@@ -1,5 +1,26 @@
 # DEV_LOG.md - Skill Architect 開發日誌
 
+> **⚠️ Anti-Vibe Coding 紀律宣告**
+> 所有 Bug 修復與系統變更，必須在此日誌留下 RCA (Root Cause Analysis) 與 CAPA (Corrective and Preventive Actions) 的結構化紀錄。禁止「猜測性」的盲目修復。
+> 
+> **標準診斷模板 (Standard Diagnostic Template)：**
+> - **[Reproduce]**: 錯誤重現路徑
+> - **[Minimize]**: 影響範圍與脆弱點
+> - **[RCA]**: 根本原因假設
+> - **[CAPA]**: 修復邏輯與預防策略
+
+---
+
+## [2026-05-16] Anti-Vibe Coding 紀律整合 (Anti-Vibe Coding Integration)
+
+### 任務內容
+
+- **哲學升級**：更新 `karpathy_coding_standards.md`，納入「拒絕 Vibe Coding」的第 5 條準則。
+- **實戰防禦技能**：在 `skills/dev/` 新增 `tdd-enforcer`、`bug-diagnose`、`grill-requirements`，強制 AI 遵守垂直切片與測試驅動開發。
+- **鉤子自動化**：升級 `master_workflow_hook.md`，使未來新專案自動宣告拒絕 Vibe Coding 並載入相關防禦技能。
+- **日誌規範化**：重構 `DEV_LOG.md` 頂部結構，納入標準診斷模板 (Standard Diagnostic Template)，根除盲目修復的惡習。
+
+---
 ## [2026-05-13] 里程碑發布與歷史重寫 (v1.0.0 Release & History Rewrite)
 
 ### 任務內容
