@@ -24,6 +24,14 @@ export default function Home() {
   const [loading, setLoading] = useState(false);
   const [engineStatus, setEngineStatus] = useState<'CONNECTED' | 'DISCONNECTED'>('DISCONNECTED');
   const [activeTab, setActiveTab] = useState<'FEATURES' | 'SKETCH'>('FEATURES');
+
+  // Dynamic LocalStorage self-cleanup of legacy mockup features
+  useEffect(() => {
+    if (features.some(f => f.id === 'feat_1')) {
+      useCadStore.setState({ features: [], selectedId: null });
+      setMeshData([]);
+    }
+  }, [features, setMeshData]);
   
   const selectedFeature = useMemo(() => features.find(f => f.id === selectedId), [features, selectedId]);
 

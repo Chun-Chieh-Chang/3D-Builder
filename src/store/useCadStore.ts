@@ -69,21 +69,8 @@ export const useCadStore = create<CadState>()(
 
       setProjectName: (name) => set({ projectName: name }),
       
-      // Industrial Default: A Base Plate with a Cut-out on a different plane
-      features: [
-        {
-          id: 'feat_1',
-          type: 'EXTRUDE',
-          name: 'Base Plate',
-          parameters: { width: 50, height: 30, depth: 5, x: 0, y: 0, z: 0, operation: 'ADD', plane: 'FRONT' }
-        },
-        {
-          id: 'feat_2',
-          type: 'EXTRUDE',
-          name: 'Top Cut-out',
-          parameters: { width: 10, height: 10, depth: 20, x: 20, y: 0, z: 10, operation: 'CUT', plane: 'TOP' }
-        }
-      ],
+      // Start with a clean slate: no default features, exactly like a new SolidWorks Part document
+      features: [],
 
 
       
@@ -103,7 +90,7 @@ export const useCadStore = create<CadState>()(
         return { features: [...newFeatures] };
       }),
       
-      selectedId: 'feat_1',
+      selectedId: null,
       setSelectedId: (id) => set({ selectedId: id }),
 
       meshData: [],
