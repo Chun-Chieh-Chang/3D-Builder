@@ -609,3 +609,33 @@
 - [x] 懸浮 HUD 設計符合 Approchable Luxury 的莫蘭迪灰色調，並具備高級毛玻璃陰影，保證極致的視覺美學。
 - [x] `✓ 離開並拉伸 (Extrude)` 功能測試通過，直接生成 Custom Extrude 特徵並觸發 Heavy Engine Rebuild 🟢。
 - [x] 本地編譯無任何錯誤，成功推送至 Git 倉庫 🟢。
+
+---
+
+## [2026-05-17] 復刻 SolidWorks 專業 CAD 開發環境 (Full Replication of SolidWorks Professional CAD Environment)
+
+### 任務內容
+- **拒絕任何妥協的頂級 UI/UX 重構**：
+    - **1. 頂部 Windows 視窗標題列 (Desktop Titlebar)**：
+        - 增加包含主選單（檔案 File, 編輯 Edit, 檢視 View, 插入 Insert, 工具 Tools, 說明 Help）、零件檔名（`零件1.SLDPRT`）、當前草圖基準面狀態，以及右上角的 Windows 視窗操作控制按鈕。
+        - 整合動態顯示的 `OCCT 幾何引擎連接狀態` 及健康偵測指標。
+    - **2. CommandManager 橫向功能區 (Ribbon Bar)**：
+        - 打造了高度還原 SolidWorks 的雙標籤 Ribbon 面板（**特徵 Features** / **草圖 Sketch**）。
+        - 在「特徵」面板下提供大型指令按鈕：`伸長-實體`、`伸長-除料`、`方塊實體`、`圓柱實體`、`球體實體`，並附帶 `旋轉` 與 `圓角/倒角` 規劃中鎖定圖示。
+        - 在「草圖」面板下提供：`繪製草圖`、`智慧尺寸`、`直線段`、`三點圓弧`、`網格吸附` 切換。
+    - **3. FeatureManager 設計樹 (Design Tree Sidebar)**：
+        - 左側側邊欄完全復刻設計樹結構：從 `🔷 零件1 (Part1)`，到內嵌 `📡 感測器`、`📝 註記`、`🪵 材質 <未指定>`。
+        - 內置 `前基準面`、`上基準面`、`右基準面`、`原點`，**點擊選取基準面，雙擊直接啟動該基準面的草圖繪製**！
+        - 歷史特徵樹動態展示所有幾何特徵，並為 `伸長-實體 (ADD)` 與 `伸長-除料 (CUT)` 標記專屬的 SolidWorks 幾何操作圖標。
+    - **4. PropertyManager 屬性經理面板**：
+        - 側邊欄下方動態顯示選取特徵的屬性面版，完美復刻 SolidWorks 階層式折疊區段：**`方向 1 (Direction 1)`**、**`參數設定`**。
+        - 提供拉伸操作的 `JOIN / CUT` 下拉選單、基準面選擇，以及高精度 offset 位置微調。
+    - **5. 視埠視角控制列 (Graphics Orientation Bar)**：
+        - 在 3D Viewport 右上角加入經典的懸浮視角列，提供：`前視景 (XY Plane)`、`上視景 (XZ Plane)`、`右視景 (YZ Plane)` 與 `等角立體透視`，點擊即流暢變換相機视角。
+
+### 最終確效結果 (Verification)
+- [x] 重構後的 SolidWorks 桌面環境全面跑通，UI 外觀達國際頂尖水準 🟢。
+- [x] `伸長-實體` 與 `伸長-除料 (CUT)` 能根據特徵樹配置，完美觸發 FastAPI 後端 OCC B-Rep Kernel 重新計算 🟢。
+- [x] 成功將雙擊基準面、視角快捷變換、CommandManager 標籤與 FeatureTree 高度耦合。
+- [x] Next.js Turbopack 生產環境編譯百分之百成功，無任何 TypeScript 類型或語意錯誤，退出碼 0 🟢。
+- [x] 完整代碼順利推送至 remote GitHub 倉庫 🟢。
