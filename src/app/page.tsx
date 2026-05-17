@@ -16,7 +16,8 @@ export default function Home() {
     isSketchMode, setSketchMode,
     activePlane, setActivePlane,
     sketchPoints, setSketchPoints,
-    sketchTool, setSketchTool
+    sketchTool, setSketchTool,
+    gridSnap, setGridSnap
   } = useCadStore();
 
   
@@ -100,6 +101,31 @@ export default function Home() {
     });
     setSelectedId(id);
   };
+
+  const handleExitAndExtrude = useCallback(() => {
+    if (sketchPoints.length < 3 || !activePlane) return;
+    
+    const id = `feat_${Date.now()}`;
+    addFeature({
+      id,
+      type: 'EXTRUDE',
+      name: `Custom Extrude ${features.length + 1}`,
+      parameters: { 
+        points: [...sketchPoints],
+        depth: 10, 
+        x: 0, y: 0, z: 0,
+        operation: 'ADD', 
+        plane: activePlane 
+      }
+    });
+
+    setSketchPoints([]);
+    setSketchMode(false);
+    setActivePlane(null);
+    setSelectedId(id);
+    
+    setTimeout(handleRebuild, 50);
+  }, [sketchPoints, activePlane, features, addFeature, setSketchPoints, setSketchMode, setActivePlane, setSelectedId, handleRebuild]);
 
   return (
     <main className="flex h-screen w-screen overflow-hidden bg-background">
@@ -329,6 +355,62 @@ export default function Home() {
             </mesh>
           )}
         </Viewport>
+        
+        {/* Floating Sketch Viewport HUD */}
+        {isSketchMode && (
+          <div className="absolute top-6 left-1/2 -translate-x-1/2 glass-effect px-4 py-2.5 rounded-2xl flex items-center gap-6 shadow-2xl border border-white/10 z-50 animate-fade-in pointer-events-auto">
+            {/* Active Drawing Tool Info */}
+            <div className="flex items-center gap-2">
+              <span className="text-[14px]">✏️</span>
+              <div className="flex flex-col">
+                <span className="text-[10px] font-bold text-primary tracking-wider uppercase">草圖繪製中 (Sketching)</span>
+                <span className="text-[8px] text-secondary-text">正在繪製: {sketchTool === 'LINE' ? '直線段 (Line)' : '三點圓弧 (Arc)'}</span>
+              </div>
+            </div>
+            
+            {/* Grid Snapping Toggle */}
+            <div className="flex items-center gap-2 border-l border-border/60 pl-4">
+              <button 
+                onClick={() => setGridSnap(!gridSnap)}
+                type="button"
+                className={`px-2 py-1 rounded text-[9px] font-bold transition-all border ${
+                  gridSnap 
+                    ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' 
+                    : 'bg-surface/50 text-secondary-text border-border'
+                }`}
+              >
+                🧲 網格吸附: {gridSnap ? '已啟用' : '已關閉'}
+              </button>
+            </div>
+
+            {/* Point Count */}
+            <div className="flex flex-col items-center justify-center border-l border-border/60 pl-4">
+              <span className="text-[11px] font-mono font-bold text-foreground leading-none">{sketchPoints.length}</span>
+              <span className="text-[7px] text-secondary-text uppercase tracking-widest text-center mt-1 w-8">節點</span>
+            </div>
+
+            {/* Commands */}
+            <div className="flex items-center gap-2 border-l border-border/60 pl-4">
+              <button
+                onClick={handleExitAndExtrude}
+                disabled={sketchPoints.length < 3}
+                type="button"
+                className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-40 disabled:hover:bg-emerald-600 text-white rounded-xl text-[9px] font-bold shadow-lg shadow-emerald-500/20 transition-all hover:scale-105 active:scale-95 flex items-center gap-1.5"
+                title="閉合草圖並長出為 3D 實體"
+              >
+                ✓ 離開並拉伸 (Extrude)
+              </button>
+              <button
+                onClick={() => { setSketchPoints([]); setSketchMode(false); setActivePlane(null); }}
+                type="button"
+                className="px-2.5 py-1.5 bg-error/10 hover:bg-error/20 text-error rounded-xl text-[9px] font-bold transition-all hover:scale-105 active:scale-95"
+                title="捨棄當前草圖"
+              >
+                ✗ 捨棄 (Discard)
+              </button>
+            </div>
+          </div>
+        )}
         
         {/* Toolbar */}
         <div className="absolute top-4 right-4 flex flex-col gap-2">

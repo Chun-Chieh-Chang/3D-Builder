@@ -583,4 +583,29 @@
 - [x] 後端導入 `GC_MakeArcOfCircle`，本地測試案例編譯退出碼 0。
 - [x] 三點圓弧草圖在 FRONT/TOP/RIGHT 基準面上順利渲染，Catmull-Rom 曲線插補順暢。
 - [x] 草圖點位輸入框能完美定量編輯並觸發 Recompute B-Rep 長出。
+- [x] 成功整合 SolidWorks 風格的 Viewport HUD 控制面版與網格吸附功能。
 - [x] 本地生產環境 `npm run build` TypeScript 編譯順利成功 🟢。
+
+---
+
+## [2026-05-17] SolidWorks 使用者體驗優化與視埠指令 HUD (SolidWorks UX Optimization & Viewport HUD)
+
+### 任務內容
+- **網格精準鎖點與自動吸附 (Grid Snapping)**：
+    - Zustand 狀態庫新增 `gridSnap`（預設為啟用）開關。
+    - 當設計師使用滑鼠在基準面上進行點擊定位時，[DatumPlanes.tsx](file:///c:/Users/3kids/Downloads/3D-Builder/src/renderer/DatumPlanes.tsx) 會自動將點擊座標值四捨五入吸附至最近的整數網格（如 10.0, -5.0），避免產生小數點碎屑座標，大幅提升滑鼠點擊粗定位時的幾何整潔度。
+- **視埠中央懸浮 HUD (Heads-Up Display)**：
+    - 借鑒 SolidWorks 經典的草圖 Heads-Up 功能，在 3D 畫布頂部中央設計了高階毛玻璃（Glassmorphism）懸浮 HUD。
+    - **HUD 模組內容**：
+        1. **狀態與工具指示**：實時顯示當前正在繪製直線段或圓弧。
+        2. **自動吸附開關**：提供 `🧲 網格吸附: 已啟用/已關閉` 切換按鈕，允許使用者在自由繪圖與吸附鎖點間實時切換。
+        3. **節點計數**：即時回饋當前草圖已繪製的端點數量。
+        4. **快速指令按鈕**：提供 **`✓ 離開並拉伸 (Extrude)`** 與 **`✗ 捨棄 (Discard)`** 快捷按鈕。
+- **閉合草圖並長出 (Direct Exit & Extrude)**：
+    - 在視埠中點擊 `✓ 離開並拉伸` 時，系統會自動在草圖節點大於 3 時，閉合輪廓並退出草圖模式，自動生成 Extrude 特徵並帶入 10mm 的初始厚度，同時呼叫後端進行 B-Rep 特徵重構，實現「草圖面 $\to$ 實體拉伸」的一體化流暢體驗！
+
+### 最終確效結果 (Verification)
+- [x] 成功實現 `gridSnap` Zustand 狀態與座標吸附邏輯，定位點全部完美落在網格交叉點上。
+- [x] 懸浮 HUD 設計符合 Approchable Luxury 的莫蘭迪灰色調，並具備高級毛玻璃陰影，保證極致的視覺美學。
+- [x] `✓ 離開並拉伸 (Extrude)` 功能測試通過，直接生成 Custom Extrude 特徵並觸發 Heavy Engine Rebuild 🟢。
+- [x] 本地編譯無任何錯誤，成功推送至 Git 倉庫 🟢。

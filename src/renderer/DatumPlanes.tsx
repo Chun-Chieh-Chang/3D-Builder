@@ -8,7 +8,7 @@ export const DatumPlanes = () => {
     activePlane, setActivePlane, 
     isSketchMode, setSketchMode,
     sketchPoints, setSketchPoints,
-    sketchTool,
+    sketchTool, gridSnap,
     addFeature, features
   } = useCadStore();
   const [hovered, setHovered] = useState<string | null>(null);
@@ -35,6 +35,12 @@ export const DatumPlanes = () => {
     if (plane === 'FRONT') { u = point.x; v = point.y; }
     else if (plane === 'TOP') { u = point.x; v = point.z; }
     else if (plane === 'RIGHT') { u = point.y; v = point.z; }
+
+    // Apply SolidWorks precision grid snapping
+    if (gridSnap) {
+      u = Math.round(u);
+      v = Math.round(v);
+    }
 
     // Tag the point if it's an Arc Control Point (the 2nd point in a 3-point arc sequence)
     let newPt: any = [u, v];

@@ -23,6 +23,8 @@ interface CadState {
   setSketchPoints: (points: any[]) => void;
   sketchTool: 'LINE' | 'ARC';
   setSketchTool: (tool: 'LINE' | 'ARC') => void;
+  gridSnap: boolean;
+  setGridSnap: (snap: boolean) => void;
   
   projectName: string;
 
@@ -59,6 +61,8 @@ export const useCadStore = create<CadState>()(
       setSketchPoints: (points) => set({ sketchPoints: points }),
       sketchTool: 'LINE',
       setSketchTool: (tool) => set({ sketchTool: tool }),
+      gridSnap: true,
+      setGridSnap: (snap) => set({ gridSnap: snap }),
       
       projectName: 'Professional CAD Project',
 
