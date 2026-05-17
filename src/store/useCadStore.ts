@@ -19,8 +19,10 @@ interface CadState {
   activePlane: 'FRONT' | 'TOP' | 'RIGHT' | null;
   setActivePlane: (plane: 'FRONT' | 'TOP' | 'RIGHT' | null) => void;
   
-  sketchPoints: [number, number][]; // 2D points on the active plane
-  setSketchPoints: (points: [number, number][]) => void;
+  sketchPoints: any[]; // 2D points on the active plane
+  setSketchPoints: (points: any[]) => void;
+  sketchTool: 'LINE' | 'ARC';
+  setSketchTool: (tool: 'LINE' | 'ARC') => void;
   
   projectName: string;
 
@@ -55,6 +57,8 @@ export const useCadStore = create<CadState>()(
       
       sketchPoints: [],
       setSketchPoints: (points) => set({ sketchPoints: points }),
+      sketchTool: 'LINE',
+      setSketchTool: (tool) => set({ sketchTool: tool }),
       
       projectName: 'Professional CAD Project',
 

@@ -8,6 +8,7 @@ export const DatumPlanes = () => {
     activePlane, setActivePlane, 
     isSketchMode, setSketchMode,
     sketchPoints, setSketchPoints,
+    sketchTool,
     addFeature, features
   } = useCadStore();
   const [hovered, setHovered] = useState<string | null>(null);
@@ -35,7 +36,13 @@ export const DatumPlanes = () => {
     else if (plane === 'TOP') { u = point.x; v = point.z; }
     else if (plane === 'RIGHT') { u = point.y; v = point.z; }
 
-    const newPoints: [number, number][] = [...sketchPoints, [u, v]];
+    // Tag the point if it's an Arc Control Point (the 2nd point in a 3-point arc sequence)
+    let newPt: any = [u, v];
+    if (sketchTool === 'ARC' && sketchPoints.length % 3 === 1) {
+      newPt = [u, v, 'ARC_CONTROL'];
+    }
+
+    const newPoints: any[] = [...sketchPoints, newPt];
     
     // Check if we should finish (e.g., if clicked near the start point or if points > 3 and user clicks again)
     const isClosing = newPoints.length > 2 && 

@@ -15,7 +15,8 @@ export default function Home() {
     meshData, setMeshData,
     isSketchMode, setSketchMode,
     activePlane, setActivePlane,
-    sketchPoints, setSketchPoints
+    sketchPoints, setSketchPoints,
+    sketchTool, setSketchTool
   } = useCadStore();
 
   
@@ -133,35 +134,75 @@ export default function Home() {
               
               <div className="space-y-4">
                 <div className="p-3 bg-surface/40 rounded-xl border border-primary/20">
-                  <div className="text-[10px] text-secondary-text mb-2">DRAWING ON: <span className="text-primary font-bold">{activePlane}</span></div>
+                  <div className="text-[10px] text-secondary-text mb-2 flex justify-between items-center">
+                    <span>DRAWING ON: <span className="text-primary font-bold">{activePlane}</span></span>
+                    <span className="text-[8px] text-primary font-semibold px-1 py-0.5 bg-primary/10 rounded uppercase">{sketchTool} MODE</span>
+                  </div>
+                  
+                  {/* Premium Sketch Segment Selector */}
+                  <div className="flex gap-2 p-1 bg-background/50 rounded-lg border border-border/80 mb-3">
+                    <button 
+                      onClick={() => setSketchTool('LINE')} 
+                      className={`flex-1 py-1 text-[9px] rounded font-bold transition-all ${
+                        sketchTool === 'LINE' 
+                          ? 'bg-primary text-white shadow-lg shadow-primary/20' 
+                          : 'text-secondary-text hover:bg-surface/50'
+                      }`}
+                    >
+                      直線段 (Line)
+                    </button>
+                    <button 
+                      onClick={() => setSketchTool('ARC')} 
+                      className={`flex-1 py-1 text-[9px] rounded font-bold transition-all ${
+                        sketchTool === 'ARC' 
+                          ? 'bg-primary text-white shadow-lg shadow-primary/20' 
+                          : 'text-secondary-text hover:bg-surface/50'
+                      }`}
+                    >
+                      三點圓弧 (Arc)
+                    </button>
+                  </div>
                   <div className="space-y-2">
-                    {sketchPoints.map((pt, i) => (
-                      <div key={i} className="flex gap-2 items-center">
-                        <span className="text-[10px] text-secondary-text w-4">P{i+1}</span>
-                        <input 
-                          type="number" 
-                          value={pt[0]} 
-                          onChange={(e) => {
-                            const newPts = [...sketchPoints];
-                            newPts[i][0] = parseFloat(e.target.value) || 0;
-                            setSketchPoints(newPts);
-                          }}
-                          className="flex-1 bg-background border border-border rounded px-2 py-1 text-xs text-foreground"
-                          placeholder="U"
-                        />
-                        <input 
-                          type="number" 
-                          value={pt[1]} 
-                          onChange={(e) => {
-                            const newPts = [...sketchPoints];
-                            newPts[i][1] = parseFloat(e.target.value) || 0;
-                            setSketchPoints(newPts);
-                          }}
-                          className="flex-1 bg-background border border-border rounded px-2 py-1 text-xs text-foreground"
-                          placeholder="V"
-                        />
-                      </div>
-                    ))}
+                    {sketchPoints.map((pt, i) => {
+                      const isControl = pt[2] === 'ARC_CONTROL';
+                      return (
+                        <div key={i} className="flex gap-2 items-center">
+                          <span className={`text-[9px] font-bold w-14 shrink-0 transition-all ${
+                            isControl ? 'text-emerald-500 font-semibold' : 'text-secondary-text'
+                          }`}>
+                            {isControl ? '弧頂 Ctrl' : `端點 P${i+1}`}
+                          </span>
+                          <div className="flex-1 flex gap-1 items-center">
+                            <span className="text-[8px] text-secondary-text font-bold">U:</span>
+                            <input 
+                              type="number" 
+                              value={pt[0]} 
+                              onChange={(e) => {
+                                const newPts = [...sketchPoints];
+                                newPts[i] = [parseFloat(e.target.value) || 0, newPts[i][1], newPts[i][2]];
+                                setSketchPoints(newPts);
+                              }}
+                              className="w-full bg-background border border-border rounded px-1.5 py-0.5 text-xs text-foreground font-mono"
+                              placeholder="U"
+                            />
+                          </div>
+                          <div className="flex-1 flex gap-1 items-center">
+                            <span className="text-[8px] text-secondary-text font-bold">V:</span>
+                            <input 
+                              type="number" 
+                              value={pt[1]} 
+                              onChange={(e) => {
+                                const newPts = [...sketchPoints];
+                                newPts[i] = [newPts[i][0], parseFloat(e.target.value) || 0, newPts[i][2]];
+                                setSketchPoints(newPts);
+                              }}
+                              className="w-full bg-background border border-border rounded px-1.5 py-0.5 text-xs text-foreground font-mono"
+                              placeholder="V"
+                            />
+                          </div>
+                        </div>
+                      );
+                    })}
                   </div>
                   {sketchPoints.length > 0 && (
                     <div className="mt-4 p-2 bg-primary/10 rounded text-[10px] text-primary text-center">

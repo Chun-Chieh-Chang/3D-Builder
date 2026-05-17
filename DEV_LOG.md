@@ -558,3 +558,29 @@
 - [x] 移除 Actions 冗餘的 `static_site_generator` 重置參數。
 - [x] GitHub API 查詢與 GitHub Actions 工作流 #2 回報 **completed - success** 🟢。
 - [x] 網頁正式部署上線且資源無 404 加載異常：[3D-Builder Live Pages](https://chun-chieh-chang.github.io/3D-Builder/) 🟢。
+
+---
+
+## [2026-05-17] SolidWorks 級草圖長出功能與定量尺寸設計 (SolidWorks-grade Sketch-to-Extrude & Parametric Dimensioning)
+
+### 任務內容
+- **二維幾何與圓弧內核擴充**：
+    - 在後端幾何微服務導入 OpenCascade 的 `GC_MakeArcOfCircle` 幾何算子。
+    - 重構 B-Rep 線框建構模組，支援直線段 (`Line`) 與三點圓弧 (`Arc`) 混合拓撲線框（Wire）的解析。當端點序列中偵測到 `ARC_CONTROL` 頂點時，會自動在空間中插補三點圓弧，若點位共線則自動降級為直線以進行防禦防禦。
+- **草圖繪製狀態升級**：
+    - Zustand 狀態庫新增 `sketchTool` 狀態，支援 `LINE`（直線段）與 `ARC`（三點圓弧）工具的自由切換。
+    - 滑鼠點擊基準面時，動態判斷選用工具：在圓弧模式下，將點擊點自動標記為 `ARC_CONTROL` 控制頂點，與起迄端點配對。
+- **三維實時草圖預覽**：
+    - 重構 Three.js 視埠中的 `SketchPreview.tsx`。
+    - 導入 `THREE.CatmullRomCurve3` 用於三維空間中插補草圖弧線，實時渲染高精度的黃色曲率預覽線，取代單調的折線預覽。
+- **定量尺寸編輯器**：
+    - 精緻化左側的「草圖屬性編輯面板」，動態標示點位為「端點 (P_n)」或「弧頂 Ctrl」，並為座標輸入框提供 U 與 V 指示標誌。設計師在畫布定位後，能在此定量修改數值，實現尺寸設定。
+
+### 診斷 (Diagnosis & RCA)
+- **RCA (根因分析)**：原先的幾何建構流程只支援 3D 幾何體的直接融合，忽略了 CAD 行業中「草圖面定義 -> 繪製輪廓 -> 拉伸特徵」的標準拓撲關係。為此需要解耦頂點表示，以 `ARC_CONTROL` 語意標籤將直線與曲線段進行拓撲分離。
+
+### 最終確效結果 (Verification)
+- [x] 後端導入 `GC_MakeArcOfCircle`，本地測試案例編譯退出碼 0。
+- [x] 三點圓弧草圖在 FRONT/TOP/RIGHT 基準面上順利渲染，Catmull-Rom 曲線插補順暢。
+- [x] 草圖點位輸入框能完美定量編輯並觸發 Recompute B-Rep 長出。
+- [x] 本地生產環境 `npm run build` TypeScript 編譯順利成功 🟢。

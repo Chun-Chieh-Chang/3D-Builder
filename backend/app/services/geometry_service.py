@@ -8,6 +8,7 @@ from OCC.Core.TopLoc import TopLoc_Location
 from OCC.Core.BRepBuilderAPI import BRepBuilderAPI_MakeEdge, BRepBuilderAPI_MakeWire, BRepBuilderAPI_MakeFace
 from OCC.Core.BRepAlgoAPI import BRepAlgoAPI_Fuse, BRepAlgoAPI_Cut
 import math
+from OCC.Core.GC import GC_MakeArcOfCircle
 
 def _shape_to_mesh(shape, deflection=0.01):
     """Converts an OCCT shape to a mesh format for Three.js."""
@@ -101,27 +102,51 @@ def process_features(features):
                 ax2 = gp_Ax2(gp_Pnt(x_origin, y_origin, z_origin), gp_Dir(0, 0, 1))
                 vec = gp_Vec(0, 0, depth)
 
-            # Build Wire from Polyline Points
+            # Build Wire supporting Lines and Arcs
             make_wire = BRepBuilderAPI_MakeWire()
-            for i in range(len(points_2d)):
-                p_start = points_2d[i]
-                p_end = points_2d[(i + 1) % len(points_2d)] # Auto-close the loop
-                
+            
+            def get_gp_pnt(p):
+                u_val = float(p[0])
+                v_val = float(p[1])
                 if plane_type == 'FRONT':
-                    gp_start = gp_Pnt(p_start[0], p_start[1], 0)
-                    gp_end = gp_Pnt(p_end[0], p_end[1], 0)
+                    return gp_Pnt(u_val, v_val, 0)
                 elif plane_type == 'TOP':
-                    gp_start = gp_Pnt(p_start[0], 0, p_start[1])
-                    gp_end = gp_Pnt(p_end[0], 0, p_end[1])
+                    return gp_Pnt(u_val, 0, v_val)
                 elif plane_type == 'RIGHT':
-                    gp_start = gp_Pnt(0, p_start[0], p_start[1])
-                    gp_end = gp_Pnt(0, p_end[0], p_end[1])
+                    return gp_Pnt(0, u_val, v_val)
                 else:
-                    gp_start = gp_Pnt(p_start[0], p_start[1], 0)
-                    gp_end = gp_Pnt(p_end[0], p_end[1], 0)
+                    return gp_Pnt(u_val, v_val, 0)
 
-                edge = BRepBuilderAPI_MakeEdge(gp_start, gp_end).Edge()
-                make_wire.Add(edge)
+            i = 0
+            n_points = len(points_2d)
+            while i < n_points:
+                p_start = points_2d[i]
+                p_next = points_2d[(i + 1) % n_points]
+                
+                # Check if next point is an arc control point
+                if len(p_next) > 2 and p_next[2] == 'ARC_CONTROL':
+                    p_control = p_next
+                    p_end = points_2d[(i + 2) % n_points]
+                    
+                    gp_start = get_gp_pnt(p_start)
+                    gp_control = get_gp_pnt(p_control)
+                    gp_end = get_gp_pnt(p_end)
+                    
+                    arc = GC_MakeArcOfCircle(gp_start, gp_control, gp_end)
+                    if arc.IsDone():
+                        edge = BRepBuilderAPI_MakeEdge(arc.Value()).Edge()
+                        make_wire.Add(edge)
+                    else:
+                        edge = BRepBuilderAPI_MakeEdge(gp_start, gp_end).Edge()
+                        make_wire.Add(edge)
+                    i += 2
+                else:
+                    gp_start = get_gp_pnt(p_start)
+                    gp_end = get_gp_pnt(p_next)
+                    
+                    edge = BRepBuilderAPI_MakeEdge(gp_start, gp_end).Edge()
+                    make_wire.Add(edge)
+                    i += 1
 
             wire = make_wire.Wire()
             face = BRepBuilderAPI_MakeFace(wire).Face()
