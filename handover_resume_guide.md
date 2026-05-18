@@ -1,73 +1,26 @@
-# SolidWorks Replicant CAD Continuation & Handover Guide (v2.3.0-alpha)
+# 3D-Builder Handoff & Resume Guide
 
-Last updated: 2026-05-17
+## Current State of Development (2026-05-18)
+The project is currently implementing an industrial-grade **SolidWorks-like 3D Web CAD application**. The technology stack includes **Next.js, TailwindCSS, React Three Fiber (R3F), Zustand, and a FastAPI + PythonOCC backend**.
 
-This document is the handover anchor for the `3D-Builder` project. Read it first when resuming development so another account, model, or tool can continue without relying on hidden chat context.
+### Recent Major Achievements
+1. **O-Snap Smart Sketch Snapping (智慧游標捕捉引擎)**: 
+   - Implemented a dynamic `onPointerMove` cursor with `SNAP_RADIUS`.
+   - Advanced Object Snapping prioritization: Origin > Sketch EndPoints > 3D Feature Vertices > Grid.
+   - Built a high-performance `useMemo` orthographic projection engine that maps all existing 3D vertices from `meshData` onto the active 2D sketching plane, matching SolidWorks' reference geometry snapping perfectly.
+2. **History Rollback Bar & X-Ray Sketching (時光退回與 X-Ray 穿透)**:
+   - When editing a historical sketch, the system dynamically slices the `features` array before sending it to the backend (`HeavyEngineClient.getInstance().rebuild`), causing all future solids to instantly disappear (SolidWorks Rollback).
+   - Applied `depthTest={false}` to all sketch `<Line>` and marker components in `SketchPreview.tsx`, ensuring new sketch geometry perfectly overrides any existing obstructing 3D solids (X-Ray effect).
+3. **Double-Click "Flip Normal To" (雙面翻轉正對其)**:
+   - "Normal To" camera transition was perfected by locking OrbitControls purely declaratively (`isCameraAnimating`).
+   - Implemented `cameraNormalFlip` in `useCadStore`. Clicking "Normal To" on the same plane twice elegantly flips the camera 180 degrees (Front/Back) while adjusting the Up-Vector to preserve the Right-Hand Rule and prevent upside-down sketching.
 
-## Project Goal
+### Known Issues & Next Steps
+- **Advanced Constraints Solver**: While sketch relations like "Horizontal" and "Equal" exist, they lack a true geometric degree-of-freedom (DOF) solver. The next milestone should be integrating an advanced 2D geometric constraint solver.
+- **Measurement & Mass Properties**: SolidWorks' "Evaluate" functionality needs physical measurement support via OCCT's `GProp_GProps` to compute actual center of mass, surface area, and volume accurately based on selected topologies.
 
-Build `3D-Builder` into a SolidWorks-like feature-based parametric CAD tool:
-
-- **SolidWorks Desktop UX**: CommandManager ribbon (Features / Sketch tabs), FeatureManager design tree, PropertyManager, and cool gray desktop palette.
-- **Interactive CAD Build Demo**: Playable Step-by-Step animated construction showing intermediate stages of drawing, dimensioning, B-Rep revolving, and physics analysis.
-- **Topology Selection System**: Raycaster-based face, edge, and vertex selection mapping.
-- **3D Floating Measurement & Mass Properties Tools**: Measures area and volume properties directly from selected topologies.
-- **B-Rep Revolve & STEP Export**: Parametrically revolves custom profiles 360° around Y-axis, exporting standard STEP geometric models.
-
-## Stack
-
-- Frontend: Next.js `16.2.6`, React `19.2.4`, Zustand, React Three Fiber, Three.js.
-- Main UI: `src/app/page.tsx`
-- Renderer: `src/renderer/Viewport.tsx`, `src/renderer/DatumPlanes.tsx`, `src/renderer/SketchPreview.tsx`
-- Store: `src/store/useCadStore.ts`
-- Backend: FastAPI + PythonOCC, with geometry rebuild in `backend/app/services/geometry_service.py`
-- Frontend dev URL observed in this session: `http://localhost:3000/`
-- Backend docs when running: `http://localhost:8000/docs`
-
-## Current Completed State
-
-### v2.2.0 Prior State
-
-- Enabled 3D Topology selection (Vertices, Edges, Faces).
-- Implemented Revolve geometry reconstruction on the backend.
-- Created high-fidelity Coke Bottle mockup demo loader.
-
-### v2.3.0 Completed In This Session
-
-Added a spectacular **Interactive Step-by-Step CAD Construction Tour** in the UI:
-
-- **`startInteractiveConstructionDemo` State Machine**:
-  - Automatically starts sketch mode on Front Plane.
-  - Sequentially spawns points P1 ➔ P2 ➔ P3 ➔ P4 ➔ P5 ➔ P6 with 1.8s delay between them, showing the lines growing in real-time.
-  - Activates Smart Dimension tool and shows the height driver.
-  - Parametrically scales the height from 30.0 mm to 50.0 mm (recalculating coords and keeping loop closed).
-  - Triggers B-Rep Revolve feature, sending the final profile to the backend for 3D extrusion.
-  - Highlights top face and displays physical measurement results (Area & Volume).
-- **Amber Glassmorphic HUD Banner**: Real-time visual messages walking the user step-by-step through the CAD engine pipeline.
-- **`🎥 示範建構` Ribbon Button**: Prominent green button placed next to `旋轉-實體` in the Features ribbon.
-- **Subagent validation**: Verified the complete animation tour, saving screenshots `tour_step1_front_plane.png` through `tour_step7_final_cup.png` to conversation records with zero console errors.
-
-## Run Commands
-
-Frontend:
-
-```powershell
-npm run dev
-npm run build
-npm run lint
-```
-
-Backend:
-
-```powershell
-cd backend
-python -m uvicorn app.main:app --reload --port 8000
-```
-
-## Continuation Rule
-
-When remaining working capacity is near 10%, update this file and `DEV_LOG.md` before stopping. Include:
-- What changed.
-- What was verified.
-- What failed or remains risky.
-- Exact next steps.
+## How to Resume
+1. **Server Boot**: Always start the backend first via `uvicorn app.main:app --host 0.0.0.0 --port 8400` in the `backend` folder.
+2. **Frontend Boot**: Run `npm run dev` in the root folder.
+3. **Code Quality**: Always run `npx tsc --noEmit` after modifying React components to ensure strict type safety.
+4. **Agent Instructions**: Read `DEV_LOG.md` to understand the root causes of past issues (e.g. Gimbal Lock avoidance, React Reconciliation conflicts). Never guess; always apply standard CAPA diagnostics.

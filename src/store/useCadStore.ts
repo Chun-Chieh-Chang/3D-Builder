@@ -4,6 +4,11 @@ import { persist, createJSONStorage } from 'zustand/middleware';
 export type CadMode = 'PART' | 'ASSEMBLY' | 'DRAWING';
 export type MeasurementMode = 'NONE' | 'DISTANCE' | 'ANGLE' | 'AREA' | 'VOLUME';
 
+export interface CADContextMenu {
+  plane: 'FRONT' | 'TOP' | 'RIGHT';
+  position: [number, number, number];
+}
+
 export interface MeasurementResult {
   mode: MeasurementMode;
   value: number;
@@ -13,7 +18,7 @@ export interface MeasurementResult {
 
 export interface CADFeature {
   id: string;
-  type: 'SKETCH_RECT' | 'EXTRUDE' | 'BOX' | 'CYLINDER' | 'SPHERE' | 'REVOLVE';
+  type: 'SKETCH_RECT' | 'EXTRUDE' | 'BOX' | 'CYLINDER' | 'SPHERE' | 'REVOLVE' | 'FILLET' | 'CHAMFER';
   name: string;
   parameters: any;
 }
@@ -35,6 +40,8 @@ interface CadState {
   setGridSnap: (snap: boolean) => void;
   sketchRelations: string[];
   setSketchRelations: (relations: string[]) => void;
+  selectedEntityIds: string[];
+  setSelectedEntityIds: (ids: string[]) => void;
 
   projectName: string;
 
@@ -66,6 +73,22 @@ interface CadState {
   // Render State
   meshData: any[]; // Array of { id, data: { vertices, indices, normals } }
   setMeshData: (data: any[]) => void;
+
+  // Camera Alignment Trigger
+  cameraNormalTrigger: number;
+  cameraNormalFlip: boolean;
+  cameraNormalLastPlane: string | null;
+  triggerCameraNormal: () => void;
+
+  // Transient Context Menu HUD
+  contextMenu: CADContextMenu | null;
+  setContextMenu: (menu: CADContextMenu | null) => void;
+
+  // Transient OrbitControls Reference & Animation Lock
+  controls: any | null;
+  setControls: (controls: any | null) => void;
+  isCameraAnimating: boolean;
+  setIsCameraAnimating: (isAnimating: boolean) => void;
 }
 
 export const useCadStore = create<CadState>()(
@@ -87,6 +110,8 @@ export const useCadStore = create<CadState>()(
       setGridSnap: (snap) => set({ gridSnap: snap }),
       sketchRelations: [],
       setSketchRelations: (relations) => set({ sketchRelations: relations }),
+      selectedEntityIds: [],
+      setSelectedEntityIds: (selectedEntityIds) => set({ selectedEntityIds }),
 
       projectName: 'Professional CAD Project',
 
@@ -133,6 +158,27 @@ export const useCadStore = create<CadState>()(
 
       meshData: [],
       setMeshData: (meshData) => set({ meshData }),
+
+      cameraNormalTrigger: 0,
+      cameraNormalFlip: false,
+      cameraNormalLastPlane: null,
+      triggerCameraNormal: () => set((state) => {
+        // If clicking normal to the same plane again, flip the view 180 degrees!
+        const isSamePlane = state.cameraNormalLastPlane === state.activePlane;
+        return { 
+          cameraNormalTrigger: state.cameraNormalTrigger + 1,
+          cameraNormalLastPlane: state.activePlane,
+          cameraNormalFlip: isSamePlane ? !state.cameraNormalFlip : false
+        };
+      }),
+
+      contextMenu: null,
+      setContextMenu: (contextMenu) => set({ contextMenu }),
+
+      controls: null,
+      setControls: (controls) => set({ controls }),
+      isCameraAnimating: false,
+      setIsCameraAnimating: (isCameraAnimating) => set({ isCameraAnimating }),
     }),
     {
       name: 'cad-storage',
@@ -143,6 +189,7 @@ export const useCadStore = create<CadState>()(
         features: state.features,
         selectedId: state.selectedId,
         selectedTopology: state.selectedTopology,
+        selectedEntityIds: state.selectedEntityIds,
       }), // Don't persist meshData and transient measurement state as they can be large or dynamic
     }
   )

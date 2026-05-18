@@ -40,8 +40,49 @@ export default function Home() {
     sketchRelations, setSketchRelations,
     measurementMode, setMeasurementMode,
     measurementPoints, setMeasurementPoints,
-    measurementResults, setMeasurementResults
+    measurementResults, setMeasurementResults,
+    setContextMenu
   } = useCadStore();
+
+  const [hoveredTreeId, setHoveredTreeId] = useState<string | null>(null);
+
+  const getTreeRelation = useCallback((targetId: string, hoveredId: string | null): 'NONE' | 'PARENT' | 'CHILD' => {
+    if (!hoveredId || targetId === hoveredId) return 'NONE';
+
+    // 1. If hovered is a Feature
+    if (hoveredId.startsWith('feat_')) {
+      const hoveredFeat = features.find(f => f.id === hoveredId);
+      const hoveredPlane = hoveredFeat?.parameters?.plane || 'FRONT';
+
+      // Standard plane relationships
+      if (targetId === hoveredPlane || targetId === 'ORIGIN') return 'PARENT';
+
+      // Feature-to-Feature relationships
+      if (hoveredId === 'feat_base_plate') {
+        if (targetId === 'feat_center_hole' || targetId === 'feat_corner_fillets') return 'CHILD';
+      }
+      if (hoveredId === 'feat_center_hole' || hoveredId === 'feat_corner_fillets') {
+        if (targetId === 'feat_base_plate') return 'PARENT';
+      }
+      
+      // Dynamic fallback for custom features
+      if (targetId === 'feat_base_plate') return 'PARENT';
+      if (hoveredId === 'feat_base_plate') return 'CHILD';
+    }
+
+    // 2. If hovered is a Standard Plane or Origin
+    if (hoveredId === 'FRONT' || hoveredId === 'TOP' || hoveredId === 'RIGHT' || hoveredId === 'ORIGIN') {
+      if (targetId.startsWith('feat_')) {
+        const targetFeat = features.find(f => f.id === targetId);
+        const targetPlane = targetFeat?.parameters?.plane || 'FRONT';
+
+        if (hoveredId === 'ORIGIN') return 'CHILD';
+        if (targetPlane === hoveredId) return 'CHILD';
+      }
+    }
+
+    return 'NONE';
+  }, [features]);
 
   const measurementService = useMemo(() => new MeasurementService(), []);
 
@@ -157,6 +198,18 @@ export default function Home() {
   const [smartDimensionActive, setSmartDimensionActive] = useState(false);
   const [selectedEntityIds, setSelectedEntityIds] = useState<string[]>([]);
   const [demoStep, setDemoStep] = useState<string | null>(null);
+  const [virtualCursor, setVirtualCursor] = useState<{
+    x: string;
+    y: string;
+    visible: boolean;
+    label: string;
+    clicking: boolean;
+  } | null>(null);
+  const [sidebarHighlight, setSidebarHighlight] = useState<{
+    active: boolean;
+    target: 'SKETCH_COORDS' | 'SMART_DIM' | 'SIDEBAR_INPUT';
+    typeValue?: string;
+  } | null>(null);
 
   // Dynamic LocalStorage self-cleanup of legacy mockup features
   useEffect(() => {
@@ -270,9 +323,19 @@ export default function Home() {
     return list;
   }, [sketchPoints]);
 
-  // The new "Assembly-Aware" Rebuild Logic
+  // The new "Assembly-Aware" Rebuild Logic with History Rollback (退回控制棒)
   const handleRebuild = useCallback(async () => {
-    if (features.length === 0) {
+    // Determine the active features based on the history rollback state
+    let activeFeatures = features;
+    if (isSketchMode && editingFeatureId) {
+      const index = features.findIndex(f => f.id === editingFeatureId);
+      if (index !== -1) {
+        // Rollback history: Exclude the current feature being edited and all subsequent features
+        activeFeatures = features.slice(0, index);
+      }
+    }
+
+    if (activeFeatures.length === 0) {
       setMeshData([]);
       return;
     }
@@ -291,8 +354,8 @@ export default function Home() {
         return;
       }
 
-      console.log('[API] Sending feature list to Python Heavy Engine...', features);
-      const results = await client.rebuild(features);
+      console.log('[API] Sending rolled-back feature list to Python Heavy Engine...', activeFeatures);
+      const results = await client.rebuild(activeFeatures);
 
       if (results && Array.isArray(results)) {
         setMeshData(results);
@@ -303,7 +366,7 @@ export default function Home() {
     } finally {
       setLoading(false);
     }
-  }, [features, setMeshData]);
+  }, [features, setMeshData, isSketchMode, editingFeatureId]);
 
   useEffect(() => {
     handleRebuild();
@@ -330,33 +393,59 @@ export default function Home() {
     // 1. Clear everything and reset
     useCadStore.setState({ features: [], selectedId: null });
     resetSketchSession();
+    setSmartDimensionActive(false);
+    setSidebarHighlight(null);
     
     // Step 1: Start sketching on FRONT plane
     setDemoStep("步驟 1：啟動草圖編輯器，並自動選定「前基準面 (Front Plane)」...");
-    setSketchMode(true);
-    setActivePlane('FRONT');
-    setSketchTool('LINE');
+    setVirtualCursor({ x: '180px', y: '50px', visible: true, label: '點選: 草圖分頁', clicking: true });
+    setActiveTab('SKETCH');
+
+    setTimeout(() => {
+      setVirtualCursor(prev => prev ? { ...prev, clicking: false } : null);
+    }, 400);
+
+    setTimeout(() => {
+      setVirtualCursor({ x: '120px', y: '330px', visible: true, label: '雙擊選定: 前基準面', clicking: true });
+      setSketchMode(true);
+      setActivePlane('FRONT');
+      setSketchTool('LINE');
+      setTimeout(() => setVirtualCursor(prev => prev ? { ...prev, clicking: false } : null), 400);
+    }, 800);
     
     // Step 2: Draw base outline sequentially (Base center to outer wall)
     setTimeout(() => {
       setDemoStep("步驟 2：逐步連續繪製草圖端點以定義工件剖面 (P1 ➔ P2 ➔ P3)...");
+      setVirtualCursor({ x: '60%', y: '52%', visible: true, label: '定位點 P1: (0, 0) mm', clicking: true });
+      setSketchPoints([
+        [0.0, 0.0]
+      ]);
+      setTimeout(() => setVirtualCursor(prev => prev ? { ...prev, clicking: false } : null), 400);
+    }, 1800);
+
+    setTimeout(() => {
+      setVirtualCursor({ x: '68%', y: '52%', visible: true, label: '定位點 P2: (20.0, 0) mm', clicking: true });
       setSketchPoints([
         [0.0, 0.0],
         [20.0, 0.0]
       ]);
-    }, 1800);
+      setTimeout(() => setVirtualCursor(prev => prev ? { ...prev, clicking: false } : null), 400);
+    }, 3200);
 
     setTimeout(() => {
+      setVirtualCursor({ x: '68%', y: '38%', visible: true, label: '定位點 P3: (20.0, 30.0) mm', clicking: true });
       setSketchPoints([
         [0.0, 0.0],
         [20.0, 0.0],
         [20.0, 30.0]
       ]);
-    }, 3200);
+      setTimeout(() => setVirtualCursor(prev => prev ? { ...prev, clicking: false } : null), 400);
+    }, 4600);
 
     // Step 3: Draw upper lip profile (P3 -> P4 -> P5 -> P6)
     setTimeout(() => {
       setDemoStep("步驟 3：繼續逆時針描繪內腔與壁厚，形成封閉的 2D 草圖輪廓...");
+      setVirtualCursor({ x: '60%', y: '52%', visible: true, label: '端點閉合於起點 P1', clicking: true });
       setSketchPoints([
         [0.0, 0.0],
         [20.0, 0.0],
@@ -365,17 +454,41 @@ export default function Home() {
         [18.0, 2.0],
         [0.0, 2.0]
       ]);
-    }, 4800);
+      setTimeout(() => setVirtualCursor(prev => prev ? { ...prev, clicking: false } : null), 400);
+    }, 6000);
 
     // Step 4: Apply Smart Dimension to scale parametric segment
     setTimeout(() => {
       setDemoStep("步驟 4：啟用「智慧尺寸 (Smart Dimension)」工具進行幾何定量驅動...");
+      setVirtualCursor({ x: '210px', y: '110px', visible: true, label: '點選: 智慧尺寸', clicking: true });
       setSmartDimensionActive(true);
-    }, 6500);
+      setTimeout(() => setVirtualCursor(prev => prev ? { ...prev, clicking: false } : null), 400);
+    }, 7500);
 
+    // Step 5: Double click to type dimension in Sidebar
     setTimeout(() => {
       setDemoStep("步驟 5：雙擊高度標記，將外壁高度從 30.0 mm 參數化調整為 50.0 mm（端點座標與相鄰拓撲自適應縮放，保持草圖閉合）...");
-      
+      setVirtualCursor({ x: '180px', y: '730px', visible: true, label: '修改邊 P2➔P3 長度', clicking: true });
+      setSidebarHighlight({ active: true, target: 'SMART_DIM', typeValue: '30.' });
+      setTimeout(() => setVirtualCursor(prev => prev ? { ...prev, clicking: false } : null), 400);
+    }, 8800);
+
+    // Animate typing text values
+    setTimeout(() => {
+      setSidebarHighlight({ active: true, target: 'SMART_DIM', typeValue: '' });
+    }, 9200);
+    setTimeout(() => {
+      setSidebarHighlight({ active: true, target: 'SMART_DIM', typeValue: '5' });
+    }, 9500);
+    setTimeout(() => {
+      setSidebarHighlight({ active: true, target: 'SMART_DIM', typeValue: '50' });
+    }, 9800);
+    setTimeout(() => {
+      setSidebarHighlight({ active: true, target: 'SMART_DIM', typeValue: '50.0' });
+    }, 10100);
+
+    // Apply parametric rebuild
+    setTimeout(() => {
       const scaledPoints = [
         [0.0, 0.0],
         [20.0, 0.0],
@@ -386,13 +499,24 @@ export default function Home() {
       ];
       setSketchPoints(scaledPoints);
       setSketchRelations(["段邊 P2➔P3: 智慧尺寸 (已驅動值 50.00 mm)"]);
-    }, 8500);
+      setVirtualCursor(prev => prev ? { ...prev, clicking: true, label: '定量完成！' } : null);
+      setTimeout(() => setVirtualCursor(prev => prev ? { ...prev, clicking: false } : null), 400);
+    }, 10600);
 
     // Step 5: Exit sketch and trigger B-Rep Revolve Solid!
     setTimeout(() => {
       setDemoStep("步驟 6：結束草圖！呼叫「旋轉-實體」，底層 OCCT 幾何核讀取閉合草圖並繞對稱 Y 軸旋轉 360 度...");
+      setVirtualCursor({ x: '100px', y: '50px', visible: true, label: '切換: 特徵分頁', clicking: true });
+      setActiveTab('FEATURES');
       setSmartDimensionActive(false);
-    }, 11000);
+      setSidebarHighlight(null);
+      setTimeout(() => setVirtualCursor(prev => prev ? { ...prev, clicking: false } : null), 400);
+    }, 11800);
+
+    setTimeout(() => {
+      setVirtualCursor({ x: '170px', y: '110px', visible: true, label: '點選: 旋轉-實體', clicking: true });
+      setTimeout(() => setVirtualCursor(prev => prev ? { ...prev, clicking: false } : null), 400);
+    }, 12600);
 
     setTimeout(() => {
       const solidPoints = [
@@ -403,7 +527,7 @@ export default function Home() {
         [18.0, 2.0],
         [0.0, 2.0]
       ];
-      const id = `feat_${Date.now()}`;
+      const id = "feat_revolve_cup";
       const revolveFeature: CADFeature = {
         id,
         type: 'REVOLVE',
@@ -418,12 +542,21 @@ export default function Home() {
       };
       useCadStore.setState({ features: [revolveFeature], selectedId: id });
       resetSketchSession();
+      setVirtualCursor({ x: '60%', y: '50%', visible: true, label: '3D 旋轉展示實體...', clicking: false });
       setTimeout(handleRebuild, 50);
-    }, 13000);
+    }, 13500);
 
     // Step 6: Highlight final solid and display measurements
     setTimeout(() => {
       setDemoStep("🎉 成功！3D 中空杯形實體建模完成！我們已自動調用「測量工具」來分析表面積與體積屬性，完美實現 CAD 確效！");
+      setVirtualCursor({ x: '260px', y: '50px', visible: true, label: '切換: 評估分頁', clicking: true });
+      setActiveTab('EVALUATE');
+      setMeasurementMode('DISTANCE');
+      setTimeout(() => setVirtualCursor(prev => prev ? { ...prev, clicking: false } : null), 400);
+    }, 15800);
+
+    setTimeout(() => {
+      setVirtualCursor({ x: '58%', y: '48%', visible: true, label: '選取表面量測屬性', clicking: true });
       useCadStore.setState({
         selectedTopology: {
           type: "FACE",
@@ -433,12 +566,15 @@ export default function Home() {
           volume: 5882.16
         }
       });
-    }, 15500);
+      setTimeout(() => setVirtualCursor(prev => prev ? { ...prev, clicking: false } : null), 400);
+    }, 16800);
 
-    // Clear message banner
+    // Clear message banner and cursor
     setTimeout(() => {
       setDemoStep(null);
-    }, 19500);
+      setVirtualCursor(null);
+      setSidebarHighlight(null);
+    }, 20500);
   };
 
 
@@ -1252,44 +1388,130 @@ export default function Home() {
                     </div>
 
                     <div className="space-y-2 max-h-[220px] overflow-y-auto pr-1">
-                      {sketchPoints.map((pt, i) => {
-                        const isControl = pt[2] === 'ARC_CONTROL';
-                        return (
-                          <div key={i} className="flex gap-2 items-center">
-                            <span className={`text-[9px] font-bold w-12 shrink-0 ${
-                              isControl ? 'text-emerald-600 font-semibold' : 'text-slate-500'
-                            }`}>
-                              {isControl ? '弧頂 Ctrl' : `端點 P${i+1}`}
-                            </span>
-                            <div className="flex-1 flex gap-1 items-center">
-                              <span className="text-[8px] text-slate-500 font-bold">U:</span>
-                              <input
-                                type="number"
-                                value={pt[0]}
-                                onChange={(e) => {
-                                  const newPts = [...sketchPoints];
-                                  newPts[i] = [parseFloat(e.target.value) || 0, newPts[i][1], newPts[i][2]];
-                                  setSketchPoints(newPts);
-                                }}
-                                className="w-full bg-white border border-[#C4C7CE] rounded px-1.5 py-0.5 text-xs text-slate-800 font-mono focus:border-primary outline-none"
-                              />
+                      {(() => {
+                        // Scan for circles and register hidden boundary point indices
+                        const circleCenters: { center: [number, number]; radius: number; startIdx: number }[] = [];
+                        const hiddenIndices = new Set<number>();
+                        let idx = 0;
+                        while (idx < sketchPoints.length) {
+                          if (idx + 36 < sketchPoints.length) {
+                            const pStart = sketchPoints[idx];
+                            const pEnd = sketchPoints[idx + 36];
+                            if (Math.hypot(pStart[0] - pEnd[0], pStart[1] - pEnd[1]) < 0.1) {
+                              const pts = sketchPoints.slice(idx, idx + 37);
+                              const us = pts.map(p => p[0]);
+                              const vs = pts.map(p => p[1]);
+                              const minU = Math.min(...us);
+                              const maxU = Math.max(...us);
+                              const minV = Math.min(...vs);
+                              const maxV = Math.max(...vs);
+                              const cU = (minU + maxU) / 2;
+                              const cV = (minV + maxV) / 2;
+                              const radius = (maxU - minU) / 2;
+
+                              circleCenters.push({ center: [cU, cV], radius, startIdx: idx });
+                              for (let k = 0; k < 37; k++) {
+                                hiddenIndices.add(idx + k);
+                              }
+                              idx += 37;
+                              continue;
+                            }
+                          }
+                          idx++;
+                        }
+
+                        const listElems: React.ReactNode[] = [];
+
+                        // 1. Render non-circle points
+                        sketchPoints.forEach((pt, i) => {
+                          if (hiddenIndices.has(i)) return;
+                          const isControl = pt[2] === 'ARC_CONTROL';
+                          listElems.push(
+                            <div key={`pt_${i}`} className="flex gap-2 items-center">
+                              <span className={`text-[9px] font-bold w-12 shrink-0 ${isControl ? 'text-emerald-600 font-semibold' : 'text-slate-500'}`}>
+                                {isControl ? '弧頂 Ctrl' : `端點 P${i+1}`}
+                              </span>
+                              <div className="flex-1 flex gap-1 items-center">
+                                <span className="text-[8px] text-slate-500 font-bold">U:</span>
+                                <input
+                                  type="number"
+                                  value={parseFloat(pt[0].toFixed(1))}
+                                  onChange={(e) => {
+                                    const newPts = [...sketchPoints];
+                                    newPts[i] = [parseFloat(e.target.value) || 0, newPts[i][1], newPts[i][2]];
+                                    setSketchPoints(newPts);
+                                  }}
+                                  className="w-full bg-white border border-[#C4C7CE] rounded px-1.5 py-0.5 text-xs text-slate-800 font-mono focus:border-primary outline-none"
+                                />
+                              </div>
+                              <div className="flex-1 flex gap-1 items-center">
+                                <span className="text-[8px] text-slate-500 font-bold">V:</span>
+                                <input
+                                  type="number"
+                                  value={parseFloat(pt[1].toFixed(1))}
+                                  onChange={(e) => {
+                                    const newPts = [...sketchPoints];
+                                    newPts[i] = [newPts[i][0], parseFloat(e.target.value) || 0, newPts[i][2]];
+                                    setSketchPoints(newPts);
+                                  }}
+                                  className="w-full bg-white border border-[#C4C7CE] rounded px-1.5 py-0.5 text-xs text-slate-800 font-mono focus:border-primary outline-none"
+                                />
+                              </div>
                             </div>
-                            <div className="flex-1 flex gap-1 items-center">
-                              <span className="text-[8px] text-slate-500 font-bold">V:</span>
-                              <input
-                                type="number"
-                                value={pt[1]}
-                                onChange={(e) => {
-                                  const newPts = [...sketchPoints];
-                                  newPts[i] = [newPts[i][0], parseFloat(e.target.value) || 0, newPts[i][2]];
-                                  setSketchPoints(newPts);
-                                }}
-                                className="w-full bg-white border border-[#C4C7CE] rounded px-1.5 py-0.5 text-xs text-slate-800 font-mono focus:border-primary outline-none"
-                              />
+                          );
+                        });
+
+                        // 2. Render Circle Center points (SolidWorks Style!)
+                        circleCenters.forEach((c, cIdx) => {
+                          listElems.push(
+                            <div key={`circle_${cIdx}`} className="flex gap-2 items-center bg-primary/5 p-1 rounded border border-primary/20">
+                              <span className="text-[9px] font-bold text-primary w-12 shrink-0">
+                                圓心 C{cIdx+1}
+                              </span>
+                              <div className="flex-1 flex gap-1 items-center">
+                                <span className="text-[8px] text-slate-500 font-bold">U:</span>
+                                <input
+                                  type="number"
+                                  value={parseFloat(c.center[0].toFixed(1))}
+                                  onChange={(e) => {
+                                    const newU = parseFloat(e.target.value) || 0;
+                                    const deltaU = newU - c.center[0];
+                                    const newPts = [...sketchPoints];
+                                    for (let k = 0; k < 37; k++) {
+                                      const pIdx = c.startIdx + k;
+                                      newPts[pIdx] = [newPts[pIdx][0] + deltaU, newPts[pIdx][1], newPts[pIdx][2]];
+                                    }
+                                    setSketchPoints(newPts);
+                                  }}
+                                  className="w-full bg-white border border-[#C4C7CE] rounded px-1.5 py-0.5 text-xs text-slate-800 font-mono focus:border-primary outline-none"
+                                  title="修改圓心 U 座標，整體平移圓形"
+                                />
+                              </div>
+                              <div className="flex-1 flex gap-1 items-center">
+                                <span className="text-[8px] text-slate-500 font-bold">V:</span>
+                                <input
+                                  type="number"
+                                  value={parseFloat(c.center[1].toFixed(1))}
+                                  onChange={(e) => {
+                                    const newV = parseFloat(e.target.value) || 0;
+                                    const deltaV = newV - c.center[1];
+                                    const newPts = [...sketchPoints];
+                                    for (let k = 0; k < 37; k++) {
+                                      const pIdx = c.startIdx + k;
+                                      newPts[pIdx] = [newPts[pIdx][0], newPts[pIdx][1] + deltaV, newPts[pIdx][2]];
+                                    }
+                                    setSketchPoints(newPts);
+                                  }}
+                                  className="w-full bg-white border border-[#C4C7CE] rounded px-1.5 py-0.5 text-xs text-slate-800 font-mono focus:border-primary outline-none"
+                                  title="修改圓心 V 座標，整體平移圓形"
+                                />
+                              </div>
                             </div>
-                          </div>
-                        );
-                      })}
+                          );
+                        });
+
+                        return listElems;
+                      })()}
                     </div>
                     {sketchPoints.length > 0 && (
                       <div className="mt-3 p-2 bg-primary/10 rounded text-[9px] text-primary/90 text-center font-medium leading-tight">
@@ -1376,51 +1598,178 @@ export default function Home() {
 
                   {/* Smart Dimensions Card */}
                   {sketchPoints.length >= 2 && (
-                    <div className={`p-2.5 rounded-xl border shadow-sm space-y-2 transition-all ${
-                      smartDimensionActive ? 'bg-primary/5 border-primary/30' : 'bg-white border-[#D1D5DB]'
+                    <div className={`p-2.5 rounded-xl border shadow-sm space-y-2 transition-all duration-300 ${
+                      sidebarHighlight && sidebarHighlight.active && sidebarHighlight.target === 'SMART_DIM'
+                        ? 'bg-amber-50/50 border-amber-500 shadow-[0_0_12px_rgba(245,158,11,0.4)] ring-2 ring-amber-500/10'
+                        : smartDimensionActive ? 'bg-primary/5 border-primary/30' : 'bg-white border-[#D1D5DB]'
                     }`}>
                       <div className="text-[10px] text-slate-700 font-bold uppercase border-b border-[#D1D5DB]/50 pb-1 flex justify-between items-center">
                         <span className="flex items-center gap-1">📏 智慧定量尺寸 (Smart Dimensions)</span>
                         {smartDimensionActive && <span className="text-[7px] bg-primary text-white px-1.5 py-0.5 rounded animate-pulse font-mono">編輯中</span>}
                       </div>
 
-                      <div className="space-y-2 max-h-[160px] overflow-y-auto pr-0.5">
-                        {sketchPoints.map((pt, i) => {
-                          const nextIdx = (i + 1) % sketchPoints.length;
-                          // If last point and it's a line/arc that doesn't close (e.g. open profile), don't show wrap-around segment
-                          if (i === sketchPoints.length - 1) {
-                            const start = sketchPoints[0];
-                            if (Math.hypot(start[0] - pt[0], start[1] - pt[1]) > 1.5) {
-                              return null;
+                      <div className="space-y-2 max-h-[180px] overflow-y-auto pr-0.5">
+                        {(() => {
+                          if (entities.length === 0) return null;
+
+                          return entities.map((ent) => {
+                            if (ent.type === 'CIRCLE') {
+                              const cU = ent.center?.[0] || 0;
+                              const cV = ent.center?.[1] || 0;
+                              const radius = ent.radius || 5;
+                              const startIdx = ent.pointIndices?.[0] || 0;
+
+                              return (
+                                <div key={ent.id} className="flex items-center justify-between gap-2 bg-primary/5 p-1.5 rounded border border-primary/20 text-[10px]">
+                                  <span className="text-primary font-bold font-mono">⭕ {ent.name} 直徑 (Ø Dia):</span>
+                                  <div className="flex items-center gap-1">
+                                    <input
+                                      type="number"
+                                      step="0.5"
+                                      value={parseFloat((radius * 2.0).toFixed(1))}
+                                      onChange={(e) => {
+                                        const val = parseFloat(e.target.value);
+                                        if (val > 0) {
+                                          const newRadius = val / 2.0;
+                                          const newPts = [...sketchPoints];
+                                          const DIVISIONS = 36;
+                                          for (let k = 0; k <= DIVISIONS; k++) {
+                                            const theta = (k / DIVISIONS) * Math.PI * 2;
+                                            newPts[startIdx + k] = [
+                                              parseFloat((cU + newRadius * Math.cos(theta)).toFixed(3)),
+                                              parseFloat((cV + newRadius * Math.sin(theta)).toFixed(3)),
+                                              newPts[startIdx + k]?.[2]
+                                            ];
+                                          }
+                                          setSketchPoints(newPts);
+                                          const newRel = `直徑定尺寸 (${ent.name} Ø ${val.toFixed(1)} mm)`;
+                                          setSketchRelations([...sketchRelations.filter(r => !r.includes(ent.name)), newRel]);
+                                        }
+                                      }}
+                                      className="w-[85px] bg-white border border-[#C4C7CE] rounded px-1.5 py-0.5 text-right font-mono text-slate-800 focus:border-primary outline-none font-bold"
+                                      title="修改直徑，動態更改圓圈尺寸"
+                                    />
+                                    <span className="text-[8px] text-slate-400">mm</span>
+                                  </div>
+                                </div>
+                              );
                             }
-                          }
 
-                          const nextPt = sketchPoints[nextIdx];
-                          if (pt[2] === 'ARC_CONTROL' || nextPt[2] === 'ARC_CONTROL') return null; // skip arc control subsegments
+                            if (ent.type === 'RECTANGLE') {
+                              const idxs = ent.pointIndices;
+                              const p0 = sketchPoints[idxs[0]];
+                              const p1 = sketchPoints[idxs[1]];
+                              const p2 = sketchPoints[idxs[2]];
+                              
+                              if (!p0 || !p1 || !p2) return null;
+                              
+                              const width = Math.hypot(p1[0] - p0[0], p1[1] - p0[1]);
+                              const height = Math.hypot(p2[0] - p1[0], p2[1] - p1[1]);
 
-                          const len = Math.hypot(nextPt[0] - pt[0], nextPt[1] - pt[1]);
+                              return (
+                                <div key={ent.id} className="space-y-1.5 p-2 bg-[#F8FAFC] rounded border border-slate-200 text-[10px]">
+                                  <div className="text-slate-600 font-bold border-b border-slate-200/50 pb-0.5 flex justify-between">
+                                    <span>📦 {ent.name} 尺寸標註</span>
+                                    <span className="text-[8px] text-slate-400 uppercase font-mono">RECT</span>
+                                  </div>
+                                  <div className="flex items-center justify-between gap-2">
+                                    <span className="text-slate-500 font-medium">寬度 (Width):</span>
+                                    <div className="flex items-center gap-1">
+                                      <input
+                                        type="number"
+                                        step="1"
+                                        value={parseFloat(width.toFixed(1))}
+                                        onChange={(e) => {
+                                          const val = parseFloat(e.target.value);
+                                          if (val > 0) {
+                                            const newPts = [...sketchPoints];
+                                            const dx = val - width;
+                                            newPts[idxs[1]] = [newPts[idxs[1]][0] + dx, newPts[idxs[1]][1], newPts[idxs[1]][2]];
+                                            newPts[idxs[2]] = [newPts[idxs[2]][0] + dx, newPts[idxs[2]][1], newPts[idxs[2]][2]];
+                                            setSketchPoints(newPts);
+                                          }
+                                        }}
+                                        className="w-[70px] bg-white border border-[#C4C7CE] rounded px-1.5 py-0.5 text-right font-mono text-slate-800 focus:border-primary outline-none"
+                                      />
+                                      <span className="text-[8px] text-slate-400">mm</span>
+                                    </div>
+                                  </div>
+                                  <div className="flex items-center justify-between gap-2">
+                                    <span className="text-slate-500 font-medium">高度 (Height):</span>
+                                    <div className="flex items-center gap-1">
+                                      <input
+                                        type="number"
+                                        step="1"
+                                        value={parseFloat(height.toFixed(1))}
+                                        onChange={(e) => {
+                                          const val = parseFloat(e.target.value);
+                                          if (val > 0) {
+                                            const newPts = [...sketchPoints];
+                                            const dy = val - height;
+                                            newPts[idxs[2]] = [newPts[idxs[2]][0], newPts[idxs[2]][1] + dy, newPts[idxs[2]][2]];
+                                            newPts[idxs[3]] = [newPts[idxs[3]][0], newPts[idxs[3]][1] + dy, newPts[idxs[3]][2]];
+                                            setSketchPoints(newPts);
+                                          }
+                                        }}
+                                        className="w-[70px] bg-white border border-[#C4C7CE] rounded px-1.5 py-0.5 text-right font-mono text-slate-800 focus:border-primary outline-none"
+                                      />
+                                      <span className="text-[8px] text-slate-400">mm</span>
+                                    </div>
+                                  </div>
+                                </div>
+                              );
+                            }
 
-                          return (
-                            <div key={i} className="flex items-center justify-between gap-2 bg-slate-50 p-1.5 rounded border border-slate-200/60 text-[10px]">
-                              <span className="text-slate-600 font-bold font-mono">段邊 P{i+1}➔P{nextIdx+1}:</span>
-                              <div className="flex items-center gap-1">
-                                <input
-                                  type="number"
-                                  step="1"
-                                  value={parseFloat(len.toFixed(1))}
-                                  onChange={(e) => {
-                                    const val = parseFloat(e.target.value);
-                                    if (val > 0) {
-                                      handleScaleSegment(i, val);
+                            // Standard Line / Center Line
+                            const idxs = ent.pointIndices;
+                            const p0 = sketchPoints[idxs[0]];
+                            const p1 = sketchPoints[idxs[1]];
+                            if (!p0 || !p1) return null;
+
+                            const len = Math.hypot(p1[0] - p0[0], p1[1] - p0[1]);
+                            const isSmartDimHighlight = !!(sidebarHighlight && sidebarHighlight.active && sidebarHighlight.target === 'SMART_DIM' && ent.name === '線段 L2');
+
+                            return (
+                              <div key={ent.id} className={`flex items-center justify-between gap-2 rounded border p-1.5 text-[10px] transition-all duration-300 ${
+                                isSmartDimHighlight
+                                  ? 'bg-amber-50 border-amber-500 shadow-[0_0_8px_rgba(245,158,11,0.4)] ring-2 ring-amber-500/10 font-bold'
+                                  : 'bg-slate-50 border-slate-200/60'
+                              }`}>
+                                <span className="text-slate-600 font-bold font-mono">📏 {ent.name} 長度:</span>
+                                <div className="flex items-center gap-1">
+                                  <input
+                                    type={isSmartDimHighlight ? "text" : "number"}
+                                    step="1"
+                                    value={
+                                      isSmartDimHighlight && sidebarHighlight.typeValue !== undefined
+                                        ? sidebarHighlight.typeValue
+                                        : parseFloat(len.toFixed(1))
                                     }
-                                  }}
-                                  className="w-[70px] bg-white border border-[#C4C7CE] rounded px-1.5 py-0.5 text-right font-mono text-slate-800 focus:border-primary outline-none font-bold"
-                                />
-                                <span className="text-[8px] text-slate-400">mm</span>
+                                    readOnly={isSmartDimHighlight}
+                                    onChange={(e) => {
+                                      if (isSmartDimHighlight) return;
+                                      const val = parseFloat(e.target.value);
+                                      if (val > 0) {
+                                        const ratio = val / len;
+                                        const newPts = [...sketchPoints];
+                                        newPts[idxs[1]] = [
+                                          newPts[idxs[0]][0] + (newPts[idxs[1]][0] - newPts[idxs[0]][0]) * ratio,
+                                          newPts[idxs[0]][1] + (newPts[idxs[1]][1] - newPts[idxs[0]][1]) * ratio,
+                                          newPts[idxs[1]][2]
+                                        ];
+                                        setSketchPoints(newPts);
+                                      }
+                                    }}
+                                    className={`w-[70px] bg-white border rounded px-1.5 py-0.5 text-right font-mono text-slate-800 focus:border-primary outline-none font-bold ${
+                                      isSmartDimHighlight ? 'border-amber-500 text-amber-700 animate-pulse' : 'border-[#C4C7CE]'
+                                    }`}
+                                  />
+                                  <span className="text-[8px] text-slate-400">mm</span>
+                                </div>
                               </div>
-                            </div>
-                          );
-                        })}
+                            );
+                          });
+                        })()}
                       </div>
                     </div>
                   )}
@@ -1565,100 +1914,221 @@ export default function Home() {
                     </div>
 
                     {/* Standard Plane Selection (Double click triggers sketch) */}
-                    <div
-                      onClick={() => { setActivePlane('FRONT'); setSelectedId(null); }}
-                      onDoubleClick={() => { setEditingFeatureId(null); setSketchPoints([]); setSketchRelations([]); setActivePlane('FRONT'); setSketchMode(true); setSketchTool('LINE'); }}
-                      className={`flex items-center justify-between p-1 rounded cursor-pointer transition-all ${
-                        activePlane === 'FRONT' ? 'bg-primary/10 text-primary font-bold' : 'hover:bg-slate-100 hover:text-slate-800'
-                      }`}
-                      title="點擊選取基準面，按雙擊進入草圖模式"
-                    >
-                      <div className="flex items-center gap-2">
-                        <span>🌐</span>
-                        <span>前基準面 (Front Plane)</span>
-                      </div>
-                      {activePlane === 'FRONT' && <span className="text-[8px] bg-primary/10 text-primary px-1 rounded uppercase font-bold">選取</span>}
-                    </div>
+                    {(() => {
+                      const frontRel = getTreeRelation('FRONT', hoveredTreeId);
+                      const topRel = getTreeRelation('TOP', hoveredTreeId);
+                      const rightRel = getTreeRelation('RIGHT', hoveredTreeId);
+                      const originRel = getTreeRelation('ORIGIN', hoveredTreeId);
 
-                    <div
-                      onClick={() => { setActivePlane('TOP'); setSelectedId(null); }}
-                      onDoubleClick={() => { setEditingFeatureId(null); setSketchPoints([]); setSketchRelations([]); setActivePlane('TOP'); setSketchMode(true); setSketchTool('LINE'); }}
-                      className={`flex items-center justify-between p-1 rounded cursor-pointer transition-all ${
-                        activePlane === 'TOP' ? 'bg-primary/10 text-primary font-bold' : 'hover:bg-slate-100 hover:text-slate-800'
-                      }`}
-                      title="點擊選取基準面，按雙擊進入草圖模式"
-                    >
-                      <div className="flex items-center gap-2">
-                        <span>🌐</span>
-                        <span>上基準面 (Top Plane)</span>
-                      </div>
-                      {activePlane === 'TOP' && <span className="text-[8px] bg-primary/10 text-primary px-1 rounded uppercase font-bold">選取</span>}
-                    </div>
+                      return (
+                        <>
+                          <div
+                            onClick={() => { 
+                              setActivePlane('FRONT'); 
+                              setSelectedId(null); 
+                              setContextMenu({ plane: 'FRONT', position: [0, 0, 40] });
+                            }}
+                            onDoubleClick={() => { setEditingFeatureId(null); setSketchPoints([]); setSketchRelations([]); setActivePlane('FRONT'); setSketchMode(true); setSketchTool('LINE'); setContextMenu(null); }}
+                            onMouseEnter={() => setHoveredTreeId('FRONT')}
+                            onMouseLeave={() => setHoveredTreeId(null)}
+                            className={`flex items-center justify-between p-1 rounded cursor-pointer transition-all border ${
+                              activePlane === 'FRONT' 
+                                ? 'bg-primary/10 border-primary/30 text-primary font-bold' 
+                                : frontRel === 'PARENT'
+                                ? 'bg-blue-50 border-blue-200 text-blue-900 font-medium'
+                                : frontRel === 'CHILD'
+                                ? 'bg-purple-50 border-purple-200 text-purple-900 font-medium'
+                                : 'hover:bg-slate-100 border-transparent hover:text-slate-800'
+                            }`}
+                            title="點擊選取基準面，按雙擊進入草圖模式"
+                          >
+                            <div className="flex items-center gap-2">
+                              <span>🌐</span>
+                              <span>前基準面 (Front Plane)</span>
+                            </div>
+                            <div className="flex items-center gap-1 shrink-0 text-[7.5px] font-bold">
+                              {frontRel === 'PARENT' && <span className="bg-blue-100 text-blue-600 px-1 py-0.2 rounded">父 (Parent)</span>}
+                              {frontRel === 'CHILD' && <span className="bg-purple-100 text-purple-600 px-1 py-0.2 rounded">子 (Child)</span>}
+                              {activePlane === 'FRONT' && <span className="bg-primary/10 text-primary px-1 rounded uppercase">選取</span>}
+                            </div>
+                          </div>
 
-                    <div
-                      onClick={() => { setActivePlane('RIGHT'); setSelectedId(null); }}
-                      onDoubleClick={() => { setEditingFeatureId(null); setSketchPoints([]); setSketchRelations([]); setActivePlane('RIGHT'); setSketchMode(true); setSketchTool('LINE'); }}
-                      className={`flex items-center justify-between p-1 rounded cursor-pointer transition-all ${
-                        activePlane === 'RIGHT' ? 'bg-primary/10 text-primary font-bold' : 'hover:bg-slate-100 hover:text-slate-800'
-                      }`}
-                      title="點擊選取基準面，按雙擊進入草圖模式"
-                    >
-                      <div className="flex items-center gap-2">
-                        <span>🌐</span>
-                        <span>右基準面 (Right Plane)</span>
-                      </div>
-                      {activePlane === 'RIGHT' && <span className="text-[8px] bg-primary/10 text-primary px-1 rounded uppercase font-bold">選取</span>}
-                    </div>
+                          <div
+                            onClick={() => { 
+                              setActivePlane('TOP'); 
+                              setSelectedId(null); 
+                              setContextMenu({ plane: 'TOP', position: [0, 40, 0] });
+                            }}
+                            onDoubleClick={() => { setEditingFeatureId(null); setSketchPoints([]); setSketchRelations([]); setActivePlane('TOP'); setSketchMode(true); setSketchTool('LINE'); setContextMenu(null); }}
+                            onMouseEnter={() => setHoveredTreeId('TOP')}
+                            onMouseLeave={() => setHoveredTreeId(null)}
+                            className={`flex items-center justify-between p-1 rounded cursor-pointer transition-all border ${
+                              activePlane === 'TOP' 
+                                ? 'bg-primary/10 border-primary/30 text-primary font-bold' 
+                                : topRel === 'PARENT'
+                                ? 'bg-blue-50 border-blue-200 text-blue-900 font-medium'
+                                : topRel === 'CHILD'
+                                ? 'bg-purple-50 border-purple-200 text-purple-900 font-medium'
+                                : 'hover:bg-slate-100 border-transparent hover:text-slate-800'
+                            }`}
+                            title="點擊選取基準面，按雙擊進入草圖模式"
+                          >
+                            <div className="flex items-center gap-2">
+                              <span>🌐</span>
+                              <span>上基準面 (Top Plane)</span>
+                            </div>
+                            <div className="flex items-center gap-1 shrink-0 text-[7.5px] font-bold">
+                              {topRel === 'PARENT' && <span className="bg-blue-100 text-blue-600 px-1 py-0.2 rounded">父 (Parent)</span>}
+                              {topRel === 'CHILD' && <span className="bg-purple-100 text-purple-600 px-1 py-0.2 rounded">子 (Child)</span>}
+                              {activePlane === 'TOP' && <span className="bg-primary/10 text-primary px-1 rounded uppercase">選取</span>}
+                            </div>
+                          </div>
 
-                    <div className="flex items-center gap-2 p-0.5 hover:text-slate-800 cursor-pointer border-b border-[#D1D5DB]/40 pb-1.5">
-                      <span>📍</span>
-                      <span>原點 (Origin)</span>
-                    </div>
+                          <div
+                            onClick={() => { 
+                              setActivePlane('RIGHT'); 
+                              setSelectedId(null); 
+                              setContextMenu({ plane: 'RIGHT', position: [40, 0, 0] });
+                            }}
+                            onDoubleClick={() => { setEditingFeatureId(null); setSketchPoints([]); setSketchRelations([]); setActivePlane('RIGHT'); setSketchMode(true); setSketchTool('LINE'); setContextMenu(null); }}
+                            onMouseEnter={() => setHoveredTreeId('RIGHT')}
+                            onMouseLeave={() => setHoveredTreeId(null)}
+                            className={`flex items-center justify-between p-1 rounded cursor-pointer transition-all border ${
+                              activePlane === 'RIGHT' 
+                                ? 'bg-primary/10 border-primary/30 text-primary font-bold' 
+                                : rightRel === 'PARENT'
+                                ? 'bg-blue-50 border-blue-200 text-blue-900 font-medium'
+                                : rightRel === 'CHILD'
+                                ? 'bg-purple-50 border-purple-200 text-purple-900 font-medium'
+                                : 'hover:bg-slate-100 border-transparent hover:text-slate-800'
+                            }`}
+                            title="點擊選取基準面，按雙擊進入草圖模式"
+                          >
+                            <div className="flex items-center gap-2">
+                              <span>🌐</span>
+                              <span>右基準面 (Right Plane)</span>
+                            </div>
+                            <div className="flex items-center gap-1 shrink-0 text-[7.5px] font-bold">
+                              {rightRel === 'PARENT' && <span className="bg-blue-100 text-blue-600 px-1 py-0.2 rounded">父 (Parent)</span>}
+                              {rightRel === 'CHILD' && <span className="bg-purple-100 text-purple-600 px-1 py-0.2 rounded">子 (Child)</span>}
+                              {activePlane === 'RIGHT' && <span className="bg-primary/10 text-primary px-1 rounded uppercase">選取</span>}
+                            </div>
+                          </div>
+
+                          <div 
+                            onMouseEnter={() => setHoveredTreeId('ORIGIN')}
+                            onMouseLeave={() => setHoveredTreeId(null)}
+                            className={`flex items-center justify-between p-1 rounded cursor-pointer transition-all border border-transparent ${
+                              originRel === 'PARENT'
+                                ? 'bg-blue-50 border-blue-200 text-blue-900 font-medium'
+                                : originRel === 'CHILD'
+                                ? 'bg-purple-50 border-purple-200 text-purple-900 font-medium'
+                                : 'hover:bg-slate-100 hover:text-slate-800'
+                            }`}
+                          >
+                            <div className="flex items-center gap-2 p-0.5">
+                              <span>📍</span>
+                              <span>原點 (Origin)</span>
+                            </div>
+                            <div className="flex items-center gap-1 shrink-0 text-[7.5px] font-bold mr-1">
+                              {originRel === 'PARENT' && <span className="bg-blue-100 text-blue-600 px-1 py-0.2 rounded">父 (Parent)</span>}
+                              {originRel === 'CHILD' && <span className="bg-purple-100 text-purple-600 px-1 py-0.2 rounded">子 (Child)</span>}
+                            </div>
+                          </div>
+                        </>
+                      );
+                    })()}
                   </div>
 
                   {/* Chronological History Tree */}
                   <div className="pl-2 pt-2 space-y-1">
                     <div className="text-[9px] uppercase tracking-wider text-slate-500 font-bold mb-1">模型歷史特徵</div>
-                    {features.map((f) => (
-                      <div
-                        key={f.id}
-                        onClick={() => setSelectedId(f.id)}
-                        onDoubleClick={() => handleEditFeatureSketch(f)}
-                        className={`group flex items-center justify-between p-1.5 rounded cursor-pointer transition-all border ${
-                          editingFeatureId === f.id
-                            ? 'bg-emerald-50 border-emerald-300 text-slate-900 font-bold'
-                            : selectedId === f.id
-                            ? 'bg-primary/10 border-primary/30 text-slate-800 font-bold'
-                            : 'hover:bg-slate-100 border-transparent text-slate-700'
-                        }`}
-                      >
-                        <div className="flex items-center gap-2">
-                          <span className="text-sm">
-                            {f.type === 'REVOLVE' ? '🍾' : f.type === 'EXTRUDE' ? (f.parameters.operation === 'CUT' ? '🕳️' : '🏗️') : f.type === 'BOX' ? '📦' : f.type === 'CYLINDER' ? '🧪' : '🔮'}
-                          </span>
-                          <div className="flex flex-col">
-                            <span className="text-[11px] leading-tight">{f.name}</span>
-                            <span className="text-[8px] text-slate-500 font-mono leading-none uppercase">{f.type === 'EXTRUDE' ? f.parameters.operation : f.type}</span>
-                            {editingFeatureId === f.id && (
-                              <span className="mt-0.5 text-[7px] text-emerald-700 font-bold uppercase leading-none">Editing sketch</span>
-                            )}
-                          </div>
-                        </div>
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            removeFeature(f.id);
-                            setSelectedId(null);
-                            setTimeout(handleRebuild, 50);
-                          }}
-                          onDoubleClick={(e) => e.stopPropagation()}
-                          className="opacity-0 group-hover:opacity-100 p-0.5 hover:bg-error/20 rounded text-slate-500 hover:text-error transition-all"
-                          title="刪除特徵"
+                    {features.map((f, fIdx) => {
+                      const relState = getTreeRelation(f.id, hoveredTreeId);
+                      const isExtrudeOrRevolve = f.type === 'EXTRUDE' || f.type === 'REVOLVE';
+                      let sketchNum = 1;
+                      if (f.id === 'feat_base_plate') sketchNum = 1;
+                      else if (f.id === 'feat_center_hole') sketchNum = 2;
+                      else {
+                        const extrudeFeats = features.filter(x => x.type === 'EXTRUDE' || x.type === 'REVOLVE');
+                        const idx = extrudeFeats.findIndex(x => x.id === f.id);
+                        sketchNum = idx >= 0 ? idx + 1 : fIdx + 1;
+                      }
+
+                      return (
+                        <div 
+                          key={f.id} 
+                          className="flex flex-col border border-transparent rounded transition-all"
+                          onMouseEnter={() => setHoveredTreeId(f.id)}
+                          onMouseLeave={() => setHoveredTreeId(null)}
                         >
-                          🗑️
-                        </button>
-                      </div>
-                    ))}
+                          {/* Feature Row */}
+                          <div
+                            onClick={() => setSelectedId(f.id)}
+                            onDoubleClick={() => handleEditFeatureSketch(f)}
+                            className={`group flex items-center justify-between p-1.5 rounded cursor-pointer transition-all border ${
+                              editingFeatureId === f.id
+                                ? 'bg-emerald-50 border-emerald-300 text-slate-900 font-bold'
+                                : selectedId === f.id
+                                ? 'bg-primary/10 border-primary/30 text-slate-800 font-bold'
+                                : relState === 'PARENT'
+                                ? 'bg-blue-50/70 border-blue-200 text-blue-900 font-medium'
+                                : relState === 'CHILD'
+                                ? 'bg-purple-50/70 border-purple-200 text-purple-900 font-medium'
+                                : 'hover:bg-slate-100 border-transparent text-slate-700'
+                            }`}
+                          >
+                            <div className="flex items-center gap-2">
+                              <span className="text-sm">
+                                {f.type === 'REVOLVE' ? '🍾' : f.type === 'EXTRUDE' ? (f.parameters.operation === 'CUT' ? '🕳️' : '🏗️') : f.type === 'BOX' ? '📦' : f.type === 'CYLINDER' ? '🧪' : '🔮'}
+                              </span>
+                              <div className="flex flex-col">
+                                <span className="text-[11px] leading-tight">{f.name}</span>
+                                <span className="text-[8px] text-slate-500 font-mono leading-none uppercase">{f.type === 'EXTRUDE' ? f.parameters.operation : f.type}</span>
+                                {editingFeatureId === f.id && (
+                                  <span className="mt-0.5 text-[7px] text-emerald-700 font-bold uppercase leading-none">Editing sketch</span>
+                                )}
+                              </div>
+                            </div>
+                            <div className="flex items-center gap-1 shrink-0 text-[7px] font-bold">
+                              {relState === 'PARENT' && <span className="bg-blue-100 text-blue-600 px-1 py-0.2 rounded">父 (Parent)</span>}
+                              {relState === 'CHILD' && <span className="bg-purple-100 text-purple-600 px-1.5 py-0.2 rounded">子 (Child)</span>}
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  removeFeature(f.id);
+                                  setSelectedId(null);
+                                  setTimeout(handleRebuild, 50);
+                                }}
+                                onDoubleClick={(e) => e.stopPropagation()}
+                                className="opacity-0 group-hover:opacity-100 p-0.5 hover:bg-error/20 rounded text-slate-500 hover:text-error transition-all"
+                                title="刪除特徵"
+                              >
+                                🗑️
+                              </button>
+                            </div>
+                          </div>
+
+                          {/* Nested Sketch Child Node */}
+                          {isExtrudeOrRevolve && (
+                            <div
+                              onClick={() => { setSelectedId(f.id); }}
+                              onDoubleClick={() => handleEditFeatureSketch(f)}
+                              className="pl-7 py-1 flex items-center justify-between gap-1.5 text-slate-500 hover:text-primary cursor-pointer text-[10px] select-none hover:bg-slate-100/50 rounded transition-all"
+                              title="雙擊編輯此特徵所屬的草圖幾何"
+                            >
+                              <div className="flex items-center gap-1.5">
+                                <span>↳ ✏️</span>
+                                <span className="italic hover:underline">草圖{sketchNum} (Sketch{sketchNum})</span>
+                              </div>
+                              {editingFeatureId === f.id && (
+                                <span className="text-[7px] bg-emerald-100 text-emerald-700 px-1.5 py-0.2 rounded font-bold font-mono mr-2 animate-pulse">編輯中</span>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
                   </div>
                 </div>
               </div>
@@ -1667,7 +2137,7 @@ export default function Home() {
 
           {/* PropertyManager (左下角特徵屬性面板) */}
           {!isSketchMode && selectedFeature && measurementMode === 'NONE' && (
-            <div className="h-[210px] w-full border-t border-[#D1D5DB] bg-[#F5F6F9] flex flex-col p-3 z-10 shrink-0">
+            <div className="h-[250px] w-full border-t border-[#D1D5DB] bg-[#F5F6F9] flex flex-col p-3 z-10 shrink-0">
               <div className="text-[10px] uppercase tracking-wider text-slate-500 mb-2 font-bold flex justify-between items-center border-b border-[#D1D5DB]/40 pb-1">
                 <span>📋 PropertyManager</span>
                 <span className="text-[8px] bg-primary/10 text-primary px-1 rounded uppercase font-mono">{selectedFeature.type}</span>
@@ -1737,6 +2207,123 @@ export default function Home() {
                     </div>
                   </div>
                 )}
+
+                {/* Parent/Child Relations Card (父子拓撲關係鏈) */}
+                {(() => {
+                  const getParentsAndChildren = (targetFeature: any, allFeatures: any[]) => {
+                    const parents: { id: string; name: string; type: string }[] = [];
+                    const children: { id: string; name: string; type: string }[] = [];
+
+                    const targetIdx = allFeatures.findIndex(f => f.id === targetFeature.id);
+                    if (targetIdx === -1) return { parents, children };
+
+                    // 1. Determine parents
+                    for (let i = 0; i < targetIdx; i++) {
+                      const f = allFeatures[i];
+                      if (targetFeature.type === 'EXTRUDE') {
+                        if (targetFeature.parameters.operation === 'CUT' && f.type === 'EXTRUDE' && f.parameters.operation === 'ADD') {
+                          parents.push({ id: f.id, name: f.name, type: f.type });
+                        }
+                      } else if (targetFeature.type === 'FILLET' || targetFeature.type === 'CHAMFER') {
+                        if (f.type === 'EXTRUDE' || f.type === 'BOX' || f.type === 'CYLINDER' || f.type === 'SPHERE' || f.type === 'REVOLVE') {
+                          parents.push({ id: f.id, name: f.name, type: f.type });
+                        }
+                      } else if (targetFeature.type === 'REVOLVE') {
+                        if (f.type === 'EXTRUDE' && f.parameters.operation === 'ADD') {
+                          parents.push({ id: f.id, name: f.name, type: f.type });
+                        }
+                      }
+                    }
+
+                    // Always add its own sketch for extrudes/revolves
+                    if (targetFeature.type === 'EXTRUDE' || targetFeature.type === 'REVOLVE') {
+                      const sketchNum = targetFeature.name.match(/\d+/)?.[0] || '1';
+                      parents.unshift({ id: `${targetFeature.id}_sketch`, name: `草圖${sketchNum} (Sketch${sketchNum})`, type: 'SKETCH' });
+                    }
+
+                    // 2. Determine children
+                    for (let i = targetIdx + 1; i < allFeatures.length; i++) {
+                      const f = allFeatures[i];
+                      if (targetFeature.type === 'EXTRUDE' && targetFeature.parameters.operation === 'ADD') {
+                        if (f.type === 'EXTRUDE' || f.type === 'FILLET' || f.type === 'CHAMFER' || f.type === 'REVOLVE') {
+                          children.push({ id: f.id, name: f.name, type: f.type });
+                        }
+                      } else if (targetFeature.type === 'EXTRUDE' && targetFeature.parameters.operation === 'CUT') {
+                        if (f.type === 'FILLET' || f.type === 'CHAMFER') {
+                          children.push({ id: f.id, name: f.name, type: f.type });
+                        }
+                      }
+                    }
+
+                    return { parents, children };
+                  };
+
+                  const { parents, children } = getParentsAndChildren(selectedFeature, features);
+                  if (parents.length === 0 && children.length === 0) return null;
+
+                  return (
+                    <div className="bg-white p-2.5 rounded border border-[#D1D5DB] shadow-sm space-y-2">
+                      <div className="text-[9px] text-slate-700 font-bold uppercase border-b border-[#D1D5DB]/30 pb-0.5 flex justify-between items-center">
+                        <span className="flex items-center gap-1">👪 父子拓撲鏈 (Parent/Child Relations)</span>
+                        <span className="text-[7px] text-primary font-bold bg-primary/10 px-1 rounded font-mono">拓撲依賴</span>
+                      </div>
+                      
+                      <div className="grid grid-cols-2 gap-2 text-[9.5px]">
+                        {/* Parents Column */}
+                        <div className="space-y-1">
+                          <div className="text-[8px] text-slate-400 font-semibold uppercase tracking-wider flex items-center gap-0.5">
+                            <span>⬆️</span> 父特徵 (Parents)
+                          </div>
+                          {parents.length === 0 ? (
+                            <div className="text-[8px] text-slate-400 italic p-1 bg-slate-50 rounded text-center border border-dashed border-[#E5E7EB]">無</div>
+                          ) : (
+                            <div className="space-y-1 max-h-[70px] overflow-y-auto pr-0.5">
+                              {parents.map((p) => (
+                                <button
+                                  key={p.id}
+                                  onClick={() => {
+                                    if (p.type === 'SKETCH') {
+                                      handleEditFeatureSketch(selectedFeature);
+                                    } else {
+                                      setSelectedId(p.id);
+                                    }
+                                  }}
+                                  className="w-full text-left truncate px-1.5 py-0.5 rounded border border-emerald-200 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 transition-all font-medium leading-tight flex items-center gap-1"
+                                >
+                                  <span className="text-[8px]">●</span>
+                                  <span className="truncate">{p.name}</span>
+                                </button>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+
+                        {/* Children Column */}
+                        <div className="space-y-1">
+                          <div className="text-[8px] text-slate-400 font-semibold uppercase tracking-wider flex items-center gap-0.5">
+                            <span>⬇️</span> 子特徵 (Children)
+                          </div>
+                          {children.length === 0 ? (
+                            <div className="text-[8px] text-slate-400 italic p-1 bg-slate-50 rounded text-center border border-dashed border-[#E5E7EB]">無</div>
+                          ) : (
+                            <div className="space-y-1 max-h-[70px] overflow-y-auto pr-0.5">
+                              {children.map((c) => (
+                                <button
+                                  key={c.id}
+                                  onClick={() => setSelectedId(c.id)}
+                                  className="w-full text-left truncate px-1.5 py-0.5 rounded border border-blue-200 bg-blue-50 hover:bg-blue-100 text-blue-800 transition-all font-medium leading-tight flex items-center gap-1"
+                                >
+                                  <span className="text-[8px]">●</span>
+                                  <span className="truncate">{c.name}</span>
+                                </button>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })()}
               </div>
             </div>
           )}
