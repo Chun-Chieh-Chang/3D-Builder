@@ -15,13 +15,12 @@ export const SketchHUD = ({
     activePlane,
     sketchTool,
     gridSnap,
-    setGridSnap,
-    sketchPoints
+    setGridSnap
   } = useCadStore();
 
   if (!isSketchMode) return null;
 
-  const solidPointCount = sketchPoints.filter(pt => pt[2] !== 'CENTER_LINE').length;
+  const solidPointCount = Object.values(useCadStore.getState().sketchNodes).length;
   const isClosed = solidPointCount >= 3;
 
   return (

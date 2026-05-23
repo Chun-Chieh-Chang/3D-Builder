@@ -50,6 +50,32 @@ export interface CADFeature {
   parameters: any;
 }
 
+export interface SketchNode {
+  id: string;
+  x: number;
+  y: number;
+  isFixed?: boolean;
+}
+
+export type SketchEdgeType = 'LINE' | 'ARC' | 'CIRCLE' | 'CENTER_LINE';
+
+export interface SketchEdge {
+  id: string;
+  type: SketchEdgeType;
+  nodeIds: string[]; 
+  isConstruction?: boolean;
+}
+
+export type ConstraintType = 'COINCIDENT' | 'HORIZONTAL' | 'VERTICAL' | 'DISTANCE' | 'EQUAL';
+
+export interface SketchConstraint {
+  id: string;
+  type: ConstraintType;
+  nodeIds?: string[];
+  edgeIds?: string[];
+  value?: number;
+}
+
 interface CadState {
   mode: CadMode;
   setMode: (mode: CadMode) => void;
@@ -66,8 +92,14 @@ interface CadState {
   activeFaceId: string | null;
   setActiveFaceId: (id: string | null) => void;
 
-  sketchPoints: any[]; // 2D points on the active plane
-  setSketchPoints: (points: any[]) => void;
+  sketchNodes: Record<string, SketchNode>;
+  setSketchNodes: (nodes: Record<string, SketchNode> | ((prev: Record<string, SketchNode>) => Record<string, SketchNode>)) => void;
+  sketchEdges: Record<string, SketchEdge>;
+  setSketchEdges: (edges: Record<string, SketchEdge> | ((prev: Record<string, SketchEdge>) => Record<string, SketchEdge>)) => void;
+  sketchConstraints: Record<string, SketchConstraint>;
+  setSketchConstraints: (constraints: Record<string, SketchConstraint> | ((prev: Record<string, SketchConstraint>) => Record<string, SketchConstraint>)) => void;
+
+
   sketchTool: 'LINE' | 'CENTER_LINE' | 'CIRCLE' | 'RECTANGLE' | 'ARC' | 'MIDPOINT_LINE';
   /** Circle creation mode */
   activeCircleMode: 'CENTER_RADIUS' | 'DIAMETER' | 'THREE_POINTS' | 'TANGENT' | 'COINCIDENT';
@@ -174,8 +206,20 @@ export const useCadStore = create<CadState>()(
       activeFaceId: null,
       setActiveFaceId: (activeFaceId) => set({ activeFaceId }),
 
-      sketchPoints: [],
-      setSketchPoints: (points) => set({ sketchPoints: points }),
+      sketchNodes: {},
+      setSketchNodes: (updater) => set((state) => ({ 
+        sketchNodes: typeof updater === 'function' ? updater(state.sketchNodes) : updater 
+      })),
+      sketchEdges: {},
+      setSketchEdges: (updater) => set((state) => ({ 
+        sketchEdges: typeof updater === 'function' ? updater(state.sketchEdges) : updater 
+      })),
+      sketchConstraints: {},
+      setSketchConstraints: (updater) => set((state) => ({ 
+        sketchConstraints: typeof updater === 'function' ? updater(state.sketchConstraints) : updater 
+      })),
+
+
       sketchTool: 'LINE',
       setSketchTool: (tool) => set({ sketchTool: tool }),
       // Circle mode defaults to center‑radius

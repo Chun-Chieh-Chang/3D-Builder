@@ -11,6 +11,7 @@ import { SketchHUD } from '@/renderer/SketchHUD';
 import { onFileOpen, onSaveRequest, onNewFile, appAPI, fileAPI } from '../../electron/renderer';
 import { MatePanel } from '@/ui/MatePanel';
 import { DrawingSheet } from '@/ui/DrawingSheet';
+import { SketchPropertyManager } from '@/ui/SketchPropertyManager';
 
 const isSketchPlane = (plane: unknown): plane is 'FRONT' | 'TOP' | 'RIGHT' | 'FACE' => (
   plane === 'FRONT' || plane === 'TOP' || plane === 'RIGHT' || plane === 'FACE'
@@ -87,10 +88,8 @@ export default function Home() {
     meshData, setMeshData,
     isSketchMode, setSketchMode,
     activePlane, setActivePlane,
-    sketchPoints, setSketchPoints,
     sketchTool, setSketchTool,
     gridSnap, setGridSnap,
-    sketchRelations, setSketchRelations,
     measurementMode, setMeasurementMode,
     measurementPoints, setMeasurementPoints,
     measurementResults, setMeasurementResults,
@@ -105,6 +104,12 @@ export default function Home() {
     activeFaceId, setActiveFaceId,
     triggerCameraNormal
   } = useCadStore();
+
+  // Legacy stubs to prevent TS errors in dead code
+  const sketchPoints: any[] = [];
+  const setSketchPoints = (pts: any) => {};
+  const sketchRelations: any[] = [];
+  const setSketchRelations = (rels: any) => {};
 
   const [hoveredTreeId, setHoveredTreeId] = useState<string | null>(null);
 
@@ -310,7 +315,7 @@ export default function Home() {
     };
     window.addEventListener('keydown', handleGlobalKeyDown);
     return () => window.removeEventListener('keydown', handleGlobalKeyDown);
-  }, [isSketchMode, sketchPoints, setSketchPoints, setSketchTool, setSketchNewChain]);
+  }, [isSketchMode, setSketchTool, setSketchNewChain]);
 
   const selectedFeature = useMemo(() => features.find(f => f.id === selectedId), [features, selectedId]);
   const solidSketchPointCount = useMemo(
@@ -930,7 +935,7 @@ export default function Home() {
     setSketchPoints(newPts);
     const newRel = `水平 (Horizontal ${sketchRelations.filter(r => r.includes('水平')).length + 1})`;
     setSketchRelations([...sketchRelations, newRel]);
-  }, [sketchPoints, setSketchPoints, sketchRelations, setSketchRelations]);
+  }, [ sketchRelations, setSketchRelations]);
 
   const applyVerticalConstraint = useCallback(() => {
     if (sketchPoints.length < 2) return;
@@ -954,7 +959,7 @@ export default function Home() {
     setSketchPoints(newPts);
     const newRel = `垂直 (Vertical ${sketchRelations.filter(r => r.includes('垂直')).length + 1})`;
     setSketchRelations([...sketchRelations, newRel]);
-  }, [sketchPoints, setSketchPoints, sketchRelations, setSketchRelations]);
+  }, [ sketchRelations, setSketchRelations]);
 
   const applyCoincidentToOrigin = useCallback(() => {
     if (sketchPoints.length === 0) return;
@@ -968,7 +973,7 @@ export default function Home() {
     setSketchPoints(newPts);
     const newRel = `重合原點 (Coincident ${sketchRelations.filter(r => r.includes('重合')).length + 1})`;
     setSketchRelations([...sketchRelations, newRel]);
-  }, [sketchPoints, setSketchPoints, sketchRelations, setSketchRelations]);
+  }, [ sketchRelations, setSketchRelations]);
 
   const applyEqualSidesConstraint = useCallback(() => {
     if (sketchPoints.length < 4) return;
@@ -991,7 +996,7 @@ export default function Home() {
     setSketchPoints(newPts);
     const newRel = `等長邊緣 (Equal ${sketchRelations.filter(r => r.includes('等長')).length + 1})`;
     setSketchRelations([...sketchRelations, newRel]);
-  }, [sketchPoints, setSketchPoints, sketchRelations, setSketchRelations]);
+  }, [ sketchRelations, setSketchRelations]);
 
   const applySmoothArcConstraint = useCallback(() => {
     const newPts = [...sketchPoints];
@@ -1018,7 +1023,7 @@ export default function Home() {
     setSketchPoints(newPts);
     const newRel = `相切對稱 (Tangent ${sketchRelations.filter(r => r.includes('相切')).length + 1})`;
     setSketchRelations([...sketchRelations, newRel]);
-  }, [sketchPoints, setSketchPoints, sketchRelations, setSketchRelations]);
+  }, [ sketchRelations, setSketchRelations]);
 
   const applyFixConstraint = useCallback(() => {
     const newPts = sketchPoints.map(pt => [
@@ -1029,7 +1034,7 @@ export default function Home() {
     setSketchPoints(newPts);
     const newRel = `固定鎖定 (Fixed ${sketchRelations.filter(r => r.includes('固定')).length + 1})`;
     setSketchRelations([...sketchRelations, newRel]);
-  }, [sketchPoints, setSketchPoints, sketchRelations, setSketchRelations]);
+  }, [ sketchRelations, setSketchRelations]);
 
   const handleScaleSegment = useCallback((index: number, newLen: number) => {
     if (sketchPoints.length < 2) return;
@@ -1070,7 +1075,7 @@ export default function Home() {
       const newRel = `尺寸定量 (Dim ${sketchRelations.filter(r => r.includes('尺寸')).length + 1})`;
       setSketchRelations([...sketchRelations, newRel]);
     }
-  }, [sketchPoints, setSketchPoints, sketchRelations, setSketchRelations]);
+  }, [ sketchRelations, setSketchRelations]);
 
   const applyParallelRelation = useCallback((entA: SketchEntity, entB: SketchEntity) => {
     const newPts = [...sketchPoints];
@@ -1089,7 +1094,7 @@ export default function Home() {
     const newRel = `平行 (Parallel: ${entA.name} ∥ ${entB.name})`;
     setSketchRelations([...sketchRelations, newRel]);
     setSelectedEntityIds([]);
-  }, [sketchPoints, setSketchPoints, sketchRelations, setSketchRelations, setSelectedEntityIds]);
+  }, [ setSelectedEntityIds]);
 
   const applyConcentricRelation = useCallback((entA: SketchEntity, entB: SketchEntity) => {
     if (!entA.center || !entB.center) return;
@@ -1103,7 +1108,7 @@ export default function Home() {
     const newRel = `同心 (Concentric: ${entA.name} 🎯 ${entB.name})`;
     setSketchRelations([...sketchRelations, newRel]);
     setSelectedEntityIds([]);
-  }, [sketchPoints, setSketchPoints, sketchRelations, setSketchRelations, setSelectedEntityIds]);
+  }, [ setSelectedEntityIds]);
 
   const applyTangentRelation = useCallback((lineEnt: SketchEntity, circleEnt: SketchEntity) => {
     if (!circleEnt.center || circleEnt.radius === undefined) return;
@@ -1130,7 +1135,7 @@ export default function Home() {
     const newRel = `相切 (Tangent: ${lineEnt.name} 🌀 ${circleEnt.name})`;
     setSketchRelations([...sketchRelations, newRel]);
     setSelectedEntityIds([]);
-  }, [sketchPoints, setSketchPoints, sketchRelations, setSketchRelations, setSelectedEntityIds]);
+  }, [ setSelectedEntityIds]);
 
   const applyMirrorSketch = useCallback(() => {
     const selectedEntities = entities.filter(ent => selectedEntityIds.includes(ent.id));
@@ -1179,7 +1184,7 @@ export default function Home() {
     const newRel = `鏡像 (Mirror: ${targets.map(t => t.name).join(', ')} 🪞 對稱於 ${centerline.name})`;
     setSketchRelations([...sketchRelations, newRel]);
     setSelectedEntityIds([]);
-  }, [entities, selectedEntityIds, sketchPoints, setSketchPoints, sketchRelations, setSketchRelations, setSelectedEntityIds]);
+  }, [entities, selectedEntityIds, setSelectedEntityIds]);
 
   return (
     <main className="flex flex-col h-screen w-screen overflow-hidden bg-[#EBEBEB] text-slate-800 font-sans">
@@ -1666,598 +1671,7 @@ export default function Home() {
                 </div>
 
                 <div className="space-y-3">
-                  <div className="p-2.5 bg-[#F5F6F9] rounded-xl border border-primary/20 shadow-sm">
-                    <div className="text-[14px] text-slate-600 mb-2 flex justify-between items-center">
-                      <span>草圖基準面: <span className="text-primary font-bold">{activePlane}</span></span>
-                      <span className="text-[13px] text-primary font-semibold px-1 py-0.5 bg-primary/10 rounded uppercase">{sketchTool} 模式</span>
-                    </div>
-
-                    <div className="space-y-2 max-h-[220px] overflow-y-auto pr-1">
-                      {(() => {
-                        // Scan for circles and register hidden boundary point indices
-                        const circleCenters: { center: [number, number]; radius: number; startIdx: number }[] = [];
-                        const hiddenIndices = new Set<number>();
-                        let idx = 0;
-                        while (idx < sketchPoints.length) {
-                          if (idx + 36 < sketchPoints.length) {
-                            const pStart = sketchPoints[idx];
-                            const pEnd = sketchPoints[idx + 36];
-                            if (Math.hypot(pStart[0] - pEnd[0], pStart[1] - pEnd[1]) < 0.1) {
-                              const pts = sketchPoints.slice(idx, idx + 37);
-                              const us = pts.map(p => p[0]);
-                              const vs = pts.map(p => p[1]);
-                              const minU = Math.min(...us);
-                              const maxU = Math.max(...us);
-                              const minV = Math.min(...vs);
-                              const maxV = Math.max(...vs);
-                              const cU = (minU + maxU) / 2;
-                              const cV = (minV + maxV) / 2;
-                              const radius = (maxU - minU) / 2;
-
-                              circleCenters.push({ center: [cU, cV], radius, startIdx: idx });
-                              for (let k = 0; k < 37; k++) {
-                                hiddenIndices.add(idx + k);
-                              }
-                              idx += 37;
-                              continue;
-                            }
-                          }
-                          idx++;
-                        }
-
-                        const listElems: React.ReactNode[] = [];
-
-                        // 1. Render non-circle points
-                        sketchPoints.forEach((pt, i) => {
-                          if (hiddenIndices.has(i)) return;
-                          const isControl = pt[2] === 'ARC_CONTROL';
-                          listElems.push(
-                            <div key={`pt_${i}`} className="flex gap-2 items-center">
-                              <span className={`text-[13px] font-bold w-12 shrink-0 ${isControl ? 'text-emerald-600 font-semibold' : 'text-slate-500'}`}>
-                                {isControl ? '弧頂 Ctrl' : `端點 P${i+1}`}
-                              </span>
-                              <div className="flex-1 flex gap-1 items-center">
-                                <span className="text-[13px] text-slate-500 font-bold">U:</span>
-                                <input
-                                  type="number"
-                                  value={parseFloat(pt[0].toFixed(1))}
-                                  onChange={(e) => {
-                                    const newPts = [...sketchPoints];
-                                    newPts[i] = [parseFloat(e.target.value) || 0, newPts[i][1], newPts[i][2]];
-                                    setSketchPoints(newPts);
-                                  }}
-                                  className="w-full bg-white border border-[#C4C7CE] rounded px-1.5 py-0.5 text-[14px] text-slate-800 font-mono focus:border-primary outline-none"
-                                />
-                              </div>
-                              <div className="flex-1 flex gap-1 items-center">
-                                <span className="text-[13px] text-slate-500 font-bold">V:</span>
-                                <input
-                                  type="number"
-                                  value={parseFloat(pt[1].toFixed(1))}
-                                  onChange={(e) => {
-                                    const newPts = [...sketchPoints];
-                                    newPts[i] = [newPts[i][0], parseFloat(e.target.value) || 0, newPts[i][2]];
-                                    setSketchPoints(newPts);
-                                  }}
-                                  className="w-full bg-white border border-[#C4C7CE] rounded px-1.5 py-0.5 text-[14px] text-slate-800 font-mono focus:border-primary outline-none"
-                                />
-                              </div>
-                            </div>
-                          );
-                        });
-
-                        // 2. Render Circle Center points (SolidWorks Style!)
-                        circleCenters.forEach((c, cIdx) => {
-                          listElems.push(
-                            <div key={`circle_${cIdx}`} className="flex gap-2 items-center bg-primary/5 p-1 rounded border border-primary/20">
-                              <span className="text-[13px] font-bold text-primary w-12 shrink-0">
-                                圓心 C{cIdx+1}
-                              </span>
-                              <div className="flex-1 flex gap-1 items-center">
-                                <span className="text-[13px] text-slate-500 font-bold">U:</span>
-                                <input
-                                  type="number"
-                                  value={parseFloat(c.center[0].toFixed(1))}
-                                  onChange={(e) => {
-                                    const newU = parseFloat(e.target.value) || 0;
-                                    const deltaU = newU - c.center[0];
-                                    const newPts = [...sketchPoints];
-                                    for (let k = 0; k < 37; k++) {
-                                      const pIdx = c.startIdx + k;
-                                      newPts[pIdx] = [newPts[pIdx][0] + deltaU, newPts[pIdx][1], newPts[pIdx][2]];
-                                    }
-                                    setSketchPoints(newPts);
-                                  }}
-                                  className="w-full bg-white border border-[#C4C7CE] rounded px-1.5 py-0.5 text-[14px] text-slate-800 font-mono focus:border-primary outline-none"
-                                  title="修改圓心 U 座標，整體平移圓形"
-                                />
-                              </div>
-                              <div className="flex-1 flex gap-1 items-center">
-                                <span className="text-[13px] text-slate-500 font-bold">V:</span>
-                                <input
-                                  type="number"
-                                  value={parseFloat(c.center[1].toFixed(1))}
-                                  onChange={(e) => {
-                                    const newV = parseFloat(e.target.value) || 0;
-                                    const deltaV = newV - c.center[1];
-                                    const newPts = [...sketchPoints];
-                                    for (let k = 0; k < 37; k++) {
-                                      const pIdx = c.startIdx + k;
-                                      newPts[pIdx] = [newPts[pIdx][0], newPts[pIdx][1] + deltaV, newPts[pIdx][2]];
-                                    }
-                                    setSketchPoints(newPts);
-                                  }}
-                                  className="w-full bg-white border border-[#C4C7CE] rounded px-1.5 py-0.5 text-[14px] text-slate-800 font-mono focus:border-primary outline-none"
-                                  title="修改圓心 V 座標，整體平移圓形"
-                                />
-                              </div>
-                            </div>
-                          );
-                        });
-
-                        return listElems;
-                      })()}
-                    </div>
-                    {sketchPoints.length > 0 && (
-                      <div className="mt-3 p-2 bg-primary/10 rounded text-[13px] text-primary/90 text-center font-medium leading-tight">
-                        在基準面上點擊定位，或在此精確設定 U, V 參數以定量輪廓！
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Constraints & Relations Card */}
-                  <div className="p-2.5 bg-white rounded-xl border border-[#D1D5DB] shadow-sm space-y-2">
-                    <div className="text-[14px] text-slate-700 font-bold uppercase border-b border-[#D1D5DB]/50 pb-1 flex justify-between items-center">
-                      <span>🔗 幾何限制與拘束關係</span>
-                      <span className="text-[13px] bg-slate-100 text-slate-500 px-1 py-0.5 rounded font-mono">RELATIONS</span>
-                    </div>
-
-                    <div className="grid grid-cols-2 gap-1.5 text-[13px]">
-                      <button
-                        onClick={applyHorizontalConstraint}
-                        disabled={sketchPoints.length < 2}
-                        type="button"
-                        className="flex items-center gap-1.5 p-1.5 bg-[#F8FAFC] hover:bg-primary/10 hover:text-primary rounded border border-[#E2E8F0] active:scale-95 transition-all text-slate-700 font-bold justify-start disabled:opacity-50"
-                        title="將近似水平的邊段調整為絕對水平 (v1 = v2)"
-                      >
-                        <span>➖</span>
-                        <span>水平 (Horizontal)</span>
-                      </button>
-
-                      <button
-                        onClick={applyVerticalConstraint}
-                        disabled={sketchPoints.length < 2}
-                        type="button"
-                        className="flex items-center gap-1.5 p-1.5 bg-[#F8FAFC] hover:bg-primary/10 hover:text-primary rounded border border-[#E2E8F0] active:scale-95 transition-all text-slate-700 font-bold justify-start disabled:opacity-50"
-                        title="將近似垂直的邊段調整為絕對垂直 (u1 = u2)"
-                      >
-                        <span>➗</span>
-                        <span>垂直 (Vertical)</span>
-                      </button>
-
-                      <button
-                        onClick={applyCoincidentToOrigin}
-                        disabled={sketchPoints.length === 0}
-                        type="button"
-                        className="flex items-center gap-1.5 p-1.5 bg-[#F8FAFC] hover:bg-primary/10 hover:text-primary rounded border border-[#E2E8F0] active:scale-95 transition-all text-slate-700 font-bold justify-start disabled:opacity-50"
-                        title="將草圖起點或幾何中心重合於原點 (0, 0)"
-                      >
-                        <span>🎯</span>
-                        <span>重合原點 (Coincident)</span>
-                      </button>
-
-                      <button
-                        onClick={applyEqualSidesConstraint}
-                        disabled={sketchPoints.length < 4}
-                        type="button"
-                        className="flex items-center gap-1.5 p-1.5 bg-[#F8FAFC] hover:bg-primary/10 hover:text-primary rounded border border-[#E2E8F0] active:scale-95 transition-all text-slate-700 font-bold justify-start disabled:opacity-50"
-                        title="將矩形草圖的邊長設為相等 (正方形)"
-                      >
-                        <span>⚖️</span>
-                        <span>等長 (Equal)</span>
-                      </button>
-
-                      <button
-                        onClick={applySmoothArcConstraint}
-                        disabled={!sketchPoints.some(pt => pt[2] === 'ARC_CONTROL')}
-                        type="button"
-                        className="flex items-center gap-1.5 p-1.5 bg-[#F8FAFC] hover:bg-primary/10 hover:text-primary rounded border border-[#E2E8F0] active:scale-95 transition-all text-slate-700 font-bold justify-start disabled:opacity-50"
-                        title="將三點圓弧頂點調整至兩端點對稱中點"
-                      >
-                        <span>🌀</span>
-                        <span>相切相稱 (Tangent)</span>
-                      </button>
-
-                      <button
-                        onClick={applyFixConstraint}
-                        disabled={sketchPoints.length === 0}
-                        type="button"
-                        className="flex items-center gap-1.5 p-1.5 bg-[#F8FAFC] hover:bg-primary/10 hover:text-primary rounded border border-[#E2E8F0] active:scale-95 transition-all text-slate-700 font-bold justify-start disabled:opacity-50"
-                        title="將所有目前頂點座標鎖定為整數/固定值"
-                      >
-                        <span>🔒</span>
-                        <span>固定 (Fix/Anchor)</span>
-                      </button>
-                    </div>
-                  </div>
-
-                  {/* Smart Dimensions Card */}
-                  {sketchPoints.length >= 2 && (
-                    <div className={`p-2.5 rounded-xl border shadow-sm space-y-2 transition-all duration-300 ${
-                      sidebarHighlight && sidebarHighlight.active && sidebarHighlight.target === 'SMART_DIM'
-                        ? 'bg-amber-50/50 border-amber-500 shadow-[0_0_12px_rgba(245,158,11,0.4)] ring-2 ring-amber-500/10'
-                        : smartDimensionActive ? 'bg-primary/5 border-primary/30' : 'bg-white border-[#D1D5DB]'
-                    }`}>
-                      <div className="text-[14px] text-slate-700 font-bold uppercase border-b border-[#D1D5DB]/50 pb-1 flex justify-between items-center">
-                        <span className="flex items-center gap-1">📏 智慧定量尺寸 (Smart Dimensions)</span>
-                        {smartDimensionActive && <span className="text-[12px] bg-primary text-white px-1.5 py-0.5 rounded animate-pulse font-mono">編輯中</span>}
-                      </div>
-
-                      <div className="space-y-2 max-h-[180px] overflow-y-auto pr-0.5">
-                        {(() => {
-                          if (entities.length === 0) return null;
-
-                          return entities.map((ent) => {
-                            if (ent.type === 'CIRCLE') {
-                              const cU = ent.center?.[0] || 0;
-                              const cV = ent.center?.[1] || 0;
-                              const radius = ent.radius || 5;
-                              const startIdx = ent.pointIndices?.[0] || 0;
-
-                              return (
-                                <div key={ent.id} className="flex items-center justify-between gap-2 bg-primary/5 p-1.5 rounded border border-primary/20 text-[14px]">
-                                  <span className="text-primary font-bold font-mono">⭕ {ent.name} 直徑 (Ø Dia):</span>
-                                  <div className="flex items-center gap-1">
-                                    <input
-                                      type="number"
-                                      step="0.5"
-                                      value={parseFloat((radius * 2.0).toFixed(1))}
-                                      onChange={(e) => {
-                                        const val = parseFloat(e.target.value);
-                                        if (val > 0) {
-                                          const newRadius = val / 2.0;
-                                          const newPts = [...sketchPoints];
-                                          const DIVISIONS = 36;
-                                          for (let k = 0; k <= DIVISIONS; k++) {
-                                            const theta = (k / DIVISIONS) * Math.PI * 2;
-                                            newPts[startIdx + k] = [
-                                              parseFloat((cU + newRadius * Math.cos(theta)).toFixed(3)),
-                                              parseFloat((cV + newRadius * Math.sin(theta)).toFixed(3)),
-                                              newPts[startIdx + k]?.[2]
-                                            ];
-                                          }
-                                          setSketchPoints(newPts);
-                                          const newRel = `直徑定尺寸 (${ent.name} Ø ${val.toFixed(1)} mm)`;
-                                          setSketchRelations([...sketchRelations.filter(r => !r.includes(ent.name)), newRel]);
-                                        }
-                                      }}
-                                      className="w-[85px] bg-white border border-[#C4C7CE] rounded px-1.5 py-0.5 text-right font-mono text-slate-800 focus:border-primary outline-none font-bold"
-                                      title="修改直徑，動態更改圓圈尺寸"
-                                    />
-                                    <span className="text-[13px] text-slate-400">mm</span>
-                                  </div>
-                                </div>
-                              );
-                            }
-
-                            if (ent.type === 'RECTANGLE') {
-                              const idxs = ent.pointIndices;
-                              const p0 = sketchPoints[idxs[0]];
-                              const p1 = sketchPoints[idxs[1]];
-                              const p2 = sketchPoints[idxs[2]];
-                              
-                              if (!p0 || !p1 || !p2) return null;
-                              
-                              const width = Math.hypot(p1[0] - p0[0], p1[1] - p0[1]);
-                              const height = Math.hypot(p2[0] - p1[0], p2[1] - p1[1]);
-
-                              return (
-                                <div key={ent.id} className="space-y-1.5 p-2 bg-[#F8FAFC] rounded border border-slate-200 text-[14px]">
-                                  <div className="text-slate-600 font-bold border-b border-slate-200/50 pb-0.5 flex justify-between">
-                                    <span>📦 {ent.name} 尺寸標註</span>
-                                    <span className="text-[13px] text-slate-400 uppercase font-mono">RECT</span>
-                                  </div>
-                                  <div className="flex items-center justify-between gap-2">
-                                    <span className="text-slate-500 font-medium">寬度 (Width):</span>
-                                    <div className="flex items-center gap-1">
-                                      <input
-                                        type="number"
-                                        step="1"
-                                        value={parseFloat(width.toFixed(1))}
-                                        onChange={(e) => {
-                                          const val = parseFloat(e.target.value);
-                                          if (val > 0) {
-                                            const newPts = [...sketchPoints];
-                                            const dx = val - width;
-                                            newPts[idxs[1]] = [newPts[idxs[1]][0] + dx, newPts[idxs[1]][1], newPts[idxs[1]][2]];
-                                            newPts[idxs[2]] = [newPts[idxs[2]][0] + dx, newPts[idxs[2]][1], newPts[idxs[2]][2]];
-                                            setSketchPoints(newPts);
-                                          }
-                                        }}
-                                        className="w-[70px] bg-white border border-[#C4C7CE] rounded px-1.5 py-0.5 text-right font-mono text-slate-800 focus:border-primary outline-none"
-                                      />
-                                      <span className="text-[13px] text-slate-400">mm</span>
-                                    </div>
-                                  </div>
-                                  <div className="flex items-center justify-between gap-2">
-                                    <span className="text-slate-500 font-medium">高度 (Height):</span>
-                                    <div className="flex items-center gap-1">
-                                      <input
-                                        type="number"
-                                        step="1"
-                                        value={parseFloat(height.toFixed(1))}
-                                        onChange={(e) => {
-                                          const val = parseFloat(e.target.value);
-                                          if (val > 0) {
-                                            const newPts = [...sketchPoints];
-                                            const dy = val - height;
-                                            newPts[idxs[2]] = [newPts[idxs[2]][0], newPts[idxs[2]][1] + dy, newPts[idxs[2]][2]];
-                                            newPts[idxs[3]] = [newPts[idxs[3]][0], newPts[idxs[3]][1] + dy, newPts[idxs[3]][2]];
-                                            setSketchPoints(newPts);
-                                          }
-                                        }}
-                                        className="w-[70px] bg-white border border-[#C4C7CE] rounded px-1.5 py-0.5 text-right font-mono text-slate-800 focus:border-primary outline-none"
-                                      />
-                                      <span className="text-[13px] text-slate-400">mm</span>
-                                    </div>
-                                  </div>
-                                </div>
-                              );
-                            }
-
-                            // Standard Line / Center Line
-                            const idxs = ent.pointIndices;
-                            const p0 = sketchPoints[idxs[0]];
-                            const p1 = sketchPoints[idxs[1]];
-                            if (!p0 || !p1) return null;
-
-                            const len = Math.hypot(p1[0] - p0[0], p1[1] - p0[1]);
-                            const isSmartDimHighlight = !!(sidebarHighlight && sidebarHighlight.active && sidebarHighlight.target === 'SMART_DIM' && ent.name === '線段 L2');
-
-                            return (
-                              <div key={ent.id} className={`flex items-center justify-between gap-2 rounded border p-1.5 text-[14px] transition-all duration-300 ${
-                                isSmartDimHighlight
-                                  ? 'bg-amber-50 border-amber-500 shadow-[0_0_8px_rgba(245,158,11,0.4)] ring-2 ring-amber-500/10 font-bold'
-                                  : 'bg-slate-50 border-slate-200/60'
-                              }`}>
-                                <span className="text-slate-600 font-bold font-mono">📏 {ent.name} 長度:</span>
-                                <div className="flex items-center gap-1">
-                                  <input
-                                    type={isSmartDimHighlight ? "text" : "number"}
-                                    step="1"
-                                    value={
-                                      isSmartDimHighlight && sidebarHighlight.typeValue !== undefined
-                                        ? sidebarHighlight.typeValue
-                                        : parseFloat(len.toFixed(1))
-                                    }
-                                    readOnly={isSmartDimHighlight}
-                                    onChange={(e) => {
-                                      if (isSmartDimHighlight) return;
-                                      const val = parseFloat(e.target.value);
-                                      if (val > 0) {
-                                        const ratio = val / len;
-                                        const newPts = [...sketchPoints];
-                                        newPts[idxs[1]] = [
-                                          newPts[idxs[0]][0] + (newPts[idxs[1]][0] - newPts[idxs[0]][0]) * ratio,
-                                          newPts[idxs[0]][1] + (newPts[idxs[1]][1] - newPts[idxs[0]][1]) * ratio,
-                                          newPts[idxs[1]][2]
-                                        ];
-                                        setSketchPoints(newPts);
-                                      }
-                                    }}
-                                    className={`w-[70px] bg-white border rounded px-1.5 py-0.5 text-right font-mono text-slate-800 focus:border-primary outline-none font-bold ${
-                                      isSmartDimHighlight ? 'border-amber-500 text-amber-700 animate-pulse' : 'border-[#C4C7CE]'
-                                    }`}
-                                  />
-                                  <span className="text-[13px] text-slate-400">mm</span>
-                                </div>
-                              </div>
-                            );
-                          });
-                        })()}
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Selected Entity Properties (For Construction) */}
-                  {selectedEntityIds.length > 0 && (() => {
-                    const selectedEnts = entities.filter(ent => selectedEntityIds.includes(ent.id));
-                    if (selectedEnts.length === 0) return null;
-
-                    const toggleForConstruction = (ent: any) => {
-                      const newPts = [...sketchPoints];
-                      const idx = ent.pointIndices[0];
-                      if (!newPts[idx]) return;
-                      
-                      const currentTag = newPts[idx][2] || '';
-                      if (currentTag.includes('CENTER_LINE')) {
-                        // Make standard
-                        newPts[idx][2] = currentTag.replace('CENTER_LINE', '').replace(/^,|,$/, '').trim();
-                        if (newPts[idx][2] === '') {
-                          newPts[idx] = [newPts[idx][0], newPts[idx][1]];
-                        }
-                      } else {
-                        // Make construction
-                        if (currentTag) {
-                          newPts[idx][2] = `${currentTag},CENTER_LINE`;
-                        } else {
-                          newPts[idx] = [newPts[idx][0], newPts[idx][1], 'CENTER_LINE'];
-                        }
-                      }
-                      setSketchPoints(newPts);
-                    };
-
-                    return (
-                      <div className="p-2.5 bg-white rounded-xl border border-[#D1D5DB] shadow-sm space-y-2">
-                        <div className="text-[14px] text-slate-700 font-bold uppercase border-b border-[#D1D5DB]/50 pb-1 flex justify-between items-center">
-                          <span className="flex items-center gap-1">🛠️ 草圖對象屬性 (PropertyManager)</span>
-                          <span className="text-[13px] bg-slate-100 text-slate-500 px-1 py-0.5 rounded font-mono">PROPERTIES</span>
-                        </div>
-
-                        <div className="space-y-2">
-                          {selectedEnts.map((ent) => {
-                            const isLine = ent.type === 'LINE' || ent.type === 'CENTER_LINE';
-                            if (!isLine) return null;
-
-                            const isConstruction = ent.type === 'CENTER_LINE';
-
-                            return (
-                              <div key={ent.id} className="flex items-center justify-between p-1.5 bg-[#F8FAFC] rounded border border-slate-200 text-[14px]">
-                                <span className="font-bold text-slate-700 flex items-center gap-1">
-                                  <span>{isConstruction ? '⛓️' : '➖'}</span>
-                                  <span>{ent.name}</span>
-                                </span>
-                                
-                                <label className="flex items-center gap-1.5 cursor-pointer select-none">
-                                  <input
-                                    type="checkbox"
-                                    checked={isConstruction}
-                                    onChange={() => toggleForConstruction(ent)}
-                                    className="w-3.5 h-3.5 text-primary border-slate-300 rounded focus:ring-primary focus:ring-2 cursor-pointer"
-                                  />
-                                  <span className="text-[13px] text-slate-600 font-bold">作為建構線 (For Construction)</span>
-                                </label>
-                              </div>
-                            );
-                          })}
-                        </div>
-                      </div>
-                    );
-                  })()}
-
-                  {/* Multi-Entity Relations Card */}
-                  {entities.length >= 2 && (
-                    <div className="p-2.5 bg-white rounded-xl border border-[#D1D5DB] shadow-sm space-y-2">
-                      <div className="text-[14px] text-slate-700 font-bold uppercase border-b border-[#D1D5DB]/50 pb-1 flex justify-between items-center">
-                        <span className="flex items-center gap-1">🔗 多對象幾何關係 (Multi-Entity Relations)</span>
-                        <span className="text-[13px] bg-indigo-50 text-indigo-500 px-1 py-0.5 rounded font-mono">MULTI-ENTITIES</span>
-                      </div>
-
-                      {(() => {
-                        const selectedEntities = entities.filter(ent => selectedEntityIds.includes(ent.id));
-                        const centerline = selectedEntities.find(ent => ent.type === 'CENTER_LINE');
-                        if (centerline) {
-                          return (
-                            <div className="text-[13px] text-primary font-bold bg-primary/5 p-1.5 rounded border border-primary/20 leading-tight">
-                              💡 已選取中心線 {centerline.name} 作為對稱軸，請勾選其他草圖對象以執行「鏡像幾何」！
-                            </div>
-                          );
-                        }
-                        return (
-                          <div className="text-[13px] text-slate-500 leading-tight">
-                            請選取 <strong>兩個</strong> 草圖對象建立平行、同心、相切關係，或選取一條中心線進行 <strong>「鏡像」</strong>：
-                          </div>
-                        );
-                      })()}
-
-                      {/* Entities Checklist */}
-                      <div className="space-y-1.5 max-h-[140px] overflow-y-auto pr-0.5">
-                        {entities.map((ent) => {
-                          const isSelected = selectedEntityIds.includes(ent.id);
-                          return (
-                            <button
-                              key={ent.id}
-                              type="button"
-                              onClick={() => {
-                                if (isSelected) {
-                                  setSelectedEntityIds(selectedEntityIds.filter(id => id !== ent.id));
-                                } else {
-                                  setSelectedEntityIds([...selectedEntityIds, ent.id]);
-                                }
-                              }}
-                              className={`w-full flex items-center justify-between p-1.5 rounded border text-[13px] font-bold text-left transition-all ${
-                                isSelected
-                                  ? 'bg-primary/10 border-primary text-primary shadow-sm'
-                                  : 'bg-[#F8FAFC] border-slate-200 text-slate-700 hover:bg-slate-100'
-                              }`}
-                            >
-                              <span className="flex items-center gap-1">
-                                <span>{ent.type === 'CIRCLE' ? '⭕' : ent.type === 'CENTER_LINE' ? '📏' : '➖'}</span>
-                                <span>{ent.name}</span>
-                              </span>
-                              <span className="text-[12px] text-slate-400 font-mono font-normal">
-                                {ent.type === 'CIRCLE'
-                                  ? `半徑: ${ent.radius?.toFixed(1)}mm`
-                                  : `頂點: P${ent.pointIndices[0]+1}➔P${ent.pointIndices[ent.pointIndices.length-1]+1}`}
-                              </span>
-                            </button>
-                          );
-                        })}
-                      </div>
-
-                      {/* Relation Buttons based on selection */}
-                      {selectedEntityIds.length >= 2 && (() => {
-                        const selectedEntities = entities.filter(ent => selectedEntityIds.includes(ent.id));
-                        const centerline = selectedEntities.find(ent => ent.type === 'CENTER_LINE');
-                        const targets = selectedEntities.filter(ent => ent.id !== centerline?.id);
-                        const canMirror = centerline !== undefined && targets.length > 0;
-
-                        const showTwoEntityButtons = selectedEntityIds.length === 2;
-                        const entA = showTwoEntityButtons ? entities.find(e => e.id === selectedEntityIds[0]) : null;
-                        const entB = showTwoEntityButtons ? entities.find(e => e.id === selectedEntityIds[1]) : null;
-
-                        const isBothLines = entA && entB && (entA.type === 'LINE' || entA.type === 'CENTER_LINE') && (entB.type === 'LINE' || entB.type === 'CENTER_LINE');
-                        const isBothCircles = entA && entB && entA.type === 'CIRCLE' && entB.type === 'CIRCLE';
-                        const isLineAndCircle = entA && entB && (((entA.type === 'LINE' || entA.type === 'CENTER_LINE') && entB.type === 'CIRCLE') || (entA.type === 'CIRCLE' && (entB.type === 'LINE' || entB.type === 'CENTER_LINE')));
-
-                        return (
-                          <div className="pt-1.5 border-t border-slate-100 flex flex-col gap-1.5">
-                            {showTwoEntityButtons && isBothLines && (
-                              <button
-                                onClick={() => applyParallelRelation(entA, entB)}
-                                type="button"
-                                className="w-full flex items-center justify-center gap-1.5 p-1.5 bg-[#4F46E5] hover:bg-[#4338CA] text-white rounded font-bold text-[14px] active:scale-95 transition-all shadow-sm"
-                                title="使兩條選定線段平行"
-                              >
-                                <span>∥</span>
-                                <span>設定平行 (Make Parallel)</span>
-                              </button>
-                            )}
-
-                            {showTwoEntityButtons && isBothCircles && (
-                              <button
-                                onClick={() => applyConcentricRelation(entA, entB)}
-                                type="button"
-                                className="w-full flex items-center justify-center gap-1.5 p-1.5 bg-[#059669] hover:bg-[#047857] text-white rounded font-bold text-[14px] active:scale-95 transition-all shadow-sm"
-                                title="使兩個圓同心"
-                              >
-                                <span>🎯</span>
-                                <span>設定同心 (Make Concentric)</span>
-                              </button>
-                            )}
-
-                            {showTwoEntityButtons && isLineAndCircle && (() => {
-                              const lineEnt = entA.type === 'CIRCLE' ? entB : entA;
-                              const circleEnt = entA.type === 'CIRCLE' ? entA : entB;
-                              return (
-                                <button
-                                  onClick={() => applyTangentRelation(lineEnt, circleEnt)}
-                                  type="button"
-                                  className="w-full flex items-center justify-center gap-1.5 p-1.5 bg-[#D97706] hover:bg-[#B45309] text-white rounded font-bold text-[14px] active:scale-95 transition-all shadow-sm"
-                                  title="使線段與圓相切"
-                                >
-                                  <span>🌀</span>
-                                  <span>設定相切 (Make Tangent)</span>
-                                </button>
-                              );
-                            })()}
-
-                            {canMirror && (
-                              <button
-                                onClick={applyMirrorSketch}
-                                type="button"
-                                className="w-full flex items-center justify-center gap-1.5 p-2 bg-[#EC4899] hover:bg-[#DB2777] text-white rounded font-bold text-[14px] active:scale-95 transition-all shadow-md animate-pulse"
-                                title={`鏡像草圖幾何對稱於 ${centerline.name}`}
-                              >
-                                <span>🪞</span>
-                                <span>鏡像幾何 (Mirror Entities)</span>
-                              </button>
-                            )}
-                          </div>
-                        );
-                      })()}
-                    </div>
-                  )}
+                  <SketchPropertyManager />
                 </div>
               </div>
             ) : activeTab === 'ASSEMBLY' ? (

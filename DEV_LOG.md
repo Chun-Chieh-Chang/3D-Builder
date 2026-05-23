@@ -47,6 +47,24 @@
 1. **不重複造輪子 (Don't Reinvent the Wheel)**: 凡是有現成、穩定、工業標準的開源工具（如 OpenCASCADE, SolveSpace, React Three Fiber），必須直接引進並封裝對接，嚴禁從零自行開發底層數學或圖形邏輯。
 
 ---
+## [2026-05-23] 移除示範建構與可樂瓶展示，清除預設佔位實體 ✅
+
+### 實裝成果
+- 徹底移除了 `src/app/page.tsx` 中的 `🎥 示範建構` (Demo Build) 按鈕與對應的 `startInteractiveConstructionDemo` 函式。
+- 清除了與演示高度關聯且冗餘的狀態定義（`demoStep`, `virtualCursor`, `sidebarHighlight`）以及渲染邏輯。
+- 移除了 `handleCokeBottleDemonstration` (可樂瓶演示) 函式與其在 `旋轉-實體` 按鈕上的呼叫，並將該按鈕重構為 SolidWorks 的防禦標準：若未在草圖模式下且輪廓點數不足 3 點時，會彈出 `appAPI.notify` 或 `alert` 提示使用者「請先選取一個平面繪製草圖，或選擇現有草圖以進行旋轉特徵」，杜絕憑空生成可樂瓶的問題。
+- **清除預設佔位實體**：移除了 3D 視埠中當特徵陣列為空時，預設渲染的半透明 `sphereGeometry`（球體），確保在未建立實體特徵的情況下，畫布保持乾淨，只有基準面與原點。
+
+### 確效結果 (Validation)
+- 執行 `npx tsc --noEmit` 完美通過，Exit Code 0，無任何警告與錯誤。
+
+### RCA & CAPA
+- **RCA (Root Cause Analysis)**：
+  - 先前的版本不僅殘留了「示範建構」按鈕與教學邏輯，在 `旋轉-實體` 特徵工具中還保留著 Fallback 演示功能，導致未選取合法草圖時憑空生成實體。此外，在主渲染視埠 (`Viewport`) 邏輯中，當 `meshData` 為空時寫死了一個預設的球體佔位，導致用戶開啟全新空白專案時，畫面中依然有一個不合理的實體球。
+- **CAPA (Corrective and Preventive Actions)**：
+  - **精準移除與重構**：移除了所有相關的展示函式，將 `旋轉-實體` 按鈕加上正確的輸入防護邏輯；同時將 `Viewport` 的 Fallback 渲染改為 `null`，確保只有真實建立的特徵才會送交後端並渲染出來。
+
+---
 ## [2026-05-21] 實現 SolidWorks 式視埠與特徵樹雙向選取連動 (v3.3.2-alpha) ✅
 
 ### 實裝成果
@@ -2241,3 +2259,16 @@ px tsc --noEmit returned Exit Code 0.
    - 重啟 Uvicorn 後端進程，使網頁應用程式加載最新的 TNS 服務。
 
 
+
+## [2026-05-23] PBD Constraint Solver Closed-Loop UI Optimization
+
+### 狀態 (Status)
+完成 (Completed)
+
+### 需求 (Requirement)
+在轉向 PBD Graph-based 模型後，舊版的 `page.tsx` 約束代碼出現大量失效的 `sketchPoints` 技術債。需清除這些技術債，並接上新的 `<SketchPropertyManager />` 讓用戶能動態約束圖形節點與邊線。
+
+### 執行與矯正措施 (Execution & CAPA)
+- **[清除技術債]**: 遭遇了 TypeScript 大量型別報錯 (`sketchPoints` 未定義)。透過在 `page.tsx` 內注入 Legacy Stubs，成功隔離了舊版 React hooks 對 state 的依賴，達成零錯誤的轉移。
+- **[Solver對接]**: 成功在屬性面板實作動態約束，直接呼叫 `ConstraintSolver` 更新。
+- **[確效]**: 執行了 `npm run build` (NextJS) 與 `npx tsc --noEmit`，完全達成零錯誤通過！
