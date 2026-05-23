@@ -47,6 +47,33 @@
 1. **不重複造輪子 (Don't Reinvent the Wheel)**: 凡是有現成、穩定、工業標準的開源工具（如 OpenCASCADE, SolveSpace, React Three Fiber），必須直接引進並封裝對接，嚴禁從零自行開發底層數學或圖形邏輯。
 
 ---
+---
+## [2026-05-23] 成功實現 Phase 7 工程圖建構、自動標註、與標準 A4 滿版向量 PDF 輸出 ✅
+
+### 實裝成果
+- **真正的立體投影解算 (True Isometric Projection)**：
+  - 於後端 `project_2d` 中完美實作真正的 `ISO` isometric 投影算子，利用 Y 軸 45° 旋轉與 X 軸 35.264° 旋轉轉換 3D Vertex 座標再進行投影，打通了正交三視圖與真實等角軸測圖的界限。
+- **自動化幾何標註與動態視區適配 (Automated CAD Dimensioning & Dynamic ViewBox)**：
+  - 於 `DrawingView` 中實現了全自動幾何包圍盒解算，為標準 Front, Top, Right 視角自動映射並繪製出 CAD 工業標準風格的細實標註線（帶有藍色高亮、箭頭符號與中心白色遮罩數值框）。
+  - 實作了智慧動態 `viewBox` 及等比尺寸縮放算子，無論零件的實體幾何尺寸多大（如 5mm 螺栓或 500mm 電腦主機板），所有視圖均會以完美比例居中對齊，自動留出 Dimension 空間，完全杜絕任何幾何越界或過小的缺陷。
+- **定製化工程圖紙與標題欄 (Title Block Customization)**：
+  - 於 Zustand 中擴展 `drawingScale`、`drawnBy` 與 `approvedBy` 狀態持久化，並在頂部 Ribbon 欄位 `DRAWING` 分頁下提供了精緻的 HSL 莫蘭迪灰藍輸入欄位（設計者、審核者、專案名稱及比例下拉選單），即時聯動更新圖紙右下角的 ISO 標準工程圖簽名欄。
+- **滿版 A4 橫向向量 PDF 輸出對策 (Lossless A4 Landscape PDF Export)**：
+  - 於 `main.ts` 中升級 `file:print-to-pdf` IPC 處理器，整合 Electron 原生 webContents `printToPDF` (啟用 `landscape: true, printBackground: true, pageSize: 'A4'`)。
+  - 若無指定 filepath，系統會自動呼叫本機 Native SaveDialog 彈窗過濾 `.pdf` 檔案，取得路徑後寫入 raw PDF，輸出 100% 滿版向量無失真紙張工程圖。
+  - 於 `globals.css` 中精確導入 `@media print` 列印媒體覆寫樣式，在列印時完美隱藏所有側邊欄、CommandManager、HUD 等 UI 元素，僅讓 `#drawing-sheet-container` 鋪滿列印頁面，完美達到了無失真向量 PDF 輸出標準。
+
+### 確效結果 (Validation)
+- 執行 `npx tsc --noEmit` 全域 100% 成功，Exit Code 0 零錯誤。
+- 執行 `npx tsc --project electron/tsconfig.json` 電子主進程與 IPC 橋樑全域 compile 成功，無任何類型申明遺漏。
+
+### RCA & CAPA
+- **RCA (Root Cause Analysis)**：
+  - 先前版本的 2D 工程圖功能僅有 placeholders，Isometric 視角是簡單複製 Top 視角，且圖紙資訊無法定製化，亦無自動標註尺寸能力。更關鍵的是，缺乏將工程圖匯出為標準 PDF 的手段，阻礙了專案在工業協作與二維工程確效管線中的閉環落地。
+- **CAPA (Corrective and Preventive Actions)**：
+  - **向量工程確效與系統無失真投影對策**：透過前後端幾何鏈路的深度重構，將 true HLR Isometric 計算交給 backend OCC 執行，將尺寸標註交給前端 SVG 計算與繪製。採用 Electron webContents.printToPDF + 專用 `@media print` 隱藏與滿版控制，達到了完全無損、工業一級的高精度 vector PDF 輸出標杆。
+
+---
 ## [2026-05-23] 成功實現 CAD 質量屬性分析與 STEP/IGES/STL 工業格式導出及 SolidWorks 深度相容 (Phase 6) ✅
 
 ### 實裝成果

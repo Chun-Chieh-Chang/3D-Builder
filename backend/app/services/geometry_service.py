@@ -985,10 +985,29 @@ def project_2d(features, plane_type='FRONT'):
         while v_exp.More():
             v = topods.Vertex(v_exp.Current())
             pt = BRep_Tool.Pnt(v)
-            if plane_type == 'FRONT': u, v_val = pt.X(), pt.Y()
-            elif plane_type == 'TOP': u, v_val = pt.X(), pt.Z()
-            elif plane_type == 'RIGHT': u, v_val = pt.Y(), pt.Z()
-            else: u, v_val = pt.X(), pt.Y()
+            if plane_type == 'FRONT':
+                u, v_val = pt.X(), pt.Y()
+            elif plane_type == 'TOP':
+                u, v_val = pt.X(), pt.Z()
+            elif plane_type == 'RIGHT':
+                u, v_val = pt.Y(), pt.Z()
+            elif plane_type == 'ISO':
+                # Apply Isometric rotations (45 deg Y-axis, 35.264 deg X-axis)
+                x, y, z = pt.X(), pt.Y(), pt.Z()
+                r45 = math.radians(45.0)
+                c45 = math.cos(r45)
+                s45 = math.sin(r45)
+                x1 = x * c45 - z * s45
+                z1 = x * s45 + z * c45
+                
+                r35 = math.radians(35.264)
+                c35 = math.cos(r35)
+                s35 = math.sin(r35)
+                y2 = y * c35 - z1 * s35
+                
+                u, v_val = x1, y2
+            else:
+                u, v_val = pt.X(), pt.Y()
             pnts.append([u, v_val])
             v_exp.Next()
         if len(pnts) >= 2:

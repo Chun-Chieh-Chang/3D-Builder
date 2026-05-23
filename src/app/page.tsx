@@ -67,7 +67,10 @@ export default function Home() {
   }, []);
   const {
     mode, setMode,
-    projectName,
+    projectName, setProjectName,
+    drawingScale, setDrawingScale,
+    drawnBy, setDrawnBy,
+    approvedBy, setApprovedBy,
     features, addFeature, removeFeature, updateFeatureParams,
     editingFeatureId, setEditingFeatureId,
     selectedId, setSelectedId,
@@ -1299,6 +1302,20 @@ export default function Home() {
     setSelectedEntityIds([]);
   }, [entities, selectedEntityIds, setSelectedEntityIds]);
 
+  const handlePrintToPDF = useCallback(async () => {
+    try {
+      const result = await fileAPI.printToPdf();
+      if (result.success && result.path) {
+        appAPI.notify('PDF 匯出成功 🖨️', `工程圖已成功儲存至:\n${result.path}`);
+      } else if (result.error && result.error !== 'Cancelled') {
+        alert(`PDF 匯出失敗: ${result.error}`);
+      }
+    } catch (e) {
+      console.error(e);
+      alert('PDF 匯出發生非預期錯誤');
+    }
+  }, []);
+
   return (
     <main className="flex flex-col h-screen w-screen overflow-hidden bg-[#EBEBEB] text-slate-800 font-sans">
       {/* 1. SolidWorks Desktop Titlebar */}
@@ -1663,6 +1680,71 @@ export default function Home() {
                 <span className="text-lg group-hover:scale-110 transition-all">🧲</span>
                 <span className="text-[13px] font-bold leading-none">網格吸附</span>
               </button>
+            </div>
+          ) : activeTab === 'DRAWING' ? (
+            <div className="flex items-center gap-2 h-full">
+              {/* Drawing Sheet Controls */}
+              <button
+                onClick={handlePrintToPDF}
+                className="h-[52px] px-3.5 rounded transition-all flex flex-col items-center justify-center gap-1 group text-indigo-600 font-bold border border-indigo-200/50 bg-indigo-50/30 hover:bg-indigo-100/80 shadow-sm"
+                title="一鍵匯出無失真 A4 橫向向量 PDF 工程圖"
+              >
+                <span className="text-lg group-hover:scale-110 transition-all">🖨️</span>
+                <span className="text-[13px] leading-none">輸出 PDF 工程圖</span>
+              </button>
+
+              <div className="w-[1px] h-[40px] bg-slate-300 mx-2 shrink-0" />
+
+              {/* Title Block Inputs */}
+              <div className="flex items-center gap-3">
+                <div className="flex flex-col gap-0.5">
+                  <label className="text-[9px] font-bold text-slate-400 uppercase">圖紙比例</label>
+                  <select
+                    value={drawingScale}
+                    onChange={(e) => setDrawingScale(e.target.value)}
+                    className="text-xs bg-white border border-slate-300 rounded px-2 py-0.5 font-bold text-slate-700 h-[24px]"
+                  >
+                    <option value="1:1">1:1</option>
+                    <option value="1:2">1:2</option>
+                    <option value="1:5">1:5</option>
+                    <option value="2:1">2:1</option>
+                    <option value="5:1">5:1</option>
+                  </select>
+                </div>
+
+                <div className="flex flex-col gap-0.5">
+                  <label className="text-[9px] font-bold text-slate-400 uppercase">設計者</label>
+                  <input
+                    type="text"
+                    value={drawnBy}
+                    onChange={(e) => setDrawnBy(e.target.value)}
+                    className="text-xs bg-white border border-slate-300 rounded px-2 py-0.5 font-bold text-slate-700 h-[24px] w-[110px]"
+                    placeholder="設計者"
+                  />
+                </div>
+
+                <div className="flex flex-col gap-0.5">
+                  <label className="text-[9px] font-bold text-slate-400 uppercase">審核者</label>
+                  <input
+                    type="text"
+                    value={approvedBy}
+                    onChange={(e) => setApprovedBy(e.target.value)}
+                    className="text-xs bg-white border border-slate-300 rounded px-2 py-0.5 font-bold text-slate-700 h-[24px] w-[110px]"
+                    placeholder="審核者"
+                  />
+                </div>
+
+                <div className="flex flex-col gap-0.5">
+                  <label className="text-[9px] font-bold text-slate-400 uppercase">專案名稱</label>
+                  <input
+                    type="text"
+                    value={projectName}
+                    onChange={(e) => setProjectName(e.target.value)}
+                    className="text-xs bg-white border border-slate-300 rounded px-2 py-0.5 font-bold text-slate-700 h-[24px] w-[150px]"
+                    placeholder="專案名稱"
+                  />
+                </div>
+              </div>
             </div>
           ) : (
             <div className="flex items-center gap-1.5 h-full">

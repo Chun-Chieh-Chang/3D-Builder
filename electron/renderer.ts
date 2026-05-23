@@ -26,6 +26,13 @@ export const fileAPI = {
     }
     return { success: false, error: 'Electron API not available' };
   },
+
+  printToPdf: async (filePath?: string): Promise<{ success: boolean; path?: string; error?: string }> => {
+    if (typeof window !== 'undefined' && window.electronAPI) {
+      return await window.electronAPI.file.printToPdf(filePath);
+    }
+    return { success: false, error: 'Electron API not available' };
+  },
 };
 
 // App API

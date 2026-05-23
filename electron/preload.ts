@@ -11,6 +11,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     open: () => ipcRenderer.invoke('file:open'),
     save: (data: string) => ipcRenderer.invoke('file:save', data),
     read: (filePath: string) => ipcRenderer.invoke('file:read', filePath),
+    printToPdf: (filePath?: string) => ipcRenderer.invoke('file:print-to-pdf', filePath),
   },
 
   // App API
@@ -54,6 +55,7 @@ declare global {
         open: () => Promise<{ path: string } | null>;
         save: (data: string) => Promise<{ success: boolean; path?: string; error?: string } | null>;
         read: (filePath: string) => Promise<{ success: boolean; content?: string; error?: string }>;
+        printToPdf: (filePath?: string) => Promise<{ success: boolean; path?: string; error?: string }>;
       };
       app: {
         openExternal: (url: string) => Promise<{ success: boolean }>;

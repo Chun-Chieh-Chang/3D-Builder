@@ -115,8 +115,13 @@ interface CadState {
   setSketchNewChain: (val: boolean) => void;
 
   projectName: string;
-
   setProjectName: (name: string) => void;
+  drawingScale: string;
+  setDrawingScale: (scale: string) => void;
+  drawnBy: string;
+  setDrawnBy: (by: string) => void;
+  approvedBy: string;
+  setApprovedBy: (by: string) => void;
 
   // Feature Tree Logic
   features: CADFeature[];
@@ -235,9 +240,13 @@ export const useCadStore = create<CadState>()(
       setSketchNewChain: (sketchNewChain) => set({ sketchNewChain }),
 
       projectName: 'Professional CAD Project',
-
-
+      drawingScale: '1:1',
+      drawnBy: 'CAD Engineer',
+      approvedBy: 'Lead Architect',
       setProjectName: (name) => set({ projectName: name }),
+      setDrawingScale: (scale) => set({ drawingScale: scale }),
+      setDrawnBy: (by) => set({ drawnBy: by }),
+      setApprovedBy: (by) => set({ approvedBy: by }),
 
       // Start with a clean slate: no default features, exactly like a new SolidWorks Part document
       features: [],
@@ -332,6 +341,9 @@ export const useCadStore = create<CadState>()(
       partialize: (state) => ({
         mode: state.mode,
         projectName: state.projectName,
+        drawingScale: state.drawingScale,
+        drawnBy: state.drawnBy,
+        approvedBy: state.approvedBy,
         features: state.features,
         selectedId: state.selectedId,
         selectedSubNodeType: state.selectedSubNodeType,

@@ -192,6 +192,43 @@ ipcMain.handle('app:open-external', async (event: IpcMainInvokeEvent, url: strin
   return { success: true };
 });
 
+ipcMain.handle('file:print-to-pdf', async (event: IpcMainInvokeEvent, filepath?: string) => {
+  const win = BrowserWindow.fromWebContents(event.sender);
+  if (!win) return { success: false, error: 'Window not found' };
+  
+  let targetPath = filepath;
+  if (!targetPath) {
+    const result = (await dialog.showSaveDialog(win, {
+      title: 'Export PDF Drawing',
+      defaultPath: 'drawing.pdf',
+      filters: [
+        { name: 'PDF Documents', extensions: ['pdf'] },
+      ],
+    })) as any;
+    if (!result || result.canceled || !result.filePath) {
+      return { success: false, error: 'Cancelled' };
+    }
+    targetPath = result.filePath;
+  }
+  
+  if (!targetPath) {
+    return { success: false, error: 'No filepath selected' };
+  }
+  
+  try {
+    const data = await win.webContents.printToPDF({
+      landscape: true,
+      printBackground: true,
+      pageSize: 'A4',
+      margins: { top: 0, bottom: 0, left: 0, right: 0 }
+    });
+    await fs.promises.writeFile(targetPath, data);
+    return { success: true, path: targetPath };
+  } catch (error) {
+    return { success: false, error: String(error) };
+  }
+});
+
 // 應用程式生命週期
 app.whenReady().then(async () => {
   if (!isDev) {
