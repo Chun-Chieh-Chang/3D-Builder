@@ -35,6 +35,7 @@ Welcome to the central intelligence hub of **3D-Builder**. This wiki compiles ou
 *   [LLM Wiki](concepts/llm-wiki.md): Compounding knowledge pattern.
 *   [Skill Design](concepts/skill-design.md): The 6 design patterns and Hermes/Karpathy guardrails.
 *   [Skill Lifecycle](concepts/skill-lifecycle.md): Agent-Driven Development (ADD) & the 4-phase workflow.
+*   [Nexus Protocols](concepts/nexus-protocols.md): Standards for agentic handovers and quality gates.
 
 ---
 

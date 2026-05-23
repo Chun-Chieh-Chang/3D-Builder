@@ -24,6 +24,17 @@
 
 ---
 
+## 🧠 AI Agentic Capabilities (Integrated SkillsBuilder)
+
+本專案已深度整合 **SkillsBuilder** 全明星技能庫，為 AI 助理提供以下增益：
+
+- **193+ 專家角色 (Personas)**: 位於 `raw/external/agency-agents-zh/`，涵蓋工程、設計、財務等全領域專家引導。
+- **ClawHub 技能庫**: 內建 `tavily` (研究)、`gitnexus` (代碼圖譜)、`last30days` (趨勢) 等 15+ 項工業級 AI 技能。
+- **Gemini & Claude 擴充**: 支援 `gemini-extension.json` 與 `.claude-plugin`，實現 IDE 原生插件級別的開發體驗。
+- **Nexus 協作協議**: 遵循 `wiki/concepts/nexus-protocols.md` 進行標準化的 AI 任務交接。
+
+---
+
 ## 🚀 系統架構與文件 (Documentation)
 
 專案遵循嚴格的 **MECE (相互獨立、完全窮盡)** 原則進行文檔歸檔：
