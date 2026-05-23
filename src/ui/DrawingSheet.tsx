@@ -11,6 +11,13 @@ interface DrawingViewProps {
 }
 
 const DrawingView = ({ title, type, lines }: DrawingViewProps) => {
+  const [editingDim, setEditingDim] = useState<'NONE' | 'HORIZ' | 'VERT'>('NONE');
+  const [editValue, setEditValue] = useState<string>('');
+
+  const features = useCadStore(state => state.features);
+  const selectedId = useCadStore(state => state.selectedId);
+  const updateFeatureParams = useCadStore(state => state.updateFeatureParams);
+
   let minU = Infinity, maxU = -Infinity;
   let minV = Infinity, maxV = -Infinity;
   lines.forEach(line => {
@@ -43,8 +50,64 @@ const DrawingView = ({ title, type, lines }: DrawingViewProps) => {
   const extOffset = viewBoxSize * 0.18;
   const dimOffset = viewBoxSize * 0.13;
 
+  const saveDimensionEdit = (dimType: 'HORIZ' | 'VERT') => {
+    const newValue = parseFloat(editValue);
+    setEditingDim('NONE');
+    
+    if (isNaN(newValue) || newValue <= 0) {
+      return;
+    }
+
+    // Prioritize selected feature, fall back to first primary solid/sketch feature
+    const primaryFeature = features.find(f => f.id === selectedId) || features.find(f => 
+      f.type === 'BOX' || 
+      f.type === 'CYLINDER' || 
+      f.type === 'SPHERE' || 
+      f.type === 'EXTRUDE'
+    );
+
+    if (!primaryFeature) {
+      return;
+    }
+
+    const paramUpdates: Record<string, number> = {};
+    const viewType = type;
+
+    if (primaryFeature.type === 'BOX' || primaryFeature.type === 'EXTRUDE') {
+      if (dimType === 'HORIZ') {
+        if (viewType === 'FRONT' || viewType === 'TOP') {
+          paramUpdates.width = newValue;
+        } else if (viewType === 'RIGHT') {
+          paramUpdates.depth = newValue;
+        }
+      } else if (dimType === 'VERT') {
+        if (viewType === 'FRONT' || viewType === 'RIGHT') {
+          paramUpdates.height = newValue;
+        } else if (viewType === 'TOP') {
+          paramUpdates.depth = newValue;
+        }
+      }
+    } else if (primaryFeature.type === 'CYLINDER') {
+      if (dimType === 'HORIZ') {
+        paramUpdates.radius = newValue / 2;
+      } else if (dimType === 'VERT') {
+        if (viewType === 'FRONT' || viewType === 'RIGHT') {
+          paramUpdates.height = newValue;
+        } else if (viewType === 'TOP') {
+          paramUpdates.radius = newValue / 2;
+        }
+      }
+    } else if (primaryFeature.type === 'SPHERE') {
+      paramUpdates.radius = newValue / 2;
+    }
+
+    if (Object.keys(paramUpdates).length > 0) {
+      updateFeatureParams(primaryFeature.id, paramUpdates);
+    }
+  };
+
   return (
-    <div className="border border-slate-300 bg-white aspect-video relative flex flex-col group hover:border-primary transition-all shadow-sm rounded overflow-hidden">
+    <div className="border border-slate-300 bg-white aspect-video relative flex flex-col group hover:border-primary transition-all shadow-sm rounded overflow-hidden animate-fade-in">
       <div className="absolute top-2 left-2 text-[10px] font-bold text-slate-400 uppercase tracking-widest bg-slate-50/80 backdrop-blur px-1.5 py-0.5 rounded border border-slate-200 z-10 group-hover:text-primary group-hover:border-primary/30">
         {title} {hasBounds && type !== 'ISO' && `(${widthVal.toFixed(1)} x ${heightVal.toFixed(1)})`}
       </div>
@@ -113,28 +176,74 @@ const DrawingView = ({ title, type, lines }: DrawingViewProps) => {
                 markerStart={`url(#arrow-start-${type})`}
                 markerEnd={`url(#arrow-end-${type})`}
               />
-              <g transform={`translate(${midU}, ${minV - dimOffset}) scale(1, -1)`}>
+              <g 
+                transform={`translate(${midU}, ${minV - dimOffset}) scale(1, -1)`}
+                className="cursor-pointer select-none"
+                onDoubleClick={(e) => {
+                  e.stopPropagation();
+                  setEditingDim('HORIZ');
+                  setEditValue(widthVal.toFixed(1));
+                }}
+              >
                 <rect
                   x={-rectW / 2}
                   y={-rectH / 2}
                   width={rectW}
                   height={rectH}
                   fill="white"
-                  stroke="#E2E8F0"
-                  strokeWidth={dimStrokeWidth / 2}
+                  stroke={editingDim === 'HORIZ' ? '#3B82F6' : '#E2E8F0'}
+                  strokeWidth={editingDim === 'HORIZ' ? dimStrokeWidth : dimStrokeWidth / 2}
                   rx={rectH * 0.2}
+                  className="hover:stroke-blue-500 hover:fill-blue-50/50 transition-all duration-200"
                 />
-                <text
-                  x="0"
-                  y={rectH * 0.18}
-                  textAnchor="middle"
-                  fontSize={textSize}
-                  fontWeight="bold"
-                  fill="#1E293B"
-                  fontFamily="monospace"
-                >
-                  {widthVal.toFixed(1)}
-                </text>
+                {editingDim === 'HORIZ' ? (
+                  <foreignObject
+                    x={-rectW / 2}
+                    y={-rectH / 2}
+                    width={rectW}
+                    height={rectH}
+                  >
+                    <input
+                      type="number"
+                      step="any"
+                      value={editValue}
+                      onChange={(e) => setEditValue(e.target.value)}
+                      onKeyDown={(e) => {
+                        e.stopPropagation();
+                        if (e.key === 'Enter') {
+                          saveDimensionEdit('HORIZ');
+                        } else if (e.key === 'Escape') {
+                          setEditingDim('NONE');
+                        }
+                      }}
+                      onBlur={() => saveDimensionEdit('HORIZ')}
+                      onDoubleClick={(e) => e.stopPropagation()}
+                      autoFocus
+                      className="w-full h-full text-center font-mono font-bold text-slate-900 bg-white border border-blue-500 rounded focus:outline-none focus:ring-1 focus:ring-blue-500 select-all"
+                      style={{
+                        fontSize: `${textSize}px`,
+                        padding: 0,
+                        margin: 0,
+                        border: 'none',
+                        outline: 'none',
+                        background: 'transparent'
+                      }}
+                    />
+                  </foreignObject>
+                ) : (
+                  <text
+                    x="0"
+                    y={rectH * 0.18}
+                    textAnchor="middle"
+                    fontSize={textSize}
+                    fontWeight="bold"
+                    fill="#1E293B"
+                    fontFamily="monospace"
+                    className="pointer-events-none hover:fill-blue-600"
+                  >
+                    {widthVal.toFixed(1)}
+                  </text>
+                )}
               </g>
 
               {/* Vertical Dimension */}
@@ -166,28 +275,74 @@ const DrawingView = ({ title, type, lines }: DrawingViewProps) => {
                 markerStart={`url(#arrow-start-${type})`}
                 markerEnd={`url(#arrow-end-${type})`}
               />
-              <g transform={`translate(${minU - dimOffset}, ${midV}) scale(1, -1)`}>
+              <g 
+                transform={`translate(${minU - dimOffset}, ${midV}) scale(1, -1)`}
+                className="cursor-pointer select-none"
+                onDoubleClick={(e) => {
+                  e.stopPropagation();
+                  setEditingDim('VERT');
+                  setEditValue(heightVal.toFixed(1));
+                }}
+              >
                 <rect
                   x={-rectW / 2}
                   y={-rectH / 2}
                   width={rectW}
                   height={rectH}
                   fill="white"
-                  stroke="#E2E8F0"
-                  strokeWidth={dimStrokeWidth / 2}
+                  stroke={editingDim === 'VERT' ? '#3B82F6' : '#E2E8F0'}
+                  strokeWidth={editingDim === 'VERT' ? dimStrokeWidth : dimStrokeWidth / 2}
                   rx={rectH * 0.2}
+                  className="hover:stroke-blue-500 hover:fill-blue-50/50 transition-all duration-200"
                 />
-                <text
-                  x="0"
-                  y={rectH * 0.18}
-                  textAnchor="middle"
-                  fontSize={textSize}
-                  fontWeight="bold"
-                  fill="#1E293B"
-                  fontFamily="monospace"
-                >
-                  {heightVal.toFixed(1)}
-                </text>
+                {editingDim === 'VERT' ? (
+                  <foreignObject
+                    x={-rectW / 2}
+                    y={-rectH / 2}
+                    width={rectW}
+                    height={rectH}
+                  >
+                    <input
+                      type="number"
+                      step="any"
+                      value={editValue}
+                      onChange={(e) => setEditValue(e.target.value)}
+                      onKeyDown={(e) => {
+                        e.stopPropagation();
+                        if (e.key === 'Enter') {
+                          saveDimensionEdit('VERT');
+                        } else if (e.key === 'Escape') {
+                          setEditingDim('NONE');
+                        }
+                      }}
+                      onBlur={() => saveDimensionEdit('VERT')}
+                      onDoubleClick={(e) => e.stopPropagation()}
+                      autoFocus
+                      className="w-full h-full text-center font-mono font-bold text-slate-900 bg-white border border-blue-500 rounded focus:outline-none focus:ring-1 focus:ring-blue-500 select-all"
+                      style={{
+                        fontSize: `${textSize}px`,
+                        padding: 0,
+                        margin: 0,
+                        border: 'none',
+                        outline: 'none',
+                        background: 'transparent'
+                      }}
+                    />
+                  </foreignObject>
+                ) : (
+                  <text
+                    x="0"
+                    y={rectH * 0.18}
+                    textAnchor="middle"
+                    fontSize={textSize}
+                    fontWeight="bold"
+                    fill="#1E293B"
+                    fontFamily="monospace"
+                    className="pointer-events-none hover:fill-blue-600"
+                  >
+                    {heightVal.toFixed(1)}
+                  </text>
+                )}
               </g>
             </>
           )}
@@ -205,9 +360,11 @@ export const DrawingSheet = () => {
     RIGHT: [],
     ISO: []
   });
+  const [isRebuilding, setIsRebuilding] = useState<boolean>(false);
 
   useEffect(() => {
     const fetchProjections = async () => {
+      setIsRebuilding(true);
       const client = HeavyEngineClient.getInstance();
       const views = ['FRONT', 'TOP', 'RIGHT', 'ISO'];
       const newProjections: any = { ...projections };
@@ -222,6 +379,7 @@ export const DrawingSheet = () => {
       }
       
       setProjections(newProjections);
+      setIsRebuilding(false);
     };
 
     if (features.length > 0) {
@@ -233,6 +391,13 @@ export const DrawingSheet = () => {
     <div className="flex-1 h-full bg-[#CBD5E1] p-8 overflow-auto flex justify-center">
       <div id="drawing-sheet-container" className="w-[1120px] h-[792px] bg-white shadow-2xl border-2 border-slate-400 relative flex flex-col p-12 space-y-6">
         
+        {isRebuilding && (
+          <div className="absolute top-6 right-12 bg-blue-500/90 border border-blue-400 text-white px-4 py-2 rounded-full shadow-lg flex items-center gap-2 z-[999] backdrop-blur-md transition-all animate-pulse">
+            <span className="text-sm">🔄</span>
+            <span className="text-[11px] font-extrabold uppercase tracking-wider">雙向參數重構中 (Rebuilding...)</span>
+          </div>
+        )}
+
         <div className="flex justify-between items-start border-b-2 border-slate-900 pb-2">
           <div className="flex flex-col">
             <span className="text-2xl font-black tracking-tighter text-slate-900 uppercase">Engineering Drawing</span>

@@ -40,3 +40,6 @@ graph.html
 graph.json
 manifest.json
 GRAPH_REPORT.md
+
+# BitFun snapshot data - auto managed
+.bitfun/

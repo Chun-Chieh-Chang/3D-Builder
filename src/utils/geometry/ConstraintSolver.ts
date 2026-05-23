@@ -319,3 +319,230 @@ function applyConstraint(
     }
   }
 }
+
+export interface SketchDefinitionReport {
+  nodes: Record<string, 'UNDER' | 'FULLY' | 'CONFLICT'>;
+  edges: Record<string, 'UNDER' | 'FULLY' | 'CONFLICT'>;
+  hasConflict: boolean;
+}
+
+export function analyzeSketchDefinitions(
+  nodes: Record<string, SketchNode>,
+  edges: Record<string, SketchEdge>,
+  constraints: Record<string, SketchConstraint>
+): SketchDefinitionReport {
+  const nodeIds = Object.keys(nodes);
+  const edgeIds = Object.keys(edges);
+  const constraintList = Object.values(constraints);
+
+  const nodeStatus: Record<string, 'UNDER' | 'FULLY' | 'CONFLICT'> = {};
+  const edgeStatus: Record<string, 'UNDER' | 'FULLY' | 'CONFLICT'> = {};
+  let hasConflict = false;
+
+  // 1. Run constraint solver first on original nodes to get the relaxed state
+  const relaxedNodes = solveConstraints(nodes, edges, constraints, 10);
+
+  // 2. Measure residual errors to detect CONFLICT
+  for (const constraint of constraintList) {
+    let err = 0;
+    switch (constraint.type) {
+      case 'COINCIDENT': {
+        if (constraint.nodeIds && constraint.nodeIds.length === 2) {
+          const n1 = relaxedNodes[constraint.nodeIds[0]];
+          const n2 = relaxedNodes[constraint.nodeIds[1]];
+          if (n1 && n2) {
+            err = Math.hypot(n2.x - n1.x, n2.y - n1.y);
+          }
+        }
+        break;
+      }
+      case 'HORIZONTAL': {
+        if (constraint.edgeIds && constraint.edgeIds.length === 1) {
+          const edge = edges[constraint.edgeIds[0]];
+          if (edge && edge.nodeIds.length >= 2) {
+            const n1 = relaxedNodes[edge.nodeIds[0]];
+            const n2 = relaxedNodes[edge.nodeIds[1]];
+            if (n1 && n2) {
+              err = Math.abs(n2.y - n1.y);
+            }
+          }
+        }
+        break;
+      }
+      case 'VERTICAL': {
+        if (constraint.edgeIds && constraint.edgeIds.length === 1) {
+          const edge = edges[constraint.edgeIds[0]];
+          if (edge && edge.nodeIds.length >= 2) {
+            const n1 = relaxedNodes[edge.nodeIds[0]];
+            const n2 = relaxedNodes[edge.nodeIds[1]];
+            if (n1 && n2) {
+              err = Math.abs(n2.x - n1.x);
+            }
+          }
+        }
+        break;
+      }
+      case 'DISTANCE': {
+        if (constraint.nodeIds && constraint.nodeIds.length === 2 && constraint.value !== undefined) {
+          const n1 = relaxedNodes[constraint.nodeIds[0]];
+          const n2 = relaxedNodes[constraint.nodeIds[1]];
+          if (n1 && n2) {
+            err = Math.abs(Math.hypot(n2.x - n1.x, n2.y - n1.y) - constraint.value);
+          }
+        }
+        break;
+      }
+      case 'EQUAL': {
+        if (constraint.edgeIds && constraint.edgeIds.length === 2) {
+          const e1 = edges[constraint.edgeIds[0]];
+          const e2 = edges[constraint.edgeIds[1]];
+          if (e1 && e2 && e1.nodeIds.length >= 2 && e2.nodeIds.length >= 2) {
+            const n1a = relaxedNodes[e1.nodeIds[0]];
+            const n1b = relaxedNodes[e1.nodeIds[1]];
+            const n2a = relaxedNodes[e2.nodeIds[0]];
+            const n2b = relaxedNodes[e2.nodeIds[1]];
+            if (n1a && n1b && n2a && n2b) {
+              err = Math.abs(Math.hypot(n1b.x - n1a.x, n1b.y - n1a.y) - Math.hypot(n2b.x - n2a.x, n2b.y - n2a.y));
+            }
+          }
+        }
+        break;
+      }
+      case 'CONCENTRIC': {
+        if (constraint.edgeIds && constraint.edgeIds.length === 2) {
+          const c1 = edges[constraint.edgeIds[0]];
+          const c2 = edges[constraint.edgeIds[1]];
+          if (c1 && c2 && c1.nodeIds.length > 0 && c2.nodeIds.length > 0) {
+            const n1 = relaxedNodes[c1.nodeIds[0]];
+            const n2 = relaxedNodes[c2.nodeIds[0]];
+            if (n1 && n2) {
+              err = Math.hypot(n2.x - n1.x, n2.y - n1.y);
+            }
+          }
+        }
+        break;
+      }
+      case 'TANGENT': {
+        if (constraint.edgeIds && constraint.edgeIds.length === 2) {
+          const e1 = edges[constraint.edgeIds[0]];
+          const e2 = edges[constraint.edgeIds[1]];
+          if (e1 && e2) {
+            const line = e1.type === 'LINE' ? e1 : (e2.type === 'LINE' ? e2 : null);
+            const circle = e1.type === 'CIRCLE' ? e1 : (e2.type === 'CIRCLE' ? e2 : null);
+            if (line && circle && line.nodeIds.length >= 2 && circle.nodeIds.length >= 2) {
+              const p1 = relaxedNodes[line.nodeIds[0]];
+              const p2 = relaxedNodes[line.nodeIds[1]];
+              const pc = relaxedNodes[circle.nodeIds[0]];
+              const pr = relaxedNodes[circle.nodeIds[1]];
+              if (p1 && p2 && pc && pr) {
+                const R = Math.hypot(pr.x - pc.x, pr.y - pc.y);
+                const dx = p2.x - p1.x;
+                const dy = p2.y - p1.y;
+                const lenSq = dx * dx + dy * dy;
+                if (lenSq > 1e-6) {
+                  const t = ((pc.x - p1.x) * dx + (pc.y - p1.y) * dy) / lenSq;
+                  const projX = p1.x + t * dx;
+                  const projY = p1.y + t * dy;
+                  const dist = Math.hypot(projX - pc.x, projY - pc.y);
+                  err = Math.abs(dist - R);
+                }
+              }
+            }
+          }
+        }
+        break;
+      }
+      case 'ANGLE': {
+        if (constraint.edgeIds && constraint.edgeIds.length === 2) {
+          const e1 = edges[constraint.edgeIds[0]];
+          const e2 = edges[constraint.edgeIds[1]];
+          if (e1 && e2 && e1.nodeIds.length >= 2 && e2.nodeIds.length >= 2) {
+            const p1a = relaxedNodes[e1.nodeIds[0]];
+            const p1b = relaxedNodes[e1.nodeIds[1]];
+            const p2a = relaxedNodes[e2.nodeIds[0]];
+            const p2b = relaxedNodes[e2.nodeIds[1]];
+            if (p1a && p1b && p2a && p2b) {
+              const dx1 = p1b.x - p1a.x;
+              const dy1 = p1b.y - p1a.y;
+              const dx2 = p2b.x - p2a.x;
+              const dy2 = p2b.y - p2a.y;
+              const len1 = Math.hypot(dx1, dy1);
+              const len2 = Math.hypot(dx2, dy2);
+              if (len1 > 1e-4 && len2 > 1e-4) {
+                const angle1 = Math.atan2(dy1, dx1);
+                const angle2 = Math.atan2(dy2, dx2);
+                const currentAngle = angle2 - angle1;
+                const targetAngleRad = (constraint.value ?? 45.0) * Math.PI / 180.0;
+                let diff = targetAngleRad - currentAngle;
+                diff = Math.atan2(Math.sin(diff), Math.cos(diff));
+                err = Math.abs(diff);
+              }
+            }
+          }
+        }
+        break;
+      }
+    }
+    
+    if (err > 0.05) { // conflict threshold
+      hasConflict = true;
+      // Mark nodes and edges of this constraint as CONFLICT
+      constraint.nodeIds?.forEach(id => { nodeStatus[id] = 'CONFLICT'; });
+      constraint.edgeIds?.forEach(id => {
+        edgeStatus[id] = 'CONFLICT';
+        const edge = edges[id];
+        edge?.nodeIds?.forEach(nId => { nodeStatus[nId] = 'CONFLICT'; });
+      });
+    }
+  }
+
+  // 3. For non-conflict elements, run the Numerical Perturbation analysis
+  for (const nId of nodeIds) {
+    if (nodeStatus[nId] === 'CONFLICT') continue;
+    const originalNode = relaxedNodes[nId];
+    if (!originalNode) continue;
+
+    if (originalNode.isFixed) {
+      nodeStatus[nId] = 'FULLY';
+      continue;
+    }
+
+    // Perturb X and Y
+    const perturbedNodes = JSON.parse(JSON.stringify(relaxedNodes));
+    perturbedNodes[nId].x += 0.2;
+    perturbedNodes[nId].y += 0.2;
+
+    // Run constraint solver for 5 iterations on perturbed nodes
+    const resolved = solveConstraints(perturbedNodes, edges, constraints, 5);
+
+    // Check distance of nId from original position
+    const solvedNode = resolved[nId];
+    const dist = Math.hypot(solvedNode.x - originalNode.x, solvedNode.y - originalNode.y);
+
+    if (dist < 0.01) {
+      nodeStatus[nId] = 'FULLY';
+    } else {
+      nodeStatus[nId] = 'UNDER';
+    }
+  }
+
+  // 4. Resolve edge definition colors based on their endpoints
+  for (const eId of edgeIds) {
+    if (edgeStatus[eId] === 'CONFLICT') continue;
+    const edge = edges[eId];
+    if (!edge || edge.nodeIds.length < 2) {
+      edgeStatus[eId] = 'UNDER';
+      continue;
+    }
+
+    // Edge is FULLY if both endpoints are FULLY
+    const allEndpointsFully = edge.nodeIds.every(nId => nodeStatus[nId] === 'FULLY');
+    if (allEndpointsFully) {
+      edgeStatus[eId] = 'FULLY';
+    } else {
+      edgeStatus[eId] = 'UNDER';
+    }
+  }
+
+  return { nodes: nodeStatus, edges: edgeStatus, hasConflict };
+}

@@ -4,10 +4,11 @@ import React, { useMemo, useState } from 'react';
 import * as THREE from 'three';
 import { useCadStore } from '../store/useCadStore';
 import { Line, Html } from '@react-three/drei';
+import { analyzeSketchDefinitions } from '../utils/geometry/ConstraintSolver';
 
 export const SketchPreview = () => {
   const { 
-    sketchNodes, sketchEdges, 
+    sketchNodes, sketchEdges, sketchConstraints,
     activePlane, 
     isSketchMode,
     selectedEntityIds,
@@ -17,11 +18,13 @@ export const SketchPreview = () => {
     referencePlanes,
     selectedId,
     selectedSubNodeType,
-    features,
-    updateFeatureParams
+    features
   } = useCadStore();
 
   const [hoveredEntityId, setHoveredEntityId] = useState<string | null>(null);
+  const [editingConstraintId, setEditingConstraintId] = useState<string | null>(null);
+  const [inputValue, setInputValue] = useState<string>('');
+
   const selectedFeature = useMemo(() => features.find(f => f.id === selectedId), [features, selectedId]);
 
   const isViewingStoredSketch = useMemo(() => {
@@ -79,9 +82,33 @@ export const SketchPreview = () => {
     if (isSelected) {
       setSelectedEntityIds(selectedEntityIds.filter(id => id !== entId));
     } else {
-      // Allow multiple selection (for geometric constraints)
       setSelectedEntityIds([...selectedEntityIds, entId]);
     }
+  };
+
+  const definitionReport = useMemo(() => {
+    return analyzeSketchDefinitions(sketchNodes, sketchEdges, sketchConstraints);
+  }, [sketchNodes, sketchEdges, sketchConstraints]);
+
+  const distanceConstraints = useMemo(() => {
+    return Object.values(sketchConstraints).filter(
+      c => c.type === 'DISTANCE' && c.nodeIds && c.nodeIds.length === 2 && c.value !== undefined
+    );
+  }, [sketchConstraints]);
+
+  const handleSaveConstraintValue = (constraintId: string) => {
+    const val = parseFloat(inputValue);
+    if (!isNaN(val) && val > 0) {
+      const currentConstraints = { ...useCadStore.getState().sketchConstraints };
+      if (currentConstraints[constraintId]) {
+        currentConstraints[constraintId] = {
+          ...currentConstraints[constraintId],
+          value: val
+        };
+        useCadStore.setState({ sketchConstraints: currentConstraints });
+      }
+    }
+    setEditingConstraintId(null);
   };
 
   if ((!isSketchMode && !isViewingStoredSketch) || !activePlane) return null;
@@ -110,21 +137,25 @@ export const SketchPreview = () => {
         const isSelected = selectedEntityIds.includes(edge.id);
         const isHovered = hoveredEntityId === edge.id;
         const isCenterline = edge.type === 'CENTER_LINE' || edge.isConstruction;
+        
+        const edgeState = definitionReport.edges[edge.id];
+        const strokeColor = isSelected
+          ? "#ec4899"
+          : isHovered
+          ? "#f59e0b"
+          : edgeState === 'CONFLICT'
+          ? "#ef4444"
+          : edgeState === 'FULLY'
+          ? "#0f172a"
+          : isCenterline
+          ? "#6b7280"
+          : "#3b82f6";
 
         return (
           <group key={edge.id}>
-            {/* Visual Line */}
             <Line
               points={entityPoints}
-              color={
-                isSelected 
-                  ? "#ec4899" // Magenta when selected
-                  : isHovered 
-                  ? "#f59e0b" // Amber when hovered
-                  : isCenterline 
-                  ? "#6b7280" // Grey for construction
-                  : "#3b82f6" // Royal Blue for standard lines
-              }
+              color={strokeColor}
               lineWidth={isSelected ? 5.5 : isHovered ? 4.5 : 3.0}
               dashed={isCenterline}
               dashSize={1.5}
@@ -132,7 +163,6 @@ export const SketchPreview = () => {
               depthTest={false}
             />
             
-            {/* Hitbox */}
             <Line
               points={entityPoints}
               color="#000000"
@@ -153,6 +183,19 @@ export const SketchPreview = () => {
         const isHovered = hoveredEntityId === node.id;
         const pos = get3DPoint(node.x, node.y);
 
+        const nodeState = definitionReport.nodes[node.id];
+        const dotColor = isSelected
+          ? "#ec4899"
+          : isHovered
+          ? "#f59e0b"
+          : node.isFixed
+          ? "#10b981"
+          : nodeState === 'CONFLICT'
+          ? "#ef4444"
+          : nodeState === 'FULLY'
+          ? "#0f172a"
+          : "#3b82f6";
+
         return (
           <mesh 
             key={node.id} 
@@ -164,17 +207,106 @@ export const SketchPreview = () => {
             <sphereGeometry args={[isSelected || isHovered ? 0.6 : 0.4, 12, 12]} />
             <meshBasicMaterial
               depthTest={false}
-              color={
-                isSelected 
-                  ? "#ec4899" // Magenta when selected
-                  : isHovered 
-                  ? "#f59e0b" // Amber when hovered
-                  : node.isFixed
-                  ? "#10b981" // Emerald for fixed (Origin)
-                  : "#3b82f6" // Royal blue for free nodes
-              }
+              color={dotColor}
             />
           </mesh>
+        );
+      })}
+
+      {/* 3. Render Floating Interactive 2D Dimension Lines for DISTANCE constraints */}
+      {isSketchMode && distanceConstraints.map((constraint) => {
+        const nA = sketchNodes[constraint.nodeIds![0]];
+        const nB = sketchNodes[constraint.nodeIds![1]];
+        if (!nA || !nB) return null;
+
+        const dx = nB.x - nA.x;
+        const dy = nB.y - nA.y;
+        const len = Math.hypot(dx, dy);
+        if (len < 1e-4) return null;
+
+        const ux = dx / len;
+        const uy = dy / len;
+        const nx = -uy;
+        const ny = ux;
+
+        const offsetDist = 12;
+        const offAx = nA.x + nx * offsetDist;
+        const offAy = nA.y + ny * offsetDist;
+        const offBx = nB.x + nx * offsetDist;
+        const offBy = nB.y + ny * offsetDist;
+
+        const pA = get3DPoint(nA.x, nA.y);
+        const pB = get3DPoint(nB.x, nB.y);
+        const pOffA = get3DPoint(offAx, offAy);
+        const pOffB = get3DPoint(offBx, offBy);
+
+        const midX = (offAx + offBx) / 2;
+        const midY = (offAy + offBy) / 2;
+        const pMid = get3DPoint(midX, midY);
+
+        const hasConflict = definitionReport.nodes[nA.id] === 'CONFLICT' || definitionReport.nodes[nB.id] === 'CONFLICT';
+
+        return (
+          <group key={constraint.id}>
+            <Line
+              points={[pA, pOffA]}
+              color="#64748b"
+              lineWidth={1.0}
+              dashed
+              dashSize={0.5}
+              gapSize={0.5}
+              depthTest={false}
+            />
+            <Line
+              points={[pB, pOffB]}
+              color="#64748b"
+              lineWidth={1.0}
+              dashed
+              dashSize={0.5}
+              gapSize={0.5}
+              depthTest={false}
+            />
+            <Line
+              points={[pOffA, pOffB]}
+              color={hasConflict ? "#ef4444" : "#4f46e5"}
+              lineWidth={1.5}
+              depthTest={false}
+            />
+            
+            <Html position={pMid} center>
+              <div 
+                className={`px-1.5 py-0.5 rounded border shadow-md font-mono text-[10px] font-bold transition-all select-none ${
+                  hasConflict 
+                    ? 'bg-red-50 border-red-200 text-red-600'
+                    : 'bg-indigo-50/95 border-indigo-200 text-indigo-700 backdrop-blur'
+                }`}
+                onDoubleClick={(e) => {
+                  e.stopPropagation();
+                  setEditingConstraintId(constraint.id);
+                  setInputValue(constraint.value!.toString());
+                }}
+                style={{ pointerEvents: 'auto', cursor: 'pointer' }}
+              >
+                {editingConstraintId === constraint.id ? (
+                  <input
+                    type="number"
+                    value={inputValue}
+                    autoFocus
+                    onChange={(e) => setInputValue(e.target.value)}
+                    onBlur={() => handleSaveConstraintValue(constraint.id)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') handleSaveConstraintValue(constraint.id);
+                      if (e.key === 'Escape') setEditingConstraintId(null);
+                    }}
+                    className="w-[45px] bg-white border border-indigo-300 rounded px-1 py-0 text-slate-800 text-[10px] font-mono font-bold focus:outline-none"
+                    onClick={(e) => e.stopPropagation()}
+                  />
+                ) : (
+                  <span>{constraint.value!.toFixed(2)}</span>
+                )}
+              </div>
+            </Html>
+          </group>
         );
       })}
     </group>

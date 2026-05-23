@@ -14,6 +14,7 @@ import { DrawingSheet } from '@/ui/DrawingSheet';
 import { SketchPropertyManager } from '@/ui/SketchPropertyManager';
 import { v4 as uuidv4 } from 'uuid';
 import { extractClosedLoop, extractAllClosedLoops } from '@/utils/geometry/GraphAdapter';
+import { analyzeSketchDefinitions } from '@/utils/geometry/ConstraintSolver';
 
 const isSketchPlane = (plane: unknown): plane is 'FRONT' | 'TOP' | 'RIGHT' | 'FACE' => (
   plane === 'FRONT' || plane === 'TOP' || plane === 'RIGHT' || plane === 'FACE'
@@ -93,7 +94,7 @@ export default function Home() {
     activeFaceNormal, setActiveFaceNormal,
     activeFaceId, setActiveFaceId,
     triggerCameraNormal,
-    sketchNodes, sketchEdges
+    sketchNodes, sketchEdges, sketchConstraints
   } = useCadStore();
 
   // Legacy stubs to prevent TS errors in dead code
@@ -321,6 +322,12 @@ export default function Home() {
     () => sketchPoints.filter(pt => !pt[2] || !pt[2].includes('CENTER_LINE')).length,
     [sketchPoints]
   );
+
+  const hasConflict = useMemo(() => {
+    if (!isSketchMode) return false;
+    const report = analyzeSketchDefinitions(sketchNodes, sketchEdges, sketchConstraints);
+    return report.hasConflict;
+  }, [isSketchMode, sketchNodes, sketchEdges, sketchConstraints]);
 
   const entities = useMemo(() => {
     const list: SketchEntity[] = [];
@@ -2635,6 +2642,16 @@ export default function Home() {
               <div className="flex flex-col">
                 <span className="text-[14px] font-extrabold uppercase tracking-wider text-amber-700 leading-none">正在演示 CAD 逐步建構過程 (Live CAD Build Demo)</span>
                 <span className="text-[13px] font-bold mt-2 leading-relaxed text-amber-900">{demoStep}</span>
+              </div>
+            </div>
+          )}
+
+          {isSketchMode && hasConflict && (
+            <div className="absolute top-24 left-1/2 -translate-x-1/2 bg-red-500/90 border border-red-400 text-white px-5 py-3 rounded-full shadow-2xl flex items-center gap-2.5 z-[999] w-[85%] max-w-[500px] pointer-events-none backdrop-blur-md">
+              <span className="text-xl">⚠️</span>
+              <div className="flex flex-col">
+                <span className="text-[12px] font-extrabold uppercase tracking-wider leading-none">草圖約束過度定義 (Over-Constrained Conflict)</span>
+                <span className="text-[11px] font-bold mt-1 text-red-50">幾何約束衝突！請刪除部分標註或關係以恢復定義狀態。</span>
               </div>
             </div>
           )}

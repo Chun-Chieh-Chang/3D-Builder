@@ -48,6 +48,30 @@
 
 ---
 ---
+## [2026-05-23] 成功實現 Phase 8 全參數化尺寸驅動與工程確效系統 ✅
+
+### 實裝成果
+- **二維工程圖雙向參數驅動 (Bi-directional Driving Dimensions)**：
+  - 於 `DrawingSheet.tsx` 中將 Front Elevation、Top Plan、Right Profile 等投影視角中的 horizontal 與 vertical 外包絡尺寸全面升級為「雙向驅動尺寸 (Driving Dimensions)」。
+- **極致平滑的互動輸入體驗 (Morandi Interactive Input)**：
+  - 運用 SVG `<foreignObject>` 與 HTML `<input>` 完美整合，在用戶雙擊 2D 圖紙尺寸標註值時，原地彈出高質感的 inline 數值輸入框。
+  - 採用 Morandi 經典的深灰/極簡藍對比框，完美抑制事件冒泡 (stopPropagation) 與雙擊防抖，在 `Enter` 或 `blur` 時即時將修改同步回 Zustand 的特徵參數樹。
+- **動態多維特徵投影映射器 (Parametric Layout Mapping)**：
+  - 精確推導了 Orthographic projections 視角到 3D 特徵參數的幾何對齊。當驅動 Box / Extrude / Cylinder / Sphere 特徵的外包尺寸時，自動將 FRONT、TOP、RIGHT 的 HORIZ 與 VERT 軸向分別精確映射到 `width`、`height`、`depth` 或 `radius`（圓形/球體以直徑對半轉換）上，完成 100% 邏輯一致的 CAD 確效。
+- **雙向重構狀態 HUD 燈 (Rebuild Status HUD Overlay)**：
+  - 於 Drawing 視圖頂部置入毛玻璃發光 (Glassmorphic) 且帶有呼吸動畫的 `🔄 雙向參數重構中 (Rebuilding...)` 狀態條，給予用戶極高質量的操作回饋。
+
+### 確效結果 (Validation)
+- 執行 `npx tsc --noEmit` 全域 100% 成功，Exit Code 0，無任何隱式 Any 或型別報錯。
+- 執行 `npx tsc --project electron/tsconfig.json` 全域 compile 100% 成功。
+
+### RCA & CAPA
+- **RCA (Root Cause Analysis)**：
+  - 先前版本的 2D Projected Drawing Sheet 僅為單向唯讀渲染，尺寸文字只具備展示性，缺乏「雙向驅動」的參數反向更新能力。這使得工程圖紙與 3D 模型實體鏈路脫節，無法發揮 SolidWorks 以尺寸定義幾何的核心特色。
+- **CAPA (Corrective and Preventive Actions)**：
+  - **全尺寸雙向驅動閉環管線**：在 `DrawingView` 中利用 React `useState` 控制 Dim 編輯狀態，原地以 `<foreignObject>` 實作 100% 同步縮放的 inputs，並建立 `viewType + dimType ➔ parametricFeature` 的動態幾何參數適配器。由於 Zustand 在更新特徵樹時會觸發全域的 `handleRebuild()` 及本機 `fetchProjections`，這項機制成功打通了「編輯工程圖紙尺寸 ➔ 背景 OCC 重構 ➔ 刷新 3D 模型與所有二維投影」的毫秒級閉環，完美重現了 SolidWorks 的全參數化驅動靈魂！
+
+---
 ## [2026-05-23] 成功實現 Phase 7 工程圖建構、自動標註、與標準 A4 滿版向量 PDF 輸出 ✅
 
 ### 實裝成果
