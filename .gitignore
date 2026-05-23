@@ -31,3 +31,12 @@ __pycache__/
 .venv/
 venv/
 env/
+
+# Graphify
+graphify-out/
+.graphify_labels.json
+.graphify_root
+graph.html
+graph.json
+manifest.json
+GRAPH_REPORT.md
