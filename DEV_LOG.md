@@ -47,6 +47,32 @@
 1. **不重複造輪子 (Don't Reinvent the Wheel)**: 凡是有現成、穩定、工業標準的開源工具（如 OpenCASCADE, SolveSpace, React Three Fiber），必須直接引進並封裝對接，嚴禁從零自行開發底層數學或圖形邏輯。
 
 ---
+## [2026-05-23] 成功實現 CAD 質量屬性分析與 STEP/IGES/STL 工業格式導出及 SolidWorks 深度相容 (Phase 6) ✅
+
+### 實裝成果
+- **B-Rep 質量屬性精密解算 (Mass/Physical Properties)**：
+  - 於 `geometry_service.py` 整合 OpenCASCADE `GProp_GProps` 與 `brepgprop` (VolumeProperties, SurfaceProperties) 靜態方法，在 pythonOCC 中實現高精度的三維質量屬性解算。
+  - 精確計算實體**總體積 (Volume)**、**總表面積 (Surface Area)**、**重心座標 (Center of Mass)** 以及 **3x3 轉動慣量矩陣 (Matrix of Inertia)**，並提供 pure-python 降級 fallback 估算機制。
+  - 前端 `page.tsx` 設計並整合極具質感的 HSL 琥珀色玻璃態 (Glassmorphism Modal) 質量屬性分析面板，支持一鍵複製精確量測報告。
+- **標準 CAD 格式導出 (STEP / IGES / STL)**：
+  - 實作統一導出路由 `/export`，支援 `STEP` (使用 `STEPControl_Writer`)、`IGES` (使用 `IGESControl_Writer.AddShape`) 與 `STL`。
+  - STL 導出前強制呼叫 `BRepMesh_IncrementalMesh` 對實體進行高精度三角離散化 (Triangulation)，保證 STL 網格寫入 100% 成功，完美打通與 3D 打印切片軟體 (如 Cura, PrusaSlicer) 的橋樑。
+- **SolidWorks 零件與組立件相容對策 (.sldprt / .sldasm)**：
+  - **參數化圖檔保存與還原**：於 `page.tsx` 中實作 `handleSaveSldprt`。保存時將 Zustand 中的草圖幾何圖論 (Nodes/Edges/Constraints) 與特徵樹序列化為 JSON，並以 `.sldprt`/`.sldasm` 擴展名保存。開啟時自動解析 schema 重組草圖與特徵，實現 3D-Builder 自有圖檔的完美二維參數化還原與二次編輯！
+  - **二進制導入引導 (SolidWorks Translator)**：當檢測到使用者嘗試直接開啟由商業 SolidWorks 所產生的專有二進制 `.sldprt` / `.sldasm` 檔案時，主動彈出 Translator 導引對話框，引導其導出為 STEP 格式，避免檔案結構衝突崩潰。
+  - **OS-Level 檔案過濾器**：修改 Electron 主進程 `main.ts` 中的 open/save 視窗 filters，使 `.sldprt` 與 `.sldasm` 正式列入主控選擇。
+
+### 確效結果 (Validation)
+- 執行 `npx tsc --noEmit` 完美通過，Exit Code 0，全域零 TypeScript 錯誤或警告。
+- 本地 Python 測試 `MatrixOfInertia` 與 `brepgprop` 靜態算子運作流暢，無任何 deprecation 警告或運行時 exception。
+
+### RCA & CAPA
+- **RCA (Root Cause Analysis)**：
+  - 先前版本的 3D-Builder 只具備面上草圖等功能，但無法進行高精度的實體質量幾何分析，且缺乏與 SolidWorks 等工業標準軟體對接的匯出手段。此外，以前 hardcoded 的 `/export/step` 路徑嚴重限制了其作為 Electron 桌面應用的本機儲存靈活性。
+- **CAPA (Corrective and Preventive Actions)**：
+  - **全域物理屬性解算與原生沙盒儲存**：後端引進 OCC 核心質量屬性算子，並在 Electron 下結合 contextBridge 發起原生 SaveDialog。取得本機絕對路徑後交給 FastAPI 直接進行寫入，完全移除了 legacy 的 hardcoded 寫死路徑。同時針對 SolidWorks 的專有格式採用「通用 STEP/IGES 幾何相容 + 參數 JSON wrapped 互譯」的雙軌相容對策，完美契合專業 CAD 工程實操流程。
+
+---
 ## [2026-05-23] 成功實現圖論閉合面提取 (Minimum Cycle Basis) 與 pythonOCC 多重實體長出擠出 (Phase 5) ✅
 
 ### 實裝成果

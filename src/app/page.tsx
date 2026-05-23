@@ -33,6 +33,7 @@ export interface SketchEntity {
 }
 
 export default function Home() {
+  const client = HeavyEngineClient.getInstance();
   // Electron Native Integration
   useEffect(() => {
     if (typeof window === 'undefined' || !window.electronAPI) return;
@@ -41,27 +42,11 @@ export default function Home() {
       onFileOpen(async (path) => {
         const result = await fileAPI.read(path);
         if (result.success && result.content) {
-          try {
-            const data = JSON.parse(result.content);
-            if (data.features) {
-              useCadStore.setState({ features: data.features });
-              appAPI.notify('File Opened', `Successfully loaded ${path}`);
-            }
-          } catch (e) {
-            appAPI.notify('Open Failed', 'Invalid project file format');
-          }
+          loadCadData(result.content, path);
         }
       }),
       onSaveRequest(async () => {
-        const state = useCadStore.getState();
-        const data = JSON.stringify({
-          features: state.features,
-          projectName: state.projectName
-        });
-        const result = await fileAPI.save(data);
-        if (result?.success) {
-          appAPI.notify('Saved', `Project saved to ${result.path}`);
-        }
+        handleSaveSldprt();
       }),
       onNewFile(() => {
         if (confirm('Create new project? All unsaved changes will be lost.')) {
@@ -265,6 +250,14 @@ export default function Home() {
   const [loading, setLoading] = useState(false);
   const [engineStatus, setEngineStatus] = useState<'CONNECTED' | 'DISCONNECTED'>('DISCONNECTED');
   const [activeTab, setActiveTab] = useState<'FEATURES' | 'SKETCH' | 'EVALUATE' | 'ASSEMBLY' | 'DRAWING'>('FEATURES');
+  const [massProps, setMassProps] = useState<{
+    volume: number;
+    surface_area: number;
+    center_of_mass: number[];
+    inertia_matrix: number[][];
+  } | null>(null);
+  const [showMassPropsModal, setShowMassPropsModal] = useState(false);
+  const [showTranslatorModal, setShowTranslatorModal] = useState(false);
   const [smartDimensionActive, setSmartDimensionActive] = useState(false);
   const [demoStep, setDemoStep] = useState<string | null>(null);
   const [virtualCursor, setVirtualCursor] = useState<{
@@ -467,31 +460,13 @@ export default function Home() {
     if (result) {
       const readResult = await fileAPI.read(result.path);
       if (readResult.success && readResult.content) {
-        try {
-          const data = JSON.parse(readResult.content);
-          if (data.features) {
-            useCadStore.setState({ features: data.features });
-            appAPI.notify('File Opened', `Successfully loaded ${result.path}`);
-          }
-        } catch (e) {
-          appAPI.notify('Open Failed', 'Invalid project file format');
-        }
+        loadCadData(readResult.content, result.path);
       }
     }
   };
 
   const handleSave = async () => {
-    const state = useCadStore.getState();
-    const data = JSON.stringify({
-      features: state.features,
-      projectName: state.projectName,
-      components: state.components,
-      mates: state.mates
-    });
-    const result = await fileAPI.save(data);
-    if (result?.success) {
-      appAPI.notify('Saved', `Project saved to ${result.path}`);
-    }
+    handleSaveSldprt();
   };
 
   const handleRebuild = useCallback(async () => {
@@ -827,6 +802,100 @@ export default function Home() {
       parameters: defaultParams[type]
     });
     setSelectedId(id);
+  };
+
+  const loadCadData = useCallback(async (content: string, filePath: string) => {
+    try {
+      const data = JSON.parse(content);
+      if (data.schema === "3D-BUILDER-PARAMETRIC-SCHEMA") {
+        useCadStore.setState({
+          features: data.features || [],
+          sketchNodes: data.sketchNodes || {},
+          sketchEdges: data.sketchEdges || {},
+          sketchConstraints: data.sketchConstraints || {}
+        });
+        setTimeout(handleRebuild, 50);
+        appAPI.notify('開啟成功', `已還原參數化特徵與草圖幾何: ${filePath}`);
+      } else if (data.features) {
+        useCadStore.setState({ features: data.features });
+        setTimeout(handleRebuild, 50);
+        appAPI.notify('開啟成功', `已載入零件特徵: ${filePath}`);
+      } else {
+        appAPI.notify('開啟失敗', '無效的圖檔格式');
+      }
+    } catch (e) {
+      // If it's a binary SolidWorks file (not JSON), show the Translator modal
+      const pathLower = filePath.toLowerCase();
+      if (pathLower.endsWith('.sldprt') || pathLower.endsWith('.sldasm')) {
+        setShowTranslatorModal(true);
+      } else {
+        appAPI.notify('開啟失敗', '不支援的二進制檔案，請使用 STEP/IGES 標準格式');
+      }
+    }
+  }, [handleRebuild]);
+
+  const handleExportCad = async (format: 'STEP' | 'IGES' | 'STL') => {
+    if (typeof window === 'undefined' || !window.electronAPI) {
+      alert('請在 Electron 桌面環境下使用本機匯出功能。');
+      return;
+    }
+
+    // We pass empty string just to open the save dialog and get the path
+    const result = await window.electronAPI.file.save('');
+    if (result && result.success && result.path) {
+      setLoading(true);
+      try {
+        const success = await client.exportCadFile(features, format, result.path);
+        if (success) {
+          appAPI.notify('匯出成功', `已成功長出並匯出 ${format} 格式至: ${result.path}`);
+        } else {
+          alert(`幾何長出或匯出 ${format} 失敗，請先建立有效的 3D 實體模型。`);
+        }
+      } catch (err) {
+        console.error(`[Export] ${format} failed:`, err);
+        alert(`匯出過程中發生錯誤: ${err}`);
+      } finally {
+        setLoading(false);
+      }
+    }
+  };
+
+  const handleSaveSldprt = async () => {
+    if (typeof window === 'undefined' || !window.electronAPI) {
+      alert('請在 Electron 桌面環境下使用本機儲存功能。');
+      return;
+    }
+
+    const state = useCadStore.getState();
+    const payload = JSON.stringify({
+      schema: "3D-BUILDER-PARAMETRIC-SCHEMA",
+      version: "3.1.0",
+      features: features,
+      sketchNodes: state.sketchNodes,
+      sketchEdges: state.sketchEdges,
+      sketchConstraints: state.sketchConstraints
+    }, null, 2);
+
+    const result = await window.electronAPI.file.save(payload);
+    if (result && result.success && result.path) {
+      appAPI.notify('儲存成功', `SolidWorks 參數化零件已保存至: ${result.path}`);
+    }
+  };
+
+  const handleCalculateMassProperties = async () => {
+    setLoading(true);
+    try {
+      const results = await client.calculateMassProperties(features);
+      if (results) {
+        setMassProps(results);
+        setShowMassPropsModal(true);
+      }
+    } catch (err) {
+      console.error('[API] Mass properties failed:', err);
+      alert('幾何屬性計算失敗，請確認是否已長出有效的 3D 實體模型。');
+    } finally {
+      setLoading(false);
+    }
   };
 
   const resetSketchSession = useCallback(() => {
@@ -1684,6 +1753,57 @@ export default function Home() {
                   </button>
                 </>
               )}
+
+              <div className="w-[1px] h-[40px] bg-slate-300 mx-2 shrink-0" />
+
+              {/* Mass Properties Button */}
+              <button
+                onClick={handleCalculateMassProperties}
+                className="h-[52px] px-3 rounded hover:bg-amber-500/10 border border-transparent hover:border-amber-500/20 text-slate-700 hover:text-amber-700 transition-all flex flex-col items-center justify-center gap-1 group"
+                title="計算零件質量、重心與轉動慣量"
+              >
+                <span className="text-lg group-hover:scale-110 transition-all">⚖️</span>
+                <span className="text-[13px] font-bold leading-none text-slate-800">質量屬性</span>
+              </button>
+
+              <div className="w-[1px] h-[40px] bg-slate-300 mx-2 shrink-0" />
+
+              {/* CAD Exporters */}
+              <button
+                onClick={() => handleExportCad('STEP')}
+                className="h-[52px] px-3 rounded hover:bg-blue-500/10 border border-transparent hover:border-blue-500/20 text-slate-700 hover:text-blue-700 transition-all flex flex-col items-center justify-center gap-1 group"
+                title="匯出為標準 B-Rep STEP 圖檔，供 SolidWorks 載入"
+              >
+                <span className="text-lg group-hover:scale-110 transition-all">🟦</span>
+                <span className="text-[13px] font-bold leading-none text-slate-800">匯出 STEP</span>
+              </button>
+
+              <button
+                onClick={() => handleExportCad('IGES')}
+                className="h-[52px] px-3 rounded hover:bg-orange-500/10 border border-transparent hover:border-orange-500/20 text-slate-700 hover:text-orange-700 transition-all flex flex-col items-center justify-center gap-1 group"
+                title="匯出為標準 IGES 曲面圖檔"
+              >
+                <span className="text-lg group-hover:scale-110 transition-all">🟧</span>
+                <span className="text-[13px] font-bold leading-none text-slate-800">匯出 IGES</span>
+              </button>
+
+              <button
+                onClick={() => handleExportCad('STL')}
+                className="h-[52px] px-3 rounded hover:bg-emerald-500/10 border border-transparent hover:border-emerald-500/20 text-slate-700 hover:text-emerald-700 transition-all flex flex-col items-center justify-center gap-1 group"
+                title="匯出為 STL 三角網格，供 3D 打印切片"
+              >
+                <span className="text-lg group-hover:scale-110 transition-all">🖨️</span>
+                <span className="text-[13px] font-bold leading-none text-slate-800">匯出 STL</span>
+              </button>
+
+              <button
+                onClick={handleSaveSldprt}
+                className="h-[52px] px-3 rounded hover:bg-pink-500/10 border border-transparent hover:border-pink-500/20 text-slate-700 hover:text-pink-700 transition-all flex flex-col items-center justify-center gap-1 group"
+                title="保存為 3D-Builder 參數化特徵零件檔"
+              >
+                <span className="text-lg group-hover:scale-110 transition-all">🛠️</span>
+                <span className="text-[13px] font-bold leading-none text-slate-800">儲存 SLDPRT</span>
+              </button>
             </div>
           )}
         </div>
@@ -2528,6 +2648,165 @@ export default function Home() {
               <div className="glass-effect px-5 py-2.5 rounded-2xl text-[14px] font-bold text-primary animate-pulse border border-primary/30 shadow-2xl flex items-center gap-2">
                 <span>🔄</span>
                 <span>B-REP 幾何核心特徵重構中...</span>
+              </div>
+            </div>
+          )}
+
+          {/* ⚖️ 質量屬性彈出視窗 (Mass Properties Modal) */}
+          {showMassPropsModal && massProps && (
+            <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-md flex items-center justify-center z-[1000] p-4 animate-fade-in">
+              <div className="w-[520px] bg-slate-900/90 border border-slate-700/60 rounded-3xl p-6 shadow-2xl flex flex-col gap-5 text-slate-100 relative overflow-hidden backdrop-blur-xl">
+                {/* Glowing neon background highlights */}
+                <div className="absolute -top-12 -left-12 w-32 h-32 bg-amber-500/20 rounded-full blur-3xl pointer-events-none" />
+                <div className="absolute -bottom-12 -right-12 w-32 h-32 bg-indigo-500/20 rounded-full blur-3xl pointer-events-none" />
+
+                {/* Header */}
+                <div className="flex justify-between items-center border-b border-slate-800 pb-3 z-10">
+                  <div className="flex items-center gap-2">
+                    <span className="text-xl">⚖️</span>
+                    <span className="text-[16px] font-extrabold tracking-wider uppercase text-amber-400 font-sans">質量屬性分析 (Mass Properties)</span>
+                  </div>
+                  <button
+                    onClick={() => setShowMassPropsModal(false)}
+                    className="w-7 h-7 flex items-center justify-center rounded-full bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white transition-all cursor-pointer"
+                  >
+                    ✕
+                  </button>
+                </div>
+
+                {/* Physical metrics list */}
+                <div className="space-y-3 z-10 font-sans">
+                  <div className="bg-slate-950/50 rounded-2xl border border-slate-800/80 p-3.5 flex justify-between items-center shadow-inner">
+                    <div className="flex flex-col">
+                      <span className="text-[13px] text-slate-400 font-bold uppercase tracking-wider">零件實體體積 (Volume)</span>
+                      <span className="text-[12px] text-slate-500 mt-0.5">基於 3D B-Rep 封閉流形計算</span>
+                    </div>
+                    <span className="text-base font-black font-mono text-emerald-400">
+                      {massProps.volume.toLocaleString(undefined, { minimumFractionDigits: 3, maximumFractionDigits: 3 })} <span className="text-[12px] font-bold text-slate-500">mm³</span>
+                    </span>
+                  </div>
+
+                  <div className="bg-slate-950/50 rounded-2xl border border-slate-800/80 p-3.5 flex justify-between items-center shadow-inner">
+                    <div className="flex flex-col">
+                      <span className="text-[13px] text-slate-400 font-bold uppercase tracking-wider">零件表面積 (Surface Area)</span>
+                      <span className="text-[12px] text-slate-500 mt-0.5">實體所有拓撲表面積累加值</span>
+                    </div>
+                    <span className="text-base font-black font-mono text-indigo-400">
+                      {massProps.surface_area.toLocaleString(undefined, { minimumFractionDigits: 3, maximumFractionDigits: 3 })} <span className="text-[12px] font-bold text-slate-500">mm²</span>
+                    </span>
+                  </div>
+
+                  <div className="bg-slate-950/50 rounded-2xl border border-slate-800/80 p-3.5 flex flex-col gap-2 shadow-inner">
+                    <div className="flex justify-between items-center">
+                      <span className="text-[13px] text-slate-400 font-bold uppercase tracking-wider">重心位置 (Center of Mass)</span>
+                      <span className="text-[11px] bg-emerald-500/10 text-emerald-400 px-2 py-0.5 rounded-full font-mono font-bold">X, Y, Z Coords</span>
+                    </div>
+                    <div className="grid grid-cols-3 gap-2.5 mt-1">
+                      {['X', 'Y', 'Z'].map((axis, aIdx) => (
+                        <div key={axis} className="bg-slate-900 border border-slate-800 rounded-xl p-2 flex flex-col items-center shadow-sm">
+                          <span className="text-[12px] font-extrabold text-slate-500">{axis}-軸座標</span>
+                          <span className="text-[14px] font-black font-mono text-slate-100 mt-0.5">
+                            {massProps.center_of_mass[aIdx].toFixed(3)} <span className="text-[10px] text-slate-600 font-bold">mm</span>
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Moment of inertia tensor */}
+                  <div className="bg-slate-950/50 rounded-2xl border border-slate-800/80 p-3.5 flex flex-col gap-2 shadow-inner">
+                    <span className="text-[13px] text-slate-400 font-bold uppercase tracking-wider border-b border-slate-800 pb-1.5 flex justify-between items-center">
+                      <span>慣性張量矩陣 (Inertia Tensor)</span>
+                      <span className="text-[10px] text-slate-500 font-mono">g·mm² (Density = 1.0)</span>
+                    </span>
+                    <div className="grid grid-cols-3 gap-1.5 mt-1 font-mono text-[12px] bg-slate-900/50 p-2.5 rounded-xl border border-slate-800/40">
+                      {massProps.inertia_matrix.map((row, rIdx) => 
+                        row.map((val, cIdx) => (
+                          <div key={`${rIdx}-${cIdx}`} className="text-right p-1 font-semibold text-slate-300">
+                            {val.toLocaleString(undefined, { maximumFractionDigits: 1 })}
+                          </div>
+                        ))
+                      )}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Footer Controls */}
+                <button
+                  onClick={() => {
+                    const text = `體積: ${massProps.volume.toFixed(3)} mm³\n表面積: ${massProps.surface_area.toFixed(3)} mm²\n重心: [${massProps.center_of_mass.map(c => c.toFixed(3)).join(', ')}]\n慣性張量:\n${massProps.inertia_matrix.map(r => r.map(v => v.toFixed(1)).join('\t')).join('\n')}`;
+                    navigator.clipboard.writeText(text);
+                    appAPI.notify('複製成功', '物理屬性數據已複製至剪貼簿！');
+                  }}
+                  className="w-full py-2.5 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 active:from-amber-700 active:to-amber-800 text-slate-950 font-extrabold rounded-2xl transition-all shadow-lg flex items-center justify-center gap-1.5 text-[14px] cursor-pointer"
+                >
+                  <span>📋</span>
+                  <span>複製量測報告 (Copy Report)</span>
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* 🛠️ SolidWorks 二進制轉換引導彈出視窗 (SolidWorks Translator Dialog) */}
+          {showTranslatorModal && (
+            <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-md flex items-center justify-center z-[1000] p-4 animate-fade-in">
+              <div className="w-[460px] bg-slate-900/90 border border-slate-700/60 rounded-3xl p-6 shadow-2xl flex flex-col gap-4 text-slate-100 relative overflow-hidden backdrop-blur-xl">
+                <div className="absolute -top-12 -left-12 w-32 h-32 bg-blue-500/20 rounded-full blur-3xl pointer-events-none" />
+
+                {/* Header */}
+                <div className="flex justify-between items-center border-b border-slate-800 pb-3 z-10">
+                  <div className="flex items-center gap-2">
+                    <span className="text-xl">🛠️</span>
+                    <span className="text-[16px] font-extrabold tracking-wider uppercase text-blue-400 font-sans">SolidWorks 專用格式轉換器</span>
+                  </div>
+                  <button
+                    onClick={() => setShowTranslatorModal(false)}
+                    className="w-7 h-7 flex items-center justify-center rounded-full bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white transition-all cursor-pointer"
+                  >
+                    ✕
+                  </button>
+                </div>
+
+                {/* Guidance Content */}
+                <div className="space-y-3.5 z-10 leading-relaxed text-[13px] text-slate-300 font-sans">
+                  <p className="text-slate-200 font-bold border-l-4 border-blue-500 pl-2">
+                    偵測到 SolidWorks 專有二進制零件或組立件圖檔 (.sldprt / .sldasm)！
+                  </p>
+                  <p>
+                    由於 SolidWorks 採用封閉且未公開的二進制檔案結構，第三方幾何引擎無法直接讀取其原生數據特徵。
+                  </p>
+                  <div className="bg-slate-950/60 p-3.5 rounded-2xl border border-slate-800/80 space-y-2">
+                    <span className="text-[13px] font-bold text-slate-100 flex items-center gap-1.5">
+                      <span>💡</span>
+                      <span>標準跨平台轉換步驟：</span>
+                    </span>
+                    <ol className="list-decimal list-inside space-y-1.5 text-xs text-slate-400">
+                      <li>在 SolidWorks 中開啟此檔案</li>
+                      <li>點選 <span className="text-slate-200">另存新檔 (Save As...)</span></li>
+                      <li>選擇格式為 <span className="text-slate-200 font-mono">STEP (.step / .stp)</span> 或 <span className="text-slate-200 font-mono">IGES (.iges)</span></li>
+                      <li>將導出的標準格式直接在 3D-Builder 中開啟，即可實現高精度的無損實體導入！</li>
+                    </ol>
+                  </div>
+                </div>
+
+                {/* Actions */}
+                <div className="flex gap-3 mt-2 z-10 font-sans">
+                  <button
+                    onClick={() => setShowTranslatorModal(false)}
+                    className="flex-1 py-2.5 bg-slate-800 hover:bg-slate-700 active:bg-slate-600 rounded-xl font-bold transition-all text-center text-slate-300 text-[13px] cursor-pointer"
+                  >
+                    我知道了
+                  </button>
+                  <button
+                    onClick={async () => {
+                      setShowTranslatorModal(false);
+                      handleOpen();
+                    }}
+                    className="flex-1 py-2.5 bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white rounded-xl font-bold transition-all shadow-md text-center text-[13px] cursor-pointer"
+                  >
+                    開啟其他標準圖檔
+                  </button>
+                </div>
               </div>
             </div>
           )}

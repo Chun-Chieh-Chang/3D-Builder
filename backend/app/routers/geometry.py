@@ -67,6 +67,42 @@ async def rebuild_assembly(request: AssemblyRequest):
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))
 
+class MassPropertiesRequest(BaseModel):
+    features: List[FeatureDefinition]
+
+@router.post("/mass_properties")
+async def get_mass_properties(request: MassPropertiesRequest):
+    try:
+        props = geometry_service.calculate_mass_properties(request.features)
+        if props is None:
+            raise HTTPException(status_code=500, detail="Failed to calculate physical properties for shape.")
+        return props
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(e))
+
+class ExportRequest(BaseModel):
+    features: List[FeatureDefinition]
+    format: str  # 'STEP', 'IGES', 'STL'
+    filepath: str
+
+@router.post("/export")
+async def export_cad(request: ExportRequest):
+    try:
+        success = geometry_service.export_cad_file(request.features, request.format, request.filepath)
+        if not success:
+            raise HTTPException(status_code=500, detail=f"Failed to export shape as {request.format} to {request.filepath}")
+        return {
+            "status": "SUCCESS",
+            "filepath": request.filepath,
+            "message": f"Successfully exported to {request.filepath}"
+        }
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(e))
+
 class ExportStepRequest(BaseModel):
     features: List[FeatureDefinition]
     filename: Optional[str] = "part.step"
@@ -75,23 +111,14 @@ class ExportStepRequest(BaseModel):
 async def export_step(request: ExportStepRequest):
     try:
         import os
-        from OCC.Core.STEPControl import STEPControl_Writer, STEPControl_AsIs
-        
-        shape = geometry_service.build_shape_only(request.features)
-        if not shape or shape.IsNull():
-            raise HTTPException(status_code=400, detail="Failed to build a valid 3D shape from features.")
-        
-        # Save step file inside artifacts directory
-        target_dir = r"C:\Users\3kids\.gemini\antigravity\brain\c393fd10-6f9e-42cf-9722-9cb722fd18e2"
+        # Safely determine a dynamic download/export folder
+        target_dir = os.path.join(os.path.expanduser("~"), "Downloads")
         os.makedirs(target_dir, exist_ok=True)
         filepath = os.path.join(target_dir, request.filename)
         
-        writer = STEPControl_Writer()
-        writer.Transfer(shape, STEPControl_AsIs)
-        status = writer.Write(filepath)
-        
-        if status != 1:
-            raise HTTPException(status_code=500, detail=f"STEP writer failed to save shape (status={status})")
+        success = geometry_service.export_cad_file(request.features, "STEP", filepath)
+        if not success:
+            raise HTTPException(status_code=500, detail="STEP writer failed to save shape.")
             
         return {
             "status": "SUCCESS", 

@@ -143,7 +143,9 @@ ipcMain.handle('file:open', async (event: IpcMainInvokeEvent) => {
   const result = (await dialog.showOpenDialog(mainWindow!, {
     properties: ['openFile'],
     filters: [
-      { name: 'CAD Files', extensions: ['step', 'stl', 'iges', 'igs'] },
+      { name: 'CAD Files', extensions: ['step', 'stl', 'iges', 'igs', 'sldprt', 'sldasm'] },
+      { name: 'SolidWorks Part Files', extensions: ['sldprt'] },
+      { name: 'SolidWorks Assembly Files', extensions: ['sldasm'] },
       { name: 'All Files', extensions: ['*'] },
     ],
   })) as any;
@@ -160,6 +162,8 @@ ipcMain.handle('file:save', async (event: IpcMainInvokeEvent, data: string) => {
       { name: 'STEP Files', extensions: ['step'] },
       { name: 'STL Files', extensions: ['stl'] },
       { name: 'IGES Files', extensions: ['iges', 'igs'] },
+      { name: 'SolidWorks Part Files', extensions: ['sldprt'] },
+      { name: 'SolidWorks Assembly Files', extensions: ['sldasm'] },
     ],
   })) as any;
 

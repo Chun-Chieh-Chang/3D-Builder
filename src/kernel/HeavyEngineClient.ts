@@ -284,4 +284,57 @@ export class HeavyEngineClient {
       return null;
     }
   }
+
+  /**
+   * Request precise mass/physical properties from the heavy engine.
+   */
+  public async calculateMassProperties(features: CADFeature[]): Promise<any> {
+    try {
+      const response = await fetch(`${this.baseUrl}/mass_properties`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ features }),
+      });
+
+      if (!response.ok) {
+        throw new Error(`Engine error: ${response.statusText}`);
+      }
+
+      return await response.json();
+    } catch (error) {
+      console.error('[HeavyEngineClient] Failed to calculate mass properties:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Export the 3D solid to STEP, IGES, or STL on the local filesystem.
+   */
+  public async exportCadFile(
+    features: CADFeature[],
+    format: 'STEP' | 'IGES' | 'STL',
+    filepath: string
+  ): Promise<boolean> {
+    try {
+      const response = await fetch(`${this.baseUrl}/export`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ features, format, filepath }),
+      });
+
+      if (!response.ok) {
+        throw new Error(`Engine error: ${response.statusText}`);
+      }
+
+      const res = await response.json();
+      return res.status === 'SUCCESS';
+    } catch (error) {
+      console.error('[HeavyEngineClient] Failed to export CAD file:', error);
+      return false;
+    }
+  }
 }
