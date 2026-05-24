@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+﻿import React, { useState, useMemo } from 'react';
 import { Plane, Text, Html, Sphere, Line } from '@react-three/drei';
 import { useCadStore } from '../store/useCadStore';
 import * as THREE from 'three';
@@ -165,6 +165,9 @@ export const DatumPlanes = () => {
   };
 
   const handlePlaneClick = (plane: string, event: any) => {
+    // Only accept Left Click (button === 0)
+    if (event.button !== 0) return;
+
     if (contextMenu) {
       setContextMenu(null);
       return;

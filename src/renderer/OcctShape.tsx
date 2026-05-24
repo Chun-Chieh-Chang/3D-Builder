@@ -1,4 +1,4 @@
-'use client';
+﻿'use client';
 
 import React, { useMemo } from 'react';
 import * as THREE from 'three';
@@ -66,6 +66,9 @@ export default function OcctShape({
   }, [geometry]);
 
   const handleMeshClick = (e: any) => {
+    // Only process Left Click
+    if (e.button !== 0) return;
+    
     e.stopPropagation();
     
     if (topologySelector) {
