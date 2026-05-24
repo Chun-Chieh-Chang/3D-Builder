@@ -335,6 +335,46 @@ export default function Home() {
         }
         setSketchPoints(newPts);
         setSketchNewChain(true);
+      } else if (e.key === 'Delete' || e.key === 'Backspace') {
+        const state = useCadStore.getState();
+        const selectedIds = state.selectedEntityIds || [];
+        
+        if (selectedIds.length > 0) {
+          e.preventDefault();
+          const nextNodes = { ...state.sketchNodes };
+          const nextEdges = { ...state.sketchEdges };
+          const nextConstraints = { ...state.sketchConstraints };
+          
+          const nodesToDelete = new Set();
+          const edgesToDelete = new Set();
+          const constraintsToDelete = new Set();
+
+          selectedIds.forEach(id => {
+            if (nextNodes[id]) nodesToDelete.add(id);
+            if (nextEdges[id]) edgesToDelete.add(id);
+            if (nextConstraints[id]) constraintsToDelete.add(id);
+          });
+
+          Object.values(nextEdges).forEach((edge: any) => {
+            if (edge.nodeIds.some((nid: string) => nodesToDelete.has(nid))) {
+              edgesToDelete.add(edge.id);
+            }
+          });
+
+          Object.values(nextConstraints).forEach((c: any) => {
+            if (c.nodeIds?.some((nid: string) => nodesToDelete.has(nid))) constraintsToDelete.add(c.id);
+            if (c.edgeIds?.some((eid: string) => edgesToDelete.has(eid))) constraintsToDelete.add(c.id);
+          });
+
+          nodesToDelete.forEach((id: any) => delete nextNodes[id]);
+          edgesToDelete.forEach((id: any) => delete nextEdges[id]);
+          constraintsToDelete.forEach((id: any) => delete nextConstraints[id]);
+
+          state.setSketchNodes(nextNodes);
+          state.setSketchEdges(nextEdges);
+          state.setSketchConstraints(nextConstraints);
+          state.setSelectedEntityIds([]);
+        }
       }
     };
     window.addEventListener('keydown', handleGlobalKeyDown);
