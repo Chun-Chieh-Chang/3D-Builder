@@ -3216,3 +3216,15 @@ px tsc --noEmit -> **PASS**??
 ### RCA & CAPA
 - **RCA (Root Cause Analysis)**?  - 違反了標準 CAD 的「無狀態優先 (Stateless-First)」原則。進入草圖即強制啟動繪圖工具，導致使用者在只想點選既有特徵時，意外觸發了寫入操作。
 - **CAPA (Corrective and Preventive Actions)**?  - **State Guarding**垢隤 在 React Three Fiber 的渲染層引入嚴格的工具狀態判斷，徹底切斷了「選取模式」與「繪圖行為」的耦合。
+
+---
+## [2026-05-24] RCA/CAPA: Global UI English Localization (Anti-Mojibake)
+### 正??
+- **?? Complete UI Purge**城?對 page.tsx, StatusBar.tsx, SketchPropertyManager.tsx, DrawingSheet.tsx, SketchHUD.tsx, MatePanel.tsx, MeasurementPanel.tsx 執行了全局 CJK (中文) 字符清除。
+- **?? English Baseline**垮??將所有的按鈕標籤、狀態提示、錯誤訊息與對話框全數替換為標準英文（如：Extrude Boss, Fully Defined, Smart Dimension），徹底解決編碼衝突。
+### 捂?荒? (Validation)
+- ?? 
+px tsc --noEmit -> **PASS**??
+### RCA & CAPA
+- **RCA (Root Cause Analysis)**?  - 由於 Windows PowerShell 環境、Node.js 檔案寫入流以及 Git Hook 之間對 UTF-8（是否帶 BOM）的處理機制不一致，導致在進行代碼重構時，中文字符頻繁損壞為「孵噩」等亂碼（Mojibake），甚至破壞了緊鄰的 TypeScript 邏輯運算子（如 ??）。
+- **CAPA (Corrective and Preventive Actions)**?  - **Encoding Agnosticism**垢隤 作出戰略性決策：放棄在核心架構未穩定前維持本地化介面。全面轉向純英文 ASCII 介面，確保 1.0/2.0 正式版的代碼能在任何作業系統或終端環境下穩定編譯與渲染，消除一切編碼地雷。
