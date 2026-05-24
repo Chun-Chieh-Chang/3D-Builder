@@ -3313,3 +3313,18 @@ px tsc --noEmit -> **PASS**??
 ### RCA & CAPA
 - **Gap Analysis**?  - 缺乏角度約束是導致草圖無法「完全定義 (Fully Defined)」的核心原因。若僅有長度標註，圖元仍可繞點旋轉，造成模型在參數化修改時產生非預期的形變。
 - **CAPA (Comprehensive Dimensioning)**?  - **Multi-Entity Dimensioning Standard**垢隤 建立「Smart Dimension」的層次化選取邏輯：單選 = 長度/直徑；雙選點 = 點對點距離；雙選線 = 角度。這確保了 3D-Builder 的草圖引擎在數學層面達到工業級完備性。
+
+---
+## [2026-05-24] UI Architecture: MECE Alignment & SolidWorks Workflow ??
+### 正??
+- **?? MECE Compliance**城?從 Ribbon 功能區移除了冗餘的 Box 與 Cylinder 快捷按鈕。
+    - **RCA**：這些圖元完全可以透過 Sketch -> Extrude 的標準流程建立。保留它們會造成功能重疊（違反 MECE 原則），且容易誤導使用者進入非參數化的死胡同。
+- **?? Professional Workflow Enforcement**垮??調整功能分組，優先配置 Extrude Boss, Extrude Cut 與 Revolve。這強制引導使用者遵循 SolidWorks 的標準工作流：**草圖驅動特徵 (Sketch-driven Features)**。
+- **?? UI Layout Polish**垢隤 清理了功能區的分割線（Dividers）與間距，提升整體介面的專業度與平衡感。
+### 捂?荒? (Validation)
+- ?? 
+px tsc --noEmit -> **PASS**??
+- ?? **Architectural Audit**垢隤 確認 page.tsx 中已無冗餘的 Primitive 產生邏輯。
+### RCA & CAPA
+- **Gap Analysis**?  - 之前的 UI 混雜了「玩具級」的幾何體生成器（Primitives）與「專業級」的參數化特徵工具。這不僅讓介面擁擠，也降低了軟體的專業定位。
+- **CAPA**?  - **Sketch-First Mandate**垢隤 制定設計規範：除非是標準件庫（Toolbox），否則所有幾何特徵必須基於草圖。未來新增功能（如 Sweep, Loft）將嚴格遵守此層級結構，確保 3D-Builder 的架構嚴謹度與 SolidWorks 1:1 對標。

@@ -2686,16 +2686,10 @@ export default function Home() {
                 <span className="text-[13px] text-slate-800 font-bold leading-none">Revolve</span>
               </button>
 
-              <div className="w-[1px] h-[40px] bg-slate-300 mx-2 shrink-0" />
+              <div className="w-[1px] h-[40px] bg-slate-300 mx-1 shrink-0" />
 
-              <button onClick={() => addNewFeature('BOX')} className="h-[60px] px-3 rounded hover:bg-slate-200/80 transition-all flex flex-col items-center justify-center gap-1 group" title="Box">
-                <span className="text-lg group-hover:scale-110 transition-all">📦</span>
-                <span className="text-[13px] text-slate-800 font-bold leading-none">Box</span>
-              </button>
-              <button onClick={() => addNewFeature('CYLINDER')} className="h-[60px] px-3 rounded hover:bg-slate-200/80 transition-all flex flex-col items-center justify-center gap-1 group" title="Cylinder">
-                <span className="text-lg group-hover:scale-110 transition-all">🛢️</span>
-                <span className="text-[13px] text-slate-800 font-bold leading-none">Cylinder</span>
-              </button>
+              
+              
               <button
                 onClick={() => {
                    if (!selectedId) return;
@@ -2752,7 +2746,7 @@ export default function Home() {
 
                 title="一鍵匯出無失真 A4 橫向向量 PDF 工程圖"
 
-              > <span className="text-lg group-hover:scale-110 transition-all"> </span> <span className="text-[13px] leading-none"> PDF </span> </button> <div className="w-[1px] h-[40px] bg-slate-300 mx-2 shrink-0" />
+              > <span className="text-lg group-hover:scale-110 transition-all"> </span> <span className="text-[13px] leading-none"> PDF </span> </button> <div className="w-[1px] h-[40px] bg-slate-300 mx-1 shrink-0" />
 
 
 
@@ -2866,7 +2860,7 @@ export default function Home() {
 
               {measurementMode !== 'NONE' && (
 
-                <> <div className="w-[1px] h-[40px] bg-slate-300 mx-2 shrink-0" /> <button
+                <> <div className="w-[1px] h-[40px] bg-slate-300 mx-1 shrink-0" /> <button
 
                     onClick={() => {
 
@@ -2952,7 +2946,7 @@ export default function Home() {
 
 
 
-              <div className="w-[1px] h-[40px] bg-slate-300 mx-2 shrink-0" />
+              <div className="w-[1px] h-[40px] bg-slate-300 mx-1 shrink-0" />
 
 
 
@@ -2966,7 +2960,7 @@ export default function Home() {
 
                 title="計算Part質量、重心與轉動慣量"
 
-              > <span className="text-lg group-hover:scale-110 transition-all"> </span> <span className="text-[13px] font-bold leading-none text-slate-800">Mass Properties</span> </button> <div className="w-[1px] h-[40px] bg-slate-300 mx-2 shrink-0" />
+              > <span className="text-lg group-hover:scale-110 transition-all"> </span> <span className="text-[13px] font-bold leading-none text-slate-800">Mass Properties</span> </button> <div className="w-[1px] h-[40px] bg-slate-300 mx-1 shrink-0" />
 
 
 
