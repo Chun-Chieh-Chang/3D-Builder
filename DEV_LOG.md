@@ -3328,3 +3328,18 @@ px tsc --noEmit -> **PASS**??
 ### RCA & CAPA
 - **Gap Analysis**?  - 之前的 UI 混雜了「玩具級」的幾何體生成器（Primitives）與「專業級」的參數化特徵工具。這不僅讓介面擁擠，也降低了軟體的專業定位。
 - **CAPA**?  - **Sketch-First Mandate**垢隤 制定設計規範：除非是標準件庫（Toolbox），否則所有幾何特徵必須基於草圖。未來新增功能（如 Sweep, Loft）將嚴格遵守此層級結構，確保 3D-Builder 的架構嚴謹度與 SolidWorks 1:1 對標。
+
+---
+## [2026-05-24] UI Restoration: Sidebar Icons & Feature Deletion ??
+### 正??
+- **?? Sidebar Icon Restoration**城?對設計樹（Feature Tree）執行了精準的圖標補回。包含系統節點（Sensors 📡, Annotations 📝, Material 🧊, Planes 📄, Origin 📍）以及特徵圖標（Extrude 🏗️, Revolve 🔄, Box 📦, Cylinder 🛢️）。
+- **?? Feature Deletion Logic Fix**垮??修復了設計樹中「刪除特徵」按鈕的顯示與交互問題。
+    - **Visual**：將原本 mojibake 的字符替換為標準的 🗑️ 圖標，並提升了預設透明度，讓使用者能更輕易發現刪除入口。
+    - **Logic**：整合了 confirm 提示，防止誤刪，並確保刪除後觸發模型的全域重新建模（Rebuild）。
+### 捂?荒? (Validation)
+- ?? 
+px tsc --noEmit -> **PASS**??
+- ?? 視覺校驗：確認 Sidebar 所有層級均具備具意圖標。
+### RCA & CAPA
+- **RCA (Root Cause Analysis)**?  - 在執行「UI 全面英文在地化」時，對 JSX 樹結構的字串處理過於粗放，導致側邊欄這種深層嵌套的 <span> 內容遺失或編碼損壞。
+- **CAPA (Corrective and Preventive Actions)**?  - **Hierarchical UI Verification**垢隤 在進行全域介面改動後，除了 Ribbon 功能區外，必須強制對側邊導覽列與彈窗面板進行「水平展開式校驗」，確保視覺與交互的一致性。

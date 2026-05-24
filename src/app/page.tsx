@@ -3048,13 +3048,13 @@ export default function Home() {
 
               /* FeatureManager Design Tree */
 
-              <div className="flex-1 overflow-y-auto p-3 flex flex-col"> <div className="text-[14px] uppercase tracking-wider text-slate-600 mb-3 font-bold flex justify-between items-center border-b border-[#D1D5DB] pb-1.5"> <span>Feature Tree</span> <button onClick={handleRebuild} className="text-primary hover:underline text-[13px] uppercase tracking-tighter"> </button> </div>
+              <div className="flex-1 overflow-y-auto p-3 flex flex-col"> <div className="text-[14px] uppercase tracking-wider text-slate-600 mb-3 font-bold flex justify-between items-center border-b border-[#D1D5DB] pb-1.5"> <span>Feature Tree</span> <button onClick={handleRebuild} className="text-primary hover:text-primary-dark transition-all" title="Rebuild Model"> 🔄 </button> </div>
 
 
 
                 {/* Standard SolidWorks Meta Nodes */}
 
-                <div className="space-y-1.5 text-[14px] select-none"> <div className="flex items-center gap-2 p-1 text-slate-800 font-bold"> <span> </span> <span>Part1 (Part1)</span> </div> <div className="pl-4 space-y-1 text-slate-600"> <div className="flex items-center gap-2 p-0.5 hover:text-slate-800 cursor-pointer"> <span> </span> <span> (Sensors)</span> </div> <div className="flex items-center gap-2 p-0.5 hover:text-slate-800 cursor-pointer"> <span> </span> <span> (Annotations)</span> </div> <div className="flex items-center gap-2 p-0.5 hover:text-slate-800 cursor-pointer border-b border-[#D1D5DB]/40 pb-1.5"> <span> </span> <span> &lt;&gt;</span> </div>
+                <div className="space-y-1.5 text-[14px] select-none"> <div className="flex items-center gap-2 p-1 text-slate-800 font-bold"> <span> </span> <span>📦</span> <span>Part1</span> </div> <div className="pl-4 space-y-1 text-slate-600"> <div className="flex items-center gap-2 p-0.5 hover:text-slate-800 cursor-pointer"> <span> </span> <span>📡</span> <span>Sensors</span> </div> <div className="flex items-center gap-2 p-0.5 hover:text-slate-800 cursor-pointer"> <span> </span> <span>📝</span> <span>Annotations</span> </div> <div className="flex items-center gap-2 p-0.5 hover:text-slate-800 cursor-pointer border-b border-[#D1D5DB]/40 pb-1.5"> <span> </span> <span>🧊</span> <span>Material</span> </div>
 
 
 
@@ -3126,7 +3126,7 @@ export default function Home() {
 
                           >
 
-                            <div className="flex items-center gap-2"> <span> </span> <span>Reference Plane</span> </div> <div className="flex items-center gap-1 shrink-0 text-[12px] font-bold">
+                            <div className="flex items-center gap-2"> <span> </span> <span>📄</span> <span>Reference Plane</span> </div> <div className="flex items-center gap-1 shrink-0 text-[12px] font-bold">
 
                               {frontRel === 'PARENT' && <span className="bg-blue-100 text-blue-600 px-1 py-0.2 rounded"> (Parent)</span>}
 
@@ -3186,7 +3186,7 @@ export default function Home() {
 
                           >
 
-                            <div className="flex items-center gap-2"> <span> </span> <span>Reference Plane</span> </div> <div className="flex items-center gap-1 shrink-0 text-[12px] font-bold">
+                            <div className="flex items-center gap-2"> <span> </span> <span>📄</span> <span>Reference Plane</span> </div> <div className="flex items-center gap-1 shrink-0 text-[12px] font-bold">
 
                               {topRel === 'PARENT' && <span className="bg-blue-100 text-blue-600 px-1 py-0.2 rounded"> (Parent)</span>}
 
@@ -3246,7 +3246,7 @@ export default function Home() {
 
                           >
 
-                            <div className="flex items-center gap-2"> <span> </span> <span>Reference Plane</span> </div> <div className="flex items-center gap-1 shrink-0 text-[12px] font-bold">
+                            <div className="flex items-center gap-2"> <span> </span> <span>📄</span> <span>Reference Plane</span> </div> <div className="flex items-center gap-1 shrink-0 text-[12px] font-bold">
 
                               {rightRel === 'PARENT' && <span className="bg-blue-100 text-blue-600 px-1 py-0.2 rounded"> (Parent)</span>}
 
@@ -3276,7 +3276,7 @@ export default function Home() {
 
                           >
 
-                            <div className="flex items-center gap-2 p-0.5"> <span> </span> <span> (Origin)</span> </div> <div className="flex items-center gap-1 shrink-0 text-[12px] font-bold mr-1">
+                            <div className="flex items-center gap-2 p-0.5"> <span> </span> <span>📍</span> <span>Origin</span> </div> <div className="flex items-center gap-1 shrink-0 text-[12px] font-bold mr-1">
 
                               {originRel === 'PARENT' && <span className="bg-blue-100 text-blue-600 px-1 py-0.2 rounded"> (Parent)</span>}
 
@@ -3416,7 +3416,7 @@ export default function Home() {
 
                                   onDoubleClick={(e) => e.stopPropagation()}
 
-                                  className="opacity-0 group-hover:opacity-100 p-0.5 hover:bg-error/20 rounded text-slate-500 hover:text-error transition-all"
+                                  className="opacity-30 group-hover:opacity-100 p-1 hover:bg-red-50 rounded text-slate-400 hover:text-red-500 transition-all border border-transparent hover:border-red-200"
 
                                   title="Delete Feature"
 
@@ -3454,7 +3454,7 @@ export default function Home() {
 
                               >
 
-                                <div className="flex items-center gap-1.5 overflow-hidden"> <span> </span> <span>✏️</span> <span className="italic hover:underline truncate">Sketch {sketchNum}</span> </div> <div className="flex items-center gap-1.5 shrink-0">
+                                <div className="flex items-center gap-1.5 overflow-hidden"> <span> </span> <span>✏️</span> <span>✏️</span> <span className="italic hover:underline truncate">Sketch {sketchNum}</span> </div> <div className="flex items-center gap-1.5 shrink-0">
 
                                   {editingFeatureId === f.id && (
 
