@@ -1,4 +1,4 @@
-'use client';
+﻿'use client';
 
 import React, { useEffect, useState, useCallback, useMemo, Fragment } from 'react';
 import Viewport from '@/renderer/Viewport';
@@ -1298,7 +1298,7 @@ export default function Home() {
                 : 'border-transparent text-slate-500 hover:text-slate-800'
             }`}
           >
-            ?? (Assembly)
+            組裝 (Assembly)
           </button>
           <button
             onClick={() => {
