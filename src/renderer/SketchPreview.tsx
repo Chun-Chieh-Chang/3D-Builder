@@ -163,71 +163,74 @@ export const SketchPreview = () => {
 
     const handleEntityClick = (entId: string) => {
     if (!isSketchMode) return;
-    
-    console.log('[Sketch Interaction] Entity Clicked:', entId, 'SmartDim:', smartDimensionActive);
 
     if (smartDimensionActive) {
-      // 1. Try to find as Edge (Line/Circle)
-      const edge = sketchEdges[entId];
-      if (edge) {
-        if (edge.type === 'LINE' || edge.type === 'CENTER_LINE' || edge.type === 'CIRCLE') {
-          const n1 = sketchNodes[edge.nodeIds[0]];
-          const n2 = sketchNodes[edge.nodeIds[1]];
-          if (n1 && n2) {
-            const distance = Math.hypot(n2.x - n1.x, n2.y - n1.y);
-            const cId = uuidv4();
-            const newConstraint = {
-              id: cId,
-              type: 'DISTANCE' as const,
-              nodeIds: [n1.id, n2.id],
-              value: distance
-            };
-            setSketchConstraints((prev: any) => {
-               const next = { ...prev, [cId]: newConstraint };
-               // Trigger solve immediately
-               const solvedNodes = solveConstraints(sketchNodes, sketchEdges, next);
-               setSketchNodes(solvedNodes);
-               return next;
-            });
-            setSelectedEntityIds([]);
-            return;
-          }
+      // 1. Check if we already have one entity selected
+      if (selectedEntityIds.length === 1) {
+        const id1 = selectedEntityIds[0];
+        const id2 = entId;
+        if (id1 === id2) return; // Same entity
+
+        // A. Two Lines -> Angle
+        const e1 = sketchEdges[id1];
+        const e2 = sketchEdges[id2];
+        if (e1 && e2 && (e1.type === 'LINE' || e1.type === 'CENTER_LINE') && (e2.type === 'LINE' || e2.type === 'CENTER_LINE')) {
+          const cId = uuidv4();
+          setSketchConstraints(prev => ({
+            ...prev,
+            [cId]: { id: cId, type: 'ANGLE' as const, edgeIds: [id1, id2], value: 45.0 }
+          }));
+          setSelectedEntityIds([]);
+          return;
+        }
+
+        // B. Two Nodes -> Distance
+        const n1 = sketchNodes[id1];
+        const n2 = sketchNodes[id2];
+        if (n1 && n2) {
+          const dist = Math.hypot(n2.x - n1.x, n2.y - n1.y);
+          const cId = uuidv4();
+          setSketchConstraints(prev => ({
+            ...prev,
+            [cId]: { id: cId, type: 'DISTANCE' as const, nodeIds: [id1, id2], value: dist }
+          }));
+          setSelectedEntityIds([]);
+          return;
         }
       }
 
-      // 2. Try to find as Node
-      const node = sketchNodes[entId];
-      if (node) {
-        // If one node already selected, create dimension
-        const alreadySelectedNodeId = selectedEntityIds.find(id => sketchNodes[id]);
-        if (alreadySelectedNodeId && alreadySelectedNodeId !== entId) {
-          const n1 = sketchNodes[alreadySelectedNodeId];
-          const n2 = node;
+      // 2. Single Entity Selection Logic (Starting or Single-Click Dim)
+      const edge = sketchEdges[entId];
+      if (edge && (edge.type === 'LINE' || edge.type === 'CENTER_LINE' || edge.type === 'CIRCLE')) {
+        // Line distance or Circle diameter
+        const n1 = sketchNodes[edge.nodeIds[0]];
+        const n2 = sketchNodes[edge.nodeIds[1]];
+        if (n1 && n2) {
           const distance = Math.hypot(n2.x - n1.x, n2.y - n1.y);
           const cId = uuidv4();
-          const newConstraint = {
-            id: cId,
-            type: 'DISTANCE' as const,
-            nodeIds: [n1.id, n2.id],
-            value: distance
-          };
-          setSketchConstraints((prev: any) => {
-             const next = { ...prev, [cId]: newConstraint };
-             const solvedNodes = solveConstraints(sketchNodes, sketchEdges, next);
-             setSketchNodes(solvedNodes);
-             return next;
-          });
+          setSketchConstraints(prev => ({
+            ...prev,
+            [cId]: { id: cId, type: 'DISTANCE' as const, nodeIds: [n1.id, n2.id], value: distance }
+          }));
           setSelectedEntityIds([]);
           return;
-        } else {
-          // First node selection in dim mode
-          setSelectedEntityIds([entId]);
-          return;
         }
+      }
+
+      // If it's a node, just select it and wait for second click
+      if (sketchNodes[entId]) {
+        setSelectedEntityIds([entId]);
+        return;
+      }
+      
+      // If it's a line but we might want it for an angle, select it and wait
+      if (edge && (edge.type === 'LINE' || edge.type === 'CENTER_LINE')) {
+        setSelectedEntityIds([entId]);
+        return;
       }
     }
 
-    // Standard Selection Logic (if not in dim mode or nothing handled)
+    // Standard Selection
     const isSelected = selectedEntityIds.includes(entId);
     if (isSelected) {
       setSelectedEntityIds(selectedEntityIds.filter(id => id !== entId));
@@ -249,6 +252,11 @@ export const SketchPreview = () => {
   const geometricConstraints = useMemo(() => {
     return Object.values(sketchConstraints).filter(
       c => ['HORIZONTAL', 'VERTICAL', 'COINCIDENT', 'EQUAL'].includes(c.type)
+    );
+  }, [sketchConstraints]);
+  const angleConstraints = useMemo(() => {
+    return Object.values(sketchConstraints).filter(
+      c => c.type === 'ANGLE' && c.edgeIds && c.edgeIds.length === 2 && c.value !== undefined
     );
   }, [sketchConstraints]);
 
@@ -493,6 +501,47 @@ export const SketchPreview = () => {
                   />
                 ) : (
                   <span>{constraint.value!.toFixed(2)}</span>
+                )}
+              </div>
+            </Html>
+          </group>
+        );
+      })}
+      {isSketchMode && activePlane && angleConstraints.map((c) => {
+        const e1 = sketchEdges[c.edgeIds![0]];
+        const e2 = sketchEdges[c.edgeIds![1]];
+        if (!e1 || !e2) return null;
+        const n1a = sketchNodes[e1.nodeIds[0]]; const n1b = sketchNodes[e1.nodeIds[1]];
+        const n2a = sketchNodes[e2.nodeIds[0]]; const n2b = sketchNodes[e2.nodeIds[1]];
+        if (!n1a || !n1b || !n2a || !n2b) return null;
+
+        // Visual Center (Roughly midpoint of both lines)
+        const cx = (n1a.x + n1b.x + n2a.x + n2b.x) / 4;
+        const cy = (n1a.y + n1b.y + n2a.y + n2b.y) / 4;
+        const pMid = get3DPointForPlane(cx, cy, activePlane, activeBasis);
+
+        return (
+          <group key={c.id}>
+            <Html position={pMid} center>
+              <div 
+                className="px-1.5 py-0.5 rounded border border-indigo-400 bg-white/90 text-indigo-800 text-[10px] font-black shadow-md cursor-pointer flex items-center gap-1"
+                onClick={(e) => { e.stopPropagation(); handleEntityClick(c.id); }}
+                onDoubleClick={(e) => {
+                  e.stopPropagation();
+                  setEditingConstraintId(c.id);
+                  setInputValue(c.value!.toString());
+                }}
+              >
+                {editingConstraintId === c.id ? (
+                  <input
+                    type="number" value={inputValue} autoFocus
+                    onChange={(e) => setInputValue(e.target.value)}
+                    onBlur={() => handleSaveConstraintValue(c.id)}
+                    onKeyDown={(e) => e.key === 'Enter' && handleSaveConstraintValue(c.id)}
+                    className="w-[40px] outline-none"
+                  />
+                ) : (
+                  <span>{c.value!.toFixed(1)}°</span>
                 )}
               </div>
             </Html>

@@ -3298,3 +3298,18 @@ px tsc --noEmit -> **PASS**??
 ### RCA & CAPA
 - **RCA (Root Cause Analysis)**?  - 之前的「Dimension」按鈕僅僅是一個 UI 切換，背後缺乏與 3D 交互層 (React Three Fiber) 的邏輯綁定。渲染層根本不知道使用者切換到了標註模式，因此點擊圖元時僅觸發了選取邏輯而非標註邏輯。
 - **CAPA (Corrective and Preventive Actions)**?  - **State-Driven Tooling**垢隤 確立規範：所有影響視圖交互的工具狀態必須存放於全域 Store。並在渲染層 onClick 處理器中優先判斷工具模式，確保「模式 -> 行為」的正確映射。
+
+---
+## [2026-05-24] Feature: Angle Dimensioning Supported ??
+### 正??
+- **?? Smart Angle Logic**城?更新 src/renderer/SketchPreview.tsx。現在「Smart Dimension」工具支援角度標註。
+    - **操作流**：點擊第一條線 -> 點擊第二條非平行線 -> 系統自動建立 ANGLE 約束。
+- **?? Angle Visualization**垮??實作了角度標註的 UI 呈現，在兩條線的交互區域顯示角度數值（度數 °）。
+- **?? Bidirectional Drive**垢隤 支援雙擊角度數值進行修改，變更後會立即驅動草圖幾何形狀重新計算（Auto-Solve）。
+### 捂?荒? (Validation)
+- ?? 
+px tsc --noEmit -> **PASS**??
+- ?? 幾何解算器驗證：確認 ConstraintSolver.ts 已具備 ANGLE 矩陣運算能力。
+### RCA & CAPA
+- **Gap Analysis**?  - 缺乏角度約束是導致草圖無法「完全定義 (Fully Defined)」的核心原因。若僅有長度標註，圖元仍可繞點旋轉，造成模型在參數化修改時產生非預期的形變。
+- **CAPA (Comprehensive Dimensioning)**?  - **Multi-Entity Dimensioning Standard**垢隤 建立「Smart Dimension」的層次化選取邏輯：單選 = 長度/直徑；雙選點 = 點對點距離；雙選線 = 角度。這確保了 3D-Builder 的草圖引擎在數學層面達到工業級完備性。
