@@ -1,4 +1,4 @@
-﻿﻿'use client';
+﻿﻿﻿'use client';
 
 
 
@@ -3384,7 +3384,7 @@ export default function Home() {
 
                               <div className="flex items-center gap-2"> <span className="text-sm">
 
-                                  {f.type === 'REVOLVE' ? '' : f.type === 'EXTRUDE' ? (f.parameters.operation === 'CUT' ? '' : '') : f.type === 'BOX' ? '' : f.type === 'CYLINDER' ? '' : ''}
+                                  {f.type === 'REVOLVE' ? '🔄' : f.type === 'EXTRUDE' ? (f.parameters.operation === 'CUT' ? '🔨' : '🏗️') : f.type === 'BOX' ? '📦' : f.type === 'CYLINDER' ? '🛢️' : '🛠️'}
 
                                 </span> <div className="flex flex-col"> <span className="text-[14px] leading-tight">{f.name}</span> <span className="text-[13px] text-slate-500 font-mono leading-none uppercase">{f.type === 'EXTRUDE' ? f.parameters.operation : f.type}</span>
 
@@ -3421,6 +3421,8 @@ export default function Home() {
                                   title="Delete Feature"
 
                                 >
+                                  🗑️
+                                
 
                                   
 
@@ -3452,7 +3454,7 @@ export default function Home() {
 
                               >
 
-                                <div className="flex items-center gap-1.5 overflow-hidden"> <span> </span> <span className="italic hover:underline truncate">{sketchNum} (Sketch{sketchNum})</span> </div> <div className="flex items-center gap-1.5 shrink-0">
+                                <div className="flex items-center gap-1.5 overflow-hidden"> <span> </span> <span>✏️</span> <span className="italic hover:underline truncate">Sketch {sketchNum}</span> </div> <div className="flex items-center gap-1.5 shrink-0">
 
                                   {editingFeatureId === f.id && (
 

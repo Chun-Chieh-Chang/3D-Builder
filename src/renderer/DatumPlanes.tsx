@@ -33,6 +33,7 @@ export const DatumPlanes = () => {
   const [hasMovedAway, setHasMovedAway] = useState(false);
 
   const [cursorState, setCursorState] = useState<{u: number, v: number, type: string | null} | null>(null);
+  const [inferenceLines, setInferenceLines] = useState<{ p1: [number, number], p2: [number, number] }[]>([]);
 
   const faceBasis = useMemo(() => {
     if (activePlane !== 'FACE' || !activeFaceOrigin || !activeFaceNormal) {
@@ -96,41 +97,75 @@ export const DatumPlanes = () => {
     return points;
   }, [isSketchMode, activePlane, meshData, activeBasis]);
 
-  const getSnappedUV = (rawU: number, rawV: number) => {
+    const getSnappedUV = (rawU: number, rawV: number) => {
     let u = rawU;
     let v = rawV;
     let snappedId = null;
+    const currentInferences: { p1: [number, number], p2: [number, number] }[] = [];
 
+    // A. Grid Snap
     if (gridSnap) {
       u = Math.round(u / 5) * 5;
       v = Math.round(v / 5) * 5;
     }
 
-    if (Math.abs(u) < 1 && Math.abs(v) < 1) {
-      u = 0; v = 0;
+    // B. Origin Snap
+    if (Math.abs(u) < 1.5 && Math.abs(v) < 1.5) {
       setCursorState({ u: 0, v: 0, type: 'COINCIDENT' });
-      return { u, v, id: 'origin' };
+      setInferenceLines([]);
+      return { u: 0, v: 0, id: 'origin' };
     }
 
-    const SNAP_DIST = 2.0;
+    const SNAP_DIST = 2.5;
+
+    // C. Node Snap (Coincident)
     for (const node of Object.values(sketchNodes)) {
       if (Math.hypot(node.x - rawU, node.y - rawV) < SNAP_DIST) {
         setCursorState({ u: node.x, v: node.y, type: 'COINCIDENT' });
+        setInferenceLines([]);
         return { u: node.x, v: node.y, id: node.id };
       }
     }
 
+    // D. Smart Inferences (Horizontal/Vertical alignment with ANY node)
+    let bestU = u;
+    let bestV = v;
+    let foundH = false;
+    let foundV = false;
+
+    // First priority: Current Chain Last Node
     if (lastClickedUV) {
-      if (Math.abs(rawU - lastClickedUV.u) < SNAP_DIST) {
-        u = lastClickedUV.u;
-        setCursorState({ u, v, type: 'VERTICAL' });
-        return { u, v, id: null };
+       if (Math.abs(rawU - lastClickedUV.u) < SNAP_DIST) {
+         bestU = lastClickedUV.u; foundV = true;
+         currentInferences.push({ p1: [lastClickedUV.u, lastClickedUV.v], p2: [lastClickedUV.u, rawV] });
+       }
+       if (Math.abs(rawV - lastClickedUV.v) < SNAP_DIST) {
+         bestV = lastClickedUV.v; foundH = true;
+         currentInferences.push({ p1: [lastClickedUV.u, lastClickedUV.v], p2: [rawU, lastClickedUV.v] });
+       }
+    }
+
+    // Second priority: Origin or other nodes
+    if (!foundV || !foundH) {
+      for (const node of Object.values(sketchNodes)) {
+        if (!foundV && Math.abs(rawU - node.x) < SNAP_DIST) {
+          bestU = node.x; foundV = true;
+          currentInferences.push({ p1: [node.x, node.y], p2: [node.x, rawV] });
+        }
+        if (!foundH && Math.abs(rawV - node.y) < SNAP_DIST) {
+          bestV = node.y; foundH = true;
+          currentInferences.push({ p1: [node.x, node.y], p2: [rawU, node.y] });
+        }
       }
-      if (Math.abs(rawV - lastClickedUV.v) < SNAP_DIST) {
-        v = lastClickedUV.v;
-        setCursorState({ u, v, type: 'HORIZONTAL' });
-        return { u, v, id: null };
-      }
+      // Origin Inferences
+      if (!foundV && Math.abs(rawU) < SNAP_DIST) { bestU = 0; foundV = true; currentInferences.push({ p1: [0, 0], p2: [0, rawV] }); }
+      if (!foundH && Math.abs(rawV) < SNAP_DIST) { bestV = 0; foundH = true; currentInferences.push({ p1: [0, 0], p2: [rawU, 0] }); }
+    }
+
+    setInferenceLines(currentInferences);
+    if (foundH || foundV) {
+      setCursorState({ u: bestU, v: bestV, type: foundH && foundV ? 'COINCIDENT' : (foundH ? 'HORIZONTAL' : 'VERTICAL') });
+      return { u: bestU, v: bestV, id: null };
     }
 
     setCursorState(null);
