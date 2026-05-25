@@ -1,4 +1,4 @@
-﻿import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo } from 'react';
 import { Plane, Text, Html, Sphere, Line } from '@react-three/drei';
 import { useCadStore } from '../store/useCadStore';
 import * as THREE from 'three';
@@ -207,15 +207,27 @@ export const DatumPlanes = () => {
       setContextMenu(null);
       return;
     }
+
     if (!isSketchMode) {
+      // If not in sketch mode, clicking a plane selects it as the active plane
+      setActivePlane(plane);
+      
+      // Double click to enter sketch mode (simulated via rapid selection or we could add a timer)
+      // For now, let's make it more explicit: selecting a plane enables the "Sketch" button in UI
+      // But if the user clicks a standard plane, we can optionally jump into sketch mode immediately
+      // to keep the existing flow, while allowing custom planes to be selected first.
       if (['FRONT', 'TOP', 'RIGHT'].includes(plane)) {
-        setActivePlane(plane);
         setSketchMode(true);
       }
       return;
     }
 
-    if (activePlane !== plane) return;
+    if (activePlane !== plane) {
+      // If in sketch mode but clicked a different plane, we might want to switch planes
+      // or simply ignore to prevent accidental sketch plane switching.
+      // SolidWorks requires exiting sketch mode first.
+      return;
+    }
     event.stopPropagation();
 
     const point = event.point;
@@ -471,7 +483,53 @@ export const DatumPlanes = () => {
               {cursorState.type || `${cursorState.u.toFixed(1)}, ${cursorState.v.toFixed(1)}`}
             </div>
           </Html>
-              {/* Render Computed Custom Reference Planes */}
+      {/* Render Permanent User-defined Reference Planes */}
+      {referencePlanes.map((plane) => {
+        const { id, origin, normal, xDir, yDir, name } = plane;
+        const originVec = new THREE.Vector3(...origin);
+        const normalVec = new THREE.Vector3(...normal);
+        const xDirVec = new THREE.Vector3(...xDir);
+        const yDirVec = new THREE.Vector3(...yDir);
+        
+        const isSelected = activePlane === id;
+        
+        return (
+          <group key={id} position={originVec} quaternion={new THREE.Quaternion().setFromRotationMatrix(new THREE.Matrix4().makeBasis(xDirVec, yDirVec, normalVec))}>
+            <Plane
+              args={[150, 150]}
+              onPointerDown={(e) => {
+                  e.stopPropagation();
+                  handlePlaneClick(id, e);
+              }}
+              onPointerOver={() => setHovered(id)}
+              onPointerOut={() => setHovered(null)}
+              onPointerMove={handlePointerMove}
+              visible={isSketchMode ? activePlane === id : true}
+            >
+              <meshStandardMaterial 
+                color={isSelected ? "#60A5FA" : hovered === id ? "#94A3B8" : "#475569"} 
+                transparent 
+                opacity={isSelected ? 0.2 : 0.1} 
+                side={THREE.DoubleSide}
+                depthWrite={false}
+              />
+              <lineSegments>
+                <edgesGeometry args={[new THREE.PlaneGeometry(150, 150)]} />
+                <lineBasicMaterial color={isSelected ? "#60A5FA" : hovered === id ? "#94A3B8" : "#475569"} />
+              </lineSegments>
+            </Plane>
+            <Html position={[75, 75, 0]} center className="pointer-events-none">
+              <div className={`px-2 py-1 rounded bg-slate-900/80 backdrop-blur-sm border transition-colors ${
+                isSelected ? 'border-sky-500 text-sky-400 font-bold' : hovered === id ? 'border-slate-500 text-slate-300' : 'border-slate-700 text-slate-500'
+              } text-[10px] font-mono select-none whitespace-nowrap`}>
+                {name || id}
+              </div>
+            </Html>
+          </group>
+        );
+      })}
+
+      {/* Render Computed Custom Reference Planes (Preview) */}
       {computedRefGeometry?.filter(g => g.type === 'PLANE').map((plane) => {
         const { id, data } = plane;
         const origin = new THREE.Vector3(...data.origin);

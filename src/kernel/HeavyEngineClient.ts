@@ -21,7 +21,7 @@ export interface CADFeature {
 
 export class HeavyEngineClient {
   private static instance: HeavyEngineClient;
-  private baseUrl: string = 'http://localhost:8400/api/v1/geometry';
+  private baseUrl: string = 'http://127.0.0.1:8400/api/v1/geometry';
 
   private constructor() {}
 
@@ -34,19 +34,20 @@ export class HeavyEngineClient {
 
   public async checkHealth(): Promise<boolean> {
     try {
-      const response = await fetch(`${this.baseUrl}/../health`);
+      const response = await fetch("http://127.0.0.1:8400/api/v1/health");
       return response.ok;
     } catch {
       return false;
     }
   }
 
-  public async rebuild(features: CADFeature[], deflection: number = 0.01): Promise<MeshData[]> {
+  public async rebuild(features: CADFeature[], deflection: number = 0.01, signal?: AbortSignal): Promise<MeshData[]> {
     try {
       const response = await fetch(`${this.baseUrl}/rebuild`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ features, deflection }),
+        signal,
       });
       if (!response.ok) throw new Error('Rebuild failed');
       return await response.json();

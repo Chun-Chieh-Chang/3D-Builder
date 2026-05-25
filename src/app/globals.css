@@ -1,88 +1,63 @@
 ﻿@import "tailwindcss";
 
 :root {
-  /* Color Master Palette - Light Mode (Day) */
-  --background: #F9FAFB;
-  --surface: #FFFFFF;
-  --primary-text: #111827;
-  --secondary-text: #6B7280;
-  --accent-brand: #3B82F6;
-  --success-safe: #10B981;
-  --warning-error: #EF4444;
-  --border-divider: #E5E7EB;
+  /* Official SolidWorks 2024 Industrial Palette (Light Theme Only for Precision) */
+  --background: #D6DADC;    /* Classic Windows/CAD Gray - Base background */
+  --surface: #F5F5F5;       /* Light Gray - Panel backgrounds */
+  --ribbon: #E8E8E8;        /* Ribbon background */
+  --primary-text: #000000;  /* Pure Black - High contrast for labels */
+  --secondary-text: #404040; /* Dark Gray - Descriptions */
+  --accent: #005B9A;        /* SolidWorks Professional Blue */
+  --border: #A0A0A0;        /* Industrial Gray - Sharp borders */
+  
+  --success: #28a745;
+  --error: #dc3545;
+  --warning: #ffc107;
 
-  /* Spacing Tokens */
-  --spacing-unit: 4px;
+  --radius-sm: 2px;
+  --radius-md: 4px;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    /* Color Master Palette - Dark Mode (Night) */
-    --background: #0F172A;
-    --surface: #1E293B;
-    --primary-text: #F1F5F9;
-    --secondary-text: #94A3B8;
-    --accent-brand: #60A5FA;
-    --success-safe: #34D399;
-    --warning-error: #F87171;
-    --border-divider: #334155;
-  }
+/* Force Light Theme by Default for CAD Environment */
+body {
+  background: var(--background);
+  color: var(--primary-text);
+  font-family: "Segoe UI", Tahoma, sans-serif;
+  font-size: 14px;
+  -webkit-font-smoothing: antialiased;
+  overflow: hidden;
 }
 
 @theme inline {
   --color-background: var(--background);
   --color-surface: var(--surface);
+  --color-accent: var(--accent);
+  --color-border: var(--border);
   --color-primary-text: var(--primary-text);
   --color-secondary-text: var(--secondary-text);
-  --color-accent: var(--accent-brand);
-  --color-success: var(--success-safe);
-  --color-warning: var(--warning-error);
-  --color-border: var(--border-divider);
-  
-  --radius-xs: 4px;
-  --radius-sm: 8px;
-  --radius-md: 12px;
-  --radius-lg: 16px;
-  --radius-xl: 24px;
+  --color-success: var(--success);
+  --color-error: var(--error);
 }
 
-body {
-  background: var(--background);
-  color: var(--primary-text);
-  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-  overflow: hidden;
-  transition: background-color 0.3s ease, color 0.3s ease;
+/* Ribbon and Panel Styling */
+.cad-panel {
+  background-color: var(--surface);
+  border: 1px solid var(--border);
 }
 
-/* Glassmorphism Refined */
-.glass-effect {
-  background: color-mix(in srgb, var(--surface) 75%, transparent);
-  backdrop-filter: blur(16px) saturate(180%);
-  -webkit-backdrop-filter: blur(16px) saturate(180%);
-  border: 1px solid var(--border-divider);
-  box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.05), inset 0 1px 0 rgba(255, 255, 255, 0.1);
+.cad-panel-header {
+  background: linear-gradient(to bottom, #F8F8F8, #E8E8E8);
+  border-bottom: 1px solid var(--border);
+  font-weight: 700;
+  padding: 4px 8px;
 }
 
-.surface-card {
-  background: var(--surface);
-  border: 1px solid var(--border-divider);
-  border-radius: var(--radius-md);
-  box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
-  transition: transform 0.2s ease, box-shadow 0.2s ease;
-}
-
-.surface-card:hover {
-  box-shadow: 0 10px 15px -3px rgb(0 0 0 / 0.1);
-}
-
-/* CAD Specific Overrides */
 .canvas-container {
-  background: radial-gradient(circle at center, var(--background) 0%, color-mix(in srgb, var(--background) 95%, black) 100%);
+  background: radial-gradient(circle at center, #FFFFFF 0%, #BCC3C7 100%);
 }
 
-@media print {
-  body { background: #ffffff !important; color: #000000 !important; overflow: visible !important; }
-  body * { visibility: hidden !important; }
-  #drawing-sheet-container, #drawing-sheet-container * { visibility: visible !important; }
-  #drawing-sheet-container { position: absolute !important; left: 0 !important; top: 0 !important; width: 100% !important; height: 100% !important; margin: 0 !important; padding: 0 !important; border: none !important; box-shadow: none !important; background: #ffffff !important; }
-}
+/* Scrollbar for Professional Feel */
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-track { background: #F1F1F1; }
+::-webkit-scrollbar-thumb { background: #C1C1C1; border: 2px solid #F1F1F1; }
+::-webkit-scrollbar-thumb:hover { background: #A8A8A8; }

@@ -1,8 +1,8 @@
-﻿﻿﻿'use client';
+﻿﻿'use client';
 
 
 
-import React, { useEffect, useState, useCallback, useMemo, Fragment } from 'react';
+import React, { useEffect, useState, useCallback, useMemo, Fragment, useRef } from 'react';
 
 import Viewport from '@/renderer/Viewport';
 
@@ -79,6 +79,7 @@ export interface SketchEntity {
 export default function Home() {
 
   const client = HeavyEngineClient.getInstance();
+  const rebuildController = useRef<AbortController | null>(null);
 
   // Electron Native Integration
 
@@ -141,6 +142,23 @@ export default function Home() {
     return () => unsubs.forEach(unsub => unsub());
 
   }, []);
+
+
+    // Continuous Heartbeat to force connection recovery
+    useEffect(() => {
+      const check = async () => {
+        const client = HeavyEngineClient.getInstance();
+        try {
+          const isAlive = await client.checkHealth();
+          setEngineStatus(isAlive ? 'CONNECTED' : 'DISCONNECTED');
+        } catch (e) {
+          setEngineStatus('DISCONNECTED');
+        }
+      };
+      const timer = setInterval(check, 2000);
+      check();
+      return () => clearInterval(timer);
+    }, []);
 
   const { mode, setMode,
 
@@ -575,6 +593,7 @@ export default function Home() {
 
 
   const [loading, setLoading] = useState(false);
+  
 
   const [engineStatus, setEngineStatus] = useState<'CONNECTED' | 'DISCONNECTED'>('DISCONNECTED');
 
@@ -1223,6 +1242,7 @@ export default function Home() {
     try {
 
       const client = HeavyEngineClient.getInstance();
+  const rebuildController = useRef<AbortController | null>(null);
 
 
 
@@ -1248,7 +1268,7 @@ export default function Home() {
 
       console.log('[API] Sending rolled-back feature list to Python Heavy Engine...', activeFeatures);
 
-      const results = await client.rebuild(activeFeatures);
+      const results = await client.rebuild(activeFeatures, 0.01, rebuildController.current?.signal);
 
 
 
@@ -1610,183 +1630,38 @@ export default function Home() {
 
   }, [setSketchNodes, setSketchEdges, setSketchConstraints, setSketchPoints, setSketchRelations, setSketchMode, setActivePlane, setEditingFeatureId, setSelectedEntityIds, setActiveFaceOrigin, setActiveFaceNormal, setActiveFaceId]);
 
-
-
-  const handleEditFeatureSketch = useCallback((feature: CADFeature) => {
-
-    const rawPoints = feature.parameters?.points;
-
-    if ((feature.type !== 'EXTRUDE' && feature.type !== 'REVOLVE') || !Array.isArray(rawPoints) || rawPoints.length === 0) {
-
-      setSelectedId(feature.id);
-
-      setSelectedSubNodeType('FEATURE');
-
-      return;
-
+  const handleEditFeatureSketch = useCallback((f: CADFeature) => {
+    setEditingFeatureId(f.id);
+    setSketchNodes(f.parameters.sketchNodes || {});
+    setSketchEdges(f.parameters.sketchEdges || {});
+    setSketchConstraints(f.parameters.sketchConstraints || {});
+    setSketchRelations(f.parameters.relations || []);
+    setActivePlane(f.parameters.plane);
+    if (f.parameters.plane === 'FACE') {
+      setActiveFaceOrigin(f.parameters.faceOrigin);
+      setActiveFaceNormal(f.parameters.faceNormal);
+      setActiveFaceId(f.parameters.faceId);
     }
-
-
-
-    const plane = isSketchPlane(feature.parameters?.plane) ? feature.parameters.plane : 'FRONT';
-
-    const relations = Array.isArray(feature.parameters?.relations) ? [...feature.parameters.relations] : [];
-
-
-
-    setSelectedId(feature.id);
-
-    setSelectedSubNodeType(null);
-
-    setEditingFeatureId(feature.id);
-
-    
-
-    // Check if we have stored parametric sketch data
-
-    if (feature.parameters?.sketchNodes && feature.parameters?.sketchEdges) {
-
-      useCadStore.setState({
-
-        sketchNodes: { ...feature.parameters.sketchNodes },
-
-        sketchEdges: { ...feature.parameters.sketchEdges },
-
-        sketchConstraints: { ...feature.parameters.sketchConstraints || {} }
-
-      });
-
-      // Also set legacy stubs for compatibility
-
-      const loops = feature.parameters.points;
-
-      const firstLoop = Array.isArray(loops[0]) && Array.isArray(loops[0][0]) ? loops[0] : loops;
-
-      setSketchPoints(cloneSketchPoints(firstLoop));
-
-    } else {
-
-      // Reconstruct topological graph nodes & edges supporting both single-loop and nested multi-loops (Legacy Fallback)
-
-      const firstLoopPoints = Array.isArray(rawPoints[0]) && Array.isArray(rawPoints[0][0]) ? rawPoints[0] : rawPoints;
-
-      setSketchPoints(cloneSketchPoints(firstLoopPoints));
-
-      
-
-      const nextNodes: Record<string, any> = {};
-
-      const nextEdges: Record<string, any> = {};
-
-      const loopsToLoad: any[][] = Array.isArray(rawPoints[0]) && Array.isArray(rawPoints[0][0]) ? rawPoints : [rawPoints];
-
-
-
-      loopsToLoad.forEach((loopPoints: any[]) => {
-
-        if (loopPoints.length < 3) return;
-
-        const pointsToLoad = [...loopPoints];
-
-        const first = pointsToLoad[0];
-
-        const last = pointsToLoad[pointsToLoad.length - 1];
-
-        if (Math.hypot(last[0] - first[0], last[1] - first[1]) < 1e-4) {
-
-          pointsToLoad.pop();
-
-        }
-
-
-
-        const nodeIds: string[] = [];
-
-        pointsToLoad.forEach((pt: any) => {
-
-          const id = uuidv4();
-
-          const isOrigin = Math.abs(pt[0]) < 1e-5 && Math.abs(pt[1]) < 1e-5;
-
-          nextNodes[id] = { id, x: pt[0], y: pt[1], isFixed: isOrigin };
-
-          nodeIds.push(id);
-
-        });
-
-
-
-        for (let i = 0; i < nodeIds.length; i++) {
-
-          const n1 = nodeIds[i];
-
-          const n2 = nodeIds[(i + 1) % nodeIds.length];
-
-          const eId = uuidv4();
-
-          nextEdges[eId] = { id: eId, type: 'LINE', nodeIds: [n1, n2] };
-
-        }
-
-      });
-
-
-
-      useCadStore.setState({
-
-        sketchNodes: nextNodes,
-
-        sketchEdges: nextEdges,
-
-        sketchConstraints: {}
-
-      });
-
-    }
-
-
-
-    setSketchRelations(relations);
-
-
-
-    setActivePlane(plane);
-
-    if (plane === 'FACE') {
-
-      setActiveFaceOrigin(feature.parameters?.faceOrigin ?? null);
-
-      setActiveFaceNormal(feature.parameters?.faceNormal ?? null);
-
-      setActiveFaceId(feature.parameters?.faceId ?? null);
-
-    } else {
-
-      setActiveFaceOrigin(null);
-
-      setActiveFaceNormal(null);
-
-      setActiveFaceId(null);
-
-    }
-
-    setSketchTool('SELECT');
-
     setSketchMode(true);
-
+    setSketchTool('SELECT');
     setActiveTab('SKETCH');
-
-    setSmartDimensionActive(false);
-
-  }, [setSelectedId, setSelectedSubNodeType, setEditingFeatureId, setSketchPoints, setSketchRelations, setActivePlane, setSketchTool, setSketchMode, setActiveFaceOrigin, setActiveFaceNormal, setActiveFaceId]);
-
-
+  }, [setEditingFeatureId, setSketchNodes, setSketchEdges, setSketchConstraints, setSketchRelations, setActivePlane, setActiveFaceOrigin, setActiveFaceNormal, setActiveFaceId, setSketchMode, setSketchTool, setActiveTab]);
 
   const handleExitAndExtrude = useCallback((operationOverride?: 'ADD' | 'CUT') => {
+    // Connection Warning (Non-blocking attempt)
+    if (engineStatus === 'DISCONNECTED') {
+      console.warn('Attempting construction while kernel reports DISCONNECTED...');
+    }
 
     const solidLoops = extractAllClosedLoops(sketchNodes, sketchEdges);
+    
+    // 2. Profile Validation Guard
+    if (solidLoops.length === 0 || solidLoops[0].length < 3) {
+      alert('Invalid Sketch Profile: No closed loop found.\nPlease ensure your sketch forms a single closed boundary without self-intersections.');
+      return;
+    }
 
-    if (solidLoops.length === 0 || solidLoops[0].length < 3 || !activePlane) return;
+    if (!activePlane) return;
 
 
 
@@ -2428,7 +2303,8 @@ export default function Home() {
 
       if (result.success && result.path) {
 
-        appAPI.notify('PDF  ', `:\n${result.path}`);
+        appAPI.notify('PDF  ', `:
+${result.path}`);
 
       } else if (result.error && result.error !== 'Cancelled') {
 
@@ -2450,566 +2326,149 @@ export default function Home() {
 
   return (
 
-    <main className="flex flex-col h-screen w-screen overflow-hidden bg-[#EBEBEB] text-slate-800 font-sans">
+    <main className="flex flex-col h-screen w-screen overflow-hidden bg-background text-primary-text font-sans">
 
       {/* 1. SolidWorks Desktop Titlebar */}
 
-      <header className="h-[32px] w-full bg-white border-b border-[#D1D5DB] flex items-center justify-between px-3 select-none z-30 shrink-0"> <div className="flex items-center gap-4"> <div className="flex items-center gap-1"> <span className="text-primary font-black text-[14px]"> </span> <span className="text-[14px] font-bold tracking-tight text-slate-800">SolidWeb 3D-Builder</span> </div> <nav className="flex items-center gap-3 text-[14px] text-slate-600 font-medium"> <span className="hover:text-foreground cursor-pointer transition-all"> (F)</span> <span className="hover:text-foreground cursor-pointer transition-all"> (E)</span> <span className="hover:text-foreground cursor-pointer transition-all"> (V)</span> <span className="hover:text-foreground cursor-pointer transition-all"> (I)</span> <span className="hover:text-foreground cursor-pointer transition-all"> (T)</span> <span className="hover:text-foreground cursor-pointer transition-all"> (H)</span> </nav> </div> <div className="text-[14px] text-slate-600 font-medium tracking-tight">
+      <header className="h-[32px] w-full bg-[#F5F5F5] border-b border-[#A0A0A0] flex items-center justify-between px-3 select-none z-50 shrink-0" style={{ background: "linear-gradient(to bottom, #FFFFFF 0%, #E8E8E8 100%)" }}>
+        <div className="flex items-center gap-6">
+          <div className="flex items-center gap-2 text-[14px] font-black tracking-tighter text-[#000000]">
+            <div className="w-6 h-6 bg-[#005B9A] rounded-sm flex items-center justify-center text-white text-[11px] shadow-sm font-sans">3D</div>
+            3D-Builder Pro
+          </div>
+          <nav className="flex items-center gap-4 text-[12px] text-[#404040] font-semibold">
+            {["File", "Edit", "View", "Insert", "Tools", "Help"].map(m => (
+              <span key={m} className="hover:text-[#005B9A] cursor-pointer transition-colors px-1 uppercase tracking-wider">{m}</span>
+            ))}
+          </nav>
+        </div>
+        <div className="flex items-center gap-4">
+          <div className="text-[11px] text-[#404040] font-medium bg-[#FFFFFF] px-4 py-1 rounded-sm border border-[#A0A0A0] shadow-inner">
+            Part 1.SLDPRT * <span className="text-[#005B9A] font-bold">[{activePlane || "No Active Plane"}]</span>
+          </div>
+          <div className="flex items-center gap-3 text-[12px]">
+            <div className="flex items-center gap-1.5">
+              <div className={`w-2 h-2 rounded-full ${engineStatus === "CONNECTED" ? "bg-[#28a745]" : "bg-[#dc3545]"} shadow-sm`} />
+              <span className="text-[#404040] font-bold uppercase tracking-widest text-[10px]">Kernel: <span className={engineStatus === "CONNECTED" ? "text-[#28a745]" : "text-[#dc3545]"}>{engineStatus}</span></span>
+            </div>
+          </div>
+        </div>
+      </header>
 
-          Part 1.SLDPRT * <span className="text-primary font-semibold">[{activePlane ? `${activePlane} ` : ''}]</span> </div> <div className="flex items-center gap-4 text-[14px] text-slate-600"> <div className="flex items-center gap-1.5"> <div className={`w-1.5 h-1.5 rounded-full ${engineStatus === 'CONNECTED' ? 'bg-success' : 'bg-error'}`} /> <span>OCCT : <span className={engineStatus === 'CONNECTED' ? 'text-success font-bold' : 'text-error'}>{engineStatus}</span></span> </div> <div className="flex gap-2"> <span className="hover:text-foreground cursor-pointer"> </span> <span className="hover:text-foreground cursor-pointer"> </span> <span className="hover:text-error cursor-pointer"> </span> </div> </div> </header>
 
 
-
+      
       {/* 2. SolidWorks CommandManager (Ribbon Bar) */}
-
-      <div className="h-[110px] w-full bg-[#F5F6F9] border-b border-[#D1D5DB] flex flex-col z-20 shrink-0 select-none">
-
+      <div className="h-[110px] w-full bg-[#E8E8E8] border-b border-[#A0A0A0] flex flex-col z-20 shrink-0 select-none">
         {/* Ribbon Tabs */}
-
-        <div className="flex px-4 border-b border-[#D1D5DB]/60 bg-[#EBEBEB]/40"> <button
-
+        <div className="flex px-2 border-b border-[#A0A0A0] bg-[#D6DADC]">
+          <button
+            onClick={() => { setActiveTab('FEATURES'); setMeasurementMode('NONE'); setMeasurementPoints([]); setMeasurementResults(null); } }
+            className={`px-6 py-1.5 text-[11px] font-black transition-all border-b-[3px] uppercase ${activeTab === "FEATURES" ? "border-[#005B9A] text-[#005B9A] bg-white shadow-sm" : "border-transparent text-slate-600 hover:bg-white/50"}` }
+          >FEATURES</button>
+          <button
             onClick={() => {
-
-              setActiveTab('FEATURES');
-
-              setMeasurementMode('NONE');
-
-              setMeasurementPoints([]);
-
+              setActiveTab('SKETCH'); 
+              setMeasurementMode('NONE'); 
+              setMeasurementPoints([]); 
               setMeasurementResults(null);
-
-            }}
-
-            className={`px-4 py-1 text-[14px] font-bold tracking-wider transition-all border-b-2 uppercase ${
-
-              activeTab === 'FEATURES'
-
-                ? 'border-primary text-primary bg-[#F5F6F9]/60'
-
-                : 'border-transparent text-slate-500 hover:text-slate-800'
-
-            }`}
-
-          >FEATURES</button> <button
-
-            onClick={() => {
-
-              setActiveTab('SKETCH');
-
-              setMeasurementMode('NONE');
-
-              setMeasurementPoints([]);
-
-              setMeasurementResults(null);
-
-              // Auto trigger sketch mode if not already in it
-
-              if (!isSketchMode) {
-
-                setEditingFeatureId(null);
-
-                setSketchPoints([]);
-
-                setSketchRelations([]);
-
+              
+              if (!isSketchMode) { 
+                setEditingFeatureId(null); 
+                setSketchPoints([]); 
+                setSketchRelations([]);      
                 
-
-                // SolidWorks logic: If a face is selected, sketch on that face. Otherwise, default to Front Plane.
-
+                // Smart Plane Selection:
+                // 1. Priority: Currently selected topology face
                 if (selectedTopology?.type === 'FACE' && selectedTopology.coordinates && selectedTopology.normal) {
-
-                  setActiveFaceOrigin(selectedTopology.coordinates);
-
+                  setActiveFaceOrigin(selectedTopology.coordinates); 
                   setActiveFaceNormal(selectedTopology.normal);
-
-                  setActiveFaceId(selectedTopology.id || `face_${Date.now()}`);
-
-                  setActivePlane('FACE');
-
+                  setActiveFaceId(selectedTopology.id || `face_${Date.now()}`); 
+                  setActivePlane('FACE'); 
                   triggerCameraNormal();
-
-                } else {
-
-                  setActivePlane('FRONT');
-
+                } 
+                // 2. Secondary: A plane already selected via FeatureTree or Viewport (activePlane might be set)
+                else if (activePlane) {
+                  triggerCameraNormal();
                 }
-
+                // 3. Fallback: Default to FRONT
+                else {
+                  setActivePlane('FRONT');
+                  triggerCameraNormal();
+                }
                 
-
-                setSketchMode(true);
-
+                setSketchMode(true); 
                 setSketchTool('SELECT');
-
               }
-
-            }}
-
-            className={`px-4 py-1 text-[14px] font-bold tracking-wider transition-all border-b-2 uppercase ${
-
-              activeTab === 'SKETCH'
-
-                ? 'border-primary text-primary bg-[#F5F6F9]/60'
-
-                : 'border-transparent text-slate-500 hover:text-slate-800'
-
-            }`}
-
-          >SKETCH</button> <button
-
-            onClick={() => {
-
-              setActiveTab('DRAWING');
-
-              setMode('DRAWING');
-
-              setMeasurementMode('NONE');
-
-            }}
-
-            className={`px-4 py-1 text-[14px] font-bold tracking-wider transition-all border-b-2 uppercase ${
-
-              activeTab === 'DRAWING'
-
-                ? 'border-primary text-primary bg-[#F5F6F9]/60'
-
-                : 'border-transparent text-slate-500 hover:text-slate-800'
-
-            }`}
-
-          >DRAWING</button> <button
-
-            onClick={() => {
-
-              setActiveTab('ASSEMBLY');
-
-              setMode('ASSEMBLY');
-
-              setMeasurementMode('NONE');
-
-            }}
-
-            className={`px-4 py-1 text-[14px] font-bold tracking-wider transition-all border-b-2 uppercase ${
-
-              activeTab === 'ASSEMBLY'
-
-                ? 'border-primary text-primary bg-[#F5F6F9]/60'
-
-                : 'border-transparent text-slate-500 hover:text-slate-800'
-
-            }`}
-
-          >ASSEMBLY</button> <button
-
-            onClick={() => {
-
-              setActiveTab('EVALUATE');
-
-              setMeasurementMode('DISTANCE');
-
-              setMeasurementPoints([]);
-
-              setMeasurementResults(null);
-
-            }}
-
-            className={`px-4 py-1 text-[14px] font-bold tracking-wider transition-all border-b-2 uppercase ${
-
-              activeTab === 'EVALUATE'
-
-                ? 'border-primary text-primary bg-[#F5F6F9]/60'
-
-                : 'border-transparent text-slate-500 hover:text-slate-800'
-
-            }`}
-
-          >EVALUATE</button> </div>
-
-
+            } }
+            className={`px-6 py-1.5 text-[11px] font-black transition-all border-b-[3px] uppercase ${activeTab === "SKETCH" ? "border-[#005B9A] text-[#005B9A] bg-white shadow-sm" : "border-transparent text-slate-600 hover:bg-white/50"}` }
+          >SKETCH</button>
+          <button
+            onClick={() => { setActiveTab('EVALUATE'); setMeasurementMode('NONE'); } }
+            className={`px-6 py-1.5 text-[11px] font-black transition-all border-b-[3px] uppercase ${activeTab === "EVALUATE" ? "border-[#005B9A] text-[#005B9A] bg-white shadow-sm" : "border-transparent text-slate-600 hover:bg-white/50"}` }
+          >EVALUATE</button>
+        </div>
 
         {/* Ribbon Content Panels */}
-
-        <div className="flex-1 flex items-center px-4 py-1.5 gap-1.5 overflow-x-auto overflow-y-hidden bg-[#F5F6F9]">
-
+        <div className="flex-1 flex items-center px-6 py-2 gap-2 overflow-x-auto overflow-y-hidden bg-surface"> 
           {activeTab === 'FEATURES' ? (
-            <div className="flex items-center gap-1.5 h-full overflow-x-auto no-scrollbar py-1">
-              <button
-                onClick={() => {
-                  if (solidSketchPointCount >= 3) {
-                    handleExitAndExtrude();
-                  } else {
-                    setEditingFeatureId(null); setSketchPoints([]); setSketchRelations([]);
-                    if (selectedTopology?.type === 'FACE') { setActivePlane('FACE'); triggerCameraNormal(); }
-                    else setActivePlane('FRONT');
-                    setSketchMode(true); setSketchTool('SELECT');
-                  }
-                }}
-                className="h-[60px] px-3 rounded hover:bg-slate-200/80 transition-all flex flex-col items-center justify-center gap-1 group"
-                title="🏗️ Extrude Boss (Boss/Base)"
-              >
-                <span className="text-lg group-hover:scale-110 transition-all">🏗️</span>
-                <span className="text-[13px] text-slate-800 font-bold leading-none">Extrude</span>
+            <div className="flex items-center gap-2 h-full animate-in fade-in slide-in-from-left-2 duration-300">
+              <button onClick={() => { if (solidSketchPointCount >= 3) handleExitAndExtrude(); else { setSketchMode(true); setSketchTool('SELECT'); } }} className="flex flex-col items-center justify-center gap-0.5 px-3 h-[78px] min-w-[75px] transition-all border border-transparent hover:bg-white hover:border-[#A0A0A0] active:bg-slate-100 group" title="Extruded Boss/Base">
+                <div className="w-10 h-10 flex items-center justify-center text-[#005B9A] transition-transform group-hover:scale-110">
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg>
+                </div>
+                <span className="text-[10px] font-bold text-slate-800 leading-none uppercase">Extrude</span>
               </button>
-              <button
-                onClick={() => {
-                  if (solidSketchPointCount >= 3) {
-                    handleExitAndExtrude('CUT');
-                  } else {
-                    setEditingFeatureId(null); setSketchPoints([]); setSketchRelations([]);
-                    if (selectedTopology?.type === 'FACE') { setActivePlane('FACE'); triggerCameraNormal(); }
-                    else setActivePlane('FRONT');
-                    setSketchMode(true); setSketchTool('SELECT');
-                  }
-                }}
-                className="h-[60px] px-3 rounded hover:bg-slate-200/80 transition-all flex flex-col items-center justify-center gap-1 group"
-                title="🔨 Extrude Cut (Remove Material)"
-              >
-                <span className="text-lg group-hover:scale-110 transition-all">🔨</span>
-                <span className="text-[13px] text-slate-800 font-bold leading-none">Cut</span>
-              </button>
-              <button
-                onClick={() => {
-                  if (isSketchMode && sketchPoints.length >= 3) {
-                    const solidPoints = cloneSketchPoints(sketchPoints.filter(pt => pt[2] !== 'CENTER_LINE'));
-                    const id = `feat_${Date.now()}`;
-                    const revolveFeature: CADFeature = {
-                      id, type: 'REVOLVE', name: `Revolve ${features.length + 1}`,
-                      parameters: { plane: activePlane ?? 'FRONT', angle: 360.0, points: solidPoints, x: 0.0, y: 0.0, z: 0.0, operation: 'ADD' }
-                    };
-                    useCadStore.setState({ features: [...features, revolveFeature], selectedId: id });
-                    resetSketchSession(); setTimeout(handleRebuild, 50);
-                  } else { alert('Select a plane and draw a profile first'); }
-                }}
-                className="h-[60px] px-3 rounded hover:bg-slate-200/80 transition-all flex flex-col items-center justify-center gap-1 group"
-                title="🔄 Revolve (Circular Feature)"
-              >
-                <span className="text-lg group-hover:scale-110 transition-all">🔄</span>
-                <span className="text-[13px] text-slate-800 font-bold leading-none">Revolve</span>
-              </button>
-
-              <div className="w-[1px] h-[40px] bg-slate-300 mx-1 shrink-0" />
-
-              
-              
-              <button
-                onClick={() => {
-                   if (!selectedId) return;
-                   const id = `feat_${Date.now()}`;
-                   const pat: CADFeature = {
-                     id, type: 'PATTERN', name: `Pattern ${features.length + 1}`,
-                     parameters: { targetFeatureId: selectedId, type: 'LINEAR', count: 3, spacing: 50, direction: [1,0,0] }
-                   };
-                   useCadStore.setState({ features: [...features, pat], selectedId: id });
-                   setTimeout(handleRebuild, 50);
-                }}
-                className="h-[60px] px-3 rounded hover:bg-slate-200/80 transition-all flex flex-col items-center justify-center gap-1 group"
-                title="Pattern"
-              >
-                <span className="text-lg group-hover:scale-110 transition-all">🔢</span>
-                <span className="text-[13px] text-slate-800 font-bold leading-none">Pattern</span>
+              <button onClick={() => { if (solidSketchPointCount >= 3) handleExitAndExtrude('CUT'); else { setSketchMode(true); setSketchTool('SELECT'); } }} className="flex flex-col items-center justify-center gap-0.5 px-3 h-[78px] min-w-[75px] transition-all border border-transparent hover:bg-white hover:border-[#A0A0A0] active:bg-slate-100 group" title="Extruded Cut">
+                <div className="w-10 h-10 flex items-center justify-center text-red-600 transition-transform group-hover:scale-110">
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><path d="M12 22V12"/><path d="M3 8l9 4 9-4"/></svg>
+                </div>
+                <span className="text-[10px] font-bold text-slate-800 leading-none uppercase">Cut</span>
               </button>
             </div>
           ) : activeTab === 'SKETCH' ? (
-            <div className="flex items-center gap-1.5 h-full overflow-x-auto no-scrollbar py-1">
-              <button onClick={resetSketchSession} className="h-[60px] px-3 rounded bg-slate-100 hover:bg-slate-200 transition-all flex flex-col items-center justify-center gap-1 group border border-slate-300" title="✅ Exit Sketch (Apply Changes)">
-                <span className="text-lg group-hover:scale-110 transition-all">✅</span>
-                <span className="text-[13px] text-slate-800 font-bold leading-none">Exit</span>
+            <div className="flex items-center gap-2 h-full animate-in fade-in slide-in-from-left-2 duration-300">
+              <button onClick={resetSketchSession} className="flex flex-col items-center justify-center gap-0.5 px-3 h-[78px] min-w-[75px] transition-all border border-transparent hover:bg-white hover:border-[#A0A0A0] active:bg-slate-100 group" title="Exit Sketch">
+                <div className="w-10 h-10 flex items-center justify-center text-emerald-600 transition-transform group-hover:scale-110">
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/><polyline points="10 17 15 12 10 7"/><line x1="15" y1="12" x2="3" y2="12"/></svg>
+                </div>
+                <span className="text-[10px] font-bold text-slate-800 leading-none uppercase">Exit</span>
               </button>
-              <button onClick={() => setSmartDimensionActive(!smartDimensionActive)} className={`h-[60px] px-3 rounded transition-all flex flex-col items-center justify-center gap-1 group ${smartDimensionActive ? 'bg-primary/10 text-primary font-bold' : 'hover:bg-slate-200'}`} title="Dimension">
-                <span className="text-lg group-hover:scale-110 transition-all">📏</span>
-                <span className="text-[13px] leading-none">Dimension</span>
-              </button>
-              <div className="w-[1px] h-[40px] bg-slate-300 mx-1 shrink-0" />
-              <button onClick={() => setSketchTool('LINE')} className={`h-[60px] px-3 rounded transition-all flex flex-col items-center justify-center gap-1 group ${sketchTool === 'LINE' ? 'bg-primary/10 text-primary font-bold' : 'hover:bg-slate-200'}`} title="📏 Line (Continuous Segments)">
-                <span className="text-lg group-hover:scale-110 transition-all">📏</span>
-                <span className="text-[13px] leading-none">Line</span>
-              </button>
-              <button onClick={() => setSketchTool('CIRCLE')} className={`h-[60px] px-3 rounded transition-all flex flex-col items-center justify-center gap-1 group ${sketchTool === 'CIRCLE' ? 'bg-primary/10 text-primary font-bold' : 'hover:bg-slate-200'}`} title="⭕ Circle (Center-Radius)">
-                <span className="text-lg group-hover:scale-110 transition-all">⭕</span>
-                <span className="text-[13px] leading-none">Circle</span>
-              </button>
-              <button onClick={() => setSketchTool('RECTANGLE')} className={`h-[60px] px-3 rounded transition-all flex flex-col items-center justify-center gap-1 group ${sketchTool === 'RECTANGLE' ? 'bg-primary/10 text-primary font-bold' : 'hover:bg-slate-200'}`} title="⬜ Rectangle (Corner-Corner)">
-                <span className="text-lg group-hover:scale-110 transition-all">⬜</span>
-                <span className="text-[13px] leading-none">Rect</span>
+              <div className="w-[1px] h-10 bg-border/50 mx-2" />
+              <button onClick={() => setSmartDimensionActive(!smartDimensionActive)} className={`flex flex-col items-center justify-center gap-0.5 px-3 h-[78px] min-w-[75px] transition-all border ${smartDimensionActive ? 'bg-white border-[#A0A0A0] shadow-inner' : 'border-transparent hover:bg-white hover:border-[#A0A0A0]'} active:bg-slate-100 group`} title="Smart Dimension">
+                <div className={`w-10 h-10 flex items-center justify-center transition-transform ${smartDimensionActive ? 'text-[#005B9A] scale-110' : 'text-slate-600 group-hover:scale-110'}`}>
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="m18 8 3 3-3 3"/><path d="m6 8-3 3 3 3"/><path d="M2 11h20"/><path d="M2 4v14"/><path d="M22 4v14"/></svg>
+                </div>
+                <span className="text-[10px] font-bold text-slate-800 leading-none uppercase">Smart Dim</span>
               </button>
             </div>
-          ) : activeTab === 'DRAWING' ? (
-
-            <div className="flex items-center gap-2 h-full">
-
-              {/* Drawing Sheet Controls */}
-
-              <button
-
-                onClick={handlePrintToPDF}
-
-                className="h-[60px] px-3.5 rounded transition-all flex flex-col items-center justify-center gap-1 group text-indigo-600 font-bold border border-indigo-200/50 bg-indigo-50/30 hover:bg-indigo-100/80 shadow-sm"
-
-                title="一鍵匯出無失真 A4 橫向向量 PDF 工程圖"
-
-              > <span className="text-lg group-hover:scale-110 transition-all"> </span> <span className="text-[13px] leading-none"> PDF </span> </button> <div className="w-[1px] h-[40px] bg-slate-300 mx-1 shrink-0" />
-
-
-
-              {/* Title Block Inputs */}
-
-              <div className="flex items-center gap-3"> <div className="flex flex-col gap-0.5"> <label className="text-[9px] font-bold text-slate-400 uppercase">Scale</label> <select
-
-                    value={drawingScale}
-
-                    onChange={(e) => setDrawingScale(e.target.value)}
-
-                    className="text-xs bg-white border border-slate-300 rounded px-2 py-0.5 font-bold text-slate-700 h-[24px]"
-
-                  >
-
-                    <option value="1:1">1:1</option> <option value="1:2">1:2</option> <option value="1:5">1:5</option> <option value="2:1">2:1</option> <option value="5:1">5:1</option> </select> </div> <div className="flex flex-col gap-0.5"> <label className="text-[9px] font-bold text-slate-400 uppercase"> </label> <input
-
-                    type="text"
-
-                    value={drawnBy}
-
-                    onChange={(e) => setDrawnBy(e.target.value)}
-
-                    className="text-xs bg-white border border-slate-300 rounded px-2 py-0.5 font-bold text-slate-700 h-[24px] w-[110px]"
-
-                    placeholder=""
-
-                  />
-
-                </div> <div className="flex flex-col gap-0.5"> <label className="text-[9px] font-bold text-slate-400 uppercase"> </label> <input
-
-                    type="text"
-
-                    value={approvedBy}
-
-                    onChange={(e) => setApprovedBy(e.target.value)}
-
-                    className="text-xs bg-white border border-slate-300 rounded px-2 py-0.5 font-bold text-slate-700 h-[24px] w-[110px]"
-
-                    placeholder=""
-
-                  />
-
-                </div> <div className="flex flex-col gap-0.5"> <label className="text-[9px] font-bold text-slate-400 uppercase">Project Name</label> <input
-
-                    type="text"
-
-                    value={projectName}
-
-                    onChange={(e) => setProjectName(e.target.value)}
-
-                    className="text-xs bg-white border border-slate-300 rounded px-2 py-0.5 font-bold text-slate-700 h-[24px] w-[150px]"
-
-                    placeholder="Project Name"
-
-                  />
-
-                </div> </div> </div>
-
-          ) : (
-
-            <div className="flex items-center gap-1.5 h-full">
-
-              {/* Evaluate/Measure Tools */}
-
-              <button
-
-                onClick={() => {
-
-                  if (measurementMode === 'NONE') {
-
-                    setMeasurementMode('DISTANCE');
-
-                    setMeasurementPoints([]);
-
-                    setMeasurementResults(null);
-
-                  } else {
-
-                    setMeasurementMode('NONE');
-
-                    setMeasurementPoints([]);
-
-                    setMeasurementResults(null);
-
-                  }
-
-                }}
-
-                className={`h-[60px] px-3 rounded transition-all flex flex-col items-center justify-center gap-1 group ${
-
-                  measurementMode !== 'NONE'
-
-                    ? 'bg-indigo-500/20 border border-indigo-500/30 text-indigo-600 font-bold shadow-inner'
-
-                    : 'hover:bg-slate-200/80 active:bg-slate-300'
-
-                }`}
-
-                title="/ (Measure)"
-
-              >
-
-                <span className="text-lg group-hover:scale-110 transition-all"> </span> <span className="text-[13px] text-slate-800 font-bold leading-none">
-
-                  {measurementMode !== 'NONE' ? '' : ''}
-
-                </span> </button>
-
-
-
-              {measurementMode !== 'NONE' && (
-
-                <> <div className="w-[1px] h-[40px] bg-slate-300 mx-1 shrink-0" /> <button
-
-                    onClick={() => {
-
-                      setMeasurementMode('DISTANCE');
-
-                      setMeasurementPoints([]);
-
-                      setMeasurementResults(null);
-
-                    }}
-
-                    className={`h-[60px] px-3 rounded transition-all flex flex-col items-center justify-center gap-1 ${
-
-                      measurementMode === 'DISTANCE' ? 'bg-indigo-100 border border-indigo-300 text-indigo-700 font-bold' : 'hover:bg-slate-200'
-
-                    }`}
-
-                  >
-
-                    <span className="text-sm"> </span> <span className="text-[13px] text-slate-700 font-bold">Distance</span> </button> <button
-
-                    onClick={() => {
-
-                      setMeasurementMode('ANGLE');
-
-                      setMeasurementPoints([]);
-
-                      setMeasurementResults(null);
-
-                    }}
-
-                    className={`h-[60px] px-3 rounded transition-all flex flex-col items-center justify-center gap-1 ${
-
-                      measurementMode === 'ANGLE' ? 'bg-indigo-100 border border-indigo-300 text-indigo-700 font-bold' : 'hover:bg-slate-200'
-
-                    }`}
-
-                  >
-
-                    <span className="text-sm"> </span> <span className="text-[13px] text-slate-700 font-bold">Angle</span> </button> <button
-
-                    onClick={() => {
-
-                      setMeasurementMode('AREA');
-
-                      setMeasurementPoints([]);
-
-                      setMeasurementResults(null);
-
-                    }}
-
-                    className={`h-[60px] px-3 rounded transition-all flex flex-col items-center justify-center gap-1 ${
-
-                      measurementMode === 'AREA' ? 'bg-indigo-100 border border-indigo-300 text-indigo-700 font-bold' : 'hover:bg-slate-200'
-
-                    }`}
-
-                  >
-
-                    <span className="text-sm"> </span> <span className="text-[13px] text-slate-700 font-bold">Surface Area</span> </button> <button
-
-                    onClick={() => {
-
-                      setMeasurementMode('VOLUME');
-
-                      setMeasurementPoints([]);
-
-                      setMeasurementResults(null);
-
-                    }}
-
-                    className={`h-[60px] px-3 rounded transition-all flex flex-col items-center justify-center gap-1 ${
-
-                      measurementMode === 'VOLUME' ? 'bg-indigo-100 border border-indigo-300 text-indigo-700 font-bold' : 'hover:bg-slate-200'
-
-                    }`}
-
-                  >
-
-                    <span className="text-sm"> </span> <span className="text-[13px] text-slate-700 font-bold">Volume</span> </button> </>
-
-              )}
-
-
-
-              <div className="w-[1px] h-[40px] bg-slate-300 mx-1 shrink-0" />
-
-
-
-              {/* Mass Properties Button */}
-
-              <button
-
-                onClick={handleCalculateMassProperties}
-
-                className="h-[60px] px-3 rounded hover:bg-amber-500/10 border border-transparent hover:border-amber-500/20 text-slate-700 hover:text-amber-700 transition-all flex flex-col items-center justify-center gap-1 group"
-
-                title="計算Part質量、重心與轉動慣量"
-
-              > <span className="text-lg group-hover:scale-110 transition-all"> </span> <span className="text-[13px] font-bold leading-none text-slate-800">Mass Properties</span> </button> <div className="w-[1px] h-[40px] bg-slate-300 mx-1 shrink-0" />
-
-
-
-              {/* CAD Exporters */}
-
-              <button
-
-                onClick={() => handleExportCad('STEP')}
-
-                className="h-[60px] px-3 rounded hover:bg-blue-500/10 border border-transparent hover:border-blue-500/20 text-slate-700 hover:text-blue-700 transition-all flex flex-col items-center justify-center gap-1 group"
-
-                title=" B-Rep STEP  SolidWorks "
-
-              >
-
-                <span className="text-lg group-hover:scale-110 transition-all"> </span> <span className="text-[13px] font-bold leading-none text-slate-800">Export STEP</span> </button> <button
-
-                onClick={() => handleExportCad('IGES')}
-
-                className="h-[60px] px-3 rounded hover:bg-orange-500/10 border border-transparent hover:border-orange-500/20 text-slate-700 hover:text-orange-700 transition-all flex flex-col items-center justify-center gap-1 group"
-
-                title=" IGES "
-
-              >
-
-                <span className="text-lg group-hover:scale-110 transition-all"> </span> <span className="text-[13px] font-bold leading-none text-slate-800">Export IGES</span> </button> <button
-
-                onClick={() => handleExportCad('STL')}
-
-                className="h-[60px] px-3 rounded hover:bg-emerald-500/10 border border-transparent hover:border-emerald-500/20 text-slate-700 hover:text-emerald-700 transition-all flex flex-col items-center justify-center gap-1 group"
-
-                title=" STL  3D "
-
-              >
-
-                <span className="text-lg group-hover:scale-110 transition-all"> </span> <span className="text-[13px] font-bold leading-none text-slate-800">Export STL</span> </button> <button
-
-                onClick={handleSaveSldprt}
-
-                className="h-[60px] px-3 rounded hover:bg-pink-500/10 border border-transparent hover:border-pink-500/20 text-slate-700 hover:text-pink-700 transition-all flex flex-col items-center justify-center gap-1 group"
-
-                title="保存為 3D-Builder 參數化特徵Part檔"
-
-              > <span className="text-lg group-hover:scale-110 transition-all"> </span> <span className="text-[13px] font-bold leading-none text-slate-800"> SLDPRT</span> </button> </div>
-
-          )}
-
-        </div> </div>
-
+          ) : activeTab === 'EVALUATE' ? (
+            <div className="flex items-center gap-2 h-full animate-in fade-in slide-in-from-left-2 duration-300">
+              <button onClick={() => setMeasurementMode(measurementMode === 'NONE' ? 'DISTANCE' : 'NONE')} className={`flex flex-col items-center justify-center gap-0.5 px-3 h-[78px] min-w-[75px] transition-all border ${measurementMode !== 'NONE' ? 'bg-white border-[#A0A0A0] shadow-inner' : 'border-transparent hover:bg-white hover:border-[#A0A0A0]'} active:bg-slate-100 group`} title="Measure">
+                <div className={`w-10 h-10 flex items-center justify-center transition-transform ${measurementMode !== 'NONE' ? 'text-indigo-600 scale-110' : 'text-slate-600 group-hover:scale-110'}`}>
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M21.3 15.3l-5-5L19 7.7l-2-2L14.7 8l-5-5-1.4 1.4 1 1-1.5 1.5-1-1L5.4 7.3l1 1-1.5 1.5-1-1-1.4 1.4 5 5-2.3 2.3 2 2 2.3-2.3 5 5 1.4-1.4-1-1 1.5-1.5 1 1 1.4-1.4-1-1 1.5-1.5 1 1z"/></svg>
+                </div>
+                <span className="text-[10px] font-bold text-slate-800 leading-none uppercase">Measure</span>
+              </button>
+            </div>
+          ) : null}
+        </div>
+      </div>
+
+      {/* Kernel Offline Warning Banner */}
+      {engineStatus === 'DISCONNECTED' && (
+        <div className="bg-red-600 text-white text-[11px] font-black py-1 px-4 flex items-center justify-center gap-4 animate-pulse z-[100]">
+          <span>⚠️ GEOMETRY KERNEL OFFLINE</span>
+          <button 
+            onClick={async () => {
+              const client = HeavyEngineClient.getInstance();
+              const alive = await client.checkHealth();
+              setEngineStatus(alive ? 'CONNECTED' : 'DISCONNECTED');
+            }}
+            className="px-2 py-0.5 bg-white text-red-600 rounded text-[9px] font-black hover:bg-slate-100"
+          >RETRY CONNECTION</button>
+        </div>
+      )}
 
 
       {/* 3. Main Workspace Area */}
@@ -3018,11 +2477,11 @@ export default function Home() {
 
         {/* Left Sidebars: FeatureManager & PropertyManager */}
 
-        <aside className="w-[290px] h-full bg-white border-r border-[#D1D5DB] flex flex-col z-10 shrink-0">
+        <aside className="w-[290px] h-full bg-surface border-r border-border flex flex-col z-10 shrink-0">
 
           {/* SolidWorks Tab Header */}
 
-          <div className="h-[28px] w-full bg-[#F5F6F9] flex items-center justify-around border-b border-[#D1D5DB]/60 text-slate-500 text-[14px]"> <span className="text-primary font-bold cursor-pointer" title="FeatureManager 設計樹">Feature Tree</span> <span className="hover:text-slate-800 cursor-pointer" title="PropertyManager 屬性經理">Properties</span> <span className="hover:text-slate-800 cursor-pointer" title="ConfigurationManager 設定經理">Configurations</span> </div> <div className="flex-grow flex flex-col overflow-hidden">
+          <div className="h-[28px] w-full bg-surface flex items-center justify-around border-b border-border/60 text-secondary-text text-[14px]"> <span className="text-primary font-bold cursor-pointer" title="FeatureManager 設計樹">Feature Tree</span> <span className="hover:text-primary-text cursor-pointer" title="PropertyManager 屬性經理">Properties</span> <span className="hover:text-primary-text cursor-pointer" title="ConfigurationManager 設定經理">Configurations</span> </div> <div className="flex-grow flex flex-col overflow-hidden">
 
             {isSketchMode ? (
 
@@ -3048,13 +2507,13 @@ export default function Home() {
 
               /* FeatureManager Design Tree */
 
-              <div className="flex-1 overflow-y-auto p-3 flex flex-col"> <div className="text-[14px] uppercase tracking-wider text-slate-600 mb-3 font-bold flex justify-between items-center border-b border-[#D1D5DB] pb-1.5"> <span>Feature Tree</span> <button onClick={handleRebuild} className="text-primary hover:text-primary-dark transition-all" title="Rebuild Model"> 🔄 </button> </div>
+              <div className="flex-1 overflow-y-auto p-3 flex flex-col"> <div className="text-[11px] uppercase tracking-[0.2em] text-secondary-text mb-4 font-black flex justify-between items-center border-b border-border pb-2"> <span>Feature Tree</span> <button onClick={handleRebuild} className="text-primary hover:text-primary-dark transition-all" title="Rebuild Model"> 🔄 </button> </div>
 
 
 
                 {/* Standard SolidWorks Meta Nodes */}
 
-                <div className="space-y-1.5 text-[14px] select-none"> <div className="flex items-center gap-2 p-1 text-slate-800 font-bold"> <span> </span> <span>📦</span> <span>Part1</span> </div> <div className="pl-4 space-y-1 text-slate-600"> <div className="flex items-center gap-2 p-0.5 hover:text-slate-800 cursor-pointer"> <span> </span> <span>📡</span> <span>Sensors</span> </div> <div className="flex items-center gap-2 p-0.5 hover:text-slate-800 cursor-pointer"> <span> </span> <span>📝</span> <span>Annotations</span> </div> <div className="flex items-center gap-2 p-0.5 hover:text-slate-800 cursor-pointer border-b border-[#D1D5DB]/40 pb-1.5"> <span> </span> <span>🧊</span> <span>Material</span> </div>
+                <div className="space-y-1.5 text-[14px] select-none"> <div className="flex items-center gap-2 p-1 text-primary-text font-bold"> <span> </span> <span>📦</span> <span>Part1</span> </div> <div className="pl-4 space-y-1 text-secondary-text"> <div className="flex items-center gap-2 p-0.5 hover:text-primary-text cursor-pointer"> <span> </span> <span>📡</span> <span>Sensors</span> </div> <div className="flex items-center gap-2 p-0.5 hover:text-primary-text cursor-pointer"> <span> </span> <span>📝</span> <span>Annotations</span> </div> <div className="flex items-center gap-2 p-0.5 hover:text-primary-text cursor-pointer border-b border-border/40 pb-1.5"> <span> </span> <span>🧊</span> <span>Material</span> </div>
 
 
 
@@ -3118,7 +2577,7 @@ export default function Home() {
 
                                 ? 'bg-purple-50 border-purple-200 text-purple-900 font-medium'
 
-                                : 'hover:bg-slate-100 border-transparent hover:text-slate-800'
+                                : 'hover:bg-slate-100 border-transparent hover:text-primary-text'
 
                             }`}
 
@@ -3178,7 +2637,7 @@ export default function Home() {
 
                                 ? 'bg-purple-50 border-purple-200 text-purple-900 font-medium'
 
-                                : 'hover:bg-slate-100 border-transparent hover:text-slate-800'
+                                : 'hover:bg-slate-100 border-transparent hover:text-primary-text'
 
                             }`}
 
@@ -3238,7 +2697,7 @@ export default function Home() {
 
                                 ? 'bg-purple-50 border-purple-200 text-purple-900 font-medium'
 
-                                : 'hover:bg-slate-100 border-transparent hover:text-slate-800'
+                                : 'hover:bg-slate-100 border-transparent hover:text-primary-text'
 
                             }`}
 
@@ -3270,7 +2729,7 @@ export default function Home() {
 
                                 ? 'bg-purple-50 border-purple-200 text-purple-900 font-medium'
 
-                                : 'hover:bg-slate-100 hover:text-slate-800'
+                                : 'hover:bg-slate-100 hover:text-primary-text'
 
                             }`}
 
@@ -3294,7 +2753,7 @@ export default function Home() {
 
                   {/* Chronological History Tree */}
 
-                  <div className="pl-2 pt-2 space-y-1 relative"> <div className="text-[13px] uppercase tracking-wider text-slate-500 font-bold mb-1"> </div>
+                  <div className="pl-2 pt-2 space-y-1 relative"> <div className="text-[13px] uppercase tracking-wider text-secondary-text font-bold mb-1"> </div>
 
                     
 
@@ -3366,7 +2825,7 @@ export default function Home() {
 
                                   : selectedId === f.id && selectedSubNodeType === 'FEATURE'
 
-                                  ? 'bg-primary/10 border-primary/30 text-slate-800 font-bold'
+                                  ? 'bg-primary/10 border-primary/30 text-primary-text font-bold'
 
                                   : relState === 'PARENT'
 
@@ -3386,7 +2845,7 @@ export default function Home() {
 
                                   {f.type === 'REVOLVE' ? '🔄' : f.type === 'EXTRUDE' ? (f.parameters.operation === 'CUT' ? '🔨' : '🏗️') : f.type === 'BOX' ? '📦' : f.type === 'CYLINDER' ? '🛢️' : '🛠️'}
 
-                                </span> <div className="flex flex-col"> <span className="text-[14px] leading-tight">{f.name}</span> <span className="text-[13px] text-slate-500 font-mono leading-none uppercase">{f.type === 'EXTRUDE' ? f.parameters.operation : f.type}</span>
+                                </span> <div className="flex flex-col"> <span className="text-[14px] leading-tight">{f.name}</span> <span className="text-[13px] text-secondary-text font-mono leading-none uppercase">{f.type === 'EXTRUDE' ? f.parameters.operation : f.type}</span>
 
                                   {editingFeatureId === f.id && (
 
@@ -3446,7 +2905,7 @@ export default function Home() {
 
                                     ? 'bg-pink-100/90 border border-pink-300 text-pink-700 font-bold shadow-xs'
 
-                                    : 'text-slate-500 hover:text-primary hover:bg-slate-100/50'
+                                    : 'text-secondary-text hover:text-primary hover:bg-slate-100/50'
 
                                 }`}
 
@@ -3522,11 +2981,11 @@ export default function Home() {
 
           {!isSketchMode && selectedTopology?.type === 'FACE' && measurementMode === 'NONE' && (
 
-            <div className="h-[250px] w-full border-t border-[#D1D5DB] bg-[#F5F6F9] flex flex-col p-3 z-10 shrink-0 shadow-[0_-2px_10px_rgba(0,0,0,0.05)]"> <div className="text-[14px] uppercase tracking-wider text-slate-500 mb-2 font-bold flex justify-between items-center border-b border-[#D1D5DB]/40 pb-1"> <span className="flex items-center gap-1"> </span> <span className="text-[13px] bg-indigo-600/10 text-indigo-600 px-1.5 rounded uppercase font-mono">Face Selected</span> </div> <div className="flex-1 overflow-y-auto space-y-2.5 pr-1"> <div className="bg-white p-2.5 rounded border border-[#D1D5DB] shadow-sm space-y-2 text-[14px]"> <div className="flex justify-between items-center"> <span className="text-slate-500 font-medium"> (Center)</span> <span className="font-mono text-slate-800 text-[13px]">
+            <div className="h-[250px] w-full border-t border-border bg-surface flex flex-col p-3 z-10 shrink-0 shadow-[0_-2px_10px_rgba(0,0,0,0.05)]"> <div className="text-[14px] uppercase tracking-wider text-secondary-text mb-2 font-bold flex justify-between items-center border-b border-border/40 pb-1"> <span className="flex items-center gap-1"> </span> <span className="text-[13px] bg-indigo-600/10 text-indigo-600 px-1.5 rounded uppercase font-mono">Face Selected</span> </div> <div className="flex-1 overflow-y-auto space-y-2.5 pr-1"> <div className="bg-surface p-2.5 rounded border border-border shadow-sm space-y-2 text-[14px]"> <div className="flex justify-between items-center"> <span className="text-secondary-text font-medium"> (Center)</span> <span className="font-mono text-primary-text text-[13px]">
 
                       {selectedTopology.coordinates ? `[${selectedTopology.coordinates.map((c: number) => c.toFixed(1)).join(', ')}]` : 'N/A'}
 
-                    </span> </div> <div className="flex justify-between items-center"> <span className="text-slate-500 font-medium"> (Normal)</span> <span className="font-mono text-slate-800 text-[13px]">
+                    </span> </div> <div className="flex justify-between items-center"> <span className="text-secondary-text font-medium"> (Normal)</span> <span className="font-mono text-primary-text text-[13px]">
 
                       {selectedTopology.normal ? `[${selectedTopology.normal.map((n: number) => n.toFixed(2)).join(', ')}]` : 'N/A'}
 
@@ -3534,7 +2993,7 @@ export default function Home() {
 
                   {selectedTopology.id && (
 
-                    <div className="flex justify-between items-center"> <span className="text-slate-500 font-medium"> ID</span> <span className="font-mono text-slate-800 text-xs bg-slate-100 px-1 rounded truncate max-w-[120px]" title={selectedTopology.id}>
+                    <div className="flex justify-between items-center"> <span className="text-secondary-text font-medium"> ID</span> <span className="font-mono text-primary-text text-xs bg-slate-100 px-1 rounded truncate max-w-[120px]" title={selectedTopology.id}>
 
                         {selectedTopology.id}
 
@@ -3584,21 +3043,21 @@ export default function Home() {
 
           {!isSketchMode && selectedFeature && selectedSubNodeType !== 'SKETCH' && measurementMode === 'NONE' && (!selectedTopology || selectedTopology.type !== 'FACE') && (
 
-            <div className="h-[250px] w-full border-t border-[#D1D5DB] bg-[#F5F6F9] flex flex-col p-3 z-10 shrink-0"> <div className="text-[14px] uppercase tracking-wider text-slate-500 mb-2 font-bold flex justify-between items-center border-b border-[#D1D5DB]/40 pb-1"> <span> PropertyManager</span> <span className="text-[13px] bg-primary/10 text-primary px-1 rounded uppercase font-mono">{selectedFeature.type}</span> </div> <div className="flex-1 overflow-y-auto space-y-2.5 pr-1">
+            <div className="h-[250px] w-full border-t border-border bg-surface flex flex-col p-3 z-10 shrink-0"> <div className="text-[14px] uppercase tracking-wider text-secondary-text mb-2 font-bold flex justify-between items-center border-b border-border/40 pb-1"> <span> PropertyManager</span> <span className="text-[13px] bg-primary/10 text-primary px-1 rounded uppercase font-mono">{selectedFeature.type}</span> </div> <div className="flex-1 overflow-y-auto space-y-2.5 pr-1">
 
                 {selectedFeature.type === 'PATTERN' ? (
 
-                  <div className="bg-white p-2 rounded border border-[#D1D5DB] shadow-sm"> <div className="text-[13px] text-primary font-bold uppercase mb-1.5 border-b border-[#D1D5DB]/30 pb-0.5">Pattern</div> <div className="space-y-2 text-[14px] pt-1">
+                  <div className="bg-surface p-2 rounded border border-border shadow-sm"> <div className="text-[13px] text-primary font-bold uppercase mb-1.5 border-b border-border/30 pb-0.5">Pattern</div> <div className="space-y-2 text-[14px] pt-1">
 
                       {/* Target Feature Selector */}
 
-                      <div className="flex items-center justify-between gap-2"> <label className="text-[13px] text-slate-600 font-medium uppercase shrink-0"> </label> <select
+                      <div className="flex items-center justify-between gap-2"> <label className="text-[13px] text-secondary-text font-medium uppercase shrink-0"> </label> <select
 
                           value={selectedFeature.parameters.target_feature_id || ''}
 
                           onChange={(e) => onParamChange('target_feature_id', e.target.value)}
 
-                          className="bg-white border border-[#C4C7CE] rounded px-1 py-0.5 text-[14px] focus:border-primary outline-none text-slate-800 w-[120px]"
+                          className="bg-surface border border-[#C4C7CE] rounded px-1 py-0.5 text-[14px] focus:border-primary outline-none text-primary-text w-[120px]"
 
                         >
 
@@ -3622,13 +3081,13 @@ export default function Home() {
 
                       {/* Pattern Type */}
 
-                      <div className="flex items-center justify-between gap-2"> <label className="text-[13px] text-slate-600 font-medium uppercase shrink-0">Pattern</label> <select
+                      <div className="flex items-center justify-between gap-2"> <label className="text-[13px] text-secondary-text font-medium uppercase shrink-0">Pattern</label> <select
 
                           value={selectedFeature.parameters.pattern_type || 'CIRCULAR'}
 
                           onChange={(e) => onParamChange('pattern_type', e.target.value)}
 
-                          className="bg-white border border-[#C4C7CE] rounded px-1 py-0.5 text-[14px] focus:border-primary outline-none text-slate-800 w-[120px]"
+                          className="bg-surface border border-[#C4C7CE] rounded px-1 py-0.5 text-[14px] focus:border-primary outline-none text-primary-text w-[120px]"
 
                         >
 
@@ -3638,13 +3097,13 @@ export default function Home() {
 
                       {/* Axis */}
 
-                      <div className="flex items-center justify-between gap-2"> <label className="text-[13px] text-slate-600 font-medium uppercase shrink-0"> </label> <select
+                      <div className="flex items-center justify-between gap-2"> <label className="text-[13px] text-secondary-text font-medium uppercase shrink-0"> </label> <select
 
                           value={selectedFeature.parameters.axis || 'Y'}
 
                           onChange={(e) => onParamChange('axis', e.target.value)}
 
-                          className="bg-white border border-[#C4C7CE] rounded px-1 py-0.5 text-[14px] focus:border-primary outline-none text-slate-800 w-[120px]"
+                          className="bg-surface border border-[#C4C7CE] rounded px-1 py-0.5 text-[14px] focus:border-primary outline-none text-primary-text w-[120px]"
 
                         >
 
@@ -3654,7 +3113,7 @@ export default function Home() {
 
                       {/* Count */}
 
-                      <div className="flex items-center justify-between gap-2"> <label className="text-[13px] text-slate-600 font-medium uppercase shrink-0"> (Count)</label> <input
+                      <div className="flex items-center justify-between gap-2"> <label className="text-[13px] text-secondary-text font-medium uppercase shrink-0"> (Count)</label> <input
 
                           type="number"
 
@@ -3666,7 +3125,7 @@ export default function Home() {
 
                           onChange={(e) => onParamChange('count', e.target.value)}
 
-                          className="bg-white border border-[#C4C7CE] rounded px-1.5 py-0.5 text-[14px] focus:border-primary outline-none text-slate-800 font-mono w-[120px] text-right"
+                          className="bg-surface border border-[#C4C7CE] rounded px-1.5 py-0.5 text-[14px] focus:border-primary outline-none text-primary-text font-mono w-[120px] text-right"
 
                         />
 
@@ -3676,7 +3135,7 @@ export default function Home() {
 
                       {/* Spacing */}
 
-                      <div className="flex items-center justify-between gap-2"> <label className="text-[13px] text-slate-600 font-medium uppercase shrink-0">
+                      <div className="flex items-center justify-between gap-2"> <label className="text-[13px] text-secondary-text font-medium uppercase shrink-0">
 
                           {selectedFeature.parameters.pattern_type === 'CIRCULAR' ? ' ()' : ' (mm)'}
 
@@ -3690,7 +3149,7 @@ export default function Home() {
 
                           onChange={(e) => onParamChange('spacing', e.target.value)}
 
-                          className="bg-white border border-[#C4C7CE] rounded px-1.5 py-0.5 text-[14px] focus:border-primary outline-none text-slate-800 font-mono w-[120px] text-right"
+                          className="bg-surface border border-[#C4C7CE] rounded px-1.5 py-0.5 text-[14px] focus:border-primary outline-none text-primary-text font-mono w-[120px] text-right"
 
                         />
 
@@ -3700,7 +3159,7 @@ export default function Home() {
 
                   /* direction header */
 
-                  <div className="bg-white p-2 rounded border border-[#D1D5DB] shadow-sm"> <div className="text-[13px] text-primary font-bold uppercase mb-1.5"> 1 (Direction 1)</div> <div className="space-y-2 text-[14px]">
+                  <div className="bg-surface p-2 rounded border border-border shadow-sm"> <div className="text-[13px] text-primary font-bold uppercase mb-1.5"> 1 (Direction 1)</div> <div className="space-y-2 text-[14px]">
 
                       {Object.keys(selectedFeature.parameters).map((key) => {
 
@@ -3710,7 +3169,7 @@ export default function Home() {
 
                         return (
 
-                          <div key={key} className="flex items-center justify-between gap-2"> <label className="text-[13px] text-slate-600 font-medium uppercase shrink-0">{key}</label>
+                          <div key={key} className="flex items-center justify-between gap-2"> <label className="text-[13px] text-secondary-text font-medium uppercase shrink-0">{key}</label>
 
                             {key === 'operation' ? (
 
@@ -3720,7 +3179,7 @@ export default function Home() {
 
                                 onChange={(e) => onParamChange(key, e.target.value)}
 
-                                className="bg-white border border-[#C4C7CE] rounded px-1 py-0.5 text-[14px] focus:border-primary outline-none text-slate-800 w-[120px]"
+                                className="bg-surface border border-[#C4C7CE] rounded px-1 py-0.5 text-[14px] focus:border-primary outline-none text-primary-text w-[120px]"
 
                               >
 
@@ -3734,7 +3193,7 @@ export default function Home() {
 
                                 onChange={(e) => onParamChange(key, e.target.value)}
 
-                                className="bg-white border border-[#C4C7CE] rounded px-1 py-0.5 text-[14px] focus:border-primary outline-none text-slate-800 w-[120px]"
+                                className="bg-surface border border-[#C4C7CE] rounded px-1 py-0.5 text-[14px] focus:border-primary outline-none text-primary-text w-[120px]"
 
                               >
 
@@ -3752,7 +3211,7 @@ export default function Home() {
 
                                 onChange={(e) => onParamChange(key, e.target.value)}
 
-                                className="bg-white border border-[#C4C7CE] rounded px-1.5 py-0.5 text-[14px] focus:border-primary outline-none text-slate-800 font-mono w-[120px] text-right"
+                                className="bg-surface border border-[#C4C7CE] rounded px-1.5 py-0.5 text-[14px] focus:border-primary outline-none text-primary-text font-mono w-[120px] text-right"
 
                               />
 
@@ -3774,11 +3233,11 @@ export default function Home() {
 
                 {selectedFeature.parameters.relations && selectedFeature.parameters.relations.length > 0 && (
 
-                  <div className="bg-white p-2.5 rounded border border-[#D1D5DB] shadow-sm"> <div className="text-[13px] text-slate-700 font-bold uppercase mb-1.5 border-b border-[#D1D5DB]/30 pb-0.5 flex justify-between items-center"> <span>  (Relations)</span> <span className="text-[12px] text-emerald-600 font-bold bg-emerald-50 px-1 rounded animate-pulse">Fully Defined</span> </div> <div className="space-y-1 max-h-[85px] overflow-y-auto pr-0.5">
+                  <div className="bg-surface p-2.5 rounded border border-border shadow-sm"> <div className="text-[13px] text-slate-700 font-bold uppercase mb-1.5 border-b border-border/30 pb-0.5 flex justify-between items-center"> <span>  (Relations)</span> <span className="text-[12px] text-emerald-600 font-bold bg-emerald-50 px-1 rounded animate-pulse">Fully Defined</span> </div> <div className="space-y-1 max-h-[85px] overflow-y-auto pr-0.5">
 
                       {selectedFeature.parameters.relations.map((rel: string, rIdx: number) => (
 
-                        <div key={rIdx} className="flex items-center gap-1.5 text-[13px] text-slate-600 bg-[#F8FAFC] px-1.5 py-0.5 rounded border border-[#E2E8F0] font-mono"> <span className="text-emerald-500"> </span> <span className="font-bold text-slate-800">{rel}</span> <span className="text-slate-400 text-[13px] ml-auto"> </span> </div>
+                        <div key={rIdx} className="flex items-center gap-1.5 text-[13px] text-secondary-text bg-[#F8FAFC] px-1.5 py-0.5 rounded border border-[#E2E8F0] font-mono"> <span className="text-emerald-500"> </span> <span className="font-bold text-primary-text">{rel}</span> <span className="text-slate-400 text-[13px] ml-auto"> </span> </div>
 
                       ))}
 
@@ -3896,7 +3355,7 @@ export default function Home() {
 
                   return (
 
-                    <div className="bg-white p-2.5 rounded border border-[#D1D5DB] shadow-sm space-y-2"> <div className="text-[13px] text-slate-700 font-bold uppercase border-b border-[#D1D5DB]/30 pb-0.5 flex justify-between items-center"> <span className="flex items-center gap-1">  (Parent/Child Relations)</span> <span className="text-[12px] text-primary font-bold bg-primary/10 px-1 rounded font-mono"> </span> </div> <div className="grid grid-cols-2 gap-2 text-[9.5px]">
+                    <div className="bg-surface p-2.5 rounded border border-border shadow-sm space-y-2"> <div className="text-[13px] text-slate-700 font-bold uppercase border-b border-border/30 pb-0.5 flex justify-between items-center"> <span className="flex items-center gap-1">  (Parent/Child Relations)</span> <span className="text-[12px] text-primary font-bold bg-primary/10 px-1 rounded font-mono"> </span> </div> <div className="grid grid-cols-2 gap-2 text-[9.5px]">
 
                         {/* Parents Column */}
 
@@ -3998,19 +3457,19 @@ export default function Home() {
 
           {!isSketchMode && selectedSubNodeType === 'SKETCH' && selectedFeature && measurementMode === 'NONE' && (
 
-            <div className="h-[250px] w-full border-t border-[#D1D5DB] bg-[#FDF2F8] flex flex-col p-3 z-10 shrink-0 shadow-[0_-2px_10px_rgba(219,39,119,0.05)]"> <div className="text-[14px] uppercase tracking-wider text-pink-600 mb-2 font-bold flex justify-between items-center border-b border-pink-200 pb-1"> <span className="flex items-center gap-1.5"> </span> <span className="text-[13px] bg-pink-100 text-pink-600 px-1.5 rounded uppercase font-mono">Sketch Node</span> </div> <div className="flex-1 overflow-y-auto space-y-2.5 pr-1 text-[14px]"> <div className="bg-white p-2.5 rounded border border-pink-200 shadow-sm space-y-2"> <div className="flex justify-between items-center"> <span className="text-slate-500 font-medium"> </span> <span className="font-bold text-slate-800 font-mono">
+            <div className="h-[250px] w-full border-t border-border bg-[#FDF2F8] flex flex-col p-3 z-10 shrink-0 shadow-[0_-2px_10px_rgba(219,39,119,0.05)]"> <div className="text-[14px] uppercase tracking-wider text-pink-600 mb-2 font-bold flex justify-between items-center border-b border-pink-200 pb-1"> <span className="flex items-center gap-1.5"> </span> <span className="text-[13px] bg-pink-100 text-pink-600 px-1.5 rounded uppercase font-mono">Sketch Node</span> </div> <div className="flex-1 overflow-y-auto space-y-2.5 pr-1 text-[14px]"> <div className="bg-surface p-2.5 rounded border border-pink-200 shadow-sm space-y-2"> <div className="flex justify-between items-center"> <span className="text-secondary-text font-medium"> </span> <span className="font-bold text-primary-text font-mono">
 
                       {selectedFeature.name.replace('-', '').replace('-', '')}
 
-                    </span> </div> <div className="flex justify-between items-center"> <span className="text-slate-500 font-medium">Reference Plane</span> <span className="font-semibold text-slate-700 bg-slate-100 px-1.5 py-0.5 rounded font-mono">
+                    </span> </div> <div className="flex justify-between items-center"> <span className="text-secondary-text font-medium">Reference Plane</span> <span className="font-semibold text-slate-700 bg-slate-100 px-1.5 py-0.5 rounded font-mono">
 
                       {selectedFeature.parameters.plane || 'FRONT'}
 
-                    </span> </div> <div className="flex justify-between items-center"> <span className="text-slate-500 font-medium"> </span> <span className="font-bold text-slate-800 font-mono">
+                    </span> </div> <div className="flex justify-between items-center"> <span className="text-secondary-text font-medium"> </span> <span className="font-bold text-primary-text font-mono">
 
                       {Array.isArray(selectedFeature.parameters.points) ? selectedFeature.parameters.points.length : 0}
 
-                    </span> </div> <div className="flex justify-between items-center"> <span className="text-slate-500 font-medium"> </span> <span className="font-semibold text-primary font-mono bg-blue-50 border border-blue-100 px-1 rounded">
+                    </span> </div> <div className="flex justify-between items-center"> <span className="text-secondary-text font-medium"> </span> <span className="font-semibold text-primary font-mono bg-blue-50 border border-blue-100 px-1 rounded">
 
                       {selectedFeature.name}
 
@@ -4032,7 +3491,7 @@ export default function Home() {
 
           {!isSketchMode && measurementMode !== 'NONE' && (
 
-            <div className="h-[210px] w-full border-t border-[#D1D5DB] bg-[#F5F6F9] flex flex-col p-3 z-10 shrink-0"> <div className="text-[14px] uppercase tracking-wider text-indigo-600 mb-2 font-bold flex justify-between items-center border-b border-[#D1D5DB]/40 pb-1"> <span>  (Measure Manager)</span> <button
+            <div className="h-[210px] w-full border-t border-border bg-surface flex flex-col p-3 z-10 shrink-0"> <div className="text-[14px] uppercase tracking-wider text-indigo-600 mb-2 font-bold flex justify-between items-center border-b border-border/40 pb-1"> <span>  (Measure Manager)</span> <button
 
                   onClick={() => {
 
@@ -4048,7 +3507,7 @@ export default function Home() {
 
                   
 
-                </button> </div> <div className="flex-1 overflow-y-auto space-y-2.5 pr-1"> <div className="bg-white p-2.5 rounded-xl border border-[#D1D5DB] shadow-sm"> <div className="text-[13px] text-indigo-700 font-bold uppercase mb-1.5 border-b border-[#D1D5DB]/30 pb-0.5 flex justify-between items-center"> <span>: {measurementMode}</span> <span className="text-[12px] text-indigo-600 font-bold bg-indigo-50 px-1 rounded font-mono">
+                </button> </div> <div className="flex-1 overflow-y-auto space-y-2.5 pr-1"> <div className="bg-surface p-2.5 rounded-sm border border-border shadow-sm"> <div className="text-[13px] text-indigo-700 font-bold uppercase mb-1.5 border-b border-border/30 pb-0.5 flex justify-between items-center"> <span>: {measurementMode}</span> <span className="text-[12px] text-indigo-600 font-bold bg-indigo-50 px-1 rounded font-mono">
 
                       : {measurementPoints.length} 
 
@@ -4086,7 +3545,7 @@ export default function Home() {
 
                 {measurementResults && (
 
-                  <div className="bg-[#4F46E5]/10 p-2.5 rounded-xl border border-[#4F46E5]/20 shadow-sm flex flex-col items-center justify-center py-3"> <span className="text-[13px] text-[#4F46E5] uppercase font-bold tracking-widest mb-1"> </span> <div className="text-base font-black text-slate-900 font-mono leading-none flex items-baseline gap-1"> <span>{(measurementResults.value ?? 0).toFixed(3)}</span> <span className="text-[14px] text-indigo-600 font-bold">{measurementResults.unit}</span> </div>
+                  <div className="bg-[#4F46E5]/10 p-2.5 rounded-sm border border-[#4F46E5]/20 shadow-sm flex flex-col items-center justify-center py-3"> <span className="text-[13px] text-[#4F46E5] uppercase font-bold tracking-widest mb-1"> </span> <div className="text-base font-black text-slate-900 font-mono leading-none flex items-baseline gap-1"> <span>{(measurementResults.value ?? 0).toFixed(3)}</span> <span className="text-[14px] text-indigo-600 font-bold">{measurementResults.unit}</span> </div>
 
                     {measurementResults.details && (
 
@@ -4120,7 +3579,7 @@ export default function Home() {
 
           {isSketchMode && hasConflict && (
 
-            <div className="absolute top-24 left-1/2 -translate-x-1/2 bg-red-500/90 border border-red-400 text-white px-5 py-3 rounded-full shadow-2xl flex items-center gap-2.5 z-[999] w-[85%] max-w-[500px] pointer-events-none backdrop-blur-md"> <span className="text-xl"> </span> <div className="flex flex-col"> <span className="text-[12px] font-extrabold uppercase tracking-wider leading-none"> (Over-Constrained Conflict)</span> <span className="text-[11px] font-bold mt-1 text-red-50"> </span> </div> </div>
+            <div className="absolute top-24 left-1/2 -translate-x-1/2 bg-red-500/90 border border-red-400 text-white px-5 py-3 rounded-full shadow-sm flex items-center gap-2.5 z-[999] w-[85%] max-w-[500px] pointer-events-none backdrop-blur-md"> <span className="text-xl"> </span> <div className="flex flex-col"> <span className="text-[12px] font-extrabold uppercase tracking-wider leading-none"> (Over-Constrained Conflict)</span> <span className="text-[11px] font-bold mt-1 text-red-50"> </span> </div> </div>
 
           )}
 
@@ -4186,7 +3645,7 @@ export default function Home() {
 
           {loading && (
 
-            <div className="absolute inset-0 bg-background/25 backdrop-blur-[1px] flex items-center justify-center pointer-events-none z-30"> <div className="glass-effect px-5 py-2.5 rounded-2xl text-[14px] font-bold text-primary animate-pulse border border-primary/30 shadow-2xl flex items-center gap-2"> <span> </span> <span>B-REP ...</span> </div> </div>
+            <div className="absolute inset-0 bg-background/25 backdrop-blur-[1px] flex items-center justify-center pointer-events-none z-30"> <div className="glass-effect px-5 py-2.5 rounded text-[14px] font-bold text-primary animate-pulse border border-primary/30 shadow-sm flex items-center gap-2"> <span> </span> <span>B-REP ...</span> </div> </div>
 
           )}
 
@@ -4196,7 +3655,7 @@ export default function Home() {
 
           {showMassPropsModal && massProps && (
 
-            <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-md flex items-center justify-center z-[1000] p-4 animate-fade-in"> <div className="w-[520px] bg-slate-900/90 border border-slate-700/60 rounded-3xl p-6 shadow-2xl flex flex-col gap-5 text-slate-100 relative overflow-hidden backdrop-blur-xl">
+            <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-md flex items-center justify-center z-[1000] p-4 animate-fade-in"> <div className="w-[520px] bg-slate-900/90 border border-slate-700/60 rounded-3xl p-6 shadow-sm flex flex-col gap-5 text-slate-100 relative overflow-hidden backdrop-blur-xl">
 
                 {/* Glowing neon background highlights */}
 
@@ -4222,17 +3681,17 @@ export default function Home() {
 
                 {/* Physical metrics list */}
 
-                <div className="space-y-3 z-10 font-sans"> <div className="bg-slate-950/50 rounded-2xl border border-slate-800/80 p-3.5 flex justify-between items-center shadow-inner"> <div className="flex flex-col"> <span className="text-[13px] text-slate-400 font-bold uppercase tracking-wider">Volume</span> <span className="text-[12px] text-slate-500 mt-0.5"> 3D B-Rep </span> </div> <span className="text-base font-black font-mono text-emerald-400">
+                <div className="space-y-3 z-10 font-sans"> <div className="bg-slate-950/50 rounded border border-slate-800/80 p-3.5 flex justify-between items-center shadow-inner"> <div className="flex flex-col"> <span className="text-[13px] text-slate-400 font-bold uppercase tracking-wider">Volume</span> <span className="text-[12px] text-secondary-text mt-0.5"> 3D B-Rep </span> </div> <span className="text-base font-black font-mono text-emerald-400">
 
-                      {massProps.volume.toLocaleString(undefined, { minimumFractionDigits: 3, maximumFractionDigits: 3 })} <span className="text-[12px] font-bold text-slate-500">mm</span> </span> </div> <div className="bg-slate-950/50 rounded-2xl border border-slate-800/80 p-3.5 flex justify-between items-center shadow-inner"> <div className="flex flex-col"> <span className="text-[13px] text-slate-400 font-bold uppercase tracking-wider">Surface Area</span> <span className="text-[12px] text-slate-500 mt-0.5">Surface Area</span> </div> <span className="text-base font-black font-mono text-indigo-400">
+                      {massProps.volume.toLocaleString(undefined, { minimumFractionDigits: 3, maximumFractionDigits: 3 })} <span className="text-[12px] font-bold text-secondary-text">mm</span> </span> </div> <div className="bg-slate-950/50 rounded border border-slate-800/80 p-3.5 flex justify-between items-center shadow-inner"> <div className="flex flex-col"> <span className="text-[13px] text-slate-400 font-bold uppercase tracking-wider">Surface Area</span> <span className="text-[12px] text-secondary-text mt-0.5">Surface Area</span> </div> <span className="text-base font-black font-mono text-indigo-400">
 
-                      {massProps.surface_area.toLocaleString(undefined, { minimumFractionDigits: 3, maximumFractionDigits: 3 })} <span className="text-[12px] font-bold text-slate-500">mm</span> </span> </div> <div className="bg-slate-950/50 rounded-2xl border border-slate-800/80 p-3.5 flex flex-col gap-2 shadow-inner"> <div className="flex justify-between items-center"> <span className="text-[13px] text-slate-400 font-bold uppercase tracking-wider"> (Center of Mass)</span> <span className="text-[11px] bg-emerald-500/10 text-emerald-400 px-2 py-0.5 rounded-full font-mono font-bold">X, Y, Z Coords</span> </div> <div className="grid grid-cols-3 gap-2.5 mt-1">
+                      {massProps.surface_area.toLocaleString(undefined, { minimumFractionDigits: 3, maximumFractionDigits: 3 })} <span className="text-[12px] font-bold text-secondary-text">mm</span> </span> </div> <div className="bg-slate-950/50 rounded border border-slate-800/80 p-3.5 flex flex-col gap-2 shadow-inner"> <div className="flex justify-between items-center"> <span className="text-[13px] text-slate-400 font-bold uppercase tracking-wider"> (Center of Mass)</span> <span className="text-[11px] bg-emerald-500/10 text-emerald-400 px-2 py-0.5 rounded-full font-mono font-bold">X, Y, Z Coords</span> </div> <div className="grid grid-cols-3 gap-2.5 mt-1">
 
                       {['X', 'Y', 'Z'].map((axis, aIdx) => (
 
-                        <div key={axis} className="bg-slate-900 border border-slate-800 rounded-xl p-2 flex flex-col items-center shadow-sm"> <span className="text-[12px] font-extrabold text-slate-500">{axis}-</span> <span className="text-[14px] font-black font-mono text-slate-100 mt-0.5">
+                        <div key={axis} className="bg-slate-900 border border-slate-800 rounded-sm p-2 flex flex-col items-center shadow-sm"> <span className="text-[12px] font-extrabold text-secondary-text">{axis}-</span> <span className="text-[14px] font-black font-mono text-slate-100 mt-0.5">
 
-                            {massProps.center_of_mass[aIdx].toFixed(3)} <span className="text-[10px] text-slate-600 font-bold">mm</span> </span> </div>
+                            {massProps.center_of_mass[aIdx].toFixed(3)} <span className="text-[10px] text-secondary-text font-bold">mm</span> </span> </div>
 
                       ))}
 
@@ -4242,7 +3701,7 @@ export default function Home() {
 
                   {/* Moment of inertia tensor */}
 
-                  <div className="bg-slate-950/50 rounded-2xl border border-slate-800/80 p-3.5 flex flex-col gap-2 shadow-inner"> <span className="text-[13px] text-slate-400 font-bold uppercase tracking-wider border-b border-slate-800 pb-1.5 flex justify-between items-center"> <span> (Inertia Tensor)</span> <span className="text-[10px] text-slate-500 font-mono">gmm (Density = 1.0)</span> </span> <div className="grid grid-cols-3 gap-1.5 mt-1 font-mono text-[12px] bg-slate-900/50 p-2.5 rounded-xl border border-slate-800/40">
+                  <div className="bg-slate-950/50 rounded border border-slate-800/80 p-3.5 flex flex-col gap-2 shadow-inner"> <span className="text-[13px] text-slate-400 font-bold uppercase tracking-wider border-b border-slate-800 pb-1.5 flex justify-between items-center"> <span> (Inertia Tensor)</span> <span className="text-[10px] text-secondary-text font-mono">gmm (Density = 1.0)</span> </span> <div className="grid grid-cols-3 gap-1.5 mt-1 font-mono text-[12px] bg-slate-900/50 p-2.5 rounded-sm border border-slate-800/40">
 
                       {massProps.inertia_matrix.map((row, rIdx) => 
 
@@ -4268,7 +3727,11 @@ export default function Home() {
 
                   onClick={() => {
 
-                    const text = `: ${massProps.volume.toFixed(3)} mm\n: ${massProps.surface_area.toFixed(3)} mm\n: [${massProps.center_of_mass.map(c => c.toFixed(3)).join(', ')}]\n:\n${massProps.inertia_matrix.map(r => r.map(v => v.toFixed(1)).join('\t')).join('\n')}`;
+                    const text = `: ${massProps.volume.toFixed(3)} mm
+: ${massProps.surface_area.toFixed(3)} mm
+: [${massProps.center_of_mass.map(c => c.toFixed(3)).join(', ')}]
+:
+${massProps.inertia_matrix.map(r => r.map(v => v.toFixed(1)).join('\t')).join('\n')}`;
 
                     navigator.clipboard.writeText(text);
 
@@ -4276,7 +3739,7 @@ export default function Home() {
 
                   }}
 
-                  className="w-full py-2.5 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 active:from-amber-700 active:to-amber-800 text-slate-950 font-extrabold rounded-2xl transition-all shadow-lg flex items-center justify-center gap-1.5 text-[14px] cursor-pointer"
+                  className="w-full py-2.5 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 active:from-amber-700 active:to-amber-800 text-slate-950 font-extrabold rounded transition-all shadow-lg flex items-center justify-center gap-1.5 text-[14px] cursor-pointer"
 
                 >
 
@@ -4290,7 +3753,7 @@ export default function Home() {
 
           {showTranslatorModal && (
 
-            <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-md flex items-center justify-center z-[1000] p-4 animate-fade-in"> <div className="w-[460px] bg-slate-900/90 border border-slate-700/60 rounded-3xl p-6 shadow-2xl flex flex-col gap-4 text-slate-100 relative overflow-hidden backdrop-blur-xl"> <div className="absolute -top-12 -left-12 w-32 h-32 bg-blue-500/20 rounded-full blur-3xl pointer-events-none" />
+            <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-md flex items-center justify-center z-[1000] p-4 animate-fade-in"> <div className="w-[460px] bg-slate-900/90 border border-slate-700/60 rounded-3xl p-6 shadow-sm flex flex-col gap-4 text-slate-100 relative overflow-hidden backdrop-blur-xl"> <div className="absolute -top-12 -left-12 w-32 h-32 bg-blue-500/20 rounded-full blur-3xl pointer-events-none" />
 
 
 
@@ -4320,7 +3783,7 @@ export default function Home() {
 
                      SolidWorks 
 
-                  </p> <div className="bg-slate-950/60 p-3.5 rounded-2xl border border-slate-800/80 space-y-2"> <span className="text-[13px] font-bold text-slate-100 flex items-center gap-1.5"> <span> </span> <span> </span> </span> <ol className="list-decimal list-inside space-y-1.5 text-xs text-slate-400"> <li> SolidWorks </li> <li> <span className="text-slate-200"> (Save As...)</span></li> <li> <span className="text-slate-200 font-mono">STEP (.step / .stp)</span> <span className="text-slate-200 font-mono">IGES (.iges)</span></li> <li> 3D-Builder </li> </ol> </div> </div>
+                  </p> <div className="bg-slate-950/60 p-3.5 rounded border border-slate-800/80 space-y-2"> <span className="text-[13px] font-bold text-slate-100 flex items-center gap-1.5"> <span> </span> <span> </span> </span> <ol className="list-decimal list-inside space-y-1.5 text-xs text-slate-400"> <li> SolidWorks </li> <li> <span className="text-slate-200"> (Save As...)</span></li> <li> <span className="text-slate-200 font-mono">STEP (.step / .stp)</span> <span className="text-slate-200 font-mono">IGES (.iges)</span></li> <li> 3D-Builder </li> </ol> </div> </div>
 
 
 
@@ -4330,7 +3793,7 @@ export default function Home() {
 
                     onClick={() => setShowTranslatorModal(false)}
 
-                    className="flex-1 py-2.5 bg-slate-800 hover:bg-slate-700 active:bg-slate-600 rounded-xl font-bold transition-all text-center text-slate-300 text-[13px] cursor-pointer"
+                    className="flex-1 py-2.5 bg-slate-800 hover:bg-slate-700 active:bg-slate-600 rounded-sm font-bold transition-all text-center text-slate-300 text-[13px] cursor-pointer"
 
                   >
 
@@ -4346,7 +3809,7 @@ export default function Home() {
 
                     }}
 
-                    className="flex-1 py-2.5 bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white rounded-xl font-bold transition-all shadow-md text-center text-[13px] cursor-pointer"
+                    className="flex-1 py-2.5 bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white rounded-sm font-bold transition-all shadow-md text-center text-[13px] cursor-pointer"
 
                   >
 

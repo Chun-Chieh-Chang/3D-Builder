@@ -28,8 +28,43 @@ export const SketchPreview = () => {
   const [hoveredEntityId, setHoveredEntityId] = useState<string | null>(null);
   const [editingConstraintId, setEditingConstraintId] = useState<string | null>(null);
   const [inputValue, setInputValue] = useState<string>('');
+  const [draggingDimId, setDraggingDimId] = useState<string | null>(null);
+  const [dragStartPos, setDragStartPos] = useState<{ x: number, y: number } | null>(null);
+  const [dragStartOffset, setDragStartOffset] = useState<number>(12);
 
   const selectedFeature = useMemo(() => features.find(f => f.id === selectedId), [features, selectedId]);
+
+
+  React.useEffect(() => {
+    if (!draggingDimId || !dragStartPos) return;
+
+    const handlePointerMove = (e: PointerEvent) => {
+      const dx = e.clientX - dragStartPos.x;
+      const dy = e.clientY - dragStartPos.y;
+      
+      // Industrial Drag Logic: Use a sensitivity factor
+      const sensitivity = 0.5;
+      const delta = (Math.abs(dx) > Math.abs(dy) ? dx : -dy) * sensitivity;
+      const newOffset = dragStartOffset + delta;
+
+      setSketchConstraints(prev => ({
+        ...prev,
+        [draggingDimId]: { ...prev[draggingDimId], offset: newOffset }
+      }));
+    };
+
+    const handlePointerUp = () => {
+      setDraggingDimId(null);
+      setDragStartPos(null);
+    };
+
+    window.addEventListener('pointermove', handlePointerMove);
+    window.addEventListener('pointerup', handlePointerUp);
+    return () => {
+      window.removeEventListener('pointermove', handlePointerMove);
+      window.removeEventListener('pointerup', handlePointerUp);
+    };
+  }, [draggingDimId, dragStartPos, dragStartOffset, setSketchConstraints]);
 
   const isViewingStoredSketch = useMemo(() => {
     return !isSketchMode && selectedSubNodeType === 'SKETCH' && selectedFeature && 
@@ -397,11 +432,11 @@ export const SketchPreview = () => {
         const nx = -uy;
         const ny = ux;
 
-        const offsetDist = 12;
-        const offAx = nA.x + nx * offsetDist;
-        const offAy = nA.y + ny * offsetDist;
-        const offBx = nB.x + nx * offsetDist;
-        const offBy = nB.y + ny * offsetDist;
+        const currentOffset = constraint.offset ?? 12;
+        const offAx = nA.x + nx * currentOffset;
+        const offAy = nA.y + ny * currentOffset;
+        const offBx = nB.x + nx * currentOffset;
+        const offBy = nB.y + ny * currentOffset;
 
         const pA = get3DPointForPlane(nA.x, nA.y, activePlane, activeBasis);
         const pB = get3DPointForPlane(nB.x, nB.y, activePlane, activeBasis);
@@ -483,7 +518,7 @@ export const SketchPreview = () => {
                   setEditingConstraintId(constraint.id);
                   setInputValue(constraint.value!.toString());
                 }}
-                style={{ pointerEvents: 'auto', cursor: 'pointer' }}
+                style={{ pointerEvents: 'auto', cursor: draggingDimId ? 'grabbing' : 'grab' }}
               >
                 {editingConstraintId === constraint.id ? (
                   <input

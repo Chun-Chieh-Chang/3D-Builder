@@ -47,6 +47,56 @@
 1. **不重複造輪子 (Don't Reinvent the Wheel)**: 凡是有現成、穩定、工業標準的開源工具（如 OpenCASCADE, SolveSpace, React Three Fiber），必須直接引進並封裝對接，嚴禁從零自行開發底層數學或圖形邏輯。
 
 ---
+## [2026-05-23] RCA/CAPA：PDCA 自動化檢查失敗修復 (Act) ✅
+
+### 實裝成果
+- **修復 PDCA 完整性**：
+  - 重建了 [task_plan.md](file:///c:/Users/3kids/Downloads/3D-Builder/task_plan.md)，明確定義當前基準點狀態。
+  - 修正了 `cleanup` 邏輯，確保在 Phase 結束時，雖然清理了冗餘檔案，但必須保留符合規範的計畫文件。
+
+### 確效結果 (Check)
+- 執行 `npm run pdca:check` 結果：**Success**。
+- 驗證結果與計畫達成一致，自動化門禁通過。
+
+### RCA & CAPA
+- **Phase 1: Investigation (根因調查)**：
+  - 在執行「今日終結」清理任務時，Agent 誤將 [task_plan.md](file:///c:/Users/3kids/Downloads/3D-Builder/task_plan.md) 視為冗餘檔案刪除。
+  - 隨後的 `git commit` 觸發了 pre-commit hook 中的 `npm run pdca:check`，該腳本強制要求 `task_plan.md` 必須存在，導致提交失敗。
+- **Phase 2: Pattern (模式分析)**：
+  - 正常開發流程中，`task_plan.md` 是開發軌跡的核心組成部分，不應在 Phase 結束時被完全刪除，而應是更新為「已完成」或「基準點」狀態。
+- **Phase 3: Hypothesis (假設分析 RCA)**：
+  - **根本原因**：Agent 對「清理 (Cleanup)」的理解過於激進，未考慮到自動化檢查腳本的硬性約束 (Hard Constraints)。
+- **Phase 4: Fix & Verify (精準修復 CAPA)**：
+  - **CAPA 1 (Corrective Action)**：立即重建 `task_plan.md`，並將其內容設為當前 Phase 14 的結算狀態。
+  - **CAPA 2 (Preventive Action)**：在 `handover_resume_guide.md` 與 `project_memory.md` 中加入明確指令，禁止刪除 `task_plan.md`，並在未來執行清理任務前，先查閱 `tools/pdca-check.mjs` 的要求。
+
+---
+## [2026-05-23] Phase 14: 基準面與草圖平面交互深度優化 ✅
+
+### 實裝成果
+- **基準面選取與草圖啟動閉環 (Plane-to-Sketch Loop)**：
+  - 重構 [DatumPlanes.tsx](file:///c:/Users/3kids/Downloads/3D-Builder/src/renderer/DatumPlanes.tsx) 的點擊邏輯。現在點擊任何平面（標準面或自定義面）都會立即更新 `activePlane` 並提供視覺高亮。
+  - 升級 [page.tsx](file:///c:/Users/3kids/Downloads/3D-Builder/src/app/page.tsx) 的 **SKETCH** 按鈕邏輯。現在具備智慧感知的優先級：`選取表面 (FACE) > 已選取基準面 (activePlane) > 前基準面 (FRONT)`。
+- **全平面類型支援 (Universal Plane Support)**：
+  - 在 `DatumPlanes.tsx` 中正式實裝了 **永久自定義基準面 (Permanent Reference Planes)** 的渲染與交互。
+  - 確保了自定義基準面在非草圖模式下也能被選取，並在進入草圖模式時正確切換為活動繪圖平面。
+- **正對面視角強化 (Normal To Selection)**：
+  - 在 [HeadsUpToolbar.tsx](file:///c:/Users/3kids/Downloads/3D-Builder/src/ui/HeadsUpToolbar.tsx) 的視角切換選單中新增了 **「正對面 (Normal To)」** 功能。
+  - 支援針對標準面、選取表面 (FACE) 以及自定義基準面進行精準的相機轉正動畫。
+
+### 確效結果 (Validation)
+- 執行 `npx tsc --noEmit` 全域 100% 成功。
+- 驗證交互鏈路：`點擊自定義面 ➔ 點擊 SKETCH ➔ 相機自動轉正並進入繪圖模式`，流程極度流暢。
+- **還原基準點建立**：已完成 `v3.2.0-Phase14-Baseline` 標籤推送，並清理冗餘的 `task_plan.md` 與模擬報告。
+
+### RCA & CAPA
+- **RCA (Root Cause Analysis)**：
+  - 先前的系統中，草圖平面的啟動與基準面的選取是脫節的。使用者必須先點擊「SKETCH」標籤頁，系統才會強制預設為 FRONT 平面，這導致在自定義基準面上起草的操作非常繁瑣且不直觀。
+- **CAPA (Corrective and Preventive Actions)**：
+  - **選取即意圖 (Selection as Intent)**：將 `activePlane` 狀態從單純的繪圖指標提升為全域的「焦點平面」。
+  - **智慧切換機制**：在啟動草圖指令時，自動偵測當前視埠中的「選取上下文 (Selection Context)」，達成零點擊的平面自動適配。
+
+---
 ## [2026-05-23] 貫徹 RCA/CAPA：型別強固化與自動化防禦體系實裝 ✅
 
 ### 實裝成果
@@ -2706,7 +2756,8 @@ pm run pdca:check契謍???
 - ?? 
 pm run pdca:check契謍???
 ### RCA & CAPA
-- **RCA (Root Cause Analysis)**?  - PRODUCTIZATION_PLAN.md ? Phase 0 ? spec ?? elease-gates.md????? PDCA Check Checklist 鼎?? release gate? spec ????? stabilization???? plan debt??- **CAPA (Corrective and Preventive Actions)**?  - **Design Specification**垢隤 docs/spec/release-gates.md 遴鬲蹌 Phase 0 堆?菔??  - **Check gate**城?? 	ask_plan.md ?? README.md ? spec ???? audit trail??
+- **RCA (Root Cause Analysis)**?  - PRODUCTIZATION_PLAN.md ? Phase 0 ? spec ?? 
+elease-gates.md????? PDCA Check Checklist 鼎?? release gate? spec ????? stabilization???? plan debt??- **CAPA (Corrective and Preventive Actions)**?  - **Design Specification**垢隤 docs/spec/release-gates.md 遴鬲蹌 Phase 0 堆?菔??  - **Check gate**城?? 	ask_plan.md ?? README.md ? spec ???? audit trail??
 
 ---
 ## [2026-05-24] Phase 1 P0城?Geometry Regression Fixtures 秋赯
@@ -2782,14 +2833,17 @@ pm run pdca:check -> **PASS**??
 ---
 ## [2026-05-24] Phase 1 FULL VALIDATION (軟體確效) COMPLETED ??
 ### 正??
-- **?? Persistence Roundtrip Validation**城?oundtrip_check.py 確效了「儲存 -> 讀取 -> 重建」的完整幾何一致性??
+- **?? Persistence Roundtrip Validation**城?
+oundtrip_check.py 確效了「儲存 -> 讀取 -> 重建」的完整幾何一致性??
 - **?? Cross-Feature Integrity**垮??驗證了 BOX 與 EXTRUDE 特徵組合後的體積計算（1180.00 mm³）與理論值 100% 吻合??
 - **?? Formal Reporting**城?產出 VALIDATION_SUMMARY_REPORT.md (VSR)，正式記錄所有 V&V 活動與 CAPA 歷史??
 ### 捂?荒? (Validation)
-- ?? oundtrip_check.py -> **PASS**??
+- ?? 
+oundtrip_check.py -> **PASS**??
 - ?? 	sc / pdca:check -> **100% Compliance**??
 ### RCA & CAPA
-- **RCA (Root Cause Analysis)**?  - 軟體交付前若無「端到端 (E2E)」的資料持久化確效，無法保證使用者儲存的檔案在未來版本中能被 100% 還原???? Intentional Validation??- **CAPA (Corrective and Preventive Actions)**?  - **Automated Roundtrip Testing**垢隤 oundtrip_check.py 作為未來 CI 管道的必備環節??  - **Knowledge Encapsulation**城?? VSR 文件化確保了開發過程的「可追溯性」符合工業標準??
+- **RCA (Root Cause Analysis)**?  - 軟體交付前若無「端到端 (E2E)」的資料持久化確效，無法保證使用者儲存的檔案在未來版本中能被 100% 還原???? Intentional Validation??- **CAPA (Corrective and Preventive Actions)**?  - **Automated Roundtrip Testing**垢隤 
+oundtrip_check.py 作為未來 CI 管道的必備環節??  - **Knowledge Encapsulation**城?? VSR 文件化確保了開發過程的「可追溯性」符合工業標準??
 
 ---
 ## [2026-05-24] Phase 1 UI/UX FULL PATH VALIDATION COMPLETED ??
@@ -3197,7 +3251,8 @@ pm run pdca:check -> **PASS**??
 ---
 ## [2026-05-24] Bug Fix: Sketch Cancellation State Leak ??
 ### 正??
-- **?? Graph State Cleanup**城?更新 src/app/page.tsx 中的 esetSketchSession 邏輯。現在當使用者點擊「取消草圖」或完成特徵重建後，系統不僅會清空舊的 sketchPoints，還會同步清空全域的圖論模型數據 (sketchNodes, sketchEdges, sketchConstraints)。
+- **?? Graph State Cleanup**城?更新 src/app/page.tsx 中的 
+esetSketchSession 邏輯。現在當使用者點擊「取消草圖」或完成特徵重建後，系統不僅會清空舊的 sketchPoints，還會同步清空全域的圖論模型數據 (sketchNodes, sketchEdges, sketchConstraints)。
 ### 捂?荒? (Validation)
 - ?? 
 px tsc --noEmit -> **PASS**??
@@ -3239,7 +3294,8 @@ px tsc --noEmit -> **PASS**??
 px tsc --noEmit -> **PASS**??
 - ?? 視覺檢查：手動核對 JSX 標籤結構與 Emoji 編碼。
 ### RCA & CAPA
-- **RCA (Root Cause Analysis)**?  - 在之前的「全球英文在地化」腳本中，使用了過於激進的正則表達式 e.sub(r'[^\x00-\x7F]+', '', s)，該表達式原本意圖刪除中文字符，但卻誤將所有的非 ASCII 圖標（Emoji）與特殊符號一併抹除，導致 UI 呈現「禿頭」現象。
+- **RCA (Root Cause Analysis)**?  - 在之前的「全球英文在地化」腳本中，使用了過於激進的正則表達式 
+e.sub(r'[^\x00-\x7F]+', '', s)，該表達式原本意圖刪除中文字符，但卻誤將所有的非 ASCII 圖標（Emoji）與特殊符號一併抹除，導致 UI 呈現「禿頭」現象。
 - **CAPA (Corrective and Preventive Actions)**?  - **Surgical UI Rebuild**垢隤 放棄模糊的正則匹配，改用針對 Ribbon 區塊的「硬核覆寫 (Hard Overwrite)」策略。直接將清潔、帶有正確圖標的 JSX 代碼段寫入檔案，確保 100% 的顯示一致性。
 
 ---
@@ -3343,3 +3399,31 @@ px tsc --noEmit -> **PASS**??
 ### RCA & CAPA
 - **RCA (Root Cause Analysis)**?  - 在執行「UI 全面英文在地化」時，對 JSX 樹結構的字串處理過於粗放，導致側邊欄這種深層嵌套的 <span> 內容遺失或編碼損壞。
 - **CAPA (Corrective and Preventive Actions)**?  - **Hierarchical UI Verification**垢隤 在進行全域介面改動後，除了 Ribbon 功能區外，必須強制對側邊導覽列與彈窗面板進行「水平展開式校驗」，確保視覺與交互的一致性。
+
+---
+## [2026-05-25] UI Professionalization & Data Flow Fix
+### Description
+- **UI Label Professionalization**: Standardized button labels across page.tsx, HeadsUpToolbar.tsx, and ShortcutBox.tsx.
+- **Mojibake Fix**: Removed corrupted characters from UI components.
+- **Data Flow Robustness**: Added AbortController to handleRebuild to prevent race conditions.
+### Validation
+- npm run typecheck -> **PASS**
+
+---
+## [2026-05-25] Skill Deployment: Mojibake Guard (CAD Productization)
+### Description
+- **Global Skill Deployment**: Deployed mojibake-guard skill to ensure long-term encoding health and professional CAD terminology.
+- **Strategic Impact**: This skill will automatically trigger during UI/Logic refactors to prevent mojibake regressions and enforce SolidWorks standards across the codebase.
+### Status
+- **Deployed to**: C:\Users\3kids\.agents\skills\mojibake-guard\
+- **Integrity Check**: Verified via iterative testing in temporary workspace.
+
+---
+## [2026-05-25] Project Cleanup & Unified Launcher
+### Description
+- **Redundant File Cleanup**: Removed legacy executables (micromamba, miniforge), obsolete scripts (START-ELECTRON.ps1), and redundant documentation (raw/, PROJECT_DEVELOPMENT_SOP.html).
+- **Unified Launcher**: Rebuilt LAUNCH-3D-BUILDER.ps1 to orchestrate Python backend (background) and Electron frontend with health checks.
+- **Documentation Fix**: Fixed mojibake in PRODUCTIZATION_PLAN.html.
+### Status
+- **Launcher**: Active & Robust
+- **Project Hygiene**: MECE compliant

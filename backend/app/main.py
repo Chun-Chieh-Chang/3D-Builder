@@ -1,4 +1,4 @@
-from fastapi import FastAPI
+﻿from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.routers import geometry
 
@@ -14,6 +14,10 @@ app.add_middleware(
 )
 
 app.include_router(geometry.router, prefix="/api/v1/geometry", tags=["geometry"])
+
+@app.get("/api/v1/health")
+async def health():
+    return {"status": "ok"}
 
 @app.get("/")
 async def root():

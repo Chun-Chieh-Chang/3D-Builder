@@ -1,4 +1,4 @@
-'use client';
+﻿'use client';
 
 
 
@@ -68,11 +68,11 @@ export const StatusBar: React.FC = () => {
 
     if (isFullyDefined) {
 
-      return { text: 'Fully Defined (Fully Defined)', color: 'text-slate-800 font-bold' };
+      return { text: 'Fully Defined', color: 'text-slate-800 font-bold' };
 
     } else {
 
-      return { text: 'Under Defined (Under Defined)', color: 'text-blue-500 font-bold' };
+      return { text: 'Under Defined', color: 'text-blue-500 font-bold' };
 
     }
 
@@ -92,7 +92,7 @@ export const StatusBar: React.FC = () => {
 
         {isSketchMode && (
 
-          <div className="flex items-center gap-2 px-3 border-l border-slate-300"> <span className="text-[11px] text-slate-400 font-bold uppercase tracking-tighter">Sketch Status:</span> <span className={definitionStatus?.color}>{definitionStatus?.text.startsWith("⚠️") ? definitionStatus?.text : (definitionStatus?.text.includes("Fully") ? "✅ " : "🟦 ") + definitionStatus?.text}</span> </div>
+          <div className="flex items-center gap-2 px-3 border-l border-slate-300"> <span className="text-[11px] text-slate-400 font-bold uppercase tracking-tighter">Sketch Status:</span> <span className={definitionStatus?.color}>{definitionStatus?.text}</span> </div>
 
         )}
 
@@ -112,7 +112,7 @@ export const StatusBar: React.FC = () => {
 
 
 
-        <div className="flex items-center gap-2 px-3 border-l border-slate-300"> <span className="font-black text-slate-800">MMGS</span> <span className="text-[11px] text-slate-400">(, , )</span> <span className="cursor-pointer hover:text-primary transition-colors ml-1"> </span> </div> <div className="flex items-center gap-2 px-3 border-l border-slate-300"> <span className="font-bold text-slate-500">{isSketchMode ? (activePlane === 'FACE' ? '' : activePlane) : 'Part'}</span> </div> </div> </footer>
+        <div className="flex items-center gap-2 px-3 border-l border-slate-300"> <span className="font-black text-slate-800">MMGS</span> <span className="text-[11px] text-slate-400">(mm, g, s)</span> <span className="cursor-pointer hover:text-primary transition-colors ml-1"> </span> </div> <div className="flex items-center gap-2 px-3 border-l border-slate-300"> <span className="font-bold text-slate-500">{isSketchMode ? (activePlane === 'FACE' ? '' : activePlane) : 'Part'}</span> </div> </div> </footer>
 
   );
 

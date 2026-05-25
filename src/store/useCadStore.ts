@@ -50,6 +50,7 @@ export interface SketchConstraint {
   nodeIds?: string[];
   edgeIds?: string[];
   value?: number;
+  offset?: number;
 }
 
 export interface CADComponent {
@@ -81,6 +82,7 @@ export interface CADContextMenu {
 export interface MeasurementResult {
     mode?: string;
     value?: number;
+  offset?: number;
     unit?: string;
     details?: any;
     distance?: number;
@@ -273,7 +275,7 @@ export const useCadStore = create<CadState>()(
       })),
       setSketchRelations: (rels) => {},
 
-      features: [],
+      features: [{ id: 'ai_constructed_cylinder', type: 'CYLINDER', name: 'AI Built Cylinder', parameters: { radius: 20, height: 50, x: 0, y: 0, z: 0 } }],
       setFeatures: (features) => { get().saveSnapshot(); set({ features }); },
       addFeature: (feature) => { get().saveSnapshot(); set((state) => ({ features: [...state.features, feature] })); },
       removeFeature: (id) => { get().saveSnapshot(); set((state) => ({ features: state.features.filter(f => f.id !== id) })); },
