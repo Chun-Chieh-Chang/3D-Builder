@@ -1,0 +1,16 @@
+<svg width="256" height="256" viewBox="0 0 256 256" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- Background Circle -->
+  <circle cx="128" cy="128" r="120" fill="#4F46E5"/>
+  
+  <!-- 3D Cube Representation -->
+  <path d="M128 40L80 64V128L128 152L176 128V64L128 40Z" fill="white" fill-opacity="0.9"/>
+  <path d="M80 64L128 88V152L80 128V64Z" fill="#E0E7FF"/>
+  <path d="M128 88L176 64V128L128 152V88Z" fill="#C7D2FE"/>
+  
+  <!-- Text "3D" -->
+  <text x="128" y="140" font-family="Arial, sans-serif" font-size="48" font-weight="bold" fill="white" text-anchor="middle">3D</text>
+  
+  <!-- Gear Icon (CAD Symbol) -->
+  <circle cx="128" cy="128" r="10" fill="#F59E0B"/>
+  <path d="M128 108L138 118L158 108L148 98L158 78L138 88L128 78L118 88L98 78L108 98L98 108L118 98L128 108Z" fill="#F59E0B"/>
+</svg>

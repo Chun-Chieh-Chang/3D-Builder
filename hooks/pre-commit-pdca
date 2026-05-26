@@ -1,0 +1,13 @@
+#!/usr/bin/env bash
+# PDCA pre-commit hook entrypoint.
+# Installed into .git/hooks/pre-commit by INSTALL.ps1.
+
+set -euo pipefail
+
+printf '%s\n' '🔍 [CAPA] Running TypeScript type check: npx tsc --noEmit'
+npx tsc --noEmit
+
+printf '%s\n' '🔍 [PDCA] Checking Do output against Plan: npm run pdca:check'
+npm run pdca:check
+
+printf '%s\n' '✅ [PDCA] Plan/Do/Check gate passed. Commit may proceed.'

@@ -1,0 +1,65 @@
+{
+  "name": "3d-builder-electron",
+  "version": "3.1.0-alpha",
+  "description": "SolidWorks-like 3D Web CAD Application (Electron Desktop)",
+  "main": "./out/main.js",
+  "author": "3D-Builder Team",
+  "license": "MIT",
+  "scripts": {
+    "dev": "concurrently \"npm run dev:next\" \"npm run dev:electron\"",
+    "dev:next": "next dev",
+    "dev:electron": "electron .",
+    "build": "next build && tsc --project electron/tsconfig.json",
+    "build:electron": "tsc --project electron/tsconfig.json",
+    "start": "electron .",
+    "pack": "electron-builder --dir",
+    "dist": "electron-builder",
+    "postinstall": "electron-builder install-app-deps"
+  },
+  "dependencies": {
+    "@react-three/drei": "^10.7.7",
+    "@react-three/fiber": "^9.6.1",
+    "gsap": "^3.15.0",
+    "next": "16.2.6",
+    "react": "19.2.4",
+    "react-dom": "19.2.4",
+    "three": "^0.184.0",
+    "zustand": "^5.0.13"
+  },
+  "devDependencies": {
+    "@electron/remote": "^2.1.0",
+    "@types/electron": "^1.4.38",
+    "@types/node": "^20",
+    "@types/react": "^19",
+    "@types/react-dom": "^19",
+    "babel-plugin-react-compiler": "1.0.0",
+    "concurrently": "^9.1.0",
+    "electron": "^34.0.0",
+    "electron-builder": "^25.1.0",
+    "typescript": "^5"
+  },
+  "build": {
+    "appId": "com.3dbuilder.cad",
+    "productName": "3D-Builder",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "out/**/*",
+      "node_modules/**/*",
+      "package.json"
+    ],
+    "mac": {
+      "target": "dmg",
+      "icon": "assets/icon.icns"
+    },
+    "win": {
+      "target": "nsis",
+      "icon": "assets/icon.ico"
+    },
+    "linux": {
+      "target": "AppImage",
+      "icon": "assets/icon.png"
+    }
+  }
+}

@@ -1,0 +1,22 @@
+﻿{
+  "schema": "com.3dbuilder.part",
+  "schemaVersion": "1.0.0",
+  "appVersion": "3.1.0-alpha",
+  "units": "mm",
+  "features": [
+    {
+      "id": "feat_box_001",
+      "type": "BOX",
+      "name": "Base Box",
+      "parameters": {
+        "width": 10,
+        "height": 10,
+        "depth": 10,
+        "operation": "ADD"
+      }
+    }
+  ],
+  "sketchNodes": {},
+  "sketchEdges": {},
+  "sketchConstraints": {}
+}

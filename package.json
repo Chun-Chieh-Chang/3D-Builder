@@ -1,0 +1,127 @@
+{
+  "name": "cad-app",
+  "version": "1.0.0",
+  "private": true,
+  "main": "out/main.js",
+  "skillsBuilder": {
+    "main": ".opencode/plugins/superpowers.js"
+  },
+  "scripts": {
+    "dev": "next dev",
+    "dev:full": "concurrently \"cd backend && python -m uvicorn app.main:app --host 0.0.0.0 --port 8400 --reload\" \"npm run dev\" --names \"BACKEND,FRONTEND\" --prefix-colors \"magenta,blue\"",
+    "build": "next build",
+    "start": "next start",
+    "lint": "eslint",
+    "electron:dev": "concurrently \"npm run dev\" \"electron . --dev\"",
+    "electron:build": "npm run build && npx tsc --project electron/tsconfig.json",
+    "electron:start": "electron .",
+    "electron:pack": "electron-builder --dir",
+    "electron:dist": "electron-builder",
+    "typecheck": "tsc --noEmit",
+    "pdca:check": "node tools/pdca-check.mjs",
+    "pdca:full": "npm run typecheck && npm run pdca:check"
+  },
+  "dependencies": {
+    "@react-three/drei": "^10.7.7",
+    "@react-three/fiber": "^9.6.1",
+    "gsap": "^3.15.0",
+    "next": "16.2.6",
+    "react": "19.2.4",
+    "react-dom": "19.2.4",
+    "three": "^0.184.0",
+    "uuid": "^14.0.0",
+    "zustand": "^5.0.13"
+  },
+  "devDependencies": {
+    "@tailwindcss/postcss": "^4",
+    "@types/node": "^20",
+    "@types/react": "^19",
+    "@types/react-dom": "^19",
+    "@types/uuid": "^10.0.0",
+    "babel-plugin-react-compiler": "1.0.0",
+    "concurrently": "^9.1.0",
+    "electron": "^34.0.0",
+    "electron-builder": "^25.1.0",
+    "eslint": "^9",
+    "eslint-config-next": "16.2.6",
+    "tailwindcss": "^4",
+    "ts-morph": "^28.0.0",
+    "typescript": "^5"
+  },
+    "build": {
+    "appId": "com.3dbuilder.cad",
+    "productName": "3D-Builder",
+    "copyright": "Copyright © 2026 SkillsBuilder",
+    "directories": {
+      "output": "release"
+    },
+    "win": {
+      "target": "nsis",
+      "icon": "public/icon.ico"
+    },
+    "mac": {
+      "target": "dmg",
+      "category": "public.app-category.graphics-design"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true
+    },
+    "files": [
+      "out/**/*",
+      "electron/main.js",
+      "electron/preload.js",
+      "node_modules/**/*",
+      "package.json"
+    ]
+  },
+    "files": [
+      "out/**/*",
+      "node_modules/**/*",
+      "package.json"
+    ],
+    "mac": {
+      "target": "dmg",
+      "icon": "assets/icon.icns"
+    },
+    "win": {
+      "target": "nsis",
+      "icon": "assets/icon.ico"
+    },
+    "linux": {
+      "target": "AppImage",
+      "icon": "assets/icon.png"
+    },
+    "fileAssociations": [
+      {
+        "ext": [
+          "step",
+          "stp"
+        ],
+        "name": "STEP File",
+        "role": "Editor"
+      },
+      {
+        "ext": [
+          "iges",
+          "igs"
+        ],
+        "name": "IGES File",
+        "role": "Editor"
+      },
+      {
+        "ext": [
+          "stl"
+        ],
+        "name": "STL File",
+        "role": "Editor"
+      },
+      {
+        "ext": [
+          "3dbpart"
+        ],
+        "name": "3D-Builder Part",
+        "role": "Editor"
+      }
+    ]
+  }

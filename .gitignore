@@ -1,0 +1,45 @@
+*.jpg
+*.png
+.DS_Store
+Thumbs.db
+node_modules/
+dist/
+.env
+.gemini/antigravity/scratch/
+.gemini/antigravity/recordings/
+.vscode/
+.idea/
+*.log
+
+# Miniforge / Conda local envs and installers
+.miniforge/
+miniforge.exe
+micromamba.exe
+info/
+
+# Next.js build and export
+.next/
+out/
+tsconfig.tsbuildinfo
+
+# Python build and cache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache/
+.venv/
+venv/
+env/
+
+# Graphify
+graphify-out/
+.graphify_labels.json
+.graphify_root
+graph.html
+graph.json
+manifest.json
+GRAPH_REPORT.md
+
+# BitFun snapshot data - auto managed
+.bitfun/

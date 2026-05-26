@@ -1,0 +1,174 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>3D-Builder Productization Plan</title>
+  <style>
+    body { margin: 0; background: #f6f8fb; color: #1e293b; font-family: Arial, 'Microsoft JhengHei', sans-serif; line-height: 1.7; }
+    header { background: #0f172a; color: white; padding: 40px 28px; }
+    main, .wrap { max-width: 1080px; margin: 0 auto; }
+    main { padding: 28px; }
+    section { background: white; border: 1px solid #dbe4ee; border-radius: 14px; padding: 22px; margin: 20px 0; }
+    h1 { margin: 0 0 10px; font-size: 40px; }
+    h2 { border-top: 1px solid #dbe4ee; padding-top: 18px; margin-top: 36px; }
+    h3 { color: #1d4ed8; }
+    table { width: 100%; border-collapse: collapse; margin: 14px 0; }
+    th, td { border: 1px solid #dbe4ee; padding: 10px; vertical-align: top; }
+    th { background: #f1f5f9; }
+    code { background: #eef2ff; padding: 2px 5px; border-radius: 5px; }
+    pre { background: #0f172a; color: #e2e8f0; padding: 16px; border-radius: 12px; overflow: auto; }
+    .notice { border-left: 5px solid #2563eb; background: #eff6ff; padding: 14px; border-radius: 10px; }
+    .warning { border-left: 5px solid #b91c1c; background: #fef2f2; padding: 14px; border-radius: 10px; }
+    footer { text-align: center; color: #64748b; padding: 36px; }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="wrap">
+      <h1>3D-Builder 產品化開發藍圖</h1>
+      <p>Plan of Record：開發或修訂（Do）後，必須回到本計畫 Check；若不符合，必須 RCA/CAPA（Act），直到結果與計畫一致。</p>
+      <p>Version 1.0 · 2026-05-24 · PDCA Governed</p>
+    </div>
+  </header>
+  <main>
+    <div class="notice">本 HTML 是 <code>PRODUCTIZATION_PLAN.md</code> 的瀏覽版摘要；完整可編輯版本以 Markdown 為準。</div>
+    <section>
+      <h2>目錄</h2>
+      <ol>
+        <li><a href="#positioning">產品定位</a></li>
+        <li><a href="#versions">版本路線</a></li>
+        <li><a href="#architecture">目標架構</a></li>
+        <li><a href="#phases">Phase 0 到 Phase 6</a></li>
+        <li><a href="#backlog">分線 Backlog</a></li>
+        <li><a href="#quality">測試、效能與 Release Gate</a></li>
+        <li><a href="#pdca">PDCA 執行要求</a></li>
+      </ol>
+    </section>
+    <section id="positioning">
+      <h2>1. 產品定位</h2>
+      <p><b>3D-Builder</b> 是以 OpenCASCADE 為幾何核心、受 SolidWorks 操作流程啟發的輕量化參數式 3D CAD 工具，聚焦零件建模、基礎工程圖、標準格式交換與教育/中小型設計場景。</p>
+      <div class="warning">
+        <b>1.0 前禁止宣稱：</b>
+        <ul>
+          <li>完整取代 SolidWorks。</li>
+          <li>原生支援 <code>.sldprt</code> / <code>.sldasm</code>。</li>
+          <li>支援大型工業裝配。</li>
+          <li>支援完整鈑金、模具、Simulation、PDM。</li>
+        </ul>
+      </div>
+      <h3>初期主打價值</h3>
+      <ul>
+        <li>輕量、跨平台、開放格式。</li>
+        <li>現代 Web/Electron 桌面體驗。</li>
+        <li>基於 OpenCASCADE 的真 B-Rep 幾何核心。</li>
+        <li>參數化零件建模與 STEP / STL / IGES 交換。</li>
+      </ul>
+    </section>
+    <section id="versions">
+      <h2>2. 版本路線</h2>
+      <table>
+        <thead><tr><th>階段</th><th>版本</th><th>目標</th></tr></thead>
+        <tbody>
+          <tr><td>Phase 0</td><td>Internal Stabilization</td><td>清理架構、建立產品化基礎</td></tr>
+          <tr><td>Phase 1</td><td>Alpha</td><td>可穩定建立簡單零件</td></tr>
+          <tr><td>Phase 2</td><td>Private Beta</td><td>可供小規模使用者測試</td></tr>
+          <tr><td>Phase 3</td><td>Public Beta</td><td>對外釋出，支援基本工作流</td></tr>
+          <tr><td>Phase 4</td><td>1.0</td><td>可正式交付的輕量 Part CAD</td></tr>
+          <tr><td>Phase 5</td><td>1.5</td><td>工程圖與匯入匯出強化</td></tr>
+          <tr><td>Phase 6</td><td>2.0</td><td>裝配體與進階特徵</td></tr>
+        </tbody>
+      </table>
+    </section>
+    <section id="architecture">
+      <h2>3. 目標架構</h2>
+      <pre>Electron Desktop Shell
+  -> React / Next.js UI
+     -> CAD State Store
+        -> Sketch Engine
+        -> Feature Tree
+     -> Renderer: Three.js
+     -> Geometry API Client
+        -> Local Geometry Service
+           -> OpenCASCADE Kernel
+              -> Mesh Tessellation
+              -> STEP / IGES / STL I/O
+     -> Project File: 3DBPART JSON
+     -> Drawing / PDF Export</pre>
+    </section>
+    <section id="phases">
+      <h2>4. Phase 0 到 Phase 6</h2>
+      <h3>Phase 0：產品化基礎整理</h3>
+      <ul>
+        <li>改用 <code>.3dbpart</code>，停止將 JSON 偽裝為 <code>.sldprt</code>。</li>
+        <li>建立 <code>com.3dbuilder.part</code> 版本化 schema。</li>
+        <li>建立規格文件與測試基礎。</li>
+        <li>移除 legacy <code>sketchPoints</code>，統一 graph sketch model。</li>
+      </ul>
+      <h3>Phase 1：Alpha</h3>
+      <p>穩定完成「建立草圖 → 加約束 → Extrude / Cut → Fillet / Chamfer → 匯出 STEP/STL」。</p>
+      <h3>Phase 2：Private Beta</h3>
+      <p>標準測試模型、Topological Naming 初版、Rollback 完整化、STEP 匯入與 UX 打磨。</p>
+      <h3>Phase 3：Public Beta</h3>
+      <p>安裝包、後端程序管理、crash reporting、文件與使用者回饋。</p>
+      <h3>Phase 4：1.0</h3>
+      <p>可正式交付的輕量參數化零件 CAD。</p>
+      <h3>Phase 5：1.5</h3>
+      <p>工程圖、匯入匯出、材料與屬性強化。</p>
+      <h3>Phase 6：2.0</h3>
+      <p>裝配體、mate solver、干涉檢查、BOM 與進階特徵。</p>
+    </section>
+    <section id="backlog">
+      <h2>5. 分線 Backlog</h2>
+      <table>
+        <thead><tr><th>主線</th><th>P0 / P1 代表任務</th></tr></thead>
+        <tbody>
+          <tr><td>核心架構</td><td><code>.3dbpart</code>、schema、拆分 <code>page.tsx</code>、geometry API contract</td></tr>
+          <tr><td>Sketch Engine</td><td>移除 legacy <code>sketchPoints</code>、closed profile detection、Smart Dimension</td></tr>
+          <tr><td>Geometry Kernel</td><td>Rebuild API、錯誤診斷、STEP import、Shape healing</td></tr>
+          <tr><td>Topology</td><td>Reference schema、signature matching、broken reference detection</td></tr>
+          <tr><td>Feature Tree</td><td>Edit Feature、Edit Sketch、Rollback、Suppress、Feature error state</td></tr>
+          <tr><td>UI / UX</td><td>CommandManager、PropertyManager、Context menu、Selection filter</td></tr>
+          <tr><td>Drawing</td><td>三視圖、PDF export、Basic dimensions、Section view</td></tr>
+          <tr><td>Assembly</td><td>Assembly schema、Component transform、Mate solver、BOM</td></tr>
+          <tr><td>Productization</td><td>Installer、Backend bundling、Crash log、Auto update</td></tr>
+        </tbody>
+      </table>
+    </section>
+    <section id="quality">
+      <h2>6. 測試、效能與 Release Gate</h2>
+      <h3>1.0 效能目標</h3>
+      <table>
+        <thead><tr><th>項目</th><th>目標</th></tr></thead>
+        <tbody>
+          <tr><td>啟動時間</td><td>小於 5 秒</td></tr>
+          <tr><td>開啟簡單零件</td><td>小於 2 秒</td></tr>
+          <tr><td>Rebuild 20 features</td><td>小於 1 秒</td></tr>
+          <tr><td>草圖拖曳回饋</td><td>60 FPS 目標</td></tr>
+          <tr><td>STEP export 小零件</td><td>小於 3 秒</td></tr>
+          <tr><td>PDF drawing export</td><td>小於 3 秒</td></tr>
+        </tbody>
+      </table>
+      <h3>1.0 Release Gate</h3>
+      <ul>
+        <li>至少 10 個標準測試零件。</li>
+        <li>可儲存/開啟 <code>.3dbpart</code>。</li>
+        <li>可匯出 STEP/STL/IGES。</li>
+        <li>可完成基本三視圖 PDF。</li>
+        <li>TypeScript、backend pytest、E2E 建模流程通過。</li>
+      </ul>
+    </section>
+    <section id="pdca">
+      <h2>7. PDCA 執行要求</h2>
+      <div class="notice"><b>每次開發或修訂完成後必須執行：</b><pre>npm run pdca:check</pre></div>
+      <ol>
+        <li><b>Plan：</b>讀取本文件與 <code>task_plan.md</code>。</li>
+        <li><b>Do：</b>完成最小可驗證變更。</li>
+        <li><b>Check：</b>執行 <code>npm run pdca:check</code> 與任務對應測試。</li>
+        <li><b>Act：</b>若不符合 Plan，在 <code>DEV_LOG.md</code> 使用 RCA/CAPA 模板記錄並修正。</li>
+      </ol>
+    </section>
+  </main>
+  <footer>3D-Builder Productization Plan of Record · 2026-05-24</footer>
+</body>
+</html>
