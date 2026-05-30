@@ -52,6 +52,10 @@ const OffsetIcon = () => (
   <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M22 12A10 10 0 0 0 12 2v0"/><path d="M22 12A10 10 0 0 1 12 22v0"/><path d="M12 22a10 10 0 0 1-10-10v0"/><path d="M12 2a10 10 0 0 0-10 10v0"/><path d="M16 12a4 4 0 1 1-8 0 4 4 0 0 1 8 0Z"/></svg>
 );
 
+const TrimIcon = () => (
+  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M6 10a2 2 0 1 0 0-4 2 2 0 0 0 0 4Z"/><path d="M18 10a2 2 0 1 0 0-4 2 2 0 0 0 0 4Z"/><path d="m17 17-5-5-5 5"/><path d="m14.5 10.5-2.5 2.5-2.5-2.5"/><path d="M15 18H9"/></svg>
+);
+
 export const ShortcutBox: React.FC = () => {
   const { 
     shortcutBox, setShortcutBox, 
@@ -79,6 +83,7 @@ export const ShortcutBox: React.FC = () => {
     { id: 'RECTANGLE', icon: <RectIcon />, label: 'Rect', action: () => setSketchTool('RECTANGLE') },
     { id: 'SPLINE', icon: <SplineIcon />, label: 'Spline', action: () => setSketchTool('SPLINE') },
     { id: 'SMART_DIM', icon: <DimIcon />, label: 'Dim', action: () => setSmartDimensionActive(true) },
+    { id: 'TRIM', icon: <TrimIcon />, label: 'Trim', action: () => setSketchTool('TRIM') },
     { id: 'CONVERT', icon: <ConvertIcon />, label: 'Convert', action: () => { (window as any).__handleConvertEntities?.(); } },
     { id: 'OFFSET', icon: <OffsetIcon />, label: 'Offset', action: () => { (window as any).__handleOffsetEntities?.(); } },
     { id: 'SAVE', icon: <ExitIcon />, label: 'Save', action: () => { (window as any).__handleSaveSketchOnly?.(); } },

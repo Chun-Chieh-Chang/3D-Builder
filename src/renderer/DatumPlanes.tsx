@@ -34,6 +34,7 @@ export const DatumPlanes = () => {
 
   const [cursorState, setCursorState] = useState<{u: number, v: number, type: string | null} | null>(null);
   const [inferenceLines, setInferenceLines] = useState<{ p1: [number, number], p2: [number, number] }[]>([]);
+  const [trimPath, setTrimPath] = useState<THREE.Vector3[]>([]);
 
   const faceBasis = useMemo(() => {
     if (activePlane !== 'FACE' || !activeFaceOrigin || !activeFaceNormal) {
@@ -179,8 +180,62 @@ export const DatumPlanes = () => {
       setHasMovedAway(true);
     }
 
-    if (isDragging && lastClickedUV) {
-      if (sketchTool === 'LINE') {
+    if (isDragging) {
+      if (sketchTool === 'TRIM') {
+        const currentPnt = new THREE.Vector3().copy(e.point);
+        setTrimPath(prev => {
+          const next = [...prev, currentPnt];
+          if (next.length > 2) {
+            const p1 = next[next.length - 2];
+            const p2 = next[next.length - 1];
+            // Check intersection with all edges
+            const edges = Object.values(useCadStore.getState().sketchEdges);
+            const nodes = useCadStore.getState().sketchNodes;
+            
+            for (const edge of edges) {
+              if (edge.type === 'LINE') {
+                const n1 = nodes[edge.nodeIds[0]];
+                const n2 = nodes[edge.nodeIds[1]];
+                if (!n1 || !n2) continue;
+                
+                // Segment 1: p1 to p2 (drag)
+                // Segment 2: n1 to n2 (edge)
+                // Projected 2D intersection
+                const intersect = (
+                  x1: number, y1: number, x2: number, y2: number, 
+                  x3: number, y3: number, x4: number, y4: number
+                ) => {
+                  const den = (y4 - y3) * (x2 - x1) - (x4 - x3) * (y2 - y1);
+                  if (den === 0) return false;
+                  const ua = ((x4 - x3) * (y1 - y3) - (y4 - y3) * (x1 - x3)) / den;
+                  const ub = ((x2 - x1) * (y1 - y3) - (y2 - y1) * (x1 - x3)) / den;
+                  return ua >= 0 && ua <= 1 && ub >= 0 && ub <= 1;
+                };
+
+                let hit = false;
+                if (plane === 'FRONT') hit = intersect(p1.x, p1.y, p2.x, p2.y, n1.x, n1.y, n2.x, n2.y);
+                else if (plane === 'TOP') hit = intersect(p1.x, p1.z, p2.x, p2.z, n1.x, n1.y, n2.x, n2.y);
+                else if (plane === 'RIGHT') hit = intersect(p1.y, p1.z, p2.y, p2.z, n1.x, n1.y, n2.x, n2.y);
+                else {
+                  const uv1 = getCustomFaceUV(p1);
+                  const uv2 = getCustomFaceUV(p2);
+                  hit = intersect(uv1.u, uv1.v, uv2.u, uv2.v, n1.x, n1.y, n2.x, n2.y);
+                }
+
+                if (hit) {
+                  useCadStore.setState(state => {
+                    const nextEdges = { ...state.sketchEdges };
+                    delete nextEdges[edge.id];
+                    return { sketchEdges: nextEdges };
+                  });
+                }
+              }
+            }
+          }
+          return next.slice(-20); // Keep short trail
+        });
+      }
+      else if (lastClickedUV && sketchTool === 'LINE') {
         setSketchTool('ARC');
       }
     }
@@ -360,8 +415,9 @@ export const DatumPlanes = () => {
             const snapped = getSnappedUV(rawU, rawV);
             setDragStartUV({u: snapped.u, v: snapped.v});
             setIsDragging(true);
+            if (sketchTool === 'TRIM') setTrimPath([new THREE.Vector3().copy(e.point)]);
         }}
-        onPointerUp={(e) => { setIsDragging(false); handlePlaneClick('FRONT', e); }}
+        onPointerUp={(e) => { setIsDragging(false); setTrimPath([]); handlePlaneClick('FRONT', e); }}
         onDoubleClick={(e) => handlePlaneDoubleClick('FRONT', e)}
         onContextMenu={(e) => handleContextMenu('FRONT', e)}
       >
@@ -398,8 +454,9 @@ export const DatumPlanes = () => {
             const snapped = getSnappedUV(rawU, rawV);
             setDragStartUV({u: snapped.u, v: snapped.v});
             setIsDragging(true);
+            if (sketchTool === 'TRIM') setTrimPath([new THREE.Vector3().copy(e.point)]);
         }}
-        onPointerUp={(e) => { setIsDragging(false); handlePlaneClick('TOP', e); }}
+        onPointerUp={(e) => { setIsDragging(false); setTrimPath([]); handlePlaneClick('TOP', e); }}
         onDoubleClick={(e) => handlePlaneDoubleClick('TOP', e)}
         onContextMenu={(e) => handleContextMenu('TOP', e)}
       >
@@ -436,8 +493,9 @@ export const DatumPlanes = () => {
             const snapped = getSnappedUV(rawU, rawV);
             setDragStartUV({u: snapped.u, v: snapped.v});
             setIsDragging(true);
+            if (sketchTool === 'TRIM') setTrimPath([new THREE.Vector3().copy(e.point)]);
         }}
-        onPointerUp={(e) => { setIsDragging(false); handlePlaneClick('RIGHT', e); }}
+        onPointerUp={(e) => { setIsDragging(false); setTrimPath([]); handlePlaneClick('RIGHT', e); }}
         onDoubleClick={(e) => handlePlaneDoubleClick('RIGHT', e)}
         onContextMenu={(e) => handleContextMenu('RIGHT', e)}
       >
@@ -497,6 +555,14 @@ export const DatumPlanes = () => {
           gapSize={1}
         />
       ))}
+
+      {trimPath.length > 1 && (
+        <Line 
+          points={trimPath}
+          color="#EF4444"
+          lineWidth={2}
+        />
+      )}
 
       {referencePlanes.map((plane) => {
         const { id, origin, normal, xDir, yDir, name } = plane;

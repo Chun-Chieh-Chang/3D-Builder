@@ -28,6 +28,7 @@ export const RibbonController: React.FC<RibbonControllerProps> = ({
     features,
     isSketchMode,
     setSketchMode,
+    sketchTool,
     setSketchTool,
     setEditingFeatureId,
     setActivePlane,
@@ -397,6 +398,13 @@ export const RibbonController: React.FC<RibbonControllerProps> = ({
                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="m18 8 3 3-3 3"/><path d="m6 8-3 3 3 3"/><path d="M2 11h20"/><path d="M2 4v14"/><path d="M22 4v14"/></svg>
               </div>
               <span className="text-[10px] font-bold text-slate-800 leading-none uppercase">Smart Dim</span>
+            </button>
+            <div className="w-[1px] h-10 bg-border/50 mx-1" />
+            <button onClick={() => { setSketchTool('TRIM'); }} className={`flex flex-col items-center justify-center gap-0.5 px-3 h-[78px] min-w-[75px] transition-all border ${sketchTool === 'TRIM' ? 'bg-white border-[#A0A0A0] shadow-inner' : 'border-transparent hover:bg-white hover:border-[#A0A0A0]'} active:bg-slate-100 group`} title="Trim Entities">
+              <div className={`w-10 h-10 flex items-center justify-center transition-transform ${sketchTool === 'TRIM' ? 'text-red-500 scale-110' : 'text-slate-600 group-hover:scale-110'}`}>
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M6 10a2 2 0 1 0 0-4 2 2 0 0 0 0 4Z"/><path d="M18 10a2 2 0 1 0 0-4 2 2 0 0 0 0 4Z"/><path d="m17 17-5-5-5 5"/><path d="m14.5 10.5-2.5 2.5-2.5-2.5"/><path d="M15 18H9"/></svg>
+              </div>
+              <span className="text-[10px] font-bold text-slate-800 leading-none uppercase">Trim</span>
             </button>
             <div className="w-[1px] h-10 bg-border/50 mx-1" />
             <button onClick={() => { (window as any).__handleConvertEntities?.(); }} className="flex flex-col items-center justify-center gap-0.5 px-3 h-[78px] min-w-[75px] transition-all border border-transparent hover:bg-white hover:border-[#A0A0A0] active:bg-slate-100 group" title="Convert Entities">
