@@ -579,83 +579,149 @@ export function PartFeaturePropertyManager({
             </div>
           </div>
         ) : selectedFeature.type === 'SWEEP' ? (
-          <div className="space-y-2">
-            <div className="bg-surface p-0 rounded border border-border shadow-sm overflow-hidden text-[14px]">
-              <div className="bg-slate-50 px-2 py-1.5 border-b border-border font-bold text-slate-700 text-[13px] flex items-center gap-1">
-                <span className="text-[14px]">▼</span> 掃掠參數 (Sweep Parameters)
-              </div>
-              <div className="p-2 space-y-2">
-                <label className="flex items-center justify-between gap-2">
-                  <span className="text-[13px] text-secondary-text">Profile</span>
+          <div className="bg-surface p-3 rounded-xl border border-slate-200 shadow-sm space-y-4 text-[14px]">
+            <div className="space-y-1.5">
+              <span className="text-[12px] font-bold text-slate-500 uppercase tracking-wider flex items-center gap-2">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M4 22C4 13 14 13 14 4"/><circle cx="14" cy="4" r="2"/><circle cx="4" cy="22" r="2"/></svg>
+                掃掠參數 (Sweep Parameters)
+              </span>
+              <div className="space-y-3">
+                <div className="space-y-1">
+                  <label className="text-[11px] font-bold text-[#005B9A] uppercase tracking-wider flex items-center gap-1.5">
+                    <div className="w-4 h-4 rounded-full bg-[#005B9A]/10 border border-[#005B9A]/30 flex items-center justify-center text-[9px]">P</div>
+                    輪廓 (Profile)
+                  </label>
                   <select
                     value={selectedFeature.parameters.profile_id || ''}
                     onChange={(e) => onParamChange('profile_id', e.target.value)}
-                    className="border border-[#C4C7CE] rounded px-1 py-0.5 w-[120px]"
+                    className="w-full bg-slate-50 border border-slate-300 rounded-lg px-2 py-1.5 outline-none focus:border-[#005B9A] transition-colors"
                   >
-                    <option value="">—</option>
-                    {features.filter(f => f.type === 'SKETCH').map(f => (
+                    <option value="">— 請選取草圖 —</option>
+                    {features.filter(f => f.type === 'SKETCH' && f.id !== selectedFeature.parameters.path_id).map(f => (
                       <option key={f.id} value={f.id}>{f.name}</option>
                     ))}
                   </select>
-                </label>
-                <label className="flex items-center justify-between gap-2">
-                  <span className="text-[13px] text-secondary-text">Path</span>
+                </div>
+                
+                <div className="space-y-1">
+                  <label className="text-[11px] font-bold text-emerald-600 uppercase tracking-wider flex items-center gap-1.5">
+                    <div className="w-4 h-4 rounded-full bg-emerald-600/10 border border-emerald-600/30 flex items-center justify-center text-[9px]">T</div>
+                    路徑 (Path)
+                  </label>
                   <select
                     value={selectedFeature.parameters.path_id || ''}
                     onChange={(e) => onParamChange('path_id', e.target.value)}
-                    className="border border-[#C4C7CE] rounded px-1 py-0.5 w-[120px]"
+                    className="w-full bg-slate-50 border border-slate-300 rounded-lg px-2 py-1.5 outline-none focus:border-[#005B9A] transition-colors"
                   >
-                    <option value="">—</option>
-                    {features.filter(f => f.type === 'SKETCH').map(f => (
+                    <option value="">— 請選取草圖 —</option>
+                    {features.filter(f => f.type === 'SKETCH' && f.id !== selectedFeature.parameters.profile_id).map(f => (
                       <option key={f.id} value={f.id}>{f.name}</option>
                     ))}
                   </select>
-                </label>
+                </div>
               </div>
             </div>
+            
             {onBuildSweepLoft && (
               <button
                 onClick={() => onBuildSweepLoft(selectedFeature)}
-                className="mt-2 w-full py-1.5 bg-[#005B9A] text-white text-[12px] font-bold rounded hover:bg-[#0073C1] transition-colors"
+                className={`mt-2 w-full py-2.5 text-white text-[13px] font-extrabold rounded-lg transition-all shadow-md flex items-center justify-center gap-2 ${
+                  selectedFeature.parameters.profile_id && selectedFeature.parameters.path_id
+                    ? 'bg-gradient-to-r from-[#005B9A] to-[#0073C1] hover:from-[#004A7C] hover:to-[#005B9A] cursor-pointer'
+                    : 'bg-slate-300 cursor-not-allowed opacity-70'
+                }`}
+                disabled={!selectedFeature.parameters.profile_id || !selectedFeature.parameters.path_id}
               >
-                ▶ Build Sweep
+                ▶ 執行掃掠 (Build Sweep)
               </button>
             )}
           </div>
         ) : selectedFeature.type === 'LOFT' ? (
-          <div className="space-y-2">
-            <div className="bg-surface p-0 rounded border border-border shadow-sm overflow-hidden text-[14px]">
-              <div className="bg-slate-50 px-2 py-1.5 border-b border-border font-bold text-slate-700 text-[13px] flex items-center gap-1">
-                <span className="text-[14px]">▼</span> 疊層拉伸參數 (Loft Profiles)
-              </div>
-              <div className="p-2 space-y-2">
-                {[0, 1].map(index => (
-                  <label key={index} className="flex items-center justify-between gap-2">
-                    <span className="text-[13px] text-secondary-text">Profile {index + 1}</span>
-                    <select
-                      value={(selectedFeature.parameters.profile_ids || [])[index] || ''}
-                      onChange={(e) => {
-                        const newIds = [...(selectedFeature.parameters.profile_ids || [])];
-                        newIds[index] = e.target.value;
-                        onParamChange('profile_ids', newIds as any);
-                      }}
-                      className="border border-[#C4C7CE] rounded px-1 py-0.5 w-[120px]"
-                    >
-                      <option value="">—</option>
-                      {features.filter(f => f.type === 'SKETCH').map(f => (
-                        <option key={f.id} value={f.id}>{f.name}</option>
-                      ))}
-                    </select>
-                  </label>
-                ))}
+          <div className="bg-surface p-3 rounded-xl border border-slate-200 shadow-sm space-y-4 text-[14px]">
+            <div className="space-y-1.5">
+              <span className="text-[12px] font-bold text-slate-500 uppercase tracking-wider flex items-center gap-2">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M4 20h16"/><path d="M6 12h12"/><path d="M8 4h8"/><path d="M4 20L8 4"/><path d="M20 20L16 4"/></svg>
+                疊層拉伸輪廓 (Loft Profiles)
+              </span>
+              <div className="space-y-2">
+                <select
+                  value=""
+                  onChange={(e) => {
+                    const id = e.target.value;
+                    if (!id) return;
+                    const current = selectedFeature.parameters.profile_ids || [];
+                    if (!current.includes(id)) {
+                      onParamChange('profile_ids', [...current, id]);
+                    }
+                  }}
+                  className="w-full bg-slate-50 border border-slate-300 rounded-lg px-2 py-1.5 outline-none focus:border-[#005B9A] transition-colors"
+                >
+                  <option value="">+ 新增草圖輪廓...</option>
+                  {features
+                    .filter((f) => f.type === 'SKETCH' && !(selectedFeature.parameters.profile_ids || []).includes(f.id))
+                    .map((f) => (
+                      <option key={f.id} value={f.id}>{f.name}</option>
+                    ))}
+                </select>
+                <div className="flex flex-col gap-1.5">
+                  {(selectedFeature.parameters.profile_ids || []).length === 0 && (
+                    <div className="w-full py-3 border-2 border-dashed border-slate-200 rounded-lg flex items-center justify-center text-slate-400 text-[11px] italic">
+                      請依序選取至少兩個草圖輪廓
+                    </div>
+                  )}
+                  {(selectedFeature.parameters.profile_ids || []).map((id: string, index: number) => {
+                    const feat = features.find(f => f.id === id);
+                    return (
+                      <div key={id} className="bg-[#005B9A]/10 text-[#005B9A] text-[11px] font-bold px-2 py-1.5 rounded-md border border-[#005B9A]/20 flex items-center justify-between group">
+                        <div className="flex items-center gap-2">
+                          <span className="w-4 h-4 rounded-full bg-[#005B9A] text-white flex items-center justify-center text-[9px]">{index + 1}</span>
+                          {feat?.name || id}
+                        </div>
+                        <div className="flex items-center gap-1 opacity-50 group-hover:opacity-100 transition-opacity">
+                          <button 
+                            disabled={index === 0}
+                            onClick={() => {
+                              const newIds = [...selectedFeature.parameters.profile_ids];
+                              [newIds[index - 1], newIds[index]] = [newIds[index], newIds[index - 1]];
+                              onParamChange('profile_ids', newIds);
+                            }}
+                            className="w-5 h-5 flex items-center justify-center hover:bg-slate-200 rounded cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed"
+                            title="上移"
+                          >▲</button>
+                          <button 
+                            disabled={index === (selectedFeature.parameters.profile_ids || []).length - 1}
+                            onClick={() => {
+                              const newIds = [...selectedFeature.parameters.profile_ids];
+                              [newIds[index + 1], newIds[index]] = [newIds[index], newIds[index + 1]];
+                              onParamChange('profile_ids', newIds);
+                            }}
+                            className="w-5 h-5 flex items-center justify-center hover:bg-slate-200 rounded cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed"
+                            title="下移"
+                          >▼</button>
+                          <button 
+                            onClick={() => onParamChange('profile_ids', (selectedFeature.parameters.profile_ids || []).filter((tid: string) => tid !== id))} 
+                            className="w-5 h-5 flex items-center justify-center hover:bg-red-100 hover:text-red-600 rounded cursor-pointer text-slate-500"
+                            title="移除"
+                          >×</button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
               </div>
             </div>
+            
             {onBuildSweepLoft && (
               <button
                 onClick={() => onBuildSweepLoft(selectedFeature)}
-                className="mt-2 w-full py-1.5 bg-[#005B9A] text-white text-[12px] font-bold rounded hover:bg-[#0073C1] transition-colors"
+                className={`mt-2 w-full py-2.5 text-white text-[13px] font-extrabold rounded-lg transition-all shadow-md flex items-center justify-center gap-2 ${
+                  (selectedFeature.parameters.profile_ids || []).length >= 2
+                    ? 'bg-gradient-to-r from-[#005B9A] to-[#0073C1] hover:from-[#004A7C] hover:to-[#005B9A] cursor-pointer'
+                    : 'bg-slate-300 cursor-not-allowed opacity-70'
+                }`}
+                disabled={(selectedFeature.parameters.profile_ids || []).length < 2}
               >
-                ▶ Build Loft
+                ▶ 執行疊層拉伸 (Build Loft)
               </button>
             )}
           </div>

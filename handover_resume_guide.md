@@ -49,7 +49,17 @@ src/
 | 57 | Advanced 3D Mirror Feature | ✅ |
 | 58-60 | Patterning, Guidance, TNS 3.0 | ✅ |
 | 61 | STEP Import UI Workflow | ✅ |
-| **62** | **Convert & Offset Entities** | ✅ **最新** |
+| 62 | Convert & Offset Entities | ✅ |
+| **63** | **Sweep & Loft UX** | ✅ **最新** |
+
+---
+
+## 🔑 Phase 63 實作細節 (最新完成)
+
+### 新增：Sweep & Loft UX (掃掠與疊層拉伸介面升級)
+**功能描述**：對標 SolidWorks 2000 的進階曲面建模交互，徹底解決原先 PropertyManager 的硬編碼限制。
+- **Sweep (掃掠)**：明確區分「輪廓 (Profile)」與「路徑 (Path)」選單，並附帶圖形化的標籤，加入選取防呆機制 (未選滿無法建構)。
+- **Loft (疊層拉伸)**：捨棄只能選取 2 個草圖的限制，改用多選晶片 (Multi-select Chip) 介面。支援無限多個斷面草圖，並具備上移、下移、刪除按鈕，精確控制疊層拉伸的拓撲順序。
 
 ---
 

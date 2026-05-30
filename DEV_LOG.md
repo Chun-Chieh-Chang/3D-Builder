@@ -16,6 +16,47 @@
 
 ---
 
+## [2026-05-30] Phase 60: Robust TNS 3.0 (Topology Genealogy) ✅
+
+### 實裝成果
+- **演化追蹤機制**：實作 `TopologicalLinker` 類別，利用 OpenCASCADE 的 `Generated()` 與 `Modified()` API，在每次 Boolean 運算 (Fuse/Cut) 時精準記錄拓樸結構的「血統」變化。
+- **持久化 ID 映射**：系統現在能識別哪些新生成的面是由哪個原始面「演化」而來，解決了在鏡射或陣列操作後，子特徵（如孔）因 ID 飄移而遺失參照的工業級痛點。
+
+---
+
+## [2026-05-30] Phase 59: Dynamic Constraint Guidance (Sketching UX) ✅
+
+### 實裝成果
+- **專業級約束標誌**：重構 `DatumPlanes.tsx`，將原本的文字提示替換為 SolidWorks 風格的黃色與藍色標籤，具備動態圖示（水平、垂直、重合）。
+- **視覺引導強化**：優化了對齊推導線 (Inference Lines) 的顯示效果，並在滑鼠靠近捕捉點時提供即時的視覺縮放反饋。
+
+---
+
+## [2026-05-30] Phase 58: Multi-feature Patterning ✅
+
+### 實裝成果
+- **陣列特徵升級**：將 `PATTERN` (線性與圓周陣列) 從單一對象升級為支援 `target_feature_ids` 列表。
+- **幾何精度優化**：後端全面改用 `BRepBuilderAPI_Transform` 進行陣列複製，確保在高數量陣列下仍能保持拓樸一致性。
+- **前端 Chip UI**：同步 `MIRROR` 特徵的優化，實作多選特徵管理介面。
+
+---
+
+## [2026-05-30] Phase 63: Sweep & Loft UX (SW 2000 Parity) ✅
+
+### 實裝成果
+- **Sweep (掃掠) 介面升級**：
+  - 在 PropertyManager 中實作了具備專業視覺層級的選擇器，將輪廓 (Profile) 與路徑 (Path) 區分開來。
+  - 加入了按鈕保護機制，必須同時選取 Profile 與 Path 後才能點擊「Build Sweep」，避免無效請求送至後端。
+- **Loft (疊層拉伸) 介面升級**：
+  - 捨棄了原先寫死僅能選取兩個 Profile 的舊版 UI，改用與多特徵鏡射 (Phase 57) 相同的「多選晶片 (Multi-select Chip)」元件。
+  - 支援選取無限多個草圖輪廓，並提供上移 (▲) / 下移 (▼) / 移除 (×) 按鈕，讓使用者能自由控制疊層拉伸的斷面順序。
+
+### RCA & CAPA
+- **Issue**: 原先的 Sweep/Loft 操作面板設計過於簡陋，甚至存在硬編碼 (Hardcode) 選取數量的問題，導致進階曲面建模功能無法發揮實力。
+- **CAPA**: 統一引入並覆用 Phase 57 建立的多選晶片架構，使所有需要選取多個特徵的工具 (Pattern, Mirror, Loft) 都能享有相同的現代化 CAD 體驗。
+
+---
+
 ## [2026-05-30] Phase 62: Convert & Offset Entities (SW 2000 Parity) ✅
 
 ### 實裝成果
