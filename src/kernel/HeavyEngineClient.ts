@@ -10,6 +10,7 @@ export interface MeshData {
   vertices: number[];
   indices: number[];
   normals: number[];
+  colors?: number[];
   face_metadata?: FaceMetadata[];
 }
 
@@ -34,6 +35,7 @@ export interface CADFeature {
   id: string;
   type: string;
   parameters: any;
+  color?: string;
 }
 
 export class HeavyEngineClient {
@@ -183,6 +185,7 @@ export class HeavyEngineClient {
       throw error;
     }
   }
+
   public async solveAssembly(components: any, mates: any[]): Promise<any> {
     try {
       const response = await fetch(`${this.baseUrl}/solve_assembly`, {
@@ -197,20 +200,38 @@ export class HeavyEngineClient {
       throw error;
     }
   }
-  public async detectInterference(components: { id: string, features: CADFeature[] }[]): Promise<any[]> {
+
+  public async checkInterferences(components: any[]): Promise<any[]> {
     try {
-      const response = await fetch(`${this.baseUrl}/detect_interference`, {
+      const response = await fetch(`${this.baseUrl}/check_interferences`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ components }),
       });
-      if (!response.ok) throw new Error('Interference detection failed');
+      if (!response.ok) throw new Error('Interference check failed');
       return await response.json();
     } catch (error) {
       console.error('[HeavyEngineClient] Interference detection error:', error);
       return [];
     }
   }
+
+  public async exportAssemblyStep(components: any[], filename: string): Promise<boolean> {
+    try {
+      const response = await fetch(`${this.baseUrl}/export_assembly/step`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ components, filename }),
+      });
+      if (!response.ok) throw new Error('Export assembly failed');
+      const res = await response.json();
+      return res.status === 'SUCCESS';
+    } catch (error) {
+      console.error('[HeavyEngineClient] Export assembly error:', error);
+      return false;
+    }
+  }
+
   public async uploadStepFile(file: File): Promise<{ filepath: string }> {
     try {
       const formData = new FormData();

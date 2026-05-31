@@ -61,11 +61,35 @@ src/
 | 76 | Shell Feature (Uniform Wall Thickness) | ✅ |
 | 77 | Extend Entities (Sketch Completion) | ✅ |
 | 78 | Hole Wizard (Standard Fasteners) | ✅ |
-| **79** | **Draft Feature (Mold Design Essentials)** | ✅ **最新** |
+| 79 | Draft Feature (Mold Design Essentials) | ✅ |
+| 80 | Property Propagation (Color & Material Inheritance) | ✅ |
+| 81 | Assembly Interference Detection | ✅ |
+| **82** | **2D Sketch Patterns (Linear & Circular)** | ✅ **最新** |
 
 ---
 
-## 🔑 Phase 79 實作細節 (最新完成)
+## 🔑 Phase 82 實作細節 (最新完成)
+
+### 新增：2D Sketch Patterns (草圖陣列)
+**功能描述**：實現 2D 草圖實體的線性與圓形陣列，大幅提升重複幾何的繪製效率。
+- **線性陣列 (Linear Pattern)**：基於選取的參考線段（方向）進行平移複製，支援個數與間距設定。
+- **圓形陣列 (Circular Pattern)**：基於選取的中心點進行旋轉複製，支援執行個數與總角度設定。
+- **自動參數化 (Auto-EQUAL)**：陣列生成時自動在源幾何與複製品間建立 `EQUAL` 長度/半徑約束，確保修改原始幾何時陣列同步聯動。
+- **引導式 UI**：在 `SketchPropertyManager` 實作了專用的 Pattern Rollout，與 SolidWorks 操作邏輯 100% 對標。
+
+---
+
+## 🔑 Phase 81 實作細節 (最新完成)
+
+### 新增：Assembly Interference Detection (干涉檢查)
+**功能描述**：實現裝配體物理衝突偵測，對標 SolidWorks Evaluate 標籤。
+- **後端空間布林分析**：利用 OCC `BRepAlgoAPI_Common` 偵測零件間的物理重疊區域。
+- **干涉體積計算**：精確計算碰撞區域的體積 (mm³)，並提供高亮 Mesh 渲染。
+- **幽靈網格渲染**：在視埠中以亮紅色半透明標示衝突位置，輔助工程師調整配合。
+
+---
+
+## 🔑 Phase 80 實作細節
 
 ### 新增：Draft Feature (拔模特徵)
 **功能描述**：模具與塑膠件設計核心工具，允許側面相對於中立面產生特定角度的斜度。
@@ -193,9 +217,9 @@ src/
 
 如果您接手本專案，建議從以下任務開始：
 
-1. **[進階] 幾何屬性傳遞 (Property Propagation)**：當執行鏡射或陣列時，確保新生成的面能繼承原始特徵的顏色、材質。
-2. **[工程] 裝配體干涉檢查 (Interference Detection)**：在 3D 空間中找出零件碰撞區域，補齊 Evaluate 標籤的最後一塊拼圖。
-3. **[交互] 尺寸即時驅動 (Callout Editing)**：在 3D 視埠中直接雙擊尺寸數值進行修改，取代面板輸入，達到最極致的建模手感。
+1. **[交互] 尺寸即時驅動 (Callout Editing)**：在 3D 視埠中直接雙擊尺寸數值進行修改，取代面板輸入，達到最極致的建模手感。
+2. **[建模] 3D 螺旋掃掠 (Helical Sweep)**：實作對標 SolidWorks 的螺旋線功能，用於建模螺紋、彈簧等複雜幾何。
+3. **[工程] 裝配體運動模擬 (Motion Study)**：利用配合關係 (Mates) 驅動組件運動，實作簡單的機構連桿動畫。
 
 ---
 

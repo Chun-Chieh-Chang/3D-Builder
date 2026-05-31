@@ -1,7 +1,8 @@
 'use client';
 
 import React from 'react';
-import type { CADFeature } from '@/store/useCadStore';
+import type { CADFeature, CadState } from '@/store/useCadStore';
+import { useCadStore } from '@/store/useCadStore';
 
 export interface PartFeaturePropertyManagerProps {
   selectedFeature: CADFeature;
@@ -32,9 +33,11 @@ export function PartFeaturePropertyManager({
 }: PartFeaturePropertyManagerProps) {
   const { parents, children } = getParentsAndChildren(selectedFeature, features);
   const relations = selectedFeature.parameters.relations as string[] | undefined;
+  const updateFeatureProperty = useCadStore((state: CadState) => state.updateFeatureProperty);
 
   return (
     <div className="h-[250px] w-full border-t border-border bg-surface flex flex-col p-3 z-10 shrink-0">
+
       <div className="text-[14px] uppercase tracking-wider text-secondary-text mb-2 font-bold flex justify-between items-center border-b border-border/40 pb-1">
         <span>屬性管理器 (PropertyManager)</span>
         <span className="text-[13px] bg-primary/10 text-primary px-1 rounded uppercase font-mono">
@@ -1004,6 +1007,33 @@ export function PartFeaturePropertyManager({
             </div>
           </div>
         )}
+
+        {/* Feature Appearance Rollout (Global for all feature types) */}
+        <div className="bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden mt-4 mb-2">
+          <div className="px-3 py-2 bg-slate-50 border-b border-slate-200 flex items-center gap-2">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><circle cx="12" cy="12" r="10"/><path d="M12 2a7 7 0 0 1 7 7c0 2.38-1.19 4.47-3 5.74V17a2 2 0 0 1-2 2H10a2 2 0 0 1-2-2v-2.26C6.19 13.47 5 11.38 5 9a7 7 0 0 1 7-7z"/></svg>
+            <span className="text-[11px] font-bold text-slate-700 uppercase tracking-wider">特徵外觀 (Feature Appearance)</span>
+          </div>
+          <div className="p-3">
+            <div className="flex items-center justify-between">
+              <label className="text-[11px] font-bold text-slate-500 uppercase">特徵顏色</label>
+              <div className="flex items-center gap-2">
+                <input
+                  type="color"
+                  value={selectedFeature.color || '#60A5FA'}
+                  onChange={(e) => updateFeatureProperty(selectedFeature.id, 'color', e.target.value)}
+                  className="w-8 h-8 rounded-md cursor-pointer border-none bg-transparent"
+                />
+                <button 
+                  onClick={() => updateFeatureProperty(selectedFeature.id, 'color', undefined)}
+                  className="text-[10px] text-slate-400 hover:text-red-500 font-bold underline transition-colors"
+                >
+                  重置
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
   );

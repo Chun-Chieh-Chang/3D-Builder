@@ -21,6 +21,12 @@ export const SketchPropertyManager: React.FC = () => {
 
   const [mirrorAxisId, setMirrorAxisId] = useState<string | null>(null);
 
+  // Pattern States
+  const [patternAxisId, setPatternAxisId] = useState<string | null>(null);
+  const [patternCount, setPatternCount] = useState<number>(3);
+  const [patternSpacing, setPatternSpacing] = useState<number>(20);
+  const [patternAngle, setPatternAngle] = useState<number>(360);
+
   const selectedNodes = useMemo(() => {
     return selectedEntityIds
       .filter(id => sketchNodes[id])
@@ -219,6 +225,123 @@ export const SketchPropertyManager: React.FC = () => {
     triggerRebuild();
   };
 
+  const executeLinearPattern = async () => {
+    if (!patternAxisId || patternCount < 2) return;
+    const axisEdge = sketchEdges[patternAxisId];
+    if (!axisEdge) return;
+    const a1 = sketchNodes[axisEdge.nodeIds[0]];
+    const a2 = sketchNodes[axisEdge.nodeIds[1]];
+    if (!a1 || !a2) return;
+
+    const dx = a2.x - a1.x;
+    const dy = a2.y - a1.y;
+    const mag = Math.hypot(dx, dy);
+    if (mag < 1e-6) return;
+    const ux = dx / mag;
+    const uy = dy / mag;
+
+    const nextNodes = { ...sketchNodes };
+    const nextEdges = { ...sketchEdges };
+    const nextConstraints = { ...sketchConstraints };
+
+    for (let i = 1; i < patternCount; i++) {
+      const offset = i * patternSpacing;
+      const nodeMap = new Map<string, string>();
+
+      selectedNodes.forEach(n => {
+        const newId = `n_lp_${Date.now()}_${i}_${n.id.slice(-4)}`;
+        nextNodes[newId] = { 
+          id: newId, 
+          x: n.x + ux * offset, 
+          y: n.y + uy * offset, 
+          isFixed: false 
+        };
+        nodeMap.set(n.id, newId);
+      });
+
+      selectedEdges.forEach(e => {
+        const newId = `e_lp_${Date.now()}_${i}_${e.id.slice(-4)}`;
+        const mNodeIds = e.nodeIds.map(nid => nodeMap.get(nid) || nid);
+        nextEdges[newId] = { ...e, id: newId, nodeIds: mNodeIds as [string, string] };
+
+        // Auto-Constraint: Equal length/radius
+        if (e.type === 'LINE' || e.type === 'CIRCLE') {
+           const cId = `c_eq_lp_${Date.now()}_${i}_${e.id.slice(-4)}`;
+           nextConstraints[cId] = {
+             id: cId,
+             type: 'EQUAL',
+             edgeIds: [e.id, newId]
+           };
+        }
+      });
+    }
+
+    setSketchNodes(nextNodes);
+    setSketchEdges(nextEdges);
+    setSketchConstraints(nextConstraints);
+    setSketchTool('SELECT');
+    setSelectedEntityIds([]);
+    await commitPreciseSketchSolve();
+    triggerRebuild();
+  };
+
+  const executeCircularPattern = async () => {
+    if (selectedNodes.length === 0 || patternCount < 2) return;
+    const center = selectedNodes[0]; 
+    
+    const nextNodes = { ...sketchNodes };
+    const nextEdges = { ...sketchEdges };
+    const nextConstraints = { ...sketchConstraints };
+    const angleStep = (patternAngle * Math.PI / 180) / patternCount;
+
+    for (let i = 1; i < patternCount; i++) {
+      const theta = i * angleStep;
+      const cos = Math.cos(theta);
+      const sin = Math.sin(theta);
+      const nodeMap = new Map<string, string>();
+
+      const toPattern = selectedNodes.filter(n => n.id !== center.id);
+
+      toPattern.forEach(n => {
+        const newId = `n_cp_${Date.now()}_${i}_${n.id.slice(-4)}`;
+        const rx = n.x - center.x;
+        const ry = n.y - center.y;
+        nextNodes[newId] = { 
+          id: newId, 
+          x: center.x + rx * cos - ry * sin, 
+          y: center.y + rx * sin + ry * cos, 
+          isFixed: false 
+        };
+        nodeMap.set(n.id, newId);
+      });
+
+      selectedEdges.forEach(e => {
+        const newId = `e_cp_${Date.now()}_${i}_${e.id.slice(-4)}`;
+        const mNodeIds = e.nodeIds.map(nid => nodeMap.get(nid) || nid);
+        const finalIds = mNodeIds.map((id, idx) => nodeMap.has(e.nodeIds[idx]) ? id : e.nodeIds[idx]);
+        nextEdges[newId] = { ...e, id: newId, nodeIds: finalIds as [string, string] };
+
+        // Auto-Constraint: Equal length/radius
+        if (e.type === 'LINE' || e.type === 'CIRCLE') {
+           const cId = `c_eq_cp_${Date.now()}_${i}_${e.id.slice(-4)}`;
+           nextConstraints[cId] = {
+             id: cId,
+             type: 'EQUAL',
+             edgeIds: [e.id, newId]
+           };
+        }
+      });
+    }
+
+    setSketchNodes(nextNodes);
+    setSketchEdges(nextEdges);
+    setSketchConstraints(nextConstraints);
+    setSketchTool('SELECT');
+    setSelectedEntityIds([]);
+    await commitPreciseSketchSolve();
+    triggerRebuild();
+  };
+
   const triggerRebuild = () => {
     const rebuildHook = (window as any).__handleRebuild;
     if (rebuildHook) rebuildHook();
@@ -257,6 +380,83 @@ export const SketchPropertyManager: React.FC = () => {
       </div>
 
       <div className="flex-1 overflow-y-auto p-2 space-y-3">
+        {/* Linear Pattern Rollout */}
+        {sketchTool === 'LINEAR_PATTERN' && (
+          <div className="bg-white border border-blue-300 rounded shadow-md overflow-hidden animate-in fade-in slide-in-from-top-2 duration-200">
+            <div className="px-2 py-1 bg-blue-50 border-b border-blue-200 flex items-center justify-between">
+              <span className="text-[11px] font-bold text-blue-700 uppercase tracking-tighter">Linear Pattern</span>
+              <button onClick={() => setSketchTool('SELECT')} className="text-[10px] text-slate-400 hover:text-blue-600 font-bold">CANCEL</button>
+            </div>
+            <div className="p-3 space-y-3">
+              <div className="space-y-1">
+                <label className="text-[10px] font-bold text-slate-500 uppercase">Pattern Direction (Axis)</label>
+                <div 
+                  className={`p-2 border rounded min-h-[40px] flex items-center justify-between transition-colors ${patternAxisId ? 'bg-blue-50 border-blue-300 text-blue-700' : 'bg-white border-slate-300 text-slate-400 italic'}`}
+                  onClick={() => {
+                    const line = selectedEdges.find(e => e.type === 'LINE' || e.type === 'CENTER_LINE');
+                    if (line) setPatternAxisId(line.id);
+                  }}
+                >
+                  <span className="text-[11px]">{patternAxisId ? `Axis (${patternAxisId.slice(0,4)})` : "Select a Line..."}</span>
+                  {patternAxisId && <button onClick={(e) => { e.stopPropagation(); setPatternAxisId(null); }} className="text-blue-400 hover:text-blue-600 font-bold">×</button>}
+                </div>
+              </div>
+              <div className="flex gap-2">
+                <div className="flex-1 space-y-1">
+                  <label className="text-[10px] font-bold text-slate-500 uppercase">Count</label>
+                  <input type="number" min="2" value={patternCount} onChange={e => setPatternCount(parseInt(e.target.value))} className="w-full bg-slate-50 border border-slate-200 rounded px-2 py-1 text-[12px] outline-none focus:border-blue-400" />
+                </div>
+                <div className="flex-1 space-y-1">
+                  <label className="text-[10px] font-bold text-slate-500 uppercase">Spacing (mm)</label>
+                  <input type="number" value={patternSpacing} onChange={e => setPatternSpacing(parseFloat(e.target.value))} className="w-full bg-slate-50 border border-slate-200 rounded px-2 py-1 text-[12px] outline-none focus:border-blue-400" />
+                </div>
+              </div>
+              <button 
+                disabled={!patternAxisId || selectedEntityIds.filter(id => id !== patternAxisId).length === 0}
+                onClick={executeLinearPattern}
+                className="w-full py-2 bg-blue-600 text-white rounded font-bold text-[12px] hover:bg-blue-700 disabled:opacity-50 transition-all shadow-sm active:scale-95 flex items-center justify-center gap-2"
+              >
+                Apply Linear Pattern
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Circular Pattern Rollout */}
+        {sketchTool === 'CIRCULAR_PATTERN' && (
+          <div className="bg-white border border-blue-300 rounded shadow-md overflow-hidden animate-in fade-in slide-in-from-top-2 duration-200">
+            <div className="px-2 py-1 bg-blue-50 border-b border-blue-200 flex items-center justify-between">
+              <span className="text-[11px] font-bold text-blue-700 uppercase tracking-tighter">Circular Pattern</span>
+              <button onClick={() => setSketchTool('SELECT')} className="text-[10px] text-slate-400 hover:text-blue-600 font-bold">CANCEL</button>
+            </div>
+            <div className="p-3 space-y-3">
+              <div className="space-y-1">
+                <label className="text-[10px] font-bold text-slate-500 uppercase">Center Point (Seed Node)</label>
+                <div className="p-2 bg-blue-50 border border-blue-200 rounded text-[11px] text-blue-700 font-bold">
+                  {selectedNodes[0] ? `Point (${selectedNodes[0].id.slice(0,4)})` : "Select a seed point..."}
+                </div>
+              </div>
+              <div className="flex gap-2">
+                <div className="flex-1 space-y-1">
+                  <label className="text-[10px] font-bold text-slate-500 uppercase">Instances</label>
+                  <input type="number" min="2" value={patternCount} onChange={e => setPatternCount(parseInt(e.target.value))} className="w-full bg-slate-50 border border-slate-200 rounded px-2 py-1 text-[12px] outline-none focus:border-blue-400" />
+                </div>
+                <div className="flex-1 space-y-1">
+                  <label className="text-[10px] font-bold text-slate-500 uppercase">Total Angle</label>
+                  <input type="number" value={patternAngle} onChange={e => setPatternAngle(parseFloat(e.target.value))} className="w-full bg-slate-50 border border-slate-200 rounded px-2 py-1 text-[12px] outline-none focus:border-blue-400" />
+                </div>
+              </div>
+              <button 
+                disabled={selectedNodes.length === 0}
+                onClick={executeCircularPattern}
+                className="w-full py-2 bg-blue-600 text-white rounded font-bold text-[12px] hover:bg-blue-700 disabled:opacity-50 transition-all shadow-sm active:scale-95 flex items-center justify-center gap-2"
+              >
+                Apply Circular Pattern
+              </button>
+            </div>
+          </div>
+        )}
+
         {/* Mirror Entities Rollout (Active Tool Only) */}
         {sketchTool === 'MIRROR' && (
           <div className="bg-white border border-indigo-300 rounded shadow-md overflow-hidden animate-in fade-in slide-in-from-top-2 duration-200">

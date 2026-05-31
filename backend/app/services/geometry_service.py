@@ -37,6 +37,7 @@ def _shape_to_mesh(shape, deflection=0.01):
     vertices = []
     indices = []
     normals = []
+    colors = [] # New colors array
     face_metadata = []
     edge_metadata = []
 
@@ -53,7 +54,16 @@ def _shape_to_mesh(shape, deflection=0.01):
     explorer = TopExp_Explorer(shape, TopAbs_FACE)
     while explorer.More():
         face = topods.Face(explorer.Current())
-        # ... (rest of face logic)
+        h_face = face.HashCode(10000000)
+        
+        # Resolve Color
+        f_color_hex = linker.color_map.get(h_face, "#60A5FA") # Default Blue
+        r, g, b = 0.37, 0.65, 0.98
+        try:
+            c_hex = f_color_hex.lstrip('#')
+            if len(c_hex) == 6:
+                r, g, b = int(c_hex[0:2], 16)/255.0, int(c_hex[2:4], 16)/255.0, int(c_hex[4:6], 16)/255.0
+        except: pass
 
         location = face.Location()
         triangulation = BRep_Tool.Triangulation(face, location)
@@ -68,6 +78,7 @@ def _shape_to_mesh(shape, deflection=0.01):
                 pnt = triangulation.Node(i)
                 pnt.Transform(trsf)
                 vertices.extend([pnt.X(), pnt.Y(), pnt.Z()])
+                colors.extend([r, g, b])
                 
             # Compute and extract high-precision normals at each node
             has_uv = triangulation.HasUVNodes()
@@ -178,6 +189,7 @@ def _shape_to_mesh(shape, deflection=0.01):
         "vertices": vertices,
         "indices": indices,
         "normals": normals,
+        "colors": colors,
         "face_metadata": face_metadata,
         "edge_metadata": edge_metadata
     }
@@ -921,10 +933,11 @@ def process_features_cached(
 
 
 class TopologicalLinker:
-    """Tracks how shapes evolve through operations (Boolean, Transform)."""
+    """Tracks how shapes evolve through operations (Boolean, Transform) and manages property inheritance."""
     def __init__(self):
         self.mapping = {} # Original Shape Hash -> List of New Shape Hashes
         self.shape_pool = {} # Hash -> Shape object
+        self.color_map = {} # Hash -> Hex Color string
         
     def record_evolution(self, tool, original_shapes):
         """Records Generated and Modified shapes from an OCC tool (e.g. BRepAlgoAPI)."""
@@ -936,7 +949,10 @@ class TopologicalLinker:
             h_orig = orig.HashCode(10000000)
             self.shape_pool[h_orig] = orig
             
-            # Track both Faces and Edges
+            # Get color from original shape if it exists
+            orig_color = self.color_map.get(h_orig)
+            
+            # Track sub-shapes
             for sub_type in [TopAbs_FACE, TopAbs_EDGE]:
                 exp = TopExp_Explorer(orig, sub_type)
                 while exp.More():
@@ -944,11 +960,13 @@ class TopologicalLinker:
                     h_sub = sub.HashCode(10000000)
                     self.shape_pool[h_sub] = sub
                     
+                    # Inherit color from parent if sub-shape doesn't have one
+                    sub_color = self.color_map.get(h_sub) or orig_color
+                    if sub_color: self.color_map[h_sub] = sub_color
+                    
                     # Get Generated
                     generated_list = tool.Generated(sub)
                     if generated_list and not generated_list.IsNull():
-                        # Generated might be a compound or single shape depending on OCC version/tool
-                        # Usually it's a TopoDS_Shape which could be TopAbs_COMPOUND
                         exp_gen = TopExp_Explorer(generated_list, sub_type)
                         while exp_gen.More():
                             gen_sub = exp_gen.Current()
@@ -956,6 +974,8 @@ class TopologicalLinker:
                             if h_sub not in self.mapping: self.mapping[h_sub] = []
                             self.mapping[h_sub].append(h_gen)
                             self.shape_pool[h_gen] = gen_sub
+                            # Propagate Color to Generated
+                            if sub_color: self.color_map[h_gen] = sub_color
                             exp_gen.Next()
                         
                     # Get Modified
@@ -968,6 +988,8 @@ class TopologicalLinker:
                             if h_sub not in self.mapping: self.mapping[h_sub] = []
                             self.mapping[h_sub].append(h_mod)
                             self.shape_pool[h_mod] = mod_sub
+                            # Propagate Color to Modified
+                            if sub_color: self.color_map[h_mod] = sub_color
                             exp_mod.Next()
                     exp.Next()
 
@@ -1010,9 +1032,11 @@ def process_features(features, deflection=0.01):
         if hasattr(feat, 'type'):
             f_type = feat.type
             params = feat.parameters
+            f_color = getattr(feat, 'color', None)
         else:
             f_type = feat.get('type')
             params = feat.get('parameters', {})
+            f_color = feat.get('color')
             
         current_feat_shape = None
         op = params.get('operation', 'ADD')
@@ -1170,10 +1194,15 @@ def process_features(features, deflection=0.01):
 
         # Perform the B-Rep boolean combination
         if current_feat_shape:
+            # Assign color to the new shape in the linker
+            if f_color:
+                h_feat = current_feat_shape.HashCode(10000000)
+                linker.color_map[h_feat] = f_color
+
             if final_shape is None:
                 final_shape = current_feat_shape
             else:
-                try:
+
                     if op == 'ADD':
                         tool = BRepAlgoAPI_Fuse(final_shape, current_feat_shape)
                     else:
@@ -1648,10 +1677,15 @@ def build_shape_only(
 
         # Perform the B-Rep boolean combination
         if current_feat_shape:
+            # Assign color to the new shape in the linker
+            if f_color:
+                h_feat = current_feat_shape.HashCode(10000000)
+                linker.color_map[h_feat] = f_color
+
             if final_shape is None:
                 final_shape = current_feat_shape
             else:
-                try:
+
                     if op == 'ADD':
                         tool = BRepAlgoAPI_Fuse(final_shape, current_feat_shape)
                     else:
@@ -3100,6 +3134,84 @@ def export_cad_file(features, format_type, filepath):
     except Exception as err:
         print(f"[ERROR] export_cad_file failed for format {format_type}:", err)
         return False
+
+def check_interferences(components_data):
+    \"\"\"
+    Detects physical overlaps between assembly components using OCC Boolean operations.
+    Returns a list of interferences with component IDs, volume, and mesh data.
+    \"\"\"
+    if not HAS_OCC:
+        return []
+
+    interferences = []
+    from OCC.Core.BRepAlgoAPI import BRepAlgoAPI_Common
+    from OCC.Core.GProp import GProp_GProps
+    from OCC.Core.BRepGProp import brepgprop
+    from OCC.Core.gp import gp_Trsf, gp_Pnt, gp_Dir, gp_Ax1, gp_Vec
+    from OCC.Core.BRepBuilderAPI import BRepBuilderAPI_Transform
+    import math
+
+    # 1. Rebuild and transform all component shapes
+    transformed_shapes = {}
+    for comp in components_data:
+        cid = comp.get('id')
+        features = comp.get('features', [])
+        # Simple rebuild
+        shape = build_shape_only(features)
+        if not shape or shape.IsNull():
+            continue
+        
+        # Apply transformation
+        trans = comp.get('transform', {})
+        pos = trans.get('position', [0,0,0])
+        rot = trans.get('rotation', [0,0,0])
+        
+        trsf = gp_Trsf()
+        trsf.SetTranslation(gp_Vec(*pos))
+        
+        # Rotation (Euler XYZ)
+        trsf_x = gp_Trsf(); trsf_x.SetRotation(gp_Ax1(gp_Pnt(0,0,0), gp_Dir(1,0,0)), rot[0])
+        trsf_y = gp_Trsf(); trsf_y.SetRotation(gp_Ax1(gp_Pnt(0,0,0), gp_Dir(0,1,0)), rot[1])
+        trsf_z = gp_Trsf(); trsf_z.SetRotation(gp_Ax1(gp_Pnt(0,0,0), gp_Dir(0,0,1)), rot[2])
+        
+        final_rot = trsf_z.Multiplied(trsf_y).Multiplied(trsf_x)
+        trsf.Multiply(final_rot)
+        
+        shape = BRepBuilderAPI_Transform(shape, trsf).Shape()
+        transformed_shapes[cid] = shape
+
+    # 2. Pairwise intersection check
+    ids = list(transformed_shapes.keys())
+    for i in range(len(ids)):
+        for j in range(i + 1, len(ids)):
+            id1 = ids[i]
+            id2 = ids[j]
+            s1 = transformed_shapes[id1]
+            s2 = transformed_shapes[id2]
+            
+            try:
+                common_tool = BRepAlgoAPI_Common(s1, s2)
+                common_tool.Build()
+                if common_tool.IsDone():
+                    clash_shape = common_tool.Shape()
+                    
+                    # Calculate volume
+                    props = GProp_GProps()
+                    brepgprop.VolumeProperties(clash_shape, props)
+                    volume = props.Mass()
+                    
+                    if volume > 0.001: # Threshold for meaningful interference
+                        mesh = _shape_to_mesh(clash_shape, deflection=0.1) # Coarse mesh for highlight
+                        interferences.append({
+                            \"component_id_1\": id1,
+                            \"component_id_2\": id2,
+                            \"volume\": float(volume),
+                            \"mesh\": mesh
+                        })
+            except Exception as e:
+                print(f\"[ERROR] Interference check failed for {id1} vs {id2}: {e}\")
+
+    return interferences
 
 def export_assembly_step(components_data, filepath):
     """

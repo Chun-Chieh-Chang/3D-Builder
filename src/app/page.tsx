@@ -6,6 +6,7 @@ import OcctShape, { type MeshData } from '@/renderer/OcctShape';
 import { useCadStore, type CADFeature } from '@/store/useCadStore';
 import { HeavyEngineClient } from '@/kernel/HeavyEngineClient';
 import { MeasurementPanel } from '@/ui/MeasurementPanel';
+import { InterferencePanel } from '@/ui/InterferencePanel';
 import { SketchHUD } from '@/renderer/SketchHUD';
 import { fileAPI } from '../../electron/renderer';
 import { MatePanel } from '@/ui/MatePanel';
@@ -49,6 +50,7 @@ export default function Home() {
     visibleSketches, toggleSketchVisibility,
     removeFeature, removeFeatures,
     measurementMode,
+    interferenceActive,
     selectedTopology, setSelectedTopology,
     triggerCameraNormal, pendingFeatureCommand, setPendingFeatureCommand,
     defaultFilletRadius, defaultChamferDistance,
@@ -277,6 +279,8 @@ export default function Home() {
               <div className="flex-1 flex flex-col p-2 gap-2 bg-[#F8FAFC]"><AssemblyTreePanel /><MatePanel /></div>
             ) : measurementMode !== 'NONE' ? (
               <MeasurementPanel />
+            ) : interferenceActive ? (
+              <InterferencePanel />
             ) : (
               <FeatureManagerPanel
                 features={features}

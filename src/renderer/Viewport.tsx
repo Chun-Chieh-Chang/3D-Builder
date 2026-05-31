@@ -787,6 +787,38 @@ const SectionViewControls = () => {
   );
 };
 
+const InterferenceRenderer = () => {
+  const { interferenceMeshes } = useCadStore();
+  if (!interferenceMeshes || interferenceMeshes.length === 0) return null;
+
+  return (
+    <group>
+      {interferenceMeshes.map((data, idx) => {
+        const geom = new THREE.BufferGeometry();
+        geom.setAttribute('position', new THREE.Float32BufferAttribute(data.vertices, 3));
+        if (data.normals && data.normals.length > 0) {
+          geom.setAttribute('normal', new THREE.Float32BufferAttribute(data.normals, 3));
+        }
+        geom.setIndex(data.indices);
+
+        return (
+          <mesh key={idx} geometry={geom}>
+            <meshStandardMaterial 
+              color="#FF0000" 
+              emissive="#FF0000"
+              emissiveIntensity={0.5}
+              transparent 
+              opacity={0.6} 
+              side={THREE.DoubleSide}
+              depthTest={false}
+            />
+          </mesh>
+        );
+      })}
+    </group>
+  );
+};
+
 export default function Viewport({ children }: ViewportProps) {
   const { isSketchMode, features, setControls, isCameraAnimating, activePropertyManager, setSelectedId, setSelectedSubNodeType, environmentMap, mode: cadMode } = useCadStore();
 
@@ -814,6 +846,7 @@ export default function Viewport({ children }: ViewportProps) {
             <SketchPreview />
             <DanglingNodesRenderer />
             <HighlightRenderer />
+            <InterferenceRenderer />
             <FeatureOutlines />
 
             {children || (

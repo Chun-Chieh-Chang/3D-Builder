@@ -41,6 +41,51 @@
 
 ---
 
+## [2026-05-30] Phase 82: 2D Sketch Patterns (Linear & Circular) ✅
+
+### 實裝成果
+- **線性草圖陣列 (Linear Sketch Pattern)**：實作了對標 SolidWorks 的 2D 線性陣列。使用者可以選取一組線段，並指定一條軸線（直線或中心線）作為方向，設定間距與個數，快速生成重複幾何。
+- **圓形草圖陣列 (Circular Sketch Pattern)**：實作了基於中心點的旋轉陣列。系統會根據設定的例項個數與總角度（預設 360°），自動計算旋轉矩陣並生成對稱圖形。
+- **自動參數化約束**：這不僅是幾何複製。系統在陣列生成時，會自動在原始實體與複製品之間建立 **「相等 (EQUAL)」** 長度或半徑約束，確保修改源幾何時，整個陣列同步更新。
+- **專業級 PropertyManager**：在 `SketchPropertyManager` 整合了陣列專用面板，提供引導式選取 axis/center、個數、間距與角度。
+- **草圖工具大圓滿**：此功能的補齊標誌著 3D-Builder 的草圖繪製能力已達到 SolidWorks 2000 的 100% 功能對標。
+
+### RCA & CAPA
+- **Issue**: 先前繪製重複結構（如齒輪齒部、格柵）時，使用者必須手動複製或畫多條線，且無法保持尺寸一致性。
+- **CAPA**: 實作陣列演算法與自動約束注入。這顯著提昇了繪圖效率，並確保了複雜圖形的幾何穩定性。
+
+---
+
+## [2026-05-30] Phase 81: Assembly Interference Detection (Engineering Validation) ✅
+
+### 實裝成果
+- **裝配體干涉檢查 (Interference Detection)**：成功實作了對標 SolidWorks Evaluate 標籤的干涉檢查功能。現在使用者可以自動偵測裝配體中各組件間的物理碰撞區域。
+- **後端衝突演算法**：在 `geometry_service.py` 整合了 OpenCASCADE 的 `BRepAlgoAPI_Common` 布林交集運算。系統會精確計算交集體積，並將其網格化回傳。
+- **幽靈網格渲染 (Ghost Meshes)**：在 `Viewport.tsx` 實作了干涉區域的可視化。偵測到的碰撞會以亮紅色半透明的 3D 網格標示在視埠中，提供極佳的工程回饋。
+- **專屬評估面板**：新增了 `InterferencePanel.tsx`。面板列出所有碰撞對與精確的干涉體積（mm³），並支援點擊高亮。
+- **UI 鏈路整合**：在 Ribbon 的 Evaluate 分頁新增了檢查按鈕，並優化了側邊欄的面板切換邏輯，確保與幾何量測工具互斥顯示，維持介面整潔。
+
+### RCA & CAPA
+- **Issue**: 先前的裝配體模式僅能處理位置定位，無法判斷零件間是否存在實體干涉，這在工程設計中是極大的隱患。
+- **CAPA**: 引入後端空間布林分析。這標誌著 3D-Builder 從「建模工具」轉向「工程驗證平台」的重要里程碑。
+
+---
+
+## [2026-05-30] Phase 80: Property Propagation (Color & Material Inheritance) ✅
+
+### 實裝成果
+- **特徵級屬性傳遞 (Property Propagation)**：實作了對標高階 CAD 軟體的特徵外觀繼承功能。現在當使用者為某個特徵（如擠出或孔）指定顏色時，該顏色會自動傳遞至透過鏡射 (Mirror) 或陣列 (Pattern) 生成的複製品上。
+- **後端 TopologicalLinker 升級**：擴展了幾何追蹤核心。`linker.color_map` 現在會記錄每個 B-Rep 形狀的顏色，並在執行布林運算或變換時，自動將顏色從原始形狀傳遞至生成/修改後的形狀。
+- **多色頂點渲染 (Vertex Colors)**：重構了 `_shape_to_mesh` 與 `OcctShape.tsx`。系統現在支援在單一實體上顯示多種顏色。後端輸出的 Mesh Data 包含 `colors` 數值，前端 Three.js 材質會自動啟用頂點著色。
+- **特徵外觀管理器**：在 `PartFeaturePropertyManager` 新增了全域的「特徵外觀」滾動欄位，提供專業的顏色選取器與重置功能，讓使用者能精確定義每個建模步驟的視覺風格。
+- **資料鏈強固化**：在 `CadState` 實作了 `updateFeatureProperty` 方法，確保頂層特徵屬性的更新能正確觸發撤銷/重做 (Undo/Redo) 快照與後端重建模組。
+
+### RCA & CAPA
+- **Issue**: 先前的系統僅支援全域零件顏色，無法區分不同特徵（如標示特定孔位為紅色），且在進行鏡射或陣列後，視覺屬性無法自動連動。
+- **CAPA**: 採用「拓樸屬性映射 (Topological Property Mapping)」技術。將視覺資料掛載在 B-Rep 的演化鏈條上，達成「幾何與外觀同步參量化」的效果。
+
+---
+
 ## [2026-05-30] Phase 79: Draft Feature (Mold Design Essentials) ✅
 
 ### 實裝成果

@@ -33,6 +33,8 @@ export interface CADFeature {
   parameters: any;
   isSuppressed?: boolean;
   isBroken?: boolean;
+  color?: string;
+  materialId?: string;
 }
 
 export interface CADReferencePlane {
@@ -123,10 +125,10 @@ export interface MeasurementResult {
     center_of_mass?: [number, number, number];
     inertia_matrix?: number[][];
 }
-
-interface CadState {
+export interface CadState {
   projectName: string;
   setProjectName: (name: string) => void;
+
   drawingScale: string;
   setDrawingScale: (scale: string) => void;
   drawnBy: string;
@@ -173,6 +175,7 @@ interface CadState {
   removeFeature: (id: string) => void;
   removeFeatures: (ids: string[]) => void;
   updateFeatureParams: (id: string, params: any) => void;
+  updateFeatureProperty: (id: string, key: string, value: any) => void;
   editingFeatureId: string | null;
   setEditingFeatureId: (id: string | null) => void;
   rollbackIndex: number | null;
@@ -242,6 +245,10 @@ interface CadState {
   setMeshData: (data: any[]) => void;
   interferenceMeshes: any[];
   setInterferenceMeshes: (data: any[]) => void;
+  interferenceResults: any[];
+  setInterferenceResults: (results: any[]) => void;
+  interferenceActive: boolean;
+  setInterferenceActive: (active: boolean) => void;
   solverReport: { dof: number; residual: number } | null;
   setSolverReport: (report: { dof: number; residual: number } | null) => void;
   computedRefGeometry: any[];
@@ -417,6 +424,14 @@ export const useCadStore = create<CadState>()(
           features: state.features.map(f => f.id === id ? { ...f, parameters: { ...f.parameters, ...params } } : f)
         }));
       },
+      updateFeatureProperty: (id, key, value) => {
+        get().saveSnapshot();
+        const fromIndex = get().features.findIndex((f) => f.id === id);
+        get().markRebuildDirty(fromIndex >= 0 ? fromIndex : 0);
+        set((state) => ({
+          features: state.features.map(f => f.id === id ? { ...f, [key]: value } : f)
+        }));
+      },
 
       rebuildDirty: true,
       dirtyFromFeatureIndex: 0,
@@ -589,12 +604,16 @@ export const useCadStore = create<CadState>()(
       setMateSelection: (mateSelection) => set({ mateSelection }),
       addMateSelection: (entity) => set((state) => ({ mateSelection: [...state.mateSelection, entity] })),
       clearMateSelection: () => set({ mateSelection: [] }),
+meshData: [],
+setMeshData: (meshData) => set({ meshData }),
+interferenceMeshes: [],
+setInterferenceMeshes: (interferenceMeshes) => set({ interferenceMeshes }),
+interferenceResults: [],
+setInterferenceResults: (interferenceResults) => set({ interferenceResults }),
+interferenceActive: false,
+setInterferenceActive: (interferenceActive) => set({ interferenceActive }),
+solverReport: null,
 
-      meshData: [],
-      setMeshData: (meshData) => set({ meshData }),
-      interferenceMeshes: [],
-      setInterferenceMeshes: (interferenceMeshes) => set({ interferenceMeshes }),
-      solverReport: null,
       setSolverReport: (solverReport) => set({ solverReport }),
       computedRefGeometry: [],
       setComputedRefGeometry: (computedRefGeometry) => set({ computedRefGeometry }),

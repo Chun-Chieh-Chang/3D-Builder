@@ -43,6 +43,8 @@ export const RibbonController: React.FC<RibbonControllerProps> = ({
     setMeasurementPoints,
     setMeasurementResults,
     measurementMode,
+    interferenceActive,
+    setInterferenceActive,
     setHint,
     pendingFeatureCommand,
     setPendingFeatureCommand,
@@ -317,30 +319,6 @@ export const RibbonController: React.FC<RibbonControllerProps> = ({
                 setActiveTab('FEATURES');
                 setPendingFeatureCommand('DRAFT');
                 setSelectedTopology(null);
-                setHint('Select a neutral plane, then select faces to draft.');
-              }}
-              className={`flex flex-col items-center justify-center gap-0.5 px-3 h-[78px] min-w-[75px] transition-all border ${pendingFeatureCommand === 'DRAFT' ? 'bg-white border-[#A0A0A0] shadow-inner' : 'border-transparent hover:bg-white hover:border-[#A0A0A0]'} active:bg-slate-100 group`}
-              title="Draft Angle"
-            >
-              <div className={`w-10 h-10 flex items-center justify-center transition-transform ${pendingFeatureCommand === 'DRAFT' ? 'text-indigo-500 scale-110' : 'text-slate-600 group-hover:scale-110'}`}>
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polygon points="12 2 2 22 22 22"/></svg>
-              </div>
-              <span className="text-[10px] font-bold text-slate-800 leading-none uppercase">Draft</span>
-            </button>
-            
-            <button
-              onClick={() => {
-                const featId = `feat_${Date.now()}`;
-                addFeature({
-                  id: featId,
-                  type: 'DRAFT',
-                  name: `Draft ${features.filter(f => f.type === 'DRAFT').length + 1}`,
-                  parameters: { angle: 5, neutral_plane_refs: [], faces_to_draft_refs: [] }
-                });
-                setSelectedId(featId);
-                setActiveTab('FEATURES');
-                setPendingFeatureCommand('DRAFT');
-                setSelectedTopology(null);
                 setHint('Step 1: Select a neutral plane. Step 2: Select faces to draft.');
               }}
               className={`flex flex-col items-center justify-center gap-0.5 px-3 h-[78px] min-w-[75px] transition-all border ${pendingFeatureCommand === 'DRAFT' ? 'bg-white border-[#A0A0A0] shadow-inner' : 'border-transparent hover:bg-white hover:border-[#A0A0A0]'} active:bg-slate-100 group`}
@@ -473,6 +451,19 @@ export const RibbonController: React.FC<RibbonControllerProps> = ({
               <span className="text-[10px] font-bold text-slate-800 leading-none uppercase text-center">Extend</span>
             </button>
             <div className="w-[1px] h-10 bg-border/50 mx-1" />
+            <button onClick={() => { setSketchTool('LINEAR_PATTERN'); }} className={`flex flex-col items-center justify-center gap-0.5 px-3 h-[78px] min-w-[75px] transition-all border ${sketchTool === 'LINEAR_PATTERN' ? 'bg-white border-[#A0A0A0] shadow-inner' : 'border-transparent hover:bg-white hover:border-[#A0A0A0]'} active:bg-slate-100 group`} title="Linear Sketch Pattern">
+              <div className={`w-10 h-10 flex items-center justify-center transition-transform ${sketchTool === 'LINEAR_PATTERN' ? 'text-[#005B9A] scale-110' : 'text-slate-600 group-hover:scale-110'}`}>
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><rect x="3" y="3" width="6" height="6" rx="1"/><rect x="15" y="3" width="6" height="6" rx="1"/><rect x="3" y="15" width="6" height="6" rx="1"/><path d="M12 6h3"/><path d="M6 12v3"/></svg>
+              </div>
+              <span className="text-[10px] font-bold text-slate-800 leading-none uppercase text-center">Linear<br/>Pattern</span>
+            </button>
+            <button onClick={() => { setSketchTool('CIRCULAR_PATTERN'); }} className={`flex flex-col items-center justify-center gap-0.5 px-3 h-[78px] min-w-[75px] transition-all border ${sketchTool === 'CIRCULAR_PATTERN' ? 'bg-white border-[#A0A0A0] shadow-inner' : 'border-transparent hover:bg-white hover:border-[#A0A0A0]'} active:bg-slate-100 group`} title="Circular Sketch Pattern">
+              <div className={`w-10 h-10 flex items-center justify-center transition-transform ${sketchTool === 'CIRCULAR_PATTERN' ? 'text-[#005B9A] scale-110' : 'text-slate-600 group-hover:scale-110'}`}>
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><circle cx="12" cy="12" r="3"/><path d="M12 2v2"/><path d="M12 18v2"/><path d="M2 12h2"/><path d="M18 12h2"/><path d="m4.9 4.9 1.4 1.4"/><path d="m17.7 17.7 1.4 1.4"/><path d="m4.9 19.1 1.4-1.4"/><path d="m17.7 6.3 1.4-1.4"/></svg>
+              </div>
+              <span className="text-[10px] font-bold text-slate-800 leading-none uppercase text-center">Circular<br/>Pattern</span>
+            </button>
+            <div className="w-[1px] h-10 bg-border/50 mx-1" />
             <button onClick={() => { (window as any).__handleConvertEntities?.(); }} className="flex flex-col items-center justify-center gap-0.5 px-3 h-[78px] min-w-[75px] transition-all border border-transparent hover:bg-white hover:border-[#A0A0A0] active:bg-slate-100 group" title="Convert Entities">
               <div className="w-10 h-10 flex items-center justify-center text-slate-700 transition-transform group-hover:scale-110">
                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><path d="M12 22V12"/><path d="M12 12 3.5 7.5"/><path d="M12 12l8.5-4.5"/></svg>
@@ -488,11 +479,11 @@ export const RibbonController: React.FC<RibbonControllerProps> = ({
           </div>
         ) : activeTab === 'EVALUATE' ? (
           <div className="flex items-center gap-2 h-full animate-in fade-in slide-in-from-left-2 duration-300">
-            <button onClick={() => setMeasurementMode(measurementMode === 'DISTANCE' ? 'NONE' : 'DISTANCE')} className={`flex flex-col items-center justify-center gap-0.5 px-3 h-[78px] min-w-[75px] transition-all border rounded-md ${measurementMode === 'DISTANCE' ? 'bg-[#005B9A]/10 border-[#005B9A]' : 'border-transparent hover:bg-white hover:border-[#A0A0A0] active:bg-slate-100'} group`} title="Measure Distance">
+            <button onClick={() => { setMeasurementMode(measurementMode === 'DISTANCE' ? 'NONE' : 'DISTANCE'); setInterferenceActive(false); }} className={`flex flex-col items-center justify-center gap-0.5 px-3 h-[78px] min-w-[75px] transition-all border rounded-md ${measurementMode !== 'NONE' ? 'bg-[#005B9A]/10 border-[#005B9A]' : 'border-transparent hover:bg-white hover:border-[#A0A0A0] active:bg-slate-100'} group`} title="Measure Distance">
               <div className="w-10 h-10 flex items-center justify-center text-slate-700 transition-transform group-hover:scale-110">
                 <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 4h6v6" /><path d="M20 4L4 20" /><path d="M10 20H4v-6" /></svg>
               </div>
-              <span className="text-[11px] font-semibold text-slate-800 leading-tight">Measure<br />Distance</span>
+              <span className="text-[11px] font-semibold text-slate-800 leading-tight">Measure</span>
             </button>
 
             <button
@@ -507,6 +498,21 @@ export const RibbonController: React.FC<RibbonControllerProps> = ({
                 <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M4 12h16M12 4v16M3 9h18M3 15h18" /></svg>
               </div>
               <span className="text-[11px] font-semibold text-slate-800 leading-tight">Section<br />View</span>
+            </button>
+
+            <button
+              onClick={() => {
+                const next = !interferenceActive;
+                setInterferenceActive(next);
+                if (next) setMeasurementMode('NONE');
+              }}
+              className={`flex flex-col items-center justify-center gap-0.5 px-3 h-[78px] min-w-[75px] transition-all border border-transparent hover:bg-white hover:border-[#A0A0A0] active:bg-slate-100 rounded-md group ${interferenceActive ? 'bg-red-50 border-red-300 shadow-inner' : ''}`}
+              title="Interference Detection"
+            >
+              <div className={`w-10 h-10 flex items-center justify-center transition-transform ${interferenceActive ? 'text-red-600 scale-110' : 'text-slate-600 group-hover:scale-110'}`}>
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="m21 21-4.3-4.3"/><circle cx="11" cy="11" r="8"/><path d="m11 8-2 2 2 2 2-2-2-2Z"/></svg>
+              </div>
+              <span className="text-[11px] font-semibold text-slate-800 leading-tight">Interference</span>
             </button>
           </div>
         ) : activeTab === 'RENDER' ? (

@@ -166,6 +166,19 @@ async def export_step(request: ExportStepRequest):
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))
 
+class AssemblyInterferenceRequest(BaseModel):
+    components: List[dict]
+
+@router.post(\"/check_interferences\")
+async def check_interferences(request: AssemblyInterferenceRequest):
+    try:
+        results = geometry_service.check_interferences(request.components)
+        return results
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(e))
+
 class AssemblyExportStepRequest(BaseModel):
     components: List[dict]
     filename: Optional[str] = "assembly.step"

@@ -23,6 +23,7 @@ export interface MeshData {
   vertices: number[];
   normals: number[];
   indices: number[];
+  colors?: number[];
   face_metadata?: FaceMetadata[];
 }
 
@@ -93,13 +94,15 @@ export default function OcctShape({
     if (data.normals && data.normals.length > 0) {
       geom.setAttribute('normal', new THREE.Float32BufferAttribute(data.normals, 3));
     }
+    if (data.colors && data.colors.length > 0) {
+      geom.setAttribute('color', new THREE.Float32BufferAttribute(data.colors, 3));
+    }
     geom.setIndex(data.indices);
     geometryCache.set(data, geom);
     return geom;
   }, [data]);
 
   // We no longer dispose geometry on unmount because it may be shared via geometryCache.
-  // Instead we let the browser GC it when data (the key in WeakMap) goes out of scope.
   React.useEffect(() => {
     return () => {
       // Intentionally empty: Geometry is cached.
@@ -124,7 +127,6 @@ export default function OcctShape({
       const preserve = isSketchMode || activePropertyManager !== null;
       
       const selected = topologySelector.selectAtPosition(ndcX, ndcY, preserve, filterType as any);
-      console.log('[OcctShape Topology] Clicked mesh at NDC:', ndcX, ndcY, 'Selected:', selected);
       
       if (selected && measurementMode !== 'NONE') {
         if (measurementPoints.length < 2) {
@@ -138,11 +140,8 @@ export default function OcctShape({
       if (selected && cadMode === 'ASSEMBLY' && !isSketchMode) {
         // Assembly Mate Selection
         selected.componentId = componentId;
-        
-        // Only allow up to 2 items
         const currentState = useCadStore.getState().mateSelection;
         if (currentState.length < 2) {
-            // check if not already selected
             const alreadyExists = currentState.some((sel: any) => sel.id === selected.id && sel.componentId === componentId);
             if (!alreadyExists) {
                 addMateSelection(selected);
@@ -162,7 +161,6 @@ export default function OcctShape({
           }
         }
       } else if (selected && pendingFeatureCommand) {
-        // Direct addition of selected topology (edges/faces) to the pending feature's parameters
         const state = useCadStore.getState();
         const featId = state.selectedId;
         if (featId) {
@@ -197,7 +195,6 @@ export default function OcctShape({
                 state.updateFeatureParams(featId, { faces_to_remove_refs: [...currentRefs, selected] });
               }
             } else if (pendingFeatureCommand === 'HOLE_WIZARD') {
-              // Only keep the latest one
               state.updateFeatureParams(featId, { hole_placement_refs: [selected] });
             } else if (pendingFeatureCommand === 'PLANE') {
               state.updateFeatureParams(featId, { reference_refs: [selected] });
@@ -211,7 +208,6 @@ export default function OcctShape({
           }
         }
       } else if (!activePropertyManager && !isSketchMode) {
-        // SolidWorks viewport selection & proximity mapping logic
         if (selected) {
           const clickPos = new THREE.Vector3(...selected.coordinates);
           let closestFeat = null;
@@ -226,7 +222,6 @@ export default function OcctShape({
           }
           
           if (closestFeat) {
-            console.log('[OcctShape Selection] Proximity matches feature:', closestFeat.name, 'with distance:', minDistance);
             setSelectedId(closestFeat.id);
             setSelectedSubNodeType('FEATURE');
           }
@@ -244,7 +239,8 @@ export default function OcctShape({
       onClick={handleMeshClick}
     >
       <meshPhysicalMaterial
-        color={cadMode === 'RENDER' ? MATERIAL_PRESETS[partMaterial]?.color || color : color}
+        vertexColors={!!data.colors && data.colors.length > 0}
+        color={data.colors && data.colors.length > 0 ? '#ffffff' : (cadMode === 'RENDER' ? MATERIAL_PRESETS[partMaterial]?.color || color : color)}
         roughness={cadMode === 'RENDER' ? MATERIAL_PRESETS[partMaterial]?.roughness ?? 0.3 : 0.3}
         metalness={cadMode === 'RENDER' ? MATERIAL_PRESETS[partMaterial]?.metalness ?? 0.2 : 0.2}
         clearcoat={cadMode === 'RENDER' ? MATERIAL_PRESETS[partMaterial]?.clearcoat ?? 0 : 0}
@@ -268,4 +264,3 @@ export default function OcctShape({
     </mesh>
   );
 }
-
