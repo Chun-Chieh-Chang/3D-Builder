@@ -373,6 +373,7 @@ export const useFeatureBuilders = (handleRebuild: () => void) => {
 
     const result: any[][] = [];
     for (const loop of points) {
+      const transformedLoop: any[] = [];
       for (const pt of loop) {
         if (!pt || pt.length < 2) continue;
         const [u, v] = [Number(pt[0]), Number(pt[1])];
@@ -410,7 +411,10 @@ export const useFeatureBuilders = (handleRebuild: () => void) => {
 
         // Preserve all metadata (labels like 'SPLINE_CONTROL', 'ARC_CONTROL')
         const labels = pt.slice(2);
-        result.push([x, y, z, ...labels]);
+        transformedLoop.push([x, y, z, ...labels]);
+      }
+      if (transformedLoop.length > 0) {
+         result.push(transformedLoop);
       }
     }
     return result;

@@ -5,26 +5,39 @@ from collections import OrderedDict
 
 try:
     from OCC.Core.HLRBRep import HLRBRep_Algo, HLRBRep_HLRToShape
-    from OCC.Core.gp import gp_Ax2, gp_Dir, gp_Pnt, gp_Ax3, gp_Trsf, gp_Vec, gp_Ax1
+    from OCC.Core.gp import gp_Ax2, gp_Dir, gp_Pnt, gp_Ax3, gp_Trsf, gp_Vec, gp_Ax1, gp_Lin2d, gp_Pnt2d, gp_Dir2d, gp_Pln
     from OCC.Core.BRepPrimAPI import BRepPrimAPI_MakeBox, BRepPrimAPI_MakeCylinder, BRepPrimAPI_MakeSphere, BRepPrimAPI_MakePrism, BRepPrimAPI_MakeRevol, BRepPrimAPI_MakeCone
     from OCC.Core.BRepMesh import BRepMesh_IncrementalMesh
-    from OCC.Core.TopExp import TopExp_Explorer
-    from OCC.Core.TopAbs import TopAbs_FACE, TopAbs_SOLID, TopAbs_EDGE, TopAbs_VERTEX
-    from OCC.Core.BRep import BRep_Tool
+    from OCC.Core.TopExp import TopExp_Explorer, topexp
+    from OCC.Core.TopAbs import TopAbs_FACE, TopAbs_SOLID, TopAbs_EDGE, TopAbs_VERTEX, TopAbs_REVERSED
+    from OCC.Core.BRep import BRep_Tool, BRep_Builder
     from OCC.Core.TopLoc import TopLoc_Location
-    from OCC.Core.BRepBuilderAPI import BRepBuilderAPI_MakeEdge, BRepBuilderAPI_MakeWire, BRepBuilderAPI_MakeFace, BRepBuilderAPI_Sewing
-    from OCC.Core.BRepAlgoAPI import BRepAlgoAPI_Fuse, BRepAlgoAPI_Cut
+    from OCC.Core.BRepBuilderAPI import BRepBuilderAPI_MakeEdge, BRepBuilderAPI_MakeWire, BRepBuilderAPI_MakeFace, BRepBuilderAPI_Sewing, BRepBuilderAPI_Transform
+    from OCC.Core.BRepAlgoAPI import BRepAlgoAPI_Fuse, BRepAlgoAPI_Cut, BRepAlgoAPI_Common, BRepAlgoAPI_Section
     from OCC.Core.BRepFill import BRepFill_PipeShell
-    from OCC.Core.BRepOffsetAPI import BRepOffsetAPI_ThruSections, BRepOffsetAPI_MakeOffsetShape
+    from OCC.Core.BRepOffsetAPI import BRepOffsetAPI_ThruSections, BRepOffsetAPI_MakeOffsetShape, BRepOffsetAPI_MakeThickSolid, BRepOffsetAPI_MakeOffset, BRepOffsetAPI_DraftAngle, BRepOffsetAPI_MakePipe
     from OCC.Core.GC import GC_MakeArcOfCircle
-    from OCC.Core.TopoDS import topods
+    from OCC.Core.TopoDS import topods, TopoDS_Compound
     from OCC.Core.BRepFilletAPI import BRepFilletAPI_MakeFillet, BRepFilletAPI_MakeChamfer
     from OCC.Core.GProp import GProp_GProps
     from OCC.Core.BRepGProp import brepgprop
     from OCC.Core.IGESControl import IGESControl_Writer
     from OCC.Core.StlAPI import StlAPI_Writer
+    from OCC.Core.BRepAdaptor import BRepAdaptor_Surface, BRepAdaptor_Curve
+    from OCC.Core.BRepLProp import BRepLProp_SLProps
+    from OCC.Core.GeomAbs import GeomAbs_Cylinder, GeomAbs_Plane, GeomAbs_Arc, GeomAbs_Circle, GeomAbs_Line
+    from OCC.Core.TopTools import TopTools_ListOfShape, TopTools_IndexedDataMapOfShapeListOfShape, TopTools_ListIteratorOfListOfShape
+    from OCC.Core.BRepOffset import BRepOffset_Skin
+    from OCC.Core.TColgp import TColgp_HArray1OfPnt
+    from OCC.Core.GeomAPI import GeomAPI_Interpolate
+    from OCC.Core.Geom import Geom_CylindricalSurface, Geom_ConicalSurface, Geom_Plane
+    from OCC.Core.Geom2d import Geom2d_Line
+    from OCC.Core.STEPControl import STEPControl_Reader, STEPControl_Writer, STEPControl_AsIs
+    from OCC.Core.IFSelect import IFSelect_RetDone
+    
     HAS_OCC = True
-except ImportError:
+except ImportError as e:
+    print(f"[WARNING] OpenCASCADE not found or failed to load: {e}")
     HAS_OCC = False
 
 
@@ -370,12 +383,28 @@ def _build_wire_from_points(points, is_closed=True, edge_map=None):
     while i < limit:
         p_start = points[i]
         p_next = points[(i + 1) % n_points]
+        start_label = get_label(p_start)
         next_label = get_label(p_next)
         metadata = get_metadata(p_start)
         edge_id = metadata.get('edgeId')
 
         current_edge = None
-        if next_label == 'ARC_CONTROL':
+        if start_label == 'CIRCLE_CENTER':
+            p_perimeter = p_next
+            center_pnt = get_gp_pnt(p_start)
+            perim_pnt = get_gp_pnt(p_perimeter)
+            radius = center_pnt.Distance(perim_pnt)
+            if radius > 1e-6:
+                from OCC.Core.gp import gp_Circ, gp_Ax2, gp_Dir
+                from OCC.Core.BRepBuilderAPI import BRepBuilderAPI_MakeEdge
+                # Create a circle in the XY plane by default, it will be mapped later by sketch logic if needed
+                # Wait! The 3D coordinates are ALREADY transformed into world space by sketchFeatureTo3DPoints!
+                # Ah! For Extrude/Revolve, the points are passed as 2D (u,v) but get_gp_pnt sets Z=0.
+                # Then the face is moved to 3D space by gp_Trsf later!
+                circle = gp_Circ(gp_Ax2(center_pnt, gp_Dir(0, 0, 1)), radius)
+                current_edge = BRepBuilderAPI_MakeEdge(circle).Edge()
+            i += 2
+        elif next_label == 'ARC_CONTROL':
             p_control = p_next
             p_end = points[(i + 2) % n_points]
 
@@ -571,9 +600,13 @@ def detect_interference(component_shapes):
     return interferences
 
 def build_feature_shape_in_isolation(f_type, params, parent_shape=None, all_features=[]):
+    print(f"[DEBUG] build_feature_shape_in_isolation: type={f_type}, HAS_OCC={HAS_OCC}")
     if not HAS_OCC:
         return None
 
+    # Defensive re-import to avoid UnboundLocalError in some environments
+    from OCC.Core.gp import gp_Ax2, gp_Dir, gp_Pnt, gp_Ax3, gp_Trsf, gp_Vec, gp_Ax1
+    
     current_feat_shape = None
 
     if f_type == 'DUMB_SOLID':
@@ -687,7 +720,11 @@ def build_feature_shape_in_isolation(f_type, params, parent_shape=None, all_feat
 
         # Extrude along plane normal in global coordinates
         normal_dir = ax2.Direction()
-        vec = gp_Vec(normal_dir.X() * depth, normal_dir.Y() * depth, normal_dir.Z() * depth)
+        is_flip = params.get('flip', False)
+        mag = -depth if is_flip else depth
+        vec = gp_Vec(normal_dir.X() * mag, normal_dir.Y() * mag, normal_dir.Z() * mag)
+        
+        print(f"[DEBUG] EXTRUDE: plane={plane_type}, depth={depth}, flip={is_flip}, vec=({vec.X()},{vec.Y()},{vec.Z()})")
 
         try:
             wires = []
@@ -1018,7 +1055,6 @@ def build_feature_shape_in_isolation(f_type, params, parent_shape=None, all_feat
         try:
             from OCC.Core.Geom import Geom_CylindricalSurface, Geom_ConicalSurface
             from OCC.Core.Geom2d import Geom2d_Line
-            from OCC.Core.gp import gp_Lin2d, gp_Pnt2d, gp_Dir2d, gp_Ax2, gp_Dir, gp_Pnt, gp_Vec
             from OCC.Core.BRepBuilderAPI import BRepBuilderAPI_MakeEdge, BRepBuilderAPI_MakeWire
             from OCC.Core.BRepOffsetAPI import BRepOffsetAPI_MakePipe
             
@@ -1084,13 +1120,9 @@ def build_feature_shape_in_isolation(f_type, params, parent_shape=None, all_feat
         # Orientation defaults to Z-axis but can be mapped to face normal
         nx, ny, nz = float(params.get('nx', 0)), float(params.get('ny', 0)), float(params.get('nz', 1))
         
-        from OCC.Core.gp import gp_Ax1, gp_Dir, gp_Pnt
         axis = gp_Ax1(gp_Pnt(x, y, z), gp_Dir(nx, ny, nz))
         
         try:
-            from OCC.Core.BRepPrimAPI import BRepPrimAPI_MakeCylinder, BRepPrimAPI_MakeCone
-            from OCC.Core.BRepAlgoAPI import BRepAlgoAPI_Fuse
-            
             # 1. Base Drilled Hole
             main_hole = BRepPrimAPI_MakeCylinder(axis, diameter/2.0, depth).Shape()
             final_hole_shape = main_hole
@@ -1609,7 +1641,7 @@ def process_features(features, deflection=0.01):
             if final_shape is None:
                 final_shape = current_feat_shape
             else:
-
+                try:
                     if op == 'ADD':
                         tool = BRepAlgoAPI_Fuse(final_shape, current_feat_shape)
                     else:
@@ -2156,7 +2188,7 @@ def build_shape_only(
             if final_shape is None:
                 final_shape = current_feat_shape
             else:
-
+                try:
                     if op == 'ADD':
                         tool = BRepAlgoAPI_Fuse(final_shape, current_feat_shape)
                     else:
@@ -2834,6 +2866,7 @@ def find_matching_face(shape, ref_origin, ref_normal, signature=None):
     except Exception:
         return ref_origin, ref_normal, None
 
+    print(f"[DEBUG] find_matching_face: target_origin={ref_origin}, target_normal={ref_normal}")
     # Normalize reference normal
     n_len = math.sqrt(r_nrm[0]**2 + r_nrm[1]**2 + r_nrm[2]**2)
     if n_len > 1e-6:
@@ -2899,12 +2932,8 @@ def find_matching_face(shape, ref_origin, ref_normal, signature=None):
         explorer.Next()
 
     if not candidate_faces:
+        print("  - No face found with matching normal.")
         return ref_origin, ref_normal, None
-
-    # If only one candidate aligns with normal, it is a perfect match (e.g. box faces)
-    if len(candidate_faces) == 1:
-        best = candidate_faces[0]
-        return best["center"], best["normal"], best["face"]
 
     # Multi-signature disambiguation (TNS Stage 2)
     # Weights: 1.0 * Distance + 0.5 * AreaDiff + 2.0 * CurvatureMismatch
@@ -2928,9 +2957,12 @@ def find_matching_face(shape, ref_origin, ref_normal, signature=None):
         c_surf = BRepAdaptor_Surface(c_face)
         c_stype = c_surf.GetType()
         from OCC.Core.GeomAbs import GeomAbs_Plane, GeomAbs_Cylinder, GeomAbs_Sphere, GeomAbs_Cone, GeomAbs_Torus
-        c["curvature"] = "PLANE" if c_stype == GeomAbs_Plane else "CYLINDER" if c_stype == GeomAbs_Cylinder else "SPHERE" if c_stype == GeomAbs_Sphere else "UNKNOWN"
+        c["curvature"] = "PLANE" if c_stype == GeomAbs_Plane else "CYLINDER" if c_stype == GeomAbs_Cylinder else "SPHERE" if c_stype == GeomAbs_Cylinder else "UNKNOWN"
+        c["dist"] = math.dist(c["center"], r_ori)
+        print(f"  - Candidate: center={c['center']}, dist={c['dist']:.4f}")
 
     best_candidate = min(candidate_faces, key=calculate_score)
+    print(f"  - Best Match: dist={best_candidate['dist']:.4f}")
     return best_candidate["center"], best_candidate["normal"], best_candidate["face"]
 
 
@@ -3611,10 +3643,10 @@ def export_cad_file(features, format_type, filepath):
         return False
 
 def check_interferences(components_data):
-    \"\"\"
+    """
     Detects physical overlaps between assembly components using OCC Boolean operations.
     Returns a list of interferences with component IDs, volume, and mesh data.
-    \"\"\"
+    """
     if not HAS_OCC:
         return []
 
@@ -3678,13 +3710,13 @@ def check_interferences(components_data):
                     if volume > 0.001: # Threshold for meaningful interference
                         mesh = _shape_to_mesh(clash_shape, deflection=0.1) # Coarse mesh for highlight
                         interferences.append({
-                            \"component_id_1\": id1,
-                            \"component_id_2\": id2,
-                            \"volume\": float(volume),
-                            \"mesh\": mesh
+                            "component_id_1": id1,
+                            "component_id_2": id2,
+                            "volume": float(volume),
+                            "mesh": mesh
                         })
             except Exception as e:
-                print(f\"[ERROR] Interference check failed for {id1} vs {id2}: {e}\")
+                print(f"[ERROR] Interference check failed for {id1} vs {id2}: {e}")
 
     return interferences
 

@@ -13,6 +13,29 @@ export function extractAllClosedLoops(
   const edgeList = Object.values(edges).filter(e => !e.isConstruction);
   if (edgeList.length === 0) return [];
 
+  const loops: any[][] = [];
+  const normalEdges: SketchEdge[] = [];
+
+  // Separate CIRCLE edges from others
+  for (const e of edgeList) {
+    if (e.type === 'CIRCLE') {
+      const center = nodes[e.nodeIds[0]];
+      const perimeter = nodes[e.nodeIds[1]];
+      if (center && perimeter) {
+        const r = Math.hypot(perimeter.x - center.x, perimeter.y - center.y);
+        const metadata = { edgeId: e.id };
+        // We can emit a special loop for CIRCLE that the backend can recognize.
+        loops.push([
+          [center.x, center.y, 'CIRCLE_CENTER', metadata],
+          [perimeter.x, perimeter.y, 'CIRCLE_PERIMETER', metadata],
+          [center.x, center.y, undefined, metadata] // close the loop for consistency
+        ]);
+      }
+    } else {
+      normalEdges.push(e);
+    }
+  }
+
   // 1. Create Half-Edges
   // Each undirected edge (u, v) becomes two half-edges: u->v and v->u
   interface HalfEdge {
@@ -26,7 +49,7 @@ export function extractAllClosedLoops(
 
   const outEdges = new Map<string, HalfEdge[]>();
   
-  for (const e of edgeList) {
+  for (const e of normalEdges) {
     if (e.type === 'SPLINE') {
        // A spline has > 2 nodes: nodeIds[0] ... nodeIds[n-1]
        // It acts as a single edge from nodeIds[0] to nodeIds[n-1]
@@ -48,7 +71,9 @@ export function extractAllClosedLoops(
        continue;
     }
 
-    const [n1, n2] = e.nodeIds;
+    // LINE or ARC
+    const n1 = e.nodeIds[0];
+    const n2 = e.type === 'ARC' ? e.nodeIds[1] : e.nodeIds[e.nodeIds.length - 1];
     if (!n1 || !n2 || !nodes[n1] || !nodes[n2]) continue;
     
     const p1 = nodes[n1];
@@ -98,39 +123,14 @@ export function extractAllClosedLoops(
         face.push(curr);
         curr = curr.next!;
       }
-      // Only keep faces with at least 3 edges
-      if (face.length >= 3) {
+      // Only keep faces with at least 3 edges (or 2 edges if we consider a closed shape with 2 curves like two arcs)
+      if (face.length >= 2) {
         faces.push(face);
       }
     }
   }
 
-  const loops: any[][] = [];
-
   for (const face of faces) {
-    // Calculate signed area (Shoelace formula)
-    let signedArea = 0;
-    for (let i = 0; i < face.length; i++) {
-      const p1 = nodes[face[i].from];
-      const p2 = nodes[face[i].to];
-      signedArea += (p1.x * p2.y - p2.x * p1.y);
-    }
-    signedArea *= 0.5;
-
-    // Filter out the exterior face (usually the one with negative area in standard CCW traversal, 
-    // but in screen coordinates Y points down, so we keep the ones that represent solid regions).
-    // Actually, a robust way is to just keep all bounded faces. The exterior face has the largest absolute area
-    // and bounds the whole component negatively.
-    // We will extract all of them, and sort by bounding area. 
-    // But wait, the exterior face of a component encloses everything. We should discard the exterior face.
-    // In a standard planar graph, exactly one face per connected component is the exterior face,
-    // and its signed area (with standard math coordinates) will be negative if inner faces are positive.
-    // Let's rely on the absolute bounding area for sorting, but we need a way to discard the infinite exterior face.
-    // A simple heuristic: if there are multiple faces in a component, the one with the opposite signed area
-    // and the largest absolute signed area is the exterior face.
-    // For now, let's just emit all faces, and let the backend boolean ops handle it, OR we can filter it here.
-    // We'll pass them all, sorted by bounding area descending. 
-    
     // Convert to coordinates [x, y, tag, metadata]
     const result: any[] = [];
     for (let i = 0; i < face.length; i++) {
@@ -139,7 +139,12 @@ export function extractAllClosedLoops(
       const metadata = { edgeId: he.edge.id };
       result.push([p.x, p.y, i === 0 ? 'START' : undefined, metadata]);
       
-      if (he.edge.type === 'SPLINE') {
+      if (he.edge.type === 'ARC' && he.edge.nodeIds.length >= 3) {
+         const cp = nodes[he.edge.nodeIds[2]];
+         if (cp) {
+             result.push([cp.x, cp.y, 'ARC_CONTROL', metadata]);
+         }
+      } else if (he.edge.type === 'SPLINE') {
          // Emit intermediate control points with 'SPLINE_CONTROL' tag
          const isForward = he.edge.nodeIds[0] === he.from;
          const innerNodeIds = he.edge.nodeIds.slice(1, -1);
@@ -167,14 +172,6 @@ export function extractAllClosedLoops(
     const areaB = calculateLoopArea(b);
     return areaB - areaA;
   });
-
-  // Filter out the exterior face if there are multiple loops (simple heuristic: if multiple, the largest one 
-  // that is geometrically a superset might be the exterior traversal of the outer boundary).
-  // Actually, half-edge traversal creates ONE exterior face for the whole graph.
-  // The exterior face has area with opposite sign. If we assume inner faces have positive signedArea
-  // (or vice-versa), the exterior face is the single face with the opposite sign.
-  // We'll keep all for now as PythonOCC BRepBuilderAPI_MakeFace often accepts a list of wires 
-  // and handles orientation itself if we just give it valid closed wires.
 
   return loops;
 }

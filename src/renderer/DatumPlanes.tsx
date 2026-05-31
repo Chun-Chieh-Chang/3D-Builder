@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import { Plane, Text, Html, Sphere, Line } from '@react-three/drei';
+import { Plane, Text, Html, Sphere, Line, Grid } from '@react-three/drei';
 import { useCadStore } from '../store/useCadStore';
 import * as THREE from 'three';
 import { v4 as uuidv4 } from 'uuid';
@@ -442,12 +442,17 @@ export const DatumPlanes = () => {
       let nextConstraints = { ...state.sketchConstraints };
       let nextLastNodeId = lastClickedNodeId;
 
-      if (sketchTool === 'LINE') {
+      if (sketchTool === 'LINE' || sketchTool === 'CENTER_LINE') {
          if (sketchNewChain || !lastClickedNodeId) {
             nextLastNodeId = nId;
          } else {
             const eId = uuidv4();
-            nextEdges[eId] = { id: eId, type: 'LINE', nodeIds: [lastClickedNodeId, nId] };
+            nextEdges[eId] = { 
+              id: eId, 
+              type: 'LINE', 
+              nodeIds: [lastClickedNodeId, nId],
+              isConstruction: sketchTool === 'CENTER_LINE'
+            };
             
             // Auto-Constraint Capture
             if (activeSnapType === 'HORIZONTAL' || activeSnapType === 'VERTICAL') {
@@ -462,6 +467,29 @@ export const DatumPlanes = () => {
             const solved = previewSolve(nextNodes, nextEdges, nextConstraints, 4);
             Object.assign(nextNodes, solved);
             nextLastNodeId = nId;
+         }
+      } else if (sketchTool === 'ARC') {
+         if (sketchNewChain || !lastClickedNodeId) {
+            nextLastNodeId = nId;
+         } else {
+            // 3-Point Arc Logic (Simplified: Start -> End -> Middle/Curvature)
+            // If we have 2 points, and user clicks 3rd, we create/update the arc
+            let activeArcEdgeId: string | null = null;
+            for (const edge of Object.values(nextEdges)) {
+               if (edge.type === 'ARC' && edge.nodeIds.length < 3 && edge.nodeIds[0] === firstChainNodeId) {
+                  activeArcEdgeId = edge.id;
+                  break;
+               }
+            }
+
+            if (activeArcEdgeId) {
+               nextEdges[activeArcEdgeId].nodeIds.push(nId);
+               nextLastNodeId = null; // Arc finished
+            } else {
+               const eId = uuidv4();
+               nextEdges[eId] = { id: eId, type: 'ARC', nodeIds: [lastClickedNodeId, nId] };
+               nextLastNodeId = nId;
+            }
          }
       } else if (sketchTool === 'SPLINE') {
          if (sketchNewChain || !lastClickedNodeId) {
@@ -670,13 +698,47 @@ export const DatumPlanes = () => {
             </div>
           </Html>
         )}
-      </Plane>
+        </Plane>
 
-      {cursorState && (
+        {/* Dynamic Face Plane for Sketching on Faces */}
+        {isSketchMode && activePlane === 'FACE' && activeBasis && (
+        <Plane
+          args={[2000, 2000]}
+          position={activeBasis.origin}
+          quaternion={new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 0, 1), activeBasis.normal)}
+          onPointerMove={handlePointerMove}
+          onPointerDown={(e) => {
+              const uv = getCustomFaceUV(e.point);
+              const snapped = getSnappedUV(uv.u, uv.v);
+              setDragStartUV({u: snapped.u, v: snapped.v});
+              setIsDragging(true);
+              if (sketchTool === 'TRIM') setTrimPath([new THREE.Vector3().copy(e.point)]);
+          }}
+          onPointerUp={(e) => { setIsDragging(false); setTrimPath([]); handlePlaneClick('FACE', e); }}
+          onDoubleClick={(e) => handlePlaneDoubleClick('FACE', e)}
+        >
+          <meshBasicMaterial transparent opacity={0.02} color="#60A5FA" side={THREE.DoubleSide} depthWrite={false} />
+          <Grid
+            args={[100, 100]}
+            sectionSize={10}
+            sectionColor="#60A5FA"
+            sectionThickness={1}
+            cellSize={2}
+            cellColor="#94A3B8"
+            cellThickness={0.5}
+            infiniteGrid
+            fadeDistance={100}
+            fadeStrength={5}
+          />
+        </Plane>
+        )}
+
+      {/* Snap/Constraint Cursor Feedback */}
+      {isSketchMode && cursorState && (
         <group position={get3DPnt(cursorState.u, cursorState.v)}>
           <mesh scale={[1.2, 1.2, 1.2]}>
             <sphereGeometry args={[0.4, 16, 16]} />
-            <meshBasicMaterial color={cursorState.type === 'COINCIDENT' ? '#F59E0B' : '#3B82F6'} transparent opacity={0.8} />
+            <meshBasicMaterial color={cursorState.type === 'COINCIDENT' ? '#F59E0B' : '#3B82F6'} transparent opacity={0.8} depthTest={false} />
           </mesh>
           <Html position={[1.5, 1.5, 0]} center className="pointer-events-none">
             <div className={`flex items-center justify-center w-6 h-6 rounded-sm shadow-md border border-amber-500/50 transition-all animate-in zoom-in-50 duration-75 ${

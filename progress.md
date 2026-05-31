@@ -23,3 +23,9 @@
 - Restore baseline established via Git.
 
 **3D-Builder v1.0 is ready for industrial deployment.**
+
+### Phase 102: Sketch Primitives & Data Closed-Loop
+- [x] Implement CIRCLE semantic parsing in CycleFinder.
+- [x] Fix RECTANGLE to 4-LINE expansion in DatumPlanes.
+- [x] Refactor useFeatureBuilder to preserve loop structures.
+- [x] Update PythonOCC geometry service to construct native gp_Circ boundaries.

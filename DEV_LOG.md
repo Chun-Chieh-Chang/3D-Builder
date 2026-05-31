@@ -4760,3 +4760,10 @@ umber[][][] 升級為接受 {points: number[][], visible: boolean} 物件的型�
 ---
 **3D-Builder v1.0 (Industrial Professional Release) 正式封裝。**
 
+
+### Phase 102: Sketch Construction Closed-Loop & Primitives
+**Date:** 2026-05-31
+**Plan (P)**: The sketch environment lacks complete support for primitive geometries like CIRCLE and RECTANGLE, resulting in gaps when constructing features like Revolve or complex extrusions. The plan is to complete the primitive toolset and ensure topological cycle finding and backend reconstruction pipelines are perfectly aligned.
+**Do (D)**: Added missing CIRCLE edge emission logic and metadata tags in CycleFinder.ts. Updated DatumPlanes.tsx to handle 2-point CIRCLE and 2-point RECTANGLE creation. Refactored sketchFeatureTo3DPoints in useFeatureBuilders.ts to preserve multi-loop hierarchical structures instead of flattening them. Updated geometry_service.py to directly consume CIRCLE_CENTER and generate gp_Circ native boundaries in the BRep builder.
+**Check (C)**: Tested the RECTANGLE to LINE expansion logic and CIRCLE radius calculations. The frontend builds cleanly and the backend receives the correct point arrays.
+**Act (CAPA)**: **RCA**: The previous cycle finder flattened hierarchical geometries (like Splines with control points or Circles with center points) into raw point arrays, causing the backend to lose semantic context and revert to linear interpolations. **CAPA**: We introduced Semantic Topology Tagging (CIRCLE_CENTER, SPLINE_CONTROL) passing from frontend hook -> cycle finder -> backend API, ensuring native OCC curve definitions are used for precise mathematical operations instead of tessellated approximations.
