@@ -397,11 +397,15 @@ def _build_wire_from_points(points, is_closed=True, edge_map=None):
             if radius > 1e-6:
                 from OCC.Core.gp import gp_Circ, gp_Ax2, gp_Dir
                 from OCC.Core.BRepBuilderAPI import BRepBuilderAPI_MakeEdge
-                # Create a circle in the XY plane by default, it will be mapped later by sketch logic if needed
-                # Wait! The 3D coordinates are ALREADY transformed into world space by sketchFeatureTo3DPoints!
-                # Ah! For Extrude/Revolve, the points are passed as 2D (u,v) but get_gp_pnt sets Z=0.
-                # Then the face is moved to 3D space by gp_Trsf later!
-                circle = gp_Circ(gp_Ax2(center_pnt, gp_Dir(0, 0, 1)), radius)
+                
+                # Fetch normal from metadata or default to Z-up for 2D profiles
+                normal_vec = metadata.get('planeNormal', [0.0, 0.0, 1.0])
+                nx, ny, nz = float(normal_vec[0]), float(normal_vec[1]), float(normal_vec[2])
+                n_len = math.sqrt(nx*nx + ny*ny + nz*nz)
+                if n_len > 1e-6: nx, ny, nz = nx/n_len, ny/n_len, nz/n_len
+                else: nx, ny, nz = 0.0, 0.0, 1.0
+                
+                circle = gp_Circ(gp_Ax2(center_pnt, gp_Dir(nx, ny, nz)), radius)
                 current_edge = BRepBuilderAPI_MakeEdge(circle).Edge()
             i += 2
         elif next_label == 'ARC_CONTROL':

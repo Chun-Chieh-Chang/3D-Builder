@@ -378,12 +378,14 @@ export const useFeatureBuilders = (handleRebuild: () => void) => {
         if (!pt || pt.length < 2) continue;
         const [u, v] = [Number(pt[0]), Number(pt[1])];
         let x = 0, y = 0, z = 0;
+        let pnx = 0, pny = 0, pnz = 1;
         
-        if (plane === 'FRONT')       { x = u; y = v; z = 0; }
-        else if (plane === 'TOP')    { x = u; y = 0; z = v; }
-        else if (plane === 'RIGHT')  { x = 0; y = u; z = v; }
+        if (plane === 'FRONT')       { x = u; y = v; z = 0; pnx = 0; pny = 0; pnz = 1; }
+        else if (plane === 'TOP')    { x = u; y = 0; z = v; pnx = 0; pny = 1; pnz = 0; }
+        else if (plane === 'RIGHT')  { x = 0; y = u; z = v; pnx = 1; pny = 0; pnz = 0; }
         else if (plane === 'FACE' && faceOrigin && faceNormal) {
           const [nx, ny, nz] = faceNormal;
+          pnx = nx; pny = ny; pnz = nz;
           
           // Robust Plane Axis Logic (Aligned with OCC gp_Ax2 defaults)
           // 1. Choose a candidate 'up' vector
@@ -411,6 +413,21 @@ export const useFeatureBuilders = (handleRebuild: () => void) => {
 
         // Preserve all metadata (labels like 'SPLINE_CONTROL', 'ARC_CONTROL')
         const labels = pt.slice(2);
+        // Ensure metadata object exists and append planeNormal
+        const metadataIdx = labels.findIndex((l: any) => typeof l === 'object' && l !== null);
+        let metadata = metadataIdx >= 0 ? labels[metadataIdx] : {};
+        metadata = { ...metadata, planeNormal: [pnx, pny, pnz] };
+        
+        if (metadataIdx >= 0) {
+          labels[metadataIdx] = metadata;
+        } else if (labels.length > 0) {
+           // Tag exists but no metadata obj, append metadata
+           labels.push(metadata);
+        } else {
+           // No tag, no metadata, push undefined tag then metadata
+           labels.push(undefined, metadata);
+        }
+
         transformedLoop.push([x, y, z, ...labels]);
       }
       if (transformedLoop.length > 0) {

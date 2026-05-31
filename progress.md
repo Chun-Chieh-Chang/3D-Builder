@@ -29,3 +29,9 @@
 - [x] Fix RECTANGLE to 4-LINE expansion in DatumPlanes.
 - [x] Refactor useFeatureBuilder to preserve loop structures.
 - [x] Update PythonOCC geometry service to construct native gp_Circ boundaries.
+
+### Phase 103: Revolve & Sweep Robustness Validation
+- [x] Analyze Extrude vs Sweep coordinate spaces.
+- [x] Inject planeNormal into sketch loop metadata.
+- [x] Update PythonOCC gp_Circ vector resolution.
+- [x] Run static syntax and compilation validations.
