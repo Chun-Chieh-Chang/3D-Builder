@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
+import { v4 as uuidv4 } from 'uuid';
 
 export type CadMode = 'PART' | 'ASSEMBLY' | 'DRAWING' | 'RENDER';
 export type MeasurementMode = 'NONE' | 'DISTANCE' | 'ANGLE' | 'AREA' | 'VOLUME';
@@ -191,6 +192,8 @@ export interface CadState {
 
   mode: CadMode;
   setMode: (mode: CadMode) => void;
+  activeTab: 'FEATURES' | 'SKETCH' | 'EVALUATE' | 'ASSEMBLY' | 'DRAWING' | 'RENDER' | 'SURFACING';
+  setActiveTab: (tab: 'FEATURES' | 'SKETCH' | 'EVALUATE' | 'ASSEMBLY' | 'DRAWING' | 'RENDER' | 'SURFACING') => void;
   activeComponentId: string | null;
   setActiveComponentId: (id: string | null) => void;
   isSketchMode: boolean;
@@ -212,6 +215,11 @@ export interface CadState {
   setGridSnap: (active: boolean) => void;
   sketchNewChain: boolean;
   setSketchNewChain: (active: boolean) => void;
+  lastClickedNodeId: string | null;
+  setLastClickedNodeId: (id: string | null) => void;
+  firstChainNodeId: string | null;
+  setFirstChainNodeId: (id: string | null) => void;
+  convertEntities: (selectedEdgeIds: string[]) => void;
   selectedEntityIds: string[];
   setSelectedEntityIds: (ids: string[] | ((prev: string[]) => string[])) => void;
 
@@ -453,11 +461,19 @@ export const useCadStore = create<CadState>()(
       }),
 
       mode: 'PART',
-      setMode: (mode) => set({ mode }),
+      setMode: (mode) => set({ 
+        mode,
+        activeTab: mode === 'ASSEMBLY' ? 'ASSEMBLY' : (mode === 'DRAWING' ? 'DRAWING' : 'FEATURES')
+      }),
+      activeTab: 'FEATURES',
+      setActiveTab: (activeTab) => set({ activeTab }),
       activeComponentId: null,
       setActiveComponentId: (activeComponentId) => set({ activeComponentId }),
       isSketchMode: false,
-      setSketchMode: (isSketchMode) => set({ isSketchMode }),
+      setSketchMode: (isSketchMode) => set((state) => ({ 
+        isSketchMode,
+        activeTab: isSketchMode ? 'SKETCH' : (state.activeTab === 'SKETCH' ? 'FEATURES' : state.activeTab)
+      })),
       smartDimensionActive: false,
       setSmartDimensionActive: (smartDimensionActive) => set({ smartDimensionActive }),
       activePlane: null,
@@ -469,11 +485,37 @@ export const useCadStore = create<CadState>()(
       activeFaceId: null,
       setActiveFaceId: (activeFaceId) => set({ activeFaceId }),
       sketchTool: 'SELECT',
-      setSketchTool: (sketchTool) => set({ sketchTool }),
+      setSketchTool: (sketchTool) => set({ 
+        sketchTool,
+        // Reset chain state when switching tools to prevent cross-tool pollution
+        lastClickedNodeId: null,
+        sketchNewChain: true,
+        firstChainNodeId: null
+      }),
       gridSnap: true,
       setGridSnap: (gridSnap) => set({ gridSnap }),
       sketchNewChain: false,
       setSketchNewChain: (sketchNewChain) => set({ sketchNewChain }),
+      lastClickedNodeId: null,
+      setLastClickedNodeId: (lastClickedNodeId) => set({ lastClickedNodeId }),
+      firstChainNodeId: null,
+      setFirstChainNodeId: (firstChainNodeId) => set({ firstChainNodeId }),
+      
+      convertEntities: (selectedEdgeIds) => set((state) => {
+        // Simple mock implementation: Create nodes/edges at fixed positions
+        // In reality, this would query OcctShape mesh edges and project them
+        const nextNodes = { ...state.sketchNodes };
+        const nextEdges = { ...state.sketchEdges };
+        selectedEdgeIds.forEach((id, idx) => {
+          const n1 = uuidv4(); const n2 = uuidv4();
+          nextNodes[n1] = { id: n1, x: 0 + idx * 10, y: 0 };
+          nextNodes[n2] = { id: n2, x: 10 + idx * 10, y: 0 };
+          const eId = uuidv4();
+          nextEdges[eId] = { id: eId, type: 'LINE', nodeIds: [n1, n2] };
+        });
+        return { sketchNodes: nextNodes, sketchEdges: nextEdges };
+      }),
+
       selectedEntityIds: [],
       setSelectedEntityIds: (ids) => set((state) => ({ selectedEntityIds: typeof ids === 'function' ? ids(state.selectedEntityIds) : ids })),
       sketchNodes: {},
@@ -519,7 +561,10 @@ export const useCadStore = create<CadState>()(
       selectedTopology: null,
       setSelectedTopology: (selectedTopology) => set({ selectedTopology }),
       measurementMode: 'NONE',
-      setMeasurementMode: (measurementMode) => set({ measurementMode }),
+      setMeasurementMode: (measurementMode) => set((state) => ({ 
+        measurementMode,
+        activeTab: measurementMode !== 'NONE' ? 'EVALUATE' : state.activeTab
+      })),
       measurementPoints: [],
       setMeasurementPoints: (measurementPoints) => set({ measurementPoints }),
       measurementResults: null,
@@ -614,6 +659,7 @@ export const useCadStore = create<CadState>()(
       storage: createJSONStorage(() => localStorage),
       partialize: (state) => ({
         mode: state.mode,
+        activeTab: state.activeTab,
         features: state.features,
         sketchNodes: state.sketchNodes,
         sketchEdges: state.sketchEdges,

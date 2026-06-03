@@ -1,6 +1,6 @@
 'use client';
 
-import React, { Fragment, useState, useMemo } from 'react';
+import React, { Fragment, useState, useMemo, useEffect } from 'react';
 import type { CADFeature, CadState } from '@/store/useCadStore';
 import { getFeatureTreeRelation, getParentsAndChildren, type TreeRelation, type RelationNode } from '@/utils/feature-tree-relations';
 import { useCadStore } from '@/store/useCadStore';
@@ -106,7 +106,8 @@ function SortableFeatureItem({
   id, feature, fIdx, isRolledBack, relState, 
   editingFeatureId, selectedId, selectedSubNodeType, 
   setSelectedId, setSelectedSubNodeType, onEditFeatureSketch, 
-  onRebuild, features, setHoveredTreeId
+  onRebuild, features, setHoveredTreeId,
+  visibleSketches, toggleSketchVisibility
 }: any) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id });
 
@@ -119,6 +120,18 @@ function SortableFeatureItem({
 
   const isExtrudeOrRevolve = feature.type === 'EXTRUDE' || feature.type === 'REVOLVE';
   const isSelected = selectedId === feature.id && selectedSubNodeType === 'FEATURE';
+  
+  // Calculate sketch index for naming
+  const sketchNum = useMemo(() => {
+    let count = 0;
+    for (const f of features) {
+      if (f.type === 'EXTRUDE' || f.type === 'REVOLVE' || f.type === 'SKETCH') {
+        count++;
+        if (f.id === feature.id) return count;
+      }
+    }
+    return fIdx + 1;
+  }, [features, feature.id, fIdx]);
 
   return (
     <div 
@@ -153,7 +166,7 @@ function SortableFeatureItem({
         }}
         className={`group flex items-center justify-between p-1.5 rounded cursor-pointer transition-all border ${
           relationClass(relState, isSelected, isRolledBack || (feature.isSuppressed ?? false))
-        }`}
+        } ${editingFeatureId === feature.id ? 'ring-2 ring-emerald-500 ring-offset-1' : ''}`}
         title={feature.type === 'SKETCH' ? '雙擊進入草圖編輯' : '雙擊編輯特徵草圖'}
       >
         <div className="flex items-center gap-2 truncate">
@@ -170,6 +183,53 @@ function SortableFeatureItem({
           </div>
         </div>
       </div>
+
+      {/* Nested Sketch Child Node (Independence Optimization) */}
+      {isExtrudeOrRevolve && !isRolledBack && (
+        <div
+          onClick={(e) => { 
+            e.stopPropagation();
+            setSelectedId(feature.id); 
+            setSelectedSubNodeType('SKETCH'); 
+          }}
+          onDoubleClick={(e) => {
+            e.stopPropagation();
+            onEditFeatureSketch(feature);
+          }}
+          className={`pl-7 pr-2 py-1 flex items-center justify-between gap-1.5 cursor-pointer text-[12px] select-none rounded transition-all border border-transparent ${
+            selectedId === feature.id && selectedSubNodeType === 'SKETCH'
+              ? 'bg-pink-100/90 border-pink-300 text-pink-700 font-bold shadow-xs'
+              : 'text-slate-500 hover:text-[#005B9A] hover:bg-slate-100/50'
+          }`}
+          title="雙擊編輯此特徵所屬的草圖幾何"
+        >
+          <div className="flex items-center gap-1.5 overflow-hidden">
+            <span className="opacity-60">↳ ✏️</span>
+            <span className="italic truncate">草圖{sketchNum} (Sketch{sketchNum})</span>
+          </div>
+          <div className="flex items-center gap-1.5 shrink-0">
+            {editingFeatureId === feature.id && (
+              <span className="text-[10px] bg-emerald-100 text-emerald-700 px-1.5 py-0.2 rounded font-bold font-mono animate-pulse">編輯中</span>
+            )}
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                toggleSketchVisibility(feature.id);
+              }}
+              className={`p-0.5 rounded transition-all hover:bg-slate-200 ${
+                visibleSketches?.includes(feature.id) ? 'text-[#005B9A]' : 'text-slate-300'
+              }`}
+              title={visibleSketches?.includes(feature.id) ? "隱藏草圖" : "顯示草圖"}
+            >
+              {visibleSketches?.includes(feature.id) ? (
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg>
+              ) : (
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="opacity-50"><path d="M9.88 9.88L2 2"/><path d="M17.36 17.36L22 22"/><path d="M2 12s3-7 10-7a9.77 9.77 0 0 1 5 1.45"/><path d="M12 19c-3.85 0-7.14-2.11-8.88-5.41"/><path d="M12 5c3.85 0 7.14 2.11 8.88 5.41"/><path d="M22 12s-3 7-10 7a9.77 9.77 0 0 1-5-1.45"/><path d="M15.12 15.12a3 3 0 0 1-4.24-4.24"/></svg>
+              )}
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -178,8 +238,14 @@ export function FeatureManagerPanel({
   features, rollbackIndex, setRollbackIndex, activePlane, setActivePlane,
   selectedId, setSelectedId, selectedSubNodeType, setSelectedSubNodeType,
   editingFeatureId, onRebuild, onEditFeatureSketch,
-  onStartPlaneSketch, onPlaneContextMenu
+  onStartPlaneSketch, onPlaneContextMenu,
+  visibleSketches, toggleSketchVisibility
 }: any) {
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
   const setHoveredTreeId = useCadStore(s => s.setHoveredTreeId);
   const reorderFeatures = useCadStore(s => s.reorderFeatures);
 
@@ -257,42 +323,50 @@ export function FeatureManagerPanel({
       </div>
 
       <div className="flex-1 overflow-y-auto p-2 custom-scrollbar">
-        <DndContext 
-          sensors={sensors} 
-          collisionDetection={closestCenter} 
-          onDragEnd={handleDragEnd}
-        >
-          <SortableContext items={features.map((f: any) => f.id)} strategy={verticalListSortingStrategy}>
-            {treeData.map((item) => (
-              item.type === 'ROLLBACK' ? (
-                <SortableRollbackBar 
-                  key="rollback-bar" 
-                  id="rollback-bar" 
-                  rollbackIndex={rollbackIndex} 
-                  setRollbackIndex={setRollbackIndex} 
-                />
-              ) : (
-                <SortableFeatureItem
-                  key={item.id}
-                  id={item.id}
-                  feature={item.feature}
-                  fIdx={item.fIdx}
-                  isRolledBack={item.isRolledBack}
-                  relState={item.relState}
-                  editingFeatureId={editingFeatureId}
-                  selectedId={selectedId}
-                  selectedSubNodeType={selectedSubNodeType}
-                  setSelectedId={setSelectedId}
-                  setSelectedSubNodeType={setSelectedSubNodeType}
-                  onEditFeatureSketch={onEditFeatureSketch}
-                  onRebuild={onRebuild}
-                  features={features}
-                  setHoveredTreeId={setHoveredTreeId}
-                />
-              )
+        {!mounted ? (
+          <div className="space-y-2 opacity-50">
+            {features.map((f: any) => (
+              <div key={f.id} className="h-10 bg-slate-100 rounded animate-pulse" />
             ))}
-          </SortableContext>
-        </DndContext>
+          </div>
+        ) : (
+          <DndContext 
+            sensors={sensors} 
+            collisionDetection={closestCenter} 
+            onDragEnd={handleDragEnd}
+          >
+            <SortableContext items={features.map((f: any) => f.id)} strategy={verticalListSortingStrategy}>
+              {treeData.map((item) => (
+                item.type === 'ROLLBACK' ? (
+                  <SortableRollbackBar 
+                    key="rollback-bar" 
+                    id="rollback-bar" 
+                    rollbackIndex={rollbackIndex} 
+                    setRollbackIndex={setRollbackIndex} 
+                  />
+                ) : (
+                  <SortableFeatureItem
+                    key={item.id}
+                    id={item.id}
+                    feature={item.feature}
+                    fIdx={item.fIdx}
+                    isRolledBack={item.isRolledBack}
+                    relState={item.relState}
+                    editingFeatureId={editingFeatureId}
+                    selectedId={selectedId}
+                    selectedSubNodeType={selectedSubNodeType}
+                    setSelectedId={setSelectedId}
+                    setSelectedSubNodeType={setSelectedSubNodeType}
+                    onEditFeatureSketch={onEditFeatureSketch}
+                    onRebuild={onRebuild}
+                    features={features}
+                    setHoveredTreeId={setHoveredTreeId}
+                  />
+                )
+              ))}
+            </SortableContext>
+          </DndContext>
+        )}
       </div>
     </div>
   );

@@ -918,7 +918,40 @@ const FeatureCallouts = () => {
 };
 
 export default function Viewport({ children }: ViewportProps) {
-  const { isSketchMode, features, setControls, isCameraAnimating, activePropertyManager, setSelectedId, setSelectedSubNodeType, environmentMap, mode: cadMode } = useCadStore();
+  const { 
+    isSketchMode, 
+    features, 
+    setControls, 
+    isCameraAnimating, 
+    activePropertyManager, 
+    setSelectedId, 
+    setSelectedSubNodeType, 
+    environmentMap, 
+    mode: cadMode,
+    setShortcutBox
+  } = useCadStore();
+
+  // Handle Global Key Events (SolidWorks Style)
+  React.useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Escape: Stop current drafting chain
+      if (e.key === 'Escape') {
+        if (isSketchMode) {
+          useCadStore.setState({
+            sketchNewChain: true,
+            lastClickedNodeId: null,
+            firstChainNodeId: null
+          });
+          // Also reset tool to SELECT if double-escaped or if no chain was active
+          // (Wait, SolidWorks usually keeps the tool active but drops the chain)
+        }
+        setShortcutBox(null);
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isSketchMode, setShortcutBox]);
 
   return (
     <div className="w-full h-full bg-linear-to-b from-[#FFFFFF] to-[#C8D2DF] relative">

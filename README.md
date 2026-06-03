@@ -2,7 +2,15 @@
 
 3D-Builder 是一個基於 Web 的新世代參數化 3D CAD 建模工具，提供工業級的草圖約束引擎與三維幾何構建能力，並透過 OpenCASCADE (OCCT) 內核實現 1:1 對標 **SolidWorks 2000** 的工業標準。
 
-本專案採用 **Thin Client (Next.js) + Heavy Engine (PythonOCC)** 架構，並具備即時響應的幾何約束求解器。開發過程遵循嚴格的 PDCA 循環與防迴歸確效紀律。
+---
+
+## 🧠 AI Agentic Capabilities (Powered by SkillsBuilder)
+本專案已深度整合 **SkillsBuilder** 開發框架，為 AI 助理提供以下增益：
+
+- **智庫驅動 (Wiki-Driven)**：內建 [3D-Builder Knowledge Base Map](wiki/index.md)，收錄核心架構、幾何數學與開發規範。
+- **193+ 專家角色 (Personas)**：位於 `skills/dev/`，涵蓋架構、診斷、測試等全領域專家引導。
+- **PDCA 治理門禁**：強制執行 [SOLIDWORKS_MASTER_PLAN.md](SOLIDWORKS_MASTER_PLAN.md) 與 Git Hooks，確保每一行代碼都符合工業級確效。
+- **Nexus 協作協議**：遵循 `wiki/concepts/nexus-protocols.md` 進行標準化的 AI 任務交接。
 
 ---
 

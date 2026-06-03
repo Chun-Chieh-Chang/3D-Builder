@@ -61,7 +61,7 @@ export const ShortcutBox: React.FC = () => {
     shortcutBox, setShortcutBox, 
     isSketchMode, setSketchTool, setSketchMode, 
     setActivePlane, smartDimensionActive, setSmartDimensionActive,
-    setMeasurementMode, measurementMode, features 
+    setMeasurementMode, measurementMode, features, triggerCameraNormal
   } = useCadStore();
   const boxRef = useRef<HTMLDivElement>(null);
 
@@ -75,65 +75,67 @@ export const ShortcutBox: React.FC = () => {
 
   if (!shortcutBox?.visible) return null;
 
-  const tools = isSketchMode ? [
-    { id: 'LINE', icon: <LineIcon />, label: 'Line', action: () => setSketchTool('LINE') },
-    { id: 'CENTER_LINE', icon: <CenterLineIcon />, label: 'C-Line', action: () => setSketchTool('CENTER_LINE') },
-    { id: 'CIRCLE', icon: <CircleIcon />, label: 'Circle', action: () => setSketchTool('CIRCLE') },
-    { id: 'ARC', icon: <ArcIcon />, label: '3P-Arc', action: () => setSketchTool('ARC') },
-    { id: 'RECTANGLE', icon: <RectIcon />, label: 'Rect', action: () => setSketchTool('RECTANGLE') },
-    { id: 'SPLINE', icon: <SplineIcon />, label: 'Spline', action: () => setSketchTool('SPLINE') },
-    { id: 'SMART_DIM', icon: <DimIcon />, label: 'Dim', action: () => setSmartDimensionActive(true) },
-    { id: 'TRIM', icon: <TrimIcon />, label: 'Trim', action: () => setSketchTool('TRIM') },
-    { id: 'CONVERT', icon: <ConvertIcon />, label: 'Convert', action: () => { (window as any).__handleConvertEntities?.(); } },
-    { id: 'OFFSET', icon: <OffsetIcon />, label: 'Offset', action: () => { (window as any).__handleOffsetEntities?.(); } },
-    { id: 'SAVE', icon: <ExitIcon />, label: 'Save', action: () => { (window as any).__handleSaveSketchOnly?.(); } },
-    { id: 'EXIT', icon: <ExitIcon />, label: 'Exit', action: () => { (window as any).__resetSketchSession?.(); } },
-  ] : [
-    { id: 'EXTRUDE', icon: <ExtrudeIcon />, label: 'Extrude', action: () => { (window as any).__handleExtrude?.(); } },
-    { id: 'REVOLVE', icon: <RevolveIcon />, label: 'Revolve', action: () => { (window as any).__handleRevolve?.(); } },
-    { id: 'FILLET', icon: <FilletIcon />, label: 'Fillet', action: () => { 
+  const handleAction = (tool: any) => {
+    if (tool.id === 'NORMAL_TO') {
+      triggerCameraNormal();
+    } else {
+      tool.action();
+    }
+    setShortcutBox(null);
+  };
+
+  const sketchTools = [
+    { id: 'SELECT', icon: '↖', label: 'Select', action: () => setSketchTool('SELECT') },
+    { id: 'SMART_DIMENSION', icon: '📏', label: 'Smart Dim', action: () => setSmartDimensionActive(true) },
+    { id: 'LINE', icon: '╱', label: 'Line', action: () => setSketchTool('LINE') },
+    { id: 'CIRCLE', icon: '○', label: 'Circle', action: () => setSketchTool('CIRCLE') },
+    { id: 'RECTANGLE', icon: '▭', label: 'Rect', action: () => setSketchTool('RECTANGLE') },
+    { id: 'ARC', icon: '⌒', label: 'Arc', action: () => setSketchTool('ARC') },
+    { id: 'NORMAL_TO', icon: '⟕', label: 'Normal To', action: () => {} },
+    { id: 'EXIT_SKETCH', icon: '🚪', label: 'Exit', action: () => setSketchMode(false) },
+  ];
+
+  const featureTools = [
+    { id: 'EXTRUDE', icon: '🧊', label: 'Extrude', action: () => { (window as any).__handleExtrude?.(); } },
+    { id: 'REVOLVE', icon: '🌀', label: 'Revolve', action: () => { (window as any).__handleRevolve?.(); } },
+    { id: 'FILLET', icon: 'rounded', label: 'Fillet', action: () => { 
         if (features.length > 0) {
           useCadStore.setState({ pendingFeatureCommand: 'FILLET' });
         } else {
           alert('Create a solid body first!');
         }
     } },
-    { id: 'CHAMFER', icon: <ChamferIcon />, label: 'Chamfer', action: () => { 
+    { id: 'CHAMFER', icon: 'bevel', label: 'Chamfer', action: () => { 
         if (features.length > 0) {
           useCadStore.setState({ pendingFeatureCommand: 'CHAMFER' });
         } else {
           alert('Create a solid body first!');
         }
     } },
-    { id: 'SHELL', icon: <ShellIcon />, label: 'Shell', action: () => { 
-        useCadStore.setState({ pendingFeatureCommand: 'SHELL' });
-    } },
-    { id: 'HOLE', icon: <HoleIcon />, label: 'Hole', action: () => { 
-        useCadStore.setState({ pendingFeatureCommand: 'HOLE_WIZARD' });
-    } },
-    { id: 'MEASURE', icon: <MeasureIcon />, label: 'Measure', action: () => { setMeasurementMode(measurementMode === 'NONE' ? 'DISTANCE' : 'NONE'); } },
-    { id: 'SECTION', icon: <SectionIcon />, label: 'Section', action: () => { 
-        const newState = !useCadStore.getState().sectionView.isActive;
-        useCadStore.getState().setSectionView({ isActive: newState });
-        useCadStore.getState().setActivePropertyManager(newState ? 'SECTION_VIEW' : null);
-    } },
-    { id: 'SKETCH', icon: <LineIcon />, label: 'Sketch', action: () => { setActivePlane('FRONT'); setSketchMode(true); } },
+    { id: 'NORMAL_TO', icon: '⟕', label: 'Normal To', action: () => {} },
   ];
+
+  const tools = isSketchMode ? sketchTools : featureTools;
 
   return (
     <div 
-      ref={boxRef} 
-      className="fixed z-[1000] bg-surface/90 backdrop-blur-xl border border-white/20 rounded-xl shadow-2xl p-3 grid grid-cols-4 gap-2 animate-in fade-in zoom-in duration-200 select-none" 
-      style={{ left: shortcutBox.x, top: shortcutBox.y }}
+      ref={boxRef}
+      className="fixed z-[1000] bg-white/90 backdrop-blur-xl border border-slate-300 rounded-lg shadow-2xl p-1 grid grid-cols-4 gap-1 animate-in zoom-in-95 duration-100 origin-top-left"
+      style={{ 
+        left: shortcutBox.x, 
+        top: shortcutBox.y,
+        transform: 'translate(-10px, -10px)'
+      }}
     >
-      {tools.map((tool) => (
-        <button 
-          key={tool.id} 
-          onClick={() => { tool.action(); setShortcutBox(null); }} 
-          className="w-14 h-14 flex flex-col items-center justify-center rounded-xl hover:bg-white/50 text-slate-700 hover:text-[#005B9A] transition-all border border-transparent hover:border-slate-200 group"
+      {tools.map((t) => (
+        <button
+          key={t.id}
+          onClick={() => handleAction(t)}
+          className="w-12 h-12 flex flex-col items-center justify-center rounded hover:bg-[#005B9A] hover:text-white transition-all group border-none bg-transparent cursor-pointer"
+          title={t.label}
         >
-          <div className="group-hover:scale-110 transition-transform">{tool.icon}</div>
-          <span className="text-[9px] font-black mt-1 uppercase tracking-tighter">{tool.label}</span>
+          <span className="text-xl font-bold group-hover:scale-110 transition-transform">{t.icon}</span>
+          <span className="text-[8px] font-black uppercase mt-0.5 opacity-60 group-hover:opacity-100">{t.label}</span>
         </button>
       ))}
     </div>

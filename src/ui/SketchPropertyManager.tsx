@@ -19,9 +19,26 @@ export const SketchPropertyManager: React.FC = () => {
     setSketchTool,
   } = useCadStore();
 
-  const [mirrorAxisId, setMirrorAxisId] = useState<string | null>(null);
+  const [isEditName, setIsEditName] = useState<string | null>(null);
 
-  // Pattern States
+  const activeEntity = useMemo(() => {
+    if (selectedEntityIds.length === 1) {
+      const id = selectedEntityIds[0];
+      return sketchNodes[id] || sketchEdges[id];
+    }
+    return null;
+  }, [selectedEntityIds, sketchNodes, sketchEdges]);
+
+  const updateEntityProperty = (id: string, key: string, value: any) => {
+    if (sketchNodes[id]) {
+      setSketchNodes({ ...sketchNodes, [id]: { ...sketchNodes[id], [key]: value } });
+    } else if (sketchEdges[id]) {
+      setSketchEdges({ ...sketchEdges, [id]: { ...sketchEdges[id], [key]: value } });
+    }
+    commitPreciseSketchSolve().then(() => triggerRebuild());
+  };
+
+  const [mirrorAxisId, setMirrorAxisId] = useState<string | null>(null);
   const [patternAxisId, setPatternAxisId] = useState<string | null>(null);
   const [patternCount, setPatternCount] = useState<number>(3);
   const [patternSpacing, setPatternSpacing] = useState<number>(20);
@@ -502,6 +519,89 @@ export const SketchPropertyManager: React.FC = () => {
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><path d="M20 6L9 17l-5-5"/></svg>
                 Apply Mirror
               </button>
+            </div>
+          </div>
+        )}
+
+        {/* Selected Entity Properties (Active Driver) */}
+        {activeEntity && (
+          <div className="bg-white border border-slate-300 rounded shadow-sm overflow-hidden">
+            <div className="px-2 py-1 bg-slate-100 border-b border-slate-300 flex items-center justify-between">
+              <span className="text-[11px] font-bold text-slate-700">Properties</span>
+              <span className="text-[9px] font-mono text-slate-400">{activeEntity.id.slice(0, 8)}</span>
+            </div>
+            <div className="p-3 space-y-3">
+              <div className="space-y-1">
+                <label className="text-[10px] font-bold text-slate-500 uppercase">Entity Name</label>
+                {isEditName === activeEntity.id ? (
+                  <input 
+                    autoFocus
+                    type="text" 
+                    defaultValue={(activeEntity as any).name || activeEntity.id.slice(0, 6)}
+                    onBlur={(e) => {
+                      updateEntityProperty(activeEntity.id, 'name', e.target.value);
+                      setIsEditName(null);
+                    }}
+                    onKeyDown={(e) => e.key === 'Enter' && (e.target as HTMLInputElement).blur()}
+                    className="w-full bg-white border border-blue-400 rounded px-2 py-1 text-[12px] font-bold outline-none shadow-sm"
+                  />
+                ) : (
+                  <div 
+                    onClick={() => setIsEditName(activeEntity.id)}
+                    className="w-full bg-slate-50 border border-slate-200 rounded px-2 py-1 text-[12px] font-bold text-slate-700 cursor-text hover:border-blue-300"
+                  >
+                    {(activeEntity as any).name || activeEntity.id.slice(0, 6)}
+                  </div>
+                )}
+              </div>
+              
+              {/* Node Specific: Coordinates */}
+              {sketchNodes[activeEntity.id] && (
+                <div className="grid grid-cols-2 gap-2">
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-bold text-slate-500 uppercase">X Coord</label>
+                    <input 
+                      type="number" 
+                      value={(activeEntity as any).x.toFixed(2)}
+                      onChange={(e) => updateEntityProperty(activeEntity.id, 'x', parseFloat(e.target.value))}
+                      className="w-full bg-white border border-slate-300 rounded px-2 py-1 text-[12px] font-mono font-bold text-right"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-bold text-slate-500 uppercase">Y Coord</label>
+                    <input 
+                      type="number" 
+                      value={(activeEntity as any).y.toFixed(2)}
+                      onChange={(e) => updateEntityProperty(activeEntity.id, 'y', parseFloat(e.target.value))}
+                      className="w-full bg-white border border-slate-300 rounded px-2 py-1 text-[12px] font-mono font-bold text-right"
+                    />
+                  </div>
+                </div>
+              )}
+
+              {/* Edge Specific: Type & Status */}
+              {sketchEdges[activeEntity.id] && (
+                <div className="space-y-1">
+                  <label className="text-[10px] font-bold text-slate-500 uppercase">Parameters</label>
+                  <div className="p-2 bg-slate-50 border border-slate-200 rounded space-y-1">
+                    <div className="flex justify-between text-[11px]">
+                      <span className="text-slate-500">Type:</span>
+                      <span className="font-bold text-slate-700">{(activeEntity as any).type}</span>
+                    </div>
+                    {/* Circle Radius Driver */}
+                    {(activeEntity as any).type === 'CIRCLE' && (
+                      <div className="pt-1 flex items-center gap-2">
+                        <span className="text-slate-500 text-[11px]">Radius:</span>
+                        <input 
+                          type="number" 
+                          defaultValue={10} // Placeholder for radius logic
+                          className="flex-1 bg-white border border-slate-300 rounded px-1.5 py-0.5 text-[11px] font-bold text-right"
+                        />
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         )}

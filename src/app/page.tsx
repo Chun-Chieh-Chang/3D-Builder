@@ -40,7 +40,6 @@ import { DesignLibraryPanel } from '@/ui/DesignLibraryPanel';
 export default function Home() {
   const [loading, setLoading] = useState(false);
   const [engineStatus, setEngineStatus] = useState<'CONNECTED' | 'DISCONNECTED'>('DISCONNECTED');
-  const [activeTab, setActiveTab] = useState<'FEATURES' | 'SKETCH' | 'EVALUATE' | 'ASSEMBLY' | 'DRAWING' | 'RENDER' | 'SURFACING'>('FEATURES');
   const [sidebarTab, setSidebarTab] = useState<'TREE' | 'PROPERTIES' | 'CONFIGS'>('TREE');
   const [taskPaneTab, setTaskPaneTab] = useState<'LIBRARY' | 'NONE'>('LIBRARY');
   const [showMassPropsModal, setShowMassPropsModal] = useState(false);
@@ -53,6 +52,7 @@ export default function Home() {
     setSelectedId, setMeshData,
     isSketchMode, setSketchMode, setSketchTool,
     activePlane, setActivePlane, setActiveFaceOrigin, setActiveFaceNormal, setActiveFaceId,
+    activeTab, setActiveTab,
     sketchNodes, sketchEdges, sketchConstraints,
     selectedId, selectedSubNodeType, setSelectedSubNodeType,
     visibleSketches, toggleSketchVisibility,

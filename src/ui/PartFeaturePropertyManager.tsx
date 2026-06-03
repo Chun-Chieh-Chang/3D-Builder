@@ -44,7 +44,12 @@ const ParamInput: React.FC<{
                 onChange(isNaN(num) ? 0 : num);
               }
             }}
-            className={`w-full bg-white border border-slate-300 rounded px-2 py-1 text-[12px] text-right font-mono font-bold transition-colors ${isFormula ? 'text-indigo-700 border-indigo-200' : 'text-slate-800'}`}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') {
+                (e.target as HTMLInputElement).blur();
+              }
+            }}
+            className={`w-full bg-white border border-slate-300 rounded px-2 py-1 text-[12px] text-right font-mono font-bold transition-all focus:border-[#005B9A] focus:ring-1 focus:ring-[#005B9A]/20 outline-none ${isFormula ? 'text-indigo-700 border-indigo-200' : 'text-slate-800'}`}
           />
           {badge && <span className="absolute left-2 top-1/2 -translate-y-1/2 text-[10px] text-slate-400 font-black">{badge}</span>}
         </div>
