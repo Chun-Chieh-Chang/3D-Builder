@@ -33,7 +33,7 @@ export const SketchPreview = () => {
   const [editingConstraintId, setEditingConstraintId] = useState<string | null>(null);
   const [inputValue, setInputValue] = useState<string>('');
   const [draggingDimId, setDraggingDimId] = useState<string | null>(null);
-  const [dragStartPos, setDragStartPos] = useState<{ x: number, y: number } | null>(null);
+  const [dragStartPos, setDragStartPos] = useState<{ x: number, y: number, nx?: number, ny?: number } | null>(null);
   const [dragStartOffset, setDragStartOffset] = useState<number>(12);
   const [draggingNodeId, setDraggingNodeId] = useState<string | null>(null);
 
@@ -46,9 +46,17 @@ export const SketchPreview = () => {
       const dx = e.clientX - dragStartPos.x;
       const dy = e.clientY - dragStartPos.y;
       
-      // Industrial Drag Logic: Use a sensitivity factor
+      // Get the 2D normal vector of the dimension on the screen
+      const nx = dragStartPos.nx ?? 1;
+      const ny = dragStartPos.ny ?? 0;
+
+      // Project mouse movement (dx, dy) onto the screen-space normal vector (nx, -ny)
+      // clientY is inverted relative to world Y, so screen-space Y normal is -ny
+      const dot = (dx * nx) - (dy * ny);
+
+      // Industrial Drag Logic: Intuitive projection-based delta
       const sensitivity = 0.5;
-      const delta = (Math.abs(dx) > Math.abs(dy) ? dx : -dy) * sensitivity;
+      const delta = dot * sensitivity;
       const newOffset = dragStartOffset + delta;
 
       setSketchConstraints(prev => ({
@@ -283,6 +291,17 @@ export const SketchPreview = () => {
         const n1 = sketchNodes[id1];
         const n2 = sketchNodes[id2];
         if (n1 && n2) {
+          const existingDim = Object.values(sketchConstraints).find(
+            c => c.type === 'DISTANCE' && c.nodeIds && (
+              (c.nodeIds[0] === n1.id && c.nodeIds[1] === n2.id) || 
+              (c.nodeIds[0] === n2.id && c.nodeIds[1] === n1.id)
+            )
+          );
+          if (existingDim) {
+            setSelectedEntityIds([]);
+            return;
+          }
+
           const dist = Math.hypot(n2.x - n1.x, n2.y - n1.y);
           const cId = uuidv4();
           setSketchConstraints(prev => ({
@@ -301,6 +320,18 @@ export const SketchPreview = () => {
         const n1 = sketchNodes[edge.nodeIds[0]];
         const n2 = sketchNodes[edge.nodeIds[1]];
         if (n1 && n2) {
+          // Prevent duplicating constraints
+          const existingDim = Object.values(sketchConstraints).find(
+            c => c.type === 'DISTANCE' && c.nodeIds && (
+              (c.nodeIds[0] === n1.id && c.nodeIds[1] === n2.id) || 
+              (c.nodeIds[0] === n2.id && c.nodeIds[1] === n1.id)
+            )
+          );
+          if (existingDim) {
+            setSelectedEntityIds([]);
+            return;
+          }
+
           const distance = Math.hypot(n2.x - n1.x, n2.y - n1.y);
           const cId = uuidv4();
           setSketchConstraints(prev => ({
@@ -473,6 +504,8 @@ export const SketchPreview = () => {
               opacity={0.0}
               transparent
               onClick={(e) => { e.stopPropagation(); handleEntityClick(edge.id); }}
+              onPointerDown={(e) => { if (!isSketchMode) return; }}
+              onPointerUp={(e) => {}}
               onPointerOver={(e) => { if (!isSketchMode) return; e.stopPropagation(); setHoveredEntityId(edge.id); }}
               onPointerOut={(e) => { if (!isSketchMode) return; setHoveredEntityId(null); }}
             />
@@ -511,9 +544,9 @@ export const SketchPreview = () => {
             onPointerOut={(e) => { if (!isSketchMode) return; setHoveredEntityId(null); }}
             onPointerDown={(e) => {
               if (!isSketchMode) return;
-              e.stopPropagation();
               setDraggingNodeId(node.id);
             }}
+            onPointerUp={(e) => {}}
           >
             <sphereGeometry args={[isSelected || isHovered ? 0.35 : 0.2, 12, 12]} />
             <meshBasicMaterial
@@ -620,6 +653,12 @@ export const SketchPreview = () => {
                 onClick={(e) => {
                   e.stopPropagation();
                   handleEntityClick(constraint.id);
+                }}
+                onPointerDown={(e) => {
+                  e.stopPropagation();
+                  setDraggingDimId(constraint.id);
+                  setDragStartPos({ x: e.clientX, y: e.clientY, nx, ny });
+                  setDragStartOffset(constraint.offset ?? 12);
                 }}
                 onDoubleClick={(e) => {
                   e.stopPropagation();

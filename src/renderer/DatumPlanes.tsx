@@ -3,6 +3,14 @@ import { Plane, Text, Html, Sphere, Line, Grid } from '@react-three/drei';
 import { useCadStore } from '../store/useCadStore';
 import * as THREE from 'three';
 import { v4 as uuidv4 } from 'uuid';
+import { LineToolHandler } from '../utils/sketch/ToolHandlers/LineTool';
+import { TrimToolHandler } from '../utils/sketch/ToolHandlers/TrimTool';
+import { SelectToolHandler } from '../utils/sketch/ToolHandlers/SelectTool';
+import { ArcToolHandler } from '../utils/sketch/ToolHandlers/ArcTool';
+import { SplineToolHandler } from '../utils/sketch/ToolHandlers/SplineTool';
+import { CircleToolHandler } from '../utils/sketch/ToolHandlers/CircleTool';
+import { RectangleToolHandler } from '../utils/sketch/ToolHandlers/RectangleTool';
+import { sketchActions } from '../store/sketchActions';
 import { previewSolve, commitPreciseSketchSolve } from '@/kernel/SketchSolverService';
 
 export const DatumPlanes = () => {
@@ -259,11 +267,8 @@ export const DatumPlanes = () => {
                 }
 
                 if (hit) {
-                  useCadStore.setState(state => {
-                    const nextEdges = { ...state.sketchEdges };
-                    delete nextEdges[edge.id];
-                    return { sketchEdges: nextEdges };
-                  });
+                  // Use centralized sketch action to guarantee cascading deletes
+                  sketchActions.deleteEdges([edge.id]);
                 }
               }
             }
@@ -402,12 +407,6 @@ export const DatumPlanes = () => {
       rawU = uv.u; rawV = uv.v;
     }
 
-    const snapped = getSnappedUV(rawU, rawV);
-    const u = snapped.u;
-    const v = snapped.v;
-    const SNAP_DIST = 3.5;
-    const activeSnapType = cursorState?.type;
-
     if (sketchTool === 'EXTEND') {
        const edges = Object.values(useCadStore.getState().sketchEdges);
        const nodes = useCadStore.getState().sketchNodes;
@@ -438,103 +437,63 @@ export const DatumPlanes = () => {
        return;
     }
 
-    const nId = snapped.id || uuidv4();
-    const isOrigin = Math.abs(u) < 1e-5 && Math.abs(v) < 1e-5;
-    const newNode = { id: nId, x: u, y: v, isFixed: isOrigin };
+    let u = rawU, v = rawV, snappedId = null;
+    let activeSnapType = undefined;
+    const SNAP_DIST = 3.5;
     
-    let isClosing = false;
-    if (!sketchNewChain && firstChainNodeId === nId) {
-       isClosing = true;
+    if (!event.shiftKey) {
+      const snapped = getSnappedUV(rawU, rawV);
+      u = snapped.u;
+      v = snapped.v;
+      snappedId = snapped.id;
+      activeSnapType = cursorState?.type;
     }
 
+    // --- NEW ARCHITECTURE ROUTING ---
+    const ctx = {
+      rawU, rawV,
+      snappedU: u, snappedV: v,
+      snappedNodeId: snappedId,
+      shiftKey: event.shiftKey || false,
+      activeSnapType: activeSnapType || undefined
+    };
+
+    if (sketchTool === 'LINE' || sketchTool === 'CENTER_LINE') {
+      new LineToolHandler(sketchTool === 'CENTER_LINE').onPointerDown(ctx);
+      return;
+    }
+    if (sketchTool === 'TRIM') {
+      const trimTool = new TrimToolHandler();
+      trimTool.onPointerDown(ctx); // Simulate drag start
+      trimTool.onPointerUp(ctx);   // Trigger click-to-trim
+      return;
+    }
+    if (sketchTool === 'SELECT') {
+      new SelectToolHandler().onPointerDown(ctx);
+      return;
+    }
+    if (sketchTool === 'ARC') {
+      new ArcToolHandler().onPointerDown(ctx);
+      return;
+    }
+    if (sketchTool === 'SPLINE') {
+      new SplineToolHandler().onPointerDown(ctx);
+      return;
+    }
+    if (sketchTool === 'CIRCLE') {
+      new CircleToolHandler().onPointerDown(ctx);
+      return;
+    }
+    if (sketchTool === 'RECTANGLE') {
+      new RectangleToolHandler().onPointerDown(ctx);
+      return;
+    }
     useCadStore.setState((state) => {
-      const nextNodes = { ...state.sketchNodes };
-      if (!nextNodes[nId]) nextNodes[nId] = newNode;
-      
+      let nextNodes = { ...state.sketchNodes };
       let nextEdges = { ...state.sketchEdges };
       let nextConstraints = { ...state.sketchConstraints };
-      let nextLastNodeId = lastClickedNodeId;
 
-      if (sketchTool === 'LINE' || sketchTool === 'CENTER_LINE') {
-         if (sketchNewChain || !lastClickedNodeId) {
-            nextLastNodeId = nId;
-         } else {
-            if (lastClickedNodeId === nId) return state; // Prevent degenerate lines
-            const eId = uuidv4();
-            nextEdges[eId] = { 
-              id: eId, 
-              type: 'LINE', 
-              nodeIds: [lastClickedNodeId, nId],
-              isConstruction: sketchTool === 'CENTER_LINE'
-            };
-            
-            // Auto-Constraint Capture
-            if (activeSnapType === 'HORIZONTAL' || activeSnapType === 'VERTICAL') {
-              const cId = uuidv4();
-              nextConstraints[cId] = {
-                id: cId,
-                type: activeSnapType,
-                edgeIds: [eId]
-              };
-            }
-
-            const solved = previewSolve(nextNodes, nextEdges, nextConstraints, 4);
-            Object.assign(nextNodes, solved);
-            nextLastNodeId = nId;
-         }
-      } else if (sketchTool === 'ARC') {
-         if (sketchNewChain || !lastClickedNodeId) {
-            nextLastNodeId = nId;
-         } else {
-            // Simplified 2-Point Arc: Center -> Circumference (renders as arc segment)
-            const eId = uuidv4();
-            nextEdges[eId] = { id: eId, type: 'ARC', nodeIds: [lastClickedNodeId, nId] };
-            nextLastNodeId = nId;
-         }
-      } else if (sketchTool === 'TRIM') {
-         // Trim Logic: Identify closest edge and delete it
-         let closestEdgeId: string | null = null;
-         let minDist = Infinity;
-         Object.values(nextEdges).forEach(edge => {
-            const n1 = nextNodes[edge.nodeIds[0]];
-            const n2 = nextNodes[edge.nodeIds[1]];
-            if (n1 && n2) {
-               const d = pointToSegmentDistance(u, v, n1.x, n1.y, n2.x, n2.y);
-               if (d < SNAP_DIST && d < minDist) {
-                  minDist = d;
-                  closestEdgeId = edge.id;
-               }
-            }
-         });
-         if (closestEdgeId) delete nextEdges[closestEdgeId];
-         nextLastNodeId = null;
-      } else if (sketchTool === 'SPLINE') {
-         if (sketchNewChain || !lastClickedNodeId) {
-            nextLastNodeId = nId;
-         } else {
-            let activeSplineEdgeId: string | null = null;
-            for (const edge of Object.values(nextEdges)) {
-               if (edge.type === 'SPLINE' && edge.nodeIds[edge.nodeIds.length - 1] === lastClickedNodeId) {
-                  activeSplineEdgeId = edge.id;
-                  break;
-               }
-            }
-            if (activeSplineEdgeId) nextEdges[activeSplineEdgeId].nodeIds.push(nId);
-            else {
-               const eId = uuidv4();
-               nextEdges[eId] = { id: eId, type: 'SPLINE', nodeIds: [lastClickedNodeId, nId] };
-            }
-            nextLastNodeId = nId;
-         }
-      } else if (sketchTool === 'CIRCLE') {
-         if (sketchNewChain || !lastClickedNodeId) {
-            nextLastNodeId = nId;
-         } else {
-            const eId = uuidv4();
-            nextEdges[eId] = { id: eId, type: 'CIRCLE', nodeIds: [lastClickedNodeId, nId] };
-            nextLastNodeId = null;
-         }
-      } else if (sketchTool === 'SMART_DIMENSION') {
+      if (sketchTool === 'SMART_DIMENSION') {
          // Smart Dimension Logic: Create a distance constraint between selected nodes or on an edge
          const eId = Object.values(nextEdges).find(e => {
             const n1 = nextNodes[e.nodeIds[0]];
@@ -545,30 +504,6 @@ export const DatumPlanes = () => {
          if (eId) {
             const cId = uuidv4();
             nextConstraints[cId] = { id: cId, type: 'DISTANCE', edgeIds: [eId], value: 50 }; // Default 50
-         }
-         nextLastNodeId = null;
-      } else if (sketchTool === 'RECTANGLE') {
-         if (sketchNewChain || !lastClickedNodeId) {
-            nextLastNodeId = nId;
-         } else {
-            const n1 = lastClickedNodeId;
-            const n3 = nId;
-            const n2 = uuidv4();
-            const n4 = uuidv4();
-            nextNodes[n2] = { id: n2, x: u, y: nextNodes[n1].y };
-            nextNodes[n4] = { id: n4, x: nextNodes[n1].x, y: v };
-            const e1 = uuidv4(); const e2 = uuidv4(); const e3 = uuidv4(); const e4 = uuidv4();
-            nextEdges[e1] = { id: e1, type: 'LINE', nodeIds: [n1, n2] };
-            nextEdges[e2] = { id: e2, type: 'LINE', nodeIds: [n2, n3] };
-            nextEdges[e3] = { id: e3, type: 'LINE', nodeIds: [n3, n4] };
-            nextEdges[e4] = { id: e4, type: 'LINE', nodeIds: [n4, n1] };
-            
-            // Auto-Constraints for Rectangle
-            const c1 = uuidv4(); const c2 = uuidv4();
-            nextConstraints[c1] = { id: c1, type: 'HORIZONTAL', edgeIds: [e1, e3] };
-            nextConstraints[c2] = { id: c2, type: 'VERTICAL', edgeIds: [e2, e4] };
-            
-            nextLastNodeId = null;
          }
       } else if (sketchTool === 'OFFSET') {
          // Offset Entities: Offset selected entities by a fixed distance
@@ -599,7 +534,6 @@ export const DatumPlanes = () => {
          } else {
             pushToast('Please select entities to offset.', 'info');
          }
-         nextLastNodeId = null;
       } else if (sketchTool === 'MIRROR') {
          // Basic Mirror: Mirror selected entities across the first construction line found
          const axis = Object.values(nextEdges).find(e => e.isConstruction && e.type === 'LINE');
@@ -636,55 +570,9 @@ export const DatumPlanes = () => {
          } else {
             pushToast('Please select a 3D edge or vertex to convert.', 'info');
          }
-         nextLastNodeId = null;
-      } else if (sketchTool === 'SELECT') {
-         // Handle entity selection in sketch mode
-         let hitId: string | null = null;
-         let minDist = SNAP_DIST;
-         
-         // Check nodes
-         Object.values(nextNodes).forEach(node => {
-            const d = Math.hypot(node.x - u, node.y - v);
-            if (d < minDist) { minDist = d; hitId = node.id; }
-         });
-         
-         // Check edges
-         if (!hitId) {
-            Object.values(nextEdges).forEach(edge => {
-               const n1 = nextNodes[edge.nodeIds[0]];
-               const n2 = nextNodes[edge.nodeIds[1]];
-               if (n1 && n2) {
-                  const d = pointToSegmentDistance(u, v, n1.x, n1.y, n2.x, n2.y);
-                  if (d < minDist) { minDist = d; hitId = edge.id; }
-               }
-            });
-         }
-         
-         if (hitId) {
-            const currentSelected = [...useCadStore.getState().selectedEntityIds];
-            if (currentSelected.includes(hitId)) {
-               useCadStore.setState({ selectedEntityIds: currentSelected.filter(id => id !== hitId) });
-            } else {
-               useCadStore.setState({ selectedEntityIds: [...currentSelected, hitId] });
-            }
-         } else {
-            useCadStore.setState({ selectedEntityIds: [] });
-         }
       }
       return { sketchNodes: nextNodes, sketchEdges: nextEdges, sketchConstraints: nextConstraints };
     });
-
-    if (isClosing || ((sketchTool === 'CIRCLE' || sketchTool === 'RECTANGLE') && !sketchNewChain)) {
-      setSketchNewChain(true);
-      setLastClickedNodeId(null);
-      setFirstChainNodeId(null);
-    } else {
-      if (sketchNewChain) setFirstChainNodeId(nId);
-      setLastClickedNodeId(nId);
-      setSketchNewChain(false);
-      setLastClickedUV({ u, v });
-      setHasMovedAway(false);
-    }
 
     if (isSketchMode) void commitPreciseSketchSolve();
   };
@@ -702,10 +590,14 @@ export const DatumPlanes = () => {
   const handleContextMenu = (plane: string, event: any) => {
     if (activePlane && activePlane !== plane) return;
     event.stopPropagation();
-    if (isSketchMode && !sketchNewChain) {
-      setSketchNewChain(true);
-      setLastClickedNodeId(null);
-      setFirstChainNodeId(null);
+    if (isSketchMode) {
+      if (!sketchNewChain) {
+        setSketchNewChain(true);
+        setLastClickedNodeId(null);
+        setFirstChainNodeId(null);
+      } else {
+        useCadStore.getState().setSketchTool('SELECT');
+      }
       return;
     }
     setContextMenu({
@@ -738,8 +630,21 @@ export const DatumPlanes = () => {
         }}
         onPointerUp={(e) => { 
             if (isSketchMode && activePlane !== 'FRONT') return;
+            e.stopPropagation();
             setIsDragging(false); 
             setTrimPath([]); 
+            
+            // If we are trimming, we process it on drag anyway, so we just end it.
+            // If not trimming, only treat as a click if the mouse didn't move significantly during the down-up cycle.
+            if (sketchTool !== 'TRIM') {
+               const rawU = e.point.x; const rawV = e.point.y;
+               const snapped = getSnappedUV(rawU, rawV);
+               const dx = dragStartUV ? snapped.u - dragStartUV.u : 0;
+               const dy = dragStartUV ? snapped.v - dragStartUV.v : 0;
+               if (dragStartUV && Math.hypot(dx, dy) > 2.0) {
+                 return; // Was a drag, don't create a point
+               }
+            }
             handlePlaneClick('FRONT', e); 
         }}
         onDoubleClick={(e) => handlePlaneDoubleClick('FRONT', e)}
@@ -784,8 +689,19 @@ export const DatumPlanes = () => {
         }}
         onPointerUp={(e) => { 
             if (isSketchMode && activePlane !== 'TOP') return;
+            e.stopPropagation();
             setIsDragging(false); 
             setTrimPath([]); 
+            
+            if (sketchTool !== 'TRIM') {
+               const rawU = e.point.x; const rawV = e.point.z;
+               const snapped = getSnappedUV(rawU, rawV);
+               const dx = dragStartUV ? snapped.u - dragStartUV.u : 0;
+               const dy = dragStartUV ? snapped.v - dragStartUV.v : 0;
+               if (dragStartUV && Math.hypot(dx, dy) > 2.0) {
+                 return; 
+               }
+            }
             handlePlaneClick('TOP', e); 
         }}
         onDoubleClick={(e) => handlePlaneDoubleClick('TOP', e)}
@@ -830,8 +746,19 @@ export const DatumPlanes = () => {
         }}
         onPointerUp={(e) => { 
             if (isSketchMode && activePlane !== 'RIGHT') return;
+            e.stopPropagation();
             setIsDragging(false); 
             setTrimPath([]); 
+            
+            if (sketchTool !== 'TRIM') {
+               const rawU = e.point.y; const rawV = e.point.z;
+               const snapped = getSnappedUV(rawU, rawV);
+               const dx = dragStartUV ? snapped.u - dragStartUV.u : 0;
+               const dy = dragStartUV ? snapped.v - dragStartUV.v : 0;
+               if (dragStartUV && Math.hypot(dx, dy) > 2.0) {
+                 return; 
+               }
+            }
             handlePlaneClick('RIGHT', e); 
         }}
         onDoubleClick={(e) => handlePlaneDoubleClick('RIGHT', e)}
@@ -876,6 +803,16 @@ export const DatumPlanes = () => {
               e.stopPropagation();
               setIsDragging(false); 
               setTrimPath([]); 
+              
+              if (sketchTool !== 'TRIM') {
+                 const uv = getCustomFaceUV(e.point);
+                 const snapped = getSnappedUV(uv.u, uv.v);
+                 const dx = dragStartUV ? snapped.u - dragStartUV.u : 0;
+                 const dy = dragStartUV ? snapped.v - dragStartUV.v : 0;
+                 if (dragStartUV && Math.hypot(dx, dy) > 2.0) {
+                   return; 
+                 }
+              }
               handlePlaneClick('FACE', e); 
           }}
           onDoubleClick={(e) => handlePlaneDoubleClick('FACE', e)}
@@ -979,22 +916,30 @@ export const DatumPlanes = () => {
       )}
 
       {/* Drafting Ghost Preview (SolidWorks Style) */}
-      {isSketchMode && lastClickedUV && cursorState && (
+      {isSketchMode && cursorState && (
         <group>
-          {(sketchTool === 'LINE' || sketchTool === 'CENTER_LINE') && (
-            <Line
-              points={[get3DPnt(lastClickedUV.u, lastClickedUV.v), get3DPnt(cursorState.u, cursorState.v)]}
-              color="#F59E0B"
-              lineWidth={1.2}
-              dashed={sketchTool === 'CENTER_LINE'}
-              dashSize={1}
-              gapSize={0.5}
-              transparent
-              opacity={0.6}
-            />
-          )}
+          {(sketchTool === 'LINE' || sketchTool === 'CENTER_LINE') && (() => {
+            const lastNodeId = useCadStore.getState().lastClickedNodeId;
+            const lastNode = useCadStore.getState().sketchNodes[lastNodeId || ''];
+            if (!lastNode) return null;
+            return (
+              <Line
+                points={[get3DPnt(lastNode.x, lastNode.y), get3DPnt(cursorState.u, cursorState.v)]}
+                color="#F59E0B"
+                lineWidth={1.2}
+                dashed={sketchTool === 'CENTER_LINE'}
+                dashSize={1}
+                gapSize={0.5}
+                transparent
+                opacity={0.6}
+              />
+            );
+          })()}
           {sketchTool === 'CIRCLE' && (() => {
-            const center = lastClickedUV;
+            const lastNodeId = useCadStore.getState().lastClickedNodeId;
+            const centerNode = useCadStore.getState().sketchNodes[lastNodeId || ''];
+            if (!centerNode) return null;
+            const center = { u: centerNode.x, v: centerNode.y };
             const R = Math.hypot(cursorState.u - center.u, cursorState.v - center.v);
             const pts: [number, number, number][] = [];
             for (let k = 0; k <= 36; k++) {
@@ -1010,7 +955,10 @@ export const DatumPlanes = () => {
             );
           })()}
           {sketchTool === 'RECTANGLE' && (() => {
-            const p1 = lastClickedUV;
+            const lastNodeId = useCadStore.getState().lastClickedNodeId;
+            const p1Node = useCadStore.getState().sketchNodes[lastNodeId || ''];
+            if (!p1Node) return null;
+            const p1 = { u: p1Node.x, v: p1Node.y };
             const p3 = cursorState;
             const pts = [
               get3DPnt(p1.u, p1.v),

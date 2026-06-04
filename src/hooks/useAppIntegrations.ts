@@ -2,6 +2,7 @@
 
 import { useEffect, useCallback } from 'react';
 import { useCadStore } from '../store/useCadStore';
+import { sketchActions } from '../store/sketchActions';
 import { onFileOpen, onSaveRequest, onNewFile, appAPI, fileAPI } from '../../electron/renderer';
 
 export const useAppIntegrations = (
@@ -75,36 +76,7 @@ export const useAppIntegrations = (
       } else if (e.key === 'Delete' || e.key === 'Backspace') {
         if (selectedEntityIds.length > 0) {
           e.preventDefault();
-          const nextNodes = { ...sketchNodes };
-          const nextEdges = { ...sketchEdges };
-          const nextConstraints = { ...sketchConstraints };
-          
-          const nodesToDelete = new Set<string>();
-          const edgesToDelete = new Set<string>();
-          const constraintsToDelete = new Set<string>();
-
-          selectedEntityIds.forEach(id => {
-            if (nextNodes[id]) nodesToDelete.add(id);
-            if (nextEdges[id]) edgesToDelete.add(id);
-            if (nextConstraints[id]) constraintsToDelete.add(id);
-          });
-
-          Object.values(nextEdges).forEach((edge: any) => {
-            if (edge.nodeIds.some((nid: string) => nodesToDelete.has(nid))) edgesToDelete.add(edge.id);
-          });
-
-          Object.values(nextConstraints).forEach((c: any) => {
-            if (c.nodeIds?.some((nid: string) => nodesToDelete.has(nid))) constraintsToDelete.add(c.id);
-            if (c.edgeIds?.some((eid: string) => edgesToDelete.has(eid))) constraintsToDelete.add(c.id);
-          });
-
-          nodesToDelete.forEach(id => delete nextNodes[id]);
-          edgesToDelete.forEach(id => delete nextEdges[id]);
-          constraintsToDelete.forEach(id => delete nextConstraints[id]);
-
-          setSketchNodes(nextNodes);
-          setSketchEdges(nextEdges);
-          setSketchConstraints(nextConstraints);
+          sketchActions.deleteEntities(selectedEntityIds);
           setSelectedEntityIds([]);
         }
       }

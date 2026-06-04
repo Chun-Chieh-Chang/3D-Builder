@@ -369,7 +369,9 @@ const FeatureOutlines = () => {
           };
 
           // Base closed loop
-          const basePts = rawPoints.map((p: number[]) => get3DPoint(p[0], p[1], 0));
+          const basePts = rawPoints.map((p: number[]) => get3DPoint(p[0], p[1], 0))
+                                   .filter((p: THREE.Vector3) => !isNaN(p.x) && !isNaN(p.y) && !isNaN(p.z));
+          if (basePts.length < 2) return null;
           const baseClosed: [number, number, number][] = basePts.map((p: THREE.Vector3) => [p.x, p.y, p.z]);
           if (basePts.length > 1) {
             baseClosed.push([basePts[0].x, basePts[0].y, basePts[0].z]);
@@ -445,7 +447,7 @@ const FeatureOutlines = () => {
         if (feat.type === 'REVOLVE') {
           const params = feat.parameters;
           const points = params.points;
-          if (!points || points.length === 0) return null;
+          if (!points || points.length < 2) return null;
 
           const get3DPoint = (u: number, v: number) => {
             return new THREE.Vector3(u, v, 0);
@@ -453,8 +455,10 @@ const FeatureOutlines = () => {
 
           const outlinePoints: [number, number, number][] = points.map((p: number[]) => {
             const pt = get3DPoint(p[0], p[1]);
-            return [pt.x, pt.y, pt.z];
-          });
+            return [pt.x, pt.y, pt.z] as [number, number, number];
+          }).filter((p: [number, number, number]) => !isNaN(p[0]) && !isNaN(p[1]) && !isNaN(p[2]));
+
+          if (outlinePoints.length < 2) return null;
 
           return (
             <group key={feat.id}>

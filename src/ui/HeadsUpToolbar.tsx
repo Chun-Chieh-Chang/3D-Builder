@@ -47,6 +47,37 @@ export const HeadsUpToolbar: React.FC = () => {
   } = useCadStore();
   const [showOrientation, setShowOrientation] = useState(false);
 
+  const [position, setPosition] = useState({ x: 0, y: 0 });
+  const [isDragging, setIsDragging] = useState(false);
+  const dragRef = React.useRef<{ startX: number, startY: number, initialX: number, initialY: number } | null>(null);
+
+  const handlePointerDown = (e: React.PointerEvent) => {
+    dragRef.current = {
+      startX: e.clientX,
+      startY: e.clientY,
+      initialX: position.x,
+      initialY: position.y
+    };
+    setIsDragging(true);
+    (e.target as HTMLElement).setPointerCapture(e.pointerId);
+  };
+
+  const handlePointerMove = (e: React.PointerEvent) => {
+    if (!isDragging || !dragRef.current) return;
+    const dx = e.clientX - dragRef.current.startX;
+    const dy = e.clientY - dragRef.current.startY;
+    setPosition({
+      x: dragRef.current.initialX + dx,
+      y: dragRef.current.initialY + dy
+    });
+  };
+
+  const handlePointerUp = (e: React.PointerEvent) => {
+    setIsDragging(false);
+    dragRef.current = null;
+    (e.target as HTMLElement).releasePointerCapture(e.pointerId);
+  };
+
   const handleZoomToFit = () => { if (controls) controls.reset(); };
 
   const setOrientation = (view: 'FRONT' | 'TOP' | 'RIGHT' | 'ISOMETRIC' | 'NORMAL_TO') => {
@@ -66,7 +97,30 @@ export const HeadsUpToolbar: React.FC = () => {
   };
 
   return (
-    <div className="absolute top-6 left-1/2 -translate-x-1/2 flex items-center gap-1 p-1 bg-[#F5F6F9]/80 backdrop-blur-xl border border-slate-300/50 rounded-lg shadow-2xl z-40 select-none transition-all hover:bg-white/90 font-sans">
+    <div 
+      className={`absolute flex items-center gap-1 p-1 bg-[#F5F6F9]/80 backdrop-blur-xl border border-slate-300/50 rounded-lg shadow-2xl z-40 select-none font-sans ${isDragging ? '' : 'transition-colors hover:bg-white/90'}`}
+      style={{
+        top: `calc(1.5rem + ${position.y}px)`,
+        left: `calc(50% + ${position.x}px)`,
+        transform: 'translateX(-50%)'
+      }}
+    >
+      <div 
+        className="h-9 flex flex-col flex-wrap gap-[3px] items-center justify-center cursor-move text-slate-300 hover:text-slate-500 px-1 border-r border-slate-300/50 opacity-80 hover:opacity-100 transition-all touch-none"
+        onPointerDown={handlePointerDown}
+        onPointerMove={handlePointerMove}
+        onPointerUp={handlePointerUp}
+        onPointerCancel={handlePointerUp}
+        title="Drag to move toolbar"
+      >
+        <div className="w-[3px] h-[3px] rounded-full bg-current" />
+        <div className="w-[3px] h-[3px] rounded-full bg-current" />
+        <div className="w-[3px] h-[3px] rounded-full bg-current" />
+        <div className="w-[3px] h-[3px] rounded-full bg-current" />
+        <div className="w-[3px] h-[3px] rounded-full bg-current" />
+        <div className="w-[3px] h-[3px] rounded-full bg-current" />
+      </div>
+
       <button onClick={handleZoomToFit} className="w-9 h-9 flex items-center justify-center rounded-md hover:bg-slate-200/50 text-slate-700 transition-all border-none bg-transparent cursor-pointer" title="Zoom to Fit (F)">
         <ZoomIcon />
       </button>
