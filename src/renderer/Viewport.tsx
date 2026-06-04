@@ -11,7 +11,12 @@ import { SketchPreview } from './SketchPreview';
 import { TopologySelector } from '../kernel/TopologySelector';
 
 const CameraHandler = () => {
-  const { activePlane, isSketchMode, cameraNormalTrigger, cameraNormalFlip, controls, setIsCameraAnimating } = useCadStore();
+  const activePlane = useCadStore(state => state.activePlane);
+  const isSketchMode = useCadStore(state => state.isSketchMode);
+  const cameraNormalTrigger = useCadStore(state => state.cameraNormalTrigger);
+  const cameraNormalFlip = useCadStore(state => state.cameraNormalFlip);
+  const controls = useCadStore(state => state.controls);
+  const setIsCameraAnimating = useCadStore(state => state.setIsCameraAnimating);
   const { camera } = useThree();
   const lastTriggerRef = useRef(0);
 
@@ -127,7 +132,8 @@ const CameraHandler = () => {
 
 // Visual feedback for open sketch loops
 const DanglingNodesRenderer = () => {
-  const { danglingNodes, isSketchMode } = useCadStore();
+  const danglingNodes = useCadStore(state => state.danglingNodes);
+  const isSketchMode = useCadStore(state => state.isSketchMode);
   if (!isSketchMode || danglingNodes.length === 0) return null;
 
   return (
@@ -167,7 +173,8 @@ const SceneSelector = () => {
 
 // Visual feedback and 3D measurement tags renderer
 const HighlightRenderer = () => {
-  const { selectedTopology, measurementPoints } = useCadStore();
+  const selectedTopology = useCadStore(state => state.selectedTopology);
+  const measurementPoints = useCadStore(state => state.measurementPoints);
 
   return (
     <group>
@@ -255,7 +262,12 @@ const HighlightRenderer = () => {
 };
 
 const FeatureOutlines = () => {
-  const { features, selectedId, setSelectedId, isSketchMode, selectedSubNodeType, setSelectedSubNodeType } = useCadStore();
+  const features = useCadStore(state => state.features);
+  const selectedId = useCadStore(state => state.selectedId);
+  const setSelectedId = useCadStore(state => state.setSelectedId);
+  const isSketchMode = useCadStore(state => state.isSketchMode);
+  const selectedSubNodeType = useCadStore(state => state.selectedSubNodeType);
+  const setSelectedSubNodeType = useCadStore(state => state.setSelectedSubNodeType);
   const [hoveredFeatureId, setHoveredFeatureId] = useState<string | null>(null);
 
   if (isSketchMode || features.length === 0) return null;
@@ -687,7 +699,11 @@ interface ViewportProps {
 }
 
 const MouseTracker = () => {
-  const { setMousePos, activePlane, isSketchMode, activeFaceOrigin, activeFaceNormal } = useCadStore();
+  const setMousePos = useCadStore(state => state.setMousePos);
+  const activePlane = useCadStore(state => state.activePlane);
+  const isSketchMode = useCadStore(state => state.isSketchMode);
+  const activeFaceOrigin = useCadStore(state => state.activeFaceOrigin);
+  const activeFaceNormal = useCadStore(state => state.activeFaceNormal);
   
   // Create a large invisible plane that matches the current active plane to catch mouse movement
   const planeArgs = useMemo(() => {
@@ -728,7 +744,9 @@ const MouseTracker = () => {
 
 // Section View Controls for 3D dragging
 const SectionViewControls = () => {
-  const { sectionView, setSectionView, controls } = useCadStore();
+  const sectionView = useCadStore(state => state.sectionView);
+  const setSectionView = useCadStore(state => state.setSectionView);
+  const controls = useCadStore(state => state.controls);
   const planeMeshRef = useRef<THREE.Mesh>(null);
   
   if (!sectionView.isActive) return null;
@@ -788,7 +806,7 @@ const SectionViewControls = () => {
 };
 
 const InterferenceRenderer = () => {
-  const { interferenceMeshes } = useCadStore();
+  const interferenceMeshes = useCadStore(state => state.interferenceMeshes);
   if (!interferenceMeshes || interferenceMeshes.length === 0) return null;
 
   return (
@@ -820,7 +838,10 @@ const InterferenceRenderer = () => {
 };
 
 const FeatureCallouts = () => {
-  const { selectedId, features, updateFeatureParams, isSketchMode } = useCadStore();
+  const selectedId = useCadStore(state => state.selectedId);
+  const features = useCadStore(state => state.features);
+  const updateFeatureParams = useCadStore(state => state.updateFeatureParams);
+  const isSketchMode = useCadStore(state => state.isSketchMode);
   const [localVal, setLocalVal] = useState<string>("");
   const [activeFeatId, setActiveFeatId] = useState<string | null>(null);
 
@@ -917,19 +938,53 @@ const FeatureCallouts = () => {
   );
 };
 
-export default function Viewport({ children }: ViewportProps) {
-  const { 
-    isSketchMode, 
-    features, 
-    setControls, 
-    isCameraAnimating, 
-    activePropertyManager, 
-    setSelectedId, 
-    setSelectedSubNodeType, 
-    environmentMap, 
-    mode: cadMode,
-    setShortcutBox
-  } = useCadStore();
+const OrbitControlsWrapper = React.memo(() => {
+  const isSketchMode = useCadStore(state => state.isSketchMode);
+  const setControls = useCadStore(state => state.setControls);
+  const isCameraAnimating = useCadStore(state => state.isCameraAnimating);
+  
+  return (
+    <OrbitControls 
+      ref={(ref) => {
+        if (ref) setControls(ref);
+      }}
+      makeDefault 
+      enableRotate={!isSketchMode}
+      enabled={!isCameraAnimating}
+      enableDamping={!isCameraAnimating}
+    />
+  );
+});
+OrbitControlsWrapper.displayName = 'OrbitControlsWrapper';
+
+const PerspectiveCameraWrapper = React.memo(() => {
+  const { camera } = useThree();
+  const hasSetInitialPosition = useRef(false);
+
+  useEffect(() => {
+    if (camera && !hasSetInitialPosition.current) {
+      hasSetInitialPosition.current = true;
+      camera.position.set(100, 100, 100);
+      const c = camera as any;
+      if (c.isPerspectiveCamera) {
+        c.fov = 45;
+        c.updateProjectionMatrix();
+      }
+      camera.lookAt(0, 0, 0);
+    }
+  }, [camera]);
+
+  return <PerspectiveCamera makeDefault position={[100, 100, 100]} fov={45} />;
+});
+PerspectiveCameraWrapper.displayName = 'PerspectiveCameraWrapper';
+
+const Viewport = ({ children }: ViewportProps) => {
+  const isSketchMode = useCadStore(state => state.isSketchMode);
+  const setSelectedId = useCadStore(state => state.setSelectedId);
+  const setSelectedSubNodeType = useCadStore(state => state.setSelectedSubNodeType);
+  const environmentMap = useCadStore(state => state.environmentMap);
+  const cadMode = useCadStore(state => state.mode);
+  const setShortcutBox = useCadStore(state => state.setShortcutBox);
 
   // Handle Global Key Events (SolidWorks Style)
   React.useEffect(() => {
@@ -942,8 +997,6 @@ export default function Viewport({ children }: ViewportProps) {
             lastClickedNodeId: null,
             firstChainNodeId: null
           });
-          // Also reset tool to SELECT if double-escaped or if no chain was active
-          // (Wait, SolidWorks usually keeps the tool active but drops the chain)
         }
         setShortcutBox(null);
       }
@@ -953,24 +1006,25 @@ export default function Viewport({ children }: ViewportProps) {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [isSketchMode, setShortcutBox]);
 
+  const handlePointerMissed = useCallback(() => {
+    console.log('[Selection] Clicked empty space. Resetting selections.');
+    setSelectedId(null);
+    setSelectedSubNodeType(null);
+    useCadStore.getState().setSelectedTopology(null);
+  }, [setSelectedId, setSelectedSubNodeType]);
+
   return (
     <div className="w-full h-full bg-linear-to-b from-[#FFFFFF] to-[#C8D2DF] relative">
       <Canvas 
         shadows 
         dpr={[1, 2]} 
         gl={{ localClippingEnabled: true }}
-        onPointerMissed={() => {
-          // Click empty space: clear selections (SolidWorks behavior)
-          console.log('[Selection] Clicked empty space. Resetting selections.');
-          setSelectedId(null);
-          setSelectedSubNodeType(null);
-          useCadStore.getState().setSelectedTopology(null);
-        }}
+        onPointerMissed={handlePointerMissed}
       >
         <CameraHandler />
         <MouseTracker />
         <SceneSelector />
-        <PerspectiveCamera makeDefault position={[100, 100, 100]} fov={45} />
+        <PerspectiveCameraWrapper />
         <Suspense fallback={null}>
           <Stage adjustCamera={false} environment={cadMode === 'RENDER' ? (environmentMap as any) : "city"} intensity={0.5}>
             <DatumPlanes />
@@ -999,15 +1053,7 @@ export default function Viewport({ children }: ViewportProps) {
           sectionColor="#94A3B8"
           cellColor="#CBD5E1"
         />
-        <OrbitControls 
-          ref={(ref) => {
-            if (ref) setControls(ref);
-          }}
-          makeDefault 
-          enableRotate={!isSketchMode}
-          enabled={!isCameraAnimating}
-          enableDamping={!isCameraAnimating}
-        />
+        <OrbitControlsWrapper />
       </Canvas>
 
       <div className="absolute top-4 left-4 glass-effect p-2 rounded-lg text-[14px] font-mono text-slate-700 pointer-events-none">
@@ -1015,4 +1061,6 @@ export default function Viewport({ children }: ViewportProps) {
       </div>
     </div>
   );
-}
+};
+
+export default React.memo(Viewport);
