@@ -1,5 +1,5 @@
 # Handover Resume Guide (Auto-Generated)
-**Last Saved:** 2026-06-05 21:02:49
+**Last Saved:** 2026-06-05 21:12:26
 
 > [!IMPORTANT]
 > **To the next Agent/Human taking over:** 
@@ -7,13 +7,12 @@
 
 ## 1. Current Git State
 ```shell
-188a0fb fix: resolve postinstall hook missing file error in CI and fix geometry_service face NameError
+a724074 fix: resolve pythonocc HashCode AttributeError and build_shape_only f_color NameError
 ```
 
 ### Uncommitted Changes
 ```shell
-M DEV_LOG.md
- M backend/app/services/geometry_service.py
+M package.json
 ?? sync.ffs_db
 ```
 

@@ -24,7 +24,8 @@
     "graphify:query": "graphify query",
     "postinstall": "node -e \"if (require('fs').existsSync('vendor/SkillsBuilder/skills/dev/git-push-guardian/scripts/install-hook.js')) require('child_process').execSync('node vendor/SkillsBuilder/skills/dev/git-push-guardian/scripts/install-hook.js', {stdio: 'inherit'})\"",
     "test:golden": "python tests/regression/run_golden.py",
-    "test:regression": "npm run test:golden"
+    "test:backend": "C:\\3D_ENV_FINAL\\python.exe -m pytest backend/tests",
+    "test:regression": "npm run test:golden && npm run test:backend"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",
