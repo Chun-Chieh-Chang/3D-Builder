@@ -9,15 +9,21 @@ GitHub Actions 中的 `Deploy Next.js site to Pages` 與 `PythonOCC CI (Backend 
    - **Cause**: `package.json` 中的 `postinstall` 腳本寫死執行 `vendor/SkillsBuilder` 目錄下的 `install-hook.js`。然而該 `vendor` 目錄在 Git 倉庫中為空，導致 clean CI 容器環境下執行 postinstall 時因找不到檔案而報錯中斷。
 2. **Backend (`PythonOCC CI`)**:
    - **Error**: `Run Backend Tests` 失敗。
-   - **Cause**: 在上一次修復 OCC `HashCode()` 版本相容性問題時，誤刪了 `_shape_to_mesh` 內 face explorer loop 裡的 `face = topods.Face(explorer.Current())` 定義，導致後續 `get_shape_hash(face)` 等調用拋出 `NameError: name 'face' is not defined`。
+   - **Cause 1**: 在上一次修復 OCC `HashCode()` 版本相容性問題時，誤刪了 `_shape_to_mesh` 內 face explorer loop 裡的 `face = topods.Face(explorer.Current())` 定義，導致後續 `get_shape_hash(face)` 等調用拋出 `NameError: name 'face' is not defined`。
+   - **Cause 2**: 新版本 pythonocc 下 `TopoDS_Face` / `TopoDS_Edge` 等形體物件皆無原生的 `.HashCode()` 方法。雖引入了 `get_shape_hash` 替代方案，但程式碼中仍遺留 16 處直呼 `.HashCode(...)` 的地方，引發 `AttributeError`。
+   - **Cause 3**: `build_shape_only` 函式內部引用了 `f_color`，但該函式的迴圈收集段未如 `process_features` 般提取特徵顏色，導致 `NameError: name 'f_color' is not defined`。
 
 ### Corrective & Preventive Action (CAPA):
 1. **Frontend Fix**: 將 `package.json` 裡的 `postinstall` 修改為條件式執行。利用 Node.js `fs.existsSync` 判斷檔案是否存在，存在時才透過 `child_process.execSync` 執行掛載 hook。如此一來，在 CI 或無 SkillsBuilder 的環境下會自動跳過，不影響建置。
-2. **Backend Fix**: 於 `geometry_service.py` 內重新補上 `face = topods.Face(explorer.Current())` 定義，確保變數正確解析。
+2. **Backend Fixes**:
+   - 於 `geometry_service.py` 內重新補上 `face = topods.Face(explorer.Current())` 定義。
+   - 將檔案中殘存的 16 個 `.HashCode(...)` 直呼，全面以 `get_shape_hash(var, ...)` 取代。
+   - 於 `build_shape_only` 的特徵迴圈首部，補上 `f_color` 的提取邏輯。
 3. **Validation**:
    - 本地執行 `npm install` 順暢無阻。
    - 本地執行 `npm run build` 成功輸出 Static Pages。
-   - 藉由 `python -m py_compile` 編譯 `geometry_service.py` 確認無任何語法或靜態引用錯誤。
+   - 在本地 OpenCASCADE 環境下成功安裝 `pytest` 並執行 `python -m pytest backend/tests`，測試 **100% 通過 (1 Passed)**。
+   - 藉由 `python -m py_compile` 編譯 `geometry_service.py` 確認無語法錯誤。
 
 ## 2026-06-05 Fix Syntax Error in Geometry Service (修復幾何服務語法錯誤)
 

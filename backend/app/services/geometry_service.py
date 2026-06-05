@@ -181,7 +181,7 @@ def _shape_to_mesh(shape, deflection=0.01):
 
             # Record face metadata for selection resolution
             face_metadata.append({
-                "id": str(face.HashCode(1000000)), # Transient Hash
+                "id": str(get_shape_hash(face, 1000000)), # Transient Hash
                 "tns_name": tns_name,
                 "area": face_area,
                 "curvature": curvature,
@@ -215,7 +215,7 @@ def _shape_to_mesh(shape, deflection=0.01):
                 length = props.Mass()
                 
                 edge_metadata.append({
-                    "id": str(edge.HashCode(1000000)),
+                    "id": str(get_shape_hash(edge, 1000000)),
                     "start": pnts[0],
                     "end": pnts[-1],
                     "length": length
@@ -247,7 +247,7 @@ def find_matching_edge(shape, target_start, target_end, signature=None):
             explorer = TopExp_Explorer(shape, TopAbs_EDGE)
             while explorer.More():
                 edge = topods.Edge(explorer.Current())
-                if edge.HashCode(10000000) == target_hash:
+                if get_shape_hash(edge, 10000000) == target_hash:
                     return edge
                 explorer.Next()
 
@@ -310,7 +310,7 @@ def get_tangent_edges(shape, start_edge, angular_tolerance=0.01):
     import math
 
     tangent_edges = [start_edge]
-    visited_hashes = set([start_edge.HashCode(2**31 - 1)])
+    visited_hashes = set([get_shape_hash(start_edge, 2**31 - 1)])
     
     # Map vertices to edges
     v_e_map = TopTools_IndexedDataMapOfShapeListOfShape()
@@ -344,7 +344,7 @@ def get_tangent_edges(shape, start_edge, angular_tolerance=0.01):
                     adj_shape = it.Value()
                     it.Next()
                     adj_edge = topods.Edge(adj_shape)
-                    ehash = adj_edge.HashCode(2**31 - 1)
+                    ehash = get_shape_hash(adj_edge, 2**31 - 1)
                     if ehash in visited_hashes:
                         continue
                         
@@ -772,7 +772,7 @@ def build_feature_shape_in_isolation(f_type, params, parent_shape=None, all_feat
                     for eid, edge in edge_map.items():
                         gen_face = prism_tool.Generated(edge)
                         if not gen_face.IsNull():
-                            linker.mapping[f"{eid}_GEN"] = gen_face.HashCode(10000000)
+                            linker.mapping[f"{eid}_GEN"] = get_shape_hash(gen_face, 10000000)
 
                 current_feat_shape = comp
             else:
@@ -1323,7 +1323,7 @@ class TopologicalLinker:
         
     def record_generation(self, tns_name, shape):
         if shape is None or (HAS_OCC and shape.IsNull()): return
-        h = shape.HashCode(10000000)
+        h = get_shape_hash(shape, 10000000)
         self.generation_map[tns_name] = h
         self.shape_pool[h] = shape
 
@@ -1334,7 +1334,7 @@ class TopologicalLinker:
         
         for orig in original_shapes:
             if orig is None or (HAS_OCC and orig.IsNull()): continue
-            h_orig = orig.HashCode(10000000)
+            h_orig = get_shape_hash(orig, 10000000)
             self.shape_pool[h_orig] = orig
             
             # Get color from original shape if it exists
@@ -1345,7 +1345,7 @@ class TopologicalLinker:
                 exp = TopExp_Explorer(orig, sub_type)
                 while exp.More():
                     sub = exp.Current()
-                    h_sub = sub.HashCode(10000000)
+                    h_sub = get_shape_hash(sub, 10000000)
                     self.shape_pool[h_sub] = sub
                     
                     # Inherit color from parent if sub-shape doesn't have one
@@ -1358,7 +1358,7 @@ class TopologicalLinker:
                         exp_gen = TopExp_Explorer(generated_list, sub_type)
                         while exp_gen.More():
                             gen_sub = exp_gen.Current()
-                            h_gen = gen_sub.HashCode(10000000)
+                            h_gen = get_shape_hash(gen_sub, 10000000)
                             if h_sub not in self.mapping: self.mapping[h_sub] = []
                             self.mapping[h_sub].append(h_gen)
                             self.shape_pool[h_gen] = gen_sub
@@ -1372,7 +1372,7 @@ class TopologicalLinker:
                         exp_mod = TopExp_Explorer(modified_list, sub_type)
                         while exp_mod.More():
                             mod_sub = exp_mod.Current()
-                            h_mod = mod_sub.HashCode(10000000)
+                            h_mod = get_shape_hash(mod_sub, 10000000)
                             if h_sub not in self.mapping: self.mapping[h_sub] = []
                             self.mapping[h_sub].append(h_mod)
                             self.shape_pool[h_mod] = mod_sub
@@ -1462,7 +1462,7 @@ def process_features(features, deflection=0.01):
                                         edges_to_fillet = get_tangent_edges(final_shape, matched_edge)
                                         
                                     for e in edges_to_fillet:
-                                        ehash = e.HashCode(2**31 - 1)
+                                        ehash = get_shape_hash(e, 2**31 - 1)
                                         if ehash not in visited_hashes:
                                             if abs(r1 - r2) < 1e-4:
                                                 fillet_tool.Add(r1, e)
@@ -1677,7 +1677,7 @@ def process_features(features, deflection=0.01):
         if current_feat_shape:
             # Assign color to the new shape in the linker
             if f_color:
-                h_feat = current_feat_shape.HashCode(10000000)
+                h_feat = get_shape_hash(current_feat_shape, 10000000)
                 linker.color_map[h_feat] = f_color
 
             if final_shape is None:
@@ -1739,9 +1739,11 @@ def build_shape_only(
         if hasattr(feat, 'type'):
             f_type = feat.type
             params = feat.parameters
+            f_color = getattr(feat, 'color', None)
         else:
             f_type = feat.get('type')
             params = feat.get('parameters', {})
+            f_color = feat.get('color')
 
         op = params.get('operation', 'ADD')
         current_feat_shape = None
@@ -1831,7 +1833,7 @@ def build_shape_only(
                                         edges_to_chamfer = get_tangent_edges(final_shape, matched_edge)
                                     
                                     for e in edges_to_chamfer:
-                                        ehash = e.HashCode(2**31 - 1)
+                                        ehash = get_shape_hash(e, 2**31 - 1)
                                         if ehash not in visited_hashes:
                                             chamfer_tool.Add(distance, e)
                                             visited_hashes.add(ehash)
@@ -1878,7 +1880,7 @@ def build_shape_only(
                                         edges_to_fillet = get_tangent_edges(final_shape, matched_edge)
                                         
                                     for e in edges_to_fillet:
-                                        ehash = e.HashCode(2**31 - 1)
+                                        ehash = get_shape_hash(e, 2**31 - 1)
                                         if ehash not in visited_hashes:
                                             if abs(r1 - r2) < 1e-4:
                                                 fillet_tool.Add(r1, e)
@@ -2224,7 +2226,7 @@ def build_shape_only(
         if current_feat_shape:
             # Assign color to the new shape in the linker
             if f_color:
-                h_feat = current_feat_shape.HashCode(10000000)
+                h_feat = get_shape_hash(current_feat_shape, 10000000)
                 linker.color_map[h_feat] = f_color
 
             if final_shape is None:
