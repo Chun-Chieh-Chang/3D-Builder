@@ -83,5 +83,17 @@ No code change should be made without following these steps:
 
 ---
 
-## 5. Activation
+## 5. PythonOCC / CAD Geometry Kernel Rules (幾何核心開發守則)
+When modifying the CAD backend geometry services (such as `geometry_service.py`):
+- **Never Direct `.HashCode()` Calls**: Never call `.HashCode(...)` directly on OpenCASCADE shapes (`TopoDS_Face`, `TopoDS_Edge`, etc.) as newer PythonOCC versions have removed this method. Always use the version-independent wrapper `get_shape_hash(shape, upper_bound)`.
+- **Defensive Variable Definition**: Inside topological loop structures (like `TopExp_Explorer(shape, TopAbs_FACE)`), always explicitly extract the variable (e.g., `face = topods.Face(explorer.Current())`) immediately at the start of the loop before referencing it.
+- **Local Regression Validation**: Before executing any git commit or push, you MUST run `npm run test:regression` locally to ensure that both the frontend golden tests and the backend unit tests pass 100%.
+
+## 6. Clean CI Environment Defense (乾淨環境防禦)
+When configuring package scripts or lifecycle hooks (like `postinstall`):
+- **Conditional Hook Execution**: Never write hardcoded install hook scripts that depend on local development directories (e.g., `vendor/SkillsBuilder`) without verifying their existence. Always use conditional node commands (e.g., `fs.existsSync`) to prevent blocking clean/isolated CI containers.
+
+---
+
+## 7. Activation
 在任何專案目錄對我說：**「啟動 SkillsBuilder 開發模式」**，或在系統中調用全域 `skills_builder` 知識項（Knowledge Item）以喚醒此規則手冊。

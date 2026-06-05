@@ -1,5 +1,5 @@
 # Handover Resume Guide (Auto-Generated)
-**Last Saved:** 2026-06-05 21:12:26
+**Last Saved:** 2026-06-05 21:14:23
 
 > [!IMPORTANT]
 > **To the next Agent/Human taking over:** 
@@ -7,12 +7,12 @@
 
 ## 1. Current Git State
 ```shell
-a724074 fix: resolve pythonocc HashCode AttributeError and build_shape_only f_color NameError
+b4ff396 ci: integrate backend pytest suite into npm test:regression pipeline
 ```
 
 ### Uncommitted Changes
 ```shell
-M package.json
+M wiki/global_rules.md
 ?? sync.ffs_db
 ```
 
