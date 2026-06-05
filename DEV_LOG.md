@@ -1,5 +1,14 @@
 # DEV_LOG (開發日誌)
 
+## 2026-06-05 Branch Merge and Cleanup (分支合併與清理)
+
+### Motivation:
+將功能開發完畢並通過驗證的 `origin-main-check` 分支合併至 `main` 主分支，並依指示清理遠端與本地之臨時分支，保持 Git 線圖之乾淨與整潔。
+
+### Implementation:
+1. **本地合併**: 將 `origin-main-check` 合併至 `main`，並修復衝突與編譯警告，測試編譯成功。
+2. **推送與清理**: 推送 `main` 至遠端，並刪除本地與遠端之 `origin-main-check` 分支。
+
 ## 2026-06-05 SolidWorks Compatibility Gap Analyzer Skill (SolidWorks 差異分析技能建立)
 
 ### Motivation:
