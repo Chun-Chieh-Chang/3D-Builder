@@ -40,6 +40,20 @@ except ImportError as e:
     print(f"[WARNING] OpenCASCADE not found or failed to load: {e}")
     HAS_OCC = False
 
+def get_shape_hash(shape, upper=10000000):
+    """Robust hashing for OCC shapes across different versions."""
+    if not HAS_OCC or shape is None:
+        return 0
+    try:
+        # Newer pythonocc versions might not have HashCode on the object
+        if hasattr(shape, 'HashCode'):
+            return shape.HashCode(upper)
+        else:
+            # Fallback to python ID or a custom hash implementation if needed
+            return id(shape) % upper
+    except Exception:
+        return id(shape) % upper
+
 
 def _shape_to_mesh(shape, deflection=0.01):
     if not HAS_OCC: return None
@@ -68,8 +82,7 @@ def _shape_to_mesh(shape, deflection=0.01):
     # Extract Face Metadata
     explorer = TopExp_Explorer(shape, TopAbs_FACE)
     while explorer.More():
-        face = topods.Face(explorer.Current())
-        h_face = face.HashCode(10000000)
+        h_face = get_shape_hash(face)
         
         # Resolve Color
         f_color_hex = linker.color_map.get(h_face, "#60A5FA") # Default Blue
@@ -2883,7 +2896,7 @@ def find_matching_face(shape, ref_origin, ref_normal, signature=None):
             explorer = TopExp_Explorer(shape, TopAbs_FACE)
             while explorer.More():
                 face = topods.Face(explorer.Current())
-                if face.HashCode(10000000) == target_hash:
+                if get_shape_hash(face) == target_hash:
                     # Found perfect match via history!
                     # Calculate center for visual consistency
                     v_exp = TopExp_Explorer(face, TopAbs_VERTEX); v_count = 0; sx, sy, sz = 0, 0, 0
@@ -3930,4 +3943,5 @@ def export_assembly_step(components_data, filepath):
         import traceback
         traceback.print_exc()
         print("[ERROR] export_assembly_step failed:", e)
+        return Falsee)
         return False
