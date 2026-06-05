@@ -1,0 +1,950 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SkillsBuilder Multi-Agent Closed-Loop PDCA System</title>
+  <!-- Google Fonts for premium typography -->
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+  <style>
+    /* DESIGN SYSTEM & TOKENS (Based on Color Master Palette) */
+    :root {
+      /* Light Mode */
+      --bg-base: #F8FAFC;         /* Slate 50 */
+      --bg-surface: #FFFFFF;      /* Pure White */
+      --text-primary: #0F172A;    /* Slate 900 */
+      --text-secondary: #64748B;  /* Slate 500 */
+      --accent: #2563EB;          /* Royal Blue */
+      --accent-light: #EFF6FF;
+      --success: #059669;         /* Emerald 600 */
+      --success-light: #ECFDF5;
+      --warning: #EA580C;         /* Orange 600 */
+      --warning-light: #FFF7ED;
+      --error: #DC2626;           /* Red 600 */
+      --error-light: #FEE2E2;
+      --border: #E2E8F0;          /* Slate 200 */
+      --shadow: rgba(15, 23, 42, 0.05);
+      --shadow-hover: rgba(15, 23, 42, 0.1);
+
+      /* CSS variables for SVG Gradient Fills */
+      --grad-user-start: #EFF6FF;
+      --grad-user-end: #DBEAFE;
+      --grad-expert-start: #F5F3FF;
+      --grad-expert-end: #EDE9FE;
+      --grad-robot-start: #FFF7ED;
+      --grad-robot-end: #FFEDD5;
+      --grad-complete-start: #ECFDF5;
+      --grad-complete-end: #D1FAE5;
+      --grad-repair-bg: #FFFFFF;
+
+      --font-heading: 'Plus Jakarta Sans', sans-serif;
+      --font-body: 'Inter', sans-serif;
+      --font-mono: 'JetBrains Mono', monospace;
+    }
+
+    [data-theme="dark"] {
+      /* Dark Mode */
+      --bg-base: #0F172A;         /* Slate 900 */
+      --bg-surface: #1E293B;      /* Slate 800 */
+      --text-primary: #F1F5F9;    /* Slate 100 */
+      --text-secondary: #94A3B8;  /* Slate 400 */
+      --accent: #3B82F6;          /* Sky Blue */
+      --accent-light: #1E3A8A;
+      --success: #10B981;         /* Emerald */
+      --success-light: #064E3B;
+      --warning: #F97316;         /* Amber/Orange */
+      --warning-light: #7C2D12;
+      --error: #EF4444;           /* Red Light */
+      --error-light: #7F1D1D;
+      --border: #334155;          /* Slate 700 */
+      --shadow: rgba(0, 0, 0, 0.15);
+      --shadow-hover: rgba(0, 0, 0, 0.25);
+
+      /* Dark mode SVG Gradient Fills */
+      --grad-user-start: #1E3A8A;
+      --grad-user-end: #172554;
+      --grad-expert-start: #4C1D95;
+      --grad-expert-end: #2E1065;
+      --grad-robot-start: #7C2D12;
+      --grad-robot-end: #431407;
+      --grad-complete-start: #064E3B;
+      --grad-complete-end: #022C22;
+      --grad-repair-bg: #1E293B;
+    }
+
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+      transition: background-color 0.3s ease, border-color 0.3s ease, color 0.3s ease;
+    }
+
+    body {
+      background-color: var(--bg-base);
+      color: var(--text-primary);
+      font-family: var(--font-body);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 32px 24px;
+    }
+
+    header {
+      width: 100%;
+      max-width: 1300px;
+      margin-bottom: 24px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 16px;
+    }
+
+    .title-area h1 {
+      font-family: var(--font-heading);
+      font-size: clamp(22px, 3vw, 30px);
+      font-weight: 800;
+      letter-spacing: -0.03em;
+      line-height: 1.15;
+    }
+
+    .title-area h1 span {
+      background: linear-gradient(135deg, var(--accent), #8B5CF6);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      color: var(--accent);
+    }
+
+    .title-area p {
+      color: var(--text-secondary);
+      font-size: 14px;
+      margin-top: 4px;
+      font-weight: 500;
+    }
+
+    /* Theme Toggle Switch */
+    .theme-toggle {
+      background: var(--bg-surface);
+      border: 1px solid var(--border);
+      color: var(--text-primary);
+      padding: 8px 16px;
+      border-radius: 50px;
+      font-size: 14px;
+      font-weight: 600;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      box-shadow: 0 2px 8px var(--shadow);
+    }
+
+    .theme-toggle:hover {
+      box-shadow: 0 4px 12px var(--shadow-hover);
+      transform: translateY(-1px);
+    }
+
+    /* Main Dashboard Container */
+    .dashboard-container {
+      width: 100%;
+      max-width: 1300px;
+      background: var(--bg-surface);
+      border: 1px solid var(--border);
+      border-radius: 24px;
+      box-shadow: 0 10px 30px var(--shadow);
+      padding: 24px;
+      display: grid;
+      grid-template-columns: 1.25fr 0.95fr;
+      gap: 24px;
+    }
+
+    @media (max-width: 1024px) {
+      .dashboard-container {
+        grid-template-columns: 1fr;
+        padding: 16px;
+      }
+    }
+
+    /* Left Panel: Flow Diagram Container */
+    .diagram-panel {
+      display: flex;
+      flex-direction: column;
+      justify-content: flex-start;
+      align-items: stretch;
+      background: var(--bg-base);
+      border: 1px solid var(--border);
+      border-radius: 20px;
+      padding: 24px;
+      position: relative;
+      overflow: hidden;
+      min-height: 840px;
+    }
+
+    .diagram-panel-title {
+      font-family: var(--font-heading);
+      font-size: 14px;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--text-secondary);
+      margin-bottom: 16px;
+    }
+
+    /* SVG Interactive Styling - Maximize scale */
+    svg {
+      width: 100%;
+      height: 100%;
+      max-height: 780px;
+      display: block;
+      margin: auto;
+    }
+
+    .node {
+      cursor: pointer;
+    }
+
+    .node-body {
+      transition: transform 0.25s cubic-bezier(0.4, 0, 0.2, 1), filter 0.25s ease;
+    }
+
+    .node:hover .node-body {
+      transform: translateY(-3px);
+      filter: drop-shadow(0 8px 12px rgba(0, 0, 0, 0.08));
+    }
+
+    /* Active Highlight States */
+    .node.active .node-body rect {
+      stroke-width: 3px;
+      stroke: var(--accent);
+      filter: drop-shadow(0 0 8px var(--accent));
+    }
+    
+    .node.active.success-node .node-body rect {
+      stroke: var(--success);
+      filter: drop-shadow(0 0 8px var(--success));
+    }
+
+    .node.active.robot-node .node-body rect {
+      stroke: var(--warning);
+      filter: drop-shadow(0 0 12px var(--warning));
+    }
+
+    /* ═══ SVG Text Styling - High Contrast & Adherence to >=13px Rule ═══ */
+    .node-emoji {
+      fill: var(--text-primary);
+    }
+    .zone-header {
+      fill: var(--text-secondary);
+      font-family: var(--font-heading);
+      font-weight: 800;
+    }
+    .flow-step-label {
+      fill: var(--text-secondary);
+      font-family: var(--font-body);
+      font-weight: 600;
+    }
+
+    /* Badges in arrows */
+    .badge-blocked-text { fill: var(--error); }
+    .badge-success-text { fill: var(--success); }
+    .badge-feedback-text { fill: var(--warning); }
+
+    /* Light Mode Node Texts */
+    .node-title-user { fill: #1E3A8A; }
+    .node-sub-user { fill: #2563EB; }
+    .badge-text-user { fill: #1E3A8A; }
+
+    .node-title-expert { fill: #4C1D95; }
+    .node-sub-expert { fill: #7C3AED; }
+    .badge-text-expert { fill: #4C1D95; }
+
+    .node-title-robot { fill: #7C2D12; }
+    .node-sub-robot { fill: #C2410C; }
+    .node-desc-robot { fill: #9A3412; }
+    .badge-text-robot { fill: #FFFFFF; }
+
+    .node-title-complete { fill: #064E3B; }
+    .node-sub-complete { fill: #059669; }
+    .badge-text-complete { fill: #064E3B; }
+
+    .node-title-architect { fill: #1E3A8A; }
+    .node-sub-architect { fill: #2563EB; }
+    .badge-text-architect { fill: #2563EB; }
+
+    .node-title-implementer { fill: #064E3B; }
+    .node-sub-implementer { fill: #059669; }
+    .badge-text-implementer { fill: #059669; }
+
+    .node-title-qa { fill: #7C2D12; }
+    .node-sub-qa { fill: #C2410C; }
+    .badge-text-qa { fill: #EA580C; }
+
+    /* Dark Mode Node Texts (Dynamically activated) */
+    [data-theme="dark"] .node-emoji { fill: var(--text-primary); }
+    [data-theme="dark"] .node-body rect { fill-opacity: 0.95; }
+
+    [data-theme="dark"] .node-title-user { fill: #EFF6FF; }
+    [data-theme="dark"] .node-sub-user { fill: #93C5FD; }
+    [data-theme="dark"] .badge-text-user { fill: #93C5FD; }
+
+    [data-theme="dark"] .node-title-expert { fill: #F5F3FF; }
+    [data-theme="dark"] .node-sub-expert { fill: #C4B5FD; }
+    [data-theme="dark"] .badge-text-expert { fill: #C4B5FD; }
+
+    [data-theme="dark"] .node-title-robot { fill: #FFF7ED; }
+    [data-theme="dark"] .node-sub-robot { fill: #FDBA74; }
+    [data-theme="dark"] .node-desc-robot { fill: #FED7AA; }
+    [data-theme="dark"] .badge-text-robot { fill: #FFFFFF; }
+
+    [data-theme="dark"] .node-title-complete { fill: #ECFDF5; }
+    [data-theme="dark"] .node-sub-complete { fill: #A7F3D0; }
+    [data-theme="dark"] .badge-text-complete { fill: #A7F3D0; }
+
+    [data-theme="dark"] .node-title-architect { fill: #EFF6FF; }
+    [data-theme="dark"] .node-sub-architect { fill: #93C5FD; }
+    [data-theme="dark"] .badge-text-architect { fill: #93C5FD; }
+
+    [data-theme="dark"] .node-title-implementer { fill: #ECFDF5; }
+    [data-theme="dark"] .node-sub-implementer { fill: #A7F3D0; }
+    [data-theme="dark"] .badge-text-implementer { fill: #A7F3D0; }
+
+    [data-theme="dark"] .node-title-qa { fill: #FFF7ED; }
+    [data-theme="dark"] .node-sub-qa { fill: #FDBA74; }
+    [data-theme="dark"] .badge-text-qa { fill: #FDBA74; }
+
+    .flow-path {
+      transition: stroke-width 0.3s ease, stroke 0.3s ease;
+    }
+
+    .flow-path.active {
+      stroke-width: 4px !important;
+    }
+
+    .path-success.active { stroke: var(--success) !important; }
+    .path-blocked.active { stroke: var(--error) !important; }
+    .path-repair.active { stroke: var(--accent) !important; }
+    .path-feedback.active { stroke: var(--warning) !important; }
+
+    /* Keyframe Animations */
+    @keyframes dash-flow {
+      to {
+        stroke-dashoffset: -40;
+      }
+    }
+
+    .animated-dash {
+      stroke-dasharray: 10, 6;
+      animation: dash-flow 1.5s linear infinite;
+    }
+
+    @keyframes pulse-glow {
+      0%, 100% { opacity: 0.1; transform: scale(1.01); }
+      50% { opacity: 0.3; transform: scale(1.03); }
+    }
+
+    .robot-glow-ring {
+      animation: pulse-glow 3s ease-in-out infinite;
+      transform-origin: 240px 415px; /* Matching the Robot center */
+    }
+
+    /* Right Panel: Explanations & Sidebar */
+    .sidebar-panel {
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+
+    .sidebar-header {
+      border-bottom: 1px solid var(--border);
+      padding-bottom: 10px;
+    }
+
+    .sidebar-header h2 {
+      font-family: var(--font-heading);
+      font-size: 18px;
+      font-weight: 700;
+    }
+
+    .sidebar-header p {
+      color: var(--text-secondary);
+      font-size: 14px;
+      margin-top: 4px;
+    }
+
+    .agent-list {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      max-height: 650px;
+      overflow-y: auto;
+      padding-right: 4px;
+    }
+
+    /* Slim scrollbar for agent list */
+    .agent-list::-webkit-scrollbar {
+      width: 5px;
+    }
+    .agent-list::-webkit-scrollbar-track {
+      background: transparent;
+    }
+    .agent-list::-webkit-scrollbar-thumb {
+      background: var(--border);
+      border-radius: 10px;
+    }
+
+    .agent-card {
+      background: var(--bg-base);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 14px;
+      cursor: pointer;
+      position: relative;
+      overflow: hidden;
+      transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
+    }
+
+    .agent-card::before {
+      content: '';
+      position: absolute;
+      left: 0;
+      top: 0;
+      bottom: 0;
+      width: 4px;
+      background: transparent;
+      transition: background-color 0.2s ease;
+    }
+
+    .agent-card:hover {
+      transform: translateX(3px);
+      box-shadow: 0 4px 10px var(--shadow);
+      border-color: var(--accent);
+    }
+
+    .agent-card.active {
+      background: var(--bg-surface);
+      border-color: var(--accent);
+      box-shadow: 0 4px 12px var(--shadow);
+    }
+
+    .agent-card.active::before {
+      background-color: var(--accent);
+    }
+
+    /* Card coloring variants */
+    .agent-card.success-card.active { border-color: var(--success); }
+    .agent-card.success-card.active::before { background-color: var(--success); }
+    
+    .agent-card.robot-card.active { border-color: var(--warning); }
+    .agent-card.robot-card.active::before { background-color: var(--warning); }
+
+    .agent-card-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 4px;
+    }
+
+    .agent-card-title {
+      font-size: 15px;
+      font-weight: 700;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .agent-card-badge {
+      font-family: var(--font-mono);
+      font-size: 13px;
+      font-weight: 700;
+      padding: 2px 8px;
+      border-radius: 50px;
+      background: var(--border);
+      color: var(--text-secondary);
+      letter-spacing: 0.05em;
+    }
+
+    .agent-card.active .agent-card-badge {
+      background: var(--accent-light);
+      color: var(--accent);
+    }
+    .agent-card.robot-card.active .agent-card-badge {
+      background: var(--warning-light);
+      color: var(--warning);
+    }
+    .agent-card.success-card.active .agent-card-badge {
+      background: var(--success-light);
+      color: var(--success);
+    }
+
+    .agent-card-desc {
+      color: var(--text-secondary);
+      font-size: 13.5px;
+      line-height: 1.5;
+    }
+
+    /* Footer / Legend explanation */
+    .footer-desc {
+      margin-top: 12px;
+      padding-top: 12px;
+      border-top: 1px solid var(--border);
+      color: var(--text-secondary);
+      font-size: 13px;
+      line-height: 1.5;
+    }
+
+    .footer-desc strong {
+      color: var(--text-primary);
+    }
+  </style>
+</head>
+<body>
+
+  <header>
+    <div class="title-area">
+      <h1>SkillsBuilder <span>Multi-Agent PDCA</span></h1>
+      <p>基於自適應修復機制的閉環自動化工程系統工作流 (Closed-Loop Diagram v3)</p>
+    </div>
+    <button class="theme-toggle" id="themeBtn" aria-label="Toggle dark mode">
+      <span id="themeIcon">☀️</span> <span id="themeText">切換深色</span>
+    </button>
+  </header>
+
+  <main class="dashboard-container">
+    
+    <!-- LEFT PANEL: SVG FLOW DIAGRAM -->
+    <section class="diagram-panel">
+      <div class="diagram-panel-title">互動式流程結構圖 (Interacts on hover)</div>
+      
+      <!-- Compacted viewBox 700x860 for large scaled nodes, shifted down to clear headers -->
+      <svg viewBox="0 0 700 860" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <defs>
+          <!-- Gradients for premium aesthetics, powered dynamically by CSS variables -->
+          <linearGradient id="grad-user" x1="0%" y1="0%" x2="100%" y2="100%">
+            <stop offset="0%" stop-color="var(--grad-user-start)"/>
+            <stop offset="100%" stop-color="var(--grad-user-end)"/>
+          </linearGradient>
+          <linearGradient id="grad-expert" x1="0%" y1="0%" x2="100%" y2="100%">
+            <stop offset="0%" stop-color="var(--grad-expert-start)"/>
+            <stop offset="100%" stop-color="var(--grad-expert-end)"/>
+          </linearGradient>
+          <linearGradient id="grad-robot" x1="0%" y1="0%" x2="100%" y2="100%">
+            <stop offset="0%" stop-color="var(--grad-robot-start)"/>
+            <stop offset="100%" stop-color="var(--grad-robot-end)"/>
+          </linearGradient>
+          <linearGradient id="grad-complete" x1="0%" y1="0%" x2="100%" y2="100%">
+            <stop offset="0%" stop-color="var(--grad-complete-start)"/>
+            <stop offset="100%" stop-color="var(--grad-complete-end)"/>
+          </linearGradient>
+
+          <!-- Shadows -->
+          <filter id="shadow-soft" x="-10%" y="-10%" width="120%" height="120%">
+            <feDropShadow dx="0" dy="4" stdDeviation="6" flood-color="#0F172A" flood-opacity="0.06"/>
+          </filter>
+
+          <!-- Glowing Filters -->
+          <filter id="glow-robot" x="-20%" y="-20%" width="140%" height="140%">
+            <feGaussianBlur stdDeviation="6" result="blur"/>
+            <feMerge>
+              <feMergeNode in="blur"/>
+              <feMergeNode in="SourceGraphic"/>
+            </feMerge>
+          </filter>
+
+          <!-- Arrowheads (Markers) -->
+          <marker id="arrow-gray" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto" markerUnits="userSpaceOnUse">
+            <path d="M0 0 L8 3 L0 6z" fill="#94A3B8"/>
+          </marker>
+          <marker id="arrow-green" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto" markerUnits="userSpaceOnUse">
+            <path d="M0 0 L8 3 L0 6z" fill="#10B981"/>
+          </marker>
+          <marker id="arrow-red" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto" markerUnits="userSpaceOnUse">
+            <path d="M0 0 L8 3 L0 6z" fill="#EF4444"/>
+          </marker>
+          <marker id="arrow-orange" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto" markerUnits="userSpaceOnUse">
+            <path d="M0 0 L8 3 L0 6z" fill="#F97316"/>
+          </marker>
+        </defs>
+
+        <!-- Dynamic Loop Area Backgrounds -->
+        <g id="zone-backgrounds">
+          <!-- Main flow column zone background (subtle light border) shifted to y=65 -->
+          <rect x="90" y="65" width="300" height="740" rx="24" fill="none" stroke="var(--border)" stroke-width="1" stroke-dasharray="4 4"/>
+          <!-- Repair Loop column zone background (warm background tint) shifted to y=65 -->
+          <rect x="420" y="65" width="260" height="740" rx="24" fill="var(--bg-base)" stroke="var(--border)" stroke-width="1"/>
+          
+          <!-- Zone Labels (Shifted cleanly up, well above the cards, now classed) -->
+          <text x="550" y="44" text-anchor="middle" font-size="14" class="zone-header">🔄 AUTO REPAIR ZONE</text>
+          <text x="240" y="44" text-anchor="middle" font-size="14" class="zone-header">MAIN FLOW</text>
+        </g>
+
+        <!-- Glow Ring for Robot Node -->
+        <rect class="robot-glow-ring" x="102" y="362" width="276" height="106" rx="20" fill="none" stroke="#F97316" stroke-width="8" opacity="0.15" filter="url(#glow-robot)"/>
+
+        <!-- ═══ FLOW PATH LINES ═══ -->
+        <g id="flow-paths">
+          <!-- User -> Expert -->
+          <line id="path-user-expert" class="flow-path" x1="240" y1="160" x2="240" y2="222" stroke="#94A3B8" stroke-width="2" marker-end="url(#arrow-gray)"/>
+          
+          <!-- Expert -> Robot -->
+          <line id="path-expert-robot" class="flow-path" x1="240" y1="300" x2="240" y2="362" stroke="#94A3B8" stroke-width="2" marker-end="url(#arrow-gray)"/>
+          
+          <!-- Robot -> Success (Emerald) -->
+          <line id="path-robot-success" class="flow-path path-success" x1="240" y1="460" x2="240" y2="562" stroke="#10B981" stroke-width="2.5" marker-end="url(#arrow-green)"/>
+          
+          <!-- Robot -> Architect (Blocked - Red, Perfectly Horizontal at y=415) -->
+          <line id="path-robot-blocked" class="flow-path path-blocked" x1="370" y1="415" x2="452" y2="415" stroke="#EF4444" stroke-width="2.5" marker-end="url(#arrow-red)"/>
+          
+          <!-- Architect -> Implementer -->
+          <line id="path-architect-implementer" class="flow-path path-repair" x1="560" y1="452.5" x2="560" y2="519.5" stroke="#94A3B8" stroke-width="2" marker-end="url(#arrow-gray)"/>
+          
+          <!-- Implementer -> QA -->
+          <line id="path-implementer-qa" class="flow-path path-repair" x1="560" y1="602.5" x2="560" y2="669.5" stroke="#94A3B8" stroke-width="2" marker-end="url(#arrow-gray)"/>
+          
+          <!-- QA -> Robot Feedback Loop (Amber/Orange)
+               Starts QA left: (460, 715)
+               Sweeps smoothly down below Complete node (Complete bottom is y=640, curve passes at y=810)
+               Vertical channel on the left runs at x=50.
+               Enters Robot left: (110, 415).
+          -->
+          <path id="path-feedback-loop" class="flow-path path-feedback animated-dash" 
+                d="M 460,715 C 390,810 290,810 200,810 L 120,810 C 80,810 50,770 50,710 L 50,465 C 50,415 70,415 110,415" 
+                fill="none" stroke="#F97316" stroke-width="2.5" marker-end="url(#arrow-orange)"/>
+        </g>
+
+        <!-- ═══ PATH BADGES / LABELS (All font sizes >= 13px) ═══ -->
+        <g id="path-labels" font-family="var(--font-heading)" font-weight="700" font-size="13">
+          <!-- Blocked Badge (Robot -> Architect) -->
+          <g transform="translate(381, 404)">
+            <rect width="68" height="22" rx="11" fill="var(--error-light)" stroke="var(--error)" stroke-width="1"/>
+            <text x="34" y="16" text-anchor="middle" class="badge-blocked-text">🚨 阻礙</text>
+          </g>
+
+          <!-- Success Badge (Robot -> Success) -->
+          <g transform="translate(206, 500)">
+            <rect width="68" height="22" rx="11" fill="var(--success-light)" stroke="var(--success)" stroke-width="1"/>
+            <text x="34" y="16" text-anchor="middle" class="badge-success-text">✅ 成功</text>
+          </g>
+
+          <!-- Feedback Retry Badge (QA -> Robot) -->
+          <g transform="translate(112, 799)">
+            <rect width="96" height="22" rx="11" fill="var(--warning-light)" stroke="var(--warning)" stroke-width="1"/>
+            <text x="48" y="16" text-anchor="middle" class="badge-feedback-text">↺ 循環重試</text>
+          </g>
+
+          <!-- Repair Step 1 Label -->
+          <text x="580" y="490" class="flow-step-label">根因分析 &rarr; 方案設計</text>
+          <!-- Repair Step 2 Label -->
+          <text x="580" y="640" class="flow-step-label">精密修復 &rarr; 回歸驗證</text>
+        </g>
+
+        <!-- ═══ NODES (All text elements inside cards >= 13px with explicit CSS classes) ═══ -->
+        <!-- 1. User Input (Shifted to y=90) -->
+        <g id="node-user" class="node" data-target="card-user" transform="translate(120, 90)">
+          <!-- Stationary transparent pointer target to prevent hover jitter -->
+          <rect width="240" height="70" fill="none" pointer-events="all"/>
+          <g class="node-body">
+            <rect width="240" height="70" rx="12" fill="url(#grad-user)" stroke="#3B82F6" stroke-width="1.5" filter="url(#shadow-soft)"/>
+            <text x="20" y="43" font-size="22" class="node-emoji">👤</text>
+            <text x="54" y="32" font-family="var(--font-heading)" font-weight="700" font-size="14.5" class="node-title-user">使用者指令</text>
+            <text x="54" y="52" font-family="var(--font-body)" font-weight="500" font-size="13" class="node-sub-user">User Input / YouTube SOP</text>
+            <rect x="165" y="10" width="65" height="20" rx="10" fill="#3B82F6" opacity="0.2"/>
+            <text x="197.5" y="24" text-anchor="middle" font-family="var(--font-mono)" font-size="13" font-weight="700" class="badge-text-user">INPUT</text>
+          </g>
+        </g>
+
+        <!-- 2. SolidWorks Expert -->
+        <g id="node-expert" class="node" data-target="card-expert" transform="translate(120, 230)">
+          <!-- Stationary transparent pointer target to prevent hover jitter -->
+          <rect width="240" height="70" fill="none" pointer-events="all"/>
+          <g class="node-body">
+            <rect width="240" height="70" rx="12" fill="url(#grad-expert)" stroke="#7C3AED" stroke-width="1.5" filter="url(#shadow-soft)"/>
+            <text x="20" y="43" font-size="22" class="node-emoji">🧠</text>
+            <text x="54" y="32" font-family="var(--font-heading)" font-weight="700" font-size="14.5" class="node-title-expert">SolidWorks 專家</text>
+            <text x="54" y="52" font-family="var(--font-body)" font-weight="500" font-size="13" class="node-sub-expert">解析幾何特徵與步驟</text>
+            <rect x="175" y="10" width="55" height="20" rx="10" fill="#7C3AED" opacity="0.2"/>
+            <text x="202.5" y="24" text-anchor="middle" font-family="var(--font-mono)" font-size="13" font-weight="700" class="badge-text-expert">PLAN</text>
+          </g>
+        </g>
+
+        <!-- 3. Automation Robot (Pivot Node) -->
+        <g id="node-robot" class="node robot-node" data-target="card-robot" transform="translate(110, 370)">
+          <!-- Stationary transparent pointer target to prevent hover jitter -->
+          <rect width="260" height="90" fill="none" pointer-events="all"/>
+          <g class="node-body">
+            <!-- Outer border for premium double-border glow -->
+            <rect width="260" height="90" rx="16" fill="url(#grad-robot)" stroke="#F97316" stroke-width="2.5" filter="url(#shadow-soft)"/>
+            <rect x="4" y="4" width="252" height="82" rx="12" fill="none" stroke="#FDBA74" stroke-width="1"/>
+            <text x="18" y="54" font-size="26" class="node-emoji">🤖</text>
+            <text x="58" y="32" font-family="var(--font-heading)" font-weight="800" font-size="15" class="node-title-robot">UI 實作機器人</text>
+            <text x="58" y="52" font-family="var(--font-mono)" font-size="13" font-weight="600" class="node-sub-robot">browser_subagent (DO)</text>
+            <text x="58" y="71" font-family="var(--font-body)" font-size="13" class="node-desc-robot">執行瀏覽器點擊與繪圖交互</text>
+            
+            <!-- Pivot indicator badge -->
+            <g transform="translate(180, 10)">
+              <rect width="70" height="20" rx="10" fill="#F97316" stroke="#FFFFFF" stroke-width="1"/>
+              <text x="35" y="14" text-anchor="middle" font-family="var(--font-heading)" font-weight="800" font-size="13" class="badge-text-robot">PIVOT &infin;</text>
+            </g>
+          </g>
+        </g>
+
+        <!-- 4. Complete Node -->
+        <g id="node-complete" class="node success-node" data-target="card-complete" transform="translate(120, 570)">
+          <!-- Stationary transparent pointer target to prevent hover jitter -->
+          <rect width="240" height="70" fill="none" pointer-events="all"/>
+          <g class="node-body">
+            <rect width="240" height="70" rx="12" fill="url(#grad-complete)" stroke="#10B981" stroke-width="1.5" filter="url(#shadow-soft)"/>
+            <text x="20" y="43" font-size="22" class="node-emoji">🎉</text>
+            <text x="54" y="32" font-family="var(--font-heading)" font-weight="700" font-size="14.5" class="node-title-complete">任務完成！</text>
+            <text x="54" y="52" font-family="var(--font-body)" font-weight="500" font-size="13" class="node-sub-complete">幾何驗證通過 &amp; 存檔輸出</text>
+            <rect x="175" y="10" width="55" height="20" rx="10" fill="#10B981" opacity="0.2"/>
+            <text x="202.5" y="24" text-anchor="middle" font-family="var(--font-mono)" font-size="13" font-weight="700" class="badge-text-complete">DONE</text>
+          </g>
+        </g>
+
+        <!-- 5. Architect Agent (Shifted vertically to align centers with Robot at center=415) -->
+        <g id="node-architect" class="node" data-target="card-architect" transform="translate(460, 377.5)">
+          <!-- Stationary transparent pointer target to prevent hover jitter -->
+          <rect width="200" height="75" fill="none" pointer-events="all"/>
+          <g class="node-body">
+            <rect width="200" height="75" rx="12" fill="var(--grad-repair-bg)" stroke="#2563EB" stroke-width="1.5" filter="url(#shadow-soft)"/>
+            <text x="16" y="46" font-size="20" class="node-emoji">📐</text>
+            <text x="44" y="34" font-family="var(--font-heading)" font-weight="700" font-size="14" class="node-title-architect">架構師代理</text>
+            <text x="44" y="54" font-family="var(--font-body)" font-weight="500" font-size="13" class="node-sub-architect">阻礙診斷與方案設計</text>
+            <rect x="130" y="8" width="60" height="20" rx="10" fill="#2563EB" opacity="0.15"/>
+            <text x="160" y="22" text-anchor="middle" font-family="var(--font-mono)" font-size="13" font-weight="800" class="badge-text-architect">ANALYZE</text>
+          </g>
+        </g>
+
+        <!-- 6. Implementer Agent -->
+        <g id="node-implementer" class="node" data-target="card-implementer" transform="translate(460, 527.5)">
+          <!-- Stationary transparent pointer target to prevent hover jitter -->
+          <rect width="200" height="75" fill="none" pointer-events="all"/>
+          <g class="node-body">
+            <rect width="200" height="75" rx="12" fill="var(--grad-repair-bg)" stroke="#10B981" stroke-width="1.5" filter="url(#shadow-soft)"/>
+            <text x="16" y="46" font-size="20" class="node-emoji">🔪</text>
+            <text x="44" y="34" font-family="var(--font-heading)" font-weight="700" font-size="14" class="node-title-implementer">核心實作代理</text>
+            <text x="44" y="54" font-family="var(--font-body)" font-weight="500" font-size="13" class="node-sub-implementer">執行代碼精準修復</text>
+            <rect x="130" y="8" width="60" height="20" rx="10" fill="#10B981" opacity="0.15"/>
+            <text x="160" y="22" text-anchor="middle" font-family="var(--font-mono)" font-size="13" font-weight="800" class="badge-text-implementer">ACT/DO</text>
+          </g>
+        </g>
+
+        <!-- 7. QA Agent -->
+        <g id="node-qa" class="node" data-target="card-qa" transform="translate(460, 677.5)">
+          <!-- Stationary transparent pointer target to prevent hover jitter -->
+          <rect width="200" height="75" fill="none" pointer-events="all"/>
+          <g class="node-body">
+            <rect width="200" height="75" rx="12" fill="var(--grad-repair-bg)" stroke="#EA580C" stroke-width="1.5" filter="url(#shadow-soft)"/>
+            <text x="16" y="46" font-size="20" class="node-emoji">🛡️</text>
+            <text x="44" y="34" font-family="var(--font-heading)" font-weight="700" font-size="14" class="node-title-qa">品質保證代理</text>
+            <text x="44" y="54" font-family="var(--font-body)" font-weight="500" font-size="13" class="node-sub-qa">回歸驗證與 Build 檢查</text>
+            <rect x="130" y="8" width="60" height="20" rx="10" fill="#EA580C" opacity="0.15"/>
+            <text x="160" y="22" text-anchor="middle" font-family="var(--font-mono)" font-size="13" font-weight="800" class="badge-text-qa">CHECK</text>
+          </g>
+        </g>
+      </svg>
+    </section>
+
+    <!-- RIGHT PANEL: SIDEBAR DOCUMENTATION -->
+    <section class="sidebar-panel">
+      <div class="sidebar-header">
+        <h2>多代理協同系統角色說明</h2>
+        <p>點擊下方卡片或圖中節點以高亮查看對應的工作流區塊</p>
+      </div>
+
+      <div class="agent-list">
+        <!-- User card -->
+        <div class="agent-card" id="card-user" data-node="node-user">
+          <div class="agent-card-header">
+            <span class="agent-card-title">👤 使用者指令 / SOP 輸入</span>
+            <span class="agent-card-badge">INPUT</span>
+          </div>
+          <p class="agent-card-desc">
+            輸入建模目標（例如 YouTube 影片網址或 SolidWorks 練習題 SOP）。系統會自動提取字幕、文字規格或工程參數。
+          </p>
+        </div>
+
+        <!-- Expert card -->
+        <div class="agent-card" id="card-expert" data-node="node-expert">
+          <div class="agent-card-header">
+            <span class="agent-card-title">🧠 SolidWorks 專家代理</span>
+            <span class="agent-card-badge">PLAN</span>
+          </div>
+          <p class="agent-card-desc">
+            負責將繁雜的建模需求拆解為精確的 CAD 特徵樹操作序列（例如：基準面選擇、草圖繪製、幾何約束約束、拉伸/旋轉特徵建立），提供明確的指導步驟。
+          </p>
+        </div>
+
+        <!-- Robot card -->
+        <div class="agent-card robot-card" id="card-robot" data-node="node-robot">
+          <div class="agent-card-header">
+            <span class="agent-card-title">🤖 UI 實作機器人 (Robot)</span>
+            <span class="agent-card-badge">DO</span>
+          </div>
+          <p class="agent-card-desc">
+            <strong>系統核心樞紐 (Pivot)。</strong>接手專家給予的步驟，實際控制瀏覽器子代理，在網頁端 UI 執行滑鼠點擊、參數輸入與草圖繪製，以對齊 SolidWorks 真實建模路徑。
+          </p>
+        </div>
+
+        <!-- Architect card -->
+        <div class="agent-card" id="card-architect" data-node="node-architect">
+          <div class="agent-card-header">
+            <span class="agent-card-title">📐 架構師代理 (Architect)</span>
+            <span class="agent-card-badge">ANALYZE</span>
+          </div>
+          <p class="agent-card-desc">
+            當實作機器人卡關（如找不到按鈕、特徵不支援、發生JS錯誤）時觸發。架構師介入審查錯誤日誌與代碼庫，定位最脆弱點，提供精準修補方案。
+          </p>
+        </div>
+
+        <!-- Implementer card -->
+        <div class="agent-card" id="card-implementer" data-node="node-implementer">
+          <div class="agent-card-header">
+            <span class="agent-card-title">🔪 核心實作代理 (Implementer)</span>
+            <span class="agent-card-badge">ACT/DO</span>
+          </div>
+          <p class="agent-card-desc">
+            負責實施架構師的修復提案，進行外科手術式的代碼修改（Surgical Edits），不帶引入副作用的前提下，精準修復代碼脆弱環節。
+          </p>
+        </div>
+
+        <!-- QA card -->
+        <div class="agent-card" id="card-qa" data-node="node-qa">
+          <div class="agent-card-header">
+            <span class="agent-card-title">🛡️ 品質保證代理 (QA)</span>
+            <span class="agent-card-badge">CHECK</span>
+          </div>
+          <p class="agent-card-desc">
+            在代碼修改完畢後，執行回歸掃描、單元測試與 build 流程完整性驗證。確保專案在零紅色警告狀態下，自動將控制權移交回實作機器人重試。
+          </p>
+        </div>
+
+        <!-- Complete card -->
+        <div class="agent-card success-card" id="card-complete" data-node="node-complete">
+          <div class="agent-card-header">
+            <span class="agent-card-title">🎉 任務完成 (Success Output)</span>
+            <span class="agent-card-badge">DONE</span>
+          </div>
+          <p class="agent-card-desc">
+            實作機器人在不遭遇阻礙的情況下順暢跑通所有建模步驟，3D模型正確生成並與後端 Mass Properties 驗證完全一致，輸出最終特徵模型。
+          </p>
+        </div>
+      </div>
+
+      <div class="footer-desc">
+        <strong>💡 設計亮點：</strong><br>
+        1. <strong>零交叉 (Cross-Free) 布局：</strong> 將「任務完成！」移至中央主軸，騰出左側的完全空白通道供橘色的「反饋重試」線條流經，彻底解決了舊版線條橫穿 green 卡片產生的視覺干擾。<br>
+        2. <strong>高對比色彩層次：</strong> 嚴格遵照色彩大師規範，使用微調 Slate/Cool Gray 作為背景，提供清透的卡片懸浮投影，標示明顯的 Phase 進度。<br>
+        3. <strong>自動修復自愈閉環：</strong> Robot (DO) 遇到 Blocker 時向右切換至修復流程，通過 QA 驗證後，藉由反饋線迴路重新注入 Robot，實現真正無人值守的自愈工程。
+      </div>
+
+    </section>
+
+  </main>
+
+  <script>
+    // Theme switching logic using dynamic CSS variables
+    const themeBtn = document.getElementById('themeBtn');
+    const themeIcon = document.getElementById('themeIcon');
+    const themeText = document.getElementById('themeText');
+    let currentTheme = localStorage.getItem('theme') || 'light';
+
+    function setTheme(theme) {
+      document.documentElement.setAttribute('data-theme', theme);
+      localStorage.setItem('theme', theme);
+      if (theme === 'dark') {
+        themeIcon.textContent = '🌙';
+        themeText.textContent = '切換淺色';
+      } else {
+        themeIcon.textContent = '☀️';
+        themeText.textContent = '切換深色';
+      }
+      currentTheme = theme;
+    }
+
+    // Initialize theme
+    setTheme(currentTheme);
+
+    themeBtn.addEventListener('click', () => {
+      setTheme(currentTheme === 'light' ? 'dark' : 'light');
+    });
+
+    // Interactive Node & Card Highlight Mapping
+    const nodes = document.querySelectorAll('.node');
+    const cards = document.querySelectorAll('.agent-card');
+    const paths = document.querySelectorAll('.flow-path');
+
+    // Define path-to-node mapping for highlighting connections
+    const pathConnections = {
+      'node-user': ['path-user-expert'],
+      'node-expert': ['path-user-expert', 'path-expert-robot'],
+      'node-robot': ['path-expert-robot', 'path-robot-success', 'path-robot-blocked', 'path-feedback-loop'],
+      'node-architect': ['path-robot-blocked', 'path-architect-implementer'],
+      'node-implementer': ['path-architect-implementer', 'path-implementer-qa'],
+      'node-qa': ['path-implementer-qa', 'path-feedback-loop'],
+      'node-complete': ['path-robot-success']
+    };
+
+    function highlightElement(nodeId, cardId) {
+      // Deactivate all
+      nodes.forEach(n => n.classList.remove('active'));
+      cards.forEach(c => c.classList.remove('active'));
+      paths.forEach(p => p.classList.remove('active'));
+
+      // Activate target node and card
+      const targetNode = document.getElementById(nodeId);
+      const targetCard = document.getElementById(cardId);
+      if (targetNode) targetNode.classList.add('active');
+      if (targetCard) targetCard.classList.add('active');
+
+      // Highlight associated flow paths
+      const connections = pathConnections[nodeId] || [];
+      connections.forEach(pathId => {
+        const pathEl = document.getElementById(pathId);
+        if (pathEl) pathEl.classList.add('active');
+      });
+    }
+
+    function resetHighlights() {
+      nodes.forEach(n => n.classList.remove('active'));
+      cards.forEach(c => {
+        c.classList.remove('active');
+      });
+      paths.forEach(p => p.classList.remove('active'));
+    }
+
+    // Add SVG Node Event Listeners
+    nodes.forEach(node => {
+      node.addEventListener('mouseenter', () => {
+        const nodeId = node.id;
+        const cardId = node.getAttribute('data-target');
+        highlightElement(nodeId, cardId);
+      });
+      node.addEventListener('mouseleave', () => {
+        resetHighlights();
+      });
+      node.addEventListener('click', () => {
+        const cardId = node.getAttribute('data-target');
+        const cardEl = document.getElementById(cardId);
+        if (cardEl) {
+          cardEl.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+          cardEl.style.transform = 'scale(1.02)';
+          setTimeout(() => cardEl.style.transform = '', 300);
+        }
+      });
+    });
+
+    // Add Sidebar Card Event Listeners
+    cards.forEach(card => {
+      card.addEventListener('mouseenter', () => {
+        const cardId = card.id;
+        const nodeId = card.getAttribute('data-node');
+        highlightElement(nodeId, cardId);
+      });
+      card.addEventListener('mouseleave', () => {
+        resetHighlights();
+      });
+    });
+  </script>
+</body>
+</html>

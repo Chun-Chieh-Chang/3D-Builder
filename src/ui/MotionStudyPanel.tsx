@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { useCadStore, MotionDriver, CADMate } from '../store/useCadStore';
+import { v4 as uuidv4 } from 'uuid';
 import { AssemblyService } from '../kernel/AssemblyService';
 
 export const MotionStudyPanel: React.FC = () => {
@@ -83,7 +84,7 @@ export const MotionStudyPanel: React.FC = () => {
   const handleAddDriver = () => {
     if (!selectedMateId) return;
     const newDriver: MotionDriver = {
-      id: `driver_${Date.now()}`,
+      id: `driver_${uuidv4()}`,
       mateId: selectedMateId,
       type: driverType,
       velocity: velocity

@@ -9,7 +9,7 @@ import { SelectToolHandler } from '../utils/sketch/ToolHandlers/SelectTool';
 import { ArcToolHandler } from '../utils/sketch/ToolHandlers/ArcTool';
 import { SplineToolHandler } from '../utils/sketch/ToolHandlers/SplineTool';
 import { CircleToolHandler } from '../utils/sketch/ToolHandlers/CircleTool';
-import { RectangleToolHandler } from '../utils/sketch/ToolHandlers/RectangleTool';
+import { RectangleToolHandler, CenterRectangleToolHandler } from '../utils/sketch/ToolHandlers/RectangleTool';
 import { sketchActions } from '../store/sketchActions';
 import { previewSolve, commitPreciseSketchSolve } from '@/kernel/SketchSolverService';
 
@@ -85,6 +85,69 @@ export const DatumPlanes = () => {
     if (activePlane === 'FACE') return faceBasis;
     return customBasis;
   }, [activePlane, faceBasis, customBasis]);
+
+  const sketchCoordinateSystem = useMemo(() => {
+    if (!activePlane) return null;
+    let origin = new THREE.Vector3(0, 0, 0);
+    let xDir = new THREE.Vector3(1, 0, 0);
+    let yDir = new THREE.Vector3(0, 1, 0);
+
+    if (activePlane === 'FRONT') {
+      origin.set(0, 0, 0);
+      xDir.set(1, 0, 0);
+      yDir.set(0, 1, 0);
+    } else if (activePlane === 'TOP') {
+      origin.set(0, 0, 0);
+      xDir.set(1, 0, 0);
+      yDir.set(0, 0, 1);
+    } else if (activePlane === 'RIGHT') {
+      origin.set(0, 0, 0);
+      xDir.set(0, 1, 0);
+      yDir.set(0, 0, 1);
+    } else {
+      const basis = activeBasis;
+      if (basis) {
+        origin.copy(basis.origin);
+        xDir.copy(basis.xDir);
+        yDir.copy(basis.yDir);
+      }
+    }
+    return { origin, xDir, yDir };
+  }, [activePlane, activeBasis]);
+
+  const originRings = useMemo(() => {
+    const R = 0.8;
+    const segments = 32;
+    const xy: [number, number, number][] = [];
+    const xz: [number, number, number][] = [];
+    const yz: [number, number, number][] = [];
+    for (let i = 0; i <= segments; i++) {
+      const theta = (i / segments) * Math.PI * 2;
+      const cos = Math.cos(theta) * R;
+      const sin = Math.sin(theta) * R;
+      xy.push([cos, sin, 0]);
+      xz.push([cos, 0, sin]);
+      yz.push([0, cos, sin]);
+    }
+    return { xy, xz, yz };
+  }, []);
+
+  const activeSketchOriginRing = useMemo(() => {
+    if (!sketchCoordinateSystem) return [];
+    const R = 0.8;
+    const segments = 32;
+    const pts: THREE.Vector3[] = [];
+    const { origin, xDir, yDir } = sketchCoordinateSystem;
+    for (let i = 0; i <= segments; i++) {
+      const theta = (i / segments) * Math.PI * 2;
+      const p = origin.clone()
+        .addScaledVector(xDir, R * Math.cos(theta))
+        .addScaledVector(yDir, R * Math.sin(theta));
+      pts.push(p);
+    }
+    return pts;
+  }, [sketchCoordinateSystem]);
+
 
   const getCustomFaceUV = (point: THREE.Vector3) => {
     const basis = activeBasis;
@@ -230,7 +293,7 @@ export const DatumPlanes = () => {
       setHasMovedAway(true);
     }
 
-    if (moveLastRef && (sketchTool === 'LINE' || sketchTool === 'CENTER_LINE' || sketchTool === 'RECTANGLE')) {
+    if (moveLastRef && (sketchTool === 'LINE' || sketchTool === 'CENTER_LINE' || sketchTool === 'RECTANGLE' || sketchTool === 'CENTER_RECTANGLE')) {
       const du = u - moveLastRef.u;
       const dv = v - moveLastRef.v;
       const len = Math.hypot(du, dv);
@@ -522,6 +585,11 @@ export const DatumPlanes = () => {
       syncLastClickedUV();
       return;
     }
+    if (sketchTool === 'CENTER_RECTANGLE') {
+      new CenterRectangleToolHandler().onPointerDown(ctx);
+      syncLastClickedUV();
+      return;
+    }
     useCadStore.setState((state) => {
       const nextNodes = { ...state.sketchNodes };
       const nextEdges = { ...state.sketchEdges };
@@ -532,7 +600,15 @@ export const DatumPlanes = () => {
          const eId = Object.values(nextEdges).find(e => {
             const n1 = nextNodes[e.nodeIds[0]];
             const n2 = nextNodes[e.nodeIds[1]];
-            return n1 && n2 && pointToSegmentDistance(u, v, n1.x, n1.y, n2.x, n2.y) < SNAP_DIST;
+            if (!n1 || !n2) return false;
+            
+            if (e.type === 'CIRCLE') {
+               const radius = Math.hypot(n2.x - n1.x, n2.y - n1.y);
+               const distToCenter = Math.hypot(u - n1.x, v - n1.y);
+               return Math.abs(distToCenter - radius) < SNAP_DIST;
+            } else {
+               return pointToSegmentDistance(u, v, n1.x, n1.y, n2.x, n2.y) < SNAP_DIST;
+            }
          })?.id;
 
          if (eId) {
@@ -624,16 +700,6 @@ export const DatumPlanes = () => {
   const handleContextMenu = (plane: string, event: any) => {
     if (activePlane && activePlane !== plane) return;
     event.stopPropagation();
-    if (isSketchMode) {
-      if (!sketchNewChain) {
-        setSketchNewChain(true);
-        setLastClickedNodeId(null);
-        setFirstChainNodeId(null);
-      } else {
-        useCadStore.getState().setSketchTool('SELECT');
-      }
-      return;
-    }
     setContextMenu({
       visible: true,
       x: event.nativeEvent.clientX,
@@ -1003,6 +1069,34 @@ export const DatumPlanes = () => {
             ];
             return <Line points={pts} color="#F59E0B" lineWidth={1.2} transparent opacity={0.6} />;
           })()}
+          {sketchTool === 'CENTER_RECTANGLE' && (() => {
+            const lastNodeId = useCadStore.getState().lastClickedNodeId;
+            const centerNode = useCadStore.getState().sketchNodes[lastNodeId || ''];
+            if (!centerNode) return null;
+            const cx = centerNode.x;
+            const cy = centerNode.y;
+            const dx = cursorState.u - cx;
+            const dy = cursorState.v - cy;
+            const pts = [
+              get3DPnt(cx + dx, cy + dy),
+              get3DPnt(cx - dx, cy + dy),
+              get3DPnt(cx - dx, cy - dy),
+              get3DPnt(cx + dx, cy - dy),
+              get3DPnt(cx + dx, cy + dy)
+            ];
+            const diagonals = [
+              get3DPnt(cx - dx, cy - dy),
+              get3DPnt(cx + dx, cy + dy),
+              get3DPnt(cx + dx, cy - dy),
+              get3DPnt(cx - dx, cy + dy)
+            ];
+            return (
+              <group>
+                <Line points={pts} color="#F59E0B" lineWidth={1.2} transparent opacity={0.6} />
+                <Line points={diagonals} color="#94A3B8" lineWidth={0.5} dashed dashSize={0.5} gapSize={0.5} />
+              </group>
+            );
+          })()}
         </group>
       )}
 
@@ -1078,6 +1172,215 @@ export const DatumPlanes = () => {
         );
       })}
 
+      {/* Plane Intersection Lines */}
+      {!isSketchMode ? (
+        <>
+          {/* X axis intersection (Front and Top planes) */}
+          <Line
+            points={[new THREE.Vector3(-100, 0, 0), new THREE.Vector3(100, 0, 0)]}
+            color="#94A3B8"
+            lineWidth={1.5}
+            dashed
+            dashScale={2}
+            dashSize={2}
+            gapSize={2}
+            transparent
+            opacity={0.5}
+          />
+          {/* Y axis intersection (Front and Right planes) */}
+          <Line
+            points={[new THREE.Vector3(0, -100, 0), new THREE.Vector3(0, 100, 0)]}
+            color="#94A3B8"
+            lineWidth={1.5}
+            dashed
+            dashScale={2}
+            dashSize={2}
+            gapSize={2}
+            transparent
+            opacity={0.5}
+          />
+          {/* Z axis intersection (Top and Right planes) */}
+          <Line
+            points={[new THREE.Vector3(0, 0, -100), new THREE.Vector3(0, 0, 100)]}
+            color="#94A3B8"
+            lineWidth={1.5}
+            dashed
+            dashScale={2}
+            dashSize={2}
+            gapSize={2}
+            transparent
+            opacity={0.5}
+          />
+        </>
+      ) : (
+        sketchCoordinateSystem && (
+          <>
+            {/* Sketch local horizontal axis line */}
+            <Line
+              points={[
+                sketchCoordinateSystem.origin.clone().addScaledVector(sketchCoordinateSystem.xDir, -100),
+                sketchCoordinateSystem.origin.clone().addScaledVector(sketchCoordinateSystem.xDir, 100)
+              ]}
+              color="#94A3B8"
+              lineWidth={1.5}
+              dashed
+              dashScale={2}
+              dashSize={2}
+              gapSize={2}
+              transparent
+              opacity={0.5}
+            />
+            {/* Sketch local vertical axis line */}
+            <Line
+              points={[
+                sketchCoordinateSystem.origin.clone().addScaledVector(sketchCoordinateSystem.yDir, -100),
+                sketchCoordinateSystem.origin.clone().addScaledVector(sketchCoordinateSystem.yDir, 100)
+              ]}
+              color="#94A3B8"
+              lineWidth={1.5}
+              dashed
+              dashScale={2}
+              dashSize={2}
+              gapSize={2}
+              transparent
+              opacity={0.5}
+            />
+          </>
+        )
+      )}
+
+      {/* SolidWorks-style Geometric Origin */}
+      {!isSketchMode ? (
+        <group>
+          {/* Central violet-blue sphere */}
+          <mesh position={[0, 0, 0]}>
+            <sphereGeometry args={[0.5, 16, 16]} />
+            <meshBasicMaterial color="#8B5CF6" depthTest={false} transparent opacity={0.9} />
+          </mesh>
+          
+          {/* Orthogonal rings */}
+          <Line points={originRings.xy} color="#8B5CF6" lineWidth={1.2} depthTest={false} transparent opacity={0.6} />
+          <Line points={originRings.xz} color="#8B5CF6" lineWidth={1.2} depthTest={false} transparent opacity={0.6} />
+          <Line points={originRings.yz} color="#8B5CF6" lineWidth={1.2} depthTest={false} transparent opacity={0.6} />
+
+          {/* X Axis Arrow */}
+          <Line points={[new THREE.Vector3(0, 0, 0), new THREE.Vector3(8, 0, 0)]} color="#8B5CF6" lineWidth={1.8} depthTest={false} />
+          <Line points={[new THREE.Vector3(8, 0, 0), new THREE.Vector3(6.8, 0.4, 0)]} color="#8B5CF6" lineWidth={1.5} depthTest={false} />
+          <Line points={[new THREE.Vector3(8, 0, 0), new THREE.Vector3(6.8, -0.4, 0)]} color="#8B5CF6" lineWidth={1.5} depthTest={false} />
+          <Line points={[new THREE.Vector3(8, 0, 0), new THREE.Vector3(6.8, 0, 0.4)]} color="#8B5CF6" lineWidth={1.5} depthTest={false} />
+          <Line points={[new THREE.Vector3(8, 0, 0), new THREE.Vector3(6.8, 0, -0.4)]} color="#8B5CF6" lineWidth={1.5} depthTest={false} />
+          <Html position={[9.5, 0, 0]} center className="pointer-events-none">
+            <div className="text-[#8B5CF6] font-mono text-[10px] font-black select-none transition-opacity duration-200">X</div>
+          </Html>
+
+          {/* Y Axis Arrow */}
+          <Line points={[new THREE.Vector3(0, 0, 0), new THREE.Vector3(0, 8, 0)]} color="#8B5CF6" lineWidth={1.8} depthTest={false} />
+          <Line points={[new THREE.Vector3(0, 8, 0), new THREE.Vector3(0.4, 6.8, 0)]} color="#8B5CF6" lineWidth={1.5} depthTest={false} />
+          <Line points={[new THREE.Vector3(0, 8, 0), new THREE.Vector3(-0.4, 6.8, 0)]} color="#8B5CF6" lineWidth={1.5} depthTest={false} />
+          <Line points={[new THREE.Vector3(0, 8, 0), new THREE.Vector3(0, 6.8, 0.4)]} color="#8B5CF6" lineWidth={1.5} depthTest={false} />
+          <Line points={[new THREE.Vector3(0, 8, 0), new THREE.Vector3(0, 6.8, -0.4)]} color="#8B5CF6" lineWidth={1.5} depthTest={false} />
+          <Html position={[0, 9.5, 0]} center className="pointer-events-none">
+            <div className="text-[#8B5CF6] font-mono text-[10px] font-black select-none transition-opacity duration-200">Y</div>
+          </Html>
+
+          {/* Z Axis Arrow */}
+          <Line points={[new THREE.Vector3(0, 0, 0), new THREE.Vector3(0, 0, 8)]} color="#8B5CF6" lineWidth={1.8} depthTest={false} />
+          <Line points={[new THREE.Vector3(0, 0, 8), new THREE.Vector3(0.4, 0, 6.8)]} color="#8B5CF6" lineWidth={1.5} depthTest={false} />
+          <Line points={[new THREE.Vector3(0, 0, 8), new THREE.Vector3(-0.4, 0, 6.8)]} color="#8B5CF6" lineWidth={1.5} depthTest={false} />
+          <Line points={[new THREE.Vector3(0, 0, 8), new THREE.Vector3(0, 0.4, 6.8)]} color="#8B5CF6" lineWidth={1.5} depthTest={false} />
+          <Line points={[new THREE.Vector3(0, 0, 8), new THREE.Vector3(0, -0.4, 6.8)]} color="#8B5CF6" lineWidth={1.5} depthTest={false} />
+          <Html position={[0, 0, 9.5]} center className="pointer-events-none">
+            <div className="text-[#8B5CF6] font-mono text-[10px] font-black select-none transition-opacity duration-200">Z</div>
+          </Html>
+        </group>
+      ) : (
+        sketchCoordinateSystem && (
+          <group>
+            {/* Sketch orange-red center sphere */}
+            <mesh position={sketchCoordinateSystem.origin}>
+              <sphereGeometry args={[0.5, 16, 16]} />
+              <meshBasicMaterial color="#EF4444" depthTest={false} transparent opacity={0.9} />
+            </mesh>
+            
+            {/* Sketch plane origin ring */}
+            <Line points={activeSketchOriginRing} color="#EF4444" lineWidth={1.5} depthTest={false} transparent opacity={0.6} />
+
+            {/* Horizontal Axis Arrow */}
+            <Line
+              points={[
+                sketchCoordinateSystem.origin,
+                sketchCoordinateSystem.origin.clone().addScaledVector(sketchCoordinateSystem.xDir, 8)
+              ]}
+              color="#EF4444"
+              lineWidth={1.8}
+              depthTest={false}
+            />
+            <Line
+              points={[
+                sketchCoordinateSystem.origin.clone().addScaledVector(sketchCoordinateSystem.xDir, 8),
+                sketchCoordinateSystem.origin.clone().addScaledVector(sketchCoordinateSystem.xDir, 6.8).addScaledVector(sketchCoordinateSystem.yDir, 0.4)
+              ]}
+              color="#EF4444"
+              lineWidth={1.5}
+              depthTest={false}
+            />
+            <Line
+              points={[
+                sketchCoordinateSystem.origin.clone().addScaledVector(sketchCoordinateSystem.xDir, 8),
+                sketchCoordinateSystem.origin.clone().addScaledVector(sketchCoordinateSystem.xDir, 6.8).addScaledVector(sketchCoordinateSystem.yDir, -0.4)
+              ]}
+              color="#EF4444"
+              lineWidth={1.5}
+              depthTest={false}
+            />
+            <Html
+              position={sketchCoordinateSystem.origin.clone().addScaledVector(sketchCoordinateSystem.xDir, 9.5)}
+              center
+              className="pointer-events-none"
+            >
+              <div className="text-[#EF4444] font-mono text-[10px] font-black select-none transition-opacity duration-200">X</div>
+            </Html>
+
+            {/* Vertical Axis Arrow */}
+            <Line
+              points={[
+                sketchCoordinateSystem.origin,
+                sketchCoordinateSystem.origin.clone().addScaledVector(sketchCoordinateSystem.yDir, 8)
+              ]}
+              color="#EF4444"
+              lineWidth={1.8}
+              depthTest={false}
+            />
+            <Line
+              points={[
+                sketchCoordinateSystem.origin.clone().addScaledVector(sketchCoordinateSystem.yDir, 8),
+                sketchCoordinateSystem.origin.clone().addScaledVector(sketchCoordinateSystem.yDir, 6.8).addScaledVector(sketchCoordinateSystem.xDir, 0.4)
+              ]}
+              color="#EF4444"
+              lineWidth={1.5}
+              depthTest={false}
+            />
+            <Line
+              points={[
+                sketchCoordinateSystem.origin.clone().addScaledVector(sketchCoordinateSystem.yDir, 8),
+                sketchCoordinateSystem.origin.clone().addScaledVector(sketchCoordinateSystem.yDir, 6.8).addScaledVector(sketchCoordinateSystem.xDir, -0.4)
+              ]}
+              color="#EF4444"
+              lineWidth={1.5}
+              depthTest={false}
+            />
+            <Html
+              position={sketchCoordinateSystem.origin.clone().addScaledVector(sketchCoordinateSystem.yDir, 9.5)}
+              center
+              className="pointer-events-none"
+            >
+              <div className="text-[#EF4444] font-mono text-[10px] font-black select-none transition-opacity duration-200">Y</div>
+            </Html>
+          </group>
+        )
+      )}
+
     </group>
   );
 };
+

@@ -4,6 +4,7 @@ import React, { useEffect, useState, useCallback, useMemo, useRef } from 'react'
 import Viewport from '@/renderer/Viewport';
 import OcctShape, { type MeshData } from '@/renderer/OcctShape';
 import { useCadStore, type CADFeature } from '@/store/useCadStore';
+import { v4 as uuidv4 } from 'uuid';
 import { HeavyEngineClient } from '@/kernel/HeavyEngineClient';
 import { MeasurementPanel } from '@/ui/MeasurementPanel';
 import { InterferencePanel } from '@/ui/InterferencePanel';
@@ -110,7 +111,7 @@ export default function Home() {
     try {
       const result = await client.uploadStepFile(file);
       if (result?.filepath) {
-        addFeature({ id: `dumb_${Date.now()}`, name: file.name, type: 'DUMB_SOLID', parameters: { filepath: result.filepath, x: 0, y: 0, z: 0 } });
+        addFeature({ id: `dumb_${uuidv4()}`, name: file.name, type: 'DUMB_SOLID', parameters: { filepath: result.filepath, x: 0, y: 0, z: 0 } });
         setTimeout(handleRebuild, 50);
       }
     } catch (err) {
@@ -205,7 +206,7 @@ export default function Home() {
     const end = topo.edgeData?.end;
     if (!start || !end) return;
 
-    const featureId = `feat_${Date.now()}`;
+    const featureId = `feat_${uuidv4()}`;
     if (cmd === 'FILLET') {
       addFeature({ id: featureId, type: 'FILLET', name: `Fillet ${features.length + 1}`, parameters: { radius: defaultFilletRadius, edge_start: start, edge_end: end, signature: topo.signature, operation: 'ADD' } });
     } else {

@@ -3,6 +3,7 @@
 import React, { useMemo, useState } from 'react';
 import * as THREE from 'three';
 import { useCadStore } from '../store/useCadStore';
+import { sketchActions } from '../store/sketchActions';
 import { v4 as uuidv4 } from 'uuid';
 import { Line, Html } from '@react-three/drei';
 import { analyzeSketchDefinitions, solveConstraints } from '../utils/geometry/ConstraintSolver';
@@ -59,10 +60,7 @@ export const SketchPreview = () => {
       const delta = dot * sensitivity;
       const newOffset = dragStartOffset + delta;
 
-      setSketchConstraints(prev => ({
-        ...prev,
-        [draggingDimId]: { ...prev[draggingDimId], offset: newOffset }
-      }));
+      sketchActions.updateConstraint(draggingDimId, { offset: newOffset });
     };
 
     const handlePointerUp = () => {
@@ -279,10 +277,7 @@ export const SketchPreview = () => {
         const e2 = sketchEdges[id2];
         if (e1 && e2 && (e1.type === 'LINE' || e1.type === 'CENTER_LINE') && (e2.type === 'LINE' || e2.type === 'CENTER_LINE')) {
           const cId = uuidv4();
-          setSketchConstraints(prev => ({
-            ...prev,
-            [cId]: { id: cId, type: 'ANGLE' as const, edgeIds: [id1, id2], value: 45.0 }
-          }));
+          sketchActions.addConstraintObj({ id: cId, type: 'ANGLE' as const, edgeIds: [id1, id2], value: 45.0 });
           setSelectedEntityIds([]);
           return;
         }
@@ -304,10 +299,7 @@ export const SketchPreview = () => {
 
           const dist = Math.hypot(n2.x - n1.x, n2.y - n1.y);
           const cId = uuidv4();
-          setSketchConstraints(prev => ({
-            ...prev,
-            [cId]: { id: cId, type: 'DISTANCE' as const, nodeIds: [id1, id2], value: dist }
-          }));
+          sketchActions.addConstraintObj({ id: cId, type: 'DISTANCE' as const, nodeIds: [id1, id2], value: dist });
           setSelectedEntityIds([]);
           return;
         }
@@ -334,10 +326,7 @@ export const SketchPreview = () => {
 
           const distance = Math.hypot(n2.x - n1.x, n2.y - n1.y);
           const cId = uuidv4();
-          setSketchConstraints(prev => ({
-            ...prev,
-            [cId]: { id: cId, type: 'DISTANCE' as const, nodeIds: [n1.id, n2.id], value: distance }
-          }));
+          sketchActions.addConstraintObj({ id: cId, type: 'DISTANCE' as const, nodeIds: [n1.id, n2.id], value: distance });
           setSelectedEntityIds([]);
           return;
         }
@@ -389,13 +378,8 @@ export const SketchPreview = () => {
   const handleSaveConstraintValue = async (constraintId: string) => {
     const val = parseFloat(inputValue);
     if (!isNaN(val) && val > 0) {
-      const currentConstraints = { ...useCadStore.getState().sketchConstraints };
-      if (currentConstraints[constraintId]) {
-        currentConstraints[constraintId] = {
-          ...currentConstraints[constraintId],
-          value: val
-        };
-        setSketchConstraints(currentConstraints);
+      if (useCadStore.getState().sketchConstraints[constraintId]) {
+        sketchActions.updateConstraint(constraintId, { value: val });
         await commitPreciseSketchSolve();
         
         const rebuildHook = (window as any).__handleRebuild;

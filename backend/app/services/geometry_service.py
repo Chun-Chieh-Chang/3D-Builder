@@ -942,8 +942,32 @@ def build_feature_shape_in_isolation(f_type, params, parent_shape=None, all_feat
                 make_face.Add(inner_wire)
             face = make_face.Face()
 
-            # Revolve around local Y-axis in local space
-            local_axis = gp_Ax1(gp_Pnt(0, 0, 0), gp_Dir(0, 1, 0))
+            # Revolve around custom axis if provided, otherwise default to local Y-axis
+            axis_origin = gp_Pnt(0, 0, 0)
+            axis_dir = gp_Dir(0, 1, 0)
+            
+            axis_edge_id = params.get('axis_edge_id')
+            axis_pts_param = params.get('axis_points')
+            
+            if axis_pts_param and len(axis_pts_param) >= 2:
+                p1 = gp_Pnt(float(axis_pts_param[0][0]), float(axis_pts_param[0][1]), float(axis_pts_param[0][2]))
+                p2 = gp_Pnt(float(axis_pts_param[1][0]), float(axis_pts_param[1][1]), float(axis_pts_param[1][2]))
+                vec = gp_Vec(p1, p2)
+                if vec.Magnitude() > 1e-6:
+                    axis_origin = p1
+                    axis_dir = gp_Dir(vec)
+            elif axis_edge_id and edge_map and axis_edge_id in edge_map:
+                # Find the axis in the local edge_map
+                axis_edge = edge_map[axis_edge_id]
+                from OCC.Core.BRepAdaptor import BRepAdaptor_Curve
+                adaptor = BRepAdaptor_Curve(axis_edge)
+                axis_origin = adaptor.Value(adaptor.FirstParameter())
+                p_end = adaptor.Value(adaptor.LastParameter())
+                vec = gp_Vec(axis_origin, p_end)
+                if vec.Magnitude() > 1e-6:
+                    axis_dir = gp_Dir(vec)
+
+            local_axis = gp_Ax1(axis_origin, axis_dir)
             revol_tool = BRepPrimAPI_MakeRevol(face, local_axis, angle)
             revol_shape = revol_tool.Shape()
 
@@ -1434,16 +1458,16 @@ def process_features(features, deflection=0.01):
                                             edges_added += 1
                         
                         if edges_added > 0:
-                            tool_api.Build()
-                            if tool_api.IsDone():
-                                res_shape = tool_api.Shape()
+                            fillet_tool.Build()
+                            if fillet_tool.IsDone():
+                                res_shape = fillet_tool.Shape()
                                 # --- TNS 2.0 Tracking ---
                                 for ref in refs:
                                     edge_data = ref.get('edgeData', {})
                                     signature = ref.get('signature')
                                     matched_edge = find_matching_edge(final_shape, edge_data.get('start'), edge_data.get('end'), signature)
                                     if matched_edge:
-                                        gen_face = tool_api.Generated(matched_edge)
+                                        gen_face = fillet_tool.Generated(matched_edge)
                                         if gen_face and not gen_face.IsNull():
                                             linker.record_generation(f"{f_id}_GEN", gen_face)
                                 final_shape = res_shape
@@ -1577,7 +1601,7 @@ def process_features(features, deflection=0.01):
                 print(f"[ERROR] SURFACE_KNIT failed: {knit_err}")
             continue
 
-        if f_type in ['SKETCH', 'SKETCH_POLYLINE', 'EXTRUDE', 'REVOLVE', 'BOX', 'CYLINDER', 'SPHERE', 'SWEEP', 'LOFT']:
+        if f_type in ['SKETCH', 'SKETCH_POLYLINE', 'EXTRUDE', 'REVOLVE', 'BOX', 'CYLINDER', 'SPHERE', 'SWEEP', 'LOFT', 'WRAP']:
             current_feat_shape = build_feature_shape_in_isolation(f_type, params, final_shape, features)
 
         elif f_type == 'PATTERN':
@@ -1850,16 +1874,16 @@ def build_shape_only(
                                             edges_added += 1
                         
                         if edges_added > 0:
-                            tool_api.Build()
-                            if tool_api.IsDone():
-                                res_shape = tool_api.Shape()
+                            fillet_tool.Build()
+                            if fillet_tool.IsDone():
+                                res_shape = fillet_tool.Shape()
                                 # --- TNS 2.0 Tracking ---
                                 for ref in refs:
                                     edge_data = ref.get('edgeData', {})
                                     signature = ref.get('signature')
                                     matched_edge = find_matching_edge(final_shape, edge_data.get('start'), edge_data.get('end'), signature)
                                     if matched_edge:
-                                        gen_face = tool_api.Generated(matched_edge)
+                                        gen_face = fillet_tool.Generated(matched_edge)
                                         if gen_face and not gen_face.IsNull():
                                             linker.record_generation(f"{f_id}_GEN", gen_face)
                                 final_shape = res_shape
@@ -1918,7 +1942,7 @@ def build_shape_only(
                 print(f"[ERROR] SURFACE_KNIT failed: {knit_err}")
             continue
 
-        if f_type in ['SKETCH', 'SKETCH_POLYLINE', 'EXTRUDE', 'REVOLVE', 'BOX', 'CYLINDER', 'SPHERE', 'SWEEP', 'LOFT']:
+        if f_type in ['SKETCH', 'SKETCH_POLYLINE', 'EXTRUDE', 'REVOLVE', 'BOX', 'CYLINDER', 'SPHERE', 'SWEEP', 'LOFT', 'WRAP']:
             current_feat_shape = build_feature_shape_in_isolation(f_type, params, final_shape, features)
 
         elif f_type == 'PATTERN':
@@ -2454,9 +2478,12 @@ def generate_mock_mesh(features):
         if f_type == 'EXTRUDE' or f_type == 'BOX':
             has_extrude = True
             points = params.get('points', [])
+            if points and isinstance(points[0], list) and len(points[0]) > 0 and isinstance(points[0][0], list):
+                # Use outer loop
+                points = points[0]
             if len(points) >= 4:
-                us = [pt[0] for pt in points]
-                vs = [pt[1] for pt in points]
+                us = [float(pt[0]) for pt in points]
+                vs = [float(pt[1]) for pt in points]
                 width = max(us) - min(us)
                 height = max(vs) - min(vs)
                 if width > 0: W = width
@@ -2465,8 +2492,10 @@ def generate_mock_mesh(features):
         elif (f_type == 'CYLINDER' or f_type == 'EXTRUDE') and params.get('operation') == 'CUT':
             has_cut = True
             points = params.get('points', [])
+            if points and isinstance(points[0], list) and len(points[0]) > 0 and isinstance(points[0][0], list):
+                points = points[0]
             if len(points) >= 2:
-                us = [pt[0] for pt in points]
+                us = [float(pt[0]) for pt in points]
                 radius = (max(us) - min(us)) / 2.0
                 if radius > 0: R = radius
             else:
@@ -2482,6 +2511,9 @@ def generate_mock_mesh(features):
         params = feat.get('parameters', {}) if isinstance(feat, dict) else getattr(feat, 'parameters', {})
         if f_type == 'REVOLVE':
             points = params.get('points', [])
+            if points and isinstance(points[0], list) and len(points[0]) > 0 and isinstance(points[0][0], list):
+                # Use outer loop for mock revolve
+                points = points[0]
             angle = float(params.get('angle', 360.0))
             return make_mock_revolve_mesh(points, angle)
         elif f_type == 'BOX':
@@ -3542,7 +3574,29 @@ def calculate_mass_properties(features, material_id='GENERIC'):
                     area = abs(area) / 2.0
                     perimeter = sum(math.hypot(float(poly[i][0])-float(poly[(i-1)%len(poly)][0]), float(poly[i][1])-float(poly[(i-1)%len(poly)][1])) for i in range(len(poly)))
                     fv, fa = area * depth, 2 * area + perimeter * depth
-            
+            elif t == 'REVOLVE':
+                angle_deg = float(p.get('angle', 360.0))
+                points_data = p.get('points', [])
+                if points_data:
+                    poly = points_data[0] if isinstance(points_data[0][0], list) else points_data
+                    clean_poly = [pt for pt in poly if len(pt) < 3 or pt[2] != 'ARC_CONTROL']
+                    area_sum = 0.0
+                    u_centroid_sum = 0.0
+                    for i in range(len(clean_poly)):
+                        p1, p2 = clean_poly[i], clean_poly[(i + 1) % len(clean_poly)]
+                        u1, v1 = float(p1[0]), float(p1[1])
+                        u2, v2 = float(p2[0]), float(p2[1])
+                        cross = (u1 * v2) - (u2 * v1)
+                        area_sum += cross
+                        u_centroid_sum += (u1 + u2) * cross
+                    area = abs(area_sum) / 2.0
+                    if area > 1e-6:
+                        u_c = u_centroid_sum / (3.0 * area_sum)
+                        fv = abs(2 * math.pi * u_c * area * (angle_deg / 360.0))
+                        fa = 2 * area + 100
+                    else:
+                        fv, fa = 0.0, 0.0
+
             if op == 'ADD': vol += fv; surf += fa
             else: vol -= fv; surf += fa
 

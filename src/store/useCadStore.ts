@@ -208,6 +208,8 @@ export interface CadState {
   setActiveFaceNormal: (normal: [number, number, number] | null) => void;
   activeFaceId: string | null;
   setActiveFaceId: (id: string | null) => void;
+  revolveAxisId: string | null;
+  setRevolveAxisId: (id: string | null) => void;
 
   sketchTool: string;
   setSketchTool: (tool: string) => void;
@@ -525,7 +527,7 @@ export const useCadStore = create<CadState>()(
       sketchConstraints: {},
       setSketchConstraints: (constraints) => { get().markRebuildDirty(0); set((state) => ({ sketchConstraints: typeof constraints === 'function' ? constraints(state.sketchConstraints) : constraints })); },
 
-      features: [{ id: 'ai_constructed_cylinder', type: 'CYLINDER', name: 'AI Built Cylinder', parameters: { radius: 20, height: 50, x: 0, y: 0, z: 0 } }],
+      features: [],
       setFeatures: (features) => { get().saveSnapshot(); get().markRebuildDirty(0); set({ features }); },
       addFeature: (feature) => { get().saveSnapshot(); const fromIndex = get().features.length; get().markRebuildDirty(fromIndex); set((state) => ({ features: [...state.features, feature] })); },
       removeFeature: (id) => { get().saveSnapshot(); const fromIndex = get().features.findIndex((f) => f.id === id); get().markRebuildDirty(fromIndex >= 0 ? fromIndex : 0); set((state) => ({ features: state.features.filter(f => f.id !== id) })); },

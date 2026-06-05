@@ -2,6 +2,7 @@
 
 import React from 'react';
 import { useCadStore, MateType, CADMate } from '../store/useCadStore';
+import { v4 as uuidv4 } from 'uuid';
 import { AssemblyService } from '../kernel/AssemblyService';
 
 export const MatePanel = () => {
@@ -112,7 +113,7 @@ export const MatePanel = () => {
     });
 
     const newMate: CADMate = {
-      id: `mate_${Date.now()}`,
+      id: `mate_${uuidv4()}`,
       name: `${mateType === 'GEAR' || mateType === 'SCREW' ? '機械配合' : '配合'} ${mates.length + 1}`,
       type: mateType,
       entity1: toMateEntity(mateSelection[0]),

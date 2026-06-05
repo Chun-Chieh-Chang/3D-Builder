@@ -96,7 +96,7 @@ export const RibbonController: React.FC<RibbonControllerProps> = ({
               if (selectedTopology?.type === 'FACE' && selectedTopology.coordinates && selectedTopology.normal) {
                 setActiveFaceOrigin(selectedTopology.coordinates); 
                 setActiveFaceNormal(selectedTopology.normal);
-                setActiveFaceId(selectedTopology.id || `face_${Date.now()}`); 
+                setActiveFaceId(selectedTopology.id || `face_${uuidv4()}`); 
                 setActivePlane('FACE'); 
                 triggerCameraNormal();
               } 
@@ -331,7 +331,7 @@ export const RibbonController: React.FC<RibbonControllerProps> = ({
 
             <button
               onClick={() => {
-                const featId = `feat_${Date.now()}`;
+                const featId = `feat_${uuidv4()}`;
                 addFeature({
                   id: featId,
                   type: 'PATTERN',
@@ -356,7 +356,7 @@ export const RibbonController: React.FC<RibbonControllerProps> = ({
 
             <button
               onClick={() => {
-                const featId = `feat_${Date.now()}`;
+                const featId = `feat_${uuidv4()}`;
                 addFeature({
                   id: featId,
                   type: 'MIRROR',
@@ -381,7 +381,7 @@ export const RibbonController: React.FC<RibbonControllerProps> = ({
 
             <button
               onClick={() => {
-                const featId = `feat_${Date.now()}`;
+                const featId = `feat_${uuidv4()}`;
                 addFeature({
                   id: featId,
                   type: 'DRAFT',
@@ -408,7 +408,7 @@ export const RibbonController: React.FC<RibbonControllerProps> = ({
 
             <button
               onClick={() => {
-                const featId = `feat_${Date.now()}`;
+                const featId = `feat_${uuidv4()}`;
                 addFeature({
                   id: featId,
                   type: 'SHELL',
@@ -435,7 +435,7 @@ export const RibbonController: React.FC<RibbonControllerProps> = ({
 
             <button 
               onClick={() => {
-                const featId = `feat_${Date.now()}`;
+                const featId = `feat_${uuidv4()}`;
                 addFeature({
                   id: featId,
                   type: 'REFERENCE_PLANE',
@@ -457,7 +457,7 @@ export const RibbonController: React.FC<RibbonControllerProps> = ({
 
             <button 
               onClick={() => {
-                const featId = `feat_${Date.now()}`;
+                const featId = `feat_${uuidv4()}`;
                 addFeature({
                   id: featId,
                   type: 'REFERENCE_AXIS',
@@ -478,7 +478,7 @@ export const RibbonController: React.FC<RibbonControllerProps> = ({
             </button>
             <button
               onClick={() => {
-                const featId = `feat_${Date.now()}`;
+                const featId = `feat_${uuidv4()}`;
                 addFeature({
                   id: featId,
                   type: 'HOLE_WIZARD',
@@ -593,11 +593,23 @@ export const RibbonController: React.FC<RibbonControllerProps> = ({
               <span className="text-[10px] font-bold text-slate-800 leading-none uppercase">Line</span>
             </button>
 
-            <button onClick={() => setSketchTool('RECTANGLE')} className={`flex flex-col items-center justify-center gap-0.5 px-3 h-[78px] min-w-[65px] transition-all border ${sketchTool === 'RECTANGLE' ? 'bg-white border-[#A0A0A0] shadow-inner' : 'border-transparent hover:bg-white hover:border-[#A0A0A0]'} active:bg-slate-100 group`} title="Rectangle">
+            <button onClick={() => setSketchTool('RECTANGLE')} className={`flex flex-col items-center justify-center gap-0.5 px-3 h-[78px] min-w-[65px] transition-all border ${sketchTool === 'RECTANGLE' ? 'bg-white border-[#A0A0A0] shadow-inner' : 'border-transparent hover:bg-white hover:border-[#A0A0A0]'} active:bg-slate-100 group`} title="Corner Rectangle">
               <div className={`w-10 h-10 flex items-center justify-center transition-transform ${sketchTool === 'RECTANGLE' ? 'text-[#005B9A] scale-110' : 'text-slate-600 group-hover:scale-110'}`}>
                 <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><rect x="3" y="3" width="18" height="18" rx="2"/></svg>
               </div>
               <span className="text-[10px] font-bold text-slate-800 leading-none uppercase">Rect</span>
+            </button>
+
+            <button onClick={() => setSketchTool('CENTER_RECTANGLE')} className={`flex flex-col items-center justify-center gap-0.5 px-3 h-[78px] min-w-[65px] transition-all border ${sketchTool === 'CENTER_RECTANGLE' ? 'bg-white border-[#A0A0A0] shadow-inner' : 'border-transparent hover:bg-white hover:border-[#A0A0A0]'} active:bg-slate-100 group`} title="Center Rectangle">
+              <div className={`w-10 h-10 flex items-center justify-center transition-transform ${sketchTool === 'CENTER_RECTANGLE' ? 'text-[#005B9A] scale-110' : 'text-slate-600 group-hover:scale-110'}`}>
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                  <rect x="3" y="3" width="18" height="18" rx="2"/>
+                  <circle cx="12" cy="12" r="1.5" fill="currentColor"/>
+                  <line x1="12" y1="3" x2="12" y2="21" strokeDasharray="2 2"/>
+                  <line x1="3" y1="12" x2="21" y2="12" strokeDasharray="2 2"/>
+                </svg>
+              </div>
+              <span className="text-[10px] font-bold text-slate-800 leading-none uppercase">Ctr Rect</span>
             </button>
 
             <button onClick={() => setSketchTool('CIRCLE')} className={`flex flex-col items-center justify-center gap-0.5 px-3 h-[78px] min-w-[65px] transition-all border ${sketchTool === 'CIRCLE' ? 'bg-white border-[#A0A0A0] shadow-inner' : 'border-transparent hover:bg-white hover:border-[#A0A0A0]'} active:bg-slate-100 group`} title="Circle">
@@ -787,7 +799,7 @@ export const RibbonController: React.FC<RibbonControllerProps> = ({
         ) : activeTab === 'ASSEMBLY' ? (
           <div className="flex items-center gap-2 h-full animate-in fade-in slide-in-from-left-2 duration-300">
             <button onClick={() => {
-              const id = `comp_${Date.now()}`;
+              const id = `comp_${uuidv4()}`;
               const newComp = { id, partId: 'new_part', instanceName: `Component_${components?.length || 0 + 1}`, transform: { position: [0,0,0] as [number, number, number], rotation: [0,0,0] as [number, number, number] }, visible: true };
               useCadStore.setState(state => ({ components: [...(state.components||[]), newComp] }));
             }} className={`flex flex-col items-center justify-center gap-0.5 px-3 h-[78px] min-w-[75px] transition-all border border-transparent hover:bg-white hover:border-[#A0A0A0] active:bg-slate-100 group`} title="Insert Component">

@@ -294,7 +294,7 @@ export const useFeatureBuilders = (handleRebuild: () => void) => {
     if (featureId && existingFeature) {
       updateFeatureParams(featureId, nextParams);
     } else {
-      featureId = `feat_${Date.now()}`;
+      featureId = `feat_${uuidv4()}`;
       addFeature({
         id: featureId,
         type: 'EXTRUDE',
@@ -348,7 +348,7 @@ export const useFeatureBuilders = (handleRebuild: () => void) => {
     if (featureId && existingFeature) {
       updateFeatureParams(featureId, nextParams);
     } else {
-      featureId = `feat_${Date.now()}`;
+      featureId = `feat_${uuidv4()}`;
       addFeature({
         id: featureId,
         type: 'REVOLVE',
@@ -409,6 +409,19 @@ export const useFeatureBuilders = (handleRebuild: () => void) => {
           x = faceOrigin[0] + u * xx + v * yx;
           y = faceOrigin[1] + u * xy + v * yy;
           z = faceOrigin[2] + u * xz + v * yz;
+        } else {
+          // Handle custom reference planes
+          const customPlane = referencePlanes.find(p => p.id === plane);
+          if (customPlane) {
+            const [ox, oy, oz] = customPlane.origin;
+            const [nx, ny, nz] = customPlane.normal;
+            const [xx, xy, xz] = customPlane.xDir;
+            const [yx, yy, yz] = customPlane.yDir;
+            pnx = nx; pny = ny; pnz = nz;
+            x = ox + u * xx + v * yx;
+            y = oy + u * xy + v * yy;
+            z = oz + u * xz + v * yz;
+          }
         }
 
         // Preserve all metadata (labels like 'SPLINE_CONTROL', 'ARC_CONTROL')
@@ -435,7 +448,7 @@ export const useFeatureBuilders = (handleRebuild: () => void) => {
       }
     }
     return result;
-  }, []);
+  }, [referencePlanes]);
 const handleBuildSweepLoft = useCallback((feat: CADFeature) => {
   if (feat.type === 'SWEEP') {
     const profileFeat = features.find(f => f.id === feat.parameters.profile_id);

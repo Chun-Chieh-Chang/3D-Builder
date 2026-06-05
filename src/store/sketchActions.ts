@@ -175,5 +175,24 @@ export const sketchActions = {
       sketchEdges: newEdges,
       sketchConstraints: newConstraints
     });
+  },
+
+  addConstraintObj: (constraint: SketchConstraint) => {
+    const state = useCadStore.getState();
+    useCadStore.setState({
+      sketchConstraints: { ...state.sketchConstraints, [constraint.id]: constraint }
+    });
+  },
+  
+  updateConstraint: (id: string, updates: Partial<SketchConstraint>) => {
+    const state = useCadStore.getState();
+    if (state.sketchConstraints[id]) {
+      useCadStore.setState({
+        sketchConstraints: {
+          ...state.sketchConstraints,
+          [id]: { ...state.sketchConstraints[id], ...updates }
+        }
+      });
+    }
   }
 };

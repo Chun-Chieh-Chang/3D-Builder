@@ -1,0 +1,41 @@
+[
+  {
+    "text": "How to design this in solid works."
+  },
+  {
+    "text": "Create two concentric circles of"
+  },
+  {
+    "text": "diameters 20 mm and 30 mm. Extrude the"
+  },
+  {
+    "text": "sketch to 52 mm. Apply chamfer on both"
+  },
+  {
+    "text": "end edges."
+  },
+  {
+    "text": "Create a new plane offset at a distance"
+  },
+  {
+    "text": "of 20 mm. On this plane, sketch a slot"
+  },
+  {
+    "text": "profile."
+  },
+  {
+    "text": "[Music]"
+  },
+  {
+    "text": "Use wrap feature. Set wrap type to"
+  },
+  {
+    "text": "deboss. Set deboss depth to 5 mm."
+  },
+  {
+    "text": "Apply circular pattern."
+  },
+  {
+    "text": "[Music]"
+  }
+]

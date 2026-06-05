@@ -90,10 +90,21 @@ function applyConstraint(
     }
 
     case 'DISTANCE': {
-      if (!constraint.nodeIds || constraint.nodeIds.length !== 2 || constraint.value === undefined) return;
-      const n1 = nodes[constraint.nodeIds[0]];
-      const n2 = nodes[constraint.nodeIds[1]];
-      if (!n1 || !n2) return;
+      let n1, n2;
+      let targetValue = constraint.value;
+
+      if (constraint.nodeIds && constraint.nodeIds.length === 2) {
+        n1 = nodes[constraint.nodeIds[0]];
+        n2 = nodes[constraint.nodeIds[1]];
+      } else if (constraint.edgeIds && constraint.edgeIds.length === 1) {
+        const edge = edges[constraint.edgeIds[0]];
+        if (edge && edge.nodeIds.length >= 2) {
+          n1 = nodes[edge.nodeIds[0]];
+          n2 = nodes[edge.nodeIds[1]];
+        }
+      }
+
+      if (!n1 || !n2 || targetValue === undefined) return;
 
       const dx = n2.x - n1.x;
       const dy = n2.y - n1.y;
@@ -102,7 +113,7 @@ function applyConstraint(
       // Prevent division by zero
       if (dist < 1e-6) return;
 
-      const diff = dist - constraint.value;
+      const diff = dist - targetValue;
       const nx = dx / dist;
       const ny = dy / dist;
 

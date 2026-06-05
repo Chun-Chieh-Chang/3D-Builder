@@ -255,8 +255,8 @@ export function PartFeaturePropertyManager({
                         onChange={(e) => onParamChange('operation', e.target.value)}
                         className="flex-1 bg-white border border-slate-300 rounded px-2 py-1 text-[12px] font-bold"
                       >
-                        <option value="ADD">Blind (Boss)</option>
-                        <option value="CUT">Blind (Cut)</option>
+                        <option value="ADD">Boss/Base</option>
+                        <option value="CUT">Cut</option>
                       </select>
                       <button 
                         onClick={() => onParamChange('flip', !selectedFeature.parameters.flip)}
@@ -267,7 +267,26 @@ export function PartFeaturePropertyManager({
                       </button>
                     </div>
 
-                    <ParamInput label="Depth" value={selectedFeature.parameters.depth} onChange={(v) => onParamChange('depth', v)} badge="D1" />
+                    <div className="space-y-1 mt-2">
+                      <label className="text-[10px] font-bold text-slate-500 uppercase">End Condition</label>
+                      <select
+                        value={selectedFeature.parameters.endCondition || 'BLIND'}
+                        onChange={(e) => {
+                          onParamChange('endCondition', e.target.value);
+                          if (e.target.value === 'THROUGH_ALL') {
+                            onParamChange('depth', 9999); // Use an arbitrarily large depth for Through All
+                          }
+                        }}
+                        className="w-full bg-white border border-slate-300 rounded px-2 py-1 text-[12px] font-bold"
+                      >
+                        <option value="BLIND">Blind</option>
+                        <option value="THROUGH_ALL">Through All</option>
+                      </select>
+                    </div>
+
+                    {(selectedFeature.parameters.endCondition || 'BLIND') === 'BLIND' && (
+                      <ParamInput label="Depth" value={selectedFeature.parameters.depth} onChange={(v) => onParamChange('depth', v)} badge="D1" />
+                    )}
 
                     <div className="flex items-center gap-2 pt-1 border-t border-slate-100">
                        <button
