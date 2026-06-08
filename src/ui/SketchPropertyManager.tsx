@@ -4,6 +4,7 @@ import React, { useMemo, useState } from 'react';
 import { v4 as uuidv4 } from 'uuid';
 import { useCadStore } from '../store/useCadStore';
 import { previewSolve, commitPreciseSketchSolve } from '@/kernel/SketchSolverService';
+import { Tabs, Tab } from './components/Tabs';
 
 export const SketchPropertyManager: React.FC = () => {
   const {
@@ -25,16 +26,18 @@ export const SketchPropertyManager: React.FC = () => {
   const activeEntity = useMemo(() => {
     if (selectedEntityIds.length === 1) {
       const id = selectedEntityIds[0];
-      return sketchNodes[id] || sketchEdges[id];
+      return sketchNodes[id] || sketchEdges[id] || sketchConstraints[id];
     }
     return null;
-  }, [selectedEntityIds, sketchNodes, sketchEdges]);
+  }, [selectedEntityIds, sketchNodes, sketchEdges, sketchConstraints]);
 
   const updateEntityProperty = (id: string, key: string, value: any) => {
     if (sketchNodes[id]) {
       setSketchNodes({ ...sketchNodes, [id]: { ...sketchNodes[id], [key]: value } });
     } else if (sketchEdges[id]) {
       setSketchEdges({ ...sketchEdges, [id]: { ...sketchEdges[id], [key]: value } });
+    } else if (sketchConstraints[id]) {
+      setSketchConstraints({ ...sketchConstraints, [id]: { ...sketchConstraints[id], [key]: value } });
     }
     commitPreciseSketchSolve().then(() => triggerRebuild());
   };
@@ -160,6 +163,25 @@ export const SketchPropertyManager: React.FC = () => {
         const n1 = sketchNodes[e.nodeIds[0]];
         const n2 = sketchNodes[e.nodeIds[1]];
         if (n1 && n2) newConstraint.value = Math.hypot(n2.x - n1.x, n2.y - n1.y);
+      } else if (selectedNodes.length === 1 && selectedEdges.length === 1) {
+        newConstraint.nodeIds = [selectedNodes[0].id];
+        newConstraint.edgeIds = [selectedEdges[0].id];
+        newConstraint.value = 50; 
+        if (selectedEdges[0].type === 'CIRCLE') {
+           newConstraint.arcCondition = 'CENTER';
+        }
+      } else if (selectedEdges.length === 2) {
+        const e1 = selectedEdges[0];
+        const e2 = selectedEdges[1];
+        const hasLine = e1.type === 'LINE' || e1.type === 'CENTER_LINE' || e2.type === 'LINE' || e2.type === 'CENTER_LINE';
+        const hasCircle = e1.type === 'CIRCLE' || e2.type === 'CIRCLE';
+        if (hasLine && hasCircle) {
+          newConstraint.edgeIds = [e1.id, e2.id];
+          newConstraint.value = 50;
+          newConstraint.arcCondition = 'CENTER';
+        } else {
+          return;
+        }
       } else {
         return;
       }
@@ -694,6 +716,76 @@ export const SketchPropertyManager: React.FC = () => {
                           defaultValue={10} // Placeholder for radius logic
                           className="flex-1 bg-white border border-slate-300 rounded px-1.5 py-0.5 text-[11px] font-bold text-right"
                         />
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* Constraint Specific */}
+              {sketchConstraints[activeEntity.id] && (
+                <div className="space-y-1">
+                  <label className="text-[10px] font-bold text-slate-500 uppercase">Parameters</label>
+                  <div className="bg-slate-50 border border-slate-200 rounded overflow-hidden">
+                    {(activeEntity as any).type === 'DISTANCE' && (activeEntity as any).arcCondition ? (
+                      <Tabs>
+                        <Tab label="General">
+                          <div className="space-y-2 p-1">
+                            <div className="flex justify-between text-[11px]">
+                              <span className="text-slate-500">Type:</span>
+                              <span className="font-bold text-slate-700">DISTANCE</span>
+                            </div>
+                            <div className="flex items-center justify-between gap-2">
+                              <span className="text-slate-500 text-[11px]">Value:</span>
+                              <input 
+                                type="number" 
+                                value={(activeEntity as any).value || 0}
+                                onChange={(e) => updateEntityProperty(activeEntity.id, 'value', parseFloat(e.target.value))}
+                                className="w-20 bg-white border border-slate-300 rounded px-1.5 py-0.5 text-[11px] font-bold text-right outline-none focus:border-blue-400"
+                              />
+                            </div>
+                          </div>
+                        </Tab>
+                        <Tab label="Leaders">
+                          <div className="space-y-2 p-1">
+                            <div className="flex flex-col gap-1">
+                              <span className="text-slate-500 text-[10px] font-bold uppercase">Arc Condition</span>
+                              <div className="grid grid-cols-1 gap-1">
+                                {['CENTER', 'MIN', 'MAX'].map(condition => (
+                                  <button
+                                    key={condition}
+                                    onClick={() => updateEntityProperty(activeEntity.id, 'arcCondition', condition)}
+                                    className={`px-2 py-1.5 rounded text-[11px] font-bold text-left transition-all ${
+                                      (activeEntity as any).arcCondition === condition
+                                        ? 'bg-blue-600 text-white shadow-sm'
+                                        : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'
+                                    }`}
+                                  >
+                                    {condition.charAt(0) + condition.slice(1).toLowerCase()}
+                                  </button>
+                                ))}
+                              </div>
+                            </div>
+                          </div>
+                        </Tab>
+                      </Tabs>
+                    ) : (
+                      <div className="p-2 space-y-2">
+                        <div className="flex justify-between text-[11px]">
+                          <span className="text-slate-500">Type:</span>
+                          <span className="font-bold text-slate-700">{(activeEntity as any).type}</span>
+                        </div>
+                        {((activeEntity as any).type === 'DISTANCE' || (activeEntity as any).type === 'ANGLE') && (
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="text-slate-500 text-[11px]">Value:</span>
+                            <input 
+                              type="number" 
+                              value={(activeEntity as any).value || 0}
+                              onChange={(e) => updateEntityProperty(activeEntity.id, 'value', parseFloat(e.target.value))}
+                              className="w-20 bg-white border border-slate-300 rounded px-1.5 py-0.5 text-[11px] font-bold text-right outline-none focus:border-blue-400"
+                            />
+                          </div>
+                        )}
                       </div>
                     )}
                   </div>

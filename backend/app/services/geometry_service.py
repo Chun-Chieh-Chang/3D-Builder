@@ -797,7 +797,7 @@ def build_feature_shape_in_isolation(f_type, params, parent_shape=None, all_feat
         elif any((f.get('id') if isinstance(f, dict) else getattr(f, 'id', None)) == plane_type for f in all_features):
             target_plane = next((f for f in all_features if (f.get('id') if isinstance(f, dict) else getattr(f, 'id', None)) == plane_type), None)
             p_params = target_plane.get('parameters', {}) if isinstance(target_plane, dict) else getattr(target_plane, 'parameters', {})
-            p_res = generate_reference_plane(p_params.get('planeType', 'OFFSET'), p_params.get('refs', []), p_params.get('offset', 0.0), all_features)
+            p_res = generate_reference_plane(p_params.get('planeType', 'OFFSET'), p_params.get('refs', []), p_params.get('offset', 0.0), all_features, angle=p_params.get('angle', 0.0))
             ax2 = gp_Ax2(gp_Pnt(*p_res['origin']), gp_Dir(*p_res['normal']), gp_Dir(*p_res['xDir']))
         
         else:
@@ -806,10 +806,51 @@ def build_feature_shape_in_isolation(f_type, params, parent_shape=None, all_feat
         # Extrude along plane normal in global coordinates
         normal_dir = ax2.Direction()
         is_flip = params.get('flip', False)
-        
+        depth = float(params.get('depth', 10.0))
         end_condition = params.get('endCondition', 'BLIND')
         has_dir2 = params.get('hasDirection2', False)
         
+        # --- Up To Next / Up To Surface implementation via Raycasting ---
+        if end_condition in ['UP_TO_NEXT', 'UP_TO_SURFACE'] and parent_shape and not parent_shape.IsNull():
+            try:
+                from OCC.Core.IntCurvesFace import IntCurvesFace_ShapeIntersector
+                from OCC.Core.gp import gp_Lin, gp_Dir, gp_Pnt, gp_Trsf, gp_Ax3
+                
+                # Use centroid of the first sketch loop as ray origin
+                cx, cy, cz = 0.0, 0.0, 0.0
+                pts_count = 0
+                if cleaned_loops:
+                    for pt in cleaned_loops[0]:
+                        cx += float(pt[0]); cy += float(pt[1]); cz += float(pt[2])
+                        pts_count += 1
+                if pts_count > 0:
+                    cx /= pts_count; cy /= pts_count; cz /= pts_count
+                
+                local_pnt = gp_Pnt(cx, cy, cz)
+                trsf = gp_Trsf()
+                trsf.SetTransformation(gp_Ax3(ax2), gp_Ax3())
+                local_pnt.Transform(trsf)
+                
+                ray_dir_gp = gp_Dir(-normal_dir.X(), -normal_dir.Y(), -normal_dir.Z()) if is_flip else normal_dir
+                ray = gp_Lin(local_pnt, ray_dir_gp)
+                
+                intersector = IntCurvesFace_ShapeIntersector()
+                intersector.Load(parent_shape, 1e-4)
+                intersector.Perform(ray, 0.001, 9999.0)
+                
+                min_dist = None
+                if intersector.IsDone():
+                    for i in range(1, intersector.NbPnt() + 1):
+                        d = intersector.WParameter(i)
+                        if d > 0.001:
+                            if min_dist is None or d < min_dist:
+                                min_dist = d
+                
+                if min_dist is not None:
+                    depth = min_dist
+            except Exception as e:
+                print(f"[WARNING] {end_condition} ray casting failed: {e}")
+
         if end_condition == 'MID_PLANE':
             mag1 = depth / 2.0
             mag2 = -depth / 2.0
@@ -817,32 +858,6 @@ def build_feature_shape_in_isolation(f_type, params, parent_shape=None, all_feat
                 mag1, mag2 = -mag1, -mag2
             vec = gp_Vec(normal_dir.X() * mag1, normal_dir.Y() * mag1, normal_dir.Z() * mag1)
             vec2 = gp_Vec(normal_dir.X() * mag2, normal_dir.Y() * mag2, normal_dir.Z() * mag2)
-        elif end_condition == 'UP_TO_NEXT':
-            # Use a large probe vector to find intersection
-            probe_mag = 1000.0 if not is_flip else -1000.0
-            vec = gp_Vec(normal_dir.X() * probe_mag, normal_dir.Y() * probe_mag, normal_dir.Z() * probe_mag)
-            vec2 = None
-        elif end_condition == 'UP_TO_SURFACE' or end_condition == 'OFFSET_FROM_SURFACE':
-            surface_ref = params.get('upToSurfaceRef')
-            offset = float(params.get('offsetDistance', 0.0)) if end_condition == 'OFFSET_FROM_SURFACE' else 0.0
-            
-            if surface_ref and 'origin' in surface_ref and 'normal' in surface_ref:
-                sx, sy, sz = surface_ref['origin']
-                # Projection along normal: depth = (P_surf - P_origin) dot Normal
-                n = ax2.Direction()
-                dot_prod = (sx - x_origin) * n.X() + (sy - y_origin) * n.Y() + (sz - z_origin) * n.Z()
-                
-                # Apply offset in the direction of the extrusion normal
-                # SolidWorks logic: depth is adjusted so the end cap is 'offset' away from the target surface.
-                # If dot_prod is positive (forward), adding offset increases length. 
-                # Usually users want 'Offset FROM surface' meaning it stops BEFORE reaching it if offset is positive? 
-                # Actually, we'll just add the offset to the dot product.
-                mag = dot_prod + offset
-                vec = gp_Vec(n.X() * mag, n.Y() * mag, n.Z() * mag)
-            else:
-                mag = -depth if is_flip else depth
-                vec = gp_Vec(normal_dir.X() * mag, normal_dir.Y() * mag, normal_dir.Z() * mag)
-            vec2 = None
         elif end_condition == 'UP_TO_VERTEX':
             vertex_ref = params.get('upToVertexRef')
             if vertex_ref and 'coordinates' in vertex_ref:
@@ -868,6 +883,7 @@ def build_feature_shape_in_isolation(f_type, params, parent_shape=None, all_feat
                 vec2 = gp_Vec(normal_dir.X() * mag2, normal_dir.Y() * mag2, normal_dir.Z() * mag2)
             else:
                 vec2 = None
+
         
         print(f"[DEBUG] EXTRUDE: plane={plane_type}, depth={depth}, flip={is_flip}, vec=({vec.X()},{vec.Y()},{vec.Z()})")
 
@@ -1148,7 +1164,7 @@ def build_feature_shape_in_isolation(f_type, params, parent_shape=None, all_feat
         elif any((f.get('id') if isinstance(f, dict) else getattr(f, 'id', None)) == plane_type for f in all_features):
             target_plane = next((f for f in all_features if (f.get('id') if isinstance(f, dict) else getattr(f, 'id', None)) == plane_type), None)
             p_params = target_plane.get('parameters', {}) if isinstance(target_plane, dict) else getattr(target_plane, 'parameters', {})
-            p_res = generate_reference_plane(p_params.get('planeType', 'OFFSET'), p_params.get('refs', []), p_params.get('offset', 0.0), all_features)
+            p_res = generate_reference_plane(p_params.get('planeType', 'OFFSET'), p_params.get('refs', []), p_params.get('offset', 0.0), all_features, angle=p_params.get('angle', 0.0))
             ax2 = gp_Ax2(gp_Pnt(*p_res['origin']), gp_Dir(*p_res['normal']), gp_Dir(*p_res['xDir']))
         
         else:
@@ -1788,7 +1804,7 @@ def process_features(features, deflection=0.01):
             params = feat.get('parameters', {})
 
         if f_type == 'REFERENCE_PLANE':
-            res = generate_reference_plane(params.get('planeType', 'OFFSET'), params.get('refs', []), params.get('offset', 0.0), features)
+            res = generate_reference_plane(params.get('planeType', 'OFFSET'), params.get('refs', []), params.get('offset', 0.0), features, angle=params.get('angle', 0.0))
             ref_geometry.append({"id": f_id, "type": "PLANE", "data": res})
             continue
         
@@ -2108,7 +2124,7 @@ def build_shape_only(
             params = feat.get('parameters', {})
 
         if f_type == 'REFERENCE_PLANE':
-            res = generate_reference_plane(params.get('planeType', 'OFFSET'), params.get('refs', []), params.get('offset', 0.0), features)
+            res = generate_reference_plane(params.get('planeType', 'OFFSET'), params.get('refs', []), params.get('offset', 0.0), features, angle=params.get('angle', 0.0))
             ref_geometry.append({"id": f_id, "type": "PLANE", "data": res})
             continue
         
@@ -3930,7 +3946,7 @@ def get_intersection_curve(features, plane_type, face_origin=None, face_normal=N
         elif any((f.get('id') if isinstance(f, dict) else getattr(f, 'id', None)) == plane_type for f in all_features):
             target_plane = next((f for f in all_features if (f.get('id') if isinstance(f, dict) else getattr(f, 'id', None)) == plane_type), None)
             p_params = target_plane.get('parameters', {}) if isinstance(target_plane, dict) else getattr(target_plane, 'parameters', {})
-            p_res = generate_reference_plane(p_params.get('planeType', 'OFFSET'), p_params.get('refs', []), p_params.get('offset', 0.0), all_features)
+            p_res = generate_reference_plane(p_params.get('planeType', 'OFFSET'), p_params.get('refs', []), p_params.get('offset', 0.0), all_features, angle=p_params.get('angle', 0.0))
             ax2 = gp_Ax2(gp_Pnt(*p_res['origin']), gp_Dir(*p_res['normal']), gp_Dir(*p_res['xDir']))
         
         else:
@@ -3979,7 +3995,7 @@ def get_intersection_curve(features, plane_type, face_origin=None, face_normal=N
         return []
 
 
-def generate_reference_plane(plane_type, refs, offset=0.0, features=[]):
+def generate_reference_plane(plane_type, refs, offset=0.0, features=[], angle=0.0):
     """
     Computes a custom reference plane from topology references.
     Returns: { "origin": [x,y,z], "normal": [x,y,z], "xDir": [x,y,z], "yDir": [x,y,z] }
@@ -3996,6 +4012,43 @@ def generate_reference_plane(plane_type, refs, offset=0.0, features=[]):
             unorm = [norm[0]/n_len, norm[1]/n_len, norm[2]/n_len] if n_len > 1e-6 else [0.0, 0.0, 1.0]
             origin = [coords[0] + offset * unorm[0], coords[1] + offset * unorm[1], coords[2] + offset * unorm[2]]
             normal = unorm
+
+        elif plane_type == 'ANGLE' and len(refs) >= 2:
+            axis_ref = refs[0]
+            plane_ref = refs[1]
+            angle_rad = math.radians(angle)
+            
+            # 1. Get axis vector (u)
+            if axis_ref.get('type') == 'EDGE' and 'edgeData' in axis_ref:
+                e = axis_ref['edgeData']
+                origin = e['start']
+                ux, uy, uz = e['end'][0]-e['start'][0], e['end'][1]-e['start'][1], e['end'][2]-e['start'][2]
+                u_len = math.sqrt(ux*ux + uy*uy + uz*uz)
+                if u_len > 1e-9:
+                    ux, uy, uz = ux/u_len, uy/u_len, uz/u_len
+                else:
+                    ux, uy, uz = 0.0, 0.0, 1.0
+            else:
+                origin = [0,0,0]
+                ux, uy, uz = 0,0,1
+            
+            # 2. Get reference normal (v)
+            v = plane_ref.get('normal', [0,0,1])
+            vx, vy, vz = v[0], v[1], v[2]
+            
+            # 3. Rodrigues' rotation formula: v_rot = v*cos + (u x v)*sin + u*(u . v)*(1 - cos)
+            cos_t = math.cos(angle_rad)
+            sin_t = math.sin(angle_rad)
+            dot = ux*vx + uy*vy + uz*vz
+            cross_x = uy*vz - uz*vy
+            cross_y = uz*vx - ux*vz
+            cross_z = ux*vy - uy*vx
+            
+            nx = vx*cos_t + cross_x*sin_t + ux*dot*(1 - cos_t)
+            ny = vy*cos_t + cross_y*sin_t + uy*dot*(1 - cos_t)
+            nz = vz*cos_t + cross_z*sin_t + uz*dot*(1 - cos_t)
+            
+            normal = [nx, ny, nz]
 
         elif plane_type == 'THREE_POINTS' and len(refs) >= 3:
             p1 = refs[0].get('coordinates', [0.0, 0.0, 0.0])

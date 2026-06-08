@@ -1,4 +1,5 @@
 import { SketchNode, SketchEdge, SketchConstraint } from '../../store/useCadStore';
+import { projectPointToLine, getLineProjectionT, pointToLineDistance } from './DistanceUtils';
 
 /**
  * PBD (Position-Based Dynamics) 2D Constraint Solver
@@ -113,12 +114,18 @@ function applyConstraint(
     }
 
     case 'DISTANCE': {
-      let n1, n2;
+      let n1, n2, e_circle, e_line;
       const targetValue = constraint.value;
 
       if (constraint.nodeIds && constraint.nodeIds.length === 2) {
         n1 = nodes[constraint.nodeIds[0]];
         n2 = nodes[constraint.nodeIds[1]];
+      } else if (constraint.nodeIds && constraint.nodeIds.length === 1 && constraint.edgeIds && constraint.edgeIds.length === 1) {
+        n1 = nodes[constraint.nodeIds[0]];
+        e_circle = edges[constraint.edgeIds[0]];
+        if (e_circle && e_circle.type === 'CIRCLE' && e_circle.nodeIds.length >= 2) {
+           n2 = nodes[e_circle.nodeIds[0]];
+        }
       } else if (constraint.nodeIds && constraint.nodeIds.length === 1) {
         // Absolute distance from Origin (0,0) or X/Y component
         const node = nodes[constraint.nodeIds[0]];
@@ -139,6 +146,13 @@ function applyConstraint(
           }
         }
         return;
+      } else if (constraint.edgeIds && constraint.edgeIds.length === 2) {
+        const e1 = edges[constraint.edgeIds[0]];
+        const e2 = edges[constraint.edgeIds[1]];
+        if (e1 && e2) {
+          e_line = e1.type === 'LINE' ? e1 : (e2.type === 'LINE' ? e2 : null);
+          e_circle = e1.type === 'CIRCLE' ? e1 : (e2.type === 'CIRCLE' ? e2 : null);
+        }
       } else if (constraint.edgeIds && constraint.edgeIds.length === 1) {
         const edge = edges[constraint.edgeIds[0]];
         if (edge && edge.nodeIds.length >= 2) {
@@ -147,29 +161,81 @@ function applyConstraint(
         }
       }
 
-      if (!n1 || !n2 || targetValue === undefined) return;
+      if (targetValue === undefined) return;
 
-      const dx = n2.x - n1.x;
-      const dy = n2.y - n1.y;
-      const dist = Math.sqrt(dx * dx + dy * dy);
-      
-      // Prevent division by zero
-      if (dist < 1e-6) return;
+      if (n1 && n2) {
+        // Point-to-Point or Point-to-CircleCenter
+        const dx = n2.x - n1.x;
+        const dy = n2.y - n1.y;
+        const dist = Math.hypot(dx, dy);
+        if (dist < 1e-6) return;
 
-      const diff = dist - targetValue;
-      const nx = dx / dist;
-      const ny = dy / dist;
+        let effectiveTarget = targetValue;
+        if (e_circle && e_circle.type === 'CIRCLE' && e_circle.nodeIds.length >= 2) {
+            const rim = nodes[e_circle.nodeIds[1]];
+            const radius = Math.hypot(rim.x - n2.x, rim.y - n2.y);
+            if (constraint.arcCondition === 'MIN') effectiveTarget = targetValue + radius;
+            else if (constraint.arcCondition === 'MAX') effectiveTarget = targetValue - radius;
+        }
 
-      const w1 = n1.isFixed ? 0 : (n2.isFixed ? 1 : 0.5);
-      const w2 = n2.isFixed ? 0 : (n1.isFixed ? 1 : 0.5);
+        const diff = dist - effectiveTarget;
+        const nx = dx / dist;
+        const ny = dy / dist;
 
-      if (w1 > 0) {
-        n1.x += nx * diff * w1;
-        n1.y += ny * diff * w1;
-      }
-      if (w2 > 0) {
-        n2.x -= nx * diff * w2;
-        n2.y -= ny * diff * w2;
+        const w1 = n1.isFixed ? 0 : (n2.isFixed ? 1 : 0.5);
+        const w2 = n2.isFixed ? 0 : (n1.isFixed ? 1 : 0.5);
+
+        if (w1 > 0) { n1.x += nx * diff * w1; n1.y += ny * diff * w1; }
+        if (w2 > 0) { n2.x -= nx * diff * w2; n2.y -= ny * diff * w2; }
+      } else if (e_line && e_circle) {
+        // Line-to-Circle
+        const p1 = nodes[e_line.nodeIds[0]];
+        const p2 = nodes[e_line.nodeIds[1]];
+        const pc = nodes[e_circle.nodeIds[0]];
+        const pr = nodes[e_circle.nodeIds[1]];
+        if (!p1 || !p2 || !pc || !pr) return;
+
+        const radius = Math.hypot(pr.x - pc.x, pr.y - pc.y);
+        const proj = projectPointToLine(pc, p1, p2);
+        const t = getLineProjectionT(pc, p1, p2);
+
+        const dx = proj.x - pc.x;
+        const dy = proj.y - pc.y;
+        const dist = Math.hypot(dx, dy);
+        if (dist < 1e-6) return;
+
+        let effectiveTarget = targetValue;
+        if (constraint.arcCondition === 'MIN') effectiveTarget = targetValue + radius;
+        else if (constraint.arcCondition === 'MAX') effectiveTarget = targetValue - radius;
+
+        const diff = dist - effectiveTarget;
+        const nx = dx / dist;
+        const ny = dy / dist;
+
+        const w_circle = pc.isFixed ? 0 : 0.5;
+        const w_line = 1.0 - w_circle;
+
+        if (w_circle > 0) {
+          pc.x += nx * diff * w_circle;
+          pc.y += ny * diff * w_circle;
+        }
+
+        if (w_line > 0) {
+          const p1_w = p1.isFixed ? 0 : (p2.isFixed ? 1 : 0.5);
+          const p2_w = p2.isFixed ? 0 : (p1.isFixed ? 1 : 0.5);
+          
+          const corrX = -nx * diff * w_line;
+          const corrY = -ny * diff * w_line;
+
+          if (p1_w > 0) {
+            p1.x += corrX * (1 - t) * p1_w;
+            p1.y += corrY * (1 - t) * p1_w;
+          }
+          if (p2_w > 0) {
+            p2.x += corrX * t * p2_w;
+            p2.y += corrY * t * p2_w;
+          }
+        }
       }
       break;
     }
@@ -868,13 +934,42 @@ export function analyzeSketchDefinitions(
         break;
       }
       case 'DISTANCE': {
-        if (constraint.nodeIds && constraint.nodeIds.length === 2 && constraint.value !== undefined) {
+        if (constraint.value === undefined) break;
+        let d = -1;
+        if (constraint.nodeIds && constraint.nodeIds.length === 2) {
           const n1 = relaxedNodes[constraint.nodeIds[0]];
           const n2 = relaxedNodes[constraint.nodeIds[1]];
-          if (n1 && n2) {
-            err = Math.abs(Math.hypot(n2.x - n1.x, n2.y - n1.y) - constraint.value);
+          if (n1 && n2) d = Math.hypot(n2.x - n1.x, n2.y - n1.y);
+        } else if (constraint.nodeIds && constraint.nodeIds.length === 1 && constraint.edgeIds && constraint.edgeIds.length === 1) {
+          const n1 = relaxedNodes[constraint.nodeIds[0]];
+          const e = edges[constraint.edgeIds[0]];
+          if (n1 && e && e.type === 'CIRCLE' && e.nodeIds.length >= 2) {
+            const pc = relaxedNodes[e.nodeIds[0]];
+            const pr = relaxedNodes[e.nodeIds[1]];
+            const radius = Math.hypot(pr.x - pc.x, pr.y - pc.y);
+            const distCenter = Math.hypot(n1.x - pc.x, n1.y - pc.y);
+            if (constraint.arcCondition === 'MIN') d = Math.abs(distCenter - radius);
+            else if (constraint.arcCondition === 'MAX') d = distCenter + radius;
+            else d = distCenter;
+          }
+        } else if (constraint.edgeIds && constraint.edgeIds.length === 2) {
+          const e1 = edges[constraint.edgeIds[0]];
+          const e2 = edges[constraint.edgeIds[1]];
+          const el = e1.type === 'LINE' ? e1 : (e2.type === 'LINE' ? e2 : null);
+          const ec = e1.type === 'CIRCLE' ? e1 : (e2.type === 'CIRCLE' ? e2 : null);
+          if (el && ec && el.nodeIds.length >= 2 && ec.nodeIds.length >= 2) {
+            const p1 = relaxedNodes[el.nodeIds[0]];
+            const p2 = relaxedNodes[el.nodeIds[1]];
+            const pc = relaxedNodes[ec.nodeIds[0]];
+            const pr = relaxedNodes[ec.nodeIds[1]];
+            const radius = Math.hypot(pr.x - pc.x, pr.y - pc.y);
+            const distCenter = pointToLineDistance(pc, p1, p2);
+            if (constraint.arcCondition === 'MIN') d = Math.abs(distCenter - radius);
+            else if (constraint.arcCondition === 'MAX') d = distCenter + radius;
+            else d = distCenter;
           }
         }
+        if (d >= 0) err = Math.abs(d - constraint.value);
         break;
       }
       case 'EQUAL': {

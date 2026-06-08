@@ -42,7 +42,8 @@
 - [x] Relax point count limit for Cut to >=2.
 - [x] Delegate true closed-loop validation to \handleExitAndExtrude\.
 
-### Phase 106: Primitive Tool UI/UX Final Audit
-- [x] Audit RECTANGLE macro-expansion logic.
-- [x] Audit CIRCLE radius preview computation.
-- [x] Verify LINE chain persistence logic.
+### Phase 126: Smart Dimension Arc Condition (Line-to-Circle)
+- [x] Implement Line-to-Circle PBD distance constraint in `ConstraintSolver.ts`.
+- [x] Create `DistanceUtils.ts` for specialized geometry projections.
+- [x] Implement "Leaders" tabbed UI in `SketchPropertyManager.tsx` for Arc Condition selection.
+- [x] Verify with 100% precision via `test_line_to_circle_distance.ts`.

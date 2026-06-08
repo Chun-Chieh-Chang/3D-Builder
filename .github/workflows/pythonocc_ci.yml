@@ -21,6 +21,7 @@ jobs:
 
       - name: Cache Conda
         uses: actions/cache@v4
+        if: false  # Temporarily disable during infrastructure issues (504 Gateway Timeout)
         with:
           path: ~/conda_pkgs_dir
           key: ${{ runner.os }}-conda-${{ hashFiles('backend/requirements.txt') }}
