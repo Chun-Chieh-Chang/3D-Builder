@@ -730,7 +730,7 @@ def build_feature_shape_in_isolation(f_type, params, parent_shape=None, all_feat
         elif any((f.get('id') if isinstance(f, dict) else getattr(f, 'id', None)) == plane_type for f in all_features):
             target_plane = next((f for f in all_features if (f.get('id') if isinstance(f, dict) else getattr(f, 'id', None)) == plane_type), None)
             p_params = target_plane.get('parameters', {}) if isinstance(target_plane, dict) else getattr(target_plane, 'parameters', {})
-            p_res = generate_reference_plane(p_params.get('planeType', 'OFFSET'), p_params.get('refs', []), p_params.get('offset', 0.0), all_features)
+            p_res = generate_reference_plane(p_params.get('planeType', 'OFFSET'), p_params.get('refs', []), p_params.get('offset', 0.0), all_features, angle=p_params.get('angle', 0.0))
             ax2 = gp_Ax2(gp_Pnt(*p_res['origin']), gp_Dir(*p_res['normal']), gp_Dir(*p_res['xDir']))
         
         else:
@@ -937,7 +937,7 @@ def build_feature_shape_in_isolation(f_type, params, parent_shape=None, all_feat
         elif any((f.get('id') if isinstance(f, dict) else getattr(f, 'id', None)) == plane_type for f in all_features):
             target_plane = next((f for f in all_features if (f.get('id') if isinstance(f, dict) else getattr(f, 'id', None)) == plane_type), None)
             p_params = target_plane.get('parameters', {}) if isinstance(target_plane, dict) else getattr(target_plane, 'parameters', {})
-            p_res = generate_reference_plane(p_params.get('planeType', 'OFFSET'), p_params.get('refs', []), p_params.get('offset', 0.0), all_features)
+            p_res = generate_reference_plane(p_params.get('planeType', 'OFFSET'), p_params.get('refs', []), p_params.get('offset', 0.0), all_features, angle=p_params.get('angle', 0.0))
             ax2 = gp_Ax2(gp_Pnt(*p_res['origin']), gp_Dir(*p_res['normal']), gp_Dir(*p_res['xDir']))
         
         else:
@@ -1406,7 +1406,7 @@ def process_features(features, deflection=0.01):
             params = feat.get('parameters', {})
 
         if f_type == 'REFERENCE_PLANE':
-            res = generate_reference_plane(params.get('planeType', 'OFFSET'), params.get('refs', []), params.get('offset', 0.0), features)
+            res = generate_reference_plane(params.get('planeType', 'OFFSET'), params.get('refs', []), params.get('offset', 0.0), features, angle=params.get('angle', 0.0))
             ref_geometry.append({"id": f_id, "type": "PLANE", "data": res})
             continue
         
@@ -1726,7 +1726,7 @@ def build_shape_only(
             params = feat.get('parameters', {})
 
         if f_type == 'REFERENCE_PLANE':
-            res = generate_reference_plane(params.get('planeType', 'OFFSET'), params.get('refs', []), params.get('offset', 0.0), features)
+            res = generate_reference_plane(params.get('planeType', 'OFFSET'), params.get('refs', []), params.get('offset', 0.0), features, angle=params.get('angle', 0.0))
             ref_geometry.append({"id": f_id, "type": "PLANE", "data": res})
             continue
         
@@ -3320,7 +3320,7 @@ def get_intersection_curve(features, plane_type, face_origin=None, face_normal=N
         elif any((f.get('id') if isinstance(f, dict) else getattr(f, 'id', None)) == plane_type for f in all_features):
             target_plane = next((f for f in all_features if (f.get('id') if isinstance(f, dict) else getattr(f, 'id', None)) == plane_type), None)
             p_params = target_plane.get('parameters', {}) if isinstance(target_plane, dict) else getattr(target_plane, 'parameters', {})
-            p_res = generate_reference_plane(p_params.get('planeType', 'OFFSET'), p_params.get('refs', []), p_params.get('offset', 0.0), all_features)
+            p_res = generate_reference_plane(p_params.get('planeType', 'OFFSET'), p_params.get('refs', []), p_params.get('offset', 0.0), all_features, angle=p_params.get('angle', 0.0))
             ax2 = gp_Ax2(gp_Pnt(*p_res['origin']), gp_Dir(*p_res['normal']), gp_Dir(*p_res['xDir']))
         
         else:
@@ -3369,7 +3369,7 @@ def get_intersection_curve(features, plane_type, face_origin=None, face_normal=N
         return []
 
 
-def generate_reference_plane(plane_type, refs, offset=0.0, features=[]):
+def generate_reference_plane(plane_type, refs, offset=0.0, features=[], angle=0.0):
     """
     Computes a custom reference plane from topology references.
     Returns: { "origin": [x,y,z], "normal": [x,y,z], "xDir": [x,y,z], "yDir": [x,y,z] }
@@ -3386,6 +3386,43 @@ def generate_reference_plane(plane_type, refs, offset=0.0, features=[]):
             unorm = [norm[0]/n_len, norm[1]/n_len, norm[2]/n_len] if n_len > 1e-6 else [0.0, 0.0, 1.0]
             origin = [coords[0] + offset * unorm[0], coords[1] + offset * unorm[1], coords[2] + offset * unorm[2]]
             normal = unorm
+
+        elif plane_type == 'ANGLE' and len(refs) >= 2:
+            axis_ref = refs[0]
+            plane_ref = refs[1]
+            angle_rad = math.radians(angle)
+            
+            # 1. Get axis vector (u)
+            if axis_ref.get('type') == 'EDGE' and 'edgeData' in axis_ref:
+                e = axis_ref['edgeData']
+                origin = e['start']
+                ux, uy, uz = e['end'][0]-e['start'][0], e['end'][1]-e['start'][1], e['end'][2]-e['start'][2]
+                u_len = math.sqrt(ux*ux + uy*uy + uz*uz)
+                if u_len > 1e-9:
+                    ux, uy, uz = ux/u_len, uy/u_len, uz/u_len
+                else:
+                    ux, uy, uz = 0.0, 0.0, 1.0
+            else:
+                origin = [0,0,0]
+                ux, uy, uz = 0,0,1
+            
+            # 2. Get reference normal (v)
+            v = plane_ref.get('normal', [0,0,1])
+            vx, vy, vz = v[0], v[1], v[2]
+            
+            # 3. Rodrigues' rotation formula: v_rot = v*cos + (u x v)*sin + u*(u . v)*(1 - cos)
+            cos_t = math.cos(angle_rad)
+            sin_t = math.sin(angle_rad)
+            dot = ux*vx + uy*vy + uz*vz
+            cross_x = uy*vz - uz*vy
+            cross_y = uz*vx - ux*vz
+            cross_z = ux*vy - uy*vx
+            
+            nx = vx*cos_t + cross_x*sin_t + ux*dot*(1 - cos_t)
+            ny = vy*cos_t + cross_y*sin_t + uy*dot*(1 - cos_t)
+            nz = vz*cos_t + cross_z*sin_t + uz*dot*(1 - cos_t)
+            
+            normal = [nx, ny, nz]
 
         elif plane_type == 'THREE_POINTS' and len(refs) >= 3:
             p1 = refs[0].get('coordinates', [0.0, 0.0, 0.0])

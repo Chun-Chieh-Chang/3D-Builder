@@ -12,6 +12,9 @@ export const ContextMenu: React.FC = () => {
     setActivePlane,
     triggerCameraNormal,
     selectedId,
+    selectedEntityIds,
+    setSketchEdges,
+    sketchEdges,
     selectedSubNodeType,
     features,
     removeFeature,
@@ -153,6 +156,24 @@ export const ContextMenu: React.FC = () => {
           >
             <span className="font-semibold text-amber-600">結束鏈 (End Chain)</span>
             <span className="text-[10px] text-slate-400">Double Click</span>
+          </button>
+        )}
+
+        {selectedEntityIds && selectedEntityIds.length > 0 && (
+          <button 
+            onClick={() => {
+              const newEdges = { ...sketchEdges };
+              selectedEntityIds.forEach((id: string) => {
+                if (newEdges[id]) {
+                  newEdges[id] = { ...newEdges[id], isConstruction: !newEdges[id].isConstruction };
+                }
+              });
+              setSketchEdges(newEdges);
+              setContextMenu(null);
+            }}
+            className="w-full text-left px-4 py-1.5 text-[13px] text-slate-700 hover:bg-slate-100 transition-colors flex items-center justify-between"
+          >
+            <span className="font-semibold text-indigo-600">構造幾何 (Construction)</span>
           </button>
         )}
 

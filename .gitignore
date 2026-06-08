@@ -43,3 +43,6 @@ GRAPH_REPORT.md
 
 # BitFun snapshot data - auto managed
 .bitfun/
+
+# Local Sync & DB
+sync.ffs_db

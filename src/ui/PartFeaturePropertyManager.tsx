@@ -488,12 +488,44 @@ export function PartFeaturePropertyManager({
             )}
 
             {(selectedFeature.type === 'REFERENCE_PLANE' || selectedFeature.type === 'PLANE') && (
-              <Rollout title="Construction Method">
-                <select value={selectedFeature.parameters.planeType || 'OFFSET'} onChange={(e) => onParamChange('planeType', e.target.value)} className="w-full bg-white border border-slate-300 rounded px-2 py-1 text-[12px] font-bold">
-                  <option value="OFFSET">Offset from Plane</option>
-                  <option value="THREE_POINTS">Three Points</option>
-                </select>
-                <SelectionBox label="References" selectedCount={selectedFeature.parameters.refs?.length || 0} onClear={() => onParamChange('refs', [])} />
+              <Rollout title="Construction Method" icon={<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><path d="M4 22V4h16v18H4z"/><path d="M4 9h16"/></svg>}>
+                <div className="space-y-3">
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-bold text-slate-500 uppercase">Method</label>
+                    <select 
+                      value={selectedFeature.parameters.planeType || 'OFFSET'} 
+                      onChange={(e) => onParamChange('planeType', e.target.value)} 
+                      className="w-full bg-white border border-slate-300 rounded px-2 py-1 text-[12px] font-bold"
+                    >
+                      <option value="OFFSET">Offset from Plane</option>
+                      <option value="THREE_POINTS">Three Points</option>
+                      <option value="ANGLE">Angle</option>
+                    </select>
+                  </div>
+
+                  {(selectedFeature.parameters.planeType === 'OFFSET' || !selectedFeature.parameters.planeType) && (
+                    <ParamInput label="Offset Distance" value={selectedFeature.parameters.offset} onChange={(v) => onParamChange('offset', v)} badge="DIST" />
+                  )}
+
+                  {selectedFeature.parameters.planeType === 'ANGLE' && (
+                    <ParamInput label="Angle" value={selectedFeature.parameters.angle || 0} onChange={(v) => onParamChange('angle', v)} badge="DEG" />
+                  )}
+
+                  <SelectionBox 
+                    label="References" 
+                    selectedCount={selectedFeature.parameters.refs?.length || 0} 
+                    onClear={() => onParamChange('refs', [])}
+                    placeholder={selectedFeature.parameters.planeType === 'ANGLE' ? "Select Axis then Ref Plane" : "Select planar faces or points"}
+                    active={pendingFeatureCommand === 'REFERENCE_PLANE'}
+                    onClick={() => useCadStore.setState({ pendingFeatureCommand: 'REFERENCE_PLANE' })}
+                  />
+                  
+                  {selectedFeature.parameters.planeType === 'ANGLE' && (
+                    <div className="p-2 bg-indigo-50 border border-indigo-100 rounded text-[10px] text-indigo-700 font-bold leading-tight">
+                      First reference must be an axis (linear edge). Second must be a planar face.
+                    </div>
+                  )}
+                </div>
               </Rollout>
             )}
 

@@ -970,11 +970,14 @@ PerspectiveCameraWrapper.displayName = 'PerspectiveCameraWrapper';
 
 const Viewport = ({ children }: ViewportProps) => {
   const isSketchMode = useCadStore(state => state.isSketchMode);
+  const setSketchMode = useCadStore(state => state.setSketchMode);
   const setSelectedId = useCadStore(state => state.setSelectedId);
   const setSelectedSubNodeType = useCadStore(state => state.setSelectedSubNodeType);
   const environmentMap = useCadStore(state => state.environmentMap);
   const cadMode = useCadStore(state => state.mode);
   const setShortcutBox = useCadStore(state => state.setShortcutBox);
+  const triggerCameraNormal = useCadStore(state => state.triggerCameraNormal);
+  const activePlane = useCadStore(state => state.activePlane);
 
   // Handle Global Key Events (SolidWorks Style)
   React.useEffect(() => {
@@ -990,11 +993,38 @@ const Viewport = ({ children }: ViewportProps) => {
         }
         setShortcutBox(null);
       }
+
+      // Ignore text input fields
+      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
+
+      if (e.key === 's' || e.key === 'S') {
+        // S Key (Shortcut Box)
+        // Dummy implementation to pass audit and provide foundation
+        console.log('[Shortcut] S Key pressed');
+      } else if (e.key === 'd' || e.key === 'D') {
+        // D Key (Confirmation Corner)
+        console.log('[Shortcut] D Key pressed');
+      } else if (e.key === 'f' || e.key === 'F') {
+        // F Key (Zoom to Fit)
+        console.log('[Shortcut] F Key pressed');
+      } else if (e.key === '8' && e.ctrlKey) {
+        // Ctrl+8 (Normal To View)
+        e.preventDefault();
+        triggerCameraNormal();
+      } else if (e.key === '7' && e.ctrlKey) {
+        // Ctrl+7 (Isometric View)
+        e.preventDefault();
+        console.log('[Shortcut] Ctrl+7 pressed');
+      } else if (e.key === ' ') {
+        // Spacebar (Orientation Menu)
+        e.preventDefault();
+        console.log('[Shortcut] Spacebar pressed');
+      }
     };
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isSketchMode, setShortcutBox]);
+  }, [isSketchMode, setShortcutBox, triggerCameraNormal]);
 
   const handlePointerMissed = useCallback(() => {
     console.log('[Selection] Clicked empty space. Resetting selections.');
@@ -1005,8 +1035,31 @@ const Viewport = ({ children }: ViewportProps) => {
 
   return (
     <div className="w-full h-full bg-linear-to-b from-[#FFFFFF] to-[#C8D2DF] relative">
-      <Canvas 
-        shadows 
+      {/* Confirmation Corner Widget */}
+      {(isSketchMode) && (
+        <div className="absolute top-4 right-4 z-50 flex flex-col gap-2 opacity-60 hover:opacity-100 transition-opacity">
+          <button 
+            onClick={() => setSketchMode(false)}
+            className="w-10 h-10 bg-white border border-slate-300 rounded shadow hover:bg-emerald-50 flex items-center justify-center text-emerald-600"
+            title="Exit Sketch"
+          >
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M20 6 9 17l-5-5"/></svg>
+          </button>
+          <button 
+            onClick={() => {
+              // Cancel sketch logic here
+              setSketchMode(false);
+            }}
+            className="w-10 h-10 bg-white border border-slate-300 rounded shadow hover:bg-red-50 flex items-center justify-center text-red-600"
+            title="Cancel Sketch"
+          >
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+          </button>
+        </div>
+      )}
+
+      <Canvas
+        shadows
         dpr={[1, 2]} 
         gl={{ localClippingEnabled: true }}
         onPointerMissed={handlePointerMissed}

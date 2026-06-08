@@ -65,7 +65,8 @@ def main():
     for name, (pattern, file_path, weight) in AUDIT_ITEMS.items():
         max_score += weight
         relative_path = os.path.relpath(file_path, ROOT_DIR).replace("\\", "/")
-        file_url = f"[{os.path.basename(file_path)}](file:///{file_path.replace('\\', '/')})"
+        file_path_forward = file_path.replace('\\', '/')
+        file_url = f"[{os.path.basename(file_path)}](file:///{file_path_forward})"
         
         implemented = scan_file(file_path, pattern)
         if implemented:
