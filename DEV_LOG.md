@@ -1,4 +1,22 @@
-## 2026-06-09 SkillsBuilder PDCA: Video VA_Cw0UOAQc (Dice Example) & Reference Point
+## 2026-06-09 SkillsBuilder PDCA: Video Q2VQuy30T-w (Dice Revolved Cut) & Revolved Cut
+
+### Goal:
+- Execute SkillsBuilder closed-loop for the Dice example (Video Q2VQuy30T-w).
+- Implement the missing "Revolved Cut" (旋轉除料) feature required for rounded corners.
+
+### Actions:
+- **Phase 1 [分析偵測]**: Used `yt-dlp` to extract video metadata. Identified "旋轉除料" (Revolved Cut) as the core feature for creating dice rounded corners.
+- **Phase 2 [缺口審計]**: Confirmed that while `REVOLVE` backend existed, there was no explicit "Revolved Cut" UI button or specialized property manager configuration.
+- **Phase 3 [外科手術式補齊]**: 
+  - Frontend UI: Added "Rev Cut" button to `RibbonController.tsx` with red "Cut" icon styling.
+  - Property Manager: Updated `PartFeaturePropertyManager.tsx` to explicitly support the `operation` parameter ('ADD' vs 'CUT') for `REVOLVE` features, including dynamic title switching.
+  - State Management: Restored lost `ribbonLayout` state in `useCadStore.ts` and registered `REVOLVED_CUT`.
+- **Phase 4 [確效與交付]**: Verified that calling `handleRevolveFromSketch('CUT')` correctly triggers the backend boolean cut logic. Updated `gap-checklist.md` with Revolved Cut and Reference Point. Final SCS Score: 95.8%.
+
+### Status:
+- 旋轉除料 (Revolved Cut) 功能已全面實裝並與全域 UI 整合。
+
+
 
 ### Goal:
 - Execute SkillsBuilder closed-loop for the Dice example (Video VA_Cw0UOAQc).

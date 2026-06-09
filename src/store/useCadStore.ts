@@ -685,6 +685,10 @@ export const useCadStore = create<CadState>()(
       setPartMaterial: (m) => set({ partMaterial: m }),
       environmentMap: 'studio',
       setEnvironmentMap: (env) => set({ environmentMap: env }),
+
+      ribbonLayout: DEFAULT_RIBBON_LAYOUT,
+      setRibbonLayout: (ribbonLayout) => set({ ribbonLayout }),
+      resetRibbonLayout: () => set({ ribbonLayout: DEFAULT_RIBBON_LAYOUT }),
     }),
     {
       name: 'cad-storage',
@@ -702,6 +706,24 @@ export const useCadStore = create<CadState>()(
         activeFaceOrigin: state.activeFaceOrigin,
         activeFaceNormal: state.activeFaceNormal,
         activeFaceId: state.activeFaceId,
+        referencePlanes: state.referencePlanes,
+        referenceAxes: state.referenceAxes,
+        projectName: state.projectName,
+        drawingScale: state.drawingScale,
+        drawnBy: state.drawnBy,
+        approvedBy: state.approvedBy,
+        partMaterial: state.partMaterial,
+        environmentMap: state.environmentMap,
+        explodedView: state.explodedView,
+        configurations: state.configurations,
+        activeConfigurationId: state.activeConfigurationId,
+        globalVariables: state.globalVariables,
+        ribbonLayout: state.ribbonLayout,
+      }),
+    }
+  )
+);
+d: state.activeFaceId,
         referencePlanes: state.referencePlanes,
         referenceAxes: state.referenceAxes,
         projectName: state.projectName,
