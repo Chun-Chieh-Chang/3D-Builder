@@ -1,5 +1,5 @@
 # Handover Resume Guide (Auto-Generated)
-**Last Saved:** 2026-06-09 19:52:13
+**Last Saved:** 2026-06-09 20:15:31
 
 > [!IMPORTANT]
 > **To the next Agent/Human taking over:** 
@@ -7,39 +7,33 @@
 
 ## 1. Current Git State
 ```shell
-3adf504 merge: synchronize with remote updates while preserving MID_PLANE and SkillsBuilder progress
+9e0c1cf feat: implement Reference Point geometry feature
 ```
 
 ### Uncommitted Changes
 ```shell
-M DEV_LOG.md
- M backend/app/routers/geometry.py
- M backend/app/services/geometry_service.py
- M handover_resume_guide.md
- M src/hooks/usePartRebuild.ts
- M src/renderer/DatumPlanes.tsx
- M src/renderer/Viewport.tsx
- M src/store/useCadStore.ts
- M src/ui/PartFeaturePropertyManager.tsx
- M src/ui/RibbonBar/RibbonController.tsx
-?? transcript.json
-?? video_info.json
+M  DEV_LOG.md
+MM backend/app/services/geometry_service.py
+M  handover_resume_guide.md
+M  progress.md
+M  skills/dev/solidworks-gap-analyzer/gap-checklist.md
+MM src/store/useCadStore.ts
+M  src/ui/FeatureManagerPanel.tsx
+MM src/ui/PartFeaturePropertyManager.tsx
+MM src/ui/RibbonBar/RibbonController.tsx
+M  src/ui/ShortcutBox.tsx
+M  src/ui/SketchPropertyManager.tsx
+M  src/utils/EquationEngine.ts
+M  task_plan.md
+A  tests/regression/test_feature_reordering.ts
+A  tests/regression/test_fill_pattern.py
+A  tests/regression/test_surface_cut.py
+A  tests/regression/test_thin_feature.py
+A  transcript_COsyShU3l3g_full.json
 ```
 
 ## 2. Recent Development Log (DEV_LOG.md snippet)
 ```markdown
-### Status:
-- 已於 `docs/pdca-system.html` 中實?�此修復，�?測試?�深/淺色模�?下�??�?��?字、徽章�??�示??100% 清晰?��?，�?比度完�???
-- 清�??��? `pdca-flow-diagram.html` 以符??MECE ?��?術�?
-
-## 2026-06-05 SkillsBuilder PDCA: SolidWorks Exercise 05 (Stepped Base with Hub)
-
-### Analysis:
-- **SolidWorks Expert**: �??�?Stepped Base with Hub ?�建模�?程�?L?��?梯�?�?(145x90) -> 中�??��???(72mm) -> 底部 70x5 貫穿?�除 -> ?��?輪�? (D24, L20) -> 輪�??��? (D12) -> ?��??�徵??
-- **Hybrid Verification**:
-  - **Backend Simulation**: 建�?�?`tests/regression/e2e_exercise_5_sim.py`，�?證�??�徵?��??�輯，�???`MID_PLANE` ?�出??`MIRROR` ?�徵??
-  - **Mirror Logic Verification**: 確�?後端 `geometry_service.py` ?�援 `MIRROR` ?�徵類�?，�??�透�? `mirror_plane_refs` (�?`RIGHT` ?��??? ?��??�徵?��???
-- **Result**: ??Passed (?�輯?��??��?)??
 
 ### Status:
 - ?�輯驗�??��?，已建�? SOP `docs/benchmarks/EXERCISE_05_SOP.md`??
@@ -58,6 +52,18 @@ M DEV_LOG.md
 ### Status:
 - 完�?幾�?模擬?�本，�?證�?複�?布�??��?（�??��??�深度�? Add/Cut）�?
 - 已產?��?證�??��?確�? UI 實�??��?齊設計�?範�?
+$log
+$log
+
+## 2026-06-09 SkillsBuilder PDCA: Video Index 79 (Surface Cut)
+
+### Analysis:
+- **SolidWorks Expert**: 影片 8-4 介紹了「曲面除料 (Surface Cut)」特徵。這允許使用者利用一個曲面當作刀具，將實體模型切分並移除一側。
+- **Gap Detection**: 系統缺乏 SURFACE_CUT 的處理邏輯與前端 UI。
+- **Surgical Implementation**:
+  - **Backend**: 在 process_features 迴圈中新增 SURFACE_CUT 處理邏輯，透過 BRepPrimAPI_MakeHalfSpace 與 BRepAlgoAPI_Cut 達成曲面切除。
+  - **UI/UX**: 在 RibbonController 與 PartFeaturePropertyManager 中新增了 Surface Cut 的入口與操作面板。
+- **Result**: ✅ Passed。
 
 ```
 

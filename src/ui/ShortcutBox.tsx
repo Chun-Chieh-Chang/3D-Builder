@@ -96,16 +96,16 @@ export const ShortcutBox: React.FC = () => {
   ];
 
   const featureTools = [
-    { id: 'EXTRUDE', icon: '🧊', label: 'Extrude', action: () => { (window as any).__handleExtrude?.(); } },
-    { id: 'REVOLVE', icon: '🌀', label: 'Revolve', action: () => { (window as any).__handleRevolve?.(); } },
-    { id: 'FILLET', icon: 'rounded', label: 'Fillet', action: () => { 
+    { id: 'EXTRUDE', icon: <ExtrudeIcon />, label: 'Extrude', action: () => { (window as any).__handleExtrude?.(); } },
+    { id: 'REVOLVE', icon: <RevolveIcon />, label: 'Revolve', action: () => { (window as any).__handleRevolve?.(); } },
+    { id: 'FILLET', icon: <FilletIcon />, label: 'Fillet', action: () => { 
         if (features.length > 0) {
           useCadStore.setState({ pendingFeatureCommand: 'FILLET' });
         } else {
           alert('Create a solid body first!');
         }
     } },
-    { id: 'CHAMFER', icon: 'bevel', label: 'Chamfer', action: () => { 
+    { id: 'CHAMFER', icon: <ChamferIcon />, label: 'Chamfer', action: () => { 
         if (features.length > 0) {
           useCadStore.setState({ pendingFeatureCommand: 'CHAMFER' });
         } else {

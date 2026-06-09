@@ -17,9 +17,34 @@ const ParamInput: React.FC<{
   badge?: string;
 }> = ({ label, value, onChange, unit = 'mm', badge }) => {
   const { evaluatedVariables } = useCadStore();
-  const isFormula = typeof value === 'string' && value.startsWith('=');
-  const displayValue = isFormula ? value : value ?? 0;
-  const evaluated = isFormula ? EquationEngine.evaluate(value.substring(1), evaluatedVariables) : Number(value);
+  const [localValue, setLocalValue] = React.useState(value?.toString() || '0');
+  const isEditing = React.useRef(false);
+
+  React.useEffect(() => {
+    if (!isEditing.current) {
+      setLocalValue(value?.toString() || '0');
+    }
+  }, [value]);
+
+  const isFormula = localValue.startsWith('=');
+  const evaluated = isFormula 
+    ? EquationEngine.evaluate(localValue.substring(1), evaluatedVariables) 
+    : EquationEngine.evaluate(localValue, evaluatedVariables);
+
+  const handleBlur = () => {
+    isEditing.current = false;
+    if (isFormula) {
+      onChange(localValue);
+    } else {
+      const solved = EquationEngine.evaluate(localValue, evaluatedVariables);
+      onChange(solved);
+      setLocalValue(solved.toFixed(3));
+    }
+  };
+
+  const handleFocus = () => {
+    isEditing.current = true;
+  };
 
   return (
     <div className="space-y-1">
@@ -35,17 +60,12 @@ const ParamInput: React.FC<{
         <div className="relative flex-1">
           <input
             type="text"
-            value={displayValue}
-            onChange={(e) => {
-              const val = e.target.value;
-              if (val.startsWith('=')) onChange(val);
-              else {
-                const num = parseFloat(val);
-                onChange(isNaN(num) ? 0 : num);
-              }
-            }}
+            value={localValue}
+            onChange={(e) => setLocalValue(e.target.value)}
+            onBlur={handleBlur}
             onKeyDown={(e) => {
               if (e.key === 'Enter') {
+                handleBlur();
                 (e.target as HTMLInputElement).blur();
               }
             }}
@@ -55,7 +75,7 @@ const ParamInput: React.FC<{
         </div>
         <span className="text-[11px] text-slate-500 font-bold w-6">{unit}</span>
       </div>
-      {isFormula && (
+      {(isFormula || (localValue !== evaluated.toString() && localValue !== evaluated.toFixed(3))) && (
         <div className="text-[10px] text-emerald-600 font-black text-right pr-8 animate-in fade-in">
           = {evaluated.toFixed(3)} {unit}
         </div>
@@ -96,7 +116,7 @@ export function PartFeaturePropertyManager({
   const pendingFeatureCommand = useCadStore((state: CadState) => state.pendingFeatureCommand);
 
   const handleConfirm = () => {
-    if (onBuildSweepLoft && ['SWEEP', 'LOFT', 'HELICAL_SWEEP', 'FILLET', 'CHAMFER', 'SURFACE_OFFSET', 'SURFACE_KNIT', 'DOME'].includes(selectedFeature.type)) {
+    if (onBuildSweepLoft && ['SWEEP', 'LOFT', 'HELICAL_SWEEP', 'FILLET', 'CHAMFER', 'SURFACE_OFFSET', 'SURFACE_KNIT'].includes(selectedFeature.type)) {
       onBuildSweepLoft(selectedFeature);
     }
     setSelectedId(null);
@@ -164,6 +184,39 @@ export function PartFeaturePropertyManager({
               </Rollout>
             )}
 
+            {selectedFeature.type === 'SURFACE_CUT' && (
+              <Rollout title="Surface Cut" icon={<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="7.5 4.21 12 6.81 16.5 4.21"/><polyline points="7.5 19.79 7.5 14.6 3 12"/><polyline points="21 12 16.5 14.6 16.5 19.79"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg>}>
+                <div className="space-y-3">
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-bold text-slate-500 uppercase">Cutting Tool</label>
+                    <select
+                      value={selectedFeature.parameters.tool_feature_id || ''}
+                      onChange={(e) => onParamChange('tool_feature_id', e.target.value)}
+                      className="w-full bg-white border border-slate-300 rounded px-2 py-1 text-[12px] font-bold"
+                    >
+                      <option value="">— Select Surface Feature —</option>
+                      {features.filter(f => f.type === 'SURFACE_OFFSET' || f.type === 'SURFACE_KNIT' || f.type === 'REFERENCE_PLANE').map(f => (
+                        <option key={f.id} value={f.id}>{f.name}</option>
+                      ))}
+                    </select>
+                  </div>
+                  
+                  <div className="flex items-center justify-between">
+                    <label className="text-[10px] font-bold text-slate-500 uppercase">Flip Direction</label>
+                    <button 
+                      onClick={() => onParamChange('flip', !selectedFeature.parameters.flip)}
+                      className={`px-3 py-1 rounded text-[10px] font-black border transition-all ${selectedFeature.parameters.flip ? 'bg-amber-600 text-white border-amber-700' : 'bg-white text-slate-400 border-slate-200'}`}
+                    >
+                      {selectedFeature.parameters.flip ? 'REVERSE' : 'NORMAL'}
+                    </button>
+                  </div>
+                  <div className="p-2 bg-amber-50 border border-amber-100 rounded text-[10px] text-amber-700 font-bold">
+                    Removes material from the side indicated by the surface normal.
+                  </div>
+                </div>
+              </Rollout>
+            )}
+
             {selectedFeature.type === 'PATTERN' && (
               <>
                 <Rollout title="Features to Pattern" icon={<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>}>
@@ -200,61 +253,191 @@ export function PartFeaturePropertyManager({
 
                 <Rollout title="Direction 1" icon={<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><path d="m5 12 7-7 7 7"/><path d="M12 19V5"/></svg>}>
                   <div className="space-y-3">
-                    <SelectionBox 
-                      label="Pattern Direction"
-                      items={(selectedFeature.parameters.direction_refs || []).map((ref: any, idx: number) => ({ id: ref.id || `${idx}`, name: `Edge ${idx + 1}` }))}
-                      onRemove={() => onParamChange('direction_refs', [])}
-                      onClear={() => onParamChange('direction_refs', [])}
-                      placeholder="Select edge for direction"
-                      maxHeight="60px"
-                    />
+                    <div className="flex items-center gap-2">
+                      <div className="flex-1">
+                        <SelectionBox 
+                          label={selectedFeature.parameters.pattern_type === 'CIRCULAR' ? "Rotation Axis" : "Pattern Direction"}
+                          items={(selectedFeature.parameters.direction_refs || []).map((ref: any, idx: number) => ({ id: ref.id || `${idx}`, name: ref.type === 'FACE' ? `Face ${ref.id.slice(0,4)}` : `Edge ${idx + 1}` }))}
+                          onRemove={() => onParamChange('direction_refs', [])}
+                          onClear={() => onParamChange('direction_refs', [])}
+                          placeholder={selectedFeature.parameters.pattern_type === 'CIRCULAR' ? "Select circular edge or face" : "Select edge for direction"}
+                          maxHeight="60px"
+                        />
+                      </div>
+                      <button 
+                        onClick={() => onParamChange('flip1', !selectedFeature.parameters.flip1)}
+                        className={`mt-4 p-1.5 border rounded transition-all ${selectedFeature.parameters.flip1 ? 'bg-[#005B9A] border-[#004A7C] text-white shadow-inner' : 'bg-white border-slate-300 text-slate-400 hover:text-slate-600'}`}
+                        title="Reverse Direction"
+                      >
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="m7 11-5 5 5 5v-4h10v4l5-5-5-5v4H7Z"/></svg>
+                      </button>
+                    </div>
+
+                    {selectedFeature.parameters.pattern_type === 'CIRCULAR' && (
+                      <div className="flex items-center justify-between">
+                        <label className="text-[10px] font-bold text-slate-500 uppercase">Equal Spacing</label>
+                        <button 
+                          onClick={() => onParamChange('equalSpacing', !selectedFeature.parameters.equalSpacing)}
+                          className={`px-3 py-1 rounded text-[10px] font-black border transition-all ${selectedFeature.parameters.equalSpacing ? 'bg-[#005B9A] text-white border-[#004A7C]' : 'bg-white text-slate-400 border-slate-200'}`}
+                        >
+                          {selectedFeature.parameters.equalSpacing ? 'ON' : 'OFF'}
+                        </button>
+                      </div>
+                    )}
 
                     <div className="grid grid-cols-2 gap-2">
-                      <ParamInput label="Spacing" value={selectedFeature.parameters.spacing} onChange={(v) => onParamChange('spacing', v)} />
+                      <ParamInput 
+                        label={selectedFeature.parameters.pattern_type === 'CIRCULAR' ? (selectedFeature.parameters.equalSpacing ? "Total Angle" : "Step Angle") : "Spacing"} 
+                        value={selectedFeature.parameters.spacing} 
+                        onChange={(v) => onParamChange('spacing', v)} 
+                        unit={selectedFeature.parameters.pattern_type === 'CIRCULAR' ? "deg" : "mm"}
+                      />
                       <ParamInput label="Instances" value={selectedFeature.parameters.count} onChange={(v) => onParamChange('count', v)} unit="pcs" />
                     </div>
                   </div>
                 </Rollout>
 
-                <Rollout title="Pattern Type" icon={<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="3"/></svg>}>
-                  <div className="space-y-3">
-                    <div className="space-y-1">
-                      <label className="text-[10px] font-bold text-slate-500 uppercase">Method</label>
-                      <select
-                        value={selectedFeature.parameters.pattern_type || 'LINEAR'}
-                        onChange={(e) => onParamChange('pattern_type', e.target.value)}
-                        className="w-full bg-white border border-slate-300 rounded px-2 py-1 text-[12px] font-bold"
-                      >
-                        <option value="LINEAR">Linear Pattern</option>
-                        <option value="CIRCULAR">Circular Pattern</option>
-                      </select>
-                    </div>
-
-                    {selectedFeature.parameters.pattern_type === 'CIRCULAR' && (
-                      <div className="space-y-3 animate-in fade-in slide-in-from-top-1">
-                        <SelectionBox 
-                          label="Rotation Axis"
-                          items={selectedFeature.parameters.axis_edge_id ? [{ id: selectedFeature.parameters.axis_edge_id, name: `Axis (${selectedFeature.parameters.axis_edge_id.slice(0, 4)})` }] : []}
-                          onRemove={() => onParamChange('axis_edge_id', null)}
-                          onClear={() => onParamChange('axis_edge_id', null)}
-                          placeholder="Select a center line or edge"
-                          active={pendingFeatureCommand === 'PATTERN'}
-                          onClick={() => useCadStore.setState({ pendingFeatureCommand: 'PATTERN' })}
-                        />
-                        <div className="flex items-center justify-between">
-                          <label className="text-[10px] font-bold text-slate-500 uppercase">Equal Spacing</label>
-                          <button 
-                            onClick={() => onParamChange('equalSpacing', selectedFeature.parameters.equalSpacing === undefined ? true : !selectedFeature.parameters.equalSpacing)}
-                            className={`px-3 py-1 rounded text-[10px] font-black border transition-all ${selectedFeature.parameters.equalSpacing !== false ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-slate-400 border-slate-200'}`}
-                          >
-                            {selectedFeature.parameters.equalSpacing !== false ? 'ON' : 'OFF'}
-                          </button>
-                        </div>
-                        <ParamInput label="Total Angle" value={selectedFeature.parameters.totalAngle || 360} onChange={(v) => onParamChange('totalAngle', v)} unit="deg" badge="∠" />
+                {(selectedFeature.parameters.pattern_type || 'LINEAR') === 'LINEAR' && (
+                  <Rollout title="Direction 2" icon={<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><path d="m5 12 7-7 7 7"/><path d="M12 19V5"/></svg>}>
+                    <div className="space-y-3">
+                      <div className="flex items-center justify-between">
+                        <label className="text-[10px] font-bold text-slate-500 uppercase">Enable Dir 2</label>
+                        <button 
+                          onClick={() => onParamChange('count2', selectedFeature.parameters.count2 ? 0 : 2)}
+                          className={`px-3 py-1 rounded text-[10px] font-black border transition-all ${selectedFeature.parameters.count2 && selectedFeature.parameters.count2 > 0 ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-slate-400 border-slate-200'}`}
+                        >
+                          {selectedFeature.parameters.count2 && selectedFeature.parameters.count2 > 0 ? 'ON' : 'OFF'}
+                        </button>
                       </div>
-                    )}
+
+                      {selectedFeature.parameters.count2 !== undefined && selectedFeature.parameters.count2 > 0 && (
+                        <div className="space-y-3 animate-in fade-in slide-in-from-top-1">
+                          <div className="flex items-center gap-2">
+                            <div className="flex-1">
+                              <SelectionBox 
+                                label="Direction 2"
+                                items={(selectedFeature.parameters.direction2_refs || []).map((ref: any, idx: number) => ({ id: ref.id || `${idx}`, name: `Edge ${idx + 1}` }))}
+                                onRemove={(id) => onParamChange('direction2_refs', (selectedFeature.parameters.direction2_refs || []).filter((r: any) => r.id !== id))}
+                                onClear={() => onParamChange('direction2_refs', [])}
+                                placeholder="Select edge for Dir 2"
+                                maxHeight="60px"
+                              />
+                            </div>
+                            <button 
+                              onClick={() => onParamChange('flip2', !selectedFeature.parameters.flip2)}
+                              className={`mt-4 p-1.5 border rounded transition-all ${selectedFeature.parameters.flip2 ? 'bg-[#005B9A] border-[#004A7C] text-white shadow-inner' : 'bg-white border-slate-300 text-slate-400 hover:text-slate-600'}`}
+                              title="Reverse Direction 2"
+                            >
+                              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="m7 11-5 5 5 5v-4h10v4l5-5-5-5v4H7Z"/></svg>
+                            </button>
+                          </div>
+
+                          <div className="grid grid-cols-2 gap-2">
+                            <ParamInput label="Spacing 2" value={selectedFeature.parameters.spacing2 || 10} onChange={(v) => onParamChange('spacing2', v)} />
+                            <ParamInput label="Instances 2" value={selectedFeature.parameters.count2} onChange={(v) => onParamChange('count2', v)} unit="pcs" />
+                          </div>
+
+                          <div className="flex items-center justify-between pt-1">
+                            <label className="text-[10px] font-bold text-slate-500 uppercase">Pattern Seed Only</label>
+                            <button 
+                              onClick={() => onParamChange('patternSeedOnly', !selectedFeature.parameters.patternSeedOnly)}
+                              className={`px-3 py-1 rounded text-[10px] font-black border transition-all ${selectedFeature.parameters.patternSeedOnly ? 'bg-amber-600 text-white border-amber-700' : 'bg-white text-slate-400 border-slate-200'}`}
+                            >
+                              {selectedFeature.parameters.patternSeedOnly ? 'ON' : 'OFF'}
+                            </button>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  </Rollout>
+                )}
+
+                <Rollout title="Instances to Skip" icon={<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><circle cx="12" cy="12" r="10"/><path d="m15 9-6 6M9 9l6 6"/></svg>}>
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-bold text-slate-500 uppercase">Excluded Copies</label>
+                    <div className="flex flex-wrap gap-1 min-h-[24px]">
+                      {(selectedFeature.parameters.instancesToSkip || []).map((idx: number) => (
+                        <button 
+                          key={idx}
+                          onClick={() => onParamChange('instancesToSkip', (selectedFeature.parameters.instancesToSkip || []).filter((i: number) => i !== idx))}
+                          className="bg-slate-200 hover:bg-red-100 hover:text-red-700 text-slate-600 px-1.5 py-0.5 rounded text-[10px] font-black transition-colors"
+                        >
+                          #{idx} ×
+                        </button>
+                      ))}
+                      <button 
+                        onClick={() => {
+                          const input = prompt('Enter instance index to skip (starting from 0):');
+                          if (input !== null) {
+                            const idx = parseInt(input);
+                            if (!isNaN(idx)) {
+                              const current = selectedFeature.parameters.instancesToSkip || [];
+                              if (!current.includes(idx)) onParamChange('instancesToSkip', [...current, idx].sort((a,b) => a-b));
+                            }
+                          }
+                        }}
+                        className="bg-white border border-dashed border-slate-300 text-slate-400 px-2 py-0.5 rounded text-[10px] font-bold hover:border-slate-400 hover:text-slate-600"
+                      >
+                        + Skip
+                      </button>
+                    </div>
                   </div>
                 </Rollout>
+
+                <Rollout title="Pattern Type" icon={<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="3"/></svg>}>
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-bold text-slate-500 uppercase">Method</label>
+                    <select
+                      value={selectedFeature.parameters.pattern_type || 'LINEAR'}
+                      onChange={(e) => onParamChange('pattern_type', e.target.value)}
+                      className="w-full bg-white border border-slate-300 rounded px-2 py-1 text-[12px] font-bold"
+                    >
+                      <option value="LINEAR">Linear Pattern</option>
+                      <option value="CIRCULAR">Circular Pattern</option>
+                      <option value="FILL">Fill Pattern</option>
+                    </select>
+                  </div>
+                </Rollout>
+
+                {selectedFeature.parameters.pattern_type === 'FILL' && (
+                  <>
+                    <Rollout title="Fill Boundary" icon={<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>}>
+                      <div className="space-y-2">
+                        <select
+                          value={selectedFeature.parameters.boundary_id || ''}
+                          onChange={(e) => onParamChange('boundary_id', e.target.value)}
+                          className="w-full bg-white border border-slate-300 rounded px-2 py-1 text-[12px] font-bold"
+                        >
+                          <option value="">— Select Boundary Sketch —</option>
+                          {features.filter(f => f.type === 'SKETCH').map(f => <option key={f.id} value={f.id}>{f.name}</option>)}
+                        </select>
+                        <div className="p-2 bg-emerald-50 border border-emerald-100 rounded text-[10px] text-emerald-700 font-bold">
+                          The pattern will be contained within the selected closed sketch.
+                        </div>
+                      </div>
+                    </Rollout>
+
+                    <Rollout title="Fill Settings" icon={<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M9 9h6v6H9z"/></svg>}>
+                      <div className="space-y-3">
+                        <div className="space-y-1">
+                          <label className="text-[10px] font-bold text-slate-500 uppercase">Layout</label>
+                          <select
+                            value={selectedFeature.parameters.fill_layout || 'SQUARE'}
+                            onChange={(e) => onParamChange('fill_layout', e.target.value)}
+                            className="w-full bg-white border border-slate-300 rounded px-2 py-1 text-[12px] font-bold"
+                          >
+                            <option value="SQUARE">Square / Grid</option>
+                            <option value="PERFORATION">Perforation</option>
+                            <option value="HEXAGON">Hexagonal / Honeycomb</option>
+                          </select>
+                        </div>
+                        <ParamInput label="Instance Spacing" value={selectedFeature.parameters.spacing} onChange={(v) => onParamChange('spacing', v)} badge="SP" />
+                        <ParamInput label="Margin" value={selectedFeature.parameters.margin || 2.0} onChange={(v) => onParamChange('margin', v)} badge="MG" />
+                        <ParamInput label="Rotation" value={selectedFeature.parameters.fill_angle || 0} onChange={(v) => onParamChange('fill_angle', v)} unit="deg" badge="ROT" />
+                      </div>
+                    </Rollout>
+                  </>
+                )}
               </>
             )}
 
@@ -308,41 +491,9 @@ export function PartFeaturePropertyManager({
                         <option value="BLIND">Blind</option>
                         <option value="THROUGH_ALL">Through All</option>
                         <option value="UP_TO_NEXT">Up To Next</option>
-                        <option value="UP_TO_VERTEX">Up To Vertex</option>
                         <option value="UP_TO_SURFACE">Up To Surface</option>
-                        <option value="OFFSET_FROM_SURFACE">Offset From Surface</option>
-                        <option value="MID_PLANE">Mid Plane</option>
                       </select>
                     </div>
-
-                    {((selectedFeature.parameters.endCondition || 'BLIND') === 'UP_TO_SURFACE' || (selectedFeature.parameters.endCondition || 'BLIND') === 'OFFSET_FROM_SURFACE') && (
-                      <div className="space-y-2">
-                        <SelectionBox 
-                          label="Reference Face"
-                          items={selectedFeature.parameters.upToSurfaceRef ? [{ id: selectedFeature.parameters.upToSurfaceRef.id, name: `Face ${selectedFeature.parameters.upToSurfaceRef.id.slice(0,4)}` }] : []}
-                          onRemove={() => onParamChange('upToSurfaceRef', null)}
-                          onClear={() => onParamChange('upToSurfaceRef', null)}
-                          placeholder="Select a face from 3D view"
-                          active={pendingFeatureCommand === 'EXTRUDE'}
-                          onClick={() => useCadStore.setState({ pendingFeatureCommand: 'EXTRUDE' })}
-                        />
-                        {(selectedFeature.parameters.endCondition || 'BLIND') === 'OFFSET_FROM_SURFACE' && (
-                          <ParamInput label="Offset" value={selectedFeature.parameters.offsetDistance || 0} onChange={(v) => onParamChange('offsetDistance', v)} badge="OFF" />
-                        )}
-                      </div>
-                    )}
-
-                    {(selectedFeature.parameters.endCondition || 'BLIND') === 'UP_TO_VERTEX' && (
-                      <SelectionBox 
-                        label="Reference Vertex"
-                        items={selectedFeature.parameters.upToVertexRef ? [{ id: selectedFeature.parameters.upToVertexRef.id, name: `Vertex ${selectedFeature.parameters.upToVertexRef.id.slice(0,4)}` }] : []}
-                        onRemove={() => onParamChange('upToVertexRef', null)}
-                        onClear={() => onParamChange('upToVertexRef', null)}
-                        placeholder="Select a vertex from 3D view"
-                        active={pendingFeatureCommand === 'EXTRUDE'}
-                        onClick={() => useCadStore.setState({ pendingFeatureCommand: 'EXTRUDE' })}
-                      />
-                    )}
 
                     {(selectedFeature.parameters.endCondition || 'BLIND') === 'BLIND' && (
                       <ParamInput label="Depth" value={selectedFeature.parameters.depth} onChange={(v) => onParamChange('depth', v)} badge="D1" />
@@ -356,43 +507,6 @@ export function PartFeaturePropertyManager({
                          {selectedFeature.parameters.isSurfaceOnly ? 'SURFACE MODE ON' : 'SOLID BOSS/BASE'}
                        </button>
                     </div>
-                  </div>
-                </Rollout>
-
-                <Rollout title="Direction 2" icon={<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><path d="m19 12-7 7-7-7"/><path d="M12 5v14"/></svg>}>
-                  <div className="space-y-3">
-                    <div className="flex items-center justify-between">
-                      <label className="text-[10px] font-bold text-slate-500 uppercase">Enable Direction 2</label>
-                      <button 
-                        onClick={() => onParamChange('hasDirection2', !selectedFeature.parameters.hasDirection2)}
-                        className={`px-3 py-1 rounded text-[10px] font-black border transition-all ${selectedFeature.parameters.hasDirection2 ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-slate-400 border-slate-200'}`}
-                      >
-                        {selectedFeature.parameters.hasDirection2 ? 'ON' : 'OFF'}
-                      </button>
-                    </div>
-                    {selectedFeature.parameters.hasDirection2 && (
-                      <div className="space-y-2 animate-in fade-in slide-in-from-top-1">
-                        <div className="space-y-1 mt-2">
-                          <label className="text-[10px] font-bold text-slate-500 uppercase">End Condition 2</label>
-                          <select
-                            value={selectedFeature.parameters.endCondition2 || 'BLIND'}
-                            onChange={(e) => {
-                              onParamChange('endCondition2', e.target.value);
-                              if (e.target.value === 'THROUGH_ALL') {
-                                onParamChange('depth2', 9999);
-                              }
-                            }}
-                            className="w-full bg-white border border-slate-300 rounded px-2 py-1 text-[12px] font-bold"
-                          >
-                            <option value="BLIND">Blind</option>
-                            <option value="THROUGH_ALL">Through All</option>
-                          </select>
-                        </div>
-                        {(selectedFeature.parameters.endCondition2 || 'BLIND') === 'BLIND' && (
-                          <ParamInput label="Depth 2" value={selectedFeature.parameters.depth2 || 10} onChange={(v) => onParamChange('depth2', v)} badge="D2" />
-                        )}
-                      </div>
-                    )}
                   </div>
                 </Rollout>
 
@@ -422,384 +536,99 @@ export function PartFeaturePropertyManager({
                   </div>
                 </Rollout>
 
-                <Rollout title="Selected Contours" icon={<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>}>
-                  <SelectionBox 
-                    label="Contours"
-                    items={(selectedFeature.parameters.selectedContours || []).map((ref: any, idx: number) => ({ id: ref.id || ref || `${idx}`, name: `Edge/Region ${idx + 1}` }))}
-                    onRemove={(id) => {
-                      const current = selectedFeature.parameters.selectedContours || [];
-                      onParamChange('selectedContours', current.filter((r: any) => (r.id || r) !== id));
-                    }}
-                    onClear={() => onParamChange('selectedContours', [])}
-                    placeholder="Select sketch contours or regions"
-                  />
-                  <div className="mt-2 text-[9px] text-slate-400 italic leading-tight">
-                    Leave empty to extrude the entire sketch profile.
-                  </div>
+                <Rollout title="Thin Feature" icon={<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><rect x="4" y="4" width="16" height="16" rx="2"/><path d="M9 9h6v6H9z"/></svg>}>
+                   <div className="space-y-3">
+                     <div className="flex items-center justify-between">
+                       <label className="text-[10px] font-bold text-slate-500 uppercase">Thin Feature On/Off</label>
+                       <button
+                         onClick={() => onParamChange('isThin', !selectedFeature.parameters.isThin)}
+                         className={`px-3 py-1 rounded text-[10px] font-black border transition-all ${selectedFeature.parameters.isThin ? 'bg-rose-600 text-white border-rose-600 shadow-sm' : 'bg-white text-slate-400 border-slate-200'}`}
+                       >
+                         {selectedFeature.parameters.isThin ? 'ON' : 'OFF'}
+                       </button>
+                     </div>
+
+                     {selectedFeature.parameters.isThin && (
+                       <div className="space-y-2 animate-in fade-in slide-in-from-top-1">
+                         <div className="space-y-1">
+                           <label className="text-[10px] font-bold text-slate-500 uppercase">Type</label>
+                           <select
+                             value={selectedFeature.parameters.thinDirection || 'ONE_DIRECTION'}
+                             onChange={(e) => onParamChange('thinDirection', e.target.value)}
+                             className="w-full bg-white border border-slate-300 rounded px-2 py-1 text-[12px] font-bold"
+                           >
+                             <option value="ONE_DIRECTION">One-Direction</option>
+                             <option value="MID_PLANE">Mid-Plane</option>
+                             <option value="TWO_DIRECTIONS">Two-Directions</option>
+                           </select>
+                         </div>
+                         <ParamInput 
+                           label="Thickness" 
+                           value={selectedFeature.parameters.thinThickness || 1.0} 
+                           onChange={(v) => onParamChange('thinThickness', v)} 
+                           badge="T1" 
+                         />
+                         {selectedFeature.parameters.thinDirection === 'TWO_DIRECTIONS' && (
+                           <ParamInput 
+                             label="Thickness 2" 
+                             value={selectedFeature.parameters.thinThickness2 || 1.0} 
+                             onChange={(v) => onParamChange('thinThickness2', v)} 
+                             badge="T2" 
+                           />
+                         )}
+                       </div>
+                     )}
+                   </div>
                 </Rollout>
               </>
             )}
 
             {selectedFeature.type === 'REVOLVE' && (
               <>
-                <Rollout 
-                  title={selectedFeature.parameters.operation === 'CUT' ? "Revolve Cut Parameters" : "Revolve Parameters"} 
-                  icon={<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke={selectedFeature.parameters.operation === 'CUT' ? "#EF4444" : "currentColor"} strokeWidth="3"><path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8"/><polyline points="21 3 21 8 16 8"/></svg>}
-                >
+                <Rollout title="Revolve Parameters" icon={<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8"/><polyline points="21 3 21 8 16 8"/></svg>}>
                   <div className="space-y-3">
                     <div className="space-y-1">
                       <label className="text-[10px] font-bold text-slate-500 uppercase">Revolve Type</label>
-                      <select 
-                        value={selectedFeature.parameters.endCondition || 'BLIND'} 
-                        onChange={(e) => onParamChange('endCondition', e.target.value)}
-                        className="w-full bg-white border border-slate-300 rounded px-2 py-1 text-[12px] font-bold"
-                      >
-                        <option value="BLIND">Blind</option>
-                        <option value="MID_PLANE">Mid Plane</option>
+                      <select value="ONE_DIRECTION" disabled className="w-full bg-[#F5F5F5] border border-slate-300 rounded px-2 py-1 text-[12px] font-bold text-slate-500">
+                        <option value="ONE_DIRECTION">One-Direction</option>
                       </select>
                     </div>
                     <ParamInput label="Angle" value={selectedFeature.parameters.angle} onChange={(v) => onParamChange('angle', v)} unit="deg" badge="A1" />
                   </div>
                 </Rollout>
-
-                <Rollout title="Direction 2" icon={<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><path d="m19 12-7 7-7-7"/><path d="M12 5v14"/></svg>}>
-                   <div className="space-y-3">
-                    <div className="flex items-center justify-between">
-                      <label className="text-[10px] font-bold text-slate-500 uppercase">Enable Direction 2</label>
-                      <button 
-                        onClick={() => onParamChange('hasDirection2', !selectedFeature.parameters.hasDirection2)}
-                        className={`px-3 py-1 rounded text-[10px] font-black border transition-all ${selectedFeature.parameters.hasDirection2 ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-slate-400 border-slate-200'}`}
-                      >
-                        {selectedFeature.parameters.hasDirection2 ? 'ON' : 'OFF'}
-                      </button>
-                    </div>
-                    {selectedFeature.parameters.hasDirection2 && (selectedFeature.parameters.endCondition || 'BLIND') !== 'MID_PLANE' && (
-                      <div className="space-y-2 animate-in fade-in slide-in-from-top-1">
-                        <ParamInput label="Angle 2" value={selectedFeature.parameters.angle2 || 90} onChange={(v) => onParamChange('angle2', v)} unit="deg" badge="A2" />
-                      </div>
-                    )}
-                  </div>
-                </Rollout>
-
                 <Rollout title="Axis of Revolution" icon={<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><line x1="12" y1="2" x2="12" y2="22"/><polyline points="5 12 12 12 19 12"/></svg>}>
-                  <SelectionBox 
-                    label="Axis Selection"
-                    items={selectedFeature.parameters.axis_edge_id ? [{ id: selectedFeature.parameters.axis_edge_id, name: `Axis (${selectedFeature.parameters.axis_edge_id.slice(0, 4)})` }] : []}
-                    onRemove={() => {
-                      onParamChange('axis_edge_id', null);
-                      onParamChange('axis_points', null);
-                    }}
-                    onClear={() => {
-                      onParamChange('axis_edge_id', null);
-                      onParamChange('axis_points', null);
-                    }}
-                    placeholder="Select a line or axis"
-                    active={pendingFeatureCommand === 'REVOLVE'}
-                    onClick={() => useCadStore.setState({ pendingFeatureCommand: 'REVOLVE' })}
-                  />
-                </Rollout>
-
-                <Rollout title="Thin Feature" icon={<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>}>
-                  <div className="space-y-3">
-                    <div className="flex items-center justify-between">
-                      <label className="text-[10px] font-bold text-slate-500 uppercase">Thin Revolve</label>
-                      <button 
-                        onClick={() => onParamChange('isThinFeature', !selectedFeature.parameters.isThinFeature)}
-                        className={`px-3 py-1 rounded text-[10px] font-black border transition-all ${selectedFeature.parameters.isThinFeature ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-slate-400 border-slate-200'}`}
-                      >
-                        {selectedFeature.parameters.isThinFeature ? 'ON' : 'OFF'}
-                      </button>
-                    </div>
-                    {selectedFeature.parameters.isThinFeature && (
-                      <ParamInput label="Thickness" value={selectedFeature.parameters.thinThickness || 1.0} onChange={(v) => onParamChange('thinThickness', v)} badge="THK" />
-                    )}
+                  <div className="p-2 border border-dashed border-slate-200 rounded text-center">
+                    <span className="text-[10px] text-slate-400 uppercase font-bold tracking-widest italic">Default: Sketch Axis</span>
                   </div>
-                </Rollout>
-
-                <Rollout title="Selected Contours" icon={<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>}>
-                  <SelectionBox 
-                    label="Contours"
-                    items={(selectedFeature.parameters.selectedContours || []).map((ref: any, idx: number) => ({ id: ref.id || ref || `${idx}`, name: `Edge/Region ${idx + 1}` }))}
-                    onRemove={(id) => {
-                      const current = selectedFeature.parameters.selectedContours || [];
-                      onParamChange('selectedContours', current.filter((r: any) => (r.id || r) !== id));
-                    }}
-                    onClear={() => onParamChange('selectedContours', [])}
-                    placeholder="Select sketch contours or regions"
-                  />
                 </Rollout>
               </>
             )}
 
             {(selectedFeature.type === 'FILLET' || selectedFeature.type === 'CHAMFER') && (
               <>
-                <Rollout title="Fillet Type" icon={<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><circle cx="12" cy="12" r="10"/><path d="M12 2a7 7 0 0 1 7 7"/></svg>}>
-                  <div className="grid grid-cols-4 gap-1">
-                    {[
-                      { id: 'CONSTANT', label: 'Constant', icon: '🔵' },
-                      { id: 'VARIABLE', label: 'Variable', icon: '🟢' },
-                      { id: 'FACE', label: 'Face', icon: '🟧' },
-                      { id: 'FULL_ROUND', label: 'Full', icon: '⚪' }
-                    ].map(t => (
-                      <button
-                        key={t.id}
-                        onClick={() => onParamChange('filletType', t.id)}
-                        className={`flex flex-col items-center justify-center p-1.5 rounded border transition-all ${
-                          (selectedFeature.parameters.filletType || 'CONSTANT') === t.id
-                            ? 'bg-primary/10 border-primary text-primary shadow-inner'
-                            : 'bg-white border-slate-200 text-slate-400 hover:bg-slate-50'
-                        }`}
-                        title={t.label}
-                      >
-                        <span className="text-sm">{t.icon}</span>
-                      </button>
-                    ))}
-                  </div>
-                </Rollout>
-
                 <Rollout title="Items to Fillet" icon={<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>}>
-                  <div className="space-y-3">
-                    {(!selectedFeature.parameters.filletType || selectedFeature.parameters.filletType === 'CONSTANT' || selectedFeature.parameters.filletType === 'VARIABLE') && (
-                      <SelectionBox 
-                        label={selectedFeature.type === 'FILLET' ? "Edges to Fillet" : "Edges to Chamfer"}
-                        items={(selectedFeature.parameters.refs || []).map((ref: any, idx: number) => ({ id: ref.id || `${idx}`, name: `Edge ${idx + 1}` }))}
-                        onRemove={(id) => onParamChange('refs', selectedFeature.parameters.refs.filter((r: any) => r.id !== id))}
-                        onClear={() => onParamChange('refs', [])}
-                        placeholder="Select edges from 3D view"
-                        active={pendingFeatureCommand === 'FILLET'}
-                        onClick={() => useCadStore.setState({ pendingFeatureCommand: 'FILLET' })}
-                      />
-                    )}
-
-                    {selectedFeature.parameters.filletType === 'VARIABLE' && (
-                      <div className="p-2 bg-slate-50 rounded border border-slate-200 space-y-3">
-                        <div className="flex items-center justify-between">
-                          <label className="text-[10px] font-bold text-slate-500 uppercase">Points</label>
-                          <input 
-                            type="number" 
-                            min="2" 
-                            max="10"
-                            value={(selectedFeature.parameters.variablePoints || []).length || 2} 
-                            onChange={(e) => {
-                              const count = parseInt(e.target.value) || 2;
-                              const current = selectedFeature.parameters.variablePoints || [{ r: 2.0 }, { r: 5.0 }];
-                              let next;
-                              if (count > current.length) {
-                                next = [...current, ...Array(count - current.length).fill({ r: 2.0 })];
-                              } else {
-                                next = current.slice(0, count);
-                              }
-                              onParamChange('variablePoints', next);
-                            }}
-                            className="w-12 bg-white border border-slate-200 rounded px-1 py-0.5 text-[11px] font-bold text-center"
-                          />
-                        </div>
-
-                        <div className="space-y-1 max-h-32 overflow-y-auto">
-                          {(selectedFeature.parameters.variablePoints || [{ r: 2.0 }, { r: 5.0 }]).map((p: any, idx: number) => (
-                            <div key={idx} className="flex items-center justify-between gap-2">
-                              <span className="text-[10px] text-slate-400 font-mono">P{idx + 1}</span>
-                              <input 
-                                type="number" 
-                                value={p.r} 
-                                onChange={(e) => {
-                                  const newPoints = [...(selectedFeature.parameters.variablePoints || [{ r: 2.0 }, { r: 5.0 }])];
-                                  newPoints[idx] = { ...newPoints[idx], r: parseFloat(e.target.value) || 0 };
-                                  onParamChange('variablePoints', newPoints);
-                                }}
-                                className="w-full bg-white border border-slate-200 rounded px-1 py-0.5 text-[11px] font-bold text-right"
-                              />
-                            </div>
-                          ))}
-                        </div>
-
-                        <div className="flex flex-col gap-1 border-t border-slate-200 pt-2">
-                           <label className="text-[10px] font-bold text-slate-500 uppercase">Transition</label>
-                           <div className="flex gap-1">
-                              {['SMOOTH', 'STRAIGHT'].map(mode => (
-                                <button
-                                  key={mode}
-                                  onClick={() => onParamChange('transitionType', mode)}
-                                  className={`flex-1 py-1 rounded text-[9px] font-black border transition-all ${
-                                    (selectedFeature.parameters.transitionType || 'SMOOTH') === mode
-                                      ? 'bg-indigo-600 text-white border-indigo-600'
-                                      : 'bg-white text-slate-400 border-slate-200'
-                                  }`}
-                                >
-                                  {mode}
-                                </button>
-                              ))}
-                           </div>
-                        </div>
-                      </div>
-                    )}
-
-                    {selectedFeature.parameters.filletType === 'FACE' && (
-                      <div className="space-y-2">
-                        <SelectionBox 
-                          label="Face Set 1"
-                          items={(selectedFeature.parameters.faceSet1 || []).map((ref: any) => ({ id: ref.id, name: `Face ${ref.id.slice(0, 4)}` }))}
-                          onRemove={(id) => onParamChange('faceSet1', selectedFeature.parameters.faceSet1.filter((r: any) => r.id !== id))}
-                          onClear={() => onParamChange('faceSet1', [])}
-                          placeholder="Select first set of faces"
-                        />
-                        <SelectionBox 
-                          label="Face Set 2"
-                          items={(selectedFeature.parameters.faceSet2 || []).map((ref: any) => ({ id: ref.id, name: `Face ${ref.id.slice(0, 4)}` }))}
-                          onRemove={(id) => onParamChange('faceSet2', selectedFeature.parameters.faceSet2.filter((r: any) => r.id !== id))}
-                          onClear={() => onParamChange('faceSet2', [])}
-                          placeholder="Select second set of faces"
-                        />
-                        <div className="border-t border-slate-100 my-2 pt-2 space-y-3">
-                           <div className="flex items-center justify-between">
-                            <label className="text-[10px] font-bold text-slate-500 uppercase">Constant Width</label>
-                            <button 
-                              onClick={() => onParamChange('isConstantWidth', !selectedFeature.parameters.isConstantWidth)}
-                              className={`px-3 py-1 rounded text-[10px] font-black border transition-all ${selectedFeature.parameters.isConstantWidth ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-slate-400 border-slate-200'}`}
-                            >
-                              {selectedFeature.parameters.isConstantWidth ? 'ON' : 'OFF'}
-                            </button>
-                          </div>
-                          <SelectionBox 
-                            label="Hold Line"
-                            items={(selectedFeature.parameters.holdLineRefs || []).map((ref: any) => ({ id: ref.id, name: `Edge ${ref.id.slice(0, 4)}` }))}
-                            onRemove={(id) => onParamChange('holdLineRefs', selectedFeature.parameters.holdLineRefs.filter((r: any) => r.id !== id))}
-                            onClear={() => onParamChange('holdLineRefs', [])}
-                            placeholder="Select edge to limit fillet"
-                            active={pendingFeatureCommand === 'FILLET'}
-                            onClick={() => useCadStore.setState({ pendingFeatureCommand: 'FILLET' })}
-                          />
-                        </div>
-                      </div>
-                    )}
-
-                    {selectedFeature.parameters.filletType === 'FULL_ROUND' && (
-                      <div className="space-y-2">
-                        <SelectionBox label="Side Face 1" items={selectedFeature.parameters.fullRoundSet1 ? [selectedFeature.parameters.fullRoundSet1].map(r => ({ id: r.id, name: `Face ${r.id.slice(0,4)}` })) : []} onRemove={() => onParamChange('fullRoundSet1', null)} onClear={() => onParamChange('fullRoundSet1', null)} placeholder="Select first side face" />
-                        <SelectionBox label="Center Face" items={selectedFeature.parameters.fullRoundCenter ? [selectedFeature.parameters.fullRoundCenter].map(r => ({ id: r.id, name: `Face ${r.id.slice(0,4)}` })) : []} onRemove={() => onParamChange('fullRoundCenter', null)} onClear={() => onParamChange('fullRoundCenter', null)} placeholder="Select center face" />
-                        <SelectionBox label="Side Face 2" items={selectedFeature.parameters.fullRoundSet2 ? [selectedFeature.parameters.fullRoundSet2].map(r => ({ id: r.id, name: `Face ${r.id.slice(0,4)}` })) : []} onRemove={() => onParamChange('fullRoundSet2', null)} onClear={() => onParamChange('fullRoundSet2', null)} placeholder="Select second side face" />
-                      </div>
-                    )}
-                  </div>
+                  <SelectionBox 
+                    label={selectedFeature.type === 'FILLET' ? "Edges to Fillet" : "Edges to Chamfer"}
+                    items={(selectedFeature.parameters.refs || []).map((ref: any, idx: number) => ({ id: ref.id || `${idx}`, name: `Edge ${idx + 1}` }))}
+                    onRemove={(id) => {
+                      const newRefs = selectedFeature.parameters.refs.filter((r: any) => r.id !== id);
+                      onParamChange('refs', newRefs);
+                    }}
+                    onClear={() => onParamChange('refs', [])}
+                    placeholder="Select edges from 3D view"
+                  />
                 </Rollout>
-
                 <Rollout title="Fillet Parameters" icon={<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><circle cx="12" cy="12" r="10"/><path d="M12 2a7 7 0 0 1 7 7"/></svg>}>
                   <div className="space-y-3">
-                    {selectedFeature.type === 'FILLET' && (selectedFeature.parameters.filletType || 'CONSTANT') === 'CONSTANT' && (
-                       <div className="flex items-center justify-between mb-1">
-                        <label className="text-[10px] font-bold text-slate-500 uppercase">Multiple Radius Fillet</label>
-                        <button 
-                          onClick={() => onParamChange('isMultiRadius', !selectedFeature.parameters.isMultiRadius)}
-                          className={`px-3 py-1 rounded text-[10px] font-black border transition-all ${selectedFeature.parameters.isMultiRadius ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-slate-400 border-slate-200'}`}
-                        >
-                          {selectedFeature.parameters.isMultiRadius ? 'ON' : 'OFF'}
-                        </button>
-                      </div>
-                    )}
-                    
-                    {(!selectedFeature.parameters.isMultiRadius || selectedFeature.parameters.filletType !== 'CONSTANT') && selectedFeature.parameters.filletType !== 'FULL_ROUND' && (
-                      <ParamInput 
-                        label={selectedFeature.type === 'FILLET' ? "Radius" : "Distance"} 
-                        value={selectedFeature.parameters[selectedFeature.type === 'FILLET' ? 'radius' : 'distance']} 
-                        onChange={(v) => onParamChange(selectedFeature.type === 'FILLET' ? 'radius' : 'distance', v)} 
-                        badge={selectedFeature.type === 'FILLET' ? 'R1' : 'D1'} 
-                      />
-                    )}
-
-                    {selectedFeature.parameters.isMultiRadius && (selectedFeature.parameters.filletType || 'CONSTANT') === 'CONSTANT' && (
-                      <div className="space-y-1 max-h-40 overflow-y-auto border-t border-slate-100 pt-2 mt-2">
-                         {(selectedFeature.parameters.refs || []).map((ref: any, idx: number) => (
-                            <div key={ref.id || idx} className="flex items-center justify-between gap-2 p-1.5 bg-slate-50 rounded border border-slate-200/50">
-                              <span className="text-[10px] font-bold text-slate-600 truncate flex-1">
-                                {ref.type === 'FACE' ? 'Face' : 'Edge'} {ref.id?.slice(0, 4) || (idx + 1)}
-                              </span>
-                              <input 
-                                type="number" 
-                                value={ref.radius || selectedFeature.parameters.radius || 2} 
-                                onChange={(e) => {
-                                  const newRefs = [...selectedFeature.parameters.refs];
-                                  newRefs[idx] = { ...ref, radius: parseFloat(e.target.value) || 0 };
-                                  onParamChange('refs', newRefs);
-                                }}
-                                className="w-16 bg-white border border-slate-300 rounded px-1 py-0.5 text-[11px] font-black text-right"
-                              />
-                            </div>
-                         ))}
-                      </div>
-                    )}
-
-                    {selectedFeature.type === 'FILLET' && (!selectedFeature.parameters.filletType || selectedFeature.parameters.filletType === 'CONSTANT') && !selectedFeature.parameters.isMultiRadius && (
+                    <ParamInput 
+                      label={selectedFeature.type === 'FILLET' ? "Radius" : "Distance"} 
+                      value={selectedFeature.parameters[selectedFeature.type === 'FILLET' ? 'radius' : 'distance']} 
+                      onChange={(v) => onParamChange(selectedFeature.type === 'FILLET' ? 'radius' : 'distance', v)} 
+                      badge={selectedFeature.type === 'FILLET' ? 'R1' : 'D1'} 
+                    />
+                    {selectedFeature.type === 'FILLET' && (
                       <ParamInput label="Radius 2" value={selectedFeature.parameters.radius2} onChange={(v) => onParamChange('radius2', v)} badge="R2" />
                     )}
-
-                    {selectedFeature.type === 'FILLET' && (selectedFeature.parameters.filletType || 'CONSTANT') === 'CONSTANT' && (
-                      <div className="space-y-2 border-t border-slate-100 pt-2 mt-2">
-                        <div className="space-y-1">
-                          <label className="text-[10px] font-bold text-slate-500 uppercase">Fillet Profile</label>
-                          <select
-                            value={selectedFeature.parameters.profileType || 'CIRCULAR'}
-                            onChange={(e) => onParamChange('profileType', e.target.value)}
-                            className="w-full bg-white border border-slate-300 rounded px-2 py-1 text-[12px] font-bold"
-                          >
-                            <option value="CIRCULAR">Circular</option>
-                            <option value="CONIC_RHO">Conic Rho</option>
-                            <option value="CONIC_RADIUS">Conic Radius</option>
-                            <option value="CURVATURE_CONTINUOUS">Curvature Continuous (G2)</option>
-                          </select>
-                        </div>
-                        {selectedFeature.parameters.profileType === 'CONIC_RHO' && (
-                          <ParamInput label="Rho" value={selectedFeature.parameters.rho || 0.5} onChange={(v) => onParamChange('rho', v)} badge="RHO" />
-                        )}
-                      </div>
-                    )}
-
-                    <div className="flex items-center justify-between border-t border-slate-100 pt-2 mt-2">
-                      <label className="text-[10px] font-bold text-slate-500 uppercase">Tangent Propagation</label>
-                      <button 
-                        onClick={() => onParamChange('tangentPropagation', selectedFeature.parameters.tangentPropagation === undefined ? false : !selectedFeature.parameters.tangentPropagation)}
-                        className={`px-3 py-1 rounded text-[10px] font-black border transition-all ${selectedFeature.parameters.tangentPropagation !== false ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-slate-400 border-slate-200'}`}
-                      >
-                        {selectedFeature.parameters.tangentPropagation !== false ? 'ON' : 'OFF'}
-                      </button>
-                    </div>
-                  </div>
-                </Rollout>
-
-                <Rollout title="Setback Parameters" icon={<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>}>
-                   <div className="space-y-3">
-                    <SelectionBox 
-                      label="Vertices"
-                      items={(selectedFeature.parameters.setbackRefs || []).map((ref: any, idx: number) => ({ id: ref.id, name: `Vertex ${ref.id.slice(0, 4)}` }))}
-                      onRemove={(id) => onParamChange('setbackRefs', selectedFeature.parameters.setbackRefs.filter((r: any) => r.id !== id))}
-                      onClear={() => onParamChange('setbackRefs', [])}
-                      placeholder="Select corners for setback"
-                      active={pendingFeatureCommand === 'FILLET'}
-                      onClick={() => useCadStore.setState({ pendingFeatureCommand: 'FILLET' })}
-                    />
-                    <ParamInput label="Setback Dist" value={selectedFeature.parameters.setbackDist || 2.0} onChange={(v) => onParamChange('setbackDist', v)} badge="SET" />
-                  </div>
-                </Rollout>
-
-                <Rollout title="Fillet Options" icon={<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/></svg>}>
-                  <div className="space-y-2">
-                    <div className="flex items-center justify-between">
-                      <label className="text-[10px] font-bold text-slate-500 uppercase">Keep Features</label>
-                      <button 
-                        onClick={() => onParamChange('keepFeatures', !selectedFeature.parameters.keepFeatures)}
-                        className={`px-3 py-1 rounded text-[10px] font-black border transition-all ${selectedFeature.parameters.keepFeatures ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-slate-400 border-slate-200'}`}
-                      >
-                        {selectedFeature.parameters.keepFeatures ? 'ON' : 'OFF'}
-                      </button>
-                    </div>
-                    <div className="flex items-center justify-between">
-                      <label className="text-[10px] font-bold text-slate-500 uppercase">Round Corners</label>
-                      <button 
-                        onClick={() => onParamChange('roundCorners', !selectedFeature.parameters.roundCorners)}
-                        className={`px-3 py-1 rounded text-[10px] font-black border transition-all ${selectedFeature.parameters.roundCorners ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-slate-400 border-slate-200'}`}
-                      >
-                        {selectedFeature.parameters.roundCorners ? 'ON' : 'OFF'}
-                      </button>
-                    </div>
                   </div>
                 </Rollout>
               </>
@@ -859,110 +688,11 @@ export function PartFeaturePropertyManager({
                     ))}
                   </div>
                 </Rollout>
-
-                <Rollout title="Standard & Size">
-                   <div className="space-y-3">
-                    <div className="space-y-1">
-                      <label className="text-[10px] font-bold text-slate-500 uppercase">Standard</label>
-                      <select 
-                        value={selectedFeature.parameters.standard || 'ISO'} 
-                        onChange={(e) => onParamChange('standard', e.target.value)}
-                        className="w-full bg-white border border-slate-300 rounded px-2 py-1 text-[12px] font-bold"
-                      >
-                        <option value="ISO">ISO (Metric)</option>
-                        <option value="ANSI">ANSI Inch</option>
-                        <option value="DIN">DIN</option>
-                      </select>
-                    </div>
-                    <div className="space-y-1">
-                      <label className="text-[10px] font-bold text-slate-500 uppercase">Size</label>
-                      <select 
-                        value={selectedFeature.parameters.size || 'M5'} 
-                        onChange={(e) => {
-                          const size = e.target.value;
-                          onParamChange('size', size);
-                          // Auto-fill based on ISO Metric defaults
-                          if (size === 'M3') { onParamChange('diameter', 3.4); onParamChange('cb_diameter', 6); onParamChange('cb_depth', 3.3); }
-                          if (size === 'M4') { onParamChange('diameter', 4.5); onParamChange('cb_diameter', 8); onParamChange('cb_depth', 4.4); }
-                          if (size === 'M5') { onParamChange('diameter', 5.5); onParamChange('cb_diameter', 10); onParamChange('cb_depth', 5.4); }
-                          if (size === 'M6') { onParamChange('diameter', 6.6); onParamChange('cb_diameter', 11); onParamChange('cb_depth', 6.5); }
-                        }}
-                        className="w-full bg-white border border-slate-300 rounded px-2 py-1 text-[12px] font-bold"
-                      >
-                        <option value="M3">M3</option>
-                        <option value="M4">M4</option>
-                        <option value="M5">M5</option>
-                        <option value="M6">M6</option>
-                        <option value="M8">M8</option>
-                        <option value="CUSTOM">Custom</option>
-                      </select>
-                    </div>
-                  </div>
-                </Rollout>
-
                 <Rollout title="Hole Specifications">
                   <div className="space-y-3">
-                    <ParamInput label="Diameter" value={selectedFeature.parameters.diameter || 5.5} onChange={(v) => onParamChange('diameter', v)} badge="Ø" />
-                    <ParamInput label="Total Depth" value={selectedFeature.parameters.depth || 10} onChange={(v) => onParamChange('depth', v)} badge="HT" />
-                    
-                    {selectedFeature.parameters.hole_type === 'COUNTERBORE' && (
-                      <div className="pt-2 border-t border-slate-100 space-y-3 animate-in fade-in slide-in-from-top-1">
-                        <ParamInput label="C-Bore Dia" value={selectedFeature.parameters.cb_diameter || 10} onChange={(v) => onParamChange('cb_diameter', v)} badge="CBØ" />
-                        <ParamInput label="C-Bore Depth" value={selectedFeature.parameters.cb_depth || 5} onChange={(v) => onParamChange('cb_depth', v)} badge="CBH" />
-                      </div>
-                    )}
-
-                    {selectedFeature.parameters.hole_type === 'COUNTERSINK' && (
-                      <div className="pt-2 border-t border-slate-100 space-y-3 animate-in fade-in slide-in-from-top-1">
-                        <ParamInput label="C-Sink Dia" value={selectedFeature.parameters.cs_diameter || 10} onChange={(v) => onParamChange('cs_diameter', v)} badge="CSØ" />
-                        <ParamInput label="C-Sink Angle" value={selectedFeature.parameters.cs_angle || 90} onChange={(v) => onParamChange('cs_angle', v)} unit="deg" badge="∠" />
-                      </div>
-                    )}
+                    <ParamInput label="Diameter" value={selectedFeature.parameters.diameter} onChange={(v) => onParamChange('diameter', v)} badge="Ø" />
+                    <ParamInput label="Total Depth" value={selectedFeature.parameters.depth} onChange={(v) => onParamChange('depth', v)} badge="HT" />
                   </div>
-                </Rollout>
-
-                <Rollout title="Positions">
-                  <SelectionBox 
-                    label="Placement Points"
-                    items={(selectedFeature.parameters.hole_placement_refs || []).map((ref: any, idx: number) => ({ id: ref.id, name: `Point ${idx + 1}` }))}
-                    onRemove={(id) => onParamChange('hole_placement_refs', selectedFeature.parameters.hole_placement_refs.filter((r: any) => r.id !== id))}
-                    onClear={() => onParamChange('hole_placement_refs', [])}
-                    placeholder="Select faces or sketch points"
-                    active={pendingFeatureCommand === 'HOLE_WIZARD'}
-                    onClick={() => useCadStore.setState({ pendingFeatureCommand: 'HOLE_WIZARD' })}
-                  />
-                </Rollout>
-              </>
-            )}
-
-            {selectedFeature.type === 'DOME' && (
-              <>
-                <Rollout title="Dome Parameters" icon={<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><path d="M2 12C2 17.52 6.48 22 12 22s10-4.48 10-10S17.52 2 12 2 2 6.48 2 12z" strokeOpacity="0.3"/><path d="M12 2C6.48 2 2 6.48 2 12h20c0-5.52-4.48-10-10-10z"/></svg>}>
-                  <div className="space-y-3">
-                    <ParamInput label="Distance" value={selectedFeature.parameters.height} onChange={(v) => onParamChange('height', v)} badge="HT" />
-                    <div className="flex items-center justify-between">
-                      <label className="text-[10px] font-bold text-slate-500 uppercase">Reverse Direction</label>
-                      <button
-                        onClick={() => onParamChange('flip', !selectedFeature.parameters.flip)}
-                        className={`px-3 py-1 rounded text-[11px] font-bold transition-all border ${
-                          selectedFeature.parameters.flip ? 'bg-indigo-600 text-white border-indigo-600 shadow-sm' : 'bg-white text-indigo-600 border-indigo-200 hover:bg-indigo-50'
-                        }`}
-                      >
-                        {selectedFeature.parameters.flip ? 'REVERSED' : 'DEFAULT'}
-                      </button>
-                    </div>
-                  </div>
-                </Rollout>
-                <Rollout title="Faces to Dome" icon={<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/></svg>}>
-                  <SelectionBox 
-                    label="Selected Faces"
-                    items={(selectedFeature.parameters.faces_refs || []).map((ref: any) => ({ id: ref.id, name: `Face ${ref.id.slice(0, 4)}` }))}
-                    onRemove={(id) => onParamChange('faces_refs', selectedFeature.parameters.faces_refs.filter((r: any) => r.id !== id))}
-                    onClear={() => onParamChange('faces_refs', [])}
-                    placeholder="Select faces to apply dome"
-                    active={pendingFeatureCommand === 'DOME'}
-                    onClick={() => useCadStore.setState({ pendingFeatureCommand: 'DOME' })}
-                  />
                 </Rollout>
               </>
             )}
@@ -984,99 +714,6 @@ export function PartFeaturePropertyManager({
                         <option value="">— Select Sketch —</option>
                         {features.filter(f => f.type === 'SKETCH').map(f => <option key={f.id} value={f.id}>{f.name}</option>)}
                       </select>
-                    </div>
-                    </div>
-                    </Rollout>
-
-                    <Rollout title="Guide Curves" icon={<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>}>
-                    <div className="space-y-2">
-                    <select
-                       value=""
-                       onChange={(e) => {
-                         const id = e.target.value;
-                         if (!id) return;
-                         const current = selectedFeature.parameters.guide_ids || [];
-                         if (!current.includes(id)) onParamChange('guide_ids', [...current, id]);
-                       }}
-                       className="w-full bg-white border border-slate-300 rounded px-2 py-1 text-[12px] font-bold"
-                     >
-                       <option value="">+ Add Guide Curve (Sketch)...</option>
-                       {features.filter(f => f.type === 'SKETCH' && f.id !== selectedFeature.parameters.profile_id && f.id !== selectedFeature.parameters.path_id && !(selectedFeature.parameters.guide_ids || []).includes(f.id)).map(f => (
-                         <option key={f.id} value={f.id}>{f.name}</option>
-                       ))}
-                     </select>
-                     <SelectionBox 
-                       label="Selected Guides"
-                       items={(selectedFeature.parameters.guide_ids || []).map((id: string) => ({ id, name: features.find(f => f.id === id)?.name || id }))}
-                       onRemove={(id) => onParamChange('guide_ids', (selectedFeature.parameters.guide_ids || []).filter((gid: string) => gid !== id))}
-                       onClear={() => onParamChange('guide_ids', [])}
-                       placeholder="Select sketches from the tree"
-                     />
-                    </div>
-                    </Rollout>
-              </>
-            )}
-
-            {selectedFeature.type === 'MIRROR' && (
-              <>
-                <Rollout title="Mirror Plane/Face" icon={<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><path d="M12 3v18M3 12h18"/></svg>}>
-                  <div className="space-y-3">
-                    <div className="space-y-1">
-                      <label className="text-[10px] font-bold text-slate-500 uppercase">Primary Plane</label>
-                      <select 
-                        value={selectedFeature.parameters.mirror_plane_refs?.[0]?.id || ''} 
-                        onChange={(e) => {
-                          const val = e.target.value;
-                          if (val === 'FRONT' || val === 'TOP' || val === 'RIGHT') {
-                            onParamChange('mirror_plane_refs', [{ type: 'PLANE', id: val }]);
-                          }
-                        }} 
-                        className="w-full bg-white border border-slate-300 rounded px-2 py-1 text-[12px] font-bold"
-                      >
-                        <option value="">— Select Face in Viewport —</option>
-                        <option value="FRONT">Front Plane</option>
-                        <option value="TOP">Top Plane</option>
-                        <option value="RIGHT">Right Plane</option>
-                      </select>
-                    </div>
-                    <SelectionBox 
-                      label="Mirror Face"
-                      items={(selectedFeature.parameters.mirror_plane_refs || []).filter((r: any) => r.type === 'FACE').map((ref: any) => ({ id: ref.id, name: `Face ${ref.id.slice(0, 4)}` }))}
-                      onRemove={(id) => onParamChange('mirror_plane_refs', selectedFeature.parameters.mirror_plane_refs.filter((r: any) => r.id !== id))}
-                      onClear={() => onParamChange('mirror_plane_refs', [])}
-                      placeholder="Or select a face..."
-                      active={pendingFeatureCommand === 'MIRROR'}
-                      onClick={() => useCadStore.setState({ pendingFeatureCommand: 'MIRROR' })}
-                    />
-                  </div>
-                </Rollout>
-
-                <Rollout title="Features to Mirror" icon={<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>}>
-                   <div className="space-y-2">
-                    <select
-                      value=""
-                      onChange={(e) => {
-                        const id = e.target.value;
-                        if (!id) return;
-                        const current = selectedFeature.parameters.target_feature_ids || [];
-                        if (!current.includes(id)) onParamChange('target_feature_ids', [...current, id]);
-                      }}
-                      className="w-full bg-white border border-slate-300 rounded px-2 py-1 text-[12px] font-bold"
-                    >
-                      <option value="">+ Add Feature to Mirror...</option>
-                      {features.filter((f) => f.id !== selectedFeature.id && f.type !== 'SKETCH' && !(selectedFeature.parameters.target_feature_ids || []).includes(f.id)).map((f) => (
-                        <option key={f.id} value={f.id}>{f.name}</option>
-                      ))}
-                    </select>
-                    <SelectionBox 
-                      label="Selected Features" 
-                      items={(selectedFeature.parameters.target_feature_ids || []).map((id: string) => ({ id, name: features.find(f => f.id === id)?.name || id }))} 
-                      onRemove={(id) => onParamChange('target_feature_ids', selectedFeature.parameters.target_feature_ids.filter((tid: string) => tid !== id))} 
-                      onClear={() => onParamChange('target_feature_ids', [])} 
-                      placeholder="Select features from the tree"
-                    />
-                    <div className="mt-2 text-[9px] text-slate-400 italic leading-tight">
-                      Leave empty to mirror the entire body.
                     </div>
                   </div>
                 </Rollout>
@@ -1106,90 +743,24 @@ export function PartFeaturePropertyManager({
                   </div>
                 </Rollout>
 
-                <Rollout title="Start/End Constraints" icon={<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><path d="M7 7h10M7 17h10M7 7v10M17 7v10"/></svg>}>
-                  <div className="space-y-4">
-                    {/* Start Constraint */}
-                    <div className="space-y-2">
-                      <div className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Start Constraint</div>
-                      <select 
-                        value={selectedFeature.parameters.startConstraint || 'NONE'} 
-                        onChange={(e) => onParamChange('startConstraint', e.target.value)}
-                        className="w-full bg-white border border-slate-300 rounded px-2 py-1 text-[11px] font-bold"
-                      >
-                        <option value="NONE">None</option>
-                        <option value="NORMAL_TO_PROFILE">Normal to Profile</option>
-                        <option value="DIRECTION_VECTOR">Direction Vector</option>
-                        <option value="TANGENT_TO_FACE">Tangent to Face</option>
-                        <option value="CURVATURE_TO_FACE">Curvature to Face (G2)</option>
-                      </select>
-                      {(selectedFeature.parameters.startConstraint === 'NORMAL_TO_PROFILE' || selectedFeature.parameters.startConstraint === 'DIRECTION_VECTOR' || selectedFeature.parameters.startConstraint === 'TANGENT_TO_FACE' || selectedFeature.parameters.startConstraint === 'CURVATURE_TO_FACE') && (
-                        <div className="flex gap-2">
-                          <ParamInput label="Magnitude" value={selectedFeature.parameters.startMagnitude ?? 1.0} onChange={(v) => onParamChange('startMagnitude', v)} badge="MAG" className="flex-1" />
-                          {(selectedFeature.parameters.startConstraint === 'NORMAL_TO_PROFILE' || selectedFeature.parameters.startConstraint === 'TANGENT_TO_FACE' || selectedFeature.parameters.startConstraint === 'CURVATURE_TO_FACE') && (
-                            <ParamInput label="Draft Angle" value={selectedFeature.parameters.startDraftAngle ?? 0.0} onChange={(v) => onParamChange('startDraftAngle', v)} badge="DEG" className="flex-1" />
-                          )}
-                        </div>
-                      )}
-                      {(selectedFeature.parameters.startConstraint === 'TANGENT_TO_FACE' || selectedFeature.parameters.startConstraint === 'CURVATURE_TO_FACE') && (
-                         <SelectionBox 
-                           label="Start Face Reference"
-                           items={selectedFeature.parameters.startFaceRef ? [{ id: selectedFeature.parameters.startFaceRef.id, name: `Face ${selectedFeature.parameters.startFaceRef.id.slice(0,4)}` }] : []}
-                           onRemove={() => onParamChange('startFaceRef', null)}
-                           placeholder="Select tangent face"
-                         />
-                      )}
-                    </div>
-
-                    <div className="h-px bg-slate-100" />
-
-                    {/* End Constraint */}
-                    <div className="space-y-2">
-                      <div className="text-[9px] font-black text-slate-400 uppercase tracking-widest">End Constraint</div>
-                      <select 
-                        value={selectedFeature.parameters.endConstraint || 'NONE'} 
-                        onChange={(e) => onParamChange('endConstraint', e.target.value)}
-                        className="w-full bg-white border border-slate-300 rounded px-2 py-1 text-[11px] font-bold"
-                      >
-                        <option value="NONE">None</option>
-                        <option value="NORMAL_TO_PROFILE">Normal to Profile</option>
-                        <option value="DIRECTION_VECTOR">Direction Vector</option>
-                        <option value="TANGENT_TO_FACE">Tangent to Face</option>
-                        <option value="CURVATURE_TO_FACE">Curvature to Face (G2)</option>
-                      </select>
-                      {(selectedFeature.parameters.endConstraint === 'NORMAL_TO_PROFILE' || selectedFeature.parameters.endConstraint === 'DIRECTION_VECTOR' || selectedFeature.parameters.endConstraint === 'TANGENT_TO_FACE' || selectedFeature.parameters.endConstraint === 'CURVATURE_TO_FACE') && (
-                        <div className="flex gap-2">
-                          <ParamInput label="Magnitude" value={selectedFeature.parameters.endMagnitude ?? 1.0} onChange={(v) => onParamChange('endMagnitude', v)} badge="MAG" className="flex-1" />
-                          {(selectedFeature.parameters.endConstraint === 'NORMAL_TO_PROFILE' || selectedFeature.parameters.endConstraint === 'TANGENT_TO_FACE' || selectedFeature.parameters.endConstraint === 'CURVATURE_TO_FACE') && (
-                            <ParamInput label="Draft Angle" value={selectedFeature.parameters.endDraftAngle ?? 0.0} onChange={(v) => onParamChange('endDraftAngle', v)} badge="DEG" className="flex-1" />
-                          )}
-                        </div>
-                      )}
-                      {(selectedFeature.parameters.endConstraint === 'TANGENT_TO_FACE' || selectedFeature.parameters.endConstraint === 'CURVATURE_TO_FACE') && (
-                         <SelectionBox 
-                           label="End Face Reference"
-                           items={selectedFeature.parameters.endFaceRef ? [{ id: selectedFeature.parameters.endFaceRef.id, name: `Face ${selectedFeature.parameters.endFaceRef.id.slice(0,4)}` }] : []}
-                           onRemove={() => onParamChange('endFaceRef', null)}
-                           placeholder="Select tangent face"
-                         />
-                      )}
-                    </div>
-                  </div>
-                </Rollout>
-
-                <Rollout title="Thin Feature" icon={<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M7 7h10v10H7z"/></svg>}>
-                  <div className="space-y-3">
-                    <div className="flex items-center justify-between">
-                      <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Enable Thin</label>
-                      <button 
-                        onClick={() => onParamChange('isThin', !selectedFeature.parameters.isThin)}
-                        className={`w-10 h-5 rounded-full relative transition-all ${selectedFeature.parameters.isThin ? 'bg-indigo-600' : 'bg-slate-300'}`}
-                      >
-                        <div className={`absolute top-1 w-3 h-3 rounded-full bg-white transition-all ${selectedFeature.parameters.isThin ? 'right-1' : 'left-1'}`} />
-                      </button>
-                    </div>
-                    {selectedFeature.parameters.isThin && (
-                      <ParamInput label="Thickness" value={selectedFeature.parameters.thickness ?? 2.0} onChange={(v) => onParamChange('thickness', v)} badge="THK" />
-                    )}
+                <Rollout title="Guide Curves" icon={<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><path d="M4 22C4 13 14 13 14 4"/><circle cx="14" cy="4" r="2"/><circle cx="4" cy="22" r="2"/></svg>}>
+                  <div className="space-y-2">
+                    <select
+                      value=""
+                      onChange={(e) => {
+                        const id = e.target.value;
+                        if (!id) return;
+                        const current = selectedFeature.parameters.guide_ids || [];
+                        if (!current.includes(id)) onParamChange('guide_ids', [...current, id]);
+                      }}
+                      className="w-full bg-white border border-slate-300 rounded px-2 py-1 text-[12px] font-bold"
+                    >
+                      <option value="">+ Add Guide Sketch...</option>
+                      {features.filter((f) => f.type === 'SKETCH' && !(selectedFeature.parameters.guide_ids || []).includes(f.id)).map((f) => (
+                        <option key={f.id} value={f.id}>{f.name}</option>
+                      ))}
+                    </select>
+                    <SelectionBox label="Guide Curves" items={(selectedFeature.parameters.guide_ids || []).map((id: string) => ({ id, name: features.find(f => f.id === id)?.name || id }))} onRemove={(id) => onParamChange('guide_ids', selectedFeature.parameters.guide_ids.filter((tid: string) => tid !== id))} onClear={() => onParamChange('guide_ids', [])} />
                   </div>
                 </Rollout>
               </>

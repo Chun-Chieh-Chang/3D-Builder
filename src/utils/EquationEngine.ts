@@ -5,43 +5,62 @@
  */
 
 export class EquationEngine {
+  private static UNIT_FACTORS: Record<string, number> = {
+    'mm': 1.0,
+    'cm': 10.0,
+    'm': 1000.0,
+    'in': 25.4,
+    'inch': 25.4,
+  };
+
   /**
-   * Safely evaluates a mathematical expression string.
-   * @param expr The expression to evaluate (e.g., "WIDTH * 2 + 10")
+   * Safely evaluates a mathematical expression string, supporting unit suffixes.
+   * @param expr The expression to evaluate (e.g., "1in + 5mm")
    * @param context A dictionary of variables and their numeric values
-   * @returns The evaluated result as a number
+   * @returns The evaluated result as a number (always in mm)
    */
   public static evaluate(expr: string, context: Record<string, number> = {}): number {
-    // 1. Basic Sanitization: Remove whitespace and handle common SW symbols
-    let sanitized = expr.replace(/\s+/g, '');
+    if (!expr) return 0;
+
+    // 1. Unit Conversion Preprocessing
+    // Regex: (\d+(\.\d*)?) - Number, \s* - optional space, (mm|in|inch|cm|m) - unit
+    let processed = expr.toLowerCase();
     
-    // 2. Variable Substitution: Sort by length descending to prevent partial matches (e.g., "W" matching "WIDTH")
+    // Replace unit suffixes with multiplication by factor
+    // We use a regex that matches numbers followed by units
+    const unitRegex = /(\d+(\.\d*)?)\s*(mm|inch|in|cm|m)\b/g;
+    processed = processed.replace(unitRegex, (match, val, decimal, unit) => {
+      const factor = this.UNIT_FACTORS[unit] || 1.0;
+      return `(${parseFloat(val) * factor})`;
+    });
+
+    // 2. Basic Sanitization: Remove whitespace
+    let sanitized = processed.replace(/\s+/g, '');
+    
+    // 3. Variable Substitution
     const sortedVars = Object.keys(context).sort((a, b) => b.length - a.length);
     for (const varName of sortedVars) {
       const value = context[varName];
-      // Use regex with word boundary or simple replace if sanitized is pure alphanumeric+ops
-      const regex = new RegExp(`\\b${varName}\\b`, 'g');
+      const regex = new RegExp(`\\b${varName.toLowerCase()}\\b`, 'g');
       sanitized = sanitized.replace(regex, `(${value})`);
     }
 
-    // 3. Evaluation
+    // 4. Evaluation
     try {
-      // For SW2000 parity, we use a simple functional evaluator. 
-      // In a production app, we'd use a parser library, but here we'll implement a safe subset.
-      // We replace '^' with '**' for JS compatibility
       sanitized = sanitized.replace(/\^/g, '**');
       
       // Safety check: Only allow numbers, basic operators, and parentheses
       if (/[^-+*/().0-9e**]/.test(sanitized)) {
         throw new Error(`Invalid characters in expression: ${sanitized}`);
       }
-
        
       const result = eval(sanitized);
       return typeof result === 'number' ? result : 0;
     } catch (err) {
       console.warn(`[EquationEngine] Failed to evaluate: "${expr}" -> "${sanitized}"`, err);
-      return 0;
+      // Fallback for simple numeric input if eval fails
+      const fallback = parseFloat(expr);
+      return isNaN(fallback) ? 0 : fallback;
     }
   }
 

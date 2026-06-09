@@ -1,10 +1,68 @@
 'use client';
 
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useState, useEffect } from 'react';
 import { v4 as uuidv4 } from 'uuid';
 import { useCadStore } from '../store/useCadStore';
 import { previewSolve, commitPreciseSketchSolve } from '@/kernel/SketchSolverService';
 import { Tabs, Tab } from './components/Tabs';
+import { EquationEngine } from '../utils/EquationEngine';
+
+/**
+ * A specialized input that evaluates expressions and units (e.g., '1in + 5mm')
+ */
+const SmartNumericInput: React.FC<{
+  label: string;
+  value: number;
+  onChange: (val: number) => void;
+  badge?: string;
+  unit?: string;
+}> = ({ label, value, onChange, badge, unit = 'mm' }) => {
+  const [inputValue, setInputValue] = useState(value.toString());
+  const evaluatedVariables = useCadStore(state => state.evaluatedVariables);
+  const isEditing = React.useRef(false);
+
+  // Sync internal state when external value changes (e.g., from solver)
+  // But only if we are not currently focused/editing
+  useEffect(() => {
+    if (!isEditing.current) {
+      setInputValue(value.toFixed(2));
+    }
+  }, [value]);
+
+  const handleBlur = () => {
+    isEditing.current = false;
+    const solved = EquationEngine.evaluate(inputValue, evaluatedVariables);
+    onChange(solved);
+    setInputValue(solved.toFixed(2));
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter') {
+      handleBlur();
+    }
+  };
+
+  return (
+    <div className="flex flex-col gap-1">
+      <div className="flex items-center justify-between text-[10px] font-bold text-slate-400 uppercase px-0.5">
+        <span>{label}</span>
+        {badge && <span className="bg-slate-200 text-slate-600 px-1 rounded-[2px]">{badge}</span>}
+      </div>
+      <div className="relative group">
+        <input 
+          type="text"
+          value={inputValue}
+          onFocus={() => { isEditing.current = true; }}
+          onChange={(e) => setInputValue(e.target.value)}
+          onBlur={handleBlur}
+          onKeyDown={handleKeyDown}
+          className="w-full bg-white border border-slate-300 rounded px-1.5 py-1 text-[11px] font-bold text-slate-700 outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500/20 transition-all text-right pr-6"
+        />
+        <span className="absolute right-1.5 top-1/2 -translate-y-1/2 text-[9px] font-black text-slate-300 group-focus-within:text-blue-400 uppercase">{unit}</span>
+      </div>
+    </div>
+  );
+};
 
 export const SketchPropertyManager: React.FC = () => {
   const {
@@ -709,12 +767,12 @@ export const SketchPropertyManager: React.FC = () => {
                     </div>
                     {/* Circle Radius Driver */}
                     {(activeEntity as any).type === 'CIRCLE' && (
-                      <div className="pt-1 flex items-center gap-2">
-                        <span className="text-slate-500 text-[11px]">Radius:</span>
-                        <input 
-                          type="number" 
-                          defaultValue={10} // Placeholder for radius logic
-                          className="flex-1 bg-white border border-slate-300 rounded px-1.5 py-0.5 text-[11px] font-bold text-right"
+                      <div className="pt-1">
+                        <SmartNumericInput 
+                          label="Radius"
+                          value={(activeEntity as any).radius || 10}
+                          onChange={(v) => updateEntityProperty(activeEntity.id, 'radius', v)}
+                          badge="R1"
                         />
                       </div>
                     )}
@@ -735,15 +793,12 @@ export const SketchPropertyManager: React.FC = () => {
                               <span className="text-slate-500">Type:</span>
                               <span className="font-bold text-slate-700">DISTANCE</span>
                             </div>
-                            <div className="flex items-center justify-between gap-2">
-                              <span className="text-slate-500 text-[11px]">Value:</span>
-                              <input 
-                                type="number" 
-                                value={(activeEntity as any).value || 0}
-                                onChange={(e) => updateEntityProperty(activeEntity.id, 'value', parseFloat(e.target.value))}
-                                className="w-20 bg-white border border-slate-300 rounded px-1.5 py-0.5 text-[11px] font-bold text-right outline-none focus:border-blue-400"
-                              />
-                            </div>
+                            <SmartNumericInput 
+                              label="Dimension Value"
+                              value={(activeEntity as any).value || 0}
+                              onChange={(v) => updateEntityProperty(activeEntity.id, 'value', v)}
+                              badge="D1"
+                            />
                           </div>
                         </Tab>
                         <Tab label="Leaders">
@@ -776,15 +831,13 @@ export const SketchPropertyManager: React.FC = () => {
                           <span className="font-bold text-slate-700">{(activeEntity as any).type}</span>
                         </div>
                         {((activeEntity as any).type === 'DISTANCE' || (activeEntity as any).type === 'ANGLE') && (
-                          <div className="flex items-center justify-between gap-2">
-                            <span className="text-slate-500 text-[11px]">Value:</span>
-                            <input 
-                              type="number" 
-                              value={(activeEntity as any).value || 0}
-                              onChange={(e) => updateEntityProperty(activeEntity.id, 'value', parseFloat(e.target.value))}
-                              className="w-20 bg-white border border-slate-300 rounded px-1.5 py-0.5 text-[11px] font-bold text-right outline-none focus:border-blue-400"
-                            />
-                          </div>
+                          <SmartNumericInput 
+                            label="Value"
+                            value={(activeEntity as any).value || 0}
+                            onChange={(v) => updateEntityProperty(activeEntity.id, 'value', v)}
+                            badge={(activeEntity as any).type === 'ANGLE' ? 'ANG' : 'D1'}
+                            unit={(activeEntity as any).type === 'ANGLE' ? 'deg' : 'mm'}
+                          />
                         )}
                       </div>
                     )}

@@ -110,9 +110,6 @@ function SortableFeatureItem({
   visibleSketches, toggleSketchVisibility
 }: any) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id });
-  const [isRenaming, setIsRenaming] = useState(false);
-  const [newName, setNewName] = useState(feature.name);
-  const updateFeature = useCadStore(s => s.updateFeature);
 
   const style = {
     transform: CSS.Transform.toString(transform),
@@ -124,22 +121,17 @@ function SortableFeatureItem({
   const isExtrudeOrRevolve = feature.type === 'EXTRUDE' || feature.type === 'REVOLVE';
   const isSelected = selectedId === feature.id && selectedSubNodeType === 'FEATURE';
   
-  const handleRenameCommit = () => {
-    if (newName.trim() && newName !== feature.name) {
-      updateFeature(feature.id, { name: newName.trim() });
-    }
-    setIsRenaming(false);
-  };
-
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (isSelected && e.key === 'F2') {
-        setIsRenaming(true);
+  // Calculate sketch index for naming
+  const sketchNum = useMemo(() => {
+    let count = 0;
+    for (const f of features) {
+      if (f.type === 'EXTRUDE' || f.type === 'REVOLVE' || f.type === 'SKETCH') {
+        count++;
+        if (f.id === feature.id) return count;
       }
-    };
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isSelected]);
+    }
+    return fIdx + 1;
+  }, [features, feature.id, fIdx]);
 
   return (
     <div 
@@ -169,43 +161,27 @@ function SortableFeatureItem({
           setSelectedId(feature.id);
           setSelectedSubNodeType('FEATURE');
           useCadStore.setState({ 
-            contextMenu: { 
-              visible: true, 
-              x: e.clientX, 
-              y: e.clientY, 
-              type: 'FEATURE', 
-              data: { id: feature.id, onRename: () => setIsRenaming(true) } 
-            } 
+            contextMenu: { visible: true, x: e.clientX, y: e.clientY, type: 'FEATURE', data: { id: feature.id } } 
           });
         }}
         className={`group flex items-center justify-between p-1.5 rounded cursor-pointer transition-all border ${
           relationClass(relState, isSelected, isRolledBack || (feature.isSuppressed ?? false))
         } ${editingFeatureId === feature.id ? 'ring-2 ring-emerald-500 ring-offset-1' : ''}`}
+        title={feature.type === 'SKETCH' ? '雙擊進入草圖編輯' : '雙擊編輯特徵草圖'}
       >
-        <div className="flex items-center gap-2 truncate flex-1">
+        <div className="flex items-center gap-2 truncate">
+          {/* Drag Handle Visual */}
+          <div className="shrink-0 opacity-0 group-hover:opacity-40 transition-opacity cursor-grab">
+            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><circle cx="9" cy="5" r="1"/><circle cx="9" cy="12" r="1"/><circle cx="9" cy="19" r="1"/><circle cx="15" cy="5" r="1"/><circle cx="15" cy="12" r="1"/><circle cx="15" cy="19" r="1"/></svg>
+          </div>
           <div className={`shrink-0 transition-colors ${feature.isSuppressed ? 'text-slate-400' : isSelected ? 'text-white' : 'text-[#005B9A]'}`}>
             {FEATURE_ICONS[feature.type] || FEATURE_ICONS.EXTRUDE}
           </div>
-          <div className="flex flex-col truncate flex-1">
-            {isRenaming ? (
-              <input 
-                autoFocus
-                className="text-[12px] font-bold bg-white text-slate-800 px-1 rounded border border-blue-500 outline-none w-full"
-                value={newName}
-                onChange={e => setNewName(e.target.value)}
-                onBlur={handleRenameCommit}
-                onKeyDown={e => {
-                  if (e.key === 'Enter') handleRenameCommit();
-                  if (e.key === 'Escape') { setNewName(feature.name); setIsRenaming(false); }
-                }}
-                onClick={e => e.stopPropagation()}
-              />
-            ) : (
-              <span className={`text-[12px] font-bold truncate max-w-[160px] leading-tight ${feature.isSuppressed ? 'italic font-normal' : ''}`}>
-                {feature.name}
-              </span>
-            )}
-            {isExtrudeOrRevolve && !isSelected && !isRenaming && (
+          <div className="flex flex-col truncate">
+            <span className={`text-[12px] font-bold truncate max-w-[160px] leading-tight ${feature.isSuppressed ? 'italic font-normal' : ''}`}>
+              {feature.name}
+            </span>
+            {isExtrudeOrRevolve && !isSelected && (
               <span className="text-[9px] text-slate-400 font-mono">[{feature.parameters.plane}]</span>
             )}
           </div>
@@ -286,32 +262,8 @@ export function FeatureManagerPanel({
   const handleDragEnd = (event: DragEndEvent) => {
     const { active, over } = event;
     if (over && active.id !== over.id) {
-      const activeFeature = features.find((f: any) => f.id === active.id);
-      if (!activeFeature) return;
-
       const oldIndex = features.findIndex((f: any) => f.id === active.id);
       const newIndex = features.findIndex((f: any) => f.id === over.id);
-
-      // Chronological & Topological Dependency Validation
-      const { parents, children } = getParentsAndChildren(activeFeature, features);
-      
-      let minAllowedIndex = 0;
-      parents.forEach(p => {
-        const pIdx = features.findIndex((f: any) => f.id === p.id);
-        if (pIdx > minAllowedIndex) minAllowedIndex = pIdx;
-      });
-
-      let maxAllowedIndex = features.length - 1;
-      children.forEach(c => {
-        const cIdx = features.findIndex((f: any) => f.id === c.id);
-        if (cIdx !== -1 && cIdx < maxAllowedIndex) maxAllowedIndex = cIdx;
-      });
-
-      if (newIndex <= minAllowedIndex || newIndex >= maxAllowedIndex) {
-        console.warn(`[Reorder Rejected] Cannot move feature ${activeFeature.name} outside its topological bounds (Parents max: ${minAllowedIndex}, Children min: ${maxAllowedIndex})`);
-        return; // Reject the drop
-      }
-
       reorderFeatures(oldIndex, newIndex);
       setTimeout(onRebuild, 50);
     }

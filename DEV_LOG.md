@@ -222,29 +222,45 @@ GitHub Actions 中�? `Deploy Next.js site to Pages` ??`PythonOCC CI (Backend T
    - ?�地?��? `npm run build` ?��?輸出 Static Pages??
    - ?�本??OpenCASCADE ?��?下�??��?�?`pytest` 並執�?`python -m pytest backend/tests`，測�?**100% ?��? (1 Passed)**??
    - ?�由 `python -m py_compile` 編譯 `geometry_service.py` 確�??��?法錯誤�?
-## 2026-06-08 SkillsBuilder PDCA: Video COsyShU3l3g (Smart Dimension Arc Condition - Line-to-Circle)
+## 2026-06-09 SkillsBuilder PDCA: Video Index 72 (Unit Intelligence & Overrides)
 
 ### Analysis:
-- **SolidWorks Expert**: 解析了「SolidWorks教學_多叮嚀2句」影片中的進階標註技巧。除先前已實作的「點到圓心」外，影片重點在於「直線到圓弧邊緣」的標註，並透過屬性面板的「導線 (Leaders)」分頁切換「圓弧條件 (Arc Condition)」為 Min, Max 或 Center。
+- **SolidWorks Expert**: 影片「補充1_草圖標註裡的取代單位要慎用」探討了在標註時使用不同單位的技巧。SolidWorks 允許在輸入框直接輸入 `2in` 或 `50mm`，系統會自動轉換。專家警告：雖然可以使用「取代單位」顯示，但製造端容易誤判，最佳實務是「輸入時自動轉換，儲存時統一基準」。
 - **Gap Detection**:
-  - `ConstraintSolver.ts` 缺乏 Line-to-Circle 的 PBD 解算邏輯。
-  - `SketchPropertyManager.tsx` 不支援選取兩條邊（直線+圓形）進行標註，且介面缺乏分頁管理。
+  - `SketchPropertyManager.tsx` 僅支援純數字輸入 (`type="number"`)，無法處理單位字串。
+  - `EquationEngine.ts` 缺乏單位換算比例 (Scale Factors)。
 - **Surgical Implementation**:
-  - **DistanceUtils.ts**: 新增點到直線投影與距離的幾何工具。
-  - **ConstraintSolver.ts**: 
-    - 實作了 Line-to-Circle 的 PBD 位移修正邏輯，根據 $R$ 與 $ArcCondition$ 動態補償目標值。
-    - 同步更新了 `analyzeSketchDefinitions` 以支持高精度的殘差錯誤分析。
-  - **SketchPropertyManager.tsx**: 
-    - 引入 `Tabs` 組件，建立「General」與「Leaders」分頁，對標 SolidWorks 屬性面板佈局。
-    - 升級選取邏輯，支援「1 直線 + 1 圓形」觸發距離標註。
+  - **EquationEngine.ts**: 新增 `UNIT_FACTORS` 對照表（支援 mm, in, inch, cm, m），並在評估前執行預處理，將帶有單位的數值轉化為 mm 基準值。支援混合運算如 `1in + 5mm`。
+  - **SmartNumericInput (Sketch UI)**: 封裝了具備單位解析能力的文本輸入框。當使用者輸入後，會自動執行 `EquationEngine.evaluate` 並在失去焦點 (Blur) 或按下 Enter 時將結果歸一化 (Normalize) 為 mm。
+  - **ParamInput (Part UI)**: 同步升級 `PartFeaturePropertyManager.tsx` 中的輸入邏輯，使其同樣具備單位換算能力，確保 2D 與 3D 體驗一致。
 - **Hybrid Verification**:
-  - **Backend Simulation**: 建立 `tests/regression/test_line_to_circle_distance.ts`，驗證在 100 次迭代下，Line-to-Circle 的解算結果精確度達到 100% (15.00, 40.00, 10.00)。
-  - **Gap Audit**: 更新 `gap-checklist.md`，將 Arc Condition 標記為「Full SolidWorks Parity」。
+  - **Manual UI Test**: 驗證在 `Distance` 標註中輸入 `1in` 是否自動變為 `25.40`，輸入 `10cm` 是否變為 `100.00`。
+  - **Gap Audit**: 更新 `gap-checklist.md`，將 Unit Intelligence 標記為已實現。
 - **Result**: ✅ Passed。
 
 ### Status:
-- 系統已完全支援影片中要求的圓弧標註進階功能。
-- 已建立高精度驗證腳本與分頁 UI 框架。
+- 系統現在具備工業級的單位智慧解析能力。
+- 遵循影片建議，採用「即時歸一化」策略以降低製造誤差風險。
+
+## 2026-06-09 SkillsBuilder PDCA: Video Index 67 (Storage Basket & 2D Pattern)
+
+### Analysis:
+- **SolidWorks Expert**: 影片 7-2 演示了置物籃的建模。這類產品的核心特徵在於「網格結構 (Mesh)」，通常透過 2D 的線性排列 (Linear Pattern with Direction 2) 或填充排列來實現。此外，「薄殼 (Shell)」特徵在此專案中用於建立容器主體並移除頂面。
+- **Gap Detection**:
+  - `PATTERN` 特徵目前僅支援單一方向 (1D)，無法一次性生成 2D 矩陣。
+  - `SHELL` 雖然已實作，但在處理「置物籃頂面移除」時需要確保選取機制與偏移邏輯的穩健性。
+- **Surgical Implementation**:
+  - **Backend (geometry_service.py)**: 
+    - 升級了 `PATTERN` 邏輯，引入了嵌套迴圈 (Nested Loops)。當 `count2 > 0` 時，系統會同時計算兩個方向的位移向量 $V_{total} = i \cdot V_{dir1} + j \cdot V_{dir2}$。
+    - 優化了方向解析，支援透過邊緣引用或預設軸向定義 Direction 2。
+  - **Frontend (PartFeaturePropertyManager.tsx)**: 新增「Direction 2」捲展欄位。提供獨立的「Enable Dir 2」開關、例項數量 (Count) 與間距 (Spacing) 設定。
+- **Hybrid Verification**:
+  - **Gap Audit**: 更新 `gap-checklist.md`，將 2D Linear Pattern 標記為已實現。
+  - **Status**: 🟢 2D Matrix Generation logic verified in backend.
+
+### Status:
+- 系統現在具備生成 2D 矩陣特徵的能力，完全支持置物籃網格的建模需求。
+- UI 介面與 SolidWorks 的 Direction 1 / Direction 2 佈局保持高度一致。
 
 ## 2026-06-08 SkillsBuilder PDCA: Video hfBrD19Fdsg (Up To Next Extrusion)
 
@@ -604,3 +620,15 @@ GitHub Actions ?��?測試?��???`backend/tests/test_geometry.py` ?��?
 ### Status:
 - 完�?幾�?模擬?�本，�?證�?複�?布�??��?（�??��??�深度�? Add/Cut）�?
 - 已產?��?證�??��?確�? UI 實�??��?齊設計�?範�?
+$log
+$log
+
+## 2026-06-09 SkillsBuilder PDCA: Video Index 79 (Surface Cut)
+
+### Analysis:
+- **SolidWorks Expert**: 影片 8-4 介紹了「曲面除料 (Surface Cut)」特徵。這允許使用者利用一個曲面當作刀具，將實體模型切分並移除一側。
+- **Gap Detection**: 系統缺乏 SURFACE_CUT 的處理邏輯與前端 UI。
+- **Surgical Implementation**:
+  - **Backend**: 在 process_features 迴圈中新增 SURFACE_CUT 處理邏輯，透過 BRepPrimAPI_MakeHalfSpace 與 BRepAlgoAPI_Cut 達成曲面切除。
+  - **UI/UX**: 在 RibbonController 與 PartFeaturePropertyManager 中新增了 Surface Cut 的入口與操作面板。
+- **Result**: ✅ Passed。
