@@ -32,6 +32,7 @@ export const DatumPlanes = () => {
     activeFaceId, computedRefGeometry,
     referencePlanes,
     referenceAxes,
+    referencePoints,
     pendingFeatureCommand,
     selectedId,
     measurementMode,
@@ -1387,6 +1388,23 @@ export const DatumPlanes = () => {
             />
             <Html position={originVec} center className="pointer-events-none">
               <div className="px-1.5 py-0.5 rounded bg-amber-500/80 text-white text-[9px] font-black border border-amber-400 shadow-sm whitespace-nowrap">
+                {name || id}
+              </div>
+            </Html>
+          </group>
+        );
+      })}
+
+      {referencePoints?.map((pt) => {
+        const { id, origin, name } = pt;
+        const originVec = new THREE.Vector3(...origin);
+        return (
+          <group key={id} position={originVec}>
+            <Sphere args={[1.5, 16, 16]}>
+              <meshBasicMaterial color="#10B981" depthTest={false} transparent opacity={0.8} />
+            </Sphere>
+            <Html position={[2, 2, 0]} center className="pointer-events-none">
+              <div className="px-1 py-0.5 rounded bg-slate-900/80 backdrop-blur-sm border border-emerald-700 text-emerald-400 text-[9px] font-mono select-none">
                 {name || id}
               </div>
             </Html>

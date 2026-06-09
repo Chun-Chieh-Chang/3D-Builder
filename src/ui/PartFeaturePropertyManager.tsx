@@ -1237,6 +1237,38 @@ export function PartFeaturePropertyManager({
               </Rollout>
             )}
 
+            {selectedFeature.type === 'REFERENCE_POINT' && (
+              <Rollout title="Reference Point" icon={<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><circle cx="12" cy="12" r="4" fill="currentColor"/></svg>}>
+                <div className="space-y-3">
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-bold text-slate-500 uppercase">Method</label>
+                    <select 
+                      value={selectedFeature.parameters.pointType || 'FACE_CENTER'} 
+                      onChange={(e) => onParamChange('pointType', e.target.value)} 
+                      className="w-full bg-white border border-slate-300 rounded px-2 py-1 text-[12px] font-bold"
+                    >
+                      <option value="FACE_CENTER">Center of Face</option>
+                      <option value="OFFSET">Offset</option>
+                      <option value="INTERSECTION">Intersection</option>
+                    </select>
+                  </div>
+
+                  {selectedFeature.parameters.pointType === 'OFFSET' && (
+                    <ParamInput label="Offset Distance" value={selectedFeature.parameters.offset || 0} onChange={(v) => onParamChange('offset', v)} badge="DIST" />
+                  )}
+
+                  <SelectionBox 
+                    label="References" 
+                    selectedCount={selectedFeature.parameters.refs?.length || 0} 
+                    onClear={() => onParamChange('refs', [])}
+                    placeholder="Select face or edge"
+                    active={pendingFeatureCommand === 'REFERENCE_POINT'}
+                    onClick={() => useCadStore.setState({ pendingFeatureCommand: 'REFERENCE_POINT' as any })}
+                  />
+                </div>
+              </Rollout>
+            )}
+
             {selectedFeature.type === 'DUMB_SOLID' && (
               <Rollout title="Translation">
                 <div className="space-y-2">

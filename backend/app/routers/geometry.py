@@ -383,6 +383,13 @@ class RefAxisRequest(BaseModel):
     features: List[FeatureDefinition]
     materialId: Optional[str] = "GENERIC"
 
+class RefPointRequest(BaseModel):
+    pointType: str
+    refs: List[dict]
+    offset: Optional[float] = 0.0
+    features: List[FeatureDefinition]
+    materialId: Optional[str] = "GENERIC"
+
 
 @router.post("/ref_plane")
 async def create_ref_plane(request: RefPlaneRequest):
@@ -404,6 +411,20 @@ async def create_ref_axis(request: RefAxisRequest):
         return geometry_service.generate_reference_axis(
             request.axisType,
             request.refs,
+            request.features
+        )
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.post("/ref_point")
+async def create_ref_point(request: RefPointRequest):
+    try:
+        return geometry_service.generate_reference_point(
+            request.pointType,
+            request.refs,
+            request.offset,
             request.features
         )
     except Exception as e:

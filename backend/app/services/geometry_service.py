@@ -1812,6 +1812,11 @@ def process_features(features, deflection=0.01):
             res = generate_reference_axis(params.get('axisType', 'TWO_POINTS'), params.get('refs', []), features)
             ref_geometry.append({"id": f_id, "type": "AXIS", "data": res})
             continue
+
+        elif f_type == 'REFERENCE_POINT':
+            res = generate_reference_point(params.get('pointType', 'FACE_CENTER'), params.get('refs', []), params.get('offset', 0.0), features)
+            ref_geometry.append({"id": f_id, "type": "POINT", "data": res})
+            continue
     
     for feat in features:
         # Support both Pydantic models (with attribute access) and plain dicts
@@ -2131,6 +2136,11 @@ def build_shape_only(
         elif f_type == 'REFERENCE_AXIS':
             res = generate_reference_axis(params.get('axisType', 'TWO_POINTS'), params.get('refs', []), features)
             ref_geometry.append({"id": f_id, "type": "AXIS", "data": res})
+            continue
+
+        elif f_type == 'REFERENCE_POINT':
+            res = generate_reference_point(params.get('pointType', 'FACE_CENTER'), params.get('refs', []), params.get('offset', 0.0), features)
+            ref_geometry.append({"id": f_id, "type": "POINT", "data": res})
             continue
     
     for local_idx, feat in enumerate(features):
@@ -4590,6 +4600,26 @@ def export_assembly_step(components_data, filepath):
                 trsf_z.SetRotation(gp_Ax1(gp_Pnt(0,0,0), gp_Dir(0,0,1)), rz)
                 
                 final_rot = trsf_z.Multiplied(trsf_y).Multiplied(trsf_x)
+                
+                final_trsf = gp_Trsf()
+                final_trsf.SetTranslation(gp_Vec(*pos))
+                final_trsf.Multiply(final_rot)
+                
+                # 4. Create an instance (component) in the assembly label
+                loc = TopLoc_Location(final_trsf)
+                inst_label = shape_tool.AddComponent(assembly_label, part_label, loc)
+                TDataStd_Name.Set(inst_label, TCollection_ExtendedString(name))
+                
+        # Export XDE Document to STEP
+        writer = STEPCAFControl_Writer()
+        writer.Transfer(doc)
+        status = writer.Write(filepath)
+        return status == 1
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        print("[ERROR] export_assembly_step failed:", e)
+        return Falseiplied(trsf_y).Multiplied(trsf_x)
                 
                 final_trsf = gp_Trsf()
                 final_trsf.SetTranslation(gp_Vec(*pos))

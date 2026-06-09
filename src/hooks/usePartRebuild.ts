@@ -135,6 +135,16 @@ export function usePartRebuild(
         });
         useCadStore.getState().setReferenceAxes(formattedAxes);
 
+        const formattedPoints = allRefGeo.filter((g: any) => g.type === 'POINT').map((p: any) => {
+          const featName = features.find(f => f.id === p.id)?.name || p.id;
+          return {
+            id: p.id,
+            name: featName,
+            origin: p.data.origin
+          };
+        });
+        useCadStore.getState().setReferencePoints(formattedPoints);
+
         lastRebuildFingerprint.current = fingerprint;
         clearRebuildDirty();
       }

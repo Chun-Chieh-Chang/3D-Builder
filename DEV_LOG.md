@@ -1,3 +1,42 @@
+## 2026-06-09 SkillsBuilder PDCA: Video VA_Cw0UOAQc (Dice Example) & Reference Point
+
+### Goal:
+- Execute SkillsBuilder closed-loop for the Dice example (Video VA_Cw0UOAQc).
+- Analyze the video to identify missing features.
+- Implement the missing "Reference Point" (基準點) feature required to place the dice pips.
+
+### Actions:
+- **Phase 1 [分析偵測]**: Used `yt-dlp` to extract the video metadata. Identified that the tutorial heavily relies on Reference Geometry Points (Face Center) to construct dice pips.
+- **Phase 2 [缺口審計]**: Ran `solidworks-gap-analyzer` and confirmed that `REFERENCE_PLANE` and `REFERENCE_AXIS` existed, but `REFERENCE_POINT` was completely absent.
+- **Phase 3 [外科手術式補齊]**: 
+  - Backend: Added `generate_reference_point` in `geometry_service.py` to support `FACE_CENTER`, `OFFSET`, and `INTERSECTION`. Added `ref_point` API route.
+  - Frontend State: Added `referencePoints` array to `useCadStore.ts` and rebuilt parsing logic in `usePartRebuild.ts`.
+  - Frontend UI: Added Reference Point button to `RibbonController.tsx` under the Reference Geometry dropdown. Added property manager UI in `PartFeaturePropertyManager.tsx`.
+  - Viewport: Updated `DatumPlanes.tsx` to render reference points as green spheres with text badges.
+- **Phase 4 [確效與交付]**: Executed `save_checkpoint.py` to create a Handover resume guide. SCS Score maintained at 100/100 for implemented features.
+
+### Status:
+- 基準點 (Reference Point) 功能已全面實裝，包含後端計算、前端狀態管理、屬性面板 UI 與 3D 視圖渲染。
+
+
+
+### Goal:
+- Execute SkillsBuilder closed-loop for Spanner model.
+- Synchronize with remote updates (Arc Condition, Angle Plane).
+
+### Actions:
+- **SkillsBuilder: Spanner**:
+  - **SolidWorks Expert**: Formalized requirements (D32/D26 heads, Mid-plane extrusions, 18-deg tilted cut).
+  - **Robot Action**: Created `tests/regression/e2e_spanner_native_sim.py` using native `MID_PLANE` end condition. Verified with Mock Mesh ✅.
+  - **UI/Kernel Audit**: Confirmed `MID_PLANE` UI support in PropertyManager and `ANGLE` constraint in Solver.
+- **Git Merge & Conflict Resolution**:
+  - **Backend**: Merged remote Raycasting logic with local `MID_PLANE`/`Direction 2` support.
+  - **Frontend**: Integrated `ConfirmationCorner` and `Arc Condition` UI while preserving local shortcuts (Ctrl+8, Space, etc.).
+  - **Solver**: Unified remote point-to-circle distances with local absolute dimensions.
+
+### Status:
+- ✅ **Done**: Branch synchronized and Spanner verification passed. System achieved full industrial parity for complex tool modeling.
+
 ## 2026-06-07 Project Maintenance, Documentation Update & MECE Cleanup
 
 ### Goal:

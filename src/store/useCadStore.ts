@@ -423,7 +423,7 @@ export interface CadState {
 }
 
 export const DEFAULT_RIBBON_LAYOUT: RibbonLayout = {
-  FEATURES: ['EXTRUDE', 'REVOLVE', 'EXTRUDE_CUT', 'REVOLVED_CUT', 'SWEEP', 'LOFT', 'FILLET', 'CHAMFER', 'MIRROR', 'PATTERN', 'SHELL', 'DOME', 'DRAFT'],
+  FEATURES: ['EXTRUDE', 'REVOLVE', 'EXTRUDE_CUT', 'REVOLVED_CUT', 'SWEEP', 'LOFT', 'FILLET', 'CHAMFER', 'MIRROR', 'PATTERN', 'SHELL', 'DOME', 'DRAFT', 'HOLE_WIZARD', 'REFERENCE_PLANE', 'REFERENCE_AXIS', 'REFERENCE_POINT'],
   SKETCH: ['LINE', 'CIRCLE', 'ARC', 'RECTANGLE', 'SMART_DIMENSION', 'TRIM', 'EXTEND', 'OFFSET', 'MIRROR', 'PATTERN', 'TEXT'],
   EVALUATE: ['MEASURE', 'MASS_PROPS', 'INTERFERENCE', 'SECTION_VIEW']
 };
@@ -685,6 +685,8 @@ export const useCadStore = create<CadState>()(
       setReferencePlanes: (referencePlanes) => set({ referencePlanes }),
       referenceAxes: [],
       setReferenceAxes: (referenceAxes) => set({ referenceAxes }),
+      referencePoints: [],
+      setReferencePoints: (referencePoints) => set({ referencePoints }),
       activePropertyManager: null,
       setActivePropertyManager: (activePropertyManager) => set({ activePropertyManager }),
       showExportModal: false,
