@@ -360,13 +360,15 @@ export interface CadState {
   pushToast: (message: string, type?: CadToastType) => void;
   dismissToast: (id: string) => void;
 
-  pendingFeatureCommand: 'FILLET' | 'CHAMFER' | 'THICKEN' | 'PATTERN' | 'MIRROR' | 'DRAFT' | 'SHELL' | 'HOLE_WIZARD' | 'PLANE' | 'REFERENCE_PLANE' | 'SURFACE_OFFSET' | 'SURFACE_KNIT' | 'SURFACE_CUT' | null;
-  setPendingFeatureCommand: (cmd: 'FILLET' | 'CHAMFER' | 'THICKEN' | 'PATTERN' | 'MIRROR' | 'DRAFT' | 'SHELL' | 'HOLE_WIZARD' | 'PLANE' | 'REFERENCE_PLANE' | 'SURFACE_OFFSET' | 'SURFACE_KNIT' | 'SURFACE_CUT' | null) => void;
+  pendingFeatureCommand: 'FILLET' | 'CHAMFER' | 'THICKEN' | 'PATTERN' | 'MIRROR' | 'DRAFT' | 'SHELL' | 'HOLE_WIZARD' | 'PLANE' | 'REFERENCE_PLANE' | 'REFERENCE_POINT' | 'DOME' | 'SURFACE_OFFSET' | 'SURFACE_KNIT' | 'SURFACE_CUT' | null;
+  setPendingFeatureCommand: (cmd: 'FILLET' | 'CHAMFER' | 'THICKEN' | 'PATTERN' | 'MIRROR' | 'DRAFT' | 'SHELL' | 'HOLE_WIZARD' | 'PLANE' | 'REFERENCE_PLANE' | 'REFERENCE_POINT' | 'DOME' | 'SURFACE_OFFSET' | 'SURFACE_KNIT' | 'SURFACE_CUT' | null) => void;
   defaultFilletRadius: number;
   defaultChamferDistance: number;
   
   referencePlanes: CADReferencePlane[];
   setReferencePlanes: (planes: CADReferencePlane[]) => void;
+  referencePoints: any[];
+  setReferencePoints: (points: any[]) => void;
   referenceAxes: any[];
   setReferenceAxes: (axes: any[]) => void;
   
@@ -653,6 +655,8 @@ export const useCadStore = create<CadState>()(
       defaultChamferDistance: 1.5,
       referencePlanes: [],
       setReferencePlanes: (referencePlanes) => set({ referencePlanes }),
+      referencePoints: [],
+      setReferencePoints: (referencePoints) => set({ referencePoints }),
       referenceAxes: [],
       setReferenceAxes: (referenceAxes) => set({ referenceAxes }),
       activePropertyManager: null,
@@ -701,6 +705,7 @@ export const useCadStore = create<CadState>()(
         activeFaceNormal: state.activeFaceNormal,
         activeFaceId: state.activeFaceId,
         referencePlanes: state.referencePlanes,
+        referencePoints: state.referencePoints,
         referenceAxes: state.referenceAxes,
         projectName: state.projectName,
         drawingScale: state.drawingScale,

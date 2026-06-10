@@ -33,6 +33,19 @@ Transform 3D-Builder from a functional prototype into a 1:1 SolidWorks 2000 indu
 | 132 | Circular Pattern Reinforcement | complete | 實現等間距 (Equal Spacing) 與排除執行個體 (Skip Instances) |
 | 133 | Fill Pattern | complete | 實現邊界填入排列，支援 Square/Hex 佈局與邊距控制 |
 | 134 | Surface Cut | complete | 實現曲面除料，支援使用曲面或基準面作為刀具切割實體 |
+| 135 | Reference Point & Dome | complete | 實現參考點 (面中心) 與圓頂特徵，滿足骰子建模需求 |
+| 136 | Spanner Industrial V2 | complete | 透過 12 角星與 18 度傾斜除料實現扳手工業級對標 |
+
+## Phase 136 Details: Spanner Industrial V2
+- [x] Simulation: Verified complex boolean sequence for combination wrench.
+- [x] UI: Confirmed Mid-Plane support and Angle constraints readiness.
+- [x] Docs: Produced `SPANNER_V2_SOP.md` for industrial verification.
+
+## Phase 135 Details: Reference Point & Dome
+- [x] Backend: Implemented `CentreOfMass` resolution for Reference Points.
+- [x] Backend: Developed Sphere-cap algorithm for Dome rounding.
+- [x] UI: Added "Point" and "Dome" to Features ribbon and PropertyManager.
+- [x] QA: Verified cubic-face dome generation via regression test.
 
 ## Phase 134 Details: Surface Cut (Advanced Solid Trimming)
 - [x] Backend: Implemented `SURFACE_CUT` logic using `BRepPrimAPI_MakeHalfSpace`.

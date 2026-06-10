@@ -783,10 +783,10 @@ def build_feature_shape_in_isolation(f_type, params, parent_shape=None, all_feat
             except Exception as e:
                 print(f"[WARNING] {end_cond} ray casting failed: {e}")
 
-        mag = -depth if is_flip else depth
+        mag = depth if end_cond == 'MID_PLANE' else (-depth if is_flip else depth)
         vec = gp_Vec(normal_dir.X() * mag, normal_dir.Y() * mag, normal_dir.Z() * mag)
         
-        print(f"[DEBUG] EXTRUDE: plane={plane_type}, depth={depth}, flip={is_flip}, vec=({vec.X()},{vec.Y()},{vec.Z()})")
+        print(f"[DEBUG] EXTRUDE: plane={plane_type}, depth={depth}, flip={is_flip}, end_cond={end_cond}, vec=({vec.X()},{vec.Y()},{vec.Z()})")
 
         try:
             wires = []
@@ -806,6 +806,11 @@ def build_feature_shape_in_isolation(f_type, params, parent_shape=None, all_feat
                 for w in wires:
                     trsf = gp_Trsf()
                     trsf.SetTransformation(gp_Ax3(ax2), gp_Ax3())
+                    
+                    if end_cond == 'MID_PLANE':
+                        shift = gp_Vec(normal_dir.X() * -depth/2.0, normal_dir.Y() * -depth/2.0, normal_dir.Z() * -depth/2.0)
+                        trsf.SetTranslationPart(trsf.TranslationPart().Added(shift))
+
                     from OCC.Core.BRepBuilderAPI import BRepBuilderAPI_Transform
                     moved_wire = BRepBuilderAPI_Transform(w, trsf).Shape()
                     prism_tool = BRepPrimAPI_MakePrism(moved_wire, vec)
@@ -865,6 +870,11 @@ def build_feature_shape_in_isolation(f_type, params, parent_shape=None, all_feat
                 # Move face to local plane
                 trsf = gp_Trsf()
                 trsf.SetTransformation(gp_Ax3(ax2), gp_Ax3())
+                
+                if end_cond == 'MID_PLANE':
+                    shift = gp_Vec(normal_dir.X() * -depth/2.0, normal_dir.Y() * -depth/2.0, normal_dir.Z() * -depth/2.0)
+                    trsf.SetTranslationPart(trsf.TranslationPart().Added(shift))
+
                 face.Move(TopLoc_Location(trsf))
 
                 prism_tool = BRepPrimAPI_MakePrism(face, vec)
@@ -1659,6 +1669,47 @@ def process_features(features, deflection=0.01):
                     print(f"[ERROR] SHELL feature failed: {shell_err}")
             continue
 
+        elif f_type == 'DOME':
+            if final_shape is not None:
+                distance = float(params.get('distance', 2.0))
+                is_reverse = params.get('reverse', False)
+                refs = params.get('refs', [])
+                
+                try:
+                    for ref in refs:
+                        coords = ref.get('coordinates', [0,0,0])
+                        normal = ref.get('normal', [0,0,1])
+                        sig = ref.get('signature', {})
+                        
+                        matched_origin, matched_normal, matched_face = find_matching_face(final_shape, coords, normal, sig)
+                        if matched_face:
+                            # Industrial Dome Logic: Sphere-cap approximation
+                            from OCC.Core.GProp import GProp_GProps
+                            from OCC.Core.BRepGProp import brepgprop
+                            props = GProp_GProps()
+                            brepgprop.SurfaceProperties(matched_face, props)
+                            cog = props.CentreOfMass()
+                            
+                            d_dir = gp_Dir(matched_normal[0], matched_normal[1], matched_normal[2])
+                            if is_reverse:
+                                d_dir.Reverse()
+                            
+                            face_r = math.sqrt(props.Mass() / math.pi) if props.Mass() > 0 else 5.0
+                            sphere_r = (face_r**2 + distance**2) / (2 * distance)
+                            sphere_center = gp_Pnt(cog.X() - d_dir.X() * (sphere_r - distance),
+                                                  cog.Y() - d_dir.Y() * (sphere_r - distance),
+                                                  cog.Z() - d_dir.Z() * (sphere_r - distance))
+                            
+                            sphere_shape = BRepPrimAPI_MakeSphere(sphere_center, sphere_r).Shape()
+                            
+                            if is_reverse:
+                                final_shape = BRepAlgoAPI_Cut(final_shape, sphere_shape).Shape()
+                            else:
+                                final_shape = BRepAlgoAPI_Fuse(final_shape, sphere_shape).Shape()
+                except Exception as dome_err:
+                    print(f"[ERROR] DOME failed: {dome_err}")
+            continue
+
         elif f_type == 'CHAMFER':
             if final_shape is not None:
                 distance = float(params.get('distance', 1.5))
@@ -1953,6 +2004,47 @@ def build_shape_only(
                         final_shape = shell_tool.Shape()
                 except Exception as shell_err:
                     print(f"[ERROR] SHELL feature failed: {shell_err}")
+            continue
+
+        elif f_type == 'DOME':
+            if final_shape is not None:
+                distance = float(params.get('distance', 2.0))
+                is_reverse = params.get('reverse', False)
+                refs = params.get('refs', [])
+                
+                try:
+                    for ref in refs:
+                        coords = ref.get('coordinates', [0,0,0])
+                        normal = ref.get('normal', [0,0,1])
+                        sig = ref.get('signature', {})
+                        
+                        matched_origin, matched_normal, matched_face = find_matching_face(final_shape, coords, normal, sig)
+                        if matched_face:
+                            # Industrial Dome Logic: Sphere-cap approximation
+                            from OCC.Core.GProp import GProp_GProps
+                            from OCC.Core.BRepGProp import brepgprop
+                            props = GProp_GProps()
+                            brepgprop.SurfaceProperties(matched_face, props)
+                            cog = props.CentreOfMass()
+                            
+                            d_dir = gp_Dir(matched_normal[0], matched_normal[1], matched_normal[2])
+                            if is_reverse:
+                                d_dir.Reverse()
+                            
+                            face_r = math.sqrt(props.Mass() / math.pi) if props.Mass() > 0 else 5.0
+                            sphere_r = (face_r**2 + distance**2) / (2 * distance)
+                            sphere_center = gp_Pnt(cog.X() - d_dir.X() * (sphere_r - distance),
+                                                  cog.Y() - d_dir.Y() * (sphere_r - distance),
+                                                  cog.Z() - d_dir.Z() * (sphere_r - distance))
+                            
+                            sphere_shape = BRepPrimAPI_MakeSphere(sphere_center, sphere_r).Shape()
+                            
+                            if is_reverse:
+                                final_shape = BRepAlgoAPI_Cut(final_shape, sphere_shape).Shape()
+                            else:
+                                final_shape = BRepAlgoAPI_Fuse(final_shape, sphere_shape).Shape()
+                except Exception as dome_err:
+                    print(f"[ERROR] DOME failed: {dome_err}")
             continue
 
         elif f_type == 'CHAMFER':
@@ -3942,6 +4034,49 @@ def generate_reference_axis(axis_type, refs, features=[]):
             "origin": origin,
             "direction": direction
         }
+
+
+def generate_reference_point(point_type, refs, features=[], final_shape=None):
+    """
+    Computes a reference point from topology references.
+    Returns: [x,y,z]
+    """
+    origin = [0.0, 0.0, 0.0]
+    try:
+        if point_type == 'CENTER_OF_FACE' and len(refs) > 0 and HAS_OCC:
+            ref = refs[0]
+            coords = ref.get('coordinates', [0.0, 0.0, 0.0])
+            sig = ref.get('signature', {})
+            
+            target_shape = final_shape
+            if not target_shape:
+                # build_shape_only is expensive, try to use cache or build up to here
+                target_shape = build_shape_only(features)
+                
+            if target_shape and not target_shape.IsNull():
+                # We need to find the specific face
+                matched_origin, matched_normal, matched_face = find_matching_face(target_shape, coords, ref.get('normal', [0,0,1]), sig)
+                if matched_face:
+                    from OCC.Core.GProp import GProp_GProps
+                    from OCC.Core.BRepGProp import brepgprop
+                    props = GProp_GProps()
+                    brepgprop.SurfaceProperties(matched_face, props)
+                    cog = props.CentreOfMass()
+                    return [cog.X(), cog.Y(), cog.Z()]
+            return coords # Fallback
+
+        elif point_type == 'TWO_POINTS' and len(refs) >= 2:
+            p1 = refs[0].get('coordinates', [0.0, 0.0, 0.0])
+            p2 = refs[1].get('coordinates', [0.0, 0.0, 0.0])
+            return [(p1[0]+p2[0])/2.0, (p1[1]+p2[1])/2.0, (p1[2]+p2[2])/2.0]
+
+        elif len(refs) > 0:
+            return refs[0].get('coordinates', [0.0, 0.0, 0.0])
+            
+        return origin
+    except Exception as e:
+        print("[ERROR] generate_reference_point failed:", e)
+        return origin
 
 
 # --- P5-3 Material Database & Density (g/cm^3) ---

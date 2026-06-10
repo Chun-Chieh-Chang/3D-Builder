@@ -94,3 +94,16 @@
 - [x] Extract normal from target surface to define cut direction with flip capability.
 - [x] Add "Surface Cut" entry point in RibbonController.
 - [x] Create "Surface Cut" rollout in PropertyManager for tool selection and flip control.
+
+### Phase 135: Reference Point & Dome Feature (Index 81 & 83)
+- [x] Implement `REFERENCE_POINT` logic in backend using Center of Face (CentreOfMass) resolution.
+- [x] Implement `DOME` feature using Sphere-cap approximation algorithm in `geometry_service.py`.
+- [x] Add "Point" and "Dome" buttons to `RibbonController.tsx` with high-fidelity icons.
+- [x] Integrate parameter rollouts for Point and Dome in `PartFeaturePropertyManager.tsx`.
+- [x] Verified via `test_dome_feature.py` with successful mesh generation.
+
+### Phase 136: Spanner Industrial Parity V2 (Index sDqD0PRYhJI)
+- [x] Developed `e2e_video_spanner_final.py` to simulate industrial modeling workflow.
+- [x] Verified Mid-Plane extrusion, 18-degree tilted cuts, and 12-point star geometry.
+- [x] Updated `SPANNER_V2_SOP.md` for 1:1 manual verification parity.
+- [x] Established industrial baseline for complex tool modeling.
