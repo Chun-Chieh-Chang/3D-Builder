@@ -242,8 +242,8 @@ function applyConstraint(
 
     case 'EQUAL': {
       if (!constraint.edgeIds || constraint.edgeIds.length !== 2) return;
-      const e1 = edges[constraint.edgeIds[0]];
-      const e2 = edges[constraint.edgeIds[1]];
+      const e1 = edges[constraint.edgeIds?.[0] || ''];
+      const e2 = edges[constraint.edgeIds?.[1] || ''];
       if (!e1 || !e2 || e1.nodeIds.length < 2 || e2.nodeIds.length < 2) return;
 
       if (e1.type === 'CIRCLE' && e2.type === 'CIRCLE') {
@@ -333,8 +333,8 @@ function applyConstraint(
 
     case 'TANGENT': {
       if (!constraint.edgeIds || constraint.edgeIds.length !== 2) return;
-      const e1 = edges[constraint.edgeIds[0]];
-      const e2 = edges[constraint.edgeIds[1]];
+      const e1 = edges[constraint.edgeIds?.[0] || ''];
+      const e2 = edges[constraint.edgeIds?.[1] || ''];
       if (!e1 || !e2) return;
       
       const lineEdge = e1.type === 'LINE' ? e1 : (e2.type === 'LINE' ? e2 : null);
@@ -476,8 +476,8 @@ function applyConstraint(
 
     case 'ANGLE': {
       if (!constraint.edgeIds || constraint.edgeIds.length !== 2) return;
-      const e1 = edges[constraint.edgeIds[0]];
-      const e2 = edges[constraint.edgeIds[1]];
+      const e1 = edges[constraint.edgeIds?.[0] || ''];
+      const e2 = edges[constraint.edgeIds?.[1] || ''];
       if (!e1 || !e2 || e1.nodeIds.length < 2 || e2.nodeIds.length < 2) return;
 
       const p1a = nodes[e1.nodeIds[0]];
@@ -530,8 +530,8 @@ function applyConstraint(
 
     case 'COLLINEAR': {
       if (!constraint.edgeIds || constraint.edgeIds.length !== 2) return;
-      const e1 = edges[constraint.edgeIds[0]];
-      const e2 = edges[constraint.edgeIds[1]];
+      const e1 = edges[constraint.edgeIds?.[0] || ''];
+      const e2 = edges[constraint.edgeIds?.[1] || ''];
       if (!e1 || !e2 || e1.nodeIds.length < 2 || e2.nodeIds.length < 2) return;
 
       const p1a = nodes[e1.nodeIds[0]];
@@ -631,8 +631,8 @@ function applyConstraint(
     }
 
     case 'PARALLEL': {
-      const e1 = edges[constraint.edgeIds[0]];
-      const e2 = edges[constraint.edgeIds[1]];
+      const e1 = edges[constraint.edgeIds?.[0] || ''];
+      const e2 = edges[constraint.edgeIds?.[1] || ''];
       if (!e1 || !e2 || e1.nodeIds.length < 2 || e2.nodeIds.length < 2) return;
 
       const p1a = nodes[e1.nodeIds[0]];
@@ -686,8 +686,8 @@ function applyConstraint(
 
     case 'PERPENDICULAR': {
       if (!constraint.edgeIds || constraint.edgeIds.length !== 2) return;
-      const e1 = edges[constraint.edgeIds[0]];
-      const e2 = edges[constraint.edgeIds[1]];
+      const e1 = edges[constraint.edgeIds?.[0] || ''];
+      const e2 = edges[constraint.edgeIds?.[1] || ''];
       if (!e1 || !e2 || e1.nodeIds.length < 2 || e2.nodeIds.length < 2) return;
 
       const p1a = nodes[e1.nodeIds[0]];

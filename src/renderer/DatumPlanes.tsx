@@ -9,7 +9,6 @@ import { SelectToolHandler } from '../utils/sketch/ToolHandlers/SelectTool';
 import { ArcToolHandler } from '../utils/sketch/ToolHandlers/ArcTool';
 import { SplineToolHandler } from '../utils/sketch/ToolHandlers/SplineTool';
 import { CircleToolHandler } from '../utils/sketch/ToolHandlers/CircleTool';
-import { TextToolHandler } from '../utils/sketch/ToolHandlers/TextTool';
 import { RectangleToolHandler, CenterRectangleToolHandler } from '../utils/sketch/ToolHandlers/RectangleTool';
 import { sketchActions } from '../store/sketchActions';
 import { previewSolve, commitPreciseSketchSolve } from '@/kernel/SketchSolverService';
@@ -184,8 +183,7 @@ export const DatumPlanes = () => {
   const getSnappedUV = (rawU: number, rawV: number) => {
     let u = rawU;
     let v = rawV;
-    let snappedId: string | null = null;
-    let snappedEdgeId: string | null = null;
+    const snappedId = null;
     const currentInferences: { p1: [number, number], p2: [number, number] }[] = [];
 
     if (gridSnap) {
@@ -196,18 +194,18 @@ export const DatumPlanes = () => {
     if (Math.abs(u) < 2.0 && Math.abs(v) < 2.0) {
       setCursorState({ u: 0, v: 0, type: 'ORIGIN' });
       setInferenceLines([]);
-      return { u: 0, v: 0, id: 'origin', edgeId: null };
+      return { u: 0, v: 0, id: 'origin' };
     }
 
-    const SNAP_DIST = 3.5;
+    const SNAP_DIST = 3.5; // Increased for easier snapping
 
-    // 1. Node Snapping
+    // 1. Check for Node Snapping (Priority: First Node of Chain for Loop Closure)
     if (firstChainNodeId && sketchNodes[firstChainNodeId]) {
       const node = sketchNodes[firstChainNodeId];
       if (Math.hypot(node.x - rawU, node.y - rawV) < SNAP_DIST) {
         setCursorState({ u: node.x, v: node.y, type: 'COINCIDENT' });
         setInferenceLines([]);
-        return { u: node.x, v: node.y, id: node.id, edgeId: null };
+        return { u: node.x, v: node.y, id: node.id };
       }
     }
 
@@ -215,151 +213,8 @@ export const DatumPlanes = () => {
       if (Math.hypot(node.x - rawU, node.y - rawV) < SNAP_DIST) {
         setCursorState({ u: node.x, v: node.y, type: 'COINCIDENT' });
         setInferenceLines([]);
-        return { u: node.x, v: node.y, id: node.id, edgeId: null };
+        return { u: node.x, v: node.y, id: node.id };
       }
-    }
-
-    // 2. Edge Snapping (Midpoint, Coincident, Tangent)
-    Object.values(sketchEdges).forEach(edge => {
-      if (edge.type === 'LINE' || edge.type === 'CENTER_LINE') {
-        const n1 = sketchNodes[edge.nodeIds[0]];
-        const n2 = sketchNodes[edge.nodeIds[1]];
-        if (n1 && n2) {
-          // Priority 1: Midpoint Snap
-          const midU = (n1.x + n2.x) / 2;
-          const midV = (n1.y + n2.y) / 2;
-          if (Math.hypot(rawU - midU, rawV - midV) < SNAP_DIST) {
-            u = midU; v = midV; snappedEdgeId = edge.id; activeSnapType = 'MIDPOINT';
-            return;
-          }
-
-          // Priority 2: General Coincident to Edge
-          if (!activeSnapType) {
-            const d = distToSegment(rawU, rawV, n1.x, n1.y, n2.x, n2.y);
-            if (d < SNAP_DIST) {
-              const l2 = (n2.x - n1.x)**2 + (n2.y - n1.y)**2;
-              let t = ((rawU - n1.x)*(n2.x - n1.x) + (rawV - n1.y)*(n2.y - n1.y)) / l2;
-              t = Math.max(0, Math.min(1, t));
-              u = n1.x + t * (n2.x - n1.x);
-              v = n1.y + t * (n2.y - n1.y);
-              snappedEdgeId = edge.id;
-            }
-          }
-        }
-      } else if (edge.type === 'CIRCLE') {
-        const center = sketchNodes[edge.nodeIds[0]];
-        const perimeter = sketchNodes[edge.nodeIds[1]];
-        if (center && perimeter) {
-          const radius = Math.hypot(perimeter.x - center.x, perimeter.y - center.y);
-          const dToCenter = Math.hypot(rawU - center.x, rawV - center.y);
-
-          // Priority 1: Tangent Snap (if drawing a line)
-          const storeLastNodeId = useCadStore.getState().lastClickedNodeId;
-          const storeLastNode = storeLastNodeId ? useCadStore.getState().sketchNodes[storeLastNodeId] : null;
-          if (storeLastNode && (sketchTool === 'LINE' || sketchTool === 'CENTER_LINE')) {
-            // Find tangent points from storeLastNode to circle
-            const dx = center.x - storeLastNode.x;
-            const dy = center.y - storeLastNode.y;
-            const distSq = dx*dx + dy*dy;
-            const dist = Math.sqrt(distSq);
-
-            if (dist > radius) {
-              const angleToCenter = Math.atan2(dy, dx);
-              const angleOffset = Math.acos(radius / dist);
-              
-              const t1 = {
-                x: center.x + radius * Math.cos(angleToCenter + angleOffset + Math.PI),
-                y: center.y + radius * Math.sin(angleToCenter + angleOffset + Math.PI)
-              };
-              const t2 = {
-                x: center.x + radius * Math.cos(angleToCenter - angleOffset + Math.PI),
-                y: center.y + radius * Math.sin(angleToCenter - angleOffset + Math.PI)
-              };
-
-              // Re-check: the above math gives tangent points on the circle
-              // Wait, the tangent line from P to circle: the angle between PC and PT is alpha where sin(alpha) = R/dist.
-              // Actually angle(PT) = angle(PC) ± (PI/2 - alpha)? No.
-              // Let alpha = asin(R/d). The tangent point T is at angle(CP) ± (PI - (PI/2 - alpha))?
-              // Correct tangent point T: dist(C,T)=R, angle(CT) = angle(CP) ± acos(R/d).
-              const cpAngle = Math.atan2(storeLastNode.y - center.y, storeLastNode.x - center.x);
-              const alpha = Math.acos(radius / dist);
-              
-              const pt1 = { x: center.x + radius * Math.cos(cpAngle + alpha), y: center.y + radius * Math.sin(cpAngle + alpha) };
-              const pt2 = { x: center.x + radius * Math.cos(cpAngle - alpha), y: center.y + radius * Math.sin(cpAngle - alpha) };
-
-              if (Math.hypot(rawU - pt1.x, rawV - pt1.y) < SNAP_DIST * 1.5) {
-                u = pt1.x; v = pt1.y; snappedEdgeId = edge.id; activeSnapType = 'TANGENT';
-              } else if (Math.hypot(rawU - pt2.x, rawV - pt2.y) < SNAP_DIST * 1.5) {
-                u = pt2.x; v = pt2.y; snappedEdgeId = edge.id; activeSnapType = 'TANGENT';
-              }
-            }
-          }
-
-          // Priority 2: Coincident Snap (if not tangent or tangent failed)
-          if (!activeSnapType && Math.abs(dToCenter - radius) < SNAP_DIST) {
-            const angle = Math.atan2(rawV - center.y, rawU - center.x);
-            u = center.x + radius * Math.cos(angle);
-            v = center.y + radius * Math.sin(angle);
-            snappedEdgeId = edge.id;
-          }
-        }
-      }
-    });
-
-    // 3. Parallel / Perpendicular Snap (if drawing a line)
-    const storeLastNodeId = useCadStore.getState().lastClickedNodeId;
-    const storeLastNode = storeLastNodeId ? useCadStore.getState().sketchNodes[storeLastNodeId] : null;
-    if (!activeSnapType && storeLastNode && (sketchTool === 'LINE' || sketchTool === 'CENTER_LINE')) {
-      const ANGLE_SNAP_TOL = 0.08; // ~4.5 degrees
-      const du = rawU - storeLastNode.x;
-      const dv = rawV - storeLastNode.y;
-      const currentAngle = Math.atan2(dv, du);
-      const currentLen = Math.hypot(du, dv);
-
-      if (currentLen > 5.0) {
-        Object.values(sketchEdges).forEach(other => {
-          if (other.type === 'LINE' || other.type === 'CENTER_LINE') {
-            const o1 = sketchNodes[other.nodeIds[0]];
-            const o2 = sketchNodes[other.nodeIds[1]];
-            if (o1 && o2) {
-              const otherAngle = Math.atan2(o2.y - o1.y, o2.x - o1.x);
-              
-              // Check Parallel
-              let diffP = (currentAngle - otherAngle) % Math.PI;
-              if (diffP > Math.PI/2) diffP -= Math.PI;
-              if (diffP < -Math.PI/2) diffP += Math.PI;
-              
-              if (Math.abs(diffP) < ANGLE_SNAP_TOL) {
-                const targetAngle = otherAngle + (Math.abs(currentAngle - otherAngle) > Math.PI/2 ? Math.PI : 0);
-                u = storeLastNode.x + Math.cos(targetAngle) * currentLen;
-                v = storeLastNode.y + Math.sin(targetAngle) * currentLen;
-                snappedEdgeId = other.id;
-                activeSnapType = 'PARALLEL';
-              }
-
-              // Check Perpendicular
-              if (!activeSnapType) {
-                let diffPerp = (currentAngle - (otherAngle + Math.PI/2)) % Math.PI;
-                if (diffPerp > Math.PI/2) diffPerp -= Math.PI;
-                if (diffPerp < -Math.PI/2) diffPerp += Math.PI;
-
-                if (Math.abs(diffPerp) < ANGLE_SNAP_TOL) {
-                  const targetAngle = otherAngle + Math.PI/2;
-                  u = storeLastNode.x + Math.cos(targetAngle) * currentLen;
-                  v = storeLastNode.y + Math.sin(targetAngle) * currentLen;
-                  snappedEdgeId = other.id;
-                  activeSnapType = 'PERPENDICULAR';
-                }
-              }
-            }
-          }
-        });
-      }
-    }
-
-    if (snappedEdgeId) {
-       setCursorState({ u, v, type: activeSnapType || 'COINCIDENT' });
-       return { u, v, id: null, edgeId: snappedEdgeId };
     }
 
     let bestU = u;
@@ -367,6 +222,9 @@ export const DatumPlanes = () => {
     let foundH = false;
     let foundV = false;
 
+    // BUG FIX: Read last click position from the store (lastClickedNodeId) instead of
+    // local lastClickedUV, because ToolHandlers update lastClickedNodeId in the store
+    // but never update the local lastClickedUV state.
     const storeLastNodeId = useCadStore.getState().lastClickedNodeId;
     const storeLastNode = storeLastNodeId ? useCadStore.getState().sketchNodes[storeLastNodeId] : null;
     const lastClickRef = storeLastNode ? { u: storeLastNode.x, v: storeLastNode.y } : lastClickedUV;
@@ -400,11 +258,15 @@ export const DatumPlanes = () => {
     setInferenceLines(currentInferences);
     if (foundH || foundV) {
       setCursorState({ u: bestU, v: bestV, type: foundH && foundV ? 'COINCIDENT' : (foundH ? 'HORIZONTAL' : 'VERTICAL') });
-      return { u: bestU, v: bestV, id: null, edgeId: null };
+      return { u: bestU, v: bestV, id: null };
     }
 
+    // BUG FIX: Never set cursorState to null. The preview lines rendering at line 919+
+    // is gated by {cursorState && ...}. Setting null kills ALL preview lines (ghost line,
+    // circle preview, rectangle preview). Instead, always provide the current position
+    // with type: null to indicate "no snap, but cursor is here".
     setCursorState({ u, v, type: null });
-    return { u, v, id: null, edgeId: null };
+    return { u, v, id: null };
   };
 
   const handlePointerMove = (e: any) => {
@@ -655,7 +517,7 @@ export const DatumPlanes = () => {
        return;
     }
 
-    let u = rawU, v = rawV, snappedId = null, snappedEdgeId = null;
+    let u = rawU, v = rawV, snappedId = null;
     let activeSnapType = undefined;
     const SNAP_DIST = 3.5;
     
@@ -664,7 +526,6 @@ export const DatumPlanes = () => {
       u = snapped.u;
       v = snapped.v;
       snappedId = snapped.id;
-      snappedEdgeId = snapped.edgeId;
       activeSnapType = cursorState?.type;
     }
 
@@ -673,7 +534,6 @@ export const DatumPlanes = () => {
       rawU, rawV,
       snappedU: u, snappedV: v,
       snappedNodeId: snappedId,
-      snappedEdgeId,
       shiftKey: event.shiftKey || false,
       activeSnapType: activeSnapType || undefined
     };
@@ -731,112 +591,30 @@ export const DatumPlanes = () => {
       syncLastClickedUV();
       return;
     }
-    if (sketchTool === 'TEXT') {
-      TextToolHandler.onMouseDown(u, v);
-      return;
-    }
     useCadStore.setState((state) => {
       const nextNodes = { ...state.sketchNodes };
       const nextEdges = { ...state.sketchEdges };
       const nextConstraints = { ...state.sketchConstraints };
 
       if (sketchTool === 'SMART_DIMENSION') {
-         const { dimensionSelection, addDimensionSelection, clearDimensionSelection } = state;
-         
-         // 1. Find hit entity (Node or Edge)
-         let hitId: string | null = null;
-         let hitType: 'NODE' | 'EDGE' | null = null;
-
-         // Priority: Node
-         const snapNode = Object.values(nextNodes).find(n => Math.hypot(u - n.x, v - n.y) < SNAP_DIST);
-         if (snapNode) {
-            hitId = snapNode.id;
-            hitType = 'NODE';
-         } else {
-            const snapEdge = Object.values(nextEdges).find(e => {
-               const n1 = nextNodes[e.nodeIds[0]];
-               const n2 = nextNodes[e.nodeIds[1]];
-               if (!n1 || !n2) return false;
-               if (e.type === 'CIRCLE') {
-                  const r = Math.hypot(n2.x - n1.x, n2.y - n1.y);
-                  return Math.abs(Math.hypot(u - n1.x, v - n1.y) - r) < SNAP_DIST;
-               }
+         // Smart Dimension Logic: Create a distance constraint between selected nodes or on an edge
+         const eId = Object.values(nextEdges).find(e => {
+            const n1 = nextNodes[e.nodeIds[0]];
+            const n2 = nextNodes[e.nodeIds[1]];
+            if (!n1 || !n2) return false;
+            
+            if (e.type === 'CIRCLE') {
+               const radius = Math.hypot(n2.x - n1.x, n2.y - n1.y);
+               const distToCenter = Math.hypot(u - n1.x, v - n1.y);
+               return Math.abs(distToCenter - radius) < SNAP_DIST;
+            } else {
                return pointToSegmentDistance(u, v, n1.x, n1.y, n2.x, n2.y) < SNAP_DIST;
-            });
-            if (snapEdge) {
-               hitId = snapEdge.id;
-               hitType = 'EDGE';
             }
-         }
+         })?.id;
 
-         if (!hitId) {
-            clearDimensionSelection();
-            return;
-         }
-
-         const nextSelection = [...dimensionSelection, hitId];
-         
-         if (nextSelection.length === 1) {
-            // Case A: Single Edge (Length/Diameter)
-            if (hitType === 'EDGE') {
-               const cId = `dim_${uuidv4().slice(0,8)}`;
-               const edge = nextEdges[hitId];
-               let val = 50;
-               if (edge.type === 'LINE') {
-                  val = Math.hypot(nextNodes[edge.nodeIds[1]].x - nextNodes[edge.nodeIds[0]].x, nextNodes[edge.nodeIds[1]].y - nextNodes[edge.nodeIds[0]].y);
-               } else if (edge.type === 'CIRCLE') {
-                  val = Math.hypot(nextNodes[edge.nodeIds[1]].x - nextNodes[edge.nodeIds[0]].x, nextNodes[edge.nodeIds[1]].y - nextNodes[edge.nodeIds[0]].y) * 2;
-               }
-               nextConstraints[cId] = { id: cId, type: 'DISTANCE', edgeIds: [hitId], value: parseFloat(val.toFixed(2)) };
-               clearDimensionSelection();
-               setHint(`Dimension added: ${val.toFixed(2)}`);
-            } else {
-               // Single Node - Wait for second
-               addDimensionSelection(hitId);
-               setHint('Select second point or line for dimension.');
-            }
-         } else if (nextSelection.length === 2) {
-            const id1 = nextSelection[0];
-            const id2 = nextSelection[1];
-            const cId = `dim_${uuidv4().slice(0,8)}`;
-
-            if (nextNodes[id1] && nextNodes[id2]) {
-               // Case B: Point to Point Distance
-               const val = Math.hypot(nextNodes[id2].x - nextNodes[id1].x, nextNodes[id2].y - nextNodes[id1].y);
-               nextConstraints[cId] = { id: cId, type: 'DISTANCE', nodeIds: [id1, id2], value: parseFloat(val.toFixed(2)) };
-               setHint(`Distance: ${val.toFixed(2)}`);
-            } else if (nextEdges[id1] && nextEdges[id2]) {
-               // Case C: Line to Line Angle
-               const e1 = nextEdges[id1];
-               const e2 = nextEdges[id2];
-               if (e1.type === 'LINE' && e2.type === 'LINE') {
-                  const d1 = [nextNodes[e1.nodeIds[1]].x - nextNodes[e1.nodeIds[0]].x, nextNodes[e1.nodeIds[1]].y - nextNodes[e1.nodeIds[0]].y];
-                  const d2 = [nextNodes[e2.nodeIds[1]].x - nextNodes[e2.nodeIds[0]].x, nextNodes[e2.nodeIds[1]].y - nextNodes[e2.nodeIds[0]].y];
-                  const angle = Math.abs(Math.atan2(d2[1], d2[0]) - Math.atan2(d1[1], d1[0])) * 180 / Math.PI;
-                  nextConstraints[cId] = { id: cId, type: 'ANGLE', edgeIds: [id1, id2], value: parseFloat((angle % 180).toFixed(2)) };
-                  setHint(`Angle: ${(angle % 180).toFixed(2)}°`);
-               }
-            } else {
-               // Case D: Node to Edge (Line or Circle)
-               const node = nextNodes[id1] || nextNodes[id2];
-               const edge = nextEdges[id1] || nextEdges[id2];
-               if (node && edge) {
-                  const n1 = nextNodes[edge.nodeIds[0]];
-                  const n2 = nextNodes[edge.nodeIds[1]];
-                  if (n1 && n2) {
-                    let val = 0;
-                    if (edge.type === 'LINE') {
-                       val = pointToSegmentDistance(node.x, node.y, n1.x, n1.y, n2.x, n2.y);
-                    } else if (edge.type === 'CIRCLE') {
-                       const R = Math.hypot(n2.x - n1.x, n2.y - n1.y);
-                       val = Math.hypot(node.x - n1.x, node.y - n1.y) - R; // Distance to perimeter
-                    }
-                    nextConstraints[cId] = { id: cId, type: 'DISTANCE', nodeIds: [node.id], edgeIds: [edge.id], value: parseFloat(Math.abs(val).toFixed(2)) };
-                    setHint(`Distance to edge: ${Math.abs(val).toFixed(2)}`);
-                  }
-               }
-            }
-            clearDimensionSelection();
+         if (eId) {
+            const cId = uuidv4();
+            nextConstraints[cId] = { id: cId, type: 'DISTANCE', edgeIds: [eId], value: 50 }; // Default 50
          }
       } else if (sketchTool === 'OFFSET') {
          // Offset Entities: Offset selected entities by a fixed distance

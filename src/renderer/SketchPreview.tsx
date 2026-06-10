@@ -18,9 +18,6 @@ export const SketchPreview = () => {
     setSketchConstraints,
     selectedEntityIds,
     setSelectedEntityIds,
-    dimensionSelection,
-    addDimensionSelection,
-    clearDimensionSelection,
     activeFaceOrigin,
     activeFaceNormal,
     referencePlanes,
@@ -369,7 +366,7 @@ export const SketchPreview = () => {
 
   const geometricConstraints = useMemo(() => {
     return Object.values(sketchConstraints).filter(
-      c => ['HORIZONTAL', 'VERTICAL', 'COINCIDENT', 'EQUAL', 'PARALLEL', 'PERPENDICULAR', 'CONCENTRIC', 'COLLINEAR'].includes(c.type)
+      c => ['HORIZONTAL', 'VERTICAL', 'COINCIDENT', 'EQUAL', 'PARALLEL', 'PERPENDICULAR', 'CONCENTRIC'].includes(c.type)
     );
   }, [sketchConstraints]);
   const angleConstraints = useMemo(() => {
@@ -460,22 +457,8 @@ export const SketchPreview = () => {
         const isOverDefined = solverReport !== undefined && solverReport !== null && solverReport.dof < 0;
 
         const edgeState = definitionReport.edges[edge.id];
-        
-        // Highlight logic for linked constraints
-        let isLinkedToHoveredConstraint = false;
-        if (hoveredEntityId && sketchConstraints[hoveredEntityId]) {
-          const hc = sketchConstraints[hoveredEntityId];
-          isLinkedToHoveredConstraint = hc.edgeIds?.includes(edge.id) || false;
-        }
-
-        const isDimensioning = dimensionSelection.includes(edge.id);
-
         const strokeColor = isSelected
           ? "#ec4899"
-          : isDimensioning
-          ? "#f59e0b" // Amber for dimensioning
-          : isLinkedToHoveredConstraint
-          ? "#06b6d4" // Cyan for linked entities
           : isHovered
           ? "#f59e0b"
           : (isOverDefined || edgeState === 'CONFLICT')
@@ -491,7 +474,7 @@ export const SketchPreview = () => {
             <Line
               points={entityPoints}
               color={strokeColor}
-              lineWidth={isSelected || isLinkedToHoveredConstraint || isDimensioning ? 3.5 : isHovered ? 2.5 : 1.5}
+              lineWidth={isSelected ? 3.5 : isHovered ? 2.5 : 1.5}
               dashed={isCenterline}
               dashSize={1.5}
               gapSize={1.0}
@@ -737,29 +720,22 @@ export const SketchPreview = () => {
         let pos: [number, number, number] | null = null;
         let icon = "";
 
-        const typesWithIcons = ['HORIZONTAL', 'VERTICAL', 'PARALLEL', 'PERPENDICULAR', 'CONCENTRIC', 'COLLINEAR', 'TANGENT', 'MIDPOINT', 'SYMMETRIC', 'EQUAL'];
-
-        if (typesWithIcons.includes(constraint.type)) {
+        if (constraint.type === 'HORIZONTAL' || constraint.type === 'VERTICAL' || constraint.type === 'PARALLEL' || constraint.type === 'PERPENDICULAR' || constraint.type === 'CONCENTRIC') {
           if (!constraint.edgeIds || constraint.edgeIds.length === 0) return null;
           const edge = sketchEdges[constraint.edgeIds[0]];
           if (!edge || edge.nodeIds.length < 2) return null;
           const n1 = sketchNodes[edge.nodeIds[0]];
           const n2 = sketchNodes[edge.nodeIds[1]];
           if (!n1 || !n2) return null;
-          
-          // Position icon at edge midpoint
           pos = get3DPointForPlane((n1.x + n2.x) / 2, (n1.y + n2.y) / 2, activePlane, activeBasis);
-          
           if (constraint.type === 'HORIZONTAL') icon = "—";
           else if (constraint.type === 'VERTICAL') icon = "│";
           else if (constraint.type === 'PARALLEL') icon = "∥";
           else if (constraint.type === 'PERPENDICULAR') icon = "⊥";
           else if (constraint.type === 'CONCENTRIC') icon = "◎";
-          else if (constraint.type === 'COLLINEAR') icon = "⬌";
           else if (constraint.type === 'TANGENT') icon = "○";
           else if (constraint.type === 'MIDPOINT') icon = "⬗";
           else if (constraint.type === 'SYMMETRIC') icon = "|⬵|";
-          else if (constraint.type === 'EQUAL') icon = "=";
 
           } else if (constraint.type === 'COINCIDENT') {
           if (!constraint.nodeIds || constraint.nodeIds.length === 0) return null;
@@ -773,30 +749,9 @@ export const SketchPreview = () => {
 
         if (!pos) return null;
 
-        const isSelected = selectedEntityIds.includes(constraint.id);
-        const isHovered = hoveredEntityId === constraint.id;
-
         return (
           <Html key={constraint.id} position={pos} center>
-            <div 
-              onClick={(e) => {
-                e.stopPropagation();
-                if (e.ctrlKey || e.shiftKey) {
-                  setSelectedEntityIds(prev => prev.includes(constraint.id) ? prev.filter(id => id !== constraint.id) : [...prev, constraint.id]);
-                } else {
-                  setSelectedEntityIds([constraint.id]);
-                }
-              }}
-              onPointerOver={() => setHoveredEntityId(constraint.id)}
-              onPointerOut={() => setHoveredEntityId(null)}
-              className={`w-3.5 h-3.5 border rounded-sm flex items-center justify-center text-[9px] font-bold shadow-md cursor-pointer transition-all ${
-                isSelected 
-                ? 'bg-pink-500 border-pink-600 text-white scale-125 z-20' 
-                : isHovered 
-                ? 'bg-orange-400 border-orange-500 text-white scale-110 z-10' 
-                : 'bg-emerald-500 border-emerald-600 text-white opacity-80'
-              }`}
-            >
+            <div className="w-3 h-3 bg-emerald-500 border border-emerald-600 rounded-sm flex items-center justify-center text-[9px] text-white font-bold shadow-sm pointer-events-none opacity-80">
               {icon}
             </div>
           </Html>

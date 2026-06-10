@@ -77,6 +77,7 @@ export const SketchPropertyManager: React.FC = () => {
     solverReport,
     sketchTool,
     setSketchTool,
+    setHoveredEntityId,
   } = useCadStore();
 
   const [isEditName, setIsEditName] = useState<string | null>(null);

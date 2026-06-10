@@ -1,7 +1,7 @@
 'use client';
 
 import React from 'react';
-import { useCadStore, MATERIAL_PRESETS } from '../store/useCadStore';
+import { useCadStore, MATERIAL_PRESETS } from '../../store/useCadStore';
 
 export const MaterialSelectorModal: React.FC = () => {
   const { 

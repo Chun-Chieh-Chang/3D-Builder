@@ -23,6 +23,9 @@ export interface CADMate {
     offset?: number; 
     angle?: number; 
     alignmentFlip?: boolean;
+    isLimitAngle?: boolean;
+    minAngle?: number;
+    maxAngle?: number;
     ratio?: number; // For Gear
     pitch?: number; // For Screw
     initialTransforms?: Record<string, { position: [number, number, number], rotation: [number, number, number] }>;
@@ -99,19 +102,21 @@ export interface SketchNode {
 
 export interface SketchEdge {
   id: string;
-  type: 'LINE' | 'ARC' | 'CIRCLE' | 'CENTER_LINE' | 'SPLINE';
+  type: 'LINE' | 'ARC' | 'CIRCLE' | 'CENTER_LINE' | 'SPLINE' | 'TEXT';
   nodeIds: string[];
   isConstruction?: boolean;
+  parameters?: any;
 }
 
 export interface SketchConstraint {
   id: string;
-  type: 'COINCIDENT' | 'HORIZONTAL' | 'VERTICAL' | 'DISTANCE' | 'EQUAL' | 'CONCENTRIC' | 'TANGENT' | 'ANGLE' | 'PARALLEL' | 'PERPENDICULAR' | 'SYMMETRIC' | 'MIDPOINT';
+  type: 'COINCIDENT' | 'HORIZONTAL' | 'VERTICAL' | 'DISTANCE' | 'EQUAL' | 'CONCENTRIC' | 'TANGENT' | 'ANGLE' | 'PARALLEL' | 'PERPENDICULAR' | 'SYMMETRIC' | 'MIDPOINT' | 'COLLINEAR' | 'PIERCE';
   nodeIds?: string[];
   edgeIds?: string[];
   value?: number;
   offset?: number;
   arcCondition?: 'CENTER' | 'MIN' | 'MAX';
+  label?: string;
 }
 
 export interface CADComponent {
@@ -192,6 +197,17 @@ export interface MeasurementResult {
     center_of_mass?: [number, number, number];
     inertia_matrix?: number[][];
 }
+
+export interface RibbonLayout {
+  FEATURES: string[];
+  SKETCH: string[];
+  EVALUATE: string[];
+  ASSEMBLY?: string[];
+  DRAWING?: string[];
+  RENDER?: string[];
+  SURFACING?: string[];
+}
+
 export interface CadState {
   projectName: string;
   setProjectName: (name: string) => void;
@@ -306,6 +322,10 @@ export interface CadState {
   measurementResults: MeasurementResult | null;
   setMeasurementResults: (results: MeasurementResult | null) => void;
 
+  dimensionSelection: string[];
+  addDimensionSelection: (id: string) => void;
+  clearDimensionSelection: () => void;
+
   components: CADComponent[];
   setComponents: (components: CADComponent[]) => void;
   addComponent: (component: CADComponent) => void;
@@ -335,8 +355,8 @@ export interface CadState {
   setInterferenceResults: (results: any[]) => void;
   interferenceActive: boolean;
   setInterferenceActive: (active: boolean) => void;
-  solverReport: { dof: number; residual: number } | null;
-  setSolverReport: (report: { dof: number; residual: number } | null) => void;
+  solverReport: { dof: number; residual: number; nodes: Record<string, any> } | null;
+  setSolverReport: (report: { dof: number; residual: number; nodes: Record<string, any> } | null) => void;
   assemblyPreviewComponents: CADComponent[] | null;
   setAssemblyPreviewComponents: (components: CADComponent[] | null) => void;
   massProperties: { volume: number; surface_area: number; center_of_mass: number[]; inertia_matrix: number[][]; } | null;
@@ -360,8 +380,8 @@ export interface CadState {
   pushToast: (message: string, type?: CadToastType) => void;
   dismissToast: (id: string) => void;
 
-  pendingFeatureCommand: 'FILLET' | 'CHAMFER' | 'THICKEN' | 'PATTERN' | 'MIRROR' | 'DRAFT' | 'SHELL' | 'HOLE_WIZARD' | 'PLANE' | 'REFERENCE_PLANE' | 'SURFACE_OFFSET' | 'SURFACE_KNIT' | 'SURFACE_CUT' | null;
-  setPendingFeatureCommand: (cmd: 'FILLET' | 'CHAMFER' | 'THICKEN' | 'PATTERN' | 'MIRROR' | 'DRAFT' | 'SHELL' | 'HOLE_WIZARD' | 'PLANE' | 'REFERENCE_PLANE' | 'SURFACE_OFFSET' | 'SURFACE_KNIT' | 'SURFACE_CUT' | null) => void;
+  pendingFeatureCommand: 'FILLET' | 'CHAMFER' | 'THICKEN' | 'PATTERN' | 'MIRROR' | 'DRAFT' | 'SHELL' | 'HOLE_WIZARD' | 'PLANE' | 'REFERENCE_PLANE' | 'SURFACE_OFFSET' | 'SURFACE_KNIT' | 'SURFACE_CUT' | 'REFERENCE_POINT' | 'REVOLVED_CUT' | 'DOME' | null;
+  setPendingFeatureCommand: (cmd: 'FILLET' | 'CHAMFER' | 'THICKEN' | 'PATTERN' | 'MIRROR' | 'DRAFT' | 'SHELL' | 'HOLE_WIZARD' | 'PLANE' | 'REFERENCE_PLANE' | 'SURFACE_OFFSET' | 'SURFACE_KNIT' | 'SURFACE_CUT' | 'REFERENCE_POINT' | 'REVOLVED_CUT' | 'DOME' | null) => void;
   defaultFilletRadius: number;
   defaultChamferDistance: number;
   
@@ -369,6 +389,8 @@ export interface CadState {
   setReferencePlanes: (planes: CADReferencePlane[]) => void;
   referenceAxes: any[];
   setReferenceAxes: (axes: any[]) => void;
+  referencePoints: any[];
+  setReferencePoints: (points: any[]) => void;
   
   activePropertyManager: any;
   setActivePropertyManager: (mgr: any) => void;
@@ -404,6 +426,31 @@ export interface CadState {
   setPartMaterial: (material: string) => void;
   environmentMap: string;
   setEnvironmentMap: (env: string) => void;
+
+  ribbonLayout: RibbonLayout;
+  setRibbonLayout: (layout: RibbonLayout) => void;
+  resetRibbonLayout: () => void;
+
+  commitPreciseSketchSolve: () => void;
+  viewOrientationSelectorVisible: boolean;
+  setViewOrientationSelectorVisible: (visible: boolean) => void;
+
+  showMaterialModal: boolean;
+  setShowMaterialModal: (show: boolean) => void;
+  targetMaterialEntity: { type: 'PART' | 'COMPONENT' | 'FEATURE', id: string } | null;
+  setTargetMaterialEntity: (entity: { type: 'PART' | 'COMPONENT' | 'FEATURE', id: string } | null) => void;
+
+  hoveredEntityId: string | null;
+  setHoveredEntityId: (id: string | null) => void;
+
+  selection: {
+    type?: string;
+    ids?: string[];
+    nodes: string[];
+    edges: string[];
+    features: string[];
+    faces: string[];
+  };
 }
 
 export const MATERIAL_PRESETS: Record<string, {
@@ -423,6 +470,12 @@ export const MATERIAL_PRESETS: Record<string, {
   'Glossy Plastic': { color: '#e74c3c', roughness: 0.05, metalness: 0.05, clearcoat: 1.0, clearcoatRoughness: 0.1 },
   'Matte Plastic': { color: '#2c3e50', roughness: 0.8, metalness: 0.0 },
   Glass: { color: '#ffffff', roughness: 0.0, metalness: 0.0, transmission: 1.0, ior: 1.5, thickness: 2.0, clearcoat: 1.0 },
+};
+
+export const DEFAULT_RIBBON_LAYOUT: RibbonLayout = {
+  FEATURES: ['EXTRUDE', 'REVOLVE', 'EXTRUDE_CUT', 'REVOLVED_CUT', 'SWEEP', 'LOFT', 'FILLET', 'CHAMFER', 'MIRROR', 'PATTERN', 'SHELL', 'DOME', 'DRAFT', 'REFERENCE_PLANE', 'REFERENCE_AXIS', 'REFERENCE_POINT', 'HOLE_WIZARD'],
+  SKETCH: ['LINE', 'CIRCLE', 'ARC', 'RECTANGLE', 'SMART_DIMENSION', 'TRIM', 'EXTEND', 'OFFSET', 'MIRROR', 'PATTERN', 'TEXT', 'SPLINE'],
+  EVALUATE: ['MEASURE', 'MASS_PROPS', 'INTERFERENCE', 'SECTION_VIEW', 'EQUATIONS']
 };
 
 export const useCadStore = create<CadState>()(
@@ -532,8 +585,6 @@ export const useCadStore = create<CadState>()(
       setFirstChainNodeId: (firstChainNodeId) => set({ firstChainNodeId }),
       
       convertEntities: (selectedEdgeIds) => set((state) => {
-        // Simple mock implementation: Create nodes/edges at fixed positions
-        // In reality, this would query OcctShape mesh edges and project them
         const nextNodes = { ...state.sketchNodes };
         const nextEdges = { ...state.sketchEdges };
         selectedEdgeIds.forEach((id, idx) => {
@@ -599,6 +650,9 @@ export const useCadStore = create<CadState>()(
       setMeasurementPoints: (measurementPoints) => set({ measurementPoints }),
       measurementResults: null,
       setMeasurementResults: (measurementResults) => set({ measurementResults }),
+      dimensionSelection: [],
+      addDimensionSelection: (id) => set((state) => ({ dimensionSelection: [...state.dimensionSelection, id] })),
+      clearDimensionSelection: () => set({ dimensionSelection: [] }),
       components: [],
       setComponents: (components) => set({ components }),
       addComponent: (component) => set((state) => ({ components: [...state.components, component] })),
@@ -685,57 +739,102 @@ export const useCadStore = create<CadState>()(
       setPartMaterial: (m) => set({ partMaterial: m }),
       environmentMap: 'studio',
       setEnvironmentMap: (env) => set({ environmentMap: env }),
-
       ribbonLayout: DEFAULT_RIBBON_LAYOUT,
       setRibbonLayout: (ribbonLayout) => set({ ribbonLayout }),
       resetRibbonLayout: () => set({ ribbonLayout: DEFAULT_RIBBON_LAYOUT }),
+      commitPreciseSketchSolve: () => { /* Logic would go here */ },
+      viewOrientationSelectorVisible: false,
+      setViewOrientationSelectorVisible: (visible) => set({ viewOrientationSelectorVisible: visible }),
+      showMaterialModal: false,
+      setShowMaterialModal: (showMaterialModal) => set({ showMaterialModal }),
+      targetMaterialEntity: null,
+      setTargetMaterialEntity: (targetMaterialEntity) => set({ targetMaterialEntity }),
+      hoveredEntityId: null,
+      setHoveredEntityId: (hoveredEntityId) => set({ hoveredEntityId }),
+      selection: { nodes: [], edges: [], features: [], faces: [] },
     }),
     {
       name: 'cad-storage',
       storage: createJSONStorage(() => localStorage),
       partialize: (state) => ({
+        projectName: state.projectName,
+        drawingScale: state.drawingScale,
+        drawnBy: state.drawnBy,
+        approvedBy: state.approvedBy,
+        configurations: state.configurations,
+        activeConfigurationId: state.activeConfigurationId,
+        globalVariables: state.globalVariables,
         mode: state.mode,
         activeTab: state.activeTab,
-        features: state.features,
-        sketchNodes: state.sketchNodes,
-        sketchEdges: state.sketchEdges,
-        sketchConstraints: state.sketchConstraints,
-        components: state.components,
-        mates: state.mates,
+        activeComponentId: state.activeComponentId,
+        isSketchMode: state.isSketchMode,
+        smartDimensionActive: state.smartDimensionActive,
         activePlane: state.activePlane,
         activeFaceOrigin: state.activeFaceOrigin,
         activeFaceNormal: state.activeFaceNormal,
         activeFaceId: state.activeFaceId,
+        revolveAxisId: state.revolveAxisId,
+        sketchTool: state.sketchTool,
+        gridSnap: state.gridSnap,
+        sketchNewChain: state.sketchNewChain,
+        lastClickedNodeId: state.lastClickedNodeId,
+        firstChainNodeId: state.firstChainNodeId,
+        selectedEntityIds: state.selectedEntityIds,
+        sketchNodes: state.sketchNodes,
+        sketchEdges: state.sketchEdges,
+        sketchConstraints: state.sketchConstraints,
+        features: state.features,
+        editingFeatureId: state.editingFeatureId,
+        rollbackIndex: state.rollbackIndex,
+        selectedId: state.selectedId,
+        selectedSubNodeType: state.selectedSubNodeType,
+        visibleSketches: state.visibleSketches,
+        hoveredTreeId: state.hoveredTreeId,
+        hoveredChildren: state.hoveredChildren,
+        selectedTopology: state.selectedTopology,
+        measurementMode: state.measurementMode,
+        measurementPoints: state.measurementPoints,
+        measurementResults: state.measurementResults,
+        dimensionSelection: state.dimensionSelection,
+        components: state.components,
+        mates: state.mates,
+        mateSelection: state.mateSelection,
+        meshData: state.meshData,
+        interferenceMeshes: state.interferenceMeshes,
+        interferenceResults: state.interferenceResults,
+        interferenceActive: state.interferenceActive,
+        solverReport: state.solverReport,
+        assemblyPreviewComponents: state.assemblyPreviewComponents,
+        massProperties: state.massProperties,
+        computedRefGeometry: state.computedRefGeometry,
+        contextMenu: state.contextMenu,
+        shortcutBox: state.shortcutBox,
+        mousePos: state.mousePos,
+        hint: state.hint,
+        danglingNodes: state.danglingNodes,
+        pendingFeatureCommand: state.pendingFeatureCommand,
+        defaultFilletRadius: state.defaultFilletRadius,
+        defaultChamferDistance: state.defaultChamferDistance,
         referencePlanes: state.referencePlanes,
         referenceAxes: state.referenceAxes,
-        projectName: state.projectName,
-        drawingScale: state.drawingScale,
-        drawnBy: state.drawnBy,
-        approvedBy: state.approvedBy,
+        referencePoints: state.referencePoints,
+        activePropertyManager: state.activePropertyManager,
+        showExportModal: state.showExportModal,
+        viewportDisplayMode: state.viewportDisplayMode,
+        cameraNormalTrigger: state.cameraNormalTrigger,
+        cameraNormalFlip: state.cameraNormalFlip,
+        cameraNormalLastPlane: state.cameraNormalLastPlane,
+        sectionView: state.sectionView,
+        explodedView: state.explodedView,
+        motionStudy: state.motionStudy,
         partMaterial: state.partMaterial,
         environmentMap: state.environmentMap,
-        explodedView: state.explodedView,
-        configurations: state.configurations,
-        activeConfigurationId: state.activeConfigurationId,
-        globalVariables: state.globalVariables,
         ribbonLayout: state.ribbonLayout,
-      }),
-    }
-  )
-);
-d: state.activeFaceId,
-        referencePlanes: state.referencePlanes,
-        referenceAxes: state.referenceAxes,
-        projectName: state.projectName,
-        drawingScale: state.drawingScale,
-        drawnBy: state.drawnBy,
-        approvedBy: state.approvedBy,
-        partMaterial: state.partMaterial,
-        environmentMap: state.environmentMap,
-        explodedView: state.explodedView,
-        configurations: state.configurations,
-        activeConfigurationId: state.activeConfigurationId,
-        globalVariables: state.globalVariables,
+        viewOrientationSelectorVisible: state.viewOrientationSelectorVisible,
+        showMaterialModal: state.showMaterialModal,
+        targetMaterialEntity: state.targetMaterialEntity,
+        hoveredEntityId: state.hoveredEntityId,
+        selection: state.selection,
       }),
     }
   )

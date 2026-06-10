@@ -229,7 +229,11 @@ export const sketchActions = {
     useCadStore.setState({
       selection: {
         type: 'SKETCH',
-        ids: Array.from(chainEdgeIds)
+        ids: Array.from(chainEdgeIds),
+        nodes: [],
+        edges: [],
+        features: [],
+        faces: []
       }
     });
   },

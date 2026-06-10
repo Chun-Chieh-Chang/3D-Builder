@@ -11,7 +11,7 @@ interface RibbonControllerProps {
   engineStatus: 'CONNECTED' | 'DISCONNECTED';
   solidSketchPointCount: number;
   handleExitAndExtrude: (op?: any) => void;
-  handleRevolveFromSketch: () => void;
+  handleRevolveFromSketch: (op?: 'ADD' | 'CUT') => void;
   handleImportStep: (e: React.ChangeEvent<HTMLInputElement>) => void;
   onShowMassProps?: () => void;
   onShowEquations?: () => void;

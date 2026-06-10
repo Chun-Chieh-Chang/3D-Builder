@@ -11,6 +11,7 @@ export interface SketchSolveReport {
   dof: number;
   residual: number;
   status: string;
+  nodes?: Record<string, any>;
 }
 
 /** PBD preview during drag / line chaining (60 FPS target). */
@@ -87,7 +88,11 @@ export async function commitPreciseSketchSolve(): Promise<SketchSolveReport> {
   
   useCadStore.setState({
     sketchNodes: nodes,
-    solverReport: { dof: report.dof, residual: report.residual },
+    solverReport: { 
+      dof: report.dof, 
+      residual: report.residual,
+      nodes: report.nodes || {}
+    },
   });
 
   const editingFeatureId = state.editingFeatureId;

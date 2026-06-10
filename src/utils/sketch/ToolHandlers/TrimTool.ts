@@ -1,7 +1,7 @@
 import { SketchToolHandler, SketchToolContext } from './BaseTool';
 import { useCadStore } from '../../../store/useCadStore';
 import { sketchActions } from '../../../store/sketchActions';
-import { intersectSegments, intersectSegmentCircle } from '../../geometry/Intersection';
+import { intersectSegments, intersectSegmentCircle, intersectLines } from '../../geometry/Intersection';
 
 export class TrimToolHandler implements SketchToolHandler {
   private lastDragU: number | null = null;

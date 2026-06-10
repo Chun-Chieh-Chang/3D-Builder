@@ -119,7 +119,7 @@ export default function OcctShape({
       let filterType = 'ALL';
       if (pendingFeatureCommand === 'FILLET' || pendingFeatureCommand === 'CHAMFER' || pendingFeatureCommand === 'PATTERN') {
         filterType = 'EDGE_ONLY';
-      } else if (pendingFeatureCommand === 'DRAFT' || pendingFeatureCommand === 'MIRROR' || pendingFeatureCommand === 'THICKEN' || pendingFeatureCommand === 'SHELL' || pendingFeatureCommand === 'HOLE_WIZARD' || pendingFeatureCommand === 'PLANE' || pendingFeatureCommand === 'DOME') {
+      } else if (pendingFeatureCommand === 'DRAFT' || pendingFeatureCommand === 'MIRROR' || pendingFeatureCommand === 'THICKEN' || pendingFeatureCommand === 'SHELL' || pendingFeatureCommand === 'HOLE_WIZARD' || pendingFeatureCommand === 'PLANE') {
         filterType = 'FACE_ONLY';
       } else if (activePropertyManager?.selectionFilter) {
         filterType = activePropertyManager.selectionFilter;
@@ -194,12 +194,6 @@ export default function OcctShape({
               const alreadyExists = currentRefs.some((r: any) => r.id === selected.id);
               if (!alreadyExists) {
                 state.updateFeatureParams(featId, { faces_to_remove_refs: [...currentRefs, selected] });
-              }
-            } else if (pendingFeatureCommand === 'DOME') {
-              const currentRefs = params.faces_refs || [];
-              const alreadyExists = currentRefs.some((r: any) => r.id === selected.id);
-              if (!alreadyExists) {
-                state.updateFeatureParams(featId, { faces_refs: [...currentRefs, selected] });
               }
             } else if (pendingFeatureCommand === 'HOLE_WIZARD') {
               state.updateFeatureParams(featId, { hole_placement_refs: [selected] });
