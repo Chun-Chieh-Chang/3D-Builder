@@ -2007,17 +2007,20 @@ def build_shape_only(
                 tangent_prop = params.get('tangentPropagation', True)
                 refs = params.get('refs', [])
                 if not refs:
-                    # Fallback for old tests if they only pass edge_start and edge_end
+                    # Fallback for old format
                     edge_start = params.get('edge_start')
                     edge_end = params.get('edge_end')
                     if edge_start and edge_end:
                         refs = [{"edgeData": {"start": edge_start, "end": edge_end}, "signature": params.get("signature")}]
                 
+                edges_added = 0
+                visited_hashes = set()
+                fillet_tool = None
+                res_shape = None
+                
                 if refs:
                     try:
                         fillet_tool = BRepFilletAPI_MakeFillet(final_shape)
-                        edges_added = 0
-                        visited_hashes = set()
                         
                         for ref in refs:
                             edge_data = ref.get('edgeData', {})
@@ -2045,7 +2048,7 @@ def build_shape_only(
                             fillet_tool.Build()
                             if fillet_tool.IsDone():
                                 res_shape = fillet_tool.Shape()
-                                # --- TNS 2.0 Tracking ---
+                                # TNS 2.0 Tracking
                                 for ref in refs:
                                     edge_data = ref.get('edgeData', {})
                                     signature = ref.get('signature')

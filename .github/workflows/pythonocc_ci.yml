@@ -9,45 +9,31 @@ on:
 jobs:
   test:
     name: Backend Pytest with PythonOCC
-    runs-on: ubuntu-22.04
-    
-    defaults:
-      run:
-        shell: bash -el {0}
+    runs-on: ubuntu-latest
 
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
 
-      - name: Cache Conda
-        uses: actions/cache@v4
-        if: false  # Temporarily disable during infrastructure issues (504 Gateway Timeout)
+      - name: Set up Python
+        uses: actions/setup-python@v5
         with:
-          path: ~/conda_pkgs_dir
-          key: ${{ runner.os }}-conda-${{ hashFiles('backend/requirements.txt') }}
-          restore-keys: |
-            ${{ runner.os }}-conda-
-
-      - name: Setup Miniforge (Mamba)
-        uses: conda-incubator/setup-miniconda@v3
-        with:
-          miniforge-version: latest
           python-version: "3.10"
-          activate-environment: test-env
-          use-mamba: true
-          channels: conda-forge
-          channel-priority: true
 
-      - name: Install Dependencies
+      - name: Install system dependencies
         run: |
-          mamba install -y \
-            pythonocc-core \
-            pytest \
-            fastapi \
-            pydantic \
-            httpx \
-            uvicorn \
-            python-multipart
+          sudo apt-get update
+          sudo apt-get install -y libopencascade-dev
+
+      - name: Install Python Dependencies
+        run: |
+          pip install --upgrade pip
+          pip install pythonocc-core==7.7.2
+          pip install pytest fastapi pydantic httpx uvicorn python-multipart
+
+      - name: Verify pythonocc-core Installation
+        run: |
+          python -c "from OCC.Core.BRepPrimAPI import BRepPrimAPI_MakeBox; print('pythonocc-core OK')"
 
       - name: Run Backend Tests
         working-directory: ./backend
