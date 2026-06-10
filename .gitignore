@@ -44,3 +44,6 @@ GRAPH_REPORT.md
 # BitFun snapshot data - auto managed
 .bitfun/
 sync.ffs_db
+
+# Cleanup scan report
+.cleanup_report.json

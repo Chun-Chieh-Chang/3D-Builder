@@ -49,12 +49,18 @@ npm run dev
 ### 文件結構
 ```
 docs/
-├── SOLIDWORKS_2025_參考標準.md    # 專家知識標準
-├── DEVELOPMENT_ROADMAP.md         # 開發路線圖
-├── DEVELOPMENT_GUIDE.md           # 開發指南
-├── SOLIDWORKS_INDEX.md            # 知識索引
-└── gap-audit-report.md            # 功能缺口報告
+├── 00_INDEX.md              ← 總索引
+├── 01_REFERENCE/            ← SOLIDWORKS 參考標準
+├── 02_SPEC/                 ← 技術規格
+├── 03_ARCHITECTURE/         ← 架構設計
+├── 04_DEVELOPMENT/          ← 開發指南
+├── 05_GOVERNANCE/           ← 治理流程
+├── 06_PRODUCTIZATION/       ← 產品化報告
+├── 07_BENCHMARKS/           ← 實作練習
+└── 08_LEARNINGS/            ← 經驗學習
 ```
+
+- [📚 文件總索引](docs/00_INDEX.md)
 
 ### 開發流程
 1. **需求分析**: 對照 SOLIDWORKS 2025 參考標準
