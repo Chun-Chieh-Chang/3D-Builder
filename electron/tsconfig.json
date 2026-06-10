@@ -13,7 +13,16 @@
     "resolveJsonModule": true,
     "declaration": true,
     "declarationMap": true,
-    "sourceMap": true
+    "sourceMap": true,
+
+    /* Prevent cross-node_modules type conflicts.
+       Electron ships its own @types/node (v20.x) which declares
+       `noDeprecation: boolean` (non-optional), while root's
+       @types/node declares `noDeprecation?: boolean` (optional).
+       TS sees both declarations globally → TS2687.
+       By pinning typeRoots to electron's own node_modules we
+       prevent the root types from leaking in. */
+    "typeRoots": ["./node_modules/@types"]
   },
   "include": ["**/*.ts"],
   "exclude": ["node_modules", "../out", "../.next"]

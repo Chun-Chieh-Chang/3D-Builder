@@ -1,3 +1,6 @@
+import { CAD_API } from '@/lib/cad-api';
+
+// Re-export for backward compatibility with existing imports
 export interface FaceMetadata {
   id: string;
   area: number;
@@ -40,7 +43,7 @@ export interface CADFeature {
 
 export class HeavyEngineClient {
   private static instance: HeavyEngineClient;
-  private baseUrl: string = 'http://127.0.0.1:8400/api/v1/geometry';
+  private baseUrl: string = CAD_API.baseUrl;
 
   private constructor() {}
 
@@ -53,7 +56,7 @@ export class HeavyEngineClient {
 
   public async checkHealth(): Promise<boolean> {
     try {
-      const response = await fetch("http://127.0.0.1:8400/api/v1/health");
+      const response = await fetch(CAD_API.healthUrl);
       return response.ok;
     } catch {
       return false;

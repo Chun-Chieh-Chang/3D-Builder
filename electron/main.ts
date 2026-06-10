@@ -270,13 +270,6 @@ app.on('window-all-closed', () => {
   }
 });
 
-app.on('activate', () => {
-  // macOS: 點擊 dock 圖示時重新建立視窗
-  if (BrowserWindow.getAllWindows().length === 0) {
-    createWindow();
-  }
-});
-
 // 清理資源
 app.on('before-quit', () => {
   // 可以在這裡保存應用程式狀態

@@ -20,11 +20,17 @@
     "typecheck": "tsc --noEmit",
     "pdca:check": "node tools/pdca-check.mjs",
     "pdca:full": "npm run typecheck && npm run pdca:check",
+    "check:all": "npm run check:typecheck && npm run check:electron && npm run check:lint && npm run check:env",
+    "check:typecheck": "npx tsc --noEmit --skipLibCheck",
+    "check:electron": "cd electron && npx tsc --noEmit",
+    "check:lint": "npm run lint",
+    "check:env": "python3 scripts/ci-learn.py --check-env",
+    "learn": "python3 scripts/ci-learn.py",
     "graphify:update": "graphify . --no-viz --update",
     "graphify:query": "graphify query",
     "postinstall": "node -e \"if (require('fs').existsSync('vendor/SkillsBuilder/skills/dev/git-push-guardian/scripts/install-hook.js')) require('child_process').execSync('node vendor/SkillsBuilder/skills/dev/git-push-guardian/scripts/install-hook.js', {stdio: 'inherit'})\"",
     "test:golden": "python tests/regression/run_golden.py",
-    "test:backend": "C:\\3D_ENV_FINAL\\python.exe -m pytest backend/tests",
+    "test:backend": "uv run --directory backend pytest backend/tests",
     "test:regression": "npm run test:golden && npm run test:backend"
   },
   "dependencies": {

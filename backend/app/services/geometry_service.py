@@ -1211,6 +1211,33 @@ def build_feature_shape_in_isolation(f_type, params, parent_shape=None, all_feat
                     except Exception:
                         pass  # SetGuide may not be supported, ignore
             
+            # --- Alignment control (SW Style) ---
+            alignment = params.get('alignment', 'PARALLEL')
+            if alignment == 'PERPENDICULAR':
+                try:
+                    sweep_tool.SetMode(GeomAbs_Perpendicular)
+                except Exception:
+                    pass  # SetMode may not be available on all OCCT versions
+
+            # --- Flip profile control ---
+            flip_profile = params.get('flip_profile', False)
+            if flip_profile:
+                try:
+                    # Flip by inverting the profile wire
+                    reversed_wire = profile_wire.Reversed()
+                    # Rebuild PipeShell with reversed profile
+                    sweep_tool = BRepOffsetAPI_MakePipeShell(path_wire)
+                    sweep_tool.Add(reversed_wire)
+                    for guide_pts in guide_points_list:
+                        if guide_pts:
+                            guide_wire = _build_wire_from_points(guide_pts, is_closed=False)
+                            try:
+                                sweep_tool.SetGuide(guide_wire)
+                            except Exception:
+                                pass
+                except Exception:
+                    pass  # Flip may fail on some paths, continue with original
+            
             # Build and return shape
             sweep_tool.Build()
             if sweep_tool.IsDone():
