@@ -846,10 +846,20 @@ def build_feature_shape_in_isolation(f_type, params, parent_shape=None, all_feat
                     # Track generated faces for surface sweep/extrude
                     for eid, edge in edge_map.items():
                         gen_faces = prism_tool.Generated(edge)
-                        for gf in gen_faces:
-                            if not gf.IsNull():
-                                linker.mapping[f"{eid}_GEN"] = get_shape_hash(gf, 10000000)
-                                break
+                        # TopTools_ListOfShape needs iterator in pythonocc
+                        if gen_faces is not None:
+                            try:
+                                extent = gen_faces.Extent()
+                            except Exception:
+                                extent = 0
+                            if extent > 0:
+                                it = TopTools_ListIteratorOfListOfShape(gen_faces)
+                                while it.More():
+                                    gf = it.Value()
+                                    it.Next()
+                                    if gf and not gf.IsNull():
+                                        linker.mapping[f"{eid}_GEN"] = get_shape_hash(gf, 10000000)
+                                        break
 
                 current_feat_shape = comp
             else:
@@ -915,10 +925,19 @@ def build_feature_shape_in_isolation(f_type, params, parent_shape=None, all_feat
                         for eid, local_edge in edge_map.items():
                             moved_edge = topods.Edge(BRepBuilderAPI_Transform(local_edge, trsf).Shape())
                             gen_faces = prism_tool.Generated(moved_edge)
-                            for gf in gen_faces:
-                                if gf and not gf.IsNull():
-                                    # draft_tool.Add(face, direction, angle, neutral_plane)
-                                    draft_tool.Add(gf, normal_dir, angle_rad, gp_Pln(ax2))
+                            if gen_faces is not None:
+                                try:
+                                    extent = gen_faces.Extent()
+                                except Exception:
+                                    extent = 0
+                                if extent > 0:
+                                    it = TopTools_ListIteratorOfListOfShape(gen_faces)
+                                    while it.More():
+                                        gf = it.Value()
+                                        it.Next()
+                                        if gf and not gf.IsNull():
+                                            # draft_tool.Add(face, direction, angle, neutral_plane)
+                                            draft_tool.Add(gf, normal_dir, angle_rad, gp_Pln(ax2))
 
                         if draft_tool.IsDone():
                             current_feat_shape = draft_tool.Shape()
@@ -947,22 +966,38 @@ def build_feature_shape_in_isolation(f_type, params, parent_shape=None, all_feat
                 
                 # 1. Track Side Faces (from edges)
                 for eid, local_edge in edge_map.items():
-                    # The edge in edge_map is in local sketch space (2D plane at origin).
-                    # We need to transform it to match the 'face' passed to prism_tool.
-                    # BRepBuilderAPI_Transform doesn't have .Edge() in all versions; use .Shape() + cast
                     moved_edge = topods.Edge(BRepBuilderAPI_Transform(local_edge, trsf).Shape())
                     gen_faces = prism_tool.Generated(moved_edge)
-                    for gf in gen_faces:
-                        if not gf.IsNull():
-                            linker.record_generation(f"{eid}_GEN", gf)
-                            break
+                    # TopTools_ListOfShape needs iterator in pythonocc
+                    if gen_faces is not None:
+                        try:
+                            extent = gen_faces.Extent()
+                        except Exception:
+                            extent = 0
+                        if extent > 0:
+                            it = TopTools_ListIteratorOfListOfShape(gen_faces)
+                            while it.More():
+                                gf = it.Value()
+                                it.Next()
+                                if gf and not gf.IsNull():
+                                    linker.record_generation(f"{eid}_GEN", gf)
+                                    break
                 
                 # 2. Track Top Face (from the sketch face)
                 gen_top_faces = prism_tool.Generated(face)
-                for gf in gen_top_faces:
-                    if not gf.IsNull():
-                        linker.record_generation(f"{feat_id}_TOP", gf)
-                        break
+                if gen_top_faces is not None:
+                    try:
+                        extent = gen_top_faces.Extent()
+                    except Exception:
+                        extent = 0
+                    if extent > 0:
+                        it = TopTools_ListIteratorOfListOfShape(gen_top_faces)
+                        while it.More():
+                            gf = it.Value()
+                            it.Next()
+                            if gf and not gf.IsNull():
+                                linker.record_generation(f"{feat_id}_TOP", gf)
+                                break
                     
                 # 3. Track Bottom Face (the original face itself is the bottom)
                 linker.record_generation(f"{feat_id}_BOT", face)
