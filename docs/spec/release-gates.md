@@ -50,3 +50,43 @@ The goal of Phase 2 is usability and handling complex topologies.
 - [ ] **Constraint Solving**: Precise solver handles over-defined states and reports residuals.
 - [ ] **Error Boundaries**: Frontend gracefully handles backend crashes or rebuild timeouts.
 - [ ] **Feature History**: Rollback bar and feature reordering are functional and safe.
+
+---
+
+## 5. SOLIDWORKS 驗證標準對齊 (Verification Standard Alignment)
+
+> All phase acceptance criteria below must conform to the validation levels (L1–L4) defined in [`docs/spec/SOLIDWORKS_VERIFICATION_STANDARD.md`](docs/spec/SOLIDWORKS_VERIFICATION_STANDARD.md).
+> Feature-level verification tables are in [`docs/spec/SOLIDWORKS_VERIFICATION_STANDARD_FEATURES*.md`](docs/spec/SOLIDWORKS_VERIFICATION_STANDARD_FEATURES.md).
+
+### 5.1 Mandatory Release Gate Items (All Phases)
+
+Before any phase transition, the following gates are mandatory:
+
+| Gate ID | Name | Command | Acceptance |
+|---------|------|---------|------------|
+| RG-01 | TypeScript Type Safety | `npx tsc --noEmit` | Zero errors |
+| RG-02 | PDCA Document Consistency | `npm run pdca:check` | All checks pass |
+| RG-03 | Unit Test Coverage | `npm run test:unit` | Coverage >= Phase requirement |
+| RG-04 | Golden Test | `npm run test:golden` | All applicable golden tests pass |
+| RG-05 | Event-Chain Audit | Manual + automated | Full trace for all L4 features |
+| RG-06 | Feature Verification SOP | Per [FEATURES.md](docs/spec/SOLIDWORKS_VERIFICATION_STANDARD_FEATURES.md) | All L3+ rows pass |
+
+### 5.2 Phase 2 Feature Verification Checklist
+
+Each Phase 2 feature must pass the verification table defined in the corresponding section of `SOLIDWORKS_VERIFICATION_STANDARD_FEATURES.md`:
+
+- **2D Sketch Engine** → Section 3.5 (驗證等級 L3–L4)
+- **Geometric Constraints** → Section 3.5 (L4)
+- **Base Features (Extrude/Revolve)** → Section 3.6 (L4)
+- **Boolean Operations** → Section 3.6 (L4)
+- **File I/O (STEP/IGES)** → Section 3.12 (L3)
+
+### 5.3 Golden Part Requirements
+
+- Each L4-verified feature must have a `golden/` directory with `solidworks_step.step`, `golden_part.3dbpart`, `golden_spec.json`, and `golden_report.md`.
+- Tolerance thresholds defined in [SOLIDWORKS_VERIFICATION_STANDARD_FEATURES_3.md](docs/spec/SOLIDWORKS_VERIFICATION_STANDARD_FEATURES_3.md):
+  - Volume: ±1 PPM
+  - Surface area: ±10 PPM
+  - Center of gravity: ±0.001 mm
+  - Topology count: 100% match
+  - Moments of inertia: ±100 PPM

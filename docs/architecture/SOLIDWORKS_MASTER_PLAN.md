@@ -79,6 +79,10 @@
     - 標準零件 (如 L-Bracket) 的幾何拓撲、體積與重心數據必須與 SolidWorks 導出結果 100% 匹配。
 5. **Benchmark SOP Validation**：
     - 必須由 AI Agent 模擬或人工實際操作，完整執行 [REINFORCED_L_BRACKET_SOP.md](docs/benchmarks/REINFORCED_L_BRACKET_SOP.md) 並截圖/記錄日誌，確保無任何「點擊無效」或「顯示錯誤」。
+6. **SOLIDWORKS 驗證標準對齊**（v2025 線上說明）：
+    - 所有板塊的驗證標準、Golden Part 規範、RCA/CAPA 流程、自動化測試要求已統一收斂至 `docs/spec/SOLIDWORKS_VERIFICATION_STANDARD*.md`。
+    - 各 Phase 的 acceptance criteria 必須符合 [SOLIDWORKS_VERIFICATION_STANDARD.md](docs/spec/SOLIDWORKS_VERIFICATION_STANDARD.md) 定義的驗證分級（L1–L4）。
+    - 詳細功能板塊驗證標準：[SOLIDWORKS_VERIFICATION_STANDARD_FEATURES.md](docs/spec/SOLIDWORKS_VERIFICATION_STANDARD_FEATURES.md) 系列文件。
 
 ---
 
@@ -87,4 +91,5 @@
 - **Step 1 (Event Trace)**: 追蹤從 React 事件 (onClick) ➔ Store (Action) ➔ Renderer (Hook) ➔ Viewport (Primitive) 的完整路徑。
 - **Step 2 (State Diff)**: 比對「預期狀態」與「實際 Zustand 快照」的差異。
 - **Step 3 (Prevention)**: 修改代碼後，必須在 `DEV_LOG.md` 記錄該交互模式的「邊界條件」，並將其加入自動化測試或手動查核清單。
+- **詳細 RCA/CAPA 流程**：參見 [SOLIDWORKS_VERIFICATION_STANDARD_RCA.md](docs/spec/SOLIDWORKS_VERIFICATION_STANDARD_RCA.md)，包含分類代碼與 CAPA 模板引用。
 

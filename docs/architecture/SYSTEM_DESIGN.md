@@ -26,6 +26,13 @@ The core intelligence for 3D solid operations, running locally via Python.
 - **Native Parser**: Reads and writes standard formats (STEP, IGES, BREP) via PythonOCC.
 - **Project Files**: Saves the proprietary JSON feature tree locally to the disk via Electron `fileAPI`.
 
+### Layer 5: Verification & Governance
+- **Release Gates**: Defined in [`docs/spec/release-gates.md`](docs/spec/release-gates.md). All phase transitions require mandatory gate checks.
+- **SOLIDWORKS Verification Standards**: Feature-level acceptance criteria aligned to SOLIDWORKS 2025 Online Help in [`docs/spec/SOLIDWORKS_VERIFICATION_STANDARD*.md`](docs/spec/SOLIDWORKS_VERIFICATION_STANDARD.md).
+- **Golden Part Testing**: Each L4 feature requires a golden part with topology/mass-property 100% match to SolidWorks reference data.
+- **RCA/CAPA Process**: Defined in [`docs/spec/SOLIDWORKS_VERIFICATION_STANDARD_RCA.md`](docs/spec/SOLIDWORKS_VERIFICATION_STANDARD_RCA.md). All failures trigger root-cause analysis with 5-step trace protocol.
+- **Automated Testing**: Layered test architecture (unit → integration → golden → regression → e2e) with coverage targets per phase defined in [`docs/spec/SOLIDWORKS_VERIFICATION_STANDARD_TESTS.md`](docs/spec/SOLIDWORKS_VERIFICATION_STANDARD_TESTS.md).
+
 ## 2. Data Flow (Parametric Rebuild Cycle)
 
 1. **User Action**: Modifies a dimension or applies a constraint in the React UI (e.g. via `SketchPropertyManager`).
