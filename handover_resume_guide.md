@@ -1,5 +1,5 @@
 # Handover Resume Guide (Auto-Generated)
-**Last Saved:** 2026-06-11 20:33:09
+**Last Saved:** 2026-06-11 20:37:34
 
 > [!IMPORTANT]
 > **To the next Agent/Human taking over:** 
@@ -7,7 +7,7 @@
 
 ## 1. Current Git State
 ```shell
-05fc379 feat: implement Sweep and Loft advanced capabilities gap alignment and Angle Reference Plane validation
+53745a8 chore: add backend and vendor to eslint ignores to bypass CI env scans
 ```
 
 ### Uncommitted Changes
@@ -15,25 +15,11 @@
 M DEV_LOG.md
  M backend/app/services/geometry_service.py
  M handover_resume_guide.md
- M tools/save_checkpoint.py
 ?? backend/tests/test_diagnostic_extrude.py
 ```
 
 ## 2. Recent Development Log (DEV_LOG.md snippet)
 ```markdown
-1. **Mock Path Extraction**: Modified `process_features` mock pipeline to extract and compile `ref_geometry` elements (such as `REFERENCE_PLANE` and `REFERENCE_AXIS`) even when `HAS_OCC` is False.
-2. **Verification Suite**: Created `test_reference_plane_angle.py` containing tests for Rodrigues' rotation angles and CAD feature rebuilding. Both tests passed successfully.
-
-## 2026-06-11 SkillsBuilder Sweep Twist Feature Gap Alignment
-
-### Requirement
-Implement video-driven Sweep Twist functional enhancements (Twist along Path by Degrees or Turns) to match SolidWorks capabilities as requested by Video 13-5.
-
-### RCA (Root Cause Analysis)
-1. **Twist Support Gap**: The standard `BRepOffsetAPI_MakePipeShell` builder in pythonocc/OCP does not have a native twist parameter, meaning standard sweeps could not rotate/twist section profiles along the trajectory.
-
-### CAPA (Corrective and Preventive Actions)
-1. **Path Subdivision and Section Lofting**: Updated `geometry_service.py` Sweep builder. When a twist angle is specified (Degrees or Turns), the path points are subdivided (default 24 intervals). For each point, the profile section is translated and rotated around the local path tangent. The resulting series of section wires is lofted using `BRepOffsetAPI_ThruSections` to produce a smooth, twisted sweep.
 2. **UI Options Integration**: Added Twist Type select dropdown and Twist Value inputs under the Sweep Options rollout in `PartFeaturePropertyManager.tsx` and updated defaults in `RibbonController.tsx`.
 3. **Verification**: Created `test_sweep_twist.py` validating twisted solid/thin sweeps. Pytest, tsc typecheck, and PDCA validation checks passed successfully.
 
@@ -51,6 +37,19 @@ Fix regression test failures in the pythonocc-core CI environment (with HAS_OCC=
 1. **Robust Profile Loop Detection**: Updated the LOFT builder in `geometry_service.py` to inspect the structure of `sketch_loops`. If the first element is a coordinate (i.e. number), it treats `sketch_loops` as a single loop (List[Point]). Otherwise, it extracts the outer loop from `sketch_loops[0]`.
 2. **Reference Geometry Returns**: Corrected the return block of `process_features` under `HAS_OCC=True`. If `final_shape` is None but reference geometry elements are populated, it returns a standard dict structure (`{"type": "mesh", "data": {"vertices": [], "indices": [], "normals": []}, "ref_geometry": ref_geometry}`), aligning it with the mock path behavior and passing all reference plane rebuild tests.
 3. **Verification**: Executed the test suite locally and verified that all type checks, PDCA checks, and backend test suites passed successfully.
+
+
+## 2026-06-11 SkillsBuilder CI zero-length edge MakeEdge Fix
+
+### Requirement
+Fix pythonocc-core CI test failures for test_loft_solid_and_thin and test_sweep_twist_degrees raising `StdFail_NotDone: BRep_API: command not done` during `BRepBuilderAPI_MakeEdge` calls.
+
+### RCA (Root Cause Analysis)
+1. **Identical Point MakeEdge Failures**: For closed loop profiles where the final point is identical to the first point, the `_build_wire_from_points` logic attempted to build a final edge between `points[-1]` and `points[0]`. Since they represent the exact same coordinate, `BRepBuilderAPI_MakeEdge` was invoked with two identical points (distance = 0.0), raising a standard OCC runtime exception (`BRep_API: command not done`).
+
+### CAPA (Corrective and Preventive Actions)
+1. **Distance-Based Edge Filtering**: Updated all `BRepBuilderAPI_MakeEdge` fallback and straight line paths in `_build_wire_from_points` to verify the Cartesian distance between vertices before edge construction. If `p_s.Distance(p_e) <= 1e-6`, the edge is skipped, preventing zero-length edge failures for closed loops.
+2. **Verification**: Ran the test suite successfully. All tests pass.
 
 ```
 

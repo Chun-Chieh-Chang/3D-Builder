@@ -480,7 +480,10 @@ def _build_wire_from_points(points, is_closed=True, edge_map=None):
             if arc.IsDone():
                 current_edge = BRepBuilderAPI_MakeEdge(arc.Value()).Edge()
             else:
-                current_edge = BRepBuilderAPI_MakeEdge(get_gp_pnt(p_start), get_gp_pnt(p_end)).Edge()
+                p_s = get_gp_pnt(p_start)
+                p_e = get_gp_pnt(p_end)
+                if p_s.Distance(p_e) > 1e-6:
+                    current_edge = BRepBuilderAPI_MakeEdge(p_s, p_e).Edge()
             i += 2
         elif next_label == 'SPLINE_CONTROL':
             spline_pts = [p_start]
@@ -504,12 +507,18 @@ def _build_wire_from_points(points, is_closed=True, edge_map=None):
                 spline_curve = anInterpolation.Curve()
                 current_edge = BRepBuilderAPI_MakeEdge(spline_curve).Edge()
             else:
-                current_edge = BRepBuilderAPI_MakeEdge(get_gp_pnt(p_start), get_gp_pnt(p_end)).Edge()
+                p_s = get_gp_pnt(p_start)
+                p_e = get_gp_pnt(p_end)
+                if p_s.Distance(p_e) > 1e-6:
+                    current_edge = BRepBuilderAPI_MakeEdge(p_s, p_e).Edge()
                 
             if curr_idx > i: i = curr_idx
             else: i = n_points
         else:
-            current_edge = BRepBuilderAPI_MakeEdge(get_gp_pnt(p_start), get_gp_pnt(p_next)).Edge()
+            p_s = get_gp_pnt(p_start)
+            p_e = get_gp_pnt(p_next)
+            if p_s.Distance(p_e) > 1e-6:
+                current_edge = BRepBuilderAPI_MakeEdge(p_s, p_e).Edge()
             i += 1
             
         if current_edge:
