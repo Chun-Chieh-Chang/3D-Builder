@@ -5,7 +5,7 @@
 
 ## 🎯 總體開發進度 (Overall Project Completion)
 
-**總體目標完成度：████████░░ 82%**
+**總體目標完成度：█████████░ 88%**
 *(基於四大戰略階段的綜合加權評估)*
 
 ---
@@ -29,11 +29,11 @@
 
 ### Phase 2: 突破工程圖高牆 (The Documentation Wall)
 *目標：從概念設計邁向可製造交付，實作隱藏線移除與 2D 圖紙環境。*
-* **進度**：███░░░░░░░ **33%** (推進中)
+* **進度**：██████░░░░ **66%** (推進中)
 * **已完成 (Done)**：
   - [x] **Sprint DRAW-1**: 後端 HLR 投影引擎 API 實作與 DXF 原生匯出。
+  - [x] **Sprint DRAW-2**: 前端 2D 工程圖畫布 (`DrawingSheet.tsx` 視覺化呈現)。
 * **開發中 / 待處理 (To-Do)**：
-  - [ ] ⏳ **Sprint DRAW-2**: 前端 2D 工程圖畫布 (`DrawingSheet.tsx` 視覺化呈現)。
   - [ ] ⏳ **Sprint DRAW-3**: 智慧尺寸標註 (Smart Dimension) 與圖紙 BOM 表整合。
 
 ---

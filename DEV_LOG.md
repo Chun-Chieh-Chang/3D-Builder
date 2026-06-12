@@ -1,3 +1,23 @@
+## 2026-06-12 Sprint DRAW-2: Frontend 2D SVG Canvas & Engineering Drawings
+
+### Goal:
+- Execute Phase 2 (The Documentation Wall) from the Continuous Improvement Plan.
+- Link the backend HLR API to the frontend to render an industrial-grade engineering drawing environment.
+
+### Actions:
+- **UI Tab Integration**: Added the "DRAWING" tab to the `RibbonController.tsx` ensuring it correctly triggers `activeTab` states and loads the drawing viewport.
+- **Frontend Canvas Implementation (`DrawingSheet.tsx`)**:
+  - Implemented automatic batch processing to request Top, Front, Right, and Isometric views simultaneously via `HeavyEngineClient.project()`.
+  - Implemented dynamic SVG `viewBox` scaling to center and fit models of any scale perfectly inside the view boundaries.
+  - Implemented semantic styling for CAD lines: Visible edges are solid, while Hidden edges are correctly rendered as thin dashed lines (`strokeDasharray`).
+- **Production-Ready Deliverables**:
+  - Built a comprehensive parametric Title Block drawing data from `useCadStore` (Scale, Material, Weight, etc.).
+  - Automated Bill of Materials (BOM) table generation when in Assembly mode.
+  - Wired up `window.__handlePrintToPDF` so the "Save PDF" ribbon button correctly outputs the vector graphics.
+
+### Status:
+- ✅ **Done**: The "Documentation Wall" has been significantly breached. Users can now click the DRAWING tab and immediately receive a 4-view technical drawing with proper line semantics, title block, and PDF/DXF export support.
+
 ## 2026-06-12 Sprint DRAW-1: Backend HLR Engine & DXF Export
 
 ### Goal:
