@@ -1,5 +1,5 @@
 # Handover Resume Guide (Auto-Generated)
-**Last Saved:** 2026-06-12 19:43:23
+**Last Saved:** 2026-06-12 20:34:50
 
 > [!IMPORTANT]
 > **To the next Agent/Human taking over:** 
@@ -7,14 +7,18 @@
 
 ## 1. Current Git State
 ```shell
-8834b30 docs: sync DEV_LOG and update handover guide with advanced 2D constraints baseline
+3b7bce1 docs: pivot project baseline from SW 2025 to SW 2010 for MVP focus
 ```
 
 ### Uncommitted Changes
 ```shell
 M DEV_LOG.md
-?? docs/architecture/SOLIDWORKS_2025_GAP_ANALYSIS.md
-?? docs/solidworks_raw.html
+ M backend/app/services/geometry_service.py
+ M gap-checklist.md
+ M src/ui/Modals/ExportModal.tsx
+ M task_plan.md
+?? backend/test_hlr.py
+?? progress.md
 ```
 
 ## 2. Recent Development Log (DEV_LOG.md snippet)

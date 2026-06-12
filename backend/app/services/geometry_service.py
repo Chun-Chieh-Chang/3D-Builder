@@ -4515,6 +4515,34 @@ def export_cad_file(features, format_type, filepath):
             status = writer.Write(shape, filepath)
             return bool(status)
 
+        elif format_type == 'DXF':
+            # Generate HLR lines and manually build DXF file
+            hlr_lines = project_2d(features, plane_type='FRONT')
+            if not hlr_lines:
+                return False
+            
+            with open(filepath, 'w', encoding='utf-8') as f:
+                f.write("  0\nSECTION\n  2\nENTITIES\n")
+                for line in hlr_lines:
+                    layer = "VISIBLE" if line.get("visible", True) else "HIDDEN"
+                    pts = line.get("points", [])
+                    if len(pts) < 2:
+                        continue
+                    # DXF uses simple LINE entities for segments
+                    for i in range(len(pts) - 1):
+                        x1, y1 = pts[i]
+                        x2, y2 = pts[i+1]
+                        f.write("  0\nLINE\n")
+                        f.write(f"  8\n{layer}\n")
+                        f.write(f" 10\n{x1:.6f}\n")
+                        f.write(f" 20\n{y1:.6f}\n")
+                        f.write(" 30\n0.0\n")
+                        f.write(f" 11\n{x2:.6f}\n")
+                        f.write(f" 21\n{y2:.6f}\n")
+                        f.write(" 31\n0.0\n")
+                f.write("  0\nENDSEC\n  0\nEOF\n")
+            return True
+
         else:
             print(f"[ERROR] Unsupported export format: {format_type}")
             return False

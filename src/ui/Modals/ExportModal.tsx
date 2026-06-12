@@ -11,7 +11,7 @@ interface ExportModalProps {
 
 export const ExportModal: React.FC<ExportModalProps> = ({ onClose, activeTab }) => {
   const { projectName, features, pushToast, components } = useCadStore();
-  const [format, setFormat] = useState<'STEP' | 'IGES' | 'STL' | 'PDF'>('STEP');
+  const [format, setFormat] = useState<'STEP' | 'IGES' | 'STL' | 'PDF' | 'DXF'>('STEP');
   const [isExporting, setIsExporting] = useState(false);
 
   const handleExport = async () => {
@@ -60,7 +60,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({ onClose, activeTab }) 
 
   return (
     <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-md flex items-center justify-center z-[1000] p-4">
-      <div className="w-[480px] bg-[#F8FAFC] border border-slate-300 rounded-lg shadow-2xl flex flex-col overflow-hidden">
+      <div className="w-[540px] bg-[#F8FAFC] border border-slate-300 rounded-lg shadow-2xl flex flex-col overflow-hidden">
         {/* Header */}
         <div className="bg-gradient-to-r from-[#005B9A] to-[#0078D4] p-4 flex justify-between items-center text-white">
           <h3 className="text-[14px] font-black tracking-wider uppercase flex items-center gap-2">
@@ -73,8 +73,8 @@ export const ExportModal: React.FC<ExportModalProps> = ({ onClose, activeTab }) 
         <div className="p-6 space-y-5">
           <div className="space-y-2">
             <label className="text-[11px] font-bold text-slate-500 uppercase tracking-widest">檔案格式 (Format)</label>
-            <div className="grid grid-cols-2 gap-3">
-              {(['STEP', 'IGES', 'STL', 'PDF'] as const).map(fmt => (
+            <div className="grid grid-cols-3 gap-3">
+              {(['STEP', 'IGES', 'STL', 'PDF', 'DXF'] as const).map(fmt => (
                 <button
                   key={fmt}
                   onClick={() => setFormat(fmt)}
@@ -85,11 +85,11 @@ export const ExportModal: React.FC<ExportModalProps> = ({ onClose, activeTab }) 
                   }`}
                 >
                   <span className="text-xl">
-                    {fmt === 'STEP' ? '📐' : fmt === 'IGES' ? '🧊' : fmt === 'STL' ? '🖨️' : '📄'}
+                    {fmt === 'STEP' ? '📐' : fmt === 'IGES' ? '🧊' : fmt === 'STL' ? '🖨️' : fmt === 'DXF' ? '✒️' : '📄'}
                   </span>
                   <span className="font-bold text-[13px]">{fmt}</span>
                   <span className="text-[9px] opacity-70">
-                    {fmt === 'STEP' ? '最推薦 (通用)' : fmt === 'IGES' ? '舊型系統' : fmt === 'STL' ? '3D 打印' : '工程圖面'}
+                    {fmt === 'STEP' ? '最推薦 (通用)' : fmt === 'IGES' ? '舊型系統' : fmt === 'STL' ? '3D 打印' : fmt === 'DXF' ? '2D 向量圖紙' : '工程視圖'}
                   </span>
                 </button>
               ))}

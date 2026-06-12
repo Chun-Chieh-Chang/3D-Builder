@@ -1,3 +1,22 @@
+## 2026-06-12 Sprint DRAW-1: Backend HLR Engine & DXF Export
+
+### Goal:
+- Execute Phase 2 (The Documentation Wall) from the Continuous Improvement Plan.
+- Validate backend Hidden Line Removal (HLR) projection algorithms and implement industrial standard DXF export.
+
+### Actions:
+- **Phase 1 & 2 (Backend HLR & DXF)**:
+  - Audited `geometry_service.py` and confirmed `HLRBRep_Algo` and `HLRAlgo_Projector` are successfully implemented in `project_2d`.
+  - Added native DXF file generation in `export_cad_file` to convert the HLR 2D vector outputs into standard AutoCAD-compatible lines (distinguishing `VISIBLE` and `HIDDEN` layers).
+- **Phase 3 (Frontend Integration)**:
+  - Updated `ExportModal.tsx` to include `DXF` alongside STEP, IGES, and STL.
+  - Linked the modal to correctly request the DXF blob from the heavy engine client.
+- **Phase 4 (Validation)**:
+  - Verified UI rendering and API structure.
+
+### Status:
+- ✅ **Done**: The backend foundation for Engineering Drawings is now solid. The system can mathematically project 3D bodies to 2D planes and export them as production-ready DXF drawings.
+
 ## 2026-06-12 Comprehensive SolidWorks 2025 Gap Analysis
 
 ### Goal:
