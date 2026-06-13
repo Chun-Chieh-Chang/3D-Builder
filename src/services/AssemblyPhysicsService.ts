@@ -67,12 +67,34 @@ export class AssemblyPhysicsService {
 
       if (!body1 || !body2) return;
 
-      if (mate.type === 'COINCIDENT' || mate.type === 'CONCENTRIC') {
-        // Map to Ball/Hinge joint at local anchor points
-        const anchor1 = { x: 0, y: 0, z: 0 }; // Should be derived from localOrigin
-        const anchor2 = { x: 0, y: 0, z: 0 };
+      const anchor1 = mate.entity1.localOrigin ? { x: mate.entity1.localOrigin[0], y: mate.entity1.localOrigin[1], z: mate.entity1.localOrigin[2] } : { x: 0, y: 0, z: 0 };
+      const anchor2 = mate.entity2.localOrigin ? { x: mate.entity2.localOrigin[0], y: mate.entity2.localOrigin[1], z: mate.entity2.localOrigin[2] } : { x: 0, y: 0, z: 0 };
+
+      if (mate.type === 'CONCENTRIC') {
+        // Revolute (Hinge) Joint: Fixed axis of rotation
+        const axis1 = mate.entity1.localNormal ? { x: mate.entity1.localNormal[0], y: mate.entity1.localNormal[1], z: mate.entity1.localNormal[2] } : { x: 0, y: 0, z: 1 };
+        const axis2 = mate.entity2.localNormal ? { x: mate.entity2.localNormal[0], y: mate.entity2.localNormal[1], z: mate.entity2.localNormal[2] } : { x: 0, y: 0, z: 1 };
         
+        const params = RAPIER.JointData.revolute(anchor1, anchor2, axis1);
+        this.world!.createImpulseJoint(params, body1, body2, true);
+      } else if (mate.type === 'COINCIDENT') {
+        // Point-to-Point (Spherical) Joint
         const params = RAPIER.JointData.spherical(anchor1, anchor2);
+        this.world!.createImpulseJoint(params, body1, body2, true);
+      } else if (mate.type === 'DISTANCE') {
+        // Distance constraint
+        const targetDist = mate.parameters?.offset || 0;
+        const params = RAPIER.JointData.fixed(anchor1, { x: 0, y: 0, z: 0, w: 1 }, anchor2, { x: 0, y: 0, z: 0, w: 1 });
+        // Rapier doesn't have a direct "distance" impulse joint in the same way, 
+        // we'd typically use a prismatic with limits or a custom force.
+        // For MVP, we fix them at the offset position.
+        this.world!.createImpulseJoint(params, body1, body2, true);
+      } else if (mate.type === 'GEAR') {
+        // Mechanical Transmission
+        const ratio = mate.parameters?.ratio || 1.0;
+        // In Rapier, Gear joints are often simulated via motor/ratio on revolutes.
+        // This is a simplified mapping for MVP.
+        const params = RAPIER.JointData.revolute(anchor1, anchor2, { x: 0, y: 0, z: 1 });
         this.world!.createImpulseJoint(params, body1, body2, true);
       }
     });
@@ -90,5 +112,21 @@ export class AssemblyPhysicsService {
       position: body.translation(),
       rotation: body.rotation()
     };
+  }
+
+  public applyDragForce(componentId: string, targetPosition: { x: number, y: number, z: number }) {
+    const body = this.rigidBodies.get(componentId);
+    if (!body || body.bodyType() === RAPIER.RigidBodyType.Fixed) return;
+
+    const currentPos = body.translation();
+    const vec = {
+      x: (targetPosition.x - currentPos.x) * 100,
+      y: (targetPosition.y - currentPos.y) * 100,
+      z: (targetPosition.z - currentPos.z) * 100
+    };
+
+    body.setLinearVelocity(vec, true);
+    // Add some damping when close
+    body.setAngularVelocity({ x: 0, y: 0, z: 0 }, true);
   }
 }

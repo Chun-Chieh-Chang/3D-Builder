@@ -1,5 +1,5 @@
 # Handover Resume Guide (Auto-Generated)
-**Last Saved:** 2026-06-13 09:59:28
+**Last Saved:** 2026-06-13 10:02:20
 
 > [!IMPORTANT]
 > **To the next Agent/Human taking over:** 
@@ -7,19 +7,17 @@
 
 ## 1. Current Git State
 ```shell
-13a53a1 feat: finalize Phase 3 with CSV Design Table Import/Export (Sprint CFG-3) and TS fix
+f8b1a9d fix: implement missing physics state in store and retry Sprint ASM-1 push
 ```
 
 ### Uncommitted Changes
 ```shell
-M package-lock.json
- M package.json
- M src/renderer/Viewport.tsx
- M src/store/useCadStore.ts
- M src/ui/RibbonBar/RibbonController.tsx
+M DEV_LOG.md
+ M PROJECT_ROADMAP.md
+ M gap-checklist.md
+ M progress.md
+ M src/services/AssemblyPhysicsService.ts
  M task_plan.md
-?? src/hooks/useAssemblyPhysics.ts
-?? src/services/AssemblyPhysicsService.ts
 ```
 
 ## 2. Recent Development Log (DEV_LOG.md snippet)
