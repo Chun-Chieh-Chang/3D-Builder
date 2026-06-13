@@ -1,26 +1,21 @@
-# Task Plan: Sprint ASM-3 (Drag to Animate & Interaction)
+# Task Plan: Sprint STABLE-1 (TNS v2 Implementation)
 
 ## Goal
-Finalize the project by implementing real-time mouse interaction within the dynamic assembly simulation, enabling users to "play" with mechanisms to verify their motion.
+Implement Topological Naming Service (TNS) v2 in the backend to ensure feature references (faces/edges) remain stable after model changes.
 
 ## Phases
 
-### Phase 1: LCS & Joint Mapping (Sprint ASM-2 Refinement)
-- [x] Refine `AssemblyPhysicsService.ts` to calculate precise local anchors from `MateEntity` topology.
-- [x] Implement Revolute, Spherical, and Prismatic (Slider) joints with axis alignment.
-- Status: `complete`
-
-### Phase 2: Drag to Animate Implementation (Sprint ASM-3)
-- [ ] Implement `AssemblyMouseInteraction` system in the Viewport.
-- [ ] Capture 3D cursor position during simulation and apply "spring-like" drag forces to the selected rigid body.
-- [ ] Ensure smooth synchronization between Three.js mesh transforms and physics-calculated positions.
-- Status: `in_progress`
-
-### Phase 3: Final Project Audit & Baseline (畢業 🎓)
-- [ ] Re-calculate final **SolidWorks Compatibility Score (SCS)**.
-- [ ] Update `PROJECT_ROADMAP.md` to show absolute 100% completion across all modules.
-- [ ] Finalize `DEV_LOG.md` and generate the terminal `handover_resume_guide.md`.
+### Phase 1: Research & Fingerprint Definition
+- [ ] Read `backend/app/services/geometry_service.py` functions `find_matching_face` and `find_matching_edge`.
+- [ ] Define the "Fingerprint" data structure: { normal, centroid, area, type }.
 - Status: `not_started`
 
-## Errors Encountered
-*(No critical errors in ASM-2)*
+### Phase 2: Implementation of Fuzzy Matching Logic
+- [ ] Upgrade `find_matching_face` to include a "Fuzzy Search" mode.
+- [ ] Implement distance-weighted score: $Score = W_1 \cdot \text{dist}(C_1, C_2) + W_2 \cdot \text{angle}(N_1, N_2) + W_3 \cdot |\text{Area}_1 - \text{Area}_2|$.
+- [ ] Return the best-matched sub-shape even if the exact Hash/ID changed.
+- Status: `not_started`
+
+### Phase 3: Verification
+- [ ] Run `backend/tests/e2e_stress_test_sim.py` and ensure the DRAFT and SHELL errors are resolved by the fuzzy matcher.
+- Status: `not_started`

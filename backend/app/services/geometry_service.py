@@ -2065,8 +2065,8 @@ def process_features(features, deflection=0.01):
                 try:
                     # Create the hollow solid
                     # Tolerance (1e-3), JoinType (GeomAbs_Arc), Inside(False)
-                    shell_tool = BRepOffsetAPI_MakeThickSolid(final_shape, removed_faces, actual_offset, 1e-3, GeomAbs_Arc, False)
-                    shell_tool.Build()
+                    shell_tool = BRepOffsetAPI_MakeThickSolid()
+                    shell_tool.MakeThickSolidByJoin(final_shape, removed_faces, actual_offset, 1e-3)
                     if shell_tool.IsDone():
                         final_shape = shell_tool.Shape()
                 except Exception as shell_err:
@@ -2116,7 +2116,7 @@ def process_features(features, deflection=0.01):
                                 n_norm_vec = gp_Vec(0,0,1)
                             
                             pull_dir = gp_Dir(n_norm_vec.X(), n_norm_vec.Y(), n_norm_vec.Z())
-                            neutral_plane_geom = Geom_Plane(gp_Pnt(*n_origin), pull_dir)
+                            neutral_plane_gp = gp_Pln(gp_Pnt(*n_origin), pull_dir)
                             
                             try:
                                 draft_tool = BRepOffsetAPI_DraftAngle(final_shape)
@@ -2128,7 +2128,7 @@ def process_features(features, deflection=0.01):
                                     f_sig = f_ref.get('signature', {})
                                     _, _, matched_face = find_matching_face(final_shape, f_origin, f_normal, f_sig)
                                     if matched_face:
-                                        draft_tool.Add(matched_face, pull_dir, angle_rad, neutral_plane_geom)
+                                        draft_tool.Add(matched_face, pull_dir, angle_rad, neutral_plane_gp)
                                         faces_added += 1
                                 
                                 if faces_added > 0:
@@ -2424,8 +2424,8 @@ def build_shape_only(
                 try:
                     # Create the hollow solid
                     # Tolerance (1e-3), JoinType (GeomAbs_Arc), Inside(False)
-                    shell_tool = BRepOffsetAPI_MakeThickSolid(final_shape, removed_faces, actual_offset, 1e-3, GeomAbs_Arc, False)
-                    shell_tool.Build()
+                    shell_tool = BRepOffsetAPI_MakeThickSolid()
+                    shell_tool.MakeThickSolidByJoin(final_shape, removed_faces, actual_offset, 1e-3)
                     if shell_tool.IsDone():
                         final_shape = shell_tool.Shape()
                 except Exception as shell_err:
@@ -2964,7 +2964,7 @@ def build_shape_only(
                     n_norm_vec = gp_Vec(0,0,1)
                 pull_dir = gp_Dir(n_norm_vec.X(), n_norm_vec.Y(), n_norm_vec.Z())
                 
-                neutral_plane_geom = Geom_Plane(gp_Pnt(*matched_n_origin), pull_dir)
+                neutral_plane_gp = gp_Pln(gp_Pnt(*matched_n_origin), pull_dir)
                 
                 draft_tool = BRepOffsetAPI_DraftAngle(final_shape)
                 
@@ -2975,7 +2975,7 @@ def build_shape_only(
                     f_sig = f_ref.get('signature', {})
                     _, _, matched_face = find_matching_face(final_shape, f_origin, f_normal, f_sig)
                     if matched_face:
-                        draft_tool.Add(matched_face, pull_dir, angle_rad, neutral_plane_geom)
+                        draft_tool.Add(matched_face, pull_dir, angle_rad, neutral_plane_gp)
                         faces_added += 1
                 
                 if faces_added > 0:
@@ -3004,8 +3004,18 @@ def build_shape_only(
                         faces_to_remove.Append(matched_face)
                 
                 try:
-                    shell_tool = BRepOffsetAPI_MakeThickSolid(final_shape, faces_to_remove, actual_offset, 1e-3, GeomAbs_Arc, False)
-                    shell_tool.Build()
+                    faces_to_remove = TopTools_ListOfShape()
+                    for ref in faces_refs:
+                        origin = ref.get('coordinates', [0,0,0])
+                        normal = ref.get('normal', [0,0,1])
+                        f_sig = ref.get('signature', {})
+                        _, _, matched_face = find_matching_face(final_shape, origin, normal, f_sig)
+                        if matched_face:
+                            faces_to_remove.Append(matched_face)
+                    
+                    shell_tool = BRepOffsetAPI_MakeThickSolid()
+                    shell_tool.MakeThickSolidByJoin(final_shape, faces_to_remove, actual_offset, 1e-3)
+                    
                     if shell_tool.IsDone():
                         final_shape = shell_tool.Shape()
                 except Exception as e:
@@ -3493,6 +3503,8 @@ def project_2d(features, plane_type='FRONT', section_plane=None):
     output_lines = []
     
     def extract_from_shape(s, is_visible):
+        if s is None or s.IsNull():
+            return
         exp = TopExp_Explorer(s, TopAbs_EDGE)
         while exp.More():
             e = topods.Edge(exp.Current())
@@ -3581,6 +3593,8 @@ def project_assembly_2d(components_data, plane_type='FRONT'):
     output_lines = []
     
     def extract_from_shape(s, is_visible):
+        if s is None or s.IsNull():
+            return
         exp = TopExp_Explorer(s, TopAbs_EDGE)
         while exp.More():
             e = topods.Edge(exp.Current())
@@ -3811,36 +3825,59 @@ def find_matching_face(shape, ref_origin, ref_normal, signature=None):
         explorer.Next()
 
     if not candidate_faces:
-        print("  - No face found with matching normal.")
+        print("  - [TNS v2] No face found with tight normal match. Relaxing search to all faces...")
+        # Relax search to ALL faces in the shape for fuzzy matching
+        explorer = TopExp_Explorer(shape, TopAbs_FACE)
+        while explorer.More():
+            face = topods.Face(explorer.Current())
+            v_exp = TopExp_Explorer(face, TopAbs_VERTEX); v_count = 0; sx, sy, sz = 0, 0, 0
+            while v_exp.More():
+                pt = BRep_Tool.Pnt(topods.Vertex(v_exp.Current()))
+                sx += pt.X(); sy += pt.Y(); sz += pt.Z(); v_count += 1
+                v_exp.Next()
+            if v_count > 0:
+                center = [sx/v_count, sy/v_count, sz/v_count]
+                try:
+                    adaptor = BRepAdaptor_Surface(face)
+                    stype = adaptor.GetType()
+                    if stype == 0: # Plane
+                        gp_dir = adaptor.Plane().Position().Direction()
+                        surf_normal = [gp_dir.X(), gp_dir.Y(), gp_dir.Z()]
+                    else: surf_normal = [0,0,1]
+                except Exception: surf_normal = [0,0,1]
+                candidate_faces.append({"face": face, "center": center, "normal": surf_normal})
+            explorer.Next()
+
+    if not candidate_faces:
         return ref_origin, ref_normal, None
 
     # Multi-signature disambiguation (TNS Stage 2)
-    # Weights: 1.0 * Distance + 0.5 * AreaDiff + 2.0 * CurvatureMismatch
+    # Weights: 1.0 * Distance + 20.0 * OrientationDev + 5.0 * AreaDiff
     r_area = float(signature.get('area', 0.0)) if signature else 0.0
     r_curv = signature.get('curvature', 'PLANE') if signature else 'PLANE'
 
     def calculate_score(c):
         dist = math.dist(c["center"], r_ori)
-        # Area similarity (normalized)
-        area_diff = abs(c.get("area", 0) - r_area) / (max(r_area, 1e-6))
-        # Curvature penalty (high if types don't match)
-        curv_penalty = 0 if c.get("curvature") == r_curv else 100.0
-        return dist + (area_diff * 5.0) + curv_penalty
-
-    # Pre-populate candidate metadata for scoring
-    for c in candidate_faces:
-        c_face = c["face"]
+        # Orientation alignment
+        dot = c["normal"][0]*r_nrm[0] + c["normal"][1]*r_nrm[1] + c["normal"][2]*r_nrm[2]
+        angular_penalty = (1.0 - max(-1.0, min(1.0, dot))) * 20.0
+        # Area similarity
         c_props = GProp_GProps()
-        brepgprop.SurfaceProperties(c_face, c_props)
-        c["area"] = c_props.Mass()
-        c_surf = BRepAdaptor_Surface(c_face)
-        c_stype = c_surf.GetType()
-        c["curvature"] = "PLANE" if c_stype == GeomAbs_Plane else "CYLINDER" if c_stype == GeomAbs_Cylinder else "SPHERE" if c_stype == GeomAbs_Cylinder else "UNKNOWN"
-        c["dist"] = math.dist(c["center"], r_ori)
-        print(f"  - Candidate: center={c['center']}, dist={c['dist']:.4f}")
+        brepgprop.SurfaceProperties(c["face"], c_props)
+        c_area = c_props.Mass()
+        area_penalty = abs(c_area - r_area) / (max(r_area, 1e-6)) * 5.0
+        
+        return dist + angular_penalty + area_penalty
 
-    best_candidate = min(candidate_faces, key=calculate_score)
-    print(f"  - Best Match: dist={best_candidate['dist']:.4f}")
+    # Scoring all candidates
+    for c in candidate_faces:
+        c["score"] = calculate_score(c)
+        c["dist"] = math.dist(c["center"], r_ori)
+        print(f"  - Candidate: center={c['center']}, score={c['score']:.4f}, dist={c['dist']:.4f}")
+
+    best_candidate = min(candidate_faces, key=lambda x: x["score"])
+    print(f"  - Best Match Found (Score={best_candidate['score']:.4f}, Dist={best_candidate['dist']:.4f})")
+    
     return best_candidate["center"], best_candidate["normal"], best_candidate["face"]
 
 

@@ -347,6 +347,12 @@ export interface CadState {
   setIsPhysicsActive: (active: boolean) => void;
   draggedComponentId: string | null;
   setDraggedComponentId: (id: string | null) => void;
+  automationLog: string[];
+  addAutomationLog: (log: string) => void;
+  activeAutomationStep: string | null;
+  setActiveAutomationStep: (step: string | null) => void;
+  robotStatus: 'IDLE' | 'WORKING' | 'PAUSED' | 'ERROR';
+  setRobotStatus: (status: 'IDLE' | 'WORKING' | 'PAUSED' | 'ERROR') => void;
   mates: CADMate[];
   setMates: (mates: CADMate[]) => void;
   addMate: (mate: CADMate) => void;
@@ -749,6 +755,12 @@ export const useCadStore = create<CadState>()(
       setIsPhysicsActive: (active) => set({ isPhysicsActive: active }),
       draggedComponentId: null,
       setDraggedComponentId: (id) => set({ draggedComponentId: id }),
+      automationLog: [],
+      addAutomationLog: (log) => set((state) => ({ automationLog: [...state.automationLog, log] })),
+      activeAutomationStep: null,
+      setActiveAutomationStep: (activeAutomationStep) => set({ activeAutomationStep }),
+      robotStatus: 'IDLE',
+      setRobotStatus: (robotStatus) => set({ robotStatus }),
       mates: [],
       setMates: (mates) => set({ mates }),
       addMate: (mate) => set((state) => { get().saveSnapshot(); return { mates: [...state.mates, mate] }; }),

@@ -39,6 +39,8 @@ import { ConfigurationManagerPanel } from '@/ui/ConfigurationManagerPanel';
 import { EquationsModal } from '@/ui/Modals/EquationsModal';
 import { DesignLibraryPanel } from '@/ui/DesignLibraryPanel';
 import { MaterialSelectorModal } from '@/ui/Modals/MaterialSelectorModal';
+import { RobotHUD } from '@/ui/RobotHUD';
+import { RobotOperationService } from '@/ui/RobotOperationService';
 import { useAutoSave } from '@/hooks/useAutoSave';
 import { RecoveryDialog } from '@/ui/Modals/RecoveryDialog';
 
@@ -376,6 +378,7 @@ export default function Home() {
       </div>
       <StatusBar />
       <MaterialSelectorModal />
+      <RobotHUD />
     </main>
   );
 }
