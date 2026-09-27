@@ -2,6 +2,7 @@ export * from './ids';
 export * from './schema';
 export * from './datums';
 export * from './expr';
+export * from './sketch-rules';
 export * from './commands';
 export * from './history';
 export * from './serialize';

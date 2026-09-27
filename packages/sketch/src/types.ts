@@ -1,4 +1,4 @@
-import type { Id, SketchFeature } from '@3db/model';
+import type { CircleRadius, Id, PointPosition, SketchFeature } from '@3db/model';
 
 export type P2 = [number, number];
 
@@ -13,6 +13,9 @@ export type SolvedGeometry =
 /** SolidWorks sketch status (C1.31): black = fully, blue = under, red = over. */
 export type SketchStatus = 'fully' | 'under' | 'over' | 'failed';
 
+/** Definition state of one entity (C1.31 colours each entity, not only the whole sketch). */
+export type EntityStatus = 'fully' | 'under' | 'over';
+
 export interface SolvedSketch {
   geometry: Map<Id, SolvedGeometry>;
   status: SketchStatus;
@@ -20,11 +23,22 @@ export interface SolvedSketch {
   /** Constraint ids reported as conflicting / redundant by the solver (for D7.2 diagnostics). */
   conflicting: Id[];
   redundant: Id[];
+  /** Present when the solve was asked to analyze (see SolveOptions.analyze). */
+  entityStatus?: Map<Id, EntityStatus>;
   message?: string;
 }
 
+export interface SolveOptions {
+  /** Starting values that override the stored ones, e.g. the previous drag frame (A2.6 minimal change). */
+  initial?: { points?: PointPosition[]; radii?: CircleRadius[] };
+  /** Drag targets: the dragged points and radii follow them as closely as the constraints allow (A2.6). */
+  drag?: { points?: PointPosition[]; radii?: CircleRadius[] };
+  /** Also classify every entity as fully / under / over defined (C1.31). */
+  analyze?: boolean;
+}
+
 export interface SketchSolver {
-  solve(sketch: SketchFeature): SolvedSketch;
+  solve(sketch: SketchFeature, options?: SolveOptions): SolvedSketch;
 }
 
 export type Segment2 =

@@ -2,13 +2,17 @@ import { useEffect, useState } from 'react';
 import {
   findFeature,
   isDimension,
+  SKETCH_ORIGIN,
   type Command,
   type ExtrudeFeature,
   type FilletFeature,
+  type Id,
+  type SketchConstraint,
   type SketchFeature,
 } from '@3db/model';
-import { store, useStore } from '../state/store';
-import { DIMENSION_LABEL, FEATURE_LABEL, SKETCH_STATUS_LABEL } from '../strings';
+import { applicableRelations, constraintsOf, dimensionText, sameRelation } from '@3db/sketch/interact';
+import { store, useSketcherView, useStore } from '../state/store';
+import { DIMENSION_LABEL, FEATURE_LABEL, RELATION_LABEL, SKETCH_STATUS_LABEL, TOOL_LABEL } from '../strings';
 import { Icon } from './Icon';
 
 /** Numeric field that commits a document command on Enter/blur; invalid input stays red (D6.1). */
@@ -42,26 +46,107 @@ function ValueInput({ value, toCommand, suffix = 'mm' }: { value: string; toComm
   );
 }
 
+const ENTITY_LABEL = { point: '點', line: '直線', circle: '圓', arc: '圓弧' } as const;
+
+function describe(f: SketchFeature, id: Id): string {
+  if (id === SKETCH_ORIGIN) return '原點';
+  const e = f.entities.find((x) => x.id === id);
+  if (e) return `${e.construction ? '幾何建構線 ' : ''}${ENTITY_LABEL[e.type]} ${id}`;
+  const c = f.constraints.find((x) => x.id === id);
+  if (c) return isDimension(c) ? `${DIMENSION_LABEL[c.type] ?? '尺寸'} ${dimensionText(c)}` : `${RELATION_LABEL[c.type]} ${id}`;
+  return id;
+}
+
+function relationText(f: SketchFeature, c: SketchConstraint): string {
+  if (isDimension(c)) return `${DIMENSION_LABEL[c.type] ?? '尺寸'} ${dimensionText(c)}`;
+  return RELATION_LABEL[c.type];
+}
+
+/** Sketch PropertyManager (C1.26, C1.27, C1.31): status, tool, selection, relations and dimensions. */
 function SketchPanel({ f }: { f: SketchFeature }) {
-  const r = useStore((s) => s.result?.features.find((x) => x.id === f.id));
+  const solve = useStore((s) => s.sketchSolve);
+  const view = useSketcherView();
+  const sketcher = store.sketcher;
+  const selection = view?.selection ?? [];
+  const entityIds = selection.filter((id) => id === SKETCH_ORIGIN || f.entities.some((e) => e.id === id));
+  const curves = f.entities.filter((e) => e.type !== 'point' && entityIds.includes(e.id));
+  const existing = constraintsOf(f.constraints, entityIds);
+  const offered = solve ? applicableRelations(solve.geometry, entityIds).filter((r) => !existing.some((c) => sameRelation(c, r))) : [];
   const dims = f.constraints.filter(isDimension);
+  const conflicting = solve?.conflicting.map((id) => describe(f, id)) ?? [];
+
   return (
     <>
       <section className="pm-group">
         <h4>草圖狀態</h4>
-        {r?.sketch ? (
-          <p className={`sketch-status ${r.sketch.status}`}>
-            {SKETCH_STATUS_LABEL[r.sketch.status]}
-            {r.sketch.status === 'under' && `（尚有 ${r.sketch.dof} 個自由度）`}
+        {solve ? (
+          <p className={`sketch-status ${solve.status}`}>
+            {SKETCH_STATUS_LABEL[solve.status]}
+            {solve.status === 'under' && `（尚有 ${solve.dof} 個自由度）`}
           </p>
         ) : (
-          <p className="muted">計算中…</p>
+          <p className="muted">求解中…</p>
         )}
-        {r?.sketch && r.sketch.conflicting.length > 0 && <p className="error-text">衝突的限制條件：{r.sketch.conflicting.join('、')}</p>}
-        {r?.sketch && r.sketch.problems.length > 0 && <p className="error-text">{r.sketch.problems.join('；')}</p>}
+        {conflicting.length > 0 && <p className="error-text">衝突：{conflicting.join('、')}</p>}
+        {solve && solve.problems.length > 0 && f.entities.length > 0 && <p className="hint">尚不能產生特徵：{solve.problems.join('；')}</p>}
       </section>
+
+      {view && view.tool !== 'select' && (
+        <section className="pm-group">
+          <h4>{TOOL_LABEL[view.tool]}</h4>
+          <p className="hint">{view.hint}</p>
+          <p className="hint">Esc 結束工具。</p>
+        </section>
+      )}
+
+      {sketcher && selection.length > 0 && (
+        <section className="pm-group">
+          <h4>選取的項目</h4>
+          <ul className="selection-box">
+            {selection.map((id) => (
+              <li key={id}>{describe(f, id)}</li>
+            ))}
+          </ul>
+          {existing.length > 0 && (
+            <>
+              <h4 className="sub">現有限制條件</h4>
+              <ul className="relation-list">
+                {existing.map((c) => (
+                  <li key={c.id} className={solve?.conflicting.includes(c.id) ? 'over' : ''}>
+                    <span>{relationText(f, c)}</span>
+                    <button title="刪除" onClick={() => store.execute({ type: 'removeSketchItems', featureId: f.id, ids: [c.id] })}>
+                      <Icon name="cancel" />
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </>
+          )}
+          {offered.length > 0 && (
+            <>
+              <h4 className="sub">加入限制條件</h4>
+              <div className="relation-buttons">
+                {offered.map((r) => (
+                  <button key={r.type} onClick={() => void sketcher.addRelation(r)}>
+                    {RELATION_LABEL[r.type]}
+                  </button>
+                ))}
+              </div>
+            </>
+          )}
+          {curves.length > 0 && (
+            <label className="pm-row checkbox">
+              <input type="checkbox" checked={curves.every((e) => e.construction)} onChange={(e) => sketcher.setConstruction(e.target.checked)} />
+              <span>作為幾何建構線</span>
+            </label>
+          )}
+          <p className="hint">Delete 刪除選取的項目。</p>
+        </section>
+      )}
+
       <section className="pm-group">
         <h4>尺寸</h4>
+        {dims.length === 0 && <p className="muted">（用智慧型尺寸標註）</p>}
         {dims.map((c) => (
           <label key={c.id} className="pm-row">
             <span>{c.label ?? `${DIMENSION_LABEL[c.type] ?? '尺寸'} ${c.id}`}</span>
@@ -72,7 +157,6 @@ function SketchPanel({ f }: { f: SketchFeature }) {
             />
           </label>
         ))}
-        <p className="hint">完整的草圖繪製工具（畫線、加入限制條件）排在 Phase 1。</p>
       </section>
     </>
   );
@@ -155,17 +239,18 @@ export function PropertyManager() {
   if (!editing) return null;
   const f = findFeature(doc, editing.featureId);
   if (!f) return null;
+  const sketching = editing.kind === 'sketch';
   return (
     <div className="property-manager">
       <div className="pm-header">
         <Icon name={f.type} />
         <span className="pm-title">
-          {FEATURE_LABEL[f.type]}：{f.name}
+          {sketching ? '編輯草圖' : FEATURE_LABEL[f.type]}：{f.name}
         </span>
-        <button className="pm-ok" title="確定（Enter）" onClick={() => store.commitEdit()}>
+        <button className="pm-ok" title={sketching ? '離開草圖' : '確定（Enter）'} onClick={() => store.commitEdit()}>
           <Icon name="ok" />
         </button>
-        <button className="pm-cancel" title="取消（Esc）" onClick={() => store.cancelEdit()}>
+        <button className="pm-cancel" title={sketching ? '放棄變更' : '取消（Esc）'} onClick={() => store.cancelEdit()}>
           <Icon name="cancel" />
         </button>
       </div>

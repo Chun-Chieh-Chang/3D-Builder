@@ -1,3 +1,4 @@
+import { countersFor } from './ids';
 import { SCHEMA_VERSION, type PartDoc } from './schema';
 
 /**
@@ -21,8 +22,34 @@ function sortKeys(value: unknown): unknown {
   return value;
 }
 
+type Json = Record<string, unknown>;
+
+/** Every id in a raw (not yet validated) document: features and sketch entities/constraints. */
+function rawIds(doc: Json): string[] {
+  const features = Array.isArray(doc.features) ? (doc.features as Json[]) : [];
+  return features.flatMap((f) => [
+    f.id as string,
+    ...((f.entities as Json[] | undefined) ?? []).map((e) => e.id as string),
+    ...((f.constraints as Json[] | undefined) ?? []).map((c) => c.id as string),
+  ]);
+}
+
 /** Forward migrations (B9.2): migrations[n] upgrades a version-n document to n+1. */
-const migrations: Record<number, (doc: Record<string, unknown>) => Record<string, unknown>> = {};
+const migrations: Record<number, (doc: Json) => Json> = {
+  // v2: point–line coincidence generalised to curves (pointOnCurve); horizontal/vertical also
+  // between two points (line → a); id counters (B1.3).
+  1: (doc) => {
+    const upgrade = ({ line, ...c }: Json): Json => {
+      if (c.type === 'pointOnLine') return { ...c, type: 'pointOnCurve', curve: line };
+      if (c.type === 'horizontal' || c.type === 'vertical') return { ...c, a: line };
+      return line === undefined ? c : { ...c, line };
+    };
+    const features = ((doc.features as Json[] | undefined) ?? []).map((f) =>
+      f.type !== 'sketch' ? f : { ...f, constraints: ((f.constraints as Json[] | undefined) ?? []).map(upgrade) },
+    );
+    return { ...doc, features, idCounters: countersFor(rawIds(doc)) };
+  },
+};
 
 export class FormatError extends Error {
   constructor(message: string) {
@@ -54,5 +81,7 @@ export function parsePart(text: string): PartDoc {
     raw.schemaVersion = version;
   }
   if (!Array.isArray(raw.features)) throw new FormatError('缺少特徵清單');
+  // Counters cover every id in the file, even if the file was edited by hand or by a script.
+  raw.idCounters = countersFor(rawIds(raw), { ...((raw.idCounters as Record<string, number> | undefined) ?? {}) });
   return raw as unknown as PartDoc;
 }

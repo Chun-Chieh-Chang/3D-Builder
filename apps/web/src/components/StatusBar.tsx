@@ -9,19 +9,32 @@ export function StatusBar() {
   const doc = useStore((s) => s.doc);
   const selected = useStore((s) => s.selected);
   const editing = useStore((s) => s.editing);
+  const sketchSolve = useStore((s) => s.sketchSolve);
   const bootMs = useStore((s) => s.bootMs);
 
+  // Inside a sketch its live solve is the status; otherwise the selected (or first) sketch of the last rebuild.
   const sketchId = [editing?.featureId, selected, ...doc.features.map((f) => f.id)].find((id) => id && doc.features.find((f) => f.id === id)?.type === 'sketch');
-  const sketch = result?.features.find((f) => f.id === sketchId)?.sketch;
+  const sketch = editing?.kind === 'sketch' ? sketchSolve : result?.features.find((f) => f.id === sketchId)?.sketch;
   const errors = result?.features.filter((f) => f.status === 'error') ?? [];
+  const editingName = editing?.kind === 'sketch' ? doc.features.find((f) => f.id === editing.featureId)?.name : undefined;
 
   return (
     <footer className="status-bar">
       <span className={`notice ${notice?.kind ?? ''}`} onClick={() => store.dismissNotice()}>
-        {notice?.text ?? (errors.length > 0 ? `錯誤為何？ ${errors.map((e) => `${doc.features.find((f) => f.id === e.id)?.name}：${e.message}`).join('；')}` : '就緒')}
+        {notice?.text ??
+          (editingName
+            ? `正在編輯：${editingName}`
+            : errors.length > 0
+              ? `錯誤為何？ ${errors.map((e) => `${doc.features.find((f) => f.id === e.id)?.name}：${e.message}`).join('；')}`
+              : '就緒')}
       </span>
-      {sketch && <span className={`sketch-status ${sketch.status}`}>{SKETCH_STATUS_LABEL[sketch.status]}</span>}
-      {result?.mass && <span>體積 {result.mass.volume.toFixed(3)} mm³</span>}
+      {sketch && (
+        <span className={`sketch-status ${sketch.status}`}>
+          {SKETCH_STATUS_LABEL[sketch.status]}
+          {editing?.kind === 'sketch' && sketch.status === 'under' ? `（${sketch.dof}）` : ''}
+        </span>
+      )}
+      {result?.mass && editing?.kind !== 'sketch' && <span>體積 {result.mass.volume.toFixed(3)} mm³</span>}
       <span>{rebuilding ? '重新計算中…' : result ? `重新計算 ${result.totalMs.toFixed(1)} ms` : ''}</span>
       {bootMs && <span className="muted">核心載入 {Math.round(bootMs.occtMs)} ms</span>}
       <span className="units">MMGS</span>

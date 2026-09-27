@@ -1,17 +1,23 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { ACTIONS, type UiAction } from '../actions';
-import { useStore } from '../state/store';
+import { useSketcherView, useStore } from '../state/store';
 
-const TABS = [
-  { id: 'features', label: '特徵', groups: ['edit'] as UiAction['group'][] },
-  { id: 'file', label: '檔案', groups: ['file'] as UiAction['group'][] },
-  { id: 'view', label: '檢視', groups: ['view'] as UiAction['group'][] },
+const TABS: { id: string; label: string; groups: UiAction['group'][] }[] = [
+  { id: 'features', label: '特徵', groups: ['feature', 'edit'] },
+  { id: 'sketch', label: '草圖', groups: ['sketch', 'sketch-tool'] },
+  { id: 'file', label: '檔案', groups: ['file'] },
+  { id: 'view', label: '檢視', groups: ['view'] },
 ];
 
 /** CommandManager-style tabbed toolbar (D3.2); buttons come from the action registry (D3.1). */
 export function CommandBar() {
   const [tab, setTab] = useState('features');
   const state = useStore((s) => s);
+  useSketcherView(); // re-render when the active sketch tool changes
+  const sketching = state.editing?.kind === 'sketch';
+  useEffect(() => {
+    if (sketching) setTab('sketch');
+  }, [sketching]);
   const current = TABS.find((t) => t.id === tab)!;
   return (
     <header className="command-bar">
@@ -25,7 +31,13 @@ export function CommandBar() {
       </nav>
       <div className="tools">
         {ACTIONS.filter((a) => current.groups.includes(a.group)).map((a) => (
-          <button key={a.id} className="tool" disabled={!a.enabled(state)} onClick={a.run} title={a.shortcut ? `${a.label}（${a.shortcut}）` : a.label}>
+          <button
+            key={a.id}
+            className={a.active?.() ? 'tool active' : 'tool'}
+            disabled={!a.enabled(state)}
+            onClick={a.run}
+            title={a.shortcut ? `${a.label}（${a.shortcut}）` : a.label}
+          >
             {a.label}
           </button>
         ))}

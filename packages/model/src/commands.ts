@@ -1,21 +1,43 @@
 import { produce, type Draft } from 'immer';
-import type { Id } from './ids';
-import type { EndCondition, Expr, Feature, PartDoc, Ref } from './schema';
+import { countersFor, type Id } from './ids';
+import type { EndCondition, Expr, Feature, PartDoc, Ref, SketchConstraint, SketchEntity, SketchFeature } from './schema';
 import { isDimension } from './schema';
 import { evalAngle, evalLength, ExprError } from './expr';
+import { idsInUse, removalSet, sketchError } from './sketch-rules';
+
+export interface PointPosition {
+  id: Id;
+  x: number;
+  y: number;
+}
+
+export interface CircleRadius {
+  id: Id;
+  radius: number;
+}
 
 /**
  * Document commands (B7.1): the only way to change the SSOT.
  * UI, scripts, macro recording and future collaboration all go through this layer.
+ * New objects carry their ids in the command, so applying a command stays a pure function.
  */
 export type Command =
+  /** Inserts a feature at `index` (at or above the rollback bar), like SolidWorks inserting at the bar. */
+  | { type: 'insertFeature'; feature: Feature; index: number }
   | { type: 'setDimension'; featureId: Id; constraintId: Id; value: Expr }
   | { type: 'setEndCondition'; featureId: Id; dir: 'dir1' | 'dir2'; value: EndCondition }
   | { type: 'setFilletRadius'; featureId: Id; value: Expr }
   | { type: 'setFilletEdges'; featureId: Id; edges: Ref[] }
   | { type: 'setSuppressed'; featureId: Id; value: boolean }
   | { type: 'renameFeature'; featureId: Id; name: string }
-  | { type: 'setRollback'; index: number | null };
+  | { type: 'setRollback'; index: number | null }
+  /** Sketch editing (C1): add geometry together with its relations and dimensions. */
+  | { type: 'addSketchItems'; featureId: Id; entities: SketchEntity[]; constraints: SketchConstraint[] }
+  /** Deletes entities, relations or dimensions, and whatever depends on them (see removalSet). */
+  | { type: 'removeSketchItems'; featureId: Id; ids: Id[] }
+  /** Stores placement intent: where points are and how big circles are (e.g. after a drag). */
+  | { type: 'setSketchGeometry'; featureId: Id; points: PointPosition[]; radii?: CircleRadius[] }
+  | { type: 'setConstruction'; featureId: Id; ids: Id[]; value: boolean };
 
 export class CommandError extends Error {
   constructor(message: string) {
@@ -30,6 +52,12 @@ function feature(draft: Draft<PartDoc>, id: Id): Draft<Feature> {
   return f;
 }
 
+function sketchOf(draft: Draft<PartDoc>, id: Id): Draft<SketchFeature> {
+  const f = feature(draft, id);
+  if (f.type !== 'sketch') throw new CommandError('只有草圖可以這樣編輯');
+  return f;
+}
+
 function positiveLength(value: Expr): void {
   let v: number;
   try {
@@ -40,12 +68,65 @@ function positiveLength(value: Expr): void {
   if (!(v > 0)) throw new CommandError(`數值必須大於 0：「${value}」`);
 }
 
+function endCondition(value: EndCondition): void {
+  if ('depth' in value) positiveLength(value.depth);
+}
+
+/** Ids a feature brings into the document: its own and, for a sketch, those of its contents. */
+function featureIds(f: Feature): Id[] {
+  return f.type === 'sketch' ? [f.id, ...f.entities.map((e) => e.id), ...f.constraints.map((c) => c.id)] : [f.id];
+}
+
+function assertFresh(doc: PartDoc, ids: Id[]): void {
+  const inUse = new Set(idsInUse(doc));
+  const seen = new Set<Id>();
+  for (const id of ids) {
+    if (inUse.has(id) || seen.has(id)) throw new CommandError(`ID 已被使用：${id}`);
+    seen.add(id);
+  }
+}
+
+function validateNewFeature(doc: PartDoc, f: Feature, index: number): void {
+  if (!f.name.trim()) throw new CommandError('名稱不可空白');
+  switch (f.type) {
+    case 'sketch': {
+      if (f.plane.kind !== 'datum' && f.plane.kind !== 'face') throw new CommandError('草圖必須放在基準面或平面上');
+      const err = sketchError(f);
+      if (err) throw new CommandError(err);
+      return;
+    }
+    case 'extrude': {
+      const at = doc.features.findIndex((x) => x.id === f.sketch);
+      if (at < 0 || at >= index || doc.features[at]!.type !== 'sketch') throw new CommandError('伸長需要一個在它之前的草圖');
+      endCondition(f.dir1);
+      if (f.dir2) endCondition(f.dir2);
+      return;
+    }
+    case 'fillet':
+      if (f.edges.some((r) => r.kind !== 'edge')) throw new CommandError('圓角只能選邊線');
+      positiveLength(f.radius);
+      return;
+  }
+}
+
 /** Immer recipe: mutates the draft or throws CommandError (the document is then left untouched). */
 export function mutate(draft: Draft<PartDoc>, cmd: Command): void {
   switch (cmd.type) {
+    case 'insertFeature': {
+      const limit = draft.rollbackIndex ?? draft.features.length;
+      if (!Number.isInteger(cmd.index) || cmd.index < 0 || cmd.index > limit) {
+        throw new CommandError(`插入位置超出範圍：${cmd.index}`);
+      }
+      const ids = featureIds(cmd.feature);
+      assertFresh(draft as PartDoc, ids);
+      validateNewFeature(draft as PartDoc, cmd.feature, cmd.index);
+      draft.features.splice(cmd.index, 0, cmd.feature as Draft<Feature>);
+      if (draft.rollbackIndex !== null) draft.rollbackIndex += 1;
+      countersFor(ids, draft.idCounters);
+      return;
+    }
     case 'setDimension': {
-      const f = feature(draft, cmd.featureId);
-      if (f.type !== 'sketch') throw new CommandError('只有草圖有尺寸');
+      const f = sketchOf(draft, cmd.featureId);
       const c = f.constraints.find((x) => x.id === cmd.constraintId);
       if (!c || !isDimension(c)) throw new CommandError(`找不到尺寸：${cmd.constraintId}`);
       if (c.type === 'angle') {
@@ -63,7 +144,7 @@ export function mutate(draft: Draft<PartDoc>, cmd: Command): void {
     case 'setEndCondition': {
       const f = feature(draft, cmd.featureId);
       if (f.type !== 'extrude') throw new CommandError('只有伸長特徵有終止型態');
-      if ('depth' in cmd.value) positiveLength(cmd.value.depth);
+      endCondition(cmd.value);
       f[cmd.dir] = cmd.value;
       return;
     }
@@ -97,6 +178,57 @@ export function mutate(draft: Draft<PartDoc>, cmd: Command): void {
         throw new CommandError(`回溯位置超出範圍：${cmd.index}`);
       }
       draft.rollbackIndex = cmd.index === n ? null : cmd.index;
+      return;
+    }
+    case 'addSketchItems': {
+      const f = sketchOf(draft, cmd.featureId);
+      const ids = [...cmd.entities.map((e) => e.id), ...cmd.constraints.map((c) => c.id)];
+      if (ids.length === 0) return;
+      assertFresh(draft as PartDoc, ids);
+      const err = sketchError({ entities: [...f.entities, ...cmd.entities], constraints: [...f.constraints, ...cmd.constraints] });
+      if (err) throw new CommandError(err);
+      f.entities.push(...(cmd.entities as Draft<SketchEntity>[]));
+      f.constraints.push(...(cmd.constraints as Draft<SketchConstraint>[]));
+      countersFor(ids, draft.idCounters);
+      return;
+    }
+    case 'removeSketchItems': {
+      const f = sketchOf(draft, cmd.featureId);
+      const present = new Set<Id>([...f.entities.map((e) => e.id), ...f.constraints.map((c) => c.id)]);
+      for (const id of cmd.ids) if (!present.has(id)) throw new CommandError(`草圖中找不到：${id}`);
+      if (cmd.ids.length === 0) return;
+      const removed = removalSet(f as SketchFeature, cmd.ids);
+      countersFor(removed, draft.idCounters); // deleted ids stay issued and are never handed out again
+      f.entities = f.entities.filter((e) => !removed.has(e.id));
+      f.constraints = f.constraints.filter((c) => !removed.has(c.id));
+      return;
+    }
+    case 'setSketchGeometry': {
+      const f = sketchOf(draft, cmd.featureId);
+      const byId = new Map(f.entities.map((e) => [e.id, e]));
+      for (const p of cmd.points) {
+        const e = byId.get(p.id);
+        if (e?.type !== 'point') throw new CommandError(`不是草圖點：${p.id}`);
+        if (!Number.isFinite(p.x) || !Number.isFinite(p.y)) throw new CommandError(`點 ${p.id} 的座標無效`);
+        e.x = p.x;
+        e.y = p.y;
+      }
+      for (const r of cmd.radii ?? []) {
+        const e = byId.get(r.id);
+        if (e?.type !== 'circle') throw new CommandError(`不是圓：${r.id}`);
+        if (!(Number.isFinite(r.radius) && r.radius > 0)) throw new CommandError(`圓 ${r.id} 的半徑必須大於 0`);
+        e.radius = r.radius;
+      }
+      return;
+    }
+    case 'setConstruction': {
+      const f = sketchOf(draft, cmd.featureId);
+      for (const id of cmd.ids) {
+        const e = f.entities.find((x) => x.id === id);
+        if (!e || e.type === 'point') throw new CommandError(`只有直線、圓、圓弧可以設為幾何建構線：${id}`);
+        if (cmd.value) e.construction = true;
+        else delete e.construction;
+      }
       return;
     }
   }

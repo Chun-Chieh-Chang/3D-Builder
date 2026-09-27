@@ -3,21 +3,34 @@ import { useSyncExternalStore } from 'react';
 import {
   CommandError,
   createDemoPart,
+  createEmptyPart,
+  DATUM_PLANES,
   DocHistory,
+  findFeature,
   FormatError,
+  IdAllocator,
+  idsInUse,
+  isDatumPlaneName,
   parsePart,
   serializePart,
   type Command,
+  type DatumPlaneName,
+  type Feature,
   type Id,
   type PartDoc,
+  type PlaneFrame,
   type Ref,
+  type SketchFeature,
 } from '@3db/model';
 import { stepFileName } from '@3db/io';
 import type { Viewer } from '@3db/render';
-import type { KernelApi, RebuildPayload } from '../worker/protocol';
+import type { KernelApi, RebuildPayload, SketchSolvePayload, SketchSolveRequest } from '../worker/protocol';
+import { SketchController, type ControllerView, type SketchHost } from '../sketcher/controller';
 
 export interface EditSession {
   featureId: Id;
+  /** A sketch session edits geometry in the graphics area; a feature session edits PropertyManager values. */
+  kind: 'feature' | 'sketch';
 }
 
 export interface Notice {
@@ -27,15 +40,20 @@ export interface Notice {
 
 /**
  * UI state. The document inside DocHistory is the only source of truth for the design;
- * everything else here is session state (selection, edit session) or derived data (result).
+ * everything else here is session state (selection, edit session) or derived data (results).
  */
 export interface UiState {
   doc: PartDoc;
   canUndo: boolean;
   canRedo: boolean;
+  /** Selected feature, or datum plane ("plane:front" …) in the FeatureManager. */
   selected: Id | null;
   editing: EditSession | null;
   result: RebuildPayload | null;
+  /** Solve of the sketch being edited (or of the current drag frame). */
+  sketchSolve: SketchSolvePayload | null;
+  /** Dimension whose Modify box is open (D6.1). */
+  dimensionEdit: Id | null;
   rebuilding: boolean;
   bootMs: { occtMs: number; gcsMs: number } | null;
   bootError: string | null;
@@ -51,6 +69,51 @@ function download(name: string, text: string, type: string): void {
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
+/** Next free display name like SolidWorks does: 草圖3 after 草圖2 (names are labels, ids stay permanent). */
+function nextName(doc: PartDoc, base: string): string {
+  const pattern = new RegExp(`^${base}(\\d+)$`);
+  const used = doc.features.map((f) => Number(pattern.exec(f.name)?.[1] ?? 0));
+  return `${base}${Math.max(0, ...used) + 1}`;
+}
+
+export function sketchFrame(sketch: SketchFeature): PlaneFrame | null {
+  return sketch.plane.kind === 'datum' && isDatumPlaneName(sketch.plane.name) ? DATUM_PLANES[sketch.plane.name] : null;
+}
+
+/** Runs one request at a time; while one is running only the newest waiting request is kept. */
+class LatestRunner<Req, Res> {
+  private busy = false;
+  private waiting: Req | null = null;
+
+  constructor(
+    private readonly run: (req: Req) => Promise<Res>,
+    private readonly done: (res: Res) => void,
+    private readonly fail: (e: unknown) => void,
+  ) {}
+
+  request(req: Req): void {
+    if (this.busy) {
+      this.waiting = req;
+      return;
+    }
+    void this.go(req);
+  }
+
+  private async go(req: Req): Promise<void> {
+    this.busy = true;
+    try {
+      this.done(await this.run(req));
+    } catch (e) {
+      this.fail(e);
+    } finally {
+      this.busy = false;
+      const next = this.waiting;
+      this.waiting = null;
+      if (next) void this.go(next);
+    }
+  }
+}
+
 class AppStore {
   private history = new DocHistory(createDemoPart());
   private api: Comlink.Remote<KernelApi>;
@@ -58,9 +121,13 @@ class AppStore {
   private seq = 0;
   private inFlight = false;
   private pending = false;
+  private sketchSeq = 0;
+  private sketchRunner: LatestRunner<SketchSolveRequest, SketchSolvePayload>;
   private state: UiState;
   /** The viewport registers itself so view actions (fit, standard views) can reach it. */
   viewer: Viewer | null = null;
+  /** Tools of the sketch being edited (null outside sketch sessions). */
+  sketcher: SketchController | null = null;
 
   constructor() {
     const worker = new Worker(new URL('../worker/kernel.worker.ts', import.meta.url), { type: 'module' });
@@ -72,11 +139,23 @@ class AppStore {
       selected: null,
       editing: null,
       result: null,
+      sketchSolve: null,
+      dimensionEdit: null,
       rebuilding: false,
       bootMs: null,
       bootError: null,
       notice: null,
     };
+    this.sketchRunner = new LatestRunner(
+      (req) => this.api.solveSketch(req),
+      (res) => {
+        if (this.state.editing?.kind !== 'sketch') return;
+        // Drag frames are not analyzed: keep the last per-entity colours until the next analysis.
+        const prev = this.state.sketchSolve;
+        this.set({ sketchSolve: res.entityStatus || !prev?.entityStatus ? res : { ...res, entityStatus: prev.entityStatus } });
+      },
+      (e) => this.set({ notice: { kind: 'error', text: `草圖求解失敗：${e instanceof Error ? e.message : String(e)}` } }),
+    );
     this.history.subscribe(() => this.onDocChanged());
     this.api.init().then(
       (bootMs) => this.set({ bootMs }),
@@ -99,7 +178,13 @@ class AppStore {
 
   private onDocChanged(): void {
     this.set({ doc: this.history.doc, canUndo: this.history.canUndo, canRedo: this.history.canRedo });
-    this.requestRebuild();
+    // Inside a sketch only the sketch changes: solve it, and leave the model before it as it is.
+    if (this.state.editing?.kind === 'sketch') this.requestSketchSolve();
+    else this.requestRebuild();
+  }
+
+  notify(text: string, kind: Notice['kind'] = 'info'): void {
+    this.set({ notice: { kind, text } });
   }
 
   // ------------------------------------------------------------ document commands (B7.1)
@@ -110,7 +195,7 @@ class AppStore {
       if (this.state.notice?.kind === 'error') this.set({ notice: null });
       return true;
     } catch (e) {
-      this.set({ notice: { kind: 'error', text: e instanceof CommandError ? e.message : String(e) } });
+      this.notify(e instanceof CommandError ? e.message : String(e), 'error');
       return false;
     }
   }
@@ -127,26 +212,106 @@ class AppStore {
     this.set({ selected: id });
   }
 
+  private allocator(): IdAllocator {
+    const doc = this.history.doc;
+    return new IdAllocator(doc.idCounters, idsInUse(doc));
+  }
+
   // ------------------------------------------------------------ edit sessions (B7.3, D2.3)
 
   beginEdit(featureId: Id): void {
     if (this.state.editing) this.commitEdit();
-    this.history.begin(`編輯 ${featureId}`);
-    this.set({ editing: { featureId }, selected: featureId });
+    const f = findFeature(this.history.doc, featureId);
+    if (!f) return;
+    this.history.begin(`編輯 ${f.name}`);
+    if (f.type === 'sketch') return this.enterSketch(f, false);
+    this.set({ editing: { featureId, kind: 'feature' }, selected: featureId });
     this.requestRebuild();
+  }
+
+  /**
+   * Starts a session that creates a feature (SolidWorks: the PropertyManager of a new feature).
+   * Cancel removes the feature again; undo inside the session never does.
+   */
+  private startNew(feature: Feature, label: string): boolean {
+    if (this.state.editing) this.commitEdit();
+    const doc = this.history.doc;
+    this.history.begin(label);
+    try {
+      this.history.execute({ type: 'insertFeature', feature, index: doc.rollbackIndex ?? doc.features.length });
+    } catch (e) {
+      this.history.rollback();
+      this.notify(e instanceof CommandError ? e.message : String(e), 'error');
+      return false;
+    }
+    this.history.markSessionBase();
+    this.set({ canUndo: this.history.canUndo, canRedo: this.history.canRedo });
+    return true;
+  }
+
+  /** 「草圖」 on a selected datum plane (C1.1): a new sketch, viewed normal to its plane. */
+  newSketch(plane: DatumPlaneName): void {
+    const doc = this.history.doc;
+    const feature: SketchFeature = {
+      id: this.allocator().take('sketch'),
+      type: 'sketch',
+      name: nextName(doc, '草圖'),
+      suppressed: false,
+      plane: { kind: 'datum', name: plane },
+      entities: [],
+      constraints: [],
+    };
+    if (this.startNew(feature, '新草圖')) this.enterSketch(feature, true);
+  }
+
+  /** 「伸長填料/基材」 from the selected sketch (C4.1). */
+  newExtrude(): void {
+    const sketch = findFeature(this.history.doc, this.state.selected ?? '');
+    if (sketch?.type !== 'sketch') return this.notify('請先在設計樹中選擇一個草圖');
+    const id = this.allocator().take('extrude');
+    const feature: Feature = { id, type: 'extrude', name: nextName(this.history.doc, '伸長'), suppressed: false, sketch: sketch.id, op: 'boss', dir1: { type: 'blind', depth: '10' } };
+    if (!this.startNew(feature, '伸長')) return;
+    this.set({ editing: { featureId: id, kind: 'feature' }, selected: id });
+    this.requestRebuild();
+  }
+
+  /** 「圓角」 (C5.1): picks edges on the model in the PropertyManager session. */
+  newFillet(): void {
+    const id = this.allocator().take('fillet');
+    const feature: Feature = { id, type: 'fillet', name: nextName(this.history.doc, '圓角'), suppressed: false, edges: [], radius: '2' };
+    if (!this.startNew(feature, '圓角')) return;
+    this.set({ editing: { featureId: id, kind: 'feature' }, selected: id });
+    this.requestRebuild();
+  }
+
+  private enterSketch(sketch: SketchFeature, fresh: boolean): void {
+    const frame = sketchFrame(sketch);
+    if (!frame) {
+      this.history.rollback();
+      return this.notify('Phase 1A 只能編輯基準面上的草圖', 'error');
+    }
+    this.sketcher = new SketchController(this.sketchHost(sketch.id));
+    this.set({ editing: { featureId: sketch.id, kind: 'sketch' }, selected: sketch.id, sketchSolve: null, dimensionEdit: null });
+    this.requestRebuild(); // the model up to the sketch
+    this.requestSketchSolve();
+    if (fresh) this.viewer?.lookAt(frame);
   }
 
   commitEdit(): void {
     if (!this.state.editing) return;
     this.history.commit();
-    this.set({ editing: null, canUndo: this.history.canUndo, canRedo: this.history.canRedo });
-    this.requestRebuild();
+    this.leaveSession();
   }
 
   cancelEdit(): void {
     if (!this.state.editing) return;
     this.history.rollback();
-    this.set({ editing: null, canUndo: this.history.canUndo, canRedo: this.history.canRedo });
+    this.leaveSession();
+  }
+
+  private leaveSession(): void {
+    this.sketcher = null;
+    this.set({ editing: null, sketchSolve: null, dimensionEdit: null, canUndo: this.history.canUndo, canRedo: this.history.canRedo });
     this.requestRebuild();
   }
 
@@ -165,12 +330,55 @@ class AppStore {
     this.execute({ type: 'setFilletEdges', featureId: f.id, edges });
   }
 
-  /** While editing a fillet, show the model before it so its input edges can be picked. */
+  /** While editing a fillet or a sketch, show the model before it (fillet edges are picked on that model). */
   private until(): number | undefined {
     const e = this.state.editing;
     if (!e) return undefined;
     const i = this.history.doc.features.findIndex((f) => f.id === e.featureId);
-    return this.history.doc.features[i]?.type === 'fillet' ? i : undefined;
+    const type = this.history.doc.features[i]?.type;
+    return type === 'fillet' || type === 'sketch' ? i : undefined;
+  }
+
+  // ------------------------------------------------------------ sketch sessions (C1)
+
+  /** The sketch being edited, as it is in the document now. */
+  editedSketch(): SketchFeature | null {
+    const e = this.state.editing;
+    const f = e?.kind === 'sketch' ? findFeature(this.history.doc, e.featureId) : undefined;
+    return f?.type === 'sketch' ? f : null;
+  }
+
+  private requestSketchSolve(options: Omit<SketchSolveRequest, 'seq' | 'sketch'> = { analyze: true }): void {
+    const sketch = this.editedSketch();
+    if (sketch) this.sketchRunner.request({ seq: ++this.sketchSeq, sketch, ...options });
+  }
+
+  private sketchHost(featureId: Id): SketchHost {
+    return {
+      featureId,
+      doc: () => this.history.doc,
+      solved: () => this.state.sketchSolve,
+      execute: (cmd) => this.execute(cmd),
+      dragPreview: (o) => {
+        if (o) this.requestSketchSolve({ drag: o.drag, initial: o.initial, analyze: false });
+      },
+      trial: (sketch) => this.api.solveSketch({ seq: -1, sketch }),
+      notify: (text, kind) => this.notify(text, kind),
+      editDimension: (id) => this.set({ dimensionEdit: id }),
+    };
+  }
+
+  editDimension(id: Id | null): void {
+    this.set({ dimensionEdit: id });
+  }
+
+  /** Modify box (D6.1): Enter sets the value; an invalid value keeps the box open. */
+  setDimensionValue(constraintId: Id, value: string): boolean {
+    const sketch = this.editedSketch();
+    if (!sketch) return false;
+    const ok = this.execute({ type: 'setDimension', featureId: sketch.id, constraintId, value });
+    if (ok) this.set({ dimensionEdit: null });
+    return ok;
   }
 
   // ------------------------------------------------------------ rebuild (B3.5: off the UI thread)
@@ -197,7 +405,7 @@ class AppStore {
       // A queued request supersedes this result: showing it would briefly contradict the current document.
       if (result.seq === this.seq && !this.pending) this.set({ result });
     } catch (e) {
-      this.set({ notice: { kind: 'error', text: `重新計算失敗：${e instanceof Error ? e.message : String(e)}` } });
+      this.notify(`重新計算失敗：${e instanceof Error ? e.message : String(e)}`, 'error');
     } finally {
       this.inFlight = false;
       if (this.pending) {
@@ -215,9 +423,9 @@ class AppStore {
     try {
       const text = await this.api.exportStep(this.history.doc);
       download(stepFileName(this.history.doc), text, 'application/step');
-      this.set({ notice: { kind: 'info', text: `已輸出 ${stepFileName(this.history.doc)}` } });
+      this.notify(`已輸出 ${stepFileName(this.history.doc)}`);
     } catch (e) {
-      this.set({ notice: { kind: 'error', text: `STEP 輸出失敗：${e instanceof Error ? e.message : String(e)}` } });
+      this.notify(`STEP 輸出失敗：${e instanceof Error ? e.message : String(e)}`, 'error');
     }
   }
 
@@ -229,14 +437,21 @@ class AppStore {
   async openFile(file: File): Promise<void> {
     try {
       this.load(parsePart(await file.text()));
-      this.set({ notice: { kind: 'info', text: `已開啟 ${file.name}` } });
+      this.notify(`已開啟 ${file.name}`);
     } catch (e) {
-      this.set({ notice: { kind: 'error', text: e instanceof FormatError ? e.message : `無法開啟：${String(e)}` } });
+      this.notify(e instanceof FormatError ? e.message : `無法開啟：${String(e)}`, 'error');
     }
   }
 
   newDemo(): void {
     this.load(createDemoPart());
+  }
+
+  /** 「新零件」: an empty part with the default planes (B1.4). */
+  newPart(): void {
+    const doc = createEmptyPart();
+    doc.properties = { 零件名稱: '零件1' };
+    this.load(doc);
   }
 
   private load(doc: PartDoc): void {
@@ -257,4 +472,13 @@ export const store = new AppStore();
 
 export function useStore<T>(selector: (s: UiState) => T): T {
   return useSyncExternalStore(store.subscribe, () => selector(store.getState()));
+}
+
+const noSubscription = () => () => {};
+
+/** Tool/selection state of the sketch being edited; null outside sketch sessions. */
+export function useSketcherView(): ControllerView | null {
+  useStore((s) => s.editing); // a new session brings a new controller
+  const sketcher = store.sketcher;
+  return useSyncExternalStore(sketcher ? sketcher.subscribe : noSubscription, () => sketcher?.getView() ?? null);
 }

@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { ViewControls } from './controls';
+import { buildOverlayObjects, disposeGroup, toWorld, type P2, type PlaneFrame, type SketchOverlay } from './overlay';
 
 /** Mesh payload produced by the kernel worker (same layout as @3db/kernel MeshData). */
 export interface ViewMesh {
@@ -31,33 +32,53 @@ const COLORS = {
   background: 0xf3f5f8,
 };
 
+/** Pointer input on the graphics area while a tool (e.g. a sketch tool) owns the left button. */
+export interface ToolPointerEvent {
+  type: 'down' | 'move' | 'up' | 'dblclick' | 'leave';
+  clientX: number;
+  clientY: number;
+  ctrl: boolean;
+  shift: boolean;
+  /** Left button held (for moves). */
+  pressed: boolean;
+}
+
 export interface ViewerEvents {
   /** Edge under the cursor changed (index into the mesh's edges, or -1). */
   onEdgeHover?: (edge: number) => void;
   /** Left click on an edge (or -1 on empty space / faces). */
   onEdgeClick?: (edge: number, additive: boolean) => void;
+  /** The camera moved, zoomed or the viewport was resized (screen-sized overlays need a new layout). */
+  onViewChange?: () => void;
+  onLabelClick?: (key: string, additive: boolean) => void;
+  onLabelDoubleClick?: (key: string) => void;
 }
 
 /**
  * Framework-agnostic viewport (A4.2, A5.1, D4): shaded body with black edges, orthographic
- * camera like SolidWorks, a headlight, edge picking and highlighting, and a reference triad.
+ * camera like SolidWorks, a headlight, edge picking and highlighting, a reference triad, and an
+ * on-top 2D overlay for the sketch being edited.
  */
 export class Viewer {
   private readonly renderer: THREE.WebGLRenderer;
   private readonly scene = new THREE.Scene();
+  private readonly overlayScene = new THREE.Scene();
   private readonly camera: THREE.OrthographicCamera;
   private readonly controls: ViewControls;
   private readonly triadScene = new THREE.Scene();
   private readonly triadCamera = new THREE.OrthographicCamera(-1.6, 1.6, 1.6, -1.6, 0.1, 10);
+  private readonly labelLayer: HTMLDivElement;
   private body: THREE.Mesh | null = null;
   private edges: THREE.LineSegments | null = null;
   /** segmentEdge[s] = edge index owning line segment s. */
   private segmentEdge = new Int32Array(0);
-  /** First segment and segment count per edge. */
-  private edgeSegments: [number, number][] = [];
   private hovered = -1;
   private selected = new Set<number>();
   private pickEdges = false;
+  private overlay: SketchOverlay | null = null;
+  private overlayGroup: THREE.Group | null = null;
+  private labels = new Map<string, { el: HTMLElement; world: THREE.Vector3 }>();
+  private toolHandler: ((e: ToolPointerEvent) => void) | null = null;
   private pendingFit = false;
   private frame = 0;
   private readonly resizeObserver: ResizeObserver;
@@ -72,6 +93,9 @@ export class Viewer {
     this.renderer.autoClear = false;
     container.appendChild(this.renderer.domElement);
     this.renderer.domElement.style.display = 'block';
+    this.labelLayer = document.createElement('div');
+    this.labelLayer.className = 'overlay-labels';
+    container.appendChild(this.labelLayer);
 
     this.camera = new THREE.OrthographicCamera(-1, 1, 1, -1, -1e5, 1e5);
     this.scene.add(new THREE.AmbientLight(0xffffff, 1.1));
@@ -81,9 +105,14 @@ export class Viewer {
     this.scene.add(this.camera);
     this.buildTriad();
 
-    this.controls = new ViewControls(this.camera, this.renderer.domElement, () => this.requestRender());
-    this.renderer.domElement.addEventListener('pointermove', this.onPointerMove);
-    this.renderer.domElement.addEventListener('click', this.onClick);
+    this.controls = new ViewControls(this.camera, this.renderer.domElement, () => this.viewChanged());
+    const dom = this.renderer.domElement;
+    dom.addEventListener('pointerdown', this.onPointerDown);
+    dom.addEventListener('pointermove', this.onPointerMove);
+    dom.addEventListener('pointerup', this.onPointerUp);
+    dom.addEventListener('pointerleave', this.onPointerLeave);
+    dom.addEventListener('click', this.onClick);
+    dom.addEventListener('dblclick', this.onDoubleClick);
     this.resizeObserver = new ResizeObserver(() => this.resize());
     this.resizeObserver.observe(container);
     this.resize();
@@ -95,8 +124,10 @@ export class Viewer {
     this.resizeObserver.disconnect();
     this.controls.dispose();
     this.clear();
+    this.setOverlay(null);
     this.renderer.dispose();
     this.renderer.domElement.remove();
+    this.labelLayer.remove();
   }
 
   // ---------------------------------------------------------------- content
@@ -129,12 +160,10 @@ export class Viewer {
   private buildEdges(mesh: ViewMesh): void {
     const segs: number[] = [];
     const owner: number[] = [];
-    this.edgeSegments = [];
     for (let g = 0; g < mesh.edgeRanges.length; g += 3) {
       const start = mesh.edgeRanges[g]!;
       const count = mesh.edgeRanges[g + 1]!;
       const edge = mesh.edgeRanges[g + 2]!;
-      this.edgeSegments[edge] = [owner.length, Math.max(0, count - 1)];
       for (let p = start; p < start + count - 1; p++) {
         segs.push(...mesh.edgePoints.subarray(p * 3, p * 3 + 6));
         owner.push(edge);
@@ -159,6 +188,102 @@ export class Viewer {
     }
     this.body = null;
     this.edges = null;
+  }
+
+  // ---------------------------------------------------------------- 2D overlay (sketch editing)
+
+  /** Replaces the overlay; labels keep their DOM nodes by key so edits in progress are not disturbed. */
+  setOverlay(overlay: SketchOverlay | null): void {
+    if (this.overlayGroup) {
+      this.overlayScene.remove(this.overlayGroup);
+      disposeGroup(this.overlayGroup);
+      this.overlayGroup = null;
+    }
+    this.overlay = overlay;
+    if (overlay) {
+      this.overlayGroup = buildOverlayObjects(overlay, this.pixelSize());
+      this.overlayScene.add(this.overlayGroup);
+    }
+    const keep = new Set<string>();
+    for (const l of overlay?.labels ?? []) {
+      keep.add(l.key);
+      let entry = this.labels.get(l.key);
+      if (!entry) {
+        const el = document.createElement('div');
+        el.addEventListener('pointerdown', (e) => e.stopPropagation());
+        el.addEventListener('click', (e) => this.events.onLabelClick?.(l.key, e.ctrlKey || e.shiftKey));
+        el.addEventListener('dblclick', () => this.events.onLabelDoubleClick?.(l.key));
+        this.labelLayer.appendChild(el);
+        entry = { el, world: new THREE.Vector3() };
+        this.labels.set(l.key, entry);
+      }
+      entry.world.copy(toWorld(overlay!.frame, l.p));
+      entry.el.className = `overlay-label ${l.className ?? ''} ${l.interactive ? 'interactive' : ''}`;
+      if (entry.el.textContent !== l.text) entry.el.textContent = l.text;
+      entry.el.title = l.title ?? '';
+    }
+    for (const [key, entry] of this.labels) {
+      if (keep.has(key)) continue;
+      entry.el.remove();
+      this.labels.delete(key);
+    }
+    this.requestRender();
+  }
+
+  /** Routes left-button input to a tool instead of edge picking (null restores normal selection). */
+  setToolHandler(handler: ((e: ToolPointerEvent) => void) | null): void {
+    this.toolHandler = handler;
+    if (handler) this.setHovered(-1);
+  }
+
+  /** Size of one screen pixel in world units (orthographic camera). */
+  pixelSize(): number {
+    return (this.camera.right - this.camera.left) / this.camera.zoom / this.canvasSize().w;
+  }
+
+  /** The drawing surface in CSS pixels: every screen↔world conversion uses this one size. */
+  private canvasSize(): { w: number; h: number } {
+    const el = this.renderer.domElement;
+    return { w: el.clientWidth || 1, h: el.clientHeight || 1 };
+  }
+
+  /** Where a screen position hits a plane, in the plane's 2D coordinates; null if the view is edge-on. */
+  planePoint(clientX: number, clientY: number, frame: PlaneFrame): P2 | null {
+    const ray = this.rayAt(clientX, clientY);
+    const n = new THREE.Vector3(...frame.normal);
+    const o = new THREE.Vector3(...frame.origin);
+    const denom = ray.direction.dot(n);
+    if (Math.abs(denom) < 1e-9) return null;
+    const t = o.clone().sub(ray.origin).dot(n) / denom;
+    const w = ray.origin.clone().addScaledVector(ray.direction, t).sub(o);
+    return [w.dot(new THREE.Vector3(...frame.xDir)), w.dot(new THREE.Vector3(...frame.yDir))];
+  }
+
+  /** Screen position (relative to the viewport) of a point on a plane. */
+  screenOf(frame: PlaneFrame, p: P2): { x: number; y: number } {
+    this.syncCamera();
+    const v = toWorld(frame, p).project(this.camera);
+    const { w, h } = this.canvasSize();
+    return { x: ((v.x + 1) / 2) * w, y: ((1 - v.y) / 2) * h };
+  }
+
+  /**
+   * three.js refreshes camera matrices only when it renders. Screen↔world conversions can run
+   * between a view change and the next frame (a click right after zooming or 「正視於」), so
+   * they bring the matrices up to date themselves.
+   */
+  private syncCamera(): void {
+    this.camera.updateMatrixWorld();
+    this.camera.matrixWorldInverse.copy(this.camera.matrixWorld).invert();
+  }
+
+  private rayAt(clientX: number, clientY: number): THREE.Ray {
+    this.syncCamera();
+    const rect = this.renderer.domElement.getBoundingClientRect();
+    const ndc = new THREE.Vector2(((clientX - rect.left) / rect.width) * 2 - 1, -((clientY - rect.top) / rect.height) * 2 + 1);
+    const caster = new THREE.Raycaster();
+    caster.setFromCamera(ndc, this.camera);
+    return caster.ray;
   }
 
   // ---------------------------------------------------------------- selection
@@ -199,37 +324,77 @@ export class Viewer {
   private pick(clientX: number, clientY: number): number {
     if (!this.edges) return -1;
     const rect = this.renderer.domElement.getBoundingClientRect();
-    const ndc = new THREE.Vector2(((clientX - rect.left) / rect.width) * 2 - 1, -((clientY - rect.top) / rect.height) * 2 + 1);
     const ray = new THREE.Raycaster();
     ray.params.Line = { threshold: (6 * (this.camera.right - this.camera.left)) / this.camera.zoom / rect.width };
-    ray.setFromCamera(ndc, this.camera);
+    ray.set(this.rayAt(clientX, clientY).origin, this.rayAt(clientX, clientY).direction);
     const hits = ray.intersectObject(this.edges);
     // Prefer edges not hidden behind the body.
     const bodyHit = this.body ? ray.intersectObject(this.body)[0]?.distance ?? Infinity : Infinity;
-    const visible = hits.filter((h) => h.distance <= bodyHit + 1e-3 * (this.camera.right - this.camera.left) / this.camera.zoom);
-    const hit = (visible[0] ?? null);
+    const visible = hits.filter((h) => h.distance <= bodyHit + (1e-3 * (this.camera.right - this.camera.left)) / this.camera.zoom);
+    const hit = visible[0] ?? null;
     return hit && hit.index !== undefined ? (this.segmentEdge[Math.floor(hit.index / 2)] ?? -1) : -1;
   }
 
+  private tool(type: ToolPointerEvent['type'], e: MouseEvent, pressed: boolean): void {
+    this.toolHandler?.({ type, clientX: e.clientX, clientY: e.clientY, ctrl: e.ctrlKey || e.metaKey, shift: e.shiftKey, pressed });
+  }
+
+  private onPointerDown = (e: PointerEvent) => {
+    if (!this.toolHandler || e.button !== 0 || e.altKey) return;
+    try {
+      this.renderer.domElement.setPointerCapture(e.pointerId); // keep receiving moves while dragging outside
+    } catch {
+      // the pointer is already gone (or the event is synthetic): nothing to capture
+    }
+    this.tool('down', e, true);
+  };
+
   private onPointerMove = (e: PointerEvent) => {
+    if (this.toolHandler) {
+      if (e.buttons === 0 || e.buttons === 1) this.tool('move', e, e.buttons === 1);
+      return;
+    }
     if (!this.pickEdges || e.buttons !== 0) return;
     this.setHovered(this.pick(e.clientX, e.clientY));
   };
 
+  private onPointerUp = (e: PointerEvent) => {
+    if (!this.toolHandler || e.button !== 0 || e.altKey) return;
+    this.tool('up', e, false);
+  };
+
+  private onPointerLeave = (e: PointerEvent) => {
+    if (this.toolHandler) this.tool('leave', e, false);
+  };
+
   private onClick = (e: MouseEvent) => {
-    if (!this.pickEdges || e.altKey) return;
+    if (this.toolHandler || !this.pickEdges || e.altKey) return;
     this.events.onEdgeClick?.(this.pick(e.clientX, e.clientY), e.ctrlKey || e.shiftKey);
+  };
+
+  private onDoubleClick = (e: MouseEvent) => {
+    if (this.toolHandler && !e.altKey) this.tool('dblclick', e, false);
   };
 
   // ---------------------------------------------------------------- views
 
   setView(view: StandardView): void {
     const [dir, up] = VIEW_DIRS[view];
+    this.orient(dir, up);
+    this.fitAll();
+  }
+
+  /** Looks straight at a plane (「正視於」, C1.2): view direction −normal, screen up = the plane's y. */
+  lookAt(frame: PlaneFrame): void {
+    this.orient(new THREE.Vector3(...frame.normal), new THREE.Vector3(...frame.yDir));
+    this.viewChanged();
+  }
+
+  private orient(dir: THREE.Vector3, up: THREE.Vector3): void {
     const dist = 1000;
     this.camera.position.copy(this.controls.target).addScaledVector(dir, dist);
     this.camera.up.copy(up);
     this.camera.lookAt(this.controls.target);
-    this.fitAll();
   }
 
   /** Zoom to fit (「全部顯示」). Deferred while the viewport has no size (hidden tab, minimized window). */
@@ -241,6 +406,7 @@ export class Viewer {
     this.pendingFit = false;
     const box = new THREE.Box3();
     if (this.body) box.setFromObject(this.body);
+    if (this.overlayGroup) box.union(new THREE.Box3().setFromObject(this.overlayGroup));
     if (box.isEmpty()) box.set(new THREE.Vector3(-50, -50, -50), new THREE.Vector3(50, 50, 50));
     const center = box.getCenter(new THREE.Vector3());
     const radius = box.getBoundingSphere(new THREE.Sphere()).radius || 50;
@@ -256,7 +422,7 @@ export class Viewer {
     this.camera.bottom = -half / Math.min(aspect, 1);
     this.camera.zoom = 1;
     this.camera.updateProjectionMatrix();
-    this.requestRender();
+    this.viewChanged();
   }
 
   private resize(): void {
@@ -272,6 +438,11 @@ export class Viewer {
     this.camera.left = -halfH * (w / h);
     this.camera.right = halfH * (w / h);
     this.camera.updateProjectionMatrix();
+    this.viewChanged();
+  }
+
+  private viewChanged(): void {
+    this.events.onViewChange?.();
     this.requestRender();
   }
 
@@ -305,6 +476,15 @@ export class Viewer {
     r.setViewport(0, 0, w, h);
     r.clear();
     r.render(this.scene, this.camera);
+    if (this.overlayGroup) {
+      r.clearDepth();
+      r.render(this.overlayScene, this.camera);
+    }
+    const canvas = this.canvasSize();
+    for (const { el, world } of this.labels.values()) {
+      const v = world.clone().project(this.camera);
+      el.style.transform = `translate(${((v.x + 1) / 2) * canvas.w}px, ${((1 - v.y) / 2) * canvas.h}px) translate(-50%, -50%)`;
+    }
     const size = 90;
     const offset = this.camera.position.clone().sub(this.controls.target).normalize().multiplyScalar(5);
     this.triadCamera.position.copy(offset);

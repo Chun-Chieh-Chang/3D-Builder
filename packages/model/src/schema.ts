@@ -6,7 +6,7 @@ import type { Id } from './ids';
  * DOF status, mass properties and error lists are derived data and never stored.
  */
 
-export const SCHEMA_VERSION = 1;
+export const SCHEMA_VERSION = 2;
 
 /** Value expression: "20", "25.4mm", "1in", "30deg". Variables/equations arrive in Phase 3a (B5.2/B5.3). */
 export type Expr = string;
@@ -50,8 +50,9 @@ export type SketchEntity =
  */
 export type SketchConstraint =
   | { id: Id; type: 'coincident'; a: Id; b: Id }
-  | { id: Id; type: 'horizontal'; line: Id }
-  | { id: Id; type: 'vertical'; line: Id }
+  /** One line, or two points aligned horizontally / vertically. */
+  | { id: Id; type: 'horizontal'; a: Id; b?: Id }
+  | { id: Id; type: 'vertical'; a: Id; b?: Id }
   | { id: Id; type: 'collinear'; a: Id; b: Id }
   | { id: Id; type: 'parallel'; a: Id; b: Id }
   | { id: Id; type: 'perpendicular'; a: Id; b: Id }
@@ -59,7 +60,8 @@ export type SketchConstraint =
   | { id: Id; type: 'concentric'; a: Id; b: Id }
   | { id: Id; type: 'equal'; a: Id; b: Id }
   | { id: Id; type: 'midpoint'; point: Id; line: Id }
-  | { id: Id; type: 'pointOnLine'; point: Id; line: Id }
+  /** SolidWorks "coincident" between a point and a line, circle or arc (point–point is `coincident`). */
+  | { id: Id; type: 'pointOnCurve'; point: Id; curve: Id }
   | { id: Id; type: 'symmetric'; a: Id; b: Id; axis: Id }
   | { id: Id; type: 'fix'; point: Id }
   | { id: Id; type: 'distance'; a: Id; b?: Id; value: Expr; label?: string; driving?: boolean }
@@ -145,6 +147,11 @@ export interface PartDoc {
   properties: Record<string, string>;
   appearances: AppearanceOverride[];
   blobs: BlobRef[];
+  /**
+   * Highest number issued so far per readable-id prefix ("l" → 4 means l1…l4 were issued).
+   * Ids are never reused, so a stale reference can never silently bind to a new object (B1.3).
+   */
+  idCounters: Record<string, number>;
 }
 
 export function findFeature(doc: PartDoc, id: Id): Feature | undefined {

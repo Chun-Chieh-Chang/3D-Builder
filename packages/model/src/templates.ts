@@ -1,4 +1,6 @@
+import { countersFor } from './ids';
 import { SCHEMA_VERSION, SKETCH_ORIGIN, type PartDoc } from './schema';
+import { idsInUse } from './sketch-rules';
 
 export function createEmptyPart(): PartDoc {
   return {
@@ -11,6 +13,7 @@ export function createEmptyPart(): PartDoc {
     properties: {},
     appearances: [],
     blobs: [],
+    idCounters: {},
   };
 }
 
@@ -40,10 +43,10 @@ export function createDemoPart(): PartDoc {
       ],
       constraints: [
         { id: 'c1', type: 'coincident', a: 'p1', b: SKETCH_ORIGIN },
-        { id: 'c2', type: 'horizontal', line: 'l1' },
-        { id: 'c3', type: 'horizontal', line: 'l3' },
-        { id: 'c4', type: 'vertical', line: 'l2' },
-        { id: 'c5', type: 'vertical', line: 'l4' },
+        { id: 'c2', type: 'horizontal', a: 'l1' },
+        { id: 'c3', type: 'horizontal', a: 'l3' },
+        { id: 'c4', type: 'vertical', a: 'l2' },
+        { id: 'c5', type: 'vertical', a: 'l4' },
         { id: 'd1', type: 'distance', a: 'l1', value: '20', label: '寬度' },
         { id: 'd2', type: 'distance', a: 'l2', value: '10', label: '高度' },
       ],
@@ -72,5 +75,6 @@ export function createDemoPart(): PartDoc {
       ],
     },
   ];
+  doc.idCounters = countersFor(idsInUse(doc));
   return doc;
 }

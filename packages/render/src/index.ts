@@ -1,2 +1,3 @@
-export { Viewer, type ViewMesh, type StandardView, type ViewerEvents } from './viewer';
+export * from './viewer';
+export * from './overlay';
 export { ViewControls } from './controls';

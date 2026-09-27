@@ -65,7 +65,12 @@ export function FeatureTree() {
       </div>
       <ol ref={listRef} className="tree-list">
         {DATUM_ITEMS.map((d) => (
-          <li key={d.id} className="tree-row datum">
+          <li
+            key={d.id}
+            className={`tree-row datum ${selected === d.id ? 'selected' : ''}`}
+            title={d.icon === 'plane' ? '選取後按「草圖」即可在此基準面上繪製草圖' : undefined}
+            onClick={() => d.icon === 'plane' && store.select(d.id)}
+          >
             <Icon name={d.icon} />
             <span>{d.label}</span>
           </li>
@@ -112,7 +117,7 @@ export function FeatureTree() {
 
       {menu && (
         <ul className="context-menu" style={{ left: menu.x, top: menu.y }} onPointerDown={(e) => e.stopPropagation()}>
-          <li onClick={() => (setMenu(null), store.beginEdit(menu.feature.id))}>編輯特徵</li>
+          <li onClick={() => (setMenu(null), store.beginEdit(menu.feature.id))}>{menu.feature.type === 'sketch' ? '編輯草圖' : '編輯特徵'}</li>
           <li onClick={() => (setMenu(null), store.execute({ type: 'setSuppressed', featureId: menu.feature.id, value: !menu.feature.suppressed }))}>
             {menu.feature.suppressed ? '恢復抑制' : '抑制'}
           </li>

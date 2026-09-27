@@ -1,0 +1,179 @@
+import type { Id } from './ids';
+import { evalAngle, evalLength, ExprError } from './expr';
+import { isDimension, SKETCH_ORIGIN, type PartDoc, type SketchConstraint, type SketchEntity, type SketchFeature } from './schema';
+
+/**
+ * Structural rules of a sketch (B1.2): which entities a relation or dimension may reference, and
+ * what disappears together when something is deleted. Commands use these rules so an invalid
+ * sketch can never enter the document; the solver only has to map a valid one.
+ */
+
+export type EntityKind = SketchEntity['type'];
+type RefKind = EntityKind | 'origin';
+
+const POINT: RefKind[] = ['point', 'origin'];
+const LINE: RefKind[] = ['line'];
+const RADIAL: RefKind[] = ['circle', 'arc'];
+const CURVE: RefKind[] = ['line', 'circle', 'arc'];
+/** Points, or circles/arcs measured from their centers (as SolidWorks does). */
+const ANCHOR: RefKind[] = ['point', 'origin', 'circle', 'arc'];
+const ANY: RefKind[] = ['point', 'origin', 'line', 'circle', 'arc'];
+
+const REF_FIELDS = ['a', 'b', 'point', 'line', 'curve', 'axis', 'circle'] as const;
+type RefField = (typeof REF_FIELDS)[number];
+
+/** Constraint types whose second reference is optional (one entity, or a pair). */
+const OPTIONAL_B = new Set<SketchConstraint['type']>(['distance', 'horizontal', 'vertical']);
+
+const RULES: { [T in SketchConstraint['type']]: Partial<Record<RefField, RefKind[]>> } = {
+  coincident: { a: POINT, b: POINT },
+  horizontal: { a: ['line', 'point', 'origin'], b: POINT },
+  vertical: { a: ['line', 'point', 'origin'], b: POINT },
+  collinear: { a: LINE, b: LINE },
+  parallel: { a: LINE, b: LINE },
+  perpendicular: { a: LINE, b: LINE },
+  tangent: { a: CURVE, b: CURVE },
+  concentric: { a: RADIAL, b: RADIAL },
+  equal: { a: CURVE, b: CURVE },
+  midpoint: { point: POINT, line: LINE },
+  pointOnCurve: { point: POINT, curve: CURVE },
+  symmetric: { a: POINT, b: POINT, axis: LINE },
+  fix: { point: ['point'] },
+  distance: { a: ANY, b: ANY },
+  distanceX: { a: ANCHOR, b: ANCHOR },
+  distanceY: { a: ANCHOR, b: ANCHOR },
+  radius: { circle: RADIAL },
+  diameter: { circle: RADIAL },
+  angle: { a: LINE, b: LINE },
+};
+
+/** Ids a relation or dimension refers to. */
+export function constraintRefs(c: SketchConstraint): Id[] {
+  const out: Id[] = [];
+  for (const f of REF_FIELDS) {
+    const v = (c as Partial<Record<RefField, Id>>)[f];
+    if (v !== undefined) out.push(v);
+  }
+  return out;
+}
+
+/** Point ids an entity is built on. */
+export function entityPoints(e: SketchEntity): Id[] {
+  switch (e.type) {
+    case 'point':
+      return [];
+    case 'line':
+      return [e.p1, e.p2];
+    case 'circle':
+      return [e.center];
+    case 'arc':
+      return [e.center, e.start, e.end];
+  }
+}
+
+/** Every id in use in the document: features, and the entities and constraints inside sketches. */
+export function idsInUse(doc: PartDoc): Id[] {
+  const out: Id[] = [];
+  for (const f of doc.features) {
+    out.push(f.id);
+    if (f.type === 'sketch') {
+      for (const e of f.entities) out.push(e.id);
+      for (const c of f.constraints) out.push(c.id);
+    }
+  }
+  return out;
+}
+
+const finite = (...xs: number[]) => xs.every(Number.isFinite);
+
+function dimensionError(c: SketchConstraint): string | null {
+  if (!isDimension(c)) return null;
+  try {
+    if (c.type === 'angle') evalAngle(c.value);
+    else if (!(evalLength(c.value) > 0)) return `數值必須大於 0：「${c.value}」`;
+  } catch (e) {
+    return e instanceof ExprError ? e.message : String(e);
+  }
+  return null;
+}
+
+/**
+ * Checks a whole sketch: unique ids, entities built on existing points, every relation and
+ * dimension referencing entities of an allowed kind. Returns the first problem, or null.
+ */
+export function sketchError(sketch: Pick<SketchFeature, 'entities' | 'constraints'>): string | null {
+  const kinds = new Map<Id, EntityKind>();
+  for (const e of sketch.entities) {
+    if (e.id === SKETCH_ORIGIN || kinds.has(e.id)) return `重複的圖元 ID：${e.id}`;
+    kinds.set(e.id, e.type);
+  }
+  const kindOf = (id: Id): RefKind | undefined => (id === SKETCH_ORIGIN ? 'origin' : kinds.get(id));
+
+  for (const e of sketch.entities) {
+    const pts = entityPoints(e);
+    if (pts.some((p) => kinds.get(p) !== 'point')) return `圖元 ${e.id} 參考了不存在的點`;
+    if (new Set(pts).size !== pts.length) return `圖元 ${e.id} 的端點重複`;
+    if (e.type === 'point' && !finite(e.x, e.y)) return `點 ${e.id} 的座標無效`;
+    if (e.type === 'circle' && !(finite(e.radius) && e.radius > 0)) return `圓 ${e.id} 的半徑必須大於 0`;
+  }
+
+  const seen = new Set<Id>(kinds.keys());
+  for (const c of sketch.constraints) {
+    if (c.id === SKETCH_ORIGIN || seen.has(c.id)) return `重複的 ID：${c.id}`;
+    seen.add(c.id);
+    const rule = RULES[c.type];
+    if (!rule) return `不支援的限制條件：${(c as { type: string }).type}`;
+    for (const field of REF_FIELDS) {
+      const ref = (c as Partial<Record<RefField, Id>>)[field];
+      const allowed = rule[field];
+      if (ref === undefined) {
+        if (allowed && !(field === 'b' && OPTIONAL_B.has(c.type))) return `限制條件 ${c.id} 缺少參考`;
+        continue;
+      }
+      if (!allowed) return `限制條件 ${c.id} 有多餘的參考`;
+      const k = kindOf(ref);
+      if (!k || !allowed.includes(k)) return `限制條件 ${c.id} 不能套用在「${ref}」上`;
+    }
+    const refs = constraintRefs(c);
+    if (new Set(refs).size !== refs.length) return `限制條件 ${c.id} 參考了同一個圖元兩次`;
+    const ks = refs.map(kindOf);
+    if (c.type === 'tangent' && ks[0] === 'line' && ks[1] === 'line') return '相切需要至少一個圓或圓弧';
+    if (c.type === 'equal' && (ks[0] === 'line') !== (ks[1] === 'line')) return '相等只適用於兩條直線或兩個圓/圓弧';
+    if (c.type === 'distance' && c.b === undefined && ks[0] !== 'line') return '單一圖元的距離只適用於直線';
+    if ((c.type === 'horizontal' || c.type === 'vertical') && (c.b === undefined) !== (ks[0] === 'line')) {
+      return '水平/垂直適用於一條直線，或兩個點';
+    }
+    const dim = dimensionError(c);
+    if (dim) return dim;
+  }
+  return null;
+}
+
+/**
+ * Everything deleted together with `ids`: curves built on a deleted point, the endpoints only a
+ * deleted curve used, and every relation or dimension referring to something deleted.
+ */
+export function removalSet(sketch: SketchFeature, ids: Iterable<Id>): Set<Id> {
+  const removed = new Set(ids);
+  for (let changed = true; changed; ) {
+    changed = false;
+    const add = (id: Id) => {
+      if (!removed.has(id)) {
+        removed.add(id);
+        changed = true;
+      }
+    };
+    for (const e of sketch.entities) {
+      if (!removed.has(e.id) && entityPoints(e).some((p) => removed.has(p))) add(e.id);
+    }
+    const usedByKept = new Set(sketch.entities.filter((e) => !removed.has(e.id)).flatMap(entityPoints));
+    for (const e of sketch.entities) {
+      if (!removed.has(e.id)) continue;
+      for (const p of entityPoints(e)) if (!usedByKept.has(p)) add(p);
+    }
+    for (const c of sketch.constraints) {
+      if (!removed.has(c.id) && constraintRefs(c).some((r) => removed.has(r))) add(c.id);
+    }
+  }
+  return removed;
+}
