@@ -1,4 +1,4 @@
-import type { FeatureType, SketchConstraint } from '@3db/model';
+import type { Feature, FeatureType, SketchConstraint } from '@3db/model';
 import type { SketchStatus } from '@3db/sketch';
 import type { ToolId } from './sketcher/controller';
 
@@ -6,8 +6,15 @@ import type { ToolId } from './sketcher/controller';
 export const FEATURE_LABEL: Record<FeatureType, string> = {
   sketch: '草圖',
   extrude: '伸長',
+  revolve: '旋轉',
   fillet: '圓角',
+  chamfer: '導角',
 };
+
+/** SolidWorks names cuts after what they cut with: 「除料-伸長」, 「除料-旋轉」. */
+export function featureLabel(f: Feature): string {
+  return (f.type === 'extrude' || f.type === 'revolve') && f.op === 'cut' ? `除料-${FEATURE_LABEL[f.type]}` : FEATURE_LABEL[f.type];
+}
 
 export const SKETCH_STATUS_LABEL: Record<SketchStatus, string> = {
   fully: '完全定義',

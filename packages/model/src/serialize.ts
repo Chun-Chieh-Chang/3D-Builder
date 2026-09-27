@@ -49,6 +49,9 @@ const migrations: Record<number, (doc: Json) => Json> = {
     );
     return { ...doc, features, idCounters: countersFor(rawIds(doc)) };
   },
+  // v3: revolve and chamfer features. Nothing to convert; the version keeps older programs from
+  // opening documents with feature types they do not know.
+  2: (doc) => doc,
 };
 
 export class FormatError extends Error {

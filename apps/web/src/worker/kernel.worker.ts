@@ -6,7 +6,7 @@ import type { PartDoc } from '@3db/model';
 import { findProfiles, PlaneGcsSolver } from '@3db/sketch';
 import { Kernel } from '@3db/kernel';
 import { Regenerator } from '@3db/regen';
-import { edgeFingerprint } from '@3db/naming';
+import { edgeFingerprint, faceFingerprint } from '@3db/naming';
 import { exportPartStep } from '@3db/io';
 import type { KernelApi, RebuildPayload, RebuildRequest, SketchSolvePayload, SketchSolveRequest } from './protocol';
 
@@ -49,8 +49,10 @@ const api: KernelApi = {
       features: r.features,
       mesh,
       faceNames: body?.names.faces ?? [],
+      faceFingerprints: body ? body.topology.faces.map((_, i) => faceFingerprint(body.topology, i)) : [],
       edgeNames: body?.names.edges ?? [],
       edgeFingerprints: body ? body.topology.edges.map((_, i) => edgeFingerprint(body.topology, i)) : [],
+      frames: r.frames,
       mass: body ? kernel.massProps(body.shape) : null,
       totalMs: r.totalMs,
     };

@@ -3,15 +3,17 @@ import { findFeature, isDimension, type Ref } from '@3db/model';
 import { Viewer, type SketchOverlay } from '@3db/render';
 import { ACTIONS } from '../actions';
 import { buildOverlay } from '../sketcher/overlay';
-import { sketchFrame, store, useSketcherView, useStore } from '../state/store';
+import { store, useSketcherView, useStore } from '../state/store';
+import { FEATURE_LABEL } from '../strings';
 import type { RebuildPayload } from '../worker/protocol';
 import { Icon } from './Icon';
 
 /**
- * Graphics area (D4, D5): viewer, heads-up view toolbar, edge picking while a fillet is being edited,
- * and the sketch overlay with its tools while a sketch is being edited.
+ * Graphics area (D4, D5): viewer, heads-up view toolbar, face selection, edge picking while a fillet
+ * or chamfer is being edited, end-face picking for 「成形至某一面」, and the sketch overlay with its
+ * tools while a sketch is being edited.
  * Picked indices are resolved against the payload whose mesh is on screen — never against a newer
- * or older result — so an index can only ever name the edge the user actually clicked.
+ * or older result — so an index can only ever name the element the user actually clicked.
  */
 export function Viewport() {
   const host = useRef<HTMLDivElement>(null);
@@ -22,12 +24,14 @@ export function Viewport() {
   const result = useStore((s) => s.result);
   const editing = useStore((s) => s.editing);
   const doc = useStore((s) => s.doc);
+  const selectedFace = useStore((s) => s.selectedFace);
   const sketchSolve = useStore((s) => s.sketchSolve);
   const dimensionEdit = useStore((s) => s.dimensionEdit);
   const bootMs = useStore((s) => s.bootMs);
   const bootError = useStore((s) => s.bootError);
   const view = useSketcherView();
   const [hover, setHover] = useState(-1);
+  const [hoverFace, setHoverFace] = useState(-1);
   const [viewTick, setViewTick] = useState(0);
   const sketching = editing?.kind === 'sketch';
   sketchingRef.current = sketching;
@@ -39,12 +43,25 @@ export function Viewport() {
       const fingerprint = r?.edgeFingerprints[edge];
       return name && fingerprint ? { kind: 'edge', name, fingerprint } : null;
     };
+    const faceRef = (face: number): Ref | null => {
+      const r = displayed.current;
+      const name = r?.faceNames[face];
+      const fingerprint = r?.faceFingerprints[face];
+      return name && fingerprint ? { kind: 'face', name, fingerprint } : null;
+    };
     const idOf = (key: string) => key.slice(key.indexOf(':') + 1);
     const viewer = new Viewer(host.current!, {
       onEdgeHover: setHover,
       onEdgeClick: (edge) => {
         const ref = edgeRef(edge);
-        if (ref) store.toggleFilletEdge(ref);
+        if (ref) store.toggleEdge(ref);
+      },
+      onFaceHover: setHoverFace,
+      onFaceClick: (face) => {
+        const ref = faceRef(face);
+        if (store.getState().editing) {
+          if (ref) store.setUpToFace(ref);
+        } else store.selectFace(ref);
       },
       // Screen-sized parts of the sketch overlay (dimension offsets, arrows) follow the zoom.
       onViewChange: () => sketchingRef.current && setViewTick((t) => t + 1),
@@ -63,7 +80,10 @@ export function Viewport() {
   }, []);
 
   const feature = editing ? findFeature(doc, editing.featureId) : undefined;
-  const picking = feature?.type === 'fillet';
+  const edgeFeature = feature?.type === 'fillet' || feature?.type === 'chamfer' ? feature : null;
+  const endFace = feature?.type === 'extrude' && feature.dir1.type === 'upToFace' ? feature.dir1.face : null;
+  const pickingEndFace = feature?.type === 'extrude' && feature.dir1.type === 'upToFace';
+  const pickingFaces = !editing || pickingEndFace;
 
   useEffect(() => {
     const v = store.viewer;
@@ -76,17 +96,21 @@ export function Viewport() {
   useEffect(() => {
     const v = store.viewer;
     if (!v) return;
-    v.setEdgePicking(picking);
-    const names = displayed.current?.edgeNames ?? [];
-    v.setSelectedEdges(picking && feature?.type === 'fillet' ? feature.edges.map((e) => names.indexOf(e.name)).filter((i) => i >= 0) : []);
-  }, [picking, feature, result]);
+    v.setEdgePicking(!!edgeFeature);
+    v.setFacePicking(pickingFaces);
+    const edgeNames = displayed.current?.edgeNames ?? [];
+    const faceNames = displayed.current?.faceNames ?? [];
+    v.setSelectedEdges(edgeFeature ? edgeFeature.edges.map((e) => edgeNames.indexOf(e.name)).filter((i) => i >= 0) : []);
+    const face = pickingEndFace ? endFace : !editing ? selectedFace : null;
+    v.setSelectedFaces(face && face.kind === 'face' ? [faceNames.indexOf(face.name)].filter((i) => i >= 0) : []);
+  }, [edgeFeature, pickingFaces, pickingEndFace, endFace, editing, selectedFace, result]);
 
   // Sketch tools own the left mouse button while a sketch is being edited.
   useEffect(() => {
     const v = store.viewer;
     const sketcher = store.sketcher;
     const sketch = store.editedSketch();
-    const frame = sketch && sketchFrame(sketch);
+    const frame = sketch && store.frameOf(sketch);
     if (!v || !sketching || !sketcher || !frame) return;
     v.setToolHandler((e) => {
       const p = v.planePoint(e.clientX, e.clientY, frame);
@@ -105,7 +129,7 @@ export function Viewport() {
     const v = store.viewer;
     const sketcher = store.sketcher;
     const sketch = store.editedSketch();
-    const frame = sketch && sketchFrame(sketch);
+    const frame = sketch && store.frameOf(sketch);
     if (!v) return;
     if (!sketching || !sketcher || !sketch || !frame || !view) {
       overlay.current = null;
@@ -116,7 +140,9 @@ export function Viewport() {
     v.setOverlay(overlay.current);
   }, [sketching, doc, sketchSolve, view, viewTick]);
 
-  const hoverName = picking && hover >= 0 ? displayed.current?.edgeNames[hover] : undefined;
+  const hoverEdgeName = edgeFeature && hover >= 0 ? displayed.current?.edgeNames[hover] : undefined;
+  const hoverFaceName = pickingFaces && hoverFace >= 0 ? displayed.current?.faceNames[hoverFace] : undefined;
+  const planar = selectedFace?.fingerprint?.type === 'plane';
 
   return (
     <main className="viewport">
@@ -142,14 +168,39 @@ export function Viewport() {
       {!bootMs && (
         <div className="boot-overlay">{bootError ? `幾何核心載入失敗：${bootError}` : '正在載入幾何核心（OCCT WASM，約 43 MB）…'}</div>
       )}
-      {picking && (
+      {edgeFeature && (
         <div className="pick-hint">
-          {hoverName ? (
+          {hoverEdgeName ? (
             <>
-              持久名稱：<code>{hoverName}</code>
+              持久名稱：<code>{hoverEdgeName}</code>
             </>
           ) : (
-            '點選邊線以加入圓角'
+            `點選邊線以加入${FEATURE_LABEL[edgeFeature.type]}`
+          )}
+        </div>
+      )}
+      {pickingEndFace && (
+        <div className="pick-hint">
+          {hoverFaceName ? (
+            <>
+              持久名稱：<code>{hoverFaceName}</code>
+            </>
+          ) : (
+            '點選伸長要終止的面'
+          )}
+        </div>
+      )}
+      {!editing && (hoverFaceName || selectedFace) && (
+        <div className="pick-hint">
+          {hoverFaceName ? (
+            <>
+              面：<code>{hoverFaceName}</code>
+            </>
+          ) : (
+            <>
+              已選取面 <code>{selectedFace!.name}</code>
+              {planar ? '：按「草圖」分頁的「草圖」即可在此面上繪製。' : '（不是平面，不能放草圖）'}
+            </>
           )}
         </div>
       )}

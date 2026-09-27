@@ -3,7 +3,7 @@ import type { Feature, Id } from '@3db/model';
 import { dependencies } from '@3db/regen/dag';
 import type { FeatureResult } from '@3db/regen';
 import { store, useStore } from '../state/store';
-import { DATUM_ITEMS, FEATURE_LABEL, SKETCH_STATUS_PREFIX } from '../strings';
+import { DATUM_ITEMS, featureLabel, SKETCH_STATUS_PREFIX } from '../strings';
 import { Icon } from './Icon';
 
 interface Menu {
@@ -93,7 +93,7 @@ export function FeatureTree() {
               key={f.id}
               data-feature-row
               className={cls}
-              title={tip || `${FEATURE_LABEL[f.type]}：${f.name}`}
+              title={tip || `${featureLabel(f)}：${f.name}`}
               onClick={() => store.select(f.id)}
               onDoubleClick={() => !rolledBack && store.beginEdit(f.id)}
               onContextMenu={(e) => {

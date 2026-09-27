@@ -1,4 +1,4 @@
-import type { Fingerprint, Id, PartDoc, SketchFeature } from '@3db/model';
+import type { Fingerprint, Id, PartDoc, PlaneFrame, SketchFeature } from '@3db/model';
 import type { MassProps, MeshData } from '@3db/kernel';
 import type { FeatureResult } from '@3db/regen';
 import type { EntityStatus, SketchStatus, SolvedGeometry, SolveOptions } from '@3db/sketch';
@@ -16,8 +16,11 @@ export interface RebuildPayload {
   features: FeatureResult[];
   mesh: MeshData | null;
   faceNames: string[];
+  faceFingerprints: Fingerprint[];
   edgeNames: string[];
   edgeFingerprints: Fingerprint[];
+  /** Plane of each sketch (datum or model face), including the sketch being edited. */
+  frames: Map<Id, PlaneFrame>;
   mass: MassProps | null;
   totalMs: number;
 }

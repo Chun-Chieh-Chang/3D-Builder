@@ -48,6 +48,10 @@ export interface ViewerEvents {
   onEdgeHover?: (edge: number) => void;
   /** Left click on an edge (or -1 on empty space / faces). */
   onEdgeClick?: (edge: number, additive: boolean) => void;
+  /** Face under the cursor changed (index into the mesh's faces, or -1). */
+  onFaceHover?: (face: number) => void;
+  /** Left click on a face (or -1 on empty space). */
+  onFaceClick?: (face: number, additive: boolean) => void;
   /** The camera moved, zoomed or the viewport was resized (screen-sized overlays need a new layout). */
   onViewChange?: () => void;
   onLabelClick?: (key: string, additive: boolean) => void;
@@ -75,6 +79,13 @@ export class Viewer {
   private hovered = -1;
   private selected = new Set<number>();
   private pickEdges = false;
+  private pickFaces = false;
+  private mesh: ViewMesh | null = null;
+  /** triangleFace[t] = face index owning triangle t. */
+  private triangleFace = new Int32Array(0);
+  private hoveredFace = -1;
+  private selectedFaces = new Set<number>();
+  private faceHighlight: THREE.Mesh | null = null;
   private overlay: SketchOverlay | null = null;
   private overlayGroup: THREE.Group | null = null;
   private labels = new Map<string, { el: HTMLElement; world: THREE.Vector3 }>();
@@ -150,9 +161,16 @@ export class Viewer {
       this.body = new THREE.Mesh(g, material);
       this.scene.add(this.body);
       this.buildEdges(mesh);
+      const owner = new Int32Array(mesh.indices.length / 3);
+      for (let r = 0; r < mesh.faceRanges.length; r += 3) owner.fill(mesh.faceRanges[r + 2]!, mesh.faceRanges[r]! / 3, (mesh.faceRanges[r]! + mesh.faceRanges[r + 1]!) / 3);
+      this.triangleFace = owner;
     }
+    this.mesh = mesh;
     this.hovered = -1;
+    this.hoveredFace = -1;
     this.selected.clear();
+    this.selectedFaces.clear();
+    this.paintFaces();
     if (fit) this.fitAll();
     this.requestRender();
   }
@@ -294,6 +312,67 @@ export class Viewer {
     if (!enabled) this.setHovered(-1);
   }
 
+  /** Enables face hover/click picking (selecting a face to sketch on, an end face …). */
+  setFacePicking(enabled: boolean): void {
+    this.pickFaces = enabled;
+    if (!enabled) this.setHoveredFace(-1);
+  }
+
+  setSelectedFaces(faces: Iterable<number>): void {
+    this.selectedFaces = new Set(faces);
+    this.paintFaces();
+  }
+
+  private setHoveredFace(face: number): void {
+    if (face === this.hoveredFace) return;
+    this.hoveredFace = face;
+    this.paintFaces();
+    this.events.onFaceHover?.(face);
+  }
+
+  /** Translucent copies of the hovered and selected faces' triangles, drawn over the body. */
+  private paintFaces(): void {
+    if (this.faceHighlight) {
+      this.scene.remove(this.faceHighlight);
+      this.faceHighlight.geometry.dispose();
+      (this.faceHighlight.material as THREE.Material).dispose();
+      this.faceHighlight = null;
+    }
+    const mesh = this.mesh;
+    const faces = new Map<number, THREE.Color>();
+    for (const f of this.selectedFaces) faces.set(f, new THREE.Color(COLORS.edgeSelected));
+    if (this.hoveredFace >= 0) faces.set(this.hoveredFace, new THREE.Color(COLORS.edgeHover));
+    if (mesh && faces.size > 0) {
+      const positions: number[] = [];
+      const colors: number[] = [];
+      for (let r = 0; r < mesh.faceRanges.length; r += 3) {
+        const color = faces.get(mesh.faceRanges[r + 2]!);
+        if (!color) continue;
+        for (let i = mesh.faceRanges[r]!; i < mesh.faceRanges[r]! + mesh.faceRanges[r + 1]!; i++) {
+          const v = mesh.indices[i]! * 3;
+          positions.push(mesh.positions[v]!, mesh.positions[v + 1]!, mesh.positions[v + 2]!);
+          colors.push(color.r, color.g, color.b);
+        }
+      }
+      const g = new THREE.BufferGeometry();
+      g.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+      g.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
+      const material = new THREE.MeshBasicMaterial({ vertexColors: true, transparent: true, opacity: 0.45, depthWrite: false, side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -1 });
+      this.faceHighlight = new THREE.Mesh(g, material);
+      this.scene.add(this.faceHighlight);
+    }
+    this.requestRender();
+  }
+
+  private pickFace(clientX: number, clientY: number): number {
+    if (!this.body) return -1;
+    const ray = new THREE.Raycaster();
+    const r = this.rayAt(clientX, clientY);
+    ray.set(r.origin, r.direction);
+    const hit = ray.intersectObject(this.body)[0];
+    return hit?.faceIndex !== undefined && hit.faceIndex !== null ? (this.triangleFace[hit.faceIndex] ?? -1) : -1;
+  }
+
   setSelectedEdges(edges: Iterable<number>): void {
     this.selected = new Set(edges);
     this.paintEdges();
@@ -354,8 +433,9 @@ export class Viewer {
       if (e.buttons === 0 || e.buttons === 1) this.tool('move', e, e.buttons === 1);
       return;
     }
-    if (!this.pickEdges || e.buttons !== 0) return;
-    this.setHovered(this.pick(e.clientX, e.clientY));
+    if (e.buttons !== 0) return;
+    if (this.pickEdges) this.setHovered(this.pick(e.clientX, e.clientY));
+    if (this.pickFaces) this.setHoveredFace(this.pickFace(e.clientX, e.clientY));
   };
 
   private onPointerUp = (e: PointerEvent) => {
@@ -368,8 +448,9 @@ export class Viewer {
   };
 
   private onClick = (e: MouseEvent) => {
-    if (this.toolHandler || !this.pickEdges || e.altKey) return;
-    this.events.onEdgeClick?.(this.pick(e.clientX, e.clientY), e.ctrlKey || e.shiftKey);
+    if (this.toolHandler || e.altKey) return;
+    if (this.pickEdges) this.events.onEdgeClick?.(this.pick(e.clientX, e.clientY), e.ctrlKey || e.shiftKey);
+    if (this.pickFaces) this.events.onFaceClick?.(this.pickFace(e.clientX, e.clientY), e.ctrlKey || e.shiftKey);
   };
 
   private onDoubleClick = (e: MouseEvent) => {

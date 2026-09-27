@@ -12,6 +12,7 @@ import {
   idsInUse,
   isDatumPlaneName,
   parsePart,
+  planeFrame,
   serializePart,
   type Command,
   type DatumPlaneName,
@@ -48,6 +49,8 @@ export interface UiState {
   canRedo: boolean;
   /** Selected feature, or datum plane ("plane:front" …) in the FeatureManager. */
   selected: Id | null;
+  /** Face selected in the graphics area (by persistent name, resolved against the displayed model). */
+  selectedFace: Ref | null;
   editing: EditSession | null;
   result: RebuildPayload | null;
   /** Solve of the sketch being edited (or of the current drag frame). */
@@ -76,8 +79,10 @@ function nextName(doc: PartDoc, base: string): string {
   return `${base}${Math.max(0, ...used) + 1}`;
 }
 
-export function sketchFrame(sketch: SketchFeature): PlaneFrame | null {
-  return sketch.plane.kind === 'datum' && isDatumPlaneName(sketch.plane.name) ? DATUM_PLANES[sketch.plane.name] : null;
+/** A planar face's sketch frame, from its fingerprint (same rule the rebuild uses, see planeFrame). */
+function faceFrame(face: Ref): PlaneFrame | null {
+  const fp = face.fingerprint;
+  return fp?.type === 'plane' && fp.dir ? planeFrame(fp.center, fp.dir) : null;
 }
 
 /** Runs one request at a time; while one is running only the newest waiting request is kept. */
@@ -137,6 +142,7 @@ class AppStore {
       canUndo: false,
       canRedo: false,
       selected: null,
+      selectedFace: null,
       editing: null,
       result: null,
       sketchSolve: null,
@@ -208,8 +214,19 @@ class AppStore {
     this.history.redo();
   }
 
+  /** One selection at a time: a tree item or a face (a face selection clears the tree item and vice versa). */
   select(id: Id | null): void {
-    this.set({ selected: id });
+    this.set({ selected: id, selectedFace: null });
+  }
+
+  selectFace(face: Ref | null): void {
+    this.set({ selectedFace: face, selected: null });
+  }
+
+  /** The plane a sketch lies on: a default plane, or (for a sketch on a face) the plane the last rebuild found. */
+  frameOf(sketch: SketchFeature): PlaneFrame | null {
+    if (sketch.plane.kind === 'datum') return isDatumPlaneName(sketch.plane.name) ? DATUM_PLANES[sketch.plane.name] : null;
+    return this.state.result?.frames.get(sketch.id) ?? faceFrame(sketch.plane);
   }
 
   private allocator(): IdAllocator {
@@ -249,49 +266,77 @@ class AppStore {
     return true;
   }
 
-  /** 「草圖」 on a selected datum plane (C1.1): a new sketch, viewed normal to its plane. */
-  newSketch(plane: DatumPlaneName): void {
+  /** 「草圖」 on a selected datum plane or planar face (C1.1): a new sketch, viewed normal to its plane. */
+  newSketch(plane: DatumPlaneName | Ref): void {
+    if (typeof plane !== 'string' && !faceFrame(plane)) return this.notify('草圖只能放在平面上', 'error');
     const doc = this.history.doc;
     const feature: SketchFeature = {
       id: this.allocator().take('sketch'),
       type: 'sketch',
       name: nextName(doc, '草圖'),
       suppressed: false,
-      plane: { kind: 'datum', name: plane },
+      plane: typeof plane === 'string' ? { kind: 'datum', name: plane } : plane,
       entities: [],
       constraints: [],
     };
     if (this.startNew(feature, '新草圖')) this.enterSketch(feature, true);
   }
 
-  /** 「伸長填料/基材」 from the selected sketch (C4.1). */
-  newExtrude(): void {
+  /** The sketch selected in the FeatureManager, for the features built from one. */
+  private selectedSketch(): SketchFeature | null {
     const sketch = findFeature(this.history.doc, this.state.selected ?? '');
-    if (sketch?.type !== 'sketch') return this.notify('請先在設計樹中選擇一個草圖');
-    const id = this.allocator().take('extrude');
-    const feature: Feature = { id, type: 'extrude', name: nextName(this.history.doc, '伸長'), suppressed: false, sketch: sketch.id, op: 'boss', dir1: { type: 'blind', depth: '10' } };
-    if (!this.startNew(feature, '伸長')) return;
-    this.set({ editing: { featureId: id, kind: 'feature' }, selected: id });
+    if (sketch?.type === 'sketch') return sketch;
+    this.notify('請先在設計樹中選擇一個草圖');
+    return null;
+  }
+
+  private openNew(feature: Feature, label: string): void {
+    if (!this.startNew(feature, label)) return;
+    this.set({ editing: { featureId: feature.id, kind: 'feature' }, selected: feature.id, selectedFace: null });
     this.requestRebuild();
+  }
+
+  /** 「伸長填料/基材」 or 「伸長除料」 from the selected sketch (C4.1, C4.2). */
+  newExtrude(op: 'boss' | 'cut'): void {
+    const sketch = this.selectedSketch();
+    if (!sketch) return;
+    const base = op === 'boss' ? '伸長' : '除料-伸長';
+    const id = this.allocator().take(op === 'boss' ? 'extrude' : 'cut');
+    this.openNew({ id, type: 'extrude', name: nextName(this.history.doc, base), suppressed: false, sketch: sketch.id, op, dir1: { type: 'blind', depth: '10' } }, base);
+  }
+
+  /** 「旋轉填料/基材」 or 「旋轉除料」 (C4.3) about the sketch's centerline (or its only line). */
+  newRevolve(op: 'boss' | 'cut'): void {
+    const sketch = this.selectedSketch();
+    if (!sketch) return;
+    const lines = sketch.entities.filter((e) => e.type === 'line');
+    const axis = lines.find((e) => e.construction) ?? (lines.length === 1 ? lines[0] : undefined);
+    if (!axis) return this.notify('旋轉需要草圖中的一條中心線作為旋轉軸', 'error');
+    const base = op === 'boss' ? '旋轉' : '除料-旋轉';
+    const id = this.allocator().take('revolve');
+    this.openNew({ id, type: 'revolve', name: nextName(this.history.doc, base), suppressed: false, sketch: sketch.id, axis: axis.id, op, dir1: { type: 'blind', angle: '360' } }, base);
   }
 
   /** 「圓角」 (C5.1): picks edges on the model in the PropertyManager session. */
   newFillet(): void {
     const id = this.allocator().take('fillet');
-    const feature: Feature = { id, type: 'fillet', name: nextName(this.history.doc, '圓角'), suppressed: false, edges: [], radius: '2' };
-    if (!this.startNew(feature, '圓角')) return;
-    this.set({ editing: { featureId: id, kind: 'feature' }, selected: id });
-    this.requestRebuild();
+    this.openNew({ id, type: 'fillet', name: nextName(this.history.doc, '圓角'), suppressed: false, edges: [], radius: '2' }, '圓角');
+  }
+
+  /** 「導角」 (C5.3), angle–distance by default like SolidWorks. */
+  newChamfer(): void {
+    const id = this.allocator().take('chamfer');
+    this.openNew({ id, type: 'chamfer', name: nextName(this.history.doc, '導角'), suppressed: false, edges: [], mode: 'angleDistance', distance: '1', second: '45' }, '導角');
   }
 
   private enterSketch(sketch: SketchFeature, fresh: boolean): void {
-    const frame = sketchFrame(sketch);
+    const frame = this.frameOf(sketch);
     if (!frame) {
       this.history.rollback();
-      return this.notify('Phase 1A 只能編輯基準面上的草圖', 'error');
+      return this.notify('找不到草圖所在的平面（先修正草圖前面的特徵）', 'error');
     }
     this.sketcher = new SketchController(this.sketchHost(sketch.id));
-    this.set({ editing: { featureId: sketch.id, kind: 'sketch' }, selected: sketch.id, sketchSolve: null, dimensionEdit: null });
+    this.set({ editing: { featureId: sketch.id, kind: 'sketch' }, selected: sketch.id, selectedFace: null, sketchSolve: null, dimensionEdit: null });
     this.requestRebuild(); // the model up to the sketch
     this.requestSketchSolve();
     if (fresh) this.viewer?.lookAt(frame);
@@ -316,27 +361,35 @@ class AppStore {
   }
 
   /**
-   * Fillet edge list (D2.1): clicking an edge toggles it, like the SolidWorks selection box.
-   * Takes the persistent reference resolved by the viewport from the mesh it is displaying,
-   * never an index into some other result (H3, SSOT).
+   * Edge list of a fillet or chamfer (D2.1): clicking an edge toggles it, like the SolidWorks
+   * selection box. Takes the persistent reference resolved by the viewport from the mesh it is
+   * displaying, never an index into some other result (H3, SSOT).
    */
-  toggleFilletEdge(ref: Ref): void {
+  toggleEdge(ref: Ref): void {
     const e = this.state.editing;
     if (!e || ref.kind !== 'edge') return;
     const f = this.history.doc.features.find((x) => x.id === e.featureId);
-    if (f?.type !== 'fillet') return;
+    if (f?.type !== 'fillet' && f?.type !== 'chamfer') return;
     const exists = f.edges.some((x) => x.name === ref.name);
     const edges = exists ? f.edges.filter((x) => x.name !== ref.name) : [...f.edges, ref];
-    this.execute({ type: 'setFilletEdges', featureId: f.id, edges });
+    this.execute({ type: 'setEdges', featureId: f.id, edges });
   }
 
-  /** While editing a fillet or a sketch, show the model before it (fillet edges are picked on that model). */
+  /** 「成形至某一面」: the face picked in the graphics area ends the extrusion being edited. */
+  setUpToFace(face: Ref): void {
+    const e = this.state.editing;
+    const f = e ? findFeature(this.history.doc, e.featureId) : undefined;
+    if (f?.type !== 'extrude' || f.dir1.type !== 'upToFace') return;
+    this.execute({ type: 'setEndCondition', featureId: f.id, dir: 'dir1', value: { ...f.dir1, face } });
+  }
+
+  /** While editing a fillet, chamfer or sketch, show the model before it (edges are picked on that model). */
   private until(): number | undefined {
     const e = this.state.editing;
     if (!e) return undefined;
     const i = this.history.doc.features.findIndex((f) => f.id === e.featureId);
     const type = this.history.doc.features[i]?.type;
-    return type === 'fillet' || type === 'sketch' ? i : undefined;
+    return type === 'fillet' || type === 'chamfer' || type === 'sketch' ? i : undefined;
   }
 
   // ------------------------------------------------------------ sketch sessions (C1)
@@ -458,7 +511,7 @@ class AppStore {
     if (this.state.editing) this.cancelEdit();
     this.history = new DocHistory(doc);
     this.history.subscribe(() => this.onDocChanged());
-    this.set({ selected: null, result: null });
+    this.set({ selected: null, selectedFace: null, result: null });
     this.onDocChanged();
     this.viewer?.fitAll();
   }

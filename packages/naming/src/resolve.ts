@@ -1,5 +1,13 @@
 import type { Fingerprint, Ref } from '@3db/model';
-import { stripSuffix, type ElementNames } from './names';
+import type { ElementNames } from './names';
+
+/**
+ * A name with the "#k" split suffix removed at every level: `{e1:cap:end#2|e1:side:s1.l1}` →
+ * `{e1:cap:end|e1:side:s1.l1}`. A reference made before a face was split keeps this base name.
+ */
+export function baseName(name: string): string {
+  return name.replace(/#\d+(?=[|}>]|$)/g, '');
+}
 
 type Vec3 = [number, number, number];
 
@@ -39,7 +47,7 @@ export type Resolution =
 
 /**
  * Resolves a persistent reference against a result's names (B4.2):
- * exact name → unique name ignoring "#k" → fingerprint among equal names.
+ * exact name → unique name ignoring "#k" at every level → fingerprint among equal names.
  * A reference that cannot be resolved is reported with ranked candidates (B4.3) — never guessed.
  */
 export function resolveRef(ref: Ref, names: ElementNames, topo: FingerprintTopology): Resolution {
@@ -55,8 +63,8 @@ export function resolveRef(ref: Ref, names: ElementNames, topo: FingerprintTopol
   const exact = list.flatMap((n, i) => (n === ref.name ? [i] : []));
   if (exact.length === 1) return { ok: true, index: exact[0]!, via: 'name' };
 
-  const base = stripSuffix(ref.name);
-  const sameBase = list.flatMap((n, i) => (stripSuffix(n) === base ? [i] : []));
+  const base = baseName(ref.name);
+  const sameBase = list.flatMap((n, i) => (baseName(n) === base ? [i] : []));
   if (exact.length === 0 && sameBase.length === 1) return { ok: true, index: sameBase[0]!, via: 'base-name' };
 
   const pool = exact.length > 0 ? exact : sameBase;

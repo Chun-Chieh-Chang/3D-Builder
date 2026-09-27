@@ -6,7 +6,7 @@ import type { Id } from './ids';
  * DOF status, mass properties and error lists are derived data and never stored.
  */
 
-export const SCHEMA_VERSION = 2;
+export const SCHEMA_VERSION = 3;
 
 /** Value expression: "20", "25.4mm", "1in", "30deg". Variables/equations arrive in Phase 3a (B5.2/B5.3). */
 export type Expr = string;
@@ -92,19 +92,35 @@ export interface SketchFeature extends FeatureBase {
   constraints: SketchConstraint[];
 }
 
-/** Extrude end conditions (C4.1). Phase 0 evaluates blind and midPlane. */
+/**
+ * Extrude end conditions (C4.1). The direction is the sketch normal for a boss and the opposite
+ * (into the material) for a cut, as in SolidWorks; `reverse` flips it.
+ */
 export type EndCondition =
   | { type: 'blind'; depth: Expr; reverse?: boolean }
   | { type: 'midPlane'; depth: Expr }
   | { type: 'throughAll'; reverse?: boolean }
-  | { type: 'upToFace'; face: Ref; offset?: Expr };
+  | { type: 'upToFace'; face: Ref; reverse?: boolean };
 
 export interface ExtrudeFeature extends FeatureBase {
   type: 'extrude';
   sketch: Id;
   op: 'boss' | 'cut';
   dir1: EndCondition;
+  /** Second direction (P1). */
   dir2?: EndCondition;
+}
+
+/** Revolve end conditions (C4.3): an angle in one direction, or split evenly about the sketch plane. */
+export type RevolveCondition = { type: 'blind'; angle: Expr; reverse?: boolean } | { type: 'midPlane'; angle: Expr };
+
+export interface RevolveFeature extends FeatureBase {
+  type: 'revolve';
+  sketch: Id;
+  /** A line of the same sketch, usually a centerline, to revolve about. */
+  axis: Id;
+  op: 'boss' | 'cut';
+  dir1: RevolveCondition;
 }
 
 export interface FilletFeature extends FeatureBase {
@@ -113,7 +129,20 @@ export interface FilletFeature extends FeatureBase {
   radius: Expr;
 }
 
-export type Feature = SketchFeature | ExtrudeFeature | FilletFeature;
+/** Chamfer (C5.3): SolidWorks 「角度-距離」 or 「距離-距離」. */
+export interface ChamferFeature extends FeatureBase {
+  type: 'chamfer';
+  edges: Ref[];
+  mode: 'angleDistance' | 'distanceDistance';
+  /** Measured on the first adjacent face of each edge (see `flip`). */
+  distance: Expr;
+  /** The second distance, or the angle for angleDistance. */
+  second: Expr;
+  /** Measure `distance` on the other adjacent face of each edge (「反轉方向」). */
+  flip?: boolean;
+}
+
+export type Feature = SketchFeature | ExtrudeFeature | RevolveFeature | FilletFeature | ChamferFeature;
 export type FeatureType = Feature['type'];
 
 // ---------------------------------------------------------------- document

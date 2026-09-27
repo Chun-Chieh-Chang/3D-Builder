@@ -1,6 +1,6 @@
 import { produce, type Draft } from 'immer';
 import { countersFor, type Id } from './ids';
-import type { EndCondition, Expr, Feature, PartDoc, Ref, SketchConstraint, SketchEntity, SketchFeature } from './schema';
+import type { ChamferFeature, EndCondition, Expr, Feature, PartDoc, Ref, RevolveCondition, SketchConstraint, SketchEntity, SketchFeature } from './schema';
 import { isDimension } from './schema';
 import { evalAngle, evalLength, ExprError } from './expr';
 import { idsInUse, removalSet, sketchError } from './sketch-rules';
@@ -26,8 +26,12 @@ export type Command =
   | { type: 'insertFeature'; feature: Feature; index: number }
   | { type: 'setDimension'; featureId: Id; constraintId: Id; value: Expr }
   | { type: 'setEndCondition'; featureId: Id; dir: 'dir1' | 'dir2'; value: EndCondition }
+  | { type: 'setRevolveCondition'; featureId: Id; value: RevolveCondition }
+  | { type: 'setRevolveAxis'; featureId: Id; axis: Id }
   | { type: 'setFilletRadius'; featureId: Id; value: Expr }
-  | { type: 'setFilletEdges'; featureId: Id; edges: Ref[] }
+  /** Edges of an edge-based feature (fillet, chamfer). */
+  | { type: 'setEdges'; featureId: Id; edges: Ref[] }
+  | { type: 'setChamfer'; featureId: Id; value: Pick<ChamferFeature, 'mode' | 'distance' | 'second' | 'flip'> }
   | { type: 'setSuppressed'; featureId: Id; value: boolean }
   | { type: 'renameFeature'; featureId: Id; name: string }
   | { type: 'setRollback'; index: number | null }
@@ -68,8 +72,41 @@ function positiveLength(value: Expr): void {
   if (!(v > 0)) throw new CommandError(`數值必須大於 0：「${value}」`);
 }
 
+function angleIn(value: Expr, min: number, max: number, label: string): void {
+  let v: number;
+  try {
+    v = evalAngle(value);
+  } catch (e) {
+    throw new CommandError(e instanceof ExprError ? e.message : String(e));
+  }
+  if (!(v > min && v <= max + 1e-12)) throw new CommandError(`${label}：「${value}」`);
+}
+
 function endCondition(value: EndCondition): void {
   if ('depth' in value) positiveLength(value.depth);
+  if (value.type === 'upToFace' && value.face.kind !== 'face') throw new CommandError('「成形至某一面」需要選擇一個面');
+}
+
+function revolveCondition(value: RevolveCondition): void {
+  angleIn(value.angle, 0, 2 * Math.PI, '旋轉角度必須在 0° 到 360° 之間');
+}
+
+function chamferParams(value: Pick<ChamferFeature, 'mode' | 'distance' | 'second'>): void {
+  positiveLength(value.distance);
+  if (value.mode === 'distanceDistance') positiveLength(value.second);
+  else angleIn(value.second, 0, Math.PI / 2 - 1e-9, '導角角度必須在 0° 到 90° 之間');
+}
+
+/** The feature's sketch must come earlier in the history. */
+function sketchBefore(doc: PartDoc, sketchId: Id, index: number, label: string): SketchFeature {
+  const at = doc.features.findIndex((x) => x.id === sketchId);
+  const s = doc.features[at];
+  if (at < 0 || at >= index || s?.type !== 'sketch') throw new CommandError(`${label}需要一個在它之前的草圖`);
+  return s;
+}
+
+function revolveAxis(sketch: SketchFeature, axis: Id): void {
+  if (sketch.entities.find((e) => e.id === axis)?.type !== 'line') throw new CommandError('旋轉軸必須是草圖中的一條直線（通常是中心線）');
 }
 
 /** Ids a feature brings into the document: its own and, for a sketch, those of its contents. */
@@ -95,16 +132,22 @@ function validateNewFeature(doc: PartDoc, f: Feature, index: number): void {
       if (err) throw new CommandError(err);
       return;
     }
-    case 'extrude': {
-      const at = doc.features.findIndex((x) => x.id === f.sketch);
-      if (at < 0 || at >= index || doc.features[at]!.type !== 'sketch') throw new CommandError('伸長需要一個在它之前的草圖');
+    case 'extrude':
+      sketchBefore(doc, f.sketch, index, '伸長');
       endCondition(f.dir1);
       if (f.dir2) endCondition(f.dir2);
       return;
-    }
+    case 'revolve':
+      revolveAxis(sketchBefore(doc, f.sketch, index, '旋轉'), f.axis);
+      revolveCondition(f.dir1);
+      return;
     case 'fillet':
       if (f.edges.some((r) => r.kind !== 'edge')) throw new CommandError('圓角只能選邊線');
       positiveLength(f.radius);
+      return;
+    case 'chamfer':
+      if (f.edges.some((r) => r.kind !== 'edge')) throw new CommandError('導角只能選邊線');
+      chamferParams(f);
       return;
   }
 }
@@ -148,6 +191,33 @@ export function mutate(draft: Draft<PartDoc>, cmd: Command): void {
       f[cmd.dir] = cmd.value;
       return;
     }
+    case 'setRevolveCondition': {
+      const f = feature(draft, cmd.featureId);
+      if (f.type !== 'revolve') throw new CommandError('只有旋轉特徵有旋轉角度');
+      revolveCondition(cmd.value);
+      f.dir1 = cmd.value;
+      return;
+    }
+    case 'setRevolveAxis': {
+      const f = feature(draft, cmd.featureId);
+      if (f.type !== 'revolve') throw new CommandError('只有旋轉特徵有旋轉軸');
+      const sketch = draft.features.find((x) => x.id === f.sketch);
+      if (sketch?.type !== 'sketch') throw new CommandError('找不到旋轉特徵的草圖');
+      revolveAxis(sketch as SketchFeature, cmd.axis);
+      f.axis = cmd.axis;
+      return;
+    }
+    case 'setChamfer': {
+      const f = feature(draft, cmd.featureId);
+      if (f.type !== 'chamfer') throw new CommandError('只有導角特徵有這些參數');
+      chamferParams(cmd.value);
+      f.mode = cmd.value.mode;
+      f.distance = cmd.value.distance;
+      f.second = cmd.value.second;
+      if (cmd.value.flip) f.flip = true;
+      else delete f.flip;
+      return;
+    }
     case 'setFilletRadius': {
       const f = feature(draft, cmd.featureId);
       if (f.type !== 'fillet') throw new CommandError('只有圓角特徵有半徑');
@@ -155,10 +225,10 @@ export function mutate(draft: Draft<PartDoc>, cmd: Command): void {
       f.radius = cmd.value;
       return;
     }
-    case 'setFilletEdges': {
+    case 'setEdges': {
       const f = feature(draft, cmd.featureId);
-      if (f.type !== 'fillet') throw new CommandError('只有圓角特徵可選邊線');
-      if (cmd.edges.some((r) => r.kind !== 'edge')) throw new CommandError('圓角只能選邊線');
+      if (f.type !== 'fillet' && f.type !== 'chamfer') throw new CommandError('只有圓角與導角特徵可選邊線');
+      if (cmd.edges.some((r) => r.kind !== 'edge')) throw new CommandError('只能選邊線');
       f.edges = cmd.edges;
       return;
     }

@@ -1,5 +1,5 @@
 import { isDatumPlaneName } from '@3db/model';
-import { sketchFrame, store, type UiState } from './state/store';
+import { store, type UiState } from './state/store';
 import { TOOL_LABEL } from './strings';
 import type { ToolId } from './sketcher/controller';
 
@@ -21,6 +21,10 @@ export interface UiAction {
 const idle = (s: UiState) => s.editing === null;
 const sketching = (s: UiState) => s.editing?.kind === 'sketch';
 const selectedFeature = (s: UiState) => s.doc.features.find((f) => f.id === s.selected);
+const sketchSelected = (s: UiState) => idle(s) && selectedFeature(s)?.type === 'sketch';
+const hasBody = (s: UiState) => idle(s) && !!s.result?.mesh;
+/** A plane to sketch on: a datum plane in the tree, or a planar face in the graphics area. */
+const sketchPlane = (s: UiState) => (s.selected !== null && isDatumPlaneName(s.selected) ? s.selected : s.selectedFace?.fingerprint?.type === 'plane' ? s.selectedFace : null);
 
 const SKETCH_TOOLS: ToolId[] = ['dimension', 'line', 'centerline', 'rect', 'centerRect', 'circle', 'perimeterCircle', 'arc', 'tangentArc', 'threePointArc', 'point'];
 
@@ -31,17 +35,21 @@ export const ACTIONS: UiAction[] = [
   { id: 'save', label: '另存新檔', shortcut: 'Ctrl+S', group: 'file', enabled: idle, run: () => store.saveFile() },
   { id: 'export-step', label: '輸出 STEP', group: 'file', enabled: (s) => idle(s) && s.bootMs !== null, run: () => void store.exportStep() },
 
-  { id: 'extrude', label: '伸長填料/基材', group: 'feature', enabled: (s) => idle(s) && selectedFeature(s)?.type === 'sketch', run: () => store.newExtrude() },
-  { id: 'fillet', label: '圓角', group: 'feature', enabled: (s) => idle(s) && !!s.result?.mesh, run: () => store.newFillet() },
+  { id: 'extrude', label: '伸長填料/基材', group: 'feature', enabled: sketchSelected, run: () => store.newExtrude('boss') },
+  { id: 'revolve', label: '旋轉填料/基材', group: 'feature', enabled: sketchSelected, run: () => store.newRevolve('boss') },
+  { id: 'extrude-cut', label: '伸長除料', group: 'feature', enabled: (s) => sketchSelected(s) && !!s.result?.mesh, run: () => store.newExtrude('cut') },
+  { id: 'revolve-cut', label: '旋轉除料', group: 'feature', enabled: (s) => sketchSelected(s) && !!s.result?.mesh, run: () => store.newRevolve('cut') },
+  { id: 'fillet', label: '圓角', group: 'feature', enabled: hasBody, run: () => store.newFillet() },
+  { id: 'chamfer', label: '導角', group: 'feature', enabled: hasBody, run: () => store.newChamfer() },
 
   {
     id: 'sketch',
     label: '草圖',
     group: 'sketch',
-    enabled: (s) => idle(s) && s.selected !== null && isDatumPlaneName(s.selected),
+    enabled: (s) => idle(s) && sketchPlane(s) !== null,
     run: () => {
-      const plane = store.getState().selected;
-      if (plane && isDatumPlaneName(plane)) store.newSketch(plane);
+      const plane = sketchPlane(store.getState());
+      if (plane) store.newSketch(plane);
     },
   },
   ...SKETCH_TOOLS.map(
@@ -77,7 +85,7 @@ export const action = (id: string): UiAction => {
 
 function lookAtSketch(): void {
   const sketch = store.editedSketch();
-  const frame = sketch && sketchFrame(sketch);
+  const frame = sketch && store.frameOf(sketch);
   if (frame) store.viewer?.lookAt(frame);
 }
 

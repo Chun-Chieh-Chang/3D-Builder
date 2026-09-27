@@ -8,6 +8,7 @@ import {
   IdAllocator,
   idsInUse,
   parsePart,
+  SCHEMA_VERSION,
   type Command,
   type PartDoc,
   type SketchFeature,
@@ -180,7 +181,7 @@ describe('migration v1 → v2', () => {
       ],
     };
     const doc = parsePart(JSON.stringify(v1));
-    expect(doc.schemaVersion).toBe(2);
+    expect(doc.schemaVersion).toBe(SCHEMA_VERSION); // migrated all the way up
     expect(sketch(doc, 'sketch7').constraints).toEqual([
       { id: 'c1', type: 'horizontal', a: 'l1' },
       { id: 'c2', type: 'pointOnCurve', point: 'p3', curve: 'l1' },

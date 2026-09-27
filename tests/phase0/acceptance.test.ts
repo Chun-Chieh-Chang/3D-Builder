@@ -101,7 +101,7 @@ describe('Phase 0 acceptance', () => {
 describe('Phase 0 behaviour', () => {
   it('isolates a missing reference: fillet errors with candidates, the extrude body survives', () => {
     const doc = applyCommand(createDemoPart(), {
-      type: 'setFilletEdges',
+      type: 'setEdges',
       featureId: 'fillet1',
       edges: [{ kind: 'edge', name: '{extrude1:cap:end|extrude1:side:sketch1.l9}', fingerprint: { type: 'line', size: 10, center: [20, 5, -5], dir: [0, 0, -1] } }],
     });

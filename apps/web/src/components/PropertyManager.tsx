@@ -3,16 +3,19 @@ import {
   findFeature,
   isDimension,
   SKETCH_ORIGIN,
+  type ChamferFeature,
   type Command,
+  type EndCondition,
   type ExtrudeFeature,
   type FilletFeature,
   type Id,
+  type RevolveFeature,
   type SketchConstraint,
   type SketchFeature,
 } from '@3db/model';
 import { applicableRelations, constraintsOf, dimensionText, sameRelation } from '@3db/sketch/interact';
 import { store, useSketcherView, useStore } from '../state/store';
-import { DIMENSION_LABEL, FEATURE_LABEL, RELATION_LABEL, SKETCH_STATUS_LABEL, TOOL_LABEL } from '../strings';
+import { DIMENSION_LABEL, FEATURE_LABEL, featureLabel, RELATION_LABEL, SKETCH_STATUS_LABEL, TOOL_LABEL } from '../strings';
 import { Icon } from './Icon';
 
 /** Numeric field that commits a document command on Enter/blur; invalid input stays red (D6.1). */
@@ -162,46 +165,160 @@ function SketchPanel({ f }: { f: SketchFeature }) {
   );
 }
 
+
+const END_CONDITION: Record<EndCondition['type'], string> = {
+  blind: '給定深度',
+  midPlane: '兩側對稱',
+  throughAll: '完全貫穿',
+  upToFace: '成形至某一面',
+};
+
+/** Extrude (C4.1, C4.2): end condition, depth, direction and the end face for 「成形至某一面」. */
 function ExtrudePanel({ f }: { f: ExtrudeFeature }) {
   const doc = useStore((s) => s.doc);
+  const result = useStore((s) => s.result);
   const d = f.dir1;
   const depth = 'depth' in d ? d.depth : '10';
-  const set = (value: ExtrudeFeature['dir1']) => store.execute({ type: 'setEndCondition', featureId: f.id, dir: 'dir1', value });
+  const reverse = 'reverse' in d ? (d.reverse ?? false) : false;
+  const rev = (on: boolean) => (on ? { reverse: true } : {});
+  const set = (value: EndCondition) => store.execute({ type: 'setEndCondition', featureId: f.id, dir: 'dir1', value });
+  const condition = (type: EndCondition['type'], flip = reverse): EndCondition => {
+    switch (type) {
+      case 'blind':
+        return { type, depth, ...rev(flip) };
+      case 'midPlane':
+        return { type, depth };
+      case 'throughAll':
+        return { type, ...rev(flip) };
+      case 'upToFace':
+        // until a face is picked the reference is empty and the feature reports it as missing
+        return { type, face: d.type === 'upToFace' ? d.face : { kind: 'face', name: '' }, ...rev(flip) };
+    }
+  };
+  const faceFound = d.type === 'upToFace' && !!d.face.name && !!result?.faceNames.includes(d.face.name);
   return (
     <section className="pm-group">
       <h4>方向 1</h4>
       <label className="pm-row">
         <span>終止型態</span>
-        <select value={d.type} onChange={(e) => set(e.target.value === 'midPlane' ? { type: 'midPlane', depth } : { type: 'blind', depth })}>
-          <option value="blind">給定深度</option>
-          <option value="midPlane">兩側對稱</option>
+        <select value={d.type} onChange={(e) => set(condition(e.target.value as EndCondition['type']))}>
+          {Object.entries(END_CONDITION).map(([type, label]) => (
+            <option key={type} value={type}>
+              {label}
+            </option>
+          ))}
         </select>
       </label>
-      <label className="pm-row">
-        <span>深度</span>
-        <ValueInput
-          value={depth}
-          toCommand={(value) => ({
-            type: 'setEndCondition',
-            featureId: f.id,
-            dir: 'dir1',
-            value: d.type === 'midPlane' ? { type: 'midPlane', depth: value } : { type: 'blind', depth: value, ...(d.type === 'blind' && d.reverse ? { reverse: true } : {}) },
-          })}
-        />
-      </label>
-      {d.type === 'blind' && (
+      {'depth' in d && (
+        <label className="pm-row">
+          <span>深度</span>
+          <ValueInput
+            value={depth}
+            toCommand={(value) => ({ type: 'setEndCondition', featureId: f.id, dir: 'dir1', value: d.type === 'midPlane' ? { type: 'midPlane', depth: value } : { type: 'blind', depth: value, ...rev(reverse) } })}
+          />
+        </label>
+      )}
+      {d.type === 'upToFace' && (
+        <ul className="selection-box">
+          {!d.face.name ? (
+            <li className="muted">（在圖面中點選要終止的面）</li>
+          ) : (
+            <li className={faceFound ? '' : 'missing'} title={d.face.name}>
+              終止面{!faceFound && '（遺失參考）'}
+              <code>{d.face.name}</code>
+            </li>
+          )}
+        </ul>
+      )}
+      {d.type !== 'midPlane' && (
         <label className="pm-row checkbox">
-          <input type="checkbox" checked={d.reverse ?? false} onChange={(e) => set({ type: 'blind', depth, ...(e.target.checked ? { reverse: true } : {}) })} />
+          <input type="checkbox" checked={reverse} onChange={(e) => set(condition(d.type, e.target.checked))} />
           <span>反轉方向</span>
         </label>
       )}
-      <p className="hint">輪廓：{findFeature(doc, f.sketch)?.name ?? f.sketch}</p>
+      <p className="hint">
+        輪廓：{findFeature(doc, f.sketch)?.name ?? f.sketch}
+        {f.op === 'cut' && '。除料預設往材料內部（與草圖法向相反）。'}
+      </p>
+    </section>
+  );
+}
+
+/** Revolve (C4.3): axis line of the sketch, one direction or both, and the angle. */
+function RevolvePanel({ f }: { f: RevolveFeature }) {
+  const doc = useStore((s) => s.doc);
+  const sketch = findFeature(doc, f.sketch);
+  const lines = sketch?.type === 'sketch' ? sketch.entities.filter((e) => e.type === 'line') : [];
+  const d = f.dir1;
+  const reverse = d.type === 'blind' && (d.reverse ?? false);
+  const set = (value: RevolveFeature['dir1']) => store.execute({ type: 'setRevolveCondition', featureId: f.id, value });
+  return (
+    <>
+      <section className="pm-group">
+        <h4>旋轉軸</h4>
+        <select value={f.axis} onChange={(e) => store.execute({ type: 'setRevolveAxis', featureId: f.id, axis: e.target.value })}>
+          {lines.map((l) => (
+            <option key={l.id} value={l.id}>
+              {l.construction ? '中心線' : '直線'} {l.id}
+            </option>
+          ))}
+        </select>
+      </section>
+      <section className="pm-group">
+        <h4>方向 1</h4>
+        <label className="pm-row">
+          <span>旋轉類型</span>
+          <select value={d.type} onChange={(e) => set(e.target.value === 'midPlane' ? { type: 'midPlane', angle: d.angle } : { type: 'blind', angle: d.angle })}>
+            <option value="blind">給定深度</option>
+            <option value="midPlane">兩側對稱</option>
+          </select>
+        </label>
+        <label className="pm-row">
+          <span>角度</span>
+          <ValueInput
+            value={d.angle}
+            suffix="°"
+            toCommand={(angle) => ({ type: 'setRevolveCondition', featureId: f.id, value: d.type === 'midPlane' ? { type: 'midPlane', angle } : { type: 'blind', angle, ...(reverse ? { reverse: true } : {}) } })}
+          />
+        </label>
+        {d.type === 'blind' && (
+          <label className="pm-row checkbox">
+            <input type="checkbox" checked={reverse} onChange={(e) => set({ type: 'blind', angle: d.angle, ...(e.target.checked ? { reverse: true } : {}) })} />
+            <span>反轉方向</span>
+          </label>
+        )}
+        <p className="hint">輪廓：{sketch?.name ?? f.sketch}</p>
+      </section>
+    </>
+  );
+}
+
+/** Edge selection box of a fillet or chamfer (D2.1): edges by persistent name, missing ones marked. */
+function EdgeList({ f }: { f: FilletFeature | ChamferFeature }) {
+  const r = useStore((s) => s.result);
+  const label = FEATURE_LABEL[f.type];
+  return (
+    <section className="pm-group">
+      <h4>要產生{label}的邊線</h4>
+      <ul className="selection-box">
+        {f.edges.length === 0 && <li className="muted">（在圖面中點選邊線）</li>}
+        {f.edges.map((e, i) => {
+          const found = r?.edgeNames.includes(e.name);
+          return (
+            <li key={e.name} className={found ? '' : 'missing'} title={e.name}>
+              邊線 {i + 1}
+              {!found && '（遺失參考）'}
+              <code>{e.name}</code>
+            </li>
+          );
+        })}
+      </ul>
+      <p className="hint">編輯時顯示{label}之前的模型；點選邊線加入或移除。參考以持久名稱儲存，不使用索引。</p>
     </section>
   );
 }
 
 function FilletPanel({ f }: { f: FilletFeature }) {
-  const r = useStore((s) => s.result);
   return (
     <>
       <section className="pm-group">
@@ -211,23 +328,44 @@ function FilletPanel({ f }: { f: FilletFeature }) {
           <ValueInput value={f.radius} toCommand={(value) => ({ type: 'setFilletRadius', featureId: f.id, value })} />
         </label>
       </section>
+      <EdgeList f={f} />
+    </>
+  );
+}
+
+/** Chamfer (C5.3): 「角度-距離」 or 「距離-距離」, and which face the first distance is measured on. */
+function ChamferPanel({ f }: { f: ChamferFeature }) {
+  const params = { mode: f.mode, distance: f.distance, second: f.second, ...(f.flip ? { flip: true } : {}) };
+  const set = (patch: Partial<ChamferFeature>): Command => ({ type: 'setChamfer', featureId: f.id, value: { ...params, ...patch } });
+  const angled = f.mode === 'angleDistance';
+  return (
+    <>
       <section className="pm-group">
-        <h4>要產生圓角的邊線</h4>
-        <ul className="selection-box">
-          {f.edges.length === 0 && <li className="muted">（在圖面中點選邊線）</li>}
-          {f.edges.map((e, i) => {
-            const found = r?.edgeNames.includes(e.name);
-            return (
-              <li key={e.name} className={found ? '' : 'missing'} title={e.name}>
-                邊線 {i + 1}
-                {!found && '（遺失參考）'}
-                <code>{e.name}</code>
-              </li>
-            );
-          })}
-        </ul>
-        <p className="hint">編輯時顯示圓角之前的模型；點選邊線加入或移除。參考以持久名稱儲存，不使用索引。</p>
+        <h4>導角參數</h4>
+        <label className="pm-row">
+          <span>導角類型</span>
+          <select
+            value={f.mode}
+            onChange={(e) => store.execute(e.target.value === 'angleDistance' ? set({ mode: 'angleDistance', second: '45' }) : set({ mode: 'distanceDistance', second: f.distance }))}
+          >
+            <option value="angleDistance">角度-距離</option>
+            <option value="distanceDistance">距離-距離</option>
+          </select>
+        </label>
+        <label className="pm-row">
+          <span>{angled ? '距離' : '距離 1'}</span>
+          <ValueInput value={f.distance} toCommand={(distance) => set({ distance })} />
+        </label>
+        <label className="pm-row">
+          <span>{angled ? '角度' : '距離 2'}</span>
+          <ValueInput value={f.second} suffix={angled ? '°' : 'mm'} toCommand={(second) => set({ second })} />
+        </label>
+        <label className="pm-row checkbox">
+          <input type="checkbox" checked={f.flip ?? false} onChange={(e) => store.execute(set({ flip: e.target.checked }))} />
+          <span>反轉方向</span>
+        </label>
       </section>
+      <EdgeList f={f} />
     </>
   );
 }
@@ -245,7 +383,7 @@ export function PropertyManager() {
       <div className="pm-header">
         <Icon name={f.type} />
         <span className="pm-title">
-          {sketching ? '編輯草圖' : FEATURE_LABEL[f.type]}：{f.name}
+          {sketching ? '編輯草圖' : featureLabel(f)}：{f.name}
         </span>
         <button className="pm-ok" title={sketching ? '離開草圖' : '確定（Enter）'} onClick={() => store.commitEdit()}>
           <Icon name="ok" />
@@ -256,7 +394,9 @@ export function PropertyManager() {
       </div>
       {f.type === 'sketch' && <SketchPanel f={f} />}
       {f.type === 'extrude' && <ExtrudePanel f={f} />}
+      {f.type === 'revolve' && <RevolvePanel f={f} />}
       {f.type === 'fillet' && <FilletPanel f={f} />}
+      {f.type === 'chamfer' && <ChamferPanel f={f} />}
     </div>
   );
 }

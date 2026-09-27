@@ -5,7 +5,7 @@
 | 驗收標準（藍圖 §3） | 測試 | 狀態 |
 |---|---|---|
 | ① 10 組尺寸變化中，圓角 10/10 留在正確的邊 | `tests/phase0/acceptance.test.ts`：寬、高、深、半徑共 10 組；檢查圓角面的持久名稱、面型（圓柱）、位置與解析體積 | ✅ |
-| ② STEP 在 SW 開啟為實體、體積誤差 < 0.01% | 自動部分：STEP 輸出後再輸入，體積誤差 < 1e-9；產品名稱、公釐單位 | ✅ 自動部分；⏳ 需在 SW 人工核對 |
+| ② STEP 在 SW 開啟為實體、體積誤差 < 0.01% | 自動部分：STEP 輸出後再輸入，體積誤差 < 1e-9；產品名稱、公釐單位 | ✅ 自動部分；✅ 使用者已在 SW 核對通過（2026-09-27） |
 | ③ 示範件重新計算 < 500 ms | 實測中位數 6.6 ms（libcascade；replicad 版為 7.9 ms，見 `tests/phase0/metrics.test.ts`） | ✅ |
 | ④ ADR：OCCT 建置、求解器、WASM 大小與效能 | `docs/adr/0002-phase0-kernel-and-solvers.md`、`docs/adr/0003-occt-binding-gaps.md` | ✅ |
 
