@@ -58,6 +58,7 @@ export class Viewer {
   private hovered = -1;
   private selected = new Set<number>();
   private pickEdges = false;
+  private pendingFit = false;
   private frame = 0;
   private readonly resizeObserver: ResizeObserver;
 
@@ -231,8 +232,13 @@ export class Viewer {
     this.fitAll();
   }
 
-  /** Zoom to fit (「全部顯示」). */
+  /** Zoom to fit (「全部顯示」). Deferred while the viewport has no size (hidden tab, minimized window). */
   fitAll(): void {
+    if (this.container.clientWidth === 0 || this.container.clientHeight === 0) {
+      this.pendingFit = true;
+      return;
+    }
+    this.pendingFit = false;
     const box = new THREE.Box3();
     if (this.body) box.setFromObject(this.body);
     if (box.isEmpty()) box.set(new THREE.Vector3(-50, -50, -50), new THREE.Vector3(50, 50, 50));
@@ -242,9 +248,7 @@ export class Viewer {
     this.controls.target.copy(center);
     this.camera.position.copy(center).addScaledVector(dir, radius * 10);
     this.camera.lookAt(center);
-    const w = this.container.clientWidth || 1;
-    const h = this.container.clientHeight || 1;
-    const aspect = w / h;
+    const aspect = this.container.clientWidth / this.container.clientHeight;
     const half = radius * 1.15;
     this.camera.left = -half * Math.max(aspect, 1);
     this.camera.right = half * Math.max(aspect, 1);
@@ -256,9 +260,14 @@ export class Viewer {
   }
 
   private resize(): void {
-    const w = this.container.clientWidth || 1;
-    const h = this.container.clientHeight || 1;
+    const w = this.container.clientWidth;
+    const h = this.container.clientHeight;
+    if (w === 0 || h === 0) return; // keep the last good frustum; a zero size would distort the aspect ratio
     this.renderer.setSize(w, h);
+    if (this.pendingFit) {
+      this.fitAll();
+      return;
+    }
     const halfH = (this.camera.top - this.camera.bottom) / 2 || 1;
     this.camera.left = -halfH * (w / h);
     this.camera.right = halfH * (w / h);

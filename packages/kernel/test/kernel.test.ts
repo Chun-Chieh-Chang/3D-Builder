@@ -83,6 +83,23 @@ describe('mesh and exchange', () => {
     expect(m.edgeRanges.length / 3).toBe(12);
   });
 
+  it('draws each edge polyline along the whole edge', () => {
+    const box = keep(k.extrude(front, [rect(20, 10)], [0, 0, 5]).shape);
+    const rounded = keep(k.fillet(box, [0], 2).shape);
+    const m = k.mesh(rounded);
+    const topo = k.topology(rounded);
+    for (let g = 0; g < m.edgeRanges.length; g += 3) {
+      const [start, count, edge] = [m.edgeRanges[g]!, m.edgeRanges[g + 1]!, m.edgeRanges[g + 2]!];
+      let length = 0;
+      for (let p = start; p < start + count - 1; p++) {
+        const d = [0, 1, 2].map((c) => m.edgePoints[(p + 1) * 3 + c]! - m.edgePoints[p * 3 + c]!);
+        length += Math.hypot(d[0]!, d[1]!, d[2]!);
+      }
+      expect(length).toBeCloseTo(topo.edges[edge]!.length, 1);
+      expect(count).toBeLessThan(200);
+    }
+  });
+
   it('round-trips STEP with identical volume', () => {
     const box = keep(k.extrude(front, [rect(20, 10)], [0, 0, 5]).shape);
     const text = k.exportStep(box, 'TestPart');

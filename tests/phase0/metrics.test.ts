@@ -32,7 +32,7 @@ it('measures Phase 0 performance', async () => {
   const stepMs = performance.now() - t;
 
   const require = createRequire(import.meta.url);
-  const wasm = require.resolve('replicad-opencascadejs/wasm');
+  const wasm = require.resolve('libcascade/single/wasm');
   const rows = {
     'OCCT WASM size (MB)': (statSync(wasm).size / 1e6).toFixed(1),
     'OCCT init (ms)': kernelInit.toFixed(0),

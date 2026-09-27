@@ -1,93 +1,107 @@
 # ADR 0003：OCCT 綁定缺口的技術驗證與決策
 
-- 狀態：**提議**（自訂建置需要你啟動 Docker Desktop，並同意下載 2.37 GB 映像）
+- 狀態：**提議，已在 `spike/occt-gaps` 分支完成切換與驗證，待你確認後合併**
 - 日期：2026-09-27
 - 依據：ADR 0002 的缺口表；需求 R7（大量輸入 SW 的 STEP 並繼續修改）
-- 證據：`spikes/occt-gaps/`（`inventory.mjs` → `inventory.md`；`workarounds.mjs`，共 7 個實驗）
+- 證據：`spikes/occt-gaps/`
+  - `inventory.mjs` → `inventory.md`：兩個建置的類別盤點
+  - `workarounds.mjs`：在原建置上的 7 個繞道實驗
+  - `libcascade.mjs`：新建置的 9 項驗證
 
-## 背景
+## 結論
 
-Phase 0 使用 `replicad-opencascadejs` 1.1.0（OCCT 8.0）。這份建置只綁定 replicad 需要的類別。在 Phase 1 之前，要確認藍圖各階段需要的 OCCT 功能有哪些缺口、能不能繞過，以及補上它們的實際成本。
+**把 `@3db/kernel` 從 `replicad-opencascadejs` 1.1.0 改成 `libcascade` 3.0.2**，也就是 taucad 發布的完整版 OCCT 8.0.1 WASM。
 
-## 發現
+- 不自己建置 OCCT。
+- 原本規劃的 Docker 自訂建置，降級為「有實測證據才做」的最佳化項目。
 
-### 1. 盤點：46 個需要的類別中有 29 個、缺 17 個
+## 驗證過程與發現
 
-| 缺口 | 影響 | 繞道 |
+### 1. 原建置（replicad）的缺口
+
+藍圖需要的 46 個類別，replicad 版只有 27 個。其中阻擋 R7 的關鍵缺口：
+
+- `STEPCAFControl_Reader`：組合件的名稱與階層
+- `ShapeFix_Shape`：整體修復
+- `BRepAlgoAPI_Defeaturing`：刪除面
+- `BRepTools_History`：合併共面後的持久命名
+
+7 個繞道實驗中有 6 個可行，但都有使用上限：
+
+- 刪除面：只限平面上的貫穿孔。
+- 移動面：只限側面與移動方向平行的情況。
+- 命名對應：計算量是「面數 × 面數」。
+
+組合件 STEP 輸入則沒有可靠的繞道（E7）。
+
+### 2. 補綁定的兩條路
+
+| 路線 | 做法 | 評估 |
 |---|---|---|
-| `STEPCAFControl_Reader` | 輸入時的名稱、顏色、組合件階層（F2.1 名稱、F2.8） | ❌ 無可靠繞道（E7） |
-| `ShapeFix_Shape`、`ShapeFix_Shell`、`ShapeAnalysis_FreeBounds` | 整體修復、破面診斷（F2.2） | ⚠️ 部分可行：`Sewing` + `ShapeFix_Solid/Face/Wire`（E2、E3） |
-| `BRepAlgoAPI_Defeaturing`、`BOPAlgo_RemoveFeatures` | 刪除面、刪除鑽孔（C10.2） | ⚠️ 平面上的貫穿孔可以處理（E4）；一般曲面不行 |
-| `BRepOffset_MakeOffset` | 移動/偏移面（C10.1） | ⚠️ 只限側面與移動方向平行的情況（E5）；斜面相鄰時結果錯誤 |
-| `BRepTools_History`（盤點後新發現） | 布林後合併共面時沒有歷史，持久命名只能用幾何方式對應（E6） | ⚠️ 可行，但計算量是「面數×面數」，需要空間索引，並改用面內點（質心可能落在孔裡） |
-| `NCollection_IndexedMap`（無法建構） | 形狀索引 | ✅ Phase 0 已用 `ShapeIndex` 解決 |
-| `HLRBRep_PolyAlgo`（Ph5）、`BRepLProp_SLProps`（Ph6）、`IntCurvesFace_ShapeIntersector`（Ph6）、`BRepFeat_SplitShape`（Ph4b）、`BRepLib_MakeFace`、`BRepAlgoAPI_Check`、`BRepExtrema_ShapeProximity`、`BRepFeat_MakeLinearForm` | 後期階段 | ✅ 都有替代方案：精確 HLR、`EvalD1` 外積算法向、網格射線、`BRepAlgoAPI_Splitter`、`BRepBuilderAPI_MakeFace`、`DistShapeShape`、伸長 + 布林 |
-| `IGESControl_Reader/Writer` | IGES（P2，待辦池） | ❌ 需要自訂建置 |
+| A. 完整預建版 `libcascade` | npm 安裝官方正式版 | ✅ 採用：零建置管線、有 provenance、版本號固定 |
+| B. 自訂精簡建置 | `@libcascade/toolchain` + 固定 digest 的 `3.0.2-single-threaded` 映像，列出需要的類別與自己的 C++ 輔助檔 | 保留為最佳化：體積與初始化較好，但要維護建置管線 |
 
-### 2. 繞道實驗（`node spikes/occt-gaps/workarounds.mjs`）
+replicad 自己使用的 `canary-ebd263f1` 映像，官方只保留 7 天，不適合作為長期可重現建置的基礎。
 
-| # | 實驗 | 結果 |
+### 3. libcascade 3.0.2 的驗證結果（`node spikes/occt-gaps/libcascade.mjs`，9/9 通過）
+
+| # | 項目 | 結果 |
 |---|---|---|
-| E1 | 以 `Quantity_ColorRGBA` 輸出 STEP 顏色 | ✅ 寫出 `COLOUR_RGB`；OCCT 以線性 RGB 儲存、以 sRGB 寫出，輸入的 sRGB 顏色要先轉成線性 |
-| E2 | 有 0.01 mm 縫隙的六個面 → 縫合 → 實體 | ✅ 自由邊 0、實體有效 |
-| E3 | 只有面的 STEP 輸入 → 實體 | ✅ 體積 1000.000（精確） |
-| E4 | 刪除貫穿孔（移除孔壁、以曲面 + 外框線重建面、縫合） | ✅ 937.168 → 1000.000 |
-| E5 | 以布林推拉移動平面 ±2 mm，並合併共面 | ✅ 1400 / 600，合併後 6 面 |
-| E6 | 布林 + `UnifySameDomain` 後，以幾何方式做面對應 | ✅ 10 面 → 6 面，全部唯一（13 ms） |
-| E7 | 只用 `STEPControl_Reader` 輸入組合件 | ❌ 幾何正確（3 個實體、體積正確），但名稱與階層遺失 |
+| L0 | 初始化 | WASM 42.7 MB（gzip 12.4 MB），Node 初始化約 700 ms |
+| L1 | 與現有核心用法相容 | ✅ 伸長歷史、索引、圓角、例外、FS/wasmMemory、字串列舉 |
+| G1 | 組合件 STEP 輸入 | ✅ 讀回「治具組合件 → 基板、定位銷 ×2」，名稱（中文）、階層、位置都正確 |
+| G2 | `ShapeFix_Shape` | ✅ 方向錯誤的實體修成有效 |
+| G3 | `BRepAlgoAPI_Defeaturing` | ✅ 同時移除圓角面與鑽孔（不限平面），並提供歷史 |
+| G4 | `UnifySameDomain` 的 `BRepTools_History` | ✅ 10/10 面由歷史對應，不再需要幾何繞道 |
+| G5 | IGES 輸出/輸入 | ✅（讀回為曲面，需再縫合成實體） |
+| G6 | 以 sRGB 指定顏色 | ✅ 寫出值與輸入完全一致 |
+| M1 | 網格擷取（80 孔治具板，1.6 萬個三角形） | 482 ms；replicad 的 C++ 批次擷取是 229 ms |
 
-### 3. 補綁定的成本：replicad 的建置方式可以直接沿用
+盤點：46 個類別有 44 個。缺的兩個是：
 
-- 建置指令：`docker run … ghcr.io/taucad/opencascade.js:canary-ebd263f1-single-threaded link custom_build_single.yml`
-- 映像裡已有預先編譯的 OCCT 8.0，所以**補綁定 = 在 YAML 清單加一行 `- symbol: 類別名`，再重新連結**，不需要從原始碼編譯 OCCT。
-- 需要的檔案：
-  - replicad 的綁定清單（約 270 個 symbol）
-  - Emscripten 建置參數
-  - 6 個 C++ 輔助檔：形狀雜湊、網格擷取、邊線擷取、BRep 讀寫等（LGPL-2.1）
-- 映像大小：amd64 壓縮後 **2.37 GB**（31 層）。本機已安裝 Docker Desktop，但目前沒有啟動。
-- 建置時間未知，第一次建置時實測。
+- `BRepFeat_MakeLinearForm`：不需要，肋材用伸長 + 布林即可。
+- `BRepOffset_MakeOffset`：完整版同樣沒有綁定，見下方「仍未解決」。
 
-### 4. 實作時要避開的陷阱
+### 4. 切換後的產品驗證
 
-- `BRepBuilderAPI_MakeFace(face, wire)` 是在原面上「加一條線框」，不是取代邊界。要重建面，應該用 `BRep_Tool.Surface(face)` 取曲面再建構。
-- `Extrema_ExtFlag` 沒有綁定。`BRepExtrema_DistShapeShape` 請用兩參數的建構子。
-- 布林合併後，以幾何方式做面對應時，取樣點要用「面內一點」（例如三角網格的某個三角形重心），不能用質心。
+- `npm run check`：型別檢查、分層檢查、**51 個測試全部通過**，包括 Phase 0 的全部驗收，以及新增的「邊線折線涵蓋整條邊」測試。
+- 瀏覽器實測：
+  - 核心在 Worker 初始化 560–990 ms。
+  - 改尺寸、復原、STEP 輸出（含中文產品名稱）、點選邊線加入圓角，全部正確。
+- 效能：
 
-## 決策（建議）
+  | 項目 | replicad 版 | libcascade 版 |
+  |---|---|---|
+  | 示範件重新計算 | 7.9 ms | **6.6 ms** |
+  | 網格化 | 12.9 ms | 32.8 ms |
+  | OCCT 初始化 | 119 ms | 678 ms |
 
-1. **Phase 1 照常開始**，繼續使用 `replicad-opencascadejs` 1.1.0 加上 E1–E6 的繞道。Phase 1 的範圍（布林、旋轉、導角、STEP 零件輸入、基本修復）都沒有阻擋。
-2. **建立我們自己的 OCCT WASM 建置管線**，工具鏈與 replicad 相同：
-   - 設定放在 `tools/occt-wasm/`：replicad 的清單，加上下面的補充清單，再加上 C++ 輔助檔。
-   - 映像固定到 digest，不使用浮動的 canary 標籤。
-   - 產物放在 `vendor/occt-wasm/`，以 Git LFS 管理。
-   - `@3db/kernel` 透過 `LoadOptions` 切換模組，API 維持不變（同一個綁定產生器，型別相容）。
-   - **最晚在 Phase 3a（C10 直接編輯）與 Phase 3b（F2.8 組合件輸入）之前完成**。建議在 Phase 1 期間完成，讓持久命名可以及早改用 `BRepTools_History`。
-3. **補充綁定清單**：
-   - STEP 輸入：`STEPCAFControl_Reader`
-   - 修復與診斷：`ShapeFix_Shape`、`ShapeFix_Shell`、`ShapeAnalysis_FreeBounds`
-   - 刪除面：`BRepAlgoAPI_Defeaturing`
-   - 移動/偏移面：`BRepOffset_MakeOffset`
-   - 形狀歷史與索引：`BRepTools_History`、`TopTools_IndexedMapOfShape`、`NCollection_BaseMap`、`TopExp`
-   - 缺漏的列舉：`Extrema_ExtFlag`、`Quantity_TypeOfColor`
-   - 工程圖：`HLRBRep_PolyAlgo`、`HLRBRep_PolyHLRToShape`
-   - 分析：`BRepLProp_SLProps`、`IntCurvesFace_ShapeIntersector`
-   - 分割線：`BRepFeat_SplitShape`
-   - IGES：`IGESControl_Reader`、`IGESControl_Writer`（需確認映像是否含 IGES 函式庫）
+## 實作時要避開的陷阱（libcascade）
 
-## 後果與風險
+1. **多載以參數個數分派**：`GCPnts_TangentialDeflection(curve, 角度, 弦高, 2, 1e-9, 1e-7)` 共 6 個數值參數，會被分派到「帶參數範圍」的多載，結果只離散化邊的一小段，而且切出上萬個點。要只傳 3 個參數，並用測試驗證折線長度等於邊長。
+2. **UTF-16 字串沒有綁定**：`TCollection_ExtendedString.ToExtString()` 與 `Value()` 都不能用。要改用 `new TCollection_AsciiString(ext, '\0').ToCString()` 轉成 UTF-8 讀出。
+3. **handle 所有權**：`BRep_Tool.Triangulation` 回傳的是有所有權的 handle 副本，刪除後不影響面上的網格，應該刪除以免洩漏。
+4. **沒有批次網格擷取器**：要在 TS 端逐點讀取，並在 JS 端計算面內平滑法向。
 
-| 風險 | 對策 |
+另外，切換過程中發現並修正了三個與 OCCT 無關的前端問題：
+
+- 拾取到的邊索引，原本會用「另一份結果」查名稱。改成一律用畫面上正在顯示的那份結果。
+- 已被新請求取代的過期結果，原本仍會套用到畫面上。現在直接丟棄。
+- 視窗尺寸為 0 時（隱藏分頁、最小化），「全部顯示」會算出失真的視錐。現在改成延後到取得實際尺寸再執行。
+
+## 仍未解決
+
+- **C10.1 移動面**：兩個建置都沒有 `BRepOffset_MakeOffset`。
+  - Phase 3a 先用布林推拉處理側面與移動方向平行的常見情況（E5）。
+  - 一般情況的選項：(a) Phase 3a 前用自訂建置加入這個類別；(b) 以「刪除面（Defeaturing）+ 延伸相鄰面 + 縫合」重建。
+  - 在 Phase 3a 的技術驗證中決定。
+- **體積與初始化時間**：瀏覽器首次下載約 12.4 MB（gzip），初始化約 1 秒。對內部工具可以接受；Phase 3b 包成桌面版後改從本機載入，影響會更小。
+
+## 後果
+
+| 項目 | 影響 |
 |---|---|
-| 映像是 canary 標籤，日後可能消失 | 固定 digest；必要時匯出映像保存 |
-| 補充的類別會讓 WASM 變大 | 建置後實測；目前 23 MB，gzip 後 7.3 MB |
-| 新綁定的方法若參數型別沒有綁定，會被產生器略過 | 用 `inventory.mjs` 逐一檢查方法簽章，必要時補上相依型別 |
-| 授權 | OCCT 與輔助檔皆為 LGPL-2.1，目前定位為內部使用，符合授權 |
-
-## 下一步
-
-1. 你：啟動 Docker Desktop，並同意下載 `ghcr.io/taucad/opencascade.js:canary-ebd263f1-single-threaded`（約 2.37 GB）。
-2. 我：
-   1. 建立 `tools/occt-wasm/`。
-   2. 第一次建置時實測時間與大小。
-   3. 用新建置跑盤點腳本與全部測試。
-   4. 通過後切換 `@3db/kernel`，並把本 ADR 改為「已採用」。
+| 授權 | libcascade 為 LGPL-2.1 + Open CASCADE 例外條款，目前定位為內部使用，符合授權 |
+| 相依 | 產品程式碼不再依賴 `replicad-opencascadejs`；它只以 devDependency 形式留給驗證腳本重現本 ADR 的證據 |
+| Docker | Phase 1–3 不需要 Docker。之後若要做自訂精簡建置，會使用 `@libcascade/toolchain` 固定的 `3.0.2-single-threaded` 映像，跟這次下載的 canary 映像（佔用 **12.3 GB**）無關，建議刪除 |
+| 觸發路線 B 的條件 | 用你的真實檔案實測後，網格化或初始化超出藍圖 §4 的效能預算；或需要 `BRepOffset_MakeOffset` 等缺少的類別 |

@@ -1,6 +1,6 @@
 /// <reference lib="webworker" />
 import * as Comlink from 'comlink';
-import occtWasm from 'replicad-opencascadejs/wasm?url';
+import occtWasm from 'libcascade/single/wasm?url';
 import gcsWasm from '@salusoft89/planegcs/dist/planegcs_dist/planegcs.wasm?url';
 import type { PartDoc } from '@3db/model';
 import { PlaneGcsSolver } from '@3db/sketch';

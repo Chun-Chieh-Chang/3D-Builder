@@ -1,18 +1,18 @@
-import init, { type OpenCascadeInstance, type TopoDS_Shape } from 'replicad-opencascadejs';
+import { createInstance, type OpenCascadeInstance, type TopoDS_Shape } from 'libcascade/single/init';
 
 export type OC = OpenCascadeInstance;
 
 export interface LoadOptions {
-  /** URL of replicad_single.wasm (browser builds pass the bundler URL; Node resolves it itself). */
+  /** URL of the libcascade single-threaded WASM (browser builds pass the bundler URL; Node resolves it itself). */
   wasmUrl?: string;
 }
 
 export async function loadOcct(options: LoadOptions = {}): Promise<OC> {
   const quiet = () => {};
-  return init({
+  return createInstance({
     print: quiet,
     printErr: quiet,
-    ...(options.wasmUrl ? { locateFile: () => options.wasmUrl } : {}),
+    ...(options.wasmUrl ? { locateFile: () => options.wasmUrl! } : {}),
   });
 }
 
@@ -37,58 +37,34 @@ export class Arena {
   }
 }
 
-const HASH_BOUND = 2147483647;
-
 /**
- * Indexed set of sub-shapes with TopTools_ShapeMapHasher semantics (same TShape and location,
- * orientation ignored). Substitutes NCollection_IndexedMap, which this WASM build cannot construct.
+ * Indexed set of sub-shapes (TopExp::MapShapes into TopTools_IndexedMapOfShape): first-occurrence
+ * explorer order, identity by TShape + location with orientation ignored.
  */
 export class ShapeIndex {
   readonly keys: TopoDS_Shape[] = [];
-  private buckets = new Map<number, number[]>();
 
-  constructor(private readonly oc: OC) {}
+  private constructor(private readonly map: InstanceType<OC['NCollection_IndexedMap_TopoDS_Shape_TopTools_ShapeMapHasher']>) {}
 
   static of(oc: OC, shape: TopoDS_Shape, type: string, arena: Arena): ShapeIndex {
-    const index = new ShapeIndex(oc);
-    const ex = arena.own(new oc.TopExp_Explorer(shape, type as never, oc.TopAbs_ShapeEnum.TopAbs_SHAPE));
-    for (; ex.More(); ex.Next()) {
-      const s = ex.Current();
-      if (index.indexOf(s) < 0) index.push(s);
-      else s.delete();
-    }
+    const map = arena.own(new oc.NCollection_IndexedMap_TopoDS_Shape_TopTools_ShapeMapHasher());
+    oc.TopExp.MapShapes(shape, type as never, map);
+    const index = new ShapeIndex(map);
+    for (let i = 1; i <= map.Extent(); i++) index.keys.push(map.FindKey(i));
     return index;
-  }
-
-  private hash(s: TopoDS_Shape): number {
-    return this.oc.ReplicadShapeHasher.HashCode(s, HASH_BOUND);
-  }
-
-  private push(s: TopoDS_Shape): void {
-    const h = this.hash(s);
-    this.keys.push(s);
-    const bucket = this.buckets.get(h);
-    if (bucket) bucket.push(this.keys.length - 1);
-    else this.buckets.set(h, [this.keys.length - 1]);
   }
 
   /** 0-based index, or -1 when absent. */
   indexOf(s: TopoDS_Shape): number {
-    for (const i of this.buckets.get(this.hash(s)) ?? []) if (this.keys[i]!.IsSame(s)) return i;
-    return -1;
+    return this.map.FindIndex(s) - 1;
   }
 
   get size(): number {
     return this.keys.length;
   }
 
-  hashAt(i: number): number {
-    return this.hash(this.keys[i]!);
-  }
-
   dispose(): void {
     for (const k of this.keys) k.delete();
     this.keys.length = 0;
-    this.buckets.clear();
   }
 }

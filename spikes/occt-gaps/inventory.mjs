@@ -1,12 +1,17 @@
-// OCCT binding inventory: which classes the blueprint phases need vs. what replicad-opencascadejs exposes.
+// OCCT binding inventory: which classes the blueprint phases need vs. what each WASM build exposes.
 // Run: node spikes/occt-gaps/inventory.mjs  (writes spikes/occt-gaps/inventory.md)
 import { readFileSync, writeFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { dirname, join } from 'node:path';
 
 const require = createRequire(import.meta.url);
-const pkgDir = dirname(require.resolve('replicad-opencascadejs/package.json'));
-const dts = readFileSync(join(pkgDir, 'dist', 'replicad_single.d.ts'), 'utf8');
+const read = (pkg, file) => readFileSync(join(dirname(require.resolve(`${pkg}/package.json`)), file), 'utf8');
+
+/** Each build declares bound classes differently in its .d.ts. */
+const BUILDS = [
+  { name: 'replicad-opencascadejs 1.1.0', dts: read('replicad-opencascadejs', 'dist/replicad_single.d.ts'), has: (d, c) => new RegExp(`^export declare class ${c}[ <]`, 'm').test(d) },
+  { name: 'libcascade 3.0.2', dts: read('libcascade', 'dist/types.d.ts'), has: (d, c) => new RegExp(`^(declare class ${c}\\b|type ${c} =)`, 'm').test(d) },
+];
 
 /** [phase, catalog ids, class, purpose] */
 const NEEDS = [
@@ -14,7 +19,10 @@ const NEEDS = [
   ['1', 'A1.5 C4.2', 'BRepAlgoAPI_Cut', '伸長/旋轉除料'],
   ['1', 'A1.5 C7.2', 'BRepAlgoAPI_Common', '共同、干涉體積'],
   ['1', 'A1.5', 'BRepAlgoAPI_Splitter', '分割'],
-  ['1', 'A1.5', 'ShapeUpgrade_UnifySameDomain', '布林後合併共面/共圓柱面（命名與拓撲乾淨）'],
+  ['1', 'A1.5', 'ShapeUpgrade_UnifySameDomain', '布林後合併共面/共圓柱面'],
+  ['1', 'B4.1', 'BRepTools_History', '合併共面後的面演化歷史（持久命名）'],
+  ['1', 'B4.1', 'TopTools_IndexedMapOfShape', '形狀索引'],
+  ['1', 'B4.1', 'TopExp', 'MapShapes / 鄰接'],
   ['1', 'C4.3', 'BRepPrimAPI_MakeRevol', '旋轉'],
   ['1', 'C5.3', 'BRepFilletAPI_MakeChamfer', '導角'],
   ['1', 'F2.1', 'STEPControl_Reader', 'STEP 零件輸入（無名稱/顏色）'],
@@ -37,18 +45,15 @@ const NEEDS = [
   ['3a', 'C10.1', 'BRepOffset_MakeOffset', '移動/偏移面（逐面偏移）'],
   ['3a', 'C10.1', 'BRepOffsetAPI_MakeOffsetShape', '偏移'],
   ['3a', 'C10.2', 'BRepAlgoAPI_Defeaturing', '刪除面、刪除鑽孔'],
-  ['3a', 'C10.2', 'BOPAlgo_RemoveFeatures', '刪除面（Defeaturing 的底層演算法）'],
   ['3a', 'C14.2 F1.1', 'Quantity_ColorRGBA', '顏色輸出'],
-  ['3a', 'C14.2 F1.1', 'Quantity_Color', '顏色輸出'],
+  ['3a', 'C14.2 F1.1', 'Quantity_TypeOfColor', '以 sRGB 指定顏色'],
   ['3b', 'F2.8', 'XCAFDoc_ShapeTool', '組合件結構讀寫'],
   ['3b', 'E2.1', 'BRepAlgoAPI_Check', '布林前檢查'],
-  ['3b', 'F4.1', 'StlAPI_Writer', 'STL 輸出（備案：由網格自寫）'],
-  ['4a', 'C7.5', 'BRepToolsWrapper', '衍生本體快取（BRep 文字）'],
+  ['3b', 'F4.1', 'StlAPI_Writer', 'STL 輸出'],
   ['4a', 'A3.6', 'BRepExtrema_ShapeProximity', '碰撞/接近偵測'],
   ['4b', 'C9.2', 'BRepOffsetAPI_MakeFilling', '填補曲面'],
   ['4b', 'C8.1', 'BRepFeat_SplitShape', '分割線'],
   ['4b', 'C8.1', 'BRepAlgoAPI_Section', '截交線'],
-  ['4b', 'C9.3', 'BRepLib_MakeFace', '修剪曲面'],
   ['5', 'A4.4', 'HLRBRep_Algo', '精確隱藏線'],
   ['5', 'A4.4', 'HLRBRep_PolyAlgo', '多邊形隱藏線（快速預覽）'],
   ['5', 'A4.4', 'HLRBRep_HLRToShape', '隱藏線結果轉邊線'],
@@ -58,20 +63,22 @@ const NEEDS = [
   ['P2', 'F1.4 F2.2', 'IGESControl_Reader', 'IGES 輸入'],
 ];
 
-const has = (cls) => new RegExp(`^export declare class ${cls}[ <]`, 'm').test(dts);
-const rows = NEEDS.map(([phase, ids, cls, purpose]) => ({ phase, ids, cls, purpose, ok: has(cls) }));
-const missing = rows.filter((r) => !r.ok);
+const rows = NEEDS.map(([phase, ids, cls, purpose]) => ({ phase, ids, cls, purpose, present: BUILDS.map((b) => b.has(b.dts, cls)) }));
+const totals = BUILDS.map((b, i) => `${b.name}：${rows.filter((r) => r.present[i]).length}/${rows.length}`);
+const mark = (ok) => (ok ? '有' : '**缺**');
 
 const md = [
-  '# OCCT 綁定盤點（replicad-opencascadejs）',
+  '# OCCT 綁定盤點',
   '',
-  `總計 ${rows.length} 個類別：有 ${rows.length - missing.length} 個、缺 ${missing.length} 個。`,
+  ...totals.map((t) => `- ${t}`),
   '',
-  '| Phase | 目錄 ID | 類別 | 用途 | 狀態 |',
-  '|---|---|---|---|---|',
-  ...rows.map((r) => `| ${r.phase} | ${r.ids} | \`${r.cls}\` | ${r.purpose} | ${r.ok ? '有' : '**缺**'} |`),
+  `| Phase | 目錄 ID | 類別 | 用途 | ${BUILDS.map((b) => b.name).join(' | ')} |`,
+  `|---|---|---|---|${BUILDS.map(() => '---').join('|')}|`,
+  ...rows.map((r) => `| ${r.phase} | ${r.ids} | \`${r.cls}\` | ${r.purpose} | ${r.present.map(mark).join(' | ')} |`),
   '',
 ].join('\n');
 writeFileSync(new URL('./inventory.md', import.meta.url), md);
-console.log(`present ${rows.length - missing.length}/${rows.length}`);
-console.log('missing:', missing.map((r) => `${r.cls} (Ph${r.phase})`).join(', '));
+for (const [i, b] of BUILDS.entries()) {
+  const missing = rows.filter((r) => !r.present[i]).map((r) => r.cls);
+  console.log(`${b.name}: ${rows.length - missing.length}/${rows.length} present; missing: ${missing.join(', ') || '—'}`);
+}

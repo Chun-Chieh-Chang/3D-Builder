@@ -10,6 +10,7 @@ import {
   type Command,
   type Id,
   type PartDoc,
+  type Ref,
 } from '@3db/model';
 import { stepFileName } from '@3db/io';
 import type { Viewer } from '@3db/render';
@@ -151,19 +152,16 @@ class AppStore {
 
   /**
    * Fillet edge list (D2.1): clicking an edge toggles it, like the SolidWorks selection box.
-   * The picked edge is stored as persistent name + fingerprint, never as an index (H3).
+   * Takes the persistent reference resolved by the viewport from the mesh it is displaying,
+   * never an index into some other result (H3, SSOT).
    */
-  toggleFilletEdge(edgeIndex: number): void {
+  toggleFilletEdge(ref: Ref): void {
     const e = this.state.editing;
-    const r = this.state.result;
-    if (!e || !r || edgeIndex < 0) return;
+    if (!e || ref.kind !== 'edge') return;
     const f = this.history.doc.features.find((x) => x.id === e.featureId);
     if (f?.type !== 'fillet') return;
-    const name = r.edgeNames[edgeIndex];
-    const fingerprint = r.edgeFingerprints[edgeIndex];
-    if (!name || !fingerprint) return;
-    const exists = f.edges.some((x) => x.name === name);
-    const edges = exists ? f.edges.filter((x) => x.name !== name) : [...f.edges, { kind: 'edge' as const, name, fingerprint }];
+    const exists = f.edges.some((x) => x.name === ref.name);
+    const edges = exists ? f.edges.filter((x) => x.name !== ref.name) : [...f.edges, ref];
     this.execute({ type: 'setFilletEdges', featureId: f.id, edges });
   }
 
@@ -196,7 +194,8 @@ class AppStore {
     try {
       const until = this.until();
       const result = await this.api.rebuild({ seq, doc: this.history.doc, ...(until === undefined ? {} : { until }) });
-      if (result.seq === this.seq) this.set({ result });
+      // A queued request supersedes this result: showing it would briefly contradict the current document.
+      if (result.seq === this.seq && !this.pending) this.set({ result });
     } catch (e) {
       this.set({ notice: { kind: 'error', text: `重新計算失敗：${e instanceof Error ? e.message : String(e)}` } });
     } finally {

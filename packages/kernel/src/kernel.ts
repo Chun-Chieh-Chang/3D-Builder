@@ -1,4 +1,4 @@
-import type { BRepBuilderAPI_MakeShape, NCollection_List_TopoDS_Shape, TopoDS_Shape, TopoDS_Wire } from 'replicad-opencascadejs';
+import type { BRepBuilderAPI_MakeShape, NCollection_List_TopoDS_Shape, TopoDS_Shape, TopoDS_Wire } from 'libcascade/single/init';
 import { Arena, loadOcct, ShapeIndex, type LoadOptions, type OC } from './occt';
 import {
   KernelError,
@@ -41,6 +41,32 @@ const T = {
 } as const;
 
 const add = (a: Vec3, b: Vec3, s = 1): Vec3 => [a[0] + b[0] * s, a[1] + b[1] * s, a[2] + b[2] * s];
+
+/** Area-weighted vertex normals. Vertices are per face, so smoothing never crosses a face boundary. */
+function smoothNormals(positions: number[], indices: number[], faceRanges: number[]): Float32Array {
+  const n = new Float32Array(positions.length);
+  for (let r = 0; r < faceRanges.length; r += 3) {
+    const end = faceRanges[r]! + faceRanges[r + 1]!;
+    for (let t = faceRanges[r]!; t < end; t += 3) {
+      const [a, b, c] = [indices[t]! * 3, indices[t + 1]! * 3, indices[t + 2]! * 3];
+      const ux = positions[b]! - positions[a]!, uy = positions[b + 1]! - positions[a + 1]!, uz = positions[b + 2]! - positions[a + 2]!;
+      const vx = positions[c]! - positions[a]!, vy = positions[c + 1]! - positions[a + 1]!, vz = positions[c + 2]! - positions[a + 2]!;
+      const nx = uy * vz - uz * vy, ny = uz * vx - ux * vz, nz = ux * vy - uy * vx;
+      for (const v of [a, b, c]) {
+        n[v] = n[v]! + nx;
+        n[v + 1] = n[v + 1]! + ny;
+        n[v + 2] = n[v + 2]! + nz;
+      }
+    }
+  }
+  for (let i = 0; i < n.length; i += 3) {
+    const len = Math.hypot(n[i]!, n[i + 1]!, n[i + 2]!) || 1;
+    n[i] = n[i]! / len;
+    n[i + 1] = n[i + 1]! / len;
+    n[i + 2] = n[i + 2]! / len;
+  }
+  return n;
+}
 
 /**
  * Coarse-grained facade over OCCT (A1). Every operation reports face provenance so the naming
@@ -400,43 +426,64 @@ export class Kernel {
         tolerance = Math.min(1, Math.max(0.002, Math.hypot(b[0] - a[0], b[1] - a[1], b[2] - a[2]) * 5e-4));
       }
       const angular = options.angular ?? 0.25;
-      const mem = () => oc.wasmMemory.buffer;
-      const md = arena.own(oc.ReplicadMeshExtractor.extract(shape, tolerance, angular, false));
-      const positions = new Float32Array(mem(), md.getVerticesPtr(), md.getVerticesSize()).slice();
-      const normals = new Float32Array(mem(), md.getNormalsPtr(), md.getNormalsSize()).slice();
-      const indices = new Uint32Array(mem(), md.getTrianglesPtr(), md.getTrianglesSize()).slice();
-      const fg = new Uint32Array(mem(), md.getFaceGroupsPtr(), md.getFaceGroupsSize()).slice();
-      const ed = arena.own(oc.ReplicadEdgeMeshExtractor.extract(shape, tolerance, angular));
-      const edgePoints = new Float32Array(mem(), ed.getLinesPtr(), ed.getLinesSize()).slice();
-      const eg = new Uint32Array(mem(), ed.getEdgeGroupsPtr(), ed.getEdgeGroupsSize()).slice();
+      arena.own(new oc.BRepMesh_IncrementalMesh(shape, tolerance, false, angular, false));
+
+      // Faces: per-face vertices (crisp edges between faces), winding flipped on reversed faces.
+      const positions: number[] = [];
+      const indices: number[] = [];
+      const faceRanges: number[] = [];
+      faces.keys.forEach((f, fi) => {
+        const face = arena.own(oc.TopoDS.Face(f));
+        const loc = arena.own(new oc.TopLoc_Location());
+        const tri = oc.BRep_Tool.Triangulation(face, loc, 0);
+        if (!tri) return;
+        arena.own(tri); // an owning handle copy: deleting it leaves the face's triangulation intact
+        const trsf = arena.own(loc.Transformation());
+        const base = positions.length / 3;
+        for (let n = 1; n <= tri.NbNodes(); n++) {
+          const p = arena.own(arena.own(tri.Node(n)).Transformed(trsf));
+          positions.push(p.X(), p.Y(), p.Z());
+        }
+        const reversed = face.Orientation() === oc.TopAbs_Orientation.TopAbs_REVERSED;
+        const start = indices.length;
+        for (let k = 1; k <= tri.NbTriangles(); k++) {
+          const t = arena.own(tri.Triangle(k));
+          const { theN1, theN2, theN3 } = t.Get();
+          indices.push(base + theN1 - 1, base + (reversed ? theN3 : theN2) - 1, base + (reversed ? theN2 : theN3) - 1);
+        }
+        faceRanges.push(start, indices.length - start, fi);
+      });
+
+      // Edges: tangential-deflection polylines, independent of the face tessellation.
+      const edgePoints: number[] = [];
+      const edgeRanges: number[] = [];
+      edges.keys.forEach((e, ei) => {
+        const edge = arena.own(oc.TopoDS.Edge(e));
+        if (oc.BRep_Tool.Degenerated(edge)) return;
+        const curve = arena.own(new oc.BRepAdaptor_Curve(edge));
+        // Exactly three arguments: with six, arity-based dispatch picks the (first, last parameter) overload.
+        const pts = arena.own(new oc.GCPnts_TangentialDeflection(curve, angular, tolerance));
+        const start = edgePoints.length / 3;
+        for (let i = 1; i <= pts.NbPoints(); i++) {
+          const p = arena.own(pts.Value(i));
+          edgePoints.push(p.X(), p.Y(), p.Z());
+        }
+        edgeRanges.push(start, edgePoints.length / 3 - start, ei);
+      });
+
       return {
-        positions,
-        normals,
-        indices,
-        faceRanges: this.groups(fg, faces),
-        edgePoints,
-        edgeRanges: this.groups(eg, edges),
+        positions: Float32Array.from(positions),
+        normals: smoothNormals(positions, indices, faceRanges),
+        indices: Uint32Array.from(indices),
+        faceRanges: Int32Array.from(faceRanges),
+        edgePoints: Float32Array.from(edgePoints),
+        edgeRanges: Int32Array.from(edgeRanges),
       };
     } finally {
       faces.dispose();
       edges.dispose();
       arena.dispose();
     }
-  }
-
-  /** Mesh groups are (start, count, hash) in explorer order; verify by hash, fall back to lookup. */
-  private groups(raw: Uint32Array, index: ShapeIndex): Int32Array {
-    const out = new Int32Array(raw.length);
-    const byHash = new Map<number, number>();
-    for (let i = 0; i < index.size; i++) byHash.set(index.hashAt(i), i);
-    for (let g = 0; g * 3 < raw.length; g++) {
-      const hash = raw[g * 3 + 2]!;
-      const i = g < index.size && index.hashAt(g) === hash ? g : (byHash.get(hash) ?? -1);
-      out[g * 3] = raw[g * 3]!;
-      out[g * 3 + 1] = raw[g * 3 + 1]!;
-      out[g * 3 + 2] = i;
-    }
-    return out;
   }
 
   // ------------------------------------------------------------------ exchange (F1, F2)

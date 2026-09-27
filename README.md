@@ -26,7 +26,7 @@ npm run check      # 型別檢查 + 分層檢查 + 全部測試
 packages/model     SSOT：文件 schema、文件指令、復原/重做、序列化（零內部相依）
 packages/sketch    草圖求解（PlaneGCS WASM）與封閉輪廓偵測
 packages/naming    持久命名（TNP）與參考解析
-packages/kernel    OCCT（WASM）門面：伸長、圓角、拓撲、網格、物質特性、STEP
+packages/kernel    OCCT 8.0.1（libcascade WASM）門面：伸長、圓角、拓撲、網格、物質特性、STEP
 packages/regen     確定性的重新計算引擎、父子關係推導
 packages/io        檔案層：STEP 輸出命名
 packages/render    Three.js 圖面：SW 式視圖操作、邊線拾取、三度空間參考
@@ -39,4 +39,4 @@ docs/adr           架構決策紀錄
 
 ## 授權說明
 
-本專案使用 LGPL 元件，包括 OCCT（經 `replicad-opencascadejs`）與 PlaneGCS（經 `@salusoft89/planegcs`）。目前定位為個人/公司內部使用。日後若要對外散佈，需要遵守 LGPL 的可替換要求。
+本專案使用 LGPL 元件，包括 OCCT（經 `libcascade`，LGPL-2.1 + Open CASCADE 例外條款）與 PlaneGCS（經 `@salusoft89/planegcs`）。目前定位為個人/公司內部使用。日後若要對外散佈，需要遵守 LGPL 的可替換要求。
