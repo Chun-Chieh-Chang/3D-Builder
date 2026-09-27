@@ -1,0 +1,37 @@
+{
+  "name": "3d-builder",
+  "private": true,
+  "type": "module",
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "scripts": {
+    "dev": "npm run dev -w @3db/web",
+    "build": "npm run build -w @3db/web",
+    "typecheck": "tsc -p tsconfig.json",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "lint:deps": "node scripts/check-deps.mjs",
+    "check": "npm run typecheck && npm run lint:deps && npm test"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.3",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "@types/three": "^0.186.0",
+    "@vitejs/plugin-react": "^6.1.1",
+    "typescript": "^7.0.2",
+    "vite": "^8.3.1",
+    "vitest": "^5.0.2"
+  },
+  "dependencies": {
+    "@salusoft89/planegcs": "^1.2.0",
+    "comlink": "^4.4.2",
+    "immer": "^11.1.18",
+    "react": "^19.3.0",
+    "react-dom": "^19.3.0",
+    "replicad-opencascadejs": "^1.1.0",
+    "three": "^0.186.1"
+  }
+}

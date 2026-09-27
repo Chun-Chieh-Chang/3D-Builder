@@ -1,0 +1,25 @@
+{
+  "name": "@3db/web",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "@3db/io": "*",
+    "@3db/kernel": "*",
+    "@3db/model": "*",
+    "@3db/naming": "*",
+    "@3db/regen": "*",
+    "@3db/render": "*",
+    "@3db/sketch": "*",
+    "@salusoft89/planegcs": "^1.2.0",
+    "comlink": "^4.4.2",
+    "react": "^19.3.0",
+    "react-dom": "^19.3.0",
+    "replicad-opencascadejs": "^1.1.0"
+  }
+}

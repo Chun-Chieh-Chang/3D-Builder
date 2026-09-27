@@ -1,0 +1,152 @@
+import type { Id } from './ids';
+
+/**
+ * SSOT document schema (B1, B2, B5, B8, B9).
+ * Only design intent lives here. B-Rep, meshes, element maps, sketch solutions,
+ * DOF status, mass properties and error lists are derived data and never stored.
+ */
+
+export const SCHEMA_VERSION = 1;
+
+/** Value expression: "20", "25.4mm", "1in", "30deg". Variables/equations arrive in Phase 3a (B5.2/B5.3). */
+export type Expr = string;
+
+export type Vec3 = [number, number, number];
+
+/** Geometric fallback used to disambiguate or repair a persistent-name reference (B4.3). */
+export interface Fingerprint {
+  /** Surface type for faces ("plane", "cylinder", …) or curve type for edges ("line", "circle", …). */
+  type: string;
+  /** Area for faces, length for edges. */
+  size: number;
+  center: Vec3;
+  /** Plane normal for planar faces, direction for straight edges. */
+  dir?: Vec3;
+}
+
+/** Reference = persistent name + fingerprint. Never a topology index (H3). */
+export interface Ref {
+  kind: 'face' | 'edge' | 'vertex' | 'datum' | 'body';
+  name: string;
+  fingerprint?: Fingerprint;
+}
+
+export type DatumPlaneName = 'plane:front' | 'plane:top' | 'plane:right';
+
+// ---------------------------------------------------------------- sketch (C1)
+
+/** Reserved id of the projected part origin inside every sketch (fixed at 0,0). */
+export const SKETCH_ORIGIN: Id = '@origin';
+
+export type SketchEntity =
+  | { id: Id; type: 'point'; x: number; y: number; construction?: boolean }
+  | { id: Id; type: 'line'; p1: Id; p2: Id; construction?: boolean }
+  | { id: Id; type: 'circle'; center: Id; radius: number; construction?: boolean }
+  | { id: Id; type: 'arc'; center: Id; start: Id; end: Id; construction?: boolean };
+
+/**
+ * Sketch relations and dimensions (C1.25–C1.28). Point coordinates stored on entities are the
+ * initial guess and the intent for under-defined DOFs; solved positions are derived.
+ */
+export type SketchConstraint =
+  | { id: Id; type: 'coincident'; a: Id; b: Id }
+  | { id: Id; type: 'horizontal'; line: Id }
+  | { id: Id; type: 'vertical'; line: Id }
+  | { id: Id; type: 'collinear'; a: Id; b: Id }
+  | { id: Id; type: 'parallel'; a: Id; b: Id }
+  | { id: Id; type: 'perpendicular'; a: Id; b: Id }
+  | { id: Id; type: 'tangent'; a: Id; b: Id }
+  | { id: Id; type: 'concentric'; a: Id; b: Id }
+  | { id: Id; type: 'equal'; a: Id; b: Id }
+  | { id: Id; type: 'midpoint'; point: Id; line: Id }
+  | { id: Id; type: 'pointOnLine'; point: Id; line: Id }
+  | { id: Id; type: 'symmetric'; a: Id; b: Id; axis: Id }
+  | { id: Id; type: 'fix'; point: Id }
+  | { id: Id; type: 'distance'; a: Id; b?: Id; value: Expr; label?: string; driving?: boolean }
+  | { id: Id; type: 'distanceX'; a: Id; b: Id; value: Expr; label?: string; driving?: boolean }
+  | { id: Id; type: 'distanceY'; a: Id; b: Id; value: Expr; label?: string; driving?: boolean }
+  | { id: Id; type: 'radius'; circle: Id; value: Expr; label?: string; driving?: boolean }
+  | { id: Id; type: 'diameter'; circle: Id; value: Expr; label?: string; driving?: boolean }
+  | { id: Id; type: 'angle'; a: Id; b: Id; value: Expr; label?: string; driving?: boolean };
+
+export type DimensionConstraint = Extract<SketchConstraint, { value: Expr }>;
+
+export function isDimension(c: SketchConstraint): c is DimensionConstraint {
+  return 'value' in c;
+}
+
+// ---------------------------------------------------------------- features (C3–C5)
+
+interface FeatureBase {
+  id: Id;
+  name: string;
+  suppressed: boolean;
+}
+
+export interface SketchFeature extends FeatureBase {
+  type: 'sketch';
+  plane: Ref;
+  entities: SketchEntity[];
+  constraints: SketchConstraint[];
+}
+
+/** Extrude end conditions (C4.1). Phase 0 evaluates blind and midPlane. */
+export type EndCondition =
+  | { type: 'blind'; depth: Expr; reverse?: boolean }
+  | { type: 'midPlane'; depth: Expr }
+  | { type: 'throughAll'; reverse?: boolean }
+  | { type: 'upToFace'; face: Ref; offset?: Expr };
+
+export interface ExtrudeFeature extends FeatureBase {
+  type: 'extrude';
+  sketch: Id;
+  op: 'boss' | 'cut';
+  dir1: EndCondition;
+  dir2?: EndCondition;
+}
+
+export interface FilletFeature extends FeatureBase {
+  type: 'fillet';
+  edges: Ref[];
+  radius: Expr;
+}
+
+export type Feature = SketchFeature | ExtrudeFeature | FilletFeature;
+export type FeatureType = Feature['type'];
+
+// ---------------------------------------------------------------- document
+
+export interface Variable {
+  id: Id;
+  name: string;
+  expr: Expr;
+}
+
+export interface AppearanceOverride {
+  target: Ref | { kind: 'part' };
+  color: string;
+}
+
+export interface BlobRef {
+  id: Id;
+  sha256: string;
+  kind: 'step';
+}
+
+export interface PartDoc {
+  kind: 'part';
+  schemaVersion: number;
+  displayUnits: { length: 'mm' | 'in'; angle: 'deg' };
+  variables: Variable[];
+  /** Ordered history = FeatureManager tree order (B2.1). */
+  features: Feature[];
+  /** Rollback bar position: number of features evaluated, or null for all (B2.4). */
+  rollbackIndex: number | null;
+  properties: Record<string, string>;
+  appearances: AppearanceOverride[];
+  blobs: BlobRef[];
+}
+
+export function findFeature(doc: PartDoc, id: Id): Feature | undefined {
+  return doc.features.find((f) => f.id === id);
+}
