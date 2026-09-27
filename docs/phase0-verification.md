@@ -11,7 +11,8 @@
 
 ## 你在 SolidWorks 的人工核對（驗收 ②）
 
-1. 在專案目錄執行 `npm install`（第一次），再執行 `npm run dev`，用 Edge 或 Chrome 開啟 http://localhost:5173 。
+1. 在專案目錄執行 `npm install`（第一次），再執行 `npm run dev`。瀏覽器會自動開啟 http://127.0.0.1:5391 （建議用 Edge 或 Chrome），左上角應顯示「3D-Builder」。
+   - 若出現 `Port 5391 is already in use`，通常表示 3D-Builder 已經在執行，直接開啟上面的網址即可。
 2. 上方切到「檔案」→「輸出 STEP」，會下載 `行走骨架示範件.step`。
 3. 在 SolidWorks 開啟這個 STEP 檔。
 4. 用「評估 → 物質特性」核對：

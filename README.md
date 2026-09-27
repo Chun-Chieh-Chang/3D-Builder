@@ -16,7 +16,7 @@
 
 ```bash
 npm install
-npm run dev        # http://localhost:5173
+npm run dev        # 自動開啟 http://127.0.0.1:5391
 npm run check      # 型別檢查 + 分層檢查 + 全部測試
 ```
 

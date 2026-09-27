@@ -5,7 +5,8 @@
       "name": "web",
       "runtimeExecutable": "npm",
       "runtimeArgs": ["run", "dev", "-w", "@3db/web"],
-      "port": 5173
+      "port": 5391,
+      "url": "http://127.0.0.1:5391"
     }
   ]
 }

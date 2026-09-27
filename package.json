@@ -7,7 +7,7 @@
     "apps/*"
   ],
   "scripts": {
-    "dev": "npm run dev -w @3db/web",
+    "dev": "npm run dev -w @3db/web -- --open",
     "build": "npm run build -w @3db/web",
     "typecheck": "tsc -p tsconfig.json",
     "test": "vitest run",
