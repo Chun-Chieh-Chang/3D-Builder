@@ -35,8 +35,9 @@ const SKETCH_TOOLS: ToolId[] = ['dimension', 'line', 'centerline', 'rect', 'cent
 export const ACTIONS: UiAction[] = [
   { id: 'new-part', label: '新零件', shortcut: 'Ctrl+N', group: 'file', enabled: idle, run: () => store.newPart() },
   { id: 'new-demo', label: '新示範件', group: 'file', enabled: idle, run: () => store.newDemo() },
-  { id: 'open', label: '開啟舊檔', shortcut: 'Ctrl+O', group: 'file', enabled: idle, run: () => openFileDialog() },
-  { id: 'save', label: '另存新檔', shortcut: 'Ctrl+S', group: 'file', enabled: idle, run: () => store.saveFile() },
+  { id: 'open', label: '開啟舊檔', shortcut: 'Ctrl+O', group: 'file', enabled: idle, run: () => store.open() },
+  { id: 'save', label: '儲存檔案', shortcut: 'Ctrl+S', group: 'file', enabled: idle, run: () => void store.save() },
+  { id: 'save-as', label: '另存新檔', group: 'file', enabled: idle, run: () => void store.saveAs() },
   { id: 'export-step', label: '輸出 STEP', group: 'file', enabled: (s) => idle(s) && s.bootMs !== null, run: () => void store.exportStep() },
 
   { id: 'extrude', label: '伸長填料/基材', group: 'feature', enabled: sketchSelected, run: () => store.newExtrude('boss') },
@@ -104,17 +105,6 @@ function toggleConstruction(): void {
   sketcher.setConstruction(!curves.every((e) => 'construction' in e && e.construction));
 }
 
-function openFileDialog(): void {
-  const input = document.createElement('input');
-  input.type = 'file';
-  input.accept = '.json,application/json';
-  input.onchange = () => {
-    const file = input.files?.[0];
-    if (file) void store.openFile(file);
-  };
-  input.click();
-}
-
 function matches(e: KeyboardEvent, shortcut: string): boolean {
   const parts = shortcut.split('+');
   const key = parts.pop()!.toLowerCase();
@@ -129,10 +119,11 @@ export function installShortcuts(): () => void {
     if (target && (target.tagName === 'INPUT' || target.tagName === 'SELECT' || target.tagName === 'TEXTAREA')) return;
     const s = store.getState();
     // An open dialog owns the keyboard (Esc closes it; its focused button takes Enter).
-    if (s.confirmDelete || s.whatsWrong) {
+    if (s.confirmDelete || s.whatsWrong || s.unsaved) {
       if (e.key === 'Escape') {
         store.requestDelete(null);
         store.showWhatsWrong(false);
+        void store.answerUnsaved('cancel');
       }
       return;
     }

@@ -1,0 +1,3 @@
+# Binary fixtures and part files must reach the tests byte for byte.
+*.zip binary
+*.3dbx binary

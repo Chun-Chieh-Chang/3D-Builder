@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { ACTIONS, type UiAction } from '../actions';
-import { useSketcherView, useStore } from '../state/store';
+import { useDocumentTitle, useSketcherView, useStore } from '../state/store';
 
 const TABS: { id: string; label: string; groups: UiAction['group'][] }[] = [
   { id: 'features', label: '特徵', groups: ['feature', 'edit'] },
@@ -13,6 +13,7 @@ const TABS: { id: string; label: string; groups: UiAction['group'][] }[] = [
 export function CommandBar() {
   const [tab, setTab] = useState('features');
   const state = useStore((s) => s);
+  const title = useDocumentTitle();
   useSketcherView(); // re-render when the active sketch tool changes
   const sketching = state.editing?.kind === 'sketch';
   useEffect(() => {
@@ -41,6 +42,9 @@ export function CommandBar() {
             {a.label}
           </button>
         ))}
+      </div>
+      <div className="doc-title" title={state.dirty ? '有尚未儲存的變更' : undefined}>
+        {title}
       </div>
     </header>
   );

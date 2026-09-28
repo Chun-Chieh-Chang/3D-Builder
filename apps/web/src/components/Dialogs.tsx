@@ -125,3 +125,31 @@ export function WhatsWrongDialog() {
     </div>
   );
 }
+
+/** 「要儲存變更嗎？」 before a new or opened part replaces a modified one (SolidWorks asks the same). */
+export function UnsavedDialog() {
+  const action = useStore((s) => s.unsaved);
+  const fileName = useStore((s) => s.fileName);
+  const partName = useStore((s) => s.doc.properties['零件名稱'] || '零件1');
+  const save = useRef<HTMLButtonElement>(null);
+  useEffect(() => save.current?.focus(), [action]);
+  if (!action) return null;
+  const answer = (a: 'save' | 'discard' | 'cancel') => () => void store.answerUnsaved(a);
+  return (
+    <div className="modal-backdrop" onPointerDown={answer('cancel')}>
+      <div className="modal" role="dialog" aria-label="要儲存變更嗎" onPointerDown={(e) => e.stopPropagation()}>
+        <h3>要儲存變更嗎？</h3>
+        <p>
+          「{fileName ?? partName}」有尚未儲存的變更。{action === 'open' ? '開啟其他檔案' : '建立新零件'}之前要先儲存嗎？
+        </p>
+        <div className="modal-actions">
+          <button ref={save} className="primary" onClick={answer('save')}>
+            儲存
+          </button>
+          <button onClick={answer('discard')}>不儲存</button>
+          <button onClick={answer('cancel')}>取消</button>
+        </div>
+      </div>
+    </div>
+  );
+}

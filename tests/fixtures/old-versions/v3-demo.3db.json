@@ -1,0 +1,167 @@
+{
+  "appearances": [],
+  "blobs": [],
+  "displayUnits": {
+    "angle": "deg",
+    "length": "mm"
+  },
+  "features": [
+    {
+      "constraints": [
+        {
+          "a": "p1",
+          "b": "@origin",
+          "id": "c1",
+          "type": "coincident"
+        },
+        {
+          "a": "l1",
+          "id": "c2",
+          "type": "horizontal"
+        },
+        {
+          "a": "l3",
+          "id": "c3",
+          "type": "horizontal"
+        },
+        {
+          "a": "l2",
+          "id": "c4",
+          "type": "vertical"
+        },
+        {
+          "a": "l4",
+          "id": "c5",
+          "type": "vertical"
+        },
+        {
+          "a": "l1",
+          "id": "d1",
+          "label": "寬度",
+          "type": "distance",
+          "value": "20"
+        },
+        {
+          "a": "l2",
+          "id": "d2",
+          "label": "高度",
+          "type": "distance",
+          "value": "10"
+        }
+      ],
+      "entities": [
+        {
+          "id": "p1",
+          "type": "point",
+          "x": 0,
+          "y": 0
+        },
+        {
+          "id": "p2",
+          "type": "point",
+          "x": 20,
+          "y": 0
+        },
+        {
+          "id": "p3",
+          "type": "point",
+          "x": 20,
+          "y": 10
+        },
+        {
+          "id": "p4",
+          "type": "point",
+          "x": 0,
+          "y": 10
+        },
+        {
+          "id": "l1",
+          "p1": "p1",
+          "p2": "p2",
+          "type": "line"
+        },
+        {
+          "id": "l2",
+          "p1": "p2",
+          "p2": "p3",
+          "type": "line"
+        },
+        {
+          "id": "l3",
+          "p1": "p3",
+          "p2": "p4",
+          "type": "line"
+        },
+        {
+          "id": "l4",
+          "p1": "p4",
+          "p2": "p1",
+          "type": "line"
+        }
+      ],
+      "id": "sketch1",
+      "name": "草圖1",
+      "plane": {
+        "kind": "datum",
+        "name": "plane:top"
+      },
+      "suppressed": false,
+      "type": "sketch"
+    },
+    {
+      "dir1": {
+        "depth": "5",
+        "type": "blind"
+      },
+      "id": "extrude1",
+      "name": "伸長1",
+      "op": "boss",
+      "sketch": "sketch1",
+      "suppressed": false,
+      "type": "extrude"
+    },
+    {
+      "edges": [
+        {
+          "fingerprint": {
+            "center": [
+              20,
+              5,
+              -5
+            ],
+            "dir": [
+              0,
+              0,
+              -1
+            ],
+            "size": 10,
+            "type": "line"
+          },
+          "kind": "edge",
+          "name": "{extrude1:cap:end|extrude1:side:sketch1.l2}"
+        }
+      ],
+      "id": "fillet1",
+      "name": "圓角1",
+      "radius": "2",
+      "suppressed": false,
+      "type": "fillet"
+    }
+  ],
+  "idCounters": {
+    "c": 5,
+    "d": 2,
+    "extrude": 1,
+    "fillet": 1,
+    "l": 4,
+    "p": 4,
+    "sketch": 1
+  },
+  "kind": "part",
+  "properties": {
+    "零件名稱": "行走骨架示範件"
+  },
+  "rollbackIndex": null,
+  "schemaVersion": 3,
+  "variables": []
+}

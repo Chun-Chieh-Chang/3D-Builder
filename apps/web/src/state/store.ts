@@ -11,7 +11,6 @@ import {
   IdAllocator,
   idsInUse,
   isDatumPlaneName,
-  parsePart,
   planeFrame,
   serializePart,
   type Command,
@@ -24,11 +23,12 @@ import {
   type Ref,
   type SketchFeature,
 } from '@3db/model';
-import { stepFileName } from '@3db/io';
+import { PART_FILE_EXTENSION, partFileName, readPartFile, stepFileName, writePartFile } from '@3db/io';
 import { suppressionTargets, type SuppressAction } from '@3db/regen/dag';
 import type { Viewer } from '@3db/render';
 import type { KernelApi, RebuildPayload, SketchSolvePayload, SketchSolveRequest } from '../worker/protocol';
 import { SketchController, type ControllerView, type SketchHost } from '../sketcher/controller';
+import { download, pickFileToOpen, pickSaveTarget, writeFile } from '../files';
 
 export interface EditSession {
   featureId: Id;
@@ -40,6 +40,9 @@ export interface Notice {
   kind: 'error' | 'info';
   text: string;
 }
+
+/** File actions that replace the part, and so first ask about unsaved changes. */
+export type PendingFileAction = 'new-part' | 'new-demo' | 'open';
 
 /**
  * UI state. The document inside DocHistory is the only source of truth for the design;
@@ -63,19 +66,18 @@ export interface UiState {
   confirmDelete: Id | null;
   /** 「錯誤為何？」 dialog (D7.1). */
   whatsWrong: boolean;
+  /** The file the part was opened from or last saved to (F7.1); null for a part never saved. */
+  fileName: string | null;
+  /** The document differs from what was last opened or saved (the title shows 「*」). */
+  dirty: boolean;
+  /** A file action waiting for the answer to 「要儲存變更嗎？」. */
+  unsaved: PendingFileAction | null;
+  /** Bumped when a part replaces the current one: the viewport fits the next model it shows. */
+  fitRequest: number;
   rebuilding: boolean;
   bootMs: { occtMs: number; gcsMs: number } | null;
   bootError: string | null;
   notice: Notice | null;
-}
-
-function download(name: string, text: string, type: string): void {
-  const url = URL.createObjectURL(new Blob([text], { type }));
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = name;
-  a.click();
-  setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
 /** Next free display name like SolidWorks does: 草圖3 after 草圖2 (names are labels, ids stay permanent). */
@@ -135,6 +137,12 @@ class AppStore {
   private sketchSeq = 0;
   private sketchRunner: LatestRunner<SketchSolveRequest, SketchSolvePayload>;
   private state: UiState;
+  /** Where 「儲存檔案」 writes (F7.1); null until the part is saved or opened from a writable file. */
+  private fileHandle: FileSystemFileHandle | null = null;
+  /** The document text as last opened or saved: the document is 「dirty」 when it serializes differently. */
+  private savedText: string;
+  /** Imported data by SHA-256, saved with the document (1F). */
+  private blobs = new Map<string, Uint8Array>();
   /** The viewport registers itself so view actions (fit, standard views) can reach it. */
   viewer: Viewer | null = null;
   /** Tools of the sketch being edited (null outside sketch sessions). */
@@ -143,6 +151,7 @@ class AppStore {
   constructor() {
     const worker = new Worker(new URL('../worker/kernel.worker.ts', import.meta.url), { type: 'module' });
     this.api = Comlink.wrap<KernelApi>(worker);
+    this.savedText = serializePart(this.history.doc);
     this.state = {
       doc: this.history.doc,
       canUndo: false,
@@ -155,6 +164,10 @@ class AppStore {
       dimensionEdit: null,
       confirmDelete: null,
       whatsWrong: false,
+      fileName: null,
+      dirty: false,
+      unsaved: null,
+      fitRequest: 0,
       rebuilding: false,
       bootMs: null,
       bootError: null,
@@ -176,6 +189,10 @@ class AppStore {
       (e: unknown) => this.set({ bootError: e instanceof Error ? e.message : String(e) }),
     );
     this.requestRebuild();
+    // Closing the tab with unsaved changes asks first, like closing a modified document (risk 11: lost work).
+    window.addEventListener('beforeunload', (e) => {
+      if (this.state.dirty) e.preventDefault();
+    });
   }
 
   getState = (): UiState => this.state;
@@ -191,7 +208,8 @@ class AppStore {
   }
 
   private onDocChanged(): void {
-    this.set({ doc: this.history.doc, canUndo: this.history.canUndo, canRedo: this.history.canRedo });
+    const doc = this.history.doc;
+    this.set({ doc, canUndo: this.history.canUndo, canRedo: this.history.canRedo, dirty: serializePart(doc) !== this.savedText });
     // Inside a sketch only the sketch changes: solve it, and leave the model before it as it is.
     if (this.state.editing?.kind === 'sketch') this.requestSketchSolve();
     else this.requestRebuild();
@@ -584,7 +602,7 @@ class AppStore {
     }
   }
 
-  // ------------------------------------------------------------ files (F1.1, F7.1)
+  // ------------------------------------------------------------ files (F1.1, F7.1, B9.1)
 
   async exportStep(): Promise<void> {
     try {
@@ -596,38 +614,111 @@ class AppStore {
     }
   }
 
-  saveFile(): void {
-    const name = (this.history.doc.properties['零件名稱'] || 'part').replace(/[\\/:*?"<>|]+/g, '_');
-    download(`${name}.3db.json`, serializePart(this.history.doc), 'application/json');
-  }
-
-  async openFile(file: File): Promise<void> {
-    try {
-      this.load(parsePart(await file.text()));
-      this.notify(`已開啟 ${file.name}`);
-    } catch (e) {
-      this.notify(e instanceof FormatError ? e.message : `無法開啟：${String(e)}`, 'error');
-    }
+  /** 「新零件」: an empty part with the default planes (B1.4). */
+  newPart(): void {
+    this.guard('new-part');
   }
 
   newDemo(): void {
-    this.load(createDemoPart());
+    this.guard('new-demo');
   }
 
-  /** 「新零件」: an empty part with the default planes (B1.4). */
-  newPart(): void {
+  /** 「開啟舊檔」: a `.3dbx` part, or a `.3db.json` saved by an older version (B9.2). */
+  open(): void {
+    this.guard('open');
+  }
+
+  /** Replacing a modified part asks 「要儲存變更嗎？」 first, as SolidWorks does. */
+  private guard(action: PendingFileAction): void {
+    if (this.state.dirty) this.set({ unsaved: action });
+    else void this.perform(action);
+  }
+
+  /** The answer to 「要儲存變更嗎？」: save first (and go on only if that worked), go on without saving, or stay. */
+  async answerUnsaved(answer: 'save' | 'discard' | 'cancel'): Promise<void> {
+    const action = this.state.unsaved;
+    this.set({ unsaved: null });
+    if (!action || answer === 'cancel') return;
+    if (answer === 'save' && !(await this.save())) return;
+    await this.perform(action);
+  }
+
+  private async perform(action: PendingFileAction): Promise<void> {
+    if (action === 'open') return this.openFile();
+    if (action === 'new-demo') return this.load(createDemoPart(), null, null);
     const doc = createEmptyPart();
     doc.properties = { 零件名稱: '零件1' };
-    this.load(doc);
+    this.load(doc, null, null);
   }
 
-  private load(doc: PartDoc): void {
+  private async openFile(): Promise<void> {
+    try {
+      const picked = await pickFileToOpen();
+      if (!picked) return;
+      const file = await readPartFile(picked.bytes);
+      // A file in the old format is never overwritten with the new one: its first save asks for a name.
+      this.load(file.doc, file.format === '3dbx' ? picked.handle : null, picked.name, file.blobs);
+      const notes = [...(file.format === 'json' ? ['舊版格式，儲存時會另存為 .3dbx'] : []), ...file.warnings];
+      this.notify(`已開啟 ${picked.name}${notes.length ? `（${notes.join('；')}）` : ''}`, file.warnings.length ? 'error' : 'info');
+    } catch (e) {
+      // After 「儲存」 in the unsaved-changes prompt the browser may refuse a second file dialog.
+      if (e instanceof DOMException && (e.name === 'SecurityError' || e.name === 'NotAllowedError')) return this.notify('請再按一次「開啟舊檔」');
+      this.notify(`無法開啟：${e instanceof Error ? e.message : String(e)}`, 'error');
+    }
+  }
+
+  /** 「儲存檔案」: into the file the part came from; a part never saved asks for a name. True when saved. */
+  async save(): Promise<boolean> {
+    return this.fileHandle ? this.write(this.fileHandle) : this.saveAs();
+  }
+
+  /** 「另存新檔」. True when saved. */
+  async saveAs(): Promise<boolean> {
+    const name = this.state.fileName ? this.state.fileName.replace(/(\.3db)?\.json$|\.3dbx$/i, '') + PART_FILE_EXTENSION : partFileName(this.history.doc);
+    try {
+      const target = await pickSaveTarget(name);
+      if (target === null) return false;
+      if (target !== 'download') return await this.write(target);
+      // Without file access the part is downloaded; the next save downloads again.
+      const doc = this.history.doc;
+      download(name, (await writePartFile(doc, this.blobs)) as Uint8Array<ArrayBuffer>, 'application/octet-stream');
+      this.saved(doc, null, name);
+      this.notify(`已下載 ${name}（這個瀏覽器不能直接寫入檔案）`);
+      return true;
+    } catch (e) {
+      this.notify(`存檔失敗：${e instanceof Error ? e.message : String(e)}`, 'error');
+      return false;
+    }
+  }
+
+  private async write(handle: FileSystemFileHandle): Promise<boolean> {
+    const doc = this.history.doc; // what is written, even if an edit lands while writing
+    try {
+      await writeFile(handle, await writePartFile(doc, this.blobs));
+      this.saved(doc, handle, handle.name);
+      this.notify(`已儲存 ${handle.name}`);
+      return true;
+    } catch (e) {
+      this.notify(`存檔失敗：${e instanceof Error ? e.message : String(e)}`, 'error');
+      return false;
+    }
+  }
+
+  private saved(doc: PartDoc, handle: FileSystemFileHandle | null, fileName: string): void {
+    this.fileHandle = handle;
+    this.savedText = serializePart(doc);
+    this.set({ fileName, dirty: serializePart(this.history.doc) !== this.savedText });
+  }
+
+  private load(doc: PartDoc, handle: FileSystemFileHandle | null, fileName: string | null, blobs = new Map<string, Uint8Array>()): void {
     if (this.state.editing) this.cancelEdit();
     this.history = new DocHistory(doc);
     this.history.subscribe(() => this.onDocChanged());
-    this.set({ selected: null, selectedFace: null, result: null });
+    this.fileHandle = handle;
+    this.blobs = blobs;
+    this.savedText = serializePart(doc);
+    this.set({ selected: null, selectedFace: null, result: null, fileName, fitRequest: this.state.fitRequest + 1 });
     this.onDocChanged();
-    this.viewer?.fitAll();
   }
 
   dismissNotice(): void {
@@ -639,6 +730,14 @@ export const store = new AppStore();
 
 export function useStore<T>(selector: (s: UiState) => T): T {
   return useSyncExternalStore(store.subscribe, () => selector(store.getState()));
+}
+
+/** The document as a title bar shows it: file name (or part name if never saved), 「*」 when modified. */
+export function useDocumentTitle(): string {
+  const fileName = useStore((s) => s.fileName);
+  const partName = useStore((s) => s.doc.properties['零件名稱'] || '零件1');
+  const dirty = useStore((s) => s.dirty);
+  return `${fileName ?? partName}${dirty ? ' *' : ''}`;
 }
 
 const noSubscription = () => () => {};

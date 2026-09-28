@@ -54,7 +54,8 @@ export function Viewport() {
   const displayed = useRef<RebuildPayload | null>(null);
   const overlay = useRef<SketchOverlay | null>(null);
   const sketchingRef = useRef(false);
-  const fitted = useRef(false);
+  /** The fitRequest the view was last fitted for: a new or opened part is fitted once its model arrives. */
+  const fittedFor = useRef(-1);
   const result = useStore((s) => s.result);
   const editing = useStore((s) => s.editing);
   const doc = useStore((s) => s.doc);
@@ -64,6 +65,7 @@ export function Viewport() {
   const dimensionEdit = useStore((s) => s.dimensionEdit);
   const bootMs = useStore((s) => s.bootMs);
   const bootError = useStore((s) => s.bootError);
+  const fitRequest = useStore((s) => s.fitRequest);
   const view = useSketcherView();
   const [hover, setHover] = useState(-1);
   const [hoverFace, setHoverFace] = useState(-1);
@@ -132,10 +134,11 @@ export function Viewport() {
   useEffect(() => {
     const v = store.viewer;
     if (!v) return;
-    v.setMesh(result?.mesh ?? null, !fitted.current && !!result?.mesh);
+    const fit = !!result?.mesh && fittedFor.current !== fitRequest;
+    v.setMesh(result?.mesh ?? null, fit);
     v.setVertices(result?.vertexPoints ?? new Float32Array(0));
     displayed.current = result;
-    if (result?.mesh) fitted.current = true;
+    if (fit) fittedFor.current = fitRequest;
   }, [result]);
 
   useEffect(() => {

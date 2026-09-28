@@ -1,0 +1,270 @@
+{
+  "appearances": [],
+  "blobs": [],
+  "displayUnits": {
+    "angle": "deg",
+    "length": "mm"
+  },
+  "features": [
+    {
+      "constraints": [
+        {
+          "a": "al0",
+          "id": "ah0",
+          "type": "horizontal"
+        },
+        {
+          "a": "al1",
+          "id": "av1",
+          "type": "vertical"
+        },
+        {
+          "a": "al2",
+          "id": "ah2",
+          "type": "horizontal"
+        },
+        {
+          "a": "al3",
+          "id": "av3",
+          "type": "vertical"
+        },
+        {
+          "a": "al0",
+          "id": "aw",
+          "type": "distance",
+          "value": "40"
+        },
+        {
+          "a": "al1",
+          "id": "ad",
+          "type": "distance",
+          "value": "30"
+        },
+        {
+          "a": "ap0",
+          "b": "@origin",
+          "id": "ao",
+          "type": "coincident"
+        }
+      ],
+      "entities": [
+        {
+          "id": "ap0",
+          "type": "point",
+          "x": 0,
+          "y": 0
+        },
+        {
+          "id": "ap1",
+          "type": "point",
+          "x": 40,
+          "y": 0
+        },
+        {
+          "id": "ap2",
+          "type": "point",
+          "x": 40,
+          "y": 30
+        },
+        {
+          "id": "ap3",
+          "type": "point",
+          "x": 0,
+          "y": 30
+        },
+        {
+          "id": "al0",
+          "p1": "ap0",
+          "p2": "ap1",
+          "type": "line"
+        },
+        {
+          "id": "al1",
+          "p1": "ap1",
+          "p2": "ap2",
+          "type": "line"
+        },
+        {
+          "id": "al2",
+          "p1": "ap2",
+          "p2": "ap3",
+          "type": "line"
+        },
+        {
+          "id": "al3",
+          "p1": "ap3",
+          "p2": "ap0",
+          "type": "line"
+        }
+      ],
+      "id": "sketch1",
+      "name": "草圖1",
+      "plane": {
+        "kind": "datum",
+        "name": "plane:front"
+      },
+      "suppressed": false,
+      "type": "sketch"
+    },
+    {
+      "dir1": {
+        "depth": "10",
+        "type": "blind"
+      },
+      "id": "extrude1",
+      "name": "伸長1",
+      "op": "boss",
+      "sketch": "sketch1",
+      "suppressed": false,
+      "type": "extrude"
+    },
+    {
+      "constraints": [
+        {
+          "circle": "k",
+          "id": "kr",
+          "type": "radius",
+          "value": "4"
+        },
+        {
+          "a": "@origin",
+          "b": "kc",
+          "id": "kx",
+          "type": "distanceX",
+          "value": "20"
+        },
+        {
+          "a": "@origin",
+          "b": "kc",
+          "id": "ky",
+          "type": "distanceY",
+          "value": "15"
+        }
+      ],
+      "entities": [
+        {
+          "id": "kc",
+          "type": "point",
+          "x": 20,
+          "y": 15
+        },
+        {
+          "center": "kc",
+          "id": "k",
+          "radius": 4,
+          "type": "circle"
+        }
+      ],
+      "id": "sketch2",
+      "name": "草圖2",
+      "plane": {
+        "kind": "datum",
+        "name": "plane:front"
+      },
+      "suppressed": false,
+      "type": "sketch"
+    },
+    {
+      "dir1": {
+        "reverse": true,
+        "type": "throughAll"
+      },
+      "id": "cut1",
+      "name": "除料-伸長1",
+      "op": "cut",
+      "sketch": "sketch2",
+      "suppressed": false,
+      "type": "extrude"
+    },
+    {
+      "distance": "2",
+      "edges": [
+        {
+          "kind": "edge",
+          "name": "{extrude1:cap:end|extrude1:side:sketch1.al1}"
+        }
+      ],
+      "id": "chamfer1",
+      "mode": "distanceDistance",
+      "name": "導角1",
+      "second": "2",
+      "suppressed": false,
+      "type": "chamfer"
+    },
+    {
+      "constraints": [
+        {
+          "circle": "m",
+          "id": "mr",
+          "type": "radius",
+          "value": "3"
+        },
+        {
+          "a": "@origin",
+          "b": "mc",
+          "id": "mx",
+          "type": "distanceX",
+          "value": "8"
+        },
+        {
+          "a": "@origin",
+          "b": "mc",
+          "id": "my",
+          "type": "distanceY",
+          "value": "8"
+        }
+      ],
+      "entities": [
+        {
+          "id": "mc",
+          "type": "point",
+          "x": 8,
+          "y": 8
+        },
+        {
+          "center": "mc",
+          "id": "m",
+          "radius": 3,
+          "type": "circle"
+        }
+      ],
+      "id": "sketch3",
+      "name": "草圖3",
+      "plane": {
+        "kind": "face",
+        "name": "extrude1:cap:end"
+      },
+      "suppressed": false,
+      "type": "sketch"
+    },
+    {
+      "dir1": {
+        "depth": "5",
+        "type": "blind"
+      },
+      "id": "extrude2",
+      "name": "伸長2",
+      "op": "boss",
+      "sketch": "sketch3",
+      "suppressed": false,
+      "type": "extrude"
+    }
+  ],
+  "idCounters": {
+    "ah": 2,
+    "al": 3,
+    "ap": 3,
+    "av": 3,
+    "chamfer": 1,
+    "cut": 1,
+    "extrude": 2,
+    "sketch": 3
+  },
+  "kind": "part",
+  "properties": {
+    "零件名稱": "板-孔-導角-凸台"
+  },
+  "rollbackIndex": null,
+  "schemaVersion": 3,
+  "variables": []
+}
