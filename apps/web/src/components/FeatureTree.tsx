@@ -3,7 +3,7 @@ import type { Feature, Id } from '@3db/model';
 import { ownerFeatures } from '@3db/naming';
 import { dependencies } from '@3db/regen/dag';
 import type { FeatureResult } from '@3db/regen';
-import { store, useStore } from '../state/store';
+import { store, useDocumentName, useStore } from '../state/store';
 import { DATUM_ITEMS, featureLabel, SKETCH_STATUS_PREFIX } from '../strings';
 import { Icon } from './Icon';
 
@@ -24,6 +24,7 @@ export function FeatureTree() {
   const selected = useStore((s) => s.selected);
   const selectedFace = useStore((s) => s.selectedFace);
   const editing = useStore((s) => s.editing);
+  const name = useDocumentName();
   const [menu, setMenu] = useState<Menu | null>(null);
   const [relations, setRelations] = useState<Feature | null>(null);
   const [dragIndex, setDragIndex] = useState<number | null>(null);
@@ -73,7 +74,7 @@ export function FeatureTree() {
     <div className="feature-tree">
       <div className="tree-part">
         <Icon name="part" />
-        <span>{doc.properties['零件名稱'] || '零件1'}</span>
+        <span>{name}</span>
       </div>
       <ol ref={listRef} className="tree-list">
         {DATUM_ITEMS.map((d) => (

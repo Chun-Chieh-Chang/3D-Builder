@@ -10,7 +10,7 @@ import { applyCommand, createDemoPart, type Command, type PartDoc } from '@3db/m
 import { PlaneGcsSolver } from '@3db/sketch';
 import { Kernel } from '@3db/kernel';
 import { dependencies, descendants, Regenerator, type RebuildResult } from '@3db/regen';
-import { exportPartStep } from '@3db/io';
+import { exportPartStep, partName } from '@3db/io';
 
 let kernel: Kernel;
 let regen: Regenerator;
@@ -77,7 +77,7 @@ describe('Phase 0 acceptance', () => {
   it('round-trips STEP with identical volume', () => {
     const doc = demo(30, 10, 5, 2);
     const res = regen.rebuild(doc);
-    const step = exportPartStep(kernel, res.body!.shape, doc);
+    const step = exportPartStep(kernel, res.body!.shape, partName(doc, null));
     expect(step).toMatch(/^ISO-10303-21;/);
     expect(step).toContain("PRODUCT('行走骨架示範件'");
     expect(step).toMatch(/SI_UNIT\(\.MILLI\.,\.METRE\.\)/);

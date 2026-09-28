@@ -73,6 +73,27 @@ describe('smart dimension (C1.28)', () => {
     expect(smartDimension(g, ['p1', 'kc'], [12, 9])!.body.type).toBe('distance');
   });
 
+  it('measures the angle on the side it is placed, like SolidWorks', () => {
+    // Two lines from the origin 60° apart, and a V drawn head to tail (D → E → F) with a 90° opening.
+    const pts: Record<string, [number, number]> = { o: [0, 0], x: [10, 0], y: [5, 5 * Math.sqrt(3)], D: [15, 40], E: [0, 25], F: [-15, 40] };
+    const g = new Map<Id, SolvedGeometry>(Object.entries(pts).map(([id, p]) => [id, { type: 'point', p }]));
+    const line = (id: string, p1: string, p2: string) => g.set(id, { type: 'line', a: pts[p1]!, b: pts[p2]!, p1, p2, construction: false });
+    line('ox', 'o', 'x');
+    line('oy', 'o', 'y');
+    line('DE', 'D', 'E');
+    line('EF', 'E', 'F');
+    const at = (place: [number, number], ids: Id[] = ['ox', 'oy']) => {
+      const r = smartDimension(g, ids, place)!;
+      return { ...r.body, value: Math.round(r.value * 1e9) / 1e9 };
+    };
+    expect(at([6, 2])).toEqual({ type: 'angle', a: 'ox', b: 'oy', value: 60 }); // inside
+    expect(at([-3, 3])).toEqual({ type: 'angle', a: 'oy', b: 'ox', flip: 'b', value: 120 }); // beside it
+    expect(at([-6, -2])).toEqual({ type: 'angle', a: 'ox', b: 'oy', flip: 'both', value: 60 }); // opposite
+    expect(at([0, 35], ['DE', 'EF'])).toEqual({ type: 'angle', a: 'DE', b: 'EF', flip: 'a', value: 90 }); // inside the V
+    // below the bottom of the V: DE continued past E (225°), then EF reversed (315°), 90° counter-clockwise
+    expect(at([0, 15], ['DE', 'EF'])).toEqual({ type: 'angle', a: 'DE', b: 'EF', flip: 'b', value: 90 });
+  });
+
   it('orients angle dimensions so the stored angle is positive', () => {
     const r = smartDimension(g, ['l2', 'l1'], [25, 5])!;
     expect(r.body).toMatchObject({ type: 'angle', a: 'l1', b: 'l2' });

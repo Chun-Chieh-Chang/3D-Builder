@@ -92,6 +92,9 @@ describe('up to face, revolve, chamfer', () => {
     keep(tube.shape);
     expect(volume(tube.shape)).toBeCloseTo(Math.PI * (100 - 25) * 10, 6);
     expect(tube.faceOrigins.flat().some((o) => o.rel === 'cap')).toBe(false);
+    // Every face, the planar ones square to the axis included, knows the profile edge that swept it.
+    expect(tube.faceOrigins.map((o) => o.map((x) => ('source' in x ? x.source : x.rel)))).toEqual(expect.arrayContaining([['r1'], ['r2'], ['r3'], ['r4']]));
+    expect(tube.faceOrigins.every((o) => o.length === 1)).toBe(true);
     const quarter = k.revolve(front, [rect(5, 0, 10, 10)], { origin: [0, 0, 0], dir: [0, 1, 0] }, Math.PI / 2);
     keep(quarter.shape);
     expect(volume(quarter.shape)).toBeCloseTo((Math.PI * (100 - 25) * 10) / 4, 6);

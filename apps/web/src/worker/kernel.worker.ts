@@ -83,11 +83,11 @@ const api: KernelApi = {
     return { seq, ...r, problems, ms: performance.now() - t };
   },
 
-  async exportStep(doc: PartDoc): Promise<string> {
+  async exportStep(doc: PartDoc, name: string): Promise<string> {
     await api.init();
     const r = regen.rebuild(doc);
     if (!r.body) throw new Error('沒有可輸出的本體');
-    return exportPartStep(kernel, r.body.shape, doc);
+    return exportPartStep(kernel, r.body.shape, name);
   },
 };
 

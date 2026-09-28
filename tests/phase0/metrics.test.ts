@@ -6,7 +6,7 @@ import { createDemoPart } from '@3db/model';
 import { PlaneGcsSolver } from '@3db/sketch';
 import { Kernel } from '@3db/kernel';
 import { Regenerator } from '@3db/regen';
-import { exportPartStep } from '@3db/io';
+import { exportPartStep, partName } from '@3db/io';
 
 const median = (xs: number[]) => xs.slice().sort((a, b) => a - b)[Math.floor(xs.length / 2)]!;
 
@@ -28,7 +28,7 @@ it('measures Phase 0 performance', async () => {
   const mesh = kernel.mesh(r.body!.shape);
   const meshMs = performance.now() - t;
   t = performance.now();
-  const step = exportPartStep(kernel, r.body!.shape, doc);
+  const step = exportPartStep(kernel, r.body!.shape, partName(doc, null));
   const stepMs = performance.now() - t;
 
   const require = createRequire(import.meta.url);

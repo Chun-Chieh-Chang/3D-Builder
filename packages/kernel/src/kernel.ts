@@ -210,24 +210,36 @@ export class Kernel {
   }
 
   /** Provenance of a sweep (prism or revolution): side faces from profile edges, caps from the first/last profile. */
+  /**
+   * `swept` is the sweep's own record of what a profile edge generated. It is needed for full
+   * revolutions: there BRepPrimAPI_MakeRevol.Generated returns nothing for edges square to the axis,
+   * although the planar faces they sweep are in the result, and those faces would lose their names.
+   */
   private sweepOrigins(
     mk: { Generated(s: TopoDS_Shape): NCollection_List_TopoDS_Shape; FirstShape(): TopoDS_Shape; LastShape(): TopoDS_Shape },
     out: TopoDS_Shape,
     sources: Map<TopoDS_Shape, string>,
     arena: Arena,
+    swept?: (edge: TopoDS_Shape) => TopoDS_Shape | null,
   ): FaceOrigin[][] {
     const oc = this.oc;
     const outFaces = ShapeIndex.of(oc, out, T.FACE, arena);
     try {
       const origins: FaceOrigin[][] = outFaces.keys.map(() => []);
+      const same = (a: FaceOrigin, b: FaceOrigin) => JSON.stringify(a) === JSON.stringify(b);
       const mark = (shapes: TopoDS_Shape[], origin: FaceOrigin) => {
         for (const s of shapes) {
           const i = outFaces.indexOf(s);
-          if (i >= 0) origins[i]!.push(origin);
+          if (i >= 0 && !origins[i]!.some((o) => same(o, origin))) origins[i]!.push(origin);
           s.delete();
         }
       };
-      for (const [edge, source] of sources) mark(this.list(mk.Generated(edge)), { rel: 'generated', kind: 'profileEdge', source });
+      for (const [edge, source] of sources) {
+        const origin: FaceOrigin = { rel: 'generated', kind: 'profileEdge', source };
+        mark(this.list(mk.Generated(edge)), origin);
+        const s = swept?.(edge);
+        if (s) mark([s], origin);
+      }
       const caps = (shape: TopoDS_Shape, which: 'start' | 'end') => {
         const idx = ShapeIndex.of(oc, shape, T.FACE, arena);
         mark(idx.keys.splice(0), { rel: 'cap', which });
@@ -326,7 +338,14 @@ export class Kernel {
       // Four arguments on purpose: with three, arity dispatch cannot tell (angle) from (copy).
       const mk = arena.own(new oc.BRepPrimAPI_MakeRevol(profile, ax, angle, false));
       const out = this.build(mk, '旋轉', arena);
-      return { shape: this.put(out), faceOrigins: this.sweepOrigins(mk, out, sources, arena) };
+      const sweep = arena.own(mk.Revol());
+      const swept = (edge: TopoDS_Shape) => {
+        const s = sweep.Shape(edge);
+        if (!s.IsNull()) return s;
+        s.delete();
+        return null; // an edge on the axis sweeps nothing
+      };
+      return { shape: this.put(out), faceOrigins: this.sweepOrigins(mk, out, sources, arena, swept) };
     } finally {
       arena.dispose();
     }

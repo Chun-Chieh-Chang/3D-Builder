@@ -6,7 +6,7 @@ import type { Id } from './ids';
  * DOF status, mass properties and error lists are derived data and never stored.
  */
 
-export const SCHEMA_VERSION = 5;
+export const SCHEMA_VERSION = 6;
 
 /** Value expression: "20", "25.4mm", "1in", "30deg". Variables/equations arrive in Phase 3a (B5.2/B5.3). */
 export type Expr = string;
@@ -69,7 +69,13 @@ export type SketchConstraint =
   | { id: Id; type: 'distanceY'; a: Id; b: Id; value: Expr; label?: string; driving?: boolean }
   | { id: Id; type: 'radius'; circle: Id; value: Expr; label?: string; driving?: boolean }
   | { id: Id; type: 'diameter'; circle: Id; value: Expr; label?: string; driving?: boolean }
-  | { id: Id; type: 'angle'; a: Id; b: Id; value: Expr; label?: string; driving?: boolean };
+  /**
+   * The angle of the sector between two lines where the dimension was placed (SolidWorks). The sector
+   * lies between the rays along the lines as drawn, each reversed where `flip` says so; seen from the
+   * intersection, `b`'s ray is `value` counter-clockwise from `a`'s. Without `flip` (and in documents
+   * before v6) the rays are the lines as drawn.
+   */
+  | { id: Id; type: 'angle'; a: Id; b: Id; value: Expr; label?: string; driving?: boolean; flip?: 'a' | 'b' | 'both' };
 
 export type DimensionConstraint = Extract<SketchConstraint, { value: Expr }>;
 

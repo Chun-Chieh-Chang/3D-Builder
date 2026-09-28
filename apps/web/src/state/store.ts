@@ -25,7 +25,7 @@ import {
   type Ref,
   type SketchFeature,
 } from '@3db/model';
-import { PART_FILE_EXTENSION, partFileName, readPartFile, sha256Hex, stepFileName, writePartFile } from '@3db/io';
+import { partFileName, partName, readPartFile, sha256Hex, stepFileName, writePartFile } from '@3db/io';
 import { suppressionTargets, type SuppressAction } from '@3db/regen/dag';
 import type { Viewer } from '@3db/render';
 import type { KernelApi, RebuildPayload, SketchSolvePayload, SketchSolveRequest } from '../worker/protocol';
@@ -76,6 +76,8 @@ export interface UiState {
   unsaved: PendingFileAction | null;
   /** Bumped when a part replaces the current one: the viewport fits the next model it shows. */
   fitRequest: number;
+  /** Name of a part never saved (「零件1」, 「零件2」 …, or the STEP file it was made from). */
+  untitled: string;
   rebuilding: boolean;
   bootMs: { occtMs: number; gcsMs: number } | null;
   bootError: string | null;
@@ -145,6 +147,8 @@ class AppStore {
   private savedText: string;
   /** Imported data by SHA-256, saved with the document (1F). */
   private blobs = new Map<string, Uint8Array>();
+  /** New parts of this session are numbered like SolidWorks: 零件1, 零件2 … */
+  private untitledCount = 0;
   /** The viewport registers itself so view actions (fit, standard views) can reach it. */
   viewer: Viewer | null = null;
   /** Tools of the sketch being edited (null outside sketch sessions). */
@@ -170,6 +174,7 @@ class AppStore {
       dirty: false,
       unsaved: null,
       fitRequest: 0,
+      untitled: '零件1',
       rebuilding: false,
       bootMs: null,
       bootError: null,
@@ -606,11 +611,17 @@ class AppStore {
 
   // ------------------------------------------------------------ files (F1.1, F7.1, B9.1)
 
+  /** The part's name: its file's name once saved or opened, as SolidWorks shows it (see partName). */
+  documentName(): string {
+    return partName(this.history.doc, this.state.fileName, this.state.untitled);
+  }
+
   async exportStep(): Promise<void> {
     try {
-      const text = await this.api.exportStep(this.history.doc);
-      download(stepFileName(this.history.doc), text, 'application/step');
-      this.notify(`已輸出 ${stepFileName(this.history.doc)}`);
+      const name = this.documentName();
+      const text = await this.api.exportStep(this.history.doc, name);
+      download(stepFileName(name), text, 'application/step');
+      this.notify(`已輸出 ${stepFileName(name)}`);
     } catch (e) {
       this.notify(`STEP 輸出失敗：${e instanceof Error ? e.message : String(e)}`, 'error');
     }
@@ -648,9 +659,7 @@ class AppStore {
   private async perform(action: PendingFileAction): Promise<void> {
     if (action === 'open') return this.openFile();
     if (action === 'new-demo') return this.load(createDemoPart(), null, null);
-    const doc = createEmptyPart();
-    doc.properties = { 零件名稱: '零件1' };
-    this.load(doc, null, null);
+    this.load(createEmptyPart(), null, null, new Map(), `零件${++this.untitledCount}`);
   }
 
   private async openFile(): Promise<void> {
@@ -659,9 +668,7 @@ class AppStore {
       if (!picked) return;
       if (isStepFile(picked)) {
         // Like SolidWorks: a new, unsaved part named after the file, holding the imported body.
-        const doc = createEmptyPart();
-        doc.properties = { 零件名稱: picked.name.replace(/\.(step|stp)$/i, '') };
-        this.load(doc, null, null);
+        this.load(createEmptyPart(), null, null, new Map(), picked.name.replace(/\.(step|stp)$/i, ''));
         return await this.importData(picked.name, picked.bytes);
       }
       const file = await readPartFile(picked.bytes);
@@ -711,7 +718,7 @@ class AppStore {
 
   /** 「另存新檔」. True when saved. */
   async saveAs(): Promise<boolean> {
-    const name = this.state.fileName ? this.state.fileName.replace(/(\.3db)?\.json$|\.3dbx$/i, '') + PART_FILE_EXTENSION : partFileName(this.history.doc);
+    const name = partFileName(this.documentName());
     try {
       const target = await pickSaveTarget(name);
       if (target === null) return false;
@@ -747,7 +754,7 @@ class AppStore {
     this.set({ fileName, dirty: serializePart(this.history.doc) !== this.savedText });
   }
 
-  private load(doc: PartDoc, handle: FileSystemFileHandle | null, fileName: string | null, blobs = new Map<string, Uint8Array>()): void {
+  private load(doc: PartDoc, handle: FileSystemFileHandle | null, fileName: string | null, blobs = new Map<string, Uint8Array>(), untitled = this.state.untitled): void {
     if (this.state.editing) this.cancelEdit();
     this.history = new DocHistory(doc);
     this.history.subscribe(() => this.onDocChanged());
@@ -755,7 +762,7 @@ class AppStore {
     this.blobs = blobs;
     void this.api.setBlobs(blobs); // posted before the rebuild request, so the worker has them first
     this.savedText = serializePart(doc);
-    this.set({ selected: null, selectedFace: null, result: null, fileName, fitRequest: this.state.fitRequest + 1 });
+    this.set({ selected: null, selectedFace: null, result: null, fileName, untitled, fitRequest: this.state.fitRequest + 1 });
     this.onDocChanged();
   }
 
@@ -770,12 +777,20 @@ export function useStore<T>(selector: (s: UiState) => T): T {
   return useSyncExternalStore(store.subscribe, () => selector(store.getState()));
 }
 
+/** The part's name (FeatureManager, dialogs): its file's name once saved or opened. */
+export function useDocumentName(): string {
+  const doc = useStore((s) => s.doc);
+  const fileName = useStore((s) => s.fileName);
+  const untitled = useStore((s) => s.untitled);
+  return partName(doc, fileName, untitled);
+}
+
 /** The document as a title bar shows it: file name (or part name if never saved), 「*」 when modified. */
 export function useDocumentTitle(): string {
   const fileName = useStore((s) => s.fileName);
-  const partName = useStore((s) => s.doc.properties['零件名稱'] || '零件1');
+  const name = useDocumentName();
   const dirty = useStore((s) => s.dirty);
-  return `${fileName ?? partName}${dirty ? ' *' : ''}`;
+  return `${fileName ?? name}${dirty ? ' *' : ''}`;
 }
 
 const noSubscription = () => () => {};

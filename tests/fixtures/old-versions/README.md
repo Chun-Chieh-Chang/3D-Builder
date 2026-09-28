@@ -9,11 +9,13 @@
 | `v2-demo.3db.json` | 2 | `e63cfc5`（1A） | 同上 |
 | `v3-demo.3db.json` | 3 | `61bac81`（1B） | 同上 |
 | `v3-plate.3db.json` | 3 | `61bac81`（1B） | 40×30×10 的板、R4 貫穿孔、2×2 導角、頂面上 R3×5 的凸台 |
+| `v4-refplane.3dbx` | 4 | `b5ed448`（1E） | 板、偏移 25 的基準面、從基準面「成形至某一面」長到板上的 R4 圓柱 |
+| `v5-import.3dbx` | 5 | `3b80043`（1F） | 輸入 `tests/fixtures/step/plate-with-hole.step`（資料在檔案內），輸入邊線上 R2 圓角 |
 
 產生方式：
 
-1. `git archive <版本> packages/model/src` 取出當時的模型套件。
-2. 用 `rolldown` 打包一個呼叫 `createDemoPart()`（板件則用當時的 `applyCommand` 逐一插入特徵）與 `serializePart()` 的小程式。
+1. `git archive <版本> packages/model/src packages/io/src` 取出當時的模型與檔案套件；`io` 對 `@3db/model` 的引用改指向同一版本的模型。
+2. 用 `rolldown` 打包一個小程式：以當時的 `createDemoPart()` 或 `applyCommand` 建立文件，再以當時的 `serializePart()`（v1–v3）或 `writePartFile()`（v4 起）寫出。
 3. 以 `node` 執行並寫出。
 
-`.3dbx` 之前，「另存新檔」下載的就是這種文件文字。這些檔案不可修改；格式再升版時，另外新增該版本的樣本。
+v1–v3 是 `.3dbx` 出現之前「另存新檔」下載的文件文字；v4 起是 `.3dbx`。這些檔案不可修改；格式再升版時，另外新增該版本的樣本。

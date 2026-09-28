@@ -1,5 +1,5 @@
 import { FormatError, parsePart, serializePart, type BlobRef, type PartDoc } from '@3db/model';
-import { productName } from './names';
+import { safeFileName } from './names';
 import { readZip, writeZip, ZipError, type ZipEntry } from './zip';
 
 /**
@@ -79,7 +79,7 @@ export async function readPartFile(bytes: Uint8Array): Promise<PartFile> {
   return { doc, blobs, format: '3dbx', warnings };
 }
 
-/** The file name a part is saved under when it has none yet: its part name, made safe for file systems. */
-export function partFileName(doc: PartDoc): string {
-  return `${productName(doc).replace(/[\\/:*?"<>|]+/g, '_')}${PART_FILE_EXTENSION}`;
+/** The file name a part is offered to be saved under: its name, made safe for file systems. */
+export function partFileName(name: string): string {
+  return `${safeFileName(name)}${PART_FILE_EXTENSION}`;
 }

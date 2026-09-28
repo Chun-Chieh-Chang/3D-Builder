@@ -175,6 +175,22 @@ describe('revolve (C4.3) and chamfer (C5.3)', () => {
     expect(volume(oneWay)).toBeCloseTo(ring / 4, 5);
   });
 
+  it('names every face of a full revolve after the profile line that swept it, the planar ones too', () => {
+    // A full revolution loses the history of faces square to the axis in OCCT (found by the 1G acceptance);
+    // before the fix they were named by position ("r1:face#2") and a reference could jump to another face.
+    const full = regen.rebuild(build(profile(), revolve('axis', { type: 'blind', angle: '360' })));
+    expect([...full.body!.names.faces].sort()).toEqual(['r1:side:s1.al0', 'r1:side:s1.al1', 'r1:side:s1.al2', 'r1:side:s1.al3']);
+    // A chamfer on the top outer edge stays there when the profile grows taller.
+    const chamfer: Feature = { id: 'ch1', type: 'chamfer', name: 'ch1', suppressed: false, edges: [{ kind: 'edge', name: '{r1:side:s1.al1|r1:side:s1.al2}' }], mode: 'distanceDistance', distance: '1', second: '1' };
+    const cut = Math.PI * 2 * (15 - 1 / 3) * 0.5;
+    for (const height of ['20', '30']) {
+      const doc = applyCommand(build(profile(), revolve('axis', { type: 'blind', angle: '360' }), chamfer), { type: 'setDimension', featureId: 's1', constraintId: 'ad', value: height });
+      const r = regen.rebuild(doc);
+      expect(status(r)).toEqual(['s1=ok', 'r1=ok', 'ch1=ok']);
+      expect(volume(r)).toBeCloseTo(Math.PI * (15 ** 2 - 10 ** 2) * Number(height) - cut, 5);
+    }
+  });
+
   it('refuses a profile that crosses the axis', () => {
     expect(regen.rebuild(build(profile(), revolve('across', { type: 'blind', angle: '90' }))).features.at(-1)).toMatchObject({ status: 'error', message: '輪廓跨過旋轉軸' });
   });

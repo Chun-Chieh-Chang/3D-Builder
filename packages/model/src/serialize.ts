@@ -60,6 +60,9 @@ const migrations: Record<number, (doc: Json) => Json> = {
   3: (doc) => doc,
   // v5: imported bodies (F2.1) and their data in `blobs`. Nothing to convert.
   4: (doc) => doc,
+  // v6: angle dimensions may measure another sector between their lines (`flip`). Nothing to convert:
+  // an angle without `flip` keeps its meaning, and older programs must not open a `flip` they ignore.
+  5: (doc) => doc,
 };
 
 export class FormatError extends Error {

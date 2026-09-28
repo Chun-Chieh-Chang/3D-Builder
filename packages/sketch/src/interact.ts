@@ -222,11 +222,30 @@ function anchorOf(geometry: Geometry, id: Id): P2 | undefined {
 }
 
 /** Signed angle from line a to line b (directions p1→p2), as the solver measures it. */
-function lineAngle(ga: Extract<SolvedGeometry, { type: 'line' }>, gb: Extract<SolvedGeometry, { type: 'line' }>): number {
+type SolvedLine = Extract<SolvedGeometry, { type: 'line' }>;
+type AngleFlip = 'a' | 'b' | 'both' | undefined;
+
+/** Where two (non-parallel) lines meet, extended as needed. */
+function intersection(ga: SolvedLine, gb: SolvedLine): P2 {
   const da = sub(ga.b, ga.a);
   const db = sub(gb.b, gb.a);
-  return Math.atan2(cross(da, db), dot(da, db));
+  const denom = cross(da, db);
+  return Math.abs(denom) < 1e-12 ? ga.a : add(ga.a, scale(da, cross(sub(gb.a, ga.a), db) / denom));
 }
+
+/** The rays an angle dimension measures between: along the lines as drawn, reversed where `flip` says. */
+export function angleRays(ga: SolvedLine, gb: SolvedLine, flip: AngleFlip): { vertex: P2; ra: P2; rb: P2 } {
+  const da = sub(ga.b, ga.a);
+  const db = sub(gb.b, gb.a);
+  return {
+    vertex: intersection(ga, gb),
+    ra: flip === 'a' || flip === 'both' ? scale(da, -1) : da,
+    rb: flip === 'b' || flip === 'both' ? scale(db, -1) : db,
+  };
+}
+
+/** Counter-clockwise angle from ray a to ray b, in (-π, π]. */
+const rayAngle = (ra: P2, rb: P2) => Math.atan2(cross(ra, rb), dot(ra, rb));
 
 /** Horizontal, vertical or aligned, from where the dimension is placed relative to two points (SW behaviour). */
 function placementKind(a: P2, b: P2, place: P2): 'x' | 'y' | 'aligned' {
@@ -273,10 +292,17 @@ export function smartDimension(geometry: Geometry, picks: Id[], place: P2): Dime
       // parallel lines: their distance, measured like the solver does (from a's first point to b)
       return { body: { type: 'distance', a, b }, value: Math.abs(cross(db, sub(ga.a, gb.a))), unit: 'mm' };
     }
-    const angle = lineAngle(ga, gb);
-    return angle >= 0
-      ? { body: { type: 'angle', a, b }, value: (angle * 180) / Math.PI, unit: 'deg' }
-      : { body: { type: 'angle', a: b, b: a }, value: (-angle * 180) / Math.PI, unit: 'deg' };
+    // Like SolidWorks, the angle of the sector the dimension is placed in: the placement, seen from the
+    // intersection, is α·da + β·db; the signs of α and β pick the rays that bound that sector.
+    const q = sub(place, intersection(ga, gb));
+    const den = cross(da, db);
+    const sa = cross(q, db) / den < 0 ? -1 : 1;
+    const sb = cross(da, q) / den < 0 ? -1 : 1;
+    const angle = rayAngle(scale(da, sa), scale(db, sb));
+    // Stored so that b's ray is counter-clockwise from a's, the value then being positive.
+    const [first, second, s1, s2] = angle >= 0 ? [a, b, sa, sb] : [b, a, sb, sa];
+    const flip: AngleFlip = s1 < 0 && s2 < 0 ? 'both' : s1 < 0 ? 'a' : s2 < 0 ? 'b' : undefined;
+    return { body: { type: 'angle', a: first, b: second, ...(flip ? { flip } : {}) }, value: (Math.abs(angle) * 180) / Math.PI, unit: 'deg' };
   }
   if (ga?.type === 'line' || gb?.type === 'line') {
     const [lineId, otherId] = ga?.type === 'line' ? [a, b] : [b, a];
@@ -453,13 +479,10 @@ export function layoutDimension(c: SketchConstraint, geometry: Geometry, px: num
       const ga = geometry.get(c.a);
       const gb = geometry.get(c.b);
       if (ga?.type !== 'line' || gb?.type !== 'line') return null;
-      const da = sub(ga.b, ga.a);
-      const db = sub(gb.b, gb.a);
-      const denom = cross(da, db);
-      const vertex = Math.abs(denom) < 1e-12 ? ga.a : add(ga.a, scale(da, cross(sub(gb.a, ga.a), db) / denom));
+      const { vertex, ra, rb } = angleRays(ga, gb, c.flip);
       const r = off * 1.6;
-      const a0 = Math.atan2(da[1], da[0]);
-      const sweep = lineAngle(ga, gb);
+      const a0 = Math.atan2(ra[1], ra[0]);
+      const sweep = rayAngle(ra, rb);
       const pts = Array.from({ length: 17 }, (_, i) => polar(vertex, r, a0 + (sweep * i) / 16));
       const segments: [P2, P2][] = pts.slice(1).map((p, i) => [pts[i]!, p]);
       return { segments, text: polar(vertex, r + 12 * px, a0 + sweep / 2) };

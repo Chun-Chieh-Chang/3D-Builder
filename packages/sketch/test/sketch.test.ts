@@ -50,6 +50,40 @@ describe('PlaneGCS solver', () => {
     expect(p2.p[0]).toBeCloseTo(33.5, 9);
   });
 
+  it('turns an angle dimension to the side it was placed on (and keeps the old meaning without it)', () => {
+    // A V drawn head to tail: D → E → F, with E fixed at the origin, D fixed, and EF 20 long.
+    const v = (angle: SketchConstraint) =>
+      sketch(
+        [
+          { id: 'D', type: 'point', x: 10, y: 10 },
+          { id: 'E', type: 'point', x: 0, y: 0 },
+          { id: 'F', type: 'point', x: -10, y: 10 },
+          { id: 'DE', type: 'line', p1: 'D', p2: 'E' },
+          { id: 'EF', type: 'line', p1: 'E', p2: 'F' },
+        ],
+        [
+          { id: 'e', type: 'coincident', a: 'E', b: '@origin' },
+          { id: 'dx', type: 'distanceX', a: 'E', b: 'D', value: '10' },
+          { id: 'dy', type: 'distanceY', a: 'E', b: 'D', value: '10' },
+          { id: 'len', type: 'distance', a: 'EF', value: String(Math.hypot(10, 10)) },
+          angle,
+        ],
+      );
+    const opening = (angle: SketchConstraint) => {
+      const r = solver.solve(v(angle));
+      expect(r.status).toBe('fully');
+      const p = (id: string) => (r.geometry.get(id) as Extract<SolvedGeometry, { type: 'point' }>).p;
+      const [e, d, f] = [p('E'), p('D'), p('F')];
+      const u = [d[0] - e[0], d[1] - e[1]];
+      const w = [f[0] - e[0], f[1] - e[1]];
+      return (Math.acos((u[0]! * w[0]! + u[1]! * w[1]!) / (Math.hypot(u[0]!, u[1]!) * Math.hypot(w[0]!, w[1]!))) * 180) / Math.PI;
+    };
+    // Placed inside the V (flip 'a'), 100 opens the V to 100°, as in SolidWorks …
+    expect(opening({ id: 'ang', type: 'angle', a: 'DE', b: 'EF', flip: 'a', value: '100' })).toBeCloseTo(100, 6);
+    // … while a dimension without `flip` (documents before v6) still turns the lines as drawn: 80°.
+    expect(opening({ id: 'ang', type: 'angle', a: 'DE', b: 'EF', value: '100' })).toBeCloseTo(80, 6);
+  });
+
   it('handles circles with radius and concentric relations', () => {
     const s = sketch(
       [

@@ -1,6 +1,6 @@
 # 交接文件
 
-- 最後更新：2026-09-28（1A–1F 已提交；以 `git log` 為準）
+- 最後更新：2026-09-28（Phase 1 完成、閘門通過；1A–1G 已提交；以 `git log` 為準）
 - 用途：讓下一個工作階段（人或 AI）不讀對話紀錄也能接手。
 - 本文件只記錄「目前狀態、待辦、下一步、工作約定」。範圍與設計以藍圖、ADR、程式碼為準；若有衝突，以它們為準並更新本文件。
 
@@ -29,7 +29,9 @@
 | [ADR 0007](docs/adr/0007-reference-planes.md) | 基準面：Schema v4、基準面參考的命名、框架規則、頂點持久命名、拾取優先順序、圖面顯示 |
 | [ADR 0008](docs/adr/0008-part-file.md) | 零件檔 `.3dbx`：ZIP 內容、自寫 ZIP、固定輸出、輸入資料以雜湊命名、舊檔相容、本機檔案、已修改標記 |
 | [ADR 0009](docs/adr/0009-step-import.md) | STEP 輸入：Schema v5、只在需要時修復、輸入面的命名與金樣、讀取快取、兩個入口 |
+| [ADR 0010](docs/adr/0010-phase1-acceptance-fixes.md) | Phase 1 驗收的修正：整圈旋轉面的命名、角度尺寸量放置那一側（Schema v6）、零件名稱就是檔名 |
 | [phase0-verification.md](docs/phase0-verification.md) | Phase 0 驗收紀錄與 SW 人工核對步驟 |
+| [phase1-verification.md](docs/phase1-verification.md) | Phase 1 驗收紀錄：三個示範零件、金樣與 TNP、驗收中發現的問題 |
 | 本文件 | 狀態、待辦、下一步、約定 |
 
 ## 3. 目前狀態
@@ -41,10 +43,13 @@
 - **Phase 1B 特徵與布林**：完成，已提交並推送（`61bac81`）。細節見 ADR 0005 與 §9。
 - **Phase 1D 樹狀結構操作**：完成，已提交並推送（`ca85736`）。細節見 ADR 0006 與 §9。
 - **Phase 1C 基準面**：完成並提交。細節見 ADR 0007 與 §9。
-- **Phase 1E 檔案**：完成並提交。細節見 ADR 0008 與 §9。系統檔案對話框待使用者實機確認。
-- **Phase 1F STEP 輸入**：功能完成並提交。細節見 ADR 0009 與 §9。最終驗收需要使用者的 SW STEP 樣本。
+- **Phase 1E 檔案**：完成並提交。細節見 ADR 0008 與 §9。系統檔案對話框已由使用者實機確認（2026-09-28）。
+- **Phase 1F STEP 輸入**：完成並提交。細節見 ADR 0009 與 §9。使用者以自己的 SW 樣本驗收通過（2026-09-28）；輸入特徵的名稱「輸入1」已確認。
+- **Phase 1G 驗收**：藍圖 Phase 1 驗收 ①②③ 都已完成，**閘門已由使用者確認通過（2026-09-28）**。細節見 [phase1-verification.md](docs/phase1-verification.md)。
+  - 驗收中發現的 3 個問題都已修正，見 ADR 0010：整圈旋轉平面的命名、角度尺寸的量測側、零件名稱不隨檔名。
+- **Phase 1 零件 MVP**：完成。下一步是 Phase 2 組合件 MVP（§9 最後）。
 - **分支與遠端**：只在 `main` 開發。遠端 `origin` = https://github.com/Chun-Chieh-Chang/3D-Builder（私人），`main` 追蹤 `origin/main`。`spike/occt-gaps` 已合併、未推送，可以刪除。
-- **檢查**：`npm run check` 181/181 通過（型別、分層、測試）；`vite build` 成功。
+- **檢查**：`npm run check` 195/195 通過（型別、分層、測試）；`vite build` 成功。
 
 ## 4. 如何執行
 
@@ -79,6 +84,8 @@ npm run build        # 正式版建置
 7. 新物件的 ID 由 UI 用 `IdAllocator` 發放並放進指令；ID 永不重用。
 8. 布林結果的名稱，依「目標在前、工具在後」的來源繼承；合併共面時，保留較早特徵的名稱（ADR 0005）。
 9. 輸入的資料（STEP）以 SHA-256 識別，隨 `.3dbx` 存放；Worker 在執行使用它的指令之前就要拿到資料（ADR 0009）。
+10. 零件名稱只有一個來源：存檔或開檔後就是檔名（`partName`）。「新零件」不把名稱寫進文件（ADR 0010）。
+11. 角度尺寸記錄放置的扇形（`flip`）；沒有 `flip` 的舊尺寸意義不變（ADR 0010）。
 
 ## 6. 已知陷阱
 
@@ -90,6 +97,7 @@ npm run build        # 正式版建置
 - 例外要用 `getExceptionMessage` 解碼。
 - `BRepAlgoAPI_Fuse`/`Cut` 的建構子本身就會執行運算，不要再呼叫 `Build()`。
 - `BRepPrimAPI_MakeHalfSpace` 只以傳入的面為界。要以整個曲面為界，先用 `BRep_Tool.Surface` 加上 `MakeFace(surface, tol)` 做出無界的面。
+- `BRepPrimAPI_MakeRevol` 旋轉整圈時，`Generated(edge)` 對與軸垂直的輪廓線回傳空集合，但它們掃出的平面確實在結果中。要同時查 `mk.Revol().Shape(edge)`，否則這些面會失去名稱（1G 發現）。
 - `Regenerator.rebuild()` 會釋放上一次結果的形狀。測試必須先量完這次的結果，才能再做下一次 rebuild。
 
 **開發與測試環境**
@@ -107,6 +115,12 @@ npm run build        # 正式版建置
   - 共用端點的相切必須用 `angle_via_point`，否則會被誤判為冗餘。
   - 它的法向慣例：直線為方向逆時針轉 90°，圓指向圓心。
 - **系統檔案對話框**：`showOpenFilePicker`、`showSaveFilePicker` 必須由真人點擊觸發；腳本的 `click()` 不算。自動測試時以替身取代它們，真正的對話框請使用者確認。
+- **UI 驗收腳本**（`tests/e2e/phase1-demo-parts.js`）：
+  - 用法：在頁面中 `await import('/@fs/C:/Users/3kids/Downloads/3D-Builder/tests/e2e/phase1-demo-parts.js?' + Date.now())`，再 `await __demo.plate()`（或 `vblock()`、`pin()`）。
+  - 規則：點擊一律落在畫布可見範圍內；先用滾輪縮放、Ctrl+中鍵平移到合適比例（空草圖按「全部顯示」會放大到約 700 px/mm）。
+  - 被擋住的邊線點不到，要先轉動視角或換標準視角。
+  - 短線要點中段，因為 7 px 內有點時會選到點。
+  - 瀏覽器窗格隱藏時重新載入的頁面不會繪製，畫布的 ResizeObserver 不觸發，畫布停在 300×150。腳本在每個零件開始時呼叫 `store.viewer.resize()`（`H.ready()`）。
 - **舊版樣本檔**：`tests/fixtures/old-versions/` 由舊版程式寫出，不可修改（產生方式見該目錄的 README）。
 - **STEP 金樣**：`tests/fixtures/step/` 的檔案固定輸入面的順序；升級幾何核心後若這個測試失敗，代表輸入面的名稱會變，要先處理遷移。
 - **ShapeFix**：對乾淨的檔案也會回報「已修改」，所以只在有效性檢查失敗時才修復（ADR 0009）。
@@ -139,13 +153,12 @@ npm run build        # 正式版建置
 
 ## 8. 使用者的待辦
 
-1. 樣本檔案（藍圖 §6），1F STEP 輸入需要：
-   - 3–5 個 SW 零件和 1 個組合件的 STEP；
-   - 1–2 個夾治具案例；
-   - 常用廠商標準件的 STEP。
+1. 樣本檔案（藍圖 §6）：
+   - Phase 2 開始前：1 個 SW 組合件的 STEP（10–20 個零組件），當作驗收樣本；
+   - Phase 4：1–2 個夾治具案例、常用廠商標準件的 STEP。
 2. （可選）壓縮 Docker 虛擬磁碟；刪除 `spike/occt-gaps` 分支。
 
-## 9. 下一步：Phase 1 零件 MVP
+## 9. Phase 1 零件 MVP（完成，閘門通過）
 
 **範圍**：藍圖 §3 的 Phase 1，加上附錄 C 中、非 Phase 2 的 P0 項。Phase 0 已全部驗收，閘門已開。
 
@@ -155,9 +168,9 @@ npm run build        # 正式版建置
 | 1B 特徵與布林 | C4.1–C4.3 的 P0 部分（終止型態、除料、旋轉）、C5.3 導角、A1.5 布林、在模型平面上繪製草圖 | 布林後的持久命名回歸測試全綠 | **完成**（`tests/phase1/tnp.test.ts` 全綠、瀏覽器實測通過） |
 | 1C 基準面 | C3.2 的 P0 部分（偏移、角度、三點） | 基準面上的草圖與特徵正確重建 | **完成**（`tests/phase1/planes.test.ts` 全綠、瀏覽器實測通過） |
 | 1D 樹狀結構操作 | B2.6 抑制連帶子特徵、B2.8 刪除時處理相依、D1.6/D7.1 錯誤提示、在回溯位置插入特徵；另含 D1.2 雙向選取同步 | 對應行為測試通過 | **完成**（`tests/phase1/tree.test.ts` 全綠、瀏覽器實測通過） |
-| 1E 檔案 | `.3dbx`（ZIP：`document.json` + `blobs/`）、F7.1 本機檔案、B9.2 版本遷移 | 舊版檔案可開啟；存檔/開檔往返一致 | **完成**（`tests/phase1/files.test.ts` 全綠、瀏覽器實測通過；系統對話框待實機確認） |
-| 1F STEP 輸入 | F2.1 輸入本體特徵；命名 = blob 雜湊 + 拓撲索引 + 指紋 | 使用者的 SW 零件 STEP：輸入 → 加特徵 → 輸出 → 在 SW 開啟正確 | **功能完成**（`tests/phase1/import.test.ts` 全綠、瀏覽器實測通過）；**待使用者樣本驗收** |
-| 1G 驗收 | 金樣與 TNP 回歸套件；只用 UI 完成 3 個示範零件 | 藍圖 §3 Phase 1 驗收 ①②③ | 未開始 |
+| 1E 檔案 | `.3dbx`（ZIP：`document.json` + `blobs/`）、F7.1 本機檔案、B9.2 版本遷移 | 舊版檔案可開啟；存檔/開檔往返一致 | **完成**（`tests/phase1/files.test.ts` 全綠、瀏覽器實測通過；系統對話框已由使用者確認） |
+| 1F STEP 輸入 | F2.1 輸入本體特徵；命名 = blob 雜湊 + 拓撲索引 + 指紋 | 使用者的 SW 零件 STEP：輸入 → 加特徵 → 輸出 → 在 SW 開啟正確 | **完成**（`tests/phase1/import.test.ts` 全綠、瀏覽器實測通過；使用者以 SW 樣本驗收通過） |
+| 1G 驗收 | 金樣與 TNP 回歸套件；只用 UI 完成 3 個示範零件 | 藍圖 §3 Phase 1 驗收 ①②③ | **完成**（`tests/golden/` 全綠；三個零件只用 UI 建模；③ 使用者確認）；**閘門通過** |
 
 **1A 完成的內容**（設計決策見 ADR 0004）：
 
@@ -258,7 +271,29 @@ npm run build        # 正式版建置
   - 不讀顏色與名稱；
   - 沒有修復選項。
 
-**建議的下一步**：
+**1G 完成的內容**（細節見 [phase1-verification.md](docs/phase1-verification.md)）：
 
-1. **1F 驗收（需要你）**：提供 SW 零件的 STEP 樣本。流程：輸入 → 加特徵 → 輸出 STEP → 在 SW 開啟，核對物質特性。
-2. **1G 驗收**：只用 UI 完成 3 個示範零件；把金樣與 TNP 回歸套件整理成藍圖 §4 的形式。
+- **三個夾治具示範零件**：定位板、V 型塊、削邊銷，只用 UI 建模（`tests/e2e/phase1-demo-parts.js`），存成 `tests/golden/*.3dbx`。
+- **金樣測試**（`tests/golden/golden.test.ts`）：
+  - 體積與手算值相同；
+  - 完全定義、無警告、模型有效；
+  - STEP 往返；
+  - 改變關鍵尺寸後，特徵仍留在原本的元素上。
+- **修正**（ADR 0010）：
+  - 整圈旋轉產生的平面以輪廓線命名，原本依位置編號。修正前存檔、且參考了這類平面的零件，會顯示遺失參考，需要重新選擇；
+  - 角度尺寸量放置的那一側，同 SW（Schema v6）；
+  - 零件名稱就是檔名，用在設計樹、標題與 STEP 輸出；
+  - 補上 v4、v5 的舊版樣本。
+
+## 10. 下一步：Phase 2 組合件 MVP
+
+**範圍**：藍圖 §3 Phase 2：C15.1–15.3、15.8、15.12、A3.1–3.4、F1.2、B9.4。
+
+**驗收**：
+1. 10–20 個零組件的組合件可完成結合；
+2. DOF 顯示正確；
+3. STEP 組合件在 SW 開啟時，結構與位置正確。
+
+**開始前**：
+- 需要一個 SW 組合件的 STEP 當驗收樣本（見 §8）；
+- 按照階段規則，先把範圍拆成里程碑、寫進本文件，再動工。

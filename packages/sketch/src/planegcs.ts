@@ -250,9 +250,13 @@ function toPrimitives(sketch: SketchFeature, start: Start, pinned: ReadonlySet<I
         }
         break;
       }
-      case 'angle':
-        add(id, [{ id, type: 'l2l_angle_ll', l1_id: line(c.a).id, l2_id: line(c.b).id, angle: evalAngle(c.value) }]);
+      case 'angle': {
+        // l2l_angle_ll turns a's direction (as drawn) onto b's. With one ray reversed the dimension's
+        // sector lies half a turn round, so the lines' own angle is the value less 180°.
+        const oneFlipped = c.flip === 'a' || c.flip === 'b';
+        add(id, [{ id, type: 'l2l_angle_ll', l1_id: line(c.a).id, l2_id: line(c.b).id, angle: evalAngle(c.value) - (oneFlipped ? Math.PI : 0) }]);
         break;
+      }
     }
   }
   return prims;

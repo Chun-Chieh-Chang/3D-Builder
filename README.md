@@ -2,7 +2,7 @@
 
 類 SolidWorks 的參數式 3D CAD（Web 先行）。設計意圖是唯一真相（SSOT）：幾何、網格、STEP 都由文件重新計算而來；參考一律用持久名稱，不用拓撲索引。
 
-目前進度：**Phase 0 完成並已驗收；Phase 1A 草圖編輯器、1B 特徵與布林、1C 基準面、1D 設計樹操作、1E 零件檔、1F STEP 輸入完成**（1F 待使用者的 SW 樣本驗收）。Phase 0 的流程是：
+目前進度：**Phase 0、Phase 1（零件 MVP）完成，閘門皆已通過**（見 [phase1-verification.md](docs/phase1-verification.md)）。下一步是 Phase 2 組合件 MVP。Phase 0 的流程是：
 
 1. 草圖（PlaneGCS 求解）
 2. 伸長
@@ -34,6 +34,8 @@ apps/web           React 介面：CommandManager、FeatureManager、PropertyMana
 tests/phase0       Phase 0 驗收與效能量測
 tests/phase1       Phase 1 回歸：特徵與布林後的持久命名（TNP）、設計樹操作、基準面、零件檔、STEP 輸入
 tests/fixtures     舊版程式寫出的文件樣本（證明舊檔可開啟）、STEP 金樣
+tests/golden       只用 UI 做出的三個示範零件（Phase 1 驗收）與金樣測試
+tests/e2e          在瀏覽器中只用 UI 建模的驗收腳本
 docs/adr           架構決策紀錄
 ```
 

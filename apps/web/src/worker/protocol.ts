@@ -56,5 +56,6 @@ export interface KernelApi {
   addBlob(sha256: string, data: Uint8Array): Promise<void>;
   rebuild(req: RebuildRequest): Promise<RebuildPayload>;
   solveSketch(req: SketchSolveRequest): Promise<SketchSolvePayload>;
-  exportStep(doc: PartDoc): Promise<string>;
+  /** STEP of the rebuilt part, its product named `name`. */
+  exportStep(doc: PartDoc, name: string): Promise<string>;
 }

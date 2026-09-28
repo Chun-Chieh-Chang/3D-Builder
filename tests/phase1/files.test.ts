@@ -61,6 +61,24 @@ describe('files written by older versions (B9.2)', () => {
   });
 });
 
+describe('part files written by older versions (B9.2)', () => {
+  it.each([
+    // a post from an offset reference plane down to the plate
+    ['v4-refplane.3dbx', 4, 12000 + Math.PI * 16 * 15],
+    // the plate-with-hole STEP imported (its data inside the file), an R2 fillet on an imported edge
+    ['v5-import.3dbx', 5, 12000 - Math.PI * 16 * 10 - (4 - Math.PI) * 10],
+  ])('opens %s (schema %i) with its data and rebuilds it', async (name, version, volume) => {
+    const file = await readPartFile(oldFile(name));
+    expect(file.format).toBe('3dbx');
+    expect(file.warnings).toEqual([]);
+    expect(file.doc.schemaVersion).toBe(SCHEMA_VERSION);
+    expect(JSON.parse(new TextDecoder().decode((await readZip(oldFile(name)))[0]!.data)).schemaVersion).toBe(version);
+    const r = new Regenerator(kernel, await PlaneGcsSolver.create(), file.blobs).rebuild(file.doc);
+    expect(statuses(r).filter((s) => !s.endsWith('=ok'))).toEqual([]);
+    expect(kernel.massProps(r.body!.shape).volume).toBeCloseTo(volume, 6);
+  });
+});
+
 describe('the .3dbx file (B9.1, F7.1)', () => {
   const docs = async (): Promise<[string, PartDoc][]> => [
     ['the demo part', createDemoPart()],
@@ -139,7 +157,7 @@ describe('the .3dbx file (B9.1, F7.1)', () => {
   });
 
   it('names a new file after the part', () => {
-    expect(partFileName({ ...createDemoPart(), properties: { 零件名稱: '夾具/底板:A' } })).toBe('夾具_底板_A.3dbx');
-    expect(partFileName({ ...createDemoPart(), properties: {} })).toBe('Part.3dbx');
+    expect(partFileName('夾具/底板:A')).toBe('夾具_底板_A.3dbx');
+    expect(partFileName('零件1')).toBe('零件1.3dbx');
   });
 });
