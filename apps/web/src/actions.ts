@@ -1,4 +1,4 @@
-import { isDatumPlaneName } from '@3db/model';
+import { isDatumPlaneName, type DatumPlaneName, type Ref } from '@3db/model';
 import { store, type UiState } from './state/store';
 import { TOOL_LABEL } from './strings';
 import type { ToolId } from './sketcher/controller';
@@ -23,8 +23,12 @@ const sketching = (s: UiState) => s.editing?.kind === 'sketch';
 const selectedFeature = (s: UiState) => s.doc.features.find((f) => f.id === s.selected);
 const sketchSelected = (s: UiState) => idle(s) && selectedFeature(s)?.type === 'sketch';
 const hasBody = (s: UiState) => idle(s) && !!s.result?.mesh;
-/** A plane to sketch on: a datum plane in the tree, or a planar face in the graphics area. */
-const sketchPlane = (s: UiState) => (s.selected !== null && isDatumPlaneName(s.selected) ? s.selected : s.selectedFace?.fingerprint?.type === 'plane' ? s.selectedFace : null);
+/** A plane to sketch on: a default or reference plane in the tree, or a planar face in the graphics area. */
+const sketchPlane = (s: UiState): DatumPlaneName | Ref | null => {
+  if (s.selected !== null && isDatumPlaneName(s.selected)) return s.selected;
+  if (selectedFeature(s)?.type === 'refPlane') return { kind: 'datum', name: s.selected! };
+  return s.selectedFace?.fingerprint?.type === 'plane' ? s.selectedFace : null;
+};
 
 const SKETCH_TOOLS: ToolId[] = ['dimension', 'line', 'centerline', 'rect', 'centerRect', 'circle', 'perimeterCircle', 'arc', 'tangentArc', 'threePointArc', 'point'];
 
@@ -41,6 +45,7 @@ export const ACTIONS: UiAction[] = [
   { id: 'revolve-cut', label: '旋轉除料', group: 'feature', enabled: (s) => sketchSelected(s) && !!s.result?.mesh, run: () => store.newRevolve('cut') },
   { id: 'fillet', label: '圓角', group: 'feature', enabled: hasBody, run: () => store.newFillet() },
   { id: 'chamfer', label: '導角', group: 'feature', enabled: hasBody, run: () => store.newChamfer() },
+  { id: 'ref-plane', label: '基準面', group: 'feature', enabled: idle, run: () => store.newRefPlane() },
 
   {
     id: 'sketch',

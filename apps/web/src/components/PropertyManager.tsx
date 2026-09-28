@@ -9,13 +9,18 @@ import {
   type ExtrudeFeature,
   type FilletFeature,
   type Id,
+  type PartDoc,
+  type PlaneDefinition,
+  type Ref,
+  type RefPlaneFeature,
   type RevolveFeature,
   type SketchConstraint,
   type SketchFeature,
 } from '@3db/model';
+import type { RebuildPayload } from '../worker/protocol';
 import { applicableRelations, constraintsOf, dimensionText, sameRelation } from '@3db/sketch/interact';
 import { store, useSketcherView, useStore } from '../state/store';
-import { DIMENSION_LABEL, FEATURE_LABEL, featureLabel, RELATION_LABEL, SKETCH_STATUS_LABEL, TOOL_LABEL } from '../strings';
+import { DATUM_ITEMS, DIMENSION_LABEL, FEATURE_LABEL, featureLabel, PLANE_MODE_LABEL, RELATION_LABEL, SKETCH_STATUS_LABEL, TOOL_LABEL } from '../strings';
 import { Icon } from './Icon';
 
 /** Numeric field that commits a document command on Enter/blur; invalid input stays red (D6.1). */
@@ -370,14 +375,112 @@ function ChamferPanel({ f }: { f: ChamferFeature }) {
   );
 }
 
+/**
+ * One reference in a selection box: what it is, and whether the model on screen still has it. A
+ * datum names a default plane or a reference plane feature; elements are shown by persistent name.
+ */
+function RefItem({ label, refr, doc, result }: { label: string; refr: Ref; doc: PartDoc; result: RebuildPayload | null }) {
+  if (refr.kind === 'datum') {
+    const plane = DATUM_ITEMS.find((d) => d.id === refr.name)?.label ?? findFeature(doc, refr.name)?.name;
+    return <li className={plane ? '' : 'missing'}>{label}：{plane ?? `${refr.name}（遺失參考）`}</li>;
+  }
+  const names = refr.kind === 'face' ? result?.faceNames : refr.kind === 'edge' ? result?.edgeNames : result?.vertexNames;
+  const found = !!names?.includes(refr.name);
+  return (
+    <li className={found ? '' : 'missing'} title={refr.name}>
+      {label}
+      {!found && '（遺失參考）'}
+      <code>{refr.name}</code>
+    </li>
+  );
+}
+
+const FRONT: Ref = { kind: 'datum', name: 'plane:front' };
+
+/**
+ * Reference plane (C3.2): offset from a plane, at an angle to a plane through a straight edge, or
+ * through three vertices. References come from the graphics area and, for planes, from the tree.
+ */
+function RefPlanePanel({ f }: { f: RefPlaneFeature }) {
+  const doc = useStore((s) => s.doc);
+  const result = useStore((s) => s.result);
+  const d = f.def;
+  const set = (def: PlaneDefinition): Command => ({ type: 'setRefPlane', featureId: f.id, def });
+  const plane = d.mode === 'threePoint' ? FRONT : d.plane;
+  const modeChange = (mode: PlaneDefinition['mode']) =>
+    store.execute(
+      set(
+        mode === 'offset'
+          ? { mode, plane, distance: '10' }
+          : mode === 'angle'
+            ? { mode, plane, axis: { kind: 'edge', name: '' }, angle: '45' }
+            : { mode, points: [] },
+      ),
+    );
+  const reverse = (on: boolean) => {
+    const { reverse: _, ...rest } = d;
+    store.execute(set((on ? { ...rest, reverse: true } : rest) as PlaneDefinition));
+  };
+  return (
+    <>
+      <section className="pm-group">
+        <h4>基準面類型</h4>
+        <select value={d.mode} onChange={(e) => modeChange(e.target.value as PlaneDefinition['mode'])}>
+          {Object.entries(PLANE_MODE_LABEL).map(([mode, label]) => (
+            <option key={mode} value={mode}>
+              {label}
+            </option>
+          ))}
+        </select>
+      </section>
+      <section className="pm-group">
+        <h4>參考</h4>
+        <ul className="selection-box">
+          {d.mode !== 'threePoint' && <RefItem label="參考面" refr={d.plane} doc={doc} result={result} />}
+          {d.mode === 'angle' &&
+            (d.axis.name ? <RefItem label="旋轉軸" refr={d.axis} doc={doc} result={result} /> : <li className="muted">（在圖面中點選作為旋轉軸的直線邊線）</li>)}
+          {d.mode === 'threePoint' && d.points.length === 0 && <li className="muted">（在圖面中點選三個頂點）</li>}
+          {d.mode === 'threePoint' && d.points.map((p, i) => <RefItem key={p.name} label={`點 ${i + 1}`} refr={p} doc={doc} result={result} />)}
+        </ul>
+        {d.mode === 'offset' && (
+          <label className="pm-row">
+            <span>偏移距離</span>
+            <ValueInput value={d.distance} toCommand={(distance) => set({ ...d, distance })} />
+          </label>
+        )}
+        {d.mode === 'angle' && (
+          <label className="pm-row">
+            <span>角度</span>
+            <ValueInput value={d.angle} suffix="°" toCommand={(angle) => set({ ...d, angle })} />
+          </label>
+        )}
+        <label className="pm-row checkbox">
+          <input type="checkbox" checked={d.reverse ?? false} onChange={(e) => reverse(e.target.checked)} />
+          <span>反轉方向</span>
+        </label>
+        <p className="hint">
+          {d.mode === 'threePoint'
+            ? '再點一次已選的頂點可移除它。'
+            : d.mode === 'angle'
+              ? '角度 0° 時與參考面平行，90° 時垂直；參考面也可在設計樹中點選基準面。'
+              : '參考面也可在設計樹中點選基準面。'}
+        </p>
+      </section>
+    </>
+  );
+}
+
 /** PropertyManager (D2): parameters of the feature being edited; ✔ commits one undo step, ✖ restores (B7.3). */
 export function PropertyManager() {
   const editing = useStore((s) => s.editing);
   const doc = useStore((s) => s.doc);
+  const result = useStore((s) => s.result);
   if (!editing) return null;
   const f = findFeature(doc, editing.featureId);
   if (!f) return null;
   const sketching = editing.kind === 'sketch';
+  // Like the message box at the top of a SolidWorks PropertyManager: why the feature cannot be built yet.
+  const status = sketching ? undefined : result?.features.find((r) => r.id === f.id);
   return (
     <div className="property-manager">
       <div className="pm-header">
@@ -392,11 +495,13 @@ export function PropertyManager() {
           <Icon name="cancel" />
         </button>
       </div>
+      {status?.status === 'error' && <p className="pm-message error-text">{status.message}</p>}
       {f.type === 'sketch' && <SketchPanel f={f} />}
       {f.type === 'extrude' && <ExtrudePanel f={f} />}
       {f.type === 'revolve' && <RevolvePanel f={f} />}
       {f.type === 'fillet' && <FilletPanel f={f} />}
       {f.type === 'chamfer' && <ChamferPanel f={f} />}
+      {f.type === 'refPlane' && <RefPlanePanel f={f} />}
     </div>
   );
 }

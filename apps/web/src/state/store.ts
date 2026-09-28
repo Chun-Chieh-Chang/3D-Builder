@@ -19,6 +19,7 @@ import {
   type Feature,
   type Id,
   type PartDoc,
+  type PlaneDefinition,
   type PlaneFrame,
   type Ref,
   type SketchFeature,
@@ -261,10 +262,20 @@ class AppStore {
     this.set({ whatsWrong: open });
   }
 
-  /** The plane a sketch lies on: a default plane, or (for a sketch on a face) the plane the last rebuild found. */
+  /**
+   * The plane a sketch lies on: a default plane, or the plane the last rebuild found for it. A new
+   * sketch has not been rebuilt yet: it takes its reference plane's frame, or its face's fingerprint.
+   */
   frameOf(sketch: SketchFeature): PlaneFrame | null {
-    if (sketch.plane.kind === 'datum') return isDatumPlaneName(sketch.plane.name) ? DATUM_PLANES[sketch.plane.name] : null;
-    return this.state.result?.frames.get(sketch.id) ?? faceFrame(sketch.plane);
+    const plane = sketch.plane;
+    if (plane.kind === 'datum' && isDatumPlaneName(plane.name)) return DATUM_PLANES[plane.name];
+    const frames = this.state.result?.frames;
+    return frames?.get(sketch.id) ?? (plane.kind === 'datum' ? (frames?.get(plane.name) ?? null) : faceFrame(plane));
+  }
+
+  /** A default plane or a reference plane feature, by the id the FeatureManager uses. */
+  isPlane(id: Id): boolean {
+    return isDatumPlaneName(id) || findFeature(this.history.doc, id)?.type === 'refPlane';
   }
 
   private allocator(): IdAllocator {
@@ -304,16 +315,17 @@ class AppStore {
     return true;
   }
 
-  /** 「草圖」 on a selected datum plane or planar face (C1.1): a new sketch, viewed normal to its plane. */
+  /** 「草圖」 on a selected default plane, reference plane or planar face (C1.1): a new sketch, viewed normal to its plane. */
   newSketch(plane: DatumPlaneName | Ref): void {
-    if (typeof plane !== 'string' && !faceFrame(plane)) return this.notify('草圖只能放在平面上', 'error');
+    const ref: Ref = typeof plane === 'string' ? { kind: 'datum', name: plane } : plane;
+    if (ref.kind === 'face' && !faceFrame(ref)) return this.notify('草圖只能放在平面上', 'error');
     const doc = this.history.doc;
     const feature: SketchFeature = {
       id: this.allocator().take('sketch'),
       type: 'sketch',
       name: nextName(doc, '草圖'),
       suppressed: false,
-      plane: typeof plane === 'string' ? { kind: 'datum', name: plane } : plane,
+      plane: ref,
       entities: [],
       constraints: [],
     };
@@ -359,6 +371,22 @@ class AppStore {
   newFillet(): void {
     const id = this.allocator().take('fillet');
     this.openNew({ id, type: 'fillet', name: nextName(this.history.doc, '圓角'), suppressed: false, edges: [], radius: '2' }, '圓角');
+  }
+
+  /**
+   * 「基準面」 (C3.2): 10 mm off the plane or planar face that is selected (the front plane when
+   * nothing is); the PropertyManager changes the type and the references.
+   */
+  newRefPlane(): void {
+    const s = this.state;
+    const plane: Ref =
+      s.selected !== null && this.isPlane(s.selected)
+        ? { kind: 'datum', name: s.selected }
+        : s.selectedFace?.fingerprint?.type === 'plane'
+          ? s.selectedFace
+          : { kind: 'datum', name: 'plane:front' };
+    const id = this.allocator().take('plane');
+    this.openNew({ id, type: 'refPlane', name: nextName(this.history.doc, '基準面'), suppressed: false, def: { mode: 'offset', plane, distance: '10' } }, '基準面');
   }
 
   /** 「導角」 (C5.3), angle–distance by default like SolidWorks. */
@@ -413,6 +441,50 @@ class AppStore {
     this.execute({ type: 'setEdges', featureId: f.id, edges });
   }
 
+  /** The feature of the PropertyManager session, as it is in the document now. */
+  private editedFeature(): Feature | undefined {
+    const e = this.state.editing;
+    return e?.kind === 'feature' ? findFeature(this.history.doc, e.featureId) : undefined;
+  }
+
+  /** An element picked in the graphics area goes to the selection box of the feature being edited that takes its kind. */
+  pick(ref: Ref): void {
+    const f = this.editedFeature();
+    if (f?.type === 'fillet' || f?.type === 'chamfer') this.toggleEdge(ref);
+    else if (f?.type === 'extrude') this.setUpToFace(ref);
+    else if (f?.type === 'refPlane') this.setPlaneRef(ref);
+  }
+
+  /** A click in the FeatureManager selects; while a plane is being defined it picks a plane like SolidWorks' flyout tree. */
+  treeClick(id: Id): void {
+    const f = this.editedFeature();
+    if (f?.type === 'refPlane' && f.def.mode !== 'threePoint' && id !== f.id && this.isPlane(id)) return this.setPlaneRef({ kind: 'datum', name: id });
+    this.select(id);
+  }
+
+  /**
+   * References of the plane being defined (C3.2): a plane (datum or planar face) for offset and angle
+   * planes, a straight edge as the axis of an angle plane, and up to three vertices, toggled by clicking.
+   */
+  setPlaneRef(ref: Ref): void {
+    const f = this.editedFeature();
+    if (f?.type !== 'refPlane') return;
+    const d = f.def;
+    const set = (def: PlaneDefinition) => this.execute({ type: 'setRefPlane', featureId: f.id, def });
+    if (d.mode === 'threePoint') {
+      if (ref.kind !== 'vertex') return;
+      if (d.points.some((p) => p.name === ref.name)) return void set({ ...d, points: d.points.filter((p) => p.name !== ref.name) });
+      if (d.points.length >= 3) return this.notify('已選三個點；點選已選的點可移除它');
+      return void set({ ...d, points: [...d.points, ref] });
+    }
+    if (ref.kind === 'edge' && d.mode === 'angle') {
+      if (ref.fingerprint?.type !== 'line') return this.notify('旋轉軸必須是直線邊線', 'error');
+      return void set({ ...d, axis: ref });
+    }
+    if (ref.kind === 'face' && ref.fingerprint?.type !== 'plane') return this.notify('參考面必須是平面', 'error');
+    if (ref.kind === 'face' || ref.kind === 'datum') set({ ...d, plane: ref });
+  }
+
   /** 「成形至某一面」: the face picked in the graphics area ends the extrusion being edited. */
   setUpToFace(face: Ref): void {
     const e = this.state.editing;
@@ -421,12 +493,16 @@ class AppStore {
     this.execute({ type: 'setEndCondition', featureId: f.id, dir: 'dir1', value: { ...f.dir1, face } });
   }
 
-  /** While editing a fillet, chamfer or sketch, show the model before it (edges are picked on that model). */
+  /**
+   * While editing a fillet, chamfer or sketch, show the model before it (edges are picked on that
+   * model); a reference plane is evaluated too, on the model before it, so that it can be previewed.
+   */
   private until(): number | undefined {
     const e = this.state.editing;
     if (!e) return undefined;
     const i = this.history.doc.features.findIndex((f) => f.id === e.featureId);
     const type = this.history.doc.features[i]?.type;
+    if (type === 'refPlane') return i + 1;
     return type === 'fillet' || type === 'chamfer' || type === 'sketch' ? i : undefined;
   }
 

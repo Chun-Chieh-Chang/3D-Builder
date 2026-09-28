@@ -14,6 +14,11 @@ type Vec3 = [number, number, number];
 export interface FingerprintTopology {
   faces: { surface: string; area: number; center: Vec3; normal: Vec3 | null }[];
   edges: { curve: string; length: number; mid: Vec3; dir: Vec3 | null }[];
+  vertices: { point: Vec3 }[];
+}
+
+export function vertexFingerprint(topo: FingerprintTopology, i: number): Fingerprint {
+  return { type: 'point', size: 0, center: topo.vertices[i]!.point };
 }
 
 export function faceFingerprint(topo: FingerprintTopology, i: number): Fingerprint {
@@ -51,10 +56,10 @@ export type Resolution =
  * A reference that cannot be resolved is reported with ranked candidates (B4.3) — never guessed.
  */
 export function resolveRef(ref: Ref, names: ElementNames, topo: FingerprintTopology): Resolution {
-  const kind = ref.kind === 'edge' ? 'edges' : ref.kind === 'face' ? 'faces' : null;
+  const kind = ref.kind === 'edge' ? 'edges' : ref.kind === 'face' ? 'faces' : ref.kind === 'vertex' ? 'vertices' : null;
   if (!kind) return { ok: false, reason: 'missing', candidates: [] };
   const list = names[kind];
-  const fp = (i: number) => (kind === 'edges' ? edgeFingerprint(topo, i) : faceFingerprint(topo, i));
+  const fp = (i: number) => (kind === 'edges' ? edgeFingerprint(topo, i) : kind === 'faces' ? faceFingerprint(topo, i) : vertexFingerprint(topo, i));
   const rank = (indices: number[]): Candidate[] =>
     indices
       .map((index) => ({ index, name: list[index]!, distance: ref.fingerprint ? fingerprintDistance(ref.fingerprint, fp(index)) : Infinity }))

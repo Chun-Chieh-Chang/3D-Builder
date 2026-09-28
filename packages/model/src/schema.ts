@@ -6,7 +6,7 @@ import type { Id } from './ids';
  * DOF status, mass properties and error lists are derived data and never stored.
  */
 
-export const SCHEMA_VERSION = 3;
+export const SCHEMA_VERSION = 4;
 
 /** Value expression: "20", "25.4mm", "1in", "30deg". Variables/equations arrive in Phase 3a (B5.2/B5.3). */
 export type Expr = string;
@@ -142,7 +142,23 @@ export interface ChamferFeature extends FeatureBase {
   flip?: boolean;
 }
 
-export type Feature = SketchFeature | ExtrudeFeature | RevolveFeature | FilletFeature | ChamferFeature;
+/**
+ * How a reference plane is defined (C3.2). `plane` is a default plane or another reference plane
+ * (kind "datum", by name or feature id) or a planar model face; `axis` a straight model edge;
+ * `points` three model vertices.
+ */
+export type PlaneDefinition =
+  | { mode: 'offset'; plane: Ref; distance: Expr; reverse?: boolean }
+  /** Through the axis, turned by `angle` from the plane (at 0° parallel to it). */
+  | { mode: 'angle'; plane: Ref; axis: Ref; angle: Expr; reverse?: boolean }
+  | { mode: 'threePoint'; points: Ref[]; reverse?: boolean };
+
+export interface RefPlaneFeature extends FeatureBase {
+  type: 'refPlane';
+  def: PlaneDefinition;
+}
+
+export type Feature = SketchFeature | ExtrudeFeature | RevolveFeature | FilletFeature | ChamferFeature | RefPlaneFeature;
 export type FeatureType = Feature['type'];
 
 // ---------------------------------------------------------------- document

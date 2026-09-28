@@ -6,7 +6,7 @@ import type { PartDoc } from '@3db/model';
 import { findProfiles, PlaneGcsSolver } from '@3db/sketch';
 import { Kernel } from '@3db/kernel';
 import { Regenerator } from '@3db/regen';
-import { edgeFingerprint, faceFingerprint } from '@3db/naming';
+import { edgeFingerprint, faceFingerprint, vertexFingerprint } from '@3db/naming';
 import { exportPartStep } from '@3db/io';
 import type { KernelApi, RebuildPayload, RebuildRequest, SketchSolvePayload, SketchSolveRequest } from './protocol';
 
@@ -52,11 +52,15 @@ const api: KernelApi = {
       faceFingerprints: body ? body.topology.faces.map((_, i) => faceFingerprint(body.topology, i)) : [],
       edgeNames: body?.names.edges ?? [],
       edgeFingerprints: body ? body.topology.edges.map((_, i) => edgeFingerprint(body.topology, i)) : [],
+      vertexNames: body?.names.vertices ?? [],
+      vertexPoints: Float32Array.from(body?.topology.vertices.flatMap((v) => v.point) ?? []),
+      vertexFingerprints: body ? body.topology.vertices.map((_, i) => vertexFingerprint(body.topology, i)) : [],
       frames: r.frames,
       mass: body ? kernel.massProps(body.shape) : null,
       totalMs: r.totalMs,
     };
-    const buffers = mesh ? [mesh.positions, mesh.normals, mesh.indices, mesh.faceRanges, mesh.edgePoints, mesh.edgeRanges].map((a) => a.buffer as ArrayBuffer) : [];
+    const arrays = mesh ? [mesh.positions, mesh.normals, mesh.indices, mesh.faceRanges, mesh.edgePoints, mesh.edgeRanges] : [];
+    const buffers = [...arrays, payload.vertexPoints].map((a) => a.buffer as ArrayBuffer);
     return Comlink.transfer(payload, buffers);
   },
 

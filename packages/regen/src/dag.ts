@@ -7,7 +7,8 @@ import { ownerFeatures } from '@3db/naming';
  */
 export function parentsOf(feature: Feature, doc: PartDoc): Id[] {
   const ids = new Set(doc.features.map((f) => f.id));
-  const fromRefs = (refs: Ref[]) => refs.flatMap((r) => (r.kind === 'datum' ? [] : ownerFeatures(r.name)));
+  // A datum reference names a default plane (no parent) or a reference plane feature (its id).
+  const fromRefs = (refs: Ref[]) => refs.flatMap((r) => (r.kind === 'datum' ? [r.name] : ownerFeatures(r.name)));
   let parents: Id[];
   switch (feature.type) {
     case 'sketch':
@@ -23,6 +24,11 @@ export function parentsOf(feature: Feature, doc: PartDoc): Id[] {
     case 'chamfer':
       parents = fromRefs(feature.edges);
       break;
+    case 'refPlane': {
+      const d = feature.def;
+      parents = fromRefs(d.mode === 'threePoint' ? d.points : d.mode === 'angle' ? [d.plane, d.axis] : [d.plane]);
+      break;
+    }
   }
   return [...new Set(parents)].filter((p) => p !== feature.id && ids.has(p));
 }

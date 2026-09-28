@@ -11,6 +11,7 @@ import {
   type PartDoc,
   type PlaneFrame,
   type Ref,
+  type RefPlaneFeature,
   type RevolveFeature,
   type SketchFeature,
   type Vec3,
@@ -53,7 +54,8 @@ export interface RebuildResult {
   sketches: Map<Id, { frame: PlaneFrame; solved: SolvedSketch; profiles: ProfileResult }>;
   /**
    * Plane of every sketch that could be placed, including the sketch right at the `until` limit
-   * (the one being edited), whose plane may be a face of the model before it.
+   * (the one being edited), whose plane may be a face of the model before it; and of every
+   * reference plane that was built.
    */
   frames: Map<Id, PlaneFrame>;
   totalMs: number;
@@ -105,6 +107,8 @@ export class Regenerator {
   private owned: ShapeId[] = [];
   /** Warnings of the feature being evaluated. */
   private warnings: string[] = [];
+  /** Reference planes built so far in this rebuild (C3.2). */
+  private planes = new Map<Id, PlaneFrame>();
 
   constructor(
     private readonly kernel: Kernel,
@@ -124,6 +128,7 @@ export class Regenerator {
     const frames: RebuildResult['frames'] = new Map();
     const results: FeatureResult[] = [];
     let body: BodyState | null = null;
+    this.planes = new Map();
 
     doc.features.forEach((feature, index) => {
       const t = performance.now();
@@ -152,6 +157,12 @@ export class Regenerator {
             }
             sketches.set(feature.id, s);
             return done({ status: 'ok', sketch: info });
+          }
+          case 'refPlane': {
+            const frame = this.refPlane(feature, body);
+            this.planes.set(feature.id, frame);
+            frames.set(feature.id, frame);
+            return done({ status: 'ok' });
           }
           case 'extrude':
           case 'revolve':
@@ -182,9 +193,11 @@ export class Regenerator {
   }
 
   private resolve(ref: Ref, body: BodyState, what: string): number {
+    // An empty reference is a selection box not filled in yet, not a lost reference.
+    if (!ref.name) throw new FeatureError(`請選擇${what}`);
     const r = resolveRef(ref, body.names, body.topology);
     if (!r.ok) throw new FeatureError(`遺失參考：${what}找不到，請重新選擇`, [{ ref, reason: r.reason, candidates: r.candidates }]);
-    this.noteFingerprint(r.via, what, body.names[ref.kind === 'edge' ? 'edges' : 'faces'][r.index]!);
+    this.noteFingerprint(r.via, what, body.names[ref.kind === 'edge' ? 'edges' : ref.kind === 'vertex' ? 'vertices' : 'faces'][r.index]!);
     return r.index;
   }
 
@@ -195,17 +208,65 @@ export class Regenerator {
 
   // ------------------------------------------------------------------ sketches (C1.1)
 
-  /** Where a sketch lies: a default plane, or a planar face of the model before it. */
-  private frame(f: SketchFeature, body: BodyState | null): PlaneFrame {
-    if (f.plane.kind === 'datum') {
-      if (!isDatumPlaneName(f.plane.name)) throw new FeatureError(`不明的基準面：${f.plane.name}`);
-      return DATUM_PLANES[f.plane.name];
+  /**
+   * A plane reference: a default plane, a reference plane built earlier in this rebuild, or a planar
+   * face of the model so far.
+   */
+  private planeOf(ref: Ref, body: BodyState | null, labels: { what: string; notPlanar: string }): PlaneFrame {
+    if (ref.kind === 'datum') {
+      if (isDatumPlaneName(ref.name)) return DATUM_PLANES[ref.name];
+      const plane = this.planes.get(ref.name);
+      if (!plane) throw new FeatureError(`${labels.what}：參考的基準面不存在、已抑制或失敗`);
+      return plane;
     }
-    if (f.plane.kind !== 'face') throw new FeatureError('草圖必須放在基準面或平面上');
-    if (!body) throw new FeatureError('草圖所在的面不存在：它之前沒有本體');
-    const face = body.topology.faces[this.resolve(f.plane, body, '草圖所在的面')]!;
-    if (face.surface !== 'plane' || !face.normal) throw new FeatureError('草圖只能放在平面上');
+    if (ref.kind !== 'face') throw new FeatureError('必須選擇基準面或平面');
+    if (!body) throw new FeatureError(`${labels.what}不存在：它之前沒有本體`);
+    const face = body.topology.faces[this.resolve(ref, body, labels.what)]!;
+    if (face.surface !== 'plane' || !face.normal) throw new FeatureError(labels.notPlanar);
     return planeFrame(face.center, face.normal);
+  }
+
+  /** Where a sketch lies (C1.1): a default plane, a reference plane, or a planar face of the model before it. */
+  private frame(f: SketchFeature, body: BodyState | null): PlaneFrame {
+    return this.planeOf(f.plane, body, { what: '草圖所在的面', notPlanar: '草圖只能放在平面上' });
+  }
+
+  /**
+   * Reference plane (C3.2): offset from a plane; through a straight edge at an angle to a plane
+   * (at 0° parallel to it); or through three vertices. The frame follows the planeFrame rules, so a
+   * sketch on it gets the same axes the same plane would get anywhere else.
+   */
+  private refPlane(f: RefPlaneFeature, body: BodyState | null): PlaneFrame {
+    const d = f.def;
+    const sign = d.reverse ? -1 : 1;
+    const labels = { what: '參考面', notPlanar: '參考面必須是平面' };
+    switch (d.mode) {
+      case 'offset': {
+        const base = this.planeOf(d.plane, body, labels);
+        return { ...base, origin: add(base.origin, base.normal, evalLength(d.distance) * sign) };
+      }
+      case 'angle': {
+        const base = this.planeOf(d.plane, body, labels);
+        if (!body) throw new FeatureError('旋轉軸不存在：它之前沒有本體');
+        const edge = body.topology.edges[this.resolve(d.axis, body, '旋轉軸')]!;
+        if (edge.curve !== 'line' || !edge.dir) throw new FeatureError('旋轉軸必須是直線邊線');
+        const k = unit(edge.dir);
+        // The part of the plane's normal across the axis, turned about the axis.
+        const across = sub(base.normal, add([0, 0, 0], k, dot(base.normal, k)));
+        if (Math.hypot(...across) < 1e-9) throw new FeatureError('旋轉軸不能垂直於參考面');
+        return planeFrame(edge.mid, rotate(unit(across), k, evalAngle(d.angle) * sign));
+      }
+      case 'threePoint': {
+        if (d.points.length < 3) throw new FeatureError('三點基準面需要三個頂點');
+        if (!body) throw new FeatureError('頂點不存在：它之前沒有本體');
+        const [a, b, c] = d.points.map((ref, i) => body.topology.vertices[this.resolve(ref, body, `第 ${i + 1} 點`)]!.point) as [Vec3, Vec3, Vec3];
+        const normal = cross(sub(b, a), sub(c, a));
+        const size = Math.max(Math.hypot(...sub(b, a)), Math.hypot(...sub(c, a)), 1e-9);
+        if (Math.hypot(...normal) < 1e-9 * size * size) throw new FeatureError('三點共線，無法決定平面');
+        const n = unit(normal);
+        return planeFrame(a, [n[0] * sign, n[1] * sign, n[2] * sign]);
+      }
+    }
   }
 
   private sketch(f: SketchFeature, body: BodyState | null) {

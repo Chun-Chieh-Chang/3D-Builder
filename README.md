@@ -2,7 +2,7 @@
 
 類 SolidWorks 的參數式 3D CAD（Web 先行）。設計意圖是唯一真相（SSOT）：幾何、網格、STEP 都由文件重新計算而來；參考一律用持久名稱，不用拓撲索引。
 
-目前進度：**Phase 0 完成並已驗收；Phase 1A 草圖編輯器、1B 特徵與布林完成**。Phase 0 的流程是：
+目前進度：**Phase 0 完成並已驗收；Phase 1A 草圖編輯器、1B 特徵與布林、1C 基準面、1D 設計樹操作完成**。Phase 0 的流程是：
 
 1. 草圖（PlaneGCS 求解）
 2. 伸長
@@ -29,10 +29,10 @@ packages/naming    持久命名（TNP）與參考解析
 packages/kernel    OCCT 8.0.1（libcascade WASM）門面：伸長、旋轉、布林（含合併共面）、圓角、導角、拓撲、網格、物質特性、STEP
 packages/regen     確定性的重新計算引擎、父子關係推導
 packages/io        檔案層：STEP 輸出命名
-packages/render    Three.js 圖面：SW 式視圖操作、邊線拾取、三度空間參考、草圖疊加層
+packages/render    Three.js 圖面：SW 式視圖操作、頂點/邊線/面拾取、基準面顯示、三度空間參考、草圖疊加層
 apps/web           React 介面：CommandManager、FeatureManager、PropertyManager、狀態列；src/sketcher 為草圖工具
 tests/phase0       Phase 0 驗收與效能量測
-tests/phase1       Phase 1 特徵與布林後的持久命名（TNP）回歸
+tests/phase1       Phase 1 回歸：特徵與布林後的持久命名（TNP）、設計樹操作、基準面
 docs/adr           架構決策紀錄
 ```
 

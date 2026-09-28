@@ -81,7 +81,7 @@ export function FeatureTree() {
             key={d.id}
             className={`tree-row datum ${selected === d.id ? 'selected' : ''}`}
             title={d.icon === 'plane' ? '選取後按「草圖」即可在此基準面上繪製草圖' : undefined}
-            onClick={() => d.icon === 'plane' && store.select(d.id)}
+            onClick={() => d.icon === 'plane' && store.treeClick(d.id)}
           >
             <Icon name={d.icon} />
             <span>{d.label}</span>
@@ -109,7 +109,7 @@ export function FeatureTree() {
               data-feature-row
               className={cls}
               title={tip || `${featureLabel(f)}：${f.name}`}
-              onClick={() => store.select(f.id)}
+              onClick={() => store.treeClick(f.id)}
               onDoubleClick={() => !rolledBack && store.beginEdit(f.id)}
               onContextMenu={(e) => {
                 e.preventDefault();

@@ -19,7 +19,11 @@ export interface RebuildPayload {
   faceFingerprints: Fingerprint[];
   edgeNames: string[];
   edgeFingerprints: Fingerprint[];
-  /** Plane of each sketch (datum or model face), including the sketch being edited. */
+  vertexNames: string[];
+  /** xyz per vertex, in the order of vertexNames. */
+  vertexPoints: Float32Array;
+  vertexFingerprints: Fingerprint[];
+  /** Plane of each sketch (datum or model face), including the sketch being edited, and of each reference plane. */
   frames: Map<Id, PlaneFrame>;
   mass: MassProps | null;
   totalMs: number;

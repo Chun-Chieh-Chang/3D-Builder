@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
-import { findFeature, isDimension, type Ref } from '@3db/model';
+import { DATUM_PLANES, findFeature, isDimension, type DatumPlaneName, type Feature, type PlaneFrame, type Ref } from '@3db/model';
 import { ownerFeatures } from '@3db/naming';
-import { Viewer, type SketchOverlay } from '@3db/render';
+import { Viewer, type PlaneDisplay, type SketchOverlay } from '@3db/render';
 import { ACTIONS } from '../actions';
 import { buildOverlay } from '../sketcher/overlay';
 import { store, useSketcherView, useStore } from '../state/store';
@@ -10,9 +10,42 @@ import type { RebuildPayload } from '../worker/protocol';
 import { Icon } from './Icon';
 
 /**
- * Graphics area (D4, D5): viewer, heads-up view toolbar, face selection, edge picking while a fillet
- * or chamfer is being edited, end-face picking for 「成形至某一面」, and the sketch overlay with its
- * tools while a sketch is being edited.
+ * What the graphics area picks during a PropertyManager session, what it shows as already picked
+ * (the SolidWorks selection boxes), and the prompt. Outside sessions faces are picked for selection.
+ */
+function picking(feature: Feature | undefined, editing: boolean) {
+  const def = feature?.type === 'refPlane' ? feature.def : null;
+  const upTo = feature?.type === 'extrude' && feature.dir1.type === 'upToFace' ? feature.dir1 : null;
+  const edgeFeature = feature?.type === 'fillet' || feature?.type === 'chamfer' ? feature : null;
+  const prompt = edgeFeature
+    ? `點選邊線以加入${FEATURE_LABEL[edgeFeature.type]}`
+    : upTo
+      ? '點選伸長要終止的面'
+      : def?.mode === 'offset'
+        ? '點選平面，或在設計樹中選擇基準面'
+        : def?.mode === 'angle'
+          ? '點選參考平面（或在設計樹中選擇基準面），再點選作為旋轉軸的直線邊線'
+          : def?.mode === 'threePoint'
+            ? `點選三個頂點（已選 ${def.points.length} 個）`
+            : null;
+  return {
+    edges: !!edgeFeature || def?.mode === 'angle',
+    faces: !editing || !!upTo || def?.mode === 'offset' || def?.mode === 'angle',
+    vertices: def?.mode === 'threePoint',
+    pickedEdges: edgeFeature ? edgeFeature.edges : def?.mode === 'angle' ? [def.axis] : [],
+    pickedFace: upTo ? upTo.face : def && def.mode !== 'threePoint' && def.plane.kind === 'face' ? def.plane : null,
+    pickedVertices: def?.mode === 'threePoint' ? def.points : [],
+    /** A default or reference plane the plane being defined is based on. */
+    referencePlane: def && def.mode !== 'threePoint' && def.plane.kind === 'datum' ? def.plane.name : null,
+    prompt,
+  };
+}
+
+/**
+ * Graphics area (D4, D5): viewer, heads-up view toolbar, face selection, reference planes, element
+ * picking for the feature being edited (edges of a fillet or chamfer, the end face of 「成形至某一面」,
+ * faces, edges and vertices of a reference plane), and the sketch overlay with its tools while a
+ * sketch is being edited.
  * Picked indices are resolved against the payload whose mesh is on screen — never against a newer
  * or older result — so an index can only ever name the element the user actually clicked.
  */
@@ -34,6 +67,7 @@ export function Viewport() {
   const view = useSketcherView();
   const [hover, setHover] = useState(-1);
   const [hoverFace, setHoverFace] = useState(-1);
+  const [hoverVertex, setHoverVertex] = useState(-1);
   const [viewTick, setViewTick] = useState(0);
   const sketching = editing?.kind === 'sketch';
   sketchingRef.current = sketching;
@@ -51,19 +85,30 @@ export function Viewport() {
       const fingerprint = r?.faceFingerprints[face];
       return name && fingerprint ? { kind: 'face', name, fingerprint } : null;
     };
+    const vertexRef = (vertex: number): Ref | null => {
+      const r = displayed.current;
+      const name = r?.vertexNames[vertex];
+      const fingerprint = r?.vertexFingerprints[vertex];
+      return name && fingerprint ? { kind: 'vertex', name, fingerprint } : null;
+    };
     const idOf = (key: string) => key.slice(key.indexOf(':') + 1);
     const viewer = new Viewer(host.current!, {
       onEdgeHover: setHover,
       onEdgeClick: (edge) => {
         const ref = edgeRef(edge);
-        if (ref) store.toggleEdge(ref);
+        if (ref) store.pick(ref);
       },
       onFaceHover: setHoverFace,
       onFaceClick: (face) => {
         const ref = faceRef(face);
         if (store.getState().editing) {
-          if (ref) store.setUpToFace(ref);
+          if (ref) store.pick(ref);
         } else store.selectFace(ref);
+      },
+      onVertexHover: setHoverVertex,
+      onVertexClick: (vertex) => {
+        const ref = vertexRef(vertex);
+        if (ref) store.pick(ref);
       },
       // Screen-sized parts of the sketch overlay (dimension offsets, arrows) follow the zoom.
       onViewChange: () => sketchingRef.current && setViewTick((t) => t + 1),
@@ -82,15 +127,13 @@ export function Viewport() {
   }, []);
 
   const feature = editing ? findFeature(doc, editing.featureId) : undefined;
-  const edgeFeature = feature?.type === 'fillet' || feature?.type === 'chamfer' ? feature : null;
-  const endFace = feature?.type === 'extrude' && feature.dir1.type === 'upToFace' ? feature.dir1.face : null;
-  const pickingEndFace = feature?.type === 'extrude' && feature.dir1.type === 'upToFace';
-  const pickingFaces = !editing || pickingEndFace;
+  const pick = picking(feature, !!editing);
 
   useEffect(() => {
     const v = store.viewer;
     if (!v) return;
     v.setMesh(result?.mesh ?? null, !fitted.current && !!result?.mesh);
+    v.setVertices(result?.vertexPoints ?? new Float32Array(0));
     displayed.current = result;
     if (result?.mesh) fitted.current = true;
   }, [result]);
@@ -98,16 +141,33 @@ export function Viewport() {
   useEffect(() => {
     const v = store.viewer;
     if (!v) return;
-    v.setEdgePicking(!!edgeFeature);
-    v.setFacePicking(pickingFaces);
-    const edgeNames = displayed.current?.edgeNames ?? [];
-    const faceNames = displayed.current?.faceNames ?? [];
-    v.setSelectedEdges(edgeFeature ? edgeFeature.edges.map((e) => edgeNames.indexOf(e.name)).filter((i) => i >= 0) : []);
-    const face = pickingEndFace ? endFace : !editing ? selectedFace : null;
-    if (face && face.kind === 'face') v.setSelectedFaces([faceNames.indexOf(face.name)].filter((i) => i >= 0));
+    const p = picking(feature, !!editing);
+    v.setEdgePicking(p.edges);
+    v.setFacePicking(p.faces);
+    v.setVertexPicking(p.vertices);
+    const r = displayed.current;
+    const indices = (names: string[] | undefined, refs: Ref[]) => refs.map((x) => names?.indexOf(x.name) ?? -1).filter((i) => i >= 0);
+    v.setSelectedEdges(indices(r?.edgeNames, p.pickedEdges));
+    v.setSelectedVertices(indices(r?.vertexNames, p.pickedVertices));
+    if (editing) v.setSelectedFaces(indices(r?.faceNames, p.pickedFace ? [p.pickedFace] : []));
+    else if (selectedFace?.kind === 'face') v.setSelectedFaces(indices(r?.faceNames, [selectedFace]));
     // D1.2: a feature selected in the FeatureManager shows the faces it made.
-    else v.setSelectedFaces(!editing && selected ? faceNames.flatMap((n, i) => (ownerFeatures(n)[0] === selected ? [i] : [])) : []);
-  }, [edgeFeature, pickingFaces, pickingEndFace, endFace, editing, selectedFace, selected, result]);
+    else v.setSelectedFaces(selected ? (r?.faceNames ?? []).flatMap((n, i) => (ownerFeatures(n)[0] === selected ? [i] : [])) : []);
+  }, [feature, editing, selectedFace, selected, result]);
+
+  // Reference planes show like new planes in SolidWorks; default planes only when selected or referenced (D4.6).
+  useEffect(() => {
+    const v = store.viewer;
+    if (!v) return;
+    const reference = picking(feature, !!editing).referencePlane;
+    const planes: PlaneDisplay[] = [];
+    const show = (key: string, frame: PlaneFrame | undefined, highlighted: boolean) => frame && planes.push({ key, frame, highlighted });
+    for (const name of Object.keys(DATUM_PLANES) as DatumPlaneName[]) {
+      if (selected === name || reference === name) show(name, DATUM_PLANES[name], selected === name);
+    }
+    for (const f of doc.features) if (f.type === 'refPlane') show(f.id, result?.frames.get(f.id), selected === f.id || editing?.featureId === f.id);
+    v.setPlanes(planes);
+  }, [feature, editing, selected, doc, result]);
 
   // Sketch tools own the left mouse button while a sketch is being edited.
   useEffect(() => {
@@ -144,8 +204,12 @@ export function Viewport() {
     v.setOverlay(overlay.current);
   }, [sketching, doc, sketchSolve, view, viewTick]);
 
-  const hoverEdgeName = edgeFeature && hover >= 0 ? displayed.current?.edgeNames[hover] : undefined;
-  const hoverFaceName = pickingFaces && hoverFace >= 0 ? displayed.current?.faceNames[hoverFace] : undefined;
+  const shown = displayed.current;
+  const hoverName =
+    (pick.vertices && hoverVertex >= 0 ? shown?.vertexNames[hoverVertex] : undefined) ??
+    (pick.edges && hover >= 0 ? shown?.edgeNames[hover] : undefined) ??
+    (pick.faces && hoverFace >= 0 ? shown?.faceNames[hoverFace] : undefined);
+  const hoverFaceName = pick.faces && hoverFace >= 0 ? shown?.faceNames[hoverFace] : undefined;
   const planar = selectedFace?.fingerprint?.type === 'plane';
 
   return (
@@ -172,25 +236,14 @@ export function Viewport() {
       {!bootMs && (
         <div className="boot-overlay">{bootError ? `幾何核心載入失敗：${bootError}` : '正在載入幾何核心（OCCT WASM，約 43 MB）…'}</div>
       )}
-      {edgeFeature && (
+      {pick.prompt && (
         <div className="pick-hint">
-          {hoverEdgeName ? (
+          {hoverName ? (
             <>
-              持久名稱：<code>{hoverEdgeName}</code>
+              持久名稱：<code>{hoverName}</code>
             </>
           ) : (
-            `點選邊線以加入${FEATURE_LABEL[edgeFeature.type]}`
-          )}
-        </div>
-      )}
-      {pickingEndFace && (
-        <div className="pick-hint">
-          {hoverFaceName ? (
-            <>
-              持久名稱：<code>{hoverFaceName}</code>
-            </>
-          ) : (
-            '點選伸長要終止的面'
+            pick.prompt
           )}
         </div>
       )}

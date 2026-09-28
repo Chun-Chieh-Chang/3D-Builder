@@ -9,6 +9,7 @@ export const FEATURE_LABEL: Record<FeatureType, string> = {
   revolve: '旋轉',
   fillet: '圓角',
   chamfer: '導角',
+  refPlane: '基準面',
 };
 
 /** SolidWorks names cuts after what they cut with: 「除料-伸長」, 「除料-旋轉」. */
@@ -77,6 +78,13 @@ export const TOOL_LABEL: Record<ToolId, string> = {
   point: '點',
   dimension: '智慧型尺寸',
 };
+
+/** How a reference plane is defined (C3.2). */
+export const PLANE_MODE_LABEL = {
+  offset: '偏移距離',
+  angle: '角度',
+  threePoint: '三點',
+} as const;
 
 export const DATUM_ITEMS = [
   { id: 'origin', label: '原點', icon: 'origin' },

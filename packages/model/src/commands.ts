@@ -1,6 +1,7 @@
 import { produce, type Draft } from 'immer';
 import { countersFor, type Id } from './ids';
-import type { ChamferFeature, EndCondition, Expr, Feature, PartDoc, Ref, RevolveCondition, SketchConstraint, SketchEntity, SketchFeature } from './schema';
+import type { ChamferFeature, EndCondition, Expr, Feature, PartDoc, PlaneDefinition, Ref, RevolveCondition, SketchConstraint, SketchEntity, SketchFeature } from './schema';
+import { isDatumPlaneName } from './datums';
 import { isDimension } from './schema';
 import { evalAngle, evalLength, ExprError } from './expr';
 import { idsInUse, removalSet, sketchError } from './sketch-rules';
@@ -32,6 +33,7 @@ export type Command =
   /** Edges of an edge-based feature (fillet, chamfer). */
   | { type: 'setEdges'; featureId: Id; edges: Ref[] }
   | { type: 'setChamfer'; featureId: Id; value: Pick<ChamferFeature, 'mode' | 'distance' | 'second' | 'flip'> }
+  | { type: 'setRefPlane'; featureId: Id; def: PlaneDefinition }
   /** Suppresses or unsuppresses several features at once; which ones follows from their dependencies (B2.6). */
   | { type: 'setSuppressed'; featureIds: Id[]; value: boolean }
   /** Deletes features (B2.8). Their ids stay issued; references to them become missing, never rebound. */
@@ -108,6 +110,36 @@ function sketchBefore(doc: PartDoc, sketchId: Id, index: number, label: string):
   return s;
 }
 
+/** A plane reference names a default plane, a reference plane earlier in the history, or a model face. */
+function planeRef(doc: PartDoc, ref: Ref, index: number): void {
+  if (ref.kind === 'face') return;
+  if (ref.kind !== 'datum') throw new CommandError('必須選擇基準面或平面');
+  if (isDatumPlaneName(ref.name)) return;
+  const at = doc.features.findIndex((f) => f.id === ref.name);
+  if (at < 0 || at >= index || doc.features[at]!.type !== 'refPlane') throw new CommandError('參考的基準面必須在它之前');
+}
+
+/**
+ * Structure of a reference plane definition (C3.2). References may still be empty while the user
+ * picks them in the PropertyManager; the rebuild reports what is missing.
+ */
+function planeDefinition(doc: PartDoc, def: PlaneDefinition, index: number): void {
+  switch (def.mode) {
+    case 'offset':
+      planeRef(doc, def.plane, index);
+      positiveLength(def.distance);
+      return;
+    case 'angle':
+      planeRef(doc, def.plane, index);
+      if (def.axis.kind !== 'edge') throw new CommandError('旋轉軸必須是一條直線邊線');
+      angleIn(def.angle, -1e-12, 2 * Math.PI, '角度必須在 0° 到 360° 之間');
+      return;
+    case 'threePoint':
+      if (def.points.length > 3 || def.points.some((p) => p.kind !== 'vertex')) throw new CommandError('三點基準面需要三個頂點');
+      return;
+  }
+}
+
 function revolveAxis(sketch: SketchFeature, axis: Id): void {
   if (sketch.entities.find((e) => e.id === axis)?.type !== 'line') throw new CommandError('旋轉軸必須是草圖中的一條直線（通常是中心線）');
 }
@@ -131,6 +163,7 @@ function validateNewFeature(doc: PartDoc, f: Feature, index: number): void {
   switch (f.type) {
     case 'sketch': {
       if (f.plane.kind !== 'datum' && f.plane.kind !== 'face') throw new CommandError('草圖必須放在基準面或平面上');
+      planeRef(doc, f.plane, index);
       const err = sketchError(f);
       if (err) throw new CommandError(err);
       return;
@@ -151,6 +184,9 @@ function validateNewFeature(doc: PartDoc, f: Feature, index: number): void {
     case 'chamfer':
       if (f.edges.some((r) => r.kind !== 'edge')) throw new CommandError('導角只能選邊線');
       chamferParams(f);
+      return;
+    case 'refPlane':
+      planeDefinition(doc, f.def, index);
       return;
   }
 }
@@ -208,6 +244,13 @@ export function mutate(draft: Draft<PartDoc>, cmd: Command): void {
       if (sketch?.type !== 'sketch') throw new CommandError('找不到旋轉特徵的草圖');
       revolveAxis(sketch as SketchFeature, cmd.axis);
       f.axis = cmd.axis;
+      return;
+    }
+    case 'setRefPlane': {
+      const f = feature(draft, cmd.featureId);
+      if (f.type !== 'refPlane') throw new CommandError('只有基準面有這些參數');
+      planeDefinition(draft as PartDoc, cmd.def, draft.features.findIndex((x) => x.id === f.id));
+      f.def = cmd.def;
       return;
     }
     case 'setChamfer': {

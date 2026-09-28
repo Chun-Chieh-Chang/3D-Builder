@@ -52,6 +52,8 @@ const migrations: Record<number, (doc: Json) => Json> = {
   // v3: revolve and chamfer features. Nothing to convert; the version keeps older programs from
   // opening documents with feature types they do not know.
   2: (doc) => doc,
+  // v4: reference planes (C3.2). Nothing to convert, as for v3.
+  3: (doc) => doc,
 };
 
 export class FormatError extends Error {

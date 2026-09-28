@@ -32,6 +32,13 @@ const COLORS = {
   background: 0xf3f5f8,
 };
 
+/** A reference plane to show (D4.6): drawn as a translucent square around the model. */
+export interface PlaneDisplay {
+  key: string;
+  frame: PlaneFrame;
+  highlighted?: boolean;
+}
+
 /** Pointer input on the graphics area while a tool (e.g. a sketch tool) owns the left button. */
 export interface ToolPointerEvent {
   type: 'down' | 'move' | 'up' | 'dblclick' | 'leave';
@@ -52,6 +59,9 @@ export interface ViewerEvents {
   onFaceHover?: (face: number) => void;
   /** Left click on a face (or -1 on empty space). */
   onFaceClick?: (face: number, additive: boolean) => void;
+  /** Vertex under the cursor changed (index into the vertices given to setVertices, or -1). */
+  onVertexHover?: (vertex: number) => void;
+  onVertexClick?: (vertex: number, additive: boolean) => void;
   /** The camera moved, zoomed or the viewport was resized (screen-sized overlays need a new layout). */
   onViewChange?: () => void;
   onLabelClick?: (key: string, additive: boolean) => void;
@@ -86,6 +96,14 @@ export class Viewer {
   private hoveredFace = -1;
   private selectedFaces = new Set<number>();
   private faceHighlight: THREE.Mesh | null = null;
+  private pickVertices = false;
+  /** Model vertices, xyz per vertex (for picking and highlighting). */
+  private vertices: Float32Array = new Float32Array(0);
+  private hoveredVertex = -1;
+  private selectedVertices = new Set<number>();
+  private vertexHighlight: THREE.Points | null = null;
+  private planes: PlaneDisplay[] = [];
+  private planeGroup: THREE.Group | null = null;
   private overlay: SketchOverlay | null = null;
   private overlayGroup: THREE.Group | null = null;
   private labels = new Map<string, { el: HTMLElement; world: THREE.Vector3 }>();
@@ -136,6 +154,8 @@ export class Viewer {
     this.controls.dispose();
     this.clear();
     this.setOverlay(null);
+    this.setPlanes([]);
+    this.setVertices(new Float32Array(0));
     this.renderer.dispose();
     this.renderer.domElement.remove();
     this.labelLayer.remove();
@@ -171,6 +191,7 @@ export class Viewer {
     this.selected.clear();
     this.selectedFaces.clear();
     this.paintFaces();
+    if (this.planes.length > 0) this.paintPlanes(); // sized to the body
     if (fit) this.fitAll();
     this.requestRender();
   }
@@ -364,6 +385,132 @@ export class Viewer {
     this.requestRender();
   }
 
+  // ---------------------------------------------------------------- vertices (three-point planes, …)
+
+  /** The model's vertices, xyz per vertex, in the order the element names use. */
+  setVertices(points: Float32Array): void {
+    this.vertices = points;
+    this.hoveredVertex = -1;
+    this.selectedVertices.clear();
+    this.paintVertices();
+  }
+
+  setVertexPicking(enabled: boolean): void {
+    this.pickVertices = enabled;
+    if (!enabled) this.setHoveredVertex(-1);
+  }
+
+  setSelectedVertices(vertices: Iterable<number>): void {
+    this.selectedVertices = new Set(vertices);
+    this.paintVertices();
+  }
+
+  private setHoveredVertex(vertex: number): void {
+    if (vertex === this.hoveredVertex) return;
+    this.hoveredVertex = vertex;
+    this.paintVertices();
+    this.events.onVertexHover?.(vertex);
+  }
+
+  private paintVertices(): void {
+    if (this.vertexHighlight) {
+      this.overlayScene.remove(this.vertexHighlight);
+      this.vertexHighlight.geometry.dispose();
+      (this.vertexHighlight.material as THREE.Material).dispose();
+      this.vertexHighlight = null;
+    }
+    const shown = new Map<number, THREE.Color>();
+    for (const v of this.selectedVertices) shown.set(v, new THREE.Color(COLORS.edgeSelected));
+    if (this.hoveredVertex >= 0) shown.set(this.hoveredVertex, new THREE.Color(COLORS.edgeHover));
+    if (shown.size > 0) {
+      const positions: number[] = [];
+      const colors: number[] = [];
+      for (const [v, c] of shown) {
+        positions.push(this.vertices[v * 3]!, this.vertices[v * 3 + 1]!, this.vertices[v * 3 + 2]!);
+        colors.push(c.r, c.g, c.b);
+      }
+      const g = new THREE.BufferGeometry();
+      g.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+      g.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
+      this.vertexHighlight = new THREE.Points(g, new THREE.PointsMaterial({ size: 10, sizeAttenuation: false, vertexColors: true, depthTest: false }));
+      this.overlayScene.add(this.vertexHighlight);
+    }
+    this.requestRender();
+  }
+
+  /** The nearest visible vertex within 10 pixels of the cursor, or -1. */
+  private pickVertex(clientX: number, clientY: number): number {
+    if (this.vertices.length === 0) return -1;
+    const rect = this.renderer.domElement.getBoundingClientRect();
+    const { w, h } = this.canvasSize();
+    this.syncCamera();
+    const candidates: [number, number][] = [];
+    const v = new THREE.Vector3();
+    for (let i = 0; i < this.vertices.length / 3; i++) {
+      v.set(this.vertices[i * 3]!, this.vertices[i * 3 + 1]!, this.vertices[i * 3 + 2]!).project(this.camera);
+      const d = Math.hypot(rect.left + ((v.x + 1) / 2) * w - clientX, rect.top + ((1 - v.y) / 2) * h - clientY);
+      if (d <= 10) candidates.push([d, i]);
+    }
+    candidates.sort((a, b) => a[0] - b[0]);
+    const scale = (this.camera.right - this.camera.left) / this.camera.zoom;
+    for (const [, i] of candidates) {
+      // Hidden behind the body? Compare the body hit along the ray with the vertex's own depth.
+      const p = new THREE.Vector3(this.vertices[i * 3]!, this.vertices[i * 3 + 1]!, this.vertices[i * 3 + 2]!);
+      const s = p.clone().project(this.camera);
+      const ray = this.rayAt(rect.left + ((s.x + 1) / 2) * w, rect.top + ((1 - s.y) / 2) * h);
+      const depth = p.clone().sub(ray.origin).dot(ray.direction);
+      const caster = new THREE.Raycaster(ray.origin, ray.direction);
+      const hit = this.body ? caster.intersectObject(this.body)[0]?.distance ?? Infinity : Infinity;
+      if (hit >= depth - 1e-3 * scale) return i;
+    }
+    return -1;
+  }
+
+  // ---------------------------------------------------------------- reference planes (D4.6)
+
+  /** Reference planes to show; each is a translucent square centered on the model's projection. */
+  setPlanes(planes: PlaneDisplay[]): void {
+    this.planes = planes;
+    this.paintPlanes();
+  }
+
+  private paintPlanes(): void {
+    if (this.planeGroup) {
+      this.scene.remove(this.planeGroup);
+      disposeGroup(this.planeGroup);
+      this.planeGroup = null;
+    }
+    if (this.planes.length === 0) return this.requestRender();
+    const box = new THREE.Box3();
+    if (this.body) box.setFromObject(this.body);
+    const boxCorners = box.isEmpty()
+      ? []
+      : [0, 1, 2, 3, 4, 5, 6, 7].map((i) => new THREE.Vector3(i & 1 ? box.max.x : box.min.x, i & 2 ? box.max.y : box.min.y, i & 4 ? box.max.z : box.min.z));
+    const group = new THREE.Group();
+    for (const plane of this.planes) {
+      const o = new THREE.Vector3(...plane.frame.origin);
+      const x = new THREE.Vector3(...plane.frame.xDir);
+      const y = new THREE.Vector3(...plane.frame.yDir);
+      // Like SolidWorks, a plane is drawn as large as the model seen along its normal, plus a margin.
+      let [u0, u1, v0, v1] = [-50, 50, -50, 50];
+      if (boxCorners.length > 0) {
+        const us = boxCorners.map((c) => c.clone().sub(o).dot(x));
+        const vs = boxCorners.map((c) => c.clone().sub(o).dot(y));
+        const margin = Math.max(0.1 * Math.max(Math.max(...us) - Math.min(...us), Math.max(...vs) - Math.min(...vs)), 5);
+        [u0, u1, v0, v1] = [Math.min(...us) - margin, Math.max(...us) + margin, Math.min(...vs) - margin, Math.max(...vs) + margin];
+      }
+      const at = (u: number, v: number) => o.clone().addScaledVector(x, u).addScaledVector(y, v);
+      const corners = [at(u0, v0), at(u1, v0), at(u1, v1), at(u0, v1)];
+      const fill = new THREE.BufferGeometry().setFromPoints([corners[0]!, corners[1]!, corners[2]!, corners[0]!, corners[2]!, corners[3]!]);
+      const color = plane.highlighted ? COLORS.edgeHover : 0x6f9fd6;
+      group.add(new THREE.Mesh(fill, new THREE.MeshBasicMaterial({ color, transparent: true, opacity: plane.highlighted ? 0.22 : 0.12, side: THREE.DoubleSide, depthWrite: false })));
+      group.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints([...corners, corners[0]!]), new THREE.LineBasicMaterial({ color })));
+    }
+    this.planeGroup = group;
+    this.scene.add(group);
+    this.requestRender();
+  }
+
   private pickFace(clientX: number, clientY: number): number {
     if (!this.body) return -1;
     const ray = new THREE.Raycaster();
@@ -434,8 +581,12 @@ export class Viewer {
       return;
     }
     if (e.buttons !== 0) return;
-    if (this.pickEdges) this.setHovered(this.pick(e.clientX, e.clientY));
-    if (this.pickFaces) this.setHoveredFace(this.pickFace(e.clientX, e.clientY));
+    // One element at a time, in SolidWorks priority: vertex, then edge, then face.
+    const vertex = this.pickVertices ? this.pickVertex(e.clientX, e.clientY) : -1;
+    const edge = vertex < 0 && this.pickEdges ? this.pick(e.clientX, e.clientY) : -1;
+    this.setHoveredVertex(vertex);
+    this.setHovered(edge);
+    this.setHoveredFace(vertex < 0 && edge < 0 && this.pickFaces ? this.pickFace(e.clientX, e.clientY) : -1);
   };
 
   private onPointerUp = (e: PointerEvent) => {
@@ -445,12 +596,19 @@ export class Viewer {
 
   private onPointerLeave = (e: PointerEvent) => {
     if (this.toolHandler) this.tool('leave', e, false);
+    this.setHoveredVertex(-1);
+    this.setHovered(-1);
+    this.setHoveredFace(-1);
   };
 
   private onClick = (e: MouseEvent) => {
     if (this.toolHandler || e.altKey) return;
-    if (this.pickEdges) this.events.onEdgeClick?.(this.pick(e.clientX, e.clientY), e.ctrlKey || e.shiftKey);
-    if (this.pickFaces) this.events.onFaceClick?.(this.pickFace(e.clientX, e.clientY), e.ctrlKey || e.shiftKey);
+    const additive = e.ctrlKey || e.shiftKey;
+    const vertex = this.pickVertices ? this.pickVertex(e.clientX, e.clientY) : -1;
+    if (vertex >= 0) return void this.events.onVertexClick?.(vertex, additive);
+    const edge = this.pickEdges ? this.pick(e.clientX, e.clientY) : -1;
+    if (edge >= 0 || (this.pickEdges && !this.pickFaces)) return void this.events.onEdgeClick?.(edge, additive);
+    if (this.pickFaces) this.events.onFaceClick?.(this.pickFace(e.clientX, e.clientY), additive);
   };
 
   private onDoubleClick = (e: MouseEvent) => {
@@ -557,7 +715,7 @@ export class Viewer {
     r.setViewport(0, 0, w, h);
     r.clear();
     r.render(this.scene, this.camera);
-    if (this.overlayGroup) {
+    if (this.overlayScene.children.length > 0) {
       r.clearDepth();
       r.render(this.overlayScene, this.camera);
     }
