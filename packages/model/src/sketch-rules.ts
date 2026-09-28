@@ -81,6 +81,7 @@ export function idsInUse(doc: PartDoc): Id[] {
       for (const c of f.constraints) out.push(c.id);
     }
   }
+  for (const b of doc.blobs) out.push(b.id);
   return out;
 }
 

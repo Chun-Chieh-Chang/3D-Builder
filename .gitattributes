@@ -1,3 +1,6 @@
 # Binary fixtures and part files must reach the tests byte for byte.
 *.zip binary
 *.3dbx binary
+# STEP fixtures are compared by content hash: no line-ending conversion.
+*.step -text
+*.stp -text

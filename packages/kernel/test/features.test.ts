@@ -37,7 +37,7 @@ describe('booleans (A1.5)', () => {
     expect(volume(r.shape)).toBeCloseTo(1000 + 10 * 6 * 4, 6);
     expect(k.isValid(r.shape)).toBe(true);
     expect(r.faceOrigins.every((o) => o.length > 0)).toBe(true);
-    const fromBoss = r.faceOrigins.filter((o) => o.some((x) => x.rel !== 'cap' && x.kind === 'face' && x.index >= nBase));
+    const fromBoss = r.faceOrigins.filter((o) => o.some((x) => 'kind' in x && x.kind === 'face' && x.index >= nBase));
     expect(fromBoss).toHaveLength(5); // four boss sides and its top; its bottom merged away
   });
 
@@ -58,7 +58,7 @@ describe('booleans (A1.5)', () => {
     keep(r.shape);
     expect(volume(r.shape)).toBeCloseTo(1000 - Math.PI * 4 * 5, 6);
     const n = k.topology(base).faces.length;
-    const wall = r.faceOrigins.findIndex((o) => o.some((x) => x.rel !== 'cap' && x.kind === 'face' && x.index >= n));
+    const wall = r.faceOrigins.findIndex((o) => o.some((x) => 'kind' in x && x.kind === 'face' && x.index >= n));
     expect(k.topology(r.shape).faces[wall]!.surface).toBe('cylinder');
   });
 });

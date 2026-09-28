@@ -24,14 +24,18 @@ function sortKeys(value: unknown): unknown {
 
 type Json = Record<string, unknown>;
 
-/** Every id in a raw (not yet validated) document: features and sketch entities/constraints. */
+/** Every id in a raw (not yet validated) document: features, sketch entities/constraints, blobs. */
 function rawIds(doc: Json): string[] {
   const features = Array.isArray(doc.features) ? (doc.features as Json[]) : [];
-  return features.flatMap((f) => [
-    f.id as string,
-    ...((f.entities as Json[] | undefined) ?? []).map((e) => e.id as string),
-    ...((f.constraints as Json[] | undefined) ?? []).map((c) => c.id as string),
-  ]);
+  const blobs = Array.isArray(doc.blobs) ? (doc.blobs as Json[]) : [];
+  return [
+    ...features.flatMap((f) => [
+      f.id as string,
+      ...((f.entities as Json[] | undefined) ?? []).map((e) => e.id as string),
+      ...((f.constraints as Json[] | undefined) ?? []).map((c) => c.id as string),
+    ]),
+    ...blobs.map((b) => b.id as string),
+  ];
 }
 
 /** Forward migrations (B9.2): migrations[n] upgrades a version-n document to n+1. */
@@ -54,6 +58,8 @@ const migrations: Record<number, (doc: Json) => Json> = {
   2: (doc) => doc,
   // v4: reference planes (C3.2). Nothing to convert, as for v3.
   3: (doc) => doc,
+  // v5: imported bodies (F2.1) and their data in `blobs`. Nothing to convert.
+  4: (doc) => doc,
 };
 
 export class FormatError extends Error {

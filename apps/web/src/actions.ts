@@ -47,6 +47,7 @@ export const ACTIONS: UiAction[] = [
   { id: 'fillet', label: '圓角', group: 'feature', enabled: hasBody, run: () => store.newFillet() },
   { id: 'chamfer', label: '導角', group: 'feature', enabled: hasBody, run: () => store.newChamfer() },
   { id: 'ref-plane', label: '基準面', group: 'feature', enabled: idle, run: () => store.newRefPlane() },
+  { id: 'import-step', label: '輸入 STEP', group: 'feature', enabled: (s) => idle(s) && s.bootMs !== null, run: () => void store.importStep() },
 
   {
     id: 'sketch',

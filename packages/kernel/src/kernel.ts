@@ -5,6 +5,7 @@ import {
   type EdgeInfo,
   type FaceInfo,
   type FaceOrigin,
+  type ImportResult,
   type MassProps,
   type MeshData,
   type OpResult,
@@ -95,6 +96,12 @@ export class Kernel {
     const s = this.shapes.get(id);
     if (!s) throw new KernelError(`形狀控制代碼已釋放：${id}`);
     return s;
+  }
+
+  /** A second handle to the same shape: releasing either leaves the other intact. */
+  copy(id: ShapeId): ShapeId {
+    const s = this.get(id);
+    return this.put(s.Oriented(s.Orientation()));
   }
 
   release(id: ShapeId): void {
@@ -628,9 +635,13 @@ export class Kernel {
   }
 
   isValid(id: ShapeId): boolean {
+    return this.valid(this.get(id));
+  }
+
+  private valid(shape: TopoDS_Shape): boolean {
     const arena = new Arena();
     try {
-      return arena.own(new this.oc.BRepCheck_Analyzer(this.get(id), true, false, false)).IsValid();
+      return arena.own(new this.oc.BRepCheck_Analyzer(shape, true, false, false)).IsValid();
     } finally {
       arena.dispose();
     }
@@ -721,13 +732,13 @@ export class Kernel {
    * `Transfer` + `Write`: the binding cannot pass a null "multi-file" prefix, and an empty string would
    * split geometry into external files.
    */
-  exportStep(id: ShapeId, productName = 'Part'): string {
+  exportStep(id: ShapeId, productName = 'Part', unit: 'MM' | 'INCH' = 'MM'): string {
     const oc = this.oc;
     const arena = new Arena();
     const path = `/export-${++this.fileSeq}.step`;
     const doc = new oc.TDocStd_Document(arena.own(new oc.TCollection_ExtendedString('XmlXCAF', false)));
     try {
-      oc.Interface_Static.SetCVal('write.step.unit', 'MM');
+      oc.Interface_Static.SetCVal('write.step.unit', unit);
       // Attribute and tool wrappers are owned by the document; only the document itself is deleted.
       const label = oc.XCAFDoc_DocumentTool.ShapeTool(doc.Main()).AddShape(this.get(id), false, true);
       oc.TDataStd_Name.Set(label, arena.own(new oc.TCollection_ExtendedString(productName, true)));
@@ -753,17 +764,65 @@ export class Kernel {
     }
   }
 
-  importStep(text: string): ShapeId {
+  /**
+   * STEP import (F2.1): the file's solids, in millimetres whatever unit the file uses. A shape that
+   * fails the validity check is healed by ShapeFix (F2.2, basic); a valid one is left exactly as
+   * read, since ShapeFix always touches something. Faces keep their order in the shape, which is
+   * what imported faces are named by; anything that is not part of a solid is left out.
+   */
+  importStep(data: Uint8Array | string): ImportResult {
     const oc = this.oc;
     const arena = new Arena();
     const path = `/import-${++this.fileSeq}.step`;
+    const warnings: string[] = [];
     try {
-      oc.FS.writeFile(path, text);
+      oc.FS.writeFile(path, data);
       const r = arena.own(new oc.STEPControl_Reader());
-      if (r.ReadFile(path) !== oc.IFSelect_ReturnStatus.IFSelect_RetDone) throw new KernelError('無法讀取 STEP 檔');
+      let status;
+      try {
+        status = r.ReadFile(path);
+      } catch (e) {
+        throw new KernelError(`無法讀取 STEP 檔：${this.errorText(e)}`);
+      }
+      if (status !== oc.IFSelect_ReturnStatus.IFSelect_RetDone) throw new KernelError('無法讀取 STEP 檔（格式錯誤，或不是 STEP 檔）');
       r.TransferRoots(arena.own(new oc.Message_ProgressRange()));
       if (r.NbShapes() === 0) throw new KernelError('STEP 檔中沒有形狀');
-      return this.put(r.OneShape());
+      let healed = arena.own(r.OneShape());
+      if (!this.valid(healed)) {
+        const fix = arena.own(new oc.ShapeFix_Shape(healed));
+        fix.Perform(arena.own(new oc.Message_ProgressRange()));
+        healed = arena.own(fix.Shape());
+        warnings.push('輸入的幾何有缺陷，已自動修復');
+      }
+
+      // Solids only: surfaces cannot take part in solid features yet (sewing them is F2.2, P1).
+      const solids = ShapeIndex.of(oc, healed, 'TopAbs_SOLID', arena);
+      let result: TopoDS_Shape;
+      try {
+        if (solids.size === 0) throw new KernelError('STEP 檔中沒有實體（可能只有曲面或線架構），目前只能輸入實體');
+        if (solids.size === 1) result = solids.keys[0]!.Oriented(solids.keys[0]!.Orientation());
+        else {
+          const compound = new oc.TopoDS_Compound();
+          const builder = arena.own(new oc.BRep_Builder());
+          builder.MakeCompound(compound);
+          for (const solid of solids.keys) builder.Add(compound, solid);
+          result = compound;
+        }
+      } finally {
+        solids.dispose();
+      }
+      const id = this.put(result);
+      const count = (s: TopoDS_Shape) => {
+        const faces = ShapeIndex.of(oc, s, T.FACE, arena);
+        const n = faces.size;
+        faces.dispose();
+        return n;
+      };
+      const faces = count(result);
+      const loose = count(healed) - faces;
+      if (loose > 0) warnings.push(`略過 ${loose} 個不屬於實體的面`);
+      if (!this.isValid(id)) warnings.push('輸入的幾何沒有通過有效性檢查，後續特徵可能失敗');
+      return { shape: id, faceOrigins: Array.from({ length: faces }, (_, index) => [{ rel: 'imported', index }]), warnings };
     } finally {
       try {
         oc.FS.unlink(path);

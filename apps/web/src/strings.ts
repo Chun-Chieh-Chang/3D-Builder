@@ -10,6 +10,7 @@ export const FEATURE_LABEL: Record<FeatureType, string> = {
   fillet: '圓角',
   chamfer: '導角',
   refPlane: '基準面',
+  importedBody: '輸入本體',
 };
 
 /** SolidWorks names cuts after what they cut with: 「除料-伸長」, 「除料-旋轉」. */

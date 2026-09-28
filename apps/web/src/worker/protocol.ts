@@ -51,6 +51,9 @@ export interface SketchSolvePayload {
 
 export interface KernelApi {
   init(): Promise<{ occtMs: number; gcsMs: number }>;
+  /** Imported data by SHA-256 (F2.1): the whole set when a part is loaded, one more on each import. */
+  setBlobs(blobs: Map<string, Uint8Array>): Promise<void>;
+  addBlob(sha256: string, data: Uint8Array): Promise<void>;
   rebuild(req: RebuildRequest): Promise<RebuildPayload>;
   solveSketch(req: SketchSolveRequest): Promise<SketchSolvePayload>;
   exportStep(doc: PartDoc): Promise<string>;

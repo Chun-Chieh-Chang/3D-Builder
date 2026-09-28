@@ -41,12 +41,19 @@ export type FaceOrigin =
   | { rel: 'same' | 'modified'; kind: 'face'; index: number }
   | { rel: 'generated'; kind: 'edge' | 'vertex'; index: number }
   | { rel: 'generated'; kind: 'profileEdge'; source: string }
-  | { rel: 'cap'; which: 'start' | 'end' };
+  | { rel: 'cap'; which: 'start' | 'end' }
+  /** Face `index` of an imported shape, in the order the file defines them. */
+  | { rel: 'imported'; index: number };
 
 export interface OpResult {
   shape: ShapeId;
   /** faceOrigins[i] lists the origins of output face i. */
   faceOrigins: FaceOrigin[][];
+}
+
+export interface ImportResult extends OpResult {
+  /** What was repaired or left out on the way in (F2.2). */
+  warnings: string[];
 }
 
 export interface MeshData {

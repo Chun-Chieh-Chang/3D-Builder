@@ -14,6 +14,8 @@ let kernel: Kernel;
 let solver: PlaneGcsSolver;
 let regen: Regenerator;
 let ready: Promise<{ occtMs: number; gcsMs: number }> | null = null;
+/** Imported data the document refers to by hash; the regenerator reads each file from here once. */
+const blobs = new Map<string, Uint8Array>();
 let solverReady: Promise<PlaneGcsSolver> | null = null;
 
 /** The sketch solver loads first and on its own: sketching does not wait for the 43 MB geometry kernel. */
@@ -29,7 +31,7 @@ async function boot() {
   t = performance.now();
   kernel = await Kernel.load({ wasmUrl: occtWasm });
   const occtMs = performance.now() - t;
-  regen = new Regenerator(kernel, solver);
+  regen = new Regenerator(kernel, solver, blobs);
   return { occtMs, gcsMs };
 }
 
@@ -37,6 +39,15 @@ const api: KernelApi = {
   init() {
     ready ??= boot();
     return ready;
+  },
+
+  async setBlobs(next) {
+    blobs.clear();
+    for (const [sha256, data] of next) blobs.set(sha256, data);
+  },
+
+  async addBlob(sha256, data) {
+    blobs.set(sha256, data);
   },
 
   async rebuild({ seq, doc, until }: RebuildRequest): Promise<RebuildPayload> {

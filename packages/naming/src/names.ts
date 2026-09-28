@@ -3,6 +3,7 @@
  * never from its position in the topology:
  *   face    <featureId>:side:<sketchId>.<entityId> | <featureId>:cap:start|end
  *           <featureId>:<role>:<inputEdgeName>      (e.g. fillet faces)
+ *           <featureId>:f<k>                       (k-th face of an imported shape, as its file orders them)
  *           inherited input face name              (faces kept or modified by an operation)
  *   edge    {<faceName>|<faceName>}                (sorted adjacent face names)
  *   vertex  <<faceName>|<faceName>|…>              (sorted adjacent face names)
@@ -16,7 +17,8 @@ export type Origin =
   | { rel: 'same' | 'modified'; kind: 'face'; index: number }
   | { rel: 'generated'; kind: 'edge' | 'vertex'; index: number }
   | { rel: 'generated'; kind: 'profileEdge'; source: string }
-  | { rel: 'cap'; which: 'start' | 'end' };
+  | { rel: 'cap'; which: 'start' | 'end' }
+  | { rel: 'imported'; index: number };
 
 export interface NamingTopology {
   faces: { center: Vec3 }[];
@@ -63,14 +65,16 @@ function disambiguate(base: string[], keyOf: (i: number) => Vec3): string[] {
   return out;
 }
 
-const PRIORITY: Record<string, number> = { edge: 0, vertex: 1, face: 2, profileEdge: 3, cap: 4 };
+const PRIORITY: Record<string, number> = { edge: 0, vertex: 1, face: 2, profileEdge: 3, cap: 4, imported: 5 };
 
 function faceBaseName(origins: Origin[], ctx: NamingContext): string {
   const f = ctx.featureId;
-  const sorted = origins.slice().sort((a, b) => PRIORITY[a.rel === 'cap' ? 'cap' : a.kind]! - PRIORITY[b.rel === 'cap' ? 'cap' : b.kind]!);
+  const rank = (o: Origin) => PRIORITY[o.rel === 'cap' || o.rel === 'imported' ? o.rel : o.kind]!;
+  const sorted = origins.slice().sort((a, b) => rank(a) - rank(b));
   const o = sorted[0];
   if (!o) return `${f}:face`;
   if (o.rel === 'cap') return `${f}:cap:${o.which}`;
+  if (o.rel === 'imported') return `${f}:f${o.index + 1}`;
   if (o.kind === 'profileEdge') return `${f}:side:${ctx.sketchId ?? '?'}.${o.source}`;
   const role = ctx.role ?? 'op';
   if (o.kind === 'edge') return `${f}:${role}:${ctx.input?.edges[o.index] ?? `?e${o.index}`}`;

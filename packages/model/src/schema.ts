@@ -6,7 +6,7 @@ import type { Id } from './ids';
  * DOF status, mass properties and error lists are derived data and never stored.
  */
 
-export const SCHEMA_VERSION = 4;
+export const SCHEMA_VERSION = 5;
 
 /** Value expression: "20", "25.4mm", "1in", "30deg". Variables/equations arrive in Phase 3a (B5.2/B5.3). */
 export type Expr = string;
@@ -158,7 +158,16 @@ export interface RefPlaneFeature extends FeatureBase {
   def: PlaneDefinition;
 }
 
-export type Feature = SketchFeature | ExtrudeFeature | RevolveFeature | FilletFeature | ChamferFeature | RefPlaneFeature;
+/**
+ * A solid read from a file (F2.1). The file's content is the document's blob `blob` and travels
+ * inside the part file, so the part rebuilds without the original file.
+ */
+export interface ImportedBodyFeature extends FeatureBase {
+  type: 'importedBody';
+  blob: Id;
+}
+
+export type Feature = SketchFeature | ExtrudeFeature | RevolveFeature | FilletFeature | ChamferFeature | RefPlaneFeature | ImportedBodyFeature;
 export type FeatureType = Feature['type'];
 
 // ---------------------------------------------------------------- document
@@ -174,10 +183,13 @@ export interface AppearanceOverride {
   color: string;
 }
 
+/** Data a feature imports, identified by content (the part file stores it as blobs/<sha256>.<kind>). */
 export interface BlobRef {
   id: Id;
   sha256: string;
   kind: 'step';
+  /** Name of the file it was read from; shown only. */
+  fileName?: string;
 }
 
 export interface PartDoc {

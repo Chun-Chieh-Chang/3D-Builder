@@ -81,7 +81,7 @@ describe('Phase 0 acceptance', () => {
     expect(step).toMatch(/^ISO-10303-21;/);
     expect(step).toContain("PRODUCT('行走骨架示範件'");
     expect(step).toMatch(/SI_UNIT\(\.MILLI\.,\.METRE\.\)/);
-    const back = kernel.importStep(step);
+    const back = kernel.importStep(step).shape;
     try {
       const a = kernel.massProps(res.body!.shape).volume;
       const b = kernel.massProps(back).volume;

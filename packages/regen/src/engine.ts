@@ -8,6 +8,7 @@ import {
   type ExtrudeFeature,
   type FilletFeature,
   type Id,
+  type ImportedBodyFeature,
   type PartDoc,
   type PlaneFrame,
   type Ref,
@@ -17,7 +18,7 @@ import {
   type Vec3,
 } from '@3db/model';
 import { findProfiles, type ProfileResult, type SketchSolver, type SketchStatus, type SolvedSketch } from '@3db/sketch';
-import { KernelError, type Kernel, type OpResult, type ShapeId, type Topology } from '@3db/kernel';
+import { KernelError, type FaceOrigin, type Kernel, type OpResult, type ShapeId, type Topology } from '@3db/kernel';
 import { nameElements, resolveRef, type Candidate, type ElementNames } from '@3db/naming';
 
 export type FeatureStatus = 'ok' | 'error' | 'suppressed' | 'rolledBack';
@@ -60,6 +61,14 @@ export interface RebuildResult {
   frames: Map<Id, PlaneFrame>;
   totalMs: number;
 }
+
+/** Where imported data comes from, by SHA-256 (the part file's blobs; a Map will do). */
+export interface BlobSource {
+  get(sha256: string): Uint8Array | undefined;
+}
+
+/** A file read once: its solids (or why it could not be read), kept while the document uses it. */
+type ImportedShape = { shape: ShapeId; faceOrigins: FaceOrigin[][]; warnings: string[] } | { error: string };
 
 export interface RebuildOptions {
   /** Evaluate only features [0, until) — edit sessions look at the model before the edited feature. */
@@ -109,19 +118,38 @@ export class Regenerator {
   private warnings: string[] = [];
   /** Reference planes built so far in this rebuild (C3.2). */
   private planes = new Map<Id, PlaneFrame>();
+  /**
+   * Imported files by SHA-256. Reading a STEP file is slow and depends on nothing but its bytes, so
+   * each one is read once and kept across rebuilds — a cache of derived data, not a second truth.
+   */
+  private imports = new Map<string, ImportedShape>();
 
   constructor(
     private readonly kernel: Kernel,
     private readonly solver: SketchSolver,
+    private readonly blobs: BlobSource = new Map(),
   ) {}
 
-  /** Releases the shapes of the previous result; call before discarding the regenerator. */
+  /** Releases every shape the regenerator holds; call before discarding it. */
   dispose(): void {
+    this.releaseResult();
+    for (const i of this.imports.values()) if ('shape' in i) this.kernel.release(i.shape);
+    this.imports.clear();
+  }
+
+  /** The previous result's shapes: every rebuild starts by releasing them. */
+  private releaseResult(): void {
     for (const id of this.owned.splice(0)) this.kernel.release(id);
   }
 
   rebuild(doc: PartDoc, options: RebuildOptions = {}): RebuildResult {
-    this.dispose();
+    this.releaseResult();
+    // Files the document no longer imports are let go.
+    for (const [sha256, i] of this.imports) {
+      if (doc.blobs.some((b) => b.sha256 === sha256)) continue;
+      if ('shape' in i) this.kernel.release(i.shape);
+      this.imports.delete(sha256);
+    }
     const t0 = performance.now();
     const limit = Math.min(options.until ?? doc.features.length, doc.rollbackIndex ?? doc.features.length);
     const sketches: RebuildResult['sketches'] = new Map();
@@ -167,7 +195,8 @@ export class Regenerator {
           case 'extrude':
           case 'revolve':
           case 'fillet':
-          case 'chamfer': {
+          case 'chamfer':
+          case 'importedBody': {
             const next =
               feature.type === 'extrude'
                 ? this.extrude(feature, sketches, body)
@@ -175,7 +204,9 @@ export class Regenerator {
                   ? this.revolve(feature, sketches, body)
                   : feature.type === 'fillet'
                     ? this.fillet(feature, body)
-                    : this.chamfer(feature, body);
+                    : feature.type === 'chamfer'
+                      ? this.chamfer(feature, body)
+                      : this.importedBody(feature, doc, body);
             if (body && body.shape !== next.shape) this.kernel.release(body.shape);
             body = next;
             return done({ status: 'ok' });
@@ -363,7 +394,7 @@ export class Regenerator {
    * Names a new tool body by how it was swept, then adds it to (boss) or removes it from (cut) the
    * body so far. Faces of the result inherit the names of the faces they came from, on either side.
    */
-  private combine(featureId: Id, op: 'boss' | 'cut', tool: OpResult, context: { featureId: Id; sketchId: Id }, body: BodyState | null): BodyState {
+  private combine(featureId: Id, op: 'boss' | 'cut', tool: OpResult, context: { featureId: Id; sketchId?: Id }, body: BodyState | null): BodyState {
     const toolTopology = this.kernel.topology(tool.shape);
     const toolNames = nameElements(tool.faceOrigins, toolTopology, context);
     if (!body) return { shape: tool.shape, topology: toolTopology, names: toolNames, by: featureId };
@@ -387,6 +418,33 @@ export class Regenerator {
     }
     const topology = this.kernel.topology(r.shape);
     return { shape: r.shape, topology, names: nameElements(r.faceOrigins, topology, { featureId, input: concatNames(body.names, toolNames) }), by: featureId };
+  }
+
+  // ------------------------------------------------------------------ imported bodies (F2.1)
+
+  /**
+   * The solids of an imported file, added to the body so far. Their faces are named
+   * `<feature>:f<k>` by the order the file gives them, so the same file always names them the same.
+   */
+  private importedBody(f: ImportedBodyFeature, doc: PartDoc, body: BodyState | null): BodyState {
+    const blob = doc.blobs.find((b) => b.id === f.blob);
+    if (!blob) throw new FeatureError('輸入的資料不存在');
+    let imported = this.imports.get(blob.sha256);
+    if (!imported) {
+      const data = this.blobs.get(blob.sha256);
+      if (!data) throw new FeatureError('找不到輸入的資料（零件檔中缺少），請重新輸入');
+      try {
+        const r = this.kernel.importStep(data);
+        imported = { shape: r.shape, faceOrigins: r.faceOrigins, warnings: r.warnings };
+      } catch (e) {
+        imported = { error: e instanceof Error ? e.message : String(e) };
+      }
+      this.imports.set(blob.sha256, imported);
+    }
+    if ('error' in imported) throw new FeatureError(imported.error);
+    this.warnings.push(...imported.warnings);
+    // The kept shape never becomes the body itself: the body is released on the next rebuild.
+    return this.combine(f.id, 'boss', { shape: this.kernel.copy(imported.shape), faceOrigins: imported.faceOrigins }, { featureId: f.id }, body);
   }
 
   // ------------------------------------------------------------------ fillet and chamfer (C5.1, C5.3)

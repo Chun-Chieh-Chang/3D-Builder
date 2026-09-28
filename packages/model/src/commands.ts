@@ -1,6 +1,6 @@
 import { produce, type Draft } from 'immer';
 import { countersFor, type Id } from './ids';
-import type { ChamferFeature, EndCondition, Expr, Feature, PartDoc, PlaneDefinition, Ref, RevolveCondition, SketchConstraint, SketchEntity, SketchFeature } from './schema';
+import type { BlobRef, ChamferFeature, EndCondition, Expr, Feature, ImportedBodyFeature, PartDoc, PlaneDefinition, Ref, RevolveCondition, SketchConstraint, SketchEntity, SketchFeature } from './schema';
 import { isDatumPlaneName } from './datums';
 import { isDimension } from './schema';
 import { evalAngle, evalLength, ExprError } from './expr';
@@ -34,6 +34,8 @@ export type Command =
   | { type: 'setEdges'; featureId: Id; edges: Ref[] }
   | { type: 'setChamfer'; featureId: Id; value: Pick<ChamferFeature, 'mode' | 'distance' | 'second' | 'flip'> }
   | { type: 'setRefPlane'; featureId: Id; def: PlaneDefinition }
+  /** Adds imported data and the feature that uses it, as one step (F2.1). */
+  | { type: 'importBody'; blob: BlobRef; feature: ImportedBodyFeature; index: number }
   /** Suppresses or unsuppresses several features at once; which ones follows from their dependencies (B2.6). */
   | { type: 'setSuppressed'; featureIds: Id[]; value: boolean }
   /** Deletes features (B2.8). Their ids stay issued; references to them become missing, never rebound. */
@@ -188,24 +190,37 @@ function validateNewFeature(doc: PartDoc, f: Feature, index: number): void {
     case 'refPlane':
       planeDefinition(doc, f.def, index);
       return;
+    case 'importedBody':
+      if (!doc.blobs.some((b) => b.id === f.blob)) throw new CommandError(`找不到輸入的資料：${f.blob}`);
+      return;
   }
+}
+
+/** Inserts a feature at `index` (at or above the rollback bar) after checking it. */
+function insert(draft: Draft<PartDoc>, feature: Feature, index: number): void {
+  const limit = draft.rollbackIndex ?? draft.features.length;
+  if (!Number.isInteger(index) || index < 0 || index > limit) throw new CommandError(`插入位置超出範圍：${index}`);
+  const ids = featureIds(feature);
+  assertFresh(draft as PartDoc, ids);
+  validateNewFeature(draft as PartDoc, feature, index);
+  draft.features.splice(index, 0, feature as Draft<Feature>);
+  if (draft.rollbackIndex !== null) draft.rollbackIndex += 1;
+  countersFor(ids, draft.idCounters);
 }
 
 /** Immer recipe: mutates the draft or throws CommandError (the document is then left untouched). */
 export function mutate(draft: Draft<PartDoc>, cmd: Command): void {
   switch (cmd.type) {
-    case 'insertFeature': {
-      const limit = draft.rollbackIndex ?? draft.features.length;
-      if (!Number.isInteger(cmd.index) || cmd.index < 0 || cmd.index > limit) {
-        throw new CommandError(`插入位置超出範圍：${cmd.index}`);
-      }
-      const ids = featureIds(cmd.feature);
-      assertFresh(draft as PartDoc, ids);
-      validateNewFeature(draft as PartDoc, cmd.feature, cmd.index);
-      draft.features.splice(cmd.index, 0, cmd.feature as Draft<Feature>);
-      if (draft.rollbackIndex !== null) draft.rollbackIndex += 1;
-      countersFor(ids, draft.idCounters);
-      return;
+    case 'insertFeature':
+      return insert(draft, cmd.feature, cmd.index);
+    case 'importBody': {
+      const { blob, feature } = cmd;
+      if (!/^[0-9a-f]{64}$/.test(blob.sha256)) throw new CommandError('輸入資料的雜湊值無效');
+      if (feature.blob !== blob.id) throw new CommandError('輸入本體必須使用這份輸入資料');
+      assertFresh(draft as PartDoc, [blob.id]);
+      draft.blobs.push(blob);
+      countersFor([blob.id], draft.idCounters);
+      return insert(draft, feature, cmd.index); // throws before anything is kept if the feature is wrong
     }
     case 'setDimension': {
       const f = sketchOf(draft, cmd.featureId);
@@ -294,6 +309,9 @@ export function mutate(draft: Draft<PartDoc>, cmd: Command): void {
       }
       draft.features = draft.features.filter((f) => !ids.has(f.id));
       if (draft.rollbackIndex !== null && draft.rollbackIndex >= draft.features.length) draft.rollbackIndex = null;
+      // Imported data no feature uses any more is dropped too (its id stays issued).
+      const used = new Set(draft.features.flatMap((f) => (f.type === 'importedBody' ? [f.blob] : [])));
+      draft.blobs = draft.blobs.filter((b) => used.has(b.id));
       return;
     }
     case 'renameFeature': {

@@ -1,6 +1,6 @@
 import type { ReactElement } from 'react';
 
-type IconName = 'part' | 'origin' | 'plane' | 'refPlane' | 'sketch' | 'extrude' | 'revolve' | 'fillet' | 'chamfer' | 'error' | 'warning' | 'ok' | 'cancel';
+type IconName = 'part' | 'origin' | 'plane' | 'refPlane' | 'sketch' | 'extrude' | 'revolve' | 'fillet' | 'chamfer' | 'importedBody' | 'error' | 'warning' | 'ok' | 'cancel';
 
 /** Default planes and reference planes share one icon, as in SolidWorks. */
 const PLANE = <path d="M4 4h10l-2 8H2z" />;
@@ -15,6 +15,7 @@ const PATHS: Record<IconName, ReactElement> = {
   revolve: <path d="M8 1.5v13 M3 6a5 2.5 0 1 0 10 0 M11.5 3.2l1.5 2.8-3 0.4" />,
   fillet: <path d="M3 13V3 M3 13h10 M3 7a6 6 0 0 0 6 6" />,
   chamfer: <path d="M3 13V7l4-4h6 M3 13h10V3" />,
+  importedBody: <path d="M3 5l5-3 5 3v6l-5 3-5-3z M8 5.5v5 M5.8 8.3L8 10.5l2.2-2.2" />,
   error: <path d="M8 2l6.5 11h-13z M8 6v3.5 M8 11.5v0.5" />,
   warning: <path d="M8 2.5l6 10.5H2z M8 6.5v3 M8 11v0.5" />,
   ok: <path d="M3 8.5l3 3 7-7" />,

@@ -27,7 +27,7 @@ describe('extrude', () => {
   it('tags side faces with their sketch entity and the two caps', () => {
     const r = k.extrude(front, [rect(20, 10)], [0, 0, 5]);
     keep(r.shape);
-    const tags = r.faceOrigins.map((o) => o.map((x) => (x.rel === 'cap' ? `cap:${x.which}` : x.kind === 'profileEdge' ? x.source : '?')).join());
+    const tags = r.faceOrigins.map((o) => o.map((x) => (x.rel === 'cap' ? `cap:${x.which}` : 'kind' in x && x.kind === 'profileEdge' ? x.source : '?')).join());
     expect(tags.sort()).toEqual(['cap:end', 'cap:start', 'l1', 'l2', 'l3', 'l4']);
     const topo = k.topology(r.shape);
     expect([topo.faces.length, topo.edges.length, topo.vertices.length]).toEqual([6, 12, 8]);
@@ -104,7 +104,7 @@ describe('mesh and exchange', () => {
     const box = keep(k.extrude(front, [rect(20, 10)], [0, 0, 5]).shape);
     const text = k.exportStep(box, 'TestPart');
     expect(text).toContain('ISO-10303-21');
-    const back = keep(k.importStep(text));
+    const back = keep(k.importStep(text).shape);
     expect(k.massProps(back).volume).toBeCloseTo(1000, 6);
   });
 

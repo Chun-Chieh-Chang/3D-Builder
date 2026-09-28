@@ -36,6 +36,17 @@ const PICKER_ID = '3d-builder-parts';
 const PART_TYPE: PickerType = { description: '3D-Builder 零件', accept: { 'application/octet-stream': [PART_FILE_EXTENSION] } };
 /** Parts saved before `.3dbx` were bare document text (`.3db.json`). */
 const OLD_PART_TYPE: PickerType = { description: '3D-Builder 零件（舊版 .3db.json）', accept: { 'application/json': ['.json'] } };
+const STEP_TYPE: PickerType = { description: 'STEP 檔', accept: { 'application/step': ['.step', '.stp'] } };
+/** The first type is the dialog's default filter: everything 「開啟舊檔」 can open. */
+const ANY_TYPE: PickerType = { description: '所有支援的檔案', accept: { ...PART_TYPE.accept, ...STEP_TYPE.accept, ...OLD_PART_TYPE.accept } };
+
+const acceptOf = (types: PickerType[]) => types.flatMap((t) => Object.values(t.accept).flat()).join(',');
+
+/** A STEP file by name, or by its first bytes when the name says nothing. */
+export function isStepFile(file: OpenedFile): boolean {
+  if (/\.(step|stp)$/i.test(file.name)) return true;
+  return new TextDecoder().decode(file.bytes.subarray(0, 64)).trimStart().startsWith('ISO-10303-21');
+}
 
 export interface OpenedFile {
   name: string;
@@ -46,11 +57,20 @@ export interface OpenedFile {
 
 const cancelled = (e: unknown) => e instanceof DOMException && e.name === 'AbortError';
 
-/** Asks for a part to open; null when the user cancels. */
-export async function pickFileToOpen(): Promise<OpenedFile | null> {
+/** 「開啟舊檔」: a part, or a STEP file to start a part from; null when the user cancels. */
+export function pickFileToOpen(): Promise<OpenedFile | null> {
+  return pick([ANY_TYPE, PART_TYPE, STEP_TYPE, OLD_PART_TYPE]);
+}
+
+/** 「輸入 STEP」: a STEP file to import into the part. */
+export function pickStepFile(): Promise<OpenedFile | null> {
+  return pick([STEP_TYPE]);
+}
+
+async function pick(types: PickerType[]): Promise<OpenedFile | null> {
   if (window.showOpenFilePicker) {
     try {
-      const [handle] = await window.showOpenFilePicker({ id: PICKER_ID, types: [PART_TYPE, OLD_PART_TYPE] });
+      const [handle] = await window.showOpenFilePicker({ id: PICKER_ID, types });
       if (!handle) return null;
       const file = await handle.getFile();
       return { name: file.name, bytes: new Uint8Array(await file.arrayBuffer()), handle };
@@ -59,7 +79,7 @@ export async function pickFileToOpen(): Promise<OpenedFile | null> {
       throw e;
     }
   }
-  const file = await chooseFile(`${PART_FILE_EXTENSION},.json`);
+  const file = await chooseFile(acceptOf(types));
   return file && { name: file.name, bytes: new Uint8Array(await file.arrayBuffer()), handle: null };
 }
 

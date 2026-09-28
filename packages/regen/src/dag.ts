@@ -29,6 +29,9 @@ export function parentsOf(feature: Feature, doc: PartDoc): Id[] {
       parents = fromRefs(d.mode === 'threePoint' ? d.points : d.mode === 'angle' ? [d.plane, d.axis] : [d.plane]);
       break;
     }
+    case 'importedBody':
+      parents = []; // it depends only on its data
+      break;
   }
   return [...new Set(parents)].filter((p) => p !== feature.id && ids.has(p));
 }

@@ -9,6 +9,7 @@ import {
   type ExtrudeFeature,
   type FilletFeature,
   type Id,
+  type ImportedBodyFeature,
   type PartDoc,
   type PlaneDefinition,
   type Ref,
@@ -470,6 +471,28 @@ function RefPlanePanel({ f }: { f: RefPlaneFeature }) {
   );
 }
 
+/** Imported body (F2.1): where the data came from, and what happened to it on the way in. */
+function ImportedBodyPanel({ f }: { f: ImportedBodyFeature }) {
+  const doc = useStore((s) => s.doc);
+  const result = useStore((s) => s.result);
+  const blob = doc.blobs.find((b) => b.id === f.blob);
+  const warnings = result?.features.find((r) => r.id === f.id)?.warnings ?? [];
+  return (
+    <section className="pm-group">
+      <h4>輸入的資料</h4>
+      <p>{blob?.fileName ?? '（未記錄檔名）'}</p>
+      {warnings.map((w) => (
+        <p key={w} className="warning-text">
+          {w}
+        </p>
+      ))}
+      <p className="hint">
+        資料存放在零件檔中（內容雜湊 <code>{blob?.sha256.slice(0, 12)}…</code>），不需要原始檔案。面依檔案中的順序命名。
+      </p>
+    </section>
+  );
+}
+
 /** PropertyManager (D2): parameters of the feature being edited; ✔ commits one undo step, ✖ restores (B7.3). */
 export function PropertyManager() {
   const editing = useStore((s) => s.editing);
@@ -502,6 +525,7 @@ export function PropertyManager() {
       {f.type === 'fillet' && <FilletPanel f={f} />}
       {f.type === 'chamfer' && <ChamferPanel f={f} />}
       {f.type === 'refPlane' && <RefPlanePanel f={f} />}
+      {f.type === 'importedBody' && <ImportedBodyPanel f={f} />}
     </div>
   );
 }

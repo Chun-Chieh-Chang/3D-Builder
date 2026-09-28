@@ -15,20 +15,22 @@ import {
   serializePart,
   type Command,
   type DatumPlaneName,
+  type BlobRef,
   type Feature,
   type Id,
+  type ImportedBodyFeature,
   type PartDoc,
   type PlaneDefinition,
   type PlaneFrame,
   type Ref,
   type SketchFeature,
 } from '@3db/model';
-import { PART_FILE_EXTENSION, partFileName, readPartFile, stepFileName, writePartFile } from '@3db/io';
+import { PART_FILE_EXTENSION, partFileName, readPartFile, sha256Hex, stepFileName, writePartFile } from '@3db/io';
 import { suppressionTargets, type SuppressAction } from '@3db/regen/dag';
 import type { Viewer } from '@3db/render';
 import type { KernelApi, RebuildPayload, SketchSolvePayload, SketchSolveRequest } from '../worker/protocol';
 import { SketchController, type ControllerView, type SketchHost } from '../sketcher/controller';
-import { download, pickFileToOpen, pickSaveTarget, writeFile } from '../files';
+import { download, isStepFile, pickFileToOpen, pickSaveTarget, pickStepFile, writeFile } from '../files';
 
 export interface EditSession {
   featureId: Id;
@@ -623,7 +625,7 @@ class AppStore {
     this.guard('new-demo');
   }
 
-  /** 「開啟舊檔」: a `.3dbx` part, or a `.3db.json` saved by an older version (B9.2). */
+  /** 「開啟舊檔」: a `.3dbx` part, a `.3db.json` saved by an older version (B9.2), or a STEP file to start a part from. */
   open(): void {
     this.guard('open');
   }
@@ -655,6 +657,13 @@ class AppStore {
     try {
       const picked = await pickFileToOpen();
       if (!picked) return;
+      if (isStepFile(picked)) {
+        // Like SolidWorks: a new, unsaved part named after the file, holding the imported body.
+        const doc = createEmptyPart();
+        doc.properties = { 零件名稱: picked.name.replace(/\.(step|stp)$/i, '') };
+        this.load(doc, null, null);
+        return await this.importData(picked.name, picked.bytes);
+      }
       const file = await readPartFile(picked.bytes);
       // A file in the old format is never overwritten with the new one: its first save asks for a name.
       this.load(file.doc, file.format === '3dbx' ? picked.handle : null, picked.name, file.blobs);
@@ -664,6 +673,34 @@ class AppStore {
       // After 「儲存」 in the unsaved-changes prompt the browser may refuse a second file dialog.
       if (e instanceof DOMException && (e.name === 'SecurityError' || e.name === 'NotAllowedError')) return this.notify('請再按一次「開啟舊檔」');
       this.notify(`無法開啟：${e instanceof Error ? e.message : String(e)}`, 'error');
+    }
+  }
+
+  /** 「輸入 STEP」 (F2.1): the file's solids become an imported body at the rollback bar, in one undoable step. */
+  async importStep(): Promise<void> {
+    try {
+      const picked = await pickStepFile();
+      if (picked) await this.importData(picked.name, picked.bytes);
+    } catch (e) {
+      this.notify(`無法輸入：${e instanceof Error ? e.message : String(e)}`, 'error');
+    }
+  }
+
+  /**
+   * The data goes to the worker before the command that uses it, so the first rebuild finds it. It is
+   * kept in the session even if the feature is deleted later: undo can bring the feature back.
+   */
+  private async importData(fileName: string, data: Uint8Array): Promise<void> {
+    const sha256 = await sha256Hex(data);
+    await this.api.addBlob(sha256, data);
+    this.blobs.set(sha256, data);
+    const doc = this.history.doc;
+    const ids = this.allocator();
+    const blob: BlobRef = { id: ids.take('blob'), sha256, kind: 'step', fileName };
+    const feature: ImportedBodyFeature = { id: ids.take('import'), type: 'importedBody', name: nextName(doc, '輸入'), suppressed: false, blob: blob.id };
+    if (this.execute({ type: 'importBody', blob, feature, index: doc.rollbackIndex ?? doc.features.length })) {
+      this.set({ selected: feature.id, selectedFace: null, fitRequest: this.state.fitRequest + 1 });
+      this.notify(`已輸入 ${fileName}`);
     }
   }
 
@@ -716,6 +753,7 @@ class AppStore {
     this.history.subscribe(() => this.onDocChanged());
     this.fileHandle = handle;
     this.blobs = blobs;
+    void this.api.setBlobs(blobs); // posted before the rebuild request, so the worker has them first
     this.savedText = serializePart(doc);
     this.set({ selected: null, selectedFace: null, result: null, fileName, fitRequest: this.state.fitRequest + 1 });
     this.onDocChanged();
