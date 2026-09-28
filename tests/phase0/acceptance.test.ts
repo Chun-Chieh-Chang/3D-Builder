@@ -113,7 +113,7 @@ describe('Phase 0 behaviour', () => {
   });
 
   it('suppresses the fillet', () => {
-    const r = regen.rebuild(applyCommand(createDemoPart(), { type: 'setSuppressed', featureId: 'fillet1', value: true }));
+    const r = regen.rebuild(applyCommand(createDemoPart(), { type: 'setSuppressed', featureIds: ['fillet1'], value: true }));
     expect(statusOf(r, 'fillet1').status).toBe('suppressed');
     expect(kernel.massProps(r.body!.shape).volume).toBeCloseTo(1000, 6);
   });

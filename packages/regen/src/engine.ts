@@ -33,6 +33,8 @@ export interface FeatureResult {
   message?: string;
   sketch?: { status: SketchStatus; dof: number; conflicting: Id[]; redundant: Id[]; problems: string[] };
   unresolved?: Unresolved[];
+  /** The feature rebuilt, but something deserves a look (D1.6), e.g. a reference found by its geometry. */
+  warnings?: string[];
   ms: number;
 }
 
@@ -101,6 +103,8 @@ const concatNames = (a: ElementNames, b: ElementNames): ElementNames => ({
  */
 export class Regenerator {
   private owned: ShapeId[] = [];
+  /** Warnings of the feature being evaluated. */
+  private warnings: string[] = [];
 
   constructor(
     private readonly kernel: Kernel,
@@ -123,7 +127,9 @@ export class Regenerator {
 
     doc.features.forEach((feature, index) => {
       const t = performance.now();
-      const done = (r: Omit<FeatureResult, 'id' | 'ms'>) => results.push({ id: feature.id, ms: performance.now() - t, ...r });
+      this.warnings = [];
+      const done = (r: Omit<FeatureResult, 'id' | 'ms'>) =>
+        results.push({ id: feature.id, ms: performance.now() - t, ...r, ...(this.warnings.length > 0 ? { warnings: this.warnings } : {}) });
       if (index >= limit) {
         if (index === limit && feature.type === 'sketch') {
           try {
@@ -177,8 +183,14 @@ export class Regenerator {
 
   private resolve(ref: Ref, body: BodyState, what: string): number {
     const r = resolveRef(ref, body.names, body.topology);
-    if (r.ok) return r.index;
-    throw new FeatureError(`遺失參考：${what}找不到，請重新選擇`, [{ ref, reason: r.reason, candidates: r.candidates }]);
+    if (!r.ok) throw new FeatureError(`遺失參考：${what}找不到，請重新選擇`, [{ ref, reason: r.reason, candidates: r.candidates }]);
+    this.noteFingerprint(r.via, what, body.names[ref.kind === 'edge' ? 'edges' : 'faces'][r.index]!);
+    return r.index;
+  }
+
+  /** A reference that only its geometry could pick out is a guess the user should confirm (never silent). */
+  private noteFingerprint(via: string, what: string, found: string): void {
+    if (via === 'fingerprint') this.warnings.push(`${what}依幾何指紋找到「${found}」（同名的有好幾個），請確認位置正確`);
   }
 
   // ------------------------------------------------------------------ sketches (C1.1)
@@ -324,8 +336,10 @@ export class Regenerator {
     const unresolved: Unresolved[] = [];
     for (const ref of refs) {
       const r = resolveRef(ref, body.names, body.topology);
-      if (r.ok) indices.push(r.index);
-      else unresolved.push({ ref, reason: r.reason, candidates: r.candidates });
+      if (r.ok) {
+        indices.push(r.index);
+        this.noteFingerprint(r.via, '邊線', body.names.edges[r.index]!);
+      } else unresolved.push({ ref, reason: r.reason, candidates: r.candidates });
     }
     if (unresolved.length > 0) throw new FeatureError(`遺失參考：${unresolved.length} 條邊線找不到，請重新選擇`, unresolved);
     return [...new Set(indices)];

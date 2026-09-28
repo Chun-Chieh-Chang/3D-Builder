@@ -1,7 +1,7 @@
 import { useStore, store } from '../state/store';
 import { SKETCH_STATUS_LABEL } from '../strings';
 
-/** Status bar: notices, sketch status (C1.31), rebuild time, volume, unit system. */
+/** Status bar: notices, 「錯誤為何？」 (D7.1), sketch status (C1.31), rebuild time, volume, unit system. */
 export function StatusBar() {
   const notice = useStore((s) => s.notice);
   const result = useStore((s) => s.result);
@@ -15,19 +15,20 @@ export function StatusBar() {
   // Inside a sketch its live solve is the status; otherwise the selected (or first) sketch of the last rebuild.
   const sketchId = [editing?.featureId, selected, ...doc.features.map((f) => f.id)].find((id) => id && doc.features.find((f) => f.id === id)?.type === 'sketch');
   const sketch = editing?.kind === 'sketch' ? sketchSolve : result?.features.find((f) => f.id === sketchId)?.sketch;
-  const errors = result?.features.filter((f) => f.status === 'error') ?? [];
+  const errors = result?.features.filter((f) => f.status === 'error').length ?? 0;
+  const warnings = result?.features.filter((f) => f.status === 'ok' && f.warnings?.length).length ?? 0;
   const editingName = editing?.kind === 'sketch' ? doc.features.find((f) => f.id === editing.featureId)?.name : undefined;
 
   return (
     <footer className="status-bar">
       <span className={`notice ${notice?.kind ?? ''}`} onClick={() => store.dismissNotice()}>
-        {notice?.text ??
-          (editingName
-            ? `正在編輯：${editingName}`
-            : errors.length > 0
-              ? `錯誤為何？ ${errors.map((e) => `${doc.features.find((f) => f.id === e.id)?.name}：${e.message}`).join('；')}`
-              : '就緒')}
+        {notice?.text ?? (editingName ? `正在編輯：${editingName}` : '就緒')}
       </span>
+      {(errors > 0 || warnings > 0) && (
+        <button className={`whats-wrong-button ${errors > 0 ? 'error' : 'warning'}`} onClick={() => store.showWhatsWrong(true)} title="列出所有錯誤與警告">
+          錯誤為何？（{[errors > 0 && `${errors} 個錯誤`, warnings > 0 && `${warnings} 個警告`].filter(Boolean).join('、')}）
+        </button>
+      )}
       {sketch && (
         <span className={`sketch-status ${sketch.status}`}>
           {SKETCH_STATUS_LABEL[sketch.status]}

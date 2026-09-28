@@ -123,6 +123,14 @@ export function installShortcuts(): () => void {
     const target = e.target as HTMLElement | null;
     if (target && (target.tagName === 'INPUT' || target.tagName === 'SELECT' || target.tagName === 'TEXTAREA')) return;
     const s = store.getState();
+    // An open dialog owns the keyboard (Esc closes it; its focused button takes Enter).
+    if (s.confirmDelete || s.whatsWrong) {
+      if (e.key === 'Escape') {
+        store.requestDelete(null);
+        store.showWhatsWrong(false);
+      }
+      return;
+    }
     if (s.editing?.kind === 'sketch') {
       // Inside a sketch, Esc ends the current tool and Delete removes the selection (SolidWorks);
       // leaving the sketch is the confirmation corner or 「離開草圖」.
@@ -131,6 +139,8 @@ export function installShortcuts(): () => void {
     } else if (s.editing) {
       if (e.key === 'Enter') return void store.commitEdit();
       if (e.key === 'Escape') return void store.cancelEdit();
+    } else if (e.key === 'Delete' && s.doc.features.some((f) => f.id === s.selected)) {
+      return void store.requestDelete(s.selected); // 「確認刪除」 for the feature selected in the tree
     }
     for (const a of ACTIONS) {
       if (a.shortcut && matches(e, a.shortcut) && a.enabled(s)) {

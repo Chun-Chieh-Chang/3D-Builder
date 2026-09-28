@@ -4,10 +4,11 @@
  * including faces split by a cut ("#k" in geometric order).
  */
 import { beforeAll, describe, expect, it } from 'vitest';
-import { applyCommand, createEmptyPart, type Command, type Feature, type PartDoc, type Ref } from '@3db/model';
+import { applyCommand, type Feature, type PartDoc } from '@3db/model';
 import { PlaneGcsSolver } from '@3db/sketch';
 import { Kernel } from '@3db/kernel';
-import { Regenerator, type RebuildResult } from '@3db/regen';
+import { Regenerator } from '@3db/regen';
+import { build, edge, face, faceNamed, front, rectangle, sketch, statuses } from './builders';
 
 let kernel: Kernel;
 let regen: Regenerator;
@@ -15,49 +16,6 @@ beforeAll(async () => {
   kernel = await Kernel.load();
   regen = new Regenerator(kernel, await PlaneGcsSolver.create());
 });
-
-const front: Ref = { kind: 'datum', name: 'plane:front' };
-const face = (name: string): Ref => ({ kind: 'face', name });
-const edge = (name: string): Ref => ({ kind: 'edge', name });
-
-/** A rectangle with its lower-left corner at (x, y), fully defined against the sketch origin. */
-function rectangle(id: string, x: number, y: number, w: number, h: number): Pick<Extract<Feature, { type: 'sketch' }>, 'entities' | 'constraints'> {
-  const c: [number, number][] = [[x, y], [x + w, y], [x + w, y + h], [x, y + h]];
-  return {
-    entities: [
-      ...c.map(([px, py], i) => ({ id: `${id}p${i}`, type: 'point', x: px, y: py }) as const),
-      ...[0, 1, 2, 3].map((i) => ({ id: `${id}l${i}`, type: 'line', p1: `${id}p${i}`, p2: `${id}p${(i + 1) % 4}` }) as const),
-    ],
-    constraints: [
-      { id: `${id}h0`, type: 'horizontal', a: `${id}l0` },
-      { id: `${id}v1`, type: 'vertical', a: `${id}l1` },
-      { id: `${id}h2`, type: 'horizontal', a: `${id}l2` },
-      { id: `${id}v3`, type: 'vertical', a: `${id}l3` },
-      { id: `${id}w`, type: 'distance', a: `${id}l0`, value: String(w) },
-      { id: `${id}d`, type: 'distance', a: `${id}l1`, value: String(h) },
-      // Pinned like in SolidWorks: coincident with the origin, aligned with it, or a (positive) distance.
-      ...(x === 0 && y === 0
-        ? [{ id: `${id}o`, type: 'coincident', a: `${id}p0`, b: '@origin' } as const]
-        : [
-            x === 0 ? ({ id: `${id}x`, type: 'vertical', a: `${id}p0`, b: '@origin' } as const) : ({ id: `${id}x`, type: 'distanceX', a: '@origin', b: `${id}p0`, value: String(Math.abs(x)) } as const),
-            y === 0 ? ({ id: `${id}y`, type: 'horizontal', a: `${id}p0`, b: '@origin' } as const) : ({ id: `${id}y`, type: 'distanceY', a: '@origin', b: `${id}p0`, value: String(Math.abs(y)) } as const),
-          ]),
-    ],
-  };
-}
-
-const sketch = (id: string, plane: Ref, parts: Pick<Extract<Feature, { type: 'sketch' }>, 'entities' | 'constraints'>): Feature => ({ id, type: 'sketch', name: id, suppressed: false, plane, ...parts });
-
-function build(...features: Feature[]): PartDoc {
-  return features.reduce<PartDoc>((doc, feature, index) => applyCommand(doc, { type: 'insertFeature', feature, index } satisfies Command), createEmptyPart());
-}
-
-const statuses = (r: RebuildResult) => r.features.map((f) => `${f.id}=${f.status}${f.message ? `(${f.message})` : ''}`);
-const faceNamed = (r: RebuildResult, name: string) => {
-  const i = r.body!.names.faces.indexOf(name);
-  expect(i, `face ${name} in ${r.body!.names.faces.join(', ')}`).toBeGreaterThanOrEqual(0);
-  return r.body!.topology.faces[i]!;
-};
 
 describe('names through boss, cut, fillet and chamfer', () => {
   interface V {

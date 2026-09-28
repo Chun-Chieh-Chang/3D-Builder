@@ -2,6 +2,7 @@ import { useEffect } from 'react';
 import { installShortcuts } from './actions';
 import { useStore } from './state/store';
 import { CommandBar } from './components/CommandBar';
+import { DeleteDialog, WhatsWrongDialog } from './components/Dialogs';
 import { FeatureTree } from './components/FeatureTree';
 import { PropertyManager } from './components/PropertyManager';
 import { StatusBar } from './components/StatusBar';
@@ -24,6 +25,8 @@ export function App() {
         <Viewport />
       </div>
       <StatusBar />
+      <DeleteDialog />
+      <WhatsWrongDialog />
     </div>
   );
 }

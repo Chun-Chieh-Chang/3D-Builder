@@ -1,6 +1,6 @@
 import type { ReactElement } from 'react';
 
-type IconName = 'part' | 'origin' | 'plane' | 'sketch' | 'extrude' | 'revolve' | 'fillet' | 'chamfer' | 'error' | 'ok' | 'cancel';
+type IconName = 'part' | 'origin' | 'plane' | 'sketch' | 'extrude' | 'revolve' | 'fillet' | 'chamfer' | 'error' | 'warning' | 'ok' | 'cancel';
 
 const PATHS: Record<IconName, ReactElement> = {
   part: <path d="M3 5l5-3 5 3v6l-5 3-5-3z M3 5l5 3 5-3 M8 8v6" />,
@@ -12,6 +12,7 @@ const PATHS: Record<IconName, ReactElement> = {
   fillet: <path d="M3 13V3 M3 13h10 M3 7a6 6 0 0 0 6 6" />,
   chamfer: <path d="M3 13V7l4-4h6 M3 13h10V3" />,
   error: <path d="M8 2l6.5 11h-13z M8 6v3.5 M8 11.5v0.5" />,
+  warning: <path d="M8 2.5l6 10.5H2z M8 6.5v3 M8 11v0.5" />,
   ok: <path d="M3 8.5l3 3 7-7" />,
   cancel: <path d="M4 4l8 8 M12 4l-8 8" />,
 };

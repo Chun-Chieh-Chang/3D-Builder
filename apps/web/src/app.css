@@ -54,6 +54,9 @@ code { font-family: Consolas, 'Cascadia Mono', monospace; font-size: 11px; }
 .tree-row.editing { outline: 1px dashed var(--accent); }
 .tree-row.datum { color: #45505c; }
 .tree-row.error .name { color: var(--error); }
+.tree-row.owner { box-shadow: inset 3px 0 0 var(--accent); background: #edf4fb; }
+.status-warning { color: var(--warn); }
+.warning-text { color: #a35200; }
 .tree-row.suppressed .name { color: #9aa3ad; }
 .tree-row.rolled-back { opacity: 0.45; }
 .tree-row .name { flex: 1; }
@@ -65,6 +68,19 @@ code { font-family: Consolas, 'Cascadia Mono', monospace; font-size: 11px; }
 .context-menu { position: fixed; z-index: 20; list-style: none; margin: 0; padding: 4px 0; background: #fff; border: 1px solid var(--line); box-shadow: 0 4px 14px rgba(0, 0, 0, 0.12); min-width: 140px; }
 .context-menu li { padding: 6px 14px; cursor: pointer; }
 .context-menu li:hover { background: var(--accent-soft); }
+.context-menu li.separator { height: 1px; padding: 0; margin: 4px 0; background: var(--line); cursor: default; }
+.modal.wide { min-width: 480px; max-width: 640px; }
+.modal-actions button { margin-left: 6px; padding: 4px 14px; border: 1px solid var(--line); background: #fff; border-radius: 4px; }
+.modal-actions button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+.delete-list { list-style: none; margin: 0 0 8px; padding: 6px 8px; border: 1px solid var(--line); border-radius: 4px; background: #fbfcfd; }
+.delete-list li { display: flex; align-items: center; gap: 6px; padding: 2px 0; }
+.whats-wrong { list-style: none; margin: 0; padding: 0; max-height: 50vh; overflow: auto; }
+.whats-wrong li { display: flex; gap: 8px; padding: 6px 8px; border-bottom: 1px solid #eef1f4; cursor: pointer; }
+.whats-wrong li:hover { background: var(--accent-soft); }
+.whats-wrong p { margin: 2px 0 0; font-size: 12px; }
+.whats-wrong-button { border: 1px solid var(--line); background: #fff; border-radius: 3px; padding: 1px 8px; font-size: 12px; }
+.whats-wrong-button.error { color: var(--error); border-color: #ffa8a8; }
+.whats-wrong-button.warning { color: #a35200; border-color: #ffd8a8; }
 
 .modal-backdrop { position: fixed; inset: 0; background: rgba(20, 30, 40, 0.25); display: grid; place-items: center; z-index: 30; }
 .modal { background: #fff; border-radius: 6px; padding: 14px 18px; min-width: 320px; box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2); }

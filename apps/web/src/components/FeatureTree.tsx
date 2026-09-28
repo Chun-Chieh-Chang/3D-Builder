@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
 import type { Feature, Id } from '@3db/model';
+import { ownerFeatures } from '@3db/naming';
 import { dependencies } from '@3db/regen/dag';
 import type { FeatureResult } from '@3db/regen';
 import { store, useStore } from '../state/store';
@@ -12,11 +13,16 @@ interface Menu {
   feature: Feature;
 }
 
-/** FeatureManager design tree (D1.1–D1.6): history order, status, rollback bar, context menu, parent/child. */
+/**
+ * FeatureManager design tree (D1.1–D1.6): history order, status and warnings, rollback bar,
+ * context menu (edit, suppress, delete, roll back, parent/child, what's wrong), and the feature
+ * owning the face selected in the graphics area (D1.2).
+ */
 export function FeatureTree() {
   const doc = useStore((s) => s.doc);
   const result = useStore((s) => s.result);
   const selected = useStore((s) => s.selected);
+  const selectedFace = useStore((s) => s.selectedFace);
   const editing = useStore((s) => s.editing);
   const [menu, setMenu] = useState<Menu | null>(null);
   const [relations, setRelations] = useState<Feature | null>(null);
@@ -33,6 +39,7 @@ export function FeatureTree() {
   const statusOf = (id: Id): FeatureResult | undefined => result?.features.find((f) => f.id === id);
   const rollback = doc.rollbackIndex ?? doc.features.length;
   const barIndex = dragIndex ?? rollback;
+  const owner = selectedFace ? ownerFeatures(selectedFace.name)[0] : undefined;
 
   // Rollback bar drag (B2.4 / D1.4): the bar snaps between feature rows.
   const onBarDown = (e: ReactPointerEvent) => {
@@ -57,6 +64,11 @@ export function FeatureTree() {
     </li>
   );
 
+  const act = (fn: () => void) => () => {
+    setMenu(null);
+    fn();
+  };
+
   return (
     <div className="feature-tree">
       <div className="tree-part">
@@ -78,16 +90,19 @@ export function FeatureTree() {
         {doc.features.flatMap((f, i) => {
           const r = statusOf(f.id);
           const rolledBack = i >= barIndex;
+          const warned = r?.status === 'ok' && !!r.warnings?.length;
           const cls = [
             'tree-row',
             selected === f.id ? 'selected' : '',
+            owner === f.id ? 'owner' : '',
             r?.status === 'error' ? 'error' : '',
+            warned ? 'warning' : '',
             f.suppressed ? 'suppressed' : '',
             rolledBack ? 'rolled-back' : '',
             editing?.featureId === f.id ? 'editing' : '',
           ].join(' ');
           const prefix = f.type === 'sketch' && r?.sketch ? SKETCH_STATUS_PREFIX[r.sketch.status] : '';
-          const tip = [r?.message, ...(r?.unresolved?.map((u) => `找不到：${u.ref.name}`) ?? [])].filter(Boolean).join('\n');
+          const tip = [r?.message, ...(r?.unresolved?.map((u) => `找不到：${u.ref.name}`) ?? []), ...(r?.warnings ?? [])].filter(Boolean).join('\n');
           const row = (
             <li
               key={f.id}
@@ -98,6 +113,7 @@ export function FeatureTree() {
               onDoubleClick={() => !rolledBack && store.beginEdit(f.id)}
               onContextMenu={(e) => {
                 e.preventDefault();
+                if (editing) return;
                 store.select(f.id);
                 setMenu({ x: e.clientX, y: e.clientY, feature: f });
               }}
@@ -108,6 +124,7 @@ export function FeatureTree() {
                 {f.name}
               </span>
               {r?.status === 'error' && <Icon name="error" className="status-error" />}
+              {warned && <Icon name="warning" className="status-warning" />}
             </li>
           );
           return i === barIndex ? [bar, row] : [row];
@@ -117,11 +134,24 @@ export function FeatureTree() {
 
       {menu && (
         <ul className="context-menu" style={{ left: menu.x, top: menu.y }} onPointerDown={(e) => e.stopPropagation()}>
-          <li onClick={() => (setMenu(null), store.beginEdit(menu.feature.id))}>{menu.feature.type === 'sketch' ? '編輯草圖' : '編輯特徵'}</li>
-          <li onClick={() => (setMenu(null), store.execute({ type: 'setSuppressed', featureId: menu.feature.id, value: !menu.feature.suppressed }))}>
-            {menu.feature.suppressed ? '恢復抑制' : '抑制'}
-          </li>
-          <li onClick={() => (setMenu(null), setRelations(menu.feature))}>父子關係…</li>
+          {doc.features.indexOf(menu.feature) < rollback && (
+            <li onClick={act(() => store.beginEdit(menu.feature.id))}>{menu.feature.type === 'sketch' ? '編輯草圖' : '編輯特徵'}</li>
+          )}
+          {menu.feature.suppressed ? (
+            <>
+              <li onClick={act(() => store.suppress(menu.feature.id, 'unsuppress'))}>恢復抑制</li>
+              <li onClick={act(() => store.suppress(menu.feature.id, 'unsuppressWithDependents'))}>恢復抑制（含相依特徵）</li>
+            </>
+          ) : (
+            <li onClick={act(() => store.suppress(menu.feature.id, 'suppress'))}>抑制</li>
+          )}
+          <li onClick={act(() => store.requestDelete(menu.feature.id))}>刪除…</li>
+          <li className="separator" />
+          <li onClick={act(() => store.rollTo(menu.feature.id))}>回溯（到此特徵之前）</li>
+          {doc.rollbackIndex !== null && <li onClick={act(() => store.rollTo(null))}>推進至最後</li>}
+          <li className="separator" />
+          <li onClick={act(() => setRelations(menu.feature))}>父子關係…</li>
+          {(statusOf(menu.feature.id)?.status === 'error' || statusOf(menu.feature.id)?.warnings) && <li onClick={act(() => store.showWhatsWrong(true))}>錯誤為何？</li>}
         </ul>
       )}
 

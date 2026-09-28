@@ -32,7 +32,10 @@ export type Command =
   /** Edges of an edge-based feature (fillet, chamfer). */
   | { type: 'setEdges'; featureId: Id; edges: Ref[] }
   | { type: 'setChamfer'; featureId: Id; value: Pick<ChamferFeature, 'mode' | 'distance' | 'second' | 'flip'> }
-  | { type: 'setSuppressed'; featureId: Id; value: boolean }
+  /** Suppresses or unsuppresses several features at once; which ones follows from their dependencies (B2.6). */
+  | { type: 'setSuppressed'; featureIds: Id[]; value: boolean }
+  /** Deletes features (B2.8). Their ids stay issued; references to them become missing, never rebound. */
+  | { type: 'deleteFeatures'; featureIds: Id[] }
   | { type: 'renameFeature'; featureId: Id; name: string }
   | { type: 'setRollback'; index: number | null }
   /** Sketch editing (C1): add geometry together with its relations and dimensions. */
@@ -233,7 +236,21 @@ export function mutate(draft: Draft<PartDoc>, cmd: Command): void {
       return;
     }
     case 'setSuppressed': {
-      feature(draft, cmd.featureId).suppressed = cmd.value;
+      const targets = cmd.featureIds.map((id) => feature(draft, id)); // all exist, or nothing changes
+      for (const f of targets) f.suppressed = cmd.value;
+      return;
+    }
+    case 'deleteFeatures': {
+      const ids = new Set(cmd.featureIds);
+      for (const id of ids) feature(draft, id);
+      if (ids.size === 0) return;
+      const doomed = draft.features.filter((f) => ids.has(f.id)) as Feature[];
+      countersFor(doomed.flatMap(featureIds), draft.idCounters); // deleted ids are never handed out again
+      if (draft.rollbackIndex !== null) {
+        draft.rollbackIndex -= draft.features.slice(0, draft.rollbackIndex).filter((f) => ids.has(f.id)).length;
+      }
+      draft.features = draft.features.filter((f) => !ids.has(f.id));
+      if (draft.rollbackIndex !== null && draft.rollbackIndex >= draft.features.length) draft.rollbackIndex = null;
       return;
     }
     case 'renameFeature': {

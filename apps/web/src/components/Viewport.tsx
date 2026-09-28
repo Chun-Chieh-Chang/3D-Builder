@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { findFeature, isDimension, type Ref } from '@3db/model';
+import { ownerFeatures } from '@3db/naming';
 import { Viewer, type SketchOverlay } from '@3db/render';
 import { ACTIONS } from '../actions';
 import { buildOverlay } from '../sketcher/overlay';
@@ -25,6 +26,7 @@ export function Viewport() {
   const editing = useStore((s) => s.editing);
   const doc = useStore((s) => s.doc);
   const selectedFace = useStore((s) => s.selectedFace);
+  const selected = useStore((s) => s.selected);
   const sketchSolve = useStore((s) => s.sketchSolve);
   const dimensionEdit = useStore((s) => s.dimensionEdit);
   const bootMs = useStore((s) => s.bootMs);
@@ -102,8 +104,10 @@ export function Viewport() {
     const faceNames = displayed.current?.faceNames ?? [];
     v.setSelectedEdges(edgeFeature ? edgeFeature.edges.map((e) => edgeNames.indexOf(e.name)).filter((i) => i >= 0) : []);
     const face = pickingEndFace ? endFace : !editing ? selectedFace : null;
-    v.setSelectedFaces(face && face.kind === 'face' ? [faceNames.indexOf(face.name)].filter((i) => i >= 0) : []);
-  }, [edgeFeature, pickingFaces, pickingEndFace, endFace, editing, selectedFace, result]);
+    if (face && face.kind === 'face') v.setSelectedFaces([faceNames.indexOf(face.name)].filter((i) => i >= 0));
+    // D1.2: a feature selected in the FeatureManager shows the faces it made.
+    else v.setSelectedFaces(!editing && selected ? faceNames.flatMap((n, i) => (ownerFeatures(n)[0] === selected ? [i] : [])) : []);
+  }, [edgeFeature, pickingFaces, pickingEndFace, endFace, editing, selectedFace, selected, result]);
 
   // Sketch tools own the left mouse button while a sketch is being edited.
   useEffect(() => {

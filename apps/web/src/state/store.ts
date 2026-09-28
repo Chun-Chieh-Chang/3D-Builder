@@ -24,6 +24,7 @@ import {
   type SketchFeature,
 } from '@3db/model';
 import { stepFileName } from '@3db/io';
+import { suppressionTargets, type SuppressAction } from '@3db/regen/dag';
 import type { Viewer } from '@3db/render';
 import type { KernelApi, RebuildPayload, SketchSolvePayload, SketchSolveRequest } from '../worker/protocol';
 import { SketchController, type ControllerView, type SketchHost } from '../sketcher/controller';
@@ -57,6 +58,10 @@ export interface UiState {
   sketchSolve: SketchSolvePayload | null;
   /** Dimension whose Modify box is open (D6.1). */
   dimensionEdit: Id | null;
+  /** Feature whose 「確認刪除」 dialog is open (B2.8). */
+  confirmDelete: Id | null;
+  /** 「錯誤為何？」 dialog (D7.1). */
+  whatsWrong: boolean;
   rebuilding: boolean;
   bootMs: { occtMs: number; gcsMs: number } | null;
   bootError: string | null;
@@ -147,6 +152,8 @@ class AppStore {
       result: null,
       sketchSolve: null,
       dimensionEdit: null,
+      confirmDelete: null,
+      whatsWrong: false,
       rebuilding: false,
       bootMs: null,
       bootError: null,
@@ -221,6 +228,37 @@ class AppStore {
 
   selectFace(face: Ref | null): void {
     this.set({ selectedFace: face, selected: null });
+  }
+
+  // ------------------------------------------------------------ FeatureManager operations (B2.4, B2.6, B2.8, D7.1)
+
+  /** 「抑制」「恢復抑制」「恢復抑制（含相依特徵）」: the dependency graph decides which features change, in one step. */
+  suppress(featureId: Id, action: SuppressAction): void {
+    const featureIds = suppressionTargets(this.history.doc, featureId, action);
+    if (featureIds.length > 0) this.execute({ type: 'setSuppressed', featureIds, value: action === 'suppress' });
+  }
+
+  /** Opens 「確認刪除」 for a feature (Delete key or context menu). */
+  requestDelete(featureId: Id | null): void {
+    if (featureId && this.state.editing) return;
+    this.set({ confirmDelete: featureId });
+  }
+
+  deleteFeatures(featureIds: Id[]): void {
+    if (this.execute({ type: 'deleteFeatures', featureIds })) {
+      const selected = this.state.selected;
+      this.set({ confirmDelete: null, ...(selected && featureIds.includes(selected) ? { selected: null } : {}) });
+    }
+  }
+
+  /** 「回溯」 puts the bar right above the feature; 「推進至最後」 (null) evaluates everything again. */
+  rollTo(featureId: Id | null): void {
+    const index = featureId === null ? null : this.history.doc.features.findIndex((f) => f.id === featureId);
+    if (index !== -1) this.execute({ type: 'setRollback', index });
+  }
+
+  showWhatsWrong(open: boolean): void {
+    this.set({ whatsWrong: open });
   }
 
   /** The plane a sketch lies on: a default plane, or (for a sketch on a face) the plane the last rebuild found. */
