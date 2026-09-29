@@ -2,7 +2,7 @@
 
 類 SolidWorks 的參數式 3D CAD（Web 先行）。設計意圖是唯一真相（SSOT）：幾何、網格、STEP 都由文件重新計算而來；參考一律用持久名稱，不用拓撲索引。
 
-目前進度：**Phase 0、Phase 1（零件 MVP）完成，閘門皆已通過**（見 [phase1-verification.md](docs/phase1-verification.md)）。Phase 2 組合件 MVP 進行中：2A 組合件骨架（[ADR 0011](docs/adr/0011-assembly-skeleton.md)）、2B 結合求解器（[ADR 0012](docs/adr/0012-mate-solver.md)）已完成。Phase 0 的流程是：
+目前進度：**Phase 0、Phase 1（零件 MVP）完成，閘門皆已通過**（見 [phase1-verification.md](docs/phase1-verification.md)）。Phase 2 組合件 MVP 進行中：2A 組合件骨架（[ADR 0011](docs/adr/0011-assembly-skeleton.md)）、2B 結合求解器（[ADR 0012](docs/adr/0012-mate-solver.md)）、2C 結合的介面（[ADR 0013](docs/adr/0013-mate-ui.md)）已完成。Phase 0 的流程是：
 
 1. 草圖（PlaneGCS 求解）
 2. 伸長

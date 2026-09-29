@@ -1,4 +1,4 @@
-import { ASSEMBLY_FILE_EXTENSION, PART_FILE_EXTENSION } from '@3db/io';
+import { ASSEMBLY_FILE_EXTENSION, isStepData, PART_FILE_EXTENSION } from '@3db/io';
 
 /**
  * Local files (F7.1). Chrome and Edge have the File System Access API: a part is opened and saved
@@ -55,8 +55,7 @@ const acceptOf = (types: PickerType[]) => types.flatMap((t) => Object.values(t.a
 
 /** A STEP file by name, or by its first bytes when the name says nothing. */
 export function isStepFile(file: OpenedFile): boolean {
-  if (/\.(step|stp)$/i.test(file.name)) return true;
-  return new TextDecoder().decode(file.bytes.subarray(0, 64)).trimStart().startsWith('ISO-10303-21');
+  return /\.(step|stp)$/i.test(file.name) || isStepData(file.bytes);
 }
 
 export interface OpenedFile {
@@ -78,9 +77,10 @@ export function pickStepFile(): Promise<OpenedFile | null> {
   return pick([STEP_TYPE]);
 }
 
-/** 「插入零組件」→「瀏覽」: a part file, starting in the project folder. */
+/** 「插入零組件」→「瀏覽」: a part file or a STEP file, starting in the project folder. */
 export function pickPartFile(startIn: FileSystemDirectoryHandle): Promise<OpenedFile | null> {
-  return pick([PART_TYPE], startIn);
+  const either: PickerType = { description: '零件或 STEP 檔', accept: { ...PART_TYPE.accept, ...STEP_TYPE.accept } };
+  return pick([either, PART_TYPE, STEP_TYPE], startIn);
 }
 
 async function pick(types: PickerType[], startIn: FileSystemDirectoryHandle | null = null): Promise<OpenedFile | null> {
@@ -160,21 +160,33 @@ export async function fileIn(folder: FileSystemDirectoryHandle, path: string): P
   return dir.getFileHandle(parts[parts.length - 1]!);
 }
 
-/** Files in the folder and below it whose names end with `extension`, by path; hidden folders are skipped. */
-export async function listFiles(folder: FileSystemDirectoryHandle, extension: string, limit = 2000): Promise<string[]> {
+/** Folders never searched for parts: tool and program folders with thousands of files. */
+const SKIPPED = new Set(['node_modules']);
+
+/**
+ * Files in the folder and below it whose names end with one of `extensions`, by path. Hidden folders
+ * and SKIPPED are left out, and the search stops after `limit` entries (a whole Downloads folder can
+ * hold far more): `truncated` then says the list is partial.
+ */
+export async function listFiles(folder: FileSystemDirectoryHandle, extensions: string[], limit = 20000): Promise<{ files: string[]; truncated: boolean }> {
   const found: string[] = [];
+  let seen = 0;
+  let truncated = false;
   const walk = async (dir: FileSystemDirectoryHandle, prefix: string, depth: number): Promise<void> => {
     for await (const [name, handle] of dir.entries()) {
-      if (found.length >= limit) return;
+      if (++seen > limit) {
+        truncated = true;
+        return;
+      }
       if (handle.kind === 'directory') {
-        if (!name.startsWith('.') && depth < 8) await walk(handle as FileSystemDirectoryHandle, `${prefix}${name}/`, depth + 1);
-      } else if (name.toLowerCase().endsWith(extension)) {
+        if (!name.startsWith('.') && !SKIPPED.has(name) && depth < 8) await walk(handle as FileSystemDirectoryHandle, `${prefix}${name}/`, depth + 1);
+      } else if (extensions.some((e) => name.toLowerCase().endsWith(e))) {
         found.push(`${prefix}${name}`);
       }
     }
   };
   await walk(folder, '', 0);
-  return found.sort((a, b) => a.localeCompare(b, 'zh-Hant'));
+  return { files: found.sort((a, b) => a.localeCompare(b, 'zh-Hant')), truncated };
 }
 
 export async function readBytes(file: FileSystemFileHandle): Promise<Uint8Array> {

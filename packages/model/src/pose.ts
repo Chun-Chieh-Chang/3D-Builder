@@ -35,3 +35,20 @@ export function axisAngle([ax, ay, az]: Vec3, angle: number): Quat {
   const s = Math.sin(angle / 2);
   return [ax * s, ay * s, az * s, Math.cos(angle / 2)];
 }
+
+/** b's pose seen from a: what a lock mate keeps (a ∘ result = b). */
+export function relativePose(a: Pose, b: Pose): Pose {
+  const [x, y, z, w] = a.rotation;
+  const inv: Quat = [-x, -y, -z, w];
+  const d: Vec3 = [b.position[0] - a.position[0], b.position[1] - a.position[1], b.position[2] - a.position[2]];
+  const rotation = mul(inv, b.rotation);
+  return { position: turn(inv, d), rotation: rotation[3] < 0 ? [-rotation[0], -rotation[1], -rotation[2], -rotation[3]] : rotation };
+}
+
+function mul([ax, ay, az, aw]: Quat, [bx, by, bz, bw]: Quat): Quat {
+  return [aw * bx + ax * bw + ay * bz - az * by, aw * by - ax * bz + ay * bw + az * bx, aw * bz + ax * by - ay * bx + az * bw, aw * bw - ax * bx - ay * by - az * bz];
+}
+
+function turn(q: Quat, v: Vec3): Vec3 {
+  return transformPoint({ position: [0, 0, 0], rotation: q }, v);
+}

@@ -2,12 +2,12 @@
 import * as Comlink from 'comlink';
 import occtWasm from 'libcascade/single/wasm?url';
 import gcsWasm from '@salusoft89/planegcs/dist/planegcs_dist/planegcs.wasm?url';
-import type { PartDoc } from '@3db/model';
+import type { AssemblyDoc, Id, PartDoc } from '@3db/model';
 import { findProfiles, PlaneGcsSolver } from '@3db/sketch';
 import { Kernel } from '@3db/kernel';
-import { Regenerator, type RebuildResult } from '@3db/regen';
+import { edgeMateGeometry, faceMateGeometry, Regenerator, solveAssembly, type AssemblyResult, type RebuildResult } from '@3db/regen';
 import { edgeFingerprint, faceFingerprint, vertexFingerprint } from '@3db/naming';
-import { exportPartStep, readPartFile } from '@3db/io';
+import { exportPartStep, readComponentFile } from '@3db/io';
 import type { KernelApi, PartBuildPayload, RebuildPayload, RebuildRequest, SketchSolvePayload, SketchSolveRequest } from './protocol';
 
 let kernel: Kernel;
@@ -23,18 +23,23 @@ interface BuiltPart {
   regen: Regenerator;
   result: RebuildResult;
   problems: string[];
+  planes: PartBuildPayload['planes'];
 }
 /** By content: an unchanged file is never rebuilt again, a changed one is a new entry (B9.4). */
 const parts = new Map<string, Promise<BuiltPart>>();
 
 async function build(bytes: Uint8Array): Promise<BuiltPart> {
   await api.init();
-  const file = await readPartFile(bytes);
+  const file = await readComponentFile(bytes, '');
   const regen = new Regenerator(kernel, solver, file.blobs);
   const result = regen.rebuild(file.doc);
   const name = (id: string) => file.doc.features.find((f) => f.id === id)?.name ?? id;
   const failed = result.features.filter((f) => f.status === 'error').map((f) => `${name(f.id)}：${f.message ?? '失敗'}`);
-  return { regen, result, problems: [...file.warnings, ...failed] };
+  const planes = file.doc.features.flatMap((f) => {
+    const frame = f.type === 'refPlane' ? result.frames.get(f.id) : undefined;
+    return frame ? [{ id: f.id, name: f.name, frame }] : [];
+  });
+  return { regen, result, problems: [...file.warnings, ...failed], planes };
 }
 
 /** The sketch solver loads first and on its own: sketching does not wait for the 43 MB geometry kernel. */
@@ -120,9 +125,38 @@ const api: KernelApi = {
     const part = await entry;
     const body = part.result.body;
     const mesh = body ? kernel.mesh(body.shape) : null;
-    const payload: PartBuildPayload = { key, mesh, problems: part.problems, ms: performance.now() - t };
+    const topo = body?.topology;
+    const payload: PartBuildPayload = {
+      key,
+      mesh,
+      problems: part.problems,
+      faceNames: body?.names.faces ?? [],
+      faceFingerprints: topo ? topo.faces.map((_, i) => faceFingerprint(topo, i)) : [],
+      faceGeometry: topo ? topo.faces.map(faceMateGeometry) : [],
+      edgeNames: body?.names.edges ?? [],
+      edgeFingerprints: topo ? topo.edges.map((_, i) => edgeFingerprint(topo, i)) : [],
+      edgeGeometry: topo ? topo.edges.map(edgeMateGeometry) : [],
+      vertexNames: body?.names.vertices ?? [],
+      vertexPoints: Float32Array.from(topo?.vertices.flatMap((v) => v.point) ?? []),
+      vertexFingerprints: topo ? topo.vertices.map((_, i) => vertexFingerprint(topo, i)) : [],
+      planes: part.planes,
+      ms: performance.now() - t,
+    };
     const arrays = mesh ? [mesh.positions, mesh.normals, mesh.indices, mesh.faceRanges, mesh.edgePoints, mesh.edgeRanges] : [];
-    return Comlink.transfer(payload, arrays.map((a) => a.buffer as ArrayBuffer));
+    return Comlink.transfer(payload, [...arrays, payload.vertexPoints].map((a) => a.buffer as ArrayBuffer));
+  },
+
+  async solveAssembly(doc: AssemblyDoc, keys: Record<Id, string>): Promise<AssemblyResult> {
+    await api.init();
+    const built = new Map<Id, BuiltPart>();
+    for (const [component, key] of Object.entries(keys)) {
+      const part = await parts.get(key)?.catch(() => null);
+      if (part) built.set(component, part);
+    }
+    return solveAssembly(doc, (id) => {
+      const body = built.get(id)?.result.body;
+      return body ? { topology: body.topology, names: body.names, frames: built.get(id)!.result.frames } : null;
+    });
   },
 
   async retainParts(keys: string[]): Promise<void> {

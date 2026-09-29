@@ -5,7 +5,8 @@ import { Icon } from './Icon';
 
 /**
  * 「插入零組件」 PropertyManager (C15.1): the part files of the project folder, or 「瀏覽」. The chosen
- * part follows the cursor in the graphics area and a click places it; ✓ places it at the origin.
+ * part follows the cursor in the graphics area and a click places it; ✓ places it at the origin. In an
+ * empty assembly it is SolidWorks' 「開始組合件」, which a new assembly opens with.
  */
 export function InsertComponentPanel() {
   const asm = useStore((s) => s.asm)!;
@@ -19,7 +20,7 @@ export function InsertComponentPanel() {
     <div className="property-manager">
       <div className="pm-header">
         <Icon name="assembly" />
-        <span className="pm-title">插入零組件</span>
+        <span className="pm-title">{first ? '開始組合件' : '插入零組件'}</span>
         <button className="pm-ok" title="放在原點（Enter）" disabled={status?.status !== 'ok'} onClick={() => a?.place(null)}>
           <Icon name="ok" />
         </button>
@@ -33,7 +34,7 @@ export function InsertComponentPanel() {
         {insert.files === null ? (
           <p className="muted">正在讀取資料夾…</p>
         ) : insert.files.length === 0 ? (
-          <p className="muted">資料夾中沒有零件檔（.3dbx）。</p>
+          <p className="muted">資料夾中沒有零件檔（.3dbx）或 STEP 檔。</p>
         ) : (
           <ul className="file-list" role="listbox" aria-label="零件檔">
             {insert.files.map((path) => (
@@ -41,10 +42,12 @@ export function InsertComponentPanel() {
                 <Icon name="part" />
                 <span className="name">{partNameOf(path)}</span>
                 {dirName(path) && <span className="folder muted">{dirName(path)}</span>}
+                {/\.(step|stp)$/i.test(path) && <span className="file-kind">STEP</span>}
               </li>
             ))}
           </ul>
         )}
+        {insert.truncated && <p className="hint">資料夾裡的檔案很多，只列出了一部分。建議為這個專案建立一個資料夾，只放它的零件與組合件。</p>}
         <div className="pm-row">
           <button className="pm-button" onClick={() => void a?.browse()}>
             瀏覽…

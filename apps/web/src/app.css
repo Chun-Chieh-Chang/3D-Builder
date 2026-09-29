@@ -173,3 +173,24 @@ code { font-family: Consolas, 'Cascadia Mono', monospace; font-size: 11px; }
 .pm-button { border: 1px solid var(--line); background: #fff; border-radius: 3px; padding: 3px 10px; }
 .pm-button:hover { background: var(--accent-soft); border-color: #a5c8ec; }
 .pm-ok:disabled { color: #aab2bd; cursor: default; }
+
+/* Mates (2C) */
+.mate-types { display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px; }
+.mate-types button, .mate-align button { border: 1px solid var(--line); background: #fff; border-radius: 3px; padding: 4px 2px; }
+.mate-types button:hover:not(:disabled), .mate-align button:hover { background: var(--accent-soft); border-color: #a5c8ec; }
+.mate-types button.active, .mate-align button.active { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); font-weight: 600; }
+.mate-types button:disabled { color: #aab2bd; cursor: default; }
+.mate-align { display: inline-flex; gap: 4px; }
+.mate-align button { padding: 3px 8px; }
+.selection-box li.removable { flex-direction: row; align-items: center; justify-content: space-between; gap: 6px; word-break: break-all; }
+.selection-box li.removable button { border: 0; background: none; color: var(--muted); padding: 2px; display: grid; place-items: center; }
+.selection-box li.removable button:hover { color: var(--error); }
+.tree-row.mate { padding-left: 22px; font-size: 12px; }
+.flyout-tree { position: absolute; top: 44px; left: 8px; max-height: 60%; overflow: auto; background: rgba(255, 255, 255, 0.94); border: 1px solid var(--line); border-radius: 4px; padding: 4px 6px; font-size: 12px; min-width: 150px; user-select: none; }
+.flyout-tree ul { list-style: none; margin: 0; padding: 0 0 2px 10px; }
+.flyout-tree li, .flyout-component { display: flex; align-items: center; gap: 4px; padding: 2px 4px; border-radius: 3px; cursor: pointer; }
+.flyout-tree li:hover, .flyout-component:hover { background: #e3ebf4; }
+.flyout-tree li.selected { background: var(--accent-soft); color: var(--accent); }
+.flyout-title { font-weight: 600; padding: 2px 4px; }
+.flyout-component .twisty { width: 10px; color: var(--muted); }
+.file-list li .file-kind { font-size: 10px; color: var(--muted); border: 1px solid var(--line); border-radius: 3px; padding: 0 4px; }

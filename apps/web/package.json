@@ -9,6 +9,7 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@3db/assembly": "*",
     "@3db/io": "*",
     "@3db/kernel": "*",
     "@3db/model": "*",

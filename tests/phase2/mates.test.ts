@@ -19,10 +19,10 @@ import {
   type Pose,
   type Vec3,
 } from '@3db/model';
-import { readDocumentFile, readPartFile, writeAssemblyFile } from '@3db/io';
+import { readDocumentFile, readPartFile, stepAsPart, writeAssemblyFile } from '@3db/io';
 import { PlaneGcsSolver } from '@3db/sketch';
 import { Kernel } from '@3db/kernel';
-import { Regenerator, solveAssembly, type MatePart } from '@3db/regen';
+import { faceMateGeometry, Regenerator, solveAssembly, type MatePart } from '@3db/regen';
 
 let kernel: Kernel;
 let solver: PlaneGcsSolver;
@@ -143,6 +143,23 @@ describe('the diamond pin in the locating plate (A3.2, A3.4)', () => {
     const longer = applyCommand(pinDoc, { type: 'setDimension', featureId: 'sketch1', constraintId: 'd3', value: '20' });
     const r = solveWith(jig(seat()), part(longer));
     expect([...r.mates.values()].map((m) => m.status)).toEqual(['ok', 'missing']);
+  });
+
+  it('mates to a STEP file taken as a part, by the imported faces\' names', async () => {
+    // tests/fixtures/step: a 40 × 30 × 10 plate with an R4 hole through it along z.
+    const file = await stepAsPart(new Uint8Array(readFileSync(new URL('../fixtures/step/plate-with-hole.step', import.meta.url))), 'plate-with-hole.step');
+    const r = new Regenerator(kernel, solver, file.blobs).rebuild(file.doc);
+    const plate: MatePart = { topology: r.body!.topology, names: r.body!.names, frames: r.frames };
+    const faceWhere = (test: (g: NonNullable<ReturnType<typeof faceMateGeometry>>) => boolean) => r.body!.names.faces[r.body!.topology.faces.findIndex((f) => { const g = faceMateGeometry(f); return !!g && test(g); })]!;
+    const hole = faceWhere((g) => g.kind === 'cylinder' && !g.convex);
+    const top = faceWhere((g) => g.kind === 'plane' && g.normal[2] > 0.99);
+    expect([hole, top].every((n) => /^import1:f\d+$/.test(n))).toBe(true);
+    const doc = jig([mate('concentric', ['plate', hole], ['pin', SHANK]), mate('coincident', ['plate', top], ['pin', FLANGE_UNDERSIDE], { align: 'antiAligned' })]);
+    const result = solveAssembly(doc, (id) => (id === 'plate' ? plate : id === 'pin' ? part(pinDoc) : null));
+    expect([...result.mates.values()]).toEqual([{ status: 'ok' }, { status: 'ok' }]);
+    expect(result.components.get('pin')).toEqual({ status: 'under', dof: 1 });
+    // The flange (y = 15 in the pin) on the plate's top (z = 10), over the hole's axis at (20, 15).
+    close(where(result, [0, 15, 0]), [20, 15, 10]);
   });
 
   it('is saved with the assembly and solves the same after reopening', async () => {

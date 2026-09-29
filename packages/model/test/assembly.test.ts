@@ -21,6 +21,7 @@ import {
   parseAssembly,
   poseMatrix,
   relativePath,
+  relativePose,
   relocateAssembly,
   serializeAssembly,
   transformPoint,
@@ -305,5 +306,16 @@ describe('assemblies written by older versions (B9.2)', () => {
     expect(doc.schemaVersion).toBe(ASSEMBLY_SCHEMA_VERSION);
     expect(doc.mates).toEqual([]);
     expect(doc.components).toEqual(jig().components);
+  });
+});
+
+describe('relative poses (lock mates)', () => {
+  it('gives b as seen from a, so that a composed with it is b again', () => {
+    const a: Pose = { position: [10, 0, 5], rotation: axisAngle([0, 0, 1], Math.PI / 2) };
+    const b: Pose = { position: [10, 20, 5], rotation: axisAngle([1, 0, 0], 0.3) };
+    const rel = relativePose(a, b);
+    // b's origin is 20 mm along a's own x axis (a is turned 90° about z, so its x is the world's y).
+    close(rel.position, [20, 0, 0]);
+    for (const p of [[0, 0, 0], [1, 2, 3], [-4, 0, 7]] as Vec3[]) close(transformPoint(a, transformPoint(rel, p)), transformPoint(b, p));
   });
 });

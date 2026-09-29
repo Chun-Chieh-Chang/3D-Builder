@@ -1,6 +1,7 @@
-import type { Fingerprint, Id, PartDoc, PlaneFrame, SketchFeature } from '@3db/model';
+import type { AssemblyDoc, Fingerprint, Id, PartDoc, PlaneFrame, SketchFeature } from '@3db/model';
 import type { MassProps, MeshData } from '@3db/kernel';
-import type { FeatureResult } from '@3db/regen';
+import type { AssemblyResult, FeatureResult } from '@3db/regen';
+import type { MateGeometry } from '@3db/assembly';
 import type { EntityStatus, SketchStatus, SolvedGeometry, SolveOptions } from '@3db/sketch';
 
 export interface RebuildRequest {
@@ -39,6 +40,20 @@ export interface PartBuildPayload {
   mesh: MeshData | null;
   /** What went wrong inside the part: features that failed, imported data the file lacks. */
   problems: string[];
+  // The part's elements in the mesh's order, for picking them on a component (2C): persistent names,
+  // fingerprints, and the geometry a mate can use (null where it cannot).
+  faceNames: string[];
+  faceFingerprints: Fingerprint[];
+  faceGeometry: (MateGeometry | null)[];
+  edgeNames: string[];
+  edgeFingerprints: Fingerprint[];
+  edgeGeometry: (MateGeometry | null)[];
+  vertexNames: string[];
+  /** xyz per vertex, in the order of vertexNames. */
+  vertexPoints: Float32Array;
+  vertexFingerprints: Fingerprint[];
+  /** The part's reference planes (its default planes are the same in every part). */
+  planes: { id: Id; name: string; frame: PlaneFrame }[];
   ms: number;
 }
 
@@ -75,4 +90,6 @@ export interface KernelApi {
   buildPart(key: string, bytes: Uint8Array): Promise<PartBuildPayload>;
   /** Lets go of every rebuilt part file except these. */
   retainParts(keys: string[]): Promise<void>;
+  /** Solves an assembly's mates on the parts rebuilt for it (`keys`: component id → part key). */
+  solveAssembly(doc: AssemblyDoc, keys: Record<Id, string>): Promise<AssemblyResult>;
 }

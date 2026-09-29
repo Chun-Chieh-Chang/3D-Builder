@@ -7,6 +7,7 @@ import { CommandBar } from './components/CommandBar';
 import { DeleteComponentsDialog, DeleteDialog, FolderDialog, UnsavedDialog, WhatsWrongDialog } from './components/Dialogs';
 import { FeatureTree } from './components/FeatureTree';
 import { InsertComponentPanel } from './components/InsertComponentPanel';
+import { MatePanel } from './components/MatePanel';
 import { PropertyManager } from './components/PropertyManager';
 import { StatusBar } from './components/StatusBar';
 import { Viewport } from './components/Viewport';
@@ -14,8 +15,9 @@ import { Viewport } from './components/Viewport';
 export function App() {
   const assembly = useStore((s) => s.active === 'assembly');
   const inserting = useStore((s) => !!s.asm?.insert);
+  const mating = useStore((s) => !!s.asm?.mate);
   const partEditing = useStore((s) => s.editing);
-  const editing = assembly ? inserting : !!partEditing;
+  const editing = assembly ? inserting || mating : !!partEditing;
   const title = useDocumentTitle();
   useEffect(() => installShortcuts(), []);
   useEffect(() => {
@@ -30,7 +32,7 @@ export function App() {
             <span className={editing ? '' : 'active'}>FeatureManager</span>
             <span className={editing ? 'active' : ''}>PropertyManager</span>
           </div>
-          {assembly ? (inserting ? <InsertComponentPanel /> : <AssemblyTree />) : editing ? <PropertyManager /> : <FeatureTree />}
+          {assembly ? mating ? <MatePanel /> : inserting ? <InsertComponentPanel /> : <AssemblyTree /> : editing ? <PropertyManager /> : <FeatureTree />}
         </aside>
         {assembly ? <AssemblyViewport /> : <Viewport />}
       </div>

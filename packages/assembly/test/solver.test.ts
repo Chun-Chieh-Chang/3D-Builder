@@ -303,12 +303,28 @@ describe('freedoms left and conflicts (A3.4)', () => {
 // ---------------------------------------------------------------- performance
 
 describe('20 components (blueprint §2.5: 50 ms)', () => {
-  /** The fastest of a few runs: other test files share the machine, and only the solver's own time counts. */
+  /**
+   * The solver's own CPU time per run, the least of three batches of five. Wall time measures the
+   * machine: with the other test files, a dev server and a browser running, it came out several times
+   * the solver's work. Windows counts CPU time in ticks of about 15.6 ms, hence the batches.
+   */
+  const cpu = () => {
+    const u = process.cpuUsage();
+    return (u.user + u.system) / 1000;
+  };
   const timed = (run: () => ReturnType<typeof solve>) => {
     run(); // warm up the JIT
-    const runs = [run(), run(), run()];
-    return { s: runs[0]!, ms: Math.min(...runs.map((r) => r.ms)) };
+    let best = Infinity;
+    let s = run();
+    for (let i = 0; i < 3; i++) {
+      const t = cpu();
+      for (let k = 0; k < 5; k++) s = run();
+      best = Math.min(best, (cpu() - t) / 5);
+    }
+    return { s, ms: best };
   };
+  /** Below one tick over the batch, only a bound is known. */
+  const shownMs = (ms: number) => (ms < 3.2 ? 'under 3 ms' : `${ms.toFixed(1)} ms`);
 
   /** Pins stacked in a column: each sits concentric and flush on the one below; the first on the base. */
   function column(count: number) {
@@ -331,7 +347,7 @@ describe('20 components (blueprint §2.5: 50 ms)', () => {
     allOk(s);
     expect(where(s, 'p19', [0, 0, 0])[2]).toBeCloseTo(18 * 10, 6);
     for (let i = 1; i < 20; i++) expect(s.bodies.get(`p${i}`)).toEqual({ status: 'under', dof: 1 });
-    console.log(`column of 19: ${ms.toFixed(1)} ms`);
+    console.log(`column of 19: ${shownMs(ms)}`);
     expect(ms).toBeLessThan(50);
   });
 
@@ -344,7 +360,7 @@ describe('20 components (blueprint §2.5: 50 ms)', () => {
     expect(where(s, 'p19', [0, 0, 0])[2]).toBeCloseTo(180, 6);
     // Finding a conflict has no budget in the blueprint (about 65 ms here when the machine is idle); this
     // only catches a slide back to solving once per mate.
-    console.log(`column of 19 with a conflict: ${ms.toFixed(1)} ms`);
+    console.log(`column of 19 with a conflict: ${shownMs(ms)}`);
     expect(ms).toBeLessThan(1000);
   });
 
@@ -359,7 +375,7 @@ describe('20 components (blueprint §2.5: 50 ms)', () => {
     const { s, ms } = timed(() => solve(bodies, mates));
     allOk(s);
     for (let i = 1; i < 20; i++) expect(s.bodies.get(`p${i}`)!.dof).toBe(1);
-    console.log(`19 seated pins: ${ms.toFixed(1)} ms`);
+    console.log(`19 seated pins: ${shownMs(ms)}`);
     expect(ms).toBeLessThan(50);
   });
 });

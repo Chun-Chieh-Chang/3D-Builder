@@ -19,10 +19,10 @@ export interface UiAction {
 }
 
 /** No PropertyManager session in the open document: file commands may replace or save it. */
-const idle = (s: UiState) => (s.active === 'assembly' ? !s.asm?.insert : s.editing === null);
+const idle = (s: UiState) => (s.active === 'assembly' ? !s.asm?.insert && !s.asm?.mate : s.editing === null);
 /** A part is open and nothing is being edited in it. */
 const partIdle = (s: UiState) => s.active === 'part' && s.editing === null;
-const assemblyIdle = (s: UiState) => s.active === 'assembly' && !s.asm?.insert;
+const assemblyIdle = (s: UiState) => s.active === 'assembly' && !s.asm?.insert && !s.asm?.mate;
 const sketching = (s: UiState) => s.editing?.kind === 'sketch';
 const selectedFeature = (s: UiState) => s.doc.features.find((f) => f.id === s.selected);
 const sketchSelected = (s: UiState) => partIdle(s) && selectedFeature(s)?.type === 'sketch';
@@ -55,6 +55,7 @@ export const ACTIONS: UiAction[] = [
   { id: 'import-step', label: '輸入 STEP', group: 'feature', enabled: (s) => partIdle(s) && s.bootMs !== null, run: () => void store.importStep() },
 
   { id: 'insert-component', label: '插入零組件', group: 'assembly', enabled: assemblyIdle, run: () => void store.assembly?.startInsert() },
+  { id: 'mate', label: '結合', group: 'assembly', enabled: (s) => assemblyIdle(s) && (s.asm?.doc.components.length ?? 0) > 0, run: () => store.assembly?.startMate() },
   { id: 'fix-component', label: '固定', group: 'assembly', enabled: (s) => assemblyIdle(s) && selectedComponent(s)?.fixed === false, run: () => setFixed(true) },
   { id: 'float-component', label: '浮動', group: 'assembly', enabled: (s) => assemblyIdle(s) && selectedComponent(s)?.fixed === true, run: () => setFixed(false) },
 
@@ -81,8 +82,8 @@ export const ACTIONS: UiAction[] = [
   { id: 'construction', label: '幾何建構線', group: 'sketch-tool', enabled: sketching, run: () => toggleConstruction() },
   { id: 'exit-sketch', label: '離開草圖', group: 'sketch-tool', enabled: sketching, run: () => store.commitEdit() },
 
-  { id: 'undo', label: '復原', shortcut: 'Ctrl+Z', group: 'edit', enabled: (s) => (s.asm ? s.asm.canUndo && !s.asm.insert : s.canUndo), run: () => store.undo() },
-  { id: 'redo', label: '重做', shortcut: 'Ctrl+Y', group: 'edit', enabled: (s) => (s.asm ? s.asm.canRedo && !s.asm.insert : s.canRedo), run: () => store.redo() },
+  { id: 'undo', label: '復原', shortcut: 'Ctrl+Z', group: 'edit', enabled: (s) => (s.asm ? s.asm.canUndo && idle(s) : s.canUndo), run: () => store.undo() },
+  { id: 'redo', label: '重做', shortcut: 'Ctrl+Y', group: 'edit', enabled: (s) => (s.asm ? s.asm.canRedo && idle(s) : s.canRedo), run: () => store.redo() },
   { id: 'rebuild', label: '重新計算', shortcut: 'Ctrl+B', group: 'edit', enabled: () => true, run: () => store.rebuild() },
 
   { id: 'fit', label: '全部顯示', shortcut: 'F', group: 'view', enabled: () => true, run: () => store.viewer?.fitAll() },
@@ -151,11 +152,15 @@ export function installShortcuts(): () => void {
     }
     if (s.asm) {
       const a = store.assembly;
-      if (s.asm.insert) {
+      const selected = s.asm.selected;
+      if (s.asm.mate) {
+        if (e.key === 'Escape') return void a?.cancelMate();
+        if (e.key === 'Enter') return void a?.applyMate();
+      } else if (s.asm.insert) {
         if (e.key === 'Escape') return void a?.cancelInsert();
         if (e.key === 'Enter') return void a?.place(null);
-      } else if (e.key === 'Delete' && selectedComponent(s)) {
-        return void a?.requestDelete([s.asm.selected!]);
+      } else if (e.key === 'Delete' && selected && (selectedComponent(s) || s.asm.doc.mates.some((m) => m.id === selected))) {
+        return void a?.requestDelete([selected]);
       }
     } else if (s.editing?.kind === 'sketch') {
       // Inside a sketch, Esc ends the current tool and Delete removes the selection (SolidWorks);

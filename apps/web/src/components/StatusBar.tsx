@@ -1,4 +1,5 @@
 import { joinPath } from '@3db/model';
+import { mateProblem } from './AssemblyTree';
 import { useStore, store } from '../state/store';
 import { SKETCH_STATUS_LABEL } from '../strings';
 
@@ -19,13 +20,23 @@ export function StatusBar() {
     const statuses = asm.doc.files.map((f) => asm.files.get(joinPath(asm.folder, f.path)));
     const loading = statuses.filter((s) => !s || s.status === 'loading').length;
     const missing = statuses.filter((s) => s?.status === 'missing' || s?.status === 'error').length;
+    const mateErrors = asm.doc.mates.filter((m) => mateProblem(asm, m)).length;
+    // The assembly as SolidWorks' status bar says it: over-defined, under-defined or fully defined.
+    const states = [...(asm.solution?.components.values() ?? [])].map((c) => c.status);
+    const definition = !asm.solution || asm.doc.components.length === 0 ? null : states.includes('over') ? { text: '過多定義', cls: 'over' } : states.includes('under') ? { text: '定義不足', cls: 'under' } : { text: '完全定義', cls: 'fully' };
     return (
       <footer className="status-bar">
         <span className={`notice ${notice?.kind ?? ''}`} onClick={() => store.dismissNotice()}>
           {notice?.text ?? '就緒'}
         </span>
+        {mateErrors > 0 && (
+          <button className="whats-wrong-button error" onClick={() => store.showWhatsWrong(true)} title="列出有錯誤的結合">
+            錯誤為何？（{mateErrors} 個結合錯誤）
+          </button>
+        )}
         {missing > 0 && <span className="status-error">{missing} 個零件檔無法載入</span>}
         <span>{loading > 0 ? `正在載入零件（${loading}）…` : `零組件 ${asm.doc.components.length} 個`}</span>
+        {definition && <span className={`sketch-status ${definition.cls}`}>{definition.text}</span>}
         {bootMs && <span className="muted">核心載入 {Math.round(bootMs.occtMs)} ms</span>}
         <span className="units">MMGS</span>
       </footer>

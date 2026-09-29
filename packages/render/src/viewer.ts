@@ -44,10 +44,36 @@ export interface ViewInstance {
   matrix: ArrayLike<number>;
 }
 
+/** A part mesh instances can show, and its vertices (xyz each, in the order of its vertex names). */
+export interface ViewPart {
+  mesh: ViewMesh;
+  vertices?: Float32Array;
+}
+
+/** An element of a placed part: a face, edge or vertex, by its index in the part's mesh. */
+export interface InstanceElement {
+  key: string;
+  kind: 'face' | 'edge' | 'vertex';
+  index: number;
+}
+
+interface PartGeometry {
+  mesh: ViewMesh;
+  body: THREE.BufferGeometry;
+  edges: THREE.BufferGeometry;
+  /** triangleFace[t] = face owning triangle t; segmentEdge[s] = edge owning line segment s. */
+  triangleFace: Int32Array;
+  segmentEdge: Int32Array;
+  vertices: Float32Array;
+}
+
 interface Instance {
   part: string;
   group: THREE.Group;
   body: THREE.Mesh;
+  edges: THREE.LineSegments | null;
+  /** Hovered and selected elements, drawn in the part's coordinates so they follow the component. */
+  marks: THREE.Group;
 }
 
 function bodyGeometry(mesh: ViewMesh): THREE.BufferGeometry {
@@ -120,6 +146,9 @@ export interface ViewerEvents {
   onComponentHover?: (key: string | null) => void;
   /** Left click on a component (null on empty space). */
   onComponentClick?: (key: string | null, additive: boolean) => void;
+  /** Element of a component under the cursor changed (while elements are picked). */
+  onElementHover?: (element: InstanceElement | null) => void;
+  onElementClick?: (element: InstanceElement | null, additive: boolean) => void;
 }
 
 /**
@@ -163,7 +192,10 @@ export class Viewer {
   private labels = new Map<string, { el: HTMLElement; world: THREE.Vector3 }>();
   private toolHandler: ((e: ToolPointerEvent) => void) | null = null;
   /** Part meshes that instances show, by key: built once, shared by every instance of the part. */
-  private partGeometry = new Map<string, { body: THREE.BufferGeometry; edges: THREE.BufferGeometry }>();
+  private partGeometry = new Map<string, PartGeometry>();
+  private pickElements = false;
+  private hoveredElement: InstanceElement | null = null;
+  private selectedElements: InstanceElement[] = [];
   private instances = new Map<string, Instance>();
   private readonly instanceEdges = new THREE.LineBasicMaterial({ color: COLORS.edge });
   private pickInstances = false;
@@ -276,20 +308,23 @@ export class Viewer {
   // ---------------------------------------------------------------- assembly components (C15.1, A3.1)
 
   /** The part meshes instances can show, by key. Instances of a part no longer given are removed. */
-  setParts(meshes: ReadonlyMap<string, ViewMesh>): void {
+  setParts(parts: ReadonlyMap<string, ViewPart>): void {
     for (const [key, geo] of this.partGeometry) {
-      if (meshes.has(key)) continue;
+      if (parts.has(key)) continue;
       for (const [k, inst] of this.instances) if (inst.part === key) this.removeInstance(k);
       if (this.ghost?.part === key) this.setGhost(null);
       geo.body.dispose();
       geo.edges.dispose();
       this.partGeometry.delete(key);
     }
-    for (const [key, mesh] of meshes) {
+    for (const [key, { mesh, vertices }] of parts) {
       if (this.partGeometry.has(key)) continue;
+      const { segs, owner } = edgeSegments(mesh);
       const edges = new THREE.BufferGeometry();
-      edges.setAttribute('position', new THREE.Float32BufferAttribute(edgeSegments(mesh).segs, 3));
-      this.partGeometry.set(key, { body: bodyGeometry(mesh), edges });
+      edges.setAttribute('position', new THREE.Float32BufferAttribute(segs, 3));
+      const triangleFace = new Int32Array(mesh.indices.length / 3);
+      for (let r = 0; r < mesh.faceRanges.length; r += 3) triangleFace.fill(mesh.faceRanges[r + 2]!, mesh.faceRanges[r]! / 3, (mesh.faceRanges[r]! + mesh.faceRanges[r + 1]!) / 3);
+      this.partGeometry.set(key, { mesh, body: bodyGeometry(mesh), edges, triangleFace, segmentEdge: Int32Array.from(owner), vertices: vertices ?? new Float32Array(0) });
     }
     this.requestRender();
   }
@@ -324,8 +359,11 @@ export class Viewer {
     const group = new THREE.Group();
     group.matrixAutoUpdate = false;
     group.add(body);
-    if (!ghost) group.add(new THREE.LineSegments(geo.edges, this.instanceEdges));
-    return { part, group, body };
+    const edges = ghost ? null : new THREE.LineSegments(geo.edges, this.instanceEdges);
+    if (edges) group.add(edges);
+    const marks = new THREE.Group();
+    group.add(marks);
+    return { part, group, body, edges, marks };
   }
 
   private removeInstance(key: string): void {
@@ -333,8 +371,131 @@ export class Viewer {
     if (!inst) return;
     this.scene.remove(inst.group);
     (inst.body.material as THREE.Material).dispose();
+    clearMarks(inst.marks);
     this.instances.delete(key);
     this.selectedInstances.delete(key);
+  }
+
+  // ---------------------------------------------------------------- elements of components (mates, 2C)
+
+  /** Enables picking faces, edges and vertices of the components instead of whole components. */
+  setElementPicking(enabled: boolean): void {
+    this.pickElements = enabled;
+    if (!enabled) this.setHoveredElement(null);
+  }
+
+  /** Elements shown as chosen (the mate being defined, or the selected mate's elements). */
+  setSelectedElements(elements: InstanceElement[]): void {
+    this.selectedElements = elements;
+    this.paintElements();
+  }
+
+  private setHoveredElement(el: InstanceElement | null): void {
+    const same = el === this.hoveredElement || (el && this.hoveredElement && el.key === this.hoveredElement.key && el.kind === this.hoveredElement.kind && el.index === this.hoveredElement.index);
+    if (same) return;
+    this.hoveredElement = el;
+    this.paintElements();
+    this.events.onElementHover?.(el);
+  }
+
+  /** Marks on each instance, in its part's coordinates: the element's triangles, segments or point. */
+  private paintElements(): void {
+    for (const inst of this.instances.values()) clearMarks(inst.marks);
+    const draw = (el: InstanceElement, color: number) => {
+      const inst = this.instances.get(el.key);
+      const geo = inst && this.partGeometry.get(inst.part);
+      if (!inst || !geo) return;
+      const g = new THREE.BufferGeometry();
+      if (el.kind === 'face') {
+        const positions: number[] = [];
+        const { mesh } = geo;
+        for (let r = 0; r < mesh.faceRanges.length; r += 3) {
+          if (mesh.faceRanges[r + 2] !== el.index) continue;
+          for (let i = mesh.faceRanges[r]!; i < mesh.faceRanges[r]! + mesh.faceRanges[r + 1]!; i++) {
+            const v = mesh.indices[i]! * 3;
+            positions.push(mesh.positions[v]!, mesh.positions[v + 1]!, mesh.positions[v + 2]!);
+          }
+        }
+        g.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+        const m = new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.5, depthWrite: false, side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -1 });
+        inst.marks.add(new THREE.Mesh(g, m));
+      } else if (el.kind === 'edge') {
+        const all = geo.edges.getAttribute('position') as THREE.BufferAttribute;
+        const positions: number[] = [];
+        geo.segmentEdge.forEach((edge, seg) => {
+          if (edge !== el.index) return;
+          for (const v of [2 * seg, 2 * seg + 1]) positions.push(all.getX(v), all.getY(v), all.getZ(v));
+        });
+        g.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+        const line = new THREE.LineSegments(g, new THREE.LineBasicMaterial({ color, depthTest: false }));
+        line.renderOrder = 2;
+        inst.marks.add(line);
+      } else {
+        const v = geo.vertices;
+        g.setAttribute('position', new THREE.Float32BufferAttribute([v[3 * el.index]!, v[3 * el.index + 1]!, v[3 * el.index + 2]!], 3));
+        const pts = new THREE.Points(g, new THREE.PointsMaterial({ color, size: 10, sizeAttenuation: false, depthTest: false }));
+        pts.renderOrder = 3;
+        inst.marks.add(pts);
+      }
+    };
+    for (const el of this.selectedElements) draw(el, COLORS.edgeSelected);
+    if (this.hoveredElement) draw(this.hoveredElement, COLORS.edgeHover);
+    this.requestRender();
+  }
+
+  /** The element under the cursor, in SolidWorks priority: vertex, then edge, then face; hidden ones excluded. */
+  private pickElement(clientX: number, clientY: number): InstanceElement | null {
+    if (this.instances.size === 0) return null;
+    const ray = this.rayAt(clientX, clientY);
+    const caster = new THREE.Raycaster(ray.origin, ray.direction);
+    const bodies = [...this.instances.values()].map((i) => i.body);
+    const bodyHit = caster.intersectObjects(bodies)[0];
+    const depth = bodyHit?.distance ?? Infinity;
+    const scale = (this.camera.right - this.camera.left) / this.camera.zoom;
+    const slack = 1e-3 * scale;
+    const owner = (obj: THREE.Object3D) => [...this.instances].find(([, i]) => i.body === obj || i.edges === obj);
+
+    // Vertices within 10 px, nearest first, that no body hides.
+    const rect = this.renderer.domElement.getBoundingClientRect();
+    const { w, h } = this.canvasSize();
+    this.syncCamera();
+    let best: { d: number; el: InstanceElement; p: THREE.Vector3 } | null = null;
+    const p = new THREE.Vector3();
+    for (const [key, inst] of this.instances) {
+      const v = this.partGeometry.get(inst.part)?.vertices;
+      if (!v) continue;
+      for (let i = 0; i < v.length / 3; i++) {
+        p.set(v[3 * i]!, v[3 * i + 1]!, v[3 * i + 2]!).applyMatrix4(inst.group.matrixWorld);
+        const s = p.clone().project(this.camera);
+        const d = Math.hypot(rect.left + ((s.x + 1) / 2) * w - clientX, rect.top + ((1 - s.y) / 2) * h - clientY);
+        if (d <= 10 && (!best || d < best.d)) best = { d, el: { key, kind: 'vertex', index: i }, p: p.clone() };
+      }
+    }
+    if (best) {
+      const toVertex = best.p.clone().sub(ray.origin);
+      const along = toVertex.dot(ray.direction);
+      const r = new THREE.Raycaster(best.p.clone().addScaledVector(ray.direction, -along), ray.direction);
+      const hit = r.intersectObjects(bodies)[0]?.distance ?? Infinity;
+      if (hit >= along - slack) return best.el;
+    }
+
+    // Edges within 6 px, in front of the bodies.
+    caster.params.Line = { threshold: (6 * scale) / rect.width };
+    const edges = [...this.instances.values()].flatMap((i) => (i.edges ? [i.edges] : []));
+    const edgeHit = caster.intersectObjects(edges).find((x) => x.distance <= depth + slack);
+    if (edgeHit && edgeHit.index !== undefined) {
+      const found = owner(edgeHit.object);
+      const geo = found && this.partGeometry.get(found[1].part);
+      const edge = geo?.segmentEdge[Math.floor(edgeHit.index / 2)];
+      if (found && edge !== undefined) return { key: found[0], kind: 'edge', index: edge };
+    }
+
+    if (bodyHit && bodyHit.faceIndex !== undefined && bodyHit.faceIndex !== null) {
+      const found = owner(bodyHit.object);
+      const face = found && this.partGeometry.get(found[1].part)?.triangleFace[bodyHit.faceIndex];
+      if (found && face !== undefined) return { key: found[0], kind: 'face', index: face };
+    }
+    return null;
   }
 
   /** Enables picking whole components (hover highlight, click). */
@@ -767,6 +928,7 @@ export class Viewer {
     }
     if (e.buttons !== 0) return;
     if (this.pickInstances) this.setHoveredInstance(this.pickInstance(e.clientX, e.clientY));
+    if (this.pickElements) this.setHoveredElement(this.pickElement(e.clientX, e.clientY));
     // One element at a time, in SolidWorks priority: vertex, then edge, then face.
     const vertex = this.pickVertices ? this.pickVertex(e.clientX, e.clientY) : -1;
     const edge = vertex < 0 && this.pickEdges ? this.pick(e.clientX, e.clientY) : -1;
@@ -786,11 +948,13 @@ export class Viewer {
     this.setHovered(-1);
     this.setHoveredFace(-1);
     this.setHoveredInstance(null);
+    this.setHoveredElement(null);
   };
 
   private onClick = (e: MouseEvent) => {
     if (this.toolHandler || e.altKey) return;
     const additive = e.ctrlKey || e.shiftKey;
+    if (this.pickElements) return void this.events.onElementClick?.(this.pickElement(e.clientX, e.clientY), additive);
     if (this.pickInstances) return void this.events.onComponentClick?.(this.pickInstance(e.clientX, e.clientY), additive);
     const vertex = this.pickVertices ? this.pickVertex(e.clientX, e.clientY) : -1;
     if (vertex >= 0) return void this.events.onVertexClick?.(vertex, additive);
@@ -919,5 +1083,14 @@ export class Viewer {
     r.clearDepth();
     r.setViewport(8, 8, size, size);
     r.render(this.triadScene, this.triadCamera);
+  }
+}
+
+function clearMarks(marks: THREE.Group): void {
+  for (const m of [...marks.children]) {
+    marks.remove(m);
+    const o = m as THREE.Mesh;
+    o.geometry.dispose();
+    (o.material as THREE.Material).dispose();
   }
 }

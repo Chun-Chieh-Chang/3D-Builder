@@ -96,6 +96,8 @@ export interface UiState {
   projectName: string | null;
   /** Why the project folder is asked for: the dialog is open. */
   folderRequest: string | null;
+  /** Bumped whenever another document is opened or created (the CommandManager then shows its main tab). */
+  documentSerial: number;
 }
 
 /** Next free display name like SolidWorks does: 草圖3 after 草圖2 (names are labels, ids stay permanent). */
@@ -204,6 +206,7 @@ class AppStore {
       asm: null,
       projectName: null,
       folderRequest: null,
+      documentSerial: 0,
     };
     this.sketchRunner = new LatestRunner(
       (req) => this.api.solveSketch(req),
@@ -701,7 +704,9 @@ class AppStore {
   private async perform(action: PendingFileAction): Promise<void> {
     if (action === 'open') return this.openFile();
     if (action === 'new-assembly') {
-      return this.showAssembly({ doc: createEmptyAssembly(), handle: null, fileName: null, folder: '', untitled: `組合件${++this.untitledAssemblies}`, project: this.project });
+      this.showAssembly({ doc: createEmptyAssembly(), handle: null, fileName: null, folder: '', untitled: `組合件${++this.untitledAssemblies}`, project: this.project });
+      // SolidWorks starts a new assembly in 「開始組合件」: the first thing to do is to insert a part.
+      return void this.assembly!.startInsert();
     }
     if (action === 'new-demo') return this.load(createDemoPart(), null, null);
     this.load(createEmptyPart(), null, null, new Map(), `零件${++this.untitledCount}`);
@@ -811,7 +816,7 @@ class AppStore {
     this.blobs = blobs;
     void this.api.setBlobs(blobs); // posted before the rebuild request, so the worker has them first
     this.savedText = serializePart(doc);
-    this.set({ active: 'part', selected: null, selectedFace: null, result: null, fileName, untitled, fitRequest: this.state.fitRequest + 1 });
+    this.set({ active: 'part', selected: null, selectedFace: null, result: null, fileName, untitled, fitRequest: this.state.fitRequest + 1, documentSerial: this.state.documentSerial + 1 });
     this.onDocChanged();
   }
 
@@ -829,7 +834,7 @@ class AppStore {
       },
       source,
     );
-    this.set({ active: 'assembly', asm: this.assembly.getState() });
+    this.set({ active: 'assembly', asm: this.assembly.getState(), documentSerial: this.state.documentSerial + 1 });
   }
 
   private closeAssembly(): void {

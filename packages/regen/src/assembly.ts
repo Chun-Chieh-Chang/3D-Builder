@@ -1,6 +1,6 @@
 import { DATUM_PLANES, evalAngle, evalLength, isDatumPlaneName, type AssemblyDoc, type Id, type Mate, type PlaneFrame, type Pose, type Ref, type Vec3 } from '@3db/model';
 import { solve, type BodyResult, type MateGeometry, type MateResult, type MateSpec, type SolverBody } from '@3db/assembly';
-import type { Topology } from '@3db/kernel';
+import type { EdgeInfo, FaceInfo, Topology } from '@3db/kernel';
 import { resolveRef, type ElementNames } from '@3db/naming';
 
 /** What an assembly's mates need of a part: its rebuilt model's topology and names, and its planes. */
@@ -94,13 +94,14 @@ export function mateGeometry(ref: Ref, part: MatePart | null, what = '元素'): 
   const r = resolveRef(ref, part.names, part.topology);
   if (!r.ok) return `遺失參考：${what}「${ref.name}」找不到`;
   if (ref.kind === 'vertex') return { kind: 'point', point: part.topology.vertices[r.index]!.point };
-  if (ref.kind === 'edge') {
-    const g = part.topology.edges[r.index]!.geometry;
-    if (g?.type === 'line') return { kind: 'line', origin: g.origin, dir: g.dir };
-    if (g?.type === 'circle') return { kind: 'circle', center: g.center, normal: g.normal, radius: g.radius };
-    return `${what}：這條邊線不是直線或圓，不能用於結合`;
-  }
-  const g = part.topology.faces[r.index]!.geometry;
+  if (ref.kind === 'edge') return edgeMateGeometry(part.topology.edges[r.index]!) ?? `${what}：這條邊線不是直線或圓，不能用於結合`;
+  const face = part.topology.faces[r.index]!;
+  return faceMateGeometry(face) ?? `${what}：這種面（${face.surface}）不能用於結合`;
+}
+
+/** What a mate can use of a face: its plane, cylinder, cone or sphere; null for other surfaces. */
+export function faceMateGeometry(face: FaceInfo): MateGeometry | null {
+  const g = face.geometry;
   switch (g?.type) {
     case 'plane':
       return { kind: 'plane', origin: g.origin, normal: g.normal };
@@ -111,7 +112,15 @@ export function mateGeometry(ref: Ref, part: MatePart | null, what = '元素'): 
     case 'sphere':
       return { kind: 'sphere', center: g.center, radius: g.radius, convex: g.convex };
   }
-  return `${what}：這種面（${part.topology.faces[r.index]!.surface}）不能用於結合`;
+  return null;
+}
+
+/** What a mate can use of an edge: its line or circle; null for other curves. */
+export function edgeMateGeometry(edge: EdgeInfo): MateGeometry | null {
+  const g = edge.geometry;
+  if (g?.type === 'line') return { kind: 'line', origin: g.origin, dir: g.dir };
+  if (g?.type === 'circle') return { kind: 'circle', center: g.center, normal: g.normal, radius: g.radius };
+  return null;
 }
 
 /** The middle of a part and about its radius: where it turns about and how far its points travel. */

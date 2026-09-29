@@ -29,10 +29,10 @@ export function CommandBar() {
   useEffect(() => {
     if (sketching) setTab('sketch');
   }, [sketching]);
-  // A new document opens on its main tab; the file and view tabs stay where they are.
+  // Every document opened or created shows its main tab (組合件 or 特徵), as in SolidWorks.
   useEffect(() => {
-    setTab((t) => (t === 'file' || t === 'view' ? t : assembly ? 'assembly' : 'features'));
-  }, [assembly]);
+    setTab(assembly ? 'assembly' : 'features');
+  }, [assembly, state.documentSerial]);
   const current = tabs.find((t) => t.id === tab) ?? tabs[0]!;
   return (
     <header className="command-bar">
