@@ -2,6 +2,7 @@ import type { BRepBuilderAPI_MakeShape, NCollection_List_TopoDS_Shape, TopoDS_Sh
 import { Arena, loadOcct, ShapeIndex, type LoadOptions, type OC } from './occt';
 import {
   KernelError,
+  type CurveGeometry,
   type EdgeInfo,
   type FaceInfo,
   type FaceOrigin,
@@ -13,6 +14,7 @@ import {
   type Topology,
   type Vec3,
   type VertexInfo,
+  type SurfaceGeometry,
 } from './types';
 
 /** Sketch-plane frame (structurally identical to @3db/model PlaneFrame; the kernel stays dependency-free). */
@@ -591,18 +593,56 @@ export class Kernel {
     const type = ad.GetType();
     const props = arena.own(new oc.GProp_GProps());
     oc.BRepGProp.SurfaceProperties(face, props, false, false);
-    let normal: Vec3 | null = null;
-    if (type === oc.GeomAbs_SurfaceType.GeomAbs_Plane) {
-      const d = this.xyz(arena.own(arena.own(arena.own(ad.Plane()).Axis()).Direction()));
-      const flip = face.Orientation() === oc.TopAbs_Orientation.TopAbs_REVERSED ? -1 : 1;
-      normal = [d[0] * flip, d[1] * flip, d[2] * flip];
-    }
-    return {
-      surface: String(type).replace('GeomAbs_', '').toLowerCase(),
-      area: props.Mass(),
-      center: this.xyz(arena.own(props.CentreOfMass())),
-      normal,
+    const reversed = face.Orientation() === oc.TopAbs_Orientation.TopAbs_REVERSED;
+    const surface = String(type).replace('GeomAbs_', '').toLowerCase();
+    const center = this.xyz(arena.own(props.CentreOfMass()));
+    const xyz = (v: { X(): number; Y(): number; Z(): number; delete(): void }) => this.xyz(arena.own(v));
+    // The face's outward normal at the middle of its parameter range: the surface's own normal
+    // (∂u × ∂v), turned round on a reversed face. The frames that Plane(), Cylinder() … report do not
+    // follow the parametrization for surfaces of revolution (a revolved line's plane may point either
+    // way), so they give the axis and size, never the side.
+    const d1 = ad.EvalD1((ad.FirstUParameter() + ad.LastUParameter()) / 2, (ad.FirstVParameter() + ad.LastVParameter()) / 2);
+    const at = xyz(d1.Point);
+    const n = cross3(xyz(d1.D1U), xyz(d1.D1V));
+    const out: Vec3 = reversed ? [-n[0], -n[1], -n[2]] : n;
+    /** Whether the outward normal points away from `from` (seen across `axis`, when given). */
+    const away = (from: Vec3, axis?: Vec3) => {
+      const v: Vec3 = [at[0] - from[0], at[1] - from[1], at[2] - from[2]];
+      const r = axis ? sub3(v, scale3(axis, dot3(v, axis))) : v;
+      return dot3(out, r) > 0;
     };
+    let normal: Vec3 | null = null;
+    let geometry: SurfaceGeometry | undefined;
+    if (surface === 'plane') {
+      const d = xyz(arena.own(arena.own(ad.Plane()).Axis()).Direction());
+      normal = dot3(d, out) < 0 ? [-d[0], -d[1], -d[2]] : d;
+      geometry = { type: 'plane', origin: center, normal };
+    } else if (surface === 'cylinder') {
+      const s = arena.own(ad.Cylinder());
+      const axis = arena.own(s.Axis());
+      const origin = xyz(axis.Location());
+      const dir = xyz(axis.Direction());
+      geometry = { type: 'cylinder', origin, axis: dir, radius: s.Radius(), convex: away(origin, dir) };
+    } else if (surface === 'cone') {
+      const s = arena.own(ad.Cone());
+      const apex = xyz(s.Apex());
+      const dir = xyz(arena.own(s.Axis()).Direction());
+      geometry = { type: 'cone', apex, axis: dir, halfAngle: s.SemiAngle(), convex: away(apex, dir) };
+    } else if (surface === 'sphere') {
+      const s = arena.own(ad.Sphere());
+      const c = xyz(s.Location());
+      geometry = { type: 'sphere', center: c, radius: s.Radius(), convex: away(c) };
+    } else if (surface === 'torus') {
+      const s = arena.own(ad.Torus());
+      const c = xyz(s.Location());
+      const dir = xyz(arena.own(s.Axis()).Direction());
+      // The tube's center line, where it passes the evaluated point.
+      const v: Vec3 = [at[0] - c[0], at[1] - c[1], at[2] - c[2]];
+      const radial = sub3(v, scale3(dir, dot3(v, dir)));
+      const ring = scale3(radial, s.MajorRadius() / (Math.hypot(...radial) || 1));
+      geometry = { type: 'torus', center: c, axis: dir, major: s.MajorRadius(), minor: s.MinorRadius(), convex: away([c[0] + ring[0], c[1] + ring[1], c[2] + ring[2]]) };
+    }
+    return { surface, area: props.Mass(), center, normal, ...(geometry ? { geometry } : {}) };
   }
 
   private edgeInfo(e: TopoDS_Shape, arena: Arena): Omit<EdgeInfo, 'faces' | 'vertices'> {
@@ -618,12 +658,18 @@ export class Kernel {
     const p0 = this.xyz(arena.own(ad.EvalD0(t0)));
     const p1 = this.xyz(arena.own(ad.EvalD0(t1)));
     let dir: Vec3 | null = null;
+    let geometry: CurveGeometry | undefined;
     if (type === 'line') {
       const d: Vec3 = [p1[0] - p0[0], p1[1] - p0[1], p1[2] - p0[2]];
       const n = Math.hypot(...d) || 1;
       dir = [d[0] / n, d[1] / n, d[2] / n];
+      geometry = { type: 'line', origin: p0, dir };
+    } else if (type === 'circle') {
+      const c = arena.own(ad.Circle());
+      const axis = arena.own(c.Axis());
+      geometry = { type: 'circle', center: this.xyz(arena.own(axis.Location())), normal: this.xyz(arena.own(axis.Direction())), radius: c.Radius() };
     }
-    return { curve: type, length: props.Mass(), mid: this.xyz(arena.own(ad.EvalD0((t0 + t1) / 2))), dir };
+    return { curve: type, length: props.Mass(), mid: this.xyz(arena.own(ad.EvalD0((t0 + t1) / 2))), dir, ...(geometry ? { geometry } : {}) };
   }
 
   massProps(id: ShapeId): MassProps {
@@ -852,3 +898,8 @@ export class Kernel {
     }
   }
 }
+
+const dot3 = (a: Vec3, b: Vec3) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+const sub3 = (a: Vec3, b: Vec3): Vec3 => [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
+const scale3 = (a: Vec3, k: number): Vec3 => [a[0] * k, a[1] * k, a[2] * k];
+const cross3 = (a: Vec3, b: Vec3): Vec3 => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];

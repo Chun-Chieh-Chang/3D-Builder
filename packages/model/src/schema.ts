@@ -224,7 +224,7 @@ export function findFeature(doc: PartDoc, id: Id): Feature | undefined {
 // ---------------------------------------------------------------- assembly (C15, A3.1, B9.4)
 
 /** Assemblies have their own version line: a part and an assembly change for different reasons. */
-export const ASSEMBLY_SCHEMA_VERSION = 1;
+export const ASSEMBLY_SCHEMA_VERSION = 2;
 
 /** Unit quaternion [x, y, z, w]. */
 export type Quat = [number, number, number, number];
@@ -260,12 +260,49 @@ export interface Component {
   placement: Pose;
 }
 
+/** The standard mates of SolidWorks 2010 (C15.8). */
+export type MateType = 'coincident' | 'parallel' | 'perpendicular' | 'tangent' | 'concentric' | 'lock' | 'distance' | 'angle';
+
+/**
+ * An element a mate uses: of a component, by the persistent name in its part (a face, edge or vertex;
+ * a default or reference plane as kind "datum"; the part's origin as kind "datum", name "origin"),
+ * or of the assembly itself (`component` null: its default planes and origin, which never move).
+ */
+export interface MateRef {
+  component: Id | null;
+  ref: Ref;
+}
+
+/**
+ * A mate (C15.8, C15.12). Only the design intent is stored: which elements, which relation, which
+ * way round. Whether it holds, and where it puts the components, is solved and derived (2B).
+ */
+export interface Mate {
+  id: Id;
+  /** 「重合1」, 「同軸心2」 … */
+  name: string;
+  type: MateType;
+  a: MateRef;
+  b: MateRef;
+  /** b's normal or axis runs with a's (SolidWorks 「同向對齊」) or against it (「反向對齊」). */
+  align?: 'aligned' | 'antiAligned';
+  /** Distance (length) or angle, for distance and angle mates. */
+  value?: Expr;
+  /** The distance on the other side, or the other angle (「反轉尺寸」). */
+  flip?: boolean;
+  /** Lock: b's pose relative to a's, as it was when locked. */
+  relative?: Pose;
+  suppressed: boolean;
+}
+
 export interface AssemblyDoc {
   kind: 'assembly';
   schemaVersion: number;
   files: FileRef[];
   /** FeatureManager order. */
   components: Component[];
+  /** The mates folder, in FeatureManager order: the order conflicts are judged in (A3.4). */
+  mates: Mate[];
   properties: Record<string, string>;
   /** As in parts (B1.3): ids are never reused. */
   idCounters: Record<string, number>;

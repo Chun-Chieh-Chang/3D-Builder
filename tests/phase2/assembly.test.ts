@@ -11,6 +11,7 @@ import { dirname, join } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import {
   applyAssemblyCommand,
+  ASSEMBLY_SCHEMA_VERSION,
   axisAngle,
   createEmptyAssembly,
   dirName,
@@ -108,6 +109,23 @@ describe('an assembly of part files (B9.4)', () => {
       ['削邊銷<2>', '零件/削邊銷.3dbx'],
     ]);
     for (const p of parts) expect(p.errors).toEqual([]);
+    expect(parts.map((p) => p.volume)).toEqual([expect.closeTo(PLATE, 6), expect.closeTo(PIN, 6), expect.closeTo(PIN, 6)]);
+  });
+
+  it('opens an assembly saved by version 1 (2A) and finds its parts', async () => {
+    const file = await readDocumentFile(new Uint8Array(readFileSync(new URL('../fixtures/old-versions/v1-assembly.3dba', import.meta.url))));
+    expect(file.kind).toBe('assembly');
+    if (file.kind !== 'assembly') return;
+    expect(file.doc.schemaVersion).toBe(ASSEMBLY_SCHEMA_VERSION);
+    expect(file.doc.mates).toEqual([]);
+    expect(file.doc.components.map((c) => [c.id, c.instance, c.fixed])).toEqual([
+      ['comp1', 1, true],
+      ['comp2', 1, false],
+      ['comp3', 2, false],
+    ]);
+    // It was saved in 組合件/, next to the parts' folders.
+    const parts = await components(file.doc, '組合件');
+    expect(parts.map((p) => p.name)).toEqual(['定位板<1>', '削邊銷<1>', '削邊銷<2>']);
     expect(parts.map((p) => p.volume)).toEqual([expect.closeTo(PLATE, 6), expect.closeTo(PIN, 6), expect.closeTo(PIN, 6)]);
   });
 

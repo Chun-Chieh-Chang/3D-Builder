@@ -10,6 +10,7 @@
     "./dag": "./src/dag.ts"
   },
   "dependencies": {
+    "@3db/assembly": "*",
     "@3db/kernel": "*",
     "@3db/model": "*",
     "@3db/naming": "*",

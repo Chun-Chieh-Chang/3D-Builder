@@ -9,7 +9,8 @@ const ALLOWED = {
   sketch: ['model'],
   naming: ['model'],
   kernel: [],
-  regen: ['model', 'sketch', 'naming', 'kernel'],
+  assembly: ['model'],
+  regen: ['model', 'sketch', 'naming', 'assembly', 'kernel'],
   io: ['model', 'kernel'],
   render: [],
 };

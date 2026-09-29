@@ -26,6 +26,7 @@ import {
   transformPoint,
   type AssemblyDoc,
   type Component,
+  type Mate,
   type Pose,
   type Vec3,
 } from '../src/index';
@@ -206,7 +207,7 @@ describe('assembly text format (B9.1, B9.6)', () => {
     const doc = jig();
     const text = serializeAssembly(doc);
     expect(text.endsWith('\n')).toBe(true);
-    expect(Object.keys(JSON.parse(text))).toEqual(['components', 'files', 'idCounters', 'kind', 'properties', 'schemaVersion']);
+    expect(Object.keys(JSON.parse(text))).toEqual(['components', 'files', 'idCounters', 'kind', 'mates', 'properties', 'schemaVersion']);
     expect(parseAssembly(text)).toEqual(doc);
     expect(serializeAssembly(parseAssembly(text))).toBe(text);
     expect(documentKind(text)).toBe('assembly');
@@ -225,10 +226,84 @@ describe('assembly text format (B9.1, B9.6)', () => {
   it('refuses what it cannot read', () => {
     const text = serializeAssembly(jig());
     const newer = JSON.stringify({ ...JSON.parse(text), schemaVersion: ASSEMBLY_SCHEMA_VERSION + 1 });
-    expect(() => parseAssembly(newer)).toThrow(/比本程式支援的 1 新/);
+    expect(() => parseAssembly(newer)).toThrow(/比本程式支援的 2 新/);
     expect(() => parseAssembly('{"kind":"part","schemaVersion":6,"features":[]}')).toThrow(FormatError);
     expect(() => parseAssembly('{"kind":"assembly","schemaVersion":1}')).toThrow(/缺少零組件清單/);
+    expect(() => parseAssembly('{"kind":"assembly","schemaVersion":2,"files":[],"components":[]}')).toThrow(/缺少結合清單/);
     expect(() => parseAssembly('[]')).toThrow(FormatError);
     expect(() => documentKind('{"kind":"drawing"}')).toThrow(FormatError);
+  });
+});
+
+// ---------------------------------------------------------------- mates (2B)
+
+const face = (name: string) => ({ kind: 'face' as const, name });
+/** 削邊銷<1> in 定位板<1>'s hole, flush on its top face. */
+const concentric = (): Mate => ({ id: 'mate1', name: '同軸心1', type: 'concentric', a: { component: 'comp1', ref: face('cut1:side:sketch2.c1') }, b: { component: 'comp2', ref: face('revolve1:side:sketch1.l3') }, align: 'aligned', suppressed: false });
+const flush = (): Mate => ({ id: 'mate2', name: '重合1', type: 'coincident', a: { component: 'comp1', ref: face('extrude1:cap:end') }, b: { component: 'comp2', ref: face('revolve1:side:sketch1.l2') }, align: 'antiAligned', suppressed: false });
+
+describe('mates in the document (C15.8, C15.12)', () => {
+  const mated = () => applyAssemblyCommand(applyAssemblyCommand(jig(), { type: 'insertMate', mate: concentric() }), { type: 'insertMate', mate: flush() });
+
+  it('adds, changes, suppresses and deletes mates', () => {
+    let doc = mated();
+    expect(doc.mates.map((m) => m.name)).toEqual(['同軸心1', '重合1']);
+    expect(doc.idCounters.mate).toBe(2);
+    doc = applyAssemblyCommand(doc, { type: 'setMate', mate: { ...flush(), type: 'distance', name: '距離1', value: '5' } });
+    expect(doc.mates[1]).toMatchObject({ type: 'distance', value: '5' });
+    doc = applyAssemblyCommand(doc, { type: 'setMatesSuppressed', mateIds: ['mate1'], value: true });
+    expect(doc.mates[0]!.suppressed).toBe(true);
+    doc = applyAssemblyCommand(doc, { type: 'deleteMates', mateIds: ['mate1'] });
+    expect(doc.mates.map((m) => m.id)).toEqual(['mate2']);
+    const ids = new IdAllocator(doc.idCounters, assemblyIdsInUse(doc));
+    expect(ids.take('mate')).toBe('mate3');
+  });
+
+  it('deleting a component deletes the mates on it, as SolidWorks does', () => {
+    const doc = applyAssemblyCommand(mated(), { type: 'deleteComponents', componentIds: ['comp2'] });
+    expect(doc.mates).toEqual([]);
+    expect(applyAssemblyCommand(mated(), { type: 'deleteComponents', componentIds: ['comp3'] }).mates).toHaveLength(2);
+  });
+
+  it('mates to the planes and origin of the assembly itself, and to nothing else of it', () => {
+    const toFront: Mate = { ...flush(), id: 'mate9', a: { component: null, ref: { kind: 'datum', name: 'plane:front' } } };
+    expect(applyAssemblyCommand(jig(), { type: 'insertMate', mate: toFront }).mates).toHaveLength(1);
+    expect(() => applyAssemblyCommand(jig(), { type: 'insertMate', mate: { ...toFront, a: { component: null, ref: face('x') } } })).toThrow(/只能選基準面或原點/);
+  });
+
+  it('refuses mates that are not well formed, and leaves the document as it was', () => {
+    const doc = mated();
+    const bad: [string, Mate][] = [
+      ['a reused id', { ...flush(), id: 'comp1' }],
+      ['an unknown component', { ...flush(), id: 'mate7', b: { component: 'comp9', ref: face('x') } }],
+      ['both ends on one component', { ...flush(), id: 'mate7', b: { component: 'comp1', ref: face('x') } }],
+      ['an empty selection', { ...flush(), id: 'mate7', b: { component: 'comp2', ref: face('') } }],
+      ['a distance without a value', { ...flush(), id: 'mate7', type: 'distance' }],
+      ['a negative distance', { ...flush(), id: 'mate7', type: 'distance', value: '-2' }],
+      ['an angle over 180°', { ...flush(), id: 'mate7', type: 'angle', value: '190' }],
+      ['a value on a coincident mate', { ...flush(), id: 'mate7', value: '3' }],
+      ['a lock without its relative pose', { ...flush(), id: 'mate7', type: 'lock' }],
+      ['an empty name', { ...flush(), id: 'mate7', name: ' ' }],
+    ];
+    for (const [what, mate] of bad) expect(() => applyAssemblyCommand(doc, { type: 'insertMate', mate }), what).toThrow(CommandError);
+    expect(() => applyAssemblyCommand(doc, { type: 'setMate', mate: { ...flush(), id: 'mate8' } })).toThrow(CommandError);
+    expect(doc.mates).toHaveLength(2);
+  });
+
+  it('round-trips through the text format', () => {
+    const doc = mated();
+    expect(parseAssembly(serializeAssembly(doc))).toEqual(doc);
+  });
+});
+
+describe('assemblies written by older versions (B9.2)', () => {
+  it('upgrades a version-1 document', () => {
+    const v1 = JSON.parse(serializeAssembly(jig()));
+    delete v1.mates;
+    v1.schemaVersion = 1;
+    const doc = parseAssembly(JSON.stringify(v1));
+    expect(doc.schemaVersion).toBe(ASSEMBLY_SCHEMA_VERSION);
+    expect(doc.mates).toEqual([]);
+    expect(doc.components).toEqual(jig().components);
   });
 });

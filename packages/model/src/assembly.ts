@@ -1,9 +1,10 @@
 import { produce, type Draft } from 'immer';
 import { countersFor, type Id } from './ids';
 import { CommandError } from './commands';
+import { evalAngle, evalLength, ExprError } from './expr';
 import { isFilePath, joinPath, relativePath } from './paths';
 import { isValidPose } from './pose';
-import { ASSEMBLY_SCHEMA_VERSION, type AssemblyDoc, type Component, type FileRef, type Pose } from './schema';
+import { ASSEMBLY_SCHEMA_VERSION, type AssemblyDoc, type Component, type FileRef, type Mate, type MateType, type Pose } from './schema';
 
 /**
  * Assembly commands (B7.1): the only way to change an assembly document. As with parts, new objects
@@ -14,15 +15,58 @@ export type AssemblyCommand =
   | { type: 'insertComponent'; component: Component; file?: FileRef }
   | { type: 'setFixed'; componentIds: Id[]; value: boolean }
   | { type: 'setPlacement'; componentId: Id; placement: Pose }
-  /** Deletes components. Files no component uses any more go too; all their ids stay issued. */
-  | { type: 'deleteComponents'; componentIds: Id[] };
+  /** Deletes components and the mates on them (as SolidWorks does). Files no component uses any more go too; all their ids stay issued. */
+  | { type: 'deleteComponents'; componentIds: Id[] }
+  /** Adds a mate at the end of the mates folder (C15.8). */
+  | { type: 'insertMate'; mate: Mate }
+  /** Replaces a mate's definition, e.g. from its PropertyManager (C15.12). */
+  | { type: 'setMate'; mate: Mate }
+  | { type: 'deleteMates'; mateIds: Id[] }
+  | { type: 'setMatesSuppressed'; mateIds: Id[]; value: boolean };
 
 export function createEmptyAssembly(): AssemblyDoc {
-  return { kind: 'assembly', schemaVersion: ASSEMBLY_SCHEMA_VERSION, files: [], components: [], properties: {}, idCounters: {} };
+  return { kind: 'assembly', schemaVersion: ASSEMBLY_SCHEMA_VERSION, files: [], components: [], mates: [], properties: {}, idCounters: {} };
 }
 
 export function assemblyIdsInUse(doc: AssemblyDoc): Id[] {
-  return [...doc.files.map((f) => f.id), ...doc.components.map((c) => c.id)];
+  return [...doc.files.map((f) => f.id), ...doc.components.map((c) => c.id), ...doc.mates.map((m) => m.id)];
+}
+
+const MATE_TYPES: MateType[] = ['coincident', 'parallel', 'perpendicular', 'tangent', 'concentric', 'lock', 'distance', 'angle'];
+
+/** What a mate needs to be well formed; whether it can hold is for the solver. */
+function checkMate(doc: AssemblyDoc, m: Mate): void {
+  if (!m.name.trim()) throw new CommandError('名稱不可空白');
+  if (!MATE_TYPES.includes(m.type)) throw new CommandError(`不明的結合類型：${m.type}`);
+  for (const end of [m.a, m.b]) {
+    if (end.component !== null && !doc.components.some((c) => c.id === end.component)) throw new CommandError(`找不到零組件：${end.component}`);
+    if (end.component === null && (end.ref.kind !== 'datum' || !/^(plane:(front|top|right)|origin)$/.test(end.ref.name))) {
+      throw new CommandError('組合件本身只能選基準面或原點');
+    }
+    if (!end.ref.name) throw new CommandError('請選擇兩個要結合的元素');
+  }
+  if (m.a.component === m.b.component) throw new CommandError('結合的兩個元素必須在不同的零組件上');
+  if (m.align !== undefined && m.align !== 'aligned' && m.align !== 'antiAligned') throw new CommandError('對齊方式無效');
+  if (m.type === 'distance' || m.type === 'angle') {
+    if (m.value === undefined) throw new CommandError(`${m.type === 'distance' ? '距離' : '角度'}結合需要數值`);
+    let v: number;
+    try {
+      v = m.type === 'distance' ? evalLength(m.value) : evalAngle(m.value);
+    } catch (e) {
+      throw new CommandError(e instanceof ExprError ? e.message : String(e));
+    }
+    if (m.type === 'distance' && !(v >= 0)) throw new CommandError(`距離不可為負：「${m.value}」`);
+    if (m.type === 'angle' && !(v >= 0 && v <= Math.PI + 1e-12)) throw new CommandError(`角度必須在 0° 到 180° 之間：「${m.value}」`);
+  } else if (m.value !== undefined) {
+    throw new CommandError('只有距離與角度結合有數值');
+  }
+  if (m.type === 'lock' ? !m.relative || !isValidPose(m.relative) : m.relative !== undefined) throw new CommandError('鎖住結合需要有效的相對位置');
+}
+
+function mateOf(draft: Draft<AssemblyDoc>, id: Id): Draft<Mate> {
+  const m = draft.mates.find((x) => x.id === id);
+  if (!m) throw new CommandError(`找不到結合：${id}`);
+  return m;
 }
 
 /** The instance number for another component of a file: one above the highest in use. */
@@ -90,10 +134,37 @@ export function mutateAssembly(draft: Draft<AssemblyDoc>, cmd: AssemblyCommand):
       const ids = new Set(cmd.componentIds);
       for (const id of ids) componentOf(draft, id);
       if (ids.size === 0) return;
-      countersFor([...ids, ...draft.files.map((f) => f.id)], draft.idCounters); // deleted ids are never handed out again
+      countersFor([...ids, ...draft.files.map((f) => f.id), ...draft.mates.map((m) => m.id)], draft.idCounters); // deleted ids are never handed out again
       draft.components = draft.components.filter((c) => !ids.has(c.id));
+      draft.mates = draft.mates.filter((m) => !ids.has(m.a.component ?? '') && !ids.has(m.b.component ?? ''));
       const used = new Set(draft.components.map((c) => c.file));
       draft.files = draft.files.filter((f) => used.has(f.id));
+      return;
+    }
+    case 'insertMate': {
+      if (!cmd.mate.id || assemblyIdsInUse(draft as AssemblyDoc).includes(cmd.mate.id)) throw new CommandError(`ID 已被使用：${cmd.mate.id}`);
+      checkMate(draft as AssemblyDoc, cmd.mate);
+      draft.mates.push(cmd.mate as Draft<Mate>);
+      countersFor([cmd.mate.id], draft.idCounters);
+      return;
+    }
+    case 'setMate': {
+      const at = draft.mates.findIndex((m) => m.id === cmd.mate.id);
+      if (at < 0) throw new CommandError(`找不到結合：${cmd.mate.id}`);
+      checkMate(draft as AssemblyDoc, cmd.mate);
+      draft.mates[at] = cmd.mate as Draft<Mate>;
+      return;
+    }
+    case 'deleteMates': {
+      const ids = new Set(cmd.mateIds);
+      for (const id of ids) mateOf(draft, id);
+      countersFor(ids, draft.idCounters);
+      draft.mates = draft.mates.filter((m) => !ids.has(m.id));
+      return;
+    }
+    case 'setMatesSuppressed': {
+      const targets = cmd.mateIds.map((id) => mateOf(draft, id));
+      for (const m of targets) m.suppressed = cmd.value;
       return;
     }
   }

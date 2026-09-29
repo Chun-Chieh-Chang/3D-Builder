@@ -125,15 +125,19 @@ export function parsePart(text: string): PartDoc {
   return raw as unknown as PartDoc;
 }
 
-/** Forward migrations of assemblies; none yet, version 1 is the first. */
-const assemblyMigrations: Record<number, (doc: Json) => Json> = {};
+/** Forward migrations of assemblies (B9.2): assemblyMigrations[n] upgrades version n to n+1. */
+const assemblyMigrations: Record<number, (doc: Json) => Json> = {
+  // v2: mates (C15.8). A version-1 assembly has none.
+  1: (doc) => ({ ...doc, mates: [] }),
+};
 
 export function parseAssembly(text: string): AssemblyDoc {
   let raw = parseJson(text);
   if (raw.kind !== 'assembly') throw new FormatError('不是組合件文件');
   raw = upgrade(raw, ASSEMBLY_SCHEMA_VERSION, assemblyMigrations);
   if (!Array.isArray(raw.files) || !Array.isArray(raw.components)) throw new FormatError('缺少零組件清單');
-  const ids = [...(raw.files as Json[]), ...(raw.components as Json[])].map((x) => x.id as string);
+  if (!Array.isArray(raw.mates)) throw new FormatError('缺少結合清單');
+  const ids = [...(raw.files as Json[]), ...(raw.components as Json[]), ...(raw.mates as Json[])].map((x) => x.id as string);
   // As for parts: counters cover every id in the file, even one edited by hand or by a script.
   raw.idCounters = countersFor(ids, { ...((raw.idCounters as Record<string, number> | undefined) ?? {}) });
   raw.properties ??= {};

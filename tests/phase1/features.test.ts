@@ -191,6 +191,29 @@ describe('revolve (C4.3) and chamfer (C5.3)', () => {
     }
   });
 
+  it('gives the faces of a revolve their outward sides, so a boss sketched on the bottom grows out of it', () => {
+    // Found by 2B: the plane OCCT reports for a revolved line may point either way; the bottom face said
+    // "up", into the ring, and a sketch on it faced into the material.
+    const full = regen.rebuild(build(profile(), revolve('axis', { type: 'blind', angle: '360' })));
+    const faceOf = (name: string) => full.body!.topology.faces[full.body!.names.faces.indexOf(name)]!;
+    const normal = (name: string) => faceOf(name).normal!.map((v) => v + 0); // + 0: −0 is 0
+    expect(normal('r1:side:s1.al0')).toEqual([0, -1, 0]);
+    expect(normal('r1:side:s1.al2')).toEqual([0, 1, 0]);
+    expect(faceOf('r1:side:s1.al1').geometry).toMatchObject({ type: 'cylinder', radius: 15, convex: true });
+    expect(faceOf('r1:side:s1.al3').geometry).toMatchObject({ type: 'cylinder', radius: 10, convex: false });
+    const boss = regen.rebuild(
+      build(
+        profile(),
+        revolve('axis', { type: 'blind', angle: '360' }),
+        sketch('s2', { kind: 'face', name: 'r1:side:s1.al0' }, circle('k', 12.5, 0, 1)),
+        { id: 'e2', type: 'extrude', name: 'e2', suppressed: false, sketch: 's2', op: 'boss', dir1: { type: 'blind', depth: '5' } },
+      ),
+    );
+    expect(status(boss)).toEqual(['s1=ok', 'r1=ok', 's2=ok', 'e2=ok']);
+    expect(volume(boss)).toBeCloseTo(ring + Math.PI * 5, 5);
+    expect(kernel.bounds(boss.body!.shape).min[1]).toBeCloseTo(-5, 5);
+  });
+
   it('refuses a profile that crosses the axis', () => {
     expect(regen.rebuild(build(profile(), revolve('across', { type: 'blind', angle: '90' }))).features.at(-1)).toMatchObject({ status: 'error', message: '輪廓跨過旋轉軸' });
   });

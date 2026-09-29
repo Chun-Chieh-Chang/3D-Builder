@@ -20,8 +20,9 @@
 | `@3db/model` | B1、B5、B6、B7、B8、B9（資料）；組合件文件（C15 的資料、A3.1 位姿） |
 | `@3db/sketch` | A2、C1、C2 |
 | `@3db/naming` | B4 |
-| `@3db/kernel` | A1、A4.1、A5.2、E1（計算）、F1/F2 的轉檔機制 |
-| `@3db/regen` | B2、B3 |
+| `@3db/kernel` | A1、A4.1、A5.2（含結合用的解析幾何）、E1（計算）、F1/F2 的轉檔機制 |
+| `@3db/assembly` | A3.1–A3.4（結合求解、自由度、衝突）、C15.8 的結合方程式 |
+| `@3db/regen` | B2、B3；組合件結合的求解接線 |
 | `@3db/io` | F1、F2、F3、F4（檔案層） |
 | `@3db/render` | A4.2、A5.1、D4 |
 | `apps/web` | D1–D3、D5–D9（介面） |
