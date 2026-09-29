@@ -3,16 +3,18 @@ import { useSyncExternalStore } from 'react';
 import {
   CommandError,
   createDemoPart,
+  createEmptyAssembly,
   createEmptyPart,
   DATUM_PLANES,
+  dirName,
   DocHistory,
   findFeature,
-  FormatError,
   IdAllocator,
   idsInUse,
   isDatumPlaneName,
   planeFrame,
   serializePart,
+  type AssemblyDoc,
   type Command,
   type DatumPlaneName,
   type BlobRef,
@@ -25,12 +27,13 @@ import {
   type Ref,
   type SketchFeature,
 } from '@3db/model';
-import { partFileName, partName, readPartFile, sha256Hex, stepFileName, writePartFile } from '@3db/io';
+import { assemblyName, partFileName, partName, readDocumentFile, sha256Hex, stepFileName, writePartFile } from '@3db/io';
 import { suppressionTargets, type SuppressAction } from '@3db/regen/dag';
 import type { Viewer } from '@3db/render';
 import type { KernelApi, RebuildPayload, SketchSolvePayload, SketchSolveRequest } from '../worker/protocol';
 import { SketchController, type ControllerView, type SketchHost } from '../sketcher/controller';
-import { download, isStepFile, pickFileToOpen, pickSaveTarget, pickStepFile, writeFile } from '../files';
+import { download, FOLDERS_UNSUPPORTED, isStepFile, pathIn, pickFileToOpen, pickProjectFolder, pickSaveTarget, pickStepFile, writeFile, type OpenedFile } from '../files';
+import { AssemblyStore, type AssemblySource, type AssemblyState } from './assembly';
 
 export interface EditSession {
   featureId: Id;
@@ -43,8 +46,11 @@ export interface Notice {
   text: string;
 }
 
-/** File actions that replace the part, and so first ask about unsaved changes. */
-export type PendingFileAction = 'new-part' | 'new-demo' | 'open';
+/** File actions that replace the open document, and so first ask about unsaved changes. */
+export type PendingFileAction = 'new-part' | 'new-demo' | 'new-assembly' | 'open';
+
+/** One document is open at a time (2026-09-28 decision): a part or an assembly. */
+export type DocumentKind = 'part' | 'assembly';
 
 /**
  * UI state. The document inside DocHistory is the only source of truth for the design;
@@ -82,6 +88,14 @@ export interface UiState {
   bootMs: { occtMs: number; gcsMs: number } | null;
   bootError: string | null;
   notice: Notice | null;
+  /** The open document: the part above, or the assembly in `asm`. */
+  active: DocumentKind;
+  /** The open assembly (null while a part is open). */
+  asm: AssemblyState | null;
+  /** The project folder assemblies read their parts from (B9.4); null until one is chosen. */
+  projectName: string | null;
+  /** Why the project folder is asked for: the dialog is open. */
+  folderRequest: string | null;
 }
 
 /** Next free display name like SolidWorks does: 草圖3 after 草圖2 (names are labels, ids stay permanent). */
@@ -149,6 +163,13 @@ class AppStore {
   private blobs = new Map<string, Uint8Array>();
   /** New parts of this session are numbered like SolidWorks: 零件1, 零件2 … */
   private untitledCount = 0;
+  private untitledAssemblies = 0;
+  /** The open assembly; null while a part is open. */
+  assembly: AssemblyStore | null = null;
+  /** The project folder of this session (B9.4): assemblies and the parts they use are inside it. */
+  private project: FileSystemDirectoryHandle | null = null;
+  /** Answers the open project-folder dialog. */
+  private folderAnswer: ((folder: FileSystemDirectoryHandle | null) => void) | null = null;
   /** The viewport registers itself so view actions (fit, standard views) can reach it. */
   viewer: Viewer | null = null;
   /** Tools of the sketch being edited (null outside sketch sessions). */
@@ -179,6 +200,10 @@ class AppStore {
       bootMs: null,
       bootError: null,
       notice: null,
+      active: 'part',
+      asm: null,
+      projectName: null,
+      folderRequest: null,
     };
     this.sketchRunner = new LatestRunner(
       (req) => this.api.solveSketch(req),
@@ -198,7 +223,7 @@ class AppStore {
     this.requestRebuild();
     // Closing the tab with unsaved changes asks first, like closing a modified document (risk 11: lost work).
     window.addEventListener('beforeunload', (e) => {
-      if (this.state.dirty) e.preventDefault();
+      if (this.activeDirty()) e.preventDefault();
     });
   }
 
@@ -240,10 +265,12 @@ class AppStore {
   }
 
   undo(): void {
+    if (this.assembly) return this.assembly.undo();
     this.history.undo();
   }
 
   redo(): void {
+    if (this.assembly) return this.assembly.redo();
     this.history.redo();
   }
 
@@ -575,7 +602,9 @@ class AppStore {
 
   // ------------------------------------------------------------ rebuild (B3.5: off the UI thread)
 
+  /** 「重新計算」; in an assembly it reads the part files again, so changed parts show as they are now. */
   rebuild(): void {
+    if (this.assembly) return this.assembly.reload();
     this.requestRebuild();
   }
 
@@ -611,8 +640,9 @@ class AppStore {
 
   // ------------------------------------------------------------ files (F1.1, F7.1, B9.1)
 
-  /** The part's name: its file's name once saved or opened, as SolidWorks shows it (see partName). */
+  /** The open document's name: its file's name once saved or opened, as SolidWorks shows it (see partName). */
   documentName(): string {
+    if (this.assembly) return this.assembly.name();
     return partName(this.history.doc, this.state.fileName, this.state.untitled);
   }
 
@@ -636,14 +666,26 @@ class AppStore {
     this.guard('new-demo');
   }
 
-  /** 「開啟舊檔」: a `.3dbx` part, a `.3db.json` saved by an older version (B9.2), or a STEP file to start a part from. */
+  /** 「新組合件」 (B1.1): an empty assembly; the first 「插入零組件」 asks for the project folder if there is none yet. */
+  newAssembly(): void {
+    this.guard('new-assembly');
+  }
+
+  /**
+   * 「開啟舊檔」: a `.3dbx` part, a `.3db.json` saved by an older version (B9.2), a `.3dba` assembly,
+   * or a STEP file to start a part from.
+   */
   open(): void {
     this.guard('open');
   }
 
-  /** Replacing a modified part asks 「要儲存變更嗎？」 first, as SolidWorks does. */
+  private activeDirty(): boolean {
+    return this.assembly ? this.assembly.getState().dirty : this.state.dirty;
+  }
+
+  /** Replacing a modified document asks 「要儲存變更嗎？」 first, as SolidWorks does. */
   private guard(action: PendingFileAction): void {
-    if (this.state.dirty) this.set({ unsaved: action });
+    if (this.activeDirty()) this.set({ unsaved: action });
     else void this.perform(action);
   }
 
@@ -658,20 +700,24 @@ class AppStore {
 
   private async perform(action: PendingFileAction): Promise<void> {
     if (action === 'open') return this.openFile();
+    if (action === 'new-assembly') {
+      return this.showAssembly({ doc: createEmptyAssembly(), handle: null, fileName: null, folder: '', untitled: `組合件${++this.untitledAssemblies}`, project: this.project });
+    }
     if (action === 'new-demo') return this.load(createDemoPart(), null, null);
     this.load(createEmptyPart(), null, null, new Map(), `零件${++this.untitledCount}`);
   }
 
   private async openFile(): Promise<void> {
     try {
-      const picked = await pickFileToOpen();
+      const picked = await pickFileToOpen(this.project);
       if (!picked) return;
       if (isStepFile(picked)) {
         // Like SolidWorks: a new, unsaved part named after the file, holding the imported body.
         this.load(createEmptyPart(), null, null, new Map(), picked.name.replace(/\.(step|stp)$/i, ''));
         return await this.importData(picked.name, picked.bytes);
       }
-      const file = await readPartFile(picked.bytes);
+      const file = await readDocumentFile(picked.bytes);
+      if (file.kind === 'assembly') return await this.openAssembly(picked, file.doc);
       // A file in the old format is never overwritten with the new one: its first save asks for a name.
       this.load(file.doc, file.format === '3dbx' ? picked.handle : null, picked.name, file.blobs);
       const notes = [...(file.format === 'json' ? ['舊版格式，儲存時會另存為 .3dbx'] : []), ...file.warnings];
@@ -711,13 +757,15 @@ class AppStore {
     }
   }
 
-  /** 「儲存檔案」: into the file the part came from; a part never saved asks for a name. True when saved. */
+  /** 「儲存檔案」: into the file the document came from; one never saved asks for a name. True when saved. */
   async save(): Promise<boolean> {
+    if (this.assembly) return this.assembly.save();
     return this.fileHandle ? this.write(this.fileHandle) : this.saveAs();
   }
 
   /** 「另存新檔」. True when saved. */
   async saveAs(): Promise<boolean> {
+    if (this.assembly) return this.assembly.saveAs();
     const name = partFileName(this.documentName());
     try {
       const target = await pickSaveTarget(name);
@@ -755,6 +803,7 @@ class AppStore {
   }
 
   private load(doc: PartDoc, handle: FileSystemFileHandle | null, fileName: string | null, blobs = new Map<string, Uint8Array>(), untitled = this.state.untitled): void {
+    this.closeAssembly();
     if (this.state.editing) this.cancelEdit();
     this.history = new DocHistory(doc);
     this.history.subscribe(() => this.onDocChanged());
@@ -762,8 +811,94 @@ class AppStore {
     this.blobs = blobs;
     void this.api.setBlobs(blobs); // posted before the rebuild request, so the worker has them first
     this.savedText = serializePart(doc);
-    this.set({ selected: null, selectedFace: null, result: null, fileName, untitled, fitRequest: this.state.fitRequest + 1 });
+    this.set({ active: 'part', selected: null, selectedFace: null, result: null, fileName, untitled, fitRequest: this.state.fitRequest + 1 });
     this.onDocChanged();
+  }
+
+  // ------------------------------------------------------------ assemblies (B1.1, B9.4)
+
+  /** The assembly becomes the open document; the part is put away (one document at a time). */
+  private showAssembly(source: AssemblySource): void {
+    this.load(createEmptyPart(), null, null);
+    this.assembly = new AssemblyStore(
+      {
+        api: this.api,
+        changed: (asm) => this.set({ asm }),
+        notify: (text, kind) => this.notify(text, kind),
+        projectFolder: (reason) => this.projectFolder(reason),
+      },
+      source,
+    );
+    this.set({ active: 'assembly', asm: this.assembly.getState() });
+  }
+
+  private closeAssembly(): void {
+    if (!this.assembly) return;
+    this.assembly.close();
+    this.assembly = null;
+    this.set({ asm: null });
+  }
+
+  /**
+   * An assembly is opened inside a project folder that contains it: its parts are found from there.
+   * Without one, or when the file is elsewhere, the user is asked for the folder.
+   */
+  private async openAssembly(picked: OpenedFile, doc: AssemblyDoc): Promise<void> {
+    if (!picked.handle) return this.notify(FOLDERS_UNSUPPORTED, 'error');
+    let folder = this.project;
+    let path = folder ? await pathIn(folder, picked.handle) : null;
+    let reason = `「${picked.name}」引用其他檔案。請選擇包含它和它的零件的專案資料夾。`;
+    while (path === null) {
+      folder = await this.askForFolder(reason);
+      if (!folder) return; // nothing is opened; the current document stays
+      path = await pathIn(folder, picked.handle);
+      reason = `資料夾「${folder.name}」不包含「${picked.name}」。請選擇包含它的資料夾（可以是更上層的資料夾）。`;
+    }
+    this.useProject(folder!);
+    this.showAssembly({ doc, handle: picked.handle, fileName: picked.name, folder: dirName(path), untitled: '組合件1', project: folder });
+    this.notify(`已開啟 ${picked.name}`);
+  }
+
+  private async projectFolder(reason: string): Promise<FileSystemDirectoryHandle | null> {
+    if (this.project) return this.project;
+    const folder = await this.askForFolder(reason);
+    if (folder) this.useProject(folder);
+    return folder;
+  }
+
+  private useProject(folder: FileSystemDirectoryHandle): void {
+    this.project = folder;
+    this.set({ projectName: folder.name });
+  }
+
+  /** Opens the project-folder dialog: the folder picker needs a click of its own, on the dialog's button. */
+  private askForFolder(reason: string): Promise<FileSystemDirectoryHandle | null> {
+    this.folderAnswer?.(null);
+    return new Promise((resolve) => {
+      this.folderAnswer = resolve;
+      this.set({ folderRequest: reason });
+    });
+  }
+
+  /** 「選擇資料夾…」 in the project-folder dialog. */
+  async chooseFolder(): Promise<void> {
+    try {
+      const folder = await pickProjectFolder();
+      if (folder) this.answerFolder(folder);
+    } catch (e) {
+      this.notify(`無法選擇資料夾：${e instanceof Error ? e.message : String(e)}`, 'error');
+    }
+  }
+
+  cancelFolder(): void {
+    this.answerFolder(null);
+  }
+
+  private answerFolder(folder: FileSystemDirectoryHandle | null): void {
+    const answer = this.folderAnswer;
+    this.folderAnswer = null;
+    this.set({ folderRequest: null });
+    answer?.(folder);
   }
 
   dismissNotice(): void {
@@ -777,19 +912,22 @@ export function useStore<T>(selector: (s: UiState) => T): T {
   return useSyncExternalStore(store.subscribe, () => selector(store.getState()));
 }
 
-/** The part's name (FeatureManager, dialogs): its file's name once saved or opened. */
+/** The open document's name (FeatureManager, dialogs): its file's name once saved or opened. */
 export function useDocumentName(): string {
   const doc = useStore((s) => s.doc);
   const fileName = useStore((s) => s.fileName);
   const untitled = useStore((s) => s.untitled);
-  return partName(doc, fileName, untitled);
+  const asm = useStore((s) => s.asm);
+  return asm ? assemblyName(asm.fileName, asm.untitled) : partName(doc, fileName, untitled);
 }
 
-/** The document as a title bar shows it: file name (or part name if never saved), 「*」 when modified. */
+/** The document as a title bar shows it: file name (or its name if never saved), 「*」 when modified. */
 export function useDocumentTitle(): string {
-  const fileName = useStore((s) => s.fileName);
+  const partFile = useStore((s) => s.fileName);
+  const partDirty = useStore((s) => s.dirty);
+  const asm = useStore((s) => s.asm);
   const name = useDocumentName();
-  const dirty = useStore((s) => s.dirty);
+  const [fileName, dirty] = asm ? [asm.fileName, asm.dirty] : [partFile, partDirty];
   return `${fileName ?? name}${dirty ? ' *' : ''}`;
 }
 

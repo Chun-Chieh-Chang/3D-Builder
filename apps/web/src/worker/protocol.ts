@@ -29,6 +29,19 @@ export interface RebuildPayload {
   totalMs: number;
 }
 
+/**
+ * A part file rebuilt for an assembly (2A). The worker keeps the rebuilt model, keyed by the file's
+ * content, for as long as the assembly uses it.
+ */
+export interface PartBuildPayload {
+  /** SHA-256 of the part file's bytes. */
+  key: string;
+  mesh: MeshData | null;
+  /** What went wrong inside the part: features that failed, imported data the file lacks. */
+  problems: string[];
+  ms: number;
+}
+
 /** Solving the sketch being edited, without rebuilding the model (like SolidWorks inside a sketch). */
 export interface SketchSolveRequest extends SolveOptions {
   seq: number;
@@ -58,4 +71,8 @@ export interface KernelApi {
   solveSketch(req: SketchSolveRequest): Promise<SketchSolvePayload>;
   /** STEP of the rebuilt part, its product named `name`. */
   exportStep(doc: PartDoc, name: string): Promise<string>;
+  /** Rebuilds a part file of an assembly, once per content (`key` = SHA-256 of `bytes`). */
+  buildPart(key: string, bytes: Uint8Array): Promise<PartBuildPayload>;
+  /** Lets go of every rebuilt part file except these. */
+  retainParts(keys: string[]): Promise<void>;
 }

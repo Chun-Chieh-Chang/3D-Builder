@@ -30,7 +30,57 @@ const COLORS = {
   edgeHover: 0xf08c00,
   edgeSelected: 0x1864ab,
   background: 0xf3f5f8,
+  componentHover: 0xf2c48d,
+  componentSelected: 0x8fb8e8,
 };
+
+/**
+ * A placed copy of a part mesh (an assembly component): `part` names a mesh given to setParts, and
+ * `matrix` (4×4, column-major) maps the part's coordinates into the scene.
+ */
+export interface ViewInstance {
+  key: string;
+  part: string;
+  matrix: ArrayLike<number>;
+}
+
+interface Instance {
+  part: string;
+  group: THREE.Group;
+  body: THREE.Mesh;
+}
+
+function bodyGeometry(mesh: ViewMesh): THREE.BufferGeometry {
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.BufferAttribute(mesh.positions, 3));
+  g.setAttribute('normal', new THREE.BufferAttribute(mesh.normals, 3));
+  g.setIndex(new THREE.BufferAttribute(mesh.indices, 1));
+  return g;
+}
+
+/** The edges as line segments, and the edge each segment belongs to. */
+function edgeSegments(mesh: ViewMesh): { segs: number[]; owner: number[] } {
+  const segs: number[] = [];
+  const owner: number[] = [];
+  for (let g = 0; g < mesh.edgeRanges.length; g += 3) {
+    const start = mesh.edgeRanges[g]!;
+    const count = mesh.edgeRanges[g + 1]!;
+    const edge = mesh.edgeRanges[g + 2]!;
+    for (let p = start; p < start + count - 1; p++) {
+      segs.push(...mesh.edgePoints.subarray(p * 3, p * 3 + 6));
+      owner.push(edge);
+    }
+  }
+  return { segs, owner };
+}
+
+const bodyMaterial = (options: THREE.MeshStandardMaterialParameters = {}) =>
+  new THREE.MeshStandardMaterial({ color: COLORS.body, metalness: 0.15, roughness: 0.55, polygonOffset: true, polygonOffsetFactor: 1, polygonOffsetUnits: 1, ...options });
+
+function setMatrix(group: THREE.Object3D, matrix: ArrayLike<number>): void {
+  group.matrix.fromArray(Array.from(matrix));
+  group.updateMatrixWorld(true);
+}
 
 /** A reference plane to show (D4.6): drawn as a translucent square around the model. */
 export interface PlaneDisplay {
@@ -66,6 +116,10 @@ export interface ViewerEvents {
   onViewChange?: () => void;
   onLabelClick?: (key: string, additive: boolean) => void;
   onLabelDoubleClick?: (key: string) => void;
+  /** Component under the cursor changed (an instance key, or null). */
+  onComponentHover?: (key: string | null) => void;
+  /** Left click on a component (null on empty space). */
+  onComponentClick?: (key: string | null, additive: boolean) => void;
 }
 
 /**
@@ -108,6 +162,15 @@ export class Viewer {
   private overlayGroup: THREE.Group | null = null;
   private labels = new Map<string, { el: HTMLElement; world: THREE.Vector3 }>();
   private toolHandler: ((e: ToolPointerEvent) => void) | null = null;
+  /** Part meshes that instances show, by key: built once, shared by every instance of the part. */
+  private partGeometry = new Map<string, { body: THREE.BufferGeometry; edges: THREE.BufferGeometry }>();
+  private instances = new Map<string, Instance>();
+  private readonly instanceEdges = new THREE.LineBasicMaterial({ color: COLORS.edge });
+  private pickInstances = false;
+  private hoveredInstance: string | null = null;
+  private selectedInstances = new Set<string>();
+  /** A see-through instance following the cursor while a component is being placed. */
+  private ghost: Instance | null = null;
   private pendingFit = false;
   private frame = 0;
   private readonly resizeObserver: ResizeObserver;
@@ -156,6 +219,9 @@ export class Viewer {
     this.setOverlay(null);
     this.setPlanes([]);
     this.setVertices(new Float32Array(0));
+    this.setGhost(null);
+    this.setParts(new Map());
+    this.instanceEdges.dispose();
     this.renderer.dispose();
     this.renderer.domElement.remove();
     this.labelLayer.remove();
@@ -166,19 +232,7 @@ export class Viewer {
   setMesh(mesh: ViewMesh | null, fit = false): void {
     this.clear();
     if (mesh) {
-      const g = new THREE.BufferGeometry();
-      g.setAttribute('position', new THREE.BufferAttribute(mesh.positions, 3));
-      g.setAttribute('normal', new THREE.BufferAttribute(mesh.normals, 3));
-      g.setIndex(new THREE.BufferAttribute(mesh.indices, 1));
-      const material = new THREE.MeshStandardMaterial({
-        color: COLORS.body,
-        metalness: 0.15,
-        roughness: 0.55,
-        polygonOffset: true,
-        polygonOffsetFactor: 1,
-        polygonOffsetUnits: 1,
-      });
-      this.body = new THREE.Mesh(g, material);
+      this.body = new THREE.Mesh(bodyGeometry(mesh), bodyMaterial());
       this.scene.add(this.body);
       this.buildEdges(mesh);
       const owner = new Int32Array(mesh.indices.length / 3);
@@ -197,17 +251,7 @@ export class Viewer {
   }
 
   private buildEdges(mesh: ViewMesh): void {
-    const segs: number[] = [];
-    const owner: number[] = [];
-    for (let g = 0; g < mesh.edgeRanges.length; g += 3) {
-      const start = mesh.edgeRanges[g]!;
-      const count = mesh.edgeRanges[g + 1]!;
-      const edge = mesh.edgeRanges[g + 2]!;
-      for (let p = start; p < start + count - 1; p++) {
-        segs.push(...mesh.edgePoints.subarray(p * 3, p * 3 + 6));
-        owner.push(edge);
-      }
-    }
+    const { segs, owner } = edgeSegments(mesh);
     this.segmentEdge = Int32Array.from(owner);
     const g = new THREE.BufferGeometry();
     g.setAttribute('position', new THREE.Float32BufferAttribute(segs, 3));
@@ -227,6 +271,148 @@ export class Viewer {
     }
     this.body = null;
     this.edges = null;
+  }
+
+  // ---------------------------------------------------------------- assembly components (C15.1, A3.1)
+
+  /** The part meshes instances can show, by key. Instances of a part no longer given are removed. */
+  setParts(meshes: ReadonlyMap<string, ViewMesh>): void {
+    for (const [key, geo] of this.partGeometry) {
+      if (meshes.has(key)) continue;
+      for (const [k, inst] of this.instances) if (inst.part === key) this.removeInstance(k);
+      if (this.ghost?.part === key) this.setGhost(null);
+      geo.body.dispose();
+      geo.edges.dispose();
+      this.partGeometry.delete(key);
+    }
+    for (const [key, mesh] of meshes) {
+      if (this.partGeometry.has(key)) continue;
+      const edges = new THREE.BufferGeometry();
+      edges.setAttribute('position', new THREE.Float32BufferAttribute(edgeSegments(mesh).segs, 3));
+      this.partGeometry.set(key, { body: bodyGeometry(mesh), edges });
+    }
+    this.requestRender();
+  }
+
+  /** The components to show; an instance whose part mesh has not been given yet is left out. */
+  setInstances(list: ViewInstance[]): void {
+    const keep = new Set(list.map((i) => i.key));
+    for (const key of [...this.instances.keys()]) if (!keep.has(key)) this.removeInstance(key);
+    for (const i of list) {
+      let inst = this.instances.get(i.key);
+      if (inst && inst.part !== i.part) {
+        this.removeInstance(i.key);
+        inst = undefined;
+      }
+      if (!inst) {
+        inst = this.makeInstance(i.part, false) ?? undefined;
+        if (!inst) continue;
+        this.instances.set(i.key, inst);
+        this.scene.add(inst.group);
+      }
+      setMatrix(inst.group, i.matrix);
+    }
+    if (this.hoveredInstance !== null && !this.instances.has(this.hoveredInstance)) this.setHoveredInstance(null);
+    this.paintInstances();
+    if (this.planes.length > 0) this.paintPlanes(); // sized to the content
+  }
+
+  private makeInstance(part: string, ghost: boolean): Instance | null {
+    const geo = this.partGeometry.get(part);
+    if (!geo) return null;
+    const body = new THREE.Mesh(geo.body, bodyMaterial(ghost ? { transparent: true, opacity: 0.45, depthWrite: false } : {}));
+    const group = new THREE.Group();
+    group.matrixAutoUpdate = false;
+    group.add(body);
+    if (!ghost) group.add(new THREE.LineSegments(geo.edges, this.instanceEdges));
+    return { part, group, body };
+  }
+
+  private removeInstance(key: string): void {
+    const inst = this.instances.get(key);
+    if (!inst) return;
+    this.scene.remove(inst.group);
+    (inst.body.material as THREE.Material).dispose();
+    this.instances.delete(key);
+    this.selectedInstances.delete(key);
+  }
+
+  /** Enables picking whole components (hover highlight, click). */
+  setComponentPicking(enabled: boolean): void {
+    this.pickInstances = enabled;
+    if (!enabled) this.setHoveredInstance(null);
+  }
+
+  setSelectedComponents(keys: Iterable<string>): void {
+    this.selectedInstances = new Set(keys);
+    this.paintInstances();
+  }
+
+  private setHoveredInstance(key: string | null): void {
+    if (key === this.hoveredInstance) return;
+    this.hoveredInstance = key;
+    this.paintInstances();
+    this.events.onComponentHover?.(key);
+  }
+
+  private paintInstances(): void {
+    for (const [key, inst] of this.instances) {
+      const color = key === this.hoveredInstance ? COLORS.componentHover : this.selectedInstances.has(key) ? COLORS.componentSelected : COLORS.body;
+      (inst.body.material as THREE.MeshStandardMaterial).color.setHex(color);
+    }
+    this.requestRender();
+  }
+
+  private pickInstance(clientX: number, clientY: number): string | null {
+    if (this.instances.size === 0) return null;
+    const r = this.rayAt(clientX, clientY);
+    const hit = new THREE.Raycaster(r.origin, r.direction).intersectObjects([...this.instances.values()].map((i) => i.body))[0];
+    if (!hit) return null;
+    for (const [key, inst] of this.instances) if (inst.body === hit.object) return key;
+    return null;
+  }
+
+  /** Shows a see-through copy of a part (null removes it); moveGhost places it. */
+  setGhost(part: string | null): void {
+    if (this.ghost && this.ghost.part === part) return;
+    if (this.ghost) {
+      this.scene.remove(this.ghost.group);
+      (this.ghost.body.material as THREE.Material).dispose();
+      this.ghost = null;
+    }
+    if (part) {
+      this.ghost = this.makeInstance(part, true);
+      if (this.ghost) {
+        this.ghost.group.visible = false;
+        this.scene.add(this.ghost.group);
+      }
+    }
+    this.requestRender();
+  }
+
+  /** Moves the see-through copy (null hides it, e.g. while the cursor is outside the view). */
+  moveGhost(matrix: ArrayLike<number> | null): void {
+    if (!this.ghost) return;
+    this.ghost.group.visible = matrix !== null;
+    if (matrix) setMatrix(this.ghost.group, matrix);
+    this.requestRender();
+  }
+
+  /** Where a screen position meets the plane through `through` that faces the viewer. */
+  pointOnViewPlane(clientX: number, clientY: number, through: [number, number, number] = [0, 0, 0]): [number, number, number] {
+    const ray = this.rayAt(clientX, clientY);
+    const n = this.camera.getWorldDirection(new THREE.Vector3());
+    const t = new THREE.Vector3(...through).sub(ray.origin).dot(n) / ray.direction.dot(n);
+    const p = ray.origin.clone().addScaledVector(ray.direction, t);
+    return [p.x, p.y, p.z];
+  }
+
+  /** Everything the model shows: the part's body or the assembly's components. */
+  private contentBox(): THREE.Box3 {
+    const box = new THREE.Box3();
+    if (this.body) box.expandByObject(this.body);
+    for (const inst of this.instances.values()) box.expandByObject(inst.group);
+    return box;
   }
 
   // ---------------------------------------------------------------- 2D overlay (sketch editing)
@@ -481,8 +667,7 @@ export class Viewer {
       this.planeGroup = null;
     }
     if (this.planes.length === 0) return this.requestRender();
-    const box = new THREE.Box3();
-    if (this.body) box.setFromObject(this.body);
+    const box = this.contentBox();
     const boxCorners = box.isEmpty()
       ? []
       : [0, 1, 2, 3, 4, 5, 6, 7].map((i) => new THREE.Vector3(i & 1 ? box.max.x : box.min.x, i & 2 ? box.max.y : box.min.y, i & 4 ? box.max.z : box.min.z));
@@ -581,6 +766,7 @@ export class Viewer {
       return;
     }
     if (e.buttons !== 0) return;
+    if (this.pickInstances) this.setHoveredInstance(this.pickInstance(e.clientX, e.clientY));
     // One element at a time, in SolidWorks priority: vertex, then edge, then face.
     const vertex = this.pickVertices ? this.pickVertex(e.clientX, e.clientY) : -1;
     const edge = vertex < 0 && this.pickEdges ? this.pick(e.clientX, e.clientY) : -1;
@@ -599,11 +785,13 @@ export class Viewer {
     this.setHoveredVertex(-1);
     this.setHovered(-1);
     this.setHoveredFace(-1);
+    this.setHoveredInstance(null);
   };
 
   private onClick = (e: MouseEvent) => {
     if (this.toolHandler || e.altKey) return;
     const additive = e.ctrlKey || e.shiftKey;
+    if (this.pickInstances) return void this.events.onComponentClick?.(this.pickInstance(e.clientX, e.clientY), additive);
     const vertex = this.pickVertices ? this.pickVertex(e.clientX, e.clientY) : -1;
     if (vertex >= 0) return void this.events.onVertexClick?.(vertex, additive);
     const edge = this.pickEdges ? this.pick(e.clientX, e.clientY) : -1;
@@ -643,8 +831,7 @@ export class Viewer {
       return;
     }
     this.pendingFit = false;
-    const box = new THREE.Box3();
-    if (this.body) box.setFromObject(this.body);
+    const box = this.contentBox();
     if (this.overlayGroup) box.union(new THREE.Box3().setFromObject(this.overlayGroup));
     if (box.isEmpty()) box.set(new THREE.Vector3(-50, -50, -50), new THREE.Vector3(50, 50, 50));
     const center = box.getCenter(new THREE.Vector3());

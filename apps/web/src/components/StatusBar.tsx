@@ -1,3 +1,4 @@
+import { joinPath } from '@3db/model';
 import { useStore, store } from '../state/store';
 import { SKETCH_STATUS_LABEL } from '../strings';
 
@@ -11,6 +12,25 @@ export function StatusBar() {
   const editing = useStore((s) => s.editing);
   const sketchSolve = useStore((s) => s.sketchSolve);
   const bootMs = useStore((s) => s.bootMs);
+  const asm = useStore((s) => s.asm);
+
+  if (asm) {
+    // The part files the assembly uses (not a part only looked at in 「插入零組件」).
+    const statuses = asm.doc.files.map((f) => asm.files.get(joinPath(asm.folder, f.path)));
+    const loading = statuses.filter((s) => !s || s.status === 'loading').length;
+    const missing = statuses.filter((s) => s?.status === 'missing' || s?.status === 'error').length;
+    return (
+      <footer className="status-bar">
+        <span className={`notice ${notice?.kind ?? ''}`} onClick={() => store.dismissNotice()}>
+          {notice?.text ?? '就緒'}
+        </span>
+        {missing > 0 && <span className="status-error">{missing} 個零件檔無法載入</span>}
+        <span>{loading > 0 ? `正在載入零件（${loading}）…` : `零組件 ${asm.doc.components.length} 個`}</span>
+        {bootMs && <span className="muted">核心載入 {Math.round(bootMs.occtMs)} ms</span>}
+        <span className="units">MMGS</span>
+      </footer>
+    );
+  }
 
   // Inside a sketch its live solve is the status; otherwise the selected (or first) sketch of the last rebuild.
   const sketchId = [editing?.featureId, selected, ...doc.features.map((f) => f.id)].find((id) => id && doc.features.find((f) => f.id === id)?.type === 'sketch');

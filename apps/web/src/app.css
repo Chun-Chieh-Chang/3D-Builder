@@ -160,3 +160,16 @@ code { font-family: Consolas, 'Cascadia Mono', monospace; font-size: 11px; }
 .status-bar .notice.error { color: var(--error); }
 .status-bar .notice.info { color: var(--ok); }
 .status-bar .units { font-weight: 600; color: var(--muted); }
+
+/* Assemblies (2A) */
+.tree-row.loading .name { color: var(--muted); }
+.tree-row.folder { color: var(--muted); }
+.file-list { list-style: none; margin: 0 0 6px; padding: 2px; border: 1px solid var(--line); border-radius: 3px; background: #fff; max-height: 260px; overflow: auto; }
+.file-list li { display: flex; align-items: center; gap: 6px; padding: 3px 6px; border-radius: 3px; cursor: pointer; }
+.file-list li:hover { background: #e3ebf4; }
+.file-list li.selected { background: var(--accent-soft); color: var(--accent); }
+.file-list li .name { flex: 1; }
+.file-list li .folder { font-size: 11px; }
+.pm-button { border: 1px solid var(--line); background: #fff; border-radius: 3px; padding: 3px 10px; }
+.pm-button:hover { background: var(--accent-soft); border-color: #a5c8ec; }
+.pm-ok:disabled { color: #aab2bd; cursor: default; }

@@ -220,3 +220,53 @@ export interface PartDoc {
 export function findFeature(doc: PartDoc, id: Id): Feature | undefined {
   return doc.features.find((f) => f.id === id);
 }
+
+// ---------------------------------------------------------------- assembly (C15, A3.1, B9.4)
+
+/** Assemblies have their own version line: a part and an assembly change for different reasons. */
+export const ASSEMBLY_SCHEMA_VERSION = 1;
+
+/** Unit quaternion [x, y, z, w]. */
+export type Quat = [number, number, number, number];
+
+/**
+ * Where a component sits (A3.1): its part's origin at `position` (mm), its axes turned by `rotation`.
+ * For a floating component this is where the user put it: the start and the intent for whatever its
+ * mates leave free (2B). Solved positions are derived and never stored.
+ */
+export interface Pose {
+  position: Vec3;
+  rotation: Quat;
+}
+
+/**
+ * A file the assembly uses (B9.4), by its path relative to the assembly file's folder, "/" separated
+ * ("定位板.3dbx", "零件/削邊銷.3dbx", "../共用/銷.3dbx"). Every component of the file refers to this
+ * one entry, so the path is stored once.
+ */
+export interface FileRef {
+  id: Id;
+  path: string;
+}
+
+export interface Component {
+  id: Id;
+  /** The part file: a FileRef of the assembly. Several components may use one file (C15.1). */
+  file: Id;
+  /** SolidWorks' instance number, 「削邊銷<2>」: unique among the components of one file. */
+  instance: number;
+  /** A fixed component never moves (C15.2); a floating one is placed by the user and, from 2B, by its mates. */
+  fixed: boolean;
+  placement: Pose;
+}
+
+export interface AssemblyDoc {
+  kind: 'assembly';
+  schemaVersion: number;
+  files: FileRef[];
+  /** FeatureManager order. */
+  components: Component[];
+  properties: Record<string, string>;
+  /** As in parts (B1.3): ids are never reused. */
+  idCounters: Record<string, number>;
+}

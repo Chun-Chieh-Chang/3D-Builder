@@ -5,8 +5,8 @@
 
 ## 決策
 
-1. **一值一處**：設計意圖只存在 `@3db/model` 的 `PartDoc`；其他地方以 ID 或持久名稱引用。
-2. **UI 不直接改文件**：所有修改都經過文件指令層（`Command` → `DocHistory.execute`）。UI、日後的腳本 API、錄製、協作共用同一路徑。
+1. **一值一處**：設計意圖只存在 `@3db/model` 的文件（`PartDoc`、`AssemblyDoc`）；其他地方以 ID、持久名稱或檔案路徑引用。
+2. **UI 不直接改文件**：所有修改都經過文件指令層（`Command` → `DocHistory.execute`，組合件是 `AssemblyCommand` → `AssemblyHistory.execute`）。UI、日後的腳本 API、錄製、協作共用同一路徑。
 3. **衍生資料可重建**：B-Rep、網格、元素名稱、草圖解、DOF、物質特性、錯誤清單都由 `Regenerator.rebuild(doc)` 產生，永不寫回文件。重新計算是純函數：同一份文件永遠得到同一個結果。
 4. **父子關係不另存**：`@3db/regen/dag` 從特徵內的參考即時推導。
 5. **參考 = 持久名稱 + 幾何指紋**，禁止以拓撲索引引用（`Ref`）。
@@ -17,7 +17,7 @@
 
 | 套件 | 擁有的目錄 ID |
 |---|---|
-| `@3db/model` | B1、B5、B6、B7、B8、B9（資料） |
+| `@3db/model` | B1、B5、B6、B7、B8、B9（資料）；組合件文件（C15 的資料、A3.1 位姿） |
 | `@3db/sketch` | A2、C1、C2 |
 | `@3db/naming` | B4 |
 | `@3db/kernel` | A1、A4.1、A5.2、E1（計算）、F1/F2 的轉檔機制 |

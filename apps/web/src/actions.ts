@@ -11,18 +11,22 @@ export interface UiAction {
   id: string;
   label: string;
   shortcut?: string;
-  group: 'file' | 'edit' | 'feature' | 'sketch' | 'sketch-tool' | 'view';
+  group: 'file' | 'edit' | 'feature' | 'sketch' | 'sketch-tool' | 'assembly' | 'view';
   enabled(s: UiState): boolean;
   run(): void;
   /** Toggle state for tool buttons (the active sketch tool). */
   active?(): boolean;
 }
 
-const idle = (s: UiState) => s.editing === null;
+/** No PropertyManager session in the open document: file commands may replace or save it. */
+const idle = (s: UiState) => (s.active === 'assembly' ? !s.asm?.insert : s.editing === null);
+/** A part is open and nothing is being edited in it. */
+const partIdle = (s: UiState) => s.active === 'part' && s.editing === null;
+const assemblyIdle = (s: UiState) => s.active === 'assembly' && !s.asm?.insert;
 const sketching = (s: UiState) => s.editing?.kind === 'sketch';
 const selectedFeature = (s: UiState) => s.doc.features.find((f) => f.id === s.selected);
-const sketchSelected = (s: UiState) => idle(s) && selectedFeature(s)?.type === 'sketch';
-const hasBody = (s: UiState) => idle(s) && !!s.result?.mesh;
+const sketchSelected = (s: UiState) => partIdle(s) && selectedFeature(s)?.type === 'sketch';
+const hasBody = (s: UiState) => partIdle(s) && !!s.result?.mesh;
 /** A plane to sketch on: a default or reference plane in the tree, or a planar face in the graphics area. */
 const sketchPlane = (s: UiState): DatumPlaneName | Ref | null => {
   if (s.selected !== null && isDatumPlaneName(s.selected)) return s.selected;
@@ -34,11 +38,12 @@ const SKETCH_TOOLS: ToolId[] = ['dimension', 'line', 'centerline', 'rect', 'cent
 
 export const ACTIONS: UiAction[] = [
   { id: 'new-part', label: '新零件', shortcut: 'Ctrl+N', group: 'file', enabled: idle, run: () => store.newPart() },
+  { id: 'new-assembly', label: '新組合件', group: 'file', enabled: idle, run: () => store.newAssembly() },
   { id: 'new-demo', label: '新示範件', group: 'file', enabled: idle, run: () => store.newDemo() },
   { id: 'open', label: '開啟舊檔', shortcut: 'Ctrl+O', group: 'file', enabled: idle, run: () => store.open() },
   { id: 'save', label: '儲存檔案', shortcut: 'Ctrl+S', group: 'file', enabled: idle, run: () => void store.save() },
   { id: 'save-as', label: '另存新檔', group: 'file', enabled: idle, run: () => void store.saveAs() },
-  { id: 'export-step', label: '輸出 STEP', group: 'file', enabled: (s) => idle(s) && s.bootMs !== null, run: () => void store.exportStep() },
+  { id: 'export-step', label: '輸出 STEP', group: 'file', enabled: (s) => partIdle(s) && s.bootMs !== null, run: () => void store.exportStep() },
 
   { id: 'extrude', label: '伸長填料/基材', group: 'feature', enabled: sketchSelected, run: () => store.newExtrude('boss') },
   { id: 'revolve', label: '旋轉填料/基材', group: 'feature', enabled: sketchSelected, run: () => store.newRevolve('boss') },
@@ -46,14 +51,18 @@ export const ACTIONS: UiAction[] = [
   { id: 'revolve-cut', label: '旋轉除料', group: 'feature', enabled: (s) => sketchSelected(s) && !!s.result?.mesh, run: () => store.newRevolve('cut') },
   { id: 'fillet', label: '圓角', group: 'feature', enabled: hasBody, run: () => store.newFillet() },
   { id: 'chamfer', label: '導角', group: 'feature', enabled: hasBody, run: () => store.newChamfer() },
-  { id: 'ref-plane', label: '基準面', group: 'feature', enabled: idle, run: () => store.newRefPlane() },
-  { id: 'import-step', label: '輸入 STEP', group: 'feature', enabled: (s) => idle(s) && s.bootMs !== null, run: () => void store.importStep() },
+  { id: 'ref-plane', label: '基準面', group: 'feature', enabled: partIdle, run: () => store.newRefPlane() },
+  { id: 'import-step', label: '輸入 STEP', group: 'feature', enabled: (s) => partIdle(s) && s.bootMs !== null, run: () => void store.importStep() },
+
+  { id: 'insert-component', label: '插入零組件', group: 'assembly', enabled: assemblyIdle, run: () => void store.assembly?.startInsert() },
+  { id: 'fix-component', label: '固定', group: 'assembly', enabled: (s) => assemblyIdle(s) && selectedComponent(s)?.fixed === false, run: () => setFixed(true) },
+  { id: 'float-component', label: '浮動', group: 'assembly', enabled: (s) => assemblyIdle(s) && selectedComponent(s)?.fixed === true, run: () => setFixed(false) },
 
   {
     id: 'sketch',
     label: '草圖',
     group: 'sketch',
-    enabled: (s) => idle(s) && sketchPlane(s) !== null,
+    enabled: (s) => partIdle(s) && sketchPlane(s) !== null,
     run: () => {
       const plane = sketchPlane(store.getState());
       if (plane) store.newSketch(plane);
@@ -72,8 +81,8 @@ export const ACTIONS: UiAction[] = [
   { id: 'construction', label: '幾何建構線', group: 'sketch-tool', enabled: sketching, run: () => toggleConstruction() },
   { id: 'exit-sketch', label: '離開草圖', group: 'sketch-tool', enabled: sketching, run: () => store.commitEdit() },
 
-  { id: 'undo', label: '復原', shortcut: 'Ctrl+Z', group: 'edit', enabled: (s) => s.canUndo, run: () => store.undo() },
-  { id: 'redo', label: '重做', shortcut: 'Ctrl+Y', group: 'edit', enabled: (s) => s.canRedo, run: () => store.redo() },
+  { id: 'undo', label: '復原', shortcut: 'Ctrl+Z', group: 'edit', enabled: (s) => (s.asm ? s.asm.canUndo && !s.asm.insert : s.canUndo), run: () => store.undo() },
+  { id: 'redo', label: '重做', shortcut: 'Ctrl+Y', group: 'edit', enabled: (s) => (s.asm ? s.asm.canRedo && !s.asm.insert : s.canRedo), run: () => store.redo() },
   { id: 'rebuild', label: '重新計算', shortcut: 'Ctrl+B', group: 'edit', enabled: () => true, run: () => store.rebuild() },
 
   { id: 'fit', label: '全部顯示', shortcut: 'F', group: 'view', enabled: () => true, run: () => store.viewer?.fitAll() },
@@ -89,6 +98,16 @@ export const action = (id: string): UiAction => {
   if (!a) throw new Error(`unknown action ${id}`);
   return a;
 };
+
+function selectedComponent(s: UiState) {
+  const id = s.asm?.selected;
+  return id ? s.asm!.doc.components.find((c) => c.id === id) : undefined;
+}
+
+function setFixed(value: boolean): void {
+  const c = selectedComponent(store.getState());
+  if (c) store.assembly?.setFixed([c.id], value);
+}
 
 function lookAtSketch(): void {
   const sketch = store.editedSketch();
@@ -120,15 +139,25 @@ export function installShortcuts(): () => void {
     if (target && (target.tagName === 'INPUT' || target.tagName === 'SELECT' || target.tagName === 'TEXTAREA')) return;
     const s = store.getState();
     // An open dialog owns the keyboard (Esc closes it; its focused button takes Enter).
-    if (s.confirmDelete || s.whatsWrong || s.unsaved) {
+    if (s.confirmDelete || s.whatsWrong || s.unsaved || s.folderRequest || s.asm?.confirmDelete) {
       if (e.key === 'Escape') {
         store.requestDelete(null);
         store.showWhatsWrong(false);
         void store.answerUnsaved('cancel');
+        store.cancelFolder();
+        store.assembly?.requestDelete(null);
       }
       return;
     }
-    if (s.editing?.kind === 'sketch') {
+    if (s.asm) {
+      const a = store.assembly;
+      if (s.asm.insert) {
+        if (e.key === 'Escape') return void a?.cancelInsert();
+        if (e.key === 'Enter') return void a?.place(null);
+      } else if (e.key === 'Delete' && selectedComponent(s)) {
+        return void a?.requestDelete([s.asm.selected!]);
+      }
+    } else if (s.editing?.kind === 'sketch') {
       // Inside a sketch, Esc ends the current tool and Delete removes the selection (SolidWorks);
       // leaving the sketch is the confirmation corner or 「離開草圖」.
       if (e.key === 'Escape') return void store.sketcher?.escape();

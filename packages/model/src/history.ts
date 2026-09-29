@@ -1,6 +1,7 @@
-import { applyPatches, enablePatches, produceWithPatches, type Patch } from 'immer';
-import type { PartDoc } from './schema';
+import { applyPatches, enablePatches, produceWithPatches, type Draft, type Patch } from 'immer';
+import type { AssemblyDoc, PartDoc } from './schema';
 import { mutate, type Command } from './commands';
+import { mutateAssembly, type AssemblyCommand } from './assembly';
 
 enablePatches();
 
@@ -19,8 +20,6 @@ interface Transaction {
   base: number;
 }
 
-type Listener = (doc: PartDoc) => void;
-
 function merge(label: string, steps: Step[]): Step {
   return {
     label,
@@ -32,23 +31,32 @@ function merge(label: string, steps: Step[]): Step {
   };
 }
 
+/** A step that replaces the whole document, forward and back. */
+function snapshot<D>(label: string, from: D, to: D): Step {
+  return { label, patches: [{ op: 'replace', path: [], value: to }], inverse: [{ op: 'replace', path: [], value: from }] };
+}
+
 /**
- * Undo/redo over the SSOT (B7.2) with edit sessions (B7.3). Inside a session (a PropertyManager
- * or a sketch), undo/redo step through the session's own commands, like SolidWorks inside a sketch;
- * OK commits the whole session as one undo step, Cancel restores the document as it was.
+ * Undo/redo over the SSOT (B7.2) with edit sessions (B7.3), for any document and its commands. Inside
+ * a session (a PropertyManager or a sketch), undo/redo step through the session's own commands, like
+ * SolidWorks inside a sketch; OK commits the whole session as one undo step, Cancel restores the
+ * document as it was.
  */
-export class DocHistory {
-  private current: PartDoc;
+export class History<D, C extends { type: string }> {
+  private current: D;
   private undoStack: Step[] = [];
   private redoStack: Step[] = [];
   private tx: Transaction | null = null;
-  private listeners = new Set<Listener>();
+  private listeners = new Set<(doc: D) => void>();
 
-  constructor(doc: PartDoc) {
+  constructor(
+    doc: D,
+    private readonly recipe: (draft: Draft<D>, cmd: C) => void,
+  ) {
     this.current = doc;
   }
 
-  get doc(): PartDoc {
+  get doc(): D {
     return this.current;
   }
 
@@ -64,16 +72,16 @@ export class DocHistory {
     return this.tx !== null;
   }
 
-  subscribe(fn: Listener): () => void {
+  subscribe(fn: (doc: D) => void): () => void {
     this.listeners.add(fn);
     return () => this.listeners.delete(fn);
   }
 
   /** Applies a command; throws CommandError without changing anything if it is invalid. */
-  execute(cmd: Command, label: string = cmd.type): void {
-    const [next, patches, inverse] = produceWithPatches(this.current, (d) => mutate(d, cmd));
+  execute(cmd: C, label: string = cmd.type): void {
+    const [next, patches, inverse] = produceWithPatches(this.current, (d: Draft<D>) => this.recipe(d, cmd));
     if (patches.length === 0) return;
-    this.current = next;
+    this.current = next as D;
     const step = { label, patches, inverse };
     if (this.tx) {
       this.tx.steps.push(step);
@@ -110,7 +118,7 @@ export class DocHistory {
     const tx = this.tx;
     if (!tx) return;
     this.tx = null;
-    this.current = applyPatches(this.current, merge(tx.label, tx.steps).inverse);
+    this.current = applyPatches(this.current as object, merge(tx.label, tx.steps).inverse) as D;
     this.emit();
   }
 
@@ -118,7 +126,7 @@ export class DocHistory {
     if (!this.canUndo) return;
     const [from, to] = this.tx ? [this.tx.steps, this.tx.redo] : [this.undoStack, this.redoStack];
     const step = from.pop()!;
-    this.current = applyPatches(this.current, step.inverse);
+    this.current = applyPatches(this.current as object, step.inverse) as D;
     to.push(step);
     this.emit();
   }
@@ -127,12 +135,52 @@ export class DocHistory {
     if (!this.canRedo) return;
     const [from, to] = this.tx ? [this.tx.redo, this.tx.steps] : [this.redoStack, this.undoStack];
     const step = from.pop()!;
-    this.current = applyPatches(this.current, step.patches);
+    this.current = applyPatches(this.current as object, step.patches) as D;
     to.push(step);
+    this.emit();
+  }
+
+  /**
+   * Rewrites the document and every state undo or redo can reach with `fn`, keeping the steps and
+   * their labels: e.g. file paths after an assembly was saved into another folder (B9.4). Each step
+   * then replaces the whole document. Not while an edit session is open.
+   */
+  rebase(fn: (doc: D) => D): void {
+    if (this.tx) throw new Error('編輯中不能改寫復原記錄');
+    const apply = (doc: D, patches: Patch[]) => applyPatches(doc as object, patches) as D;
+    // past[i] is the state before undoStack[i]; the last one is the current document.
+    const past: D[] = [this.current];
+    for (let i = this.undoStack.length - 1; i >= 0; i--) past.unshift(apply(past[0]!, this.undoStack[i]!.inverse));
+    // future[k] is the state after the k-th next redo (the top of the redo stack comes first).
+    const future: D[] = [];
+    for (let i = this.redoStack.length - 1; i >= 0; i--) future.push(apply(future.at(-1) ?? this.current, this.redoStack[i]!.patches));
+    const p = past.map(fn);
+    const f = future.map(fn);
+    this.undoStack = this.undoStack.map((s, i) => snapshot(s.label, p[i]!, p[i + 1]!));
+    const n = this.redoStack.length;
+    this.redoStack = this.redoStack.map((s, i) => {
+      const k = n - 1 - i;
+      return snapshot(s.label, k === 0 ? p.at(-1)! : f[k - 1]!, f[k]!);
+    });
+    this.current = p.at(-1)!;
     this.emit();
   }
 
   private emit(): void {
     for (const fn of this.listeners) fn(this.current);
+  }
+}
+
+/** Undo/redo of a part. */
+export class DocHistory extends History<PartDoc, Command> {
+  constructor(doc: PartDoc) {
+    super(doc, mutate);
+  }
+}
+
+/** Undo/redo of an assembly. */
+export class AssemblyHistory extends History<AssemblyDoc, AssemblyCommand> {
+  constructor(doc: AssemblyDoc) {
+    super(doc, mutateAssembly);
   }
 }

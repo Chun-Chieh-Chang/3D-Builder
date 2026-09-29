@@ -3,6 +3,7 @@ import { findFeature, type Id } from '@3db/model';
 import { deletion } from '@3db/regen/dag';
 import { store, useDocumentName, useStore } from '../state/store';
 import { featureLabel } from '../strings';
+import { componentInfo } from './AssemblyTree';
 import { Icon } from './Icon';
 
 /**
@@ -139,7 +140,7 @@ export function UnsavedDialog() {
       <div className="modal" role="dialog" aria-label="要儲存變更嗎" onPointerDown={(e) => e.stopPropagation()}>
         <h3>要儲存變更嗎？</h3>
         <p>
-          「{name}」有尚未儲存的變更。{action === 'open' ? '開啟其他檔案' : '建立新零件'}之前要先儲存嗎？
+          「{name}」有尚未儲存的變更。{action === 'open' ? '開啟其他檔案' : action === 'new-assembly' ? '建立新組合件' : '建立新零件'}之前要先儲存嗎？
         </p>
         <div className="modal-actions">
           <button ref={save} className="primary" onClick={answer('save')}>
@@ -147,6 +148,64 @@ export function UnsavedDialog() {
           </button>
           <button onClick={answer('discard')}>不儲存</button>
           <button onClick={answer('cancel')}>取消</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * The project folder (B9.4): an assembly and the parts it uses live in one folder the user grants
+ * once. The folder picker needs a click of its own, so this dialog asks for it.
+ */
+export function FolderDialog() {
+  const reason = useStore((s) => s.folderRequest);
+  const choose = useRef<HTMLButtonElement>(null);
+  useEffect(() => choose.current?.focus(), [reason]);
+  if (!reason) return null;
+  return (
+    <div className="modal-backdrop" onPointerDown={() => store.cancelFolder()}>
+      <div className="modal" role="dialog" aria-label="選擇專案資料夾" onPointerDown={(e) => e.stopPropagation()}>
+        <h3>選擇專案資料夾</h3>
+        <p>{reason}</p>
+        <p className="hint">瀏覽器會詢問是否允許讀取這個資料夾；本工作階段內只問一次。</p>
+        <div className="modal-actions">
+          <button ref={choose} className="primary" onClick={() => void store.chooseFolder()}>
+            選擇資料夾…
+          </button>
+          <button onClick={() => store.cancelFolder()}>取消</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/** 「確認刪除」 for components (C15.12): what goes; the part files themselves stay. */
+export function DeleteComponentsDialog() {
+  const asm = useStore((s) => s.asm);
+  const ok = useRef<HTMLButtonElement>(null);
+  const ids = asm?.confirmDelete ?? null;
+  useEffect(() => ok.current?.focus(), [ids]);
+  if (!asm || !ids) return null;
+  const close = () => store.assembly?.requestDelete(null);
+  const components = asm.doc.components.filter((c) => ids.includes(c.id));
+  return (
+    <div className="modal-backdrop" onPointerDown={close}>
+      <div className="modal" role="dialog" aria-label="確認刪除" onPointerDown={(e) => e.stopPropagation()}>
+        <h3>確認刪除</h3>
+        <p className="muted">將從組合件刪除以下零組件（零件檔本身不會刪除）：</p>
+        <ul className="delete-list">
+          {components.map((c) => (
+            <li key={c.id}>
+              <Icon name="part" /> {componentInfo(asm, c).name}
+            </li>
+          ))}
+        </ul>
+        <div className="modal-actions">
+          <button ref={ok} className="primary" onClick={() => store.assembly?.deleteComponents(ids)}>
+            刪除
+          </button>
+          <button onClick={close}>取消</button>
         </div>
       </div>
     </div>

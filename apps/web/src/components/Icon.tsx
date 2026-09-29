@@ -1,12 +1,14 @@
 import type { ReactElement } from 'react';
 
-type IconName = 'part' | 'origin' | 'plane' | 'refPlane' | 'sketch' | 'extrude' | 'revolve' | 'fillet' | 'chamfer' | 'importedBody' | 'error' | 'warning' | 'ok' | 'cancel';
+type IconName = 'part' | 'assembly' | 'mates' | 'origin' | 'plane' | 'refPlane' | 'sketch' | 'extrude' | 'revolve' | 'fillet' | 'chamfer' | 'importedBody' | 'error' | 'warning' | 'ok' | 'cancel';
 
 /** Default planes and reference planes share one icon, as in SolidWorks. */
 const PLANE = <path d="M4 4h10l-2 8H2z" />;
 
 const PATHS: Record<IconName, ReactElement> = {
   part: <path d="M3 5l5-3 5 3v6l-5 3-5-3z M3 5l5 3 5-3 M8 8v6" />,
+  assembly: <path d="M1.5 6l3.5-2 3.5 2v4l-3.5 2-3.5-2z M7.5 4l3.5-2 3.5 2v4l-3.5 2 M11 6v4 M8.5 6l2.5 1.5 3.5-2" />,
+  mates: <path d="M2 5h5v6H2z M9 5h5v6H9z M7 8h2" />,
   origin: <path d="M8 2v12 M2 8h12 M8 8m-2.5 0a2.5 2.5 0 1 0 5 0a2.5 2.5 0 1 0-5 0" />,
   plane: PLANE,
   refPlane: PLANE,

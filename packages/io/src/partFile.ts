@@ -1,6 +1,7 @@
-import { FormatError, parsePart, serializePart, type BlobRef, type PartDoc } from '@3db/model';
+import { parsePart, serializePart, type BlobRef, type PartDoc } from '@3db/model';
+import { DOCUMENT_ENTRY, documentEntry, documentText, isZip, zipEntries } from './container';
 import { safeFileName } from './names';
-import { readZip, writeZip, ZipError, type ZipEntry } from './zip';
+import { writeZip, type ZipEntry } from './zip';
 
 /**
  * The part file `.3dbx` (B9.1, F7.1): a ZIP archive holding
@@ -13,7 +14,7 @@ import { readZip, writeZip, ZipError, type ZipEntry } from './zip';
  */
 export const PART_FILE_EXTENSION = '.3dbx';
 
-const DOCUMENT = 'document.json';
+const WHAT = '零件檔';
 const BLOB_EXTENSION: Record<BlobRef['kind'], string> = { step: 'step' };
 const blobPath = (b: BlobRef) => `blobs/${b.sha256}.${BLOB_EXTENSION[b.kind]}`;
 
@@ -33,7 +34,7 @@ export async function sha256Hex(data: Uint8Array): Promise<string> {
 
 /** The document first, then each blob it references once; blobs it no longer references are dropped. */
 export async function writePartFile(doc: PartDoc, blobs: ReadonlyMap<string, Uint8Array> = new Map()): Promise<Uint8Array> {
-  const entries: ZipEntry[] = [{ name: DOCUMENT, data: new TextEncoder().encode(serializePart(doc)) }];
+  const entries: ZipEntry[] = [{ name: DOCUMENT_ENTRY, data: new TextEncoder().encode(serializePart(doc)) }];
   const paths = new Map(doc.blobs.map((b) => [blobPath(b), b.sha256]));
   for (const [path, sha256] of [...paths].sort(([a], [b]) => (a < b ? -1 : 1))) {
     const data = blobs.get(sha256);
@@ -42,29 +43,19 @@ export async function writePartFile(doc: PartDoc, blobs: ReadonlyMap<string, Uin
   return writeZip(entries);
 }
 
-const isZip = (b: Uint8Array) => b.length >= 4 && b[0] === 0x50 && b[1] === 0x4b && b[2] === 0x03 && b[3] === 0x04;
-
-function text(bytes: Uint8Array): string {
-  try {
-    return new TextDecoder('utf-8', { fatal: true }).decode(bytes); // a leading BOM is dropped
-  } catch {
-    throw new FormatError('不是 3D-Builder 零件檔（既不是 .3dbx，也不是文件文字）');
-  }
+/** The bare document text older versions saved (B9.2: old files keep opening). */
+export function readOldPartFile(bytes: Uint8Array): PartFile {
+  return { doc: parsePart(documentText(bytes, WHAT, '（既不是 .3dbx，也不是文件文字）')), blobs: new Map(), format: 'json', warnings: [] };
 }
 
-/** Opens a `.3dbx` file, or the bare document text older versions saved (B9.2: old files keep opening). */
+/** Opens a `.3dbx` file, or the bare document text older versions saved. */
 export async function readPartFile(bytes: Uint8Array): Promise<PartFile> {
-  if (!isZip(bytes)) return { doc: parsePart(text(bytes)), blobs: new Map(), format: 'json', warnings: [] };
-  let entries;
-  try {
-    entries = await readZip(bytes);
-  } catch (e) {
-    throw e instanceof ZipError ? new FormatError(e.message) : e;
-  }
-  const files = new Map(entries.map((e) => [e.name, e.data]));
-  const document = files.get(DOCUMENT);
-  if (!document) throw new FormatError('不是 3D-Builder 零件檔（缺少 document.json）');
-  const doc = parsePart(text(document));
+  return isZip(bytes) ? partFromEntries(await zipEntries(bytes)) : readOldPartFile(bytes);
+}
+
+/** The part in an opened `.3dbx` archive, with the data it imports. */
+export async function partFromEntries(files: ReadonlyMap<string, Uint8Array>): Promise<PartFile> {
+  const doc = parsePart(documentEntry(files, WHAT));
   const blobs = new Map<string, Uint8Array>();
   const warnings: string[] = [];
   const seen = new Set<string>();
