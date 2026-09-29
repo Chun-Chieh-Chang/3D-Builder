@@ -4,10 +4,11 @@ import { useDocumentTitle, useStore } from './state/store';
 import { AssemblyTree } from './components/AssemblyTree';
 import { AssemblyViewport } from './components/AssemblyViewport';
 import { CommandBar } from './components/CommandBar';
-import { DeleteComponentsDialog, DeleteDialog, FolderDialog, UnsavedDialog, WhatsWrongDialog } from './components/Dialogs';
+import { DeleteComponentsDialog, DeleteDialog, FolderDialog, MissingFilesDialog, UnsavedDialog, WhatsWrongDialog } from './components/Dialogs';
 import { FeatureTree } from './components/FeatureTree';
 import { InsertComponentPanel } from './components/InsertComponentPanel';
 import { MatePanel } from './components/MatePanel';
+import { MovePanel } from './components/MovePanel';
 import { PropertyManager } from './components/PropertyManager';
 import { StatusBar } from './components/StatusBar';
 import { Viewport } from './components/Viewport';
@@ -16,8 +17,9 @@ export function App() {
   const assembly = useStore((s) => s.active === 'assembly');
   const inserting = useStore((s) => !!s.asm?.insert);
   const mating = useStore((s) => !!s.asm?.mate);
+  const moving = useStore((s) => !!s.asm?.move);
   const partEditing = useStore((s) => s.editing);
-  const editing = assembly ? inserting || mating : !!partEditing;
+  const editing = assembly ? inserting || mating || moving : !!partEditing;
   const title = useDocumentTitle();
   useEffect(() => installShortcuts(), []);
   useEffect(() => {
@@ -32,7 +34,7 @@ export function App() {
             <span className={editing ? '' : 'active'}>FeatureManager</span>
             <span className={editing ? 'active' : ''}>PropertyManager</span>
           </div>
-          {assembly ? mating ? <MatePanel /> : inserting ? <InsertComponentPanel /> : <AssemblyTree /> : editing ? <PropertyManager /> : <FeatureTree />}
+          {assembly ? mating ? <MatePanel /> : inserting ? <InsertComponentPanel /> : moving ? <MovePanel /> : <AssemblyTree /> : editing ? <PropertyManager /> : <FeatureTree />}
         </aside>
         {assembly ? <AssemblyViewport /> : <Viewport />}
       </div>
@@ -42,6 +44,7 @@ export function App() {
       <WhatsWrongDialog />
       <UnsavedDialog />
       <FolderDialog />
+      <MissingFilesDialog />
     </div>
   );
 }

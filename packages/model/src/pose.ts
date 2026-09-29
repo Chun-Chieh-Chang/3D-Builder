@@ -45,6 +45,19 @@ export function relativePose(a: Pose, b: Pose): Pose {
   return { position: turn(inv, d), rotation: rotation[3] < 0 ? [-rotation[0], -rotation[1], -rotation[2], -rotation[3]] : rotation };
 }
 
+/** `rotation`, then `turn` (both about the assembly's axes), as one unit quaternion. */
+export function composeRotations(turn: Quat, rotation: Quat): Quat {
+  const q = mul(turn, rotation);
+  const n = Math.hypot(...q);
+  const s = q[3] < 0 ? -1 / n : 1 / n; // one sign for one rotation
+  return [q[0] * s, q[1] * s, q[2] * s, q[3] * s];
+}
+
+/** A point in assembly coordinates, in the part's coordinates: the inverse of transformPoint. */
+export function toPartPoint(pose: Pose, p: Vec3): Vec3 {
+  return relativePose(pose, { position: p, rotation: IDENTITY_ROTATION }).position;
+}
+
 function mul([ax, ay, az, aw]: Quat, [bx, by, bz, bw]: Quat): Quat {
   return [aw * bx + ax * bw + ay * bz - az * by, aw * by - ax * bz + ay * bw + az * bx, aw * bz + ax * by - ay * bx + az * bw, aw * bw - ax * bx - ay * by - az * bz];
 }

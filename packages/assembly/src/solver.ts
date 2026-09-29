@@ -1,7 +1,7 @@
 import type { Pose, Quat, Vec3 } from '@3db/model';
 import { compileMate, type MateSpec, type Residual } from './equations';
 import { placed } from './geometry';
-import { add, expRotation, qmul, qnormalize, rotate, sub } from './math';
+import { across, add, cross, dot, expRotation, qmul, qnormalize, rotate, scale, sub, unit } from './math';
 import { nullSpace, rank, solveDamped } from './linalg';
 
 /** A component as the solver sees it (A3.1). */
@@ -35,11 +35,36 @@ export interface Solution {
   poses: Map<string, Pose>;
   bodies: Map<string, BodyResult>;
   mates: Map<string, MateResult>;
+  /** With a goal: the floating components solved together with the goal's (it included), the ones a move can take along. */
+  group?: string[];
   ms: number;
+}
+
+/**
+ * What a move asks of its component (C15.3, A3.5). Points are in the part's coordinates, lines and
+ * positions in the assembly's.
+ */
+export type GoalTerm =
+  /** A point of the part onto a line: the part dragged by that point along the line under the cursor. */
+  | { kind: 'pointOnLine'; point: Vec3; origin: Vec3; dir: Vec3 }
+  /** A point of the part at a position. */
+  | { kind: 'pointAt'; point: Vec3; target: Vec3 }
+  /** The part turned to an orientation. */
+  | { kind: 'rotation'; rotation: Quat };
+
+/**
+ * A move of one component (dragging it, or moving it by numbers). The terms come most important
+ * first: each is met as far as the mates allow, and the next only as far as those before it allow.
+ */
+export interface MoveGoal {
+  body: string;
+  terms: GoalTerm[];
 }
 
 export interface SolveOptions {
   maxIterations?: number;
+  /** Moves a component toward the goal through the freedoms its mates leave; the rest is solved as usual. */
+  goal?: MoveGoal;
 }
 
 interface Body {
@@ -154,8 +179,15 @@ export function solve(input: SolverBody[], specs: MateSpec[], options: SolveOpti
   }
 
   const dofs = new Map<Body, number>();
+  const goal = options.goal;
+  const goalBody = goal ? bodies.get(goal.body) : undefined;
+  let group: string[] = [];
   for (const g of groups.values()) {
     const held = solveGroup(g.bodies, g.mates, L, tol, maxIterations, conflicts);
+    if (goalBody && g.bodies.includes(goalBody)) {
+      follow(g.bodies, held, goalBody, goal!.terms, L, tol, maxIterations);
+      group = g.bodies.map((b) => b.id);
+    }
     freedoms(g.bodies, held, L).forEach((dof, i) => dofs.set(g.bodies[i]!, dof));
   }
 
@@ -172,7 +204,7 @@ export function solve(input: SolverBody[], specs: MateSpec[], options: SolveOpti
     const dof = b.fixed ? 0 : (dofs.get(b) ?? 6);
     results.set(b.id, { status: b.fixed ? 'fixed' : over.has(b) ? 'over' : dof > 0 ? 'under' : 'full', dof });
   }
-  return { poses, bodies: results, mates, ms: performance.now() - t0 };
+  return { poses, bodies: results, mates, ...(goal ? { group } : {}), ms: performance.now() - t0 };
 }
 
 /**
@@ -351,4 +383,173 @@ function freedoms(bodies: Body[], mates: Live[], L: number): number[] {
   const { basis, count } = nullSpace(A, n);
   if (count === 0) return bodies.map(() => 0);
   return bodies.map((b) => rank(basis.subarray(6 * b.k * count, (6 * b.k + 6) * count), 6, count, 1e-5));
+}
+
+// ---------------------------------------------------------------- moving a component (C15.3, A3.5)
+
+const X: Vec3 = [1, 0, 0];
+const Y: Vec3 = [0, 1, 0];
+
+/** A goal term as equations of the body's pose, all zero when it is met exactly. */
+type Term = (q: Quat, t: Vec3, L: number) => number[];
+
+function termOf(g: GoalTerm): Term {
+  switch (g.kind) {
+    case 'pointOnLine': {
+      // The two components of the point's offset across the line.
+      const d = unit(g.dir);
+      const e1 = unit(across(Math.abs(d[0]) < 0.9 ? X : Y, d));
+      const e2 = cross(d, e1);
+      return (q, t) => {
+        const v = sub(add(rotate(q, g.point), t), g.origin);
+        return [dot(v, e1), dot(v, e2)];
+      };
+    }
+    case 'pointAt':
+      return (q, t) => sub(add(rotate(q, g.point), t), g.target);
+    case 'rotation': {
+      // Two axes of the part against the same axes turned as asked: rank 3, and no singular angle.
+      const target = qnormalize(g.rotation);
+      const tx = rotate(target, X);
+      const ty = rotate(target, Y);
+      return (q, _t, L) => [...scale(sub(rotate(q, X), tx), L), ...scale(sub(rotate(q, Y), ty), L)];
+    }
+  }
+}
+
+/** How far a term is from being met, in mm (an orientation counts as L times its angle, about). */
+const distance = (term: Term, b: Body, L: number) => Math.hypot(...term(b.q, b.t, L));
+
+/**
+ * Moves a group toward a goal without breaking its mates (C15.3, A3.5). A step goes only where the
+ * mates let the group go (the null space of their Jacobian): toward the first term, then with the
+ * freedom that leaves toward the next, and no further than needed. The mates are then solved again
+ * from there, so the group follows curved paths too (a pin turning in its hole). A step that does not
+ * bring the goal closer, term by term in order, is halved.
+ */
+function follow(bodies: Body[], mates: Live[], body: Body, goal: GoalTerm[], L: number, tol: { converged: number; holds: number }, maxIterations: number): void {
+  const terms = goal.map(termOf);
+  const distances = () => terms.map((term) => distance(term, body, L));
+  // Where the goal cannot be met, the distance is flat at its least: a finer test resolves the turn to about 1e-6 rad.
+  const same = 1e-12 * Math.max(1, L);
+  let best = distances();
+  for (let iteration = 0; iteration < 50; iteration++) {
+    const step = goalStep(bodies, mates, body, terms, L);
+    if (!step) return;
+    // Turning moves points along arcs: at most half a radian a step keeps the mates close to holding.
+    let turn = 0;
+    for (const b of bodies) turn = Math.max(turn, Math.hypot(step[6 * b.k + 3]!, step[6 * b.k + 4]!, step[6 * b.k + 5]!) / b.size);
+    let factor = turn > 0.5 ? 0.5 / turn : 1;
+    if (maxAbs(step) * factor < 1e-12 * Math.max(1, L)) return;
+    let accepted = false;
+    for (let tries = 0; tries < 6 && !accepted; tries++, factor /= 2) {
+      const before = snapshot(bodies);
+      const x = step.map((v) => v * factor);
+      for (const b of bodies) Object.assign(b, moved(b, x, 6 * b.k));
+      const holds = mates.length === 0 || levenbergMarquardt(bodies, mates, L, tol, maxIterations).holds;
+      const now = distances();
+      if (holds && closer(now, best, same)) {
+        best = now;
+        accepted = true;
+      } else {
+        restore(bodies, before);
+      }
+    }
+    if (!accepted) return;
+  }
+}
+
+/** Term by term: the first that differs by more than `same` decides. */
+function closer(now: number[], best: number[], same: number): boolean {
+  for (let i = 0; i < now.length; i++) {
+    if (now[i]! < best[i]! - same) return true;
+    if (now[i]! > best[i]! + same) return false;
+  }
+  return false;
+}
+
+/**
+ * The linear step toward the goal: least squares for each term in turn, inside the moves the mates
+ * and the terms before it leave free; the smallest such step. Null when the mates leave no move.
+ */
+function goalStep(bodies: Body[], mates: Live[], body: Body, terms: Term[], L: number): Float64Array | null {
+  const n = bodies.length * 6;
+  let N: Float64Array;
+  let k: number;
+  if (mates.length === 0) {
+    N = new Float64Array(n * n);
+    for (let i = 0; i < n; i++) N[i * n + i] = 1;
+    k = n;
+  } else {
+    const { A } = normalEquations(blocks(mates, mates.map((m) => evaluate(m, L)), L), n);
+    ({ basis: N, count: k } = nullSpace(A, n));
+  }
+  if (k === 0) return null;
+  const o = 6 * body.k;
+  const step = new Float64Array(n);
+  for (const term of terms) {
+    const r = term(body.q, body.t, L);
+    const rows = r.length;
+    const J = termJacobian(term, body, L, rows);
+    // B = J · (the body's rows of N); e = what is left of the term after the steps so far.
+    const B = new Float64Array(rows * k);
+    const e = Float64Array.from(r);
+    for (let i = 0; i < rows; i++) {
+      for (let j = 0; j < 6; j++) {
+        const Jij = J[i * 6 + j]!;
+        e[i] = e[i]! + Jij * step[o + j]!;
+        for (let c = 0; c < k; c++) B[i * k + c] = B[i * k + c]! + Jij * N[(o + j) * k + c]!;
+      }
+    }
+    const M = new Float64Array(k * k);
+    const g = new Float64Array(k);
+    for (let a = 0; a < k; a++) {
+      for (let i = 0; i < rows; i++) g[a] = g[a]! - B[i * k + a]! * e[i]!;
+      for (let b = 0; b <= a; b++) {
+        let s = 0;
+        for (let i = 0; i < rows; i++) s += B[i * k + a]! * B[i * k + b]!;
+        M[a * k + b] = s;
+        M[b * k + a] = s;
+      }
+    }
+    let top = 0;
+    for (let a = 0; a < k; a++) top = Math.max(top, M[a * k + a]!);
+    if (top > 0) {
+      const y = solveDamped(M, g, k, 1e-12 * top);
+      if (y) for (let i = 0; i < n; i++) for (let c = 0; c < k; c++) step[i] = step[i]! + N[i * k + c]! * y[c]!;
+    }
+    // What this term leaves free, for the terms after it.
+    const free = nullSpace(M, k);
+    if (free.count === 0) break;
+    const next = new Float64Array(n * free.count);
+    for (let i = 0; i < n; i++) {
+      for (let c = 0; c < free.count; c++) {
+        let s = 0;
+        for (let m = 0; m < k; m++) s += N[i * k + m]! * free.basis[m * free.count + c]!;
+        next[i * free.count + c] = s;
+      }
+    }
+    N = next;
+    k = free.count;
+  }
+  return step;
+}
+
+/** A term's derivatives by the body's six variables (central differences): rows × 6. */
+function termJacobian(term: Term, b: Body, L: number, rows: number): Float64Array {
+  const h = 1e-6;
+  const d = new Float64Array(rows * 6);
+  const x = [0, 0, 0, 0, 0, 0];
+  for (let j = 0; j < 6; j++) {
+    const at = (s: number) => {
+      x[j] = s;
+      const m = moved(b, x, 0);
+      x[j] = 0;
+      return term(m.q, m.t, L);
+    };
+    const plus = at(h);
+    const minus = at(-h);
+    for (let row = 0; row < rows; row++) d[row * 6 + j] = (plus[row]! - minus[row]!) / (2 * h);
+  }
+  return d;
 }

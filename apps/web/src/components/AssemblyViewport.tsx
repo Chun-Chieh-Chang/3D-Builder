@@ -38,8 +38,9 @@ function shownElement(ref: MateRef): { element?: InstanceElement; plane?: PlaneD
 }
 
 /**
- * Graphics area of an assembly (A3.1, C15.1, C15.8): each component is its part's mesh placed where
- * the mates put it (its placement until they are solved); a click selects a component. While
+ * Graphics area of an assembly (A3.1, C15.1, C15.3, C15.8): each component is its part's mesh placed
+ * where the mates put it (its placement until they are solved); a click selects a component, and a
+ * drag moves it (left button) or turns it (right button) along the freedoms its mates leave. While
  * 「插入零組件」 has a part chosen, a see-through copy follows the cursor and a click places it. While
  * a mate is being defined, faces, edges and vertices of the components are picked, and planes in the
  * flyout tree.
@@ -71,6 +72,9 @@ export function AssemblyViewport() {
         const ref = el && refOf(el);
         if (ref) store.assembly?.pickElement(ref);
       },
+      onComponentDragStart: (key, point, button) => store.assembly?.startDrag(key, point, button) ?? false,
+      onComponentDrag: (e) => store.assembly?.dragTo(e),
+      onComponentDragEnd: (cancelled) => store.assembly?.endDrag(cancelled),
     });
     viewer.setComponentPicking(true);
     store.viewer = viewer;
@@ -93,7 +97,7 @@ export function AssemblyViewport() {
     const instances: ViewInstance[] = asm.doc.components.flatMap((c) => {
       const file = asm.doc.files.find((f) => f.id === c.file);
       const status = file && asm.files.get(joinPath(asm.folder, file.path));
-      const pose = asm.solution?.poses.get(c.id) ?? c.placement;
+      const pose = asm.drag?.poses?.get(c.id) ?? asm.solution?.poses.get(c.id) ?? c.placement;
       return status?.status === 'ok' && parts.has(status.key) ? [{ key: c.id, part: status.key, matrix: poseMatrix(pose) }] : [];
     });
     v.setInstances(instances);
@@ -104,7 +108,7 @@ export function AssemblyViewport() {
       v.fitAll();
       fitted.current = { store: store.assembly, request: asm.fitRequest };
     }
-  }, [asm.doc, asm.files, asm.folder, asm.fitRequest, asm.solution, parts]);
+  }, [asm.doc, asm.files, asm.folder, asm.fitRequest, asm.solution, asm.drag, parts]);
 
   // What is shown as chosen: the mate being defined, else the mate or component selected in the tree.
   const selectedMate = asm.selected ? asm.doc.mates.find((m) => m.id === asm.selected) : undefined;
@@ -118,7 +122,7 @@ export function AssemblyViewport() {
     if (!asm.mate && asm.selected && isDatumPlaneName(asm.selected)) planes.push({ key: asm.selected, frame: DATUM_PLANES[asm.selected], highlighted: true });
     v.setPlanes(planes);
     v.setSelectedComponents(!asm.mate && asm.selected && asm.doc.components.some((c) => c.id === asm.selected) ? [asm.selected] : []);
-  }, [asm.mate, asm.selected, asm.doc, asm.solution, asm.builds]);
+  }, [asm.mate, asm.selected, asm.doc, asm.solution, asm.drag, asm.builds]);
 
   // Placing a component: the chosen part follows the cursor, a click puts it down.
   const chosen = asm.insert?.chosen ?? null;
@@ -141,14 +145,16 @@ export function AssemblyViewport() {
     };
   }, [ghost]);
 
-  // Whole components are picked normally; elements while a mate is being defined.
+  // Whole components are picked (and dragged) normally; elements while a mate is being defined.
   const mating = !!asm.mate;
+  const placing = !!asm.insert;
   useEffect(() => {
     const v = store.viewer;
     if (!v) return;
     v.setComponentPicking(!mating && !ghost);
+    v.setComponentDragging(!mating && !placing);
     v.setElementPicking(mating);
-  }, [mating, ghost]);
+  }, [mating, ghost, placing]);
 
   const hovered = hover ? asm.doc.components.find((c) => c.id === hover) : undefined;
   const elementName = (() => {
@@ -158,7 +164,10 @@ export function AssemblyViewport() {
     const names = hoverElement.kind === 'face' ? build?.faceNames : hoverElement.kind === 'edge' ? build?.edgeNames : build?.vertexNames;
     return build && c ? `${KIND_WORD[hoverElement.kind]}：${names?.[hoverElement.index] ?? '?'}（${componentInfo(asm, c).name}）` : null;
   })();
-  const hint = asm.insert
+  const dragged = asm.drag ? asm.doc.components.find((c) => c.id === asm.drag!.component) : undefined;
+  const hint = dragged
+    ? `${asm.drag!.mode === 'move' ? '移動' : '旋轉'}「${componentInfo(asm, dragged).name}」：只沿結合留下的自由度（Esc 取消）`
+    : asm.insert
     ? ghost
       ? `在圖面中按一下以放置「${partNameOf(chosen!)}」（Esc 取消）`
       : chosen
@@ -167,8 +176,10 @@ export function AssemblyViewport() {
     : mating
       ? (elementName ?? '點選兩個要結合的元素：零組件的面、邊線、頂點，或左上樹中的基準面與原點')
       : hovered
-        ? `零組件：${componentInfo(asm, hovered).name}`
-        : null;
+        ? `零組件：${componentInfo(asm, hovered).name}${asm.move ? `（拖曳以${asm.move.tool === 'move' ? '移動' : '旋轉'}）` : ''}`
+        : asm.move
+          ? `在圖面中拖曳零組件以${asm.move.tool === 'move' ? '移動' : '旋轉'}（右鍵拖曳旋轉）`
+          : null;
 
   return (
     <main className="viewport">

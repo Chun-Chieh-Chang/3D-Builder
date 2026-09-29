@@ -126,6 +126,19 @@ export interface ToolPointerEvent {
   pressed: boolean;
 }
 
+/** The pointer during a component drag (C15.3). */
+export interface ComponentDragEvent {
+  /** The line under the cursor, in scene coordinates. */
+  origin: [number, number, number];
+  dir: [number, number, number];
+  /** How far the pointer is from where the drag began, in CSS pixels (x to the right, y down). */
+  dx: number;
+  dy: number;
+  /** The screen's right and up directions in the scene (for turning). */
+  right: [number, number, number];
+  up: [number, number, number];
+}
+
 export interface ViewerEvents {
   /** Edge under the cursor changed (index into the mesh's edges, or -1). */
   onEdgeHover?: (edge: number) => void;
@@ -149,6 +162,14 @@ export interface ViewerEvents {
   /** Element of a component under the cursor changed (while elements are picked). */
   onElementHover?: (element: InstanceElement | null) => void;
   onElementClick?: (element: InstanceElement | null, additive: boolean) => void;
+  /**
+   * A drag began on a component (left button: move it, right button: turn it); `point` is where it was
+   * grabbed, in scene coordinates. Returning false refuses the drag (e.g. the component is fixed).
+   */
+  onComponentDragStart?: (key: string, point: [number, number, number], button: 'left' | 'right') => boolean;
+  onComponentDrag?: (e: ComponentDragEvent) => void;
+  /** The drag is over: the button was released, or it was cancelled (Esc). */
+  onComponentDragEnd?: (cancelled: boolean) => void;
 }
 
 /**
@@ -203,6 +224,11 @@ export class Viewer {
   private selectedInstances = new Set<string>();
   /** A see-through instance following the cursor while a component is being placed. */
   private ghost: Instance | null = null;
+  private dragInstances = false;
+  /** A button pressed on a component: a drag once the pointer moves a few pixels, else a click. */
+  private press: { key: string; point: THREE.Vector3; button: 'left' | 'right'; x: number; y: number; pointerId: number; dragging: boolean } | null = null;
+  /** The click the browser sends after a left-button drag is not a click. */
+  private swallowClick = false;
   private pendingFit = false;
   private frame = 0;
   private readonly resizeObserver: ResizeObserver;
@@ -235,6 +261,7 @@ export class Viewer {
     dom.addEventListener('pointermove', this.onPointerMove);
     dom.addEventListener('pointerup', this.onPointerUp);
     dom.addEventListener('pointerleave', this.onPointerLeave);
+    dom.addEventListener('pointercancel', () => this.cancelComponentDrag()); // the system took the pointer
     dom.addEventListener('click', this.onClick);
     dom.addEventListener('dblclick', this.onDoubleClick);
     this.resizeObserver = new ResizeObserver(() => this.resize());
@@ -502,6 +529,62 @@ export class Viewer {
   setComponentPicking(enabled: boolean): void {
     this.pickInstances = enabled;
     if (!enabled) this.setHoveredInstance(null);
+  }
+
+  /** Lets components be dragged: the left button moves one, the right button turns it (C15.3). */
+  setComponentDragging(enabled: boolean): void {
+    this.dragInstances = enabled;
+    if (!enabled) this.cancelComponentDrag();
+  }
+
+  /** Ends a drag in progress as cancelled (Esc). */
+  cancelComponentDrag(): void {
+    const p = this.press;
+    this.press = null;
+    if (p?.dragging) {
+      this.swallowClick = p.button === 'left';
+      this.events.onComponentDragEnd?.(true);
+    }
+  }
+
+  /** The component under a screen position and the point of it there (scene coordinates). */
+  private hitInstance(clientX: number, clientY: number): { key: string; point: THREE.Vector3 } | null {
+    if (this.instances.size === 0) return null;
+    const r = this.rayAt(clientX, clientY);
+    const hit = new THREE.Raycaster(r.origin, r.direction).intersectObjects([...this.instances.values()].map((i) => i.body))[0];
+    if (!hit) return null;
+    for (const [key, inst] of this.instances) if (inst.body === hit.object) return { key, point: hit.point.clone() };
+    return null;
+  }
+
+  private dragMove(e: PointerEvent): void {
+    const p = this.press!;
+    const dx = e.clientX - p.x;
+    const dy = e.clientY - p.y;
+    if (!p.dragging) {
+      if (Math.hypot(dx, dy) < 4) return;
+      if (!(this.events.onComponentDragStart?.(p.key, [p.point.x, p.point.y, p.point.z], p.button) ?? false)) {
+        this.press = null;
+        return;
+      }
+      p.dragging = true;
+      try {
+        this.renderer.domElement.setPointerCapture(p.pointerId);
+      } catch {
+        // the pointer is already gone (or the event is synthetic): nothing to capture
+      }
+    }
+    const ray = this.rayAt(e.clientX, e.clientY);
+    const right = new THREE.Vector3().setFromMatrixColumn(this.camera.matrixWorld, 0);
+    const up = new THREE.Vector3().setFromMatrixColumn(this.camera.matrixWorld, 1);
+    this.events.onComponentDrag?.({
+      origin: [ray.origin.x, ray.origin.y, ray.origin.z],
+      dir: [ray.direction.x, ray.direction.y, ray.direction.z],
+      dx,
+      dy,
+      right: [right.x, right.y, right.z],
+      up: [up.x, up.y, up.z],
+    });
   }
 
   setSelectedComponents(keys: Iterable<string>): void {
@@ -912,6 +995,11 @@ export class Viewer {
   }
 
   private onPointerDown = (e: PointerEvent) => {
+    this.swallowClick = false; // a new press: whatever the last drag left no longer applies
+    if (this.dragInstances && !this.toolHandler && (e.button === 0 || e.button === 2) && !e.altKey && !e.ctrlKey && !e.shiftKey) {
+      const hit = this.hitInstance(e.clientX, e.clientY);
+      this.press = hit && { ...hit, button: e.button === 0 ? 'left' : 'right', x: e.clientX, y: e.clientY, pointerId: e.pointerId, dragging: false };
+    }
     if (!this.toolHandler || e.button !== 0 || e.altKey) return;
     try {
       this.renderer.domElement.setPointerCapture(e.pointerId); // keep receiving moves while dragging outside
@@ -922,6 +1010,13 @@ export class Viewer {
   };
 
   private onPointerMove = (e: PointerEvent) => {
+    if (this.press) {
+      if (e.buttons & (this.press.button === 'left' ? 1 : 2)) return this.dragMove(e);
+      // Released where the canvas could not see it: a drag ends there, as if released.
+      const p = this.press;
+      this.press = null;
+      if (p.dragging) this.events.onComponentDragEnd?.(false);
+    }
     if (this.toolHandler) {
       if (e.buttons === 0 || e.buttons === 1) this.tool('move', e, e.buttons === 1);
       return;
@@ -938,6 +1033,15 @@ export class Viewer {
   };
 
   private onPointerUp = (e: PointerEvent) => {
+    const p = this.press;
+    if (p && e.button === (p.button === 'left' ? 0 : 2)) {
+      this.press = null;
+      if (p.dragging) {
+        this.swallowClick = p.button === 'left';
+        this.events.onComponentDragEnd?.(false);
+        return;
+      }
+    }
     if (!this.toolHandler || e.button !== 0 || e.altKey) return;
     this.tool('up', e, false);
   };
@@ -952,6 +1056,10 @@ export class Viewer {
   };
 
   private onClick = (e: MouseEvent) => {
+    if (this.swallowClick) {
+      this.swallowClick = false;
+      return;
+    }
     if (this.toolHandler || e.altKey) return;
     const additive = e.ctrlKey || e.shiftKey;
     if (this.pickElements) return void this.events.onElementClick?.(this.pickElement(e.clientX, e.clientY), additive);

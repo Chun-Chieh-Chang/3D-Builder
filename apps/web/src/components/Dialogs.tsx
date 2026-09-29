@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { findFeature, type Id } from '@3db/model';
+import { findFeature, joinPath, type Id } from '@3db/model';
 import { deletion } from '@3db/regen/dag';
 import { store, useDocumentName, useStore } from '../state/store';
 import { featureLabel } from '../strings';
@@ -130,6 +130,8 @@ export function WhatsWrongDialog() {
 }
 
 /** 「要儲存變更嗎？」 before a new or opened part replaces a modified one (SolidWorks asks the same). */
+const PENDING_VERB = { open: '開啟其他檔案', 'new-assembly': '建立新組合件', 'new-part': '建立新零件', 'new-demo': '建立新零件', 'open-part': '開啟零件', 'return-assembly': '返回組合件' } as const;
+
 export function UnsavedDialog() {
   const action = useStore((s) => s.unsaved);
   const name = useDocumentName();
@@ -142,8 +144,9 @@ export function UnsavedDialog() {
       <div className="modal" role="dialog" aria-label="要儲存變更嗎" onPointerDown={(e) => e.stopPropagation()}>
         <h3>要儲存變更嗎？</h3>
         <p>
-          「{name}」有尚未儲存的變更。{action === 'open' ? '開啟其他檔案' : action === 'new-assembly' ? '建立新組合件' : '建立新零件'}之前要先儲存嗎？
+          「{name}」有尚未儲存的變更。{PENDING_VERB[action]}之前要先儲存嗎？
         </p>
+        {action === 'open-part' && <p className="hint">一次開一份文件：不儲存的話，「返回組合件」會回到上次儲存的組合件。</p>}
         <div className="modal-actions">
           <button ref={save} className="primary" onClick={answer('save')}>
             儲存
@@ -162,19 +165,26 @@ export function UnsavedDialog() {
  */
 export function FolderDialog() {
   const reason = useStore((s) => s.folderRequest);
-  const choose = useRef<HTMLButtonElement>(null);
-  useEffect(() => choose.current?.focus(), [reason]);
+  const remembered = useStore((s) => s.rememberedProject);
+  const first = useRef<HTMLButtonElement>(null);
+  useEffect(() => first.current?.focus(), [reason]);
   if (!reason) return null;
   return (
     <div className="modal-backdrop" onPointerDown={() => store.cancelFolder()}>
       <div className="modal" role="dialog" aria-label="選擇專案資料夾" onPointerDown={(e) => e.stopPropagation()}>
         <h3>選擇專案資料夾</h3>
         <p>{reason}</p>
+        {remembered && <p className="hint">上次使用的專案資料夾是「{remembered}」：選它的話，瀏覽器會再詢問一次是否允許讀取（可以選擇每次造訪都允許）。</p>}
         <p className="hint">
-          下一個視窗只會顯示資料夾，看不到檔案是正常的：選放零件（.3dbx 或 STEP）的資料夾，再按「選擇資料夾」。建議為每個專案建立一個資料夾，只放它的零件與組合件。瀏覽器會詢問是否允許讀取這個資料夾；本工作階段內只問一次。
+          「選擇資料夾」的下一個視窗只會顯示資料夾，看不到檔案是正常的：選放零件（.3dbx 或 STEP）的資料夾。建議為每個專案建立一個資料夾，只放它的零件與組合件。程式會記住這個資料夾，下次只需再允許讀取。
         </p>
         <div className="modal-actions">
-          <button ref={choose} className="primary" onClick={() => void store.chooseFolder()}>
+          {remembered && (
+            <button ref={first} className="primary" onClick={() => void store.useRememberedFolder()}>
+              使用「{remembered}」
+            </button>
+          )}
+          <button ref={remembered ? undefined : first} className={remembered ? '' : 'primary'} onClick={() => void store.chooseFolder()}>
             選擇資料夾…
           </button>
           <button onClick={() => store.cancelFolder()}>取消</button>
@@ -218,6 +228,66 @@ export function DeleteComponentsDialog() {
             刪除
           </button>
           <button onClick={close}>取消</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * 「找不到參考的檔案」 (B9.4): the part files the assembly uses that are not where its paths say (renamed,
+ * moved, deleted), with the components that use them. Files of the project folder with the same name
+ * are offered (a file moved elsewhere); 「瀏覽…」 picks any part or STEP file there. Every component of
+ * the file follows; mates on it hold if the new file has the same faces (a copy, a renamed file, or the
+ * part saved from its STEP file).
+ */
+export function MissingFilesDialog() {
+  const asm = useStore((s) => s.asm);
+  const name = useDocumentName();
+  const relink = asm?.relink;
+  const a = store.assembly;
+  if (!asm || !relink || !a) return null;
+  const close = () => a.closeRelink();
+  const missing = a.missingFiles();
+  return (
+    <div className="modal-backdrop" onPointerDown={close}>
+      <div className="modal wide" role="dialog" aria-label="找不到參考的檔案" onPointerDown={(e) => e.stopPropagation()}>
+        <h3>找不到參考的檔案</h3>
+        <p>「{name}」使用的下列檔案不在原來的位置（可能已改名、搬移或刪除）。請重新指定檔案；略過的話，這些零組件會標示錯誤，存檔時保留原來的路徑。</p>
+        {missing.length === 0 && <p className="muted">所有檔案都找到了。</p>}
+        <ul className="relink-list">
+          {missing.map((f) => {
+            const users = asm.doc.components.filter((c) => c.file === f.id).map((c) => componentInfo(asm, c).name);
+            const found = relink.candidates?.get(f.id);
+            return (
+              <li key={f.id} data-file={f.id}>
+                <div className="relink-file">
+                  <Icon name="error" className="status-error" />
+                  <strong>{joinPath(asm.folder, f.path)}</strong>
+                  <span className="muted">（{users.join('、')}）</span>
+                </div>
+                <div className="relink-actions">
+                  {relink.candidates === null ? (
+                    <span className="muted">正在專案資料夾中尋找同名的檔案…</span>
+                  ) : found && found.length > 0 ? (
+                    found.map((p) => (
+                      <button key={p} className="pm-button" onClick={() => a.relink(f.id, p)}>
+                        使用 {p}
+                      </button>
+                    ))
+                  ) : (
+                    <span className="muted">專案資料夾中沒有同名的檔案。</span>
+                  )}
+                  <button className="pm-button" onClick={() => void a.browseRelink(f.id)}>
+                    瀏覽…
+                  </button>
+                </div>
+              </li>
+            );
+          })}
+        </ul>
+        <div className="modal-actions">
+          <button onClick={close}>{missing.length === 0 ? '關閉' : '略過'}</button>
         </div>
       </div>
     </div>

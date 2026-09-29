@@ -26,8 +26,8 @@ type PermissionState = 'granted' | 'denied' | 'prompt';
 
 /** Chromium's permission methods on handles (not in the DOM typings yet). */
 interface PermissionMethods {
-  queryPermission?(options: { mode: 'readwrite' }): Promise<PermissionState>;
-  requestPermission?(options: { mode: 'readwrite' }): Promise<PermissionState>;
+  queryPermission?(options: { mode: 'read' | 'readwrite' }): Promise<PermissionState>;
+  requestPermission?(options: { mode: 'read' | 'readwrite' }): Promise<PermissionState>;
 }
 
 declare global {
@@ -143,6 +143,64 @@ export async function pickProjectFolder(): Promise<FileSystemDirectoryHandle | n
     if (cancelled(e)) return null;
     throw e;
   }
+}
+
+// ---------------------------------------------------------------- the project folder across sessions (B9.4)
+
+/** Folder handles can be kept in IndexedDB; the browser asks for the permission again when one is used. */
+const DB_NAME = '3d-builder';
+const HANDLES = 'handles';
+
+function database(): Promise<IDBDatabase> {
+  return new Promise((resolve, reject) => {
+    const open = indexedDB.open(DB_NAME, 1);
+    open.onupgradeneeded = () => open.result.createObjectStore(HANDLES);
+    open.onsuccess = () => resolve(open.result);
+    open.onerror = () => reject(open.error);
+  });
+}
+
+async function handles<T>(mode: IDBTransactionMode, run: (store: IDBObjectStore) => IDBRequest<T>): Promise<T> {
+  const db = await database();
+  try {
+    return await new Promise<T>((resolve, reject) => {
+      const request = run(db.transaction(HANDLES, mode).objectStore(HANDLES));
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => reject(request.error);
+    });
+  } finally {
+    db.close();
+  }
+}
+
+/** Remembers the project folder for the next session. */
+export async function rememberFolder(folder: FileSystemDirectoryHandle): Promise<void> {
+  try {
+    await handles('readwrite', (s) => s.put(folder, 'project'));
+  } catch {
+    // no IndexedDB (a private window): the folder is asked for again next time
+  }
+}
+
+/** The project folder an earlier session used, if it was remembered. */
+export async function rememberedFolder(): Promise<FileSystemDirectoryHandle | null> {
+  try {
+    const found: unknown = await handles('readonly', (s) => s.get('project'));
+    return found && typeof found === 'object' && (found as FileSystemHandle).kind === 'directory' ? (found as FileSystemDirectoryHandle) : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Whether the page may read a folder. With `ask`, the browser asks the user (only from a click: a
+ * dialog's button); when they chose to allow it on every visit, it is allowed without asking.
+ */
+export async function folderAccess(folder: FileSystemDirectoryHandle, ask: boolean): Promise<boolean> {
+  const h = folder as FileSystemDirectoryHandle & PermissionMethods;
+  if (!h.queryPermission) return true;
+  if ((await h.queryPermission({ mode: 'read' })) === 'granted') return true;
+  return ask && !!h.requestPermission && (await h.requestPermission({ mode: 'read' })) === 'granted';
 }
 
 /** A file's path inside the folder ("零件/銷.3dbx"), or null when it lies elsewhere. */

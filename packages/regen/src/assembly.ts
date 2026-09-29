@@ -1,5 +1,5 @@
 import { DATUM_PLANES, evalAngle, evalLength, isDatumPlaneName, type AssemblyDoc, type Id, type Mate, type PlaneFrame, type Pose, type Ref, type Vec3 } from '@3db/model';
-import { solve, type BodyResult, type MateGeometry, type MateResult, type MateSpec, type SolverBody } from '@3db/assembly';
+import { solve, type BodyResult, type MateGeometry, type MateResult, type MateSpec, type MoveGoal, type SolverBody } from '@3db/assembly';
 import type { EdgeInfo, FaceInfo, Topology } from '@3db/kernel';
 import { resolveRef, type ElementNames } from '@3db/naming';
 
@@ -18,7 +18,16 @@ export interface AssemblyResult {
   poses: Map<Id, Pose>;
   components: Map<Id, BodyResult>;
   mates: Map<Id, MateState>;
+  /** With a goal: the floating components solved together with the one moved (it included). */
+  group?: Id[];
   ms: number;
+}
+
+export interface AssemblySolveOptions {
+  /** Where the components start instead of their placements: where they are shown now (a drag goes on from there). */
+  start?: ReadonlyMap<Id, Pose>;
+  /** A move of one component (C15.3, A3.5): `body` is its id. */
+  goal?: MoveGoal;
 }
 
 /**
@@ -26,12 +35,12 @@ export interface AssemblyResult {
  * and turned into the geometry the solver needs (A5.2); a mate whose element is gone is reported,
  * never bound to something else. Components whose part is not there keep their placement.
  */
-export function solveAssembly(doc: AssemblyDoc, partOf: (componentId: Id) => MatePart | null): AssemblyResult {
+export function solveAssembly(doc: AssemblyDoc, partOf: (componentId: Id) => MatePart | null, options: AssemblySolveOptions = {}): AssemblyResult {
   const parts = new Map(doc.components.map((c) => [c.id, partOf(c.id)] as const));
   const bodies: SolverBody[] = doc.components.map((c) => {
     const part = parts.get(c.id);
     const extent = part ? extentOf(part.topology) : null;
-    return { id: c.id, fixed: c.fixed, pose: c.placement, ...(extent ? { pivot: extent.center, size: extent.size } : {}) };
+    return { id: c.id, fixed: c.fixed, pose: options.start?.get(c.id) ?? c.placement, ...(extent ? { pivot: extent.center, size: extent.size } : {}) };
   });
   const mates = new Map<Id, MateState>();
   const specs: MateSpec[] = [];
@@ -44,11 +53,11 @@ export function solveAssembly(doc: AssemblyDoc, partOf: (componentId: Id) => Mat
     if (typeof spec === 'string') mates.set(m.id, { status: 'missing', message: spec });
     else specs.push(spec);
   }
-  const s = solve(bodies, specs);
+  const s = solve(bodies, specs, options.goal ? { goal: options.goal } : {});
   for (const [id, r] of s.mates) mates.set(id, r);
   // FeatureManager order.
   const ordered = new Map(doc.mates.map((m) => [m.id, mates.get(m.id)!] as const));
-  return { poses: s.poses, components: s.bodies, mates: ordered, ms: s.ms };
+  return { poses: s.poses, components: s.bodies, mates: ordered, ...(s.group ? { group: s.group } : {}), ms: s.ms };
 }
 
 function specOf(m: Mate, parts: ReadonlyMap<Id, MatePart | null>): MateSpec | string {

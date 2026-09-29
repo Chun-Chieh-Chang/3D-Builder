@@ -368,8 +368,9 @@ asm.extras = async () => {
 };
 
 /**
- * Run in a freshly loaded page after all(): 「開啟舊檔」 on the assembly asks for the project folder;
- * a folder that does not contain it is refused and asked again.
+ * Run in a freshly loaded page after all(), with no project folder remembered (__asm.forget(), then
+ * reload): 「開啟舊檔」 on the assembly asks for the project folder; a folder that does not contain it is
+ * refused and asked again.
  */
 asm.openFresh = async () => {
   H.ready();
@@ -725,4 +726,403 @@ asm.step = async () => {
   return { listed, hole, log, pin: r.components.get(pin.id), problems: build.problems };
 };
 
-'phase 2 assembly ready: await __asm.all(), then __asm.extras(); after a reload, __asm.openFresh(); 2C: await __asm.fixture(), then __asm.mateExtras(); STEP: await __asm.step()';
+
+// ---------------------------------------------------------------- 2D: moving components, reference files
+
+/**
+ * A drag with a mouse button (left moves, right turns): the cursor comes in, the button goes down,
+ * the cursor moves through `path` in whole pixels, and the button comes up where it ends.
+ */
+H.drag = async (path, button = 'left') => {
+  const [b, bs] = button === 'left' ? [0, 1] : [2, 2];
+  const c = H.canvas();
+  const ev = (type, p, extra) => c.dispatchEvent(new PointerEvent(type, { clientX: Math.round(p.x), clientY: Math.round(p.y), bubbles: true, pointerId: 1, ...extra }));
+  ev('pointermove', path[0], { buttons: 0 });
+  ev('pointerdown', path[0], { button: b, buttons: bs });
+  for (const p of path.slice(1)) {
+    ev('pointermove', p, { buttons: bs });
+    await H.wait(40);
+  }
+  const end = path[path.length - 1];
+  ev('pointerup', end, { button: b, buttons: 0 });
+  if (button === 'left') c.dispatchEvent(new MouseEvent('click', { clientX: Math.round(end.x), clientY: Math.round(end.y), bubbles: true }));
+  await H.waitFor(() => !H.asm().drag, 5000, 'the drag to end');
+  await H.solved();
+};
+/** A straight path of `n` steps. */
+H.line = (from, to, n = 12) => Array.from({ length: n + 1 }, (_, i) => ({ x: from.x + ((to.x - from.x) * i) / n, y: from.y + ((to.y - from.y) * i) / n }));
+/**
+ * A screen point on a component the cursor really finds there: points of its mesh (in the part's
+ * coordinates, `choose` orders them), each pulled 10 % toward `toward` so it is not on an edge pixel.
+ */
+H.onComponent = (component, choose = (pts) => pts, toward = null) => {
+  const build = store.assembly.buildOf(component);
+  const pose = H.asm().solution.poses.get(component);
+  const m = build.mesh.positions;
+  let pts = [];
+  for (let i = 0; i < m.length; i += 3) pts.push([m[i], m[i + 1], m[i + 2]]);
+  pts = choose(pts);
+  const r = H.rect();
+  for (const p of pts.slice(0, 400)) {
+    const w = transformPoint(pose, p);
+    const q = toward ? w.map((v, k) => v + 0.1 * (toward[k] - v)) : w;
+    const s = H.worldToClient(q);
+    const [x, y] = [Math.round(s.x), Math.round(s.y)];
+    if (x < r.left + 4 || x > r.right - 4 || y < r.top + 4 || y > r.bottom - 4) continue;
+    H.ptr('pointermove', x, y);
+    if (store.viewer.hoveredInstance === component) return { x, y, world: q };
+  }
+  throw new Error(`the cursor finds no point of ${component}`);
+};
+H.pose = (id) => H.asm().solution.poses.get(id);
+H.placement = (id) => H.asm().doc.components.find((c) => c.id === id).placement;
+H.near = (a, b, tol) => a.every((v, i) => Math.abs(v - b[i]) <= tol);
+/** Angle of a component's x axis about the y axis (radians), seen from above. */
+H.yaw = (id) => {
+  const o = transformPoint(H.pose(id), [0, 0, 0]);
+  const x = transformPoint(H.pose(id), [1, 0, 0]);
+  return Math.atan2(-(x[2] - o[2]), x[0] - o[0]);
+};
+H.pmSelect = async (label, value) => {
+  const s = document.querySelector(`.property-manager select[aria-label="${label}"]`);
+  if (!s) throw new Error(`no select ${label}`);
+  Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value').set.call(s, value);
+  s.dispatchEvent(new Event('change', { bubbles: true }));
+  await H.wait(100);
+};
+H.pmFields = async (values) => {
+  const inputs = [...document.querySelectorAll('.property-manager .xyz-fields input')];
+  if (inputs.length !== values.length) throw new Error(`${inputs.length} fields, ${values.length} values`);
+  inputs.forEach((input, i) => {
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(input, String(values[i]));
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+  });
+  await H.wait(60);
+  const before = JSON.stringify(H.asm().doc.components.map((c) => c.placement));
+  [...document.querySelectorAll('.property-manager button')].find((b) => b.textContent === '套用').click();
+  await H.wait(300);
+  await H.solved();
+  return JSON.stringify(H.asm().doc.components.map((c) => c.placement)) !== before;
+};
+H.notice = () => store.getState().notice?.text ?? '';
+
+/**
+ * 2D acceptance, moving (C15.3, A3.5): a free component slides with the cursor; a pin seated in its
+ * hole only turns about it when dragged or turned; fixed and fully defined components do not move; Esc
+ * cancels a drag; each drag is one undo step. Then moving by numbers in 「移動零組件」/「旋轉零組件」.
+ */
+asm.move = async () => {
+  H.ready();
+  await H.project({ '定位板.3dbx': `${H.GOLDEN}locating-plate.3dbx`, 'V型塊.3dbx': `${H.GOLDEN}v-block.3dbx`, '零件/削邊銷.3dbx': `${H.GOLDEN}diamond-pin.3dbx` });
+  await H.action('檔案', '新組合件');
+  if (store.getState().folderRequest) await H.modalButton('選擇資料夾…');
+  const plate = await H.insert('定位板.3dbx');
+  const vblock = await H.insert('V型塊.3dbx', [0.25, 0.3]);
+  const pin = await H.insert('零件/削邊銷.3dbx', [0.75, 0.3]);
+  await H.loaded();
+  await H.solved();
+  await H.hud('全部顯示');
+  const out = {};
+
+  // A free component (6 freedoms) slides parallel to the screen, without turning.
+  const q0 = H.pose(vblock.id);
+  const from = H.onComponent(vblock.id);
+  const o0 = H.worldToClient(q0.position);
+  await H.drag(H.line(from, { x: from.x + 90, y: from.y + 50 }));
+  const q1 = H.pose(vblock.id);
+  const o1 = H.worldToClient(q1.position);
+  out.free = { screen: [+(o1.x - o0.x).toFixed(2), +(o1.y - o0.y).toFixed(2)] };
+  H.check(Math.abs(o1.x - o0.x - 90) < 1 && Math.abs(o1.y - o0.y - 50) < 1, `slid with the cursor: ${out.free.screen}`);
+  H.check(H.near(q1.rotation, q0.rotation, 1e-9), 'without turning');
+  H.check(H.near(H.placement(vblock.id).position, q1.position, 1e-9) && H.asm().dirty, 'where it went is its placement now');
+  await H.ctrl('z');
+  await H.solved();
+  H.check(H.near(H.pose(vblock.id).position, q0.position, 1e-9), 'undo puts it back');
+  out.undo = 'ok';
+
+  // Esc during a drag puts it back, and nothing is written.
+  const doc0 = JSON.stringify(H.asm().doc);
+  const at = H.onComponent(vblock.id);
+  const c = H.canvas();
+  c.dispatchEvent(new PointerEvent('pointerdown', { clientX: at.x, clientY: at.y, bubbles: true, pointerId: 1, button: 0, buttons: 1 }));
+  for (let i = 1; i <= 8; i++) {
+    c.dispatchEvent(new PointerEvent('pointermove', { clientX: at.x + 10 * i, clientY: at.y, bubbles: true, pointerId: 1, buttons: 1 }));
+    await H.wait(40);
+  }
+  await H.waitFor(() => H.asm().drag?.poses, 5000, 'the drag');
+  await H.key('Escape');
+  c.dispatchEvent(new PointerEvent('pointerup', { clientX: at.x + 80, clientY: at.y, bubbles: true, pointerId: 1, button: 0, buttons: 0 }));
+  c.dispatchEvent(new MouseEvent('click', { clientX: at.x + 80, clientY: at.y, bubbles: true }));
+  await H.wait(200);
+  H.check(!H.asm().drag && JSON.stringify(H.asm().doc) === doc0 && H.near(H.pose(vblock.id).position, q0.position, 1e-9), 'Esc cancels the drag');
+  out.escape = 'ok';
+
+  // The fixed plate does not move.
+  const p0 = H.pose(plate.id);
+  const onPlate = H.onComponent(plate.id);
+  document.querySelector('.status-bar .notice')?.click();
+  await H.drag(H.line(onPlate, { x: onPlate.x + 60, y: onPlate.y }));
+  H.check(H.near(H.pose(plate.id).position, p0.position, 1e-12) && H.notice().includes('已固定'), `the fixed plate stays: ${H.notice()}`);
+  out.fixed = H.notice();
+
+  // Seat the pin: its shank in the plate's hole, its flange on the top.
+  await H.action('組合件', '結合');
+  await H.mate([plate.id, 'face', 'cut1:side:sketch2.ci6'], [pin.id, 'face', 'revolve1:side:sketch1.l3#1']);
+  await H.mate([plate.id, 'face', 'extrude1:cap:end'], [pin.id, 'edge', '{revolve1:side:sketch1.l4|revolve1:side:sketch1.l5}']);
+  document.querySelector('.property-manager .pm-ok').click();
+  await H.solved();
+  H.check(H.asm().solution.components.get(pin.id).dof === 1, 'the pin can only turn in its hole');
+
+  // Dragged from above round its hole by a quarter turn, the pin turns about the hole only.
+  await H.hud('上視');
+  await H.zoomAt([-40, 15, 0], 6);
+  const axis = transformPoint(H.pose(pin.id), [0, 0, 0]);
+  const radius = (p) => Math.hypot(p[0], p[2]);
+  const grab = H.onComponent(pin.id, (pts) => pts.filter((p) => p[1] > 10).sort((a, b) => radius(b) - radius(a)), [axis[0], transformPoint(H.pose(pin.id), [0, 30, 0])[1], axis[2]]);
+  const yaw0 = H.yaw(pin.id);
+  const [dx, dz] = [grab.world[0] - axis[0], grab.world[2] - axis[2]];
+  const arc = Array.from({ length: 13 }, (_, i) => {
+    const t = ((Math.PI / 2) * i) / 12; // about +y: x → −z
+    return H.worldToClient([axis[0] + dx * Math.cos(t) + dz * Math.sin(t), grab.world[1], axis[2] - dx * Math.sin(t) + dz * Math.cos(t)]);
+  });
+  await H.drag(arc);
+  const turned = H.yaw(pin.id) - yaw0;
+  const pinAxis = transformPoint(H.pose(pin.id), [0, 0, 0]);
+  out.turned = +((turned * 180) / Math.PI).toFixed(2);
+  H.check(Math.abs(out.turned - 90) < 1.5, `turned a quarter turn: ${out.turned}°`);
+  H.check(H.near(pinAxis, axis, 1e-6) && [...H.asm().solution.mates.values()].every((m) => m.status === 'ok'), 'still seated in its hole');
+  H.check(H.near(H.placement(pin.id).rotation, H.pose(pin.id).rotation, 1e-9), 'its placement is where it turned to');
+
+  // Turned with the right button, seen from the front: it still turns only about the hole, upright.
+  await H.hud('前視');
+  await H.zoomAt([-40, 15, 0], 6);
+  const steps0 = H.asm().doc;
+  const grab2 = H.onComponent(pin.id, (pts) => pts.filter((p) => p[1] > 10).sort((a, b) => radius(b) - radius(a)), [axis[0], grab.world[1], axis[2]]);
+  await H.drag(H.line(grab2, { x: grab2.x + 60, y: grab2.y + 10 }), 'right');
+  H.check(H.near(transformPoint(H.pose(pin.id), [0, 0, 0]), axis, 1e-6) && H.near(transformPoint(H.pose(pin.id), [0, 1, 0]), [axis[0], axis[1] + 1, axis[2]], 1e-6), 'turning keeps it upright in its hole');
+  out.rightDrag = +(((H.yaw(pin.id) - yaw0) * 180) / Math.PI).toFixed(2);
+  // Both drags undone: back as it was (its flat facing +x again, to be picked below).
+  if (H.asm().doc !== steps0) await H.ctrl('z');
+  await H.ctrl('z');
+  await H.solved();
+  H.check(Math.abs(H.yaw(pin.id) - yaw0) < 1e-6 && H.asm().doc.mates.length === 2, 'undo turns it back');
+
+  // Its flat squared to the plate's side: fully defined, it no longer moves.
+  await H.hud('等角');
+  await H.hud('全部顯示');
+  await H.action('組合件', '結合');
+  await H.mate([plate.id, 'face', 'extrude1:side:sketch1.l4'], [pin.id, 'face', 'cut1:cap:start'], { type: '平行' });
+  document.querySelector('.property-manager .pm-ok').click();
+  await H.solved();
+  const full = H.pose(pin.id);
+  const onPin = H.onComponent(pin.id);
+  document.querySelector('.status-bar .notice')?.click();
+  await H.drag(H.line(onPin, { x: onPin.x + 50, y: onPin.y + 20 }));
+  H.check(H.near(H.pose(pin.id).position, full.position, 1e-9) && H.notice().includes('完全定義'), `fully defined: stays (${H.notice()})`);
+  out.full = H.notice();
+
+  // By numbers: the V-block to (10, 20, 30), then 5 more along x, then a quarter turn about z.
+  await H.treeClick('V型塊<1>');
+  await H.action('組合件', '移動零組件');
+  H.check(document.querySelector('.property-manager .pm-title')?.textContent === '移動零組件', 'the PropertyManager');
+  await H.pmSelect('移動方式', 'to');
+  await H.pmFields([10, 20, 30]);
+  H.check(H.near(H.pose(vblock.id).position, [10, 20, 30], 1e-6), `moved to (10, 20, 30): ${H.pose(vblock.id).position}`);
+  await H.pmSelect('移動方式', 'by');
+  await H.pmFields([5, 0, 0]);
+  H.check(H.near(H.pose(vblock.id).position, [15, 20, 30], 1e-6), 'then 5 mm along x');
+  const middle = (id) => {
+    const b = store.assembly.buildOf(id).mesh.positions;
+    const lo = [Infinity, Infinity, Infinity];
+    const hi = [-Infinity, -Infinity, -Infinity];
+    for (let i = 0; i < b.length; i += 3) for (let k = 0; k < 3; k++) {
+      lo[k] = Math.min(lo[k], b[i + k]);
+      hi[k] = Math.max(hi[k], b[i + k]);
+    }
+    return transformPoint(H.pose(id), lo.map((v, k) => (v + hi[k]) / 2));
+  };
+  const m0 = middle(vblock.id);
+  [...document.querySelectorAll('.property-manager .mate-align button')].find((b) => b.textContent === '旋轉').click();
+  await H.wait(100);
+  H.check(document.querySelector('.property-manager .pm-title')?.textContent === '旋轉零組件', '旋轉零組件');
+  await H.pmSelect('旋轉方式', 'by');
+  await H.pmFields([0, 0, 90]);
+  const x = transformPoint(H.pose(vblock.id), [1, 0, 0]).map((v, k) => v - H.pose(vblock.id).position[k]);
+  H.check(H.near(x, [0, 1, 0], 1e-6) && H.near(middle(vblock.id), m0, 1e-6), 'a quarter turn about z, about its middle');
+  // The pin is held by its mates: asked to rise, it stays, and says so. (With the PropertyManager open,
+  // components are chosen in the graphics area.)
+  await H.hud('上視'); // the V-block, lifted and turned, hides the pin in the isometric view
+  const onPin2 = H.onComponent(pin.id, (pts) => pts.sort((a, b) => b[1] - a[1]));
+  H.ptr('pointerdown', onPin2.x, onPin2.y);
+  H.ptr('pointerup', onPin2.x, onPin2.y);
+  H.canvas().dispatchEvent(new MouseEvent('click', { clientX: onPin2.x, clientY: onPin2.y, bubbles: true }));
+  await H.wait(150);
+  H.check(H.asm().selected === pin.id, 'the pin is chosen');
+  [...document.querySelectorAll('.property-manager .mate-align button')].find((b) => b.textContent === '移動').click();
+  await H.wait(100);
+  await H.pmSelect('移動方式', 'by');
+  document.querySelector('.status-bar .notice')?.click();
+  const changed = await H.pmFields([0, 5, 0]);
+  H.check(!changed && /完全定義|受結合限制/.test(H.notice()), `the pin stays: ${H.notice()}`);
+  await H.key('Enter');
+  H.check(!H.asm().move, '✓ (Enter) closes it');
+  out.numbers = 'ok';
+  const steps = [];
+  while (H.asm().canUndo && steps.length < 3) {
+    await H.ctrl('z');
+    steps.push('undo');
+  }
+  await H.solved();
+  out.undoNumbers = H.pose(vblock.id).position.map((v) => +v.toFixed(3));
+  return out;
+};
+
+/**
+ * 2D acceptance, part files (B9.4): 「開啟零件」 from the assembly, a changed dimension, saved;
+ * 「返回組合件」 shows the changed part and its mates still hold. A part file saved from elsewhere shows
+ * when the window comes back. A renamed file is asked for when the assembly opens and pointed at again;
+ * a file moved to another folder is found by its name.
+ */
+asm.files = async () => {
+  H.ready();
+  await H.project({ '定位板.3dbx': `${H.GOLDEN}locating-plate.3dbx`, '零件/削邊銷.3dbx': `${H.GOLDEN}diamond-pin.3dbx` });
+  const original = await H.readAt('零件/削邊銷.3dbx');
+  await H.action('檔案', '新組合件');
+  if (store.getState().folderRequest) await H.modalButton('選擇資料夾…');
+  const plate = await H.insert('定位板.3dbx');
+  const pin = await H.insert('零件/削邊銷.3dbx', [0.75, 0.3]);
+  await H.loaded();
+  await H.action('組合件', '結合');
+  await H.mate([plate.id, 'face', 'cut1:side:sketch2.ci6'], [pin.id, 'face', 'revolve1:side:sketch1.l3#1']);
+  await H.mate([plate.id, 'face', 'extrude1:cap:end'], [pin.id, 'edge', '{revolve1:side:sketch1.l4|revolve1:side:sketch1.l5}']);
+  document.querySelector('.property-manager .pm-ok').click();
+  await H.solved();
+  H.check(H.near(transformPoint(H.pose(pin.id), [0, 0, 0]), [-40, 0, 0], 1e-6), 'the pin sits in its hole');
+  const out = {};
+
+  // Modified and not saved: 「開啟零件」 asks first; saved, the pin opens as the document.
+  await H.save('夾具.3dba');
+  await H.menu('定位板<1>', '浮動');
+  await H.menu('削邊銷<1>', '開啟零件');
+  const ask = document.querySelector('.modal[aria-label="要儲存變更嗎"]')?.textContent ?? '';
+  H.check(ask.includes('開啟零件之前要先儲存嗎'), `asked: ${ask}`);
+  await H.modalButton('取消');
+  await H.ctrl('z');
+  await H.menu('削邊銷<1>', '開啟零件');
+  await H.waitFor(() => store.getState().active === 'part' && store.getState().fileName === '削邊銷.3dbx', 10000, 'the part');
+  await H.settle();
+  H.check(document.querySelector('.return-bar')?.textContent.includes('夾具'), 'the way back is shown');
+  out.opened = store.getState().notice?.text;
+
+  // The shank 15 → 13 mm, in its sketch's Modify box; saved into the part file.
+  await H.menu('草圖1', '編輯草圖');
+  await H.waitFor(() => store.getState().editing?.kind === 'sketch', 5000, 'the sketch');
+  await H.settle();
+  const label = store.viewer.labels.get('dim:d3').el;
+  label.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }));
+  const input = await H.waitFor(() => document.querySelector('.modify-box input'), 5000, 'the Modify box');
+  Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(input, '13');
+  input.dispatchEvent(new Event('input', { bubbles: true }));
+  await H.wait(40);
+  input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+  await H.waitFor(() => !document.querySelector('.modify-box'), 5000, 'the Modify box to close');
+  document.querySelector('.property-manager .pm-ok').click(); // 離開草圖
+  await H.waitFor(() => !store.getState().editing, 5000, 'the sketch to close');
+  await H.settle();
+  await H.action('檔案', '儲存檔案');
+  await H.waitFor(() => !store.getState().dirty, 10000, 'the part to save');
+
+  // Back in the assembly: the shorter pin, still in its hole and on the plate: 2 mm higher.
+  document.querySelector('.return-bar').click();
+  await H.waitFor(() => H.asm(), 10000, 'the assembly');
+  await H.loaded();
+  await H.solved();
+  const seated = transformPoint(H.pose(pin.id), [0, 0, 0]);
+  out.returned = seated.map((v) => +v.toFixed(6));
+  H.check(H.near(seated, [-40, 2, 0], 1e-6) && [...H.asm().solution.mates.values()].every((m) => m.status === 'ok'), `the mates hold on the changed pin: ${out.returned}`);
+  H.check(!H.asm().dirty && store.getState().returnTo === null, 'the assembly as saved');
+
+  // The part file saved from elsewhere (here: the original written back): the window comes back, it shows.
+  await H.writeAt('零件/削邊銷.3dbx', original);
+  document.dispatchEvent(new Event('visibilitychange'));
+  window.dispatchEvent(new Event('focus'));
+  await H.waitFor(() => H.near(transformPoint(H.asm().solution.poses.get(pin.id), [0, 0, 0]), [-40, 0, 0], 1e-6), 10000, 'the changed file to show');
+  out.refreshed = 'ok';
+
+  // Renamed: opening the assembly asks for it; 「瀏覽…」 points the file entry at the new name.
+  await H.writeAt('零件/削邊銷-改.3dbx', original);
+  await (await H.root.getDirectoryHandle('零件')).removeEntry('削邊銷.3dbx');
+  await H.action('檔案', '新零件');
+  await H.open('夾具.3dba');
+  await H.waitFor(() => H.asm().relink?.candidates, 5000, 'the missing-file dialog');
+  const dialog = document.querySelector('.modal[aria-label="找不到參考的檔案"]')?.textContent ?? '';
+  H.check(dialog.includes('零件/削邊銷.3dbx') && dialog.includes('削邊銷<1>') && dialog.includes('沒有同名的檔案'), `asked: ${dialog}`);
+  H.next.open = '零件/削邊銷-改.3dbx';
+  await H.modalButton('瀏覽…');
+  await H.waitFor(() => !H.asm().relink, 10000, 'the dialog to close once the file is read');
+  await H.loaded();
+  await H.solved();
+  H.check(H.asm().doc.files.map((f) => f.path).join() === '定位板.3dbx,零件/削邊銷-改.3dbx' && H.asm().dirty, 'pointed at the new name');
+  H.check([...H.asm().solution.mates.values()].every((m) => m.status === 'ok') && H.tree().join('|').includes('削邊銷-改<1>'), 'its mates hold');
+  await H.save('夾具.3dba');
+  out.renamed = H.tree();
+
+  // Moved to another folder under the same name: offered by the dialog.
+  await H.writeAt('舊版/削邊銷-改.3dbx', original);
+  await (await H.root.getDirectoryHandle('零件')).removeEntry('削邊銷-改.3dbx');
+  await H.action('檔案', '新零件');
+  await H.open('夾具.3dba');
+  await H.waitFor(() => H.asm().relink?.candidates, 5000, 'the missing-file dialog');
+  await H.modalButton('使用 舊版/削邊銷-改.3dbx');
+  await H.waitFor(() => !H.asm().relink, 10000, 'the dialog to close');
+  await H.loaded();
+  await H.solved();
+  H.check(H.asm().doc.files[1].path === '舊版/削邊銷-改.3dbx' && [...H.asm().solution.mates.values()].every((m) => m.status === 'ok'), 'found where it went');
+  await H.save('夾具.3dba');
+  out.moved = 'ok';
+  return out;
+};
+
+/** Forgets the remembered project folder: run before reloading for openFresh(). */
+asm.forget = () =>
+  new Promise((resolve) => {
+    const q = indexedDB.deleteDatabase('3d-builder');
+    q.onsuccess = q.onerror = q.onblocked = () => resolve('forgotten; reload the page now');
+  });
+
+/**
+ * Run in a freshly loaded page after files(): the project folder of the last session is remembered
+ * (B9.4). Where the browser asks again, the folder dialog offers it; where it allows it on every visit
+ * (as with this test folder), it is used without asking.
+ */
+asm.remembered = async () => {
+  H.ready();
+  H.check(store.getState().rememberedProject === '3db-e2e' && !store.getState().projectName, 'remembered, not in use yet (reload the page first)');
+  H.root = await (await navigator.storage.getDirectory()).getDirectoryHandle('3db-e2e');
+  const proto = Object.getPrototypeOf(H.root);
+  const own = ['queryPermission', 'requestPermission'].map((k) => [k, Object.getOwnPropertyDescriptor(proto, k)]);
+  const asked = [];
+  proto.queryPermission = async () => 'prompt';
+  proto.requestPermission = async (o) => (asked.push(o.mode), 'granted');
+  try {
+    H.dialogs.length = 0;
+    H.next.open = '夾具.3dba';
+    await H.action('檔案', '開啟舊檔');
+    await H.waitFor(() => store.getState().folderRequest, 5000, 'the folder dialog');
+    const offered = [...document.querySelectorAll('.modal button')].map((b) => b.textContent);
+    H.check(offered.includes('使用「3db-e2e」'), `offered: ${offered}`);
+    await H.modalButton('使用「3db-e2e」');
+    await H.waitFor(() => H.asm(), 10000, 'the assembly');
+    await H.loaded();
+    H.check(asked.join() === 'read' && !H.dialogs.some((d) => d[0] === 'folder'), 'the browser asked again; no folder picker');
+    H.check(store.viewer.instances.size === 2, 'both components show');
+  } finally {
+    for (const [k, d] of own) {
+      if (d) Object.defineProperty(proto, k, d);
+      else delete proto[k];
+    }
+  }
+  return { projectName: store.getState().projectName, tree: H.tree() };
+};
+
+'phase 2 assembly ready: await __asm.all(), then __asm.extras(); after await __asm.forget() and a reload, __asm.openFresh(); 2C: await __asm.fixture(), then __asm.mateExtras(); STEP: await __asm.step(); 2D: await __asm.move(), await __asm.files(), then after a reload __asm.remembered()';

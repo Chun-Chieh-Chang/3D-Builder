@@ -25,6 +25,7 @@ export function FeatureTree() {
   const selectedFace = useStore((s) => s.selectedFace);
   const editing = useStore((s) => s.editing);
   const name = useDocumentName();
+  const returnTo = useStore((s) => s.returnTo);
   const [menu, setMenu] = useState<Menu | null>(null);
   const [relations, setRelations] = useState<Feature | null>(null);
   const [dragIndex, setDragIndex] = useState<number | null>(null);
@@ -72,6 +73,12 @@ export function FeatureTree() {
 
   return (
     <div className="feature-tree">
+      {returnTo && (
+        <button className="return-bar" onClick={() => store.returnToAssembly()} title="回到組合件：存檔過的零件變更會顯示出來">
+          <Icon name="assembly" />
+          返回組合件「{returnTo}」
+        </button>
+      )}
       <div className="tree-part">
         <Icon name="part" />
         <span>{name}</span>

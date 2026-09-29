@@ -5,7 +5,7 @@ import gcsWasm from '@salusoft89/planegcs/dist/planegcs_dist/planegcs.wasm?url';
 import type { AssemblyDoc, Id, PartDoc } from '@3db/model';
 import { findProfiles, PlaneGcsSolver } from '@3db/sketch';
 import { Kernel } from '@3db/kernel';
-import { edgeMateGeometry, faceMateGeometry, Regenerator, solveAssembly, type AssemblyResult, type RebuildResult } from '@3db/regen';
+import { edgeMateGeometry, faceMateGeometry, Regenerator, solveAssembly, type AssemblyResult, type AssemblySolveOptions, type RebuildResult } from '@3db/regen';
 import { edgeFingerprint, faceFingerprint, vertexFingerprint } from '@3db/naming';
 import { exportPartStep, readComponentFile } from '@3db/io';
 import type { KernelApi, PartBuildPayload, RebuildPayload, RebuildRequest, SketchSolvePayload, SketchSolveRequest } from './protocol';
@@ -146,17 +146,21 @@ const api: KernelApi = {
     return Comlink.transfer(payload, [...arrays, payload.vertexPoints].map((a) => a.buffer as ArrayBuffer));
   },
 
-  async solveAssembly(doc: AssemblyDoc, keys: Record<Id, string>): Promise<AssemblyResult> {
+  async solveAssembly(doc: AssemblyDoc, keys: Record<Id, string>, options: AssemblySolveOptions = {}): Promise<AssemblyResult> {
     await api.init();
     const built = new Map<Id, BuiltPart>();
     for (const [component, key] of Object.entries(keys)) {
       const part = await parts.get(key)?.catch(() => null);
       if (part) built.set(component, part);
     }
-    return solveAssembly(doc, (id) => {
-      const body = built.get(id)?.result.body;
-      return body ? { topology: body.topology, names: body.names, frames: built.get(id)!.result.frames } : null;
-    });
+    return solveAssembly(
+      doc,
+      (id) => {
+        const body = built.get(id)?.result.body;
+        return body ? { topology: body.topology, names: body.names, frames: built.get(id)!.result.frames } : null;
+      },
+      options,
+    );
   },
 
   async retainParts(keys: string[]): Promise<void> {

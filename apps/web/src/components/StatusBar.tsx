@@ -34,7 +34,11 @@ export function StatusBar() {
             錯誤為何？（{mateErrors} 個結合錯誤）
           </button>
         )}
-        {missing > 0 && <span className="status-error">{missing} 個零件檔無法載入</span>}
+        {missing > 0 && (
+          <button className="whats-wrong-button error" onClick={() => void store.assembly?.openRelink()} title="重新指定找不到的零件檔">
+            {missing} 個零件檔無法載入
+          </button>
+        )}
         <span>{loading > 0 ? `正在載入零件（${loading}）…` : `零組件 ${asm.doc.components.length} 個`}</span>
         {definition && <span className={`sketch-status ${definition.cls}`}>{definition.text}</span>}
         {bootMs && <span className="muted">核心載入 {Math.round(bootMs.occtMs)} ms</span>}

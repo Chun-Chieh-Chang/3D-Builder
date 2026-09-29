@@ -18,11 +18,14 @@ export interface UiAction {
   active?(): boolean;
 }
 
+/** Nothing going on in the open assembly: no PropertyManager, no drag. */
+const assemblyFree = (s: UiState) => !s.asm?.insert && !s.asm?.mate && !s.asm?.move && !s.asm?.drag;
 /** No PropertyManager session in the open document: file commands may replace or save it. */
-const idle = (s: UiState) => (s.active === 'assembly' ? !s.asm?.insert && !s.asm?.mate : s.editing === null);
+const idle = (s: UiState) => (s.active === 'assembly' ? assemblyFree(s) : s.editing === null);
 /** A part is open and nothing is being edited in it. */
 const partIdle = (s: UiState) => s.active === 'part' && s.editing === null;
-const assemblyIdle = (s: UiState) => s.active === 'assembly' && !s.asm?.insert && !s.asm?.mate;
+const assemblyIdle = (s: UiState) => s.active === 'assembly' && assemblyFree(s);
+const hasComponents = (s: UiState) => (s.asm?.doc.components.length ?? 0) > 0;
 const sketching = (s: UiState) => s.editing?.kind === 'sketch';
 const selectedFeature = (s: UiState) => s.doc.features.find((f) => f.id === s.selected);
 const sketchSelected = (s: UiState) => partIdle(s) && selectedFeature(s)?.type === 'sketch';
@@ -44,6 +47,7 @@ export const ACTIONS: UiAction[] = [
   { id: 'save', label: '儲存檔案', shortcut: 'Ctrl+S', group: 'file', enabled: idle, run: () => void store.save() },
   { id: 'save-as', label: '另存新檔', group: 'file', enabled: idle, run: () => void store.saveAs() },
   { id: 'export-step', label: '輸出 STEP', group: 'file', enabled: (s) => partIdle(s) && s.bootMs !== null, run: () => void store.exportStep() },
+  { id: 'return-assembly', label: '返回組合件', group: 'file', enabled: (s) => partIdle(s) && s.returnTo !== null, run: () => store.returnToAssembly() },
 
   { id: 'extrude', label: '伸長填料/基材', group: 'feature', enabled: sketchSelected, run: () => store.newExtrude('boss') },
   { id: 'revolve', label: '旋轉填料/基材', group: 'feature', enabled: sketchSelected, run: () => store.newRevolve('boss') },
@@ -55,7 +59,9 @@ export const ACTIONS: UiAction[] = [
   { id: 'import-step', label: '輸入 STEP', group: 'feature', enabled: (s) => partIdle(s) && s.bootMs !== null, run: () => void store.importStep() },
 
   { id: 'insert-component', label: '插入零組件', group: 'assembly', enabled: assemblyIdle, run: () => void store.assembly?.startInsert() },
-  { id: 'mate', label: '結合', group: 'assembly', enabled: (s) => assemblyIdle(s) && (s.asm?.doc.components.length ?? 0) > 0, run: () => store.assembly?.startMate() },
+  { id: 'mate', label: '結合', group: 'assembly', enabled: (s) => assemblyIdle(s) && hasComponents(s), run: () => store.assembly?.startMate() },
+  { id: 'move-component', label: '移動零組件', group: 'assembly', enabled: (s) => assemblyIdle(s) && hasComponents(s), run: () => store.assembly?.startMove('move') },
+  { id: 'rotate-component', label: '旋轉零組件', group: 'assembly', enabled: (s) => assemblyIdle(s) && hasComponents(s), run: () => store.assembly?.startMove('rotate') },
   { id: 'fix-component', label: '固定', group: 'assembly', enabled: (s) => assemblyIdle(s) && selectedComponent(s)?.fixed === false, run: () => setFixed(true) },
   { id: 'float-component', label: '浮動', group: 'assembly', enabled: (s) => assemblyIdle(s) && selectedComponent(s)?.fixed === true, run: () => setFixed(false) },
 
@@ -140,20 +146,28 @@ export function installShortcuts(): () => void {
     if (target && (target.tagName === 'INPUT' || target.tagName === 'SELECT' || target.tagName === 'TEXTAREA')) return;
     const s = store.getState();
     // An open dialog owns the keyboard (Esc closes it; its focused button takes Enter).
-    if (s.confirmDelete || s.whatsWrong || s.unsaved || s.folderRequest || s.asm?.confirmDelete) {
+    if (s.confirmDelete || s.whatsWrong || s.unsaved || s.folderRequest || s.asm?.confirmDelete || s.asm?.relink) {
       if (e.key === 'Escape') {
         store.requestDelete(null);
         store.showWhatsWrong(false);
         void store.answerUnsaved('cancel');
         store.cancelFolder();
         store.assembly?.requestDelete(null);
+        store.assembly?.closeRelink();
       }
       return;
     }
     if (s.asm) {
       const a = store.assembly;
       const selected = s.asm.selected;
-      if (s.asm.mate) {
+      if (s.asm.drag) {
+        // A drag owns the keyboard: Esc puts everything back where it was.
+        if (e.key === 'Escape') store.viewer?.cancelComponentDrag();
+        return;
+      }
+      if (s.asm.move) {
+        if (e.key === 'Escape' || e.key === 'Enter') return void a?.closeMove();
+      } else if (s.asm.mate) {
         if (e.key === 'Escape') return void a?.cancelMate();
         if (e.key === 'Enter') return void a?.applyMate();
       } else if (s.asm.insert) {

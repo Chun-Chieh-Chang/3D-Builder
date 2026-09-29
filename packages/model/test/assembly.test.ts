@@ -135,10 +135,58 @@ describe('assembly commands (C15.1, C15.2)', () => {
     let doc = jig();
     doc = applyAssemblyCommand(doc, { type: 'setFixed', componentIds: ['comp1', 'comp2'], value: false });
     expect(doc.components.map((c) => c.fixed)).toEqual([false, false, false]);
-    doc = applyAssemblyCommand(doc, { type: 'setPlacement', componentId: 'comp3', placement: at(1, 2, 3) });
+    doc = applyAssemblyCommand(doc, { type: 'setPlacements', placements: [{ componentId: 'comp3', placement: at(1, 2, 3) }] });
     expect(doc.components[2]!.placement).toEqual(at(1, 2, 3));
     expect(() => applyAssemblyCommand(doc, { type: 'setFixed', componentIds: ['comp1', 'comp8'], value: true })).toThrow(CommandError);
-    expect(() => applyAssemblyCommand(doc, { type: 'setPlacement', componentId: 'comp1', placement: { position: [0, 0, Infinity], rotation: [0, 0, 0, 1] } })).toThrow(CommandError);
+    expect(() => applyAssemblyCommand(doc, { type: 'setPlacements', placements: [{ componentId: 'comp1', placement: { position: [0, 0, Infinity], rotation: [0, 0, 0, 1] } }] })).toThrow(CommandError);
+  });
+
+  it('places several components in one step, or none of them', () => {
+    const doc = jig();
+    const moved = applyAssemblyCommand(doc, {
+      type: 'setPlacements',
+      placements: [
+        { componentId: 'comp2', placement: at(5, 6, 7) },
+        { componentId: 'comp3', placement: at(8, 9, 10, axisAngle([0, 0, 1], 0.5)) },
+      ],
+    });
+    expect(moved.components.map((c) => c.placement.position)).toEqual([[0, 0, 0], [5, 6, 7], [8, 9, 10]]);
+    const bad = [
+      ['an unknown component', [{ componentId: 'comp2', placement: at(1, 1, 1) }, { componentId: 'comp9', placement: at(1, 1, 1) }]],
+      ['a bad rotation', [{ componentId: 'comp2', placement: at(1, 1, 1) }, { componentId: 'comp3', placement: { position: [0, 0, 0], rotation: [0, 0, 1, 1] } }]],
+    ] as const;
+    for (const [what, placements] of bad) expect(() => applyAssemblyCommand(doc, { type: 'setPlacements', placements: [...placements] as { componentId: string; placement: Pose }[] }), what).toThrow(CommandError);
+  });
+
+  it('points a file at another one (B9.4): every component of it follows', () => {
+    const doc = jig();
+    const renamed = applyAssemblyCommand(doc, { type: 'relinkFile', fileId: 'file2', path: '零件/削邊銷-新.3dbx' });
+    expect(renamed.files.map((f) => f.path)).toEqual(['定位板.3dbx', '零件/削邊銷-新.3dbx']);
+    expect(renamed.components.map((c) => [c.id, c.file, c.instance])).toEqual([
+      ['comp1', 'file1', 1],
+      ['comp2', 'file2', 1],
+      ['comp3', 'file2', 2],
+    ]);
+    expect(applyAssemblyCommand(doc, { type: 'relinkFile', fileId: 'file2', path: '零件/削邊銷.3dbx' })).toBe(doc);
+    for (const [what, fileId, path] of [
+      ['an unknown file', 'file9', 'x.3dbx'],
+      ['an absolute path', 'file2', 'C:/x.3dbx'],
+      ['an empty path', 'file2', ''],
+    ]) {
+      expect(() => applyAssemblyCommand(doc, { type: 'relinkFile', fileId: fileId!, path: path! }), what).toThrow(CommandError);
+    }
+  });
+
+  it('pointed at a file it already uses, the components join that entry and are renumbered', () => {
+    // 削邊銷<1>, <2> of file2 become instances of 定位板 (file1), whose <1> is taken: <2> stays, <1> becomes <3>.
+    const doc = applyAssemblyCommand(jig(), { type: 'relinkFile', fileId: 'file2', path: '定位板.3dbx' });
+    expect(doc.files).toEqual([{ id: 'file1', path: '定位板.3dbx' }]);
+    expect(doc.components.map((c) => [c.id, c.file, c.instance])).toEqual([
+      ['comp1', 'file1', 1],
+      ['comp2', 'file1', 3],
+      ['comp3', 'file1', 2],
+    ]);
+    expect(new IdAllocator(doc.idCounters, assemblyIdsInUse(doc)).take('file')).toBe('file3');
   });
 
   it('deletes components, drops files left unused, and never reissues their ids', () => {
@@ -171,7 +219,7 @@ describe('moving the assembly to another folder (B9.4)', () => {
     const h = new AssemblyHistory(createEmptyAssembly());
     h.execute({ type: 'insertComponent', file: { id: 'file1', path: '定位板.3dbx' }, component: comp('comp1', 'file1', 1, true) }, '插入定位板');
     h.execute({ type: 'insertComponent', file: { id: 'file2', path: '零件/削邊銷.3dbx' }, component: comp('comp2', 'file2', 1) }, '插入削邊銷');
-    h.execute({ type: 'setPlacement', componentId: 'comp2', placement: at(5, 0, 0) });
+    h.execute({ type: 'setPlacements', placements: [{ componentId: 'comp2', placement: at(5, 0, 0) }] });
     h.undo(); // the placement waits on the redo stack
     const events: AssemblyDoc[] = [];
     h.subscribe((d) => events.push(d));

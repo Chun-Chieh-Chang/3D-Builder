@@ -14,7 +14,14 @@ export type AssemblyCommand =
   /** Inserts a component (C15.1), together with its file when the assembly does not use that file yet. */
   | { type: 'insertComponent'; component: Component; file?: FileRef }
   | { type: 'setFixed'; componentIds: Id[]; value: boolean }
-  | { type: 'setPlacement'; componentId: Id; placement: Pose }
+  /** Where components are placed (C15.3): one step for all of them, e.g. every part a drag moved. */
+  | { type: 'setPlacements'; placements: { componentId: Id; placement: Pose }[] }
+  /**
+   * Points a file entry at another file (B9.4): a part file renamed, moved, or saved in another form.
+   * Every component of the file follows. When the assembly already uses that file, its components
+   * join that entry, renumbered where their instance numbers are taken.
+   */
+  | { type: 'relinkFile'; fileId: Id; path: string }
   /** Deletes components and the mates on them (as SolidWorks does). Files no component uses any more go too; all their ids stay issued. */
   | { type: 'deleteComponents'; componentIds: Id[] }
   /** Adds a mate at the end of the mates folder (C15.8). */
@@ -124,10 +131,32 @@ export function mutateAssembly(draft: Draft<AssemblyDoc>, cmd: AssemblyCommand):
       for (const c of targets) c.fixed = cmd.value;
       return;
     }
-    case 'setPlacement': {
-      const c = componentOf(draft, cmd.componentId);
-      placement(cmd.placement);
-      c.placement = cmd.placement as Draft<Pose>;
+    case 'setPlacements': {
+      const targets = cmd.placements.map((p) => {
+        placement(p.placement);
+        return [componentOf(draft, p.componentId), p.placement] as const;
+      }); // all valid, or nothing changes
+      for (const [c, pose] of targets) c.placement = pose as Draft<Pose>;
+      return;
+    }
+    case 'relinkFile': {
+      const file = draft.files.find((f) => f.id === cmd.fileId);
+      if (!file) throw new CommandError(`找不到檔案：${cmd.fileId}`);
+      if (!isFilePath(cmd.path)) throw new CommandError(`檔案路徑無效：「${cmd.path}」`);
+      if (file.path === cmd.path) return;
+      const other = draft.files.find((f) => f.path === cmd.path);
+      if (!other) {
+        file.path = cmd.path;
+        return;
+      }
+      // Instance numbers already taken there go to numbers above all of them; the others are kept.
+      const taken = new Set(draft.components.filter((c) => c.file === other.id).map((c) => c.instance));
+      const moving = draft.components.filter((c) => c.file === file.id);
+      for (const c of moving) c.file = other.id;
+      let next = Math.max(...draft.components.filter((c) => c.file === other.id).map((c) => c.instance)) + 1;
+      for (const c of moving) if (taken.has(c.instance)) c.instance = next++;
+      countersFor([file.id], draft.idCounters); // its id is never handed out again
+      draft.files = draft.files.filter((f) => f.id !== file.id);
       return;
     }
     case 'deleteComponents': {

@@ -145,6 +145,9 @@ export function AssemblyTree() {
         <ul className="context-menu" style={{ left: menu.x, top: menu.y }} onPointerDown={(e) => e.stopPropagation()}>
           {'component' in menu ? (
             <>
+              <li onClick={act(() => store.openComponentPart(menu.component.id))}>開啟零件</li>
+              <li onClick={act(() => void a.browseRelink(menu.component.file))}>重新指定零件檔…</li>
+              <li className="separator" />
               {menu.component.fixed ? <li onClick={act(() => a.setFixed([menu.component.id], false))}>浮動</li> : <li onClick={act(() => a.setFixed([menu.component.id], true))}>固定</li>}
               <li className="separator" />
               <li onClick={act(() => a.requestDelete([menu.component.id]))}>刪除…</li>

@@ -2,7 +2,10 @@ import type * as Comlink from 'comlink';
 import {
   AssemblyHistory,
   assemblyIdsInUse,
+  axisAngle,
+  baseName,
   CommandError,
+  composeRotations,
   DATUM_PLANES,
   dirName,
   evalAngle,
@@ -16,6 +19,8 @@ import {
   relativePose,
   relocateAssembly,
   serializeAssembly,
+  toPartPoint,
+  transformPoint,
   type AssemblyCommand,
   type AssemblyDoc,
   type Component,
@@ -25,13 +30,14 @@ import {
   type MateRef,
   type MateType,
   type Pose,
+  type Quat,
   type Vec3,
 } from '@3db/model';
-import { closerAlignment, currentValue, defaultType, hasAlignment, MATE_LABEL, placed, supportedTypes, type MateGeometry } from '@3db/assembly';
-import { assemblyFileName, assemblyName, PART_FILE_EXTENSION, sha256Hex, writeAssemblyFile } from '@3db/io';
+import { closerAlignment, currentValue, defaultType, hasAlignment, MATE_LABEL, placed, supportedTypes, type GoalTerm, type MateGeometry } from '@3db/assembly';
+import { assemblyFileName, assemblyName, componentName, PART_FILE_EXTENSION, sha256Hex, writeAssemblyFile } from '@3db/io';
 import type { AssemblyResult } from '@3db/regen';
 import type { KernelApi, PartBuildPayload } from '../worker/protocol';
-import { fileIn, listFiles, pathIn, pickAssemblySaveTarget, pickPartFile, readBytes, writeFile } from '../files';
+import { fileIn, listFiles, pathIn, pickAssemblySaveTarget, pickPartFile, writeFile } from '../files';
 
 /** A part file of the assembly, by its path in the project folder: read and rebuilt, or why not. */
 export type FileStatus = { status: 'loading' } | { status: 'ok'; key: string } | { status: 'missing' | 'error'; message: string };
@@ -61,6 +67,28 @@ export interface MateDraft {
 
 /** The mate a draft shows before it is added: solved with the others, not yet in the document. */
 export const PREVIEW_MATE = 'preview';
+
+/** A component being dragged (C15.3, A3.5): moved with the left button, turned with the right. */
+export interface DragState {
+  component: Id;
+  mode: 'move' | 'rotate';
+  /** Every component where the latest pointer position puts it (derived; shown instead of the solution). */
+  poses: ReadonlyMap<Id, Pose> | null;
+}
+
+/** 「移動零組件」/「旋轉零組件」 (C15.3): what a left-button drag does while the PropertyManager is open. */
+export interface MoveState {
+  tool: 'move' | 'rotate';
+}
+
+/** A numeric move of the selected component: by ΔX ΔY ΔZ (mm), its origin to X Y Z, or turned about X, Y, Z (radians). */
+export type MoveOp = { kind: 'by'; delta: Vec3 } | { kind: 'to'; position: Vec3 } | { kind: 'turn'; angles: Vec3 };
+
+/** 「找不到參考的檔案」 (B9.4). */
+export interface RelinkState {
+  /** For each missing file (by file id), files of the project folder with its name: moved elsewhere. Null while looking. */
+  candidates: ReadonlyMap<Id, string[]> | null;
+}
 
 /**
  * The open assembly's UI state. Its document (in AssemblyHistory) is the only source of truth; the
@@ -92,6 +120,11 @@ export interface AssemblyState {
   confirmDelete: Id[] | null;
   /** Bumped when the view should fit the assembly once its parts are shown. */
   fitRequest: number;
+  drag: DragState | null;
+  /** The move PropertyManager (C15.3); null while it is closed. */
+  move: MoveState | null;
+  /** The dialog for part files that cannot be found (B9.4); null while it is closed. */
+  relink: RelinkState | null;
 }
 
 export interface AssemblyHost {
@@ -112,6 +145,8 @@ export interface AssemblySource {
 }
 
 const round = (v: number) => Math.round(v * 1000) / 1000 + 0; // µm; "+ 0" turns −0 into 0
+/** Two poses alike to within `tol` (mm, and quaternion components; the solver keeps w ≥ 0). */
+const samePose = (a: Pose, b: Pose, tol: number) => a.position.every((v, i) => Math.abs(v - b.position[i]!) <= tol) && a.rotation.every((v, i) => Math.abs(v - b.rotation[i]!) <= tol);
 const sameRef = (x: MateRef | null, y: MateRef) => !!x && x.component === y.component && x.ref.kind === y.ref.kind && x.ref.name === y.ref.name;
 /** A value as the PropertyManager shows it: mm, or degrees for angles, to a thousandth. */
 const shown = (type: MateType, v: number) => String(Math.round((type === 'angle' ? (v * 180) / Math.PI : v) * 1000) / 1000 + 0);
@@ -135,6 +170,28 @@ export class AssemblyStore {
   /** Solves run one at a time; while one runs, only the newest request waits. */
   private solving = false;
   private solveAgain = false;
+  /** Each part file as it was when read (modified time and size), to notice when it is saved again. */
+  private stamps = new Map<string, string>();
+  private refreshing = false;
+  /** Missing files are pointed out once, when the assembly has been read. */
+  private missingShown = false;
+  /** The drag in progress: where it was grabbed, and the solves it asked for. */
+  private dragging: {
+    component: Id;
+    mode: 'move' | 'rotate';
+    /** The grabbed point and the part's middle, in the part's coordinates; the middle and the orientation as the drag began. */
+    grab: Vec3;
+    center: Vec3;
+    centerAt: Vec3;
+    rotation: Quat;
+    /** Where the last solve put everything: the next one starts there. */
+    latest: ReadonlyMap<Id, Pose>;
+    result: AssemblyResult | null;
+    goal: GoalTerm[] | null;
+    running: boolean;
+    ending: boolean;
+  } | null = null;
+  private centers = new Map<string, Vec3>();
 
   constructor(
     private readonly host: AssemblyHost,
@@ -161,6 +218,9 @@ export class AssemblyStore {
       solution: null,
       confirmDelete: null,
       fitRequest: 1,
+      drag: null,
+      move: null,
+      relink: null,
     };
     this.history.subscribe(() => this.onDocChanged());
     this.loadFiles();
@@ -246,11 +306,19 @@ export class AssemblyStore {
   private load(path: string): void {
     if (this.state.files.has(path)) return;
     this.setFile(path, { status: 'loading' });
+    this.readInto(path);
+  }
+
+  /** Reads a file and shows what it holds now; until then the file shows as it was. */
+  private readInto(path: string): void {
     const generation = this.generation;
     void this.read(path).then((status) => {
       if (generation !== this.generation) return; // reloaded meanwhile
       this.setFile(path, status);
-      if (![...this.state.files.values()].some((s) => s.status === 'loading')) this.settled();
+      if (![...this.state.files.values()].some((s) => s.status === 'loading')) {
+        this.settled();
+        this.pointOutMissing();
+      }
       this.requestSolve();
     });
   }
@@ -260,7 +328,9 @@ export class AssemblyStore {
     if (!project) return { status: 'missing', message: '尚未選擇專案資料夾' };
     if (path === '..' || path.startsWith('../')) return { status: 'missing', message: `零件檔在專案資料夾「${project.name}」之外：${path}` };
     try {
-      const bytes = await readBytes(await fileIn(project, path));
+      const file = await (await fileIn(project, path)).getFile();
+      this.stamps.set(path, `${file.lastModified}:${file.size}`);
+      const bytes = new Uint8Array(await file.arrayBuffer());
       const key = await sha256Hex(bytes);
       if (!this.state.builds.has(key)) {
         const build = await this.host.api.buildPart(key, bytes);
@@ -268,8 +338,39 @@ export class AssemblyStore {
       }
       return { status: 'ok', key };
     } catch (e) {
-      if (e instanceof DOMException && (e.name === 'NotFoundError' || e.name === 'TypeMismatchError')) return { status: 'missing', message: `找不到零件檔「${path}」` };
+      if (e instanceof DOMException && (e.name === 'NotFoundError' || e.name === 'TypeMismatchError')) {
+        this.stamps.delete(path);
+        return { status: 'missing', message: `找不到零件檔「${path}」` };
+      }
       return { status: 'error', message: e instanceof Error ? e.message : String(e) };
+    }
+  }
+
+  /**
+   * 「零件改過後自動更新」 (B9.4): part files saved again since they were read (from another window, or
+   * another program) are read again, and missing ones looked for again. Runs when the window comes back.
+   */
+  async refresh(): Promise<void> {
+    const project = this.project;
+    if (!project || this.refreshing || this.closed) return;
+    this.refreshing = true;
+    try {
+      for (const f of this.history.doc.files) {
+        const path = joinPath(this.folder, f.path);
+        const status = this.state.files.get(path);
+        if (!status || status.status === 'loading') continue;
+        let stamp: string | null = null;
+        try {
+          const file = await (await fileIn(project, path)).getFile();
+          stamp = `${file.lastModified}:${file.size}`;
+        } catch {
+          stamp = null;
+        }
+        if (stamp === null ? status.status === 'missing' : stamp === this.stamps.get(path) && status.status === 'ok') continue;
+        this.readInto(path);
+      }
+    } finally {
+      this.refreshing = false;
     }
   }
 
@@ -330,9 +431,9 @@ export class AssemblyStore {
     return { ...doc, mates: d.editing ? doc.mates.map((x) => (x.id === d.editing ? m : x)) : [...doc.mates, m] };
   }
 
-  /** Where a component is now: as solved, or its placement until the first solve. */
+  /** Where a component is now: as dragged, as solved, or its placement until the first solve. */
   poseOf(componentId: Id): Pose | null {
-    return this.state.solution?.poses.get(componentId) ?? this.history.doc.components.find((c) => c.id === componentId)?.placement ?? null;
+    return this.state.drag?.poses?.get(componentId) ?? this.state.solution?.poses.get(componentId) ?? this.history.doc.components.find((c) => c.id === componentId)?.placement ?? null;
   }
 
   /** The rebuilt part of a component. */
@@ -372,6 +473,7 @@ export class AssemblyStore {
   /** 「結合」: opens the PropertyManager; elements are then picked in the graphics area or the flyout tree. */
   startMate(): void {
     if (this.state.insert) this.cancelInsert();
+    if (this.state.move) this.closeMove();
     this.set({ mate: { editing: null, a: null, b: null, type: null }, selected: null });
   }
 
@@ -556,6 +658,7 @@ export class AssemblyStore {
   async startInsert(): Promise<void> {
     if (this.getState().insert) return; // not this.state.insert: TypeScript would keep that narrowing past the awaits below
     if (this.state.mate) this.cancelMate();
+    if (this.state.move) this.closeMove();
     const project = (this.project ??= await this.host.projectFolder('插入零組件會從專案資料夾讀取零件檔（.3dbx）與 STEP 檔；組合件也要存在這個資料夾之內，才能以相對路徑找到零件。'));
     if (!project) return;
     this.set({ insert: { files: null, chosen: null }, selected: null });
@@ -624,6 +727,291 @@ export class AssemblyStore {
     this.set({ insert: null });
   }
 
+  // ------------------------------------------------------------ moving components (C15.3, A3.5)
+
+  /** A component's name as the FeatureManager shows it: 「削邊銷<2>」. */
+  componentLabel(componentId: Id): string {
+    const doc = this.history.doc;
+    const c = doc.components.find((x) => x.id === componentId);
+    return c ? componentName(doc.files.find((f) => f.id === c.file)?.path, c.instance) : componentId;
+  }
+
+  /** The middle of a component's part (its bounding box), in the part's coordinates: what it turns about. */
+  private centerOf(componentId: Id): Vec3 {
+    const build = this.buildOf(componentId);
+    if (!build?.mesh) return [0, 0, 0];
+    let c = this.centers.get(build.key);
+    if (!c) {
+      const p = build.mesh.positions;
+      const lo = [Infinity, Infinity, Infinity];
+      const hi = [-Infinity, -Infinity, -Infinity];
+      for (let i = 0; i < p.length; i += 3) {
+        for (let k = 0; k < 3; k++) {
+          lo[k] = Math.min(lo[k]!, p[i + k]!);
+          hi[k] = Math.max(hi[k]!, p[i + k]!);
+        }
+      }
+      c = p.length ? [(lo[0]! + hi[0]!) / 2, (lo[1]! + hi[1]!) / 2, (lo[2]! + hi[2]!) / 2] : [0, 0, 0];
+      this.centers.set(build.key, c);
+    }
+    return c;
+  }
+
+  /** Why a component cannot be moved: fixed, or fully defined by its mates; null when it can. */
+  private cannotMove(componentId: Id): string | null {
+    const c = this.history.doc.components.find((x) => x.id === componentId);
+    if (!c) return '找不到零組件';
+    const name = this.componentLabel(componentId);
+    if (c.fixed) return `「${name}」已固定，不能移動（在設計樹按右鍵→「浮動」）`;
+    if (this.state.solution?.components.get(componentId)?.dof === 0) return `「${name}」已被結合完全定義，不能移動`;
+    return null;
+  }
+
+  /**
+   * A drag begins on a component (A3.5): the left button moves it (or turns it, when 「旋轉零組件」 is
+   * open), the right button turns it. False when it cannot move: it is fixed or fully defined.
+   */
+  startDrag(componentId: Id, point: Vec3, button: 'left' | 'right'): boolean {
+    const pose = this.poseOf(componentId);
+    const solution = this.state.solution;
+    if (!pose || !solution || this.state.mate || this.state.insert || this.dragging) return false;
+    const why = this.cannotMove(componentId);
+    if (why) {
+      this.host.notify(why);
+      return false;
+    }
+    const mode = button === 'right' || this.state.move?.tool === 'rotate' ? 'rotate' : 'move';
+    const center = this.centerOf(componentId);
+    this.dragging = {
+      component: componentId,
+      mode,
+      grab: toPartPoint(pose, point),
+      center,
+      centerAt: transformPoint(pose, center),
+      rotation: pose.rotation,
+      latest: solution.poses,
+      result: null,
+      goal: null,
+      running: false,
+      ending: false,
+    };
+    this.set({ drag: { component: componentId, mode, poses: null }, selected: componentId });
+    return true;
+  }
+
+  /**
+   * The pointer moved: moving, the grabbed point follows the line under the cursor and the part keeps
+   * its orientation if it can; turning, it turns about its middle like a trackball (a hundred pixels
+   * about one radian). Either way only as far as its mates allow.
+   */
+  dragTo(e: { origin: Vec3; dir: Vec3; dx: number; dy: number; right: Vec3; up: Vec3 }): void {
+    const d = this.dragging;
+    if (!d || d.ending) return;
+    if (d.mode === 'move') {
+      d.goal = [
+        { kind: 'pointOnLine', point: d.grab, origin: e.origin, dir: e.dir },
+        { kind: 'rotation', rotation: d.rotation },
+      ];
+    } else {
+      // Dragging right turns the near side to the right (about the screen's up), dragging down turns it down.
+      const axis: Vec3 = [0, 1, 2].map((k) => e.up[k]! * e.dx + e.right[k]! * e.dy) as Vec3;
+      const length = Math.hypot(...axis);
+      const rotation = length > 0 ? composeRotations(axisAngle([axis[0] / length, axis[1] / length, axis[2] / length], Math.hypot(e.dx, e.dy) / 100), d.rotation) : d.rotation;
+      d.goal = [
+        { kind: 'rotation', rotation },
+        { kind: 'pointAt', point: d.center, target: d.centerAt },
+      ];
+    }
+    void this.pumpDrag();
+  }
+
+  /** Drag solves run one at a time, each from where the last one ended; only the newest waiting goal is kept. */
+  private async pumpDrag(): Promise<void> {
+    const d = this.dragging;
+    if (!d || d.running) return;
+    d.running = true;
+    try {
+      while (d.goal && this.dragging === d) {
+        const terms = d.goal;
+        d.goal = null;
+        const r = await this.host.api.solveAssembly(this.history.doc, this.keys(), { start: d.latest, goal: { body: d.component, terms } });
+        if (this.dragging !== d) return;
+        d.latest = r.poses;
+        d.result = r;
+        this.set({ drag: { component: d.component, mode: d.mode, poses: r.poses } });
+      }
+    } catch (e) {
+      this.host.notify(`移動失敗：${e instanceof Error ? e.message : String(e)}`, 'error');
+    } finally {
+      d.running = false;
+      if (d.ending && this.dragging === d) this.finishDrag();
+    }
+  }
+
+  /** The button is released: where the drag left things becomes their placement (one undo step). Cancelled (Esc): nothing changes. */
+  endDrag(cancelled: boolean): void {
+    const d = this.dragging;
+    if (!d) return;
+    if (cancelled) {
+      this.dragging = null;
+      this.set({ drag: null });
+      return;
+    }
+    d.ending = true;
+    if (!d.running) this.finishDrag();
+  }
+
+  private finishDrag(): void {
+    const d = this.dragging!;
+    this.dragging = null;
+    if (d.result) this.commitMove(d.result);
+    else this.set({ drag: null });
+  }
+
+  /**
+   * Keeps what a move did: the components solved with the moved one get the poses they have now as
+   * their placements, so solving the document again leaves them there. The result is shown at once (the
+   * document's own solve comes to the same). False when nothing moved.
+   */
+  private commitMove(r: AssemblyResult): boolean {
+    const doc = this.history.doc;
+    const before = this.state.solution?.poses;
+    const group = (r.group ?? []).flatMap((id) => {
+      const c = doc.components.find((x) => x.id === id);
+      const pose = r.poses.get(id);
+      return c && pose && !c.fixed ? [{ c, pose }] : [];
+    });
+    const moved = group.some(({ c, pose }) => !samePose(before?.get(c.id) ?? c.placement, pose, 1e-7));
+    this.set({ drag: null, ...(moved ? { solution: r } : {}) });
+    if (!moved) return false;
+    const placements = group.filter(({ c, pose }) => !samePose(c.placement, pose, 1e-12)).map(({ c, pose }) => ({ componentId: c.id, placement: pose }));
+    return placements.length === 0 || this.execute({ type: 'setPlacements', placements });
+  }
+
+  /** 「移動零組件」 / 「旋轉零組件」: the PropertyManager for moving by numbers (dragging works with it open too). */
+  startMove(tool: MoveState['tool']): void {
+    if (this.state.insert) this.cancelInsert();
+    if (this.state.mate) this.cancelMate();
+    this.set({ move: { tool } });
+  }
+
+  setMoveTool(tool: MoveState['tool']): void {
+    if (this.state.move) this.set({ move: { tool } });
+  }
+
+  closeMove(): void {
+    this.set({ move: null });
+  }
+
+  /**
+   * 「依據 Delta XYZ」, 「至 XYZ 位置」, and turning by degrees about the assembly's X, Y and Z (in that
+   * order, about the part's middle), for the selected component: as far as its mates allow, as SolidWorks
+   * does. One undo step each.
+   */
+  async moveSelected(op: MoveOp): Promise<void> {
+    const id = this.state.selected;
+    const c = id ? this.history.doc.components.find((x) => x.id === id) : undefined;
+    if (!c) return this.host.notify('請先選擇要移動的零組件（在圖面或設計樹中點選）');
+    const why = this.cannotMove(c.id);
+    if (why) return this.host.notify(why, 'error');
+    const pose = this.poseOf(c.id);
+    const solution = this.state.solution;
+    if (!pose || !solution) return;
+    let terms: GoalTerm[];
+    if (op.kind === 'turn') {
+      const [ax, ay, az] = op.angles;
+      const turn = composeRotations(axisAngle([0, 0, 1], az), composeRotations(axisAngle([0, 1, 0], ay), axisAngle([1, 0, 0], ax)));
+      const center = this.centerOf(c.id);
+      terms = [
+        { kind: 'rotation', rotation: composeRotations(turn, pose.rotation) },
+        { kind: 'pointAt', point: center, target: transformPoint(pose, center) },
+      ];
+    } else {
+      const target: Vec3 = op.kind === 'to' ? op.position : [pose.position[0] + op.delta[0], pose.position[1] + op.delta[1], pose.position[2] + op.delta[2]];
+      terms = [
+        { kind: 'pointAt', point: [0, 0, 0], target },
+        { kind: 'rotation', rotation: pose.rotation },
+      ];
+    }
+    try {
+      const r = await this.host.api.solveAssembly(this.history.doc, this.keys(), { start: solution.poses, goal: { body: c.id, terms } });
+      if (!this.commitMove(r)) this.host.notify(`「${this.componentLabel(c.id)}」受結合限制，不能這樣移動`);
+    } catch (e) {
+      this.host.notify(`移動失敗：${e instanceof Error ? e.message : String(e)}`, 'error');
+    }
+  }
+
+  // ------------------------------------------------------------ files that cannot be found (B9.4)
+
+  /** The part files of the document that are not where their paths say. */
+  missingFiles(): FileRef[] {
+    return this.history.doc.files.filter((f) => this.state.files.get(joinPath(this.folder, f.path))?.status === 'missing');
+  }
+
+  /** Once the assembly has been read: missing files are pointed out once; when none is left, the dialog goes. */
+  private pointOutMissing(): void {
+    const missing = this.missingFiles().length > 0;
+    if (!missing && this.state.relink) this.set({ relink: null });
+    if (missing && !this.missingShown && this.project) {
+      this.missingShown = true;
+      void this.openRelink();
+    }
+  }
+
+  /** 「找不到參考的檔案」: the missing files, and files of the project folder with their names (moved elsewhere). */
+  async openRelink(): Promise<void> {
+    const project = this.project;
+    if (!project) return;
+    this.set({ relink: { candidates: null } });
+    let found: string[] = [];
+    try {
+      found = (await listFiles(project, [PART_FILE_EXTENSION, '.step', '.stp'])).files;
+    } catch {
+      // the folder cannot be read: no candidates, 「瀏覽」 still works
+    }
+    if (!this.state.relink) return;
+    const candidates = new Map<Id, string[]>();
+    for (const f of this.missingFiles()) {
+      const name = baseName(f.path).toLowerCase();
+      const where = joinPath(this.folder, f.path);
+      candidates.set(f.id, found.filter((p) => baseName(p).toLowerCase() === name && p !== where));
+    }
+    this.set({ relink: { candidates } });
+  }
+
+  closeRelink(): void {
+    this.set({ relink: null });
+  }
+
+  /** Points a file of the assembly at a file of the project folder (by its path there): every component of it follows. */
+  relink(fileId: Id, projectPath: string): void {
+    this.execute({ type: 'relinkFile', fileId, path: relativePath(this.folder, projectPath) });
+  }
+
+  /** 「瀏覽…」 / 「重新指定零件檔…」: a part or STEP file chosen with the system dialog, inside the project folder. */
+  async browseRelink(fileId: Id): Promise<void> {
+    const project = this.project ?? (await this.host.projectFolder('重新指定零件檔要從專案資料夾中選擇。'));
+    if (!project) return;
+    this.project = project;
+    try {
+      const picked = await pickPartFile(project);
+      if (!picked?.handle) return;
+      const path = await pathIn(project, picked.handle);
+      if (path === null) return this.host.notify(`零件檔必須在專案資料夾「${project.name}」之內`, 'error');
+      this.relink(fileId, path);
+    } catch (e) {
+      this.host.notify(`無法開啟：${e instanceof Error ? e.message : String(e)}`, 'error');
+    }
+  }
+
+  /** The file a component uses, by its path in the project folder (for 「開啟零件」). */
+  componentPath(componentId: Id): string | null {
+    const doc = this.history.doc;
+    const c = doc.components.find((x) => x.id === componentId);
+    const f = c && doc.files.find((x) => x.id === c.file);
+    return f ? joinPath(this.folder, f.path) : null;
+  }
+
   // ------------------------------------------------------------ files (B9.1, B9.4)
 
   /** 「儲存檔案」: into the file the assembly came from; one never saved asks where. True when saved. */
@@ -657,6 +1045,11 @@ export class AssemblyStore {
       this.host.notify(`存檔失敗：${e instanceof Error ? e.message : String(e)}`, 'error');
       return false;
     }
+  }
+
+  /** The assembly's own file, when it has one: where 「返回組合件」 comes back to. */
+  file(): FileSystemFileHandle | null {
+    return this.handle;
   }
 
   private moveTo(from: string, to: string): void {

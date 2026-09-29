@@ -162,6 +162,30 @@ describe('the diamond pin in the locating plate (A3.2, A3.4)', () => {
     close(where(result, [0, 15, 0]), [20, 15, 10]);
   });
 
+  it('turns about its hole when dragged by its flange (A3.5); it cannot be moved off the hole', () => {
+    const doc = jig(seat());
+    const parts: Record<string, MatePart> = { plate: part(plateDoc), pin: part(pinDoc) };
+    const partOf = (id: string) => parts[id] ?? null;
+    const seated = solveAssembly(doc, partOf);
+    // A point 10 mm off the pin's axis, level with the flange's underside; the cursor a quarter turn
+    // round the hole (about +y), seen from above.
+    const rim: Vec3 = [10, 15, 0];
+    const w = transformPoint(seated.poses.get('pin')!, rim);
+    const target: Vec3 = [-40 + w[2], 100, -(w[0] + 40)];
+    const dragged = solveAssembly(doc, partOf, {
+      start: seated.poses,
+      goal: { body: 'pin', terms: [{ kind: 'pointOnLine', point: rim, origin: target, dir: [0, -1, 0] }, { kind: 'rotation', rotation: seated.poses.get('pin')!.rotation }] },
+    });
+    expect([...dragged.mates.values()]).toEqual([{ status: 'ok' }, { status: 'ok' }]);
+    close(where(dragged, [0, 0, 0]), [-40, 0, 0]);
+    close(where(dragged, [0, 15, 0]), [-40, 15, 0]);
+    const moved = where(dragged, rim);
+    close([moved[0], 15, moved[2]], [target[0], 15, target[2]]);
+    expect(dragged.group).toEqual(['pin']);
+    const across = solveAssembly(doc, partOf, { start: seated.poses, goal: { body: 'pin', terms: [{ kind: 'pointAt', point: [0, 0, 0], target: [0, 0, 30] }] } });
+    close(where(across, [0, 0, 0]), [-40, 0, 0]);
+  });
+
   it('is saved with the assembly and solves the same after reopening', async () => {
     const doc = jig([...seat(), mate('parallel', ['plate', SIDE], ['pin', FLAT], { align: 'aligned' })]);
     const file = await readDocumentFile(await writeAssemblyFile(doc));

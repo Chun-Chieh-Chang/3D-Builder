@@ -32,7 +32,23 @@ import { suppressionTargets, type SuppressAction } from '@3db/regen/dag';
 import type { Viewer } from '@3db/render';
 import type { KernelApi, RebuildPayload, SketchSolvePayload, SketchSolveRequest } from '../worker/protocol';
 import { SketchController, type ControllerView, type SketchHost } from '../sketcher/controller';
-import { download, FOLDERS_UNSUPPORTED, isStepFile, pathIn, pickFileToOpen, pickProjectFolder, pickSaveTarget, pickStepFile, writeFile, type OpenedFile } from '../files';
+import {
+  download,
+  fileIn,
+  folderAccess,
+  FOLDERS_UNSUPPORTED,
+  isStepFile,
+  pathIn,
+  pickFileToOpen,
+  pickProjectFolder,
+  pickSaveTarget,
+  pickStepFile,
+  readBytes,
+  rememberedFolder,
+  rememberFolder,
+  writeFile,
+  type OpenedFile,
+} from '../files';
 import { AssemblyStore, type AssemblySource, type AssemblyState } from './assembly';
 
 export interface EditSession {
@@ -46,8 +62,11 @@ export interface Notice {
   text: string;
 }
 
-/** File actions that replace the open document, and so first ask about unsaved changes. */
-export type PendingFileAction = 'new-part' | 'new-demo' | 'new-assembly' | 'open';
+/**
+ * File actions that replace the open document, and so first ask about unsaved changes. 「開啟零件」
+ * switches from an assembly to one of its parts, 「返回組合件」 back (one document at a time).
+ */
+export type PendingFileAction = 'new-part' | 'new-demo' | 'new-assembly' | 'open' | 'open-part' | 'return-assembly';
 
 /** One document is open at a time (2026-09-28 decision): a part or an assembly. */
 export type DocumentKind = 'part' | 'assembly';
@@ -96,6 +115,10 @@ export interface UiState {
   projectName: string | null;
   /** Why the project folder is asked for: the dialog is open. */
   folderRequest: string | null;
+  /** The project folder of an earlier session, offered in that dialog (B9.4). */
+  rememberedProject: string | null;
+  /** The assembly a part was opened from with 「開啟零件」: 「返回組合件」 reopens it. */
+  returnTo: string | null;
   /** Bumped whenever another document is opened or created (the CommandManager then shows its main tab). */
   documentSerial: number;
 }
@@ -172,6 +195,12 @@ class AppStore {
   private project: FileSystemDirectoryHandle | null = null;
   /** Answers the open project-folder dialog. */
   private folderAnswer: ((folder: FileSystemDirectoryHandle | null) => void) | null = null;
+  /** The project folder of an earlier session: used once the browser allows it again. */
+  private remembered: FileSystemDirectoryHandle | null = null;
+  /** 「開啟零件」: the part file to open (path in the project folder). */
+  private partToOpen: string | null = null;
+  /** The assembly file 「返回組合件」 reopens. */
+  private returnFile: FileSystemFileHandle | null = null;
   /** The viewport registers itself so view actions (fit, standard views) can reach it. */
   viewer: Viewer | null = null;
   /** Tools of the sketch being edited (null outside sketch sessions). */
@@ -206,6 +235,8 @@ class AppStore {
       asm: null,
       projectName: null,
       folderRequest: null,
+      rememberedProject: null,
+      returnTo: null,
       documentSerial: 0,
     };
     this.sketchRunner = new LatestRunner(
@@ -227,6 +258,16 @@ class AppStore {
     // Closing the tab with unsaved changes asks first, like closing a modified document (risk 11: lost work).
     window.addEventListener('beforeunload', (e) => {
       if (this.activeDirty()) e.preventDefault();
+    });
+    // Back in this window: part files saved meanwhile (in another window) show as they are now (B9.4).
+    document.addEventListener('visibilitychange', () => {
+      if (!document.hidden) void this.assembly?.refresh();
+    });
+    window.addEventListener('focus', () => void this.assembly?.refresh());
+    void rememberedFolder().then((folder) => {
+      if (!folder || this.project) return;
+      this.remembered = folder;
+      this.set({ rememberedProject: folder.name });
     });
   }
 
@@ -703,6 +744,8 @@ class AppStore {
 
   private async perform(action: PendingFileAction): Promise<void> {
     if (action === 'open') return this.openFile();
+    if (action === 'open-part') return this.openPartFile();
+    if (action === 'return-assembly') return this.reopenAssembly();
     if (action === 'new-assembly') {
       this.showAssembly({ doc: createEmptyAssembly(), handle: null, fileName: null, folder: '', untitled: `組合件${++this.untitledAssemblies}`, project: this.project });
       // SolidWorks starts a new assembly in 「開始組合件」: the first thing to do is to insert a part.
@@ -714,7 +757,7 @@ class AppStore {
 
   private async openFile(): Promise<void> {
     try {
-      const picked = await pickFileToOpen(this.project);
+      const picked = await pickFileToOpen(this.project ?? this.remembered);
       if (!picked) return;
       if (isStepFile(picked)) {
         // Like SolidWorks: a new, unsaved part named after the file, holding the imported body.
@@ -822,9 +865,72 @@ class AppStore {
 
   // ------------------------------------------------------------ assemblies (B1.1, B9.4)
 
+  /**
+   * 「開啟零件」 (from the assembly's FeatureManager): the component's part file becomes the open
+   * document, saved back into that file. The assembly is put away (one document at a time, 2026-09-28
+   * decision), after 「要儲存變更嗎？」; 「返回組合件」 reopens it, with the parts as they are then.
+   */
+  openComponentPart(componentId: Id): void {
+    const a = this.assembly;
+    const path = a?.componentPath(componentId);
+    if (!a || !path) return;
+    if (a.getState().files.get(path)?.status === 'missing') return this.notify('找不到這個零件檔：請先重新指定', 'error');
+    this.partToOpen = path;
+    this.guard('open-part');
+  }
+
+  private async openPartFile(): Promise<void> {
+    const path = this.partToOpen;
+    this.partToOpen = null;
+    const project = this.project;
+    if (!path || !project || !this.assembly) return;
+    const back = this.assembly.file();
+    const assembly = this.assembly.name();
+    try {
+      const handle = await fileIn(project, path);
+      const bytes = await readBytes(handle);
+      const fileName = handle.name;
+      const step = isStepFile({ name: fileName, bytes, handle });
+      if (step) {
+        // A STEP component opens as 「開啟舊檔」 opens STEP: a new part holding it, saved as a part file.
+        this.load(createEmptyPart(), null, null, new Map(), fileName.replace(/\.(step|stp)$/i, ''));
+        await this.importData(fileName, bytes);
+      } else {
+        const file = await readDocumentFile(bytes);
+        if (file.kind !== 'part') throw new Error(`「${fileName}」不是零件檔`);
+        this.load(file.doc, file.format === '3dbx' ? handle : null, fileName, file.blobs);
+      }
+      this.returnFile = back;
+      this.set({ returnTo: back ? assembly : null });
+      this.notify(step ? `已開啟 ${fileName}：STEP 零組件開成新零件；存成零件檔後，可在組合件中以「重新指定零件檔…」改用它` : `已開啟 ${fileName}${back ? '：改好存檔後，按「返回組合件」回到組合件' : ''}`);
+    } catch (e) {
+      this.notify(`無法開啟：${e instanceof Error ? e.message : String(e)}`, 'error');
+    }
+  }
+
+  /** 「返回組合件」: the assembly a part was opened from, read again with its parts as they are now. */
+  returnToAssembly(): void {
+    if (this.returnFile) this.guard('return-assembly');
+  }
+
+  private async reopenAssembly(): Promise<void> {
+    const handle = this.returnFile;
+    if (!handle) return;
+    try {
+      const file = await handle.getFile();
+      const bytes = new Uint8Array(await file.arrayBuffer());
+      const doc = await readDocumentFile(bytes);
+      if (doc.kind !== 'assembly') throw new Error(`「${handle.name}」不是組合件`);
+      await this.openAssembly({ name: handle.name, bytes, handle }, doc.doc);
+    } catch (e) {
+      this.notify(`無法開啟：${e instanceof Error ? e.message : String(e)}`, 'error');
+    }
+  }
+
   /** The assembly becomes the open document; the part is put away (one document at a time). */
   private showAssembly(source: AssemblySource): void {
     this.load(createEmptyPart(), null, null);
+    this.returnFile = null;
     this.assembly = new AssemblyStore(
       {
         api: this.api,
@@ -834,7 +940,7 @@ class AppStore {
       },
       source,
     );
-    this.set({ active: 'assembly', asm: this.assembly.getState(), documentSerial: this.state.documentSerial + 1 });
+    this.set({ active: 'assembly', asm: this.assembly.getState(), returnTo: null, documentSerial: this.state.documentSerial + 1 });
   }
 
   private closeAssembly(): void {
@@ -850,7 +956,7 @@ class AppStore {
    */
   private async openAssembly(picked: OpenedFile, doc: AssemblyDoc): Promise<void> {
     if (!picked.handle) return this.notify(FOLDERS_UNSUPPORTED, 'error');
-    let folder = this.project;
+    let folder = this.project ?? (await this.rememberedWithAccess());
     let path = folder ? await pathIn(folder, picked.handle) : null;
     let reason = `「${picked.name}」引用其他檔案。請選擇包含它和它的零件的專案資料夾。`;
     while (path === null) {
@@ -866,14 +972,38 @@ class AppStore {
 
   private async projectFolder(reason: string): Promise<FileSystemDirectoryHandle | null> {
     if (this.project) return this.project;
-    const folder = await this.askForFolder(reason);
+    const folder = (await this.rememberedWithAccess()) ?? (await this.askForFolder(reason));
     if (folder) this.useProject(folder);
     return folder;
   }
 
+  /** The remembered folder, when the browser allows it without asking (the user chose 「每次造訪都允許」). */
+  private async rememberedWithAccess(): Promise<FileSystemDirectoryHandle | null> {
+    const folder = this.remembered;
+    try {
+      return folder && (await folderAccess(folder, false)) ? folder : null;
+    } catch {
+      return null;
+    }
+  }
+
   private useProject(folder: FileSystemDirectoryHandle): void {
     this.project = folder;
-    this.set({ projectName: folder.name });
+    this.remembered = null;
+    this.set({ projectName: folder.name, rememberedProject: null });
+    void rememberFolder(folder);
+  }
+
+  /** 「使用上次的資料夾」 in the project-folder dialog: the browser asks to allow reading it again. */
+  async useRememberedFolder(): Promise<void> {
+    const folder = this.remembered;
+    if (!folder) return;
+    try {
+      if (await folderAccess(folder, true)) this.answerFolder(folder);
+      else this.notify(`瀏覽器沒有允許讀取「${folder.name}」`, 'error');
+    } catch (e) {
+      this.notify(`無法使用這個資料夾：${e instanceof Error ? e.message : String(e)}`, 'error');
+    }
   }
 
   /** Opens the project-folder dialog: the folder picker needs a click of its own, on the dialog's button. */

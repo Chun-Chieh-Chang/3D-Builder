@@ -1,6 +1,6 @@
 import type { AssemblyDoc, Fingerprint, Id, PartDoc, PlaneFrame, SketchFeature } from '@3db/model';
 import type { MassProps, MeshData } from '@3db/kernel';
-import type { AssemblyResult, FeatureResult } from '@3db/regen';
+import type { AssemblyResult, AssemblySolveOptions, FeatureResult } from '@3db/regen';
 import type { MateGeometry } from '@3db/assembly';
 import type { EntityStatus, SketchStatus, SolvedGeometry, SolveOptions } from '@3db/sketch';
 
@@ -90,6 +90,9 @@ export interface KernelApi {
   buildPart(key: string, bytes: Uint8Array): Promise<PartBuildPayload>;
   /** Lets go of every rebuilt part file except these. */
   retainParts(keys: string[]): Promise<void>;
-  /** Solves an assembly's mates on the parts rebuilt for it (`keys`: component id → part key). */
-  solveAssembly(doc: AssemblyDoc, keys: Record<Id, string>): Promise<AssemblyResult>;
+  /**
+   * Solves an assembly's mates on the parts rebuilt for it (`keys`: component id → part key); with a
+   * goal, moves a component as far as its mates allow (dragging, numeric moves).
+   */
+  solveAssembly(doc: AssemblyDoc, keys: Record<Id, string>, options?: AssemblySolveOptions): Promise<AssemblyResult>;
 }

@@ -194,3 +194,12 @@ code { font-family: Consolas, 'Cascadia Mono', monospace; font-size: 11px; }
 .flyout-title { font-weight: 600; padding: 2px 4px; }
 .flyout-component .twisty { width: 10px; color: var(--muted); }
 .file-list li .file-kind { font-size: 10px; color: var(--muted); border: 1px solid var(--line); border-radius: 3px; padding: 0 4px; }
+
+/* Moving components and reference files (2D) */
+.xyz-fields { margin-top: 4px; }
+.return-bar { display: flex; align-items: center; gap: 6px; width: 100%; margin: 0 0 6px; padding: 5px 8px; border: 1px solid #a5c8ec; background: var(--accent-soft); color: var(--accent); border-radius: 4px; font: inherit; text-align: left; cursor: pointer; }
+.return-bar:hover { background: #dbe9f8; }
+.relink-list { list-style: none; margin: 8px 0 0; padding: 0; max-height: 50vh; overflow: auto; }
+.relink-list li { padding: 6px 0; border-top: 1px solid var(--line); }
+.relink-file { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; word-break: break-all; }
+.relink-actions { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin: 6px 0 0 22px; }
