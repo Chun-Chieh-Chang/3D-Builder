@@ -9,6 +9,7 @@
     ".": "./src/index.ts"
   },
   "dependencies": {
+    "@3db/i18n": "*",
     "immer": "^11.1.18"
   }
 }

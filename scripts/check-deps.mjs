@@ -5,13 +5,14 @@ import { join, relative, sep } from 'node:path';
 
 /** package → internal packages it may import. This table is the single definition of the layering. */
 const ALLOWED = {
-  model: [],
-  sketch: ['model'],
+  i18n: [],
+  model: ['i18n'],
+  sketch: ['model', 'i18n'],
   naming: ['model'],
-  kernel: [],
-  assembly: ['model'],
-  regen: ['model', 'sketch', 'naming', 'assembly', 'kernel'],
-  io: ['model', 'kernel'],
+  kernel: ['i18n'],
+  assembly: ['model', 'i18n'],
+  regen: ['model', 'sketch', 'naming', 'assembly', 'kernel', 'i18n'],
+  io: ['model', 'kernel', 'i18n'],
   render: [],
 };
 

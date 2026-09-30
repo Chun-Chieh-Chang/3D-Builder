@@ -10,6 +10,7 @@
   },
   "dependencies": {
     "@3db/assembly": "*",
+    "@3db/i18n": "*",
     "@3db/io": "*",
     "@3db/kernel": "*",
     "@3db/model": "*",

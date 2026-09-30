@@ -1,3 +1,4 @@
+import { t } from '@3db/i18n';
 import { current, produce, type Draft } from 'immer';
 import { countersFor, type Id } from './ids';
 import type { BlobRef, ChamferFeature, EndCondition, Expr, Feature, ImportedBodyFeature, PartDoc, PlaneDefinition, Ref, RevolveCondition, SketchConstraint, SketchEntity, SketchFeature } from './schema';
@@ -68,13 +69,13 @@ export class CommandError extends Error {
 
 function feature(draft: Draft<PartDoc>, id: Id): Draft<Feature> {
   const f = draft.features.find((x) => x.id === id);
-  if (!f) throw new CommandError(`找不到特徵：${id}`);
+  if (!f) throw new CommandError(t('cmd.featureNotFound', { id }));
   return f;
 }
 
 function sketchOf(draft: Draft<PartDoc>, id: Id): Draft<SketchFeature> {
   const f = feature(draft, id);
-  if (f.type !== 'sketch') throw new CommandError('只有草圖可以這樣編輯');
+  if (f.type !== 'sketch') throw new CommandError(t('cmd.onlySketchEditable'));
   return f;
 }
 
@@ -85,7 +86,7 @@ function positiveLength(value: Expr): void {
   } catch (e) {
     throw new CommandError(e instanceof ExprError ? e.message : String(e));
   }
-  if (!(v > 0)) throw new CommandError(`數值必須大於 0：「${value}」`);
+  if (!(v > 0)) throw new CommandError(t('cmd.mustBePositive', { value }));
 }
 
 function angleIn(value: Expr, min: number, max: number, label: string): void {
@@ -95,39 +96,39 @@ function angleIn(value: Expr, min: number, max: number, label: string): void {
   } catch (e) {
     throw new CommandError(e instanceof ExprError ? e.message : String(e));
   }
-  if (!(v > min && v <= max + 1e-12)) throw new CommandError(`${label}：「${value}」`);
+  if (!(v > min && v <= max + 1e-12)) throw new CommandError(t('cmd.angleOutOfRange', { label, value }));
 }
 
 function endCondition(value: EndCondition): void {
   if ('depth' in value) positiveLength(value.depth);
-  if (value.type === 'upToFace' && value.face.kind !== 'face') throw new CommandError('「成形至某一面」需要選擇一個面');
+  if (value.type === 'upToFace' && value.face.kind !== 'face') throw new CommandError(t('cmd.upToFaceNeedsFace'));
 }
 
 function revolveCondition(value: RevolveCondition): void {
-  angleIn(value.angle, 0, 2 * Math.PI, '旋轉角度必須在 0° 到 360° 之間');
+  angleIn(value.angle, 0, 2 * Math.PI, t('cmd.revolveAngleRange'));
 }
 
 function chamferParams(value: Pick<ChamferFeature, 'mode' | 'distance' | 'second'>): void {
   positiveLength(value.distance);
   if (value.mode === 'distanceDistance') positiveLength(value.second);
-  else angleIn(value.second, 0, Math.PI / 2 - 1e-9, '導角角度必須在 0° 到 90° 之間');
+  else angleIn(value.second, 0, Math.PI / 2 - 1e-9, t('cmd.chamferAngleRange'));
 }
 
 /** The feature's sketch must come earlier in the history. */
 function sketchBefore(doc: PartDoc, sketchId: Id, index: number, label: string): SketchFeature {
   const at = doc.features.findIndex((x) => x.id === sketchId);
   const s = doc.features[at];
-  if (at < 0 || at >= index || s?.type !== 'sketch') throw new CommandError(`${label}需要一個在它之前的草圖`);
+  if (at < 0 || at >= index || s?.type !== 'sketch') throw new CommandError(t('cmd.needsEarlierSketch', { feature: label }));
   return s;
 }
 
 /** A plane reference names a default plane, a reference plane earlier in the history, or a model face. */
 function planeRef(doc: PartDoc, ref: Ref, index: number): void {
   if (ref.kind === 'face') return;
-  if (ref.kind !== 'datum') throw new CommandError('必須選擇基準面或平面');
+  if (ref.kind !== 'datum') throw new CommandError(t('cmd.mustPickPlane'));
   if (isDatumPlaneName(ref.name)) return;
   const at = doc.features.findIndex((f) => f.id === ref.name);
-  if (at < 0 || at >= index || doc.features[at]!.type !== 'refPlane') throw new CommandError('參考的基準面必須在它之前');
+  if (at < 0 || at >= index || doc.features[at]!.type !== 'refPlane') throw new CommandError(t('cmd.datumMustBeEarlier'));
 }
 
 /**
@@ -142,17 +143,17 @@ function planeDefinition(doc: PartDoc, def: PlaneDefinition, index: number): voi
       return;
     case 'angle':
       planeRef(doc, def.plane, index);
-      if (def.axis.kind !== 'edge') throw new CommandError('旋轉軸必須是一條直線邊線');
-      angleIn(def.angle, -1e-12, 2 * Math.PI, '角度必須在 0° 到 360° 之間');
+      if (def.axis.kind !== 'edge') throw new CommandError(t('cmd.axisMustBeStraightEdge'));
+      angleIn(def.angle, -1e-12, 2 * Math.PI, t('cmd.planeAngleRange'));
       return;
     case 'threePoint':
-      if (def.points.length > 3 || def.points.some((p) => p.kind !== 'vertex')) throw new CommandError('三點基準面需要三個頂點');
+      if (def.points.length > 3 || def.points.some((p) => p.kind !== 'vertex')) throw new CommandError(t('cmd.threePointNeedsVertices'));
       return;
   }
 }
 
 function revolveAxis(sketch: SketchFeature, axis: Id): void {
-  if (sketch.entities.find((e) => e.id === axis)?.type !== 'line') throw new CommandError('旋轉軸必須是草圖中的一條直線（通常是中心線）');
+  if (sketch.entities.find((e) => e.id === axis)?.type !== 'line') throw new CommandError(t('cmd.revolveAxisMustBeLine'));
 }
 
 /** Ids a feature brings into the document: its own and, for a sketch, those of its contents. */
@@ -164,43 +165,43 @@ function assertFresh(doc: PartDoc, ids: Id[]): void {
   const inUse = new Set(idsInUse(doc));
   const seen = new Set<Id>();
   for (const id of ids) {
-    if (inUse.has(id) || seen.has(id)) throw new CommandError(`ID 已被使用：${id}`);
+    if (inUse.has(id) || seen.has(id)) throw new CommandError(t('cmd.idInUse', { id }));
     seen.add(id);
   }
 }
 
 function validateNewFeature(doc: PartDoc, f: Feature, index: number): void {
-  if (!f.name.trim()) throw new CommandError('名稱不可空白');
+  if (!f.name.trim()) throw new CommandError(t('cmd.nameEmpty'));
   switch (f.type) {
     case 'sketch': {
-      if (f.plane.kind !== 'datum' && f.plane.kind !== 'face') throw new CommandError('草圖必須放在基準面或平面上');
+      if (f.plane.kind !== 'datum' && f.plane.kind !== 'face') throw new CommandError(t('cmd.sketchNeedsPlane'));
       planeRef(doc, f.plane, index);
       const err = sketchError(f);
       if (err) throw new CommandError(err);
       return;
     }
     case 'extrude':
-      sketchBefore(doc, f.sketch, index, '伸長');
+      sketchBefore(doc, f.sketch, index, t('feature.extrude'));
       endCondition(f.dir1);
       if (f.dir2) endCondition(f.dir2);
       return;
     case 'revolve':
-      revolveAxis(sketchBefore(doc, f.sketch, index, '旋轉'), f.axis);
+      revolveAxis(sketchBefore(doc, f.sketch, index, t('feature.revolve')), f.axis);
       revolveCondition(f.dir1);
       return;
     case 'fillet':
-      if (f.edges.some((r) => r.kind !== 'edge')) throw new CommandError('圓角只能選邊線');
+      if (f.edges.some((r) => r.kind !== 'edge')) throw new CommandError(t('cmd.filletOnlyEdges'));
       positiveLength(f.radius);
       return;
     case 'chamfer':
-      if (f.edges.some((r) => r.kind !== 'edge')) throw new CommandError('導角只能選邊線');
+      if (f.edges.some((r) => r.kind !== 'edge')) throw new CommandError(t('cmd.chamferOnlyEdges'));
       chamferParams(f);
       return;
     case 'refPlane':
       planeDefinition(doc, f.def, index);
       return;
     case 'importedBody':
-      if (!doc.blobs.some((b) => b.id === f.blob)) throw new CommandError(`找不到輸入的資料：${f.blob}`);
+      if (!doc.blobs.some((b) => b.id === f.blob)) throw new CommandError(t('cmd.importDataNotFound', { id: f.blob }));
       return;
   }
 }
@@ -208,7 +209,7 @@ function validateNewFeature(doc: PartDoc, f: Feature, index: number): void {
 /** Inserts a feature at `index` (at or above the rollback bar) after checking it. */
 function insert(draft: Draft<PartDoc>, feature: Feature, index: number): void {
   const limit = draft.rollbackIndex ?? draft.features.length;
-  if (!Number.isInteger(index) || index < 0 || index > limit) throw new CommandError(`插入位置超出範圍：${index}`);
+  if (!Number.isInteger(index) || index < 0 || index > limit) throw new CommandError(t('cmd.insertOutOfRange', { index }));
   const ids = featureIds(feature);
   assertFresh(draft as PartDoc, ids);
   validateNewFeature(draft as PartDoc, feature, index);
@@ -224,8 +225,8 @@ export function mutate(draft: Draft<PartDoc>, cmd: Command): void {
       return insert(draft, cmd.feature, cmd.index);
     case 'importBody': {
       const { blob, feature } = cmd;
-      if (!/^[0-9a-f]{64}$/.test(blob.sha256)) throw new CommandError('輸入資料的雜湊值無效');
-      if (feature.blob !== blob.id) throw new CommandError('輸入本體必須使用這份輸入資料');
+      if (!/^[0-9a-f]{64}$/.test(blob.sha256)) throw new CommandError(t('cmd.importHashInvalid'));
+      if (feature.blob !== blob.id) throw new CommandError(t('cmd.importBodyMustUseData'));
       assertFresh(draft as PartDoc, [blob.id]);
       draft.blobs.push(blob);
       countersFor([blob.id], draft.idCounters);
@@ -234,7 +235,7 @@ export function mutate(draft: Draft<PartDoc>, cmd: Command): void {
     case 'setDimension': {
       const f = sketchOf(draft, cmd.featureId);
       const c = f.constraints.find((x) => x.id === cmd.constraintId);
-      if (!c || !isDimension(c)) throw new CommandError(`找不到尺寸：${cmd.constraintId}`);
+      if (!c || !isDimension(c)) throw new CommandError(t('cmd.dimensionNotFound', { id: cmd.constraintId }));
       if (c.type === 'angle') {
         try {
           evalAngle(cmd.value);
@@ -249,37 +250,37 @@ export function mutate(draft: Draft<PartDoc>, cmd: Command): void {
     }
     case 'setEndCondition': {
       const f = feature(draft, cmd.featureId);
-      if (f.type !== 'extrude') throw new CommandError('只有伸長特徵有終止型態');
+      if (f.type !== 'extrude') throw new CommandError(t('cmd.onlyExtrudeHasEnd'));
       endCondition(cmd.value);
       f[cmd.dir] = cmd.value;
       return;
     }
     case 'setRevolveCondition': {
       const f = feature(draft, cmd.featureId);
-      if (f.type !== 'revolve') throw new CommandError('只有旋轉特徵有旋轉角度');
+      if (f.type !== 'revolve') throw new CommandError(t('cmd.onlyRevolveHasAngle'));
       revolveCondition(cmd.value);
       f.dir1 = cmd.value;
       return;
     }
     case 'setRevolveAxis': {
       const f = feature(draft, cmd.featureId);
-      if (f.type !== 'revolve') throw new CommandError('只有旋轉特徵有旋轉軸');
+      if (f.type !== 'revolve') throw new CommandError(t('cmd.onlyRevolveHasAxis'));
       const sketch = draft.features.find((x) => x.id === f.sketch);
-      if (sketch?.type !== 'sketch') throw new CommandError('找不到旋轉特徵的草圖');
+      if (sketch?.type !== 'sketch') throw new CommandError(t('cmd.revolveSketchNotFound'));
       revolveAxis(sketch as SketchFeature, cmd.axis);
       f.axis = cmd.axis;
       return;
     }
     case 'setRefPlane': {
       const f = feature(draft, cmd.featureId);
-      if (f.type !== 'refPlane') throw new CommandError('只有基準面有這些參數');
+      if (f.type !== 'refPlane') throw new CommandError(t('cmd.onlyRefPlaneHasParams'));
       planeDefinition(draft as PartDoc, cmd.def, draft.features.findIndex((x) => x.id === f.id));
       f.def = cmd.def;
       return;
     }
     case 'setChamfer': {
       const f = feature(draft, cmd.featureId);
-      if (f.type !== 'chamfer') throw new CommandError('只有導角特徵有這些參數');
+      if (f.type !== 'chamfer') throw new CommandError(t('cmd.onlyChamferHasParams'));
       chamferParams(cmd.value);
       f.mode = cmd.value.mode;
       f.distance = cmd.value.distance;
@@ -290,15 +291,15 @@ export function mutate(draft: Draft<PartDoc>, cmd: Command): void {
     }
     case 'setFilletRadius': {
       const f = feature(draft, cmd.featureId);
-      if (f.type !== 'fillet') throw new CommandError('只有圓角特徵有半徑');
+      if (f.type !== 'fillet') throw new CommandError(t('cmd.onlyFilletHasRadius'));
       positiveLength(cmd.value);
       f.radius = cmd.value;
       return;
     }
     case 'setEdges': {
       const f = feature(draft, cmd.featureId);
-      if (f.type !== 'fillet' && f.type !== 'chamfer') throw new CommandError('只有圓角與導角特徵可選邊線');
-      if (cmd.edges.some((r) => r.kind !== 'edge')) throw new CommandError('只能選邊線');
+      if (f.type !== 'fillet' && f.type !== 'chamfer') throw new CommandError(t('cmd.onlyEdgeFeaturesPickEdges'));
+      if (cmd.edges.some((r) => r.kind !== 'edge')) throw new CommandError(t('cmd.mustPickEdges'));
       f.edges = cmd.edges;
       return;
     }
@@ -326,14 +327,14 @@ export function mutate(draft: Draft<PartDoc>, cmd: Command): void {
     }
     case 'renameFeature': {
       const name = cmd.name.trim();
-      if (!name) throw new CommandError('名稱不可空白');
+      if (!name) throw new CommandError(t('cmd.nameEmpty'));
       feature(draft, cmd.featureId).name = name;
       return;
     }
     case 'setRollback': {
       const n = draft.features.length;
       if (cmd.index !== null && (!Number.isInteger(cmd.index) || cmd.index < 0 || cmd.index > n)) {
-        throw new CommandError(`回溯位置超出範圍：${cmd.index}`);
+        throw new CommandError(t('cmd.rollbackOutOfRange', { index: cmd.index }));
       }
       draft.rollbackIndex = cmd.index === n ? null : cmd.index;
       return;
@@ -353,7 +354,7 @@ export function mutate(draft: Draft<PartDoc>, cmd: Command): void {
     case 'removeSketchItems': {
       const f = sketchOf(draft, cmd.featureId);
       const present = new Set<Id>([...f.entities.map((e) => e.id), ...f.constraints.map((c) => c.id)]);
-      for (const id of cmd.ids) if (!present.has(id)) throw new CommandError(`草圖中找不到：${id}`);
+      for (const id of cmd.ids) if (!present.has(id)) throw new CommandError(t('cmd.sketchItemNotFound', { id }));
       if (cmd.ids.length === 0) return;
       const removed = removalSet(f as SketchFeature, cmd.ids);
       countersFor(removed, draft.idCounters); // deleted ids stay issued and are never handed out again
@@ -366,32 +367,32 @@ export function mutate(draft: Draft<PartDoc>, cmd: Command): void {
       const byId = new Map(f.entities.map((e) => [e.id, e]));
       for (const p of cmd.points) {
         const e = byId.get(p.id);
-        if (e?.type !== 'point') throw new CommandError(`不是草圖點：${p.id}`);
-        if (!Number.isFinite(p.x) || !Number.isFinite(p.y)) throw new CommandError(`點 ${p.id} 的座標無效`);
+        if (e?.type !== 'point') throw new CommandError(t('cmd.notSketchPoint', { id: p.id }));
+        if (!Number.isFinite(p.x) || !Number.isFinite(p.y)) throw new CommandError(t('cmd.pointCoordinateInvalid', { id: p.id }));
         e.x = p.x;
         e.y = p.y;
       }
       for (const r of cmd.radii ?? []) {
         const e = byId.get(r.id);
-        if (e?.type !== 'circle') throw new CommandError(`不是圓：${r.id}`);
-        if (!(Number.isFinite(r.radius) && r.radius > 0)) throw new CommandError(`圓 ${r.id} 的半徑必須大於 0`);
+        if (e?.type !== 'circle') throw new CommandError(t('cmd.notCircle', { id: r.id }));
+        if (!(Number.isFinite(r.radius) && r.radius > 0)) throw new CommandError(t('cmd.radiusMustBePositive', { id: r.id }));
         e.radius = r.radius;
       }
       return;
     }
     case 'setVisibility': {
-      for (const key of cmd.keys) if (!isHideable(draft as PartDoc, key)) throw new CommandError(`這個項目不能隱藏或顯示：${key}`);
+      for (const key of cmd.keys) if (!isHideable(draft as PartDoc, key)) throw new CommandError(t('cmd.cannotHide', { key }));
       for (const key of cmd.keys) draft.visibility[key] = cmd.value;
       return;
     }
     case 'replaceRef': {
       const at = draft.features.findIndex((f) => f.id === cmd.featureId);
-      if (at < 0) throw new CommandError(`找不到特徵：${cmd.featureId}`);
+      if (at < 0) throw new CommandError(t('cmd.featureNotFound', { id: cmd.featureId }));
       const { from, to } = cmd;
-      if (from.kind !== 'face' && from.kind !== 'edge' && from.kind !== 'vertex') throw new CommandError('只有面、邊線與頂點的參考可以改用其他元素');
-      if (to.kind !== from.kind) throw new CommandError('只能換成同一類的元素（面、邊線或頂點）');
+      if (from.kind !== 'face' && from.kind !== 'edge' && from.kind !== 'vertex') throw new CommandError(t('cmd.replaceOnlyElements'));
+      if (to.kind !== from.kind) throw new CommandError(t('cmd.replaceSameKind'));
       const { feature: next, replaced } = mapRefs(current(draft.features[at]!) as Feature, (r) => (r.kind === from.kind && r.name === from.name ? to : r));
-      if (replaced === 0) throw new CommandError(`這個特徵沒有參考「${from.name}」`);
+      if (replaced === 0) throw new CommandError(t('cmd.replaceRefMissing', { name: from.name }));
       // Two edges of a fillet may now name the same edge: keep one.
       if (next.type === 'fillet' || next.type === 'chamfer') next.edges = next.edges.filter((r, i) => next.edges.findIndex((x) => x.kind === r.kind && x.name === r.name) === i);
       draft.features[at] = next as Draft<Feature>;
@@ -401,7 +402,7 @@ export function mutate(draft: Draft<PartDoc>, cmd: Command): void {
       const f = sketchOf(draft, cmd.featureId);
       for (const id of cmd.ids) {
         const e = f.entities.find((x) => x.id === id);
-        if (!e || e.type === 'point') throw new CommandError(`只有直線、圓、圓弧可以設為幾何建構線：${id}`);
+        if (!e || e.type === 'point') throw new CommandError(t('cmd.constructionOnlyCurves', { id }));
         if (cmd.value) e.construction = true;
         else delete e.construction;
       }

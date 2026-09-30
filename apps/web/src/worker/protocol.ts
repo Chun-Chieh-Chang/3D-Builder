@@ -1,3 +1,4 @@
+import type { Locale } from '@3db/i18n';
 import type { AssemblyDoc, Fingerprint, Id, PartDoc, PlaneFrame, Pose, SketchFeature } from '@3db/model';
 import type { MassProps, MeshData } from '@3db/kernel';
 import type { AssemblyResult, AssemblySolveOptions, FeatureResult } from '@3db/regen';
@@ -98,6 +99,8 @@ export interface SketchSolvePayload {
 
 export interface KernelApi {
   init(): Promise<{ occtMs: number; gcsMs: number }>;
+  /** The language of the messages the worker makes (errors, warnings); what it made before keeps its language. */
+  setLocale(locale: Locale): Promise<void>;
   /** Imported data by SHA-256 (F2.1): the whole set when a part is loaded, one more on each import. */
   setBlobs(blobs: Map<string, Uint8Array>): Promise<void>;
   addBlob(sha256: string, data: Uint8Array): Promise<void>;

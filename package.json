@@ -13,7 +13,8 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "lint:deps": "node scripts/check-deps.mjs",
-    "check": "npm run typecheck && npm run lint:deps && npm test"
+    "lint:i18n": "node scripts/check-i18n.mjs",
+    "check": "npm run typecheck && npm run lint:deps && npm run lint:i18n && npm test"
   },
   "devDependencies": {
     "@types/node": "^26.6.3",

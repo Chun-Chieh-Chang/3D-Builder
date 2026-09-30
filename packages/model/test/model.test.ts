@@ -1,4 +1,5 @@
-import { describe, expect, it } from 'vitest';
+import { registerTranslation, setLocale } from '@3db/i18n';
+import { afterEach, describe, expect, it } from 'vitest';
 import {
   applyCommand,
   CommandError,
@@ -158,5 +159,21 @@ describe('replacing a reference (B4.3)', () => {
     const next = applyCommand(doc, { type: 'replaceRef', featureId: 'extrude1', from: face, to: face2 });
     const e = next.features[1]!;
     expect(e.type === 'extrude' && e.dir1).toEqual({ type: 'upToFace', face: face2 });
+  });
+});
+
+describe('messages follow the language (D9.1)', () => {
+  afterEach(() => {
+    setLocale('zh-TW');
+    registerTranslation('en', {});
+  });
+  it('a refused command explains itself in the language in use', () => {
+    const doc = createDemoPart();
+    const rename = () => applyCommand(doc, { type: 'renameFeature', featureId: 'sketch1', name: ' ' });
+    expect(rename).toThrow('名稱不可空白');
+    registerTranslation('en', { 'cmd.nameEmpty': 'The name cannot be empty' });
+    setLocale('en');
+    expect(rename).toThrow('The name cannot be empty');
+    expect(() => evalLength('abc')).toThrow('無法解析長度：「abc」'); // not translated yet: the source text
   });
 });

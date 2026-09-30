@@ -1,4 +1,5 @@
-import { useEffect } from 'react';
+import { getLocale, subscribeLocale } from '@3db/i18n';
+import { useEffect, useSyncExternalStore } from 'react';
 import { installShortcuts } from './actions';
 import { useDocumentTitle, useStore } from './state/store';
 import { AssemblyTree } from './components/AssemblyTree';
@@ -14,6 +15,11 @@ import { StatusBar } from './components/StatusBar';
 import { Viewport } from './components/Viewport';
 
 export function App() {
+  // The whole tree is drawn again when the language changes: texts are read when drawn (see strings.ts).
+  const locale = useSyncExternalStore(subscribeLocale, getLocale);
+  useEffect(() => {
+    document.documentElement.lang = locale;
+  }, [locale]);
   const assembly = useStore((s) => s.active === 'assembly');
   const inserting = useStore((s) => !!s.asm?.insert);
   const mating = useStore((s) => !!s.asm?.mate);

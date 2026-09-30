@@ -1,5 +1,6 @@
 /// <reference lib="webworker" />
 import * as Comlink from 'comlink';
+import { setLocale as setWorkerLocale } from '@3db/i18n';
 import occtWasm from 'libcascade/single/wasm?url';
 import gcsWasm from '@salusoft89/planegcs/dist/planegcs_dist/planegcs.wasm?url';
 import type { AssemblyDoc, Id, PartDoc } from '@3db/model';
@@ -60,6 +61,10 @@ async function boot() {
 }
 
 const api: KernelApi = {
+  async setLocale(locale) {
+    setWorkerLocale(locale);
+  },
+
   init() {
     ready ??= boot();
     return ready;

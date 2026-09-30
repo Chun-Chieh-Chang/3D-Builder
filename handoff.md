@@ -73,6 +73,7 @@
 | [ADR 0016](docs/adr/0016-component-mesh-and-load-progress.md) | 零組件的網格（容差 1‰、角度 0.5 rad，比編輯零件粗）與載入進度（階段、秒數）、沒有本體的零件檔視為錯誤、量到的時間分佈 |
 | [ADR 0017](docs/adr/0017-phase3a-technical-validation.md) | Phase 3a-0 技術驗證：薄殼、拔模、掃出、疊層拉伸的演化歷史夠命名、移動面的「延伸板」做法、重算時間量測、Phase 1 遺留 P0 的盤點、成形至下一面（**驗證結果，決策待確認**） |
 | [ADR 0018](docs/adr/0018-visibility-and-reference-repair.md) | 顯示/隱藏（D4.6，Schema v7 `visibility`，存進檔案）與遺失參考的修復（B4.3，`replaceRef`、候選帶指紋、「改用這個」按鈕） |
+| [ADR 0019](docs/adr/0019-i18n-mechanism.md) | 多語系的機制（D9.1）：`@3db/i18n`、語意鍵加編譯期檢查的佔位、zh-TW 為來源語言、`npm run lint:i18n` 的「只減不增」基準（639 行待搬）、Worker 語言同步 |
 | [phase0-verification.md](docs/phase0-verification.md) | Phase 0 驗收紀錄與 SW 人工核對步驟 |
 | [phase1-verification.md](docs/phase1-verification.md) | Phase 1 驗收紀錄：三個示範零件、金樣與 TNP、驗收中發現的問題 |
 | [phase3-plan.md](docs/phase3-plan.md) | **草案，待使用者確認**：Phase 3 的里程碑、驗收標準、需要的樣本與決定 |
@@ -102,7 +103,8 @@
 - **分支與遠端**：只在 `main` 開發。遠端 `origin` = https://github.com/Chun-Chieh-Chang/3D-Builder（私人），`main` 追蹤 `origin/main`。`spike/occt-gaps` 已合併、未推送，可以刪除。
 - **2F 之後的收尾（2026-09-30，已提交推送 `92a434d`）**：零組件的網格變粗（三角形約減六成）、載入進度提示（階段與秒數）、壞的 STEP 檔顯示錯誤。細節見 ADR 0016。
 - **Phase 1 遺留的 P0 已補（2026-09-30，ADR 0018，未提交）**：D4.6 顯示/隱藏（基準面、草圖、原點；本體與軸要等 3a-3、3a-7）與 B4.3 遺失參考的「改用這個」。**Schema 升為 7**（`visibility`），所以 Phase 3a-1 的 Schema 是 v8，不是 v7。
-- **檢查**：320 項測試通過、10 項需要樣本而略過（型別、分層、測試）。（這一行是 2026-09-30 在 `C:` 磁碟上跑的；舊的 301 項是 2F 之後的數字。）（2E 的檢查在 `F:` 磁碟上以暫存設定執行，原因見 §6「工作區連結」。）
+- **多語系機制已完成（2026-09-30，ADR 0019）**：新套件 `@3db/i18n`（**在新電腦或 pull 之後要再 `npm install`，工作區才會連上它；開發伺服器也要重啟**）。新的使用者可見文字一律 `t()`，寫進 `packages/i18n/src/zh-TW/`；`npm run check` 多一道 `lint:i18n`，既有的 639 行中文字串記在 `scripts/i18n-baseline.json`，只能減少。英文翻譯與設定畫面留到 3a-9。
+- **檢查**：331 項測試通過、10 項需要樣本而略過（型別、分層、i18n、測試）。（這一行是 2026-09-30 在 `C:` 磁碟上跑的；舊的 301 項是 2F 之後的數字。）（2E 的檢查在 `F:` 磁碟上以暫存設定執行，原因見 §6「工作區連結」。）
 
 ## 4. 如何執行
 

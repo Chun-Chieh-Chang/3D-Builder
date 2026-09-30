@@ -1,4 +1,5 @@
 import * as Comlink from 'comlink';
+import { DEFAULT_LOCALE, LOCALES, setLocale, type Locale } from '@3db/i18n';
 import { useSyncExternalStore } from 'react';
 import {
   CommandError,
@@ -125,6 +126,18 @@ export interface UiState {
 }
 
 /** Next free display name like SolidWorks does: 草圖3 after 草圖2 (names are labels, ids stay permanent). */
+const LOCALE_KEY = 'locale';
+
+/** The language chosen last time, else the default: the browser's language is not used until a translation exists. */
+function storedLocale(): Locale {
+  try {
+    const saved = localStorage.getItem(LOCALE_KEY);
+    return LOCALES.find((l) => l === saved) ?? DEFAULT_LOCALE;
+  } catch {
+    return DEFAULT_LOCALE;
+  }
+}
+
 /** Immer only replaces what a command touched, so anything else being the same object means it did not change. */
 function onlyVisibilityChanged(a: PartDoc, b: PartDoc): boolean {
   return (Object.keys(b) as (keyof PartDoc)[]).every((k) => k === 'visibility' || a[k] === b[k]);
@@ -261,6 +274,9 @@ class AppStore {
       (e: unknown) => this.set({ bootError: e instanceof Error ? e.message : String(e) }),
     );
     this.lastDoc = this.history.doc;
+    const locale = storedLocale();
+    setLocale(locale);
+    void this.api.setLocale(locale); // in order before the first rebuild request
     this.requestRebuild();
     // Closing the tab with unsaved changes asks first, like closing a modified document (risk 11: lost work).
     window.addEventListener('beforeunload', (e) => {
@@ -345,6 +361,23 @@ class AppStore {
   suppress(featureId: Id, action: SuppressAction): void {
     const featureIds = suppressionTargets(this.history.doc, featureId, action);
     if (featureIds.length > 0) this.execute({ type: 'setSuppressed', featureIds, value: action === 'suppress' });
+  }
+
+  /**
+   * Changes the interface language (D9.1) and remembers it. Messages the worker made are in the old
+   * language until it rebuilds, so it does, and the sketch being edited is solved again.
+   */
+  async setLanguage(locale: Locale): Promise<void> {
+    try {
+      localStorage.setItem(LOCALE_KEY, locale);
+    } catch {
+      // storage is blocked: the choice lasts for this visit only
+    }
+    setLocale(locale);
+    await this.api.setLocale(locale);
+    this.lastDoc = null;
+    if (this.state.editing?.kind === 'sketch') this.requestSketchSolve();
+    else this.requestRebuild();
   }
 
   /** Shows or hides sketches, reference planes, default planes or the origin (D4.6). */
