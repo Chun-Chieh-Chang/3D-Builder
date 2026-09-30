@@ -1084,6 +1084,48 @@ asm.files = async () => {
   return out;
 };
 
+/**
+ * (C15.3) The hint at the foot of the graphics area while the cursor is on a component: which button
+ * does what, or why it cannot be dragged. Needs a page that is drawn (the cursor has to be over the part).
+ */
+asm.hint = async () => {
+  const out = {};
+  H.ready();
+  await H.project({ '定位板.3dbx': `${H.GOLDEN}locating-plate.3dbx`, 'V型塊.3dbx': `${H.GOLDEN}v-block.3dbx` });
+  await H.action('檔案', '新組合件');
+  if (store.getState().folderRequest) await H.modalButton('選擇資料夾…');
+  const plate = await H.insert('定位板.3dbx');
+  const vblock = await H.insert('V型塊.3dbx', [0.25, 0.25]);
+  await H.loaded();
+  await H.hud('全部顯示');
+  const hint = async (id) => {
+    const p = H.onComponent(id);
+    H.ptr('pointermove', p.x, p.y);
+    await H.wait(150);
+    return document.querySelector('.pick-hint')?.textContent ?? null;
+  };
+  out.fixed = await hint(plate.id);
+  H.check(out.fixed?.endsWith('（已固定，不能拖曳）'), `fixed: ${out.fixed}`);
+  out.free = await hint(vblock.id);
+  H.check(out.free?.endsWith('（左鍵拖曳移動，右鍵拖曳旋轉）'), `free: ${out.free}`);
+  await H.action('組合件', '旋轉零組件');
+  out.rotateTool = await hint(vblock.id);
+  H.check(out.rotateTool?.endsWith('（左鍵拖曳旋轉，右鍵拖曳旋轉）'), `with 旋轉零組件 open: ${out.rotateTool}`);
+  await H.key('Enter'); // closes the PropertyManager
+  // Held by three mates on the plate (bottom on the top, centred on its right and front planes): fully defined.
+  const mate = (id, a, b, align) => ({ id, name: id, type: 'coincident', a: { component: plate.id, ref: a }, b: { component: vblock.id, ref: b }, align, suppressed: false });
+  const face = (name) => ({ kind: 'face', name });
+  const datum = (name) => ({ kind: 'datum', name });
+  store.assembly.execute({ type: 'insertMate', mate: mate('m1', face('extrude1:cap:end'), face('extrude1:side:sketch1.l1'), 'antiAligned') });
+  store.assembly.execute({ type: 'insertMate', mate: mate('m2', datum('plane:right'), datum('plane:right'), 'aligned') });
+  store.assembly.execute({ type: 'insertMate', mate: mate('m3', datum('plane:front'), datum('plane:front'), 'aligned') });
+  await H.solved();
+  await H.hud('等角');
+  out.defined = await hint(vblock.id);
+  H.check(out.defined?.endsWith('（已被結合完全定義，不能拖曳）'), `fully defined: ${out.defined}`);
+  return out;
+};
+
 /** 「輸出 STEP」 in the assembly: what the button downloads, or null (and why) when it does not. */
 H.exportedStep = async () => {
   const downloads = [];

@@ -38,6 +38,7 @@ import { assemblyFileName, assemblyName, componentName, PART_FILE_EXTENSION, par
 import type { AssemblyResult } from '@3db/regen';
 import type { AssemblyStepRequest, KernelApi, PartBuildPayload, PartStage } from '../worker/protocol';
 import { fileIn, listFiles, pathIn, pickAssemblySaveTarget, pickPartFile, writeFile } from '../files';
+import { immovable } from './movability';
 
 /** A part file of the assembly, by its path in the project folder: read and rebuilt, or why not. */
 export type FileStatus =
@@ -810,8 +811,9 @@ export class AssemblyStore {
     const c = this.history.doc.components.find((x) => x.id === componentId);
     if (!c) return '找不到零組件';
     const name = this.componentLabel(componentId);
-    if (c.fixed) return `「${name}」已固定，不能移動（在設計樹按右鍵→「浮動」）`;
-    if (this.state.solution?.components.get(componentId)?.dof === 0) return `「${name}」已被結合完全定義，不能移動`;
+    const why = immovable(c, this.state.solution);
+    if (why === 'fixed') return `「${name}」已固定，不能移動（在設計樹按右鍵→「浮動」）`;
+    if (why === 'defined') return `「${name}」已被結合完全定義，不能移動`;
     return null;
   }
 

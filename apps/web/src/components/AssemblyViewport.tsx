@@ -6,6 +6,7 @@ import { ACTIONS } from '../actions';
 import { store, useStore } from '../state/store';
 import type { AssemblyStore } from '../state/assembly';
 import { componentInfo } from './AssemblyTree';
+import { dragHint } from '../state/movability';
 import { LoadProgress } from './LoadProgress';
 import { MateFlyout } from './MatePanel';
 
@@ -177,7 +178,7 @@ export function AssemblyViewport() {
     : mating
       ? (elementName ?? '點選兩個要結合的元素：零組件的面、邊線、頂點，或左上樹中的基準面與原點')
       : hovered
-        ? `零組件：${componentInfo(asm, hovered).name}${asm.move ? `（拖曳以${asm.move.tool === 'move' ? '移動' : '旋轉'}）` : ''}`
+        ? `零組件：${componentInfo(asm, hovered).name}（${dragHint(hovered, asm.solution, asm.move?.tool)}）`
         : asm.move
           ? `在圖面中拖曳零組件以${asm.move.tool === 'move' ? '移動' : '旋轉'}（右鍵拖曳旋轉）`
           : null;
