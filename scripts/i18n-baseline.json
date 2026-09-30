@@ -32,7 +32,7 @@
   "packages/model/src/assembly.ts": 27,
   "packages/model/src/history.ts": 2,
   "packages/model/src/serialize.ts": 11,
-  "packages/model/src/sketch-rules.ts": 16,
+  "packages/model/src/sketch-rules.ts": 15,
   "packages/model/src/templates.ts": 6,
   "packages/regen/src/assembly.ts": 9,
   "packages/regen/src/engine.ts": 39,

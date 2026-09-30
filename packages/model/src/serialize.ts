@@ -72,6 +72,10 @@ const migrations: Record<number, (doc: Json) => Json> = {
   // v7: what is shown or hidden (D4.6) is stored in `visibility`. A version-6 document has no choices,
   // so everything is at its default.
   6: (doc) => ({ ...doc, visibility: {} }),
+  // v8: values are expressions: variables (`variables`), other dimensions, file properties (B5.2, B5.3). Nothing to
+  // convert: a plain number is still an expression. The version keeps older programs from opening a
+  // document whose values they would not understand.
+  7: (doc) => doc,
 };
 
 export class FormatError extends Error {

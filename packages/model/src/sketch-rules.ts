@@ -1,5 +1,4 @@
 import type { Id } from './ids';
-import { evalAngle, evalLength, ExprError } from './expr';
 import { isDimension, SKETCH_ORIGIN, type PartDoc, type SketchConstraint, type SketchEntity, type SketchFeature } from './schema';
 
 /**
@@ -82,21 +81,11 @@ export function idsInUse(doc: PartDoc): Id[] {
     }
   }
   for (const b of doc.blobs) out.push(b.id);
+  for (const v of doc.variables) out.push(v.id);
   return out;
 }
 
 const finite = (...xs: number[]) => xs.every(Number.isFinite);
-
-function dimensionError(c: SketchConstraint): string | null {
-  if (!isDimension(c)) return null;
-  try {
-    if (c.type === 'angle') evalAngle(c.value);
-    else if (!(evalLength(c.value) > 0)) return `數值必須大於 0：「${c.value}」`;
-  } catch (e) {
-    return e instanceof ExprError ? e.message : String(e);
-  }
-  return null;
-}
 
 /**
  * Checks a whole sketch: unique ids, entities built on existing points, every relation and
@@ -144,8 +133,6 @@ export function sketchError(sketch: Pick<SketchFeature, 'entities' | 'constraint
     if ((c.type === 'horizontal' || c.type === 'vertical') && (c.b === undefined) !== (ks[0] === 'line')) {
       return '水平/垂直適用於一條直線，或兩個點';
     }
-    const dim = dimensionError(c);
-    if (dim) return dim;
   }
   return null;
 }

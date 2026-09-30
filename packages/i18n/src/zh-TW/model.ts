@@ -1,10 +1,5 @@
 /** Messages of `@3db/model`: why a command or an expression is refused. */
 export const model = {
-  'expr.cannotParseLength': '無法解析長度：「{expr}」',
-  'expr.cannotParseAngle': '無法解析角度：「{expr}」',
-  'expr.unsupportedLengthUnit': '不支援的長度單位：「{unit}」',
-  'expr.unsupportedAngleUnit': '不支援的角度單位：「{unit}」',
-
   'cmd.featureNotFound': '找不到特徵：{id}',
   'cmd.onlySketchEditable': '只有草圖可以這樣編輯',
   'cmd.mustBePositive': '數值必須大於 0：「{value}」',
@@ -49,4 +44,13 @@ export const model = {
   'cmd.replaceSameKind': '只能換成同一類的元素（面、邊線或頂點）',
   'cmd.replaceRefMissing': '這個特徵沒有參考「{name}」',
   'cmd.constructionOnlyCurves': '只有直線、圓、圓弧可以設為幾何建構線：{id}',
+  'cmd.variableNameInvalid': '變數名稱只能用文字、數字與底線，且不能以數字開頭：「{name}」',
+  'cmd.variableNameTaken': '已經有名稱是「{name}」的變數',
+  'cmd.variableNotFound': '找不到變數：{id}',
+  'cmd.listSeparator': '、',
+  'cmd.variableInUse': '變數「{name}」正被使用，先改掉那些運算式才能刪除：{users}',
+  'cmd.propertyNameEmpty': '屬性名稱不可空白',
+  'cmd.propertyNotFound': '找不到屬性：{name}',
+  'cmd.dimensionLabelInvalid': '尺寸名稱只能用文字、數字與底線，且不能以數字開頭：「{name}」',
+  'cmd.dimensionLabelTaken': '這個草圖已經有名稱是「{name}」的尺寸',
 } as const;

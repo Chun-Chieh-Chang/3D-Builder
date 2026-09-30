@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { t } from '@3db/i18n';
 import { ACTIONS, type UiAction } from '../actions';
 import { useDocumentTitle, useSketcherView, useStore } from '../state/store';
 
@@ -8,6 +9,7 @@ type Tab = { id: string; label: string; groups: UiAction['group'][] };
 const PART_TABS: Tab[] = [
   { id: 'features', label: '特徵', groups: ['feature', 'edit'] },
   { id: 'sketch', label: '草圖', groups: ['sketch', 'sketch-tool'] },
+  { id: 'tools', get label() { return t('tab.tools'); }, groups: ['tools'] },
   { id: 'file', label: '檔案', groups: ['file'] },
   { id: 'view', label: '檢視', groups: ['view'] },
 ];

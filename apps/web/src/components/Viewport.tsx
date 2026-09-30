@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { DATUM_PLANES, findFeature, isDimension, isShown, ORIGIN_KEY, type DatumPlaneName, type Feature, type PlaneFrame, type Ref } from '@3db/model';
+import { DATUM_PLANES, findFeature, isDimension, isShown, ORIGIN_KEY, Parameters, type DatumPlaneName, type Id, type Feature, type PlaneFrame, type Ref } from '@3db/model';
 import { ownerFeatures } from '@3db/naming';
 import { Viewer, type PlaneDisplay, type SketchOverlay } from '@3db/render';
 import { ACTIONS } from '../actions';
@@ -226,7 +226,13 @@ export function Viewport() {
       v.setOverlay(null);
       return;
     }
-    overlay.current = buildOverlay(frame, sketch, sketchSolve, view, v.pixelSize(), { showRelations: true, dimensionPreview: sketcher.dimensionPreview() });
+    const params = new Parameters(doc);
+    const values = new Map<Id, number>();
+    for (const c of sketch.constraints) {
+      const r = isDimension(c) ? params.dimensionValue(sketch, c) : null;
+      if (r && 'value' in r) values.set(c.id, r.value);
+    }
+    overlay.current = buildOverlay(frame, sketch, sketchSolve, view, v.pixelSize(), { showRelations: true, values, dimensionPreview: sketcher.dimensionPreview() });
     v.setOverlay(overlay.current);
   }, [sketching, doc, sketchSolve, view, viewTick]);
 

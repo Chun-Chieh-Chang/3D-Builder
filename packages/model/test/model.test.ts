@@ -10,6 +10,7 @@ import {
   FormatError,
   isShown,
   parsePart,
+  Parameters,
   serializePart,
   type SketchFeature,
 } from '../src/index';
@@ -121,7 +122,7 @@ describe('visibility (D4.6)', () => {
   it('a version-6 document opens with every item at its default', () => {
     const { visibility: _omit, ...v6 } = createDemoPart();
     const doc = parsePart(serializePart({ ...v6, schemaVersion: 6 } as never));
-    expect(doc.schemaVersion).toBe(7);
+    expect(doc.schemaVersion).toBe(8);
     expect(doc.visibility).toEqual({});
   });
 });
@@ -174,6 +175,87 @@ describe('messages follow the language (D9.1)', () => {
     registerTranslation('en', { 'cmd.nameEmpty': 'The name cannot be empty' });
     setLocale('en');
     expect(rename).toThrow('The name cannot be empty');
-    expect(() => evalLength('abc')).toThrow('無法解析長度：「abc」'); // not translated yet: the source text
+    expect(() => evalLength('abc')).toThrow('找不到變數「abc」'); // not translated yet: the source text
+  });
+});
+
+describe('variables, properties and names (B5.2, B5.3, B8.3)', () => {
+  const withVars = () =>
+    [
+      { type: 'addVariable', variable: { id: 'var1', name: 'w', expr: '15' } },
+      { type: 'addVariable', variable: { id: 'var2', name: 'k', expr: 'w * 2' } },
+    ].reduce((doc, cmd) => applyCommand(doc, cmd as never), createDemoPart());
+
+  it('adds variables, and refuses a bad name, a taken name and an expression that cannot be evaluated', () => {
+    const doc = withVars();
+    expect(doc.variables.map((v) => v.name)).toEqual(['w', 'k']);
+    expect(doc.idCounters.var).toBe(2);
+    expect(() => applyCommand(doc, { type: 'addVariable', variable: { id: 'var3', name: '2x', expr: '1' } })).toThrow(CommandError);
+    expect(() => applyCommand(doc, { type: 'addVariable', variable: { id: 'var3', name: 'w', expr: '1' } })).toThrow('已經有名稱是「w」的變數');
+    expect(() => applyCommand(doc, { type: 'addVariable', variable: { id: 'var3', name: 'z', expr: 'nope + 1' } })).toThrow('找不到變數「nope」');
+    expect(() => applyCommand(doc, { type: 'addVariable', variable: { id: 'var1', name: 'z', expr: '1' } })).toThrow(CommandError); // id in use
+  });
+
+  it('a dimension, a depth, a radius and a variable can all be expressions', () => {
+    let doc = withVars();
+    doc = applyCommand(doc, { type: 'setDimension', featureId: 'sketch1', constraintId: 'd1', value: 'k + 3' });
+    doc = applyCommand(doc, { type: 'setEndCondition', featureId: 'extrude1', dir: 'dir1', value: { type: 'blind', depth: 'w / 3' } });
+    doc = applyCommand(doc, { type: 'setFilletRadius', featureId: 'fillet1', value: 'w / 10' });
+    expect(new Parameters(doc).evaluate('k + 3', 'length')).toBe(33);
+    expect(() => applyCommand(doc, { type: 'setFilletRadius', featureId: 'fillet1', value: '0 * w' })).toThrow('數值必須大於 0');
+    expect(() => applyCommand(doc, { type: 'setDimension', featureId: 'sketch1', constraintId: 'd1', value: 'nope' })).toThrow('找不到變數「nope」');
+    expect(() => applyCommand(doc, { type: 'setDimension', featureId: 'sketch1', constraintId: 'd1', value: '30deg' })).toThrow('需要長度');
+  });
+
+  it('refuses an expression that would make a cycle, naming the path', () => {
+    const doc = withVars();
+    expect(() => applyCommand(doc, { type: 'setVariable', id: 'var1', expr: 'k + 1' })).toThrow('循環引用：w → k → w');
+    const d = applyCommand(doc, { type: 'setDimension', featureId: 'sketch1', constraintId: 'd1', value: '高度@草圖1' });
+    expect(() => applyCommand(d, { type: 'setDimension', featureId: 'sketch1', constraintId: 'd2', value: '寬度@草圖1' })).toThrow('循環引用');
+  });
+
+  it('renaming a variable, a sketch or a dimension keeps every expression that used it working', () => {
+    let doc = withVars();
+    doc = applyCommand(doc, { type: 'setDimension', featureId: 'sketch1', constraintId: 'd2', value: 'w' });
+    doc = applyCommand(doc, { type: 'setVariable', id: 'var1', name: 'half' });
+    expect(doc.variables.map((v) => v.expr)).toEqual(['15', 'half * 2']);
+    expect((doc.features[0] as SketchFeature).constraints.find((c) => c.id === 'd2')).toMatchObject({ value: 'half' });
+    doc = applyCommand(doc, { type: 'addVariable', variable: { id: 'var3', name: 'h', expr: '高度@草圖1 + 1' } });
+    doc = applyCommand(doc, { type: 'renameFeature', featureId: 'sketch1', name: '底板' });
+    expect(doc.variables[2]!.expr).toBe('高度@底板 + 1');
+    doc = applyCommand(doc, { type: 'setDimensionLabel', featureId: 'sketch1', constraintId: 'd2', label: 'depth_y' });
+    expect(doc.variables[2]!.expr).toBe('depth_y@底板 + 1');
+    expect(new Parameters(doc).variableValue(doc.variables[2]!)).toMatchObject({ value: { v: 16 } });
+    doc = applyCommand(doc, { type: 'setDimensionLabel', featureId: 'sketch1', constraintId: 'd2', label: '' });
+    expect(doc.variables[2]!.expr).toBe('D2@底板 + 1');
+  });
+
+  it('refuses a name a sketch already has, and a name that cannot be written bare', () => {
+    const doc = createDemoPart();
+    expect(() => applyCommand(doc, { type: 'setDimensionLabel', featureId: 'sketch1', constraintId: 'd2', label: '寬度' })).toThrow('已經有名稱是「寬度」的尺寸');
+    expect(() => applyCommand(doc, { type: 'setDimensionLabel', featureId: 'sketch1', constraintId: 'd2', label: 'a b' })).toThrow(CommandError);
+  });
+
+  it('will not delete a variable that is still used, and lists who uses it', () => {
+    const doc = withVars();
+    expect(() => applyCommand(doc, { type: 'deleteVariable', id: 'var1' })).toThrow('變數「w」正被使用');
+    expect(applyCommand(doc, { type: 'deleteVariable', id: 'var2' }).variables.map((v) => v.name)).toEqual(['w']);
+    expect(() => applyCommand(doc, { type: 'deleteVariable', id: 'nope' })).toThrow(CommandError);
+  });
+
+  it('keeps file properties, and an expression can read them', () => {
+    let doc = applyCommand(createDemoPart(), { type: 'setProperty', name: '板厚', value: '4mm' });
+    doc = applyCommand(doc, { type: 'setProperty', name: '廠商', value: '某某' });
+    doc = applyCommand(doc, { type: 'setDimension', featureId: 'sketch1', constraintId: 'd2', value: "property('板厚') * 3" });
+    expect(new Parameters(doc).evaluate("property('板厚') * 3", 'length')).toBe(12);
+    expect(applyCommand(doc, { type: 'deleteProperty', name: '廠商' }).properties['廠商']).toBeUndefined();
+    expect(() => applyCommand(doc, { type: 'setProperty', name: '  ', value: 'x' })).toThrow(CommandError);
+    expect(() => applyCommand(doc, { type: 'deleteProperty', name: '沒有' })).toThrow(CommandError);
+    expect(() => applyCommand(doc, { type: 'setDimension', featureId: 'sketch1', constraintId: 'd2', value: "property('沒有')" })).toThrow('找不到檔案屬性');
+  });
+
+  it('is saved and read back', () => {
+    const doc = applyCommand(withVars(), { type: 'setProperty', name: '料號', value: 'A-1' });
+    expect(parsePart(serializePart(doc))).toEqual(doc);
   });
 });

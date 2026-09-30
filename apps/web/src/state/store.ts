@@ -14,6 +14,7 @@ import {
   idsInUse,
   isDatumPlaneName,
   planeFrame,
+  resolveSketch,
   serializePart,
   type AssemblyDoc,
   type Command,
@@ -95,6 +96,8 @@ export interface UiState {
   confirmDelete: Id | null;
   /** 「錯誤為何？」 dialog (D7.1). */
   whatsWrong: boolean;
+  /** The equations or file-properties dialog (B5.2, B8.3), when open. */
+  dialog: 'equations' | 'properties' | null;
   /** The file the part was opened from or last saved to (F7.1); null for a part never saved. */
   fileName: string | null;
   /** The document differs from what was last opened or saved (the title shows 「*」). */
@@ -241,6 +244,7 @@ class AppStore {
       dimensionEdit: null,
       confirmDelete: null,
       whatsWrong: false,
+      dialog: null,
       fileName: null,
       dirty: false,
       unsaved: null,
@@ -409,6 +413,17 @@ class AppStore {
   rollTo(featureId: Id | null): void {
     const index = featureId === null ? null : this.history.doc.features.findIndex((f) => f.id === featureId);
     if (index !== -1) this.execute({ type: 'setRollback', index });
+  }
+
+  openDialog(dialog: UiState['dialog']): void {
+    this.set({ dialog });
+  }
+
+  /** Adds a global variable with a fresh id; the reason it was refused, or null. */
+  addVariable(name: string, expr: string): string | null {
+    const doc = this.history.doc;
+    const id = new IdAllocator(doc.idCounters, idsInUse(doc)).take('var');
+    return this.execute({ type: 'addVariable', variable: { id, name, expr } }) ? null : (this.state.notice?.text ?? '?');
   }
 
   showWhatsWrong(open: boolean): void {
@@ -670,7 +685,8 @@ class AppStore {
 
   private requestSketchSolve(options: Omit<SketchSolveRequest, 'seq' | 'sketch'> = { analyze: true }): void {
     const sketch = this.editedSketch();
-    if (sketch) this.sketchRunner.request({ seq: ++this.sketchSeq, sketch, ...options });
+    // the solver only ever sees numbers: expressions are worked out here, with the whole document at hand
+    if (sketch) this.sketchRunner.request({ seq: ++this.sketchSeq, sketch: resolveSketch(sketch, this.history.doc), ...options });
   }
 
   private sketchHost(featureId: Id): SketchHost {
@@ -682,7 +698,7 @@ class AppStore {
       dragPreview: (o) => {
         if (o) this.requestSketchSolve({ drag: o.drag, initial: o.initial, analyze: false });
       },
-      trial: (sketch) => this.api.solveSketch({ seq: -1, sketch }),
+      trial: (sketch) => this.api.solveSketch({ seq: -1, sketch: resolveSketch(sketch, this.history.doc) }),
       notify: (text, kind) => this.notify(text, kind),
       editDimension: (id) => this.set({ dimensionEdit: id }),
     };

@@ -1,7 +1,13 @@
 import { useEffect, useState } from 'react';
+import { t } from '@3db/i18n';
 import {
+  evalQuantity,
   findFeature,
+  formatQuantity,
   isDimension,
+  isNumber,
+  isPlain,
+  Parameters,
   SKETCH_ORIGIN,
   type ChamferFeature,
   type Command,
@@ -25,10 +31,29 @@ import { store, useSketcherView, useStore } from '../state/store';
 import { DATUM_ITEMS, DIMENSION_LABEL, FEATURE_LABEL, featureLabel, PLANE_MODE_LABEL, RELATION_LABEL, SKETCH_STATUS_LABEL, TOOL_LABEL } from '../strings';
 import { Icon } from './Icon';
 
-/** Numeric field that commits a document command on Enter/blur; invalid input stays red (D6.1). */
+/**
+ * What an expression comes to in this document, for showing next to the box (D2.4): the value when it is
+ * more than a plain number, or the reason it is not one. Null for a plain number.
+ */
+function preview(text: string, doc: PartDoc, angle: boolean): { value: string } | { error: string } | null {
+  if (!text.trim() || isPlain(text)) return null;
+  try {
+    const q = evalQuantity(text, new Parameters(doc));
+    return { value: formatQuantity(angle && isNumber(q) ? { v: (q.v * Math.PI) / 180, L: 0, A: 1 } : !angle && isNumber(q) ? { v: q.v, L: 1, A: 0 } : q) };
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : String(e) };
+  }
+}
+
+/**
+ * Field that commits a document command on Enter/blur; invalid input stays red (D6.1). It takes
+ * expressions (D2.4): variables, other dimensions, units and functions, with the value shown beside it.
+ */
 function ValueInput({ value, toCommand, suffix = 'mm' }: { value: string; toCommand: (v: string) => Command; suffix?: string }) {
+  const doc = useStore((s) => s.doc);
   const [text, setText] = useState(value);
   const [invalid, setInvalid] = useState(false);
+  const shown = preview(text, doc, suffix === '°');
   useEffect(() => {
     setText(value);
     setInvalid(false);
@@ -40,8 +65,9 @@ function ValueInput({ value, toCommand, suffix = 'mm' }: { value: string; toComm
   return (
     <span className="value-input">
       <input
-        className={invalid ? 'invalid' : ''}
+        className={invalid || (shown && 'error' in shown) ? 'invalid' : ''}
         value={text}
+        title={shown ? ('error' in shown ? shown.error : t('value.expression', { value: shown.value })) : undefined}
         onChange={(e) => setText(e.target.value)}
         onBlur={commit}
         onKeyDown={(e) => {
@@ -52,6 +78,7 @@ function ValueInput({ value, toCommand, suffix = 'mm' }: { value: string; toComm
         }}
       />
       <span className="suffix">{suffix}</span>
+      {shown && 'value' in shown && <span className="value-preview">= {shown.value}</span>}
     </span>
   );
 }

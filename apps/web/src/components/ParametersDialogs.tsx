@@ -1,0 +1,260 @@
+import { useEffect, useMemo, useState } from 'react';
+import { t } from '@3db/i18n';
+import { dimensionName, formatQuantity, isDimension, Parameters, type Command, type SketchFeature } from '@3db/model';
+import { store, useStore } from '../state/store';
+
+/** Runs a command; the reason it was refused (as the store worded it), or null when it went through. */
+function run(cmd: Command): string | null {
+  return store.execute(cmd) ? null : (store.getState().notice?.text ?? '?');
+}
+
+/** A text field that commits on Enter or when left; a refusal keeps the text, in red, with the reason on hover. */
+function Field({ value, onCommit, placeholder, mono = true, list }: { value: string; onCommit: (v: string) => string | null; placeholder?: string; mono?: boolean; list?: string }) {
+  const [text, setText] = useState(value);
+  const [error, setError] = useState<string | null>(null);
+  useEffect(() => {
+    setText(value);
+    setError(null);
+  }, [value]);
+  const commit = () => {
+    if (text.trim() === value) return;
+    setError(onCommit(text.trim()));
+  };
+  return (
+    <input
+      className={`${error ? 'invalid ' : ''}${mono ? 'mono' : ''}`}
+      value={text}
+      placeholder={placeholder}
+      list={list}
+      title={error ?? undefined}
+      onChange={(e) => setText(e.target.value)}
+      onBlur={commit}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          commit();
+        }
+        e.stopPropagation();
+      }}
+    />
+  );
+}
+
+function Frame({ title, hint, children }: { title: string; hint: string; children: React.ReactNode }) {
+  const close = () => store.openDialog(null);
+  return (
+    <div className="modal-backdrop" onPointerDown={close}>
+      <div className="modal wide parameters" role="dialog" aria-label={title} onPointerDown={(e) => e.stopPropagation()} onKeyDown={(e) => e.key === 'Escape' && close()}>
+        <h3>{title}</h3>
+        <p className="hint">{hint}</p>
+        {children}
+        <div className="modal-actions">
+          <button onClick={close}>{t('eq.close')}</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/** 方程式 (B5.2, B5.3): global variables, and the driving dimensions of every sketch with their names and values. */
+export function EquationsDialog() {
+  const open = useStore((s) => s.dialog === 'equations');
+  const doc = useStore((s) => s.doc);
+  const params = useMemo(() => new Parameters(doc), [doc]);
+  const [name, setName] = useState('');
+  const [expr, setExpr] = useState('');
+  const [addError, setAddError] = useState<string | null>(null);
+  if (!open) return null;
+  const sketches = doc.features.filter((f): f is SketchFeature => f.type === 'sketch');
+  const add = () => {
+    const error = store.addVariable(name.trim(), expr.trim());
+    setAddError(error);
+    if (!error) {
+      setName('');
+      setExpr('');
+    }
+  };
+  return (
+    <Frame title={t('eq.title')} hint={t('eq.hint')}>
+      <h4>{t('eq.variables')}</h4>
+      <table className="eq-table">
+        <thead>
+          <tr>
+            <th>{t('eq.name')}</th>
+            <th>{t('eq.expression')}</th>
+            <th>{t('eq.value')}</th>
+            <th />
+          </tr>
+        </thead>
+        <tbody>
+          {doc.variables.length === 0 && (
+            <tr>
+              <td colSpan={4} className="muted">
+                {t('eq.none')}
+              </td>
+            </tr>
+          )}
+          {doc.variables.map((v) => {
+            const r = params.variableValue(v);
+            return (
+              <tr key={v.id}>
+                <td>
+                  <Field value={v.name} onCommit={(name) => run({ type: 'setVariable', id: v.id, name })} />
+                </td>
+                <td>
+                  <Field value={v.expr} onCommit={(expr) => run({ type: 'setVariable', id: v.id, expr })} />
+                </td>
+                <td className={'error' in r ? 'error-text' : ''} title={'error' in r ? r.error : undefined}>
+                  {'value' in r ? formatQuantity(r.value) : r.error}
+                </td>
+                <td>
+                  <button title={t('eq.delete')} aria-label={t('eq.delete')} onClick={() => run({ type: 'deleteVariable', id: v.id })}>
+                    ✕
+                  </button>
+                </td>
+              </tr>
+            );
+          })}
+          <tr>
+            <td>
+              <input className={addError ? 'invalid mono' : 'mono'} value={name} placeholder={t('eq.newName')} onChange={(e) => setName(e.target.value)} onKeyDown={(e) => e.stopPropagation()} />
+            </td>
+            <td>
+              <input
+                className={addError ? 'invalid mono' : 'mono'}
+                value={expr}
+                placeholder={t('eq.newExpr')}
+                title={addError ?? undefined}
+                onChange={(e) => setExpr(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') add();
+                  e.stopPropagation();
+                }}
+              />
+            </td>
+            <td className="error-text">{addError}</td>
+            <td>
+              <button onClick={add} disabled={!name.trim() || !expr.trim()}>
+                {t('eq.add')}
+              </button>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+
+      <h4>{t('eq.dimensions')}</h4>
+      <table className="eq-table">
+        <tbody>
+          {sketches.every((s) => !s.constraints.some(isDimension)) && (
+            <tr>
+              <td className="muted">{t('eq.noDimensions')}</td>
+            </tr>
+          )}
+          {sketches.flatMap((s) =>
+            s.constraints.filter(isDimension).map((c) => {
+              const r = params.dimensionValue(s, c);
+              const shown = dimensionName(c);
+              return (
+                <tr key={`${s.id}:${c.id}`}>
+                  <td className="owner">{s.name}</td>
+                  <td>
+                    <Field value={shown} mono onCommit={(label) => run({ type: 'setDimensionLabel', featureId: s.id, constraintId: c.id, label: label === shown ? c.label ?? '' : label })} />
+                  </td>
+                  <td>
+                    <Field value={c.value} onCommit={(value) => run({ type: 'setDimension', featureId: s.id, constraintId: c.id, value })} />
+                  </td>
+                  <td className={'error' in r ? 'error-text' : ''} title={'error' in r ? r.error : `${shown}@${s.name}`}>
+                    {'value' in r ? formatQuantity({ v: r.value, L: c.type === 'angle' ? 0 : 1, A: c.type === 'angle' ? 1 : 0 }) : r.error}
+                  </td>
+                </tr>
+              );
+            }),
+          )}
+        </tbody>
+      </table>
+    </Frame>
+  );
+}
+
+/** 檔案屬性 (B8.3): free text by name (vendor, part number …), also readable by expressions. */
+export function PropertiesDialog() {
+  const open = useStore((s) => s.dialog === 'properties');
+  const properties = useStore((s) => s.doc.properties);
+  const [name, setName] = useState('');
+  const [value, setValue] = useState('');
+  const [addError, setAddError] = useState<string | null>(null);
+  if (!open) return null;
+  const add = () => {
+    const error = run({ type: 'setProperty', name, value });
+    setAddError(error);
+    if (!error) {
+      setName('');
+      setValue('');
+    }
+  };
+  return (
+    <Frame title={t('props.title')} hint={t('props.hint')}>
+      <table className="eq-table">
+        <thead>
+          <tr>
+            <th>{t('props.name')}</th>
+            <th>{t('props.value')}</th>
+            <th />
+          </tr>
+        </thead>
+        <tbody>
+          {Object.keys(properties).length === 0 && (
+            <tr>
+              <td colSpan={3} className="muted">
+                {t('props.none')}
+              </td>
+            </tr>
+          )}
+          {Object.entries(properties)
+            .sort(([a], [b]) => (a < b ? -1 : 1))
+            .map(([key, text]) => (
+              <tr key={key}>
+                <td className="owner">{key}</td>
+                <td>
+                  <Field mono={false} value={text} onCommit={(v) => run({ type: 'setProperty', name: key, value: v })} />
+                </td>
+                <td>
+                  <button title={t('props.delete')} aria-label={t('props.delete')} onClick={() => run({ type: 'deleteProperty', name: key })}>
+                    ✕
+                  </button>
+                </td>
+              </tr>
+            ))}
+          <tr>
+            <td>
+              <input list="property-names" className={addError ? 'invalid' : ''} value={name} placeholder={t('props.newName')} onChange={(e) => setName(e.target.value)} onKeyDown={(e) => e.stopPropagation()} />
+              <datalist id="property-names">
+                <option value={t('props.vendor')} />
+                <option value={t('props.partNumber')} />
+                <option value={t('props.description')} />
+              </datalist>
+            </td>
+            <td>
+              <input
+                className={addError ? 'invalid' : ''}
+                value={value}
+                placeholder={t('props.newValue')}
+                title={addError ?? undefined}
+                onChange={(e) => setValue(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') add();
+                  e.stopPropagation();
+                }}
+              />
+            </td>
+            <td>
+              <button onClick={add} disabled={!name.trim()}>
+                {t('props.add')}
+              </button>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </Frame>
+  );
+}

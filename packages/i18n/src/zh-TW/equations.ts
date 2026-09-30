@@ -1,0 +1,37 @@
+/** Interface wording of the equations and file-properties dialogs (B5.2, B5.3, B8.3). */
+export const equations = {
+  'action.equations': '方程式',
+  'action.properties': '檔案屬性',
+  'tab.tools': '工具',
+
+  'eq.title': '方程式',
+  'eq.hint': '變數與運算式：可用 + − × ÷ ^、括號、sin cos sqrt min max if 等函數，與 mm、in、deg 等單位；尺寸以「名稱@草圖」引用，檔案屬性以 property(\'名稱\') 讀取。',
+  'eq.variables': '全域變數',
+  'eq.dimensions': '草圖尺寸',
+  'eq.name': '名稱',
+  'eq.expression': '運算式',
+  'eq.value': '值',
+  'eq.add': '新增',
+  'eq.delete': '刪除',
+  'eq.newName': '新變數的名稱',
+  'eq.newExpr': '運算式，例如 20 或 w*2',
+  'eq.none': '（還沒有全域變數）',
+  'eq.noDimensions': '（草圖裡還沒有尺寸）',
+  'eq.dimensionName': '尺寸名稱：{name}',
+  'eq.close': '關閉',
+
+  'props.title': '檔案屬性',
+  'props.hint': '自訂屬性（廠商、料號…）隨檔案保存，也可以在運算式裡用 property(\'名稱\') 讀取數值。',
+  'props.name': '屬性名稱',
+  'props.value': '值',
+  'props.add': '新增',
+  'props.delete': '刪除',
+  'props.none': '（還沒有屬性）',
+  'props.newName': '新屬性的名稱',
+  'props.newValue': '值',
+  'props.vendor': '廠商',
+  'props.partNumber': '料號',
+  'props.description': '說明',
+
+  'value.expression': '運算式的值：{value}',
+} as const;

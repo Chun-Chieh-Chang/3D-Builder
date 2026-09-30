@@ -1,5 +1,6 @@
 import { isDatumPlaneName, type DatumPlaneName, type Ref } from '@3db/model';
 import { store, type UiState } from './state/store';
+import { t } from '@3db/i18n';
 import { TOOL_LABEL } from './strings';
 import type { ToolId } from './sketcher/controller';
 
@@ -11,7 +12,7 @@ export interface UiAction {
   id: string;
   label: string;
   shortcut?: string;
-  group: 'file' | 'edit' | 'feature' | 'sketch' | 'sketch-tool' | 'assembly' | 'view';
+  group: 'file' | 'edit' | 'feature' | 'sketch' | 'sketch-tool' | 'assembly' | 'view' | 'tools';
   enabled(s: UiState): boolean;
   run(): void;
   /** Toggle state for tool buttons (the active sketch tool). */
@@ -48,6 +49,9 @@ export const ACTIONS: UiAction[] = [
   { id: 'save-as', label: '另存新檔', group: 'file', enabled: idle, run: () => void store.saveAs() },
   { id: 'export-step', label: '輸出 STEP', group: 'file', enabled: (s) => (partIdle(s) || (assemblyIdle(s) && hasComponents(s))) && s.bootMs !== null, run: () => void store.exportStep() },
   { id: 'return-assembly', label: '返回組合件', group: 'file', enabled: (s) => partIdle(s) && s.returnTo !== null, run: () => store.returnToAssembly() },
+
+  { id: 'equations', get label() { return t('action.equations'); }, group: 'tools', enabled: partIdle, run: () => store.openDialog('equations') },
+  { id: 'properties', get label() { return t('action.properties'); }, group: 'tools', enabled: partIdle, run: () => store.openDialog('properties') },
 
   { id: 'extrude', label: '伸長填料/基材', group: 'feature', enabled: sketchSelected, run: () => store.newExtrude('boss') },
   { id: 'revolve', label: '旋轉填料/基材', group: 'feature', enabled: sketchSelected, run: () => store.newRevolve('boss') },

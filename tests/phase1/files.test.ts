@@ -69,12 +69,16 @@ describe('part files written by older versions (B9.2)', () => {
     ['v5-import.3dbx', 5, 12000 - Math.PI * 16 * 10 - (4 - Math.PI) * 10],
     // the demo block written just before what is shown or hidden was saved with the part (D4.6)
     ['v6-demo.3dbx', 6, 1000 - (1 - Math.PI / 4) * 4 * 10],
+    // the same block with what v7 added (its sketch and the origin hidden); values become expressions in v8 (B5.2)
+    ['v7-demo.3dbx', 7, 1000 - (1 - Math.PI / 4) * 4 * 10],
   ])('opens %s (schema %i) with its data and rebuilds it', async (name, version, volume) => {
     const file = await readPartFile(oldFile(name));
     expect(file.format).toBe('3dbx');
     expect(file.warnings).toEqual([]);
     expect(file.doc.schemaVersion).toBe(SCHEMA_VERSION);
-    expect(file.doc.visibility).toEqual({});
+    // what v7 stored survives; older files have no choices, so everything is at its default
+    expect(file.doc.visibility).toEqual(version >= 7 ? { origin: false, sketch1: false } : {});
+    expect(file.doc.variables).toEqual([]);
     expect(JSON.parse(new TextDecoder().decode((await readZip(oldFile(name)))[0]!.data)).schemaVersion).toBe(version);
     const r = new Regenerator(kernel, await PlaneGcsSolver.create(), file.blobs).rebuild(file.doc);
     expect(statuses(r).filter((s) => !s.endsWith('=ok'))).toEqual([]);

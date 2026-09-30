@@ -4,6 +4,7 @@ import {
   evalLength,
   isDatumPlaneName,
   planeFrame,
+  resolveDoc,
   type ChamferFeature,
   type ExtrudeFeature,
   type FilletFeature,
@@ -158,7 +159,10 @@ export class Regenerator {
     let body: BodyState | null = null;
     this.planes = new Map();
 
-    doc.features.forEach((feature, index) => {
+    // Every expression becomes the number it stands for before anything is built: the solver and the kernel
+    // only ever see numbers. A feature whose expression cannot be evaluated reports why instead of building.
+    const { doc: resolved, problems } = resolveDoc(doc);
+    resolved.features.forEach((feature, index) => {
       const t = performance.now();
       this.warnings = [];
       const done = (r: Omit<FeatureResult, 'id' | 'ms'>) =>
@@ -174,6 +178,8 @@ export class Regenerator {
         return done({ status: 'rolledBack' });
       }
       if (feature.suppressed) return done({ status: 'suppressed' });
+      const problem = problems.get(feature.id);
+      if (problem) return done({ status: 'error', message: problem });
       try {
         switch (feature.type) {
           case 'sketch': {

@@ -1,4 +1,4 @@
-import type { Feature, Id, PartDoc, Ref } from '@3db/model';
+import { expressionParents, type Feature, type Id, type PartDoc, type Ref } from '@3db/model';
 import { ownerFeatures } from '@3db/naming';
 
 /**
@@ -33,6 +33,8 @@ export function parentsOf(feature: Feature, doc: PartDoc): Id[] {
       parents = []; // it depends only on its data
       break;
   }
+  // a dimension of another sketch used in an expression, directly or through a variable (B5.3)
+  parents.push(...expressionParents(doc, feature));
   return [...new Set(parents)].filter((p) => p !== feature.id && ids.has(p));
 }
 

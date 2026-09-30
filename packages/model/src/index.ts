@@ -4,6 +4,7 @@ export * from './datums';
 export * from './expr';
 export * from './sketch-rules';
 export * from './commands';
+export * from './params';
 export * from './refs';
 export * from './visibility';
 export * from './paths';

@@ -1,4 +1,4 @@
-import { constraintRefs, isDimension, SKETCH_ORIGIN, type Id, type PlaneFrame, type SketchConstraint, type SketchFeature } from '@3db/model';
+import { constraintRefs, isDimension, isPlain, SKETCH_ORIGIN, type DimensionConstraint, type Id, type PlaneFrame, type SketchConstraint, type SketchFeature } from '@3db/model';
 import { add, dimensionText, layoutDimension, mid, polar, sample, type Geometry } from '@3db/sketch/interact';
 import type { EntityStatus, P2, SolvedGeometry } from '@3db/sketch';
 import type { OverlayCurve, OverlayLabel, OverlayPoint, SketchOverlay } from '@3db/render';
@@ -36,8 +36,18 @@ const RELATION_SYMBOL: Record<Exclude<SketchConstraint['type'], 'distance' | 'di
 
 export interface OverlayOptions {
   showRelations: boolean;
+  /** What each dimension's expression comes to (mm, radians); shown in place of the expression, with a Σ (SolidWorks' mark for a dimension driven by an equation). */
+  values?: ReadonlyMap<Id, number>;
   /** Dimension label next to the cursor while the smart-dimension tool is placing one. */
   dimensionPreview: { text: string; at: P2 } | null;
+}
+
+const shown = (v: number) => String(Math.round(v * 1e4) / 1e4);
+
+/** A dimension's text: as typed when it is a plain number, else its value marked with Σ. */
+function dimensionLabel(c: DimensionConstraint, value: number | undefined): string {
+  if (value === undefined || isPlain(c.value)) return dimensionText(c);
+  return 'Σ' + dimensionText({ ...c, value: c.type === 'angle' ? shown((value * 180) / Math.PI) : shown(value) });
 }
 
 function statusColor(s: EntityStatus | undefined): number {
@@ -124,7 +134,7 @@ export function buildOverlay(frame: PlaneFrame, sketch: SketchFeature, solve: Sk
     const state = selected.has(c.id) ? 'selected' : over.has(c.id) ? 'over' : '';
     const color = state === 'selected' ? SKETCH_COLORS.selected : state === 'over' ? SKETCH_COLORS.over : SKETCH_COLORS.dimension;
     for (const [a, b] of layout.segments) curves.push({ points: [a, b], color });
-    labels.push({ key: `dim:${c.id}`, p: layout.text, text: dimensionText(c), className: `dimension ${state}`, interactive: true, title: c.label ?? '按兩下修改尺寸' });
+    labels.push({ key: `dim:${c.id}`, p: layout.text, text: dimensionLabel(c, options.values?.get(c.id)), className: `dimension ${state}`, interactive: true, title: c.label ?? '按兩下修改尺寸' });
   }
 
   // relation symbols (C1.27), stacked when several sit at the same place
