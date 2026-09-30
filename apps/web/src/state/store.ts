@@ -693,7 +693,7 @@ class AppStore {
   async exportStep(): Promise<void> {
     try {
       const name = this.documentName();
-      const text = await this.api.exportStep(this.history.doc, name);
+      const text = this.assembly ? await this.api.exportAssemblyStep(this.assembly.stepRequest()) : await this.api.exportStep(this.history.doc, name);
       download(stepFileName(name), text, 'application/step');
       this.notify(`已輸出 ${stepFileName(name)}`);
     } catch (e) {

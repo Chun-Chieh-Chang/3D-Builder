@@ -1,6 +1,6 @@
 # 交接文件
 
-- 最後更新：2026-09-30（2A–2D 已提交推送；下一步 2E；以 `git log` 為準）
+- 最後更新：2026-09-30（2A–2D 已提交推送；2E 已實作驗證、尚未提交；下一步 2F，需要使用者的 SW 組合件樣本；以 `git log` 為準）
 - 用途：讓下一個工作階段（人或 AI）不讀對話紀錄也能接手。
 - 本文件只記錄「目前狀態、待辦、下一步、工作約定」。範圍與設計以藍圖、ADR、程式碼為準；若有衝突，以它們為準並更新本文件。
 
@@ -34,6 +34,7 @@
 | [ADR 0012](docs/adr/0012-mate-solver.md) | 結合求解器：`@3db/assembly`、組合件 Schema 2（結合）、LM 從擺放位置解起、分組、依設計樹順序找衝突、自由度、支援的結合、零件的解析幾何、旋轉件平面法向的修正 |
 | [ADR 0013](docs/adr/0013-mate-ui.md) | 結合的介面：Worker 求解與預覽、結合 PropertyManager、零組件上的拾取與浮出樹、設計樹的狀態與結合資料夾、錯誤為何、開始組合件、STEP 零組件 |
 | [ADR 0014](docs/adr/0014-moving-and-reference-files.md) | 移動零組件與參考檔：求解器的移動目標、拖曳與數值移動、放開時寫入整組擺放位置、重新指定零件檔、找不到的檔案、零件改過後更新、開啟零件與返回組合件、記住專案資料夾 |
+| [ADR 0015](docs/adr/0015-step-assembly-export.md) | STEP 組合件輸出：XCAF 單層結構、寫出圖面上的位姿、位姿由四元數與平移組成的原因、非單位四元數與讀不到的零件檔一律拒絕 |
 | [phase0-verification.md](docs/phase0-verification.md) | Phase 0 驗收紀錄與 SW 人工核對步驟 |
 | [phase1-verification.md](docs/phase1-verification.md) | Phase 1 驗收紀錄：三個示範零件、金樣與 TNP、驗收中發現的問題 |
 | 本文件 | 狀態、待辦、下一步、約定 |
@@ -57,8 +58,9 @@
   - **2B 結合求解器**：完成並已提交推送（`d10c2ad`）。細節見 ADR 0012 與 §10。另修正一個 Phase 1 的問題：旋轉件平面的法向（ADR 0012「修正」）。
   - **2C 結合的介面與管理**：完成並已提交推送（`c3f3860`）。細節見 ADR 0013 與 §10。驗收：只用 UI 把三個金樣零件組成小夾具並完全定義，矛盾的結合被正確指出。STEP 檔可直接當零組件插入。
   - **2D 移動零組件與參考檔**：完成並已提交推送。細節見 ADR 0014 與 §10。驗收：拖曳部分定義的零組件只沿剩餘自由度移動；零件檔改名後開啟組合件會詢問並可重新指定；從組合件開啟零件改尺寸、返回後結合仍成立。
+  - **2E STEP 組合件輸出**：已實作並通過自動與瀏覽器驗證，**尚未提交**。細節見 ADR 0015 與 §10。「檔案」→「輸出 STEP」在組合件中可用，寫出一個組合件，每個零件檔一個原型、每個零組件一個帶位姿的實例。待使用者在 SW 開啟輸出檔確認（§8）。
 - **分支與遠端**：只在 `main` 開發。遠端 `origin` = https://github.com/Chun-Chieh-Chang/3D-Builder（私人），`main` 追蹤 `origin/main`。`spike/occt-gaps` 已合併、未推送，可以刪除。
-- **檢查**：`npm run check` 278/278 通過（型別、分層、測試）；`vite build` 成功。
+- **檢查**：289/289 測試通過（型別、分層、測試）；`vite build` 成功。（2E 的檢查在 `F:` 磁碟上以暫存設定執行，原因見 §6「工作區連結」。）
 
 ## 4. 如何執行
 
@@ -119,6 +121,12 @@ npm run build        # 正式版建置
 
 **開發與測試環境**
 
+- **工作區連結（`F:` 磁碟）**：專案在 `F:\Self-developed_Apps\G3\3D-Builder`（USB 磁碟，不支援符號連結），`node_modules/@3db` 是空的，所以 `npm run typecheck`、`npm test`、`npm run build`、`npm run dev` 都找不到 `@3db/*`。在支援符號連結的磁碟（例如 C:）上 `npm install` 就正常。在 `F:` 上驗證的做法（2E 用過）：在暫存區放三個設定檔，各自加上 `@3db/<套件>` → `packages/<套件>/src/index.ts` 的別名（另有 `@3db/regen/dag`、`@3db/sketch/interact`），專案內不留檔案：
+  - tsc：`extends` 專案的 `tsconfig.json`，加 `paths`、`typeRoots`（`node_modules/@types` 與 `node_modules`）與絕對路徑的 `include`；`baseUrl` 已被移除，不能用；
+  - vitest：`root` 指向專案，`resolve.alias` 用正規表示式（`/` 要跳脫），執行 `vitest run --config … --maxWorkers=4`。並行 worker 太多（預設約 26 個）會耗盡 WASM 記憶體而崩潰；
+  - vite：設定檔用 `file:///…/node_modules/vite/dist/node/index.js` 匯入 `defineConfig` 與 react 外掛，`root` 設成 `apps/web`，`build.outDir` 指向暫存區。開發伺服器用背景程序啟動（`npx vite --config …`），再以 `preview_start` 的 `url` 開分頁；用完停掉。
+- **e2e 腳本的路徑**：`tests/e2e/*.js` 的 `H.GOLDEN` 已改成由 `import.meta.url` 推出，不再寫死使用者路徑。載入腳本時用實際的檢出位置，例如 `await import('/@fs/F:/Self-developed_Apps/G3/3D-Builder/tests/e2e/phase2-assembly.js?' + Date.now())`。本文件其他處的 `C:/Users/3kids/Downloads/3D-Builder` 是舊機器上的路徑。Vite 會把 `new URL('字面值', import.meta.url)` 當成資源匯入而改寫，所以腳本裡用字串處理。
+- **頁面沒有繪製時的 e2e**：瀏覽器窗格隱藏、Claude 視窗被擋住時截圖逾時，依游標拾取的流程（`H.pickOn`，例如 `__asm.fixture()` 的結合）會失敗（「could not get the cursor onto face …」）。這種情況改用指令加入結合；`__asm.exportStep()` 就是這樣做的。
 - **連接埠**：5173 是本機其他 Vite 專案在用的預設埠。本專案固定使用 `127.0.0.1:5391`，並開啟 strictPort；埠被占用時直接報錯，不會換埠。
 - **預覽伺服器**：app 可能在回合之間停掉它。請使用者開網址前，先用 `preview_list` 和 curl 確認。Phase 0 驗收 ② 第一次失敗就是因為沒有確認。
 - **別的工作階段的開發伺服器**：
@@ -134,7 +142,7 @@ npm run build        # 正式版建置
 - **系統檔案對話框**：`showOpenFilePicker`、`showSaveFilePicker`、`showDirectoryPicker` 必須由真人點擊觸發；腳本的 `click()` 不算，非同步流程中途也不能再開（所以專案資料夾用一個對話框承接點擊）。自動測試時以替身取代它們，真正的對話框請使用者確認。
 - **組合件的瀏覽器測試**（`tests/e2e/phase2-assembly.js`）：
   - 專案資料夾用瀏覽器的私有檔案系統（OPFS，`navigator.storage.getDirectory()`）。它的控制代碼是真的，`resolve()`、讀寫都走瀏覽器本身的程式；對話框替身回傳其中的檔案。
-  - 用法：在剛載入的頁面 `await import('/@fs/C:/Users/3kids/Downloads/3D-Builder/tests/e2e/phase2-assembly.js?' + Date.now())`，再 `await __asm.all()`、`await __asm.extras()`；2C：`__asm.fixture()`、`__asm.mateExtras()`；STEP：`__asm.step()`；2D：`__asm.move()`、`__asm.files()`，重新載入後 `__asm.remembered()`。
+  - 用法：在剛載入的頁面 `await import('/@fs/<檢出路徑>/tests/e2e/phase2-assembly.js?' + Date.now())`（路徑見上），再 `await __asm.all()`、`await __asm.extras()`；2C：`__asm.fixture()`、`__asm.mateExtras()`；STEP：`__asm.step()`；2D：`__asm.move()`、`__asm.files()`，重新載入後 `__asm.remembered()`；2E：`__asm.exportStep()`（自己組夾具，不必先跑 `fixture()`）。
   - 專案資料夾會記在 IndexedDB（2D）。要測「第一次選資料夾」的流程（`__asm.openFresh()`），先 `await __asm.forget()` 再重新載入頁面。OPFS 的資料夾讀取權限永遠是「已允許」，所以記住的資料夾會直接使用；`__asm.remembered()` 以替身讓它回報「要再詢問」，測試對話框的「使用「X」」按鈕。
   - 每個流程開頭都會「新組合件」：上一個流程留下未存的組合件時會跳出「要儲存變更嗎？」而卡住，先重新載入頁面。流程超過 45 秒時，在背景執行並輪詢 `window.__result`。
   - 拖曳用 `H.drag(path, 'left' | 'right')`：合成的 PointerEvent 帶 `buttons`；`setPointerCapture` 對合成事件會拋錯（已忽略）。找零組件上的點用 `H.onComponent`（確認游標真的落在它上面）；等角視圖中被其他零件擋住時改用上視圖。
@@ -194,6 +202,7 @@ npm run build        # 正式版建置
    - （2D）設計樹在零組件上按右鍵 →「開啟零件」：改一個尺寸、存檔，再按零件設計樹上方的「返回組合件」，組合件會顯示改過的零件，結合仍成立。
    - （2D）在檔案總管把一個零件檔改名，再開啟組合件：會出現「找不到參考的檔案」，按「瀏覽…」選改名後的檔案。
    - （2D）重新整理頁面後開啟組合件：資料夾對話框會有「使用「資料夾名稱」」，瀏覽器會再問一次是否允許讀取（可以選「每次造訪都允許」，之後就不再問）。
+   - （2E）在有零組件的組合件按「檔案」→「輸出 STEP」，會下載 `<組合件名>.step`。用 SW 開啟：應該是一個組合件，零件名稱是檔名，零組件名稱如「削邊銷<2>」，位置與畫面一致（結合移動過的零件是移動後的位置）。若零件檔遺失，會顯示檔名並中止，不產生檔案。
 3. Phase 4 樣本：1–2 個夾治具案例、常用廠商標準件的 STEP。
 4. （可選）壓縮 Docker 虛擬磁碟；刪除 `spike/occt-gaps` 分支。
 
@@ -357,7 +366,7 @@ npm run build        # 正式版建置
 | 2B 結合求解器 | `@3db/assembly`（純 TS）：位姿參數化；A5.2 從零件 B-Rep 取出結合幾何（平面、軸、點、圓柱、圓錐、球）；A3.2 C15.8 全部標準結合（重合/共線/共點、平行、垂直、相切、同軸心、鎖住、距離、角度，含對齊方向）；LM 求解、依連通分量分解；A3.4 以 SVD 的秩求剩餘 DOF、過多定義與衝突診斷 | 每種結合都有解析解測試；典型組態的 DOF 正確（例：銷入孔 = 1 個旋轉自由度，方塊貼三面 = 0）；衝突的結合被指名；20 個零組件求解在 50 ms 內 | **完成**（見 ADR 0012；最壞情況一組 19 個約 12–18 ms）；已提交 `d10c2ad` |
 | 2C 結合 UI 與管理 | C15.8 結合 PropertyManager（選兩個元素 → 建議結合類型、對齊反轉、距離/角度）；零組件上的面、邊、頂點與基準面拾取；C15.12 結合資料夾、編輯/抑制/刪除、結合錯誤與「錯誤為何？」、選取結合時標示它的兩個元素；A3.4 零組件狀態 (f)/(-)/(+) | 只用 UI 把 Phase 1 的三個金樣零件組成小夾具並完全定義；故意加入衝突結合時，正確指出是哪幾個 | **完成**（`__asm.fixture()`、`__asm.mateExtras()` 全部通過；見 ADR 0013）；已提交 `c3f3860` |
 | 2D 移動零組件與參考檔 | C15.3 移動/旋轉：拖曳沿剩餘自由度移動（A3.5）、數值移動；B9.4 零件檔遺失或改名時重新指定、零件改過後自動更新、資料夾授權跨工作階段保存；從組合件「開啟零件」切換文件 | 零件檔改名後開啟組合件 → 提示並重新指定；改零件尺寸後結合仍成立；部分定義的零組件拖曳時只沿剩餘自由度移動 | **完成**（`__asm.move()`、`__asm.files()`、`__asm.remembered()` 全部通過；見 ADR 0014）；已提交 |
-| 2E STEP 組合件輸出 | F1.2：XCAF，每個零件一個原型、每個實例一個帶位姿的零組件，名稱取自檔名；單層結構 | 輸出再讀回：結構、名稱、位置一致；使用者在 SW 開啟正確 | 未開始 |
+| 2E STEP 組合件輸出 | F1.2：XCAF，每個零件一個原型、每個實例一個帶位姿的零組件，名稱取自檔名；單層結構 | 輸出再讀回：結構、名稱、位置一致；使用者在 SW 開啟正確 | **完成**（讀回測試與 `__asm.exportStep()` 通過；見 ADR 0015）；未提交；SW 開啟待使用者確認 |
 | 2F 驗收 | 用 UI 重組你的 SW 組合件（10–20 個零組件）；金樣組合件測試 | 藍圖 §3 Phase 2 驗收 ①②③ | 未開始，需要樣本 |
 
 **順序的理由**：
@@ -378,7 +387,7 @@ npm run build        # 正式版建置
 
 - 專案資料夾的授權跨工作階段保存、遺失檔案重新指定、從組合件「開啟零件」：2D（已完成，ADR 0014）。
 - 移動/旋轉已放置的零組件：2D（已完成，ADR 0014）。
-- 組合件的 STEP 輸出：2E。「輸出 STEP」在組合件中停用。
+- 組合件的 STEP 輸出：2E（已完成，ADR 0015；2A 時「輸出 STEP」在組合件中停用）。
 
 **2B 的結果**（ADR 0012）：
 
@@ -407,5 +416,12 @@ npm run build        # 正式版建置
 - 專案資料夾記在瀏覽器的 IndexedDB：下次開啟時資料夾對話框提供「使用「X」」。
 - 未做（留待之後）：沿著組合件 XYZ、沿著圖元、對於圖元、拖曳時碰撞偵測（Phase 4a）。右鍵旋轉是軌跡球，無法繞視線方向轉；要從上方轉一支直立的銷，用左鍵繞著它拖。
 
-**下一步：2E STEP 組合件輸出**（見上表）。
+**2E 的結果**（ADR 0015）：
+
+- `Kernel.exportAssemblyStep`：一個根組合件、每個零件檔一個原型（名稱 = 檔名）、每個零組件一個實例（名稱 = 設計樹名稱）；位姿以 `SetRotation` + `SetTranslationPart` 組成。非單位四元數會被拒絕（OCCT 會靜默走樣）。
+- 輸出的是圖面上的位姿（`poseOf`），不是存下來的擺放位置。零件檔讀不到、沒有本體、結合正在求解都會中止並說明，不會輸出缺零件的組合件。
+- 驗證：kernel 讀回 6 項；金樣夾具（板、V 型塊、兩支銷）位姿 1e-6、體積 1e-9、結合移動過的銷寫的是求解位置；瀏覽器 `__asm.exportStep()`。測試的讀回輔助在 `tests/support/readAssemblyStep.ts`。
+- 未做：顏色（F1.3）、次組合件、組合件 STEP 輸入（Phase 3b）。
+
+**下一步：2F 驗收**（見上表）：用 UI 重組使用者的 SW 組合件（10–20 個零組件），需要 §8 第 1 項的樣本。2E 之後提交前，請使用者確認要不要先在 SW 開啟輸出檔。沒有樣本時可以先做的：用金樣零件組出更大的組合件，量求解時間與輸出檔。
 

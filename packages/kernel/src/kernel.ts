@@ -830,6 +830,72 @@ export class Kernel {
   }
 
   /**
+   * STEP AP214 of an assembly (F1.2): one product per part (`parts`, the shape and its name), one
+   * component per instance placing a part by its pose (`instances`: an index of `parts`, the
+   * instance's name, position and unit quaternion x y z w). One level; millimetres unless `unit` says.
+   * A pose maps part coordinates to assembly coordinates, the same way `Component.placement` does.
+   */
+  exportAssemblyStep(
+    name: string,
+    parts: readonly { shape: ShapeId; name: string }[],
+    instances: readonly { part: number; name: string; position: Vec3; rotation: [number, number, number, number] }[],
+    unit: 'MM' | 'INCH' = 'MM',
+  ): string {
+    if (instances.length === 0) throw new KernelError('組合件沒有可輸出的零組件');
+    const oc = this.oc;
+    const arena = new Arena();
+    const path = `/export-${++this.fileSeq}.step`;
+    const doc = new oc.TDocStd_Document(arena.own(new oc.TCollection_ExtendedString('XmlXCAF', false)));
+    const label = (l: { delete(): void }, text: string) => oc.TDataStd_Name.Set(l as never, arena.own(new oc.TCollection_ExtendedString(text, true)));
+    try {
+      oc.Interface_Static.SetCVal('write.step.unit', unit);
+      const tool = oc.XCAFDoc_DocumentTool.ShapeTool(doc.Main());
+      const root = tool.NewShape();
+      label(root, name);
+      const prototypes = parts.map((p) => {
+        const l = tool.AddShape(this.get(p.shape), false, true);
+        label(l, p.name);
+        return l;
+      });
+      for (const inst of instances) {
+        const proto = prototypes[inst.part];
+        if (!proto) throw new KernelError(`零組件「${inst.name}」的零件不存在`);
+        // OCCT turns a quaternion that is not a unit one into a skewed matrix without a word.
+        if (![...inst.position, ...inst.rotation].every(Number.isFinite) || Math.abs(Math.hypot(...inst.rotation) - 1) > 1e-9) {
+          throw new KernelError(`零組件「${inst.name}」的位姿無效`);
+        }
+        // SetRotation and SetTranslationPart each have one gp_Trsf overload; SetTransformation(q, v) shares its arity with another.
+        const trsf = arena.own(new oc.gp_Trsf());
+        const [qx, qy, qz, qw] = inst.rotation;
+        trsf.SetRotation(arena.own(new oc.gp_Quaternion(qx, qy, qz, qw)));
+        trsf.SetTranslationPart(arena.own(new oc.gp_Vec(inst.position[0], inst.position[1], inst.position[2])));
+        const component = tool.AddComponent(root, proto, arena.own(new oc.TopLoc_Location(trsf)));
+        label(component, inst.name);
+      }
+      tool.UpdateAssemblies();
+      const w = arena.own(new oc.STEPCAFControl_Writer());
+      w.SetNameMode(true);
+      w.SetColorMode(true);
+      let ok: boolean;
+      try {
+        ok = w.Perform(doc, path, arena.own(new oc.Message_ProgressRange()));
+      } catch (e) {
+        throw new KernelError(`STEP 輸出失敗：${this.errorText(e)}`);
+      }
+      if (!ok) throw new KernelError('STEP 輸出失敗');
+      return oc.FS.readFile(path, { encoding: 'utf8' }) as string;
+    } finally {
+      doc.delete();
+      try {
+        oc.FS.unlink(path);
+      } catch {
+        // not written
+      }
+      arena.dispose();
+    }
+  }
+
+  /**
    * STEP import (F2.1): the file's solids, in millimetres whatever unit the file uses. A shape that
    * fails the validity check is healed by ShapeFix (F2.2, basic); a valid one is left exactly as
    * read, since ShapeFix always touches something. Faces keep their order in the shape, which is

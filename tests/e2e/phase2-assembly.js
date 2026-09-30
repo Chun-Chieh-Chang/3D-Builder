@@ -40,7 +40,8 @@ H.settle = async () => {
 };
 
 // ---------------------------------------------------------------- the project folder (OPFS) and dialog stand-ins
-H.GOLDEN = '/@fs/C:/Users/3kids/Downloads/3D-Builder/tests/golden/';
+// Wherever this checkout is (a string, not `new URL('../golden/', import.meta.url)`: Vite rewrites that as an asset).
+H.GOLDEN = new URL(import.meta.url).pathname.replace(/e2e\/[^/]*$/, 'golden/');
 H.handleAt = async (path, create = false) => {
   const parts = path.split('/');
   let dir = H.root;
@@ -1080,6 +1081,96 @@ asm.files = async () => {
   H.check(H.asm().doc.files[1].path === '舊版/削邊銷-改.3dbx' && [...H.asm().solution.mates.values()].every((m) => m.status === 'ok'), 'found where it went');
   await H.save('夾具.3dba');
   out.moved = 'ok';
+  return out;
+};
+
+/** 「輸出 STEP」 in the assembly: what the button downloads, or null (and why) when it does not. */
+H.exportedStep = async () => {
+  const downloads = [];
+  const create = URL.createObjectURL;
+  URL.createObjectURL = (blob) => (downloads.push(blob), create.call(URL, blob));
+  document.querySelector('.status-bar .notice')?.click();
+  try {
+    await H.action('檔案', '輸出 STEP');
+    await H.waitFor(() => store.getState().notice, 20000, 'the export notice');
+    const notice = store.getState().notice;
+    return { notice, text: downloads[0] ? await downloads[0].text() : null };
+  } finally {
+    URL.createObjectURL = create;
+  }
+};
+
+/**
+ * (F1.2, 2E) 「輸出 STEP」 in the assembly writes the components where they are shown, one product per
+ * part file, named after the files and the tree; while a PropertyManager is open the command is off; a
+ * part file that cannot be read stops the export with its name, and nothing is written.
+ *
+ * The jig is made here: the components are inserted through the UI and the pins seated by the same
+ * mates as fixture(), added as commands (picking them with the cursor, as fixture() does, needs a page
+ * that is drawn). The pins are seated by concentric + coincident: each keeps one turn about its hole.
+ */
+asm.exportStep = async () => {
+  const out = {};
+  H.ready();
+  await H.project({ '定位板.3dbx': `${H.GOLDEN}locating-plate.3dbx`, 'V型塊.3dbx': `${H.GOLDEN}v-block.3dbx`, '零件/削邊銷.3dbx': `${H.GOLDEN}diamond-pin.3dbx` });
+  await H.action('檔案', '新組合件');
+  if (store.getState().folderRequest) await H.modalButton('選擇資料夾…');
+  const plate = await H.insert('定位板.3dbx');
+  const vblock = await H.insert('V型塊.3dbx', [0.25, 0.25]);
+  const pin1 = await H.insert('零件/削邊銷.3dbx', [0.8, 0.3]);
+  const pin2 = await H.insert('零件/削邊銷.3dbx', [0.8, 0.7]);
+  await H.loaded();
+  const face = (name) => ({ kind: 'face', name });
+  for (const [pin, hole] of [[pin1.id, 'cut1:side:sketch2.ci5'], [pin2.id, 'cut1:side:sketch2.ci6']]) {
+    const mate = (type, a, b, align) => ({ id: `${type}-${pin}`, name: `${type}-${pin}`, type, a: { component: plate.id, ref: face(a) }, b: { component: pin, ref: face(b) }, align, suppressed: false });
+    store.assembly.execute({ type: 'insertMate', mate: mate('concentric', hole, 'revolve1:side:sketch1.l3#1', 'aligned') });
+    store.assembly.execute({ type: 'insertMate', mate: mate('coincident', 'extrude1:cap:end', 'revolve1:side:sketch1.l4', 'antiAligned') });
+  }
+  await H.solved();
+  H.check([...H.asm().solution.mates.values()].every((m) => m.status === 'ok'), 'every mate holds');
+  const stored = H.asm().doc.components.find((c) => c.id === pin1.id).placement;
+  H.check(!H.near(H.pose(pin1.id).position, stored.position, 1), 'the seated pin is not where it was dropped');
+
+  const enabled = (label) => [...document.querySelectorAll('.tools button')].find((b) => b.textContent === label)?.disabled === false;
+  H.tab('檔案');
+  await H.wait(80);
+  H.check(enabled('輸出 STEP'), '輸出 STEP is on for an assembly with components');
+  await H.action('組合件', '結合');
+  H.tab('檔案');
+  await H.wait(80);
+  H.check(!enabled('輸出 STEP'), '輸出 STEP is off while the mate PropertyManager is open');
+  document.querySelector('.property-manager .pm-cancel, .property-manager .pm-ok').click();
+  await H.wait(150);
+
+  // The file, read the way STEP says: the products (one per part file), the placed uses of them.
+  const r = await H.exportedStep();
+  H.check(r.text && r.notice.kind !== 'error', `written: ${r.notice.text}`);
+  const text = r.text;
+  const names = (re) => [...text.matchAll(re)].map((m) => m[1]);
+  out.notice = r.notice.text;
+  out.products = names(/PRODUCT\('[^']*','([^']*)'/g);
+  out.uses = (text.match(/NEXT_ASSEMBLY_USAGE_OCCURRENCE/g) || []).length;
+  out.solids = (text.match(/MANIFOLD_SOLID_BREP/g) || []).length;
+  H.check(out.notice === `已輸出 ${H.asm().untitled}.step`, `notice: ${out.notice}`);
+  for (const n of ['定位板', 'V型塊', '削邊銷']) H.check(out.products.includes(n), `product ${n} in ${out.products}`);
+  H.check(out.uses === 4, `4 components (plate, V-block, 2 pins): ${out.uses}`);
+  H.check(out.solids === 3, `one solid per part file: ${out.solids}`);
+
+  // Where each component is written is where it is shown: its origin is a point of the file.
+  const points = [...text.matchAll(/CARTESIAN_POINT\('[^']*',\(([^)]*)\)\)/g)].map((m) => m[1].split(',').map(Number));
+  const shown = H.asm().doc.components.map((c) => [c.id, H.pose(c.id).position]);
+  for (const [id, p] of shown) H.check(points.some((q) => q.length === 3 && H.near(q, p, 1e-6)), `${id} at ${p.map((v) => +v.toFixed(3))} is in the file`);
+  out.placed = shown.map(([id, p]) => [id, p.map((v) => +v.toFixed(3))]);
+
+  // A part file that cannot be read: nothing is written and the file is named.
+  const file = H.asm().doc.files.find((f) => f.path === '零件/削邊銷.3dbx');
+  await (await H.root.getDirectoryHandle('零件')).removeEntry('削邊銷.3dbx');
+  store.assembly?.reload();
+  await H.loaded();
+  const bad = await H.exportedStep();
+  out.refused = bad.notice.text;
+  H.check(bad.text === null && bad.notice.kind === 'error' && bad.notice.text.includes(file.path), `refused with the file's name: ${bad.notice.text}`);
+  H.check(bad.notice.text.startsWith('STEP 輸出失敗：有 1 個零件檔無法讀取') && !bad.notice.text.includes('、'), `the file is listed once, though two pins use it: ${bad.notice.text}`);
   return out;
 };
 

@@ -1,8 +1,15 @@
-import type { AssemblyDoc, Fingerprint, Id, PartDoc, PlaneFrame, SketchFeature } from '@3db/model';
+import type { AssemblyDoc, Fingerprint, Id, PartDoc, PlaneFrame, Pose, SketchFeature } from '@3db/model';
 import type { MassProps, MeshData } from '@3db/kernel';
 import type { AssemblyResult, AssemblySolveOptions, FeatureResult } from '@3db/regen';
 import type { MateGeometry } from '@3db/assembly';
 import type { EntityStatus, SketchStatus, SolvedGeometry, SolveOptions } from '@3db/sketch';
+
+/** An assembly to write as STEP: the rebuilt parts it uses (by content key, named after their files) and where each component is. */
+export interface AssemblyStepRequest {
+  name: string;
+  parts: { key: string; name: string }[];
+  instances: { part: number; name: string; pose: Pose }[];
+}
 
 export interface RebuildRequest {
   seq: number;
@@ -88,6 +95,8 @@ export interface KernelApi {
   exportStep(doc: PartDoc, name: string): Promise<string>;
   /** Rebuilds a part file of an assembly, once per content (`key` = SHA-256 of `bytes`). */
   buildPart(key: string, bytes: Uint8Array): Promise<PartBuildPayload>;
+  /** STEP of an assembly (F1.2) as the components are placed in `req`; parts are the ones rebuilt for it (`buildPart`). */
+  exportAssemblyStep(req: AssemblyStepRequest): Promise<string>;
   /** Lets go of every rebuilt part file except these. */
   retainParts(keys: string[]): Promise<void>;
   /**

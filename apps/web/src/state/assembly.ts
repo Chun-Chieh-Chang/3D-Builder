@@ -34,9 +34,9 @@ import {
   type Vec3,
 } from '@3db/model';
 import { closerAlignment, currentValue, defaultType, hasAlignment, MATE_LABEL, placed, supportedTypes, type GoalTerm, type MateGeometry } from '@3db/assembly';
-import { assemblyFileName, assemblyName, componentName, PART_FILE_EXTENSION, sha256Hex, writeAssemblyFile } from '@3db/io';
+import { assemblyFileName, assemblyName, componentName, PART_FILE_EXTENSION, partNameOf, sha256Hex, writeAssemblyFile } from '@3db/io';
 import type { AssemblyResult } from '@3db/regen';
-import type { KernelApi, PartBuildPayload } from '../worker/protocol';
+import type { AssemblyStepRequest, KernelApi, PartBuildPayload } from '../worker/protocol';
 import { fileIn, listFiles, pathIn, pickAssemblySaveTarget, pickPartFile, writeFile } from '../files';
 
 /** A part file of the assembly, by its path in the project folder: read and rebuilt, or why not. */
@@ -434,6 +434,40 @@ export class AssemblyStore {
   /** Where a component is now: as dragged, as solved, or its placement until the first solve. */
   poseOf(componentId: Id): Pose | null {
     return this.state.drag?.poses?.get(componentId) ?? this.state.solution?.poses.get(componentId) ?? this.history.doc.components.find((c) => c.id === componentId)?.placement ?? null;
+  }
+
+  /**
+   * The assembly as STEP is written (F1.2): each part file used once, each component where it is shown
+   * now. Throws, saying why, when a part cannot be read (nothing is left out silently) or the mates are
+   * still being solved (the poses would be the old ones).
+   */
+  stepRequest(): AssemblyStepRequest {
+    const doc = this.history.doc;
+    if (doc.components.length === 0) throw new Error('組合件沒有零組件');
+    if (this.solving || this.solveAgain) throw new Error('結合正在求解，請稍後再輸出');
+    const parts: AssemblyStepRequest['parts'] = [];
+    const partOf = new Map<Id, number>();
+    const unreadable: string[] = [];
+    const seen = new Set<Id>();
+    for (const c of doc.components) {
+      if (seen.has(c.file)) continue;
+      seen.add(c.file);
+      const file = doc.files.find((f) => f.id === c.file);
+      const status = file && this.state.files.get(joinPath(this.folder, file.path));
+      if (!file || status?.status !== 'ok') {
+        const why = status?.status === 'missing' || status?.status === 'error' ? status.message : '尚未讀取';
+        unreadable.push(`${file?.path ?? c.file}（${why}）`);
+        continue;
+      }
+      partOf.set(c.file, parts.length);
+      parts.push({ key: status.key, name: partNameOf(file.path) });
+    }
+    if (unreadable.length) throw new Error(`有 ${unreadable.length} 個零件檔無法讀取：${unreadable.join('、')}`);
+    const instances = doc.components.map((c) => {
+      const file = doc.files.find((f) => f.id === c.file);
+      return { part: partOf.get(c.file)!, name: componentName(file?.path, c.instance), pose: this.poseOf(c.id)! };
+    });
+    return { name: this.name(), parts, instances };
   }
 
   /** The rebuilt part of a component. */

@@ -4,11 +4,11 @@ import occtWasm from 'libcascade/single/wasm?url';
 import gcsWasm from '@salusoft89/planegcs/dist/planegcs_dist/planegcs.wasm?url';
 import type { AssemblyDoc, Id, PartDoc } from '@3db/model';
 import { findProfiles, PlaneGcsSolver } from '@3db/sketch';
-import { Kernel } from '@3db/kernel';
+import { Kernel, type ShapeId } from '@3db/kernel';
 import { edgeMateGeometry, faceMateGeometry, Regenerator, solveAssembly, type AssemblyResult, type AssemblySolveOptions, type RebuildResult } from '@3db/regen';
 import { edgeFingerprint, faceFingerprint, vertexFingerprint } from '@3db/naming';
-import { exportPartStep, readComponentFile } from '@3db/io';
-import type { KernelApi, PartBuildPayload, RebuildPayload, RebuildRequest, SketchSolvePayload, SketchSolveRequest } from './protocol';
+import { exportAssemblyStep, exportPartStep, readComponentFile } from '@3db/io';
+import type { AssemblyStepRequest, KernelApi, PartBuildPayload, RebuildPayload, RebuildRequest, SketchSolvePayload, SketchSolveRequest } from './protocol';
 
 let kernel: Kernel;
 let solver: PlaneGcsSolver;
@@ -161,6 +161,17 @@ const api: KernelApi = {
       },
       options,
     );
+  },
+
+  async exportAssemblyStep({ name, parts: used, instances }: AssemblyStepRequest): Promise<string> {
+    await api.init();
+    const shapes: { shape: ShapeId; name: string }[] = [];
+    for (const u of used) {
+      const body = (await parts.get(u.key)?.catch(() => null))?.result.body;
+      if (!body) throw new Error(`零件「${u.name}」沒有可輸出的本體`);
+      shapes.push({ shape: body.shape, name: u.name });
+    }
+    return exportAssemblyStep(kernel, name, shapes, instances);
   },
 
   async retainParts(keys: string[]): Promise<void> {
