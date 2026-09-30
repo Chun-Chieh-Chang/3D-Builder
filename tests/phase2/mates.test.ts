@@ -186,6 +186,45 @@ describe('the diamond pin in the locating plate (A3.2, A3.4)', () => {
     close(where(across, [0, 0, 0]), [-40, 0, 0]);
   });
 
+  it('mates on the part\'s own reference planes and default planes, by the feature they are', () => {
+    // 基準面1 of the pin: made in the part, offset from its right plane. The mate names it by its feature.
+    const ref = pinDoc.features.find((f) => f.type === 'refPlane' && f.name === '基準面1')!;
+    expect(ref).toBeDefined();
+    const datum = (name: string) => ({ kind: 'datum' as const, name });
+    const onRef = (align: 'aligned' | 'antiAligned'): Mate => ({
+      id: 'onRef',
+      name: '平行',
+      type: 'parallel',
+      a: { component: 'plate', ref: face(SIDE) },
+      b: { component: 'pin', ref: datum(ref.id) },
+      align,
+      suppressed: false,
+    });
+    const pin = part(pinDoc);
+    const frame = pin.frames.get(ref.id)!;
+    expect(frame).toBeDefined();
+    // Seated in the hole, it turns about the hole; squared to the plate's side by its reference plane instead of the flat: fully defined.
+    for (const align of ['aligned', 'antiAligned'] as const) {
+      const r = solveWith(jig([...seat(), onRef(align)]), pin);
+      expect([...r.mates.values()].every((m) => m.status === 'ok'), align).toBe(true);
+      expect(r.components.get('pin'), align).toEqual({ status: 'full', dof: 0 });
+      // Where the plane is now: its normal runs along x, with the plate side's (+x) or against it.
+      const o = where(r, frame.origin);
+      const n = where(r, [frame.origin[0] + frame.normal[0], frame.origin[1] + frame.normal[1], frame.origin[2] + frame.normal[2]]);
+      close([n[0] - o[0], n[1] - o[1], n[2] - o[2]], [align === 'aligned' ? 1 : -1, 0, 0]);
+    }
+
+    // The default planes of a component are its own, in its own frame, not the assembly's: the pin's front
+    // plane (normal z in the pin) parallel to the plate's front plane (normal z in the plate).
+    const front: Mate = { id: 'front', name: '平行', type: 'parallel', a: { component: 'plate', ref: datum('plane:front') }, b: { component: 'pin', ref: datum('plane:front') }, align: 'aligned', suppressed: false };
+    const r2 = solveWith(jig([...seat(), front]), pin);
+    expect([...r2.mates.values()].every((m) => m.status === 'ok')).toBe(true);
+    expect(r2.components.get('pin')).toEqual({ status: 'full', dof: 0 });
+    const zero = where(r2, [0, 0, 0]);
+    const z = where(r2, [0, 0, 1]);
+    close([z[0] - zero[0], z[1] - zero[1], z[2] - zero[2]], [0, 0, 1]);
+  });
+
   it('is saved with the assembly and solves the same after reopening', async () => {
     const doc = jig([...seat(), mate('parallel', ['plate', SIDE], ['pin', FLAT], { align: 'aligned' })]);
     const file = await readDocumentFile(await writeAssemblyFile(doc));
