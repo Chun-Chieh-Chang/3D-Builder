@@ -1,61 +1,42 @@
 # 交接文件
 
-- 最後更新：2026-09-30（Phase 2 組合件 MVP 完成，閘門已由使用者確認通過；**藍圖不在版本庫，Phase 3 的規劃卡在取得藍圖，先讀 §0**；以 `git log` 為準）
+- 最後更新：2026-09-30（Phase 2 組合件 MVP 完成，閘門已由使用者確認通過；藍圖已進版本庫（`docs/blueprint.md`）；Phase 3 計畫是草案，等使用者確認，見 [docs/phase3-plan.md](docs/phase3-plan.md)；以 `git log` 為準）
 - 用途：讓下一個工作階段（人或 AI）不讀對話紀錄也能接手。
 - 本文件只記錄「目前狀態、待辦、下一步、工作約定」。範圍與設計以藍圖、ADR、程式碼為準；若有衝突，以它們為準並更新本文件。
 
-## 0. 換電腦之前，先讀這裡（藍圖還沒進版本庫）
+## 0. 換電腦之前，先讀這裡
 
-### 0.1 現況
+### 0.1 藍圖（已完成）
 
-- **藍圖不在版本庫，從來沒進過 git。** 它只存在「家裡電腦」：`C:\Users\3kids\.claude\plans\solidworks-3d-solidworks-solidworks-3d-serene-crayon.md`。
-- 2026-09-30 使用者在另一台電腦（使用者名稱 `ws61`）上，找不到藍圖，Phase 3 的規劃因此無法開始（Phase 3 的範圍、優先順序、驗收標準都在藍圖裡）。
-- 這是單點故障：那台電腦壞掉、重灌或換人，藍圖就沒了。**解法是把它放進版本庫**（私人的 GitHub 專案），見 0.2。
-- 版本庫裡能重建的藍圖內容整理在 §11，只當備援，不是藍圖；有衝突時以藍圖為準。
+- 藍圖曾經只存在家裡電腦，從來沒進過 git，是單點故障（2026-09-30 在另一台電腦上找不到它，Phase 3 的規劃因此卡住）。
+- **2026-09-30 已放進版本庫**：[docs/blueprint.md](docs/blueprint.md)（提交 `80964b6`，與原檔 SHA-256 相同）。原檔 `C:\Users\3kids\.claude\plans\solidworks-3d-solidworks-solidworks-3d-serene-crayon.md` 是同一份的舊副本；**之後只改 `docs/blueprint.md`**，不要兩邊各改。
+- `.claude/plans/` 裡沒有這個專案的其他計畫檔。
+- 藍圖有幾處技術描述已過時，範圍不受影響：OCCT 7.9.x（實際是 libcascade 3.0.2 的 OCCT 8.0.1）、pnpm（實際是 npm workspaces）、「現況為空目錄」。
+- §11 是藍圖遺失時用的備援摘要；現在藍圖在版本庫，有衝突時以藍圖為準。
 
-### 0.2 在家裡電腦做一次（約 2 分鐘）
+### 0.2 接手藍圖之後的工作
 
-打開 PowerShell，依序執行：
+1. §2 文件地圖的藍圖那一列已改成 [docs/blueprint.md](docs/blueprint.md)。
+2. **Phase 3 的里程碑與驗收標準已擬成草案**：[docs/phase3-plan.md](docs/phase3-plan.md)，**等使用者確認**（使用者的規範）。確認前不寫 Phase 3 的產品程式碼。
 
-```powershell
-cd C:\Users\3kids\Downloads\3D-Builder
-git status
-git pull origin main
-Copy-Item 'C:\Users\3kids\.claude\plans\solidworks-3d-solidworks-solidworks-3d-serene-crayon.md' docs\blueprint.md
-git add docs\blueprint.md
-git commit -m "Add the blueprint (docs/blueprint.md)"
-git push origin main
-```
-
-- `git status` 若有未提交的修改，先不要往下做，把畫面告訴 Claude。家裡電腦的版本庫比另一台落後很多（2D 之後的 2E、2F、網格與進度提示、實機確認的修正都在另一台做的），所以一定要先 `git pull`。
-- `git pull` 若說有衝突或分歧，也先停，把訊息告訴 Claude，不要自己解。
-- 順便看一下 `C:\Users\3kids\.claude\plans\` 裡還有沒有這個專案的其他計畫檔，一起放進 `docs\`。
-- 推送後，在 https://github.com/Chun-Chieh-Chang/3D-Builder/blob/main/docs/blueprint.md 確認看得到。
-
-### 0.3 藍圖進版本庫之後（Claude 要做）
-
-1. 把 §2 文件地圖的藍圖那一列改成 [docs/blueprint.md](docs/blueprint.md)，其餘處提到的「藍圖 §3」「附錄 C」不用改。
-2. 把 0.1、0.2 改寫成「已完成」（留一行說明日期），保留 0.4、0.5。
-3. 讀藍圖 §3 與附錄 C 的 Phase 3，**先擬出里程碑與可量化的驗收標準，等使用者確認再動手**（使用者的規範）。可以比對 §11 檢查有沒有漏掉的決定。
-
-### 0.4 不在版本庫、只存在某台電腦的東西
+### 0.3 不在版本庫、只存在某台電腦的東西
 
 | 東西 | 在哪裡 | 換電腦時 |
 |---|---|---|
-| **藍圖** | 家裡電腦 `C:\Users\3kids\.claude\plans\` | 見 0.2 |
+| ~~藍圖~~ | 已在版本庫 `docs/blueprint.md`（0.1） | 不用做什麼 |
 | 使用者的全域規則 `CLAUDE.md`（SkillsBuilder 開發標準、反向提問、智囊團審查、檔案刪除保護） | 每台電腦各自的 `C:\Users\<使用者>\.claude\CLAUDE.md` | 從舊電腦複製，或依那份檔案最後一行的說明執行 SkillsBuilder 的 `INSTALL.ps1 -Global`。沒有它，§7 的工作約定不會自動生效 |
 | SolidWorks 樣本（專有檔案，不進版本庫） | `C:\Users\ws61\Downloads\SW樣本`：`T1405001.SLDASM`、兩個單一實體的 STEP | 看 §8 第 1 項；用到它的測試靠環境變數 `SW_SAMPLE_DIR`，沒設就略過 |
 | 實機測試用的專案資料夾 | `C:\Users\ws61\Downloads\3DB實機確認` | 只是金樣零件的複本，可從 `tests/golden/` 重建（三個檔案：`定位板.3dbx`、`V型塊.3dbx`、`零件\削邊銷.3dbx`） |
 | 對話紀錄與 Claude 的記憶 | 各電腦本機，不同步 | 沒有：**本文件是唯一的交接** |
-| `node_modules` | 各電腦自己 `npm install` | 見 0.5 |
+| `node_modules` | 各電腦自己 `npm install` | 見 0.4 |
 
-### 0.5 在新電腦接手
+### 0.4 在新電腦接手
 
 1. 安裝 Node（開發用 26）與 git。
 2. `git clone https://github.com/Chun-Chieh-Chang/3D-Builder`（私人專案，需要 GitHub 登入）。
 3. **專案要放在支援符號連結的磁碟**（NTFS，例如 `C:`），不要放在 exFAT 或 FAT 的 USB 隨身碟：npm workspaces 靠符號連結，在 USB 上 `node_modules/@3db` 是空的，`npm run check`、`npm run dev`、`npm run build` 都會失敗（另一台電腦就是這樣，繞法見 §6「工作區連結」）。
 4. `npm install`，然後 `npm run check`（型別、分層、全部測試，應全過），`npm run dev`，用 Chrome 或 Edge 開 http://127.0.0.1:5391。
-5. 確認 `docs/blueprint.md` 在；不在的話先做 0.2。
+5. 確認 `docs/blueprint.md` 在；不在的話，先 `git pull`。
 6. 對 Claude 說：「讀取 handoff.md，接手開發任務」。
 
 ## 1. 專案
@@ -72,7 +53,7 @@ git push origin main
 
 | 文件 | 內容 |
 |---|---|
-| **藍圖（尚未進版本庫，見 §0）** 原在 `C:\Users\3kids\.claude\plans\solidworks-3d-solidworks-solidworks-3d-serene-crayon.md`，放進版本庫後應為 `docs/blueprint.md` | 範圍、架構、階段與驗收標準。範圍以附錄 C 目錄與 §3 階段規則為準。備援摘要：§11 |
+| [藍圖 docs/blueprint.md](docs/blueprint.md) | 範圍、架構、階段與驗收標準。範圍以附錄 C 目錄與 §3 階段規則為準（§0.1）。備援摘要：§11 |
 | [README.md](README.md) | 快速開始、套件結構 |
 | [ADR 0001](docs/adr/0001-ssot-mece-rules.md) | SSOT/MECE 程式碼守則，各套件擁有的目錄 ID |
 | [ADR 0002](docs/adr/0002-phase0-kernel-and-solvers.md) | Phase 0 的求解器決策、持久命名文法 |
@@ -92,6 +73,7 @@ git push origin main
 | [ADR 0016](docs/adr/0016-component-mesh-and-load-progress.md) | 零組件的網格（容差 1‰、角度 0.5 rad，比編輯零件粗）與載入進度（階段、秒數）、沒有本體的零件檔視為錯誤、量到的時間分佈 |
 | [phase0-verification.md](docs/phase0-verification.md) | Phase 0 驗收紀錄與 SW 人工核對步驟 |
 | [phase1-verification.md](docs/phase1-verification.md) | Phase 1 驗收紀錄：三個示範零件、金樣與 TNP、驗收中發現的問題 |
+| [phase3-plan.md](docs/phase3-plan.md) | **草案，待使用者確認**：Phase 3 的里程碑、驗收標準、需要的樣本與決定 |
 | 本文件 | 狀態、待辦、下一步、約定 |
 
 ## 3. 目前狀態
@@ -264,8 +246,9 @@ npm run build        # 正式版建置
    - （2D）在檔案總管把一個零件檔改名，再開啟組合件：會出現「找不到參考的檔案」，按「瀏覽…」選改名後的檔案。
    - （2D）重新整理頁面後開啟組合件：資料夾對話框會有「使用「資料夾名稱」」，瀏覽器會再問一次是否允許讀取（可以選「每次造訪都允許」，之後就不再問）。
    - （2E）在有零組件的組合件按「檔案」→「輸出 STEP」，會下載 `<組合件名>.step`。用 SW 開啟：應該是一個組合件，零件名稱是檔名，零組件名稱如「削邊銷<2>」，位置與畫面一致（結合移動過的零件是移動後的位置）。若零件檔遺失，會顯示檔名並中止，不產生檔案。
-3. Phase 4 樣本：1–2 個夾治具案例、常用廠商標準件的 STEP。
-4. （可選）壓縮 Docker 虛擬磁碟；刪除 `spike/occt-gaps` 分支。
+3. **Phase 3 驗收樣本（草案待確認）**：3 個真實零件的 SW 輸出 STEP、特徵清單、關鍵尺寸；沒有 SW 的替代驗收**使用者已接受（2026-09-30）**；還缺哪 3 個零件。細節見 [docs/phase3-plan.md](docs/phase3-plan.md) §5、§6。
+4. Phase 4 樣本：1–2 個夾治具案例、常用廠商標準件的 STEP。
+5. （可選）壓縮 Docker 虛擬磁碟；刪除 `spike/occt-gaps` 分支。
 
 ## 9. Phase 1 零件 MVP（完成，閘門通過）
 
@@ -507,7 +490,7 @@ npm run build        # 正式版建置
 - 瀏覽器（真實 UI 插入兩個 STEP，結合以指令加入）：插入治具 10.5 s、產品件 3.9 s（含讀檔、建構、網格、傳回主執行緒），0 Console 錯誤。第一個 STEP 插入要 10 秒，使用者會感覺到，之後可考慮進度提示。
 - **觀察（非 2E 造成）**：產品件的體積在「零件層級」STEP 輸出再輸入後差 3.5e-6（989.8939 → 989.8974 mm³），組合件輸出與零件輸出完全一致，治具的差是 −1.4e-14。**已查明（2026-09-30，`tests/phase2/step-roundtrip.test.ts`，設 `SW_SAMPLE_DIR` 才跑）：形狀沒有變，不需修改。** 邊長 ≤ 1e-9、頂點 ≤ 1e-10 mm、面數與曲面種類完全一致，細網格體積只差 2e-7；只有 38 個被計算出的曲線修剪的面（24 個錐面、14 個 B 樣條面）面積不同。不是積分器的問題（自適應積分收斂後給出同樣的 3.49e-6）。約一半來自寫出檔宣告的精度：原檔 1e-5，OCCT 寫出的是形狀自己的公差 1e-4；以 1e-5 讀入或寫出則剩 1.5e-6。是一次性的：第二次往返完全相同（7.7e-15）。解析形狀（治具）是 1e-14。3.5 ppm 低於檔案本身的公差。
 
-**下一步：規劃 Phase 3。** 藍圖不在版本庫，也不在使用者現在用的電腦上（在家裡電腦，見 §0），Phase 3 的範圍以藍圖 §3 與附錄 C 為準，所以要先取得藍圖（§0.2），或請使用者貼出 Phase 3 的範圍。在那之前不要自己決定範圍。已知的 Phase 3 相關事項：
+**下一步：使用者確認 Phase 3 計畫草案**（[docs/phase3-plan.md](docs/phase3-plan.md)；範圍以藍圖 §3 與附錄 C 為準）。確認前不寫 Phase 3 的產品程式碼。已知的 Phase 3 相關事項：
 - 3a：`BRepOffset_MakeOffset`（C10.1 移動面）libcascade 沒有，Phase 3a 前決定做法（ADR 0003）。
 - 3b：次組合件（剛性次組合件 C15.4）、零組件複製排列、爆炸視圖、零件表、干涉檢查、STEP 組合件輸入。
 - Phase 2 留下的：拖曳時碰撞偵測（Phase 4a）、沿著組合件 XYZ／圖元的移動、STEP 顏色（F1.3）。
