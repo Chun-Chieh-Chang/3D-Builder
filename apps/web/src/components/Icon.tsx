@@ -1,6 +1,6 @@
 import type { ReactElement } from 'react';
 
-type IconName = 'part' | 'assembly' | 'mates' | 'origin' | 'plane' | 'refPlane' | 'sketch' | 'extrude' | 'revolve' | 'fillet' | 'chamfer' | 'importedBody' | 'error' | 'warning' | 'ok' | 'cancel';
+type IconName = 'part' | 'assembly' | 'mates' | 'origin' | 'plane' | 'refPlane' | 'sketch' | 'extrude' | 'revolve' | 'fillet' | 'chamfer' | 'importedBody' | 'error' | 'warning' | 'ok' | 'cancel' | 'eye' | 'eyeOff';
 
 /** Default planes and reference planes share one icon, as in SolidWorks. */
 const PLANE = <path d="M4 4h10l-2 8H2z" />;
@@ -22,6 +22,8 @@ const PATHS: Record<IconName, ReactElement> = {
   warning: <path d="M8 2.5l6 10.5H2z M8 6.5v3 M8 11v0.5" />,
   ok: <path d="M3 8.5l3 3 7-7" />,
   cancel: <path d="M4 4l8 8 M12 4l-8 8" />,
+  eye: <path d="M1.5 8s2.5-4.5 6.5-4.5S14.5 8 14.5 8 12 12.5 8 12.5 1.5 8 1.5 8z M8 8m-1.8 0a1.8 1.8 0 1 0 3.6 0a1.8 1.8 0 1 0-3.6 0" />,
+  eyeOff: <path d="M1.5 8s2.5-4.5 6.5-4.5S14.5 8 14.5 8 12 12.5 8 12.5 1.5 8 1.5 8z M2.5 13.5l11-11" />,
 };
 
 export function Icon({ name, className }: { name: IconName; className?: string }) {

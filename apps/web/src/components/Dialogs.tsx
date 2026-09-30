@@ -102,14 +102,17 @@ export function WhatsWrongDialog() {
                   </strong>
                   {r.message && <p>{r.message}</p>}
                   {r.unresolved?.map((u) => (
-                    <p key={u.ref.name} className="muted">
-                      找不到 <code>{u.ref.name}</code>
-                      {u.candidates.length > 0 && (
-                        <>
-                          ；最接近的是 <code>{u.candidates[0]!.name}</code>
-                        </>
-                      )}
-                    </p>
+                    <div key={u.ref.name} className="unresolved" onClick={(e) => e.stopPropagation()}>
+                      <p className="muted">
+                        {u.reason === 'ambiguous' ? '有多個同名元素，無法判斷是哪一個：' : '找不到 '}
+                        <code>{u.ref.name}</code>
+                      </p>
+                      {u.candidates.slice(0, 3).map((c, i) => (
+                        <button key={c.name} className="use-nearest" title={i === 0 ? '幾何最接近的元素' : '其他候選'} onClick={() => store.replaceRef(r.id, u.ref, c)}>
+                          改用{i === 0 ? '最接近的' : '這個'}：<code>{c.name}</code>
+                        </button>
+                      ))}
+                    </div>
                   ))}
                   {r.warnings?.map((w) => (
                     <p key={w} className="warning-text">

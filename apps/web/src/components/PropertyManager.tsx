@@ -20,6 +20,7 @@ import {
 } from '@3db/model';
 import type { RebuildPayload } from '../worker/protocol';
 import { applicableRelations, constraintsOf, dimensionText, sameRelation } from '@3db/sketch/interact';
+import { nearestElement } from '../state/candidates';
 import { store, useSketcherView, useStore } from '../state/store';
 import { DATUM_ITEMS, DIMENSION_LABEL, FEATURE_LABEL, featureLabel, PLANE_MODE_LABEL, RELATION_LABEL, SKETCH_STATUS_LABEL, TOOL_LABEL } from '../strings';
 import { Icon } from './Icon';
@@ -232,6 +233,7 @@ function ExtrudePanel({ f }: { f: ExtrudeFeature }) {
             <li className={faceFound ? '' : 'missing'} title={d.face.name}>
               終止面{!faceFound && '（遺失參考）'}
               <code>{d.face.name}</code>
+              {!faceFound && <UseNearest featureId={f.id} refr={d.face} />}
             </li>
           )}
         </ul>
@@ -315,6 +317,7 @@ function EdgeList({ f }: { f: FilletFeature | ChamferFeature }) {
               邊線 {i + 1}
               {!found && '（遺失參考）'}
               <code>{e.name}</code>
+              {!found && <UseNearest featureId={f.id} refr={e} />}
             </li>
           );
         })}
@@ -376,11 +379,23 @@ function ChamferPanel({ f }: { f: ChamferFeature }) {
   );
 }
 
+/** 「改用最接近的」 (B4.3): offered under a reference the model no longer has; one click points the feature at it. */
+function UseNearest({ featureId, refr }: { featureId: string; refr: Ref }) {
+  const result = useStore((s) => s.result);
+  const near = nearestElement(refr, result);
+  if (!near) return null;
+  return (
+    <button className="use-nearest" title={`幾何最接近的元素：${near.name}`} onClick={() => store.replaceRef(featureId, refr, near)}>
+      改用最接近的：<code>{near.name}</code>
+    </button>
+  );
+}
+
 /**
  * One reference in a selection box: what it is, and whether the model on screen still has it. A
  * datum names a default plane or a reference plane feature; elements are shown by persistent name.
  */
-function RefItem({ label, refr, doc, result }: { label: string; refr: Ref; doc: PartDoc; result: RebuildPayload | null }) {
+function RefItem({ label, refr, doc, result, featureId }: { label: string; refr: Ref; doc: PartDoc; result: RebuildPayload | null; featureId: string }) {
   if (refr.kind === 'datum') {
     const plane = DATUM_ITEMS.find((d) => d.id === refr.name)?.label ?? findFeature(doc, refr.name)?.name;
     return <li className={plane ? '' : 'missing'}>{label}：{plane ?? `${refr.name}（遺失參考）`}</li>;
@@ -392,6 +407,7 @@ function RefItem({ label, refr, doc, result }: { label: string; refr: Ref; doc: 
       {label}
       {!found && '（遺失參考）'}
       <code>{refr.name}</code>
+      {!found && <UseNearest featureId={featureId} refr={refr} />}
     </li>
   );
 }
@@ -437,11 +453,11 @@ function RefPlanePanel({ f }: { f: RefPlaneFeature }) {
       <section className="pm-group">
         <h4>參考</h4>
         <ul className="selection-box">
-          {d.mode !== 'threePoint' && <RefItem label="參考面" refr={d.plane} doc={doc} result={result} />}
+          {d.mode !== 'threePoint' && <RefItem label="參考面" refr={d.plane} doc={doc} result={result} featureId={f.id} />}
           {d.mode === 'angle' &&
-            (d.axis.name ? <RefItem label="旋轉軸" refr={d.axis} doc={doc} result={result} /> : <li className="muted">（在圖面中點選作為旋轉軸的直線邊線）</li>)}
+            (d.axis.name ? <RefItem label="旋轉軸" refr={d.axis} doc={doc} result={result} featureId={f.id} /> : <li className="muted">（在圖面中點選作為旋轉軸的直線邊線）</li>)}
           {d.mode === 'threePoint' && d.points.length === 0 && <li className="muted">（在圖面中點選三個頂點）</li>}
-          {d.mode === 'threePoint' && d.points.map((p, i) => <RefItem key={p.name} label={`點 ${i + 1}`} refr={p} doc={doc} result={result} />)}
+          {d.mode === 'threePoint' && d.points.map((p, i) => <RefItem key={p.name} label={`點 ${i + 1}`} refr={p} doc={doc} result={result} featureId={f.id} />)}
         </ul>
         {d.mode === 'offset' && (
           <label className="pm-row">

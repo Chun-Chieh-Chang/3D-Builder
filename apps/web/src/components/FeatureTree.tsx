@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
-import type { Feature, Id } from '@3db/model';
+import { isHideable, isShown, type Feature, type Id } from '@3db/model';
 import { ownerFeatures } from '@3db/naming';
 import { dependencies } from '@3db/regen/dag';
 import type { FeatureResult } from '@3db/regen';
@@ -66,6 +66,27 @@ export function FeatureTree() {
     </li>
   );
 
+  /** Eye button (D4.6): hides or shows a sketch, reference plane, default plane or the origin. */
+  const eye = (key: string) => {
+    if (!isHideable(doc, key)) return null;
+    const shown = isShown(doc, key);
+    return (
+      <button
+        className={shown ? 'vis-toggle shown' : 'vis-toggle'}
+        title={shown ? '隱藏' : '顯示'}
+        aria-label={shown ? '隱藏' : '顯示'}
+        disabled={!!editing}
+        onClick={(e) => {
+          e.stopPropagation();
+          store.setVisibility([key], !shown);
+        }}
+        onDoubleClick={(e) => e.stopPropagation()}
+      >
+        <Icon name={shown ? 'eye' : 'eyeOff'} />
+      </button>
+    );
+  };
+
   const act = (fn: () => void) => () => {
     setMenu(null);
     fn();
@@ -92,7 +113,8 @@ export function FeatureTree() {
             onClick={() => d.icon === 'plane' && store.treeClick(d.id)}
           >
             <Icon name={d.icon} />
-            <span>{d.label}</span>
+            <span className="name">{d.label}</span>
+            {eye(d.id)}
           </li>
         ))}
         {doc.features.flatMap((f, i) => {
@@ -133,6 +155,7 @@ export function FeatureTree() {
               </span>
               {r?.status === 'error' && <Icon name="error" className="status-error" />}
               {warned && <Icon name="warning" className="status-warning" />}
+              {eye(f.id)}
             </li>
           );
           return i === barIndex ? [bar, row] : [row];
@@ -152,6 +175,9 @@ export function FeatureTree() {
             </>
           ) : (
             <li onClick={act(() => store.suppress(menu.feature.id, 'suppress'))}>抑制</li>
+          )}
+          {isHideable(doc, menu.feature.id) && (
+            <li onClick={act(() => store.setVisibility([menu.feature.id], !isShown(doc, menu.feature.id)))}>{isShown(doc, menu.feature.id) ? '隱藏' : '顯示'}</li>
           )}
           <li onClick={act(() => store.requestDelete(menu.feature.id))}>刪除…</li>
           <li className="separator" />

@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState } from 'react';
-import { DATUM_PLANES, findFeature, isDimension, type DatumPlaneName, type Feature, type PlaneFrame, type Ref } from '@3db/model';
+import { DATUM_PLANES, findFeature, isDimension, isShown, ORIGIN_KEY, type DatumPlaneName, type Feature, type PlaneFrame, type Ref } from '@3db/model';
 import { ownerFeatures } from '@3db/naming';
 import { Viewer, type PlaneDisplay, type SketchOverlay } from '@3db/render';
 import { ACTIONS } from '../actions';
-import { buildOverlay } from '../sketcher/overlay';
+import { sample } from '@3db/sketch/interact';
+import { buildOverlay, SKETCH_COLORS } from '../sketcher/overlay';
 import { store, useSketcherView, useStore } from '../state/store';
 import { FEATURE_LABEL } from '../strings';
 import type { RebuildPayload } from '../worker/protocol';
@@ -166,11 +167,33 @@ export function Viewport() {
     const planes: PlaneDisplay[] = [];
     const show = (key: string, frame: PlaneFrame | undefined, highlighted: boolean) => frame && planes.push({ key, frame, highlighted });
     for (const name of Object.keys(DATUM_PLANES) as DatumPlaneName[]) {
-      if (selected === name || reference === name) show(name, DATUM_PLANES[name], selected === name);
+      if (selected === name || reference === name || isShown(doc, name)) show(name, DATUM_PLANES[name], selected === name);
     }
-    for (const f of doc.features) if (f.type === 'refPlane') show(f.id, result?.frames.get(f.id), selected === f.id || editing?.featureId === f.id);
+    for (const f of doc.features) {
+      if (f.type === 'refPlane' && (isShown(doc, f.id) || selected === f.id || editing?.featureId === f.id)) show(f.id, result?.frames.get(f.id), selected === f.id || editing?.featureId === f.id);
+    }
     v.setPlanes(planes);
   }, [feature, editing, selected, doc, result]);
+
+  // Shown sketches and the origin (D4.6). The sketch being edited is drawn by its own overlay.
+  const zoomBand = store.viewer ? Math.round(Math.log2(store.viewer.pixelSize())) : 0;
+  useEffect(() => {
+    const v = store.viewer;
+    if (!v) return;
+    v.setOrigin(isShown(doc, ORIGIN_KEY));
+    const px = v.pixelSize();
+    const overlays: SketchOverlay[] = [];
+    for (const [id, geometry] of result?.sketchGeometry ?? []) {
+      const frame = result?.frames.get(id);
+      if (!frame || id === editing?.featureId || !isShown(doc, id)) continue;
+      const status = result?.features.find((f) => f.id === id)?.sketch?.status;
+      const color = status === 'over' ? SKETCH_COLORS.over : status === 'fully' ? SKETCH_COLORS.fully : SKETCH_COLORS.under;
+      const curves: SketchOverlay['curves'] = [];
+      for (const g of geometry.values()) if (g.type !== 'point') curves.push({ points: sample(g, px), color, dashed: g.construction });
+      overlays.push({ frame, curves, points: [], labels: [] });
+    }
+    v.setSketches(overlays);
+  }, [doc, result, editing?.featureId, zoomBand]);
 
   // Sketch tools own the left mouse button while a sketch is being edited.
   useEffect(() => {

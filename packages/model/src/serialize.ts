@@ -69,6 +69,9 @@ const migrations: Record<number, (doc: Json) => Json> = {
   // v6: angle dimensions may measure another sector between their lines (`flip`). Nothing to convert:
   // an angle without `flip` keeps its meaning, and older programs must not open a `flip` they ignore.
   5: (doc) => doc,
+  // v7: what is shown or hidden (D4.6) is stored in `visibility`. A version-6 document has no choices,
+  // so everything is at its default.
+  6: (doc) => ({ ...doc, visibility: {} }),
 };
 
 export class FormatError extends Error {

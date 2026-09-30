@@ -91,6 +91,7 @@ const api: KernelApi = {
       vertexPoints: Float32Array.from(body?.topology.vertices.flatMap((v) => v.point) ?? []),
       vertexFingerprints: body ? body.topology.vertices.map((_, i) => vertexFingerprint(body.topology, i)) : [],
       frames: r.frames,
+      sketchGeometry: new Map([...r.sketches].map(([id, s]) => [id, s.solved.geometry])),
       mass: body ? kernel.massProps(body.shape) : null,
       totalMs: r.totalMs,
     };

@@ -61,6 +61,13 @@ code { font-family: Consolas, 'Cascadia Mono', monospace; font-size: 11px; }
 .tree-row.suppressed .name { color: #9aa3ad; }
 .tree-row.rolled-back { opacity: 0.45; }
 .tree-row .name { flex: 1; }
+.use-nearest { display: block; margin: 3px 0 0; padding: 2px 8px; font-size: 12px; text-align: left; }
+.use-nearest code { margin-left: 2px; }
+.unresolved { margin-top: 2px; }
+.vis-toggle { border: 0; background: transparent; padding: 0 2px; color: var(--muted); opacity: 0.55; cursor: pointer; line-height: 0; }
+.vis-toggle:hover:not(:disabled) { opacity: 1; background: #d5e0ec; }
+.vis-toggle.shown { opacity: 0.85; color: var(--accent); }
+.vis-toggle:disabled { cursor: default; opacity: 0.3; }
 .status-error { color: var(--error); }
 .rollback-bar { height: 10px; padding: 3px 0; cursor: ns-resize; }
 .rollback-bar span { display: block; height: 4px; background: #3b82c4; border-radius: 2px; }

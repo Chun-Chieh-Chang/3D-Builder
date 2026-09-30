@@ -44,6 +44,8 @@ export interface Candidate {
   index: number;
   name: string;
   distance: number;
+  /** Of the candidate itself: what a reference to it (`replaceRef`, B4.3) stores. */
+  fingerprint: Fingerprint;
 }
 
 export type Resolution =
@@ -62,7 +64,10 @@ export function resolveRef(ref: Ref, names: ElementNames, topo: FingerprintTopol
   const fp = (i: number) => (kind === 'edges' ? edgeFingerprint(topo, i) : kind === 'faces' ? faceFingerprint(topo, i) : vertexFingerprint(topo, i));
   const rank = (indices: number[]): Candidate[] =>
     indices
-      .map((index) => ({ index, name: list[index]!, distance: ref.fingerprint ? fingerprintDistance(ref.fingerprint, fp(index)) : Infinity }))
+      .map((index) => {
+        const fingerprint = fp(index);
+        return { index, name: list[index]!, distance: ref.fingerprint ? fingerprintDistance(ref.fingerprint, fingerprint) : Infinity, fingerprint };
+      })
       .sort((a, b) => a.distance - b.distance);
 
   const exact = list.flatMap((n, i) => (n === ref.name ? [i] : []));

@@ -1,7 +1,9 @@
-import { produce, type Draft } from 'immer';
+import { current, produce, type Draft } from 'immer';
 import { countersFor, type Id } from './ids';
 import type { BlobRef, ChamferFeature, EndCondition, Expr, Feature, ImportedBodyFeature, PartDoc, PlaneDefinition, Ref, RevolveCondition, SketchConstraint, SketchEntity, SketchFeature } from './schema';
 import { isDatumPlaneName } from './datums';
+import { mapRefs } from './refs';
+import { isHideable } from './visibility';
 import { isDimension } from './schema';
 import { evalAngle, evalLength, ExprError } from './expr';
 import { idsInUse, removalSet, sketchError } from './sketch-rules';
@@ -48,7 +50,14 @@ export type Command =
   | { type: 'removeSketchItems'; featureId: Id; ids: Id[] }
   /** Stores placement intent: where points are and how big circles are (e.g. after a drag). */
   | { type: 'setSketchGeometry'; featureId: Id; points: PointPosition[]; radii?: CircleRadius[] }
-  | { type: 'setConstruction'; featureId: Id; ids: Id[]; value: boolean };
+  | { type: 'setConstruction'; featureId: Id; ids: Id[]; value: boolean }
+  /** Shows or hides sketches, reference planes, default planes or the origin (D4.6). */
+  | { type: 'setVisibility'; keys: string[]; value: boolean }
+  /**
+   * Points the reference `from` of a feature at another element `to` of the same kind (B4.3), after it
+   * stopped resolving. Only that reference changes; the feature is not rebuilt differently in any other way.
+   */
+  | { type: 'replaceRef'; featureId: Id; from: Ref; to: Ref };
 
 export class CommandError extends Error {
   constructor(message: string) {
@@ -308,6 +317,7 @@ export function mutate(draft: Draft<PartDoc>, cmd: Command): void {
         draft.rollbackIndex -= draft.features.slice(0, draft.rollbackIndex).filter((f) => ids.has(f.id)).length;
       }
       draft.features = draft.features.filter((f) => !ids.has(f.id));
+      for (const id of ids) delete draft.visibility[id];
       if (draft.rollbackIndex !== null && draft.rollbackIndex >= draft.features.length) draft.rollbackIndex = null;
       // Imported data no feature uses any more is dropped too (its id stays issued).
       const used = new Set(draft.features.flatMap((f) => (f.type === 'importedBody' ? [f.blob] : [])));
@@ -367,6 +377,24 @@ export function mutate(draft: Draft<PartDoc>, cmd: Command): void {
         if (!(Number.isFinite(r.radius) && r.radius > 0)) throw new CommandError(`圓 ${r.id} 的半徑必須大於 0`);
         e.radius = r.radius;
       }
+      return;
+    }
+    case 'setVisibility': {
+      for (const key of cmd.keys) if (!isHideable(draft as PartDoc, key)) throw new CommandError(`這個項目不能隱藏或顯示：${key}`);
+      for (const key of cmd.keys) draft.visibility[key] = cmd.value;
+      return;
+    }
+    case 'replaceRef': {
+      const at = draft.features.findIndex((f) => f.id === cmd.featureId);
+      if (at < 0) throw new CommandError(`找不到特徵：${cmd.featureId}`);
+      const { from, to } = cmd;
+      if (from.kind !== 'face' && from.kind !== 'edge' && from.kind !== 'vertex') throw new CommandError('只有面、邊線與頂點的參考可以改用其他元素');
+      if (to.kind !== from.kind) throw new CommandError('只能換成同一類的元素（面、邊線或頂點）');
+      const { feature: next, replaced } = mapRefs(current(draft.features[at]!) as Feature, (r) => (r.kind === from.kind && r.name === from.name ? to : r));
+      if (replaced === 0) throw new CommandError(`這個特徵沒有參考「${from.name}」`);
+      // Two edges of a fillet may now name the same edge: keep one.
+      if (next.type === 'fillet' || next.type === 'chamfer') next.edges = next.edges.filter((r, i) => next.edges.findIndex((x) => x.kind === r.kind && x.name === r.name) === i);
+      draft.features[at] = next as Draft<Feature>;
       return;
     }
     case 'setConstruction': {

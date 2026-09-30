@@ -6,7 +6,7 @@ import type { Id } from './ids';
  * DOF status, mass properties and error lists are derived data and never stored.
  */
 
-export const SCHEMA_VERSION = 6;
+export const SCHEMA_VERSION = 7;
 
 /** Value expression: "20", "25.4mm", "1in", "30deg". Variables/equations arrive in Phase 3a (B5.2/B5.3). */
 export type Expr = string;
@@ -210,6 +210,12 @@ export interface PartDoc {
   properties: Record<string, string>;
   appearances: AppearanceOverride[];
   blobs: BlobRef[];
+  /**
+   * What the user chose to show or hide (D4.6), by feature id (sketches, reference planes), default
+   * plane name ("plane:front" …) or "origin". Only choices are stored: an item without an entry is
+   * shown or hidden by its default (see `isShown`). Like SolidWorks, it is saved with the part.
+   */
+  visibility: Record<string, boolean>;
   /**
    * Highest number issued so far per readable-id prefix ("l" → 4 means l1…l4 were issued).
    * Ids are never reused, so a stale reference can never silently bind to a new object (B1.3).

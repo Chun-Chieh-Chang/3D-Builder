@@ -40,6 +40,11 @@ export interface RebuildPayload {
   vertexFingerprints: Fingerprint[];
   /** Plane of each sketch (datum or model face), including the sketch being edited, and of each reference plane. */
   frames: Map<Id, PlaneFrame>;
+  /**
+   * Solved geometry of every sketch that was evaluated. Which of them are drawn is the document's choice
+   * (D4.6, `isShown`), so hiding or showing one does not need a rebuild.
+   */
+  sketchGeometry: Map<Id, Map<Id, SolvedGeometry>>;
   mass: MassProps | null;
   totalMs: number;
 }

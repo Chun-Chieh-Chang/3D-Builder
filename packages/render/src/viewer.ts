@@ -209,6 +209,11 @@ export class Viewer {
   private planes: PlaneDisplay[] = [];
   private planeGroup: THREE.Group | null = null;
   private overlay: SketchOverlay | null = null;
+  /** Sketches that are shown next to the model (D4.6), each drawn like the sketch being edited, without labels. */
+  private sketches: SketchOverlay[] = [];
+  private sketchGroup: THREE.Group | null = null;
+  private originShown = false;
+  private originGroup: THREE.Group | null = null;
   private overlayGroup: THREE.Group | null = null;
   private labels = new Map<string, { el: HTMLElement; world: THREE.Vector3 }>();
   private toolHandler: ((e: ToolPointerEvent) => void) | null = null;
@@ -276,6 +281,8 @@ export class Viewer {
     this.controls.dispose();
     this.clear();
     this.setOverlay(null);
+    this.setSketches([]);
+    this.setOrigin(false);
     this.setPlanes([]);
     this.setVertices(new Float32Array(0));
     this.setGhost(null);
@@ -896,6 +903,56 @@ export class Viewer {
     return -1;
   }
 
+  // ---------------------------------------------------------------- shown sketches and the origin (D4.6)
+
+  /** Sketches to show in the graphics area, on top of the model. Only their lines and points are drawn. */
+  setSketches(sketches: SketchOverlay[]): void {
+    if (this.sketchGroup) {
+      this.overlayScene.remove(this.sketchGroup);
+      disposeGroup(this.sketchGroup);
+      this.sketchGroup = null;
+    }
+    this.sketches = sketches;
+    if (sketches.length > 0) {
+      const group = new THREE.Group();
+      const px = this.pixelSize();
+      for (const s of sketches) group.add(buildOverlayObjects({ ...s, labels: [] }, px));
+      this.sketchGroup = group;
+      this.overlayScene.add(group);
+    }
+    this.requestRender();
+  }
+
+  /** The part's origin: three short axes, a constant length on screen. */
+  setOrigin(show: boolean): void {
+    this.originShown = show;
+    this.paintOrigin();
+  }
+
+  private paintOrigin(): void {
+    if (this.originGroup) {
+      this.overlayScene.remove(this.originGroup);
+      disposeGroup(this.originGroup);
+      this.originGroup = null;
+    }
+    if (this.originShown) {
+      const len = 28 * this.pixelSize();
+      const group = new THREE.Group();
+      const axes: [number[], number][] = [
+        [[len, 0, 0], 0xe03131],
+        [[0, len, 0], 0x2f9e44],
+        [[0, 0, len], 0x1c7ed6],
+      ];
+      for (const [end, color] of axes) {
+        group.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(), new THREE.Vector3(...end)]), new THREE.LineBasicMaterial({ color, depthTest: false })));
+      }
+      group.add(new THREE.Points(new THREE.BufferGeometry().setFromPoints([new THREE.Vector3()]), new THREE.PointsMaterial({ color: 0xe03131, size: 6, sizeAttenuation: false, depthTest: false })));
+      this.originGroup = group;
+      this.overlayScene.add(group);
+    }
+    this.requestRender();
+  }
+
   // ---------------------------------------------------------------- reference planes (D4.6)
 
   /** Reference planes to show; each is a translucent square centered on the model's projection. */
@@ -1140,6 +1197,7 @@ export class Viewer {
   }
 
   private viewChanged(): void {
+    if (this.originShown) this.paintOrigin(); // a constant size on screen
     this.events.onViewChange?.();
     this.requestRender();
   }

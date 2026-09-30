@@ -13,6 +13,7 @@ export function createEmptyPart(): PartDoc {
     properties: {},
     appearances: [],
     blobs: [],
+    visibility: {},
     idCounters: {},
   };
 }

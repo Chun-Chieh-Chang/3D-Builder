@@ -19,6 +19,7 @@ import {
   type DatumPlaneName,
   type BlobRef,
   type Feature,
+  type Fingerprint,
   type Id,
   type ImportedBodyFeature,
   type PartDoc,
@@ -124,6 +125,11 @@ export interface UiState {
 }
 
 /** Next free display name like SolidWorks does: 草圖3 after 草圖2 (names are labels, ids stay permanent). */
+/** Immer only replaces what a command touched, so anything else being the same object means it did not change. */
+function onlyVisibilityChanged(a: PartDoc, b: PartDoc): boolean {
+  return (Object.keys(b) as (keyof PartDoc)[]).every((k) => k === 'visibility' || a[k] === b[k]);
+}
+
 function nextName(doc: PartDoc, base: string): string {
   const pattern = new RegExp(`^${base}(\\d+)$`);
   const used = doc.features.map((f) => Number(pattern.exec(f.name)?.[1] ?? 0));
@@ -254,6 +260,7 @@ class AppStore {
       (bootMs) => this.set({ bootMs }),
       (e: unknown) => this.set({ bootError: e instanceof Error ? e.message : String(e) }),
     );
+    this.lastDoc = this.history.doc;
     this.requestRebuild();
     // Closing the tab with unsaved changes asks first, like closing a modified document (risk 11: lost work).
     window.addEventListener('beforeunload', (e) => {
@@ -283,12 +290,17 @@ class AppStore {
     for (const fn of this.listeners) fn();
   }
 
+  /** The part the last rebuild was requested for: a change that only touches what is shown needs no new rebuild. */
+  private lastDoc: PartDoc | null = null;
+
   private onDocChanged(): void {
     const doc = this.history.doc;
+    const prev = this.lastDoc;
+    this.lastDoc = doc;
     this.set({ doc, canUndo: this.history.canUndo, canRedo: this.history.canRedo, dirty: serializePart(doc) !== this.savedText });
     // Inside a sketch only the sketch changes: solve it, and leave the model before it as it is.
     if (this.state.editing?.kind === 'sketch') this.requestSketchSolve();
-    else this.requestRebuild();
+    else if (!(prev && onlyVisibilityChanged(prev, doc))) this.requestRebuild();
   }
 
   notify(text: string, kind: Notice['kind'] = 'info'): void {
@@ -333,6 +345,18 @@ class AppStore {
   suppress(featureId: Id, action: SuppressAction): void {
     const featureIds = suppressionTargets(this.history.doc, featureId, action);
     if (featureIds.length > 0) this.execute({ type: 'setSuppressed', featureIds, value: action === 'suppress' });
+  }
+
+  /** Shows or hides sketches, reference planes, default planes or the origin (D4.6). */
+  setVisibility(keys: string[], value: boolean): void {
+    this.execute({ type: 'setVisibility', keys, value });
+  }
+
+  /** 「改用這個」 (B4.3): a feature's reference that no longer resolves now points at the candidate. */
+  replaceRef(featureId: Id, from: Ref, candidate: { name: string; fingerprint: Fingerprint }): void {
+    if (this.execute({ type: 'replaceRef', featureId, from, to: { kind: from.kind, name: candidate.name, fingerprint: candidate.fingerprint } })) {
+      this.notify(`已改用 ${candidate.name}`);
+    }
   }
 
   /** Opens 「確認刪除」 for a feature (Delete key or context menu). */
@@ -855,6 +879,7 @@ class AppStore {
     if (this.state.editing) this.cancelEdit();
     this.history = new DocHistory(doc);
     this.history.subscribe(() => this.onDocChanged());
+    this.lastDoc = null; // a new document is always rebuilt
     this.fileHandle = handle;
     this.blobs = blobs;
     void this.api.setBlobs(blobs); // posted before the rebuild request, so the worker has them first
