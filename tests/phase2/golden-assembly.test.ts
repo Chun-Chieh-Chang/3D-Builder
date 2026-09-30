@@ -12,7 +12,8 @@
  *               V-block 1: bottom on the top, centred on the plate's right and front planes → fully defined
  *               V-block 2: bottom on V-block 1's top, centred on its planes → fully defined
  */
-import { readFileSync } from 'node:fs';
+import { readFileSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { beforeAll, describe, expect, it } from 'vitest';
 import { applyAssemblyCommand, applyCommand, axisAngle, createEmptyAssembly, transformPoint, type AssemblyDoc, type Mate, type MateType, type PartDoc, type Pose, type Vec3 } from '@3db/model';
 import { componentName, exportAssemblyStep, partNameOf, readDocumentFile, readPartFile, writeAssemblyFile } from '@3db/io';
@@ -266,7 +267,14 @@ describe('the golden assembly: 3 plates × (2 pins + 2 V-blocks) = 15 components
       name: componentName(doc.files.find((f) => f.id === c.file)?.path, c.instance),
       pose: solved.poses.get(c.id)!,
     }));
-    const back = readAssemblyStep(kernel.oc, exportAssemblyStep(kernel, '夾具', parts, instances));
+    const text = exportAssemblyStep(kernel, '夾具', parts, instances);
+    // Not through OCCT's reader: what a program that only reads the text finds.
+    expect(text.match(/NEXT_ASSEMBLY_USAGE_OCCURRENCE/g)).toHaveLength(15);
+    expect(text.match(/MANIFOLD_SOLID_BREP/g)).toHaveLength(3);
+    expect(text.match(/PRODUCT\s*\(/g)).toHaveLength(4); // the assembly and its three parts
+    // To open the assembly in another program: STEP_OUT_DIR=<folder> writes it there.
+    if (process.env.STEP_OUT_DIR) writeFileSync(join(process.env.STEP_OUT_DIR, '金樣夾具-15零組件.step'), text);
+    const back = readAssemblyStep(kernel.oc, text);
     expect(back.root).toBe('夾具');
     expect(back.isAssembly).toBe(true);
     expect([...back.volumes.keys()].sort()).toEqual(['V型塊', '定位板', '削邊銷'].sort());
