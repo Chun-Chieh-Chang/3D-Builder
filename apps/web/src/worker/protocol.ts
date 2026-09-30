@@ -4,6 +4,13 @@ import type { AssemblyResult, AssemblySolveOptions, FeatureResult } from '@3db/r
 import type { MateGeometry } from '@3db/assembly';
 import type { EntityStatus, SketchStatus, SolvedGeometry, SolveOptions } from '@3db/sketch';
 
+/**
+ * Where a part file is on its way in (2F): read from the project folder (the app), then rebuilt (a STEP
+ * file is imported and named here, the longest stage), then meshed. Reported only while the worker
+ * really does the work: a part it already has is answered at once, without any.
+ */
+export type PartStage = 'reading' | 'building' | 'meshing';
+
 /** An assembly to write as STEP: the rebuilt parts it uses (by content key, named after their files) and where each component is. */
 export interface AssemblyStepRequest {
   name: string;
@@ -94,7 +101,7 @@ export interface KernelApi {
   /** STEP of the rebuilt part, its product named `name`. */
   exportStep(doc: PartDoc, name: string): Promise<string>;
   /** Rebuilds a part file of an assembly, once per content (`key` = SHA-256 of `bytes`). */
-  buildPart(key: string, bytes: Uint8Array): Promise<PartBuildPayload>;
+  buildPart(key: string, bytes: Uint8Array, onStage?: (stage: PartStage) => void): Promise<PartBuildPayload>;
   /** STEP of an assembly (F1.2) as the components are placed in `req`; parts are the ones rebuilt for it (`buildPart`). */
   exportAssemblyStep(req: AssemblyStepRequest): Promise<string>;
   /** Lets go of every rebuilt part file except these. */

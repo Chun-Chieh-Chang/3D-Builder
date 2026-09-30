@@ -138,6 +138,17 @@ code { font-family: Consolas, 'Cascadia Mono', monospace; font-size: 11px; }
 
 /* Sketch overlay (labels are positioned by the viewer) */
 .overlay-labels { position: absolute; inset: 0; pointer-events: none; overflow: hidden; }
+/* Part files being loaded (2F): what the wait is for and how long it has been, over the graphics area. */
+.load-progress { position: absolute; top: 12px; left: 50%; transform: translateX(-50%); min-width: 320px; max-width: min(560px, calc(100% - 24px)); background: rgba(255, 255, 255, 0.96); border: 1px solid var(--line); border-radius: 4px; padding: 8px 12px 10px; font-size: 13px; line-height: 1.5; box-shadow: 0 2px 8px rgba(29, 35, 43, 0.12); pointer-events: none; }
+.load-progress-row { display: flex; justify-content: space-between; gap: 16px; }
+.load-progress-name { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.load-progress-stage { color: var(--muted); white-space: nowrap; }
+.load-progress-more { color: var(--muted); }
+.busy-bar { position: relative; height: 4px; margin-top: 6px; border-radius: 2px; overflow: hidden; background: var(--accent-soft); }
+.busy-bar::after { content: ''; position: absolute; top: 0; bottom: 0; width: 35%; border-radius: 2px; background: var(--accent); animation: busy-slide 1.2s ease-in-out infinite; }
+@keyframes busy-slide { from { left: -35%; } to { left: 100%; } }
+/* Without motion the bar stands full: it says "going on", not how far. */
+@media (prefers-reduced-motion: reduce) { .busy-bar::after { animation: none; left: 0; width: 100%; opacity: 0.45; } }
 .overlay-label { position: absolute; left: 0; top: 0; white-space: nowrap; font-size: 12px; line-height: 1; user-select: none; }
 .overlay-label.interactive { pointer-events: auto; cursor: pointer; }
 .overlay-label.dimension { padding: 2px 3px; background: rgba(255, 255, 255, 0.85); border-radius: 2px; color: #3d4650; }

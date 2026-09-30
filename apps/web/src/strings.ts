@@ -1,6 +1,14 @@
 import type { Feature, FeatureType, SketchConstraint } from '@3db/model';
 import type { SketchStatus } from '@3db/sketch';
 import type { ToolId } from './sketcher/controller';
+import type { PartStage } from './worker/protocol';
+
+/** Where a part file is on its way in (2F): what the wait is for. STEP files are imported and named in 「重建幾何」, the longest stage. */
+export const PART_STAGE_LABEL: Record<PartStage, string> = {
+  reading: '讀取檔案',
+  building: '重建幾何（STEP 檔要匯入，較久）',
+  meshing: '產生網格',
+};
 
 /** UI wording in one place (SW 2010 Traditional Chinese terminology), ready for i18n (D9.1). */
 export const FEATURE_LABEL: Record<FeatureType, string> = {

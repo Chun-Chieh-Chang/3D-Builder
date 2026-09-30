@@ -2,6 +2,7 @@ import { dirName } from '@3db/model';
 import { partNameOf } from '@3db/io';
 import { store, useStore } from '../state/store';
 import { Icon } from './Icon';
+import { Busy, loadingText, useLoadingParts } from './LoadProgress';
 
 /**
  * 「插入零組件」 PropertyManager (C15.1): the part files of the project folder, or 「瀏覽」. The chosen
@@ -16,6 +17,7 @@ export function InsertComponentPanel() {
   const chosen = insert.chosen;
   const status = chosen ? asm.files.get(chosen) : undefined;
   const first = asm.doc.components.length === 0;
+  const loading = useLoadingParts();
   return (
     <div className="property-manager">
       <div className="pm-header">
@@ -57,7 +59,14 @@ export function InsertComponentPanel() {
       {chosen && (
         <div className="pm-group">
           <h4>放置</h4>
-          {status?.status === 'loading' && <p className="muted">正在載入「{partNameOf(chosen)}」…</p>}
+          {status?.status === 'loading' && (
+            <div role="status">
+              <p className="muted">
+                正在載入「{partNameOf(chosen)}」：{loadingText(loading.find((p) => p.path === chosen) ?? { path: chosen, name: '', stage: status.stage, seconds: 0 })}
+              </p>
+              <Busy />
+            </div>
+          )}
           {(status?.status === 'missing' || status?.status === 'error') && <p className="error-text">{status.message}</p>}
           {status?.status === 'ok' && (
             <p className="hint">

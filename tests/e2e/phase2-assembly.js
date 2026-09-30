@@ -1174,6 +1174,96 @@ asm.exportStep = async () => {
   return out;
 };
 
+/**
+ * (2F) The wait while a part file loads: the stages the worker reports in their order, the card over the
+ * graphics area and the line in the panel with their seconds, all gone once the part is in; a file that
+ * cannot be read ends as an error, not as a bar that never stops; a component is meshed with under half
+ * the triangles of a part. It needs a STEP file that takes seconds: `base` is the URL of a folder that
+ * serves 「CIV0000467治具_step.STEP」 (the 7.5 MB fixture of the sample; the app's page cannot fetch files
+ * of another drive from the dev server, so serve that folder read-only on 127.0.0.1 for the run).
+ *
+ *   await __asm.progress('http://127.0.0.1:5393/')
+ */
+asm.progress = async (base) => {
+  const out = {};
+  const name = 'CIV0000467治具_step.STEP';
+  H.ready();
+  const bytes = new Uint8Array(await (await fetch(base + encodeURIComponent(name))).arrayBuffer());
+  await H.project({});
+  await H.writeAt(name, bytes);
+  await H.writeAt('壞檔.STEP', new TextEncoder().encode('ISO-10303-21;\nHEADER;\nnot a step file at all\n'));
+  await H.action('檔案', '新組合件');
+  if (store.getState().folderRequest) await H.modalButton('選擇資料夾…');
+  await H.waitFor(() => H.asm()?.insert?.files, 10000, 'the part list');
+
+  // The stages, and what is on the screen while they last: sampled every 40 ms.
+  const stages = [];
+  const cards = new Set();
+  const seconds = new Set();
+  let panelLine = null;
+  let bar = false;
+  let timer;
+  const sample = () => {
+    const s = H.asm()?.files.get(name);
+    if (s?.status === 'loading' && stages.at(-1) !== s.stage) stages.push(s.stage);
+    const card = document.querySelector('.load-progress');
+    if (card) {
+      cards.add(card.querySelector('.load-progress-name')?.textContent);
+      const m = card.querySelector('.load-progress-stage')?.textContent.match(/(\d+) 秒/);
+      if (m) seconds.add(+m[1]);
+      bar ||= !!card.querySelector('.busy-bar');
+    }
+    panelLine ??= [...document.querySelectorAll('.property-manager p.muted')].map((p) => p.textContent).find((t) => t.startsWith('正在載入')) ?? null;
+  };
+  const t0 = performance.now();
+  timer = setInterval(sample, 40);
+  [...document.querySelectorAll('.file-list li')].find((li) => li.title === name).click();
+  await H.waitFor(() => H.asm().files.get(name)?.status === 'ok', 90000, 'the fixture to load');
+  clearInterval(timer);
+  out.loadedInMs = Math.round(performance.now() - t0);
+  out.stages = stages;
+  out.card = [...cards];
+  out.secondsSeen = [...seconds].sort((a, b) => a - b);
+  out.panelLine = panelLine;
+  // 「讀取檔案」 is over in a few tens of ms for a file on this machine: the sampling may not catch it.
+  H.check(stages.filter((s) => s !== 'reading').join() === 'building,meshing' && (stages.length === 2 || stages[0] === 'reading'), `stages in order: ${stages}`);
+  H.check(cards.size === 1 && [...cards][0] === `正在載入「CIV0000467治具_step」`, `the card names the part: ${[...cards]}`);
+  H.check(bar, 'the card has the moving bar');
+  H.check(seconds.size >= 3, `the seconds count up: ${[...seconds]}`);
+  H.check(panelLine?.includes('CIV0000467治具_step') && /重建幾何|讀取檔案|產生網格/.test(panelLine), `the panel says what it waits for: ${panelLine}`);
+
+  // Done: nothing of it is left on the screen.
+  await H.wait(300);
+  H.check(!document.querySelector('.load-progress'), 'the card is gone once the part is in');
+  H.check(![...document.querySelectorAll('.property-manager p.muted')].some((p) => p.textContent.startsWith('正在載入')), 'the panel line is gone');
+  H.check(!document.querySelector('.status-bar').textContent.includes('正在載入'), 'the status bar does not say loading');
+
+  // The mesh of a component: under half of the 74 048 triangles the part mesh of this file has.
+  const mesh = H.asm().builds.get(H.asm().files.get(name).key).mesh;
+  out.triangles = mesh.indices.length / 3;
+  H.check(out.triangles <= 74048 / 2, `component mesh under half of 74048: ${out.triangles}`);
+
+  // Looks: type at least 13 px, the bar stands still for those who ask for no motion.
+  const card = document.createElement('div');
+  card.className = 'load-progress';
+  document.body.append(card);
+  out.cardFontPx = parseFloat(getComputedStyle(card).fontSize);
+  card.remove();
+  const rules = [...document.styleSheets].flatMap((s) => [...s.cssRules]);
+  out.reducedMotionRule = rules.some((r) => r instanceof CSSMediaRule && r.conditionText.includes('prefers-reduced-motion') && [...r.cssRules].some((c) => c.selectorText?.includes('.busy-bar')));
+  H.check(out.cardFontPx >= 13, `type size ${out.cardFontPx}px`);
+  H.check(out.reducedMotionRule, 'a rule for prefers-reduced-motion');
+
+  // A file that cannot be read: an error with its reason, and the bar goes.
+  [...document.querySelectorAll('.file-list li')].find((li) => li.title === '壞檔.STEP').click();
+  await H.waitFor(() => H.asm().files.get('壞檔.STEP')?.status === 'error', 30000, 'the bad file to fail');
+  await H.wait(300);
+  out.badFile = H.asm().files.get('壞檔.STEP').message;
+  H.check(!document.querySelector('.load-progress') && !document.querySelector('.busy-bar'), 'no bar after a failed load');
+  H.check(document.querySelector('.property-manager .error-text')?.textContent === out.badFile, 'the reason is in the panel');
+  return out;
+};
+
 /** Forgets the remembered project folder: run before reloading for openFresh(). */
 asm.forget = () =>
   new Promise((resolve) => {

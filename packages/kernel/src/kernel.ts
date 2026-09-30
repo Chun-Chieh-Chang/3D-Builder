@@ -9,6 +9,7 @@ import {
   type ImportResult,
   type MassProps,
   type MeshData,
+  type MeshOptions,
   type OpResult,
   type ShapeId,
   type Topology,
@@ -714,7 +715,8 @@ export class Kernel {
 
   // ------------------------------------------------------------------ tessellation (A4.1)
 
-  mesh(id: ShapeId, options: { tolerance?: number; angular?: number } = {}): MeshData {
+  /** A shape keeps the finest mesh it has had: BRepMesh refines one, never coarsens it. Mesh a shape once, with the setting it is to have. */
+  mesh(id: ShapeId, options: MeshOptions = {}): MeshData {
     const oc = this.oc;
     const arena = new Arena();
     const shape = this.get(id);
@@ -727,7 +729,7 @@ export class Kernel {
         oc.BRepBndLib.Add(shape, box, false);
         const a = this.xyz(arena.own(box.CornerMin()));
         const b = this.xyz(arena.own(box.CornerMax()));
-        tolerance = Math.min(1, Math.max(0.002, Math.hypot(b[0] - a[0], b[1] - a[1], b[2] - a[2]) * 5e-4));
+        tolerance = Math.min(1, Math.max(0.002, Math.hypot(b[0] - a[0], b[1] - a[1], b[2] - a[2]) * (options.relative ?? 5e-4)));
       }
       const angular = options.angular ?? 0.25;
       arena.own(new oc.BRepMesh_IncrementalMesh(shape, tolerance, false, angular, false));

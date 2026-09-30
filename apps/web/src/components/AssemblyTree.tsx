@@ -3,7 +3,7 @@ import { joinPath, type Component, type Id, type Mate } from '@3db/model';
 import { componentName } from '@3db/io';
 import { store, useDocumentName, useStore } from '../state/store';
 import type { AssemblyState } from '../state/assembly';
-import { DATUM_ITEMS } from '../strings';
+import { DATUM_ITEMS, PART_STAGE_LABEL } from '../strings';
 import { Icon } from './Icon';
 
 type Menu = { x: number; y: number } & ({ component: Component } | { mate: Mate });
@@ -17,7 +17,8 @@ export function componentInfo(asm: AssemblyState, c: Component) {
   return {
     name: componentName(file?.path, c.instance),
     path,
-    loading: status?.status === 'loading',
+    /** What the wait is for, while the part file loads. */
+    loading: status?.status === 'loading' ? PART_STAGE_LABEL[status.stage] : undefined,
     error: !file ? `找不到零組件的檔案：${c.file}` : status?.status === 'missing' || status?.status === 'error' ? status.message : undefined,
     warnings: build?.problems ?? [],
   };
@@ -85,7 +86,7 @@ export function AssemblyTree() {
           const info = componentInfo(asm, c);
           const result = asm.solution?.components.get(c.id);
           const freedom = result && result.status === 'under' ? `可移動的自由度：${result.dof}` : undefined;
-          const tip = [info.path && `檔案：${info.path}`, freedom, info.loading && '載入中…', info.error, ...info.warnings].filter(Boolean).join('\n');
+          const tip = [info.path && `檔案：${info.path}`, freedom, info.loading && `載入中：${info.loading}`, info.error, ...info.warnings].filter(Boolean).join('\n');
           return (
             <li
               key={c.id}

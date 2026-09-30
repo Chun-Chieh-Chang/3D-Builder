@@ -6,6 +6,7 @@ import { ACTIONS } from '../actions';
 import { store, useStore } from '../state/store';
 import type { AssemblyStore } from '../state/assembly';
 import { componentInfo } from './AssemblyTree';
+import { LoadProgress } from './LoadProgress';
 import { MateFlyout } from './MatePanel';
 
 const KIND_WORD = { face: '面', edge: '邊線', vertex: '頂點' } as const;
@@ -193,6 +194,7 @@ export function AssemblyViewport() {
       </div>
       {mating && <MateFlyout />}
       {!bootMs && <div className="boot-overlay">{bootError ? `幾何核心載入失敗：${bootError}` : '正在載入幾何核心（OCCT WASM，約 43 MB）…'}</div>}
+      <LoadProgress />
       {hint && <div className="pick-hint">{hint}</div>}
     </main>
   );

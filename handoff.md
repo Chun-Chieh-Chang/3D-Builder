@@ -35,6 +35,7 @@
 | [ADR 0013](docs/adr/0013-mate-ui.md) | 結合的介面：Worker 求解與預覽、結合 PropertyManager、零組件上的拾取與浮出樹、設計樹的狀態與結合資料夾、錯誤為何、開始組合件、STEP 零組件 |
 | [ADR 0014](docs/adr/0014-moving-and-reference-files.md) | 移動零組件與參考檔：求解器的移動目標、拖曳與數值移動、放開時寫入整組擺放位置、重新指定零件檔、找不到的檔案、零件改過後更新、開啟零件與返回組合件、記住專案資料夾 |
 | [ADR 0015](docs/adr/0015-step-assembly-export.md) | STEP 組合件輸出：XCAF 單層結構、寫出圖面上的位姿、位姿由四元數與平移組成的原因、非單位四元數與讀不到的零件檔一律拒絕 |
+| [ADR 0016](docs/adr/0016-component-mesh-and-load-progress.md) | 零組件的網格（容差 1‰、角度 0.5 rad，比編輯零件粗）與載入進度（階段、秒數）、沒有本體的零件檔視為錯誤、量到的時間分佈 |
 | [phase0-verification.md](docs/phase0-verification.md) | Phase 0 驗收紀錄與 SW 人工核對步驟 |
 | [phase1-verification.md](docs/phase1-verification.md) | Phase 1 驗收紀錄：三個示範零件、金樣與 TNP、驗收中發現的問題 |
 | 本文件 | 狀態、待辦、下一步、約定 |
@@ -61,7 +62,8 @@
   - **2E STEP 組合件輸出**：已實作並通過自動與瀏覽器驗證，已提交推送（`49e93c7`）。細節見 ADR 0015 與 §10。「檔案」→「輸出 STEP」在組合件中可用，寫出一個組合件，每個零件檔一個原型、每個零組件一個帶位姿的實例。金樣夾具的輸出檔已由使用者在 eDrawings 開啟確認（§8）。
   - **2F 驗收**：見 §10。金樣組合件測試（15 個零組件）、兩個真實 STEP 的部分驗收，閘門通過。
 - **分支與遠端**：只在 `main` 開發。遠端 `origin` = https://github.com/Chun-Chieh-Chang/3D-Builder（私人），`main` 追蹤 `origin/main`。`spike/occt-gaps` 已合併、未推送，可以刪除。
-- **檢查**：297/297 測試通過（型別、分層、測試）；`vite build` 成功。（2E 的檢查在 `F:` 磁碟上以暫存設定執行，原因見 §6「工作區連結」。）
+- **2F 之後的收尾（2026-09-30，未提交）**：零組件的網格變粗（三角形約減六成）、載入進度提示（階段與秒數）、壞的 STEP 檔顯示錯誤。細節見 ADR 0016。
+- **檢查**：301/301 測試通過（另有 6 項需要樣本、略過）（型別、分層、測試）；`vite build` 成功。（2E 的檢查在 `F:` 磁碟上以暫存設定執行，原因見 §6「工作區連結」。）
 
 ## 4. 如何執行
 
@@ -144,7 +146,7 @@ npm run build        # 正式版建置
 - **系統檔案對話框**：`showOpenFilePicker`、`showSaveFilePicker`、`showDirectoryPicker` 必須由真人點擊觸發；腳本的 `click()` 不算，非同步流程中途也不能再開（所以專案資料夾用一個對話框承接點擊）。自動測試時以替身取代它們，真正的對話框請使用者確認。
 - **組合件的瀏覽器測試**（`tests/e2e/phase2-assembly.js`）：
   - 專案資料夾用瀏覽器的私有檔案系統（OPFS，`navigator.storage.getDirectory()`）。它的控制代碼是真的，`resolve()`、讀寫都走瀏覽器本身的程式；對話框替身回傳其中的檔案。
-  - 用法：在剛載入的頁面 `await import('/@fs/<檢出路徑>/tests/e2e/phase2-assembly.js?' + Date.now())`（路徑見上），再 `await __asm.all()`、`await __asm.extras()`；2C：`__asm.fixture()`、`__asm.mateExtras()`；STEP：`__asm.step()`；2D：`__asm.move()`、`__asm.files()`，重新載入後 `__asm.remembered()`；2E：`__asm.exportStep()`（自己組夾具，不必先跑 `fixture()`）。
+  - 用法：在剛載入的頁面 `await import('/@fs/<檢出路徑>/tests/e2e/phase2-assembly.js?' + Date.now())`（路徑見上），再 `await __asm.all()`、`await __asm.extras()`；2C：`__asm.fixture()`、`__asm.mateExtras()`；STEP：`__asm.step()`；2D：`__asm.move()`、`__asm.files()`，重新載入後 `__asm.remembered()`；2E：`__asm.exportStep()`（自己組夾具，不必先跑 `fixture()`）；載入進度：`__asm.progress('http://127.0.0.1:5393/')`（要有提供 `CIV0000467治具_step.STEP` 的只讀伺服器，見上面「Vite 對別的磁碟的檔案」；約 15 秒，工具逾時 45 秒，要在背景跑並輪詢 `window.__result`）。
   - 專案資料夾會記在 IndexedDB（2D）。要測「第一次選資料夾」的流程（`__asm.openFresh()`），先 `await __asm.forget()` 再重新載入頁面。OPFS 的資料夾讀取權限永遠是「已允許」，所以記住的資料夾會直接使用；`__asm.remembered()` 以替身讓它回報「要再詢問」，測試對話框的「使用「X」」按鈕。
   - 每個流程開頭都會「新組合件」：上一個流程留下未存的組合件時會跳出「要儲存變更嗎？」而卡住，先重新載入頁面。流程超過 45 秒時，在背景執行並輪詢 `window.__result`。
   - 拖曳用 `H.drag(path, 'left' | 'right')`：合成的 PointerEvent 帶 `buttons`；`setPointerCapture` 對合成事件會拋錯（已忽略）。找零組件上的點用 `H.onComponent`（確認游標真的落在它上面）；等角視圖中被其他零件擋住時改用上視圖。
@@ -455,5 +457,6 @@ npm run build        # 正式版建置
 - 3a：`BRepOffset_MakeOffset`（C10.1 移動面）libcascade 沒有，Phase 3a 前決定做法（ADR 0003）。
 - 3b：次組合件（剛性次組合件 C15.4）、零組件複製排列、爆炸視圖、零件表、干涉檢查、STEP 組合件輸入。
 - Phase 2 留下的：拖曳時碰撞偵測（Phase 4a）、沿著組合件 XYZ／圖元的移動、STEP 顏色（F1.3）。
-- 觀察待查（§10 部分驗收）：自由曲面 STEP 往返的體積差 3.5e-6、小件網格偏密（4.4 萬個三角形）、第一個大 STEP 插入約 10 秒。
+- 觀察待查（§10 部分驗收）：自由曲面 STEP 往返的體積差 3.5e-6。
+- 已處理（ADR 0016）：小件網格偏密（零組件改為約 1.9 萬個三角形）、第一個大 STEP 插入的等待（加了進度提示，插入時間約 8.8 s）。**還沒解決的是等待本身**：時間主要花在 STEP 匯入與命名（治具 Node 2.6 s、瀏覽器約 3 倍），要縮短得把匯入結果快取在 IndexedDB，或依視圖距離調細緻度（LOD）。
 

@@ -1,5 +1,6 @@
 import { joinPath } from '@3db/model';
 import { mateProblem } from './AssemblyTree';
+import { loadingText, useLoadingParts } from './LoadProgress';
 import { useStore, store } from '../state/store';
 import { SKETCH_STATUS_LABEL } from '../strings';
 
@@ -14,6 +15,7 @@ export function StatusBar() {
   const sketchSolve = useStore((s) => s.sketchSolve);
   const bootMs = useStore((s) => s.bootMs);
   const asm = useStore((s) => s.asm);
+  const loadingParts = useLoadingParts();
 
   if (asm) {
     // The part files the assembly uses (not a part only looked at in 「插入零組件」).
@@ -39,7 +41,13 @@ export function StatusBar() {
             {missing} 個零件檔無法載入
           </button>
         )}
-        <span>{loading > 0 ? `正在載入零件（${loading}）…` : `零組件 ${asm.doc.components.length} 個`}</span>
+        <span>
+          {loading > 0
+            ? loadingParts[0]
+              ? `正在載入「${loadingParts[0].name}」：${loadingText(loadingParts[0])}${loading > 1 ? `（共 ${loading} 個）` : ''}`
+              : `正在載入零件（${loading}）…`
+            : `零組件 ${asm.doc.components.length} 個`}
+        </span>
         {definition && <span className={`sketch-status ${definition.cls}`}>{definition.text}</span>}
         {bootMs && <span className="muted">核心載入 {Math.round(bootMs.occtMs)} ms</span>}
         <span className="units">MMGS</span>

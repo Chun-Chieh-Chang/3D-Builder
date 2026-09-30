@@ -17,8 +17,9 @@ import { beforeAll, describe, expect, it } from 'vitest';
 import { applyAssemblyCommand, axisAngle, createEmptyAssembly, transformPoint, type AssemblyDoc, type Mate, type Pose, type Vec3 } from '@3db/model';
 import { componentName, exportAssemblyStep, partNameOf, readDocumentFile, readComponentFile, writeAssemblyFile } from '@3db/io';
 import { PlaneGcsSolver } from '@3db/sketch';
-import { Kernel, type FaceInfo } from '@3db/kernel';
-import { Regenerator, solveAssembly, type MatePart } from '@3db/regen';
+import { COMPONENT_MESH, Kernel, type FaceInfo } from '@3db/kernel';
+import { edgeMateGeometry, faceMateGeometry, Regenerator, solveAssembly, type MatePart } from '@3db/regen';
+import { edgeFingerprint, faceFingerprint, vertexFingerprint } from '@3db/naming';
 import { readAssemblyStep, rotationMatrix } from '../support/readAssemblyStep';
 
 const dir = process.env.SW_SAMPLE_DIR;
@@ -60,7 +61,7 @@ describe.skipIf(!ready)('two real SolidWorks STEP files as the parts of a small 
     expect(r.features.filter((f) => f.status !== 'ok')).toEqual([]);
     const body = r.body!;
     const m = ms();
-    const mesh = kernel.mesh(body.shape);
+    const mesh = kernel.mesh(body.shape, COMPONENT_MESH); // as the worker meshes a component
     summary[`${file} meshed (ms)`] = Math.round(ms() - m);
     summary[`${file} triangles`] = mesh.indices.length / 3;
     return { mate: { topology: body.topology, names: body.names, frames: r.frames }, shape: body.shape, name: partNameOf(file) };
@@ -182,6 +183,28 @@ describe.skipIf(!ready)('two real SolidWorks STEP files as the parts of a small 
     expect(file.doc).toEqual(doc);
     expect(solveAssembly(file.doc, partOf).poses.get('piece')).toEqual(solveAssembly(doc, partOf).poses.get('piece'));
   });
+
+  it('meshes a component with at most half the triangles of the part mesh (2F)', () => {
+    // A shape keeps the finest mesh it has had (BRepMesh never coarsens one), so each setting meshes a fresh import.
+    const rows: string[] = [];
+    for (const [label, file] of [['base', BASE], ['piece', PIECE]] as const) {
+      const bytes = new Uint8Array(readFileSync(join(dir!, file)));
+      const count = (options?: Parameters<Kernel['mesh']>[1]) => {
+        const shape = kernel.importStep(bytes).shape;
+        const t = ms();
+        const n = kernel.mesh(shape, options).indices.length / 3;
+        const took = Math.round(ms() - t);
+        kernel.release(shape);
+        return { n, took };
+      };
+      const part = count();
+      const component = count(COMPONENT_MESH);
+      rows.push(`${label}: ${part.n} triangles (${part.took} ms) as a part, ${component.n} (${component.took} ms) as a component`);
+      expect(component.n, label).toBeLessThanOrEqual(part.n / 2);
+    }
+    summary['mesh: part / component'] = rows;
+  });
+
 
   it('report', () => {
     console.log('REAL SAMPLE ' + JSON.stringify(summary, null, 1));

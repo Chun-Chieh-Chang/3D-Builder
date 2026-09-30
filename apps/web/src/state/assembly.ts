@@ -1,4 +1,4 @@
-import type * as Comlink from 'comlink';
+import { proxy, type Remote } from 'comlink';
 import {
   AssemblyHistory,
   assemblyIdsInUse,
@@ -36,11 +36,15 @@ import {
 import { closerAlignment, currentValue, defaultType, hasAlignment, MATE_LABEL, placed, supportedTypes, type GoalTerm, type MateGeometry } from '@3db/assembly';
 import { assemblyFileName, assemblyName, componentName, PART_FILE_EXTENSION, partNameOf, sha256Hex, writeAssemblyFile } from '@3db/io';
 import type { AssemblyResult } from '@3db/regen';
-import type { AssemblyStepRequest, KernelApi, PartBuildPayload } from '../worker/protocol';
+import type { AssemblyStepRequest, KernelApi, PartBuildPayload, PartStage } from '../worker/protocol';
 import { fileIn, listFiles, pathIn, pickAssemblySaveTarget, pickPartFile, writeFile } from '../files';
 
 /** A part file of the assembly, by its path in the project folder: read and rebuilt, or why not. */
-export type FileStatus = { status: 'loading' } | { status: 'ok'; key: string } | { status: 'missing' | 'error'; message: string };
+export type FileStatus =
+  /** `since`: when it began (ms since the epoch), for how long it has been going on. */
+  | { status: 'loading'; stage: PartStage; since: number }
+  | { status: 'ok'; key: string }
+  | { status: 'missing' | 'error'; message: string };
 
 /** 「插入零組件」 (C15.1). */
 export interface InsertState {
@@ -128,7 +132,7 @@ export interface AssemblyState {
 }
 
 export interface AssemblyHost {
-  api: Comlink.Remote<KernelApi>;
+  api: Remote<KernelApi>;
   changed(state: AssemblyState): void;
   notify(text: string, kind?: 'info' | 'error'): void;
   /** The project folder; when there is none yet the user is asked, with `reason`. Null if they cancel. */
@@ -305,8 +309,15 @@ export class AssemblyStore {
 
   private load(path: string): void {
     if (this.state.files.has(path)) return;
-    this.setFile(path, { status: 'loading' });
+    this.setFile(path, { status: 'loading', stage: 'reading', since: Date.now() });
     this.readInto(path);
+  }
+
+  /** The worker has got as far as `stage` with a part file that is still loading (one already shown is read again without a word). */
+  private stageReached(path: string, stage: PartStage, generation: number): void {
+    const now = this.state.files.get(path);
+    if (generation !== this.generation || now?.status !== 'loading' || now.stage === stage) return;
+    this.setFile(path, { ...now, stage });
   }
 
   /** Reads a file and shows what it holds now; until then the file shows as it was. */
@@ -324,6 +335,7 @@ export class AssemblyStore {
   }
 
   private async read(path: string): Promise<FileStatus> {
+    const generation = this.generation;
     const project = this.project;
     if (!project) return { status: 'missing', message: '尚未選擇專案資料夾' };
     if (path === '..' || path.startsWith('../')) return { status: 'missing', message: `零件檔在專案資料夾「${project.name}」之外：${path}` };
@@ -333,7 +345,9 @@ export class AssemblyStore {
       const bytes = new Uint8Array(await file.arrayBuffer());
       const key = await sha256Hex(bytes);
       if (!this.state.builds.has(key)) {
-        const build = await this.host.api.buildPart(key, bytes);
+        const build = await this.host.api.buildPart(key, bytes, proxy((stage: PartStage) => this.stageReached(path, stage, generation)));
+        // A file that gave no body and said why (a STEP file that is none, a part whose features all failed) is an error, not a part to place. An empty part has nothing to say and stays.
+        if (!build.mesh && build.problems.length > 0) return { status: 'error', message: `無法使用「${path}」：${build.problems.join('；')}` };
         this.set({ builds: new Map(this.state.builds).set(key, build) });
       }
       return { status: 'ok', key };

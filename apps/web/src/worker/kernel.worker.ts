@@ -4,11 +4,11 @@ import occtWasm from 'libcascade/single/wasm?url';
 import gcsWasm from '@salusoft89/planegcs/dist/planegcs_dist/planegcs.wasm?url';
 import type { AssemblyDoc, Id, PartDoc } from '@3db/model';
 import { findProfiles, PlaneGcsSolver } from '@3db/sketch';
-import { Kernel, type ShapeId } from '@3db/kernel';
+import { COMPONENT_MESH, Kernel, type ShapeId } from '@3db/kernel';
 import { edgeMateGeometry, faceMateGeometry, Regenerator, solveAssembly, type AssemblyResult, type AssemblySolveOptions, type RebuildResult } from '@3db/regen';
 import { edgeFingerprint, faceFingerprint, vertexFingerprint } from '@3db/naming';
 import { exportAssemblyStep, exportPartStep, readComponentFile } from '@3db/io';
-import type { AssemblyStepRequest, KernelApi, PartBuildPayload, RebuildPayload, RebuildRequest, SketchSolvePayload, SketchSolveRequest } from './protocol';
+import type { AssemblyStepRequest, KernelApi, PartBuildPayload, PartStage, RebuildPayload, RebuildRequest, SketchSolvePayload, SketchSolveRequest } from './protocol';
 
 let kernel: Kernel;
 let solver: PlaneGcsSolver;
@@ -114,17 +114,22 @@ const api: KernelApi = {
     return exportPartStep(kernel, r.body.shape, name);
   },
 
-  async buildPart(key: string, bytes: Uint8Array): Promise<PartBuildPayload> {
+  async buildPart(key: string, bytes: Uint8Array, onStage?: (stage: PartStage) => void): Promise<PartBuildPayload> {
     const t = performance.now();
+    // A callback that cannot be reached (the page went away) must not fail the build.
+    const stage = (s: PartStage) => void Promise.resolve(onStage?.(s)).catch(() => {});
     let entry = parts.get(key);
+    const fresh = !entry;
     if (!entry) {
+      stage('building');
       entry = build(bytes);
       parts.set(key, entry);
       entry.catch(() => parts.delete(key)); // a file that cannot be read is tried again next time
     }
     const part = await entry;
     const body = part.result.body;
-    const mesh = body ? kernel.mesh(body.shape) : null;
+    if (fresh) stage('meshing');
+    const mesh = body ? kernel.mesh(body.shape, COMPONENT_MESH) : null;
     const topo = body?.topology;
     const payload: PartBuildPayload = {
       key,

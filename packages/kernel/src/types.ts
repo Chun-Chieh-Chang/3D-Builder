@@ -86,6 +86,24 @@ export interface MeshData {
   edgeRanges: Int32Array;
 }
 
+/**
+ * How finely a shape is meshed. `tolerance` is the largest chord error in mm; `relative` sets it as a
+ * fraction of the shape's bounding-box diagonal instead (never below 0.002 mm nor above 1 mm);
+ * `angular` is the largest turn in radians between neighbouring mesh normals. Without any: 5e-4, 0.25.
+ */
+export interface MeshOptions {
+  tolerance?: number;
+  relative?: number;
+  angular?: number;
+}
+
+/**
+ * The mesh of a component in an assembly (2F): seen small and among others, so about half as many
+ * triangles as a part being edited (the angle limit is what sets their number, more than the tolerance).
+ * 1e-3 of the diagonal is under a pixel when the whole component fills the view.
+ */
+export const COMPONENT_MESH: MeshOptions = { relative: 1e-3, angular: 0.5 };
+
 export interface MassProps {
   volume: number;
   area: number;
