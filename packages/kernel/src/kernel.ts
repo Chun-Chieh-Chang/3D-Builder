@@ -1646,6 +1646,8 @@ export class Kernel {
     const path = `/export-${++this.fileSeq}.step`;
     const doc = new oc.TDocStd_Document(arena.own(new oc.TCollection_ExtendedString('XmlXCAF', false)));
     try {
+      // The writer makes the library's STEP settings exist (before the first one is made, setting them does nothing), so it comes first.
+      const w = arena.own(new oc.STEPCAFControl_Writer());
       oc.Interface_Static.SetCVal('write.step.unit', unit);
       // the schema is a setting of the library as a whole: it is put back below, so that the next export is not AP242 by accident
       oc.Interface_Static.SetCVal('write.step.schema', options.schema === 'AP242' ? 'AP242DIS' : 'AP214IS');
@@ -1654,7 +1656,6 @@ export class Kernel {
       const label = shapeTool.AddShape(this.get(id), false, true);
       oc.TDataStd_Name.Set(label, arena.own(new oc.TCollection_ExtendedString(productName, true)));
       this.colorFaces(doc, label, id, options.faceColors ?? [], arena);
-      const w = arena.own(new oc.STEPCAFControl_Writer());
       w.SetNameMode(true);
       w.SetColorMode(true);
       let ok: boolean;

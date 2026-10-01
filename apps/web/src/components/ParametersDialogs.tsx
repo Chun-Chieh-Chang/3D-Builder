@@ -341,7 +341,7 @@ export function AppearanceDialog() {
   const doc = useStore((s) => s.doc);
   const selected = useStore((s) => s.selected);
   const selectedFace = useStore((s) => s.selectedFace);
-  const bodies = useStore((s) => s.result?.bodies ?? []);
+  const bodies = useStore((s) => s.result?.bodies) ?? [];
   const [choice, setChoice] = useState('part');
   const [color, setColor] = useState('#3366cc');
   if (!open) return null;
@@ -407,5 +407,58 @@ export function AppearanceDialog() {
         </tbody>
       </table>
     </Frame>
+  );
+}
+
+/** 輸出 STEP (F1.1, F1.3, C3.4): the schema, colors, and the coordinate system the part is written in. */
+export function StepOptionsDialog() {
+  const open = useStore((s) => s.dialog === 'stepOptions');
+  const doc = useStore((s) => s.doc);
+  const [schema, setSchema] = useState<'AP214' | 'AP242'>('AP214');
+  const [colors, setColors] = useState(true);
+  const [coordSys, setCoordSys] = useState('');
+  if (!open) return null;
+  const systems = doc.features.filter((f) => f.type === 'coordSys' && !f.suppressed);
+  const close = () => store.openDialog(null);
+  return (
+    <div className="modal-backdrop" onPointerDown={close}>
+      <div className="modal parameters" role="dialog" aria-label={t('export.stepTitle')} onPointerDown={(e) => e.stopPropagation()} onKeyDown={(e) => e.key === 'Escape' && close()}>
+        <h3>{t('export.stepTitle')}</h3>
+        <p className="hint">{t('export.stepHint')}</p>
+        <label className="pm-row">
+          <span>{t('export.schema')}</span>
+          <select value={schema} onChange={(e) => setSchema(e.target.value as 'AP214' | 'AP242')}>
+            <option value="AP214">AP214</option>
+            <option value="AP242">AP242</option>
+          </select>
+        </label>
+        <label className="pm-row checkbox">
+          <input type="checkbox" checked={colors} onChange={(e) => setColors(e.target.checked)} />
+          <span>{t('export.colors')}</span>
+        </label>
+        <label className="pm-row">
+          <span>{t('export.coordSys')}</span>
+          <select value={coordSys} onChange={(e) => setCoordSys(e.target.value)}>
+            <option value="">{t('export.partOrigin')}</option>
+            {systems.map((f) => (
+              <option key={f.id} value={f.id}>
+                {f.name}
+              </option>
+            ))}
+          </select>
+        </label>
+        <div className="modal-actions">
+          <button
+            onClick={() => {
+              close();
+              void store.writeStep({ schema, colors, coordSys: coordSys || null });
+            }}
+          >
+            {t('export.go')}
+          </button>
+          <button onClick={close}>{t('export.cancel')}</button>
+        </div>
+      </div>
+    </div>
   );
 }

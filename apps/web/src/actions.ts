@@ -51,7 +51,9 @@ export const ACTIONS: UiAction[] = [
   { id: 'open', label: '開啟舊檔', shortcut: 'Ctrl+O', group: 'file', enabled: idle, run: () => store.open() },
   { id: 'save', label: '儲存檔案', shortcut: 'Ctrl+S', group: 'file', enabled: idle, run: () => void store.save() },
   { id: 'save-as', label: '另存新檔', group: 'file', enabled: idle, run: () => void store.saveAs() },
-  { id: 'export-step', label: '輸出 STEP', group: 'file', enabled: (s) => (partIdle(s) || (assemblyIdle(s) && hasComponents(s))) && s.bootMs !== null, run: () => void store.exportStep() },
+  { id: 'export-step', label: '輸出 STEP', group: 'file', enabled: (s) => (partIdle(s) || (assemblyIdle(s) && hasComponents(s))) && s.bootMs !== null, run: () => store.exportStep() },
+  { id: 'export-stl', get label() { return t('export.stl'); }, group: 'file', enabled: (s) => hasBody(s) && s.bootMs !== null, run: () => void store.exportStl() },
+  { id: 'export-image', get label() { return t('export.image'); }, group: 'file', enabled: (s) => (s.active === 'assembly' ? assemblyIdle(s) && hasComponents(s) : hasBody(s)), run: () => void store.exportImage() },
   { id: 'return-assembly', label: '返回組合件', group: 'file', enabled: (s) => partIdle(s) && s.returnTo !== null, run: () => store.returnToAssembly() },
 
   { id: 'equations', get label() { return t('action.equations'); }, group: 'tools', enabled: partIdle, run: () => store.openDialog('equations') },

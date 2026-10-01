@@ -6,11 +6,11 @@ import gcsWasm from '@salusoft89/planegcs/dist/planegcs_dist/planegcs.wasm?url';
 import { bodyKey, isShown, MESH_QUALITY, settingsOf, type AssemblyDoc, type Id, type PartDoc } from '@3db/model';
 import { findProfiles, PlaneGcsSolver } from '@3db/sketch';
 import { COMPONENT_MESH, Kernel, type MassProps, type MeshData, type MeshOptions, type ShapeId } from '@3db/kernel';
-import { convertEdges, edgeMateGeometry, exportFaces, faceColors, faceEdges, faceMateGeometry, followReferences, ReferenceProblem, Regenerator, solveAssembly, type AssemblyResult, type AssemblySolveOptions, type BodyInfo, type RebuildResult } from '@3db/regen';
+import { convertEdges, edgeMateGeometry, exportFaces, faceColors, intoFrame, faceEdges, faceMateGeometry, followReferences, ReferenceProblem, Regenerator, solveAssembly, type AssemblyResult, type AssemblySolveOptions, type BodyInfo, type RebuildResult } from '@3db/regen';
 import { edgeFingerprint, faceFingerprint, vertexFingerprint } from '@3db/naming';
-import { exportAssemblyStep, exportPartStep, readComponentFile } from '@3db/io';
+import { binaryStl, exportAssemblyStep, exportPartStep, readComponentFile } from '@3db/io';
 import { mergeMeshes } from './mergeMesh';
-import type { AssemblyStepRequest, ConvertPayload, ConvertRequest, KernelApi, PartBuildPayload, PartStage, RebuildPayload, RebuildRequest, SketchSolvePayload, SketchSolveRequest } from './protocol';
+import type { AssemblyStepRequest, ConvertPayload, PartExportOptions, ConvertRequest, KernelApi, PartBuildPayload, PartStage, RebuildPayload, RebuildRequest, SketchSolvePayload, SketchSolveRequest } from './protocol';
 
 let kernel: Kernel;
 let solver: PlaneGcsSolver;
@@ -66,6 +66,22 @@ function massOf(r: RebuildResult): MassProps | null {
   const volume = own.reduce((n, m) => n + m.volume, 0);
   const centre = (k: number) => (volume > 0 ? own.reduce((n, m) => n + m.center[k]! * m.volume, 0) / volume : 0);
   return { volume, area: own.reduce((n, m) => n + m.area, 0), center: [centre(0), centre(1), centre(2)] };
+}
+
+/** The bodies of the result that go into a file, and the color of each of their faces: a reference body is a design aid, not part of the part (C7.1). */
+function ownBodies(doc: PartDoc, r: RebuildResult) {
+  if (!r.body) throw new Error('沒有可輸出的本體');
+  const own = exportFaces(doc, r);
+  if (own.shapes.length === 0) throw new Error(t('body.exportNone'));
+  return own;
+}
+
+/** The motion that writes the part in the coordinate system chosen (C3.4), or nothing. */
+function placing(r: RebuildResult, options: PartExportOptions): { place?: number[] } {
+  if (!options.coordSys) return {};
+  const system = r.systems.get(options.coordSys);
+  if (!system) throw new Error(t('export.coordSysMissing'));
+  return { place: intoFrame(system) };
 }
 
 /** The sketch solver loads first and on its own: sketching does not wait for the 43 MB geometry kernel. */
@@ -168,14 +184,31 @@ const api: KernelApi = {
     }
   },
 
-  async exportStep(doc: PartDoc, name: string): Promise<string> {
+  async exportStep(doc: PartDoc, name: string, options: PartExportOptions = {}): Promise<string> {
     await api.init();
     const r = regen.rebuild(doc);
-    if (!r.body) throw new Error('沒有可輸出的本體');
-    // a reference body is a design aid, not part of the part (C7.1)
-    const { shapes, colors } = exportFaces(doc, r);
-    if (shapes.length === 0) throw new Error(t('body.exportNone'));
-    return exportPartStep(kernel, shapes, name, { faceColors: colors });
+    const { shapes, colors } = ownBodies(doc, r);
+    return exportPartStep(kernel, shapes, name, {
+      schema: options.schema ?? 'AP214',
+      ...(options.colors === false ? {} : { faceColors: colors }),
+      ...placing(r, options),
+    });
+  },
+
+  async exportStl(doc: PartDoc, name: string, options: PartExportOptions = {}): Promise<Uint8Array> {
+    await api.init();
+    const r = regen.rebuild(doc);
+    const { shapes } = ownBodies(doc, r);
+    const joined = shapes.length === 1 ? shapes[0]! : kernel.join(shapes);
+    const place = placing(r, options).place;
+    const moved = place ? kernel.transformed(joined, place) : joined;
+    try {
+      const mesh = kernel.mesh(moved, MESH_QUALITY[settingsOf(doc).meshQuality]);
+      return binaryStl([mesh], name);
+    } finally {
+      if (moved !== joined) kernel.release(moved);
+      if (joined !== shapes[0]) kernel.release(joined);
+    }
   },
 
   async buildPart(key: string, bytes: Uint8Array, onStage?: (stage: PartStage) => void): Promise<PartBuildPayload> {

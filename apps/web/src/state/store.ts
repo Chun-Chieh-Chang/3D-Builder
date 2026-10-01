@@ -34,11 +34,11 @@ import {
   type Ref,
   type SketchFeature,
 } from '@3db/model';
-import { assemblyName, partFileName, partName, readDocumentFile, sha256Hex, stepFileName, writePartFile } from '@3db/io';
+import { assemblyName, partFileName, partName, readDocumentFile, sha256Hex, imageFileName, stepFileName, stlFileName, writePartFile } from '@3db/io';
 import { suppressionTargets, type SuppressAction } from '@3db/regen/dag';
 import { contourChoices, findProfiles, type ContourChoice } from '@3db/sketch/profiles';
 import type { Viewer } from '@3db/render';
-import type { KernelApi, RebuildPayload, SketchSolvePayload, SketchSolveRequest } from '../worker/protocol';
+import type { KernelApi, PartExportOptions, RebuildPayload, SketchSolvePayload, SketchSolveRequest } from '../worker/protocol';
 import { SketchController, type ControllerView, type SketchHost } from '../sketcher/controller';
 import { axisDefinitionFor, emptyRef, put, treeRef } from './datumSlots';
 import {
@@ -103,7 +103,7 @@ export interface UiState {
   /** 「錯誤為何？」 dialog (D7.1). */
   whatsWrong: boolean;
   /** The equations or file-properties dialog (B5.2, B8.3), when open. */
-  dialog: 'equations' | 'properties' | 'appearance' | null;
+  dialog: 'equations' | 'properties' | 'appearance' | 'stepOptions' | null;
   /** The file the part was opened from or last saved to (F7.1); null for a part never saved. */
   fileName: string | null;
   /** The document differs from what was last opened or saved (the title shows 「*」). */
@@ -1092,14 +1092,45 @@ class AppStore {
     return partName(this.history.doc, this.state.fileName, this.state.untitled);
   }
 
-  async exportStep(): Promise<void> {
+  /** 「輸出 STEP」: an assembly is written as it is; a part first asks how (the schema, colors, a coordinate system). */
+  exportStep(): void {
+    if (this.assembly) void this.writeStep();
+    else this.openDialog('stepOptions');
+  }
+
+  async writeStep(options: PartExportOptions = {}): Promise<void> {
     try {
       const name = this.documentName();
-      const text = this.assembly ? await this.api.exportAssemblyStep(this.assembly.stepRequest()) : await this.api.exportStep(this.history.doc, name);
+      const text = this.assembly ? await this.api.exportAssemblyStep(this.assembly.stepRequest()) : await this.api.exportStep(this.history.doc, name, options);
       download(stepFileName(name), text, 'application/step');
-      this.notify(`已輸出 ${stepFileName(name)}`);
+      this.notify(t('export.done', { file: stepFileName(name) }));
     } catch (e) {
-      this.notify(`STEP 輸出失敗：${e instanceof Error ? e.message : String(e)}`, 'error');
+      this.notify(t('export.failed', { what: 'STEP', why: e instanceof Error ? e.message : String(e) }), 'error');
+    }
+  }
+
+  /** 「輸出 STL」 (F4.1): the bodies that count, as fine as the document's quality says. */
+  async exportStl(): Promise<void> {
+    try {
+      const name = this.documentName();
+      const bytes = await this.api.exportStl(this.history.doc, name);
+      download(stlFileName(name), bytes as Uint8Array<ArrayBuffer>, 'model/stl');
+      this.notify(t('export.done', { file: stlFileName(name) }));
+    } catch (e) {
+      this.notify(t('export.failed', { what: t('export.stlWhat'), why: e instanceof Error ? e.message : String(e) }), 'error');
+    }
+  }
+
+  /** 「輸出影像」 (F3.3): what the graphics area shows, as a PNG. */
+  async exportImage(): Promise<void> {
+    try {
+      const blob = await this.viewer?.snapshot();
+      if (!blob) throw new Error(t('export.imageEmpty'));
+      const name = this.documentName();
+      download(imageFileName(name), blob, 'image/png');
+      this.notify(t('export.done', { file: imageFileName(name) }));
+    } catch (e) {
+      this.notify(t('export.failed', { what: t('export.imageWhat'), why: e instanceof Error ? e.message : String(e) }), 'error');
     }
   }
 

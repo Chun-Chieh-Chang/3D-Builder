@@ -1332,6 +1332,15 @@ export class Viewer {
     });
   }
 
+  /**
+   * The picture on the screen as a PNG (F3.3), the size of the canvas: drawn again and taken in the same step, since the canvas does not keep what it
+   * showed. Null when the browser cannot make one.
+   */
+  snapshot(): Promise<Blob | null> {
+    this.render();
+    return new Promise((resolve) => this.renderer.domElement.toBlob(resolve, 'image/png'));
+  }
+
   private render(): void {
     const r = this.renderer;
     const w = this.container.clientWidth;

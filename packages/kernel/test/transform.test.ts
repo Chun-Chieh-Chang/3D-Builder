@@ -101,3 +101,12 @@ describe('STEP export options (F1.3)', () => {
     expect(() => k.exportStep(a, 'Lump', 'MM', { faceColors: ['red'] })).toThrow(KernelError);
   });
 });
+
+describe('the first STEP export of a kernel', () => {
+  it('can already be AP242 (the library’s settings exist only once a writer has been made)', async () => {
+    const fresh = await Kernel.load();
+    const front: Frame = { origin: [0, 0, 0], xDir: [1, 0, 0], yDir: [0, 1, 0], normal: [0, 0, 1] };
+    const box = fresh.extrude(front, [rect(5, 5)], [0, 0, 5]).shape;
+    expect(fresh.exportStep(box, 'First', 'MM', { schema: 'AP242' })).toContain('AP242');
+  });
+});

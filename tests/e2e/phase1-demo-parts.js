@@ -273,6 +273,9 @@ H.exportStep = async () => {
   };
   try {
     await H.action('檔案', '輸出 STEP');
+    // a part asks how first (3a-8c): the dialog's own 「輸出」 button, with what it offers as it is
+    const go = document.querySelector('.modal-actions button');
+    if (go && document.querySelector('[aria-label="輸出 STEP"]')) go.click();
     await H.waitFor(() => caught, 30000, 'STEP');
   } finally {
     HTMLAnchorElement.prototype.click = click;

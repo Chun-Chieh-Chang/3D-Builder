@@ -38,3 +38,10 @@ export function angleStep(count: number, angle: number, equal: boolean): number 
   if (!equal) return angle;
   return angle >= 2 * Math.PI - 1e-9 ? angle / count : angle / (count - 1);
 }
+
+/** The motion that puts a coordinate system's axes on the part's (its origin at 0, its X, Y, Z along x, y, z): what a file written "in" that system is moved by (C3.4). */
+export function intoFrame(system: { origin: Vec3; x: Vec3; y: Vec3; z: Vec3 }): Motion {
+  const { origin: o, x, y, z } = system;
+  const row = (a: Vec3) => [a[0], a[1], a[2], -(a[0] * o[0] + a[1] * o[1] + a[2] * o[2])];
+  return [...row(x), ...row(y), ...row(z)];
+}

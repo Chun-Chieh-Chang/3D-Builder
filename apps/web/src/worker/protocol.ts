@@ -19,6 +19,15 @@ export interface AssemblyStepRequest {
   instances: { part: number; name: string; pose: Pose }[];
 }
 
+/** What the user chose for a part's file (F1.3, C3.4): the STEP schema, whether faces carry their colors, and a coordinate system the part is written in. */
+export interface PartExportOptions {
+  schema?: 'AP214' | 'AP242';
+  /** Colors in the file; on unless `false`. */
+  colors?: boolean;
+  /** A coordinate system feature: the part is moved so that its origin and axes are the file's. Absent: the part's own. */
+  coordSys?: Id | null;
+}
+
 export interface RebuildRequest {
   seq: number;
   doc: PartDoc;
@@ -143,7 +152,9 @@ export interface KernelApi {
   /** What these model edges and face outlines look like on the plane of the sketch being edited. */
   convertReferences(req: ConvertRequest): Promise<ConvertPayload>;
   /** STEP of the rebuilt part, its product named `name`. */
-  exportStep(doc: PartDoc, name: string): Promise<string>;
+  exportStep(doc: PartDoc, name: string, options?: PartExportOptions): Promise<string>;
+  /** Binary STL of the bodies that count, meshed as finely as the document's quality says (F4.1). */
+  exportStl(doc: PartDoc, name: string, options?: PartExportOptions): Promise<Uint8Array>;
   /** Rebuilds a part file of an assembly, once per content (`key` = SHA-256 of `bytes`). */
   buildPart(key: string, bytes: Uint8Array, onStage?: (stage: PartStage) => void): Promise<PartBuildPayload>;
   /** STEP of an assembly (F1.2) as the components are placed in `req`; parts are the ones rebuilt for it (`buildPart`). */

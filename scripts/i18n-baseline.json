@@ -17,7 +17,7 @@
   "apps/web/src/sketcher/overlay.ts": 2,
   "apps/web/src/state/assembly.ts": 34,
   "apps/web/src/state/movability.ts": 3,
-  "apps/web/src/state/store.ts": 44,
+  "apps/web/src/state/store.ts": 42,
   "apps/web/src/worker/kernel.worker.ts": 3,
   "packages/assembly/src/equations.ts": 14,
   "packages/assembly/src/geometry.ts": 7,
