@@ -1,6 +1,9 @@
 import { useEffect, useMemo, useState } from 'react';
-import { t } from '@3db/i18n';
-import { dimensionName, formatQuantity, isDimension, Parameters, type Command, type SketchFeature } from '@3db/model';
+import { getLocale, LOCALES, t, type Locale } from '@3db/i18n';
+import { dimensionName, formatMass, formatQuantity, isDimension, massGrams, MATERIALS, materialById, Parameters, PART_TEMPLATES, settingsOf, type AppearanceTarget, type Command, type DocSettings, type SketchFeature } from '@3db/model';
+import { ACTIONS, shortcutOf } from '../actions';
+import { conflictWith, formatEvent, overrides, resetOverrides, setOverride, subscribeShortcuts } from '../shortcuts';
+import { AUTOSAVE_SECONDS } from '../options';
 import { store, useStore } from '../state/store';
 
 /** Runs a command; the reason it was refused (as the store worded it), or null when it went through. */
@@ -176,6 +179,81 @@ export function EquationsDialog() {
   );
 }
 
+/** 材質 (C14.1) and 文件設定 (B8.4): the material of the part and the mass it gives, the standard, the decimals and the mesh quality. */
+function MaterialAndSettings() {
+  const doc = useStore((s) => s.doc);
+  const volume = useStore((s) => s.result?.mass?.volume ?? null);
+  const material = doc.material;
+  const settings = settingsOf(doc);
+  const custom = material !== undefined && material.id === undefined;
+  const choose = (value: string) => {
+    if (value === '') return void run({ type: 'setMaterial', material: null });
+    if (value === 'custom') return void run({ type: 'setMaterial', material: { name: t('material.custom'), density: 1 } });
+    const m = materialById(value);
+    if (m) run({ type: 'setMaterial', material: { id: m.id, name: t(`material.${m.id}`), density: m.density } });
+  };
+  return (
+    <div className="props-material">
+      <h4>{t('material.heading')}</h4>
+      <div className="pm-row">
+        <select value={material ? (material.id ?? 'custom') : ''} onChange={(e) => choose(e.target.value)} onKeyDown={(e) => e.stopPropagation()}>
+          <option value="">{t('material.none')}</option>
+          {MATERIALS.map((m) => (
+            <option key={m.id} value={m.id}>
+              {t('material.option', { name: t(`material.${m.id}`), density: m.density })}
+            </option>
+          ))}
+          <option value="custom">{t('material.custom')}</option>
+        </select>
+      </div>
+      {custom && (
+        <>
+          <label className="pm-row">
+            <span>{t('material.name')}</span>
+            <Field mono={false} value={material.name} onCommit={(v) => run({ type: 'setMaterial', material: { name: v, density: material.density } })} />
+          </label>
+          <label className="pm-row">
+            <span>{t('material.density')}</span>
+            <Field value={String(material.density)} onCommit={(v) => run({ type: 'setMaterial', material: { name: material.name, density: Number(v) } })} />
+          </label>
+        </>
+      )}
+      {material && volume !== null && (
+        <p className="hint">
+          {t('material.massLine', { mass: formatMass(massGrams(volume, material.density)), density: material.density })}
+        </p>
+      )}
+      <p className="hint">{t('material.hint')}</p>
+      <h4>{t('settings.heading')}</h4>
+      <label className="pm-row">
+        <span>{t('settings.draftStandard')}</span>
+        <select value={settings.draftStandard} onChange={(e) => run({ type: 'setSettings', settings: { draftStandard: e.target.value as DocSettings['draftStandard'] } })} onKeyDown={(e) => e.stopPropagation()}>
+          {(['ISO', 'CNS', 'ANSI', 'JIS', 'GB'] as const).map((x) => (
+            <option key={x} value={x}>
+              {x}
+            </option>
+          ))}
+        </select>
+      </label>
+      <label className="pm-row">
+        <span>{t('settings.dimensionPrecision')}</span>
+        <Field value={String(settings.dimensionPrecision)} onCommit={(v) => run({ type: 'setSettings', settings: { dimensionPrecision: Number(v) } })} />
+      </label>
+      <label className="pm-row">
+        <span>{t('settings.meshQuality')}</span>
+        <select value={settings.meshQuality} onChange={(e) => run({ type: 'setSettings', settings: { meshQuality: e.target.value as DocSettings['meshQuality'] } })} onKeyDown={(e) => e.stopPropagation()}>
+          {(['coarse', 'normal', 'fine'] as const).map((x) => (
+            <option key={x} value={x}>
+              {t(`settings.mesh.${x}`)}
+            </option>
+          ))}
+        </select>
+      </label>
+      <p className="hint">{t('settings.hint')}</p>
+    </div>
+  );
+}
+
 /** 檔案屬性 (B8.3): free text by name (vendor, part number …), also readable by expressions. */
 export function PropertiesDialog() {
   const open = useStore((s) => s.dialog === 'properties');
@@ -194,6 +272,7 @@ export function PropertiesDialog() {
   };
   return (
     <Frame title={t('props.title')} hint={t('props.hint')}>
+      <MaterialAndSettings />
       <table className="eq-table">
         <thead>
           <tr>
@@ -256,5 +335,288 @@ export function PropertiesDialog() {
         </tbody>
       </table>
     </Frame>
+  );
+}
+
+/** 外觀 (C14.2): the color of the part, a body, a feature or a face — the one that is selected — and what has been colored so far. */
+export function AppearanceDialog() {
+  const open = useStore((s) => s.dialog === 'appearance');
+  const doc = useStore((s) => s.doc);
+  const selected = useStore((s) => s.selected);
+  const selectedFace = useStore((s) => s.selectedFace);
+  const bodies = useStore((s) => s.result?.bodies) ?? [];
+  const [choice, setChoice] = useState('part');
+  const [color, setColor] = useState('#3366cc');
+  if (!open) return null;
+  const bodyId = selected?.startsWith('body:') ? selected.slice('body:'.length) : null;
+  const feature = selected && !bodyId ? doc.features.find((f) => f.id === selected) : undefined;
+  const bodyName = (id: string) => bodies.find((b) => b.id === id)?.name ?? id;
+  const targets: { key: string; label: string; target: AppearanceTarget }[] = [
+    { key: 'part', label: t('appearance.part'), target: { kind: 'part' } },
+    ...(bodyId ? [{ key: 'body', label: t('appearance.body', { name: bodyName(bodyId) }), target: { kind: 'body', id: bodyId } as AppearanceTarget }] : []),
+    ...(feature && feature.type !== 'sketch' ? [{ key: 'feature', label: t('appearance.feature', { name: feature.name }), target: { kind: 'feature', id: feature.id } as AppearanceTarget }] : []),
+    ...(selectedFace?.kind === 'face' ? [{ key: 'face', label: t('appearance.face', { name: selectedFace.name }), target: { kind: 'face', ref: selectedFace } as AppearanceTarget }] : []),
+  ];
+  const current = targets.find((x) => x.key === choice) ?? targets[targets.length - 1]!;
+  const describe = (target: AppearanceTarget): string =>
+    target.kind === 'part'
+      ? t('appearance.part')
+      : target.kind === 'body'
+        ? t('appearance.body', { name: bodyName(target.id) })
+        : target.kind === 'feature'
+          ? t('appearance.feature', { name: doc.features.find((f) => f.id === target.id)?.name ?? target.id })
+          : t('appearance.face', { name: target.ref.name });
+  return (
+    <Frame title={t('appearance.title')} hint={t('appearance.hint')}>
+      <label className="pm-row">
+        <span>{t('appearance.target')}</span>
+        <select value={current.key} onChange={(e) => setChoice(e.target.value)} onKeyDown={(e) => e.stopPropagation()}>
+          {targets.map((x) => (
+            <option key={x.key} value={x.key}>
+              {x.label}
+            </option>
+          ))}
+        </select>
+      </label>
+      <label className="pm-row">
+        <span>{t('appearance.color')}</span>
+        <input type="color" value={color} onChange={(e) => setColor(e.target.value)} />
+      </label>
+      <div className="modal-actions">
+        <button onClick={() => run({ type: 'setAppearance', target: current.target, color })}>{t('appearance.apply')}</button>
+        <button onClick={() => run({ type: 'setAppearance', target: current.target, color: null })}>{t('appearance.remove')}</button>
+      </div>
+      <h4>{t('appearance.list')}</h4>
+      <table className="eq-table">
+        <tbody>
+          {doc.appearances.length === 0 && (
+            <tr>
+              <td className="muted">{t('appearance.none')}</td>
+            </tr>
+          )}
+          {doc.appearances.map((a, i) => (
+            <tr key={i}>
+              <td>
+                <span className="swatch" style={{ background: a.color }} /> {a.color}
+              </td>
+              <td className="owner">{describe(a.target)}</td>
+              <td>
+                <button title={t('appearance.remove')} aria-label={t('appearance.remove')} onClick={() => run({ type: 'setAppearance', target: a.target, color: null })}>
+                  ✕
+                </button>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </Frame>
+  );
+}
+
+/** 輸出 STEP (F1.1, F1.3, C3.4): the schema, colors, and the coordinate system the part is written in. */
+export function StepOptionsDialog() {
+  const open = useStore((s) => s.dialog === 'stepOptions');
+  const doc = useStore((s) => s.doc);
+  const [schema, setSchema] = useState<'AP214' | 'AP242'>('AP214');
+  const [colors, setColors] = useState(true);
+  const [coordSys, setCoordSys] = useState('');
+  if (!open) return null;
+  const systems = doc.features.filter((f) => f.type === 'coordSys' && !f.suppressed);
+  const close = () => store.openDialog(null);
+  return (
+    <div className="modal-backdrop" onPointerDown={close}>
+      <div className="modal parameters" role="dialog" aria-label={t('export.stepTitle')} onPointerDown={(e) => e.stopPropagation()} onKeyDown={(e) => e.key === 'Escape' && close()}>
+        <h3>{t('export.stepTitle')}</h3>
+        <p className="hint">{t('export.stepHint')}</p>
+        <label className="pm-row">
+          <span>{t('export.schema')}</span>
+          <select value={schema} onChange={(e) => setSchema(e.target.value as 'AP214' | 'AP242')}>
+            <option value="AP214">AP214</option>
+            <option value="AP242">AP242</option>
+          </select>
+        </label>
+        <label className="pm-row checkbox">
+          <input type="checkbox" checked={colors} onChange={(e) => setColors(e.target.checked)} />
+          <span>{t('export.colors')}</span>
+        </label>
+        <label className="pm-row">
+          <span>{t('export.coordSys')}</span>
+          <select value={coordSys} onChange={(e) => setCoordSys(e.target.value)}>
+            <option value="">{t('export.partOrigin')}</option>
+            {systems.map((f) => (
+              <option key={f.id} value={f.id}>
+                {f.name}
+              </option>
+            ))}
+          </select>
+        </label>
+        <div className="modal-actions">
+          <button
+            onClick={() => {
+              close();
+              void store.writeStep({ schema, colors, coordSys: coordSys || null });
+            }}
+          >
+            {t('export.go')}
+          </button>
+          <button onClick={close}>{t('export.cancel')}</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/** 新零件（範本） (B1.4): which kind of part to begin with. */
+export function TemplateDialog() {
+  const open = useStore((s) => s.dialog === 'template');
+  if (!open) return null;
+  const close = () => store.openDialog(null);
+  return (
+    <div className="modal-backdrop" onPointerDown={close}>
+      <div className="modal" role="dialog" aria-label={t('template.title')} onPointerDown={(e) => e.stopPropagation()} onKeyDown={(e) => e.key === 'Escape' && close()}>
+        <h3>{t('template.title')}</h3>
+        <p className="hint">{t('template.hint')}</p>
+        <ul className="template-list">
+          {PART_TEMPLATES.map((x) => (
+            <li key={x.id}>
+              <button onClick={() => store.newPartFromTemplate(x.id)}>
+                <strong>{t(`template.${x.id}`)}</strong>
+                <span className="muted">{t(`template.${x.id}Hint`)}</span>
+              </button>
+            </li>
+          ))}
+        </ul>
+        <div className="modal-actions">
+          <button onClick={close}>{t('export.cancel')}</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/** 快速鍵 (D3.3): every action with its shortcut; a click on the field and a key combination changes it. */
+export function ShortcutsDialog() {
+  const open = useStore((s) => s.dialog === 'shortcuts');
+  const [, again] = useState(0);
+  const [problem, setProblem] = useState<string | null>(null);
+  useEffect(() => subscribeShortcuts(() => again((n) => n + 1)), []);
+  if (!open) return null;
+  const close = () => store.openDialog(null);
+  const mine = overrides();
+  const labelOf = (id: string) => ACTIONS.find((a) => a.id === id)?.label ?? id;
+  return (
+    <div className="modal-backdrop" onPointerDown={close}>
+      <div className="modal wide parameters" role="dialog" aria-label={t('shortcuts.title')} onPointerDown={(e) => e.stopPropagation()}>
+        <h3>{t('shortcuts.title')}</h3>
+        <p className="hint">{t('shortcuts.hint')}</p>
+        {problem && <p className="error-text">{problem}</p>}
+        <div className="shortcut-list">
+          <table className="eq-table">
+            <tbody>
+              {ACTIONS.map((a) => (
+                <tr key={a.id}>
+                  <td>{a.label}</td>
+                  <td>
+                    <input
+                      className="mono"
+                      readOnly
+                      aria-label={a.label}
+                      value={shortcutOf(a) ?? ''}
+                      placeholder={t('shortcuts.press')}
+                      onKeyDown={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        if (e.key === 'Escape') return void e.currentTarget.blur();
+                        if (e.key === 'Backspace' || e.key === 'Delete') {
+                          setProblem(null);
+                          return setOverride(a.id, a.shortcut === undefined ? undefined : '');
+                        }
+                        const combo = formatEvent(e.nativeEvent);
+                        if (!combo) return;
+                        const other = conflictWith(combo, a.id, ACTIONS, mine);
+                        if (other) return setProblem(t('shortcuts.conflict', { keys: combo, action: labelOf(other) }));
+                        setProblem(null);
+                        setOverride(a.id, combo === a.shortcut ? undefined : combo);
+                      }}
+                    />
+                  </td>
+                  <td>{mine[a.id] !== undefined && <button onClick={() => setOverride(a.id, undefined)}>{t('shortcuts.reset')}</button>}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        <div className="modal-actions">
+          {Object.keys(mine).length > 0 && <button onClick={() => resetOverrides()}>{t('shortcuts.reset')}</button>}
+          <button onClick={close}>{t('shortcuts.close')}</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/** 系統選項 (D8.1): the language, autosave, the template of a new part and what can be picked at first; kept in the browser. */
+export function OptionsDialog() {
+  const open = useStore((s) => s.dialog === 'options');
+  const options = useStore((s) => s.options);
+  const [, again] = useState(0);
+  if (!open) return null;
+  const close = () => store.openDialog(null);
+  const language = getLocale();
+  return (
+    <div className="modal-backdrop" onPointerDown={close}>
+      <div className="modal parameters" role="dialog" aria-label={t('options.title')} onPointerDown={(e) => e.stopPropagation()} onKeyDown={(e) => e.key === 'Escape' && close()}>
+        <h3>{t('options.title')}</h3>
+        <p className="hint">{t('options.hint')}</p>
+        <div className="options-grid">
+          <label>{t('options.language')}</label>
+          <select
+            value={language}
+            onChange={(e) => {
+              void store.setLanguage(e.target.value as Locale).then(() => again((n) => n + 1));
+            }}
+          >
+            {LOCALES.map((l) => (
+              <option key={l} value={l}>
+                {t(l === 'en' ? 'options.languageEn' : 'options.languageZh')}
+              </option>
+            ))}
+          </select>
+          <label>{t('options.autosave')}</label>
+          <input type="checkbox" checked={options.autosave} onChange={(e) => store.setOptions({ autosave: e.target.checked })} />
+          <label>{t('options.autosaveSeconds')}</label>
+          <input
+            type="number"
+            min={AUTOSAVE_SECONDS.min}
+            max={AUTOSAVE_SECONDS.max}
+            disabled={!options.autosave}
+            value={options.autosaveSeconds}
+            onChange={(e) => e.target.value !== '' && store.setOptions({ autosaveSeconds: Number(e.target.value) })}
+          />
+          <label>{t('options.template')}</label>
+          <select value={options.defaultTemplate} onChange={(e) => store.setOptions({ defaultTemplate: e.target.value as (typeof PART_TEMPLATES)[number]['id'] })}>
+            {PART_TEMPLATES.map((x) => (
+              <option key={x.id} value={x.id}>
+                {t(`template.${x.id}`)}
+              </option>
+            ))}
+          </select>
+          <label>{t('options.pickFilter')}</label>
+          <span className="pick-filter-options">
+            {(['faces', 'edges', 'vertices'] as const).map((k) => (
+              <label key={k}>
+                <input type="checkbox" checked={options.pickFilter[k]} onChange={(e) => store.setOptions({ pickFilter: { ...options.pickFilter, [k]: e.target.checked } })} />
+                {t(k === 'faces' ? 'select.filterFaces' : k === 'edges' ? 'select.filterEdges' : 'select.filterVertices')}
+              </label>
+            ))}
+          </span>
+        </div>
+        <div className="modal-actions">
+          <button className="primary" onClick={close}>
+            {t('options.close')}
+          </button>
+        </div>
+      </div>
+    </div>
   );
 }

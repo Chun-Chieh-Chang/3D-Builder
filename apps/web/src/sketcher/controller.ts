@@ -145,19 +145,20 @@ const DRAG_PX = 3;
 /** How far (radians) a line may point away from an arc's tangent and still be made tangent. */
 const TANGENT_TOLERANCE = (6 * Math.PI) / 180;
 
-const HINTS: Record<Exclude<ToolId, OperationTool>, string[]> = {
-  select: ['選取圖元或尺寸；拖曳圖元可移動定義不足的幾何；在空白處拖曳可方塊選取。'],
-  line: ['按一下設定直線起點。', '按一下設定終點；連續畫線，按 Esc 或按兩下結束。'],
-  centerline: ['按一下設定中心線起點。', '按一下設定終點；按 Esc 結束。'],
-  rect: ['按一下設定第一個角落。', '按一下設定對角。'],
-  centerRect: ['按一下設定矩形中心。', '按一下設定角落。'],
-  circle: ['按一下設定圓心。', '按一下設定半徑。'],
-  perimeterCircle: ['按一下圓周上的第一點。', '按一下第二點。', '按一下第三點。'],
-  arc: ['按一下設定圓心。', '按一下設定起點（決定半徑）。', '按一下設定終點。'],
-  tangentArc: ['按一下直線或圓弧的端點。', '按一下設定終點。'],
-  threePointArc: ['按一下設定起點。', '按一下設定終點。', '按一下圓弧上的一點。'],
-  point: ['按一下放置點。'],
-  dimension: ['選擇要標註的圖元。', '選擇第二個圖元，或按一下放置尺寸。', '按一下放置尺寸。'],
+/** The hints of each tool, one per step (read when asked for, so they follow the language). */
+const HINT_KEYS: Record<Exclude<ToolId, OperationTool>, PlainKey[]> = {
+  select: ['hint.select'],
+  line: ['hint.line1', 'hint.line2'],
+  centerline: ['hint.centerline1', 'hint.centerline2'],
+  rect: ['hint.rect1', 'hint.rect2'],
+  centerRect: ['hint.centerRect1', 'hint.centerRect2'],
+  circle: ['hint.circle1', 'hint.circle2'],
+  perimeterCircle: ['hint.perimeter1', 'hint.perimeter2', 'hint.perimeter3'],
+  arc: ['hint.arc1', 'hint.arc2', 'hint.arc3'],
+  tangentArc: ['hint.tangentArc1', 'hint.tangentArc2'],
+  threePointArc: ['hint.threePoint1', 'hint.threePoint2', 'hint.threePoint3'],
+  point: ['hint.point'],
+  dimension: ['hint.dimension1', 'hint.dimension2', 'hint.dimension3'],
 };
 
 const fmt = (v: number) => String(Number(v.toFixed(4)));
@@ -172,7 +173,7 @@ export class SketchController {
   private hover: Hit | null = null;
   private snapTarget: Snap | null = null;
   /** Inferred relation shown next to the cursor while drawing. */
-  private inference: string | null = null;
+  private inference: 'coincident' | 'midpoint' | 'onCurve' | 'tangent' | 'horizontal' | 'vertical' | null = null;
   /** Arc the line being drawn is inferred to be tangent to. */
   private tangentTo: Id | null = null;
   private cursor: P2 | null = null;
@@ -219,7 +220,7 @@ export class SketchController {
       selection: [...this.selection],
       hover: this.hover?.id ?? null,
       snap: this.snapTarget,
-      inference: this.inference,
+      inference: this.inference && t(`infer.${this.inference}`),
       preview: this.previewShapes(),
       picks: [...this.picks],
       cursor: this.cursor,
@@ -251,8 +252,8 @@ export class SketchController {
       case 'pierce':
         return t('sketch.hint.pierce');
       default: {
-        const hints = HINTS[tool];
-        return hints[Math.min(step, hints.length - 1)]!;
+        const hints = HINT_KEYS[tool];
+        return t(hints[Math.min(step, hints.length - 1)]!);
       }
     }
   }
@@ -374,7 +375,7 @@ export class SketchController {
     const s = this.sketch();
     const r = await this.host.trial({ ...s, constraints: [...s.constraints, relation] });
     if (r.status === 'over' || r.status === 'failed') {
-      this.host.notify('這個限制條件會使草圖過多定義，因此沒有加入', 'error');
+      this.host.notify(t('sketch.overDefinedRelation'), 'error');
       return false;
     }
     const ok = this.host.execute({ type: 'addSketchItems', featureId: this.host.featureId, entities: [], constraints: [relation] });
@@ -531,7 +532,7 @@ export class SketchController {
       return;
     }
     let s = snap(geometry, e.p, PICK_PX * e.px, this.excluded());
-    this.inference = s.kind === 'point' ? '重合' : s.kind === 'midpoint' ? '中點' : s.kind === 'curve' ? '在圖元上' : null;
+    this.inference = s.kind === 'point' ? 'coincident' : s.kind === 'midpoint' ? 'midpoint' : s.kind === 'curve' ? 'onCurve' : null;
     this.tangentTo = null;
     const from = this.lineStart();
     if ((this.tool === 'line' || this.tool === 'centerline') && from && s.kind === 'free') {
@@ -542,13 +543,13 @@ export class SketchController {
       const along = arc ? dot(d, arc.dir) : 0;
       if (arc && along > 0 && Math.abs(cross(arc.dir, d)) <= Math.tan(TANGENT_TOLERANCE) * along) {
         s = { kind: 'free', p: add(from, scale(arc.dir, along)) };
-        this.inference = '相切';
+        this.inference = 'tangent';
         this.tangentTo = arc.curve;
       } else {
         const hv = inferDirection(from, s.p);
         if (hv.direction) {
           s = { kind: 'free', p: hv.b };
-          this.inference = hv.direction === 'horizontal' ? '水平' : '垂直';
+          this.inference = hv.direction === 'horizontal' ? 'horizontal' : 'vertical';
         }
       }
     }
@@ -613,7 +614,7 @@ export class SketchController {
       case 'circle':
       case 'tangentArc':
         if (this.clicks.length === 0) {
-          if (this.tool === 'tangentArc' && !this.tangentStart(s)) return this.host.notify('切線弧必須從直線或圓弧的端點開始', 'info');
+          if (this.tool === 'tangentArc' && !this.tangentStart(s)) return this.host.notify(t('sketch.tangentFromEnd'), 'info');
           this.clicks.push(s);
           return;
         }
@@ -648,7 +649,7 @@ export class SketchController {
     const p2 = b.pointFor(s);
     if (p1 === p2) return;
     const line = b.line(p1, p2, construction);
-    if (this.inference === '水平' || this.inference === '垂直') b.relation({ type: this.inference === '水平' ? 'horizontal' : 'vertical', a: line });
+    if (this.inference === 'horizontal' || this.inference === 'vertical') b.relation({ type: this.inference, a: line });
     if (this.tangentTo) b.relation({ type: 'tangent', a: this.tangentTo, b: line });
     if (!this.commit(b)) return;
     const first = this.chain?.first ?? p1;
@@ -722,14 +723,14 @@ export class SketchController {
     switch (this.tool) {
       case 'perimeterCircle': {
         const circle3 = circleThrough(c1.p, c2.p, c3.p);
-        if (!circle3) return this.host.notify('三點共線，無法產生圓', 'info');
+        if (!circle3) return this.host.notify(t('sketch.collinearCircle'), 'info');
         const circle = b.circle(b.newPoint(circle3.c), circle3.r);
         for (const s of [c1, c2, c3]) if (s.kind === 'point') b.relation({ type: 'pointOnCurve', point: s.id, curve: circle });
         break;
       }
       case 'threePointArc': {
         const circle3 = circleThrough(c1.p, c2.p, c3.p);
-        if (!circle3) return this.host.notify('三點共線，無法產生圓弧', 'info');
+        if (!circle3) return this.host.notify(t('sketch.collinearArc'), 'info');
         // counter-clockwise from start to end when the third point lies on that sweep
         const ccw = cross(sub(c2.p, c1.p), sub(c3.p, c1.p)) < 0;
         const [s, e] = [b.pointFor(c1), b.pointFor(c2)];
@@ -963,7 +964,7 @@ export class SketchController {
     }
     const proposal = smartDimension(geometry, this.picks, e.p);
     this.picks = [];
-    if (!proposal) return this.host.notify('無法標註這個組合', 'info');
+    if (!proposal) return this.host.notify(t('sketch.cannotDimension'), 'info');
     this.placeDimension(proposal.body as SketchConstraint, proposal.value);
   }
 
@@ -991,7 +992,7 @@ export class SketchController {
     const hover = this.hover && this.picks.length === 1 && this.hover.id !== this.picks[0] ? [this.picks[0]!, this.hover.id] : this.picks;
     const proposal = smartDimension(this.geometry(), hover, this.cursor) ?? smartDimension(this.geometry(), this.picks, this.cursor);
     if (!proposal) return null;
-    const kind = { distance: '', distanceX: '水平 ', distanceY: '垂直 ', radius: 'R', diameter: 'Ø', arcLength: '⌒', angle: '' }[proposal.body.type];
+    const kind = { distance: '', distanceX: t('dimension.prefixX'), distanceY: t('dimension.prefixY'), radius: 'R', diameter: 'Ø', arcLength: '⌒', angle: '' }[proposal.body.type];
     return { text: `${kind}${fmt(proposal.value)}${proposal.unit === 'deg' ? '°' : ''}`, at: this.cursor };
   }
 

@@ -1,5 +1,23 @@
 import type { Feature, Ref } from './schema';
 
+const isRef = (v: unknown): v is Ref => typeof v === 'object' && v !== null && typeof (v as Ref).kind === 'string' && typeof (v as Ref).name === 'string';
+
+/**
+ * The references a definition of a reference plane, axis, point, coordinate system or pattern holds (C3.2–C3.5, C6), in the order they are written. Every
+ * property that is a `Ref`, a list of them, or an object holding some (a direction of a pattern) counts, so a new mode with its own references needs
+ * nothing here.
+ */
+export function defRefs(def: object): Ref[] {
+  return Object.values(def).flatMap((v) => (isRef(v) ? [v] : Array.isArray(v) ? v.filter(isRef) : typeof v === 'object' && v !== null ? defRefs(v) : []));
+}
+
+/** The same definition with each reference replaced by `map`'s answer; references in lists keep their place. */
+export function mapDefRefs<D extends object>(def: D, map: (ref: Ref) => Ref): D {
+  const out: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(def)) out[k] = isRef(v) ? map(v) : Array.isArray(v) ? v.map((x) => (isRef(x) ? map(x) : x)) : typeof v === 'object' && v !== null ? mapDefRefs(v, map) : v;
+  return out as D;
+}
+
 /**
  * Rewrites every reference of a feature (B4.3): `map` gets each `Ref` and returns the one to keep.
  * Returns a copy of the feature and how many references were replaced (a returned ref that is the
@@ -35,11 +53,16 @@ export function mapRefs(feature: Feature, map: (ref: Ref) => Ref): { feature: Fe
     case 'fillet':
     case 'chamfer':
       return { feature: { ...feature, edges: feature.edges.map(one) }, replaced };
-    case 'refPlane': {
-      const d = feature.def;
-      const def = d.mode === 'threePoint' ? { ...d, points: d.points.map(one) } : d.mode === 'angle' ? { ...d, plane: one(d.plane), axis: one(d.axis) } : { ...d, plane: one(d.plane) };
-      return { feature: { ...feature, def }, replaced };
-    }
+    case 'refPlane':
+    case 'refAxis':
+    case 'refPoint':
+      return { feature: { ...feature, def: mapDefRefs(feature.def, one) } as Feature, replaced };
+    case 'pattern':
+      return { feature: { ...feature, def: mapDefRefs(feature.def, one) }, replaced };
+    case 'mirror':
+      return { feature: { ...feature, plane: one(feature.plane), bodies: feature.bodies.map(one) }, replaced };
+    case 'coordSys':
+      return { feature: { ...feature, ...(feature.origin ? { origin: one(feature.origin) } : {}), x: one(feature.x), y: one(feature.y) }, replaced };
     case 'deleteFace':
     case 'shell':
       return { feature: { ...feature, faces: feature.faces.map(one) }, replaced };

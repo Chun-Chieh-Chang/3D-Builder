@@ -1,22 +1,44 @@
 import { useEffect, useRef, useState } from 'react';
 import { t } from '@3db/i18n';
-import { DATUM_PLANES, findFeature, isDimension, isShown, ORIGIN_KEY, Parameters, type DatumPlaneName, type Id, type Feature, type PlaneFrame, type Ref } from '@3db/model';
+import { DATUM_PLANES, findFeature, isDimension, isShown, ORIGIN_KEY, Parameters, settingsOf, type DatumPlaneName, type Id, type Feature, type PlaneFrame, type Ref } from '@3db/model';
 import { ownerFeatures } from '@3db/naming';
-import { Viewer, type PlaneDisplay, type SketchOverlay } from '@3db/render';
-import { ACTIONS } from '../actions';
+import { Viewer, type DatumDisplay, type DisplayMode, type PlaneDisplay, type SectionPlane, type SketchOverlay, type StandardView } from '@3db/render';
+import { ACTIONS, shortcutOf } from '../actions';
+import { chosen, pickable, prompt } from '../state/datumSlots';
 import { sample } from '@3db/sketch/interact';
 import { buildOverlay, SKETCH_COLORS } from '../sketcher/overlay';
 import { store, useSketcherView, useStore } from '../state/store';
 import { FEATURE_LABEL } from '../strings';
 import type { RebuildPayload } from '../worker/protocol';
+import { Topology } from '../state/selectionSets';
 import { Icon } from './Icon';
+
+/** Topology for selecting loops, tangent chains and the like, built once per rebuilt model (D5.6). */
+const topologies = new WeakMap<RebuildPayload, Topology>();
+function topologyOf(r: RebuildPayload): Topology | null {
+  if (!r.mesh) return null;
+  let topo = topologies.get(r);
+  if (!topo) {
+    topo = new Topology({ faceNames: r.faceNames, edgeNames: r.edgeNames, mesh: r.mesh });
+    topologies.set(r, topo);
+  }
+  return topo;
+}
+
+/** One line of the right-click menu; one that returns more lines opens them in its place. */
+interface MenuItem {
+  label: string;
+  run: () => MenuItem[] | void;
+}
 
 /**
  * What the graphics area picks during a PropertyManager session, what it shows as already picked
  * (the SolidWorks selection boxes), and the prompt. Outside sessions faces are picked for selection.
  */
 function picking(feature: Feature | undefined, editing: boolean, modelTool: 'convert' | 'pierce' | null = null) {
-  const def = feature?.type === 'refPlane' ? feature.def : null;
+  // reference geometry (C3.2–C3.5): what its empty selection boxes take, and what they hold
+  const datum = feature?.type === 'refPlane' || feature?.type === 'refAxis' || feature?.type === 'refPoint' || feature?.type === 'coordSys' || feature?.type === 'pattern' || feature?.type === 'mirror' ? feature : undefined;
+  const slots = datum ? { ...pickable(datum), ...chosen(datum), prompt: prompt(datum) } : null;
   // the end of an extrusion that is a face, a vertex or a body: what is clicked on the model goes to the direction that is waiting for it
   const ends = feature?.type === 'extrude' ? [feature.dir1, feature.dir2].flatMap((d) => (d ? [d] : [])) : [];
   const endFaces = ends.flatMap((d) => (d.type === 'upToFace' || d.type === 'offsetFromFace' ? [d.face] : []));
@@ -26,31 +48,25 @@ function picking(feature: Feature | undefined, editing: boolean, modelTool: 'con
   const edgeFeature = feature?.type === 'fillet' || feature?.type === 'chamfer' ? feature : null;
   const faceFeature = feature?.type === 'deleteFace' || feature?.type === 'moveFace' || feature?.type === 'shell' || feature?.type === 'draft' ? feature : null;
   const combine = feature?.type === 'combine';
-  const prompt = combine
+  const prompt_ = combine
     ? t('pick.combine')
     : faceFeature
     ? t(faceFeature.type === 'deleteFace' ? 'pick.deleteFace' : faceFeature.type === 'shell' ? 'pick.shell' : faceFeature.type === 'draft' ? 'pick.draft' : 'pick.moveFace')
     : edgeFeature
-    ? `點選邊線以加入${FEATURE_LABEL[edgeFeature.type]}`
+    ? t('pick.edges', { what: FEATURE_LABEL[edgeFeature.type] })
     : upTo
       ? t('pick.extrudeEnd')
-      : def?.mode === 'offset'
-        ? '點選平面，或在設計樹中選擇基準面'
-        : def?.mode === 'angle'
-          ? '點選參考平面（或在設計樹中選擇基準面），再點選作為旋轉軸的直線邊線'
-          : def?.mode === 'threePoint'
-            ? `點選三個頂點（已選 ${def.points.length} 個）`
-            : null;
+      : (slots?.prompt ?? null);
   return {
-    edges: !!edgeFeature || def?.mode === 'angle' || modelTool !== null,
-    faces: !editing || modelTool === 'convert' || !!upTo || !!faceFeature || combine || def?.mode === 'offset' || def?.mode === 'angle',
-    vertices: def?.mode === 'threePoint' || endVertices.length > 0,
-    pickedEdges: edgeFeature ? edgeFeature.edges : def?.mode === 'angle' ? [def.axis] : [],
-    pickedFaces: faceFeature ? (faceFeature.type === 'deleteFace' || faceFeature.type === 'shell' ? faceFeature.faces : faceFeature.type === 'draft' ? [faceFeature.neutral, ...faceFeature.faces] : [faceFeature.face]) : upTo ? endFaces : def && def.mode !== 'threePoint' && def.plane.kind === 'face' ? [def.plane] : [],
-    pickedVertices: def?.mode === 'threePoint' ? def.points : endVertices,
-    /** A default or reference plane the plane being defined is based on. */
-    referencePlane: def && def.mode !== 'threePoint' && def.plane.kind === 'datum' ? def.plane.name : null,
-    prompt,
+    edges: !!edgeFeature || !!slots?.edges || modelTool !== null,
+    faces: !editing || modelTool === 'convert' || !!upTo || !!faceFeature || combine || !!slots?.faces,
+    vertices: !!slots?.vertices || endVertices.length > 0,
+    pickedEdges: edgeFeature ? edgeFeature.edges : (slots?.edges ?? []),
+    pickedFaces: faceFeature ? (faceFeature.type === 'deleteFace' || faceFeature.type === 'shell' ? faceFeature.faces : faceFeature.type === 'draft' ? [faceFeature.neutral, ...faceFeature.faces] : [faceFeature.face]) : upTo ? endFaces : (slots?.faces ?? []),
+    pickedVertices: slots ? slots.vertices : endVertices,
+    /** Default and reference planes, axes and points the geometry being defined is based on: they are drawn while they are used. */
+    referenceDatums: slots?.datums ?? [],
+    prompt: prompt_,
   };
 }
 
@@ -84,6 +100,8 @@ export function Viewport() {
   const [hoverFace, setHoverFace] = useState(-1);
   const [hoverVertex, setHoverVertex] = useState(-1);
   const [viewTick, setViewTick] = useState(0);
+  const [menu, setMenu] = useState<{ x: number; y: number; items: MenuItem[] } | null>(null);
+  const pickFilter = useStore((s) => s.pickFilter);
   const sketching = editing?.kind === 'sketch';
   sketchingRef.current = sketching;
 
@@ -107,6 +125,12 @@ export function Viewport() {
       return name && fingerprint ? { kind: 'vertex', name, fingerprint } : null;
     };
     const idOf = (key: string) => key.slice(key.indexOf(':') + 1);
+    const clickFace = (face: number) => {
+      const ref = faceRef(face);
+      if (store.getState().editing) {
+        if (ref) store.pick(ref);
+      } else store.selectFace(ref);
+    };
     const viewer = new Viewer(host.current!, {
       onEdgeHover: setHover,
       onEdgeClick: (edge) => {
@@ -114,11 +138,29 @@ export function Viewport() {
         if (ref) store.pick(ref);
       },
       onFaceHover: setHoverFace,
-      onFaceClick: (face) => {
-        const ref = faceRef(face);
-        if (store.getState().editing) {
-          if (ref) store.pick(ref);
-        } else store.selectFace(ref);
+      onFaceClick: clickFace,
+      onContextMenu: (x, y) => {
+        const r = displayed.current;
+        const topo = r && topologyOf(r);
+        if (!r || !topo) return;
+        const el = viewer.elementsAt(x, y);
+        const kind = store.multiPickKind();
+        const refs = (indices: number[], of: 'edge' | 'face') => indices.flatMap((i) => { const ref = of === 'edge' ? edgeRef(i) : faceRef(i); return ref ? [ref] : []; });
+        const add = (list: Ref[]) => () => void store.pickMany(list);
+        const items: MenuItem[] = [];
+        if (kind === 'edge' && el.edge >= 0) {
+          items.push({ label: t('select.tangentEdges'), run: add(refs(topo.tangentEdges(el.edge), 'edge')) });
+          for (const f of topo.edgeFaces[el.edge] ?? []) items.push({ label: t('select.loopOf', { name: r.faceNames[f] ?? '' }), run: add(refs(topo.loop(f, el.edge), 'edge')) });
+        }
+        if (kind === 'face' && el.face >= 0) items.push({ label: t('select.tangentFaces'), run: add(refs(topo.tangentFaces(el.face), 'face')) });
+        const stack = el.face >= 0 ? viewer.facesAt(x, y) : [];
+        if (stack.length > 1) {
+          const others: MenuItem[] = stack.map((f, i) => ({ label: t('select.otherFace', { n: i + 1, name: r.faceNames[f] ?? '' }), run: () => clickFace(f) }));
+          items.push({ label: t('select.other', { count: stack.length }), run: () => others });
+        }
+        const rect = host.current?.getBoundingClientRect();
+        if (items.length > 0 && rect) setMenu({ x: x - rect.left, y: y - rect.top, items });
+        else setMenu(null);
       },
       onVertexHover: setHoverVertex,
       onVertexClick: (vertex) => {
@@ -151,6 +193,7 @@ export function Viewport() {
     if (!v) return;
     const fit = !!result?.mesh && fittedFor.current !== fitRequest;
     v.setMesh(result?.mesh ?? null, fit);
+    v.setFaceColors(result?.faceColors ?? []);
     v.setVertices(result?.vertexPoints ?? new Float32Array(0));
     displayed.current = result;
     if (fit) fittedFor.current = fitRequest;
@@ -163,6 +206,7 @@ export function Viewport() {
     v.setEdgePicking(p.edges);
     v.setFacePicking(p.faces);
     v.setVertexPicking(p.vertices);
+    v.setPickFilter(pickFilter);
     const r = displayed.current;
     const indices = (names: string[] | undefined, refs: Ref[]) => refs.map((x) => names?.indexOf(x.name) ?? -1).filter((i) => i >= 0);
     v.setSelectedEdges(indices(r?.edgeNames, p.pickedEdges));
@@ -175,22 +219,45 @@ export function Viewport() {
     else if (selectedFace?.kind === 'face') v.setSelectedFaces(indices(r?.faceNames, [selectedFace]));
     // D1.2: a feature selected in the FeatureManager shows the faces it made.
     else v.setSelectedFaces(selected ? (r?.faceNames ?? []).flatMap((n, i) => (ownerFeatures(n)[0] === selected ? [i] : [])) : []);
-  }, [feature, editing, selectedFace, selected, result, modelTool]);
+  }, [feature, editing, selectedFace, selected, result, modelTool, pickFilter]);
 
   // Reference planes show like new planes in SolidWorks; default planes only when selected or referenced (D4.6).
   useEffect(() => {
     const v = store.viewer;
     if (!v) return;
-    const reference = picking(feature, !!editing).referencePlane;
+    const reference = picking(feature, !!editing).referenceDatums;
     const planes: PlaneDisplay[] = [];
     const show = (key: string, frame: PlaneFrame | undefined, highlighted: boolean) => frame && planes.push({ key, frame, highlighted });
     for (const name of Object.keys(DATUM_PLANES) as DatumPlaneName[]) {
-      if (selected === name || reference === name || isShown(doc, name)) show(name, DATUM_PLANES[name], selected === name);
+      if (selected === name || reference.includes(name) || isShown(doc, name)) show(name, DATUM_PLANES[name], selected === name);
     }
     for (const f of doc.features) {
       if (f.type === 'refPlane' && (isShown(doc, f.id) || selected === f.id || editing?.featureId === f.id)) show(f.id, result?.frames.get(f.id), selected === f.id || editing?.featureId === f.id);
     }
     v.setPlanes(planes);
+  }, [feature, editing, selected, doc, result]);
+
+  // Reference axes, points and coordinate systems (D4.6): shown, or being defined, or used by what is being defined.
+  useEffect(() => {
+    const v = store.viewer;
+    if (!v) return;
+    const reference = picking(feature, !!editing).referenceDatums;
+    const lit = (id: Id) => selected === id || editing?.featureId === id;
+    const datums: DatumDisplay = { axes: [], points: [], systems: [] };
+    for (const f of doc.features) {
+      if (!(isShown(doc, f.id) || lit(f.id) || reference.includes(f.id))) continue;
+      if (f.type === 'refAxis') {
+        const a = result?.axes.get(f.id);
+        if (a) datums.axes.push({ key: f.id, origin: a.origin, dir: a.dir, highlighted: lit(f.id) });
+      } else if (f.type === 'refPoint') {
+        const p = result?.points.get(f.id);
+        if (p) datums.points.push({ key: f.id, p, highlighted: lit(f.id) });
+      } else if (f.type === 'coordSys') {
+        const c = result?.systems.get(f.id);
+        if (c) datums.systems.push({ key: f.id, ...c, highlighted: lit(f.id) });
+      }
+    }
+    v.setDatums(datums);
   }, [feature, editing, selected, doc, result]);
 
   // Shown sketches and the origin (D4.6). The sketch being edited is drawn by its own overlay.
@@ -250,7 +317,7 @@ export function Viewport() {
       const r = isDimension(c) ? params.dimensionValue(sketch, c) : null;
       if (r && 'value' in r) values.set(c.id, r.value);
     }
-    overlay.current = buildOverlay(frame, sketch, sketchSolve, view, v.pixelSize(), { showRelations: true, values, dimensionPreview: sketcher.dimensionPreview() });
+    overlay.current = buildOverlay(frame, sketch, sketchSolve, view, v.pixelSize(), { showRelations: true, values, dimensionPreview: sketcher.dimensionPreview(), precision: settingsOf(doc).dimensionPrecision });
     v.setOverlay(overlay.current);
   }, [sketching, doc, sketchSolve, view, viewTick]);
 
@@ -265,32 +332,34 @@ export function Viewport() {
   return (
     <main className="viewport">
       <div ref={host} className="viewport-canvas" />
+      <ViewCube />
+      <ViewOptions />
       <div className="heads-up">
         {ACTIONS.filter((a) => a.group === 'view').map((a) => (
-          <button key={a.id} onClick={a.run} disabled={!a.enabled(store.getState())} title={a.shortcut ? `${a.label}（${a.shortcut}）` : a.label}>
+          <button key={a.id} onClick={a.run} disabled={!a.enabled(store.getState())} title={shortcutOf(a) ? `${a.label} (${shortcutOf(a)})` : a.label}>
             {a.label}
           </button>
         ))}
       </div>
       {sketching && (
         <div className="confirm-corner">
-          <button className="pm-ok" title="離開草圖（保留變更）" onClick={() => store.commitEdit()}>
+          <button className="pm-ok" title={t('sketch.exitKeep')} onClick={() => store.commitEdit()}>
             <Icon name="ok" />
           </button>
-          <button className="pm-cancel" title="放棄變更並離開草圖" onClick={() => store.cancelEdit()}>
+          <button className="pm-cancel" title={t('sketch.exitDiscard')} onClick={() => store.cancelEdit()}>
             <Icon name="cancel" />
           </button>
         </div>
       )}
       {sketching && dimensionEdit && <DimensionEditor id={dimensionEdit} overlay={overlay.current} key={dimensionEdit} />}
       {!bootMs && (
-        <div className="boot-overlay">{bootError ? `幾何核心載入失敗：${bootError}` : '正在載入幾何核心（OCCT WASM，約 43 MB）…'}</div>
+        <div className="boot-overlay">{bootError ? t('boot.failed', { why: bootError }) : t('boot.loading')}</div>
       )}
       {pick.prompt && (
         <div className="pick-hint">
           {hoverName ? (
             <>
-              持久名稱：<code>{hoverName}</code>
+              {t('hover.name')} <code>{hoverName}</code>
             </>
           ) : (
             pick.prompt
@@ -301,18 +370,47 @@ export function Viewport() {
         <div className="pick-hint">
           {hoverFaceName ? (
             <>
-              面：<code>{hoverFaceName}</code>
+              {t('hover.face')} <code>{hoverFaceName}</code>
             </>
           ) : (
             <>
-              已選取面 <code>{selectedFace!.name}</code>
-              {planar ? '：按「草圖」分頁的「草圖」即可在此面上繪製。' : '（不是平面，不能放草圖）'}
+              {t('hover.selected')} <code>{selectedFace!.name}</code> {planar ? t('hover.canSketch') : t('hover.notPlanar')}
             </>
           )}
         </div>
       )}
       {sketching && view && <div className="pick-hint">{view.hint}</div>}
+      {menu && <ContextMenu x={menu.x} y={menu.y} items={menu.items} onItems={(items) => setMenu({ ...menu, items })} onClose={() => setMenu(null)} />}
     </main>
+  );
+}
+
+/** The right-click menu of the graphics area (D5.5, D5.6): closes on any click elsewhere or Esc. */
+function ContextMenu({ x, y, items, onItems, onClose }: { x: number; y: number; items: MenuItem[]; onItems: (items: MenuItem[]) => void; onClose: () => void }) {
+  useEffect(() => {
+    const key = (e: KeyboardEvent) => e.key === 'Escape' && onClose();
+    window.addEventListener('pointerdown', onClose);
+    window.addEventListener('keydown', key);
+    return () => {
+      window.removeEventListener('pointerdown', onClose);
+      window.removeEventListener('keydown', key);
+    };
+  }, [onClose]);
+  return (
+    <div className="ctx-menu" style={{ left: x, top: y }} onPointerDown={(e) => e.stopPropagation()} onContextMenu={(e) => e.preventDefault()}>
+      {items.map((item, i) => (
+        <button
+          key={i}
+          onClick={() => {
+            const more = item.run();
+            if (more) onItems(more);
+            else onClose();
+          }}
+        >
+          {item.label}
+        </button>
+      ))}
+    </div>
   );
 }
 
@@ -349,6 +447,116 @@ function DimensionEditor({ id, overlay }: { id: string; overlay: SketchOverlay |
         onBlur={() => store.editDimension(null)}
       />
       <span className="suffix">{c.type === 'angle' ? '°' : 'mm'}</span>
+    </div>
+  );
+}
+
+/** The faces of the view cube (D4.3): the view each shows, and where it is on the cube. */
+const CUBE_FACES: { view: StandardView; label: string; transform: string }[] = [
+  { view: 'front', label: 'cube.front', transform: 'translateZ(22px)' },
+  { view: 'back', label: 'cube.back', transform: 'rotateY(180deg) translateZ(22px)' },
+  { view: 'right', label: 'cube.right', transform: 'rotateY(90deg) translateZ(22px)' },
+  { view: 'left', label: 'cube.left', transform: 'rotateY(-90deg) translateZ(22px)' },
+  { view: 'top', label: 'cube.top', transform: 'rotateX(90deg) translateZ(22px)' },
+  { view: 'bottom', label: 'cube.bottom', transform: 'rotateX(-90deg) translateZ(22px)' },
+];
+
+/** 視角選擇方塊 (D4.3): a cube that turns with the model; a click on a face looks at the model from that side. */
+function ViewCube() {
+  const [matrix, setMatrix] = useState<number[] | null>(null);
+  useEffect(() => {
+    let stop = () => {};
+    // the viewer is made after the first render: look for it until it is there
+    const wait = setInterval(() => {
+      const v = store.viewer;
+      if (!v) return;
+      clearInterval(wait);
+      setMatrix(v.cubeMatrix());
+      stop = v.subscribeView(() => setMatrix(v.cubeMatrix()));
+    }, 100);
+    return () => {
+      clearInterval(wait);
+      stop();
+    };
+  }, []);
+  if (!matrix) return null;
+  return (
+    <div className="view-cube" aria-label={t('cube.title')}>
+      <div className="cube" style={{ transform: `matrix3d(${matrix.join(',')})` }}>
+        {CUBE_FACES.map((f) => (
+          <button key={f.view} className="cube-face" style={{ transform: f.transform }} title={t('cube.look', { face: t(f.label as 'cube.front') })} onClick={() => store.viewer?.setView(f.view)}>
+            {t(f.label as 'cube.front')}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+const DISPLAY_MODES: DisplayMode[] = ['shadedEdges', 'shaded', 'hiddenRemoved', 'hiddenVisible', 'wireframe'];
+
+/** 顯示類型 (A4.3) and 剖面視圖 (D4.4): how the model is drawn, and a cut through it. */
+function ViewOptions() {
+  const filter = useStore((s) => s.pickFilter);
+  const [mode, setMode] = useState<DisplayMode>('shadedEdges');
+  const [cut, setCut] = useState<{ axis: 0 | 1 | 2; at: number; flip: boolean } | null>(null);
+  const result = useStore((s) => s.result);
+  useEffect(() => store.viewer?.setDisplayMode(mode), [mode, result]);
+  const bounds = store.viewer?.contentBounds() ?? null;
+  const range = bounds && cut ? ([bounds.min[cut.axis], bounds.max[cut.axis]] as const) : null;
+  useEffect(() => {
+    const v = store.viewer;
+    if (!v) return;
+    if (!cut || !range) return v.setSection(null);
+    const normal: [number, number, number] = [0, 0, 0];
+    normal[cut.axis] = cut.flip ? -1 : 1;
+    const plane: SectionPlane = { normal, offset: cut.flip ? -cut.at : cut.at };
+    v.setSection(plane);
+  }, [cut, result]);
+  const span = range ? Math.max(range[1] - range[0], 1e-6) : 1;
+  return (
+    <div className="view-options">
+      <select value={mode} aria-label={t('view.mode')} title={t('view.mode')} onChange={(e) => setMode(e.target.value as DisplayMode)}>
+        {DISPLAY_MODES.map((m) => (
+          <option key={m} value={m}>
+            {t(`view.mode.${m}`)}
+          </option>
+        ))}
+      </select>
+      <span className="pick-filter" title={t('select.filterTitle')}>
+        {t('select.filter')}
+        {(['faces', 'edges', 'vertices'] as const).map((k) => (
+          <label key={k}>
+            <input type="checkbox" checked={filter[k]} onChange={(e) => store.setPickFilter(k, e.target.checked)} />
+            {t(k === 'faces' ? 'select.filterFaces' : k === 'edges' ? 'select.filterEdges' : 'select.filterVertices')}
+          </label>
+        ))}
+      </span>
+      <button className={cut ? 'active' : ''} onClick={() => setCut(cut ? null : { axis: 0, at: ((bounds?.min[0] ?? 0) + (bounds?.max[0] ?? 0)) / 2, flip: false })}>
+        {t('view.section')}
+      </button>
+      {cut && range && (
+        <div className="section-panel">
+          <select
+            value={cut.axis}
+            aria-label={t('view.sectionAxis')}
+            onChange={(e) => {
+              const axis = Number(e.target.value) as 0 | 1 | 2;
+              const b = store.viewer!.contentBounds()!;
+              setCut({ ...cut, axis, at: (b.min[axis] + b.max[axis]) / 2 });
+            }}
+          >
+            <option value={0}>{t('view.sectionX')}</option>
+            <option value={1}>{t('view.sectionY')}</option>
+            <option value={2}>{t('view.sectionZ')}</option>
+          </select>
+          <input type="range" aria-label={t('view.sectionAt')} min={range[0]} max={range[1]} step={span / 200} value={cut.at} onChange={(e) => setCut({ ...cut, at: Number(e.target.value) })} />
+          <span className="muted">{cut.at.toFixed(2)}</span>
+          <label>
+            <input type="checkbox" checked={cut.flip} onChange={(e) => setCut({ ...cut, flip: e.target.checked })} /> {t('view.sectionFlip')}
+          </label>
+        </div>
+      )}
     </div>
   );
 }

@@ -5,3 +5,4 @@ export * from './container';
 export * from './partFile';
 export * from './assemblyFile';
 export * from './stepPart';
+export * from './stl';

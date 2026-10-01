@@ -6,7 +6,7 @@ import type { Id } from './ids';
  * DOF status, mass properties and error lists are derived data and never stored.
  */
 
-export const SCHEMA_VERSION = 20;
+export const SCHEMA_VERSION = 25;
 
 /** Value expression (B5.2, B5.3): "20", "25.4mm", "30deg", "wall_t*2", "D1@草圖1/2", "property('厚度')"; see `expr/`. */
 export type Expr = string;
@@ -100,6 +100,12 @@ interface FeatureBase {
   id: Id;
   name: string;
   suppressed: boolean;
+  /** A note the user wrote on the feature (D1.7, v25). */
+  comment?: string;
+  /** A short label the tree can be filtered by (D1.7, v25). */
+  tag?: string;
+  /** The folder of the tree the feature is in (D1.7, v25); the features of one folder follow one another in the history. */
+  folder?: string;
 }
 
 export interface SketchFeature extends FeatureBase {
@@ -165,7 +171,8 @@ export type RevolveCondition = { type: 'blind'; angle: Expr; reverse?: boolean }
 
 /**
  * Hole wizard (異型孔, C4.8, v17): a hole of one of four kinds drilled into the material at every point of a sketch, from the sketch plane inward (against
- * the normal; everse the other way). size is only the label of the standard size the diameters were taken from; the values that count are the
+ * the normal; 
+everse the other way). size is only the label of the standard size the diameters were taken from; the values that count are the
  * expressions. 	apped is the tap-drill hole of a thread, which is not modelled.
  */
 export interface HoleFeature extends FeatureBase {
@@ -230,6 +237,49 @@ export interface RibFeature extends FeatureBase {
   flip?: boolean;
 }
 
+/** One direction of a linear pattern (C6.1): the instances lie `spacing` apart along the straight edge, axis or plane normal `ref` points, `count` of them counting the seed. */
+export interface PatternDirection {
+  ref: Ref;
+  spacing: Expr;
+  count: Expr;
+  reverse?: boolean;
+}
+
+/**
+ * How a pattern repeats its seed (v22). Linear: along one direction, or a grid of two. Circular: about a straight edge, a reference axis or the axis of a
+ * cylindrical face, `count` instances counting the seed; with `equal` the `angle` is the whole sweep they share out (all the way round, 360°, puts the
+ * last one one step short of the seed; less than that puts the last one at the end), without it `angle` is the step between neighbours.
+ */
+export type PatternDefinition =
+  | { mode: 'linear'; dir1: PatternDirection; dir2?: PatternDirection }
+  | { mode: 'circular'; axis: Ref; count: Expr; angle: Expr; equal: boolean; reverse?: boolean };
+
+/**
+ * Pattern (複製排列, C6.1, C6.2, v22): what the `seeds` (one feature, or a run of features that follow one another) added to the body and took away from
+ * it, repeated. Each instance is a copy of that, moved, then joined to or cut from the bodies like the seed was. The seed itself is instance 0. `skip` names
+ * instances to leave out (`"2"`, or `"2x3"` in a grid: column 2, row 3, counting the seed as 0).
+ */
+export interface PatternFeature extends FeatureBase {
+  type: 'pattern';
+  seeds: Id[];
+  def: PatternDefinition;
+  skip?: string[];
+}
+
+/**
+ * Mirror (鏡射, C6.3, v23): across a plane (a default plane, a reference plane, or a planar face), either what the `seeds` (one feature, or a run of features)
+ * added to the bodies and took from them (`target: 'features'`, joined and cut like the seed was), or whole `bodies` (`target: 'bodies'`: each mirrored into
+ * a body of its own with `merge: false`, else joined to every body it touches, the original included).
+ */
+export interface MirrorFeature extends FeatureBase {
+  type: 'mirror';
+  target: 'features' | 'bodies';
+  plane: Ref;
+  seeds: Id[];
+  bodies: Ref[];
+  merge?: boolean;
+}
+
 export interface RevolveFeature extends FeatureBase {
   type: 'revolve';
   sketch: Id;
@@ -265,18 +315,70 @@ export interface ChamferFeature extends FeatureBase {
 
 /**
  * How a reference plane is defined (C3.2). `plane` is a default plane or another reference plane
- * (kind "datum", by name or feature id) or a planar model face; `axis` a straight model edge;
- * `points` three model vertices.
+ * (kind "datum", by name or feature id) or a planar model face; `axis` a straight model edge or a reference axis;
+ * `points` three model vertices (or reference points); `point` a model vertex or a reference point; `face` a cylindrical face.
+ * v21 adds `parallel`, `perpendicular`, `midplane` and `tangent` (C3.2, P1).
  */
 export type PlaneDefinition =
   | { mode: 'offset'; plane: Ref; distance: Expr; reverse?: boolean }
   /** Through the axis, turned by `angle` from the plane (at 0° parallel to it). */
   | { mode: 'angle'; plane: Ref; axis: Ref; angle: Expr; reverse?: boolean }
-  | { mode: 'threePoint'; points: Ref[]; reverse?: boolean };
+  | { mode: 'threePoint'; points: Ref[]; reverse?: boolean }
+  /** Through the point, parallel to the plane. */
+  | { mode: 'parallel'; plane: Ref; point: Ref; reverse?: boolean }
+  /** Through the point, square to the axis (a straight edge or a reference axis). */
+  | { mode: 'perpendicular'; axis: Ref; point: Ref; reverse?: boolean }
+  /** Halfway between two parallel planes. */
+  | { mode: 'midplane'; plane: Ref; plane2: Ref; reverse?: boolean }
+  /** Touching a cylindrical face along a line, parallel to the plane (`reverse`: on the other side of the cylinder). */
+  | { mode: 'tangent'; face: Ref; plane: Ref; reverse?: boolean };
 
 export interface RefPlaneFeature extends FeatureBase {
   type: 'refPlane';
   def: PlaneDefinition;
+}
+
+/**
+ * How a reference axis (基準軸, C3.3, v21) is defined: a straight edge; the line through two points (model vertices or reference points);
+ * the axis of a cylindrical or conical face; or the line two planes meet in.
+ */
+export type AxisDefinition =
+  | { mode: 'edge'; edge: Ref }
+  | { mode: 'twoPoints'; points: Ref[] }
+  | { mode: 'cylinder'; face: Ref }
+  | { mode: 'planes'; plane: Ref; plane2: Ref };
+
+export interface RefAxisFeature extends FeatureBase {
+  type: 'refAxis';
+  def: AxisDefinition;
+}
+
+/**
+ * How a reference point (參考點, C3.5, v21) is defined: by its coordinates from the part origin; the centre of an edge (the centre of a circle, else
+ * its middle) or of a face (a sphere's centre, else the middle of the face); or where an axis meets a plane.
+ */
+export type PointDefinition =
+  | { mode: 'coords'; x: Expr; y: Expr; z: Expr }
+  | { mode: 'center'; element: Ref }
+  | { mode: 'axisPlane'; axis: Ref; plane: Ref };
+
+export interface RefPointFeature extends FeatureBase {
+  type: 'refPoint';
+  def: PointDefinition;
+}
+
+/**
+ * Coordinate system (座標系統, C3.4, v21): at `origin` (a vertex or reference point; the part origin when absent) with X along `x` and Y as near `y`
+ * as is square to X. `x` and `y` are straight edges, reference axes, or planes (their normal). `flipX` and `flipY` turn those two around; Z follows
+ * (X × Y), so the system is always right-handed.
+ */
+export interface CoordSysFeature extends FeatureBase {
+  type: 'coordSys';
+  origin?: Ref;
+  x: Ref;
+  y: Ref;
+  flipX?: boolean;
+  flipY?: boolean;
 }
 
 /**
@@ -333,7 +435,8 @@ export interface ShellFeature extends FeatureBase {
 /**
  * Draft (拔模, C5.5, v16): the walls aces lean by ngle about the neutral plane 
 eutral (a planar face of the body, or a plane), so that they
- * narrow away from it; everse leans them the other way (they widen away from it).
+ * narrow away from it; 
+everse leans them the other way (they widen away from it).
  */
 export interface DraftFeature extends FeatureBase {
   type: 'draft';
@@ -361,9 +464,14 @@ export type Feature =
   | SweepFeature
   | LoftFeature
   | RibFeature
+  | PatternFeature
+  | MirrorFeature
   | FilletFeature
   | ChamferFeature
   | RefPlaneFeature
+  | RefAxisFeature
+  | RefPointFeature
+  | CoordSysFeature
   | ImportedBodyFeature
   | DeleteFaceFeature
   | MoveFaceFeature
@@ -381,8 +489,30 @@ export interface Variable {
   expr: Expr;
 }
 
+/** The material of the part (C14.1, v24): a name and a density in g/cm³; the mass is the volume of the bodies that count times it. */
+export interface MaterialRef {
+  /** The id of the built-in material it was taken from (see `MATERIALS`); absent for one the user typed. */
+  id?: string;
+  name: string;
+  density: number;
+}
+
+/** Standards the drawings of a part follow, how many decimals a derived dimension shows, and how fine the meshes of the screen, STL and images are (B8.4, v24). */
+export interface DocSettings {
+  draftStandard: 'ISO' | 'CNS' | 'ANSI' | 'JIS' | 'GB';
+  dimensionPrecision: number;
+  meshQuality: 'coarse' | 'normal' | 'fine';
+}
+
+/**
+ * What a color is for (C14.2, v24): the whole part, one body (by its id), the faces a feature made (by its id), or one face (by reference). Where
+ * several apply to a face, the narrower wins: part < body < feature < face.
+ */
+export type AppearanceTarget = { kind: 'part' } | { kind: 'body'; id: Id } | { kind: 'feature'; id: Id } | { kind: 'face'; ref: Ref };
+
 export interface AppearanceOverride {
-  target: Ref | { kind: 'part' };
+  target: AppearanceTarget;
+  /** "#rrggbb". */
   color: string;
 }
 
@@ -416,6 +546,10 @@ export interface PartDoc {
   rollbackIndex: number | null;
   properties: Record<string, string>;
   appearances: AppearanceOverride[];
+  /** C14.1 (v24): absent until one is chosen; the mass is then known. */
+  material?: MaterialRef;
+  /** B8.4 (v24): only what was chosen; see `settingsOf` for the rest. */
+  settings?: Partial<DocSettings>;
   blobs: BlobRef[];
   /**
    * What the user chose to show or hide (D4.6), by feature id (sketches, reference planes), default

@@ -98,46 +98,46 @@ const finite = (...xs: number[]) => xs.every(Number.isFinite);
 export function sketchError(sketch: Pick<SketchFeature, 'entities' | 'constraints'>): string | null {
   const kinds = new Map<Id, EntityKind>();
   for (const e of sketch.entities) {
-    if (e.id === SKETCH_ORIGIN || kinds.has(e.id)) return `重複的圖元 ID：${e.id}`;
+    if (e.id === SKETCH_ORIGIN || kinds.has(e.id)) return t('rules.dupEntity', { id: e.id });
     kinds.set(e.id, e.type);
   }
   const kindOf = (id: Id): RefKind | undefined => (id === SKETCH_ORIGIN ? 'origin' : kinds.get(id));
 
   for (const e of sketch.entities) {
     const pts = entityPoints(e);
-    if (pts.some((p) => kinds.get(p) !== 'point')) return `圖元 ${e.id} 參考了不存在的點`;
-    if (new Set(pts).size !== pts.length) return `圖元 ${e.id} 的端點重複`;
-    if (e.type === 'point' && !finite(e.x, e.y)) return `點 ${e.id} 的座標無效`;
-    if (e.type === 'circle' && !(finite(e.radius) && e.radius > 0)) return `圓 ${e.id} 的半徑必須大於 0`;
+    if (pts.some((p) => kinds.get(p) !== 'point')) return t('rules.missingPoint', { id: e.id });
+    if (new Set(pts).size !== pts.length) return t('rules.dupEnd', { id: e.id });
+    if (e.type === 'point' && !finite(e.x, e.y)) return t('cmd.pointCoordinateInvalid', { id: e.id });
+    if (e.type === 'circle' && !(finite(e.radius) && e.radius > 0)) return t('cmd.radiusMustBePositive', { id: e.id });
     const model = e.type === 'point' ? e.pierce : e.ref;
     if (model && model.kind !== 'edge') return t('cmd.sketchRefMustBeEdge', { id: e.id });
   }
 
   const seen = new Set<Id>(kinds.keys());
   for (const c of sketch.constraints) {
-    if (c.id === SKETCH_ORIGIN || seen.has(c.id)) return `重複的 ID：${c.id}`;
+    if (c.id === SKETCH_ORIGIN || seen.has(c.id)) return t('rules.dupId', { id: c.id });
     seen.add(c.id);
     const rule = RULES[c.type];
-    if (!rule) return `不支援的限制條件：${(c as { type: string }).type}`;
+    if (!rule) return t('rules.unsupported', { type: (c as { type: string }).type });
     for (const field of REF_FIELDS) {
       const ref = (c as Partial<Record<RefField, Id>>)[field];
       const allowed = rule[field];
       if (ref === undefined) {
-        if (allowed && !(field === 'b' && OPTIONAL_B.has(c.type))) return `限制條件 ${c.id} 缺少參考`;
+        if (allowed && !(field === 'b' && OPTIONAL_B.has(c.type))) return t('rules.missingRef', { id: c.id });
         continue;
       }
-      if (!allowed) return `限制條件 ${c.id} 有多餘的參考`;
+      if (!allowed) return t('rules.extraRef', { id: c.id });
       const k = kindOf(ref);
-      if (!k || !allowed.includes(k)) return `限制條件 ${c.id} 不能套用在「${ref}」上`;
+      if (!k || !allowed.includes(k)) return t('rules.badRef', { id: c.id, ref });
     }
     const refs = constraintRefs(c);
-    if (new Set(refs).size !== refs.length) return `限制條件 ${c.id} 參考了同一個圖元兩次`;
+    if (new Set(refs).size !== refs.length) return t('rules.sameTwice', { id: c.id });
     const ks = refs.map(kindOf);
-    if (c.type === 'tangent' && ks[0] === 'line' && ks[1] === 'line') return '相切需要至少一個圓或圓弧';
-    if (c.type === 'equal' && (ks[0] === 'line') !== (ks[1] === 'line')) return '相等只適用於兩條直線或兩個圓/圓弧';
-    if (c.type === 'distance' && c.b === undefined && ks[0] !== 'line') return '單一圖元的距離只適用於直線';
+    if (c.type === 'tangent' && ks[0] === 'line' && ks[1] === 'line') return t('rules.tangentNeedsCurve');
+    if (c.type === 'equal' && (ks[0] === 'line') !== (ks[1] === 'line')) return t('rules.equalKinds');
+    if (c.type === 'distance' && c.b === undefined && ks[0] !== 'line') return t('rules.distanceLine');
     if ((c.type === 'horizontal' || c.type === 'vertical') && (c.b === undefined) !== (ks[0] === 'line')) {
-      return '水平/垂直適用於一條直線，或兩個點';
+      return t('rules.horizontalVertical');
     }
   }
   return null;

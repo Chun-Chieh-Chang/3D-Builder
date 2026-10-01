@@ -42,18 +42,18 @@ function toPrimitives(sketch: SketchFeature, start: Start, pinned: ReadonlySet<I
   const byId = new Map<Id, SketchEntity>(sketch.entities.map((e) => [e.id, e]));
   const kind = (id: Id) => (id === SKETCH_ORIGIN ? 'point' : byId.get(id)?.type);
   const point = (id: Id) => {
-    if (kind(id) !== 'point') throw new MappingError(`「${id}」不是點`);
+    if (kind(id) !== 'point') throw new MappingError(t('map.notPoint', { id }));
     return id;
   };
   const line = (id: Id) => {
     const e = byId.get(id);
-    if (e?.type !== 'line') throw new MappingError(`「${id}」不是直線`);
+    if (e?.type !== 'line') throw new MappingError(t('map.notLine', { id }));
     return e;
   };
   const stored = (id: Id): [number, number] => {
     if (id === SKETCH_ORIGIN) return [0, 0];
     const e = byId.get(id);
-    if (e?.type !== 'point') throw new MappingError(`「${id}」不是點`);
+    if (e?.type !== 'point') throw new MappingError(t('map.notPoint', { id }));
     return [e.x, e.y];
   };
   const pointXY = (id: Id): [number, number] => start.points.get(id) ?? stored(id);
@@ -66,7 +66,7 @@ function toPrimitives(sketch: SketchFeature, start: Start, pinned: ReadonlySet<I
   const radial = (id: Id) => {
     const e = byId.get(id);
     if (e?.type === 'circle' || e?.type === 'arc') return e;
-    throw new MappingError(`「${id}」不是圓或圓弧`);
+    throw new MappingError(t('map.notCircleOrArc', { id }));
   };
 
   const prims: Prim[] = [{ id: SKETCH_ORIGIN, type: 'point', x: 0, y: 0, fixed: true }];
@@ -112,7 +112,7 @@ function toPrimitives(sketch: SketchFeature, start: Start, pinned: ReadonlySet<I
     if (curve?.type === 'line') return { id, type: 'point_on_line_pl', p_id: p, l_id: curve.id };
     if (curve?.type === 'circle') return { id, type: 'point_on_circle', p_id: p, c_id: curve.id };
     if (curve?.type === 'arc') return { id, type: 'point_on_arc', p_id: p, a_id: curve.id };
-    throw new MappingError(`「${curveId}」不是直線、圓或圓弧`);
+    throw new MappingError(t('map.notCurve', { id: curveId }));
   };
   const equalRadius = (a: Extract<SketchEntity, { type: 'circle' | 'arc' }>, b: Extract<SketchEntity, { type: 'circle' | 'arc' }>, id: Id): Prim => {
     if (a.type === 'circle' && b.type === 'circle') return { id, type: 'equal_radius_cc', c1_id: a.id, c2_id: b.id };
@@ -204,7 +204,7 @@ function toPrimitives(sketch: SketchFeature, start: Start, pinned: ReadonlySet<I
         const b = byId.get(c.b);
         if (a?.type === 'line' && b?.type === 'line') add(id, [{ id, type: 'equal_length', l1_id: a.id, l2_id: b.id }]);
         else if ((a?.type === 'circle' || a?.type === 'arc') && (b?.type === 'circle' || b?.type === 'arc')) add(id, [equalRadius(a, b, id)]);
-        else throw new MappingError('相等只適用於兩條直線或兩個圓/圓弧');
+        else throw new MappingError(t('rules.equalKinds'));
         break;
       }
       case 'intersection': {
@@ -382,7 +382,7 @@ export class PlaneGcsSolver implements SketchSolver {
       dof,
       conflicting,
       redundant,
-      ...(ok ? {} : { message: '草圖無法求解' }),
+      ...(ok ? {} : { message: t('regen.sketchUnsolved') }),
     };
     if (options.analyze) result.entityStatus = this.analyze(sketch, result, ok);
     return result;

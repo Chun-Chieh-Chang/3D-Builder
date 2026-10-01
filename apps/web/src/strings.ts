@@ -24,12 +24,17 @@ export const FEATURE_LABEL: Record<FeatureType, string> = labelsOf({
   fillet: 'feature.fillet',
   chamfer: 'feature.chamfer',
   refPlane: 'feature.refPlane',
+  refAxis: 'feature.refAxis',
+  refPoint: 'feature.refPoint',
+  coordSys: 'feature.coordSys',
   importedBody: 'feature.importedBody',
   deleteFace: 'feature.deleteFace',
   shell: 'feature.shell',
   sweep: 'feature.sweep',
   loft: 'feature.loft',
   rib: 'feature.rib',
+  pattern: 'feature.pattern',
+  mirror: 'feature.mirror',
   hole: 'feature.hole',
   draft: 'feature.draftFeature',
   moveFace: 'feature.moveFace',
@@ -38,6 +43,7 @@ export const FEATURE_LABEL: Record<FeatureType, string> = labelsOf({
 
 /** SolidWorks names cuts after what they cut with: 「除料-伸長」, 「除料-旋轉」. */
 export function featureLabel(f: Feature): string {
+  if (f.type === 'pattern') return t(f.def.mode === 'linear' ? 'feature.linearPattern' : 'feature.circularPattern');
   return (f.type === 'extrude' || f.type === 'revolve' || f.type === 'sweep' || f.type === 'loft') && f.op === 'cut' ? t('feature.cut', { name: FEATURE_LABEL[f.type] }) : FEATURE_LABEL[f.type];
 }
 
@@ -122,6 +128,23 @@ export const PLANE_MODE_LABEL = labelsOf({
   offset: 'planeMode.offset',
   angle: 'planeMode.angle',
   threePoint: 'planeMode.threePoint',
+  parallel: 'planeMode.parallel',
+  perpendicular: 'planeMode.perpendicular',
+  midplane: 'planeMode.midplane',
+  tangent: 'planeMode.tangent',
+});
+
+/** How a reference axis (C3.3) and a reference point (C3.5) are defined. */
+export const AXIS_MODE_LABEL = labelsOf({
+  edge: 'axisMode.edge',
+  twoPoints: 'axisMode.twoPoints',
+  cylinder: 'axisMode.cylinder',
+  planes: 'axisMode.planes',
+});
+export const POINT_MODE_LABEL = labelsOf({
+  coords: 'pointMode.coords',
+  center: 'pointMode.center',
+  axisPlane: 'pointMode.axisPlane',
 });
 
 export const DATUM_ITEMS = [

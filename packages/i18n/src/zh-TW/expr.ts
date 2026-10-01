@@ -1,5 +1,6 @@
 /** Messages of the expression language (B5.2, B5.3): why an expression cannot be evaluated. */
 export const expr = {
+  'expr.countHasUnit': '數量是沒有單位的整數，不能寫成長度或角度',
   'expr.syntax': '運算式有誤：第 {pos} 個字元附近（「{near}」）',
   'expr.incomplete': '運算式不完整：「{expr}」',
   'expr.unknownVariable': '找不到變數「{name}」',

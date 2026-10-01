@@ -1,7 +1,7 @@
 import { t } from '@3db/i18n';
 import type { Id } from './ids';
 import { evalAngle, evalLength, evalQuantity, ExprError, parseExpr, referencesOf, rewriteRefs, type Env, type NameRef, type Quantity } from './expr';
-import type { Draft, Expr, Feature, PartDoc, SketchConstraint, SketchFeature, Thin, Variable } from './schema';
+import type { Draft, Expr, Feature, PartDoc, PatternDirection, SketchConstraint, SketchFeature, Thin, Variable } from './schema';
 import { isDimension } from './schema';
 
 /**
@@ -12,10 +12,11 @@ import { isDimension } from './schema';
  * Nothing here is stored: the document holds the expressions only.
  */
 
-export type ExprKind = 'length' | 'angle';
+/** What a value is: a length, an angle, or a count (a whole number without a unit: how many instances). */
+export type ExprKind = 'length' | 'angle' | 'count';
 
 /** What a value must be for the feature to make sense: a size above zero, or an angle in the range its feature allows. */
-export type ExprRole = 'positive' | 'nonZero' | 'revolveAngle' | 'chamferAngle' | 'draftAngle' | 'includedAngle' | 'planeAngle' | 'any';
+export type ExprRole = 'positive' | 'nonZero' | 'revolveAngle' | 'chamferAngle' | 'draftAngle' | 'includedAngle' | 'planeAngle' | 'count' | 'any';
 
 /** Why a value is not acceptable for its role (in words), or null. `expr` is what the user wrote. */
 export function roleProblem(v: number, role: ExprRole, expr: Expr): string | null {
@@ -35,10 +36,15 @@ export function roleProblem(v: number, role: ExprRole, expr: Expr): string | nul
       return angle(0, Math.PI - 1e-9, t('cmd.includedAngleRange'));
     case 'planeAngle':
       return angle(-1e-12, 2 * Math.PI, t('cmd.planeAngleRange'));
+    case 'count':
+      return Number.isInteger(Math.round(v)) && Math.abs(v - Math.round(v)) < 1e-9 && v >= 2 && v <= MAX_INSTANCES ? null : t('cmd.countRange', { max: MAX_INSTANCES, value: expr });
     case 'any':
       return null;
   }
 }
+
+/** The most instances one direction of a pattern may have: a mistyped 1000 should say so rather than take minutes. */
+export const MAX_INSTANCES = 200;
 
 /** The kind of value a dimension holds. */
 const dimensionKind = (c: SketchConstraint): ExprKind => (c.type === 'angle' ? 'angle' : 'length');
@@ -124,6 +130,12 @@ export function mapExprs(feature: Feature, fn: (expr: Expr, kind: ExprKind, role
       }
       return feature;
     }
+    case 'refPoint': {
+      const d = feature.def;
+      if (d.mode !== 'coords') return feature;
+      const [x, y, z] = [fn(d.x, 'length', 'any'), fn(d.y, 'length', 'any'), fn(d.z, 'length', 'any')];
+      return x === d.x && y === d.y && z === d.z ? feature : { ...feature, def: { ...d, x, y, z } };
+    }
     case 'hole': {
       const f = feature;
       const one = (v: string | undefined, kind: ExprKind, role: ExprRole): string | undefined => (v === undefined ? v : fn(v, kind, role));
@@ -136,6 +148,22 @@ export function mapExprs(feature: Feature, fn: (expr: Expr, kind: ExprKind, role
       const same = diameter === f.diameter && JSON.stringify(end) === JSON.stringify(f.end) && cbDiameter === f.cbDiameter && cbDepth === f.cbDepth && csDiameter === f.csDiameter && csAngle === f.csAngle;
       if (same) return feature;
       return { ...f, diameter, end, ...(cbDiameter === undefined ? {} : { cbDiameter }), ...(cbDepth === undefined ? {} : { cbDepth }), ...(csDiameter === undefined ? {} : { csDiameter }), ...(csAngle === undefined ? {} : { csAngle }) };
+    }
+    case 'pattern': {
+      const d = feature.def;
+      const direction = (x: PatternDirection): PatternDirection => {
+        const spacing = fn(x.spacing, 'length', 'positive');
+        const count = fn(x.count, 'count', 'count');
+        return spacing === x.spacing && count === x.count ? x : { ...x, spacing, count };
+      };
+      if (d.mode === 'linear') {
+        const dir1 = direction(d.dir1);
+        const dir2 = d.dir2 ? direction(d.dir2) : undefined;
+        return dir1 === d.dir1 && dir2 === d.dir2 ? feature : { ...feature, def: { ...d, dir1, ...(dir2 ? { dir2 } : {}) } };
+      }
+      const count = fn(d.count, 'count', 'count');
+      const angle = fn(d.angle, 'angle', 'revolveAngle');
+      return count === d.count && angle === d.angle ? feature : { ...feature, def: { ...d, count, angle } };
     }
     case 'rib': {
       const thickness = fn(feature.thickness, 'length', 'positive');
@@ -162,6 +190,9 @@ export function mapExprs(feature: Feature, fn: (expr: Expr, kind: ExprKind, role
     case 'sweep':
     case 'loft':
     case 'combine':
+    case 'refAxis':
+    case 'coordSys':
+    case 'mirror':
       return feature;
   }
 }
@@ -188,6 +219,13 @@ type Result = { ok: true; q: Quantity } | { ok: false; error: ExprError };
 
 /** A number in the internal units, written so `evalLength` / `evalAngle` read back exactly the same value. */
 const literal = (v: number, kind: ExprKind): Expr => (kind === 'angle' ? `${v}rad` : `${v}`);
+
+/** A count: a number without a unit. */
+function evalCount(expr: Expr, env: Env): number {
+  const q = evalQuantity(expr, env);
+  if (q.L !== 0 || q.A !== 0) throw new ExprError(expr, t('expr.countHasUnit'));
+  return q.v;
+}
 
 /** Finds and evaluates the variables and sketch dimensions of a document, on demand and once each. */
 export class Parameters implements Env {
@@ -254,7 +292,7 @@ export class Parameters implements Env {
     this.owners.push(owner);
     this.labels.set(key, label);
     try {
-      const q = kind === 'length' ? { v: evalLength(expr, this), L: 1, A: 0 } : kind === 'angle' ? { v: evalAngle(expr, this), L: 0, A: 1 } : evalQuantity(expr, this);
+      const q = kind === 'length' ? { v: evalLength(expr, this), L: 1, A: 0 } : kind === 'angle' ? { v: evalAngle(expr, this), L: 0, A: 1 } : kind === 'count' ? { v: evalCount(expr, this), L: 0, A: 0 } : evalQuantity(expr, this);
       this.memo.set(key, { ok: true, q });
       return q;
     } catch (e) {
@@ -276,7 +314,7 @@ export class Parameters implements Env {
 
   /** The value of an expression in this document, in the internal units; throws `ExprError`. */
   evaluate(expr: Expr, kind: ExprKind): number {
-    return kind === 'length' ? evalLength(expr, this) : evalAngle(expr, this);
+    return kind === 'length' ? evalLength(expr, this) : kind === 'angle' ? evalAngle(expr, this) : evalCount(expr, this);
   }
 
   /** The value of a variable, or the reason it has none. */

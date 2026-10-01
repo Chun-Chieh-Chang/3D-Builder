@@ -38,7 +38,7 @@ function count(text) {
 }
 
 const roots = [join(root, 'apps', 'web', 'src'), ...readdirSync(join(root, 'packages')).map((p) => join(root, 'packages', p, 'src'))];
-const catalog = join(root, 'packages', 'i18n', 'src', 'zh-TW');
+const catalogs = ['zh-TW', 'en'].map((name) => join(root, 'packages', 'i18n', 'src', name));
 const current = {};
 for (const dir of roots) {
   let listed;
@@ -48,7 +48,7 @@ for (const dir of roots) {
     continue; // a package without src
   }
   for (const file of listed) {
-    if (file.startsWith(catalog + sep)) continue;
+    if (catalogs.some((dir) => file.startsWith(dir + sep))) continue;
     const n = count(readFileSync(file, 'utf8'));
     if (n > 0) current[relative(root, file).split(sep).join('/')] = n;
   }

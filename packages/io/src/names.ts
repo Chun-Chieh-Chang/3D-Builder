@@ -36,3 +36,11 @@ export const safeFileName = (name: string) => name.replace(/[\\/:*?"<>|]+/g, '_'
 export function stepFileName(name: string): string {
   return `${safeFileName(name)}.step`;
 }
+
+export function stlFileName(name: string): string {
+  return `${safeFileName(name)}.stl`;
+}
+
+export function imageFileName(name: string): string {
+  return `${safeFileName(name)}.png`;
+}

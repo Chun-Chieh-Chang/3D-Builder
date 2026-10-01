@@ -1,6 +1,6 @@
 import type { ReactElement } from 'react';
 
-type IconName = 'part' | 'assembly' | 'mates' | 'origin' | 'plane' | 'refPlane' | 'sketch' | 'extrude' | 'revolve' | 'sweep' | 'loft' | 'rib' | 'fillet' | 'chamfer' | 'importedBody' | 'deleteFace' | 'moveFace' | 'shell' | 'draft' | 'hole' | 'combine' | 'body' | 'error' | 'warning' | 'ok' | 'cancel' | 'eye' | 'eyeOff';
+type IconName = 'part' | 'assembly' | 'mates' | 'origin' | 'plane' | 'refPlane' | 'refAxis' | 'refPoint' | 'coordSys' | 'sketch' | 'extrude' | 'revolve' | 'sweep' | 'loft' | 'rib' | 'pattern' | 'mirror' | 'fillet' | 'chamfer' | 'importedBody' | 'deleteFace' | 'moveFace' | 'shell' | 'draft' | 'hole' | 'combine' | 'body' | 'error' | 'warning' | 'ok' | 'cancel' | 'eye' | 'eyeOff';
 
 /** Default planes and reference planes share one icon, as in SolidWorks. */
 const PLANE = <path d="M4 4h10l-2 8H2z" />;
@@ -12,6 +12,9 @@ const PATHS: Record<IconName, ReactElement> = {
   origin: <path d="M8 2v12 M2 8h12 M8 8m-2.5 0a2.5 2.5 0 1 0 5 0a2.5 2.5 0 1 0-5 0" />,
   plane: PLANE,
   refPlane: PLANE,
+  refAxis: <path d="M2 14L14 2 M10 2h4v4" />,
+  refPoint: <path d="M8 8m-2 0a2 2 0 1 0 4 0a2 2 0 1 0-4 0 M8 2v3 M8 11v3 M2 8h3 M11 8h3" />,
+  coordSys: <path d="M4 12V3 M4 12h9 M4 12l5-4 M3 5l1-2 1 2 M11 11l2 1-2 1" />,
   sketch: <path d="M2 14l3-1 8-8-2-2-8 8z M10 4l2 2" />,
   extrude: <path d="M3 6h7v7H3z M3 6l3-3h7L10 6 M13 3v7l-3 3" />,
   revolve: <path d="M8 1.5v13 M3 6a5 2.5 0 1 0 10 0 M11.5 3.2l1.5 2.8-3 0.4" />,
@@ -23,6 +26,8 @@ const PATHS: Record<IconName, ReactElement> = {
   draft: <path d="M4 14L2 3h12l-2 11z M2 8h12" />,
   sweep: <path d="M2 13c4 0 4-9 8-9h4 M2 11c4 0 4-9 8-9 M2 15c4 0 4-9 8-9" />,
   loft: <path d="M3 13h10l-2-4H5z M5 9h6l-1.5-4h-3z M6.5 5h3l-.5-3h-2z" />,
+  mirror: <path d="M8 2v12 M5.5 5L2 11h3.5z M10.5 5L14 11h-3.5z" />,
+  pattern: <path d="M2 9h3v4H2z M6.5 9h3v4h-3z M11 9h3v4h-3z M3.5 6V3 M8 6V3 M12.5 6V3" />,
   rib: <path d="M2 13h12 M8 13V3 M8 3h0 M5 13l3-5 3 5" />,
   hole: <path d="M2 4h12v8H2z M6 4v4h4V4 M8 8v4" />,
   shell: <path d="M2 5l6-3 6 3v6l-6 3-6-3z M5 6.5l3-1.5 3 1.5v3l-3 1.5-3-1.5z" />,

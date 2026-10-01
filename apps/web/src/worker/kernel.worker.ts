@@ -3,14 +3,14 @@ import * as Comlink from 'comlink';
 import { setLocale as setWorkerLocale, t } from '@3db/i18n';
 import occtWasm from 'libcascade/single/wasm?url';
 import gcsWasm from '@salusoft89/planegcs/dist/planegcs_dist/planegcs.wasm?url';
-import { bodyKey, isShown, type AssemblyDoc, type Id, type PartDoc } from '@3db/model';
+import { bodyKey, isShown, MESH_QUALITY, settingsOf, type AssemblyDoc, type Id, type PartDoc } from '@3db/model';
 import { findProfiles, PlaneGcsSolver } from '@3db/sketch';
-import { COMPONENT_MESH, Kernel, type MassProps, type MeshData, type ShapeId } from '@3db/kernel';
-import { convertEdges, edgeMateGeometry, faceEdges, faceMateGeometry, followReferences, ReferenceProblem, Regenerator, solveAssembly, type AssemblyResult, type AssemblySolveOptions, type BodyInfo, type RebuildResult } from '@3db/regen';
+import { COMPONENT_MESH, Kernel, type MassProps, type MeshData, type MeshOptions, type ShapeId } from '@3db/kernel';
+import { convertEdges, edgeMateGeometry, exportFaces, faceColors, intoFrame, faceEdges, faceMateGeometry, followReferences, ReferenceProblem, Regenerator, solveAssembly, type AssemblyResult, type AssemblySolveOptions, type BodyInfo, type RebuildResult } from '@3db/regen';
 import { edgeFingerprint, faceFingerprint, vertexFingerprint } from '@3db/naming';
-import { exportAssemblyStep, exportPartStep, readComponentFile } from '@3db/io';
+import { binaryStl, exportAssemblyStep, exportPartStep, readComponentFile } from '@3db/io';
 import { mergeMeshes } from './mergeMesh';
-import type { AssemblyStepRequest, ConvertPayload, ConvertRequest, KernelApi, PartBuildPayload, PartStage, RebuildPayload, RebuildRequest, SketchSolvePayload, SketchSolveRequest } from './protocol';
+import type { AssemblyStepRequest, ConvertPayload, PartExportOptions, ConvertRequest, KernelApi, PartBuildPayload, PartStage, RebuildPayload, RebuildRequest, SketchSolvePayload, SketchSolveRequest } from './protocol';
 
 let kernel: Kernel;
 let solver: PlaneGcsSolver;
@@ -38,7 +38,7 @@ async function build(bytes: Uint8Array): Promise<BuiltPart> {
   const regen = new Regenerator(kernel, solver, file.blobs);
   const result = regen.rebuild(file.doc);
   const name = (id: string) => file.doc.features.find((f) => f.id === id)?.name ?? id;
-  const failed = result.features.filter((f) => f.status === 'error').map((f) => `${name(f.id)}：${f.message ?? '失敗'}`);
+  const failed = result.features.filter((f) => f.status === 'error').map((f) => `${name(f.id)}: ${f.message ?? t('worker.failedShort')}`);
   const planes = file.doc.features.flatMap((f) => {
     const frame = f.type === 'refPlane' ? result.frames.get(f.id) : undefined;
     return frame ? [{ id: f.id, name: f.name, frame }] : [];
@@ -50,11 +50,11 @@ async function build(bytes: Uint8Array): Promise<BuiltPart> {
  * What is drawn of the bodies (D4.6): the whole view when every body is shown, else each shown body meshed on its own and put together,
  * so that a hidden body has no triangles to see or pick. Faces and edges keep their numbers in the names either way.
  */
-function meshOf(r: RebuildResult, shown: boolean[]): MeshData | null {
+function meshOf(r: RebuildResult, shown: boolean[], quality: MeshOptions = {}): MeshData | null {
   const body = r.body;
   if (!body) return null;
-  if (shown.every(Boolean)) return kernel.mesh(body.shape);
-  const parts = r.bodies.flatMap((b: BodyInfo, i) => (shown[i] ? [{ mesh: kernel.mesh(b.shape), face0: b.face0, edge0: b.edge0 }] : []));
+  if (shown.every(Boolean)) return kernel.mesh(body.shape, quality);
+  const parts = r.bodies.flatMap((b: BodyInfo, i) => (shown[i] ? [{ mesh: kernel.mesh(b.shape, quality), face0: b.face0, edge0: b.edge0 }] : []));
   return parts.length > 0 ? mergeMeshes(parts) : null;
 }
 
@@ -66,6 +66,22 @@ function massOf(r: RebuildResult): MassProps | null {
   const volume = own.reduce((n, m) => n + m.volume, 0);
   const centre = (k: number) => (volume > 0 ? own.reduce((n, m) => n + m.center[k]! * m.volume, 0) / volume : 0);
   return { volume, area: own.reduce((n, m) => n + m.area, 0), center: [centre(0), centre(1), centre(2)] };
+}
+
+/** The bodies of the result that go into a file, and the color of each of their faces: a reference body is a design aid, not part of the part (C7.1). */
+function ownBodies(doc: PartDoc, r: RebuildResult) {
+  if (!r.body) throw new Error(t('worker.noBodyExport'));
+  const own = exportFaces(doc, r);
+  if (own.shapes.length === 0) throw new Error(t('body.exportNone'));
+  return own;
+}
+
+/** The motion that writes the part in the coordinate system chosen (C3.4), or nothing. */
+function placing(r: RebuildResult, options: PartExportOptions): { place?: number[] } {
+  if (!options.coordSys) return {};
+  const system = r.systems.get(options.coordSys);
+  if (!system) throw new Error(t('export.coordSysMissing'));
+  return { place: intoFrame(system) };
 }
 
 /** The sketch solver loads first and on its own: sketching does not wait for the 43 MB geometry kernel. */
@@ -110,7 +126,7 @@ const api: KernelApi = {
     const body = r.body;
     lastModel = body ? { names: body.names, topology: body.topology, frames: r.frames } : null;
     const shown = r.bodies.map((b) => isShown(doc, bodyKey(b.id)));
-    const mesh = meshOf(r, shown);
+    const mesh = meshOf(r, shown, MESH_QUALITY[settingsOf(doc).meshQuality]);
     const payload: RebuildPayload = {
       seq,
       features: r.features,
@@ -123,7 +139,11 @@ const api: KernelApi = {
       vertexNames: body?.names.vertices ?? [],
       vertexPoints: Float32Array.from(body?.topology.vertices.flatMap((v) => v.point) ?? []),
       vertexFingerprints: body ? body.topology.vertices.map((_, i) => vertexFingerprint(body.topology, i)) : [],
+      faceColors: faceColors(doc, r),
       frames: r.frames,
+      axes: r.axes,
+      points: r.points,
+      systems: r.systems,
       sketchGeometry: new Map([...r.sketches].map(([id, s]) => [id, s.solved.geometry])),
       mass: massOf(r),
       totalMs: r.totalMs,
@@ -164,19 +184,30 @@ const api: KernelApi = {
     }
   },
 
-  async exportStep(doc: PartDoc, name: string): Promise<string> {
+  async exportStep(doc: PartDoc, name: string, options: PartExportOptions = {}): Promise<string> {
     await api.init();
     const r = regen.rebuild(doc);
-    if (!r.body) throw new Error('沒有可輸出的本體');
-    // a reference body is a design aid, not part of the part (C7.1)
-    const own = r.bodies.filter((b) => !b.reference);
-    if (own.length === 0) throw new Error(t('body.exportNone'));
-    if (own.length === r.bodies.length) return exportPartStep(kernel, r.body.shape, name);
-    const joined = kernel.join(own.map((b) => b.shape));
+    const { shapes, colors } = ownBodies(doc, r);
+    return exportPartStep(kernel, shapes, name, {
+      schema: options.schema ?? 'AP214',
+      ...(options.colors === false ? {} : { faceColors: colors }),
+      ...placing(r, options),
+    });
+  },
+
+  async exportStl(doc: PartDoc, name: string, options: PartExportOptions = {}): Promise<Uint8Array> {
+    await api.init();
+    const r = regen.rebuild(doc);
+    const { shapes } = ownBodies(doc, r);
+    const joined = shapes.length === 1 ? shapes[0]! : kernel.join(shapes);
+    const place = placing(r, options).place;
+    const moved = place ? kernel.transformed(joined, place) : joined;
     try {
-      return exportPartStep(kernel, joined, name);
+      const mesh = kernel.mesh(moved, MESH_QUALITY[settingsOf(doc).meshQuality]);
+      return binaryStl([mesh], name);
     } finally {
-      kernel.release(joined);
+      if (moved !== joined) kernel.release(moved);
+      if (joined !== shapes[0]) kernel.release(joined);
     }
   },
 
@@ -239,7 +270,7 @@ const api: KernelApi = {
     const shapes: { shape: ShapeId; name: string }[] = [];
     for (const u of used) {
       const body = (await parts.get(u.key)?.catch(() => null))?.result.body;
-      if (!body) throw new Error(`零件「${u.name}」沒有可輸出的本體`);
+      if (!body) throw new Error(t('worker.noBodyForPart', { name: u.name }));
       shapes.push({ shape: body.shape, name: u.name });
     }
     return exportAssemblyStep(kernel, name, shapes, instances);

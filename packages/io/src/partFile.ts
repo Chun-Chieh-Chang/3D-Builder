@@ -1,3 +1,4 @@
+import { t } from '@3db/i18n';
 import { parsePart, serializePart, type BlobRef, type PartDoc } from '@3db/model';
 import { DOCUMENT_ENTRY, documentEntry, documentText, isZip, zipEntries } from './container';
 import { safeFileName } from './names';
@@ -14,7 +15,6 @@ import { writeZip, type ZipEntry } from './zip';
  */
 export const PART_FILE_EXTENSION = '.3dbx';
 
-const WHAT = '零件檔';
 const BLOB_EXTENSION: Record<BlobRef['kind'], string> = { step: 'step' };
 const blobPath = (b: BlobRef) => `blobs/${b.sha256}.${BLOB_EXTENSION[b.kind]}`;
 
@@ -45,7 +45,7 @@ export async function writePartFile(doc: PartDoc, blobs: ReadonlyMap<string, Uin
 
 /** The bare document text older versions saved (B9.2: old files keep opening). */
 export function readOldPartFile(bytes: Uint8Array): PartFile {
-  return { doc: parsePart(documentText(bytes, WHAT, '（既不是 .3dbx，也不是文件文字）')), blobs: new Map(), format: 'json', warnings: [] };
+  return { doc: parsePart(documentText(bytes, t('file.kindPart'), t('file.notDocText'))), blobs: new Map(), format: 'json', warnings: [] };
 }
 
 /** Opens a `.3dbx` file, or the bare document text older versions saved. */
@@ -55,7 +55,7 @@ export async function readPartFile(bytes: Uint8Array): Promise<PartFile> {
 
 /** The part in an opened `.3dbx` archive, with the data it imports. */
 export async function partFromEntries(files: ReadonlyMap<string, Uint8Array>): Promise<PartFile> {
-  const doc = parsePart(documentEntry(files, WHAT));
+  const doc = parsePart(documentEntry(files, t('file.kindPart')));
   const blobs = new Map<string, Uint8Array>();
   const warnings: string[] = [];
   const seen = new Set<string>();
@@ -63,8 +63,8 @@ export async function partFromEntries(files: ReadonlyMap<string, Uint8Array>): P
     if (seen.has(b.sha256)) continue; // equal imports share one entry
     seen.add(b.sha256);
     const data = files.get(blobPath(b));
-    if (!data) warnings.push(`檔案中缺少輸入的資料 ${b.id}（${blobPath(b)}）`);
-    else if ((await sha256Hex(data)) !== b.sha256) warnings.push(`輸入的資料 ${b.id} 與記錄的雜湊值不符，已略過`);
+    if (!data) warnings.push(t('part.blobMissing', { id: b.id, path: blobPath(b) }));
+    else if ((await sha256Hex(data)) !== b.sha256) warnings.push(t('part.blobHash', { id: b.id }));
     else blobs.set(b.sha256, data);
   }
   return { doc, blobs, format: '3dbx', warnings };

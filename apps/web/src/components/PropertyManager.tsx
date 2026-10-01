@@ -1,13 +1,16 @@
 import { useEffect, useState } from 'react';
-import { t } from '@3db/i18n';
+import { labelsOf, t } from '@3db/i18n';
 import {
+  canBeSeed,
   evalQuantity,
   findFeature,
   formatQuantity,
   isDimension,
   isNumber,
   isPlain,
+  MAX_INSTANCES,
   Parameters,
+  patternInstances,
   SKETCH_ORIGIN,
   type ChamferFeature,
   type CombineFeature,
@@ -23,13 +26,23 @@ import {
   type ExtrudeFeature,
   type FilletFeature,
   type Id,
+  type AxisDefinition,
+  type CoordSysFeature,
+  type Feature,
   type ImportedBodyFeature,
   type LoftFeature,
   type MoveFaceFeature,
+  type MirrorFeature,
   type PartDoc,
+  type PatternDefinition,
+  type PatternDirection,
+  type PatternFeature,
   type PlaneDefinition,
+  type PointDefinition,
   type Ref,
+  type RefAxisFeature,
   type RefPlaneFeature,
+  type RefPointFeature,
   type RevolveFeature,
   type RibFeature,
   type ShellFeature,
@@ -42,7 +55,8 @@ import type { RebuildPayload, SketchSolvePayload } from '../worker/protocol';
 import { applicableRelations, constraintsOf, dimensionText, measuredText, sameRelation } from '@3db/sketch/interact';
 import { nearestElement } from '../state/candidates';
 import { store, useSketcherView, useStore } from '../state/store';
-import { DATUM_ITEMS, DIMENSION_LABEL, FEATURE_LABEL, featureLabel, PLANE_MODE_LABEL, RELATION_LABEL, SKETCH_STATUS_LABEL, TOOL_LABEL } from '../strings';
+import { accepts, axisDefinitionFor, fill, filled, planeDefinitionFor, pointDefinitionFor, slotsOf } from '../state/datumSlots';
+import { AXIS_MODE_LABEL, DATUM_ITEMS, DIMENSION_LABEL, FEATURE_LABEL, featureLabel, PLANE_MODE_LABEL, POINT_MODE_LABEL, RELATION_LABEL, SKETCH_STATUS_LABEL, TOOL_LABEL } from '../strings';
 import { Icon } from './Icon';
 import type { ControllerView, SketchController, SketchFix } from '../sketcher/controller';
 import type { SketchIssue } from '@3db/sketch/check';
@@ -52,10 +66,11 @@ import type { ContourChoice } from '@3db/sketch/profiles';
  * What an expression comes to in this document, for showing next to the box (D2.4): the value when it is
  * more than a plain number, or the reason it is not one. Null for a plain number.
  */
-function preview(text: string, doc: PartDoc, angle: boolean): { value: string } | { error: string } | null {
+function preview(text: string, doc: PartDoc, angle: boolean, count = false): { value: string } | { error: string } | null {
   if (!text.trim() || isPlain(text)) return null;
   try {
     const q = evalQuantity(text, new Parameters(doc));
+    if (count) return isNumber(q) ? { value: String(Math.round(q.v * 1e6) / 1e6) } : { error: t('expr.countHasUnit') };
     return { value: formatQuantity(angle && isNumber(q) ? { v: (q.v * Math.PI) / 180, L: 0, A: 1 } : !angle && isNumber(q) ? { v: q.v, L: 1, A: 0 } : q) };
   } catch (e) {
     return { error: e instanceof Error ? e.message : String(e) };
@@ -70,7 +85,7 @@ function ValueInput({ value, toCommand, suffix = 'mm' }: { value: string; toComm
   const doc = useStore((s) => s.doc);
   const [text, setText] = useState(value);
   const [invalid, setInvalid] = useState(false);
-  const shown = preview(text, doc, suffix === '°');
+  const shown = preview(text, doc, suffix === '°', suffix === '');
   useEffect(() => {
     setText(value);
     setInvalid(false);
@@ -94,25 +109,25 @@ function ValueInput({ value, toCommand, suffix = 'mm' }: { value: string; toComm
           }
         }}
       />
-      <span className="suffix">{suffix}</span>
+      {suffix !== '' && <span className="suffix">{suffix}</span>}
       {shown && 'value' in shown && <span className="value-preview">= {shown.value}</span>}
     </span>
   );
 }
 
-const ENTITY_LABEL = { point: '點', line: '直線', circle: '圓', arc: '圓弧' } as const;
+const ENTITY_LABEL = labelsOf({ point: 'entity.point', line: 'entity.line', circle: 'entity.circle', arc: 'entity.arc' });
 
 function describe(f: SketchFeature, id: Id): string {
-  if (id === SKETCH_ORIGIN) return '原點';
+  if (id === SKETCH_ORIGIN) return t('datum.origin');
   const e = f.entities.find((x) => x.id === id);
-  if (e) return `${e.construction ? '幾何建構線 ' : ''}${ENTITY_LABEL[e.type]} ${id}`;
+  if (e) return `${e.construction ? `${t('entity.construction')} ` : ''}${ENTITY_LABEL[e.type]} ${id}`;
   const c = f.constraints.find((x) => x.id === id);
-  if (c) return isDimension(c) ? `${DIMENSION_LABEL[c.type] ?? '尺寸'} ${dimensionText(c)}` : `${RELATION_LABEL[c.type]} ${id}`;
+  if (c) return isDimension(c) ? `${DIMENSION_LABEL[c.type] ?? t('dimension.generic')} ${dimensionText(c)}` : `${RELATION_LABEL[c.type]} ${id}`;
   return id;
 }
 
 function relationText(f: SketchFeature, c: SketchConstraint, geometry?: SketchSolvePayload['geometry']): string {
-  if (isDimension(c)) return `${DIMENSION_LABEL[c.type] ?? '尺寸'} ${dimensionText(c, geometry && measuredText(c, geometry))}`;
+  if (isDimension(c)) return `${DIMENSION_LABEL[c.type] ?? t('dimension.generic')} ${dimensionText(c, geometry && measuredText(c, geometry))}`;
   return RELATION_LABEL[c.type];
 }
 
@@ -203,7 +218,7 @@ function DiagnosisBox({ f, solve, sketcher }: { f: SketchFeature; solve: SketchS
 function CheckBox({ f, view, sketcher }: { f: SketchFeature; view: ControllerView | null; sketcher: SketchController }) {
   const issues = sketcher.issues();
   const text = (i: SketchIssue): string => {
-    const ids = i.ids.join('、');
+    const ids = i.ids.join(t('cmd.listSeparator'));
     switch (i.kind) {
       case 'openEnd':
         return t('sketch.check.openEnd', { ids });
@@ -265,16 +280,16 @@ function SketchPanel({ f }: { f: SketchFeature }) {
   return (
     <>
       <section className="pm-group">
-        <h4>草圖狀態</h4>
+        <h4>{t('pm.sketchStatus')}</h4>
         {solve ? (
           <p className={`sketch-status ${solve.status}`}>
             {SKETCH_STATUS_LABEL[solve.status]}
-            {solve.status === 'under' && `（尚有 ${solve.dof} 個自由度）`}
+            {solve.status === 'under' && t('pm.dof', { n: solve.dof })}
           </p>
         ) : (
-          <p className="muted">求解中…</p>
+          <p className="muted">{t('pm.solving')}</p>
         )}
-        {conflicting.length > 0 && <p className="error-text">衝突：{conflicting.join('、')}</p>}
+        {conflicting.length > 0 && <p className="error-text">{t('pm.conflict', { ids: conflicting.join(t('cmd.listSeparator')) })}</p>}
       </section>
 
       {sketcher && solve && <DiagnosisBox f={f} solve={solve} sketcher={sketcher} />}
@@ -285,13 +300,13 @@ function SketchPanel({ f }: { f: SketchFeature }) {
           <h4>{TOOL_LABEL[view.tool]}</h4>
           <p className="hint">{view.hint}</p>
           {sketcher && <ToolOptionsBox view={view} sketcher={sketcher} />}
-          <p className="hint">Esc 結束工具。</p>
+          <p className="hint">{t('pm.escTool')}</p>
         </section>
       )}
 
       {sketcher && selection.length > 0 && (
         <section className="pm-group">
-          <h4>選取的項目</h4>
+          <h4>{t('pm.selectedItems')}</h4>
           <ul className="selection-box">
             {selection.map((id) => (
               <li key={id}>{describe(f, id)}</li>
@@ -299,12 +314,12 @@ function SketchPanel({ f }: { f: SketchFeature }) {
           </ul>
           {existing.length > 0 && (
             <>
-              <h4 className="sub">現有限制條件</h4>
+              <h4 className="sub">{t('pm.existingRelations')}</h4>
               <ul className="relation-list">
                 {existing.map((c) => (
                   <li key={c.id} className={solve?.conflicting.includes(c.id) ? 'over' : ''}>
                     <span>{relationText(f, c, solve?.geometry)}</span>
-                    <button title="刪除" onClick={() => store.execute({ type: 'removeSketchItems', featureId: f.id, ids: [c.id] })}>
+                    <button title={t('pm.delete')} onClick={() => store.execute({ type: 'removeSketchItems', featureId: f.id, ids: [c.id] })}>
                       <Icon name="cancel" />
                     </button>
                   </li>
@@ -314,7 +329,7 @@ function SketchPanel({ f }: { f: SketchFeature }) {
           )}
           {offered.length > 0 && (
             <>
-              <h4 className="sub">加入限制條件</h4>
+              <h4 className="sub">{t('pm.addRelations')}</h4>
               <div className="relation-buttons">
                 {offered.map((r) => (
                   <button key={r.type} onClick={() => void sketcher.addRelation(r)}>
@@ -338,19 +353,19 @@ function SketchPanel({ f }: { f: SketchFeature }) {
           {curves.length > 0 && (
             <label className="pm-row checkbox">
               <input type="checkbox" checked={curves.every((e) => e.construction)} onChange={(e) => sketcher.setConstruction(e.target.checked)} />
-              <span>作為幾何建構線</span>
+              <span>{t('pm.asConstruction')}</span>
             </label>
           )}
-          <p className="hint">Delete 刪除選取的項目。</p>
+          <p className="hint">{t('pm.deleteHint')}</p>
         </section>
       )}
 
       <section className="pm-group">
-        <h4>尺寸</h4>
-        {dims.length === 0 && <p className="muted">（用智慧型尺寸標註）</p>}
+        <h4>{t('pm.dimensions')}</h4>
+        {dims.length === 0 && <p className="muted">{t('pm.dimensionsHint')}</p>}
         {dims.map((c) => (
           <label key={c.id} className="pm-row">
-            <span>{c.label ?? `${DIMENSION_LABEL[c.type] ?? '尺寸'} ${c.id}`}</span>
+            <span>{c.label ?? `${DIMENSION_LABEL[c.type] ?? t('dimension.generic')} ${c.id}`}</span>
             {c.driving === false ? (
               <span className="muted" title={t('sketch.driven')}>
                 {dimensionText(c, solve ? measuredText(c, solve.geometry) : undefined)}
@@ -625,8 +640,8 @@ function ExtrudePanel({ f }: { f: ExtrudeFeature }) {
       <ThinBox f={f} />
       <section className="pm-group">
         <p className="hint">
-          輪廓：{findFeature(doc, f.sketch)?.name ?? f.sketch}
-          {f.op === 'cut' && '。除料預設往材料內部（與草圖法向相反）。'}
+          {t('pm.profile', { name: findFeature(doc, f.sketch)?.name ?? f.sketch })}
+          {f.op === 'cut' && ` ${t('pm.cutHint')}`}
         </p>
         <ContourBox f={f} />
         {f.op === 'boss' && <MergeBox f={f} />}
@@ -645,26 +660,26 @@ function RevolvePanel({ f }: { f: RevolveFeature }) {
   return (
     <>
       <section className="pm-group">
-        <h4>旋轉軸</h4>
+        <h4>{t('pm.revolve.axis')}</h4>
         <select value={f.axis} onChange={(e) => store.execute({ type: 'setRevolveAxis', featureId: f.id, axis: e.target.value })}>
           {lines.map((l) => (
             <option key={l.id} value={l.id}>
-              {l.construction ? '中心線' : '直線'} {l.id}
+              {l.construction ? t('tool.centerline') : t('entity.line')} {l.id}
             </option>
           ))}
         </select>
       </section>
       <section className="pm-group">
-        <h4>方向 1</h4>
+        <h4>{t('pattern.direction1')}</h4>
         <label className="pm-row">
-          <span>旋轉類型</span>
+          <span>{t('pm.revolve.type')}</span>
           <select value={d.type} onChange={(e) => set(e.target.value === 'midPlane' ? { type: 'midPlane', angle: d.angle } : { type: 'blind', angle: d.angle })}>
-            <option value="blind">給定深度</option>
-            <option value="midPlane">兩側對稱</option>
+            <option value="blind">{t('pm.end.blind')}</option>
+            <option value="midPlane">{t('pm.end.midPlane')}</option>
           </select>
         </label>
         <label className="pm-row">
-          <span>角度</span>
+          <span>{t('dimension.angle')}</span>
           <ValueInput
             value={d.angle}
             suffix="°"
@@ -674,10 +689,10 @@ function RevolvePanel({ f }: { f: RevolveFeature }) {
         {d.type === 'blind' && (
           <label className="pm-row checkbox">
             <input type="checkbox" checked={reverse} onChange={(e) => set({ type: 'blind', angle: d.angle, ...(e.target.checked ? { reverse: true } : {}) })} />
-            <span>反轉方向</span>
+            <span>{t('pm.reverseDirection')}</span>
           </label>
         )}
-        <p className="hint">輪廓：{sketch?.name ?? f.sketch}</p>
+        <p className="hint">{t('pm.profile', { name: sketch?.name ?? f.sketch })}</p>
         <ThinBox f={f} />
         <ContourBox f={f} />
         {f.op === 'boss' && <MergeBox f={f} />}
@@ -790,22 +805,22 @@ function EdgeList({ f }: { f: FilletFeature | ChamferFeature }) {
   const label = FEATURE_LABEL[f.type];
   return (
     <section className="pm-group">
-      <h4>要產生{label}的邊線</h4>
+      <h4>{t('pm.edges.heading', { label })}</h4>
       <ul className="selection-box">
-        {f.edges.length === 0 && <li className="muted">（在圖面中點選邊線）</li>}
+        {f.edges.length === 0 && <li className="muted">{t('pm.edges.empty')}</li>}
         {f.edges.map((e, i) => {
           const found = r?.edgeNames.includes(e.name);
           return (
             <li key={e.name} className={found ? '' : 'missing'} title={e.name}>
-              邊線 {i + 1}
-              {!found && '（遺失參考）'}
+              {t('pm.edges.item', { n: i + 1 })}
+              {!found && t('pm.lost')}
               <code>{e.name}</code>
               {!found && <UseNearest featureId={f.id} refr={e} />}
             </li>
           );
         })}
       </ul>
-      <p className="hint">編輯時顯示{label}之前的模型；點選邊線加入或移除。參考以持久名稱儲存，不使用索引。</p>
+      <p className="hint">{t('pm.edges.hint', { label })}</p>
     </section>
   );
 }
@@ -814,9 +829,9 @@ function FilletPanel({ f }: { f: FilletFeature }) {
   return (
     <>
       <section className="pm-group">
-        <h4>圓角參數</h4>
+        <h4>{t('pm.fillet.params')}</h4>
         <label className="pm-row">
-          <span>半徑</span>
+          <span>{t('dimension.radius')}</span>
           <ValueInput value={f.radius} toCommand={(value) => ({ type: 'setFilletRadius', featureId: f.id, value })} />
         </label>
       </section>
@@ -833,28 +848,28 @@ function ChamferPanel({ f }: { f: ChamferFeature }) {
   return (
     <>
       <section className="pm-group">
-        <h4>導角參數</h4>
+        <h4>{t('pm.chamfer.params')}</h4>
         <label className="pm-row">
-          <span>導角類型</span>
+          <span>{t('pm.chamfer.type')}</span>
           <select
             value={f.mode}
             onChange={(e) => store.execute(e.target.value === 'angleDistance' ? set({ mode: 'angleDistance', second: '45' }) : set({ mode: 'distanceDistance', second: f.distance }))}
           >
-            <option value="angleDistance">角度-距離</option>
-            <option value="distanceDistance">距離-距離</option>
+            <option value="angleDistance">{t('pm.chamfer.angleDistance')}</option>
+            <option value="distanceDistance">{t('pm.chamfer.distanceDistance')}</option>
           </select>
         </label>
         <label className="pm-row">
-          <span>{angled ? '距離' : '距離 1'}</span>
+          <span>{angled ? t('dimension.distance') : t('sketch.option.distance1')}</span>
           <ValueInput value={f.distance} toCommand={(distance) => set({ distance })} />
         </label>
         <label className="pm-row">
-          <span>{angled ? '角度' : '距離 2'}</span>
+          <span>{angled ? t('dimension.angle') : t('sketch.option.distance2')}</span>
           <ValueInput value={f.second} suffix={angled ? '°' : 'mm'} toCommand={(second) => set({ second })} />
         </label>
         <label className="pm-row checkbox">
           <input type="checkbox" checked={f.flip ?? false} onChange={(e) => store.execute(set({ flip: e.target.checked }))} />
-          <span>反轉方向</span>
+          <span>{t('pm.reverseDirection')}</span>
         </label>
       </section>
       <EdgeList f={f} />
@@ -868,8 +883,8 @@ function UseNearest({ featureId, refr }: { featureId: string; refr: Ref }) {
   const near = nearestElement(refr, result);
   if (!near) return null;
   return (
-    <button className="use-nearest" title={`幾何最接近的元素：${near.name}`} onClick={() => store.replaceRef(featureId, refr, near)}>
-      改用最接近的：<code>{near.name}</code>
+    <button className="use-nearest" title={t('pm.nearest.title', { name: near.name })} onClick={() => store.replaceRef(featureId, refr, near)}>
+      {t('pm.nearest.use')} <code>{near.name}</code>
     </button>
   );
 }
@@ -878,95 +893,384 @@ function UseNearest({ featureId, refr }: { featureId: string; refr: Ref }) {
  * One reference in a selection box: what it is, and whether the model on screen still has it. A
  * datum names a default plane or a reference plane feature; elements are shown by persistent name.
  */
-function RefItem({ label, refr, doc, result, featureId }: { label: string; refr: Ref; doc: PartDoc; result: RebuildPayload | null; featureId: string }) {
+function RefItem({ label, refr, doc, result, featureId, onClear }: { label: string; refr: Ref; doc: PartDoc; result: RebuildPayload | null; featureId: string; onClear?: () => void }) {
+  const clear = onClear && (
+    <button className="link" title={t('slot.clear')} onClick={onClear}>
+      ×
+    </button>
+  );
   if (refr.kind === 'datum') {
     const plane = DATUM_ITEMS.find((d) => d.id === refr.name)?.label ?? findFeature(doc, refr.name)?.name;
-    return <li className={plane ? '' : 'missing'}>{label}：{plane ?? `${refr.name}（遺失參考）`}</li>;
+    return (
+      <li className={plane ? '' : 'missing'}>
+        {label}: {plane ?? `${refr.name} ${t('pm.lost')}`}
+        {clear}
+      </li>
+    );
   }
   const names = refr.kind === 'face' ? result?.faceNames : refr.kind === 'edge' ? result?.edgeNames : result?.vertexNames;
   const found = !!names?.includes(refr.name);
   return (
     <li className={found ? '' : 'missing'} title={refr.name}>
       {label}
-      {!found && '（遺失參考）'}
+      {!found && t('pm.lost')}
       <code>{refr.name}</code>
       {!found && <UseNearest featureId={featureId} refr={refr} />}
+      {clear}
     </li>
   );
 }
 
-const FRONT: Ref = { kind: 'datum', name: 'plane:front' };
-
-/**
- * Reference plane (C3.2): offset from a plane, at an angle to a plane through a straight edge, or
- * through three vertices. References come from the graphics area and, for planes, from the tree.
- */
-function RefPlanePanel({ f }: { f: RefPlaneFeature }) {
+/** The selection boxes of reference geometry (C3.2–C3.5): what is in each, with a way to empty it, and a line saying what to click for the ones that are empty. */
+function SlotList({ f }: { f: Feature }) {
   const doc = useStore((s) => s.doc);
   const result = useStore((s) => s.result);
+  return (
+    <ul className="selection-box">
+      {slotsOf(f).flatMap((slot) => {
+        const refs = filled(slot);
+        const items = refs.map((r, i) => (
+          <RefItem key={`${slot.key}:${r.name}`} label={slot.list ? `${slot.label} ${i + 1}` : slot.label} refr={r} doc={doc} result={result} featureId={f.id} onClear={() => store.execute(fill(f, slot.key, refs.filter((_, k) => k !== i)))} />
+        ));
+        const open = slot.list ? refs.length < slot.list : refs.length === 0;
+        if (open) items.push(<li key={`${slot.key}:empty`} className="muted">{slot.optional ? t('slot.optionalEmpty', { what: slot.label }) : t('slot.empty', { what: slot.label })}</li>);
+        return items;
+      })}
+    </ul>
+  );
+}
+
+/**
+ * The default planes and the reference planes, axes and points made before this feature, that one of its boxes takes: the FeatureManager is
+ * hidden while a PropertyManager is open, so this is the flyout tree of SolidWorks. A click puts the datum in the first box that takes it.
+ */
+function DatumPicker({ f }: { f: Feature }) {
+  const doc = useStore((s) => s.doc);
+  const at = doc.features.findIndex((x) => x.id === f.id);
+  const slots = slotsOf(f);
+  const choices = [
+    ...DATUM_ITEMS.filter((d) => d.icon === 'plane').map((d) => ({ id: d.id as string, label: d.label, icon: 'plane' as const })),
+    ...doc.features.slice(0, Math.max(at, 0)).flatMap((x) => (x.type === 'refPlane' || x.type === 'refAxis' || x.type === 'refPoint' ? [{ id: x.id, label: x.name, icon: x.type }] : [])),
+  ].filter((c) => slots.some((s) => accepts(s.type, { kind: 'datum', name: c.id }, doc)));
+  if (choices.length === 0) return null;
+  return (
+    <div className="datum-picker">
+      {choices.map((c) => (
+        <button key={c.id} title={c.label} onClick={() => store.putDatumRef({ kind: 'datum', name: c.id })}>
+          <Icon name={c.icon} />
+          {c.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+/** The type of a reference geometry feature, as a drop-down list. */
+function ModeSelect({ heading, value, labels, onChange }: { heading: string; value: string; labels: Record<string, string>; onChange: (mode: string) => void }) {
+  return (
+    <section className="pm-group">
+      <h4>{heading}</h4>
+      <select value={value} onChange={(e) => onChange(e.target.value)}>
+        {Object.entries(labels).map(([mode, label]) => (
+          <option key={mode} value={mode}>
+            {label}
+          </option>
+        ))}
+      </select>
+    </section>
+  );
+}
+
+/**
+ * Reference plane (C3.2): offset from a plane, at an angle to a plane through a straight edge or axis, through three points, through a point parallel
+ * to a plane or square to an axis, halfway between two planes, or tangent to a cylinder. References come from the graphics area and, for planes, axes
+ * and points, from the tree.
+ */
+function RefPlanePanel({ f }: { f: RefPlaneFeature }) {
   const d = f.def;
   const set = (def: PlaneDefinition): Command => ({ type: 'setRefPlane', featureId: f.id, def });
-  const plane = d.mode === 'threePoint' ? FRONT : d.plane;
-  const modeChange = (mode: PlaneDefinition['mode']) =>
-    store.execute(
-      set(
-        mode === 'offset'
-          ? { mode, plane, distance: '10' }
-          : mode === 'angle'
-            ? { mode, plane, axis: { kind: 'edge', name: '' }, angle: '45' }
-            : { mode, points: [] },
-      ),
-    );
   const reverse = (on: boolean) => {
     const { reverse: _, ...rest } = d;
     store.execute(set((on ? { ...rest, reverse: true } : rest) as PlaneDefinition));
   };
   return (
     <>
+      <ModeSelect heading={t('pm.plane.type')} value={d.mode} labels={PLANE_MODE_LABEL} onChange={(mode) => store.execute(set(planeDefinitionFor(mode as PlaneDefinition['mode'], d)))} />
       <section className="pm-group">
-        <h4>基準面類型</h4>
-        <select value={d.mode} onChange={(e) => modeChange(e.target.value as PlaneDefinition['mode'])}>
-          {Object.entries(PLANE_MODE_LABEL).map(([mode, label]) => (
-            <option key={mode} value={mode}>
-              {label}
-            </option>
-          ))}
-        </select>
-      </section>
-      <section className="pm-group">
-        <h4>參考</h4>
-        <ul className="selection-box">
-          {d.mode !== 'threePoint' && <RefItem label="參考面" refr={d.plane} doc={doc} result={result} featureId={f.id} />}
-          {d.mode === 'angle' &&
-            (d.axis.name ? <RefItem label="旋轉軸" refr={d.axis} doc={doc} result={result} featureId={f.id} /> : <li className="muted">（在圖面中點選作為旋轉軸的直線邊線）</li>)}
-          {d.mode === 'threePoint' && d.points.length === 0 && <li className="muted">（在圖面中點選三個頂點）</li>}
-          {d.mode === 'threePoint' && d.points.map((p, i) => <RefItem key={p.name} label={`點 ${i + 1}`} refr={p} doc={doc} result={result} featureId={f.id} />)}
-        </ul>
+        <h4>{t('pm.refs')}</h4>
+        <SlotList f={f} />
+      <DatumPicker f={f} />
+        <DatumPicker f={f} />
         {d.mode === 'offset' && (
           <label className="pm-row">
-            <span>偏移距離</span>
+            <span>{t('pm.plane.offset')}</span>
             <ValueInput value={d.distance} toCommand={(distance) => set({ ...d, distance })} />
           </label>
         )}
         {d.mode === 'angle' && (
           <label className="pm-row">
-            <span>角度</span>
+            <span>{t('pm.plane.angle')}</span>
             <ValueInput value={d.angle} suffix="°" toCommand={(angle) => set({ ...d, angle })} />
           </label>
         )}
         <label className="pm-row checkbox">
           <input type="checkbox" checked={d.reverse ?? false} onChange={(e) => reverse(e.target.checked)} />
-          <span>反轉方向</span>
+          <span>{t('pm.plane.reverse')}</span>
         </label>
-        <p className="hint">
-          {d.mode === 'threePoint'
-            ? '再點一次已選的頂點可移除它。'
-            : d.mode === 'angle'
-              ? '角度 0° 時與參考面平行，90° 時垂直；參考面也可在設計樹中點選基準面。'
-              : '參考面也可在設計樹中點選基準面。'}
-        </p>
+        <p className="hint">{t(`pm.plane.hint.${d.mode}`)}</p>
       </section>
     </>
+  );
+}
+
+/** Reference axis (C3.3). */
+function RefAxisPanel({ f }: { f: RefAxisFeature }) {
+  const d = f.def;
+  return (
+    <>
+      <ModeSelect heading={t('pm.axis.type')} value={d.mode} labels={AXIS_MODE_LABEL} onChange={(mode) => store.execute({ type: 'setRefAxis', featureId: f.id, def: axisDefinitionFor(mode as AxisDefinition['mode']) })} />
+      <section className="pm-group">
+        <h4>{t('pm.refs')}</h4>
+        <SlotList f={f} />
+      <DatumPicker f={f} />
+        <DatumPicker f={f} />
+        <p className="hint">{t(`pm.axis.hint.${d.mode}`)}</p>
+      </section>
+    </>
+  );
+}
+
+/** Reference point (C3.5). */
+function RefPointPanel({ f }: { f: RefPointFeature }) {
+  const d = f.def;
+  const set = (def: PointDefinition): Command => ({ type: 'setRefPoint', featureId: f.id, def });
+  return (
+    <>
+      <ModeSelect heading={t('pm.point.type')} value={d.mode} labels={POINT_MODE_LABEL} onChange={(mode) => store.execute(set(pointDefinitionFor(mode as PointDefinition['mode'])))} />
+      <section className="pm-group">
+        <h4>{t('pm.refs')}</h4>
+        <SlotList f={f} />
+      <DatumPicker f={f} />
+        <DatumPicker f={f} />
+        {d.mode === 'coords' &&
+          (['x', 'y', 'z'] as const).map((axis) => (
+            <label key={axis} className="pm-row">
+              <span>{t(`pm.point.${axis}`)}</span>
+              <ValueInput value={d[axis]} toCommand={(value) => set({ ...d, [axis]: value })} />
+            </label>
+          ))}
+        <p className="hint">{t(`pm.point.hint.${d.mode}`)}</p>
+      </section>
+    </>
+  );
+}
+
+/** Pattern (C6.1, C6.2): the seeds, the direction(s) or the axis, how many and how far apart, and the instances to leave out. */
+function PatternPanel({ f }: { f: PatternFeature }) {
+  const doc = useStore((s) => s.doc);
+  const d = f.def;
+  const at = doc.features.findIndex((x) => x.id === f.id);
+  const candidates = doc.features.slice(0, Math.max(at, 0)).filter(canBeSeed);
+  const cmd = (patch: { seeds?: Id[]; def?: PatternDefinition; skip?: string[] }): Command => {
+    const skip = patch.skip ?? f.skip;
+    return { type: 'setPattern', featureId: f.id, seeds: patch.seeds ?? f.seeds, def: patch.def ?? f.def, ...(skip && skip.length > 0 ? { skip } : {}) };
+  };
+  const toggleSeed = (id: Id, on: boolean) => store.execute(cmd({ seeds: on ? [...f.seeds, id] : f.seeds.filter((x) => x !== id) }));
+  // the instances there are, by label, for the list of those to skip
+  const counts = (() => {
+    try {
+      const p = new Parameters(doc);
+      return d.mode === 'linear' ? [p.evaluate(d.dir1.count, 'count'), d.dir2 ? p.evaluate(d.dir2.count, 'count') : null] : [p.evaluate(d.count, 'count'), null];
+    } catch {
+      return null;
+    }
+  })();
+  const labels = counts && counts[0]! >= 2 && counts[0]! <= MAX_INSTANCES && (counts[1] === null || (counts[1]! >= 2 && counts[1]! <= MAX_INSTANCES)) ? patternInstances(Math.round(counts[0]!), counts[1] === null ? null : Math.round(counts[1]!)) : [];
+  const skipped = new Set(f.skip ?? []);
+  const direction = (title: string, key: 'dir1' | 'dir2', x: PatternDirection) => {
+    const set = (patch: Partial<PatternDirection>): Command => cmd({ def: { ...(d as Extract<PatternDefinition, { mode: 'linear' }>), [key]: { ...x, ...patch } } });
+    return (
+      <div key={key}>
+        <h4>{title}</h4>
+        <label className="pm-row">
+          <span>{t('pm.pattern.spacing')}</span>
+          <ValueInput value={x.spacing} toCommand={(spacing) => set({ spacing })} />
+        </label>
+        <label className="pm-row">
+          <span>{t('pm.pattern.count')}</span>
+          <ValueInput value={x.count} suffix="" toCommand={(count) => set({ count })} />
+        </label>
+        <label className="pm-row checkbox">
+          <input type="checkbox" checked={x.reverse ?? false} onChange={(e) => store.execute(set({ reverse: e.target.checked ? true : undefined }))} />
+          <span>{t('pm.pattern.reverse')}</span>
+        </label>
+      </div>
+    );
+  };
+  return (
+    <>
+      <section className="pm-group">
+        <h4>{t('pm.pattern.seeds')}</h4>
+        <ul className="selection-box">
+          {candidates.length === 0 && <li className="muted">{t('pm.pattern.noSeeds')}</li>}
+          {candidates.map((c) => (
+            <li key={c.id}>
+              <label className="pm-row checkbox">
+                <input type="checkbox" checked={f.seeds.includes(c.id)} onChange={(e) => toggleSeed(c.id, e.target.checked)} />
+                <span>{c.name}</span>
+              </label>
+            </li>
+          ))}
+        </ul>
+        <p className="hint">{t('pm.pattern.seedsHint')}</p>
+      </section>
+      <section className="pm-group">
+        <h4>{d.mode === 'linear' ? t('pm.pattern.directions') : t('pm.pattern.axis')}</h4>
+        <SlotList f={f} />
+        <DatumPicker f={f} />
+        {d.mode === 'linear' ? (
+          <>
+            {direction(t('pm.pattern.dir1'), 'dir1', d.dir1)}
+            {d.dir2 ? (
+              <>
+                {direction(t('pm.pattern.dir2'), 'dir2', d.dir2)}
+                <button onClick={() => store.execute(cmd({ def: { mode: 'linear', dir1: d.dir1 }, skip: [] }))}>{t('pm.pattern.removeDir2')}</button>
+              </>
+            ) : (
+              <button onClick={() => store.execute(cmd({ def: { ...d, dir2: { ref: { kind: 'datum', name: 'plane:top' }, spacing: '10', count: '2' } }, skip: [] }))}>{t('pm.pattern.addDir2')}</button>
+            )}
+          </>
+        ) : (
+          <>
+            <label className="pm-row">
+              <span>{t('pm.pattern.count')}</span>
+              <ValueInput value={d.count} suffix="" toCommand={(count) => cmd({ def: { ...d, count } })} />
+            </label>
+            <label className="pm-row">
+              <span>{t('pm.pattern.angle')}</span>
+              <ValueInput value={d.angle} suffix="°" toCommand={(angle) => cmd({ def: { ...d, angle } })} />
+            </label>
+            <label className="pm-row checkbox">
+              <input type="checkbox" checked={d.equal} onChange={(e) => store.execute(cmd({ def: { ...d, equal: e.target.checked } }))} />
+              <span>{t('pm.pattern.equal')}</span>
+            </label>
+            <label className="pm-row checkbox">
+              <input type="checkbox" checked={d.reverse ?? false} onChange={(e) => store.execute(cmd({ def: { ...d, reverse: e.target.checked ? true : undefined } }))} />
+              <span>{t('pm.pattern.reverse')}</span>
+            </label>
+          </>
+        )}
+        <p className="hint">{t(d.mode === 'linear' ? 'pm.pattern.hintLinear' : 'pm.pattern.hintCircular')}</p>
+      </section>
+      {labels.length > 0 && (
+        <section className="pm-group">
+          <h4>{t('pm.pattern.skip')}</h4>
+          <div className="datum-picker">
+            {labels.map((x) => (
+              <button key={x.label} className={skipped.has(x.label) ? 'skipped' : ''} onClick={() => store.execute(cmd({ skip: skipped.has(x.label) ? [...skipped].filter((l) => l !== x.label) : [...skipped, x.label] }))}>
+                {x.label}
+              </button>
+            ))}
+          </div>
+          <p className="hint">{t('pm.pattern.skipHint')}</p>
+        </section>
+      )}
+    </>
+  );
+}
+
+/** Mirror (C6.3): features or bodies, and the plane they are reflected across. */
+function MirrorPanel({ f }: { f: MirrorFeature }) {
+  const doc = useStore((s) => s.doc);
+  const result = useStore((s) => s.result);
+  const at = doc.features.findIndex((x) => x.id === f.id);
+  const candidates = doc.features.slice(0, Math.max(at, 0)).filter(canBeSeed);
+  const value = (patch: Partial<Pick<MirrorFeature, 'target' | 'seeds' | 'bodies' | 'merge'>>): Command => ({
+    type: 'setMirror',
+    featureId: f.id,
+    value: { target: f.target, plane: f.plane, seeds: f.seeds, bodies: f.bodies, ...(f.merge === false ? { merge: false } : {}), ...patch },
+  });
+  const known = (result?.bodies ?? []).map((b) => ({ id: b.id, name: b.name }));
+  return (
+    <>
+      <section className="pm-group">
+        <h4>{t('pm.mirror.target')}</h4>
+        <select value={f.target} onChange={(e) => store.execute(value({ target: e.target.value as MirrorFeature['target'] }))}>
+          <option value="features">{t('pm.mirror.features')}</option>
+          <option value="bodies">{t('pm.mirror.bodies')}</option>
+        </select>
+      </section>
+      {f.target === 'features' ? (
+        <section className="pm-group">
+          <h4>{t('pm.pattern.seeds')}</h4>
+          <ul className="selection-box">
+            {candidates.length === 0 && <li className="muted">{t('pm.pattern.noSeeds')}</li>}
+            {candidates.map((c) => (
+              <li key={c.id}>
+                <label className="pm-row checkbox">
+                  <input type="checkbox" checked={f.seeds.includes(c.id)} onChange={(e) => store.execute(value({ seeds: e.target.checked ? [...f.seeds, c.id] : f.seeds.filter((x) => x !== c.id) }))} />
+                  <span>{c.name}</span>
+                </label>
+              </li>
+            ))}
+          </ul>
+          <p className="hint">{t('pm.mirror.hintFeatures')}</p>
+        </section>
+      ) : (
+        <section className="pm-group">
+          <h4>{t('pm.mirror.bodiesHeading')}</h4>
+          <ul className="selection-box">
+            {known.length === 0 && <li className="muted">{t('pm.mirror.noBodies')}</li>}
+            {known.map((b) => (
+              <li key={b.id}>
+                <label className="pm-row checkbox">
+                  <input
+                    type="checkbox"
+                    checked={f.bodies.some((x) => x.name === b.id)}
+                    onChange={(e) => store.execute(value({ bodies: e.target.checked ? [...f.bodies, { kind: 'body', name: b.id }] : f.bodies.filter((x) => x.name !== b.id) }))}
+                  />
+                  <span>{b.name}</span>
+                </label>
+              </li>
+            ))}
+          </ul>
+          <label className="pm-row checkbox">
+            <input type="checkbox" checked={f.merge !== false} onChange={(e) => store.execute(value({ merge: e.target.checked }))} />
+            <span>{t('pm.mirror.merge')}</span>
+          </label>
+          <p className="hint">{t('pm.mirror.hintBodies')}</p>
+        </section>
+      )}
+      <section className="pm-group">
+        <h4>{t('pm.mirror.plane')}</h4>
+        <SlotList f={f} />
+        <DatumPicker f={f} />
+      </section>
+    </>
+  );
+}
+
+/** Coordinate system (C3.4). */
+function CoordSysPanel({ f }: { f: CoordSysFeature }) {
+  const flip = (key: 'flipX' | 'flipY', on: boolean) => {
+    const { origin, x, y, flipX, flipY } = f;
+    store.execute({ type: 'setCoordSys', featureId: f.id, value: { ...(origin ? { origin } : {}), x, y, ...(flipX ? { flipX } : {}), ...(flipY ? { flipY } : {}), [key]: on ? true : undefined } });
+  };
+  return (
+    <section className="pm-group">
+      <h4>{t('pm.refs')}</h4>
+      <SlotList f={f} />
+      <DatumPicker f={f} />
+      <label className="pm-row checkbox">
+        <input type="checkbox" checked={f.flipX ?? false} onChange={(e) => flip('flipX', e.target.checked)} />
+        <span>{t('pm.coordSys.flipX')}</span>
+      </label>
+      <label className="pm-row checkbox">
+        <input type="checkbox" checked={f.flipY ?? false} onChange={(e) => flip('flipY', e.target.checked)} />
+        <span>{t('pm.coordSys.flipY')}</span>
+      </label>
+      <p className="hint">{t('pm.coordSys.hint')}</p>
+    </section>
   );
 }
 
@@ -1264,15 +1568,15 @@ function ImportedBodyPanel({ f }: { f: ImportedBodyFeature }) {
   return (
     <>
       <section className="pm-group">
-        <h4>輸入的資料</h4>
-        <p>{blob?.fileName ?? '（未記錄檔名）'}</p>
+        <h4>{t('pm.import.heading')}</h4>
+        <p>{blob?.fileName ?? t('pm.import.noName')}</p>
         {warnings.map((w) => (
           <p key={w} className="warning-text">
             {w}
           </p>
         ))}
         <p className="hint">
-          資料存放在零件檔中（內容雜湊 <code>{blob?.sha256.slice(0, 12)}…</code>），不需要原始檔案。面依檔案中的順序命名。
+          {t('pm.import.stored', { hash: `${blob?.sha256.slice(0, 12)}…` })}
         </p>
         <MergeBox f={f} />
       </section>
@@ -1317,12 +1621,12 @@ export function PropertyManager() {
       <div className="pm-header">
         <Icon name={f.type} />
         <span className="pm-title">
-          {sketching ? '編輯草圖' : featureLabel(f)}：{f.name}
+          {sketching ? t('pm.editSketch') : featureLabel(f)}: {f.name}
         </span>
-        <button className="pm-ok" title={sketching ? '離開草圖' : '確定（Enter）'} onClick={() => store.commitEdit()}>
+        <button className="pm-ok" title={sketching ? t('pm.exitSketch') : t('pm.ok')} onClick={() => store.commitEdit()}>
           <Icon name="ok" />
         </button>
-        <button className="pm-cancel" title={sketching ? '放棄變更' : '取消（Esc）'} onClick={() => store.cancelEdit()}>
+        <button className="pm-cancel" title={sketching ? t('pm.discardChanges') : t('pm.cancel')} onClick={() => store.cancelEdit()}>
           <Icon name="cancel" />
         </button>
       </div>
@@ -1336,6 +1640,11 @@ export function PropertyManager() {
       {f.type === 'fillet' && <FilletPanel f={f} />}
       {f.type === 'chamfer' && <ChamferPanel f={f} />}
       {f.type === 'refPlane' && <RefPlanePanel f={f} />}
+      {f.type === 'refAxis' && <RefAxisPanel f={f} />}
+      {f.type === 'refPoint' && <RefPointPanel f={f} />}
+      {f.type === 'coordSys' && <CoordSysPanel f={f} />}
+      {f.type === 'pattern' && <PatternPanel f={f} />}
+      {f.type === 'mirror' && <MirrorPanel f={f} />}
       {f.type === 'importedBody' && <ImportedBodyPanel f={f} />}
       {f.type === 'deleteFace' && <DeleteFacePanel f={f} />}
       {f.type === 'shell' && <ShellPanel f={f} />}

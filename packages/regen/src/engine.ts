@@ -4,10 +4,14 @@ import {
   evalAngle,
   evalLength,
   isDatumPlaneName,
+  patternInstances,
   planeFrame,
   resolveDoc,
   bodyFeature,
+  type Axis3,
   type ChamferFeature,
+  type CoordSysFeature,
+  type CoordSystem,
   type CombineFeature,
   type DeleteFaceFeature,
   type DraftFeature,
@@ -20,11 +24,15 @@ import {
   type Id,
   type ImportedBodyFeature,
   type LoftFeature,
+  type MirrorFeature,
   type MoveFaceFeature,
+  type PatternFeature,
   type PartDoc,
   type PlaneFrame,
   type Ref,
+  type RefAxisFeature,
   type RefPlaneFeature,
+  type RefPointFeature,
   type RevolveFeature,
   type RibFeature,
   type ShellFeature,
@@ -38,6 +46,7 @@ import { KernelError, type SweepSpec, type FaceOrigin, type ImportDiagnostics, t
 import { nameElements, nameFromFaces, resolveRef, type Candidate, type ElementNames } from '@3db/naming';
 import { Bodies, type BodyState, type BodyView } from './bodies';
 import { followReferences, ReferenceProblem } from './references';
+import { angleStep, mirror, slide, turn, type Motion } from './placements';
 
 export type FeatureStatus = 'ok' | 'error' | 'suppressed' | 'rolledBack';
 
@@ -87,7 +96,28 @@ export interface RebuildResult {
    * reference plane that was built.
    */
   frames: Map<Id, PlaneFrame>;
+  /** The reference axes, reference points and coordinate systems that were built (C3.3–C3.5), by feature id. */
+  axes: Map<Id, Axis3>;
+  points: Map<Id, Vec3>;
+  systems: Map<Id, CoordSystem>;
   totalMs: number;
+}
+
+/** The bodies as they were before the first seed of a pattern (C6): a handle on their shape, their names, and how many there were. */
+interface Snapshot {
+  shape: ShapeId | null;
+  names: ElementNames;
+  bodies: number;
+}
+
+/**
+ * What the seeds of a pattern did (C6): the material they added to the bodies and the material they took from them, each as a shape with the names its
+ * faces had, and whether they made a body of their own (so each instance does too). Null where they did none.
+ */
+interface Delta {
+  added: { shape: ShapeId; names: ElementNames } | null;
+  removed: { shape: ShapeId; names: ElementNames } | null;
+  newBody: boolean;
 }
 
 /** Where imported data comes from, by SHA-256 (the part file's blobs; a Map will do). */
@@ -220,6 +250,16 @@ export class Regenerator {
   private diagnostics: ImportDiagnostics | null = null;
   /** Reference planes built so far in this rebuild (C3.2). */
   private planes = new Map<Id, PlaneFrame>();
+  /** Reference axes, points and coordinate systems built so far in this rebuild (C3.3–C3.5). */
+  private axes = new Map<Id, Axis3>();
+  private points = new Map<Id, Vec3>();
+  private systems = new Map<Id, CoordSystem>();
+  /** Patterns (C6), for the rebuild in progress: the first seed's bodies before it, the delta of each pattern, why a pattern has none, and how each feature ended. */
+  private snapshots = new Map<Id, Snapshot>();
+  private deltas = new Map<Id, Delta>();
+  private patternPlans = new Map<Id, { first: Id; last: Id; seeds: Id[] } | string>();
+  private statuses = new Map<Id, FeatureStatus>();
+  private featureNames = new Map<Id, string>();
   /** The imported files read so far in this rebuild: a second read of one gets a copy of its own. */
   private usedImports = new Set<string>();
   /**
@@ -255,10 +295,19 @@ export class Regenerator {
     const results: FeatureResult[] = [];
     let set = new Bodies([], this.kernel);
     this.planes = new Map();
+    this.axes = new Map();
+    this.points = new Map();
+    this.systems = new Map();
+    this.releasePatterns();
+    this.statuses = new Map();
 
     // Every expression becomes the number it stands for before anything is built: the solver and the kernel
     // only ever see numbers. A feature whose expression cannot be evaluated reports why instead of building.
     const { doc: resolved, problems } = resolveDoc(doc);
+    this.planPatterns(resolved);
+    const firstSeeds = new Set([...this.patternPlans.values()].flatMap((p) => (typeof p === 'string' ? [] : [p.first])));
+    const lastSeeds = new Map<Id, Id[]>();
+    for (const [pattern, p] of this.patternPlans) if (typeof p !== 'string') lastSeeds.set(p.last, [...(lastSeeds.get(p.last) ?? []), pattern]);
     // Files the document no longer imports (or no longer with these options) are let go.
     const wanted = new Set(resolved.features.flatMap((f) => (f.type === 'importedBody' ? resolved.blobs.filter((b) => b.id === f.blob).map((b) => importKey(b.sha256, f.sewTolerance)) : [])));
     for (const [key, i] of this.imports) {
@@ -268,11 +317,15 @@ export class Regenerator {
     }
     this.usedImports = new Set();
     resolved.features.forEach((feature, index) => {
-      const t = performance.now();
+      const started = performance.now();
       this.warnings = [];
       this.diagnostics = null;
-      const done = (r: Omit<FeatureResult, 'id' | 'ms'>) =>
-        results.push({ id: feature.id, ms: performance.now() - t, ...r, ...(this.warnings.length > 0 ? { warnings: this.warnings } : {}), ...(this.diagnostics ? { diagnostics: this.diagnostics } : {}) });
+      const done = (r: Omit<FeatureResult, 'id' | 'ms'>) => {
+        this.statuses.set(feature.id, r.status);
+        return results.push({ id: feature.id, ms: performance.now() - started, ...r, ...(this.warnings.length > 0 ? { warnings: this.warnings } : {}), ...(this.diagnostics ? { diagnostics: this.diagnostics } : {}) });
+      };
+      // a pattern's seeds are compared with the bodies as they were before the first of them
+      if (firstSeeds.has(feature.id) && index < limit && !feature.suppressed) this.snapshots.set(feature.id, this.snapshot(set));
       if (index >= limit) {
         if (index === limit && feature.type === 'sketch') {
           try {
@@ -293,7 +346,7 @@ export class Regenerator {
             frames.set(feature.id, s.frame);
             const info = { status: s.solved.status, dof: s.solved.dof, conflicting: s.solved.conflicting, redundant: s.solved.redundant, problems: s.profiles.problems };
             if (s.solved.status === 'failed' || s.solved.status === 'over') {
-              return done({ status: 'error', message: s.solved.status === 'over' ? '草圖過多定義' : (s.solved.message ?? '草圖無法求解'), sketch: info });
+              return done({ status: 'error', message: s.solved.status === 'over' ? t('regen.sketchOver') : (s.solved.message ?? t('regen.sketchUnsolved')), sketch: info });
             }
             sketches.set(feature.id, s);
             return done({ status: 'ok', sketch: info });
@@ -302,6 +355,18 @@ export class Regenerator {
             const frame = this.refPlane(feature, set);
             this.planes.set(feature.id, frame);
             frames.set(feature.id, frame);
+            return done({ status: 'ok' });
+          }
+          case 'refAxis': {
+            this.axes.set(feature.id, this.refAxis(feature, set));
+            return done({ status: 'ok' });
+          }
+          case 'refPoint': {
+            this.points.set(feature.id, this.refPoint(feature, set));
+            return done({ status: 'ok' });
+          }
+          case 'coordSys': {
+            this.systems.set(feature.id, this.coordSys(feature, set));
             return done({ status: 'ok' });
           }
           case 'extrude':
@@ -317,6 +382,8 @@ export class Regenerator {
           case 'deleteFace':
           case 'moveFace':
           case 'combine':
+          case 'pattern':
+          case 'mirror':
           case 'importedBody': {
             const next =
               feature.type === 'extrude'
@@ -345,17 +412,24 @@ export class Regenerator {
                           ? this.moveFace(feature, set)
                           : feature.type === 'combine'
                             ? this.combineBodies(feature, set)
-                            : this.importedBody(feature, doc, set);
+                            : feature.type === 'pattern'
+                              ? this.pattern(feature, set)
+                              : feature.type === 'mirror'
+                                ? this.mirror(feature, set)
+                                : this.importedBody(feature, doc, set);
             set = this.advance(set, next);
+            for (const pattern of lastSeeds.get(feature.id) ?? []) this.captureDelta(pattern, set);
             return done({ status: 'ok' });
           }
         }
       } catch (e) {
         if (e instanceof FeatureError) return done({ status: 'error', message: e.message, ...(e.unresolved ? { unresolved: e.unresolved } : {}) });
         if (e instanceof KernelError) return done({ status: 'error', message: e.message });
-        return done({ status: 'error', message: `內部錯誤：${e instanceof Error ? e.message : String(e)}` });
+        return done({ status: 'error', message: t('regen.internal', { why: e instanceof Error ? e.message : String(e) }) });
       }
     });
+
+    this.releasePatterns();
 
     // The result keeps the bodies and, for several, the compound that is their view.
     const view = set.view;
@@ -381,7 +455,7 @@ export class Regenerator {
           };
         })
       : [];
-    return { features: results, body: view, bodies, sketches, frames, totalMs: performance.now() - t0 };
+    return { features: results, body: view, bodies, sketches, frames, axes: this.axes, points: this.points, systems: this.systems, totalMs: performance.now() - t0 };
   }
 
   /**
@@ -397,15 +471,15 @@ export class Regenerator {
 
   private resolve(ref: Ref, body: BodyState, what: string): number {
     // An empty reference is a selection box not filled in yet, not a lost reference.
-    if (!ref.name) throw new FeatureError(`請選擇${what}`);
+    if (!ref.name) throw new FeatureError(t('body.pick', { what }));
     const r = resolveRef(ref, body.names, body.topology);
-    if (!r.ok) throw new FeatureError(`遺失參考：${what}找不到，請重新選擇`, [{ ref, reason: r.reason, candidates: r.candidates }]);
+    if (!r.ok) throw new FeatureError(t('regen.lostWhat', { what }), [{ ref, reason: r.reason, candidates: r.candidates }]);
     this.noteFingerprint(r.via, what, body.names[ref.kind === 'edge' ? 'edges' : ref.kind === 'vertex' ? 'vertices' : 'faces'][r.index]!);
     return r.index;
   }
   /** A reference that only its geometry could pick out is a guess the user should confirm (never silent). */
   private noteFingerprint(via: string, what: string, found: string): void {
-    const note = `${what}依幾何指紋找到「${found}」（同名的有好幾個），請確認位置正確`;
+    const note = t('regen.fingerprintNote', { what, found });
     if (via === 'fingerprint' && !this.warnings.includes(note)) this.warnings.push(note);
   }
 
@@ -419,12 +493,12 @@ export class Regenerator {
     if (ref.kind === 'datum') {
       if (isDatumPlaneName(ref.name)) return DATUM_PLANES[ref.name];
       const plane = this.planes.get(ref.name);
-      if (!plane) throw new FeatureError(`${labels.what}：參考的基準面不存在、已抑制或失敗`);
+      if (!plane) throw new FeatureError(t('regen.planeMissing', { what: labels.what }));
       return plane;
     }
-    if (ref.kind !== 'face') throw new FeatureError('必須選擇基準面或平面');
+    if (ref.kind !== 'face') throw new FeatureError(t('cmd.mustPickPlane'));
     const body = set.view;
-    if (!body) throw new FeatureError(`${labels.what}不存在：它之前沒有本體`);
+    if (!body) throw new FeatureError(t('datum.noModel', { what: labels.what }));
     const face = body.topology.faces[this.resolve(ref, body, labels.what)]!;
     if (face.surface !== 'plane' || !face.normal) throw new FeatureError(labels.notPlanar);
     return planeFrame(face.center, face.normal);
@@ -432,18 +506,61 @@ export class Regenerator {
 
   /** Where a sketch lies (C1.1): a default plane, a reference plane, or a planar face of the model before it. */
   private frame(f: SketchFeature, set: Bodies): PlaneFrame {
-    return this.planeOf(f.plane, set, { what: '草圖所在的面', notPlanar: '草圖只能放在平面上' });
+    return this.planeOf(f.plane, set, { what: t('regen.whatSketchPlane'), notPlanar: t('sketch.planeOnly') });
+  }
+
+  /** The model so far, which a reference to one of its elements is looked up in. */
+  private modelFor(set: Bodies, what: string): BodyView {
+    const body = set.view;
+    if (!body) throw new FeatureError(t('datum.noModel', { what }));
+    return body;
+  }
+
+  /** A straight model edge or a reference axis (C3.3) as a point on it and a direction. */
+  private axisOfRef(ref: Ref, set: Bodies, what: string): Axis3 {
+    if (ref.kind === 'datum') {
+      const axis = this.axes.get(ref.name);
+      if (!axis) throw new FeatureError(t('datum.axisMissing', { what }));
+      return axis;
+    }
+    const body = this.modelFor(set, what);
+    if (ref.kind === 'face') {
+      // the axis of a cylinder, a cone or a torus
+      const axis = axisOf(body.topology.faces[this.resolve(ref, body, what)]!);
+      if (!axis) throw new FeatureError(t('datum.notRevolved'));
+      // which way along its axis a surface of revolution runs is OCCT's to say and may change from one rebuild to the next: the axis of a face points
+      // the way its first coordinate that is not zero grows, so that what turns about it always turns the same way
+      const d = unit(axis.dir);
+      const lead = d.find((c) => Math.abs(c) > 1e-9) ?? 1;
+      return { origin: axis.point, dir: lead < 0 ? [-d[0], -d[1], -d[2]] : d };
+    }
+    const edge = body.topology.edges[this.resolve(ref, body, what)]!;
+    if (edge.curve !== 'line' || !edge.dir) throw new FeatureError(t('datum.notLine', { what }));
+    return { origin: edge.mid, dir: unit(edge.dir) };
+  }
+
+  /** A model vertex or a reference point (C3.5). */
+  private pointOfRef(ref: Ref, set: Bodies, what: string): Vec3 {
+    if (ref.kind === 'datum') {
+      const point = this.points.get(ref.name);
+      if (!point) throw new FeatureError(t('datum.pointMissing', { what }));
+      return point;
+    }
+    const body = this.modelFor(set, what);
+    return body.topology.vertices[this.resolve(ref, body, what)]!.point;
   }
 
   /**
-   * Reference plane (C3.2): offset from a plane; through a straight edge at an angle to a plane
-   * (at 0° parallel to it); or through three vertices. The frame follows the planeFrame rules, so a
+   * Reference plane (C3.2): offset from a plane; through a straight edge or axis at an angle to a plane
+   * (at 0° parallel to it); through three points; through a point parallel to a plane; through a point square to an axis; halfway between two
+   * parallel planes; or touching a cylinder, parallel to a plane. The frame follows the planeFrame rules, so a
    * sketch on it gets the same axes the same plane would get anywhere else.
    */
   private refPlane(f: RefPlaneFeature, set: Bodies): PlaneFrame {
     const d = f.def;
     const sign = d.reverse ? -1 : 1;
-    const labels = { what: '參考面', notPlanar: '參考面必須是平面' };
+    const labels = { what: t('slot.plane'), notPlanar: t('regen.refNotPlanar') };
+    const signed = (n: Vec3): Vec3 => [n[0] * sign, n[1] * sign, n[2] * sign];
     switch (d.mode) {
       case 'offset': {
         const base = this.planeOf(d.plane, set, labels);
@@ -451,28 +568,133 @@ export class Regenerator {
       }
       case 'angle': {
         const base = this.planeOf(d.plane, set, labels);
-        const body = set.view;
-        if (!body) throw new FeatureError('旋轉軸不存在：它之前沒有本體');
-        const edge = body.topology.edges[this.resolve(d.axis, body, '旋轉軸')]!;
-        if (edge.curve !== 'line' || !edge.dir) throw new FeatureError('旋轉軸必須是直線邊線');
-        const k = unit(edge.dir);
+        const axis = this.axisOfRef(d.axis, set, t('pattern.rotationAxis'));
+        const k = axis.dir;
         // The part of the plane's normal across the axis, turned about the axis.
         const across = sub(base.normal, add([0, 0, 0], k, dot(base.normal, k)));
-        if (Math.hypot(...across) < 1e-9) throw new FeatureError('旋轉軸不能垂直於參考面');
-        return planeFrame(edge.mid, rotate(unit(across), k, evalAngle(d.angle) * sign));
+        if (Math.hypot(...across) < 1e-9) throw new FeatureError(t('regen.axisPerpendicular'));
+        return planeFrame(axis.origin, rotate(unit(across), k, evalAngle(d.angle) * sign));
       }
       case 'threePoint': {
-        if (d.points.length < 3) throw new FeatureError('三點基準面需要三個頂點');
-        const body = set.view;
-        if (!body) throw new FeatureError('頂點不存在：它之前沒有本體');
-        const [a, b, c] = d.points.map((ref, i) => body.topology.vertices[this.resolve(ref, body, `第 ${i + 1} 點`)]!.point) as [Vec3, Vec3, Vec3];
+        if (d.points.length < 3) throw new FeatureError(t('regen.threeVertices'));
+        const [a, b, c] = d.points.map((ref, i) => this.pointOfRef(ref, set, t('datum.nthPoint', { n: i + 1 }))) as [Vec3, Vec3, Vec3];
         const normal = cross(sub(b, a), sub(c, a));
         const size = Math.max(Math.hypot(...sub(b, a)), Math.hypot(...sub(c, a)), 1e-9);
-        if (Math.hypot(...normal) < 1e-9 * size * size) throw new FeatureError('三點共線，無法決定平面');
-        const n = unit(normal);
-        return planeFrame(a, [n[0] * sign, n[1] * sign, n[2] * sign]);
+        if (Math.hypot(...normal) < 1e-9 * size * size) throw new FeatureError(t('regen.collinear'));
+        return planeFrame(a, signed(unit(normal)));
+      }
+      case 'parallel': {
+        const base = this.planeOf(d.plane, set, labels);
+        return planeFrame(this.pointOfRef(d.point, set, t('datum.through')), signed(base.normal));
+      }
+      case 'perpendicular': {
+        const axis = this.axisOfRef(d.axis, set, t('datum.perpendicularTo'));
+        return planeFrame(this.pointOfRef(d.point, set, t('datum.through')), signed(axis.dir));
+      }
+      case 'midplane': {
+        const a = this.planeOf(d.plane, set, labels);
+        const b = this.planeOf(d.plane2, set, { what: t('datum.secondPlane'), notPlanar: t('datum.secondPlaneNotPlanar') });
+        const sin = Math.hypot(...cross(a.normal, b.normal));
+        if (sin > 1e-9) throw new FeatureError(t('datum.midParallel', { angle: ((Math.asin(Math.min(1, sin)) * 180) / Math.PI).toFixed(2) }));
+        const gap = dot(sub(b.origin, a.origin), a.normal);
+        if (Math.abs(gap) < 1e-9) throw new FeatureError(t('datum.midCoincident'));
+        return planeFrame(add(a.origin, a.normal, gap / 2), signed(a.normal));
+      }
+      case 'tangent': {
+        const base = this.planeOf(d.plane, set, labels);
+        const body = this.modelFor(set, t('datum.cylinderFace'));
+        const face = body.topology.faces[this.resolve(d.face, body, t('datum.cylinderFace'))]!;
+        const g = face.geometry;
+        if (g?.type !== 'cylinder') throw new FeatureError(t('datum.tangentCylinder'));
+        const axis = unit(g.axis);
+        if (Math.abs(dot(base.normal, axis)) > 1e-6) throw new FeatureError(t('datum.tangentNotParallel'));
+        return planeFrame(add(g.origin, base.normal, g.radius * sign), signed(base.normal));
       }
     }
+  }
+
+  /** Reference axis (C3.3): a straight edge, two points, the axis of a cylinder or cone, or where two planes meet. */
+  private refAxis(f: RefAxisFeature, set: Bodies): Axis3 {
+    const d = f.def;
+    switch (d.mode) {
+      case 'edge':
+        return this.axisOfRef(d.edge, set, t('datum.edge'));
+      case 'twoPoints': {
+        if (d.points.length < 2) throw new FeatureError(t('datum.twoPointsNeedTwo'));
+        const [a, b] = d.points.map((ref, i) => this.pointOfRef(ref, set, t('datum.nthPoint', { n: i + 1 }))) as [Vec3, Vec3];
+        const v = sub(b, a);
+        if (Math.hypot(...v) < 1e-9) throw new FeatureError(t('datum.twoPointsSame'));
+        return { origin: a, dir: unit(v) };
+      }
+      case 'cylinder': {
+        const body = this.modelFor(set, t('datum.cylinderFace'));
+        const face = body.topology.faces[this.resolve(d.face, body, t('datum.cylinderFace'))]!;
+        const g = face.geometry;
+        if (g?.type !== 'cylinder' && g?.type !== 'cone') throw new FeatureError(t('datum.notRevolved'));
+        return g.type === 'cylinder' ? { origin: g.origin, dir: unit(g.axis) } : { origin: g.apex, dir: unit(g.axis) };
+      }
+      case 'planes': {
+        const labels = { what: t('slot.plane'), notPlanar: t('regen.refNotPlanar') };
+        const a = this.planeOf(d.plane, set, labels);
+        const b = this.planeOf(d.plane2, set, { what: t('datum.secondPlane'), notPlanar: t('datum.secondPlaneNotPlanar') });
+        const dir = cross(a.normal, b.normal);
+        const len2 = dot(dir, dir);
+        if (len2 < 1e-18) throw new FeatureError(t('datum.planesParallelNoLine'));
+        // the point of both planes nearest the origin: ((h1 n2 − h2 n1) …) as the sum of the two planes' parts square to the line
+        const h1 = dot(a.normal, a.origin);
+        const h2 = dot(b.normal, b.origin);
+        const p1 = cross(b.normal, dir);
+        const p2 = cross(dir, a.normal);
+        const origin: Vec3 = [(h1 * p1[0] + h2 * p2[0]) / len2, (h1 * p1[1] + h2 * p2[1]) / len2, (h1 * p1[2] + h2 * p2[2]) / len2];
+        return { origin, dir: unit(dir) };
+      }
+    }
+  }
+
+  /** Reference point (C3.5): by coordinates, the centre of an edge or a face, or where an axis meets a plane. */
+  private refPoint(f: RefPointFeature, set: Bodies): Vec3 {
+    const d = f.def;
+    switch (d.mode) {
+      case 'coords':
+        return [evalLength(d.x), evalLength(d.y), evalLength(d.z)];
+      case 'center': {
+        const body = this.modelFor(set, t('datum.centerOf'));
+        const index = this.resolve(d.element, body, t('datum.centerOf'));
+        if (d.element.kind === 'edge') {
+          const edge = body.topology.edges[index]!;
+          return edge.geometry?.type === 'circle' ? edge.geometry.center : edge.mid;
+        }
+        const face = body.topology.faces[index]!;
+        return face.geometry?.type === 'sphere' ? face.geometry.center : face.center;
+      }
+      case 'axisPlane': {
+        const axis = this.axisOfRef(d.axis, set, t('datum.axis'));
+        const plane = this.planeOf(d.plane, set, { what: t('slot.plane'), notPlanar: t('regen.refNotPlanar') });
+        const along = dot(axis.dir, plane.normal);
+        if (Math.abs(along) < 1e-9) throw new FeatureError(t('datum.axisParallelPlane'));
+        return add(axis.origin, axis.dir, dot(sub(plane.origin, axis.origin), plane.normal) / along);
+      }
+    }
+  }
+
+  /** A direction a coordinate system takes from an element: a straight edge or an axis (as drawn), or the normal of a plane. */
+  private directionOf(ref: Ref, set: Bodies, what: string): Vec3 {
+    if (ref.kind === 'datum' && (isDatumPlaneName(ref.name) || this.planes.has(ref.name))) return this.planeOf(ref, set, { what, notPlanar: t('datum.dirKind', { what }) }).normal;
+    if (ref.kind === 'datum' || ref.kind === 'edge') return this.axisOfRef(ref, set, what).dir;
+    if (ref.kind === 'face') return this.planeOf(ref, set, { what, notPlanar: t('datum.dirKind', { what }) }).normal;
+    throw new FeatureError(t('datum.dirKind', { what }));
+  }
+
+  /** Coordinate system (C3.4): X along one direction, Y as near the other as is square to X, Z = X × Y. */
+  private coordSys(f: CoordSysFeature, set: Bodies): CoordSystem {
+    const origin: Vec3 = f.origin ? this.pointOfRef(f.origin, set, t('datum.csOrigin')) : [0, 0, 0];
+    const flip = (v: Vec3, on: boolean | undefined): Vec3 => (on ? [-v[0], -v[1], -v[2]] : v);
+    const x = unit(flip(this.directionOf(f.x, set, t('datum.xDirection')), f.flipX));
+    const y0 = flip(this.directionOf(f.y, set, t('datum.yDirection')), f.flipY);
+    const z = cross(x, y0);
+    if (Math.hypot(...z) < 1e-9 * Math.hypot(...y0)) throw new FeatureError(t('datum.coordParallel'));
+    const zu = unit(z);
+    return { origin, x, y: cross(zu, x), z: zu };
   }
 
   private sketch(f: SketchFeature, set: Bodies) {
@@ -502,7 +724,7 @@ export class Regenerator {
       thin.mode === 'mid' ? { inward: one / 2, outward: one / 2 } : thin.mode === 'two' ? { inward: one, outward: evalLength(thin.thickness2 ?? thin.thickness) } : thin.reverse ? { inward: 0, outward: one } : { inward: one, outward: 0 };
     try {
       const regions = thinRegions(s.sketch, s.solved, th);
-      if (regions.length === 0) throw new FeatureError('草圖沒有可以做成薄件的輪廓');
+      if (regions.length === 0) throw new FeatureError(t('regen.noThinRegions'));
       return { ...s, profiles: { regions, problems: [] } };
     } catch (e) {
       if (e instanceof ThinProblem) throw new FeatureError(e.message);
@@ -513,10 +735,10 @@ export class Regenerator {
   /** The sketch of a boss or cut with the contours the feature chose (all of them when it chose none, C1.34). */
   private profileOf(sketches: RebuildResult['sketches'], sketchId: Id, contours?: Id[][], thin?: Thin) {
     const s = sketches.get(sketchId);
-    if (!s) throw new FeatureError('父草圖不存在、已抑制或失敗');
+    if (!s) throw new FeatureError(t('feature.sketchGone'));
     if (thin) return this.thinProfile(s, thin, contours);
-    if (s.profiles.problems.length > 0) throw new FeatureError(`草圖不能用於特徵：${s.profiles.problems.join('；')}`);
-    if (s.profiles.regions.length === 0) throw new FeatureError('草圖沒有封閉輪廓');
+    if (s.profiles.problems.length > 0) throw new FeatureError(t('regen.sketchUnusable', { problems: s.profiles.problems.join('; ') }));
+    if (s.profiles.regions.length === 0) throw new FeatureError(t('regen.noClosedProfile'));
     if (!contours) return s;
     const { regions, missing } = selectContours(s.profiles.regions, contours);
     if (missing > 0) throw new FeatureError(t('regen.contourMissing', { n: missing }));
@@ -601,7 +823,7 @@ export class Regenerator {
   private extrude(f: ExtrudeFeature, sketches: RebuildResult['sketches'], set: Bodies): BodyState[] {
     const s = this.profileOf(sketches, f.sketch, f.contours, f.thin);
     const body = set.view;
-    if (f.op === 'cut' && !body) throw new FeatureError('除料需要既有的本體');
+    if (f.op === 'cut' && !body) throw new FeatureError(t('feature.cutNeedsBody'));
     const n = s.frame.normal;
     // A boss grows along the sketch normal, a cut goes into the material (SolidWorks defaults); direction 2 goes the other way.
     const grow = f.op === 'cut' ? -1 : 1;
@@ -632,14 +854,14 @@ export class Regenerator {
 
   private revolve(f: RevolveFeature, sketches: RebuildResult['sketches'], set: Bodies): BodyState[] {
     const s = this.profileOf(sketches, f.sketch, f.contours, f.thin);
-    if (f.op === 'cut' && !set.view) throw new FeatureError('除料需要既有的本體');
+    if (f.op === 'cut' && !set.view) throw new FeatureError(t('feature.cutNeedsBody'));
     const axis = s.solved.geometry.get(f.axis);
-    if (axis?.type !== 'line') throw new FeatureError('旋轉軸不存在，請重新選擇');
+    if (axis?.type !== 'line') throw new FeatureError(t('regen.axisGone'));
     const [a, b] = [axis.a, axis.b];
     const side = (p: [number, number]) => (b[0] - a[0]) * (p[1] - a[1]) - (b[1] - a[1]) * (p[0] - a[0]);
     const pts = s.profiles.regions.flatMap((r) => r.outer.flatMap((seg) => (seg.kind === 'line' ? [seg.a, seg.b] : seg.kind === 'arc' ? [seg.from, seg.to, seg.c] : [seg.c])));
     const scale = Math.hypot(b[0] - a[0], b[1] - a[1]) || 1;
-    if (pts.some((p) => side(p) > 1e-9 * scale) && pts.some((p) => side(p) < -1e-9 * scale)) throw new FeatureError('輪廓跨過旋轉軸');
+    if (pts.some((p) => side(p) > 1e-9 * scale) && pts.some((p) => side(p) < -1e-9 * scale)) throw new FeatureError(t('regen.crossesAxis'));
 
     const fr = s.frame;
     const at = (p: [number, number]): Vec3 => add(add(fr.origin, fr.xDir, p[0]), fr.yDir, p[1]);
@@ -762,6 +984,260 @@ export class Regenerator {
     return this.apply(f.id, 'boss', tool, { featureId: f.id, sketchId: f.sketch }, set.list, true);
   }
 
+  // ------------------------------------------------------------------ patterns (C6)
+
+  /** Lets go of what the patterns of a rebuild kept: the bodies before their first seeds, and what the seeds did. */
+  private releasePatterns(): void {
+    for (const s of this.snapshots.values()) if (s.shape !== null) this.kernel.release(s.shape);
+    for (const d of this.deltas.values()) {
+      if (d.added) this.kernel.release(d.added.shape);
+      if (d.removed) this.kernel.release(d.removed.shape);
+    }
+    this.snapshots.clear();
+    this.deltas.clear();
+    this.patternPlans.clear();
+  }
+
+  /**
+   * Which features each pattern repeats, or why it cannot: they must exist, be before the pattern, be built (not suppressed) and follow one another with
+   * nothing between, since what is repeated is the difference between the bodies before the first of them and after the last.
+   */
+  private planPatterns(doc: PartDoc): void {
+    this.featureNames = new Map(doc.features.map((f) => [f.id, f.name]));
+    doc.features.forEach((f, index) => {
+      if ((f.type !== 'pattern' && !(f.type === 'mirror' && f.target === 'features')) || f.suppressed) return;
+      if (f.seeds.length === 0) return void this.patternPlans.set(f.id, t('pattern.noSeeds'));
+      const at = f.seeds.map((id) => doc.features.findIndex((g) => g.id === id)).sort((a, b) => a - b);
+      if (at.some((i) => i < 0 || i >= index)) return void this.patternPlans.set(f.id, t('pattern.seedMissing'));
+      // between the first and the last seed there may be sketches and reference geometry, which leave the bodies as they are, but no other feature
+      const between = doc.features.slice(at[0]!, at[at.length - 1]! + 1).find((g) => !f.seeds.includes(g.id) && g.type !== 'sketch' && g.type !== 'refPlane' && g.type !== 'refAxis' && g.type !== 'refPoint' && g.type !== 'coordSys');
+      if (between) return void this.patternPlans.set(f.id, t('pattern.seedsApart', { name: between.name }));
+      const suppressed = at.map((i) => doc.features[i]!).find((g) => g.suppressed);
+      if (suppressed) return void this.patternPlans.set(f.id, t('pattern.seedSuppressed', { name: suppressed.name }));
+      this.patternPlans.set(f.id, { first: doc.features[at[0]!]!.id, last: doc.features[at[at.length - 1]!]!.id, seeds: at.map((i) => doc.features[i]!.id) });
+    });
+  }
+
+  private snapshot(set: Bodies): Snapshot {
+    const view = set.view;
+    return { shape: view ? this.kernel.copy(view.shape) : null, names: view ? view.names : { faces: [], edges: [], vertices: [] }, bodies: set.list.length };
+  }
+
+  /** What the seeds of `pattern` did, now that the last of them is built: the bodies after, less the bodies before (added), and the bodies before, less the bodies after (removed). */
+  private captureDelta(pattern: Id, set: Bodies): void {
+    const plan = this.patternPlans.get(pattern);
+    if (!plan || typeof plan === 'string') return;
+    const before = this.snapshots.get(plan.first);
+    const after = set.view;
+    if (!before || !after) return;
+    const k = this.kernel;
+    const part = (op: 'cut', target: ShapeId, tool: ShapeId | null, targetNames: ElementNames, toolNames: ElementNames, total: number): Delta['added'] => {
+      if (tool === null) return { shape: k.copy(target), names: targetNames };
+      const r = k.boolean(op, target, tool);
+      if (k.massProps(r.shape).volume <= 1e-9 * Math.max(total, 1e-12)) {
+        k.release(r.shape);
+        return null;
+      }
+      const topology = k.topology(r.shape);
+      return { shape: r.shape, names: nameElements(r.faceOrigins, topology, { featureId: pattern, input: concatNames(targetNames, toolNames) }) };
+    };
+    const total = Math.max(k.massProps(after.shape).volume, before.shape === null ? 0 : k.massProps(before.shape).volume);
+    const added = part('cut', after.shape, before.shape, after.names, before.names, total);
+    const removed = before.shape === null ? null : part('cut', before.shape, after.shape, before.names, after.names, total);
+    this.deltas.set(pattern, { added, removed, newBody: added !== null && set.list.length > before.bodies });
+  }
+
+  /** The unit direction of a direction of a linear pattern: a straight edge, a reference axis, or the normal of a plane. */
+  private patternDirection(ref: Ref, set: Bodies, what: string): Vec3 {
+    return unit(this.directionOf(ref, set, what));
+  }
+
+  /** The count a pattern asks for (already a number: the document's expressions were worked out before the rebuild). */
+  private patternCount(expr: string, what: string): number {
+    const n = Math.round(Number(expr));
+    if (!(n >= 2)) throw new FeatureError(t('pattern.countTooSmall', { what, value: expr }));
+    return n;
+  }
+
+  /** Where each instance goes, as a motion of space, by its label (the seed, which stays, is not among them). */
+  private placements(f: PatternFeature, set: Bodies): { label: string; motion: Motion }[] {
+    const d = f.def;
+    if (d.mode === 'linear') {
+      const sign = (r?: boolean) => (r ? -1 : 1);
+      const v1 = this.patternDirection(d.dir1.ref, set, t('pattern.direction1'));
+      const n1 = this.patternCount(d.dir1.count, t('pattern.direction1'));
+      const s1 = evalLength(d.dir1.spacing) * sign(d.dir1.reverse);
+      if (!d.dir2) return patternInstances(n1, null).map((x) => ({ label: x.label, motion: slide([v1[0] * s1 * x.i, v1[1] * s1 * x.i, v1[2] * s1 * x.i]) }));
+      const v2 = this.patternDirection(d.dir2.ref, set, t('pattern.direction2'));
+      if (Math.hypot(...cross(v1, v2)) < 1e-9) throw new FeatureError(t('pattern.directionsParallel'));
+      const n2 = this.patternCount(d.dir2.count, t('pattern.direction2'));
+      const s2 = evalLength(d.dir2.spacing) * sign(d.dir2.reverse);
+      return patternInstances(n1, n2).map((x) => ({
+        label: x.label,
+        motion: slide([v1[0] * s1 * x.i + v2[0] * s2 * x.j, v1[1] * s1 * x.i + v2[1] * s2 * x.j, v1[2] * s1 * x.i + v2[2] * s2 * x.j]),
+      }));
+    }
+    const axis = this.axisOfRef(d.axis, set, t('pattern.rotationAxis'));
+    const n = this.patternCount(d.count, t('pattern.count'));
+    const step = angleStep(n, evalAngle(d.angle), d.equal) * (d.reverse ? -1 : 1);
+    return patternInstances(n, null).map((x) => ({ label: x.label, motion: turn(axis.origin, axis.dir, step * x.i) }));
+  }
+
+  /** What the seeds of a pattern or a mirror did, or why there is nothing to repeat. */
+  private deltaOf(f: PatternFeature | MirrorFeature): Delta {
+    const plan = this.patternPlans.get(f.id);
+    if (typeof plan === 'string') throw new FeatureError(plan);
+    if (!plan) throw new FeatureError(t('pattern.seedMissing'));
+    const failed = plan.seeds.find((id) => this.statuses.get(id) !== 'ok');
+    if (failed) throw new FeatureError(t('pattern.seedFailed', { name: this.featureNames.get(failed) ?? failed }));
+    const delta = this.deltas.get(f.id);
+    if (!delta || (!delta.added && !delta.removed)) throw new FeatureError(t('pattern.seedChangedNothing'));
+    return delta;
+  }
+
+  /** A pattern (C6.1, C6.2): a copy of what the seeds added, moved to each instance and joined like the seed was, and of what they took away, moved and cut. */
+  private pattern(f: PatternFeature, set: Bodies): BodyState[] {
+    const delta = this.deltaOf(f);
+    const skip = new Set(f.skip ?? []);
+    const instances = this.placements(f, set).filter((p) => !skip.has(p.label));
+    if (instances.length === 0) throw new FeatureError(t('pattern.noInstances'));
+    return this.repeat(f, set, delta, instances.map((p) => ({ ...p, prefix: `inst${p.label}` })), {
+      overlap: true,
+      misses: (label) => t('pattern.instanceMissesBody', { label }),
+      floats: (label) => t('pattern.instanceFloats', { label }),
+    });
+  }
+
+  /** A mirror (C6.3) of features: what the seeds added and took away, reflected across the plane and joined and cut like the seed was. */
+  private mirrorFeatures(f: MirrorFeature, set: Bodies): BodyState[] {
+    const delta = this.deltaOf(f);
+    return this.repeat(f, set, delta, [{ label: '1', motion: this.mirrorMotion(f, set), prefix: 'mirror' }], {
+      overlap: false,
+      misses: () => t('mirror.cutMissesBody'),
+      floats: () => t('mirror.bossFloats'),
+    });
+  }
+
+  private mirrorMotion(f: MirrorFeature, set: Bodies): Motion {
+    const plane = this.planeOf(f.plane, set, { what: t('mirror.plane'), notPlanar: t('mirror.planeNotPlanar') });
+    return mirror(plane.origin, plane.normal);
+  }
+
+  /** A mirror of whole bodies: each reflected into a body of its own (`merge: false`), or joined to every body it touches, the original too. */
+  private mirrorBodies(f: MirrorFeature, set: Bodies): BodyState[] {
+    if (f.bodies.length === 0) throw new FeatureError(t('mirror.pickBodies'));
+    const k = this.kernel;
+    const motion = this.mirrorMotion(f, set);
+    const original = new Set(set.list.map((b) => b.shape));
+    let current: readonly BodyState[] = set.list;
+    const drop = (old: readonly BodyState[], now: readonly BodyState[]) => {
+      for (const b of old) if (!original.has(b.shape) && !now.some((x) => x.shape === b.shape)) k.release(b.shape);
+    };
+    try {
+      f.bodies.forEach((ref, i) => {
+        if (!ref.name) throw new FeatureError(t('mirror.pickBodies'));
+        const body = set.list.find((b) => b.id === ref.name);
+        if (!body) throw new FeatureError(t('body.lost', { name: ref.name }), [{ ref, reason: 'missing', candidates: [] }]);
+        const shape = k.transformed(body.shape, motion);
+        const names = nameFromFaces(body.names.faces.map((n) => `${f.id}:mirror:${n}`), k.topology(shape));
+        const next = this.apply(f.id, 'boss', { shape, faceOrigins: [] }, { featureId: f.id }, current, f.merge !== false, `${f.id}#${i + 1}`, names);
+        drop(current, next);
+        current = next;
+      });
+      return [...current];
+    } catch (e) {
+      drop(current, []);
+      throw e;
+    }
+  }
+
+  private mirror(f: MirrorFeature, set: Bodies): BodyState[] {
+    return f.target === 'features' ? this.mirrorFeatures(f, set) : this.mirrorBodies(f, set);
+  }
+
+  /**
+   * Copies of what the seeds did, one for each instance, put on the bodies in turn: what they added joined (or standing apart, if the seed's did), what
+   * they took away cut. An instance that does not meet the bodies is an error that names it.
+   */
+  private repeat(f: PatternFeature | MirrorFeature, set: Bodies, delta: Delta, instances: { label: string; motion: Motion; prefix: string }[], check: { overlap: boolean; misses: (label: string) => string; floats: (label: string) => string }): BodyState[] {
+    const k = this.kernel;
+    // the copy of what the seeds did that goes to each instance, made before any is used so that they can be compared with one another
+    const pending = new Set<ShapeId>();
+    const make = (part: NonNullable<Delta['added']>) =>
+      instances.map((p) => {
+        const shape = k.transformed(part.shape, p.motion);
+        pending.add(shape);
+        return { label: p.label, shape, names: nameFromFaces(part.names.faces.map((n) => `${f.id}:${p.prefix}:${n}`), k.topology(shape)) };
+      });
+    let current: readonly BodyState[] = set.list;
+    const original = new Set(set.list.map((b) => b.shape));
+    const drop = (old: readonly BodyState[], now: readonly BodyState[]) => {
+      for (const b of old) if (!original.has(b.shape) && !now.some((x) => x.shape === b.shape)) k.release(b.shape);
+    };
+    try {
+      const adds = delta.added ? make(delta.added) : [];
+      const cuts = delta.removed ? make(delta.removed) : [];
+      if (check.overlap) {
+        this.noOverlap(delta.added?.shape ?? null, adds);
+        this.noOverlap(delta.removed?.shape ?? null, cuts);
+      }
+      for (let i = 0; i < instances.length; i++) {
+        const label = instances[i]!.label;
+        const at = (run: () => BodyState[]): BodyState[] => {
+          try {
+            return run();
+          } catch (e) {
+            if (e instanceof FeatureError && e.message === t('feature.cutRemovedNothing')) throw new FeatureError(check.misses(label));
+            throw e;
+          }
+        };
+        if (adds[i]) {
+          const tool = adds[i]!;
+          pending.delete(tool.shape);
+          const next = at(() => this.apply(f.id, 'boss', { shape: tool.shape, faceOrigins: [] }, { featureId: f.id }, current, !delta.newBody, `${f.id}#${label}`, tool.names));
+          // an instance of a boss that joined the body must still touch it, or it is a piece floating in space
+          if (!delta.newBody && next.length > current.length) {
+            drop(current, next);
+            current = next;
+            throw new FeatureError(check.floats(label));
+          }
+          drop(current, next);
+          current = next;
+        }
+        if (cuts[i]) {
+          const tool = cuts[i]!;
+          pending.delete(tool.shape);
+          const next = at(() => this.apply(f.id, 'cut', { shape: tool.shape, faceOrigins: [] }, { featureId: f.id }, current, true, f.id, tool.names));
+          drop(current, next);
+          current = next;
+        }
+      }
+      return [...current];
+    } catch (e) {
+      drop(current, []);
+      throw e;
+    } finally {
+      for (const shape of pending) k.release(shape);
+    }
+  }
+
+  /** The instances of one kind of delta must not run into one another or into the seed's own: the spacing is smaller than what is repeated. */
+  private noOverlap(seed: ShapeId | null, tools: { label: string; shape: ShapeId }[]): void {
+    const k = this.kernel;
+    const all = [...(seed === null ? [] : [{ label: t('pattern.seedLabel'), shape: seed }]), ...tools.map((x) => ({ ...x, label: t('pattern.instanceName', { label: x.label }) }))].map((x) => ({ ...x, box: k.bounds(x.shape) }));
+    const eps = 1e-7;
+    const apart = (a: { min: Vec3; max: Vec3 }, b: { min: Vec3; max: Vec3 }) => [0, 1, 2].some((i) => a.max[i]! < b.min[i]! + eps || b.max[i]! < a.min[i]! + eps);
+    for (let i = 0; i < all.length; i++) {
+      for (let j = i + 1; j < all.length; j++) {
+        if (apart(all[i]!.box, all[j]!.box)) continue;
+        const r = k.boolean('common', all[i]!.shape, all[j]!.shape);
+        const shared = k.massProps(r.shape).volume;
+        k.release(r.shape);
+        if (shared > 1e-6 * Math.min(k.massProps(all[i]!.shape).volume, k.massProps(all[j]!.shape).volume)) throw new FeatureError(t('pattern.overlap', { a: all[i]!.label, b: all[j]!.label }));
+      }
+    }
+  }
+
   // ------------------------------------------------------------------ several bodies (C7)
 
   /**
@@ -771,17 +1247,17 @@ export class Regenerator {
    * on either side. Returns the bodies after the feature; the shapes of those that were changed are new, the old ones are
    * the caller's to let go (`advance`).
    */
-  private apply(featureId: Id, op: 'boss' | 'cut', tool: OpResult, context: { featureId: Id; sketchId?: Id }, list: readonly BodyState[], merge: boolean, bodyId: Id = featureId): BodyState[] {
+  private apply(featureId: Id, op: 'boss' | 'cut', tool: OpResult, context: { featureId: Id; sketchId?: Id }, list: readonly BodyState[], merge: boolean, bodyId: Id = featureId, named?: ElementNames): BodyState[] {
     const k = this.kernel;
     const toolTopology = k.topology(tool.shape);
-    const toolNames = nameElements(tool.faceOrigins, toolTopology, context);
+    const toolNames = named ?? nameElements(tool.faceOrigins, toolTopology, context);
     const made: ShapeId[] = [];
     try {
       if (op === 'cut') {
         const r = this.boolBodies(featureId, 'cut', list, tool.shape, toolNames, made);
         k.release(tool.shape);
-        if (!r.changed) throw new FeatureError('除料沒有移除任何材料（試試反轉方向）');
-        if (r.out.length === 0) throw new FeatureError('除料移除了整個本體');
+        if (!r.changed) throw new FeatureError(t('feature.cutRemovedNothing'));
+        if (r.out.length === 0) throw new FeatureError(t('regen.cutRemovedAll'));
         if (r.removed.length > 0) this.warnings.push(t('body.removedWhole', { names: r.removed.join(t('cmd.listSeparator')) }));
         return r.out;
       }
@@ -922,12 +1398,12 @@ export class Regenerator {
    */
   private importedBody(f: ImportedBodyFeature, doc: PartDoc, set: Bodies): BodyState[] {
     const blob = doc.blobs.find((b) => b.id === f.blob);
-    if (!blob) throw new FeatureError('輸入的資料不存在');
+    if (!blob) throw new FeatureError(t('regen.importMissing'));
     const key = importKey(blob.sha256, f.sewTolerance);
     let imported = this.imports.get(key);
     if (!imported) {
       const data = this.blobs.get(blob.sha256);
-      if (!data) throw new FeatureError('找不到輸入的資料（零件檔中缺少），請重新輸入');
+      if (!data) throw new FeatureError(t('regen.importNotInFile'));
       try {
         const r = this.kernel.importStep(data, f.sewTolerance === undefined ? {} : { sewTolerance: evalLength(f.sewTolerance) });
         imported = { shape: r.shape, faceOrigins: r.faceOrigins, warnings: r.warnings, diagnostics: r.diagnostics };
@@ -970,7 +1446,7 @@ export class Regenerator {
       const r = resolveRef(ref, body.names, body.topology);
       if (r.ok) {
         indices.push(r.index);
-        this.noteFingerprint(r.via, '邊線', body.names.edges[r.index]!);
+        this.noteFingerprint(r.via, t('regen.edgeNoun'), body.names.edges[r.index]!);
       } else unresolved.push({ ref, reason: r.reason, candidates: r.candidates });
     }
     if (unresolved.length > 0) throw new FeatureError(t('edit.edgesLost', { n: unresolved.length }), unresolved);
@@ -995,7 +1471,7 @@ export class Regenerator {
         continue;
       }
       // Among all the bodies a name may be shared (the pieces of a split face); the body alone then finds it by name.
-      this.noteFingerprint(r.via, kind === 'edge' ? '邊線' : t('edit.faceNoun'), view.names[kind === 'edge' ? 'edges' : 'faces'][r.index]!);
+      this.noteFingerprint(r.via, kind === 'edge' ? t('regen.edgeNoun') : t('edit.faceNoun'), view.names[kind === 'edge' ? 'edges' : 'faces'][r.index]!);
       const { body } = set.locate(kind, r.index);
       owners.set(body, [...(owners.get(body) ?? []), ref]);
     }
@@ -1152,7 +1628,7 @@ export class Regenerator {
         // (the other one with 「反轉方向」): a choice that survives rebuilds, unlike face order.
         const faces = [...body.topology.edges[edge]!.faces].sort((a, b) => (body.names.faces[a]! < body.names.faces[b]! ? -1 : 1));
         const face = faces[f.flip ? faces.length - 1 : 0];
-        if (face === undefined) throw new FeatureError('這條邊線沒有相鄰的面');
+        if (face === undefined) throw new FeatureError(t('regen.edgeNoFace'));
         return { edge, face };
       });
       const second = f.mode === 'distanceDistance' ? evalLength(f.second) : evalAngle(f.second);

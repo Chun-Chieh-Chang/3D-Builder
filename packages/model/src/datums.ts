@@ -51,3 +51,17 @@ export function planeFrame(point: Vec3, normal: Vec3): PlaneFrame {
   const xDir = reject([1, 0, 0], n);
   return { origin, xDir, yDir: cross(n, xDir), normal: n };
 }
+
+/** A reference axis once built (C3.3): a point on it and its direction (a unit vector). Derived data, never stored. */
+export interface Axis3 {
+  origin: Vec3;
+  dir: Vec3;
+}
+
+/** A coordinate system once built (C3.4): its origin and three unit axes, right-handed (x × y = z). Derived data, never stored. */
+export interface CoordSystem {
+  origin: Vec3;
+  x: Vec3;
+  y: Vec3;
+  z: Vec3;
+}

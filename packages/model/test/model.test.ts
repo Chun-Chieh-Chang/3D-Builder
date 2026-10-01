@@ -1,4 +1,4 @@
-import { registerTranslation, setLocale } from '@3db/i18n';
+import { en, registerTranslation, setLocale } from '@3db/i18n';
 import { afterEach, describe, expect, it } from 'vitest';
 import {
   applyCommand,
@@ -167,16 +167,17 @@ describe('replacing a reference (B4.3)', () => {
 describe('messages follow the language (D9.1)', () => {
   afterEach(() => {
     setLocale('zh-TW');
-    registerTranslation('en', {});
+    registerTranslation('en', en);
   });
   it('a refused command explains itself in the language in use', () => {
     const doc = createDemoPart();
     const rename = () => applyCommand(doc, { type: 'renameFeature', featureId: 'sketch1', name: ' ' });
     expect(rename).toThrow('名稱不可空白');
-    registerTranslation('en', { 'cmd.nameEmpty': 'The name cannot be empty' });
     setLocale('en');
     expect(rename).toThrow('The name cannot be empty');
-    expect(() => evalLength('abc')).toThrow('找不到變數「abc」'); // not translated yet: the source text
+    expect(() => evalLength('abc')).toThrow('Variable "abc" not found');
+    registerTranslation('en', { 'expr.unknownVariable': undefined }); // a text a language lacks is the source text
+    expect(() => evalLength('abc')).toThrow('找不到變數「abc」');
   });
 });
 

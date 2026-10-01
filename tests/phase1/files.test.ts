@@ -4,7 +4,7 @@
  */
 import { readFileSync } from 'node:fs';
 import { beforeAll, describe, expect, it } from 'vitest';
-import { createDemoPart, FormatError, SCHEMA_VERSION, serializePart, type PartDoc } from '@3db/model';
+import { createDemoPart, FormatError, SCHEMA_VERSION, serializePart, settingsOf, type PartDoc } from '@3db/model';
 import { partFileName, readPartFile, readZip, sha256Hex, writePartFile, writeZip } from '@3db/io';
 import { PlaneGcsSolver } from '@3db/sketch';
 import { Kernel } from '@3db/kernel';
@@ -275,6 +275,84 @@ describe('a part file written by version 19 (loft, C4.5) opens in version 20 (ri
     expect(r.bodies).toHaveLength(2);
     expect(r.bodies.every((b) => kernel.isValid(b.shape))).toBe(true);
     expect(r.bodies.reduce((v, b) => v + kernel.massProps(b.shape).volume, 0)).toBeCloseTo(DEMO + (20 / 3) * (100 + 60 + 36), 6);
+  });
+});
+
+describe('a part file written by version 20 (rib, C4.7) opens in version 21 (reference geometry, C3.2–C3.5)', () => {
+  it('keeps its rib and rebuilds it: a plate 40 × 40 × 10 and a wall 4 thick, 20 long and 15 high, valid, every face named as before', async () => {
+    const file = await readPartFile(oldFile('v20-rib.3dbx'));
+    expect(file.warnings).toEqual([]);
+    expect(JSON.parse(new TextDecoder().decode((await readZip(oldFile('v20-rib.3dbx')))[0]!.data)).schemaVersion).toBe(20);
+    expect(file.doc.schemaVersion).toBe(SCHEMA_VERSION);
+    expect(file.doc.features.map((f) => f.type)).toEqual(['sketch', 'extrude', 'sketch', 'rib']);
+    const r = new Regenerator(kernel, await PlaneGcsSolver.create(), file.blobs).rebuild(file.doc);
+    expect(statuses(r).filter((s) => !s.endsWith('=ok'))).toEqual([]);
+    expect(r.bodies).toHaveLength(1);
+    expect(kernel.isValid(r.body!.shape)).toBe(true);
+    expect(kernel.massProps(r.body!.shape).volume).toBeCloseTo(40 * 40 * 10 + 15 * 20 * 4, 6);
+    expect(r.body!.names.faces).toEqual(expect.arrayContaining(['rib1:cap:start', 'rib1:side:sr.l.neg', 'rib1:side:sr.l.pos']));
+  });
+});
+
+describe('a part file written by version 21 (reference geometry, C3.2–C3.5) opens in version 22 (pattern, C6.1–C6.2)', () => {
+  it('keeps its axis, point, plane and coordinate system and rebuilds them: the axis of the post, the centre of its top, the plane square to the axis there', async () => {
+    const file = await readPartFile(oldFile('v21-datums.3dbx'));
+    expect(file.warnings).toEqual([]);
+    expect(JSON.parse(new TextDecoder().decode((await readZip(oldFile('v21-datums.3dbx')))[0]!.data)).schemaVersion).toBe(21);
+    expect(file.doc.schemaVersion).toBe(SCHEMA_VERSION);
+    expect(file.doc.features.map((f) => f.type)).toEqual(['sketch', 'extrude', 'sketch', 'extrude', 'refAxis', 'refPoint', 'refPlane', 'coordSys']);
+    const r = new Regenerator(kernel, await PlaneGcsSolver.create(), file.blobs).rebuild(file.doc);
+    expect(statuses(r).filter((s) => !s.endsWith('=ok'))).toEqual([]);
+    expect(kernel.massProps(r.body!.shape).volume).toBeCloseTo(60 * 20 * 5 + Math.PI * 4 * 5, 6);
+    expect(r.axes.get('axis1')!.origin[0]).toBeCloseTo(5, 6);
+    expect(r.points.get('point1')![2]).toBeCloseTo(10, 6);
+    expect(r.frames.get('plane1')!.normal.map(Math.abs)).toEqual([expect.closeTo(0, 6), expect.closeTo(0, 6), expect.closeTo(1, 6)]);
+    expect(r.systems.get('csys1')!.origin[2]).toBeCloseTo(10, 6);
+  });
+});
+
+describe('a part file written by version 22 (pattern, C6.1–C6.2) opens in version 23 (mirror, C6.3)', () => {
+  it('keeps its pattern and rebuilds it: the plate and three posts (the second instance skipped), valid, every instance under its own name', async () => {
+    const file = await readPartFile(oldFile('v22-pattern.3dbx'));
+    expect(file.warnings).toEqual([]);
+    expect(JSON.parse(new TextDecoder().decode((await readZip(oldFile('v22-pattern.3dbx')))[0]!.data)).schemaVersion).toBe(22);
+    expect(file.doc.schemaVersion).toBe(SCHEMA_VERSION);
+    expect(file.doc.features.map((f) => f.type)).toEqual(['sketch', 'extrude', 'sketch', 'extrude', 'pattern']);
+    const r = new Regenerator(kernel, await PlaneGcsSolver.create(), file.blobs).rebuild(file.doc);
+    expect(statuses(r).filter((s) => !s.endsWith('=ok'))).toEqual([]);
+    expect(kernel.isValid(r.body!.shape)).toBe(true);
+    expect(kernel.massProps(r.body!.shape).volume).toBeCloseTo(60 * 20 * 5 + 3 * Math.PI * 4 * 5, 6);
+    expect(r.body!.names.faces).toEqual(expect.arrayContaining(['pat1:inst1:e2:cap:end', 'pat1:inst3:e2:cap:end']));
+    expect(r.body!.names.faces.some((n) => n.startsWith('pat1:inst2:'))).toBe(false);
+  });
+});
+
+describe('a part file written by version 23 (mirror, C6.3) opens in version 24 (material and settings, C14.1, B8.4)', () => {
+  it('keeps its mirror and rebuilds it, with no material and the settings it never had filled in by default', async () => {
+    const file = await readPartFile(oldFile('v23-mirror.3dbx'));
+    expect(file.warnings).toEqual([]);
+    expect(JSON.parse(new TextDecoder().decode((await readZip(oldFile('v23-mirror.3dbx')))[0]!.data)).schemaVersion).toBe(23);
+    expect(file.doc.schemaVersion).toBe(SCHEMA_VERSION);
+    expect(file.doc.material).toBeUndefined();
+    expect(settingsOf(file.doc)).toEqual({ draftStandard: 'ISO', dimensionPrecision: 4, meshQuality: 'normal' });
+    const r = new Regenerator(kernel, await PlaneGcsSolver.create(), file.blobs).rebuild(file.doc);
+    expect(statuses(r).filter((s) => !s.endsWith('=ok'))).toEqual([]);
+    expect(kernel.massProps(r.body!.shape).volume).toBeCloseTo(60 * 20 * 5 + 2 * Math.PI * 4 * 5, 6);
+  });
+});
+
+describe('a part file written by version 24 (material, settings, appearance) opens in version 25 (notes, tags and folders on features, D1.7)', () => {
+  it('keeps its material, settings and colour and rebuilds; no feature has a note, a tag or a folder', async () => {
+    const file = await readPartFile(oldFile('v24-material.3dbx'));
+    expect(file.warnings).toEqual([]);
+    expect(JSON.parse(new TextDecoder().decode((await readZip(oldFile('v24-material.3dbx')))[0]!.data)).schemaVersion).toBe(24);
+    expect(file.doc.schemaVersion).toBe(SCHEMA_VERSION);
+    expect(file.doc.material).toEqual({ id: 'steel', name: '碳鋼', density: 7.85 });
+    expect(settingsOf(file.doc)).toEqual({ draftStandard: 'CNS', dimensionPrecision: 2, meshQuality: 'normal' });
+    expect(file.doc.appearances).toEqual([{ target: { kind: 'feature', id: 'e2' }, color: '#3366cc' }]);
+    expect(file.doc.features.every((f) => f.comment === undefined && f.tag === undefined && f.folder === undefined)).toBe(true);
+    const r = new Regenerator(kernel, await PlaneGcsSolver.create(), file.blobs).rebuild(file.doc);
+    expect(statuses(r).filter((s) => !s.endsWith('=ok'))).toEqual([]);
   });
 });
 

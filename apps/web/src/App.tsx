@@ -5,8 +5,8 @@ import { useDocumentTitle, useStore } from './state/store';
 import { AssemblyTree } from './components/AssemblyTree';
 import { AssemblyViewport } from './components/AssemblyViewport';
 import { CommandBar } from './components/CommandBar';
-import { EquationsDialog, PropertiesDialog } from './components/ParametersDialogs';
-import { DeleteComponentsDialog, DeleteDialog, FolderDialog, MissingFilesDialog, UnsavedDialog, WhatsWrongDialog } from './components/Dialogs';
+import { AppearanceDialog, EquationsDialog, OptionsDialog, PropertiesDialog, ShortcutsDialog, StepOptionsDialog, TemplateDialog } from './components/ParametersDialogs';
+import { DeleteComponentsDialog, DeleteDialog, FolderDialog, MissingFilesDialog, RecoveryDialog, UnsavedDialog, WhatsWrongDialog } from './components/Dialogs';
 import { FeatureTree } from './components/FeatureTree';
 import { InsertComponentPanel } from './components/InsertComponentPanel';
 import { MatePanel } from './components/MatePanel';
@@ -51,7 +51,13 @@ export function App() {
       <WhatsWrongDialog />
       <EquationsDialog />
       <PropertiesDialog />
+      <AppearanceDialog />
+      <StepOptionsDialog />
+      <TemplateDialog />
+      <ShortcutsDialog />
+      <OptionsDialog />
       <UnsavedDialog />
+      <RecoveryDialog />
       <FolderDialog />
       <MissingFilesDialog />
     </div>

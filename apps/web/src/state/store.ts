@@ -2,10 +2,13 @@ import * as Comlink from 'comlink';
 import { DEFAULT_LOCALE, getLocale, LOCALES, setLocale, t, type Locale } from '@3db/i18n';
 import { useSyncExternalStore } from 'react';
 import {
+  canBeSeed,
   CommandError,
   createDemoPart,
   createEmptyAssembly,
   createEmptyPart,
+  createPartFromTemplate,
+  type PartTemplateId,
   DATUM_PLANES,
   dirName,
   DocHistory,
@@ -27,22 +30,26 @@ import {
   type Id,
   type ImportedBodyFeature,
   type PartDoc,
+  type PatternDefinition,
   type PlaneDefinition,
   type PlaneFrame,
   type Ref,
   type SketchFeature,
 } from '@3db/model';
-import { assemblyName, partFileName, partName, readDocumentFile, sha256Hex, stepFileName, writePartFile } from '@3db/io';
-import { suppressionTargets, type SuppressAction } from '@3db/regen/dag';
+import { assemblyName, partFileName, partName, readDocumentFile, sha256Hex, imageFileName, stepFileName, stlFileName, writePartFile } from '@3db/io';
+import { orderProblem, suppressionTargets, type SuppressAction } from '@3db/regen/dag';
 import { contourChoices, findProfiles, type ContourChoice } from '@3db/sketch/profiles';
-import type { Viewer } from '@3db/render';
-import type { KernelApi, RebuildPayload, SketchSolvePayload, SketchSolveRequest } from '../worker/protocol';
+import type { PickFilter, Viewer } from '@3db/render';
+import type { KernelApi, PartExportOptions, RebuildPayload, SketchSolvePayload, SketchSolveRequest } from '../worker/protocol';
 import { SketchController, type ControllerView, type SketchHost } from '../sketcher/controller';
+import { axisDefinitionFor, emptyRef, put, treeRef } from './datumSlots';
+import { Autosaver, type Recovery } from '../autosave';
+import { loadOptions, parseOptions, saveOptions, type SystemOptions } from '../options';
 import {
   download,
   fileIn,
   folderAccess,
-  FOLDERS_UNSUPPORTED,
+  foldersUnsupported,
   isStepFile,
   pathIn,
   pickFileToOpen,
@@ -54,6 +61,9 @@ import {
   rememberFolder,
   writeFile,
   type OpenedFile,
+  dropRecovery,
+  keepRecovery,
+  recoveryCopy,
 } from '../files';
 import { AssemblyStore, type AssemblySource, type AssemblyState } from './assembly';
 
@@ -89,6 +99,10 @@ export interface UiState {
   selected: Id | null;
   /** Face selected in the graphics area (by persistent name, resolved against the displayed model). */
   selectedFace: Ref | null;
+  /** Which kinds of element the graphics area lets be picked (D5.4): a command asks for kinds, this narrows them. */
+  pickFilter: PickFilter;
+  /** What belongs to this browser and its user (D8.1). */
+  options: SystemOptions;
   editing: EditSession | null;
   result: RebuildPayload | null;
   /** Solve of the sketch being edited (or of the current drag frame). */
@@ -100,13 +114,15 @@ export interface UiState {
   /** 「錯誤為何？」 dialog (D7.1). */
   whatsWrong: boolean;
   /** The equations or file-properties dialog (B5.2, B8.3), when open. */
-  dialog: 'equations' | 'properties' | null;
+  dialog: 'equations' | 'properties' | 'appearance' | 'stepOptions' | 'template' | 'shortcuts' | 'options' | null;
   /** The file the part was opened from or last saved to (F7.1); null for a part never saved. */
   fileName: string | null;
   /** The document differs from what was last opened or saved (the title shows 「*」). */
   dirty: boolean;
   /** A file action waiting for the answer to 「要儲存變更嗎？」. */
   unsaved: PendingFileAction | null;
+  /** A copy of a part with unsaved changes, left by an earlier session (B9.3), waiting for 「復原」 or 「捨棄」. */
+  recovery: { name: string; savedAt: number } | null;
   /** Bumped when a part replaces the current one: the viewport fits the next model it shows. */
   fitRequest: number;
   /** Name of a part never saved (「零件1」, 「零件2」 …, or the STEP file it was made from). */
@@ -262,6 +278,8 @@ class AppStore {
 
   constructor() {
     this.startWorker();
+    void this.checkRecovery();
+    if (typeof document !== 'undefined') document.addEventListener('visibilitychange', () => document.visibilityState === 'hidden' && void this.autosave.flush());
     this.api = new Proxy({} as Comlink.Remote<KernelApi>, {
       // never `then` (the proxy is not a promise) and no symbols: only the methods of the worker's API
       get: (_target, name) => (typeof name === 'symbol' || name === 'then' ? undefined : (...args: unknown[]) => (this.remote as unknown as Record<string, (...a: unknown[]) => unknown>)[name]!(...args)),
@@ -273,6 +291,8 @@ class AppStore {
       canRedo: false,
       selected: null,
       selectedFace: null,
+      pickFilter: { ...loadOptions().pickFilter },
+      options: loadOptions(),
       editing: null,
       result: null,
       sketchSolve: null,
@@ -283,8 +303,9 @@ class AppStore {
       fileName: null,
       dirty: false,
       unsaved: null,
+      recovery: null,
       fitRequest: 0,
-      untitled: '零件1',
+      untitled: t('doc.untitledPart', { n: 1 }),
       rebuilding: false,
       bootMs: null,
       bootError: null,
@@ -305,10 +326,11 @@ class AppStore {
         const prev = this.state.sketchSolve;
         this.set({ sketchSolve: res.entityStatus || !prev?.entityStatus ? res : { ...res, entityStatus: prev.entityStatus } });
       },
-      (e) => this.set({ notice: { kind: 'error', text: `草圖求解失敗：${e instanceof Error ? e.message : String(e)}` } }),
+      (e) => this.set({ notice: { kind: 'error', text: t('sketch.solveFailed', { why: e instanceof Error ? e.message : String(e) }) } }),
     );
     this.history.subscribe(() => this.onDocChanged());
     this.lastDoc = this.history.doc;
+    this.applyOptions(this.state.options);
     const locale = storedLocale();
     setLocale(locale);
     this.boot(locale);
@@ -341,14 +363,86 @@ class AppStore {
     for (const fn of this.listeners) fn();
   }
 
+  /** The template the next 「新零件」 is made from (B1.4). */
+  private template: PartTemplateId = 'blank';
+
+  /** 「系統選項」 (D8.1): changes some of the options, keeps them in the browser and puts them to work. */
+  setOptions(patch: Partial<SystemOptions>): void {
+    const options = parseOptions({ ...this.state.options, ...patch });
+    saveOptions(options);
+    this.set({ options });
+    this.applyOptions(options);
+  }
+
+  private applyOptions(options: SystemOptions): void {
+    this.autosave.enabled = options.autosave;
+    this.autosave.delayMs = options.autosaveSeconds * 1000;
+    if (!options.autosave) this.autosave.cancel();
+  }
+
+  /** 「新零件（範本）」: the part is made from the template, after 「要儲存變更嗎？」 if the open one has changes. */
+  newPartFromTemplate(id: PartTemplateId): void {
+    this.set({ dialog: null });
+    this.template = id;
+    this.guard('new-part');
+  }
+
   /** The part the last rebuild was requested for: a change that only touches what is shown needs no new rebuild. */
   private lastDoc: PartDoc | null = null;
+
+  // ------------------------------------------------------------ autosave and recovery (B9.3)
+
+  /** The copy of a part with unsaved changes, kept in the browser. */
+  private autosave = new Autosaver(
+    { put: keepRecovery, get: recoveryCopy, clear: dropRecovery },
+    async () => (this.assembly ? null : { bytes: await writePartFile(this.history.doc, this.blobs), fileName: this.state.fileName, untitled: this.state.untitled }),
+  );
+  /** What an earlier session left, until the user answers. */
+  private recoveryCopy: Recovery | null = null;
+
+  private async checkRecovery(): Promise<void> {
+    const copy = await recoveryCopy();
+    if (!copy) return;
+    this.recoveryCopy = copy;
+    this.set({ recovery: { name: copy.fileName ?? copy.untitled, savedAt: copy.savedAt } });
+  }
+
+  /** 「復原」: the part of the copy opens as an unsaved part (its first save asks for a name), with its changes. */
+  async restoreRecovery(): Promise<void> {
+    const copy = this.recoveryCopy;
+    if (!copy) return;
+    this.recoveryCopy = null;
+    try {
+      const file = await readDocumentFile(copy.bytes);
+      if (file.kind !== 'part') throw new Error('not a part');
+      this.load(file.doc, null, copy.fileName, file.blobs, copy.untitled); // (the copy in the browser stays until a newer one replaces it)
+      this.set({ recovery: null });
+      this.savedText = ''; // it differs from every file: the title shows 「*」 and the next change keeps a copy again
+      this.set({ dirty: true });
+      this.autosave.changed(true);
+      this.notify(t('recovery.restored', { name: copy.fileName ?? copy.untitled }));
+    } catch (e) {
+      this.set({ recovery: null });
+      this.notify(t('recovery.failed', { why: e instanceof Error ? e.message : String(e) }), 'error');
+      void this.autosave.clear();
+    }
+  }
+
+  /** 「捨棄」: the copy is thrown away. */
+  discardRecovery(): void {
+    this.recoveryCopy = null;
+    this.set({ recovery: null });
+    void this.autosave.clear();
+  }
 
   private onDocChanged(): void {
     const doc = this.history.doc;
     const prev = this.lastDoc;
     this.lastDoc = doc;
-    this.set({ doc, canUndo: this.history.canUndo, canRedo: this.history.canRedo, dirty: serializePart(doc) !== this.savedText });
+    const dirty = serializePart(doc) !== this.savedText;
+    this.set({ doc, canUndo: this.history.canUndo, canRedo: this.history.canRedo, dirty });
+    // a copy is kept only while the answer to the recovery dialog is not still being waited for
+    if (!this.state.recovery) this.autosave.changed(dirty);
     // Inside a sketch only the sketch changes: solve it, and leave the model before it as it is.
     if (this.state.editing?.kind === 'sketch') this.requestSketchSolve();
     else if (!(prev && onlyVisibilityChanged(prev, doc))) this.requestRebuild();
@@ -390,7 +484,57 @@ class AppStore {
     this.set({ selectedFace: face, selected: null });
   }
 
+  setPickFilter(kind: keyof PickFilter, on: boolean): void {
+    this.set({ pickFilter: { ...this.state.pickFilter, [kind]: on } });
+  }
+
   // ------------------------------------------------------------ FeatureManager operations (B2.4, B2.6, B2.8, D7.1)
+
+  // ------------------------------------------------------------ order, folders and notes (B2.5, D1.5, D1.7)
+
+  /**
+   * Moves a feature to just before `beforeId` (the end when null): one undo step. A feature cannot come before what it is built on, nor go past the rollback
+   * bar. It joins the folder that has features on both sides of where it lands, and leaves its own if it lands outside it; `folderChoice` says it otherwise.
+   */
+  moveFeature(id: Id, beforeId: Id | null, folderChoice?: string | null): void {
+    const doc = this.history.doc;
+    const ids = doc.features.map((f) => f.id);
+    const rest = ids.filter((x) => x !== id);
+    const at = beforeId === null ? rest.length : rest.indexOf(beforeId);
+    if (at < 0 || !ids.includes(id)) return;
+    const order = [...rest.slice(0, at), id, ...rest.slice(at)];
+    if (order.every((x, i) => x === ids[i])) return;
+    const name = (x: Id) => doc.features.find((f) => f.id === x)?.name ?? x;
+    const bar = doc.rollbackIndex ?? ids.length;
+    if (order.slice(0, bar).some((x) => !ids.slice(0, bar).includes(x))) return void this.notify(t('tree.moveAcrossBar'), 'error');
+    const problem = orderProblem(doc, order);
+    if (problem) return void this.notify(t('tree.moveBlocked', { feature: name(problem.feature), parent: name(problem.parent) }), 'error');
+    const folderOf = (x: Id | undefined) => (x === undefined ? undefined : doc.features.find((f) => f.id === x)?.folder);
+    const before = folderOf(order[at - 1]);
+    const after = folderOf(order[at + 1]);
+    // between two features of one folder it joins; where the user dropped it on a folder row or beside one it is the user who says
+    const folder = folderChoice !== undefined ? folderChoice : before !== undefined && before === after ? before : null;
+    this.execute({ type: 'arrange', order, folders: { [id]: folder } });
+  }
+
+  /** 「放進新資料夾」: the feature gets a folder of its own to begin with (drag others in, rename it). */
+  newFolder(id: Id): void {
+    const used = new Set(this.history.doc.features.flatMap((f) => (f.folder ? [f.folder] : [])));
+    let n = 1;
+    while (used.has(t('tree.folderName', { n }))) n++;
+    this.execute({ type: 'arrange', order: this.history.doc.features.map((f) => f.id), folders: { [id]: t('tree.folderName', { n }) } });
+  }
+
+  /** The name of a folder changed, or the folder dissolved (null): all its features at once. */
+  renameFolder(folder: string, to: string | null): void {
+    const members = this.history.doc.features.filter((f) => f.folder === folder).map((f) => f.id);
+    this.execute({ type: 'arrange', order: this.history.doc.features.map((f) => f.id), folders: Object.fromEntries(members.map((m) => [m, to])) });
+  }
+
+  /** Takes the feature out of its folder. */
+  leaveFolder(id: Id): void {
+    this.execute({ type: 'arrange', order: this.history.doc.features.map((f) => f.id), folders: { [id]: null } });
+  }
 
   /** 「抑制」「恢復抑制」「恢復抑制（含相依特徵）」: the dependency graph decides which features change, in one step. */
   suppress(featureId: Id, action: SuppressAction): void {
@@ -423,7 +567,7 @@ class AppStore {
   /** 「改用這個」 (B4.3): a feature's reference that no longer resolves now points at the candidate. */
   replaceRef(featureId: Id, from: Ref, candidate: { name: string; fingerprint: Fingerprint }): void {
     if (this.execute({ type: 'replaceRef', featureId, from, to: { kind: from.kind, name: candidate.name, fingerprint: candidate.fingerprint } })) {
-      this.notify(`已改用 ${candidate.name}`);
+      this.notify(t('ref.replaced', { name: candidate.name }));
     }
   }
 
@@ -488,7 +632,7 @@ class AppStore {
     if (this.state.editing) this.commitEdit();
     const f = findFeature(this.history.doc, featureId);
     if (!f) return;
-    this.history.begin(`編輯 ${f.name}`);
+    this.history.begin(t('history.edit', { name: f.name }));
     if (f.type === 'sketch') return this.enterSketch(f, false);
     this.set({ editing: { featureId, kind: 'feature' }, selected: featureId });
     this.requestRebuild();
@@ -517,25 +661,25 @@ class AppStore {
   /** 「草圖」 on a selected default plane, reference plane or planar face (C1.1): a new sketch, viewed normal to its plane. */
   newSketch(plane: DatumPlaneName | Ref): void {
     const ref: Ref = typeof plane === 'string' ? { kind: 'datum', name: plane } : plane;
-    if (ref.kind === 'face' && !faceFrame(ref)) return this.notify('草圖只能放在平面上', 'error');
+    if (ref.kind === 'face' && !faceFrame(ref)) return this.notify(t('sketch.planeOnly'), 'error');
     const doc = this.history.doc;
     const feature: SketchFeature = {
       id: this.allocator().take('sketch'),
       type: 'sketch',
-      name: nextName(doc, '草圖'),
+      name: nextName(doc, t('feature.sketch')),
       suppressed: false,
       plane: ref,
       entities: [],
       constraints: [],
     };
-    if (this.startNew(feature, '新草圖')) this.enterSketch(feature, true);
+    if (this.startNew(feature, t('sketch.newSketch'))) this.enterSketch(feature, true);
   }
 
   /** The sketch selected in the FeatureManager, for the features built from one. */
   private selectedSketch(): SketchFeature | null {
     const sketch = findFeature(this.history.doc, this.state.selected ?? '');
     if (sketch?.type === 'sketch') return sketch;
-    this.notify('請先在設計樹中選擇一個草圖');
+    this.notify(t('sketch.pickInTree'));
     return null;
   }
 
@@ -549,7 +693,7 @@ class AppStore {
   newExtrude(op: 'boss' | 'cut'): void {
     const sketch = this.selectedSketch();
     if (!sketch) return;
-    const base = op === 'boss' ? '伸長' : '除料-伸長';
+    const base = op === 'boss' ? t('feature.extrude') : t('feature.cut', { name: t('feature.extrude') });
     const id = this.allocator().take(op === 'boss' ? 'extrude' : 'cut');
     this.openNew({ id, type: 'extrude', name: nextName(this.history.doc, base), suppressed: false, sketch: sketch.id, op, dir1: { type: 'blind', depth: '10' } }, base);
   }
@@ -602,8 +746,8 @@ class AppStore {
     if (!sketch) return;
     const lines = sketch.entities.filter((e) => e.type === 'line');
     const axis = lines.find((e) => e.construction) ?? (lines.length === 1 ? lines[0] : undefined);
-    if (!axis) return this.notify('旋轉需要草圖中的一條中心線作為旋轉軸', 'error');
-    const base = op === 'boss' ? '旋轉' : '除料-旋轉';
+    if (!axis) return this.notify(t('feature.axisNeeded'), 'error');
+    const base = op === 'boss' ? t('feature.revolve') : t('feature.cut', { name: t('feature.revolve') });
     const id = this.allocator().take('revolve');
     this.openNew({ id, type: 'revolve', name: nextName(this.history.doc, base), suppressed: false, sketch: sketch.id, axis: axis.id, op, dir1: { type: 'blind', angle: '360' } }, base);
   }
@@ -611,7 +755,7 @@ class AppStore {
   /** 「圓角」 (C5.1): picks edges on the model in the PropertyManager session. */
   newFillet(): void {
     const id = this.allocator().take('fillet');
-    this.openNew({ id, type: 'fillet', name: nextName(this.history.doc, '圓角'), suppressed: false, edges: [], radius: '2' }, '圓角');
+    this.openNew({ id, type: 'fillet', name: nextName(this.history.doc, t('feature.fillet')), suppressed: false, edges: [], radius: '2' }, t('feature.fillet'));
   }
 
   /**
@@ -627,13 +771,65 @@ class AppStore {
           ? s.selectedFace
           : { kind: 'datum', name: 'plane:front' };
     const id = this.allocator().take('plane');
-    this.openNew({ id, type: 'refPlane', name: nextName(this.history.doc, '基準面'), suppressed: false, def: { mode: 'offset', plane, distance: '10' } }, '基準面');
+    this.openNew({ id, type: 'refPlane', name: nextName(this.history.doc, t('feature.refPlane')), suppressed: false, def: { mode: 'offset', plane, distance: '10' } }, t('feature.refPlane'));
+  }
+
+  /**
+   * 「線性複製排列」 or 「環狀複製排列」 (C6.1, C6.2): repeats the feature that is selected (else the latest one that can be repeated); the
+   * PropertyManager changes the seeds, the direction or axis, the count and the spacing, and the instances to skip.
+   */
+  newPattern(mode: 'linear' | 'circular'): void {
+    const doc = this.history.doc;
+    const selected = findFeature(doc, this.state.selected ?? '');
+    const seed = selected && canBeSeed(selected) ? selected : [...doc.features].reverse().find(canBeSeed);
+    if (!seed) return this.notify(t('pattern.nothingToRepeat'), 'error');
+    const name = t(mode === 'linear' ? 'feature.linearPattern' : 'feature.circularPattern');
+    const def: PatternDefinition = mode === 'linear' ? { mode, dir1: { ref: { kind: 'datum', name: 'plane:right' }, spacing: '10', count: '3' } } : { mode, axis: emptyRef('rotationAxis'), count: '6', angle: '360', equal: true };
+    this.openNew({ id: this.allocator().take('pattern'), type: 'pattern', name: nextName(doc, name), suppressed: false, seeds: [seed.id], def }, name);
+  }
+
+  /**
+   * 「鏡射」 (C6.3): across the right plane to begin with; mirrors the feature that is selected (else the latest one that can be repeated), or, when
+   * the model has nothing to repeat, a body. The PropertyManager changes what is mirrored and across which plane.
+   */
+  newMirror(): void {
+    const doc = this.history.doc;
+    const selected = findFeature(doc, this.state.selected ?? '');
+    const seed = selected && canBeSeed(selected) ? selected : [...doc.features].reverse().find(canBeSeed);
+    const body = this.state.result?.bodies[0];
+    if (!seed && !body) return this.notify(t('mirror.nothingToMirror'), 'error');
+    const name = t('feature.mirror');
+    const plane: Ref = { kind: 'datum', name: 'plane:right' };
+    const mirror: Feature = seed
+      ? { id: this.allocator().take('mirror'), type: 'mirror', name: nextName(doc, name), suppressed: false, target: 'features', plane, seeds: [seed.id], bodies: [] }
+      : { id: this.allocator().take('mirror'), type: 'mirror', name: nextName(doc, name), suppressed: false, target: 'bodies', plane, seeds: [], bodies: [{ kind: 'body', name: body!.id }] };
+    this.openNew(mirror, name);
+  }
+
+  /** 「基準軸」 (C3.3): along a straight edge, or the axis of the cylinder that is selected; the PropertyManager changes the type and the references. */
+  newRefAxis(): void {
+    const face = this.state.selectedFace;
+    const def = face?.kind === 'face' && (face.fingerprint?.type === 'cylinder' || face.fingerprint?.type === 'cone') ? ({ mode: 'cylinder', face } as const) : axisDefinitionFor('edge');
+    const name = t('feature.refAxis');
+    this.openNew({ id: this.allocator().take('axis'), type: 'refAxis', name: nextName(this.history.doc, name), suppressed: false, def }, name);
+  }
+
+  /** 「參考點」 (C3.5): at the part origin by coordinates, to be moved or changed to another kind in the PropertyManager. */
+  newRefPoint(): void {
+    const name = t('feature.refPoint');
+    this.openNew({ id: this.allocator().take('point'), type: 'refPoint', name: nextName(this.history.doc, name), suppressed: false, def: { mode: 'coords', x: '0', y: '0', z: '0' } }, name);
+  }
+
+  /** 「座標系統」 (C3.4): at the part origin with its axes along the default ones, to be changed in the PropertyManager. */
+  newCoordSys(): void {
+    const name = t('feature.coordSys');
+    this.openNew({ id: this.allocator().take('csys'), type: 'coordSys', name: nextName(this.history.doc, name), suppressed: false, x: { kind: 'datum', name: 'plane:right' }, y: { kind: 'datum', name: 'plane:top' } }, name);
   }
 
   /** 「導角」 (C5.3), angle–distance by default like SolidWorks. */
   newChamfer(): void {
     const id = this.allocator().take('chamfer');
-    this.openNew({ id, type: 'chamfer', name: nextName(this.history.doc, '導角'), suppressed: false, edges: [], mode: 'angleDistance', distance: '1', second: '45' }, '導角');
+    this.openNew({ id, type: 'chamfer', name: nextName(this.history.doc, t('feature.chamfer')), suppressed: false, edges: [], mode: 'angleDistance', distance: '1', second: '45' }, t('feature.chamfer'));
   }
 
   /** 「刪除面」 (C10.2): starts with the face selected in the graphics area, if there is one. */
@@ -735,7 +931,7 @@ class AppStore {
     const frame = this.frameOf(sketch);
     if (!frame) {
       this.history.rollback();
-      return this.notify('找不到草圖所在的平面（先修正草圖前面的特徵）', 'error');
+      return this.notify(t('sketch.planeNotFound'), 'error');
     }
     this.sketcher = new SketchController(this.sketchHost(sketch.id));
     this.set({ editing: { featureId: sketch.id, kind: 'sketch' }, selected: sketch.id, selectedFace: null, sketchSolve: null, dimensionEdit: null });
@@ -789,7 +985,7 @@ class AppStore {
     const f = this.editedFeature();
     if (f?.type === 'fillet' || f?.type === 'chamfer') this.toggleEdge(ref);
     else if (f?.type === 'extrude') this.setUpToFace(ref);
-    else if (f?.type === 'refPlane') this.setPlaneRef(ref);
+    else if (f?.type === 'refPlane' || f?.type === 'refAxis' || f?.type === 'refPoint' || f?.type === 'coordSys' || f?.type === 'pattern' || f?.type === 'mirror') this.putDatumRef(ref);
     else if (f?.type === 'deleteFace') this.toggleFace(ref);
     else if (f?.type === 'shell') this.toggleShellFace(ref);
     else if (f?.type === 'draft') this.pickDraftFace(ref);
@@ -797,34 +993,50 @@ class AppStore {
     else if (f?.type === 'combine' && ref.kind === 'face') this.pickBody(ref.name);
   }
 
+  /** The kind of element the feature being edited takes in a list, if it takes several at a time (a fillet's edges, the faces of a shell). */
+  multiPickKind(): 'edge' | 'face' | null {
+    const f = this.editedFeature();
+    if (f?.type === 'fillet' || f?.type === 'chamfer') return 'edge';
+    if (f?.type === 'deleteFace' || f?.type === 'shell' || f?.type === 'draft') return 'face';
+    return null;
+  }
+
+  /**
+   * Adds elements picked all at once — a loop, a chain of edges that continue one another, the faces that meet smoothly (D5.6) — to the list of the feature
+   * being edited. Unlike a click nothing is toggled off: those already in the list stay.
+   */
+  pickMany(refs: Ref[]): void {
+    const f = this.editedFeature();
+    const more = (list: Ref[], kind: Ref['kind'], skip?: string) => [...list, ...refs.filter((r, i) => r.kind === kind && r.name !== skip && !list.some((x) => x.name === r.name) && refs.findIndex((q) => q.name === r.name) === i)];
+    if (f?.type === 'fillet' || f?.type === 'chamfer') this.execute({ type: 'setEdges', featureId: f.id, edges: more(f.edges, 'edge') });
+    else if (f?.type === 'deleteFace') this.execute({ type: 'setFaces', featureId: f.id, faces: more(f.faces, 'face'), ...(f.hole ? { hole: true } : {}) });
+    else if (f?.type === 'shell') this.execute({ type: 'setShell', featureId: f.id, faces: more(f.faces, 'face'), thickness: f.thickness, ...(f.outward ? { outward: true } : {}) });
+    else if (f?.type === 'draft' && f.neutral.name) this.execute({ type: 'setDraftFeature', featureId: f.id, neutral: f.neutral, faces: more(f.faces, 'face', f.neutral.name), angle: f.angle, ...(f.reverse ? { reverse: true } : {}) });
+  }
+
   /** A click in the FeatureManager selects; while a plane is being defined it picks a plane like SolidWorks' flyout tree. */
   treeClick(id: Id): void {
     const f = this.editedFeature();
-    if (f?.type === 'refPlane' && f.def.mode !== 'threePoint' && id !== f.id && this.isPlane(id)) return this.setPlaneRef({ kind: 'datum', name: id });
+    const datum = f && id !== f.id && (f.type === 'refPlane' || f.type === 'refAxis' || f.type === 'refPoint' || f.type === 'coordSys' || f.type === 'pattern' || f.type === 'mirror') ? treeRef(this.history.doc, id) : null;
+    if (datum && this.putDatumRef(datum)) return;
     this.select(id);
   }
 
   /**
-   * References of the plane being defined (C3.2): a plane (datum or planar face) for offset and angle
-   * planes, a straight edge as the axis of an angle plane, and up to three vertices, toggled by clicking.
+   * What is clicked while reference geometry is being defined (C3.2–C3.5) goes to the first selection box that takes it (`datumSlots`).
+   * Returns whether anything took it; an element nothing takes is left to the caller (a click in the tree selects).
    */
-  setPlaneRef(ref: Ref): void {
+  putDatumRef(ref: Ref): boolean {
     const f = this.editedFeature();
-    if (f?.type !== 'refPlane') return;
-    const d = f.def;
-    const set = (def: PlaneDefinition) => this.execute({ type: 'setRefPlane', featureId: f.id, def });
-    if (d.mode === 'threePoint') {
-      if (ref.kind !== 'vertex') return;
-      if (d.points.some((p) => p.name === ref.name)) return void set({ ...d, points: d.points.filter((p) => p.name !== ref.name) });
-      if (d.points.length >= 3) return this.notify('已選三個點；點選已選的點可移除它');
-      return void set({ ...d, points: [...d.points, ref] });
+    if (!f) return false;
+    const result = put(f, this.history.doc, ref);
+    if (!result) {
+      this.notify(t('slot.notNeeded'), 'error');
+      return false;
     }
-    if (ref.kind === 'edge' && d.mode === 'angle') {
-      if (ref.fingerprint?.type !== 'line') return this.notify('旋轉軸必須是直線邊線', 'error');
-      return void set({ ...d, axis: ref });
-    }
-    if (ref.kind === 'face' && ref.fingerprint?.type !== 'plane') return this.notify('參考面必須是平面', 'error');
-    if (ref.kind === 'face' || ref.kind === 'datum') set({ ...d, plane: ref });
+    if ('message' in result) this.notify(result.message);
+    else this.execute(result.command);
+    return true;
   }
 
   /** 「成形至某一面」: the face picked in the graphics area ends the extrusion being edited. */
@@ -857,7 +1069,7 @@ class AppStore {
     if (!e) return undefined;
     const i = this.history.doc.features.findIndex((f) => f.id === e.featureId);
     const type = this.history.doc.features[i]?.type;
-    if (type === 'refPlane') return i + 1;
+    if (type === 'refPlane' || type === 'refAxis' || type === 'refPoint' || type === 'coordSys' || type === 'pattern' || type === 'mirror') return i + 1;
     return type === 'fillet' || type === 'chamfer' || type === 'deleteFace' || type === 'moveFace' || type === 'shell' || type === 'draft' || type === 'combine' || type === 'sketch' ? i : undefined;
   }
 
@@ -1020,7 +1232,7 @@ class AppStore {
       if (e instanceof StalledError) {
         this.restartWorker();
         this.notify(t('worker.stalled', { seconds: Math.round(this.rebuildLimitMs / 1000) }), 'error');
-      } else this.notify(`重新計算失敗：${e instanceof Error ? e.message : String(e)}`, 'error');
+      } else this.notify(t('rebuild.failed', { why: e instanceof Error ? e.message : String(e) }), 'error');
     } finally {
       if (worker === this.workerGeneration) {
         this.inFlight = false;
@@ -1042,19 +1254,51 @@ class AppStore {
     return partName(this.history.doc, this.state.fileName, this.state.untitled);
   }
 
-  async exportStep(): Promise<void> {
+  /** 「輸出 STEP」: an assembly is written as it is; a part first asks how (the schema, colors, a coordinate system). */
+  exportStep(): void {
+    if (this.assembly) void this.writeStep();
+    else this.openDialog('stepOptions');
+  }
+
+  async writeStep(options: PartExportOptions = {}): Promise<void> {
     try {
       const name = this.documentName();
-      const text = this.assembly ? await this.api.exportAssemblyStep(this.assembly.stepRequest()) : await this.api.exportStep(this.history.doc, name);
+      const text = this.assembly ? await this.api.exportAssemblyStep(this.assembly.stepRequest()) : await this.api.exportStep(this.history.doc, name, options);
       download(stepFileName(name), text, 'application/step');
-      this.notify(`已輸出 ${stepFileName(name)}`);
+      this.notify(t('export.done', { file: stepFileName(name) }));
     } catch (e) {
-      this.notify(`STEP 輸出失敗：${e instanceof Error ? e.message : String(e)}`, 'error');
+      this.notify(t('export.failed', { what: 'STEP', why: e instanceof Error ? e.message : String(e) }), 'error');
+    }
+  }
+
+  /** 「輸出 STL」 (F4.1): the bodies that count, as fine as the document's quality says. */
+  async exportStl(): Promise<void> {
+    try {
+      const name = this.documentName();
+      const bytes = await this.api.exportStl(this.history.doc, name);
+      download(stlFileName(name), bytes as Uint8Array<ArrayBuffer>, 'model/stl');
+      this.notify(t('export.done', { file: stlFileName(name) }));
+    } catch (e) {
+      this.notify(t('export.failed', { what: t('export.stlWhat'), why: e instanceof Error ? e.message : String(e) }), 'error');
+    }
+  }
+
+  /** 「輸出影像」 (F3.3): what the graphics area shows, as a PNG. */
+  async exportImage(): Promise<void> {
+    try {
+      const blob = await this.viewer?.snapshot();
+      if (!blob) throw new Error(t('export.imageEmpty'));
+      const name = this.documentName();
+      download(imageFileName(name), blob, 'image/png');
+      this.notify(t('export.done', { file: imageFileName(name) }));
+    } catch (e) {
+      this.notify(t('export.failed', { what: t('export.imageWhat'), why: e instanceof Error ? e.message : String(e) }), 'error');
     }
   }
 
   /** 「新零件」: an empty part with the default planes (B1.4). */
   newPart(): void {
+    this.template = this.state.options.defaultTemplate;
     this.guard('new-part');
   }
 
@@ -1099,12 +1343,14 @@ class AppStore {
     if (action === 'open-part') return this.openPartFile();
     if (action === 'return-assembly') return this.reopenAssembly();
     if (action === 'new-assembly') {
-      this.showAssembly({ doc: createEmptyAssembly(), handle: null, fileName: null, folder: '', untitled: `組合件${++this.untitledAssemblies}`, project: this.project });
+      this.showAssembly({ doc: createEmptyAssembly(), handle: null, fileName: null, folder: '', untitled: t('doc.untitledAssembly', { n: ++this.untitledAssemblies }), project: this.project });
       // SolidWorks starts a new assembly in 「開始組合件」: the first thing to do is to insert a part.
       return void this.assembly!.startInsert();
     }
     if (action === 'new-demo') return this.load(createDemoPart(), null, null);
-    this.load(createEmptyPart(), null, null, new Map(), `零件${++this.untitledCount}`);
+    const template = this.template;
+    this.template = 'blank';
+    this.load(createPartFromTemplate(template), null, null, new Map(), t('doc.untitledPart', { n: ++this.untitledCount }));
   }
 
   private async openFile(): Promise<void> {
@@ -1120,12 +1366,12 @@ class AppStore {
       if (file.kind === 'assembly') return await this.openAssembly(picked, file.doc);
       // A file in the old format is never overwritten with the new one: its first save asks for a name.
       this.load(file.doc, file.format === '3dbx' ? picked.handle : null, picked.name, file.blobs);
-      const notes = [...(file.format === 'json' ? ['舊版格式，儲存時會另存為 .3dbx'] : []), ...file.warnings];
-      this.notify(`已開啟 ${picked.name}${notes.length ? `（${notes.join('；')}）` : ''}`, file.warnings.length ? 'error' : 'info');
+      const notes = [...(file.format === 'json' ? [t('file.oldFormat')] : []), ...file.warnings];
+      this.notify(notes.length ? t('file.openedNotes', { name: picked.name, notes: notes.join('; ') }) : t('file.opened', { name: picked.name }), file.warnings.length ? 'error' : 'info');
     } catch (e) {
       // After 「儲存」 in the unsaved-changes prompt the browser may refuse a second file dialog.
-      if (e instanceof DOMException && (e.name === 'SecurityError' || e.name === 'NotAllowedError')) return this.notify('請再按一次「開啟舊檔」');
-      this.notify(`無法開啟：${e instanceof Error ? e.message : String(e)}`, 'error');
+      if (e instanceof DOMException && (e.name === 'SecurityError' || e.name === 'NotAllowedError')) return this.notify(t('file.again'));
+      this.notify(t('file.openFailed', { why: e instanceof Error ? e.message : String(e) }), 'error');
     }
   }
 
@@ -1135,7 +1381,7 @@ class AppStore {
       const picked = await pickStepFile();
       if (picked) await this.importData(picked.name, picked.bytes);
     } catch (e) {
-      this.notify(`無法輸入：${e instanceof Error ? e.message : String(e)}`, 'error');
+      this.notify(t('file.importFailed', { why: e instanceof Error ? e.message : String(e) }), 'error');
     }
   }
 
@@ -1150,10 +1396,10 @@ class AppStore {
     const doc = this.history.doc;
     const ids = this.allocator();
     const blob: BlobRef = { id: ids.take('blob'), sha256, kind: 'step', fileName };
-    const feature: ImportedBodyFeature = { id: ids.take('import'), type: 'importedBody', name: nextName(doc, '輸入'), suppressed: false, blob: blob.id };
+    const feature: ImportedBodyFeature = { id: ids.take('import'), type: 'importedBody', name: nextName(doc, t('feature.importName')), suppressed: false, blob: blob.id };
     if (this.execute({ type: 'importBody', blob, feature, index: doc.rollbackIndex ?? doc.features.length })) {
       this.set({ selected: feature.id, selectedFace: null, fitRequest: this.state.fitRequest + 1 });
-      this.notify(`已輸入 ${fileName}`);
+      this.notify(t('file.imported', { name: fileName }));
     }
   }
 
@@ -1175,10 +1421,10 @@ class AppStore {
       const doc = this.history.doc;
       download(name, (await writePartFile(doc, this.blobs)) as Uint8Array<ArrayBuffer>, 'application/octet-stream');
       this.saved(doc, null, name);
-      this.notify(`已下載 ${name}（這個瀏覽器不能直接寫入檔案）`);
+      this.notify(t('file.downloaded', { name }));
       return true;
     } catch (e) {
-      this.notify(`存檔失敗：${e instanceof Error ? e.message : String(e)}`, 'error');
+      this.notify(t('file.saveFailed', { why: e instanceof Error ? e.message : String(e) }), 'error');
       return false;
     }
   }
@@ -1188,10 +1434,10 @@ class AppStore {
     try {
       await writeFile(handle, await writePartFile(doc, this.blobs));
       this.saved(doc, handle, handle.name);
-      this.notify(`已儲存 ${handle.name}`);
+      this.notify(t('file.saved', { name: handle.name }));
       return true;
     } catch (e) {
-      this.notify(`存檔失敗：${e instanceof Error ? e.message : String(e)}`, 'error');
+      this.notify(t('file.saveFailed', { why: e instanceof Error ? e.message : String(e) }), 'error');
       return false;
     }
   }
@@ -1200,6 +1446,7 @@ class AppStore {
     this.fileHandle = handle;
     this.savedText = serializePart(doc);
     this.set({ fileName, dirty: serializePart(this.history.doc) !== this.savedText });
+    void this.autosave.clear();
   }
 
   private load(doc: PartDoc, handle: FileSystemFileHandle | null, fileName: string | null, blobs = new Map<string, Uint8Array>(), untitled = this.state.untitled): void {
@@ -1212,6 +1459,7 @@ class AppStore {
     this.blobs = blobs;
     void this.api.setBlobs(blobs); // posted before the rebuild request, so the worker has them first
     this.savedText = serializePart(doc);
+    if (!this.state.recovery) void this.autosave.clear();
     this.set({ active: 'part', selected: null, selectedFace: null, result: null, fileName, untitled, fitRequest: this.state.fitRequest + 1, documentSerial: this.state.documentSerial + 1 });
     this.onDocChanged();
   }
@@ -1227,7 +1475,7 @@ class AppStore {
     const a = this.assembly;
     const path = a?.componentPath(componentId);
     if (!a || !path) return;
-    if (a.getState().files.get(path)?.status === 'missing') return this.notify('找不到這個零件檔：請先重新指定', 'error');
+    if (a.getState().files.get(path)?.status === 'missing') return this.notify(t('file.partMissing'), 'error');
     this.partToOpen = path;
     this.guard('open-part');
   }
@@ -1250,14 +1498,14 @@ class AppStore {
         await this.importData(fileName, bytes);
       } else {
         const file = await readDocumentFile(bytes);
-        if (file.kind !== 'part') throw new Error(`「${fileName}」不是零件檔`);
+        if (file.kind !== 'part') throw new Error(t('file.notPart', { name: fileName }));
         this.load(file.doc, file.format === '3dbx' ? handle : null, fileName, file.blobs);
       }
       this.returnFile = back;
       this.set({ returnTo: back ? assembly : null });
-      this.notify(step ? `已開啟 ${fileName}：STEP 零組件開成新零件；存成零件檔後，可在組合件中以「重新指定零件檔…」改用它` : `已開啟 ${fileName}${back ? '：改好存檔後，按「返回組合件」回到組合件' : ''}`);
+      this.notify(step ? t('file.openedStep', { name: fileName }) : back ? t('file.openedBack', { name: fileName }) : t('file.opened', { name: fileName }));
     } catch (e) {
-      this.notify(`無法開啟：${e instanceof Error ? e.message : String(e)}`, 'error');
+      this.notify(t('file.openFailed', { why: e instanceof Error ? e.message : String(e) }), 'error');
     }
   }
 
@@ -1273,10 +1521,10 @@ class AppStore {
       const file = await handle.getFile();
       const bytes = new Uint8Array(await file.arrayBuffer());
       const doc = await readDocumentFile(bytes);
-      if (doc.kind !== 'assembly') throw new Error(`「${handle.name}」不是組合件`);
+      if (doc.kind !== 'assembly') throw new Error(t('file.notAssembly', { name: handle.name }));
       await this.openAssembly({ name: handle.name, bytes, handle }, doc.doc);
     } catch (e) {
-      this.notify(`無法開啟：${e instanceof Error ? e.message : String(e)}`, 'error');
+      this.notify(t('file.openFailed', { why: e instanceof Error ? e.message : String(e) }), 'error');
     }
   }
 
@@ -1308,19 +1556,19 @@ class AppStore {
    * Without one, or when the file is elsewhere, the user is asked for the folder.
    */
   private async openAssembly(picked: OpenedFile, doc: AssemblyDoc): Promise<void> {
-    if (!picked.handle) return this.notify(FOLDERS_UNSUPPORTED, 'error');
+    if (!picked.handle) return this.notify(foldersUnsupported(), 'error');
     let folder = this.project ?? (await this.rememberedWithAccess());
     let path = folder ? await pathIn(folder, picked.handle) : null;
-    let reason = `「${picked.name}」引用其他檔案。請選擇包含它和它的零件的專案資料夾。`;
+    let reason = t('folder.askRefs', { name: picked.name });
     while (path === null) {
       folder = await this.askForFolder(reason);
       if (!folder) return; // nothing is opened; the current document stays
       path = await pathIn(folder, picked.handle);
-      reason = `資料夾「${folder.name}」不包含「${picked.name}」。請選擇包含它的資料夾（可以是更上層的資料夾）。`;
+      reason = t('folder.askNotIn', { folder: folder.name, name: picked.name });
     }
     this.useProject(folder!);
-    this.showAssembly({ doc, handle: picked.handle, fileName: picked.name, folder: dirName(path), untitled: '組合件1', project: folder });
-    this.notify(`已開啟 ${picked.name}`);
+    this.showAssembly({ doc, handle: picked.handle, fileName: picked.name, folder: dirName(path), untitled: t('doc.untitledAssembly', { n: 1 }), project: folder });
+    this.notify(t('file.opened', { name: picked.name }));
   }
 
   private async projectFolder(reason: string): Promise<FileSystemDirectoryHandle | null> {
@@ -1353,9 +1601,9 @@ class AppStore {
     if (!folder) return;
     try {
       if (await folderAccess(folder, true)) this.answerFolder(folder);
-      else this.notify(`瀏覽器沒有允許讀取「${folder.name}」`, 'error');
+      else this.notify(t('folder.notAllowed', { name: folder.name }), 'error');
     } catch (e) {
-      this.notify(`無法使用這個資料夾：${e instanceof Error ? e.message : String(e)}`, 'error');
+      this.notify(t('folder.useFailed', { why: e instanceof Error ? e.message : String(e) }), 'error');
     }
   }
 
@@ -1374,7 +1622,7 @@ class AppStore {
       const folder = await pickProjectFolder();
       if (folder) this.answerFolder(folder);
     } catch (e) {
-      this.notify(`無法選擇資料夾：${e instanceof Error ? e.message : String(e)}`, 'error');
+      this.notify(t('folder.chooseFailed', { why: e instanceof Error ? e.message : String(e) }), 'error');
     }
   }
 

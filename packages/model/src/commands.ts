@@ -1,8 +1,10 @@
 import { t } from '@3db/i18n';
 import { current, produce, type Draft } from 'immer';
 import { countersFor, type Id } from './ids';
-import type { Variable, BlobRef, ChamferFeature, CombineFeature, HoleFeature, LoftFeature, RibFeature, SweepFeature, Draft as WallDraft, EndCondition, Thin, Expr, Feature, ImportedBodyFeature, PartDoc, PlaneDefinition, Ref, RevolveCondition, SketchConstraint, SketchEntity, SketchFeature } from './schema';
+import type { AppearanceTarget, DocSettings, MaterialRef, Variable, BlobRef, ChamferFeature, CombineFeature, HoleFeature, LoftFeature, RibFeature, SweepFeature, Draft as WallDraft, EndCondition, Thin, Expr, Feature, ImportedBodyFeature, AxisDefinition, CoordSysFeature, MirrorFeature, PartDoc, PatternDefinition, PatternFeature, PlaneDefinition, PointDefinition, Ref, RevolveCondition, SketchConstraint, SketchEntity, SketchFeature } from './schema';
 import { isDatumPlaneName } from './datums';
+import { canBeSeed } from './patterns';
+import { colorOk, materialOk, sameTarget } from './materials';
 import { mapRefs } from './refs';
 import { bodyFeature, isBodyKey, isHideable } from './visibility';
 import { dimensionName, Parameters, renameInDoc, resolveDoc, variableUsers, type ExprKind } from './params';
@@ -91,6 +93,14 @@ ull). */
   /** The face and the distance of a Move Face feature (C10.1). */
   | { type: 'setMoveFace'; featureId: Id; face: Ref; distance: Expr }
   | { type: 'setRefPlane'; featureId: Id; def: PlaneDefinition }
+  /** How a reference axis (C3.3), a reference point (C3.5) or a coordinate system (C3.4) is defined. */
+  | { type: 'setRefAxis'; featureId: Id; def: AxisDefinition }
+  | { type: 'setRefPoint'; featureId: Id; def: PointDefinition }
+  /** What a pattern repeats and how (C6.1, C6.2); `skip` names the instances to leave out. */
+  | { type: 'setPattern'; featureId: Id; seeds: Id[]; def: PatternDefinition; skip?: string[] }
+  /** What a mirror reflects and across what (C6.3). */
+  | { type: 'setMirror'; featureId: Id; value: Pick<MirrorFeature, 'target' | 'plane' | 'seeds' | 'bodies' | 'merge'> }
+  | { type: 'setCoordSys'; featureId: Id; value: Pick<CoordSysFeature, 'origin' | 'x' | 'y' | 'flipX' | 'flipY'> }
   /** Adds imported data and the feature that uses it, as one step (F2.1). */
   | { type: 'importBody'; blob: BlobRef; feature: ImportedBodyFeature; index: number }
   /** Suppresses or unsuppresses several features at once; which ones follows from their dependencies (B2.6). */
@@ -98,6 +108,14 @@ ull). */
   /** Deletes features (B2.8). Their ids stay issued; references to them become missing, never rebound. */
   | { type: 'deleteFeatures'; featureIds: Id[] }
   | { type: 'renameFeature'; featureId: Id; name: string }
+  /**
+   * The history put in another order (B2.5), and, at the same time, which features are in which folder (D1.7; `null` takes a feature out). `order` has every
+   * feature once; those before the rollback bar stay before it. Whether a feature still comes after the ones it depends on is for the caller to see
+   * (`orderProblem`): the rebuild reports what is left wrong.
+   */
+  | { type: 'arrange'; order: Id[]; folders?: Record<Id, string | null> }
+  /** A note and a label on a feature (D1.7); an empty text takes it away. */
+  | { type: 'setFeatureNote'; featureId: Id; comment?: string; tag?: string }
   | { type: 'setRollback'; index: number | null }
   /** Sketch editing (C1): add geometry together with its relations and dimensions. */
   | { type: 'addSketchItems'; featureId: Id; entities: SketchEntity[]; constraints: SketchConstraint[] }
@@ -127,6 +145,12 @@ ull). */
   | { type: 'deleteVariable'; id: Id }
   /** File properties (B8.3): free text by name, e.g. a vendor or a part number. */
   | { type: 'setProperty'; name: string; value: string }
+  /** The material of the part (C14.1); `null` takes it away. */
+  | { type: 'setMaterial'; material: MaterialRef | null }
+  /** The color of a part, body, feature or face (C14.2); `null` takes the color of that target away. */
+  | { type: 'setAppearance'; target: AppearanceTarget; color: string | null }
+  /** Document settings (B8.4): the ones given are changed. */
+  | { type: 'setSettings'; settings: Partial<DocSettings> }
   | { type: 'deleteProperty'; name: string }
   /** Names a dimension of a sketch (`寬度@草圖1`); expressions that used the old name follow. An empty label goes back to `D<n>`. */
   | { type: 'setDimensionLabel'; featureId: Id; constraintId: Id; label: string };
@@ -199,13 +223,32 @@ function sketchBefore(doc: PartDoc, sketchId: Id, index: number, label: string):
   return s;
 }
 
+/** A reference to a feature of the history that makes `type` of datum (a plane, an axis, a point), made before the one at `index`. */
+function datumFeature(doc: PartDoc, ref: Ref, index: number, type: 'refPlane' | 'refAxis' | 'refPoint'): void {
+  const at = doc.features.findIndex((f) => f.id === ref.name);
+  if (at < 0 || at >= index || doc.features[at]!.type !== type) throw new CommandError(t(`cmd.${type}MustBeEarlier`));
+}
+
 /** A plane reference names a default plane, a reference plane earlier in the history, or a model face. */
 function planeRef(doc: PartDoc, ref: Ref, index: number): void {
   if (ref.kind === 'face') return;
   if (ref.kind !== 'datum') throw new CommandError(t('cmd.mustPickPlane'));
   if (isDatumPlaneName(ref.name)) return;
-  const at = doc.features.findIndex((f) => f.id === ref.name);
-  if (at < 0 || at >= index || doc.features[at]!.type !== 'refPlane') throw new CommandError(t('cmd.datumMustBeEarlier'));
+  datumFeature(doc, ref, index, 'refPlane');
+}
+
+/** An axis reference names a straight model edge or a reference axis earlier in the history. The box may still be empty while the user picks. */
+function axisRef(doc: PartDoc, ref: Ref, index: number): void {
+  if (ref.kind === 'edge') return;
+  if (ref.kind !== 'datum') throw new CommandError(t('cmd.axisMustBeStraightEdge'));
+  datumFeature(doc, ref, index, 'refAxis');
+}
+
+/** A point reference names a model vertex or a reference point earlier in the history. */
+function pointRef(doc: PartDoc, ref: Ref, index: number): void {
+  if (ref.kind === 'vertex') return;
+  if (ref.kind !== 'datum') throw new CommandError(t('cmd.mustPickPoint'));
+  datumFeature(doc, ref, index, 'refPoint');
 }
 
 /**
@@ -219,12 +262,111 @@ function planeDefinition(doc: PartDoc, def: PlaneDefinition, index: number): voi
       return;
     case 'angle':
       planeRef(doc, def.plane, index);
-      if (def.axis.kind !== 'edge') throw new CommandError(t('cmd.axisMustBeStraightEdge'));
+      axisRef(doc, def.axis, index);
       return;
     case 'threePoint':
-      if (def.points.length > 3 || def.points.some((p) => p.kind !== 'vertex')) throw new CommandError(t('cmd.threePointNeedsVertices'));
+      if (def.points.length > 3) throw new CommandError(t('cmd.threePointNeedsVertices'));
+      for (const p of def.points) pointRef(doc, p, index);
+      return;
+    case 'parallel':
+      planeRef(doc, def.plane, index);
+      pointRef(doc, def.point, index);
+      return;
+    case 'perpendicular':
+      axisRef(doc, def.axis, index);
+      pointRef(doc, def.point, index);
+      return;
+    case 'midplane':
+      planeRef(doc, def.plane, index);
+      planeRef(doc, def.plane2, index);
+      return;
+    case 'tangent':
+      planeRef(doc, def.plane, index);
+      if (def.face.kind !== 'face') throw new CommandError(t('cmd.tangentNeedsFace'));
       return;
   }
+}
+
+/** Structure of a reference axis definition (C3.3). */
+function axisDefinition(doc: PartDoc, def: AxisDefinition, index: number): void {
+  switch (def.mode) {
+    case 'edge':
+      if (def.edge.kind !== 'edge') throw new CommandError(t('cmd.axisMustBeStraightEdge'));
+      return;
+    case 'twoPoints':
+      if (def.points.length > 2) throw new CommandError(t('cmd.twoPointsNeedsTwo'));
+      for (const p of def.points) pointRef(doc, p, index);
+      return;
+    case 'cylinder':
+      if (def.face.kind !== 'face') throw new CommandError(t('cmd.axisNeedsFace'));
+      return;
+    case 'planes':
+      planeRef(doc, def.plane, index);
+      planeRef(doc, def.plane2, index);
+      return;
+  }
+}
+
+/** Structure of a reference point definition (C3.5). */
+function pointDefinition(doc: PartDoc, def: PointDefinition, index: number): void {
+  switch (def.mode) {
+    case 'coords':
+      return;
+    case 'center':
+      if (def.element.kind !== 'edge' && def.element.kind !== 'face') throw new CommandError(t('cmd.centerNeedsEdgeOrFace'));
+      return;
+    case 'axisPlane':
+      axisRef(doc, def.axis, index);
+      planeRef(doc, def.plane, index);
+      return;
+  }
+}
+
+/** A direction is a straight edge, a reference axis, or a plane (its normal): a model face, a default plane, or a reference plane or axis earlier in the history. */
+function directionRef(doc: PartDoc, ref: Ref, index: number): void {
+  if (ref.kind === 'face' || (ref.kind === 'datum' && isDatumPlaneName(ref.name))) return;
+  if (ref.kind === 'datum') {
+    const at = doc.features.find((g) => g.id === ref.name);
+    if (!at || doc.features.indexOf(at) >= index || (at.type !== 'refAxis' && at.type !== 'refPlane')) throw new CommandError(t('cmd.datumMustBeEarlier'));
+  } else if (ref.kind !== 'edge') throw new CommandError(t('cmd.coordSysDirection'));
+}
+
+/** A coordinate system's origin is a point, its two directions are axes or planes (their normals). */
+function coordSysRefs(doc: PartDoc, f: Pick<CoordSysFeature, 'origin' | 'x' | 'y'>, index: number): void {
+  if (f.origin) pointRef(doc, f.origin, index);
+  directionRef(doc, f.x, index);
+  directionRef(doc, f.y, index);
+}
+
+/** A circular pattern turns about a straight edge, a reference axis, or the axis of a cylindrical face. */
+function rotationAxisRef(doc: PartDoc, ref: Ref, index: number): void {
+  if (ref.kind === 'face') return;
+  axisRef(doc, ref, index);
+}
+
+/** A mirror reflects features that are earlier in the history and can be repeated, or bodies; across a plane. */
+function mirrorRefs(doc: PartDoc, f: Pick<MirrorFeature, 'target' | 'plane' | 'seeds' | 'bodies'>, index: number): void {
+  planeRef(doc, f.plane, index);
+  if (f.bodies.some((r) => r.kind !== 'body')) throw new CommandError(t('cmd.combineOnlyBodies'));
+  if (f.target === 'features') patternSeeds(doc, f.seeds, index);
+}
+
+/** A pattern repeats features that are earlier in the history and can be repeated; which direction and where it turns is for the rebuild to check. */
+function patternSeeds(doc: PartDoc, seeds: Id[], index: number): void {
+  if (new Set(seeds).size !== seeds.length) throw new CommandError(t('cmd.patternSeedTwice'));
+  for (const id of seeds) {
+    const at = doc.features.findIndex((g) => g.id === id);
+    if (at < 0 || at >= index) throw new CommandError(t('cmd.patternSeedEarlier'));
+    if (!canBeSeed(doc.features[at]!)) throw new CommandError(t('cmd.patternSeedType', { name: doc.features[at]!.name }));
+  }
+}
+
+function patternRefs(doc: PartDoc, f: Pick<PatternFeature, 'seeds' | 'def'>, index: number): void {
+  patternSeeds(doc, f.seeds, index);
+  if (f.def.mode === 'linear') {
+    directionRef(doc, f.def.dir1.ref, index);
+    if (f.def.dir2) directionRef(doc, f.def.dir2.ref, index);
+  } else rotationAxisRef(doc, f.def.axis, index);
 }
 
 /** A Combine takes bodies, and its main body is not one of its tools. The boxes may still be empty while the user picks. */
@@ -301,6 +443,21 @@ function validateNewFeature(doc: PartDoc, f: Feature, index: number): void {
       return;
     case 'refPlane':
       planeDefinition(doc, f.def, index);
+      return;
+    case 'refAxis':
+      axisDefinition(doc, f.def, index);
+      return;
+    case 'refPoint':
+      pointDefinition(doc, f.def, index);
+      return;
+    case 'coordSys':
+      coordSysRefs(doc, f, index);
+      return;
+    case 'pattern':
+      patternRefs(doc, f, index);
+      return;
+    case 'mirror':
+      mirrorRefs(doc, f, index);
       return;
     case 'deleteFace':
       if (f.faces.some((r) => r.kind !== 'face')) throw new CommandError(t('cmd.deleteFaceOnlyFaces'));
@@ -453,6 +610,59 @@ export function mutate(draft: Draft<PartDoc>, cmd: Command): void {
       planeDefinition(draft as PartDoc, cmd.def, draft.features.findIndex((x) => x.id === f.id));
       f.def = cmd.def;
       checkExprs(draft as PartDoc, f as Feature);
+      return;
+    }
+    case 'setRefAxis': {
+      const f = feature(draft, cmd.featureId);
+      if (f.type !== 'refAxis') throw new CommandError(t('cmd.onlyRefAxisHasParams'));
+      axisDefinition(draft as PartDoc, cmd.def, draft.features.findIndex((x) => x.id === f.id));
+      f.def = cmd.def;
+      return;
+    }
+    case 'setRefPoint': {
+      const f = feature(draft, cmd.featureId);
+      if (f.type !== 'refPoint') throw new CommandError(t('cmd.onlyRefPointHasParams'));
+      pointDefinition(draft as PartDoc, cmd.def, draft.features.findIndex((x) => x.id === f.id));
+      f.def = cmd.def;
+      checkExprs(draft as PartDoc, f as Feature);
+      return;
+    }
+    case 'setMirror': {
+      const f = feature(draft, cmd.featureId);
+      if (f.type !== 'mirror') throw new CommandError(t('cmd.onlyMirrorHasParams'));
+      mirrorRefs(draft as PartDoc, cmd.value, draft.features.findIndex((x) => x.id === f.id));
+      f.target = cmd.value.target;
+      f.plane = cmd.value.plane;
+      f.seeds = [...cmd.value.seeds];
+      f.bodies = [...cmd.value.bodies];
+      if (cmd.value.merge === false) f.merge = false;
+      else delete f.merge;
+      return;
+    }
+    case 'setPattern': {
+      const f = feature(draft, cmd.featureId);
+      if (f.type !== 'pattern') throw new CommandError(t('cmd.onlyPatternHasParams'));
+      patternRefs(draft as PartDoc, cmd, draft.features.findIndex((x) => x.id === f.id));
+      f.seeds = [...cmd.seeds];
+      f.def = cmd.def;
+      if (cmd.skip && cmd.skip.length > 0) f.skip = [...cmd.skip];
+      else delete f.skip;
+      checkExprs(draft as PartDoc, f as Feature);
+      return;
+    }
+    case 'setCoordSys': {
+      const f = feature(draft, cmd.featureId);
+      if (f.type !== 'coordSys') throw new CommandError(t('cmd.onlyCoordSysHasParams'));
+      coordSysRefs(draft as PartDoc, cmd.value, draft.features.findIndex((x) => x.id === f.id));
+      const v = cmd.value;
+      if (v.origin) f.origin = v.origin;
+      else delete f.origin;
+      f.x = v.x;
+      f.y = v.y;
+      if (v.flipX) f.flipX = true;
+      else delete f.flipX;
+      if (v.flipY) f.flipY = true;
+      else delete f.flipY;
       return;
     }
     case 'setChamfer': {
@@ -626,6 +836,42 @@ export function mutate(draft: Draft<PartDoc>, cmd: Command): void {
       if (target.type === 'sketch' && old !== name) rewriteNames(draft, (r) => (r.kind === 'dimension' && r.owner === old ? { ...r, owner: name } : null));
       return;
     }
+    case 'arrange': {
+      const old = draft.features.map((f) => f.id);
+      if (cmd.order.length !== old.length || new Set(cmd.order).size !== old.length || cmd.order.some((id) => !old.includes(id))) throw new CommandError(t('cmd.arrangeNotAll'));
+      const bar = draft.rollbackIndex ?? old.length;
+      if (cmd.order.slice(0, bar).some((id) => !old.slice(0, bar).includes(id))) throw new CommandError(t('cmd.arrangeAcrossBar'));
+      const byId = new Map(draft.features.map((f) => [f.id, f]));
+      const next = cmd.order.map((id) => byId.get(id)!);
+      for (const [id, folder] of Object.entries(cmd.folders ?? {})) {
+        const target = byId.get(id);
+        if (!target) throw new CommandError(t('cmd.featureNotFound', { id }));
+        if (folder === null || folder.trim() === '') delete target.folder;
+        else target.folder = folder.trim();
+      }
+      // the features of a folder follow one another
+      const seen = new Set<string>();
+      let before: string | undefined;
+      for (const f of next) {
+        if (f.folder !== before && f.folder !== undefined) {
+          if (seen.has(f.folder)) throw new CommandError(t('cmd.folderApart', { folder: f.folder }));
+          seen.add(f.folder);
+        }
+        before = f.folder;
+      }
+      draft.features = next;
+      return;
+    }
+    case 'setFeatureNote': {
+      const target = feature(draft, cmd.featureId);
+      for (const key of ['comment', 'tag'] as const) {
+        const value = cmd[key];
+        if (value === undefined) continue;
+        if (value.trim() === '') delete target[key];
+        else target[key] = key === 'tag' ? value.trim() : value;
+      }
+      return;
+    }
     case 'setRollback': {
       const n = draft.features.length;
       if (cmd.index !== null && (!Number.isInteger(cmd.index) || cmd.index < 0 || cmd.index > n)) {
@@ -772,6 +1018,29 @@ export function mutate(draft: Draft<PartDoc>, cmd: Command): void {
       const name = cmd.name.trim();
       if (!name) throw new CommandError(t('cmd.propertyNameEmpty'));
       draft.properties[name] = cmd.value;
+      return;
+    }
+    case 'setMaterial': {
+      if (cmd.material === null) delete draft.material;
+      else {
+        if (!materialOk(cmd.material)) throw new CommandError(t('cmd.materialInvalid'));
+        draft.material = { ...(cmd.material.id ? { id: cmd.material.id } : {}), name: cmd.material.name.trim(), density: cmd.material.density };
+      }
+      return;
+    }
+    case 'setAppearance': {
+      if (cmd.color !== null && !colorOk(cmd.color)) throw new CommandError(t('cmd.colorInvalid'));
+      const target = cmd.target;
+      if (target.kind === 'feature' && !draft.features.some((f) => f.id === target.id)) throw new CommandError(t('cmd.appearanceFeatureGone'));
+      if (target.kind === 'face' && target.ref.kind !== 'face') throw new CommandError(t('cmd.appearanceNeedsFace'));
+      const rest = draft.appearances.filter((a) => !sameTarget(a.target, target));
+      draft.appearances = cmd.color === null ? rest : [...rest, { target, color: cmd.color.toLowerCase() }];
+      return;
+    }
+    case 'setSettings': {
+      const s = cmd.settings;
+      if (s.dimensionPrecision !== undefined && !(Number.isInteger(s.dimensionPrecision) && s.dimensionPrecision >= 0 && s.dimensionPrecision <= 6)) throw new CommandError(t('cmd.precisionRange'));
+      draft.settings = { ...draft.settings, ...s };
       return;
     }
     case 'deleteProperty': {

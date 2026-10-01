@@ -1,4 +1,4 @@
-import { bodyFeature, expressionParents, type Feature, type Id, type PartDoc, type Ref } from '@3db/model';
+import { bodyFeature, defRefs, expressionParents, type Feature, type Id, type PartDoc, type Ref } from '@3db/model';
 import { ownerFeatures } from '@3db/naming';
 
 /**
@@ -49,11 +49,21 @@ export function parentsOf(feature: Feature, doc: PartDoc): Id[] {
       // a body is named by the feature that made it (`extrude1`, or `cut1#2` for a piece a cut left)
       parents = [feature.main, ...feature.tools].filter((r) => r.name).map((r) => bodyFeature(r.name));
       break;
-    case 'refPlane': {
-      const d = feature.def;
-      parents = fromRefs(d.mode === 'threePoint' ? d.points : d.mode === 'angle' ? [d.plane, d.axis] : [d.plane]);
+    case 'refPlane':
+    case 'refAxis':
+    case 'refPoint':
+      parents = fromRefs(defRefs(feature.def));
       break;
-    }
+    case 'pattern':
+      parents = [...feature.seeds, ...fromRefs(defRefs(feature.def))];
+      break;
+    case 'mirror':
+      // a body is named by the feature that made it
+      parents = [...(feature.target === 'features' ? feature.seeds : feature.bodies.filter((r) => r.name).map((r) => bodyFeature(r.name))), ...fromRefs([feature.plane])];
+      break;
+    case 'coordSys':
+      parents = fromRefs([...(feature.origin ? [feature.origin] : []), feature.x, feature.y]);
+      break;
     case 'importedBody':
       parents = []; // it depends only on its data
       break;
@@ -152,4 +162,18 @@ export function deletion(doc: PartDoc, id: Id, options: { children: boolean; abs
     .map((s) => s.id);
   if (options.absorbed) for (const s of absorbed) doomed.add(s);
   return { features: inOrder(doc, doomed), children: inOrder(doc, children), absorbed: inOrder(doc, absorbed) };
+}
+
+/**
+ * Whether the history may be put in this order (B2.5, "受 DAG 約束"): every feature has to come after what it is built on. Returns the first feature, in the new
+ * order, that would come before one of its parents, with that parent; null when the order is fine. The parents are those of the document as it is (a move does
+ * not change what refers to what).
+ */
+export function orderProblem(doc: PartDoc, order: Id[]): { feature: Id; parent: Id } | null {
+  const at = new Map(order.map((id, i) => [id, i]));
+  const { parents } = dependencies(doc);
+  for (const id of order) {
+    for (const p of parents.get(id) ?? []) if ((at.get(p) ?? -1) > at.get(id)!) return { feature: id, parent: p };
+  }
+  return null;
 }

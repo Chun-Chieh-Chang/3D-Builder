@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { acceleratedRaycast, computeBoundsTree, disposeBoundsTree } from 'three-mesh-bvh';
 import { ViewControls } from './controls';
 import { buildOverlayObjects, disposeGroup, toWorld, type P2, type PlaneFrame, type SketchOverlay } from './overlay';
 
@@ -10,6 +11,22 @@ export interface ViewMesh {
   faceRanges: Int32Array;
   edgePoints: Float32Array;
   edgeRanges: Int32Array;
+}
+
+/** How the model is drawn (A4.3): shaded with edges, shaded, hidden lines removed (white fill), hidden lines dashed, or wireframe. */
+export type DisplayMode = 'shadedEdges' | 'shaded' | 'hiddenRemoved' | 'hiddenVisible' | 'wireframe';
+
+/** A cut through the model (D4.4): what is on the side of `normal` beyond `offset` (the points with normal · p > offset) is left out. */
+export interface SectionPlane {
+  normal: [number, number, number];
+  offset: number;
+}
+
+/** What the user lets be picked (D5.4). */
+export interface PickFilter {
+  faces: boolean;
+  edges: boolean;
+  vertices: boolean;
 }
 
 export type StandardView = 'front' | 'back' | 'top' | 'bottom' | 'left' | 'right' | 'iso';
@@ -76,11 +93,18 @@ interface Instance {
   marks: THREE.Group;
 }
 
+// Rays against the body go through a bounding-volume hierarchy (A5.3): a few hundred thousand triangles take ~10 ms to test one by one, ~0.1 ms this way.
+THREE.Mesh.prototype.raycast = acceleratedRaycast;
+THREE.BufferGeometry.prototype.computeBoundsTree = computeBoundsTree;
+THREE.BufferGeometry.prototype.disposeBoundsTree = disposeBoundsTree;
+
 function bodyGeometry(mesh: ViewMesh): THREE.BufferGeometry {
   const g = new THREE.BufferGeometry();
   g.setAttribute('position', new THREE.BufferAttribute(mesh.positions, 3));
   g.setAttribute('normal', new THREE.BufferAttribute(mesh.normals, 3));
   g.setIndex(new THREE.BufferAttribute(mesh.indices, 1));
+  // `indirect`: the tree keeps its own order, so the triangle numbers (and the index buffer shared with the rebuild result) stay as the faces' ranges say
+  g.computeBoundsTree({ indirect: true });
   return g;
 }
 
@@ -115,6 +139,16 @@ export interface PlaneDisplay {
   highlighted?: boolean;
 }
 
+/**
+ * Reference axes, points and coordinate systems to show (D4.6, C3.3–C3.5). An axis is a line through the model's extent, a point a dot, a coordinate
+ * system three arrows: the last two a constant length on screen.
+ */
+export interface DatumDisplay {
+  axes: { key: string; origin: [number, number, number]; dir: [number, number, number]; highlighted?: boolean }[];
+  points: { key: string; p: [number, number, number]; highlighted?: boolean }[];
+  systems: { key: string; origin: [number, number, number]; x: [number, number, number]; y: [number, number, number]; z: [number, number, number]; highlighted?: boolean }[];
+}
+
 /** Pointer input on the graphics area while a tool (e.g. a sketch tool) owns the left button. */
 export interface ToolPointerEvent {
   type: 'down' | 'move' | 'up' | 'dblclick' | 'leave';
@@ -140,6 +174,8 @@ export interface ComponentDragEvent {
 }
 
 export interface ViewerEvents {
+  /** The right button was pressed and released on the graphics area (not while a tool owns it). */
+  onContextMenu?: (clientX: number, clientY: number) => void;
   /** Edge under the cursor changed (index into the mesh's edges, or -1). */
   onEdgeHover?: (edge: number) => void;
   /** Left click on an edge (or -1 on empty space / faces). */
@@ -193,6 +229,7 @@ export class Viewer {
   private hovered = -1;
   private selected = new Set<number>();
   private pickEdges = false;
+  private filter: PickFilter = { faces: true, edges: true, vertices: true };
   private pickFaces = false;
   private mesh: ViewMesh | null = null;
   /** triangleFace[t] = face index owning triangle t. */
@@ -206,6 +243,14 @@ export class Viewer {
   private hoveredVertex = -1;
   private selectedVertices = new Set<number>();
   private vertexHighlight: THREE.Points | null = null;
+  /** The color of each face (C14.2): "#rrggbb" or null for the body's own. */
+  private faceColors: readonly (string | null)[] = [];
+  private displayMode: DisplayMode = 'shadedEdges';
+  private section: SectionPlane | null = null;
+  private clip: THREE.Plane[] = [];
+  /** The edges that lie behind the body, drawn dashed in 'hiddenVisible'. */
+  private hiddenEdges: THREE.LineSegments | null = null;
+  private readonly viewListeners = new Set<() => void>();
   private planes: PlaneDisplay[] = [];
   private planeGroup: THREE.Group | null = null;
   private overlay: SketchOverlay | null = null;
@@ -214,6 +259,8 @@ export class Viewer {
   private sketchGroup: THREE.Group | null = null;
   private originShown = false;
   private originGroup: THREE.Group | null = null;
+  private datums: DatumDisplay = { axes: [], points: [], systems: [] };
+  private datumGroup: THREE.Group | null = null;
   private overlayGroup: THREE.Group | null = null;
   private labels = new Map<string, { el: HTMLElement; world: THREE.Vector3 }>();
   private toolHandler: ((e: ToolPointerEvent) => void) | null = null;
@@ -243,6 +290,7 @@ export class Viewer {
     private readonly events: ViewerEvents = {},
   ) {
     this.renderer = new THREE.WebGLRenderer({ antialias: true });
+    this.renderer.localClippingEnabled = true;
     this.renderer.setPixelRatio(window.devicePixelRatio);
     this.renderer.setClearColor(COLORS.background);
     this.renderer.autoClear = false;
@@ -268,6 +316,7 @@ export class Viewer {
     dom.addEventListener('pointerleave', this.onPointerLeave);
     dom.addEventListener('pointercancel', () => this.cancelComponentDrag()); // the system took the pointer
     dom.addEventListener('click', this.onClick);
+    dom.addEventListener('contextmenu', (e) => !this.toolHandler && this.events.onContextMenu?.(e.clientX, e.clientY));
     dom.addEventListener('dblclick', this.onDoubleClick);
     this.resizeObserver = new ResizeObserver(() => this.resize());
     this.resizeObserver.observe(container);
@@ -311,7 +360,9 @@ export class Viewer {
     this.selected.clear();
     this.selectedFaces.clear();
     this.paintFaces();
+    this.applyDisplay();
     if (this.planes.length > 0) this.paintPlanes(); // sized to the body
+    if (this.datums.axes.length > 0) this.paintDatums();
     if (fit) this.fitAll();
     this.requestRender();
   }
@@ -337,6 +388,12 @@ export class Viewer {
     }
     this.body = null;
     this.edges = null;
+    if (this.hiddenEdges) {
+      this.scene.remove(this.hiddenEdges);
+      this.hiddenEdges.geometry.dispose();
+      (this.hiddenEdges.material as THREE.Material).dispose();
+      this.hiddenEdges = null;
+    }
   }
 
   // ---------------------------------------------------------------- assembly components (C15.1, A3.1)
@@ -764,6 +821,55 @@ export class Viewer {
 
   // ---------------------------------------------------------------- selection
 
+  /**
+   * Which kinds of element the user lets be picked (D5.4). It narrows what the command in progress asks for, it never adds to it: a kind both asks for
+   * and allows is what is hovered and clicked.
+   */
+  setPickFilter(filter: PickFilter): void {
+    this.filter = { ...filter };
+    if (!this.edgesOn) this.setHovered(-1);
+    if (!this.facesOn) this.setHoveredFace(-1);
+    if (!this.verticesOn) this.setHoveredVertex(-1);
+  }
+
+  private get edgesOn(): boolean {
+    return this.pickEdges && this.filter.edges;
+  }
+  private get facesOn(): boolean {
+    return this.pickFaces && this.filter.faces;
+  }
+  private get verticesOn(): boolean {
+    return this.pickVertices && this.filter.vertices;
+  }
+
+  /** Every face under the cursor, nearest first, hidden ones too (D5.5 「選擇其他」). Faces the section cut away are not in the list. */
+  facesAt(clientX: number, clientY: number): number[] {
+    if (!this.body) return [];
+    const r = this.rayAt(clientX, clientY);
+    const ray = new THREE.Raycaster(r.origin, r.direction);
+    const faces: number[] = [];
+    // the faces behind are seen from inside: back faces count here
+    const material = this.body.material as THREE.Material;
+    const side = material.side;
+    material.side = THREE.DoubleSide;
+    const hits = ray.intersectObject(this.body);
+    material.side = side;
+    for (const hit of hits) {
+      if (!this.kept(hit.point) || hit.faceIndex === undefined || hit.faceIndex === null) continue;
+      const face = this.triangleFace[hit.faceIndex] ?? -1;
+      if (face >= 0 && !faces.includes(face)) faces.push(face);
+    }
+    return faces;
+  }
+
+  /** The edge, vertex and face the cursor is on, as picking would take them (-1 for none) — what a right click acts on. */
+  elementsAt(clientX: number, clientY: number): { edge: number; vertex: number; face: number } {
+    const vertex = this.verticesOn ? this.pickVertex(clientX, clientY) : -1;
+    const edge = vertex < 0 && this.edgesOn ? this.pick(clientX, clientY) : -1;
+    const face = this.facesOn ? this.pickFace(clientX, clientY) : -1;
+    return { vertex, edge, face };
+  }
+
   /** Enables edge hover/click picking (e.g. while a fillet's edge list is active). */
   setEdgePicking(enabled: boolean): void {
     this.pickEdges = enabled;
@@ -789,6 +895,41 @@ export class Viewer {
   }
 
   /** Translucent copies of the hovered and selected faces' triangles, drawn over the body. */
+  /** The colors of the faces of the body on show (C14.2), in the order of its faces; faces without one keep the body's. */
+  setFaceColors(colors: readonly (string | null)[]): void {
+    this.faceColors = colors;
+    this.paintBodyColors();
+  }
+
+  private paintBodyColors(): void {
+    const mesh = this.mesh;
+    if (!this.body || !mesh) return;
+    const geometry = this.body.geometry;
+    const material = this.body.material as THREE.MeshStandardMaterial;
+    if (!this.faceColors.some(Boolean) || this.displayMode === 'hiddenRemoved') {
+      if (geometry.getAttribute('color')) geometry.deleteAttribute('color');
+      material.vertexColors = false;
+      material.color.set(COLORS.body);
+      material.needsUpdate = true;
+      return this.requestRender();
+    }
+    const base = new THREE.Color(COLORS.body);
+    const colors = new Float32Array(geometry.getAttribute('position').count * 3);
+    for (let i = 0; i < colors.length; i += 3) colors.set([base.r, base.g, base.b], i);
+    const own = new THREE.Color();
+    for (let r = 0; r < mesh.faceRanges.length; r += 3) {
+      const hex = this.faceColors[mesh.faceRanges[r + 2]!];
+      if (!hex) continue;
+      own.set(hex);
+      for (let i = mesh.faceRanges[r]!; i < mesh.faceRanges[r]! + mesh.faceRanges[r + 1]!; i++) colors.set([own.r, own.g, own.b], mesh.indices[i]! * 3);
+    }
+    geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+    material.vertexColors = true;
+    material.color.set(0xffffff);
+    material.needsUpdate = true;
+    this.requestRender();
+  }
+
   private paintFaces(): void {
     if (this.faceHighlight) {
       this.scene.remove(this.faceHighlight);
@@ -953,6 +1094,61 @@ export class Viewer {
     this.requestRender();
   }
 
+  // ---------------------------------------------------------------- reference axes, points and coordinate systems (D4.6)
+
+  /** Reference axes, points and coordinate systems to show. */
+  setDatums(datums: DatumDisplay): void {
+    this.datums = datums;
+    this.paintDatums();
+  }
+
+  private paintDatums(): void {
+    if (this.datumGroup) {
+      this.overlayScene.remove(this.datumGroup);
+      disposeGroup(this.datumGroup);
+      this.datumGroup = null;
+    }
+    const { axes, points, systems } = this.datums;
+    if (axes.length + points.length + systems.length > 0) {
+      const group = new THREE.Group();
+      const px = this.pixelSize();
+      const box = this.contentBox();
+      const reach = box.isEmpty() ? 50 : box.getSize(new THREE.Vector3()).length();
+      const line = (a: THREE.Vector3, b: THREE.Vector3, color: number) =>
+        group.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints([a, b]), new THREE.LineBasicMaterial({ color, depthTest: false })));
+      for (const axis of axes) {
+        // through the extent of the model, and a little beyond it, whatever the axis starts at
+        const o = new THREE.Vector3(...axis.origin);
+        const d = new THREE.Vector3(...axis.dir).normalize();
+        let [t0, t1] = [-reach / 2, reach / 2];
+        if (!box.isEmpty()) {
+          const along = [0, 1, 2, 3, 4, 5, 6, 7].map((i) => new THREE.Vector3(i & 1 ? box.max.x : box.min.x, i & 2 ? box.max.y : box.min.y, i & 4 ? box.max.z : box.min.z).sub(o).dot(d));
+          const margin = 0.1 * (Math.max(...along) - Math.min(...along)) + 5;
+          [t0, t1] = [Math.min(...along) - margin, Math.max(...along) + margin];
+        }
+        line(o.clone().addScaledVector(d, t0), o.clone().addScaledVector(d, t1), axis.highlighted ? COLORS.edgeHover : 0x7048a8);
+      }
+      if (points.length > 0) {
+        const geometry = new THREE.BufferGeometry().setFromPoints(points.map((p) => new THREE.Vector3(...p.p)));
+        group.add(new THREE.Points(geometry, new THREE.PointsMaterial({ color: 0x7048a8, size: 8, sizeAttenuation: false, depthTest: false })));
+        const lit = points.filter((p) => p.highlighted);
+        if (lit.length > 0) group.add(new THREE.Points(new THREE.BufferGeometry().setFromPoints(lit.map((p) => new THREE.Vector3(...p.p))), new THREE.PointsMaterial({ color: COLORS.edgeHover, size: 11, sizeAttenuation: false, depthTest: false })));
+      }
+      const len = 40 * px;
+      for (const c of systems) {
+        const o = new THREE.Vector3(...c.origin);
+        const arm = (v: [number, number, number], color: number) => line(o, o.clone().addScaledVector(new THREE.Vector3(...v), len), color);
+        arm(c.x, 0xe03131);
+        arm(c.y, 0x2f9e44);
+        arm(c.z, 0x1c7ed6);
+        group.add(new THREE.Points(new THREE.BufferGeometry().setFromPoints([o]), new THREE.PointsMaterial({ color: c.highlighted ? COLORS.edgeHover : 0x7048a8, size: 7, sizeAttenuation: false, depthTest: false })));
+      }
+      this.datumGroup = group;
+      this.overlayScene.add(group);
+    }
+    this.requestRender();
+  }
+
   // ---------------------------------------------------------------- reference planes (D4.6)
 
   /** Reference planes to show; each is a translucent square centered on the model's projection. */
@@ -1002,7 +1198,7 @@ export class Viewer {
     const ray = new THREE.Raycaster();
     const r = this.rayAt(clientX, clientY);
     ray.set(r.origin, r.direction);
-    const hit = ray.intersectObject(this.body)[0];
+    const hit = ray.intersectObject(this.body).find((h) => this.kept(h.point));
     return hit?.faceIndex !== undefined && hit.faceIndex !== null ? (this.triangleFace[hit.faceIndex] ?? -1) : -1;
   }
 
@@ -1014,7 +1210,8 @@ export class Viewer {
   private paintEdges(): void {
     if (!this.edges) return;
     const attr = this.edges.geometry.getAttribute('color') as THREE.BufferAttribute;
-    const base = new THREE.Color(COLORS.edge);
+    // with no edges drawn ('shaded') the edges are the colour of the body: they are still there to hover and to pick
+    const base = new THREE.Color(this.displayMode === 'shaded' ? COLORS.body : COLORS.edge);
     const hover = new THREE.Color(COLORS.edgeHover);
     const sel = new THREE.Color(COLORS.edgeSelected);
     for (let s = 0; s < this.segmentEdge.length; s++) {
@@ -1041,8 +1238,9 @@ export class Viewer {
     ray.set(this.rayAt(clientX, clientY).origin, this.rayAt(clientX, clientY).direction);
     const hits = ray.intersectObject(this.edges);
     // Prefer edges not hidden behind the body.
-    const bodyHit = this.body ? ray.intersectObject(this.body)[0]?.distance ?? Infinity : Infinity;
-    const visible = hits.filter((h) => h.distance <= bodyHit + (1e-3 * (this.camera.right - this.camera.left)) / this.camera.zoom);
+    const seeThrough = this.displayMode === 'wireframe' || this.displayMode === 'hiddenVisible';
+    const bodyHit = this.body && !seeThrough ? this.firstBodyHit(ray) : Infinity;
+    const visible = hits.filter((h) => this.kept(h.point) && h.distance <= bodyHit + (1e-3 * (this.camera.right - this.camera.left)) / this.camera.zoom);
     const hit = visible[0] ?? null;
     return hit && hit.index !== undefined ? (this.segmentEdge[Math.floor(hit.index / 2)] ?? -1) : -1;
   }
@@ -1082,11 +1280,11 @@ export class Viewer {
     if (this.pickInstances) this.setHoveredInstance(this.pickInstance(e.clientX, e.clientY));
     if (this.pickElements) this.setHoveredElement(this.pickElement(e.clientX, e.clientY));
     // One element at a time, in SolidWorks priority: vertex, then edge, then face.
-    const vertex = this.pickVertices ? this.pickVertex(e.clientX, e.clientY) : -1;
-    const edge = vertex < 0 && this.pickEdges ? this.pick(e.clientX, e.clientY) : -1;
+    const vertex = this.verticesOn ? this.pickVertex(e.clientX, e.clientY) : -1;
+    const edge = vertex < 0 && this.edgesOn ? this.pick(e.clientX, e.clientY) : -1;
     this.setHoveredVertex(vertex);
     this.setHovered(edge);
-    this.setHoveredFace(vertex < 0 && edge < 0 && this.pickFaces ? this.pickFace(e.clientX, e.clientY) : -1);
+    this.setHoveredFace(vertex < 0 && edge < 0 && this.facesOn ? this.pickFace(e.clientX, e.clientY) : -1);
   };
 
   private onPointerUp = (e: PointerEvent) => {
@@ -1121,16 +1319,106 @@ export class Viewer {
     const additive = e.ctrlKey || e.shiftKey;
     if (this.pickElements) return void this.events.onElementClick?.(this.pickElement(e.clientX, e.clientY), additive);
     if (this.pickInstances) return void this.events.onComponentClick?.(this.pickInstance(e.clientX, e.clientY), additive);
-    const vertex = this.pickVertices ? this.pickVertex(e.clientX, e.clientY) : -1;
+    const vertex = this.verticesOn ? this.pickVertex(e.clientX, e.clientY) : -1;
     if (vertex >= 0) return void this.events.onVertexClick?.(vertex, additive);
-    const edge = this.pickEdges ? this.pick(e.clientX, e.clientY) : -1;
-    if (edge >= 0 || (this.pickEdges && !this.pickFaces)) return void this.events.onEdgeClick?.(edge, additive);
-    if (this.pickFaces) this.events.onFaceClick?.(this.pickFace(e.clientX, e.clientY), additive);
+    const edge = this.edgesOn ? this.pick(e.clientX, e.clientY) : -1;
+    if (edge >= 0 || (this.edgesOn && !this.facesOn)) return void this.events.onEdgeClick?.(edge, additive);
+    if (this.facesOn) this.events.onFaceClick?.(this.pickFace(e.clientX, e.clientY), additive);
   };
 
   private onDoubleClick = (e: MouseEvent) => {
     if (this.toolHandler && !e.altKey) this.tool('dblclick', e, false);
   };
+
+  // ---------------------------------------------------------------- display modes (A4.3) and section (D4.4)
+
+  setDisplayMode(mode: DisplayMode): void {
+    this.displayMode = mode;
+    this.paintEdges();
+    this.applyDisplay();
+  }
+
+  /** Cuts the model open at a plane, or (null) puts it back. */
+  setSection(section: SectionPlane | null): void {
+    this.section = section;
+    this.clip = section ? [new THREE.Plane(new THREE.Vector3(...section.normal).normalize().negate(), section.offset)] : [];
+    this.applyDisplay();
+  }
+
+  /** The corners of the box round everything on show, or null when nothing is. */
+  contentBounds(): { min: [number, number, number]; max: [number, number, number] } | null {
+    const box = this.contentBox();
+    return box.isEmpty() ? null : { min: [box.min.x, box.min.y, box.min.z], max: [box.max.x, box.max.y, box.max.z] };
+  }
+
+  /** Is the point on the side of the section that is kept? */
+  private kept(p: THREE.Vector3): boolean {
+    return this.clip.every((c) => c.distanceToPoint(p) >= -1e-9);
+  }
+
+  private firstBodyHit(ray: THREE.Raycaster): number {
+    return this.body ? (ray.intersectObject(this.body).find((h) => this.kept(h.point))?.distance ?? Infinity) : Infinity;
+  }
+
+  /** Puts the body and its edges as the display mode and the section say. */
+  private applyDisplay(): void {
+    const mode = this.displayMode;
+    const body = this.body;
+    if (body) {
+      const m = body.material as THREE.MeshStandardMaterial;
+      const seeThrough = mode === 'wireframe' || mode === 'hiddenVisible';
+      m.colorWrite = !seeThrough;
+      m.depthWrite = mode !== 'wireframe';
+      m.emissive.set(mode === 'hiddenRemoved' ? 0xffffff : 0x000000);
+      m.emissiveIntensity = mode === 'hiddenRemoved' ? 0.85 : 1;
+      m.clippingPlanes = this.clip;
+      m.side = this.clip.length > 0 ? THREE.DoubleSide : THREE.FrontSide;
+      m.needsUpdate = true;
+      this.paintBodyColors();
+    }
+    if (this.edges) {
+      const m = this.edges.material as THREE.LineBasicMaterial;
+      m.clippingPlanes = this.clip;
+      m.needsUpdate = true;
+    }
+    if (mode === 'hiddenVisible' && this.edges && !this.hiddenEdges) {
+      const g = this.edges.geometry.clone();
+      const line = new THREE.LineSegments(g, new THREE.LineDashedMaterial({ color: 0x8b98a8, dashSize: 1, gapSize: 1, depthFunc: THREE.GreaterDepth, depthWrite: false }));
+      line.computeLineDistances();
+      this.hiddenEdges = line;
+      this.scene.add(line);
+    }
+    if (this.hiddenEdges) {
+      this.hiddenEdges.visible = mode === 'hiddenVisible';
+      const m = this.hiddenEdges.material as THREE.LineDashedMaterial;
+      const box = this.contentBox();
+      const size = box.isEmpty() ? 100 : box.getSize(new THREE.Vector3()).length();
+      m.dashSize = size / 150;
+      m.gapSize = size / 300;
+      m.clippingPlanes = this.clip;
+      m.needsUpdate = true;
+    }
+    this.requestRender();
+  }
+
+  /**
+   * The rotation of the view as a CSS `matrix3d` (D4.3): what turns a cube drawn with x to the right, y down and z toward the viewer so that it shows
+   * the model's axes as the camera sees them.
+   */
+  cubeMatrix(): number[] {
+    this.camera.updateMatrixWorld();
+    const e = this.camera.matrixWorldInverse.clone().copy(this.camera.matrixWorld).invert().elements;
+    // column-major, rotation only. The cube is drawn in CSS's frame (y down) and the camera's is y up: M = S · R · S, S turning y over
+    const r = (row: number, col: number) => e[col * 4 + row]!;
+    const m = (row: number, col: number) => (row === 1 ? -1 : 1) * (col === 1 ? -1 : 1) * r(row, col);
+    return [m(0, 0), m(1, 0), m(2, 0), 0, m(0, 1), m(1, 1), m(2, 1), 0, m(0, 2), m(1, 2), m(2, 2), 0, 0, 0, 0, 1];
+  }
+
+  /** Called whenever the camera moves, zooms or the viewport is resized. Returns the way to stop. */
+  subscribeView(fn: () => void): () => void {
+    this.viewListeners.add(fn);
+    return () => this.viewListeners.delete(fn);
+  }
 
   // ---------------------------------------------------------------- views
 
@@ -1198,7 +1486,9 @@ export class Viewer {
 
   private viewChanged(): void {
     if (this.originShown) this.paintOrigin(); // a constant size on screen
+    if (this.datums.points.length + this.datums.systems.length > 0) this.paintDatums();
     this.events.onViewChange?.();
+    for (const fn of this.viewListeners) fn();
     this.requestRender();
   }
 
@@ -1223,6 +1513,15 @@ export class Viewer {
       this.frame = 0;
       this.render();
     });
+  }
+
+  /**
+   * The picture on the screen as a PNG (F3.3), the size of the canvas: drawn again and taken in the same step, since the canvas does not keep what it
+   * showed. Null when the browser cannot make one.
+   */
+  snapshot(): Promise<Blob | null> {
+    this.render();
+    return new Promise((resolve) => this.renderer.domElement.toBlob(resolve, 'image/png'));
   }
 
   private render(): void {

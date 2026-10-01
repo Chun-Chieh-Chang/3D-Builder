@@ -1,5 +1,5 @@
 import type { Locale } from '@3db/i18n';
-import type { AssemblyDoc, Fingerprint, Id, PartDoc, PlaneFrame, Pose, Ref, SketchFeature } from '@3db/model';
+import type { AssemblyDoc, Axis3, CoordSystem, Fingerprint, Id, PartDoc, PlaneFrame, Pose, Ref, SketchFeature, Vec3 } from '@3db/model';
 import type { MassProps, MeshData } from '@3db/kernel';
 import type { AssemblyResult, AssemblySolveOptions, Converted, FeatureResult } from '@3db/regen';
 import type { MateGeometry } from '@3db/assembly';
@@ -17,6 +17,15 @@ export interface AssemblyStepRequest {
   name: string;
   parts: { key: string; name: string }[];
   instances: { part: number; name: string; pose: Pose }[];
+}
+
+/** What the user chose for a part's file (F1.3, C3.4): the STEP schema, whether faces carry their colors, and a coordinate system the part is written in. */
+export interface PartExportOptions {
+  schema?: 'AP214' | 'AP242';
+  /** Colors in the file; on unless `false`. */
+  colors?: boolean;
+  /** A coordinate system feature: the part is moved so that its origin and axes are the file's. Absent: the part's own. */
+  coordSys?: Id | null;
 }
 
 export interface RebuildRequest {
@@ -53,8 +62,14 @@ export interface RebuildPayload {
   /** xyz per vertex, in the order of vertexNames. */
   vertexPoints: Float32Array;
   vertexFingerprints: Fingerprint[];
+  /** The color of each face, "#rrggbb" or null, in the order of faceNames (C14.2). */
+  faceColors: (string | null)[];
   /** Plane of each sketch (datum or model face), including the sketch being edited, and of each reference plane. */
   frames: Map<Id, PlaneFrame>;
+  /** The reference axes, points and coordinate systems that were built (C3.3–C3.5). */
+  axes: Map<Id, Axis3>;
+  points: Map<Id, Vec3>;
+  systems: Map<Id, CoordSystem>;
   /**
    * Solved geometry of every sketch that was evaluated. Which of them are drawn is the document's choice
    * (D4.6, `isShown`), so hiding or showing one does not need a rebuild.
@@ -137,7 +152,9 @@ export interface KernelApi {
   /** What these model edges and face outlines look like on the plane of the sketch being edited. */
   convertReferences(req: ConvertRequest): Promise<ConvertPayload>;
   /** STEP of the rebuilt part, its product named `name`. */
-  exportStep(doc: PartDoc, name: string): Promise<string>;
+  exportStep(doc: PartDoc, name: string, options?: PartExportOptions): Promise<string>;
+  /** Binary STL of the bodies that count, meshed as finely as the document's quality says (F4.1). */
+  exportStl(doc: PartDoc, name: string, options?: PartExportOptions): Promise<Uint8Array>;
   /** Rebuilds a part file of an assembly, once per content (`key` = SHA-256 of `bytes`). */
   buildPart(key: string, bytes: Uint8Array, onStage?: (stage: PartStage) => void): Promise<PartBuildPayload>;
   /** STEP of an assembly (F1.2) as the components are placed in `req`; parts are the ones rebuilt for it (`buildPart`). */
