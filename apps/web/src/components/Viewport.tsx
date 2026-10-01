@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { t } from '@3db/i18n';
 import { DATUM_PLANES, findFeature, isDimension, isShown, ORIGIN_KEY, Parameters, settingsOf, type DatumPlaneName, type Id, type Feature, type PlaneFrame, type Ref } from '@3db/model';
 import { ownerFeatures } from '@3db/naming';
-import { Viewer, type DatumDisplay, type PlaneDisplay, type SketchOverlay } from '@3db/render';
+import { Viewer, type DatumDisplay, type DisplayMode, type PlaneDisplay, type SectionPlane, type SketchOverlay, type StandardView } from '@3db/render';
 import { ACTIONS, shortcutOf } from '../actions';
 import { chosen, pickable, prompt } from '../state/datumSlots';
 import { sample } from '@3db/sketch/interact';
@@ -286,6 +286,8 @@ export function Viewport() {
   return (
     <main className="viewport">
       <div ref={host} className="viewport-canvas" />
+      <ViewCube />
+      <ViewOptions />
       <div className="heads-up">
         {ACTIONS.filter((a) => a.group === 'view').map((a) => (
           <button key={a.id} onClick={a.run} disabled={!a.enabled(store.getState())} title={shortcutOf(a) ? `${a.label}（${shortcutOf(a)}）` : a.label}>
@@ -370,6 +372,106 @@ function DimensionEditor({ id, overlay }: { id: string; overlay: SketchOverlay |
         onBlur={() => store.editDimension(null)}
       />
       <span className="suffix">{c.type === 'angle' ? '°' : 'mm'}</span>
+    </div>
+  );
+}
+
+/** The faces of the view cube (D4.3): the view each shows, and where it is on the cube. */
+const CUBE_FACES: { view: StandardView; label: string; transform: string }[] = [
+  { view: 'front', label: 'cube.front', transform: 'translateZ(22px)' },
+  { view: 'back', label: 'cube.back', transform: 'rotateY(180deg) translateZ(22px)' },
+  { view: 'right', label: 'cube.right', transform: 'rotateY(90deg) translateZ(22px)' },
+  { view: 'left', label: 'cube.left', transform: 'rotateY(-90deg) translateZ(22px)' },
+  { view: 'top', label: 'cube.top', transform: 'rotateX(90deg) translateZ(22px)' },
+  { view: 'bottom', label: 'cube.bottom', transform: 'rotateX(-90deg) translateZ(22px)' },
+];
+
+/** 視角選擇方塊 (D4.3): a cube that turns with the model; a click on a face looks at the model from that side. */
+function ViewCube() {
+  const [matrix, setMatrix] = useState<number[] | null>(null);
+  useEffect(() => {
+    let stop = () => {};
+    // the viewer is made after the first render: look for it until it is there
+    const wait = setInterval(() => {
+      const v = store.viewer;
+      if (!v) return;
+      clearInterval(wait);
+      setMatrix(v.cubeMatrix());
+      stop = v.subscribeView(() => setMatrix(v.cubeMatrix()));
+    }, 100);
+    return () => {
+      clearInterval(wait);
+      stop();
+    };
+  }, []);
+  if (!matrix) return null;
+  return (
+    <div className="view-cube" aria-label={t('cube.title')}>
+      <div className="cube" style={{ transform: `matrix3d(${matrix.join(',')})` }}>
+        {CUBE_FACES.map((f) => (
+          <button key={f.view} className="cube-face" style={{ transform: f.transform }} title={t('cube.look', { face: t(f.label as 'cube.front') })} onClick={() => store.viewer?.setView(f.view)}>
+            {t(f.label as 'cube.front')}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+const DISPLAY_MODES: DisplayMode[] = ['shadedEdges', 'shaded', 'hiddenRemoved', 'hiddenVisible', 'wireframe'];
+
+/** 顯示類型 (A4.3) and 剖面視圖 (D4.4): how the model is drawn, and a cut through it. */
+function ViewOptions() {
+  const [mode, setMode] = useState<DisplayMode>('shadedEdges');
+  const [cut, setCut] = useState<{ axis: 0 | 1 | 2; at: number; flip: boolean } | null>(null);
+  const result = useStore((s) => s.result);
+  useEffect(() => store.viewer?.setDisplayMode(mode), [mode, result]);
+  const bounds = store.viewer?.contentBounds() ?? null;
+  const range = bounds && cut ? ([bounds.min[cut.axis], bounds.max[cut.axis]] as const) : null;
+  useEffect(() => {
+    const v = store.viewer;
+    if (!v) return;
+    if (!cut || !range) return v.setSection(null);
+    const normal: [number, number, number] = [0, 0, 0];
+    normal[cut.axis] = cut.flip ? -1 : 1;
+    const plane: SectionPlane = { normal, offset: cut.flip ? -cut.at : cut.at };
+    v.setSection(plane);
+  }, [cut, result]);
+  const span = range ? Math.max(range[1] - range[0], 1e-6) : 1;
+  return (
+    <div className="view-options">
+      <select value={mode} aria-label={t('view.mode')} title={t('view.mode')} onChange={(e) => setMode(e.target.value as DisplayMode)}>
+        {DISPLAY_MODES.map((m) => (
+          <option key={m} value={m}>
+            {t(`view.mode.${m}`)}
+          </option>
+        ))}
+      </select>
+      <button className={cut ? 'active' : ''} onClick={() => setCut(cut ? null : { axis: 0, at: ((bounds?.min[0] ?? 0) + (bounds?.max[0] ?? 0)) / 2, flip: false })}>
+        {t('view.section')}
+      </button>
+      {cut && range && (
+        <div className="section-panel">
+          <select
+            value={cut.axis}
+            aria-label={t('view.sectionAxis')}
+            onChange={(e) => {
+              const axis = Number(e.target.value) as 0 | 1 | 2;
+              const b = store.viewer!.contentBounds()!;
+              setCut({ ...cut, axis, at: (b.min[axis] + b.max[axis]) / 2 });
+            }}
+          >
+            <option value={0}>{t('view.sectionX')}</option>
+            <option value={1}>{t('view.sectionY')}</option>
+            <option value={2}>{t('view.sectionZ')}</option>
+          </select>
+          <input type="range" aria-label={t('view.sectionAt')} min={range[0]} max={range[1]} step={span / 200} value={cut.at} onChange={(e) => setCut({ ...cut, at: Number(e.target.value) })} />
+          <span className="muted">{cut.at.toFixed(2)}</span>
+          <label>
+            <input type="checkbox" checked={cut.flip} onChange={(e) => setCut({ ...cut, flip: e.target.checked })} /> {t('view.sectionFlip')}
+          </label>
+        </div>
+      )}
     </div>
   );
 }

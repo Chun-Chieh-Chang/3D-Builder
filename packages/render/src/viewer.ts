@@ -12,6 +12,15 @@ export interface ViewMesh {
   edgeRanges: Int32Array;
 }
 
+/** How the model is drawn (A4.3): shaded with edges, shaded, hidden lines removed (white fill), hidden lines dashed, or wireframe. */
+export type DisplayMode = 'shadedEdges' | 'shaded' | 'hiddenRemoved' | 'hiddenVisible' | 'wireframe';
+
+/** A cut through the model (D4.4): what is on the side of `normal` beyond `offset` (the points with normal · p > offset) is left out. */
+export interface SectionPlane {
+  normal: [number, number, number];
+  offset: number;
+}
+
 export type StandardView = 'front' | 'back' | 'top' | 'bottom' | 'left' | 'right' | 'iso';
 
 const VIEW_DIRS: Record<StandardView, [THREE.Vector3, THREE.Vector3]> = {
@@ -218,6 +227,12 @@ export class Viewer {
   private vertexHighlight: THREE.Points | null = null;
   /** The color of each face (C14.2): "#rrggbb" or null for the body's own. */
   private faceColors: readonly (string | null)[] = [];
+  private displayMode: DisplayMode = 'shadedEdges';
+  private section: SectionPlane | null = null;
+  private clip: THREE.Plane[] = [];
+  /** The edges that lie behind the body, drawn dashed in 'hiddenVisible'. */
+  private hiddenEdges: THREE.LineSegments | null = null;
+  private readonly viewListeners = new Set<() => void>();
   private planes: PlaneDisplay[] = [];
   private planeGroup: THREE.Group | null = null;
   private overlay: SketchOverlay | null = null;
@@ -257,6 +272,7 @@ export class Viewer {
     private readonly events: ViewerEvents = {},
   ) {
     this.renderer = new THREE.WebGLRenderer({ antialias: true });
+    this.renderer.localClippingEnabled = true;
     this.renderer.setPixelRatio(window.devicePixelRatio);
     this.renderer.setClearColor(COLORS.background);
     this.renderer.autoClear = false;
@@ -325,7 +341,7 @@ export class Viewer {
     this.selected.clear();
     this.selectedFaces.clear();
     this.paintFaces();
-    this.paintBodyColors();
+    this.applyDisplay();
     if (this.planes.length > 0) this.paintPlanes(); // sized to the body
     if (this.datums.axes.length > 0) this.paintDatums();
     if (fit) this.fitAll();
@@ -353,6 +369,12 @@ export class Viewer {
     }
     this.body = null;
     this.edges = null;
+    if (this.hiddenEdges) {
+      this.scene.remove(this.hiddenEdges);
+      this.hiddenEdges.geometry.dispose();
+      (this.hiddenEdges.material as THREE.Material).dispose();
+      this.hiddenEdges = null;
+    }
   }
 
   // ---------------------------------------------------------------- assembly components (C15.1, A3.1)
@@ -816,7 +838,7 @@ export class Viewer {
     if (!this.body || !mesh) return;
     const geometry = this.body.geometry;
     const material = this.body.material as THREE.MeshStandardMaterial;
-    if (!this.faceColors.some(Boolean)) {
+    if (!this.faceColors.some(Boolean) || this.displayMode === 'hiddenRemoved') {
       if (geometry.getAttribute('color')) geometry.deleteAttribute('color');
       material.vertexColors = false;
       material.color.set(COLORS.body);
@@ -1108,7 +1130,7 @@ export class Viewer {
     const ray = new THREE.Raycaster();
     const r = this.rayAt(clientX, clientY);
     ray.set(r.origin, r.direction);
-    const hit = ray.intersectObject(this.body)[0];
+    const hit = ray.intersectObject(this.body).find((h) => this.kept(h.point));
     return hit?.faceIndex !== undefined && hit.faceIndex !== null ? (this.triangleFace[hit.faceIndex] ?? -1) : -1;
   }
 
@@ -1120,7 +1142,8 @@ export class Viewer {
   private paintEdges(): void {
     if (!this.edges) return;
     const attr = this.edges.geometry.getAttribute('color') as THREE.BufferAttribute;
-    const base = new THREE.Color(COLORS.edge);
+    // with no edges drawn ('shaded') the edges are the colour of the body: they are still there to hover and to pick
+    const base = new THREE.Color(this.displayMode === 'shaded' ? COLORS.body : COLORS.edge);
     const hover = new THREE.Color(COLORS.edgeHover);
     const sel = new THREE.Color(COLORS.edgeSelected);
     for (let s = 0; s < this.segmentEdge.length; s++) {
@@ -1147,8 +1170,9 @@ export class Viewer {
     ray.set(this.rayAt(clientX, clientY).origin, this.rayAt(clientX, clientY).direction);
     const hits = ray.intersectObject(this.edges);
     // Prefer edges not hidden behind the body.
-    const bodyHit = this.body ? ray.intersectObject(this.body)[0]?.distance ?? Infinity : Infinity;
-    const visible = hits.filter((h) => h.distance <= bodyHit + (1e-3 * (this.camera.right - this.camera.left)) / this.camera.zoom);
+    const seeThrough = this.displayMode === 'wireframe' || this.displayMode === 'hiddenVisible';
+    const bodyHit = this.body && !seeThrough ? this.firstBodyHit(ray) : Infinity;
+    const visible = hits.filter((h) => this.kept(h.point) && h.distance <= bodyHit + (1e-3 * (this.camera.right - this.camera.left)) / this.camera.zoom);
     const hit = visible[0] ?? null;
     return hit && hit.index !== undefined ? (this.segmentEdge[Math.floor(hit.index / 2)] ?? -1) : -1;
   }
@@ -1238,6 +1262,96 @@ export class Viewer {
     if (this.toolHandler && !e.altKey) this.tool('dblclick', e, false);
   };
 
+  // ---------------------------------------------------------------- display modes (A4.3) and section (D4.4)
+
+  setDisplayMode(mode: DisplayMode): void {
+    this.displayMode = mode;
+    this.paintEdges();
+    this.applyDisplay();
+  }
+
+  /** Cuts the model open at a plane, or (null) puts it back. */
+  setSection(section: SectionPlane | null): void {
+    this.section = section;
+    this.clip = section ? [new THREE.Plane(new THREE.Vector3(...section.normal).normalize().negate(), section.offset)] : [];
+    this.applyDisplay();
+  }
+
+  /** The corners of the box round everything on show, or null when nothing is. */
+  contentBounds(): { min: [number, number, number]; max: [number, number, number] } | null {
+    const box = this.contentBox();
+    return box.isEmpty() ? null : { min: [box.min.x, box.min.y, box.min.z], max: [box.max.x, box.max.y, box.max.z] };
+  }
+
+  /** Is the point on the side of the section that is kept? */
+  private kept(p: THREE.Vector3): boolean {
+    return this.clip.every((c) => c.distanceToPoint(p) >= -1e-9);
+  }
+
+  private firstBodyHit(ray: THREE.Raycaster): number {
+    return this.body ? (ray.intersectObject(this.body).find((h) => this.kept(h.point))?.distance ?? Infinity) : Infinity;
+  }
+
+  /** Puts the body and its edges as the display mode and the section say. */
+  private applyDisplay(): void {
+    const mode = this.displayMode;
+    const body = this.body;
+    if (body) {
+      const m = body.material as THREE.MeshStandardMaterial;
+      const seeThrough = mode === 'wireframe' || mode === 'hiddenVisible';
+      m.colorWrite = !seeThrough;
+      m.depthWrite = mode !== 'wireframe';
+      m.emissive.set(mode === 'hiddenRemoved' ? 0xffffff : 0x000000);
+      m.emissiveIntensity = mode === 'hiddenRemoved' ? 0.85 : 1;
+      m.clippingPlanes = this.clip;
+      m.side = this.clip.length > 0 ? THREE.DoubleSide : THREE.FrontSide;
+      m.needsUpdate = true;
+      this.paintBodyColors();
+    }
+    if (this.edges) {
+      const m = this.edges.material as THREE.LineBasicMaterial;
+      m.clippingPlanes = this.clip;
+      m.needsUpdate = true;
+    }
+    if (mode === 'hiddenVisible' && this.edges && !this.hiddenEdges) {
+      const g = this.edges.geometry.clone();
+      const line = new THREE.LineSegments(g, new THREE.LineDashedMaterial({ color: 0x8b98a8, dashSize: 1, gapSize: 1, depthFunc: THREE.GreaterDepth, depthWrite: false }));
+      line.computeLineDistances();
+      this.hiddenEdges = line;
+      this.scene.add(line);
+    }
+    if (this.hiddenEdges) {
+      this.hiddenEdges.visible = mode === 'hiddenVisible';
+      const m = this.hiddenEdges.material as THREE.LineDashedMaterial;
+      const box = this.contentBox();
+      const size = box.isEmpty() ? 100 : box.getSize(new THREE.Vector3()).length();
+      m.dashSize = size / 150;
+      m.gapSize = size / 300;
+      m.clippingPlanes = this.clip;
+      m.needsUpdate = true;
+    }
+    this.requestRender();
+  }
+
+  /**
+   * The rotation of the view as a CSS `matrix3d` (D4.3): what turns a cube drawn with x to the right, y down and z toward the viewer so that it shows
+   * the model's axes as the camera sees them.
+   */
+  cubeMatrix(): number[] {
+    this.camera.updateMatrixWorld();
+    const e = this.camera.matrixWorldInverse.clone().copy(this.camera.matrixWorld).invert().elements;
+    // column-major, rotation only. The cube is drawn in CSS's frame (y down) and the camera's is y up: M = S · R · S, S turning y over
+    const r = (row: number, col: number) => e[col * 4 + row]!;
+    const m = (row: number, col: number) => (row === 1 ? -1 : 1) * (col === 1 ? -1 : 1) * r(row, col);
+    return [m(0, 0), m(1, 0), m(2, 0), 0, m(0, 1), m(1, 1), m(2, 1), 0, m(0, 2), m(1, 2), m(2, 2), 0, 0, 0, 0, 1];
+  }
+
+  /** Called whenever the camera moves, zooms or the viewport is resized. Returns the way to stop. */
+  subscribeView(fn: () => void): () => void {
+    this.viewListeners.add(fn);
+    return () => this.viewListeners.delete(fn);
+  }
+
   // ---------------------------------------------------------------- views
 
   setView(view: StandardView): void {
@@ -1306,6 +1420,7 @@ export class Viewer {
     if (this.originShown) this.paintOrigin(); // a constant size on screen
     if (this.datums.points.length + this.datums.systems.length > 0) this.paintDatums();
     this.events.onViewChange?.();
+    for (const fn of this.viewListeners) fn();
     this.requestRender();
   }
 
