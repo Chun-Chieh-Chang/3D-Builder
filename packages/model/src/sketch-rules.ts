@@ -33,6 +33,8 @@ const RULES: { [T in SketchConstraint['type']]: Partial<Record<RefField, RefKind
   perpendicular: { a: LINE, b: LINE },
   tangent: { a: CURVE, b: CURVE },
   concentric: { a: RADIAL, b: RADIAL },
+  coradial: { a: RADIAL, b: RADIAL },
+  intersection: { point: POINT, a: CURVE, b: CURVE },
   equal: { a: CURVE, b: CURVE },
   midpoint: { point: POINT, line: LINE },
   pointOnCurve: { point: POINT, curve: CURVE },
@@ -43,6 +45,7 @@ const RULES: { [T in SketchConstraint['type']]: Partial<Record<RefField, RefKind
   distanceY: { a: ANCHOR, b: ANCHOR },
   radius: { circle: RADIAL },
   diameter: { circle: RADIAL },
+  arcLength: { circle: ['arc'] },
   angle: { a: LINE, b: LINE },
 };
 

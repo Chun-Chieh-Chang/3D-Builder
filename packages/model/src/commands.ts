@@ -5,7 +5,7 @@ import type { Variable, BlobRef, ChamferFeature, CombineFeature, EndCondition, E
 import { isDatumPlaneName } from './datums';
 import { mapRefs } from './refs';
 import { bodyFeature, isBodyKey, isHideable } from './visibility';
-import { dimensionName, Parameters, renameInDoc, variableUsers, type ExprKind } from './params';
+import { dimensionName, Parameters, renameInDoc, resolveDoc, variableUsers, type ExprKind } from './params';
 import type { NameRef } from './expr';
 import { isDimension } from './schema';
 import { ExprError } from './expr';
@@ -47,6 +47,8 @@ export type Command =
   /** Inserts a feature at `index` (at or above the rollback bar), like SolidWorks inserting at the bar. */
   | { type: 'insertFeature'; feature: Feature; index: number }
   | { type: 'setDimension'; featureId: Id; constraintId: Id; value: Expr }
+  /** Makes a dimension driven (a reference that shows what is measured) or driving again; `value` is the new value when it drives again (C1.29). */
+  | { type: 'setDimensionDriving'; featureId: Id; constraintId: Id; driving: boolean; value?: Expr }
   | { type: 'setEndCondition'; featureId: Id; dir: 'dir1' | 'dir2'; value: EndCondition }
   | { type: 'setRevolveCondition'; featureId: Id; value: RevolveCondition }
   | { type: 'setRevolveAxis'; featureId: Id; axis: Id }
@@ -317,6 +319,23 @@ export function mutate(draft: Draft<PartDoc>, cmd: Command): void {
       if (!c || !isDimension(c)) throw new CommandError(t('cmd.dimensionNotFound', { id: cmd.constraintId }));
       c.value = cmd.value;
       checkExprs(draft as PartDoc, f as Feature, new Set([c.id])); // after the change, so a cycle through it is seen
+      return;
+    }
+    case 'setDimensionDriving': {
+      const f = sketchOf(draft, cmd.featureId);
+      const c = f.constraints.find((x) => x.id === cmd.constraintId);
+      if (!c || !isDimension(c)) throw new CommandError(t('cmd.dimensionNotFound', { id: cmd.constraintId }));
+      if (cmd.driving) {
+        delete c.driving;
+        if (cmd.value !== undefined) c.value = cmd.value;
+        checkExprs(draft as PartDoc, f as Feature, new Set([c.id]));
+        return;
+      }
+      // a driven dimension has no value of its own, so nothing may still use it
+      const before = resolveDoc(current(draft) as PartDoc).problems;
+      c.driving = false;
+      const after = resolveDoc(current(draft) as PartDoc).problems;
+      for (const id of after.keys()) if (!before.has(id)) throw new CommandError(t('cmd.dimensionStillUsed', { name: dimensionName(c) }));
       return;
     }
     case 'setEndCondition': {

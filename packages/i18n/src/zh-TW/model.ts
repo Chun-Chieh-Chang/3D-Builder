@@ -63,6 +63,7 @@ export const model = {
   'cmd.variableInUse': '變數「{name}」正被使用，先改掉那些運算式才能刪除：{users}',
   'cmd.propertyNameEmpty': '屬性名稱不可空白',
   'cmd.propertyNotFound': '找不到屬性：{name}',
+  'cmd.dimensionStillUsed': '尺寸「{name}」正被運算式使用，不能改成從動尺寸',
   'cmd.dimensionLabelInvalid': '尺寸名稱只能用文字、數字與底線，且不能以數字開頭：「{name}」',
   'cmd.dimensionLabelTaken': '這個草圖已經有名稱是「{name}」的尺寸',
 } as const;

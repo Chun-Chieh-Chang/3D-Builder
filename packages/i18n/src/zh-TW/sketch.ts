@@ -24,6 +24,22 @@ export const sketch = {
   'sketch.offsetTooSmall': '偏移距離太大：圓弧的半徑會變成 0 或負的',
   'sketch.offsetNoJoin': '偏移後的線條在轉角處接不起來，請縮小偏移距離',
 
+  'sketch.notArc': '「{id}」不是圓弧',
+  'sketch.mergeOrigin': '原點不能與其他點合併，請改用「重合」限制條件',
+  'sketch.mergeTwoPoints': '合併需要兩個不同的點',
+  'sketch.mergeDegenerate': '這兩個點是同一個圖元的兩端，合併後它就沒有長度了',
+  'sketch.mergeDimension': '這兩個點之間有尺寸，合併前請先刪掉它',
+
+  'relation.coradial': '同心同徑',
+  'relation.intersection': '交錯',
+  'relation.merge': '合併',
+  'dimension.arcLength': '弧長',
+  'sketch.dimensionDriven': '這個尺寸會使草圖過多定義，已加為從動尺寸（只顯示量到的值）',
+  'sketch.driven': '從動尺寸',
+  'sketch.makeDriven': '設為從動',
+  'sketch.makeDriving': '設為驅動',
+  'sketch.arcLengthButton': '標註弧長',
+
   'tool.slot': '狹槽',
   'tool.polygon': '多邊形',
   'tool.sketchFillet': '草圖圓角',

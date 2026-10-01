@@ -1,5 +1,5 @@
 import { t, type PlainKey } from '@3db/i18n';
-import { SKETCH_ORIGIN, type Id, type IdAllocator, type SketchConstraint, type SketchEdit, type SketchEntity, type SketchFeature } from '@3db/model';
+import { constraintRefs, isDimension, SKETCH_ORIGIN, type Id, type IdAllocator, type SketchConstraint, type SketchEdit, type SketchEntity, type SketchFeature } from '@3db/model';
 import { closestOn, onSweep } from './interact';
 import type { P2, SolvedGeometry } from './types';
 
@@ -282,6 +282,36 @@ export function chamfer(sketch: Pick<SketchFeature, 'constraints'>, geometry: Ge
   b.dimension({ type: 'distance', a: c.p, b: T1 }, d1);
   b.dimension({ type: 'distance', a: c.p, b: T2 }, d2);
   return { edit: { ...openCorner(c, b, T1, T2, sketch), add: b.added } };
+}
+
+// ---------------------------------------------------------------- merge (C1.26)
+
+/**
+ * 「合併」: two points become one. Everything that used the second point uses the first (the origin cannot be merged: use a coincidence), a
+ * coincidence between the two goes, other relations between them go too (they would say something about one point),
+ * and a dimension between them refuses the merge, since removing it would change the design.
+ */
+export function mergePoints(sketch: Pick<SketchFeature, 'entities' | 'constraints'>, a: Id, b: Id): OpResult {
+  const isPoint = (id: Id) => sketch.entities.some((e) => e.id === id && e.type === 'point');
+  if (a === SKETCH_ORIGIN || b === SKETCH_ORIGIN) return error('sketch.mergeOrigin');
+  if (a === b || !isPoint(a) || !isPoint(b)) return error('sketch.mergeTwoPoints');
+  const [keep, gone] = [a, b];
+  if (sketch.entities.some((e) => refsOf(e).includes(keep) && refsOf(e).includes(gone))) return error('sketch.mergeDegenerate');
+  const entities = sketch.entities.flatMap((e) => {
+    const fields = Object.entries(e).filter(([k, v]) => v === gone && k !== 'id');
+    return fields.length > 0 ? [{ id: e.id, set: Object.fromEntries(fields.map(([k]) => [k, keep])) }] : [];
+  });
+  const remove: Id[] = [gone];
+  const constraints: NonNullable<SketchEdit['constraints']> = [];
+  for (const k of sketch.constraints) {
+    const fields = (['a', 'b', 'point', 'line', 'curve', 'axis', 'circle'] as const).filter((f) => (k as Record<string, unknown>)[f] === gone);
+    if (fields.length === 0) continue;
+    const both = constraintRefs(k).includes(keep);
+    if (both && isDimension(k)) return error('sketch.mergeDimension');
+    if (both) remove.push(k.id);
+    else constraints.push({ id: k.id, set: Object.fromEntries(fields.map((f) => [f, keep])) });
+  }
+  return { edit: { entities, constraints, remove } };
 }
 
 // ---------------------------------------------------------------- where curves meet (trim, extend)

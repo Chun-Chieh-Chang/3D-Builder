@@ -339,7 +339,11 @@ export function applicableRelations(geometry: Geometry, selection: Id[]): Relati
   if (n === 1 && points.length === 1 && points[0] !== SKETCH_ORIGIN) return [{ type: 'fix', point: points[0]! }];
   if (n !== 2 && n !== 3) return [];
   if (n === 3) {
-    return points.length === 2 && lines.length === 1 ? [{ type: 'symmetric', a: points[0]!, b: points[1]!, axis: lines[0]! }] : [];
+    if (points.length === 2 && lines.length === 1) return [{ type: 'symmetric', a: points[0]!, b: points[1]!, axis: lines[0]! }];
+    // a point and two curves: the point where they cross
+    const curves = [...lines, ...radials];
+    if (points.length === 1 && curves.length === 2) return [{ type: 'intersection', point: points[0]!, a: curves[0]!, b: curves[1]! }];
+    return [];
   }
   const [a, b] = selection as [Id, Id];
   if (lines.length === 2) {
@@ -368,6 +372,7 @@ export function applicableRelations(geometry: Geometry, selection: Id[]): Relati
   if (radials.length === 2) {
     return [
       { type: 'concentric', a, b },
+      { type: 'coradial', a, b },
       { type: 'equal', a, b },
       { type: 'tangent', a, b },
     ];
@@ -475,6 +480,16 @@ export function layoutDimension(c: SketchConstraint, geometry: Geometry, px: num
       const from = c.type === 'diameter' ? polar(g.c, g.r, angle + Math.PI) : g.c;
       return { segments: [[from, tail], ...arrowhead(rim, from)], text: polar(g.c, g.r + off + 10 * px, angle) };
     }
+    case 'arcLength': {
+      const g = geometry.get(c.circle);
+      if (g?.type !== 'arc') return null;
+      const sweep = norm(g.a1 - g.a0) || 2 * Math.PI;
+      const r = g.r + off;
+      const pts = Array.from({ length: 17 }, (_, i) => polar(g.c, r, g.a0 + (sweep * i) / 16));
+      const segments: [P2, P2][] = pts.slice(1).map((p, i) => [pts[i]!, p]);
+      segments.push([polar(g.c, g.r, g.a0), pts[0]!], [polar(g.c, g.r, g.a1), pts[16]!]);
+      return { segments, text: polar(g.c, r + 12 * px, g.a0 + sweep / 2) };
+    }
     case 'angle': {
       const ga = geometry.get(c.a);
       const gb = geometry.get(c.b);
@@ -492,10 +507,63 @@ export function layoutDimension(c: SketchConstraint, geometry: Geometry, px: num
   }
 }
 
-/** Display text of a dimension: the value as entered, with SolidWorks prefixes and suffixes. */
-export function dimensionText(c: DimensionConstraint): string {
-  if (c.type === 'diameter') return `Ø${c.value}`;
-  if (c.type === 'radius') return `R${c.value}`;
-  if (c.type === 'angle') return /[a-z°]/i.test(c.value) ? c.value : `${c.value}°`;
-  return c.value;
+/**
+ * Display text of a dimension: the value as entered, with SolidWorks prefixes and suffixes. A driven (reference) dimension
+ * shows what is measured now, in parentheses (`measured`, the number from `measure`).
+ */
+export function dimensionText(c: DimensionConstraint, measured?: string): string {
+  const value = c.driving === false && measured !== undefined ? measured : c.value;
+  const text =
+    c.type === 'diameter' ? `Ø${value}` : c.type === 'radius' ? `R${value}` : c.type === 'arcLength' ? `⌒${value}` : c.type === 'angle' ? (/[a-z°]/i.test(value) ? value : `${value}°`) : value;
+  return c.driving === false ? `(${text})` : text;
+}
+
+/** What a dimension measures in the solved sketch: millimetres, or degrees for an angle; null when its entities are not there. */
+export function measure(c: DimensionConstraint, geometry: Geometry): number | null {
+  switch (c.type) {
+    case 'distance': {
+      if (c.b === undefined) {
+        const l = geometry.get(c.a);
+        return l?.type === 'line' ? dist(l.a, l.b) : null;
+      }
+      const [ga, gb] = [geometry.get(c.a), geometry.get(c.b)];
+      // like the solver: from the first point of a line (or the anchor) to the other line
+      const [lineId, other] = gb?.type === 'line' ? [c.b, c.a] : ga?.type === 'line' ? [c.a, c.b] : [null, null];
+      if (lineId !== null) {
+        const l = geometry.get(lineId) as SolvedLine;
+        const o = geometry.get(other!);
+        const p = o?.type === 'line' ? o.a : anchorOf(geometry, other!);
+        return p ? Math.abs(cross(unit(sub(l.b, l.a)), sub(p, l.a))) : null;
+      }
+      const [pa, pb] = [anchorOf(geometry, c.a), anchorOf(geometry, c.b)];
+      return pa && pb ? dist(pa, pb) : null;
+    }
+    case 'distanceX':
+    case 'distanceY': {
+      const [pa, pb] = [anchorOf(geometry, c.a), anchorOf(geometry, c.b)];
+      const axis = c.type === 'distanceX' ? 0 : 1;
+      return pa && pb ? Math.abs(pb[axis]! - pa[axis]!) : null;
+    }
+    case 'radius':
+    case 'diameter': {
+      const g = geometry.get(c.circle);
+      return g?.type === 'circle' || g?.type === 'arc' ? (c.type === 'radius' ? g.r : 2 * g.r) : null;
+    }
+    case 'arcLength': {
+      const g = geometry.get(c.circle);
+      return g?.type === 'arc' ? g.r * (norm(g.a1 - g.a0) || 2 * Math.PI) : null;
+    }
+    case 'angle': {
+      const [ga, gb] = [geometry.get(c.a), geometry.get(c.b)];
+      if (ga?.type !== 'line' || gb?.type !== 'line') return null;
+      const { ra, rb } = angleRays(ga, gb, c.flip);
+      return (norm(rayAngle(ra, rb)) * 180) / Math.PI;
+    }
+  }
+}
+
+/** `measure`, as the text a driven dimension shows. */
+export function measuredText(c: DimensionConstraint, geometry: Geometry): string | undefined {
+  const v = measure(c, geometry);
+  return v === null ? undefined : String(Math.round(v * 1e4) / 1e4);
 }

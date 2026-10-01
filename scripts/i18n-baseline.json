@@ -13,7 +13,7 @@
   "apps/web/src/components/StatusBar.tsx": 17,
   "apps/web/src/components/Viewport.tsx": 13,
   "apps/web/src/files.ts": 9,
-  "apps/web/src/sketcher/controller.ts": 23,
+  "apps/web/src/sketcher/controller.ts": 22,
   "apps/web/src/sketcher/overlay.ts": 2,
   "apps/web/src/state/assembly.ts": 34,
   "apps/web/src/state/movability.ts": 3,

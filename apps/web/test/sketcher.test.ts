@@ -127,8 +127,12 @@ describe('sketch tools', () => {
       click(c, place[0], place[1]);
       await flush();
     }
-    expect(h.sketch().constraints.filter((x) => x.type === 'distance')).toHaveLength(2); // the top width was refused
-    expect(h.notices.join()).toContain('過多定義');
+    // the top width would have over-defined the sketch: it is a reference (driven) dimension, which shows what is measured
+    const distances = h.sketch().constraints.filter((x) => x.type === 'distance') as { driving?: boolean }[];
+    expect(distances).toHaveLength(3);
+    expect(distances.filter((x) => x.driving !== false)).toHaveLength(2);
+    expect(h.notices.join()).toContain('從動');
+    expect(h.last!.status).toBe('fully'); // the reference adds nothing to solve
   });
 
   it('continues a line with a tangent arc', () => {
@@ -367,6 +371,62 @@ describe('sketch operations (C1.8, C1.9, C1.15, C1.16, C1.17, C1.19)', () => {
     expect(kinds(m, 'line')).toHaveLength(3);
     expect(m.sketch().constraints.filter((k) => k.type === 'symmetric')).toHaveLength(2);
     expect(m.last!.conflicting).toEqual([]);
+  });
+
+  it('merges two selected points into one, in one undo step', async () => {
+    const h = new Host();
+    const c = new SketchController(h);
+    c.setTool('line');
+    click(c, 0, 0);
+    click(c, 10, 0);
+    c.escape();
+    click(c, 12, 3);
+    click(c, 12, 9);
+    c.escape();
+    c.setTool('select');
+    const [a, b] = ['p2', 'p3'];
+    c.select([a!, b!]);
+    c.mergeSelection();
+    await c.settled();
+    expect(kinds(h, 'point').map((e) => e.id)).toEqual(['p1', 'p2', 'p4']);
+    expect(h.sketch().entities.find((e) => e.id === 'l2')).toMatchObject({ p1: 'p2' });
+    h.history.undo();
+    expect(kinds(h, 'point')).toHaveLength(4);
+    // one point is not enough
+    c.select(['p1']);
+    c.mergeSelection();
+    expect(h.notices.join()).toContain('兩個不同');
+  });
+
+  it('dimensions the length of an arc, and a dimension that would over-define is added as a reference that follows the geometry', async () => {
+    const doc = applyCommand(applyCommand(createEmptyPart(), EMPTY_SKETCH), {
+      type: 'addSketchItems',
+      featureId: 'sketch1',
+      entities: [
+        { id: 'c', type: 'point', x: 0, y: 0 }, { id: 's', type: 'point', x: 10, y: 0 }, { id: 'e', type: 'point', x: 0, y: 10 }, { id: 'A', type: 'arc', center: 'c', start: 's', end: 'e' },
+      ],
+      constraints: [
+        { id: 'f', type: 'coincident', a: 'c', b: '@origin' }, { id: 'h', type: 'horizontal', a: 'c', b: 's' }, { id: 'r', type: 'radius', circle: 'A', value: '10' }, { id: 'v', type: 'vertical', a: 'c', b: 'e' },
+      ],
+    });
+    const h = new Host(doc);
+    const c = new SketchController(h);
+    expect(h.last!.status).toBe('fully');
+    c.dimensionArcLength('A'); // already defined by its radius and its two ends: a reference
+    await flush();
+    const length = h.sketch().constraints.find((k) => k.type === 'arcLength') as { value: string; driving?: boolean };
+    expect(length).toMatchObject({ driving: false, value: String(Number(((10 * Math.PI) / 2).toFixed(4))) });
+    expect(h.notices.join()).toContain('從動');
+    expect(h.last!.status).toBe('fully');
+    // a reference becomes driving again with the value measured now, unless that over-defines the sketch
+    c.setDriven(h.sketch().constraints.find((k) => k.type === 'arcLength')!.id, false);
+    await c.settled();
+    expect(h.notices.join()).toContain('過多定義');
+    expect(h.sketch().constraints.find((k) => k.type === 'arcLength')).toMatchObject({ driving: false });
+    // making a driving dimension a reference is one command, and frees what it held
+    c.setDriven('r', true);
+    expect(h.sketch().constraints.find((k) => k.id === 'r')).toMatchObject({ driving: false });
+    expect(h.last!.status).toBe('under');
   });
 
   it('asks for a selection first, and refuses an operation the solver finds over-defining', async () => {

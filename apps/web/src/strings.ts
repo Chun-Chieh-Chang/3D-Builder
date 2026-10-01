@@ -56,6 +56,7 @@ export const DIMENSION_LABEL: Partial<Record<SketchConstraint['type'], string>> 
   distanceY: 'dimension.distanceY',
   radius: 'dimension.radius',
   diameter: 'dimension.diameter',
+  arcLength: 'dimension.arcLength',
   angle: 'dimension.angle',
 });
 
@@ -69,6 +70,8 @@ export const RELATION_LABEL: Record<SketchConstraint['type'], string> = labelsOf
   perpendicular: 'relation.perpendicular',
   tangent: 'relation.tangent',
   concentric: 'relation.concentric',
+  coradial: 'relation.coradial',
+  intersection: 'relation.intersection',
   equal: 'relation.equal',
   midpoint: 'relation.midpoint',
   pointOnCurve: 'relation.pointOnCurve',
@@ -79,6 +82,7 @@ export const RELATION_LABEL: Record<SketchConstraint['type'], string> = labelsOf
   distanceY: 'dimension.distanceY',
   radius: 'dimension.radius',
   diameter: 'dimension.diameter',
+  arcLength: 'dimension.arcLength',
   angle: 'dimension.angle',
 });
 

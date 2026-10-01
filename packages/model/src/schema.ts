@@ -6,7 +6,7 @@ import type { Id } from './ids';
  * DOF status, mass properties and error lists are derived data and never stored.
  */
 
-export const SCHEMA_VERSION = 10;
+export const SCHEMA_VERSION = 11;
 
 /** Value expression (B5.2, B5.3): "20", "25.4mm", "30deg", "wall_t*2", "D1@草圖1/2", "property('厚度')"; see `expr/`. */
 export type Expr = string;
@@ -58,17 +58,23 @@ export type SketchConstraint =
   | { id: Id; type: 'perpendicular'; a: Id; b: Id }
   | { id: Id; type: 'tangent'; a: Id; b: Id }
   | { id: Id; type: 'concentric'; a: Id; b: Id }
+  /** Two circles or arcs with the same center and the same radius (SolidWorks 「同心同徑」, v11). */
+  | { id: Id; type: 'coradial'; a: Id; b: Id }
   | { id: Id; type: 'equal'; a: Id; b: Id }
   | { id: Id; type: 'midpoint'; point: Id; line: Id }
   /** SolidWorks "coincident" between a point and a line, circle or arc (point–point is `coincident`). */
   | { id: Id; type: 'pointOnCurve'; point: Id; curve: Id }
   | { id: Id; type: 'symmetric'; a: Id; b: Id; axis: Id }
+  /** A point where two curves cross (SolidWorks 「交錯」, v11). */
+  | { id: Id; type: 'intersection'; point: Id; a: Id; b: Id }
   | { id: Id; type: 'fix'; point: Id }
   | { id: Id; type: 'distance'; a: Id; b?: Id; value: Expr; label?: string; driving?: boolean }
   | { id: Id; type: 'distanceX'; a: Id; b: Id; value: Expr; label?: string; driving?: boolean }
   | { id: Id; type: 'distanceY'; a: Id; b: Id; value: Expr; label?: string; driving?: boolean }
   | { id: Id; type: 'radius'; circle: Id; value: Expr; label?: string; driving?: boolean }
   | { id: Id; type: 'diameter'; circle: Id; value: Expr; label?: string; driving?: boolean }
+  /** The length of an arc (v11); `circle` is the arc. */
+  | { id: Id; type: 'arcLength'; circle: Id; value: Expr; label?: string; driving?: boolean }
   /**
    * The angle of the sector between two lines where the dimension was placed (SolidWorks). The sector
    * lies between the rays along the lines as drawn, each reversed where `flip` says so; seen from the

@@ -82,6 +82,9 @@ const migrations: Record<number, (doc: Json) => Json> = {
   // v10: several bodies in a part (C7): `bodies` holds their names and reference flags, `merge` the way a boss joins
   // them, and there is a `combine` feature. A version-9 part has one body whatever it does: nothing to convert.
   9: (doc) => ({ ...doc, bodies: {} }),
+  // v11: sketch relations `coradial` and `intersection` and the `arcLength` dimension (C1.26, C1.28). Nothing to convert; the version
+  // keeps older programs from opening a sketch whose relations they would not know.
+  10: (doc) => doc,
 };
 
 export class FormatError extends Error {

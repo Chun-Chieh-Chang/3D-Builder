@@ -3,6 +3,7 @@ import {
   applyCommand,
   IdAllocator,
   idsInUse,
+  isDimension,
   SKETCH_ORIGIN,
   type CircleRadius,
   type Command,
@@ -20,6 +21,7 @@ import {
   hitTest,
   inBox,
   inferDirection,
+  measure,
   perp,
   scale,
   smartDimension,
@@ -34,7 +36,7 @@ import {
   type Snap,
 } from '@3db/sketch/interact';
 import type { P2, SolvedGeometry } from '@3db/sketch';
-import { chamfer, extend, fillet, mirror, offset, polygon, slot, trim, type OpResult } from '@3db/sketch/ops';
+import { chamfer, extend, fillet, mergePoints, mirror, offset, polygon, slot, trim, type OpResult } from '@3db/sketch/ops';
 import type { SketchSolvePayload } from '../worker/protocol';
 
 export type ToolId =
@@ -816,8 +818,12 @@ export class SketchController {
    */
   private run(r: OpResult, done?: () => void): void {
     if ('error' in r) return this.host.notify(r.error, 'info');
+    this.submit({ type: 'editSketch', featureId: this.host.featureId, ...r.edit } as Command, done);
+  }
+
+  /** Trial-solves what the command would make of the sketch and, if it is not over-defined, executes it. */
+  private submit(cmd: Command, done?: () => void): void {
     if (this.busy) return;
-    const cmd = { type: 'editSketch', featureId: this.host.featureId, ...r.edit } as Command;
     let next: PartDoc;
     try {
       next = applyCommand(this.host.doc(), cmd);
@@ -844,6 +850,37 @@ export class SketchController {
     return this.host.execute({ type: 'addSketchItems', featureId: this.host.featureId, entities: b.entities, constraints: b.constraints });
   }
 
+  // ------------------------------------------------------------------ merge, arc length, driven dimensions (C1.26, C1.28, C1.29)
+
+  /** 「合併」 of the two selected points. */
+  mergeSelection(): void {
+    const [a, b] = [...this.selection];
+    if (this.selection.size !== 2 || a === undefined || b === undefined) return this.host.notify(t('sketch.mergeTwoPoints'), 'info');
+    this.run(mergePoints(this.sketch(), a, b), () => {
+      this.selection.clear();
+    });
+  }
+
+  /** The length of the selected arc as a dimension. */
+  dimensionArcLength(arcId: Id): void {
+    const g = this.geometry().get(arcId);
+    if (g?.type !== 'arc') return;
+    const value = measure({ id: '', type: 'arcLength', circle: arcId, value: '0' }, this.geometry());
+    if (value !== null) this.placeDimension({ type: 'arcLength', circle: arcId } as SketchConstraint, value);
+  }
+
+  /** A dimension that is a reference shows what is measured; one that drives again takes the value measured now (SolidWorks does the same). */
+  setDriven(constraintId: Id, driven: boolean): void {
+    const c = this.sketch().constraints.find((x) => x.id === constraintId);
+    if (!c || !isDimension(c)) return;
+    if (driven) {
+      this.host.execute({ type: 'setDimensionDriving', featureId: this.host.featureId, constraintId, driving: false });
+      return void this.changed();
+    }
+    const value = measure(c, this.geometry());
+    this.submit({ type: 'setDimensionDriving', featureId: this.host.featureId, constraintId, driving: true, ...(value === null ? {} : { value: fmt(value) }) });
+  }
+
   // ------------------------------------------------------------------ smart dimension (C1.28)
 
   private dimensionClick(e: PointerInput): void {
@@ -860,17 +897,24 @@ export class SketchController {
     const proposal = smartDimension(geometry, this.picks, e.p);
     this.picks = [];
     if (!proposal) return this.host.notify('無法標註這個組合', 'info');
+    this.placeDimension(proposal.body as SketchConstraint, proposal.value);
+  }
+
+  /**
+   * Adds a driving dimension, refused (like a relation) when the solver says it over-defines the sketch; in that case it
+   * is added as a driven one instead, a reference that shows the measured value (C1.29), as SolidWorks offers.
+   */
+  private placeDimension(body: SketchConstraint, value: number): void {
     const id = this.allocator().take('d');
-    const dimension = { id, ...proposal.body, value: fmt(proposal.value) } as SketchConstraint;
+    const dimension = { ...body, id, value: fmt(value) } as SketchConstraint;
     const s = this.sketch();
     void this.host.trial({ ...s, constraints: [...s.constraints, dimension] }).then((r) => {
-      if (r.status === 'over' || r.status === 'failed') {
-        this.host.notify('這個尺寸會使草圖過多定義，因此沒有加入', 'error');
-        return;
-      }
-      if (this.host.execute({ type: 'addSketchItems', featureId: this.host.featureId, entities: [], constraints: [dimension] })) {
-        this.host.editDimension(id);
-      }
+      const add = (c: SketchConstraint) => this.host.execute({ type: 'addSketchItems', featureId: this.host.featureId, entities: [], constraints: [c] });
+      if (r.status === 'failed') this.host.notify(t('sketch.opOverDefined'), 'error');
+      else if (r.status === 'over') {
+        if (add({ ...dimension, driving: false } as SketchConstraint)) this.host.notify(t('sketch.dimensionDriven'), 'info');
+      } else if (add(dimension)) this.host.editDimension(id);
+      this.changed();
     });
   }
 
@@ -880,7 +924,7 @@ export class SketchController {
     const hover = this.hover && this.picks.length === 1 && this.hover.id !== this.picks[0] ? [this.picks[0]!, this.hover.id] : this.picks;
     const proposal = smartDimension(this.geometry(), hover, this.cursor) ?? smartDimension(this.geometry(), this.picks, this.cursor);
     if (!proposal) return null;
-    const kind = { distance: '', distanceX: '水平 ', distanceY: '垂直 ', radius: 'R', diameter: 'Ø', angle: '' }[proposal.body.type];
+    const kind = { distance: '', distanceX: '水平 ', distanceY: '垂直 ', radius: 'R', diameter: 'Ø', arcLength: '⌒', angle: '' }[proposal.body.type];
     return { text: `${kind}${fmt(proposal.value)}${proposal.unit === 'deg' ? '°' : ''}`, at: this.cursor };
   }
 

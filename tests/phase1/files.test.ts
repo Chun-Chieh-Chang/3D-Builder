@@ -117,6 +117,22 @@ describe('a part file written by version 9 (direct editing, C10) opens in versio
   });
 });
 
+describe('a part file written by version 10 (bodies, C7) opens in version 11 (sketch relations, C1.26)', () => {
+  it('keeps its two bodies and the name of the second, and rebuilds them with the same volumes', async () => {
+    const file = await readPartFile(oldFile('v10-bodies.3dbx'));
+    expect(file.warnings).toEqual([]);
+    expect(JSON.parse(new TextDecoder().decode((await readZip(oldFile('v10-bodies.3dbx')))[0]!.data)).schemaVersion).toBe(10);
+    expect(file.doc.schemaVersion).toBe(SCHEMA_VERSION);
+    expect(file.doc.bodies).toEqual({ extrude2: { name: '工件' } });
+    const r = new Regenerator(kernel, await PlaneGcsSolver.create(), file.blobs).rebuild(file.doc);
+    expect(statuses(r).filter((s) => !s.endsWith('=ok'))).toEqual([]);
+    expect(r.bodies.map((b) => b.id)).toEqual(['extrude1', 'extrude2']);
+    expect(r.bodies[1]!.name).toBe('工件');
+    expect(kernel.massProps(r.bodies[1]!.shape).volume).toBeCloseTo(10 * 10 * 3, 6);
+    expect(kernel.massProps(r.bodies[0]!.shape).volume).toBeCloseTo(DEMO, 6);
+  });
+});
+
 describe('the .3dbx file (B9.1, F7.1)', () => {
   const docs = async (): Promise<[string, PartDoc][]> => [
     ['the demo part', createDemoPart()],

@@ -1,5 +1,5 @@
 import { constraintRefs, isDimension, isPlain, SKETCH_ORIGIN, type DimensionConstraint, type Id, type PlaneFrame, type SketchConstraint, type SketchFeature } from '@3db/model';
-import { add, dimensionText, layoutDimension, mid, polar, sample, type Geometry } from '@3db/sketch/interact';
+import { add, dimensionText, layoutDimension, measuredText, mid, polar, sample, type Geometry } from '@3db/sketch/interact';
 import type { EntityStatus, P2, SolvedGeometry } from '@3db/sketch';
 import type { OverlayCurve, OverlayLabel, OverlayPoint, SketchOverlay } from '@3db/render';
 import { RELATION_LABEL } from '../strings';
@@ -18,7 +18,7 @@ export const SKETCH_COLORS = {
   origin: 0xe03131,
 } as const;
 
-const RELATION_SYMBOL: Record<Exclude<SketchConstraint['type'], 'distance' | 'distanceX' | 'distanceY' | 'radius' | 'diameter' | 'angle'>, string> = {
+const RELATION_SYMBOL: Record<Exclude<SketchConstraint['type'], 'distance' | 'distanceX' | 'distanceY' | 'radius' | 'diameter' | 'arcLength' | 'angle'>, string> = {
   coincident: '⊙',
   horizontal: '―',
   vertical: '│',
@@ -27,6 +27,8 @@ const RELATION_SYMBOL: Record<Exclude<SketchConstraint['type'], 'distance' | 'di
   perpendicular: '⊥',
   tangent: '◠',
   concentric: '◎',
+  coradial: '◉',
+  intersection: '✕',
   equal: '=',
   midpoint: '◇',
   pointOnCurve: '⊙',
@@ -45,7 +47,8 @@ export interface OverlayOptions {
 const shown = (v: number) => String(Math.round(v * 1e4) / 1e4);
 
 /** A dimension's text: as typed when it is a plain number, else its value marked with Σ. */
-function dimensionLabel(c: DimensionConstraint, value: number | undefined): string {
+function dimensionLabel(c: DimensionConstraint, value: number | undefined, measured: string | undefined): string {
+  if (c.driving === false) return dimensionText(c, measured); // a reference: what is measured now, in parentheses
   if (value === undefined || isPlain(c.value)) return dimensionText(c);
   return 'Σ' + dimensionText({ ...c, value: c.type === 'angle' ? shown((value * 180) / Math.PI) : shown(value) });
 }
@@ -134,7 +137,7 @@ export function buildOverlay(frame: PlaneFrame, sketch: SketchFeature, solve: Sk
     const state = selected.has(c.id) ? 'selected' : over.has(c.id) ? 'over' : '';
     const color = state === 'selected' ? SKETCH_COLORS.selected : state === 'over' ? SKETCH_COLORS.over : SKETCH_COLORS.dimension;
     for (const [a, b] of layout.segments) curves.push({ points: [a, b], color });
-    labels.push({ key: `dim:${c.id}`, p: layout.text, text: dimensionLabel(c, options.values?.get(c.id)), className: `dimension ${state}`, interactive: true, title: c.label ?? '按兩下修改尺寸' });
+    labels.push({ key: `dim:${c.id}`, p: layout.text, text: dimensionLabel(c, options.values?.get(c.id), measuredText(c, geometry)), className: `dimension ${state}${c.driving === false ? ' driven' : ''}`, interactive: true, title: c.label ?? '按兩下修改尺寸' });
   }
 
   // relation symbols (C1.27), stacked when several sit at the same place

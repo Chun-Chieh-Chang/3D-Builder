@@ -1,3 +1,4 @@
+import { t } from '@3db/i18n';
 import { Algorithm, make_gcs_wrapper, SolveStatus, type GcsWrapper, type SketchPrimitive } from '@salusoft89/planegcs';
 import {
   constraintRefs,
@@ -105,6 +106,21 @@ function toPrimitives(sketch: SketchFeature, start: Start, pinned: ReadonlySet<I
     }
   }
 
+  /** "The point lies on this line, circle or arc". */
+  const onCurve = (p: Id, curveId: Id, id: Id): Prim => {
+    const curve = byId.get(curveId);
+    if (curve?.type === 'line') return { id, type: 'point_on_line_pl', p_id: p, l_id: curve.id };
+    if (curve?.type === 'circle') return { id, type: 'point_on_circle', p_id: p, c_id: curve.id };
+    if (curve?.type === 'arc') return { id, type: 'point_on_arc', p_id: p, a_id: curve.id };
+    throw new MappingError(`「${curveId}」不是直線、圓或圓弧`);
+  };
+  const equalRadius = (a: Extract<SketchEntity, { type: 'circle' | 'arc' }>, b: Extract<SketchEntity, { type: 'circle' | 'arc' }>, id: Id): Prim => {
+    if (a.type === 'circle' && b.type === 'circle') return { id, type: 'equal_radius_cc', c1_id: a.id, c2_id: b.id };
+    if (a.type === 'arc' && b.type === 'arc') return { id, type: 'equal_radius_aa', a1_id: a.id, a2_id: b.id };
+    const [circle, arc] = a.type === 'circle' ? [a, b] : [b, a];
+    return { id, type: 'equal_radius_ca', c1_id: circle.id, a2_id: arc.id };
+  };
+
   const add = (id: Id, list: Prim[]) => list.forEach((p, k) => prims.push({ ...p, id: list.length === 1 ? id : `${id}#${k}` } as Prim));
 
   for (const c of sketch.constraints) {
@@ -177,15 +193,23 @@ function toPrimitives(sketch: SketchFeature, start: Start, pinned: ReadonlySet<I
       case 'concentric':
         add(id, [{ id, type: 'p2p_coincident', p1_id: radial(c.a).center, p2_id: radial(c.b).center }]);
         break;
+      case 'coradial': {
+        // the same center and the same radius: concentric plus equal
+        const [ra, rb] = [radial(c.a), radial(c.b)];
+        add(id, [{ id, type: 'p2p_coincident', p1_id: ra.center, p2_id: rb.center }, equalRadius(ra, rb, id)]);
+        break;
+      }
       case 'equal': {
         const a = byId.get(c.a);
         const b = byId.get(c.b);
         if (a?.type === 'line' && b?.type === 'line') add(id, [{ id, type: 'equal_length', l1_id: a.id, l2_id: b.id }]);
-        else if (a?.type === 'circle' && b?.type === 'circle') add(id, [{ id, type: 'equal_radius_cc', c1_id: a.id, c2_id: b.id }]);
-        else if (a?.type === 'arc' && b?.type === 'arc') add(id, [{ id, type: 'equal_radius_aa', a1_id: a.id, a2_id: b.id }]);
-        else if (a?.type === 'circle' && b?.type === 'arc') add(id, [{ id, type: 'equal_radius_ca', c1_id: a.id, a2_id: b.id }]);
-        else if (a?.type === 'arc' && b?.type === 'circle') add(id, [{ id, type: 'equal_radius_ca', c1_id: b.id, a2_id: a.id }]);
+        else if ((a?.type === 'circle' || a?.type === 'arc') && (b?.type === 'circle' || b?.type === 'arc')) add(id, [equalRadius(a, b, id)]);
         else throw new MappingError('相等只適用於兩條直線或兩個圓/圓弧');
+        break;
+      }
+      case 'intersection': {
+        const p = point(c.point);
+        add(id, [onCurve(p, c.a, id), onCurve(p, c.b, id)]);
         break;
       }
       case 'midpoint': {
@@ -193,15 +217,9 @@ function toPrimitives(sketch: SketchFeature, start: Start, pinned: ReadonlySet<I
         add(id, [{ id, type: 'p2p_symmetric_ppp', p1_id: l.p1, p2_id: l.p2, p_id: point(c.point) }]);
         break;
       }
-      case 'pointOnCurve': {
-        const curve = byId.get(c.curve);
-        const p = point(c.point);
-        if (curve?.type === 'line') add(id, [{ id, type: 'point_on_line_pl', p_id: p, l_id: curve.id }]);
-        else if (curve?.type === 'circle') add(id, [{ id, type: 'point_on_circle', p_id: p, c_id: curve.id }]);
-        else if (curve?.type === 'arc') add(id, [{ id, type: 'point_on_arc', p_id: p, a_id: curve.id }]);
-        else throw new MappingError(`「${c.curve}」不是直線、圓或圓弧`);
+      case 'pointOnCurve':
+        add(id, [onCurve(point(c.point), c.curve, id)]);
         break;
-      }
       case 'symmetric':
         add(id, [{ id, type: 'p2p_symmetric_ppl', p1_id: point(c.a), p2_id: point(c.b), l_id: line(c.axis).id }]);
         break;
@@ -240,6 +258,12 @@ function toPrimitives(sketch: SketchFeature, start: Start, pinned: ReadonlySet<I
         const axis = prop === 'x' ? 0 : 1;
         const sign = pointXY(pb)[axis] - pointXY(pa)[axis] >= 0 ? 1 : -1;
         add(id, [{ id, type: 'difference', param1: { o_id: pa, prop }, param2: { o_id: pb, prop }, difference: sign * evalLength(c.value) }]);
+        break;
+      }
+      case 'arcLength': {
+        const arc = radial(c.circle);
+        if (arc.type !== 'arc') throw new MappingError(t('sketch.notArc', { id: c.circle }));
+        add(id, [{ id, type: 'arc_length', a_id: arc.id, dist: evalLength(c.value) }]);
         break;
       }
       case 'radius':

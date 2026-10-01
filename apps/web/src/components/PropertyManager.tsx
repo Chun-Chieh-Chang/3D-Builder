@@ -27,8 +27,8 @@ import {
   type SketchConstraint,
   type SketchFeature,
 } from '@3db/model';
-import type { RebuildPayload } from '../worker/protocol';
-import { applicableRelations, constraintsOf, dimensionText, sameRelation } from '@3db/sketch/interact';
+import type { RebuildPayload, SketchSolvePayload } from '../worker/protocol';
+import { applicableRelations, constraintsOf, dimensionText, measuredText, sameRelation } from '@3db/sketch/interact';
 import { nearestElement } from '../state/candidates';
 import { store, useSketcherView, useStore } from '../state/store';
 import { DATUM_ITEMS, DIMENSION_LABEL, FEATURE_LABEL, featureLabel, PLANE_MODE_LABEL, RELATION_LABEL, SKETCH_STATUS_LABEL, TOOL_LABEL } from '../strings';
@@ -98,8 +98,8 @@ function describe(f: SketchFeature, id: Id): string {
   return id;
 }
 
-function relationText(f: SketchFeature, c: SketchConstraint): string {
-  if (isDimension(c)) return `${DIMENSION_LABEL[c.type] ?? '尺寸'} ${dimensionText(c)}`;
+function relationText(f: SketchFeature, c: SketchConstraint, geometry?: SketchSolvePayload['geometry']): string {
+  if (isDimension(c)) return `${DIMENSION_LABEL[c.type] ?? '尺寸'} ${dimensionText(c, geometry && measuredText(c, geometry))}`;
   return RELATION_LABEL[c.type];
 }
 
@@ -164,6 +164,9 @@ function SketchPanel({ f }: { f: SketchFeature }) {
   const offered = solve ? applicableRelations(solve.geometry, entityIds).filter((r) => !existing.some((c) => sameRelation(c, r))) : [];
   const dims = f.constraints.filter(isDimension);
   const conflicting = solve?.conflicting.map((id) => describe(f, id)) ?? [];
+  const isPointId = (id: Id) => f.entities.some((e) => e.id === id && e.type === 'point');
+  const canMerge = selection.length === 2 && selection.every(isPointId);
+  const arcSelected = selection.length === 1 ? f.entities.find((e) => e.id === selection[0] && e.type === 'arc') : undefined;
 
   return (
     <>
@@ -204,7 +207,7 @@ function SketchPanel({ f }: { f: SketchFeature }) {
               <ul className="relation-list">
                 {existing.map((c) => (
                   <li key={c.id} className={solve?.conflicting.includes(c.id) ? 'over' : ''}>
-                    <span>{relationText(f, c)}</span>
+                    <span>{relationText(f, c, solve?.geometry)}</span>
                     <button title="刪除" onClick={() => store.execute({ type: 'removeSketchItems', featureId: f.id, ids: [c.id] })}>
                       <Icon name="cancel" />
                     </button>
@@ -222,8 +225,19 @@ function SketchPanel({ f }: { f: SketchFeature }) {
                     {RELATION_LABEL[r.type]}
                   </button>
                 ))}
+                {canMerge && <button onClick={() => sketcher.mergeSelection()}>{t('relation.merge')}</button>}
               </div>
             </>
+          )}
+          {canMerge && offered.length === 0 && (
+            <div className="relation-buttons">
+              <button onClick={() => sketcher.mergeSelection()}>{t('relation.merge')}</button>
+            </div>
+          )}
+          {arcSelected && (
+            <div className="relation-buttons">
+              <button onClick={() => sketcher.dimensionArcLength(arcSelected.id)}>{t('sketch.arcLengthButton')}</button>
+            </div>
           )}
           {curves.length > 0 && (
             <label className="pm-row checkbox">
@@ -241,11 +255,20 @@ function SketchPanel({ f }: { f: SketchFeature }) {
         {dims.map((c) => (
           <label key={c.id} className="pm-row">
             <span>{c.label ?? `${DIMENSION_LABEL[c.type] ?? '尺寸'} ${c.id}`}</span>
-            <ValueInput
-              value={c.value}
-              suffix={c.type === 'angle' ? '°' : 'mm'}
-              toCommand={(value) => ({ type: 'setDimension', featureId: f.id, constraintId: c.id, value })}
-            />
+            {c.driving === false ? (
+              <span className="muted" title={t('sketch.driven')}>
+                {dimensionText(c, solve ? measuredText(c, solve.geometry) : undefined)}
+              </span>
+            ) : (
+              <ValueInput
+                value={c.value}
+                suffix={c.type === 'angle' ? '°' : 'mm'}
+                toCommand={(value) => ({ type: 'setDimension', featureId: f.id, constraintId: c.id, value })}
+              />
+            )}
+            <button type="button" className="link" onClick={() => sketcher?.setDriven(c.id, c.driving !== false)}>
+              {c.driving === false ? t('sketch.makeDriving') : t('sketch.makeDriven')}
+            </button>
           </label>
         ))}
       </section>
