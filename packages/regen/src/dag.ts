@@ -34,6 +34,9 @@ export function parentsOf(feature: Feature, doc: PartDoc): Id[] {
     case 'moveFace':
       parents = fromRefs([feature.face]);
       break;
+    case 'draft':
+      parents = fromRefs([feature.neutral, ...feature.faces]);
+      break;
     case 'combine':
       // a body is named by the feature that made it (`extrude1`, or `cut1#2` for a piece a cut left)
       parents = [feature.main, ...feature.tools].filter((r) => r.name).map((r) => bodyFeature(r.name));

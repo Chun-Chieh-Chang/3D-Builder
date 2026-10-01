@@ -122,6 +122,10 @@ export function mapExprs(feature: Feature, fn: (expr: Expr, kind: ExprKind, role
       }
       return feature;
     }
+    case 'draft': {
+      const angle = fn(feature.angle, 'angle', 'draftAngle');
+      return angle === feature.angle ? feature : { ...feature, angle };
+    }
     case 'shell': {
       const thickness = fn(feature.thickness, 'length', 'positive');
       return thickness === feature.thickness ? feature : { ...feature, thickness };

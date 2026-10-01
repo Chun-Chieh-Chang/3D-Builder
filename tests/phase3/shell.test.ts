@@ -94,6 +94,13 @@ describe('shell (C5.4)', () => {
     expect(volume(r)).toBeCloseTo(expected, 3);
   });
 
+  it('does not pass off an untouched body as a shell: an opened face with a fillet along its edge is a readable error', () => {
+    const r = rebuild(build(...plate(), fillet('f0', [edge('{e1:cap:end|e1:side:s1.al0}')], '3'), shell(['e1:cap:end'], '1')));
+    expect(failures(r)[0]).toContain('做不出來');
+    // opening the other end works
+    expect(failures(rebuild(build(...plate(), fillet('f0', [edge('{e1:cap:end|e1:side:s1.al0}')], '3'), shell(['e1:cap:start'], '1'))))).toEqual([]);
+  });
+
   it('says what is wrong: nothing picked, a wall too thick, a face that is gone', () => {
     expect(failures(rebuild(build(...plate(), shell([], '2'))))[0]).toContain('尚未選擇面'); // an empty selection box, not yet filled in
     expect(failures(rebuild(build(...plate(), shell(['e1:cap:end'], '20'))))[0]).toContain('薄殼失敗');

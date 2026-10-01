@@ -601,6 +601,23 @@ class AppStore {
     this.openNew({ id: this.allocator().take('delface'), type: 'deleteFace', name: nextName(this.history.doc, name), suppressed: false, faces: face?.kind === 'face' ? [face] : [] }, name);
   }
 
+  /** 「拔模」 (C5.5): starts with the face selected in the graphics area, if there is one, as the neutral face. */
+  newDraft(): void {
+    const face = this.state.selectedFace;
+    const name = t('feature.draftFeature');
+    this.openNew({ id: this.allocator().take('draft'), type: 'draft', name: nextName(this.history.doc, name), suppressed: false, neutral: face?.kind === 'face' ? face : { kind: 'face', name: '' }, faces: [], angle: '3deg' }, name);
+  }
+
+  /** A click while a draft is edited: the first face is the neutral face, the others are toggled in or out of the faces to lean. */
+  pickDraftFace(ref: Ref): void {
+    const f = this.editedFeature();
+    if (f?.type !== 'draft' || ref.kind !== 'face') return;
+    const set = (neutral: Ref, faces: Ref[]) => this.execute({ type: 'setDraftFeature', featureId: f.id, neutral, faces, angle: f.angle, ...(f.reverse ? { reverse: true } : {}) });
+    if (!f.neutral.name) return void set(ref, f.faces.filter((x) => x.name !== ref.name));
+    if (ref.name === f.neutral.name) return;
+    set(f.neutral, f.faces.some((x) => x.name === ref.name) ? f.faces.filter((x) => x.name !== ref.name) : [...f.faces, ref]);
+  }
+
   /** 「薄殼」 (C5.4): starts with the face selected in the graphics area, if there is one, as the face to take away. */
   newShell(): void {
     const face = this.state.selectedFace;
@@ -733,6 +750,7 @@ class AppStore {
     else if (f?.type === 'refPlane') this.setPlaneRef(ref);
     else if (f?.type === 'deleteFace') this.toggleFace(ref);
     else if (f?.type === 'shell') this.toggleShellFace(ref);
+    else if (f?.type === 'draft') this.pickDraftFace(ref);
     else if (f?.type === 'moveFace') this.setMoveFace(ref);
     else if (f?.type === 'combine' && ref.kind === 'face') this.pickBody(ref.name);
   }
@@ -798,7 +816,7 @@ class AppStore {
     const i = this.history.doc.features.findIndex((f) => f.id === e.featureId);
     const type = this.history.doc.features[i]?.type;
     if (type === 'refPlane') return i + 1;
-    return type === 'fillet' || type === 'chamfer' || type === 'deleteFace' || type === 'moveFace' || type === 'shell' || type === 'combine' || type === 'sketch' ? i : undefined;
+    return type === 'fillet' || type === 'chamfer' || type === 'deleteFace' || type === 'moveFace' || type === 'shell' || type === 'draft' || type === 'combine' || type === 'sketch' ? i : undefined;
   }
 
   // ------------------------------------------------------------ sketch sessions (C1)

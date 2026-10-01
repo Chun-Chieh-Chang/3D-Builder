@@ -64,6 +64,8 @@ ull). */
   /** Edges of an edge-based feature (fillet, chamfer). */
   | { type: 'setEdges'; featureId: Id; edges: Ref[] }
   | { type: 'setChamfer'; featureId: Id; value: Pick<ChamferFeature, 'mode' | 'distance' | 'second' | 'flip'> }
+  /** What a draft leans and about which plane (C5.5). */
+  | { type: 'setDraftFeature'; featureId: Id; neutral: Ref; faces: Ref[]; angle: Expr; reverse?: boolean }
   /** What a shell takes away and how thick the wall is (C5.4). */
   | { type: 'setShell'; featureId: Id; faces: Ref[]; thickness: Expr; outward?: boolean }
   /** Faces of a Delete Face feature (C10.2), and whether the rest of a hole goes with them. */
@@ -439,6 +441,19 @@ export function mutate(draft: Draft<PartDoc>, cmd: Command): void {
       f.faces = cmd.faces;
       if (cmd.hole) f.hole = true;
       else delete f.hole;
+      return;
+    }
+    case 'setDraftFeature': {
+      const f = feature(draft, cmd.featureId);
+      if (f.type !== 'draft') throw new CommandError(t('cmd.onlyDraftHasParams'));
+      if (cmd.neutral.kind !== 'face' && cmd.neutral.kind !== 'datum') throw new CommandError(t('cmd.draftNeutralKind'));
+      if (cmd.faces.some((r) => r.kind !== 'face')) throw new CommandError(t('cmd.draftOnlyFaces'));
+      f.neutral = cmd.neutral;
+      f.faces = cmd.faces;
+      f.angle = cmd.angle;
+      if (cmd.reverse) f.reverse = true;
+      else delete f.reverse;
+      checkExprs(draft as PartDoc, f as Feature);
       return;
     }
     case 'setShell': {

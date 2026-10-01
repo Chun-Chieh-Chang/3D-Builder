@@ -805,6 +805,25 @@ export class Kernel {
   }
 
   /**
+   * Leans the picked faces of a body (draft feature, C5.5) by ngle about the neutral plane, pulled along pull; a positive angle narrows
+   * them along pull. The faces keep their identity (modified), so their names do not change. A face that cannot lean is an error.
+   */
+  draft(target: ShapeId, faceIndices: number[], pull: Vec3, neutral: { origin: Vec3; normal: Vec3 }, angle: number): OpResult {
+    if (faceIndices.length === 0) throw new KernelError(t('feature.draftNoFaces'));
+    const arena = new Arena();
+    const shape = this.get(target);
+    const faces = ShapeIndex.of(this.oc, shape, T.FACE, arena);
+    try {
+      const origins = faces.keys.map((_, index): FaceOrigin[] => [{ rel: 'modified', kind: 'face', index }]);
+      const r = this.draftFaces(shape, origins, [...new Set(faceIndices)], pull, neutral, angle, arena);
+      return { shape: this.put(r.shape), faceOrigins: r.origins };
+    } finally {
+      faces.dispose();
+      arena.dispose();
+    }
+  }
+
+  /**
    * Hollows a body out (shell, C5.4): the faces asked for are taken away to open it, and the wall left is `thickness` thick, inside the old
    * surface or (`outward`) outside it. The faces that stay keep their origin; the inside of the wall is generated from the face it lies against;
    * a face that was opened is the rim of the wall. A shell OCCT cannot build (a wall thicker than the body allows) is an error.
@@ -857,6 +876,11 @@ export class Kernel {
             g.delete();
           }
         });
+        // OCCT can answer "done" and hand back the body untouched (an opened face with a fillet along its edge does): nothing generated is a failure
+        if (!origins.some((o) => o.some((x) => x.rel === 'generated'))) {
+          out.delete();
+          throw new KernelError(t('feature.shellFailed', { reason: t('feature.shellNothingMade') }));
+        }
         return { shape: this.put(out), faceOrigins: origins };
       } finally {
         outFaces.dispose();

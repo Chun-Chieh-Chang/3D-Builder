@@ -96,6 +96,8 @@ const migrations: Record<number, (doc: Json) => Json> = {
   13: (doc) => doc,
   // v15: the shell feature (C5.4). Nothing to convert; the version keeps older programs from opening a part with a feature they would skip.
   14: (doc) => doc,
+  // v16: the draft feature (C5.5). Nothing to convert; the version keeps older programs from opening a part with a feature they would skip.
+  15: (doc) => doc,
 };
 
 export class FormatError extends Error {

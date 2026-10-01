@@ -10,6 +10,7 @@ import {
   type ChamferFeature,
   type CombineFeature,
   type DeleteFaceFeature,
+  type DraftFeature,
   type Draft,
   type EndCondition,
   type ExtrudeFeature,
@@ -304,6 +305,7 @@ export class Regenerator {
           case 'fillet':
           case 'chamfer':
           case 'shell':
+          case 'draft':
           case 'deleteFace':
           case 'moveFace':
           case 'combine':
@@ -317,6 +319,8 @@ export class Regenerator {
                     ? this.fillet(feature, set)
                     : feature.type === 'chamfer'
                       ? this.chamfer(feature, set)
+                      : feature.type === 'draft'
+                        ? this.draftFeature(feature, set)
                       : feature.type === 'shell'
                         ? this.shell(feature, set)
                         : feature.type === 'deleteFace'
@@ -915,6 +919,18 @@ export class Regenerator {
   private edited(f: Feature, r: OpResult, body: BodyState): BodyState {
     const topology = this.kernel.topology(r.shape);
     return { id: body.id, shape: r.shape, topology, names: nameElements(r.faceOrigins, topology, { featureId: f.id, input: body.names }), by: f.id };
+  }
+
+  private draftFeature(f: DraftFeature, set: Bodies): BodyState[] {
+    return this.perBody(set, f.faces, 'face', t('feature.noBodyForDraft'), (n) => t('edit.facesLost', { n }), (body, mine) => {
+      const neutral = this.planeOf(f.neutral, set, { what: t('feature.neutralPlane'), notPlanar: t('feature.neutralNotPlanar') });
+      // a face is the plane of the body's own surface, so the wall leans away from the body's side of it; a plane is as it is drawn
+      const pull = f.neutral.kind === 'face' ? ([-neutral.normal[0], -neutral.normal[1], -neutral.normal[2]] as Vec3) : neutral.normal;
+      const sign = f.reverse ? -1 : 1;
+      const r = this.kernel.draft(body.shape, this.faceIndices(mine, body), [pull[0] * sign, pull[1] * sign, pull[2] * sign], { origin: neutral.origin, normal: neutral.normal }, evalAngle(f.angle));
+      const topology = this.kernel.topology(r.shape);
+      return { id: body.id, shape: r.shape, topology, names: nameElements(r.faceOrigins, topology, { featureId: f.id, input: body.names }), by: f.id };
+    });
   }
 
   private shell(f: ShellFeature, set: Bodies): BodyState[] {

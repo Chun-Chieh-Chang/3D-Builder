@@ -43,6 +43,8 @@ export function mapRefs(feature: Feature, map: (ref: Ref) => Ref): { feature: Fe
     case 'deleteFace':
     case 'shell':
       return { feature: { ...feature, faces: feature.faces.map(one) }, replaced };
+    case 'draft':
+      return { feature: { ...feature, neutral: one(feature.neutral), faces: feature.faces.map(one) }, replaced };
     case 'moveFace':
       return { feature: { ...feature, face: one(feature.face) }, replaced };
     case 'combine':

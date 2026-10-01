@@ -13,6 +13,7 @@ import {
   type CombineFeature,
   type Command,
   type DeleteFaceFeature,
+  type DraftFeature,
   type EndCondition,
   type Draft,
   type ExtrudeFeature,
@@ -893,6 +894,53 @@ function DeleteFacePanel({ f }: { f: DeleteFaceFeature }) {
   );
 }
 
+/** Draft (C5.5): the neutral face, the walls that lean, the angle, and which way they lean. */
+function DraftPanel({ f }: { f: DraftFeature }) {
+  const result = useStore((s) => s.result);
+  const run = (patch: Partial<Pick<DraftFeature, 'neutral' | 'faces' | 'angle' | 'reverse'>>) => {
+    const next = { neutral: f.neutral, faces: f.faces, angle: f.angle, reverse: f.reverse, ...patch };
+    store.execute({ type: 'setDraftFeature', featureId: f.id, neutral: next.neutral, faces: next.faces, angle: next.angle, ...(next.reverse ? { reverse: true } : {}) });
+  };
+  const row = (r: Ref, label: string) => {
+    const found = result?.faceNames.includes(r.name);
+    return (
+      <li key={r.name + label} className={found ? '' : 'missing'} title={r.name}>
+        {label}
+        {!found && t('pm.lost')}
+        <code>{r.name}</code>
+        {!found && <UseNearest featureId={f.id} refr={r} />}
+      </li>
+    );
+  };
+  return (
+    <section className="pm-group">
+      <h4>{t('pm.draft.neutral')}</h4>
+      <ul className="selection-box">
+        {!f.neutral.name ? <li className="muted">{t('pm.draft.neutralEmpty')}</li> : row(f.neutral, t('feature.neutralPlane'))}
+      </ul>
+      {f.neutral.name && (
+        <button type="button" className="link" onClick={() => run({ neutral: { kind: 'face', name: '' } })}>
+          {t('pm.draft.reselect')}
+        </button>
+      )}
+      <h4 className="sub">{t('pm.draft.faces')}</h4>
+      <ul className="selection-box">
+        {f.faces.length === 0 && <li className="muted">{t('pm.draft.facesEmpty')}</li>}
+        {f.faces.map((r, i) => row(r, t('pm.face', { n: i + 1 })))}
+      </ul>
+      <label className="pm-row">
+        <span>{t('pm.draft.angle')}</span>
+        <ValueInput value={f.angle} suffix="°" toCommand={(angle) => ({ type: 'setDraftFeature', featureId: f.id, neutral: f.neutral, faces: f.faces, angle, ...(f.reverse ? { reverse: true } : {}) })} />
+      </label>
+      <label className="pm-row checkbox">
+        <input type="checkbox" checked={!!f.reverse} onChange={(e) => run({ reverse: e.target.checked })} />
+        <span>{t('pm.draft.reverse')}</span>
+      </label>
+      <p className="hint">{t('pm.draft.hint')}</p>
+    </section>
+  );
+}
+
 /** Shell (C5.4): the faces to take away to open the body, the wall thickness, and which way the wall grows. */
 function ShellPanel({ f }: { f: ShellFeature }) {
   const result = useStore((s) => s.result);
@@ -1097,6 +1145,7 @@ export function PropertyManager() {
       {f.type === 'importedBody' && <ImportedBodyPanel f={f} />}
       {f.type === 'deleteFace' && <DeleteFacePanel f={f} />}
       {f.type === 'shell' && <ShellPanel f={f} />}
+      {f.type === 'draft' && <DraftPanel f={f} />}
       {f.type === 'moveFace' && <MoveFacePanel f={f} />}
       {f.type === 'combine' && <CombinePanel f={f} />}
     </div>
