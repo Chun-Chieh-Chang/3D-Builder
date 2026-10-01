@@ -51,6 +51,7 @@ export function mapRefs(feature: Feature, map: (ref: Ref) => Ref): { feature: Fe
       return { feature: { ...feature, main: one(feature.main), tools: feature.tools.map(one) }, replaced };
     case 'revolve':
     case 'sweep':
+    case 'loft':
     case 'hole':
     case 'importedBody':
       return { feature, replaced };

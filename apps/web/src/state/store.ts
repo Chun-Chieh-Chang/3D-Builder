@@ -563,6 +563,19 @@ class AppStore {
   }
 
   /**
+   * 「疊層拉伸」 or 「除料-疊層拉伸」 (C4.5): the selected sketch is the last section, the latest other sketch with a circle, a line or an arc the first; the
+   * PropertyManager adds, removes and orders the sections.
+   */
+  newLoft(op: 'boss' | 'cut'): void {
+    const last = this.selectedSketch();
+    if (!last) return;
+    const first = [...this.history.doc.features].reverse().find((f): f is SketchFeature => f.type === 'sketch' && f.id !== last.id && f.entities.some((e) => (e.type === 'line' || e.type === 'arc' || e.type === 'circle') && !e.construction));
+    const base = op === 'boss' ? t('feature.loft') : t('feature.cut', { name: t('feature.loft') });
+    const id = this.allocator().take('loft');
+    this.openNew({ id, type: 'loft', name: nextName(this.history.doc, base), suppressed: false, sections: first ? [first.id, last.id] : [last.id], op }, base);
+  }
+
+  /**
    * 「掃出」 or 「除料-掃出」 (C4.4): the selected sketch is the profile; its path is the latest other sketch that has a line or an arc, to be changed in the PropertyManager.
    */
   newSweep(op: 'boss' | 'cut'): void {

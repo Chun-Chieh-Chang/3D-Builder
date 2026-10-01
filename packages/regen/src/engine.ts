@@ -19,6 +19,7 @@ import {
   type FilletFeature,
   type Id,
   type ImportedBodyFeature,
+  type LoftFeature,
   type MoveFaceFeature,
   type PartDoc,
   type PlaneFrame,
@@ -305,6 +306,7 @@ export class Regenerator {
           case 'extrude':
           case 'revolve':
           case 'sweep':
+          case 'loft':
           case 'fillet':
           case 'chamfer':
           case 'shell':
@@ -321,6 +323,8 @@ export class Regenerator {
                   ? this.revolve(feature, sketches, set)
                   : feature.type === 'sweep'
                   ? this.sweep(feature, sketches, set)
+                  : feature.type === 'loft'
+                  ? this.loft(feature, sketches, set)
                   : feature.type === 'fillet'
                     ? this.fillet(feature, set)
                     : feature.type === 'chamfer'
@@ -694,6 +698,25 @@ export class Regenerator {
     if (Math.abs(dot(dir, s.frame.normal)) < 1e-3) throw new FeatureError(t('feature.sweepPathAlongPlane'));
     const tool = this.kernel.sweepAlongPath(s.frame, s.profiles.regions, p.frame, path);
     return this.apply(f.id, f.op, tool, { featureId: f.id, sketchId: f.sketch }, set.list, f.merge !== false);
+  }
+
+  /**
+   * The loft (C4.5): the sketches of the sections, each with one closed outline and no hole, in the order the feature lists them. OCCT does the
+   * rest, and what it makes must be a valid solid.
+   */
+  private loft(f: LoftFeature, sketches: RebuildResult['sketches'], set: Bodies): BodyState[] {
+    if (f.sections.length < 2) throw new FeatureError(t('feature.loftFewSections'));
+    if (f.op === 'cut' && !set.view) throw new FeatureError(t('feature.cutNeedsBody'));
+    const sections = f.sections.map((id) => {
+      const s = sketches.get(id);
+      if (!s) throw new FeatureError(t('feature.loftSectionGone'));
+      const { regions } = this.profileOf(sketches, id).profiles;
+      if (regions.length !== 1) throw new FeatureError(t('feature.loftOneOutline', { name: s.sketch.name, n: String(regions.length) }));
+      if (regions[0]!.holes.length > 0) throw new FeatureError(t('feature.loftNoHoles', { name: s.sketch.name }));
+      return { frame: s.frame, outer: regions[0]!.outer };
+    });
+    const tool = this.kernel.loft(sections);
+    return this.apply(f.id, f.op, tool, { featureId: f.id, sketchId: f.sections[0]! }, set.list, f.merge !== false);
   }
 
   // ------------------------------------------------------------------ several bodies (C7)

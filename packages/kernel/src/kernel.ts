@@ -676,6 +676,58 @@ export class Kernel {
     return origins;
   }
 
+  /**
+   * A body through two or more sections (C4.5, 疊層拉伸): each the outer outline of a region on its own frame, first to last. The faces are smooth
+   * through all the sections (ruled when there are two); OCCT lines the sections up itself (the corner they start at, the way round, a different
+   * number of edges, which it makes alike by splitting). A side face is named for the edge of the first section that made it
+   * (`<source>`; the caller puts the first sketch before it), the ends are caps.
+   */
+  loft(sections: { frame: Frame; outer: Segment[] }[]): OpResult {
+    if (sections.length < 2) throw new KernelError(t('feature.loftFewSections'));
+    const oc = this.oc;
+    const arena = new Arena();
+    try {
+      const first = new Map<TopoDS_Shape, string>();
+      const mk = arena.own(new oc.BRepOffsetAPI_ThruSections(true, false, 1e-6));
+      sections.forEach((s, i) => mk.AddWire(this.wire(arena, s.frame, s.outer, false, i === 0 ? first : new Map())));
+      let out: TopoDS_Shape;
+      try {
+        out = arena.own(this.build(mk, t('feature.loft'), arena));
+      } catch (e) {
+        if (e instanceof KernelError) throw new KernelError(t('feature.loftFailed', { why: e.message }));
+        throw e;
+      }
+      if (!this.valid(out)) throw new KernelError(t('feature.loftInvalid'));
+      const id = this.put(out.Oriented(out.Orientation()));
+      if (!(this.massProps(id).volume > 1e-9)) {
+        this.release(id);
+        throw new KernelError(t('feature.loftInvalid'));
+      }
+      const faces = ShapeIndex.of(oc, out, T.FACE, arena);
+      const origins: FaceOrigin[][] = faces.keys.map(() => []);
+      for (const [edge, source] of first) {
+        for (const s of this.list(mk.Generated(edge))) {
+          const i = faces.indexOf(s);
+          if (i >= 0 && !origins[i]!.some((o) => o.rel === 'generated' && o.kind === 'profileEdge' && o.source === source)) origins[i]!.push({ rel: 'generated', kind: 'profileEdge', source });
+          s.delete();
+        }
+      }
+      for (const [shape, which] of [[mk.FirstShape(), 'start'], [mk.LastShape(), 'end']] as const) {
+        const ends = ShapeIndex.of(oc, shape, T.FACE, arena);
+        for (const f of ends.keys) {
+          const i = faces.indexOf(f);
+          if (i >= 0) origins[i]!.push({ rel: 'cap', which });
+        }
+        ends.dispose();
+        shape.delete();
+      }
+      faces.dispose();
+      return { shape: id, faceOrigins: origins };
+    } finally {
+      arena.dispose();
+    }
+  }
+
   private boolOp(op: 'fuse' | 'cut' | 'common', a: TopoDS_Shape, b: TopoDS_Shape, label: string, arena: Arena) {
     const oc = this.oc;
     let mk;

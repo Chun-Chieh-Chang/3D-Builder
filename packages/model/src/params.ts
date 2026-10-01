@@ -156,6 +156,7 @@ export function mapExprs(feature: Feature, fn: (expr: Expr, kind: ExprKind, role
     }
     case 'deleteFace':
     case 'sweep':
+    case 'loft':
     case 'combine':
       return feature;
   }

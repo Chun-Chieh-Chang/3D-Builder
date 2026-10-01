@@ -6,7 +6,7 @@ import type { Id } from './ids';
  * DOF status, mass properties and error lists are derived data and never stored.
  */
 
-export const SCHEMA_VERSION = 18;
+export const SCHEMA_VERSION = 19;
 
 /** Value expression (B5.2, B5.3): "20", "25.4mm", "30deg", "wall_t*2", "D1@草圖1/2", "property('厚度')"; see `expr/`. */
 export type Expr = string;
@@ -203,6 +203,20 @@ export interface SweepFeature extends FeatureBase {
   contours?: Id[][];
 }
 
+/**
+ * Loft (疊層拉伸, C4.5, v19): a body through two or more sections, each the closed outline of a sketch, in the order listed. The faces are
+ * smooth through all the sections (with two, they are ruled). Each section is one outline without holes; where the sections start and which way
+ * round they go does not matter. A boss joins or becomes a body, a cut removes material, as for an extrusion.
+ */
+export interface LoftFeature extends FeatureBase {
+  type: 'loft';
+  /** The sketches of the sections, first to last. */
+  sections: Id[];
+  op: 'boss' | 'cut';
+  /** As for `ExtrudeFeature.merge`. */
+  merge?: boolean;
+}
+
 export interface RevolveFeature extends FeatureBase {
   type: 'revolve';
   sketch: Id;
@@ -332,6 +346,7 @@ export type Feature =
   | ExtrudeFeature
   | RevolveFeature
   | SweepFeature
+  | LoftFeature
   | FilletFeature
   | ChamferFeature
   | RefPlaneFeature

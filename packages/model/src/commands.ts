@@ -1,7 +1,7 @@
 import { t } from '@3db/i18n';
 import { current, produce, type Draft } from 'immer';
 import { countersFor, type Id } from './ids';
-import type { Variable, BlobRef, ChamferFeature, CombineFeature, HoleFeature, SweepFeature, Draft as WallDraft, EndCondition, Thin, Expr, Feature, ImportedBodyFeature, PartDoc, PlaneDefinition, Ref, RevolveCondition, SketchConstraint, SketchEntity, SketchFeature } from './schema';
+import type { Variable, BlobRef, ChamferFeature, CombineFeature, HoleFeature, LoftFeature, SweepFeature, Draft as WallDraft, EndCondition, Thin, Expr, Feature, ImportedBodyFeature, PartDoc, PlaneDefinition, Ref, RevolveCondition, SketchConstraint, SketchEntity, SketchFeature } from './schema';
 import { isDatumPlaneName } from './datums';
 import { mapRefs } from './refs';
 import { bodyFeature, isBodyKey, isHideable } from './visibility';
@@ -62,6 +62,8 @@ ull). */
   | { type: 'setRevolveAxis'; featureId: Id; axis: Id }
   /** The sketch whose path a sweep follows (C4.4). */
   | { type: 'setSweepPath'; featureId: Id; path: Id }
+  /** The sketches of a loft's sections, in order (C4.5). */
+  | { type: 'setLoftSections'; featureId: Id; sections: Id[] }
   | { type: 'setFilletRadius'; featureId: Id; value: Expr }
   /** Edges of an edge-based feature (fillet, chamfer). */
   | { type: 'setEdges'; featureId: Id; edges: Ref[] }
@@ -237,6 +239,13 @@ function sweepSketches(doc: PartDoc, f: SweepFeature, index: number): void {
   if (f.path === f.sketch) throw new CommandError(t('cmd.sweepPathIsProfile'));
 }
 
+/** A loft's sections are different sketches, all earlier in the history (how many is for the rebuild to say: the PropertyManager adds them one by one). */
+function loftSections(doc: PartDoc, f: LoftFeature, index: number): void {
+  const label = t('feature.loft');
+  for (const id of f.sections) sketchBefore(doc, id, index, label);
+  if (new Set(f.sections).size !== f.sections.length) throw new CommandError(t('cmd.loftSectionTwice'));
+}
+
 function revolveAxis(sketch: SketchFeature, axis: Id): void {
   if (sketch.entities.find((e) => e.id === axis)?.type !== 'line') throw new CommandError(t('cmd.revolveAxisMustBeLine'));
 }
@@ -275,6 +284,9 @@ function validateNewFeature(doc: PartDoc, f: Feature, index: number): void {
       return;
     case 'sweep':
       sweepSketches(doc, f, index);
+      return;
+    case 'loft':
+      loftSections(doc, f, index);
       return;
     case 'fillet':
       if (f.edges.some((r) => r.kind !== 'edge')) throw new CommandError(t('cmd.filletOnlyEdges'));
@@ -423,6 +435,13 @@ export function mutate(draft: Draft<PartDoc>, cmd: Command): void {
       f.path = cmd.path;
       return;
     }
+    case 'setLoftSections': {
+      const f = feature(draft, cmd.featureId);
+      if (f.type !== 'loft') throw new CommandError(t('cmd.onlyLoftHasSections'));
+      loftSections(draft as PartDoc, { ...(f as LoftFeature), sections: cmd.sections }, draft.features.findIndex((x) => x.id === f.id));
+      f.sections = [...cmd.sections];
+      return;
+    }
     case 'setRefPlane': {
       const f = feature(draft, cmd.featureId);
       if (f.type !== 'refPlane') throw new CommandError(t('cmd.onlyRefPlaneHasParams'));
@@ -508,7 +527,7 @@ export function mutate(draft: Draft<PartDoc>, cmd: Command): void {
     }
     case 'setMerge': {
       const f = feature(draft, cmd.featureId);
-      if (f.type !== 'extrude' && f.type !== 'revolve' && f.type !== 'sweep' && f.type !== 'importedBody') throw new CommandError(t('cmd.onlyBossMerges'));
+      if (f.type !== 'extrude' && f.type !== 'revolve' && f.type !== 'sweep' && f.type !== 'loft' && f.type !== 'importedBody') throw new CommandError(t('cmd.onlyBossMerges'));
       if (cmd.merge) delete f.merge;
       else f.merge = false;
       return;

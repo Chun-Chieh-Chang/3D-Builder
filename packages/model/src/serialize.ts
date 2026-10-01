@@ -102,6 +102,8 @@ const migrations: Record<number, (doc: Json) => Json> = {
   16: (doc) => doc,
   // v18: the sweep (C4.4). Nothing to convert; the version keeps older programs from opening a part with a feature they would skip.
   17: (doc) => doc,
+  // v19: the loft (C4.5). Nothing to convert; the version keeps older programs from opening a part with a feature they would skip.
+  18: (doc) => doc,
 };
 
 export class FormatError extends Error {

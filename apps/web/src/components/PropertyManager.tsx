@@ -24,6 +24,7 @@ import {
   type FilletFeature,
   type Id,
   type ImportedBodyFeature,
+  type LoftFeature,
   type MoveFaceFeature,
   type PartDoc,
   type PlaneDefinition,
@@ -591,7 +592,7 @@ function ContourBox({ f }: { f: ExtrudeFeature | RevolveFeature | SweepFeature }
 }
 
 /** 「合併結果」 (C7.1): whether a boss joins the bodies it touches or is a body of its own. */
-function MergeBox({ f }: { f: ExtrudeFeature | RevolveFeature | SweepFeature | ImportedBodyFeature }) {
+function MergeBox({ f }: { f: ExtrudeFeature | RevolveFeature | SweepFeature | LoftFeature | ImportedBodyFeature }) {
   return (
     <>
       <label className="pm-row checkbox">
@@ -705,6 +706,51 @@ function SweepPanel({ f }: { f: SweepFeature }) {
       </select>
       {f.op === 'boss' && <MergeBox f={f} />}
       <p className="hint">{t('pm.sweep.hint')}</p>
+    </section>
+  );
+}
+
+/** Loft (C4.5): the sketches of the sections as an ordered list (move up, move down, remove), and a list to add one from. */
+function LoftPanel({ f }: { f: LoftFeature }) {
+  const doc = useStore((s) => s.doc);
+  const index = doc.features.findIndex((x) => x.id === f.id);
+  const name = (id: Id) => findFeature(doc, id)?.name ?? id;
+  const set = (sections: Id[]) => store.execute({ type: 'setLoftSections', featureId: f.id, sections });
+  const move = (i: number, by: number) => {
+    const next = [...f.sections];
+    [next[i], next[i + by]] = [next[i + by]!, next[i]!];
+    set(next);
+  };
+  const more = doc.features.filter((x, i): x is SketchFeature => x.type === 'sketch' && i < index && !f.sections.includes(x.id));
+  return (
+    <section className="pm-group">
+      <h4>{t('pm.loft.sections')}</h4>
+      {f.sections.map((id, i) => (
+        <div key={id} className="pm-row">
+          <span>
+            {i + 1}. {name(id)}
+          </span>
+          <button disabled={i === 0} title={t('pm.loft.up')} onClick={() => move(i, -1)}>
+            ↑
+          </button>
+          <button disabled={i === f.sections.length - 1} title={t('pm.loft.down')} onClick={() => move(i, 1)}>
+            ↓
+          </button>
+          <button title={t('pm.loft.remove')} onClick={() => set(f.sections.filter((x) => x !== id))}>
+            ✕
+          </button>
+        </div>
+      ))}
+      <select value="" onChange={(e) => e.target.value && set([...f.sections, e.target.value])}>
+        <option value="">{t('pm.loft.add')}</option>
+        {more.map((s) => (
+          <option key={s.id} value={s.id}>
+            {s.name}
+          </option>
+        ))}
+      </select>
+      {f.op === 'boss' && <MergeBox f={f} />}
+      <p className="hint">{t('pm.loft.hint')}</p>
     </section>
   );
 }
@@ -1256,6 +1302,7 @@ export function PropertyManager() {
       {f.type === 'extrude' && <ExtrudePanel f={f} />}
       {f.type === 'revolve' && <RevolvePanel f={f} />}
       {f.type === 'sweep' && <SweepPanel f={f} />}
+      {f.type === 'loft' && <LoftPanel f={f} />}
       {f.type === 'fillet' && <FilletPanel f={f} />}
       {f.type === 'chamfer' && <ChamferPanel f={f} />}
       {f.type === 'refPlane' && <RefPlanePanel f={f} />}
