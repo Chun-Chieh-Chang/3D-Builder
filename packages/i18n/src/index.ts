@@ -1,3 +1,4 @@
+import { en } from './en';
 import { zhTW } from './zh-TW';
 
 /**
@@ -19,7 +20,7 @@ export type PlainKey = { [K in MessageKey]: [Placeholders<Template<K>>] extends 
 
 export type Translation = Partial<Record<MessageKey, string>>;
 
-const catalogs: Record<Locale, Translation> = { 'zh-TW': zhTW, en: {} };
+const catalogs: Record<Locale, Translation> = { 'zh-TW': zhTW, en };
 let current: Locale = DEFAULT_LOCALE;
 const listeners = new Set<() => void>();
 
@@ -66,4 +67,4 @@ export function placeholdersOf(template: string): string[] {
   return [...new Set([...template.matchAll(/\{(\w+)\}/g)].map((m) => m[1]!))].sort();
 }
 
-export { zhTW };
+export { en, zhTW };

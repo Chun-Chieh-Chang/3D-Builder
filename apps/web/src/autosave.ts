@@ -24,6 +24,8 @@ export interface RecoveryBox {
 export class Autosaver {
   private timer: ReturnType<typeof setTimeout> | null = null;
   private pending = false;
+  /** Off (D8.1): no new copy is made; the one there is stays until the part is saved. */
+  enabled = true;
   /** A write that has been started: a clear has to wait for it, or the copy it makes would outlive the clear. */
   private writing: Promise<void> = Promise.resolve();
 
@@ -31,16 +33,25 @@ export class Autosaver {
     private readonly box: RecoveryBox,
     /** The part as it is now, or null when there is nothing to keep. */
     private readonly snapshot: () => Promise<Omit<Recovery, 'savedAt'> | null>,
-    private readonly delayMs = 5000,
+    /** How long after the last change the copy is made; the system options change it (D8.1). */
+    public delayMs = 5000,
     private readonly now: () => number = Date.now,
   ) {}
 
   /** The part changed: `dirty` says whether it now differs from its file. Keeps a copy soon, or throws the copy away when the change brought it back. */
   changed(dirty: boolean): void {
     if (!dirty) return void this.clear();
+    if (!this.enabled) return;
     this.pending = true;
     if (this.timer !== null) clearTimeout(this.timer);
     this.timer = setTimeout(() => void this.flush(), this.delayMs);
+  }
+
+  /** Forgets a change that was waiting for its copy (autosave was switched off); the copy already kept stays. */
+  cancel(): void {
+    if (this.timer !== null) clearTimeout(this.timer);
+    this.timer = null;
+    this.pending = false;
   }
 
   /** Keeps the copy now if there is a change waiting (the page is going away). */

@@ -44,6 +44,7 @@ import type { KernelApi, PartExportOptions, RebuildPayload, SketchSolvePayload, 
 import { SketchController, type ControllerView, type SketchHost } from '../sketcher/controller';
 import { axisDefinitionFor, emptyRef, put, treeRef } from './datumSlots';
 import { Autosaver, type Recovery } from '../autosave';
+import { loadOptions, parseOptions, saveOptions, type SystemOptions } from '../options';
 import {
   download,
   fileIn,
@@ -100,6 +101,8 @@ export interface UiState {
   selectedFace: Ref | null;
   /** Which kinds of element the graphics area lets be picked (D5.4): a command asks for kinds, this narrows them. */
   pickFilter: PickFilter;
+  /** What belongs to this browser and its user (D8.1). */
+  options: SystemOptions;
   editing: EditSession | null;
   result: RebuildPayload | null;
   /** Solve of the sketch being edited (or of the current drag frame). */
@@ -111,7 +114,7 @@ export interface UiState {
   /** 「錯誤為何？」 dialog (D7.1). */
   whatsWrong: boolean;
   /** The equations or file-properties dialog (B5.2, B8.3), when open. */
-  dialog: 'equations' | 'properties' | 'appearance' | 'stepOptions' | 'template' | 'shortcuts' | null;
+  dialog: 'equations' | 'properties' | 'appearance' | 'stepOptions' | 'template' | 'shortcuts' | 'options' | null;
   /** The file the part was opened from or last saved to (F7.1); null for a part never saved. */
   fileName: string | null;
   /** The document differs from what was last opened or saved (the title shows 「*」). */
@@ -288,7 +291,8 @@ class AppStore {
       canRedo: false,
       selected: null,
       selectedFace: null,
-      pickFilter: { faces: true, edges: true, vertices: true },
+      pickFilter: { ...loadOptions().pickFilter },
+      options: loadOptions(),
       editing: null,
       result: null,
       sketchSolve: null,
@@ -326,6 +330,7 @@ class AppStore {
     );
     this.history.subscribe(() => this.onDocChanged());
     this.lastDoc = this.history.doc;
+    this.applyOptions(this.state.options);
     const locale = storedLocale();
     setLocale(locale);
     this.boot(locale);
@@ -360,6 +365,20 @@ class AppStore {
 
   /** The template the next 「新零件」 is made from (B1.4). */
   private template: PartTemplateId = 'blank';
+
+  /** 「系統選項」 (D8.1): changes some of the options, keeps them in the browser and puts them to work. */
+  setOptions(patch: Partial<SystemOptions>): void {
+    const options = parseOptions({ ...this.state.options, ...patch });
+    saveOptions(options);
+    this.set({ options });
+    this.applyOptions(options);
+  }
+
+  private applyOptions(options: SystemOptions): void {
+    this.autosave.enabled = options.autosave;
+    this.autosave.delayMs = options.autosaveSeconds * 1000;
+    if (!options.autosave) this.autosave.cancel();
+  }
 
   /** 「新零件（範本）」: the part is made from the template, after 「要儲存變更嗎？」 if the open one has changes. */
   newPartFromTemplate(id: PartTemplateId): void {
@@ -1279,7 +1298,7 @@ class AppStore {
 
   /** 「新零件」: an empty part with the default planes (B1.4). */
   newPart(): void {
-    this.template = 'blank';
+    this.template = this.state.options.defaultTemplate;
     this.guard('new-part');
   }
 

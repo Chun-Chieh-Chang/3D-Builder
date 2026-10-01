@@ -261,6 +261,7 @@ code { font-family: Consolas, 'Cascadia Mono', monospace; font-size: 11px; }
 .view-cube { position: absolute; top: 52px; right: 14px; width: 70px; height: 70px; z-index: 5; }
 .view-cube .cube { position: absolute; left: 0; top: 0; width: 70px; height: 70px; transform-style: preserve-3d; }
 .view-cube .cube-face { position: absolute; left: 13px; top: 13px; width: 44px; height: 44px; padding: 0; display: grid; place-items: center; background: rgba(240, 244, 250, 0.92); border: 1px solid #8aa0b8; color: #234; font-size: 13px; cursor: pointer; backface-visibility: hidden; }
+html[lang="en"] .view-cube .cube-face { font-size: 10px; }
 .view-cube .cube-face:hover { background: #ffe8b3; }
 .view-options { position: absolute; top: 48px; left: 8px; display: flex; gap: 6px; align-items: center; z-index: 5; flex-wrap: wrap; max-width: 60%; }
 .view-options select, .view-options button { font-size: 12px; }
@@ -272,3 +273,7 @@ code { font-family: Consolas, 'Cascadia Mono', monospace; font-size: 11px; }
 .ctx-menu { position: absolute; z-index: 20; display: flex; flex-direction: column; min-width: 160px; background: #fff; border: 1px solid var(--line); border-radius: 4px; box-shadow: 0 4px 14px rgba(29, 35, 43, 0.2); padding: 3px 0; }
 .ctx-menu button { border: 0; background: none; text-align: left; padding: 5px 12px; font-size: 13px; white-space: nowrap; }
 .ctx-menu button:hover { background: var(--accent-soft); }
+.options-grid { display: grid; grid-template-columns: auto 1fr; gap: 8px 12px; align-items: center; margin-top: 8px; }
+.options-grid input[type='number'] { width: 80px; }
+.pick-filter-options { display: flex; gap: 10px; }
+.pick-filter-options label { display: flex; gap: 3px; align-items: center; }

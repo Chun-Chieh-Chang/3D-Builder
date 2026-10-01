@@ -99,4 +99,30 @@ describe('autosave (B9.3)', () => {
     await vi.advanceTimersByTimeAsync(1500);
     expect(m.log).toEqual(['put ok@1']);
   });
+
+  it('switched off (D8.1): no copy is made, and a change that was waiting is forgotten', async () => {
+    const m = memoryBox();
+    const a = new Autosaver(m.box, snap(), 5000, () => 42);
+    a.changed(true);
+    a.enabled = false;
+    a.cancel();
+    await vi.advanceTimersByTimeAsync(6000);
+    expect(m.log).toEqual([]);
+    a.changed(true);
+    await vi.advanceTimersByTimeAsync(6000);
+    expect(m.log).toEqual([]);
+    a.enabled = true;
+    a.changed(true);
+    await vi.advanceTimersByTimeAsync(5500);
+    expect(m.log).toEqual(['put 零件1@42']);
+  });
+
+  it('the wait can be changed: the next change uses the new one', async () => {
+    const m = memoryBox();
+    const a = new Autosaver(m.box, snap(), 5000, () => 42);
+    a.delayMs = 2000;
+    a.changed(true);
+    await vi.advanceTimersByTimeAsync(2500);
+    expect(m.log).toEqual(['put 零件1@42']);
+  });
 });

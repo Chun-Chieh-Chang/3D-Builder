@@ -1,10 +1,13 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { getLocale, labelsOf, placeholdersOf, registerTranslation, setLocale, subscribeLocale, t, zhTW, type MessageKey } from '../src/index';
+import { en, getLocale, labelsOf, placeholdersOf, registerTranslation, setLocale, subscribeLocale, t, zhTW, type MessageKey } from '../src/index';
 
 afterEach(() => {
   setLocale('zh-TW');
-  registerTranslation('en', {});
+  registerTranslation('en', en); // the real English back, whatever a test put in its place
 });
+
+/** A language that lacks these texts, as one being translated would. */
+const without = (...keys: MessageKey[]) => registerTranslation('en', Object.fromEntries(keys.map((k) => [k, undefined])));
 
 describe('messages', () => {
   it('fills the placeholders of a template', () => {
@@ -23,9 +26,10 @@ describe('messages', () => {
   });
 
   it('shows the source text for what a language has not translated, and the translation for what it has', () => {
-    registerTranslation('en', { 'datum.top': 'Top Plane' });
+    without('datum.front');
+    registerTranslation('en', { 'datum.top': 'Top Plane (test)' });
     setLocale('en');
-    expect(t('datum.top')).toBe('Top Plane');
+    expect(t('datum.top')).toBe('Top Plane (test)');
     expect(t('datum.front')).toBe('前基準面');
     expect(getLocale()).toBe('en');
   });
@@ -55,7 +59,7 @@ describe('messages', () => {
 
   it('reads label tables when they are used, so they follow the language', () => {
     const labels = labelsOf({ top: 'datum.top', front: 'datum.front' });
-    registerTranslation('en', { 'datum.top': 'Top Plane' });
+    without('datum.front');
     expect(labels.top).toBe('上基準面');
     setLocale('en');
     expect(labels.top).toBe('Top Plane');
@@ -84,5 +88,25 @@ describe('the source catalog', () => {
   it('lists the placeholders of a template', () => {
     expect(placeholdersOf('{b} und {a} und {b}')).toEqual(['a', 'b']);
     expect(placeholdersOf('none')).toEqual([]);
+  });
+});
+
+describe('the English catalog (D9.1)', () => {
+  const english = Object.entries(en) as [MessageKey, string][];
+
+  it('translates only texts that exist in the source catalog', () => {
+    for (const [key] of english) expect(key in zhTW, key).toBe(true);
+  });
+
+  it('translates every text of the source catalog', () => {
+    const missing = (Object.keys(zhTW) as MessageKey[]).filter((k) => !en[k]);
+    expect(missing).toEqual([]);
+  });
+
+  it('keeps the placeholders of each text, and the English has no Chinese in it (except the name of the language)', () => {
+    for (const [key, text] of english) {
+      expect(placeholdersOf(text), key).toEqual(placeholdersOf(zhTW[key]));
+      if (key !== 'options.languageZh') expect(text, key).not.toMatch(/[\u3000-\u9fff]/);
+    }
   });
 });

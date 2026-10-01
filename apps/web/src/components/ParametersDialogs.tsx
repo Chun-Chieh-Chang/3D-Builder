@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useState } from 'react';
-import { t } from '@3db/i18n';
+import { getLocale, LOCALES, t, type Locale } from '@3db/i18n';
 import { dimensionName, formatMass, formatQuantity, isDimension, massGrams, MATERIALS, materialById, Parameters, PART_TEMPLATES, settingsOf, type AppearanceTarget, type Command, type DocSettings, type SketchFeature } from '@3db/model';
 import { ACTIONS, shortcutOf } from '../actions';
 import { conflictWith, formatEvent, overrides, resetOverrides, setOverride, subscribeShortcuts } from '../shortcuts';
+import { AUTOSAVE_SECONDS } from '../options';
 import { store, useStore } from '../state/store';
 
 /** Runs a command; the reason it was refused (as the store worded it), or null when it went through. */
@@ -548,6 +549,72 @@ export function ShortcutsDialog() {
         <div className="modal-actions">
           {Object.keys(mine).length > 0 && <button onClick={() => resetOverrides()}>{t('shortcuts.reset')}</button>}
           <button onClick={close}>{t('shortcuts.close')}</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/** 系統選項 (D8.1): the language, autosave, the template of a new part and what can be picked at first; kept in the browser. */
+export function OptionsDialog() {
+  const open = useStore((s) => s.dialog === 'options');
+  const options = useStore((s) => s.options);
+  const [, again] = useState(0);
+  if (!open) return null;
+  const close = () => store.openDialog(null);
+  const language = getLocale();
+  return (
+    <div className="modal-backdrop" onPointerDown={close}>
+      <div className="modal parameters" role="dialog" aria-label={t('options.title')} onPointerDown={(e) => e.stopPropagation()} onKeyDown={(e) => e.key === 'Escape' && close()}>
+        <h3>{t('options.title')}</h3>
+        <p className="hint">{t('options.hint')}</p>
+        <div className="options-grid">
+          <label>{t('options.language')}</label>
+          <select
+            value={language}
+            onChange={(e) => {
+              void store.setLanguage(e.target.value as Locale).then(() => again((n) => n + 1));
+            }}
+          >
+            {LOCALES.map((l) => (
+              <option key={l} value={l}>
+                {t(l === 'en' ? 'options.languageEn' : 'options.languageZh')}
+              </option>
+            ))}
+          </select>
+          <label>{t('options.autosave')}</label>
+          <input type="checkbox" checked={options.autosave} onChange={(e) => store.setOptions({ autosave: e.target.checked })} />
+          <label>{t('options.autosaveSeconds')}</label>
+          <input
+            type="number"
+            min={AUTOSAVE_SECONDS.min}
+            max={AUTOSAVE_SECONDS.max}
+            disabled={!options.autosave}
+            value={options.autosaveSeconds}
+            onChange={(e) => e.target.value !== '' && store.setOptions({ autosaveSeconds: Number(e.target.value) })}
+          />
+          <label>{t('options.template')}</label>
+          <select value={options.defaultTemplate} onChange={(e) => store.setOptions({ defaultTemplate: e.target.value as (typeof PART_TEMPLATES)[number]['id'] })}>
+            {PART_TEMPLATES.map((x) => (
+              <option key={x.id} value={x.id}>
+                {t(`template.${x.id}`)}
+              </option>
+            ))}
+          </select>
+          <label>{t('options.pickFilter')}</label>
+          <span className="pick-filter-options">
+            {(['faces', 'edges', 'vertices'] as const).map((k) => (
+              <label key={k}>
+                <input type="checkbox" checked={options.pickFilter[k]} onChange={(e) => store.setOptions({ pickFilter: { ...options.pickFilter, [k]: e.target.checked } })} />
+                {t(k === 'faces' ? 'select.filterFaces' : k === 'edges' ? 'select.filterEdges' : 'select.filterVertices')}
+              </label>
+            ))}
+          </span>
+        </div>
+        <div className="modal-actions">
+          <button className="primary" onClick={close}>
+            {t('options.close')}
+          </button>
         </div>
       </div>
     </div>
