@@ -2,6 +2,7 @@ import * as Comlink from 'comlink';
 import { DEFAULT_LOCALE, getLocale, LOCALES, setLocale, t, type Locale } from '@3db/i18n';
 import { useSyncExternalStore } from 'react';
 import {
+  canBeSeed,
   CommandError,
   createDemoPart,
   createEmptyAssembly,
@@ -27,6 +28,7 @@ import {
   type Id,
   type ImportedBodyFeature,
   type PartDoc,
+  type PatternDefinition,
   type PlaneDefinition,
   type PlaneFrame,
   type Ref,
@@ -38,7 +40,7 @@ import { contourChoices, findProfiles, type ContourChoice } from '@3db/sketch/pr
 import type { Viewer } from '@3db/render';
 import type { KernelApi, RebuildPayload, SketchSolvePayload, SketchSolveRequest } from '../worker/protocol';
 import { SketchController, type ControllerView, type SketchHost } from '../sketcher/controller';
-import { axisDefinitionFor, put, treeRef } from './datumSlots';
+import { axisDefinitionFor, emptyRef, put, treeRef } from './datumSlots';
 import {
   download,
   fileIn,
@@ -631,6 +633,20 @@ class AppStore {
     this.openNew({ id, type: 'refPlane', name: nextName(this.history.doc, '基準面'), suppressed: false, def: { mode: 'offset', plane, distance: '10' } }, '基準面');
   }
 
+  /**
+   * 「線性複製排列」 or 「環狀複製排列」 (C6.1, C6.2): repeats the feature that is selected (else the latest one that can be repeated); the
+   * PropertyManager changes the seeds, the direction or axis, the count and the spacing, and the instances to skip.
+   */
+  newPattern(mode: 'linear' | 'circular'): void {
+    const doc = this.history.doc;
+    const selected = findFeature(doc, this.state.selected ?? '');
+    const seed = selected && canBeSeed(selected) ? selected : [...doc.features].reverse().find(canBeSeed);
+    if (!seed) return this.notify(t('pattern.nothingToRepeat'), 'error');
+    const name = t(mode === 'linear' ? 'feature.linearPattern' : 'feature.circularPattern');
+    const def: PatternDefinition = mode === 'linear' ? { mode, dir1: { ref: { kind: 'datum', name: 'plane:right' }, spacing: '10', count: '3' } } : { mode, axis: emptyRef('rotationAxis'), count: '6', angle: '360', equal: true };
+    this.openNew({ id: this.allocator().take('pattern'), type: 'pattern', name: nextName(doc, name), suppressed: false, seeds: [seed.id], def }, name);
+  }
+
   /** 「基準軸」 (C3.3): along a straight edge, or the axis of the cylinder that is selected; the PropertyManager changes the type and the references. */
   newRefAxis(): void {
     const face = this.state.selectedFace;
@@ -810,7 +826,7 @@ class AppStore {
     const f = this.editedFeature();
     if (f?.type === 'fillet' || f?.type === 'chamfer') this.toggleEdge(ref);
     else if (f?.type === 'extrude') this.setUpToFace(ref);
-    else if (f?.type === 'refPlane' || f?.type === 'refAxis' || f?.type === 'refPoint' || f?.type === 'coordSys') this.putDatumRef(ref);
+    else if (f?.type === 'refPlane' || f?.type === 'refAxis' || f?.type === 'refPoint' || f?.type === 'coordSys' || f?.type === 'pattern') this.putDatumRef(ref);
     else if (f?.type === 'deleteFace') this.toggleFace(ref);
     else if (f?.type === 'shell') this.toggleShellFace(ref);
     else if (f?.type === 'draft') this.pickDraftFace(ref);
@@ -821,7 +837,7 @@ class AppStore {
   /** A click in the FeatureManager selects; while a plane is being defined it picks a plane like SolidWorks' flyout tree. */
   treeClick(id: Id): void {
     const f = this.editedFeature();
-    const datum = f && id !== f.id && (f.type === 'refPlane' || f.type === 'refAxis' || f.type === 'refPoint' || f.type === 'coordSys') ? treeRef(this.history.doc, id) : null;
+    const datum = f && id !== f.id && (f.type === 'refPlane' || f.type === 'refAxis' || f.type === 'refPoint' || f.type === 'coordSys' || f.type === 'pattern') ? treeRef(this.history.doc, id) : null;
     if (datum && this.putDatumRef(datum)) return;
     this.select(id);
   }
@@ -873,7 +889,7 @@ class AppStore {
     if (!e) return undefined;
     const i = this.history.doc.features.findIndex((f) => f.id === e.featureId);
     const type = this.history.doc.features[i]?.type;
-    if (type === 'refPlane' || type === 'refAxis' || type === 'refPoint' || type === 'coordSys') return i + 1;
+    if (type === 'refPlane' || type === 'refAxis' || type === 'refPoint' || type === 'coordSys' || type === 'pattern') return i + 1;
     return type === 'fillet' || type === 'chamfer' || type === 'deleteFace' || type === 'moveFace' || type === 'shell' || type === 'draft' || type === 'combine' || type === 'sketch' ? i : undefined;
   }
 

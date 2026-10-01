@@ -33,6 +33,7 @@ export const FEATURE_LABEL: Record<FeatureType, string> = labelsOf({
   sweep: 'feature.sweep',
   loft: 'feature.loft',
   rib: 'feature.rib',
+  pattern: 'feature.pattern',
   hole: 'feature.hole',
   draft: 'feature.draftFeature',
   moveFace: 'feature.moveFace',
@@ -41,6 +42,7 @@ export const FEATURE_LABEL: Record<FeatureType, string> = labelsOf({
 
 /** SolidWorks names cuts after what they cut with: 「除料-伸長」, 「除料-旋轉」. */
 export function featureLabel(f: Feature): string {
+  if (f.type === 'pattern') return t(f.def.mode === 'linear' ? 'feature.linearPattern' : 'feature.circularPattern');
   return (f.type === 'extrude' || f.type === 'revolve' || f.type === 'sweep' || f.type === 'loft') && f.op === 'cut' ? t('feature.cut', { name: FEATURE_LABEL[f.type] }) : FEATURE_LABEL[f.type];
 }
 

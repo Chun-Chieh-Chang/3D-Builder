@@ -1,14 +1,14 @@
 import { t } from '@3db/i18n';
-import { findFeature, isDatumPlaneName, type AxisDefinition, type Command, type Feature, type Id, type PartDoc, type PlaneDefinition, type PointDefinition, type Ref } from '@3db/model';
+import { findFeature, isDatumPlaneName, type AxisDefinition, type Command, type Feature, type Id, type PartDoc, type PatternDefinition, type PlaneDefinition, type PointDefinition, type Ref } from '@3db/model';
 
 /**
  * The selection boxes of reference geometry (C3.2–C3.5): a plane, axis, point or coordinate system is defined by references, and what is clicked in
- * the graphics area or the FeatureManager goes to the first box that wants that kind of element. One table here says which boxes each kind of
- * definition has, so the PropertyManager, the picking in the graphics area and the tree clicks cannot disagree.
+ * the graphics area or the PropertyManager's buttons goes to the first box that wants that kind of element. One table here says which boxes each kind of
+ * definition has, patterns' directions and axis too, so the PropertyManager, the picking in the graphics area and the tree clicks cannot disagree.
  */
 
 /** What a box takes: a planar face or plane; a straight edge or axis; a vertex or point; a cylindrical face; a cylindrical or conical face; an edge or face; or a direction (a straight edge, an axis, or a plane's normal). */
-export type SlotType = 'plane' | 'axis' | 'point' | 'cylinder' | 'revolved' | 'element' | 'direction';
+export type SlotType = 'plane' | 'axis' | 'point' | 'cylinder' | 'revolved' | 'element' | 'direction' | 'rotationAxis';
 
 export interface Slot {
   /** The property of the definition (or of the coordinate system) the box fills. */
@@ -50,6 +50,8 @@ export function accepts(type: SlotType, ref: Ref, doc: PartDoc): boolean {
       return ref.kind === 'edge' || ref.kind === 'face';
     case 'direction':
       return planar || straight;
+    case 'rotationAxis':
+      return straight || (ref.kind === 'face' && (fp === 'cylinder' || fp === 'cone'));
   }
 }
 
@@ -116,6 +118,10 @@ export function slotsOf(f: Feature | undefined): Slot[] {
       return axisSlots(f.def);
     case 'refPoint':
       return pointSlots(f.def);
+    case 'pattern':
+      return f.def.mode === 'linear'
+        ? [one('dir1.ref', t('slot.direction1'), 'direction', f.def.dir1.ref), ...(f.def.dir2 ? [one('dir2.ref', t('slot.direction2'), 'direction', f.def.dir2.ref)] : [])]
+        : [one('axis', t('slot.rotationAxis'), 'rotationAxis', f.def.axis)];
     case 'coordSys':
       return [one('origin', t('slot.origin'), 'point', f.origin, true), one('x', t('slot.xDirection'), 'direction', f.x), one('y', t('slot.yDirection'), 'direction', f.y)];
     default:
@@ -137,6 +143,17 @@ export function fill(f: Feature, key: string, refs: Ref[]): Command {
       return { type: 'setRefAxis', featureId: f.id, def: { ...f.def, [key]: value } as AxisDefinition };
     case 'refPoint':
       return { type: 'setRefPoint', featureId: f.id, def: { ...f.def, [key]: value } as PointDefinition };
+    case 'pattern': {
+      const d = f.def;
+      const ref = value as Ref;
+      const def: PatternDefinition =
+        d.mode === 'circular'
+          ? { ...d, axis: ref }
+          : key === 'dir2.ref'
+            ? { ...d, dir2: { ...d.dir2!, ref } }
+            : { ...d, dir1: { ...d.dir1, ref } };
+      return { type: 'setPattern', featureId: f.id, seeds: f.seeds, def, ...(f.skip ? { skip: f.skip } : {}) };
+    }
     case 'coordSys': {
       const { origin, x, y } = f;
       const next = { origin, x, y, [key]: key === 'origin' ? refs[0] : value } as { origin?: Ref; x: Ref; y: Ref };
@@ -175,8 +192,8 @@ export function treeRef(doc: PartDoc, id: Id): Ref | null {
 export function pickable(f: Feature | undefined): { edges: boolean; faces: boolean; vertices: boolean } {
   const out = { edges: false, faces: false, vertices: false };
   for (const s of slotsOf(f)) {
-    if (s.type === 'axis' || s.type === 'direction' || s.type === 'element') out.edges = true;
-    if (s.type === 'plane' || s.type === 'cylinder' || s.type === 'revolved' || s.type === 'direction' || s.type === 'element') out.faces = true;
+    if (s.type === 'axis' || s.type === 'direction' || s.type === 'element' || s.type === 'rotationAxis') out.edges = true;
+    if (s.type === 'plane' || s.type === 'cylinder' || s.type === 'revolved' || s.type === 'direction' || s.type === 'element' || s.type === 'rotationAxis') out.faces = true;
     if (s.type === 'point') out.vertices = true;
   }
   return out;

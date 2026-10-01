@@ -1,13 +1,16 @@
 import { useEffect, useState } from 'react';
 import { t } from '@3db/i18n';
 import {
+  canBeSeed,
   evalQuantity,
   findFeature,
   formatQuantity,
   isDimension,
   isNumber,
   isPlain,
+  MAX_INSTANCES,
   Parameters,
+  patternInstances,
   SKETCH_ORIGIN,
   type ChamferFeature,
   type CombineFeature,
@@ -30,6 +33,9 @@ import {
   type LoftFeature,
   type MoveFaceFeature,
   type PartDoc,
+  type PatternDefinition,
+  type PatternDirection,
+  type PatternFeature,
   type PlaneDefinition,
   type PointDefinition,
   type Ref,
@@ -59,10 +65,11 @@ import type { ContourChoice } from '@3db/sketch/profiles';
  * What an expression comes to in this document, for showing next to the box (D2.4): the value when it is
  * more than a plain number, or the reason it is not one. Null for a plain number.
  */
-function preview(text: string, doc: PartDoc, angle: boolean): { value: string } | { error: string } | null {
+function preview(text: string, doc: PartDoc, angle: boolean, count = false): { value: string } | { error: string } | null {
   if (!text.trim() || isPlain(text)) return null;
   try {
     const q = evalQuantity(text, new Parameters(doc));
+    if (count) return isNumber(q) ? { value: String(Math.round(q.v * 1e6) / 1e6) } : { error: t('expr.countHasUnit') };
     return { value: formatQuantity(angle && isNumber(q) ? { v: (q.v * Math.PI) / 180, L: 0, A: 1 } : !angle && isNumber(q) ? { v: q.v, L: 1, A: 0 } : q) };
   } catch (e) {
     return { error: e instanceof Error ? e.message : String(e) };
@@ -77,7 +84,7 @@ function ValueInput({ value, toCommand, suffix = 'mm' }: { value: string; toComm
   const doc = useStore((s) => s.doc);
   const [text, setText] = useState(value);
   const [invalid, setInvalid] = useState(false);
-  const shown = preview(text, doc, suffix === '°');
+  const shown = preview(text, doc, suffix === '°', suffix === '');
   useEffect(() => {
     setText(value);
     setInvalid(false);
@@ -101,7 +108,7 @@ function ValueInput({ value, toCommand, suffix = 'mm' }: { value: string; toComm
           }
         }}
       />
-      <span className="suffix">{suffix}</span>
+      {suffix !== '' && <span className="suffix">{suffix}</span>}
       {shown && 'value' in shown && <span className="value-preview">= {shown.value}</span>}
     </span>
   );
@@ -1057,6 +1064,120 @@ function RefPointPanel({ f }: { f: RefPointFeature }) {
   );
 }
 
+/** Pattern (C6.1, C6.2): the seeds, the direction(s) or the axis, how many and how far apart, and the instances to leave out. */
+function PatternPanel({ f }: { f: PatternFeature }) {
+  const doc = useStore((s) => s.doc);
+  const d = f.def;
+  const at = doc.features.findIndex((x) => x.id === f.id);
+  const candidates = doc.features.slice(0, Math.max(at, 0)).filter(canBeSeed);
+  const cmd = (patch: { seeds?: Id[]; def?: PatternDefinition; skip?: string[] }): Command => {
+    const skip = patch.skip ?? f.skip;
+    return { type: 'setPattern', featureId: f.id, seeds: patch.seeds ?? f.seeds, def: patch.def ?? f.def, ...(skip && skip.length > 0 ? { skip } : {}) };
+  };
+  const toggleSeed = (id: Id, on: boolean) => store.execute(cmd({ seeds: on ? [...f.seeds, id] : f.seeds.filter((x) => x !== id) }));
+  // the instances there are, by label, for the list of those to skip
+  const counts = (() => {
+    try {
+      const p = new Parameters(doc);
+      return d.mode === 'linear' ? [p.evaluate(d.dir1.count, 'count'), d.dir2 ? p.evaluate(d.dir2.count, 'count') : null] : [p.evaluate(d.count, 'count'), null];
+    } catch {
+      return null;
+    }
+  })();
+  const labels = counts && counts[0]! >= 2 && counts[0]! <= MAX_INSTANCES && (counts[1] === null || (counts[1]! >= 2 && counts[1]! <= MAX_INSTANCES)) ? patternInstances(Math.round(counts[0]!), counts[1] === null ? null : Math.round(counts[1]!)) : [];
+  const skipped = new Set(f.skip ?? []);
+  const direction = (title: string, key: 'dir1' | 'dir2', x: PatternDirection) => {
+    const set = (patch: Partial<PatternDirection>): Command => cmd({ def: { ...(d as Extract<PatternDefinition, { mode: 'linear' }>), [key]: { ...x, ...patch } } });
+    return (
+      <div key={key}>
+        <h4>{title}</h4>
+        <label className="pm-row">
+          <span>{t('pm.pattern.spacing')}</span>
+          <ValueInput value={x.spacing} toCommand={(spacing) => set({ spacing })} />
+        </label>
+        <label className="pm-row">
+          <span>{t('pm.pattern.count')}</span>
+          <ValueInput value={x.count} suffix="" toCommand={(count) => set({ count })} />
+        </label>
+        <label className="pm-row checkbox">
+          <input type="checkbox" checked={x.reverse ?? false} onChange={(e) => store.execute(set({ reverse: e.target.checked ? true : undefined }))} />
+          <span>{t('pm.pattern.reverse')}</span>
+        </label>
+      </div>
+    );
+  };
+  return (
+    <>
+      <section className="pm-group">
+        <h4>{t('pm.pattern.seeds')}</h4>
+        <ul className="selection-box">
+          {candidates.length === 0 && <li className="muted">{t('pm.pattern.noSeeds')}</li>}
+          {candidates.map((c) => (
+            <li key={c.id}>
+              <label className="pm-row checkbox">
+                <input type="checkbox" checked={f.seeds.includes(c.id)} onChange={(e) => toggleSeed(c.id, e.target.checked)} />
+                <span>{c.name}</span>
+              </label>
+            </li>
+          ))}
+        </ul>
+        <p className="hint">{t('pm.pattern.seedsHint')}</p>
+      </section>
+      <section className="pm-group">
+        <h4>{d.mode === 'linear' ? t('pm.pattern.directions') : t('pm.pattern.axis')}</h4>
+        <SlotList f={f} />
+        <DatumPicker f={f} />
+        {d.mode === 'linear' ? (
+          <>
+            {direction(t('pm.pattern.dir1'), 'dir1', d.dir1)}
+            {d.dir2 ? (
+              <>
+                {direction(t('pm.pattern.dir2'), 'dir2', d.dir2)}
+                <button onClick={() => store.execute(cmd({ def: { mode: 'linear', dir1: d.dir1 }, skip: [] }))}>{t('pm.pattern.removeDir2')}</button>
+              </>
+            ) : (
+              <button onClick={() => store.execute(cmd({ def: { ...d, dir2: { ref: { kind: 'datum', name: 'plane:top' }, spacing: '10', count: '2' } }, skip: [] }))}>{t('pm.pattern.addDir2')}</button>
+            )}
+          </>
+        ) : (
+          <>
+            <label className="pm-row">
+              <span>{t('pm.pattern.count')}</span>
+              <ValueInput value={d.count} suffix="" toCommand={(count) => cmd({ def: { ...d, count } })} />
+            </label>
+            <label className="pm-row">
+              <span>{t('pm.pattern.angle')}</span>
+              <ValueInput value={d.angle} suffix="°" toCommand={(angle) => cmd({ def: { ...d, angle } })} />
+            </label>
+            <label className="pm-row checkbox">
+              <input type="checkbox" checked={d.equal} onChange={(e) => store.execute(cmd({ def: { ...d, equal: e.target.checked } }))} />
+              <span>{t('pm.pattern.equal')}</span>
+            </label>
+            <label className="pm-row checkbox">
+              <input type="checkbox" checked={d.reverse ?? false} onChange={(e) => store.execute(cmd({ def: { ...d, reverse: e.target.checked ? true : undefined } }))} />
+              <span>{t('pm.pattern.reverse')}</span>
+            </label>
+          </>
+        )}
+        <p className="hint">{t(d.mode === 'linear' ? 'pm.pattern.hintLinear' : 'pm.pattern.hintCircular')}</p>
+      </section>
+      {labels.length > 0 && (
+        <section className="pm-group">
+          <h4>{t('pm.pattern.skip')}</h4>
+          <div className="datum-picker">
+            {labels.map((x) => (
+              <button key={x.label} className={skipped.has(x.label) ? 'skipped' : ''} onClick={() => store.execute(cmd({ skip: skipped.has(x.label) ? [...skipped].filter((l) => l !== x.label) : [...skipped, x.label] }))}>
+                {x.label}
+              </button>
+            ))}
+          </div>
+          <p className="hint">{t('pm.pattern.skipHint')}</p>
+        </section>
+      )}
+    </>
+  );
+}
+
 /** Coordinate system (C3.4). */
 function CoordSysPanel({ f }: { f: CoordSysFeature }) {
   const flip = (key: 'flipX' | 'flipY', on: boolean) => {
@@ -1450,6 +1571,7 @@ export function PropertyManager() {
       {f.type === 'refAxis' && <RefAxisPanel f={f} />}
       {f.type === 'refPoint' && <RefPointPanel f={f} />}
       {f.type === 'coordSys' && <CoordSysPanel f={f} />}
+      {f.type === 'pattern' && <PatternPanel f={f} />}
       {f.type === 'importedBody' && <ImportedBodyPanel f={f} />}
       {f.type === 'deleteFace' && <DeleteFacePanel f={f} />}
       {f.type === 'shell' && <ShellPanel f={f} />}

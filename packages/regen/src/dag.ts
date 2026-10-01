@@ -54,6 +54,9 @@ export function parentsOf(feature: Feature, doc: PartDoc): Id[] {
     case 'refPoint':
       parents = fromRefs(defRefs(feature.def));
       break;
+    case 'pattern':
+      parents = [...feature.seeds, ...fromRefs(defRefs(feature.def))];
+      break;
     case 'coordSys':
       parents = fromRefs([...(feature.origin ? [feature.origin] : []), feature.x, feature.y]);
       break;

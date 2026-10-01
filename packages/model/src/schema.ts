@@ -6,7 +6,7 @@ import type { Id } from './ids';
  * DOF status, mass properties and error lists are derived data and never stored.
  */
 
-export const SCHEMA_VERSION = 21;
+export const SCHEMA_VERSION = 22;
 
 /** Value expression (B5.2, B5.3): "20", "25.4mm", "30deg", "wall_t*2", "D1@草圖1/2", "property('厚度')"; see `expr/`. */
 export type Expr = string;
@@ -231,6 +231,35 @@ export interface RibFeature extends FeatureBase {
   flip?: boolean;
 }
 
+/** One direction of a linear pattern (C6.1): the instances lie `spacing` apart along the straight edge, axis or plane normal `ref` points, `count` of them counting the seed. */
+export interface PatternDirection {
+  ref: Ref;
+  spacing: Expr;
+  count: Expr;
+  reverse?: boolean;
+}
+
+/**
+ * How a pattern repeats its seed (v22). Linear: along one direction, or a grid of two. Circular: about a straight edge, a reference axis or the axis of a
+ * cylindrical face, `count` instances counting the seed; with `equal` the `angle` is the whole sweep they share out (all the way round, 360°, puts the
+ * last one one step short of the seed; less than that puts the last one at the end), without it `angle` is the step between neighbours.
+ */
+export type PatternDefinition =
+  | { mode: 'linear'; dir1: PatternDirection; dir2?: PatternDirection }
+  | { mode: 'circular'; axis: Ref; count: Expr; angle: Expr; equal: boolean; reverse?: boolean };
+
+/**
+ * Pattern (複製排列, C6.1, C6.2, v22): what the `seeds` (one feature, or a run of features that follow one another) added to the body and took away from
+ * it, repeated. Each instance is a copy of that, moved, then joined to or cut from the bodies like the seed was. The seed itself is instance 0. `skip` names
+ * instances to leave out (`"2"`, or `"2x3"` in a grid: column 2, row 3, counting the seed as 0).
+ */
+export interface PatternFeature extends FeatureBase {
+  type: 'pattern';
+  seeds: Id[];
+  def: PatternDefinition;
+  skip?: string[];
+}
+
 export interface RevolveFeature extends FeatureBase {
   type: 'revolve';
   sketch: Id;
@@ -415,6 +444,7 @@ export type Feature =
   | SweepFeature
   | LoftFeature
   | RibFeature
+  | PatternFeature
   | FilletFeature
   | ChamferFeature
   | RefPlaneFeature

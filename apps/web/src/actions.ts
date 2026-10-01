@@ -1,4 +1,4 @@
-import { isDatumPlaneName, type DatumPlaneName, type Ref } from '@3db/model';
+import { canBeSeed, isDatumPlaneName, type DatumPlaneName, type Ref } from '@3db/model';
 import { store, type UiState } from './state/store';
 import { t } from '@3db/i18n';
 import { TOOL_LABEL } from './strings';
@@ -33,6 +33,8 @@ const sketchSelected = (s: UiState) => partIdle(s) && selectedFeature(s)?.type =
 /** A sweep takes a profile (the selected sketch) and a path (another sketch). */
 const canSweep = (s: UiState) => sketchSelected(s) && s.doc.features.filter((f) => f.type === 'sketch').length >= 2;
 const hasBody = (s: UiState) => partIdle(s) && !!s.result?.mesh;
+/** A pattern repeats a feature that adds to or takes from the bodies: there has to be one. */
+const canPattern = (s: UiState) => partIdle(s) && s.doc.features.some(canBeSeed);
 /** A plane to sketch on: a default or reference plane in the tree, or a planar face in the graphics area. */
 const sketchPlane = (s: UiState): DatumPlaneName | Ref | null => {
   if (s.selected !== null && isDatumPlaneName(s.selected)) return s.selected;
@@ -72,6 +74,8 @@ export const ACTIONS: UiAction[] = [
   { id: 'shell', get label() { return t('feature.shell'); }, group: 'feature', enabled: hasBody, run: () => store.newShell() },
   { id: 'move-face', get label() { return t('feature.moveFace'); }, group: 'feature', enabled: hasBody, run: () => store.newMoveFace() },
   { id: 'combine', get label() { return t('feature.combine'); }, group: 'feature', enabled: (s) => hasBody(s) && (s.result?.bodies.length ?? 0) > 1, run: () => store.newCombine() },
+  { id: 'linear-pattern', get label() { return t('action.linearPattern'); }, group: 'feature', enabled: canPattern, run: () => store.newPattern('linear') },
+  { id: 'circular-pattern', get label() { return t('action.circularPattern'); }, group: 'feature', enabled: canPattern, run: () => store.newPattern('circular') },
   { id: 'ref-plane', label: '基準面', group: 'feature', enabled: partIdle, run: () => store.newRefPlane() },
   { id: 'ref-axis', get label() { return t('action.refAxis'); }, group: 'feature', enabled: partIdle, run: () => store.newRefAxis() },
   { id: 'ref-point', get label() { return t('action.refPoint'); }, group: 'feature', enabled: partIdle, run: () => store.newRefPoint() },

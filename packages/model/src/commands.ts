@@ -1,8 +1,9 @@
 import { t } from '@3db/i18n';
 import { current, produce, type Draft } from 'immer';
 import { countersFor, type Id } from './ids';
-import type { Variable, BlobRef, ChamferFeature, CombineFeature, HoleFeature, LoftFeature, RibFeature, SweepFeature, Draft as WallDraft, EndCondition, Thin, Expr, Feature, ImportedBodyFeature, AxisDefinition, CoordSysFeature, PartDoc, PlaneDefinition, PointDefinition, Ref, RevolveCondition, SketchConstraint, SketchEntity, SketchFeature } from './schema';
+import type { Variable, BlobRef, ChamferFeature, CombineFeature, HoleFeature, LoftFeature, RibFeature, SweepFeature, Draft as WallDraft, EndCondition, Thin, Expr, Feature, ImportedBodyFeature, AxisDefinition, CoordSysFeature, PartDoc, PatternDefinition, PatternFeature, PlaneDefinition, PointDefinition, Ref, RevolveCondition, SketchConstraint, SketchEntity, SketchFeature } from './schema';
 import { isDatumPlaneName } from './datums';
+import { canBeSeed } from './patterns';
 import { mapRefs } from './refs';
 import { bodyFeature, isBodyKey, isHideable } from './visibility';
 import { dimensionName, Parameters, renameInDoc, resolveDoc, variableUsers, type ExprKind } from './params';
@@ -94,6 +95,8 @@ ull). */
   /** How a reference axis (C3.3), a reference point (C3.5) or a coordinate system (C3.4) is defined. */
   | { type: 'setRefAxis'; featureId: Id; def: AxisDefinition }
   | { type: 'setRefPoint'; featureId: Id; def: PointDefinition }
+  /** What a pattern repeats and how (C6.1, C6.2); `skip` names the instances to leave out. */
+  | { type: 'setPattern'; featureId: Id; seeds: Id[]; def: PatternDefinition; skip?: string[] }
   | { type: 'setCoordSys'; featureId: Id; value: Pick<CoordSysFeature, 'origin' | 'x' | 'y' | 'flipX' | 'flipY'> }
   /** Adds imported data and the feature that uses it, as one step (F2.1). */
   | { type: 'importBody'; blob: BlobRef; feature: ImportedBodyFeature; index: number }
@@ -302,16 +305,40 @@ function pointDefinition(doc: PartDoc, def: PointDefinition, index: number): voi
   }
 }
 
+/** A direction is a straight edge, a reference axis, or a plane (its normal): a model face, a default plane, or a reference plane or axis earlier in the history. */
+function directionRef(doc: PartDoc, ref: Ref, index: number): void {
+  if (ref.kind === 'face' || (ref.kind === 'datum' && isDatumPlaneName(ref.name))) return;
+  if (ref.kind === 'datum') {
+    const at = doc.features.find((g) => g.id === ref.name);
+    if (!at || doc.features.indexOf(at) >= index || (at.type !== 'refAxis' && at.type !== 'refPlane')) throw new CommandError(t('cmd.datumMustBeEarlier'));
+  } else if (ref.kind !== 'edge') throw new CommandError(t('cmd.coordSysDirection'));
+}
+
 /** A coordinate system's origin is a point, its two directions are axes or planes (their normals). */
 function coordSysRefs(doc: PartDoc, f: Pick<CoordSysFeature, 'origin' | 'x' | 'y'>, index: number): void {
   if (f.origin) pointRef(doc, f.origin, index);
-  for (const ref of [f.x, f.y]) {
-    if (ref.kind === 'face' || (ref.kind === 'datum' && isDatumPlaneName(ref.name))) continue;
-    if (ref.kind === 'datum') {
-      const at = doc.features.find((g) => g.id === ref.name);
-      if (!at || doc.features.indexOf(at) >= index || (at.type !== 'refAxis' && at.type !== 'refPlane')) throw new CommandError(t('cmd.datumMustBeEarlier'));
-    } else if (ref.kind !== 'edge') throw new CommandError(t('cmd.coordSysDirection'));
+  directionRef(doc, f.x, index);
+  directionRef(doc, f.y, index);
+}
+
+/** A circular pattern turns about a straight edge, a reference axis, or the axis of a cylindrical face. */
+function rotationAxisRef(doc: PartDoc, ref: Ref, index: number): void {
+  if (ref.kind === 'face') return;
+  axisRef(doc, ref, index);
+}
+
+/** A pattern repeats features that are earlier in the history and can be repeated; which direction and where it turns is for the rebuild to check. */
+function patternRefs(doc: PartDoc, f: Pick<PatternFeature, 'seeds' | 'def'>, index: number): void {
+  if (new Set(f.seeds).size !== f.seeds.length) throw new CommandError(t('cmd.patternSeedTwice'));
+  for (const id of f.seeds) {
+    const at = doc.features.findIndex((g) => g.id === id);
+    if (at < 0 || at >= index) throw new CommandError(t('cmd.patternSeedEarlier'));
+    if (!canBeSeed(doc.features[at]!)) throw new CommandError(t('cmd.patternSeedType', { name: doc.features[at]!.name }));
   }
+  if (f.def.mode === 'linear') {
+    directionRef(doc, f.def.dir1.ref, index);
+    if (f.def.dir2) directionRef(doc, f.def.dir2.ref, index);
+  } else rotationAxisRef(doc, f.def.axis, index);
 }
 
 /** A Combine takes bodies, and its main body is not one of its tools. The boxes may still be empty while the user picks. */
@@ -397,6 +424,9 @@ function validateNewFeature(doc: PartDoc, f: Feature, index: number): void {
       return;
     case 'coordSys':
       coordSysRefs(doc, f, index);
+      return;
+    case 'pattern':
+      patternRefs(doc, f, index);
       return;
     case 'deleteFace':
       if (f.faces.some((r) => r.kind !== 'face')) throw new CommandError(t('cmd.deleteFaceOnlyFaces'));
@@ -563,6 +593,17 @@ export function mutate(draft: Draft<PartDoc>, cmd: Command): void {
       if (f.type !== 'refPoint') throw new CommandError(t('cmd.onlyRefPointHasParams'));
       pointDefinition(draft as PartDoc, cmd.def, draft.features.findIndex((x) => x.id === f.id));
       f.def = cmd.def;
+      checkExprs(draft as PartDoc, f as Feature);
+      return;
+    }
+    case 'setPattern': {
+      const f = feature(draft, cmd.featureId);
+      if (f.type !== 'pattern') throw new CommandError(t('cmd.onlyPatternHasParams'));
+      patternRefs(draft as PartDoc, cmd, draft.features.findIndex((x) => x.id === f.id));
+      f.seeds = [...cmd.seeds];
+      f.def = cmd.def;
+      if (cmd.skip && cmd.skip.length > 0) f.skip = [...cmd.skip];
+      else delete f.skip;
       checkExprs(draft as PartDoc, f as Feature);
       return;
     }

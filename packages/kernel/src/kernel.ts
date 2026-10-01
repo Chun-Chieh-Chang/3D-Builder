@@ -869,6 +869,33 @@ export class Kernel {
     }
   }
 
+  /**
+   * A copy of the shape moved by a transformation of space (patterns, C6.1–C6.3): the 3 × 4 matrix `m` in rows (a11 a12 a13 a14, a21 …, a31 …),
+   * its first three columns square and of length one. A turn or a slide keeps the faces, edges and vertices in the order they had; a mirror (a matrix whose
+   * determinant is −1) turns the solid inside out and OCCT makes it right again, so a mirrored solid has the volume of the one it came from.
+   */
+  transformed(id: ShapeId, m: readonly number[]): ShapeId {
+    if (m.length !== 12 || !m.every(Number.isFinite)) throw new KernelError(t('kernel.badMotion'));
+    // the 3 × 3 part must be a turn or a turn with a mirror (its rows square and of length one): OCCT takes a shear without a word
+    const rows = [m.slice(0, 3), m.slice(4, 7), m.slice(8, 11)];
+    const square = rows.every((a, i) => rows.every((b, j) => Math.abs(a[0]! * b[0]! + a[1]! * b[1]! + a[2]! * b[2]! - (i === j ? 1 : 0)) < 1e-9));
+    if (!square) throw new KernelError(t('kernel.motionNotRigid'));
+    const oc = this.oc;
+    const arena = new Arena();
+    try {
+      const trsf = arena.own(new oc.gp_Trsf());
+      try {
+        // SetValues takes the twelve coefficients; its arity is its own, so there is nothing to choose between
+        (trsf as unknown as { SetValues(...a: number[]): void }).SetValues(...m);
+      } catch (e) {
+        throw new KernelError(t('kernel.badMotionWhy', { why: this.errorText(e) }));
+      }
+      return this.put(arena.own(new oc.BRepBuilderAPI_Transform(this.get(id), trsf, true, false)).Shape());
+    } finally {
+      arena.dispose();
+    }
+  }
+
   /** Constant-radius fillet on the given edges of `target` (C5.1). */
   fillet(target: ShapeId, edgeIndices: number[], radius: number): OpResult {
     if (edgeIndices.length === 0) throw new KernelError('圓角至少需要一條邊線');

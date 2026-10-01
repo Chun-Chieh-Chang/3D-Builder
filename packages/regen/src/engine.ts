@@ -4,6 +4,7 @@ import {
   evalAngle,
   evalLength,
   isDatumPlaneName,
+  patternInstances,
   planeFrame,
   resolveDoc,
   bodyFeature,
@@ -24,6 +25,7 @@ import {
   type ImportedBodyFeature,
   type LoftFeature,
   type MoveFaceFeature,
+  type PatternFeature,
   type PartDoc,
   type PlaneFrame,
   type Ref,
@@ -43,6 +45,7 @@ import { KernelError, type SweepSpec, type FaceOrigin, type ImportDiagnostics, t
 import { nameElements, nameFromFaces, resolveRef, type Candidate, type ElementNames } from '@3db/naming';
 import { Bodies, type BodyState, type BodyView } from './bodies';
 import { followReferences, ReferenceProblem } from './references';
+import { angleStep, slide, turn, type Motion } from './placements';
 
 export type FeatureStatus = 'ok' | 'error' | 'suppressed' | 'rolledBack';
 
@@ -97,6 +100,23 @@ export interface RebuildResult {
   points: Map<Id, Vec3>;
   systems: Map<Id, CoordSystem>;
   totalMs: number;
+}
+
+/** The bodies as they were before the first seed of a pattern (C6): a handle on their shape, their names, and how many there were. */
+interface Snapshot {
+  shape: ShapeId | null;
+  names: ElementNames;
+  bodies: number;
+}
+
+/**
+ * What the seeds of a pattern did (C6): the material they added to the bodies and the material they took from them, each as a shape with the names its
+ * faces had, and whether they made a body of their own (so each instance does too). Null where they did none.
+ */
+interface Delta {
+  added: { shape: ShapeId; names: ElementNames } | null;
+  removed: { shape: ShapeId; names: ElementNames } | null;
+  newBody: boolean;
 }
 
 /** Where imported data comes from, by SHA-256 (the part file's blobs; a Map will do). */
@@ -233,6 +253,12 @@ export class Regenerator {
   private axes = new Map<Id, Axis3>();
   private points = new Map<Id, Vec3>();
   private systems = new Map<Id, CoordSystem>();
+  /** Patterns (C6), for the rebuild in progress: the first seed's bodies before it, the delta of each pattern, why a pattern has none, and how each feature ended. */
+  private snapshots = new Map<Id, Snapshot>();
+  private deltas = new Map<Id, Delta>();
+  private patternPlans = new Map<Id, { first: Id; last: Id; seeds: Id[] } | string>();
+  private statuses = new Map<Id, FeatureStatus>();
+  private featureNames = new Map<Id, string>();
   /** The imported files read so far in this rebuild: a second read of one gets a copy of its own. */
   private usedImports = new Set<string>();
   /**
@@ -271,10 +297,16 @@ export class Regenerator {
     this.axes = new Map();
     this.points = new Map();
     this.systems = new Map();
+    this.releasePatterns();
+    this.statuses = new Map();
 
     // Every expression becomes the number it stands for before anything is built: the solver and the kernel
     // only ever see numbers. A feature whose expression cannot be evaluated reports why instead of building.
     const { doc: resolved, problems } = resolveDoc(doc);
+    this.planPatterns(resolved);
+    const firstSeeds = new Set([...this.patternPlans.values()].flatMap((p) => (typeof p === 'string' ? [] : [p.first])));
+    const lastSeeds = new Map<Id, Id[]>();
+    for (const [pattern, p] of this.patternPlans) if (typeof p !== 'string') lastSeeds.set(p.last, [...(lastSeeds.get(p.last) ?? []), pattern]);
     // Files the document no longer imports (or no longer with these options) are let go.
     const wanted = new Set(resolved.features.flatMap((f) => (f.type === 'importedBody' ? resolved.blobs.filter((b) => b.id === f.blob).map((b) => importKey(b.sha256, f.sewTolerance)) : [])));
     for (const [key, i] of this.imports) {
@@ -287,8 +319,12 @@ export class Regenerator {
       const t = performance.now();
       this.warnings = [];
       this.diagnostics = null;
-      const done = (r: Omit<FeatureResult, 'id' | 'ms'>) =>
-        results.push({ id: feature.id, ms: performance.now() - t, ...r, ...(this.warnings.length > 0 ? { warnings: this.warnings } : {}), ...(this.diagnostics ? { diagnostics: this.diagnostics } : {}) });
+      const done = (r: Omit<FeatureResult, 'id' | 'ms'>) => {
+        this.statuses.set(feature.id, r.status);
+        return results.push({ id: feature.id, ms: performance.now() - t, ...r, ...(this.warnings.length > 0 ? { warnings: this.warnings } : {}), ...(this.diagnostics ? { diagnostics: this.diagnostics } : {}) });
+      };
+      // a pattern's seeds are compared with the bodies as they were before the first of them
+      if (firstSeeds.has(feature.id) && index < limit && !feature.suppressed) this.snapshots.set(feature.id, this.snapshot(set));
       if (index >= limit) {
         if (index === limit && feature.type === 'sketch') {
           try {
@@ -345,6 +381,7 @@ export class Regenerator {
           case 'deleteFace':
           case 'moveFace':
           case 'combine':
+          case 'pattern':
           case 'importedBody': {
             const next =
               feature.type === 'extrude'
@@ -373,8 +410,11 @@ export class Regenerator {
                           ? this.moveFace(feature, set)
                           : feature.type === 'combine'
                             ? this.combineBodies(feature, set)
-                            : this.importedBody(feature, doc, set);
+                            : feature.type === 'pattern'
+                              ? this.pattern(feature, set)
+                              : this.importedBody(feature, doc, set);
             set = this.advance(set, next);
+            for (const pattern of lastSeeds.get(feature.id) ?? []) this.captureDelta(pattern, set);
             return done({ status: 'ok' });
           }
         }
@@ -384,6 +424,8 @@ export class Regenerator {
         return done({ status: 'error', message: `內部錯誤：${e instanceof Error ? e.message : String(e)}` });
       }
     });
+
+    this.releasePatterns();
 
     // The result keeps the bodies and, for several, the compound that is their view.
     const view = set.view;
@@ -478,6 +520,16 @@ export class Regenerator {
       return axis;
     }
     const body = this.modelFor(set, what);
+    if (ref.kind === 'face') {
+      // the axis of a cylinder, a cone or a torus
+      const axis = axisOf(body.topology.faces[this.resolve(ref, body, what)]!);
+      if (!axis) throw new FeatureError(t('datum.notRevolved'));
+      // which way along its axis a surface of revolution runs is OCCT's to say and may change from one rebuild to the next: the axis of a face points
+      // the way its first coordinate that is not zero grows, so that what turns about it always turns the same way
+      const d = unit(axis.dir);
+      const lead = d.find((c) => Math.abs(c) > 1e-9) ?? 1;
+      return { origin: axis.point, dir: lead < 0 ? [-d[0], -d[1], -d[2]] : d };
+    }
     const edge = body.topology.edges[this.resolve(ref, body, what)]!;
     if (edge.curve !== 'line' || !edge.dir) throw new FeatureError(t('datum.notLine', { what }));
     return { origin: edge.mid, dir: unit(edge.dir) };
@@ -928,6 +980,193 @@ export class Regenerator {
     return this.apply(f.id, 'boss', tool, { featureId: f.id, sketchId: f.sketch }, set.list, true);
   }
 
+  // ------------------------------------------------------------------ patterns (C6)
+
+  /** Lets go of what the patterns of a rebuild kept: the bodies before their first seeds, and what the seeds did. */
+  private releasePatterns(): void {
+    for (const s of this.snapshots.values()) if (s.shape !== null) this.kernel.release(s.shape);
+    for (const d of this.deltas.values()) {
+      if (d.added) this.kernel.release(d.added.shape);
+      if (d.removed) this.kernel.release(d.removed.shape);
+    }
+    this.snapshots.clear();
+    this.deltas.clear();
+    this.patternPlans.clear();
+  }
+
+  /**
+   * Which features each pattern repeats, or why it cannot: they must exist, be before the pattern, be built (not suppressed) and follow one another with
+   * nothing between, since what is repeated is the difference between the bodies before the first of them and after the last.
+   */
+  private planPatterns(doc: PartDoc): void {
+    this.featureNames = new Map(doc.features.map((f) => [f.id, f.name]));
+    doc.features.forEach((f, index) => {
+      if (f.type !== 'pattern' || f.suppressed) return;
+      if (f.seeds.length === 0) return void this.patternPlans.set(f.id, t('pattern.noSeeds'));
+      const at = f.seeds.map((id) => doc.features.findIndex((g) => g.id === id)).sort((a, b) => a - b);
+      if (at.some((i) => i < 0 || i >= index)) return void this.patternPlans.set(f.id, t('pattern.seedMissing'));
+      // between the first and the last seed there may be sketches and reference geometry, which leave the bodies as they are, but no other feature
+      const between = doc.features.slice(at[0]!, at[at.length - 1]! + 1).find((g) => !f.seeds.includes(g.id) && g.type !== 'sketch' && g.type !== 'refPlane' && g.type !== 'refAxis' && g.type !== 'refPoint' && g.type !== 'coordSys');
+      if (between) return void this.patternPlans.set(f.id, t('pattern.seedsApart', { name: between.name }));
+      const suppressed = at.map((i) => doc.features[i]!).find((g) => g.suppressed);
+      if (suppressed) return void this.patternPlans.set(f.id, t('pattern.seedSuppressed', { name: suppressed.name }));
+      this.patternPlans.set(f.id, { first: doc.features[at[0]!]!.id, last: doc.features[at[at.length - 1]!]!.id, seeds: at.map((i) => doc.features[i]!.id) });
+    });
+  }
+
+  private snapshot(set: Bodies): Snapshot {
+    const view = set.view;
+    return { shape: view ? this.kernel.copy(view.shape) : null, names: view ? view.names : { faces: [], edges: [], vertices: [] }, bodies: set.list.length };
+  }
+
+  /** What the seeds of `pattern` did, now that the last of them is built: the bodies after, less the bodies before (added), and the bodies before, less the bodies after (removed). */
+  private captureDelta(pattern: Id, set: Bodies): void {
+    const plan = this.patternPlans.get(pattern);
+    if (!plan || typeof plan === 'string') return;
+    const before = this.snapshots.get(plan.first);
+    const after = set.view;
+    if (!before || !after) return;
+    const k = this.kernel;
+    const part = (op: 'cut', target: ShapeId, tool: ShapeId | null, targetNames: ElementNames, toolNames: ElementNames, total: number): Delta['added'] => {
+      if (tool === null) return { shape: k.copy(target), names: targetNames };
+      const r = k.boolean(op, target, tool);
+      if (k.massProps(r.shape).volume <= 1e-9 * Math.max(total, 1e-12)) {
+        k.release(r.shape);
+        return null;
+      }
+      const topology = k.topology(r.shape);
+      return { shape: r.shape, names: nameElements(r.faceOrigins, topology, { featureId: pattern, input: concatNames(targetNames, toolNames) }) };
+    };
+    const total = Math.max(k.massProps(after.shape).volume, before.shape === null ? 0 : k.massProps(before.shape).volume);
+    const added = part('cut', after.shape, before.shape, after.names, before.names, total);
+    const removed = before.shape === null ? null : part('cut', before.shape, after.shape, before.names, after.names, total);
+    this.deltas.set(pattern, { added, removed, newBody: added !== null && set.list.length > before.bodies });
+  }
+
+  /** The unit direction of a direction of a linear pattern: a straight edge, a reference axis, or the normal of a plane. */
+  private patternDirection(ref: Ref, set: Bodies, what: string): Vec3 {
+    return unit(this.directionOf(ref, set, what));
+  }
+
+  /** The count a pattern asks for (already a number: the document's expressions were worked out before the rebuild). */
+  private patternCount(expr: string, what: string): number {
+    const n = Math.round(Number(expr));
+    if (!(n >= 2)) throw new FeatureError(t('pattern.countTooSmall', { what, value: expr }));
+    return n;
+  }
+
+  /** Where each instance goes, as a motion of space, by its label (the seed, which stays, is not among them). */
+  private placements(f: PatternFeature, set: Bodies): { label: string; motion: Motion }[] {
+    const d = f.def;
+    if (d.mode === 'linear') {
+      const sign = (r?: boolean) => (r ? -1 : 1);
+      const v1 = this.patternDirection(d.dir1.ref, set, t('pattern.direction1'));
+      const n1 = this.patternCount(d.dir1.count, t('pattern.direction1'));
+      const s1 = evalLength(d.dir1.spacing) * sign(d.dir1.reverse);
+      if (!d.dir2) return patternInstances(n1, null).map((x) => ({ label: x.label, motion: slide([v1[0] * s1 * x.i, v1[1] * s1 * x.i, v1[2] * s1 * x.i]) }));
+      const v2 = this.patternDirection(d.dir2.ref, set, t('pattern.direction2'));
+      if (Math.hypot(...cross(v1, v2)) < 1e-9) throw new FeatureError(t('pattern.directionsParallel'));
+      const n2 = this.patternCount(d.dir2.count, t('pattern.direction2'));
+      const s2 = evalLength(d.dir2.spacing) * sign(d.dir2.reverse);
+      return patternInstances(n1, n2).map((x) => ({
+        label: x.label,
+        motion: slide([v1[0] * s1 * x.i + v2[0] * s2 * x.j, v1[1] * s1 * x.i + v2[1] * s2 * x.j, v1[2] * s1 * x.i + v2[2] * s2 * x.j]),
+      }));
+    }
+    const axis = this.axisOfRef(d.axis, set, t('pattern.rotationAxis'));
+    const n = this.patternCount(d.count, t('pattern.count'));
+    const step = angleStep(n, evalAngle(d.angle), d.equal) * (d.reverse ? -1 : 1);
+    return patternInstances(n, null).map((x) => ({ label: x.label, motion: turn(axis.origin, axis.dir, step * x.i) }));
+  }
+
+  /** A pattern (C6.1, C6.2): a copy of what the seeds added, moved to each instance and joined like the seed was, and of what they took away, moved and cut. */
+  private pattern(f: PatternFeature, set: Bodies): BodyState[] {
+    const plan = this.patternPlans.get(f.id);
+    if (typeof plan === 'string') throw new FeatureError(plan);
+    if (!plan) throw new FeatureError(t('pattern.seedMissing'));
+    const failed = plan.seeds.find((id) => this.statuses.get(id) !== 'ok');
+    if (failed) throw new FeatureError(t('pattern.seedFailed', { name: this.featureNames.get(failed) ?? failed }));
+    const delta = this.deltas.get(f.id);
+    if (!delta || (!delta.added && !delta.removed)) throw new FeatureError(t('pattern.seedChangedNothing'));
+    const k = this.kernel;
+    const skip = new Set(f.skip ?? []);
+    const instances = this.placements(f, set).filter((p) => !skip.has(p.label));
+    if (instances.length === 0) throw new FeatureError(t('pattern.noInstances'));
+    // the copy of what the seeds did that goes to each instance, made before any is used so that they can be compared with one another
+    const pending = new Set<ShapeId>();
+    const make = (part: NonNullable<Delta['added']>) =>
+      instances.map((p) => {
+        const shape = k.transformed(part.shape, p.motion);
+        pending.add(shape);
+        return { label: p.label, shape, names: nameFromFaces(part.names.faces.map((n) => `${f.id}:inst${p.label}:${n}`), k.topology(shape)) };
+      });
+    let current: readonly BodyState[] = set.list;
+    const original = new Set(set.list.map((b) => b.shape));
+    const drop = (old: readonly BodyState[], now: readonly BodyState[]) => {
+      for (const b of old) if (!original.has(b.shape) && !now.some((x) => x.shape === b.shape)) k.release(b.shape);
+    };
+    try {
+      const adds = delta.added ? make(delta.added) : [];
+      const cuts = delta.removed ? make(delta.removed) : [];
+      this.noOverlap(delta.added?.shape ?? null, adds);
+      this.noOverlap(delta.removed?.shape ?? null, cuts);
+      for (let i = 0; i < instances.length; i++) {
+        const label = instances[i]!.label;
+        const at = (run: () => BodyState[]): BodyState[] => {
+          try {
+            return run();
+          } catch (e) {
+            if (e instanceof FeatureError && e.message === t('feature.cutRemovedNothing')) throw new FeatureError(t('pattern.instanceMissesBody', { label }));
+            throw e;
+          }
+        };
+        if (adds[i]) {
+          const tool = adds[i]!;
+          pending.delete(tool.shape);
+          const next = at(() => this.apply(f.id, 'boss', { shape: tool.shape, faceOrigins: [] }, { featureId: f.id }, current, !delta.newBody, `${f.id}#${label}`, tool.names));
+          // an instance of a boss that joined the body must still touch it, or it is a piece floating in space
+          if (!delta.newBody && next.length > current.length) {
+            drop(current, next);
+            current = next;
+            throw new FeatureError(t('pattern.instanceFloats', { label }));
+          }
+          drop(current, next);
+          current = next;
+        }
+        if (cuts[i]) {
+          const tool = cuts[i]!;
+          pending.delete(tool.shape);
+          const next = at(() => this.apply(f.id, 'cut', { shape: tool.shape, faceOrigins: [] }, { featureId: f.id }, current, true, f.id, tool.names));
+          drop(current, next);
+          current = next;
+        }
+      }
+      return [...current];
+    } catch (e) {
+      drop(current, []);
+      throw e;
+    } finally {
+      for (const shape of pending) k.release(shape);
+    }
+  }
+
+  /** The instances of one kind of delta must not run into one another or into the seed's own: the spacing is smaller than what is repeated. */
+  private noOverlap(seed: ShapeId | null, tools: { label: string; shape: ShapeId }[]): void {
+    const k = this.kernel;
+    const all = [...(seed === null ? [] : [{ label: t('pattern.seedLabel'), shape: seed }]), ...tools.map((x) => ({ ...x, label: t('pattern.instanceName', { label: x.label }) }))].map((x) => ({ ...x, box: k.bounds(x.shape) }));
+    const eps = 1e-7;
+    const apart = (a: { min: Vec3; max: Vec3 }, b: { min: Vec3; max: Vec3 }) => [0, 1, 2].some((i) => a.max[i]! < b.min[i]! + eps || b.max[i]! < a.min[i]! + eps);
+    for (let i = 0; i < all.length; i++) {
+      for (let j = i + 1; j < all.length; j++) {
+        if (apart(all[i]!.box, all[j]!.box)) continue;
+        const r = k.boolean('common', all[i]!.shape, all[j]!.shape);
+        const shared = k.massProps(r.shape).volume;
+        k.release(r.shape);
+        if (shared > 1e-6 * Math.min(k.massProps(all[i]!.shape).volume, k.massProps(all[j]!.shape).volume)) throw new FeatureError(t('pattern.overlap', { a: all[i]!.label, b: all[j]!.label }));
+      }
+    }
+  }
+
   // ------------------------------------------------------------------ several bodies (C7)
 
   /**
@@ -937,16 +1176,16 @@ export class Regenerator {
    * on either side. Returns the bodies after the feature; the shapes of those that were changed are new, the old ones are
    * the caller's to let go (`advance`).
    */
-  private apply(featureId: Id, op: 'boss' | 'cut', tool: OpResult, context: { featureId: Id; sketchId?: Id }, list: readonly BodyState[], merge: boolean, bodyId: Id = featureId): BodyState[] {
+  private apply(featureId: Id, op: 'boss' | 'cut', tool: OpResult, context: { featureId: Id; sketchId?: Id }, list: readonly BodyState[], merge: boolean, bodyId: Id = featureId, named?: ElementNames): BodyState[] {
     const k = this.kernel;
     const toolTopology = k.topology(tool.shape);
-    const toolNames = nameElements(tool.faceOrigins, toolTopology, context);
+    const toolNames = named ?? nameElements(tool.faceOrigins, toolTopology, context);
     const made: ShapeId[] = [];
     try {
       if (op === 'cut') {
         const r = this.boolBodies(featureId, 'cut', list, tool.shape, toolNames, made);
         k.release(tool.shape);
-        if (!r.changed) throw new FeatureError('除料沒有移除任何材料（試試反轉方向）');
+        if (!r.changed) throw new FeatureError(t('feature.cutRemovedNothing'));
         if (r.out.length === 0) throw new FeatureError('除料移除了整個本體');
         if (r.removed.length > 0) this.warnings.push(t('body.removedWhole', { names: r.removed.join(t('cmd.listSeparator')) }));
         return r.out;

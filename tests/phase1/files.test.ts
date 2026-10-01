@@ -294,6 +294,23 @@ describe('a part file written by version 20 (rib, C4.7) opens in version 21 (ref
   });
 });
 
+describe('a part file written by version 21 (reference geometry, C3.2–C3.5) opens in version 22 (pattern, C6.1–C6.2)', () => {
+  it('keeps its axis, point, plane and coordinate system and rebuilds them: the axis of the post, the centre of its top, the plane square to the axis there', async () => {
+    const file = await readPartFile(oldFile('v21-datums.3dbx'));
+    expect(file.warnings).toEqual([]);
+    expect(JSON.parse(new TextDecoder().decode((await readZip(oldFile('v21-datums.3dbx')))[0]!.data)).schemaVersion).toBe(21);
+    expect(file.doc.schemaVersion).toBe(SCHEMA_VERSION);
+    expect(file.doc.features.map((f) => f.type)).toEqual(['sketch', 'extrude', 'sketch', 'extrude', 'refAxis', 'refPoint', 'refPlane', 'coordSys']);
+    const r = new Regenerator(kernel, await PlaneGcsSolver.create(), file.blobs).rebuild(file.doc);
+    expect(statuses(r).filter((s) => !s.endsWith('=ok'))).toEqual([]);
+    expect(kernel.massProps(r.body!.shape).volume).toBeCloseTo(60 * 20 * 5 + Math.PI * 4 * 5, 6);
+    expect(r.axes.get('axis1')!.origin[0]).toBeCloseTo(5, 6);
+    expect(r.points.get('point1')![2]).toBeCloseTo(10, 6);
+    expect(r.frames.get('plane1')!.normal.map(Math.abs)).toEqual([expect.closeTo(0, 6), expect.closeTo(0, 6), expect.closeTo(1, 6)]);
+    expect(r.systems.get('csys1')!.origin[2]).toBeCloseTo(10, 6);
+  });
+});
+
 describe('the .3dbx file (B9.1, F7.1)', () => {
   const docs = async (): Promise<[string, PartDoc][]> => [
     ['the demo part', createDemoPart()],

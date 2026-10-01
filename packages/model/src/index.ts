@@ -14,3 +14,4 @@ export * from './history';
 export * from './serialize';
 export * from './templates';
 export * from './holes';
+export * from './patterns';
