@@ -142,3 +142,11 @@ export class KernelError extends Error {
     this.name = 'KernelError';
   }
 }
+
+/** What a STEP file of a part carries beyond its shape (F1.3): the schema, and a color for faces. */
+export interface StepExportOptions {
+  /** AP214 (the default) or AP242. */
+  schema?: 'AP214' | 'AP242';
+  /** "#rrggbb" or null for each face, in the order of `Kernel.topology`. */
+  faceColors?: readonly (string | null)[];
+}

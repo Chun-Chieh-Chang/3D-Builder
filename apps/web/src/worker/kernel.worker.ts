@@ -6,7 +6,7 @@ import gcsWasm from '@salusoft89/planegcs/dist/planegcs_dist/planegcs.wasm?url';
 import { bodyKey, isShown, MESH_QUALITY, settingsOf, type AssemblyDoc, type Id, type PartDoc } from '@3db/model';
 import { findProfiles, PlaneGcsSolver } from '@3db/sketch';
 import { COMPONENT_MESH, Kernel, type MassProps, type MeshData, type MeshOptions, type ShapeId } from '@3db/kernel';
-import { convertEdges, edgeMateGeometry, faceEdges, faceMateGeometry, followReferences, ReferenceProblem, Regenerator, solveAssembly, type AssemblyResult, type AssemblySolveOptions, type BodyInfo, type RebuildResult } from '@3db/regen';
+import { convertEdges, edgeMateGeometry, exportFaces, faceColors, faceEdges, faceMateGeometry, followReferences, ReferenceProblem, Regenerator, solveAssembly, type AssemblyResult, type AssemblySolveOptions, type BodyInfo, type RebuildResult } from '@3db/regen';
 import { edgeFingerprint, faceFingerprint, vertexFingerprint } from '@3db/naming';
 import { exportAssemblyStep, exportPartStep, readComponentFile } from '@3db/io';
 import { mergeMeshes } from './mergeMesh';
@@ -123,6 +123,7 @@ const api: KernelApi = {
       vertexNames: body?.names.vertices ?? [],
       vertexPoints: Float32Array.from(body?.topology.vertices.flatMap((v) => v.point) ?? []),
       vertexFingerprints: body ? body.topology.vertices.map((_, i) => vertexFingerprint(body.topology, i)) : [],
+      faceColors: faceColors(doc, r),
       frames: r.frames,
       axes: r.axes,
       points: r.points,
@@ -172,15 +173,9 @@ const api: KernelApi = {
     const r = regen.rebuild(doc);
     if (!r.body) throw new Error('沒有可輸出的本體');
     // a reference body is a design aid, not part of the part (C7.1)
-    const own = r.bodies.filter((b) => !b.reference);
-    if (own.length === 0) throw new Error(t('body.exportNone'));
-    if (own.length === r.bodies.length) return exportPartStep(kernel, r.body.shape, name);
-    const joined = kernel.join(own.map((b) => b.shape));
-    try {
-      return exportPartStep(kernel, joined, name);
-    } finally {
-      kernel.release(joined);
-    }
+    const { shapes, colors } = exportFaces(doc, r);
+    if (shapes.length === 0) throw new Error(t('body.exportNone'));
+    return exportPartStep(kernel, shapes, name, { faceColors: colors });
   },
 
   async buildPart(key: string, bytes: Uint8Array, onStage?: (stage: PartStage) => void): Promise<PartBuildPayload> {

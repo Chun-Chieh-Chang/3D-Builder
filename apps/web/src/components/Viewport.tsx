@@ -148,6 +148,7 @@ export function Viewport() {
     if (!v) return;
     const fit = !!result?.mesh && fittedFor.current !== fitRequest;
     v.setMesh(result?.mesh ?? null, fit);
+    v.setFaceColors(result?.faceColors ?? []);
     v.setVertices(result?.vertexPoints ?? new Float32Array(0));
     displayed.current = result;
     if (fit) fittedFor.current = fitRequest;

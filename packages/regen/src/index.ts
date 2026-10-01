@@ -4,3 +4,4 @@ export * from './dag';
 export * from './assembly';
 export * from './references';
 export * from './placements';
+export * from './appearance';

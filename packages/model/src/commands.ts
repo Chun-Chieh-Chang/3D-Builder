@@ -1,10 +1,10 @@
 import { t } from '@3db/i18n';
 import { current, produce, type Draft } from 'immer';
 import { countersFor, type Id } from './ids';
-import type { DocSettings, MaterialRef, Variable, BlobRef, ChamferFeature, CombineFeature, HoleFeature, LoftFeature, RibFeature, SweepFeature, Draft as WallDraft, EndCondition, Thin, Expr, Feature, ImportedBodyFeature, AxisDefinition, CoordSysFeature, MirrorFeature, PartDoc, PatternDefinition, PatternFeature, PlaneDefinition, PointDefinition, Ref, RevolveCondition, SketchConstraint, SketchEntity, SketchFeature } from './schema';
+import type { AppearanceTarget, DocSettings, MaterialRef, Variable, BlobRef, ChamferFeature, CombineFeature, HoleFeature, LoftFeature, RibFeature, SweepFeature, Draft as WallDraft, EndCondition, Thin, Expr, Feature, ImportedBodyFeature, AxisDefinition, CoordSysFeature, MirrorFeature, PartDoc, PatternDefinition, PatternFeature, PlaneDefinition, PointDefinition, Ref, RevolveCondition, SketchConstraint, SketchEntity, SketchFeature } from './schema';
 import { isDatumPlaneName } from './datums';
 import { canBeSeed } from './patterns';
-import { materialOk } from './materials';
+import { colorOk, materialOk, sameTarget } from './materials';
 import { mapRefs } from './refs';
 import { bodyFeature, isBodyKey, isHideable } from './visibility';
 import { dimensionName, Parameters, renameInDoc, resolveDoc, variableUsers, type ExprKind } from './params';
@@ -139,6 +139,8 @@ ull). */
   | { type: 'setProperty'; name: string; value: string }
   /** The material of the part (C14.1); `null` takes it away. */
   | { type: 'setMaterial'; material: MaterialRef | null }
+  /** The color of a part, body, feature or face (C14.2); `null` takes the color of that target away. */
+  | { type: 'setAppearance'; target: AppearanceTarget; color: string | null }
   /** Document settings (B8.4): the ones given are changed. */
   | { type: 'setSettings'; settings: Partial<DocSettings> }
   | { type: 'deleteProperty'; name: string }
@@ -980,6 +982,15 @@ export function mutate(draft: Draft<PartDoc>, cmd: Command): void {
         if (!materialOk(cmd.material)) throw new CommandError(t('cmd.materialInvalid'));
         draft.material = { ...(cmd.material.id ? { id: cmd.material.id } : {}), name: cmd.material.name.trim(), density: cmd.material.density };
       }
+      return;
+    }
+    case 'setAppearance': {
+      if (cmd.color !== null && !colorOk(cmd.color)) throw new CommandError(t('cmd.colorInvalid'));
+      const target = cmd.target;
+      if (target.kind === 'feature' && !draft.features.some((f) => f.id === target.id)) throw new CommandError(t('cmd.appearanceFeatureGone'));
+      if (target.kind === 'face' && target.ref.kind !== 'face') throw new CommandError(t('cmd.appearanceNeedsFace'));
+      const rest = draft.appearances.filter((a) => !sameTarget(a.target, target));
+      draft.appearances = cmd.color === null ? rest : [...rest, { target, color: cmd.color.toLowerCase() }];
       return;
     }
     case 'setSettings': {

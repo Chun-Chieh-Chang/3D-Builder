@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { t } from '@3db/i18n';
-import { dimensionName, formatMass, formatQuantity, isDimension, massGrams, MATERIALS, materialById, Parameters, settingsOf, type Command, type DocSettings, type SketchFeature } from '@3db/model';
+import { dimensionName, formatMass, formatQuantity, isDimension, massGrams, MATERIALS, materialById, Parameters, settingsOf, type AppearanceTarget, type Command, type DocSettings, type SketchFeature } from '@3db/model';
 import { store, useStore } from '../state/store';
 
 /** Runs a command; the reason it was refused (as the store worded it), or null when it went through. */
@@ -329,6 +329,81 @@ export function PropertiesDialog() {
               </button>
             </td>
           </tr>
+        </tbody>
+      </table>
+    </Frame>
+  );
+}
+
+/** 外觀 (C14.2): the color of the part, a body, a feature or a face — the one that is selected — and what has been colored so far. */
+export function AppearanceDialog() {
+  const open = useStore((s) => s.dialog === 'appearance');
+  const doc = useStore((s) => s.doc);
+  const selected = useStore((s) => s.selected);
+  const selectedFace = useStore((s) => s.selectedFace);
+  const bodies = useStore((s) => s.result?.bodies ?? []);
+  const [choice, setChoice] = useState('part');
+  const [color, setColor] = useState('#3366cc');
+  if (!open) return null;
+  const bodyId = selected?.startsWith('body:') ? selected.slice('body:'.length) : null;
+  const feature = selected && !bodyId ? doc.features.find((f) => f.id === selected) : undefined;
+  const bodyName = (id: string) => bodies.find((b) => b.id === id)?.name ?? id;
+  const targets: { key: string; label: string; target: AppearanceTarget }[] = [
+    { key: 'part', label: t('appearance.part'), target: { kind: 'part' } },
+    ...(bodyId ? [{ key: 'body', label: t('appearance.body', { name: bodyName(bodyId) }), target: { kind: 'body', id: bodyId } as AppearanceTarget }] : []),
+    ...(feature && feature.type !== 'sketch' ? [{ key: 'feature', label: t('appearance.feature', { name: feature.name }), target: { kind: 'feature', id: feature.id } as AppearanceTarget }] : []),
+    ...(selectedFace?.kind === 'face' ? [{ key: 'face', label: t('appearance.face', { name: selectedFace.name }), target: { kind: 'face', ref: selectedFace } as AppearanceTarget }] : []),
+  ];
+  const current = targets.find((x) => x.key === choice) ?? targets[targets.length - 1]!;
+  const describe = (target: AppearanceTarget): string =>
+    target.kind === 'part'
+      ? t('appearance.part')
+      : target.kind === 'body'
+        ? t('appearance.body', { name: bodyName(target.id) })
+        : target.kind === 'feature'
+          ? t('appearance.feature', { name: doc.features.find((f) => f.id === target.id)?.name ?? target.id })
+          : t('appearance.face', { name: target.ref.name });
+  return (
+    <Frame title={t('appearance.title')} hint={t('appearance.hint')}>
+      <label className="pm-row">
+        <span>{t('appearance.target')}</span>
+        <select value={current.key} onChange={(e) => setChoice(e.target.value)} onKeyDown={(e) => e.stopPropagation()}>
+          {targets.map((x) => (
+            <option key={x.key} value={x.key}>
+              {x.label}
+            </option>
+          ))}
+        </select>
+      </label>
+      <label className="pm-row">
+        <span>{t('appearance.color')}</span>
+        <input type="color" value={color} onChange={(e) => setColor(e.target.value)} />
+      </label>
+      <div className="modal-actions">
+        <button onClick={() => run({ type: 'setAppearance', target: current.target, color })}>{t('appearance.apply')}</button>
+        <button onClick={() => run({ type: 'setAppearance', target: current.target, color: null })}>{t('appearance.remove')}</button>
+      </div>
+      <h4>{t('appearance.list')}</h4>
+      <table className="eq-table">
+        <tbody>
+          {doc.appearances.length === 0 && (
+            <tr>
+              <td className="muted">{t('appearance.none')}</td>
+            </tr>
+          )}
+          {doc.appearances.map((a, i) => (
+            <tr key={i}>
+              <td>
+                <span className="swatch" style={{ background: a.color }} /> {a.color}
+              </td>
+              <td className="owner">{describe(a.target)}</td>
+              <td>
+                <button title={t('appearance.remove')} aria-label={t('appearance.remove')} onClick={() => run({ type: 'setAppearance', target: a.target, color: null })}>
+                  ✕
+                </button>
+              </td>
+            </tr>
+          ))}
         </tbody>
       </table>
     </Frame>

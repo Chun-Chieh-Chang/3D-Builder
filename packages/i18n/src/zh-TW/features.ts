@@ -6,6 +6,7 @@ export const features = {
   'mirror.cutMissesBody': '鏡射出來的除料沒有碰到本體（鏡射面把它帶到本體外面了）',
   'mirror.bossFloats': '鏡射出來的填料沒有接觸到本體，成了分開的一塊',
   'mirror.pickBodies': '請選擇要鏡射的本體',
+  'kernel.badColor': '顏色無效：{color}',
   'kernel.badMotion': '變換矩陣無效',
   'kernel.motionNotRigid': '變換矩陣無效：只能平移、旋轉與鏡射',
   'kernel.badMotionWhy': '變換矩陣無效：{why}',

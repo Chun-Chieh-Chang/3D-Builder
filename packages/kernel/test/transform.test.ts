@@ -72,3 +72,32 @@ describe('transformed shapes (C6.1–C6.3)', () => {
     expect(() => k.transformed(a, [1, 1, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0])).toThrow(KernelError);
   });
 });
+
+describe('STEP export options (F1.3)', () => {
+  it('a face colour is written, the schema is AP214 unless AP242 is asked for, and one export does not leak into the next', () => {
+    const a = lump();
+    const colors = k.topology(a).faces.map((_, i) => (i === 0 ? '#ff0000' : i === 1 ? '#00ff80' : null));
+    const plain = k.exportStep(a, 'Lump');
+    expect(plain).not.toContain('COLOUR_RGB');
+    expect(plain).toContain('AUTOMOTIVE_DESIGN');
+    const coloured = k.exportStep(a, 'Lump', 'MM', { faceColors: colors });
+    const rgb = coloured.split('\n').filter((l) => l.includes('COLOUR_RGB')).map((l) => /COLOUR_RGB\('',([\d.e+-]+),([\d.e+-]+),([\d.e+-]+)\)/.exec(l)!.slice(1).map(Number));
+    // a colour that has a name in STEP is written by that name (the first face is plain red); the other is written as it was given
+    expect(coloured).toContain("DRAUGHTING_PRE_DEFINED_COLOUR('red')");
+    expect(rgb).toHaveLength(1);
+    expect(rgb[0]![0]).toBeCloseTo(0, 6);
+    expect(rgb[0]![1]).toBeCloseTo(1, 6);
+    expect(rgb[0]![2]).toBeCloseTo(0x80 / 255, 6);
+    const ap242 = k.exportStep(a, 'Lump', 'MM', { schema: 'AP242' });
+    expect(ap242).toContain('AP242');
+    expect(k.exportStep(a, 'Lump')).not.toContain('AP242');
+    // what is written reads back as the same solid
+    const back = keep(k.importStep(coloured).shape);
+    expect(volume(back)).toBeCloseTo(volume(a), 6);
+  });
+
+  it('a colour that is not #rrggbb is refused', () => {
+    const a = lump();
+    expect(() => k.exportStep(a, 'Lump', 'MM', { faceColors: ['red'] })).toThrow(KernelError);
+  });
+});

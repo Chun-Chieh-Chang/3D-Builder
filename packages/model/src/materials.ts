@@ -1,4 +1,4 @@
-import type { DocSettings, MaterialRef, PartDoc } from './schema';
+import type { AppearanceTarget, DocSettings, MaterialRef, PartDoc } from './schema';
 
 /** The materials of the built-in table (C14.1): ids, and the density in g/cm³ (round values for the usual alloys and plastics; a part of another grade types its own). */
 export const MATERIALS = [
@@ -41,3 +41,14 @@ export const MESH_QUALITY: Record<DocSettings['meshQuality'], { relative?: numbe
 };
 
 export const materialOk = (m: MaterialRef): boolean => m.name.trim() !== '' && Number.isFinite(m.density) && m.density > 0 && m.density < 30;
+
+/** Is this a color the way appearances and STEP files take it, "#rrggbb"? */
+export const colorOk = (c: string): boolean => /^#[0-9a-fA-F]{6}$/.test(c);
+
+/** Whether two targets are the same one (a color replaces the color of the same target). */
+export function sameTarget(a: AppearanceTarget, b: AppearanceTarget): boolean {
+  if (a.kind !== b.kind) return false;
+  if (a.kind === 'part') return true;
+  if (a.kind === 'face') return a.ref.name === (b as typeof a).ref.name;
+  return a.id === (b as typeof a).id;
+}

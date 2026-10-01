@@ -498,8 +498,15 @@ export interface DocSettings {
   meshQuality: 'coarse' | 'normal' | 'fine';
 }
 
+/**
+ * What a color is for (C14.2, v24): the whole part, one body (by its id), the faces a feature made (by its id), or one face (by reference). Where
+ * several apply to a face, the narrower wins: part < body < feature < face.
+ */
+export type AppearanceTarget = { kind: 'part' } | { kind: 'body'; id: Id } | { kind: 'feature'; id: Id } | { kind: 'face'; ref: Ref };
+
 export interface AppearanceOverride {
-  target: Ref | { kind: 'part' };
+  target: AppearanceTarget;
+  /** "#rrggbb". */
   color: string;
 }
 

@@ -53,6 +53,8 @@ export interface RebuildPayload {
   /** xyz per vertex, in the order of vertexNames. */
   vertexPoints: Float32Array;
   vertexFingerprints: Fingerprint[];
+  /** The color of each face, "#rrggbb" or null, in the order of faceNames (C14.2). */
+  faceColors: (string | null)[];
   /** Plane of each sketch (datum or model face), including the sketch being edited, and of each reference plane. */
   frames: Map<Id, PlaneFrame>;
   /** The reference axes, points and coordinate systems that were built (C3.3–C3.5). */

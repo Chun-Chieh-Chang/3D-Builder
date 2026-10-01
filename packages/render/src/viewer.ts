@@ -216,6 +216,8 @@ export class Viewer {
   private hoveredVertex = -1;
   private selectedVertices = new Set<number>();
   private vertexHighlight: THREE.Points | null = null;
+  /** The color of each face (C14.2): "#rrggbb" or null for the body's own. */
+  private faceColors: readonly (string | null)[] = [];
   private planes: PlaneDisplay[] = [];
   private planeGroup: THREE.Group | null = null;
   private overlay: SketchOverlay | null = null;
@@ -323,6 +325,7 @@ export class Viewer {
     this.selected.clear();
     this.selectedFaces.clear();
     this.paintFaces();
+    this.paintBodyColors();
     if (this.planes.length > 0) this.paintPlanes(); // sized to the body
     if (this.datums.axes.length > 0) this.paintDatums();
     if (fit) this.fitAll();
@@ -802,6 +805,41 @@ export class Viewer {
   }
 
   /** Translucent copies of the hovered and selected faces' triangles, drawn over the body. */
+  /** The colors of the faces of the body on show (C14.2), in the order of its faces; faces without one keep the body's. */
+  setFaceColors(colors: readonly (string | null)[]): void {
+    this.faceColors = colors;
+    this.paintBodyColors();
+  }
+
+  private paintBodyColors(): void {
+    const mesh = this.mesh;
+    if (!this.body || !mesh) return;
+    const geometry = this.body.geometry;
+    const material = this.body.material as THREE.MeshStandardMaterial;
+    if (!this.faceColors.some(Boolean)) {
+      if (geometry.getAttribute('color')) geometry.deleteAttribute('color');
+      material.vertexColors = false;
+      material.color.set(COLORS.body);
+      material.needsUpdate = true;
+      return this.requestRender();
+    }
+    const base = new THREE.Color(COLORS.body);
+    const colors = new Float32Array(geometry.getAttribute('position').count * 3);
+    for (let i = 0; i < colors.length; i += 3) colors.set([base.r, base.g, base.b], i);
+    const own = new THREE.Color();
+    for (let r = 0; r < mesh.faceRanges.length; r += 3) {
+      const hex = this.faceColors[mesh.faceRanges[r + 2]!];
+      if (!hex) continue;
+      own.set(hex);
+      for (let i = mesh.faceRanges[r]!; i < mesh.faceRanges[r]! + mesh.faceRanges[r + 1]!; i++) colors.set([own.r, own.g, own.b], mesh.indices[i]! * 3);
+    }
+    geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+    material.vertexColors = true;
+    material.color.set(0xffffff);
+    material.needsUpdate = true;
+    this.requestRender();
+  }
+
   private paintFaces(): void {
     if (this.faceHighlight) {
       this.scene.remove(this.faceHighlight);

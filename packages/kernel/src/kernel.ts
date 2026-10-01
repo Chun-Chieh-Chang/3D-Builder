@@ -12,6 +12,7 @@ import {
   type ImportResult,
   type MassProps,
   type MeshData,
+  type StepExportOptions,
   type MeshOptions,
   type OpResult,
   type ShapeId,
@@ -1639,16 +1640,20 @@ export class Kernel {
    * `Transfer` + `Write`: the binding cannot pass a null "multi-file" prefix, and an empty string would
    * split geometry into external files.
    */
-  exportStep(id: ShapeId, productName = 'Part', unit: 'MM' | 'INCH' = 'MM'): string {
+  exportStep(id: ShapeId, productName = 'Part', unit: 'MM' | 'INCH' = 'MM', options: StepExportOptions = {}): string {
     const oc = this.oc;
     const arena = new Arena();
     const path = `/export-${++this.fileSeq}.step`;
     const doc = new oc.TDocStd_Document(arena.own(new oc.TCollection_ExtendedString('XmlXCAF', false)));
     try {
       oc.Interface_Static.SetCVal('write.step.unit', unit);
+      // the schema is a setting of the library as a whole: it is put back below, so that the next export is not AP242 by accident
+      oc.Interface_Static.SetCVal('write.step.schema', options.schema === 'AP242' ? 'AP242DIS' : 'AP214IS');
       // Attribute and tool wrappers are owned by the document; only the document itself is deleted.
-      const label = oc.XCAFDoc_DocumentTool.ShapeTool(doc.Main()).AddShape(this.get(id), false, true);
+      const shapeTool = oc.XCAFDoc_DocumentTool.ShapeTool(doc.Main());
+      const label = shapeTool.AddShape(this.get(id), false, true);
       oc.TDataStd_Name.Set(label, arena.own(new oc.TCollection_ExtendedString(productName, true)));
+      this.colorFaces(doc, label, id, options.faceColors ?? [], arena);
       const w = arena.own(new oc.STEPCAFControl_Writer());
       w.SetNameMode(true);
       w.SetColorMode(true);
@@ -1661,6 +1666,7 @@ export class Kernel {
       if (!ok) throw new KernelError('STEP 輸出失敗');
       return oc.FS.readFile(path, { encoding: 'utf8' }) as string;
     } finally {
+      oc.Interface_Static.SetCVal('write.step.schema', 'AP214IS');
       doc.delete();
       try {
         oc.FS.unlink(path);
@@ -1669,6 +1675,26 @@ export class Kernel {
       }
       arena.dispose();
     }
+  }
+
+  /** Gives faces their colors in a document about to be written (F1.3): `colors[i]` is "#rrggbb" for face i of the shape in the order of `topology`, or null. */
+  private colorFaces(doc: InstanceType<OC['TDocStd_Document']>, root: Parameters<OC['TDataStd_Name']['Set']>[0], id: ShapeId, colors: readonly (string | null)[], arena: Arena): void {
+    if (!colors.some(Boolean)) return;
+    const oc = this.oc;
+    const shapeTool = oc.XCAFDoc_DocumentTool.ShapeTool(doc.Main());
+    const colorTool = oc.XCAFDoc_DocumentTool.ColorTool(doc.Main());
+    const faces = ShapeIndex.of(oc, this.get(id), T.FACE, arena);
+    colors.forEach((hex, i) => {
+      const face = faces.keys[i];
+      if (!hex || !face) return;
+      const m = /^#([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i.exec(hex);
+      if (!m) throw new KernelError(t('kernel.badColor', { color: hex }));
+      // the numbers of a hex colour are sRGB, as STEP files write them (the other type would take them for linear light and brighten them)
+      const rgb = m.slice(1).map((h) => parseInt(h, 16) / 255) as [number, number, number];
+      const color = arena.own(new oc.Quantity_Color(rgb[0], rgb[1], rgb[2], oc.Quantity_TypeOfColor.Quantity_TOC_sRGB));
+      const sub = shapeTool.AddSubShape(root, face);
+      colorTool.SetColor(sub, color, oc.XCAFDoc_ColorType.XCAFDoc_ColorSurf);
+    });
   }
 
   /**
