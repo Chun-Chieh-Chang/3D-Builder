@@ -793,7 +793,7 @@ class AppStore {
       dragPreview: (o) => {
         if (o) this.requestSketchSolve({ drag: o.drag, initial: o.initial, analyze: false });
       },
-      trial: (sketch) => this.api.solveSketch({ seq: -1, sketch: resolveSketch(sketch, this.history.doc) }),
+      trial: (sketch, doc) => this.api.solveSketch({ seq: -1, sketch: resolveSketch(sketch, doc ?? this.history.doc) }),
       notify: (text, kind) => this.notify(text, kind),
       editDimension: (id) => this.set({ dimensionEdit: id }),
     };

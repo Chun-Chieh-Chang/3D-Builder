@@ -1,4 +1,6 @@
+import { t, type PlainKey } from '@3db/i18n';
 import {
+  applyCommand,
   IdAllocator,
   idsInUse,
   SKETCH_ORIGIN,
@@ -32,6 +34,7 @@ import {
   type Snap,
 } from '@3db/sketch/interact';
 import type { P2, SolvedGeometry } from '@3db/sketch';
+import { chamfer, extend, fillet, mirror, offset, polygon, slot, trim, type OpResult } from '@3db/sketch/ops';
 import type { SketchSolvePayload } from '../worker/protocol';
 
 export type ToolId =
@@ -46,7 +49,34 @@ export type ToolId =
   | 'tangentArc'
   | 'threePointArc'
   | 'point'
-  | 'dimension';
+  | 'dimension'
+  | 'slot'
+  | 'polygon'
+  | 'sketchFillet'
+  | 'sketchChamfer'
+  | 'trim'
+  | 'extend'
+  | 'offset'
+  | 'mirror';
+
+/** The tools of C1.8–C1.19, whose hints and messages come from the message catalog. */
+type OperationTool = 'slot' | 'polygon' | 'sketchFillet' | 'sketchChamfer' | 'trim' | 'extend' | 'offset' | 'mirror';
+
+/** Tools that pick existing geometry instead of placing points: no snapping, the element under the cursor is what counts. */
+const PICK_TOOLS: ReadonlySet<ToolId> = new Set(['dimension', 'trim', 'extend', 'sketchFillet', 'sketchChamfer', 'offset', 'mirror']);
+
+/** What the user sets for a tool before using it (shown in the PropertyManager). */
+export interface ToolOptions {
+  polygonSides: number;
+  /** The second click of a polygon is the middle of a side, not a corner. */
+  circumscribed: boolean;
+  filletRadius: number;
+  chamferDistance1: number;
+  chamferDistance2: number;
+  offsetDistance: number;
+}
+
+const DEFAULT_OPTIONS: ToolOptions = { polygonSides: 6, circumscribed: false, filletRadius: 5, chamferDistance1: 5, chamferDistance2: 5, offsetDistance: 5 };
 
 /** What the controller needs from the application. The store implements it; tests use a fake. */
 export interface SketchHost {
@@ -58,7 +88,7 @@ export interface SketchHost {
   /** Solves a drag frame for display only; null ends the preview. */
   dragPreview(options: { drag: { points?: PointPosition[]; radii?: CircleRadius[] }; initial: { points: PointPosition[]; radii: CircleRadius[] } } | null): void;
   /** Solves a candidate sketch without changing anything. */
-  trial(sketch: SketchFeature): Promise<SketchSolvePayload>;
+  trial(sketch: SketchFeature, doc?: PartDoc): Promise<SketchSolvePayload>;
   notify(text: string, kind?: 'error' | 'info'): void;
   /** Opens the Modify box of a dimension (D6.1). */
   editDimension(constraintId: Id): void;
@@ -94,6 +124,7 @@ export interface ControllerView {
   picks: Id[];
   cursor: P2 | null;
   hint: string;
+  options: ToolOptions;
 }
 
 const PICK_PX = 7;
@@ -101,7 +132,7 @@ const DRAG_PX = 3;
 /** How far (radians) a line may point away from an arc's tangent and still be made tangent. */
 const TANGENT_TOLERANCE = (6 * Math.PI) / 180;
 
-const HINTS: Record<ToolId, string[]> = {
+const HINTS: Record<Exclude<ToolId, OperationTool>, string[]> = {
   select: ['選取圖元或尺寸；拖曳圖元可移動定義不足的幾何；在空白處拖曳可方塊選取。'],
   line: ['按一下設定直線起點。', '按一下設定終點；連續畫線，按 Esc 或按兩下結束。'],
   centerline: ['按一下設定中心線起點。', '按一下設定終點；按 Esc 結束。'],
@@ -142,6 +173,10 @@ export class SketchController {
   private press: { p: P2; hit: Hit | null; moved: boolean } | null = null;
   private drag: { kind: 'points'; ids: Id[]; origin: P2; from: P2[] } | { kind: 'radius'; id: Id } | null = null;
   private box: { a: P2; b: P2 } | null = null;
+  private options: ToolOptions = { ...DEFAULT_OPTIONS };
+  /** An operation (trim, round, mirror …) being checked by the solver: clicks wait until it is done. */
+  private busy = false;
+  private pending: Promise<void> = Promise.resolve();
   private listeners = new Set<() => void>();
   private view: ControllerView;
 
@@ -166,7 +201,6 @@ export class SketchController {
   private snapshot(): ControllerView {
     const drawingLine = this.tool === 'line' || this.tool === 'centerline';
     const step = this.tool === 'dimension' ? Math.min(this.picks.length, 2) : drawingLine && this.chain ? 1 : this.clicks.length;
-    const hints = HINTS[this.tool];
     return {
       tool: this.tool,
       selection: [...this.selection],
@@ -176,9 +210,43 @@ export class SketchController {
       preview: this.previewShapes(),
       picks: [...this.picks],
       cursor: this.cursor,
-      hint: hints[Math.min(step, hints.length - 1)]!,
+      hint: this.hint(step),
+      options: { ...this.options },
     };
   }
+
+  private hint(step: number): string {
+    const tool = this.tool;
+    switch (tool) {
+      case 'slot':
+        return t(`sketch.hint.slot${Math.min(step, 2) + 1}` as PlainKey);
+      case 'polygon':
+        return t(step === 0 ? 'sketch.hint.polygon1' : this.options.circumscribed ? 'sketch.hint.polygonSide' : 'sketch.hint.polygonCorner');
+      case 'sketchFillet':
+      case 'sketchChamfer':
+        return t(this.picks.length === 0 ? 'sketch.hint.corner1' : 'sketch.hint.corner2');
+      case 'trim':
+        return t('sketch.hint.trim');
+      case 'extend':
+        return t('sketch.hint.extend');
+      case 'offset':
+        return t('sketch.hint.offset');
+      case 'mirror':
+        return t('sketch.hint.mirror');
+      default: {
+        const hints = HINTS[tool];
+        return hints[Math.min(step, hints.length - 1)]!;
+      }
+    }
+  }
+
+  setOption<K extends keyof ToolOptions>(key: K, value: ToolOptions[K]): void {
+    this.options = { ...this.options, [key]: value };
+    this.changed();
+  }
+
+  /** Resolves when the operation being checked is done (for tests and for the UI to wait on). */
+  settled = (): Promise<void> => this.pending;
 
   private sketch(): SketchFeature {
     const f = this.host.doc().features.find((x) => x.id === this.host.featureId);
@@ -198,10 +266,45 @@ export class SketchController {
   // ------------------------------------------------------------------ tools
 
   setTool(tool: ToolId): void {
+    // mirror and offset act on what is selected when the tool starts (SolidWorks takes a pre-selection too)
+    const chosen = tool === 'mirror' ? this.mirrorTargets() : tool === 'offset' ? this.offsetTargets() : [];
+    if ((tool === 'mirror' || tool === 'offset') && chosen.length === 0) {
+      this.host.notify(t(tool === 'mirror' ? 'sketch.needMirrorSelection' : 'sketch.needOffsetSelection'), 'info');
+      return;
+    }
     this.tool = tool;
     this.resetTool();
+    this.picks = chosen;
     if (tool !== 'select') this.selection.clear();
     this.changed();
+  }
+
+  /** The selected entities that can be mirrored: points and curves, not dimensions or relations. */
+  private mirrorTargets(): Id[] {
+    const s = this.sketch();
+    return s.entities.filter((e) => this.selection.has(e.id)).map((e) => e.id);
+  }
+
+  /** The selected lines, arcs and circles, and the curves joined to them end to end (a chain is offset as a whole). */
+  private offsetTargets(): Id[] {
+    const s = this.sketch();
+    const curves = s.entities.filter((e) => e.type === 'line' || e.type === 'arc' || e.type === 'circle');
+    const ends = (e: SketchEntity): Id[] => (e.type === 'line' ? [e.p1, e.p2] : e.type === 'arc' ? [e.start, e.end] : []);
+    const chosen = new Set(curves.filter((e) => this.selection.has(e.id)).map((e) => e.id));
+    for (let grew = true; grew; ) {
+      grew = false;
+      const used = new Map<Id, number>();
+      for (const e of curves) for (const p of ends(e)) used.set(p, (used.get(p) ?? 0) + 1);
+      for (const e of curves) {
+        if (chosen.has(e.id)) continue;
+        // joined to a chosen curve at a point only those two share: the chain goes on
+        if (ends(e).some((p) => used.get(p) === 2 && curves.some((o) => chosen.has(o.id) && ends(o).includes(p)))) {
+          chosen.add(e.id);
+          grew = true;
+        }
+      }
+    }
+    return [...chosen];
   }
 
   private resetTool(): void {
@@ -216,7 +319,8 @@ export class SketchController {
 
   /** Esc: ends the current chain or pick, then returns to selection (SolidWorks behaviour). */
   escape(): void {
-    if (this.clicks.length > 0 || this.chain || this.picks.length > 0) this.resetTool();
+    if (this.tool === 'mirror' || this.tool === 'offset') this.setTool('select');
+    else if (this.clicks.length > 0 || this.chain || this.picks.length > 0) this.resetTool();
     else if (this.tool !== 'select') this.tool = 'select';
     else this.selection.clear();
     this.changed();
@@ -288,7 +392,7 @@ export class SketchController {
     this.press = null;
     if (this.tool === 'select') {
       this.selectUp(e, press);
-    } else if (!press || !press.moved || this.clicks.length > 0 || this.chain || this.tool === 'point' || this.tool === 'dimension') {
+    } else if (!press || !press.moved || this.clicks.length > 0 || this.chain || this.tool === 'point' || PICK_TOOLS.has(this.tool)) {
       // click, or the release of a press-drag-release stroke (e.g. dragging out a line)
       this.click(e);
     } else {
@@ -403,7 +507,7 @@ export class SketchController {
 
   private updateSnap(e: PointerInput): void {
     const geometry = this.geometry();
-    if (this.tool === 'dimension') {
+    if (PICK_TOOLS.has(this.tool)) {
       this.hover = hitTest(geometry, e.p, PICK_PX * e.px);
       this.snapTarget = null;
       this.inference = null;
@@ -468,10 +572,19 @@ export class SketchController {
 
   private click(e: PointerInput): void {
     if (this.tool === 'dimension') return void this.dimensionClick(e);
+    if (PICK_TOOLS.has(this.tool)) return this.operationClick(e);
     this.updateSnap(e);
     const s = this.snapTarget;
     if (!s) return;
     switch (this.tool) {
+      case 'slot':
+      case 'polygon':
+        this.clicks.push(s);
+        if (this.clicks.length === (this.tool === 'slot' ? 3 : 2)) {
+          this.finishShape();
+          this.clicks = [];
+        }
+        return;
       case 'line':
       case 'centerline':
         return this.lineClick(s);
@@ -627,6 +740,105 @@ export class SketchController {
     this.commit(b);
   }
 
+  // ------------------------------------------------------------------ slot, polygon, trim, round, offset, mirror (C1.8–C1.19)
+
+  private finishShape(): void {
+    const [c1, c2, c3] = this.clicks as [Snap, Snap, Snap | undefined];
+    const place = (s: Snap) => ({ p: s.p, ...(s.kind === 'point' && s.id !== SKETCH_ORIGIN ? { id: s.id } : {}) });
+    if (this.tool === 'slot') {
+      const axis = sub(c2.p, c1.p);
+      const width = c3 ? Math.abs(cross(unit(axis), sub(c3.p, c1.p))) : 0;
+      this.run(slot(this.allocator(), place(c1), place(c2), width));
+    } else {
+      this.run(polygon(this.allocator(), place(c1), c2.p, this.options.polygonSides, this.options.circumscribed));
+    }
+  }
+
+  /** The line a click picks, or null. */
+  private pickedCurve(e: PointerInput): { id: Id; g: SolvedGeometry } | null {
+    const hit = hitTest(this.geometry(), e.p, PICK_PX * e.px);
+    const g = hit && this.geometry().get(hit.id);
+    return hit && g && g.type !== 'point' ? { id: hit.id, g } : null;
+  }
+
+  private operationClick(e: PointerInput): void {
+    const geometry = this.geometry();
+    const sketch = this.sketch();
+    const ids = this.allocator();
+    switch (this.tool) {
+      case 'trim':
+      case 'extend': {
+        const hit = this.pickedCurve(e);
+        if (hit) this.run((this.tool === 'trim' ? trim : extend)(sketch, geometry, ids, hit.id, e.p));
+        return;
+      }
+      case 'sketchFillet':
+      case 'sketchChamfer': {
+        const hit = hitTest(geometry, e.p, PICK_PX * e.px);
+        const g = hit && geometry.get(hit.id);
+        if (!hit || !g) return;
+        let pair: [Id, Id] | null = null;
+        if (g.type === 'point') {
+          const lines = [...geometry].filter(([, x]) => x.type === 'line' && (x.p1 === hit.id || x.p2 === hit.id)).map(([id]) => id);
+          if (lines.length !== 2) return this.host.notify(t('sketch.cornerPick'), 'info');
+          pair = [lines[0]!, lines[1]!];
+        } else if (g.type === 'line') {
+          if (this.picks.length === 0) {
+            this.picks = [hit.id];
+            return;
+          }
+          pair = [this.picks[0]!, hit.id];
+          this.picks = [];
+        }
+        if (!pair) return;
+        const o = this.options;
+        this.run(
+          this.tool === 'sketchFillet'
+            ? fillet(sketch, geometry, ids, pair[0], pair[1], o.filletRadius)
+            : chamfer(sketch, geometry, ids, pair[0], pair[1], o.chamferDistance1, o.chamferDistance2),
+        );
+        return;
+      }
+      case 'offset':
+        this.run(offset(sketch, geometry, ids, this.picks, this.options.offsetDistance, e.p), () => this.setTool('select'));
+        return;
+      case 'mirror': {
+        const hit = this.pickedCurve(e);
+        if (hit) this.run(mirror(sketch, geometry, ids, this.picks, hit.id), () => this.setTool('select'));
+        return;
+      }
+    }
+  }
+
+  /**
+   * Applies the result of an operation as one command (one undo step), after the solver agrees the sketch is not
+   * over-defined by it, like a dimension or a relation.
+   */
+  private run(r: OpResult, done?: () => void): void {
+    if ('error' in r) return this.host.notify(r.error, 'info');
+    if (this.busy) return;
+    const cmd = { type: 'editSketch', featureId: this.host.featureId, ...r.edit } as Command;
+    let next: PartDoc;
+    try {
+      next = applyCommand(this.host.doc(), cmd);
+    } catch (e) {
+      return this.host.notify(t('sketch.opFailed', { reason: e instanceof Error ? e.message : String(e) }), 'error');
+    }
+    const candidate = next.features.find((f) => f.id === this.host.featureId) as SketchFeature;
+    this.busy = true;
+    this.pending = this.host
+      .trial(candidate, next)
+      .then((solved) => {
+        if (solved.status === 'over' || solved.status === 'failed') this.host.notify(t('sketch.opOverDefined'), 'error');
+        else if (this.host.execute(cmd)) done?.();
+      })
+      .catch((e: unknown) => this.host.notify(t('sketch.opFailed', { reason: e instanceof Error ? e.message : String(e) }), 'error'))
+      .finally(() => {
+        this.busy = false;
+        this.changed();
+      });
+  }
+
   private commit(b: Builder): boolean {
     if (b.entities.length === 0 && b.constraints.length === 0) return false;
     return this.host.execute({ type: 'addSketchItems', featureId: this.host.featureId, entities: b.entities, constraints: b.constraints });
@@ -678,9 +890,34 @@ export class SketchController {
     const shapes: PreviewShape[] = [];
     if (this.box) shapes.push({ kind: 'box', a: this.box.a, b: this.box.b });
     const cursor = this.snapTarget?.p ?? this.cursor;
-    if (!cursor || this.tool === 'select' || this.tool === 'dimension') return shapes;
+    if (!cursor || this.tool === 'select' || PICK_TOOLS.has(this.tool)) return shapes;
     const [c1, c2] = this.clicks;
     switch (this.tool) {
+      case 'slot':
+        if (c1 && c2) {
+          const theta = Math.atan2(c2.p[1] - c1.p[1], c2.p[0] - c1.p[0]);
+          const r = Math.abs(cross(unit(sub(c2.p, c1.p)), sub(cursor, c1.p)));
+          const n: P2 = [-Math.sin(theta) * r, Math.cos(theta) * r];
+          shapes.push(
+            { kind: 'line', a: add(c1.p, n), b: add(c2.p, n) },
+            { kind: 'line', a: sub(c1.p, n), b: sub(c2.p, n) },
+            { kind: 'arc', c: c2.p, r, a0: theta - Math.PI / 2, a1: theta + Math.PI / 2 },
+            { kind: 'arc', c: c1.p, r, a0: theta + Math.PI / 2, a1: theta + (3 * Math.PI) / 2 },
+          );
+        } else if (c1) shapes.push({ kind: 'line', a: c1.p, b: cursor, construction: true });
+        break;
+      case 'polygon':
+        if (c1) {
+          const { polygonSides: n, circumscribed } = this.options;
+          const pick = dist(c1.p, cursor);
+          if (pick > 1e-9 && Number.isInteger(n) && n >= 3 && n <= 100) {
+            const radius = circumscribed ? pick / Math.cos(Math.PI / n) : pick;
+            const turn = Math.atan2(cursor[1] - c1.p[1], cursor[0] - c1.p[0]) - (circumscribed ? Math.PI / n : 0);
+            const corners = Array.from({ length: n }, (_, i): P2 => [c1.p[0] + radius * Math.cos(turn + (2 * Math.PI * i) / n), c1.p[1] + radius * Math.sin(turn + (2 * Math.PI * i) / n)]);
+            shapes.push(...corners.map((a, i) => ({ kind: 'line' as const, a, b: corners[(i + 1) % n]! })), { kind: 'circle', c: c1.p, r: radius });
+          }
+        }
+        break;
       case 'line':
       case 'centerline': {
         const from = this.lineStart();

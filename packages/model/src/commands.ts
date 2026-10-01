@@ -11,6 +11,22 @@ import { isDimension } from './schema';
 import { ExprError } from './expr';
 import { idsInUse, removalSet, sketchError } from './sketch-rules';
 
+/** The point references of a curve that an edit may change. */
+export type EntityRefs = Partial<Record<'p1' | 'p2' | 'start' | 'end' | 'center', Id>>;
+/** The references of a relation or dimension that an edit may change (`undefined` takes one away: the optional second reference). */
+export type ConstraintRefs = Partial<Record<'a' | 'b' | 'point' | 'line' | 'curve' | 'axis' | 'circle', Id | undefined>>;
+
+/** What `editSketch` does to a sketch, in this order: `entities`, `constraints`, `remove`, `add`. */
+export interface SketchEdit {
+  /** Entities whose points change (a line that now ends elsewhere). */
+  entities?: { id: Id; set: EntityRefs }[];
+  /** Relations and dimensions that now refer to something else, or whose value changes. */
+  constraints?: { id: Id; set: ConstraintRefs & { value?: Expr } }[];
+  /** Deleted together with whatever depends on them. */
+  remove?: Id[];
+  add?: { entities: SketchEntity[]; constraints: SketchConstraint[] };
+}
+
 export interface PointPosition {
   id: Id;
   x: number;
@@ -61,6 +77,12 @@ export type Command =
   | { type: 'setRollback'; index: number | null }
   /** Sketch editing (C1): add geometry together with its relations and dimensions. */
   | { type: 'addSketchItems'; featureId: Id; entities: SketchEntity[]; constraints: SketchConstraint[] }
+  /**
+   * One edit of a sketch that changes things already there (a fillet shortens two lines, a trim moves the end of one): the
+   * references of existing entities and relations are changed, then `remove` is deleted with what depends on it
+   * (see removalSet), then `add` is added. One command, so one undo step.
+   */
+  | ({ type: 'editSketch'; featureId: Id } & SketchEdit)
   /** Deletes entities, relations or dimensions, and whatever depends on them (see removalSet). */
   | { type: 'removeSketchItems'; featureId: Id; ids: Id[] }
   /** Stores placement intent: where points are and how big circles are (e.g. after a drag). */
@@ -464,6 +486,44 @@ export function mutate(draft: Draft<PartDoc>, cmd: Command): void {
       f.entities.push(...(cmd.entities as Draft<SketchEntity>[]));
       f.constraints.push(...(cmd.constraints as Draft<SketchConstraint>[]));
       checkExprs(draft as PartDoc, f as Feature, new Set(ids));
+      countersFor(ids, draft.idCounters);
+      return;
+    }
+    case 'editSketch': {
+      const f = sketchOf(draft, cmd.featureId);
+      for (const patch of cmd.entities ?? []) {
+        const e = f.entities.find((x) => x.id === patch.id);
+        if (!e) throw new CommandError(t('cmd.sketchItemNotFound', { id: patch.id }));
+        for (const [field, value] of Object.entries(patch.set)) {
+          if (!(field in e)) throw new CommandError(t('cmd.sketchEditField', { id: patch.id, field }));
+          (e as unknown as Record<string, Id>)[field] = value;
+        }
+      }
+      for (const patch of cmd.constraints ?? []) {
+        const c = f.constraints.find((x) => x.id === patch.id);
+        if (!c) throw new CommandError(t('cmd.sketchItemNotFound', { id: patch.id }));
+        for (const [field, value] of Object.entries(patch.set)) {
+          if (value === undefined) delete (c as unknown as Record<string, unknown>)[field];
+          else (c as unknown as Record<string, unknown>)[field] = value;
+        }
+      }
+      // Order: patch, add, then remove — so what the new entities use is not taken for an orphan by the removal.
+      const added = cmd.add ?? { entities: [], constraints: [] };
+      const ids = [...added.entities.map((e) => e.id), ...added.constraints.map((c) => c.id)];
+      if (ids.length > 0) assertFresh(draft as PartDoc, ids);
+      f.entities.push(...(added.entities as Draft<SketchEntity>[]));
+      f.constraints.push(...(added.constraints as Draft<SketchConstraint>[]));
+      if (cmd.remove && cmd.remove.length > 0) {
+        const present = new Set<Id>([...f.entities.map((e) => e.id), ...f.constraints.map((c) => c.id)]);
+        for (const id of cmd.remove) if (!present.has(id)) throw new CommandError(t('cmd.sketchItemNotFound', { id }));
+        const removed = removalSet(f as SketchFeature, cmd.remove);
+        countersFor(removed, draft.idCounters);
+        f.entities = f.entities.filter((e) => !removed.has(e.id));
+        f.constraints = f.constraints.filter((c) => !removed.has(c.id));
+      }
+      const err = sketchError(f as SketchFeature);
+      if (err) throw new CommandError(err);
+      checkExprs(draft as PartDoc, f as Feature);
       countersFor(ids, draft.idCounters);
       return;
     }

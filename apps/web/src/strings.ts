@@ -95,6 +95,14 @@ export const TOOL_LABEL: Record<ToolId, string> = labelsOf({
   threePointArc: 'tool.threePointArc',
   point: 'tool.point',
   dimension: 'tool.dimension',
+  slot: 'tool.slot',
+  polygon: 'tool.polygon',
+  sketchFillet: 'tool.sketchFillet',
+  sketchChamfer: 'tool.sketchChamfer',
+  trim: 'tool.trim',
+  extend: 'tool.extend',
+  offset: 'tool.offset',
+  mirror: 'tool.mirror',
 });
 
 /** How a reference plane is defined (C3.2). */

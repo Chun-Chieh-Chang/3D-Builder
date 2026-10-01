@@ -1,5 +1,5 @@
 import { beforeAll, describe, expect, it } from 'vitest';
-import { applyCommand, createEmptyPart, DocHistory, type Command, type PartDoc, type SketchFeature } from '@3db/model';
+import { applyCommand, createEmptyPart, DocHistory, resolveSketch, type Command, type PartDoc, type SketchFeature } from '@3db/model';
 import { findProfiles, PlaneGcsSolver, type SolvedGeometry } from '@3db/sketch';
 import { SketchController, type PointerInput, type SketchHost } from '../src/sketcher/controller';
 import type { SketchSolvePayload } from '../src/worker/protocol';
@@ -32,8 +32,8 @@ class Host implements SketchHost {
     return this.history.doc.features.find((f) => f.id === this.featureId) as SketchFeature;
   }
 
-  private payload(s: SketchFeature, options = {}): SketchSolvePayload {
-    const r = solver.solve(s, options);
+  private payload(s: SketchFeature, options = {}, doc: PartDoc = this.history.doc): SketchSolvePayload {
+    const r = solver.solve(resolveSketch(s, doc), options);
     return { seq: 0, ...r, problems: r.status === 'failed' ? [] : findProfiles(s, r).problems, ms: 0 };
   }
 
@@ -56,7 +56,7 @@ class Host implements SketchHost {
   dragPreview: SketchHost['dragPreview'] = (o) => {
     if (o) this.last = this.payload(this.sketch(), { drag: o.drag, initial: o.initial });
   };
-  trial = async (s: SketchFeature) => this.payload(s);
+  trial = async (s: SketchFeature, doc?: PartDoc) => this.payload(s, {}, doc);
   notify = (text: string) => void this.notices.push(text);
   editDimension = (id: string) => void (this.edited = id);
 }
@@ -218,5 +218,175 @@ describe('sketch tools', () => {
     click(c, 5, 2.5);
     expect(await c.addRelation({ type: 'horizontal', a: 'l1' })).toBe(true);
     expect(point(h, 'p2')[1]).toBeCloseTo(0, 6);
+  });
+});
+
+describe('sketch operations (C1.8, C1.9, C1.15, C1.16, C1.17, C1.19)', () => {
+  const kinds = (h: Host, type: string) => h.sketch().entities.filter((e) => e.type === type);
+  const geo = (h: Host, id: string) => h.last!.geometry.get(id)!;
+  const rectangle = () => {
+    const h = new Host();
+    const c = new SketchController(h);
+    c.setTool('rect');
+    click(c, 0, 0);
+    click(c, 20, 10);
+    return { h, c };
+  };
+
+  it('draws a slot from two centers and a width, in one undo step', async () => {
+    const h = new Host();
+    const c = new SketchController(h);
+    c.setTool('slot');
+    click(c, 0, 0);
+    click(c, 30, 0);
+    expect(c.getView().hint).toContain('寬度');
+    click(c, 15, 4);
+    await c.settled();
+    expect(kinds(h, 'line')).toHaveLength(2);
+    expect(kinds(h, 'arc')).toHaveLength(2);
+    const arc = geo(h, kinds(h, 'arc')[0]!.id);
+    expect(arc.type === 'arc' && arc.r).toBeCloseTo(4, 6);
+    expect(h.last!.problems).toEqual([]);
+    h.history.undo();
+    expect(h.sketch().entities).toEqual([]);
+  });
+
+  it('draws a regular polygon with the number of sides set in the options', async () => {
+    const h = new Host();
+    const c = new SketchController(h);
+    c.setTool('polygon');
+    c.setOption('polygonSides', 5);
+    click(c, 0, 0);
+    click(c, 10, 0);
+    await c.settled();
+    expect(kinds(h, 'line')).toHaveLength(5);
+    expect(h.last!.dof).toBe(4);
+    expect(h.last!.problems).toEqual([]);
+  });
+
+  it('rounds a corner clicked in the sketch, and chamfers one by picking its two lines', async () => {
+    const { h, c } = rectangle();
+    c.setTool('sketchFillet');
+    c.setOption('filletRadius', 3);
+    click(c, 20, 0); // the corner point
+    await c.settled();
+    const arc = geo(h, kinds(h, 'arc')[0]!.id);
+    expect(arc.type === 'arc' && arc.r).toBeCloseTo(3, 6);
+    expect(h.last!.problems).toEqual([]);
+
+    c.setTool('sketchChamfer');
+    c.setOption('chamferDistance1', 2);
+    c.setOption('chamferDistance2', 2);
+    click(c, 10, 10); // top line
+    expect(c.getView().hint).toContain('第二條');
+    click(c, 0, 5); // left line
+    await c.settled();
+    expect(kinds(h, 'line')).toHaveLength(5);
+    expect(h.last!.problems).toEqual([]);
+  });
+
+  it('trims and extends lines, each in one undo step', async () => {
+    const h = new Host();
+    const c = new SketchController(h);
+    c.setTool('line');
+    click(c, -10, 0);
+    click(c, 10, 0);
+    c.escape();
+    click(c, 0, -5);
+    click(c, 0, 5);
+    c.escape();
+    const entities = h.sketch().entities.length;
+    c.setTool('trim');
+    click(c, 5, 0);
+    await c.settled();
+    const first = geo(h, 'l1');
+    expect(first.type === 'line' && first.b[0]).toBeCloseTo(0, 6);
+    h.history.undo();
+    h.resolve();
+    expect(h.sketch().entities).toHaveLength(entities);
+
+    // a stub short of the other line is lengthened up to it
+    c.setTool('extend');
+    click(c, 9, 0);
+    await c.settled();
+    expect(h.notices.join()).toContain('沒有可以延伸'); // nothing beyond the right end
+    click(c, -9, 0);
+    await c.settled();
+    expect(h.notices.join()).toContain('沒有可以延伸');
+  });
+
+  it('lengthens a stub up to the line in its way', async () => {
+    const h = new Host();
+    const c = new SketchController(h);
+    c.setTool('line');
+    click(c, 0, 0);
+    click(c, 5, 0);
+    c.escape();
+    click(c, 10, -5);
+    click(c, 10, 5);
+    c.escape();
+    c.setTool('extend');
+    click(c, 4.5, 0);
+    await c.settled();
+    const stub = geo(h, 'l1');
+    expect(stub.type === 'line' && stub.b[0]).toBeCloseTo(10, 6);
+    expect(h.last!.conflicting).toEqual([]);
+  });
+
+  it('offsets the selected outline to the side that was clicked, and mirrors a selection about a line', async () => {
+    const { h, c } = rectangle();
+    c.setTool('select');
+    c.select(['l1', 'l2', 'l3', 'l4']);
+    c.setTool('offset');
+    c.setOption('offsetDistance', 2);
+    click(c, 10, 5);
+    await c.settled();
+    expect(c.getView().tool).toBe('select');
+    expect(kinds(h, 'line')).toHaveLength(8);
+    const xs = kinds(h, 'line').slice(4).flatMap((e) => {
+      const g = geo(h, e.id);
+      return g.type === 'line' ? [g.a[0], g.b[0]] : [];
+    });
+    expect([Math.min(...xs), Math.max(...xs)].map((v) => Math.round(v * 1e6) / 1e6)).toEqual([2, 18]);
+
+    const m = new Host();
+    const mc = new SketchController(m);
+    mc.setTool('centerline');
+    click(mc, -5, -10);
+    click(mc, -5, 10);
+    mc.escape();
+    mc.setTool('line');
+    click(mc, 3, 1);
+    click(mc, 8, 4);
+    mc.escape();
+    mc.setTool('select');
+    mc.select(['l2']);
+    mc.setTool('mirror');
+    click(mc, -5, 8); // the center line
+    await mc.settled();
+    expect(kinds(m, 'line')).toHaveLength(3);
+    expect(m.sketch().constraints.filter((k) => k.type === 'symmetric')).toHaveLength(2);
+    expect(m.last!.conflicting).toEqual([]);
+  });
+
+  it('asks for a selection first, and refuses an operation the solver finds over-defining', async () => {
+    const { h, c } = rectangle();
+    c.setTool('select');
+    c.setTool('mirror');
+    expect(c.getView().tool).toBe('select');
+    expect(h.notices.join()).toContain('先選取');
+    c.setTool('offset');
+    expect(c.getView().tool).toBe('select');
+
+    const refused = new Host();
+    const rc = new SketchController(refused);
+    refused.trial = async (s) => ({ ...(await new Host(applyCommand(createEmptyPart(), EMPTY_SKETCH)).trial(s)), status: 'over' as const });
+    rc.setTool('slot');
+    click(rc, 0, 0);
+    click(rc, 30, 0);
+    click(rc, 15, 4);
+    await rc.settled();
+    expect(refused.sketch().entities).toEqual([]);
+    expect(refused.notices.join()).toContain('過多定義');
   });
 });

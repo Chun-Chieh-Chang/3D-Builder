@@ -69,13 +69,16 @@ function toPrimitives(sketch: SketchFeature, start: Start, pinned: ReadonlySet<I
   };
 
   const prims: Prim[] = [{ id: SKETCH_ORIGIN, type: 'point', x: 0, y: 0, fixed: true }];
+  // Points first: PlaneGCS needs what a curve refers to defined before it, and an edit can make a line point at a later point.
+  for (const e of sketch.entities) {
+    if (e.type !== 'point') continue;
+    const [x, y] = pointXY(e.id);
+    prims.push({ id: e.id, type: 'point', x, y, fixed: pinned.has(e.id) });
+  }
   for (const e of sketch.entities) {
     switch (e.type) {
-      case 'point': {
-        const [x, y] = pointXY(e.id);
-        prims.push({ id: e.id, type: 'point', x, y, fixed: pinned.has(e.id) });
+      case 'point':
         break;
-      }
       case 'line':
         prims.push({ id: e.id, type: 'line', p1_id: e.p1, p2_id: e.p2 });
         break;

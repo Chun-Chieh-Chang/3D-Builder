@@ -14,6 +14,7 @@ export const model = {
   'cmd.onlyBossMerges': '只有填料（伸長、旋轉）與輸入本體可以選擇是否合併結果',
   'cmd.onlyCombineHasBodies': '只有組合特徵有這些本體',
   'cmd.bodyIdEmpty': '本體的 ID 不可空白',
+  'cmd.sketchEditField': '圖元 {id} 沒有「{field}」可以改',
   'cmd.upToFaceNeedsFace': '「成形至某一面」需要選擇一個面',
   'cmd.revolveAngleRange': '旋轉角度必須在 0° 到 360° 之間',
   'cmd.chamferAngleRange': '導角角度必須在 0° 到 90° 之間',

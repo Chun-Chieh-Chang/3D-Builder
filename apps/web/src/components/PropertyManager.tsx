@@ -33,6 +33,7 @@ import { nearestElement } from '../state/candidates';
 import { store, useSketcherView, useStore } from '../state/store';
 import { DATUM_ITEMS, DIMENSION_LABEL, FEATURE_LABEL, featureLabel, PLANE_MODE_LABEL, RELATION_LABEL, SKETCH_STATUS_LABEL, TOOL_LABEL } from '../strings';
 import { Icon } from './Icon';
+import type { ControllerView, SketchController } from '../sketcher/controller';
 
 /**
  * What an expression comes to in this document, for showing next to the box (D2.4): the value when it is
@@ -102,6 +103,55 @@ function relationText(f: SketchFeature, c: SketchConstraint): string {
   return RELATION_LABEL[c.type];
 }
 
+/** A number the sketch tool is about to use; an invalid entry is simply not taken. */
+function OptionNumber({ label, value, integer = false, onChange }: { label: string; value: number; integer?: boolean; onChange: (v: number) => void }) {
+  return (
+    <label className="pm-row">
+      <span>{label}</span>
+      <input
+        type="number"
+        min={integer ? 3 : 0}
+        step={integer ? 1 : 'any'}
+        value={value}
+        onChange={(e) => {
+          const v = Number(e.target.value);
+          if (Number.isFinite(v) && v > 0 && (!integer || Number.isInteger(v))) onChange(v);
+        }}
+      />
+    </label>
+  );
+}
+
+/** What a sketch tool needs set before it is used: the number of sides, a radius, a distance. */
+function ToolOptionsBox({ view, sketcher }: { view: ControllerView; sketcher: SketchController }) {
+  const o = view.options;
+  switch (view.tool) {
+    case 'polygon':
+      return (
+        <>
+          <OptionNumber label={t('sketch.option.sides')} value={o.polygonSides} integer onChange={(v) => sketcher.setOption('polygonSides', v)} />
+          <label className="pm-row checkbox">
+            <input type="checkbox" checked={o.circumscribed} onChange={(e) => sketcher.setOption('circumscribed', e.target.checked)} />
+            <span>{t('sketch.option.circumscribed')}</span>
+          </label>
+        </>
+      );
+    case 'sketchFillet':
+      return <OptionNumber label={t('sketch.option.radius')} value={o.filletRadius} onChange={(v) => sketcher.setOption('filletRadius', v)} />;
+    case 'sketchChamfer':
+      return (
+        <>
+          <OptionNumber label={t('sketch.option.distance1')} value={o.chamferDistance1} onChange={(v) => sketcher.setOption('chamferDistance1', v)} />
+          <OptionNumber label={t('sketch.option.distance2')} value={o.chamferDistance2} onChange={(v) => sketcher.setOption('chamferDistance2', v)} />
+        </>
+      );
+    case 'offset':
+      return <OptionNumber label={t('sketch.option.offset')} value={o.offsetDistance} onChange={(v) => sketcher.setOption('offsetDistance', v)} />;
+    default:
+      return null;
+  }
+}
+
 /** Sketch PropertyManager (C1.26, C1.27, C1.31): status, tool, selection, relations and dimensions. */
 function SketchPanel({ f }: { f: SketchFeature }) {
   const solve = useStore((s) => s.sketchSolve);
@@ -135,6 +185,7 @@ function SketchPanel({ f }: { f: SketchFeature }) {
         <section className="pm-group">
           <h4>{TOOL_LABEL[view.tool]}</h4>
           <p className="hint">{view.hint}</p>
+          {sketcher && <ToolOptionsBox view={view} sketcher={sketcher} />}
           <p className="hint">Esc 結束工具。</p>
         </section>
       )}

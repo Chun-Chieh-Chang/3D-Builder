@@ -38,7 +38,7 @@ const sketchPlane = (s: UiState): DatumPlaneName | Ref | null => {
   return s.selectedFace?.fingerprint?.type === 'plane' ? s.selectedFace : null;
 };
 
-const SKETCH_TOOLS: ToolId[] = ['dimension', 'line', 'centerline', 'rect', 'centerRect', 'circle', 'perimeterCircle', 'arc', 'tangentArc', 'threePointArc', 'point'];
+const SKETCH_TOOLS: ToolId[] = ['dimension', 'line', 'centerline', 'rect', 'centerRect', 'circle', 'perimeterCircle', 'arc', 'tangentArc', 'threePointArc', 'slot', 'polygon', 'point', 'sketchFillet', 'sketchChamfer', 'trim', 'extend', 'offset', 'mirror'];
 
 export const ACTIONS: UiAction[] = [
   { id: 'new-part', label: '新零件', shortcut: 'Ctrl+N', group: 'file', enabled: idle, run: () => store.newPart() },
