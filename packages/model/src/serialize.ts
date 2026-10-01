@@ -94,6 +94,8 @@ const migrations: Record<number, (doc: Json) => Json> = {
   // v14: more end conditions, a second direction, draft and thin features (C4.1–C4.3). Nothing to convert; the version keeps older programs from
   // building such a feature as a plain extrusion.
   13: (doc) => doc,
+  // v15: the shell feature (C5.4). Nothing to convert; the version keeps older programs from opening a part with a feature they would skip.
+  14: (doc) => doc,
 };
 
 export class FormatError extends Error {

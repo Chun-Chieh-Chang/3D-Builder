@@ -15,7 +15,7 @@ type Vec3 = [number, number, number];
 /** Structural copy of @3db/kernel FaceOrigin (naming does not depend on the kernel). */
 export type Origin =
   | { rel: 'same' | 'modified'; kind: 'face'; index: number }
-  | { rel: 'generated'; kind: 'edge' | 'vertex'; index: number }
+  | { rel: 'generated'; kind: 'edge' | 'vertex' | 'face'; index: number }
   | { rel: 'generated'; kind: 'profileEdge'; source: string }
   | { rel: 'cap'; which: 'start' | 'end' }
   | { rel: 'imported'; index: number };
@@ -79,6 +79,7 @@ function faceBaseName(origins: Origin[], ctx: NamingContext): string {
   const role = ctx.role ?? 'op';
   if (o.kind === 'edge') return `${f}:${role}:${ctx.input?.edges[o.index] ?? `?e${o.index}`}`;
   if (o.kind === 'vertex') return `${f}:${role}-v:${ctx.input?.vertices[o.index] ?? `?v${o.index}`}`;
+  if (o.rel === 'generated' && o.kind === 'face') return `${f}:${role}:${ctx.input?.faces[o.index] ?? `?f${o.index}`}`;
   return ctx.input?.faces[o.index] ?? `${f}:face`;
 }
 

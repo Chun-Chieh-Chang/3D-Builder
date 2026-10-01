@@ -64,6 +64,8 @@ ull). */
   /** Edges of an edge-based feature (fillet, chamfer). */
   | { type: 'setEdges'; featureId: Id; edges: Ref[] }
   | { type: 'setChamfer'; featureId: Id; value: Pick<ChamferFeature, 'mode' | 'distance' | 'second' | 'flip'> }
+  /** What a shell takes away and how thick the wall is (C5.4). */
+  | { type: 'setShell'; featureId: Id; faces: Ref[]; thickness: Expr; outward?: boolean }
   /** Faces of a Delete Face feature (C10.2), and whether the rest of a hole goes with them. */
   | { type: 'setFaces'; featureId: Id; faces: Ref[]; hole?: boolean }
   /** How an imported body's surfaces are sewn (F2.2); without `sewTolerance` the default is used again. */
@@ -437,6 +439,17 @@ export function mutate(draft: Draft<PartDoc>, cmd: Command): void {
       f.faces = cmd.faces;
       if (cmd.hole) f.hole = true;
       else delete f.hole;
+      return;
+    }
+    case 'setShell': {
+      const f = feature(draft, cmd.featureId);
+      if (f.type !== 'shell') throw new CommandError(t('cmd.onlyShellHasParams'));
+      if (cmd.faces.some((r) => r.kind !== 'face')) throw new CommandError(t('cmd.shellOnlyFaces'));
+      f.faces = cmd.faces;
+      f.thickness = cmd.thickness;
+      if (cmd.outward) f.outward = true;
+      else delete f.outward;
+      checkExprs(draft as PartDoc, f as Feature);
       return;
     }
     case 'setImportOptions': {

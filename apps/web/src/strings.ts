@@ -26,6 +26,7 @@ export const FEATURE_LABEL: Record<FeatureType, string> = labelsOf({
   refPlane: 'feature.refPlane',
   importedBody: 'feature.importedBody',
   deleteFace: 'feature.deleteFace',
+  shell: 'feature.shell',
   moveFace: 'feature.moveFace',
   combine: 'feature.combine',
 });

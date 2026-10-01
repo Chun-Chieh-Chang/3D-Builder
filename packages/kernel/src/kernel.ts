@@ -805,6 +805,69 @@ export class Kernel {
   }
 
   /**
+   * Hollows a body out (shell, C5.4): the faces asked for are taken away to open it, and the wall left is `thickness` thick, inside the old
+   * surface or (`outward`) outside it. The faces that stay keep their origin; the inside of the wall is generated from the face it lies against;
+   * a face that was opened is the rim of the wall. A shell OCCT cannot build (a wall thicker than the body allows) is an error.
+   */
+  shell(target: ShapeId, faceIndices: number[], thickness: number, outward: boolean): OpResult {
+    if (faceIndices.length === 0) throw new KernelError(t('feature.shellNoFaces'));
+    if (!(thickness > 0)) throw new KernelError(t('feature.shellThickness'));
+    const oc = this.oc;
+    const arena = new Arena();
+    const shape = this.get(target);
+    const faces = ShapeIndex.of(oc, shape, T.FACE, arena);
+    try {
+      const closing = arena.own(new oc.NCollection_List_TopoDS_Shape());
+      for (const i of new Set(faceIndices)) {
+        const f = faces.keys[i];
+        if (!f) throw new KernelError(t('edit.faceOutOfRange', { index: i }));
+        closing.Append(f);
+      }
+      const mk = arena.own(new oc.BRepOffsetAPI_MakeThickSolid());
+      try {
+        mk.MakeThickSolidByJoin(shape, closing, outward ? thickness : -thickness, 1e-4, oc.BRepOffset_Mode.BRepOffset_Skin, false, false, oc.GeomAbs_JoinType.GeomAbs_Intersection, false, arena.own(new oc.Message_ProgressRange()));
+        mk.Build(arena.own(new oc.Message_ProgressRange()));
+      } catch (e) {
+        throw new KernelError(t('feature.shellFailed', { reason: this.errorText(e) }));
+      }
+      if (!mk.IsDone()) throw new KernelError(t('feature.shellFailed', { reason: t('feature.shellTooThick') }));
+      const out = mk.Shape();
+      if (!this.valid(out)) {
+        out.delete();
+        throw new KernelError(t('feature.shellFailed', { reason: t('feature.shellTooThick') }));
+      }
+      const outFaces = ShapeIndex.of(oc, out, T.FACE, arena);
+      try {
+        const origins: FaceOrigin[][] = outFaces.keys.map(() => []);
+        faces.keys.forEach((f, index) => {
+          const modified = this.list(mk.Modified(f));
+          if (modified.length > 0) {
+            for (const m of modified) {
+              const j = outFaces.indexOf(m);
+              if (j >= 0) origins[j]!.push({ rel: 'modified', kind: 'face', index });
+              m.delete();
+            }
+          } else if (!mk.IsDeleted(f)) {
+            const j = outFaces.indexOf(f);
+            if (j >= 0) origins[j]!.push({ rel: 'same', kind: 'face', index });
+          }
+          for (const g of this.list(mk.Generated(f))) {
+            const j = outFaces.indexOf(g);
+            if (j >= 0) origins[j]!.push({ rel: 'generated', kind: 'face', index });
+            g.delete();
+          }
+        });
+        return { shape: this.put(out), faceOrigins: origins };
+      } finally {
+        outFaces.dispose();
+      }
+    } finally {
+      faces.dispose();
+      arena.dispose();
+    }
+  }
+
+  /**
    * Moves a planar face `distance` along its outward normal (C10.1, negative = into the material); its
    * neighbours stretch or shrink to follow. OCCT has no face-offset operation in this build, so the
    * change is made as a slab: a plate on the face's plane, `distance` thick, cut down by the surface of

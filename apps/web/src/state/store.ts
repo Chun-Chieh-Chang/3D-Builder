@@ -601,6 +601,21 @@ class AppStore {
     this.openNew({ id: this.allocator().take('delface'), type: 'deleteFace', name: nextName(this.history.doc, name), suppressed: false, faces: face?.kind === 'face' ? [face] : [] }, name);
   }
 
+  /** 「薄殼」 (C5.4): starts with the face selected in the graphics area, if there is one, as the face to take away. */
+  newShell(): void {
+    const face = this.state.selectedFace;
+    const name = t('feature.shell');
+    this.openNew({ id: this.allocator().take('shell'), type: 'shell', name: nextName(this.history.doc, name), suppressed: false, faces: face?.kind === 'face' ? [face] : [], thickness: '2' }, name);
+  }
+
+  /** Face list of a shell: clicking a face toggles it, like the faces of a Delete Face. */
+  toggleShellFace(ref: Ref): void {
+    const f = this.editedFeature();
+    if (f?.type !== 'shell' || ref.kind !== 'face') return;
+    const faces = f.faces.some((x) => x.name === ref.name) ? f.faces.filter((x) => x.name !== ref.name) : [...f.faces, ref];
+    this.execute({ type: 'setShell', featureId: f.id, faces, thickness: f.thickness, ...(f.outward ? { outward: true } : {}) });
+  }
+
   /** 「移動面」 (C10.1): starts with the planar face selected in the graphics area, if there is one. */
   newMoveFace(): void {
     const face = this.state.selectedFace;
@@ -717,6 +732,7 @@ class AppStore {
     else if (f?.type === 'extrude') this.setUpToFace(ref);
     else if (f?.type === 'refPlane') this.setPlaneRef(ref);
     else if (f?.type === 'deleteFace') this.toggleFace(ref);
+    else if (f?.type === 'shell') this.toggleShellFace(ref);
     else if (f?.type === 'moveFace') this.setMoveFace(ref);
     else if (f?.type === 'combine' && ref.kind === 'face') this.pickBody(ref.name);
   }
@@ -782,7 +798,7 @@ class AppStore {
     const i = this.history.doc.features.findIndex((f) => f.id === e.featureId);
     const type = this.history.doc.features[i]?.type;
     if (type === 'refPlane') return i + 1;
-    return type === 'fillet' || type === 'chamfer' || type === 'deleteFace' || type === 'moveFace' || type === 'combine' || type === 'sketch' ? i : undefined;
+    return type === 'fillet' || type === 'chamfer' || type === 'deleteFace' || type === 'moveFace' || type === 'shell' || type === 'combine' || type === 'sketch' ? i : undefined;
   }
 
   // ------------------------------------------------------------ sketch sessions (C1)

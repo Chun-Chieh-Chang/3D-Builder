@@ -23,6 +23,7 @@ import {
   type Ref,
   type RefPlaneFeature,
   type RevolveFeature,
+  type ShellFeature,
   type SketchFeature,
   type Thin,
   type Vec3,
@@ -302,6 +303,7 @@ export class Regenerator {
           case 'revolve':
           case 'fillet':
           case 'chamfer':
+          case 'shell':
           case 'deleteFace':
           case 'moveFace':
           case 'combine':
@@ -315,7 +317,9 @@ export class Regenerator {
                     ? this.fillet(feature, set)
                     : feature.type === 'chamfer'
                       ? this.chamfer(feature, set)
-                      : feature.type === 'deleteFace'
+                      : feature.type === 'shell'
+                        ? this.shell(feature, set)
+                        : feature.type === 'deleteFace'
                         ? this.deleteFace(feature, set)
                         : feature.type === 'moveFace'
                           ? this.moveFace(feature, set)
@@ -911,6 +915,14 @@ export class Regenerator {
   private edited(f: Feature, r: OpResult, body: BodyState): BodyState {
     const topology = this.kernel.topology(r.shape);
     return { id: body.id, shape: r.shape, topology, names: nameElements(r.faceOrigins, topology, { featureId: f.id, input: body.names }), by: f.id };
+  }
+
+  private shell(f: ShellFeature, set: Bodies): BodyState[] {
+    return this.perBody(set, f.faces, 'face', t('feature.noBodyForShell'), (n) => t('edit.facesLost', { n }), (body, mine) => {
+      const r = this.kernel.shell(body.shape, this.faceIndices(mine, body), evalLength(f.thickness), !!f.outward);
+      const topology = this.kernel.topology(r.shape);
+      return { id: body.id, shape: r.shape, topology, names: nameElements(r.faceOrigins, topology, { featureId: f.id, role: 'shell', input: body.names }), by: f.id };
+    });
   }
 
   private deleteFace(f: DeleteFaceFeature, set: Bodies): BodyState[] {

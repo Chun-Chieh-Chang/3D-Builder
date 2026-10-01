@@ -183,6 +183,21 @@ describe('a part file written by version 13 (entities that follow the model, C1.
   });
 });
 
+describe('a part file written by version 14 (draft and a second direction, C4.1) opens in version 15 (shell, C5.4)', () => {
+  it('keeps its draft and second direction and rebuilds the same body: 10 × 10 with 2° draft over 3 and 2 more the other way', async () => {
+    const file = await readPartFile(oldFile('v14-extrude.3dbx'));
+    expect(file.warnings).toEqual([]);
+    expect(JSON.parse(new TextDecoder().decode((await readZip(oldFile('v14-extrude.3dbx')))[0]!.data)).schemaVersion).toBe(14);
+    expect(file.doc.schemaVersion).toBe(SCHEMA_VERSION);
+    expect(file.doc.features.find((f) => f.id === 'extrude2')).toMatchObject({ dir2: { type: 'blind', depth: '2' }, draft1: { angle: '2deg' } });
+    const r = new Regenerator(kernel, await PlaneGcsSolver.create(), file.blobs).rebuild(file.doc);
+    expect(statuses(r).filter((s) => !s.endsWith('=ok'))).toEqual([]);
+    const t = Math.tan((2 * Math.PI) / 180);
+    expect(r.bodies.map((b) => b.id)).toEqual(['extrude1', 'extrude2']);
+    expect(kernel.massProps(r.bodies[1]!.shape).volume).toBeCloseTo(300 + 180 * t + 36 * t * t + 200, 6);
+  });
+});
+
 describe('the .3dbx file (B9.1, F7.1)', () => {
   const docs = async (): Promise<[string, PartDoc][]> => [
     ['the demo part', createDemoPart()],

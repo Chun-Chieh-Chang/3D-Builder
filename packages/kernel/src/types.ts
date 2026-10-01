@@ -57,7 +57,7 @@ export interface Topology {
 /** Where an output face came from — the raw material for persistent naming (A1.8). */
 export type FaceOrigin =
   | { rel: 'same' | 'modified'; kind: 'face'; index: number }
-  | { rel: 'generated'; kind: 'edge' | 'vertex'; index: number }
+  | { rel: 'generated'; kind: 'edge' | 'vertex' | 'face'; index: number }
   | { rel: 'generated'; kind: 'profileEdge'; source: string }
   | { rel: 'cap'; which: 'start' | 'end' }
   /** Face `index` of an imported shape, in the order the file defines them. */

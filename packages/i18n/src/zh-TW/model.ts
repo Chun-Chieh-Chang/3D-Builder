@@ -15,6 +15,8 @@ export const model = {
   'cmd.onlyCombineHasBodies': '只有組合特徵有這些本體',
   'cmd.bodyIdEmpty': '本體的 ID 不可空白',
   'cmd.sketchEditField': '圖元 {id} 沒有「{field}」可以改',
+  'cmd.onlyShellHasParams': '只有薄殼特徵有這些參數',
+  'cmd.shellOnlyFaces': '薄殼要移除的只能選面',
   'cmd.dir1Stays': '方向 1 不能移除',
   'cmd.onlyExtrudeRevolveThin': '只有伸長與旋轉特徵可以做成薄件',
   'cmd.upToVertexNeedsVertex': '「成形至頂點」需要選擇一個頂點',

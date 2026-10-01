@@ -25,6 +25,7 @@ import {
   type Ref,
   type RefPlaneFeature,
   type RevolveFeature,
+  type ShellFeature,
   type Thin,
   type SketchConstraint,
   type SketchFeature,
@@ -892,6 +893,39 @@ function DeleteFacePanel({ f }: { f: DeleteFaceFeature }) {
   );
 }
 
+/** Shell (C5.4): the faces to take away to open the body, the wall thickness, and which way the wall grows. */
+function ShellPanel({ f }: { f: ShellFeature }) {
+  const result = useStore((s) => s.result);
+  return (
+    <section className="pm-group">
+      <h4>{t('pm.shell.heading')}</h4>
+      <ul className="selection-box">
+        {f.faces.length === 0 && <li className="muted">{t('pm.shell.empty')}</li>}
+        {f.faces.map((r, i) => {
+          const found = result?.faceNames.includes(r.name);
+          return (
+            <li key={r.name} className={found ? '' : 'missing'} title={r.name}>
+              {t('pm.face', { n: i + 1 })}
+              {!found && t('pm.lost')}
+              <code>{r.name}</code>
+              {!found && <UseNearest featureId={f.id} refr={r} />}
+            </li>
+          );
+        })}
+      </ul>
+      <label className="pm-row">
+        <span>{t('pm.shell.thickness')}</span>
+        <ValueInput value={f.thickness} toCommand={(thickness) => ({ type: 'setShell', featureId: f.id, faces: f.faces, thickness, ...(f.outward ? { outward: true } : {}) })} />
+      </label>
+      <label className="pm-row checkbox">
+        <input type="checkbox" checked={!!f.outward} onChange={(e) => store.execute({ type: 'setShell', featureId: f.id, faces: f.faces, thickness: f.thickness, ...(e.target.checked ? { outward: true } : {}) })} />
+        <span>{t('pm.shell.outward')}</span>
+      </label>
+      <p className="hint">{t('pm.shell.hint')}</p>
+    </section>
+  );
+}
+
 /** Move Face (C10.1): the plane to push and how far along its outward normal. */
 function MoveFacePanel({ f }: { f: MoveFaceFeature }) {
   const result = useStore((s) => s.result);
@@ -1062,6 +1096,7 @@ export function PropertyManager() {
       {f.type === 'refPlane' && <RefPlanePanel f={f} />}
       {f.type === 'importedBody' && <ImportedBodyPanel f={f} />}
       {f.type === 'deleteFace' && <DeleteFacePanel f={f} />}
+      {f.type === 'shell' && <ShellPanel f={f} />}
       {f.type === 'moveFace' && <MoveFacePanel f={f} />}
       {f.type === 'combine' && <CombinePanel f={f} />}
     </div>

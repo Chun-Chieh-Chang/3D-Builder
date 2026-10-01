@@ -6,7 +6,7 @@ import type { Id } from './ids';
  * DOF status, mass properties and error lists are derived data and never stored.
  */
 
-export const SCHEMA_VERSION = 14;
+export const SCHEMA_VERSION = 15;
 
 /** Value expression (B5.2, B5.3): "20", "25.4mm", "30deg", "wall_t*2", "D1@草圖1/2", "property('厚度')"; see `expr/`. */
 export type Expr = string;
@@ -253,6 +253,17 @@ export interface MoveFaceFeature extends FeatureBase {
 }
 
 /**
+ * Shell (薄殼, C5.4, v15): the body hollowed out to a wall of 	hickness, the picked aces taken away to open it; the wall grows inward, or
+ * outward with outward.
+ */
+export interface ShellFeature extends FeatureBase {
+  type: 'shell';
+  faces: Ref[];
+  thickness: Expr;
+  outward?: boolean;
+}
+
+/**
  * Combine (C7.2): bodies added together, subtracted from the first, or reduced to what they share. `main` and `tools`
  * refer to bodies (kind `body`, the name is the body's id); the result is the main body, the tools are used up.
  */
@@ -273,6 +284,7 @@ export type Feature =
   | ImportedBodyFeature
   | DeleteFaceFeature
   | MoveFaceFeature
+  | ShellFeature
   | CombineFeature;
 export type FeatureType = Feature['type'];
 

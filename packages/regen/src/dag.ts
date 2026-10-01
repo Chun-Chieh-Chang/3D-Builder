@@ -28,6 +28,7 @@ export function parentsOf(feature: Feature, doc: PartDoc): Id[] {
       parents = fromRefs(feature.edges);
       break;
     case 'deleteFace':
+    case 'shell':
       parents = fromRefs(feature.faces);
       break;
     case 'moveFace':
