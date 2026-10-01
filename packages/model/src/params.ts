@@ -15,7 +15,7 @@ import { isDimension } from './schema';
 export type ExprKind = 'length' | 'angle';
 
 /** What a value must be for the feature to make sense: a size above zero, or an angle in the range its feature allows. */
-export type ExprRole = 'positive' | 'nonZero' | 'revolveAngle' | 'chamferAngle' | 'draftAngle' | 'planeAngle' | 'any';
+export type ExprRole = 'positive' | 'nonZero' | 'revolveAngle' | 'chamferAngle' | 'draftAngle' | 'includedAngle' | 'planeAngle' | 'any';
 
 /** Why a value is not acceptable for its role (in words), or null. `expr` is what the user wrote. */
 export function roleProblem(v: number, role: ExprRole, expr: Expr): string | null {
@@ -31,6 +31,8 @@ export function roleProblem(v: number, role: ExprRole, expr: Expr): string | nul
       return angle(0, Math.PI / 2 - 1e-9, t('cmd.chamferAngleRange'));
     case 'draftAngle':
       return angle(0, Math.PI / 2 - 1e-9, t('cmd.draftAngleRange'));
+    case 'includedAngle':
+      return angle(0, Math.PI - 1e-9, t('cmd.includedAngleRange'));
     case 'planeAngle':
       return angle(-1e-12, 2 * Math.PI, t('cmd.planeAngleRange'));
     case 'any':
@@ -121,6 +123,19 @@ export function mapExprs(feature: Feature, fn: (expr: Expr, kind: ExprKind, role
         return angle === d.angle ? feature : { ...feature, def: { ...d, angle } };
       }
       return feature;
+    }
+    case 'hole': {
+      const f = feature;
+      const one = (v: string | undefined, kind: ExprKind, role: ExprRole): string | undefined => (v === undefined ? v : fn(v, kind, role));
+      const diameter = fn(f.diameter, 'length', 'positive');
+      const end = f.end.type === 'blind' ? { ...f.end, depth: fn(f.end.depth, 'length', 'positive') } : f.end;
+      const cbDiameter = one(f.cbDiameter, 'length', 'positive');
+      const cbDepth = one(f.cbDepth, 'length', 'positive');
+      const csDiameter = one(f.csDiameter, 'length', 'positive');
+      const csAngle = one(f.csAngle, 'angle', 'includedAngle');
+      const same = diameter === f.diameter && JSON.stringify(end) === JSON.stringify(f.end) && cbDiameter === f.cbDiameter && cbDepth === f.cbDepth && csDiameter === f.csDiameter && csAngle === f.csAngle;
+      if (same) return feature;
+      return { ...f, diameter, end, ...(cbDiameter === undefined ? {} : { cbDiameter }), ...(cbDepth === undefined ? {} : { cbDepth }), ...(csDiameter === undefined ? {} : { csDiameter }), ...(csAngle === undefined ? {} : { csAngle }) };
     }
     case 'draft': {
       const angle = fn(feature.angle, 'angle', 'draftAngle');

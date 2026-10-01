@@ -554,6 +554,14 @@ class AppStore {
     this.openNew({ id, type: 'extrude', name: nextName(this.history.doc, base), suppressed: false, sketch: sketch.id, op, dir1: { type: 'blind', depth: '10' } }, base);
   }
 
+  /** 「異型孔」 (C4.8): a straight hole of Ø6 and 10 deep at the free points of the selected sketch, to be set in the PropertyManager. */
+  newHole(): void {
+    const sketch = this.selectedSketch();
+    if (!sketch) return;
+    const name = t('feature.hole');
+    this.openNew({ id: this.allocator().take('hole'), type: 'hole', name: nextName(this.history.doc, name), suppressed: false, sketch: sketch.id, kind: 'straight', diameter: '6', end: { type: 'blind', depth: '10' } }, name);
+  }
+
   /** 「旋轉填料/基材」 or 「旋轉除料」 (C4.3) about the sketch's centerline (or its only line). */
   newRevolve(op: 'boss' | 'cut'): void {
     const sketch = this.selectedSketch();

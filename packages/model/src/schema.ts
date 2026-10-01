@@ -6,7 +6,7 @@ import type { Id } from './ids';
  * DOF status, mass properties and error lists are derived data and never stored.
  */
 
-export const SCHEMA_VERSION = 16;
+export const SCHEMA_VERSION = 17;
 
 /** Value expression (B5.2, B5.3): "20", "25.4mm", "30deg", "wall_t*2", "D1@草圖1/2", "property('厚度')"; see `expr/`. */
 export type Expr = string;
@@ -163,6 +163,28 @@ export interface ExtrudeFeature extends FeatureBase {
 /** Revolve end conditions (C4.3): an angle in one direction, or split evenly about the sketch plane. */
 export type RevolveCondition = { type: 'blind'; angle: Expr; reverse?: boolean } | { type: 'midPlane'; angle: Expr };
 
+/**
+ * Hole wizard (異型孔, C4.8, v17): a hole of one of four kinds drilled into the material at every point of a sketch, from the sketch plane inward (against
+ * the normal; everse the other way). size is only the label of the standard size the diameters were taken from; the values that count are the
+ * expressions. 	apped is the tap-drill hole of a thread, which is not modelled.
+ */
+export interface HoleFeature extends FeatureBase {
+  type: 'hole';
+  sketch: Id;
+  kind: 'straight' | 'counterbore' | 'countersink' | 'tapped';
+  /** The standard size the diameters came from, e.g. M6 (a label; custom or absent when typed). */
+  size?: string;
+  diameter: Expr;
+  end: { type: 'blind'; depth: Expr } | { type: 'throughAll' };
+  /** Counterbore: the wider part's diameter and depth. */
+  cbDiameter?: Expr;
+  cbDepth?: Expr;
+  /** Countersink: the diameter at the surface and the included angle. */
+  csDiameter?: Expr;
+  csAngle?: Expr;
+  reverse?: boolean;
+}
+
 export interface RevolveFeature extends FeatureBase {
   type: 'revolve';
   sketch: Id;
@@ -299,6 +321,7 @@ export type Feature =
   | MoveFaceFeature
   | ShellFeature
   | DraftFeature
+  | HoleFeature
   | CombineFeature;
 export type FeatureType = Feature['type'];
 

@@ -14,6 +14,10 @@ import {
   type Command,
   type DeleteFaceFeature,
   type DraftFeature,
+  type HoleFeature,
+  holeSize,
+  HOLE_STANDARD_SOURCE,
+  ISO_HOLE_SIZES,
   type EndCondition,
   type Draft,
   type ExtrudeFeature,
@@ -894,6 +898,92 @@ function DeleteFacePanel({ f }: { f: DeleteFaceFeature }) {
   );
 }
 
+/** Hole wizard (C4.8): the kind, a standard size (which fills in the diameters) or typed values, the depth and the direction. */
+function HolePanel({ f }: { f: HoleFeature }) {
+  const { sketch: _sketch, id: _id, type: _type, name: _name, suppressed: _suppressed, ...settings } = f;
+  void [_sketch, _id, _type, _name, _suppressed];
+  const run = (patch: Partial<typeof settings>) => store.execute({ type: 'setHole', featureId: f.id, hole: { ...settings, ...patch } });
+  const size = holeSize(f.size ?? '');
+  /** The diameters of a standard size, for the kind of hole this is (a threaded hole is drilled to its tap size, the others to the clearance). */
+  const fill = (kind: HoleFeature['kind'], name: string): Partial<typeof settings> => {
+    const s = holeSize(name);
+    if (!s) return { kind, size: undefined };
+    const base = { kind, size: name, diameter: String(kind === 'tapped' ? s.tapDrill : s.normal) };
+    if (kind === 'counterbore') return { ...base, cbDiameter: String(s.cbDiameter), cbDepth: String(s.cbDepth) };
+    if (kind === 'countersink') return { ...base, csDiameter: String(s.csDiameter), csAngle: '90deg' };
+    return base;
+  };
+  const kindChange = (kind: HoleFeature['kind']) => run({ ...fill(kind, f.size ?? ''), kind, ...(kind === 'counterbore' && !f.cbDiameter ? { cbDiameter: String(Number(f.diameter) * 1.8 || 11), cbDepth: '3' } : {}), ...(kind === 'countersink' && !f.csDiameter ? { csDiameter: String(Number(f.diameter) * 2 || 12), csAngle: '90deg' } : {}) });
+  return (
+    <section className="pm-group">
+      <h4>{t('pm.hole.kind')}</h4>
+      <select value={f.kind} onChange={(e) => kindChange(e.target.value as HoleFeature['kind'])}>
+        <option value="straight">{t('pm.hole.straight')}</option>
+        <option value="counterbore">{t('pm.hole.counterbore')}</option>
+        <option value="countersink">{t('pm.hole.countersink')}</option>
+        <option value="tapped">{t('pm.hole.tapped')}</option>
+      </select>
+      <label className="pm-row">
+        <span>{t('pm.hole.size')}</span>
+        <select value={f.size ?? ''} onChange={(e) => run(fill(f.kind, e.target.value))}>
+          <option value="">{t('pm.hole.custom')}</option>
+          {ISO_HOLE_SIZES.map((s) => (
+            <option key={s.name} value={s.name}>
+              {s.name}
+            </option>
+          ))}
+        </select>
+      </label>
+      <label className="pm-row">
+        <span>{t('pm.hole.diameter')}</span>
+        <ValueInput value={f.diameter} toCommand={(diameter) => ({ type: 'setHole', featureId: f.id, hole: { ...settings, diameter, size: undefined } })} />
+      </label>
+      {f.kind === 'counterbore' && (
+        <>
+          <label className="pm-row">
+            <span>{t('pm.hole.cbDiameter')}</span>
+            <ValueInput value={f.cbDiameter ?? '0'} toCommand={(cbDiameter) => ({ type: 'setHole', featureId: f.id, hole: { ...settings, cbDiameter } })} />
+          </label>
+          <label className="pm-row">
+            <span>{t('pm.hole.cbDepth')}</span>
+            <ValueInput value={f.cbDepth ?? '0'} toCommand={(cbDepth) => ({ type: 'setHole', featureId: f.id, hole: { ...settings, cbDepth } })} />
+          </label>
+        </>
+      )}
+      {f.kind === 'countersink' && (
+        <>
+          <label className="pm-row">
+            <span>{t('pm.hole.csDiameter')}</span>
+            <ValueInput value={f.csDiameter ?? '0'} toCommand={(csDiameter) => ({ type: 'setHole', featureId: f.id, hole: { ...settings, csDiameter } })} />
+          </label>
+          <label className="pm-row">
+            <span>{t('pm.hole.csAngle')}</span>
+            <ValueInput value={f.csAngle ?? '90deg'} suffix="°" toCommand={(csAngle) => ({ type: 'setHole', featureId: f.id, hole: { ...settings, csAngle } })} />
+          </label>
+        </>
+      )}
+      <label className="pm-row">
+        <span>{t('pm.endCondition')}</span>
+        <select value={f.end.type} onChange={(e) => run({ end: e.target.value === 'blind' ? { type: 'blind', depth: '10' } : { type: 'throughAll' } })}>
+          <option value="blind">{t('pm.end.blind')}</option>
+          <option value="throughAll">{t('feature.throughAll')}</option>
+        </select>
+      </label>
+      {f.end.type === 'blind' && (
+        <label className="pm-row">
+          <span>{t('pm.depth')}</span>
+          <ValueInput value={f.end.depth} toCommand={(depth) => ({ type: 'setHole', featureId: f.id, hole: { ...settings, end: { type: 'blind', depth } } })} />
+        </label>
+      )}
+      <label className="pm-row checkbox">
+        <input type="checkbox" checked={!!f.reverse} onChange={(e) => run({ reverse: e.target.checked ? true : undefined })} />
+        <span>{t('pm.reverseDirection')}</span>
+      </label>
+      <p className="hint">{size ? t('pm.hole.sourceHint', { source: HOLE_STANDARD_SOURCE }) : t('pm.hole.hint')}</p>
+    </section>
+  );
+}
+
 /** Draft (C5.5): the neutral face, the walls that lean, the angle, and which way they lean. */
 function DraftPanel({ f }: { f: DraftFeature }) {
   const result = useStore((s) => s.result);
@@ -1146,6 +1236,7 @@ export function PropertyManager() {
       {f.type === 'deleteFace' && <DeleteFacePanel f={f} />}
       {f.type === 'shell' && <ShellPanel f={f} />}
       {f.type === 'draft' && <DraftPanel f={f} />}
+      {f.type === 'hole' && <HolePanel f={f} />}
       {f.type === 'moveFace' && <MoveFacePanel f={f} />}
       {f.type === 'combine' && <CombinePanel f={f} />}
     </div>

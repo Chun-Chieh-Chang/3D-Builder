@@ -21,6 +21,7 @@ export function parentsOf(feature: Feature, doc: PartDoc): Id[] {
       ];
       break;
     case 'revolve':
+    case 'hole':
       parents = [feature.sketch];
       break;
     case 'fillet':

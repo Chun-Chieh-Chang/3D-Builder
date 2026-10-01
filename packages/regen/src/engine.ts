@@ -11,6 +11,7 @@ import {
   type CombineFeature,
   type DeleteFaceFeature,
   type DraftFeature,
+  type HoleFeature,
   type Draft,
   type EndCondition,
   type ExtrudeFeature,
@@ -305,6 +306,7 @@ export class Regenerator {
           case 'fillet':
           case 'chamfer':
           case 'shell':
+          case 'hole':
           case 'draft':
           case 'deleteFace':
           case 'moveFace':
@@ -319,6 +321,8 @@ export class Regenerator {
                     ? this.fillet(feature, set)
                     : feature.type === 'chamfer'
                       ? this.chamfer(feature, set)
+                      : feature.type === 'hole'
+                        ? this.hole(feature, sketches, set)
                       : feature.type === 'draft'
                         ? this.draftFeature(feature, set)
                       : feature.type === 'shell'
@@ -921,6 +925,70 @@ export class Regenerator {
     return { id: body.id, shape: r.shape, topology, names: nameElements(r.faceOrigins, topology, { featureId: f.id, input: body.names }), by: f.id };
   }
 
+  /**
+   * The hole wizard (C4.8): at every free point of the sketch a tool is turned from a profile (straight, counterbored or countersunk, ending flat at
+   * its depth or past the body), and cut. Each face of a tool is named for its point and part (`<hole>:side:<sketch>.<point>.wall`, `.cbwall`,
+   * `.cbfloor`, `.cone`, `.bottom`), so every face of every hole has a name of its own.
+   */
+  private hole(f: HoleFeature, sketches: RebuildResult['sketches'], set: Bodies): BodyState[] {
+    const s = sketches.get(f.sketch);
+    if (!s) throw new FeatureError(t('feature.sketchGone'));
+    const body = set.view;
+    if (!body) throw new FeatureError(t('feature.needsBody', { what: t('feature.hole') }));
+    const used = new Set(s.sketch.entities.flatMap((e) => (e.type === 'line' ? [e.p1, e.p2] : e.type === 'circle' ? [e.center] : e.type === 'arc' ? [e.center, e.start, e.end] : [])));
+    const points = s.sketch.entities.flatMap((e) => (e.type === 'point' && !e.construction && !used.has(e.id) && s.solved.geometry.get(e.id)?.type === 'point' ? [{ id: e.id, at: (s.solved.geometry.get(e.id) as { p: [number, number] }).p }] : []));
+    if (points.length === 0) throw new FeatureError(t('feature.holeNoPoints'));
+    const n = s.frame.normal;
+    const down: Vec3 = f.reverse ? n : [-n[0], -n[1], -n[2]];
+    const R = evalLength(f.diameter) / 2;
+    const depth = f.end.type === 'blind' ? evalLength(f.end.depth) : this.reach(body, s.frame.origin, down) + 1;
+    if (depth <= 1e-9) throw new FeatureError(t('feature.nothingThatWay'));
+    const lead = 1; // the tool starts this far above the surface so that the cut is clean
+    const ring: [number, number][] = [[0, -lead]];
+    const edges: string[] = [];
+    const step = (r: number, z: number, edge: string) => {
+      ring.push([r, z]);
+      edges.push(edge);
+    };
+    if (f.kind === 'counterbore') {
+      const Rc = evalLength(f.cbDiameter ?? '0') / 2;
+      const cbd = evalLength(f.cbDepth ?? '0');
+      if (!(Rc > R) || !(cbd > 0) || cbd >= depth) throw new FeatureError(t('feature.holeCounterbore'));
+      step(Rc, -lead, 'top');
+      step(Rc, cbd, 'cbwall');
+      step(R, cbd, 'cbfloor');
+    } else if (f.kind === 'countersink') {
+      const Rs = evalLength(f.csDiameter ?? '0') / 2;
+      const half = evalAngle(f.csAngle ?? '90deg') / 2;
+      const zc = (Rs - R) / Math.tan(half);
+      if (!(Rs > R) || zc >= depth) throw new FeatureError(t('feature.holeCountersink'));
+      step(Rs, -lead, 'top');
+      step(Rs, 0, 'above');
+      step(R, zc, 'cone');
+    } else {
+      step(R, -lead, 'top');
+    }
+    step(R, depth, 'wall');
+    step(0, depth, 'bottom');
+    edges.push('axis');
+    // the loop counter-clockwise in (radius, depth)
+    const area = ring.reduce((a, p, i) => a + (p[0] * ring[(i + 1) % ring.length]![1] - ring[(i + 1) % ring.length]![0] * p[1]), 0);
+    let list: readonly BodyState[] = set.list;
+    for (const pt of points) {
+      const origin = add(add(s.frame.origin, s.frame.xDir, pt.at[0]), s.frame.yDir, pt.at[1]);
+      const plane: PlaneFrame = { origin, xDir: s.frame.xDir, yDir: down, normal: cross(s.frame.xDir, down) };
+      const loop = ring.map((a, i) => ({ kind: 'line' as const, a, b: ring[(i + 1) % ring.length]!, source: `${pt.id}.${edges[i]!}` }));
+      const outer = area >= 0 ? loop : loop.map((l) => ({ ...l, a: l.b, b: l.a })).reverse();
+      const tool = this.kernel.revolve(plane, [{ outer, holes: [] }], { origin, dir: down }, 2 * Math.PI);
+      try {
+        list = this.apply(f.id, 'cut', tool, { featureId: f.id, sketchId: f.sketch }, list, false);
+      } catch (e) {
+        if (e instanceof FeatureError) throw new FeatureError(t('feature.holeMissed', { id: pt.id }));
+        throw e;
+      }
+    }
+    return [...list];
+  }
   private draftFeature(f: DraftFeature, set: Bodies): BodyState[] {
     return this.perBody(set, f.faces, 'face', t('feature.noBodyForDraft'), (n) => t('edit.facesLost', { n }), (body, mine) => {
       const neutral = this.planeOf(f.neutral, set, { what: t('feature.neutralPlane'), notPlanar: t('feature.neutralNotPlanar') });
