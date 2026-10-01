@@ -93,6 +93,8 @@ export const model = {
   'cmd.patternSeedType': '「{name}」不能排列：只有填料、除料、孔、圓角與導角可以排列',
   'cmd.onlyMirrorHasParams': '只有鏡射有這些參數',
   'cmd.onlyPatternHasParams': '只有複製排列有這些參數',
+  'cmd.materialInvalid': '材質要有名稱，密度要大於 0 且小於 30 g/cm³',
+  'cmd.precisionRange': '尺寸的小數位數要是 0 到 6 的整數',
   'cmd.countRange': '實例數要是 2 到 {max} 的整數（現在是 {value}）',
   'cmd.listSeparator': '、',
   'cmd.variableInUse': '變數「{name}」正被使用，先改掉那些運算式才能刪除：{users}',

@@ -113,6 +113,9 @@ const migrations: Record<number, (doc: Json) => Json> = {
   21: (doc) => doc,
   // v23: the mirror (C6.3). Nothing to convert; the version keeps older programs from opening a part with a feature they would skip.
   22: (doc) => doc,
+  // v24: material and document settings (C14.1, B8.4), absent until chosen, and the targets of appearances (C14.2). Nothing to convert: no earlier
+  // version could store an appearance.
+  23: (doc) => doc,
 };
 
 export class FormatError extends Error {

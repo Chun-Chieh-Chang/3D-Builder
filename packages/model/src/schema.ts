@@ -6,7 +6,7 @@ import type { Id } from './ids';
  * DOF status, mass properties and error lists are derived data and never stored.
  */
 
-export const SCHEMA_VERSION = 23;
+export const SCHEMA_VERSION = 24;
 
 /** Value expression (B5.2, B5.3): "20", "25.4mm", "30deg", "wall_t*2", "D1@草圖1/2", "property('厚度')"; see `expr/`. */
 export type Expr = string;
@@ -483,6 +483,21 @@ export interface Variable {
   expr: Expr;
 }
 
+/** The material of the part (C14.1, v24): a name and a density in g/cm³; the mass is the volume of the bodies that count times it. */
+export interface MaterialRef {
+  /** The id of the built-in material it was taken from (see `MATERIALS`); absent for one the user typed. */
+  id?: string;
+  name: string;
+  density: number;
+}
+
+/** Standards the drawings of a part follow, how many decimals a derived dimension shows, and how fine the meshes of the screen, STL and images are (B8.4, v24). */
+export interface DocSettings {
+  draftStandard: 'ISO' | 'CNS' | 'ANSI' | 'JIS' | 'GB';
+  dimensionPrecision: number;
+  meshQuality: 'coarse' | 'normal' | 'fine';
+}
+
 export interface AppearanceOverride {
   target: Ref | { kind: 'part' };
   color: string;
@@ -518,6 +533,10 @@ export interface PartDoc {
   rollbackIndex: number | null;
   properties: Record<string, string>;
   appearances: AppearanceOverride[];
+  /** C14.1 (v24): absent until one is chosen; the mass is then known. */
+  material?: MaterialRef;
+  /** B8.4 (v24): only what was chosen; see `settingsOf` for the rest. */
+  settings?: Partial<DocSettings>;
   blobs: BlobRef[];
   /**
    * What the user chose to show or hide (D4.6), by feature id (sketches, reference planes), default

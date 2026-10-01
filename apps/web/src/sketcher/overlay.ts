@@ -43,15 +43,17 @@ export interface OverlayOptions {
   values?: ReadonlyMap<Id, number>;
   /** Dimension label next to the cursor while the smart-dimension tool is placing one. */
   dimensionPreview: { text: string; at: P2 } | null;
+  /** Decimals a dimension worked out from an expression shows (B8.4). */
+  precision?: number;
 }
 
-const shown = (v: number) => String(Math.round(v * 1e4) / 1e4);
+const shown = (v: number, decimals = 4) => String(Math.round(v * 10 ** decimals) / 10 ** decimals);
 
 /** A dimension's text: as typed when it is a plain number, else its value marked with Σ. */
-function dimensionLabel(c: DimensionConstraint, value: number | undefined, measured: string | undefined): string {
+function dimensionLabel(c: DimensionConstraint, value: number | undefined, measured: string | undefined, precision = 4): string {
   if (c.driving === false) return dimensionText(c, measured); // a reference: what is measured now, in parentheses
   if (value === undefined || isPlain(c.value)) return dimensionText(c);
-  return 'Σ' + dimensionText({ ...c, value: c.type === 'angle' ? shown((value * 180) / Math.PI) : shown(value) });
+  return 'Σ' + dimensionText({ ...c, value: c.type === 'angle' ? shown((value * 180) / Math.PI, precision) : shown(value, precision) });
 }
 
 function statusColor(s: EntityStatus | undefined): number {
@@ -140,7 +142,7 @@ export function buildOverlay(frame: PlaneFrame, sketch: SketchFeature, solve: Sk
     const state = selected.has(c.id) ? 'selected' : over.has(c.id) ? 'over' : '';
     const color = state === 'selected' ? SKETCH_COLORS.selected : state === 'over' ? SKETCH_COLORS.over : SKETCH_COLORS.dimension;
     for (const [a, b] of layout.segments) curves.push({ points: [a, b], color });
-    labels.push({ key: `dim:${c.id}`, p: layout.text, text: dimensionLabel(c, options.values?.get(c.id), measuredText(c, geometry)), className: `dimension ${state}${c.driving === false ? ' driven' : ''}`, interactive: true, title: c.label ?? '按兩下修改尺寸' });
+    labels.push({ key: `dim:${c.id}`, p: layout.text, text: dimensionLabel(c, options.values?.get(c.id), measuredText(c, geometry), options.precision), className: `dimension ${state}${c.driving === false ? ' driven' : ''}`, interactive: true, title: c.label ?? '按兩下修改尺寸' });
   }
 
   // relation symbols (C1.27), stacked when several sit at the same place

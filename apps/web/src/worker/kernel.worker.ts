@@ -3,9 +3,9 @@ import * as Comlink from 'comlink';
 import { setLocale as setWorkerLocale, t } from '@3db/i18n';
 import occtWasm from 'libcascade/single/wasm?url';
 import gcsWasm from '@salusoft89/planegcs/dist/planegcs_dist/planegcs.wasm?url';
-import { bodyKey, isShown, type AssemblyDoc, type Id, type PartDoc } from '@3db/model';
+import { bodyKey, isShown, MESH_QUALITY, settingsOf, type AssemblyDoc, type Id, type PartDoc } from '@3db/model';
 import { findProfiles, PlaneGcsSolver } from '@3db/sketch';
-import { COMPONENT_MESH, Kernel, type MassProps, type MeshData, type ShapeId } from '@3db/kernel';
+import { COMPONENT_MESH, Kernel, type MassProps, type MeshData, type MeshOptions, type ShapeId } from '@3db/kernel';
 import { convertEdges, edgeMateGeometry, faceEdges, faceMateGeometry, followReferences, ReferenceProblem, Regenerator, solveAssembly, type AssemblyResult, type AssemblySolveOptions, type BodyInfo, type RebuildResult } from '@3db/regen';
 import { edgeFingerprint, faceFingerprint, vertexFingerprint } from '@3db/naming';
 import { exportAssemblyStep, exportPartStep, readComponentFile } from '@3db/io';
@@ -50,11 +50,11 @@ async function build(bytes: Uint8Array): Promise<BuiltPart> {
  * What is drawn of the bodies (D4.6): the whole view when every body is shown, else each shown body meshed on its own and put together,
  * so that a hidden body has no triangles to see or pick. Faces and edges keep their numbers in the names either way.
  */
-function meshOf(r: RebuildResult, shown: boolean[]): MeshData | null {
+function meshOf(r: RebuildResult, shown: boolean[], quality: MeshOptions = {}): MeshData | null {
   const body = r.body;
   if (!body) return null;
-  if (shown.every(Boolean)) return kernel.mesh(body.shape);
-  const parts = r.bodies.flatMap((b: BodyInfo, i) => (shown[i] ? [{ mesh: kernel.mesh(b.shape), face0: b.face0, edge0: b.edge0 }] : []));
+  if (shown.every(Boolean)) return kernel.mesh(body.shape, quality);
+  const parts = r.bodies.flatMap((b: BodyInfo, i) => (shown[i] ? [{ mesh: kernel.mesh(b.shape, quality), face0: b.face0, edge0: b.edge0 }] : []));
   return parts.length > 0 ? mergeMeshes(parts) : null;
 }
 
@@ -110,7 +110,7 @@ const api: KernelApi = {
     const body = r.body;
     lastModel = body ? { names: body.names, topology: body.topology, frames: r.frames } : null;
     const shown = r.bodies.map((b) => isShown(doc, bodyKey(b.id)));
-    const mesh = meshOf(r, shown);
+    const mesh = meshOf(r, shown, MESH_QUALITY[settingsOf(doc).meshQuality]);
     const payload: RebuildPayload = {
       seq,
       features: r.features,

@@ -1,9 +1,10 @@
 import { t } from '@3db/i18n';
 import { current, produce, type Draft } from 'immer';
 import { countersFor, type Id } from './ids';
-import type { Variable, BlobRef, ChamferFeature, CombineFeature, HoleFeature, LoftFeature, RibFeature, SweepFeature, Draft as WallDraft, EndCondition, Thin, Expr, Feature, ImportedBodyFeature, AxisDefinition, CoordSysFeature, MirrorFeature, PartDoc, PatternDefinition, PatternFeature, PlaneDefinition, PointDefinition, Ref, RevolveCondition, SketchConstraint, SketchEntity, SketchFeature } from './schema';
+import type { DocSettings, MaterialRef, Variable, BlobRef, ChamferFeature, CombineFeature, HoleFeature, LoftFeature, RibFeature, SweepFeature, Draft as WallDraft, EndCondition, Thin, Expr, Feature, ImportedBodyFeature, AxisDefinition, CoordSysFeature, MirrorFeature, PartDoc, PatternDefinition, PatternFeature, PlaneDefinition, PointDefinition, Ref, RevolveCondition, SketchConstraint, SketchEntity, SketchFeature } from './schema';
 import { isDatumPlaneName } from './datums';
 import { canBeSeed } from './patterns';
+import { materialOk } from './materials';
 import { mapRefs } from './refs';
 import { bodyFeature, isBodyKey, isHideable } from './visibility';
 import { dimensionName, Parameters, renameInDoc, resolveDoc, variableUsers, type ExprKind } from './params';
@@ -136,6 +137,10 @@ ull). */
   | { type: 'deleteVariable'; id: Id }
   /** File properties (B8.3): free text by name, e.g. a vendor or a part number. */
   | { type: 'setProperty'; name: string; value: string }
+  /** The material of the part (C14.1); `null` takes it away. */
+  | { type: 'setMaterial'; material: MaterialRef | null }
+  /** Document settings (B8.4): the ones given are changed. */
+  | { type: 'setSettings'; settings: Partial<DocSettings> }
   | { type: 'deleteProperty'; name: string }
   /** Names a dimension of a sketch (`寬度@草圖1`); expressions that used the old name follow. An empty label goes back to `D<n>`. */
   | { type: 'setDimensionLabel'; featureId: Id; constraintId: Id; label: string };
@@ -967,6 +972,20 @@ export function mutate(draft: Draft<PartDoc>, cmd: Command): void {
       const name = cmd.name.trim();
       if (!name) throw new CommandError(t('cmd.propertyNameEmpty'));
       draft.properties[name] = cmd.value;
+      return;
+    }
+    case 'setMaterial': {
+      if (cmd.material === null) delete draft.material;
+      else {
+        if (!materialOk(cmd.material)) throw new CommandError(t('cmd.materialInvalid'));
+        draft.material = { ...(cmd.material.id ? { id: cmd.material.id } : {}), name: cmd.material.name.trim(), density: cmd.material.density };
+      }
+      return;
+    }
+    case 'setSettings': {
+      const s = cmd.settings;
+      if (s.dimensionPrecision !== undefined && !(Number.isInteger(s.dimensionPrecision) && s.dimensionPrecision >= 0 && s.dimensionPrecision <= 6)) throw new CommandError(t('cmd.precisionRange'));
+      draft.settings = { ...draft.settings, ...s };
       return;
     }
     case 'deleteProperty': {

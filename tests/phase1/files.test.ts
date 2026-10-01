@@ -4,7 +4,7 @@
  */
 import { readFileSync } from 'node:fs';
 import { beforeAll, describe, expect, it } from 'vitest';
-import { createDemoPart, FormatError, SCHEMA_VERSION, serializePart, type PartDoc } from '@3db/model';
+import { createDemoPart, FormatError, SCHEMA_VERSION, serializePart, settingsOf, type PartDoc } from '@3db/model';
 import { partFileName, readPartFile, readZip, sha256Hex, writePartFile, writeZip } from '@3db/io';
 import { PlaneGcsSolver } from '@3db/sketch';
 import { Kernel } from '@3db/kernel';
@@ -324,6 +324,20 @@ describe('a part file written by version 22 (pattern, C6.1–C6.2) opens in vers
     expect(kernel.massProps(r.body!.shape).volume).toBeCloseTo(60 * 20 * 5 + 3 * Math.PI * 4 * 5, 6);
     expect(r.body!.names.faces).toEqual(expect.arrayContaining(['pat1:inst1:e2:cap:end', 'pat1:inst3:e2:cap:end']));
     expect(r.body!.names.faces.some((n) => n.startsWith('pat1:inst2:'))).toBe(false);
+  });
+});
+
+describe('a part file written by version 23 (mirror, C6.3) opens in version 24 (material and settings, C14.1, B8.4)', () => {
+  it('keeps its mirror and rebuilds it, with no material and the settings it never had filled in by default', async () => {
+    const file = await readPartFile(oldFile('v23-mirror.3dbx'));
+    expect(file.warnings).toEqual([]);
+    expect(JSON.parse(new TextDecoder().decode((await readZip(oldFile('v23-mirror.3dbx')))[0]!.data)).schemaVersion).toBe(23);
+    expect(file.doc.schemaVersion).toBe(SCHEMA_VERSION);
+    expect(file.doc.material).toBeUndefined();
+    expect(settingsOf(file.doc)).toEqual({ draftStandard: 'ISO', dimensionPrecision: 4, meshQuality: 'normal' });
+    const r = new Regenerator(kernel, await PlaneGcsSolver.create(), file.blobs).rebuild(file.doc);
+    expect(statuses(r).filter((s) => !s.endsWith('=ok'))).toEqual([]);
+    expect(kernel.massProps(r.body!.shape).volume).toBeCloseTo(60 * 20 * 5 + 2 * Math.PI * 4 * 5, 6);
   });
 });
 

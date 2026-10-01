@@ -1,4 +1,5 @@
-import { joinPath } from '@3db/model';
+import { t } from '@3db/i18n';
+import { formatMass, joinPath, massGrams } from '@3db/model';
 import { mateProblem } from './AssemblyTree';
 import { loadingText, useLoadingParts } from './LoadProgress';
 import { useStore, store } from '../state/store';
@@ -79,6 +80,9 @@ export function StatusBar() {
         </span>
       )}
       {result?.mass && editing?.kind !== 'sketch' && <span>體積 {result.mass.volume.toFixed(3)} mm³</span>}
+      {result?.mass && doc.material && editing?.kind !== 'sketch' && (
+        <span title={`${doc.material.name}  ${doc.material.density} g/cm³`}>{t('material.mass')} {formatMass(massGrams(result.mass.volume, doc.material.density))}</span>
+      )}
       <span>{rebuilding ? '重新計算中…' : result ? `重新計算 ${result.totalMs.toFixed(1)} ms` : ''}</span>
       {bootMs && <span className="muted">核心載入 {Math.round(bootMs.occtMs)} ms</span>}
       <span className="units">MMGS</span>

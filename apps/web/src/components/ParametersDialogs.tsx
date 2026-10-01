@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { t } from '@3db/i18n';
-import { dimensionName, formatQuantity, isDimension, Parameters, type Command, type SketchFeature } from '@3db/model';
+import { dimensionName, formatMass, formatQuantity, isDimension, massGrams, MATERIALS, materialById, Parameters, settingsOf, type Command, type DocSettings, type SketchFeature } from '@3db/model';
 import { store, useStore } from '../state/store';
 
 /** Runs a command; the reason it was refused (as the store worded it), or null when it went through. */
@@ -176,6 +176,81 @@ export function EquationsDialog() {
   );
 }
 
+/** 材質 (C14.1) and 文件設定 (B8.4): the material of the part and the mass it gives, the standard, the decimals and the mesh quality. */
+function MaterialAndSettings() {
+  const doc = useStore((s) => s.doc);
+  const volume = useStore((s) => s.result?.mass?.volume ?? null);
+  const material = doc.material;
+  const settings = settingsOf(doc);
+  const custom = material !== undefined && material.id === undefined;
+  const choose = (value: string) => {
+    if (value === '') return void run({ type: 'setMaterial', material: null });
+    if (value === 'custom') return void run({ type: 'setMaterial', material: { name: t('material.custom'), density: 1 } });
+    const m = materialById(value);
+    if (m) run({ type: 'setMaterial', material: { id: m.id, name: t(`material.${m.id}`), density: m.density } });
+  };
+  return (
+    <div className="props-material">
+      <h4>{t('material.heading')}</h4>
+      <div className="pm-row">
+        <select value={material ? (material.id ?? 'custom') : ''} onChange={(e) => choose(e.target.value)} onKeyDown={(e) => e.stopPropagation()}>
+          <option value="">{t('material.none')}</option>
+          {MATERIALS.map((m) => (
+            <option key={m.id} value={m.id}>
+              {t('material.option', { name: t(`material.${m.id}`), density: m.density })}
+            </option>
+          ))}
+          <option value="custom">{t('material.custom')}</option>
+        </select>
+      </div>
+      {custom && (
+        <>
+          <label className="pm-row">
+            <span>{t('material.name')}</span>
+            <Field mono={false} value={material.name} onCommit={(v) => run({ type: 'setMaterial', material: { name: v, density: material.density } })} />
+          </label>
+          <label className="pm-row">
+            <span>{t('material.density')}</span>
+            <Field value={String(material.density)} onCommit={(v) => run({ type: 'setMaterial', material: { name: material.name, density: Number(v) } })} />
+          </label>
+        </>
+      )}
+      {material && volume !== null && (
+        <p className="hint">
+          {t('material.massLine', { mass: formatMass(massGrams(volume, material.density)), density: material.density })}
+        </p>
+      )}
+      <p className="hint">{t('material.hint')}</p>
+      <h4>{t('settings.heading')}</h4>
+      <label className="pm-row">
+        <span>{t('settings.draftStandard')}</span>
+        <select value={settings.draftStandard} onChange={(e) => run({ type: 'setSettings', settings: { draftStandard: e.target.value as DocSettings['draftStandard'] } })} onKeyDown={(e) => e.stopPropagation()}>
+          {(['ISO', 'CNS', 'ANSI', 'JIS', 'GB'] as const).map((x) => (
+            <option key={x} value={x}>
+              {x}
+            </option>
+          ))}
+        </select>
+      </label>
+      <label className="pm-row">
+        <span>{t('settings.dimensionPrecision')}</span>
+        <Field value={String(settings.dimensionPrecision)} onCommit={(v) => run({ type: 'setSettings', settings: { dimensionPrecision: Number(v) } })} />
+      </label>
+      <label className="pm-row">
+        <span>{t('settings.meshQuality')}</span>
+        <select value={settings.meshQuality} onChange={(e) => run({ type: 'setSettings', settings: { meshQuality: e.target.value as DocSettings['meshQuality'] } })} onKeyDown={(e) => e.stopPropagation()}>
+          {(['coarse', 'normal', 'fine'] as const).map((x) => (
+            <option key={x} value={x}>
+              {t(`settings.mesh.${x}`)}
+            </option>
+          ))}
+        </select>
+      </label>
+      <p className="hint">{t('settings.hint')}</p>
+    </div>
+  );
+}
+
 /** 檔案屬性 (B8.3): free text by name (vendor, part number …), also readable by expressions. */
 export function PropertiesDialog() {
   const open = useStore((s) => s.dialog === 'properties');
@@ -194,6 +269,7 @@ export function PropertiesDialog() {
   };
   return (
     <Frame title={t('props.title')} hint={t('props.hint')}>
+      <MaterialAndSettings />
       <table className="eq-table">
         <thead>
           <tr>
