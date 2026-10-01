@@ -1,5 +1,7 @@
+import { t } from '@3db/i18n';
 import { countersFor } from './ids';
-import { SCHEMA_VERSION, SKETCH_ORIGIN, type PartDoc } from './schema';
+import { materialById, type MaterialId } from './materials';
+import { SCHEMA_VERSION, SKETCH_ORIGIN, type DocSettings, type PartDoc } from './schema';
 import { idsInUse } from './sketch-rules';
 
 export function createEmptyPart(): PartDoc {
@@ -78,5 +80,29 @@ export function createDemoPart(): PartDoc {
     },
   ];
   doc.idCounters = countersFor(idsInUse(doc));
+  return doc;
+}
+
+/**
+ * Part templates (B1.4): an empty part with a material and settings chosen beforehand, for the kinds of parts that are made again and again. The default
+ * planes and the origin are in every part. Display units are millimetres and degrees in all (the program shows no other yet).
+ */
+export const PART_TEMPLATES = [
+  { id: 'blank', material: null, settings: {} },
+  { id: 'steel', material: 'steel', settings: {} },
+  { id: 'aluminium', material: 'aluminium6061', settings: {} },
+  { id: 'plastic', material: 'abs', settings: { meshQuality: 'fine' } },
+  { id: 'cns', material: 'steel', settings: { draftStandard: 'CNS', dimensionPrecision: 2 } },
+] as const satisfies readonly { id: string; material: MaterialId | null; settings: Partial<DocSettings> }[];
+
+export type PartTemplateId = (typeof PART_TEMPLATES)[number]['id'];
+
+/** An empty part made from a template. */
+export function createPartFromTemplate(id: PartTemplateId): PartDoc {
+  const doc = createEmptyPart();
+  const template = PART_TEMPLATES.find((x) => x.id === id);
+  const material = template?.material ? materialById(template.material) : undefined;
+  if (material) doc.material = { id: material.id, name: t(`material.${material.id}`), density: material.density };
+  if (template && Object.keys(template.settings).length > 0) doc.settings = { ...template.settings };
   return doc;
 }

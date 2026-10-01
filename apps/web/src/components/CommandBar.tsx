@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { t } from '@3db/i18n';
-import { ACTIONS, type UiAction } from '../actions';
+import { ACTIONS, shortcutOf, type UiAction } from '../actions';
 import { useDocumentTitle, useSketcherView, useStore } from '../state/store';
 
 type Tab = { id: string; label: string; groups: UiAction['group'][] };
@@ -53,7 +53,7 @@ export function CommandBar() {
             className={a.active?.() ? 'tool active' : 'tool'}
             disabled={!a.enabled(state)}
             onClick={a.run}
-            title={a.shortcut ? `${a.label}（${a.shortcut}）` : a.label}
+            title={shortcutOf(a) ? `${a.label}（${shortcutOf(a)}）` : a.label}
           >
             {a.label}
           </button>

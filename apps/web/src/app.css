@@ -243,3 +243,17 @@ code { font-family: Consolas, 'Cascadia Mono', monospace; font-size: 11px; }
 .relink-file { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; word-break: break-all; }
 .relink-actions { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin: 6px 0 0 22px; }
 .swatch { display: inline-block; width: 12px; height: 12px; border: 1px solid #888; border-radius: 2px; vertical-align: -1px; }
+
+.tree-filter { padding: 4px 6px; }
+.tree-filter input { width: 100%; box-sizing: border-box; }
+.tree-row.in-folder { padding-left: 22px; }
+.tree-row.folder-head { font-weight: 600; cursor: pointer; }
+.tree-row .twisty { display: inline-block; width: 14px; color: var(--muted); }
+.tree-row .tag { margin-left: 6px; padding: 0 5px; border-radius: 8px; background: #e7f0fa; color: #1c5a99; font-size: 11px; }
+.tree-row .note-mark { margin-left: 4px; color: var(--muted); font-size: 11px; }
+.tree-row.moving { opacity: 0.45; }
+.tree-row.drop-before { box-shadow: 0 -2px 0 0 #1c7ed6 inset; }
+.tree-row.drop-after { box-shadow: 0 2px 0 0 #1c7ed6 inset; }
+.template-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.template-list button { width: 100%; display: flex; flex-direction: column; align-items: flex-start; gap: 2px; padding: 6px 10px; text-align: left; }
+.shortcut-list { max-height: 50vh; overflow: auto; }

@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { DATUM_PLANES, IDENTITY_ROTATION, isDatumPlaneName, joinPath, poseMatrix, transformPoint, type MateRef, type PlaneFrame, type Pose, type Vec3 } from '@3db/model';
 import { partNameOf } from '@3db/io';
 import { Viewer, type InstanceElement, type PlaneDisplay, type ViewInstance, type ViewPart } from '@3db/render';
-import { ACTIONS } from '../actions';
+import { ACTIONS, shortcutOf } from '../actions';
 import { store, useStore } from '../state/store';
 import type { AssemblyStore } from '../state/assembly';
 import { componentInfo } from './AssemblyTree';
@@ -188,7 +188,7 @@ export function AssemblyViewport() {
       <div ref={host} className="viewport-canvas" />
       <div className="heads-up">
         {ACTIONS.filter((a) => a.group === 'view').map((a) => (
-          <button key={a.id} onClick={a.run} disabled={!a.enabled(store.getState())} title={a.shortcut ? `${a.label}（${a.shortcut}）` : a.label}>
+          <button key={a.id} onClick={a.run} disabled={!a.enabled(store.getState())} title={shortcutOf(a) ? `${a.label}（${shortcutOf(a)}）` : a.label}>
             {a.label}
           </button>
         ))}

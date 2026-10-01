@@ -341,6 +341,21 @@ describe('a part file written by version 23 (mirror, C6.3) opens in version 24 (
   });
 });
 
+describe('a part file written by version 24 (material, settings, appearance) opens in version 25 (notes, tags and folders on features, D1.7)', () => {
+  it('keeps its material, settings and colour and rebuilds; no feature has a note, a tag or a folder', async () => {
+    const file = await readPartFile(oldFile('v24-material.3dbx'));
+    expect(file.warnings).toEqual([]);
+    expect(JSON.parse(new TextDecoder().decode((await readZip(oldFile('v24-material.3dbx')))[0]!.data)).schemaVersion).toBe(24);
+    expect(file.doc.schemaVersion).toBe(SCHEMA_VERSION);
+    expect(file.doc.material).toEqual({ id: 'steel', name: '碳鋼', density: 7.85 });
+    expect(settingsOf(file.doc)).toEqual({ draftStandard: 'CNS', dimensionPrecision: 2, meshQuality: 'normal' });
+    expect(file.doc.appearances).toEqual([{ target: { kind: 'feature', id: 'e2' }, color: '#3366cc' }]);
+    expect(file.doc.features.every((f) => f.comment === undefined && f.tag === undefined && f.folder === undefined)).toBe(true);
+    const r = new Regenerator(kernel, await PlaneGcsSolver.create(), file.blobs).rebuild(file.doc);
+    expect(statuses(r).filter((s) => !s.endsWith('=ok'))).toEqual([]);
+  });
+});
+
 describe('the .3dbx file (B9.1, F7.1)', () => {
   const docs = async (): Promise<[string, PartDoc][]> => [
     ['the demo part', createDemoPart()],

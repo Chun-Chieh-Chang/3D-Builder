@@ -163,3 +163,17 @@ export function deletion(doc: PartDoc, id: Id, options: { children: boolean; abs
   if (options.absorbed) for (const s of absorbed) doomed.add(s);
   return { features: inOrder(doc, doomed), children: inOrder(doc, children), absorbed: inOrder(doc, absorbed) };
 }
+
+/**
+ * Whether the history may be put in this order (B2.5, "受 DAG 約束"): every feature has to come after what it is built on. Returns the first feature, in the new
+ * order, that would come before one of its parents, with that parent; null when the order is fine. The parents are those of the document as it is (a move does
+ * not change what refers to what).
+ */
+export function orderProblem(doc: PartDoc, order: Id[]): { feature: Id; parent: Id } | null {
+  const at = new Map(order.map((id, i) => [id, i]));
+  const { parents } = dependencies(doc);
+  for (const id of order) {
+    for (const p of parents.get(id) ?? []) if ((at.get(p) ?? -1) > at.get(id)!) return { feature: id, parent: p };
+  }
+  return null;
+}

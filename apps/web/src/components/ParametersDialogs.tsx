@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useState } from 'react';
 import { t } from '@3db/i18n';
-import { dimensionName, formatMass, formatQuantity, isDimension, massGrams, MATERIALS, materialById, Parameters, settingsOf, type AppearanceTarget, type Command, type DocSettings, type SketchFeature } from '@3db/model';
+import { dimensionName, formatMass, formatQuantity, isDimension, massGrams, MATERIALS, materialById, Parameters, PART_TEMPLATES, settingsOf, type AppearanceTarget, type Command, type DocSettings, type SketchFeature } from '@3db/model';
+import { ACTIONS, shortcutOf } from '../actions';
+import { conflictWith, formatEvent, overrides, resetOverrides, setOverride, subscribeShortcuts } from '../shortcuts';
 import { store, useStore } from '../state/store';
 
 /** Runs a command; the reason it was refused (as the store worded it), or null when it went through. */
@@ -457,6 +459,95 @@ export function StepOptionsDialog() {
             {t('export.go')}
           </button>
           <button onClick={close}>{t('export.cancel')}</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/** 新零件（範本） (B1.4): which kind of part to begin with. */
+export function TemplateDialog() {
+  const open = useStore((s) => s.dialog === 'template');
+  if (!open) return null;
+  const close = () => store.openDialog(null);
+  return (
+    <div className="modal-backdrop" onPointerDown={close}>
+      <div className="modal" role="dialog" aria-label={t('template.title')} onPointerDown={(e) => e.stopPropagation()} onKeyDown={(e) => e.key === 'Escape' && close()}>
+        <h3>{t('template.title')}</h3>
+        <p className="hint">{t('template.hint')}</p>
+        <ul className="template-list">
+          {PART_TEMPLATES.map((x) => (
+            <li key={x.id}>
+              <button onClick={() => store.newPartFromTemplate(x.id)}>
+                <strong>{t(`template.${x.id}`)}</strong>
+                <span className="muted">{t(`template.${x.id}Hint`)}</span>
+              </button>
+            </li>
+          ))}
+        </ul>
+        <div className="modal-actions">
+          <button onClick={close}>{t('export.cancel')}</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/** 快速鍵 (D3.3): every action with its shortcut; a click on the field and a key combination changes it. */
+export function ShortcutsDialog() {
+  const open = useStore((s) => s.dialog === 'shortcuts');
+  const [, again] = useState(0);
+  const [problem, setProblem] = useState<string | null>(null);
+  useEffect(() => subscribeShortcuts(() => again((n) => n + 1)), []);
+  if (!open) return null;
+  const close = () => store.openDialog(null);
+  const mine = overrides();
+  const labelOf = (id: string) => ACTIONS.find((a) => a.id === id)?.label ?? id;
+  return (
+    <div className="modal-backdrop" onPointerDown={close}>
+      <div className="modal wide parameters" role="dialog" aria-label={t('shortcuts.title')} onPointerDown={(e) => e.stopPropagation()}>
+        <h3>{t('shortcuts.title')}</h3>
+        <p className="hint">{t('shortcuts.hint')}</p>
+        {problem && <p className="error-text">{problem}</p>}
+        <div className="shortcut-list">
+          <table className="eq-table">
+            <tbody>
+              {ACTIONS.map((a) => (
+                <tr key={a.id}>
+                  <td>{a.label}</td>
+                  <td>
+                    <input
+                      className="mono"
+                      readOnly
+                      aria-label={a.label}
+                      value={shortcutOf(a) ?? ''}
+                      placeholder={t('shortcuts.press')}
+                      onKeyDown={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        if (e.key === 'Escape') return void e.currentTarget.blur();
+                        if (e.key === 'Backspace' || e.key === 'Delete') {
+                          setProblem(null);
+                          return setOverride(a.id, a.shortcut === undefined ? undefined : '');
+                        }
+                        const combo = formatEvent(e.nativeEvent);
+                        if (!combo) return;
+                        const other = conflictWith(combo, a.id, ACTIONS, mine);
+                        if (other) return setProblem(t('shortcuts.conflict', { keys: combo, action: labelOf(other) }));
+                        setProblem(null);
+                        setOverride(a.id, combo === a.shortcut ? undefined : combo);
+                      }}
+                    />
+                  </td>
+                  <td>{mine[a.id] !== undefined && <button onClick={() => setOverride(a.id, undefined)}>{t('shortcuts.reset')}</button>}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        <div className="modal-actions">
+          {Object.keys(mine).length > 0 && <button onClick={() => resetOverrides()}>{t('shortcuts.reset')}</button>}
+          <button onClick={close}>{t('shortcuts.close')}</button>
         </div>
       </div>
     </div>

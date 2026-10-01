@@ -108,6 +108,14 @@ ull). */
   /** Deletes features (B2.8). Their ids stay issued; references to them become missing, never rebound. */
   | { type: 'deleteFeatures'; featureIds: Id[] }
   | { type: 'renameFeature'; featureId: Id; name: string }
+  /**
+   * The history put in another order (B2.5), and, at the same time, which features are in which folder (D1.7; `null` takes a feature out). `order` has every
+   * feature once; those before the rollback bar stay before it. Whether a feature still comes after the ones it depends on is for the caller to see
+   * (`orderProblem`): the rebuild reports what is left wrong.
+   */
+  | { type: 'arrange'; order: Id[]; folders?: Record<Id, string | null> }
+  /** A note and a label on a feature (D1.7); an empty text takes it away. */
+  | { type: 'setFeatureNote'; featureId: Id; comment?: string; tag?: string }
   | { type: 'setRollback'; index: number | null }
   /** Sketch editing (C1): add geometry together with its relations and dimensions. */
   | { type: 'addSketchItems'; featureId: Id; entities: SketchEntity[]; constraints: SketchConstraint[] }
@@ -826,6 +834,42 @@ export function mutate(draft: Draft<PartDoc>, cmd: Command): void {
       const old = target.name;
       target.name = name;
       if (target.type === 'sketch' && old !== name) rewriteNames(draft, (r) => (r.kind === 'dimension' && r.owner === old ? { ...r, owner: name } : null));
+      return;
+    }
+    case 'arrange': {
+      const old = draft.features.map((f) => f.id);
+      if (cmd.order.length !== old.length || new Set(cmd.order).size !== old.length || cmd.order.some((id) => !old.includes(id))) throw new CommandError(t('cmd.arrangeNotAll'));
+      const bar = draft.rollbackIndex ?? old.length;
+      if (cmd.order.slice(0, bar).some((id) => !old.slice(0, bar).includes(id))) throw new CommandError(t('cmd.arrangeAcrossBar'));
+      const byId = new Map(draft.features.map((f) => [f.id, f]));
+      const next = cmd.order.map((id) => byId.get(id)!);
+      for (const [id, folder] of Object.entries(cmd.folders ?? {})) {
+        const target = byId.get(id);
+        if (!target) throw new CommandError(t('cmd.featureNotFound', { id }));
+        if (folder === null || folder.trim() === '') delete target.folder;
+        else target.folder = folder.trim();
+      }
+      // the features of a folder follow one another
+      const seen = new Set<string>();
+      let before: string | undefined;
+      for (const f of next) {
+        if (f.folder !== before && f.folder !== undefined) {
+          if (seen.has(f.folder)) throw new CommandError(t('cmd.folderApart', { folder: f.folder }));
+          seen.add(f.folder);
+        }
+        before = f.folder;
+      }
+      draft.features = next;
+      return;
+    }
+    case 'setFeatureNote': {
+      const target = feature(draft, cmd.featureId);
+      for (const key of ['comment', 'tag'] as const) {
+        const value = cmd[key];
+        if (value === undefined) continue;
+        if (value.trim() === '') delete target[key];
+        else target[key] = key === 'tag' ? value.trim() : value;
+      }
       return;
     }
     case 'setRollback': {

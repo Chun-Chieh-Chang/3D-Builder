@@ -2,6 +2,7 @@ import { canBeSeed, isDatumPlaneName, type DatumPlaneName, type Ref } from '@3db
 import { store, type UiState } from './state/store';
 import { t } from '@3db/i18n';
 import { TOOL_LABEL } from './strings';
+import { effective, matchesShortcut, overrides } from './shortcuts';
 import type { ToolId } from './sketcher/controller';
 
 /**
@@ -46,6 +47,7 @@ const SKETCH_TOOLS: ToolId[] = ['dimension', 'line', 'centerline', 'rect', 'cent
 
 export const ACTIONS: UiAction[] = [
   { id: 'new-part', label: '新零件', shortcut: 'Ctrl+N', group: 'file', enabled: idle, run: () => store.newPart() },
+  { id: 'new-part-template', get label() { return t('action.newFromTemplate'); }, group: 'file', enabled: idle, run: () => store.openDialog('template') },
   { id: 'new-assembly', label: '新組合件', group: 'file', enabled: idle, run: () => store.newAssembly() },
   { id: 'new-demo', label: '新示範件', group: 'file', enabled: idle, run: () => store.newDemo() },
   { id: 'open', label: '開啟舊檔', shortcut: 'Ctrl+O', group: 'file', enabled: idle, run: () => store.open() },
@@ -58,6 +60,7 @@ export const ACTIONS: UiAction[] = [
 
   { id: 'equations', get label() { return t('action.equations'); }, group: 'tools', enabled: partIdle, run: () => store.openDialog('equations') },
   { id: 'appearance', get label() { return t('action.appearance'); }, group: 'tools', enabled: partIdle, run: () => store.openDialog('appearance') },
+  { id: 'shortcuts', get label() { return t('action.shortcuts'); }, group: 'tools', enabled: () => true, run: () => store.openDialog('shortcuts') },
   { id: 'properties', get label() { return t('action.properties'); }, group: 'tools', enabled: partIdle, run: () => store.openDialog('properties') },
 
   { id: 'extrude', label: '伸長填料/基材', group: 'feature', enabled: sketchSelected, run: () => store.newExtrude('boss') },
@@ -160,12 +163,8 @@ function toggleConstruction(): void {
   sketcher.setConstruction(!curves.every((e) => 'construction' in e && e.construction));
 }
 
-function matches(e: KeyboardEvent, shortcut: string): boolean {
-  const parts = shortcut.split('+');
-  const key = parts.pop()!.toLowerCase();
-  const ctrl = parts.includes('Ctrl');
-  return e.key.toLowerCase() === key && ctrl === (e.ctrlKey || e.metaKey) && !e.altKey;
-}
+/** The shortcut an action has now: the user's choice (D3.3), else the one the registry gives. */
+export const shortcutOf = (a: UiAction): string | undefined => effective(a.id, a.shortcut, overrides());
 
 /** Global shortcuts; ignored while typing into inputs. */
 export function installShortcuts(): () => void {
@@ -216,7 +215,8 @@ export function installShortcuts(): () => void {
       return void store.requestDelete(s.selected); // 「確認刪除」 for the feature selected in the tree
     }
     for (const a of ACTIONS) {
-      if (a.shortcut && matches(e, a.shortcut) && a.enabled(s)) {
+      const shortcut = shortcutOf(a);
+      if (shortcut && matchesShortcut(e, shortcut) && a.enabled(s)) {
         e.preventDefault();
         a.run();
         return;

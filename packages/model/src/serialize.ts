@@ -116,6 +116,8 @@ const migrations: Record<number, (doc: Json) => Json> = {
   // v24: material and document settings (C14.1, B8.4), absent until chosen, and the targets of appearances (C14.2). Nothing to convert: no earlier
   // version could store an appearance.
   23: (doc) => doc,
+  // v25: comment, tag and folder on a feature (D1.7), all optional. Nothing to convert.
+  24: (doc) => doc,
 };
 
 export class FormatError extends Error {

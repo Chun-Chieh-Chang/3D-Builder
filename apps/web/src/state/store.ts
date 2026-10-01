@@ -7,6 +7,8 @@ import {
   createDemoPart,
   createEmptyAssembly,
   createEmptyPart,
+  createPartFromTemplate,
+  type PartTemplateId,
   DATUM_PLANES,
   dirName,
   DocHistory,
@@ -35,7 +37,7 @@ import {
   type SketchFeature,
 } from '@3db/model';
 import { assemblyName, partFileName, partName, readDocumentFile, sha256Hex, imageFileName, stepFileName, stlFileName, writePartFile } from '@3db/io';
-import { suppressionTargets, type SuppressAction } from '@3db/regen/dag';
+import { orderProblem, suppressionTargets, type SuppressAction } from '@3db/regen/dag';
 import { contourChoices, findProfiles, type ContourChoice } from '@3db/sketch/profiles';
 import type { Viewer } from '@3db/render';
 import type { KernelApi, PartExportOptions, RebuildPayload, SketchSolvePayload, SketchSolveRequest } from '../worker/protocol';
@@ -107,7 +109,7 @@ export interface UiState {
   /** 「錯誤為何？」 dialog (D7.1). */
   whatsWrong: boolean;
   /** The equations or file-properties dialog (B5.2, B8.3), when open. */
-  dialog: 'equations' | 'properties' | 'appearance' | 'stepOptions' | null;
+  dialog: 'equations' | 'properties' | 'appearance' | 'stepOptions' | 'template' | 'shortcuts' | null;
   /** The file the part was opened from or last saved to (F7.1); null for a part never saved. */
   fileName: string | null;
   /** The document differs from what was last opened or saved (the title shows 「*」). */
@@ -353,6 +355,16 @@ class AppStore {
     for (const fn of this.listeners) fn();
   }
 
+  /** The template the next 「新零件」 is made from (B1.4). */
+  private template: PartTemplateId = 'blank';
+
+  /** 「新零件（範本）」: the part is made from the template, after 「要儲存變更嗎？」 if the open one has changes. */
+  newPartFromTemplate(id: PartTemplateId): void {
+    this.set({ dialog: null });
+    this.template = id;
+    this.guard('new-part');
+  }
+
   /** The part the last rebuild was requested for: a change that only touches what is shown needs no new rebuild. */
   private lastDoc: PartDoc | null = null;
 
@@ -451,6 +463,52 @@ class AppStore {
   }
 
   // ------------------------------------------------------------ FeatureManager operations (B2.4, B2.6, B2.8, D7.1)
+
+  // ------------------------------------------------------------ order, folders and notes (B2.5, D1.5, D1.7)
+
+  /**
+   * Moves a feature to just before `beforeId` (the end when null): one undo step. A feature cannot come before what it is built on, nor go past the rollback
+   * bar. It joins the folder that has features on both sides of where it lands, and leaves its own if it lands outside it; `folderChoice` says it otherwise.
+   */
+  moveFeature(id: Id, beforeId: Id | null, folderChoice?: string | null): void {
+    const doc = this.history.doc;
+    const ids = doc.features.map((f) => f.id);
+    const rest = ids.filter((x) => x !== id);
+    const at = beforeId === null ? rest.length : rest.indexOf(beforeId);
+    if (at < 0 || !ids.includes(id)) return;
+    const order = [...rest.slice(0, at), id, ...rest.slice(at)];
+    if (order.every((x, i) => x === ids[i])) return;
+    const name = (x: Id) => doc.features.find((f) => f.id === x)?.name ?? x;
+    const bar = doc.rollbackIndex ?? ids.length;
+    if (order.slice(0, bar).some((x) => !ids.slice(0, bar).includes(x))) return void this.notify(t('tree.moveAcrossBar'), 'error');
+    const problem = orderProblem(doc, order);
+    if (problem) return void this.notify(t('tree.moveBlocked', { feature: name(problem.feature), parent: name(problem.parent) }), 'error');
+    const folderOf = (x: Id | undefined) => (x === undefined ? undefined : doc.features.find((f) => f.id === x)?.folder);
+    const before = folderOf(order[at - 1]);
+    const after = folderOf(order[at + 1]);
+    // between two features of one folder it joins; where the user dropped it on a folder row or beside one it is the user who says
+    const folder = folderChoice !== undefined ? folderChoice : before !== undefined && before === after ? before : null;
+    this.execute({ type: 'arrange', order, folders: { [id]: folder } });
+  }
+
+  /** 「放進新資料夾」: the feature gets a folder of its own to begin with (drag others in, rename it). */
+  newFolder(id: Id): void {
+    const used = new Set(this.history.doc.features.flatMap((f) => (f.folder ? [f.folder] : [])));
+    let n = 1;
+    while (used.has(t('tree.folderName', { n }))) n++;
+    this.execute({ type: 'arrange', order: this.history.doc.features.map((f) => f.id), folders: { [id]: t('tree.folderName', { n }) } });
+  }
+
+  /** The name of a folder changed, or the folder dissolved (null): all its features at once. */
+  renameFolder(folder: string, to: string | null): void {
+    const members = this.history.doc.features.filter((f) => f.folder === folder).map((f) => f.id);
+    this.execute({ type: 'arrange', order: this.history.doc.features.map((f) => f.id), folders: Object.fromEntries(members.map((m) => [m, to])) });
+  }
+
+  /** Takes the feature out of its folder. */
+  leaveFolder(id: Id): void {
+    this.execute({ type: 'arrange', order: this.history.doc.features.map((f) => f.id), folders: { [id]: null } });
+  }
 
   /** 「抑制」「恢復抑制」「恢復抑制（含相依特徵）」: the dependency graph decides which features change, in one step. */
   suppress(featureId: Id, action: SuppressAction): void {
@@ -1193,6 +1251,7 @@ class AppStore {
 
   /** 「新零件」: an empty part with the default planes (B1.4). */
   newPart(): void {
+    this.template = 'blank';
     this.guard('new-part');
   }
 
@@ -1242,7 +1301,9 @@ class AppStore {
       return void this.assembly!.startInsert();
     }
     if (action === 'new-demo') return this.load(createDemoPart(), null, null);
-    this.load(createEmptyPart(), null, null, new Map(), `零件${++this.untitledCount}`);
+    const template = this.template;
+    this.template = 'blank';
+    this.load(createPartFromTemplate(template), null, null, new Map(), `零件${++this.untitledCount}`);
   }
 
   private async openFile(): Promise<void> {

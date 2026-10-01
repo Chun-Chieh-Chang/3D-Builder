@@ -3,7 +3,7 @@ import { t } from '@3db/i18n';
 import { DATUM_PLANES, findFeature, isDimension, isShown, ORIGIN_KEY, Parameters, settingsOf, type DatumPlaneName, type Id, type Feature, type PlaneFrame, type Ref } from '@3db/model';
 import { ownerFeatures } from '@3db/naming';
 import { Viewer, type DatumDisplay, type PlaneDisplay, type SketchOverlay } from '@3db/render';
-import { ACTIONS } from '../actions';
+import { ACTIONS, shortcutOf } from '../actions';
 import { chosen, pickable, prompt } from '../state/datumSlots';
 import { sample } from '@3db/sketch/interact';
 import { buildOverlay, SKETCH_COLORS } from '../sketcher/overlay';
@@ -288,7 +288,7 @@ export function Viewport() {
       <div ref={host} className="viewport-canvas" />
       <div className="heads-up">
         {ACTIONS.filter((a) => a.group === 'view').map((a) => (
-          <button key={a.id} onClick={a.run} disabled={!a.enabled(store.getState())} title={a.shortcut ? `${a.label}（${a.shortcut}）` : a.label}>
+          <button key={a.id} onClick={a.run} disabled={!a.enabled(store.getState())} title={shortcutOf(a) ? `${a.label}（${shortcutOf(a)}）` : a.label}>
             {a.label}
           </button>
         ))}
