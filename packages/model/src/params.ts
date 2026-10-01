@@ -1,7 +1,7 @@
 import { t } from '@3db/i18n';
 import type { Id } from './ids';
 import { evalAngle, evalLength, evalQuantity, ExprError, parseExpr, referencesOf, rewriteRefs, type Env, type NameRef, type Quantity } from './expr';
-import type { Expr, Feature, PartDoc, SketchConstraint, SketchFeature, Variable } from './schema';
+import type { Draft, Expr, Feature, PartDoc, SketchConstraint, SketchFeature, Thin, Variable } from './schema';
 import { isDimension } from './schema';
 
 /**
@@ -15,7 +15,7 @@ import { isDimension } from './schema';
 export type ExprKind = 'length' | 'angle';
 
 /** What a value must be for the feature to make sense: a size above zero, or an angle in the range its feature allows. */
-export type ExprRole = 'positive' | 'nonZero' | 'revolveAngle' | 'chamferAngle' | 'planeAngle' | 'any';
+export type ExprRole = 'positive' | 'nonZero' | 'revolveAngle' | 'chamferAngle' | 'draftAngle' | 'planeAngle' | 'any';
 
 /** Why a value is not acceptable for its role (in words), or null. `expr` is what the user wrote. */
 export function roleProblem(v: number, role: ExprRole, expr: Expr): string | null {
@@ -29,6 +29,8 @@ export function roleProblem(v: number, role: ExprRole, expr: Expr): string | nul
       return angle(0, 2 * Math.PI, t('cmd.revolveAngleRange'));
     case 'chamferAngle':
       return angle(0, Math.PI / 2 - 1e-9, t('cmd.chamferAngleRange'));
+    case 'draftAngle':
+      return angle(0, Math.PI / 2 - 1e-9, t('cmd.draftAngleRange'));
     case 'planeAngle':
       return angle(-1e-12, 2 * Math.PI, t('cmd.planeAngleRange'));
     case 'any':
@@ -67,18 +69,36 @@ export function mapExprs(feature: Feature, fn: (expr: Expr, kind: ExprKind, role
     }
     case 'extrude': {
       const cond = <C extends { type: string }>(c: C): C => {
-        const d = c as unknown as { type: string; depth?: Expr };
-        if (d.depth === undefined) return c;
-        const depth = fn(d.depth, 'length', 'positive');
-        return depth === d.depth ? c : ({ ...c, depth } as C);
+        const d = c as unknown as { type: string; depth?: Expr; offset?: Expr };
+        let next = c;
+        if (d.depth !== undefined) {
+          const depth = fn(d.depth, 'length', 'positive');
+          if (depth !== d.depth) next = { ...next, depth } as C;
+        }
+        if (d.offset !== undefined) {
+          const offset = fn(d.offset, 'length', 'positive');
+          if (offset !== d.offset) next = { ...next, offset } as C;
+        }
+        return next;
       };
       const dir1 = cond(feature.dir1);
       const dir2 = feature.dir2 ? cond(feature.dir2) : undefined;
-      return dir1 === feature.dir1 && dir2 === feature.dir2 ? feature : { ...feature, dir1, ...(dir2 ? { dir2 } : {}) };
+      const draft = (d: Draft | undefined): Draft | undefined => {
+        if (!d) return d;
+        const angle = fn(d.angle, 'angle', 'draftAngle');
+        return angle === d.angle ? d : { ...d, angle };
+      };
+      const draft1 = draft(feature.draft1);
+      const draft2 = draft(feature.draft2);
+      const thin = thinExprs(feature.thin, fn);
+      if (dir1 === feature.dir1 && dir2 === feature.dir2 && draft1 === feature.draft1 && draft2 === feature.draft2 && thin === feature.thin) return feature;
+      return { ...feature, dir1, ...(dir2 ? { dir2 } : {}), ...(draft1 ? { draft1 } : {}), ...(draft2 ? { draft2 } : {}), ...(thin ? { thin } : {}) };
     }
     case 'revolve': {
       const angle = fn(feature.dir1.angle, 'angle', 'revolveAngle');
-      return angle === feature.dir1.angle ? feature : { ...feature, dir1: { ...feature.dir1, angle } };
+      const thin = thinExprs(feature.thin, fn);
+      if (angle === feature.dir1.angle && thin === feature.thin) return feature;
+      return { ...feature, dir1: { ...feature.dir1, angle }, ...(thin ? { thin } : {}) };
     }
     case 'fillet': {
       const radius = fn(feature.radius, 'length', 'positive');
@@ -115,6 +135,14 @@ export function mapExprs(feature: Feature, fn: (expr: Expr, kind: ExprKind, role
     case 'combine':
       return feature;
   }
+}
+
+/** The thicknesses of a thin feature as expressions (a feature that is not thin has none). */
+function thinExprs(thin: Thin | undefined, fn: (expr: Expr, kind: ExprKind, role: ExprRole) => Expr): Thin | undefined {
+  if (!thin) return thin;
+  const thickness = fn(thin.thickness, 'length', 'positive');
+  const thickness2 = thin.thickness2 === undefined ? undefined : fn(thin.thickness2, 'length', 'positive');
+  return thickness === thin.thickness && thickness2 === thin.thickness2 ? thin : { ...thin, thickness, ...(thickness2 === undefined ? {} : { thickness2 }) };
 }
 
 /** Every expression of a feature, in order. */

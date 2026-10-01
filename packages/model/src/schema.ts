@@ -6,7 +6,7 @@ import type { Id } from './ids';
  * DOF status, mass properties and error lists are derived data and never stored.
  */
 
-export const SCHEMA_VERSION = 13;
+export const SCHEMA_VERSION = 14;
 
 /** Value expression (B5.2, B5.3): "20", "25.4mm", "30deg", "wall_t*2", "D1@草圖1/2", "property('厚度')"; see `expr/`. */
 export type Expr = string;
@@ -117,7 +117,31 @@ export type EndCondition =
   | { type: 'blind'; depth: Expr; reverse?: boolean }
   | { type: 'midPlane'; depth: Expr }
   | { type: 'throughAll'; reverse?: boolean }
-  | { type: 'upToFace'; face: Ref; reverse?: boolean };
+  | { type: 'upToFace'; face: Ref; reverse?: boolean }
+  /** Up to the first face in the way (成形到下一面, v14); which face is worked out from the geometry at every rebuild. */
+  | { type: 'upToNext'; reverse?: boolean }
+  /** Up to the plane through a vertex, parallel to the sketch (成形至頂點, v14). */
+  | { type: 'upToVertex'; vertex: Ref; reverse?: boolean }
+  /** Up to the surface of another body, which it takes the shape of (成形至本體, v14); ody is a kind: 'body' reference. */
+  | { type: 'upToBody'; body: Ref; reverse?: boolean }
+  /** To offset short of a face parallel to the sketch, or beyond it with eyond (從曲面偏移, v14). */
+  | { type: 'offsetFromFace'; face: Ref; offset: Expr; beyond?: boolean; reverse?: boolean };
+
+/** The walls of an extrusion lean by ngle (拔模, v14): away from the profile, or towards it with inward. */
+export interface Draft {
+  angle: Expr;
+  inward?: boolean;
+}
+
+/** A thin feature (薄件, v14): the profile's outline thickened instead of its inside filled, one way, both ways equally, or by two thicknesses. */
+export interface Thin {
+  mode: 'one' | 'mid' | 'two';
+  thickness: Expr;
+  /** The other side's thickness, for 	wo. */
+  thickness2?: Expr;
+  /** One side: the other way round (to the outside of a closed profile, or the other side of an open one). */
+  reverse?: boolean;
+}
 
 export interface ExtrudeFeature extends FeatureBase {
   type: 'extrude';
@@ -128,8 +152,12 @@ export interface ExtrudeFeature extends FeatureBase {
   /** Which contours of the sketch it uses (C1.34, v12): each is the entities that bound one region; absent means all of them. */
   contours?: Id[][];
   dir1: EndCondition;
-  /** Second direction (P1). */
+  /** Second direction, from the sketch plane the other way (v14). */
   dir2?: EndCondition;
+  /** Draft of the walls of each direction (v14); not with 兩側對稱. */
+  draft1?: Draft;
+  draft2?: Draft;
+  thin?: Thin;
 }
 
 /** Revolve end conditions (C4.3): an angle in one direction, or split evenly about the sketch plane. */
@@ -146,6 +174,7 @@ export interface RevolveFeature extends FeatureBase {
   /** As for `ExtrudeFeature.contours`. */
   contours?: Id[][];
   dir1: RevolveCondition;
+  thin?: Thin;
 }
 
 export interface FilletFeature extends FeatureBase {

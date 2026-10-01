@@ -10,6 +10,8 @@ import {
   type ChamferFeature,
   type CombineFeature,
   type DeleteFaceFeature,
+  type Draft,
+  type EndCondition,
   type ExtrudeFeature,
   type Feature,
   type FilletFeature,
@@ -22,10 +24,11 @@ import {
   type RefPlaneFeature,
   type RevolveFeature,
   type SketchFeature,
+  type Thin,
   type Vec3,
 } from '@3db/model';
-import { findProfiles, selectContours, type ProfileResult, type SketchSolver, type SketchStatus, type SolvedSketch } from '@3db/sketch';
-import { KernelError, type FaceOrigin, type ImportDiagnostics, type Kernel, type OpResult, type ShapeId, type Topology } from '@3db/kernel';
+import { findProfiles, selectContours, ThinProblem, thinRegions, type ProfileResult, type SketchSolver, type SketchStatus, type SolvedSketch } from '@3db/sketch';
+import { KernelError, type SweepSpec, type FaceOrigin, type ImportDiagnostics, type Kernel, type OpResult, type ShapeId, type Topology } from '@3db/kernel';
 import { nameElements, nameFromFaces, resolveRef, type Candidate, type ElementNames } from '@3db/naming';
 import { Bodies, type BodyState, type BodyView } from './bodies';
 import { followReferences, ReferenceProblem } from './references';
@@ -71,7 +74,7 @@ export interface RebuildResult {
   /** All the bodies seen as one: the body itself when there is one (odies), a view of them all (a compound) when there are several. */
   body: BodyView | null;
   bodies: BodyInfo[];
-  sketches: Map<Id, { frame: PlaneFrame; solved: SolvedSketch; profiles: ProfileResult }>;
+  sketches: Map<Id, { frame: PlaneFrame; solved: SolvedSketch; profiles: ProfileResult; sketch: SketchFeature }>;
   /**
    * Plane of every sketch that could be placed, including the sketch right at the `until` limit
    * (the one being edited), whose plane may be a face of the model before it; and of every
@@ -464,13 +467,30 @@ export class Regenerator {
     }
     const solved = this.solver.solve(followed);
     const profiles = solved.status === 'failed' ? { regions: [], problems: [] } : findProfiles(followed, solved);
-    return { frame, solved, profiles };
+    return { frame, solved, profiles, sketch: followed };
+  }
+
+  /** A thin feature's profile (薄件): every closed outline of the sketch a ring, every open path a ribbon (C4.1, C4.3). */
+  private thinProfile(s: RebuildResult['sketches'] extends Map<Id, infer V> ? V : never, thin: Thin, contours?: Id[][]) {
+    if (contours) throw new FeatureError(t('thin.noContours'));
+    const one = evalLength(thin.thickness);
+    const th =
+      thin.mode === 'mid' ? { inward: one / 2, outward: one / 2 } : thin.mode === 'two' ? { inward: one, outward: evalLength(thin.thickness2 ?? thin.thickness) } : thin.reverse ? { inward: 0, outward: one } : { inward: one, outward: 0 };
+    try {
+      const regions = thinRegions(s.sketch, s.solved, th);
+      if (regions.length === 0) throw new FeatureError('草圖沒有可以做成薄件的輪廓');
+      return { ...s, profiles: { regions, problems: [] } };
+    } catch (e) {
+      if (e instanceof ThinProblem) throw new FeatureError(e.message);
+      throw e;
+    }
   }
 
   /** The sketch of a boss or cut with the contours the feature chose (all of them when it chose none, C1.34). */
-  private profileOf(sketches: RebuildResult['sketches'], sketchId: Id, contours?: Id[][]) {
+  private profileOf(sketches: RebuildResult['sketches'], sketchId: Id, contours?: Id[][], thin?: Thin) {
     const s = sketches.get(sketchId);
     if (!s) throw new FeatureError('父草圖不存在、已抑制或失敗');
+    if (thin) return this.thinProfile(s, thin, contours);
     if (s.profiles.problems.length > 0) throw new FeatureError(`草圖不能用於特徵：${s.profiles.problems.join('；')}`);
     if (s.profiles.regions.length === 0) throw new FeatureError('草圖沒有封閉輪廓');
     if (!contours) return s;
@@ -489,47 +509,105 @@ export class Regenerator {
     return far;
   }
 
+  /**
+   * One direction of an extrusion (C4.1): where it goes and what it ends on. `dir` is the way it grows; the end conditions that need the
+   * model before the feature (through all, up to a face, the next face, a vertex, a body, an offset from a face) look it up here.
+   */
+  private sweepOf(d: EndCondition, dir: Vec3, s: { frame: PlaneFrame; profiles: ProfileResult }, set: Bodies): SweepSpec {
+    const body = set.view;
+    const needBody = (what: string): BodyState => {
+      if (!body) throw new FeatureError(t('feature.needsBody', { what }));
+      return body;
+    };
+    const origin = s.frame.origin;
+    /** A sweep long enough to pass everything of `of`. */
+    const longer = (of: BodyState): Vec3 => {
+      const length = this.reach(of, origin, dir);
+      if (length <= 1e-9) throw new FeatureError(t('feature.nothingThatWay'));
+      return add([0, 0, 0], dir, length * 1.01 + 1);
+    };
+    switch (d.type) {
+      case 'blind':
+        return { vector: add([0, 0, 0], dir, evalLength(d.depth)) };
+      case 'midPlane': {
+        const depth = evalLength(d.depth);
+        const n = s.frame.normal;
+        return { vector: add([0, 0, 0], n, depth), offset: -depth / 2 };
+      }
+      case 'throughAll':
+        return { vector: longer(needBody(t('feature.throughAll'))) };
+      case 'upToFace': {
+        const b = needBody(t('feature.upToFace'));
+        const owner = set.locate('face', this.resolve(d.face, b, t('feature.endFace')));
+        return { vector: longer(b), until: { target: owner.body.shape, face: owner.local } };
+      }
+      case 'upToNext': {
+        const b = needBody(t('feature.upToNext'));
+        const vector = longer(b);
+        const next = this.kernel.nextFace(b.shape, s.frame, s.profiles.regions, vector);
+        if (next === null) throw new FeatureError(t('feature.noNextFace'));
+        return { vector, until: { target: b.shape, face: next } };
+      }
+      case 'upToBody': {
+        needBody(t('feature.upToBody'));
+        if (!d.body.name) throw new FeatureError(t('feature.pickBody'));
+        const other = set.list.find((x) => x.id === d.body.name);
+        if (!other) throw new FeatureError(t('body.lost', { name: d.body.name }), [{ ref: d.body, reason: 'missing', candidates: [] }]);
+        return { vector: longer(other), until: { body: other.shape } };
+      }
+      case 'upToVertex': {
+        const b = needBody(t('feature.upToVertex'));
+        const at = b.topology.vertices[this.resolve(d.vertex, b, t('feature.endVertex'))]!.point;
+        const depth = dot(sub(at, origin), dir);
+        if (depth <= 1e-9) throw new FeatureError(t('feature.vertexBehind'));
+        return { vector: add([0, 0, 0], dir, depth) };
+      }
+      case 'offsetFromFace': {
+        const b = needBody(t('feature.offsetFromFace'));
+        const face = b.topology.faces[this.resolve(d.face, b, t('feature.endFace'))]!;
+        if (face.surface !== 'plane' || !face.normal || Math.abs(dot(face.normal, s.frame.normal)) < 1 - 1e-6) throw new FeatureError(t('feature.offsetNeedsParallel'));
+        const offset = evalLength(d.offset);
+        const depth = dot(sub(face.center, origin), dir) + (d.beyond ? offset : -offset);
+        if (depth <= 1e-9) throw new FeatureError(t('feature.offsetBehind'));
+        return { vector: add([0, 0, 0], dir, depth) };
+      }
+    }
+  }
+
   private extrude(f: ExtrudeFeature, sketches: RebuildResult['sketches'], set: Bodies): BodyState[] {
-    const s = this.profileOf(sketches, f.sketch, f.contours);
-    if (f.dir2) throw new FeatureError('方向 2 排在後續階段（P1）');
+    const s = this.profileOf(sketches, f.sketch, f.contours, f.thin);
     const body = set.view;
     if (f.op === 'cut' && !body) throw new FeatureError('除料需要既有的本體');
     const n = s.frame.normal;
-    const d = f.dir1;
-    // A boss grows along the sketch normal, a cut goes into the material (SolidWorks defaults).
-    const sign = (f.op === 'cut' ? -1 : 1) * ('reverse' in d && d.reverse ? -1 : 1);
-    const dir: Vec3 = [n[0] * sign, n[1] * sign, n[2] * sign];
+    // A boss grows along the sketch normal, a cut goes into the material (SolidWorks defaults); direction 2 goes the other way.
+    const grow = f.op === 'cut' ? -1 : 1;
+    const dirOf = (d: EndCondition, base: number): Vec3 => {
+      const sign = base * ('reverse' in d && d.reverse ? -1 : 1);
+      return [n[0] * sign, n[1] * sign, n[2] * sign];
+    };
+    const draftOf = (d: EndCondition, draft: Draft | undefined, which: string): number | undefined => {
+      if (!draft) return undefined;
+      if (d.type === 'midPlane') throw new FeatureError(t('feature.draftNotMid', { which }));
+      // positive leans the walls in along the sweep: "outward" is the other way
+      const angle = evalAngle(draft.angle);
+      return draft.inward ? angle : -angle;
+    };
+    const first = { ...this.sweepOf(f.dir1, dirOf(f.dir1, grow), s, set), draft: draftOf(f.dir1, f.draft1, t('feature.dir1')) };
+    const spec1: SweepSpec = { vector: first.vector, ...(first.offset === undefined ? {} : { offset: first.offset }), ...(first.until ? { until: first.until } : {}), ...(first.draft === undefined ? {} : { draft: first.draft }) };
     let tool: OpResult;
-    switch (d.type) {
-      case 'blind':
-        tool = this.kernel.extrude(s.frame, s.profiles.regions, add([0, 0, 0], dir, evalLength(d.depth)));
-        break;
-      case 'midPlane': {
-        const depth = evalLength(d.depth);
-        tool = this.kernel.extrude(s.frame, s.profiles.regions, add([0, 0, 0], n, depth), -depth / 2);
-        break;
-      }
-      case 'throughAll':
-      case 'upToFace': {
-        if (!body) throw new FeatureError(d.type === 'throughAll' ? '完全貫穿需要既有的本體' : '成形至某一面需要既有的本體');
-        const length = this.reach(body, s.frame.origin, dir);
-        if (length <= 1e-9) throw new FeatureError('這個方向上沒有本體（試試反轉方向）');
-        const vector = add([0, 0, 0], dir, length * 1.01 + 1);
-        if (d.type === 'throughAll') {
-          tool = this.kernel.extrude(s.frame, s.profiles.regions, vector);
-        } else {
-          // the end face belongs to one body: the sweep is trimmed at that body
-          const owner = set.locate('face', this.resolve(d.face, body, '終止面'));
-          tool = this.kernel.extrude(s.frame, s.profiles.regions, vector, 0, { target: owner.body.shape, face: owner.local });
-        }
-        break;
-      }
+    if (f.dir2) {
+      if (f.dir1.type === 'midPlane' || f.dir2.type === 'midPlane') throw new FeatureError(t('feature.mid2'));
+      const second = { ...this.sweepOf(f.dir2, dirOf(f.dir2, -grow), s, set), draft: draftOf(f.dir2, f.draft2, t('feature.dir2')) };
+      const spec2: SweepSpec = { vector: second.vector, ...(second.until ? { until: second.until } : {}), ...(second.draft === undefined ? {} : { draft: second.draft }) };
+      tool = this.kernel.extrudeBoth(s.frame, s.profiles.regions, spec1, spec2);
+    } else {
+      tool = this.kernel.extrude(s.frame, s.profiles.regions, spec1.vector, spec1.offset ?? 0, spec1.until, spec1.draft);
     }
     return this.apply(f.id, f.op, tool, { featureId: f.id, sketchId: f.sketch }, set.list, f.merge !== false);
   }
 
   private revolve(f: RevolveFeature, sketches: RebuildResult['sketches'], set: Bodies): BodyState[] {
-    const s = this.profileOf(sketches, f.sketch, f.contours);
+    const s = this.profileOf(sketches, f.sketch, f.contours, f.thin);
     if (f.op === 'cut' && !set.view) throw new FeatureError('除料需要既有的本體');
     const axis = s.solved.geometry.get(f.axis);
     if (axis?.type !== 'line') throw new FeatureError('旋轉軸不存在，請重新選擇');

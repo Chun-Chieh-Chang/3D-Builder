@@ -15,7 +15,10 @@ export function parentsOf(feature: Feature, doc: PartDoc): Id[] {
       parents = fromRefs([feature.plane]);
       break;
     case 'extrude':
-      parents = [feature.sketch, ...[feature.dir1, feature.dir2].flatMap((d) => (d?.type === 'upToFace' ? fromRefs([d.face]) : []))];
+      parents = [
+        feature.sketch,
+        ...[feature.dir1, feature.dir2].flatMap((d) => (d?.type === 'upToFace' || d?.type === 'offsetFromFace' ? fromRefs([d.face]) : d?.type === 'upToVertex' ? fromRefs([d.vertex]) : d?.type === 'upToBody' && d.body.name ? [bodyFeature(d.body.name)] : [])),
+      ];
       break;
     case 'revolve':
       parents = [feature.sketch];

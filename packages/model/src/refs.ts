@@ -22,7 +22,13 @@ export function mapRefs(feature: Feature, map: (ref: Ref) => Ref): { feature: Fe
       return { feature: { ...feature, plane: one(feature.plane), entities }, replaced };
     }
     case 'extrude': {
-      const cond = <C extends { type: string }>(c: C): C => (c.type === 'upToFace' ? ({ ...c, face: one((c as unknown as { face: Ref }).face) } as C) : c);
+      const cond = <C extends { type: string }>(c: C): C => {
+        const d = c as unknown as { face?: Ref; vertex?: Ref; body?: Ref };
+        if (c.type === 'upToFace' || c.type === 'offsetFromFace') return { ...c, face: one(d.face!) } as C;
+        if (c.type === 'upToVertex') return { ...c, vertex: one(d.vertex!) } as C;
+        if (c.type === 'upToBody') return { ...c, body: one(d.body!) } as C;
+        return c;
+      };
       const next = { ...feature, dir1: cond(feature.dir1), ...(feature.dir2 ? { dir2: cond(feature.dir2) } : {}) };
       return { feature: next, replaced };
     }

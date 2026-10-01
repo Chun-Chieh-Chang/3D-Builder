@@ -91,6 +91,9 @@ const migrations: Record<number, (doc: Json) => Json> = {
   // v13: sketch entities may be projections of model edges (`ref`) and points may be where an edge pierces the sketch plane (`pierce`)
   // (C1.18, C1.26). Nothing to convert; the version keeps older programs from reading such an entity as a plain one that ignores the model.
   12: (doc) => doc,
+  // v14: more end conditions, a second direction, draft and thin features (C4.1–C4.3). Nothing to convert; the version keeps older programs from
+  // building such a feature as a plain extrusion.
+  13: (doc) => doc,
 };
 
 export class FormatError extends Error {

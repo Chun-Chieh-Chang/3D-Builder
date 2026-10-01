@@ -10,6 +10,7 @@ import {
   dirName,
   DocHistory,
   findFeature,
+  type EndCondition,
   IdAllocator,
   idsInUse,
   isBodyKey,
@@ -751,11 +752,24 @@ class AppStore {
   }
 
   /** 「成形至某一面」: the face picked in the graphics area ends the extrusion being edited. */
-  setUpToFace(face: Ref): void {
+  setUpToFace(ref: Ref): void {
     const e = this.state.editing;
     const f = e ? findFeature(this.history.doc, e.featureId) : undefined;
-    if (f?.type !== 'extrude' || f.dir1.type !== 'upToFace') return;
-    this.execute({ type: 'setEndCondition', featureId: f.id, dir: 'dir1', value: { ...f.dir1, face } });
+    if (f?.type !== 'extrude') return;
+    /** What a click puts into an end condition, or null when this one is not waiting for that kind of element. */
+    const into = (d: EndCondition): EndCondition | null => {
+      if ((d.type === 'upToFace' || d.type === 'offsetFromFace') && ref.kind === 'face') return { ...d, face: ref };
+      if (d.type === 'upToVertex' && ref.kind === 'vertex') return { ...d, vertex: ref };
+      const body = ref.kind === 'face' ? this.bodyOfFace(ref.name) : null;
+      if (d.type === 'upToBody' && body) return { ...d, body: { kind: 'body', name: body } };
+      return null;
+    };
+    const empty = (d: EndCondition) => (d.type === 'upToFace' || d.type === 'offsetFromFace' ? !d.face.name : d.type === 'upToVertex' ? !d.vertex.name : d.type === 'upToBody' ? !d.body.name : false);
+    const dirs = (['dir1', 'dir2'] as const).flatMap((dir) => (f[dir] ? [{ dir, d: f[dir]! }] : [])).sort((a, b) => Number(empty(b.d)) - Number(empty(a.d)));
+    for (const { dir, d } of dirs) {
+      const value = into(d);
+      if (value) return void this.execute({ type: 'setEndCondition', featureId: f.id, dir, value });
+    }
   }
 
   /**

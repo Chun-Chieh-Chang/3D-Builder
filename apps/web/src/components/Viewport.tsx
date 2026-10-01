@@ -17,7 +17,12 @@ import { Icon } from './Icon';
  */
 function picking(feature: Feature | undefined, editing: boolean, modelTool: 'convert' | 'pierce' | null = null) {
   const def = feature?.type === 'refPlane' ? feature.def : null;
-  const upTo = feature?.type === 'extrude' && feature.dir1.type === 'upToFace' ? feature.dir1 : null;
+  // the end of an extrusion that is a face, a vertex or a body: what is clicked on the model goes to the direction that is waiting for it
+  const ends = feature?.type === 'extrude' ? [feature.dir1, feature.dir2].flatMap((d) => (d ? [d] : [])) : [];
+  const endFaces = ends.flatMap((d) => (d.type === 'upToFace' || d.type === 'offsetFromFace' ? [d.face] : []));
+  const endVertices = ends.flatMap((d) => (d.type === 'upToVertex' ? [d.vertex] : []));
+  const endBody = ends.some((d) => d.type === 'upToBody');
+  const upTo = endFaces.length > 0 || endVertices.length > 0 || endBody ? ends : null;
   const edgeFeature = feature?.type === 'fillet' || feature?.type === 'chamfer' ? feature : null;
   const faceFeature = feature?.type === 'deleteFace' || feature?.type === 'moveFace' ? feature : null;
   const combine = feature?.type === 'combine';
@@ -28,7 +33,7 @@ function picking(feature: Feature | undefined, editing: boolean, modelTool: 'con
     : edgeFeature
     ? `點選邊線以加入${FEATURE_LABEL[edgeFeature.type]}`
     : upTo
-      ? '點選伸長要終止的面'
+      ? t('pick.extrudeEnd')
       : def?.mode === 'offset'
         ? '點選平面，或在設計樹中選擇基準面'
         : def?.mode === 'angle'
@@ -39,10 +44,10 @@ function picking(feature: Feature | undefined, editing: boolean, modelTool: 'con
   return {
     edges: !!edgeFeature || def?.mode === 'angle' || modelTool !== null,
     faces: !editing || modelTool === 'convert' || !!upTo || !!faceFeature || combine || def?.mode === 'offset' || def?.mode === 'angle',
-    vertices: def?.mode === 'threePoint',
+    vertices: def?.mode === 'threePoint' || endVertices.length > 0,
     pickedEdges: edgeFeature ? edgeFeature.edges : def?.mode === 'angle' ? [def.axis] : [],
-    pickedFaces: faceFeature ? (faceFeature.type === 'deleteFace' ? faceFeature.faces : [faceFeature.face]) : upTo ? [upTo.face] : def && def.mode !== 'threePoint' && def.plane.kind === 'face' ? [def.plane] : [],
-    pickedVertices: def?.mode === 'threePoint' ? def.points : [],
+    pickedFaces: faceFeature ? (faceFeature.type === 'deleteFace' ? faceFeature.faces : [faceFeature.face]) : upTo ? endFaces : def && def.mode !== 'threePoint' && def.plane.kind === 'face' ? [def.plane] : [],
+    pickedVertices: def?.mode === 'threePoint' ? def.points : endVertices,
     /** A default or reference plane the plane being defined is based on. */
     referencePlane: def && def.mode !== 'threePoint' && def.plane.kind === 'datum' ? def.plane.name : null,
     prompt,

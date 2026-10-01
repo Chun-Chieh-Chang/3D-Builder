@@ -1,6 +1,7 @@
 import { edit } from './edit';
 import { equations } from './equations';
 import { expr } from './expr';
+import { features } from './features';
 import { model } from './model';
 import { sketch } from './sketch';
 import { ui } from './ui';
@@ -10,4 +11,4 @@ import { ui } from './ui';
  * rewording or translating a message never renames its key. Values are templates: `{name}` is filled by
  * `t(key, { name })`, and the compiler checks the names (see `t`). One file per owner of the messages.
  */
-export const zhTW = { ...ui, ...model, ...expr, ...equations, ...edit, ...sketch } as const;
+export const zhTW = { ...ui, ...model, ...expr, ...equations, ...edit, ...sketch, ...features } as const;

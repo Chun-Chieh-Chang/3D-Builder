@@ -167,6 +167,22 @@ describe('a part file written by version 12 (contours, C1.34) opens in version 1
   });
 });
 
+describe('a part file written by version 13 (entities that follow the model, C1.18) opens in version 14 (end conditions, draft, thin features, C4.1)', () => {
+  it('keeps its projected edge and pierce point, and they still find the model', async () => {
+    const file = await readPartFile(oldFile('v13-references.3dbx'));
+    expect(file.warnings).toEqual([]);
+    expect(JSON.parse(new TextDecoder().decode((await readZip(oldFile('v13-references.3dbx')))[0]!.data)).schemaVersion).toBe(13);
+    expect(file.doc.schemaVersion).toBe(SCHEMA_VERSION);
+    const r = new Regenerator(kernel, await PlaneGcsSolver.create(), file.blobs).rebuild(file.doc);
+    expect(statuses(r).filter((s) => !s.endsWith('=ok'))).toEqual([]);
+    const g = r.sketches.get('sketch2')!.solved.geometry;
+    const line = g.get('r');
+    expect(line?.type === 'line' && Math.hypot(line.b[0] - line.a[0], line.b[1] - line.a[1])).toBeCloseTo(18, 6); // the edge of the block's end face, 20 less the two R2 corners that touch it, projected
+    expect(g.get('x')).toMatchObject({ type: 'point' });
+    expect(r.sketches.get('sketch2')!.solved.status).toBe('fully');
+  });
+});
+
 describe('the .3dbx file (B9.1, F7.1)', () => {
   const docs = async (): Promise<[string, PartDoc][]> => [
     ['the demo part', createDemoPart()],

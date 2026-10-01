@@ -1,7 +1,7 @@
 import { t } from '@3db/i18n';
 import { current, produce, type Draft } from 'immer';
 import { countersFor, type Id } from './ids';
-import type { Variable, BlobRef, ChamferFeature, CombineFeature, EndCondition, Expr, Feature, ImportedBodyFeature, PartDoc, PlaneDefinition, Ref, RevolveCondition, SketchConstraint, SketchEntity, SketchFeature } from './schema';
+import type { Variable, BlobRef, ChamferFeature, CombineFeature, Draft as WallDraft, EndCondition, Thin, Expr, Feature, ImportedBodyFeature, PartDoc, PlaneDefinition, Ref, RevolveCondition, SketchConstraint, SketchEntity, SketchFeature } from './schema';
 import { isDatumPlaneName } from './datums';
 import { mapRefs } from './refs';
 import { bodyFeature, isBodyKey, isHideable } from './visibility';
@@ -49,7 +49,15 @@ export type Command =
   | { type: 'setDimension'; featureId: Id; constraintId: Id; value: Expr }
   /** Makes a dimension driven (a reference that shows what is measured) or driving again; `value` is the new value when it drives again (C1.29). */
   | { type: 'setDimensionDriving'; featureId: Id; constraintId: Id; driving: boolean; value?: Expr }
-  | { type: 'setEndCondition'; featureId: Id; dir: 'dir1' | 'dir2'; value: EndCondition }
+  /** 
+ull removes direction 2 (and its draft). */
+  | { type: 'setEndCondition'; featureId: Id; dir: 'dir1' | 'dir2'; value: EndCondition | null }
+  /** The draft of one direction of an extrusion; 
+ull removes it. */
+  | { type: 'setDraft'; featureId: Id; dir: 'dir1' | 'dir2'; draft: WallDraft | null }
+  /** Makes an extrusion or a revolution a thin feature, or a solid one again (
+ull). */
+  | { type: 'setThin'; featureId: Id; thin: Thin | null }
   | { type: 'setRevolveCondition'; featureId: Id; value: RevolveCondition }
   | { type: 'setRevolveAxis'; featureId: Id; axis: Id }
   | { type: 'setFilletRadius'; featureId: Id; value: Expr }
@@ -166,7 +174,9 @@ function checkExprs(doc: PartDoc, f: Feature, only?: Set<Id>): void {
 }
 
 function endCondition(value: EndCondition): void {
-  if (value.type === 'upToFace' && value.face.kind !== 'face') throw new CommandError(t('cmd.upToFaceNeedsFace'));
+  if ((value.type === 'upToFace' || value.type === 'offsetFromFace') && value.face.kind !== 'face') throw new CommandError(t('cmd.upToFaceNeedsFace'));
+  if (value.type === 'upToVertex' && value.vertex.kind !== 'vertex') throw new CommandError(t('cmd.upToVertexNeedsVertex'));
+  if (value.type === 'upToBody' && value.body.kind !== 'body') throw new CommandError(t('cmd.upToBodyNeedsBody'));
 }
 
 /** The feature's sketch must come earlier in the history. */
@@ -343,8 +353,31 @@ export function mutate(draft: Draft<PartDoc>, cmd: Command): void {
     case 'setEndCondition': {
       const f = feature(draft, cmd.featureId);
       if (f.type !== 'extrude') throw new CommandError(t('cmd.onlyExtrudeHasEnd'));
+      if (cmd.value === null) {
+        if (cmd.dir === 'dir1') throw new CommandError(t('cmd.dir1Stays'));
+        delete f.dir2;
+        delete f.draft2;
+        return;
+      }
       endCondition(cmd.value);
       f[cmd.dir] = cmd.value;
+      checkExprs(draft as PartDoc, f as Feature);
+      return;
+    }
+    case 'setDraft': {
+      const f = feature(draft, cmd.featureId);
+      if (f.type !== 'extrude') throw new CommandError(t('cmd.onlyExtrudeHasEnd'));
+      const key = cmd.dir === 'dir1' ? 'draft1' : 'draft2';
+      if (cmd.draft === null) delete f[key];
+      else f[key] = { angle: cmd.draft.angle, ...(cmd.draft.inward ? { inward: true } : {}) };
+      checkExprs(draft as PartDoc, f as Feature);
+      return;
+    }
+    case 'setThin': {
+      const f = feature(draft, cmd.featureId);
+      if (f.type !== 'extrude' && f.type !== 'revolve') throw new CommandError(t('cmd.onlyExtrudeRevolveThin'));
+      if (cmd.thin === null) delete f.thin;
+      else f.thin = { mode: cmd.thin.mode, thickness: cmd.thin.thickness, ...(cmd.thin.thickness2 === undefined ? {} : { thickness2: cmd.thin.thickness2 }), ...(cmd.thin.reverse ? { reverse: true } : {}) };
       checkExprs(draft as PartDoc, f as Feature);
       return;
     }

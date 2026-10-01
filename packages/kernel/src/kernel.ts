@@ -41,6 +41,17 @@ export interface Region {
   holes: Segment[][];
 }
 
+/** What a sweep ends on besides its depth: a face of a shape (up to a face), or the surface of a whole body (up to a body). */
+export type Until = { target: ShapeId; face: number } | { body: ShapeId };
+
+/** One direction of an extrusion: where it goes, its draft (radians, positive narrows along it) and what it ends on. */
+export interface SweepSpec {
+  vector: Vec3;
+  offset?: number;
+  draft?: number;
+  until?: Until;
+}
+
 const T = {
   FACE: 'TopAbs_FACE',
   EDGE: 'TopAbs_EDGE',
@@ -260,36 +271,134 @@ export class Kernel {
   }
 
   /**
-   * Extrudes sketch regions along `vector`, starting `offset` along the plane normal (C4.1).
-   * Side faces originate from profile edges (tagged with their sketch entity), caps from start/end.
-   * With `until`, the extrusion (long enough to pass it) ends on the surface of a face of `until.target`
-   * (「成形至某一面」); the face it ends on becomes the end cap.
+   * One sweep of the profile (C4.1): the tool shape (the caller deletes it) and the origins of its faces. Side faces originate from profile
+   * edges (tagged with their sketch entity), caps from start/end. With a draft the side faces lean, then with `until` the sweep, made long
+   * enough to pass it, ends on the surface of a face of `until.target` (up to a face) or of the whole body `until.body`
+   * (up to a body); what it gains from that surface is the end cap.
    */
-  extrude(frame: Frame, regions: Region[], vector: Vec3, offset = 0, until?: { target: ShapeId; face: number }): OpResult {
+  private sweep(frame: Frame, regions: Region[], spec: SweepSpec, arena: Arena): { shape: TopoDS_Shape; origins: FaceOrigin[][] } {
     if (regions.length === 0) throw new KernelError('沒有可伸長的封閉輪廓');
     const oc = this.oc;
+    const f: Frame = { ...frame, origin: add(frame.origin, frame.normal, spec.offset ?? 0) };
+    const sources = new Map<TopoDS_Shape, string>();
+    const profile = this.profile(arena, f, regions, sources);
+    const vec = arena.own(new oc.gp_Vec(spec.vector[0], spec.vector[1], spec.vector[2]));
+    const mk = arena.own(new oc.BRepPrimAPI_MakePrism(profile, vec, false, true));
+    let out = this.build(mk, t('feature.extrude'), arena);
+    let origins = this.sweepOrigins(mk, out, sources, arena);
+    if (spec.draft) {
+      const sides = origins.flatMap((o, i) => (o.some((x) => x.rel === 'generated' && x.kind === 'profileEdge') ? [i] : []));
+      const drafted = this.draftFaces(out, origins, sides, spec.vector, { origin: f.origin, normal: f.normal }, spec.draft, arena);
+      out.delete();
+      out = drafted.shape;
+      origins = drafted.origins;
+    }
+    if (!spec.until) return { shape: out, origins };
+    try {
+      return 'body' in spec.until ? this.trimAtBody(out, origins, spec.until.body, spec.vector, arena) : this.trimAtFace(out, origins, spec.until, spec.vector, arena);
+    } finally {
+      out.delete();
+    }
+  }
+
+  /** Extrudes sketch regions along `vector`, starting `offset` along the plane normal; `draft` leans the walls (radians, positive narrows along the sweep). */
+  extrude(frame: Frame, regions: Region[], vector: Vec3, offset = 0, until?: Until, draft?: number): OpResult {
     const arena = new Arena();
     try {
-      const f: Frame = { ...frame, origin: add(frame.origin, frame.normal, offset) };
-      const sources = new Map<TopoDS_Shape, string>();
-      const profile = this.profile(arena, f, regions, sources);
-      const vec = arena.own(new oc.gp_Vec(vector[0], vector[1], vector[2]));
-      const mk = arena.own(new oc.BRepPrimAPI_MakePrism(profile, vec, false, true));
-      const out = this.build(mk, '伸長', arena);
-      const origins = this.sweepOrigins(mk, out, sources, arena);
-      if (!until) return { shape: this.put(out), faceOrigins: origins };
-      try {
-        return this.trimAtFace(out, origins, until, vector, arena);
-      } finally {
-        out.delete();
-      }
+      const r = this.sweep(frame, regions, { vector, offset, ...(until ? { until } : {}), ...(draft ? { draft } : {}) }, arena);
+      return { shape: this.put(r.shape), faceOrigins: r.origins };
     } finally {
       arena.dispose();
     }
   }
 
+  /**
+   * Two sweeps from the same profile, one each way (direction 2, C4.1): fused into one body, the plane they share gone, coplanar walls merged
+   * (and so named by the profile edge both came from).
+   */
+  extrudeBoth(frame: Frame, regions: Region[], first: SweepSpec, second: SweepSpec): OpResult {
+    const oc = this.oc;
+    const arena = new Arena();
+    const a = this.sweep(frame, regions, first, arena);
+    let b: { shape: TopoDS_Shape; origins: FaceOrigin[][] } | null = null;
+    try {
+      b = this.sweep(frame, regions, second, arena);
+      const fa = ShapeIndex.of(oc, a.shape, T.FACE, arena);
+      const fb = ShapeIndex.of(oc, b.shape, T.FACE, arena);
+      try {
+        const mk = this.boolOp('fuse', a.shape, b.shape, t('feature.extrude'), arena);
+        const raw = mk.Shape();
+        try {
+          const sources = this.faceSources(mk, [...fa.keys, ...fb.keys], raw, arena);
+          // the second direction's far cap is the start of the feature, as seen from the first
+          const swap = (o: FaceOrigin): FaceOrigin => (o.rel === 'cap' ? { rel: 'cap', which: o.which === 'end' ? 'start' : 'end' } : o);
+          const all = [...a.origins, ...b.origins.map((o) => o.map(swap))];
+          const unified = this.unify(raw, sources.map((s) => s.flatMap((i) => all[i]!)), arena);
+          return { shape: this.put(unified.shape), faceOrigins: unified.origins };
+        } finally {
+          raw.delete();
+        }
+      } finally {
+        fa.dispose();
+        fb.dispose();
+      }
+    } finally {
+      a.shape.delete();
+      b?.shape.delete();
+      arena.dispose();
+    }
+  }
+
+  /**
+   * Leans faces of a shape (draft, C5.5): each of `faces` about its intersection with the neutral plane, pulled along `pull`; a positive angle
+   * makes the shape narrower further along `pull`. A face that cannot lean is an error, never skipped. The result is the caller's.
+   */
+  private draftFaces(
+    shape: TopoDS_Shape,
+    origins: FaceOrigin[][],
+    faces: number[],
+    pull: Vec3,
+    neutral: { origin: Vec3; normal: Vec3 },
+    angle: number,
+    arena: Arena,
+  ): { shape: TopoDS_Shape; origins: FaceOrigin[][] } {
+    const oc = this.oc;
+    const index = ShapeIndex.of(oc, shape, T.FACE, arena);
+    try {
+      const mk = arena.own(new oc.BRepOffsetAPI_DraftAngle(shape));
+      const direction = this.dir(arena, pull);
+      const plane = arena.own(new oc.gp_Pln(this.pnt(arena, neutral.origin), this.dir(arena, neutral.normal)));
+      for (const i of faces) {
+        const face = arena.own(oc.TopoDS.Face(index.keys[i]!));
+        mk.Add(face, direction, angle, plane, true);
+        if (!mk.AddDone()) throw new KernelError(t('feature.draftFailed', { index: i }));
+      }
+      const out = this.build(mk, t('feature.draft'), arena);
+      if (!this.valid(out)) {
+        out.delete();
+        throw new KernelError(t('feature.draftInvalid'));
+      }
+      // a leaned face is a new face: ModifiedShape says which one it became
+      const outFaces = ShapeIndex.of(oc, out, T.FACE, arena);
+      try {
+        const next: FaceOrigin[][] = outFaces.keys.map(() => []);
+        index.keys.forEach((f, i) => {
+          const m = mk.ModifiedShape(f);
+          const j = Math.max(outFaces.indexOf(m), outFaces.indexOf(f));
+          m.delete();
+          if (j >= 0) next[j]!.push(...(origins[i] ?? []));
+        });
+        return { shape: out, origins: next };
+      } finally {
+        outFaces.dispose();
+      }
+    } finally {
+      index.dispose();
+    }
+  }
+
   /** Cuts a sweep off at the (unbounded) surface of a target face; faces it gains from that surface are the end cap. */
-  private trimAtFace(tool: TopoDS_Shape, origins: FaceOrigin[][], until: { target: ShapeId; face: number }, vector: Vec3, arena: Arena): OpResult {
+  private trimAtFace(tool: TopoDS_Shape, origins: FaceOrigin[][], until: { target: ShapeId; face: number }, vector: Vec3, arena: Arena): { shape: TopoDS_Shape; origins: FaceOrigin[][] } {
     const oc = this.oc;
     const targetFaces = ShapeIndex.of(oc, this.get(until.target), T.FACE, arena);
     try {
@@ -319,13 +428,103 @@ export class Kernel {
           throw new KernelError('伸長沒有到達選取的面（面在伸長方向的另一側，或與輪廓不相交）');
         }
         const trimmed = sources.map((s) => s.flatMap((i): FaceOrigin[] => (i < n ? origins[i]! : [{ rel: 'cap', which: 'end' }])));
-        return { shape: this.put(out), faceOrigins: trimmed };
+        return { shape: out, origins: trimmed };
       } finally {
         toolFaces.dispose();
         cutterFaces.dispose();
       }
     } finally {
       targetFaces.dispose();
+    }
+  }
+
+  /**
+   * Cuts a sweep off at the surface of a whole body (up to a body): the sweep minus the body, and of what is left the piece the sketch is on.
+   * What it gains from the body's surface is the end cap.
+   */
+  private trimAtBody(tool: TopoDS_Shape, origins: FaceOrigin[][], body: ShapeId, vector: Vec3, arena: Arena): { shape: TopoDS_Shape; origins: FaceOrigin[][] } {
+    const oc = this.oc;
+    const target = this.get(body);
+    const toolFaces = ShapeIndex.of(oc, tool, T.FACE, arena);
+    const bodyFaces = ShapeIndex.of(oc, target, T.FACE, arena);
+    try {
+      const cut = this.boolOp('cut', tool, target, t('feature.upToBody'), arena);
+      const raw = cut.Shape();
+      const n = toolFaces.size;
+      const sources = this.faceSources(cut, [...toolFaces.keys, ...bodyFaces.keys], raw, arena);
+      if (!sources.some((s) => s.some((i) => i >= n))) {
+        raw.delete();
+        throw new KernelError(t('feature.bodyNotReached'));
+      }
+      const all = sources.map((s) => s.flatMap((i): FaceOrigin[] => (i < n ? origins[i]! : [{ rel: 'cap', which: 'end' }])));
+      // beyond the body the cut may leave more pieces: the one nearest the start of the sweep is the feature
+      const whole = this.put(raw);
+      const pieces = this.splitSolids({ shape: whole, faceOrigins: all });
+      this.release(whole);
+      const len = Math.hypot(...vector) || 1;
+      const along = (id: ShapeId) => {
+        const { min, max } = this.bounds(id);
+        let near = Infinity;
+        for (const x of [min[0], max[0]]) for (const y of [min[1], max[1]]) for (const z of [min[2], max[2]]) near = Math.min(near, (x * vector[0] + y * vector[1] + z * vector[2]) / len);
+        return near;
+      };
+      const chosen = pieces.reduce((best, p) => (along(p.shape) < along(best.shape) - 1e-9 ? p : best));
+      for (const p of pieces) if (p !== chosen) this.release(p.shape);
+      const piece = this.get(chosen.shape);
+      this.shapes.delete(chosen.shape); // the shape is the caller's now
+      return { shape: piece, origins: chosen.faceOrigins };
+    } finally {
+      toolFaces.dispose();
+      bodyFaces.dispose();
+    }
+  }
+
+  /**
+   * The face of `target` a sweep meets first (up to the next face, ADR 0017 section 5): the sweep is intersected with the body, and of the faces the
+   * intersection takes from the body's, the nearest one beyond the start. Null when there is none in the way.
+   */
+  nextFace(target: ShapeId, frame: Frame, regions: Region[], vector: Vec3): number | null {
+    const oc = this.oc;
+    const arena = new Arena();
+    const swept = this.sweep(frame, regions, { vector }, arena);
+    const body = this.get(target);
+    const toolFaces = ShapeIndex.of(oc, swept.shape, T.FACE, arena);
+    const bodyFaces = ShapeIndex.of(oc, body, T.FACE, arena);
+    try {
+      let raw: TopoDS_Shape;
+      let sources: number[][];
+      try {
+        const common = this.boolOp('common', swept.shape, body, t('feature.upToNext'), arena);
+        raw = common.Shape();
+        sources = this.faceSources(common, [...toolFaces.keys, ...bodyFaces.keys], raw, arena);
+      } catch (e) {
+        if (e instanceof KernelError) return null; // nothing in common: nothing in the way
+        throw e;
+      }
+      const outFaces = ShapeIndex.of(oc, raw, T.FACE, arena);
+      try {
+        const len = Math.hypot(...vector) || 1;
+        const start = (frame.origin[0] * vector[0] + frame.origin[1] * vector[1] + frame.origin[2] * vector[2]) / len;
+        let best: { face: number; at: number } | null = null;
+        outFaces.keys.forEach((f, k) => {
+          const fromBody = sources[k]!.filter((i) => i >= toolFaces.size).map((i) => i - toolFaces.size);
+          if (fromBody.length === 0) return;
+          const props = arena.own(new oc.GProp_GProps());
+          oc.BRepGProp.SurfaceProperties(f, props, false, false);
+          const c = this.xyz(arena.own(props.CentreOfMass()));
+          const at = (c[0] * vector[0] + c[1] * vector[1] + c[2] * vector[2]) / len - start;
+          if (at > 1e-6 && (!best || at < best.at)) best = { face: fromBody[0]!, at };
+        });
+        return (best as { face: number } | null)?.face ?? null;
+      } finally {
+        outFaces.dispose();
+        raw.delete();
+      }
+    } finally {
+      swept.shape.delete();
+      toolFaces.dispose();
+      bodyFaces.dispose();
+      arena.dispose();
     }
   }
 

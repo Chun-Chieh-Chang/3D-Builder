@@ -49,6 +49,12 @@ function sample(loop: Loop2): P2[] {
   return pts;
 }
 
+/** The area a loop encloses, positive when it is walked counter-clockwise. */
+export function signedAreaOf(loop: Loop2): number {
+  if (loop.length === 1 && loop[0]!.kind === 'circle') return Math.PI * loop[0]!.r * loop[0]!.r;
+  return signedArea(sample(loop));
+}
+
 function signedArea(pts: P2[]): number {
   let a = 0;
   for (let i = 0; i < pts.length; i++) {

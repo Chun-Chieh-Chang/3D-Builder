@@ -14,6 +14,7 @@ import {
   type Command,
   type DeleteFaceFeature,
   type EndCondition,
+  type Draft,
   type ExtrudeFeature,
   type FilletFeature,
   type Id,
@@ -24,6 +25,7 @@ import {
   type Ref,
   type RefPlaneFeature,
   type RevolveFeature,
+  type Thin,
   type SketchConstraint,
   type SketchFeature,
 } from '@3db/model';
@@ -362,12 +364,180 @@ function SketchPanel({ f }: { f: SketchFeature }) {
 }
 
 
-const END_CONDITION: Record<EndCondition['type'], string> = {
-  blind: '給定深度',
-  midPlane: '兩側對稱',
-  throughAll: '完全貫穿',
-  upToFace: '成形至某一面',
+const END_CONDITION: Record<EndCondition['type'], () => string> = {
+  blind: () => t('pm.end.blind'),
+  midPlane: () => t('pm.end.midPlane'),
+  throughAll: () => t('feature.throughAll'),
+  upToFace: () => t('feature.upToFace'),
+  upToNext: () => t('feature.upToNext'),
+  upToVertex: () => t('feature.upToVertex'),
+  upToBody: () => t('feature.upToBody'),
+  offsetFromFace: () => t('feature.offsetFromFace'),
 };
+
+/** A new end condition of the given type, keeping the depth and the direction the old one had; references start empty (picked in the graphics area). */
+function endCondition(type: EndCondition['type'], old: EndCondition): EndCondition {
+  const depth = 'depth' in old ? old.depth : '10';
+  const flip = 'reverse' in old && old.reverse ? { reverse: true } : {};
+  switch (type) {
+    case 'blind':
+      return { type, depth, ...flip };
+    case 'midPlane':
+      return { type, depth };
+    case 'throughAll':
+    case 'upToNext':
+      return { type, ...flip };
+    case 'upToFace':
+      return { type, face: { kind: 'face', name: '' }, ...flip };
+    case 'upToVertex':
+      return { type, vertex: { kind: 'vertex', name: '' }, ...flip };
+    case 'upToBody':
+      return { type, body: { kind: 'body', name: '' }, ...flip };
+    case 'offsetFromFace':
+      return { type, face: { kind: 'face', name: '' }, offset: 'offset' in old ? old.offset : '1', ...flip };
+  }
+}
+
+/** The element an end condition ends on, with a mark when the model no longer has it. */
+function EndRef({ f, d }: { f: ExtrudeFeature; d: EndCondition }) {
+  const result = useStore((s) => s.result);
+  const [ref, found, prompt] =
+    d.type === 'upToFace' || d.type === 'offsetFromFace'
+      ? ([d.face, !!result?.faceNames.includes(d.face.name), t('pm.pickFace')] as const)
+      : d.type === 'upToVertex'
+        ? ([d.vertex, !!result?.vertexNames.includes(d.vertex.name), t('pm.pickVertex')] as const)
+        : d.type === 'upToBody'
+          ? ([d.body, !!result?.bodies.some((b) => b.id === d.body.name), t('pm.pickBody')] as const)
+          : [null, true, ''];
+  if (!ref) return null;
+  return (
+    <ul className="selection-box">
+      {!ref.name ? (
+        <li className="muted">{prompt}</li>
+      ) : (
+        <li className={found ? '' : 'missing'} title={ref.name}>
+          {t(d.type === 'upToVertex' ? 'feature.endVertex' : d.type === 'upToBody' ? 'feature.upToBody' : 'feature.endFace')}
+          {!found && t('pm.lostRef')}
+          <code>{ref.name}</code>
+          {!found && ref.kind !== 'body' && <UseNearest featureId={f.id} refr={ref} />}
+        </li>
+      )}
+    </ul>
+  );
+}
+
+/** One direction of an extrusion (C4.1): its end condition, depth or offset, direction and draft. */
+function DirectionBox({ f, which }: { f: ExtrudeFeature; which: 'dir1' | 'dir2' }) {
+  const d = which === 'dir1' ? f.dir1 : f.dir2!;
+  const draft = which === 'dir1' ? f.draft1 : f.draft2;
+  const set = (value: EndCondition) => store.execute({ type: 'setEndCondition', featureId: f.id, dir: which, value });
+  const rev = (on: boolean) => (on ? { reverse: true } : {});
+  const reverse = 'reverse' in d && !!d.reverse;
+  const setDraft = (next: Draft | null) => store.execute({ type: 'setDraft', featureId: f.id, dir: which, draft: next });
+  return (
+    <section className="pm-group">
+      <h4>{t(which === 'dir1' ? 'feature.dir1' : 'feature.dir2')}</h4>
+      <label className="pm-row">
+        <span>{t('pm.endCondition')}</span>
+        <select value={d.type} onChange={(e) => set(endCondition(e.target.value as EndCondition['type'], d))}>
+          {Object.entries(END_CONDITION).map(([type, label]) => (
+            <option key={type} value={type}>
+              {label()}
+            </option>
+          ))}
+        </select>
+      </label>
+      {'depth' in d && (
+        <label className="pm-row">
+          <span>{t('pm.depth')}</span>
+          <ValueInput value={d.depth} toCommand={(value) => ({ type: 'setEndCondition', featureId: f.id, dir: which, value: d.type === 'midPlane' ? { type: 'midPlane', depth: value } : { type: 'blind', depth: value, ...rev(reverse) } })} />
+        </label>
+      )}
+      {d.type === 'offsetFromFace' && (
+        <>
+          <label className="pm-row">
+            <span>{t('pm.offset')}</span>
+            <ValueInput value={d.offset} toCommand={(value) => ({ type: 'setEndCondition', featureId: f.id, dir: which, value: { ...d, offset: value } })} />
+          </label>
+          <label className="pm-row checkbox">
+            <input type="checkbox" checked={!!d.beyond} onChange={(e) => set({ ...d, ...(e.target.checked ? { beyond: true } : { beyond: undefined }) })} />
+            <span>{t('pm.offset.beyond')}</span>
+          </label>
+        </>
+      )}
+      <EndRef f={f} d={d} />
+      {d.type !== 'midPlane' && (
+        <label className="pm-row checkbox">
+          <input type="checkbox" checked={reverse} onChange={(e) => set({ ...d, reverse: e.target.checked ? true : undefined } as EndCondition)} />
+          <span>{t('pm.reverseDirection')}</span>
+        </label>
+      )}
+      {d.type !== 'midPlane' && (
+        <>
+          <label className="pm-row checkbox">
+            <input type="checkbox" checked={!!draft} onChange={(e) => setDraft(e.target.checked ? { angle: '3deg' } : null)} />
+            <span>{t('pm.draft')}</span>
+          </label>
+          {draft && (
+            <>
+              <label className="pm-row">
+                <span>{t('pm.draft.angle')}</span>
+                <ValueInput value={draft.angle} suffix="°" toCommand={(angle) => ({ type: 'setDraft', featureId: f.id, dir: which, draft: { ...draft, angle } })} />
+              </label>
+              <label className="pm-row checkbox">
+                <input type="checkbox" checked={!!draft.inward} onChange={(e) => setDraft({ angle: draft.angle, ...(e.target.checked ? { inward: true } : {}) })} />
+                <span>{t('pm.draft.inward')}</span>
+              </label>
+            </>
+          )}
+        </>
+      )}
+    </section>
+  );
+}
+
+/** 「薄件」 (C4.1, C4.3): the outline thickened instead of the inside filled; one way, half each way, or two thicknesses. */
+function ThinBox({ f }: { f: ExtrudeFeature | RevolveFeature }) {
+  const thin = f.thin;
+  const set = (next: Thin | null) => store.execute({ type: 'setThin', featureId: f.id, thin: next });
+  return (
+    <section className="pm-group">
+      <label className="pm-row checkbox">
+        <input type="checkbox" checked={!!thin} onChange={(e) => set(e.target.checked ? { mode: 'one', thickness: '2' } : null)} />
+        <span>{t('pm.thin')}</span>
+      </label>
+      {thin && (
+        <>
+          <label className="pm-row">
+            <span>{t('pm.thin.mode')}</span>
+            <select value={thin.mode} onChange={(e) => set({ ...thin, mode: e.target.value as Thin['mode'], ...(e.target.value === 'two' ? { thickness2: thin.thickness2 ?? thin.thickness } : {}) })}>
+              <option value="one">{t('pm.thin.one')}</option>
+              <option value="mid">{t('pm.thin.mid')}</option>
+              <option value="two">{t('pm.thin.two')}</option>
+            </select>
+          </label>
+          <label className="pm-row">
+            <span>{t('pm.thin.thickness')}</span>
+            <ValueInput value={thin.thickness} toCommand={(thickness) => ({ type: 'setThin', featureId: f.id, thin: { ...thin, thickness } })} />
+          </label>
+          {thin.mode === 'two' && (
+            <label className="pm-row">
+              <span>{t('pm.thin.thickness2')}</span>
+              <ValueInput value={thin.thickness2 ?? thin.thickness} toCommand={(thickness2) => ({ type: 'setThin', featureId: f.id, thin: { ...thin, thickness2 } })} />
+            </label>
+          )}
+          {thin.mode === 'one' && (
+            <label className="pm-row checkbox">
+              <input type="checkbox" checked={!!thin.reverse} onChange={(e) => set({ mode: 'one', thickness: thin.thickness, ...(e.target.checked ? { reverse: true } : {}) })} />
+              <span>{t('pm.thin.reverse')}</span>
+            </label>
+          )}
+          <p className="hint">{t('pm.thin.hint')}</p>
+        </>
+      )}
+    </section>
+  );
+}
 
 /** 「所選輪廓」 (C1.34): which of the sketch's closed regions a boss or cut uses. Nothing chosen means all of them. */
 function ContourBox({ f }: { f: ExtrudeFeature | RevolveFeature }) {
@@ -426,80 +596,35 @@ function MergeBox({ f }: { f: ExtrudeFeature | RevolveFeature | ImportedBodyFeat
   );
 }
 
-/** Extrude (C4.1, C4.2): end condition, depth, direction and the end face for 「成形至某一面」. */
+/** Extrude (C4.1, C4.2): one or two directions with their end conditions and drafts, thin walls, contours and merging. */
 function ExtrudePanel({ f }: { f: ExtrudeFeature }) {
   const doc = useStore((s) => s.doc);
-  const result = useStore((s) => s.result);
-  const d = f.dir1;
-  const depth = 'depth' in d ? d.depth : '10';
-  const reverse = 'reverse' in d ? (d.reverse ?? false) : false;
-  const rev = (on: boolean) => (on ? { reverse: true } : {});
-  const set = (value: EndCondition) => store.execute({ type: 'setEndCondition', featureId: f.id, dir: 'dir1', value });
-  const condition = (type: EndCondition['type'], flip = reverse): EndCondition => {
-    switch (type) {
-      case 'blind':
-        return { type, depth, ...rev(flip) };
-      case 'midPlane':
-        return { type, depth };
-      case 'throughAll':
-        return { type, ...rev(flip) };
-      case 'upToFace':
-        // until a face is picked the reference is empty and the feature reports it as missing
-        return { type, face: d.type === 'upToFace' ? d.face : { kind: 'face', name: '' }, ...rev(flip) };
-    }
-  };
-  const faceFound = d.type === 'upToFace' && !!d.face.name && !!result?.faceNames.includes(d.face.name);
   return (
-    <section className="pm-group">
-      <h4>方向 1</h4>
-      <label className="pm-row">
-        <span>終止型態</span>
-        <select value={d.type} onChange={(e) => set(condition(e.target.value as EndCondition['type']))}>
-          {Object.entries(END_CONDITION).map(([type, label]) => (
-            <option key={type} value={type}>
-              {label}
-            </option>
-          ))}
-        </select>
-      </label>
-      {'depth' in d && (
-        <label className="pm-row">
-          <span>深度</span>
-          <ValueInput
-            value={depth}
-            toCommand={(value) => ({ type: 'setEndCondition', featureId: f.id, dir: 'dir1', value: d.type === 'midPlane' ? { type: 'midPlane', depth: value } : { type: 'blind', depth: value, ...rev(reverse) } })}
-          />
-        </label>
-      )}
-      {d.type === 'upToFace' && (
-        <ul className="selection-box">
-          {!d.face.name ? (
-            <li className="muted">（在圖面中點選要終止的面）</li>
-          ) : (
-            <li className={faceFound ? '' : 'missing'} title={d.face.name}>
-              終止面{!faceFound && '（遺失參考）'}
-              <code>{d.face.name}</code>
-              {!faceFound && <UseNearest featureId={f.id} refr={d.face} />}
-            </li>
-          )}
-        </ul>
-      )}
-      {d.type !== 'midPlane' && (
+    <>
+      <DirectionBox f={f} which="dir1" />
+      <section className="pm-group">
         <label className="pm-row checkbox">
-          <input type="checkbox" checked={reverse} onChange={(e) => set(condition(d.type, e.target.checked))} />
-          <span>反轉方向</span>
+          <input
+            type="checkbox"
+            checked={!!f.dir2}
+            onChange={(e) => store.execute({ type: 'setEndCondition', featureId: f.id, dir: 'dir2', value: e.target.checked ? { type: 'blind', depth: 'depth' in f.dir1 ? f.dir1.depth : '10' } : null })}
+          />
+          <span>{t('feature.dir2')}</span>
         </label>
-      )}
-      <p className="hint">
-        輪廓：{findFeature(doc, f.sketch)?.name ?? f.sketch}
-        {f.op === 'cut' && '。除料預設往材料內部（與草圖法向相反）。'}
-      </p>
-      <ContourBox f={f} />
-      {f.op === 'boss' && <MergeBox f={f} />}
-    </section>
+      </section>
+      {f.dir2 && <DirectionBox f={f} which="dir2" />}
+      <ThinBox f={f} />
+      <section className="pm-group">
+        <p className="hint">
+          輪廓：{findFeature(doc, f.sketch)?.name ?? f.sketch}
+          {f.op === 'cut' && '。除料預設往材料內部（與草圖法向相反）。'}
+        </p>
+        <ContourBox f={f} />
+        {f.op === 'boss' && <MergeBox f={f} />}
+      </section>
+    </>
   );
 }
-
 /** Revolve (C4.3): axis line of the sketch, one direction or both, and the angle. */
 function RevolvePanel({ f }: { f: RevolveFeature }) {
   const doc = useStore((s) => s.doc);
@@ -544,6 +669,7 @@ function RevolvePanel({ f }: { f: RevolveFeature }) {
           </label>
         )}
         <p className="hint">輪廓：{sketch?.name ?? f.sketch}</p>
+        <ThinBox f={f} />
         <ContourBox f={f} />
         {f.op === 'boss' && <MergeBox f={f} />}
       </section>
