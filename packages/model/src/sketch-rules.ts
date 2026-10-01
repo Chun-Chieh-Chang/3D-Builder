@@ -1,3 +1,4 @@
+import { t } from '@3db/i18n';
 import type { Id } from './ids';
 import { isDimension, SKETCH_ORIGIN, type PartDoc, type SketchConstraint, type SketchEntity, type SketchFeature } from './schema';
 
@@ -108,6 +109,8 @@ export function sketchError(sketch: Pick<SketchFeature, 'entities' | 'constraint
     if (new Set(pts).size !== pts.length) return `圖元 ${e.id} 的端點重複`;
     if (e.type === 'point' && !finite(e.x, e.y)) return `點 ${e.id} 的座標無效`;
     if (e.type === 'circle' && !(finite(e.radius) && e.radius > 0)) return `圓 ${e.id} 的半徑必須大於 0`;
+    const model = e.type === 'point' ? e.pierce : e.ref;
+    if (model && model.kind !== 'edge') return t('cmd.sketchRefMustBeEdge', { id: e.id });
   }
 
   const seen = new Set<Id>(kinds.keys());

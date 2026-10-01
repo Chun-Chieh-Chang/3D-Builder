@@ -1,7 +1,7 @@
 import { beforeAll, describe, expect, it } from 'vitest';
 import { applyCommand, createEmptyPart, IdAllocator, idsInUse, resolveSketch, SKETCH_ORIGIN, type Command, type PartDoc, type SketchConstraint, type SketchEntity, type SketchFeature } from '@3db/model';
 import { findProfiles, PlaneGcsSolver, type SolvedSketch } from '../src/index';
-import { chamfer, extend, fillet, mirror, offset, polygon, slot, trim, type OpResult } from '../src/ops';
+import { chamfer, extend, fillet, mirror, offset, polygon, referenceEntities, slot, trim, type OpResult } from '../src/ops';
 
 let solver: PlaneGcsSolver;
 beforeAll(async () => {
@@ -487,6 +487,45 @@ describe('offset (C1.17)', () => {
     expect(offset(sketchOf(ring), solve(ring).geometry, ids(ring), ['C'], 0, [1, 0])).toMatchObject({ error: expect.stringContaining('大於 0') });
     const tee = start([point('p', 0, 0), point('a', 5, 0), point('b', 0, 5), point('c', -5, 0), line('A', 'p', 'a'), line('B', 'p', 'b'), line('C', 'p', 'c')]);
     expect(offset(sketchOf(tee), solve(tee).geometry, ids(tee), ['A', 'B', 'C'], 1, [1, 1])).toMatchObject({ error: expect.stringContaining('分岔') });
+  });
+});
+
+describe('entities that follow the model (C1.18, C1.26)', () => {
+  const ref = (name: string) => ({ kind: 'edge' as const, name });
+
+  it('adds projected edges as entities carrying the edge, sharing the corners of a face outline', () => {
+    const square = [[0, 0], [10, 0], [10, 5], [0, 5]] as const;
+    const items = square.map((p, i) => ({ ref: ref(`edge${i}`), projected: { kind: 'line' as const, a: [...p] as [number, number], b: [...square[(i + 1) % 4]!] as [number, number] } }));
+    const doc = run(start(), referenceEntities(sketchOf(start()), ids(start()), items));
+    const sk = sketchOf(doc);
+    expect(sk.entities.filter((e) => e.type === 'point')).toHaveLength(4);
+    expect(sk.entities.filter((e) => e.type === 'line').map((e) => (e as { ref?: { name: string } }).ref?.name)).toEqual(['edge0', 'edge1', 'edge2', 'edge3']);
+    const profile = findProfiles(sk, solve(doc));
+    expect(profile.problems).toEqual([]);
+    expect(profile.regions).toHaveLength(1);
+  });
+
+  it('adds circles, arcs and pierce points, and leaves out an edge the sketch already follows', () => {
+    const items = [
+      { ref: ref('c'), projected: { kind: 'circle' as const, c: [3, 4] as [number, number], r: 2 } },
+      { ref: ref('a'), projected: { kind: 'arc' as const, c: [0, 0] as [number, number], r: 5, start: [5, 0] as [number, number], end: [0, 5] as [number, number] } },
+      { ref: ref('p'), pierce: [7, 8] as [number, number] },
+    ];
+    let doc = run(start(), referenceEntities(sketchOf(start()), ids(start()), items));
+    const sk = sketchOf(doc);
+    expect(sk.entities.find((e) => e.type === 'circle')).toMatchObject({ radius: 2, ref: { name: 'c' } });
+    expect(sk.entities.find((e) => e.type === 'arc')).toMatchObject({ ref: { name: 'a' } });
+    expect(sk.entities.find((e) => e.type === 'point' && e.pierce)).toMatchObject({ x: 7, y: 8, pierce: { name: 'p' } });
+    // again: nothing new; with one new edge: only that one
+    expect(referenceEntities(sk, ids(doc), items)).toMatchObject({ error: expect.stringContaining('已經在草圖裡') });
+    doc = run(doc, referenceEntities(sk, ids(doc), [...items, { ref: ref('q'), projected: { kind: 'line' as const, a: [0, 0] as [number, number], b: [1, 0] as [number, number] } }]));
+    expect(sketchOf(doc).entities.filter((e) => e.type === 'line')).toHaveLength(1);
+    expect(sketchOf(doc).entities.filter((e) => e.type === 'circle')).toHaveLength(1);
+  });
+
+  it('refuses a reference that is not an edge', () => {
+    const bad = { kind: 'face' as const, name: 'f' };
+    expect(() => run(start(), { edit: { add: { entities: [{ id: 'l1', type: 'line', p1: 'a', p2: 'b', ref: bad }, point('a', 0, 0), point('b', 1, 0)], constraints: [] } } })).toThrow('必須是模型的邊線');
   });
 });
 

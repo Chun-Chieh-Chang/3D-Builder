@@ -63,6 +63,7 @@ export const model = {
   'cmd.variableInUse': '變數「{name}」正被使用，先改掉那些運算式才能刪除：{users}',
   'cmd.propertyNameEmpty': '屬性名稱不可空白',
   'cmd.propertyNotFound': '找不到屬性：{name}',
+  'cmd.sketchRefMustBeEdge': '圖元 {id} 參考的必須是模型的邊線',
   'cmd.onlyExtrudeRevolveContours': '只有伸長與旋轉特徵可以選擇草圖的輪廓',
   'cmd.contoursEmpty': '至少要選一個輪廓',
   'cmd.dimensionStillUsed': '尺寸「{name}」正被運算式使用，不能改成從動尺寸',

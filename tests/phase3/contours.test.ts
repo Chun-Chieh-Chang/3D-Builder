@@ -105,11 +105,10 @@ describe('the setContours command and the file (C1.34)', () => {
     expect(() => applyCommand(doc, { type: 'setContours', featureId: 's', contours: [['a']] })).toThrow('只有伸長與旋轉');
   });
 
-  it('is saved with the part and read back: schema 12', async () => {
-    expect(SCHEMA_VERSION).toBe(12);
+  it('is saved with the part and read back', async () => {
     const doc = build(three(), boss([['c']]));
     const file = await readPartFile(await writePartFile(doc));
-    expect(file.doc.schemaVersion).toBe(12);
+    expect(file.doc.schemaVersion).toBe(SCHEMA_VERSION);
     expect(file.doc.features.find((f) => f.id === 'e')).toMatchObject({ contours: [['c']] });
     expect(failures(rebuild(file.doc))).toEqual([]);
   });

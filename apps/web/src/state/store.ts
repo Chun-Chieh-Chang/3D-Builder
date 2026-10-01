@@ -710,6 +710,7 @@ class AppStore {
 
   /** An element picked in the graphics area goes to the selection box of the feature being edited that takes its kind. */
   pick(ref: Ref): void {
+    if (this.state.editing?.kind === 'sketch') return void this.convertPicked(ref);
     const f = this.editedFeature();
     if (f?.type === 'fillet' || f?.type === 'chamfer') this.toggleEdge(ref);
     else if (f?.type === 'extrude') this.setUpToFace(ref);
@@ -798,6 +799,22 @@ class AppStore {
       notify: (text, kind) => this.notify(text, kind),
       editDimension: (id) => this.set({ dimensionEdit: id }),
     };
+  }
+
+  /**
+   * A click on the model while a sketch is edited with 「轉換實體引用」 or 「貫穿」 (C1.18, C1.26): the edge (or the outline of the face) is
+   * projected onto the sketch's plane by the worker, which has the model before the sketch, and added as entities that follow it.
+   */
+  private async convertPicked(ref: Ref): Promise<void> {
+    const sketcher = this.sketcher;
+    const sketch = this.editedSketch();
+    const tool = sketcher?.getView().tool;
+    if (!sketcher || !sketch || (tool !== 'convert' && tool !== 'pierce')) return;
+    const mode = tool === 'pierce' ? 'pierce' : 'convert';
+    if (ref.kind !== 'edge' && !(ref.kind === 'face' && mode === 'convert')) return;
+    const r = await this.api.convertReferences({ sketchId: sketch.id, edges: ref.kind === 'edge' ? [ref] : [], faces: ref.kind === 'face' ? [ref] : [], mode });
+    if (r.items.length > 0) sketcher.addReferences(r.items);
+    if (r.errors.length > 0) this.notify(r.errors[0]!, r.items.length > 0 ? 'info' : 'error');
   }
 
   /** The contours (closed regions) of a sketch as they are now, for 「所選輪廓」 (C1.34); none when the sketch cannot make a profile. */

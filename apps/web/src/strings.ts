@@ -107,6 +107,8 @@ export const TOOL_LABEL: Record<ToolId, string> = labelsOf({
   extend: 'tool.extend',
   offset: 'tool.offset',
   mirror: 'tool.mirror',
+  convert: 'tool.convert',
+  pierce: 'tool.pierce',
 });
 
 /** How a reference plane is defined (C3.2). */

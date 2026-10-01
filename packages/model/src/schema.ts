@@ -6,7 +6,7 @@ import type { Id } from './ids';
  * DOF status, mass properties and error lists are derived data and never stored.
  */
 
-export const SCHEMA_VERSION = 12;
+export const SCHEMA_VERSION = 13;
 
 /** Value expression (B5.2, B5.3): "20", "25.4mm", "30deg", "wall_t*2", "D1@草圖1/2", "property('厚度')"; see `expr/`. */
 export type Expr = string;
@@ -38,11 +38,16 @@ export type DatumPlaneName = 'plane:front' | 'plane:top' | 'plane:right';
 /** Reserved id of the projected part origin inside every sketch (fixed at 0,0). */
 export const SKETCH_ORIGIN: Id = '@origin';
 
+/**
+ * A `ref` on a line, circle or arc makes it the projection of a model edge onto the sketch plane (C1.18, v13): where it lies comes from the
+ * model, never from the sketch, so it follows the edge when the model changes. A `pierce` on a point makes it the place where a straight model
+ * edge passes through the sketch plane (「貫穿」, C1.26). Their points keep their stored places only as a first guess; the model fixes them.
+ */
 export type SketchEntity =
-  | { id: Id; type: 'point'; x: number; y: number; construction?: boolean }
-  | { id: Id; type: 'line'; p1: Id; p2: Id; construction?: boolean }
-  | { id: Id; type: 'circle'; center: Id; radius: number; construction?: boolean }
-  | { id: Id; type: 'arc'; center: Id; start: Id; end: Id; construction?: boolean };
+  | { id: Id; type: 'point'; x: number; y: number; construction?: boolean; pierce?: Ref }
+  | { id: Id; type: 'line'; p1: Id; p2: Id; construction?: boolean; ref?: Ref }
+  | { id: Id; type: 'circle'; center: Id; radius: number; construction?: boolean; ref?: Ref }
+  | { id: Id; type: 'arc'; center: Id; start: Id; end: Id; construction?: boolean; ref?: Ref };
 
 /**
  * Sketch relations and dimensions (C1.25–C1.28). Point coordinates stored on entities are the

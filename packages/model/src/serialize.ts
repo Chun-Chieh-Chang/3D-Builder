@@ -88,6 +88,9 @@ const migrations: Record<number, (doc: Json) => Json> = {
   // v12: a boss or cut may use only some of its sketch's contours (`contours`, C1.34). Without it a feature uses them all, as before: nothing to
   // convert. The version keeps older programs from extruding every contour of a feature that chose some.
   11: (doc) => doc,
+  // v13: sketch entities may be projections of model edges (`ref`) and points may be where an edge pierces the sketch plane (`pierce`)
+  // (C1.18, C1.26). Nothing to convert; the version keeps older programs from reading such an entity as a plain one that ignores the model.
+  12: (doc) => doc,
 };
 
 export class FormatError extends Error {

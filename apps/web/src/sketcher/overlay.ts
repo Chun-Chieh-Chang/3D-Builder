@@ -16,6 +16,7 @@ export const SKETCH_COLORS = {
   preview: 0x74b0e8,
   dimension: 0x3d4650,
   origin: 0xe03131,
+  reference: 0x7048e8,
 } as const;
 
 const RELATION_SYMBOL: Record<Exclude<SketchConstraint['type'], 'distance' | 'distanceX' | 'distanceY' | 'radius' | 'diameter' | 'arcLength' | 'angle'>, string> = {
@@ -102,8 +103,10 @@ export function buildOverlay(frame: PlaneFrame, sketch: SketchFeature, solve: Sk
   const highlighted = new Set([...(view.hover ? [view.hover] : []), ...view.picks]);
   const over = new Set([...(solve?.conflicting ?? []), ...(solve?.redundant ?? [])]);
   const fallback: EntityStatus | undefined = solve?.status === 'fully' ? 'fully' : undefined;
+  // what follows the model (C1.18) is drawn in its own colour: it is the model's, not the sketch's, to change
+  const followed = new Set(sketch.entities.filter((e) => (e.type === 'point' ? e.pierce : e.ref)).map((e) => e.id));
   const colorOf = (id: Id) =>
-    selected.has(id) ? SKETCH_COLORS.selected : highlighted.has(id) ? SKETCH_COLORS.hover : statusColor(solve?.entityStatus?.get(id) ?? fallback);
+    selected.has(id) ? SKETCH_COLORS.selected : highlighted.has(id) ? SKETCH_COLORS.hover : followed.has(id) ? SKETCH_COLORS.reference : statusColor(solve?.entityStatus?.get(id) ?? fallback);
 
   const curves: OverlayCurve[] = [];
   const points: OverlayPoint[] = [];

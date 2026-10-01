@@ -1,5 +1,5 @@
 import { t, type PlainKey } from '@3db/i18n';
-import { constraintRefs, isDimension, SKETCH_ORIGIN, type Id, type IdAllocator, type SketchConstraint, type SketchEdit, type SketchEntity, type SketchFeature } from '@3db/model';
+import { constraintRefs, isDimension, SKETCH_ORIGIN, type Id, type IdAllocator, type Ref, type SketchConstraint, type SketchEdit, type SketchEntity, type SketchFeature } from '@3db/model';
 import { closestOn, onSweep } from './interact';
 import type { P2, SolvedGeometry } from './types';
 
@@ -36,7 +36,7 @@ class Parts {
   readonly entities: SketchEntity[] = [];
   readonly constraints: SketchConstraint[] = [];
 
-  constructor(private readonly ids: IdAllocator) {}
+  constructor(readonly ids: IdAllocator) {}
 
   point(p: P2): Id {
     const id = this.ids.take('p');
@@ -282,6 +282,45 @@ export function chamfer(sketch: Pick<SketchFeature, 'constraints'>, geometry: Ge
   b.dimension({ type: 'distance', a: c.p, b: T1 }, d1);
   b.dimension({ type: 'distance', a: c.p, b: T2 }, d2);
   return { edit: { ...openCorner(c, b, T1, T2, sketch), add: b.added } };
+}
+
+// ---------------------------------------------------------------- entities that follow the model (C1.18, C1.26)
+
+/** What a model edge looks like on the sketch plane, or where it pierces it: the shape `@3db/regen` hands over (sketch coordinates). */
+export type ModelItem =
+  | { ref: Ref; projected: { kind: 'line'; a: P2; b: P2 } | { kind: 'circle'; c: P2; r: number } | { kind: 'arc'; c: P2; r: number; start: P2; end: P2 } }
+  | { ref: Ref; pierce: P2 };
+
+/**
+ * Adds the model edges as entities that follow them (`ref`), or as pierce points. Corners shared by the new entities are one point; an edge
+ * the sketch already follows is left out, and when there is nothing new that is the message.
+ */
+export function referenceEntities(sketch: Pick<SketchFeature, 'entities'>, ids: IdAllocator, items: ModelItem[]): OpResult {
+  const have = new Set(sketch.entities.flatMap((e) => (e.type === 'point' ? (e.pierce ? [`pierce:${e.pierce.name}`] : []) : e.ref ? [`ref:${e.ref.name}`] : [])));
+  const fresh = items.filter((i) => !have.has(('pierce' in i ? 'pierce:' : 'ref:') + i.ref.name));
+  if (fresh.length === 0) return error('reference.already');
+  const b = new Parts(ids);
+  const points: { id: Id; at: P2 }[] = [];
+  const corner = (at: P2): Id => {
+    const found = points.find((p) => dist(p.at, at) < 1e-6);
+    if (found) return found.id;
+    const id = b.point(at);
+    points.push({ id, at });
+    return id;
+  };
+  for (const item of fresh) {
+    if ('pierce' in item) {
+      b.point(item.pierce);
+      (b.entities.at(-1) as Extract<SketchEntity, { type: 'point' }>).pierce = item.ref;
+      continue;
+    }
+    const p = item.projected;
+    const lineId = b.ids.take(p.kind === 'line' ? 'l' : p.kind === 'circle' ? 'ci' : 'a');
+    if (p.kind === 'line') b.entities.push({ id: lineId, type: 'line', p1: corner(p.a), p2: corner(p.b), ref: item.ref });
+    else if (p.kind === 'circle') b.entities.push({ id: lineId, type: 'circle', center: corner(p.c), radius: p.r, ref: item.ref });
+    else b.entities.push({ id: lineId, type: 'arc', center: corner(p.c), start: corner(p.start), end: corner(p.end), ref: item.ref });
+  }
+  return { edit: { add: b.added } };
 }
 
 // ---------------------------------------------------------------- merge (C1.26)

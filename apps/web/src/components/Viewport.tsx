@@ -15,7 +15,7 @@ import { Icon } from './Icon';
  * What the graphics area picks during a PropertyManager session, what it shows as already picked
  * (the SolidWorks selection boxes), and the prompt. Outside sessions faces are picked for selection.
  */
-function picking(feature: Feature | undefined, editing: boolean) {
+function picking(feature: Feature | undefined, editing: boolean, modelTool: 'convert' | 'pierce' | null = null) {
   const def = feature?.type === 'refPlane' ? feature.def : null;
   const upTo = feature?.type === 'extrude' && feature.dir1.type === 'upToFace' ? feature.dir1 : null;
   const edgeFeature = feature?.type === 'fillet' || feature?.type === 'chamfer' ? feature : null;
@@ -37,8 +37,8 @@ function picking(feature: Feature | undefined, editing: boolean) {
             ? `點選三個頂點（已選 ${def.points.length} 個）`
             : null;
   return {
-    edges: !!edgeFeature || def?.mode === 'angle',
-    faces: !editing || !!upTo || !!faceFeature || combine || def?.mode === 'offset' || def?.mode === 'angle',
+    edges: !!edgeFeature || def?.mode === 'angle' || modelTool !== null,
+    faces: !editing || modelTool === 'convert' || !!upTo || !!faceFeature || combine || def?.mode === 'offset' || def?.mode === 'angle',
     vertices: def?.mode === 'threePoint',
     pickedEdges: edgeFeature ? edgeFeature.edges : def?.mode === 'angle' ? [def.axis] : [],
     pickedFaces: faceFeature ? (faceFeature.type === 'deleteFace' ? faceFeature.faces : [faceFeature.face]) : upTo ? [upTo.face] : def && def.mode !== 'threePoint' && def.plane.kind === 'face' ? [def.plane] : [],
@@ -137,7 +137,9 @@ export function Viewport() {
   }, []);
 
   const feature = editing ? findFeature(doc, editing.featureId) : undefined;
-  const pick = picking(feature, !!editing);
+  // 「轉換實體引用」 and 「貫穿」 pick the model, not points on the sketch plane (C1.18)
+  const modelTool = sketching && (view?.tool === 'convert' || view?.tool === 'pierce') ? view.tool : null;
+  const pick = picking(feature, !!editing, modelTool);
 
   useEffect(() => {
     const v = store.viewer;
@@ -152,7 +154,7 @@ export function Viewport() {
   useEffect(() => {
     const v = store.viewer;
     if (!v) return;
-    const p = picking(feature, !!editing);
+    const p = picking(feature, !!editing, modelTool);
     v.setEdgePicking(p.edges);
     v.setFacePicking(p.faces);
     v.setVertexPicking(p.vertices);
@@ -168,7 +170,7 @@ export function Viewport() {
     else if (selectedFace?.kind === 'face') v.setSelectedFaces(indices(r?.faceNames, [selectedFace]));
     // D1.2: a feature selected in the FeatureManager shows the faces it made.
     else v.setSelectedFaces(selected ? (r?.faceNames ?? []).flatMap((n, i) => (ownerFeatures(n)[0] === selected ? [i] : [])) : []);
-  }, [feature, editing, selectedFace, selected, result]);
+  }, [feature, editing, selectedFace, selected, result, modelTool]);
 
   // Reference planes show like new planes in SolidWorks; default planes only when selected or referenced (D4.6).
   useEffect(() => {
@@ -212,7 +214,7 @@ export function Viewport() {
     const sketcher = store.sketcher;
     const sketch = store.editedSketch();
     const frame = sketch && store.frameOf(sketch);
-    if (!v || !sketching || !sketcher || !frame) return;
+    if (!v || !sketching || !sketcher || !frame || modelTool) return;
     v.setToolHandler((e) => {
       const p = v.planePoint(e.clientX, e.clientY, frame);
       if (!p && e.type !== 'leave') return;
@@ -224,7 +226,7 @@ export function Viewport() {
       else sketcher.leave();
     });
     return () => v.setToolHandler(null);
-  }, [sketching, editing?.featureId]);
+  }, [sketching, editing?.featureId, modelTool]);
 
   useEffect(() => {
     const v = store.viewer;

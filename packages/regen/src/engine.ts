@@ -28,6 +28,7 @@ import { findProfiles, selectContours, type ProfileResult, type SketchSolver, ty
 import { KernelError, type FaceOrigin, type ImportDiagnostics, type Kernel, type OpResult, type ShapeId, type Topology } from '@3db/kernel';
 import { nameElements, nameFromFaces, resolveRef, type Candidate, type ElementNames } from '@3db/naming';
 import { Bodies, type BodyState, type BodyView } from './bodies';
+import { followReferences, ReferenceProblem } from './references';
 
 export type FeatureStatus = 'ok' | 'error' | 'suppressed' | 'rolledBack';
 
@@ -449,8 +450,20 @@ export class Regenerator {
 
   private sketch(f: SketchFeature, set: Bodies) {
     const frame = this.frame(f, set);
-    const solved = this.solver.solve(f);
-    const profiles = solved.status === 'failed' ? { regions: [], problems: [] } : findProfiles(f, solved);
+    // projected model edges and pierce points are put where the model has them now (C1.18)
+    let followed = f;
+    if (f.entities.some((e) => (e.type === 'point' ? e.pierce : e.ref))) {
+      const body = set.view;
+      if (!body) throw new FeatureError(t('reference.noModel'));
+      try {
+        followed = followReferences(f, { names: body.names, topology: body.topology, frame });
+      } catch (e) {
+        if (e instanceof ReferenceProblem) throw new FeatureError(e.message, e.unresolved);
+        throw e;
+      }
+    }
+    const solved = this.solver.solve(followed);
+    const profiles = solved.status === 'failed' ? { regions: [], problems: [] } : findProfiles(followed, solved);
     return { frame, solved, profiles };
   }
 

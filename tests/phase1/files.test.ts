@@ -152,6 +152,21 @@ describe('a part file written by version 11 (sketch relations, C1.26) opens in v
   });
 });
 
+describe('a part file written by version 12 (contours, C1.34) opens in version 13 (entities that follow the model, C1.18)', () => {
+  it('keeps the contour its boss chose and rebuilds the same volume', async () => {
+    const file = await readPartFile(oldFile('v12-contours.3dbx'));
+    expect(file.warnings).toEqual([]);
+    expect(JSON.parse(new TextDecoder().decode((await readZip(oldFile('v12-contours.3dbx')))[0]!.data)).schemaVersion).toBe(12);
+    expect(file.doc.schemaVersion).toBe(SCHEMA_VERSION);
+    expect(file.doc.features.find((f) => f.id === 'extrude2')).toMatchObject({ contours: [['m1', 'm2', 'm3', 'm4']] });
+    const r = new Regenerator(kernel, await PlaneGcsSolver.create(), file.blobs).rebuild(file.doc);
+    expect(statuses(r).filter((s) => !s.endsWith('=ok'))).toEqual([]);
+    // only the 10 × 10 contour was extruded (3 high): a second body next to the demo block; the 15 × 10 one was not
+    expect(r.bodies.map((b) => b.id)).toEqual(['extrude1', 'extrude2']);
+    expect(kernel.massProps(r.bodies[1]!.shape).volume).toBeCloseTo(10 * 10 * 3, 6);
+  });
+});
+
 describe('the .3dbx file (B9.1, F7.1)', () => {
   const docs = async (): Promise<[string, PartDoc][]> => [
     ['the demo part', createDemoPart()],

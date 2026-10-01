@@ -6,16 +6,18 @@ import gcsWasm from '@salusoft89/planegcs/dist/planegcs_dist/planegcs.wasm?url';
 import { bodyKey, isShown, type AssemblyDoc, type Id, type PartDoc } from '@3db/model';
 import { findProfiles, PlaneGcsSolver } from '@3db/sketch';
 import { COMPONENT_MESH, Kernel, type MassProps, type MeshData, type ShapeId } from '@3db/kernel';
-import { edgeMateGeometry, faceMateGeometry, Regenerator, solveAssembly, type AssemblyResult, type AssemblySolveOptions, type BodyInfo, type RebuildResult } from '@3db/regen';
+import { convertEdges, edgeMateGeometry, faceEdges, faceMateGeometry, followReferences, ReferenceProblem, Regenerator, solveAssembly, type AssemblyResult, type AssemblySolveOptions, type BodyInfo, type RebuildResult } from '@3db/regen';
 import { edgeFingerprint, faceFingerprint, vertexFingerprint } from '@3db/naming';
 import { exportAssemblyStep, exportPartStep, readComponentFile } from '@3db/io';
 import { mergeMeshes } from './mergeMesh';
-import type { AssemblyStepRequest, KernelApi, PartBuildPayload, PartStage, RebuildPayload, RebuildRequest, SketchSolvePayload, SketchSolveRequest } from './protocol';
+import type { AssemblyStepRequest, ConvertPayload, ConvertRequest, KernelApi, PartBuildPayload, PartStage, RebuildPayload, RebuildRequest, SketchSolvePayload, SketchSolveRequest } from './protocol';
 
 let kernel: Kernel;
 let solver: PlaneGcsSolver;
 let regen: Regenerator;
 let ready: Promise<{ occtMs: number; gcsMs: number }> | null = null;
+/** The model as the last rebuild saw it (before the sketch being edited, when a sketch is): what its projected edges are looked up in (C1.18). */
+let lastModel: { names: NonNullable<RebuildResult['body']>['names']; topology: NonNullable<RebuildResult['body']>['topology']; frames: RebuildResult['frames'] } | null = null;
 /** Imported data the document refers to by hash; the regenerator reads each file from here once. */
 const blobs = new Map<string, Uint8Array>();
 let solverReady: Promise<PlaneGcsSolver> | null = null;
@@ -106,6 +108,7 @@ const api: KernelApi = {
     await api.init();
     const r = regen.rebuild(doc, until === undefined ? {} : { until });
     const body = r.body;
+    lastModel = body ? { names: body.names, topology: body.topology, frames: r.frames } : null;
     const shown = r.bodies.map((b) => isShown(doc, bodyKey(b.id)));
     const mesh = meshOf(r, shown);
     const payload: RebuildPayload = {
@@ -132,10 +135,33 @@ const api: KernelApi = {
 
   async solveSketch({ seq, sketch, ...options }: SketchSolveRequest): Promise<SketchSolvePayload> {
     await loadSolver();
-    const t = performance.now();
-    const r = solver.solve(sketch, options);
-    const problems = r.status === 'failed' ? [] : findProfiles(sketch, r).problems;
-    return { seq, ...r, problems, ms: performance.now() - t };
+    const began = performance.now();
+    let followed = sketch;
+    if (sketch.entities.some((e) => (e.type === 'point' ? e.pierce : e.ref))) {
+      const frame = lastModel?.frames.get(sketch.id);
+      try {
+        if (!lastModel || !frame) throw new ReferenceProblem(t('reference.noModel'));
+        followed = followReferences(sketch, { names: lastModel.names, topology: lastModel.topology, frame });
+      } catch (e) {
+        if (!(e instanceof ReferenceProblem)) throw e;
+        return { seq, geometry: new Map(), status: 'failed', dof: 0, conflicting: [], redundant: [], problems: [], message: e.message, ms: performance.now() - began };
+      }
+    }
+    const r = solver.solve(followed, options);
+    const problems = r.status === 'failed' ? [] : findProfiles(followed, r).problems;
+    return { seq, ...r, problems, ms: performance.now() - began };
+  },
+
+  async convertReferences({ sketchId, edges, faces, mode }: ConvertRequest): Promise<ConvertPayload> {
+    const frame = lastModel?.frames.get(sketchId);
+    if (!lastModel || !frame) return { items: [], errors: [t('reference.noModel')] };
+    const scope = { names: lastModel.names, topology: lastModel.topology, frame };
+    try {
+      const outline = faces.flatMap((f) => faceEdges(scope, f, (i) => edgeFingerprint(scope.topology, i)));
+      return convertEdges(scope, [...edges, ...outline], mode);
+    } catch (e) {
+      return { items: [], errors: [e instanceof Error ? e.message : String(e)] };
+    }
   },
 
   async exportStep(doc: PartDoc, name: string): Promise<string> {

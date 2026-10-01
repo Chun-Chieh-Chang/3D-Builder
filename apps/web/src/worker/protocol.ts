@@ -1,7 +1,7 @@
 import type { Locale } from '@3db/i18n';
-import type { AssemblyDoc, Fingerprint, Id, PartDoc, PlaneFrame, Pose, SketchFeature } from '@3db/model';
+import type { AssemblyDoc, Fingerprint, Id, PartDoc, PlaneFrame, Pose, Ref, SketchFeature } from '@3db/model';
 import type { MassProps, MeshData } from '@3db/kernel';
-import type { AssemblyResult, AssemblySolveOptions, FeatureResult } from '@3db/regen';
+import type { AssemblyResult, AssemblySolveOptions, Converted, FeatureResult } from '@3db/regen';
 import type { MateGeometry } from '@3db/assembly';
 import type { EntityStatus, SketchStatus, SolvedGeometry, SolveOptions } from '@3db/sketch';
 
@@ -111,6 +111,20 @@ export interface SketchSolvePayload {
   ms: number;
 }
 
+/** Edges (and faces, by their outlines) of the model to turn into sketch entities, or into pierce points (C1.18, C1.26). */
+export interface ConvertRequest {
+  sketchId: Id;
+  edges: Ref[];
+  faces: Ref[];
+  mode: 'convert' | 'pierce';
+}
+
+export interface ConvertPayload {
+  items: Converted[];
+  /** Why the others could not be converted. */
+  errors: string[];
+}
+
 export interface KernelApi {
   init(): Promise<{ occtMs: number; gcsMs: number }>;
   /** The language of the messages the worker makes (errors, warnings); what it made before keeps its language. */
@@ -120,6 +134,8 @@ export interface KernelApi {
   addBlob(sha256: string, data: Uint8Array): Promise<void>;
   rebuild(req: RebuildRequest): Promise<RebuildPayload>;
   solveSketch(req: SketchSolveRequest): Promise<SketchSolvePayload>;
+  /** What these model edges and face outlines look like on the plane of the sketch being edited. */
+  convertReferences(req: ConvertRequest): Promise<ConvertPayload>;
   /** STEP of the rebuilt part, its product named `name`. */
   exportStep(doc: PartDoc, name: string): Promise<string>;
   /** Rebuilds a part file of an assembly, once per content (`key` = SHA-256 of `bytes`). */

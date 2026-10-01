@@ -37,7 +37,7 @@ import {
 } from '@3db/sketch/interact';
 import type { P2, SolvedGeometry } from '@3db/sketch';
 import { checkSketch, repairSketch, type SketchIssue } from '@3db/sketch/check';
-import { chamfer, extend, fillet, mergePoints, mirror, offset, polygon, slot, trim, type OpResult } from '@3db/sketch/ops';
+import { chamfer, extend, fillet, mergePoints, mirror, offset, polygon, referenceEntities, slot, trim, type ModelItem, type OpResult } from '@3db/sketch/ops';
 import type { SketchSolvePayload } from '../worker/protocol';
 
 export type ToolId =
@@ -60,10 +60,12 @@ export type ToolId =
   | 'trim'
   | 'extend'
   | 'offset'
-  | 'mirror';
+  | 'mirror'
+  | 'convert'
+  | 'pierce';
 
 /** The tools of C1.8–C1.19, whose hints and messages come from the message catalog. */
-type OperationTool = 'slot' | 'polygon' | 'sketchFillet' | 'sketchChamfer' | 'trim' | 'extend' | 'offset' | 'mirror';
+type OperationTool = 'slot' | 'polygon' | 'sketchFillet' | 'sketchChamfer' | 'trim' | 'extend' | 'offset' | 'mirror' | 'convert' | 'pierce';
 
 /** Tools that pick existing geometry instead of placing points: no snapping, the element under the cursor is what counts. */
 const PICK_TOOLS: ReadonlySet<ToolId> = new Set(['dimension', 'trim', 'extend', 'sketchFillet', 'sketchChamfer', 'offset', 'mirror']);
@@ -244,6 +246,10 @@ export class SketchController {
         return t('sketch.hint.offset');
       case 'mirror':
         return t('sketch.hint.mirror');
+      case 'convert':
+        return t('sketch.hint.convert');
+      case 'pierce':
+        return t('sketch.hint.pierce');
       default: {
         const hints = HINTS[tool];
         return hints[Math.min(step, hints.length - 1)]!;
@@ -885,6 +891,13 @@ export class SketchController {
     if (fix.kind === 'driven') this.host.execute({ type: 'setDimensionDriving', featureId: this.host.featureId, constraintId: fix.id, driving: false });
     else this.host.execute({ type: 'removeSketchItems', featureId: this.host.featureId, ids: [fix.id] });
     this.changed();
+  }
+
+  // ------------------------------------------------------------------ entities that follow the model (C1.18, C1.26)
+
+  /** Adds what the model's edges look like on this sketch's plane (the worker projected them) as entities that follow them. */
+  addReferences(items: ModelItem[]): void {
+    this.run(referenceEntities(this.sketch(), this.allocator(), items), () => this.host.notify(t('reference.added', { n: items.length }), 'info'));
   }
 
   // ------------------------------------------------------------------ check and repair (C1.35)
