@@ -31,6 +31,7 @@ import {
   type RefPlaneFeature,
   type RevolveFeature,
   type ShellFeature,
+  type SweepFeature,
   type Thin,
   type SketchConstraint,
   type SketchFeature,
@@ -546,7 +547,7 @@ function ThinBox({ f }: { f: ExtrudeFeature | RevolveFeature }) {
 }
 
 /** 「所選輪廓」 (C1.34): which of the sketch's closed regions a boss or cut uses. Nothing chosen means all of them. */
-function ContourBox({ f }: { f: ExtrudeFeature | RevolveFeature }) {
+function ContourBox({ f }: { f: ExtrudeFeature | RevolveFeature | SweepFeature }) {
   const doc = useStore((s) => s.doc);
   const [choices, setChoices] = useState<ContourChoice[] | null>(null);
   useEffect(() => {
@@ -590,7 +591,7 @@ function ContourBox({ f }: { f: ExtrudeFeature | RevolveFeature }) {
 }
 
 /** 「合併結果」 (C7.1): whether a boss joins the bodies it touches or is a body of its own. */
-function MergeBox({ f }: { f: ExtrudeFeature | RevolveFeature | ImportedBodyFeature }) {
+function MergeBox({ f }: { f: ExtrudeFeature | RevolveFeature | SweepFeature | ImportedBodyFeature }) {
   return (
     <>
       <label className="pm-row checkbox">
@@ -680,6 +681,31 @@ function RevolvePanel({ f }: { f: RevolveFeature }) {
         {f.op === 'boss' && <MergeBox f={f} />}
       </section>
     </>
+  );
+}
+
+/** Sweep (C4.4): the profile is the sketch it was made from, the path another sketch before it; contours and merging as for an extrusion. */
+function SweepPanel({ f }: { f: SweepFeature }) {
+  const doc = useStore((s) => s.doc);
+  const index = doc.features.findIndex((x) => x.id === f.id);
+  const paths = doc.features.filter((x, i): x is SketchFeature => x.type === 'sketch' && x.id !== f.sketch && i < index);
+  return (
+    <section className="pm-group">
+      <h4>{t('pm.sweep.profile')}</h4>
+      <p className="hint">{findFeature(doc, f.sketch)?.name ?? f.sketch}</p>
+      <ContourBox f={f} />
+      <h4>{t('pm.sweep.path')}</h4>
+      <select value={f.path} onChange={(e) => store.execute({ type: 'setSweepPath', featureId: f.id, path: e.target.value })}>
+        {!paths.some((p) => p.id === f.path) && <option value={f.path}>{findFeature(doc, f.path)?.name ?? f.path}</option>}
+        {paths.map((p) => (
+          <option key={p.id} value={p.id}>
+            {p.name}
+          </option>
+        ))}
+      </select>
+      {f.op === 'boss' && <MergeBox f={f} />}
+      <p className="hint">{t('pm.sweep.hint')}</p>
+    </section>
   );
 }
 
@@ -1229,6 +1255,7 @@ export function PropertyManager() {
       {f.type === 'sketch' && <SketchPanel f={f} />}
       {f.type === 'extrude' && <ExtrudePanel f={f} />}
       {f.type === 'revolve' && <RevolvePanel f={f} />}
+      {f.type === 'sweep' && <SweepPanel f={f} />}
       {f.type === 'fillet' && <FilletPanel f={f} />}
       {f.type === 'chamfer' && <ChamferPanel f={f} />}
       {f.type === 'refPlane' && <RefPlanePanel f={f} />}

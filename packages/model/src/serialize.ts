@@ -100,6 +100,8 @@ const migrations: Record<number, (doc: Json) => Json> = {
   15: (doc) => doc,
   // v17: the hole wizard (C4.8). Nothing to convert; the version keeps older programs from opening a part with a feature they would skip.
   16: (doc) => doc,
+  // v18: the sweep (C4.4). Nothing to convert; the version keeps older programs from opening a part with a feature they would skip.
+  17: (doc) => doc,
 };
 
 export class FormatError extends Error {

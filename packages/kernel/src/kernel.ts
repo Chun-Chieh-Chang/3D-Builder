@@ -556,6 +556,126 @@ export class Kernel {
     }
   }
 
+  /**
+   * Sweeps sketch regions along a path of lines and arcs (C4.4, 掃出). `path` is in the plane of `pathFrame`, in the order it is walked; the
+   * profile is where it is, on the plane of `frame` at the start of the path, and keeps its angle to the path ("follow path", a corrected Frenet
+   * trihedron, which has no twist where the path turns the other way or runs straight). A side face is named for the profile edge and the path
+   * edge that made it, `<profile source>@<path source>`; the ends are caps. A region with holes is its outer outline swept, less each hole swept.
+   */
+  sweepAlongPath(frame: Frame, regions: Region[], pathFrame: Frame, path: Segment[]): OpResult {
+    if (regions.length === 0) throw new KernelError(t('feature.sweepNoProfile'));
+    if (path.length === 0) throw new KernelError(t('feature.sweepNoPath'));
+    const oc = this.oc;
+    const arena = new Arena();
+    try {
+      const pathSources = new Map<TopoDS_Shape, string>();
+      const spine = this.wire(arena, pathFrame, path, false, pathSources);
+      const parts = regions.map((region) => this.sweepRegion(frame, region, spine, pathSources, arena));
+      let whole = parts[0]!;
+      if (parts.length > 1) {
+        // separate regions are separate solids of one compound; a face keeps what its own sweep said it was
+        const compound = arena.own(new oc.TopoDS_Compound());
+        const builder = arena.own(new oc.TopoDS_Builder());
+        builder.MakeCompound(compound);
+        for (const p of parts) builder.Add(compound, p.shape);
+        const index = ShapeIndex.of(oc, compound, T.FACE, arena);
+        const origins: FaceOrigin[][] = index.keys.map(() => []);
+        for (const p of parts) {
+          const own = ShapeIndex.of(oc, p.shape, T.FACE, arena);
+          own.keys.forEach((face, i) => {
+            const j = index.indexOf(face);
+            if (j >= 0) origins[j]!.push(...(p.origins[i] ?? []));
+          });
+          own.dispose();
+        }
+        index.dispose();
+        whole = { shape: compound, origins };
+      }
+      if (!this.valid(whole.shape)) throw new KernelError(t('feature.sweepInvalid'));
+      const id = this.put(whole.shape.Oriented(whole.shape.Orientation()));
+      if (!(this.massProps(id).volume > 1e-9)) {
+        this.release(id);
+        throw new KernelError(t('feature.sweepInvalid'));
+      }
+      return { shape: id, faceOrigins: whole.origins };
+    } finally {
+      arena.dispose();
+    }
+  }
+
+  /** One region swept along `spine`: its outline, less its holes (each swept in the same way). The shape is the arena's. */
+  private sweepRegion(frame: Frame, region: Region, spine: TopoDS_Wire, pathSources: Map<TopoDS_Shape, string>, arena: Arena): { shape: TopoDS_Shape; origins: FaceOrigin[][] } {
+    const oc = this.oc;
+    const one = (loop: Segment[], hole: boolean) => {
+      const sources = new Map<TopoDS_Shape, string>();
+      const wire = this.wire(arena, frame, loop, hole, sources);
+      const mk = arena.own(new oc.BRepOffsetAPI_MakePipeShell(spine));
+      mk.SetMode(false); // corrected Frenet
+      mk.Add(wire, false, false);
+      try {
+        mk.Build(arena.own(new oc.Message_ProgressRange()));
+        if (!mk.IsReady() || !mk.MakeSolid()) throw new KernelError(t('feature.sweepFailed', { why: t('feature.sweepNoSolid') }));
+      } catch (e) {
+        if (e instanceof KernelError) throw e;
+        throw new KernelError(t('feature.sweepFailed', { why: this.errorText(e) }));
+      }
+      const shape = arena.own(mk.Shape());
+      return { shape, origins: this.pipeOrigins(mk, shape, sources, pathSources, arena) };
+    };
+    let acc = one(region.outer, false);
+    for (const hole of region.holes) {
+      const tool = one(hole, true);
+      const fa = ShapeIndex.of(oc, acc.shape, T.FACE, arena);
+      const fb = ShapeIndex.of(oc, tool.shape, T.FACE, arena);
+      const mk = this.boolOp('cut', acc.shape, tool.shape, t('feature.sweep'), arena);
+      const raw = arena.own(mk.Shape());
+      const sources = this.faceSources(mk, [...fa.keys, ...fb.keys], raw, arena);
+      const all = [...acc.origins, ...tool.origins];
+      fa.dispose();
+      fb.dispose();
+      acc = { shape: raw, origins: sources.map((s) => s.flatMap((i) => all[i]!)) };
+    }
+    return acc;
+  }
+
+  /** Where the faces of a pipe shell came from: a side face from a profile edge and a path edge (both must have made it), the ends from the first and last sections. */
+  private pipeOrigins(mk: { Generated(s: TopoDS_Shape): NCollection_List_TopoDS_Shape; FirstShape(): TopoDS_Shape; LastShape(): TopoDS_Shape }, out: TopoDS_Shape, profile: Map<TopoDS_Shape, string>, path: Map<TopoDS_Shape, string>, arena: Arena): FaceOrigin[][] {
+    const oc = this.oc;
+    const faces = ShapeIndex.of(oc, out, T.FACE, arena);
+    const origins: FaceOrigin[][] = faces.keys.map(() => []);
+    /** The faces of `out` an edge made. */
+    const made = (edge: TopoDS_Shape): Set<number> => {
+      const set = new Set<number>();
+      for (const s of this.list(mk.Generated(edge))) {
+        const i = faces.indexOf(s);
+        if (i >= 0) set.add(i);
+        s.delete();
+      }
+      return set;
+    };
+    const byPath = [...path].map(([edge, source]) => ({ source, faces: made(edge) }));
+    for (const [edge, source] of profile) {
+      const mine = made(edge);
+      for (const i of mine) {
+        const along = byPath.filter((p) => p.faces.has(i));
+        // a face no path edge claims is named for its profile edge alone: never nameless
+        if (along.length === 0) origins[i]!.push({ rel: 'generated', kind: 'profileEdge', source });
+        for (const p of along) origins[i]!.push({ rel: 'generated', kind: 'profileEdge', source: `${source}@${p.source}` });
+      }
+    }
+    for (const [shape, which] of [[mk.FirstShape(), 'start'], [mk.LastShape(), 'end']] as const) {
+      const ends = ShapeIndex.of(oc, shape, T.FACE, arena);
+      for (const f of ends.keys) {
+        const i = faces.indexOf(f);
+        if (i >= 0) origins[i]!.push({ rel: 'cap', which });
+      }
+      ends.dispose();
+      shape.delete();
+    }
+    faces.dispose();
+    return origins;
+  }
+
   private boolOp(op: 'fuse' | 'cut' | 'common', a: TopoDS_Shape, b: TopoDS_Shape, label: string, arena: Arena) {
     const oc = this.oc;
     let mk;

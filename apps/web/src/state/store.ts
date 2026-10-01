@@ -562,6 +562,19 @@ class AppStore {
     this.openNew({ id: this.allocator().take('hole'), type: 'hole', name: nextName(this.history.doc, name), suppressed: false, sketch: sketch.id, kind: 'straight', diameter: '6', end: { type: 'blind', depth: '10' } }, name);
   }
 
+  /**
+   * 「掃出」 or 「除料-掃出」 (C4.4): the selected sketch is the profile; its path is the latest other sketch that has a line or an arc, to be changed in the PropertyManager.
+   */
+  newSweep(op: 'boss' | 'cut'): void {
+    const profile = this.selectedSketch();
+    if (!profile) return;
+    const path = [...this.history.doc.features].reverse().find((f): f is SketchFeature => f.type === 'sketch' && f.id !== profile.id && f.entities.some((e) => (e.type === 'line' || e.type === 'arc') && !e.construction));
+    if (!path) return this.notify(t('feature.sweepNeedsPathSketch'), 'error');
+    const base = op === 'boss' ? t('feature.sweep') : t('feature.cut', { name: t('feature.sweep') });
+    const id = this.allocator().take('sweep');
+    this.openNew({ id, type: 'sweep', name: nextName(this.history.doc, base), suppressed: false, sketch: profile.id, path: path.id, op }, base);
+  }
+
   /** 「旋轉填料/基材」 or 「旋轉除料」 (C4.3) about the sketch's centerline (or its only line). */
   newRevolve(op: 'boss' | 'cut'): void {
     const sketch = this.selectedSketch();

@@ -6,7 +6,7 @@ import type { Id } from './ids';
  * DOF status, mass properties and error lists are derived data and never stored.
  */
 
-export const SCHEMA_VERSION = 17;
+export const SCHEMA_VERSION = 18;
 
 /** Value expression (B5.2, B5.3): "20", "25.4mm", "30deg", "wall_t*2", "D1@草圖1/2", "property('厚度')"; see `expr/`. */
 export type Expr = string;
@@ -185,6 +185,24 @@ export interface HoleFeature extends FeatureBase {
   reverse?: boolean;
 }
 
+/**
+ * Sweep (掃出, C4.4, v18): the profile sketch's closed outlines carried along the path of another sketch, a single run of lines and arcs. One end of
+ * the path is on the plane of the profile and the sweep starts there; the profile keeps the angle it has to the path ("follow path"). A boss
+ * joins or becomes a body, a cut removes material, as for an extrusion.
+ */
+export interface SweepFeature extends FeatureBase {
+  type: 'sweep';
+  /** The sketch of the profile. */
+  sketch: Id;
+  /** The sketch of the path. */
+  path: Id;
+  op: 'boss' | 'cut';
+  /** As for `ExtrudeFeature.merge`. */
+  merge?: boolean;
+  /** As for `ExtrudeFeature.contours`. */
+  contours?: Id[][];
+}
+
 export interface RevolveFeature extends FeatureBase {
   type: 'revolve';
   sketch: Id;
@@ -313,6 +331,7 @@ export type Feature =
   | SketchFeature
   | ExtrudeFeature
   | RevolveFeature
+  | SweepFeature
   | FilletFeature
   | ChamferFeature
   | RefPlaneFeature

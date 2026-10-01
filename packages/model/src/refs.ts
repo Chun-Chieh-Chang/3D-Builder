@@ -50,6 +50,7 @@ export function mapRefs(feature: Feature, map: (ref: Ref) => Ref): { feature: Fe
     case 'combine':
       return { feature: { ...feature, main: one(feature.main), tools: feature.tools.map(one) }, replaced };
     case 'revolve':
+    case 'sweep':
     case 'hole':
     case 'importedBody':
       return { feature, replaced };

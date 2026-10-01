@@ -27,10 +27,11 @@ import {
   type RevolveFeature,
   type ShellFeature,
   type SketchFeature,
+  type SweepFeature,
   type Thin,
   type Vec3,
 } from '@3db/model';
-import { findProfiles, selectContours, ThinProblem, thinRegions, type ProfileResult, type SketchSolver, type SketchStatus, type SolvedSketch } from '@3db/sketch';
+import { findOutlines, findProfiles, reversePath, selectContours, ThinProblem, thinRegions, type ProfileResult, type SketchSolver, type SketchStatus, type SolvedSketch } from '@3db/sketch';
 import { KernelError, type SweepSpec, type FaceOrigin, type ImportDiagnostics, type Kernel, type OpResult, type ShapeId, type Topology } from '@3db/kernel';
 import { nameElements, nameFromFaces, resolveRef, type Candidate, type ElementNames } from '@3db/naming';
 import { Bodies, type BodyState, type BodyView } from './bodies';
@@ -303,6 +304,7 @@ export class Regenerator {
           }
           case 'extrude':
           case 'revolve':
+          case 'sweep':
           case 'fillet':
           case 'chamfer':
           case 'shell':
@@ -317,6 +319,8 @@ export class Regenerator {
                 ? this.extrude(feature, sketches, set)
                 : feature.type === 'revolve'
                   ? this.revolve(feature, sketches, set)
+                  : feature.type === 'sweep'
+                  ? this.sweep(feature, sketches, set)
                   : feature.type === 'fillet'
                     ? this.fillet(feature, set)
                     : feature.type === 'chamfer'
@@ -645,6 +649,50 @@ export class Regenerator {
       normal: rotate(fr.normal, k, turn),
     };
     const tool = this.kernel.revolve(frame, s.profiles.regions, { origin, dir: k }, angle);
+    return this.apply(f.id, f.op, tool, { featureId: f.id, sketchId: f.sketch }, set.list, f.merge !== false);
+  }
+
+  /**
+   * The sweep (C4.4): the closed outlines of one sketch carried along the path of another. The path is a single open run of lines and arcs with one
+   * end on the plane of the profile, and does not run along that plane there; that end is where the sweep starts. Everything else is said, not guessed.
+   */
+  private sweep(f: SweepFeature, sketches: RebuildResult['sketches'], set: Bodies): BodyState[] {
+    const s = this.profileOf(sketches, f.sketch, f.contours);
+    if (f.op === 'cut' && !set.view) throw new FeatureError(t('feature.cutNeedsBody'));
+    const p = sketches.get(f.path);
+    if (!p) throw new FeatureError(t('feature.sweepPathGone'));
+    const found = findOutlines(p.sketch, p.solved);
+    if (found.problems.length > 0) throw new FeatureError(found.problems.join(t('cmd.listSeparator')));
+    if (found.chains.length === 0 && found.loops.length === 0) throw new FeatureError(t('feature.sweepNoPath'));
+    if (found.chains.length === 0) throw new FeatureError(t('feature.sweepPathClosed'));
+    if (found.chains.length + found.loops.length > 1) throw new FeatureError(t('feature.sweepPathMany', { n: String(found.chains.length + found.loops.length) }));
+    let path = found.chains[0]!;
+    const at = (frame: PlaneFrame, q: [number, number]): Vec3 => add(add(frame.origin, frame.xDir, q[0]), frame.yDir, q[1]);
+    const away = (q: [number, number]) => Math.abs(dot(sub(at(p.frame, q), s.frame.origin), s.frame.normal));
+    const first = path[0]!;
+    const last = path[path.length - 1]!;
+    const head = first.kind === 'line' ? first.a : first.kind === 'arc' ? first.from : first.c;
+    const tail = last.kind === 'line' ? last.b : last.kind === 'arc' ? last.to : last.c;
+    const extent = Math.max(1, ...path.map((g) => (g.kind === 'line' ? Math.hypot(g.b[0] - g.a[0], g.b[1] - g.a[1]) : g.kind === 'arc' ? g.r : 0)));
+    const tol = 1e-6 * extent;
+    if (away(head) > tol) {
+      if (away(tail) > tol) throw new FeatureError(t('feature.sweepPathOffPlane', { a: away(head).toFixed(3), b: away(tail).toFixed(3) }));
+      path = reversePath(path);
+    }
+    // the way the path leaves the profile: it must cross the profile's plane, not run along it
+    const start = path[0]!;
+    const heading: [number, number] =
+      start.kind === 'line'
+        ? [start.b[0] - start.a[0], start.b[1] - start.a[1]]
+        : start.kind === 'arc'
+          ? (() => {
+              const r: [number, number] = [start.from[0] - start.c[0], start.from[1] - start.c[1]];
+              return start.ccw ? [-r[1], r[0]] : [r[1], -r[0]];
+            })()
+          : [1, 0];
+    const dir = unit(add(add([0, 0, 0], p.frame.xDir, heading[0]), p.frame.yDir, heading[1]));
+    if (Math.abs(dot(dir, s.frame.normal)) < 1e-3) throw new FeatureError(t('feature.sweepPathAlongPlane'));
+    const tool = this.kernel.sweepAlongPath(s.frame, s.profiles.regions, p.frame, path);
     return this.apply(f.id, f.op, tool, { featureId: f.id, sketchId: f.sketch }, set.list, f.merge !== false);
   }
 

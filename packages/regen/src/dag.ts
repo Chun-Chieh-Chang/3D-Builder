@@ -24,6 +24,9 @@ export function parentsOf(feature: Feature, doc: PartDoc): Id[] {
     case 'hole':
       parents = [feature.sketch];
       break;
+    case 'sweep':
+      parents = [feature.sketch, feature.path];
+      break;
     case 'fillet':
     case 'chamfer':
       parents = fromRefs(feature.edges);

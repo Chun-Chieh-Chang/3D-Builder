@@ -232,6 +232,22 @@ describe('a part file written by version 16 (draft feature, C5.5) opens in versi
   });
 });
 
+describe('a part file written by version 17 (hole wizard, C4.8) opens in version 18 (sweep, C4.4)', () => {
+  it('keeps its counterbored hole and rebuilds it: the block loses a Ø3.4 hole and a Ø6.5 counterbore, valid, every face named as before', async () => {
+    const file = await readPartFile(oldFile('v17-hole.3dbx'));
+    expect(file.warnings).toEqual([]);
+    expect(JSON.parse(new TextDecoder().decode((await readZip(oldFile('v17-hole.3dbx')))[0]!.data)).schemaVersion).toBe(17);
+    expect(file.doc.schemaVersion).toBe(SCHEMA_VERSION);
+    expect(file.doc.features.map((f) => f.type)).toEqual(['sketch', 'extrude', 'fillet', 'sketch', 'hole']);
+    const r = new Regenerator(kernel, await PlaneGcsSolver.create(), file.blobs).rebuild(file.doc);
+    expect(statuses(r).filter((s) => !s.endsWith('=ok'))).toEqual([]);
+    expect(kernel.isValid(r.body!.shape)).toBe(true);
+    const volume = kernel.massProps(r.body!.shape).volume;
+    expect(volume).toBeCloseTo(DEMO - Math.PI * (3.25 * 3.25 * 3.4 + 1.7 * 1.7 * (4 - 3.4)), 6);
+    expect(r.body!.names.faces).toEqual(expect.arrayContaining(['extrude1:side:sketch1.l1', 'hole1:side:sketch2.hp1.wall', 'hole1:side:sketch2.hp1.cbwall']));
+  });
+});
+
 describe('the .3dbx file (B9.1, F7.1)', () => {
   const docs = async (): Promise<[string, PartDoc][]> => [
     ['the demo part', createDemoPart()],

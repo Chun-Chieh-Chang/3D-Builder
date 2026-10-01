@@ -16,6 +16,8 @@ export const model = {
   'cmd.bodyIdEmpty': '本體的 ID 不可空白',
   'cmd.sketchEditField': '圖元 {id} 沒有「{field}」可以改',
   'cmd.onlyHoleHasParams': '只有異型孔特徵有這些參數',
+  'cmd.onlySweepHasPath': '只有掃出特徵有路徑',
+  'cmd.sweepPathIsProfile': '掃出的路徑和輪廓不能是同一張草圖',
   'cmd.onlyDraftHasParams': '只有拔模特徵有這些參數',
   'cmd.draftNeutralKind': '中立面必須是面或基準面',
   'cmd.draftOnlyFaces': '要拔模的只能選面',

@@ -27,6 +27,7 @@ export const FEATURE_LABEL: Record<FeatureType, string> = labelsOf({
   importedBody: 'feature.importedBody',
   deleteFace: 'feature.deleteFace',
   shell: 'feature.shell',
+  sweep: 'feature.sweep',
   hole: 'feature.hole',
   draft: 'feature.draftFeature',
   moveFace: 'feature.moveFace',
@@ -35,7 +36,7 @@ export const FEATURE_LABEL: Record<FeatureType, string> = labelsOf({
 
 /** SolidWorks names cuts after what they cut with: 「除料-伸長」, 「除料-旋轉」. */
 export function featureLabel(f: Feature): string {
-  return (f.type === 'extrude' || f.type === 'revolve') && f.op === 'cut' ? t('feature.cut', { name: FEATURE_LABEL[f.type] }) : FEATURE_LABEL[f.type];
+  return (f.type === 'extrude' || f.type === 'revolve' || f.type === 'sweep') && f.op === 'cut' ? t('feature.cut', { name: FEATURE_LABEL[f.type] }) : FEATURE_LABEL[f.type];
 }
 
 export const SKETCH_STATUS_LABEL: Record<SketchStatus, string> = labelsOf({

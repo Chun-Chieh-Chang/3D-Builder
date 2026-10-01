@@ -1,7 +1,7 @@
 import { t } from '@3db/i18n';
 import { current, produce, type Draft } from 'immer';
 import { countersFor, type Id } from './ids';
-import type { Variable, BlobRef, ChamferFeature, CombineFeature, HoleFeature, Draft as WallDraft, EndCondition, Thin, Expr, Feature, ImportedBodyFeature, PartDoc, PlaneDefinition, Ref, RevolveCondition, SketchConstraint, SketchEntity, SketchFeature } from './schema';
+import type { Variable, BlobRef, ChamferFeature, CombineFeature, HoleFeature, SweepFeature, Draft as WallDraft, EndCondition, Thin, Expr, Feature, ImportedBodyFeature, PartDoc, PlaneDefinition, Ref, RevolveCondition, SketchConstraint, SketchEntity, SketchFeature } from './schema';
 import { isDatumPlaneName } from './datums';
 import { mapRefs } from './refs';
 import { bodyFeature, isBodyKey, isHideable } from './visibility';
@@ -60,6 +60,8 @@ ull). */
   | { type: 'setThin'; featureId: Id; thin: Thin | null }
   | { type: 'setRevolveCondition'; featureId: Id; value: RevolveCondition }
   | { type: 'setRevolveAxis'; featureId: Id; axis: Id }
+  /** The sketch whose path a sweep follows (C4.4). */
+  | { type: 'setSweepPath'; featureId: Id; path: Id }
   | { type: 'setFilletRadius'; featureId: Id; value: Expr }
   /** Edges of an edge-based feature (fillet, chamfer). */
   | { type: 'setEdges'; featureId: Id; edges: Ref[] }
@@ -227,6 +229,14 @@ function combineRefs(main: Ref, tools: Ref[]): void {
   if (main.name && tools.some((r) => r.name === main.name)) throw new CommandError(t('cmd.combineMainIsTool'));
 }
 
+/** A sweep's profile and path are two different sketches, both earlier in the history. */
+function sweepSketches(doc: PartDoc, f: SweepFeature, index: number): void {
+  const label = t('feature.sweep');
+  sketchBefore(doc, f.sketch, index, label);
+  sketchBefore(doc, f.path, index, label);
+  if (f.path === f.sketch) throw new CommandError(t('cmd.sweepPathIsProfile'));
+}
+
 function revolveAxis(sketch: SketchFeature, axis: Id): void {
   if (sketch.entities.find((e) => e.id === axis)?.type !== 'line') throw new CommandError(t('cmd.revolveAxisMustBeLine'));
 }
@@ -262,6 +272,9 @@ function validateNewFeature(doc: PartDoc, f: Feature, index: number): void {
       return;
     case 'revolve':
       revolveAxis(sketchBefore(doc, f.sketch, index, t('feature.revolve')), f.axis);
+      return;
+    case 'sweep':
+      sweepSketches(doc, f, index);
       return;
     case 'fillet':
       if (f.edges.some((r) => r.kind !== 'edge')) throw new CommandError(t('cmd.filletOnlyEdges'));
@@ -403,6 +416,13 @@ export function mutate(draft: Draft<PartDoc>, cmd: Command): void {
       f.axis = cmd.axis;
       return;
     }
+    case 'setSweepPath': {
+      const f = feature(draft, cmd.featureId);
+      if (f.type !== 'sweep') throw new CommandError(t('cmd.onlySweepHasPath'));
+      sweepSketches(draft as PartDoc, { ...(f as SweepFeature), path: cmd.path }, draft.features.findIndex((x) => x.id === f.id));
+      f.path = cmd.path;
+      return;
+    }
     case 'setRefPlane': {
       const f = feature(draft, cmd.featureId);
       if (f.type !== 'refPlane') throw new CommandError(t('cmd.onlyRefPlaneHasParams'));
@@ -488,14 +508,14 @@ export function mutate(draft: Draft<PartDoc>, cmd: Command): void {
     }
     case 'setMerge': {
       const f = feature(draft, cmd.featureId);
-      if (f.type !== 'extrude' && f.type !== 'revolve' && f.type !== 'importedBody') throw new CommandError(t('cmd.onlyBossMerges'));
+      if (f.type !== 'extrude' && f.type !== 'revolve' && f.type !== 'sweep' && f.type !== 'importedBody') throw new CommandError(t('cmd.onlyBossMerges'));
       if (cmd.merge) delete f.merge;
       else f.merge = false;
       return;
     }
     case 'setContours': {
       const f = feature(draft, cmd.featureId);
-      if (f.type !== 'extrude' && f.type !== 'revolve') throw new CommandError(t('cmd.onlyExtrudeRevolveContours'));
+      if (f.type !== 'extrude' && f.type !== 'revolve' && f.type !== 'sweep') throw new CommandError(t('cmd.onlyExtrudeRevolveContours'));
       if (cmd.contours === null) {
         delete f.contours;
         return;

@@ -30,6 +30,8 @@ const hasComponents = (s: UiState) => (s.asm?.doc.components.length ?? 0) > 0;
 const sketching = (s: UiState) => s.editing?.kind === 'sketch';
 const selectedFeature = (s: UiState) => s.doc.features.find((f) => f.id === s.selected);
 const sketchSelected = (s: UiState) => partIdle(s) && selectedFeature(s)?.type === 'sketch';
+/** A sweep takes a profile (the selected sketch) and a path (another sketch). */
+const canSweep = (s: UiState) => sketchSelected(s) && s.doc.features.filter((f) => f.type === 'sketch').length >= 2;
 const hasBody = (s: UiState) => partIdle(s) && !!s.result?.mesh;
 /** A plane to sketch on: a default or reference plane in the tree, or a planar face in the graphics area. */
 const sketchPlane = (s: UiState): DatumPlaneName | Ref | null => {
@@ -55,8 +57,10 @@ export const ACTIONS: UiAction[] = [
 
   { id: 'extrude', label: '伸長填料/基材', group: 'feature', enabled: sketchSelected, run: () => store.newExtrude('boss') },
   { id: 'revolve', label: '旋轉填料/基材', group: 'feature', enabled: sketchSelected, run: () => store.newRevolve('boss') },
+  { id: 'sweep', get label() { return t('action.sweep'); }, group: 'feature', enabled: canSweep, run: () => store.newSweep('boss') },
   { id: 'extrude-cut', label: '伸長除料', group: 'feature', enabled: (s) => sketchSelected(s) && !!s.result?.mesh, run: () => store.newExtrude('cut') },
   { id: 'revolve-cut', label: '旋轉除料', group: 'feature', enabled: (s) => sketchSelected(s) && !!s.result?.mesh, run: () => store.newRevolve('cut') },
+  { id: 'sweep-cut', get label() { return t('action.sweepCut'); }, group: 'feature', enabled: (s) => canSweep(s) && !!s.result?.mesh, run: () => store.newSweep('cut') },
   { id: 'fillet', label: '圓角', group: 'feature', enabled: hasBody, run: () => store.newFillet() },
   { id: 'chamfer', label: '導角', group: 'feature', enabled: hasBody, run: () => store.newChamfer() },
   { id: 'delete-face', get label() { return t('feature.deleteFace'); }, group: 'feature', enabled: hasBody, run: () => store.newDeleteFace() },
