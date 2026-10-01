@@ -29,6 +29,7 @@ export const FEATURE_LABEL: Record<FeatureType, string> = labelsOf({
   shell: 'feature.shell',
   sweep: 'feature.sweep',
   loft: 'feature.loft',
+  rib: 'feature.rib',
   hole: 'feature.hole',
   draft: 'feature.draftFeature',
   moveFace: 'feature.moveFace',

@@ -104,6 +104,8 @@ const migrations: Record<number, (doc: Json) => Json> = {
   17: (doc) => doc,
   // v19: the loft (C4.5). Nothing to convert; the version keeps older programs from opening a part with a feature they would skip.
   18: (doc) => doc,
+  // v20: the rib (C4.7). Nothing to convert; the version keeps older programs from opening a part with a feature they would skip.
+  19: (doc) => doc,
 };
 
 export class FormatError extends Error {

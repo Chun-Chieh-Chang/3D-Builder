@@ -1,6 +1,6 @@
 import type { ReactElement } from 'react';
 
-type IconName = 'part' | 'assembly' | 'mates' | 'origin' | 'plane' | 'refPlane' | 'sketch' | 'extrude' | 'revolve' | 'sweep' | 'loft' | 'fillet' | 'chamfer' | 'importedBody' | 'deleteFace' | 'moveFace' | 'shell' | 'draft' | 'hole' | 'combine' | 'body' | 'error' | 'warning' | 'ok' | 'cancel' | 'eye' | 'eyeOff';
+type IconName = 'part' | 'assembly' | 'mates' | 'origin' | 'plane' | 'refPlane' | 'sketch' | 'extrude' | 'revolve' | 'sweep' | 'loft' | 'rib' | 'fillet' | 'chamfer' | 'importedBody' | 'deleteFace' | 'moveFace' | 'shell' | 'draft' | 'hole' | 'combine' | 'body' | 'error' | 'warning' | 'ok' | 'cancel' | 'eye' | 'eyeOff';
 
 /** Default planes and reference planes share one icon, as in SolidWorks. */
 const PLANE = <path d="M4 4h10l-2 8H2z" />;
@@ -23,6 +23,7 @@ const PATHS: Record<IconName, ReactElement> = {
   draft: <path d="M4 14L2 3h12l-2 11z M2 8h12" />,
   sweep: <path d="M2 13c4 0 4-9 8-9h4 M2 11c4 0 4-9 8-9 M2 15c4 0 4-9 8-9" />,
   loft: <path d="M3 13h10l-2-4H5z M5 9h6l-1.5-4h-3z M6.5 5h3l-.5-3h-2z" />,
+  rib: <path d="M2 13h12 M8 13V3 M8 3h0 M5 13l3-5 3 5" />,
   hole: <path d="M2 4h12v8H2z M6 4v4h4V4 M8 8v4" />,
   shell: <path d="M2 5l6-3 6 3v6l-6 3-6-3z M5 6.5l3-1.5 3 1.5v3l-3 1.5-3-1.5z" />,
   combine: <path d="M2 6h6v6H2z M8 4h6v6H8z M8 6v4" />,

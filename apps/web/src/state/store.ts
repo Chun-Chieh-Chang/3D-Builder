@@ -562,6 +562,14 @@ class AppStore {
     this.openNew({ id: this.allocator().take('hole'), type: 'hole', name: nextName(this.history.doc, name), suppressed: false, sketch: sketch.id, kind: 'straight', diameter: '6', end: { type: 'blind', depth: '10' } }, name);
   }
 
+  /** 「肋材」 (C4.7): the one line of the selected sketch as a wall of 4 mm about the sketch plane, grown to the body in the PropertyManager's session. */
+  newRib(): void {
+    const sketch = this.selectedSketch();
+    if (!sketch) return;
+    const name = t('feature.rib');
+    this.openNew({ id: this.allocator().take('rib'), type: 'rib', name: nextName(this.history.doc, name), suppressed: false, sketch: sketch.id, thickness: '4', side: 'mid' }, name);
+  }
+
   /**
    * 「疊層拉伸」 or 「除料-疊層拉伸」 (C4.5): the selected sketch is the last section, the latest other sketch with a circle, a line or an arc the first; the
    * PropertyManager adds, removes and orders the sections.

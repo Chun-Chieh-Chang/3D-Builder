@@ -26,6 +26,7 @@ import {
   type Ref,
   type RefPlaneFeature,
   type RevolveFeature,
+  type RibFeature,
   type ShellFeature,
   type SketchFeature,
   type SweepFeature,
@@ -307,6 +308,7 @@ export class Regenerator {
           case 'revolve':
           case 'sweep':
           case 'loft':
+          case 'rib':
           case 'fillet':
           case 'chamfer':
           case 'shell':
@@ -325,6 +327,8 @@ export class Regenerator {
                   ? this.sweep(feature, sketches, set)
                   : feature.type === 'loft'
                   ? this.loft(feature, sketches, set)
+                  : feature.type === 'rib'
+                  ? this.rib(feature, sketches, set)
                   : feature.type === 'fillet'
                     ? this.fillet(feature, set)
                     : feature.type === 'chamfer'
@@ -717,6 +721,45 @@ export class Regenerator {
     });
     const tool = this.kernel.loft(sections);
     return this.apply(f.id, f.op, tool, { featureId: f.id, sketchId: f.sections[0]! }, set.list, f.merge !== false);
+  }
+
+  /**
+   * The rib (C4.7): the one line of the sketch becomes a wall of the thickness asked for, a rectangle square to the sketch plane along the line, and
+   * grows from the line (in the sketch plane, square to the line) as far as the body: an extrusion up to the body, then joined to it. A rib that
+   * grows away from the body, or past which there is nothing, says so.
+   */
+  private rib(f: RibFeature, sketches: RebuildResult['sketches'], set: Bodies): BodyState[] {
+    const s = sketches.get(f.sketch);
+    if (!s) throw new FeatureError(t('feature.ribSketchGone'));
+    const body = set.view;
+    if (!body) throw new FeatureError(t('feature.ribNeedsBody'));
+    const found = findOutlines(s.sketch, s.solved);
+    if (found.problems.length > 0) throw new FeatureError(found.problems.join(t('cmd.listSeparator')));
+    const line = found.chains.length === 1 && found.loops.length === 0 && found.chains[0]!.length === 1 ? found.chains[0]![0]! : null;
+    if (line?.kind !== 'line') throw new FeatureError(t('feature.ribOneLine', { n: String(found.chains.length + found.loops.length) }));
+    const at = (q: [number, number]): Vec3 => add(add(s.frame.origin, s.frame.xDir, q[0]), s.frame.yDir, q[1]);
+    const a = at(line.a);
+    const along = sub(at(line.b), a);
+    const length = Math.hypot(...along);
+    const u = unit(along);
+    const n = s.frame.normal;
+    // the wall grows along (normal × the way the line is drawn): the normal of the frame of the line and its thickness
+    const frame: PlaneFrame = { origin: a, xDir: u, yDir: n, normal: cross(u, n) };
+    const dir: Vec3 = f.flip ? [-frame.normal[0], -frame.normal[1], -frame.normal[2]] : frame.normal;
+    const thickness = evalLength(f.thickness);
+    const [y0, y1] = f.side === 'mid' ? [-thickness / 2, thickness / 2] : f.side === 'positive' ? [0, thickness] : [-thickness, 0];
+    const wall = (p: [number, number], q: [number, number], what: string) => ({ kind: 'line' as const, a: p, b: q, source: `${line.source}.${what}` });
+    const outer = [wall([0, y0], [length, y0], 'neg'), wall([length, y0], [length, y1], 'end2'), wall([length, y1], [0, y1], 'pos'), wall([0, y1], [0, y0], 'end1')];
+    const reach = this.reach(body, a, dir);
+    if (reach <= 1e-9) throw new FeatureError(t('feature.ribAway'));
+    let tool: OpResult;
+    try {
+      tool = this.kernel.extrude(frame, [{ outer, holes: [] }], add([0, 0, 0], dir, reach * 1.01 + 1), 0, { body: body.shape });
+    } catch (e) {
+      if (e instanceof KernelError && e.message === t('feature.bodyNotReached')) throw new FeatureError(t('feature.ribNotReached'));
+      throw e;
+    }
+    return this.apply(f.id, 'boss', tool, { featureId: f.id, sketchId: f.sketch }, set.list, true);
   }
 
   // ------------------------------------------------------------------ several bodies (C7)

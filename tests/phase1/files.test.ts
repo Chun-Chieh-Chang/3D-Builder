@@ -263,6 +263,21 @@ describe('a part file written by version 18 (sweep, C4.4) opens in version 19 (l
   });
 });
 
+describe('a part file written by version 19 (loft, C4.5) opens in version 20 (rib, C4.7)', () => {
+  it('keeps its loft and rebuilds it: a 10 × 10 to 6 × 6 frustum over 20 as a second body, valid, every face named as before', async () => {
+    const file = await readPartFile(oldFile('v19-loft.3dbx'));
+    expect(file.warnings).toEqual([]);
+    expect(JSON.parse(new TextDecoder().decode((await readZip(oldFile('v19-loft.3dbx')))[0]!.data)).schemaVersion).toBe(19);
+    expect(file.doc.schemaVersion).toBe(SCHEMA_VERSION);
+    expect(file.doc.features.map((f) => f.type)).toEqual(['sketch', 'extrude', 'fillet', 'refPlane', 'sketch', 'sketch', 'loft']);
+    const r = new Regenerator(kernel, await PlaneGcsSolver.create(), file.blobs).rebuild(file.doc);
+    expect(statuses(r).filter((s) => !s.endsWith('=ok'))).toEqual([]);
+    expect(r.bodies).toHaveLength(2);
+    expect(r.bodies.every((b) => kernel.isValid(b.shape))).toBe(true);
+    expect(r.bodies.reduce((v, b) => v + kernel.massProps(b.shape).volume, 0)).toBeCloseTo(DEMO + (20 / 3) * (100 + 60 + 36), 6);
+  });
+});
+
 describe('the .3dbx file (B9.1, F7.1)', () => {
   const docs = async (): Promise<[string, PartDoc][]> => [
     ['the demo part', createDemoPart()],

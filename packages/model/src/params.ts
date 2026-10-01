@@ -137,6 +137,10 @@ export function mapExprs(feature: Feature, fn: (expr: Expr, kind: ExprKind, role
       if (same) return feature;
       return { ...f, diameter, end, ...(cbDiameter === undefined ? {} : { cbDiameter }), ...(cbDepth === undefined ? {} : { cbDepth }), ...(csDiameter === undefined ? {} : { csDiameter }), ...(csAngle === undefined ? {} : { csAngle }) };
     }
+    case 'rib': {
+      const thickness = fn(feature.thickness, 'length', 'positive');
+      return thickness === feature.thickness ? feature : { ...feature, thickness };
+    }
     case 'draft': {
       const angle = fn(feature.angle, 'angle', 'draftAngle');
       return angle === feature.angle ? feature : { ...feature, angle };

@@ -1,7 +1,7 @@
 import { t } from '@3db/i18n';
 import { current, produce, type Draft } from 'immer';
 import { countersFor, type Id } from './ids';
-import type { Variable, BlobRef, ChamferFeature, CombineFeature, HoleFeature, LoftFeature, SweepFeature, Draft as WallDraft, EndCondition, Thin, Expr, Feature, ImportedBodyFeature, PartDoc, PlaneDefinition, Ref, RevolveCondition, SketchConstraint, SketchEntity, SketchFeature } from './schema';
+import type { Variable, BlobRef, ChamferFeature, CombineFeature, HoleFeature, LoftFeature, RibFeature, SweepFeature, Draft as WallDraft, EndCondition, Thin, Expr, Feature, ImportedBodyFeature, PartDoc, PlaneDefinition, Ref, RevolveCondition, SketchConstraint, SketchEntity, SketchFeature } from './schema';
 import { isDatumPlaneName } from './datums';
 import { mapRefs } from './refs';
 import { bodyFeature, isBodyKey, isHideable } from './visibility';
@@ -70,6 +70,8 @@ ull). */
   | { type: 'setChamfer'; featureId: Id; value: Pick<ChamferFeature, 'mode' | 'distance' | 'second' | 'flip'> }
   /** The hole wizard's settings (C4.8): everything but which sketch it drills at. */
   | { type: 'setHole'; featureId: Id; hole: Omit<HoleFeature, 'id' | 'type' | 'name' | 'suppressed' | 'sketch'> }
+  /** A rib's thickness, where it goes, and which way it grows (C4.7). */
+  | { type: 'setRib'; featureId: Id; rib: Omit<RibFeature, 'id' | 'type' | 'name' | 'suppressed' | 'sketch'> }
   /** What a draft leans and about which plane (C5.5). */
   | { type: 'setDraftFeature'; featureId: Id; neutral: Ref; faces: Ref[]; angle: Expr; reverse?: boolean }
   /** What a shell takes away and how thick the wall is (C5.4). */
@@ -288,6 +290,9 @@ function validateNewFeature(doc: PartDoc, f: Feature, index: number): void {
     case 'loft':
       loftSections(doc, f, index);
       return;
+    case 'rib':
+      sketchBefore(doc, f.sketch, index, t('feature.rib'));
+      return;
     case 'fillet':
       if (f.edges.some((r) => r.kind !== 'edge')) throw new CommandError(t('cmd.filletOnlyEdges'));
       return;
@@ -490,6 +495,16 @@ export function mutate(draft: Draft<PartDoc>, cmd: Command): void {
       const keep = { id: f.id, type: f.type, name: f.name, suppressed: f.suppressed, sketch: f.sketch } as const;
       for (const k of Object.keys(f)) delete (f as unknown as Record<string, unknown>)[k];
       Object.assign(f, keep, cmd.hole);
+      checkExprs(draft as PartDoc, f as Feature);
+      return;
+    }
+    case 'setRib': {
+      const f = feature(draft, cmd.featureId);
+      if (f.type !== 'rib') throw new CommandError(t('cmd.onlyRibHasParams'));
+      const keep = { id: f.id, type: f.type, name: f.name, suppressed: f.suppressed, sketch: f.sketch } as const;
+      for (const k of Object.keys(f)) delete (f as unknown as Record<string, unknown>)[k];
+      Object.assign(f, keep, cmd.rib);
+      if (f.flip === undefined) delete f.flip;
       checkExprs(draft as PartDoc, f as Feature);
       return;
     }

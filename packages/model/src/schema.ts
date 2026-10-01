@@ -6,7 +6,7 @@ import type { Id } from './ids';
  * DOF status, mass properties and error lists are derived data and never stored.
  */
 
-export const SCHEMA_VERSION = 19;
+export const SCHEMA_VERSION = 20;
 
 /** Value expression (B5.2, B5.3): "20", "25.4mm", "30deg", "wall_t*2", "D1@草圖1/2", "property('厚度')"; see `expr/`. */
 export type Expr = string;
@@ -217,6 +217,19 @@ export interface LoftFeature extends FeatureBase {
   merge?: boolean;
 }
 
+/**
+ * Rib (肋材, C4.7, v20): one straight line of a sketch thickened into a wall and grown from the line, in the plane of the sketch and square to the line,
+ * until it meets the body. `side` is where the thickness goes, to both sides of the sketch plane or to the one the normal points to or the other one;
+ * the wall grows along (normal of the sketch × the way the line is drawn), `flip` the other way.
+ */
+export interface RibFeature extends FeatureBase {
+  type: 'rib';
+  sketch: Id;
+  thickness: Expr;
+  side: 'mid' | 'positive' | 'negative';
+  flip?: boolean;
+}
+
 export interface RevolveFeature extends FeatureBase {
   type: 'revolve';
   sketch: Id;
@@ -347,6 +360,7 @@ export type Feature =
   | RevolveFeature
   | SweepFeature
   | LoftFeature
+  | RibFeature
   | FilletFeature
   | ChamferFeature
   | RefPlaneFeature

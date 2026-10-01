@@ -31,6 +31,7 @@ import {
   type Ref,
   type RefPlaneFeature,
   type RevolveFeature,
+  type RibFeature,
   type ShellFeature,
   type SweepFeature,
   type Thin,
@@ -755,6 +756,34 @@ function LoftPanel({ f }: { f: LoftFeature }) {
   );
 }
 
+/** Rib (C4.7): the thickness of the wall made of the sketch's line, where the thickness goes, and which way the wall grows. */
+function RibPanel({ f }: { f: RibFeature }) {
+  const { sketch: _sketch, id: _id, type: _type, name: _name, suppressed: _suppressed, ...settings } = f;
+  void [_sketch, _id, _type, _name, _suppressed];
+  const run = (patch: Partial<typeof settings>) => store.execute({ type: 'setRib', featureId: f.id, rib: { ...settings, ...patch } });
+  return (
+    <section className="pm-group">
+      <label className="pm-row">
+        <span>{t('pm.rib.thickness')}</span>
+        <ValueInput value={f.thickness} toCommand={(thickness) => ({ type: 'setRib', featureId: f.id, rib: { ...settings, thickness } })} />
+      </label>
+      <label className="pm-row">
+        <span>{t('pm.rib.side')}</span>
+        <select value={f.side} onChange={(e) => run({ side: e.target.value as RibFeature['side'] })}>
+          <option value="mid">{t('pm.rib.mid')}</option>
+          <option value="positive">{t('pm.rib.positive')}</option>
+          <option value="negative">{t('pm.rib.negative')}</option>
+        </select>
+      </label>
+      <label className="pm-row checkbox">
+        <input type="checkbox" checked={f.flip === true} onChange={(e) => run({ flip: e.target.checked ? true : undefined })} />
+        <span>{t('pm.rib.flip')}</span>
+      </label>
+      <p className="hint">{t('pm.rib.hint')}</p>
+    </section>
+  );
+}
+
 /** Edge selection box of a fillet or chamfer (D2.1): edges by persistent name, missing ones marked. */
 function EdgeList({ f }: { f: FilletFeature | ChamferFeature }) {
   const r = useStore((s) => s.result);
@@ -1303,6 +1332,7 @@ export function PropertyManager() {
       {f.type === 'revolve' && <RevolvePanel f={f} />}
       {f.type === 'sweep' && <SweepPanel f={f} />}
       {f.type === 'loft' && <LoftPanel f={f} />}
+      {f.type === 'rib' && <RibPanel f={f} />}
       {f.type === 'fillet' && <FilletPanel f={f} />}
       {f.type === 'chamfer' && <ChamferPanel f={f} />}
       {f.type === 'refPlane' && <RefPlanePanel f={f} />}
