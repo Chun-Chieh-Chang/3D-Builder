@@ -49,7 +49,7 @@ import {
   download,
   fileIn,
   folderAccess,
-  FOLDERS_UNSUPPORTED,
+  foldersUnsupported,
   isStepFile,
   pathIn,
   pickFileToOpen,
@@ -305,7 +305,7 @@ class AppStore {
       unsaved: null,
       recovery: null,
       fitRequest: 0,
-      untitled: '零件1',
+      untitled: t('doc.untitledPart', { n: 1 }),
       rebuilding: false,
       bootMs: null,
       bootError: null,
@@ -326,7 +326,7 @@ class AppStore {
         const prev = this.state.sketchSolve;
         this.set({ sketchSolve: res.entityStatus || !prev?.entityStatus ? res : { ...res, entityStatus: prev.entityStatus } });
       },
-      (e) => this.set({ notice: { kind: 'error', text: `草圖求解失敗：${e instanceof Error ? e.message : String(e)}` } }),
+      (e) => this.set({ notice: { kind: 'error', text: t('sketch.solveFailed', { why: e instanceof Error ? e.message : String(e) }) } }),
     );
     this.history.subscribe(() => this.onDocChanged());
     this.lastDoc = this.history.doc;
@@ -567,7 +567,7 @@ class AppStore {
   /** 「改用這個」 (B4.3): a feature's reference that no longer resolves now points at the candidate. */
   replaceRef(featureId: Id, from: Ref, candidate: { name: string; fingerprint: Fingerprint }): void {
     if (this.execute({ type: 'replaceRef', featureId, from, to: { kind: from.kind, name: candidate.name, fingerprint: candidate.fingerprint } })) {
-      this.notify(`已改用 ${candidate.name}`);
+      this.notify(t('ref.replaced', { name: candidate.name }));
     }
   }
 
@@ -632,7 +632,7 @@ class AppStore {
     if (this.state.editing) this.commitEdit();
     const f = findFeature(this.history.doc, featureId);
     if (!f) return;
-    this.history.begin(`編輯 ${f.name}`);
+    this.history.begin(t('history.edit', { name: f.name }));
     if (f.type === 'sketch') return this.enterSketch(f, false);
     this.set({ editing: { featureId, kind: 'feature' }, selected: featureId });
     this.requestRebuild();
@@ -661,25 +661,25 @@ class AppStore {
   /** 「草圖」 on a selected default plane, reference plane or planar face (C1.1): a new sketch, viewed normal to its plane. */
   newSketch(plane: DatumPlaneName | Ref): void {
     const ref: Ref = typeof plane === 'string' ? { kind: 'datum', name: plane } : plane;
-    if (ref.kind === 'face' && !faceFrame(ref)) return this.notify('草圖只能放在平面上', 'error');
+    if (ref.kind === 'face' && !faceFrame(ref)) return this.notify(t('sketch.planeOnly'), 'error');
     const doc = this.history.doc;
     const feature: SketchFeature = {
       id: this.allocator().take('sketch'),
       type: 'sketch',
-      name: nextName(doc, '草圖'),
+      name: nextName(doc, t('feature.sketch')),
       suppressed: false,
       plane: ref,
       entities: [],
       constraints: [],
     };
-    if (this.startNew(feature, '新草圖')) this.enterSketch(feature, true);
+    if (this.startNew(feature, t('sketch.newSketch'))) this.enterSketch(feature, true);
   }
 
   /** The sketch selected in the FeatureManager, for the features built from one. */
   private selectedSketch(): SketchFeature | null {
     const sketch = findFeature(this.history.doc, this.state.selected ?? '');
     if (sketch?.type === 'sketch') return sketch;
-    this.notify('請先在設計樹中選擇一個草圖');
+    this.notify(t('sketch.pickInTree'));
     return null;
   }
 
@@ -693,7 +693,7 @@ class AppStore {
   newExtrude(op: 'boss' | 'cut'): void {
     const sketch = this.selectedSketch();
     if (!sketch) return;
-    const base = op === 'boss' ? '伸長' : '除料-伸長';
+    const base = op === 'boss' ? t('feature.extrude') : t('feature.cut', { name: t('feature.extrude') });
     const id = this.allocator().take(op === 'boss' ? 'extrude' : 'cut');
     this.openNew({ id, type: 'extrude', name: nextName(this.history.doc, base), suppressed: false, sketch: sketch.id, op, dir1: { type: 'blind', depth: '10' } }, base);
   }
@@ -746,8 +746,8 @@ class AppStore {
     if (!sketch) return;
     const lines = sketch.entities.filter((e) => e.type === 'line');
     const axis = lines.find((e) => e.construction) ?? (lines.length === 1 ? lines[0] : undefined);
-    if (!axis) return this.notify('旋轉需要草圖中的一條中心線作為旋轉軸', 'error');
-    const base = op === 'boss' ? '旋轉' : '除料-旋轉';
+    if (!axis) return this.notify(t('feature.axisNeeded'), 'error');
+    const base = op === 'boss' ? t('feature.revolve') : t('feature.cut', { name: t('feature.revolve') });
     const id = this.allocator().take('revolve');
     this.openNew({ id, type: 'revolve', name: nextName(this.history.doc, base), suppressed: false, sketch: sketch.id, axis: axis.id, op, dir1: { type: 'blind', angle: '360' } }, base);
   }
@@ -755,7 +755,7 @@ class AppStore {
   /** 「圓角」 (C5.1): picks edges on the model in the PropertyManager session. */
   newFillet(): void {
     const id = this.allocator().take('fillet');
-    this.openNew({ id, type: 'fillet', name: nextName(this.history.doc, '圓角'), suppressed: false, edges: [], radius: '2' }, '圓角');
+    this.openNew({ id, type: 'fillet', name: nextName(this.history.doc, t('feature.fillet')), suppressed: false, edges: [], radius: '2' }, t('feature.fillet'));
   }
 
   /**
@@ -771,7 +771,7 @@ class AppStore {
           ? s.selectedFace
           : { kind: 'datum', name: 'plane:front' };
     const id = this.allocator().take('plane');
-    this.openNew({ id, type: 'refPlane', name: nextName(this.history.doc, '基準面'), suppressed: false, def: { mode: 'offset', plane, distance: '10' } }, '基準面');
+    this.openNew({ id, type: 'refPlane', name: nextName(this.history.doc, t('feature.refPlane')), suppressed: false, def: { mode: 'offset', plane, distance: '10' } }, t('feature.refPlane'));
   }
 
   /**
@@ -829,7 +829,7 @@ class AppStore {
   /** 「導角」 (C5.3), angle–distance by default like SolidWorks. */
   newChamfer(): void {
     const id = this.allocator().take('chamfer');
-    this.openNew({ id, type: 'chamfer', name: nextName(this.history.doc, '導角'), suppressed: false, edges: [], mode: 'angleDistance', distance: '1', second: '45' }, '導角');
+    this.openNew({ id, type: 'chamfer', name: nextName(this.history.doc, t('feature.chamfer')), suppressed: false, edges: [], mode: 'angleDistance', distance: '1', second: '45' }, t('feature.chamfer'));
   }
 
   /** 「刪除面」 (C10.2): starts with the face selected in the graphics area, if there is one. */
@@ -931,7 +931,7 @@ class AppStore {
     const frame = this.frameOf(sketch);
     if (!frame) {
       this.history.rollback();
-      return this.notify('找不到草圖所在的平面（先修正草圖前面的特徵）', 'error');
+      return this.notify(t('sketch.planeNotFound'), 'error');
     }
     this.sketcher = new SketchController(this.sketchHost(sketch.id));
     this.set({ editing: { featureId: sketch.id, kind: 'sketch' }, selected: sketch.id, selectedFace: null, sketchSolve: null, dimensionEdit: null });
@@ -1232,7 +1232,7 @@ class AppStore {
       if (e instanceof StalledError) {
         this.restartWorker();
         this.notify(t('worker.stalled', { seconds: Math.round(this.rebuildLimitMs / 1000) }), 'error');
-      } else this.notify(`重新計算失敗：${e instanceof Error ? e.message : String(e)}`, 'error');
+      } else this.notify(t('rebuild.failed', { why: e instanceof Error ? e.message : String(e) }), 'error');
     } finally {
       if (worker === this.workerGeneration) {
         this.inFlight = false;
@@ -1343,14 +1343,14 @@ class AppStore {
     if (action === 'open-part') return this.openPartFile();
     if (action === 'return-assembly') return this.reopenAssembly();
     if (action === 'new-assembly') {
-      this.showAssembly({ doc: createEmptyAssembly(), handle: null, fileName: null, folder: '', untitled: `組合件${++this.untitledAssemblies}`, project: this.project });
+      this.showAssembly({ doc: createEmptyAssembly(), handle: null, fileName: null, folder: '', untitled: t('doc.untitledAssembly', { n: ++this.untitledAssemblies }), project: this.project });
       // SolidWorks starts a new assembly in 「開始組合件」: the first thing to do is to insert a part.
       return void this.assembly!.startInsert();
     }
     if (action === 'new-demo') return this.load(createDemoPart(), null, null);
     const template = this.template;
     this.template = 'blank';
-    this.load(createPartFromTemplate(template), null, null, new Map(), `零件${++this.untitledCount}`);
+    this.load(createPartFromTemplate(template), null, null, new Map(), t('doc.untitledPart', { n: ++this.untitledCount }));
   }
 
   private async openFile(): Promise<void> {
@@ -1366,12 +1366,12 @@ class AppStore {
       if (file.kind === 'assembly') return await this.openAssembly(picked, file.doc);
       // A file in the old format is never overwritten with the new one: its first save asks for a name.
       this.load(file.doc, file.format === '3dbx' ? picked.handle : null, picked.name, file.blobs);
-      const notes = [...(file.format === 'json' ? ['舊版格式，儲存時會另存為 .3dbx'] : []), ...file.warnings];
-      this.notify(`已開啟 ${picked.name}${notes.length ? `（${notes.join('；')}）` : ''}`, file.warnings.length ? 'error' : 'info');
+      const notes = [...(file.format === 'json' ? [t('file.oldFormat')] : []), ...file.warnings];
+      this.notify(notes.length ? t('file.openedNotes', { name: picked.name, notes: notes.join('; ') }) : t('file.opened', { name: picked.name }), file.warnings.length ? 'error' : 'info');
     } catch (e) {
       // After 「儲存」 in the unsaved-changes prompt the browser may refuse a second file dialog.
-      if (e instanceof DOMException && (e.name === 'SecurityError' || e.name === 'NotAllowedError')) return this.notify('請再按一次「開啟舊檔」');
-      this.notify(`無法開啟：${e instanceof Error ? e.message : String(e)}`, 'error');
+      if (e instanceof DOMException && (e.name === 'SecurityError' || e.name === 'NotAllowedError')) return this.notify(t('file.again'));
+      this.notify(t('file.openFailed', { why: e instanceof Error ? e.message : String(e) }), 'error');
     }
   }
 
@@ -1381,7 +1381,7 @@ class AppStore {
       const picked = await pickStepFile();
       if (picked) await this.importData(picked.name, picked.bytes);
     } catch (e) {
-      this.notify(`無法輸入：${e instanceof Error ? e.message : String(e)}`, 'error');
+      this.notify(t('file.importFailed', { why: e instanceof Error ? e.message : String(e) }), 'error');
     }
   }
 
@@ -1396,10 +1396,10 @@ class AppStore {
     const doc = this.history.doc;
     const ids = this.allocator();
     const blob: BlobRef = { id: ids.take('blob'), sha256, kind: 'step', fileName };
-    const feature: ImportedBodyFeature = { id: ids.take('import'), type: 'importedBody', name: nextName(doc, '輸入'), suppressed: false, blob: blob.id };
+    const feature: ImportedBodyFeature = { id: ids.take('import'), type: 'importedBody', name: nextName(doc, t('feature.importName')), suppressed: false, blob: blob.id };
     if (this.execute({ type: 'importBody', blob, feature, index: doc.rollbackIndex ?? doc.features.length })) {
       this.set({ selected: feature.id, selectedFace: null, fitRequest: this.state.fitRequest + 1 });
-      this.notify(`已輸入 ${fileName}`);
+      this.notify(t('file.imported', { name: fileName }));
     }
   }
 
@@ -1421,10 +1421,10 @@ class AppStore {
       const doc = this.history.doc;
       download(name, (await writePartFile(doc, this.blobs)) as Uint8Array<ArrayBuffer>, 'application/octet-stream');
       this.saved(doc, null, name);
-      this.notify(`已下載 ${name}（這個瀏覽器不能直接寫入檔案）`);
+      this.notify(t('file.downloaded', { name }));
       return true;
     } catch (e) {
-      this.notify(`存檔失敗：${e instanceof Error ? e.message : String(e)}`, 'error');
+      this.notify(t('file.saveFailed', { why: e instanceof Error ? e.message : String(e) }), 'error');
       return false;
     }
   }
@@ -1434,10 +1434,10 @@ class AppStore {
     try {
       await writeFile(handle, await writePartFile(doc, this.blobs));
       this.saved(doc, handle, handle.name);
-      this.notify(`已儲存 ${handle.name}`);
+      this.notify(t('file.saved', { name: handle.name }));
       return true;
     } catch (e) {
-      this.notify(`存檔失敗：${e instanceof Error ? e.message : String(e)}`, 'error');
+      this.notify(t('file.saveFailed', { why: e instanceof Error ? e.message : String(e) }), 'error');
       return false;
     }
   }
@@ -1475,7 +1475,7 @@ class AppStore {
     const a = this.assembly;
     const path = a?.componentPath(componentId);
     if (!a || !path) return;
-    if (a.getState().files.get(path)?.status === 'missing') return this.notify('找不到這個零件檔：請先重新指定', 'error');
+    if (a.getState().files.get(path)?.status === 'missing') return this.notify(t('file.partMissing'), 'error');
     this.partToOpen = path;
     this.guard('open-part');
   }
@@ -1498,14 +1498,14 @@ class AppStore {
         await this.importData(fileName, bytes);
       } else {
         const file = await readDocumentFile(bytes);
-        if (file.kind !== 'part') throw new Error(`「${fileName}」不是零件檔`);
+        if (file.kind !== 'part') throw new Error(t('file.notPart', { name: fileName }));
         this.load(file.doc, file.format === '3dbx' ? handle : null, fileName, file.blobs);
       }
       this.returnFile = back;
       this.set({ returnTo: back ? assembly : null });
-      this.notify(step ? `已開啟 ${fileName}：STEP 零組件開成新零件；存成零件檔後，可在組合件中以「重新指定零件檔…」改用它` : `已開啟 ${fileName}${back ? '：改好存檔後，按「返回組合件」回到組合件' : ''}`);
+      this.notify(step ? t('file.openedStep', { name: fileName }) : back ? t('file.openedBack', { name: fileName }) : t('file.opened', { name: fileName }));
     } catch (e) {
-      this.notify(`無法開啟：${e instanceof Error ? e.message : String(e)}`, 'error');
+      this.notify(t('file.openFailed', { why: e instanceof Error ? e.message : String(e) }), 'error');
     }
   }
 
@@ -1521,10 +1521,10 @@ class AppStore {
       const file = await handle.getFile();
       const bytes = new Uint8Array(await file.arrayBuffer());
       const doc = await readDocumentFile(bytes);
-      if (doc.kind !== 'assembly') throw new Error(`「${handle.name}」不是組合件`);
+      if (doc.kind !== 'assembly') throw new Error(t('file.notAssembly', { name: handle.name }));
       await this.openAssembly({ name: handle.name, bytes, handle }, doc.doc);
     } catch (e) {
-      this.notify(`無法開啟：${e instanceof Error ? e.message : String(e)}`, 'error');
+      this.notify(t('file.openFailed', { why: e instanceof Error ? e.message : String(e) }), 'error');
     }
   }
 
@@ -1556,19 +1556,19 @@ class AppStore {
    * Without one, or when the file is elsewhere, the user is asked for the folder.
    */
   private async openAssembly(picked: OpenedFile, doc: AssemblyDoc): Promise<void> {
-    if (!picked.handle) return this.notify(FOLDERS_UNSUPPORTED, 'error');
+    if (!picked.handle) return this.notify(foldersUnsupported(), 'error');
     let folder = this.project ?? (await this.rememberedWithAccess());
     let path = folder ? await pathIn(folder, picked.handle) : null;
-    let reason = `「${picked.name}」引用其他檔案。請選擇包含它和它的零件的專案資料夾。`;
+    let reason = t('folder.askRefs', { name: picked.name });
     while (path === null) {
       folder = await this.askForFolder(reason);
       if (!folder) return; // nothing is opened; the current document stays
       path = await pathIn(folder, picked.handle);
-      reason = `資料夾「${folder.name}」不包含「${picked.name}」。請選擇包含它的資料夾（可以是更上層的資料夾）。`;
+      reason = t('folder.askNotIn', { folder: folder.name, name: picked.name });
     }
     this.useProject(folder!);
-    this.showAssembly({ doc, handle: picked.handle, fileName: picked.name, folder: dirName(path), untitled: '組合件1', project: folder });
-    this.notify(`已開啟 ${picked.name}`);
+    this.showAssembly({ doc, handle: picked.handle, fileName: picked.name, folder: dirName(path), untitled: t('doc.untitledAssembly', { n: 1 }), project: folder });
+    this.notify(t('file.opened', { name: picked.name }));
   }
 
   private async projectFolder(reason: string): Promise<FileSystemDirectoryHandle | null> {
@@ -1601,9 +1601,9 @@ class AppStore {
     if (!folder) return;
     try {
       if (await folderAccess(folder, true)) this.answerFolder(folder);
-      else this.notify(`瀏覽器沒有允許讀取「${folder.name}」`, 'error');
+      else this.notify(t('folder.notAllowed', { name: folder.name }), 'error');
     } catch (e) {
-      this.notify(`無法使用這個資料夾：${e instanceof Error ? e.message : String(e)}`, 'error');
+      this.notify(t('folder.useFailed', { why: e instanceof Error ? e.message : String(e) }), 'error');
     }
   }
 
@@ -1622,7 +1622,7 @@ class AppStore {
       const folder = await pickProjectFolder();
       if (folder) this.answerFolder(folder);
     } catch (e) {
-      this.notify(`無法選擇資料夾：${e instanceof Error ? e.message : String(e)}`, 'error');
+      this.notify(t('folder.chooseFailed', { why: e instanceof Error ? e.message : String(e) }), 'error');
     }
   }
 

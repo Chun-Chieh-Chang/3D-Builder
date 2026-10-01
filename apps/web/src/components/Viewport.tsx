@@ -53,7 +53,7 @@ function picking(feature: Feature | undefined, editing: boolean, modelTool: 'con
     : faceFeature
     ? t(faceFeature.type === 'deleteFace' ? 'pick.deleteFace' : faceFeature.type === 'shell' ? 'pick.shell' : faceFeature.type === 'draft' ? 'pick.draft' : 'pick.moveFace')
     : edgeFeature
-    ? `點選邊線以加入${FEATURE_LABEL[edgeFeature.type]}`
+    ? t('pick.edges', { what: FEATURE_LABEL[edgeFeature.type] })
     : upTo
       ? t('pick.extrudeEnd')
       : (slots?.prompt ?? null);
@@ -336,30 +336,30 @@ export function Viewport() {
       <ViewOptions />
       <div className="heads-up">
         {ACTIONS.filter((a) => a.group === 'view').map((a) => (
-          <button key={a.id} onClick={a.run} disabled={!a.enabled(store.getState())} title={shortcutOf(a) ? `${a.label}（${shortcutOf(a)}）` : a.label}>
+          <button key={a.id} onClick={a.run} disabled={!a.enabled(store.getState())} title={shortcutOf(a) ? `${a.label} (${shortcutOf(a)})` : a.label}>
             {a.label}
           </button>
         ))}
       </div>
       {sketching && (
         <div className="confirm-corner">
-          <button className="pm-ok" title="離開草圖（保留變更）" onClick={() => store.commitEdit()}>
+          <button className="pm-ok" title={t('sketch.exitKeep')} onClick={() => store.commitEdit()}>
             <Icon name="ok" />
           </button>
-          <button className="pm-cancel" title="放棄變更並離開草圖" onClick={() => store.cancelEdit()}>
+          <button className="pm-cancel" title={t('sketch.exitDiscard')} onClick={() => store.cancelEdit()}>
             <Icon name="cancel" />
           </button>
         </div>
       )}
       {sketching && dimensionEdit && <DimensionEditor id={dimensionEdit} overlay={overlay.current} key={dimensionEdit} />}
       {!bootMs && (
-        <div className="boot-overlay">{bootError ? `幾何核心載入失敗：${bootError}` : '正在載入幾何核心（OCCT WASM，約 43 MB）…'}</div>
+        <div className="boot-overlay">{bootError ? t('boot.failed', { why: bootError }) : t('boot.loading')}</div>
       )}
       {pick.prompt && (
         <div className="pick-hint">
           {hoverName ? (
             <>
-              持久名稱：<code>{hoverName}</code>
+              {t('hover.name')} <code>{hoverName}</code>
             </>
           ) : (
             pick.prompt
@@ -370,12 +370,11 @@ export function Viewport() {
         <div className="pick-hint">
           {hoverFaceName ? (
             <>
-              面：<code>{hoverFaceName}</code>
+              {t('hover.face')} <code>{hoverFaceName}</code>
             </>
           ) : (
             <>
-              已選取面 <code>{selectedFace!.name}</code>
-              {planar ? '：按「草圖」分頁的「草圖」即可在此面上繪製。' : '（不是平面，不能放草圖）'}
+              {t('hover.selected')} <code>{selectedFace!.name}</code> {planar ? t('hover.canSketch') : t('hover.notPlanar')}
             </>
           )}
         </div>

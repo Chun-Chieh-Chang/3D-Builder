@@ -1,3 +1,4 @@
+import { t } from '@3db/i18n';
 import { ASSEMBLY_FILE_EXTENSION, isStepData, PART_FILE_EXTENSION } from '@3db/io';
 import type { Recovery } from './autosave';
 
@@ -41,14 +42,16 @@ declare global {
 
 /** One id: the pickers reopen in the folder last used for parts. */
 const PICKER_ID = '3d-builder-parts';
-const PART_TYPE: PickerType = { description: '3D-Builder 零件', accept: { 'application/octet-stream': [PART_FILE_EXTENSION] } };
+const PART_TYPE: PickerType = { get description() { return t('picker.part'); }, accept: { 'application/octet-stream': [PART_FILE_EXTENSION] } };
 /** Parts saved before `.3dbx` were bare document text (`.3db.json`). */
-const OLD_PART_TYPE: PickerType = { description: '3D-Builder 零件（舊版 .3db.json）', accept: { 'application/json': ['.json'] } };
-const STEP_TYPE: PickerType = { description: 'STEP 檔', accept: { 'application/step': ['.step', '.stp'] } };
-const ASSEMBLY_TYPE: PickerType = { description: '3D-Builder 組合件', accept: { 'application/x-3db-assembly': [ASSEMBLY_FILE_EXTENSION] } };
+const OLD_PART_TYPE: PickerType = { get description() { return t('picker.oldPart'); }, accept: { 'application/json': ['.json'] } };
+const STEP_TYPE: PickerType = { get description() { return t('picker.step'); }, accept: { 'application/step': ['.step', '.stp'] } };
+const ASSEMBLY_TYPE: PickerType = { get description() { return t('picker.assembly'); }, accept: { 'application/x-3db-assembly': [ASSEMBLY_FILE_EXTENSION] } };
 /** The first type is the dialog's default filter: everything 「開啟舊檔」 can open. */
 const ANY_TYPE: PickerType = {
-  description: '所有支援的檔案',
+  get description() {
+    return t('picker.any');
+  },
   accept: { 'application/octet-stream': [PART_FILE_EXTENSION, ASSEMBLY_FILE_EXTENSION], ...STEP_TYPE.accept, ...OLD_PART_TYPE.accept },
 };
 
@@ -80,7 +83,7 @@ export function pickStepFile(): Promise<OpenedFile | null> {
 
 /** 「插入零組件」→「瀏覽」: a part file or a STEP file, starting in the project folder. */
 export function pickPartFile(startIn: FileSystemDirectoryHandle): Promise<OpenedFile | null> {
-  const either: PickerType = { description: '零件或 STEP 檔', accept: { ...PART_TYPE.accept, ...STEP_TYPE.accept } };
+  const either: PickerType = { get description() { return t('picker.partOrStep'); }, accept: { ...PART_TYPE.accept, ...STEP_TYPE.accept } };
   return pick([either, PART_TYPE, STEP_TYPE], startIn);
 }
 
@@ -124,7 +127,7 @@ export async function pickSaveTarget(suggestedName: string): Promise<FileSystemF
 
 /** Where to save an assembly, starting in the project folder; null when the user cancels. */
 export async function pickAssemblySaveTarget(folder: FileSystemDirectoryHandle, suggestedName: string): Promise<FileSystemFileHandle | null> {
-  if (!window.showSaveFilePicker) throw new Error(FOLDERS_UNSUPPORTED);
+  if (!window.showSaveFilePicker) throw new Error(foldersUnsupported());
   try {
     return await window.showSaveFilePicker({ id: PICKER_ID, suggestedName, types: [ASSEMBLY_TYPE], startIn: folder });
   } catch (e) {
@@ -133,11 +136,11 @@ export async function pickAssemblySaveTarget(folder: FileSystemDirectoryHandle, 
   }
 }
 
-export const FOLDERS_UNSUPPORTED = '組合件需要能存取資料夾的瀏覽器（Chrome 或 Edge）';
+export const foldersUnsupported = () => t('files.foldersUnsupported');
 
 /** The project folder (B9.4): the folder picker; null when the user cancels. */
 export async function pickProjectFolder(): Promise<FileSystemDirectoryHandle | null> {
-  if (!window.showDirectoryPicker) throw new Error(FOLDERS_UNSUPPORTED);
+  if (!window.showDirectoryPicker) throw new Error(foldersUnsupported());
   try {
     return await window.showDirectoryPicker({ id: 'project-folder', mode: 'read' });
   } catch (e) {
@@ -232,7 +235,7 @@ export async function pathIn(folder: FileSystemDirectoryHandle, file: FileSystem
 /** The file at `path` inside the folder. Throws NotFoundError (DOMException) when it is not there. */
 export async function fileIn(folder: FileSystemDirectoryHandle, path: string): Promise<FileSystemFileHandle> {
   const parts = path.split('/');
-  if (parts.some((p) => p === '..' || p === '.' || p === '')) throw new DOMException(`不在專案資料夾內：${path}`, 'NotFoundError');
+  if (parts.some((p) => p === '..' || p === '.' || p === '')) throw new DOMException(t('files.outside', { path }), 'NotFoundError');
   let dir = folder;
   for (const name of parts.slice(0, -1)) dir = await dir.getDirectoryHandle(name);
   return dir.getFileHandle(parts[parts.length - 1]!);
@@ -278,7 +281,7 @@ export async function readBytes(file: FileSystemFileHandle): Promise<Uint8Array>
 export async function writeFile(handle: FileSystemFileHandle, bytes: Uint8Array): Promise<void> {
   const h = handle as FileSystemFileHandle & PermissionMethods;
   if (h.queryPermission && h.requestPermission && (await h.queryPermission({ mode: 'readwrite' })) !== 'granted') {
-    if ((await h.requestPermission({ mode: 'readwrite' })) !== 'granted') throw new Error('沒有寫入這個檔案的權限');
+    if ((await h.requestPermission({ mode: 'readwrite' })) !== 'granted') throw new Error(t('files.noWrite'));
   }
   const stream = await handle.createWritable();
   await stream.write(bytes as Uint8Array<ArrayBuffer>);

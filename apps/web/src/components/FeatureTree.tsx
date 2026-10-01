@@ -86,7 +86,7 @@ export function FeatureTree() {
   };
 
   const bar = (
-    <li key="rollback" className={dragIndex !== null ? 'rollback-bar dragging' : 'rollback-bar'} onPointerDown={onBarDown} title="回溯控制棒：拖曳以回到歷史中的某一點">
+    <li key="rollback" className={dragIndex !== null ? 'rollback-bar dragging' : 'rollback-bar'} onPointerDown={onBarDown} title={t('tree.rollbackBar')}>
       <span />
     </li>
   );
@@ -98,8 +98,8 @@ export function FeatureTree() {
     return (
       <button
         className={shown ? 'vis-toggle shown' : 'vis-toggle'}
-        title={shown ? '隱藏' : '顯示'}
-        aria-label={shown ? '隱藏' : '顯示'}
+        title={shown ? t('tree.hide') : t('tree.show')}
+        aria-label={shown ? t('tree.hide') : t('tree.show')}
         disabled={!!editing}
         onClick={(e) => {
           e.stopPropagation();
@@ -135,9 +135,9 @@ export function FeatureTree() {
   return (
     <div className="feature-tree">
       {returnTo && (
-        <button className="return-bar" onClick={() => store.returnToAssembly()} title="回到組合件：存檔過的零件變更會顯示出來">
+        <button className="return-bar" onClick={() => store.returnToAssembly()} title={t('tree.returnTip')}>
           <Icon name="assembly" />
-          返回組合件「{returnTo}」
+          {t('tree.returnTo', { name: returnTo })}
         </button>
       )}
       <div className="tree-part">
@@ -163,7 +163,7 @@ export function FeatureTree() {
           <li
             key={d.id}
             className={`tree-row datum ${selected === d.id ? 'selected' : ''}`}
-            title={d.icon === 'plane' ? '選取後按「草圖」即可在此基準面上繪製草圖' : undefined}
+            title={d.icon === 'plane' ? t('tree.sketchOnPlane') : undefined}
             onClick={() => d.icon === 'plane' && store.treeClick(d.id)}
           >
             <Icon name={d.icon} />
@@ -243,7 +243,7 @@ export function FeatureTree() {
             dropAt?.id === f.id ? (dropAt.after ? 'drop-after' : 'drop-before') : '',
           ].join(' ');
           const prefix = f.type === 'sketch' && r?.sketch ? SKETCH_STATUS_PREFIX[r.sketch.status] : '';
-          const tip = [r?.message, ...(r?.unresolved?.map((u) => `找不到：${u.ref.name}`) ?? []), ...(r?.warnings ?? [])].filter(Boolean).join('\n');
+          const tip = [r?.message, ...(r?.unresolved?.map((u) => t('tree.notFound', { name: u.ref.name })) ?? []), ...(r?.warnings ?? [])].filter(Boolean).join('\n');
           const startsFolder = !needle && f.folder !== undefined && doc.features[i - 1]?.folder !== f.folder;
           const hidden = !needle && f.folder !== undefined && closed.has(f.folder);
           const head = startsFolder ? (
@@ -285,7 +285,7 @@ export function FeatureTree() {
               data-feature-row
               className={cls}
               draggable={canDrag && !rolledBack}
-              title={[tip || `${featureLabel(f)}：${f.name}`, f.comment].filter(Boolean).join('\n')}
+              title={[tip || `${featureLabel(f)}: ${f.name}`, f.comment].filter(Boolean).join('\n')}
               onClick={() => store.treeClick(f.id)}
               onDoubleClick={() => !rolledBack && store.beginEdit(f.id)}
               onDragStart={(e) => {
@@ -359,29 +359,29 @@ export function FeatureTree() {
       {menu && (
         <ul className="context-menu" style={{ left: menu.x, top: menu.y }} onPointerDown={(e) => e.stopPropagation()}>
           {doc.features.indexOf(menu.feature) < rollback && (
-            <li onClick={act(() => store.beginEdit(menu.feature.id))}>{menu.feature.type === 'sketch' ? '編輯草圖' : '編輯特徵'}</li>
+            <li onClick={act(() => store.beginEdit(menu.feature.id))}>{menu.feature.type === 'sketch' ? t('tree.editSketch') : t('tree.editFeature')}</li>
           )}
           {menu.feature.suppressed ? (
             <>
-              <li onClick={act(() => store.suppress(menu.feature.id, 'unsuppress'))}>恢復抑制</li>
-              <li onClick={act(() => store.suppress(menu.feature.id, 'unsuppressWithDependents'))}>恢復抑制（含相依特徵）</li>
+              <li onClick={act(() => store.suppress(menu.feature.id, 'unsuppress'))}>{t('tree.unsuppress')}</li>
+              <li onClick={act(() => store.suppress(menu.feature.id, 'unsuppressWithDependents'))}>{t('tree.unsuppressDeps')}</li>
             </>
           ) : (
-            <li onClick={act(() => store.suppress(menu.feature.id, 'suppress'))}>抑制</li>
+            <li onClick={act(() => store.suppress(menu.feature.id, 'suppress'))}>{t('tree.suppress')}</li>
           )}
           {isHideable(doc, menu.feature.id) && (
-            <li onClick={act(() => store.setVisibility([menu.feature.id], !isShown(doc, menu.feature.id)))}>{isShown(doc, menu.feature.id) ? '隱藏' : '顯示'}</li>
+            <li onClick={act(() => store.setVisibility([menu.feature.id], !isShown(doc, menu.feature.id)))}>{isShown(doc, menu.feature.id) ? t('tree.hide') : t('tree.show')}</li>
           )}
           <li onClick={act(() => setRenamingFeature(menu.feature.id))}>{t('tree.renameFeature')}</li>
           <li onClick={act(() => setNoting(menu.feature))}>{t('tree.editNote')}</li>
           {menu.feature.folder ? <li onClick={act(() => store.leaveFolder(menu.feature.id))}>{t('tree.leaveFolder')}</li> : <li onClick={act(() => store.newFolder(menu.feature.id))}>{t('tree.intoFolder')}</li>}
-          <li onClick={act(() => store.requestDelete(menu.feature.id))}>刪除…</li>
+          <li onClick={act(() => store.requestDelete(menu.feature.id))}>{t('tree.delete')}</li>
           <li className="separator" />
-          <li onClick={act(() => store.rollTo(menu.feature.id))}>回溯（到此特徵之前）</li>
-          {doc.rollbackIndex !== null && <li onClick={act(() => store.rollTo(null))}>推進至最後</li>}
+          <li onClick={act(() => store.rollTo(menu.feature.id))}>{t('tree.rollHere')}</li>
+          {doc.rollbackIndex !== null && <li onClick={act(() => store.rollTo(null))}>{t('tree.rollEnd')}</li>}
           <li className="separator" />
-          <li onClick={act(() => setRelations(menu.feature))}>父子關係…</li>
-          {(statusOf(menu.feature.id)?.status === 'error' || statusOf(menu.feature.id)?.warnings) && <li onClick={act(() => store.showWhatsWrong(true))}>錯誤為何？</li>}
+          <li onClick={act(() => setRelations(menu.feature))}>{t('tree.relations')}</li>
+          {(statusOf(menu.feature.id)?.status === 'error' || statusOf(menu.feature.id)?.warnings) && <li onClick={act(() => store.showWhatsWrong(true))}>{t('tree.whatsWrong')}</li>}
         </ul>
       )}
 
@@ -438,20 +438,20 @@ function Relations({ feature, onClose }: { feature: Feature; onClose: () => void
   const children = deps.children.get(feature.id) ?? [];
   return (
     <div className="modal-backdrop" onPointerDown={onClose}>
-      <div className="modal" role="dialog" aria-label="父子關係" onPointerDown={(e) => e.stopPropagation()}>
-        <h3>父子關係：{feature.name}</h3>
+      <div className="modal" role="dialog" aria-label={t('relations.title')} onPointerDown={(e) => e.stopPropagation()}>
+        <h3>{t('relations.titleFor', { name: feature.name })}</h3>
         <div className="relations">
           <section>
-            <h4>父特徵</h4>
-            <ul>{parents.length ? parents.map((p) => <li key={p}>{name(p)}</li>) : <li className="muted">（無）</li>}</ul>
+            <h4>{t('relations.parents')}</h4>
+            <ul>{parents.length ? parents.map((p) => <li key={p}>{name(p)}</li>) : <li className="muted">{t('relations.none')}</li>}</ul>
           </section>
           <section>
-            <h4>子特徵</h4>
-            <ul>{children.length ? children.map((c) => <li key={c}>{name(c)}</li>) : <li className="muted">（無）</li>}</ul>
+            <h4>{t('relations.children')}</h4>
+            <ul>{children.length ? children.map((c) => <li key={c}>{name(c)}</li>) : <li className="muted">{t('relations.none')}</li>}</ul>
           </section>
         </div>
         <div className="modal-actions">
-          <button onClick={onClose}>關閉</button>
+          <button onClick={onClose}>{t('relations.close')}</button>
         </div>
       </div>
     </div>

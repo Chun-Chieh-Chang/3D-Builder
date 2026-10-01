@@ -1,3 +1,4 @@
+import { t } from '@3db/i18n';
 import { documentKind, parseAssembly, serializeAssembly, type AssemblyDoc } from '@3db/model';
 import { DOCUMENT_ENTRY, documentEntry, isZip, zipEntries } from './container';
 import { safeFileName } from './names';
@@ -21,7 +22,7 @@ export type DocumentFile = ({ kind: 'part' } & PartFile) | { kind: 'assembly'; d
 export async function readDocumentFile(bytes: Uint8Array): Promise<DocumentFile> {
   if (!isZip(bytes)) return { kind: 'part', ...readOldPartFile(bytes) }; // only parts were ever bare text
   const files = await zipEntries(bytes);
-  const text = documentEntry(files, '檔案');
+  const text = documentEntry(files, t('file.kindFile'));
   if (documentKind(text) === 'assembly') return { kind: 'assembly', doc: parseAssembly(text) };
   return { kind: 'part', ...(await partFromEntries(files)) };
 }

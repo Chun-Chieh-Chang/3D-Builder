@@ -26,31 +26,31 @@ export function StatusBar() {
     const mateErrors = asm.doc.mates.filter((m) => mateProblem(asm, m)).length;
     // The assembly as SolidWorks' status bar says it: over-defined, under-defined or fully defined.
     const states = [...(asm.solution?.components.values() ?? [])].map((c) => c.status);
-    const definition = !asm.solution || asm.doc.components.length === 0 ? null : states.includes('over') ? { text: '過多定義', cls: 'over' } : states.includes('under') ? { text: '定義不足', cls: 'under' } : { text: '完全定義', cls: 'fully' };
+    const definition = !asm.solution || asm.doc.components.length === 0 ? null : states.includes('over') ? { text: t('sketchStatus.over'), cls: 'over' } : states.includes('under') ? { text: t('sketchStatus.under'), cls: 'under' } : { text: t('sketchStatus.fully'), cls: 'fully' };
     return (
       <footer className="status-bar">
         <span className={`notice ${notice?.kind ?? ''}`} onClick={() => store.dismissNotice()}>
-          {notice?.text ?? '就緒'}
+          {notice?.text ?? t('status.ready')}
         </span>
         {mateErrors > 0 && (
-          <button className="whats-wrong-button error" onClick={() => store.showWhatsWrong(true)} title="列出有錯誤的結合">
-            錯誤為何？（{mateErrors} 個結合錯誤）
+          <button className="whats-wrong-button error" onClick={() => store.showWhatsWrong(true)} title={t('status.listMateErrors')}>
+            {t('status.whatsWrong', { what: t('status.mateErrors', { n: mateErrors }) })}
           </button>
         )}
         {missing > 0 && (
-          <button className="whats-wrong-button error" onClick={() => void store.assembly?.openRelink()} title="重新指定找不到的零件檔">
-            {missing} 個零件檔無法載入
+          <button className="whats-wrong-button error" onClick={() => void store.assembly?.openRelink()} title={t('status.relink')}>
+            {t('status.missing', { n: missing })}
           </button>
         )}
         <span>
           {loading > 0
             ? loadingParts[0]
-              ? `正在載入「${loadingParts[0].name}」：${loadingText(loadingParts[0])}${loading > 1 ? `（共 ${loading} 個）` : ''}`
-              : `正在載入零件（${loading}）…`
-            : `零組件 ${asm.doc.components.length} 個`}
+              ? t('status.loadingOne', { name: loadingParts[0].name, stage: loadingText(loadingParts[0]), more: loading > 1 ? t('status.loadingMore', { n: loading }) : '' })
+              : t('status.loadingParts', { n: loading })
+            : t('status.components', { n: asm.doc.components.length })}
         </span>
         {definition && <span className={`sketch-status ${definition.cls}`}>{definition.text}</span>}
-        {bootMs && <span className="muted">核心載入 {Math.round(bootMs.occtMs)} ms</span>}
+        {bootMs && <span className="muted">{t('status.coreLoaded', { ms: Math.round(bootMs.occtMs) })}</span>}
         <span className="units">MMGS</span>
       </footer>
     );
@@ -66,25 +66,25 @@ export function StatusBar() {
   return (
     <footer className="status-bar">
       <span className={`notice ${notice?.kind ?? ''}`} onClick={() => store.dismissNotice()}>
-        {notice?.text ?? (editingName ? `正在編輯：${editingName}` : '就緒')}
+        {notice?.text ?? (editingName ? t('status.editing', { name: editingName }) : t('status.ready'))}
       </span>
       {(errors > 0 || warnings > 0) && (
-        <button className={`whats-wrong-button ${errors > 0 ? 'error' : 'warning'}`} onClick={() => store.showWhatsWrong(true)} title="列出所有錯誤與警告">
-          錯誤為何？（{[errors > 0 && `${errors} 個錯誤`, warnings > 0 && `${warnings} 個警告`].filter(Boolean).join('、')}）
+        <button className={`whats-wrong-button ${errors > 0 ? 'error' : 'warning'}`} onClick={() => store.showWhatsWrong(true)} title={t('status.listAll')}>
+          {t('status.whatsWrong', { what: [errors > 0 && t('status.errors', { n: errors }), warnings > 0 && t('status.warnings', { n: warnings })].filter(Boolean).join(t('cmd.listSeparator')) })}
         </button>
       )}
       {sketch && (
         <span className={`sketch-status ${sketch.status}`}>
           {SKETCH_STATUS_LABEL[sketch.status]}
-          {editing?.kind === 'sketch' && sketch.status === 'under' ? `（${sketch.dof}）` : ''}
+          {editing?.kind === 'sketch' && sketch.status === 'under' ? `(${sketch.dof})` : ''}
         </span>
       )}
-      {result?.mass && editing?.kind !== 'sketch' && <span>體積 {result.mass.volume.toFixed(3)} mm³</span>}
+      {result?.mass && editing?.kind !== 'sketch' && <span>{t('status.volume', { value: result.mass.volume.toFixed(3) })}</span>}
       {result?.mass && doc.material && editing?.kind !== 'sketch' && (
         <span title={`${doc.material.name}  ${doc.material.density} g/cm³`}>{t('material.mass')} {formatMass(massGrams(result.mass.volume, doc.material.density))}</span>
       )}
-      <span>{rebuilding ? '重新計算中…' : result ? `重新計算 ${result.totalMs.toFixed(1)} ms` : ''}</span>
-      {bootMs && <span className="muted">核心載入 {Math.round(bootMs.occtMs)} ms</span>}
+      <span>{rebuilding ? t('status.rebuilding') : result ? t('status.rebuilt', { ms: result.totalMs.toFixed(1) }) : ''}</span>
+      {bootMs && <span className="muted">{t('status.coreLoaded', { ms: Math.round(bootMs.occtMs) })}</span>}
       <span className="units">MMGS</span>
     </footer>
   );

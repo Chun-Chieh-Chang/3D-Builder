@@ -1,3 +1,4 @@
+import { t } from '@3db/i18n';
 import { countersFor } from './ids';
 import { ASSEMBLY_SCHEMA_VERSION, SCHEMA_VERSION, type AssemblyDoc, type PartDoc } from './schema';
 
@@ -132,9 +133,9 @@ function parseJson(text: string): Json {
   try {
     raw = JSON.parse(text);
   } catch {
-    throw new FormatError('檔案不是有效的 JSON');
+    throw new FormatError(t('format.notJson'));
   }
-  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) throw new FormatError('檔案不是 3D-Builder 文件');
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) throw new FormatError(t('format.notDocument'));
   return raw as Json;
 }
 
@@ -142,14 +143,14 @@ function parseJson(text: string): Json {
 function upgrade(raw: Json, current: number, steps: Record<number, (doc: Json) => Json>): Json {
   let version = raw.schemaVersion;
   if (typeof version !== 'number' || !Number.isInteger(version) || version < 1) {
-    throw new FormatError('缺少或無效的 schemaVersion');
+    throw new FormatError(t('format.noVersion'));
   }
   if (version > current) {
-    throw new FormatError(`檔案版本 ${version} 比本程式支援的 ${current} 新，請更新程式`);
+    throw new FormatError(t('format.newer', { version, current }));
   }
   while (version < current) {
     const step = steps[version];
-    if (!step) throw new FormatError(`缺少版本 ${version} 的遷移程序`);
+    if (!step) throw new FormatError(t('format.noMigration', { version }));
     raw = step(raw);
     version += 1;
     raw.schemaVersion = version;
@@ -161,14 +162,14 @@ function upgrade(raw: Json, current: number, steps: Record<number, (doc: Json) =
 export function documentKind(text: string): 'part' | 'assembly' {
   const kind = parseJson(text).kind;
   if (kind === 'part' || kind === 'assembly') return kind;
-  throw new FormatError('不是 3D-Builder 文件（不明的文件類型）');
+  throw new FormatError(t('format.unknownKind'));
 }
 
 export function parsePart(text: string): PartDoc {
   let raw = parseJson(text);
-  if (raw.kind !== 'part') throw new FormatError('不是零件文件');
+  if (raw.kind !== 'part') throw new FormatError(t('format.notPart'));
   raw = upgrade(raw, SCHEMA_VERSION, migrations);
-  if (!Array.isArray(raw.features)) throw new FormatError('缺少特徵清單');
+  if (!Array.isArray(raw.features)) throw new FormatError(t('format.noFeatures'));
   // Counters cover every id in the file, even if the file was edited by hand or by a script.
   raw.idCounters = countersFor(rawIds(raw), { ...((raw.idCounters as Record<string, number> | undefined) ?? {}) });
   return raw as unknown as PartDoc;
@@ -182,10 +183,10 @@ const assemblyMigrations: Record<number, (doc: Json) => Json> = {
 
 export function parseAssembly(text: string): AssemblyDoc {
   let raw = parseJson(text);
-  if (raw.kind !== 'assembly') throw new FormatError('不是組合件文件');
+  if (raw.kind !== 'assembly') throw new FormatError(t('format.notAssembly'));
   raw = upgrade(raw, ASSEMBLY_SCHEMA_VERSION, assemblyMigrations);
-  if (!Array.isArray(raw.files) || !Array.isArray(raw.components)) throw new FormatError('缺少零組件清單');
-  if (!Array.isArray(raw.mates)) throw new FormatError('缺少結合清單');
+  if (!Array.isArray(raw.files) || !Array.isArray(raw.components)) throw new FormatError(t('format.noComponents'));
+  if (!Array.isArray(raw.mates)) throw new FormatError(t('format.noMates'));
   const ids = [...(raw.files as Json[]), ...(raw.components as Json[]), ...(raw.mates as Json[])].map((x) => x.id as string);
   // As for parts: counters cover every id in the file, even one edited by hand or by a script.
   raw.idCounters = countersFor(ids, { ...((raw.idCounters as Record<string, number> | undefined) ?? {}) });

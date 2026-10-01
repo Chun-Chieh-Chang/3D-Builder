@@ -1,3 +1,4 @@
+import { t } from '@3db/i18n';
 import { useEffect, useState } from 'react';
 import { partNameOf } from '@3db/io';
 import { useStore } from '../state/store';
@@ -30,11 +31,11 @@ export function useLoadingParts(): LoadingPart[] {
 }
 
 /** 「正在載入」 with the stage and the seconds, as one line of text. */
-export const loadingText = (p: LoadingPart) => `${PART_STAGE_LABEL[p.stage]}${p.seconds >= 1 ? ` ${p.seconds} 秒` : ''}`;
+export const loadingText = (p: LoadingPart) => `${PART_STAGE_LABEL[p.stage]}${p.seconds >= 1 ? ` ${t('load.seconds', { n: p.seconds })}` : ''}`;
 
 /** The bar that moves while something is going on and its end is not known. */
 export function Busy() {
-  return <div className="busy-bar" role="progressbar" aria-label="載入中" />;
+  return <div className="busy-bar" role="progressbar" aria-label={t('load.busy')} />;
 }
 
 /** Over the graphics area: the part files being loaded, each with its stage and time. */
@@ -46,11 +47,11 @@ export function LoadProgress() {
     <div className="load-progress" role="status" aria-live="polite">
       {shown.map((p) => (
         <div key={p.path} className="load-progress-row">
-          <span className="load-progress-name">正在載入「{p.name}」</span>
+          <span className="load-progress-name">{t('load.name', { name: p.name })}</span>
           <span className="load-progress-stage">{loadingText(p)}</span>
         </div>
       ))}
-      {loading.length > shown.length && <div className="load-progress-more">還有 {loading.length - shown.length} 個零件檔…</div>}
+      {loading.length > shown.length && <div className="load-progress-more">{t('load.more', { n: loading.length - shown.length })}</div>}
       <Busy />
     </div>
   );

@@ -1,3 +1,4 @@
+import { t } from '@3db/i18n';
 import { FormatError } from '@3db/model';
 import { readZip, ZipError } from './zip';
 
@@ -15,7 +16,7 @@ export function documentText(bytes: Uint8Array, what: string, hint = ''): string
   try {
     return new TextDecoder('utf-8', { fatal: true }).decode(bytes); // a leading BOM is dropped
   } catch {
-    throw new FormatError(`不是 3D-Builder ${what}${hint}`);
+    throw new FormatError(t('container.notDoc', { what, hint }));
   }
 }
 
@@ -30,6 +31,6 @@ export async function zipEntries(bytes: Uint8Array): Promise<Map<string, Uint8Ar
 
 export function documentEntry(files: ReadonlyMap<string, Uint8Array>, what: string): string {
   const document = files.get(DOCUMENT_ENTRY);
-  if (!document) throw new FormatError(`不是 3D-Builder ${what}（缺少 ${DOCUMENT_ENTRY}）`);
+  if (!document) throw new FormatError(t('container.noEntry', { what, entry: DOCUMENT_ENTRY }));
   return documentText(document, what);
 }

@@ -112,7 +112,7 @@ export class Kernel {
 
   private get(id: ShapeId): TopoDS_Shape {
     const s = this.shapes.get(id);
-    if (!s) throw new KernelError(`形狀控制代碼已釋放：${id}`);
+    if (!s) throw new KernelError(t('kernel.handleReleased', { id }));
     return s;
   }
 
@@ -137,9 +137,9 @@ export class Kernel {
     if (typeof WebAssembly !== 'undefined' && 'Exception' in WebAssembly && e instanceof WebAssembly.Exception) {
       try {
         const [type, message] = this.oc.getExceptionMessage(e);
-        return message ? `${type}：${message}` : type;
+        return message ? `${type}: ${message}` : type;
       } catch {
-        return 'OCCT 例外';
+        return t('kernel.occtException');
       }
     }
     return e instanceof Error ? e.message : String(e);
@@ -149,9 +149,9 @@ export class Kernel {
     try {
       mk.Build(arena.own(new this.oc.Message_ProgressRange()));
     } catch (e) {
-      throw new KernelError(`${label}失敗：${this.errorText(e)}`);
+      throw new KernelError(t('kernel.opFailedWhy', { label, why: this.errorText(e) }));
     }
-    if (!mk.IsDone()) throw new KernelError(`${label}失敗`);
+    if (!mk.IsDone()) throw new KernelError(t('kernel.opFailed', { label }));
     return mk.Shape();
   }
 
@@ -201,7 +201,7 @@ export class Kernel {
         if (!seg.ccw) edge = arena.own(oc.TopoDS.Edge(arena.own(edge.Reversed())));
       }
       mw.Add(edge);
-      if (!mw.IsDone()) throw new KernelError(`輪廓無法連成封閉線框（圖元 ${seg.source}）`);
+      if (!mw.IsDone()) throw new KernelError(t('kernel.wireNotClosed', { source: seg.source }));
       sources.set(arena.own(mw.Edge()), seg.source);
     }
     return arena.own(mw.Wire());
@@ -216,7 +216,7 @@ export class Kernel {
     const faces = regions.map((r) => {
       const mf = arena.own(new oc.BRepBuilderAPI_MakeFace(plane, this.wire(arena, frame, r.outer, false, sources), true));
       for (const h of r.holes) mf.Add(this.wire(arena, frame, h, true, sources));
-      if (!mf.IsDone()) throw new KernelError('無法由輪廓建立面');
+      if (!mf.IsDone()) throw new KernelError(t('kernel.noFace'));
       return arena.own(mf.Face());
     });
     if (faces.length === 1) return faces[0]!;
@@ -278,7 +278,7 @@ export class Kernel {
    * (up to a body); what it gains from that surface is the end cap.
    */
   private sweep(frame: Frame, regions: Region[], spec: SweepSpec, arena: Arena): { shape: TopoDS_Shape; origins: FaceOrigin[][] } {
-    if (regions.length === 0) throw new KernelError('沒有可伸長的封閉輪廓');
+    if (regions.length === 0) throw new KernelError(t('kernel.noExtrudeRegion'));
     const oc = this.oc;
     const f: Frame = { ...frame, origin: add(frame.origin, frame.normal, spec.offset ?? 0) };
     const sources = new Map<TopoDS_Shape, string>();
@@ -404,7 +404,7 @@ export class Kernel {
     const targetFaces = ShapeIndex.of(oc, this.get(until.target), T.FACE, arena);
     try {
       const key = targetFaces.keys[until.face];
-      if (!key) throw new KernelError(`面索引超出範圍：${until.face}`);
+      if (!key) throw new KernelError(t('edit.faceOutOfRange', { index: until.face }));
       const face = arena.own(oc.TopoDS.Face(key));
       const props = arena.own(new oc.GProp_GProps());
       oc.BRepGProp.SurfaceProperties(face, props, false, false);
@@ -420,13 +420,13 @@ export class Kernel {
       const toolFaces = ShapeIndex.of(oc, tool, T.FACE, arena);
       const cutterFaces = ShapeIndex.of(oc, halfSpace, T.FACE, arena);
       try {
-        const cut = this.boolOp('cut', tool, halfSpace, '成形至某一面', arena);
+        const cut = this.boolOp('cut', tool, halfSpace, t('feature.upToFace'), arena);
         const out = cut.Shape();
         const n = toolFaces.size;
         const sources = this.faceSources(cut, [...toolFaces.keys, ...cutterFaces.keys], out, arena);
         if (!sources.some((s) => s.some((i) => i >= n))) {
           out.delete();
-          throw new KernelError('伸長沒有到達選取的面（面在伸長方向的另一側，或與輪廓不相交）');
+          throw new KernelError(t('kernel.extrudeNotReached'));
         }
         const trimmed = sources.map((s) => s.flatMap((i): FaceOrigin[] => (i < n ? origins[i]! : [{ rel: 'cap', which: 'end' }])));
         return { shape: out, origins: trimmed };
@@ -534,7 +534,7 @@ export class Kernel {
    * Naming like an extrusion: side faces from profile edges, caps where the revolution starts and ends.
    */
   revolve(frame: Frame, regions: Region[], axis: { origin: Vec3; dir: Vec3 }, angle: number): OpResult {
-    if (regions.length === 0) throw new KernelError('沒有可旋轉的封閉輪廓');
+    if (regions.length === 0) throw new KernelError(t('kernel.noRevolveRegion'));
     const oc = this.oc;
     const arena = new Arena();
     try {
@@ -543,7 +543,7 @@ export class Kernel {
       const ax = arena.own(new oc.gp_Ax1(this.pnt(arena, axis.origin), this.dir(arena, axis.dir)));
       // Four arguments on purpose: with three, arity dispatch cannot tell (angle) from (copy).
       const mk = arena.own(new oc.BRepPrimAPI_MakeRevol(profile, ax, angle, false));
-      const out = this.build(mk, '旋轉', arena);
+      const out = this.build(mk, t('feature.revolve'), arena);
       const sweep = arena.own(mk.Revol());
       const swept = (edge: TopoDS_Shape) => {
         const s = sweep.Shape(edge);
@@ -737,9 +737,9 @@ export class Kernel {
       const range = arena.own(new oc.Message_ProgressRange());
       mk = arena.own(op === 'fuse' ? new oc.BRepAlgoAPI_Fuse(a, b, range) : op === 'cut' ? new oc.BRepAlgoAPI_Cut(a, b, range) : new oc.BRepAlgoAPI_Common(a, b, range));
     } catch (e) {
-      throw new KernelError(`${label}失敗：${this.errorText(e)}`);
+      throw new KernelError(t('kernel.opFailedWhy', { label, why: this.errorText(e) }));
     }
-    if (mk.HasErrors() || !mk.IsDone()) throw new KernelError(`${label}失敗`);
+    if (mk.HasErrors() || !mk.IsDone()) throw new KernelError(t('kernel.opFailed', { label }));
     return mk;
   }
 
@@ -757,7 +757,7 @@ export class Kernel {
     const ia = index(a);
     const ib = index(b);
     try {
-      const mk = this.boolOp(op, a, b, op === 'fuse' ? t('body.fuse') : op === 'cut' ? '除料' : t('body.common'), arena);
+      const mk = this.boolOp(op, a, b, op === 'fuse' ? t('body.fuse') : op === 'cut' ? t('kernel.opCut') : t('body.common'), arena);
       const raw = mk.Shape();
       try {
         const origins = this.history(
@@ -899,7 +899,7 @@ export class Kernel {
 
   /** Constant-radius fillet on the given edges of `target` (C5.1). */
   fillet(target: ShapeId, edgeIndices: number[], radius: number): OpResult {
-    if (edgeIndices.length === 0) throw new KernelError('圓角至少需要一條邊線');
+    if (edgeIndices.length === 0) throw new KernelError(t('kernel.filletNeedsEdge'));
     const oc = this.oc;
     const arena = new Arena();
     const shape = this.get(target);
@@ -910,10 +910,10 @@ export class Kernel {
       const mk = arena.own(new oc.BRepFilletAPI_MakeFillet(shape, oc.ChFi3d_FilletShape.ChFi3d_Rational));
       for (const i of edgeIndices) {
         const e = edges.keys[i];
-        if (!e) throw new KernelError(`邊線索引超出範圍：${i}`);
+        if (!e) throw new KernelError(t('kernel.edgeOutOfRange', { index: i }));
         mk.Add(radius, arena.own(oc.TopoDS.Edge(e)));
       }
-      const out = this.build(mk, '圓角', arena);
+      const out = this.build(mk, t('feature.fillet'), arena);
       return { shape: this.put(out), faceOrigins: this.history(mk, { faces: faces.keys, edges: edges.keys, verts: verts.keys }, out, arena) };
     } finally {
       faces.dispose();
@@ -928,7 +928,7 @@ export class Kernel {
    * distance–distance takes two lengths, angle–distance a length and an angle (radians).
    */
   chamfer(target: ShapeId, specs: { edge: number; face: number }[], mode: 'distanceDistance' | 'angleDistance', d1: number, d2: number): OpResult {
-    if (specs.length === 0) throw new KernelError('導角至少需要一條邊線');
+    if (specs.length === 0) throw new KernelError(t('kernel.chamferNeedsEdge'));
     const oc = this.oc;
     const arena = new Arena();
     const shape = this.get(target);
@@ -940,13 +940,13 @@ export class Kernel {
       for (const s of specs) {
         const e = edges.keys[s.edge];
         const f = faces.keys[s.face];
-        if (!e || !f) throw new KernelError(`邊線或面索引超出範圍：${s.edge}/${s.face}`);
+        if (!e || !f) throw new KernelError(t('kernel.edgeFaceOutOfRange', { edge: s.edge, face: s.face }));
         const edge = arena.own(oc.TopoDS.Edge(e));
         const face = arena.own(oc.TopoDS.Face(f));
         if (mode === 'distanceDistance') mk.Add(d1, d2, edge, face);
         else mk.AddDA(d1, d2, edge, face);
       }
-      const out = this.build(mk, '導角', arena);
+      const out = this.build(mk, t('feature.chamfer'), arena);
       return { shape: this.put(out), faceOrigins: this.history(mk, { faces: faces.keys, edges: edges.keys, verts: verts.keys }, out, arena) };
     } finally {
       faces.dispose();
@@ -1662,9 +1662,9 @@ export class Kernel {
       try {
         ok = w.Perform(doc, path, arena.own(new oc.Message_ProgressRange()));
       } catch (e) {
-        throw new KernelError(`STEP 輸出失敗：${this.errorText(e)}`);
+        throw new KernelError(t('kernel.stepFailedWhy', { why: this.errorText(e) }));
       }
-      if (!ok) throw new KernelError('STEP 輸出失敗');
+      if (!ok) throw new KernelError(t('kernel.stepFailed'));
       return oc.FS.readFile(path, { encoding: 'utf8' }) as string;
     } finally {
       oc.Interface_Static.SetCVal('write.step.schema', 'AP214IS');
@@ -1710,7 +1710,7 @@ export class Kernel {
     instances: readonly { part: number; name: string; position: Vec3; rotation: [number, number, number, number] }[],
     unit: 'MM' | 'INCH' = 'MM',
   ): string {
-    if (instances.length === 0) throw new KernelError('組合件沒有可輸出的零組件');
+    if (instances.length === 0) throw new KernelError(t('kernel.noComponents'));
     const oc = this.oc;
     const arena = new Arena();
     const path = `/export-${++this.fileSeq}.step`;
@@ -1728,10 +1728,10 @@ export class Kernel {
       });
       for (const inst of instances) {
         const proto = prototypes[inst.part];
-        if (!proto) throw new KernelError(`零組件「${inst.name}」的零件不存在`);
+        if (!proto) throw new KernelError(t('kernel.noPartForComponent', { name: inst.name }));
         // OCCT turns a quaternion that is not a unit one into a skewed matrix without a word.
         if (![...inst.position, ...inst.rotation].every(Number.isFinite) || Math.abs(Math.hypot(...inst.rotation) - 1) > 1e-9) {
-          throw new KernelError(`零組件「${inst.name}」的位姿無效`);
+          throw new KernelError(t('kernel.badPose', { name: inst.name }));
         }
         // SetRotation and SetTranslationPart each have one gp_Trsf overload; SetTransformation(q, v) shares its arity with another.
         const trsf = arena.own(new oc.gp_Trsf());
@@ -1749,9 +1749,9 @@ export class Kernel {
       try {
         ok = w.Perform(doc, path, arena.own(new oc.Message_ProgressRange()));
       } catch (e) {
-        throw new KernelError(`STEP 輸出失敗：${this.errorText(e)}`);
+        throw new KernelError(t('kernel.stepFailedWhy', { why: this.errorText(e) }));
       }
-      if (!ok) throw new KernelError('STEP 輸出失敗');
+      if (!ok) throw new KernelError(t('kernel.stepFailed'));
       return oc.FS.readFile(path, { encoding: 'utf8' }) as string;
     } finally {
       doc.delete();

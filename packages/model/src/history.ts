@@ -1,3 +1,4 @@
+import { t } from '@3db/i18n';
 import { applyPatches, enablePatches, produceWithPatches, type Draft, type Patch } from 'immer';
 import type { AssemblyDoc, PartDoc } from './schema';
 import { mutate, type Command } from './commands';
@@ -94,7 +95,7 @@ export class History<D, C extends { type: string }> {
   }
 
   begin(label: string): void {
-    if (this.tx) throw new Error('已有進行中的編輯');
+    if (this.tx) throw new Error(t('history.busy'));
     this.tx = { label, steps: [], redo: [], base: 0 };
   }
 
@@ -146,7 +147,7 @@ export class History<D, C extends { type: string }> {
    * then replaces the whole document. Not while an edit session is open.
    */
   rebase(fn: (doc: D) => D): void {
-    if (this.tx) throw new Error('編輯中不能改寫復原記錄');
+    if (this.tx) throw new Error(t('history.noRewrite'));
     const apply = (doc: D, patches: Patch[]) => applyPatches(doc as object, patches) as D;
     // past[i] is the state before undoStack[i]; the last one is the current document.
     const past: D[] = [this.current];

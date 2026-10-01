@@ -46,17 +46,17 @@ const sketchPlane = (s: UiState): DatumPlaneName | Ref | null => {
 const SKETCH_TOOLS: ToolId[] = ['dimension', 'line', 'centerline', 'rect', 'centerRect', 'circle', 'perimeterCircle', 'arc', 'tangentArc', 'threePointArc', 'slot', 'polygon', 'point', 'sketchFillet', 'sketchChamfer', 'trim', 'extend', 'offset', 'mirror', 'convert', 'pierce'];
 
 export const ACTIONS: UiAction[] = [
-  { id: 'new-part', label: '新零件', shortcut: 'Ctrl+N', group: 'file', enabled: idle, run: () => store.newPart() },
+  { id: 'new-part', get label() { return t('act.newPart'); }, shortcut: 'Ctrl+N', group: 'file', enabled: idle, run: () => store.newPart() },
   { id: 'new-part-template', get label() { return t('action.newFromTemplate'); }, group: 'file', enabled: idle, run: () => store.openDialog('template') },
-  { id: 'new-assembly', label: '新組合件', group: 'file', enabled: idle, run: () => store.newAssembly() },
-  { id: 'new-demo', label: '新示範件', group: 'file', enabled: idle, run: () => store.newDemo() },
-  { id: 'open', label: '開啟舊檔', shortcut: 'Ctrl+O', group: 'file', enabled: idle, run: () => store.open() },
-  { id: 'save', label: '儲存檔案', shortcut: 'Ctrl+S', group: 'file', enabled: idle, run: () => void store.save() },
-  { id: 'save-as', label: '另存新檔', group: 'file', enabled: idle, run: () => void store.saveAs() },
-  { id: 'export-step', label: '輸出 STEP', group: 'file', enabled: (s) => (partIdle(s) || (assemblyIdle(s) && hasComponents(s))) && s.bootMs !== null, run: () => store.exportStep() },
+  { id: 'new-assembly', get label() { return t('act.newAssembly'); }, group: 'file', enabled: idle, run: () => store.newAssembly() },
+  { id: 'new-demo', get label() { return t('act.newDemo'); }, group: 'file', enabled: idle, run: () => store.newDemo() },
+  { id: 'open', get label() { return t('act.open'); }, shortcut: 'Ctrl+O', group: 'file', enabled: idle, run: () => store.open() },
+  { id: 'save', get label() { return t('act.save'); }, shortcut: 'Ctrl+S', group: 'file', enabled: idle, run: () => void store.save() },
+  { id: 'save-as', get label() { return t('act.saveAs'); }, group: 'file', enabled: idle, run: () => void store.saveAs() },
+  { id: 'export-step', get label() { return t('export.step'); }, group: 'file', enabled: (s) => (partIdle(s) || (assemblyIdle(s) && hasComponents(s))) && s.bootMs !== null, run: () => store.exportStep() },
   { id: 'export-stl', get label() { return t('export.stl'); }, group: 'file', enabled: (s) => hasBody(s) && s.bootMs !== null, run: () => void store.exportStl() },
   { id: 'export-image', get label() { return t('export.image'); }, group: 'file', enabled: (s) => (s.active === 'assembly' ? assemblyIdle(s) && hasComponents(s) : hasBody(s)), run: () => void store.exportImage() },
-  { id: 'return-assembly', label: '返回組合件', group: 'file', enabled: (s) => partIdle(s) && s.returnTo !== null, run: () => store.returnToAssembly() },
+  { id: 'return-assembly', get label() { return t('act.returnAssembly'); }, group: 'file', enabled: (s) => partIdle(s) && s.returnTo !== null, run: () => store.returnToAssembly() },
 
   { id: 'equations', get label() { return t('action.equations'); }, group: 'tools', enabled: partIdle, run: () => store.openDialog('equations') },
   { id: 'appearance', get label() { return t('action.appearance'); }, group: 'tools', enabled: partIdle, run: () => store.openDialog('appearance') },
@@ -64,17 +64,17 @@ export const ACTIONS: UiAction[] = [
   { id: 'shortcuts', get label() { return t('action.shortcuts'); }, group: 'tools', enabled: () => true, run: () => store.openDialog('shortcuts') },
   { id: 'properties', get label() { return t('action.properties'); }, group: 'tools', enabled: partIdle, run: () => store.openDialog('properties') },
 
-  { id: 'extrude', label: '伸長填料/基材', group: 'feature', enabled: sketchSelected, run: () => store.newExtrude('boss') },
-  { id: 'revolve', label: '旋轉填料/基材', group: 'feature', enabled: sketchSelected, run: () => store.newRevolve('boss') },
+  { id: 'extrude', get label() { return t('act.extrude'); }, group: 'feature', enabled: sketchSelected, run: () => store.newExtrude('boss') },
+  { id: 'revolve', get label() { return t('act.revolve'); }, group: 'feature', enabled: sketchSelected, run: () => store.newRevolve('boss') },
   { id: 'sweep', get label() { return t('action.sweep'); }, group: 'feature', enabled: canSweep, run: () => store.newSweep('boss') },
   { id: 'loft', get label() { return t('action.loft'); }, group: 'feature', enabled: sketchSelected, run: () => store.newLoft('boss') },
   { id: 'rib', get label() { return t('action.rib'); }, group: 'feature', enabled: (s) => sketchSelected(s) && !!s.result?.mesh, run: () => store.newRib() },
-  { id: 'extrude-cut', label: '伸長除料', group: 'feature', enabled: (s) => sketchSelected(s) && !!s.result?.mesh, run: () => store.newExtrude('cut') },
-  { id: 'revolve-cut', label: '旋轉除料', group: 'feature', enabled: (s) => sketchSelected(s) && !!s.result?.mesh, run: () => store.newRevolve('cut') },
+  { id: 'extrude-cut', get label() { return t('act.extrudeCut'); }, group: 'feature', enabled: (s) => sketchSelected(s) && !!s.result?.mesh, run: () => store.newExtrude('cut') },
+  { id: 'revolve-cut', get label() { return t('act.revolveCut'); }, group: 'feature', enabled: (s) => sketchSelected(s) && !!s.result?.mesh, run: () => store.newRevolve('cut') },
   { id: 'sweep-cut', get label() { return t('action.sweepCut'); }, group: 'feature', enabled: (s) => canSweep(s) && !!s.result?.mesh, run: () => store.newSweep('cut') },
   { id: 'loft-cut', get label() { return t('action.loftCut'); }, group: 'feature', enabled: (s) => sketchSelected(s) && !!s.result?.mesh, run: () => store.newLoft('cut') },
-  { id: 'fillet', label: '圓角', group: 'feature', enabled: hasBody, run: () => store.newFillet() },
-  { id: 'chamfer', label: '導角', group: 'feature', enabled: hasBody, run: () => store.newChamfer() },
+  { id: 'fillet', get label() { return t('act.fillet'); }, group: 'feature', enabled: hasBody, run: () => store.newFillet() },
+  { id: 'chamfer', get label() { return t('act.chamfer'); }, group: 'feature', enabled: hasBody, run: () => store.newChamfer() },
   { id: 'delete-face', get label() { return t('feature.deleteFace'); }, group: 'feature', enabled: hasBody, run: () => store.newDeleteFace() },
   { id: 'hole', get label() { return t('feature.hole'); }, group: 'feature', enabled: (s) => sketchSelected(s) && !!s.result?.mesh, run: () => store.newHole() },
   { id: 'draft', get label() { return t('feature.draftFeature'); }, group: 'feature', enabled: hasBody, run: () => store.newDraft() },
@@ -84,22 +84,24 @@ export const ACTIONS: UiAction[] = [
   { id: 'linear-pattern', get label() { return t('action.linearPattern'); }, group: 'feature', enabled: canPattern, run: () => store.newPattern('linear') },
   { id: 'circular-pattern', get label() { return t('action.circularPattern'); }, group: 'feature', enabled: canPattern, run: () => store.newPattern('circular') },
   { id: 'mirror', get label() { return t('action.mirror'); }, group: 'feature', enabled: (s) => canPattern(s) || (partIdle(s) && (s.result?.bodies.length ?? 0) > 0), run: () => store.newMirror() },
-  { id: 'ref-plane', label: '基準面', group: 'feature', enabled: partIdle, run: () => store.newRefPlane() },
+  { id: 'ref-plane', get label() { return t('act.refPlane'); }, group: 'feature', enabled: partIdle, run: () => store.newRefPlane() },
   { id: 'ref-axis', get label() { return t('action.refAxis'); }, group: 'feature', enabled: partIdle, run: () => store.newRefAxis() },
   { id: 'ref-point', get label() { return t('action.refPoint'); }, group: 'feature', enabled: partIdle, run: () => store.newRefPoint() },
   { id: 'coord-sys', get label() { return t('action.coordSys'); }, group: 'feature', enabled: partIdle, run: () => store.newCoordSys() },
-  { id: 'import-step', label: '輸入 STEP', group: 'feature', enabled: (s) => partIdle(s) && s.bootMs !== null, run: () => void store.importStep() },
+  { id: 'import-step', get label() { return t('act.importStep'); }, group: 'feature', enabled: (s) => partIdle(s) && s.bootMs !== null, run: () => void store.importStep() },
 
-  { id: 'insert-component', label: '插入零組件', group: 'assembly', enabled: assemblyIdle, run: () => void store.assembly?.startInsert() },
-  { id: 'mate', label: '結合', group: 'assembly', enabled: (s) => assemblyIdle(s) && hasComponents(s), run: () => store.assembly?.startMate() },
-  { id: 'move-component', label: '移動零組件', group: 'assembly', enabled: (s) => assemblyIdle(s) && hasComponents(s), run: () => store.assembly?.startMove('move') },
-  { id: 'rotate-component', label: '旋轉零組件', group: 'assembly', enabled: (s) => assemblyIdle(s) && hasComponents(s), run: () => store.assembly?.startMove('rotate') },
-  { id: 'fix-component', label: '固定', group: 'assembly', enabled: (s) => assemblyIdle(s) && selectedComponent(s)?.fixed === false, run: () => setFixed(true) },
-  { id: 'float-component', label: '浮動', group: 'assembly', enabled: (s) => assemblyIdle(s) && selectedComponent(s)?.fixed === true, run: () => setFixed(false) },
+  { id: 'insert-component', get label() { return t('act.insertComponent'); }, group: 'assembly', enabled: assemblyIdle, run: () => void store.assembly?.startInsert() },
+  { id: 'mate', get label() { return t('act.mate'); }, group: 'assembly', enabled: (s) => assemblyIdle(s) && hasComponents(s), run: () => store.assembly?.startMate() },
+  { id: 'move-component', get label() { return t('act.moveComponent'); }, group: 'assembly', enabled: (s) => assemblyIdle(s) && hasComponents(s), run: () => store.assembly?.startMove('move') },
+  { id: 'rotate-component', get label() { return t('act.rotateComponent'); }, group: 'assembly', enabled: (s) => assemblyIdle(s) && hasComponents(s), run: () => store.assembly?.startMove('rotate') },
+  { id: 'fix-component', get label() { return t('act.fixComponent'); }, group: 'assembly', enabled: (s) => assemblyIdle(s) && selectedComponent(s)?.fixed === false, run: () => setFixed(true) },
+  { id: 'float-component', get label() { return t('act.floatComponent'); }, group: 'assembly', enabled: (s) => assemblyIdle(s) && selectedComponent(s)?.fixed === true, run: () => setFixed(false) },
 
   {
     id: 'sketch',
-    label: '草圖',
+    get label() {
+      return t('act.sketch');
+    },
     group: 'sketch',
     enabled: (s) => partIdle(s) && sketchPlane(s) !== null,
     run: () => {
@@ -110,26 +112,28 @@ export const ACTIONS: UiAction[] = [
   ...SKETCH_TOOLS.map(
     (tool): UiAction => ({
       id: `tool-${tool}`,
-      label: TOOL_LABEL[tool],
+      get label() {
+        return TOOL_LABEL[tool];
+      },
       group: 'sketch-tool',
       enabled: sketching,
       run: () => store.sketcher?.setTool(store.sketcher.getView().tool === tool ? 'select' : tool),
       active: () => store.sketcher?.getView().tool === tool,
     }),
   ),
-  { id: 'construction', label: '幾何建構線', group: 'sketch-tool', enabled: sketching, run: () => toggleConstruction() },
-  { id: 'exit-sketch', label: '離開草圖', group: 'sketch-tool', enabled: sketching, run: () => store.commitEdit() },
+  { id: 'construction', get label() { return t('act.construction'); }, group: 'sketch-tool', enabled: sketching, run: () => toggleConstruction() },
+  { id: 'exit-sketch', get label() { return t('act.exitSketch'); }, group: 'sketch-tool', enabled: sketching, run: () => store.commitEdit() },
 
-  { id: 'undo', label: '復原', shortcut: 'Ctrl+Z', group: 'edit', enabled: (s) => (s.asm ? s.asm.canUndo && idle(s) : s.canUndo), run: () => store.undo() },
-  { id: 'redo', label: '重做', shortcut: 'Ctrl+Y', group: 'edit', enabled: (s) => (s.asm ? s.asm.canRedo && idle(s) : s.canRedo), run: () => store.redo() },
-  { id: 'rebuild', label: '重新計算', shortcut: 'Ctrl+B', group: 'edit', enabled: () => true, run: () => store.rebuild() },
+  { id: 'undo', get label() { return t('act.undo'); }, shortcut: 'Ctrl+Z', group: 'edit', enabled: (s) => (s.asm ? s.asm.canUndo && idle(s) : s.canUndo), run: () => store.undo() },
+  { id: 'redo', get label() { return t('act.redo'); }, shortcut: 'Ctrl+Y', group: 'edit', enabled: (s) => (s.asm ? s.asm.canRedo && idle(s) : s.canRedo), run: () => store.redo() },
+  { id: 'rebuild', get label() { return t('act.rebuild'); }, shortcut: 'Ctrl+B', group: 'edit', enabled: () => true, run: () => store.rebuild() },
 
-  { id: 'fit', label: '全部顯示', shortcut: 'F', group: 'view', enabled: () => true, run: () => store.viewer?.fitAll() },
-  { id: 'view-front', label: '前視', shortcut: 'Ctrl+1', group: 'view', enabled: () => true, run: () => store.viewer?.setView('front') },
-  { id: 'view-top', label: '上視', shortcut: 'Ctrl+5', group: 'view', enabled: () => true, run: () => store.viewer?.setView('top') },
-  { id: 'view-right', label: '右視', shortcut: 'Ctrl+4', group: 'view', enabled: () => true, run: () => store.viewer?.setView('right') },
-  { id: 'view-iso', label: '等角', shortcut: 'Ctrl+7', group: 'view', enabled: () => true, run: () => store.viewer?.setView('iso') },
-  { id: 'view-normal', label: '正視於', shortcut: 'Ctrl+8', group: 'view', enabled: sketching, run: () => lookAtSketch() },
+  { id: 'fit', get label() { return t('act.fit'); }, shortcut: 'F', group: 'view', enabled: () => true, run: () => store.viewer?.fitAll() },
+  { id: 'view-front', get label() { return t('act.front'); }, shortcut: 'Ctrl+1', group: 'view', enabled: () => true, run: () => store.viewer?.setView('front') },
+  { id: 'view-top', get label() { return t('act.top'); }, shortcut: 'Ctrl+5', group: 'view', enabled: () => true, run: () => store.viewer?.setView('top') },
+  { id: 'view-right', get label() { return t('act.right'); }, shortcut: 'Ctrl+4', group: 'view', enabled: () => true, run: () => store.viewer?.setView('right') },
+  { id: 'view-iso', get label() { return t('act.iso'); }, shortcut: 'Ctrl+7', group: 'view', enabled: () => true, run: () => store.viewer?.setView('iso') },
+  { id: 'view-normal', get label() { return t('act.normal'); }, shortcut: 'Ctrl+8', group: 'view', enabled: sketching, run: () => lookAtSketch() },
 ];
 
 export const action = (id: string): UiAction => {
@@ -160,7 +164,7 @@ function toggleConstruction(): void {
   const sketch = store.editedSketch();
   if (!sketcher || !sketch) return;
   const curves = sketch.entities.filter((e) => e.type !== 'point' && sketcher.getView().selection.includes(e.id));
-  if (curves.length === 0) return store.notify('請先選擇直線、圓或圓弧');
+  if (curves.length === 0) return store.notify(t('sketch.selectCurves'));
   sketcher.setConstruction(!curves.every((e) => 'construction' in e && e.construction));
 }
 

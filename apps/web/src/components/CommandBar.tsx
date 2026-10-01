@@ -7,16 +7,16 @@ type Tab = { id: string; label: string; groups: UiAction['group'][] };
 
 /** The CommandManager's tabs follow the open document, as in SolidWorks. */
 const PART_TABS: Tab[] = [
-  { id: 'features', label: '特徵', groups: ['feature', 'edit'] },
-  { id: 'sketch', label: '草圖', groups: ['sketch', 'sketch-tool'] },
+  { id: 'features', get label() { return t('tab.features'); }, groups: ['feature', 'edit'] },
+  { id: 'sketch', get label() { return t('tab.sketch'); }, groups: ['sketch', 'sketch-tool'] },
   { id: 'tools', get label() { return t('tab.tools'); }, groups: ['tools'] },
-  { id: 'file', label: '檔案', groups: ['file'] },
-  { id: 'view', label: '檢視', groups: ['view'] },
+  { id: 'file', get label() { return t('tab.file'); }, groups: ['file'] },
+  { id: 'view', get label() { return t('tab.view'); }, groups: ['view'] },
 ];
 const ASSEMBLY_TABS: Tab[] = [
-  { id: 'assembly', label: '組合件', groups: ['assembly', 'edit'] },
-  { id: 'file', label: '檔案', groups: ['file'] },
-  { id: 'view', label: '檢視', groups: ['view'] },
+  { id: 'assembly', get label() { return t('tab.assembly'); }, groups: ['assembly', 'edit'] },
+  { id: 'file', get label() { return t('tab.file'); }, groups: ['file'] },
+  { id: 'view', get label() { return t('tab.view'); }, groups: ['view'] },
 ];
 
 /** CommandManager-style tabbed toolbar (D3.2); buttons come from the action registry (D3.1). */
@@ -53,13 +53,13 @@ export function CommandBar() {
             className={a.active?.() ? 'tool active' : 'tool'}
             disabled={!a.enabled(state)}
             onClick={a.run}
-            title={shortcutOf(a) ? `${a.label}（${shortcutOf(a)}）` : a.label}
+            title={shortcutOf(a) ? `${a.label} (${shortcutOf(a)})` : a.label}
           >
             {a.label}
           </button>
         ))}
       </div>
-      <div className="doc-title" title={state.dirty ? '有尚未儲存的變更' : undefined}>
+      <div className="doc-title" title={state.dirty ? t('doc.unsaved') : undefined}>
         {title}
       </div>
     </header>

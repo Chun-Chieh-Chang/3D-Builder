@@ -1,3 +1,4 @@
+import { t } from '@3db/i18n';
 import type { Component } from '@3db/model';
 import type { AssemblyResult } from '@3db/regen';
 
@@ -13,7 +14,7 @@ export function immovable(c: Component, solution: Pick<AssemblyResult, 'componen
  */
 export function dragHint(c: Component, solution: Pick<AssemblyResult, 'components'> | null | undefined, tool: 'move' | 'rotate' | null | undefined): string {
   const why = immovable(c, solution);
-  if (why === 'fixed') return '已固定，不能拖曳';
-  if (why === 'defined') return '已被結合完全定義，不能拖曳';
-  return `左鍵拖曳${tool === 'rotate' ? '旋轉' : '移動'}，右鍵拖曳旋轉`;
+  if (why === 'fixed') return t('move.fixed');
+  if (why === 'defined') return t('move.defined');
+  return t('move.drag', { verb: tool === 'rotate' ? t('move.verbRotate') : t('move.verbMove') });
 }

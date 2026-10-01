@@ -317,12 +317,12 @@ export class Regenerator {
     }
     this.usedImports = new Set();
     resolved.features.forEach((feature, index) => {
-      const t = performance.now();
+      const started = performance.now();
       this.warnings = [];
       this.diagnostics = null;
       const done = (r: Omit<FeatureResult, 'id' | 'ms'>) => {
         this.statuses.set(feature.id, r.status);
-        return results.push({ id: feature.id, ms: performance.now() - t, ...r, ...(this.warnings.length > 0 ? { warnings: this.warnings } : {}), ...(this.diagnostics ? { diagnostics: this.diagnostics } : {}) });
+        return results.push({ id: feature.id, ms: performance.now() - started, ...r, ...(this.warnings.length > 0 ? { warnings: this.warnings } : {}), ...(this.diagnostics ? { diagnostics: this.diagnostics } : {}) });
       };
       // a pattern's seeds are compared with the bodies as they were before the first of them
       if (firstSeeds.has(feature.id) && index < limit && !feature.suppressed) this.snapshots.set(feature.id, this.snapshot(set));
@@ -346,7 +346,7 @@ export class Regenerator {
             frames.set(feature.id, s.frame);
             const info = { status: s.solved.status, dof: s.solved.dof, conflicting: s.solved.conflicting, redundant: s.solved.redundant, problems: s.profiles.problems };
             if (s.solved.status === 'failed' || s.solved.status === 'over') {
-              return done({ status: 'error', message: s.solved.status === 'over' ? '草圖過多定義' : (s.solved.message ?? '草圖無法求解'), sketch: info });
+              return done({ status: 'error', message: s.solved.status === 'over' ? t('regen.sketchOver') : (s.solved.message ?? t('regen.sketchUnsolved')), sketch: info });
             }
             sketches.set(feature.id, s);
             return done({ status: 'ok', sketch: info });
@@ -425,7 +425,7 @@ export class Regenerator {
       } catch (e) {
         if (e instanceof FeatureError) return done({ status: 'error', message: e.message, ...(e.unresolved ? { unresolved: e.unresolved } : {}) });
         if (e instanceof KernelError) return done({ status: 'error', message: e.message });
-        return done({ status: 'error', message: `內部錯誤：${e instanceof Error ? e.message : String(e)}` });
+        return done({ status: 'error', message: t('regen.internal', { why: e instanceof Error ? e.message : String(e) }) });
       }
     });
 
@@ -471,15 +471,15 @@ export class Regenerator {
 
   private resolve(ref: Ref, body: BodyState, what: string): number {
     // An empty reference is a selection box not filled in yet, not a lost reference.
-    if (!ref.name) throw new FeatureError(`請選擇${what}`);
+    if (!ref.name) throw new FeatureError(t('body.pick', { what }));
     const r = resolveRef(ref, body.names, body.topology);
-    if (!r.ok) throw new FeatureError(`遺失參考：${what}找不到，請重新選擇`, [{ ref, reason: r.reason, candidates: r.candidates }]);
+    if (!r.ok) throw new FeatureError(t('regen.lostWhat', { what }), [{ ref, reason: r.reason, candidates: r.candidates }]);
     this.noteFingerprint(r.via, what, body.names[ref.kind === 'edge' ? 'edges' : ref.kind === 'vertex' ? 'vertices' : 'faces'][r.index]!);
     return r.index;
   }
   /** A reference that only its geometry could pick out is a guess the user should confirm (never silent). */
   private noteFingerprint(via: string, what: string, found: string): void {
-    const note = `${what}依幾何指紋找到「${found}」（同名的有好幾個），請確認位置正確`;
+    const note = t('regen.fingerprintNote', { what, found });
     if (via === 'fingerprint' && !this.warnings.includes(note)) this.warnings.push(note);
   }
 
@@ -493,12 +493,12 @@ export class Regenerator {
     if (ref.kind === 'datum') {
       if (isDatumPlaneName(ref.name)) return DATUM_PLANES[ref.name];
       const plane = this.planes.get(ref.name);
-      if (!plane) throw new FeatureError(`${labels.what}：參考的基準面不存在、已抑制或失敗`);
+      if (!plane) throw new FeatureError(t('regen.planeMissing', { what: labels.what }));
       return plane;
     }
-    if (ref.kind !== 'face') throw new FeatureError('必須選擇基準面或平面');
+    if (ref.kind !== 'face') throw new FeatureError(t('cmd.mustPickPlane'));
     const body = set.view;
-    if (!body) throw new FeatureError(`${labels.what}不存在：它之前沒有本體`);
+    if (!body) throw new FeatureError(t('datum.noModel', { what: labels.what }));
     const face = body.topology.faces[this.resolve(ref, body, labels.what)]!;
     if (face.surface !== 'plane' || !face.normal) throw new FeatureError(labels.notPlanar);
     return planeFrame(face.center, face.normal);
@@ -506,7 +506,7 @@ export class Regenerator {
 
   /** Where a sketch lies (C1.1): a default plane, a reference plane, or a planar face of the model before it. */
   private frame(f: SketchFeature, set: Bodies): PlaneFrame {
-    return this.planeOf(f.plane, set, { what: '草圖所在的面', notPlanar: '草圖只能放在平面上' });
+    return this.planeOf(f.plane, set, { what: t('regen.whatSketchPlane'), notPlanar: t('sketch.planeOnly') });
   }
 
   /** The model so far, which a reference to one of its elements is looked up in. */
@@ -559,7 +559,7 @@ export class Regenerator {
   private refPlane(f: RefPlaneFeature, set: Bodies): PlaneFrame {
     const d = f.def;
     const sign = d.reverse ? -1 : 1;
-    const labels = { what: '參考面', notPlanar: '參考面必須是平面' };
+    const labels = { what: t('slot.plane'), notPlanar: t('regen.refNotPlanar') };
     const signed = (n: Vec3): Vec3 => [n[0] * sign, n[1] * sign, n[2] * sign];
     switch (d.mode) {
       case 'offset': {
@@ -568,19 +568,19 @@ export class Regenerator {
       }
       case 'angle': {
         const base = this.planeOf(d.plane, set, labels);
-        const axis = this.axisOfRef(d.axis, set, '旋轉軸');
+        const axis = this.axisOfRef(d.axis, set, t('pattern.rotationAxis'));
         const k = axis.dir;
         // The part of the plane's normal across the axis, turned about the axis.
         const across = sub(base.normal, add([0, 0, 0], k, dot(base.normal, k)));
-        if (Math.hypot(...across) < 1e-9) throw new FeatureError('旋轉軸不能垂直於參考面');
+        if (Math.hypot(...across) < 1e-9) throw new FeatureError(t('regen.axisPerpendicular'));
         return planeFrame(axis.origin, rotate(unit(across), k, evalAngle(d.angle) * sign));
       }
       case 'threePoint': {
-        if (d.points.length < 3) throw new FeatureError('三點基準面需要三個頂點');
+        if (d.points.length < 3) throw new FeatureError(t('regen.threeVertices'));
         const [a, b, c] = d.points.map((ref, i) => this.pointOfRef(ref, set, t('datum.nthPoint', { n: i + 1 }))) as [Vec3, Vec3, Vec3];
         const normal = cross(sub(b, a), sub(c, a));
         const size = Math.max(Math.hypot(...sub(b, a)), Math.hypot(...sub(c, a)), 1e-9);
-        if (Math.hypot(...normal) < 1e-9 * size * size) throw new FeatureError('三點共線，無法決定平面');
+        if (Math.hypot(...normal) < 1e-9 * size * size) throw new FeatureError(t('regen.collinear'));
         return planeFrame(a, signed(unit(normal)));
       }
       case 'parallel': {
@@ -634,7 +634,7 @@ export class Regenerator {
         return g.type === 'cylinder' ? { origin: g.origin, dir: unit(g.axis) } : { origin: g.apex, dir: unit(g.axis) };
       }
       case 'planes': {
-        const labels = { what: '參考面', notPlanar: '參考面必須是平面' };
+        const labels = { what: t('slot.plane'), notPlanar: t('regen.refNotPlanar') };
         const a = this.planeOf(d.plane, set, labels);
         const b = this.planeOf(d.plane2, set, { what: t('datum.secondPlane'), notPlanar: t('datum.secondPlaneNotPlanar') });
         const dir = cross(a.normal, b.normal);
@@ -669,7 +669,7 @@ export class Regenerator {
       }
       case 'axisPlane': {
         const axis = this.axisOfRef(d.axis, set, t('datum.axis'));
-        const plane = this.planeOf(d.plane, set, { what: '參考面', notPlanar: '參考面必須是平面' });
+        const plane = this.planeOf(d.plane, set, { what: t('slot.plane'), notPlanar: t('regen.refNotPlanar') });
         const along = dot(axis.dir, plane.normal);
         if (Math.abs(along) < 1e-9) throw new FeatureError(t('datum.axisParallelPlane'));
         return add(axis.origin, axis.dir, dot(sub(plane.origin, axis.origin), plane.normal) / along);
@@ -724,7 +724,7 @@ export class Regenerator {
       thin.mode === 'mid' ? { inward: one / 2, outward: one / 2 } : thin.mode === 'two' ? { inward: one, outward: evalLength(thin.thickness2 ?? thin.thickness) } : thin.reverse ? { inward: 0, outward: one } : { inward: one, outward: 0 };
     try {
       const regions = thinRegions(s.sketch, s.solved, th);
-      if (regions.length === 0) throw new FeatureError('草圖沒有可以做成薄件的輪廓');
+      if (regions.length === 0) throw new FeatureError(t('regen.noThinRegions'));
       return { ...s, profiles: { regions, problems: [] } };
     } catch (e) {
       if (e instanceof ThinProblem) throw new FeatureError(e.message);
@@ -735,10 +735,10 @@ export class Regenerator {
   /** The sketch of a boss or cut with the contours the feature chose (all of them when it chose none, C1.34). */
   private profileOf(sketches: RebuildResult['sketches'], sketchId: Id, contours?: Id[][], thin?: Thin) {
     const s = sketches.get(sketchId);
-    if (!s) throw new FeatureError('父草圖不存在、已抑制或失敗');
+    if (!s) throw new FeatureError(t('feature.sketchGone'));
     if (thin) return this.thinProfile(s, thin, contours);
-    if (s.profiles.problems.length > 0) throw new FeatureError(`草圖不能用於特徵：${s.profiles.problems.join('；')}`);
-    if (s.profiles.regions.length === 0) throw new FeatureError('草圖沒有封閉輪廓');
+    if (s.profiles.problems.length > 0) throw new FeatureError(t('regen.sketchUnusable', { problems: s.profiles.problems.join('; ') }));
+    if (s.profiles.regions.length === 0) throw new FeatureError(t('regen.noClosedProfile'));
     if (!contours) return s;
     const { regions, missing } = selectContours(s.profiles.regions, contours);
     if (missing > 0) throw new FeatureError(t('regen.contourMissing', { n: missing }));
@@ -823,7 +823,7 @@ export class Regenerator {
   private extrude(f: ExtrudeFeature, sketches: RebuildResult['sketches'], set: Bodies): BodyState[] {
     const s = this.profileOf(sketches, f.sketch, f.contours, f.thin);
     const body = set.view;
-    if (f.op === 'cut' && !body) throw new FeatureError('除料需要既有的本體');
+    if (f.op === 'cut' && !body) throw new FeatureError(t('feature.cutNeedsBody'));
     const n = s.frame.normal;
     // A boss grows along the sketch normal, a cut goes into the material (SolidWorks defaults); direction 2 goes the other way.
     const grow = f.op === 'cut' ? -1 : 1;
@@ -854,14 +854,14 @@ export class Regenerator {
 
   private revolve(f: RevolveFeature, sketches: RebuildResult['sketches'], set: Bodies): BodyState[] {
     const s = this.profileOf(sketches, f.sketch, f.contours, f.thin);
-    if (f.op === 'cut' && !set.view) throw new FeatureError('除料需要既有的本體');
+    if (f.op === 'cut' && !set.view) throw new FeatureError(t('feature.cutNeedsBody'));
     const axis = s.solved.geometry.get(f.axis);
-    if (axis?.type !== 'line') throw new FeatureError('旋轉軸不存在，請重新選擇');
+    if (axis?.type !== 'line') throw new FeatureError(t('regen.axisGone'));
     const [a, b] = [axis.a, axis.b];
     const side = (p: [number, number]) => (b[0] - a[0]) * (p[1] - a[1]) - (b[1] - a[1]) * (p[0] - a[0]);
     const pts = s.profiles.regions.flatMap((r) => r.outer.flatMap((seg) => (seg.kind === 'line' ? [seg.a, seg.b] : seg.kind === 'arc' ? [seg.from, seg.to, seg.c] : [seg.c])));
     const scale = Math.hypot(b[0] - a[0], b[1] - a[1]) || 1;
-    if (pts.some((p) => side(p) > 1e-9 * scale) && pts.some((p) => side(p) < -1e-9 * scale)) throw new FeatureError('輪廓跨過旋轉軸');
+    if (pts.some((p) => side(p) > 1e-9 * scale) && pts.some((p) => side(p) < -1e-9 * scale)) throw new FeatureError(t('regen.crossesAxis'));
 
     const fr = s.frame;
     const at = (p: [number, number]): Vec3 => add(add(fr.origin, fr.xDir, p[0]), fr.yDir, p[1]);
@@ -1257,7 +1257,7 @@ export class Regenerator {
         const r = this.boolBodies(featureId, 'cut', list, tool.shape, toolNames, made);
         k.release(tool.shape);
         if (!r.changed) throw new FeatureError(t('feature.cutRemovedNothing'));
-        if (r.out.length === 0) throw new FeatureError('除料移除了整個本體');
+        if (r.out.length === 0) throw new FeatureError(t('regen.cutRemovedAll'));
         if (r.removed.length > 0) this.warnings.push(t('body.removedWhole', { names: r.removed.join(t('cmd.listSeparator')) }));
         return r.out;
       }
@@ -1398,12 +1398,12 @@ export class Regenerator {
    */
   private importedBody(f: ImportedBodyFeature, doc: PartDoc, set: Bodies): BodyState[] {
     const blob = doc.blobs.find((b) => b.id === f.blob);
-    if (!blob) throw new FeatureError('輸入的資料不存在');
+    if (!blob) throw new FeatureError(t('regen.importMissing'));
     const key = importKey(blob.sha256, f.sewTolerance);
     let imported = this.imports.get(key);
     if (!imported) {
       const data = this.blobs.get(blob.sha256);
-      if (!data) throw new FeatureError('找不到輸入的資料（零件檔中缺少），請重新輸入');
+      if (!data) throw new FeatureError(t('regen.importNotInFile'));
       try {
         const r = this.kernel.importStep(data, f.sewTolerance === undefined ? {} : { sewTolerance: evalLength(f.sewTolerance) });
         imported = { shape: r.shape, faceOrigins: r.faceOrigins, warnings: r.warnings, diagnostics: r.diagnostics };
@@ -1446,7 +1446,7 @@ export class Regenerator {
       const r = resolveRef(ref, body.names, body.topology);
       if (r.ok) {
         indices.push(r.index);
-        this.noteFingerprint(r.via, '邊線', body.names.edges[r.index]!);
+        this.noteFingerprint(r.via, t('regen.edgeNoun'), body.names.edges[r.index]!);
       } else unresolved.push({ ref, reason: r.reason, candidates: r.candidates });
     }
     if (unresolved.length > 0) throw new FeatureError(t('edit.edgesLost', { n: unresolved.length }), unresolved);
@@ -1471,7 +1471,7 @@ export class Regenerator {
         continue;
       }
       // Among all the bodies a name may be shared (the pieces of a split face); the body alone then finds it by name.
-      this.noteFingerprint(r.via, kind === 'edge' ? '邊線' : t('edit.faceNoun'), view.names[kind === 'edge' ? 'edges' : 'faces'][r.index]!);
+      this.noteFingerprint(r.via, kind === 'edge' ? t('regen.edgeNoun') : t('edit.faceNoun'), view.names[kind === 'edge' ? 'edges' : 'faces'][r.index]!);
       const { body } = set.locate(kind, r.index);
       owners.set(body, [...(owners.get(body) ?? []), ref]);
     }
@@ -1628,7 +1628,7 @@ export class Regenerator {
         // (the other one with 「反轉方向」): a choice that survives rebuilds, unlike face order.
         const faces = [...body.topology.edges[edge]!.faces].sort((a, b) => (body.names.faces[a]! < body.names.faces[b]! ? -1 : 1));
         const face = faces[f.flip ? faces.length - 1 : 0];
-        if (face === undefined) throw new FeatureError('這條邊線沒有相鄰的面');
+        if (face === undefined) throw new FeatureError(t('regen.edgeNoFace'));
         return { edge, face };
       });
       const second = f.mode === 'distanceDistance' ? evalLength(f.second) : evalAngle(f.second);

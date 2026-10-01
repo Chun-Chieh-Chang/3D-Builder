@@ -38,7 +38,7 @@ async function build(bytes: Uint8Array): Promise<BuiltPart> {
   const regen = new Regenerator(kernel, solver, file.blobs);
   const result = regen.rebuild(file.doc);
   const name = (id: string) => file.doc.features.find((f) => f.id === id)?.name ?? id;
-  const failed = result.features.filter((f) => f.status === 'error').map((f) => `${name(f.id)}：${f.message ?? '失敗'}`);
+  const failed = result.features.filter((f) => f.status === 'error').map((f) => `${name(f.id)}: ${f.message ?? t('worker.failedShort')}`);
   const planes = file.doc.features.flatMap((f) => {
     const frame = f.type === 'refPlane' ? result.frames.get(f.id) : undefined;
     return frame ? [{ id: f.id, name: f.name, frame }] : [];
@@ -70,7 +70,7 @@ function massOf(r: RebuildResult): MassProps | null {
 
 /** The bodies of the result that go into a file, and the color of each of their faces: a reference body is a design aid, not part of the part (C7.1). */
 function ownBodies(doc: PartDoc, r: RebuildResult) {
-  if (!r.body) throw new Error('沒有可輸出的本體');
+  if (!r.body) throw new Error(t('worker.noBodyExport'));
   const own = exportFaces(doc, r);
   if (own.shapes.length === 0) throw new Error(t('body.exportNone'));
   return own;
@@ -270,7 +270,7 @@ const api: KernelApi = {
     const shapes: { shape: ShapeId; name: string }[] = [];
     for (const u of used) {
       const body = (await parts.get(u.key)?.catch(() => null))?.result.body;
-      if (!body) throw new Error(`零件「${u.name}」沒有可輸出的本體`);
+      if (!body) throw new Error(t('worker.noBodyForPart', { name: u.name }));
       shapes.push({ shape: body.shape, name: u.name });
     }
     return exportAssemblyStep(kernel, name, shapes, instances);

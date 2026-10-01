@@ -1,3 +1,4 @@
+import { t } from '@3db/i18n';
 import { SKETCH_ORIGIN, type Id, type SketchFeature } from '@3db/model';
 import type { Loop2, P2, ProfileResult, Region2, Segment2, SolvedSketch } from './types';
 
@@ -189,8 +190,8 @@ export function findProfiles(sketch: SketchFeature, solved: SolvedSketch): Profi
     for (const n of [e.from, e.to]) incident.set(n, [...(incident.get(n) ?? []), e]);
   }
   for (const [n, list] of incident) {
-    if (list.length === 1) problems.push(`開放端點（圖元 ${list[0]!.source}）`);
-    else if (list.length > 2) problems.push(`分支點：${list.map((e) => e.source).join('、')} 交會於同一點（節點 ${n}）`);
+    if (list.length === 1) problems.push(t('profile.openEnd', { source: list[0]!.source }));
+    else if (list.length > 2) problems.push(t('profile.branch', { sources: list.map((e) => e.source).join(t('cmd.listSeparator')), n }));
   }
   if (problems.length > 0) return { regions: [], problems };
 

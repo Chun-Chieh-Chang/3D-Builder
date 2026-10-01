@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { t } from '@3db/i18n';
+import { labelsOf, t } from '@3db/i18n';
 import {
   canBeSeed,
   evalQuantity,
@@ -115,19 +115,19 @@ function ValueInput({ value, toCommand, suffix = 'mm' }: { value: string; toComm
   );
 }
 
-const ENTITY_LABEL = { point: '點', line: '直線', circle: '圓', arc: '圓弧' } as const;
+const ENTITY_LABEL = labelsOf({ point: 'entity.point', line: 'entity.line', circle: 'entity.circle', arc: 'entity.arc' });
 
 function describe(f: SketchFeature, id: Id): string {
-  if (id === SKETCH_ORIGIN) return '原點';
+  if (id === SKETCH_ORIGIN) return t('datum.origin');
   const e = f.entities.find((x) => x.id === id);
-  if (e) return `${e.construction ? '幾何建構線 ' : ''}${ENTITY_LABEL[e.type]} ${id}`;
+  if (e) return `${e.construction ? `${t('entity.construction')} ` : ''}${ENTITY_LABEL[e.type]} ${id}`;
   const c = f.constraints.find((x) => x.id === id);
-  if (c) return isDimension(c) ? `${DIMENSION_LABEL[c.type] ?? '尺寸'} ${dimensionText(c)}` : `${RELATION_LABEL[c.type]} ${id}`;
+  if (c) return isDimension(c) ? `${DIMENSION_LABEL[c.type] ?? t('dimension.generic')} ${dimensionText(c)}` : `${RELATION_LABEL[c.type]} ${id}`;
   return id;
 }
 
 function relationText(f: SketchFeature, c: SketchConstraint, geometry?: SketchSolvePayload['geometry']): string {
-  if (isDimension(c)) return `${DIMENSION_LABEL[c.type] ?? '尺寸'} ${dimensionText(c, geometry && measuredText(c, geometry))}`;
+  if (isDimension(c)) return `${DIMENSION_LABEL[c.type] ?? t('dimension.generic')} ${dimensionText(c, geometry && measuredText(c, geometry))}`;
   return RELATION_LABEL[c.type];
 }
 
@@ -218,7 +218,7 @@ function DiagnosisBox({ f, solve, sketcher }: { f: SketchFeature; solve: SketchS
 function CheckBox({ f, view, sketcher }: { f: SketchFeature; view: ControllerView | null; sketcher: SketchController }) {
   const issues = sketcher.issues();
   const text = (i: SketchIssue): string => {
-    const ids = i.ids.join('、');
+    const ids = i.ids.join(t('cmd.listSeparator'));
     switch (i.kind) {
       case 'openEnd':
         return t('sketch.check.openEnd', { ids });
@@ -280,16 +280,16 @@ function SketchPanel({ f }: { f: SketchFeature }) {
   return (
     <>
       <section className="pm-group">
-        <h4>草圖狀態</h4>
+        <h4>{t('pm.sketchStatus')}</h4>
         {solve ? (
           <p className={`sketch-status ${solve.status}`}>
             {SKETCH_STATUS_LABEL[solve.status]}
-            {solve.status === 'under' && `（尚有 ${solve.dof} 個自由度）`}
+            {solve.status === 'under' && t('pm.dof', { n: solve.dof })}
           </p>
         ) : (
-          <p className="muted">求解中…</p>
+          <p className="muted">{t('pm.solving')}</p>
         )}
-        {conflicting.length > 0 && <p className="error-text">衝突：{conflicting.join('、')}</p>}
+        {conflicting.length > 0 && <p className="error-text">{t('pm.conflict', { ids: conflicting.join(t('cmd.listSeparator')) })}</p>}
       </section>
 
       {sketcher && solve && <DiagnosisBox f={f} solve={solve} sketcher={sketcher} />}
@@ -300,13 +300,13 @@ function SketchPanel({ f }: { f: SketchFeature }) {
           <h4>{TOOL_LABEL[view.tool]}</h4>
           <p className="hint">{view.hint}</p>
           {sketcher && <ToolOptionsBox view={view} sketcher={sketcher} />}
-          <p className="hint">Esc 結束工具。</p>
+          <p className="hint">{t('pm.escTool')}</p>
         </section>
       )}
 
       {sketcher && selection.length > 0 && (
         <section className="pm-group">
-          <h4>選取的項目</h4>
+          <h4>{t('pm.selectedItems')}</h4>
           <ul className="selection-box">
             {selection.map((id) => (
               <li key={id}>{describe(f, id)}</li>
@@ -314,12 +314,12 @@ function SketchPanel({ f }: { f: SketchFeature }) {
           </ul>
           {existing.length > 0 && (
             <>
-              <h4 className="sub">現有限制條件</h4>
+              <h4 className="sub">{t('pm.existingRelations')}</h4>
               <ul className="relation-list">
                 {existing.map((c) => (
                   <li key={c.id} className={solve?.conflicting.includes(c.id) ? 'over' : ''}>
                     <span>{relationText(f, c, solve?.geometry)}</span>
-                    <button title="刪除" onClick={() => store.execute({ type: 'removeSketchItems', featureId: f.id, ids: [c.id] })}>
+                    <button title={t('pm.delete')} onClick={() => store.execute({ type: 'removeSketchItems', featureId: f.id, ids: [c.id] })}>
                       <Icon name="cancel" />
                     </button>
                   </li>
@@ -329,7 +329,7 @@ function SketchPanel({ f }: { f: SketchFeature }) {
           )}
           {offered.length > 0 && (
             <>
-              <h4 className="sub">加入限制條件</h4>
+              <h4 className="sub">{t('pm.addRelations')}</h4>
               <div className="relation-buttons">
                 {offered.map((r) => (
                   <button key={r.type} onClick={() => void sketcher.addRelation(r)}>
@@ -353,19 +353,19 @@ function SketchPanel({ f }: { f: SketchFeature }) {
           {curves.length > 0 && (
             <label className="pm-row checkbox">
               <input type="checkbox" checked={curves.every((e) => e.construction)} onChange={(e) => sketcher.setConstruction(e.target.checked)} />
-              <span>作為幾何建構線</span>
+              <span>{t('pm.asConstruction')}</span>
             </label>
           )}
-          <p className="hint">Delete 刪除選取的項目。</p>
+          <p className="hint">{t('pm.deleteHint')}</p>
         </section>
       )}
 
       <section className="pm-group">
-        <h4>尺寸</h4>
-        {dims.length === 0 && <p className="muted">（用智慧型尺寸標註）</p>}
+        <h4>{t('pm.dimensions')}</h4>
+        {dims.length === 0 && <p className="muted">{t('pm.dimensionsHint')}</p>}
         {dims.map((c) => (
           <label key={c.id} className="pm-row">
-            <span>{c.label ?? `${DIMENSION_LABEL[c.type] ?? '尺寸'} ${c.id}`}</span>
+            <span>{c.label ?? `${DIMENSION_LABEL[c.type] ?? t('dimension.generic')} ${c.id}`}</span>
             {c.driving === false ? (
               <span className="muted" title={t('sketch.driven')}>
                 {dimensionText(c, solve ? measuredText(c, solve.geometry) : undefined)}
@@ -640,8 +640,8 @@ function ExtrudePanel({ f }: { f: ExtrudeFeature }) {
       <ThinBox f={f} />
       <section className="pm-group">
         <p className="hint">
-          輪廓：{findFeature(doc, f.sketch)?.name ?? f.sketch}
-          {f.op === 'cut' && '。除料預設往材料內部（與草圖法向相反）。'}
+          {t('pm.profile', { name: findFeature(doc, f.sketch)?.name ?? f.sketch })}
+          {f.op === 'cut' && ` ${t('pm.cutHint')}`}
         </p>
         <ContourBox f={f} />
         {f.op === 'boss' && <MergeBox f={f} />}
@@ -660,26 +660,26 @@ function RevolvePanel({ f }: { f: RevolveFeature }) {
   return (
     <>
       <section className="pm-group">
-        <h4>旋轉軸</h4>
+        <h4>{t('pm.revolve.axis')}</h4>
         <select value={f.axis} onChange={(e) => store.execute({ type: 'setRevolveAxis', featureId: f.id, axis: e.target.value })}>
           {lines.map((l) => (
             <option key={l.id} value={l.id}>
-              {l.construction ? '中心線' : '直線'} {l.id}
+              {l.construction ? t('tool.centerline') : t('entity.line')} {l.id}
             </option>
           ))}
         </select>
       </section>
       <section className="pm-group">
-        <h4>方向 1</h4>
+        <h4>{t('pattern.direction1')}</h4>
         <label className="pm-row">
-          <span>旋轉類型</span>
+          <span>{t('pm.revolve.type')}</span>
           <select value={d.type} onChange={(e) => set(e.target.value === 'midPlane' ? { type: 'midPlane', angle: d.angle } : { type: 'blind', angle: d.angle })}>
-            <option value="blind">給定深度</option>
-            <option value="midPlane">兩側對稱</option>
+            <option value="blind">{t('pm.end.blind')}</option>
+            <option value="midPlane">{t('pm.end.midPlane')}</option>
           </select>
         </label>
         <label className="pm-row">
-          <span>角度</span>
+          <span>{t('dimension.angle')}</span>
           <ValueInput
             value={d.angle}
             suffix="°"
@@ -689,10 +689,10 @@ function RevolvePanel({ f }: { f: RevolveFeature }) {
         {d.type === 'blind' && (
           <label className="pm-row checkbox">
             <input type="checkbox" checked={reverse} onChange={(e) => set({ type: 'blind', angle: d.angle, ...(e.target.checked ? { reverse: true } : {}) })} />
-            <span>反轉方向</span>
+            <span>{t('pm.reverseDirection')}</span>
           </label>
         )}
-        <p className="hint">輪廓：{sketch?.name ?? f.sketch}</p>
+        <p className="hint">{t('pm.profile', { name: sketch?.name ?? f.sketch })}</p>
         <ThinBox f={f} />
         <ContourBox f={f} />
         {f.op === 'boss' && <MergeBox f={f} />}
@@ -805,22 +805,22 @@ function EdgeList({ f }: { f: FilletFeature | ChamferFeature }) {
   const label = FEATURE_LABEL[f.type];
   return (
     <section className="pm-group">
-      <h4>要產生{label}的邊線</h4>
+      <h4>{t('pm.edges.heading', { label })}</h4>
       <ul className="selection-box">
-        {f.edges.length === 0 && <li className="muted">（在圖面中點選邊線）</li>}
+        {f.edges.length === 0 && <li className="muted">{t('pm.edges.empty')}</li>}
         {f.edges.map((e, i) => {
           const found = r?.edgeNames.includes(e.name);
           return (
             <li key={e.name} className={found ? '' : 'missing'} title={e.name}>
-              邊線 {i + 1}
-              {!found && '（遺失參考）'}
+              {t('pm.edges.item', { n: i + 1 })}
+              {!found && t('pm.lost')}
               <code>{e.name}</code>
               {!found && <UseNearest featureId={f.id} refr={e} />}
             </li>
           );
         })}
       </ul>
-      <p className="hint">編輯時顯示{label}之前的模型；點選邊線加入或移除。參考以持久名稱儲存，不使用索引。</p>
+      <p className="hint">{t('pm.edges.hint', { label })}</p>
     </section>
   );
 }
@@ -829,9 +829,9 @@ function FilletPanel({ f }: { f: FilletFeature }) {
   return (
     <>
       <section className="pm-group">
-        <h4>圓角參數</h4>
+        <h4>{t('pm.fillet.params')}</h4>
         <label className="pm-row">
-          <span>半徑</span>
+          <span>{t('dimension.radius')}</span>
           <ValueInput value={f.radius} toCommand={(value) => ({ type: 'setFilletRadius', featureId: f.id, value })} />
         </label>
       </section>
@@ -848,28 +848,28 @@ function ChamferPanel({ f }: { f: ChamferFeature }) {
   return (
     <>
       <section className="pm-group">
-        <h4>導角參數</h4>
+        <h4>{t('pm.chamfer.params')}</h4>
         <label className="pm-row">
-          <span>導角類型</span>
+          <span>{t('pm.chamfer.type')}</span>
           <select
             value={f.mode}
             onChange={(e) => store.execute(e.target.value === 'angleDistance' ? set({ mode: 'angleDistance', second: '45' }) : set({ mode: 'distanceDistance', second: f.distance }))}
           >
-            <option value="angleDistance">角度-距離</option>
-            <option value="distanceDistance">距離-距離</option>
+            <option value="angleDistance">{t('pm.chamfer.angleDistance')}</option>
+            <option value="distanceDistance">{t('pm.chamfer.distanceDistance')}</option>
           </select>
         </label>
         <label className="pm-row">
-          <span>{angled ? '距離' : '距離 1'}</span>
+          <span>{angled ? t('dimension.distance') : t('sketch.option.distance1')}</span>
           <ValueInput value={f.distance} toCommand={(distance) => set({ distance })} />
         </label>
         <label className="pm-row">
-          <span>{angled ? '角度' : '距離 2'}</span>
+          <span>{angled ? t('dimension.angle') : t('sketch.option.distance2')}</span>
           <ValueInput value={f.second} suffix={angled ? '°' : 'mm'} toCommand={(second) => set({ second })} />
         </label>
         <label className="pm-row checkbox">
           <input type="checkbox" checked={f.flip ?? false} onChange={(e) => store.execute(set({ flip: e.target.checked }))} />
-          <span>反轉方向</span>
+          <span>{t('pm.reverseDirection')}</span>
         </label>
       </section>
       <EdgeList f={f} />
@@ -883,8 +883,8 @@ function UseNearest({ featureId, refr }: { featureId: string; refr: Ref }) {
   const near = nearestElement(refr, result);
   if (!near) return null;
   return (
-    <button className="use-nearest" title={`幾何最接近的元素：${near.name}`} onClick={() => store.replaceRef(featureId, refr, near)}>
-      改用最接近的：<code>{near.name}</code>
+    <button className="use-nearest" title={t('pm.nearest.title', { name: near.name })} onClick={() => store.replaceRef(featureId, refr, near)}>
+      {t('pm.nearest.use')} <code>{near.name}</code>
     </button>
   );
 }
@@ -903,7 +903,7 @@ function RefItem({ label, refr, doc, result, featureId, onClear }: { label: stri
     const plane = DATUM_ITEMS.find((d) => d.id === refr.name)?.label ?? findFeature(doc, refr.name)?.name;
     return (
       <li className={plane ? '' : 'missing'}>
-        {label}：{plane ?? `${refr.name}（遺失參考）`}
+        {label}: {plane ?? `${refr.name} ${t('pm.lost')}`}
         {clear}
       </li>
     );
@@ -913,7 +913,7 @@ function RefItem({ label, refr, doc, result, featureId, onClear }: { label: stri
   return (
     <li className={found ? '' : 'missing'} title={refr.name}>
       {label}
-      {!found && '（遺失參考）'}
+      {!found && t('pm.lost')}
       <code>{refr.name}</code>
       {!found && <UseNearest featureId={featureId} refr={refr} />}
       {clear}
@@ -1568,15 +1568,15 @@ function ImportedBodyPanel({ f }: { f: ImportedBodyFeature }) {
   return (
     <>
       <section className="pm-group">
-        <h4>輸入的資料</h4>
-        <p>{blob?.fileName ?? '（未記錄檔名）'}</p>
+        <h4>{t('pm.import.heading')}</h4>
+        <p>{blob?.fileName ?? t('pm.import.noName')}</p>
         {warnings.map((w) => (
           <p key={w} className="warning-text">
             {w}
           </p>
         ))}
         <p className="hint">
-          資料存放在零件檔中（內容雜湊 <code>{blob?.sha256.slice(0, 12)}…</code>），不需要原始檔案。面依檔案中的順序命名。
+          {t('pm.import.stored', { hash: `${blob?.sha256.slice(0, 12)}…` })}
         </p>
         <MergeBox f={f} />
       </section>
@@ -1621,12 +1621,12 @@ export function PropertyManager() {
       <div className="pm-header">
         <Icon name={f.type} />
         <span className="pm-title">
-          {sketching ? '編輯草圖' : featureLabel(f)}：{f.name}
+          {sketching ? t('pm.editSketch') : featureLabel(f)}: {f.name}
         </span>
-        <button className="pm-ok" title={sketching ? '離開草圖' : '確定（Enter）'} onClick={() => store.commitEdit()}>
+        <button className="pm-ok" title={sketching ? t('pm.exitSketch') : t('pm.ok')} onClick={() => store.commitEdit()}>
           <Icon name="ok" />
         </button>
-        <button className="pm-cancel" title={sketching ? '放棄變更' : '取消（Esc）'} onClick={() => store.cancelEdit()}>
+        <button className="pm-cancel" title={sketching ? t('pm.discardChanges') : t('pm.cancel')} onClick={() => store.cancelEdit()}>
           <Icon name="cancel" />
         </button>
       </div>

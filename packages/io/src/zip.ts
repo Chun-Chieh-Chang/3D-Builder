@@ -1,3 +1,4 @@
+import { t } from '@3db/i18n';
 /**
  * Minimal ZIP writer and reader (PKWARE APPNOTE) for the part file: stored and DEFLATE entries,
  * UTF-8 names; no ZIP64, no encryption, no multi-disk archives. DEFLATE comes from the platform's
@@ -60,7 +61,7 @@ function record(size: number, fill: (v: DataView) => void): Uint8Array {
 
 /** Entries are written in the given order; each is deflated unless that would not make it smaller. */
 export async function writeZip(entries: ZipEntry[]): Promise<Uint8Array> {
-  if (entries.length > 0xffff) throw new ZipError('ZIP 項目太多');
+  if (entries.length > 0xffff) throw new ZipError(t('zip.tooMany'));
   const encoder = new TextEncoder();
   const parts: Uint8Array[] = [];
   const central: Uint8Array[] = [];
@@ -70,7 +71,7 @@ export async function writeZip(entries: ZipEntry[]): Promise<Uint8Array> {
     const deflated = await pipe(entry.data, new CompressionStream('deflate-raw'));
     const [method, body]: [number, Uint8Array] = deflated.length < entry.data.length ? [DEFLATED, deflated] : [STORED, entry.data];
     const crc = crc32(entry.data);
-    if (entry.data.length >= MAX32 || offset >= MAX32) throw new ZipError('檔案太大（需要 ZIP64）');
+    if (entry.data.length >= MAX32 || offset >= MAX32) throw new ZipError(t('zip.tooBig'));
     const local = record(30, (v) => {
       v.setUint32(0, LOCAL, true);
       v.setUint16(4, VERSION, true);
@@ -106,7 +107,7 @@ export async function writeZip(entries: ZipEntry[]): Promise<Uint8Array> {
     offset += local.length + name.length + body.length;
   }
   const size = central.reduce((n, c) => n + c.length, 0);
-  if (offset + size >= MAX32) throw new ZipError('檔案太大（需要 ZIP64）');
+  if (offset + size >= MAX32) throw new ZipError(t('zip.tooBig'));
   const end = record(22, (v) => {
     v.setUint32(0, END, true);
     v.setUint16(8, entries.length, true);
@@ -139,18 +140,18 @@ export async function readZip(bytes: Uint8Array): Promise<ZipEntry[]> {
       break;
     }
   }
-  if (end < 0) throw new ZipError('不是 ZIP 檔（找不到中央目錄）');
+  if (end < 0) throw new ZipError(t('zip.notZip'));
   const count = view.getUint16(end + 10, true);
   const size = view.getUint32(end + 12, true);
   const start = view.getUint32(end + 16, true);
-  if (count === 0xffff || size === MAX32 || start === MAX32) throw new ZipError('不支援 ZIP64 格式');
-  if (start + size > end) throw new ZipError('ZIP 中央目錄已損毀');
+  if (count === 0xffff || size === MAX32 || start === MAX32) throw new ZipError(t('zip.zip64'));
+  if (start + size > end) throw new ZipError(t('zip.dirBroken'));
 
   const decoder = new TextDecoder();
   const entries: ZipEntry[] = [];
   let p = start;
   for (let i = 0; i < count; i++) {
-    if (p + 46 > end || view.getUint32(p, true) !== CENTRAL) throw new ZipError('ZIP 中央目錄已損毀');
+    if (p + 46 > end || view.getUint32(p, true) !== CENTRAL) throw new ZipError(t('zip.dirBroken'));
     const flags = view.getUint16(p + 8, true);
     const method = view.getUint16(p + 10, true);
     const crc = view.getUint32(p + 16, true);
@@ -163,11 +164,11 @@ export async function readZip(bytes: Uint8Array): Promise<ZipEntry[]> {
     const name = decoder.decode(bytes.subarray(p + 46, p + 46 + nameLength));
     p += 46 + nameLength + skip;
     if (name.endsWith('/')) continue;
-    if (flags & ENCRYPTED) throw new ZipError(`不支援加密的 ZIP 項目：${name}`);
-    if (packed === MAX32 || length === MAX32 || local === MAX32) throw new ZipError('不支援 ZIP64 格式');
-    if (local + 30 > bytes.length || view.getUint32(local, true) !== LOCAL) throw new ZipError(`ZIP 項目已損毀：${name}`);
+    if (flags & ENCRYPTED) throw new ZipError(t('zip.encrypted', { name }));
+    if (packed === MAX32 || length === MAX32 || local === MAX32) throw new ZipError(t('zip.zip64'));
+    if (local + 30 > bytes.length || view.getUint32(local, true) !== LOCAL) throw new ZipError(t('zip.entryBroken', { name }));
     const from = local + 30 + view.getUint16(local + 26, true) + view.getUint16(local + 28, true);
-    if (from + packed > bytes.length) throw new ZipError(`ZIP 項目已損毀：${name}`);
+    if (from + packed > bytes.length) throw new ZipError(t('zip.entryBroken', { name }));
     const raw = bytes.subarray(from, from + packed);
     let data: Uint8Array;
     if (method === STORED) data = raw.slice();
@@ -175,10 +176,10 @@ export async function readZip(bytes: Uint8Array): Promise<ZipEntry[]> {
       try {
         data = await pipe(raw, new DecompressionStream('deflate-raw'));
       } catch {
-        throw new ZipError(`檔案已損毀：${name} 無法解壓縮`);
+        throw new ZipError(t('zip.inflateFailed', { name }));
       }
-    } else throw new ZipError(`不支援的壓縮方式（${method}）：${name}`);
-    if (data.length !== length || crc32(data) !== crc) throw new ZipError(`檔案已損毀：${name} 的 CRC 不符`);
+    } else throw new ZipError(t('zip.method', { method, name }));
+    if (data.length !== length || crc32(data) !== crc) throw new ZipError(t('zip.crc', { name }));
     entries.push({ name, data });
   }
   return entries;
