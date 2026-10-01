@@ -192,6 +192,7 @@ export function mapExprs(feature: Feature, fn: (expr: Expr, kind: ExprKind, role
     case 'combine':
     case 'refAxis':
     case 'coordSys':
+    case 'mirror':
       return feature;
   }
 }

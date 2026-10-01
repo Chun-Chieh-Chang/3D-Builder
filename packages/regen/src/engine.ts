@@ -24,6 +24,7 @@ import {
   type Id,
   type ImportedBodyFeature,
   type LoftFeature,
+  type MirrorFeature,
   type MoveFaceFeature,
   type PatternFeature,
   type PartDoc,
@@ -45,7 +46,7 @@ import { KernelError, type SweepSpec, type FaceOrigin, type ImportDiagnostics, t
 import { nameElements, nameFromFaces, resolveRef, type Candidate, type ElementNames } from '@3db/naming';
 import { Bodies, type BodyState, type BodyView } from './bodies';
 import { followReferences, ReferenceProblem } from './references';
-import { angleStep, slide, turn, type Motion } from './placements';
+import { angleStep, mirror, slide, turn, type Motion } from './placements';
 
 export type FeatureStatus = 'ok' | 'error' | 'suppressed' | 'rolledBack';
 
@@ -382,6 +383,7 @@ export class Regenerator {
           case 'moveFace':
           case 'combine':
           case 'pattern':
+          case 'mirror':
           case 'importedBody': {
             const next =
               feature.type === 'extrude'
@@ -412,7 +414,9 @@ export class Regenerator {
                             ? this.combineBodies(feature, set)
                             : feature.type === 'pattern'
                               ? this.pattern(feature, set)
-                              : this.importedBody(feature, doc, set);
+                              : feature.type === 'mirror'
+                                ? this.mirror(feature, set)
+                                : this.importedBody(feature, doc, set);
             set = this.advance(set, next);
             for (const pattern of lastSeeds.get(feature.id) ?? []) this.captureDelta(pattern, set);
             return done({ status: 'ok' });
@@ -1001,7 +1005,7 @@ export class Regenerator {
   private planPatterns(doc: PartDoc): void {
     this.featureNames = new Map(doc.features.map((f) => [f.id, f.name]));
     doc.features.forEach((f, index) => {
-      if (f.type !== 'pattern' || f.suppressed) return;
+      if ((f.type !== 'pattern' && !(f.type === 'mirror' && f.target === 'features')) || f.suppressed) return;
       if (f.seeds.length === 0) return void this.patternPlans.set(f.id, t('pattern.noSeeds'));
       const at = f.seeds.map((id) => doc.features.findIndex((g) => g.id === id)).sort((a, b) => a - b);
       if (at.some((i) => i < 0 || i >= index)) return void this.patternPlans.set(f.id, t('pattern.seedMissing'));
@@ -1079,8 +1083,8 @@ export class Regenerator {
     return patternInstances(n, null).map((x) => ({ label: x.label, motion: turn(axis.origin, axis.dir, step * x.i) }));
   }
 
-  /** A pattern (C6.1, C6.2): a copy of what the seeds added, moved to each instance and joined like the seed was, and of what they took away, moved and cut. */
-  private pattern(f: PatternFeature, set: Bodies): BodyState[] {
+  /** What the seeds of a pattern or a mirror did, or why there is nothing to repeat. */
+  private deltaOf(f: PatternFeature | MirrorFeature): Delta {
     const plan = this.patternPlans.get(f.id);
     if (typeof plan === 'string') throw new FeatureError(plan);
     if (!plan) throw new FeatureError(t('pattern.seedMissing'));
@@ -1088,17 +1092,82 @@ export class Regenerator {
     if (failed) throw new FeatureError(t('pattern.seedFailed', { name: this.featureNames.get(failed) ?? failed }));
     const delta = this.deltas.get(f.id);
     if (!delta || (!delta.added && !delta.removed)) throw new FeatureError(t('pattern.seedChangedNothing'));
-    const k = this.kernel;
+    return delta;
+  }
+
+  /** A pattern (C6.1, C6.2): a copy of what the seeds added, moved to each instance and joined like the seed was, and of what they took away, moved and cut. */
+  private pattern(f: PatternFeature, set: Bodies): BodyState[] {
+    const delta = this.deltaOf(f);
     const skip = new Set(f.skip ?? []);
     const instances = this.placements(f, set).filter((p) => !skip.has(p.label));
     if (instances.length === 0) throw new FeatureError(t('pattern.noInstances'));
+    return this.repeat(f, set, delta, instances.map((p) => ({ ...p, prefix: `inst${p.label}` })), {
+      overlap: true,
+      misses: (label) => t('pattern.instanceMissesBody', { label }),
+      floats: (label) => t('pattern.instanceFloats', { label }),
+    });
+  }
+
+  /** A mirror (C6.3) of features: what the seeds added and took away, reflected across the plane and joined and cut like the seed was. */
+  private mirrorFeatures(f: MirrorFeature, set: Bodies): BodyState[] {
+    const delta = this.deltaOf(f);
+    return this.repeat(f, set, delta, [{ label: '1', motion: this.mirrorMotion(f, set), prefix: 'mirror' }], {
+      overlap: false,
+      misses: () => t('mirror.cutMissesBody'),
+      floats: () => t('mirror.bossFloats'),
+    });
+  }
+
+  private mirrorMotion(f: MirrorFeature, set: Bodies): Motion {
+    const plane = this.planeOf(f.plane, set, { what: t('mirror.plane'), notPlanar: t('mirror.planeNotPlanar') });
+    return mirror(plane.origin, plane.normal);
+  }
+
+  /** A mirror of whole bodies: each reflected into a body of its own (`merge: false`), or joined to every body it touches, the original too. */
+  private mirrorBodies(f: MirrorFeature, set: Bodies): BodyState[] {
+    if (f.bodies.length === 0) throw new FeatureError(t('mirror.pickBodies'));
+    const k = this.kernel;
+    const motion = this.mirrorMotion(f, set);
+    const original = new Set(set.list.map((b) => b.shape));
+    let current: readonly BodyState[] = set.list;
+    const drop = (old: readonly BodyState[], now: readonly BodyState[]) => {
+      for (const b of old) if (!original.has(b.shape) && !now.some((x) => x.shape === b.shape)) k.release(b.shape);
+    };
+    try {
+      f.bodies.forEach((ref, i) => {
+        if (!ref.name) throw new FeatureError(t('mirror.pickBodies'));
+        const body = set.list.find((b) => b.id === ref.name);
+        if (!body) throw new FeatureError(t('body.lost', { name: ref.name }), [{ ref, reason: 'missing', candidates: [] }]);
+        const shape = k.transformed(body.shape, motion);
+        const names = nameFromFaces(body.names.faces.map((n) => `${f.id}:mirror:${n}`), k.topology(shape));
+        const next = this.apply(f.id, 'boss', { shape, faceOrigins: [] }, { featureId: f.id }, current, f.merge !== false, `${f.id}#${i + 1}`, names);
+        drop(current, next);
+        current = next;
+      });
+      return [...current];
+    } catch (e) {
+      drop(current, []);
+      throw e;
+    }
+  }
+
+  private mirror(f: MirrorFeature, set: Bodies): BodyState[] {
+    return f.target === 'features' ? this.mirrorFeatures(f, set) : this.mirrorBodies(f, set);
+  }
+
+  /**
+   * Copies of what the seeds did, one for each instance, put on the bodies in turn: what they added joined (or standing apart, if the seed's did), what
+   * they took away cut. An instance that does not meet the bodies is an error that names it.
+   */
+  private repeat(f: PatternFeature | MirrorFeature, set: Bodies, delta: Delta, instances: { label: string; motion: Motion; prefix: string }[], check: { overlap: boolean; misses: (label: string) => string; floats: (label: string) => string }): BodyState[] {
+    const k = this.kernel;
     // the copy of what the seeds did that goes to each instance, made before any is used so that they can be compared with one another
     const pending = new Set<ShapeId>();
     const make = (part: NonNullable<Delta['added']>) =>
       instances.map((p) => {
         const shape = k.transformed(part.shape, p.motion);
         pending.add(shape);
-        return { label: p.label, shape, names: nameFromFaces(part.names.faces.map((n) => `${f.id}:inst${p.label}:${n}`), k.topology(shape)) };
+        return { label: p.label, shape, names: nameFromFaces(part.names.faces.map((n) => `${f.id}:${p.prefix}:${n}`), k.topology(shape)) };
       });
     let current: readonly BodyState[] = set.list;
     const original = new Set(set.list.map((b) => b.shape));
@@ -1108,15 +1177,17 @@ export class Regenerator {
     try {
       const adds = delta.added ? make(delta.added) : [];
       const cuts = delta.removed ? make(delta.removed) : [];
-      this.noOverlap(delta.added?.shape ?? null, adds);
-      this.noOverlap(delta.removed?.shape ?? null, cuts);
+      if (check.overlap) {
+        this.noOverlap(delta.added?.shape ?? null, adds);
+        this.noOverlap(delta.removed?.shape ?? null, cuts);
+      }
       for (let i = 0; i < instances.length; i++) {
         const label = instances[i]!.label;
         const at = (run: () => BodyState[]): BodyState[] => {
           try {
             return run();
           } catch (e) {
-            if (e instanceof FeatureError && e.message === t('feature.cutRemovedNothing')) throw new FeatureError(t('pattern.instanceMissesBody', { label }));
+            if (e instanceof FeatureError && e.message === t('feature.cutRemovedNothing')) throw new FeatureError(check.misses(label));
             throw e;
           }
         };
@@ -1128,7 +1199,7 @@ export class Regenerator {
           if (!delta.newBody && next.length > current.length) {
             drop(current, next);
             current = next;
-            throw new FeatureError(t('pattern.instanceFloats', { label }));
+            throw new FeatureError(check.floats(label));
           }
           drop(current, next);
           current = next;

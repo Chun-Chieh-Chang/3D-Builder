@@ -32,6 +32,7 @@ import {
   type ImportedBodyFeature,
   type LoftFeature,
   type MoveFaceFeature,
+  type MirrorFeature,
   type PartDoc,
   type PatternDefinition,
   type PatternDirection,
@@ -1178,6 +1179,77 @@ function PatternPanel({ f }: { f: PatternFeature }) {
   );
 }
 
+/** Mirror (C6.3): features or bodies, and the plane they are reflected across. */
+function MirrorPanel({ f }: { f: MirrorFeature }) {
+  const doc = useStore((s) => s.doc);
+  const result = useStore((s) => s.result);
+  const at = doc.features.findIndex((x) => x.id === f.id);
+  const candidates = doc.features.slice(0, Math.max(at, 0)).filter(canBeSeed);
+  const value = (patch: Partial<Pick<MirrorFeature, 'target' | 'seeds' | 'bodies' | 'merge'>>): Command => ({
+    type: 'setMirror',
+    featureId: f.id,
+    value: { target: f.target, plane: f.plane, seeds: f.seeds, bodies: f.bodies, ...(f.merge === false ? { merge: false } : {}), ...patch },
+  });
+  const known = (result?.bodies ?? []).map((b) => ({ id: b.id, name: b.name }));
+  return (
+    <>
+      <section className="pm-group">
+        <h4>{t('pm.mirror.target')}</h4>
+        <select value={f.target} onChange={(e) => store.execute(value({ target: e.target.value as MirrorFeature['target'] }))}>
+          <option value="features">{t('pm.mirror.features')}</option>
+          <option value="bodies">{t('pm.mirror.bodies')}</option>
+        </select>
+      </section>
+      {f.target === 'features' ? (
+        <section className="pm-group">
+          <h4>{t('pm.pattern.seeds')}</h4>
+          <ul className="selection-box">
+            {candidates.length === 0 && <li className="muted">{t('pm.pattern.noSeeds')}</li>}
+            {candidates.map((c) => (
+              <li key={c.id}>
+                <label className="pm-row checkbox">
+                  <input type="checkbox" checked={f.seeds.includes(c.id)} onChange={(e) => store.execute(value({ seeds: e.target.checked ? [...f.seeds, c.id] : f.seeds.filter((x) => x !== c.id) }))} />
+                  <span>{c.name}</span>
+                </label>
+              </li>
+            ))}
+          </ul>
+          <p className="hint">{t('pm.mirror.hintFeatures')}</p>
+        </section>
+      ) : (
+        <section className="pm-group">
+          <h4>{t('pm.mirror.bodiesHeading')}</h4>
+          <ul className="selection-box">
+            {known.length === 0 && <li className="muted">{t('pm.mirror.noBodies')}</li>}
+            {known.map((b) => (
+              <li key={b.id}>
+                <label className="pm-row checkbox">
+                  <input
+                    type="checkbox"
+                    checked={f.bodies.some((x) => x.name === b.id)}
+                    onChange={(e) => store.execute(value({ bodies: e.target.checked ? [...f.bodies, { kind: 'body', name: b.id }] : f.bodies.filter((x) => x.name !== b.id) }))}
+                  />
+                  <span>{b.name}</span>
+                </label>
+              </li>
+            ))}
+          </ul>
+          <label className="pm-row checkbox">
+            <input type="checkbox" checked={f.merge !== false} onChange={(e) => store.execute(value({ merge: e.target.checked }))} />
+            <span>{t('pm.mirror.merge')}</span>
+          </label>
+          <p className="hint">{t('pm.mirror.hintBodies')}</p>
+        </section>
+      )}
+      <section className="pm-group">
+        <h4>{t('pm.mirror.plane')}</h4>
+        <SlotList f={f} />
+        <DatumPicker f={f} />
+      </section>
+    </>
+  );
+}
+
 /** Coordinate system (C3.4). */
 function CoordSysPanel({ f }: { f: CoordSysFeature }) {
   const flip = (key: 'flipX' | 'flipY', on: boolean) => {
@@ -1572,6 +1644,7 @@ export function PropertyManager() {
       {f.type === 'refPoint' && <RefPointPanel f={f} />}
       {f.type === 'coordSys' && <CoordSysPanel f={f} />}
       {f.type === 'pattern' && <PatternPanel f={f} />}
+      {f.type === 'mirror' && <MirrorPanel f={f} />}
       {f.type === 'importedBody' && <ImportedBodyPanel f={f} />}
       {f.type === 'deleteFace' && <DeleteFacePanel f={f} />}
       {f.type === 'shell' && <ShellPanel f={f} />}

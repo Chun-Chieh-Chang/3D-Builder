@@ -91,6 +91,7 @@ export const model = {
   'cmd.patternSeedTwice': '同一個特徵不能排列兩次',
   'cmd.patternSeedEarlier': '要排列的特徵必須在排列之前',
   'cmd.patternSeedType': '「{name}」不能排列：只有填料、除料、孔、圓角與導角可以排列',
+  'cmd.onlyMirrorHasParams': '只有鏡射有這些參數',
   'cmd.onlyPatternHasParams': '只有複製排列有這些參數',
   'cmd.countRange': '實例數要是 2 到 {max} 的整數（現在是 {value}）',
   'cmd.listSeparator': '、',

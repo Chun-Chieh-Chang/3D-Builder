@@ -57,6 +57,10 @@ export function parentsOf(feature: Feature, doc: PartDoc): Id[] {
     case 'pattern':
       parents = [...feature.seeds, ...fromRefs(defRefs(feature.def))];
       break;
+    case 'mirror':
+      // a body is named by the feature that made it
+      parents = [...(feature.target === 'features' ? feature.seeds : feature.bodies.filter((r) => r.name).map((r) => bodyFeature(r.name))), ...fromRefs([feature.plane])];
+      break;
     case 'coordSys':
       parents = fromRefs([...(feature.origin ? [feature.origin] : []), feature.x, feature.y]);
       break;

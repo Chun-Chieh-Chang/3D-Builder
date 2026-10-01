@@ -34,6 +34,7 @@ export const FEATURE_LABEL: Record<FeatureType, string> = labelsOf({
   loft: 'feature.loft',
   rib: 'feature.rib',
   pattern: 'feature.pattern',
+  mirror: 'feature.mirror',
   hole: 'feature.hole',
   draft: 'feature.draftFeature',
   moveFace: 'feature.moveFace',

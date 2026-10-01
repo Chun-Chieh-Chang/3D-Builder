@@ -118,6 +118,8 @@ export function slotsOf(f: Feature | undefined): Slot[] {
       return axisSlots(f.def);
     case 'refPoint':
       return pointSlots(f.def);
+    case 'mirror':
+      return [one('plane', t('slot.mirrorPlane'), 'plane', f.plane)];
     case 'pattern':
       return f.def.mode === 'linear'
         ? [one('dir1.ref', t('slot.direction1'), 'direction', f.def.dir1.ref), ...(f.def.dir2 ? [one('dir2.ref', t('slot.direction2'), 'direction', f.def.dir2.ref)] : [])]
@@ -143,6 +145,8 @@ export function fill(f: Feature, key: string, refs: Ref[]): Command {
       return { type: 'setRefAxis', featureId: f.id, def: { ...f.def, [key]: value } as AxisDefinition };
     case 'refPoint':
       return { type: 'setRefPoint', featureId: f.id, def: { ...f.def, [key]: value } as PointDefinition };
+    case 'mirror':
+      return { type: 'setMirror', featureId: f.id, value: { target: f.target, plane: value as Ref, seeds: f.seeds, bodies: f.bodies, ...(f.merge === false ? { merge: false } : {}) } };
     case 'pattern': {
       const d = f.def;
       const ref = value as Ref;

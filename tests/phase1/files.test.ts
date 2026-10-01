@@ -311,6 +311,22 @@ describe('a part file written by version 21 (reference geometry, C3.2–C3.5) op
   });
 });
 
+describe('a part file written by version 22 (pattern, C6.1–C6.2) opens in version 23 (mirror, C6.3)', () => {
+  it('keeps its pattern and rebuilds it: the plate and three posts (the second instance skipped), valid, every instance under its own name', async () => {
+    const file = await readPartFile(oldFile('v22-pattern.3dbx'));
+    expect(file.warnings).toEqual([]);
+    expect(JSON.parse(new TextDecoder().decode((await readZip(oldFile('v22-pattern.3dbx')))[0]!.data)).schemaVersion).toBe(22);
+    expect(file.doc.schemaVersion).toBe(SCHEMA_VERSION);
+    expect(file.doc.features.map((f) => f.type)).toEqual(['sketch', 'extrude', 'sketch', 'extrude', 'pattern']);
+    const r = new Regenerator(kernel, await PlaneGcsSolver.create(), file.blobs).rebuild(file.doc);
+    expect(statuses(r).filter((s) => !s.endsWith('=ok'))).toEqual([]);
+    expect(kernel.isValid(r.body!.shape)).toBe(true);
+    expect(kernel.massProps(r.body!.shape).volume).toBeCloseTo(60 * 20 * 5 + 3 * Math.PI * 4 * 5, 6);
+    expect(r.body!.names.faces).toEqual(expect.arrayContaining(['pat1:inst1:e2:cap:end', 'pat1:inst3:e2:cap:end']));
+    expect(r.body!.names.faces.some((n) => n.startsWith('pat1:inst2:'))).toBe(false);
+  });
+});
+
 describe('the .3dbx file (B9.1, F7.1)', () => {
   const docs = async (): Promise<[string, PartDoc][]> => [
     ['the demo part', createDemoPart()],

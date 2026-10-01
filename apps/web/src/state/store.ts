@@ -647,6 +647,24 @@ class AppStore {
     this.openNew({ id: this.allocator().take('pattern'), type: 'pattern', name: nextName(doc, name), suppressed: false, seeds: [seed.id], def }, name);
   }
 
+  /**
+   * 「鏡射」 (C6.3): across the right plane to begin with; mirrors the feature that is selected (else the latest one that can be repeated), or, when
+   * the model has nothing to repeat, a body. The PropertyManager changes what is mirrored and across which plane.
+   */
+  newMirror(): void {
+    const doc = this.history.doc;
+    const selected = findFeature(doc, this.state.selected ?? '');
+    const seed = selected && canBeSeed(selected) ? selected : [...doc.features].reverse().find(canBeSeed);
+    const body = this.state.result?.bodies[0];
+    if (!seed && !body) return this.notify(t('mirror.nothingToMirror'), 'error');
+    const name = t('feature.mirror');
+    const plane: Ref = { kind: 'datum', name: 'plane:right' };
+    const mirror: Feature = seed
+      ? { id: this.allocator().take('mirror'), type: 'mirror', name: nextName(doc, name), suppressed: false, target: 'features', plane, seeds: [seed.id], bodies: [] }
+      : { id: this.allocator().take('mirror'), type: 'mirror', name: nextName(doc, name), suppressed: false, target: 'bodies', plane, seeds: [], bodies: [{ kind: 'body', name: body!.id }] };
+    this.openNew(mirror, name);
+  }
+
   /** 「基準軸」 (C3.3): along a straight edge, or the axis of the cylinder that is selected; the PropertyManager changes the type and the references. */
   newRefAxis(): void {
     const face = this.state.selectedFace;
@@ -826,7 +844,7 @@ class AppStore {
     const f = this.editedFeature();
     if (f?.type === 'fillet' || f?.type === 'chamfer') this.toggleEdge(ref);
     else if (f?.type === 'extrude') this.setUpToFace(ref);
-    else if (f?.type === 'refPlane' || f?.type === 'refAxis' || f?.type === 'refPoint' || f?.type === 'coordSys' || f?.type === 'pattern') this.putDatumRef(ref);
+    else if (f?.type === 'refPlane' || f?.type === 'refAxis' || f?.type === 'refPoint' || f?.type === 'coordSys' || f?.type === 'pattern' || f?.type === 'mirror') this.putDatumRef(ref);
     else if (f?.type === 'deleteFace') this.toggleFace(ref);
     else if (f?.type === 'shell') this.toggleShellFace(ref);
     else if (f?.type === 'draft') this.pickDraftFace(ref);
@@ -837,7 +855,7 @@ class AppStore {
   /** A click in the FeatureManager selects; while a plane is being defined it picks a plane like SolidWorks' flyout tree. */
   treeClick(id: Id): void {
     const f = this.editedFeature();
-    const datum = f && id !== f.id && (f.type === 'refPlane' || f.type === 'refAxis' || f.type === 'refPoint' || f.type === 'coordSys' || f.type === 'pattern') ? treeRef(this.history.doc, id) : null;
+    const datum = f && id !== f.id && (f.type === 'refPlane' || f.type === 'refAxis' || f.type === 'refPoint' || f.type === 'coordSys' || f.type === 'pattern' || f.type === 'mirror') ? treeRef(this.history.doc, id) : null;
     if (datum && this.putDatumRef(datum)) return;
     this.select(id);
   }
@@ -889,7 +907,7 @@ class AppStore {
     if (!e) return undefined;
     const i = this.history.doc.features.findIndex((f) => f.id === e.featureId);
     const type = this.history.doc.features[i]?.type;
-    if (type === 'refPlane' || type === 'refAxis' || type === 'refPoint' || type === 'coordSys' || type === 'pattern') return i + 1;
+    if (type === 'refPlane' || type === 'refAxis' || type === 'refPoint' || type === 'coordSys' || type === 'pattern' || type === 'mirror') return i + 1;
     return type === 'fillet' || type === 'chamfer' || type === 'deleteFace' || type === 'moveFace' || type === 'shell' || type === 'draft' || type === 'combine' || type === 'sketch' ? i : undefined;
   }
 

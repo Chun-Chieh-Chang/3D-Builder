@@ -59,6 +59,8 @@ export function mapRefs(feature: Feature, map: (ref: Ref) => Ref): { feature: Fe
       return { feature: { ...feature, def: mapDefRefs(feature.def, one) } as Feature, replaced };
     case 'pattern':
       return { feature: { ...feature, def: mapDefRefs(feature.def, one) }, replaced };
+    case 'mirror':
+      return { feature: { ...feature, plane: one(feature.plane), bodies: feature.bodies.map(one) }, replaced };
     case 'coordSys':
       return { feature: { ...feature, ...(feature.origin ? { origin: one(feature.origin) } : {}), x: one(feature.x), y: one(feature.y) }, replaced };
     case 'deleteFace':

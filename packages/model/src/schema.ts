@@ -6,7 +6,7 @@ import type { Id } from './ids';
  * DOF status, mass properties and error lists are derived data and never stored.
  */
 
-export const SCHEMA_VERSION = 22;
+export const SCHEMA_VERSION = 23;
 
 /** Value expression (B5.2, B5.3): "20", "25.4mm", "30deg", "wall_t*2", "D1@草圖1/2", "property('厚度')"; see `expr/`. */
 export type Expr = string;
@@ -260,6 +260,20 @@ export interface PatternFeature extends FeatureBase {
   skip?: string[];
 }
 
+/**
+ * Mirror (鏡射, C6.3, v23): across a plane (a default plane, a reference plane, or a planar face), either what the `seeds` (one feature, or a run of features)
+ * added to the bodies and took from them (`target: 'features'`, joined and cut like the seed was), or whole `bodies` (`target: 'bodies'`: each mirrored into
+ * a body of its own with `merge: false`, else joined to every body it touches, the original included).
+ */
+export interface MirrorFeature extends FeatureBase {
+  type: 'mirror';
+  target: 'features' | 'bodies';
+  plane: Ref;
+  seeds: Id[];
+  bodies: Ref[];
+  merge?: boolean;
+}
+
 export interface RevolveFeature extends FeatureBase {
   type: 'revolve';
   sketch: Id;
@@ -445,6 +459,7 @@ export type Feature =
   | LoftFeature
   | RibFeature
   | PatternFeature
+  | MirrorFeature
   | FilletFeature
   | ChamferFeature
   | RefPlaneFeature

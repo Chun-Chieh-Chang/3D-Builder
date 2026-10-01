@@ -1,7 +1,7 @@
 import { t } from '@3db/i18n';
 import { current, produce, type Draft } from 'immer';
 import { countersFor, type Id } from './ids';
-import type { Variable, BlobRef, ChamferFeature, CombineFeature, HoleFeature, LoftFeature, RibFeature, SweepFeature, Draft as WallDraft, EndCondition, Thin, Expr, Feature, ImportedBodyFeature, AxisDefinition, CoordSysFeature, PartDoc, PatternDefinition, PatternFeature, PlaneDefinition, PointDefinition, Ref, RevolveCondition, SketchConstraint, SketchEntity, SketchFeature } from './schema';
+import type { Variable, BlobRef, ChamferFeature, CombineFeature, HoleFeature, LoftFeature, RibFeature, SweepFeature, Draft as WallDraft, EndCondition, Thin, Expr, Feature, ImportedBodyFeature, AxisDefinition, CoordSysFeature, MirrorFeature, PartDoc, PatternDefinition, PatternFeature, PlaneDefinition, PointDefinition, Ref, RevolveCondition, SketchConstraint, SketchEntity, SketchFeature } from './schema';
 import { isDatumPlaneName } from './datums';
 import { canBeSeed } from './patterns';
 import { mapRefs } from './refs';
@@ -97,6 +97,8 @@ ull). */
   | { type: 'setRefPoint'; featureId: Id; def: PointDefinition }
   /** What a pattern repeats and how (C6.1, C6.2); `skip` names the instances to leave out. */
   | { type: 'setPattern'; featureId: Id; seeds: Id[]; def: PatternDefinition; skip?: string[] }
+  /** What a mirror reflects and across what (C6.3). */
+  | { type: 'setMirror'; featureId: Id; value: Pick<MirrorFeature, 'target' | 'plane' | 'seeds' | 'bodies' | 'merge'> }
   | { type: 'setCoordSys'; featureId: Id; value: Pick<CoordSysFeature, 'origin' | 'x' | 'y' | 'flipX' | 'flipY'> }
   /** Adds imported data and the feature that uses it, as one step (F2.1). */
   | { type: 'importBody'; blob: BlobRef; feature: ImportedBodyFeature; index: number }
@@ -327,14 +329,25 @@ function rotationAxisRef(doc: PartDoc, ref: Ref, index: number): void {
   axisRef(doc, ref, index);
 }
 
+/** A mirror reflects features that are earlier in the history and can be repeated, or bodies; across a plane. */
+function mirrorRefs(doc: PartDoc, f: Pick<MirrorFeature, 'target' | 'plane' | 'seeds' | 'bodies'>, index: number): void {
+  planeRef(doc, f.plane, index);
+  if (f.bodies.some((r) => r.kind !== 'body')) throw new CommandError(t('cmd.combineOnlyBodies'));
+  if (f.target === 'features') patternSeeds(doc, f.seeds, index);
+}
+
 /** A pattern repeats features that are earlier in the history and can be repeated; which direction and where it turns is for the rebuild to check. */
-function patternRefs(doc: PartDoc, f: Pick<PatternFeature, 'seeds' | 'def'>, index: number): void {
-  if (new Set(f.seeds).size !== f.seeds.length) throw new CommandError(t('cmd.patternSeedTwice'));
-  for (const id of f.seeds) {
+function patternSeeds(doc: PartDoc, seeds: Id[], index: number): void {
+  if (new Set(seeds).size !== seeds.length) throw new CommandError(t('cmd.patternSeedTwice'));
+  for (const id of seeds) {
     const at = doc.features.findIndex((g) => g.id === id);
     if (at < 0 || at >= index) throw new CommandError(t('cmd.patternSeedEarlier'));
     if (!canBeSeed(doc.features[at]!)) throw new CommandError(t('cmd.patternSeedType', { name: doc.features[at]!.name }));
   }
+}
+
+function patternRefs(doc: PartDoc, f: Pick<PatternFeature, 'seeds' | 'def'>, index: number): void {
+  patternSeeds(doc, f.seeds, index);
   if (f.def.mode === 'linear') {
     directionRef(doc, f.def.dir1.ref, index);
     if (f.def.dir2) directionRef(doc, f.def.dir2.ref, index);
@@ -427,6 +440,9 @@ function validateNewFeature(doc: PartDoc, f: Feature, index: number): void {
       return;
     case 'pattern':
       patternRefs(doc, f, index);
+      return;
+    case 'mirror':
+      mirrorRefs(doc, f, index);
       return;
     case 'deleteFace':
       if (f.faces.some((r) => r.kind !== 'face')) throw new CommandError(t('cmd.deleteFaceOnlyFaces'));
@@ -594,6 +610,18 @@ export function mutate(draft: Draft<PartDoc>, cmd: Command): void {
       pointDefinition(draft as PartDoc, cmd.def, draft.features.findIndex((x) => x.id === f.id));
       f.def = cmd.def;
       checkExprs(draft as PartDoc, f as Feature);
+      return;
+    }
+    case 'setMirror': {
+      const f = feature(draft, cmd.featureId);
+      if (f.type !== 'mirror') throw new CommandError(t('cmd.onlyMirrorHasParams'));
+      mirrorRefs(draft as PartDoc, cmd.value, draft.features.findIndex((x) => x.id === f.id));
+      f.target = cmd.value.target;
+      f.plane = cmd.value.plane;
+      f.seeds = [...cmd.value.seeds];
+      f.bodies = [...cmd.value.bodies];
+      if (cmd.value.merge === false) f.merge = false;
+      else delete f.merge;
       return;
     }
     case 'setPattern': {
