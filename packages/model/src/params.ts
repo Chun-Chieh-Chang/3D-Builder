@@ -112,6 +112,7 @@ export function mapExprs(feature: Feature, fn: (expr: Expr, kind: ExprKind, role
       return sewTolerance === feature.sewTolerance ? feature : { ...feature, sewTolerance };
     }
     case 'deleteFace':
+    case 'combine':
       return feature;
   }
 }

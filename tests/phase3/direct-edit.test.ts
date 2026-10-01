@@ -4,7 +4,7 @@
  * so what comes after them stays where the user put it (ADR 0021).
  */
 import { beforeAll, describe, expect, it } from 'vitest';
-import { applyCommand, createEmptyPart, CommandError, parsePart, serializePart, type Feature, type PartDoc } from '@3db/model';
+import { applyCommand, createEmptyPart, CommandError, parsePart, SCHEMA_VERSION, serializePart, type Feature, type PartDoc } from '@3db/model';
 import { readPartFile, sha256Hex, writePartFile } from '@3db/io';
 import { PlaneGcsSolver } from '@3db/sketch';
 import { Kernel } from '@3db/kernel';
@@ -256,7 +256,7 @@ describe('the two features in the document', () => {
     expect(statuses(after)).toEqual(statuses(before));
     expect(after.body!.names.faces).toEqual(before.body!.names.faces);
     expect(volume(after)).toBeCloseTo(volume(before), 9);
-    expect(parsePart(serializePart(doc)).schemaVersion).toBe(9);
+    expect(parsePart(serializePart(doc)).schemaVersion).toBe(SCHEMA_VERSION);
   });
 
   it('do not leak shapes across rebuilds', () => {

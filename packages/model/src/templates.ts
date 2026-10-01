@@ -14,6 +14,7 @@ export function createEmptyPart(): PartDoc {
     appearances: [],
     blobs: [],
     visibility: {},
+    bodies: {},
     idCounters: {},
   };
 }

@@ -91,6 +91,14 @@ export function nameElements(origins: Origin[][], topo: NamingTopology, ctx: Nam
     origins.map((o) => faceBaseName(o, ctx)),
     (i) => topo.faces[i]!.center,
   );
+  return nameFromFaces(faces, topo);
+}
+
+/**
+ * The edges and vertices of a shape, named by the faces round them, given the names of its faces. For a piece of a result
+ * that came apart (C7): its faces have the names they got in the whole result, with the #k that told them apart there.
+ */
+export function nameFromFaces(faces: string[], topo: NamingTopology): ElementNames {
   const edges = disambiguate(
     topo.edges.map((e) => edgeName(e.faces.map((fi) => faces[fi]!))),
     (i) => topo.edges[i]!.mid,

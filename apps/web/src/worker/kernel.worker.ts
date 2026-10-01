@@ -1,14 +1,15 @@
 /// <reference lib="webworker" />
 import * as Comlink from 'comlink';
-import { setLocale as setWorkerLocale } from '@3db/i18n';
+import { setLocale as setWorkerLocale, t } from '@3db/i18n';
 import occtWasm from 'libcascade/single/wasm?url';
 import gcsWasm from '@salusoft89/planegcs/dist/planegcs_dist/planegcs.wasm?url';
-import type { AssemblyDoc, Id, PartDoc } from '@3db/model';
+import { bodyKey, isShown, type AssemblyDoc, type Id, type PartDoc } from '@3db/model';
 import { findProfiles, PlaneGcsSolver } from '@3db/sketch';
-import { COMPONENT_MESH, Kernel, type ShapeId } from '@3db/kernel';
-import { edgeMateGeometry, faceMateGeometry, Regenerator, solveAssembly, type AssemblyResult, type AssemblySolveOptions, type RebuildResult } from '@3db/regen';
+import { COMPONENT_MESH, Kernel, type MassProps, type MeshData, type ShapeId } from '@3db/kernel';
+import { edgeMateGeometry, faceMateGeometry, Regenerator, solveAssembly, type AssemblyResult, type AssemblySolveOptions, type BodyInfo, type RebuildResult } from '@3db/regen';
 import { edgeFingerprint, faceFingerprint, vertexFingerprint } from '@3db/naming';
 import { exportAssemblyStep, exportPartStep, readComponentFile } from '@3db/io';
+import { mergeMeshes } from './mergeMesh';
 import type { AssemblyStepRequest, KernelApi, PartBuildPayload, PartStage, RebuildPayload, RebuildRequest, SketchSolvePayload, SketchSolveRequest } from './protocol';
 
 let kernel: Kernel;
@@ -41,6 +42,28 @@ async function build(bytes: Uint8Array): Promise<BuiltPart> {
     return frame ? [{ id: f.id, name: f.name, frame }] : [];
   });
   return { regen, result, problems: [...file.warnings, ...failed], planes };
+}
+
+/**
+ * What is drawn of the bodies (D4.6): the whole view when every body is shown, else each shown body meshed on its own and put together,
+ * so that a hidden body has no triangles to see or pick. Faces and edges keep their numbers in the names either way.
+ */
+function meshOf(r: RebuildResult, shown: boolean[]): MeshData | null {
+  const body = r.body;
+  if (!body) return null;
+  if (shown.every(Boolean)) return kernel.mesh(body.shape);
+  const parts = r.bodies.flatMap((b: BodyInfo, i) => (shown[i] ? [{ mesh: kernel.mesh(b.shape), face0: b.face0, edge0: b.edge0 }] : []));
+  return parts.length > 0 ? mergeMeshes(parts) : null;
+}
+
+/** Mass of the part: its bodies except the reference ones (C7.1), the centre weighted by volume. */
+function massOf(r: RebuildResult): MassProps | null {
+  if (!r.body) return null;
+  const own = r.bodies.filter((b) => !b.reference).map((b) => kernel.massProps(b.shape));
+  if (own.length === r.bodies.length && own.length === 1) return own[0]!;
+  const volume = own.reduce((n, m) => n + m.volume, 0);
+  const centre = (k: number) => (volume > 0 ? own.reduce((n, m) => n + m.center[k]! * m.volume, 0) / volume : 0);
+  return { volume, area: own.reduce((n, m) => n + m.area, 0), center: [centre(0), centre(1), centre(2)] };
 }
 
 /** The sketch solver loads first and on its own: sketching does not wait for the 43 MB geometry kernel. */
@@ -83,10 +106,12 @@ const api: KernelApi = {
     await api.init();
     const r = regen.rebuild(doc, until === undefined ? {} : { until });
     const body = r.body;
-    const mesh = body ? kernel.mesh(body.shape) : null;
+    const shown = r.bodies.map((b) => isShown(doc, bodyKey(b.id)));
+    const mesh = meshOf(r, shown);
     const payload: RebuildPayload = {
       seq,
       features: r.features,
+      bodies: r.bodies.map((b, i) => ({ id: b.id, name: b.name, reference: b.reference, shown: shown[i]!, face0: b.face0, faces: b.faces, volume: kernel.massProps(b.shape).volume })),
       mesh,
       faceNames: body?.names.faces ?? [],
       faceFingerprints: body ? body.topology.faces.map((_, i) => faceFingerprint(body.topology, i)) : [],
@@ -97,7 +122,7 @@ const api: KernelApi = {
       vertexFingerprints: body ? body.topology.vertices.map((_, i) => vertexFingerprint(body.topology, i)) : [],
       frames: r.frames,
       sketchGeometry: new Map([...r.sketches].map(([id, s]) => [id, s.solved.geometry])),
-      mass: body ? kernel.massProps(body.shape) : null,
+      mass: massOf(r),
       totalMs: r.totalMs,
     };
     const arrays = mesh ? [mesh.positions, mesh.normals, mesh.indices, mesh.faceRanges, mesh.edgePoints, mesh.edgeRanges] : [];
@@ -117,7 +142,16 @@ const api: KernelApi = {
     await api.init();
     const r = regen.rebuild(doc);
     if (!r.body) throw new Error('沒有可輸出的本體');
-    return exportPartStep(kernel, r.body.shape, name);
+    // a reference body is a design aid, not part of the part (C7.1)
+    const own = r.bodies.filter((b) => !b.reference);
+    if (own.length === 0) throw new Error(t('body.exportNone'));
+    if (own.length === r.bodies.length) return exportPartStep(kernel, r.body.shape, name);
+    const joined = kernel.join(own.map((b) => b.shape));
+    try {
+      return exportPartStep(kernel, joined, name);
+    } finally {
+      kernel.release(joined);
+    }
   },
 
   async buildPart(key: string, bytes: Uint8Array, onStage?: (stage: PartStage) => void): Promise<PartBuildPayload> {

@@ -17,7 +17,7 @@
 ### 0.2 接手藍圖之後的工作
 
 1. §2 文件地圖的藍圖那一列已改成 [docs/blueprint.md](docs/blueprint.md)。
-2. **Phase 3 的里程碑與驗收標準**：[docs/phase3-plan.md](docs/phase3-plan.md)。§6 的決定 1–6 使用者都已決定（2026-09-30）；**§5 的驗收數值（對稱差體積 < 1e-6 等）是我的建議值，使用者暫時認定為 Pass（2026-10-01）**：先照做，3a-10 之前若樣本顯示不合理再調整。3a-0、3a-pre、3a-i18n、3a-1、3a-2 已完成，下一個是 3a-3 多本體。
+2. **Phase 3 的里程碑與驗收標準**：[docs/phase3-plan.md](docs/phase3-plan.md)。§6 的決定 1–6 使用者都已決定（2026-09-30）；**§5 的驗收數值（對稱差體積 < 1e-6 等）是我的建議值，使用者暫時認定為 Pass（2026-10-01）**：先照做，3a-10 之前若樣本顯示不合理再調整。3a-0、3a-pre、3a-i18n、3a-1、3a-2、3a-3 已完成（3a-3 尚未提交），下一個是 3a-4 草圖工具 P1（依你的樣本狀況可調整順序）。
 
 ### 0.3 不在版本庫、只存在某台電腦的東西
 
@@ -77,6 +77,7 @@
 | [phase0-verification.md](docs/phase0-verification.md) | Phase 0 驗收紀錄與 SW 人工核對步驟 |
 | [phase1-verification.md](docs/phase1-verification.md) | Phase 1 驗收紀錄：三個示範零件、金樣與 TNP、驗收中發現的問題 |
 | [phase3-plan.md](docs/phase3-plan.md) | Phase 3 的里程碑、驗收標準、需要的樣本與決定（決定 1–6 已確認；§5 數值暫時認定為 Pass） |
+| [ADR 0022](docs/adr/0022-multiple-bodies.md) | 多本體（3a-3，Schema 10）：本體的身分與切開的編號、名稱不加本體前綴、合併結果與除料切開的行為、組合特徵、參考本體、合併視圖讓其餘程式不必知道有幾個本體、本體的隱藏要重算 |
 | [ADR 0021](docs/adr/0021-direct-editing-and-import-repair.md) | 直接編輯與輸入修復（3a-2，Schema 9）：刪除面（Defeaturing）與「刪除鑽孔」的意圖、移動面的兩種做法（掃出／延伸板）與拒絕的情形、只重新分組鄰面、輸入診斷與縫合（容差存在特徵上）、置換面未做 |
 | [ADR 0020](docs/adr/0020-expressions-and-variables.md) | 運算式、全域變數與檔案屬性（3a-1，Schema 8）：帶量綱的求值、`D1@草圖1` 引用、循環偵測、先解析成數字再交給求解器、改名連動、由運算式推導父子關係、方程式與檔案屬性對話框 |
 | 本文件 | 狀態、待辦、下一步、約定 |
@@ -108,7 +109,8 @@
 - **多語系機制已完成（2026-09-30，ADR 0019）**：新套件 `@3db/i18n`（**在新電腦或 pull 之後要再 `npm install`，工作區才會連上它；開發伺服器也要重啟**）。新的使用者可見文字一律 `t()`，寫進 `packages/i18n/src/zh-TW/`；`npm run check` 多一道 `lint:i18n`，既有的 639 行中文字串記在 `scripts/i18n-baseline.json`，只能減少。英文翻譯與設定畫面留到 3a-9。
 - **3a-1 運算式與變數已完成（2026-09-30，ADR 0020）**：**Schema 升為 8**（v7 是 D4.6 的 `visibility`）。`packages/model/src/expr/`（解析器與求值）、`params.ts`（變數與尺寸的分析、解析、相依、改名連動）；`Regenerator.rebuild` 與草圖求解前先把運算式解析成數字，PlaneGCS 與 OCCT 沒有改。新的介面文字都走 `t()`。
 - **3a-2 輸入修復與直接編輯已實作（2026-10-01，ADR 0021，`78e0cad`）**：**Schema 升為 9**。「特徵」分頁多了「刪除面」（`BRepAlgoAPI_Defeaturing`，含「刪除鑽孔」勾選，存成意圖 `hole`，重算時由模型找出孔壁的另一半、孔底、孔口倒角）與「移動面」（平面，沿外法向；鄰面都垂直時掃出該面，否則延伸板；相切、非凸又有斜鄰面、往內移超過厚度都拒絕並說明）；輸入本體的屬性管理員多了診斷報告與「縫合容差」（只有曲面的檔案縫成實體，縫不起來就說還有幾條邊沒接上）。置換面使用者決定先不做。實作在 `packages/kernel/src/kernel.ts`（`deleteFaces`、`moveFace`、`repairImport`）、`packages/regen/src/engine.ts`（`deleteFace`、`moveFace`、`holeFaces`、匯入快取以雜湊加容差為鍵）、`packages/model`（兩種特徵、`setFaces`、`setMoveFace`、`setImportOptions`）。
-- **檢查**：**438 項測試通過、20 項需要樣本而略過**（型別、分層、i18n、測試），`vite build` 成功（2026-10-01，在 `D:` 磁碟上，NTFS，`npm install` 的連結正常）。上一個提交（3a-1）是 381 項／10 項略過。真實 STEP 的 10 項（`tests/phase3/real-sample-edit.test.ts`，9 項執行、1 項略過）要設 `SW_SAMPLE_DIR`，約 10 分鐘，全過。草圖效能預算測試（`packages/sketch/test/perf.test.ts`）在機器同時有別的負載時會超過 16 ms，安靜時過（§6「效能測試」）。（2E 的檢查在 `F:` 磁碟上以暫存設定執行，原因見 §6「工作區連結」。）
+- **3a-3 多本體已實作（2026-10-01，ADR 0022，尚未提交）**：**Schema 升為 10**。重算的狀態是一串本體（`packages/regen/src/bodies.ts` 的 `Bodies`），`RebuildResult.body` 仍是「所有本體接起來的視圖」（只有一個本體時就是它），另有 `RebuildResult.bodies`；填料的「合併結果」（預設合併接觸的本體，沒接觸就成為新本體）、除料作用於碰到的所有本體並把切開的幾塊各成一個本體、「組合」特徵（加入／減除／共同）、參考本體（不計質量與零件 STEP）、本體的隱藏／重新命名；輸入的多實體 STEP 每個實體一個本體。名稱沒有加本體前綴（ADR 0022 決策 2）。`kernel.splitSolids／join／clone／solidCount`、`naming.nameFromFaces` 是新的。
+- **檢查**：**472 項測試通過、20 項需要樣本而略過**（3a-3 之後；3a-2 之後是 438 項）（型別、分層、i18n、測試），`vite build` 成功（2026-10-01，在 `D:` 磁碟上，NTFS，`npm install` 的連結正常）。上一個提交（3a-1）是 381 項／10 項略過。真實 STEP 的 10 項（`tests/phase3/real-sample-edit.test.ts`，9 項執行、1 項略過）要設 `SW_SAMPLE_DIR`，約 10 分鐘，全過。草圖效能預算測試（`packages/sketch/test/perf.test.ts`）在機器同時有別的負載時會超過 16 ms，安靜時過（§6「效能測試」）。（2E 的檢查在 `F:` 磁碟上以暫存設定執行，原因見 §6「工作區連結」。）
 
 ## 4. 如何執行
 
@@ -527,7 +529,10 @@ npm run build        # 正式版建置
 - 重算超過 60 秒（OCCT 卡住）會換掉 Worker 並說明；開發時可用 `store.rebuildLimitMs = 8000` 縮短，用產品件的 `import1:f254` 重現（見 ADR 0021 §9）。
 - 瀏覽器腳本：`await import('/@fs/<檢出路徑>/tests/e2e/phase3-direct-edit.js?' + Date.now())`，再 `await __d3.deleteFillet()`、`moveFace()`、`refuseNextToFillet()`；`importRepair()` 需要在 127.0.0.1:5393 提供 `faces-only.step` 與 `gapped.step` 的只讀靜態伺服器（由 `tests/support/stepSamples.ts` 製造）。真實 STEP：`$env:SW_SAMPLE_DIR='C:\Users\ws61\Downloads\SW樣本'; npx vitest run tests/phase3/real-sample-edit.test.ts`（約 10 分鐘，每次重算 3–6 秒）。
 
-**下一步：3a-3 多本體**（C7.1、C7.2、D4.6 的本體部分；命名文法加本體限定，見 phase3-plan §3）。phase3-plan §5 的驗收數值已暫時認定為 Pass。已知的 Phase 3 相關事項：- 3a：置換面（C10.2）使用者決定先不做；移動面只做平面的偏移（沒有平移 XYZ 與旋轉）；Defeaturing 對某些面會跑很久（見 ADR 0021 §9），有時間上限保護但沒有真正解決；真實的壞 STEP 檔要補一個（目前只有製造的樣本）。
+**3a-3 多本體已實作（2026-10-01，ADR 0022，尚未提交）。要驗收的（使用者尚未實機確認）：** 畫兩個分開的塊 → 設計樹出現「實體(2)」；第三個塊與第一個重疊，在伸長的屬性管理員取消「合併結果」→ 第三個本體；「特徵」分頁的「組合」選類型、主要本體與要組合的本體（也可以在圖面點選面）；本體列的眼睛隱藏後圖面看不到也點不到；雙擊本體列重新命名；右鍵「設為參考本體」後質量扣掉它；除料把一個本體切成兩塊會變成兩個本體（最大的保留原 id，另一個叫 `<除料>#2`）；存檔重開仍在。瀏覽器腳本：`await import('/@fs/<檢出路徑>/tests/e2e/phase3-bodies.js?' + Date.now())`，再 `await __b.all()`。
+
+**下一步：3a-4 草圖工具 P1**（C1.8 C1.9 C1.15–C1.19 C1.26 C1.28 C1.29 C1.34 C1.35 A2.5 D7.2，見 phase3-plan §3）。phase3-plan §5 的驗收數值已暫時認定為 Pass。已知的 Phase 3 相關事項：
+- 3a：置換面（C10.2）使用者決定先不做；移動面只做平面的偏移（沒有平移 XYZ 與旋轉）；Defeaturing 對某些面會跑很久（見 ADR 0021 §9），有時間上限保護但沒有真正解決；真實的壞 STEP 檔要補一個（目前只有製造的樣本）。
 - 3b：次組合件（剛性次組合件 C15.4）、零組件複製排列、爆炸視圖、零件表、干涉檢查、STEP 組合件輸入。
 - Phase 2 留下的：拖曳時碰撞偵測（Phase 4a）、沿著組合件 XYZ／圖元的移動、STEP 顏色（F1.3）。
 - 已查明（§10 部分驗收）：自由曲面 STEP 往返的體積差 3.5e-6 是曲線修剪範圍的一次性微調，形狀沒變，不需修改。

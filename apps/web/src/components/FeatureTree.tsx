@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
-import { isHideable, isShown, type Feature, type Id } from '@3db/model';
+import { t } from '@3db/i18n';
+import { bodyKey, isHideable, isShown, type Feature, type Id } from '@3db/model';
 import { ownerFeatures } from '@3db/naming';
 import { dependencies } from '@3db/regen/dag';
 import type { FeatureResult } from '@3db/regen';
@@ -11,6 +12,13 @@ interface Menu {
   x: number;
   y: number;
   feature: Feature;
+}
+
+/** The context menu of a body (C7.1). */
+interface BodyMenu {
+  x: number;
+  y: number;
+  id: Id;
 }
 
 /**
@@ -27,16 +35,22 @@ export function FeatureTree() {
   const name = useDocumentName();
   const returnTo = useStore((s) => s.returnTo);
   const [menu, setMenu] = useState<Menu | null>(null);
+  const [bodyMenu, setBodyMenu] = useState<BodyMenu | null>(null);
+  /** The body whose name is being typed. */
+  const [renaming, setRenaming] = useState<Id | null>(null);
   const [relations, setRelations] = useState<Feature | null>(null);
   const [dragIndex, setDragIndex] = useState<number | null>(null);
   const listRef = useRef<HTMLOListElement>(null);
 
   useEffect(() => {
-    if (!menu) return;
-    const close = () => setMenu(null);
+    if (!menu && !bodyMenu) return;
+    const close = () => {
+      setMenu(null);
+      setBodyMenu(null);
+    };
     window.addEventListener('pointerdown', close);
     return () => window.removeEventListener('pointerdown', close);
-  }, [menu]);
+  }, [menu, bodyMenu]);
 
   const statusOf = (id: Id): FeatureResult | undefined => result?.features.find((f) => f.id === id);
   const rollback = doc.rollbackIndex ?? doc.features.length;
@@ -87,6 +101,8 @@ export function FeatureTree() {
     );
   };
 
+  const bodies = result?.bodies ?? [];
+
   const act = (fn: () => void) => () => {
     setMenu(null);
     fn();
@@ -117,6 +133,59 @@ export function FeatureTree() {
             {eye(d.id)}
           </li>
         ))}
+        {bodies.length > 0 && (
+          <li key="bodies" className="tree-row folder">
+            <Icon name="body" />
+            <span className="name">{t('tree.bodies', { n: bodies.length })}</span>
+          </li>
+        )}
+        {bodies.map((b) => {
+          const key = bodyKey(b.id);
+          const tip = t('tree.bodyTip', { name: b.name, volume: Math.round(b.volume * 1000) / 1000 });
+          return (
+            <li
+              key={key}
+              className={`tree-row body ${selected === key ? 'selected' : ''} ${b.shown ? '' : 'suppressed'}`}
+              title={b.reference ? `${tip}\n${t('tree.referenceTip')}` : tip}
+              onClick={() => store.select(key)}
+              onDoubleClick={() => !editing && setRenaming(b.id)}
+              onContextMenu={(e) => {
+                e.preventDefault();
+                if (editing) return;
+                store.select(key);
+                setBodyMenu({ x: e.clientX, y: e.clientY, id: b.id });
+              }}
+            >
+              <Icon name="body" />
+              {renaming === b.id ? (
+                <input
+                  className="rename"
+                  autoFocus
+                  defaultValue={b.name}
+                  onClick={(e) => e.stopPropagation()}
+                  onBlur={(e) => {
+                    store.setBody(b.id, { name: e.target.value });
+                    setRenaming(null);
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      store.setBody(b.id, { name: e.currentTarget.value });
+                      setRenaming(null);
+                    }
+                    if (e.key === 'Escape') setRenaming(null);
+                    e.stopPropagation();
+                  }}
+                />
+              ) : (
+                <span className="name">
+                  {b.name}
+                  {b.reference && t('tree.reference')}
+                </span>
+              )}
+              {eye(key)}
+            </li>
+          );
+        })}
         {doc.features.flatMap((f, i) => {
           const r = statusOf(f.id);
           const rolledBack = i >= barIndex;
@@ -188,6 +257,23 @@ export function FeatureTree() {
           {(statusOf(menu.feature.id)?.status === 'error' || statusOf(menu.feature.id)?.warnings) && <li onClick={act(() => store.showWhatsWrong(true))}>錯誤為何？</li>}
         </ul>
       )}
+
+      {bodyMenu &&
+        (() => {
+          const b = bodies.find((x) => x.id === bodyMenu.id);
+          if (!b) return null;
+          const done = (fn: () => void) => () => {
+            setBodyMenu(null);
+            fn();
+          };
+          return (
+            <ul className="context-menu" style={{ left: bodyMenu.x, top: bodyMenu.y }} onPointerDown={(e) => e.stopPropagation()}>
+              <li onClick={done(() => store.setVisibility([bodyKey(b.id)], !b.shown))}>{t(b.shown ? 'tree.hide' : 'tree.show')}</li>
+              <li onClick={done(() => setRenaming(b.id))}>{t('tree.rename')}</li>
+              <li onClick={done(() => store.setBody(b.id, { reference: !b.reference }))}>{t(b.reference ? 'tree.unmakeReference' : 'tree.makeReference')}</li>
+            </ul>
+          );
+        })()}
 
       {relations && <Relations feature={relations} onClose={() => setRelations(null)} />}
     </div>

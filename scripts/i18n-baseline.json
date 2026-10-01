@@ -35,7 +35,7 @@
   "packages/model/src/sketch-rules.ts": 15,
   "packages/model/src/templates.ts": 6,
   "packages/regen/src/assembly.ts": 9,
-  "packages/regen/src/engine.ts": 39,
+  "packages/regen/src/engine.ts": 36,
   "packages/sketch/src/planegcs.ts": 7,
   "packages/sketch/src/profiles.ts": 2
 }

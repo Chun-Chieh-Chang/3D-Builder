@@ -6,7 +6,9 @@ import {
   isDatumPlaneName,
   planeFrame,
   resolveDoc,
+  bodyFeature,
   type ChamferFeature,
+  type CombineFeature,
   type DeleteFaceFeature,
   type ExtrudeFeature,
   type Feature,
@@ -24,7 +26,8 @@ import {
 } from '@3db/model';
 import { findProfiles, type ProfileResult, type SketchSolver, type SketchStatus, type SolvedSketch } from '@3db/sketch';
 import { KernelError, type FaceOrigin, type ImportDiagnostics, type Kernel, type OpResult, type ShapeId, type Topology } from '@3db/kernel';
-import { nameElements, resolveRef, type Candidate, type ElementNames } from '@3db/naming';
+import { nameElements, nameFromFaces, resolveRef, type Candidate, type ElementNames } from '@3db/naming';
+import { Bodies, type BodyState, type BodyView } from './bodies';
 
 export type FeatureStatus = 'ok' | 'error' | 'suppressed' | 'rolledBack';
 
@@ -47,18 +50,26 @@ export interface FeatureResult {
   ms: number;
 }
 
-/** A body plus its persistent names — the state that flows forward through the history. */
-export interface BodyState {
+/** One body of the result (C7.1): where its elements are in the numbering of RebuildResult.body, and what the document says of it. */
+export interface BodyInfo {
+  id: Id;
+  /** The name the document gave it, else the name of the feature that made it (伸長1, 除料1#2). */
+  name: string;
+  reference: boolean;
   shape: ShapeId;
-  topology: Topology;
-  names: ElementNames;
-  /** Feature that produced this state. */
-  by: Id;
+  face0: number;
+  faces: number;
+  edge0: number;
+  edges: number;
+  vertex0: number;
+  vertices: number;
 }
 
 export interface RebuildResult {
   features: FeatureResult[];
-  body: BodyState | null;
+  /** All the bodies seen as one: the body itself when there is one (odies), a view of them all (a compound) when there are several. */
+  body: BodyView | null;
+  bodies: BodyInfo[];
   sketches: Map<Id, { frame: PlaneFrame; solved: SolvedSketch; profiles: ProfileResult }>;
   /**
    * Plane of every sketch that could be placed, including the sketch right at the `until` limit
@@ -199,6 +210,8 @@ export class Regenerator {
   private diagnostics: ImportDiagnostics | null = null;
   /** Reference planes built so far in this rebuild (C3.2). */
   private planes = new Map<Id, PlaneFrame>();
+  /** The imported files read so far in this rebuild: a second read of one gets a copy of its own. */
+  private usedImports = new Set<string>();
   /**
    * Imported files by SHA-256. Reading a STEP file is slow and depends on nothing but its bytes, so
    * each one is read once and kept across rebuilds — a cache of derived data, not a second truth.
@@ -230,7 +243,7 @@ export class Regenerator {
     const sketches: RebuildResult['sketches'] = new Map();
     const frames: RebuildResult['frames'] = new Map();
     const results: FeatureResult[] = [];
-    let body: BodyState | null = null;
+    let set = new Bodies([], this.kernel);
     this.planes = new Map();
 
     // Every expression becomes the number it stands for before anything is built: the solver and the kernel
@@ -243,6 +256,7 @@ export class Regenerator {
       if ('shape' in i) this.kernel.release(i.shape);
       this.imports.delete(key);
     }
+    this.usedImports = new Set();
     resolved.features.forEach((feature, index) => {
       const t = performance.now();
       this.warnings = [];
@@ -252,7 +266,7 @@ export class Regenerator {
       if (index >= limit) {
         if (index === limit && feature.type === 'sketch') {
           try {
-            frames.set(feature.id, this.frame(feature, body));
+            frames.set(feature.id, this.frame(feature, set));
           } catch {
             // the edited sketch's plane is gone: the sketch reports it once it is evaluated
           }
@@ -265,7 +279,7 @@ export class Regenerator {
       try {
         switch (feature.type) {
           case 'sketch': {
-            const s = this.sketch(feature, body);
+            const s = this.sketch(feature, set);
             frames.set(feature.id, s.frame);
             const info = { status: s.solved.status, dof: s.solved.dof, conflicting: s.solved.conflicting, redundant: s.solved.redundant, problems: s.profiles.problems };
             if (s.solved.status === 'failed' || s.solved.status === 'over') {
@@ -275,7 +289,7 @@ export class Regenerator {
             return done({ status: 'ok', sketch: info });
           }
           case 'refPlane': {
-            const frame = this.refPlane(feature, body);
+            const frame = this.refPlane(feature, set);
             this.planes.set(feature.id, frame);
             frames.set(feature.id, frame);
             return done({ status: 'ok' });
@@ -286,23 +300,25 @@ export class Regenerator {
           case 'chamfer':
           case 'deleteFace':
           case 'moveFace':
+          case 'combine':
           case 'importedBody': {
             const next =
               feature.type === 'extrude'
-                ? this.extrude(feature, sketches, body)
+                ? this.extrude(feature, sketches, set)
                 : feature.type === 'revolve'
-                  ? this.revolve(feature, sketches, body)
+                  ? this.revolve(feature, sketches, set)
                   : feature.type === 'fillet'
-                    ? this.fillet(feature, body)
+                    ? this.fillet(feature, set)
                     : feature.type === 'chamfer'
-                      ? this.chamfer(feature, body)
+                      ? this.chamfer(feature, set)
                       : feature.type === 'deleteFace'
-                        ? this.deleteFace(feature, body)
+                        ? this.deleteFace(feature, set)
                         : feature.type === 'moveFace'
-                          ? this.moveFace(feature, body)
-                          : this.importedBody(feature, doc, body);
-            if (body && body.shape !== next.shape) this.kernel.release(body.shape);
-            body = next;
+                          ? this.moveFace(feature, set)
+                          : feature.type === 'combine'
+                            ? this.combineBodies(feature, set)
+                            : this.importedBody(feature, doc, set);
+            set = this.advance(set, next);
             return done({ status: 'ok' });
           }
         }
@@ -313,8 +329,42 @@ export class Regenerator {
       }
     });
 
-    if (body) this.owned.push((body as BodyState).shape);
-    return { features: results, body, sketches, frames, totalMs: performance.now() - t0 };
+    // The result keeps the bodies and, for several, the compound that is their view.
+    const view = set.view;
+    const compound = set.keep();
+    if (compound !== null) this.owned.push(compound);
+    for (const b of set.list) this.owned.push(b.shape);
+    const bodies: BodyInfo[] = view
+      ? view.parts.map((p, i) => {
+          const b = set.list[i]!;
+          const make = resolved.features.find((x) => x.id === bodyFeature(b.id));
+          const piece = b.id.includes('#') ? `#${b.id.split('#')[1]}` : '';
+          return {
+            id: b.id,
+            name: doc.bodies[b.id]?.name ?? `${make?.name ?? bodyFeature(b.id)}${piece}`,
+            reference: doc.bodies[b.id]?.reference === true,
+            shape: b.shape,
+            face0: p.face0,
+            faces: p.faces,
+            edge0: p.edge0,
+            edges: p.edges,
+            vertex0: p.vertex0,
+            vertices: p.vertices,
+          };
+        })
+      : [];
+    return { features: results, body: view, bodies, sketches, frames, totalMs: performance.now() - t0 };
+  }
+
+  /**
+   * The bodies after a feature: the old ones that are not among the new are let go (a feature makes the shapes it keeps
+   * and says which it did away with by leaving them out), and so is the old view of them all.
+   */
+  private advance(old: Bodies, next: BodyState[]): Bodies {
+    const kept = new Set(next.map((b) => b.shape));
+    for (const b of old.list) if (!kept.has(b.shape)) this.kernel.release(b.shape);
+    old.release();
+    return new Bodies(next, this.kernel);
   }
 
   private resolve(ref: Ref, body: BodyState, what: string): number {
@@ -325,10 +375,10 @@ export class Regenerator {
     this.noteFingerprint(r.via, what, body.names[ref.kind === 'edge' ? 'edges' : ref.kind === 'vertex' ? 'vertices' : 'faces'][r.index]!);
     return r.index;
   }
-
   /** A reference that only its geometry could pick out is a guess the user should confirm (never silent). */
   private noteFingerprint(via: string, what: string, found: string): void {
-    if (via === 'fingerprint') this.warnings.push(`${what}依幾何指紋找到「${found}」（同名的有好幾個），請確認位置正確`);
+    const note = `${what}依幾何指紋找到「${found}」（同名的有好幾個），請確認位置正確`;
+    if (via === 'fingerprint' && !this.warnings.includes(note)) this.warnings.push(note);
   }
 
   // ------------------------------------------------------------------ sketches (C1.1)
@@ -337,7 +387,7 @@ export class Regenerator {
    * A plane reference: a default plane, a reference plane built earlier in this rebuild, or a planar
    * face of the model so far.
    */
-  private planeOf(ref: Ref, body: BodyState | null, labels: { what: string; notPlanar: string }): PlaneFrame {
+  private planeOf(ref: Ref, set: Bodies, labels: { what: string; notPlanar: string }): PlaneFrame {
     if (ref.kind === 'datum') {
       if (isDatumPlaneName(ref.name)) return DATUM_PLANES[ref.name];
       const plane = this.planes.get(ref.name);
@@ -345,6 +395,7 @@ export class Regenerator {
       return plane;
     }
     if (ref.kind !== 'face') throw new FeatureError('必須選擇基準面或平面');
+    const body = set.view;
     if (!body) throw new FeatureError(`${labels.what}不存在：它之前沒有本體`);
     const face = body.topology.faces[this.resolve(ref, body, labels.what)]!;
     if (face.surface !== 'plane' || !face.normal) throw new FeatureError(labels.notPlanar);
@@ -352,8 +403,8 @@ export class Regenerator {
   }
 
   /** Where a sketch lies (C1.1): a default plane, a reference plane, or a planar face of the model before it. */
-  private frame(f: SketchFeature, body: BodyState | null): PlaneFrame {
-    return this.planeOf(f.plane, body, { what: '草圖所在的面', notPlanar: '草圖只能放在平面上' });
+  private frame(f: SketchFeature, set: Bodies): PlaneFrame {
+    return this.planeOf(f.plane, set, { what: '草圖所在的面', notPlanar: '草圖只能放在平面上' });
   }
 
   /**
@@ -361,17 +412,18 @@ export class Regenerator {
    * (at 0° parallel to it); or through three vertices. The frame follows the planeFrame rules, so a
    * sketch on it gets the same axes the same plane would get anywhere else.
    */
-  private refPlane(f: RefPlaneFeature, body: BodyState | null): PlaneFrame {
+  private refPlane(f: RefPlaneFeature, set: Bodies): PlaneFrame {
     const d = f.def;
     const sign = d.reverse ? -1 : 1;
     const labels = { what: '參考面', notPlanar: '參考面必須是平面' };
     switch (d.mode) {
       case 'offset': {
-        const base = this.planeOf(d.plane, body, labels);
+        const base = this.planeOf(d.plane, set, labels);
         return { ...base, origin: add(base.origin, base.normal, evalLength(d.distance) * sign) };
       }
       case 'angle': {
-        const base = this.planeOf(d.plane, body, labels);
+        const base = this.planeOf(d.plane, set, labels);
+        const body = set.view;
         if (!body) throw new FeatureError('旋轉軸不存在：它之前沒有本體');
         const edge = body.topology.edges[this.resolve(d.axis, body, '旋轉軸')]!;
         if (edge.curve !== 'line' || !edge.dir) throw new FeatureError('旋轉軸必須是直線邊線');
@@ -383,6 +435,7 @@ export class Regenerator {
       }
       case 'threePoint': {
         if (d.points.length < 3) throw new FeatureError('三點基準面需要三個頂點');
+        const body = set.view;
         if (!body) throw new FeatureError('頂點不存在：它之前沒有本體');
         const [a, b, c] = d.points.map((ref, i) => body.topology.vertices[this.resolve(ref, body, `第 ${i + 1} 點`)]!.point) as [Vec3, Vec3, Vec3];
         const normal = cross(sub(b, a), sub(c, a));
@@ -394,8 +447,8 @@ export class Regenerator {
     }
   }
 
-  private sketch(f: SketchFeature, body: BodyState | null) {
-    const frame = this.frame(f, body);
+  private sketch(f: SketchFeature, set: Bodies) {
+    const frame = this.frame(f, set);
     const solved = this.solver.solve(f);
     const profiles = solved.status === 'failed' ? { regions: [], problems: [] } : findProfiles(f, solved);
     return { frame, solved, profiles };
@@ -419,9 +472,10 @@ export class Regenerator {
     return far;
   }
 
-  private extrude(f: ExtrudeFeature, sketches: RebuildResult['sketches'], body: BodyState | null): BodyState {
+  private extrude(f: ExtrudeFeature, sketches: RebuildResult['sketches'], set: Bodies): BodyState[] {
     const s = this.profileOf(sketches, f.sketch);
     if (f.dir2) throw new FeatureError('方向 2 排在後續階段（P1）');
+    const body = set.view;
     if (f.op === 'cut' && !body) throw new FeatureError('除料需要既有的本體');
     const n = s.frame.normal;
     const d = f.dir1;
@@ -444,19 +498,22 @@ export class Regenerator {
         const length = this.reach(body, s.frame.origin, dir);
         if (length <= 1e-9) throw new FeatureError('這個方向上沒有本體（試試反轉方向）');
         const vector = add([0, 0, 0], dir, length * 1.01 + 1);
-        tool =
-          d.type === 'throughAll'
-            ? this.kernel.extrude(s.frame, s.profiles.regions, vector)
-            : this.kernel.extrude(s.frame, s.profiles.regions, vector, 0, { target: body.shape, face: this.resolve(d.face, body, '終止面') });
+        if (d.type === 'throughAll') {
+          tool = this.kernel.extrude(s.frame, s.profiles.regions, vector);
+        } else {
+          // the end face belongs to one body: the sweep is trimmed at that body
+          const owner = set.locate('face', this.resolve(d.face, body, '終止面'));
+          tool = this.kernel.extrude(s.frame, s.profiles.regions, vector, 0, { target: owner.body.shape, face: owner.local });
+        }
         break;
       }
     }
-    return this.combine(f.id, f.op, tool, { featureId: f.id, sketchId: f.sketch }, body);
+    return this.apply(f.id, f.op, tool, { featureId: f.id, sketchId: f.sketch }, set.list, f.merge !== false);
   }
 
-  private revolve(f: RevolveFeature, sketches: RebuildResult['sketches'], body: BodyState | null): BodyState {
+  private revolve(f: RevolveFeature, sketches: RebuildResult['sketches'], set: Bodies): BodyState[] {
     const s = this.profileOf(sketches, f.sketch);
-    if (f.op === 'cut' && !body) throw new FeatureError('除料需要既有的本體');
+    if (f.op === 'cut' && !set.view) throw new FeatureError('除料需要既有的本體');
     const axis = s.solved.geometry.get(f.axis);
     if (axis?.type !== 'line') throw new FeatureError('旋轉軸不存在，請重新選擇');
     const [a, b] = [axis.a, axis.b];
@@ -481,46 +538,168 @@ export class Regenerator {
       normal: rotate(fr.normal, k, turn),
     };
     const tool = this.kernel.revolve(frame, s.profiles.regions, { origin, dir: k }, angle);
-    return this.combine(f.id, f.op, tool, { featureId: f.id, sketchId: f.sketch }, body);
+    return this.apply(f.id, f.op, tool, { featureId: f.id, sketchId: f.sketch }, set.list, f.merge !== false);
+  }
+
+  // ------------------------------------------------------------------ several bodies (C7)
+
+  /**
+   * Names a new tool body by how it was swept, then adds it to the bodies (boss) or removes it from them (cut). A boss
+   * merges with every body it touches (`merge`, the default) and is a body of its own when it touches none, or when it is
+   * not to merge; a cut works on every body it reaches. Faces of a result inherit the names of the faces they came from,
+   * on either side. Returns the bodies after the feature; the shapes of those that were changed are new, the old ones are
+   * the caller's to let go (`advance`).
+   */
+  private apply(featureId: Id, op: 'boss' | 'cut', tool: OpResult, context: { featureId: Id; sketchId?: Id }, list: readonly BodyState[], merge: boolean, bodyId: Id = featureId): BodyState[] {
+    const k = this.kernel;
+    const toolTopology = k.topology(tool.shape);
+    const toolNames = nameElements(tool.faceOrigins, toolTopology, context);
+    const made: ShapeId[] = [];
+    try {
+      if (op === 'cut') {
+        const r = this.boolBodies(featureId, 'cut', list, tool.shape, toolNames, made);
+        k.release(tool.shape);
+        if (!r.changed) throw new FeatureError('除料沒有移除任何材料（試試反轉方向）');
+        if (r.out.length === 0) throw new FeatureError('除料移除了整個本體');
+        if (r.removed.length > 0) this.warnings.push(t('body.removedWhole', { names: r.removed.join(t('cmd.listSeparator')) }));
+        return r.out;
+      }
+      let acc: BodyState = { id: bodyId, shape: tool.shape, topology: toolTopology, names: toolNames, by: featureId };
+      if (!merge) return [...list, acc];
+      const out: BodyState[] = [];
+      let slot = -1;
+      for (const b of list) {
+        const r = k.boolean('fuse', b.shape, acc.shape);
+        // Bodies that touch come out of the fuse as one solid; bodies apart come out as two, and stay apart.
+        if (k.solidCount(r.shape) !== 1) {
+          k.release(r.shape);
+          out.push(b);
+          continue;
+        }
+        made.push(r.shape);
+        const topology = k.topology(r.shape);
+        const joined: BodyState = { id: slot < 0 ? b.id : acc.id, shape: r.shape, topology, names: nameElements(r.faceOrigins, topology, { featureId, input: concatNames(b.names, acc.names) }), by: featureId };
+        if (acc.shape !== tool.shape) k.release(acc.shape); // an earlier step of this very merge
+        acc = joined;
+        if (slot < 0) {
+          slot = out.length;
+          out.push(acc);
+        } else out[slot] = acc;
+      }
+      if (slot < 0) out.push(acc);
+      else k.release(tool.shape);
+      return out;
+    } catch (e) {
+      for (const s of made) k.release(s);
+      k.release(tool.shape); // the tool is the feature's own: whatever went wrong, it is not kept
+      throw e;
+    }
   }
 
   /**
-   * Names a new tool body by how it was swept, then adds it to (boss) or removes it from (cut) the
-   * body so far. Faces of the result inherit the names of the faces they came from, on either side.
+   * A boolean of every body in `list` with one tool shape, cut (what the tool takes away) or common (what it shares): a
+   * body the tool does not change stays as it is, one it takes entirely is gone (named in `removed`), and one that comes
+   * apart becomes several: the largest keeps the id, the others are `<feature>#2`, `#3` … in order of size. The shapes made
+   * are added to `made` so that a failure can let them go.
    */
-  private combine(featureId: Id, op: 'boss' | 'cut', tool: OpResult, context: { featureId: Id; sketchId?: Id }, body: BodyState | null): BodyState {
-    const toolTopology = this.kernel.topology(tool.shape);
-    const toolNames = nameElements(tool.faceOrigins, toolTopology, context);
-    if (!body) return { shape: tool.shape, topology: toolTopology, names: toolNames, by: featureId };
-    let r: OpResult;
-    try {
-      r = this.kernel.boolean(op === 'boss' ? 'fuse' : 'cut', body.shape, tool.shape);
-    } finally {
-      this.kernel.release(tool.shape);
-    }
-    if (op === 'cut') {
-      const before = this.kernel.massProps(body.shape).volume;
-      const after = this.kernel.massProps(r.shape).volume;
+  private boolBodies(featureId: Id, op: 'cut' | 'common', list: readonly BodyState[], toolShape: ShapeId, toolNames: ElementNames, made: ShapeId[], next = { piece: 2 }): { out: BodyState[]; changed: boolean; removed: Id[] } {
+    const k = this.kernel;
+    const out: BodyState[] = [];
+    const removed: Id[] = [];
+    let changed = false;
+    for (const b of list) {
+      const r = k.boolean(op, b.shape, toolShape);
+      const before = k.massProps(b.shape).volume;
+      const after = k.massProps(r.shape).volume;
       if (after <= 1e-9 * before) {
-        this.kernel.release(r.shape);
-        throw new FeatureError('除料移除了整個本體');
+        k.release(r.shape);
+        removed.push(b.id);
+        changed = true;
+        continue;
       }
       if (Math.abs(before - after) <= 1e-9 * before) {
-        this.kernel.release(r.shape);
-        throw new FeatureError('除料沒有移除任何材料（試試反轉方向）');
+        k.release(r.shape);
+        out.push(b);
+        continue;
       }
+      changed = true;
+      const context = { featureId, input: concatNames(b.names, toolNames) };
+      if (k.solidCount(r.shape) <= 1) {
+        made.push(r.shape);
+        const topology = k.topology(r.shape);
+        out.push({ id: b.id, shape: r.shape, topology, names: nameElements(r.faceOrigins, topology, context), by: featureId });
+        continue;
+      }
+      // Named as the one result it came from, so the faces of the pieces keep the `#k` that told them apart there, then shared out.
+      const whole = nameElements(r.faceOrigins, k.topology(r.shape), context);
+      const pieces = k.splitSolids(r);
+      k.release(r.shape);
+      pieces.forEach((p, i) => {
+        made.push(p.shape);
+        const topology = k.topology(p.shape);
+        out.push({ id: i === 0 ? b.id : `${featureId}#${next.piece++}`, shape: p.shape, topology, names: nameFromFaces(p.faces.map((j) => whole.faces[j]!), topology), by: featureId });
+      });
     }
-    const topology = this.kernel.topology(r.shape);
-    return { shape: r.shape, topology, names: nameElements(r.faceOrigins, topology, { featureId, input: concatNames(body.names, toolNames) }), by: featureId };
+    return { out, changed, removed };
+  }
+
+  /** 「組合」 (C7.2): bodies added to the first, subtracted from it, or reduced to what they share with it. */
+  private combineBodies(f: CombineFeature, set: Bodies): BodyState[] {
+    const k = this.kernel;
+    const find = (ref: Ref, what: string): BodyState => {
+      if (!ref.name) throw new FeatureError(t('body.pick', { what }));
+      const b = set.list.find((x) => x.id === ref.name);
+      if (!b) throw new FeatureError(t('body.lost', { name: ref.name }), [{ ref, reason: 'missing', candidates: [] }]);
+      return b;
+    };
+    const main = find(f.main, t('body.main'));
+    if (f.tools.length === 0) throw new FeatureError(t('body.pickTools'));
+    const tools = f.tools.map((r) => find(r, t('body.tool')));
+    const made: ShapeId[] = [];
+    let pieces: BodyState[] = [main];
+    const next = { piece: 2 };
+    const drop = (old: readonly BodyState[], now: readonly BodyState[]) => {
+      // a shape made by an earlier tool of this feature and not kept is let go; the original bodies are the caller's
+      for (const b of old) if (b !== main && !now.some((x) => x.shape === b.shape)) k.release(b.shape);
+    };
+    try {
+      for (const tool of tools) {
+        if (f.op === 'add') {
+          const acc = pieces[0]!;
+          const r = k.boolean('fuse', acc.shape, tool.shape);
+          if (k.solidCount(r.shape) !== 1) {
+            k.release(r.shape);
+            throw new FeatureError(t('body.addApart', { name: tool.id }));
+          }
+          made.push(r.shape);
+          const topology = k.topology(r.shape);
+          const joined: BodyState = { id: main.id, shape: r.shape, topology, names: nameElements(r.faceOrigins, topology, { featureId: f.id, input: concatNames(acc.names, tool.names) }), by: f.id };
+          drop(pieces, [joined]);
+          pieces = [joined];
+        } else {
+          const r = this.boolBodies(f.id, f.op === 'subtract' ? 'cut' : 'common', pieces, tool.shape, tool.names, made, next);
+          if (!r.changed && f.op === 'subtract') throw new FeatureError(t('body.subtractNothing', { name: tool.id }));
+          if (r.out.length === 0) throw new FeatureError(t(f.op === 'subtract' ? 'body.subtractAll' : 'body.noCommon', { name: tool.id }));
+          drop(pieces, r.out);
+          pieces = r.out;
+        }
+      }
+    } catch (e) {
+      for (const s of made) k.release(s);
+      throw e;
+    }
+    // the result takes the place of the main body; the tools are used up
+    const used = new Set(tools.map((x) => x.id));
+    return set.list.flatMap((b) => (b === main ? pieces : used.has(b.id) ? [] : [b]));
   }
 
   // ------------------------------------------------------------------ imported bodies (F2.1)
 
   /**
-   * The solids of an imported file, added to the body so far. Their faces are named
-   * `<feature>:f<k>` by the order the file gives them, so the same file always names them the same.
+   * The solids of an imported file, each a body (and merged with the bodies it touches unless `merge` says not to). Their
+   * faces are named `<feature>:f<k>` by the order the file gives them, so the same file always names them the same.
    */
-  private importedBody(f: ImportedBodyFeature, doc: PartDoc, body: BodyState | null): BodyState {
+  private importedBody(f: ImportedBodyFeature, doc: PartDoc, set: Bodies): BodyState[] {
     const blob = doc.blobs.find((b) => b.id === f.blob);
     if (!blob) throw new FeatureError('輸入的資料不存在');
     const key = importKey(blob.sha256, f.sewTolerance);
@@ -539,14 +718,31 @@ export class Regenerator {
     if ('error' in imported) throw new FeatureError(imported.error);
     this.warnings.push(...imported.warnings);
     this.diagnostics = imported.diagnostics;
-    // The kept shape never becomes the body itself: the body is released on the next rebuild.
-    return this.combine(f.id, 'boss', { shape: this.kernel.copy(imported.shape), faceOrigins: imported.faceOrigins }, { featureId: f.id }, body);
+    // The kept shape never becomes a body itself: the bodies are released on the next rebuild. A second feature reading the
+    // same file gets a copy that shares nothing, or the faces of the two bodies would be counted once in a view of both.
+    const first = !this.usedImports.has(key);
+    this.usedImports.add(key);
+    const whole: OpResult = { shape: first ? this.kernel.copy(imported.shape) : this.kernel.clone(imported.shape), faceOrigins: imported.faceOrigins };
+    const pieces = this.kernel.solidCount(whole.shape) > 1 ? this.kernel.splitSolids(whole) : [whole];
+    if (pieces[0] !== whole) this.kernel.release(whole.shape);
+    let list: readonly BodyState[] = set.list;
+    try {
+      pieces.forEach((p, i) => {
+        list = this.apply(f.id, 'boss', p, { featureId: f.id }, list, f.merge !== false, i === 0 ? f.id : `${f.id}#${i + 1}`);
+      });
+    } catch (e) {
+      // what the pieces before the failing one made is not in the old bodies: let it go
+      const old = new Set(set.list.map((b) => b.shape));
+      for (const b of list) if (!old.has(b.shape)) this.kernel.release(b.shape);
+      throw e;
+    }
+    return [...list];
   }
 
   // ------------------------------------------------------------------ fillet and chamfer (C5.1, C5.3)
 
   private edgeIndices(refs: Ref[], body: BodyState): number[] {
-    if (refs.length === 0) throw new FeatureError('尚未選擇邊線');
+    if (refs.length === 0) throw new FeatureError(t('edit.noEdgePicked'));
     const indices: number[] = [];
     const unresolved: Unresolved[] = [];
     for (const ref of refs) {
@@ -556,13 +752,51 @@ export class Regenerator {
         this.noteFingerprint(r.via, '邊線', body.names.edges[r.index]!);
       } else unresolved.push({ ref, reason: r.reason, candidates: r.candidates });
     }
-    if (unresolved.length > 0) throw new FeatureError(`遺失參考：${unresolved.length} 條邊線找不到，請重新選擇`, unresolved);
+    if (unresolved.length > 0) throw new FeatureError(t('edit.edgesLost', { n: unresolved.length }), unresolved);
     return [...new Set(indices)];
+  }
+
+  /**
+   * Runs an edit on each body that holds some of the references. The references are found among all the bodies at once, so
+   * a lost one is reported with the nearest candidates of the whole model; each body is then given its own references
+   * (and finds them again by name). Bodies no reference points into are left as they are, in their place.
+   */
+  private perBody(set: Bodies, refs: Ref[], kind: 'face' | 'edge', none: string, lost: (n: number) => string, edit: (body: BodyState, mine: Ref[]) => BodyState): BodyState[] {
+    const view = set.view;
+    if (!view) throw new FeatureError(none);
+    if (refs.length === 0) throw new FeatureError(t(kind === 'edge' ? 'edit.noEdgePicked' : 'edit.noFacePicked'));
+    const owners = new Map<BodyState, Ref[]>();
+    const unresolved: Unresolved[] = [];
+    for (const ref of refs) {
+      const r = resolveRef(ref, view.names, view.topology);
+      if (!r.ok) {
+        unresolved.push({ ref, reason: r.reason, candidates: r.candidates });
+        continue;
+      }
+      // Among all the bodies a name may be shared (the pieces of a split face); the body alone then finds it by name.
+      this.noteFingerprint(r.via, kind === 'edge' ? '邊線' : t('edit.faceNoun'), view.names[kind === 'edge' ? 'edges' : 'faces'][r.index]!);
+      const { body } = set.locate(kind, r.index);
+      owners.set(body, [...(owners.get(body) ?? []), ref]);
+    }
+    if (unresolved.length > 0) throw new FeatureError(lost(unresolved.length), unresolved);
+    const done: BodyState[] = [];
+    try {
+      return set.list.map((b) => {
+        const mine = owners.get(b);
+        if (!mine) return b;
+        const edited = edit(b, mine);
+        done.push(edited);
+        return edited;
+      });
+    } catch (e) {
+      for (const b of done) this.kernel.release(b.shape);
+      throw e;
+    }
   }
 
   // ------------------------------------------------------------------ direct editing (C10.1, C10.2)
 
-  /** Faces of the model so far that the references name; lost ones are reported together, as for edges. */
+  /** Faces of the body that the references name; lost ones are reported together, as for edges. */
   private faceIndices(refs: Ref[], body: BodyState): number[] {
     if (refs.length === 0) throw new FeatureError(t('edit.noFacePicked'));
     const indices: number[] = [];
@@ -578,44 +812,48 @@ export class Regenerator {
     return [...new Set(indices)];
   }
 
-  /** A result whose faces came from the faces of the body before it: they keep those names. */
+  /** A result whose faces came from the faces of the body before it: they keep those names (and the body its id). */
   private edited(f: Feature, r: OpResult, body: BodyState): BodyState {
     const topology = this.kernel.topology(r.shape);
-    return { shape: r.shape, topology, names: nameElements(r.faceOrigins, topology, { featureId: f.id, input: body.names }), by: f.id };
+    return { id: body.id, shape: r.shape, topology, names: nameElements(r.faceOrigins, topology, { featureId: f.id, input: body.names }), by: f.id };
   }
 
-  private deleteFace(f: DeleteFaceFeature, body: BodyState | null): BodyState {
-    if (!body) throw new FeatureError(t('edit.noBodyForDelete'));
-    const picked = this.faceIndices(f.faces, body);
-    return this.edited(f, this.kernel.deleteFaces(body.shape, f.hole ? holeFaces(body.topology, picked) : picked), body);
-  }
-
-  private moveFace(f: MoveFaceFeature, body: BodyState | null): BodyState {
-    if (!body) throw new FeatureError(t('edit.noBodyForMove'));
-    const [face] = this.faceIndices([f.face], body);
-    return this.edited(f, this.kernel.moveFace(body.shape, face!, evalLength(f.distance)), body);
-  }
-
-  private fillet(f: FilletFeature, body: BodyState | null): BodyState {
-    if (!body) throw new FeatureError('圓角之前沒有本體');
-    const r = this.kernel.fillet(body.shape, this.edgeIndices(f.edges, body), evalLength(f.radius));
-    const topology = this.kernel.topology(r.shape);
-    return { shape: r.shape, topology, names: nameElements(r.faceOrigins, topology, { featureId: f.id, role: 'fillet', input: body.names }), by: f.id };
-  }
-
-  private chamfer(f: ChamferFeature, body: BodyState | null): BodyState {
-    if (!body) throw new FeatureError('導角之前沒有本體');
-    const specs = this.edgeIndices(f.edges, body).map((edge) => {
-      // The first distance is measured on the adjacent face whose persistent name sorts first
-      // (the other one with 「反轉方向」): a choice that survives rebuilds, unlike face order.
-      const faces = [...body.topology.edges[edge]!.faces].sort((a, b) => (body.names.faces[a]! < body.names.faces[b]! ? -1 : 1));
-      const face = faces[f.flip ? faces.length - 1 : 0];
-      if (face === undefined) throw new FeatureError('這條邊線沒有相鄰的面');
-      return { edge, face };
+  private deleteFace(f: DeleteFaceFeature, set: Bodies): BodyState[] {
+    return this.perBody(set, f.faces, 'face', t('edit.noBodyForDelete'), (n) => t('edit.facesLost', { n }), (body, mine) => {
+      const picked = this.faceIndices(mine, body);
+      return this.edited(f, this.kernel.deleteFaces(body.shape, f.hole ? holeFaces(body.topology, picked) : picked), body);
     });
-    const second = f.mode === 'distanceDistance' ? evalLength(f.second) : evalAngle(f.second);
-    const r = this.kernel.chamfer(body.shape, specs, f.mode, evalLength(f.distance), second);
-    const topology = this.kernel.topology(r.shape);
-    return { shape: r.shape, topology, names: nameElements(r.faceOrigins, topology, { featureId: f.id, role: 'chamfer', input: body.names }), by: f.id };
+  }
+
+  private moveFace(f: MoveFaceFeature, set: Bodies): BodyState[] {
+    return this.perBody(set, [f.face], 'face', t('edit.noBodyForMove'), (n) => t('edit.facesLost', { n }), (body) => {
+      const [face] = this.faceIndices([f.face], body);
+      return this.edited(f, this.kernel.moveFace(body.shape, face!, evalLength(f.distance)), body);
+    });
+  }
+
+  private fillet(f: FilletFeature, set: Bodies): BodyState[] {
+    return this.perBody(set, f.edges, 'edge', t('edit.noBodyForFillet'), (n) => t('edit.edgesLost', { n }), (body, mine) => {
+      const r = this.kernel.fillet(body.shape, this.edgeIndices(mine, body), evalLength(f.radius));
+      const topology = this.kernel.topology(r.shape);
+      return { id: body.id, shape: r.shape, topology, names: nameElements(r.faceOrigins, topology, { featureId: f.id, role: 'fillet', input: body.names }), by: f.id };
+    });
+  }
+
+  private chamfer(f: ChamferFeature, set: Bodies): BodyState[] {
+    return this.perBody(set, f.edges, 'edge', t('edit.noBodyForChamfer'), (n) => t('edit.edgesLost', { n }), (body, mine) => {
+      const specs = this.edgeIndices(mine, body).map((edge) => {
+        // The first distance is measured on the adjacent face whose persistent name sorts first
+        // (the other one with 「反轉方向」): a choice that survives rebuilds, unlike face order.
+        const faces = [...body.topology.edges[edge]!.faces].sort((a, b) => (body.names.faces[a]! < body.names.faces[b]! ? -1 : 1));
+        const face = faces[f.flip ? faces.length - 1 : 0];
+        if (face === undefined) throw new FeatureError('這條邊線沒有相鄰的面');
+        return { edge, face };
+      });
+      const second = f.mode === 'distanceDistance' ? evalLength(f.second) : evalAngle(f.second);
+      const r = this.kernel.chamfer(body.shape, specs, f.mode, evalLength(f.distance), second);
+      const topology = this.kernel.topology(r.shape);
+      return { id: body.id, shape: r.shape, topology, names: nameElements(r.faceOrigins, topology, { featureId: f.id, role: 'chamfer', input: body.names }), by: f.id };
+    });
   }
 }

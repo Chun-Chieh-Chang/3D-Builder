@@ -376,7 +376,7 @@ export class Kernel {
    * does. Face origins index the target's faces followed by the tool's (and likewise edges, vertices),
    * so the naming layer can inherit names from both inputs.
    */
-  boolean(op: 'fuse' | 'cut', target: ShapeId, tool: ShapeId): OpResult {
+  boolean(op: 'fuse' | 'cut' | 'common', target: ShapeId, tool: ShapeId): OpResult {
     const oc = this.oc;
     const arena = new Arena();
     const a = this.get(target);
@@ -385,7 +385,7 @@ export class Kernel {
     const ia = index(a);
     const ib = index(b);
     try {
-      const mk = this.boolOp(op, a, b, op === 'fuse' ? '合併' : '除料', arena);
+      const mk = this.boolOp(op, a, b, op === 'fuse' ? t('body.fuse') : op === 'cut' ? '除料' : t('body.common'), arena);
       const raw = mk.Shape();
       try {
         const origins = this.history(
@@ -431,6 +431,70 @@ export class Kernel {
     } finally {
       before.dispose();
       after.dispose();
+    }
+  }
+
+  // ------------------------------------------------------------------ bodies (C7)
+
+  /** How many solids a shape holds: a result with more than one has come apart. */
+  solidCount(id: ShapeId): number {
+    const arena = new Arena();
+    const solids = ShapeIndex.of(this.oc, this.get(id), 'TopAbs_SOLID', arena);
+    try {
+      return solids.size;
+    } finally {
+      solids.dispose();
+      arena.dispose();
+    }
+  }
+
+  /**
+   * The solids of a result as separate shapes, each with the origins of its own faces and the numbers those faces have in the
+   * whole result (aces; an imported face keeps its origin's number). Largest first, ties by position, so the order is
+   * the same on every rebuild. The result itself stays the caller's.
+   */
+  splitSolids(result: OpResult): (OpResult & { faces: number[] })[] {
+    const oc = this.oc;
+    const arena = new Arena();
+    const whole = this.get(result.shape);
+    const faces = ShapeIndex.of(oc, whole, T.FACE, arena);
+    const solids = ShapeIndex.of(oc, whole, 'TopAbs_SOLID', arena);
+    try {
+      const pieces = solids.keys.map((solid) => {
+        const own = ShapeIndex.of(oc, solid, T.FACE, arena);
+        const indices = own.keys.map((f) => faces.indexOf(f));
+        const origins = indices.map((i) => result.faceOrigins[i] ?? []);
+        own.dispose();
+        const props = arena.own(new oc.GProp_GProps());
+        oc.BRepGProp.VolumeProperties(solid, props, false, false, false);
+        return { solid, origins, indices, volume: props.Mass(), center: this.xyz(arena.own(props.CentreOfMass())) };
+      });
+      pieces.sort((a, b) => b.volume - a.volume || a.center[0] - b.center[0] || a.center[1] - b.center[1] || a.center[2] - b.center[2]);
+      return pieces.map((p) => ({ shape: this.put(p.solid.Oriented(p.solid.Orientation())), faceOrigins: p.origins, faces: p.indices }));
+    } finally {
+      faces.dispose();
+      solids.dispose();
+      arena.dispose();
+    }
+  }
+
+  /** One shape holding all of the given shapes: for showing, measuring and writing several bodies together. */
+  join(ids: ShapeId[]): ShapeId {
+    const arena = new Arena();
+    try {
+      return this.put(this.compound(ids.map((id) => this.get(id)), arena));
+    } finally {
+      arena.dispose();
+    }
+  }
+
+  /** A copy that shares nothing with the original: two bodies made from one imported file must not share faces. */
+  clone(id: ShapeId): ShapeId {
+    const arena = new Arena();
+    try {
+      return this.put(arena.own(new this.oc.BRepBuilderAPI_Copy(this.get(id), true, false)).Shape());
+    } finally {
+      arena.dispose();
     }
   }
 

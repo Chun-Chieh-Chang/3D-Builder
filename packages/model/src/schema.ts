@@ -6,7 +6,7 @@ import type { Id } from './ids';
  * DOF status, mass properties and error lists are derived data and never stored.
  */
 
-export const SCHEMA_VERSION = 9;
+export const SCHEMA_VERSION = 10;
 
 /** Value expression (B5.2, B5.3): "20", "25.4mm", "30deg", "wall_t*2", "D1@草圖1/2", "property('厚度')"; see `expr/`. */
 export type Expr = string;
@@ -112,6 +112,8 @@ export interface ExtrudeFeature extends FeatureBase {
   type: 'extrude';
   sketch: Id;
   op: 'boss' | 'cut';
+  /** A boss only (C7.1): `false` makes it a body of its own; absent (the default) merges it with the bodies it touches. */
+  merge?: boolean;
   dir1: EndCondition;
   /** Second direction (P1). */
   dir2?: EndCondition;
@@ -126,6 +128,8 @@ export interface RevolveFeature extends FeatureBase {
   /** A line of the same sketch, usually a centerline, to revolve about. */
   axis: Id;
   op: 'boss' | 'cut';
+  /** As for `ExtrudeFeature.merge`. */
+  merge?: boolean;
   dir1: RevolveCondition;
 }
 
@@ -171,6 +175,8 @@ export interface RefPlaneFeature extends FeatureBase {
 export interface ImportedBodyFeature extends FeatureBase {
   type: 'importedBody';
   blob: Id;
+  /** As for `ExtrudeFeature.merge`: `false` keeps what is read a body (or bodies) of its own. */
+  merge?: boolean;
   /**
    * How far apart (a length) the edges of two surfaces may be and still be joined, when the file has surfaces
    * and no solid and they are sewn into one (F2.2). Without it the program's own default is used.
@@ -202,6 +208,17 @@ export interface MoveFaceFeature extends FeatureBase {
   distance: Expr;
 }
 
+/**
+ * Combine (C7.2): bodies added together, subtracted from the first, or reduced to what they share. `main` and `tools`
+ * refer to bodies (kind `body`, the name is the body's id); the result is the main body, the tools are used up.
+ */
+export interface CombineFeature extends FeatureBase {
+  type: 'combine';
+  op: 'add' | 'subtract' | 'common';
+  main: Ref;
+  tools: Ref[];
+}
+
 export type Feature =
   | SketchFeature
   | ExtrudeFeature
@@ -211,7 +228,8 @@ export type Feature =
   | RefPlaneFeature
   | ImportedBodyFeature
   | DeleteFaceFeature
-  | MoveFaceFeature;
+  | MoveFaceFeature
+  | CombineFeature;
 export type FeatureType = Feature['type'];
 
 // ---------------------------------------------------------------- document
@@ -236,6 +254,16 @@ export interface BlobRef {
   fileName?: string;
 }
 
+/**
+ * What the user has said about a body (C7.1). Which bodies there are is derived (they come from the features); this is
+ * kept by body id, so a body that has gone leaves an entry that does nothing.
+ */
+export interface BodyProps {
+  name?: string;
+  /** A reference body (the workpiece of a fixture): not counted in the mass or written to the part's STEP, not in a bill of materials. */
+  reference?: boolean;
+}
+
 export interface PartDoc {
   kind: 'part';
   schemaVersion: number;
@@ -254,6 +282,8 @@ export interface PartDoc {
    * shown or hidden by its default (see `isShown`). Like SolidWorks, it is saved with the part.
    */
   visibility: Record<string, boolean>;
+  /** Names and reference flags of bodies, by body id (C7.1). Only what was chosen is stored. */
+  bodies: Record<Id, BodyProps>;
   /**
    * Highest number issued so far per readable-id prefix ("l" → 4 means l1…l4 were issued).
    * Ids are never reused, so a stale reference can never silently bind to a new object (B1.3).

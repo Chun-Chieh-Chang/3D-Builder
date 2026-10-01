@@ -20,7 +20,10 @@ function picking(feature: Feature | undefined, editing: boolean) {
   const upTo = feature?.type === 'extrude' && feature.dir1.type === 'upToFace' ? feature.dir1 : null;
   const edgeFeature = feature?.type === 'fillet' || feature?.type === 'chamfer' ? feature : null;
   const faceFeature = feature?.type === 'deleteFace' || feature?.type === 'moveFace' ? feature : null;
-  const prompt = faceFeature
+  const combine = feature?.type === 'combine';
+  const prompt = combine
+    ? t('pick.combine')
+    : faceFeature
     ? t(faceFeature.type === 'deleteFace' ? 'pick.deleteFace' : 'pick.moveFace')
     : edgeFeature
     ? `點選邊線以加入${FEATURE_LABEL[edgeFeature.type]}`
@@ -35,7 +38,7 @@ function picking(feature: Feature | undefined, editing: boolean) {
             : null;
   return {
     edges: !!edgeFeature || def?.mode === 'angle',
-    faces: !editing || !!upTo || !!faceFeature || def?.mode === 'offset' || def?.mode === 'angle',
+    faces: !editing || !!upTo || !!faceFeature || combine || def?.mode === 'offset' || def?.mode === 'angle',
     vertices: def?.mode === 'threePoint',
     pickedEdges: edgeFeature ? edgeFeature.edges : def?.mode === 'angle' ? [def.axis] : [],
     pickedFaces: faceFeature ? (faceFeature.type === 'deleteFace' ? faceFeature.faces : [faceFeature.face]) : upTo ? [upTo.face] : def && def.mode !== 'threePoint' && def.plane.kind === 'face' ? [def.plane] : [],
@@ -157,7 +160,11 @@ export function Viewport() {
     const indices = (names: string[] | undefined, refs: Ref[]) => refs.map((x) => names?.indexOf(x.name) ?? -1).filter((i) => i >= 0);
     v.setSelectedEdges(indices(r?.edgeNames, p.pickedEdges));
     v.setSelectedVertices(indices(r?.vertexNames, p.pickedVertices));
-    if (editing) v.setSelectedFaces(indices(r?.faceNames, p.pickedFaces));
+    /** The faces of bodies, by the ranges the rebuild gave them (C7.1). */
+    const ofBodies = (ids: string[]) => (r?.bodies ?? []).filter((b) => ids.includes(b.id)).flatMap((b) => Array.from({ length: b.faces }, (_, k) => b.face0 + k));
+    if (editing && feature?.type === 'combine') v.setSelectedFaces(ofBodies([feature.main.name, ...feature.tools.map((x) => x.name)]));
+    else if (!editing && selected?.startsWith('body:')) v.setSelectedFaces(ofBodies([selected.slice('body:'.length)]));
+    else if (editing) v.setSelectedFaces(indices(r?.faceNames, p.pickedFaces));
     else if (selectedFace?.kind === 'face') v.setSelectedFaces(indices(r?.faceNames, [selectedFace]));
     // D1.2: a feature selected in the FeatureManager shows the faces it made.
     else v.setSelectedFaces(selected ? (r?.faceNames ?? []).flatMap((n, i) => (ownerFeatures(n)[0] === selected ? [i] : [])) : []);

@@ -32,6 +32,8 @@ export function mapRefs(feature: Feature, map: (ref: Ref) => Ref): { feature: Fe
       return { feature: { ...feature, faces: feature.faces.map(one) }, replaced };
     case 'moveFace':
       return { feature: { ...feature, face: one(feature.face) }, replaced };
+    case 'combine':
+      return { feature: { ...feature, main: one(feature.main), tools: feature.tools.map(one) }, replaced };
     case 'revolve':
     case 'importedBody':
       return { feature, replaced };

@@ -12,6 +12,7 @@ import {
   findFeature,
   IdAllocator,
   idsInUse,
+  isBodyKey,
   isDatumPlaneName,
   planeFrame,
   resolveSketch,
@@ -143,7 +144,9 @@ function storedLocale(): Locale {
 
 /** Immer only replaces what a command touched, so anything else being the same object means it did not change. */
 function onlyVisibilityChanged(a: PartDoc, b: PartDoc): boolean {
-  return (Object.keys(b) as (keyof PartDoc)[]).every((k) => k === 'visibility' || a[k] === b[k]);
+  if (!(Object.keys(b) as (keyof PartDoc)[]).every((k) => k === 'visibility' || a[k] === b[k])) return false;
+  // sketches and planes are drawn from what the rebuild gave; a body's visibility decides what the worker meshes
+  return ![...new Set([...Object.keys(a.visibility), ...Object.keys(b.visibility)])].some((k) => isBodyKey(k) && a.visibility[k] !== b.visibility[k]);
 }
 
 function nextName(doc: PartDoc, base: string): string {
@@ -604,6 +607,38 @@ class AppStore {
     this.openNew({ id: this.allocator().take('moveface'), type: 'moveFace', name: nextName(this.history.doc, name), suppressed: false, face: picked, distance: '5' }, name);
   }
 
+  /** 「組合」 (C7.2): the body of the selected face is the main body to start with; the PropertyManager picks the rest. */
+  newCombine(): void {
+    const face = this.state.selectedFace;
+    const main = face?.kind === 'face' ? this.bodyOfFace(face.name) : undefined;
+    const name = t('feature.combine');
+    this.openNew({ id: this.allocator().take('combine'), type: 'combine', name: nextName(this.history.doc, name), suppressed: false, op: 'add', main: { kind: 'body', name: main ?? '' }, tools: [] }, name);
+  }
+
+  /** The id of the body a face of the model on screen belongs to. */
+  bodyOfFace(faceName: string): Id | undefined {
+    const r = this.state.result;
+    const i = r?.faceNames.indexOf(faceName) ?? -1;
+    return i < 0 ? undefined : r!.bodies.find((b) => i >= b.face0 && i < b.face0 + b.faces)?.id;
+  }
+
+  /** A face picked while a Combine is edited: the first body picked is the main one, the others are toggled as tools. */
+  pickBody(faceName: string): void {
+    const f = this.editedFeature();
+    const id = this.bodyOfFace(faceName);
+    if (f?.type !== 'combine' || !id) return;
+    const body = (name: string): Ref => ({ kind: 'body', name });
+    if (!f.main.name) return void this.execute({ type: 'setCombine', featureId: f.id, op: f.op, main: body(id), tools: f.tools.filter((x) => x.name !== id) });
+    if (id === f.main.name) return;
+    const tools = f.tools.some((x) => x.name === id) ? f.tools.filter((x) => x.name !== id) : [...f.tools, body(id)];
+    this.execute({ type: 'setCombine', featureId: f.id, op: f.op, main: f.main, tools });
+  }
+
+  /** What the user says of a body (C7.1): its name, whether it is a reference body. */
+  setBody(bodyId: Id, patch: { name?: string; reference?: boolean }): void {
+    this.execute({ type: 'setBody', bodyId, ...patch });
+  }
+
   /** Face list of a Delete Face (D2.1): clicking a face toggles it, as with the edges of a fillet. */
   toggleFace(ref: Ref): void {
     const f = this.editedFeature();
@@ -680,6 +715,7 @@ class AppStore {
     else if (f?.type === 'refPlane') this.setPlaneRef(ref);
     else if (f?.type === 'deleteFace') this.toggleFace(ref);
     else if (f?.type === 'moveFace') this.setMoveFace(ref);
+    else if (f?.type === 'combine' && ref.kind === 'face') this.pickBody(ref.name);
   }
 
   /** A click in the FeatureManager selects; while a plane is being defined it picks a plane like SolidWorks' flyout tree. */
@@ -730,7 +766,7 @@ class AppStore {
     const i = this.history.doc.features.findIndex((f) => f.id === e.featureId);
     const type = this.history.doc.features[i]?.type;
     if (type === 'refPlane') return i + 1;
-    return type === 'fillet' || type === 'chamfer' || type === 'deleteFace' || type === 'moveFace' || type === 'sketch' ? i : undefined;
+    return type === 'fillet' || type === 'chamfer' || type === 'deleteFace' || type === 'moveFace' || type === 'combine' || type === 'sketch' ? i : undefined;
   }
 
   // ------------------------------------------------------------ sketch sessions (C1)

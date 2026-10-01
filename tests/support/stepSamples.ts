@@ -20,6 +20,8 @@ export interface StepSamples {
   lineOnly(): Uint8Array;
   /** A 5 × 5 × 5 block and, far from it, a single face. */
   blockWithStrayFace(): Uint8Array;
+  /** Two 10 × 10 × 10 blocks 30 mm apart, as two solids of one file. */
+  twoBlocks(): Uint8Array;
   /** Volume of `block()`. */
   readonly volume: number;
 }
@@ -82,6 +84,13 @@ export function stepSamples(k: Kernel): StepSamples {
       return stepOf(compoundOf(faces.filter((f) => f !== top)) as never);
     },
     lineOnly: () => stepOf(new oc.BRepBuilderAPI_MakeEdge(new oc.gp_Pnt(0, 0, 0), new oc.gp_Pnt(10, 0, 0)).Edge() as never),
+    twoBlocks: () => {
+      const a = box(10, 10, 10);
+      const trsf = new oc.gp_Trsf();
+      trsf.SetTranslation(new oc.gp_Vec(40, 0, 0));
+      const b = new oc.BRepBuilderAPI_Transform(box(10, 10, 10), trsf, true, false).Shape();
+      return stepOf(compoundOf([a, b]) as never);
+    },
     blockWithStrayFace: () => {
       const b = box(5, 5, 5);
       return stepOf(compoundOf([b, lifted(facesOf(b)[0]!, 100)]) as never);

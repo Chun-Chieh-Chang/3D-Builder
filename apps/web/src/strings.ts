@@ -27,6 +27,7 @@ export const FEATURE_LABEL: Record<FeatureType, string> = labelsOf({
   importedBody: 'feature.importedBody',
   deleteFace: 'feature.deleteFace',
   moveFace: 'feature.moveFace',
+  combine: 'feature.combine',
 });
 
 /** SolidWorks names cuts after what they cut with: 「除料-伸長」, 「除料-旋轉」. */

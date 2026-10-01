@@ -26,10 +26,24 @@ export interface RebuildRequest {
   until?: number;
 }
 
+/** A body of the part (C7.1) as the FeatureManager shows it: derived from the features, with what the document says of it. */
+export interface BodyPayload {
+  id: Id;
+  name: string;
+  reference: boolean;
+  /** Whether it is drawn (D4.6): a hidden body has no faces in mesh, so it cannot be picked either. */
+  shown: boolean;
+  /** Its faces are numbers ace0 … ace0 + faces - 1 of the names and fingerprints below. */
+  face0: number;
+  faces: number;
+  volume: number;
+}
+
 /** Everything the UI needs from one rebuild; all derived data (never written back into the document). */
 export interface RebuildPayload {
   seq: number;
   features: FeatureResult[];
+  bodies: BodyPayload[];
   mesh: MeshData | null;
   faceNames: string[];
   faceFingerprints: Fingerprint[];

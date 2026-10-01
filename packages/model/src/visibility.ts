@@ -5,9 +5,19 @@ import type { PartDoc } from './schema';
 /** The part's origin, as a key of `PartDoc.visibility` (D4.6). */
 export const ORIGIN_KEY = 'origin';
 
-/** Can this key be shown or hidden? A sketch or reference plane of the document, a default plane, or the origin. */
+/** A body's key in PartDoc.visibility (C7.1, D4.6): ody: and its id, which cannot be mistaken for a feature's id. */
+export const bodyKey = (id: Id): string => `body:${id}`;
+export const isBodyKey = (key: string): boolean => key.startsWith('body:');
+
+/**
+ * The feature a body comes from. A body is named by the feature that made it (extrude1); the pieces a cut leaves are
+ * <cut>#2, #3 … after the largest, which keeps the body's own id.
+ */
+export const bodyFeature = (id: Id): Id => id.split('#')[0]!;
+
+/** Can this key be shown or hidden? A sketch or reference plane of the document, a default plane, the origin, or a body. */
 export function isHideable(doc: PartDoc, key: string): boolean {
-  if (key === ORIGIN_KEY || isDatumPlaneName(key)) return true;
+  if (key === ORIGIN_KEY || isDatumPlaneName(key) || isBodyKey(key)) return true;
   const f = doc.features.find((x) => x.id === key);
   return f?.type === 'sketch' || f?.type === 'refPlane';
 }

@@ -102,6 +102,21 @@ describe('a part file written by version 8 (expressions, B5.2) opens in version 
   });
 });
 
+describe('a part file written by version 9 (direct editing, C10) opens in version 10 (bodies, C7)', () => {
+  it('keeps its Delete Face and Move Face, has no bodies chosen, and rebuilds the same one body', async () => {
+    const file = await readPartFile(oldFile('v9-direct-edit.3dbx'));
+    expect(file.warnings).toEqual([]);
+    expect(JSON.parse(new TextDecoder().decode((await readZip(oldFile('v9-direct-edit.3dbx')))[0]!.data)).schemaVersion).toBe(9);
+    expect(file.doc.schemaVersion).toBe(SCHEMA_VERSION);
+    expect(file.doc.bodies).toEqual({});
+    expect(file.doc.features.map((f) => f.type)).toEqual(['sketch', 'extrude', 'fillet', 'deleteFace', 'moveFace']);
+    const r = new Regenerator(kernel, await PlaneGcsSolver.create(), file.blobs).rebuild(file.doc);
+    expect(statuses(r).filter((s) => !s.endsWith('=ok'))).toEqual([]);
+    expect(r.bodies.map((b) => b.id)).toEqual(['extrude1']);
+    expect(kernel.massProps(r.body!.shape).volume).toBeCloseTo(20 * 10 * 5 + 3 * 5 * 10, 6); // the block without its fillet, 3 mm longer
+  });
+});
+
 describe('the .3dbx file (B9.1, F7.1)', () => {
   const docs = async (): Promise<[string, PartDoc][]> => [
     ['the demo part', createDemoPart()],

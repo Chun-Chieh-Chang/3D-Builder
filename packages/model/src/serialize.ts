@@ -79,6 +79,9 @@ const migrations: Record<number, (doc: Json) => Json> = {
   // v9: direct editing of a body's faces (C10.1, C10.2): `deleteFace` and `moveFace` features. Nothing to convert;
   // the version keeps older programs from opening features they would skip.
   8: (doc) => doc,
+  // v10: several bodies in a part (C7): `bodies` holds their names and reference flags, `merge` the way a boss joins
+  // them, and there is a `combine` feature. A version-9 part has one body whatever it does: nothing to convert.
+  9: (doc) => ({ ...doc, bodies: {} }),
 };
 
 export class FormatError extends Error {

@@ -1,10 +1,10 @@
 import { t } from '@3db/i18n';
 import { current, produce, type Draft } from 'immer';
 import { countersFor, type Id } from './ids';
-import type { Variable, BlobRef, ChamferFeature, EndCondition, Expr, Feature, ImportedBodyFeature, PartDoc, PlaneDefinition, Ref, RevolveCondition, SketchConstraint, SketchEntity, SketchFeature } from './schema';
+import type { Variable, BlobRef, ChamferFeature, CombineFeature, EndCondition, Expr, Feature, ImportedBodyFeature, PartDoc, PlaneDefinition, Ref, RevolveCondition, SketchConstraint, SketchEntity, SketchFeature } from './schema';
 import { isDatumPlaneName } from './datums';
 import { mapRefs } from './refs';
-import { isHideable } from './visibility';
+import { bodyFeature, isBodyKey, isHideable } from './visibility';
 import { dimensionName, Parameters, renameInDoc, variableUsers, type ExprKind } from './params';
 import type { NameRef } from './expr';
 import { isDimension } from './schema';
@@ -42,6 +42,12 @@ export type Command =
   | { type: 'setFaces'; featureId: Id; faces: Ref[]; hole?: boolean }
   /** How an imported body's surfaces are sewn (F2.2); without `sewTolerance` the default is used again. */
   | { type: 'setImportOptions'; featureId: Id; sewTolerance?: Expr }
+  /** How a boss joins the bodies it touches (C7.1): merged with them (the default), or a body of its own. */
+  | { type: 'setMerge'; featureId: Id; merge: boolean }
+  /** What a Combine feature does to which bodies (C7.2). */
+  | { type: 'setCombine'; featureId: Id; op: CombineFeature['op']; main: Ref; tools: Ref[] }
+  /** The name and the reference flag of a body (C7.1); an empty name or `false` takes the choice back. */
+  | { type: 'setBody'; bodyId: Id; name?: string; reference?: boolean }
   /** The face and the distance of a Move Face feature (C10.1). */
   | { type: 'setMoveFace'; featureId: Id; face: Ref; distance: Expr }
   | { type: 'setRefPlane'; featureId: Id; def: PlaneDefinition }
@@ -173,6 +179,12 @@ function planeDefinition(doc: PartDoc, def: PlaneDefinition, index: number): voi
   }
 }
 
+/** A Combine takes bodies, and its main body is not one of its tools. The boxes may still be empty while the user picks. */
+function combineRefs(main: Ref, tools: Ref[]): void {
+  if ((main.name && main.kind !== 'body') || tools.some((r) => r.kind !== 'body')) throw new CommandError(t('cmd.combineOnlyBodies'));
+  if (main.name && tools.some((r) => r.name === main.name)) throw new CommandError(t('cmd.combineMainIsTool'));
+}
+
 function revolveAxis(sketch: SketchFeature, axis: Id): void {
   if (sketch.entities.find((e) => e.id === axis)?.type !== 'line') throw new CommandError(t('cmd.revolveAxisMustBeLine'));
 }
@@ -223,6 +235,9 @@ function validateNewFeature(doc: PartDoc, f: Feature, index: number): void {
       return;
     case 'moveFace':
       if (f.face.kind !== 'face') throw new CommandError(t('cmd.moveFaceOnlyFace'));
+      return;
+    case 'combine':
+      combineRefs(f.main, f.tools);
       return;
     case 'importedBody':
       if (!doc.blobs.some((b) => b.id === f.blob)) throw new CommandError(t('cmd.importDataNotFound', { id: f.blob }));
@@ -356,6 +371,38 @@ export function mutate(draft: Draft<PartDoc>, cmd: Command): void {
       checkExprs(draft as PartDoc, f as Feature);
       return;
     }
+    case 'setMerge': {
+      const f = feature(draft, cmd.featureId);
+      if (f.type !== 'extrude' && f.type !== 'revolve' && f.type !== 'importedBody') throw new CommandError(t('cmd.onlyBossMerges'));
+      if (cmd.merge) delete f.merge;
+      else f.merge = false;
+      return;
+    }
+    case 'setCombine': {
+      const f = feature(draft, cmd.featureId);
+      if (f.type !== 'combine') throw new CommandError(t('cmd.onlyCombineHasBodies'));
+      combineRefs(cmd.main, cmd.tools);
+      f.op = cmd.op;
+      f.main = cmd.main;
+      f.tools = cmd.tools;
+      return;
+    }
+    case 'setBody': {
+      if (!cmd.bodyId) throw new CommandError(t('cmd.bodyIdEmpty'));
+      const props = { ...(draft.bodies[cmd.bodyId] ?? {}) };
+      if (cmd.name !== undefined) {
+        const name = cmd.name.trim();
+        if (name) props.name = name;
+        else delete props.name;
+      }
+      if (cmd.reference !== undefined) {
+        if (cmd.reference) props.reference = true;
+        else delete props.reference;
+      }
+      if (Object.keys(props).length === 0) delete draft.bodies[cmd.bodyId];
+      else draft.bodies[cmd.bodyId] = props;
+      return;
+    }
     case 'setMoveFace': {
       const f = feature(draft, cmd.featureId);
       if (f.type !== 'moveFace') throw new CommandError(t('cmd.onlyMoveFaceHasParams'));
@@ -381,6 +428,9 @@ export function mutate(draft: Draft<PartDoc>, cmd: Command): void {
       }
       draft.features = draft.features.filter((f) => !ids.has(f.id));
       for (const id of ids) delete draft.visibility[id];
+      // what was said about the bodies a deleted feature made goes with it (their ids are the feature's, `<id>#2` …)
+      for (const body of Object.keys(draft.bodies)) if (ids.has(bodyFeature(body))) delete draft.bodies[body];
+      for (const key of Object.keys(draft.visibility)) if (isBodyKey(key) && ids.has(bodyFeature(key.slice('body:'.length)))) delete draft.visibility[key];
       if (draft.rollbackIndex !== null && draft.rollbackIndex >= draft.features.length) draft.rollbackIndex = null;
       // Imported data no feature uses any more is dropped too (its id stays issued).
       const used = new Set(draft.features.flatMap((f) => (f.type === 'importedBody' ? [f.blob] : [])));

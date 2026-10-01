@@ -10,6 +10,7 @@ import {
   Parameters,
   SKETCH_ORIGIN,
   type ChamferFeature,
+  type CombineFeature,
   type Command,
   type DeleteFaceFeature,
   type EndCondition,
@@ -209,6 +210,19 @@ const END_CONDITION: Record<EndCondition['type'], string> = {
   upToFace: '成形至某一面',
 };
 
+/** 「合併結果」 (C7.1): whether a boss joins the bodies it touches or is a body of its own. */
+function MergeBox({ f }: { f: ExtrudeFeature | RevolveFeature | ImportedBodyFeature }) {
+  return (
+    <>
+      <label className="pm-row checkbox">
+        <input type="checkbox" checked={f.merge !== false} onChange={(e) => store.execute({ type: 'setMerge', featureId: f.id, merge: e.target.checked })} />
+        <span>{t('pm.merge')}</span>
+      </label>
+      <p className="hint">{t('pm.merge.hint')}</p>
+    </>
+  );
+}
+
 /** Extrude (C4.1, C4.2): end condition, depth, direction and the end face for 「成形至某一面」. */
 function ExtrudePanel({ f }: { f: ExtrudeFeature }) {
   const doc = useStore((s) => s.doc);
@@ -277,6 +291,7 @@ function ExtrudePanel({ f }: { f: ExtrudeFeature }) {
         輪廓：{findFeature(doc, f.sketch)?.name ?? f.sketch}
         {f.op === 'cut' && '。除料預設往材料內部（與草圖法向相反）。'}
       </p>
+      {f.op === 'boss' && <MergeBox f={f} />}
     </section>
   );
 }
@@ -325,6 +340,7 @@ function RevolvePanel({ f }: { f: RevolveFeature }) {
           </label>
         )}
         <p className="hint">輪廓：{sketch?.name ?? f.sketch}</p>
+        {f.op === 'boss' && <MergeBox f={f} />}
       </section>
     </>
   );
@@ -572,6 +588,67 @@ function MoveFacePanel({ f }: { f: MoveFaceFeature }) {
   );
 }
 
+/** Combine (C7.2): what is done, to which body, with which bodies. */
+function CombinePanel({ f }: { f: CombineFeature }) {
+  const result = useStore((s) => s.result);
+  const bodies = result?.bodies ?? [];
+  const set = (patch: Partial<Pick<CombineFeature, 'op' | 'main' | 'tools'>>): Command => ({ type: 'setCombine', featureId: f.id, op: f.op, main: f.main, tools: f.tools, ...patch });
+  const body = (id: string): Ref => ({ kind: 'body', name: id });
+  const toggle = (id: string) => store.execute(set({ tools: f.tools.some((x) => x.name === id) ? f.tools.filter((x) => x.name !== id) : [...f.tools, body(id)] }));
+  const nameOf = (id: string) => bodies.find((b) => b.id === id)?.name ?? id;
+  return (
+    <>
+      <section className="pm-group">
+        <h4>{t('pm.combine.op')}</h4>
+        <select value={f.op} onChange={(e) => store.execute(set({ op: e.target.value as CombineFeature['op'] }))}>
+          <option value="add">{t('pm.combine.add')}</option>
+          <option value="subtract">{t('pm.combine.subtract')}</option>
+          <option value="common">{t('pm.combine.common')}</option>
+        </select>
+      </section>
+      <section className="pm-group">
+        <h4>{t('pm.combine.main')}</h4>
+        <select value={f.main.name} onChange={(e) => store.execute(set({ main: body(e.target.value), tools: f.tools.filter((x) => x.name !== e.target.value) }))}>
+          {!f.main.name && <option value="">{t('pm.combine.emptyMain')}</option>}
+          {f.main.name && !bodies.some((b) => b.id === f.main.name) && <option value={f.main.name}>{f.main.name}{t('pm.lost')}</option>}
+          {bodies.map((b) => (
+            <option key={b.id} value={b.id}>
+              {b.name}
+            </option>
+          ))}
+        </select>
+      </section>
+      <section className="pm-group">
+        <h4>{t('pm.combine.tools')}</h4>
+        <ul className="selection-box">
+          {f.tools.length === 0 && <li className="muted">{t('pm.combine.emptyTools')}</li>}
+          {f.tools.map((x) => {
+            const found = bodies.some((b) => b.id === x.name);
+            return (
+              <li key={x.name} className={found ? '' : 'missing'} title={x.name}>
+                {nameOf(x.name)}
+                {!found && t('pm.lost')}
+                <button className="use-nearest" onClick={() => toggle(x.name)}>
+                  ✕
+                </button>
+              </li>
+            );
+          })}
+        </ul>
+        {bodies
+          .filter((b) => b.id !== f.main.name)
+          .map((b) => (
+            <label key={b.id} className="pm-row checkbox">
+              <input type="checkbox" checked={f.tools.some((x) => x.name === b.id)} onChange={() => toggle(b.id)} />
+              <span>{b.name}</span>
+            </label>
+          ))}
+        <p className="hint">{t('pm.combine.hint')}</p>
+      </section>
+    </>
+  );
+}
+
 /** Imported body (F2.1): where the data came from, and what happened to it on the way in. */
 function ImportedBodyPanel({ f }: { f: ImportedBodyFeature }) {
   const doc = useStore((s) => s.doc);
@@ -593,6 +670,7 @@ function ImportedBodyPanel({ f }: { f: ImportedBodyFeature }) {
         <p className="hint">
           資料存放在零件檔中（內容雜湊 <code>{blob?.sha256.slice(0, 12)}…</code>），不需要原始檔案。面依檔案中的順序命名。
         </p>
+        <MergeBox f={f} />
       </section>
       <section className="pm-group">
         <h4>{t('pm.import.report')}</h4>
@@ -654,6 +732,7 @@ export function PropertyManager() {
       {f.type === 'importedBody' && <ImportedBodyPanel f={f} />}
       {f.type === 'deleteFace' && <DeleteFacePanel f={f} />}
       {f.type === 'moveFace' && <MoveFacePanel f={f} />}
+      {f.type === 'combine' && <CombinePanel f={f} />}
     </div>
   );
 }
