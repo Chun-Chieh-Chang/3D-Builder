@@ -23,13 +23,19 @@ import {
   type ExtrudeFeature,
   type FilletFeature,
   type Id,
+  type AxisDefinition,
+  type CoordSysFeature,
+  type Feature,
   type ImportedBodyFeature,
   type LoftFeature,
   type MoveFaceFeature,
   type PartDoc,
   type PlaneDefinition,
+  type PointDefinition,
   type Ref,
+  type RefAxisFeature,
   type RefPlaneFeature,
+  type RefPointFeature,
   type RevolveFeature,
   type RibFeature,
   type ShellFeature,
@@ -42,7 +48,8 @@ import type { RebuildPayload, SketchSolvePayload } from '../worker/protocol';
 import { applicableRelations, constraintsOf, dimensionText, measuredText, sameRelation } from '@3db/sketch/interact';
 import { nearestElement } from '../state/candidates';
 import { store, useSketcherView, useStore } from '../state/store';
-import { DATUM_ITEMS, DIMENSION_LABEL, FEATURE_LABEL, featureLabel, PLANE_MODE_LABEL, RELATION_LABEL, SKETCH_STATUS_LABEL, TOOL_LABEL } from '../strings';
+import { accepts, axisDefinitionFor, fill, filled, planeDefinitionFor, pointDefinitionFor, slotsOf } from '../state/datumSlots';
+import { AXIS_MODE_LABEL, DATUM_ITEMS, DIMENSION_LABEL, FEATURE_LABEL, featureLabel, PLANE_MODE_LABEL, POINT_MODE_LABEL, RELATION_LABEL, SKETCH_STATUS_LABEL, TOOL_LABEL } from '../strings';
 import { Icon } from './Icon';
 import type { ControllerView, SketchController, SketchFix } from '../sketcher/controller';
 import type { SketchIssue } from '@3db/sketch/check';
@@ -878,10 +885,20 @@ function UseNearest({ featureId, refr }: { featureId: string; refr: Ref }) {
  * One reference in a selection box: what it is, and whether the model on screen still has it. A
  * datum names a default plane or a reference plane feature; elements are shown by persistent name.
  */
-function RefItem({ label, refr, doc, result, featureId }: { label: string; refr: Ref; doc: PartDoc; result: RebuildPayload | null; featureId: string }) {
+function RefItem({ label, refr, doc, result, featureId, onClear }: { label: string; refr: Ref; doc: PartDoc; result: RebuildPayload | null; featureId: string; onClear?: () => void }) {
+  const clear = onClear && (
+    <button className="link" title={t('slot.clear')} onClick={onClear}>
+      ×
+    </button>
+  );
   if (refr.kind === 'datum') {
     const plane = DATUM_ITEMS.find((d) => d.id === refr.name)?.label ?? findFeature(doc, refr.name)?.name;
-    return <li className={plane ? '' : 'missing'}>{label}：{plane ?? `${refr.name}（遺失參考）`}</li>;
+    return (
+      <li className={plane ? '' : 'missing'}>
+        {label}：{plane ?? `${refr.name}（遺失參考）`}
+        {clear}
+      </li>
+    );
   }
   const names = refr.kind === 'face' ? result?.faceNames : refr.kind === 'edge' ? result?.edgeNames : result?.vertexNames;
   const found = !!names?.includes(refr.name);
@@ -891,82 +908,176 @@ function RefItem({ label, refr, doc, result, featureId }: { label: string; refr:
       {!found && '（遺失參考）'}
       <code>{refr.name}</code>
       {!found && <UseNearest featureId={featureId} refr={refr} />}
+      {clear}
     </li>
   );
 }
 
-const FRONT: Ref = { kind: 'datum', name: 'plane:front' };
-
-/**
- * Reference plane (C3.2): offset from a plane, at an angle to a plane through a straight edge, or
- * through three vertices. References come from the graphics area and, for planes, from the tree.
- */
-function RefPlanePanel({ f }: { f: RefPlaneFeature }) {
+/** The selection boxes of reference geometry (C3.2–C3.5): what is in each, with a way to empty it, and a line saying what to click for the ones that are empty. */
+function SlotList({ f }: { f: Feature }) {
   const doc = useStore((s) => s.doc);
   const result = useStore((s) => s.result);
+  return (
+    <ul className="selection-box">
+      {slotsOf(f).flatMap((slot) => {
+        const refs = filled(slot);
+        const items = refs.map((r, i) => (
+          <RefItem key={`${slot.key}:${r.name}`} label={slot.list ? `${slot.label} ${i + 1}` : slot.label} refr={r} doc={doc} result={result} featureId={f.id} onClear={() => store.execute(fill(f, slot.key, refs.filter((_, k) => k !== i)))} />
+        ));
+        const open = slot.list ? refs.length < slot.list : refs.length === 0;
+        if (open) items.push(<li key={`${slot.key}:empty`} className="muted">{slot.optional ? t('slot.optionalEmpty', { what: slot.label }) : t('slot.empty', { what: slot.label })}</li>);
+        return items;
+      })}
+    </ul>
+  );
+}
+
+/**
+ * The default planes and the reference planes, axes and points made before this feature, that one of its boxes takes: the FeatureManager is
+ * hidden while a PropertyManager is open, so this is the flyout tree of SolidWorks. A click puts the datum in the first box that takes it.
+ */
+function DatumPicker({ f }: { f: Feature }) {
+  const doc = useStore((s) => s.doc);
+  const at = doc.features.findIndex((x) => x.id === f.id);
+  const slots = slotsOf(f);
+  const choices = [
+    ...DATUM_ITEMS.filter((d) => d.icon === 'plane').map((d) => ({ id: d.id as string, label: d.label, icon: 'plane' as const })),
+    ...doc.features.slice(0, Math.max(at, 0)).flatMap((x) => (x.type === 'refPlane' || x.type === 'refAxis' || x.type === 'refPoint' ? [{ id: x.id, label: x.name, icon: x.type }] : [])),
+  ].filter((c) => slots.some((s) => accepts(s.type, { kind: 'datum', name: c.id }, doc)));
+  if (choices.length === 0) return null;
+  return (
+    <div className="datum-picker">
+      {choices.map((c) => (
+        <button key={c.id} title={c.label} onClick={() => store.putDatumRef({ kind: 'datum', name: c.id })}>
+          <Icon name={c.icon} />
+          {c.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+/** The type of a reference geometry feature, as a drop-down list. */
+function ModeSelect({ heading, value, labels, onChange }: { heading: string; value: string; labels: Record<string, string>; onChange: (mode: string) => void }) {
+  return (
+    <section className="pm-group">
+      <h4>{heading}</h4>
+      <select value={value} onChange={(e) => onChange(e.target.value)}>
+        {Object.entries(labels).map(([mode, label]) => (
+          <option key={mode} value={mode}>
+            {label}
+          </option>
+        ))}
+      </select>
+    </section>
+  );
+}
+
+/**
+ * Reference plane (C3.2): offset from a plane, at an angle to a plane through a straight edge or axis, through three points, through a point parallel
+ * to a plane or square to an axis, halfway between two planes, or tangent to a cylinder. References come from the graphics area and, for planes, axes
+ * and points, from the tree.
+ */
+function RefPlanePanel({ f }: { f: RefPlaneFeature }) {
   const d = f.def;
   const set = (def: PlaneDefinition): Command => ({ type: 'setRefPlane', featureId: f.id, def });
-  const plane = d.mode === 'threePoint' ? FRONT : d.plane;
-  const modeChange = (mode: PlaneDefinition['mode']) =>
-    store.execute(
-      set(
-        mode === 'offset'
-          ? { mode, plane, distance: '10' }
-          : mode === 'angle'
-            ? { mode, plane, axis: { kind: 'edge', name: '' }, angle: '45' }
-            : { mode, points: [] },
-      ),
-    );
   const reverse = (on: boolean) => {
     const { reverse: _, ...rest } = d;
     store.execute(set((on ? { ...rest, reverse: true } : rest) as PlaneDefinition));
   };
   return (
     <>
+      <ModeSelect heading={t('pm.plane.type')} value={d.mode} labels={PLANE_MODE_LABEL} onChange={(mode) => store.execute(set(planeDefinitionFor(mode as PlaneDefinition['mode'], d)))} />
       <section className="pm-group">
-        <h4>基準面類型</h4>
-        <select value={d.mode} onChange={(e) => modeChange(e.target.value as PlaneDefinition['mode'])}>
-          {Object.entries(PLANE_MODE_LABEL).map(([mode, label]) => (
-            <option key={mode} value={mode}>
-              {label}
-            </option>
-          ))}
-        </select>
-      </section>
-      <section className="pm-group">
-        <h4>參考</h4>
-        <ul className="selection-box">
-          {d.mode !== 'threePoint' && <RefItem label="參考面" refr={d.plane} doc={doc} result={result} featureId={f.id} />}
-          {d.mode === 'angle' &&
-            (d.axis.name ? <RefItem label="旋轉軸" refr={d.axis} doc={doc} result={result} featureId={f.id} /> : <li className="muted">（在圖面中點選作為旋轉軸的直線邊線）</li>)}
-          {d.mode === 'threePoint' && d.points.length === 0 && <li className="muted">（在圖面中點選三個頂點）</li>}
-          {d.mode === 'threePoint' && d.points.map((p, i) => <RefItem key={p.name} label={`點 ${i + 1}`} refr={p} doc={doc} result={result} featureId={f.id} />)}
-        </ul>
+        <h4>{t('pm.refs')}</h4>
+        <SlotList f={f} />
+      <DatumPicker f={f} />
+        <DatumPicker f={f} />
         {d.mode === 'offset' && (
           <label className="pm-row">
-            <span>偏移距離</span>
+            <span>{t('pm.plane.offset')}</span>
             <ValueInput value={d.distance} toCommand={(distance) => set({ ...d, distance })} />
           </label>
         )}
         {d.mode === 'angle' && (
           <label className="pm-row">
-            <span>角度</span>
+            <span>{t('pm.plane.angle')}</span>
             <ValueInput value={d.angle} suffix="°" toCommand={(angle) => set({ ...d, angle })} />
           </label>
         )}
         <label className="pm-row checkbox">
           <input type="checkbox" checked={d.reverse ?? false} onChange={(e) => reverse(e.target.checked)} />
-          <span>反轉方向</span>
+          <span>{t('pm.plane.reverse')}</span>
         </label>
-        <p className="hint">
-          {d.mode === 'threePoint'
-            ? '再點一次已選的頂點可移除它。'
-            : d.mode === 'angle'
-              ? '角度 0° 時與參考面平行，90° 時垂直；參考面也可在設計樹中點選基準面。'
-              : '參考面也可在設計樹中點選基準面。'}
-        </p>
+        <p className="hint">{t(`pm.plane.hint.${d.mode}`)}</p>
       </section>
     </>
+  );
+}
+
+/** Reference axis (C3.3). */
+function RefAxisPanel({ f }: { f: RefAxisFeature }) {
+  const d = f.def;
+  return (
+    <>
+      <ModeSelect heading={t('pm.axis.type')} value={d.mode} labels={AXIS_MODE_LABEL} onChange={(mode) => store.execute({ type: 'setRefAxis', featureId: f.id, def: axisDefinitionFor(mode as AxisDefinition['mode']) })} />
+      <section className="pm-group">
+        <h4>{t('pm.refs')}</h4>
+        <SlotList f={f} />
+      <DatumPicker f={f} />
+        <DatumPicker f={f} />
+        <p className="hint">{t(`pm.axis.hint.${d.mode}`)}</p>
+      </section>
+    </>
+  );
+}
+
+/** Reference point (C3.5). */
+function RefPointPanel({ f }: { f: RefPointFeature }) {
+  const d = f.def;
+  const set = (def: PointDefinition): Command => ({ type: 'setRefPoint', featureId: f.id, def });
+  return (
+    <>
+      <ModeSelect heading={t('pm.point.type')} value={d.mode} labels={POINT_MODE_LABEL} onChange={(mode) => store.execute(set(pointDefinitionFor(mode as PointDefinition['mode'])))} />
+      <section className="pm-group">
+        <h4>{t('pm.refs')}</h4>
+        <SlotList f={f} />
+      <DatumPicker f={f} />
+        <DatumPicker f={f} />
+        {d.mode === 'coords' &&
+          (['x', 'y', 'z'] as const).map((axis) => (
+            <label key={axis} className="pm-row">
+              <span>{t(`pm.point.${axis}`)}</span>
+              <ValueInput value={d[axis]} toCommand={(value) => set({ ...d, [axis]: value })} />
+            </label>
+          ))}
+        <p className="hint">{t(`pm.point.hint.${d.mode}`)}</p>
+      </section>
+    </>
+  );
+}
+
+/** Coordinate system (C3.4). */
+function CoordSysPanel({ f }: { f: CoordSysFeature }) {
+  const flip = (key: 'flipX' | 'flipY', on: boolean) => {
+    const { origin, x, y, flipX, flipY } = f;
+    store.execute({ type: 'setCoordSys', featureId: f.id, value: { ...(origin ? { origin } : {}), x, y, ...(flipX ? { flipX } : {}), ...(flipY ? { flipY } : {}), [key]: on ? true : undefined } });
+  };
+  return (
+    <section className="pm-group">
+      <h4>{t('pm.refs')}</h4>
+      <SlotList f={f} />
+      <DatumPicker f={f} />
+      <label className="pm-row checkbox">
+        <input type="checkbox" checked={f.flipX ?? false} onChange={(e) => flip('flipX', e.target.checked)} />
+        <span>{t('pm.coordSys.flipX')}</span>
+      </label>
+      <label className="pm-row checkbox">
+        <input type="checkbox" checked={f.flipY ?? false} onChange={(e) => flip('flipY', e.target.checked)} />
+        <span>{t('pm.coordSys.flipY')}</span>
+      </label>
+      <p className="hint">{t('pm.coordSys.hint')}</p>
+    </section>
   );
 }
 
@@ -1336,6 +1447,9 @@ export function PropertyManager() {
       {f.type === 'fillet' && <FilletPanel f={f} />}
       {f.type === 'chamfer' && <ChamferPanel f={f} />}
       {f.type === 'refPlane' && <RefPlanePanel f={f} />}
+      {f.type === 'refAxis' && <RefAxisPanel f={f} />}
+      {f.type === 'refPoint' && <RefPointPanel f={f} />}
+      {f.type === 'coordSys' && <CoordSysPanel f={f} />}
       {f.type === 'importedBody' && <ImportedBodyPanel f={f} />}
       {f.type === 'deleteFace' && <DeleteFacePanel f={f} />}
       {f.type === 'shell' && <ShellPanel f={f} />}

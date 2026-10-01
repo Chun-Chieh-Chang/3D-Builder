@@ -115,6 +115,16 @@ export interface PlaneDisplay {
   highlighted?: boolean;
 }
 
+/**
+ * Reference axes, points and coordinate systems to show (D4.6, C3.3–C3.5). An axis is a line through the model's extent, a point a dot, a coordinate
+ * system three arrows: the last two a constant length on screen.
+ */
+export interface DatumDisplay {
+  axes: { key: string; origin: [number, number, number]; dir: [number, number, number]; highlighted?: boolean }[];
+  points: { key: string; p: [number, number, number]; highlighted?: boolean }[];
+  systems: { key: string; origin: [number, number, number]; x: [number, number, number]; y: [number, number, number]; z: [number, number, number]; highlighted?: boolean }[];
+}
+
 /** Pointer input on the graphics area while a tool (e.g. a sketch tool) owns the left button. */
 export interface ToolPointerEvent {
   type: 'down' | 'move' | 'up' | 'dblclick' | 'leave';
@@ -214,6 +224,8 @@ export class Viewer {
   private sketchGroup: THREE.Group | null = null;
   private originShown = false;
   private originGroup: THREE.Group | null = null;
+  private datums: DatumDisplay = { axes: [], points: [], systems: [] };
+  private datumGroup: THREE.Group | null = null;
   private overlayGroup: THREE.Group | null = null;
   private labels = new Map<string, { el: HTMLElement; world: THREE.Vector3 }>();
   private toolHandler: ((e: ToolPointerEvent) => void) | null = null;
@@ -312,6 +324,7 @@ export class Viewer {
     this.selectedFaces.clear();
     this.paintFaces();
     if (this.planes.length > 0) this.paintPlanes(); // sized to the body
+    if (this.datums.axes.length > 0) this.paintDatums();
     if (fit) this.fitAll();
     this.requestRender();
   }
@@ -953,6 +966,61 @@ export class Viewer {
     this.requestRender();
   }
 
+  // ---------------------------------------------------------------- reference axes, points and coordinate systems (D4.6)
+
+  /** Reference axes, points and coordinate systems to show. */
+  setDatums(datums: DatumDisplay): void {
+    this.datums = datums;
+    this.paintDatums();
+  }
+
+  private paintDatums(): void {
+    if (this.datumGroup) {
+      this.overlayScene.remove(this.datumGroup);
+      disposeGroup(this.datumGroup);
+      this.datumGroup = null;
+    }
+    const { axes, points, systems } = this.datums;
+    if (axes.length + points.length + systems.length > 0) {
+      const group = new THREE.Group();
+      const px = this.pixelSize();
+      const box = this.contentBox();
+      const reach = box.isEmpty() ? 50 : box.getSize(new THREE.Vector3()).length();
+      const line = (a: THREE.Vector3, b: THREE.Vector3, color: number) =>
+        group.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints([a, b]), new THREE.LineBasicMaterial({ color, depthTest: false })));
+      for (const axis of axes) {
+        // through the extent of the model, and a little beyond it, whatever the axis starts at
+        const o = new THREE.Vector3(...axis.origin);
+        const d = new THREE.Vector3(...axis.dir).normalize();
+        let [t0, t1] = [-reach / 2, reach / 2];
+        if (!box.isEmpty()) {
+          const along = [0, 1, 2, 3, 4, 5, 6, 7].map((i) => new THREE.Vector3(i & 1 ? box.max.x : box.min.x, i & 2 ? box.max.y : box.min.y, i & 4 ? box.max.z : box.min.z).sub(o).dot(d));
+          const margin = 0.1 * (Math.max(...along) - Math.min(...along)) + 5;
+          [t0, t1] = [Math.min(...along) - margin, Math.max(...along) + margin];
+        }
+        line(o.clone().addScaledVector(d, t0), o.clone().addScaledVector(d, t1), axis.highlighted ? COLORS.edgeHover : 0x7048a8);
+      }
+      if (points.length > 0) {
+        const geometry = new THREE.BufferGeometry().setFromPoints(points.map((p) => new THREE.Vector3(...p.p)));
+        group.add(new THREE.Points(geometry, new THREE.PointsMaterial({ color: 0x7048a8, size: 8, sizeAttenuation: false, depthTest: false })));
+        const lit = points.filter((p) => p.highlighted);
+        if (lit.length > 0) group.add(new THREE.Points(new THREE.BufferGeometry().setFromPoints(lit.map((p) => new THREE.Vector3(...p.p))), new THREE.PointsMaterial({ color: COLORS.edgeHover, size: 11, sizeAttenuation: false, depthTest: false })));
+      }
+      const len = 40 * px;
+      for (const c of systems) {
+        const o = new THREE.Vector3(...c.origin);
+        const arm = (v: [number, number, number], color: number) => line(o, o.clone().addScaledVector(new THREE.Vector3(...v), len), color);
+        arm(c.x, 0xe03131);
+        arm(c.y, 0x2f9e44);
+        arm(c.z, 0x1c7ed6);
+        group.add(new THREE.Points(new THREE.BufferGeometry().setFromPoints([o]), new THREE.PointsMaterial({ color: c.highlighted ? COLORS.edgeHover : 0x7048a8, size: 7, sizeAttenuation: false, depthTest: false })));
+      }
+      this.datumGroup = group;
+      this.overlayScene.add(group);
+    }
+    this.requestRender();
+  }
+
   // ---------------------------------------------------------------- reference planes (D4.6)
 
   /** Reference planes to show; each is a translucent square centered on the model's projection. */
@@ -1198,6 +1266,7 @@ export class Viewer {
 
   private viewChanged(): void {
     if (this.originShown) this.paintOrigin(); // a constant size on screen
+    if (this.datums.points.length + this.datums.systems.length > 0) this.paintDatums();
     this.events.onViewChange?.();
     this.requestRender();
   }

@@ -38,6 +38,7 @@ import { contourChoices, findProfiles, type ContourChoice } from '@3db/sketch/pr
 import type { Viewer } from '@3db/render';
 import type { KernelApi, RebuildPayload, SketchSolvePayload, SketchSolveRequest } from '../worker/protocol';
 import { SketchController, type ControllerView, type SketchHost } from '../sketcher/controller';
+import { axisDefinitionFor, put, treeRef } from './datumSlots';
 import {
   download,
   fileIn,
@@ -630,6 +631,26 @@ class AppStore {
     this.openNew({ id, type: 'refPlane', name: nextName(this.history.doc, '基準面'), suppressed: false, def: { mode: 'offset', plane, distance: '10' } }, '基準面');
   }
 
+  /** 「基準軸」 (C3.3): along a straight edge, or the axis of the cylinder that is selected; the PropertyManager changes the type and the references. */
+  newRefAxis(): void {
+    const face = this.state.selectedFace;
+    const def = face?.kind === 'face' && (face.fingerprint?.type === 'cylinder' || face.fingerprint?.type === 'cone') ? ({ mode: 'cylinder', face } as const) : axisDefinitionFor('edge');
+    const name = t('feature.refAxis');
+    this.openNew({ id: this.allocator().take('axis'), type: 'refAxis', name: nextName(this.history.doc, name), suppressed: false, def }, name);
+  }
+
+  /** 「參考點」 (C3.5): at the part origin by coordinates, to be moved or changed to another kind in the PropertyManager. */
+  newRefPoint(): void {
+    const name = t('feature.refPoint');
+    this.openNew({ id: this.allocator().take('point'), type: 'refPoint', name: nextName(this.history.doc, name), suppressed: false, def: { mode: 'coords', x: '0', y: '0', z: '0' } }, name);
+  }
+
+  /** 「座標系統」 (C3.4): at the part origin with its axes along the default ones, to be changed in the PropertyManager. */
+  newCoordSys(): void {
+    const name = t('feature.coordSys');
+    this.openNew({ id: this.allocator().take('csys'), type: 'coordSys', name: nextName(this.history.doc, name), suppressed: false, x: { kind: 'datum', name: 'plane:right' }, y: { kind: 'datum', name: 'plane:top' } }, name);
+  }
+
   /** 「導角」 (C5.3), angle–distance by default like SolidWorks. */
   newChamfer(): void {
     const id = this.allocator().take('chamfer');
@@ -789,7 +810,7 @@ class AppStore {
     const f = this.editedFeature();
     if (f?.type === 'fillet' || f?.type === 'chamfer') this.toggleEdge(ref);
     else if (f?.type === 'extrude') this.setUpToFace(ref);
-    else if (f?.type === 'refPlane') this.setPlaneRef(ref);
+    else if (f?.type === 'refPlane' || f?.type === 'refAxis' || f?.type === 'refPoint' || f?.type === 'coordSys') this.putDatumRef(ref);
     else if (f?.type === 'deleteFace') this.toggleFace(ref);
     else if (f?.type === 'shell') this.toggleShellFace(ref);
     else if (f?.type === 'draft') this.pickDraftFace(ref);
@@ -800,31 +821,26 @@ class AppStore {
   /** A click in the FeatureManager selects; while a plane is being defined it picks a plane like SolidWorks' flyout tree. */
   treeClick(id: Id): void {
     const f = this.editedFeature();
-    if (f?.type === 'refPlane' && f.def.mode !== 'threePoint' && id !== f.id && this.isPlane(id)) return this.setPlaneRef({ kind: 'datum', name: id });
+    const datum = f && id !== f.id && (f.type === 'refPlane' || f.type === 'refAxis' || f.type === 'refPoint' || f.type === 'coordSys') ? treeRef(this.history.doc, id) : null;
+    if (datum && this.putDatumRef(datum)) return;
     this.select(id);
   }
 
   /**
-   * References of the plane being defined (C3.2): a plane (datum or planar face) for offset and angle
-   * planes, a straight edge as the axis of an angle plane, and up to three vertices, toggled by clicking.
+   * What is clicked while reference geometry is being defined (C3.2–C3.5) goes to the first selection box that takes it (`datumSlots`).
+   * Returns whether anything took it; an element nothing takes is left to the caller (a click in the tree selects).
    */
-  setPlaneRef(ref: Ref): void {
+  putDatumRef(ref: Ref): boolean {
     const f = this.editedFeature();
-    if (f?.type !== 'refPlane') return;
-    const d = f.def;
-    const set = (def: PlaneDefinition) => this.execute({ type: 'setRefPlane', featureId: f.id, def });
-    if (d.mode === 'threePoint') {
-      if (ref.kind !== 'vertex') return;
-      if (d.points.some((p) => p.name === ref.name)) return void set({ ...d, points: d.points.filter((p) => p.name !== ref.name) });
-      if (d.points.length >= 3) return this.notify('已選三個點；點選已選的點可移除它');
-      return void set({ ...d, points: [...d.points, ref] });
+    if (!f) return false;
+    const result = put(f, this.history.doc, ref);
+    if (!result) {
+      this.notify(t('slot.notNeeded'), 'error');
+      return false;
     }
-    if (ref.kind === 'edge' && d.mode === 'angle') {
-      if (ref.fingerprint?.type !== 'line') return this.notify('旋轉軸必須是直線邊線', 'error');
-      return void set({ ...d, axis: ref });
-    }
-    if (ref.kind === 'face' && ref.fingerprint?.type !== 'plane') return this.notify('參考面必須是平面', 'error');
-    if (ref.kind === 'face' || ref.kind === 'datum') set({ ...d, plane: ref });
+    if ('message' in result) this.notify(result.message);
+    else this.execute(result.command);
+    return true;
   }
 
   /** 「成形至某一面」: the face picked in the graphics area ends the extrusion being edited. */
@@ -857,7 +873,7 @@ class AppStore {
     if (!e) return undefined;
     const i = this.history.doc.features.findIndex((f) => f.id === e.featureId);
     const type = this.history.doc.features[i]?.type;
-    if (type === 'refPlane') return i + 1;
+    if (type === 'refPlane' || type === 'refAxis' || type === 'refPoint' || type === 'coordSys') return i + 1;
     return type === 'fillet' || type === 'chamfer' || type === 'deleteFace' || type === 'moveFace' || type === 'shell' || type === 'draft' || type === 'combine' || type === 'sketch' ? i : undefined;
   }
 

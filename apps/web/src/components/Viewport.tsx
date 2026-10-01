@@ -2,8 +2,9 @@ import { useEffect, useRef, useState } from 'react';
 import { t } from '@3db/i18n';
 import { DATUM_PLANES, findFeature, isDimension, isShown, ORIGIN_KEY, Parameters, type DatumPlaneName, type Id, type Feature, type PlaneFrame, type Ref } from '@3db/model';
 import { ownerFeatures } from '@3db/naming';
-import { Viewer, type PlaneDisplay, type SketchOverlay } from '@3db/render';
+import { Viewer, type DatumDisplay, type PlaneDisplay, type SketchOverlay } from '@3db/render';
 import { ACTIONS } from '../actions';
+import { chosen, pickable, prompt } from '../state/datumSlots';
 import { sample } from '@3db/sketch/interact';
 import { buildOverlay, SKETCH_COLORS } from '../sketcher/overlay';
 import { store, useSketcherView, useStore } from '../state/store';
@@ -16,7 +17,9 @@ import { Icon } from './Icon';
  * (the SolidWorks selection boxes), and the prompt. Outside sessions faces are picked for selection.
  */
 function picking(feature: Feature | undefined, editing: boolean, modelTool: 'convert' | 'pierce' | null = null) {
-  const def = feature?.type === 'refPlane' ? feature.def : null;
+  // reference geometry (C3.2–C3.5): what its empty selection boxes take, and what they hold
+  const datum = feature?.type === 'refPlane' || feature?.type === 'refAxis' || feature?.type === 'refPoint' || feature?.type === 'coordSys' ? feature : undefined;
+  const slots = datum ? { ...pickable(datum), ...chosen(datum), prompt: prompt(datum) } : null;
   // the end of an extrusion that is a face, a vertex or a body: what is clicked on the model goes to the direction that is waiting for it
   const ends = feature?.type === 'extrude' ? [feature.dir1, feature.dir2].flatMap((d) => (d ? [d] : [])) : [];
   const endFaces = ends.flatMap((d) => (d.type === 'upToFace' || d.type === 'offsetFromFace' ? [d.face] : []));
@@ -26,7 +29,7 @@ function picking(feature: Feature | undefined, editing: boolean, modelTool: 'con
   const edgeFeature = feature?.type === 'fillet' || feature?.type === 'chamfer' ? feature : null;
   const faceFeature = feature?.type === 'deleteFace' || feature?.type === 'moveFace' || feature?.type === 'shell' || feature?.type === 'draft' ? feature : null;
   const combine = feature?.type === 'combine';
-  const prompt = combine
+  const prompt_ = combine
     ? t('pick.combine')
     : faceFeature
     ? t(faceFeature.type === 'deleteFace' ? 'pick.deleteFace' : faceFeature.type === 'shell' ? 'pick.shell' : faceFeature.type === 'draft' ? 'pick.draft' : 'pick.moveFace')
@@ -34,23 +37,17 @@ function picking(feature: Feature | undefined, editing: boolean, modelTool: 'con
     ? `點選邊線以加入${FEATURE_LABEL[edgeFeature.type]}`
     : upTo
       ? t('pick.extrudeEnd')
-      : def?.mode === 'offset'
-        ? '點選平面，或在設計樹中選擇基準面'
-        : def?.mode === 'angle'
-          ? '點選參考平面（或在設計樹中選擇基準面），再點選作為旋轉軸的直線邊線'
-          : def?.mode === 'threePoint'
-            ? `點選三個頂點（已選 ${def.points.length} 個）`
-            : null;
+      : (slots?.prompt ?? null);
   return {
-    edges: !!edgeFeature || def?.mode === 'angle' || modelTool !== null,
-    faces: !editing || modelTool === 'convert' || !!upTo || !!faceFeature || combine || def?.mode === 'offset' || def?.mode === 'angle',
-    vertices: def?.mode === 'threePoint' || endVertices.length > 0,
-    pickedEdges: edgeFeature ? edgeFeature.edges : def?.mode === 'angle' ? [def.axis] : [],
-    pickedFaces: faceFeature ? (faceFeature.type === 'deleteFace' || faceFeature.type === 'shell' ? faceFeature.faces : faceFeature.type === 'draft' ? [faceFeature.neutral, ...faceFeature.faces] : [faceFeature.face]) : upTo ? endFaces : def && def.mode !== 'threePoint' && def.plane.kind === 'face' ? [def.plane] : [],
-    pickedVertices: def?.mode === 'threePoint' ? def.points : endVertices,
-    /** A default or reference plane the plane being defined is based on. */
-    referencePlane: def && def.mode !== 'threePoint' && def.plane.kind === 'datum' ? def.plane.name : null,
-    prompt,
+    edges: !!edgeFeature || !!slots?.edges || modelTool !== null,
+    faces: !editing || modelTool === 'convert' || !!upTo || !!faceFeature || combine || !!slots?.faces,
+    vertices: !!slots?.vertices || endVertices.length > 0,
+    pickedEdges: edgeFeature ? edgeFeature.edges : (slots?.edges ?? []),
+    pickedFaces: faceFeature ? (faceFeature.type === 'deleteFace' || faceFeature.type === 'shell' ? faceFeature.faces : faceFeature.type === 'draft' ? [faceFeature.neutral, ...faceFeature.faces] : [faceFeature.face]) : upTo ? endFaces : (slots?.faces ?? []),
+    pickedVertices: slots ? slots.vertices : endVertices,
+    /** Default and reference planes, axes and points the geometry being defined is based on: they are drawn while they are used. */
+    referenceDatums: slots?.datums ?? [],
+    prompt: prompt_,
   };
 }
 
@@ -181,16 +178,39 @@ export function Viewport() {
   useEffect(() => {
     const v = store.viewer;
     if (!v) return;
-    const reference = picking(feature, !!editing).referencePlane;
+    const reference = picking(feature, !!editing).referenceDatums;
     const planes: PlaneDisplay[] = [];
     const show = (key: string, frame: PlaneFrame | undefined, highlighted: boolean) => frame && planes.push({ key, frame, highlighted });
     for (const name of Object.keys(DATUM_PLANES) as DatumPlaneName[]) {
-      if (selected === name || reference === name || isShown(doc, name)) show(name, DATUM_PLANES[name], selected === name);
+      if (selected === name || reference.includes(name) || isShown(doc, name)) show(name, DATUM_PLANES[name], selected === name);
     }
     for (const f of doc.features) {
       if (f.type === 'refPlane' && (isShown(doc, f.id) || selected === f.id || editing?.featureId === f.id)) show(f.id, result?.frames.get(f.id), selected === f.id || editing?.featureId === f.id);
     }
     v.setPlanes(planes);
+  }, [feature, editing, selected, doc, result]);
+
+  // Reference axes, points and coordinate systems (D4.6): shown, or being defined, or used by what is being defined.
+  useEffect(() => {
+    const v = store.viewer;
+    if (!v) return;
+    const reference = picking(feature, !!editing).referenceDatums;
+    const lit = (id: Id) => selected === id || editing?.featureId === id;
+    const datums: DatumDisplay = { axes: [], points: [], systems: [] };
+    for (const f of doc.features) {
+      if (!(isShown(doc, f.id) || lit(f.id) || reference.includes(f.id))) continue;
+      if (f.type === 'refAxis') {
+        const a = result?.axes.get(f.id);
+        if (a) datums.axes.push({ key: f.id, origin: a.origin, dir: a.dir, highlighted: lit(f.id) });
+      } else if (f.type === 'refPoint') {
+        const p = result?.points.get(f.id);
+        if (p) datums.points.push({ key: f.id, p, highlighted: lit(f.id) });
+      } else if (f.type === 'coordSys') {
+        const c = result?.systems.get(f.id);
+        if (c) datums.systems.push({ key: f.id, ...c, highlighted: lit(f.id) });
+      }
+    }
+    v.setDatums(datums);
   }, [feature, editing, selected, doc, result]);
 
   // Shown sketches and the origin (D4.6). The sketch being edited is drawn by its own overlay.

@@ -278,6 +278,22 @@ describe('a part file written by version 19 (loft, C4.5) opens in version 20 (ri
   });
 });
 
+describe('a part file written by version 20 (rib, C4.7) opens in version 21 (reference geometry, C3.2–C3.5)', () => {
+  it('keeps its rib and rebuilds it: a plate 40 × 40 × 10 and a wall 4 thick, 20 long and 15 high, valid, every face named as before', async () => {
+    const file = await readPartFile(oldFile('v20-rib.3dbx'));
+    expect(file.warnings).toEqual([]);
+    expect(JSON.parse(new TextDecoder().decode((await readZip(oldFile('v20-rib.3dbx')))[0]!.data)).schemaVersion).toBe(20);
+    expect(file.doc.schemaVersion).toBe(SCHEMA_VERSION);
+    expect(file.doc.features.map((f) => f.type)).toEqual(['sketch', 'extrude', 'sketch', 'rib']);
+    const r = new Regenerator(kernel, await PlaneGcsSolver.create(), file.blobs).rebuild(file.doc);
+    expect(statuses(r).filter((s) => !s.endsWith('=ok'))).toEqual([]);
+    expect(r.bodies).toHaveLength(1);
+    expect(kernel.isValid(r.body!.shape)).toBe(true);
+    expect(kernel.massProps(r.body!.shape).volume).toBeCloseTo(40 * 40 * 10 + 15 * 20 * 4, 6);
+    expect(r.body!.names.faces).toEqual(expect.arrayContaining(['rib1:cap:start', 'rib1:side:sr.l.neg', 'rib1:side:sr.l.pos']));
+  });
+});
+
 describe('the .3dbx file (B9.1, F7.1)', () => {
   const docs = async (): Promise<[string, PartDoc][]> => [
     ['the demo part', createDemoPart()],

@@ -106,6 +106,9 @@ const migrations: Record<number, (doc: Json) => Json> = {
   18: (doc) => doc,
   // v20: the rib (C4.7). Nothing to convert; the version keeps older programs from opening a part with a feature they would skip.
   19: (doc) => doc,
+  // v21: reference axes, points and coordinate systems and the other reference planes (C3.2–C3.5). Nothing to convert; the version keeps older programs
+  // from opening a part with a feature they would skip.
+  20: (doc) => doc,
 };
 
 export class FormatError extends Error {

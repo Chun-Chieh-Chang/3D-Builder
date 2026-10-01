@@ -24,6 +24,9 @@ export const FEATURE_LABEL: Record<FeatureType, string> = labelsOf({
   fillet: 'feature.fillet',
   chamfer: 'feature.chamfer',
   refPlane: 'feature.refPlane',
+  refAxis: 'feature.refAxis',
+  refPoint: 'feature.refPoint',
+  coordSys: 'feature.coordSys',
   importedBody: 'feature.importedBody',
   deleteFace: 'feature.deleteFace',
   shell: 'feature.shell',
@@ -122,6 +125,23 @@ export const PLANE_MODE_LABEL = labelsOf({
   offset: 'planeMode.offset',
   angle: 'planeMode.angle',
   threePoint: 'planeMode.threePoint',
+  parallel: 'planeMode.parallel',
+  perpendicular: 'planeMode.perpendicular',
+  midplane: 'planeMode.midplane',
+  tangent: 'planeMode.tangent',
+});
+
+/** How a reference axis (C3.3) and a reference point (C3.5) are defined. */
+export const AXIS_MODE_LABEL = labelsOf({
+  edge: 'axisMode.edge',
+  twoPoints: 'axisMode.twoPoints',
+  cylinder: 'axisMode.cylinder',
+  planes: 'axisMode.planes',
+});
+export const POINT_MODE_LABEL = labelsOf({
+  coords: 'pointMode.coords',
+  center: 'pointMode.center',
+  axisPlane: 'pointMode.axisPlane',
 });
 
 export const DATUM_ITEMS = [

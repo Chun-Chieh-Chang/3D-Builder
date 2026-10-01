@@ -7,7 +7,10 @@ import {
   planeFrame,
   resolveDoc,
   bodyFeature,
+  type Axis3,
   type ChamferFeature,
+  type CoordSysFeature,
+  type CoordSystem,
   type CombineFeature,
   type DeleteFaceFeature,
   type DraftFeature,
@@ -24,7 +27,9 @@ import {
   type PartDoc,
   type PlaneFrame,
   type Ref,
+  type RefAxisFeature,
   type RefPlaneFeature,
+  type RefPointFeature,
   type RevolveFeature,
   type RibFeature,
   type ShellFeature,
@@ -87,6 +92,10 @@ export interface RebuildResult {
    * reference plane that was built.
    */
   frames: Map<Id, PlaneFrame>;
+  /** The reference axes, reference points and coordinate systems that were built (C3.3–C3.5), by feature id. */
+  axes: Map<Id, Axis3>;
+  points: Map<Id, Vec3>;
+  systems: Map<Id, CoordSystem>;
   totalMs: number;
 }
 
@@ -220,6 +229,10 @@ export class Regenerator {
   private diagnostics: ImportDiagnostics | null = null;
   /** Reference planes built so far in this rebuild (C3.2). */
   private planes = new Map<Id, PlaneFrame>();
+  /** Reference axes, points and coordinate systems built so far in this rebuild (C3.3–C3.5). */
+  private axes = new Map<Id, Axis3>();
+  private points = new Map<Id, Vec3>();
+  private systems = new Map<Id, CoordSystem>();
   /** The imported files read so far in this rebuild: a second read of one gets a copy of its own. */
   private usedImports = new Set<string>();
   /**
@@ -255,6 +268,9 @@ export class Regenerator {
     const results: FeatureResult[] = [];
     let set = new Bodies([], this.kernel);
     this.planes = new Map();
+    this.axes = new Map();
+    this.points = new Map();
+    this.systems = new Map();
 
     // Every expression becomes the number it stands for before anything is built: the solver and the kernel
     // only ever see numbers. A feature whose expression cannot be evaluated reports why instead of building.
@@ -302,6 +318,18 @@ export class Regenerator {
             const frame = this.refPlane(feature, set);
             this.planes.set(feature.id, frame);
             frames.set(feature.id, frame);
+            return done({ status: 'ok' });
+          }
+          case 'refAxis': {
+            this.axes.set(feature.id, this.refAxis(feature, set));
+            return done({ status: 'ok' });
+          }
+          case 'refPoint': {
+            this.points.set(feature.id, this.refPoint(feature, set));
+            return done({ status: 'ok' });
+          }
+          case 'coordSys': {
+            this.systems.set(feature.id, this.coordSys(feature, set));
             return done({ status: 'ok' });
           }
           case 'extrude':
@@ -381,7 +409,7 @@ export class Regenerator {
           };
         })
       : [];
-    return { features: results, body: view, bodies, sketches, frames, totalMs: performance.now() - t0 };
+    return { features: results, body: view, bodies, sketches, frames, axes: this.axes, points: this.points, systems: this.systems, totalMs: performance.now() - t0 };
   }
 
   /**
@@ -435,15 +463,48 @@ export class Regenerator {
     return this.planeOf(f.plane, set, { what: '草圖所在的面', notPlanar: '草圖只能放在平面上' });
   }
 
+  /** The model so far, which a reference to one of its elements is looked up in. */
+  private modelFor(set: Bodies, what: string): BodyView {
+    const body = set.view;
+    if (!body) throw new FeatureError(t('datum.noModel', { what }));
+    return body;
+  }
+
+  /** A straight model edge or a reference axis (C3.3) as a point on it and a direction. */
+  private axisOfRef(ref: Ref, set: Bodies, what: string): Axis3 {
+    if (ref.kind === 'datum') {
+      const axis = this.axes.get(ref.name);
+      if (!axis) throw new FeatureError(t('datum.axisMissing', { what }));
+      return axis;
+    }
+    const body = this.modelFor(set, what);
+    const edge = body.topology.edges[this.resolve(ref, body, what)]!;
+    if (edge.curve !== 'line' || !edge.dir) throw new FeatureError(t('datum.notLine', { what }));
+    return { origin: edge.mid, dir: unit(edge.dir) };
+  }
+
+  /** A model vertex or a reference point (C3.5). */
+  private pointOfRef(ref: Ref, set: Bodies, what: string): Vec3 {
+    if (ref.kind === 'datum') {
+      const point = this.points.get(ref.name);
+      if (!point) throw new FeatureError(t('datum.pointMissing', { what }));
+      return point;
+    }
+    const body = this.modelFor(set, what);
+    return body.topology.vertices[this.resolve(ref, body, what)]!.point;
+  }
+
   /**
-   * Reference plane (C3.2): offset from a plane; through a straight edge at an angle to a plane
-   * (at 0° parallel to it); or through three vertices. The frame follows the planeFrame rules, so a
+   * Reference plane (C3.2): offset from a plane; through a straight edge or axis at an angle to a plane
+   * (at 0° parallel to it); through three points; through a point parallel to a plane; through a point square to an axis; halfway between two
+   * parallel planes; or touching a cylinder, parallel to a plane. The frame follows the planeFrame rules, so a
    * sketch on it gets the same axes the same plane would get anywhere else.
    */
   private refPlane(f: RefPlaneFeature, set: Bodies): PlaneFrame {
     const d = f.def;
     const sign = d.reverse ? -1 : 1;
     const labels = { what: '參考面', notPlanar: '參考面必須是平面' };
+    const signed = (n: Vec3): Vec3 => [n[0] * sign, n[1] * sign, n[2] * sign];
     switch (d.mode) {
       case 'offset': {
         const base = this.planeOf(d.plane, set, labels);
@@ -451,28 +512,133 @@ export class Regenerator {
       }
       case 'angle': {
         const base = this.planeOf(d.plane, set, labels);
-        const body = set.view;
-        if (!body) throw new FeatureError('旋轉軸不存在：它之前沒有本體');
-        const edge = body.topology.edges[this.resolve(d.axis, body, '旋轉軸')]!;
-        if (edge.curve !== 'line' || !edge.dir) throw new FeatureError('旋轉軸必須是直線邊線');
-        const k = unit(edge.dir);
+        const axis = this.axisOfRef(d.axis, set, '旋轉軸');
+        const k = axis.dir;
         // The part of the plane's normal across the axis, turned about the axis.
         const across = sub(base.normal, add([0, 0, 0], k, dot(base.normal, k)));
         if (Math.hypot(...across) < 1e-9) throw new FeatureError('旋轉軸不能垂直於參考面');
-        return planeFrame(edge.mid, rotate(unit(across), k, evalAngle(d.angle) * sign));
+        return planeFrame(axis.origin, rotate(unit(across), k, evalAngle(d.angle) * sign));
       }
       case 'threePoint': {
         if (d.points.length < 3) throw new FeatureError('三點基準面需要三個頂點');
-        const body = set.view;
-        if (!body) throw new FeatureError('頂點不存在：它之前沒有本體');
-        const [a, b, c] = d.points.map((ref, i) => body.topology.vertices[this.resolve(ref, body, `第 ${i + 1} 點`)]!.point) as [Vec3, Vec3, Vec3];
+        const [a, b, c] = d.points.map((ref, i) => this.pointOfRef(ref, set, t('datum.nthPoint', { n: i + 1 }))) as [Vec3, Vec3, Vec3];
         const normal = cross(sub(b, a), sub(c, a));
         const size = Math.max(Math.hypot(...sub(b, a)), Math.hypot(...sub(c, a)), 1e-9);
         if (Math.hypot(...normal) < 1e-9 * size * size) throw new FeatureError('三點共線，無法決定平面');
-        const n = unit(normal);
-        return planeFrame(a, [n[0] * sign, n[1] * sign, n[2] * sign]);
+        return planeFrame(a, signed(unit(normal)));
+      }
+      case 'parallel': {
+        const base = this.planeOf(d.plane, set, labels);
+        return planeFrame(this.pointOfRef(d.point, set, t('datum.through')), signed(base.normal));
+      }
+      case 'perpendicular': {
+        const axis = this.axisOfRef(d.axis, set, t('datum.perpendicularTo'));
+        return planeFrame(this.pointOfRef(d.point, set, t('datum.through')), signed(axis.dir));
+      }
+      case 'midplane': {
+        const a = this.planeOf(d.plane, set, labels);
+        const b = this.planeOf(d.plane2, set, { what: t('datum.secondPlane'), notPlanar: t('datum.secondPlaneNotPlanar') });
+        const sin = Math.hypot(...cross(a.normal, b.normal));
+        if (sin > 1e-9) throw new FeatureError(t('datum.midParallel', { angle: ((Math.asin(Math.min(1, sin)) * 180) / Math.PI).toFixed(2) }));
+        const gap = dot(sub(b.origin, a.origin), a.normal);
+        if (Math.abs(gap) < 1e-9) throw new FeatureError(t('datum.midCoincident'));
+        return planeFrame(add(a.origin, a.normal, gap / 2), signed(a.normal));
+      }
+      case 'tangent': {
+        const base = this.planeOf(d.plane, set, labels);
+        const body = this.modelFor(set, t('datum.cylinderFace'));
+        const face = body.topology.faces[this.resolve(d.face, body, t('datum.cylinderFace'))]!;
+        const g = face.geometry;
+        if (g?.type !== 'cylinder') throw new FeatureError(t('datum.tangentCylinder'));
+        const axis = unit(g.axis);
+        if (Math.abs(dot(base.normal, axis)) > 1e-6) throw new FeatureError(t('datum.tangentNotParallel'));
+        return planeFrame(add(g.origin, base.normal, g.radius * sign), signed(base.normal));
       }
     }
+  }
+
+  /** Reference axis (C3.3): a straight edge, two points, the axis of a cylinder or cone, or where two planes meet. */
+  private refAxis(f: RefAxisFeature, set: Bodies): Axis3 {
+    const d = f.def;
+    switch (d.mode) {
+      case 'edge':
+        return this.axisOfRef(d.edge, set, t('datum.edge'));
+      case 'twoPoints': {
+        if (d.points.length < 2) throw new FeatureError(t('datum.twoPointsNeedTwo'));
+        const [a, b] = d.points.map((ref, i) => this.pointOfRef(ref, set, t('datum.nthPoint', { n: i + 1 }))) as [Vec3, Vec3];
+        const v = sub(b, a);
+        if (Math.hypot(...v) < 1e-9) throw new FeatureError(t('datum.twoPointsSame'));
+        return { origin: a, dir: unit(v) };
+      }
+      case 'cylinder': {
+        const body = this.modelFor(set, t('datum.cylinderFace'));
+        const face = body.topology.faces[this.resolve(d.face, body, t('datum.cylinderFace'))]!;
+        const g = face.geometry;
+        if (g?.type !== 'cylinder' && g?.type !== 'cone') throw new FeatureError(t('datum.notRevolved'));
+        return g.type === 'cylinder' ? { origin: g.origin, dir: unit(g.axis) } : { origin: g.apex, dir: unit(g.axis) };
+      }
+      case 'planes': {
+        const labels = { what: '參考面', notPlanar: '參考面必須是平面' };
+        const a = this.planeOf(d.plane, set, labels);
+        const b = this.planeOf(d.plane2, set, { what: t('datum.secondPlane'), notPlanar: t('datum.secondPlaneNotPlanar') });
+        const dir = cross(a.normal, b.normal);
+        const len2 = dot(dir, dir);
+        if (len2 < 1e-18) throw new FeatureError(t('datum.planesParallelNoLine'));
+        // the point of both planes nearest the origin: ((h1 n2 − h2 n1) …) as the sum of the two planes' parts square to the line
+        const h1 = dot(a.normal, a.origin);
+        const h2 = dot(b.normal, b.origin);
+        const p1 = cross(b.normal, dir);
+        const p2 = cross(dir, a.normal);
+        const origin: Vec3 = [(h1 * p1[0] + h2 * p2[0]) / len2, (h1 * p1[1] + h2 * p2[1]) / len2, (h1 * p1[2] + h2 * p2[2]) / len2];
+        return { origin, dir: unit(dir) };
+      }
+    }
+  }
+
+  /** Reference point (C3.5): by coordinates, the centre of an edge or a face, or where an axis meets a plane. */
+  private refPoint(f: RefPointFeature, set: Bodies): Vec3 {
+    const d = f.def;
+    switch (d.mode) {
+      case 'coords':
+        return [evalLength(d.x), evalLength(d.y), evalLength(d.z)];
+      case 'center': {
+        const body = this.modelFor(set, t('datum.centerOf'));
+        const index = this.resolve(d.element, body, t('datum.centerOf'));
+        if (d.element.kind === 'edge') {
+          const edge = body.topology.edges[index]!;
+          return edge.geometry?.type === 'circle' ? edge.geometry.center : edge.mid;
+        }
+        const face = body.topology.faces[index]!;
+        return face.geometry?.type === 'sphere' ? face.geometry.center : face.center;
+      }
+      case 'axisPlane': {
+        const axis = this.axisOfRef(d.axis, set, t('datum.axis'));
+        const plane = this.planeOf(d.plane, set, { what: '參考面', notPlanar: '參考面必須是平面' });
+        const along = dot(axis.dir, plane.normal);
+        if (Math.abs(along) < 1e-9) throw new FeatureError(t('datum.axisParallelPlane'));
+        return add(axis.origin, axis.dir, dot(sub(plane.origin, axis.origin), plane.normal) / along);
+      }
+    }
+  }
+
+  /** A direction a coordinate system takes from an element: a straight edge or an axis (as drawn), or the normal of a plane. */
+  private directionOf(ref: Ref, set: Bodies, what: string): Vec3 {
+    if (ref.kind === 'datum' && (isDatumPlaneName(ref.name) || this.planes.has(ref.name))) return this.planeOf(ref, set, { what, notPlanar: t('datum.dirKind', { what }) }).normal;
+    if (ref.kind === 'datum' || ref.kind === 'edge') return this.axisOfRef(ref, set, what).dir;
+    if (ref.kind === 'face') return this.planeOf(ref, set, { what, notPlanar: t('datum.dirKind', { what }) }).normal;
+    throw new FeatureError(t('datum.dirKind', { what }));
+  }
+
+  /** Coordinate system (C3.4): X along one direction, Y as near the other as is square to X, Z = X × Y. */
+  private coordSys(f: CoordSysFeature, set: Bodies): CoordSystem {
+    const origin: Vec3 = f.origin ? this.pointOfRef(f.origin, set, t('datum.csOrigin')) : [0, 0, 0];
+    const flip = (v: Vec3, on: boolean | undefined): Vec3 => (on ? [-v[0], -v[1], -v[2]] : v);
+    const x = unit(flip(this.directionOf(f.x, set, t('datum.xDirection')), f.flipX));
+    const y0 = flip(this.directionOf(f.y, set, t('datum.yDirection')), f.flipY);
+    const z = cross(x, y0);
+    if (Math.hypot(...z) < 1e-9 * Math.hypot(...y0)) throw new FeatureError(t('datum.coordParallel'));
+    const zu = unit(z);
+    return { origin, x, y: cross(zu, x), z: zu };
   }
 
   private sketch(f: SketchFeature, set: Bodies) {

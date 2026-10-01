@@ -1,5 +1,5 @@
 import type { Locale } from '@3db/i18n';
-import type { AssemblyDoc, Fingerprint, Id, PartDoc, PlaneFrame, Pose, Ref, SketchFeature } from '@3db/model';
+import type { AssemblyDoc, Axis3, CoordSystem, Fingerprint, Id, PartDoc, PlaneFrame, Pose, Ref, SketchFeature, Vec3 } from '@3db/model';
 import type { MassProps, MeshData } from '@3db/kernel';
 import type { AssemblyResult, AssemblySolveOptions, Converted, FeatureResult } from '@3db/regen';
 import type { MateGeometry } from '@3db/assembly';
@@ -55,6 +55,10 @@ export interface RebuildPayload {
   vertexFingerprints: Fingerprint[];
   /** Plane of each sketch (datum or model face), including the sketch being edited, and of each reference plane. */
   frames: Map<Id, PlaneFrame>;
+  /** The reference axes, points and coordinate systems that were built (C3.3–C3.5). */
+  axes: Map<Id, Axis3>;
+  points: Map<Id, Vec3>;
+  systems: Map<Id, CoordSystem>;
   /**
    * Solved geometry of every sketch that was evaluated. Which of them are drawn is the document's choice
    * (D4.6, `isShown`), so hiding or showing one does not need a rebuild.

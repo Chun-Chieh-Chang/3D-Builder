@@ -15,11 +15,11 @@ export const isBodyKey = (key: string): boolean => key.startsWith('body:');
  */
 export const bodyFeature = (id: Id): Id => id.split('#')[0]!;
 
-/** Can this key be shown or hidden? A sketch or reference plane of the document, a default plane, the origin, or a body. */
+/** Can this key be shown or hidden? A sketch or reference geometry of the document, a default plane, the origin, or a body. */
 export function isHideable(doc: PartDoc, key: string): boolean {
   if (key === ORIGIN_KEY || isDatumPlaneName(key) || isBodyKey(key)) return true;
   const f = doc.features.find((x) => x.id === key);
-  return f?.type === 'sketch' || f?.type === 'refPlane';
+  return f?.type === 'sketch' || f?.type === 'refPlane' || f?.type === 'refAxis' || f?.type === 'refPoint' || f?.type === 'coordSys';
 }
 
 /**

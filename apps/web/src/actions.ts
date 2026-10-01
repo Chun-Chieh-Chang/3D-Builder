@@ -73,6 +73,9 @@ export const ACTIONS: UiAction[] = [
   { id: 'move-face', get label() { return t('feature.moveFace'); }, group: 'feature', enabled: hasBody, run: () => store.newMoveFace() },
   { id: 'combine', get label() { return t('feature.combine'); }, group: 'feature', enabled: (s) => hasBody(s) && (s.result?.bodies.length ?? 0) > 1, run: () => store.newCombine() },
   { id: 'ref-plane', label: '基準面', group: 'feature', enabled: partIdle, run: () => store.newRefPlane() },
+  { id: 'ref-axis', get label() { return t('action.refAxis'); }, group: 'feature', enabled: partIdle, run: () => store.newRefAxis() },
+  { id: 'ref-point', get label() { return t('action.refPoint'); }, group: 'feature', enabled: partIdle, run: () => store.newRefPoint() },
+  { id: 'coord-sys', get label() { return t('action.coordSys'); }, group: 'feature', enabled: partIdle, run: () => store.newCoordSys() },
   { id: 'import-step', label: '輸入 STEP', group: 'feature', enabled: (s) => partIdle(s) && s.bootMs !== null, run: () => void store.importStep() },
 
   { id: 'insert-component', label: '插入零組件', group: 'assembly', enabled: assemblyIdle, run: () => void store.assembly?.startInsert() },

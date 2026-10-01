@@ -1,4 +1,4 @@
-import { bodyFeature, expressionParents, type Feature, type Id, type PartDoc, type Ref } from '@3db/model';
+import { bodyFeature, defRefs, expressionParents, type Feature, type Id, type PartDoc, type Ref } from '@3db/model';
 import { ownerFeatures } from '@3db/naming';
 
 /**
@@ -49,11 +49,14 @@ export function parentsOf(feature: Feature, doc: PartDoc): Id[] {
       // a body is named by the feature that made it (`extrude1`, or `cut1#2` for a piece a cut left)
       parents = [feature.main, ...feature.tools].filter((r) => r.name).map((r) => bodyFeature(r.name));
       break;
-    case 'refPlane': {
-      const d = feature.def;
-      parents = fromRefs(d.mode === 'threePoint' ? d.points : d.mode === 'angle' ? [d.plane, d.axis] : [d.plane]);
+    case 'refPlane':
+    case 'refAxis':
+    case 'refPoint':
+      parents = fromRefs(defRefs(feature.def));
       break;
-    }
+    case 'coordSys':
+      parents = fromRefs([...(feature.origin ? [feature.origin] : []), feature.x, feature.y]);
+      break;
     case 'importedBody':
       parents = []; // it depends only on its data
       break;

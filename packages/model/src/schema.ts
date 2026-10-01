@@ -6,7 +6,7 @@ import type { Id } from './ids';
  * DOF status, mass properties and error lists are derived data and never stored.
  */
 
-export const SCHEMA_VERSION = 20;
+export const SCHEMA_VERSION = 21;
 
 /** Value expression (B5.2, B5.3): "20", "25.4mm", "30deg", "wall_t*2", "D1@草圖1/2", "property('厚度')"; see `expr/`. */
 export type Expr = string;
@@ -165,7 +165,8 @@ export type RevolveCondition = { type: 'blind'; angle: Expr; reverse?: boolean }
 
 /**
  * Hole wizard (異型孔, C4.8, v17): a hole of one of four kinds drilled into the material at every point of a sketch, from the sketch plane inward (against
- * the normal; everse the other way). size is only the label of the standard size the diameters were taken from; the values that count are the
+ * the normal; 
+everse the other way). size is only the label of the standard size the diameters were taken from; the values that count are the
  * expressions. 	apped is the tap-drill hole of a thread, which is not modelled.
  */
 export interface HoleFeature extends FeatureBase {
@@ -265,18 +266,70 @@ export interface ChamferFeature extends FeatureBase {
 
 /**
  * How a reference plane is defined (C3.2). `plane` is a default plane or another reference plane
- * (kind "datum", by name or feature id) or a planar model face; `axis` a straight model edge;
- * `points` three model vertices.
+ * (kind "datum", by name or feature id) or a planar model face; `axis` a straight model edge or a reference axis;
+ * `points` three model vertices (or reference points); `point` a model vertex or a reference point; `face` a cylindrical face.
+ * v21 adds `parallel`, `perpendicular`, `midplane` and `tangent` (C3.2, P1).
  */
 export type PlaneDefinition =
   | { mode: 'offset'; plane: Ref; distance: Expr; reverse?: boolean }
   /** Through the axis, turned by `angle` from the plane (at 0° parallel to it). */
   | { mode: 'angle'; plane: Ref; axis: Ref; angle: Expr; reverse?: boolean }
-  | { mode: 'threePoint'; points: Ref[]; reverse?: boolean };
+  | { mode: 'threePoint'; points: Ref[]; reverse?: boolean }
+  /** Through the point, parallel to the plane. */
+  | { mode: 'parallel'; plane: Ref; point: Ref; reverse?: boolean }
+  /** Through the point, square to the axis (a straight edge or a reference axis). */
+  | { mode: 'perpendicular'; axis: Ref; point: Ref; reverse?: boolean }
+  /** Halfway between two parallel planes. */
+  | { mode: 'midplane'; plane: Ref; plane2: Ref; reverse?: boolean }
+  /** Touching a cylindrical face along a line, parallel to the plane (`reverse`: on the other side of the cylinder). */
+  | { mode: 'tangent'; face: Ref; plane: Ref; reverse?: boolean };
 
 export interface RefPlaneFeature extends FeatureBase {
   type: 'refPlane';
   def: PlaneDefinition;
+}
+
+/**
+ * How a reference axis (基準軸, C3.3, v21) is defined: a straight edge; the line through two points (model vertices or reference points);
+ * the axis of a cylindrical or conical face; or the line two planes meet in.
+ */
+export type AxisDefinition =
+  | { mode: 'edge'; edge: Ref }
+  | { mode: 'twoPoints'; points: Ref[] }
+  | { mode: 'cylinder'; face: Ref }
+  | { mode: 'planes'; plane: Ref; plane2: Ref };
+
+export interface RefAxisFeature extends FeatureBase {
+  type: 'refAxis';
+  def: AxisDefinition;
+}
+
+/**
+ * How a reference point (參考點, C3.5, v21) is defined: by its coordinates from the part origin; the centre of an edge (the centre of a circle, else
+ * its middle) or of a face (a sphere's centre, else the middle of the face); or where an axis meets a plane.
+ */
+export type PointDefinition =
+  | { mode: 'coords'; x: Expr; y: Expr; z: Expr }
+  | { mode: 'center'; element: Ref }
+  | { mode: 'axisPlane'; axis: Ref; plane: Ref };
+
+export interface RefPointFeature extends FeatureBase {
+  type: 'refPoint';
+  def: PointDefinition;
+}
+
+/**
+ * Coordinate system (座標系統, C3.4, v21): at `origin` (a vertex or reference point; the part origin when absent) with X along `x` and Y as near `y`
+ * as is square to X. `x` and `y` are straight edges, reference axes, or planes (their normal). `flipX` and `flipY` turn those two around; Z follows
+ * (X × Y), so the system is always right-handed.
+ */
+export interface CoordSysFeature extends FeatureBase {
+  type: 'coordSys';
+  origin?: Ref;
+  x: Ref;
+  y: Ref;
+  flipX?: boolean;
+  flipY?: boolean;
 }
 
 /**
@@ -333,7 +386,8 @@ export interface ShellFeature extends FeatureBase {
 /**
  * Draft (拔模, C5.5, v16): the walls aces lean by ngle about the neutral plane 
 eutral (a planar face of the body, or a plane), so that they
- * narrow away from it; everse leans them the other way (they widen away from it).
+ * narrow away from it; 
+everse leans them the other way (they widen away from it).
  */
 export interface DraftFeature extends FeatureBase {
   type: 'draft';
@@ -364,6 +418,9 @@ export type Feature =
   | FilletFeature
   | ChamferFeature
   | RefPlaneFeature
+  | RefAxisFeature
+  | RefPointFeature
+  | CoordSysFeature
   | ImportedBodyFeature
   | DeleteFaceFeature
   | MoveFaceFeature

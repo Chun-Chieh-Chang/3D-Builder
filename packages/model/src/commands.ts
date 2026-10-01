@@ -1,7 +1,7 @@
 import { t } from '@3db/i18n';
 import { current, produce, type Draft } from 'immer';
 import { countersFor, type Id } from './ids';
-import type { Variable, BlobRef, ChamferFeature, CombineFeature, HoleFeature, LoftFeature, RibFeature, SweepFeature, Draft as WallDraft, EndCondition, Thin, Expr, Feature, ImportedBodyFeature, PartDoc, PlaneDefinition, Ref, RevolveCondition, SketchConstraint, SketchEntity, SketchFeature } from './schema';
+import type { Variable, BlobRef, ChamferFeature, CombineFeature, HoleFeature, LoftFeature, RibFeature, SweepFeature, Draft as WallDraft, EndCondition, Thin, Expr, Feature, ImportedBodyFeature, AxisDefinition, CoordSysFeature, PartDoc, PlaneDefinition, PointDefinition, Ref, RevolveCondition, SketchConstraint, SketchEntity, SketchFeature } from './schema';
 import { isDatumPlaneName } from './datums';
 import { mapRefs } from './refs';
 import { bodyFeature, isBodyKey, isHideable } from './visibility';
@@ -91,6 +91,10 @@ ull). */
   /** The face and the distance of a Move Face feature (C10.1). */
   | { type: 'setMoveFace'; featureId: Id; face: Ref; distance: Expr }
   | { type: 'setRefPlane'; featureId: Id; def: PlaneDefinition }
+  /** How a reference axis (C3.3), a reference point (C3.5) or a coordinate system (C3.4) is defined. */
+  | { type: 'setRefAxis'; featureId: Id; def: AxisDefinition }
+  | { type: 'setRefPoint'; featureId: Id; def: PointDefinition }
+  | { type: 'setCoordSys'; featureId: Id; value: Pick<CoordSysFeature, 'origin' | 'x' | 'y' | 'flipX' | 'flipY'> }
   /** Adds imported data and the feature that uses it, as one step (F2.1). */
   | { type: 'importBody'; blob: BlobRef; feature: ImportedBodyFeature; index: number }
   /** Suppresses or unsuppresses several features at once; which ones follows from their dependencies (B2.6). */
@@ -199,13 +203,32 @@ function sketchBefore(doc: PartDoc, sketchId: Id, index: number, label: string):
   return s;
 }
 
+/** A reference to a feature of the history that makes `type` of datum (a plane, an axis, a point), made before the one at `index`. */
+function datumFeature(doc: PartDoc, ref: Ref, index: number, type: 'refPlane' | 'refAxis' | 'refPoint'): void {
+  const at = doc.features.findIndex((f) => f.id === ref.name);
+  if (at < 0 || at >= index || doc.features[at]!.type !== type) throw new CommandError(t(`cmd.${type}MustBeEarlier`));
+}
+
 /** A plane reference names a default plane, a reference plane earlier in the history, or a model face. */
 function planeRef(doc: PartDoc, ref: Ref, index: number): void {
   if (ref.kind === 'face') return;
   if (ref.kind !== 'datum') throw new CommandError(t('cmd.mustPickPlane'));
   if (isDatumPlaneName(ref.name)) return;
-  const at = doc.features.findIndex((f) => f.id === ref.name);
-  if (at < 0 || at >= index || doc.features[at]!.type !== 'refPlane') throw new CommandError(t('cmd.datumMustBeEarlier'));
+  datumFeature(doc, ref, index, 'refPlane');
+}
+
+/** An axis reference names a straight model edge or a reference axis earlier in the history. The box may still be empty while the user picks. */
+function axisRef(doc: PartDoc, ref: Ref, index: number): void {
+  if (ref.kind === 'edge') return;
+  if (ref.kind !== 'datum') throw new CommandError(t('cmd.axisMustBeStraightEdge'));
+  datumFeature(doc, ref, index, 'refAxis');
+}
+
+/** A point reference names a model vertex or a reference point earlier in the history. */
+function pointRef(doc: PartDoc, ref: Ref, index: number): void {
+  if (ref.kind === 'vertex') return;
+  if (ref.kind !== 'datum') throw new CommandError(t('cmd.mustPickPoint'));
+  datumFeature(doc, ref, index, 'refPoint');
 }
 
 /**
@@ -219,11 +242,75 @@ function planeDefinition(doc: PartDoc, def: PlaneDefinition, index: number): voi
       return;
     case 'angle':
       planeRef(doc, def.plane, index);
-      if (def.axis.kind !== 'edge') throw new CommandError(t('cmd.axisMustBeStraightEdge'));
+      axisRef(doc, def.axis, index);
       return;
     case 'threePoint':
-      if (def.points.length > 3 || def.points.some((p) => p.kind !== 'vertex')) throw new CommandError(t('cmd.threePointNeedsVertices'));
+      if (def.points.length > 3) throw new CommandError(t('cmd.threePointNeedsVertices'));
+      for (const p of def.points) pointRef(doc, p, index);
       return;
+    case 'parallel':
+      planeRef(doc, def.plane, index);
+      pointRef(doc, def.point, index);
+      return;
+    case 'perpendicular':
+      axisRef(doc, def.axis, index);
+      pointRef(doc, def.point, index);
+      return;
+    case 'midplane':
+      planeRef(doc, def.plane, index);
+      planeRef(doc, def.plane2, index);
+      return;
+    case 'tangent':
+      planeRef(doc, def.plane, index);
+      if (def.face.kind !== 'face') throw new CommandError(t('cmd.tangentNeedsFace'));
+      return;
+  }
+}
+
+/** Structure of a reference axis definition (C3.3). */
+function axisDefinition(doc: PartDoc, def: AxisDefinition, index: number): void {
+  switch (def.mode) {
+    case 'edge':
+      if (def.edge.kind !== 'edge') throw new CommandError(t('cmd.axisMustBeStraightEdge'));
+      return;
+    case 'twoPoints':
+      if (def.points.length > 2) throw new CommandError(t('cmd.twoPointsNeedsTwo'));
+      for (const p of def.points) pointRef(doc, p, index);
+      return;
+    case 'cylinder':
+      if (def.face.kind !== 'face') throw new CommandError(t('cmd.axisNeedsFace'));
+      return;
+    case 'planes':
+      planeRef(doc, def.plane, index);
+      planeRef(doc, def.plane2, index);
+      return;
+  }
+}
+
+/** Structure of a reference point definition (C3.5). */
+function pointDefinition(doc: PartDoc, def: PointDefinition, index: number): void {
+  switch (def.mode) {
+    case 'coords':
+      return;
+    case 'center':
+      if (def.element.kind !== 'edge' && def.element.kind !== 'face') throw new CommandError(t('cmd.centerNeedsEdgeOrFace'));
+      return;
+    case 'axisPlane':
+      axisRef(doc, def.axis, index);
+      planeRef(doc, def.plane, index);
+      return;
+  }
+}
+
+/** A coordinate system's origin is a point, its two directions are axes or planes (their normals). */
+function coordSysRefs(doc: PartDoc, f: Pick<CoordSysFeature, 'origin' | 'x' | 'y'>, index: number): void {
+  if (f.origin) pointRef(doc, f.origin, index);
+  for (const ref of [f.x, f.y]) {
+    if (ref.kind === 'face' || (ref.kind === 'datum' && isDatumPlaneName(ref.name))) continue;
+    if (ref.kind === 'datum') {
+      const at = doc.features.find((g) => g.id === ref.name);
+      if (!at || doc.features.indexOf(at) >= index || (at.type !== 'refAxis' && at.type !== 'refPlane')) throw new CommandError(t('cmd.datumMustBeEarlier'));
+    } else if (ref.kind !== 'edge') throw new CommandError(t('cmd.coordSysDirection'));
   }
 }
 
@@ -301,6 +388,15 @@ function validateNewFeature(doc: PartDoc, f: Feature, index: number): void {
       return;
     case 'refPlane':
       planeDefinition(doc, f.def, index);
+      return;
+    case 'refAxis':
+      axisDefinition(doc, f.def, index);
+      return;
+    case 'refPoint':
+      pointDefinition(doc, f.def, index);
+      return;
+    case 'coordSys':
+      coordSysRefs(doc, f, index);
       return;
     case 'deleteFace':
       if (f.faces.some((r) => r.kind !== 'face')) throw new CommandError(t('cmd.deleteFaceOnlyFaces'));
@@ -453,6 +549,36 @@ export function mutate(draft: Draft<PartDoc>, cmd: Command): void {
       planeDefinition(draft as PartDoc, cmd.def, draft.features.findIndex((x) => x.id === f.id));
       f.def = cmd.def;
       checkExprs(draft as PartDoc, f as Feature);
+      return;
+    }
+    case 'setRefAxis': {
+      const f = feature(draft, cmd.featureId);
+      if (f.type !== 'refAxis') throw new CommandError(t('cmd.onlyRefAxisHasParams'));
+      axisDefinition(draft as PartDoc, cmd.def, draft.features.findIndex((x) => x.id === f.id));
+      f.def = cmd.def;
+      return;
+    }
+    case 'setRefPoint': {
+      const f = feature(draft, cmd.featureId);
+      if (f.type !== 'refPoint') throw new CommandError(t('cmd.onlyRefPointHasParams'));
+      pointDefinition(draft as PartDoc, cmd.def, draft.features.findIndex((x) => x.id === f.id));
+      f.def = cmd.def;
+      checkExprs(draft as PartDoc, f as Feature);
+      return;
+    }
+    case 'setCoordSys': {
+      const f = feature(draft, cmd.featureId);
+      if (f.type !== 'coordSys') throw new CommandError(t('cmd.onlyCoordSysHasParams'));
+      coordSysRefs(draft as PartDoc, cmd.value, draft.features.findIndex((x) => x.id === f.id));
+      const v = cmd.value;
+      if (v.origin) f.origin = v.origin;
+      else delete f.origin;
+      f.x = v.x;
+      f.y = v.y;
+      if (v.flipX) f.flipX = true;
+      else delete f.flipX;
+      if (v.flipY) f.flipY = true;
+      else delete f.flipY;
       return;
     }
     case 'setChamfer': {

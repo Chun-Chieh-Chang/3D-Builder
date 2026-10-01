@@ -124,6 +124,12 @@ export function mapExprs(feature: Feature, fn: (expr: Expr, kind: ExprKind, role
       }
       return feature;
     }
+    case 'refPoint': {
+      const d = feature.def;
+      if (d.mode !== 'coords') return feature;
+      const [x, y, z] = [fn(d.x, 'length', 'any'), fn(d.y, 'length', 'any'), fn(d.z, 'length', 'any')];
+      return x === d.x && y === d.y && z === d.z ? feature : { ...feature, def: { ...d, x, y, z } };
+    }
     case 'hole': {
       const f = feature;
       const one = (v: string | undefined, kind: ExprKind, role: ExprRole): string | undefined => (v === undefined ? v : fn(v, kind, role));
@@ -162,6 +168,8 @@ export function mapExprs(feature: Feature, fn: (expr: Expr, kind: ExprKind, role
     case 'sweep':
     case 'loft':
     case 'combine':
+    case 'refAxis':
+    case 'coordSys':
       return feature;
   }
 }
