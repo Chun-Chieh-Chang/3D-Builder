@@ -39,7 +39,7 @@ import {
 import { assemblyName, partFileName, partName, readDocumentFile, sha256Hex, imageFileName, stepFileName, stlFileName, writePartFile } from '@3db/io';
 import { orderProblem, suppressionTargets, type SuppressAction } from '@3db/regen/dag';
 import { contourChoices, findProfiles, type ContourChoice } from '@3db/sketch/profiles';
-import type { Viewer } from '@3db/render';
+import type { PickFilter, Viewer } from '@3db/render';
 import type { KernelApi, PartExportOptions, RebuildPayload, SketchSolvePayload, SketchSolveRequest } from '../worker/protocol';
 import { SketchController, type ControllerView, type SketchHost } from '../sketcher/controller';
 import { axisDefinitionFor, emptyRef, put, treeRef } from './datumSlots';
@@ -98,6 +98,8 @@ export interface UiState {
   selected: Id | null;
   /** Face selected in the graphics area (by persistent name, resolved against the displayed model). */
   selectedFace: Ref | null;
+  /** Which kinds of element the graphics area lets be picked (D5.4): a command asks for kinds, this narrows them. */
+  pickFilter: PickFilter;
   editing: EditSession | null;
   result: RebuildPayload | null;
   /** Solve of the sketch being edited (or of the current drag frame). */
@@ -286,6 +288,7 @@ class AppStore {
       canRedo: false,
       selected: null,
       selectedFace: null,
+      pickFilter: { faces: true, edges: true, vertices: true },
       editing: null,
       result: null,
       sketchSolve: null,
@@ -460,6 +463,10 @@ class AppStore {
 
   selectFace(face: Ref | null): void {
     this.set({ selectedFace: face, selected: null });
+  }
+
+  setPickFilter(kind: keyof PickFilter, on: boolean): void {
+    this.set({ pickFilter: { ...this.state.pickFilter, [kind]: on } });
   }
 
   // ------------------------------------------------------------ FeatureManager operations (B2.4, B2.6, B2.8, D7.1)
@@ -965,6 +972,27 @@ class AppStore {
     else if (f?.type === 'draft') this.pickDraftFace(ref);
     else if (f?.type === 'moveFace') this.setMoveFace(ref);
     else if (f?.type === 'combine' && ref.kind === 'face') this.pickBody(ref.name);
+  }
+
+  /** The kind of element the feature being edited takes in a list, if it takes several at a time (a fillet's edges, the faces of a shell). */
+  multiPickKind(): 'edge' | 'face' | null {
+    const f = this.editedFeature();
+    if (f?.type === 'fillet' || f?.type === 'chamfer') return 'edge';
+    if (f?.type === 'deleteFace' || f?.type === 'shell' || f?.type === 'draft') return 'face';
+    return null;
+  }
+
+  /**
+   * Adds elements picked all at once — a loop, a chain of edges that continue one another, the faces that meet smoothly (D5.6) — to the list of the feature
+   * being edited. Unlike a click nothing is toggled off: those already in the list stay.
+   */
+  pickMany(refs: Ref[]): void {
+    const f = this.editedFeature();
+    const more = (list: Ref[], kind: Ref['kind'], skip?: string) => [...list, ...refs.filter((r, i) => r.kind === kind && r.name !== skip && !list.some((x) => x.name === r.name) && refs.findIndex((q) => q.name === r.name) === i)];
+    if (f?.type === 'fillet' || f?.type === 'chamfer') this.execute({ type: 'setEdges', featureId: f.id, edges: more(f.edges, 'edge') });
+    else if (f?.type === 'deleteFace') this.execute({ type: 'setFaces', featureId: f.id, faces: more(f.faces, 'face'), ...(f.hole ? { hole: true } : {}) });
+    else if (f?.type === 'shell') this.execute({ type: 'setShell', featureId: f.id, faces: more(f.faces, 'face'), thickness: f.thickness, ...(f.outward ? { outward: true } : {}) });
+    else if (f?.type === 'draft' && f.neutral.name) this.execute({ type: 'setDraftFeature', featureId: f.id, neutral: f.neutral, faces: more(f.faces, 'face', f.neutral.name), angle: f.angle, ...(f.reverse ? { reverse: true } : {}) });
   }
 
   /** A click in the FeatureManager selects; while a plane is being defined it picks a plane like SolidWorks' flyout tree. */

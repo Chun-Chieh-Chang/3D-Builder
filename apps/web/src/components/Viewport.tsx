@@ -10,7 +10,26 @@ import { buildOverlay, SKETCH_COLORS } from '../sketcher/overlay';
 import { store, useSketcherView, useStore } from '../state/store';
 import { FEATURE_LABEL } from '../strings';
 import type { RebuildPayload } from '../worker/protocol';
+import { Topology } from '../state/selectionSets';
 import { Icon } from './Icon';
+
+/** Topology for selecting loops, tangent chains and the like, built once per rebuilt model (D5.6). */
+const topologies = new WeakMap<RebuildPayload, Topology>();
+function topologyOf(r: RebuildPayload): Topology | null {
+  if (!r.mesh) return null;
+  let topo = topologies.get(r);
+  if (!topo) {
+    topo = new Topology({ faceNames: r.faceNames, edgeNames: r.edgeNames, mesh: r.mesh });
+    topologies.set(r, topo);
+  }
+  return topo;
+}
+
+/** One line of the right-click menu; one that returns more lines opens them in its place. */
+interface MenuItem {
+  label: string;
+  run: () => MenuItem[] | void;
+}
 
 /**
  * What the graphics area picks during a PropertyManager session, what it shows as already picked
@@ -81,6 +100,8 @@ export function Viewport() {
   const [hoverFace, setHoverFace] = useState(-1);
   const [hoverVertex, setHoverVertex] = useState(-1);
   const [viewTick, setViewTick] = useState(0);
+  const [menu, setMenu] = useState<{ x: number; y: number; items: MenuItem[] } | null>(null);
+  const pickFilter = useStore((s) => s.pickFilter);
   const sketching = editing?.kind === 'sketch';
   sketchingRef.current = sketching;
 
@@ -104,6 +125,12 @@ export function Viewport() {
       return name && fingerprint ? { kind: 'vertex', name, fingerprint } : null;
     };
     const idOf = (key: string) => key.slice(key.indexOf(':') + 1);
+    const clickFace = (face: number) => {
+      const ref = faceRef(face);
+      if (store.getState().editing) {
+        if (ref) store.pick(ref);
+      } else store.selectFace(ref);
+    };
     const viewer = new Viewer(host.current!, {
       onEdgeHover: setHover,
       onEdgeClick: (edge) => {
@@ -111,11 +138,29 @@ export function Viewport() {
         if (ref) store.pick(ref);
       },
       onFaceHover: setHoverFace,
-      onFaceClick: (face) => {
-        const ref = faceRef(face);
-        if (store.getState().editing) {
-          if (ref) store.pick(ref);
-        } else store.selectFace(ref);
+      onFaceClick: clickFace,
+      onContextMenu: (x, y) => {
+        const r = displayed.current;
+        const topo = r && topologyOf(r);
+        if (!r || !topo) return;
+        const el = viewer.elementsAt(x, y);
+        const kind = store.multiPickKind();
+        const refs = (indices: number[], of: 'edge' | 'face') => indices.flatMap((i) => { const ref = of === 'edge' ? edgeRef(i) : faceRef(i); return ref ? [ref] : []; });
+        const add = (list: Ref[]) => () => void store.pickMany(list);
+        const items: MenuItem[] = [];
+        if (kind === 'edge' && el.edge >= 0) {
+          items.push({ label: t('select.tangentEdges'), run: add(refs(topo.tangentEdges(el.edge), 'edge')) });
+          for (const f of topo.edgeFaces[el.edge] ?? []) items.push({ label: t('select.loopOf', { name: r.faceNames[f] ?? '' }), run: add(refs(topo.loop(f, el.edge), 'edge')) });
+        }
+        if (kind === 'face' && el.face >= 0) items.push({ label: t('select.tangentFaces'), run: add(refs(topo.tangentFaces(el.face), 'face')) });
+        const stack = el.face >= 0 ? viewer.facesAt(x, y) : [];
+        if (stack.length > 1) {
+          const others: MenuItem[] = stack.map((f, i) => ({ label: t('select.otherFace', { n: i + 1, name: r.faceNames[f] ?? '' }), run: () => clickFace(f) }));
+          items.push({ label: t('select.other', { count: stack.length }), run: () => others });
+        }
+        const rect = host.current?.getBoundingClientRect();
+        if (items.length > 0 && rect) setMenu({ x: x - rect.left, y: y - rect.top, items });
+        else setMenu(null);
       },
       onVertexHover: setHoverVertex,
       onVertexClick: (vertex) => {
@@ -161,6 +206,7 @@ export function Viewport() {
     v.setEdgePicking(p.edges);
     v.setFacePicking(p.faces);
     v.setVertexPicking(p.vertices);
+    v.setPickFilter(pickFilter);
     const r = displayed.current;
     const indices = (names: string[] | undefined, refs: Ref[]) => refs.map((x) => names?.indexOf(x.name) ?? -1).filter((i) => i >= 0);
     v.setSelectedEdges(indices(r?.edgeNames, p.pickedEdges));
@@ -173,7 +219,7 @@ export function Viewport() {
     else if (selectedFace?.kind === 'face') v.setSelectedFaces(indices(r?.faceNames, [selectedFace]));
     // D1.2: a feature selected in the FeatureManager shows the faces it made.
     else v.setSelectedFaces(selected ? (r?.faceNames ?? []).flatMap((n, i) => (ownerFeatures(n)[0] === selected ? [i] : [])) : []);
-  }, [feature, editing, selectedFace, selected, result, modelTool]);
+  }, [feature, editing, selectedFace, selected, result, modelTool, pickFilter]);
 
   // Reference planes show like new planes in SolidWorks; default planes only when selected or referenced (D4.6).
   useEffect(() => {
@@ -335,7 +381,37 @@ export function Viewport() {
         </div>
       )}
       {sketching && view && <div className="pick-hint">{view.hint}</div>}
+      {menu && <ContextMenu x={menu.x} y={menu.y} items={menu.items} onItems={(items) => setMenu({ ...menu, items })} onClose={() => setMenu(null)} />}
     </main>
+  );
+}
+
+/** The right-click menu of the graphics area (D5.5, D5.6): closes on any click elsewhere or Esc. */
+function ContextMenu({ x, y, items, onItems, onClose }: { x: number; y: number; items: MenuItem[]; onItems: (items: MenuItem[]) => void; onClose: () => void }) {
+  useEffect(() => {
+    const key = (e: KeyboardEvent) => e.key === 'Escape' && onClose();
+    window.addEventListener('pointerdown', onClose);
+    window.addEventListener('keydown', key);
+    return () => {
+      window.removeEventListener('pointerdown', onClose);
+      window.removeEventListener('keydown', key);
+    };
+  }, [onClose]);
+  return (
+    <div className="ctx-menu" style={{ left: x, top: y }} onPointerDown={(e) => e.stopPropagation()} onContextMenu={(e) => e.preventDefault()}>
+      {items.map((item, i) => (
+        <button
+          key={i}
+          onClick={() => {
+            const more = item.run();
+            if (more) onItems(more);
+            else onClose();
+          }}
+        >
+          {item.label}
+        </button>
+      ))}
+    </div>
   );
 }
 
@@ -422,6 +498,7 @@ const DISPLAY_MODES: DisplayMode[] = ['shadedEdges', 'shaded', 'hiddenRemoved', 
 
 /** 顯示類型 (A4.3) and 剖面視圖 (D4.4): how the model is drawn, and a cut through it. */
 function ViewOptions() {
+  const filter = useStore((s) => s.pickFilter);
   const [mode, setMode] = useState<DisplayMode>('shadedEdges');
   const [cut, setCut] = useState<{ axis: 0 | 1 | 2; at: number; flip: boolean } | null>(null);
   const result = useStore((s) => s.result);
@@ -447,6 +524,15 @@ function ViewOptions() {
           </option>
         ))}
       </select>
+      <span className="pick-filter" title={t('select.filterTitle')}>
+        {t('select.filter')}
+        {(['faces', 'edges', 'vertices'] as const).map((k) => (
+          <label key={k}>
+            <input type="checkbox" checked={filter[k]} onChange={(e) => store.setPickFilter(k, e.target.checked)} />
+            {t(k === 'faces' ? 'select.filterFaces' : k === 'edges' ? 'select.filterEdges' : 'select.filterVertices')}
+          </label>
+        ))}
+      </span>
       <button className={cut ? 'active' : ''} onClick={() => setCut(cut ? null : { axis: 0, at: ((bounds?.min[0] ?? 0) + (bounds?.max[0] ?? 0)) / 2, flip: false })}>
         {t('view.section')}
       </button>

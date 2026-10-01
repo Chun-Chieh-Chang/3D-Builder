@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { acceleratedRaycast, computeBoundsTree, disposeBoundsTree } from 'three-mesh-bvh';
 import { ViewControls } from './controls';
 import { buildOverlayObjects, disposeGroup, toWorld, type P2, type PlaneFrame, type SketchOverlay } from './overlay';
 
@@ -19,6 +20,13 @@ export type DisplayMode = 'shadedEdges' | 'shaded' | 'hiddenRemoved' | 'hiddenVi
 export interface SectionPlane {
   normal: [number, number, number];
   offset: number;
+}
+
+/** What the user lets be picked (D5.4). */
+export interface PickFilter {
+  faces: boolean;
+  edges: boolean;
+  vertices: boolean;
 }
 
 export type StandardView = 'front' | 'back' | 'top' | 'bottom' | 'left' | 'right' | 'iso';
@@ -85,11 +93,18 @@ interface Instance {
   marks: THREE.Group;
 }
 
+// Rays against the body go through a bounding-volume hierarchy (A5.3): a few hundred thousand triangles take ~10 ms to test one by one, ~0.1 ms this way.
+THREE.Mesh.prototype.raycast = acceleratedRaycast;
+THREE.BufferGeometry.prototype.computeBoundsTree = computeBoundsTree;
+THREE.BufferGeometry.prototype.disposeBoundsTree = disposeBoundsTree;
+
 function bodyGeometry(mesh: ViewMesh): THREE.BufferGeometry {
   const g = new THREE.BufferGeometry();
   g.setAttribute('position', new THREE.BufferAttribute(mesh.positions, 3));
   g.setAttribute('normal', new THREE.BufferAttribute(mesh.normals, 3));
   g.setIndex(new THREE.BufferAttribute(mesh.indices, 1));
+  // `indirect`: the tree keeps its own order, so the triangle numbers (and the index buffer shared with the rebuild result) stay as the faces' ranges say
+  g.computeBoundsTree({ indirect: true });
   return g;
 }
 
@@ -159,6 +174,8 @@ export interface ComponentDragEvent {
 }
 
 export interface ViewerEvents {
+  /** The right button was pressed and released on the graphics area (not while a tool owns it). */
+  onContextMenu?: (clientX: number, clientY: number) => void;
   /** Edge under the cursor changed (index into the mesh's edges, or -1). */
   onEdgeHover?: (edge: number) => void;
   /** Left click on an edge (or -1 on empty space / faces). */
@@ -212,6 +229,7 @@ export class Viewer {
   private hovered = -1;
   private selected = new Set<number>();
   private pickEdges = false;
+  private filter: PickFilter = { faces: true, edges: true, vertices: true };
   private pickFaces = false;
   private mesh: ViewMesh | null = null;
   /** triangleFace[t] = face index owning triangle t. */
@@ -298,6 +316,7 @@ export class Viewer {
     dom.addEventListener('pointerleave', this.onPointerLeave);
     dom.addEventListener('pointercancel', () => this.cancelComponentDrag()); // the system took the pointer
     dom.addEventListener('click', this.onClick);
+    dom.addEventListener('contextmenu', (e) => !this.toolHandler && this.events.onContextMenu?.(e.clientX, e.clientY));
     dom.addEventListener('dblclick', this.onDoubleClick);
     this.resizeObserver = new ResizeObserver(() => this.resize());
     this.resizeObserver.observe(container);
@@ -802,6 +821,55 @@ export class Viewer {
 
   // ---------------------------------------------------------------- selection
 
+  /**
+   * Which kinds of element the user lets be picked (D5.4). It narrows what the command in progress asks for, it never adds to it: a kind both asks for
+   * and allows is what is hovered and clicked.
+   */
+  setPickFilter(filter: PickFilter): void {
+    this.filter = { ...filter };
+    if (!this.edgesOn) this.setHovered(-1);
+    if (!this.facesOn) this.setHoveredFace(-1);
+    if (!this.verticesOn) this.setHoveredVertex(-1);
+  }
+
+  private get edgesOn(): boolean {
+    return this.pickEdges && this.filter.edges;
+  }
+  private get facesOn(): boolean {
+    return this.pickFaces && this.filter.faces;
+  }
+  private get verticesOn(): boolean {
+    return this.pickVertices && this.filter.vertices;
+  }
+
+  /** Every face under the cursor, nearest first, hidden ones too (D5.5 「選擇其他」). Faces the section cut away are not in the list. */
+  facesAt(clientX: number, clientY: number): number[] {
+    if (!this.body) return [];
+    const r = this.rayAt(clientX, clientY);
+    const ray = new THREE.Raycaster(r.origin, r.direction);
+    const faces: number[] = [];
+    // the faces behind are seen from inside: back faces count here
+    const material = this.body.material as THREE.Material;
+    const side = material.side;
+    material.side = THREE.DoubleSide;
+    const hits = ray.intersectObject(this.body);
+    material.side = side;
+    for (const hit of hits) {
+      if (!this.kept(hit.point) || hit.faceIndex === undefined || hit.faceIndex === null) continue;
+      const face = this.triangleFace[hit.faceIndex] ?? -1;
+      if (face >= 0 && !faces.includes(face)) faces.push(face);
+    }
+    return faces;
+  }
+
+  /** The edge, vertex and face the cursor is on, as picking would take them (-1 for none) — what a right click acts on. */
+  elementsAt(clientX: number, clientY: number): { edge: number; vertex: number; face: number } {
+    const vertex = this.verticesOn ? this.pickVertex(clientX, clientY) : -1;
+    const edge = vertex < 0 && this.edgesOn ? this.pick(clientX, clientY) : -1;
+    const face = this.facesOn ? this.pickFace(clientX, clientY) : -1;
+    return { vertex, edge, face };
+  }
+
   /** Enables edge hover/click picking (e.g. while a fillet's edge list is active). */
   setEdgePicking(enabled: boolean): void {
     this.pickEdges = enabled;
@@ -1212,11 +1280,11 @@ export class Viewer {
     if (this.pickInstances) this.setHoveredInstance(this.pickInstance(e.clientX, e.clientY));
     if (this.pickElements) this.setHoveredElement(this.pickElement(e.clientX, e.clientY));
     // One element at a time, in SolidWorks priority: vertex, then edge, then face.
-    const vertex = this.pickVertices ? this.pickVertex(e.clientX, e.clientY) : -1;
-    const edge = vertex < 0 && this.pickEdges ? this.pick(e.clientX, e.clientY) : -1;
+    const vertex = this.verticesOn ? this.pickVertex(e.clientX, e.clientY) : -1;
+    const edge = vertex < 0 && this.edgesOn ? this.pick(e.clientX, e.clientY) : -1;
     this.setHoveredVertex(vertex);
     this.setHovered(edge);
-    this.setHoveredFace(vertex < 0 && edge < 0 && this.pickFaces ? this.pickFace(e.clientX, e.clientY) : -1);
+    this.setHoveredFace(vertex < 0 && edge < 0 && this.facesOn ? this.pickFace(e.clientX, e.clientY) : -1);
   };
 
   private onPointerUp = (e: PointerEvent) => {
@@ -1251,11 +1319,11 @@ export class Viewer {
     const additive = e.ctrlKey || e.shiftKey;
     if (this.pickElements) return void this.events.onElementClick?.(this.pickElement(e.clientX, e.clientY), additive);
     if (this.pickInstances) return void this.events.onComponentClick?.(this.pickInstance(e.clientX, e.clientY), additive);
-    const vertex = this.pickVertices ? this.pickVertex(e.clientX, e.clientY) : -1;
+    const vertex = this.verticesOn ? this.pickVertex(e.clientX, e.clientY) : -1;
     if (vertex >= 0) return void this.events.onVertexClick?.(vertex, additive);
-    const edge = this.pickEdges ? this.pick(e.clientX, e.clientY) : -1;
-    if (edge >= 0 || (this.pickEdges && !this.pickFaces)) return void this.events.onEdgeClick?.(edge, additive);
-    if (this.pickFaces) this.events.onFaceClick?.(this.pickFace(e.clientX, e.clientY), additive);
+    const edge = this.edgesOn ? this.pick(e.clientX, e.clientY) : -1;
+    if (edge >= 0 || (this.edgesOn && !this.facesOn)) return void this.events.onEdgeClick?.(edge, additive);
+    if (this.facesOn) this.events.onFaceClick?.(this.pickFace(e.clientX, e.clientY), additive);
   };
 
   private onDoubleClick = (e: MouseEvent) => {
