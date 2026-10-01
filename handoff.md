@@ -78,6 +78,7 @@
 | [phase1-verification.md](docs/phase1-verification.md) | Phase 1 驗收紀錄：三個示範零件、金樣與 TNP、驗收中發現的問題 |
 | [phase3-plan.md](docs/phase3-plan.md) | Phase 3 的里程碑、驗收標準、需要的樣本與決定（決定 1–6 已確認；§5 數值暫時認定為 Pass） |
 | [ADR 0045](docs/adr/0045-acceptance-3a.md) | 3a 驗收（3a-10）不需樣本的部分：`tests/support/acceptance.ts`（對稱差、與參考形狀比對、關鍵尺寸 50%–200% 掃描）、`tests/phase3/acceptance.test.ts`（工具自測、三個金樣與兩類合成零件共 15 個關鍵尺寸 × 5 值全過）；§5 逐項狀態；等使用者的 3 個零件 |
+| [ADR 0046](docs/adr/0046-phase3b-validation.md) | 3b-0 技術驗證的部分：鏡射零組件（行列式 −1 的變換，STEP 往返體積與質心相同）、20 個零組件 190 對干涉檢查（包圍盒過濾後 259 ms，全部 776 ms）；Tauri 與 STEP 組合件結構對應還沒做 |
 | [ADR 0044](docs/adr/0044-system-options-english.md) | 系統選項與英文（3a-9c-3，Schema 不變）：`options.ts`（localStorage `3db.options`、`parseOptions`）、`OptionsDialog`、`Autosaver.enabled/delayMs/cancel`、`packages/i18n/src/en/`（860 多個文字全翻）；零件側文字已搬，程式碼裡剩 183 行（組合件） |
 | [ADR 0043](docs/adr/0043-selection.md) | 選取（3a-9c-2，Schema 不變）：`three-mesh-bvh`（indirect，一條射線 10 ms → 0.13 ms）、`pickFilter`、右鍵選單（選取其他、相切邊線／面、迴圈）、`selectionSets.ts` 的 `Topology`（由名稱＋網格，10° 門檻）、`store.pickMany` |
 | [ADR 0042](docs/adr/0042-view-options.md) | 顯示類型、視角選擇方塊、剖面視圖（3a-9c-1，Schema 不變）：`DisplayMode` 五種、`Viewer.cubeMatrix`／`subscribeView`、軸向剖面（裁切平面）、`contentBounds`；透視（D4.5）未做；順便修了指令列撐寬畫面 |
