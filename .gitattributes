@@ -1,6 +1,8 @@
 # Binary fixtures and part files must reach the tests byte for byte.
 *.zip binary
 *.3dbx binary
+# ...but `git diff` can show what is inside, once `npm run setup:git` has told this clone how (the setting is per clone: Git does not carry it).
+*.3dbx diff=3dbx
 # STEP fixtures are compared by content hash: no line-ending conversion.
 *.step -text
 *.stp -text

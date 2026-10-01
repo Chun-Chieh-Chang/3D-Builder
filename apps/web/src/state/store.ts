@@ -41,6 +41,7 @@ import type { Viewer } from '@3db/render';
 import type { KernelApi, PartExportOptions, RebuildPayload, SketchSolvePayload, SketchSolveRequest } from '../worker/protocol';
 import { SketchController, type ControllerView, type SketchHost } from '../sketcher/controller';
 import { axisDefinitionFor, emptyRef, put, treeRef } from './datumSlots';
+import { Autosaver, type Recovery } from '../autosave';
 import {
   download,
   fileIn,
@@ -57,6 +58,9 @@ import {
   rememberFolder,
   writeFile,
   type OpenedFile,
+  dropRecovery,
+  keepRecovery,
+  recoveryCopy,
 } from '../files';
 import { AssemblyStore, type AssemblySource, type AssemblyState } from './assembly';
 
@@ -110,6 +114,8 @@ export interface UiState {
   dirty: boolean;
   /** A file action waiting for the answer to 「要儲存變更嗎？」. */
   unsaved: PendingFileAction | null;
+  /** A copy of a part with unsaved changes, left by an earlier session (B9.3), waiting for 「復原」 or 「捨棄」. */
+  recovery: { name: string; savedAt: number } | null;
   /** Bumped when a part replaces the current one: the viewport fits the next model it shows. */
   fitRequest: number;
   /** Name of a part never saved (「零件1」, 「零件2」 …, or the STEP file it was made from). */
@@ -265,6 +271,8 @@ class AppStore {
 
   constructor() {
     this.startWorker();
+    void this.checkRecovery();
+    if (typeof document !== 'undefined') document.addEventListener('visibilitychange', () => document.visibilityState === 'hidden' && void this.autosave.flush());
     this.api = new Proxy({} as Comlink.Remote<KernelApi>, {
       // never `then` (the proxy is not a promise) and no symbols: only the methods of the worker's API
       get: (_target, name) => (typeof name === 'symbol' || name === 'then' ? undefined : (...args: unknown[]) => (this.remote as unknown as Record<string, (...a: unknown[]) => unknown>)[name]!(...args)),
@@ -286,6 +294,7 @@ class AppStore {
       fileName: null,
       dirty: false,
       unsaved: null,
+      recovery: null,
       fitRequest: 0,
       untitled: '零件1',
       rebuilding: false,
@@ -347,11 +356,59 @@ class AppStore {
   /** The part the last rebuild was requested for: a change that only touches what is shown needs no new rebuild. */
   private lastDoc: PartDoc | null = null;
 
+  // ------------------------------------------------------------ autosave and recovery (B9.3)
+
+  /** The copy of a part with unsaved changes, kept in the browser. */
+  private autosave = new Autosaver(
+    { put: keepRecovery, get: recoveryCopy, clear: dropRecovery },
+    async () => (this.assembly ? null : { bytes: await writePartFile(this.history.doc, this.blobs), fileName: this.state.fileName, untitled: this.state.untitled }),
+  );
+  /** What an earlier session left, until the user answers. */
+  private recoveryCopy: Recovery | null = null;
+
+  private async checkRecovery(): Promise<void> {
+    const copy = await recoveryCopy();
+    if (!copy) return;
+    this.recoveryCopy = copy;
+    this.set({ recovery: { name: copy.fileName ?? copy.untitled, savedAt: copy.savedAt } });
+  }
+
+  /** 「復原」: the part of the copy opens as an unsaved part (its first save asks for a name), with its changes. */
+  async restoreRecovery(): Promise<void> {
+    const copy = this.recoveryCopy;
+    if (!copy) return;
+    this.recoveryCopy = null;
+    try {
+      const file = await readDocumentFile(copy.bytes);
+      if (file.kind !== 'part') throw new Error('not a part');
+      this.load(file.doc, null, copy.fileName, file.blobs, copy.untitled); // (the copy in the browser stays until a newer one replaces it)
+      this.set({ recovery: null });
+      this.savedText = ''; // it differs from every file: the title shows 「*」 and the next change keeps a copy again
+      this.set({ dirty: true });
+      this.autosave.changed(true);
+      this.notify(t('recovery.restored', { name: copy.fileName ?? copy.untitled }));
+    } catch (e) {
+      this.set({ recovery: null });
+      this.notify(t('recovery.failed', { why: e instanceof Error ? e.message : String(e) }), 'error');
+      void this.autosave.clear();
+    }
+  }
+
+  /** 「捨棄」: the copy is thrown away. */
+  discardRecovery(): void {
+    this.recoveryCopy = null;
+    this.set({ recovery: null });
+    void this.autosave.clear();
+  }
+
   private onDocChanged(): void {
     const doc = this.history.doc;
     const prev = this.lastDoc;
     this.lastDoc = doc;
-    this.set({ doc, canUndo: this.history.canUndo, canRedo: this.history.canRedo, dirty: serializePart(doc) !== this.savedText });
+    const dirty = serializePart(doc) !== this.savedText;
+    this.set({ doc, canUndo: this.history.canUndo, canRedo: this.history.canRedo, dirty });
+    // a copy is kept only while the answer to the recovery dialog is not still being waited for
+    if (!this.state.recovery) this.autosave.changed(dirty);
     // Inside a sketch only the sketch changes: solve it, and leave the model before it as it is.
     if (this.state.editing?.kind === 'sketch') this.requestSketchSolve();
     else if (!(prev && onlyVisibilityChanged(prev, doc))) this.requestRebuild();
@@ -1281,6 +1338,7 @@ class AppStore {
     this.fileHandle = handle;
     this.savedText = serializePart(doc);
     this.set({ fileName, dirty: serializePart(this.history.doc) !== this.savedText });
+    void this.autosave.clear();
   }
 
   private load(doc: PartDoc, handle: FileSystemFileHandle | null, fileName: string | null, blobs = new Map<string, Uint8Array>(), untitled = this.state.untitled): void {
@@ -1293,6 +1351,7 @@ class AppStore {
     this.blobs = blobs;
     void this.api.setBlobs(blobs); // posted before the rebuild request, so the worker has them first
     this.savedText = serializePart(doc);
+    if (!this.state.recovery) void this.autosave.clear();
     this.set({ active: 'part', selected: null, selectedFace: null, result: null, fileName, untitled, fitRequest: this.state.fitRequest + 1, documentSerial: this.state.documentSerial + 1 });
     this.onDocChanged();
   }

@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { t } from '@3db/i18n';
 import { findFeature, joinPath, type Id } from '@3db/model';
 import { deletion } from '@3db/regen/dag';
 import { store, useDocumentName, useStore } from '../state/store';
@@ -332,6 +333,29 @@ function AssemblyWhatsWrong() {
         {over.length > 0 && <p className="muted">過多定義的零組件：{over.map((c) => componentInfo(asm, c).name).join('、')}。刪除或抑制矛盾的結合即可恢復。</p>}
         <div className="modal-actions">
           <button onClick={close}>關閉</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/** 找到沒有儲存的零件 (B9.3): the copy autosave left in the browser when the last session ended with changes that were not saved. */
+export function RecoveryDialog() {
+  const recovery = useStore((s) => s.recovery);
+  const restore = useRef<HTMLButtonElement>(null);
+  useEffect(() => restore.current?.focus(), [recovery]);
+  if (!recovery) return null;
+  return (
+    <div className="modal-backdrop">
+      <div className="modal" role="dialog" aria-label={t('recovery.title')}>
+        <h3>{t('recovery.title')}</h3>
+        <p>{t('recovery.body', { name: recovery.name, time: new Date(recovery.savedAt).toLocaleString() })}</p>
+        <p className="hint">{t('recovery.hint')}</p>
+        <div className="modal-actions">
+          <button ref={restore} className="primary" onClick={() => void store.restoreRecovery()}>
+            {t('recovery.restore')}
+          </button>
+          <button onClick={() => store.discardRecovery()}>{t('recovery.discard')}</button>
         </div>
       </div>
     </div>

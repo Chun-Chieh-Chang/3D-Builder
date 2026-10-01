@@ -6,7 +6,7 @@ import { AssemblyTree } from './components/AssemblyTree';
 import { AssemblyViewport } from './components/AssemblyViewport';
 import { CommandBar } from './components/CommandBar';
 import { AppearanceDialog, EquationsDialog, PropertiesDialog, StepOptionsDialog } from './components/ParametersDialogs';
-import { DeleteComponentsDialog, DeleteDialog, FolderDialog, MissingFilesDialog, UnsavedDialog, WhatsWrongDialog } from './components/Dialogs';
+import { DeleteComponentsDialog, DeleteDialog, FolderDialog, MissingFilesDialog, RecoveryDialog, UnsavedDialog, WhatsWrongDialog } from './components/Dialogs';
 import { FeatureTree } from './components/FeatureTree';
 import { InsertComponentPanel } from './components/InsertComponentPanel';
 import { MatePanel } from './components/MatePanel';
@@ -54,6 +54,7 @@ export function App() {
       <AppearanceDialog />
       <StepOptionsDialog />
       <UnsavedDialog />
+      <RecoveryDialog />
       <FolderDialog />
       <MissingFilesDialog />
     </div>

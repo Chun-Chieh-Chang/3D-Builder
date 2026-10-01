@@ -1,4 +1,5 @@
 import { ASSEMBLY_FILE_EXTENSION, isStepData, PART_FILE_EXTENSION } from '@3db/io';
+import type { Recovery } from './autosave';
 
 /**
  * Local files (F7.1). Chrome and Edge have the File System Access API: a part is opened and saved
@@ -171,6 +172,25 @@ async function handles<T>(mode: IDBTransactionMode, run: (store: IDBObjectStore)
   } finally {
     db.close();
   }
+}
+
+/** The copy autosave keeps of a part with changes (B9.3), in the same place as the folder handles. */
+export async function keepRecovery(entry: Recovery): Promise<void> {
+  await handles('readwrite', (s) => s.put(entry, 'recovery'));
+}
+
+export async function recoveryCopy(): Promise<Recovery | null> {
+  try {
+    const found: unknown = await handles('readonly', (s) => s.get('recovery'));
+    const r = found as Partial<Recovery> | undefined;
+    return r && r.bytes instanceof Uint8Array && typeof r.savedAt === 'number' && typeof r.untitled === 'string' ? (r as Recovery) : null;
+  } catch {
+    return null;
+  }
+}
+
+export async function dropRecovery(): Promise<void> {
+  await handles('readwrite', (s) => s.delete('recovery'));
 }
 
 /** Remembers the project folder for the next session. */
