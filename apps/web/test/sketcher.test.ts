@@ -429,6 +429,65 @@ describe('sketch operations (C1.8, C1.9, C1.15, C1.16, C1.17, C1.19)', () => {
     expect(h.last!.status).toBe('under');
   });
 
+  it('diagnoses an over-defined sketch: each fix offered is confirmed by the solver, and one click applies it', async () => {
+    const doc = applyCommand(applyCommand(createEmptyPart(), EMPTY_SKETCH), {
+      type: 'addSketchItems',
+      featureId: 'sketch1',
+      entities: [
+        { id: 'p1', type: 'point', x: 0, y: 0 }, { id: 'p2', type: 'point', x: 30, y: 0 }, { id: 'p3', type: 'point', x: 30, y: 20 }, { id: 'p4', type: 'point', x: 0, y: 20 },
+        { id: 'l1', type: 'line', p1: 'p1', p2: 'p2' }, { id: 'l2', type: 'line', p1: 'p2', p2: 'p3' }, { id: 'l3', type: 'line', p1: 'p3', p2: 'p4' }, { id: 'l4', type: 'line', p1: 'p4', p2: 'p1' },
+      ],
+      constraints: [
+        { id: 'h1', type: 'horizontal', a: 'l1' }, { id: 'v2', type: 'vertical', a: 'l2' }, { id: 'h3', type: 'horizontal', a: 'l3' }, { id: 'v4', type: 'vertical', a: 'l4' },
+        { id: 'o', type: 'coincident', a: 'p1', b: '@origin' }, { id: 'w', type: 'distance', a: 'l1', value: '30' }, { id: 'h', type: 'distance', a: 'l2', value: '20' },
+        { id: 'top', type: 'distance', a: 'l3', value: '25' },
+      ],
+    });
+    const h = new Host(doc);
+    const c = new SketchController(h);
+    expect(h.last!.status).toBe('over');
+    const fixes = await c.diagnose();
+    // the two widths disagree: either dimension cures it, and so does letting a side lean (a relation is deleted)
+    expect(fixes.map((x) => x.id)).toEqual(expect.arrayContaining(['top', 'w']));
+    expect(fixes.find((x) => x.id === 'top')).toMatchObject({ kind: 'driven' });
+    expect(fixes.find((x) => x.id === 'v2')).toMatchObject({ kind: 'delete' });
+    expect(fixes.some((x) => ['h', 'o', 'h1'].includes(x.id))).toBe(false); // the height is not the problem
+    c.applyFix(fixes.find((x) => x.id === 'top')!);
+    expect(h.last!.status).toBe('fully');
+    expect(await c.diagnose()).toEqual([]);
+    // a relation is deleted instead
+    h.history.undo();
+    h.resolve();
+    h.execute({ type: 'removeSketchItems', featureId: 'sketch1', ids: ['top'] });
+    h.execute({ type: 'addSketchItems', featureId: 'sketch1', entities: [], constraints: [{ id: 'hx', type: 'horizontal', a: 'p2', b: 'p4' }] });
+    expect(h.last!.status).toBe('over');
+    const second = await c.diagnose();
+    expect(second.some((x) => x.id === 'hx' && x.kind === 'delete')).toBe(true);
+  });
+
+  it('checks the sketch and repairs a gap and a duplicate in one undo step', async () => {
+    const doc = applyCommand(applyCommand(createEmptyPart(), EMPTY_SKETCH), {
+      type: 'addSketchItems',
+      featureId: 'sketch1',
+      entities: [
+        { id: 'a', type: 'point', x: 0, y: 0 }, { id: 'b', type: 'point', x: 10, y: 0 }, { id: 'c', type: 'point', x: 10, y: 10 }, { id: 'd', type: 'point', x: 0, y: 10 }, { id: 'e', type: 'point', x: 0, y: 0.05 },
+        { id: 'l1', type: 'line', p1: 'a', p2: 'b' }, { id: 'l2', type: 'line', p1: 'b', p2: 'c' }, { id: 'l3', type: 'line', p1: 'c', p2: 'd' }, { id: 'l4', type: 'line', p1: 'e', p2: 'd' }, { id: 'l5', type: 'line', p1: 'd', p2: 'c' },
+      ],
+      constraints: [],
+    });
+    const h = new Host(doc);
+    const c = new SketchController(h);
+    expect(c.issues().map((i) => i.kind).sort()).toEqual(['branch', 'branch', 'duplicate', 'gap']); // the copy makes both its ends branch points
+    c.repair();
+    await c.settled();
+    expect(c.issues()).toEqual([]);
+    expect(h.last!.problems).toEqual([]);
+    expect(h.notices.join()).toContain('已修復 2 處');
+    h.history.undo();
+    h.resolve();
+    expect(c.issues()).toHaveLength(4);
+  });
+
   it('asks for a selection first, and refuses an operation the solver finds over-defining', async () => {
     const { h, c } = rectangle();
     c.setTool('select');

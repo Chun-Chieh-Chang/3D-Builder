@@ -133,6 +133,25 @@ describe('a part file written by version 10 (bodies, C7) opens in version 11 (sk
   });
 });
 
+describe('a part file written by version 11 (sketch relations, C1.26) opens in version 12 (contours, C1.34)', () => {
+  it('keeps the coradial, intersection, arc-length and driven dimensions of its sketch, uses all contours, and rebuilds the same volumes', async () => {
+    const file = await readPartFile(oldFile('v11-relations.3dbx'));
+    expect(file.warnings).toEqual([]);
+    expect(JSON.parse(new TextDecoder().decode((await readZip(oldFile('v11-relations.3dbx')))[0]!.data)).schemaVersion).toBe(11);
+    expect(file.doc.schemaVersion).toBe(SCHEMA_VERSION);
+    const sketch2 = file.doc.features.find((f) => f.id === 'sketch2')!;
+    const types = sketch2.type === 'sketch' ? sketch2.constraints.map((c) => c.type) : [];
+    expect(types).toEqual(expect.arrayContaining(['intersection', 'coradial', 'arcLength']));
+    expect(sketch2.type === 'sketch' && sketch2.constraints.filter((c) => 'driving' in c && c.driving === false).map((c) => c.id)).toEqual(['n8', 'n11']);
+    expect('contours' in file.doc.features.find((f) => f.id === 'extrude2')!).toBe(false);
+    const r = new Regenerator(kernel, await PlaneGcsSolver.create(), file.blobs).rebuild(file.doc);
+    expect(statuses(r).filter((s) => !s.endsWith('=ok'))).toEqual([]);
+    // the second sketch's corner is held at the origin: its 10 × 10 × 3 block lies inside the first body, which keeps its volume (and the construction geometry is not extruded)
+    expect(r.bodies.map((b) => b.id)).toEqual(['extrude1']);
+    expect(kernel.massProps(r.bodies[0]!.shape).volume).toBeCloseTo(DEMO, 6);
+  });
+});
+
 describe('the .3dbx file (B9.1, F7.1)', () => {
   const docs = async (): Promise<[string, PartDoc][]> => [
     ['the demo part', createDemoPart()],

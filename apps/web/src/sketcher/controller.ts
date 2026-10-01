@@ -36,6 +36,7 @@ import {
   type Snap,
 } from '@3db/sketch/interact';
 import type { P2, SolvedGeometry } from '@3db/sketch';
+import { checkSketch, repairSketch, type SketchIssue } from '@3db/sketch/check';
 import { chamfer, extend, fillet, mergePoints, mirror, offset, polygon, slot, trim, type OpResult } from '@3db/sketch/ops';
 import type { SketchSolvePayload } from '../worker/protocol';
 
@@ -67,6 +68,12 @@ type OperationTool = 'slot' | 'polygon' | 'sketchFillet' | 'sketchChamfer' | 'tr
 /** Tools that pick existing geometry instead of placing points: no snapping, the element under the cursor is what counts. */
 const PICK_TOOLS: ReadonlySet<ToolId> = new Set(['dimension', 'trim', 'extend', 'sketchFillet', 'sketchChamfer', 'offset', 'mirror']);
 
+/** One way out of an over-defined sketch: delete this relation or dimension, or make this dimension a reference. */
+export interface SketchFix {
+  id: Id;
+  kind: 'delete' | 'driven';
+}
+
 /** What the user sets for a tool before using it (shown in the PropertyManager). */
 export interface ToolOptions {
   polygonSides: number;
@@ -76,9 +83,11 @@ export interface ToolOptions {
   chamferDistance1: number;
   chamferDistance2: number;
   offsetDistance: number;
+  /** 「修復草圖」 closes gaps up to this wide (mm). */
+  gapTolerance: number;
 }
 
-const DEFAULT_OPTIONS: ToolOptions = { polygonSides: 6, circumscribed: false, filletRadius: 5, chamferDistance1: 5, chamferDistance2: 5, offsetDistance: 5 };
+const DEFAULT_OPTIONS: ToolOptions = { polygonSides: 6, circumscribed: false, filletRadius: 5, chamferDistance1: 5, chamferDistance2: 5, offsetDistance: 5, gapTolerance: 0.1 };
 
 /** What the controller needs from the application. The store implements it; tests use a fake. */
 export interface SketchHost {
@@ -848,6 +857,51 @@ export class SketchController {
   private commit(b: Builder): boolean {
     if (b.entities.length === 0 && b.constraints.length === 0) return false;
     return this.host.execute({ type: 'addSketchItems', featureId: this.host.featureId, entities: b.entities, constraints: b.constraints });
+  }
+
+  // ------------------------------------------------------------------ over-definition diagnosis (A2.5, D7.2)
+
+  /**
+   * What would cure an over-defined sketch: of the relations and dimensions the solver names as conflicting or redundant,
+   * those whose deletion (a dimension: becoming a reference) leaves a sketch that is not over-defined. Each is checked by
+   * the solver, so what is offered works.
+   */
+  async diagnose(): Promise<SketchFix[]> {
+    const solved = this.host.solved();
+    if (!solved || solved.status !== 'over') return [];
+    const sketch = this.sketch();
+    const named = new Set([...solved.conflicting, ...solved.redundant]);
+    const fixes: SketchFix[] = [];
+    for (const c of sketch.constraints.filter((k) => named.has(k.id))) {
+      const driven = isDimension(c);
+      const constraints = sketch.constraints.flatMap((k) => (k.id !== c.id ? [k] : driven ? [{ ...k, driving: false } as SketchConstraint] : []));
+      const r = await this.host.trial({ ...sketch, constraints });
+      if (r.status !== 'over' && r.status !== 'failed') fixes.push({ id: c.id, kind: driven ? 'driven' : 'delete' });
+    }
+    return fixes;
+  }
+
+  applyFix(fix: SketchFix): void {
+    if (fix.kind === 'driven') this.host.execute({ type: 'setDimensionDriving', featureId: this.host.featureId, constraintId: fix.id, driving: false });
+    else this.host.execute({ type: 'removeSketchItems', featureId: this.host.featureId, ids: [fix.id] });
+    this.changed();
+  }
+
+  // ------------------------------------------------------------------ check and repair (C1.35)
+
+  /** What keeps the sketch from making a profile, as found in what the solver shows now. */
+  issues(): SketchIssue[] {
+    const solved = this.host.solved();
+    return solved ? checkSketch(this.sketch(), solved.geometry, this.options.gapTolerance) : [];
+  }
+
+  /** 「修復草圖」: duplicates and zero-length lines go, gaps within the tolerance close; one undo step. */
+  repair(): void {
+    const solved = this.host.solved();
+    if (!solved) return;
+    const r = repairSketch(this.sketch(), solved.geometry, this.options.gapTolerance);
+    if ('error' in r) return this.host.notify(r.error, 'info');
+    this.submit({ type: 'editSketch', featureId: this.host.featureId, ...r.edit } as Command, () => this.host.notify(t('sketch.repairDone', { fixed: r.fixed, skipped: r.skipped }), 'info'));
   }
 
   // ------------------------------------------------------------------ merge, arc length, driven dimensions (C1.26, C1.28, C1.29)

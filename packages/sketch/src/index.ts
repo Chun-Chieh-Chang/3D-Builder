@@ -1,3 +1,3 @@
 export * from './types';
 export { PlaneGcsSolver } from './planegcs';
-export { findProfiles } from './profiles';
+export { contourChoices, contourIds, findProfiles, selectContours, type ContourChoice } from './profiles';

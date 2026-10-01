@@ -6,7 +6,7 @@ import type { Id } from './ids';
  * DOF status, mass properties and error lists are derived data and never stored.
  */
 
-export const SCHEMA_VERSION = 11;
+export const SCHEMA_VERSION = 12;
 
 /** Value expression (B5.2, B5.3): "20", "25.4mm", "30deg", "wall_t*2", "D1@草圖1/2", "property('厚度')"; see `expr/`. */
 export type Expr = string;
@@ -120,6 +120,8 @@ export interface ExtrudeFeature extends FeatureBase {
   op: 'boss' | 'cut';
   /** A boss only (C7.1): `false` makes it a body of its own; absent (the default) merges it with the bodies it touches. */
   merge?: boolean;
+  /** Which contours of the sketch it uses (C1.34, v12): each is the entities that bound one region; absent means all of them. */
+  contours?: Id[][];
   dir1: EndCondition;
   /** Second direction (P1). */
   dir2?: EndCondition;
@@ -136,6 +138,8 @@ export interface RevolveFeature extends FeatureBase {
   op: 'boss' | 'cut';
   /** As for `ExtrudeFeature.merge`. */
   merge?: boolean;
+  /** As for `ExtrudeFeature.contours`. */
+  contours?: Id[][];
   dir1: RevolveCondition;
 }
 

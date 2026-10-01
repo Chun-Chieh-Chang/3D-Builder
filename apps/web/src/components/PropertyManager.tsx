@@ -33,7 +33,9 @@ import { nearestElement } from '../state/candidates';
 import { store, useSketcherView, useStore } from '../state/store';
 import { DATUM_ITEMS, DIMENSION_LABEL, FEATURE_LABEL, featureLabel, PLANE_MODE_LABEL, RELATION_LABEL, SKETCH_STATUS_LABEL, TOOL_LABEL } from '../strings';
 import { Icon } from './Icon';
-import type { ControllerView, SketchController } from '../sketcher/controller';
+import type { ControllerView, SketchController, SketchFix } from '../sketcher/controller';
+import type { SketchIssue } from '@3db/sketch/check';
+import type { ContourChoice } from '@3db/sketch/profiles';
 
 /**
  * What an expression comes to in this document, for showing next to the box (D2.4): the value when it is
@@ -152,6 +154,87 @@ function ToolOptionsBox({ view, sketcher }: { view: ControllerView; sketcher: Sk
   }
 }
 
+/** Over-defined sketch (A2.5, D7.2): the relations and dimensions that conflict, and what the solver confirms cures it, one click each. */
+function DiagnosisBox({ f, solve, sketcher }: { f: SketchFeature; solve: SketchSolvePayload; sketcher: SketchController }) {
+  const [fixes, setFixes] = useState<SketchFix[] | null>(null);
+  const key = `${solve.status}|${solve.conflicting.join(',')}|${solve.redundant.join(',')}|${f.constraints.length}`;
+  useEffect(() => {
+    let live = true;
+    setFixes(null);
+    if (solve.status === 'over') void sketcher.diagnose().then((r) => live && setFixes(r));
+    return () => {
+      live = false;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [key, sketcher]);
+  if (solve.status !== 'over') return null;
+  return (
+    <section className="pm-group">
+      <h4>{t('sketch.diagnose.title')}</h4>
+      {fixes === null && <p className="muted">{t('sketch.diagnose.busy')}</p>}
+      {fixes !== null && fixes.length === 0 && <p className="hint">{t('sketch.diagnose.none')}</p>}
+      {fixes !== null && fixes.length > 0 && <p className="hint">{t('sketch.diagnose.intro')}</p>}
+      <ul className="relation-list">
+        {(fixes ?? []).map((x) => (
+          <li key={x.id} onMouseEnter={() => sketcher.select([x.id])}>
+            <span>{describe(f, x.id)}</span>
+            <button type="button" onClick={() => sketcher.applyFix(x)}>
+              {x.kind === 'driven' ? t('sketch.diagnose.driven') : t('sketch.diagnose.delete')}
+            </button>
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
+}
+
+/** 「檢查草圖用於特徵」 (C1.35): what keeps the sketch from making a profile; click one to see where, and 「修復草圖」 for what needs no decision. */
+function CheckBox({ f, view, sketcher }: { f: SketchFeature; view: ControllerView | null; sketcher: SketchController }) {
+  const issues = sketcher.issues();
+  const text = (i: SketchIssue): string => {
+    const ids = i.ids.join('、');
+    switch (i.kind) {
+      case 'openEnd':
+        return t('sketch.check.openEnd', { ids });
+      case 'gap':
+        return t('sketch.check.gap', { ids, size: String(Math.round(i.size * 1e4) / 1e4) });
+      case 'branch':
+        return t('sketch.check.branch', { ids });
+      case 'duplicate':
+        return t('sketch.check.duplicate', { ids });
+      case 'zeroLength':
+        return t('sketch.check.zeroLength', { ids });
+      case 'crossing':
+        return t('sketch.check.crossing', { ids });
+    }
+  };
+  const fixable = issues.some((i) => i.kind === 'gap' || i.kind === 'duplicate' || i.kind === 'zeroLength');
+  return (
+    <section className="pm-group">
+      <h4>{t('sketch.check.title')}</h4>
+      {issues.length === 0 ? (
+        <p className="hint">{t('sketch.check.ok')}</p>
+      ) : (
+        <ul className="relation-list">
+          {issues.map((i, k) => (
+            <li key={`${i.kind}${k}`} onClick={() => sketcher.select(i.ids)}>
+              <span>{text(i)}</span>
+            </li>
+          ))}
+        </ul>
+      )}
+      <OptionNumber label={t('sketch.check.tolerance')} value={view?.options.gapTolerance ?? 0.1} onChange={(v) => sketcher.setOption('gapTolerance', v)} />
+      {fixable && (
+        <div className="relation-buttons">
+          <button type="button" onClick={() => sketcher.repair()}>
+            {t('sketch.check.repair')}
+          </button>
+        </div>
+      )}
+    </section>
+  );
+}
+
 /** Sketch PropertyManager (C1.26, C1.27, C1.31): status, tool, selection, relations and dimensions. */
 function SketchPanel({ f }: { f: SketchFeature }) {
   const solve = useStore((s) => s.sketchSolve);
@@ -181,8 +264,10 @@ function SketchPanel({ f }: { f: SketchFeature }) {
           <p className="muted">求解中…</p>
         )}
         {conflicting.length > 0 && <p className="error-text">衝突：{conflicting.join('、')}</p>}
-        {solve && solve.problems.length > 0 && f.entities.length > 0 && <p className="hint">尚不能產生特徵：{solve.problems.join('；')}</p>}
       </section>
+
+      {sketcher && solve && <DiagnosisBox f={f} solve={solve} sketcher={sketcher} />}
+      {sketcher && solve && f.entities.length > 0 && <CheckBox f={f} view={view} sketcher={sketcher} />}
 
       {view && view.tool !== 'select' && (
         <section className="pm-group">
@@ -284,6 +369,50 @@ const END_CONDITION: Record<EndCondition['type'], string> = {
   upToFace: '成形至某一面',
 };
 
+/** 「所選輪廓」 (C1.34): which of the sketch's closed regions a boss or cut uses. Nothing chosen means all of them. */
+function ContourBox({ f }: { f: ExtrudeFeature | RevolveFeature }) {
+  const doc = useStore((s) => s.doc);
+  const [choices, setChoices] = useState<ContourChoice[] | null>(null);
+  useEffect(() => {
+    let live = true;
+    // the list stays while it is read again (a click changes the document), so it does not flicker
+    void store.sketchContours(f.sketch).then((c) => live && setChoices(c));
+    return () => {
+      live = false;
+    };
+  }, [f.sketch, doc]);
+  if (choices !== null && choices.length < 2) return null; // one contour (or none) is not a choice
+  const same = (a: readonly string[], b: readonly string[]) => a.length > 0 && a.filter((id) => b.includes(id)).length / new Set([...a, ...b]).size >= 0.5;
+  const chosen = (c: ContourChoice) => !f.contours || f.contours.some((w) => same(w, c.ids));
+  const toggle = (c: ContourChoice) => {
+    if (!choices) return;
+    const next = choices.filter((x) => (x === c ? !chosen(x) : chosen(x)));
+    if (next.length === 0) return; // at least one
+    store.execute({ type: 'setContours', featureId: f.id, contours: next.length === choices.length ? null : next.map((x) => x.ids) });
+  };
+  return (
+    <>
+      <h4 className="sub">{t('contour.title')}</h4>
+      {choices === null && <p className="muted">{t('contour.loading')}</p>}
+      {choices?.map((c, i) => (
+        <label key={c.ids.join('+')} className="pm-row checkbox">
+          <input type="checkbox" checked={chosen(c)} onChange={() => toggle(c)} />
+          <span>
+            {t('contour.item', {
+              n: String(i + 1),
+              area: String(Math.round(c.area * 100) / 100),
+              x: String(Math.round(c.center[0] * 100) / 100),
+              y: String(Math.round(c.center[1] * 100) / 100),
+              holes: c.holes > 0 ? t('contour.holes', { n: String(c.holes) }) : '',
+            })}
+          </span>
+        </label>
+      ))}
+      <p className="hint">{t('contour.hint')}</p>
+    </>
+  );
+}
+
 /** 「合併結果」 (C7.1): whether a boss joins the bodies it touches or is a body of its own. */
 function MergeBox({ f }: { f: ExtrudeFeature | RevolveFeature | ImportedBodyFeature }) {
   return (
@@ -365,6 +494,7 @@ function ExtrudePanel({ f }: { f: ExtrudeFeature }) {
         輪廓：{findFeature(doc, f.sketch)?.name ?? f.sketch}
         {f.op === 'cut' && '。除料預設往材料內部（與草圖法向相反）。'}
       </p>
+      <ContourBox f={f} />
       {f.op === 'boss' && <MergeBox f={f} />}
     </section>
   );
@@ -414,6 +544,7 @@ function RevolvePanel({ f }: { f: RevolveFeature }) {
           </label>
         )}
         <p className="hint">輪廓：{sketch?.name ?? f.sketch}</p>
+        <ContourBox f={f} />
         {f.op === 'boss' && <MergeBox f={f} />}
       </section>
     </>

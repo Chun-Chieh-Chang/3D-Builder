@@ -62,6 +62,8 @@ export type Command =
   | { type: 'setImportOptions'; featureId: Id; sewTolerance?: Expr }
   /** How a boss joins the bodies it touches (C7.1): merged with them (the default), or a body of its own. */
   | { type: 'setMerge'; featureId: Id; merge: boolean }
+  /** The contours of its sketch a boss or cut uses (C1.34): each is the ids of the entities bounding one region; `null` is all of them. */
+  | { type: 'setContours'; featureId: Id; contours: Id[][] | null }
   /** What a Combine feature does to which bodies (C7.2). */
   | { type: 'setCombine'; featureId: Id; op: CombineFeature['op']; main: Ref; tools: Ref[] }
   /** The name and the reference flag of a body (C7.1); an empty name or `false` takes the choice back. */
@@ -417,6 +419,17 @@ export function mutate(draft: Draft<PartDoc>, cmd: Command): void {
       if (f.type !== 'extrude' && f.type !== 'revolve' && f.type !== 'importedBody') throw new CommandError(t('cmd.onlyBossMerges'));
       if (cmd.merge) delete f.merge;
       else f.merge = false;
+      return;
+    }
+    case 'setContours': {
+      const f = feature(draft, cmd.featureId);
+      if (f.type !== 'extrude' && f.type !== 'revolve') throw new CommandError(t('cmd.onlyExtrudeRevolveContours'));
+      if (cmd.contours === null) {
+        delete f.contours;
+        return;
+      }
+      if (cmd.contours.length === 0 || cmd.contours.some((c) => c.length === 0 || c.some((id) => typeof id !== 'string' || id === ''))) throw new CommandError(t('cmd.contoursEmpty'));
+      f.contours = cmd.contours.map((c) => [...c]);
       return;
     }
     case 'setCombine': {

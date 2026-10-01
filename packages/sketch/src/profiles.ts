@@ -1,10 +1,10 @@
 import { SKETCH_ORIGIN, type Id, type SketchFeature } from '@3db/model';
 import type { Loop2, P2, ProfileResult, Region2, Segment2, SolvedSketch } from './types';
 
-const TOL = 1e-6;
+export const TOL = 1e-6;
 
 /** Union-find over point ids: coincident relations and geometric coincidence join nodes. */
-class Nodes {
+export class Nodes {
   private parent = new Map<Id, Id>();
   find(id: Id): Id {
     let p = this.parent.get(id) ?? id;
@@ -78,6 +78,58 @@ function reverse(loop: Loop2): Loop2 {
       if (s.kind === 'arc') return { ...s, from: s.to, to: s.from, ccw: !s.ccw };
       return s;
     });
+}
+
+// ---------------------------------------------------------------- contour selection (C1.34)
+
+/** The entities that bound a region from outside: how a selected contour is remembered (ids stay when geometry changes). */
+export function contourIds(region: Region2): Id[] {
+  return [...new Set(region.outer.map((s) => s.source))].sort();
+}
+
+/** One region of a sketch as the contour list shows it. */
+export interface ContourChoice {
+  ids: Id[];
+  /** Area inside the outer boundary and outside the holes, mm². */
+  area: number;
+  center: P2;
+  holes: number;
+}
+
+export function contourChoices(regions: Region2[]): ContourChoice[] {
+  /** Area of a closed loop: a circle exactly, anything else from its outline as a polygon. */
+  const areaOf = (loop: Loop2): number => {
+    const only = loop.length === 1 ? loop[0] : undefined;
+    return only?.kind === 'circle' ? Math.PI * only.r * only.r : Math.abs(signedArea(sample(loop)));
+  };
+  return regions.map((r) => {
+    const outer = sample(r.outer);
+    const area = areaOf(r.outer) - r.holes.reduce((a, h) => a + areaOf(h), 0);
+    const xs = outer.map((p) => p[0]);
+    const ys = outer.map((p) => p[1]);
+    return { ids: contourIds(r), area, center: [(Math.min(...xs) + Math.max(...xs)) / 2, (Math.min(...ys) + Math.max(...ys)) / 2], holes: r.holes.length };
+  });
+}
+
+/**
+ * The regions a feature uses: each remembered contour picks the region whose boundary shares most entities with it (at least half of
+ * them, so a fillet that adds an arc to a selected rectangle does not lose it). A contour with no such region is `missing`.
+ */
+export function selectContours(regions: Region2[], wanted: readonly (readonly Id[])[]): { regions: Region2[]; missing: number } {
+  const chosen = new Set<Region2>();
+  let missing = 0;
+  for (const ids of wanted) {
+    let best: { region: Region2; score: number } | null = null;
+    for (const region of regions) {
+      const have = new Set(contourIds(region));
+      const shared = ids.filter((id) => have.has(id)).length;
+      const score = shared / (new Set([...ids, ...have]).size || 1);
+      if (shared > 0 && score >= 0.5 && (!best || score > best.score)) best = { region, score };
+    }
+    if (best) chosen.add(best.region);
+    else missing++;
+  }
+  return { regions: regions.filter((r) => chosen.has(r)), missing };
 }
 
 /**

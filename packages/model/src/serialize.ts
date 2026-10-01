@@ -85,6 +85,9 @@ const migrations: Record<number, (doc: Json) => Json> = {
   // v11: sketch relations `coradial` and `intersection` and the `arcLength` dimension (C1.26, C1.28). Nothing to convert; the version
   // keeps older programs from opening a sketch whose relations they would not know.
   10: (doc) => doc,
+  // v12: a boss or cut may use only some of its sketch's contours (`contours`, C1.34). Without it a feature uses them all, as before: nothing to
+  // convert. The version keeps older programs from extruding every contour of a feature that chose some.
+  11: (doc) => doc,
 };
 
 export class FormatError extends Error {

@@ -33,6 +33,7 @@ import {
 } from '@3db/model';
 import { assemblyName, partFileName, partName, readDocumentFile, sha256Hex, stepFileName, writePartFile } from '@3db/io';
 import { suppressionTargets, type SuppressAction } from '@3db/regen/dag';
+import { contourChoices, findProfiles, type ContourChoice } from '@3db/sketch/profiles';
 import type { Viewer } from '@3db/render';
 import type { KernelApi, RebuildPayload, SketchSolvePayload, SketchSolveRequest } from '../worker/protocol';
 import { SketchController, type ControllerView, type SketchHost } from '../sketcher/controller';
@@ -797,6 +798,15 @@ class AppStore {
       notify: (text, kind) => this.notify(text, kind),
       editDimension: (id) => this.set({ dimensionEdit: id }),
     };
+  }
+
+  /** The contours (closed regions) of a sketch as they are now, for 「所選輪廓」 (C1.34); none when the sketch cannot make a profile. */
+  async sketchContours(sketchId: Id): Promise<ContourChoice[]> {
+    const doc = this.history.doc;
+    const sketch = findFeature(doc, sketchId);
+    if (sketch?.type !== 'sketch') return [];
+    const solved = await this.api.solveSketch({ seq: -1, sketch: resolveSketch(sketch, doc) });
+    return solved.status === 'failed' ? [] : contourChoices(findProfiles(sketch, solved).regions);
   }
 
   editDimension(id: Id | null): void {

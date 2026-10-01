@@ -8,7 +8,9 @@
   "exports": {
     ".": "./src/index.ts",
     "./interact": "./src/interact.ts",
-    "./ops": "./src/ops.ts"
+    "./ops": "./src/ops.ts",
+    "./check": "./src/check.ts",
+    "./profiles": "./src/profiles.ts"
   },
   "dependencies": {
     "@3db/i18n": "*",

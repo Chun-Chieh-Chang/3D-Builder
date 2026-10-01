@@ -24,7 +24,7 @@ import {
   type SketchFeature,
   type Vec3,
 } from '@3db/model';
-import { findProfiles, type ProfileResult, type SketchSolver, type SketchStatus, type SolvedSketch } from '@3db/sketch';
+import { findProfiles, selectContours, type ProfileResult, type SketchSolver, type SketchStatus, type SolvedSketch } from '@3db/sketch';
 import { KernelError, type FaceOrigin, type ImportDiagnostics, type Kernel, type OpResult, type ShapeId, type Topology } from '@3db/kernel';
 import { nameElements, nameFromFaces, resolveRef, type Candidate, type ElementNames } from '@3db/naming';
 import { Bodies, type BodyState, type BodyView } from './bodies';
@@ -454,12 +454,16 @@ export class Regenerator {
     return { frame, solved, profiles };
   }
 
-  private profileOf(sketches: RebuildResult['sketches'], sketchId: Id) {
+  /** The sketch of a boss or cut with the contours the feature chose (all of them when it chose none, C1.34). */
+  private profileOf(sketches: RebuildResult['sketches'], sketchId: Id, contours?: Id[][]) {
     const s = sketches.get(sketchId);
     if (!s) throw new FeatureError('父草圖不存在、已抑制或失敗');
     if (s.profiles.problems.length > 0) throw new FeatureError(`草圖不能用於特徵：${s.profiles.problems.join('；')}`);
     if (s.profiles.regions.length === 0) throw new FeatureError('草圖沒有封閉輪廓');
-    return s;
+    if (!contours) return s;
+    const { regions, missing } = selectContours(s.profiles.regions, contours);
+    if (missing > 0) throw new FeatureError(t('regen.contourMissing', { n: missing }));
+    return { ...s, profiles: { ...s.profiles, regions } };
   }
 
   // ------------------------------------------------------------------ extrude and revolve (C4.1–C4.3)
@@ -473,7 +477,7 @@ export class Regenerator {
   }
 
   private extrude(f: ExtrudeFeature, sketches: RebuildResult['sketches'], set: Bodies): BodyState[] {
-    const s = this.profileOf(sketches, f.sketch);
+    const s = this.profileOf(sketches, f.sketch, f.contours);
     if (f.dir2) throw new FeatureError('方向 2 排在後續階段（P1）');
     const body = set.view;
     if (f.op === 'cut' && !body) throw new FeatureError('除料需要既有的本體');
@@ -512,7 +516,7 @@ export class Regenerator {
   }
 
   private revolve(f: RevolveFeature, sketches: RebuildResult['sketches'], set: Bodies): BodyState[] {
-    const s = this.profileOf(sketches, f.sketch);
+    const s = this.profileOf(sketches, f.sketch, f.contours);
     if (f.op === 'cut' && !set.view) throw new FeatureError('除料需要既有的本體');
     const axis = s.solved.geometry.get(f.axis);
     if (axis?.type !== 'line') throw new FeatureError('旋轉軸不存在，請重新選擇');

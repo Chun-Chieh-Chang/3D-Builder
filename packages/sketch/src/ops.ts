@@ -286,38 +286,68 @@ export function chamfer(sketch: Pick<SketchFeature, 'constraints'>, geometry: Ge
 
 // ---------------------------------------------------------------- merge (C1.26)
 
+const REF_FIELDS = ['a', 'b', 'point', 'line', 'curve', 'axis', 'circle'] as const;
+
+interface Merged {
+  edit: SketchEdit;
+  /** Groups of points that became one point, and groups left as they were: why each was left. */
+  merged: number;
+  skipped: ('degenerate' | 'dimension')[];
+}
+
 /**
- * 「合併」: two points become one. Everything that used the second point uses the first (the origin cannot be merged: use a coincidence), a
- * coincidence between the two goes, other relations between them go too (they would say something about one point),
- * and a dimension between them refuses the merge, since removing it would change the design.
+ * Merges groups of points, each into its first point: everything that used another point of the group uses the first, a
+ * coincidence between points of the group goes, other relations between them go too (they would say something about one
+ * point). A group is left alone when it would collapse an entity that stays (`removing` says which entities go anyway) or
+ * when a dimension is between two of its points, since removing the dimension would change the design.
+ */
+export function mergeGroups(sketch: Pick<SketchFeature, 'entities' | 'constraints'>, groups: Id[][], removing: ReadonlySet<Id> = new Set()): Merged {
+  const into = new Map<Id, Id>();
+  const skipped: Merged['skipped'] = [];
+  let merged = 0;
+  for (const group of groups) {
+    const inGroup = new Set(group);
+    const count = (refs: Id[]) => refs.filter((r) => inGroup.has(r)).length;
+    if (sketch.entities.some((e) => !removing.has(e.id) && count(refsOf(e)) > 1)) skipped.push('degenerate');
+    else if (sketch.constraints.some((k) => isDimension(k) && count(constraintRefs(k)) > 1)) skipped.push('dimension');
+    else {
+      for (const gone of group.slice(1)) into.set(gone, group[0]!);
+      merged++;
+    }
+  }
+  const entities = sketch.entities.flatMap((e) => {
+    const fields = Object.entries(e).filter(([k, v]) => k !== 'id' && typeof v === 'string' && into.has(v));
+    return fields.length > 0 ? [{ id: e.id, set: Object.fromEntries(fields.map(([k, v]) => [k, into.get(v as Id)!])) }] : [];
+  });
+  const remove: Id[] = [...into.keys()];
+  const constraints: NonNullable<SketchEdit['constraints']> = [];
+  for (const k of sketch.constraints) {
+    const fields = REF_FIELDS.filter((f) => into.has((k as Record<string, Id>)[f] as Id));
+    if (fields.length === 0) continue;
+    const refs = constraintRefs(k).map((r) => into.get(r) ?? r);
+    if (new Set(refs).size < refs.length) remove.push(k.id); // it says something about one point now
+    else constraints.push({ id: k.id, set: Object.fromEntries(fields.map((f) => [f, into.get((k as Record<string, Id>)[f]!)!])) });
+  }
+  return { edit: { entities, constraints, remove }, merged, skipped };
+}
+
+/**
+ * 「合併」: two points become one (the second into the first). The origin cannot be merged (use a coincidence); a dimension
+ * between the two, or an entity that has both as its ends, refuses the merge.
  */
 export function mergePoints(sketch: Pick<SketchFeature, 'entities' | 'constraints'>, a: Id, b: Id): OpResult {
   const isPoint = (id: Id) => sketch.entities.some((e) => e.id === id && e.type === 'point');
   if (a === SKETCH_ORIGIN || b === SKETCH_ORIGIN) return error('sketch.mergeOrigin');
   if (a === b || !isPoint(a) || !isPoint(b)) return error('sketch.mergeTwoPoints');
-  const [keep, gone] = [a, b];
-  if (sketch.entities.some((e) => refsOf(e).includes(keep) && refsOf(e).includes(gone))) return error('sketch.mergeDegenerate');
-  const entities = sketch.entities.flatMap((e) => {
-    const fields = Object.entries(e).filter(([k, v]) => v === gone && k !== 'id');
-    return fields.length > 0 ? [{ id: e.id, set: Object.fromEntries(fields.map(([k]) => [k, keep])) }] : [];
-  });
-  const remove: Id[] = [gone];
-  const constraints: NonNullable<SketchEdit['constraints']> = [];
-  for (const k of sketch.constraints) {
-    const fields = (['a', 'b', 'point', 'line', 'curve', 'axis', 'circle'] as const).filter((f) => (k as Record<string, unknown>)[f] === gone);
-    if (fields.length === 0) continue;
-    const both = constraintRefs(k).includes(keep);
-    if (both && isDimension(k)) return error('sketch.mergeDimension');
-    if (both) remove.push(k.id);
-    else constraints.push({ id: k.id, set: Object.fromEntries(fields.map((f) => [f, keep])) });
-  }
-  return { edit: { entities, constraints, remove } };
+  const r = mergeGroups(sketch, [[a, b]]);
+  return r.skipped[0] === 'degenerate' ? error('sketch.mergeDegenerate') : r.skipped[0] === 'dimension' ? error('sketch.mergeDimension') : { edit: r.edit };
 }
+
 
 // ---------------------------------------------------------------- where curves meet (trim, extend)
 
 type Curve = Extract<SolvedGeometry, { type: 'line' | 'circle' | 'arc' }>;
-const isCurve = (g: SolvedGeometry | undefined): g is Curve => g?.type === 'line' || g?.type === 'circle' || g?.type === 'arc';
+export const isCurve = (g: SolvedGeometry | undefined): g is Curve => g?.type === 'line' || g?.type === 'circle' || g?.type === 'arc';
 
 const TAU = Math.PI * 2;
 const norm = (a: number) => ((a % TAU) + TAU) % TAU;
@@ -325,7 +355,7 @@ const angleAt = (c: P2, p: P2) => Math.atan2(p[1] - c[1], p[0] - c[0]);
 /** How far round an arc runs, counter-clockwise from its first end to its second. */
 const sweepOf = (g: { a0: number; a1: number }) => norm(g.a1 - g.a0) || TAU;
 /** Distance below which two places on a curve are the same place. */
-const SAME = 1e-7;
+export const SAME = 1e-7;
 
 /** Where two whole curves meet (a line taken as infinite). A tangent touch is not a crossing. */
 function crossings(g: Curve, h: Curve): P2[] {
@@ -373,16 +403,16 @@ function along(g: Curve, p: P2): number {
   return norm(angleAt(g.c, p));
 }
 
-const spanOf = (g: Curve): number => (g.type === 'line' ? dist(g.a, g.b) : g.type === 'arc' ? sweepOf(g) : TAU);
+export const spanOf = (g: Curve): number => (g.type === 'line' ? dist(g.a, g.b) : g.type === 'arc' ? sweepOf(g) : TAU);
 
-interface Hit {
+export interface Hit {
   u: number;
   at: P2;
   other: Id;
 }
 
 /** Where `id` meets the other curves of the sketch; `beyond` also counts the stretch past its ends (a line's extension, the rest of an arc's circle). */
-function hitsOf(geometry: Geometry, id: Id, g: Curve, beyond: boolean): Hit[] {
+export function hitsOf(geometry: Geometry, id: Id, g: Curve, beyond: boolean): Hit[] {
   const hits: Hit[] = [];
   for (const [other, h] of geometry) {
     if (other === id || !isCurve(h)) continue;
@@ -394,7 +424,7 @@ function hitsOf(geometry: Geometry, id: Id, g: Curve, beyond: boolean): Hit[] {
   return hits.sort((x, y) => x.u - y.u).filter((h, i, all) => i === 0 || h.u - all[i - 1]!.u > SAME);
 }
 
-const refsOf = (e: SketchEntity): Id[] => (e.type === 'point' ? [] : e.type === 'line' ? [e.p1, e.p2] : e.type === 'circle' ? [e.center] : [e.center, e.start, e.end]);
+export const refsOf = (e: SketchEntity): Id[] => (e.type === 'point' ? [] : e.type === 'line' ? [e.p1, e.p2] : e.type === 'circle' ? [e.center] : [e.center, e.start, e.end]);
 const usedElsewhere = (sketch: Pick<SketchFeature, 'entities'>, point: Id, except: Id): boolean =>
   sketch.entities.some((e) => e.id !== except && refsOf(e).includes(point));
 
