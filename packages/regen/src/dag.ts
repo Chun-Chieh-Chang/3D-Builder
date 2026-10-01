@@ -24,6 +24,12 @@ export function parentsOf(feature: Feature, doc: PartDoc): Id[] {
     case 'chamfer':
       parents = fromRefs(feature.edges);
       break;
+    case 'deleteFace':
+      parents = fromRefs(feature.faces);
+      break;
+    case 'moveFace':
+      parents = fromRefs([feature.face]);
+      break;
     case 'refPlane': {
       const d = feature.def;
       parents = fromRefs(d.mode === 'threePoint' ? d.points : d.mode === 'angle' ? [d.plane, d.axis] : [d.plane]);

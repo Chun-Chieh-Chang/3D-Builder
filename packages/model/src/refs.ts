@@ -28,6 +28,10 @@ export function mapRefs(feature: Feature, map: (ref: Ref) => Ref): { feature: Fe
       const def = d.mode === 'threePoint' ? { ...d, points: d.points.map(one) } : d.mode === 'angle' ? { ...d, plane: one(d.plane), axis: one(d.axis) } : { ...d, plane: one(d.plane) };
       return { feature: { ...feature, def }, replaced };
     }
+    case 'deleteFace':
+      return { feature: { ...feature, faces: feature.faces.map(one) }, replaced };
+    case 'moveFace':
+      return { feature: { ...feature, face: one(feature.face) }, replaced };
     case 'revolve':
     case 'importedBody':
       return { feature, replaced };

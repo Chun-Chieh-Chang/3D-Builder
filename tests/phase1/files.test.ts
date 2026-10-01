@@ -86,6 +86,22 @@ describe('part files written by older versions (B9.2)', () => {
   });
 });
 
+describe('a part file written by version 8 (expressions, B5.2) opens in version 9 (direct editing, C10)', () => {
+  it('keeps its variable, its expression-driven dimension and depth, and its file property, and rebuilds the same part', async () => {
+    const file = await readPartFile(oldFile('v8-expressions.3dbx'));
+    expect(file.warnings).toEqual([]);
+    expect(JSON.parse(new TextDecoder().decode((await readZip(oldFile('v8-expressions.3dbx')))[0]!.data)).schemaVersion).toBe(8);
+    expect(file.doc.schemaVersion).toBe(SCHEMA_VERSION);
+    expect(file.doc.variables).toEqual([{ id: 'var1', name: 'plate_w', expr: '10' }]);
+    expect(file.doc.properties['板厚']).toBe('5mm');
+    const sketch = file.doc.features.find((f) => f.type === 'sketch')!;
+    expect(sketch.type === 'sketch' && sketch.constraints.find((c) => c.id === 'd1' && 'value' in c)).toMatchObject({ value: 'plate_w*2' });
+    const r = new Regenerator(kernel, await PlaneGcsSolver.create(), file.blobs).rebuild(file.doc);
+    expect(statuses(r).filter((s) => !s.endsWith('=ok'))).toEqual([]);
+    expect(kernel.massProps(r.body!.shape).volume).toBeCloseTo(DEMO, 6); // 20 × 10 × 5 block with its R2 fillet, 20 = plate_w*2, 5 = the property
+  });
+});
+
 describe('the .3dbx file (B9.1, F7.1)', () => {
   const docs = async (): Promise<[string, PartDoc][]> => [
     ['the demo part', createDemoPart()],

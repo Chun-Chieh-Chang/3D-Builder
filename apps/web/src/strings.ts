@@ -25,6 +25,8 @@ export const FEATURE_LABEL: Record<FeatureType, string> = labelsOf({
   chamfer: 'feature.chamfer',
   refPlane: 'feature.refPlane',
   importedBody: 'feature.importedBody',
+  deleteFace: 'feature.deleteFace',
+  moveFace: 'feature.moveFace',
 });
 
 /** SolidWorks names cuts after what they cut with: 「除料-伸長」, 「除料-旋轉」. */

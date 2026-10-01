@@ -28,7 +28,7 @@
   "packages/io/src/partFile.ts": 4,
   "packages/io/src/stepPart.ts": 1,
   "packages/io/src/zip.ts": 14,
-  "packages/kernel/src/kernel.ts": 37,
+  "packages/kernel/src/kernel.ts": 30,
   "packages/model/src/assembly.ts": 27,
   "packages/model/src/history.ts": 2,
   "packages/model/src/serialize.ts": 11,

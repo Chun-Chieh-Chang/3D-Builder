@@ -1,5 +1,5 @@
 import * as Comlink from 'comlink';
-import { DEFAULT_LOCALE, LOCALES, setLocale, type Locale } from '@3db/i18n';
+import { DEFAULT_LOCALE, getLocale, LOCALES, setLocale, t, type Locale } from '@3db/i18n';
 import { useSyncExternalStore } from 'react';
 import {
   CommandError,
@@ -162,6 +162,8 @@ function faceFrame(face: Ref): PlaneFrame | null {
 class LatestRunner<Req, Res> {
   private busy = false;
   private waiting: Req | null = null;
+  /** Bumped by `abandon`: an answer from an earlier generation (the worker that was replaced) is never used. */
+  private generation = 0;
 
   constructor(
     private readonly run: (req: Req) => Promise<Res>,
@@ -177,24 +179,49 @@ class LatestRunner<Req, Res> {
     void this.go(req);
   }
 
+  /** Forgets the request in flight and the one waiting: the worker that was to answer is gone. */
+  abandon(): void {
+    this.generation += 1;
+    this.busy = false;
+    this.waiting = null;
+  }
+
   private async go(req: Req): Promise<void> {
+    const generation = this.generation;
     this.busy = true;
     try {
-      this.done(await this.run(req));
+      const res = await this.run(req);
+      if (generation === this.generation) this.done(res);
     } catch (e) {
-      this.fail(e);
-    } finally {
-      this.busy = false;
-      const next = this.waiting;
-      this.waiting = null;
-      if (next) void this.go(next);
+      if (generation === this.generation) this.fail(e);
     }
+    if (generation !== this.generation) return;
+    this.busy = false;
+    const next = this.waiting;
+    this.waiting = null;
+    if (next) void this.go(next);
   }
 }
 
+/** How long a rebuild may take before the worker is given up on (see `AppStore.run`). */
+const REBUILD_LIMIT_MS = 60_000;
+/** A rebuild that has run this long, with the document changed since, is given up on at once. */
+const REBUILD_SUSPECT_MS = 15_000;
+
+class StalledError extends Error {}
+
 class AppStore {
   private history = new DocHistory(createDemoPart());
+  /** What the rest of the program calls: always the current worker, which is replaced when a rebuild stalls (`restartWorker`). */
   private api: Comlink.Remote<KernelApi>;
+  private worker!: Worker;
+  private remote!: Comlink.Remote<KernelApi>;
+  /** Counts the workers started: an answer or a failure from an earlier one is ignored. */
+  private workerGeneration = 0;
+  /** When the rebuild in flight began. */
+  private startedAt = 0;
+  /** How long a rebuild may take before its worker is replaced (kept here so a test can shorten it). */
+  rebuildLimitMs = REBUILD_LIMIT_MS;
   private listeners = new Set<() => void>();
   private seq = 0;
   private inFlight = false;
@@ -229,8 +256,11 @@ class AppStore {
   sketcher: SketchController | null = null;
 
   constructor() {
-    const worker = new Worker(new URL('../worker/kernel.worker.ts', import.meta.url), { type: 'module' });
-    this.api = Comlink.wrap<KernelApi>(worker);
+    this.startWorker();
+    this.api = new Proxy({} as Comlink.Remote<KernelApi>, {
+      // never `then` (the proxy is not a promise) and no symbols: only the methods of the worker's API
+      get: (_target, name) => (typeof name === 'symbol' || name === 'then' ? undefined : (...args: unknown[]) => (this.remote as unknown as Record<string, (...a: unknown[]) => unknown>)[name]!(...args)),
+    });
     this.savedText = serializePart(this.history.doc);
     this.state = {
       doc: this.history.doc,
@@ -273,14 +303,10 @@ class AppStore {
       (e) => this.set({ notice: { kind: 'error', text: `草圖求解失敗：${e instanceof Error ? e.message : String(e)}` } }),
     );
     this.history.subscribe(() => this.onDocChanged());
-    this.api.init().then(
-      (bootMs) => this.set({ bootMs }),
-      (e: unknown) => this.set({ bootError: e instanceof Error ? e.message : String(e) }),
-    );
     this.lastDoc = this.history.doc;
     const locale = storedLocale();
     setLocale(locale);
-    void this.api.setLocale(locale); // in order before the first rebuild request
+    this.boot(locale);
     this.requestRebuild();
     // Closing the tab with unsaved changes asks first, like closing a modified document (risk 11: lost work).
     window.addEventListener('beforeunload', (e) => {
@@ -563,6 +589,37 @@ class AppStore {
     this.openNew({ id, type: 'chamfer', name: nextName(this.history.doc, '導角'), suppressed: false, edges: [], mode: 'angleDistance', distance: '1', second: '45' }, '導角');
   }
 
+  /** 「刪除面」 (C10.2): starts with the face selected in the graphics area, if there is one. */
+  newDeleteFace(): void {
+    const face = this.state.selectedFace;
+    const name = t('feature.deleteFace');
+    this.openNew({ id: this.allocator().take('delface'), type: 'deleteFace', name: nextName(this.history.doc, name), suppressed: false, faces: face?.kind === 'face' ? [face] : [] }, name);
+  }
+
+  /** 「移動面」 (C10.1): starts with the planar face selected in the graphics area, if there is one. */
+  newMoveFace(): void {
+    const face = this.state.selectedFace;
+    const name = t('feature.moveFace');
+    const picked: Ref = face?.kind === 'face' && face.fingerprint?.type === 'plane' ? face : { kind: 'face', name: '' };
+    this.openNew({ id: this.allocator().take('moveface'), type: 'moveFace', name: nextName(this.history.doc, name), suppressed: false, face: picked, distance: '5' }, name);
+  }
+
+  /** Face list of a Delete Face (D2.1): clicking a face toggles it, as with the edges of a fillet. */
+  toggleFace(ref: Ref): void {
+    const f = this.editedFeature();
+    if (f?.type !== 'deleteFace' || ref.kind !== 'face') return;
+    const faces = f.faces.some((x) => x.name === ref.name) ? f.faces.filter((x) => x.name !== ref.name) : [...f.faces, ref];
+    this.execute({ type: 'setFaces', featureId: f.id, faces, ...(f.hole ? { hole: true } : {}) });
+  }
+
+  /** The face a Move Face pushes: the planar face clicked in the graphics area. */
+  setMoveFace(ref: Ref): void {
+    const f = this.editedFeature();
+    if (f?.type !== 'moveFace' || ref.kind !== 'face') return;
+    if (ref.fingerprint?.type !== 'plane') return this.notify(t('edit.planeOnly'), 'error');
+    this.execute({ type: 'setMoveFace', featureId: f.id, face: ref, distance: f.distance });
+  }
+
   private enterSketch(sketch: SketchFeature, fresh: boolean): void {
     const frame = this.frameOf(sketch);
     if (!frame) {
@@ -621,6 +678,8 @@ class AppStore {
     if (f?.type === 'fillet' || f?.type === 'chamfer') this.toggleEdge(ref);
     else if (f?.type === 'extrude') this.setUpToFace(ref);
     else if (f?.type === 'refPlane') this.setPlaneRef(ref);
+    else if (f?.type === 'deleteFace') this.toggleFace(ref);
+    else if (f?.type === 'moveFace') this.setMoveFace(ref);
   }
 
   /** A click in the FeatureManager selects; while a plane is being defined it picks a plane like SolidWorks' flyout tree. */
@@ -671,7 +730,7 @@ class AppStore {
     const i = this.history.doc.features.findIndex((f) => f.id === e.featureId);
     const type = this.history.doc.features[i]?.type;
     if (type === 'refPlane') return i + 1;
-    return type === 'fillet' || type === 'chamfer' || type === 'sketch' ? i : undefined;
+    return type === 'fillet' || type === 'chamfer' || type === 'deleteFace' || type === 'moveFace' || type === 'sketch' ? i : undefined;
   }
 
   // ------------------------------------------------------------ sketch sessions (C1)
@@ -717,6 +776,39 @@ class AppStore {
     return ok;
   }
 
+  // ------------------------------------------------------------ the worker
+
+  private startWorker(): void {
+    this.worker = new Worker(new URL('../worker/kernel.worker.ts', import.meta.url), { type: 'module' });
+    this.remote = Comlink.wrap<KernelApi>(this.worker);
+  }
+
+  /** Loads the geometry kernel in the worker, then gives it the language and the imported data (posted before any rebuild request). */
+  private boot(locale: Locale): void {
+    this.api.init().then(
+      (bootMs) => this.set({ bootMs }),
+      (e: unknown) => this.set({ bootError: e instanceof Error ? e.message : String(e) }),
+    );
+    void this.api.setLocale(locale);
+    if (this.blobs.size > 0) void this.api.setBlobs(this.blobs);
+  }
+
+  /**
+   * OCCT cannot be interrupted, and a few operations on some geometry run for minutes (a defeaturing of a small face
+   * among B-spline neighbours did, on a real part). The worker is then replaced: the document is here, so nothing is
+   * lost but the time. What the document asked for is left as it is for the user to undo.
+   */
+  private restartWorker(): void {
+    this.worker.terminate();
+    this.workerGeneration += 1;
+    this.inFlight = false;
+    this.pending = false;
+    this.startWorker();
+    this.sketchRunner.abandon();
+    this.set({ bootMs: null, rebuilding: false });
+    this.boot(getLocale());
+  }
+
   // ------------------------------------------------------------ rebuild (B3.5: off the UI thread)
 
   /** 「重新計算」; in an assembly it reads the part files again, so changed parts show as they are now. */
@@ -727,30 +819,64 @@ class AppStore {
 
   private requestRebuild(): void {
     if (this.inFlight) {
-      this.pending = true;
-      return;
+      // A rebuild that has run this long is probably stuck, and the document has changed since: do not wait for it.
+      if (this.state.bootMs !== null && performance.now() - this.startedAt > REBUILD_SUSPECT_MS) {
+        this.restartWorker();
+        this.notify(t('worker.abandoned'), 'info');
+      } else {
+        this.pending = true;
+        return;
+      }
     }
     void this.run();
   }
 
+  /** The answer, or `StalledError` when the worker has taken longer than `rebuildLimitMs` once its kernel is loaded. */
+  private withinLimit<T>(answer: Promise<T>): Promise<T> {
+    return new Promise<T>((resolve, reject) => {
+      let waited = performance.now();
+      let timer: ReturnType<typeof setTimeout>;
+      const watch = () => {
+        // loading the kernel (43 MB) is not the rebuild's time
+        if (this.state.bootMs === null) waited = performance.now();
+        if (performance.now() - waited >= this.rebuildLimitMs) reject(new StalledError());
+        else timer = setTimeout(watch, Math.min(1000, this.rebuildLimitMs));
+      };
+      timer = setTimeout(watch, Math.min(1000, this.rebuildLimitMs));
+      answer.then(
+        (v) => (clearTimeout(timer), resolve(v)),
+        (e) => (clearTimeout(timer), reject(e)),
+      );
+    });
+  }
+
   private async run(): Promise<void> {
+    const worker = this.workerGeneration;
     this.inFlight = true;
+    this.startedAt = performance.now();
     const seq = ++this.seq;
     this.set({ rebuilding: true });
     try {
       const until = this.until();
-      const result = await this.api.rebuild({ seq, doc: this.history.doc, ...(until === undefined ? {} : { until }) });
+      const result = await this.withinLimit(this.api.rebuild({ seq, doc: this.history.doc, ...(until === undefined ? {} : { until }) }));
+      if (worker !== this.workerGeneration) return; // the worker was replaced meanwhile: this is not an answer to use
       // A queued request supersedes this result: showing it would briefly contradict the current document.
       if (result.seq === this.seq && !this.pending) this.set({ result });
     } catch (e) {
-      this.notify(`重新計算失敗：${e instanceof Error ? e.message : String(e)}`, 'error');
+      if (worker !== this.workerGeneration) return;
+      if (e instanceof StalledError) {
+        this.restartWorker();
+        this.notify(t('worker.stalled', { seconds: Math.round(this.rebuildLimitMs / 1000) }), 'error');
+      } else this.notify(`重新計算失敗：${e instanceof Error ? e.message : String(e)}`, 'error');
     } finally {
-      this.inFlight = false;
-      if (this.pending) {
-        this.pending = false;
-        void this.run();
-      } else {
-        this.set({ rebuilding: false });
+      if (worker === this.workerGeneration) {
+        this.inFlight = false;
+        if (this.pending) {
+          this.pending = false;
+          void this.run();
+        } else {
+          this.set({ rebuilding: false });
+        }
       }
     }
   }

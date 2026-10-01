@@ -1,3 +1,4 @@
+import { t } from '@3db/i18n';
 import {
   DATUM_PLANES,
   evalAngle,
@@ -6,10 +7,13 @@ import {
   planeFrame,
   resolveDoc,
   type ChamferFeature,
+  type DeleteFaceFeature,
   type ExtrudeFeature,
+  type Feature,
   type FilletFeature,
   type Id,
   type ImportedBodyFeature,
+  type MoveFaceFeature,
   type PartDoc,
   type PlaneFrame,
   type Ref,
@@ -19,7 +23,7 @@ import {
   type Vec3,
 } from '@3db/model';
 import { findProfiles, type ProfileResult, type SketchSolver, type SketchStatus, type SolvedSketch } from '@3db/sketch';
-import { KernelError, type FaceOrigin, type Kernel, type OpResult, type ShapeId, type Topology } from '@3db/kernel';
+import { KernelError, type FaceOrigin, type ImportDiagnostics, type Kernel, type OpResult, type ShapeId, type Topology } from '@3db/kernel';
 import { nameElements, resolveRef, type Candidate, type ElementNames } from '@3db/naming';
 
 export type FeatureStatus = 'ok' | 'error' | 'suppressed' | 'rolledBack';
@@ -38,6 +42,8 @@ export interface FeatureResult {
   unresolved?: Unresolved[];
   /** The feature rebuilt, but something deserves a look (D1.6), e.g. a reference found by its geometry. */
   warnings?: string[];
+  /** An imported body: what the file held and what was done to it (F2.2). */
+  diagnostics?: ImportDiagnostics;
   ms: number;
 }
 
@@ -69,7 +75,7 @@ export interface BlobSource {
 }
 
 /** A file read once: its solids (or why it could not be read), kept while the document uses it. */
-type ImportedShape = { shape: ShapeId; faceOrigins: FaceOrigin[][]; warnings: string[] } | { error: string };
+type ImportedShape = { shape: ShapeId; faceOrigins: FaceOrigin[][]; warnings: string[]; diagnostics: ImportDiagnostics } | { error: string };
 
 export interface RebuildOptions {
   /** Evaluate only features [0, until) — edit sessions look at the model before the edited feature. */
@@ -94,6 +100,65 @@ const unit = (a: Vec3): Vec3 => {
   return [a[0] / l, a[1] / l, a[2] / l];
 };
 
+/** The axis of a face that is a surface of revolution: a point on it and its direction. */
+function axisOf(face: Topology['faces'][number]): { point: Vec3; dir: Vec3 } | null {
+  const g = face.geometry;
+  if (g?.type === 'cylinder') return { point: g.origin, dir: g.axis };
+  if (g?.type === 'cone') return { point: g.apex, dir: g.axis };
+  if (g?.type === 'torus') return { point: g.center, dir: g.axis };
+  return null;
+}
+
+/**
+ * The faces of a hole, from one or more of its faces (「刪除鑽孔」):
+ *  - a face joins when every face it touches is already in: the bottom of a blind hole, once its wall is;
+ *  - so does the other half of a wall the CAD system split in two (a concave cylinder of the same radius on the same
+ *    axis next to a face already in), and so does a cone or torus on that axis next to a face already in: the chamfer
+ *    or round at the hole's mouth. Those rims are added, never grown from, so the faces round them stay out.
+ * Nothing the rest of the body also uses is taken.
+ */
+export function holeFaces(topology: Topology, seeds: number[]): number[] {
+  const touching = topology.faces.map(() => new Set<number>());
+  for (const e of topology.edges) for (const a of e.faces) for (const b of e.faces) if (a !== b) touching[a]!.add(b);
+  const inside = new Set(seeds);
+  const wall = seeds.map((i) => topology.faces[i]!).filter((f) => f.geometry?.type === 'cylinder' && !f.geometry.convex);
+  const onAxis = (g: Topology['faces'][number]): boolean => {
+    const a = axisOf(g);
+    if (!a) return false;
+    return wall.some((w) => {
+      const b = axisOf(w)!;
+      const off = sub(a.point, b.point);
+      const along = dot(off, b.dir);
+      const away = Math.hypot(off[0] - b.dir[0] * along, off[1] - b.dir[1] * along, off[2] - b.dir[2] * along);
+      return Math.abs(dot(a.dir, b.dir)) > 1 - 1e-9 && away < 1e-6 * Math.max(1, Math.hypot(...off));
+    });
+  };
+  const sameRadius = (g: Topology['faces'][number]) => wall.some((w) => g.geometry?.type === 'cylinder' && !g.geometry.convex && Math.abs(g.geometry.radius - (w.geometry as { radius: number }).radius) < 1e-9);
+  for (let grew = true; grew; ) {
+    grew = false;
+    for (const f of [...inside]) {
+      for (const g of touching[f]!) {
+        if (inside.has(g)) continue;
+        const face = topology.faces[g]!;
+        const enclosed = [...touching[g]!].every((h) => inside.has(h));
+        const half = wall.length > 0 && sameRadius(face) && onAxis(face);
+        if (enclosed || half) {
+          inside.add(g);
+          grew = true;
+        }
+      }
+    }
+  }
+  // the rims: added once, after the wall is whole, and not grown from
+  for (const f of [...inside]) {
+    for (const g of touching[f]!) {
+      const type = topology.faces[g]!.geometry?.type;
+      if (!inside.has(g) && (type === 'cone' || type === 'torus') && onAxis(topology.faces[g]!)) inside.add(g);
+    }
+  }
+  return [...inside];
+}
+
 /** Rotates v about the unit axis k by angle t (Rodrigues). */
 function rotate(v: Vec3, k: Vec3, t: number): Vec3 {
   const c = Math.cos(t);
@@ -102,6 +167,19 @@ function rotate(v: Vec3, k: Vec3, t: number): Vec3 {
   const kv = dot(k, v);
   return [v[0] * c + kxv[0] * s + k[0] * kv * (1 - c), v[1] * c + kxv[1] * s + k[1] * kv * (1 - c), v[2] * c + kxv[2] * s + k[2] * kv * (1 - c)];
 }
+
+/** Where an imported file is kept: its bytes and the tolerance its surfaces were sewn with decide what comes out. */
+const importKey = (sha256: string, sewTolerance: string | undefined): string => {
+  let tolerance = '';
+  if (sewTolerance !== undefined) {
+    try {
+      tolerance = String(evalLength(sewTolerance));
+    } catch {
+      tolerance = sewTolerance; // reported by the feature itself
+    }
+  }
+  return `${sha256}|${tolerance}`;
+};
 
 const concatNames = (a: ElementNames, b: ElementNames): ElementNames => ({
   faces: [...a.faces, ...b.faces],
@@ -117,6 +195,8 @@ export class Regenerator {
   private owned: ShapeId[] = [];
   /** Warnings of the feature being evaluated. */
   private warnings: string[] = [];
+  /** What reading the file of the imported body being evaluated turned up (F2.2). */
+  private diagnostics: ImportDiagnostics | null = null;
   /** Reference planes built so far in this rebuild (C3.2). */
   private planes = new Map<Id, PlaneFrame>();
   /**
@@ -145,12 +225,6 @@ export class Regenerator {
 
   rebuild(doc: PartDoc, options: RebuildOptions = {}): RebuildResult {
     this.releaseResult();
-    // Files the document no longer imports are let go.
-    for (const [sha256, i] of this.imports) {
-      if (doc.blobs.some((b) => b.sha256 === sha256)) continue;
-      if ('shape' in i) this.kernel.release(i.shape);
-      this.imports.delete(sha256);
-    }
     const t0 = performance.now();
     const limit = Math.min(options.until ?? doc.features.length, doc.rollbackIndex ?? doc.features.length);
     const sketches: RebuildResult['sketches'] = new Map();
@@ -162,11 +236,19 @@ export class Regenerator {
     // Every expression becomes the number it stands for before anything is built: the solver and the kernel
     // only ever see numbers. A feature whose expression cannot be evaluated reports why instead of building.
     const { doc: resolved, problems } = resolveDoc(doc);
+    // Files the document no longer imports (or no longer with these options) are let go.
+    const wanted = new Set(resolved.features.flatMap((f) => (f.type === 'importedBody' ? resolved.blobs.filter((b) => b.id === f.blob).map((b) => importKey(b.sha256, f.sewTolerance)) : [])));
+    for (const [key, i] of this.imports) {
+      if (wanted.has(key)) continue;
+      if ('shape' in i) this.kernel.release(i.shape);
+      this.imports.delete(key);
+    }
     resolved.features.forEach((feature, index) => {
       const t = performance.now();
       this.warnings = [];
+      this.diagnostics = null;
       const done = (r: Omit<FeatureResult, 'id' | 'ms'>) =>
-        results.push({ id: feature.id, ms: performance.now() - t, ...r, ...(this.warnings.length > 0 ? { warnings: this.warnings } : {}) });
+        results.push({ id: feature.id, ms: performance.now() - t, ...r, ...(this.warnings.length > 0 ? { warnings: this.warnings } : {}), ...(this.diagnostics ? { diagnostics: this.diagnostics } : {}) });
       if (index >= limit) {
         if (index === limit && feature.type === 'sketch') {
           try {
@@ -202,6 +284,8 @@ export class Regenerator {
           case 'revolve':
           case 'fillet':
           case 'chamfer':
+          case 'deleteFace':
+          case 'moveFace':
           case 'importedBody': {
             const next =
               feature.type === 'extrude'
@@ -212,7 +296,11 @@ export class Regenerator {
                     ? this.fillet(feature, body)
                     : feature.type === 'chamfer'
                       ? this.chamfer(feature, body)
-                      : this.importedBody(feature, doc, body);
+                      : feature.type === 'deleteFace'
+                        ? this.deleteFace(feature, body)
+                        : feature.type === 'moveFace'
+                          ? this.moveFace(feature, body)
+                          : this.importedBody(feature, doc, body);
             if (body && body.shape !== next.shape) this.kernel.release(body.shape);
             body = next;
             return done({ status: 'ok' });
@@ -435,20 +523,22 @@ export class Regenerator {
   private importedBody(f: ImportedBodyFeature, doc: PartDoc, body: BodyState | null): BodyState {
     const blob = doc.blobs.find((b) => b.id === f.blob);
     if (!blob) throw new FeatureError('輸入的資料不存在');
-    let imported = this.imports.get(blob.sha256);
+    const key = importKey(blob.sha256, f.sewTolerance);
+    let imported = this.imports.get(key);
     if (!imported) {
       const data = this.blobs.get(blob.sha256);
       if (!data) throw new FeatureError('找不到輸入的資料（零件檔中缺少），請重新輸入');
       try {
-        const r = this.kernel.importStep(data);
-        imported = { shape: r.shape, faceOrigins: r.faceOrigins, warnings: r.warnings };
+        const r = this.kernel.importStep(data, f.sewTolerance === undefined ? {} : { sewTolerance: evalLength(f.sewTolerance) });
+        imported = { shape: r.shape, faceOrigins: r.faceOrigins, warnings: r.warnings, diagnostics: r.diagnostics };
       } catch (e) {
         imported = { error: e instanceof Error ? e.message : String(e) };
       }
-      this.imports.set(blob.sha256, imported);
+      this.imports.set(key, imported);
     }
     if ('error' in imported) throw new FeatureError(imported.error);
     this.warnings.push(...imported.warnings);
+    this.diagnostics = imported.diagnostics;
     // The kept shape never becomes the body itself: the body is released on the next rebuild.
     return this.combine(f.id, 'boss', { shape: this.kernel.copy(imported.shape), faceOrigins: imported.faceOrigins }, { featureId: f.id }, body);
   }
@@ -468,6 +558,42 @@ export class Regenerator {
     }
     if (unresolved.length > 0) throw new FeatureError(`遺失參考：${unresolved.length} 條邊線找不到，請重新選擇`, unresolved);
     return [...new Set(indices)];
+  }
+
+  // ------------------------------------------------------------------ direct editing (C10.1, C10.2)
+
+  /** Faces of the model so far that the references name; lost ones are reported together, as for edges. */
+  private faceIndices(refs: Ref[], body: BodyState): number[] {
+    if (refs.length === 0) throw new FeatureError(t('edit.noFacePicked'));
+    const indices: number[] = [];
+    const unresolved: Unresolved[] = [];
+    for (const ref of refs) {
+      const r = resolveRef(ref, body.names, body.topology);
+      if (r.ok) {
+        indices.push(r.index);
+        this.noteFingerprint(r.via, t('edit.faceNoun'), body.names.faces[r.index]!);
+      } else unresolved.push({ ref, reason: r.reason, candidates: r.candidates });
+    }
+    if (unresolved.length > 0) throw new FeatureError(t('edit.facesLost', { n: unresolved.length }), unresolved);
+    return [...new Set(indices)];
+  }
+
+  /** A result whose faces came from the faces of the body before it: they keep those names. */
+  private edited(f: Feature, r: OpResult, body: BodyState): BodyState {
+    const topology = this.kernel.topology(r.shape);
+    return { shape: r.shape, topology, names: nameElements(r.faceOrigins, topology, { featureId: f.id, input: body.names }), by: f.id };
+  }
+
+  private deleteFace(f: DeleteFaceFeature, body: BodyState | null): BodyState {
+    if (!body) throw new FeatureError(t('edit.noBodyForDelete'));
+    const picked = this.faceIndices(f.faces, body);
+    return this.edited(f, this.kernel.deleteFaces(body.shape, f.hole ? holeFaces(body.topology, picked) : picked), body);
+  }
+
+  private moveFace(f: MoveFaceFeature, body: BodyState | null): BodyState {
+    if (!body) throw new FeatureError(t('edit.noBodyForMove'));
+    const [face] = this.faceIndices([f.face], body);
+    return this.edited(f, this.kernel.moveFace(body.shape, face!, evalLength(f.distance)), body);
   }
 
   private fillet(f: FilletFeature, body: BodyState | null): BodyState {

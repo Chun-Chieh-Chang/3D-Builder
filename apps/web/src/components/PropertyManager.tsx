@@ -11,11 +11,13 @@ import {
   SKETCH_ORIGIN,
   type ChamferFeature,
   type Command,
+  type DeleteFaceFeature,
   type EndCondition,
   type ExtrudeFeature,
   type FilletFeature,
   type Id,
   type ImportedBodyFeature,
+  type MoveFaceFeature,
   type PartDoc,
   type PlaneDefinition,
   type Ref,
@@ -514,25 +516,106 @@ function RefPlanePanel({ f }: { f: RefPlaneFeature }) {
   );
 }
 
+/** Delete Face (C10.2): the faces to take out, by persistent name with the missing ones marked, and 「刪除鑽孔」. */
+function DeleteFacePanel({ f }: { f: DeleteFaceFeature }) {
+  const result = useStore((s) => s.result);
+  return (
+    <section className="pm-group">
+      <h4>{t('pm.deleteFace.heading')}</h4>
+      <ul className="selection-box">
+        {f.faces.length === 0 && <li className="muted">{t('pm.deleteFace.empty')}</li>}
+        {f.faces.map((r, i) => {
+          const found = result?.faceNames.includes(r.name);
+          return (
+            <li key={r.name} className={found ? '' : 'missing'} title={r.name}>
+              {t('pm.face', { n: i + 1 })}
+              {!found && t('pm.lost')}
+              <code>{r.name}</code>
+              {!found && <UseNearest featureId={f.id} refr={r} />}
+            </li>
+          );
+        })}
+      </ul>
+      <label className="pm-row checkbox">
+        <input type="checkbox" checked={f.hole ?? false} onChange={(e) => store.execute({ type: 'setFaces', featureId: f.id, faces: f.faces, ...(e.target.checked ? { hole: true } : {}) })} />
+        <span>{t('pm.deleteFace.hole')}</span>
+      </label>
+      <p className="hint">{t('pm.deleteFace.hint', { label: FEATURE_LABEL.deleteFace })}</p>
+    </section>
+  );
+}
+
+/** Move Face (C10.1): the plane to push and how far along its outward normal. */
+function MoveFacePanel({ f }: { f: MoveFaceFeature }) {
+  const result = useStore((s) => s.result);
+  const found = !!f.face.name && !!result?.faceNames.includes(f.face.name);
+  return (
+    <section className="pm-group">
+      <h4>{t('pm.moveFace.heading')}</h4>
+      <ul className="selection-box">
+        {!f.face.name && <li className="muted">{t('pm.moveFace.empty')}</li>}
+        {f.face.name && (
+          <li className={found ? '' : 'missing'} title={f.face.name}>
+            {t('pm.face', { n: 1 })}
+            {!found && t('pm.lost')}
+            <code>{f.face.name}</code>
+            {!found && <UseNearest featureId={f.id} refr={f.face} />}
+          </li>
+        )}
+      </ul>
+      <label className="pm-row">
+        <span>{t('pm.moveFace.distance')}</span>
+        <ValueInput value={f.distance} toCommand={(distance) => ({ type: 'setMoveFace', featureId: f.id, face: f.face, distance })} />
+      </label>
+      <p className="hint">{t('pm.moveFace.hint')}</p>
+    </section>
+  );
+}
+
 /** Imported body (F2.1): where the data came from, and what happened to it on the way in. */
 function ImportedBodyPanel({ f }: { f: ImportedBodyFeature }) {
   const doc = useStore((s) => s.doc);
   const result = useStore((s) => s.result);
   const blob = doc.blobs.find((b) => b.id === f.blob);
-  const warnings = result?.features.find((r) => r.id === f.id)?.warnings ?? [];
+  const status = result?.features.find((r) => r.id === f.id);
+  const warnings = status?.warnings ?? [];
+  const d = status?.diagnostics;
   return (
-    <section className="pm-group">
-      <h4>輸入的資料</h4>
-      <p>{blob?.fileName ?? '（未記錄檔名）'}</p>
-      {warnings.map((w) => (
-        <p key={w} className="warning-text">
-          {w}
+    <>
+      <section className="pm-group">
+        <h4>輸入的資料</h4>
+        <p>{blob?.fileName ?? '（未記錄檔名）'}</p>
+        {warnings.map((w) => (
+          <p key={w} className="warning-text">
+            {w}
+          </p>
+        ))}
+        <p className="hint">
+          資料存放在零件檔中（內容雜湊 <code>{blob?.sha256.slice(0, 12)}…</code>），不需要原始檔案。面依檔案中的順序命名。
         </p>
-      ))}
-      <p className="hint">
-        資料存放在零件檔中（內容雜湊 <code>{blob?.sha256.slice(0, 12)}…</code>），不需要原始檔案。面依檔案中的順序命名。
-      </p>
-    </section>
+      </section>
+      <section className="pm-group">
+        <h4>{t('pm.import.report')}</h4>
+        {d ? (
+          <ul className="report">
+            <li>{d.solids > 0 ? t('pm.import.contents', { solids: d.solids, faces: d.faces }) : t('pm.import.contentsSurfaces', { faces: d.faces })}</li>
+            <li className={d.validAfter ? '' : 'error-text'}>{!d.validBefore ? t(d.validAfter ? 'pm.import.checkHealed' : 'pm.import.checkStill') : t('pm.import.checkPassed')}</li>
+            {d.sewn && <li>{t('pm.import.sewn', { tolerance: d.sewTolerance ?? 0, n: d.freeEdges ?? 0 })}</li>}
+            {d.looseFaces > 0 && <li>{t('pm.import.loose', { n: d.looseFaces })}</li>}
+          </ul>
+        ) : (
+          <p className="muted">{status?.status === 'error' ? status.message : '…'}</p>
+        )}
+        <label className="pm-row">
+          <span>{t('pm.import.tolerance')}</span>
+          <ValueInput
+            value={f.sewTolerance ?? '0.01'}
+            toCommand={(v) => ({ type: 'setImportOptions', featureId: f.id, ...(v ? { sewTolerance: v } : {}) })}
+          />
+        </label>
+        <p className="hint">{t('pm.import.toleranceHint')}</p>
+      </section>
+    </>
   );
 }
 
@@ -569,6 +652,8 @@ export function PropertyManager() {
       {f.type === 'chamfer' && <ChamferPanel f={f} />}
       {f.type === 'refPlane' && <RefPlanePanel f={f} />}
       {f.type === 'importedBody' && <ImportedBodyPanel f={f} />}
+      {f.type === 'deleteFace' && <DeleteFacePanel f={f} />}
+      {f.type === 'moveFace' && <MoveFacePanel f={f} />}
     </div>
   );
 }

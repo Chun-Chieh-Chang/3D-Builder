@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { t } from '@3db/i18n';
 import { DATUM_PLANES, findFeature, isDimension, isShown, ORIGIN_KEY, Parameters, type DatumPlaneName, type Id, type Feature, type PlaneFrame, type Ref } from '@3db/model';
 import { ownerFeatures } from '@3db/naming';
 import { Viewer, type PlaneDisplay, type SketchOverlay } from '@3db/render';
@@ -18,7 +19,10 @@ function picking(feature: Feature | undefined, editing: boolean) {
   const def = feature?.type === 'refPlane' ? feature.def : null;
   const upTo = feature?.type === 'extrude' && feature.dir1.type === 'upToFace' ? feature.dir1 : null;
   const edgeFeature = feature?.type === 'fillet' || feature?.type === 'chamfer' ? feature : null;
-  const prompt = edgeFeature
+  const faceFeature = feature?.type === 'deleteFace' || feature?.type === 'moveFace' ? feature : null;
+  const prompt = faceFeature
+    ? t(faceFeature.type === 'deleteFace' ? 'pick.deleteFace' : 'pick.moveFace')
+    : edgeFeature
     ? `點選邊線以加入${FEATURE_LABEL[edgeFeature.type]}`
     : upTo
       ? '點選伸長要終止的面'
@@ -31,10 +35,10 @@ function picking(feature: Feature | undefined, editing: boolean) {
             : null;
   return {
     edges: !!edgeFeature || def?.mode === 'angle',
-    faces: !editing || !!upTo || def?.mode === 'offset' || def?.mode === 'angle',
+    faces: !editing || !!upTo || !!faceFeature || def?.mode === 'offset' || def?.mode === 'angle',
     vertices: def?.mode === 'threePoint',
     pickedEdges: edgeFeature ? edgeFeature.edges : def?.mode === 'angle' ? [def.axis] : [],
-    pickedFace: upTo ? upTo.face : def && def.mode !== 'threePoint' && def.plane.kind === 'face' ? def.plane : null,
+    pickedFaces: faceFeature ? (faceFeature.type === 'deleteFace' ? faceFeature.faces : [faceFeature.face]) : upTo ? [upTo.face] : def && def.mode !== 'threePoint' && def.plane.kind === 'face' ? [def.plane] : [],
     pickedVertices: def?.mode === 'threePoint' ? def.points : [],
     /** A default or reference plane the plane being defined is based on. */
     referencePlane: def && def.mode !== 'threePoint' && def.plane.kind === 'datum' ? def.plane.name : null,
@@ -153,7 +157,7 @@ export function Viewport() {
     const indices = (names: string[] | undefined, refs: Ref[]) => refs.map((x) => names?.indexOf(x.name) ?? -1).filter((i) => i >= 0);
     v.setSelectedEdges(indices(r?.edgeNames, p.pickedEdges));
     v.setSelectedVertices(indices(r?.vertexNames, p.pickedVertices));
-    if (editing) v.setSelectedFaces(indices(r?.faceNames, p.pickedFace ? [p.pickedFace] : []));
+    if (editing) v.setSelectedFaces(indices(r?.faceNames, p.pickedFaces));
     else if (selectedFace?.kind === 'face') v.setSelectedFaces(indices(r?.faceNames, [selectedFace]));
     // D1.2: a feature selected in the FeatureManager shows the faces it made.
     else v.setSelectedFaces(selected ? (r?.faceNames ?? []).flatMap((n, i) => (ownerFeatures(n)[0] === selected ? [i] : [])) : []);

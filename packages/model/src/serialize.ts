@@ -76,6 +76,9 @@ const migrations: Record<number, (doc: Json) => Json> = {
   // convert: a plain number is still an expression. The version keeps older programs from opening a
   // document whose values they would not understand.
   7: (doc) => doc,
+  // v9: direct editing of a body's faces (C10.1, C10.2): `deleteFace` and `moveFace` features. Nothing to convert;
+  // the version keeps older programs from opening features they would skip.
+  8: (doc) => doc,
 };
 
 export class FormatError extends Error {

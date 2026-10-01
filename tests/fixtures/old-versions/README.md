@@ -13,6 +13,7 @@
 | `v5-import.3dbx` | 5 | `3b80043`（1F） | 輸入 `tests/fixtures/step/plate-with-hole.step`（資料在檔案內），輸入邊線上 R2 圓角 |
 | `v6-demo.3dbx` | 6 | `0c51daf`（Phase 3 計畫草案的提交，Schema 還是 6） | 示範件：20×10×5 的塊，一條 R2 圓角（v7 加入 `visibility`） |
 | `v7-demo.3dbx` | 7 | `d313e19`（Schema 7 的最後一個提交） | 示範件：20×10×5 的塊，一條 R2 圓角；草圖與原點被隱藏（`visibility`） |
+| `v8-expressions.3dbx` | 8 | `5e6eb6c`（Schema 8 的最後一個提交，3a-1） | 示範件：20×10×5 的塊與 R2 圓角；變數 `plate_w = 10`、寬度尺寸 `plate_w*2`、檔案屬性「板厚 = 5mm」、伸長深度 `property('板厚')`（運算式，v8 加入） |
 | `v1-assembly.3dba` | 組合件 1 | `7906934`（2A） | 存在「組合件/」的組合件：定位板<1> 固定在原點，削邊銷<1>、削邊銷<2>（其中一個轉 90°）；零件路徑 `../定位板.3dbx`、`../零件/削邊銷.3dbx` |
 
 產生方式：

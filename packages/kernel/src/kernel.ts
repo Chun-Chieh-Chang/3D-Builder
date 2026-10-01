@@ -1,3 +1,4 @@
+import { t } from '@3db/i18n';
 import type { BRepBuilderAPI_MakeShape, NCollection_List_TopoDS_Shape, TopoDS_Shape, TopoDS_Wire } from 'libcascade/single/init';
 import { Arena, loadOcct, ShapeIndex, type LoadOptions, type OC } from './occt';
 import {
@@ -6,6 +7,8 @@ import {
   type EdgeInfo,
   type FaceInfo,
   type FaceOrigin,
+  type ImportDiagnostics,
+  type ImportOptions,
   type ImportResult,
   type MassProps,
   type MeshData,
@@ -354,13 +357,13 @@ export class Kernel {
     }
   }
 
-  private boolOp(op: 'fuse' | 'cut', a: TopoDS_Shape, b: TopoDS_Shape, label: string, arena: Arena) {
+  private boolOp(op: 'fuse' | 'cut' | 'common', a: TopoDS_Shape, b: TopoDS_Shape, label: string, arena: Arena) {
     const oc = this.oc;
     let mk;
     try {
       // The constructor with arguments performs the operation; Build() would run it again.
       const range = arena.own(new oc.Message_ProgressRange());
-      mk = arena.own(op === 'fuse' ? new oc.BRepAlgoAPI_Fuse(a, b, range) : new oc.BRepAlgoAPI_Cut(a, b, range));
+      mk = arena.own(op === 'fuse' ? new oc.BRepAlgoAPI_Fuse(a, b, range) : op === 'cut' ? new oc.BRepAlgoAPI_Cut(a, b, range) : new oc.BRepAlgoAPI_Common(a, b, range));
     } catch (e) {
       throw new KernelError(`${label}失敗：${this.errorText(e)}`);
     }
@@ -402,10 +405,15 @@ export class Kernel {
     }
   }
 
-  /** Merges faces lying on the same surface; a merged face keeps the origins of all its pieces (G4 in ADR 0003). */
-  private unify(shape: TopoDS_Shape, origins: FaceOrigin[][], arena: Arena): { shape: TopoDS_Shape; origins: FaceOrigin[][] } {
+  /**
+   * Merges faces lying on the same surface; a merged face keeps the origins of all its pieces (G4 in ADR 0003).
+   * Faces are not merged across an edge in keep: an edit that touches a few faces of a large imported body must not
+   * regroup the faces far from it, whose names others may be using.
+   */
+  private unify(shape: TopoDS_Shape, origins: FaceOrigin[][], arena: Arena, keep: TopoDS_Shape[] = []): { shape: TopoDS_Shape; origins: FaceOrigin[][] } {
     const oc = this.oc;
     const u = arena.own(new oc.ShapeUpgrade_UnifySameDomain(shape, true, true, false));
+    for (const e of keep) u.KeepShape(e);
     u.Build();
     const out = u.Shape();
     const history = arena.own(u.History());
@@ -481,6 +489,289 @@ export class Kernel {
       faces.dispose();
       edges.dispose();
       verts.dispose();
+      arena.dispose();
+    }
+  }
+
+  /**
+   * Deletes faces and heals the gap (C10.2): the neighbours are extended until they meet, so a hole or a
+   * fillet disappears and the body stays one valid solid (OCCT's defeaturing). Every face asked for must
+   * really be gone afterwards; a face OCCT could not remove is an error, never a silent partial result.
+   * Neighbours keep their origin ("modified"); no face is new.
+   */
+  deleteFaces(target: ShapeId, faceIndices: number[]): OpResult {
+    if (faceIndices.length === 0) throw new KernelError(t('edit.noFacesToDelete'));
+    const oc = this.oc;
+    const arena = new Arena();
+    const shape = this.get(target);
+    const faces = ShapeIndex.of(oc, shape, T.FACE, arena);
+    try {
+      const df = arena.own(new oc.BRepAlgoAPI_Defeaturing());
+      df.SetShape(shape);
+      df.SetToFillHistory(true);
+      for (const i of new Set(faceIndices)) {
+        const f = faces.keys[i];
+        if (!f) throw new KernelError(t('edit.faceOutOfRange', { index: i }));
+        df.AddFaceToRemove(f);
+      }
+      try {
+        df.Build(arena.own(new oc.Message_ProgressRange()));
+      } catch (e) {
+        throw new KernelError(t('edit.deleteFailed', { reason: this.errorText(e) }));
+      }
+      if (df.HasErrors() || !df.IsDone()) throw new KernelError(t('edit.deleteFailed', { reason: t('edit.cannotFillGap') }));
+      const stuck = [...new Set(faceIndices)].filter((i) => !df.IsDeleted(faces.keys[i]!));
+      if (stuck.length > 0) throw new KernelError(t('edit.deleteFailed', { reason: t('edit.facesNotRemoved', { n: stuck.length }) }));
+      const out = df.Shape();
+      if (!this.valid(out)) {
+        out.delete();
+        throw new KernelError(t('edit.deleteInvalid'));
+      }
+      const edges = ShapeIndex.of(oc, shape, T.EDGE, arena);
+      const verts = ShapeIndex.of(oc, shape, T.VERTEX, arena);
+      try {
+        return { shape: this.put(out), faceOrigins: this.history(df, { faces: faces.keys, edges: [], verts: [] }, out, arena) };
+      } finally {
+        edges.dispose();
+        verts.dispose();
+      }
+    } finally {
+      faces.dispose();
+      arena.dispose();
+    }
+  }
+
+  /**
+   * Moves a planar face `distance` along its outward normal (C10.1, negative = into the material); its
+   * neighbours stretch or shrink to follow. OCCT has no face-offset operation in this build, so the
+   * change is made as a slab: a plate on the face's plane, `distance` thick, cut down by the surface of
+   * every face next to it (each extended past its own boundary, on the side of the face) and then fused
+   * to or cut from the body. A slanted wall therefore stays slanted. A neighbour that continues the
+   * face smoothly (a fillet round its edge) has no such "side", so it is refused rather than guessed.
+   * Origins index the body's faces: the moved face keeps its own, the slab's side faces take their neighbour's.
+   */
+  moveFace(target: ShapeId, faceIndex: number, distance: number): OpResult {
+    if (!Number.isFinite(distance) || Math.abs(distance) < 1e-9) throw new KernelError(t('edit.distanceZero'));
+    const oc = this.oc;
+    const arena = new Arena();
+    const shape = this.get(target);
+    const topo = this.topology(target);
+    const info = topo.faces[faceIndex];
+    if (!info) throw new KernelError(t('edit.faceOutOfRange', { index: faceIndex }));
+    if (info.surface !== 'plane' || !info.normal) throw new KernelError(t('edit.planeOnly'));
+    const n = info.normal;
+    const faces = ShapeIndex.of(oc, shape, T.FACE, arena);
+    const edges = ShapeIndex.of(oc, shape, T.EDGE, arena);
+    const nTarget = faces.size;
+    const slabFaces: ShapeIndex[] = [];
+    try {
+      const face = arena.own(oc.TopoDS.Face(faces.keys[faceIndex]!));
+      const { min, max } = this.bounds(target);
+      const reach = Math.hypot(max[0] - min[0], max[1] - min[1], max[2] - min[2]) * 4 + Math.abs(distance) + 10;
+
+      // The neighbours: every other face sharing an edge with this one, with those edges.
+      const sharing = new Map<number, number[]>();
+      topo.edges.forEach((e, ei) => {
+        if (e.curve === 'degenerated' || !e.faces.includes(faceIndex)) return;
+        for (const g of e.faces) if (g !== faceIndex) sharing.set(g, [...(sharing.get(g) ?? []), ei]);
+      });
+
+      /** Points along an edge (the middle, then near each end): where the neighbour's direction is looked at. */
+      const along = (edge: TopoDS_Shape): Vec3[] => {
+        const ad = arena.own(new oc.BRepAdaptor_Curve(arena.own(oc.TopoDS.Edge(edge))));
+        const a = ad.FirstParameter();
+        const b = ad.LastParameter();
+        return [0.5, 0.15, 0.85].map((k) => this.xyz(arena.own(ad.EvalD0(a + (b - a) * k))));
+      };
+
+      /** The face's normal at a point of its surface under `p` (sign aside). */
+      const normalAt = (g: TopoDS_Shape, p: Vec3): Vec3 => {
+        const gFace = arena.own(oc.TopoDS.Face(g));
+        const uv = oc.GeomLib_Tool.Parameters(arena.own(oc.BRep_Tool.Surface(gFace)), this.pnt(arena, p), 1e-3);
+        if (!uv.returnValue) throw new KernelError(t('edit.noSurfacePoint'));
+        const ad = arena.own(new oc.BRepAdaptor_Surface(gFace, true));
+        const d1 = ad.EvalD1(uv.U, uv.V);
+        const c = cross3(this.xyz(arena.own(d1.D1U)), this.xyz(arena.own(d1.D1V)));
+        arena.own(d1.Point);
+        const len = Math.hypot(...c) || 1;
+        return [c[0] / len, c[1] / len, c[2] / len];
+      };
+
+      // A point of the face next to an edge, to tell on which side of the neighbour's surface the face lies.
+      const insidePoint = (edge: TopoDS_Shape, ei: number): Vec3 => {
+        const ad = arena.own(new oc.BRepAdaptor_Curve(arena.own(oc.TopoDS.Edge(edge))));
+        const d1 = ad.EvalD1((ad.FirstParameter() + ad.LastParameter()) / 2);
+        const tangent = this.xyz(arena.own(d1.D1));
+        const m = this.xyz(arena.own(d1.Point));
+        const w = cross3(n, tangent);
+        const wl = Math.hypot(...w) || 1;
+        const eps = Math.max(1e-5, Math.min(1e-3 * topo.edges[ei]!.length, 1e-2));
+        for (const s of [1, -1]) {
+          const p = add(m, w, (s * eps) / wl);
+          const c = arena.own(new oc.BRepClass_FaceClassifier(face, this.pnt(arena, p), 1e-7, true, 0.1));
+          if (c.State() === oc.TopAbs_State.TopAbs_IN) return p;
+        }
+        throw new KernelError(t('edit.noPointNearEdge'));
+      };
+
+      // How the neighbours stand to the face. Tangent to it: refused (no side to take). Square to it all along: the
+      // face can simply be swept, whatever its shape. Anything else: the slab trimmed by the neighbours' surfaces.
+      let square = true;
+      for (const [g, via] of sharing) {
+        for (const ei of via) {
+          for (const p of along(edges.keys[ei]!)) {
+            const ng = normalAt(faces.keys[g]!, p);
+            const across = Math.abs(n[0] * ng[0] + n[1] * ng[1] + n[2] * ng[2]);
+            if (across > 1 - 1e-6) throw new KernelError(t('edit.tangentNeighbour'));
+            if (across > 1e-6) square = false;
+          }
+        }
+      }
+
+      const moved: FaceOrigin = { rel: 'modified', kind: 'face', index: faceIndex };
+      const vector = arena.own(new oc.gp_Vec(n[0] * distance, n[1] * distance, n[2] * distance));
+      interface Slab {
+        shape: TopoDS_Shape;
+        index: ShapeIndex;
+        origins: FaceOrigin[][];
+      }
+
+      /** The face itself swept along its normal: its sides lie on the neighbours' planes already (all square to it). */
+      const sweep = (): Slab => {
+        const mkPrism = arena.own(new oc.BRepPrimAPI_MakePrism(face, vector, false, true));
+        const shape = arena.own(this.build(mkPrism, t('edit.moveFace'), arena));
+        const index = ShapeIndex.of(oc, shape, T.FACE, arena);
+        slabFaces.push(index);
+        const origins: FaceOrigin[][] = index.keys.map(() => []);
+        for (const end of [mkPrism.FirstShape(), mkPrism.LastShape()]) {
+          const i = index.indexOf(end);
+          if (i >= 0) origins[i] = [moved];
+          end.delete();
+        }
+        // a side of the sweep is named after the face across the edge it was swept from
+        for (const ex = arena.own(new oc.TopExp_Explorer(face, T.EDGE, oc.TopAbs_ShapeEnum.TopAbs_SHAPE)); ex.More(); ex.Next()) {
+          const edge = ex.Current();
+          const ei = edges.indexOf(edge);
+          const across = ei < 0 ? undefined : topo.edges[ei]!.faces.find((g) => g !== faceIndex);
+          for (const s of this.list(mkPrism.Generated(edge))) {
+            const i = index.indexOf(s);
+            if (i >= 0 && across !== undefined) origins[i] = [{ rel: 'modified', kind: 'face', index: across }];
+            s.delete();
+          }
+          edge.delete();
+        }
+        return { shape, index, origins };
+      };
+
+      /** A plate on the face's plane, `distance` along the normal, trimmed by each neighbour's surface. */
+      const trim = (): Slab => {
+        const plane = arena.own(new oc.gp_Pln(this.pnt(arena, info.center), this.dir(arena, n)));
+        const plate = arena.own(arena.own(new oc.BRepBuilderAPI_MakeFace(plane, -reach, reach, -reach, reach)).Face());
+        const mkPrism = arena.own(new oc.BRepPrimAPI_MakePrism(plate, vector, false, true));
+        let shape = arena.own(this.build(mkPrism, t('edit.moveFace'), arena));
+        let index = ShapeIndex.of(oc, shape, T.FACE, arena);
+        slabFaces.push(index);
+        let origins: FaceOrigin[][] = index.keys.map(() => []);
+        const start = mkPrism.FirstShape();
+        /** The face of the plate that lies on the face's own plane. */
+        let base = index.indexOf(start);
+        start.delete();
+        for (const end of [mkPrism.FirstShape(), mkPrism.LastShape()]) {
+          const i = index.indexOf(end);
+          if (i >= 0) origins[i] = [moved];
+          end.delete();
+        }
+
+        for (const [g, via] of sharing) {
+          const gShape = faces.keys[g]!;
+          const p = insidePoint(edges.keys[via[0]!]!, via[0]!);
+          const surface = arena.own(oc.BRep_Tool.Surface(arena.own(oc.TopoDS.Face(gShape))));
+          const unbounded = arena.own(arena.own(new oc.BRepBuilderAPI_MakeFace(surface, 1e-7)).Face());
+          const half = arena.own(arena.own(new oc.BRepPrimAPI_MakeHalfSpace(unbounded, this.pnt(arena, p))).Solid());
+          const halfIndex = ShapeIndex.of(oc, half, T.FACE, arena);
+          slabFaces.push(halfIndex);
+          const mk = this.boolOp('common', shape, half, t('edit.moveFace'), arena);
+          const next = arena.own(mk.Shape());
+          const sources = this.faceSources(mk, [...index.keys, ...halfIndex.keys], next, arena);
+          const nSlab = index.size;
+          const side: FaceOrigin = { rel: 'modified', kind: 'face', index: g };
+          const before = origins;
+          origins = sources.map((s) => s.flatMap((i): FaceOrigin[] => (i < nSlab ? before[i]! : [side])));
+          shape = next;
+          index = ShapeIndex.of(oc, shape, T.FACE, arena);
+          slabFaces.push(index);
+          if (index.size === 0) throw new KernelError(t('edit.noOverlap'));
+          base = sources.findIndex((s) => s.includes(base));
+        }
+        // Each neighbour's surface cuts the whole plate, so a face that is not convex (an L, a ring) would lose its
+        // far arms to the surface of an edge on the other arm. The slab's face on the plane must still be the face itself.
+        const p = arena.own(new oc.GProp_GProps());
+        oc.BRepGProp.SurfaceProperties(index.keys[base]!, p, false, false);
+        if (Math.abs(p.Mass() - info.area) > 1e-6 * info.area) throw new KernelError(t('edit.notConvex'));
+        return { shape, index, origins };
+      };
+
+      // Faces with curved neighbours (the wall of a hole) are trimmed when they can be: that keeps the wall one face with
+      // its own name, where a sweep would leave a second face on the same cylinder. Square to every neighbour, a face
+      // of any shape can be swept instead, and when every neighbour is a plane there is nothing to keep whole.
+      const planarAround = [...sharing.keys()].every((g) => topo.faces[g]!.surface === 'plane');
+      let made: Slab;
+      if (square && planarAround) made = sweep();
+      else if (!square) made = trim();
+      else {
+        try {
+          made = trim();
+        } catch (e) {
+          if (!(e instanceof KernelError)) throw e;
+          made = sweep();
+        }
+      }
+      const slab = made.shape;
+      const slabIndex = made.index;
+      const slabOrigins = made.origins;
+
+      const mk = this.boolOp(distance > 0 ? 'fuse' : 'cut', shape, slab, t('edit.moveFace'), arena);
+      const raw = mk.Shape();
+      try {
+        const origins = this.history(mk, { faces: [...faces.keys, ...slabIndex.keys], edges: [], verts: [] }, raw, arena);
+        // only the faces round the moved one may be regrouped (see unify)
+        const touched = new Set([faceIndex, ...sharing.keys()]);
+        const apart = topo.edges.flatMap((e, ei) => (e.faces.length > 0 && e.faces.every((g) => !touched.has(g)) ? [edges.keys[ei]!] : []));
+        const unified = this.unify(raw, origins, arena, apart);
+        if (!this.valid(unified.shape)) {
+          unified.shape.delete();
+          throw new KernelError(t('edit.moveInvalid'));
+        }
+        // A face of the slab is named after the face of the body it stands for.
+        const same = (a: FaceOrigin, b: FaceOrigin) => JSON.stringify(a) === JSON.stringify(b);
+        const faceOrigins = unified.origins.map((list) => {
+          const out: FaceOrigin[] = [];
+          for (const o of list) {
+            const expanded = o.rel !== 'cap' && o.rel !== 'imported' && o.kind === 'face' && o.index >= nTarget ? slabOrigins[o.index - nTarget]! : [o];
+            for (const x of expanded) if (!out.some((y) => same(x, y))) out.push(x);
+          }
+          return out;
+        });
+        const result = this.put(unified.shape);
+        // Pushed into the material by more than the body is thick there, the sweep comes out of the far side:
+        // what is taken away is then less than the face's area times the distance. Never hand that over as done.
+        if (square && distance < 0) {
+          // volumes of a body of thousands of faces are good to about 1e-6 of the whole, so only a clear shortfall counts
+          const before = this.massProps(target).volume;
+          const taken = before - this.massProps(result).volume;
+          if (taken < info.area * -distance * (1 - 1e-3) - 1e-6 * before) {
+            this.release(result);
+            throw new KernelError(t('edit.moveTooFar'));
+          }
+        }
+        return { shape: result, faceOrigins };
+      } finally {
+        raw.delete();
+      }
+    } finally {
+      for (const s of slabFaces) s.dispose();
+      faces.dispose();
+      edges.dispose();
       arena.dispose();
     }
   }
@@ -898,16 +1189,17 @@ export class Kernel {
   }
 
   /**
-   * STEP import (F2.1): the file's solids, in millimetres whatever unit the file uses. A shape that
-   * fails the validity check is healed by ShapeFix (F2.2, basic); a valid one is left exactly as
-   * read, since ShapeFix always touches something. Faces keep their order in the shape, which is
-   * what imported faces are named by; anything that is not part of a solid is left out.
+   * STEP import (F2.1, F2.2): the file's solids, in millimetres whatever unit the file uses. A shape that
+   * fails the validity check is healed by ShapeFix; a valid one is left exactly as read, since ShapeFix
+   * always touches something. A file with surfaces and no solid has them sewn together (within
+   * `options.sewTolerance`) and closed into solids, or is refused with how many edges stayed open.
+   * Faces keep their order in the shape, which is what imported faces are named by; faces that belong to
+   * no solid, next to solids, are left out. `diagnostics` says what was found and done, in numbers.
    */
-  importStep(data: Uint8Array | string): ImportResult {
+  importStep(data: Uint8Array | string, options: ImportOptions = {}): ImportResult {
     const oc = this.oc;
     const arena = new Arena();
     const path = `/import-${++this.fileSeq}.step`;
-    const warnings: string[] = [];
     try {
       oc.FS.writeFile(path, data);
       const r = arena.own(new oc.STEPControl_Reader());
@@ -915,47 +1207,12 @@ export class Kernel {
       try {
         status = r.ReadFile(path);
       } catch (e) {
-        throw new KernelError(`無法讀取 STEP 檔：${this.errorText(e)}`);
+        throw new KernelError(t('import.cannotRead', { reason: this.errorText(e) }));
       }
-      if (status !== oc.IFSelect_ReturnStatus.IFSelect_RetDone) throw new KernelError('無法讀取 STEP 檔（格式錯誤，或不是 STEP 檔）');
+      if (status !== oc.IFSelect_ReturnStatus.IFSelect_RetDone) throw new KernelError(t('import.notStep'));
       r.TransferRoots(arena.own(new oc.Message_ProgressRange()));
-      if (r.NbShapes() === 0) throw new KernelError('STEP 檔中沒有形狀');
-      let healed = arena.own(r.OneShape());
-      if (!this.valid(healed)) {
-        const fix = arena.own(new oc.ShapeFix_Shape(healed));
-        fix.Perform(arena.own(new oc.Message_ProgressRange()));
-        healed = arena.own(fix.Shape());
-        warnings.push('輸入的幾何有缺陷，已自動修復');
-      }
-
-      // Solids only: surfaces cannot take part in solid features yet (sewing them is F2.2, P1).
-      const solids = ShapeIndex.of(oc, healed, 'TopAbs_SOLID', arena);
-      let result: TopoDS_Shape;
-      try {
-        if (solids.size === 0) throw new KernelError('STEP 檔中沒有實體（可能只有曲面或線架構），目前只能輸入實體');
-        if (solids.size === 1) result = solids.keys[0]!.Oriented(solids.keys[0]!.Orientation());
-        else {
-          const compound = new oc.TopoDS_Compound();
-          const builder = arena.own(new oc.BRep_Builder());
-          builder.MakeCompound(compound);
-          for (const solid of solids.keys) builder.Add(compound, solid);
-          result = compound;
-        }
-      } finally {
-        solids.dispose();
-      }
-      const id = this.put(result);
-      const count = (s: TopoDS_Shape) => {
-        const faces = ShapeIndex.of(oc, s, T.FACE, arena);
-        const n = faces.size;
-        faces.dispose();
-        return n;
-      };
-      const faces = count(result);
-      const loose = count(healed) - faces;
-      if (loose > 0) warnings.push(`略過 ${loose} 個不屬於實體的面`);
-      if (!this.isValid(id)) warnings.push('輸入的幾何沒有通過有效性檢查，後續特徵可能失敗');
-      return { shape: id, faceOrigins: Array.from({ length: faces }, (_, index) => [{ rel: 'imported', index }]), warnings };
+      if (r.NbShapes() === 0) throw new KernelError(t('import.noShapes'));
+      return this.repairImport(arena.own(r.OneShape()), options);
     } finally {
       try {
         oc.FS.unlink(path);
@@ -965,7 +1222,111 @@ export class Kernel {
       arena.dispose();
     }
   }
+
+  /**
+   * What `importStep` does with a shape once it is read: check it, heal it if it fails, sew surfaces into solids if
+   * it has none, count what it found (F2.2). Public so that defects a STEP reader would already have mended can be
+   * made in memory and tested; the shape passed in stays the caller's.
+   */
+  repairImport(read: TopoDS_Shape, options: ImportOptions = {}): ImportResult {
+    const oc = this.oc;
+    const arena = new Arena();
+    const warnings: string[] = [];
+    try {
+      const count = (s: TopoDS_Shape, type: string) => {
+        const index = ShapeIndex.of(oc, s, type, arena);
+        const n = index.size;
+        index.dispose();
+        return n;
+      };
+      const diagnostics: ImportDiagnostics = {
+        solids: count(read, 'TopAbs_SOLID'),
+        faces: count(read, T.FACE),
+        looseFaces: 0,
+        validBefore: this.valid(read),
+        healed: false,
+        sewn: false,
+        sewTolerance: null,
+        freeEdges: null,
+        validAfter: true,
+      };
+      let current = read;
+      if (!diagnostics.validBefore) {
+        const fix = arena.own(new oc.ShapeFix_Shape(read));
+        fix.Perform(arena.own(new oc.Message_ProgressRange()));
+        current = arena.own(fix.Shape());
+        diagnostics.healed = true;
+        warnings.push(t('import.healed'));
+      }
+
+      let result: TopoDS_Shape;
+      if (count(current, 'TopAbs_SOLID') === 0) {
+        result = this.sewIntoSolids(current, options.sewTolerance ?? DEFAULT_SEW_TOLERANCE, diagnostics, warnings, arena);
+      } else {
+        const solids = ShapeIndex.of(oc, current, 'TopAbs_SOLID', arena);
+        try {
+          if (solids.size === 1) result = solids.keys[0]!.Oriented(solids.keys[0]!.Orientation());
+          else result = this.compound(solids.keys, arena);
+        } finally {
+          solids.dispose();
+        }
+        diagnostics.looseFaces = count(current, T.FACE) - count(result, T.FACE);
+        if (diagnostics.looseFaces > 0) warnings.push(t('import.looseFaces', { n: diagnostics.looseFaces }));
+      }
+      const id = this.put(result);
+      diagnostics.validAfter = this.isValid(id);
+      if (!diagnostics.validAfter) warnings.push(t('import.stillInvalid'));
+      const faces = count(result, T.FACE);
+      return { shape: id, faceOrigins: Array.from({ length: faces }, (_, index) => [{ rel: 'imported', index }]), warnings, diagnostics };
+    } finally {
+      arena.dispose();
+    }
+  }
+
+  /** One shape holding all of `shapes` (a compound is only made when there are several). */
+  private compound(shapes: TopoDS_Shape[], arena: Arena): TopoDS_Shape {
+    const compound = arena.own(new this.oc.TopoDS_Compound());
+    const builder = arena.own(new this.oc.BRep_Builder());
+    builder.MakeCompound(compound);
+    for (const s of shapes) builder.Add(compound, s);
+    return compound.Oriented(compound.Orientation());
+  }
+
+  /**
+   * Sews every face of a shape that has no solid into shells and closes each into a solid (F2.2). If
+   * some edge stays with one face the surfaces do not enclose anything: that is reported, with the
+   * count, instead of guessing a solid out of an open shell.
+   */
+  private sewIntoSolids(shape: TopoDS_Shape, tolerance: number, diagnostics: ImportDiagnostics, warnings: string[], arena: Arena): TopoDS_Shape {
+    const oc = this.oc;
+    const faces = ShapeIndex.of(oc, shape, T.FACE, arena);
+    try {
+      if (faces.size === 0) throw new KernelError(t('import.noSolid'));
+      const sewing = arena.own(new oc.BRepBuilderAPI_Sewing(tolerance, true, true, true, false));
+      for (const f of faces.keys) sewing.Add(f);
+      sewing.Perform(arena.own(new oc.Message_ProgressRange()));
+      diagnostics.sewn = true;
+      diagnostics.sewTolerance = tolerance;
+      diagnostics.freeEdges = sewing.NbFreeEdges();
+      if (diagnostics.freeEdges > 0) throw new KernelError(t('import.openSurfaces', { n: diagnostics.freeEdges, tolerance }));
+      const sewn = arena.own(sewing.SewedShape());
+      const shells = ShapeIndex.of(oc, sewn, 'TopAbs_SHELL', arena);
+      try {
+        const fix = arena.own(new oc.ShapeFix_Solid());
+        const solids = shells.keys.map((s) => arena.own(fix.SolidFromShell(arena.own(oc.TopoDS.Shell(s)))));
+        if (solids.length === 0) throw new KernelError(t('import.noSolid'));
+        warnings.push(t('import.sewn', { faces: faces.size, solids: solids.length, tolerance }));
+        return solids.length === 1 ? solids[0]!.Oriented(solids[0]!.Orientation()) : this.compound(solids, arena);
+      } finally {
+        shells.dispose();
+      }
+    } finally {
+      faces.dispose();
+    }
+  }
 }
+/** Sewing tolerance when a file has surfaces and no solid, in mm: more than the gaps files leave between faces, less than any feature. */
+const DEFAULT_SEW_TOLERANCE = 0.01;
 
 const dot3 = (a: Vec3, b: Vec3) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
 const sub3 = (a: Vec3, b: Vec3): Vec3 => [a[0] - b[0], a[1] - b[1], a[2] - b[2]];

@@ -6,7 +6,7 @@ import type { Id } from './ids';
  * DOF status, mass properties and error lists are derived data and never stored.
  */
 
-export const SCHEMA_VERSION = 8;
+export const SCHEMA_VERSION = 9;
 
 /** Value expression (B5.2, B5.3): "20", "25.4mm", "30deg", "wall_t*2", "D1@草圖1/2", "property('厚度')"; see `expr/`. */
 export type Expr = string;
@@ -171,9 +171,47 @@ export interface RefPlaneFeature extends FeatureBase {
 export interface ImportedBodyFeature extends FeatureBase {
   type: 'importedBody';
   blob: Id;
+  /**
+   * How far apart (a length) the edges of two surfaces may be and still be joined, when the file has surfaces
+   * and no solid and they are sewn into one (F2.2). Without it the program's own default is used.
+   */
+  sewTolerance?: Expr;
 }
 
-export type Feature = SketchFeature | ExtrudeFeature | RevolveFeature | FilletFeature | ChamferFeature | RefPlaneFeature | ImportedBodyFeature;
+/**
+ * Delete Face (C10.2): the faces go and their neighbours are extended until they meet, which is how a
+ * hole or a fillet of an imported body is taken out (SolidWorks 「刪除面」 with 「刪除並修補」).
+ */
+export interface DeleteFaceFeature extends FeatureBase {
+  type: 'deleteFace';
+  faces: Ref[];
+  /**
+   * 「刪除鑽孔」: besides the faces picked, the faces that only they enclose (the bottom of a blind hole) go too.
+   * Which they are is worked out from the model each time, so the intent is stored, not their names.
+   */
+  hole?: boolean;
+}
+
+/**
+ * Move Face (C10.1): a planar face is pushed `distance` along its outward normal (negative: into the
+ * material) and its neighbours follow (SolidWorks 「移動面」, 「偏移」).
+ */
+export interface MoveFaceFeature extends FeatureBase {
+  type: 'moveFace';
+  face: Ref;
+  distance: Expr;
+}
+
+export type Feature =
+  | SketchFeature
+  | ExtrudeFeature
+  | RevolveFeature
+  | FilletFeature
+  | ChamferFeature
+  | RefPlaneFeature
+  | ImportedBodyFeature
+  | DeleteFaceFeature
+  | MoveFaceFeature;
 export type FeatureType = Feature['type'];
 
 // ---------------------------------------------------------------- document

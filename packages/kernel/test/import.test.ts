@@ -71,7 +71,7 @@ describe('STEP import (F2.1)', () => {
     const id = keep(put(face.Face()));
     face.delete();
     plane.delete();
-    expect(() => k.importStep(k.exportStep(id, 'Sheet'))).toThrow('沒有實體');
+    expect(() => k.importStep(k.exportStep(id, 'Sheet'))).toThrow('只有曲面');
   });
 
   it('copies a handle that outlives the original', () => {

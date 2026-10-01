@@ -69,9 +69,35 @@ export interface OpResult {
   faceOrigins: FaceOrigin[][];
 }
 
+/** What the kernel found in a file and what it did about it (F2.2, A1.7): numbers, so the interface can say it in words. */
+export interface ImportDiagnostics {
+  /** Solids the file holds; 0 when it only has surfaces. */
+  solids: number;
+  faces: number;
+  /** Faces that belong to no solid and were left out (0 when they were sewn into one). */
+  looseFaces: number;
+  /** Whether the file's shape passed the validity check as it was read. */
+  validBefore: boolean;
+  /** The shape failed the check and was healed. */
+  healed: boolean;
+  /** Surfaces were sewn into solids, within `sewTolerance` mm. */
+  sewn: boolean;
+  sewTolerance: number | null;
+  /** Edges that still belonged to one face after sewing: 0 means the surfaces closed up. */
+  freeEdges: number | null;
+  /** Whether what is used now passes the check. */
+  validAfter: boolean;
+}
+
+export interface ImportOptions {
+  /** How far apart two faces' edges may be and still be one edge when surfaces are sewn into a solid, in mm. */
+  sewTolerance?: number;
+}
+
 export interface ImportResult extends OpResult {
-  /** What was repaired or left out on the way in (F2.2). */
+  /** What was repaired or left out on the way in (F2.2), in words. */
   warnings: string[];
+  diagnostics: ImportDiagnostics;
 }
 
 export interface MeshData {

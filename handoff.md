@@ -1,6 +1,6 @@
 # 交接文件
 
-- 最後更新：2026-09-30（Phase 2 完成、閘門通過；Phase 3a 進行中：3a-0 驗證、Phase 1 遺留 P0、多語系機制、3a-1 運算式與變數都已完成並提交；藍圖在 `docs/blueprint.md`；Phase 3 計畫 [docs/phase3-plan.md](docs/phase3-plan.md) 的決定 1–6 已由使用者確認；以 `git log` 為準）
+- 最後更新：2026-10-01（Phase 2 完成、閘門通過；Phase 3a 進行中：3a-0 驗證、Phase 1 遺留 P0、多語系機制、3a-1 運算式與變數都已提交；**3a-2 輸入修復與直接編輯已實作並通過自動測試，尚未提交**（見 §3、ADR 0021）；藍圖在 `docs/blueprint.md`；Phase 3 計畫 [docs/phase3-plan.md](docs/phase3-plan.md) 的決定 1–6 已由使用者確認；以 `git log` 為準）
 - 用途：讓下一個工作階段（人或 AI）不讀對話紀錄也能接手。
 - 本文件只記錄「目前狀態、待辦、下一步、工作約定」。範圍與設計以藍圖、ADR、程式碼為準；若有衝突，以它們為準並更新本文件。
 
@@ -17,7 +17,7 @@
 ### 0.2 接手藍圖之後的工作
 
 1. §2 文件地圖的藍圖那一列已改成 [docs/blueprint.md](docs/blueprint.md)。
-2. **Phase 3 的里程碑與驗收標準**：[docs/phase3-plan.md](docs/phase3-plan.md)。§6 的決定 1–6 使用者都已決定（2026-09-30）；**§5 的驗收數值（對稱差體積 < 1e-6 等）仍是我的建議值，使用者尚未確認**，3a-10 之前要確認。3a-0、3a-pre、3a-i18n、3a-1 已完成，下一個是 3a-2。
+2. **Phase 3 的里程碑與驗收標準**：[docs/phase3-plan.md](docs/phase3-plan.md)。§6 的決定 1–6 使用者都已決定（2026-09-30）；**§5 的驗收數值（對稱差體積 < 1e-6 等）仍是我的建議值，使用者尚未確認**，3a-10 之前要確認。3a-0、3a-pre、3a-i18n、3a-1、3a-2 已完成（3a-2 尚未提交，等使用者要求），下一個是 3a-3 多本體。
 
 ### 0.3 不在版本庫、只存在某台電腦的東西
 
@@ -77,6 +77,7 @@
 | [phase0-verification.md](docs/phase0-verification.md) | Phase 0 驗收紀錄與 SW 人工核對步驟 |
 | [phase1-verification.md](docs/phase1-verification.md) | Phase 1 驗收紀錄：三個示範零件、金樣與 TNP、驗收中發現的問題 |
 | [phase3-plan.md](docs/phase3-plan.md) | Phase 3 的里程碑、驗收標準、需要的樣本與決定（決定 1–6 已確認；§5 數值待確認） |
+| [ADR 0021](docs/adr/0021-direct-editing-and-import-repair.md) | 直接編輯與輸入修復（3a-2，Schema 9）：刪除面（Defeaturing）與「刪除鑽孔」的意圖、移動面的兩種做法（掃出／延伸板）與拒絕的情形、只重新分組鄰面、輸入診斷與縫合（容差存在特徵上）、置換面未做 |
 | [ADR 0020](docs/adr/0020-expressions-and-variables.md) | 運算式、全域變數與檔案屬性（3a-1，Schema 8）：帶量綱的求值、`D1@草圖1` 引用、循環偵測、先解析成數字再交給求解器、改名連動、由運算式推導父子關係、方程式與檔案屬性對話框 |
 | 本文件 | 狀態、待辦、下一步、約定 |
 
@@ -106,7 +107,8 @@
 - **Phase 1 遺留的 P0 已補（2026-09-30，ADR 0018，已提交推送）**：D4.6 顯示/隱藏（基準面、草圖、原點；本體與軸要等 3a-3、3a-7）與 B4.3 遺失參考的「改用這個」。**Schema 升為 7**（`visibility`），所以 Phase 3a-1 的 Schema 是 v8，不是 v7。
 - **多語系機制已完成（2026-09-30，ADR 0019）**：新套件 `@3db/i18n`（**在新電腦或 pull 之後要再 `npm install`，工作區才會連上它；開發伺服器也要重啟**）。新的使用者可見文字一律 `t()`，寫進 `packages/i18n/src/zh-TW/`；`npm run check` 多一道 `lint:i18n`，既有的 639 行中文字串記在 `scripts/i18n-baseline.json`，只能減少。英文翻譯與設定畫面留到 3a-9。
 - **3a-1 運算式與變數已完成（2026-09-30，ADR 0020）**：**Schema 升為 8**（v7 是 D4.6 的 `visibility`）。`packages/model/src/expr/`（解析器與求值）、`params.ts`（變數與尺寸的分析、解析、相依、改名連動）；`Regenerator.rebuild` 與草圖求解前先把運算式解析成數字，PlaneGCS 與 OCCT 沒有改。新的介面文字都走 `t()`。
-- **檢查**：381 項測試通過、10 項需要樣本而略過（型別、分層、i18n、測試）；`vite build` 成功。（這一行是 2026-09-30 在 `C:` 磁碟上跑的；舊的 301 項是 2F 之後的數字。）（2E 的檢查在 `F:` 磁碟上以暫存設定執行，原因見 §6「工作區連結」。）
+- **3a-2 輸入修復與直接編輯已實作（2026-10-01，ADR 0021，尚未提交）**：**Schema 升為 9**。「特徵」分頁多了「刪除面」（`BRepAlgoAPI_Defeaturing`，含「刪除鑽孔」勾選，存成意圖 `hole`，重算時由模型找出孔壁的另一半、孔底、孔口倒角）與「移動面」（平面，沿外法向；鄰面都垂直時掃出該面，否則延伸板；相切、非凸又有斜鄰面、往內移超過厚度都拒絕並說明）；輸入本體的屬性管理員多了診斷報告與「縫合容差」（只有曲面的檔案縫成實體，縫不起來就說還有幾條邊沒接上）。置換面使用者決定先不做。實作在 `packages/kernel/src/kernel.ts`（`deleteFaces`、`moveFace`、`repairImport`）、`packages/regen/src/engine.ts`（`deleteFace`、`moveFace`、`holeFaces`、匯入快取以雜湊加容差為鍵）、`packages/model`（兩種特徵、`setFaces`、`setMoveFace`、`setImportOptions`）。
+- **檢查**：**438 項測試通過、20 項需要樣本而略過**（型別、分層、i18n、測試），`vite build` 成功（2026-10-01，在 `D:` 磁碟上，NTFS，`npm install` 的連結正常）。上一個提交（3a-1）是 381 項／10 項略過。真實 STEP 的 10 項（`tests/phase3/real-sample-edit.test.ts`，9 項執行、1 項略過）要設 `SW_SAMPLE_DIR`，約 10 分鐘，全過。草圖效能預算測試（`packages/sketch/test/perf.test.ts`）在機器同時有別的負載時會超過 16 ms，安靜時過（§6「效能測試」）。（2E 的檢查在 `F:` 磁碟上以暫存設定執行，原因見 §6「工作區連結」。）
 
 ## 4. 如何執行
 
@@ -165,7 +167,20 @@ npm run build        # 正式版建置
 - `Regenerator.rebuild()` 會釋放上一次結果的形狀。測試必須先量完這次的結果，才能再做下一次 rebuild。
 - 旋轉特徵掃出的平面，`BRepAdaptor_Surface.Plane()` 的法向不一定與曲面參數化一致；只看它與面的 Orientation 會把部分平面算成朝內（2B 發現）。外法向要用 `EvalD1` 的 ∂u × ∂v。圓柱等的 `Direct()` 同理不可靠。
 
+**libcascade（3a-2 發現，細節見 ADR 0021）**
+
+- `BRep_Tool.CurveOnSurface(edge, face, …)` 的綁定壞了（丟 `Cannot read properties of undefined (reading 'name')`）。要在鄰面上找邊線對應的曲面點，用 `GeomLib_Tool.Parameters(曲面, 點, 容差)` 取 (u, v)，再 `BRepAdaptor_Surface.EvalD1`。
+- `BRepClass_FaceClassifier(face, gp_Pnt, 容差, true, 0.1).State()` 可以判斷點在不在面內（`TopAbs_IN`）。
+- `ShapeUpgrade_UnifySameDomain` 預設會把**整個本體**的共面合起來；在 2004 個面的輸入件上只動一個小面，就會合掉 48 個不相干的面、改掉別人在用的名稱。用 `KeepShape(邊)` 保護不該合的邊（`kernel.moveFace`）。
+- `BRepAlgoAPI_Defeaturing` 不能中斷，對某些面（產品件的 `import1:f254`）永遠不回來。核心沒有綁定可中斷的進度指示器，所以由 `store.ts` 的重算時間上限保護。
+- STEP 讀入器自己會修好小缺陷（移動過的頂點、沒共用邊的面再組成實體），所以做不出「讀進來就無效」的檔案；`Kernel.repairImport(shape)` 是公開的，測試在記憶體裡做缺陷再交給它。
+- 對曲面（沒有實體）的 STEP 用 `BRepBuilderAPI_Sewing` + `ShapeFix_Solid.SolidFromShell`；縫合後的面序固定，所以 `imp:f<k>` 的名稱成立。
+- 2000 面的本體，體積積分只準到約 1e-6 倍整體體積：比對體積變化時要以整體的比例為容差，不能以變化量的比例。
+
 **開發與測試環境**
+
+- **PowerShell 工具的兩個陷阱**：雙引號字串會吃掉 `${…}`（改用單引號的 here-string 或 Edit 工具）；`Set-Content -Encoding utf8` 在 Windows PowerShell 5.1 會加 BOM。指令中同時有 `Remove-Item` 與某些字串（例如 `//`、`\n`）時，工具會當成「刪除系統路徑」而拒絕整個指令：刪檔單獨一個指令。
+- **暫時用的樣本伺服器**：真實 STEP 不複製、不進版本庫；要在瀏覽器測就起一個只讀、只綁 127.0.0.1 的小型靜態伺服器，用完停掉（做法見下面「Vite 對別的磁碟的檔案」）。
 
 - **工作區連結（`F:` 磁碟）**：專案在 `F:\Self-developed_Apps\G3\3D-Builder`（USB 磁碟，不支援符號連結），`node_modules/@3db` 是空的，所以 `npm run typecheck`、`npm test`、`npm run build`、`npm run dev` 都找不到 `@3db/*`。在支援符號連結的磁碟（例如 C:）上 `npm install` 就正常。在 `F:` 上驗證的做法（2E 用過）：在暫存區放三個設定檔，各自加上 `@3db/<套件>` → `packages/<套件>/src/index.ts` 的別名（另有 `@3db/regen/dag`、`@3db/sketch/interact`），專案內不留檔案：
   - tsc：`extends` 專案的 `tsconfig.json`，加 `paths`、`typeRoots`（`node_modules/@types` 與 `node_modules`）與絕對路徑的 `include`；`baseUrl` 已被移除，不能用；
@@ -240,6 +255,7 @@ npm run build        # 正式版建置
    - **使用者沒有 SW，只有 eDrawings（2026-09-30）**：所以藍圖驗收 ③「在 SW 開啟」與「用 SW 樣本重組」都無法照原文做。改為把金樣夾具（15 個零組件）輸出成 `C:\Users\ws61\Downloads\金樣夾具-15零組件.step`（`STEP_OUT_DIR=<資料夾>` 跑 `tests/phase2/golden-assembly.test.ts` 產生），用 eDrawings 開啟目測。**使用者已開啟，看到的與下述一致**（eDrawings 不是 OCCT，是獨立於我們的讀取器），並**明確接受這個較低的範圍作為 Phase 2 閘門（2026-09-30）**。該檔案有：3 塊定位板並排（x = 0、120、240）、每塊 2 支削邊銷插在孔中（x ± 40）、2 個疊起來的 V 型塊在板的正中央（底面在 y = 15 與 55）。
    - **之後若有人有 SW**：可補做原本的驗收，需要一個保留結構的組合件 STEP（下面的說明）。不阻擋 Phase 3。
    - **目前狀態（2026-09-30）**：`C:\Users\ws61\Downloads\SW樣本` 有 `CIV0000467治具_step.STEP`、`3D_MT17203_CIV0000467_Porduct.STEP` 與 `T1405001.SLDASM`，**都不能用來驗收**：兩個 STEP 各只有 1 個 `PRODUCT`、1 個實體、0 個 `NEXT_ASSEMBLY_USAGE_OCCURRENCE`（AP203，組合件被併成單一實體；治具 2004 個面、130×100×10 mm，產品件 340 個面）；`.SLDASM` 是 SW 的專有壓縮格式，讀不出零件參照，我們沒有讀取器，它的零件檔（`.SLDPRT`）也沒給。需要重新輸出：每個不同的零件各一個 STEP，外加一個保留組合件結構的組合件 STEP（檢查：搜尋 `NEXT_ASSEMBLY_USAGE_OCCURRENCE`，應有 10 次以上）。
+   - （2026-10-01）樣本資料夾多了 `組合件1.step`（16 MB）：檔頭是 Open CASCADE 8.0、2 個實體、2 個 `NEXT_ASSEMBLY_USAGE_OCCURRENCE`，是本工具自己輸出的（治具加產品件），不是 SW 的輸出，不能當 3b 的樣本。
    - 每個不同的零件各自輸出 STEP；重複使用的零件只要一份。這些檔案輸入後當零件用。
    - 整個組合件的 STEP，或各零組件位置的截圖，用來比對位置。組合件 STEP 輸入是 Phase 3b，所以只拿來對照。
    - 最晚在 2F 前提供；越早越好，2E 的 STEP 組合件輸出也能拿它對照。
@@ -504,8 +520,14 @@ npm run build        # 正式版建置
 
 **3a-1 運算式、全域變數與屬性已完成（2026-09-30，ADR 0020）。要驗收的（使用者尚未實機確認）：**「工具」分頁的「方程式」：新增變數 `w = 30`，把尺寸改成 `w*2`，模型跟著變；壞運算式被擋下並顯示原因；循環引用被擋下並顯示路徑；改變數名稱、草圖名稱、尺寸名稱後，用到它的運算式一起更新；屬性管理員的數值框輸入 `h/2` 會在旁邊顯示「= 7.5 mm」；「檔案屬性」加一個「板厚 = 4mm」，用 `property('板厚')` 驅動深度；草圖裡由運算式驅動的尺寸顯示 `Σ60`。
 
-**下一步：3a-2 輸入修復與直接編輯**（F2.2、A1.7、C10.1、C10.2；做法在 ADR 0017：C10.1 只做平面，用延伸板；刪除鑽孔與圓角用 `BRepAlgoAPI_Defeaturing`），或依 §8 的樣本狀況調整順序。3a-2 的驗收會用到 `SW_SAMPLE_DIR` 的兩個真實 STEP（見 phase3-plan）。已知的 Phase 3 相關事項：
-- 3a：`BRepOffset_MakeOffset`（C10.1 移動面）libcascade 沒有，Phase 3a 前決定做法（ADR 0003）。
+**3a-2 輸入修復與直接編輯已實作（2026-10-01，ADR 0021，尚未提交）。要驗收的（使用者尚未實機確認）：**
+- 「特徵」分頁的「刪除面」：開著示範件，點圓角的面再按 ✔，圓角消失（體積回到 1000 mm³、6 個面）；對有孔的零件，點孔壁、勾「刪除鑽孔」，孔（含盲孔的孔底、孔口的倒角）消失；不能刪的面，特徵旁出現錯誤，「錯誤為何？」說明原因。
+- 「移動面」：點一個平面，輸入距離（正值往外、負值往材料內）；斜壁維持斜度。點與圓角相切的面會被拒絕，訊息說明「請先移動連同的圓角，或先刪除圓角」。
+- 輸入本體（例如把只有曲面的 STEP 開起來）：屬性管理員有「診斷報告」與「縫合容差」；縫隙太寬時特徵顯示錯誤「仍有 n 條邊沒有接上」，把縫合容差加大就會接上。
+- 重算超過 60 秒（OCCT 卡住）會換掉 Worker 並說明；開發時可用 `store.rebuildLimitMs = 8000` 縮短，用產品件的 `import1:f254` 重現（見 ADR 0021 §9）。
+- 瀏覽器腳本：`await import('/@fs/<檢出路徑>/tests/e2e/phase3-direct-edit.js?' + Date.now())`，再 `await __d3.deleteFillet()`、`moveFace()`、`refuseNextToFillet()`；`importRepair()` 需要在 127.0.0.1:5393 提供 `faces-only.step` 與 `gapped.step` 的只讀靜態伺服器（由 `tests/support/stepSamples.ts` 製造）。真實 STEP：`$env:SW_SAMPLE_DIR='C:\Users\ws61\Downloads\SW樣本'; npx vitest run tests/phase3/real-sample-edit.test.ts`（約 10 分鐘，每次重算 3–6 秒）。
+
+**下一步：3a-3 多本體**（C7.1、C7.2、D4.6 的本體部分；命名文法加本體限定，見 phase3-plan §3）。開工前先請使用者提交 3a-2（`git status` 有未提交的變更），並確認 phase3-plan §5 的驗收數值（3a-10 之前要確認）。已知的 Phase 3 相關事項：- 3a：置換面（C10.2）使用者決定先不做；移動面只做平面的偏移（沒有平移 XYZ 與旋轉）；Defeaturing 對某些面會跑很久（見 ADR 0021 §9），有時間上限保護但沒有真正解決；真實的壞 STEP 檔要補一個（目前只有製造的樣本）。
 - 3b：次組合件（剛性次組合件 C15.4）、零組件複製排列、爆炸視圖、零件表、干涉檢查、STEP 組合件輸入。
 - Phase 2 留下的：拖曳時碰撞偵測（Phase 4a）、沿著組合件 XYZ／圖元的移動、STEP 顏色（F1.3）。
 - 已查明（§10 部分驗收）：自由曲面 STEP 往返的體積差 3.5e-6 是曲線修剪範圍的一次性微調，形狀沒變，不需修改。

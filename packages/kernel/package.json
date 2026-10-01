@@ -9,6 +9,7 @@
     ".": "./src/index.ts"
   },
   "dependencies": {
+    "@3db/i18n": "*",
     "libcascade": "3.0.2"
   }
 }

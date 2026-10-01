@@ -38,6 +38,12 @@ export type Command =
   /** Edges of an edge-based feature (fillet, chamfer). */
   | { type: 'setEdges'; featureId: Id; edges: Ref[] }
   | { type: 'setChamfer'; featureId: Id; value: Pick<ChamferFeature, 'mode' | 'distance' | 'second' | 'flip'> }
+  /** Faces of a Delete Face feature (C10.2), and whether the rest of a hole goes with them. */
+  | { type: 'setFaces'; featureId: Id; faces: Ref[]; hole?: boolean }
+  /** How an imported body's surfaces are sewn (F2.2); without `sewTolerance` the default is used again. */
+  | { type: 'setImportOptions'; featureId: Id; sewTolerance?: Expr }
+  /** The face and the distance of a Move Face feature (C10.1). */
+  | { type: 'setMoveFace'; featureId: Id; face: Ref; distance: Expr }
   | { type: 'setRefPlane'; featureId: Id; def: PlaneDefinition }
   /** Adds imported data and the feature that uses it, as one step (F2.1). */
   | { type: 'importBody'; blob: BlobRef; feature: ImportedBodyFeature; index: number }
@@ -212,6 +218,12 @@ function validateNewFeature(doc: PartDoc, f: Feature, index: number): void {
     case 'refPlane':
       planeDefinition(doc, f.def, index);
       return;
+    case 'deleteFace':
+      if (f.faces.some((r) => r.kind !== 'face')) throw new CommandError(t('cmd.deleteFaceOnlyFaces'));
+      return;
+    case 'moveFace':
+      if (f.face.kind !== 'face') throw new CommandError(t('cmd.moveFaceOnlyFace'));
+      return;
     case 'importedBody':
       if (!doc.blobs.some((b) => b.id === f.blob)) throw new CommandError(t('cmd.importDataNotFound', { id: f.blob }));
       return;
@@ -327,6 +339,32 @@ export function mutate(draft: Draft<PartDoc>, cmd: Command): void {
       f.edges = cmd.edges;
       return;
     }
+    case 'setFaces': {
+      const f = feature(draft, cmd.featureId);
+      if (f.type !== 'deleteFace') throw new CommandError(t('cmd.onlyDeleteFaceHasFaces'));
+      if (cmd.faces.some((r) => r.kind !== 'face')) throw new CommandError(t('cmd.deleteFaceOnlyFaces'));
+      f.faces = cmd.faces;
+      if (cmd.hole) f.hole = true;
+      else delete f.hole;
+      return;
+    }
+    case 'setImportOptions': {
+      const f = feature(draft, cmd.featureId);
+      if (f.type !== 'importedBody') throw new CommandError(t('cmd.onlyImportHasOptions'));
+      if (cmd.sewTolerance === undefined) delete f.sewTolerance;
+      else f.sewTolerance = cmd.sewTolerance;
+      checkExprs(draft as PartDoc, f as Feature);
+      return;
+    }
+    case 'setMoveFace': {
+      const f = feature(draft, cmd.featureId);
+      if (f.type !== 'moveFace') throw new CommandError(t('cmd.onlyMoveFaceHasParams'));
+      if (cmd.face.kind !== 'face') throw new CommandError(t('cmd.moveFaceOnlyFace'));
+      f.face = cmd.face;
+      f.distance = cmd.distance;
+      checkExprs(draft as PartDoc, f as Feature);
+      return;
+    }
     case 'setSuppressed': {
       const targets = cmd.featureIds.map((id) => feature(draft, id)); // all exist, or nothing changes
       for (const f of targets) f.suppressed = cmd.value;
@@ -423,6 +461,7 @@ export function mutate(draft: Draft<PartDoc>, cmd: Command): void {
       if (replaced === 0) throw new CommandError(t('cmd.replaceRefMissing', { name: from.name }));
       // Two edges of a fillet may now name the same edge: keep one.
       if (next.type === 'fillet' || next.type === 'chamfer') next.edges = next.edges.filter((r, i) => next.edges.findIndex((x) => x.kind === r.kind && x.name === r.name) === i);
+      if (next.type === 'deleteFace') next.faces = next.faces.filter((r, i) => next.faces.findIndex((x) => x.name === r.name) === i);
       draft.features[at] = next as Draft<Feature>;
       return;
     }

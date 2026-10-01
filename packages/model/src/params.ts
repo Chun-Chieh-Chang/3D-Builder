@@ -15,7 +15,7 @@ import { isDimension } from './schema';
 export type ExprKind = 'length' | 'angle';
 
 /** What a value must be for the feature to make sense: a size above zero, or an angle in the range its feature allows. */
-export type ExprRole = 'positive' | 'revolveAngle' | 'chamferAngle' | 'planeAngle' | 'any';
+export type ExprRole = 'positive' | 'nonZero' | 'revolveAngle' | 'chamferAngle' | 'planeAngle' | 'any';
 
 /** Why a value is not acceptable for its role (in words), or null. `expr` is what the user wrote. */
 export function roleProblem(v: number, role: ExprRole, expr: Expr): string | null {
@@ -23,6 +23,8 @@ export function roleProblem(v: number, role: ExprRole, expr: Expr): string | nul
   switch (role) {
     case 'positive':
       return v > 0 ? null : t('cmd.mustBePositive', { value: expr });
+    case 'nonZero':
+      return Math.abs(v) > 1e-9 ? null : t('cmd.mustNotBeZero', { value: expr });
     case 'revolveAngle':
       return angle(0, 2 * Math.PI, t('cmd.revolveAngleRange'));
     case 'chamferAngle':
@@ -100,7 +102,16 @@ export function mapExprs(feature: Feature, fn: (expr: Expr, kind: ExprKind, role
       }
       return feature;
     }
-    case 'importedBody':
+    case 'moveFace': {
+      const distance = fn(feature.distance, 'length', 'nonZero');
+      return distance === feature.distance ? feature : { ...feature, distance };
+    }
+    case 'importedBody': {
+      if (feature.sewTolerance === undefined) return feature;
+      const sewTolerance = fn(feature.sewTolerance, 'length', 'positive');
+      return sewTolerance === feature.sewTolerance ? feature : { ...feature, sewTolerance };
+    }
+    case 'deleteFace':
       return feature;
   }
 }

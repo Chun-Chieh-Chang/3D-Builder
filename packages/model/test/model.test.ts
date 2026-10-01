@@ -11,6 +11,7 @@ import {
   isShown,
   parsePart,
   Parameters,
+  SCHEMA_VERSION,
   serializePart,
   type SketchFeature,
 } from '../src/index';
@@ -122,7 +123,7 @@ describe('visibility (D4.6)', () => {
   it('a version-6 document opens with every item at its default', () => {
     const { visibility: _omit, ...v6 } = createDemoPart();
     const doc = parsePart(serializePart({ ...v6, schemaVersion: 6 } as never));
-    expect(doc.schemaVersion).toBe(8);
+    expect(doc.schemaVersion).toBe(SCHEMA_VERSION); // migrated all the way to the current version
     expect(doc.visibility).toEqual({});
   });
 });
