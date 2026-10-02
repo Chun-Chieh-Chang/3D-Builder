@@ -179,6 +179,8 @@ export function parsePart(text: string): PartDoc {
 const assemblyMigrations: Record<number, (doc: Json) => Json> = {
   // v2: mates (C15.8). A version-1 assembly has none.
   1: (doc) => ({ ...doc, mates: [] }),
+  // v3: sub-assemblies (C15.4, `MateRef.path`) and component flags (C15.5). All optional, so nothing in a version-2 file changes.
+  2: (doc) => doc,
 };
 
 export function parseAssembly(text: string): AssemblyDoc {

@@ -1,4 +1,5 @@
 import { produce, type Draft } from 'immer';
+import { t } from '@3db/i18n';
 import { countersFor, type Id } from './ids';
 import { CommandError } from './commands';
 import { evalAngle, evalLength, ExprError } from './expr';
@@ -51,6 +52,11 @@ function checkMate(doc: AssemblyDoc, m: Mate): void {
       throw new CommandError('組合件本身只能選基準面或原點');
     }
     if (!end.ref.name) throw new CommandError('請選擇兩個要結合的元素');
+    // Whether the component is a sub-assembly, and the path leads to a part in it, is for the solver: the file is not read here.
+    if (end.path !== undefined) {
+      if (end.component === null) throw new CommandError(t('subassembly.pathNeedsComponent'));
+      if (end.path.length === 0 || end.path.some((id) => typeof id !== 'string' || id === '')) throw new CommandError(t('subassembly.badPath'));
+    }
   }
   if (m.a.component === m.b.component) throw new CommandError('結合的兩個元素必須在不同的零組件上');
   if (m.align !== undefined && m.align !== 'aligned' && m.align !== 'antiAligned') throw new CommandError('對齊方式無效');

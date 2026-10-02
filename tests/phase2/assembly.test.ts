@@ -129,6 +129,22 @@ describe('an assembly of part files (B9.4)', () => {
     expect(parts.map((p) => p.volume)).toEqual([expect.closeTo(PLATE, 6), expect.closeTo(PIN, 6), expect.closeTo(PIN, 6)]);
   });
 
+  it('opens an assembly saved by version 2 (3b-1) with its mates, and finds its parts', async () => {
+    const file = await readDocumentFile(new Uint8Array(readFileSync(new URL('../fixtures/old-versions/v2-assembly.3dba', import.meta.url))));
+    expect(file.kind).toBe('assembly');
+    if (file.kind !== 'assembly') return;
+    expect(file.doc.schemaVersion).toBe(ASSEMBLY_SCHEMA_VERSION);
+    expect(file.doc.mates.map((m) => [m.id, m.type, m.a.path, m.b.path])).toEqual([
+      ['mate1', 'concentric', undefined, undefined],
+      ['mate2', 'coincident', undefined, undefined],
+    ]);
+    // nothing of Schema 3 appears in a file that predates it
+    for (const c of file.doc.components) expect(c).not.toHaveProperty('hidden');
+    const parts = await components(file.doc, '組合件');
+    expect(parts.map((p) => p.name)).toEqual(['定位板<1>', '削邊銷<1>', '削邊銷<2>']);
+    expect(parts.map((p) => p.volume)).toEqual([expect.closeTo(PLATE, 6), expect.closeTo(PIN, 6), expect.closeTo(PIN, 6)]);
+  });
+
   it('places each component where its pose puts it (A3.1)', async () => {
     type Placed = Awaited<ReturnType<typeof components>>[number];
     const [plate, lying, standing] = (await components(jig(), '')) as [Placed, Placed, Placed];

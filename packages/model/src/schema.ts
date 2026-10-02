@@ -573,7 +573,7 @@ export function findFeature(doc: PartDoc, id: Id): Feature | undefined {
 // ---------------------------------------------------------------- assembly (C15, A3.1, B9.4)
 
 /** Assemblies have their own version line: a part and an assembly change for different reasons. */
-export const ASSEMBLY_SCHEMA_VERSION = 2;
+export const ASSEMBLY_SCHEMA_VERSION = 3;
 
 /** Unit quaternion [x, y, z, w]. */
 export type Quat = [number, number, number, number];
@@ -600,13 +600,23 @@ export interface FileRef {
 
 export interface Component {
   id: Id;
-  /** The part file: a FileRef of the assembly. Several components may use one file (C15.1). */
+  /**
+   * The part file, or the assembly file of a sub-assembly (C15.4): a FileRef of the assembly. Several
+   * components may use one file (C15.1). A sub-assembly is rigid in the assembly that holds it: its own
+   * mates are solved in its own file, and here it moves as one body.
+   */
   file: Id;
   /** SolidWorks' instance number, 「削邊銷<2>」: unique among the components of one file. */
   instance: number;
   /** A fixed component never moves (C15.2); a floating one is placed by the user and, from 2B, by its mates. */
   fixed: boolean;
   placement: Pose;
+  /** Not shown and not pickable, but still placed and solved (C15.5). Absent = shown. */
+  hidden?: boolean;
+  /** Left out of the assembly: not solved, not exported, its mates suppressed (C15.5). Absent = in use. */
+  suppressed?: boolean;
+  /** Drawn see-through; display only (C15.5). Absent = opaque. */
+  transparent?: boolean;
 }
 
 /** The standard mates of SolidWorks 2010 (C15.8). */
@@ -616,9 +626,16 @@ export type MateType = 'coincident' | 'parallel' | 'perpendicular' | 'tangent' |
  * An element a mate uses: of a component, by the persistent name in its part (a face, edge or vertex;
  * a default or reference plane as kind "datum"; the part's origin as kind "datum", name "origin"),
  * or of the assembly itself (`component` null: its default planes and origin, which never move).
+ *
+ * When `component` is a sub-assembly (C15.4), `path` says which part inside it the element belongs to:
+ * the ids of the components to go through, outermost first, the last being the part itself (ids of the
+ * sub-assembly's own file, not of this one). Without a path the element is the sub-assembly's own
+ * default plane or origin.
  */
 export interface MateRef {
   component: Id | null;
+  /** Components inside `component`, outermost first. Only on a sub-assembly. */
+  path?: Id[];
   ref: Ref;
 }
 

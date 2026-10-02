@@ -10,6 +10,7 @@ export * from './visibility';
 export * from './paths';
 export * from './pose';
 export * from './assembly';
+export * from './assemblyTree';
 export * from './history';
 export * from './serialize';
 export * from './templates';
