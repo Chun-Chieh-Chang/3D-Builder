@@ -236,6 +236,34 @@ sub.states = async () => {
   return { items };
 };
 
+/** A free sub-assembly moves as one body: every part goes with it, nothing inside changes, and one undo puts it back. */
+sub.moveFree = async () => {
+  await sub.insert(); // a new assembly with a 定位組 (fixed)
+  await H.insert('組件/定位組.3dba', [0.75, 0.5]); // and a second one, free
+  await H.loaded();
+  await H.waitFor(() => store.viewer.instances.size === 6, 8000, 'six parts');
+  await H.wait(800);
+  const a = store.assembly;
+  const of = (top) => a.leaves().filter((l) => l.top === top).map((l) => ({ id: l.id, p: l.pose.position.slice(), r: l.pose.rotation.slice() }));
+  const before = of('comp2');
+  const fixedBefore = JSON.stringify(of('comp1'));
+  const depth = (leaves) => leaves.map((l) => [+(l.p[0] - leaves[0].p[0]).toFixed(6), +(l.p[1] - leaves[0].p[1]).toFixed(6), +(l.p[2] - leaves[0].p[2]).toFixed(6)]);
+  a.select('comp2');
+  const undoable = H.asm().canUndo;
+  await a.moveSelected({ kind: 'by', delta: [0, 0, 25] });
+  await H.wait(800);
+  const after = of('comp2');
+  const moved = after.map((l, i) => +(l.p[2] - before[i].p[2]).toFixed(6));
+  H.check(moved.every((d) => Math.abs(d - 25) < 1e-4), `every part of the sub-assembly moved 25 along z: ${moved}`);
+  H.check(JSON.stringify(depth(before)) === JSON.stringify(depth(after)), 'the parts keep their places relative to each other');
+  H.check(JSON.stringify(of('comp1')) === fixedBefore && H.asm().doc.components[1].placement.position[2] !== before[0].p[2], 'the fixed one stayed, and the placement of the moved one was written');
+  a.undo();
+  await H.wait(800);
+  const back = of('comp2');
+  H.check(back.every((l, i) => Math.abs(l.p[2] - before[i].p[2]) < 1e-6), 'one undo puts it back');
+  return { moved, canUndoBefore: undoable };
+};
+
 /** STEP of the 夾具 (F1.2, C15.4): what 「輸出 STEP」 writes — the request the store makes, written by the worker. */
 sub.step = async () => {
   await sub.open();
