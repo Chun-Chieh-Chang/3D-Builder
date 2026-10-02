@@ -134,6 +134,29 @@ export interface MassProps {
   volume: number;
   area: number;
   center: Vec3;
+  /** The matrix of inertia about the center of mass, in the global axes, for a density of one (so its entries are in mm⁵ and scale with the density): row-major 3 × 3 (E1.2). */
+  inertia: number[];
+}
+
+/** The shortest distance between two shapes, and the points that make it (E1.1). */
+export interface Distance {
+  distance: number;
+  pointA: Vec3;
+  pointB: Vec3;
+}
+
+/** What the check of a shape found (E3.1). */
+export interface GeometryReport {
+  /** The whole shape passes BRepCheck. */
+  valid: boolean;
+  solids: number;
+  faces: number;
+  /** Numbers (in the order of Kernel.topology) of the faces that fail the check. */
+  badFaces: number[];
+  /** Edges that belong to only one face (an open shell, a hole in the skin): 0 for a closed solid. */
+  freeEdges: number;
+  /** Volume of the solids together; zero or negative is wrong. */
+  volume: number;
 }
 
 export class KernelError extends Error {

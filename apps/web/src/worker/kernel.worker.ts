@@ -3,7 +3,7 @@ import * as Comlink from 'comlink';
 import { setLocale as setWorkerLocale, t } from '@3db/i18n';
 import occtWasm from 'libcascade/single/wasm?url';
 import gcsWasm from '@salusoft89/planegcs/dist/planegcs_dist/planegcs.wasm?url';
-import { bodyKey, isShown, mirrorKey, MESH_QUALITY, settingsOf, type AssemblyDoc, type Id, type PartDoc, type SourceTree } from '@3db/model';
+import { bodyKey, combineMass, isShown, mirrorKey, MESH_QUALITY, settingsOf, type AssemblyDoc, type Id, type PartDoc, type SourceTree } from '@3db/model';
 import { findProfiles, PlaneGcsSolver } from '@3db/sketch';
 import { COMPONENT_MESH, Kernel, type MassProps, type MeshData, type MeshOptions, type ShapeId } from '@3db/kernel';
 import { convertEdges, edgeMateGeometry, exportFaces, faceColors, intoFrame, faceEdges, faceMateGeometry, followReferences, ReferenceProblem, Regenerator, solveAssemblyTree, type AssemblyResult, type AssemblySolveOptions, type BodyInfo, type RebuildResult } from '@3db/regen';
@@ -66,9 +66,9 @@ function massOf(r: RebuildResult): MassProps | null {
   if (!r.body) return null;
   const own = r.bodies.filter((b) => !b.reference).map((b) => kernel.massProps(b.shape));
   if (own.length === r.bodies.length && own.length === 1) return own[0]!;
-  const volume = own.reduce((n, m) => n + m.volume, 0);
-  const centre = (k: number) => (volume > 0 ? own.reduce((n, m) => n + m.center[k]! * m.volume, 0) / volume : 0);
-  return { volume, area: own.reduce((n, m) => n + m.area, 0), center: [centre(0), centre(1), centre(2)] };
+  // the bodies as one: for a density of one the mass is the volume (see combineMass)
+  const whole = combineMass(own.map((m) => ({ mass: m.volume, center: m.center, inertia: m.inertia })));
+  return { volume: whole.mass, area: own.reduce((n, m) => n + m.area, 0), center: whole.center, inertia: whole.inertia };
 }
 
 /** The bodies of the result that go into a file, and the color of each of their faces: a reference body is a design aid, not part of the part (C7.1). */

@@ -7,6 +7,8 @@ import {
   type EdgeInfo,
   type FaceInfo,
   type FaceOrigin,
+  type Distance,
+  type GeometryReport,
   type ImportDiagnostics,
   type ImportOptions,
   type ImportResult,
@@ -1526,8 +1528,88 @@ export class Kernel {
       oc.BRepGProp.VolumeProperties(shape, v, false, false, false);
       const s = arena.own(new oc.GProp_GProps());
       oc.BRepGProp.SurfaceProperties(shape, s, false, false);
-      return { volume: v.Mass(), area: s.Mass(), center: this.xyz(arena.own(v.CentreOfMass())) };
+      const m = arena.own(v.MatrixOfInertia());
+      const inertia: number[] = [];
+      for (let r = 1; r <= 3; r++) for (let c = 1; c <= 3; c++) inertia.push(m.Value(r, c));
+      return { volume: v.Mass(), area: s.Mass(), center: this.xyz(arena.own(v.CentreOfMass())), inertia };
     } finally {
+      arena.dispose();
+    }
+  }
+
+  /** A face, edge or vertex of a shape as a shape of its own (by its number in the order of topology), to measure (E1.1). The caller releases it. */
+  subShape(id: ShapeId, kind: 'face' | 'edge' | 'vertex', index: number): ShapeId {
+    const arena = new Arena();
+    const list = ShapeIndex.of(this.oc, this.get(id), kind === 'face' ? T.FACE : kind === 'edge' ? T.EDGE : T.VERTEX, arena);
+    try {
+      const sub = list.keys[index];
+      if (!sub) throw new KernelError(t('measure.noElement'));
+      return this.put(sub.Oriented(sub.Orientation()));
+    } finally {
+      list.dispose();
+      arena.dispose();
+    }
+  }
+
+  /** The shortest distance between two shapes, exactly, whatever they are (a point and a face, a hole and a pin) (E1.1). */
+  distance(a: ShapeId, b: ShapeId): Distance {
+    const oc = this.oc;
+    const arena = new Arena();
+    try {
+      // the binding's declarations ask for every optional argument; the two shapes are all that is needed
+      const d = arena.own(new (oc.BRepExtrema_DistShapeShape as unknown as new (a: TopoDS_Shape, b: TopoDS_Shape) => InstanceType<OC['BRepExtrema_DistShapeShape']>)(this.get(a), this.get(b)));
+      if (!d.IsDone() || d.NbSolution() < 1) throw new KernelError(t('measure.noDistance'));
+      return { distance: d.Value(), pointA: this.xyz(arena.own(d.PointOnShape1(1))), pointB: this.xyz(arena.own(d.PointOnShape2(1))) };
+    } finally {
+      arena.dispose();
+    }
+  }
+
+  /**
+   * What two shapes have in common (E2.1): its volume, and the shape itself (null when it is empty or too small to be one: under minVolume). The caller releases the shape.
+   */
+  common(a: ShapeId, b: ShapeId, minVolume = 1e-6): { volume: number; shape: ShapeId | null } {
+    const oc = this.oc;
+    const arena = new Arena();
+    try {
+      const mk = this.boolOp('common', this.get(a), this.get(b), t('body.common'), arena);
+      const props = arena.own(new oc.GProp_GProps());
+      const shape = mk.Shape();
+      oc.BRepGProp.VolumeProperties(shape, props, false, false, false);
+      const volume = props.Mass();
+      if (!(volume > minVolume)) {
+        shape.delete();
+        return { volume: Math.max(0, volume), shape: null };
+      }
+      return { volume, shape: this.put(shape) };
+    } finally {
+      arena.dispose();
+    }
+  }
+
+  /** Checks a shape (E3.1): whether it is valid, which faces are not, whether its skin is closed, how many solids and how much volume it has. */
+  check(id: ShapeId): GeometryReport {
+    const oc = this.oc;
+    const arena = new Arena();
+    const shape = this.get(id);
+    const faces = ShapeIndex.of(oc, shape, T.FACE, arena);
+    const solids = ShapeIndex.of(oc, shape, 'TopAbs_SOLID', arena);
+    try {
+      const valid = this.valid(shape);
+      const badFaces = valid ? [] : faces.keys.flatMap((f, i) => (arena.own(new oc.BRepCheck_Analyzer(f, true, false, false)).IsValid() ? [] : [i]));
+      const free = arena.own(new oc.ShapeAnalysis_FreeBounds(shape, false, true, false));
+      let freeEdges = 0;
+      for (const wires of [free.GetClosedWires(), free.GetOpenWires()]) {
+        const edges = ShapeIndex.of(oc, arena.own(wires), T.EDGE, arena);
+        freeEdges += edges.size;
+        edges.dispose();
+      }
+      const props = arena.own(new oc.GProp_GProps());
+      oc.BRepGProp.VolumeProperties(shape, props, false, false, false);
+      return { valid, solids: solids.size, faces: faces.size, badFaces, freeEdges, volume: props.Mass() };
+    } finally {
+      faces.dispose();
+      solids.dispose();
       arena.dispose();
     }
   }

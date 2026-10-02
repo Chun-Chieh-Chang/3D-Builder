@@ -14,6 +14,7 @@ export * from './assemblyTree';
 export * from './componentPatterns';
 export * from './bom';
 export * from './explosion';
+export * from './mass';
 export * from './history';
 export * from './serialize';
 export * from './templates';
