@@ -5,3 +5,4 @@ export * from './assembly';
 export * from './references';
 export * from './placements';
 export * from './appearance';
+export * from './measure';

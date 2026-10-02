@@ -12,6 +12,7 @@ import { FEATURE_LABEL } from '../strings';
 import type { RebuildPayload } from '../worker/protocol';
 import { Topology } from '../state/selectionSets';
 import { Icon } from './Icon';
+import { MeasurePanel } from './MeasurePanel';
 
 /** Topology for selecting loops, tangent chains and the like, built once per rebuilt model (D5.6). */
 const topologies = new WeakMap<RebuildPayload, Topology>();
@@ -35,7 +36,7 @@ interface MenuItem {
  * What the graphics area picks during a PropertyManager session, what it shows as already picked
  * (the SolidWorks selection boxes), and the prompt. Outside sessions faces are picked for selection.
  */
-function picking(feature: Feature | undefined, editing: boolean, modelTool: 'convert' | 'pierce' | null = null) {
+function picking(feature: Feature | undefined, editing: boolean, modelTool: 'convert' | 'pierce' | null = null, measuring = false) {
   // reference geometry (C3.2–C3.5): what its empty selection boxes take, and what they hold
   const datum = feature?.type === 'refPlane' || feature?.type === 'refAxis' || feature?.type === 'refPoint' || feature?.type === 'coordSys' || feature?.type === 'pattern' || feature?.type === 'mirror' ? feature : undefined;
   const slots = datum ? { ...pickable(datum), ...chosen(datum), prompt: prompt(datum) } : null;
@@ -58,15 +59,15 @@ function picking(feature: Feature | undefined, editing: boolean, modelTool: 'con
       ? t('pick.extrudeEnd')
       : (slots?.prompt ?? null);
   return {
-    edges: !!edgeFeature || !!slots?.edges || modelTool !== null,
-    faces: !editing || modelTool === 'convert' || !!upTo || !!faceFeature || combine || !!slots?.faces,
-    vertices: !!slots?.vertices || endVertices.length > 0,
+    edges: !!edgeFeature || !!slots?.edges || modelTool !== null || measuring,
+    faces: !editing || modelTool === 'convert' || !!upTo || !!faceFeature || combine || !!slots?.faces || measuring,
+    vertices: !!slots?.vertices || endVertices.length > 0 || measuring,
     pickedEdges: edgeFeature ? edgeFeature.edges : (slots?.edges ?? []),
     pickedFaces: faceFeature ? (faceFeature.type === 'deleteFace' || faceFeature.type === 'shell' ? faceFeature.faces : faceFeature.type === 'draft' ? [faceFeature.neutral, ...faceFeature.faces] : [faceFeature.face]) : upTo ? endFaces : (slots?.faces ?? []),
     pickedVertices: slots ? slots.vertices : endVertices,
     /** Default and reference planes, axes and points the geometry being defined is based on: they are drawn while they are used. */
     referenceDatums: slots?.datums ?? [],
-    prompt: prompt_,
+    prompt: measuring ? t('measure.prompt') : prompt_,
   };
 }
 
@@ -126,6 +127,7 @@ export function Viewport() {
     };
     const idOf = (key: string) => key.slice(key.indexOf(':') + 1);
     const clickFace = (face: number) => {
+      if (store.getState().measure) return store.measurePick('face', face, null);
       const ref = faceRef(face);
       if (store.getState().editing) {
         if (ref) store.pick(ref);
@@ -134,6 +136,7 @@ export function Viewport() {
     const viewer = new Viewer(host.current!, {
       onEdgeHover: setHover,
       onEdgeClick: (edge) => {
+        if (store.getState().measure) return store.measurePick('edge', edge, null);
         const ref = edgeRef(edge);
         if (ref) store.pick(ref);
       },
@@ -164,6 +167,7 @@ export function Viewport() {
       },
       onVertexHover: setHoverVertex,
       onVertexClick: (vertex) => {
+        if (store.getState().measure) return store.measurePick('vertex', vertex, null);
         const ref = vertexRef(vertex);
         if (ref) store.pick(ref);
       },
@@ -186,7 +190,8 @@ export function Viewport() {
   const feature = editing ? findFeature(doc, editing.featureId) : undefined;
   // 「轉換實體引用」 and 「貫穿」 pick the model, not points on the sketch plane (C1.18)
   const modelTool = sketching && (view?.tool === 'convert' || view?.tool === 'pierce') ? view.tool : null;
-  const pick = picking(feature, !!editing, modelTool);
+  const measure = useStore((s) => s.measure);
+  const pick = picking(feature, !!editing, modelTool, measure !== null);
 
   useEffect(() => {
     const v = store.viewer;
@@ -202,12 +207,20 @@ export function Viewport() {
   useEffect(() => {
     const v = store.viewer;
     if (!v) return;
-    const p = picking(feature, !!editing, modelTool);
+    const p = picking(feature, !!editing, modelTool, measure !== null);
     v.setEdgePicking(p.edges);
     v.setFacePicking(p.faces);
     v.setVertexPicking(p.vertices);
-    v.setPickFilter(pickFilter);
+    v.setPickFilter(pickFilter); // the user's filter (what can be picked) holds for measuring too
     const r = displayed.current;
+    if (measure) {
+      // what is measured is shown as picked (by the numbers the mesh has), nothing else
+      const of = (kind: 'face' | 'edge' | 'vertex') => measure.picks.filter((x) => x.kind === kind).map((x) => x.index);
+      v.setSelectedFaces(of('face'));
+      v.setSelectedEdges(of('edge'));
+      v.setSelectedVertices(of('vertex'));
+      return;
+    }
     const indices = (names: string[] | undefined, refs: Ref[]) => refs.map((x) => names?.indexOf(x.name) ?? -1).filter((i) => i >= 0);
     v.setSelectedEdges(indices(r?.edgeNames, p.pickedEdges));
     v.setSelectedVertices(indices(r?.vertexNames, p.pickedVertices));
@@ -219,7 +232,7 @@ export function Viewport() {
     else if (selectedFace?.kind === 'face') v.setSelectedFaces(indices(r?.faceNames, [selectedFace]));
     // D1.2: a feature selected in the FeatureManager shows the faces it made.
     else v.setSelectedFaces(selected ? (r?.faceNames ?? []).flatMap((n, i) => (ownerFeatures(n)[0] === selected ? [i] : [])) : []);
-  }, [feature, editing, selectedFace, selected, result, modelTool, pickFilter]);
+  }, [feature, editing, selectedFace, selected, result, modelTool, pickFilter, measure]);
 
   // Reference planes show like new planes in SolidWorks; default planes only when selected or referenced (D4.6).
   useEffect(() => {
@@ -380,6 +393,7 @@ export function Viewport() {
         </div>
       )}
       {sketching && view && <div className="pick-hint">{view.hint}</div>}
+      <MeasurePanel />
       {menu && <ContextMenu x={menu.x} y={menu.y} items={menu.items} onItems={(items) => setMenu({ ...menu, items })} onClose={() => setMenu(null)} />}
     </main>
   );

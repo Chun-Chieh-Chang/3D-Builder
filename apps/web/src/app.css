@@ -187,6 +187,14 @@ code { font-family: Consolas, 'Cascadia Mono', monospace; font-size: 11px; }
 .modify-box .suffix { color: var(--muted); font-size: 11px; }
 .pick-hint { position: absolute; left: 110px; bottom: 10px; right: 10px; background: rgba(255, 255, 255, 0.92); border: 1px solid var(--line); border-radius: 4px; padding: 5px 8px; font-size: 12px; }
 
+/* The measure tool (E1.1) */
+.measure-panel { position: absolute; right: 10px; top: 44px; width: 320px; max-height: calc(100% - 110px); overflow: auto; background: rgba(255, 255, 255, 0.96); border: 1px solid var(--line); border-radius: 4px; padding: 8px 10px; font-size: 13px; box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12); }
+.measure-panel .measure-head { display: flex; gap: 6px; align-items: center; margin-bottom: 6px; }
+.measure-panel .measure-head .spacer { flex: 1; }
+.measure-panel table { width: 100%; margin-bottom: 6px; }
+.measure-panel td:last-child { text-align: right; font-variant-numeric: tabular-nums; }
+.measure-panel .error { color: var(--error); }
+
 /* Status bar */
 .status-bar { display: flex; gap: 16px; align-items: center; padding: 4px 10px; background: #fff; border-top: 1px solid var(--line); font-size: 12px; }
 .status-bar .notice { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; cursor: default; }

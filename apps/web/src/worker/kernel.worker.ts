@@ -3,10 +3,10 @@ import * as Comlink from 'comlink';
 import { setLocale as setWorkerLocale, t } from '@3db/i18n';
 import occtWasm from 'libcascade/single/wasm?url';
 import gcsWasm from '@salusoft89/planegcs/dist/planegcs_dist/planegcs.wasm?url';
-import { bodyKey, combineMass, isShown, mirrorKey, MESH_QUALITY, settingsOf, type AssemblyDoc, type Id, type PartDoc, type SourceTree } from '@3db/model';
+import { bodyKey, combineMass, isShown, mirrorKey, MESH_QUALITY, settingsOf, type AssemblyDoc, type Id, type MeasureReport, type PartDoc, type SourceTree } from '@3db/model';
 import { findProfiles, PlaneGcsSolver } from '@3db/sketch';
 import { COMPONENT_MESH, Kernel, type MassProps, type MeshData, type MeshOptions, type ShapeId } from '@3db/kernel';
-import { convertEdges, edgeMateGeometry, exportFaces, faceColors, intoFrame, faceEdges, faceMateGeometry, followReferences, ReferenceProblem, Regenerator, solveAssemblyTree, type AssemblyResult, type AssemblySolveOptions, type BodyInfo, type RebuildResult } from '@3db/regen';
+import { measureTargets, convertEdges, edgeMateGeometry, exportFaces, faceColors, intoFrame, faceEdges, faceMateGeometry, followReferences, ReferenceProblem, Regenerator, solveAssemblyTree, type AssemblyResult, type AssemblySolveOptions, type BodyInfo, type RebuildResult } from '@3db/regen';
 import { edgeFingerprint, faceFingerprint, vertexFingerprint } from '@3db/naming';
 import { binaryStl, exportAssemblyStep, exportPartStep, readComponentFile, stepAssemblyPlan, type StepAssemblyPlan } from '@3db/io';
 import { mergeMeshes } from './mergeMesh';
@@ -21,6 +21,8 @@ let lastModel: { names: NonNullable<RebuildResult['body']>['names']; topology: N
 /** Imported data the document refers to by hash; the regenerator reads each file from here once. */
 const blobs = new Map<string, Uint8Array>();
 let solverReady: Promise<PlaneGcsSolver> | null = null;
+/** What the last rebuild of the open part gave: the shape that measuring reads (E1.1). */
+let lastResult: RebuildResult | null = null;
 
 /** A part file of the open assembly, rebuilt once: its own regenerator keeps the model alive. */
 interface BuiltPart {
@@ -128,6 +130,7 @@ const api: KernelApi = {
     await api.init();
     const r = regen.rebuild(doc, until === undefined ? {} : { until });
     const body = r.body;
+    lastResult = r;
     lastModel = body ? { names: body.names, topology: body.topology, frames: r.frames } : null;
     const shown = r.bodies.map((b) => isShown(doc, bodyKey(b.id)));
     const mesh = meshOf(r, shown, MESH_QUALITY[settingsOf(doc).meshQuality]);
@@ -191,6 +194,7 @@ const api: KernelApi = {
   async exportStep(doc: PartDoc, name: string, options: PartExportOptions = {}): Promise<string> {
     await api.init();
     const r = regen.rebuild(doc);
+    lastResult = r; // the regenerator lets go of what it made before (the shapes measuring reads)
     const { shapes, colors } = ownBodies(doc, r);
     return exportPartStep(kernel, shapes, name, {
       schema: options.schema ?? 'AP214',
@@ -202,6 +206,7 @@ const api: KernelApi = {
   async exportStl(doc: PartDoc, name: string, options: PartExportOptions = {}): Promise<Uint8Array> {
     await api.init();
     const r = regen.rebuild(doc);
+    lastResult = r; // the regenerator lets go of what it made before (the shapes measuring reads)
     const { shapes } = ownBodies(doc, r);
     const joined = shapes.length === 1 ? shapes[0]! : kernel.join(shapes);
     const place = placing(r, options).place;
@@ -333,6 +338,13 @@ const api: KernelApi = {
   async readStepAssembly(bytes: Uint8Array): Promise<StepAssemblyPlan> {
     await api.init();
     return stepAssemblyPlan(kernel, bytes);
+  },
+
+  async measure(targets): Promise<MeasureReport> {
+    await api.init();
+    const shapes = new Map<string, ShapeId | null>();
+    for (const key of new Set(targets.flatMap((x) => (x.part === null ? [] : [x.part])))) shapes.set(key, (await parts.get(key)?.catch(() => null))?.result.body?.shape ?? null);
+    return measureTargets(kernel, (x) => (x.part === null ? (lastResult?.body?.shape ?? null) : (shapes.get(x.part) ?? null)), targets);
   },
 
   async retainParts(keys: string[]): Promise<void> {

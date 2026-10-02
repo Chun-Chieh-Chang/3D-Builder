@@ -10,6 +10,7 @@ import { componentInfo } from './AssemblyTree';
 import { dragHint } from '../state/movability';
 import { LoadProgress } from './LoadProgress';
 import { MateFlyout } from './MatePanel';
+import { MeasurePanel } from './MeasurePanel';
 
 const KIND_WORD = { face: '面', edge: '邊線', vertex: '頂點' } as const;
 
@@ -59,6 +60,8 @@ export function AssemblyViewport() {
   const asm = useStore((s) => s.asm)!;
   const bootMs = useStore((s) => s.bootMs);
   const bootError = useStore((s) => s.bootError);
+  const measure = useStore((s) => s.measure);
+  const measuring = measure !== null;
   const [hover, setHover] = useState<string | null>(null);
   const [hoverElement, setHoverElement] = useState<InstanceElement | null>(null);
 
@@ -82,6 +85,8 @@ export function AssemblyViewport() {
       onComponentClick: (key) => store.assembly?.select(key),
       onElementHover: setHoverElement,
       onElementClick: (el) => {
+        // measuring takes any element of any instance, a derived one (pattern, mirror) too: what is measured is what is seen
+        if (store.getState().measure) return void (el && store.measurePick(el.kind, el.index, el.key));
         const ref = el && refOf(el);
         if (ref) store.assembly?.pickElement(ref);
       },
@@ -127,12 +132,13 @@ export function AssemblyViewport() {
     if (!v) return;
     const refs = asm.mate ? [asm.mate.a, asm.mate.b] : selectedMate ? [selectedMate.a, selectedMate.b] : [];
     const shown = refs.flatMap((r) => (r ? [shownElement(r)] : []));
-    v.setSelectedElements(shown.flatMap((s) => (s.element ? [s.element] : [])));
+    // while measuring, what is picked is what is shown as chosen
+    v.setSelectedElements(measure ? measure.picks.flatMap((p) => (p.leaf ? [{ key: p.leaf, kind: p.kind, index: p.index }] : [])) : shown.flatMap((s) => (s.element ? [s.element] : [])));
     const planes = shown.flatMap((s) => (s.plane ? [s.plane] : []));
     if (!asm.mate && asm.selected && isDatumPlaneName(asm.selected)) planes.push({ key: asm.selected, frame: DATUM_PLANES[asm.selected], highlighted: true });
     v.setPlanes(planes);
     v.setSelectedComponents(!asm.mate && asm.selected && asm.doc.components.some((c) => c.id === asm.selected) ? [asm.selected] : []);
-  }, [asm.mate, asm.selected, asm.doc, asm.solution, asm.drag, asm.builds]);
+  }, [asm.mate, asm.selected, asm.doc, asm.solution, asm.drag, asm.builds, measure]);
 
   // Placing a component: the chosen part follows the cursor, a click puts it down.
   const chosen = asm.insert?.chosen ?? null;
@@ -173,22 +179,24 @@ export function AssemblyViewport() {
   useEffect(() => {
     const v = store.viewer;
     if (!v) return;
-    v.setComponentPicking(!mating && !pickingAxis && !ghost && !subChosen);
-    v.setComponentDragging(!mating && !placing && !patterning);
-    v.setElementPicking(mating || pickingAxis);
-  }, [mating, pickingAxis, patterning, ghost, placing, subChosen]);
+    v.setComponentPicking(!mating && !pickingAxis && !measuring && !ghost && !subChosen);
+    v.setComponentDragging(!mating && !placing && !patterning && !measuring);
+    v.setElementPicking(mating || pickingAxis || measuring);
+  }, [mating, pickingAxis, patterning, measuring, ghost, placing, subChosen]);
 
   const hovered = hover ? asm.doc.components.find((c) => c.id === hover) : undefined;
   const elementName = (() => {
-    if (!(mating || pickingAxis) || !hoverElement) return null;
+    if (!(mating || pickingAxis || measuring) || !hoverElement) return null;
     const leaf = store.assembly?.leaves().find((l) => l.id === hoverElement.key);
     const build = leaf && store.assembly?.buildOfLeaf(leaf);
     const names = hoverElement.kind === 'face' ? build?.faceNames : hoverElement.kind === 'edge' ? build?.edgeNames : build?.vertexNames;
     return build && leaf ? `${KIND_WORD[hoverElement.kind]}：${names?.[hoverElement.index] ?? '?'}（${store.assembly?.ownerLabel(leaf.top, leaf.path)}）` : null;
   })();
   const dragged = asm.drag ? asm.doc.components.find((c) => c.id === asm.drag!.component) : undefined;
-  const hint = dragged
-    ? `${asm.drag!.mode === 'move' ? '移動' : '旋轉'}「${componentInfo(asm, dragged).name}」：只沿結合留下的自由度（Esc 取消）`
+  const hint = measuring
+    ? (elementName ?? t('measure.prompt'))
+    : dragged
+    ?`${asm.drag!.mode === 'move' ? '移動' : '旋轉'}「${componentInfo(asm, dragged).name}」：只沿結合留下的自由度（Esc 取消）`
     : asm.insert
     ? ghost || subChosen
       ? `在圖面中按一下以放置「${partNameOf(chosen!)}」（Esc 取消）`
@@ -218,6 +226,7 @@ export function AssemblyViewport() {
       {mating && <MateFlyout />}
       {!bootMs && <div className="boot-overlay">{bootError ? `幾何核心載入失敗：${bootError}` : '正在載入幾何核心（OCCT WASM，約 43 MB）…'}</div>}
       <LoadProgress />
+      <MeasurePanel />
       {hint && <div className="pick-hint">{hint}</div>}
     </main>
   );

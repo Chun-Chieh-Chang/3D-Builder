@@ -21,11 +21,14 @@ export interface UiAction {
 }
 
 /** Nothing going on in the open assembly: no PropertyManager, no drag. */
-const assemblyFree = (s: UiState) => !s.asm?.insert && !s.asm?.mate && !s.asm?.move && !s.asm?.drag && !s.asm?.pattern && !s.asm?.explode;
+const assemblyFree = (s: UiState) => !s.asm?.insert && !s.asm?.mate && !s.asm?.move && !s.asm?.drag && !s.asm?.pattern && !s.asm?.explode && !s.measure;
 /** No PropertyManager session in the open document: file commands may replace or save it. */
-const idle = (s: UiState) => (s.active === 'assembly' ? assemblyFree(s) : s.editing === null);
+const idle = (s: UiState) => (s.active === 'assembly' ? assemblyFree(s) : s.editing === null && !s.measure);
 /** A part is open and nothing is being edited in it. */
-const partIdle = (s: UiState) => s.active === 'part' && s.editing === null;
+const partIdle = (s: UiState) => s.active === 'part' && s.editing === null && !s.measure;
+/** The measure tool can be turned on (or off, when it is on): nothing else is going on in the open document. */
+const canMeasure = (s: UiState) => s.measure !== null || (s.bootMs !== null && (s.active === 'assembly' ? assemblyFree(s) && hasComponents(s) : partIdle(s) && !!s.result?.mesh));
+const toggleMeasure = () => (store.getState().measure ? store.stopMeasure() : store.startMeasure());
 const assemblyIdle = (s: UiState) => s.active === 'assembly' && assemblyFree(s);
 const hasComponents = (s: UiState) => (s.asm?.doc.components.length ?? 0) > 0;
 const sketching = (s: UiState) => s.editing?.kind === 'sketch';
@@ -63,6 +66,7 @@ export const ACTIONS: UiAction[] = [
   { id: 'appearance', get label() { return t('action.appearance'); }, group: 'tools', enabled: partIdle, run: () => store.openDialog('appearance') },
   { id: 'options', get label() { return t('action.options'); }, group: 'tools', enabled: () => true, run: () => store.openDialog('options') },
   { id: 'shortcuts', get label() { return t('action.shortcuts'); }, group: 'tools', enabled: () => true, run: () => store.openDialog('shortcuts') },
+  { id: 'measure-part', get label() { return t('measure.act'); }, group: 'tools', enabled: (s) => s.active === 'part' && canMeasure(s), run: toggleMeasure, active: () => store.getState().measure !== null },
   { id: 'physical-part', get label() { return t('physical.act'); }, group: 'tools', enabled: hasBody, run: () => store.openDialog('physical') },
   { id: 'properties', get label() { return t('action.properties'); }, group: 'tools', enabled: partIdle, run: () => store.openDialog('properties') },
 
@@ -97,6 +101,7 @@ export const ACTIONS: UiAction[] = [
   { id: 'move-component', get label() { return t('act.moveComponent'); }, group: 'assembly', enabled: (s) => assemblyIdle(s) && hasComponents(s), run: () => store.assembly?.startMove('move') },
   { id: 'rotate-component', get label() { return t('act.rotateComponent'); }, group: 'assembly', enabled: (s) => assemblyIdle(s) && hasComponents(s), run: () => store.assembly?.startMove('rotate') },
   { id: 'explode', get label() { return t('explode.act'); }, group: 'assembly', enabled: (s) => assemblyIdle(s) && hasComponents(s), run: () => store.assembly?.startExplode() },
+  { id: 'measure-assembly', get label() { return t('measure.act'); }, group: 'assembly', enabled: (s) => s.active === 'assembly' && canMeasure(s), run: toggleMeasure, active: () => store.getState().measure !== null },
   { id: 'physical-assembly', get label() { return t('physical.act'); }, group: 'assembly', enabled: (s) => assemblyIdle(s) && hasComponents(s), run: () => store.openDialog('physical') },
   { id: 'bom', get label() { return t('bom.act'); }, group: 'assembly', enabled: (s) => assemblyIdle(s) && hasComponents(s), run: () => store.openDialog('bom') },
   { id: 'pattern-linear', get label() { return t('pattern.actLinear'); }, group: 'assembly', enabled: (s) => assemblyIdle(s) && hasComponents(s), run: () => store.assembly?.startPattern('linear') },
@@ -197,6 +202,8 @@ export function installShortcuts(): () => void {
       }
       return;
     }
+    // Measuring owns the keyboard too: Esc turns it off, and nothing is deleted meanwhile
+    if (s.measure && (e.key === 'Escape' || e.key === 'Delete')) return void (e.key === 'Escape' && store.stopMeasure());
     if (s.asm) {
       const a = store.assembly;
       const selected = s.asm.selected;

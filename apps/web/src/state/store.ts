@@ -33,8 +33,12 @@ import {
   type PatternDefinition,
   type PlaneDefinition,
   type PlaneFrame,
+  type MeasureKind,
+  type MeasureReport,
+  type MeasureTarget,
   type Ref,
   type SketchFeature,
+  mirrorKey,
 } from '@3db/model';
 import { ASSEMBLY_FILE_EXTENSION, assemblyName, PART_FILE_EXTENSION, partFileName, partName, readDocumentFile, sha256Hex, imageFileName, stepAssemblyFiles, stepFileName, stlFileName, writePartFile } from '@3db/io';
 import { orderProblem, suppressionTargets, type SuppressAction } from '@3db/regen/dag';
@@ -73,6 +77,20 @@ export interface EditSession {
   featureId: Id;
   /** A sketch session edits geometry in the graphics area; a feature session edits PropertyManager values. */
   kind: 'feature' | 'sketch';
+}
+
+/** An element picked to measure: in the open part (leaf null), or in the part of a component of the assembly (leaf: the id of its instance in the view, see `leavesOf`). */
+export interface MeasurePick {
+  leaf: string | null;
+  kind: MeasureKind;
+  index: number;
+  label: string;
+}
+
+export interface MeasureState {
+  picks: MeasurePick[];
+  report: MeasureReport | null;
+  error: string | null;
 }
 
 export interface Notice {
@@ -149,6 +167,8 @@ export interface UiState {
   returnTo: string | null;
   /** Bumped whenever another document is opened or created (the CommandManager then shows its main tab). */
   documentSerial: number;
+  /** The measure tool (E1.1) while it is on: the elements picked and what is known of them. Null when it is off. */
+  measure: MeasureState | null;
 }
 
 /** Next free display name like SolidWorks does: 草圖3 after 草圖2 (names are labels, ids stay permanent). */
@@ -322,6 +342,7 @@ class AppStore {
       rememberedProject: null,
       returnTo: null,
       documentSerial: 0,
+      measure: null,
     };
     this.sketchRunner = new LatestRunner(
       (req) => this.api.solveSketch(req),
@@ -366,6 +387,62 @@ class AppStore {
   private set(patch: Partial<UiState>): void {
     this.state = { ...this.state, ...patch };
     for (const fn of this.listeners) fn();
+    // what is measured follows the model: a part rebuilt, or components placed anew, are measured again
+    if (this.state.measure?.picks.length && ('result' in patch || 'asm' in patch)) void this.runMeasure();
+  }
+
+  private measureSeq = 0;
+
+  /** 「測量」 on: the elements of the part or assembly are picked in the view (E1.1). */
+  startMeasure(): void {
+    this.set({ measure: { picks: [], report: null, error: null } });
+  }
+
+  stopMeasure(): void {
+    this.measureSeq++;
+    if (this.state.measure) this.set({ measure: null });
+  }
+
+  clearMeasure(): void {
+    this.measureSeq++;
+    if (this.state.measure) this.set({ measure: { picks: [], report: null, error: null } });
+  }
+
+  /** An element was clicked while measuring: a second one is measured to the first, a third starts again, the same one again takes it off. */
+  measurePick(kind: MeasureKind, index: number, leaf: string | null): void {
+    const m = this.state.measure;
+    if (!m) return;
+    const word = `${t(`measure.kind.${kind}`)} ${index + 1}`;
+    const found = leaf === null ? undefined : this.assembly?.leaves().find((l) => l.id === leaf);
+    if (leaf !== null && !found) return;
+    const pick: MeasurePick = { leaf, kind, index, label: found ? `${this.assembly!.ownerLabel(found.top, found.path)}: ${word}` : word };
+    const same = (p: MeasurePick) => p.leaf === leaf && p.kind === kind && p.index === index;
+    const picks = m.picks.some(same) ? m.picks.filter((p) => !same(p)) : m.picks.length >= 2 ? [pick] : [...m.picks, pick];
+    this.measureSeq++;
+    this.set({ measure: { picks, report: null, error: null } });
+    void this.runMeasure();
+  }
+
+  /** The picks as the kernel is asked about them: a part by its file and the pose it is at now. Null when the component is gone. */
+  private measureTarget(p: MeasurePick): MeasureTarget | null {
+    if (p.leaf === null) return { part: null, mirrored: false, pose: null, kind: p.kind, index: p.index };
+    const leaf = this.assembly?.leaves().find((l) => l.id === p.leaf);
+    if (!leaf) return null;
+    return { part: leaf.mirrored ? leaf.key.slice(0, -mirrorKey('').length) : leaf.key, mirrored: !!leaf.mirrored, pose: leaf.pose, kind: p.kind, index: p.index };
+  }
+
+  private async runMeasure(): Promise<void> {
+    const m = this.state.measure;
+    if (!m || m.picks.length === 0) return;
+    const seq = ++this.measureSeq;
+    const targets = m.picks.map((p) => this.measureTarget(p));
+    if (targets.some((x) => x === null)) return void this.set({ measure: { picks: [], report: null, error: null } });
+    try {
+      const report = await this.api.measure(targets as MeasureTarget[]);
+      if (seq === this.measureSeq && this.state.measure) this.set({ measure: { ...this.state.measure, report, error: null } });
+    } catch (e) {
+      if (seq === this.measureSeq && this.state.measure) this.set({ measure: { ...this.state.measure, report: null, error: t('measure.failed', { why: e instanceof Error ? e.message : String(e) }) } });
+    }
   }
 
   /** The template the next 「新零件」 is made from (B1.4). */
@@ -1500,7 +1577,7 @@ class AppStore {
     void this.api.setBlobs(blobs); // posted before the rebuild request, so the worker has them first
     this.savedText = serializePart(doc);
     if (!this.state.recovery) void this.autosave.clear();
-    this.set({ active: 'part', selected: null, selectedFace: null, result: null, fileName, untitled, fitRequest: this.state.fitRequest + 1, documentSerial: this.state.documentSerial + 1 });
+    this.set({ active: 'part', selected: null, selectedFace: null, result: null, fileName, untitled, fitRequest: this.state.fitRequest + 1, documentSerial: this.state.documentSerial + 1, measure: null });
     this.onDocChanged();
   }
 
@@ -1590,7 +1667,7 @@ class AppStore {
       },
       source,
     );
-    this.set({ active: 'assembly', asm: this.assembly.getState(), returnTo: null, documentSerial: this.state.documentSerial + 1 });
+    this.set({ active: 'assembly', asm: this.assembly.getState(), returnTo: null, documentSerial: this.state.documentSerial + 1, measure: null });
   }
 
   private closeAssembly(): void {

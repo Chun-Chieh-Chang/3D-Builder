@@ -1,5 +1,5 @@
 import type { Locale } from '@3db/i18n';
-import type { PartMass } from '@3db/model';
+import type { MeasureReport, MeasureTarget, PartMass } from '@3db/model';
 import type { AssemblyDoc, Axis3, CoordSystem, Fingerprint, Id, PartDoc, PlaneFrame, Pose, Ref, SketchFeature, SourceTree, Vec3 } from '@3db/model';
 import type { MassProps, MeshData } from '@3db/kernel';
 import type { AssemblyResult, AssemblySolveOptions, Converted, FeatureResult } from '@3db/regen';
@@ -174,6 +174,8 @@ export interface KernelApi {
   buildMirrorPart(partKey: string): Promise<PartBuildPayload | null>;
   /** The structure of an assembly STEP (F2.8): its products, and each part's shape written as a STEP file of its own. Refuses, saying why, what cannot be used. */
   readStepAssembly(bytes: Uint8Array): Promise<StepAssemblyPlan>;
+  /** Measures one or two elements (E1.1): of the part that is open (part null in the targets) or of parts as the assembly places them; see measureTargets. */
+  measure(targets: MeasureTarget[]): Promise<MeasureReport>;
   /** Lets go of every rebuilt part file except these. */
   retainParts(keys: string[]): Promise<void>;
   /**
