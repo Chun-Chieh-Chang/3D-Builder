@@ -16,3 +16,4 @@ export * from './templates';
 export * from './holes';
 export * from './patterns';
 export * from './materials';
+export * from './subassembly';

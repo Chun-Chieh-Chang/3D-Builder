@@ -65,3 +65,9 @@ function mul([ax, ay, az, aw]: Quat, [bx, by, bz, bw]: Quat): Quat {
 function turn(q: Quat, v: Vec3): Vec3 {
   return transformPoint({ position: [0, 0, 0], rotation: q }, v);
 }
+
+/** `inner` seen from the outside of `outer`: a part placed in a sub-assembly that is itself placed (outer ∘ inner). */
+export function composePoses(outer: Pose, inner: Pose): Pose {
+  const p = transformPoint(outer, inner.position);
+  return { position: p, rotation: composeRotations(outer.rotation, inner.rotation) };
+}
