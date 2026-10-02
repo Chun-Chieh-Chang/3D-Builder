@@ -6,4 +6,7 @@ export const subassembly: Translation = {
   'subassembly.badPath': "The path of the mate element's component inside the sub-assembly is not valid",
   'subassembly.cycle': 'This would make the assembly contain itself: {chain}',
   'subassembly.selfReference': 'An assembly cannot use itself as a component: {file}',
+  'subassembly.notLoaded': "{what}: the component's file is not loaded",
+  'subassembly.pathOnPart': '{what}: this component is a part, not a sub-assembly, so there is no path to follow',
+  'subassembly.noComponent': '{what}: the sub-assembly has no component {id}',
 };

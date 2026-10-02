@@ -45,6 +45,11 @@ export function relativePose(a: Pose, b: Pose): Pose {
   return { position: turn(inv, d), rotation: rotation[3] < 0 ? [-rotation[0], -rotation[1], -rotation[2], -rotation[3]] : rotation };
 }
 
+/** `inner` placed in the frame of `outer`, as one pose: `outer ∘ inner` (a part in a sub-assembly, the sub-assembly in its assembly). */
+export function composePose(outer: Pose, inner: Pose): Pose {
+  return { position: transformPoint(outer, inner.position), rotation: composeRotations(outer.rotation, inner.rotation) };
+}
+
 /** `rotation`, then `turn` (both about the assembly's axes), as one unit quaternion. */
 export function composeRotations(turn: Quat, rotation: Quat): Quat {
   const q = mul(turn, rotation);

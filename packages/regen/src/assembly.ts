@@ -1,7 +1,8 @@
-import { DATUM_PLANES, evalAngle, evalLength, isDatumPlaneName, type AssemblyDoc, type Id, type Mate, type PlaneFrame, type Pose, type Ref, type Vec3 } from '@3db/model';
-import { solve, type BodyResult, type MateGeometry, type MateResult, type MateSpec, type MoveGoal, type SolverBody } from '@3db/assembly';
+import { composePose, DATUM_PLANES, evalAngle, evalLength, isDatumPlaneName, type AssemblyDoc, type Id, type Mate, type PlaneFrame, type Pose, type Ref, type Vec3 } from '@3db/model';
+import { placed, solve, type BodyResult, type MateGeometry, type MateResult, type MateSpec, type MoveGoal, type SolverBody } from '@3db/assembly';
 import type { EdgeInfo, FaceInfo, Topology } from '@3db/kernel';
 import { resolveRef, type ElementNames } from '@3db/naming';
+import { t } from '@3db/i18n';
 
 /** What an assembly's mates need of a part: its rebuilt model's topology and names, and its planes. */
 export interface MatePart {
@@ -10,6 +11,22 @@ export interface MatePart {
   /** The part's reference planes (and sketch planes), by feature id. */
   frames: ReadonlyMap<Id, PlaneFrame>;
 }
+
+/**
+ * What an assembly's mates need of a sub-assembly (C15.4): rigid as the assembly above sees it, so only
+ * where each of its components ended up (in its own coordinates, its mates solved) and what each is.
+ * Components that are left out (suppressed) are not in it.
+ */
+export interface SubAssemblyPart {
+  kind: 'assembly';
+  poses: ReadonlyMap<Id, Pose>;
+  parts: ReadonlyMap<Id, MateSource | null>;
+}
+
+/** A component's part, or its sub-assembly; null where the file could not be read. */
+export type MateSource = MatePart | SubAssemblyPart;
+
+export const isSubAssembly = (s: MateSource): s is SubAssemblyPart => 'kind' in s;
 
 export type MateState = MateResult | { status: 'suppressed' } | { status: 'missing'; message: string };
 
@@ -35,11 +52,11 @@ export interface AssemblySolveOptions {
  * and turned into the geometry the solver needs (A5.2); a mate whose element is gone is reported,
  * never bound to something else. Components whose part is not there keep their placement.
  */
-export function solveAssembly(doc: AssemblyDoc, partOf: (componentId: Id) => MatePart | null, options: AssemblySolveOptions = {}): AssemblyResult {
+export function solveAssembly(doc: AssemblyDoc, partOf: (componentId: Id) => MateSource | null, options: AssemblySolveOptions = {}): AssemblyResult {
   const parts = new Map(doc.components.map((c) => [c.id, partOf(c.id)] as const));
   const bodies: SolverBody[] = doc.components.map((c) => {
     const part = parts.get(c.id);
-    const extent = part ? extentOf(part.topology) : null;
+    const extent = part ? extentOfSource(part) : null;
     return { id: c.id, fixed: c.fixed, pose: options.start?.get(c.id) ?? c.placement, ...(extent ? { pivot: extent.center, size: extent.size } : {}) };
   });
   const mates = new Map<Id, MateState>();
@@ -60,10 +77,21 @@ export function solveAssembly(doc: AssemblyDoc, partOf: (componentId: Id) => Mat
   return { poses: s.poses, components: s.bodies, mates: ordered, ...(s.group ? { group: s.group } : {}), ms: s.ms };
 }
 
-function specOf(m: Mate, parts: ReadonlyMap<Id, MatePart | null>): MateSpec | string {
+/**
+ * A sub-assembly solved on its own and what a parent needs of it: the mates of its file hold inside it, then it is
+ * rigid. `partOf` gives the part or sub-assembly of each of its components, as for `solveAssembly`.
+ */
+export function solveSubAssembly(doc: AssemblyDoc, partOf: (componentId: Id) => MateSource | null): { part: SubAssemblyPart; result: AssemblyResult } {
+  const parts = new Map<Id, MateSource | null>();
+  for (const c of doc.components) parts.set(c.id, partOf(c.id)); // once each: a sub-assembly's own parts are built when it is asked for
+  const result = solveAssembly(doc, (id) => parts.get(id) ?? null);
+  return { part: { kind: 'assembly', poses: result.poses, parts }, result };
+}
+
+function specOf(m: Mate, parts: ReadonlyMap<Id, MateSource | null>): MateSpec | string {
   const end = (side: Mate['a'], what: string) => {
-    if (side.component !== null && !parts.get(side.component)) return `${what}的零件沒有載入`;
-    return mateGeometry(side.ref, side.component === null ? null : parts.get(side.component)!, what);
+    if (side.component === null) return mateGeometry(side.ref, null, what); // the assembly itself: its planes and origin
+    return mateGeometryIn(side.ref, side.path, parts.get(side.component) ?? null, what);
   };
   const a = end(m.a, '第一個元素');
   if (typeof a === 'string') return a;
@@ -106,6 +134,36 @@ export function mateGeometry(ref: Ref, part: MatePart | null, what = '元素'): 
   if (ref.kind === 'edge') return edgeMateGeometry(part.topology.edges[r.index]!) ?? `${what}：這條邊線不是直線或圓，不能用於結合`;
   const face = part.topology.faces[r.index]!;
   return faceMateGeometry(face) ?? `${what}：這種面（${face.surface}）不能用於結合`;
+}
+
+/**
+ * The geometry of an element of a component, in the component's own coordinates. A part is as for `mateGeometry`. For a
+ * sub-assembly the `path` leads through its components to the part the element is on, and the geometry is carried
+ * out by the poses on the way (C15.4); without a path the element is the sub-assembly's own plane or origin.
+ */
+export function mateGeometryIn(ref: Ref, path: readonly Id[] | undefined, source: MateSource | null, what = '元素'): MateGeometry | string {
+  if (!source) return t('subassembly.notLoaded', { what });
+  if (!isSubAssembly(source)) return path && path.length > 0 ? t('subassembly.pathOnPart', { what }) : mateGeometry(ref, source, what);
+  if (!path || path.length === 0) return mateGeometry(ref, null, what);
+  const [first, ...rest] = path as [Id, ...Id[]];
+  const pose = source.poses.get(first);
+  if (!pose || !source.parts.has(first)) return t('subassembly.noComponent', { what, id: first });
+  const inner = mateGeometryIn(ref, rest, source.parts.get(first) ?? null, what);
+  return typeof inner === 'string' ? inner : placed(inner, pose);
+}
+
+/** The middle of a part or a sub-assembly and about its radius (see `extentOf`). */
+function extentOfSource(s: MateSource): { center: Vec3; size: number } | null {
+  if (!isSubAssembly(s)) return extentOf(s.topology);
+  const spheres: { center: Vec3; size: number }[] = [];
+  for (const [id, part] of s.parts) {
+    const pose = s.poses.get(id);
+    const extent = part && pose ? extentOfSource(part) : null;
+    if (extent && pose) spheres.push({ center: composePose(pose, { position: extent.center, rotation: [0, 0, 0, 1] }).position, size: extent.size });
+  }
+  if (spheres.length === 0) return null;
+  const center = spheres.reduce<Vec3>((c, p) => [c[0] + p.center[0] / spheres.length, c[1] + p.center[1] / spheres.length, c[2] + p.center[2] / spheres.length], [0, 0, 0]);
+  return { center, size: Math.max(1, ...spheres.map((p) => Math.hypot(p.center[0] - center[0], p.center[1] - center[1], p.center[2] - center[2]) + p.size)) };
 }
 
 /** What a mate can use of a face: its plane, cylinder, cone or sphere; null for other surfaces. */
