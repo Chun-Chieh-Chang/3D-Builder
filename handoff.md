@@ -77,6 +77,7 @@
 | [phase0-verification.md](docs/phase0-verification.md) | Phase 0 驗收紀錄與 SW 人工核對步驟 |
 | [phase1-verification.md](docs/phase1-verification.md) | Phase 1 驗收紀錄：三個示範零件、金樣與 TNP、驗收中發現的問題 |
 | [phase3-plan.md](docs/phase3-plan.md) | Phase 3 的里程碑、驗收標準、需要的樣本與決定（決定 1–6 已確認；§5 數值暫時認定為 Pass） |
+| [ADR 0046](docs/adr/0046-phase3b-technical-validation.md) | 3b-0 技術驗證（2026-10-02）：鏡射零組件＝鏡射零件檔加剛體位姿（面序不變，OCCT 雖寫得出 det −1 的位姿但只有它自己讀過）、干涉檢查（20 個小零件 190 對 1.0 s，包圍盒先濾 0.5 s，Worker 內按需執行）、STEP 巢狀組合件讀回的結構對應（原型→零件檔、組合件原型→次組合件、只取每層相對位姿）、桌面版只做了調查（缺 Rust 與 MSVC，等使用者決定安裝）；證據 `spikes/occt-gaps/phase3b-validation.test.ts` |
 | [ADR 0045](docs/adr/0045-acceptance-3a.md) | 3a 驗收（3a-10）不需樣本的部分：`tests/support/acceptance.ts`（對稱差、與參考形狀比對、關鍵尺寸 50%–200% 掃描）、`tests/phase3/acceptance.test.ts`（工具自測、三個金樣與兩類合成零件共 15 個關鍵尺寸 × 5 值全過）；§5 逐項狀態；等使用者的 3 個零件 |
 | [ADR 0044](docs/adr/0044-system-options-english.md) | 系統選項與英文（3a-9c-3，Schema 不變）：`options.ts`（localStorage `3db.options`、`parseOptions`）、`OptionsDialog`、`Autosaver.enabled/delayMs/cancel`、`packages/i18n/src/en/`（860 多個文字全翻）；零件側文字已搬，程式碼裡剩 183 行（組合件） |
 | [ADR 0043](docs/adr/0043-selection.md) | 選取（3a-9c-2，Schema 不變）：`three-mesh-bvh`（indirect，一條射線 10 ms → 0.13 ms）、`pickFilter`、右鍵選單（選取其他、相切邊線／面、迴圈）、`selectionSets.ts` 的 `Topology`（由名稱＋網格，10° 門檻）、`store.pickMany` |
@@ -139,6 +140,7 @@
 - **3a-8 材質、屬性與輸出已實作（2026-10-01，ADR 0037–0039，Schema 24，提交後推送）；3a-8 到此完成**：「工具」分頁的「檔案屬性」多了材質與文件設定、「外觀」；「檔案」分頁的「輸出 STEP」先問選項、多了「輸出 STL」「輸出影像」。範圍是使用者 2026-10-01 確認的：材質與質量、外觀與顏色、STL、AP242 與影像輸出，加上座標系統當 STEP 輸出座標系。
 - **3a-9a 自動存檔與文字化格式工具已實作（2026-10-01，ADR 0040，Schema 不變，提交後推送）**：有未存檔的變更時 5 秒後在瀏覽器留一份；下次開啟會問「復原」或「捨棄」。`node scripts/3dbx.mjs cat|unpack|pack`；每個 clone 跑一次 `npm run setup:git` 後 `git diff` 看得到零件檔裡的變更。
 - **3a-9b 設計樹與範本與快速鍵已實作（2026-10-01，ADR 0041，Schema 25，提交後推送）**：設計樹的列可以拖放調整順序（受父子關係約束）、有資料夾、註解與標籤、過濾、重新命名；「檔案」→「新零件（範本）…」；「工具」→「快速鍵…」。
+- **3b-0 技術驗證進行中（2026-10-02，ADR 0046）**：② 鏡射零組件、③ 干涉檢查效能、④ STEP 組合件結構對應已量測並有決定；**① 桌面版（Tauri）卡在這台沒有 Rust 與 MSVC 建置工具**（`rustc`、`cargo`、`vswhere` 都找不到，WebView2 154 有、`winget` 有），安裝要使用者許可；檔案存取集中在 `apps/web/src/files.ts` 一個模組。**使用者 2026-10-02 決定先跳過 ①（3b-6 桌面版開工時再裝 Rust 與 MSVC 並驗證 File System Access、WASM 本機載入）；下一步是 3b-1 剛性次組合件。**
 - **檢查**：**795 項測試通過、20 項需要樣本而略過**（3a-10 工具之後；3a-9c-3 時是 787 項；3a-9c-2 時是 777 項；3a-9b／9c-1 時是 773 項，2026-10-01，雲端工作階段；3a-9a 之後是 756 項；3a-7b 之後是 700 項；3a-7a 之後是 671 項；3a-6d 之後是 640 項，本機 `C:` 磁碟；3a-3 之後是 472 項、3a-2 之後 438 項）（型別、分層、i18n、測試），`vite build` 成功（2026-10-01，在 `D:` 磁碟上，NTFS，`npm install` 的連結正常）。上一個提交（3a-1）是 381 項／10 項略過。真實 STEP 的 10 項（`tests/phase3/real-sample-edit.test.ts`，9 項執行、1 項略過）要設 `SW_SAMPLE_DIR`，約 10 分鐘，全過。草圖效能預算測試（`packages/sketch/test/perf.test.ts`）在機器同時有別的負載時會超過 16 ms，安靜時過（§6「效能測試」）。（2E 的檢查在 `F:` 磁碟上以暫存設定執行，原因見 §6「工作區連結」。）
 
 ## 4. 如何執行
