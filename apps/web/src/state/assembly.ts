@@ -33,6 +33,7 @@ import {
   type AssemblyCommand,
   type AssemblyDoc,
   type Component,
+  type ComponentPattern,
   type ComponentState,
   type FileRef,
   type Id,
@@ -105,6 +106,17 @@ export interface MoveState {
 /** A numeric move of the selected component: by ΔX ΔY ΔZ (mm), its origin to X Y Z, or turned about X, Y, Z (radians). */
 export type MoveOp = { kind: 'by'; delta: Vec3 } | { kind: 'to'; position: Vec3 } | { kind: 'turn'; angles: Vec3 };
 
+/** A pattern or mirror being defined in its PropertyManager (C15.13): the definition so far, and which axis is being picked in the graphics area. */
+export interface PatternDraft {
+  /** The pattern being edited; null for a new one. */
+  editing: Id | null;
+  pattern: ComponentPattern;
+  picking: 'axis1' | 'axis2' | null;
+}
+
+/** The id a pattern being defined has while it is only previewed. */
+export const PREVIEW_PATTERN = 'pattern-preview';
+
 /** 「找不到參考的檔案」 (B9.4). */
 export interface RelinkState {
   /** For each missing file (by file id), files of the project folder with its name: moved elsewhere. Null while looking. */
@@ -146,6 +158,8 @@ export interface AssemblyState {
   move: MoveState | null;
   /** The dialog for part files that cannot be found (B9.4); null while it is closed. */
   relink: RelinkState | null;
+  /** The pattern PropertyManager (C15.13); null while it is closed. */
+  pattern: PatternDraft | null;
 }
 
 export interface AssemblyHost {
@@ -242,6 +256,7 @@ export class AssemblyStore {
       drag: null,
       move: null,
       relink: null,
+      pattern: null,
     };
     this.history.subscribe(() => this.onDocChanged());
     this.loadFiles();
@@ -475,19 +490,29 @@ export class AssemblyStore {
     return trees;
   }
 
-  private leafCache: { doc: AssemblyDoc; files: AssemblyState['files']; solution: AssemblyResult | null; drag: AssemblyState['drag']; leaves: Leaf[]; problems: Map<Id, string> } | null = null;
+  private leafCache: { doc: AssemblyDoc; files: AssemblyState['files']; solution: AssemblyResult | null; drag: AssemblyState['drag']; pattern: PatternDraft | null; leaves: Leaf[]; problems: Map<Id, string> } | null = null;
+
+  /** The document with the pattern being defined in it (as a preview), for what is drawn. */
+  private shownDoc(): AssemblyDoc {
+    const doc = this.history.doc;
+    const d = this.state.pattern;
+    if (!d) return doc;
+    const p = d.editing ? d.pattern : { ...d.pattern, id: PREVIEW_PATTERN };
+    const list = doc.patterns ?? [];
+    return { ...doc, patterns: d.editing ? list.map((x) => (x.id === d.editing ? p : x)) : [...list, p] };
+  }
 
   /** Every part to draw, where it is now (see `leavesOf`). Derived; kept while nothing it depends on changes. */
   leaves(): Leaf[] {
-    const { files, solution, drag } = this.state;
+    const { files, solution, drag, pattern } = this.state;
     const doc = this.history.doc;
     const c = this.leafCache;
-    if (c && c.doc === doc && c.files === files && c.solution === solution && c.drag === drag) return c.leaves;
+    if (c && c.doc === doc && c.files === files && c.solution === solution && c.drag === drag && c.pattern === pattern) return c.leaves;
     const base = leavesOf(doc, this.trees(), (id) => this.poseOf(id), solution?.inner);
     // the parts patterns and mirrors add (C15.13); their axes are found among the parts of the components themselves
-    const made = patternLeavesOf(doc, base, (axis) => this.lineOf(axis, base));
+    const made = patternLeavesOf(this.shownDoc(), base, (axis) => this.lineOf(axis, base));
     const leaves = [...base, ...made.leaves];
-    this.leafCache = { doc, files, solution, drag, leaves, problems: made.problems };
+    this.leafCache = { doc, files, solution, drag, pattern, leaves, problems: made.problems };
     this.ensureMirrors(leaves);
     return leaves;
   }
@@ -648,6 +673,7 @@ export class AssemblyStore {
   startMate(): void {
     if (this.state.insert) this.cancelInsert();
     if (this.state.move) this.closeMove();
+    if (this.state.pattern) this.cancelPattern();
     this.set({ mate: { editing: null, a: null, b: null, type: null }, selected: null });
   }
 
@@ -666,6 +692,12 @@ export class AssemblyStore {
    * third replaces the second. With both chosen, the mate SolidWorks would suggest is set up.
    */
   pickElement(ref: MateRef): void {
+    const pd = this.state.pattern;
+    if (pd?.picking) {
+      // a direction or axis for the pattern, an element of any component (C15.13)
+      this.set({ pattern: { ...pd, pattern: { ...pd.pattern, [pd.picking]: { kind: 'ref', ref } }, picking: null } });
+      return;
+    }
     const d = this.state.mate;
     if (!d) return;
     let { a, b } = d;
@@ -813,7 +845,69 @@ export class AssemblyStore {
   setComponentState(componentIds: Id[], state: ComponentState, value: boolean): void {
     if (componentIds.length === 0) return;
     if (this.state.mate) this.cancelMate(); // a mate being defined would keep pointing at what is gone
+    if (this.state.pattern) this.cancelPattern();
     this.execute({ type: 'setComponentState', componentIds, state, value });
+  }
+
+  // ------------------------------------------------------------ patterns and mirrors (C15.13)
+
+  /** 「線性複製排列」, 「環狀複製排列」, 「鏡射零組件」: opens the PropertyManager with the selected component (or the first) as the seed. */
+  startPattern(kind: ComponentPattern['kind']): void {
+    const doc = this.history.doc;
+    const seed = doc.components.find((c) => c.id === this.state.selected && !c.suppressed) ?? doc.components.find((c) => !c.suppressed);
+    if (!seed) return this.host.notify(t('pattern.noComponent'), 'error');
+    if (this.state.insert) this.cancelInsert();
+    if (this.state.mate) this.cancelMate();
+    if (this.state.move) this.closeMove();
+    const n = (doc.patterns ?? []).filter((p) => p.kind === kind).length + 1;
+    const id = new IdAllocator(doc.idCounters, assemblyIdsInUse(doc)).take('pattern');
+    const name = t(kind === 'linear' ? 'pattern.linearName' : kind === 'circular' ? 'pattern.circularName' : 'pattern.mirrorName', { n });
+    const pattern: ComponentPattern =
+      kind === 'linear'
+        ? { id, name, kind, seed: seed.id, axis1: { kind: 'axis', axis: 'x' }, count1: 3, spacing1: '50' }
+        : kind === 'circular'
+          ? { id, name, kind, seed: seed.id, axis1: { kind: 'axis', axis: 'z' }, count1: 4, spacing1: '90' }
+          : { id, name, kind, seed: seed.id, plane: 'plane:right' };
+    this.set({ pattern: { editing: null, pattern, picking: null }, selected: seed.id });
+  }
+
+  /** 「編輯」: the PropertyManager with the pattern's definition; ✓ replaces it. */
+  editPattern(id: Id): void {
+    const p = this.history.doc.patterns?.find((x) => x.id === id);
+    if (!p) return;
+    if (this.state.insert) this.cancelInsert();
+    if (this.state.mate) this.cancelMate();
+    if (this.state.move) this.closeMove();
+    this.set({ pattern: { editing: id, pattern: p, picking: null }, selected: id });
+  }
+
+  /** Changes the definition being made; the preview follows. */
+  setPatternDraft(patch: Partial<ComponentPattern>): void {
+    const d = this.state.pattern;
+    if (d) this.set({ pattern: { ...d, pattern: { ...d.pattern, ...patch } } });
+  }
+
+  /** Whether the next element picked in the graphics area is a pattern's direction or axis (and which); null stops picking. */
+  pickPatternAxis(slot: 'axis1' | 'axis2' | null): void {
+    const d = this.state.pattern;
+    if (d) this.set({ pattern: { ...d, picking: slot } });
+  }
+
+  /** ✓: the pattern is added (or replaced) and the PropertyManager closes. */
+  applyPattern(): void {
+    const d = this.state.pattern;
+    if (!d) return;
+    if (!this.execute({ type: d.editing ? 'setPattern' : 'insertPattern', pattern: d.pattern })) return;
+    this.set({ pattern: null, selected: d.pattern.id });
+  }
+
+  cancelPattern(): void {
+    if (this.state.pattern) this.set({ pattern: null });
+  }
+
+  /** Deletes patterns (their instances go with them; the seeds stay). */
+  deletePatterns(patternIds: Id[]): void {
+    if (patternIds.length > 0) this.execute({ type: 'deletePatterns', patternIds });
   }
 
   /** 「確認刪除」 for components or mates. */
@@ -840,6 +934,7 @@ export class AssemblyStore {
     if (this.getState().insert) return; // not this.state.insert: TypeScript would keep that narrowing past the awaits below
     if (this.state.mate) this.cancelMate();
     if (this.state.move) this.closeMove();
+    if (this.state.pattern) this.cancelPattern();
     const project = (this.project ??= await this.host.projectFolder('插入零組件會從專案資料夾讀取零件檔（.3dbx）與 STEP 檔；組合件也要存在這個資料夾之內，才能以相對路徑找到零件。'));
     if (!project) return;
     this.set({ insert: { files: null, chosen: null }, selected: null });
@@ -1148,6 +1243,7 @@ export class AssemblyStore {
   startMove(tool: MoveState['tool']): void {
     if (this.state.insert) this.cancelInsert();
     if (this.state.mate) this.cancelMate();
+    if (this.state.pattern) this.cancelPattern();
     this.set({ move: { tool } });
   }
 

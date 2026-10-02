@@ -118,7 +118,7 @@ export function AssemblyViewport() {
       v.fitAll();
       fitted.current = { store: store.assembly, request: asm.fitRequest };
     }
-  }, [asm.doc, asm.files, asm.folder, asm.fitRequest, asm.solution, asm.drag, parts]);
+  }, [asm.doc, asm.files, asm.folder, asm.fitRequest, asm.solution, asm.drag, asm.pattern, parts]);
 
   // What is shown as chosen: the mate being defined, else the mate or component selected in the tree.
   const selectedMate = asm.selected ? asm.doc.mates.find((m) => m.id === asm.selected) : undefined;
@@ -167,18 +167,20 @@ export function AssemblyViewport() {
 
   // Whole components are picked (and dragged) normally; elements while a mate is being defined.
   const mating = !!asm.mate;
+  const pickingAxis = !!asm.pattern?.picking; // a pattern's direction or axis is picked from the elements in the view (C15.13)
+  const patterning = !!asm.pattern;
   const placing = !!asm.insert;
   useEffect(() => {
     const v = store.viewer;
     if (!v) return;
-    v.setComponentPicking(!mating && !ghost && !subChosen);
-    v.setComponentDragging(!mating && !placing);
-    v.setElementPicking(mating);
-  }, [mating, ghost, placing, subChosen]);
+    v.setComponentPicking(!mating && !pickingAxis && !ghost && !subChosen);
+    v.setComponentDragging(!mating && !placing && !patterning);
+    v.setElementPicking(mating || pickingAxis);
+  }, [mating, pickingAxis, patterning, ghost, placing, subChosen]);
 
   const hovered = hover ? asm.doc.components.find((c) => c.id === hover) : undefined;
   const elementName = (() => {
-    if (!mating || !hoverElement) return null;
+    if (!(mating || pickingAxis) || !hoverElement) return null;
     const leaf = store.assembly?.leaves().find((l) => l.id === hoverElement.key);
     const build = leaf && store.assembly?.buildOfLeaf(leaf);
     const names = hoverElement.kind === 'face' ? build?.faceNames : hoverElement.kind === 'edge' ? build?.edgeNames : build?.vertexNames;
@@ -193,6 +195,8 @@ export function AssemblyViewport() {
       : chosen
         ? '正在載入零件…'
         : '在左側選擇要插入的零件'
+    : pickingAxis
+    ? (elementName ?? t('pattern.picking'))
     : mating
       ? (elementName ?? '點選兩個要結合的元素：零組件的面、邊線、頂點，或左上樹中的基準面與原點')
       : hovered

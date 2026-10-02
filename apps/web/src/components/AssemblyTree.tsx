@@ -1,13 +1,13 @@
 import { Fragment, useEffect, useState } from 'react';
 import { t } from '@3db/i18n';
-import { joinPath, type Component, type Id, type Mate } from '@3db/model';
+import { componentPatternLabels, joinPath, type Component, type ComponentPattern, type Id, type Mate } from '@3db/model';
 import { componentName } from '@3db/io';
 import { store, useDocumentName, useStore } from '../state/store';
 import type { AssemblyState } from '../state/assembly';
 import { DATUM_ITEMS, PART_STAGE_LABEL } from '../strings';
 import { Icon } from './Icon';
 
-type Menu = { x: number; y: number } & ({ component: Component } | { mate: Mate });
+type Menu = { x: number; y: number } & ({ component: Component } | { mate: Mate } | { pattern: ComponentPattern });
 
 /** What the FeatureManager says about a component: its name, and what is wrong with its part file. */
 export function componentInfo(asm: AssemblyState, c: Component) {
@@ -143,6 +143,30 @@ export function AssemblyTree() {
             </Fragment>
           );
         })}
+        {(asm.doc.patterns ?? []).map((p) => {
+          const problem = a?.patternProblems().get(p.id);
+          const seedName = nameOf(p.seed);
+          const n = p.kind === 'mirror' ? 1 : componentPatternLabels(p).length - (p.skip?.length ?? 0);
+          return (
+            <li
+              key={p.id}
+              data-pattern-row={p.id}
+              className={`tree-row pattern ${asm.selected === p.id ? 'selected' : ''} ${problem ? 'error' : ''}`}
+              title={problem ?? t('pattern.instances', { n })}
+              onClick={() => select(p.id)}
+              onDoubleClick={() => a?.editPattern(p.id)}
+              onContextMenu={(e) => {
+                e.preventDefault();
+                select(p.id);
+                setMenu({ x: e.clientX, y: e.clientY, pattern: p });
+              }}
+            >
+              <Icon name="assembly" />
+              <span className="name">{t('pattern.treeRow', { name: p.name, seed: seedName })}</span>
+              {problem && <Icon name="error" className="status-error" />}
+            </li>
+          );
+        })}
         <li className={`tree-row folder ${errors ? 'error' : ''}`} onClick={() => setMatesOpen((o) => !o)} title={errors ? `${errors} 個結合有錯誤` : undefined}>
           <Icon name="mates" />
           <span className="name">結合</span>
@@ -177,7 +201,12 @@ export function AssemblyTree() {
 
       {menu && a && (
         <ul className="context-menu" style={{ left: menu.x, top: menu.y }} onPointerDown={(e) => e.stopPropagation()}>
-          {'component' in menu ? (
+          {'pattern' in menu ? (
+            <>
+              <li onClick={act(() => a.editPattern(menu.pattern.id))}>{t('pattern.edit')}</li>
+              <li onClick={act(() => a.deletePatterns([menu.pattern.id]))}>{t('pattern.delete')}</li>
+            </>
+          ) : 'component' in menu ? (
             <>
               <li onClick={act(() => store.openComponentPart(menu.component.id))}>{a.isSubAssembly(menu.component.id) ? t('subassembly.open') : '開啟零件'}</li>
               <li onClick={act(() => void a.browseRelink(menu.component.file))}>重新指定零件檔…</li>
