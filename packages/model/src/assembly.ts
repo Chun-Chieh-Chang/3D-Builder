@@ -15,6 +15,12 @@ export type AssemblyCommand =
   /** Inserts a component (C15.1), together with its file when the assembly does not use that file yet. */
   | { type: 'insertComponent'; component: Component; file?: FileRef }
   | { type: 'setFixed'; componentIds: Id[]; value: boolean }
+  /**
+   * Hides, suppresses or makes see-through some components (C15.5). Hidden: not shown, still solved. Suppressed: left out of
+   * the assembly (not solved, not exported, their mates suppressed). Transparent: display only. `false` clears the flag,
+   * so a component with none writes none.
+   */
+  | { type: 'setComponentState'; componentIds: Id[]; state: ComponentState; value: boolean }
   /** Where components are placed (C15.3): one step for all of them, e.g. every part a drag moved. */
   | { type: 'setPlacements'; placements: { componentId: Id; placement: Pose }[] }
   /**
@@ -31,6 +37,9 @@ export type AssemblyCommand =
   | { type: 'setMate'; mate: Mate }
   | { type: 'deleteMates'; mateIds: Id[] }
   | { type: 'setMatesSuppressed'; mateIds: Id[]; value: boolean };
+
+/** The flags of a component (C15.5). */
+export type ComponentState = 'hidden' | 'suppressed' | 'transparent';
 
 export function createEmptyAssembly(): AssemblyDoc {
   return { kind: 'assembly', schemaVersion: ASSEMBLY_SCHEMA_VERSION, files: [], components: [], mates: [], properties: {}, idCounters: {} };
@@ -135,6 +144,15 @@ export function mutateAssembly(draft: Draft<AssemblyDoc>, cmd: AssemblyCommand):
     case 'setFixed': {
       const targets = cmd.componentIds.map((id) => componentOf(draft, id)); // all exist, or nothing changes
       for (const c of targets) c.fixed = cmd.value;
+      return;
+    }
+    case 'setComponentState': {
+      if (cmd.state !== 'hidden' && cmd.state !== 'suppressed' && cmd.state !== 'transparent') throw new CommandError(t('subassembly.badState', { state: String(cmd.state) }));
+      const targets = cmd.componentIds.map((id) => componentOf(draft, id)); // all exist, or nothing changes
+      for (const c of targets) {
+        if (cmd.value) c[cmd.state] = true;
+        else delete c[cmd.state];
+      }
       return;
     }
     case 'setPlacements': {

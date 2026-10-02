@@ -103,7 +103,8 @@ export function AssemblyViewport() {
     if (!v) return;
     v.setParts(parts);
     // every part to draw: a component that is a part, and the parts inside a sub-assembly, which belong to the component they are in (C15.4)
-    const instances: ViewInstance[] = (store.assembly?.leaves() ?? []).flatMap((l) => (parts.has(l.key) ? [{ key: l.id, part: l.key, matrix: poseMatrix(l.pose), owner: l.top }] : []));
+    // hidden ones are solved but not drawn, so they cannot be picked either (C15.5)
+    const instances: ViewInstance[] = (store.assembly?.leaves() ?? []).flatMap((l) => (parts.has(l.key) && !l.hidden ? [{ key: l.id, part: l.key, matrix: poseMatrix(l.pose), owner: l.top, transparent: l.transparent }] : []));
     v.setInstances(instances);
     // Fit once per open (or first insert), when every part that can be shown is shown.
     const loading = [...asm.files.values()].some((s) => s.status === 'loading');

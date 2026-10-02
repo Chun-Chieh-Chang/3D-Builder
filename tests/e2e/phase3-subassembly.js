@@ -180,5 +180,61 @@ sub.insert = async () => {
   return store.assembly.leaves().map((l) => l.id);
 };
 
+/** Hide, make transparent and suppress a sub-assembly (C15.5), through the tree's context menu once and the store for the rest; saved and reopened. */
+sub.states = async () => {
+  await sub.open();
+  const a = store.assembly;
+  const shown = () => store.viewer.instances.size;
+  const opacity = (top) => [...store.viewer.instances.values()].filter((i) => i.owner === top).map((i) => +i.body.material.opacity.toFixed(2));
+  H.check(shown() === 6, 'six parts shown');
+  // hide s1 through the context menu: the menu item says 「隱藏」
+  const row = document.querySelector('[data-component-row="s1"]');
+  row.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, clientX: 60, clientY: 200 }));
+  await H.wait(150);
+  const items = [...document.querySelectorAll('.context-menu li')].map((li) => li.textContent);
+  H.check(items.includes('隱藏') && items.includes('透明') && items.includes('抑制'), `the menu has the three states: ${items}`);
+  [...document.querySelectorAll('.context-menu li')].find((li) => li.textContent === '隱藏').click();
+  await H.wait(400);
+  H.check(shown() === 3 && [...store.viewer.instances.values()].every((i) => i.owner === 's0'), `hidden: only s0 is drawn (${shown()})`);
+  H.check(H.asm().solution.poses.has('s1'), 'hidden is still solved');
+  H.check(H.asm().doc.components[1].hidden === true, 'the flag is in the document');
+  a.setComponentState(['s1'], 'hidden', false);
+  a.setComponentState(['s0'], 'transparent', true);
+  await H.wait(400);
+  H.check(shown() === 6 && opacity('s0').every((o) => o === 0.4) && opacity('s1').every((o) => o === 1), `transparent: ${opacity('s0')} / ${opacity('s1')}`);
+  a.setComponentState(['s0'], 'transparent', false);
+  a.setComponentState(['s1'], 'suppressed', true);
+  await H.wait(1200);
+  const sol = H.asm().solution;
+  H.check(shown() === 3 && !sol.poses.has('s1') && [...sol.mates.values()].every((m) => m.status === 'suppressed'), `suppressed: left out and its mates suppressed (${shown()}, ${[...sol.mates.values()].map((m) => m.status)})`);
+  H.check(document.querySelector('[data-component-row="s1"]').className.includes('suppressed'), 'the row is marked');
+  // a suppressed component does not move and says why
+  a.select('s1');
+  const why = await new Promise((r) => {
+    const notify = store.notify.bind(store);
+    store.notify = (text) => {
+      store.notify = notify;
+      r(text);
+    };
+    void a.moveSelected({ kind: 'by', delta: [0, 0, 5] });
+    setTimeout(() => r('none'), 2000);
+  });
+  H.check(/已抑制/.test(why), `a suppressed component does not move: ${why}`);
+  // one undo takes the suppression back, one redo puts it on again
+  a.undo();
+  await H.wait(1000);
+  H.check(!H.asm().doc.components[1].suppressed && shown() === 6, 'one undo restores it');
+  a.redo();
+  await H.wait(1000);
+  H.check(H.asm().doc.components[1].suppressed === true && shown() === 3, 'one redo suppresses it again');
+  // saved and reopened: the flag stays
+  H.next.save = '夾具-狀態.3dba';
+  await H.action('檔案', '另存新檔');
+  await H.waitFor(() => !H.asm().dirty, 10000, 'the save');
+  await openAsm('夾具-狀態.3dba');
+  H.check(H.asm().doc.components[1].suppressed === true && shown() === 3, 'reopened: still suppressed');
+  return { items };
+};
+
 /** Everything, then the console is checked by the caller. */
-sub.all = async () => ({ open: await sub.open(), move: await sub.move(), insert: await sub.insert() });
+sub.all = async () => ({ open: await sub.open(), move: await sub.move(), insert: await sub.insert(), states: await sub.states() });

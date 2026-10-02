@@ -21,6 +21,8 @@ export interface SubAssemblyPart {
   kind: 'assembly';
   poses: ReadonlyMap<Id, Pose>;
   parts: ReadonlyMap<Id, MateSource | null>;
+  /** Its components that are suppressed (C15.5): not solved, so without a pose or a part; a mate that goes through one is suppressed. */
+  leftOut: ReadonlySet<Id>;
 }
 
 /** A component's part, or its sub-assembly; null where the file could not be read. */
@@ -82,16 +84,21 @@ export interface AssemblySolveOptions {
  * never bound to something else. Components whose part is not there keep their placement.
  */
 export function solveAssembly(doc: AssemblyDoc, partOf: (componentId: Id) => MateSource | null, options: AssemblySolveOptions = {}): AssemblyResult {
-  const parts = new Map(doc.components.map((c) => [c.id, partOf(c.id)] as const));
-  const bodies: SolverBody[] = doc.components.map((c) => {
+  // A suppressed component (C15.5) is left out: nobody asks for its part, it is not solved, and its mates are suppressed with it.
+  const active = doc.components.filter((c) => !c.suppressed);
+  const leftOut = new Set(doc.components.filter((c) => c.suppressed).map((c) => c.id));
+  const parts = new Map(active.map((c) => [c.id, partOf(c.id)] as const));
+  const bodies: SolverBody[] = active.map((c) => {
     const part = parts.get(c.id);
     const extent = part ? extentOfSource(part) : null;
     return { id: c.id, fixed: c.fixed, pose: options.start?.get(c.id) ?? c.placement, ...(extent ? { pivot: extent.center, size: extent.size } : {}) };
   });
   const mates = new Map<Id, MateState>();
   const specs: MateSpec[] = [];
+  const goesThroughLeftOut = (side: Mate['a']) =>
+    side.component !== null && (leftOut.has(side.component) || pathLeftOut(parts.get(side.component) ?? null, side.path));
   for (const m of doc.mates) {
-    if (m.suppressed) {
+    if (m.suppressed || goesThroughLeftOut(m.a) || goesThroughLeftOut(m.b)) {
       mates.set(m.id, { status: 'suppressed' });
       continue;
     }
@@ -114,9 +121,21 @@ export function solveAssembly(doc: AssemblyDoc, partOf: (componentId: Id) => Mat
  */
 export function solveSubAssembly(doc: AssemblyDoc, partOf: (componentId: Id) => MateSource | null): { part: SubAssemblyPart; result: AssemblyResult } {
   const parts = new Map<Id, MateSource | null>();
-  for (const c of doc.components) parts.set(c.id, partOf(c.id)); // once each: a sub-assembly's own parts are built when it is asked for
+  for (const c of doc.components) if (!c.suppressed) parts.set(c.id, partOf(c.id)); // once each: a sub-assembly's own parts are built when it is asked for
   const result = solveAssembly(doc, (id) => parts.get(id) ?? null);
-  return { part: { kind: 'assembly', poses: result.poses, parts }, result };
+  const leftOut = new Set(doc.components.filter((c) => c.suppressed).map((c) => c.id));
+  return { part: { kind: 'assembly', poses: result.poses, parts, leftOut }, result };
+}
+
+/** Whether a mate element's path goes through a component that is suppressed somewhere down the sub-assemblies. */
+function pathLeftOut(source: MateSource | null, path: readonly Id[] | undefined): boolean {
+  let s = source;
+  for (const id of path ?? []) {
+    if (!s || !isSubAssembly(s)) return false;
+    if (s.leftOut.has(id)) return true;
+    s = s.parts.get(id) ?? null;
+  }
+  return false;
 }
 
 function specOf(m: Mate, parts: ReadonlyMap<Id, MateSource | null>): MateSpec | string {

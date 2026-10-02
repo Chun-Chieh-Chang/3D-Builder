@@ -27,6 +27,10 @@ export interface Leaf {
   key: string;
   /** Where the part is in the assembly's coordinates. */
   pose: Pose;
+  /** Hidden (C15.5): its component, or a sub-assembly it is in, is hidden. It is still solved; it is not drawn or picked. */
+  hidden: boolean;
+  /** See-through (C15.5): its component, or a sub-assembly it is in, is. */
+  transparent: boolean;
 }
 
 /**
@@ -36,23 +40,23 @@ export interface Leaf {
  */
 export function leavesOf(doc: AssemblyDoc, trees: Readonly<Record<Id, SourceTree>>, topPose: (componentId: Id) => Pose | null, inner?: ReadonlyMap<Id, InnerPoses>): Leaf[] {
   const out: Leaf[] = [];
-  const walk = (tree: SourceTree, top: Id, path: Id[], pose: Pose, solved: InnerPoses | undefined) => {
+  const walk = (tree: SourceTree, top: Id, path: Id[], pose: Pose, solved: InnerPoses | undefined, hidden: boolean, transparent: boolean) => {
     if (tree.kind === 'part') {
-      out.push({ id: [top, ...path].join('/'), top, path, key: tree.key, pose });
+      out.push({ id: [top, ...path].join('/'), top, path, key: tree.key, pose, hidden, transparent });
       return;
     }
     for (const c of tree.doc.components) {
       const child = tree.children[c.id];
       if (!child || c.suppressed) continue;
       const own = solved?.poses.get(c.id) ?? c.placement;
-      walk(child, top, [...path, c.id], composePose(pose, own), solved?.inner.get(c.id));
+      walk(child, top, [...path, c.id], composePose(pose, own), solved?.inner.get(c.id), hidden || !!c.hidden, transparent || !!c.transparent);
     }
   };
   for (const c of doc.components) {
     const tree = trees[c.id];
     const pose = topPose(c.id);
     if (!tree || !pose || c.suppressed) continue;
-    walk(tree, c.id, [], pose, inner?.get(c.id));
+    walk(tree, c.id, [], pose, inner?.get(c.id), !!c.hidden, !!c.transparent);
   }
   return out;
 }

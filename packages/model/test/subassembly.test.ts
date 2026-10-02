@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   applyAssemblyCommand,
+  AssemblyHistory,
   ASSEMBLY_SCHEMA_VERSION,
   CommandError,
   createEmptyAssembly,
@@ -105,5 +106,35 @@ describe('assemblies that would contain themselves (C15.4)', () => {
     const deep: Record<string, string[]> = {};
     for (let i = 0; i < 500; i++) deep[`f${i}.3dba`] = [`f${i + 1}.3dba`];
     expect(findReferenceCycle('f0.3dba', tree(deep))).toBeNull();
+  });
+});
+
+describe('component flags as commands (C15.5)', () => {
+  it('sets and clears each flag, and a component with none writes none', () => {
+    let doc = parent();
+    doc = applyAssemblyCommand(doc, { type: 'setComponentState', componentIds: ['comp1', 'comp2'], state: 'hidden', value: true });
+    doc = applyAssemblyCommand(doc, { type: 'setComponentState', componentIds: ['comp2'], state: 'suppressed', value: true });
+    doc = applyAssemblyCommand(doc, { type: 'setComponentState', componentIds: ['comp1'], state: 'transparent', value: true });
+    expect(doc.components.map((c) => [c.hidden, c.suppressed, c.transparent])).toEqual([[true, undefined, true], [true, true, undefined]]);
+    doc = applyAssemblyCommand(doc, { type: 'setComponentState', componentIds: ['comp1', 'comp2'], state: 'hidden', value: false });
+    doc = applyAssemblyCommand(doc, { type: 'setComponentState', componentIds: ['comp2'], state: 'suppressed', value: false });
+    doc = applyAssemblyCommand(doc, { type: 'setComponentState', componentIds: ['comp1'], state: 'transparent', value: false });
+    expect(doc).toEqual(parent());
+    expect(Object.keys(JSON.parse(serializeAssembly(doc)).components[0]).sort()).toEqual(['file', 'fixed', 'id', 'instance', 'placement']);
+  });
+
+  it('changes all or none, and refuses an unknown component or state', () => {
+    const doc = parent();
+    expect(() => applyAssemblyCommand(doc, { type: 'setComponentState', componentIds: ['comp1', 'nope'], state: 'hidden', value: true })).toThrow(CommandError);
+    expect(doc.components.some((c) => c.hidden)).toBe(false);
+    expect(() => applyAssemblyCommand(doc, { type: 'setComponentState', componentIds: ['comp1'], state: 'frozen' as never, value: true })).toThrow(/不明的零組件狀態/);
+  });
+
+  it('undoes in one step', () => {
+    const history = new AssemblyHistory(parent());
+    history.execute({ type: 'setComponentState', componentIds: ['comp1', 'comp2'], state: 'suppressed', value: true });
+    expect(history.doc.components.every((c) => c.suppressed)).toBe(true);
+    history.undo();
+    expect(history.doc).toEqual(parent());
   });
 });

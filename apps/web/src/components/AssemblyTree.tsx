@@ -27,6 +27,7 @@ export function componentInfo(asm: AssemblyState, c: Component) {
 
 /** SolidWorks' marks before a component's name (A3.4): 「(f)」 fixed, 「(-)」 under-defined, 「(+)」 over-defined, none when fully defined. */
 export function componentPrefix(asm: AssemblyState, c: Component): string {
+  if (c.suppressed) return ''; // left out of the assembly: not solved, so no state to mark
   const status = asm.solution?.components.get(c.id)?.status ?? (c.fixed ? 'fixed' : 'under');
   return { fixed: '(f) ', under: '(-) ', over: '(+) ', full: '' }[status];
 }
@@ -102,7 +103,7 @@ export function AssemblyTree() {
             <Fragment key={c.id}>
               <li
                 data-component-row={c.id}
-                className={`tree-row ${asm.selected === c.id ? 'selected' : ''} ${info.error ? 'error' : ''} ${info.loading ? 'loading' : ''}`}
+                className={`tree-row ${asm.selected === c.id ? 'selected' : ''} ${info.error ? 'error' : ''} ${info.loading ? 'loading' : ''} ${c.suppressed ? 'suppressed' : ''} ${c.hidden ? 'hidden-component' : ''}`}
                 title={tip}
                 onClick={() => select(c.id)}
                 onContextMenu={(e) => {
@@ -182,6 +183,10 @@ export function AssemblyTree() {
               <li onClick={act(() => void a.browseRelink(menu.component.file))}>重新指定零件檔…</li>
               <li className="separator" />
               {menu.component.fixed ? <li onClick={act(() => a.setFixed([menu.component.id], false))}>浮動</li> : <li onClick={act(() => a.setFixed([menu.component.id], true))}>固定</li>}
+              <li className="separator" />
+              <li onClick={act(() => a.setComponentState([menu.component.id], 'hidden', !menu.component.hidden))}>{menu.component.hidden ? t('subassembly.show') : t('subassembly.hide')}</li>
+              <li onClick={act(() => a.setComponentState([menu.component.id], 'transparent', !menu.component.transparent))}>{menu.component.transparent ? t('subassembly.opaque') : t('subassembly.transparent')}</li>
+              <li onClick={act(() => a.setComponentState([menu.component.id], 'suppressed', !menu.component.suppressed))}>{menu.component.suppressed ? t('tree.unsuppress') : t('tree.suppress')}</li>
               <li className="separator" />
               <li onClick={act(() => a.requestDelete([menu.component.id]))}>刪除…</li>
             </>

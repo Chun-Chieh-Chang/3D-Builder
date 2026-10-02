@@ -287,3 +287,79 @@ describe('trees and leaves (3b-1c): what the worker solves and the viewer draws'
     expect(leavesOf(suppressed, some, (id) => doc.components.find((c) => c.id === id)!.placement).map((l) => l.id)).toEqual(['plate']);
   });
 });
+
+describe('hide, suppress and make transparent (3b-1d, C15.5)', () => {
+  const partOfKey = (key: string) => (key === 'plate' ? rebuilt.plate : key === 'pin' ? rebuilt.pin : null);
+  const flagged = (doc: AssemblyDoc, id: string, flags: Partial<Pick<AssemblyDoc['components'][number], 'hidden' | 'suppressed' | 'transparent'>>): AssemblyDoc => ({
+    ...doc,
+    components: doc.components.map((c) => (c.id === id ? { ...c, ...flags } : c)),
+  });
+
+  it('a suppressed component is not solved, its mates are suppressed, and the others come out as they did', () => {
+    const doc = pinsDoc();
+    const base = solveAssembly(doc, sourceOf(doc, {}));
+    const off = flagged(doc, 'pb', { suppressed: true });
+    const solved = solveAssembly(off, sourceOf(off, {}));
+    expect([...solved.poses.keys()]).toEqual(['p1', 'pa']); // no pose for what is left out
+    expect(solved.components.has('pb')).toBe(false);
+    // pb's three mates are the last three: suppressed with it, the first three still hold
+    expect([...solved.mates.values()].map((m) => m.status)).toEqual(['ok', 'ok', 'ok', 'suppressed', 'suppressed', 'suppressed']);
+    closeMatrix(solved.poses.get('pa')!, base.poses.get('pa')!, 9);
+    // nobody asked for its part
+    const asked: string[] = [];
+    solveAssembly(off, (id) => {
+      asked.push(id);
+      return sourceOf(off, {})(id);
+    });
+    expect(asked).toEqual(['p1', 'pa']);
+  });
+
+  it('a mate that goes through a suppressed component of a sub-assembly is suppressed, not missing', () => {
+    const inner = flagged(pinsDoc(), 'pa', { suppressed: true });
+    const jig = jigDoc();
+    const withPin = applyAssemblyCommand(jig, {
+      type: 'insertMate',
+      mate: { id: 'mateX', name: '重合X', type: 'coincident', a: { component: 's0', path: ['pa'], ref: face(FLANGE_UNDERSIDE) }, b: { component: 's1', path: ['pb'], ref: face(FLANGE_UNDERSIDE) }, align: 'aligned', suppressed: false },
+    });
+    const solved = solveAssembly(withPin, sourceOf(withPin, { '組件/定位組.3dba': inner }));
+    expect(solved.mates.get('mateX')).toEqual({ status: 'suppressed' });
+    // the plate-to-plate mates above it still hold, and the sub-assembly is rigid without the pin
+    expect([...solved.mates.entries()].filter(([id]) => id !== 'mateX').every(([, m]) => m.status === 'ok')).toBe(true);
+    const part = solveSubAssembly(inner, sourceOf(inner, {})).part;
+    expect([...part.leftOut]).toEqual(['pa']);
+    expect([...part.parts.keys()]).toEqual(['p1', 'pb']);
+  });
+
+  it('a suppressed sub-assembly takes all of its parts with it', () => {
+    const jig = flagged(jigDoc(), 's1', { suppressed: true });
+    const solved = solveAssemblyTree(jig, trees(), partOfKey);
+    expect([...solved.poses.keys()]).toEqual(['s0', 's2']);
+    expect([...solved.inner!.keys()]).toEqual(['s0', 's2']);
+    // the mates of s1 (s0—s1 and s1—s2) are suppressed; the s2 ones have no other component to hold to
+    expect([...solved.mates.values()].every((m) => m.status === 'suppressed')).toBe(true);
+    const leaves = leavesOf(jig, trees(), (id) => solved.poses.get(id) ?? null, solved.inner);
+    expect(leaves.map((l) => l.top)).toEqual(['s0', 's0', 's0', 's2', 's2', 's2']);
+  });
+
+  function trees(): Record<string, SourceTree> {
+    const sub = pinsDoc();
+    const one = (): SourceTree => ({ kind: 'assembly', doc: sub, children: { p1: { kind: 'part', key: 'plate' }, pa: { kind: 'part', key: 'pin' }, pb: { kind: 'part', key: 'pin' } } });
+    return { s0: one(), s1: one(), s2: one() };
+  }
+
+  it('hidden and transparent reach every part of the component, and what a sub-assembly holds adds its own', () => {
+    const jig = flagged(flagged(jigDoc(), 's1', { hidden: true }), 's2', { transparent: true });
+    const solved = solveAssemblyTree(jig, trees(), partOfKey);
+    expect(solved.poses.has('s1')).toBe(true); // hidden is still solved
+    const leaves = leavesOf(jig, trees(), (id) => solved.poses.get(id) ?? null, solved.inner);
+    const of = (top: string) => leaves.filter((l) => l.top === top).map((l) => [l.hidden, l.transparent]);
+    expect(of('s0')).toEqual([[false, false], [false, false], [false, false]]);
+    expect(of('s1')).toEqual([[true, false], [true, false], [true, false]]);
+    expect(of('s2')).toEqual([[false, true], [false, true], [false, true]]);
+    // a hidden part inside the sub-assembly hides that part only
+    const t = trees();
+    t.s0 = { kind: 'assembly', doc: flagged(pinsDoc(), 'pa', { hidden: true }), children: (t.s0 as { children: Record<string, SourceTree> }).children };
+    const inside = leavesOf(jig, t, (id) => solved.poses.get(id) ?? null, solved.inner).filter((l) => l.top === 's0');
+    expect(inside.map((l) => [l.id, l.hidden])).toEqual([['s0/p1', false], ['s0/pa', true], ['s0/pb', false]]);
+  });
+});

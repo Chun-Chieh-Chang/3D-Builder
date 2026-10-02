@@ -64,6 +64,8 @@ export interface ViewInstance {
    * hovering, selecting and dragging act on the owner, and the events say its key. Default: the instance's own key.
    */
   owner?: string;
+  /** Drawn see-through (C15.5). */
+  transparent?: boolean;
 }
 
 /** A part mesh instances can show, and its vertices (xyz each, in the order of its vertex names). */
@@ -444,6 +446,13 @@ export class Viewer {
         this.scene.add(inst.group);
       }
       inst.owner = i.owner ?? i.key;
+      const material = inst.body.material as THREE.MeshStandardMaterial;
+      if (material.transparent !== !!i.transparent) {
+        material.transparent = !!i.transparent;
+        material.opacity = i.transparent ? 0.4 : 1;
+        material.depthWrite = !i.transparent;
+        material.needsUpdate = true;
+      }
       setMatrix(inst.group, i.matrix);
     }
     if (this.hoveredInstance !== null && ![...this.instances.values()].some((i) => i.owner === this.hoveredInstance)) this.setHoveredInstance(null);

@@ -171,7 +171,7 @@ export function MateFlyout() {
     <div className="flyout-tree" onPointerDown={(e) => e.stopPropagation()}>
       <div className="flyout-title">{store.assembly?.name()}</div>
       {items(null, [])}
-      {asm.doc.components.map((c) => (
+      {asm.doc.components.filter((c) => !c.suppressed).map((c) => (
         <div key={c.id}>
           <div className="flyout-component" onClick={() => toggle(c.id)}>
             <span className="twisty">{open.has(c.id) ? '▾' : '▸'}</span>

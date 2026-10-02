@@ -30,6 +30,7 @@ import {
   type AssemblyCommand,
   type AssemblyDoc,
   type Component,
+  type ComponentState,
   type FileRef,
   type Id,
   type Leaf,
@@ -535,7 +536,7 @@ export class AssemblyStore {
     const unreadable: string[] = [];
     const seen = new Set<Id>();
     for (const c of doc.components) {
-      if (seen.has(c.file)) continue;
+      if (c.suppressed || seen.has(c.file)) continue; // left out of the assembly, and so of the file (C15.5)
       seen.add(c.file);
       const file = doc.files.find((f) => f.id === c.file);
       const status = file && this.state.files.get(joinPath(this.folder, file.path));
@@ -549,7 +550,7 @@ export class AssemblyStore {
       parts.push({ key: status.key, name: partNameOf(file.path) });
     }
     if (unreadable.length) throw new Error(`有 ${unreadable.length} 個零件檔無法讀取：${unreadable.join('、')}`);
-    const instances = doc.components.map((c) => {
+    const instances = doc.components.filter((c) => !c.suppressed).map((c) => {
       const file = doc.files.find((f) => f.id === c.file);
       return { part: partOf.get(c.file)!, name: componentName(file?.path, c.instance), pose: this.poseOf(c.id)! };
     });
@@ -785,6 +786,13 @@ export class AssemblyStore {
     if (componentIds.length > 0) this.execute({ type: 'setFixed', componentIds, value });
   }
 
+  /** 「隱藏」, 「抑制」, 「透明」 and their opposites (C15.5): one undo step. */
+  setComponentState(componentIds: Id[], state: ComponentState, value: boolean): void {
+    if (componentIds.length === 0) return;
+    if (this.state.mate) this.cancelMate(); // a mate being defined would keep pointing at what is gone
+    this.execute({ type: 'setComponentState', componentIds, state, value });
+  }
+
   /** 「確認刪除」 for components or mates. */
   requestDelete(ids: Id[] | null): void {
     if (ids && ids.length === 0) return;
@@ -985,6 +993,7 @@ export class AssemblyStore {
     const c = this.history.doc.components.find((x) => x.id === componentId);
     if (!c) return '找不到零組件';
     const name = this.componentLabel(componentId);
+    if (c.suppressed) return t('subassembly.suppressedCannotMove', { name });
     const why = immovable(c, this.state.solution);
     if (why === 'fixed') return `「${name}」已固定，不能移動（在設計樹按右鍵→「浮動」）`;
     if (why === 'defined') return `「${name}」已被結合完全定義，不能移動`;
