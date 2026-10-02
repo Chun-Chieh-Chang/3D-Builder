@@ -80,3 +80,80 @@ export function principalMoments(inertia: readonly number[]): { moments: [number
   const pick = (i: number): Vec3 => [v[0]![i]!, v[1]![i]!, v[2]![i]!];
   return { moments: [a[order[0]!]![order[0]!]!, a[order[1]!]![order[1]!]!, a[order[2]!]![order[2]!]!], axes: [pick(order[0]!), pick(order[1]!), pick(order[2]!)] };
 }
+
+/** A part's mass properties from the kernel (density one: mass = volume), and the density of its material in g/cm³ (null: it has none). */
+export interface PartMass {
+  volume: number;
+  area: number;
+  center: Vec3;
+  inertia: number[];
+  density: number | null;
+}
+
+/** Grams for a volume in mm³ of a density in g/cm³: the mass of a part, and (the same factor) the inertia in g·mm² from the kernel's mm⁵. */
+export const GRAMS_PER_MM3_PER_DENSITY = 1 / 1000;
+
+/** A part as a body of the assembly: its mass in grams, center in mm, inertia in g·mm² about the center. Null when the part has no material (its mass is not known). */
+export function partBody(p: PartMass): MassItem | null {
+  if (p.density === null) return null;
+  return scaleMass({ mass: p.volume, center: p.center, inertia: p.inertia }, p.density * GRAMS_PER_MM3_PER_DENSITY);
+}
+
+/** The mirror of a body in the part's own x = 0 plane (a mirrored part, C15.13): its center and inertia seen through x → −x. */
+export function mirrorBody(b: MassItem): MassItem {
+  const flip = (r: number, c: number) => ((r === 0 ? 1 : 0) + (c === 0 ? 1 : 0)) % 2 === 1; // one index is x: the entry changes sign
+  return { mass: b.mass, center: [-b.center[0], b.center[1], b.center[2]], inertia: b.inertia.map((v, i) => (flip(Math.floor(i / 3), i % 3) ? -v : v)) };
+}
+
+/** What the mass properties of an assembly are made of. */
+export interface PhysicalPart {
+  /** What the part is called in the report. */
+  name: string;
+  /** Where it is in the assembly (its leaf's pose). */
+  pose: Pose;
+  mirrored: boolean;
+  mass: PartMass | undefined;
+}
+
+export interface Physical {
+  /** Grams, mm, g·mm²: the parts with a material, put together. */
+  total: MassItem;
+  /** mm³ and mm²: of every part, whether it has a material or not (the area is the sum of the parts' surfaces, not of the assembly's skin). */
+  volume: number;
+  area: number;
+  /** One line per distinct part: how many, the mass of one (null: no material), in the order they first appear. */
+  lines: { name: string; qty: number; mass: number | null; volume: number }[];
+  /** Parts without a material: their mass is not in `total`. */
+  withoutMaterial: string[];
+  /** Parts whose properties are not known yet (not built). */
+  unknown: string[];
+}
+
+/** The mass properties of an assembly (E1.2): each part's body put in its place by its pose and all of them combined (see `combineMass`). */
+export function assemblyPhysical(parts: readonly PhysicalPart[]): Physical {
+  const bodies: MassItem[] = [];
+  const lines = new Map<string, { name: string; qty: number; mass: number | null; volume: number }>();
+  const without = new Set<string>();
+  const unknown = new Set<string>();
+  let volume = 0;
+  let area = 0;
+  for (const p of parts) {
+    if (!p.mass) {
+      unknown.add(p.name);
+      continue;
+    }
+    volume += p.mass.volume;
+    area += p.mass.area;
+    const body = partBody(p.mass);
+    const key = p.name;
+    const line = lines.get(key) ?? { name: p.name, qty: 0, mass: body ? body.mass : null, volume: p.mass.volume };
+    line.qty += 1;
+    lines.set(key, line);
+    if (!body) {
+      without.add(p.name);
+      continue;
+    }
+    bodies.push(placeMass(p.mirrored ? mirrorBody(body) : body, p.pose));
+  }
+  return { total: combineMass(bodies), volume, area, lines: [...lines.values()], withoutMaterial: [...without], unknown: [...unknown] };
+}

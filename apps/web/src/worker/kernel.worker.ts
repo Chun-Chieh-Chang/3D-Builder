@@ -31,6 +31,7 @@ interface BuiltPart {
   /** The color of each face of the part's body (C14.2), for the STEP of an assembly that uses it. */
   colors: (string | null)[];
   properties: Record<string, string>;
+  density: number | null;
 }
 /** By content: an unchanged file is never rebuilt again, a changed one is a new entry (B9.4). */
 const parts = new Map<string, Promise<BuiltPart>>();
@@ -46,7 +47,7 @@ async function build(bytes: Uint8Array): Promise<BuiltPart> {
     const frame = f.type === 'refPlane' ? result.frames.get(f.id) : undefined;
     return frame ? [{ id: f.id, name: f.name, frame }] : [];
   });
-  return { regen, result, problems: [...file.warnings, ...failed], planes, colors: faceColors(file.doc, result), properties: { ...file.doc.properties } };
+  return { regen, result, problems: [...file.warnings, ...failed], planes, colors: faceColors(file.doc, result), properties: { ...file.doc.properties }, density: file.doc.material?.density ?? null };
 }
 
 /**
@@ -246,6 +247,10 @@ const api: KernelApi = {
       vertexFingerprints: topo ? topo.vertices.map((_, i) => vertexFingerprint(topo, i)) : [],
       planes: part.planes,
       properties: part.properties,
+      mass: (() => {
+        const m = massOf(part.result);
+        return m ? { ...m, density: part.density } : null;
+      })(),
       ms: performance.now() - t,
     };
     const arrays = mesh ? [mesh.positions, mesh.normals, mesh.indices, mesh.faceRanges, mesh.edgePoints, mesh.edgeRanges] : [];
@@ -317,6 +322,7 @@ const api: KernelApi = {
         vertexFingerprints: [],
         planes: [],
         properties: {},
+        mass: null,
         ms: performance.now() - t0,
       };
       return Comlink.transfer(payload, [mesh.positions, mesh.normals, mesh.indices, mesh.faceRanges, mesh.edgePoints, mesh.edgeRanges].map((a) => a.buffer as ArrayBuffer));

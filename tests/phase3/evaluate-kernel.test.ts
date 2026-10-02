@@ -4,7 +4,7 @@
  */
 import { readFileSync } from 'node:fs';
 import { beforeAll, describe, expect, it } from 'vitest';
-import { axisAngle, combineMass, placeMass, principalMoments, scaleMass, type Pose } from '@3db/model';
+import { assemblyPhysical, axisAngle, combineMass, mirroredPose, partBody, placeMass, principalMoments, rotationRows, scaleMass, type Pose } from '@3db/model';
 import { readPartFile } from '@3db/io';
 import { PlaneGcsSolver } from '@3db/sketch';
 import { Kernel, type ShapeId } from '@3db/kernel';
@@ -189,5 +189,61 @@ describe('the check of a shape (3b-5a)', () => {
     expect(r.solids).toBe(0);
     expect(r.freeEdges).toBe(4);
     expect(r.faces).toBe(5);
+  });
+});
+
+describe('the mass properties of an assembly (3b-5b)', () => {
+  const rows34 = (pose: Pose) => {
+    const r = rotationRows(pose.rotation);
+    return [r[0]!, r[1]!, r[2]!, pose.position[0], r[3]!, r[4]!, r[5]!, pose.position[1], r[6]!, r[7]!, r[8]!, pose.position[2]];
+  };
+  const partMass = (id: ShapeId, density: number | null) => ({ ...kernel.massProps(id), density });
+
+  it('is the parts put together, each with its own density, turned, moved and mirrored: the same as the kernel gives for the shapes in place (< 1e-6)', () => {
+    const w1: Pose = { position: [10, 20, 30], rotation: axisAngle([0.6, 0.8, 0], 1.1) };
+    const w2: Pose = { position: [-40, 5, 12], rotation: axisAngle([0, 0, 1], 2.5) };
+    const w3: Pose = { position: [5, -7, 9], rotation: axisAngle([1, 0, 0], 0.4) };
+    const plate = partMass(golden.plate, 7.85);
+    const pin = partMass(golden.pin, 2.7);
+    const wholeFor = assemblyPhysical([
+      { name: '定位板', pose: w1, mirrored: false, mass: plate },
+      { name: '削邊銷', pose: w2, mirrored: false, mass: pin },
+      { name: '削邊銷', pose: mirroredPose('plane:right', w3), mirrored: true, mass: pin },
+    ]);
+    // the truth: each shape put in place by the kernel, the third reflected in x = 0 after its pose
+    const reflected = rows34(w3).map((v, i) => (i < 4 ? -v : v));
+    const placed = [
+      [kernel.transformed(golden.plate, rows34(w1)), 7.85],
+      [kernel.transformed(golden.pin, rows34(w2)), 2.7],
+      [kernel.transformed(golden.pin, reflected), 2.7],
+    ] as const;
+    const truth = combineMass(placed.map(([id, d]) => partBody({ ...kernel.massProps(id), density: d })!));
+    expect(rel(wholeFor.total.mass, truth.mass)).toBeLessThan(1e-9);
+    wholeFor.total.center.forEach((v, k) => expect(v).toBeCloseTo(truth.center[k]!, 6));
+    wholeFor.total.inertia.forEach((v, i) => expect(Math.abs(v - truth.inertia[i]!) / Math.max(Math.abs(truth.inertia[i]!), 1e3), `entry ${i}`).toBeLessThan(1e-6));
+    expect(wholeFor.lines.map((l) => [l.name, l.qty])).toEqual([['定位板', 1], ['削邊銷', 2]]);
+    expect(rel(wholeFor.volume, plate.volume + 2 * pin.volume)).toBeLessThan(1e-12);
+  });
+
+  it('the mass of a part is its volume times the density: grams for mm³ and g/cm³', () => {
+    const body = partBody(partMass(box(10, 20, 30), 7.85))!;
+    expect(body.mass).toBeCloseTo(6000 * 7.85 / 1000, 9);
+    expect(partBody(partMass(box(1, 1, 1), null))).toBeNull();
+  });
+
+  it('says which parts have no material and which are not known, and leaves them out of the total', () => {
+    const a = partMass(box(10, 20, 30), 7.85);
+    const b = partMass(box(10, 10, 10), null);
+    const r = assemblyPhysical([
+      { name: 'a', pose: { position: [0, 0, 0], rotation: [0, 0, 0, 1] }, mirrored: false, mass: a },
+      { name: 'b', pose: { position: [100, 0, 0], rotation: [0, 0, 0, 1] }, mirrored: false, mass: b },
+      { name: 'c', pose: { position: [0, 100, 0], rotation: [0, 0, 0, 1] }, mirrored: false, mass: undefined },
+    ]);
+    expect(r.withoutMaterial).toEqual(['b']);
+    expect(r.unknown).toEqual(['c']);
+    expect(r.total.mass).toBeCloseTo(6000 * 7.85 / 1000, 9);
+    expect(r.total.center).toEqual([expect.closeTo(5, 9), expect.closeTo(10, 9), expect.closeTo(15, 9)]);
+    expect(r.volume).toBeCloseTo(7000, 9);
+    expect(assemblyPhysical([]).total.mass).toBe(0);
   });
 });

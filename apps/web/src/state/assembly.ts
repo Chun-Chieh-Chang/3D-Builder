@@ -18,6 +18,8 @@ import {
   isDatumPlaneName,
   joinPath,
   ASSEMBLY_AXES,
+  assemblyPhysical,
+  bomName,
   buildBom,
   explodeLeaves,
   explosionOffsets,
@@ -48,6 +50,7 @@ import {
   type MateType,
   type PatternAxis,
   type PatternLine,
+  type Physical,
   type Pose,
   type Quat,
   type SourceTree,
@@ -537,6 +540,25 @@ export class AssemblyStore {
     this.leafCache = { doc, files, solution, drag, pattern, exploded, leaves, problems: made.problems, explodeProblems: exploding.problems };
     this.ensureMirrors(leaves);
     return leaves;
+  }
+
+  /** Every part where it is assembled (the exploded view does not move it): what mass properties and interference are worked out on. */
+  assembledLeaves(): Leaf[] {
+    if (!this.state.exploded) return this.leaves();
+    const doc = this.history.doc;
+    const base = leavesOf(doc, this.trees(), (id) => this.poseOf(id), this.state.solution?.inner);
+    return [...base, ...patternLeavesOf(this.shownDoc(), base, (axis) => this.lineOf(axis, base)).leaves];
+  }
+
+  /** The mass properties of the assembly (E1.2): its parts put together at their positions. Derived. */
+  physical(): Physical {
+    const suffix = t('pattern.mirrorSuffix');
+    return assemblyPhysical(
+      this.assembledLeaves().map((l) => {
+        const base = bomName(l.file ?? l.key);
+        return { name: l.mirrored ? `${base}${suffix}` : base, pose: l.pose, mirrored: !!l.mirrored, mass: this.state.builds.get(l.mirrored ? l.key.slice(0, -mirrorKey('').length) : l.key)?.mass ?? undefined };
+      }),
+    );
   }
 
   /** The parts list (C15.16) of the assembly as it is now: flat and indented. Derived from the document and the parts read, never stored. */

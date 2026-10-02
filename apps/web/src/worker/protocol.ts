@@ -1,4 +1,5 @@
 import type { Locale } from '@3db/i18n';
+import type { PartMass } from '@3db/model';
 import type { AssemblyDoc, Axis3, CoordSystem, Fingerprint, Id, PartDoc, PlaneFrame, Pose, Ref, SketchFeature, SourceTree, Vec3 } from '@3db/model';
 import type { MassProps, MeshData } from '@3db/kernel';
 import type { AssemblyResult, AssemblySolveOptions, Converted, FeatureResult } from '@3db/regen';
@@ -108,6 +109,8 @@ export interface PartBuildPayload {
   planes: { id: Id; name: string; frame: PlaneFrame }[];
   /** The part file's properties (B8.3): the parts list reads the vendor and the part number from them (C15.16). */
   properties: Record<string, string>;
+  /** Its mass properties (E1.2): the bodies that count, for a density of one, and the density of its material in g/cm³ (null: none chosen). Null when it has no body. */
+  mass: PartMass | null;
   ms: number;
 }
 
