@@ -28,6 +28,8 @@ interface BuiltPart {
   result: RebuildResult;
   problems: string[];
   planes: PartBuildPayload['planes'];
+  /** The color of each face of the part's body (C14.2), for the STEP of an assembly that uses it. */
+  colors: (string | null)[];
 }
 /** By content: an unchanged file is never rebuilt again, a changed one is a new entry (B9.4). */
 const parts = new Map<string, Promise<BuiltPart>>();
@@ -43,7 +45,7 @@ async function build(bytes: Uint8Array): Promise<BuiltPart> {
     const frame = f.type === 'refPlane' ? result.frames.get(f.id) : undefined;
     return frame ? [{ id: f.id, name: f.name, frame }] : [];
   });
-  return { regen, result, problems: [...file.warnings, ...failed], planes };
+  return { regen, result, problems: [...file.warnings, ...failed], planes, colors: faceColors(file.doc, result) };
 }
 
 /**
@@ -270,17 +272,18 @@ const api: KernelApi = {
 
   async exportAssemblyStep({ name, parts: used, subs, instances }: AssemblyStepRequest): Promise<string> {
     await api.init();
-    const shapes: { shape: ShapeId; name: string }[] = [];
+    const shapes: { shape: ShapeId; name: string; faceColors: (string | null)[] }[] = [];
     const made: ShapeId[] = [];
     try {
       for (const u of used) {
         // a mirrored part (C15.13): the part's own shape mirrored in its x = 0 plane, as the screen shows it
         const mirrored = u.key.endsWith(mirrorKey(''));
-        const body = (await parts.get(mirrored ? u.key.slice(0, -mirrorKey('').length) : u.key)?.catch(() => null))?.result.body;
-        if (!body) throw new Error(t('worker.noBodyForPart', { name: u.name }));
+        const part = await parts.get(mirrored ? u.key.slice(0, -mirrorKey('').length) : u.key)?.catch(() => null);
+        const body = part?.result.body;
+        if (!part || !body) throw new Error(t('worker.noBodyForPart', { name: u.name }));
         const shape = mirrored ? kernel.transformed(body.shape, [-1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0]) : body.shape;
         if (mirrored) made.push(shape);
-        shapes.push({ shape, name: u.name });
+        shapes.push({ shape, name: u.name, faceColors: part.colors }); // a mirror keeps the order of the faces, so the same colors
       }
       return exportAssemblyStep(kernel, name, shapes, instances, subs);
     } finally {

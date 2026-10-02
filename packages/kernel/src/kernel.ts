@@ -1712,7 +1712,7 @@ export class Kernel {
    */
   exportAssemblyStep(
     name: string,
-    parts: readonly { shape: ShapeId; name: string }[],
+    parts: readonly { shape: ShapeId; name: string; faceColors?: readonly (string | null)[] }[],
     instances: readonly StepComponent[],
     unit: 'MM' | 'INCH' = 'MM',
     subs: readonly { name: string; instances: readonly StepComponent[] }[] = [],
@@ -1731,6 +1731,7 @@ export class Kernel {
       const prototypes = parts.map((p) => {
         const l = tool.AddShape(this.get(p.shape), false, true);
         label(l, p.name);
+        this.colorFaces(doc, l, p.shape, p.faceColors ?? [], arena); // the colors of the part's faces (F1.3), the same in every use of the product
         return l;
       });
       // `parent`: the label the component goes into; `before`: how many sub-assemblies it may use (all of them for the top level)

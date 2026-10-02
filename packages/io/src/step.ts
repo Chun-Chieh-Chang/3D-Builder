@@ -28,6 +28,8 @@ export function exportPartStep(kernel: Kernel, bodies: ShapeId | readonly ShapeI
 export interface StepPart {
   shape: ShapeId;
   name: string;
+  /** "#rrggbb" or null for each face of the shape, in the order of Kernel.topology (F1.3). */
+  faceColors?: readonly (string | null)[];
 }
 
 /**
