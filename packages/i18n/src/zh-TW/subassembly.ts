@@ -15,7 +15,6 @@ export const subassembly = {
   'subassembly.insideTip': '次組合件裡的零件：在這裡不能單獨移動，要改請開啟次組合件',
   'subassembly.notAssembly': '「{path}」不是組合件',
   'subassembly.stillLoading': '次組合件還在載入，請稍候',
-  'subassembly.stepNotYet': '含次組合件的組合件還不能輸出 STEP',
   'subassembly.nestedProblem': '次組合件用到的檔案無法使用：「{path}」（{why}）；要修復請開啟那個次組合件',
   'subassembly.notLoaded': '{what}的零件沒有載入',
   'subassembly.pathOnPart': '{what}：這個零組件是零件，不是次組合件，沒有路徑可走',

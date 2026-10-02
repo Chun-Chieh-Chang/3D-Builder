@@ -60,6 +60,62 @@ export function readAssemblyStep(oc: Kernel['oc'], text: string): AssemblyStepCo
   }
 }
 
+/** A component of a (nested) assembly STEP as another CAD system finds it: its own name and its product's, its pose in the frame of the assembly it is in, and what is in it. */
+export interface StepNode {
+  name: string | null;
+  product: string | null;
+  origin: number[];
+  matrix: number[];
+  isAssembly: boolean;
+  children: StepNode[];
+}
+
+/**
+ * Reads an assembly STEP back through XCAF the way an importer would, down through sub-assemblies (C15.4). `rootName` is the top
+ * product; `nodes` its components, each with its own components when it is an assembly. Poses are as written, not accumulated.
+ */
+export function readAssemblyTree(oc: Kernel['oc'], text: string): { rootName: string | null; nodes: StepNode[]; usages: number } {
+  const path = '/assembly-tree-read-back.step';
+  oc.FS.writeFile(path, text);
+  const doc = new oc.TDocStd_Document(new oc.TCollection_ExtendedString('MDTV-XCAF', false));
+  try {
+    const reader = new oc.STEPCAFControl_Reader();
+    reader.SetNameMode(true);
+    expect(String(reader.ReadFile(path))).toBe('IFSelect_RetDone');
+    expect(reader.Transfer(doc, new oc.Message_ProgressRange())).toBe(true);
+    const tool = oc.XCAFDoc_DocumentTool.ShapeTool(doc.Main());
+    const nameOf = (label: InstanceType<typeof oc.TDF_Label>): string | null => {
+      const found = label.FindAttribute(oc.TDataStd_Name.GetID());
+      const attribute = found.anAttribute as unknown as { Get(): never };
+      return found.returnValue ? new oc.TCollection_AsciiString(attribute.Get(), '\0').ToCString() : null;
+    };
+    const walk = (label: InstanceType<typeof oc.TDF_Label>): StepNode[] => {
+      const components = new oc.NCollection_Sequence_TDF_Label();
+      oc.XCAFDoc_ShapeTool.GetComponents(label, components, false);
+      const out: StepNode[] = [];
+      for (let i = 1; i <= components.Length(); i++) {
+        const component = components.Value(i);
+        const referred = new oc.TDF_Label();
+        oc.XCAFDoc_ShapeTool.GetReferredShape(component, referred);
+        const trsf = oc.XCAFDoc_ShapeTool.GetLocation(component).Transformation();
+        const t = trsf.TranslationPart();
+        const matrix: number[] = [];
+        for (let row = 1; row <= 3; row++) for (let col = 1; col <= 3; col++) matrix.push(trsf.Value(row, col));
+        const isAssembly = oc.XCAFDoc_ShapeTool.IsAssembly(referred);
+        out.push({ name: nameOf(component), product: nameOf(referred), origin: [t.X(), t.Y(), t.Z()], matrix, isAssembly, children: isAssembly ? walk(referred) : [] });
+      }
+      return out;
+    };
+    const roots = new oc.NCollection_Sequence_TDF_Label();
+    tool.GetFreeShapes(roots);
+    expect(roots.Length()).toBe(1);
+    return { rootName: nameOf(roots.Value(1)), nodes: walk(roots.Value(1)), usages: (text.match(/NEXT_ASSEMBLY_USAGE_OCCURRENCE\(/g) ?? []).length };
+  } finally {
+    doc.delete();
+    oc.FS.unlink(path);
+  }
+}
+
 /** The rotation matrix (row-major 3×3) of a unit quaternion x y z w. */
 export function rotationMatrix([x, y, z, w]: readonly [number, number, number, number]): number[] {
   return [1 - 2 * (y * y + z * z), 2 * (x * y - z * w), 2 * (x * z + y * w), 2 * (x * y + z * w), 1 - 2 * (x * x + z * z), 2 * (y * z - x * w), 2 * (x * z - y * w), 2 * (y * z + x * w), 1 - 2 * (x * x + y * y)];

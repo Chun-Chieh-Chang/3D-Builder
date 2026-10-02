@@ -236,5 +236,24 @@ sub.states = async () => {
   return { items };
 };
 
+/** STEP of the 夾具 (F1.2, C15.4): what 「輸出 STEP」 writes — the request the store makes, written by the worker. */
+sub.step = async () => {
+  await sub.open();
+  const req = store.assembly.stepRequest();
+  H.check(req.parts.length === 2 && req.subs.length === 1 && req.instances.length === 2, `request: ${req.parts.length} parts, ${req.subs.length} sub-assembly, ${req.instances.length} components`);
+  const text = await store.api.exportAssemblyStep(req);
+  const usages = (text.match(/NEXT_ASSEMBLY_USAGE_OCCURRENCE\(/g) ?? []).length;
+  const products = [...new Set([...text.matchAll(/PRODUCT\('([^']*)'/g)].map((m) => m[1]))].sort();
+  H.check(usages === 5, `two uses at the top and three inside the one sub-assembly: ${usages}`);
+  H.check(products.join() === ['夾具', '定位板', '定位組', '削邊銷'].sort().join(), `products: ${products}`);
+  // suppressed components are left out of the file
+  store.assembly.setComponentState(['s1'], 'suppressed', true);
+  await H.wait(1500);
+  const after = await store.api.exportAssemblyStep(store.assembly.stepRequest());
+  H.check((after.match(/NEXT_ASSEMBLY_USAGE_OCCURRENCE\(/g) ?? []).length === 4, 'one use less at the top: four usages');
+  store.assembly.undo();
+  return { usages, products, bytes: text.length };
+};
+
 /** Everything, then the console is checked by the caller. */
 sub.all = async () => ({ open: await sub.open(), move: await sub.move(), insert: await sub.insert(), states: await sub.states() });

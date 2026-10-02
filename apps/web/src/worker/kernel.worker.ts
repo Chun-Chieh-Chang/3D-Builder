@@ -268,7 +268,7 @@ const api: KernelApi = {
     );
   },
 
-  async exportAssemblyStep({ name, parts: used, instances }: AssemblyStepRequest): Promise<string> {
+  async exportAssemblyStep({ name, parts: used, subs, instances }: AssemblyStepRequest): Promise<string> {
     await api.init();
     const shapes: { shape: ShapeId; name: string }[] = [];
     for (const u of used) {
@@ -276,7 +276,7 @@ const api: KernelApi = {
       if (!body) throw new Error(t('worker.noBodyForPart', { name: u.name }));
       shapes.push({ shape: body.shape, name: u.name });
     }
-    return exportAssemblyStep(kernel, name, shapes, instances);
+    return exportAssemblyStep(kernel, name, shapes, instances, subs);
   },
 
   async retainParts(keys: string[]): Promise<void> {

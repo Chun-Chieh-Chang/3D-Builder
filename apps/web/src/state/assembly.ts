@@ -43,7 +43,7 @@ import {
   type Vec3,
 } from '@3db/model';
 import { closerAlignment, currentValue, defaultType, hasAlignment, MATE_LABEL, placed, supportedTypes, type GoalTerm, type MateGeometry } from '@3db/assembly';
-import { ASSEMBLY_FILE_EXTENSION, assemblyFileName, assemblyName, componentName, PART_FILE_EXTENSION, partNameOf, readDocumentFile, sha256Hex, writeAssemblyFile } from '@3db/io';
+import { ASSEMBLY_FILE_EXTENSION, assemblyFileName, assemblyName, componentName, PART_FILE_EXTENSION, readDocumentFile, sha256Hex, stepStructure, writeAssemblyFile } from '@3db/io';
 import { t } from '@3db/i18n';
 import type { AssemblyResult } from '@3db/regen';
 import type { AssemblyStepRequest, KernelApi, PartBuildPayload, PartStage } from '../worker/protocol';
@@ -529,32 +529,14 @@ export class AssemblyStore {
    */
   stepRequest(): AssemblyStepRequest {
     const doc = this.history.doc;
-    if (doc.components.length === 0) throw new Error('組合件沒有零組件');
+    if (doc.components.every((c) => c.suppressed)) throw new Error('組合件沒有零組件');
     if (this.solving || this.solveAgain) throw new Error('結合正在求解，請稍後再輸出');
-    const parts: AssemblyStepRequest['parts'] = [];
-    const partOf = new Map<Id, number>();
-    const unreadable: string[] = [];
-    const seen = new Set<Id>();
-    for (const c of doc.components) {
-      if (c.suppressed || seen.has(c.file)) continue; // left out of the assembly, and so of the file (C15.5)
-      seen.add(c.file);
-      const file = doc.files.find((f) => f.id === c.file);
-      const status = file && this.state.files.get(joinPath(this.folder, file.path));
-      if (!file || status?.status !== 'ok') {
-        const why = status?.status === 'missing' || status?.status === 'error' ? status.message : '尚未讀取';
-        unreadable.push(`${file?.path ?? c.file}（${why}）`);
-        continue;
-      }
-      if (status.assembly) throw new Error(t('subassembly.stepNotYet'));
-      partOf.set(c.file, parts.length);
-      parts.push({ key: status.key, name: partNameOf(file.path) });
-    }
-    if (unreadable.length) throw new Error(`有 ${unreadable.length} 個零件檔無法讀取：${unreadable.join('、')}`);
-    const instances = doc.components.filter((c) => !c.suppressed).map((c) => {
-      const file = doc.files.find((f) => f.id === c.file);
-      return { part: partOf.get(c.file)!, name: componentName(file?.path, c.instance), pose: this.poseOf(c.id)! };
+    const structure = stepStructure(doc, this.folder, this.trees(), (id) => this.poseOf(id), this.state.solution?.inner, (path) => {
+      const status = this.state.files.get(path);
+      return status?.status === 'missing' || status?.status === 'error' ? status.message : '尚未讀取';
     });
-    return { name: this.name(), parts, instances };
+    if (structure.unreadable.length) throw new Error(`有 ${structure.unreadable.length} 個零件檔無法讀取：${structure.unreadable.map((u) => `${u.path}（${u.why}）`).join('、')}`);
+    return { name: this.name(), parts: structure.parts, subs: structure.subs, instances: structure.instances };
   }
 
   /** Whether a component is a sub-assembly (its file is an assembly that was read). */

@@ -3,6 +3,7 @@ import type { AssemblyDoc, Axis3, CoordSystem, Fingerprint, Id, PartDoc, PlaneFr
 import type { MassProps, MeshData } from '@3db/kernel';
 import type { AssemblyResult, AssemblySolveOptions, Converted, FeatureResult } from '@3db/regen';
 import type { MateGeometry } from '@3db/assembly';
+import type { StepInstance, StepSub } from '@3db/io';
 import type { EntityStatus, SketchStatus, SolvedGeometry, SolveOptions } from '@3db/sketch';
 
 /**
@@ -16,7 +17,9 @@ export type PartStage = 'reading' | 'building' | 'meshing';
 export interface AssemblyStepRequest {
   name: string;
   parts: { key: string; name: string }[];
-  instances: { part: number; name: string; pose: Pose }[];
+  /** Sub-assemblies (C15.4), each once, in the order a later one may use the earlier ones. */
+  subs: StepSub[];
+  instances: StepInstance[];
 }
 
 /** What the user chose for a part's file (F1.3, C3.4): the STEP schema, whether faces carry their colors, and a coordinate system the part is written in. */

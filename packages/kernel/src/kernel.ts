@@ -12,6 +12,7 @@ import {
   type ImportResult,
   type MassProps,
   type MeshData,
+  type StepComponent,
   type StepExportOptions,
   type MeshOptions,
   type OpResult,
@@ -1701,14 +1702,18 @@ export class Kernel {
   /**
    * STEP AP214 of an assembly (F1.2): one product per part (`parts`, the shape and its name), one
    * component per instance placing a part by its pose (`instances`: an index of `parts`, the
-   * instance's name, position and unit quaternion x y z w). One level; millimetres unless `unit` says.
+   * instance's name, position and unit quaternion x y z w); millimetres unless `unit` says.
    * A pose maps part coordinates to assembly coordinates, the same way `Component.placement` does.
+   *
+   * Sub-assemblies (C15.4): `subs` are assemblies of their own, each written once as a product and used by as many
+   * components as refer to it (an instance with `sub` instead of `part`). A sub-assembly may use the ones before it in the list.
    */
   exportAssemblyStep(
     name: string,
     parts: readonly { shape: ShapeId; name: string }[],
-    instances: readonly { part: number; name: string; position: Vec3; rotation: [number, number, number, number] }[],
+    instances: readonly StepComponent[],
     unit: 'MM' | 'INCH' = 'MM',
+    subs: readonly { name: string; instances: readonly StepComponent[] }[] = [],
   ): string {
     if (instances.length === 0) throw new KernelError(t('kernel.noComponents'));
     const oc = this.oc;
@@ -1726,8 +1731,9 @@ export class Kernel {
         label(l, p.name);
         return l;
       });
-      for (const inst of instances) {
-        const proto = prototypes[inst.part];
+      // `parent`: the label the component goes into; `before`: how many sub-assemblies it may use (all of them for the top level)
+      const place = (parent: typeof root, inst: StepComponent, subLabels: (typeof root)[], before: number) => {
+        const proto = inst.sub !== undefined ? (inst.sub >= 0 && inst.sub < before ? subLabels[inst.sub] : undefined) : prototypes[inst.part ?? -1];
         if (!proto) throw new KernelError(t('kernel.noPartForComponent', { name: inst.name }));
         // OCCT turns a quaternion that is not a unit one into a skewed matrix without a word.
         if (![...inst.position, ...inst.rotation].every(Number.isFinite) || Math.abs(Math.hypot(...inst.rotation) - 1) > 1e-9) {
@@ -1738,9 +1744,17 @@ export class Kernel {
         const [qx, qy, qz, qw] = inst.rotation;
         trsf.SetRotation(arena.own(new oc.gp_Quaternion(qx, qy, qz, qw)));
         trsf.SetTranslationPart(arena.own(new oc.gp_Vec(inst.position[0], inst.position[1], inst.position[2])));
-        const component = tool.AddComponent(root, proto, arena.own(new oc.TopLoc_Location(trsf)));
+        const component = tool.AddComponent(parent, proto, arena.own(new oc.TopLoc_Location(trsf)));
         label(component, inst.name);
-      }
+      };
+      const subLabels: (typeof root)[] = [];
+      subs.forEach((sub, i) => {
+        const l = tool.NewShape();
+        label(l, sub.name);
+        subLabels.push(l);
+        for (const inst of sub.instances) place(l, inst, subLabels, i);
+      });
+      for (const inst of instances) place(root, inst, subLabels, subLabels.length);
       tool.UpdateAssemblies();
       const w = arena.own(new oc.STEPCAFControl_Writer());
       w.SetNameMode(true);

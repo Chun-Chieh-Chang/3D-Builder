@@ -17,7 +17,6 @@ export const subassembly: Translation = {
   'subassembly.insideTip': 'A part inside the sub-assembly: it cannot be moved on its own here; open the sub-assembly to change it',
   'subassembly.notAssembly': '"{path}" is not an assembly',
   'subassembly.stillLoading': 'The sub-assembly is still loading, please wait',
-  'subassembly.stepNotYet': 'An assembly with sub-assemblies cannot be exported to STEP yet',
   'subassembly.nestedProblem': 'A file a sub-assembly uses cannot be used: "{path}" ({why}); open that sub-assembly to repair it',
   'subassembly.notLoaded': "{what}: the component's file is not loaded",
   'subassembly.pathOnPart': '{what}: this component is a part, not a sub-assembly, so there is no path to follow',

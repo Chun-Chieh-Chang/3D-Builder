@@ -143,6 +143,18 @@ export class KernelError extends Error {
   }
 }
 
+/**
+ * A component of an assembly STEP (F1.2): which part it places (`part`, an index of the parts given) or which sub-assembly
+ * (`sub`, an index of the sub-assemblies given), its name in the tree, and where it is: a position and a unit quaternion x y z w.
+ */
+export interface StepComponent {
+  part?: number;
+  sub?: number;
+  name: string;
+  position: Vec3;
+  rotation: [number, number, number, number];
+}
+
 /** What a STEP file of a part carries beyond its shape (F1.3): the schema, and a color for faces. */
 export interface StepExportOptions {
   /** AP214 (the default) or AP242. */
