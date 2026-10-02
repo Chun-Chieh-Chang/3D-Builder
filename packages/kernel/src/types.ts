@@ -143,6 +143,34 @@ export class KernelError extends Error {
   }
 }
 
+/** A component of an assembly read from STEP (F2.8): which product it is, and where it is in the product it belongs to (a rigid motion: row-major 3 × 3 and a translation, millimetres). */
+export interface StepAssemblyNode {
+  name: string | null;
+  /** Index of `StepAssemblyContents.prototypes`. */
+  prototype: number;
+  rotation: number[];
+  translation: Vec3;
+}
+
+/** A product of a STEP file: a part (a shape) or an assembly (components). Each is one entry however many components use it. */
+export interface StepAssemblyPrototype {
+  name: string | null;
+  /** Parts: the shape, which the caller releases (`Kernel.release`). Absent for an assembly. */
+  shape?: ShapeId;
+  /** Parts: "#rrggbb" or null for each face of `shape`, in the order of `Kernel.topology`. */
+  faceColors?: (string | null)[];
+  /** Parts: the color of the whole product, when it has one and not every face does. */
+  color?: string | null;
+  /** Assemblies: the components. */
+  children?: StepAssemblyNode[];
+}
+
+/** What an assembly STEP holds (F2.8): the products, and which one is the top. */
+export interface StepAssemblyContents {
+  prototypes: StepAssemblyPrototype[];
+  root: number;
+}
+
 /**
  * A component of an assembly STEP (F1.2): which part it places (`part`, an index of the parts given) or which sub-assembly
  * (`sub`, an index of the sub-assemblies given), its name in the tree, and where it is: a position and a unit quaternion x y z w.

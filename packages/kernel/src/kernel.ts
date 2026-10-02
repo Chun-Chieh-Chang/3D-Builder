@@ -12,6 +12,8 @@ import {
   type ImportResult,
   type MassProps,
   type MeshData,
+  type StepAssemblyContents,
+  type StepAssemblyPrototype,
   type StepComponent,
   type StepExportOptions,
   type MeshOptions,
@@ -1767,6 +1769,134 @@ export class Kernel {
       }
       if (!ok) throw new KernelError(t('kernel.stepFailed'));
       return oc.FS.readFile(path, { encoding: 'utf8' }) as string;
+    } finally {
+      doc.delete();
+      try {
+        oc.FS.unlink(path);
+      } catch {
+        // not written
+      }
+      arena.dispose();
+    }
+  }
+
+  /**
+   * The structure of an assembly STEP (F2.8) through XCAF: every product once (a part with its shape and the colors of its faces, an
+   * assembly with its components), each component with its name and its rigid motion in the assembly it is in. A file whose top is a
+   * part has one product. A motion that is not rigid (a mirror, a scale) is refused: it cannot be a component's pose.
+   * The shapes of the parts are the caller's to release.
+   */
+  readAssemblyStep(data: Uint8Array | string): StepAssemblyContents {
+    const oc = this.oc;
+    const arena = new Arena();
+    const path = `/read-assembly-${++this.fileSeq}.step`;
+    const doc = new oc.TDocStd_Document(arena.own(new oc.TCollection_ExtendedString('MDTV-XCAF', false)));
+    const made: ShapeId[] = [];
+    try {
+      oc.FS.writeFile(path, data);
+      const reader = arena.own(new oc.STEPCAFControl_Reader());
+      reader.SetNameMode(true);
+      reader.SetColorMode(true);
+      let status: string;
+      try {
+        status = String(reader.ReadFile(path));
+        if (status !== 'IFSelect_RetDone') throw new KernelError(t('stepasm.unreadable'));
+        if (!reader.Transfer(doc, arena.own(new oc.Message_ProgressRange()))) throw new KernelError(t('stepasm.unreadable'));
+      } catch (e) {
+        if (e instanceof KernelError) throw e;
+        throw new KernelError(t('kernel.stepFailedWhy', { why: this.errorText(e) }));
+      }
+      const tool = oc.XCAFDoc_DocumentTool.ShapeTool(doc.Main());
+      const colorTool = oc.XCAFDoc_DocumentTool.ColorTool(doc.Main());
+      const nameOf = (label: InstanceType<typeof oc.TDF_Label>): string | null => {
+        const found = label.FindAttribute(oc.TDataStd_Name.GetID());
+        if (!found.returnValue) return null;
+        const attribute = found.anAttribute as unknown as { Get(): never };
+        return new oc.TCollection_AsciiString(attribute.Get(), '\0').ToCString() || null;
+      };
+      /** "#rrggbb" of a color XCAF gives in linear light: the file's numbers are sRGB. */
+      const hexOf = (c: InstanceType<typeof oc.Quantity_Color>): string => {
+        const srgb = (v: number) => (v <= 0.0031308 ? 12.92 * v : 1.055 * Math.pow(v, 1 / 2.4) - 0.055);
+        return '#' + [c.Red(), c.Green(), c.Blue()].map((v) => Math.round(Math.min(1, Math.max(0, srgb(v))) * 255).toString(16).padStart(2, '0')).join('');
+      };
+      const colorOf = (shape: TopoDS_Shape): string | null => {
+        for (const type of [oc.XCAFDoc_ColorType.XCAFDoc_ColorSurf, oc.XCAFDoc_ColorType.XCAFDoc_ColorGen]) {
+          const c = arena.own(new oc.Quantity_Color());
+          if (colorTool.GetColor(shape, type, c)) return hexOf(c);
+        }
+        return null;
+      };
+
+      const labels: InstanceType<typeof oc.TDF_Label>[] = [];
+      const prototypes: StepAssemblyPrototype[] = [];
+      const protoOf = (label: InstanceType<typeof oc.TDF_Label>): number => {
+        const known = labels.findIndex((l) => l.IsEqual(label));
+        if (known >= 0) return known;
+        const index = labels.length;
+        labels.push(label);
+        const proto: StepAssemblyPrototype = { name: nameOf(label) };
+        prototypes.push(proto); // before its components: a loop in a broken file ends at a product already known
+        if (oc.XCAFDoc_ShapeTool.IsAssembly(label)) {
+          const components = new oc.NCollection_Sequence_TDF_Label();
+          oc.XCAFDoc_ShapeTool.GetComponents(label, components, false);
+          proto.children = [];
+          for (let i = 1; i <= components.Length(); i++) {
+            const component = components.Value(i);
+            const referred = new oc.TDF_Label();
+            oc.XCAFDoc_ShapeTool.GetReferredShape(component, referred);
+            const trsf = oc.XCAFDoc_ShapeTool.GetLocation(component).Transformation();
+            const nodeName = nameOf(component) ?? nameOf(referred) ?? '';
+            if (trsf.IsNegative() || Math.abs(trsf.ScaleFactor() - 1) > 1e-9) throw new KernelError(t('stepasm.notRigid', { name: nodeName }));
+            const rotation: number[] = [];
+            for (let r = 1; r <= 3; r++) for (let c = 1; c <= 3; c++) rotation.push(trsf.Value(r, c));
+            const tr = trsf.TranslationPart();
+            proto.children.push({ name: nameOf(component), prototype: protoOf(referred), rotation, translation: [tr.X(), tr.Y(), tr.Z()] });
+          }
+        } else {
+          const shape = oc.XCAFDoc_ShapeTool.GetShape(label);
+          const id = this.put(shape);
+          made.push(id);
+          proto.shape = id;
+          const faces = ShapeIndex.of(oc, shape, T.FACE, arena);
+          const colors: (string | null)[] = faces.keys.map(() => null);
+          const subs = new oc.NCollection_Sequence_TDF_Label();
+          oc.XCAFDoc_ShapeTool.GetSubShapes(label, subs);
+          for (let i = 1; i <= subs.Length(); i++) {
+            const sub = oc.XCAFDoc_ShapeTool.GetShape(subs.Value(i));
+            const hex = colorOf(sub);
+            if (!hex) continue;
+            // a colored face, or a shell or solid whose faces all take the color
+            const inside = ShapeIndex.of(oc, sub, T.FACE, arena);
+            for (const f of inside.keys) {
+              const at = faces.indexOf(f);
+              if (at >= 0) colors[at] = hex;
+            }
+            inside.dispose();
+          }
+          faces.dispose();
+          if (colors.some(Boolean)) proto.faceColors = colors;
+          const whole = colorOf(shape);
+          if (whole) proto.color = whole;
+        }
+        return index;
+      };
+
+      const roots = new oc.NCollection_Sequence_TDF_Label();
+      tool.GetFreeShapes(roots);
+      if (roots.Length() === 0) throw new KernelError(t('stepasm.noShapes'));
+      let root: number;
+      if (roots.Length() === 1) root = protoOf(roots.Value(1));
+      else {
+        // several free shapes: they are the components of an assembly the file does not name
+        const children = Array.from({ length: roots.Length() }, (_, i) => ({ name: nameOf(roots.Value(i + 1)), prototype: protoOf(roots.Value(i + 1)), rotation: [1, 0, 0, 0, 1, 0, 0, 0, 1], translation: [0, 0, 0] as Vec3 }));
+        prototypes.push({ name: null, children });
+        root = prototypes.length - 1;
+      }
+      made.length = 0; // handed over
+      return { prototypes, root };
+    } catch (e) {
+      for (const id of made) this.release(id);
+      throw e;
     } finally {
       doc.delete();
       try {
