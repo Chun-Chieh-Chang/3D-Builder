@@ -106,6 +106,8 @@ export interface PartBuildPayload {
   vertexFingerprints: Fingerprint[];
   /** The part's reference planes (its default planes are the same in every part). */
   planes: { id: Id; name: string; frame: PlaneFrame }[];
+  /** The part file's properties (B8.3): the parts list reads the vendor and the part number from them (C15.16). */
+  properties: Record<string, string>;
   ms: number;
 }
 

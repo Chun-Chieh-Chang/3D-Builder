@@ -18,6 +18,7 @@ import {
   isDatumPlaneName,
   joinPath,
   ASSEMBLY_AXES,
+  buildBom,
   leafAt,
   leavesOf,
   mirrorKey,
@@ -32,6 +33,7 @@ import {
   usedFiles,
   type AssemblyCommand,
   type AssemblyDoc,
+  type BomRow,
   type Component,
   type ComponentPattern,
   type ComponentState,
@@ -469,14 +471,14 @@ export class AssemblyStore {
   private treeOf(path: string, above: readonly string[] = []): SourceTree | null {
     const status = this.state.files.get(path);
     if (status?.status !== 'ok' || above.includes(path)) return null;
-    if (!status.assembly) return { kind: 'part', key: status.key };
+    if (!status.assembly) return { kind: 'part', key: status.key, path };
     const children: Record<Id, SourceTree> = {};
     for (const c of status.assembly.components) {
       const file = status.assembly.files.find((f) => f.id === c.file);
       const child = file && this.treeOf(joinPath(dirName(path), file.path), [...above, path]);
       if (child) children[c.id] = child;
     }
-    return { kind: 'assembly', doc: status.assembly, children };
+    return { kind: 'assembly', doc: status.assembly, children, path };
   }
 
   /** What each component of the assembly is (components whose file is not read yet are left out). */
@@ -515,6 +517,11 @@ export class AssemblyStore {
     this.leafCache = { doc, files, solution, drag, pattern, leaves, problems: made.problems };
     this.ensureMirrors(leaves);
     return leaves;
+  }
+
+  /** The parts list (C15.16) of the assembly as it is now: flat and indented. Derived from the document and the parts read, never stored. */
+  bom(): { flat: BomRow[]; indented: BomRow[] } {
+    return buildBom({ doc: this.history.doc, trees: this.trees(), propsOf: (key) => this.state.builds.get(key)?.properties, problems: this.patternProblems() });
   }
 
   /** Why a pattern has no instances (its axis is gone, its definition does not read); empty when all is well. Derived. */

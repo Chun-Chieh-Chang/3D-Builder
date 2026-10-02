@@ -6,4 +6,5 @@ export * from './partFile';
 export * from './assemblyFile';
 export * from './stepPart';
 export * from './stepAssembly';
+export * from './bomCsv';
 export * from './stl';

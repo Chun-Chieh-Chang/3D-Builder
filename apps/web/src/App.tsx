@@ -12,6 +12,7 @@ import { InsertComponentPanel } from './components/InsertComponentPanel';
 import { MatePanel } from './components/MatePanel';
 import { MovePanel } from './components/MovePanel';
 import { PatternPanel } from './components/PatternPanel';
+import { BomDialog } from './components/BomDialog';
 import { PropertyManager } from './components/PropertyManager';
 import { StatusBar } from './components/StatusBar';
 import { Viewport } from './components/Viewport';
@@ -53,6 +54,7 @@ export function App() {
       <WhatsWrongDialog />
       <EquationsDialog />
       <PropertiesDialog />
+      <BomDialog />
       <AppearanceDialog />
       <StepOptionsDialog />
       <TemplateDialog />

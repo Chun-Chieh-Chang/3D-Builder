@@ -9,7 +9,10 @@ import type { AssemblyDoc, PatternAxis, Pose } from './schema';
  * What a component is, as the worker is told: a rebuilt part by its content key, or a sub-assembly: its document and
  * what each of its components is in turn. A component whose file is not read yet (or not there) has no entry.
  */
-export type SourceTree = { kind: 'part'; key: string } | { kind: 'assembly'; doc: AssemblyDoc; children: Record<Id, SourceTree> };
+export type SourceTree =
+  /** path: the file in the project folder (the parts list names parts by it); not needed to solve or draw. */
+  | { kind: 'part'; key: string; path?: string }
+  | { kind: 'assembly'; doc: AssemblyDoc; children: Record<Id, SourceTree>; path?: string };
 
 /** Where the components of a sub-assembly are inside it (its own coordinates), and the same for the sub-assemblies in it. */
 export interface InnerPoses {
@@ -26,6 +29,8 @@ export interface Leaf {
   /** The components to go through inside it, outermost first: a mate element's `path`. Empty for a part of the assembly itself. */
   path: Id[];
   key: string;
+  /** The part's file in the project folder (see SourceTree), when known. */
+  file?: string;
   /** Where the part is in the assembly's coordinates. */
   pose: Pose;
   /** Hidden (C15.5): its component, or a sub-assembly it is in, is hidden. It is still solved; it is not drawn or picked. */
@@ -47,7 +52,7 @@ export function leavesOf(doc: AssemblyDoc, trees: Readonly<Record<Id, SourceTree
   const out: Leaf[] = [];
   const walk = (tree: SourceTree, top: Id, path: Id[], pose: Pose, solved: InnerPoses | undefined, hidden: boolean, transparent: boolean) => {
     if (tree.kind === 'part') {
-      out.push({ id: [top, ...path].join('/'), top, path, key: tree.key, pose, hidden, transparent });
+      out.push({ id: [top, ...path].join('/'), top, path, key: tree.key, ...(tree.path ? { file: tree.path } : {}), pose, hidden, transparent });
       return;
     }
     for (const c of tree.doc.components) {

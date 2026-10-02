@@ -12,6 +12,7 @@ export * from './pose';
 export * from './assembly';
 export * from './assemblyTree';
 export * from './componentPatterns';
+export * from './bom';
 export * from './history';
 export * from './serialize';
 export * from './templates';

@@ -20,6 +20,7 @@ import { ui } from './ui';
 import { subassembly } from './subassembly';
 import { patterns } from './patterns';
 import { stepasm } from './stepasm';
+import { bom } from './bom';
 
 /** The English catalog (D9.1). Same keys as the source catalog (`zh-TW`); a key left out shows in `zh-TW`. */
-export const en: Translation = { ...ui, ...model, ...expr, ...equations, ...edit, ...sketch, ...features, ...datums, ...output, ...app, ...viewport, ...tree, ...pmpanels, ...dialogs, ...storemsg, ...sketchtools, ...core, ...lowlevel, ...subassembly, ...patterns, ...stepasm };
+export const en: Translation = { ...ui, ...model, ...expr, ...equations, ...edit, ...sketch, ...features, ...datums, ...output, ...app, ...viewport, ...tree, ...pmpanels, ...dialogs, ...storemsg, ...sketchtools, ...core, ...lowlevel, ...subassembly, ...patterns, ...stepasm, ...bom };
