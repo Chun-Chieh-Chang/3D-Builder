@@ -145,6 +145,17 @@ describe('an assembly of part files (B9.4)', () => {
     expect(parts.map((p) => p.volume)).toEqual([expect.closeTo(PLATE, 6), expect.closeTo(PIN, 6), expect.closeTo(PIN, 6)]);
   });
 
+  it('opens an assembly saved by version 3 (3b-2) with its sub-assembly, component path and flag, and no patterns', async () => {
+    const file = await readDocumentFile(new Uint8Array(readFileSync(new URL('../fixtures/old-versions/v3-assembly.3dba', import.meta.url))));
+    expect(file.kind).toBe('assembly');
+    if (file.kind !== 'assembly') return;
+    expect(file.doc.schemaVersion).toBe(ASSEMBLY_SCHEMA_VERSION);
+    expect(file.doc.files.map((f) => f.path)).toEqual(['組件/定位組.3dba']);
+    expect(file.doc.mates[0]!.a.path).toEqual(['p1']);
+    expect(file.doc.components.map((c) => [c.id, c.transparent])).toEqual([['comp1', undefined], ['comp2', true]]);
+    expect(file.doc).not.toHaveProperty('patterns');
+  });
+
   it('places each component where its pose puts it (A3.1)', async () => {
     type Placed = Awaited<ReturnType<typeof components>>[number];
     const [plate, lying, standing] = (await components(jig(), '')) as [Placed, Placed, Placed];

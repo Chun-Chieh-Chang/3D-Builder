@@ -28,12 +28,12 @@ function parent(): AssemblyDoc {
 const mate = (a: Mate['a'], b: Mate['b']): Mate => ({ id: 'mate1', name: '重合1', type: 'coincident', a, b, suppressed: false });
 
 describe('assembly Schema 3: sub-assemblies and component flags (C15.4, C15.5)', () => {
-  it('is version 3 and reads a version-2 text unchanged', () => {
-    expect(ASSEMBLY_SCHEMA_VERSION).toBe(3);
+  it('reads a version-2 text unchanged', () => {
+    expect(ASSEMBLY_SCHEMA_VERSION).toBeGreaterThanOrEqual(3);
     const text = serializeAssembly(parent());
     const v2 = JSON.stringify({ ...JSON.parse(text), schemaVersion: 2 });
     const doc = parseAssembly(v2);
-    expect(doc.schemaVersion).toBe(3);
+    expect(doc.schemaVersion).toBe(ASSEMBLY_SCHEMA_VERSION);
     expect({ ...doc, schemaVersion: 2 }).toEqual({ ...parent(), schemaVersion: 2 });
   });
 

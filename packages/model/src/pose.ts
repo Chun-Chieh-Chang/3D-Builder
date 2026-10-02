@@ -50,6 +50,34 @@ export function composePose(outer: Pose, inner: Pose): Pose {
   return { position: transformPoint(outer, inner.position), rotation: composeRotations(outer.rotation, inner.rotation) };
 }
 
+/** The rotation of a pose as a row-major 3 × 3 matrix. */
+export function rotationRows([x, y, z, w]: Quat): number[] {
+  return [1 - 2 * (y * y + z * z), 2 * (x * y - z * w), 2 * (x * z + y * w), 2 * (x * y + z * w), 1 - 2 * (x * x + z * z), 2 * (y * z - x * w), 2 * (x * z - y * w), 2 * (y * z + x * w), 1 - 2 * (x * x + y * y)];
+}
+
+/** The unit quaternion (w ≥ 0) of a row-major 3 × 3 rotation matrix (determinant +1). */
+export function quatFromRows(m: readonly number[]): Quat {
+  const [m00, m01, m02, m10, m11, m12, m20, m21, m22] = m as [number, number, number, number, number, number, number, number, number];
+  const trace = m00 + m11 + m22;
+  let q: Quat;
+  if (trace > 0) {
+    const s = Math.sqrt(trace + 1) * 2;
+    q = [(m21 - m12) / s, (m02 - m20) / s, (m10 - m01) / s, s / 4];
+  } else if (m00 > m11 && m00 > m22) {
+    const s = Math.sqrt(1 + m00 - m11 - m22) * 2;
+    q = [s / 4, (m01 + m10) / s, (m02 + m20) / s, (m21 - m12) / s];
+  } else if (m11 > m22) {
+    const s = Math.sqrt(1 + m11 - m00 - m22) * 2;
+    q = [(m01 + m10) / s, s / 4, (m12 + m21) / s, (m02 - m20) / s];
+  } else {
+    const s = Math.sqrt(1 + m22 - m00 - m11) * 2;
+    q = [(m02 + m20) / s, (m12 + m21) / s, s / 4, (m10 - m01) / s];
+  }
+  const n = Math.hypot(...q);
+  const sign = q[3] < 0 ? -1 : 1;
+  return [(q[0] * sign) / n, (q[1] * sign) / n, (q[2] * sign) / n, (q[3] * sign) / n];
+}
+
 /** `rotation`, then `turn` (both about the assembly's axes), as one unit quaternion. */
 export function composeRotations(turn: Quat, rotation: Quat): Quat {
   const q = mul(turn, rotation);

@@ -573,7 +573,7 @@ export function findFeature(doc: PartDoc, id: Id): Feature | undefined {
 // ---------------------------------------------------------------- assembly (C15, A3.1, B9.4)
 
 /** Assemblies have their own version line: a part and an assembly change for different reasons. */
-export const ASSEMBLY_SCHEMA_VERSION = 3;
+export const ASSEMBLY_SCHEMA_VERSION = 4;
 
 /** Unit quaternion [x, y, z, w]. */
 export type Quat = [number, number, number, number];
@@ -661,6 +661,41 @@ export interface Mate {
   suppressed: boolean;
 }
 
+/** A direction or axis of a component pattern (C15.13): one of the assembly's axes, or an element of a component (a straight edge, a cylinder's axis, a plane's normal). */
+export type PatternAxis = { kind: 'axis'; axis: 'x' | 'y' | 'z' } | { kind: 'ref'; ref: MateRef };
+
+/** The planes of the assembly a component can be mirrored about (C15.13). */
+export type MirrorPlane = 'plane:front' | 'plane:top' | 'plane:right';
+
+/**
+ * A pattern of one component (C15.13): its definition only. The instances are derived — where they are comes from the seed's pose
+ * and this definition, so they follow the seed and are never stored or mated. `linear`: `count1` instances (the seed included)
+ * `spacing1` apart along `axis1`, and optionally `count2` rows `spacing2` apart along `axis2`. `circular`: `count1` instances
+ * turned about `axis1`, `spacing1` degrees apart (or, with `equal`, spread over `spacing1` degrees). `mirror`: one instance, the seed
+ * reflected in `plane` (a mirrored copy of its part, derived from it).
+ */
+export interface ComponentPattern {
+  id: Id;
+  /** 「線性複製排列1」 … */
+  name: string;
+  kind: 'linear' | 'circular' | 'mirror';
+  seed: Id;
+  axis1?: PatternAxis;
+  count1?: number;
+  /** Distance (length) for linear, angle for circular. */
+  spacing1?: Expr;
+  flip1?: boolean;
+  axis2?: PatternAxis;
+  count2?: number;
+  spacing2?: Expr;
+  flip2?: boolean;
+  /** Circular: `spacing1` is the whole angle the instances are spread over. */
+  equal?: boolean;
+  plane?: MirrorPlane;
+  /** Instances left out, by label: "2", "3", or "2x1" in a grid (the seed is "1" / "1x1" and cannot be left out). */
+  skip?: string[];
+}
+
 export interface AssemblyDoc {
   kind: 'assembly';
   schemaVersion: number;
@@ -670,6 +705,8 @@ export interface AssemblyDoc {
   /** The mates folder, in FeatureManager order: the order conflicts are judged in (A3.4). */
   mates: Mate[];
   properties: Record<string, string>;
+  /** Patterns and mirrors of components, in FeatureManager order (C15.13). Absent: none. */
+  patterns?: ComponentPattern[];
   /** As in parts (B1.3): ids are never reused. */
   idCounters: Record<string, number>;
 }

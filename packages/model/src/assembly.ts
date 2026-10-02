@@ -5,7 +5,8 @@ import { CommandError } from './commands';
 import { evalAngle, evalLength, ExprError } from './expr';
 import { isFilePath, joinPath, relativePath } from './paths';
 import { isValidPose } from './pose';
-import { ASSEMBLY_SCHEMA_VERSION, type AssemblyDoc, type Component, type FileRef, type Mate, type MateType, type Pose } from './schema';
+import { componentPatternProblem } from './componentPatterns';
+import { ASSEMBLY_SCHEMA_VERSION, type AssemblyDoc, type Component, type ComponentPattern, type FileRef, type Mate, type MateType, type Pose } from './schema';
 
 /**
  * Assembly commands (B7.1): the only way to change an assembly document. As with parts, new objects
@@ -36,7 +37,11 @@ export type AssemblyCommand =
   /** Replaces a mate's definition, e.g. from its PropertyManager (C15.12). */
   | { type: 'setMate'; mate: Mate }
   | { type: 'deleteMates'; mateIds: Id[] }
-  | { type: 'setMatesSuppressed'; mateIds: Id[]; value: boolean };
+  | { type: 'setMatesSuppressed'; mateIds: Id[]; value: boolean }
+  /** Adds a pattern or mirror of a component (C15.13): the definition only, the instances are derived. */
+  | { type: 'insertPattern'; pattern: ComponentPattern }
+  | { type: 'setPattern'; pattern: ComponentPattern }
+  | { type: 'deletePatterns'; patternIds: Id[] };
 
 /** The flags of a component (C15.5). */
 export type ComponentState = 'hidden' | 'suppressed' | 'transparent';
@@ -46,7 +51,7 @@ export function createEmptyAssembly(): AssemblyDoc {
 }
 
 export function assemblyIdsInUse(doc: AssemblyDoc): Id[] {
-  return [...doc.files.map((f) => f.id), ...doc.components.map((c) => c.id), ...doc.mates.map((m) => m.id)];
+  return [...doc.files.map((f) => f.id), ...doc.components.map((c) => c.id), ...doc.mates.map((m) => m.id), ...(doc.patterns ?? []).map((p) => p.id)];
 }
 
 const MATE_TYPES: MateType[] = ['coincident', 'parallel', 'perpendicular', 'tangent', 'concentric', 'lock', 'distance', 'angle'];
@@ -85,6 +90,16 @@ function checkMate(doc: AssemblyDoc, m: Mate): void {
   if (m.type === 'lock' ? !m.relative || !isValidPose(m.relative) : m.relative !== undefined) throw new CommandError('鎖住結合需要有效的相對位置');
 }
 
+/** What a pattern needs to be well formed: a name, a seed that is there, axes that are elements of components that are there, numbers that read. Whether its axes can be found is for whoever sees the geometry. */
+function checkPattern(doc: AssemblyDoc, p: ComponentPattern): void {
+  if (!p.name.trim()) throw new CommandError(t('pattern.nameEmpty'));
+  if (!doc.components.some((c) => c.id === p.seed)) throw new CommandError(t('pattern.noSeed', { id: p.seed }));
+  for (const a of [p.axis1, p.axis2]) {
+    if (a?.kind === 'ref' && (a.ref.component === null || !doc.components.some((c) => c.id === a.ref.component))) throw new CommandError(t('pattern.noSeed', { id: String(a.ref.component) }));
+  }
+  const problem = componentPatternProblem(p);
+  if (problem) throw new CommandError(problem);
+}
 function mateOf(draft: Draft<AssemblyDoc>, id: Id): Draft<Mate> {
   const m = draft.mates.find((x) => x.id === id);
   if (!m) throw new CommandError(`找不到結合：${id}`);
@@ -190,6 +205,13 @@ export function mutateAssembly(draft: Draft<AssemblyDoc>, cmd: AssemblyCommand):
       countersFor([...ids, ...draft.files.map((f) => f.id), ...draft.mates.map((m) => m.id)], draft.idCounters); // deleted ids are never handed out again
       draft.components = draft.components.filter((c) => !ids.has(c.id));
       draft.mates = draft.mates.filter((m) => !ids.has(m.a.component ?? '') && !ids.has(m.b.component ?? ''));
+      if (draft.patterns) {
+        // a pattern of a deleted component goes with it, and so does one whose axis is an element of it (its instances would have no axis)
+        const gone = draft.patterns.filter((p) => ids.has(p.seed) || [p.axis1, p.axis2].some((a) => a?.kind === 'ref' && ids.has(a.ref.component ?? '')));
+        countersFor(gone.map((p) => p.id), draft.idCounters);
+        draft.patterns = draft.patterns.filter((p) => !gone.includes(p));
+        if (draft.patterns.length === 0) delete draft.patterns;
+      }
       const used = new Set(draft.components.map((c) => c.file));
       draft.files = draft.files.filter((f) => used.has(f.id));
       return;
@@ -215,7 +237,29 @@ export function mutateAssembly(draft: Draft<AssemblyDoc>, cmd: AssemblyCommand):
       draft.mates = draft.mates.filter((m) => !ids.has(m.id));
       return;
     }
-    case 'setMatesSuppressed': {
+    case 'insertPattern': {
+      const p = cmd.pattern;
+      if (!p.id || assemblyIdsInUse(draft as AssemblyDoc).includes(p.id)) throw new CommandError(t('pattern.idInUse', { id: p.id }));
+      checkPattern(draft as AssemblyDoc, p);
+      (draft.patterns ??= []).push(p as Draft<ComponentPattern>);
+      countersFor([p.id], draft.idCounters);
+      return;
+    }
+    case 'setPattern': {
+      const at = draft.patterns?.findIndex((x) => x.id === cmd.pattern.id) ?? -1;
+      if (at < 0) throw new CommandError(t('pattern.notFound', { id: cmd.pattern.id }));
+      checkPattern(draft as AssemblyDoc, cmd.pattern);
+      draft.patterns![at] = cmd.pattern as Draft<ComponentPattern>;
+      return;
+    }
+    case 'deletePatterns': {
+      const ids = new Set(cmd.patternIds);
+      for (const id of ids) if (!draft.patterns?.some((p) => p.id === id)) throw new CommandError(t('pattern.notFound', { id }));
+      countersFor(ids, draft.idCounters);
+      draft.patterns = draft.patterns!.filter((p) => !ids.has(p.id));
+      if (draft.patterns.length === 0) delete draft.patterns;
+      return;
+    }    case 'setMatesSuppressed': {
       const targets = cmd.mateIds.map((id) => mateOf(draft, id));
       for (const m of targets) m.suppressed = cmd.value;
       return;

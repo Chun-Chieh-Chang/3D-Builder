@@ -26,3 +26,18 @@ it.skipIf(process.env.WRITE_FIXTURE !== '1')('writes the version-2 assembly samp
   mate(2, 'coincident', 'extrude1:cap:end', 'revolve1:side:sketch1.l4', 'antiAligned');
   writeFileSync(new URL('../../tests/fixtures/old-versions/v2-assembly.3dba', import.meta.url), await writeAssemblyFile(doc));
 });
+
+// Schema 3 sample (3b-1): a sub-assembly used twice, a mate with a component path, a flag on a component. Written by the Schema 4 code with schemaVersion set to 3:
+// Schema 4 only adds the optional `patterns`, so a Schema 3 file is exactly this text (it was not written by the Schema 3 code itself).
+it.skipIf(process.env.WRITE_FIXTURE_V3 !== '1')('writes the version-3 assembly sample', async () => {
+  const face = (name: string) => ({ kind: 'face' as const, name });
+  let doc = createEmptyAssembly();
+  doc = applyAssemblyCommand(doc, { type: 'insertComponent', file: { id: 'file1', path: '組件/定位組.3dba' }, component: { id: 'comp1', file: 'file1', instance: 1, fixed: true, placement: { position: [0, 0, 0], rotation: [0, 0, 0, 1] } } });
+  doc = applyAssemblyCommand(doc, { type: 'insertComponent', component: { id: 'comp2', file: 'file1', instance: 2, fixed: false, placement: { position: [126, 4, -3], rotation: [0, 0, 0, 1] } } });
+  doc = applyAssemblyCommand(doc, {
+    type: 'insertMate',
+    mate: { id: 'mate1', name: '重合1', type: 'coincident', a: { component: 'comp1', path: ['p1'], ref: face('extrude1:cap:end') }, b: { component: 'comp2', path: ['p1'], ref: face('extrude1:cap:end') }, align: 'aligned', suppressed: false },
+  });
+  doc = applyAssemblyCommand(doc, { type: 'setComponentState', componentIds: ['comp2'], state: 'transparent', value: true });
+  writeFileSync(new URL('../../tests/fixtures/old-versions/v3-assembly.3dba', import.meta.url), await writeAssemblyFile({ ...doc, schemaVersion: 3 }));
+});
