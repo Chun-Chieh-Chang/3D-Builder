@@ -36,7 +36,7 @@ import {
   type Ref,
   type SketchFeature,
 } from '@3db/model';
-import { assemblyName, partFileName, partName, readDocumentFile, sha256Hex, imageFileName, stepFileName, stlFileName, writePartFile } from '@3db/io';
+import { ASSEMBLY_FILE_EXTENSION, assemblyName, PART_FILE_EXTENSION, partFileName, partName, readDocumentFile, sha256Hex, imageFileName, stepAssemblyFiles, stepFileName, stlFileName, writePartFile } from '@3db/io';
 import { orderProblem, suppressionTargets, type SuppressAction } from '@3db/regen/dag';
 import { contourChoices, findProfiles, type ContourChoice } from '@3db/sketch/profiles';
 import type { PickFilter, Viewer } from '@3db/render';
@@ -51,12 +51,14 @@ import {
   folderAccess,
   foldersUnsupported,
   isStepFile,
+  listFiles,
   pathIn,
   pickFileToOpen,
   pickProjectFolder,
   pickSaveTarget,
   pickStepFile,
   readBytes,
+  writeFilesInto,
   rememberedFolder,
   rememberFolder,
   writeFile,
@@ -82,7 +84,7 @@ export interface Notice {
  * File actions that replace the open document, and so first ask about unsaved changes. 「開啟零件」
  * switches from an assembly to one of its parts, 「返回組合件」 back (one document at a time).
  */
-export type PendingFileAction = 'new-part' | 'new-demo' | 'new-assembly' | 'open' | 'open-part' | 'return-assembly';
+export type PendingFileAction = 'new-part' | 'new-demo' | 'new-assembly' | 'open' | 'open-part' | 'return-assembly' | 'import-step-assembly';
 
 /** One document is open at a time (2026-09-28 decision): a part or an assembly. */
 export type DocumentKind = 'part' | 'assembly';
@@ -139,6 +141,8 @@ export interface UiState {
   projectName: string | null;
   /** Why the project folder is asked for: the dialog is open. */
   folderRequest: string | null;
+  /** The folder asked for will be written into (F2.8): it is picked with write access, and the remembered one is not offered. */
+  folderWrite: boolean;
   /** The project folder of an earlier session, offered in that dialog (B9.4). */
   rememberedProject: string | null;
   /** The assembly a part was opened from with 「開啟零件」: 「返回組合件」 reopens it. */
@@ -314,6 +318,7 @@ class AppStore {
       asm: null,
       projectName: null,
       folderRequest: null,
+      folderWrite: false,
       rememberedProject: null,
       returnTo: null,
       documentSerial: 0,
@@ -1342,6 +1347,7 @@ class AppStore {
     if (action === 'open') return this.openFile();
     if (action === 'open-part') return this.openPartFile();
     if (action === 'return-assembly') return this.reopenAssembly();
+    if (action === 'import-step-assembly') return this.importStepAssemblyNow();
     if (action === 'new-assembly') {
       this.showAssembly({ doc: createEmptyAssembly(), handle: null, fileName: null, folder: '', untitled: t('doc.untitledAssembly', { n: ++this.untitledAssemblies }), project: this.project });
       // SolidWorks starts a new assembly in 「開始組合件」: the first thing to do is to insert a part.
@@ -1385,6 +1391,40 @@ class AppStore {
     }
   }
 
+  /** 「輸入 STEP 組合件」 (F2.8): replaces the open document, so a modified one is asked about first. */
+  importStepAssembly(): void {
+    this.guard('import-step-assembly');
+  }
+
+  /**
+   * A STEP file's structure becomes a project (F2.8): the file is read in the worker, the user picks a folder to write into (with write access; it
+   * is a click of its own), the assembly, its sub-assemblies and one part file per part are written there without touching what is in it, and the
+   * assembly is opened. A file that is one part opens as that part. Nothing is written when the file cannot be used.
+   */
+  private async importStepAssemblyNow(): Promise<void> {
+    try {
+      const picked = await pickStepFile();
+      if (!picked) return;
+      this.notify(t('stepasm.reading', { name: picked.name }));
+      const plan = await this.api.readStepAssembly(picked.bytes);
+      const parts = plan.prototypes.filter((p) => p.part).length;
+      const folder = await this.askForFolder(t('stepasm.askFolder', { name: picked.name, parts, subs: plan.prototypes.filter((p) => p.children).length - 1 }), true);
+      if (!folder) return;
+      const taken = (await listFiles(folder, [PART_FILE_EXTENSION, ASSEMBLY_FILE_EXTENSION])).files;
+      const out = await stepAssemblyFiles(plan, picked.name.replace(/\.(step|stp)$/i, ''), taken);
+      await writeFilesInto(folder, out.files);
+      this.useProject(folder);
+      const handle = await fileIn(folder, out.main);
+      const bytes = await readBytes(handle);
+      const file = await readDocumentFile(bytes);
+      if (file.kind === 'assembly') await this.openAssembly({ name: handle.name, bytes, handle }, file.doc);
+      else this.load(file.doc, file.format === '3dbx' ? handle : null, handle.name, file.blobs);
+      this.notify(t('stepasm.done', { name: picked.name, parts: out.parts, subs: out.subAssemblies, folder: folder.name }), out.warnings.length ? 'error' : 'info');
+    } catch (e) {
+      if (e instanceof DOMException && (e.name === 'SecurityError' || e.name === 'NotAllowedError')) return this.notify(t('file.again'));
+      this.notify(t('stepasm.failed', { why: e instanceof Error ? e.message : String(e) }), 'error');
+    }
+  }
   /**
    * The data goes to the worker before the command that uses it, so the first rebuild finds it. It is
    * kept in the session even if the feature is deleted later: undo can bring the feature back.
@@ -1617,18 +1657,18 @@ class AppStore {
   }
 
   /** Opens the project-folder dialog: the folder picker needs a click of its own, on the dialog's button. */
-  private askForFolder(reason: string): Promise<FileSystemDirectoryHandle | null> {
+  private askForFolder(reason: string, write = false): Promise<FileSystemDirectoryHandle | null> {
     this.folderAnswer?.(null);
     return new Promise((resolve) => {
       this.folderAnswer = resolve;
-      this.set({ folderRequest: reason });
+      this.set({ folderRequest: reason, folderWrite: write });
     });
   }
 
   /** 「選擇資料夾…」 in the project-folder dialog. */
   async chooseFolder(): Promise<void> {
     try {
-      const folder = await pickProjectFolder();
+      const folder = await pickProjectFolder(this.state.folderWrite ? 'readwrite' : 'read');
       if (folder) this.answerFolder(folder);
     } catch (e) {
       this.notify(t('folder.chooseFailed', { why: e instanceof Error ? e.message : String(e) }), 'error');
@@ -1642,7 +1682,7 @@ class AppStore {
   private answerFolder(folder: FileSystemDirectoryHandle | null): void {
     const answer = this.folderAnswer;
     this.folderAnswer = null;
-    this.set({ folderRequest: null });
+    this.set({ folderRequest: null, folderWrite: false });
     answer?.(folder);
   }
 

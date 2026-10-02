@@ -8,7 +8,7 @@ import { findProfiles, PlaneGcsSolver } from '@3db/sketch';
 import { COMPONENT_MESH, Kernel, type MassProps, type MeshData, type MeshOptions, type ShapeId } from '@3db/kernel';
 import { convertEdges, edgeMateGeometry, exportFaces, faceColors, intoFrame, faceEdges, faceMateGeometry, followReferences, ReferenceProblem, Regenerator, solveAssemblyTree, type AssemblyResult, type AssemblySolveOptions, type BodyInfo, type RebuildResult } from '@3db/regen';
 import { edgeFingerprint, faceFingerprint, vertexFingerprint } from '@3db/naming';
-import { binaryStl, exportAssemblyStep, exportPartStep, readComponentFile } from '@3db/io';
+import { binaryStl, exportAssemblyStep, exportPartStep, readComponentFile, stepAssemblyPlan, type StepAssemblyPlan } from '@3db/io';
 import { mergeMeshes } from './mergeMesh';
 import type { AssemblyStepRequest, ConvertPayload, PartExportOptions, ConvertRequest, KernelApi, PartBuildPayload, PartStage, RebuildPayload, RebuildRequest, SketchSolvePayload, SketchSolveRequest } from './protocol';
 
@@ -318,6 +318,11 @@ const api: KernelApi = {
       kernel.release(mirrored);
     }
   },
+  async readStepAssembly(bytes: Uint8Array): Promise<StepAssemblyPlan> {
+    await api.init();
+    return stepAssemblyPlan(kernel, bytes);
+  },
+
   async retainParts(keys: string[]): Promise<void> {
     const keep = new Set(keys);
     for (const [key, entry] of parts) {

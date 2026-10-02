@@ -85,11 +85,12 @@ export const stepAssemblyFolders = () => ({ parts: t('stepasm.folderParts'), sub
  * product used three times is `名稱<1>`, `名稱<2>`, `名稱<3>`. The first component of each assembly is fixed (C15.2); there are no mates, the
  * components are where the file puts them.
  */
-export async function stepAssemblyFiles(plan: StepAssemblyPlan, stem: string): Promise<StepAssemblyFiles> {
+export async function stepAssemblyFiles(plan: StepAssemblyPlan, stem: string, taken: Iterable<string> = []): Promise<StepAssemblyFiles> {
   const folders = stepAssemblyFolders();
   const files: StepAssemblyFiles['files'] = [];
   const warnings: string[] = [];
-  const used = new Set<string>();
+  // paths already in the folder are not written over: a name that is taken gets a number
+  const used = new Set<string>([...taken].map((p) => p.toLowerCase()));
   const unique = (folder: string, name: string, ext: string): string => {
     const base = safeFileName(name).trim() || 'x';
     let path = folder ? `${folder}/${base}${ext}` : `${base}${ext}`;

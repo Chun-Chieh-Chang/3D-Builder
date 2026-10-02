@@ -26,10 +26,11 @@ describe('rebuild speed', () => {
     }
     const doc = build(...features);
     expect(doc.features).toHaveLength(53);
-    const t0 = performance.now();
+    const t0 = process.cpuUsage();
     const r = new Regenerator(kernel, solver, new Map()).rebuild(doc);
-    const ms = performance.now() - t0;
+    const used = process.cpuUsage(t0);
+    const ms = (used.user + used.system) / 1000;
     expect(r.features.filter((f) => f.status !== 'ok')).toEqual([]);
-    expect(ms).toBeLessThan(3000);
+    expect(ms).toBeLessThan(2000);
   });
 });

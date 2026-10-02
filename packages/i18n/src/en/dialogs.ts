@@ -23,6 +23,7 @@ export const dialogs: Translation = {
   'unsaved.newPart': 'create a new part',
   'unsaved.openPart': 'open the part',
   'unsaved.returnAssembly': 'return to the assembly',
+  'unsaved.importStepAssembly': 'import a STEP assembly',
   'unsaved.openPartHint': 'One document at a time: if you do not save, "Return to Assembly" goes back to the assembly as last saved.',
   'unsaved.discard': 'Don\'t Save',
   'folder.title': 'Choose the Project Folder',

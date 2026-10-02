@@ -3,7 +3,7 @@ import type { AssemblyDoc, Axis3, CoordSystem, Fingerprint, Id, PartDoc, PlaneFr
 import type { MassProps, MeshData } from '@3db/kernel';
 import type { AssemblyResult, AssemblySolveOptions, Converted, FeatureResult } from '@3db/regen';
 import type { MateGeometry } from '@3db/assembly';
-import type { StepInstance, StepSub } from '@3db/io';
+import type { StepAssemblyPlan, StepInstance, StepSub } from '@3db/io';
 import type { EntityStatus, SketchStatus, SolvedGeometry, SolveOptions } from '@3db/sketch';
 
 /**
@@ -167,6 +167,8 @@ export interface KernelApi {
    * only the mesh is given, a derived copy has no elements to pick. Null when the part has no body or is not built.
    */
   buildMirrorPart(partKey: string): Promise<PartBuildPayload | null>;
+  /** The structure of an assembly STEP (F2.8): its products, and each part's shape written as a STEP file of its own. Refuses, saying why, what cannot be used. */
+  readStepAssembly(bytes: Uint8Array): Promise<StepAssemblyPlan>;
   /** Lets go of every rebuilt part file except these. */
   retainParts(keys: string[]): Promise<void>;
   /**

@@ -21,6 +21,7 @@ export const dialogs = {
   'unsaved.newPart': '建立新零件',
   'unsaved.openPart': '開啟零件',
   'unsaved.returnAssembly': '返回組合件',
+  'unsaved.importStepAssembly': '輸入 STEP 組合件',
   'unsaved.openPartHint': '一次開一份文件：不儲存的話，「返回組合件」會回到上次儲存的組合件。',
   'unsaved.discard': '不儲存',
   'folder.title': '選擇專案資料夾',

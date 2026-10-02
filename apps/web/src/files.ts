@@ -139,10 +139,10 @@ export async function pickAssemblySaveTarget(folder: FileSystemDirectoryHandle, 
 export const foldersUnsupported = () => t('files.foldersUnsupported');
 
 /** The project folder (B9.4): the folder picker; null when the user cancels. */
-export async function pickProjectFolder(): Promise<FileSystemDirectoryHandle | null> {
+export async function pickProjectFolder(mode: 'read' | 'readwrite' = 'read'): Promise<FileSystemDirectoryHandle | null> {
   if (!window.showDirectoryPicker) throw new Error(foldersUnsupported());
   try {
-    return await window.showDirectoryPicker({ id: 'project-folder', mode: 'read' });
+    return await window.showDirectoryPicker({ id: 'project-folder', mode });
   } catch (e) {
     if (cancelled(e)) return null;
     throw e;
@@ -286,6 +286,34 @@ export async function writeFile(handle: FileSystemFileHandle, bytes: Uint8Array)
   const stream = await handle.createWritable();
   await stream.write(bytes as Uint8Array<ArrayBuffer>);
   await stream.close();
+}
+
+/**
+ * Writes new files into a folder, folders as needed (F2.8): paths relative to it, "/" separated. Nothing that was there is touched: the caller
+ * has chosen names that are free. When one cannot be written, the ones this call made are taken away again, so no half of an import stays.
+ */
+export async function writeFilesInto(folder: FileSystemDirectoryHandle, files: readonly { path: string; bytes: Uint8Array }[]): Promise<void> {
+  const made: { dir: FileSystemDirectoryHandle; name: string }[] = [];
+  try {
+    for (const f of files) {
+      const parts = f.path.split('/');
+      let dir = folder;
+      for (const name of parts.slice(0, -1)) dir = await dir.getDirectoryHandle(name, { create: true });
+      const name = parts[parts.length - 1]!;
+      const handle = await dir.getFileHandle(name, { create: true });
+      made.push({ dir, name });
+      await writeFile(handle, f.bytes);
+    }
+  } catch (e) {
+    for (const m of made) {
+      try {
+        await m.dir.removeEntry(m.name);
+      } catch {
+        // could not be taken away either: the caller's message says what failed
+      }
+    }
+    throw e;
+  }
 }
 
 export function download(name: string, data: BlobPart, type: string): void {

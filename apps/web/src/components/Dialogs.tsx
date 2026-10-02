@@ -134,7 +134,7 @@ export function WhatsWrongDialog() {
 }
 
 /** 「要儲存變更嗎？」 before a new or opened part replaces a modified one (SolidWorks asks the same). */
-const PENDING_VERB = labelsOf({ open: 'unsaved.open', 'new-assembly': 'unsaved.newAssembly', 'new-part': 'unsaved.newPart', 'new-demo': 'unsaved.newPart', 'open-part': 'unsaved.openPart', 'return-assembly': 'unsaved.returnAssembly' });
+const PENDING_VERB = labelsOf({ open: 'unsaved.open', 'new-assembly': 'unsaved.newAssembly', 'new-part': 'unsaved.newPart', 'new-demo': 'unsaved.newPart', 'open-part': 'unsaved.openPart', 'return-assembly': 'unsaved.returnAssembly', 'import-step-assembly': 'unsaved.importStepAssembly' });
 
 export function UnsavedDialog() {
   const action = useStore((s) => s.unsaved);
@@ -167,7 +167,8 @@ export function UnsavedDialog() {
  */
 export function FolderDialog() {
   const reason = useStore((s) => s.folderRequest);
-  const remembered = useStore((s) => s.rememberedProject);
+  const write = useStore((s) => s.folderWrite);
+  const remembered = useStore((s) => (s.folderWrite ? null : s.rememberedProject)); // a folder written into is picked afresh, with write access
   const first = useRef<HTMLButtonElement>(null);
   useEffect(() => first.current?.focus(), [reason]);
   if (!reason) return null;
@@ -177,7 +178,7 @@ export function FolderDialog() {
         <h3>{t('folder.title')}</h3>
         <p>{reason}</p>
         {remembered && <p className="hint">{t('folder.remembered', { name: remembered })}</p>}
-        <p className="hint">{t('folder.hint')}</p>
+        <p className="hint">{write ? t('stepasm.folderHint') : t('folder.hint')}</p>
         <div className="modal-actions">
           {remembered && (
             <button ref={first} className="primary" onClick={() => void store.useRememberedFolder()}>
