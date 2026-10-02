@@ -76,7 +76,8 @@ export interface StepAssemblyFiles {
   warnings: string[];
 }
 
-export const STEP_ASSEMBLY_FOLDERS = { parts: '零件', subs: '組件' } as const;
+/** The folders an import writes into, next to the main file (named in the user's language). */
+export const stepAssemblyFolders = () => ({ parts: t('stepasm.folderParts'), subs: t('stepasm.folderSubs') });
 
 /**
  * The files of an assembly STEP's structure (F2.8). `stem` names the main file. File names come from the products' names, made safe and
@@ -85,6 +86,7 @@ export const STEP_ASSEMBLY_FOLDERS = { parts: '零件', subs: '組件' } as cons
  * components are where the file puts them.
  */
 export async function stepAssemblyFiles(plan: StepAssemblyPlan, stem: string): Promise<StepAssemblyFiles> {
+  const folders = stepAssemblyFolders();
   const files: StepAssemblyFiles['files'] = [];
   const warnings: string[] = [];
   const used = new Set<string>();
@@ -123,7 +125,7 @@ export async function stepAssemblyFiles(plan: StepAssemblyPlan, stem: string): P
       let at = reached.get(child.prototype);
       if (at === undefined) {
         const isPart = !!target.part;
-        at = isPart ? unique(STEP_ASSEMBLY_FOLDERS.parts, target.name ?? t('stepasm.unnamed', { n: child.prototype + 1 }), '.3dbx') : unique(STEP_ASSEMBLY_FOLDERS.subs, target.name ?? t('stepasm.unnamed', { n: child.prototype + 1 }), '.3dba');
+        at = isPart ? unique(folders.parts, target.name ?? t('stepasm.unnamed', { n: child.prototype + 1 }), '.3dbx') : unique(folders.subs, target.name ?? t('stepasm.unnamed', { n: child.prototype + 1 }), '.3dba');
         reached.set(child.prototype, at);
         if (!isPart) reachedSub.count += 1;
         await make(child.prototype, at);
