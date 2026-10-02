@@ -41,3 +41,14 @@ it.skipIf(process.env.WRITE_FIXTURE_V3 !== '1')('writes the version-3 assembly s
   doc = applyAssemblyCommand(doc, { type: 'setComponentState', componentIds: ['comp2'], state: 'transparent', value: true });
   writeFileSync(new URL('../../tests/fixtures/old-versions/v3-assembly.3dba', import.meta.url), await writeAssemblyFile({ ...doc, schemaVersion: 3 }));
 });
+
+// Schema 4 sample (3b-2): a component with a linear pattern and a mirror. Written by the Schema 5 code with schemaVersion set to 4: Schema 5 only adds the
+// optional `explosion`, so a Schema 4 file is exactly this text (it was not written by the Schema 4 code itself).
+it.skipIf(process.env.WRITE_FIXTURE_V4 !== '1')('writes the version-4 assembly sample', async () => {
+  let doc = createEmptyAssembly();
+  doc = applyAssemblyCommand(doc, { type: 'insertComponent', file: { id: 'file1', path: '../定位板.3dbx' }, component: { id: 'comp1', file: 'file1', instance: 1, fixed: true, placement: { position: [0, 0, 0], rotation: [0, 0, 0, 1] } } });
+  doc = applyAssemblyCommand(doc, { type: 'insertComponent', file: { id: 'file2', path: '../零件/削邊銷.3dbx' }, component: { id: 'comp2', file: 'file2', instance: 1, fixed: false, placement: { position: [-40, 15, 0], rotation: [0, 0, 0, 1] } } });
+  doc = applyAssemblyCommand(doc, { type: 'insertPattern', pattern: { id: 'pattern1', name: '線性複製排列1', kind: 'linear', seed: 'comp2', axis1: { kind: 'axis', axis: 'x' }, count1: 3, spacing1: '40', skip: ['3'] } });
+  doc = applyAssemblyCommand(doc, { type: 'insertPattern', pattern: { id: 'pattern2', name: '鏡射零組件1', kind: 'mirror', seed: 'comp2', plane: 'plane:right' } });
+  writeFileSync(new URL('../../tests/fixtures/old-versions/v4-assembly.3dba', import.meta.url), await writeAssemblyFile({ ...doc, schemaVersion: 4 }));
+});

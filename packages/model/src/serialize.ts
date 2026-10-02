@@ -183,6 +183,8 @@ const assemblyMigrations: Record<number, (doc: Json) => Json> = {
   2: (doc) => doc,
   // v4: patterns and mirrors of components (C15.13): an optional list, absent in older files.
   3: (doc) => doc,
+  // v5: the steps of the exploded view (C15.14): an optional list, absent in older files.
+  4: (doc) => doc,
 };
 
 export function parseAssembly(text: string): AssemblyDoc {
@@ -191,7 +193,7 @@ export function parseAssembly(text: string): AssemblyDoc {
   raw = upgrade(raw, ASSEMBLY_SCHEMA_VERSION, assemblyMigrations);
   if (!Array.isArray(raw.files) || !Array.isArray(raw.components)) throw new FormatError(t('format.noComponents'));
   if (!Array.isArray(raw.mates)) throw new FormatError(t('format.noMates'));
-  const ids = [...(raw.files as Json[]), ...(raw.components as Json[]), ...(raw.mates as Json[]), ...((raw.patterns as Json[] | undefined) ?? [])].map((x) => x.id as string);
+  const ids = [...(raw.files as Json[]), ...(raw.components as Json[]), ...(raw.mates as Json[]), ...((raw.patterns as Json[] | undefined) ?? []), ...((raw.explosion as Json[] | undefined) ?? [])].map((x) => x.id as string);
   // As for parts: counters cover every id in the file, even one edited by hand or by a script.
   raw.idCounters = countersFor(ids, { ...((raw.idCounters as Record<string, number> | undefined) ?? {}) });
   raw.properties ??= {};

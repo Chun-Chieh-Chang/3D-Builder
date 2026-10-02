@@ -573,7 +573,7 @@ export function findFeature(doc: PartDoc, id: Id): Feature | undefined {
 // ---------------------------------------------------------------- assembly (C15, A3.1, B9.4)
 
 /** Assemblies have their own version line: a part and an assembly change for different reasons. */
-export const ASSEMBLY_SCHEMA_VERSION = 4;
+export const ASSEMBLY_SCHEMA_VERSION = 5;
 
 /** Unit quaternion [x, y, z, w]. */
 export type Quat = [number, number, number, number];
@@ -696,6 +696,24 @@ export interface ComponentPattern {
   skip?: string[];
 }
 
+/**
+ * A step of the exploded view (C15.14): some components of the assembly moved distance along a direction. Only the intent is stored; the poses of the
+ * components are never changed by it: the view shows each component where its own pose plus the steps that name it put it, and collapsing is not showing them.
+ */
+export interface ExplodeStep {
+  id: Id;
+  /** 「爆炸步驟1」 … */
+  name: string;
+  /** Components of the assembly (a sub-assembly moves as one, its parts with it; the instances of a pattern follow their seed). */
+  components: Id[];
+  /** The direction: one of the assembly's axes, or an element of a component (a straight edge, a cylinder's axis, a plane's normal), as for patterns. */
+  axis: PatternAxis;
+  /** How far (length). */
+  distance: Expr;
+  /** The other way along the direction. */
+  flip?: boolean;
+}
+
 export interface AssemblyDoc {
   kind: 'assembly';
   schemaVersion: number;
@@ -707,6 +725,8 @@ export interface AssemblyDoc {
   properties: Record<string, string>;
   /** Patterns and mirrors of components, in FeatureManager order (C15.13). Absent: none. */
   patterns?: ComponentPattern[];
+  /** The steps of the exploded view, in the order they were made (C15.14). Absent: none. */
+  explosion?: ExplodeStep[];
   /** As in parts (B1.3): ids are never reused. */
   idCounters: Record<string, number>;
 }

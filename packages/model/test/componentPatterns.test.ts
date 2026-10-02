@@ -204,7 +204,7 @@ describe('pattern commands', () => {
       pattern: { id: 'pattern2', name: '鏡射零組件1', kind: 'mirror', seed: 'c1', plane: 'plane:right' },
     });
     expect(parseAssembly(serializeAssembly(d))).toEqual(d);
-    expect(ASSEMBLY_SCHEMA_VERSION).toBe(4);
+    expect(ASSEMBLY_SCHEMA_VERSION).toBeGreaterThanOrEqual(4);
     // a file with no patterns has no such key, so a version-3 file is the same text with another version
     const plain = JSON.parse(serializeAssembly(doc()));
     expect(plain).not.toHaveProperty('patterns');
