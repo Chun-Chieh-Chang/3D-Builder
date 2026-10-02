@@ -600,7 +600,7 @@ export class AssemblyStore {
     const structure = stepStructure(doc, this.folder, this.trees(), (id) => this.poseOf(id), this.state.solution?.inner, (path) => {
       const status = this.state.files.get(path);
       return status?.status === 'missing' || status?.status === 'error' ? status.message : '尚未讀取';
-    });
+    }, { axisOf: (axis) => this.lineOf(axis, this.leaves().filter((l) => !l.instanceOf)) });
     if (structure.unreadable.length) throw new Error(`有 ${structure.unreadable.length} 個零件檔無法讀取：${structure.unreadable.map((u) => `${u.path}（${u.why}）`).join('、')}`);
     return { name: this.name(), parts: structure.parts, subs: structure.subs, instances: structure.instances };
   }

@@ -167,6 +167,19 @@ pat.saveReopen = async () => {
   H.check(store.assembly.patternProblems().size === 0, `no problems: ${JSON.stringify([...store.assembly.patternProblems()])}`);
 };
 
+/** STEP of the assembly with patterns and a mirror: the worker writes the instances and the mirrored products. */
+pat.step = async () => {
+  await pat.saveReopen();
+  const req = store.assembly.stepRequest();
+  const text = await store.api.exportAssemblyStep(req);
+  const products = [...new Set([...text.matchAll(/PRODUCT\('([^']*)'/g)].map((m) => m[1]))];
+  const usages = (text.match(/NEXT_ASSEMBLY_USAGE_OCCURRENCE\(/g) ?? []).length;
+  H.check(products.some((p) => p.includes('鏡射')), `a mirrored product: ${products}`);
+  H.check(req.instances.length > req.subs.length, `the pattern instances are components: ${req.instances.length}`);
+  H.check(usages >= req.instances.length, `usages ${usages}`);
+  return { products, usages, instances: req.instances.map((i) => i.name) };
+};
+
 pat.run = async () => {
   await pat.saveReopen();
   return 'ok';

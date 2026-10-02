@@ -1,5 +1,6 @@
 import type { Kernel, ShapeId, StepExportOptions } from '@3db/kernel';
-import { dirName, joinPath, type AssemblyDoc, type Id, type InnerPoses, type Pose, type SourceTree } from '@3db/model';
+import { t } from '@3db/i18n';
+import { componentPatternInstances, composePose, dirName, joinPath, mirrorKey, mirroredInside, mirroredPose, type AssemblyDoc, type Id, type InnerPoses, type PatternAxis, type PatternLine, type Pose, type SourceTree } from '@3db/model';
 import { componentName, partNameOf } from './names';
 
 /**
@@ -82,6 +83,8 @@ export function stepStructure(
   poseOf: (componentId: Id) => Pose | null,
   inner: ReadonlyMap<Id, InnerPoses> | undefined,
   status: (path: string) => string | null,
+  /** Finds a pattern's direction or axis in the assembly (null: it is gone). Without it linear and circular patterns have no instances. */
+  patterns?: { axisOf: (axis: PatternAxis) => PatternLine | null },
 ): StepStructure {
   const parts: StepStructure['parts'] = [];
   const subs: StepSub[] = [];
@@ -92,8 +95,23 @@ export function stepStructure(
     if (!unreadable.some((u) => u.path === path)) unreadable.push({ path, why: status(path) ?? '' });
   };
 
-  /** The components of `at` (a document in the folder `where`), placed by `poses`; a sub-assembly one goes through `addSub`. */
-  const components = (at: AssemblyDoc, where: string, trees: Readonly<Record<Id, SourceTree>>, pose: (id: Id) => Pose | null, below: ReadonlyMap<Id, InnerPoses> | undefined): StepInstance[] => {
+  /** The product a component's file stands for: its part (or the part's mirror), or its sub-assembly (or the sub-assembly's mirror), made once. */
+  const protoOf = (file: { path: string }, path: string, tree: SourceTree, solved: InnerPoses | undefined, mirrored: boolean): { part?: number; sub?: number } => {
+    if (tree.kind === 'part') {
+      const at = mirrored ? `${path}:mx` : path;
+      let index = partIndex.get(at);
+      if (index === undefined) {
+        index = parts.length;
+        partIndex.set(at, index);
+        parts.push(mirrored ? { key: mirrorKey(tree.key), name: `${partNameOf(file.path)}${t('pattern.mirrorSuffix')}` } : { key: tree.key, name: partNameOf(file.path) });
+      }
+      return { part: index };
+    }
+    return { sub: addSub(path, tree, solved, mirrored) };
+  };
+
+  /** The components of `at` (a document in the folder `where`), placed by `pose`; a mirrored sub-assembly has every part mirrored, at its pose seen through the mirror. */
+  const components = (at: AssemblyDoc, where: string, trees: Readonly<Record<Id, SourceTree>>, pose: (id: Id) => Pose | null, below: ReadonlyMap<Id, InnerPoses> | undefined, mirrored = false): StepInstance[] => {
     const out: StepInstance[] = [];
     for (const c of at.components) {
       if (c.suppressed) continue;
@@ -105,33 +123,47 @@ export function stepStructure(
         note(path ?? c.file);
         continue;
       }
-      const name = componentName(file.path, c.instance);
-      if (tree.kind === 'part') {
-        let index = partIndex.get(path);
-        if (index === undefined) {
-          index = parts.length;
-          partIndex.set(path, index);
-          parts.push({ key: tree.key, name: partNameOf(file.path) });
-        }
-        out.push({ part: index, name, pose: placement });
-      } else {
-        out.push({ sub: addSub(path, tree, below?.get(c.id)), name, pose: placement });
-      }
+      out.push({ ...protoOf(file, path, tree, below?.get(c.id), mirrored), name: componentName(file.path, c.instance), pose: mirrored ? mirroredInside(placement) : placement });
     }
     return out;
   };
 
   /** A sub-assembly file as a product, once: its components where its own mates put them (the same for every use of it). */
-  const addSub = (path: string, tree: Extract<SourceTree, { kind: 'assembly' }>, solved: InnerPoses | undefined): number => {
-    const known = subIndex.get(path);
+  const addSub = (path: string, tree: Extract<SourceTree, { kind: 'assembly' }>, solved: InnerPoses | undefined, mirrored = false): number => {
+    const at = mirrored ? `${path}:mx` : path;
+    const known = subIndex.get(at);
     if (known !== undefined) return known;
-    const instances = components(tree.doc, dirName(path), tree.children, (id) => solved?.poses.get(id) ?? tree.doc.components.find((c) => c.id === id)?.placement ?? null, solved?.inner);
+    const instances = components(tree.doc, dirName(path), tree.children, (id) => solved?.poses.get(id) ?? tree.doc.components.find((c) => c.id === id)?.placement ?? null, solved?.inner, mirrored);
     const index = subs.length; // after the ones it uses, which were added while its components were made
-    subIndex.set(path, index);
-    subs.push({ name: partNameOf(path), instances });
+    subIndex.set(at, index);
+    subs.push({ name: `${partNameOf(path)}${mirrored ? t('pattern.mirrorSuffix') : ''}`, instances });
     return index;
   };
 
   const instances = components(doc, folder, trees, poseOf, inner);
+
+  // The instances of the patterns and mirrors (C15.13): more uses of the seed's product, moved; a mirror uses the product's mirror.
+  for (const p of doc.patterns ?? []) {
+    const c = doc.components.find((x) => x.id === p.seed);
+    const file = c && doc.files.find((f) => f.id === c.file);
+    const tree = c && trees[c.id];
+    const seedPose = c && poseOf(c.id);
+    if (!c || c.suppressed || !file || !tree || !seedPose) continue;
+    const path = joinPath(folder, file.path);
+    const seedName = componentName(file.path, c.instance);
+    const name = (label: string) => t('pattern.stepInstanceName', { seed: seedName, pattern: p.name, label });
+    if (p.kind === 'mirror') {
+      if (!p.plane) continue;
+      instances.push({ ...protoOf(file, path, tree, inner?.get(c.id), true), name: name('m'), pose: mirroredPose(p.plane, seedPose) });
+      continue;
+    }
+    const axis1 = p.axis1 && patterns?.axisOf(p.axis1);
+    const axis2 = p.axis2 && patterns?.axisOf(p.axis2);
+    if (!axis1 || (p.axis2 && !axis2)) continue; // the axis is gone: the pattern has no instances, as on the screen
+    const made = componentPatternInstances(p, { axis1, ...(axis2 ? { axis2 } : {}) });
+    if (typeof made === 'string') continue;
+    const proto = protoOf(file, path, tree, inner?.get(c.id), false);
+    for (const inst of made) instances.push({ ...proto, name: name(inst.label), pose: composePose(inst.motion, seedPose) });
+  }
   return { parts, subs, instances, unreadable };
 }

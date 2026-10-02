@@ -83,7 +83,7 @@ export function PatternPanel() {
   const grid = p.kind === 'linear' && !!p.axis2;
   const count = (key: 'count1' | 'count2') => (
     <TextBox
-      label={t('pattern.count')}
+      label={t('pattern.compCount')}
       width={64}
       value={String(p[key] ?? '')}
       onCommit={(v) => set({ [key]: Number(v) })}
@@ -130,10 +130,10 @@ export function PatternPanel() {
         </div>
       ) : (
         <>
-          <AxisField slot="axis1" axis={p.axis1} title={p.kind === 'linear' ? t('pattern.direction1') : t('pattern.axis')} />
+          <AxisField slot="axis1" axis={p.axis1} title={p.kind === 'linear' ? t('pattern.compDirection1') : t('pattern.axis')} />
           <div className="pm-group">
             <div className="pm-row">
-              <span>{t('pattern.count')}</span>
+              <span>{t('pattern.compCount')}</span>
               {count('count1')}
             </div>
             <div className="pm-row">
@@ -155,10 +155,10 @@ export function PatternPanel() {
           {p.kind === 'linear' &&
             (grid ? (
               <>
-                <AxisField slot="axis2" axis={p.axis2} title={t('pattern.direction2')} />
+                <AxisField slot="axis2" axis={p.axis2} title={t('pattern.compDirection2')} />
                 <div className="pm-group">
                   <div className="pm-row">
-                    <span>{t('pattern.count')}</span>
+                    <span>{t('pattern.compCount')}</span>
                     {count('count2')}
                   </div>
                   <div className="pm-row">

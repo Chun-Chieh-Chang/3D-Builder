@@ -271,12 +271,21 @@ const api: KernelApi = {
   async exportAssemblyStep({ name, parts: used, subs, instances }: AssemblyStepRequest): Promise<string> {
     await api.init();
     const shapes: { shape: ShapeId; name: string }[] = [];
-    for (const u of used) {
-      const body = (await parts.get(u.key)?.catch(() => null))?.result.body;
-      if (!body) throw new Error(t('worker.noBodyForPart', { name: u.name }));
-      shapes.push({ shape: body.shape, name: u.name });
+    const made: ShapeId[] = [];
+    try {
+      for (const u of used) {
+        // a mirrored part (C15.13): the part's own shape mirrored in its x = 0 plane, as the screen shows it
+        const mirrored = u.key.endsWith(mirrorKey(''));
+        const body = (await parts.get(mirrored ? u.key.slice(0, -mirrorKey('').length) : u.key)?.catch(() => null))?.result.body;
+        if (!body) throw new Error(t('worker.noBodyForPart', { name: u.name }));
+        const shape = mirrored ? kernel.transformed(body.shape, [-1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0]) : body.shape;
+        if (mirrored) made.push(shape);
+        shapes.push({ shape, name: u.name });
+      }
+      return exportAssemblyStep(kernel, name, shapes, instances, subs);
+    } finally {
+      for (const id of made) kernel.release(id);
     }
-    return exportAssemblyStep(kernel, name, shapes, instances, subs);
   },
 
   async buildMirrorPart(partKey: string): Promise<PartBuildPayload | null> {
