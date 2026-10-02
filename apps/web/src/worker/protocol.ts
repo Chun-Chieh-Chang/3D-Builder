@@ -162,6 +162,11 @@ export interface KernelApi {
   buildPart(key: string, bytes: Uint8Array, onStage?: (stage: PartStage) => void): Promise<PartBuildPayload>;
   /** STEP of an assembly (F1.2) as the components are placed in `req`; parts are the ones rebuilt for it (`buildPart`). */
   exportAssemblyStep(req: AssemblyStepRequest): Promise<string>;
+  /**
+   * The mirror of a part already built (C15.13): its shape mirrored in its own x = 0 plane, meshed. key is the mirror's (mirrorKey);
+   * only the mesh is given, a derived copy has no elements to pick. Null when the part has no body or is not built.
+   */
+  buildMirrorPart(partKey: string): Promise<PartBuildPayload | null>;
   /** Lets go of every rebuilt part file except these. */
   retainParts(keys: string[]): Promise<void>;
   /**

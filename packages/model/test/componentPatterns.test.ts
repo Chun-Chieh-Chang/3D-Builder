@@ -10,6 +10,9 @@ import {
   componentPatternLabels,
   componentPatternProblem,
   createEmptyAssembly,
+  leavesOf,
+  mirrorKey,
+  patternLeavesOf,
   mirroredInside,
   mirroredPose,
   parseAssembly,
@@ -19,7 +22,10 @@ import {
   transformPoint,
   type AssemblyDoc,
   type ComponentPattern,
+  type PatternAxis,
+  type PatternLine,
   type Pose,
+  type SourceTree,
   type Vec3,
 } from '../src/index';
 
@@ -207,5 +213,55 @@ describe('pattern commands', () => {
     const raw = JSON.parse(serializeAssembly(d));
     delete raw.idCounters;
     expect(parseAssembly(JSON.stringify(raw)).idCounters.pattern).toBe(2);
+  });
+});
+
+describe('the parts patterns and mirrors add (C15.13)', () => {
+  const trees = (): Record<string, SourceTree> => ({
+    c1: { kind: 'part', key: 'pin' },
+    c2: { kind: 'assembly', doc: createEmptyAssembly(), children: {} },
+  });
+  const axes = (a: PatternAxis): PatternLine | null => (a.kind === 'axis' ? { x: X, y: { origin: [0, 0, 0] as Vec3, dir: [0, 1, 0] as Vec3 }, z: Z }[a.axis] : null);
+  const withPattern = (p: ComponentPattern) => applyAssemblyCommand(doc(), { type: 'insertPattern', pattern: p });
+  const base = (d: AssemblyDoc) => leavesOf(d, trees(), (id) => d.components.find((c) => c.id === id)!.placement);
+
+  it('puts a moved copy of each part of the seed for each instance, owned by the seed', () => {
+    const d = withPattern(linear({ count1: 3, spacing1: '20' }));
+    const made = patternLeavesOf(d, base(d), axes);
+    expect(made.problems.size).toBe(0);
+    expect(made.leaves.map((l) => [l.id, l.top, l.key, l.instanceOf, l.mirrored])).toEqual([
+      ['c1@pattern1#2', 'c1', 'pin', 'pattern1', undefined],
+      ['c1@pattern1#3', 'c1', 'pin', 'pattern1', undefined],
+    ]);
+    close(made.leaves[0]!.pose.position, [25, 0, 0]); // the seed is at x = 5
+    close(made.leaves[1]!.pose.position, [45, 0, 0]);
+  });
+
+  it('carries the seed\'s hidden and transparent flags', () => {
+    const d = applyAssemblyCommand(applyAssemblyCommand(withPattern(linear({ count1: 2 })), { type: 'setComponentState', componentIds: ['c1'], state: 'hidden', value: true }), { type: 'setComponentState', componentIds: ['c1'], state: 'transparent', value: true });
+    const made = patternLeavesOf(d, base(d), axes);
+    expect(made.leaves.map((l) => [l.hidden, l.transparent])).toEqual([[true, true]]);
+  });
+
+  it('mirrors: the mirror of the part at the mirrored pose', () => {
+    const d = withPattern({ id: 'pattern1', name: '鏡射零組件1', kind: 'mirror', seed: 'c1', plane: 'plane:right' });
+    const made = patternLeavesOf(d, base(d), axes);
+    expect(made.leaves).toHaveLength(1);
+    const l = made.leaves[0]!;
+    expect([l.id, l.key, l.mirrored, l.instanceOf]).toEqual(['c1@pattern1', mirrorKey('pin'), true, 'pattern1']);
+    close(l.pose.position, [-5, 0, 0]);
+    close(Array.from(l.pose.rotation), Array.from(mirroredPose('plane:right', at([5, 0, 0])).rotation));
+  });
+
+  it('has no instances when its seed is suppressed, and says why when its axis is gone or its numbers do not read', () => {
+    const off = applyAssemblyCommand(withPattern(linear()), { type: 'setComponentState', componentIds: ['c1'], state: 'suppressed', value: true });
+    expect(patternLeavesOf(off, base(off), axes).leaves).toEqual([]);
+    const d = withPattern(circular({ axis1: { kind: 'ref', ref: { component: 'c2', ref: { kind: 'edge', name: 'e' } } } }));
+    const gone = patternLeavesOf(d, base(d), axes);
+    expect(gone.leaves).toEqual([]);
+    expect(gone.problems.get('pattern1')).toMatch(/找不到排列的方向/);
+    // a hand-edited file with a bad count is reported, not drawn wrongly
+    const bad: AssemblyDoc = { ...withPattern(linear()), patterns: [linear({ count1: 1 })] };
+    expect(patternLeavesOf(bad, base(bad), axes).problems.get('pattern1')).toMatch(/2 以上/);
   });
 });

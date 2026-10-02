@@ -3,7 +3,7 @@ import * as Comlink from 'comlink';
 import { setLocale as setWorkerLocale, t } from '@3db/i18n';
 import occtWasm from 'libcascade/single/wasm?url';
 import gcsWasm from '@salusoft89/planegcs/dist/planegcs_dist/planegcs.wasm?url';
-import { bodyKey, isShown, MESH_QUALITY, settingsOf, type AssemblyDoc, type Id, type PartDoc, type SourceTree } from '@3db/model';
+import { bodyKey, isShown, mirrorKey, MESH_QUALITY, settingsOf, type AssemblyDoc, type Id, type PartDoc, type SourceTree } from '@3db/model';
 import { findProfiles, PlaneGcsSolver } from '@3db/sketch';
 import { COMPONENT_MESH, Kernel, type MassProps, type MeshData, type MeshOptions, type ShapeId } from '@3db/kernel';
 import { convertEdges, edgeMateGeometry, exportFaces, faceColors, intoFrame, faceEdges, faceMateGeometry, followReferences, ReferenceProblem, Regenerator, solveAssemblyTree, type AssemblyResult, type AssemblySolveOptions, type BodyInfo, type RebuildResult } from '@3db/regen';
@@ -279,6 +279,36 @@ const api: KernelApi = {
     return exportAssemblyStep(kernel, name, shapes, instances, subs);
   },
 
+  async buildMirrorPart(partKey: string): Promise<PartBuildPayload | null> {
+    await api.init();
+    const body = (await parts.get(partKey)?.catch(() => null))?.result.body;
+    if (!body) return null;
+    const t0 = performance.now();
+    // the part's own x → −x: faces, edges and vertices keep their order, so the mesh's face and edge numbers still mean the same names
+    const mirrored = kernel.transformed(body.shape, [-1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0]);
+    try {
+      const mesh = kernel.mesh(mirrored, COMPONENT_MESH);
+      const payload: PartBuildPayload = {
+        key: mirrorKey(partKey),
+        mesh,
+        problems: [],
+        faceNames: [],
+        faceFingerprints: [],
+        faceGeometry: [],
+        edgeNames: [],
+        edgeFingerprints: [],
+        edgeGeometry: [],
+        vertexNames: [],
+        vertexPoints: new Float32Array(0),
+        vertexFingerprints: [],
+        planes: [],
+        ms: performance.now() - t0,
+      };
+      return Comlink.transfer(payload, [mesh.positions, mesh.normals, mesh.indices, mesh.faceRanges, mesh.edgePoints, mesh.edgeRanges].map((a) => a.buffer as ArrayBuffer));
+    } finally {
+      kernel.release(mirrored);
+    }
+  },
   async retainParts(keys: string[]): Promise<void> {
     const keep = new Set(keys);
     for (const [key, entry] of parts) {

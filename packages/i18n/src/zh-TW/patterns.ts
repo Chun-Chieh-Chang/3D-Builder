@@ -8,6 +8,8 @@ export const patterns = {
   'pattern.tooMany': '一個排列最多 {max} 個實例',
   'pattern.badSpacing': '間距或角度必須大於 0',
   'pattern.badSkip': '沒有這個實例可以跳過：「{label}」',
+  'pattern.derivedNoMate': '排列與鏡射的實例是跟著種子的衍生零件，不能當結合的對象；請選種子上的元素',
+  'pattern.axisNotFound': '找不到排列的方向或旋轉軸（它的零組件或元素已不在）',
   'pattern.noSeed': '找不到排列的種子零組件：{id}',
   'pattern.nameEmpty': '名稱不可空白',
   'pattern.idInUse': 'ID 已被使用：{id}',

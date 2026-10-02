@@ -1,8 +1,9 @@
 import { t } from '@3db/i18n';
 import { joinPath, normalizePath } from './paths';
 import type { Id } from './ids';
+import { componentPatternInstances, componentPatternProblem, mirroredPose, type PatternLine } from './componentPatterns';
 import { composePose } from './pose';
-import type { AssemblyDoc, Pose } from './schema';
+import type { AssemblyDoc, PatternAxis, Pose } from './schema';
 
 /**
  * What a component is, as the worker is told: a rebuilt part by its content key, or a sub-assembly: its document and
@@ -31,6 +32,10 @@ export interface Leaf {
   hidden: boolean;
   /** See-through (C15.5): its component, or a sub-assembly it is in, is. */
   transparent: boolean;
+  /** Made by a pattern or mirror (C15.13), by its id: derived from the seed's, never picked as an element or mated. */
+  instanceOf?: Id;
+  /** A mirrored copy: `key` is the mirror of the part (see `mirrorKey`). */
+  mirrored?: boolean;
 }
 
 /**
@@ -59,6 +64,52 @@ export function leavesOf(doc: AssemblyDoc, trees: Readonly<Record<Id, SourceTree
     walk(tree, c.id, [], pose, inner?.get(c.id), !!c.hidden, !!c.transparent);
   }
   return out;
+}
+
+/** The key of a part's mirror (C15.13): the part mirrored in its own x = 0 plane, built once from the part's. */
+export const mirrorKey = (key: string): string => `${key}:mx`;
+
+/**
+ * The parts the patterns and mirrors of an assembly add (C15.13), derived from the leaves of their seeds: a linear or circular
+ * pattern puts a moved copy of each, a mirror a mirrored copy (the mirror part at the mirrored pose). `axisOf` finds a pattern's
+ * axis in the assembly (null when it cannot: the pattern is then reported and has no instances). They belong to their seed's component
+ * (`top`), so hovering, selecting and dragging the seed carry them; `instanceOf` says what makes them. A pattern whose seed is
+ * suppressed or whose parts are not shown has none.
+ */
+export function patternLeavesOf(
+  doc: AssemblyDoc,
+  base: readonly Leaf[],
+  axisOf: (axis: PatternAxis) => PatternLine | null,
+): { leaves: Leaf[]; problems: Map<Id, string> } {
+  const leaves: Leaf[] = [];
+  const problems = new Map<Id, string>();
+  for (const p of doc.patterns ?? []) {
+    const seed = doc.components.find((c) => c.id === p.seed);
+    if (!seed || seed.suppressed) continue;
+    const mine = base.filter((l) => l.top === p.seed);
+    if (p.kind === 'mirror') {
+      const bad = componentPatternProblem(p);
+      if (bad) {
+        problems.set(p.id, bad);
+        continue;
+      }
+      for (const l of mine) leaves.push({ ...l, id: `${l.id}@${p.id}`, key: mirrorKey(l.key), pose: mirroredPose(p.plane!, l.pose), instanceOf: p.id, mirrored: true });
+      continue;
+    }
+    const axis1 = p.axis1 ? axisOf(p.axis1) : null;
+    const axis2 = p.axis2 ? axisOf(p.axis2) : null;
+    if (!axis1 || (p.axis2 && !axis2)) {
+      problems.set(p.id, t('pattern.axisNotFound'));
+      continue;
+    }
+    const made = componentPatternInstances(p, { axis1, ...(axis2 ? { axis2 } : {}) });
+    if (typeof made === 'string') {
+      problems.set(p.id, made);
+      continue;
+    }
+    for (const inst of made) for (const l of mine) leaves.push({ ...l, id: `${l.id}@${p.id}#${inst.label}`, pose: composePose(inst.motion, l.pose), instanceOf: p.id });
+  }
+  return { leaves, problems };
 }
 
 /** The leaf a mate element's component and path lead to, among `leaves` (null: not shown, e.g. its file is missing). */

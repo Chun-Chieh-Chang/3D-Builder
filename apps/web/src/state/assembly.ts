@@ -17,8 +17,11 @@ import {
   IdAllocator,
   isDatumPlaneName,
   joinPath,
+  ASSEMBLY_AXES,
   leafAt,
   leavesOf,
+  mirrorKey,
+  patternLeavesOf,
   nextInstance,
   relativePath,
   relativePose,
@@ -37,12 +40,14 @@ import {
   type Mate,
   type MateRef,
   type MateType,
+  type PatternAxis,
+  type PatternLine,
   type Pose,
   type Quat,
   type SourceTree,
   type Vec3,
 } from '@3db/model';
-import { closerAlignment, currentValue, defaultType, hasAlignment, MATE_LABEL, placed, supportedTypes, type GoalTerm, type MateGeometry } from '@3db/assembly';
+import { axisOf, closerAlignment, currentValue, defaultType, hasAlignment, MATE_LABEL, placed, supportedTypes, type GoalTerm, type MateGeometry } from '@3db/assembly';
 import { ASSEMBLY_FILE_EXTENSION, assemblyFileName, assemblyName, componentName, PART_FILE_EXTENSION, readDocumentFile, sha256Hex, stepStructure, writeAssemblyFile } from '@3db/io';
 import { t } from '@3db/i18n';
 import type { AssemblyResult } from '@3db/regen';
@@ -470,7 +475,7 @@ export class AssemblyStore {
     return trees;
   }
 
-  private leafCache: { doc: AssemblyDoc; files: AssemblyState['files']; solution: AssemblyResult | null; drag: AssemblyState['drag']; leaves: Leaf[] } | null = null;
+  private leafCache: { doc: AssemblyDoc; files: AssemblyState['files']; solution: AssemblyResult | null; drag: AssemblyState['drag']; leaves: Leaf[]; problems: Map<Id, string> } | null = null;
 
   /** Every part to draw, where it is now (see `leavesOf`). Derived; kept while nothing it depends on changes. */
   leaves(): Leaf[] {
@@ -478,9 +483,45 @@ export class AssemblyStore {
     const doc = this.history.doc;
     const c = this.leafCache;
     if (c && c.doc === doc && c.files === files && c.solution === solution && c.drag === drag) return c.leaves;
-    const leaves = leavesOf(doc, this.trees(), (id) => this.poseOf(id), solution?.inner);
-    this.leafCache = { doc, files, solution, drag, leaves };
+    const base = leavesOf(doc, this.trees(), (id) => this.poseOf(id), solution?.inner);
+    // the parts patterns and mirrors add (C15.13); their axes are found among the parts of the components themselves
+    const made = patternLeavesOf(doc, base, (axis) => this.lineOf(axis, base));
+    const leaves = [...base, ...made.leaves];
+    this.leafCache = { doc, files, solution, drag, leaves, problems: made.problems };
+    this.ensureMirrors(leaves);
     return leaves;
+  }
+
+  /** Why a pattern has no instances (its axis is gone, its definition does not read); empty when all is well. Derived. */
+  patternProblems(): ReadonlyMap<Id, string> {
+    this.leaves();
+    return this.leafCache?.problems ?? new Map();
+  }
+
+  /** A pattern's direction or axis found in the assembly: one of its axes, or the line an element of a component stands for. */
+  private lineOf(axis: PatternAxis, base: readonly Leaf[]): PatternLine | null {
+    if (axis.kind === 'axis') return ASSEMBLY_AXES[axis.axis];
+    const g = this.elementGeometry(axis.ref, base);
+    if (!g) return null;
+    if (g.kind === 'plane') return { origin: g.origin, dir: g.normal };
+    const line = axisOf(g);
+    return line ? { origin: line.p, dir: line.d } : null;
+  }
+
+  /** Mirrored parts asked for and not built yet (or being built). */
+  private mirrorsAsked = new Set<string>();
+
+  /** Builds the mirror of every part a mirror shows (C15.13), once, when the part itself is built. */
+  private ensureMirrors(leaves: readonly Leaf[]): void {
+    for (const l of leaves) {
+      if (!l.mirrored || this.state.builds.has(l.key) || this.mirrorsAsked.has(l.key) || this.closed) continue;
+      const partKey = l.key.slice(0, -mirrorKey('').length);
+      if (!this.state.builds.has(partKey)) continue; // when the part comes, leaves() runs again
+      this.mirrorsAsked.add(l.key);
+      void this.host.api.buildMirrorPart(partKey).then((build) => {
+        if (build && !this.closed) this.set({ builds: new Map(this.state.builds).set(build.key, build) });
+      }, () => this.mirrorsAsked.delete(l.key));
+    }
   }
 
   /** Solves the mates, with the mate being defined; a newer request replaces one still waiting. */
@@ -563,16 +604,16 @@ export class AssemblyStore {
   }
 
   /** The part and the pose a mate's element is on: the component's own, or the leaf its path leads to inside a sub-assembly. */
-  elementPart(ref: MateRef): { build: PartBuildPayload; pose: Pose } | null {
+  elementPart(ref: MateRef, leaves: readonly Leaf[] = this.leaves()): { build: PartBuildPayload; pose: Pose } | null {
     if (ref.component === null) return null;
-    const leaf = ref.path?.length ? leafAt(this.leaves(), ref.component, ref.path) : null;
+    const leaf = ref.path?.length ? leafAt(leaves, ref.component, ref.path) : null;
     const build = leaf ? this.buildOfLeaf(leaf) : ref.path?.length ? null : this.buildOf(ref.component);
     const pose = leaf ? leaf.pose : ref.path?.length ? null : this.poseOf(ref.component);
     return build && pose ? { build, pose } : null;
   }
 
   /** An element's geometry where it is now, in assembly coordinates (for what the PropertyManager offers). */
-  elementGeometry(ref: MateRef): MateGeometry | null {
+  elementGeometry(ref: MateRef, leaves: readonly Leaf[] = this.leaves()): MateGeometry | null {
     const { name, kind } = ref.ref;
     const datum = (planes: PartBuildPayload['planes'] | undefined): MateGeometry | null => {
       if (name === 'origin') return { kind: 'point', point: [0, 0, 0] };
@@ -587,7 +628,7 @@ export class AssemblyStore {
       const local = kind === 'datum' ? datum(undefined) : null;
       return local && pose ? placed(local, pose) : null;
     }
-    const part = this.elementPart(ref);
+    const part = this.elementPart(ref, leaves);
     if (!part) return null;
     const { build, pose } = part;
     let local: MateGeometry | null = null;
@@ -955,7 +996,7 @@ export class AssemblyStore {
     const hi = [-Infinity, -Infinity, -Infinity];
     const to = this.poseOf(componentId);
     for (const leaf of this.leaves()) {
-      const build = leaf.top === componentId ? this.buildOfLeaf(leaf) : null;
+      const build = leaf.top === componentId && !leaf.instanceOf ? this.buildOfLeaf(leaf) : null;
       if (!build?.mesh || !to) continue;
       const inside = relativePose(to, leaf.pose); // the leaf in the sub-assembly's coordinates
       const p = build.mesh.positions;

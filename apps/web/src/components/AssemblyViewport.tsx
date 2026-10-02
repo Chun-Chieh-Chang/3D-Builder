@@ -1,3 +1,4 @@
+import { t } from '@3db/i18n';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { DATUM_PLANES, IDENTITY_ROTATION, isDatumPlaneName, joinPath, poseMatrix, transformPoint, type MateRef, type PlaneFrame, type Pose, type Vec3 } from '@3db/model';
 import { partNameOf } from '@3db/io';
@@ -67,6 +68,10 @@ export function AssemblyViewport() {
       const leaf = store.assembly?.leaves().find((l) => l.id === el.key);
       const build = leaf && store.assembly?.buildOfLeaf(leaf);
       if (!leaf || !build) return null;
+      if (leaf.instanceOf) {
+        store.notify(t('pattern.derivedNoMate'), 'error'); // an instance has no elements of its own: picking one would bind to the seed's (C15.13)
+        return null;
+      }
       const [names, prints] = el.kind === 'face' ? [build.faceNames, build.faceFingerprints] : el.kind === 'edge' ? [build.edgeNames, build.edgeFingerprints] : [build.vertexNames, build.vertexFingerprints];
       const name = names[el.index];
       const fingerprint = prints[el.index];
