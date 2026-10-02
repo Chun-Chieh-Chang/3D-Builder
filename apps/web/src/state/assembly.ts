@@ -19,6 +19,8 @@ import {
   joinPath,
   ASSEMBLY_AXES,
   buildBom,
+  explodeLeaves,
+  explosionOffsets,
   leafAt,
   leavesOf,
   mirrorKey,
@@ -37,6 +39,7 @@ import {
   type Component,
   type ComponentPattern,
   type ComponentState,
+  type ExplodeStep,
   type FileRef,
   type Id,
   type Leaf,
@@ -116,6 +119,14 @@ export interface PatternDraft {
   picking: 'axis1' | 'axis2' | null;
 }
 
+/** The exploded view's PropertyManager (C15.14): the step being made or edited, and whether its axis is being picked in the graphics area. */
+export interface ExplodeDraft {
+  /** The step being edited; null for a new one. */
+  editing: Id | null;
+  step: ExplodeStep;
+  picking: boolean;
+}
+
 /** The id a pattern being defined has while it is only previewed. */
 export const PREVIEW_PATTERN = 'pattern-preview';
 
@@ -162,6 +173,10 @@ export interface AssemblyState {
   relink: RelinkState | null;
   /** The pattern PropertyManager (C15.13); null while it is closed. */
   pattern: PatternDraft | null;
+  /** The exploded view's PropertyManager (C15.14); null while it is closed. */
+  explode: ExplodeDraft | null;
+  /** The view shows the assembly exploded (a display only: no pose is changed, and nothing can be moved or mated while it is). */
+  exploded: boolean;
 }
 
 export interface AssemblyHost {
@@ -259,6 +274,8 @@ export class AssemblyStore {
       move: null,
       relink: null,
       pattern: null,
+      explode: null,
+      exploded: false,
     };
     this.history.subscribe(() => this.onDocChanged());
     this.loadFiles();
@@ -492,7 +509,7 @@ export class AssemblyStore {
     return trees;
   }
 
-  private leafCache: { doc: AssemblyDoc; files: AssemblyState['files']; solution: AssemblyResult | null; drag: AssemblyState['drag']; pattern: PatternDraft | null; leaves: Leaf[]; problems: Map<Id, string> } | null = null;
+  private leafCache: { doc: AssemblyDoc; files: AssemblyState['files']; solution: AssemblyResult | null; drag: AssemblyState['drag']; pattern: PatternDraft | null; exploded: boolean; leaves: Leaf[]; problems: Map<Id, string>; explodeProblems: Map<Id, string> } | null = null;
 
   /** The document with the pattern being defined in it (as a preview), for what is drawn. */
   private shownDoc(): AssemblyDoc {
@@ -506,15 +523,18 @@ export class AssemblyStore {
 
   /** Every part to draw, where it is now (see `leavesOf`). Derived; kept while nothing it depends on changes. */
   leaves(): Leaf[] {
-    const { files, solution, drag, pattern } = this.state;
+    const { files, solution, drag, pattern, exploded } = this.state;
     const doc = this.history.doc;
     const c = this.leafCache;
-    if (c && c.doc === doc && c.files === files && c.solution === solution && c.drag === drag && c.pattern === pattern) return c.leaves;
+    if (c && c.doc === doc && c.files === files && c.solution === solution && c.drag === drag && c.pattern === pattern && c.exploded === exploded) return c.leaves;
     const base = leavesOf(doc, this.trees(), (id) => this.poseOf(id), solution?.inner);
     // the parts patterns and mirrors add (C15.13); their axes are found among the parts of the components themselves
     const made = patternLeavesOf(this.shownDoc(), base, (axis) => this.lineOf(axis, base));
-    const leaves = [...base, ...made.leaves];
-    this.leafCache = { doc, files, solution, drag, pattern, leaves, problems: made.problems };
+    let leaves = [...base, ...made.leaves];
+    // the exploded view (C15.14): each component's leaves, its sub-assembly's parts and its pattern's instances moved by its offset; no pose is changed
+    const exploding = explosionOffsets(doc, (axis) => this.lineOf(axis, base));
+    if (exploded) leaves = explodeLeaves(leaves, exploding.offsets);
+    this.leafCache = { doc, files, solution, drag, pattern, exploded, leaves, problems: made.problems, explodeProblems: exploding.problems };
     this.ensureMirrors(leaves);
     return leaves;
   }
@@ -681,6 +701,7 @@ export class AssemblyStore {
     if (this.state.insert) this.cancelInsert();
     if (this.state.move) this.closeMove();
     if (this.state.pattern) this.cancelPattern();
+    this.leaveExplode();
     this.set({ mate: { editing: null, a: null, b: null, type: null }, selected: null });
   }
 
@@ -699,6 +720,12 @@ export class AssemblyStore {
    * third replaces the second. With both chosen, the mate SolidWorks would suggest is set up.
    */
   pickElement(ref: MateRef): void {
+    const ed = this.state.explode;
+    if (ed?.picking) {
+      // the direction of an explode step: an element of any component
+      this.set({ explode: { ...ed, step: { ...ed.step, axis: { kind: 'ref', ref } }, picking: false } });
+      return;
+    }
     const pd = this.state.pattern;
     if (pd?.picking) {
       // a direction or axis for the pattern, an element of any component (C15.13)
@@ -866,6 +893,7 @@ export class AssemblyStore {
     if (this.state.insert) this.cancelInsert();
     if (this.state.mate) this.cancelMate();
     if (this.state.move) this.closeMove();
+    this.leaveExplode();
     const n = (doc.patterns ?? []).filter((p) => p.kind === kind).length + 1;
     const id = new IdAllocator(doc.idCounters, assemblyIdsInUse(doc)).take('pattern');
     const name = t(kind === 'linear' ? 'pattern.linearName' : kind === 'circular' ? 'pattern.circularName' : 'pattern.mirrorName', { n });
@@ -917,6 +945,81 @@ export class AssemblyStore {
     if (patternIds.length > 0) this.execute({ type: 'deletePatterns', patternIds });
   }
 
+  // ------------------------------------------------------------ the exploded view (C15.14)
+
+  /** Why an explode step moves nothing (its axis is gone, its distance does not read); empty when all is well. Derived. */
+  explodeProblems(): ReadonlyMap<Id, string> {
+    this.leaves();
+    return this.leafCache?.explodeProblems ?? new Map();
+  }
+
+  /** 「爆炸視圖」: opens the PropertyManager with a new step, the selected component first. Opening it shows the view exploded. */
+  startExplode(): void {
+    if (this.state.insert) this.cancelInsert();
+    if (this.state.mate) this.cancelMate();
+    if (this.state.move) this.closeMove();
+    if (this.state.pattern) this.cancelPattern();
+    this.set({ explode: { editing: null, step: this.newExplodeStep(), picking: false }, exploded: true });
+  }
+
+  private newExplodeStep(): ExplodeStep {
+    const doc = this.history.doc;
+    const id = new IdAllocator(doc.idCounters, assemblyIdsInUse(doc)).take('explode');
+    const seed = doc.components.find((c) => c.id === this.state.selected && !c.suppressed);
+    return { id, name: t('explode.stepName', { n: (doc.explosion?.length ?? 0) + 1 }), components: seed ? [seed.id] : [], axis: { kind: 'axis', axis: 'z' }, distance: '50' };
+  }
+
+  /** What needs the assembled positions (mating, moving, inserting, patterns) closes the exploded view first. */
+  private leaveExplode(): void {
+    if (this.state.explode || this.state.exploded) this.set({ explode: null, exploded: false });
+  }
+
+  closeExplode(): void {
+    if (this.state.explode) this.set({ explode: null });
+  }
+
+  /** Shows the assembly exploded, or as it is assembled (a display: no pose changes). */
+  setExploded(value: boolean): void {
+    if (this.state.exploded !== value) this.set({ exploded: value });
+  }
+
+  /** Changes the step being made. */
+  setExplodeDraft(patch: Partial<ExplodeStep>): void {
+    const d = this.state.explode;
+    if (d) this.set({ explode: { ...d, step: { ...d.step, ...patch } } });
+  }
+
+  /** Whether the next element picked in the graphics area is the step's direction. */
+  pickExplodeAxis(on: boolean): void {
+    const d = this.state.explode;
+    if (d) this.set({ explode: { ...d, picking: on } });
+  }
+
+  /** 「編輯」 on a step of the list. */
+  editExplodeStep(id: Id): void {
+    const s = this.history.doc.explosion?.find((x) => x.id === id);
+    if (!s) return;
+    if (!this.state.explode) this.startExplode();
+    this.set({ explode: { editing: id, step: s, picking: false }, exploded: true, selected: id });
+  }
+
+  /** 「加入步驟」 / 「更新步驟」: the step goes into the document (one undo step) and the PropertyManager stays for the next. */
+  applyExplodeStep(): void {
+    const d = this.state.explode;
+    if (!d) return;
+    if (!this.execute({ type: d.editing ? 'setExplodeStep' : 'insertExplodeStep', step: d.step })) return;
+    this.set({ explode: { editing: null, step: this.newExplodeStep(), picking: false }, exploded: true });
+  }
+
+  deleteExplodeSteps(stepIds: Id[]): void {
+    if (stepIds.length === 0) return;
+    if (this.execute({ type: 'deleteExplodeSteps', stepIds }) && this.state.explode) this.set({ explode: { editing: null, step: this.newExplodeStep(), picking: false } });
+  }
+
+  moveExplodeStep(stepId: Id, to: number): void {
+    this.execute({ type: 'moveExplodeStep', stepId, to });
+  }
+
   /** 「確認刪除」 for components or mates. */
   requestDelete(ids: Id[] | null): void {
     if (ids && ids.length === 0) return;
@@ -942,6 +1045,7 @@ export class AssemblyStore {
     if (this.state.mate) this.cancelMate();
     if (this.state.move) this.closeMove();
     if (this.state.pattern) this.cancelPattern();
+    this.leaveExplode();
     const project = (this.project ??= await this.host.projectFolder('插入零組件會從專案資料夾讀取零件檔（.3dbx）與 STEP 檔；組合件也要存在這個資料夾之內，才能以相對路徑找到零件。'));
     if (!project) return;
     this.set({ insert: { files: null, chosen: null }, selected: null });
@@ -1133,6 +1237,10 @@ export class AssemblyStore {
     const pose = this.poseOf(componentId);
     const solution = this.state.solution;
     if (!pose || !solution || this.state.mate || this.state.insert || this.dragging) return false;
+    if (this.state.exploded) {
+      this.host.notify(t('explode.cannotWhileExploded'));
+      return false;
+    }
     const why = this.cannotMove(componentId);
     if (why) {
       this.host.notify(why);
@@ -1251,6 +1359,7 @@ export class AssemblyStore {
     if (this.state.insert) this.cancelInsert();
     if (this.state.mate) this.cancelMate();
     if (this.state.pattern) this.cancelPattern();
+    this.leaveExplode();
     this.set({ move: { tool } });
   }
 

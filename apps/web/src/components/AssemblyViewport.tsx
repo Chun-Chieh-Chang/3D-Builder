@@ -118,7 +118,7 @@ export function AssemblyViewport() {
       v.fitAll();
       fitted.current = { store: store.assembly, request: asm.fitRequest };
     }
-  }, [asm.doc, asm.files, asm.folder, asm.fitRequest, asm.solution, asm.drag, asm.pattern, parts]);
+  }, [asm.doc, asm.files, asm.folder, asm.fitRequest, asm.solution, asm.drag, asm.pattern, asm.exploded, parts]);
 
   // What is shown as chosen: the mate being defined, else the mate or component selected in the tree.
   const selectedMate = asm.selected ? asm.doc.mates.find((m) => m.id === asm.selected) : undefined;
@@ -167,8 +167,8 @@ export function AssemblyViewport() {
 
   // Whole components are picked (and dragged) normally; elements while a mate is being defined.
   const mating = !!asm.mate;
-  const pickingAxis = !!asm.pattern?.picking; // a pattern's direction or axis is picked from the elements in the view (C15.13)
-  const patterning = !!asm.pattern;
+  const pickingAxis = !!asm.pattern?.picking || !!asm.explode?.picking; // a pattern's direction or axis is picked from the elements in the view (C15.13)
+  const patterning = !!asm.pattern || !!asm.explode;
   const placing = !!asm.insert;
   useEffect(() => {
     const v = store.viewer;

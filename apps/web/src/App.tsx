@@ -13,6 +13,7 @@ import { MatePanel } from './components/MatePanel';
 import { MovePanel } from './components/MovePanel';
 import { PatternPanel } from './components/PatternPanel';
 import { BomDialog } from './components/BomDialog';
+import { ExplodePanel } from './components/ExplodePanel';
 import { PropertyManager } from './components/PropertyManager';
 import { StatusBar } from './components/StatusBar';
 import { Viewport } from './components/Viewport';
@@ -28,8 +29,9 @@ export function App() {
   const mating = useStore((s) => !!s.asm?.mate);
   const moving = useStore((s) => !!s.asm?.move);
   const patterning = useStore((s) => !!s.asm?.pattern);
+  const exploding = useStore((s) => !!s.asm?.explode);
   const partEditing = useStore((s) => s.editing);
-  const editing = assembly ? inserting || mating || moving || patterning : !!partEditing;
+  const editing = assembly ? inserting || mating || moving || patterning || exploding : !!partEditing;
   const title = useDocumentTitle();
   useEffect(() => installShortcuts(), []);
   useEffect(() => {
@@ -44,7 +46,7 @@ export function App() {
             <span className={editing ? '' : 'active'}>FeatureManager</span>
             <span className={editing ? 'active' : ''}>PropertyManager</span>
           </div>
-          {assembly ? mating ? <MatePanel /> : inserting ? <InsertComponentPanel /> : moving ? <MovePanel /> : patterning ? <PatternPanel /> : <AssemblyTree /> : editing ? <PropertyManager /> : <FeatureTree />}
+          {assembly ? mating ? <MatePanel /> : inserting ? <InsertComponentPanel /> : moving ? <MovePanel /> : patterning ? <PatternPanel /> : exploding ? <ExplodePanel /> : <AssemblyTree /> : editing ? <PropertyManager /> : <FeatureTree />}
         </aside>
         {assembly ? <AssemblyViewport /> : <Viewport />}
       </div>

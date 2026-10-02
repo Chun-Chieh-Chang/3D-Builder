@@ -21,7 +21,7 @@ export interface UiAction {
 }
 
 /** Nothing going on in the open assembly: no PropertyManager, no drag. */
-const assemblyFree = (s: UiState) => !s.asm?.insert && !s.asm?.mate && !s.asm?.move && !s.asm?.drag && !s.asm?.pattern;
+const assemblyFree = (s: UiState) => !s.asm?.insert && !s.asm?.mate && !s.asm?.move && !s.asm?.drag && !s.asm?.pattern && !s.asm?.explode;
 /** No PropertyManager session in the open document: file commands may replace or save it. */
 const idle = (s: UiState) => (s.active === 'assembly' ? assemblyFree(s) : s.editing === null);
 /** A part is open and nothing is being edited in it. */
@@ -95,6 +95,7 @@ export const ACTIONS: UiAction[] = [
   { id: 'mate', get label() { return t('act.mate'); }, group: 'assembly', enabled: (s) => assemblyIdle(s) && hasComponents(s), run: () => store.assembly?.startMate() },
   { id: 'move-component', get label() { return t('act.moveComponent'); }, group: 'assembly', enabled: (s) => assemblyIdle(s) && hasComponents(s), run: () => store.assembly?.startMove('move') },
   { id: 'rotate-component', get label() { return t('act.rotateComponent'); }, group: 'assembly', enabled: (s) => assemblyIdle(s) && hasComponents(s), run: () => store.assembly?.startMove('rotate') },
+  { id: 'explode', get label() { return t('explode.act'); }, group: 'assembly', enabled: (s) => assemblyIdle(s) && hasComponents(s), run: () => store.assembly?.startExplode() },
   { id: 'bom', get label() { return t('bom.act'); }, group: 'assembly', enabled: (s) => assemblyIdle(s) && hasComponents(s), run: () => store.openDialog('bom') },
   { id: 'pattern-linear', get label() { return t('pattern.actLinear'); }, group: 'assembly', enabled: (s) => assemblyIdle(s) && hasComponents(s), run: () => store.assembly?.startPattern('linear') },
   { id: 'pattern-circular', get label() { return t('pattern.actCircular'); }, group: 'assembly', enabled: (s) => assemblyIdle(s) && hasComponents(s), run: () => store.assembly?.startPattern('circular') },
@@ -204,6 +205,9 @@ export function installShortcuts(): () => void {
       }
       if (s.asm.move) {
         if (e.key === 'Escape' || e.key === 'Enter') return void a?.closeMove();
+      } else if (s.asm.explode) {
+        // Esc first stops picking a direction in the view, then closes the PropertyManager
+        if (e.key === 'Escape' || e.key === 'Enter') return void (s.asm.explode.picking && e.key === 'Escape' ? a?.pickExplodeAxis(false) : a?.closeExplode());
       } else if (s.asm.pattern) {
         // Esc first stops picking an axis in the view, then closes the PropertyManager
         if (e.key === 'Escape') return void (s.asm.pattern.picking ? a?.pickPatternAxis(null) : a?.cancelPattern());
@@ -213,6 +217,8 @@ export function installShortcuts(): () => void {
       } else if (s.asm.insert) {
         if (e.key === 'Escape') return void a?.cancelInsert();
         if (e.key === 'Enter') return void a?.place(null);
+      } else if (e.key === 'Delete' && selected && s.asm.doc.explosion?.some((x) => x.id === selected)) {
+        return void a?.deleteExplodeSteps([selected]);
       } else if (e.key === 'Delete' && selected && s.asm.doc.patterns?.some((p) => p.id === selected)) {
         return void a?.deletePatterns([selected]); // a pattern's instances are derived: nothing else goes with it
       } else if (e.key === 'Delete' && selected && (selectedComponent(s) || s.asm.doc.mates.some((m) => m.id === selected))) {

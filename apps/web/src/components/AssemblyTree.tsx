@@ -167,6 +167,31 @@ export function AssemblyTree() {
             </li>
           );
         })}
+        {(asm.doc.explosion ?? []).length > 0 && (
+          <li className="tree-row folder" data-explode-folder title={asm.exploded ? t('explode.collapse') : t('explode.explode')} onClick={() => a?.setExploded(!asm.exploded)}>
+            <Icon name="assembly" />
+            <span className="name">
+              {t('explode.title')} {asm.exploded ? '▾' : '▸'}
+            </span>
+          </li>
+        )}
+        {(asm.doc.explosion ?? []).map((s) => {
+          const problem = a?.explodeProblems().get(s.id);
+          return (
+            <li
+              key={s.id}
+              data-explode-row={s.id}
+              className={`tree-row pattern ${asm.selected === s.id ? 'selected' : ''} ${problem ? 'error' : ''}`}
+              title={problem ?? t('explode.stepSummary', { components: s.components.map(nameOf).join(', '), distance: s.distance })}
+              style={{ paddingLeft: 24 }}
+              onClick={() => select(s.id)}
+              onDoubleClick={() => a?.editExplodeStep(s.id)}
+            >
+              <span className="name">{s.name}</span>
+              {problem && <Icon name="error" className="status-error" />}
+            </li>
+          );
+        })}
         <li className={`tree-row folder ${errors ? 'error' : ''}`} onClick={() => setMatesOpen((o) => !o)} title={errors ? `${errors} 個結合有錯誤` : undefined}>
           <Icon name="mates" />
           <span className="name">結合</span>
