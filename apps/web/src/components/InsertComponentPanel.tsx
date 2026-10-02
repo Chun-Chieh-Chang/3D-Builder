@@ -18,12 +18,14 @@ export function InsertComponentPanel() {
   const status = chosen ? asm.files.get(chosen) : undefined;
   const first = asm.doc.components.length === 0;
   const loading = useLoadingParts();
+  // a sub-assembly can be placed once the files it uses are read too
+  const ready = status?.status === 'ok' && !(status.assembly && [...asm.files.values()].some((s) => s.status === 'loading'));
   return (
     <div className="property-manager">
       <div className="pm-header">
         <Icon name="assembly" />
         <span className="pm-title">{first ? '開始組合件' : '插入零組件'}</span>
-        <button className="pm-ok" title="放在原點（Enter）" disabled={status?.status !== 'ok'} onClick={() => a?.place(null)}>
+        <button className="pm-ok" title="放在原點（Enter）" disabled={!ready} onClick={() => a?.place(null)}>
           <Icon name="ok" />
         </button>
         <button className="pm-cancel" title="取消（Esc）" onClick={() => a?.cancelInsert()}>
@@ -41,10 +43,11 @@ export function InsertComponentPanel() {
           <ul className="file-list" role="listbox" aria-label="零件檔">
             {insert.files.map((path) => (
               <li key={path} role="option" aria-selected={path === chosen} className={path === chosen ? 'selected' : ''} title={path} onClick={() => a?.choosePart(path)}>
-                <Icon name="part" />
+                <Icon name={/\.3dba$/i.test(path) ? 'assembly' : 'part'} />
                 <span className="name">{partNameOf(path)}</span>
                 {dirName(path) && <span className="folder muted">{dirName(path)}</span>}
                 {/\.(step|stp)$/i.test(path) && <span className="file-kind">STEP</span>}
+                {/\.3dba$/i.test(path) && <span className="file-kind">3DBA</span>}
               </li>
             ))}
           </ul>
@@ -68,7 +71,12 @@ export function InsertComponentPanel() {
             </div>
           )}
           {(status?.status === 'missing' || status?.status === 'error') && <p className="error-text">{status.message}</p>}
-          {status?.status === 'ok' && (
+          {status?.status === 'ok' && !ready && (
+            <div role="status">
+              <Busy />
+            </div>
+          )}
+          {ready && (
             <p className="hint">
               在圖面中按一下以放置「{partNameOf(chosen)}」，或按 ✓ 放在原點。
               {first ? '第一個零組件會固定（f），其餘的可以移動（-）。' : ''}

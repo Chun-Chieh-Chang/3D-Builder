@@ -15,11 +15,21 @@
 7. **不合併幾何，沿路徑走過去（1b）。** 原本想把次組合件的所有零件拓撲與名稱合成一份「合成零件」，改成不合併：`SubAssemblyPart`（`@3db/regen`）只有「每個零組件在次組合件座標裡的位姿」與「每個零組件是什麼」，所以一個元素的幾何是 `mateGeometryIn(ref, path, source)` 沿 `path` 一層層走到葉零件、在葉零件自己的座標裡解析（持久名稱與指紋照舊），再用路上的位姿 `placed(...)` 帶出來。好處：名稱不用加前綴、不用複製拓撲、巢狀幾層都是同一個遞迴。`solveSubAssembly(doc, partOf)` 先在它自己的檔案裡求解（與一般組合件同一個 `solveAssembly`），結果交給上一層；每個零組件的來源只問一次，次組合件自己的零件由 `partOf` 在被問到時建。上一層的求解器把次組合件當一個剛體，轉動中心與大小由所有葉零件的球算出（`extentOfSource`，遞迴）。
 8. **「組合件本身」與「沒載入」是兩件事。** `component: null` 是這個組合件的預設基準面與原點，直接走 `mateGeometry(ref, null)`；`mateGeometryIn` 的 `source` 為 null 才是「零件沒有載入」（1b 的測試抓到我一開始把兩者混為一談）。
 
+9. **Worker 拿到的是「來源樹」，畫面拿到的是「葉子」（1c）。** `SourceTree`（`@3db/model`）：零件是 `{part, key}`，次組合件是 `{assembly, doc, children}`；`Worker.solveAssembly(doc, trees, options)` 用 `solveAssemblyTree`（`@3db/regen`）解，回傳的 `AssemblyResult.inner` 是每個次組合件裡各零組件的位姿（`InnerPoses`，只有位姿，不傳拓撲）。主執行緒用 `leavesOf`（純函式，在 `@3db/model`，因為主執行緒不能在執行期匯入 regen）把「頂層位姿 ∘ 內部位姿」算成每個要畫的零件：葉子 ID 是 `top` 或 `top/子/孫`，`leafAt(leaves, top, path)` 把結合參考的 `component` 與 `path` 對回葉子。
+10. **檢視器按「所屬零組件」操作。** `ViewInstance.owner`：次組合件的每個零件各是一個實例，但懸停、選取、拖曳都以 `owner`（頂層零組件）為單位，事件回報的也是 `owner`；元素事件仍回報葉子的 key，`refOf` 用 `leaves()` 換成 `{component, path, ref}`。次組合件裡的零件在父層不能單獨移動。
+11. **讀檔是遞迴的，每個路徑一個狀態。** `FileStatus` 的 `ok` 多了 `assembly?: AssemblyDoc`；讀到 `.3dba` 後逐一讀它用的檔案（路徑相對於那個檔案）。讀到的次組合件立刻用 `findReferenceCycle` 檢查，會包含自己的標為錯誤（訊息是路徑鏈）；插入時另外檢查「它的下面會不會回到這個組合件」（還有檔案在載入時不讓放，預覽的灰色零件也不畫：次組合件沒有單一網格可以跟著游標，所以按一下放置、✓ 放在原點）。`pointOutNestedProblems`：次組合件用到的檔案不見或壞掉時說一次檔名，要修復請開啟那個次組合件（它自己的「找不到參考的檔案」），**這與驗收標準 9 的「重新指定」有出入：頂層直接用的檔案有重新指定對話框，次組合件內部的檔案沒有**。
+12. **開啟次組合件與返回沿用開啟零件的機制。** 設計樹右鍵「開啟次組合件」→ 次組合件成為目前文件，左上有「返回組合件「X」」；返回時重新讀整個組合件，所以次組合件改過存檔的內容會顯示。
+
 ## 1a 的驗證
 
 - `packages/model/test/subassembly.test.ts`（9 項）：Schema 3、v2 文字讀入後內容不變、旗標與路徑往返、路徑形狀的檢查、不能與自己結合、`usedFiles`、無循環／菱形／自己用自己／兩個與三個一圈／路徑寫法不同／500 層深。
 - `tests/phase3/subassembly-files.test.ts`（4 項）：從磁碟上的檔案讀出整棵樹直到零件；定位組反過來使用夾具時找出「夾具 → 定位組 → 夾具」；另存到 `備份/舊版/` 時父檔路徑改寫為 `../../組件/定位組.3dba`、次組合件位元組不變；整個專案搬到更深的資料夾位元組全同。
 - `tests/fixtures/old-versions/v2-assembly.3dba`（`fa2ee17` 寫出，有兩個結合）：升版後開得起來，零件找得到，沒有任何 Schema 3 的鍵（`tests/phase2/assembly.test.ts`）。
+
+## 1c 的驗證
+
+- `tests/phase3/subassembly-solve.test.ts` 再加 3 項：`solveAssemblyTree` 與直接求解相同並回報每個次組合件內的位姿；`leavesOf` 的葉子 ID、鍵、位姿（頂層位姿 ∘ 內部位姿，誤差 < 1e-12）與攤平組合件的對應零件位置相差 < 1e-6；未求解的次組合件用它文件裡的擺放位置、沒讀到檔案的零組件沒有葉子、被抑制的被略過。
+- 瀏覽器（`tests/e2e/phase3-subassembly.js`，OPFS 專案資料夾）：開啟兩個定位組的夾具，四個檔案都讀到、結合成立、六個零件畫在預期位置（第二個定位組的板在 x = 120）、設計樹展開列出「定位板<1>、削邊銷<1>、削邊銷<2>」、`elementGeometry` 以路徑解析出次組合件內銷柄的圓柱面（x = 80）；完全定義的次組合件拒絕移動並說明；新組合件從插入清單選 `.3dba`（有自己的圖示與「3DBA」標籤）、載入完才可放置、名稱 `定位組<1>`；用帶路徑的元素做「重合」：建議類型是重合、結合成立（兩個定位組的板面共面）、選取方塊的標籤是「定位組<2>／定位板<1>」；存檔後開啟次組合件（有返回列）、返回後仍是 2 個零組件、1 個結合、6 個零件；刪掉次組合件用到的零件檔後開啟：說出檔名，其餘零件照畫，父層的結合仍成立。Console 只有已知的 favicon 404 與瀏覽器窗格的一個被擋下的外部資源，沒有應用程式的錯誤。
 
 ## 1b 的驗證（`tests/phase3/subassembly-solve.test.ts`，6 項）
 

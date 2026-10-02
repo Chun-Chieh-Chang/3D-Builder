@@ -277,3 +277,4 @@ html[lang="en"] .view-cube .cube-face { font-size: 10px; }
 .options-grid input[type='number'] { width: 80px; }
 .pick-filter-options { display: flex; gap: 10px; }
 .pick-filter-options label { display: flex; gap: 3px; align-items: center; }
+.flyout-leaf { padding-left: 10px; }

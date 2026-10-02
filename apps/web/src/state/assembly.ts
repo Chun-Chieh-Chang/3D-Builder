@@ -5,15 +5,20 @@ import {
   axisAngle,
   baseName,
   CommandError,
+  composePose,
   composeRotations,
+  cycleMessage,
   DATUM_PLANES,
   dirName,
   evalAngle,
   evalLength,
+  findReferenceCycle,
   IDENTITY_ROTATION,
   IdAllocator,
   isDatumPlaneName,
   joinPath,
+  leafAt,
+  leavesOf,
   nextInstance,
   relativePath,
   relativePose,
@@ -21,20 +26,24 @@ import {
   serializeAssembly,
   toPartPoint,
   transformPoint,
+  usedFiles,
   type AssemblyCommand,
   type AssemblyDoc,
   type Component,
   type FileRef,
   type Id,
+  type Leaf,
   type Mate,
   type MateRef,
   type MateType,
   type Pose,
   type Quat,
+  type SourceTree,
   type Vec3,
 } from '@3db/model';
 import { closerAlignment, currentValue, defaultType, hasAlignment, MATE_LABEL, placed, supportedTypes, type GoalTerm, type MateGeometry } from '@3db/assembly';
-import { assemblyFileName, assemblyName, componentName, PART_FILE_EXTENSION, partNameOf, sha256Hex, writeAssemblyFile } from '@3db/io';
+import { ASSEMBLY_FILE_EXTENSION, assemblyFileName, assemblyName, componentName, PART_FILE_EXTENSION, partNameOf, readDocumentFile, sha256Hex, writeAssemblyFile } from '@3db/io';
+import { t } from '@3db/i18n';
 import type { AssemblyResult } from '@3db/regen';
 import type { AssemblyStepRequest, KernelApi, PartBuildPayload, PartStage } from '../worker/protocol';
 import { fileIn, listFiles, pathIn, pickAssemblySaveTarget, pickPartFile, writeFile } from '../files';
@@ -44,7 +53,8 @@ import { immovable } from './movability';
 export type FileStatus =
   /** `since`: when it began (ms since the epoch), for how long it has been going on. */
   | { status: 'loading'; stage: PartStage; since: number }
-  | { status: 'ok'; key: string }
+  /** `assembly`: the file is a sub-assembly (C15.4), and this is its document; its own files are read too, each under its own path. */
+  | { status: 'ok'; key: string; assembly?: AssemblyDoc }
   | { status: 'missing' | 'error'; message: string };
 
 /** 「插入零組件」 (C15.1). */
@@ -152,7 +162,7 @@ export interface AssemblySource {
 const round = (v: number) => Math.round(v * 1000) / 1000 + 0; // µm; "+ 0" turns −0 into 0
 /** Two poses alike to within `tol` (mm, and quaternion components; the solver keeps w ≥ 0). */
 const samePose = (a: Pose, b: Pose, tol: number) => a.position.every((v, i) => Math.abs(v - b.position[i]!) <= tol) && a.rotation.every((v, i) => Math.abs(v - b.rotation[i]!) <= tol);
-const sameRef = (x: MateRef | null, y: MateRef) => !!x && x.component === y.component && x.ref.kind === y.ref.kind && x.ref.name === y.ref.name;
+const sameRef = (x: MateRef | null, y: MateRef) => !!x && x.component === y.component && (x.path ?? []).join('/') === (y.path ?? []).join('/') && x.ref.kind === y.ref.kind && x.ref.name === y.ref.name;
 /** A value as the PropertyManager shows it: mm, or degrees for angles, to a thousandth. */
 const shown = (type: MateType, v: number) => String(Math.round((type === 'angle' ? (v * 180) / Math.PI : v) * 1000) / 1000 + 0);
 
@@ -324,15 +334,37 @@ export class AssemblyStore {
   /** Reads a file and shows what it holds now; until then the file shows as it was. */
   private readInto(path: string): void {
     const generation = this.generation;
-    void this.read(path).then((status) => {
+    void this.read(path).then((read) => {
       if (generation !== this.generation) return; // reloaded meanwhile
+      const status = this.checked(path, read);
       this.setFile(path, status);
+      if (status.status === 'ok' && status.assembly) for (const f of status.assembly.files) this.load(joinPath(dirName(path), f.path));
       if (![...this.state.files.values()].some((s) => s.status === 'loading')) {
         this.settled();
         this.pointOutMissing();
       }
       this.requestSolve();
     });
+  }
+
+  /** Where this assembly's own file is in the project folder; null while it has not been saved. */
+  private ownPath(): string | null {
+    return this.state.fileName ? joinPath(this.folder, this.state.fileName) : null;
+  }
+
+  /** The project paths of the files the assembly file at `path` uses; null for anything that is not an assembly read so far. `known` is a file just read, not in the state yet. */
+  private refsOf(path: string, known?: { path: string; doc: AssemblyDoc }, extra?: string): string[] | null {
+    if (path === this.ownPath()) return [...usedFiles(this.history.doc, this.folder), ...(extra ? [extra] : [])];
+    const doc = known && known.path === path ? known.doc : (this.state.files.get(path) as { assembly?: AssemblyDoc } | undefined)?.assembly;
+    return doc ? usedFiles(doc, dirName(path)) : null;
+  }
+
+  /** A sub-assembly that would contain itself is an error, not a file to read further. */
+  private checked(path: string, status: FileStatus): FileStatus {
+    if (status.status !== 'ok' || !status.assembly) return status;
+    const known = { path, doc: status.assembly };
+    const cycle = findReferenceCycle(path, (p) => this.refsOf(p, known));
+    return cycle ? { status: 'error', message: cycleMessage(cycle) } : status;
   }
 
   private async read(path: string): Promise<FileStatus> {
@@ -345,6 +377,11 @@ export class AssemblyStore {
       this.stamps.set(path, `${file.lastModified}:${file.size}`);
       const bytes = new Uint8Array(await file.arrayBuffer());
       const key = await sha256Hex(bytes);
+      if (path.toLowerCase().endsWith(ASSEMBLY_FILE_EXTENSION)) {
+        const opened = await readDocumentFile(bytes);
+        if (opened.kind !== 'assembly') return { status: 'error', message: t('subassembly.notAssembly', { path }) };
+        return { status: 'ok', key, assembly: opened.doc }; // its own files are read when this is known (readInto)
+      }
       if (!this.state.builds.has(key)) {
         const build = await this.host.api.buildPart(key, bytes, proxy((stage: PartStage) => this.stageReached(path, stage, generation)));
         // A file that gave no body and said why (a STEP file that is none, a part whose features all failed) is an error, not a part to place. An empty part has nothing to say and stays.
@@ -370,8 +407,7 @@ export class AssemblyStore {
     if (!project || this.refreshing || this.closed) return;
     this.refreshing = true;
     try {
-      for (const f of this.history.doc.files) {
-        const path = joinPath(this.folder, f.path);
+      for (const path of [...this.state.files.keys()]) {
         const status = this.state.files.get(path);
         if (!status || status.status === 'loading') continue;
         let stamp: string | null = null;
@@ -391,25 +427,59 @@ export class AssemblyStore {
 
   /** Every file has been read: the worker lets go of parts nothing here uses. */
   private settled(): void {
-    const paths = [...this.history.doc.files.map((f) => joinPath(this.folder, f.path)), ...(this.state.insert?.chosen ? [this.state.insert.chosen] : [])];
-    const keys = paths.flatMap((p) => {
-      const s = this.state.files.get(p);
-      return s?.status === 'ok' ? [s.key] : [];
-    });
+    const seen = new Set<string>();
+    const keys: string[] = [];
+    const visit = (path: string) => {
+      if (seen.has(path)) return;
+      seen.add(path);
+      const s = this.state.files.get(path);
+      if (s?.status !== 'ok') return;
+      if (s.assembly) for (const f of s.assembly.files) visit(joinPath(dirName(path), f.path));
+      else keys.push(s.key);
+    };
+    for (const f of this.history.doc.files) visit(joinPath(this.folder, f.path));
+    if (this.state.insert?.chosen) visit(this.state.insert.chosen);
     void this.host.api.retainParts(keys);
   }
 
   // ------------------------------------------------------------ solving (A3.2, A3.4)
 
-  /** Each component's rebuilt part, by component id (parts not read yet are left out). */
-  private keys(): Record<Id, string> {
-    const keys: Record<Id, string> = {};
+  /** What the file at `path` is, down through sub-assemblies: a part by its key, or a sub-assembly and what is in it. Null: not read (yet), or not usable. */
+  private treeOf(path: string, above: readonly string[] = []): SourceTree | null {
+    const status = this.state.files.get(path);
+    if (status?.status !== 'ok' || above.includes(path)) return null;
+    if (!status.assembly) return { kind: 'part', key: status.key };
+    const children: Record<Id, SourceTree> = {};
+    for (const c of status.assembly.components) {
+      const file = status.assembly.files.find((f) => f.id === c.file);
+      const child = file && this.treeOf(joinPath(dirName(path), file.path), [...above, path]);
+      if (child) children[c.id] = child;
+    }
+    return { kind: 'assembly', doc: status.assembly, children };
+  }
+
+  /** What each component of the assembly is (components whose file is not read yet are left out). */
+  private trees(): Record<Id, SourceTree> {
+    const trees: Record<Id, SourceTree> = {};
     for (const c of this.history.doc.components) {
       const file = this.history.doc.files.find((f) => f.id === c.file);
-      const status = file && this.state.files.get(joinPath(this.folder, file.path));
-      if (status?.status === 'ok') keys[c.id] = status.key;
+      const tree = file && this.treeOf(joinPath(this.folder, file.path));
+      if (tree) trees[c.id] = tree;
     }
-    return keys;
+    return trees;
+  }
+
+  private leafCache: { doc: AssemblyDoc; files: AssemblyState['files']; solution: AssemblyResult | null; drag: AssemblyState['drag']; leaves: Leaf[] } | null = null;
+
+  /** Every part to draw, where it is now (see `leavesOf`). Derived; kept while nothing it depends on changes. */
+  leaves(): Leaf[] {
+    const { files, solution, drag } = this.state;
+    const doc = this.history.doc;
+    const c = this.leafCache;
+    if (c && c.doc === doc && c.files === files && c.solution === solution && c.drag === drag) return c.leaves;
+    const leaves = leavesOf(doc, this.trees(), (id) => this.poseOf(id), solution?.inner);
+    this.leafCache = { doc, files, solution, drag, leaves };
+    return leaves;
   }
 
   /** Solves the mates, with the mate being defined; a newer request replaces one still waiting. */
@@ -424,7 +494,7 @@ export class AssemblyStore {
   private async solve(): Promise<void> {
     this.solving = true;
     try {
-      const solution = await this.host.api.solveAssembly(this.solveDoc(), this.keys());
+      const solution = await this.host.api.solveAssembly(this.solveDoc(), this.trees());
       if (!this.solveAgain) this.set({ solution });
     } catch (e) {
       this.host.notify(`結合求解失敗：${e instanceof Error ? e.message : String(e)}`, 'error');
@@ -474,6 +544,7 @@ export class AssemblyStore {
         unreadable.push(`${file?.path ?? c.file}（${why}）`);
         continue;
       }
+      if (status.assembly) throw new Error(t('subassembly.stepNotYet'));
       partOf.set(c.file, parts.length);
       parts.push({ key: status.key, name: partNameOf(file.path) });
     }
@@ -485,6 +556,15 @@ export class AssemblyStore {
     return { name: this.name(), parts, instances };
   }
 
+  /** Whether a component is a sub-assembly (its file is an assembly that was read). */
+  isSubAssembly(componentId: Id): boolean {
+    const doc = this.history.doc;
+    const c = doc.components.find((x) => x.id === componentId);
+    const file = c && doc.files.find((f) => f.id === c.file);
+    const status = file && this.state.files.get(joinPath(this.folder, file.path));
+    return status?.status === 'ok' && !!status.assembly;
+  }
+
   /** The rebuilt part of a component. */
   buildOf(componentId: Id): PartBuildPayload | null {
     const doc = this.history.doc;
@@ -494,20 +574,41 @@ export class AssemblyStore {
     return status?.status === 'ok' ? (this.state.builds.get(status.key) ?? null) : null;
   }
 
+  /** The rebuilt part of a leaf (a part inside a sub-assembly, or a component that is a part). */
+  buildOfLeaf(leaf: Leaf): PartBuildPayload | null {
+    return this.state.builds.get(leaf.key) ?? null;
+  }
+
+  /** The part and the pose a mate's element is on: the component's own, or the leaf its path leads to inside a sub-assembly. */
+  elementPart(ref: MateRef): { build: PartBuildPayload; pose: Pose } | null {
+    if (ref.component === null) return null;
+    const leaf = ref.path?.length ? leafAt(this.leaves(), ref.component, ref.path) : null;
+    const build = leaf ? this.buildOfLeaf(leaf) : ref.path?.length ? null : this.buildOf(ref.component);
+    const pose = leaf ? leaf.pose : ref.path?.length ? null : this.poseOf(ref.component);
+    return build && pose ? { build, pose } : null;
+  }
+
   /** An element's geometry where it is now, in assembly coordinates (for what the PropertyManager offers). */
   elementGeometry(ref: MateRef): MateGeometry | null {
     const { name, kind } = ref.ref;
-    const datum = (): MateGeometry | null => {
+    const datum = (planes: PartBuildPayload['planes'] | undefined): MateGeometry | null => {
       if (name === 'origin') return { kind: 'point', point: [0, 0, 0] };
-      const frame = isDatumPlaneName(name) ? DATUM_PLANES[name] : ref.component ? this.buildOf(ref.component)?.planes.find((p) => p.id === name)?.frame : undefined;
+      const frame = isDatumPlaneName(name) ? DATUM_PLANES[name] : planes?.find((p) => p.id === name)?.frame;
       return frame ? { kind: 'plane', origin: frame.origin, normal: frame.normal } : null;
     };
-    if (ref.component === null) return kind === 'datum' ? datum() : null;
-    const build = this.buildOf(ref.component);
-    const pose = this.poseOf(ref.component);
-    if (!build || !pose) return null;
+    if (ref.component === null) return kind === 'datum' ? datum(undefined) : null;
+    // the planes and the origin of a sub-assembly itself (no path) are where the sub-assembly is, in its own coordinates
+    const own = !ref.path?.length && !this.buildOf(ref.component) && this.isSubAssembly(ref.component);
+    if (own) {
+      const pose = this.poseOf(ref.component);
+      const local = kind === 'datum' ? datum(undefined) : null;
+      return local && pose ? placed(local, pose) : null;
+    }
+    const part = this.elementPart(ref);
+    if (!part) return null;
+    const { build, pose } = part;
     let local: MateGeometry | null = null;
-    if (kind === 'datum') local = datum();
+    if (kind === 'datum') local = datum(build.planes);
     else if (kind === 'face') local = build.faceGeometry[build.faceNames.indexOf(name)] ?? null;
     else if (kind === 'edge') local = build.edgeGeometry[build.edgeNames.indexOf(name)] ?? null;
     else if (kind === 'vertex') {
@@ -713,8 +814,10 @@ export class AssemblyStore {
     this.set({ insert: { files: null, chosen: null }, selected: null });
     let listed = { files: [] as string[], truncated: false };
     try {
-      // STEP files are taken as parts, as SolidWorks inserts them (F2.1).
-      listed = await listFiles(project, [PART_FILE_EXTENSION, '.step', '.stp']);
+      // STEP files are taken as parts, as SolidWorks inserts them (F2.1); assembly files are sub-assemblies (C15.4), but not this one.
+      listed = await listFiles(project, [PART_FILE_EXTENSION, ASSEMBLY_FILE_EXTENSION, '.step', '.stp']);
+      const own = this.ownPath();
+      if (own) listed.files = listed.files.filter((p) => p !== own);
     } catch (e) {
       this.host.notify(`無法讀取專案資料夾：${e instanceof Error ? e.message : String(e)}`, 'error');
     }
@@ -755,6 +858,13 @@ export class AssemblyStore {
     if (!chosen) return this.host.notify('請先選擇要插入的零件');
     const status = this.state.files.get(chosen);
     if (status?.status !== 'ok') return this.host.notify(status?.status === 'loading' ? '零件還在載入，請稍候' : `無法使用這個零件檔：${status && 'message' in status ? status.message : ''}`, 'error');
+    if (status.assembly) {
+      // everything below it must be read before it can be judged; then it must not reach this assembly again (C15.4)
+      if ([...this.state.files.values()].some((s) => s.status === 'loading')) return this.host.notify(t('subassembly.stillLoading'), 'info');
+      const own = this.ownPath();
+      const cycle = own ? findReferenceCycle(own, (p) => this.refsOf(p, undefined, chosen)) : null;
+      if (cycle) return this.host.notify(cycleMessage(cycle), 'error');
+    }
     const doc = this.history.doc;
     const path = relativePath(this.folder, chosen);
     const existing = doc.files.find((f) => f.path === path);
@@ -785,8 +895,51 @@ export class AssemblyStore {
     return c ? componentName(doc.files.find((f) => f.id === c.file)?.path, c.instance) : componentId;
   }
 
+  /** What is inside a sub-assembly, in order, for the FeatureManager to list: each component's name and how deep it is (nested ones follow their sub-assembly). */
+  subComponents(componentId: Id): { path: Id[]; depth: number; name: string; assembly: boolean; missing: boolean }[] {
+    const doc = this.history.doc;
+    const c0 = doc.components.find((x) => x.id === componentId);
+    const f0 = c0 && doc.files.find((f) => f.id === c0.file);
+    const out: { path: Id[]; depth: number; name: string; assembly: boolean; missing: boolean }[] = [];
+    const walk = (path: string, above: readonly string[], ids: Id[]) => {
+      const status = this.state.files.get(path);
+      if (status?.status !== 'ok' || !status.assembly || above.includes(path)) return;
+      for (const c of status.assembly.components) {
+        const file = status.assembly.files.find((f) => f.id === c.file);
+        const childPath = file ? joinPath(dirName(path), file.path) : null;
+        const child = childPath ? this.state.files.get(childPath) : undefined;
+        const here = [...ids, c.id];
+        out.push({ path: here, depth: here.length, name: componentName(file?.path, c.instance), assembly: child?.status === 'ok' && !!child.assembly, missing: child?.status === 'missing' || child?.status === 'error' || !child });
+        if (childPath) walk(childPath, [...above, path], here);
+      }
+    };
+    if (f0) walk(joinPath(this.folder, f0.path), [], []);
+    return out;
+  }
+
+  /** 「定位組<1>／削邊銷<2>」: the component of a mate element, and the components inside it on the way to the part (C15.4). */
+  ownerLabel(top: Id, path: readonly Id[] = [], from = 0): string {
+    const doc = this.history.doc;
+    const labels = [this.componentLabel(top)];
+    const c0 = doc.components.find((x) => x.id === top);
+    const f0 = c0 && doc.files.find((f) => f.id === c0.file);
+    let tree = f0 ? this.treeOf(joinPath(this.folder, f0.path)) : null;
+    for (const id of path) {
+      if (tree?.kind !== 'assembly') {
+        labels.push(id);
+        break;
+      }
+      const c = tree.doc.components.find((x) => x.id === id);
+      const file = c && tree.doc.files.find((f) => f.id === c.file);
+      labels.push(c ? componentName(file?.path, c.instance) : id);
+      tree = tree.children[id] ?? null;
+    }
+    return labels.slice(from).join(t('subassembly.pathSeparator'));
+  }
+
   /** The middle of a component's part (its bounding box), in the part's coordinates: what it turns about. */
   private centerOf(componentId: Id): Vec3 {
+    if (this.isSubAssembly(componentId)) return this.subCenter(componentId);
     const build = this.buildOf(componentId);
     if (!build?.mesh) return [0, 0, 0];
     let c = this.centers.get(build.key);
@@ -804,6 +957,27 @@ export class AssemblyStore {
       this.centers.set(build.key, c);
     }
     return c;
+  }
+
+  /** The middle of the bounding box of everything in a sub-assembly, in the sub-assembly's own coordinates. */
+  private subCenter(componentId: Id): Vec3 {
+    const lo = [Infinity, Infinity, Infinity];
+    const hi = [-Infinity, -Infinity, -Infinity];
+    const to = this.poseOf(componentId);
+    for (const leaf of this.leaves()) {
+      const build = leaf.top === componentId ? this.buildOfLeaf(leaf) : null;
+      if (!build?.mesh || !to) continue;
+      const inside = relativePose(to, leaf.pose); // the leaf in the sub-assembly's coordinates
+      const p = build.mesh.positions;
+      for (let i = 0; i < p.length; i += 3) {
+        const q = transformPoint(inside, [p[i]!, p[i + 1]!, p[i + 2]!]);
+        for (let k = 0; k < 3; k++) {
+          lo[k] = Math.min(lo[k]!, q[k]!);
+          hi[k] = Math.max(hi[k]!, q[k]!);
+        }
+      }
+    }
+    return lo[0]! <= hi[0]! ? [(lo[0]! + hi[0]!) / 2, (lo[1]! + hi[1]!) / 2, (lo[2]! + hi[2]!) / 2] : [0, 0, 0];
   }
 
   /** Why a component cannot be moved: fixed, or fully defined by its mates; null when it can. */
@@ -884,7 +1058,7 @@ export class AssemblyStore {
       while (d.goal && this.dragging === d) {
         const terms = d.goal;
         d.goal = null;
-        const r = await this.host.api.solveAssembly(this.history.doc, this.keys(), { start: d.latest, goal: { body: d.component, terms } });
+        const r = await this.host.api.solveAssembly(this.history.doc, this.trees(), { start: d.latest, goal: { body: d.component, terms } });
         if (this.dragging !== d) return;
         d.latest = r.poses;
         d.result = r;
@@ -984,7 +1158,7 @@ export class AssemblyStore {
       ];
     }
     try {
-      const r = await this.host.api.solveAssembly(this.history.doc, this.keys(), { start: solution.poses, goal: { body: c.id, terms } });
+      const r = await this.host.api.solveAssembly(this.history.doc, this.trees(), { start: solution.poses, goal: { body: c.id, terms } });
       if (!this.commitMove(r)) this.host.notify(`「${this.componentLabel(c.id)}」受結合限制，不能這樣移動`);
     } catch (e) {
       this.host.notify(`移動失敗：${e instanceof Error ? e.message : String(e)}`, 'error');
@@ -1000,11 +1174,23 @@ export class AssemblyStore {
 
   /** Once the assembly has been read: missing files are pointed out once; when none is left, the dialog goes. */
   private pointOutMissing(): void {
+    this.pointOutNestedProblems();
     const missing = this.missingFiles().length > 0;
     if (!missing && this.state.relink) this.set({ relink: null });
     if (missing && !this.missingShown && this.project) {
       this.missingShown = true;
       void this.openRelink();
+    }
+  }
+
+  /** Files a sub-assembly uses that cannot be used (missing, unreadable): said once each; fixing them means opening the sub-assembly (its own 「找不到參考的檔案」). */
+  private nestedPointedOut = new Set<string>();
+  private pointOutNestedProblems(): void {
+    const direct = new Set(this.history.doc.files.map((f) => joinPath(this.folder, f.path)));
+    for (const [path, status] of this.state.files) {
+      if (direct.has(path) || (status.status !== 'missing' && status.status !== 'error') || this.nestedPointedOut.has(path)) continue;
+      this.nestedPointedOut.add(path);
+      this.host.notify(t('subassembly.nestedProblem', { path, why: status.message }), 'error');
     }
   }
 
@@ -1015,7 +1201,7 @@ export class AssemblyStore {
     this.set({ relink: { candidates: null } });
     let found: string[] = [];
     try {
-      found = (await listFiles(project, [PART_FILE_EXTENSION, '.step', '.stp'])).files;
+      found = (await listFiles(project, [PART_FILE_EXTENSION, ASSEMBLY_FILE_EXTENSION, '.step', '.stp'])).files;
     } catch {
       // the folder cannot be read: no candidates, 「瀏覽」 still works
     }

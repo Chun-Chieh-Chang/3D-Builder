@@ -1,5 +1,5 @@
 import type { Locale } from '@3db/i18n';
-import type { AssemblyDoc, Axis3, CoordSystem, Fingerprint, Id, PartDoc, PlaneFrame, Pose, Ref, SketchFeature, Vec3 } from '@3db/model';
+import type { AssemblyDoc, Axis3, CoordSystem, Fingerprint, Id, PartDoc, PlaneFrame, Pose, Ref, SketchFeature, SourceTree, Vec3 } from '@3db/model';
 import type { MassProps, MeshData } from '@3db/kernel';
 import type { AssemblyResult, AssemblySolveOptions, Converted, FeatureResult } from '@3db/regen';
 import type { MateGeometry } from '@3db/assembly';
@@ -162,8 +162,9 @@ export interface KernelApi {
   /** Lets go of every rebuilt part file except these. */
   retainParts(keys: string[]): Promise<void>;
   /**
-   * Solves an assembly's mates on the parts rebuilt for it (`keys`: component id → part key); with a
-   * goal, moves a component as far as its mates allow (dragging, numeric moves).
+   * Solves an assembly's mates on the parts rebuilt for it (`trees`: component id → what the component is: a part by
+   * its key, or a sub-assembly and what is in it, C15.4); with a goal, moves a component as far as its mates allow
+   * (dragging, numeric moves).
    */
-  solveAssembly(doc: AssemblyDoc, keys: Record<Id, string>, options?: AssemblySolveOptions): Promise<AssemblyResult>;
+  solveAssembly(doc: AssemblyDoc, trees: Record<Id, SourceTree>, options?: AssemblySolveOptions): Promise<AssemblyResult>;
 }

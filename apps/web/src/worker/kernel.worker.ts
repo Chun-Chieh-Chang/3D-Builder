@@ -3,10 +3,10 @@ import * as Comlink from 'comlink';
 import { setLocale as setWorkerLocale, t } from '@3db/i18n';
 import occtWasm from 'libcascade/single/wasm?url';
 import gcsWasm from '@salusoft89/planegcs/dist/planegcs_dist/planegcs.wasm?url';
-import { bodyKey, isShown, MESH_QUALITY, settingsOf, type AssemblyDoc, type Id, type PartDoc } from '@3db/model';
+import { bodyKey, isShown, MESH_QUALITY, settingsOf, type AssemblyDoc, type Id, type PartDoc, type SourceTree } from '@3db/model';
 import { findProfiles, PlaneGcsSolver } from '@3db/sketch';
 import { COMPONENT_MESH, Kernel, type MassProps, type MeshData, type MeshOptions, type ShapeId } from '@3db/kernel';
-import { convertEdges, edgeMateGeometry, exportFaces, faceColors, intoFrame, faceEdges, faceMateGeometry, followReferences, ReferenceProblem, Regenerator, solveAssembly, type AssemblyResult, type AssemblySolveOptions, type BodyInfo, type RebuildResult } from '@3db/regen';
+import { convertEdges, edgeMateGeometry, exportFaces, faceColors, intoFrame, faceEdges, faceMateGeometry, followReferences, ReferenceProblem, Regenerator, solveAssemblyTree, type AssemblyResult, type AssemblySolveOptions, type BodyInfo, type RebuildResult } from '@3db/regen';
 import { edgeFingerprint, faceFingerprint, vertexFingerprint } from '@3db/naming';
 import { binaryStl, exportAssemblyStep, exportPartStep, readComponentFile } from '@3db/io';
 import { mergeMeshes } from './mergeMesh';
@@ -248,18 +248,21 @@ const api: KernelApi = {
     return Comlink.transfer(payload, [...arrays, payload.vertexPoints].map((a) => a.buffer as ArrayBuffer));
   },
 
-  async solveAssembly(doc: AssemblyDoc, keys: Record<Id, string>, options: AssemblySolveOptions = {}): Promise<AssemblyResult> {
+  async solveAssembly(doc: AssemblyDoc, trees: Record<Id, SourceTree>, options: AssemblySolveOptions = {}): Promise<AssemblyResult> {
     await api.init();
-    const built = new Map<Id, BuiltPart>();
-    for (const [component, key] of Object.entries(keys)) {
+    const built = new Map<string, BuiltPart>();
+    const want = (tree: SourceTree): string[] => (tree.kind === 'part' ? [tree.key] : Object.values(tree.children).flatMap(want));
+    for (const key of new Set(Object.values(trees).flatMap(want))) {
       const part = await parts.get(key)?.catch(() => null);
-      if (part) built.set(component, part);
+      if (part) built.set(key, part);
     }
-    return solveAssembly(
+    return solveAssemblyTree(
       doc,
-      (id) => {
-        const body = built.get(id)?.result.body;
-        return body ? { topology: body.topology, names: body.names, frames: built.get(id)!.result.frames } : null;
+      trees,
+      (key) => {
+        const part = built.get(key);
+        const body = part?.result.body;
+        return body ? { topology: body.topology, names: body.names, frames: part!.result.frames } : null;
       },
       options,
     );

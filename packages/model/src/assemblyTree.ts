@@ -1,6 +1,67 @@
 import { t } from '@3db/i18n';
 import { joinPath, normalizePath } from './paths';
-import type { AssemblyDoc } from './schema';
+import type { Id } from './ids';
+import { composePose } from './pose';
+import type { AssemblyDoc, Pose } from './schema';
+
+/**
+ * What a component is, as the worker is told: a rebuilt part by its content key, or a sub-assembly: its document and
+ * what each of its components is in turn. A component whose file is not read yet (or not there) has no entry.
+ */
+export type SourceTree = { kind: 'part'; key: string } | { kind: 'assembly'; doc: AssemblyDoc; children: Record<Id, SourceTree> };
+
+/** Where the components of a sub-assembly are inside it (its own coordinates), and the same for the sub-assemblies in it. */
+export interface InnerPoses {
+  poses: ReadonlyMap<Id, Pose>;
+  inner: ReadonlyMap<Id, InnerPoses>;
+}
+
+/** One part to draw: where the parts of the components of an assembly end up, down through its sub-assemblies (C15.4). */
+export interface Leaf {
+  /** "comp2" for a part of the assembly itself, "comp2/pa" for a part inside the sub-assembly comp2 (ids are the files' own, so they are joined). */
+  id: string;
+  /** The component of the assembly this belongs to (it moves, hides, is selected as one). */
+  top: Id;
+  /** The components to go through inside it, outermost first: a mate element's `path`. Empty for a part of the assembly itself. */
+  path: Id[];
+  key: string;
+  /** Where the part is in the assembly's coordinates. */
+  pose: Pose;
+}
+
+/**
+ * Every part to draw. `topPose` is where a component of the assembly is now (dragged, solved, or its placement); parts inside
+ * a sub-assembly are carried along by it, at the poses its own mates gave them (`inner`) or, before it is solved, its own placements.
+ * Components that are suppressed are left out.
+ */
+export function leavesOf(doc: AssemblyDoc, trees: Readonly<Record<Id, SourceTree>>, topPose: (componentId: Id) => Pose | null, inner?: ReadonlyMap<Id, InnerPoses>): Leaf[] {
+  const out: Leaf[] = [];
+  const walk = (tree: SourceTree, top: Id, path: Id[], pose: Pose, solved: InnerPoses | undefined) => {
+    if (tree.kind === 'part') {
+      out.push({ id: [top, ...path].join('/'), top, path, key: tree.key, pose });
+      return;
+    }
+    for (const c of tree.doc.components) {
+      const child = tree.children[c.id];
+      if (!child || c.suppressed) continue;
+      const own = solved?.poses.get(c.id) ?? c.placement;
+      walk(child, top, [...path, c.id], composePose(pose, own), solved?.inner.get(c.id));
+    }
+  };
+  for (const c of doc.components) {
+    const tree = trees[c.id];
+    const pose = topPose(c.id);
+    if (!tree || !pose || c.suppressed) continue;
+    walk(tree, c.id, [], pose, inner?.get(c.id));
+  }
+  return out;
+}
+
+/** The leaf a mate element's component and path lead to, among `leaves` (null: not shown, e.g. its file is missing). */
+export function leafAt(leaves: readonly Leaf[], top: Id, path: readonly Id[] | undefined): Leaf | null {
+  const id = [top, ...(path ?? [])].join('/');
+  return leaves.find((l) => l.id === id) ?? null;
+}
 
 /**
  * The files an assembly uses, as paths relative to the project folder (`folder` is the one the assembly

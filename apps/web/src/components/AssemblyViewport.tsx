@@ -22,21 +22,26 @@ function placedFrame(frame: PlaneFrame, pose: Pose): PlaneFrame {
   return { origin: o, xDir: d(frame.xDir), yDir: d(frame.yDir), normal: d(frame.normal) };
 }
 
+/** The instance a mate element is on: the component's id, and for a part inside a sub-assembly the ids on the way (a leaf's id, see `leavesOf`). */
+const leafKey = (ref: MateRef): string => [ref.component, ...(ref.path ?? [])].join('/');
+
 /** Where a mate's element is drawn: a face, edge or vertex of a component, or a plane. */
 function shownElement(ref: MateRef): { element?: InstanceElement; plane?: PlaneDisplay } {
   const a = store.assembly;
   if (ref.ref.kind === 'datum') {
     if (!isDatumPlaneName(ref.ref.name) && ref.component === null) return {};
-    const local = isDatumPlaneName(ref.ref.name) ? DATUM_PLANES[ref.ref.name] : ref.component ? a?.buildOf(ref.component)?.planes.find((p) => p.id === ref.ref.name)?.frame : undefined;
-    const pose = ref.component ? a?.poseOf(ref.component) : null;
+    const part = a?.elementPart(ref);
+    // a sub-assembly's own planes (no path) are where the sub-assembly is; a part's reference planes are in the part
+    const pose = ref.component ? (part?.pose ?? (ref.path?.length ? null : a?.poseOf(ref.component))) : null;
+    const local = isDatumPlaneName(ref.ref.name) ? DATUM_PLANES[ref.ref.name] : part?.build.planes.find((p) => p.id === ref.ref.name)?.frame;
     if (!local || (ref.component && !pose)) return {};
-    return { plane: { key: `${ref.component ?? 'asm'}:${ref.ref.name}`, frame: pose ? placedFrame(local, pose) : local, highlighted: true } };
+    return { plane: { key: `${ref.component ? leafKey(ref) : 'asm'}:${ref.ref.name}`, frame: pose ? placedFrame(local, pose) : local, highlighted: true } };
   }
-  const build = ref.component ? a?.buildOf(ref.component) : null;
+  const build = a?.elementPart(ref)?.build;
   if (!build || !ref.component) return {};
   const names = ref.ref.kind === 'face' ? build.faceNames : ref.ref.kind === 'edge' ? build.edgeNames : build.vertexNames;
   const index = names.indexOf(ref.ref.name);
-  return index < 0 ? {} : { element: { key: ref.component, kind: ref.ref.kind as InstanceElement['kind'], index } };
+  return index < 0 ? {} : { element: { key: leafKey(ref), kind: ref.ref.kind as InstanceElement['kind'], index } };
 }
 
 /**
@@ -57,14 +62,15 @@ export function AssemblyViewport() {
   const [hoverElement, setHoverElement] = useState<InstanceElement | null>(null);
 
   useEffect(() => {
-    /** The element as a mate refers to it: the component, and the persistent name in its part. */
+    /** The element as a mate refers to it: the component (with the path inside it, for a part of a sub-assembly), and the persistent name in its part. */
     const refOf = (el: InstanceElement): MateRef | null => {
-      const build = store.assembly?.buildOf(el.key);
-      if (!build) return null;
+      const leaf = store.assembly?.leaves().find((l) => l.id === el.key);
+      const build = leaf && store.assembly?.buildOfLeaf(leaf);
+      if (!leaf || !build) return null;
       const [names, prints] = el.kind === 'face' ? [build.faceNames, build.faceFingerprints] : el.kind === 'edge' ? [build.edgeNames, build.edgeFingerprints] : [build.vertexNames, build.vertexFingerprints];
       const name = names[el.index];
       const fingerprint = prints[el.index];
-      return name && fingerprint ? { component: el.key, ref: { kind: el.kind, name, fingerprint } } : null;
+      return name && fingerprint ? { component: leaf.top, ...(leaf.path.length ? { path: leaf.path } : {}), ref: { kind: el.kind, name, fingerprint } } : null;
     };
     const viewer = new Viewer(host.current!, {
       onComponentHover: setHover,
@@ -96,12 +102,8 @@ export function AssemblyViewport() {
     const v = store.viewer;
     if (!v) return;
     v.setParts(parts);
-    const instances: ViewInstance[] = asm.doc.components.flatMap((c) => {
-      const file = asm.doc.files.find((f) => f.id === c.file);
-      const status = file && asm.files.get(joinPath(asm.folder, file.path));
-      const pose = asm.drag?.poses?.get(c.id) ?? asm.solution?.poses.get(c.id) ?? c.placement;
-      return status?.status === 'ok' && parts.has(status.key) ? [{ key: c.id, part: status.key, matrix: poseMatrix(pose) }] : [];
-    });
+    // every part to draw: a component that is a part, and the parts inside a sub-assembly, which belong to the component they are in (C15.4)
+    const instances: ViewInstance[] = (store.assembly?.leaves() ?? []).flatMap((l) => (parts.has(l.key) ? [{ key: l.id, part: l.key, matrix: poseMatrix(l.pose), owner: l.top }] : []));
     v.setInstances(instances);
     // Fit once per open (or first insert), when every part that can be shown is shown.
     const loading = [...asm.files.values()].some((s) => s.status === 'loading');
@@ -130,6 +132,16 @@ export function AssemblyViewport() {
   const chosen = asm.insert?.chosen ?? null;
   const chosenStatus = chosen ? asm.files.get(chosen) : undefined;
   const ghost = chosenStatus?.status === 'ok' && parts.has(chosenStatus.key) ? chosenStatus.key : null;
+  // a sub-assembly has no single mesh to follow the cursor (C15.4): a click places it, and ✓ puts it at the origin
+  const subChosen = chosenStatus?.status === 'ok' && !!chosenStatus.assembly && ![...asm.files.values()].some((s) => s.status === 'loading'); // its own files too
+  useEffect(() => {
+    const v = store.viewer;
+    if (!v || !subChosen) return;
+    v.setToolHandler((e) => {
+      if (e.type === 'up') store.assembly?.place(v.pointOnViewPlane(e.clientX, e.clientY));
+    });
+    return () => v.setToolHandler(null);
+  }, [subChosen]);
   useEffect(() => {
     const v = store.viewer;
     if (!v || !ghost) return;
@@ -153,24 +165,24 @@ export function AssemblyViewport() {
   useEffect(() => {
     const v = store.viewer;
     if (!v) return;
-    v.setComponentPicking(!mating && !ghost);
+    v.setComponentPicking(!mating && !ghost && !subChosen);
     v.setComponentDragging(!mating && !placing);
     v.setElementPicking(mating);
-  }, [mating, ghost, placing]);
+  }, [mating, ghost, placing, subChosen]);
 
   const hovered = hover ? asm.doc.components.find((c) => c.id === hover) : undefined;
   const elementName = (() => {
     if (!mating || !hoverElement) return null;
-    const build = store.assembly?.buildOf(hoverElement.key);
-    const c = asm.doc.components.find((x) => x.id === hoverElement.key);
+    const leaf = store.assembly?.leaves().find((l) => l.id === hoverElement.key);
+    const build = leaf && store.assembly?.buildOfLeaf(leaf);
     const names = hoverElement.kind === 'face' ? build?.faceNames : hoverElement.kind === 'edge' ? build?.edgeNames : build?.vertexNames;
-    return build && c ? `${KIND_WORD[hoverElement.kind]}：${names?.[hoverElement.index] ?? '?'}（${componentInfo(asm, c).name}）` : null;
+    return build && leaf ? `${KIND_WORD[hoverElement.kind]}：${names?.[hoverElement.index] ?? '?'}（${store.assembly?.ownerLabel(leaf.top, leaf.path)}）` : null;
   })();
   const dragged = asm.drag ? asm.doc.components.find((c) => c.id === asm.drag!.component) : undefined;
   const hint = dragged
     ? `${asm.drag!.mode === 'move' ? '移動' : '旋轉'}「${componentInfo(asm, dragged).name}」：只沿結合留下的自由度（Esc 取消）`
     : asm.insert
-    ? ghost
+    ? ghost || subChosen
       ? `在圖面中按一下以放置「${partNameOf(chosen!)}」（Esc 取消）`
       : chosen
         ? '正在載入零件…'

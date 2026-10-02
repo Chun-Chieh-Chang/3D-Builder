@@ -1498,6 +1498,15 @@ class AppStore {
         await this.importData(fileName, bytes);
       } else {
         const file = await readDocumentFile(bytes);
+        if (file.kind === 'assembly') {
+          // a sub-assembly (C15.4) opens as an assembly; 「返回組合件」 comes back to the one it was opened from
+          await this.openAssembly({ name: fileName, bytes, handle }, file.doc);
+          if (this.assembly?.file() === handle) {
+            this.returnFile = back;
+            this.set({ returnTo: back ? assembly : null });
+          }
+          return;
+        }
         if (file.kind !== 'part') throw new Error(t('file.notPart', { name: fileName }));
         this.load(file.doc, file.format === '3dbx' ? handle : null, fileName, file.blobs);
       }

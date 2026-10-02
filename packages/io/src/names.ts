@@ -1,7 +1,7 @@
 import { baseName, type PartDoc } from '@3db/model';
 
-/** Extensions of the files a part is saved to or made from; the part's name is the file name without them. */
-const PART_FILE = /(\.3db)?\.json$|\.3dbx$|\.(step|stp)$/i;
+/** Extensions of the files a part is saved to or made from; the part's name is the file name without them. A sub-assembly's file (C15.4) is named the same way. */
+const PART_FILE = /(\.3db)?\.json$|\.3dbx$|\.3dba$|\.(step|stp)$/i;
 const ASSEMBLY_FILE = /\.3dba$/i;
 
 /**

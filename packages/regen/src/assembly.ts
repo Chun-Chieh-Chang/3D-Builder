@@ -1,4 +1,4 @@
-import { composePose, DATUM_PLANES, evalAngle, evalLength, isDatumPlaneName, type AssemblyDoc, type Id, type Mate, type PlaneFrame, type Pose, type Ref, type Vec3 } from '@3db/model';
+import { composePose, DATUM_PLANES, evalAngle, evalLength, isDatumPlaneName, type AssemblyDoc, type Id, type InnerPoses, type Mate, type PlaneFrame, type Pose, type Ref, type SourceTree, type Vec3 } from '@3db/model';
 import { placed, solve, type BodyResult, type MateGeometry, type MateResult, type MateSpec, type MoveGoal, type SolverBody } from '@3db/assembly';
 import type { EdgeInfo, FaceInfo, Topology } from '@3db/kernel';
 import { resolveRef, type ElementNames } from '@3db/naming';
@@ -28,6 +28,33 @@ export type MateSource = MatePart | SubAssemblyPart;
 
 export const isSubAssembly = (s: MateSource): s is SubAssemblyPart => 'kind' in s;
 
+function innerPosesOf(s: SubAssemblyPart): InnerPoses {
+  const inner = new Map<Id, InnerPoses>();
+  for (const [id, part] of s.parts) if (part && isSubAssembly(part)) inner.set(id, innerPosesOf(part));
+  return { poses: s.poses, inner };
+}
+
+/** The source a `SourceTree` describes: parts by their keys (`partOfKey` null: not built), sub-assemblies solved on their own. */
+export function sourceFromTree(tree: SourceTree | undefined, partOfKey: (key: string) => MatePart | null): MateSource | null {
+  if (!tree) return null;
+  if (tree.kind === 'part') return partOfKey(tree.key);
+  return solveSubAssembly(tree.doc, (id) => sourceFromTree(tree.children[id], partOfKey)).part;
+}
+
+/** `solveAssembly` for components described by trees. */
+export function solveAssemblyTree(doc: AssemblyDoc, trees: Readonly<Record<Id, SourceTree>>, partOfKey: (key: string) => MatePart | null, options: AssemblySolveOptions = {}): AssemblyResult {
+  const sources = new Map<Id, MateSource | null>();
+  return solveAssembly(
+    doc,
+    (id) => {
+      if (!sources.has(id)) sources.set(id, sourceFromTree(trees[id], partOfKey));
+      return sources.get(id) ?? null;
+    },
+    options,
+  );
+}
+
+
 export type MateState = MateResult | { status: 'suppressed' } | { status: 'missing'; message: string };
 
 /** The solved assembly (A3.2, A3.4): derived from the document and its parts, never stored. */
@@ -37,6 +64,8 @@ export interface AssemblyResult {
   mates: Map<Id, MateState>;
   /** With a goal: the floating components solved together with the one moved (it included). */
   group?: Id[];
+  /** For each component that is a sub-assembly: where its own components are inside it (derived; shown, never stored). */
+  inner?: Map<Id, InnerPoses>;
   ms: number;
 }
 
@@ -74,7 +103,9 @@ export function solveAssembly(doc: AssemblyDoc, partOf: (componentId: Id) => Mat
   for (const [id, r] of s.mates) mates.set(id, r);
   // FeatureManager order.
   const ordered = new Map(doc.mates.map((m) => [m.id, mates.get(m.id)!] as const));
-  return { poses: s.poses, components: s.bodies, mates: ordered, ...(s.group ? { group: s.group } : {}), ms: s.ms };
+  const inner = new Map<Id, InnerPoses>();
+  for (const [id, part] of parts) if (part && isSubAssembly(part)) inner.set(id, innerPosesOf(part));
+  return { poses: s.poses, components: s.bodies, mates: ordered, ...(s.group ? { group: s.group } : {}), ...(inner.size > 0 ? { inner } : {}), ms: s.ms };
 }
 
 /**

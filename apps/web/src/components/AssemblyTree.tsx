@@ -1,4 +1,5 @@
-import { useEffect, useState } from 'react';
+import { Fragment, useEffect, useState } from 'react';
+import { t } from '@3db/i18n';
 import { joinPath, type Component, type Id, type Mate } from '@3db/model';
 import { componentName } from '@3db/io';
 import { store, useDocumentName, useStore } from '../state/store';
@@ -48,6 +49,9 @@ export function AssemblyTree() {
   const name = useDocumentName();
   const [menu, setMenu] = useState<Menu | null>(null);
   const [matesOpen, setMatesOpen] = useState(true);
+  const returnTo = useStore((s) => s.returnTo);
+  /** Sub-assemblies shown opened, by component id. */
+  const [opened, setOpened] = useState<Set<Id>>(new Set());
 
   useEffect(() => {
     if (!menu) return;
@@ -71,6 +75,12 @@ export function AssemblyTree() {
 
   return (
     <div className="feature-tree">
+      {returnTo && (
+        <button className="return-bar" onClick={() => store.returnToAssembly()} title={t('tree.returnTip')}>
+          <Icon name="assembly" />
+          {t('tree.returnTo', { name: returnTo })}
+        </button>
+      )}
       <div className="tree-part">
         <Icon name="assembly" />
         <span>{name}</span>
@@ -87,27 +97,49 @@ export function AssemblyTree() {
           const result = asm.solution?.components.get(c.id);
           const freedom = result && result.status === 'under' ? `可移動的自由度：${result.dof}` : undefined;
           const tip = [info.path && `檔案：${info.path}`, freedom, info.loading && `載入中：${info.loading}`, info.error, ...info.warnings].filter(Boolean).join('\n');
+          const sub = !!a?.isSubAssembly(c.id);
           return (
-            <li
-              key={c.id}
-              data-component-row={c.id}
-              className={`tree-row ${asm.selected === c.id ? 'selected' : ''} ${info.error ? 'error' : ''} ${info.loading ? 'loading' : ''}`}
-              title={tip}
-              onClick={() => select(c.id)}
-              onContextMenu={(e) => {
-                e.preventDefault();
-                select(c.id);
-                setMenu({ x: e.clientX, y: e.clientY, component: c });
-              }}
-            >
-              <Icon name="part" />
-              <span className="name">
-                {componentPrefix(asm, c)}
-                {info.name}
-              </span>
-              {info.error && <Icon name="error" className="status-error" />}
-              {!info.error && info.warnings.length > 0 && <Icon name="warning" className="status-warning" />}
-            </li>
+            <Fragment key={c.id}>
+              <li
+                data-component-row={c.id}
+                className={`tree-row ${asm.selected === c.id ? 'selected' : ''} ${info.error ? 'error' : ''} ${info.loading ? 'loading' : ''}`}
+                title={tip}
+                onClick={() => select(c.id)}
+                onContextMenu={(e) => {
+                  e.preventDefault();
+                  select(c.id);
+                  setMenu({ x: e.clientX, y: e.clientY, component: c });
+                }}
+              >
+                {sub && (
+                  <span
+                    className="twisty"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setOpened((s) => new Set(s.has(c.id) ? [...s].filter((x) => x !== c.id) : [...s, c.id]));
+                    }}
+                  >
+                    {opened.has(c.id) ? '▾' : '▸'}
+                  </span>
+                )}
+                <Icon name={sub ? 'assembly' : 'part'} />
+                <span className="name">
+                  {componentPrefix(asm, c)}
+                  {info.name}
+                </span>
+                {info.error && <Icon name="error" className="status-error" />}
+                {!info.error && info.warnings.length > 0 && <Icon name="warning" className="status-warning" />}
+              </li>
+              {sub &&
+                opened.has(c.id) &&
+                a?.subComponents(c.id).map((s) => (
+                  <li key={s.path.join('/')} className={`tree-row sub-component ${s.missing ? 'error' : ''}`} style={{ paddingLeft: 16 + 14 * s.depth }} title={t('subassembly.insideTip')}>
+                    <Icon name={s.assembly ? 'assembly' : 'part'} />
+                    <span className="name">{s.name}</span>
+                    {s.missing && <Icon name="error" className="status-error" />}
+                  </li>
+                ))}
+            </Fragment>
           );
         })}
         <li className={`tree-row folder ${errors ? 'error' : ''}`} onClick={() => setMatesOpen((o) => !o)} title={errors ? `${errors} 個結合有錯誤` : undefined}>
@@ -146,7 +178,7 @@ export function AssemblyTree() {
         <ul className="context-menu" style={{ left: menu.x, top: menu.y }} onPointerDown={(e) => e.stopPropagation()}>
           {'component' in menu ? (
             <>
-              <li onClick={act(() => store.openComponentPart(menu.component.id))}>開啟零件</li>
+              <li onClick={act(() => store.openComponentPart(menu.component.id))}>{a.isSubAssembly(menu.component.id) ? t('subassembly.open') : '開啟零件'}</li>
               <li onClick={act(() => void a.browseRelink(menu.component.file))}>重新指定零件檔…</li>
               <li className="separator" />
               {menu.component.fixed ? <li onClick={act(() => a.setFixed([menu.component.id], false))}>浮動</li> : <li onClick={act(() => a.setFixed([menu.component.id], true))}>固定</li>}

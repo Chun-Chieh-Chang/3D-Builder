@@ -13,12 +13,9 @@ const PLANE_LABEL: Record<string, string> = Object.fromEntries(DATUM_ITEMS.map((
 
 /** An element as the selection box lists it: 「面 extrude1:cap:end@定位板<1>」, 「前基準面@組合件」. */
 export function elementLabel(asm: AssemblyState, ref: MateRef): string {
-  const owner = ref.component === null ? '組合件' : (() => {
-    const c = asm.doc.components.find((x) => x.id === ref.component);
-    return c ? componentInfo(asm, c).name : ref.component;
-  })();
+  const owner = ref.component === null ? '組合件' : (store.assembly?.ownerLabel(ref.component, ref.path) ?? ref.component);
   if (ref.ref.kind === 'datum') {
-    const plane = PLANE_LABEL[ref.ref.name] ?? (ref.component ? store.assembly?.buildOf(ref.component)?.planes.find((p) => p.id === ref.ref.name)?.name : undefined) ?? ref.ref.name;
+    const plane = PLANE_LABEL[ref.ref.name] ?? store.assembly?.elementPart(ref)?.build.planes.find((p) => p.id === ref.ref.name)?.name ?? ref.ref.name;
     return `${plane}@${owner}`;
   }
   return `${KIND_WORD[ref.ref.kind]} ${ref.ref.name}@${owner}`;
@@ -150,18 +147,19 @@ export function MateFlyout() {
   const asm = useStore((s) => s.asm)!;
   const [open, setOpen] = useState<Set<string>>(new Set());
   const d = asm.mate;
-  const chosen = (component: string | null, name: string) => [d?.a, d?.b].some((r) => r && r.component === component && r.ref.kind === 'datum' && r.ref.name === name);
-  const pick = (component: string | null, name: string) => store.assembly?.pickElement({ component, ref: { kind: 'datum', name } });
-  const items = (component: string | null, extra: { id: string; name: string }[]) => (
+  const pathKey = (path: readonly string[] | undefined) => (path ?? []).join('/');
+  const chosen = (component: string | null, name: string, path?: readonly string[]) => [d?.a, d?.b].some((r) => r && r.component === component && pathKey(r.path) === pathKey(path) && r.ref.kind === 'datum' && r.ref.name === name);
+  const pick = (component: string | null, name: string, path?: string[]) => store.assembly?.pickElement({ component, ...(path?.length ? { path } : {}), ref: { kind: 'datum', name } });
+  const items = (component: string | null, extra: { id: string; name: string }[], path?: string[]) => (
     <ul>
       {[...DATUM_ITEMS.filter((x) => x.id in DATUM_PLANES), { id: 'origin', label: '原點' }].map((x) => (
-        <li key={x.id} className={chosen(component, x.id) ? 'selected' : ''} onClick={() => pick(component, x.id)}>
+        <li key={x.id} className={chosen(component, x.id, path) ? 'selected' : ''} onClick={() => pick(component, x.id, path)}>
           <Icon name={x.id === 'origin' ? 'origin' : 'plane'} />
           {x.label}
         </li>
       ))}
       {extra.map((p) => (
-        <li key={p.id} className={chosen(component, p.id) ? 'selected' : ''} onClick={() => pick(component, p.id)}>
+        <li key={p.id} className={chosen(component, p.id, path) ? 'selected' : ''} onClick={() => pick(component, p.id, path)}>
           <Icon name="plane" />
           {p.name}
         </li>
@@ -181,6 +179,17 @@ export function MateFlyout() {
             {componentInfo(asm, c).name}
           </div>
           {open.has(c.id) && items(c.id, store.assembly?.buildOf(c.id)?.planes ?? [])}
+          {open.has(c.id) &&
+            store.assembly?.leaves().filter((l) => l.top === c.id && l.path.length > 0).map((l) => (
+              <div key={l.id} className="flyout-leaf">
+                <div className="flyout-component" onClick={() => toggle(l.id)}>
+                  <span className="twisty">{open.has(l.id) ? '▾' : '▸'}</span>
+                  <Icon name="part" />
+                  {store.assembly?.ownerLabel(c.id, l.path, 1)}
+                </div>
+                {open.has(l.id) && items(c.id, store.assembly?.buildOfLeaf(l)?.planes ?? [], l.path)}
+              </div>
+            ))}
         </div>
       ))}
     </div>

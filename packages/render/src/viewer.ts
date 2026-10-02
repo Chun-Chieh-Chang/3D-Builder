@@ -59,6 +59,11 @@ export interface ViewInstance {
   key: string;
   part: string;
   matrix: ArrayLike<number>;
+  /**
+   * The component this instance belongs to, when one component shows as several instances (a sub-assembly's parts, C15.4):
+   * hovering, selecting and dragging act on the owner, and the events say its key. Default: the instance's own key.
+   */
+  owner?: string;
 }
 
 /** A part mesh instances can show, and its vertices (xyz each, in the order of its vertex names). */
@@ -86,6 +91,8 @@ interface PartGeometry {
 
 interface Instance {
   part: string;
+  /** The component it belongs to (see `ViewInstance.owner`). */
+  owner: string;
   group: THREE.Group;
   body: THREE.Mesh;
   edges: THREE.LineSegments | null;
@@ -436,9 +443,10 @@ export class Viewer {
         this.instances.set(i.key, inst);
         this.scene.add(inst.group);
       }
+      inst.owner = i.owner ?? i.key;
       setMatrix(inst.group, i.matrix);
     }
-    if (this.hoveredInstance !== null && !this.instances.has(this.hoveredInstance)) this.setHoveredInstance(null);
+    if (this.hoveredInstance !== null && ![...this.instances.values()].some((i) => i.owner === this.hoveredInstance)) this.setHoveredInstance(null);
     this.paintInstances();
     if (this.planes.length > 0) this.paintPlanes(); // sized to the content
   }
@@ -454,7 +462,7 @@ export class Viewer {
     if (edges) group.add(edges);
     const marks = new THREE.Group();
     group.add(marks);
-    return { part, group, body, edges, marks };
+    return { part, owner: '', group, body, edges, marks };
   }
 
   private removeInstance(key: string): void {
@@ -617,7 +625,7 @@ export class Viewer {
     const r = this.rayAt(clientX, clientY);
     const hit = new THREE.Raycaster(r.origin, r.direction).intersectObjects([...this.instances.values()].map((i) => i.body))[0];
     if (!hit) return null;
-    for (const [key, inst] of this.instances) if (inst.body === hit.object) return { key, point: hit.point.clone() };
+    for (const inst of this.instances.values()) if (inst.body === hit.object) return { key: inst.owner, point: hit.point.clone() };
     return null;
   }
 
@@ -664,8 +672,8 @@ export class Viewer {
   }
 
   private paintInstances(): void {
-    for (const [key, inst] of this.instances) {
-      const color = key === this.hoveredInstance ? COLORS.componentHover : this.selectedInstances.has(key) ? COLORS.componentSelected : COLORS.body;
+    for (const inst of this.instances.values()) {
+      const color = inst.owner === this.hoveredInstance ? COLORS.componentHover : this.selectedInstances.has(inst.owner) ? COLORS.componentSelected : COLORS.body;
       (inst.body.material as THREE.MeshStandardMaterial).color.setHex(color);
     }
     this.requestRender();
@@ -676,7 +684,7 @@ export class Viewer {
     const r = this.rayAt(clientX, clientY);
     const hit = new THREE.Raycaster(r.origin, r.direction).intersectObjects([...this.instances.values()].map((i) => i.body))[0];
     if (!hit) return null;
-    for (const [key, inst] of this.instances) if (inst.body === hit.object) return key;
+    for (const inst of this.instances.values()) if (inst.body === hit.object) return inst.owner;
     return null;
   }
 

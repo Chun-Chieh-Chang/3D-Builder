@@ -6,11 +6,11 @@
  */
 import { readFileSync } from 'node:fs';
 import { beforeAll, describe, expect, it } from 'vitest';
-import { applyAssemblyCommand, composePose, createEmptyAssembly, poseMatrix, relativePose, type AssemblyDoc, type Mate, type MateType, type Pose, type Vec3 } from '@3db/model';
+import { applyAssemblyCommand, composePose, createEmptyAssembly, leafAt, leavesOf, poseMatrix, relativePose, type AssemblyDoc, type Mate, type MateType, type Pose, type SourceTree, type Vec3 } from '@3db/model';
 import { readPartFile } from '@3db/io';
 import { PlaneGcsSolver } from '@3db/sketch';
 import { Kernel } from '@3db/kernel';
-import { faceMateGeometry, Regenerator, solveAssembly, solveSubAssembly, type MatePart, type MateSource } from '@3db/regen';
+import { faceMateGeometry, Regenerator, solveAssembly, solveAssemblyTree, solveSubAssembly, type MatePart, type MateSource } from '@3db/regen';
 
 let kernel: Kernel;
 let solver: PlaneGcsSolver;
@@ -233,5 +233,57 @@ describe('a sub-assembly in an assembly (3b-1b)', () => {
     // a path on a part, and a face of a sub-assembly without a path
     expect(states(['pin', face(TOP), ['p1']], ['s1', face(TOP), ['p1']])).toEqual({ status: 'missing', message: '第一個元素：這個零組件是零件，不是次組合件，沒有路徑可走' });
     expect(states(['s0', face(TOP)], ['s1', face(TOP), ['p1']])).toEqual({ status: 'missing', message: '第一個元素：組合件本身只能選基準面或原點' });
+  });
+});
+
+describe('trees and leaves (3b-1c): what the worker solves and the viewer draws', () => {
+  const partOfKey = (key: string) => (key === 'plate' ? rebuilt.plate : key === 'pin' ? rebuilt.pin : null);
+  /** The trees the store builds for 夾具: three 定位組, each with its three parts read. */
+  const trees = (): Record<string, SourceTree> => {
+    const sub = pinsDoc();
+    const one = (): SourceTree => ({ kind: 'assembly', doc: sub, children: { p1: { kind: 'part', key: 'plate' }, pa: { kind: 'part', key: 'pin' }, pb: { kind: 'part', key: 'pin' } } });
+    return { s0: one(), s1: one(), s2: one() };
+  };
+
+  it('solves as solveAssembly does with the same sources, and reports where the parts of each sub-assembly are', () => {
+    const jig = jigDoc();
+    const direct = solveAssembly(jig, sourceOf(jig, { '組件/定位組.3dba': pinsDoc() }));
+    const viaTrees = solveAssemblyTree(jig, trees(), partOfKey);
+    for (const id of ['s0', 's1', 's2']) closeMatrix(viaTrees.poses.get(id)!, direct.poses.get(id)!, 9);
+    expect([...viaTrees.inner!.keys()]).toEqual(['s0', 's1', 's2']);
+    expect([...viaTrees.inner!.get('s1')!.poses.keys()]).toEqual(['p1', 'pa', 'pb']);
+    expect(solveAssembly(builder().doc(), () => null).inner).toBeUndefined(); // nothing to report without a sub-assembly
+  });
+
+  it("draws every part: the sub-assembly's pose carries its parts, by the poses its own mates gave them", () => {
+    const jig = jigDoc();
+    const solved = solveAssemblyTree(jig, trees(), partOfKey);
+    const leaves = leavesOf(jig, trees(), (id) => solved.poses.get(id) ?? null, solved.inner);
+    expect(leaves.map((l) => l.id)).toEqual(['s0/p1', 's0/pa', 's0/pb', 's1/p1', 's1/pa', 's1/pb', 's2/p1', 's2/pa', 's2/pb']);
+    expect(leaves.map((l) => l.key)).toEqual(['plate', 'pin', 'pin', 'plate', 'pin', 'pin', 'plate', 'pin', 'pin']);
+    const inner = solved.inner!.get('s2')!;
+    closeMatrix(leafAt(leaves, 's2', ['pb'])!.pose, composePose(solved.poses.get('s2')!, inner.poses.get('pb')!), 12);
+    // and the flat assembly puts that pin where the sub-assembly's part is drawn
+    const flat = flatDoc();
+    closeMatrix(leafAt(leaves, 's2', ['pb'])!.pose, solveAssembly(flat, sourceOf(flat, {})).poses.get('s2.pb')!, 6);
+    expect(leafAt(leaves, 's2', ['nope'])).toBeNull();
+    expect(leafAt(leaves, 's2', undefined)).toBeNull(); // the sub-assembly itself is not a part to draw
+  });
+
+  it('draws a part of the assembly itself as one leaf, and a sub-assembly not solved yet at its own placements', () => {
+    const b = builder();
+    b.insert('plate', '定位板.3dbx', true, at([5, 0, 0]));
+    b.insert('s0', '組件/定位組.3dba', false, at([100, 0, 0]));
+    const doc = b.doc();
+    const some: Record<string, SourceTree> = { plate: { kind: 'part', key: 'plate' }, s0: trees().s0! };
+    const leaves = leavesOf(doc, some, (id) => doc.components.find((c) => c.id === id)!.placement);
+    expect(leaves.map((l) => [l.id, l.top, l.path])).toEqual([['plate', 'plate', []], ['s0/p1', 's0', ['p1']], ['s0/pa', 's0', ['pa']], ['s0/pb', 's0', ['pb']]]);
+    // unsolved: a part of the sub-assembly is where the sub-assembly's own document placed it, carried by the sub-assembly's pose
+    const own = pinsDoc().components.find((c) => c.id === 'pa')!.placement;
+    closeMatrix(leaves[2]!.pose, composePose(at([100, 0, 0]), own), 12);
+    // a component whose file has not been read has no tree and no leaf; a suppressed one is left out
+    expect(leavesOf(doc, { plate: some.plate! }, (id) => doc.components.find((c) => c.id === id)!.placement).map((l) => l.id)).toEqual(['plate']);
+    const suppressed = { ...doc, components: doc.components.map((c) => (c.id === 's0' ? { ...c, suppressed: true } : c)) };
+    expect(leavesOf(suppressed, some, (id) => doc.components.find((c) => c.id === id)!.placement).map((l) => l.id)).toEqual(['plate']);
   });
 });
