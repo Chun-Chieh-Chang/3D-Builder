@@ -61,6 +61,8 @@ export const model = {
   'cmd.filletOnlyEdges': '圓角只能選邊線',
   'cmd.chamferOnlyEdges': '導角只能選邊線',
   'cmd.importDataNotFound': '找不到輸入的資料：{id}',
+  'cmd.derivedSourceInvalid': '主模型的檔案路徑不是專案內的相對路徑：{path}',
+  'cmd.derivedBodyEmpty': '沒有指定主模型的本體',
   'cmd.insertOutOfRange': '插入位置超出範圍：{index}',
   'cmd.importHashInvalid': '輸入資料的雜湊值無效',
   'cmd.importBodyMustUseData': '輸入本體必須使用這份輸入資料',

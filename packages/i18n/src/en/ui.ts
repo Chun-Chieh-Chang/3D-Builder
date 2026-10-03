@@ -21,6 +21,7 @@ export const ui: Translation = {
   'feature.chamfer': 'Chamfer',
   'feature.refPlane': 'Plane',
   'feature.importedBody': 'Imported Body',
+  'feature.derivedBody': 'Derived Body',
   'feature.deleteFace': 'Delete Face',
   'feature.moveFace': 'Move Face',
   'feature.combine': 'Combine',

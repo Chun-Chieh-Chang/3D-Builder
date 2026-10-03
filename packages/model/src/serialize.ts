@@ -119,6 +119,8 @@ const migrations: Record<number, (doc: Json) => Json> = {
   23: (doc) => doc,
   // v25: comment, tag and folder on a feature (D1.7), all optional. Nothing to convert.
   24: (doc) => doc,
+  // v26: the derived body (C7.5), a body of another part file. Nothing to convert; the version keeps older programs from opening a part with a feature they would skip.
+  25: (doc) => doc,
 };
 
 export class FormatError extends Error {

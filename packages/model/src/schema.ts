@@ -6,7 +6,7 @@ import type { Id } from './ids';
  * DOF status, mass properties and error lists are derived data and never stored.
  */
 
-export const SCHEMA_VERSION = 25;
+export const SCHEMA_VERSION = 26;
 
 /** Value expression (B5.2, B5.3): "20", "25.4mm", "30deg", "wall_t*2", "D1@草圖1/2", "property('厚度')"; see `expr/`. */
 export type Expr = string;
@@ -398,6 +398,18 @@ export interface ImportedBodyFeature extends FeatureBase {
 }
 
 /**
+ * A body of another part file (C7.5, v26): the derived part of a fixture's master model. `source` is the master's file, relative to this file
+ * ("/" separated, as in an assembly's file references), and `body` the id of the body in the master (ADR 0022: the id of the feature that made it).
+ * Nothing of the body is stored here: its shape comes from rebuilding the master, its faces keep the master's persistent names, so mates on them
+ * survive a change of the master. One way: the master never reads this part.
+ */
+export interface DerivedBodyFeature extends FeatureBase {
+  type: 'derivedBody';
+  source: string;
+  body: Id;
+}
+
+/**
  * Delete Face (C10.2): the faces go and their neighbours are extended until they meet, which is how a
  * hole or a fillet of an imported body is taken out (SolidWorks 「刪除面」 with 「刪除並修補」).
  */
@@ -473,6 +485,7 @@ export type Feature =
   | RefPointFeature
   | CoordSysFeature
   | ImportedBodyFeature
+  | DerivedBodyFeature
   | DeleteFaceFeature
   | MoveFaceFeature
   | ShellFeature

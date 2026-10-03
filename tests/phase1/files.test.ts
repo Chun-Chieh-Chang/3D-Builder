@@ -356,6 +356,20 @@ describe('a part file written by version 24 (material, settings, appearance) ope
   });
 });
 
+describe('a part file written by version 25 (notes, tags and folders on features) opens in version 26 (derived bodies, C7.5)', () => {
+  it('keeps the note and the tag and rebuilds; nothing in it is derived', async () => {
+    const file = await readPartFile(oldFile('v25-notes.3dbx'));
+    expect(file.warnings).toEqual([]);
+    expect(JSON.parse(new TextDecoder().decode((await readZip(oldFile('v25-notes.3dbx')))[0]!.data)).schemaVersion).toBe(25);
+    expect(file.doc.schemaVersion).toBe(SCHEMA_VERSION);
+    expect(file.doc.features.find((f) => f.id === 'e1')).toMatchObject({ comment: '底板', tag: '主體' });
+    expect(file.doc.features.some((f) => f.type === 'derivedBody')).toBe(false);
+    const r = new Regenerator(kernel, await PlaneGcsSolver.create(), file.blobs).rebuild(file.doc);
+    expect(statuses(r).filter((s) => !s.endsWith('=ok'))).toEqual([]);
+    expect(kernel.massProps(r.body!.shape).volume).toBeCloseTo(40 * 30 * 10, 6); // the post stands inside the plate
+  });
+});
+
 describe('the .3dbx file (B9.1, F7.1)', () => {
   const docs = async (): Promise<[string, PartDoc][]> => [
     ['the demo part', createDemoPart()],

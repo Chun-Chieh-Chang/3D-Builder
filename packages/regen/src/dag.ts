@@ -67,6 +67,9 @@ export function parentsOf(feature: Feature, doc: PartDoc): Id[] {
     case 'importedBody':
       parents = []; // it depends only on its data
       break;
+    case 'derivedBody':
+      parents = []; // it depends only on another file
+      break;
   }
   // a dimension of another sketch used in an expression, directly or through a variable (B5.3)
   parents.push(...expressionParents(doc, feature));

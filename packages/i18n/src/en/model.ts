@@ -63,6 +63,8 @@ export const model: Translation = {
   'cmd.filletOnlyEdges': 'A fillet can only take edges',
   'cmd.chamferOnlyEdges': 'A chamfer can only take edges',
   'cmd.importDataNotFound': 'The imported data was not found: {id}',
+  'cmd.derivedSourceInvalid': 'The master file path is not a project-relative path: {path}',
+  'cmd.derivedBodyEmpty': 'The body of the master model is not named',
   'cmd.insertOutOfRange': 'The insert position is out of range: {index}',
   'cmd.importHashInvalid': 'The hash of the imported data is not valid',
   'cmd.importBodyMustUseData': 'An Imported Body must use this imported data',

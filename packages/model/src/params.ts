@@ -193,6 +193,7 @@ export function mapExprs(feature: Feature, fn: (expr: Expr, kind: ExprKind, role
     case 'refAxis':
     case 'coordSys':
     case 'mirror':
+    case 'derivedBody':
       return feature;
   }
 }

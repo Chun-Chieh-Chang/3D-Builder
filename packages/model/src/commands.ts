@@ -5,6 +5,7 @@ import type { AppearanceTarget, DocSettings, MaterialRef, Variable, BlobRef, Cha
 import { isDatumPlaneName } from './datums';
 import { canBeSeed } from './patterns';
 import { colorOk, materialOk, sameTarget } from './materials';
+import { isFilePath } from './paths';
 import { mapRefs } from './refs';
 import { bodyFeature, isBodyKey, isHideable } from './visibility';
 import { dimensionName, Parameters, renameInDoc, resolveDoc, variableUsers, type ExprKind } from './params';
@@ -470,6 +471,10 @@ function validateNewFeature(doc: PartDoc, f: Feature, index: number): void {
       return;
     case 'importedBody':
       if (!doc.blobs.some((b) => b.id === f.blob)) throw new CommandError(t('cmd.importDataNotFound', { id: f.blob }));
+      return;
+    case 'derivedBody':
+      if (!isFilePath(f.source)) throw new CommandError(t('cmd.derivedSourceInvalid', { path: f.source }));
+      if (f.body.trim() === '') throw new CommandError(t('cmd.derivedBodyEmpty'));
       return;
   }
 }

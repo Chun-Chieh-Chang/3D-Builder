@@ -23,6 +23,7 @@ import {
   type FilletFeature,
   type Id,
   type ImportedBodyFeature,
+  type DerivedBodyFeature,
   type LoftFeature,
   type MirrorFeature,
   type MoveFaceFeature,
@@ -123,6 +124,29 @@ interface Delta {
 /** Where imported data comes from, by SHA-256 (the part file's blobs; a Map will do). */
 export interface BlobSource {
   get(sha256: string): Uint8Array | undefined;
+}
+
+/**
+ * A part file another part is derived from (C7.5): its document and data, a `key` that names it (its project path, for finding a cycle) and, for the
+ * files it is itself derived from, where to find them (paths in it are relative to it, so each file brings its own provider).
+ */
+export interface SourcePart {
+  key: string;
+  doc: PartDoc;
+  blobs: BlobSource;
+  sources?: SourceProvider;
+}
+
+/** Finds the part file at `path` (relative to the file that asks); undefined when there is none. */
+export interface SourceProvider {
+  get(path: string): SourcePart | undefined;
+}
+
+/** A master model rebuilt for a derived body: kept while the master document is the same object, so one master serves every body taken from it. */
+interface Master {
+  doc: PartDoc;
+  regen: Regenerator;
+  result: RebuildResult;
 }
 
 /** A file read once: its solids (or why it could not be read), kept while the document uses it. */
@@ -267,11 +291,20 @@ export class Regenerator {
    * each one is read once and kept across rebuilds — a cache of derived data, not a second truth.
    */
   private imports = new Map<string, ImportedShape>();
+  /** The masters of derived bodies, by file key (C7.5), and which of them this rebuild used. */
+  private masters = new Map<string, Master>();
+  private mastersUsed = new Set<string>();
+  /** What a derived body takes from its master and the document does not say: its name and whether it is a reference body. */
+  private inherited = new Map<Id, { name: string; reference: boolean }>();
 
   constructor(
     private readonly kernel: Kernel,
     private readonly solver: SketchSolver,
     private readonly blobs: BlobSource = new Map(),
+    /** Where the files that derived bodies come from are found (C7.5). */
+    private readonly sources?: SourceProvider,
+    /** The keys of the files this one is a master's master of, up from the top: a file that comes round again is a cycle. */
+    private readonly trail: readonly string[] = [],
   ) {}
 
   /** Releases every shape the regenerator holds; call before discarding it. */
@@ -279,6 +312,8 @@ export class Regenerator {
     this.releaseResult();
     for (const i of this.imports.values()) if ('shape' in i) this.kernel.release(i.shape);
     this.imports.clear();
+    for (const m of this.masters.values()) m.regen.dispose();
+    this.masters.clear();
   }
 
   /** The previous result's shapes: every rebuild starts by releasing them. */
@@ -300,6 +335,8 @@ export class Regenerator {
     this.systems = new Map();
     this.releasePatterns();
     this.statuses = new Map();
+    this.inherited = new Map();
+    this.mastersUsed = new Set();
 
     // Every expression becomes the number it stands for before anything is built: the solver and the kernel
     // only ever see numbers. A feature whose expression cannot be evaluated reports why instead of building.
@@ -369,6 +406,10 @@ export class Regenerator {
             this.systems.set(feature.id, this.coordSys(feature, set));
             return done({ status: 'ok' });
           }
+          case 'derivedBody': {
+            set = this.advance(set, this.derivedBody(feature, set));
+            return done({ status: 'ok' });
+          }
           case 'extrude':
           case 'revolve':
           case 'sweep':
@@ -430,6 +471,12 @@ export class Regenerator {
     });
 
     this.releasePatterns();
+    // masters no derived body used this time are let go
+    for (const [key, m] of this.masters) {
+      if (this.mastersUsed.has(key)) continue;
+      m.regen.dispose();
+      this.masters.delete(key);
+    }
 
     // The result keeps the bodies and, for several, the compound that is their view.
     const view = set.view;
@@ -443,8 +490,8 @@ export class Regenerator {
           const piece = b.id.includes('#') ? `#${b.id.split('#')[1]}` : '';
           return {
             id: b.id,
-            name: doc.bodies[b.id]?.name ?? `${make?.name ?? bodyFeature(b.id)}${piece}`,
-            reference: doc.bodies[b.id]?.reference === true,
+            name: doc.bodies[b.id]?.name ?? this.inherited.get(b.id)?.name ?? `${make?.name ?? bodyFeature(b.id)}${piece}`,
+            reference: doc.bodies[b.id]?.reference ?? this.inherited.get(b.id)?.reference ?? false,
             shape: b.shape,
             face0: p.face0,
             faces: p.faces,
@@ -1434,6 +1481,44 @@ export class Regenerator {
       throw e;
     }
     return [...list];
+  }
+
+  /**
+   * A body of another part file (C7.5): the master is rebuilt, the body taken out by its id and cloned, and the clone keeps the names the master's
+   * elements have. The body is the derived part's own, named by this feature, and it does not merge with the others.
+   */
+  private derivedBody(f: DerivedBodyFeature, set: Bodies): BodyState[] {
+    if (!this.sources) throw new FeatureError(t('regen.derivedNoSources'));
+    const src = this.sources.get(f.source);
+    if (!src) throw new FeatureError(t('regen.derivedSourceMissing', { path: f.source }));
+    if (this.trail.includes(src.key)) throw new FeatureError(t('regen.derivedCycle', { path: f.source }));
+    this.mastersUsed.add(src.key);
+    let master = this.masters.get(src.key);
+    if (!master || master.doc !== src.doc) {
+      master?.regen.dispose();
+      const regen = new Regenerator(this.kernel, this.solver, src.blobs, src.sources, [...this.trail, src.key]);
+      master = { doc: src.doc, regen, result: regen.rebuild(src.doc) };
+      this.masters.set(src.key, master);
+    }
+    const { result } = master;
+    const info = result.bodies.find((b) => b.id === f.body);
+    if (!info || !result.body) {
+      throw new FeatureError(t('regen.derivedBodyMissing', { body: f.body, bodies: result.bodies.map((b) => b.id).join(', ') || t('regen.derivedNoBodies') }));
+    }
+    const shape = this.kernel.clone(info.shape);
+    const topology = this.kernel.topology(shape);
+    if (topology.faces.length !== info.faces || topology.edges.length !== info.edges || topology.vertices.length !== info.vertices) {
+      this.kernel.release(shape);
+      throw new FeatureError(t('regen.internal', { why: `derived body ${f.body}: the copy has other elements than the master's body` }));
+    }
+    const view = result.body.names;
+    const names: ElementNames = {
+      faces: view.faces.slice(info.face0, info.face0 + info.faces),
+      edges: view.edges.slice(info.edge0, info.edge0 + info.edges),
+      vertices: view.vertices.slice(info.vertex0, info.vertex0 + info.vertices),
+    };
+    this.inherited.set(f.id, { name: info.name, reference: info.reference });
+    return [...set.list, { id: f.id, shape, topology, names, by: f.id }];
   }
 
   // ------------------------------------------------------------------ fillet and chamfer (C5.1, C5.3)

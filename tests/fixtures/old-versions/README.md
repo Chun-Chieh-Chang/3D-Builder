@@ -29,6 +29,7 @@
 | `v21-datums.3dbx` | 21 | `bbeb630`（Schema 21 的最後一個提交，3a-7a） | 60 × 20 × 5 的板、板上半徑 2 高 5 的柱，加基準軸（柱面的軸）、參考點（柱頂的中心）、基準面（垂直於該軸通過該點）、座標系統（原點在該點）（`refAxis`／`refPoint`／`coordSys` 和基準面的 `perpendicular`，v21 加入）；不是示範件 |
 | `v22-pattern.3dbx` | 22 | `245f3d7`（Schema 22 的最後一個提交，3a-7b） | 60 × 20 × 5 的板、板上半徑 2 高 5 的柱，加「線性複製排列」：沿右基準面法向（x）4 個、間距 10、跳過第 2 個（`pattern`，v22 加入）；不是示範件 |
 | `v23-mirror.3dbx` | 23 | `b1b00b4`（Schema 23 的最後一個提交，3a-7c） | 60 × 20 × 5 的板、板上半徑 2 高 5 的柱、x = 30 的基準面，加「鏡射」柱（特徵鏡射，`mirror`，v23 加入）；不是示範件 |
+| `v25-notes.3dbx` | 25 | `ec053be`（Schema 25 的最後一個提交，4a-0 之前） | 40 × 30 × 10 的板、板內半徑 4 高 5 的圓柱（整個在板裡面，不改變體積），加底板的註解「底板」與標籤「主體」（`comment`／`tag`，v25 加入）；不是示範件 |
 | `v24-material.3dbx` | 24 | `b4cea8c`（Schema 24 的最後一個提交，3a-9a） | 60 × 20 × 5 的板與柱，加材質（碳鋼）、文件設定（CNS、小數 2 位）、柱的外觀（藍色）（`material`／`settings`／外觀對象，v24 加入）；不是示範件 |
 | `v4-assembly.3dba` | 組合件 4 | **不是舊版程式寫的**：組合件 Schema 5 的程式寫出，再把 `schemaVersion` 設為 4（Schema 5 只多一個可省略的 `explosion`；產生器同上，第三個測試，`WRITE_FIXTURE_V4=1`） | 存在「組合件/」：定位板<1> 固定、削邊銷<1>、削邊銷的線性複製排列（3 個、間距 40、跳過第 3 個）與鏡射（右基準面）（組合件 Schema 5 加入 `explosion`） |
 | `v3-assembly.3dba` | 組合件 3 | **不是舊版程式寫的**：組合件 Schema 4 的程式寫出，再把 `schemaVersion` 設為 3（Schema 4 只多一個可省略的 `patterns`，所以 Schema 3 的檔案就是這段文字；產生器 `spikes/occt-gaps/phase3b-fixture-v2-assembly.test.ts` 的第二個測試，`WRITE_FIXTURE_V3=1`） | 存在專案資料夾：次組合件 `組件/定位組.3dba` 用兩次（定位組<1> 固定、定位組<2>）、一個帶路徑 `['p1']` 的重合結合、定位組<2> 透明（組合件 Schema 4 加入 `patterns`） |
