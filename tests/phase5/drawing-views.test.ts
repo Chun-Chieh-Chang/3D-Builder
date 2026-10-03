@@ -4,7 +4,7 @@
  */
 import { readFileSync } from 'node:fs';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { viewVectors, type Pose } from '@3db/model';
+import { viewVectors, type Pose, type ViewName } from '@3db/model';
 import { readPartFile } from '@3db/io';
 import { PlaneGcsSolver } from '@3db/sketch';
 import { Kernel, type ProjectedView, type ShapeId } from '@3db/kernel';
@@ -26,7 +26,7 @@ beforeAll(async () => {
 afterAll(() => kept.forEach((r) => r.dispose()));
 
 const at = (position: [number, number, number]): Pose => ({ position, rotation: [0, 0, 0, 1] });
-const view = (name: Parameters<typeof projectDrawingView>[2], parts = [{ shape: plate, pose: at([0, 0, 0]), mirrored: false }]): ProjectedView => projectDrawingView(kernel, parts, name);
+const view = (name: ViewName, parts = [{ shape: plate, pose: at([0, 0, 0]), mirrored: false }]): ProjectedView => projectDrawingView(kernel, parts, viewVectors(name));
 
 /** How much of the circle of radius r about (cx, cy) the lines cover, as a fraction of its length. */
 function covered(lines: number[][], cx: number, cy: number, r: number): number {

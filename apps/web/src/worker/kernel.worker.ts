@@ -392,7 +392,7 @@ const api: KernelApi = {
           }
           viewParts.push({ shape, pose: p.pose, mirrored: p.mirrored });
         }
-        out.push({ lines: projectDrawingView(kernel, viewParts, r.direction), ms: performance.now() - began });
+        out.push({ lines: projectDrawingView(kernel, viewParts, r.axes, r.cut), ms: performance.now() - began });
       } catch (e) {
         out.push({ error: e instanceof Error ? e.message : String(e) });
       } finally {

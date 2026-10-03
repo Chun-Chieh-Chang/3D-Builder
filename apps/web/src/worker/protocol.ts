@@ -1,5 +1,5 @@
 import type { Locale } from '@3db/i18n';
-import type { InterferenceComponent, MeasureReport, MeasureTarget, PartMass, ViewName } from '@3db/model';
+import type { InterferenceComponent, MeasureReport, MeasureTarget, PartMass, ViewAxes } from '@3db/model';
 import type { AssemblyDoc, Axis3, CoordSystem, Fingerprint, Id, PartDoc, PlaneFrame, Pose, Ref, SketchFeature, SourceTree, Vec3 } from '@3db/model';
 import type { GeometryReport, MassProps, MeshData, ProjectedView } from '@3db/kernel';
 import type { AssemblyResult, AssemblySolveOptions, ClearanceRow, Converted, FeatureResult, SweepResult } from '@3db/regen';
@@ -196,7 +196,10 @@ export interface CollisionResult {
 /** A view of a drawing asked for (C16.2): the parts it shows, as built for the app (by key), where each is, and the direction it is seen from. */
 export interface DrawingViewRequest {
   parts: { part: string; mirrored: boolean; pose: Pose }[];
-  direction: ViewName;
+  /** Where it is seen from: the direction it looks along and the sheet's up. */
+  axes: ViewAxes;
+  /** A section (C16.3): the plane that cuts it, its normal toward the viewer (the side taken away). */
+  cut?: { origin: [number, number, number]; normal: [number, number, number] };
 }
 
 /** What a view of a drawing looks like: its lines at full size, or why they could not be made. */

@@ -211,8 +211,11 @@ export function parseAssembly(text: string): AssemblyDoc {
   return raw as unknown as AssemblyDoc;
 }
 
-/** Forward migrations of drawings (B9.2): drawingMigrations[n] upgrades version n to n+1. None yet. */
-const drawingMigrations: Record<number, (doc: Json) => Json> = {};
+/** Forward migrations of drawings (B9.2): drawingMigrations[n] upgrades version n to n+1. 1 → 2 added the projected, section and detail kinds of view; a version-1 view is a model view as it is. */
+const drawingMigrations: Record<number, (doc: Json) => Json> = {
+  // v2: projected, section and detail views (C16.3), each with its own fields; a version-1 drawing has only the views of a model. Nothing to convert.
+  1: (doc) => doc,
+};
 
 export function parseDrawing(text: string): DrawingDoc {
   let raw = parseJson(text);

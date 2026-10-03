@@ -7,17 +7,25 @@ import {
   drawingIdsInUse,
   joinPath,
   relocateDrawing,
+  axesOf,
+  isDerived,
+  sectionPlane,
+  sourceOf,
+  viewById,
   serializeDrawing,
   type DrawingCommand,
   type DrawingDoc,
   type DrawingSheet,
   type DrawingView,
   type Id,
+  type SectionDrawingView,
   type TitleField,
+  type ViewAxes,
   type ViewName,
+  type ViewSide,
 } from '@3db/model';
 import { drawingFileName, writeDrawingFile } from '@3db/io';
-import { buildScene, suggestScale, toSvg, type PlacedView, type Scene, type ViewLines } from '@3db/drawing';
+import { buildScene, ratio, scaleOf, STANDARD_SCALES, suggestScale, toSvg, type PlacedView, type Scene, type ViewLines } from '@3db/drawing';
 import type { Remote } from 'comlink';
 import { download, fileIn, pathIn, pickDrawingSaveTarget, writeFile } from '../files';
 import type { KernelApi } from '../worker/protocol';
@@ -79,7 +87,7 @@ export class DrawingStore {
   private state: DrawingState;
   private closed = false;
   private autoScalePending: boolean;
-  /** The lines of a view of a part as built, by the part's key and the direction: asked for once. */
+  /** The lines of a view of a part as built, by the part's key, where it looks from and the cutting plane: asked for once. */
   private cache = new Map<string, ViewLines | { error: string }>();
   private computing = false;
   private computeAgain = false;
@@ -170,8 +178,9 @@ export class DrawingStore {
   // ------------------------------------------------------------ the parts the views show
 
   /** The project path of a view's source. */
-  private pathOf(view: DrawingView): string {
-    return joinPath(this.folder, view.source);
+  private pathOf(view: DrawingView): string | null {
+    const source = sourceOf(this.history.doc.views, view);
+    return source === null ? null : joinPath(this.folder, source);
   }
 
   private loadSources(): void {
@@ -180,7 +189,7 @@ export class DrawingStore {
       void this.askProject();
       return;
     }
-    const wanted = new Set(this.history.doc.views.map((v) => this.pathOf(v)));
+    const wanted = new Set(this.history.doc.views.flatMap((v) => this.pathOf(v) ?? []));
     for (const path of wanted) {
       if (this.state.sources.has(path)) continue;
       this.set({ sources: new Map(this.state.sources).set(path, { status: 'loading' }) });
@@ -226,8 +235,29 @@ export class DrawingStore {
   // ------------------------------------------------------------ the lines of the views
 
   private keyOf(view: DrawingView): string | null {
-    const s = this.state.sources.get(this.pathOf(view));
+    const path = this.pathOf(view);
+    const s = path === null ? undefined : this.state.sources.get(path);
     return s?.status === 'ok' ? s.key : null;
+  }
+
+  /**
+   * What the worker is asked for a view: the part, where it looks from and for a section the plane that cuts it. A detail is asked for nothing (it is cut from its
+   * parent's lines in the layout); a view whose part is not built or whose chain of parents is broken, nothing yet.
+   */
+  private requestOf(view: DrawingView): { id: string; key: string; axes: ViewAxes; cut?: { origin: [number, number, number]; normal: [number, number, number] } } | null {
+    if (view.kind === 'detail') return null;
+    const doc = this.history.doc;
+    const key = this.keyOf(view);
+    const axes = axesOf(doc.views, doc.sheet.projection, view);
+    if (!key || !axes) return null;
+    let cut: { origin: [number, number, number]; normal: [number, number, number] } | undefined;
+    if (view.kind === 'section') {
+      const parent = viewById(doc.views, view.parent);
+      const parentAxes = parent ? axesOf(doc.views, doc.sheet.projection, parent) : null;
+      if (!parentAxes) return null;
+      cut = sectionPlane(parentAxes, view);
+    }
+    return { id: `${key}|${JSON.stringify(axes)}|${cut ? JSON.stringify(cut) : ''}`, key, axes, ...(cut ? { cut } : {}) };
   }
 
   /** Asks the worker for the lines of every view whose part is built and whose lines are not known; one request at a time, the newest wanted last. */
@@ -242,14 +272,13 @@ export class DrawingStore {
         this.computeAgain = false;
         const views = this.history.doc.views;
         const wanted = views.flatMap((v) => {
-          const key = this.keyOf(v);
-          const id = key ? `${key}|${v.direction}` : null;
-          return key && id && !this.cache.has(id) ? [{ id, key, direction: v.direction }] : [];
+          const r = this.requestOf(v);
+          return r && !this.cache.has(r.id) ? [r] : [];
         });
         const unique = [...new Map(wanted.map((w) => [w.id, w])).values()];
         if (unique.length > 0) {
           this.set({ computing: true });
-          const results = await this.host.api.drawingViews(unique.map((w) => ({ parts: [{ part: w.key, mirrored: false, pose: IDENTITY }], direction: w.direction })));
+          const results = await this.host.api.drawingViews(unique.map((w) => ({ parts: [{ part: w.key, mirrored: false, pose: IDENTITY }], axes: w.axes, ...(w.cut ? { cut: w.cut } : {}) })));
           if (this.closed) return;
           unique.forEach((w, i) => {
             const r = results[i]!;
@@ -259,15 +288,16 @@ export class DrawingStore {
         const lines = new Map<Id, ViewLines | null>();
         const problems = new Map<Id, string>();
         for (const v of this.history.doc.views) {
-          const key = this.keyOf(v);
-          const found = key ? this.cache.get(`${key}|${v.direction}`) : undefined;
-          const source = this.state.sources.get(this.pathOf(v));
+          const r = this.requestOf(v);
+          const found = r ? this.cache.get(r.id) : undefined;
+          const path = this.pathOf(v);
+          const source = path === null ? undefined : this.state.sources.get(path);
           if (found && 'error' in found) problems.set(v.id, found.error);
           else if (source && (source.status === 'missing' || source.status === 'error')) problems.set(v.id, source.message);
           lines.set(v.id, found && !('error' in found) ? found : null);
         }
         this.set({ lines, problems, computing: false });
-        if (this.autoScalePending && this.history.doc.views.length > 0 && this.history.doc.views.every((v) => lines.get(v.id) || problems.has(v.id))) {
+        if (this.autoScalePending && this.history.doc.views.length > 0 && this.history.doc.views.every((v) => v.kind === 'detail' || lines.get(v.id) || problems.has(v.id))) {
           this.autoScalePending = false;
           this.autoScale();
         }
@@ -302,11 +332,50 @@ export class DrawingStore {
   /** Views of the part the first view shows (or `source`, relative to the drawing), from these directions. */
   addViews(directions: readonly ViewName[], source?: string): void {
     const doc = this.history.doc;
-    const from = source ?? doc.views[0]?.source;
+    const from = source ?? doc.views.flatMap((v) => (isDerived(v) ? [] : [v.source]))[0];
     if (!from) return this.host.notify(t('drawing.noSource'), 'error');
     const ids = new IdAllocator(doc.idCounters, drawingIdsInUse(doc));
     const views = directions.map((direction): DrawingView => ({ id: ids.take('view'), name: t(`drawing.view.${direction}`), source: from, direction }));
     if (this.execute({ type: 'insertViews', views })) this.set({ selected: views[0]?.id ?? null });
+  }
+
+  /** A view projected from `parent` onto one of its sides (C16.3). */
+  addProjected(parent: Id, side: ViewSide): void {
+    const doc = this.history.doc;
+    const ids = new IdAllocator(doc.idCounters, drawingIdsInUse(doc));
+    const id = ids.take('view');
+    if (this.execute({ type: 'insertViews', views: [{ id, name: t('drawing.view.projected'), kind: 'projected', parent, side }] })) this.set({ selected: id });
+  }
+
+  /** A section of `parent` cut along a horizontal or vertical line in the parent's coordinates (C16.3); the letter is the next free one. */
+  addSection(parent: Id, line: SectionDrawingView['line']): void {
+    const doc = this.history.doc;
+    const ids = new IdAllocator(doc.idCounters, drawingIdsInUse(doc));
+    const id = ids.take('view');
+    const label = this.nextLabel();
+    if (this.execute({ type: 'insertViews', views: [{ id, name: t('drawing.view.section', { label }), kind: 'section', parent, line, label }] })) this.set({ selected: id });
+  }
+
+  /** A detail of `parent` in a circle (C16.3), at twice the scale the parent is drawn at, rounded up to a standard scale. */
+  addDetail(parent: Id, centre: [number, number], radius: number): void {
+    const doc = this.history.doc;
+    const ids = new IdAllocator(doc.idCounters, drawingIdsInUse(doc));
+    const id = ids.take('view');
+    const label = this.nextLabel();
+    const p = viewById(doc.views, parent);
+    const base = p ? scaleOf(doc, p) : doc.sheet.scale;
+    const scale = STANDARD_SCALES.slice().reverse().find((s) => ratio(s) >= 2 * ratio(base)) ?? STANDARD_SCALES[0]!;
+    if (this.execute({ type: 'insertViews', views: [{ id, name: t('drawing.view.detail', { label }), kind: 'detail', parent, centre, radius, label, scale }] })) this.set({ selected: id });
+  }
+
+  /** The first capital letter no section or detail has yet. */
+  private nextLabel(): string {
+    const used = new Set(this.history.doc.views.flatMap((v) => (v.kind === 'section' || v.kind === 'detail' ? [v.label] : [])));
+    for (let i = 0; i < 26; i++) {
+      const c = String.fromCharCode(65 + i);
+      if (!used.has(c)) return c;
+    }
+    return 'A';
   }
 
   deleteViews(ids: Id[]): void {

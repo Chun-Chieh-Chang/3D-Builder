@@ -3,16 +3,16 @@
  * document in the same container as parts and assemblies.
  */
 import { describe, expect, it } from 'vitest';
-import { applyDrawingCommand, createEmptyAssembly, createEmptyDrawing, DrawingHistory, parseDrawing, serializeDrawing, type DrawingDoc, type DrawingView } from '@3db/model';
+import { applyDrawingCommand, createEmptyAssembly, createEmptyDrawing, DrawingHistory, parseDrawing, serializeDrawing, type DrawingDoc, type DrawingView, type ModelDrawingView } from '@3db/model';
 import { drawingFileName, readAnyDocumentFile, writeAssemblyFile, writeDrawingFile } from '@3db/io';
 
-const view = (id: string, direction: DrawingView['direction'] = 'front', extra: Partial<DrawingView> = {}): DrawingView => ({ id, name: id, source: '零件/基板.3dbx', direction, ...extra });
+const view = (id: string, direction: ModelDrawingView['direction'] = 'front', extra: Partial<ModelDrawingView> = {}): DrawingView => ({ id, name: id, source: '零件/基板.3dbx', direction, ...extra });
 const withViews = (): DrawingDoc => applyDrawingCommand(createEmptyDrawing(), { type: 'insertViews', views: [view('view1'), view('view2', 'top'), view('view3', 'right')] });
 
 describe('the drawing document', () => {
   it('starts as an A3 landscape sheet at 1:1 in first angle, with no views and an empty title block', () => {
     const d = createEmptyDrawing();
-    expect(d).toMatchObject({ kind: 'drawing', schemaVersion: 1, sheet: { size: 'A3', orientation: 'landscape', projection: 'first', scale: [1, 1] }, views: [], title: {} });
+    expect(d).toMatchObject({ kind: 'drawing', schemaVersion: 2, sheet: { size: 'A3', orientation: 'landscape', projection: 'first', scale: [1, 1] }, views: [], title: {} });
   });
 
   it('inserts views with their ids kept apart, and refuses what is not a view', () => {

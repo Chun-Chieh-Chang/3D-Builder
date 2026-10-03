@@ -1815,6 +1815,81 @@ export class Kernel {
     }
   }
 
+  /**
+   * A section view of the shape (C16.3): the material on the viewer's side of the plane (`normal` points to the viewer) is taken away, and what is left is seen
+   * from there as lines, with the outlines of the faces the cut made (to be hatched). The viewer looks along `-normal`; `up` is the sheet's up, square to it.
+   */
+  sectionView(id: ShapeId, plane: { origin: Vec3; normal: Vec3 }, up: Vec3, options: { tolerance?: number; angular?: number } = {}): ProjectedView {
+    const oc = this.oc;
+    const n0 = plane.normal;
+    const nl = Math.hypot(n0[0], n0[1], n0[2]);
+    if (!(nl > 0)) throw new KernelError(t('kernel.badViewDirection'));
+    const n: Vec3 = [n0[0] / nl, n0[1] / nl, n0[2] / nl];
+    const made: ShapeId[] = [];
+    const arena = new Arena();
+    try {
+      const box = arena.own(new oc.Bnd_Box());
+      oc.BRepBndLib.Add(this.get(id), box, false);
+      const a = this.xyz(arena.own(box.CornerMin()));
+      const b = this.xyz(arena.own(box.CornerMax()));
+      const size = Math.hypot(b[0] - a[0], b[1] - a[1], b[2] - a[2]);
+      // the tool: a block on the viewer's side of the plane, far bigger than the shape, put where the plane is
+      const R = 2 * size + 10;
+      const helper: Vec3 = Math.abs(n[0]) < 0.9 ? [1, 0, 0] : [0, 1, 0];
+      const d = helper[0] * n[0] + helper[1] * n[1] + helper[2] * n[2];
+      const xr = [helper[0] - n[0] * d, helper[1] - n[1] * d, helper[2] - n[2] * d];
+      const xl = Math.hypot(xr[0]!, xr[1]!, xr[2]!);
+      const X: Vec3 = [xr[0]! / xl, xr[1]! / xl, xr[2]! / xl];
+      const Y: Vec3 = [n[1] * X[2] - n[2] * X[1], n[2] * X[0] - n[0] * X[2], n[0] * X[1] - n[1] * X[0]];
+      const block = this.put(arena.own(new oc.BRepPrimAPI_MakeBox(arena.own(new oc.gp_Pnt(-R, -R, 0)), 2 * R, 2 * R, R)).Shape());
+      made.push(block);
+      const tool = this.transformed(block, [X[0], Y[0], n[0], plane.origin[0], X[1], Y[1], n[1], plane.origin[1], X[2], Y[2], n[2], plane.origin[2]]);
+      made.push(tool);
+      const cut = this.boolean('cut', id, tool);
+      made.push(cut.shape);
+      const view: ViewDirection = { dir: [-n[0], -n[1], -n[2]], up };
+      const seen = this.projectView(cut.shape, view, options);
+      // the faces the cut made lie on the plane and face the viewer; their edges, in the view's coordinates
+      const ul = Math.hypot(up[0], up[1], up[2]);
+      const U: Vec3 = [up[0] / ul, up[1] / ul, up[2] / ul];
+      const rx: Vec3 = [view.dir[1] * U[2] - view.dir[2] * U[1], view.dir[2] * U[0] - view.dir[0] * U[2], view.dir[0] * U[1] - view.dir[1] * U[0]];
+      const rl = Math.hypot(rx[0], rx[1], rx[2]);
+      const R3: Vec3 = [rx[0] / rl, rx[1] / rl, rx[2] / rl];
+      const topo = this.topology(cut.shape);
+      const onPlane = new Set(
+        topo.faces.flatMap((f, i) => {
+          if (f.surface !== 'plane' || !f.normal) return [];
+          const parallel = Math.abs(f.normal[0] * n[0] + f.normal[1] * n[1] + f.normal[2] * n[2]) > 1 - 1e-9;
+          const off = Math.abs((f.center[0] - plane.origin[0]) * n[0] + (f.center[1] - plane.origin[1]) * n[1] + (f.center[2] - plane.origin[2]) * n[2]);
+          return parallel && off < 1e-6 * Math.max(1, size) ? [i] : [];
+        }),
+      );
+      const tolerance = options.tolerance ?? Math.min(0.05, Math.max(1e-3, size * 1e-3));
+      const angular = options.angular ?? 0.1;
+      const outlines: number[][] = [];
+      topo.edges.forEach((e, ei) => {
+        if (!e.faces.some((f) => onPlane.has(f))) return;
+        const edge = this.subShape(cut.shape, 'edge', ei);
+        made.push(edge);
+        const curve = arena.own(new oc.BRepAdaptor_Curve(arena.own(oc.TopoDS.Edge(this.get(edge)))));
+        const pts = arena.own(new oc.GCPnts_TangentialDeflection(curve, angular, tolerance));
+        const flat: number[] = [];
+        for (let i = 1; i <= pts.NbPoints(); i++) {
+          const p = arena.own(pts.Value(i));
+          flat.push(p.X() * R3[0] + p.Y() * R3[1] + p.Z() * R3[2], p.X() * U[0] + p.Y() * U[1] + p.Z() * U[2]);
+        }
+        if (flat.length >= 4) outlines.push(flat);
+      });
+      return { ...seen, cut: outlines };
+    } catch (e) {
+      if (e instanceof KernelError) throw e;
+      throw new KernelError(t('kernel.projectFailed', { why: this.errorText(e) }));
+    } finally {
+      for (const m of made) this.release(m);
+      arena.dispose();
+    }
+  }
+
   // ------------------------------------------------------------------ exchange (F1, F2)
 
   /**

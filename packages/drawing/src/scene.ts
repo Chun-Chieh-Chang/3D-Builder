@@ -1,6 +1,7 @@
 import { t } from '@3db/i18n';
-import type { DrawingDoc, Id, TitleField } from '@3db/model';
-import { layoutViews, ratio, type PlacedView, type ViewLines } from './layout';
+import { sectionArrow, type DetailDrawingView, type DrawingDoc, type DrawingView, type Id, type Scale, type SectionDrawingView, type TitleField, type ViewSide } from '@3db/model';
+import { circlePolyline, hatch } from './geometry';
+import { layoutViews, ratio, resolveLines, scaleOf, type PlacedView, type ViewLines } from './layout';
 import { sheetMetrics, titleCells, type Rect } from './sheet';
 
 /**
@@ -75,29 +76,83 @@ export function sheetItems(doc: DrawingDoc): SceneItem[] {
   return items;
 }
 
-/** A view's lines moved and scaled to where the view is on the sheet. */
-export function viewItems(view: { hidden?: boolean }, lines: ViewLines | null | undefined, placed: PlacedView): ScenePolyline[] {
+/** A point of a view's coordinates (full size) on the sheet, where the view is placed. */
+export const toSheet = (placed: PlacedView, x: number, y: number): [number, number] => [placed.at[0] + (x - placed.centre[0]) * placed.scale, placed.at[1] + (y - placed.centre[1]) * placed.scale];
+
+/** Whether a view draws its hidden lines: when it says so, and otherwise except in a section (where the cut shows what is inside). */
+export const showsHidden = (v: DrawingView): boolean => v.hidden ?? v.kind !== 'section';
+
+/** The spacing of hatch lines on the sheet (ISO 128-50: 1.5 to 3 mm for small areas, up to 10 for large). */
+export const HATCH_SPACING = 3;
+
+/** A view's lines moved and scaled to where the view is on the sheet; for a section, the hatching of the faces it cut. */
+export function viewItems(view: DrawingView, lines: ViewLines | null | undefined, placed: PlacedView): ScenePolyline[] {
   if (!lines) return [];
   const move = (line: number[]): number[] => {
     const out: number[] = [];
-    for (let i = 0; i < line.length; i += 2) out.push(placed.at[0] + (line[i]! - placed.centre[0]) * placed.scale, placed.at[1] + (line[i + 1]! - placed.centre[1]) * placed.scale);
+    for (let i = 0; i < line.length; i += 2) out.push(...toSheet(placed, line[i]!, line[i + 1]!));
     return out;
   };
+  const items: ScenePolyline[] = [];
+  if (showsHidden(view)) for (const l of lines.hidden) items.push({ kind: 'polyline', points: move(l), style: 'hidden' });
+  for (const l of lines.visible) items.push({ kind: 'polyline', points: move(l), style: 'visible' });
+  if (view.kind === 'section' && lines.cut) for (const l of hatch(lines.cut, HATCH_SPACING / placed.scale)) items.push({ kind: 'polyline', points: move(l), style: 'thin' });
+  return items;
+}
+
+const ARROW: Record<ViewSide, [number, number]> = { right: [1, 0], left: [-1, 0], up: [0, 1], down: [0, -1] };
+
+/** The cutting plane line of a section on its parent view, with the arrows at its ends and the letter beside each; and the section's own title. */
+function sectionItems(v: SectionDrawingView, parent: PlacedView, own: PlacedView): SceneItem[] {
+  const [[x0, y0], [x1, y1]] = v.line;
+  const a = toSheet(parent, x0, y0);
+  const b = toSheet(parent, x1, y1);
+  const dir = ARROW[sectionArrow(v)];
+  const shaft = 8;
+  const head = 3;
+  const items: SceneItem[] = [{ kind: 'polyline', points: [...a, ...b], style: 'center' }];
+  for (const end of [a, b]) {
+    const tip: [number, number] = [end[0] + dir[0] * shaft, end[1] + dir[1] * shaft];
+    // the arrow: a shaft from the end of the line, and a V head turned 20 degrees either way
+    const back = (turn: number): [number, number] => [tip[0] - head * (dir[0] * Math.cos(turn) - dir[1] * Math.sin(turn)), tip[1] - head * (dir[0] * Math.sin(turn) + dir[1] * Math.cos(turn))];
+    items.push({ kind: 'polyline', points: [...end, ...tip], style: 'visible' });
+    items.push({ kind: 'polyline', points: [...back(0.35), ...tip, ...back(-0.35)], style: 'visible' });
+    items.push({ kind: 'text', at: [tip[0] + dir[0] * 2 - (dir[0] < 0 ? 3 : 0), tip[1] + dir[1] * 2 - (dir[1] < 0 ? 5 : 0)], text: v.label, height: 5 });
+  }
+  items.push({ kind: 'text', at: [own.at[0], own.at[1] - own.h / 2 - 8], text: `${v.label}-${v.label}`, height: 5, anchor: 'center' });
+  return items;
+}
+
+/** The circle of a detail on its parent view with its letter, and the detail's own title (the letter and its scale). */
+function detailItems(v: DetailDrawingView, parent: PlacedView, own: PlacedView, scale: Scale): SceneItem[] {
+  const centre = toSheet(parent, v.centre[0], v.centre[1]);
+  const r = v.radius * parent.scale;
+  const ring = circlePolyline(centre, r);
   return [
-    ...(view.hidden === false ? [] : lines.hidden.map((l): ScenePolyline => ({ kind: 'polyline', points: move(l), style: 'hidden' }))),
-    ...lines.visible.map((l): ScenePolyline => ({ kind: 'polyline', points: move(l), style: 'visible' })),
+    { kind: 'polyline', points: ring, style: 'thin', closed: true },
+    { kind: 'text', at: [centre[0] + r * 0.72 + 1, centre[1] + r * 0.72 + 1], text: v.label, height: 5 },
+    { kind: 'text', at: [own.at[0], own.at[1] - own.h / 2 - 8], text: `${v.label} (${scaleText(scale)})`, height: 5, anchor: 'center' },
   ];
 }
 
 /**
- * The whole drawing as a scene: the sheet, then each view's lines where the layout puts it. `lines` is what the views look like from their directions at full
- * size (a view not in it, or null, is not drawn: its model could not be read).
+ * The whole drawing as a scene: the sheet, then each view's lines where the layout puts it, the cutting lines of the sections and the circles of the details on
+ * their parents, and the titles of those views. `lines` is what the views look like from their directions at full size (a view not in it, or null, is not
+ * drawn: its model could not be read); detail views are made from their parents' lines.
  */
 export function buildScene(doc: DrawingDoc, lines: ReadonlyMap<Id, ViewLines | null>): { scene: Scene; placed: Map<Id, PlacedView> } {
   const m = sheetMetrics(doc.sheet);
   const placed = layoutViews(doc, lines);
+  const resolved = resolveLines(doc, lines);
   const items: SceneItem[] = [...sheetItems(doc)];
-  for (const v of doc.views) items.push(...viewItems(v, lines.get(v.id), placed.get(v.id)!));
+  for (const v of doc.views) {
+    const own = placed.get(v.id)!;
+    items.push(...viewItems(v, resolved.get(v.id), own));
+    if (!resolved.get(v.id)) continue;
+    const parent = v.kind === 'section' || v.kind === 'detail' ? placed.get(v.parent) : undefined;
+    if (v.kind === 'section' && parent) items.push(...sectionItems(v, parent, own));
+    if (v.kind === 'detail' && parent) items.push(...detailItems(v, parent, own, scaleOf(doc, v)));
+  }
   return { scene: { width: m.width, height: m.height, items }, placed };
 }
 

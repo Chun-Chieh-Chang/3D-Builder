@@ -138,6 +138,8 @@ export interface ProjectedView {
   hidden: number[][];
   /** The box of what can be seen (hidden lines are inside it or on it) in view coordinates; null when nothing is seen. */
   box: { min: [number, number]; max: [number, number] } | null;
+  /** A section (C16.3): the outlines of the faces the cut made, as closed polylines in the same coordinates, for hatching. Absent for a view of the whole. */
+  cut?: number[][];
 }
 
 /**
