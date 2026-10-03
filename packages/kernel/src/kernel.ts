@@ -8,6 +8,7 @@ import {
   type FaceInfo,
   type FaceOrigin,
   type Distance,
+  type GapReport,
   type GeometryReport,
   type ImportDiagnostics,
   type ImportOptions,
@@ -28,6 +29,17 @@ import {
   type VertexInfo,
   type SurfaceGeometry,
 } from './types';
+
+/** How far a surface made by offsetting may be from the gap asked for (mm): the check of every surface feature (ADR 0067). */
+export const SURFACE_TOLERANCE = 0.05;
+
+const round3 = (v: number) => Math.round(v * 1000) / 1000;
+
+/**
+ * How far an offset is from the gap asked for. With rounded joins (the default) every point of the result is `expected` from the source, so it is the largest
+ * difference; with sharp joins the corners are farther by design, so only a result that comes nearer than `expected` is wrong.
+ */
+const gapError = (gap: GapReport, expected: number, sharp: boolean): number => (sharp ? Math.max(0, expected - gap.min) : gap.deviation);
 
 /** Sketch-plane frame (structurally identical to @3db/model PlaneFrame; the kernel stays dependency-free). */
 export interface Frame {
@@ -1886,6 +1898,500 @@ export class Kernel {
       throw new KernelError(t('kernel.projectFailed', { why: this.errorText(e) }));
     } finally {
       for (const m of made) this.release(m);
+      arena.dispose();
+    }
+  }
+
+  // ------------------------------------------------------------------ surfaces (C8.1, C9.2–C9.4, Phase 4b)
+
+  /**
+   * How far a shape is from another (4b, ADR 0067): the distance from points of `sample`'s mesh (about `maxSamples` of them, spread over it) to `reference`. With
+   * `expected`, `deviation` is the largest |distance − expected|: what a surface made by offsetting is checked by, since OCCT can give a valid shape that is not
+   * the offset asked for. `worst` is the point of `sample` that is farthest from `expected`.
+   */
+  gapReport(sample: ShapeId, reference: ShapeId, expected = 0, maxSamples = 300): GapReport {
+    const oc = this.oc;
+    const mesh = this.mesh(sample, { tolerance: 0.1, angular: 0.3 });
+    const n = mesh.positions.length / 3;
+    if (n === 0) throw new KernelError(t('surface.nothingToMeasure'));
+    const step = Math.max(1, Math.floor(n / maxSamples));
+    const arena = new Arena();
+    // a gap is to the surface: to a solid, its boundary (the distance from a point inside a solid to the solid is 0)
+    let ref = this.get(reference);
+    if (this.solidCount(reference) > 0) {
+      const boundary = ShapeIndex.of(oc, ref, T.FACE, arena);
+      ref = this.compound(boundary.keys, arena);
+    }
+    let min = Infinity;
+    let max = 0;
+    let sum = 0;
+    let count = 0;
+    let deviation = 0;
+    let worst: Vec3 = [mesh.positions[0]!, mesh.positions[1]!, mesh.positions[2]!];
+    try {
+      for (let i = 0; i < n; i += step) {
+        const p: Vec3 = [mesh.positions[3 * i]!, mesh.positions[3 * i + 1]!, mesh.positions[3 * i + 2]!];
+        const vertex = arena.own(arena.own(new oc.BRepBuilderAPI_MakeVertex(this.pnt(arena, p))).Vertex());
+        const d = arena.own(new (oc.BRepExtrema_DistShapeShape as unknown as new (a: TopoDS_Shape, b: TopoDS_Shape) => InstanceType<OC['BRepExtrema_DistShapeShape']>)(vertex, ref));
+        if (!d.IsDone() || d.NbSolution() < 1) continue;
+        const dist = d.Value();
+        min = Math.min(min, dist);
+        max = Math.max(max, dist);
+        sum += dist;
+        count++;
+        if (Math.abs(dist - expected) > deviation) {
+          deviation = Math.abs(dist - expected);
+          worst = p;
+        }
+      }
+    } finally {
+      arena.dispose();
+    }
+    if (count === 0) throw new KernelError(t('surface.nothingToMeasure'));
+    return { samples: count, min, max, mean: sum / count, deviation, worst };
+  }
+
+  /**
+   * The faces `faceIndices` of a shape offset by `distance` along their normals (positive: outward), as a surface (a face, or a shell when they are connected) (C9.2, ADR 0067).
+   * The faces are sewn first, so a region offsets as one piece. The result is measured against the faces it came from, and refused when it is not `distance`
+   * from them to `tolerance` (0.05 mm): OCCT answers that it is done and gives a valid shape when the offset is more than the surface can bear. Every output face
+   * has the face it was made from as its origin.
+   */
+  offsetFaces(target: ShapeId, faceIndices: number[], distance: number, options: { tolerance?: number; join?: 'arc' | 'intersection' } = {}): OpResult & { gap: GapReport } {
+    if (faceIndices.length === 0) throw new KernelError(t('surface.noFaces'));
+    if (!(Math.abs(distance) > 0) || !Number.isFinite(distance)) throw new KernelError(t('surface.zeroDistance'));
+    const oc = this.oc;
+    const arena = new Arena();
+    const faces = ShapeIndex.of(oc, this.get(target), T.FACE, arena);
+    const made: ShapeId[] = [];
+    try {
+      const picked = [...new Set(faceIndices)].map((i) => {
+        const f = faces.keys[i];
+        if (!f) throw new KernelError(t('edit.faceOutOfRange', { index: i }));
+        return i;
+      });
+      const sewing = arena.own(new oc.BRepBuilderAPI_Sewing(1e-6, true, true, true, false));
+      for (const i of picked) sewing.Add(faces.keys[i]!);
+      sewing.Perform(arena.own(new oc.Message_ProgressRange()));
+      const region = arena.own(sewing.SewedShape());
+      const mk = arena.own(new oc.BRepOffsetAPI_MakeOffsetShape());
+      try {
+        mk.PerformByJoin(region, distance, 1e-4, oc.BRepOffset_Mode.BRepOffset_Skin, false, false, options.join === 'intersection' ? oc.GeomAbs_JoinType.GeomAbs_Intersection : oc.GeomAbs_JoinType.GeomAbs_Arc, false, arena.own(new oc.Message_ProgressRange()));
+      } catch (e) {
+        throw new KernelError(t('surface.offsetFailed', { why: this.errorText(e) }));
+      }
+      if (!mk.IsDone()) throw new KernelError(t('surface.offsetFailed', { why: t('surface.notDone') }));
+      // the result is copied with its geometry: OCCT's offset surfaces refer to what the builder holds, which is let go with it
+      const built = arena.own(mk.Shape());
+      if (!this.valid(built)) throw new KernelError(t('surface.offsetFailed', { why: t('surface.invalid') }));
+      const copier = arena.own(new oc.BRepBuilderAPI_Copy(built, true, false));
+      const out = arena.own(copier.Shape());
+      const id = this.put(out.Oriented(out.Orientation()));
+      made.push(id);
+      const regionId = this.put(region.Oriented(region.Orientation()));
+      let gap: GapReport;
+      try {
+        gap = this.gapReport(id, regionId, Math.abs(distance));
+      } finally {
+        this.release(regionId);
+      }
+      const tolerance = options.tolerance ?? SURFACE_TOLERANCE;
+      const wrong = gapError(gap, Math.abs(distance), options.join === 'intersection');
+      if (wrong > tolerance) throw new KernelError(t('surface.gapTooBig', { distance: Math.abs(distance), worst: round3(wrong), tolerance }));
+      // the face each output face was made from
+      const outFaces = ShapeIndex.of(oc, out, T.FACE, arena);
+      const sewn = ShapeIndex.of(oc, region, T.FACE, arena);
+      try {
+        const origins: FaceOrigin[][] = outFaces.keys.map(() => []);
+        for (const index of picked) {
+          const orig = faces.keys[index]!;
+          // sewing may have rebuilt the face: the offset knows the sewn one
+          const piece = sewing.IsModified(orig) ? arena.own(sewing.Modified(orig)) : orig;
+          for (const g of [...this.list(mk.Generated(piece)), ...this.list(mk.Modified(piece))]) {
+            const j = outFaces.indexOf(arena.own(copier.ModifiedShape(g)));
+            if (j >= 0 && !origins[j]!.some((o) => 'index' in o && o.index === index)) origins[j]!.push({ rel: 'generated', kind: 'face', index });
+            g.delete();
+          }
+        }
+        // the faces a rounded join adds round an edge of the region come from that edge
+        const edges = ShapeIndex.of(oc, this.get(target), T.EDGE, arena);
+        try {
+          const onPicked = new Set<number>();
+          for (const index of picked) {
+            const sub = ShapeIndex.of(oc, faces.keys[index]!, T.EDGE, arena);
+            sub.keys.forEach((e) => onPicked.add(edges.indexOf(e)));
+            sub.dispose();
+          }
+          for (const k of onPicked) {
+            const orig = edges.keys[k]!;
+            const edge = sewing.IsModifiedSubShape(orig) ? arena.own(sewing.ModifiedSubShape(orig)) : orig;
+            for (const g of this.list(mk.Generated(edge))) {
+              const j = outFaces.indexOf(arena.own(copier.ModifiedShape(g)));
+              if (j >= 0 && origins[j]!.length === 0) origins[j]!.push({ rel: 'generated', kind: 'edge', index: k });
+              g.delete();
+            }
+          }
+        } finally {
+          edges.dispose();
+        }
+        made.length = 0;
+        return { shape: id, faceOrigins: origins, gap };
+      } finally {
+        outFaces.dispose();
+        sewn.dispose();
+      }
+    } finally {
+      for (const m of made) this.release(m);
+      faces.dispose();
+      arena.dispose();
+    }
+  }
+
+  /**
+   * The whole solid offset by `distance` (4b, ADR 0067): the gap all round. OCCT gives a closed shell, which a boolean will not take as a tool; it is made into
+   * the solid it bounds. Measured like `offsetFaces`. A negative distance shrinks the solid.
+   */
+  offsetSolid(target: ShapeId, distance: number, options: { tolerance?: number; join?: 'arc' | 'intersection' } = {}): { shape: ShapeId; gap: GapReport } {
+    if (!(Math.abs(distance) > 0) || !Number.isFinite(distance)) throw new KernelError(t('surface.zeroDistance'));
+    if (this.solidCount(target) === 0) throw new KernelError(t('surface.notSolid'));
+    const oc = this.oc;
+    const arena = new Arena();
+    try {
+      const mk = arena.own(new oc.BRepOffsetAPI_MakeOffsetShape());
+      try {
+        mk.PerformByJoin(this.get(target), distance, 1e-4, oc.BRepOffset_Mode.BRepOffset_Skin, false, false, options.join === 'intersection' ? oc.GeomAbs_JoinType.GeomAbs_Intersection : oc.GeomAbs_JoinType.GeomAbs_Arc, false, arena.own(new oc.Message_ProgressRange()));
+      } catch (e) {
+        throw new KernelError(t('surface.offsetFailed', { why: this.errorText(e) }));
+      }
+      if (!mk.IsDone()) throw new KernelError(t('surface.offsetFailed', { why: t('surface.notDone') }));
+      // copied with its geometry (see offsetFaces)
+      const copier = arena.own(new oc.BRepBuilderAPI_Copy(arena.own(mk.Shape()), true, false));
+      let out = arena.own(copier.Shape());
+      if (String(out.ShapeType()) === 'TopAbs_SHELL') out = arena.own(arena.own(new oc.BRepBuilderAPI_MakeSolid(oc.TopoDS.Shell(out))).Solid());
+      if (!this.valid(out)) throw new KernelError(t('surface.offsetFailed', { why: t('surface.invalid') }));
+      const id = this.put(out.Oriented(out.Orientation()));
+      const gap = this.gapReport(id, target, Math.abs(distance));
+      const tolerance = options.tolerance ?? SURFACE_TOLERANCE;
+      const wrong = gapError(gap, Math.abs(distance), options.join === 'intersection');
+      if (wrong > tolerance || (distance > 0 && this.massProps(id).volume <= this.massProps(target).volume)) {
+        this.release(id);
+        throw new KernelError(t('surface.gapTooBig', { distance: Math.abs(distance), worst: round3(wrong), tolerance }));
+      }
+      return { shape: id, gap };
+    } finally {
+      arena.dispose();
+    }
+  }
+
+  /**
+   * Surfaces sewn into one (C9.3 縫織): shapes whose edges meet to `tolerance` become one shell; closed, and when `makeSolid` is asked, the solid it bounds. Reports the
+   * edges left free (the open boundary) and those shared by more than two faces.
+   */
+  knit(shapes: ShapeId[], tolerance = 1e-4, makeSolid = true): { shape: ShapeId; freeEdges: number; multipleEdges: number; solid: boolean } {
+    if (shapes.length === 0) throw new KernelError(t('surface.nothingToKnit'));
+    const oc = this.oc;
+    const arena = new Arena();
+    try {
+      const sewing = arena.own(new oc.BRepBuilderAPI_Sewing(tolerance, true, true, true, false));
+      for (const s of shapes) sewing.Add(this.get(s));
+      try {
+        sewing.Perform(arena.own(new oc.Message_ProgressRange()));
+      } catch (e) {
+        throw new KernelError(t('surface.knitFailed', { why: this.errorText(e) }));
+      }
+      const sewn = arena.own(sewing.SewedShape());
+      const freeEdges = sewing.NbFreeEdges();
+      const multipleEdges = sewing.NbMultipleEdges();
+      if (makeSolid && freeEdges === 0 && multipleEdges === 0) {
+        const shells = ShapeIndex.of(oc, sewn, 'TopAbs_SHELL', arena);
+        try {
+          if (shells.size === 1) {
+            const fix = arena.own(new oc.ShapeFix_Solid());
+            const solid = arena.own(fix.SolidFromShell(arena.own(oc.TopoDS.Shell(shells.keys[0]!))));
+            const id = this.put(solid.Oriented(solid.Orientation()));
+            if (this.isValid(id) && this.massProps(id).volume > 0) return { shape: id, freeEdges, multipleEdges, solid: true };
+            this.release(id);
+          }
+        } finally {
+          shells.dispose();
+        }
+      }
+      return { shape: this.put(sewn.Oriented(sewn.Orientation())), freeEdges, multipleEdges, solid: false };
+    } finally {
+      arena.dispose();
+    }
+  }
+
+  /**
+   * A surface patch over a boundary (C9.2 填補): the edges `edgeIndices` of `target`, each with the face beside it that the patch is to meet tangent (`support`, the
+   * face's number, or null for an edge alone) when `continuity` is 'tangent'. Reports how far the patch is from the boundary (`g0`) and from the tangent (`g1`).
+   * An edge alone gives a patch that is only as good as its boundary (ADR 0067: 1 mm against 0.02 mm with the supporting face on a sphere).
+   */
+  fillSurface(target: ShapeId, edgeIndices: number[], support: (number | null)[] = [], continuity: 'contact' | 'tangent' = 'tangent'): { shape: ShapeId; g0: number; g1: number } {
+    if (edgeIndices.length === 0) throw new KernelError(t('surface.noEdges'));
+    const oc = this.oc;
+    const arena = new Arena();
+    const shape = this.get(target);
+    const edges = ShapeIndex.of(oc, shape, T.EDGE, arena);
+    const faces = ShapeIndex.of(oc, shape, T.FACE, arena);
+    try {
+      const filling = arena.own(new oc.BRepFill_Filling(3, 15, 2, false, 1e-5, 1e-4, 0.01, 0.1, 8, 9));
+      edgeIndices.forEach((ei, k) => {
+        const e = edges.keys[ei];
+        if (!e) throw new KernelError(t('kernel.edgeOutOfRange', { index: ei }));
+        const si = support[k] ?? null;
+        const f = si === null ? undefined : faces.keys[si];
+        if (continuity === 'tangent' && f) filling.Add(arena.own(oc.TopoDS.Edge(e)), arena.own(oc.TopoDS.Face(f)), oc.GeomAbs_Shape.GeomAbs_G1, true);
+        else filling.Add(arena.own(oc.TopoDS.Edge(e)), oc.GeomAbs_Shape.GeomAbs_C0, true);
+      });
+      try {
+        filling.Build();
+      } catch (e) {
+        throw new KernelError(t('surface.fillFailed', { why: this.errorText(e) }));
+      }
+      if (!filling.IsDone()) throw new KernelError(t('surface.fillFailed', { why: t('surface.notDone') }));
+      const patch = arena.own(filling.Face());
+      if (!this.valid(patch)) throw new KernelError(t('surface.fillFailed', { why: t('surface.invalid') }));
+      return { shape: this.put(patch.Oriented(patch.Orientation())), g0: filling.G0Error(), g1: continuity === 'tangent' ? filling.G1Error() : 0 };
+    } finally {
+      edges.dispose();
+      faces.dispose();
+      arena.dispose();
+    }
+  }
+
+  /** A flat patch over a closed loop of edges of `target` that lie in one plane (C9.2 平坦曲面). */
+  flatSurface(target: ShapeId, edgeIndices: number[]): ShapeId {
+    if (edgeIndices.length === 0) throw new KernelError(t('surface.noEdges'));
+    const oc = this.oc;
+    const arena = new Arena();
+    const edges = ShapeIndex.of(oc, this.get(target), T.EDGE, arena);
+    try {
+      const wire = arena.own(new oc.BRepBuilderAPI_MakeWire());
+      for (const ei of edgeIndices) {
+        const e = edges.keys[ei];
+        if (!e) throw new KernelError(t('kernel.edgeOutOfRange', { index: ei }));
+        wire.Add(arena.own(oc.TopoDS.Edge(e)));
+      }
+      if (!wire.IsDone()) throw new KernelError(t('surface.loopNotConnected'));
+      const mk = arena.own(new oc.BRepBuilderAPI_MakeFace(arena.own(wire.Wire()), true));
+      if (!mk.IsDone()) throw new KernelError(t('surface.loopNotFlat'));
+      const face = arena.own(mk.Face());
+      return this.put(face.Oriented(face.Orientation()));
+    } finally {
+      edges.dispose();
+      arena.dispose();
+    }
+  }
+
+  /**
+   * A surface made into a solid `thickness` thick (C9.4 厚面): positive toward the side its normals point to, negative the other way. OCCT can give the solid inside out
+   * (a negative volume); it is turned the right way. Checked: valid, one solid, and its farthest point from the surface is the thickness.
+   */
+  thicken(surface: ShapeId, thickness: number, options: { tolerance?: number } = {}): { shape: ShapeId; gap: GapReport } {
+    if (!(Math.abs(thickness) > 0) || !Number.isFinite(thickness)) throw new KernelError(t('surface.zeroThickness'));
+    if (this.solidCount(surface) > 0) throw new KernelError(t('surface.notSurface'));
+    const oc = this.oc;
+    const arena = new Arena();
+    try {
+      const mk = arena.own(new oc.BRepOffsetAPI_MakeThickSolid());
+      try {
+        mk.MakeThickSolidBySimple(this.get(surface), thickness);
+        mk.Build(arena.own(new oc.Message_ProgressRange()));
+      } catch (e) {
+        throw new KernelError(t('surface.thickenFailed', { why: this.errorText(e) }));
+      }
+      if (!mk.IsDone()) throw new KernelError(t('surface.thickenFailed', { why: t('surface.notDone') }));
+      let id = this.put(mk.Shape());
+      if (this.massProps(id).volume < 0) {
+        const turned = this.get(id).Reversed();
+        this.release(id);
+        id = this.put(turned);
+      }
+      const check = this.check(id);
+      if (!check.valid || check.solids !== 1 || this.massProps(id).volume <= 0) {
+        this.release(id);
+        throw new KernelError(t('surface.thickenFailed', { why: t('surface.invalid') }));
+      }
+      const gap = this.gapReport(id, surface, Math.abs(thickness));
+      const tolerance = options.tolerance ?? SURFACE_TOLERANCE;
+      if (Math.abs(gap.max - Math.abs(thickness)) > tolerance) {
+        this.release(id);
+        throw new KernelError(t('surface.thickenWrong', { thickness: Math.abs(thickness), got: round3(gap.max), tolerance }));
+      }
+      return { shape: id, gap };
+    } finally {
+      arena.dispose();
+    }
+  }
+
+  /**
+   * A solid cut along a surface (C9.4 以曲面除料): the surface (a face or a shell) is swept along `dir` into a tool, and the solid keeps what is on the side of
+   * the surface the direction points away from (`keep: 'behind'`) or toward (`'ahead'`). The surface has to reach across the solid.
+   */
+  cutWithSurface(target: ShapeId, surface: ShapeId, dir: Vec3, keep: 'behind' | 'ahead' = 'behind'): OpResult {
+    const len = Math.hypot(dir[0], dir[1], dir[2]);
+    if (!(len > 0)) throw new KernelError(t('kernel.badViewDirection'));
+    if (this.solidCount(surface) > 0) throw new KernelError(t('surface.notSurface'));
+    const oc = this.oc;
+    const arena = new Arena();
+    let tool: ShapeId | null = null;
+    try {
+      const box = arena.own(new oc.Bnd_Box());
+      oc.BRepBndLib.Add(this.get(target), box, false);
+      const a = this.xyz(arena.own(box.CornerMin()));
+      const b = this.xyz(arena.own(box.CornerMax()));
+      // long enough to carry the surface clear across the solid, wherever the surface is
+      const sb = this.bounds(surface);
+      const far = Math.max(...sb.max.map(Math.abs), ...sb.min.map(Math.abs));
+      const reach = 2 * Math.hypot(b[0] - a[0], b[1] - a[1], b[2] - a[2]) + 2 * far + 10;
+      const sweep = arena.own(new oc.BRepPrimAPI_MakePrism(this.get(surface), arena.own(new oc.gp_Vec((dir[0] / len) * reach, (dir[1] / len) * reach, (dir[2] / len) * reach)), false, true));
+      if (!sweep.IsDone()) throw new KernelError(t('surface.cutFailed', { why: t('surface.notDone') }));
+      tool = this.put(sweep.Shape());
+      if (this.solidCount(tool) === 0) throw new KernelError(t('surface.cutFailed', { why: t('surface.notClosedSweep') }));
+      return this.boolean(keep === 'behind' ? 'cut' : 'common', target, tool);
+    } catch (e) {
+      if (e instanceof KernelError) throw e;
+      throw new KernelError(t('surface.cutFailed', { why: this.errorText(e) }));
+    } finally {
+      if (tool !== null) this.release(tool);
+      arena.dispose();
+    }
+  }
+
+  /**
+   * The faces of a shape converted to B-splines (so that another CAD reads them: an offset surface is an OCCT type); the shape is the same to 1e-4 mm.
+   */
+  toBSpline(id: ShapeId): ShapeId {
+    const oc = this.oc;
+    const arena = new Arena();
+    try {
+      try {
+        const conv = arena.own(new oc.BRepBuilderAPI_NurbsConvert(this.get(id), true));
+        const out = arena.own(conv.Shape());
+        return this.put(out.Oriented(out.Orientation()));
+      } catch (e) {
+        // the converter stops on some faces that are B-splines already (the rounded join of an offset round a freeform edge: ADR 0067's limits)
+        throw new KernelError(t('surface.bsplineFailed', { why: this.errorText(e) }));
+      }
+    } finally {
+      arena.dispose();
+    }
+  }
+
+  /**
+   * Splits a face along a curve projected onto it (C8.1 分割線): the loop of `segments` drawn in `frame` is projected along `dir` onto face `faceIndex` of the
+   * target, and the face is cut along it. A line of sight crosses the shape more than once, and the projection has a wire on each crossing: only the nearest to the
+   * drawn loop (the first one met) is used, unless `throughAll`. Where a region crosses the seam of a periodic face the cut leaves it in two pieces, which are
+   * merged again with the edges of the loop kept. `regions` are the faces of the result that the loop bounds: the numbers of the pieces inside it.
+   */
+  splitByProjection(target: ShapeId, faceIndex: number, frame: Frame, segments: Segment[], dir: Vec3, throughAll = false): OpResult & { regions: number[] } {
+    const len = Math.hypot(dir[0], dir[1], dir[2]);
+    if (!(len > 0)) throw new KernelError(t('kernel.badViewDirection'));
+    const oc = this.oc;
+    const arena = new Arena();
+    const shape = this.get(target);
+    const faces = ShapeIndex.of(oc, shape, T.FACE, arena);
+    try {
+      const face = faces.keys[faceIndex];
+      if (!face) throw new KernelError(t('edit.faceOutOfRange', { index: faceIndex }));
+      const sources = new Map<TopoDS_Shape, string>();
+      const wire = this.wire(arena, frame, segments, false, sources);
+      const proj = arena.own(new oc.BRepProj_Projection(wire, face, arena.own(this.dir(arena, [dir[0] / len, dir[1] / len, dir[2] / len]))));
+      if (!proj.IsDone()) throw new KernelError(t('surface.nothingProjected'));
+      // the drawn loop's centre, and each projected wire's: the nearest along the line of sight is the first one met
+      const centre = (s: TopoDS_Shape): Vec3 => {
+        const box = arena.own(new oc.Bnd_Box());
+        oc.BRepBndLib.Add(s, box, false);
+        const lo = this.xyz(arena.own(box.CornerMin()));
+        const hi = this.xyz(arena.own(box.CornerMax()));
+        return [(lo[0] + hi[0]) / 2, (lo[1] + hi[1]) / 2, (lo[2] + hi[2]) / 2];
+      };
+      const from = centre(wire);
+      const found: { wire: TopoDS_Shape; along: number }[] = [];
+      for (proj.Init(); proj.More(); proj.Next()) {
+        const w = proj.Current();
+        const c = centre(w);
+        found.push({ wire: w, along: ((c[0] - from[0]) * dir[0] + (c[1] - from[1]) * dir[1] + (c[2] - from[2]) * dir[2]) / len });
+      }
+      if (found.length === 0) throw new KernelError(t('surface.nothingProjected'));
+      // the projection runs both ways along the line; the sight is the way `dir` points
+      const ahead = found.filter((f) => f.along > -1e-6);
+      if (ahead.length === 0) throw new KernelError(t('surface.nothingProjected'));
+      const used = throughAll ? ahead : [ahead.sort((x, y) => x.along - y.along)[0]!];
+      const split = arena.own(new oc.BRepFeat_SplitShape(shape));
+      for (const u of used) split.Add(arena.own(oc.TopoDS.Wire(u.wire)), arena.own(oc.TopoDS.Face(face)));
+      try {
+        split.Build(arena.own(new oc.Message_ProgressRange()));
+      } catch (e) {
+        throw new KernelError(t('surface.splitFailed', { why: this.errorText(e) }));
+      }
+      const cut = arena.own(split.Shape());
+      // the loop's edges as the cut has them, kept while the pieces of one region are merged
+      const loopEdges: TopoDS_Shape[] = [];
+      for (const u of used) {
+        const ex = arena.own(new oc.TopExp_Explorer(u.wire, oc.TopAbs_ShapeEnum.TopAbs_EDGE, oc.TopAbs_ShapeEnum.TopAbs_SHAPE));
+        for (; ex.More(); ex.Next()) {
+          const e = ex.Current();
+          const modified = this.list(split.Modified(e));
+          loopEdges.push(...(modified.length > 0 ? modified : [e]));
+        }
+      }
+      const unifier = arena.own(new oc.ShapeUpgrade_UnifySameDomain(cut, true, true, false));
+      for (const e of loopEdges) unifier.KeepShape(e);
+      unifier.Build();
+      const out = unifier.Shape();
+      if (!this.valid(out)) {
+        out.delete();
+        throw new KernelError(t('surface.splitFailed', { why: t('surface.invalid') }));
+      }
+      const history = arena.own(unifier.History());
+      const before = ShapeIndex.of(oc, shape, T.FACE, arena);
+      const after = ShapeIndex.of(oc, out, T.FACE, arena);
+      const loop = ShapeIndex.of(oc, out, T.EDGE, arena);
+      try {
+        const origins: FaceOrigin[][] = after.keys.map(() => []);
+        const regions: number[] = [];
+        // every face of the result comes from a face of the target (the split one gives several)
+        before.keys.forEach((f, i) => {
+          const pieces = i === faceIndex ? this.list(split.Modified(f)) : [f];
+          const mapped: TopoDS_Shape[] = [];
+          for (const p of pieces) {
+            const merged = this.list(history.Modified(p));
+            mapped.push(...(merged.length > 0 ? merged : [p]));
+          }
+          for (const m of mapped) {
+            const j = after.indexOf(m);
+            if (j >= 0 && !origins[j]!.some((o) => 'index' in o && o.index === i)) origins[j]!.push({ rel: i === faceIndex ? 'modified' : 'same', kind: 'face', index: i });
+          }
+        });
+        // a piece of the split face is a region when every edge round it is an edge of the loop
+        const keep = new Set<number>();
+        for (const e of loopEdges) {
+          const k = loop.indexOf(e);
+          if (k >= 0) keep.add(k);
+        }
+        const around = (f: TopoDS_Shape): number[] => {
+          const sub = ShapeIndex.of(oc, f, T.EDGE, arena);
+          try {
+            return sub.keys.map((e) => loop.indexOf(e));
+          } finally {
+            sub.dispose();
+          }
+        };
+        after.keys.forEach((f, j) => {
+          if (!origins[j]!.some((o) => 'index' in o && o.index === faceIndex)) return;
+          const es = around(f);
+          if (es.length > 0 && es.every((k) => keep.has(k))) regions.push(j);
+        });
+        return { shape: this.put(out), faceOrigins: origins, regions };
+      } finally {
+        before.dispose();
+        after.dispose();
+        loop.dispose();
+      }
+    } finally {
+      faces.dispose();
       arena.dispose();
     }
   }

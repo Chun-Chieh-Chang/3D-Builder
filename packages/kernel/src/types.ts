@@ -17,6 +17,18 @@ export type SurfaceGeometry =
 /** The analytic curve under an edge (A5.2). */
 export type CurveGeometry = { type: 'line'; origin: Vec3; dir: Vec3 } | { type: 'circle'; center: Vec3; normal: Vec3; radius: number };
 
+/** How far a shape is from another, by points sampled on it (`Kernel.gapReport`): the nearest distances from those points to the other shape. */
+export interface GapReport {
+  samples: number;
+  min: number;
+  max: number;
+  mean: number;
+  /** The largest |distance − the distance expected|. */
+  deviation: number;
+  /** The sampled point where that is. */
+  worst: Vec3;
+}
+
 export interface FaceInfo {
   /** "plane", "cylinder", "cone", "sphere", "torus", "bspline", … */
   surface: string;
