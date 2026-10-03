@@ -19,6 +19,8 @@ import {
   type StepComponent,
   type StepExportOptions,
   type MeshOptions,
+  type ProjectedView,
+  type ViewDirection,
   type OpResult,
   type ShapeId,
   type Topology,
@@ -90,6 +92,31 @@ function smoothNormals(positions: number[], indices: number[], faceRanges: numbe
     n[i + 2] = n[i + 2]! / len;
   }
   return n;
+}
+
+/** The distance from a point to a polyline (x, y, x, y …). */
+function distanceToPolyline(x: number, y: number, line: readonly number[]): number {
+  let best = Infinity;
+  for (let i = 0; i + 3 < line.length; i += 2) {
+    const ax = line[i]!;
+    const ay = line[i + 1]!;
+    const dx = line[i + 2]! - ax;
+    const dy = line[i + 3]! - ay;
+    const len2 = dx * dx + dy * dy;
+    const s = len2 > 0 ? Math.max(0, Math.min(1, ((x - ax) * dx + (y - ay) * dy) / len2)) : 0;
+    best = Math.min(best, Math.hypot(x - (ax + s * dx), y - (ay + s * dy)));
+  }
+  return best;
+}
+
+/** Whether a polyline lies wholly on others (within `eps`): its points, and the middle of each of its pieces, are on one of them. */
+function lyingOn(line: readonly number[], others: readonly (readonly number[])[], eps: number): boolean {
+  const samples: [number, number][] = [];
+  for (let i = 0; i < line.length; i += 2) {
+    samples.push([line[i]!, line[i + 1]!]);
+    if (i + 3 < line.length) samples.push([(line[i]! + line[i + 2]!) / 2, (line[i + 1]! + line[i + 3]!) / 2]);
+  }
+  return samples.every(([x, y]) => others.some((o) => distanceToPolyline(x, y, o) <= eps));
 }
 
 /**
@@ -1714,6 +1741,76 @@ export class Kernel {
     } finally {
       faces.dispose();
       edges.dispose();
+      arena.dispose();
+    }
+  }
+
+  /**
+   * The shape as lines seen from a direction (A4.4, Phase 5): exact hidden-line removal (`HLRBRep_Algo`). Visible are the sharp edges, the smooth ones that show
+   * (the seam of a tangent fillet) and the outlines of curved faces; hidden are the same behind the material. Each edge is cut into a polyline as finely as the
+   * tolerance (mm, default 1e-3 of the size, at most 0.05) and the angular step (radians, default 0.1) ask.
+   */
+  projectView(id: ShapeId, view: ViewDirection, options: { tolerance?: number; angular?: number } = {}): ProjectedView {
+    const oc = this.oc;
+    const arena = new Arena();
+    const unit = (v: Vec3): Vec3 => {
+      const n = Math.hypot(v[0], v[1], v[2]);
+      if (!(n > 0) || !Number.isFinite(n)) throw new KernelError(t('kernel.badViewDirection'));
+      return [v[0] / n, v[1] / n, v[2] / n];
+    };
+    try {
+      const d = unit(view.dir);
+      // the sheet's x runs to the right of a viewer who looks along `dir` with `up` above: dir × up
+      const rx = unit([d[1] * view.up[2] - d[2] * view.up[1], d[2] * view.up[0] - d[0] * view.up[2], d[0] * view.up[1] - d[1] * view.up[0]]);
+      const shape = this.get(id);
+      const box = arena.own(new oc.Bnd_Box());
+      oc.BRepBndLib.Add(shape, box, false);
+      const a = this.xyz(arena.own(box.CornerMin()));
+      const b = this.xyz(arena.own(box.CornerMax()));
+      const size = Math.hypot(b[0] - a[0], b[1] - a[1], b[2] - a[2]);
+      const tolerance = options.tolerance ?? Math.min(0.05, Math.max(1e-3, size * 1e-3));
+      const angular = options.angular ?? 0.1;
+      const algo = arena.own(new oc.HLRBRep_Algo());
+      algo.Add(shape, 0);
+      const axes = arena.own(new oc.gp_Ax2(arena.own(new oc.gp_Pnt(0, 0, 0)), arena.own(new oc.gp_Dir(-d[0], -d[1], -d[2])), arena.own(new oc.gp_Dir(rx[0], rx[1], rx[2]))));
+      algo.Projector(arena.own(new oc.HLRAlgo_Projector(axes)));
+      algo.Update();
+      algo.Hide();
+      const lines = arena.own(new oc.HLRBRep_HLRToShape(algo));
+      const polylines = (compound: TopoDS_Shape | null | undefined): number[][] => {
+        const out: number[][] = [];
+        if (!compound || compound.IsNull()) return out;
+        arena.own(compound);
+        for (const ex = arena.own(new oc.TopExp_Explorer(compound, T.EDGE, oc.TopAbs_ShapeEnum.TopAbs_SHAPE)); ex.More(); ex.Next()) {
+          const edge = arena.own(oc.TopoDS.Edge(ex.Current()));
+          if (oc.BRep_Tool.Degenerated(edge)) continue;
+          const curve = arena.own(new oc.BRepAdaptor_Curve(edge));
+          const pts = arena.own(new oc.GCPnts_TangentialDeflection(curve, angular, tolerance));
+          const flat: number[] = [];
+          for (let i = 1; i <= pts.NbPoints(); i++) {
+            const p = arena.own(pts.Value(i));
+            flat.push(p.X(), p.Y());
+          }
+          if (flat.length >= 4) out.push(flat);
+        }
+        return out;
+      };
+      const visible = [...polylines(lines.VCompound()), ...polylines(lines.Rg1LineVCompound()), ...polylines(lines.OutLineVCompound())];
+      // a hidden edge that lies wholly on a visible one (the back of the box under its front) is not drawn twice: the visible line is the one to see
+      const hidden = [...polylines(lines.HCompound()), ...polylines(lines.Rg1LineHCompound()), ...polylines(lines.OutLineHCompound())].filter((h) => !lyingOn(h, visible, Math.max(2 * tolerance, 1e-4)));
+      let min: [number, number] | null = null;
+      let max: [number, number] | null = null;
+      for (const line of visible) {
+        for (let i = 0; i < line.length; i += 2) {
+          min = [Math.min(min?.[0] ?? Infinity, line[i]!), Math.min(min?.[1] ?? Infinity, line[i + 1]!)];
+          max = [Math.max(max?.[0] ?? -Infinity, line[i]!), Math.max(max?.[1] ?? -Infinity, line[i + 1]!)];
+        }
+      }
+      return { visible, hidden, box: min && max ? { min, max } : null };
+    } catch (e) {
+      if (e instanceof KernelError) throw e;
+      throw new KernelError(t('kernel.projectFailed', { why: this.errorText(e) }));
+    } finally {
       arena.dispose();
     }
   }

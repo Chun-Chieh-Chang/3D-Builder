@@ -10,6 +10,8 @@ export const features: Translation = {
   'mirror.pickBodies': 'Pick the bodies to mirror',
   'kernel.badColor': 'The color is not valid: {color}',
   'kernel.badMotion': 'The transformation matrix is not valid',
+  'kernel.badViewDirection': 'The direction of the view cannot be a zero vector',
+  'kernel.projectFailed': 'Could not project the shape into lines: {why}',
   'kernel.motionNotRigid': 'The transformation matrix is not valid: only translation, rotation and mirroring are allowed',
   'kernel.badMotionWhy': 'The transformation matrix is not valid: {why}',
   'feature.cutRemovedNothing': 'The cut did not remove any material (try reversing the direction)',

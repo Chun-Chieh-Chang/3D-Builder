@@ -8,6 +8,8 @@ export const features = {
   'mirror.pickBodies': '請選擇要鏡射的本體',
   'kernel.badColor': '顏色無效：{color}',
   'kernel.badMotion': '變換矩陣無效',
+  'kernel.badViewDirection': '視角的方向不能是零向量',
+  'kernel.projectFailed': '投影成線條失敗：{why}',
   'kernel.motionNotRigid': '變換矩陣無效：只能平移、旋轉與鏡射',
   'kernel.badMotionWhy': '變換矩陣無效：{why}',
   'feature.cutRemovedNothing': '除料沒有移除任何材料（試試反轉方向）',

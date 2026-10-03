@@ -123,6 +123,23 @@ export interface MeshOptions {
   angular?: number;
 }
 
+/** Where the viewer is and how the drawing is laid out (C16.2): the direction the viewer looks along, and which way is up on the sheet. Not parallel. */
+export interface ViewDirection {
+  dir: Vec3;
+  up: Vec3;
+}
+
+/**
+ * A shape seen from a direction as lines (A4.4): the edges that can be seen and the ones hidden behind the material, each a polyline of x, y, x, y … in view
+ * coordinates (x to the right, y up on the sheet, the origin the projection of the world's origin), in mm and at full size.
+ */
+export interface ProjectedView {
+  visible: number[][];
+  hidden: number[][];
+  /** The box of what can be seen (hidden lines are inside it or on it) in view coordinates; null when nothing is seen. */
+  box: { min: [number, number]; max: [number, number] } | null;
+}
+
 /**
  * The mesh of a component in an assembly (2F): seen small and among others, so about half as many
  * triangles as a part being edited (the angle limit is what sets their number, more than the tolerance).
