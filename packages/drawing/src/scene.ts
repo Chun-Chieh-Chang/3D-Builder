@@ -1,7 +1,8 @@
 import { t } from '@3db/i18n';
-import { sectionArrow, type DetailDrawingView, type DrawingDoc, type DrawingView, type Id, type Scale, type SectionDrawingView, type TitleField, type ViewSide } from '@3db/model';
+import { axesOf, sectionArrow, type DetailDrawingView, type DrawingDoc, type DrawingView, type Id, type Scale, type SectionDrawingView, type TitleField, type ViewSide } from '@3db/model';
+import { evaluateDimension, type DimensionOutcome, type ElementsResult } from './dimension';
 import { circlePolyline, hatch } from './geometry';
-import { layoutViews, ratio, resolveLines, scaleOf, type PlacedView, type ViewLines } from './layout';
+import { layoutViews, resolveLines, scaleOf, toSheet, type PlacedView, type ViewLines } from './layout';
 import { sheetMetrics, titleCells, type Rect } from './sheet';
 
 /**
@@ -27,6 +28,8 @@ export interface ScenePolyline {
   points: number[];
   style: LineStyle;
   closed?: boolean;
+  /** A closed polyline filled in (an arrowhead). */
+  filled?: boolean;
 }
 
 export interface SceneText {
@@ -76,8 +79,6 @@ export function sheetItems(doc: DrawingDoc): SceneItem[] {
   return items;
 }
 
-/** A point of a view's coordinates (full size) on the sheet, where the view is placed. */
-export const toSheet = (placed: PlacedView, x: number, y: number): [number, number] => [placed.at[0] + (x - placed.centre[0]) * placed.scale, placed.at[1] + (y - placed.centre[1]) * placed.scale];
 
 /** Whether a view draws its hidden lines: when it says so, and otherwise except in a section (where the cut shows what is inside). */
 export const showsHidden = (v: DrawingView): boolean => v.hidden ?? v.kind !== 'section';
@@ -138,9 +139,14 @@ function detailItems(v: DetailDrawingView, parent: PlacedView, own: PlacedView, 
 /**
  * The whole drawing as a scene: the sheet, then each view's lines where the layout puts it, the cutting lines of the sections and the circles of the details on
  * their parents, and the titles of those views. `lines` is what the views look like from their directions at full size (a view not in it, or null, is not
- * drawn: its model could not be read); detail views are made from their parents' lines.
+ * drawn: its model could not be read); detail views are made from their parents' lines. The dimensions are drawn on their views from what `elements` says their
+ * elements are (by the dimension's id); what each came to, its text or why it could not be drawn, is in `dimensions`.
  */
-export function buildScene(doc: DrawingDoc, lines: ReadonlyMap<Id, ViewLines | null>): { scene: Scene; placed: Map<Id, PlacedView> } {
+export function buildScene(
+  doc: DrawingDoc,
+  lines: ReadonlyMap<Id, ViewLines | null>,
+  elements: ReadonlyMap<Id, ElementsResult> = new Map(),
+): { scene: Scene; placed: Map<Id, PlacedView>; dimensions: Map<Id, DimensionOutcome> } {
   const m = sheetMetrics(doc.sheet);
   const placed = layoutViews(doc, lines);
   const resolved = resolveLines(doc, lines);
@@ -153,8 +159,17 @@ export function buildScene(doc: DrawingDoc, lines: ReadonlyMap<Id, ViewLines | n
     if (v.kind === 'section' && parent) items.push(...sectionItems(v, parent, own));
     if (v.kind === 'detail' && parent) items.push(...detailItems(v, parent, own, scaleOf(doc, v)));
   }
-  return { scene: { width: m.width, height: m.height, items }, placed };
+  const dimensions = new Map<Id, DimensionOutcome>();
+  for (const d of doc.dimensions ?? []) {
+    const view = doc.views.find((v) => v.id === d.view);
+    const own = view && resolved.get(view.id) ? placed.get(view.id) : undefined;
+    const axes = view ? axesOf(doc.views, doc.sheet.projection, view) : null;
+    if (!view || !own || !axes) continue; // nothing to draw it on yet
+    const outcome = evaluateDimension(d, elements.get(d.id), axes, own);
+    dimensions.set(d.id, outcome);
+    if (!('error' in outcome)) items.push(...outcome.items);
+  }
+  return { scene: { width: m.width, height: m.height, items }, placed, dimensions };
 }
 
-export { ratio };
 export type { TitleField };

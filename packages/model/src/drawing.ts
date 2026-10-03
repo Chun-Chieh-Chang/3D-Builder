@@ -3,6 +3,8 @@ import { t } from '@3db/i18n';
 import { countersFor, type Id } from './ids';
 import { CommandError } from './commands';
 import { isFilePath, joinPath, relativePath } from './paths';
+import { parseFit } from './tolerance';
+import type { Ref } from './schema';
 
 /**
  * The drawing document (B1.1, C16, Phase 5): the sheet, the title block, and the views of a part or an assembly. Only the design intent is stored — which file a
@@ -10,7 +12,7 @@ import { isFilePath, joinPath, relativePath } from './paths';
  * opened (exact hidden-line removal), so a drawing can never disagree with the model it shows.
  */
 
-export const DRAWING_SCHEMA_VERSION = 2;
+export const DRAWING_SCHEMA_VERSION = 3;
 
 export type SheetSize = 'A4' | 'A3' | 'A2' | 'A1' | 'A0';
 export const SHEET_SIZES: readonly SheetSize[] = ['A4', 'A3', 'A2', 'A1', 'A0'];
@@ -91,12 +93,83 @@ export const isDerived = (v: DrawingView): v is DerivedDrawingView => v.kind !==
 export const TITLE_FIELDS = ['company', 'drawingName', 'drawingNo', 'material', 'drafter', 'date', 'revision', 'generalTolerance'] as const;
 export type TitleField = (typeof TITLE_FIELDS)[number];
 
+// ---------------------------------------------------------------- dimensions (C16.4)
+
+/**
+ * The tolerance of a dimension: limits in mm (`upper` and `lower`, signed: 「+0.1/-0.05」, or 「±0.05」 when they are opposite), or a class of ISO 286 (「H7」,
+ * 「m6」) whose limits come from the table for the size the dimension has.
+ */
+export type DimensionTolerance = { type: 'bilateral'; upper: number; lower: number } | { type: 'fit'; fit: string };
+
+interface DimensionCommon {
+  id: Id;
+  /** The view it is drawn on; the numbers are the model's, seen in that view. */
+  view: Id;
+  /** A reference dimension, written in parentheses: it is for information and is not what the part is made to. */
+  reference?: boolean;
+  tolerance?: DimensionTolerance;
+}
+
+export type DimensionOrientation = 'horizontal' | 'vertical' | 'aligned';
+
+/**
+ * The distance between two elements of the model, measured in the view along its x axis (horizontal), its y axis (vertical) or between the two (aligned). An
+ * element is a face, an edge or a vertex of the part the view shows, by persistent name: a plane stands for its place along the direction measured, a circular
+ * edge or a cylinder for its axis, a vertex for itself. `offset` is how far the dimension line is from the view's box on the sheet (mm): above (horizontal) or
+ * to the right (vertical) when positive, below or to the left when negative; for an aligned dimension, from the farther of the two points.
+ */
+export interface LinearDimension extends DimensionCommon {
+  kind: 'linear';
+  a: Ref;
+  b: Ref;
+  orientation: DimensionOrientation;
+  offset: number;
+}
+
+/** The diameter (Ø) of a cylinder or a circle seen as a circle in the view; `angle` is the direction of its leader on the sheet (degrees counter-clockwise from the x axis) and `count` how many equal ones it stands for (「4×Ø9」). */
+export interface DiameterDimension extends DimensionCommon {
+  kind: 'diameter';
+  ref: Ref;
+  angle: number;
+  count?: number;
+}
+
+/** The radius (R) of a cylinder or circle seen as an arc or a circle in the view. */
+export interface RadiusDimension extends DimensionCommon {
+  kind: 'radius';
+  ref: Ref;
+  angle: number;
+  count?: number;
+}
+
+export type Dimension = LinearDimension | DiameterDimension | RadiusDimension;
+
+/** What the model says an element is, worked out in the worker from the part as built: the point and direction a dimension measures from, in the part's frame. */
+export interface ElementFacts {
+  kind: 'face' | 'edge' | 'vertex';
+  /** "plane", "cylinder", "sphere", "line", "circle", "point". */
+  type: string;
+  /** A vertex's place, a plane's origin, a cylinder's or circle's axis point (its middle), a line's middle. */
+  point: [number, number, number];
+  /** A plane's normal, an axis, a line's direction. */
+  dir?: [number, number, number];
+  radius?: number;
+}
+
+/** What a dimension can be attached to in a view (the elements the view sees edge-on or as circles), found in the worker; the material of the automatic dimensions and of the choice in the panel. */
+export type ViewFeature =
+  /** A plane seen edge-on: a line across the view's x (`axis: 'x'`, at x = `coord`) or its y. */
+  | { type: 'plane'; ref: Ref; axis: 'x' | 'y'; coord: number; area: number }
+  /** A cylinder seen along its axis: a circle (a whole one, `full`, or an arc) with its middle in the view's coordinates and the direction (degrees) from there to the middle of the arc. */
+  | { type: 'circle'; ref: Ref; centre: [number, number]; radius: number; convex: boolean; full: boolean; outward: number };
+
 export interface DrawingDoc {
   kind: 'drawing';
   schemaVersion: number;
   sheet: DrawingSheet;
   title: Partial<Record<TitleField, string>>;
   views: DrawingView[];
+  dimensions: Dimension[];
   properties: Record<string, string>;
   idCounters: Record<string, number>;
 }
@@ -108,12 +181,13 @@ export function createEmptyDrawing(): DrawingDoc {
     sheet: { size: 'A3', orientation: 'landscape', projection: 'first', scale: [1, 1] },
     title: {},
     views: [],
+    dimensions: [],
     properties: {},
     idCounters: {},
   };
 }
 
-export const drawingIdsInUse = (doc: DrawingDoc): Id[] => doc.views.map((v) => v.id);
+export const drawingIdsInUse = (doc: DrawingDoc): Id[] => [...doc.views.map((v) => v.id), ...doc.dimensions.map((d) => d.id)];
 
 export type DrawingCommand =
   /** Changes the sheet: its size, orientation, projection or scale (C16.1). */
@@ -124,8 +198,25 @@ export type DrawingCommand =
   | { type: 'insertViews'; views: DrawingView[] }
   /** Changes a view: what is given replaces what is there; `at: null` and `scale: null` take the choice back (the view is laid out again / uses the sheet's scale). */
   | { type: 'setView'; viewId: Id; patch: ViewPatch }
-  /** Deletes views, and the views projected or cut from them, which have nothing to show without them. */
-  | { type: 'deleteViews'; viewIds: Id[] };
+  /** Deletes views, and the views projected or cut from them, which have nothing to show without them, and the dimensions drawn on them. */
+  | { type: 'deleteViews'; viewIds: Id[] }
+  /** Adds dimensions (C16.4), each with its own new id, on views that are there. */
+  | { type: 'insertDimensions'; dimensions: Dimension[] }
+  /** Changes a dimension: what is given replaces what is there; `null` takes `reference`, `count` or `tolerance` away. A field that does not belong to its kind is refused. */
+  | { type: 'setDimension'; dimensionId: Id; patch: DimensionPatch }
+  | { type: 'deleteDimensions'; dimensionIds: Id[] };
+
+export type DimensionPatch = {
+  reference?: boolean | null;
+  tolerance?: DimensionTolerance | null;
+  offset?: number;
+  orientation?: DimensionOrientation;
+  angle?: number;
+  count?: number | null;
+  a?: Ref;
+  b?: Ref;
+  ref?: Ref;
+};
 
 /** What `setView` may change: the fields every view has, and those of its kind; a field that does not belong to the view's kind is refused. */
 export type ViewPatch = {
@@ -179,6 +270,32 @@ function checkView(v: DrawingView, views: readonly DrawingView[]): void {
   if (v.kind === 'detail') {
     if (!v.centre.every(Number.isFinite) || !(v.radius > 0) || !Number.isFinite(v.radius)) throw new CommandError(t('drawing.badDetail'));
     if (!v.label.trim()) throw new CommandError(t('drawing.labelEmpty'));
+  }
+}
+
+const ORIENTATIONS: readonly DimensionOrientation[] = ['horizontal', 'vertical', 'aligned'];
+const isRefValue = (r: unknown): r is Ref => typeof r === 'object' && r !== null && typeof (r as Ref).name === 'string' && (r as Ref).name !== '' && ['face', 'edge', 'vertex'].includes((r as Ref).kind);
+
+/** Checks a dimension against the views it may be drawn on and what its kind needs. */
+function checkDimension(d: Dimension, views: readonly DrawingView[]): void {
+  if (!d.id) throw new CommandError(t('drawing.idMissing'));
+  if (!viewById(views, d.view)) throw new CommandError(t('drawing.dimNoView', { id: String(d.view) }));
+  if (d.kind === 'linear') {
+    if (!isRefValue(d.a) || !isRefValue(d.b)) throw new CommandError(t('drawing.dimBadRef'));
+    if (!ORIENTATIONS.includes(d.orientation)) throw new CommandError(t('drawing.dimBadOrientation', { orientation: String(d.orientation) }));
+    if (!Number.isFinite(d.offset) || d.offset === 0) throw new CommandError(t('drawing.dimBadOffset'));
+  } else if (d.kind === 'diameter' || d.kind === 'radius') {
+    if (!isRefValue(d.ref) || d.ref.kind === 'vertex') throw new CommandError(t('drawing.dimBadRef'));
+    if (!Number.isFinite(d.angle)) throw new CommandError(t('drawing.dimBadAngle'));
+    if (d.count !== undefined && !(Number.isInteger(d.count) && d.count >= 2)) throw new CommandError(t('drawing.dimBadCount'));
+  } else throw new CommandError(t('drawing.dimBadKind', { kind: String((d as { kind?: unknown }).kind) }));
+  const tol = d.tolerance;
+  if (tol) {
+    if (tol.type === 'bilateral') {
+      if (!Number.isFinite(tol.upper) || !Number.isFinite(tol.lower) || tol.upper < tol.lower) throw new CommandError(t('drawing.dimBadLimits'));
+    } else if (tol.type === 'fit') {
+      if (!parseFit(tol.fit)) throw new CommandError(t('drawing.dimBadFit', { fit: String(tol.fit) }));
+    } else throw new CommandError(t('drawing.dimBadLimits'));
   }
 }
 
@@ -242,6 +359,46 @@ export function mutateDrawing(draft: Draft<DrawingDoc>, cmd: DrawingCommand): vo
       }
       countersFor(ids, draft.idCounters); // deleted ids are never handed out again
       draft.views = draft.views.filter((v) => !ids.has(v.id));
+      // the dimensions drawn on them go too
+      countersFor(draft.dimensions.filter((d) => ids.has(d.view)).map((d) => d.id), draft.idCounters);
+      draft.dimensions = draft.dimensions.filter((d) => !ids.has(d.view));
+      return;
+    }
+    case 'insertDimensions': {
+      const inUse = new Set(drawingIdsInUse(draft as DrawingDoc));
+      for (const d of cmd.dimensions) {
+        checkDimension(d, draft.views as DrawingView[]);
+        if (inUse.has(d.id)) throw new CommandError(t('drawing.idInUse', { id: d.id }));
+        inUse.add(d.id);
+      }
+      for (const d of cmd.dimensions) draft.dimensions.push(d as Draft<Dimension>);
+      countersFor(cmd.dimensions.map((d) => d.id), draft.idCounters);
+      return;
+    }
+    case 'setDimension': {
+      const d = draft.dimensions.find((x) => x.id === cmd.dimensionId);
+      if (!d) throw new CommandError(t('drawing.noDimension', { id: cmd.dimensionId }));
+      const { reference, tolerance, count, ...rest } = cmd.patch;
+      const belongs: Record<Dimension['kind'], string[]> = { linear: ['offset', 'orientation', 'a', 'b'], diameter: ['angle', 'ref'], radius: ['angle', 'ref'] };
+      for (const k of Object.keys(rest)) if (!belongs[d.kind].includes(k)) throw new CommandError(t('drawing.notForKind', { field: k, kind: d.kind }));
+      if (count !== undefined && d.kind === 'linear') throw new CommandError(t('drawing.notForKind', { field: 'count', kind: d.kind }));
+      const next = { ...(JSON.parse(JSON.stringify(d)) as Dimension), ...rest } as Dimension & { reference?: boolean; count?: number; tolerance?: DimensionTolerance };
+      if (reference === null || reference === false) delete next.reference;
+      else if (reference === true) next.reference = true;
+      if (count === null) delete next.count;
+      else if (count !== undefined) next.count = count;
+      if (tolerance === null) delete next.tolerance;
+      else if (tolerance !== undefined) next.tolerance = tolerance;
+      checkDimension(next, draft.views as DrawingView[]);
+      for (const k of Object.keys(d)) delete (d as unknown as Record<string, unknown>)[k];
+      Object.assign(d, next);
+      return;
+    }
+    case 'deleteDimensions': {
+      const ids = new Set(cmd.dimensionIds);
+      for (const id of ids) if (!draft.dimensions.some((d) => d.id === id)) throw new CommandError(t('drawing.noDimension', { id }));
+      countersFor(ids, draft.idCounters);
+      draft.dimensions = draft.dimensions.filter((d) => !ids.has(d.id));
       return;
     }
   }

@@ -123,10 +123,10 @@ describe('the derived views in the document', () => {
     expect(() => applyDrawingCommand(d, { type: 'setView', viewId: 'view2', patch: { line: [[0, 0], [3, 3]] } })).toThrow(/水平或垂直/);
   });
 
-  it('is a version-1 drawing read as version 2: nothing to convert', async () => {
+  it('is a version-1 drawing read as the current version: nothing to convert but the empty list of dimensions', async () => {
     const { parseDrawing, serializeDrawing } = await import('@3db/model');
     const v1 = JSON.stringify({ ...JSON.parse(serializeDrawing(base())), schemaVersion: 1 });
-    expect(parseDrawing(v1).schemaVersion).toBe(2);
+    expect(parseDrawing(v1).schemaVersion).toBe(3);
     expect(parseDrawing(v1).views).toEqual(base().views);
   });
 });

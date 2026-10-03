@@ -9,3 +9,4 @@ export * from './measure';
 export * from './interference';
 export * from './clearance';
 export * from './drawingViews';
+export * from './drawingDimensions';

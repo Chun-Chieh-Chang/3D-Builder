@@ -6,12 +6,12 @@ import gcsWasm from '@salusoft89/planegcs/dist/planegcs_dist/planegcs.wasm?url';
 import { bodyKey, combineMass, isShown, mirrorKey, MESH_QUALITY, settingsOf, type AssemblyDoc, type Id, type MeasureReport, type PartDoc, type SourceTree } from '@3db/model';
 import { findProfiles, PlaneGcsSolver } from '@3db/sketch';
 import { COMPONENT_MESH, Kernel, type GeometryReport, type MassProps, type MeshData, type MeshOptions, type ShapeId } from '@3db/kernel';
-import { projectDrawingView, findClearance, findInterference, sweepClearance, measureTargets, convertEdges, edgeMateGeometry, exportFaces, faceColors, intoFrame, faceEdges, faceMateGeometry, followReferences, ReferenceProblem, Regenerator, solveAssemblyTree, type AssemblyResult, type AssemblySolveOptions, type BodyInfo, type RebuildResult } from '@3db/regen';
+import { projectDrawingView, elementFacts, viewFeatures, findClearance, findInterference, sweepClearance, measureTargets, convertEdges, edgeMateGeometry, exportFaces, faceColors, intoFrame, faceEdges, faceMateGeometry, followReferences, ReferenceProblem, Regenerator, solveAssemblyTree, type AssemblyResult, type AssemblySolveOptions, type BodyInfo, type RebuildResult } from '@3db/regen';
 import { edgeFingerprint, faceFingerprint, vertexFingerprint } from '@3db/naming';
 import { binaryStl, exportAssemblyStep, exportPartStep, readComponentFile, stepAssemblyPlan, type StepAssemblyPlan } from '@3db/io';
 import type { SourcePart, SourceProvider } from '@3db/regen';
 import { mergeMeshes } from './mergeMesh';
-import type { AssemblyStepRequest, DrawingViewResult, ClearanceResult, CollisionResult, SweepOutcome, ConvertPayload, InterferenceResult, PartExportOptions, ConvertRequest, KernelApi, PartBuildPayload, PartStage, RebuildPayload, RebuildRequest, SketchSolvePayload, SketchSolveRequest, SourceFileData } from './protocol';
+import type { AssemblyStepRequest, DrawingElementsResult, DrawingFeaturesResult, DrawingViewResult, ClearanceResult, CollisionResult, SweepOutcome, ConvertPayload, InterferenceResult, PartExportOptions, ConvertRequest, KernelApi, PartBuildPayload, PartStage, RebuildPayload, RebuildRequest, SketchSolvePayload, SketchSolveRequest, SourceFileData } from './protocol';
 
 let kernel: Kernel;
 let solver: PlaneGcsSolver;
@@ -397,6 +397,41 @@ const api: KernelApi = {
         out.push({ error: e instanceof Error ? e.message : String(e) });
       } finally {
         for (const id of made) kernel.release(id);
+      }
+    }
+    return out;
+  },
+
+  async drawingFeatures(requests): Promise<DrawingFeaturesResult[]> {
+    await api.init();
+    const out: DrawingFeaturesResult[] = [];
+    for (const r of requests) {
+      try {
+        const built = await parts.get(r.part)?.catch(() => null);
+        const body = built?.result.body;
+        if (!built || !body) throw new Error(t('drawing.noBody'));
+        // the faces of a workpiece that is only there for reference are not the part's (as in the lines of its views)
+        const own = built.result.bodies.filter((b) => !b.reference);
+        const only = own.length > 0 && own.length < built.result.bodies.length;
+        out.push({ features: viewFeatures(body.topology, body.names, r.axes, only ? (i) => own.some((b) => i >= b.face0 && i < b.face0 + b.faces) : undefined) });
+      } catch (e) {
+        out.push({ error: e instanceof Error ? e.message : String(e) });
+      }
+    }
+    return out;
+  },
+
+  async drawingElements(requests): Promise<DrawingElementsResult[]> {
+    await api.init();
+    const out: DrawingElementsResult[] = [];
+    for (const r of requests) {
+      try {
+        const built = await parts.get(r.part)?.catch(() => null);
+        const body = built?.result.body;
+        if (!built || !body) throw new Error(t('drawing.noBody'));
+        out.push({ elements: r.refs.map((ref) => elementFacts(body.topology, body.names, ref)) });
+      } catch (e) {
+        out.push({ error: e instanceof Error ? e.message : String(e) });
       }
     }
     return out;

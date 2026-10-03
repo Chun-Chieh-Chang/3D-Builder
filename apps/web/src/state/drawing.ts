@@ -18,14 +18,20 @@ import {
   type DrawingSheet,
   type DrawingView,
   type Id,
+  type Dimension,
+  type DimensionOrientation,
+  type DimensionPatch,
+  type ElementFacts,
+  type Ref,
   type SectionDrawingView,
   type TitleField,
   type ViewAxes,
+  type ViewFeature,
   type ViewName,
   type ViewSide,
 } from '@3db/model';
 import { drawingFileName, writeDrawingFile } from '@3db/io';
-import { buildScene, ratio, scaleOf, STANDARD_SCALES, suggestScale, toSvg, type PlacedView, type Scene, type ViewLines } from '@3db/drawing';
+import { autoDimensions, buildScene, FIRST_OFFSET, OFFSET_STEP, ratio, scaleOf, STANDARD_SCALES, suggestScale, toSvg, type AutoDimensionOptions, type DimensionOutcome, type ElementsResult, type PlacedView, type Scene, type ViewLines } from '@3db/drawing';
 import type { Remote } from 'comlink';
 import { download, fileIn, pathIn, pickDrawingSaveTarget, writeFile } from '../files';
 import type { KernelApi } from '../worker/protocol';
@@ -70,6 +76,10 @@ export interface DrawingState {
   lines: Map<Id, ViewLines | null>;
   /** Why a view has no lines. */
   problems: Map<Id, string>;
+  /** What each view can be dimensioned from (C16.4), by view id; a detail has its parent's. Absent while not known. */
+  features: Map<Id, ViewFeature[]>;
+  /** What the elements each dimension points at are, by dimension id; absent while not known. */
+  elements: Map<Id, ElementsResult>;
   selected: Id | null;
   /** The lines are being worked out. */
   computing: boolean;
@@ -91,7 +101,12 @@ export class DrawingStore {
   private cache = new Map<string, ViewLines | { error: string }>();
   private computing = false;
   private computeAgain = false;
-  private sceneCache: { doc: DrawingDoc; lines: DrawingState['lines']; value: { scene: Scene; placed: Map<Id, PlacedView> } } | null = null;
+  private sceneCache: { doc: DrawingDoc; lines: DrawingState['lines']; elements: DrawingState['elements']; value: { scene: Scene; placed: Map<Id, PlacedView>; dimensions: Map<Id, DimensionOutcome> } } | null = null;
+  /** What a view can be dimensioned from, by the part's key and where it looks from; and what an element is, by the part's key and the reference. */
+  private featureCache = new Map<string, ViewFeature[] | { error: string }>();
+  private elementCache = new Map<string, ElementFacts | { error: string }>();
+  private featuring = false;
+  private featureAgain = false;
 
   constructor(
     private readonly host: DrawingHost,
@@ -114,6 +129,8 @@ export class DrawingStore {
       sources: new Map(),
       lines: new Map(),
       problems: new Map(),
+      features: new Map(),
+      elements: new Map(),
       selected: null,
       computing: false,
       fitRequest: 1,
@@ -151,6 +168,7 @@ export class DrawingStore {
     });
     this.loadSources();
     void this.computeLines();
+    void this.computeDimensionData();
   }
 
   execute(cmd: DrawingCommand): boolean {
@@ -197,6 +215,7 @@ export class DrawingStore {
         if (this.closed) return;
         this.set({ sources: new Map(this.state.sources).set(path, status) });
         void this.computeLines();
+        void this.computeDimensionData();
       });
     }
   }
@@ -244,7 +263,7 @@ export class DrawingStore {
    * What the worker is asked for a view: the part, where it looks from and for a section the plane that cuts it. A detail is asked for nothing (it is cut from its
    * parent's lines in the layout); a view whose part is not built or whose chain of parents is broken, nothing yet.
    */
-  private requestOf(view: DrawingView): { id: string; key: string; axes: ViewAxes; cut?: { origin: [number, number, number]; normal: [number, number, number] } } | null {
+  private requestOf(view: DrawingView): { id: string; featureId: string; key: string; axes: ViewAxes; cut?: { origin: [number, number, number]; normal: [number, number, number] } } | null {
     if (view.kind === 'detail') return null;
     const doc = this.history.doc;
     const key = this.keyOf(view);
@@ -257,7 +276,7 @@ export class DrawingStore {
       if (!parentAxes) return null;
       cut = sectionPlane(parentAxes, view);
     }
-    return { id: `${key}|${JSON.stringify(axes)}|${cut ? JSON.stringify(cut) : ''}`, key, axes, ...(cut ? { cut } : {}) };
+    return { id: `${key}|${JSON.stringify(axes)}|${cut ? JSON.stringify(cut) : ''}`, featureId: `${key}|${JSON.stringify(axes)}`, key, axes, ...(cut ? { cut } : {}) };
   }
 
   /** Asks the worker for the lines of every view whose part is built and whose lines are not known; one request at a time, the newest wanted last. */
@@ -310,12 +329,95 @@ export class DrawingStore {
     }
   }
 
-  /** The drawing as a scene (the sheet and every view's lines where they are), kept while the document and the lines are the same. */
-  scene(): { scene: Scene; placed: Map<Id, PlacedView> } {
+  /**
+   * What the dimensions need from the worker (C16.4): what each view can be dimensioned from, and what the elements the dimensions point at are. One request at a
+   * time, the newest wanted last; each is asked for once per part content.
+   */
+  private async computeDimensionData(): Promise<void> {
+    if (this.featuring) {
+      this.featureAgain = true;
+      return;
+    }
+    this.featuring = true;
+    try {
+      do {
+        this.featureAgain = false;
+        const doc = this.history.doc;
+        // what the views can be dimensioned from
+        const wantedFeatures = doc.views.flatMap((v) => {
+          const r = this.requestOf(v);
+          if (!r || this.featureCache.has(r.featureId)) return [];
+          return [{ id: r.featureId, part: r.key, axes: r.axes }];
+        });
+        const uniqueFeatures = [...new Map(wantedFeatures.map((w) => [w.id, w])).values()];
+        if (uniqueFeatures.length > 0) {
+          const results = await this.host.api.drawingFeatures(uniqueFeatures.map((w) => ({ part: w.part, axes: w.axes })));
+          if (this.closed) return;
+          uniqueFeatures.forEach((w, i) => this.featureCache.set(w.id, 'error' in results[i]! ? { error: (results[i] as { error: string }).error } : (results[i] as { features: ViewFeature[] }).features));
+        }
+        // what the elements are
+        const need = new Map<string, Map<string, Ref>>();
+        const refsOf = (d: Dimension): Ref[] => (d.kind === 'linear' ? [d.a, d.b] : [d.ref]);
+        const keyOfDim = (d: Dimension): string | null => {
+          const view = doc.views.find((v) => v.id === d.view);
+          return view ? this.keyOf(view) : null;
+        };
+        for (const d of doc.dimensions) {
+          const key = keyOfDim(d);
+          if (!key) continue;
+          for (const ref of refsOf(d)) {
+            const id = `${key}|${ref.kind}|${ref.name}`;
+            if (!this.elementCache.has(id)) need.set(key, (need.get(key) ?? new Map()).set(id, ref));
+          }
+        }
+        if (need.size > 0) {
+          const parts = [...need];
+          const results = await this.host.api.drawingElements(parts.map(([part, refs]) => ({ part, refs: [...refs.values()] })));
+          if (this.closed) return;
+          parts.forEach(([, refs], i) => {
+            const r = results[i]!;
+            [...refs.keys()].forEach((id, j) => this.elementCache.set(id, 'error' in r ? { error: r.error } : r.elements[j]!));
+          });
+        }
+        // the answers, by view and by dimension
+        const features = new Map<Id, ViewFeature[]>();
+        for (const v of doc.views) {
+          const own = v.kind === 'detail' ? this.ancestor(doc.views, v) : v;
+          const r = own ? this.requestOf(own) : null;
+          const found = r ? this.featureCache.get(r.featureId) : undefined;
+          if (found && !('error' in found)) features.set(v.id, found);
+        }
+        const elements = new Map<Id, ElementsResult>();
+        for (const d of doc.dimensions) {
+          const key = keyOfDim(d);
+          if (!key) continue;
+          const got = refsOf(d).map((ref) => this.elementCache.get(`${key}|${ref.kind}|${ref.name}`));
+          if (got.some((g) => !g)) continue;
+          const bad = got.find((g) => g && 'error' in g) as { error: string } | undefined;
+          elements.set(d.id, bad ? { error: bad.error } : { elements: got as ElementFacts[] });
+        }
+        this.set({ features, elements });
+      } while (this.featureAgain && !this.closed);
+    } catch (e) {
+      this.host.notify(t('drawing.computeFailed', { why: e instanceof Error ? e.message : String(e) }), 'error');
+    } finally {
+      this.featuring = false;
+    }
+  }
+
+  /** The nearest view up the parents that is not a detail (a detail is measured in its parent's coordinates). */
+  private ancestor(views: readonly DrawingView[], view: DrawingView): DrawingView | null {
+    let v: DrawingView | undefined = view;
+    for (let i = 0; i < 64 && v && v.kind === 'detail'; i++) v = viewById(views, v.parent);
+    return v ?? null;
+  }
+
+  /** The drawing as a scene (the sheet and every view's lines where they are), kept while the document and what it is drawn from are the same. */
+  scene(): { scene: Scene; placed: Map<Id, PlacedView>; dimensions: Map<Id, DimensionOutcome> } {
     const c = this.sceneCache;
-    if (c && c.doc === this.state.doc && c.lines === this.state.lines) return c.value;
-    const value = buildScene(this.state.doc, this.state.lines);
-    this.sceneCache = { doc: this.state.doc, lines: this.state.lines, value };
+    if (c && c.doc === this.state.doc && c.lines === this.state.lines && c.elements === this.state.elements) return c.value;
+    const value = buildScene(this.state.doc, this.state.lines, this.state.elements);
+    this.sceneCache = { doc: this.state.doc, lines: this.state.lines, elements: this.state.elements, value };
     return value;
   }
 
@@ -376,6 +478,68 @@ export class DrawingStore {
       if (!used.has(c)) return c;
     }
     return 'A';
+  }
+
+  // ------------------------------------------------------------ dimensions (C16.4)
+
+  /** What a view can be dimensioned from (a detail: what its parent can), or null while it is not known. */
+  featuresOf(viewId: Id): ViewFeature[] | null {
+    return this.state.features.get(viewId) ?? null;
+  }
+
+  /** Every dimension of the view that asks for (overall size, holes, where the holes are), added in one step; the ones it already has are not made again. Returns how many were added. */
+  autoDimension(viewId: Id, options: AutoDimensionOptions): number {
+    const features = this.featuresOf(viewId);
+    if (!features) {
+      this.host.notify(t('drawing.featuresPending'), 'error');
+      return 0;
+    }
+    const doc = this.history.doc;
+    const same = (a: Ref, b: Ref) => a.kind === b.kind && a.name === b.name;
+    const have = doc.dimensions.filter((d) => d.view === viewId);
+    const isNew = (d: ReturnType<typeof autoDimensions>[number]) =>
+      !have.some((h) => h.kind === d.kind && (h.kind === 'linear' && d.kind === 'linear' ? h.orientation === d.orientation && same(h.a, d.a) && same(h.b, d.b) : h.kind !== 'linear' && d.kind !== 'linear' && same(h.ref, d.ref)));
+    const drafts = autoDimensions(features, options).filter(isNew);
+    if (drafts.length === 0) return 0;
+    // the offsets continue outside the dimension lines the view has already
+    const taken = (o: DimensionOrientation, sign: number) => have.filter((h) => h.kind === 'linear' && h.orientation === o && Math.sign(h.offset) === sign).length;
+    const stacked = { horizontal: taken('horizontal', -1), vertical: taken('vertical', 1) };
+    const ids = new IdAllocator(doc.idCounters, drawingIdsInUse(doc));
+    const dimensions = drafts.map((d): Dimension => {
+      const shifted = d.kind === 'linear' && d.orientation !== 'aligned' ? { ...d, offset: d.offset + Math.sign(d.offset) * stacked[d.orientation] * OFFSET_STEP } : d;
+      return { ...shifted, id: ids.take('dim'), view: viewId } as Dimension;
+    });
+    return this.execute({ type: 'insertDimensions', dimensions }) ? dimensions.length : 0;
+  }
+
+  /** A dimension between two elements of the view (planes, circles, …), the next line out on its side. */
+  addLinear(viewId: Id, a: Ref, b: Ref, orientation: DimensionOrientation): void {
+    const doc = this.history.doc;
+    const ids = new IdAllocator(doc.idCounters, drawingIdsInUse(doc));
+    const sign = orientation === 'horizontal' ? -1 : 1;
+    const n = doc.dimensions.filter((d) => d.view === viewId && d.kind === 'linear' && d.orientation === orientation && Math.sign(d.offset) === sign).length;
+    const id = ids.take('dim');
+    this.execute({ type: 'insertDimensions', dimensions: [{ id, view: viewId, kind: 'linear', a, b, orientation, offset: sign * (FIRST_OFFSET + n * OFFSET_STEP) }] });
+  }
+
+  /** The diameter or radius of a circle of the view. */
+  addRound(viewId: Id, kind: 'diameter' | 'radius', ref: Ref, angle = 45): void {
+    const doc = this.history.doc;
+    const ids = new IdAllocator(doc.idCounters, drawingIdsInUse(doc));
+    this.execute({ type: 'insertDimensions', dimensions: [{ id: ids.take('dim'), view: viewId, kind, ref, angle }] });
+  }
+
+  setDimension(id: Id, patch: DimensionPatch): void {
+    this.execute({ type: 'setDimension', dimensionId: id, patch });
+  }
+
+  deleteDimensions(ids: Id[]): void {
+    if (ids.length > 0) this.execute({ type: 'deleteDimensions', dimensionIds: ids });
+  }
+
+  /** A message for the user (the panel's own: nothing went wrong). */
+  notifyInfo(text: string): void {
+    this.host.notify(text);
   }
 
   deleteViews(ids: Id[]): void {

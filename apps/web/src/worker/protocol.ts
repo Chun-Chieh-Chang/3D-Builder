@@ -1,5 +1,5 @@
 import type { Locale } from '@3db/i18n';
-import type { InterferenceComponent, MeasureReport, MeasureTarget, PartMass, ViewAxes } from '@3db/model';
+import type { InterferenceComponent, MeasureReport, MeasureTarget, PartMass, ElementFacts, ViewAxes, ViewFeature } from '@3db/model';
 import type { AssemblyDoc, Axis3, CoordSystem, Fingerprint, Id, PartDoc, PlaneFrame, Pose, Ref, SketchFeature, SourceTree, Vec3 } from '@3db/model';
 import type { GeometryReport, MassProps, MeshData, ProjectedView } from '@3db/kernel';
 import type { AssemblyResult, AssemblySolveOptions, ClearanceRow, Converted, FeatureResult, SweepResult } from '@3db/regen';
@@ -205,6 +205,12 @@ export interface DrawingViewRequest {
 /** What a view of a drawing looks like: its lines at full size, or why they could not be made. */
 export type DrawingViewResult = { lines: ProjectedView; ms: number } | { error: string };
 
+/** What a view of a drawing can be dimensioned from, or why not (C16.4). */
+export type DrawingFeaturesResult = { features: ViewFeature[] } | { error: string };
+
+/** What the elements a drawing's dimensions point at are, one for each reference asked, or why one could not be told (it is gone, or not something to dimension). */
+export type DrawingElementsResult = { elements: (ElementFacts | { error: string })[] } | { error: string };
+
 export interface KernelApi {
   init(): Promise<{ occtMs: number; gcsMs: number }>;
   /** The language of the messages the worker makes (errors, warnings); what it made before keeps its language. */
@@ -237,6 +243,10 @@ export interface KernelApi {
   interference(components: InterferenceComponent[]): Promise<InterferenceResult>;
   /** The lines of the views of a drawing (C16.2, A4.4): exact hidden-line removal on parts built for the app (`buildPart`); one result for each request. */
   drawingViews(requests: DrawingViewRequest[]): Promise<DrawingViewResult[]>;
+  /** What each view can be dimensioned from (C16.4): the planes it sees edge-on and the cylinders it sees as circles, of the part built for the app. */
+  drawingFeatures(requests: { part: string; axes: ViewAxes }[]): Promise<DrawingFeaturesResult[]>;
+  /** What the elements of a part that dimensions point at are (C16.4), by persistent name. */
+  drawingElements(requests: { part: string; refs: Ref[] }[]): Promise<DrawingElementsResult[]>;
   /** The clearance between components (E2.2): the pairs closer than `least` mm, the closest first; with `only`, just those with one of these components. */
   clearance(components: InterferenceComponent[], least: number, only?: string[]): Promise<ClearanceResult>;
   /** How far `mover` can move along `dir` before it meets another component, at most `length` mm (E2.2). */

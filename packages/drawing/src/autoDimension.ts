@@ -1,0 +1,81 @@
+import type { Dimension, ViewFeature } from '@3db/model';
+
+/** A dimension before it has an id and a view. */
+export type DimensionDraft = Dimension extends infer D ? (D extends Dimension ? Omit<D, 'id' | 'view'> : never) : never;
+
+export interface AutoDimensionOptions {
+  /** The overall width and height of the view. */
+  overall: boolean;
+  /** The diameter of every hole and the radius of every arc (those that are equal are one dimension, 「4×Ø9」). */
+  holes: boolean;
+  /** Where each hole is, from the left side and from the bottom of the view. */
+  positions: boolean;
+}
+
+/** The distance from the view to the first dimension line, and between dimension lines (mm on the sheet). */
+export const FIRST_OFFSET = 10;
+export const OFFSET_STEP = 7;
+
+const TOL = 1e-6;
+type Plane = Extract<ViewFeature, { type: 'plane' }>;
+type Circle = Extract<ViewFeature, { type: 'circle' }>;
+
+/** The plane at the end of the view along an axis: the lowest or the highest, and of those at the same place the biggest. */
+function extreme(planes: Plane[], axis: 'x' | 'y', high: boolean): Plane | null {
+  const on = planes.filter((p) => p.axis === axis);
+  if (on.length === 0) return null;
+  const best = Math.max(...on.map((p) => (high ? p.coord : -p.coord)));
+  const there = on.filter((p) => Math.abs((high ? p.coord : -p.coord) - best) < TOL);
+  return there.reduce((a, b) => (b.area > a.area ? b : a));
+}
+
+/**
+ * The dimensions a view is given when asked for them all (C16.4): its overall width and height between the planes that bound it, the diameter of each
+ * hole and the radius of each arc, and where each hole is from the left and the bottom planes. Horizontal dimensions go below the view and vertical ones to its right,
+ * the ones that stand for a hole nearest it and the overall ones outermost. A dimension that cannot be made (no plane bounds the view that way) is left out.
+ */
+export function autoDimensions(features: readonly ViewFeature[], options: AutoDimensionOptions): DimensionDraft[] {
+  const planes = features.filter((f): f is Plane => f.type === 'plane');
+  const circles = features.filter((f): f is Circle => f.type === 'circle');
+  const minX = extreme(planes, 'x', false);
+  const maxX = extreme(planes, 'x', true);
+  const minY = extreme(planes, 'y', false);
+  const maxY = extreme(planes, 'y', true);
+  const out: DimensionDraft[] = [];
+
+  if (options.holes) {
+    // equal circles are one dimension with their count
+    const groups = new Map<string, Circle[]>();
+    for (const c of circles) {
+      const key = `${c.full}|${c.convex}|${Math.round(c.radius * 1e4)}`;
+      groups.set(key, [...(groups.get(key) ?? []), c]);
+    }
+    for (const g of groups.values()) {
+      const first = g[0]!;
+      const count = g.length > 1 ? { count: g.length } : {};
+      out.push(first.full ? { kind: 'diameter', ref: first.ref, angle: first.outward, ...count } : { kind: 'radius', ref: first.ref, angle: first.outward, ...count });
+    }
+  }
+
+  const horizontal: DimensionDraft[] = [];
+  const vertical: DimensionDraft[] = [];
+  if (options.positions) {
+    const whole = circles.filter((c) => c.full);
+    // a hole on the datum plane is at 0 from it and needs no dimension; holes at the same distance share one
+    const distinct = (axis: 0 | 1, datum: Plane | null) => {
+      const seen: { at: number; c: Circle }[] = [];
+      if (datum) for (const c of whole) if (Math.abs(c.centre[axis] - datum.coord) > TOL && !seen.some((s) => Math.abs(s.at - c.centre[axis]) < TOL)) seen.push({ at: c.centre[axis], c });
+      return seen.sort((a, b) => a.at - b.at);
+    };
+    if (minX) for (const s of distinct(0, minX)) horizontal.push({ kind: 'linear', a: minX.ref, b: s.c.ref, orientation: 'horizontal', offset: 0 });
+    if (minY) for (const s of distinct(1, minY)) vertical.push({ kind: 'linear', a: minY.ref, b: s.c.ref, orientation: 'vertical', offset: 0 });
+  }
+  if (options.overall) {
+    if (minX && maxX && Math.abs(maxX.coord - minX.coord) > TOL) horizontal.push({ kind: 'linear', a: minX.ref, b: maxX.ref, orientation: 'horizontal', offset: 0 });
+    if (minY && maxY && Math.abs(maxY.coord - minY.coord) > TOL) vertical.push({ kind: 'linear', a: minY.ref, b: maxY.ref, orientation: 'vertical', offset: 0 });
+  }
+  // stacked outward in the order made: the holes' first, the overall one last
+  horizontal.forEach((d, i) => out.push({ ...d, offset: -(FIRST_OFFSET + i * OFFSET_STEP) } as DimensionDraft));
+  vertical.forEach((d, i) => out.push({ ...d, offset: FIRST_OFFSET + i * OFFSET_STEP } as DimensionDraft));
+  return out;
+}

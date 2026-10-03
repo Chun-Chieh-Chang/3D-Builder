@@ -16,7 +16,7 @@ export function toSvg(scene: Scene, options: { font?: string } = {}): string {
       const s = LINE_STYLES[item.style];
       const pts: string[] = [];
       for (let i = 0; i < item.points.length; i += 2) pts.push(`${num(item.points[i]!)},${y(item.points[i + 1]!)}`);
-      const attrs = `fill="none" stroke="#000000" stroke-width="${s.width}" stroke-linecap="round" stroke-linejoin="round"${s.dash ? ` stroke-dasharray="${s.dash.join(' ')}"` : ''}`;
+      const attrs = `fill="${item.filled ? '#000000' : 'none'}" stroke="#000000" stroke-width="${s.width}" stroke-linecap="round" stroke-linejoin="round"${s.dash ? ` stroke-dasharray="${s.dash.join(' ')}"` : ''}`;
       out.push(item.closed ? `<polygon points="${pts.join(' ')}" ${attrs}/>` : `<polyline points="${pts.join(' ')}" ${attrs}/>`);
     } else {
       const anchor = item.anchor === 'center' ? 'middle' : item.anchor === 'right' ? 'end' : 'start';

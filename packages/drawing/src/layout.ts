@@ -23,6 +23,9 @@ export interface PlacedView {
 
 export const ratio = (s: Scale): number => s[0] / s[1];
 
+/** A point of a view's coordinates (full size) on the sheet, where the view is placed. */
+export const toSheet = (placed: PlacedView, x: number, y: number): [number, number] => [placed.at[0] + (x - placed.centre[0]) * placed.scale, placed.at[1] + (y - placed.centre[1]) * placed.scale];
+
 /** The scales a drawing is made at (ISO 5455), from the largest. */
 export const STANDARD_SCALES: readonly Scale[] = [[50, 1], [20, 1], [10, 1], [5, 1], [2, 1], [1, 1], [1, 2], [1, 5], [1, 10], [1, 20], [1, 50], [1, 100]];
 

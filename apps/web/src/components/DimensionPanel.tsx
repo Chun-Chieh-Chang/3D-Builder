@@ -1,0 +1,248 @@
+import { t } from '@3db/i18n';
+import { formatNumber } from '@3db/drawing';
+import type { Dimension, DimensionOrientation, DimensionTolerance, ViewFeature } from '@3db/model';
+import { useState } from 'react';
+import { store, useStore } from '../state/store';
+
+/** The label of a thing a dimension can point at, as the list shows it. */
+const featureLabel = (f: ViewFeature): string =>
+  f.type === 'plane'
+    ? t(f.axis === 'x' ? 'drawingUi.featurePlaneX' : 'drawingUi.featurePlaneY', { value: formatNumber(f.coord, 2) })
+    : t(f.full ? (f.convex ? 'drawingUi.featureCylinder' : 'drawingUi.featureHole') : 'drawingUi.featureArc', {
+        size: formatNumber(f.full ? 2 * f.radius : f.radius, 2),
+        x: formatNumber(f.centre[0], 2),
+        y: formatNumber(f.centre[1], 2),
+      });
+
+/** A number box that commits on Enter or when it loses focus. */
+function NumberBox({ value, onCommit, field }: { value: number; onCommit: (v: number) => void; field: string }) {
+  const [text, setText] = useState(String(value));
+  const [shown, setShown] = useState(value);
+  if (value !== shown) {
+    setShown(value);
+    setText(String(value));
+  }
+  const commit = () => {
+    const v = Number(text);
+    if (text.trim() !== '' && Number.isFinite(v) && v !== value) onCommit(v);
+    else setText(String(value));
+  };
+  return (
+    <input
+      data-field={field}
+      inputMode="decimal"
+      value={text}
+      onChange={(e) => setText(e.target.value)}
+      onBlur={commit}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          commit();
+        }
+        e.stopPropagation();
+      }}
+    />
+  );
+}
+
+const toleranceKind = (tol: DimensionTolerance | undefined) => tol?.type ?? 'none';
+
+/**
+ * The dimensions of the selected view (C16.4): all of them at once (overall size, holes, where the holes are), one between two elements or of one circle, and
+ * what is written on each (reference, tolerance), where it is drawn, and deleting it. Every change is a command on the document.
+ */
+export function DimensionPanel() {
+  const drw = useStore((s) => s.drw)!;
+  const d = store.drawingStore!;
+  const view = drw.doc.views.find((v) => v.id === drw.selected);
+  const [opts, setOpts] = useState({ overall: true, holes: true, positions: false });
+  const [a, setA] = useState(0);
+  const [b, setB] = useState(1);
+  const [orientation, setOrientation] = useState<DimensionOrientation>('horizontal');
+  const [round, setRound] = useState(0);
+  const [selected, setSelected] = useState<string | null>(null);
+  const features = view ? (drw.features.get(view.id) ?? null) : null;
+  const planes = (features ?? []).filter((f) => f.type === 'plane');
+  const circles = (features ?? []).filter((f) => f.type === 'circle');
+  const linearPick = [...planes, ...circles];
+  const mine = view ? drw.doc.dimensions.filter((x) => x.view === view.id) : [];
+  const outcomes = d.scene().dimensions;
+  const current = mine.find((x) => x.id === selected) ?? null;
+  const textOf = (x: Dimension) => {
+    const o = outcomes.get(x.id);
+    return o ? ('error' in o ? '⚠ ' + o.error : o.text) : '…';
+  };
+  return (
+    <div className="pm-group" data-group="dimensions">
+      <h4>{t('drawingUi.dimensions')}</h4>
+      {!view && <p className="muted">{t('drawingUi.dimSelectView')}</p>}
+      {view && (
+        <>
+          {features && features.length === 0 && <p className="muted">{t('drawingUi.dimNoFeatures')}</p>}
+          {(['overall', 'holes', 'positions'] as const).map((k) => (
+            <label key={k} className="pm-row checkbox">
+              <input type="checkbox" data-field={`auto-${k}`} checked={opts[k]} onChange={(e) => setOpts({ ...opts, [k]: e.target.checked })} />
+              <span>{t(`drawingUi.dimAuto.${k}`)}</span>
+            </label>
+          ))}
+          <div className="pm-row">
+            <button
+              className="pm-button"
+              data-action="autoDimension"
+              disabled={!features}
+              onClick={() => {
+                const n = d.autoDimension(view.id, opts);
+                if (n > 0) d.notifyInfo(t('drawingUi.dimAdded', { n }));
+                else if (features) d.notifyInfo(t('drawingUi.dimNothingNew'));
+              }}
+            >
+              {t('drawingUi.dimAutoButton')}
+            </button>
+          </div>
+          {linearPick.length >= 2 && (
+            <div className="pm-row">
+              <select data-field="dimA" value={Math.min(a, linearPick.length - 1)} onChange={(e) => setA(Number(e.target.value))}>
+                {linearPick.map((f, i) => (
+                  <option key={i} value={i}>
+                    {featureLabel(f)}
+                  </option>
+                ))}
+              </select>
+              <select data-field="dimB" value={Math.min(b, linearPick.length - 1)} onChange={(e) => setB(Number(e.target.value))}>
+                {linearPick.map((f, i) => (
+                  <option key={i} value={i}>
+                    {featureLabel(f)}
+                  </option>
+                ))}
+              </select>
+              <select data-field="dimOrientation" value={orientation} onChange={(e) => setOrientation(e.target.value as DimensionOrientation)}>
+                <option value="horizontal">{t('drawingUi.dimHorizontal')}</option>
+                <option value="vertical">{t('drawingUi.dimVertical')}</option>
+                <option value="aligned">{t('drawingUi.dimAligned')}</option>
+              </select>
+              <button
+                className="pm-button"
+                data-action="addLinear"
+                onClick={() => d.addLinear(view.id, linearPick[Math.min(a, linearPick.length - 1)]!.ref, linearPick[Math.min(b, linearPick.length - 1)]!.ref, orientation)}
+              >
+                {t('drawingUi.dimLinear')}
+              </button>
+            </div>
+          )}
+          {circles.length > 0 && (
+            <div className="pm-row">
+              <select data-field="dimRound" value={Math.min(round, circles.length - 1)} onChange={(e) => setRound(Number(e.target.value))}>
+                {circles.map((f, i) => (
+                  <option key={i} value={i}>
+                    {featureLabel(f)}
+                  </option>
+                ))}
+              </select>
+              <button className="pm-button" data-action="addDiameter" onClick={() => d.addRound(view.id, 'diameter', circles[Math.min(round, circles.length - 1)]!.ref)}>
+                {t('drawingUi.dimDiameter')}
+              </button>
+              <button className="pm-button" data-action="addRadius" onClick={() => d.addRound(view.id, 'radius', circles[Math.min(round, circles.length - 1)]!.ref)}>
+                {t('drawingUi.dimRadius')}
+              </button>
+            </div>
+          )}
+          <ul className="selection-box drawing-views" data-field="dimensions">
+            {mine.map((x) => (
+              <li key={x.id} className={x.id === selected ? 'selected' : ''} onClick={() => setSelected(x.id)} data-dimension={x.id}>
+                <span className="name">{textOf(x)}</span>
+                <button title={t('drawingUi.dimDelete')} onClick={(e) => (e.stopPropagation(), d.deleteDimensions([x.id]))}>
+                  ✕
+                </button>
+              </li>
+            ))}
+          </ul>
+          {current && (
+            <>
+              <label className="pm-row checkbox">
+                <input type="checkbox" data-field="dimReference" checked={!!current.reference} onChange={(e) => d.setDimension(current.id, { reference: e.target.checked })} />
+                <span>{t('drawingUi.dimReference')}</span>
+              </label>
+              {current.kind === 'linear' ? (
+                <label className="pm-row">
+                  <span>{t('drawingUi.dimOffset')}</span>
+                  <NumberBox field="dimOffset" value={current.offset} onCommit={(v) => d.setDimension(current.id, { offset: v })} />
+                </label>
+              ) : (
+                <>
+                  <label className="pm-row">
+                    <span>{t('drawingUi.dimAngle')}</span>
+                    <NumberBox field="dimAngle" value={current.angle} onCommit={(v) => d.setDimension(current.id, { angle: v })} />
+                  </label>
+                  <label className="pm-row">
+                    <span>{t('drawingUi.dimCount')}</span>
+                    <NumberBox field="dimCount" value={current.count ?? 1} onCommit={(v) => d.setDimension(current.id, { count: v >= 2 ? Math.round(v) : null })} />
+                  </label>
+                </>
+              )}
+              <label className="pm-row">
+                <span>{t('drawingUi.dimTolerance')}</span>
+                <select
+                  data-field="dimToleranceType"
+                  value={toleranceKind(current.tolerance)}
+                  onChange={(e) =>
+                    d.setDimension(current.id, {
+                      tolerance: e.target.value === 'bilateral' ? { type: 'bilateral', upper: 0.05, lower: -0.05 } : e.target.value === 'fit' ? { type: 'fit', fit: current.kind === 'linear' ? 'h7' : 'H7' } : null,
+                    })
+                  }
+                >
+                  <option value="none">{t('drawingUi.dimTolNone')}</option>
+                  <option value="bilateral">{t('drawingUi.dimTolBilateral')}</option>
+                  <option value="fit">{t('drawingUi.dimTolFit')}</option>
+                </select>
+              </label>
+              {current.tolerance?.type === 'bilateral' && (
+                <>
+                  <label className="pm-row">
+                    <span>{t('drawingUi.dimUpper')}</span>
+                    <NumberBox field="dimUpper" value={current.tolerance.upper} onCommit={(v) => d.setDimension(current.id, { tolerance: { type: 'bilateral', upper: v, lower: (current.tolerance as { lower: number }).lower } })} />
+                  </label>
+                  <label className="pm-row">
+                    <span>{t('drawingUi.dimLower')}</span>
+                    <NumberBox field="dimLower" value={current.tolerance.lower} onCommit={(v) => d.setDimension(current.id, { tolerance: { type: 'bilateral', upper: (current.tolerance as { upper: number }).upper, lower: v } })} />
+                  </label>
+                </>
+              )}
+              {current.tolerance?.type === 'fit' && (
+                <label className="pm-row">
+                  <span>{t('drawingUi.dimFit')}</span>
+                  <FitBox value={current.tolerance.fit} onCommit={(fit) => d.setDimension(current.id, { tolerance: { type: 'fit', fit } })} />
+                </label>
+              )}
+            </>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
+
+/** A text box for a tolerance class, committed on Enter or on leaving. */
+function FitBox({ value, onCommit }: { value: string; onCommit: (v: string) => void }) {
+  const [text, setText] = useState(value);
+  const [shown, setShown] = useState(value);
+  if (value !== shown) {
+    setShown(value);
+    setText(value);
+  }
+  const commit = () => (text.trim() !== value ? onCommit(text.trim()) : undefined);
+  return (
+    <input
+      data-field="dimFit"
+      value={text}
+      onChange={(e) => setText(e.target.value)}
+      onBlur={commit}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          commit();
+        }
+        e.stopPropagation();
+      }}
+    />
+  );
+}

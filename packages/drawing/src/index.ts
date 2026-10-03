@@ -3,3 +3,5 @@ export * from './layout';
 export * from './scene';
 export * from './svg';
 export * from './geometry';
+export * from './dimension';
+export * from './autoDimension';

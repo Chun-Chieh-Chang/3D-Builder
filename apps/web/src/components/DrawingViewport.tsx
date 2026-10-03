@@ -30,7 +30,7 @@ export function DrawingViewport() {
 
   // what is shown: the document, with the view being dragged where the pointer has it
   const shown = useMemo(() => (drag ? { ...drw.doc, views: drw.doc.views.map((v) => (v.id === drag.id ? { ...v, at: drag.at } : v)) } : drw.doc), [drw.doc, drag]);
-  const built = useMemo(() => buildScene(shown, drw.lines), [shown, drw.lines]);
+  const built = useMemo(() => buildScene(shown, drw.lines, drw.elements), [shown, drw.lines, drw.elements]);
   const svg = useMemo(() => toSvg(built.scene), [built]);
 
   const fit = () => {
