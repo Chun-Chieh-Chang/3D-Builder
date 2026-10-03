@@ -6,7 +6,7 @@ import type { Id } from './ids';
  * DOF status, mass properties and error lists are derived data and never stored.
  */
 
-export const SCHEMA_VERSION = 31;
+export const SCHEMA_VERSION = 32;
 
 /** Value expression (B5.2, B5.3): "20", "25.4mm", "30deg", "wall_t*2", "D1@草圖1/2", "property('厚度')"; see `expr/`. */
 export type Expr = string;
@@ -546,6 +546,12 @@ export interface ShellFeature extends FeatureBase {
   faces: Ref[];
   thickness: Expr;
   outward?: boolean;
+  /**
+   * Walls of another thickness (不等殼厚, C5.4, v32): a face of the body that stays, and how thick the wall behind it is instead of `thickness`. A planar face only. It is made
+   * as a shell of `thickness` and then the inner face that lies against that face moved (`Kernel.moveFace`), so the wall there is `thickness` of this list; a thicker one
+   * must still fit in the body.
+   */
+  faceThickness?: { face: Ref; thickness: Expr }[];
 }
 
 /**

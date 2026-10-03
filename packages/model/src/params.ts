@@ -176,7 +176,9 @@ export function mapExprs(feature: Feature, fn: (expr: Expr, kind: ExprKind, role
     }
     case 'shell': {
       const thickness = fn(feature.thickness, 'length', 'positive');
-      return thickness === feature.thickness ? feature : { ...feature, thickness };
+      const each = feature.faceThickness?.map((x) => ({ ...x, thickness: fn(x.thickness, 'length', 'positive') }));
+      const same = thickness === feature.thickness && (!each || each.every((x, i) => x.thickness === feature.faceThickness![i]!.thickness));
+      return same ? feature : { ...feature, thickness, ...(each ? { faceThickness: each } : {}) };
     }
     case 'thicken': {
       const thickness = fn(feature.thickness, 'length', 'nonZero');

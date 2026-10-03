@@ -67,7 +67,7 @@ function picking(feature: Feature | undefined, editing: boolean, modelTool: 'con
     faces: !editing || modelTool === 'convert' || !!upTo || !!faceFeature || combine || !!slots?.faces || measuring,
     vertices: !!slots?.vertices || endVertices.length > 0 || measuring,
     pickedEdges: edgeFeature ? edgeFeature.edges : (slots?.edges ?? []),
-    pickedFaces: faceFeature ? (faceFeature.type === 'deleteFace' || faceFeature.type === 'shell' || faceFeature.type === 'offsetSurface' ? faceFeature.faces : faceFeature.type === 'draft' ? [faceFeature.neutral, ...faceFeature.faces] : [faceFeature.face]) : upTo ? endFaces : (slots?.faces ?? []),
+    pickedFaces: faceFeature ? (faceFeature.type === 'shell' ? [...faceFeature.faces, ...(faceFeature.faceThickness ?? []).map((x) => x.face)] : faceFeature.type === 'deleteFace' || faceFeature.type === 'offsetSurface' ? faceFeature.faces : faceFeature.type === 'draft' ? [faceFeature.neutral, ...faceFeature.faces] : [faceFeature.face]) : upTo ? endFaces : (slots?.faces ?? []),
     pickedVertices: slots ? slots.vertices : endVertices,
     /** Default and reference planes, axes and points the geometry being defined is based on: they are drawn while they are used. */
     referenceDatums: slots?.datums ?? [],

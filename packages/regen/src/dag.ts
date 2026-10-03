@@ -36,9 +36,11 @@ export function parentsOf(feature: Feature, doc: PartDoc): Id[] {
       parents = fromRefs(feature.edges);
       break;
     case 'deleteFace':
-    case 'shell':
     case 'offsetSurface':
       parents = fromRefs(feature.faces);
+      break;
+    case 'shell':
+      parents = fromRefs([...feature.faces, ...(feature.faceThickness ?? []).map((x) => x.face)]);
       break;
     case 'moveFace':
       parents = fromRefs([feature.face]);

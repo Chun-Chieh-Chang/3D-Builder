@@ -1496,9 +1496,13 @@ function DraftPanel({ f }: { f: DraftFeature }) {
   );
 }
 
-/** Shell (C5.4): the faces to take away to open the body, the wall thickness, and which way the wall grows. */
+/** Shell (C5.4): the faces to take away to open the body, the wall thickness, which way the wall grows, and the faces whose wall is another thickness. */
 function ShellPanel({ f }: { f: ShellFeature }) {
   const result = useStore((s) => s.result);
+  const mode = useStore((s) => s.shellPick);
+  const walls = f.faceThickness ?? [];
+  const missing = (name: string) => !result?.faceNames.includes(name);
+  const withWalls = (faceThickness: { face: Ref; thickness: string }[]) => store.setShellWalls(faceThickness);
   return (
     <section className="pm-group">
       <h4>{t('pm.shell.heading')}</h4>
@@ -1524,6 +1528,30 @@ function ShellPanel({ f }: { f: ShellFeature }) {
         <input type="checkbox" checked={!!f.outward} onChange={(e) => store.execute({ type: 'setShell', featureId: f.id, faces: f.faces, thickness: f.thickness, ...(e.target.checked ? { outward: true } : {}) })} />
         <span>{t('pm.shell.outward')}</span>
       </label>
+      <h4 className="sub">{t('pm.shell.mode')}</h4>
+      <label className="pm-row checkbox">
+        <input type="radio" name="shell-pick" checked={mode === 'open'} onChange={() => store.setShellPick('open')} />
+        <span>{t('pm.shell.modeOpen')}</span>
+      </label>
+      <label className="pm-row checkbox">
+        <input type="radio" name="shell-pick" data-field="pick-walls" checked={mode === 'thickness'} onChange={() => store.setShellPick('thickness')} />
+        <span>{t('pm.shell.modeThickness')}</span>
+      </label>
+      <h4 className="sub">{t('pm.shell.thicknessHeading')}</h4>
+      <ul className="selection-box" data-field="walls">
+        {walls.length === 0 && <li className="muted">{t('pm.shell.thicknessEmpty')}</li>}
+        {walls.map((w, i) => (
+          <li key={w.face.name} className={missing(w.face.name) ? 'missing' : ''} title={w.face.name}>
+            <code>{w.face.name}</code>
+            {missing(w.face.name) && t('pm.lost')}
+            <ValueInput value={w.thickness} toCommand={(thickness) => ({ type: 'setShell', featureId: f.id, faces: f.faces, thickness: f.thickness, ...(f.outward ? { outward: true } : {}), faceThickness: walls.map((x, k) => (k === i ? { ...x, thickness } : x)) })} />
+            <button className="use-nearest" title={t('slot.clear')} onClick={() => withWalls(walls.filter((_, k) => k !== i))}>
+              ✕
+            </button>
+          </li>
+        ))}
+      </ul>
+      <p className="hint">{t('pm.shell.thicknessHint')}</p>
       <p className="hint">{t('pm.shell.hint')}</p>
     </section>
   );

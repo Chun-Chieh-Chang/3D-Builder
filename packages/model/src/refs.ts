@@ -64,9 +64,10 @@ export function mapRefs(feature: Feature, map: (ref: Ref) => Ref): { feature: Fe
     case 'coordSys':
       return { feature: { ...feature, ...(feature.origin ? { origin: one(feature.origin) } : {}), x: one(feature.x), y: one(feature.y) }, replaced };
     case 'deleteFace':
-    case 'shell':
     case 'offsetSurface':
       return { feature: { ...feature, faces: feature.faces.map(one) }, replaced };
+    case 'shell':
+      return { feature: { ...feature, faces: feature.faces.map(one), ...(feature.faceThickness ? { faceThickness: feature.faceThickness.map((x) => ({ ...x, face: one(x.face) })) } : {}) }, replaced };
     case 'draft':
       return { feature: { ...feature, neutral: one(feature.neutral), faces: feature.faces.map(one) }, replaced };
     case 'moveFace':

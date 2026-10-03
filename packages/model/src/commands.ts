@@ -79,7 +79,8 @@ ull). */
   /** What a draft leans and about which plane (C5.5). */
   | { type: 'setDraftFeature'; featureId: Id; neutral: Ref; faces: Ref[]; angle: Expr; reverse?: boolean }
   /** What a shell takes away and how thick the wall is (C5.4). */
-  | { type: 'setShell'; featureId: Id; faces: Ref[]; thickness: Expr; outward?: boolean }
+  /** `faceThickness`: the walls of another thickness (C5.4); left as it is when absent, taken away when empty. */
+  | { type: 'setShell'; featureId: Id; faces: Ref[]; thickness: Expr; outward?: boolean; faceThickness?: { face: Ref; thickness: Expr }[] }
   /** Changes an offset surface (C9.2): the faces, the distance, and how it goes round a corner of the region (absent: rounded). */
   | { type: 'setOffsetSurface'; featureId: Id; faces: Ref[]; distance: Expr; join?: 'arc' | 'intersection' }
   /** Changes a split line (C8.1): the sketch, the face it is projected on, the way round and whether it goes through all. */
@@ -899,6 +900,11 @@ export function mutate(draft: Draft<PartDoc>, cmd: Command): void {
       f.thickness = cmd.thickness;
       if (cmd.outward) f.outward = true;
       else delete f.outward;
+      if (cmd.faceThickness !== undefined) {
+        if (cmd.faceThickness.some((x) => x.face.kind !== 'face')) throw new CommandError(t('cmd.shellOnlyFaces'));
+        if (cmd.faceThickness.length > 0) f.faceThickness = cmd.faceThickness;
+        else delete f.faceThickness;
+      }
       checkExprs(draft as PartDoc, f as Feature);
       return;
     }

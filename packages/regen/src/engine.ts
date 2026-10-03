@@ -1992,11 +1992,61 @@ export class Regenerator {
     });
   }
 
+  /**
+   * 「薄殼」 (C5.4) with, when `faceThickness` has any, walls of another thickness (ADR 0078): the whole body is shelled with `thickness`, and then, for each face given
+   * another, the inner face that was made against it is moved along its normal by the difference (`moveFace`; thicker is into the cavity). The inner face is found by its
+   * name, which the moves keep, so moving one does not lose the next. Only a planar wall can be moved: say so, not guess. A move is checked: the inner face has to end up
+   * where it was told to, and the outside of the body has to be as the shell left it (a wall too thick to fit makes the body bigger, not a wall).
+   */
   private shell(f: ShellFeature, set: Bodies): BodyState[] {
     return this.perBody(set, f.faces, 'face', t('feature.noBodyForShell'), (n) => t('edit.facesLost', { n }), (body, mine) => {
-      const r = this.kernel.shell(body.shape, this.faceIndices(mine, body), evalLength(f.thickness), !!f.outward);
-      const topology = this.kernel.topology(r.shape);
-      return { id: body.id, shape: r.shape, topology, names: nameElements(r.faceOrigins, topology, { featureId: f.id, role: 'shell', input: body.names }), by: f.id };
+      const opened = this.faceIndices(mine, body);
+      const base = evalLength(f.thickness);
+      const r = this.kernel.shell(body.shape, opened, base, !!f.outward);
+      let shape = r.shape;
+      let topology = this.kernel.topology(shape);
+      let names = nameElements(r.faceOrigins, topology, { featureId: f.id, role: 'shell', input: body.names });
+      const inner = names.faces.slice();
+      const envelope = this.kernel.bounds(shape);
+      try {
+        for (const o of f.faceThickness ?? []) {
+          const [picked] = this.faceIndices([o.face], body);
+          const wanted = evalLength(o.thickness);
+          if (Math.abs(wanted - base) < 1e-9) continue;
+          if (opened.includes(picked!)) throw new FeatureError(t('feature.shellFaceOpened'));
+          // the inner face generated from the one picked, and where it is now (a move keeps its name)
+          const made = r.faceOrigins.findIndex((os) => os.some((x) => x.rel === 'generated' && x.kind === 'face' && x.index === picked));
+          if (made < 0) throw new FeatureError(t('feature.shellNoInner'));
+          const at = names.faces.indexOf(inner[made]!);
+          if (at < 0) throw new FeatureError(t('feature.shellNoInner'));
+          let moved: OpResult;
+          try {
+            moved = this.kernel.moveFace(shape, at, wanted - base);
+          } catch (e) {
+            if (e instanceof KernelError) throw new FeatureError(t('feature.shellFaceThickness', { why: e.message }));
+            throw e;
+          }
+          const was = topology.faces[at]!;
+          const after = this.kernel.topology(moved.shape);
+          const afterNames = nameElements(moved.faceOrigins, after, { featureId: f.id, role: 'shell', input: names });
+          const now = afterNames.faces.indexOf(inner[made]!);
+          const shifted = now < 0 ? NaN : (after.faces[now]!.center[0] - was.center[0]) * was.normal![0] + (after.faces[now]!.center[1] - was.center[1]) * was.normal![1] + (after.faces[now]!.center[2] - was.center[2]) * was.normal![2];
+          const reach = this.kernel.bounds(moved.shape);
+          const grown = [0, 1, 2].some((k) => reach.min[k]! < envelope.min[k]! - 1e-6 || reach.max[k]! > envelope.max[k]! + 1e-6);
+          if (grown || !(Math.abs(shifted - (wanted - base)) < 1e-6)) {
+            this.kernel.release(moved.shape);
+            throw new FeatureError(t('feature.shellFaceThickness', { why: t('feature.shellDoesNotFit') }));
+          }
+          this.kernel.release(shape);
+          shape = moved.shape;
+          topology = after;
+          names = afterNames;
+        }
+      } catch (e) {
+        this.kernel.release(shape);
+        throw e;
+      }
+      return { id: body.id, shape, topology, names, by: f.id };
     });
   }
 

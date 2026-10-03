@@ -291,6 +291,8 @@ export interface UiState {
   draft: DraftState | null;
   undercut: UndercutState | null;
   thickness: ThicknessState | null;
+  /** What a face picked in the view is while a shell is edited: one to take away (open), or one with a wall of its own (C5.4). */
+  shellPick: 'open' | 'thickness';
   /** The interference detection (E2.1) while its window is open. Null when closed. */
   interference: InterferenceState | null;
   /** The open drawing (Phase 5); null unless the open document is a drawing. */
@@ -489,6 +491,7 @@ class AppStore {
       measure: null,
       interference: null,
       clearance: null,
+      shellPick: 'open',
       thickness: null,
       undercut: null,
       draft: null,
@@ -1379,7 +1382,28 @@ class AppStore {
   newShell(): void {
     const face = this.state.selectedFace;
     const name = t('feature.shell');
+    this.set({ shellPick: 'open' });
     this.openNew({ id: this.allocator().take('shell'), type: 'shell', name: nextName(this.history.doc, name), suppressed: false, faces: face?.kind === 'face' ? [face] : [], thickness: '2' }, name);
+  }
+
+  setShellPick(mode: 'open' | 'thickness'): void {
+    this.set({ shellPick: mode });
+  }
+
+  /** A face picked while the walls of another thickness of a shell are edited: put on the list with the thickness of the rest, or taken off it when it is on. */
+  toggleShellWallFace(ref: Ref): void {
+    const f = this.editedFeature();
+    if (f?.type !== 'shell' || ref.kind !== 'face') return;
+    if (f.faces.some((x) => x.name === ref.name)) return void this.notify(t('feature.shellFaceOpened'), 'error');
+    const list = f.faceThickness ?? [];
+    this.setShellWalls(list.some((x) => x.face.name === ref.name) ? list.filter((x) => x.face.name !== ref.name) : [...list, { face: ref, thickness: f.thickness }]);
+  }
+
+  /** The walls of another thickness of the shell being edited, the rest as it was. */
+  setShellWalls(faceThickness: { face: Ref; thickness: string }[]): void {
+    const f = this.editedFeature();
+    if (f?.type !== 'shell') return;
+    this.execute({ type: 'setShell', featureId: f.id, faces: f.faces, thickness: f.thickness, ...(f.outward ? { outward: true } : {}), faceThickness });
   }
 
   /** Face list of a shell: clicking a face toggles it, like the faces of a Delete Face. */
@@ -1659,7 +1683,7 @@ class AppStore {
     else if (f?.type === 'extrude') this.setUpToFace(ref);
     else if (f?.type === 'refPlane' || f?.type === 'refAxis' || f?.type === 'refPoint' || f?.type === 'coordSys' || f?.type === 'pattern' || f?.type === 'mirror') this.putDatumRef(ref);
     else if (f?.type === 'deleteFace') this.toggleFace(ref);
-    else if (f?.type === 'shell') this.toggleShellFace(ref);
+    else if (f?.type === 'shell') (this.state.shellPick === 'thickness' ? this.toggleShellWallFace(ref) : this.toggleShellFace(ref));
     else if (f?.type === 'draft') this.pickDraftFace(ref);
     else if (f?.type === 'moveFace') this.setMoveFace(ref);
     else if (f?.type === 'offsetSurface') this.toggleOffsetFace(ref);
