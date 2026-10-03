@@ -1,13 +1,14 @@
 import { useEffect, useState } from 'react';
+import { t } from '@3db/i18n';
 import { DATUM_PLANES, type MateRef, type MateType } from '@3db/model';
 import { MATE_LABEL } from '@3db/assembly';
 import { store, useStore } from '../state/store';
-import { PREVIEW_MATE, type AssemblyState, type MateDraft } from '../state/assembly';
+import { isAdvancedMate, mateSlots, PREVIEW_MATE, type AssemblyState, type MateDraft } from '../state/assembly';
 import { DATUM_ITEMS } from '../strings';
 import { componentInfo } from './AssemblyTree';
 import { Icon } from './Icon';
 
-const TYPES: MateType[] = ['coincident', 'parallel', 'perpendicular', 'tangent', 'concentric', 'lock', 'distance', 'angle'];
+const TYPES: MateType[] = ['coincident', 'parallel', 'perpendicular', 'tangent', 'concentric', 'lock', 'distance', 'angle']; // the mates of two elements; width and symmetric are under the advanced mates
 const KIND_WORD = { face: '面', edge: '邊線', vertex: '頂點', datum: '', body: '本體' } as const;
 const PLANE_LABEL: Record<string, string> = Object.fromEntries(DATUM_ITEMS.map((d) => [d.id, d.label]));
 
@@ -24,7 +25,7 @@ export function elementLabel(asm: AssemblyState, ref: MateRef): string {
 /** What the mate being previewed does: holds, over-defines the assembly, or cannot be made. */
 function previewStatus(asm: AssemblyState, d: MateDraft): { kind: 'ok' | 'error'; text: string } | null {
   const r = asm.solution?.mates.get(d.editing ?? PREVIEW_MATE);
-  if (!r || !d.a || !d.b) return null;
+  if (!r || !d.a || !d.b || (isAdvancedMate(d.type) && mateSlots(d).some((s) => s === null))) return null;
   if (r.status === 'ok') return { kind: 'ok', text: '結合成立' };
   if (r.status === 'conflict') return { kind: 'error', text: '這個結合與之前的結合矛盾，組合件會過多定義' };
   if (r.status === 'suppressed') return { kind: 'ok', text: '結合已抑制' };
@@ -68,7 +69,9 @@ export function MatePanel() {
   const offered = a?.mateTypes() ?? [];
   const status = previewStatus(asm, d);
   const editing = d.editing ? asm.doc.mates.find((m) => m.id === d.editing) : undefined;
-  const refs = [d.a, d.b];
+  const advanced = isAdvancedMate(d.type);
+  const refs = advanced ? mateSlots(d) : [d.a, d.b];
+  const slotLabels = d.type === 'width' ? ['width1', 'width2', 'tab1', 'tab2'] : ['entity1', 'entity2', 'plane'];
   return (
     <div className="property-manager">
       <div className="pm-header">
@@ -87,17 +90,32 @@ export function MatePanel() {
           {refs.map((r, i) =>
             r ? (
               <li key={i} className="removable">
-                <span>{elementLabel(asm, r)}</span>
+                <span>{advanced ? `${t(`matePanel.slot.${slotLabels[i]}` as 'matePanel.slot.plane')}: ` : ''}{elementLabel(asm, r)}</span>
                 <button title="移除" onClick={() => a?.pickElement(r)}>
                   <Icon name="cancel" />
                 </button>
               </li>
+            ) : advanced ? (
+              <li key={i} className="empty">
+                <span className="muted">{t(`matePanel.slot.${slotLabels[i]}` as 'matePanel.slot.plane')}</span>
+              </li>
             ) : null,
           )}
         </ul>
-        {!d.a || !d.b ? <p className="hint">在圖面中點選兩個零組件上的面、邊線或頂點；基準面與原點在圖面左上的樹中。</p> : null}
+        {advanced ? <p className="hint">{t(d.type === 'width' ? 'matePanel.widthHint' : 'matePanel.symmetricHint')}</p> : !d.a || !d.b ? <p className="hint">在圖面中點選兩個零組件上的面、邊線或頂點；基準面與原點在圖面左上的樹中。</p> : null}
       </div>
-      {d.a && d.b && (
+      <div className="pm-group">
+        <h4>{t('matePanel.advanced')}</h4>
+        <div className="mate-types">
+          {(['width', 'symmetric'] as const).map((type) => (
+            <button key={type} className={type === d.type ? 'active' : ''} onClick={() => a?.setMateType(type)}>
+              {MATE_LABEL[type]}
+            </button>
+          ))}
+        </div>
+        {advanced && status && <p className={status.kind === 'ok' ? 'hint' : 'error-text'}>{status.text}</p>}
+      </div>
+      {d.a && d.b && !advanced && (
         <div className="pm-group">
           <h4>標準結合</h4>
           <div className="mate-types">
@@ -112,6 +130,18 @@ export function MatePanel() {
               <span>{d.type === 'distance' ? '距離' : '角度'}</span>
               <ValueBox value={d.value ?? ''} suffix={d.type === 'distance' ? 'mm' : '°'} onCommit={(value) => a?.setMateOptions({ value })} />
             </div>
+          )}
+          {(d.type === 'distance' || d.type === 'angle') && (
+            <>
+              <div className="pm-row">
+                <span>{t('matePanel.min')}</span>
+                <ValueBox value={d.min ?? ''} suffix={d.type === 'distance' ? 'mm' : '°'} onCommit={(min) => a?.setMateOptions({ min })} />
+              </div>
+              <div className="pm-row">
+                <span>{t('matePanel.max')}</span>
+                <ValueBox value={d.max ?? ''} suffix={d.type === 'distance' ? 'mm' : '°'} onCommit={(max) => a?.setMateOptions({ max })} />
+              </div>
+            </>
           )}
           {(d.type === 'distance' || d.type === 'angle') && (
             <label className="pm-row checkbox">
@@ -148,7 +178,7 @@ export function MateFlyout() {
   const [open, setOpen] = useState<Set<string>>(new Set());
   const d = asm.mate;
   const pathKey = (path: readonly string[] | undefined) => (path ?? []).join('/');
-  const chosen = (component: string | null, name: string, path?: readonly string[]) => [d?.a, d?.b].some((r) => r && r.component === component && pathKey(r.path) === pathKey(path) && r.ref.kind === 'datum' && r.ref.name === name);
+  const chosen = (component: string | null, name: string, path?: readonly string[]) => [d?.a, d?.b, ...(d?.more ?? [])].some((r) => r && r.component === component && pathKey(r.path) === pathKey(path) && r.ref.kind === 'datum' && r.ref.name === name);
   const pick = (component: string | null, name: string, path?: string[]) => store.assembly?.pickElement({ component, ...(path?.length ? { path } : {}), ref: { kind: 'datum', name } });
   const items = (component: string | null, extra: { id: string; name: string }[], path?: string[]) => (
     <ul>

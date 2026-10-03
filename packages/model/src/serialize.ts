@@ -187,6 +187,8 @@ const assemblyMigrations: Record<number, (doc: Json) => Json> = {
   3: (doc) => doc,
   // v5: the steps of the exploded view (C15.14): an optional list, absent in older files.
   4: (doc) => doc,
+  // v6: width and symmetric mates (`Mate.more`) and limits (`Mate.min`, `Mate.max`, C15.9): optional, absent in older files.
+  5: (doc) => doc,
 };
 
 export function parseAssembly(text: string): AssemblyDoc {

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { labelsOf, t } from '@3db/i18n';
-import { findFeature, joinPath, type Id } from '@3db/model';
+import { findFeature, joinPath, mateEnds, type Id } from '@3db/model';
 import { deletion } from '@3db/regen/dag';
 import { store, useDocumentName, useStore } from '../state/store';
 import { featureLabel } from '../strings';
@@ -206,7 +206,7 @@ export function DeleteComponentsDialog() {
   const components = asm.doc.components.filter((c) => ids.includes(c.id));
   const gone = new Set(components.map((c) => c.id));
   // Mates chosen, and mates on the components being deleted.
-  const mates = asm.doc.mates.filter((m) => ids.includes(m.id) || gone.has(m.a.component ?? '') || gone.has(m.b.component ?? ''));
+  const mates = asm.doc.mates.filter((m) => ids.includes(m.id) || mateEnds(m).some((e) => gone.has(e.component ?? '')));
   return (
     <div className="modal-backdrop" onPointerDown={close}>
       <div className="modal" role="dialog" aria-label={t('del.title')} onPointerDown={(e) => e.stopPropagation()}>

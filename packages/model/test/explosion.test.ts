@@ -150,7 +150,7 @@ describe('explode step commands', () => {
   it('writes and reads back; a version-4 text is read unchanged; the counters cover the steps', () => {
     const d = applyAssemblyCommand(doc(), { type: 'insertExplodeStep', step: step({ flip: true }) });
     expect(parseAssembly(serializeAssembly(d))).toEqual(d);
-    expect(ASSEMBLY_SCHEMA_VERSION).toBe(5);
+    expect(ASSEMBLY_SCHEMA_VERSION).toBeGreaterThanOrEqual(5);
     const plain = JSON.parse(serializeAssembly(doc()));
     expect(plain).not.toHaveProperty('explosion');
     expect(parseAssembly(JSON.stringify({ ...plain, schemaVersion: 4 }))).toEqual(doc());

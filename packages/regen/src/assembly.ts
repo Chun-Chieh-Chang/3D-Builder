@@ -1,4 +1,4 @@
-import { composePose, DATUM_PLANES, evalAngle, evalLength, isDatumPlaneName, type AssemblyDoc, type Id, type InnerPoses, type Mate, type PlaneFrame, type Pose, type Ref, type SourceTree, type Vec3 } from '@3db/model';
+import { composePose, DATUM_PLANES, mateEnds, evalAngle, evalLength, isDatumPlaneName, type AssemblyDoc, type Id, type InnerPoses, type Mate, type PlaneFrame, type Pose, type Ref, type SourceTree, type Vec3 } from '@3db/model';
 import { placed, solve, type BodyResult, type MateGeometry, type MateResult, type MateSpec, type MoveGoal, type SolverBody } from '@3db/assembly';
 import type { EdgeInfo, FaceInfo, Topology } from '@3db/kernel';
 import { resolveRef, type ElementNames } from '@3db/naming';
@@ -98,7 +98,7 @@ export function solveAssembly(doc: AssemblyDoc, partOf: (componentId: Id) => Mat
   const goesThroughLeftOut = (side: Mate['a']) =>
     side.component !== null && (leftOut.has(side.component) || pathLeftOut(parts.get(side.component) ?? null, side.path));
   for (const m of doc.mates) {
-    if (m.suppressed || goesThroughLeftOut(m.a) || goesThroughLeftOut(m.b)) {
+    if (m.suppressed || mateEnds(m).some(goesThroughLeftOut)) {
       mates.set(m.id, { status: 'suppressed' });
       continue;
     }
@@ -147,13 +147,23 @@ function specOf(m: Mate, parts: ReadonlyMap<Id, MateSource | null>): MateSpec | 
   if (typeof a === 'string') return a;
   const b = end(m.b, '第二個元素');
   if (typeof b === 'string') return b;
+  // the further elements of a width or symmetric mate (C15.9)
+  const more: MateSpec['more'] = [];
+  for (const [i, ref] of (m.more ?? []).entries()) {
+    const g = end(ref, t('mate.moreElement', { n: i + 3 }));
+    if (typeof g === 'string') return g;
+    more.push({ body: ref.component, geom: g });
+  }
   let value: number | undefined;
-  if (m.value !== undefined) {
-    try {
-      value = m.type === 'angle' ? evalAngle(m.value) : evalLength(m.value);
-    } catch (e) {
-      return e instanceof Error ? e.message : String(e);
-    }
+  let min: number | undefined;
+  let max: number | undefined;
+  try {
+    const read = m.type === 'angle' ? evalAngle : evalLength;
+    if (m.value !== undefined) value = read(m.value);
+    if (m.min !== undefined) min = read(m.min);
+    if (m.max !== undefined) max = read(m.max);
+  } catch (e) {
+    return e instanceof Error ? e.message : String(e);
   }
   return {
     id: m.id,
@@ -164,6 +174,9 @@ function specOf(m: Mate, parts: ReadonlyMap<Id, MateSource | null>): MateSpec | 
     ...(value !== undefined ? { value } : {}),
     ...(m.flip ? { flip: true } : {}),
     ...(m.relative ? { relative: m.relative } : {}),
+    ...(more.length > 0 ? { more } : {}),
+    ...(min !== undefined ? { min } : {}),
+    ...(max !== undefined ? { max } : {}),
   };
 }
 

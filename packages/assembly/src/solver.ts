@@ -1,5 +1,5 @@
 import type { Pose, Quat, Vec3 } from '@3db/model';
-import { compileMate, type MateSpec, type Residual } from './equations';
+import { compileMate, type MateEnd, type MateSpec, type ResidualN } from './equations';
 import { placed } from './geometry';
 import { across, add, cross, dot, expRotation, qmul, qnormalize, rotate, scale, sub, unit } from './math';
 import { nullSpace, rank, solveDamped } from './linalg';
@@ -80,19 +80,22 @@ interface Body {
 
 interface Live {
   spec: MateSpec;
-  residual: Residual;
-  a: Body | null;
-  b: Body | null;
+  residual: ResidualN;
+  /** The body of each element, in the order a, b, `more` (null: the assembly itself); a body may be the body of several. */
+  ends: (Body | null)[];
   rows: number;
 }
+
+const endsOf = (spec: MateSpec): MateEnd[] => [spec.a, spec.b, ...(spec.more ?? [])];
+/** The bodies a mate is on, each once: the assembly itself is not one. */
+const involved = (m: Live): Body[] => [...new Set(m.ends.filter((b): b is Body => b !== null))];
 
 const ORIGIN_POSE: Pose = { position: [0, 0, 0], rotation: [0, 0, 0, 1] };
 const pose = (b: Body | null): Pose => (b ? { position: b.t, rotation: b.q } : ORIGIN_POSE);
 
 function evaluate(m: Live, L: number): number[] {
-  const pa = pose(m.a);
-  const pb = pose(m.b);
-  return m.residual(placed(m.spec.a.geom, pa), placed(m.spec.b.geom, pb), pa, pb, L);
+  const poses = m.ends.map(pose);
+  return m.residual(endsOf(m.spec).map((e, i) => placed(e.geom, poses[i]!)), poses, L);
 }
 
 /** The body moved by x[o … o+5]: a translation of its pivot, then a turn about it (scaled by its size). */
@@ -129,22 +132,22 @@ export function solve(input: SolverBody[], specs: MateSpec[], options: SolveOpti
   const mates = new Map<string, MateResult>();
   const live: Live[] = [];
   for (const spec of specs) {
-    const a = spec.a.body === null ? null : bodies.get(spec.a.body);
-    const b = spec.b.body === null ? null : bodies.get(spec.b.body);
-    if (a === undefined || b === undefined) {
+    const ends = endsOf(spec).map((e) => (e.body === null ? null : bodies.get(e.body)));
+    if (ends.some((e) => e === undefined)) {
       mates.set(spec.id, { status: 'unsupported', message: '結合參考的零組件不存在' });
       continue;
     }
+    const [a, b] = ends as (Body | null)[];
     if ((a === null && b === null) || a === b) {
       mates.set(spec.id, { status: 'unsupported', message: '結合的兩個元素必須在不同的零組件上' });
       continue;
     }
-    const compiled = compileMate(spec, placed(spec.a.geom, pose(a)), placed(spec.b.geom, pose(b)));
+    const compiled = compileMate(spec, endsOf(spec).map((e, i) => placed(e.geom, pose(ends[i]!))));
     if ('unsupported' in compiled) {
       mates.set(spec.id, { status: 'unsupported', message: compiled.unsupported });
       continue;
     }
-    const m: Live = { spec, residual: compiled.residual, a, b, rows: 0 };
+    const m: Live = { spec, residual: compiled.residual, ends: ends as (Body | null)[], rows: 0 };
     m.rows = evaluate(m, L).length;
     live.push(m);
   }
@@ -158,7 +161,10 @@ export function solve(input: SolverBody[], specs: MateSpec[], options: SolveOpti
   };
   for (const b of bodies.values()) if (!b.fixed) parent.set(b, b);
   const floating = (b: Body | null): b is Body => b !== null && !b.fixed;
-  for (const m of live) if (floating(m.a) && floating(m.b)) parent.set(find(m.a), find(m.b));
+  for (const m of live) {
+    const moving = involved(m).filter(floating);
+    for (const other of moving.slice(1)) parent.set(find(other), find(moving[0]!));
+  }
   const groups = new Map<Body, { bodies: Body[]; mates: Live[] }>();
   for (const b of bodies.values()) {
     if (b.fixed) continue;
@@ -169,7 +175,7 @@ export function solve(input: SolverBody[], specs: MateSpec[], options: SolveOpti
   }
   const conflicts = new Map<Live, number>();
   for (const m of live) {
-    const owner = floating(m.a) ? m.a : floating(m.b) ? m.b : null;
+    const owner = involved(m).find(floating) ?? null;
     if (owner) groups.get(find(owner))!.mates.push(m);
     else {
       // Between things that never move: it holds, or it never will.
@@ -196,7 +202,7 @@ export function solve(input: SolverBody[], specs: MateSpec[], options: SolveOpti
     mates.set(m.spec.id, r === undefined ? { status: 'ok' } : { status: 'conflict', residual: r });
   }
   const over = new Set<Body>();
-  for (const m of conflicts.keys()) for (const b of [m.a, m.b]) if (floating(b)) over.add(b);
+  for (const m of conflicts.keys()) for (const b of involved(m)) if (floating(b)) over.add(b);
   const results = new Map<string, BodyResult>();
   const poses = new Map<string, Pose>();
   for (const b of bodies.values()) {
@@ -269,12 +275,11 @@ function settle(bodies: Body[], mates: Live[], L: number, tol: { converged: numb
   return levenbergMarquardt(bodies, mates, L, tol, maxIterations).holds;
 }
 
-/** One mate's derivatives: rows × 6 for each floating body it moves (a, then b). */
+/** One mate's derivatives: rows × 6 for each floating body it moves. */
 interface Block {
   mate: Live;
   r: number[];
-  da: Float64Array | null;
-  db: Float64Array | null;
+  parts: { body: Body; d: Float64Array }[];
 }
 
 function levenbergMarquardt(bodies: Body[], mates: Live[], L: number, tol: { converged: number; holds: number }, maxIterations: number): { holds: boolean; progressed: boolean } {
@@ -341,18 +346,15 @@ function blocks(mates: Live[], r: number[][], L: number): Block[] {
     }
     return d;
   };
-  const moves = (b: Body | null): b is Body => b !== null && !b.fixed;
-  return mates.map((m, i) => ({ mate: m, r: r[i]!, da: moves(m.a) ? derivative(m, m.a) : null, db: moves(m.b) ? derivative(m, m.b) : null }));
+  return mates.map((m, i) => ({ mate: m, r: r[i]!, parts: involved(m).filter((b) => !b.fixed).map((body) => ({ body, d: derivative(m, body) })) }));
 }
 
 /** JᵀJ and −Jᵀr, built block by block: each mate adds to the rows and columns of its two bodies only. */
 function normalEquations(bs: Block[], n: number): { A: Float64Array; g: Float64Array } {
   const A = new Float64Array(n * n);
   const g = new Float64Array(n);
-  for (const { mate, r, da, db } of bs) {
-    const parts: [Float64Array, number][] = [];
-    if (da) parts.push([da, 6 * mate.a!.k]);
-    if (db) parts.push([db, 6 * mate.b!.k]);
+  for (const { mate, r, parts: moved_ } of bs) {
+    const parts: [Float64Array, number][] = moved_.map((p) => [p.d, 6 * p.body.k]);
     for (const [d1, o1] of parts) {
       for (let i = 0; i < 6; i++) {
         let s = 0;

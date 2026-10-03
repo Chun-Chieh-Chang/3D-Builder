@@ -1,3 +1,4 @@
+import { t } from '@3db/i18n';
 import type { MateType, Pose, Vec3 } from '@3db/model';
 import { axisOf, centerOf, KIND_LABEL, type GeometryKind, type MateGeometry } from './geometry';
 import { across, add, cross, dot, norm, qmul, rotate, scale, sub } from './math';
@@ -13,6 +14,12 @@ export const MATE_LABEL: Record<MateType, string> = {
   lock: '鎖住',
   distance: '距離',
   angle: '角度',
+  get width() {
+    return t('mate.label.width');
+  },
+  get symmetric() {
+    return t('mate.label.symmetric');
+  },
 };
 
 /** One side of a mate: an element of a component, or of the assembly itself (`body` null: never moves). */
@@ -37,15 +44,27 @@ export interface MateSpec {
   flip?: boolean;
   /** Lock: b's pose relative to a's, kept as it was when locked. */
   relative?: Pose;
+  /**
+   * Further elements (C15.9). Width: [the other width face, on a's component; the other tab face, on b's]. Symmetric: [the plane a and b mirror
+   * each other in].
+   */
+  more?: MateEnd[];
+  /** Limits of a distance (mm) or an angle (radians): where the value may be, as a range, instead of a value it must be (C15.9). Either may be left out. */
+  min?: number;
+  max?: number;
 }
 
 /**
- * The equations of one mate: all zero when it holds. Lengths are in mm; differences of directions
+ * The equations of one mate between two elements: all zero when it holds. Lengths are in mm; differences of directions
  * are multiplied by the length `L`, so that turning and moving weigh alike.
  */
 export type Residual = (a: MateGeometry, b: MateGeometry, pa: Pose, pb: Pose, L: number) => number[];
 
-export type Compiled = { residual: Residual } | { unsupported: string };
+/** The equations of a mate of any number of elements: their geometry as placed and the poses of their components, in the order a, b, `more`. */
+export type ResidualN = (g: readonly MateGeometry[], p: readonly Pose[], L: number) => number[];
+
+type Compiled2 = { residual: Residual } | { unsupported: string };
+export type Compiled = { residual: ResidualN } | { unsupported: string };
 
 /** The order pairs are written in: a mate between a point and a plane is the plane–point case. */
 const ORDER: GeometryKind[] = ['plane', 'line', 'circle', 'cylinder', 'cone', 'sphere', 'point'];
@@ -60,7 +79,7 @@ const directions = (u: Vec3, v: Vec3, s: number | null, L: number): number[] => 
 /** Distance between the axes of two round elements that touch: outside each other, or one inside the other. */
 const touching = (a: MateGeometry, b: MateGeometry) => (side(a) > 0 && side(b) > 0 ? radius(a) + radius(b) : Math.abs(radius(a) - radius(b)));
 
-function unsupported(type: MateType, a: MateGeometry, b: MateGeometry): Compiled {
+function unsupported(type: MateType, a: MateGeometry, b: MateGeometry): Compiled2 {
   return { unsupported: `${MATE_LABEL[type]}不適用於${KIND_LABEL[a.kind]}與${KIND_LABEL[b.kind]}` };
 }
 
@@ -76,7 +95,14 @@ const directionOf = (g: MateGeometry): Vec3 | null => (g.kind === 'plane' ? g.no
  * The equations of a mate between two elements (C15.8, A3.2), or why the pair has none. `a0`, `b0`
  * are the elements where the components start, which settles an alignment the mate leaves open.
  */
-export function compileMate(m: MateSpec, a0: MateGeometry, b0: MateGeometry): Compiled {
+export function compileMate(m: MateSpec, starts: readonly MateGeometry[]): Compiled {
+  if (m.type === 'width') return width(starts);
+  if (m.type === 'symmetric') return symmetric(m, starts);
+  const two = compilePair(m, starts[0]!, starts[1]!);
+  return 'unsupported' in two ? two : { residual: (g, p, L) => two.residual(g[0]!, g[1]!, p[0]!, p[1]!, L) };
+}
+
+function compilePair(m: MateSpec, a0: MateGeometry, b0: MateGeometry): Compiled2 {
   if (m.type === 'lock') return lock(m);
   const swap = ORDER.indexOf(a0.kind) > ORDER.indexOf(b0.kind);
   const [A0, B0] = swap ? [b0, a0] : [a0, b0];
@@ -90,7 +116,7 @@ const X: Vec3 = [1, 0, 0];
 const Y: Vec3 = [0, 1, 0];
 
 /** Lock (C15.8): b keeps the pose relative to a that it had when it was locked. */
-function lock(m: MateSpec): Compiled {
+function lock(m: MateSpec): Compiled2 {
   const rel = m.relative;
   if (!rel) return { unsupported: '鎖住結合缺少相對位置' };
   return {
@@ -102,7 +128,7 @@ function lock(m: MateSpec): Compiled {
   };
 }
 
-function equations(m: MateSpec, A: MateGeometry, B: MateGeometry, s: number): Compiled {
+function equations(m: MateSpec, A: MateGeometry, B: MateGeometry, s: number): Compiled2 {
   const pair = `${A.kind}+${B.kind}`;
   const no = () => unsupported(m.type, A, B);
   const value = m.value ?? 0;
@@ -184,37 +210,99 @@ function equations(m: MateSpec, A: MateGeometry, B: MateGeometry, s: number): Co
 
     case 'distance': {
       if (!(value >= 0) || !Number.isFinite(value)) return { unsupported: '距離必須是 0 或正數' };
-      const zero = value < EPS;
+      // With limits (C15.9) the distance is right anywhere between them, and only what is outside counts; the value is then only where it starts.
+      const limited = m.min !== undefined || m.max !== undefined;
+      const off = (v: number) => v - Math.min(Math.max(v, m.min ?? -Infinity), m.max ?? Infinity);
+      const zero = value < EPS && !limited;
+      const dist = (alongNormal: number) => (limited ? off(sign * alongNormal) : alongNormal - sign * value);
+      const apart = (norm_: number) => (limited ? off(norm_) : norm_ - value);
       const centerLike = (g: MateGeometry) => g.kind === 'point' || g.kind === 'sphere' || g.kind === 'circle';
-      if (pair === 'plane+plane') return { residual: (a, b, _pa, _pb, L) => [...directions(n(a), n(b), s, L), dot(n(a), sub(o(b), o(a))) - sign * value] };
-      if (A.kind === 'plane' && STRAIGHT_AXIS.includes(B.kind)) return { residual: (a, b, _pa, _pb, L) => [L * dot(n(a), d(b)), dot(n(a), sub(o(b), o(a))) - sign * value] };
-      if (A.kind === 'plane' && centerLike(B)) return { residual: (a, b) => [dot(n(a), sub(c(b), o(a))) - sign * value] };
+      if (pair === 'plane+plane') return { residual: (a, b, _pa, _pb, L) => [...directions(n(a), n(b), s, L), dist(dot(n(a), sub(o(b), o(a))))] };
+      if (A.kind === 'plane' && STRAIGHT_AXIS.includes(B.kind)) return { residual: (a, b, _pa, _pb, L) => [L * dot(n(a), d(b)), dist(dot(n(a), sub(o(b), o(a))))] };
+      if (A.kind === 'plane' && centerLike(B)) return { residual: (a, b) => [dist(dot(n(a), sub(c(b), o(a))))] };
       if (STRAIGHT_AXIS.includes(A.kind) && STRAIGHT_AXIS.includes(B.kind)) {
         return zero
           ? { residual: (a, b, _pa, _pb, L) => [...across(sub(o(b), o(a)), d(a)), ...directions(d(a), d(b), null, L)] }
-          : { residual: (a, b, _pa, _pb, L) => [...directions(d(a), d(b), null, L), norm(across(sub(o(b), o(a)), d(a))) - value] };
+          : { residual: (a, b, _pa, _pb, L) => [...directions(d(a), d(b), null, L), apart(norm(across(sub(o(b), o(a)), d(a))))] };
       }
       if (STRAIGHT_AXIS.includes(A.kind) && centerLike(B)) {
-        return zero ? { residual: (a, b) => across(sub(c(b), o(a)), d(a)) } : { residual: (a, b) => [norm(across(sub(c(b), o(a)), d(a))) - value] };
+        return zero ? { residual: (a, b) => across(sub(c(b), o(a)), d(a)) } : { residual: (a, b) => [apart(norm(across(sub(c(b), o(a)), d(a))))] };
       }
       // A circle comes before the axes in ORDER, but plays a center here.
       if (A.kind === 'circle' && STRAIGHT_AXIS.includes(B.kind)) {
-        return zero ? { residual: (a, b) => across(sub(c(a), o(b)), d(b)) } : { residual: (a, b) => [norm(across(sub(c(a), o(b)), d(b))) - value] };
+        return zero ? { residual: (a, b) => across(sub(c(a), o(b)), d(b)) } : { residual: (a, b) => [apart(norm(across(sub(c(a), o(b)), d(b))))] };
       }
-      if (centerLike(A) && centerLike(B)) return zero ? { residual: (a, b) => sub(c(a), c(b)) } : { residual: (a, b) => [norm(sub(c(b), c(a))) - value] };
+      if (centerLike(A) && centerLike(B)) return zero ? { residual: (a, b) => sub(c(a), c(b)) } : { residual: (a, b) => [apart(norm(sub(c(b), c(a))))] };
       return no();
     }
 
     case 'angle': {
       if (!(value >= 0 && value <= Math.PI + EPS)) return { unsupported: '角度必須在 0° 到 180° 之間' };
-      if (pair === 'plane+plane') return { residual: (a, b, _pa, _pb, L) => [L * (sign * dot(n(a), n(b)) - Math.cos(value))] };
+      // With limits (C15.9) the cosine (or, for a line and a plane, the sine) of the angle may be anywhere between those of the limits.
+      const limited = m.min !== undefined || m.max !== undefined;
+      const between = (x: number, lo: number, hi: number) => x - Math.min(Math.max(x, lo), hi);
+      const byCos = (x: number) => (limited ? between(x, m.max !== undefined ? Math.cos(m.max) : -1, m.min !== undefined ? Math.cos(m.min) : 1) : x - Math.cos(value));
+      const bySin = (x: number) => (limited ? between(x, m.min !== undefined ? Math.sin(m.min) : -1, m.max !== undefined ? Math.sin(m.max) : 1) : x - Math.sin(value));
+      if (pair === 'plane+plane') return { residual: (a, b, _pa, _pb, L) => [L * byCos(sign * dot(n(a), n(b)))] };
       // Between a line and a plane: 90° less the angle to the plane's normal.
-      if (A.kind === 'plane' && STRAIGHT_AXIS.includes(B.kind)) return { residual: (a, b, _pa, _pb, L) => [L * (sign * dot(n(a), d(b)) - Math.sin(value))] };
-      if (STRAIGHT_AXIS.includes(A.kind) && STRAIGHT_AXIS.includes(B.kind)) return { residual: (a, b, _pa, _pb, L) => [L * (sign * dot(d(a), d(b)) - Math.cos(value))] };
+      if (A.kind === 'plane' && STRAIGHT_AXIS.includes(B.kind)) return { residual: (a, b, _pa, _pb, L) => [L * bySin(sign * dot(n(a), d(b)))] };
+      if (STRAIGHT_AXIS.includes(A.kind) && STRAIGHT_AXIS.includes(B.kind)) return { residual: (a, b, _pa, _pb, L) => [L * byCos(sign * dot(d(a), d(b)))] };
       return no();
     }
   }
   return no();
+}
+
+const reflectPoint = (p: Vec3, plane: Extract<MateGeometry, { kind: 'plane' }>): Vec3 => sub(p, scale(plane.normal, 2 * dot(plane.normal, sub(p, plane.origin))));
+const reflectDir = (v: Vec3, plane: Extract<MateGeometry, { kind: 'plane' }>): Vec3 => sub(v, scale(plane.normal, 2 * dot(v, plane.normal)));
+
+/**
+ * Width (C15.9): the tab (b's two faces, with `more[1]`) is centred between the width faces (a's two faces, with `more[0]`), whose planes it lies
+ * parallel to. Ends in the order a (width face), b (tab face), the other width face, the other tab face. Three freedoms stay: along the
+ * faces in two ways, and the turn about their normal.
+ */
+function width(starts: readonly MateGeometry[]): Compiled {
+  if (starts.length !== 4 || starts.some((g) => g.kind !== 'plane')) return { unsupported: t('mate.widthPlanes') };
+  return {
+    residual: (g, _p, L) => {
+      const [a1, b1, a2, b2] = g as [MateGeometry, MateGeometry, MateGeometry, MateGeometry];
+      const middle = (p: MateGeometry, q: MateGeometry): Vec3 => scale(add(o(p), o(q)), 0.5);
+      return [...directions(n(a1), n(b1), null, L), dot(n(a1), sub(middle(b1, b2), middle(a1, a2)))];
+    },
+  };
+}
+
+/**
+ * Symmetric (C15.9): b is a's mirror image in the plane `more[0]`: two planes (facing as their mirror images face), two points (or centres), or two
+ * lines and axes. The plane is the third end.
+ */
+function symmetric(m: MateSpec, starts: readonly MateGeometry[]): Compiled {
+  const [A0, B0, P0] = starts;
+  if (starts.length !== 3 || P0!.kind !== 'plane') return { unsupported: t('mate.symmetricPlane') };
+  const both = (f: (g: MateGeometry) => unknown) => !!f(A0!) && !!f(B0!);
+  if (A0!.kind === 'plane' && B0!.kind === 'plane') {
+    const s = alignment(m, reflectDir(n(A0!), P0 as Extract<MateGeometry, { kind: 'plane' }>), n(B0!));
+    return {
+      residual: (g, _p, L) => {
+        const P = g[2] as Extract<MateGeometry, { kind: 'plane' }>;
+        const na = reflectDir(n(g[0]!), P);
+        return [dot(na, sub(o(g[1]!), reflectPoint(o(g[0]!), P))), ...directions(na, n(g[1]!), s, L)];
+      },
+    };
+  }
+  if (both(centerOf) && !both(axisOf)) {
+    return { residual: (g) => sub(c(g[1]!), reflectPoint(c(g[0]!), g[2] as Extract<MateGeometry, { kind: 'plane' }>)) };
+  }
+  if (both(axisOf)) {
+    return {
+      residual: (g, _p, L) => {
+        const P = g[2] as Extract<MateGeometry, { kind: 'plane' }>;
+        const da = reflectDir(d(g[0]!), P);
+        return [...across(sub(o(g[1]!), reflectPoint(o(g[0]!), P)), da), ...directions(da, d(g[1]!), null, L)];
+      },
+    };
+  }
+  return { unsupported: t('mate.symmetricPair') };
 }
 
 // Accessors for the placed elements (the kinds are checked when the mate is compiled).

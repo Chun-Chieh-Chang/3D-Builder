@@ -9,6 +9,7 @@
     ".": "./src/index.ts"
   },
   "dependencies": {
+    "@3db/i18n": "*",
     "@3db/model": "*"
   }
 }

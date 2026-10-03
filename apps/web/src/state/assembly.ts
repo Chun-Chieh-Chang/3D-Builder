@@ -97,6 +97,26 @@ export interface MateDraft {
   /** Distance (mm) or angle (degrees), as typed. */
   value?: string;
   flip?: boolean;
+  /** Width: [the other width face, the other tab face]; symmetric: [the plane] (C15.9). Empty places are not picked yet. */
+  more?: (MateRef | null)[];
+  /** Limits of a distance or an angle, as typed; empty is none (C15.9). */
+  min?: string;
+  max?: string;
+}
+
+/** The mates that take more than two elements (C15.9). */
+export const ADVANCED_MATES: readonly MateType[] = ['width', 'symmetric'];
+export const isAdvancedMate = (type: MateType | null): type is 'width' | 'symmetric' => type !== null && ADVANCED_MATES.includes(type);
+
+/** The elements of an advanced mate in the order they are picked: width — width face, its partner, tab face, its partner; symmetric — the two, then the plane. */
+export function mateSlots(d: MateDraft): (MateRef | null)[] {
+  const more = d.more ?? [];
+  return d.type === 'width' ? [d.a, more[0] ?? null, d.b, more[1] ?? null] : [d.a, d.b, more[0] ?? null];
+}
+
+/** The draft with its elements put into the places `mateSlots` lists. */
+function withMateSlots(d: MateDraft, slots: (MateRef | null)[]): MateDraft {
+  return d.type === 'width' ? { ...d, a: slots[0]!, b: slots[2]!, more: [slots[1]!, slots[3]!] } : { ...d, a: slots[0]!, b: slots[1]!, more: [slots[2]!] };
 }
 
 /** The mate a draft shows before it is added: solved with the others, not yet in the document. */
@@ -774,7 +794,21 @@ export class AssemblyStore {
     if (!m) return;
     if (this.state.insert) this.cancelInsert();
     const value = m.value === undefined ? {} : { value: m.value };
-    this.set({ mate: { editing: id, a: m.a, b: m.b, type: m.type, ...(m.align ? { align: m.align } : {}), ...value, ...(m.flip ? { flip: true } : {}) }, selected: id });
+    this.set({
+      mate: {
+        editing: id,
+        a: m.a,
+        b: m.b,
+        type: m.type,
+        ...(m.align ? { align: m.align } : {}),
+        ...value,
+        ...(m.flip ? { flip: true } : {}),
+        ...(m.more ? { more: m.more } : {}),
+        ...(m.min !== undefined ? { min: m.min } : {}),
+        ...(m.max !== undefined ? { max: m.max } : {}),
+      },
+      selected: id,
+    });
     this.requestSolve();
   }
 
@@ -797,6 +831,7 @@ export class AssemblyStore {
     }
     const d = this.state.mate;
     if (!d) return;
+    if (isAdvancedMate(d.type)) return this.pickAdvanced(d, ref);
     let { a, b } = d;
     if (sameRef(a, ref)) [a, b] = [b, null];
     else if (sameRef(b, ref)) b = null;
@@ -809,11 +844,34 @@ export class AssemblyStore {
     this.setDraft(this.suggested({ ...d, a, b }));
   }
 
+  /**
+   * A width or symmetric mate (C15.9) takes its elements in order: a picked one fills the first empty place, a chosen one picked again leaves it. For a
+   * width mate the second width face is on the first one's component and the second tab face on the first tab face's, and the two pairs are on different ones.
+   */
+  private pickAdvanced(d: MateDraft, ref: MateRef): void {
+    const slots = mateSlots(d);
+    const at = slots.findIndex((s) => sameRef(s, ref));
+    if (at >= 0) slots[at] = null;
+    else {
+      const free = slots.findIndex((s) => s === null);
+      if (free < 0) return;
+      if (d.type === 'width') {
+        const need: (number | null)[] = [null, 0, null, 2];
+        const partner = need[free] === null ? null : slots[need[free]!];
+        const other = free === 2 ? slots[0] : free === 0 ? slots[2] : null;
+        if (partner && partner.component !== ref.component) return this.host.notify(t('mate.widthPickSame'), 'error');
+        if (other && other.component === ref.component) return this.host.notify(t('mate.widthPickOther'), 'error');
+      }
+      slots[free] = ref;
+    }
+    this.setDraft(withMateSlots(d, slots));
+  }
+
   /** Type, alignment and value for a pair: kept when they still fit, else what SolidWorks would take. */
   private suggested(d: MateDraft): MateDraft {
     const ga = d.a && this.elementGeometry(d.a);
     const gb = d.b && this.elementGeometry(d.b);
-    if (!ga || !gb) return { editing: d.editing, a: d.a, b: d.b, type: d.b ? d.type : null };
+    if (!ga || !gb) return { editing: d.editing, a: d.a, b: d.b, type: d.b ? d.type : null, ...limitsOf(d) };
     const both = d.a!.component !== null && d.b!.component !== null;
     const type = d.type && supportedTypes(ga, gb, both).includes(d.type) ? d.type : defaultType(ga, gb, both);
     return this.withOptions({ ...d, type }, ga, gb, d.type === type);
@@ -821,7 +879,7 @@ export class AssemblyStore {
 
   /** The options a type needs, from the elements as they are now (unless kept from before). */
   private withOptions(d: MateDraft, ga: MateGeometry, gb: MateGeometry, keep: boolean): MateDraft {
-    const out: MateDraft = { editing: d.editing, a: d.a, b: d.b, type: d.type };
+    const out: MateDraft = { editing: d.editing, a: d.a, b: d.b, type: d.type, ...limitsOf(d) };
     if (!d.type) return out;
     if (hasAlignment(d.type, ga, gb)) out.align = keep && d.align ? d.align : closerAlignment(ga, gb);
     const now = currentValue(d.type, ga, gb);
@@ -842,12 +900,19 @@ export class AssemblyStore {
 
   setMateType(type: MateType): void {
     const d = this.state.mate;
-    const ga = d?.a && this.elementGeometry(d.a);
-    const gb = d?.b && this.elementGeometry(d.b);
-    if (d && ga && gb) this.setDraft(this.withOptions({ ...d, type }, ga, gb, false));
+    if (!d) return;
+    if (isAdvancedMate(type)) {
+      // width and symmetric keep what is picked and wait for the rest (C15.9)
+      const { more: _more, align: _align, value: _value, flip: _flip, min: _min, max: _max, ...rest } = d;
+      return this.setDraft({ ...rest, type, more: type === 'width' ? [null, null] : [null] });
+    }
+    const ga = d.a && this.elementGeometry(d.a);
+    const gb = d.b && this.elementGeometry(d.b);
+    const { more: _more, ...plain } = d;
+    if (ga && gb) this.setDraft(this.withOptions({ ...plain, type }, ga, gb, false));
   }
 
-  setMateOptions(options: Pick<MateDraft, 'align' | 'value' | 'flip'>): void {
+  setMateOptions(options: Pick<MateDraft, 'align' | 'value' | 'flip' | 'min' | 'max'>): void {
     const d = this.state.mate;
     if (d) this.setDraft({ ...d, ...options });
   }
@@ -863,6 +928,7 @@ export class AssemblyStore {
    */
   private draftMate(d: MateDraft, final: boolean): Mate | null {
     if (!d.a || !d.b || !d.type) return null;
+    if (isAdvancedMate(d.type) && mateSlots(d).some((s) => s === null)) return null;
     const doc = this.history.doc;
     const before = d.editing ? doc.mates.find((m) => m.id === d.editing) : undefined;
     let value: string | undefined;
@@ -876,6 +942,23 @@ export class AssemblyStore {
         return null;
       }
     }
+    // limits (C15.9): empty is none; what is typed has to read
+    let min: string | undefined;
+    let max: string | undefined;
+    if (d.type === 'distance' || d.type === 'angle') {
+      for (const [key, typed] of [['min', d.min], ['max', d.max]] as const) {
+        const text = typed?.trim();
+        if (!text) continue;
+        try {
+          const v = d.type === 'distance' ? evalLength(text) : evalAngle(text);
+          if (!Number.isFinite(v) || v < 0) return null;
+        } catch {
+          return null;
+        }
+        if (key === 'min') min = text;
+        else max = text;
+      }
+    }
     let relative: Pose | undefined;
     if (d.type === 'lock') {
       const same = before?.type === 'lock' && before.relative && before.a.component === d.a.component && before.b.component === d.b.component;
@@ -885,7 +968,7 @@ export class AssemblyStore {
       if (!relative) return null;
     }
     const label = MATE_LABEL[d.type];
-    const autoName = before && /^(重合|平行|垂直|相切|同軸心|鎖住|距離|角度)\d+$/.test(before.name);
+    const autoName = before && new RegExp(`^(${Object.values(MATE_LABEL).join('|')})\\d+$`).test(before.name);
     const name = before && (before.type === d.type || !autoName) ? before.name : final ? nextMateName(doc, label) : label;
     const id = d.editing ?? (final ? new IdAllocator(doc.idCounters, assemblyIdsInUse(doc)).take('mate') : PREVIEW_MATE);
     return {
@@ -898,6 +981,9 @@ export class AssemblyStore {
       ...(value !== undefined ? { value } : {}),
       ...(d.flip ? { flip: true } : {}),
       ...(relative ? { relative } : {}),
+      ...(isAdvancedMate(d.type) ? { more: d.more!.map((r) => r!) } : {}),
+      ...(min !== undefined ? { min } : {}),
+      ...(max !== undefined ? { max } : {}),
       suppressed: before?.suppressed ?? false,
     };
   }
@@ -911,7 +997,7 @@ export class AssemblyStore {
     if (!d) return;
     if (!d.a && !d.b && !d.editing) return this.cancelMate();
     const m = this.draftMate(d, true);
-    if (!m) return this.host.notify(!d.a || !d.b ? '請選擇兩個要結合的元素' : '請檢查結合類型與數值', 'error');
+    if (!m) return this.host.notify(isAdvancedMate(d.type) ? t('mate.incomplete') : !d.a || !d.b ? '請選擇兩個要結合的元素' : '請檢查結合類型與數值', 'error');
     if (!this.execute(d.editing ? { type: 'setMate', mate: m } : { type: 'insertMate', mate: m })) return;
     if (d.editing) this.set({ mate: null, selected: m.id });
     else this.set({ mate: { editing: null, a: null, b: null, type: null } });
@@ -1616,6 +1702,9 @@ export class AssemblyStore {
     }
   }
 }
+
+/** The limits of a draft, to carry along when its other options are rebuilt (C15.9). */
+const limitsOf = (d: MateDraft): Pick<MateDraft, 'min' | 'max'> => ({ ...(d.min !== undefined ? { min: d.min } : {}), ...(d.max !== undefined ? { max: d.max } : {}) });
 
 /** The next free name for a mate of a type: 「重合3」 after 「重合2」, as SolidWorks names them. */
 function nextMateName(doc: AssemblyDoc, label: string): string {

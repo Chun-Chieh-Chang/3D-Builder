@@ -165,6 +165,16 @@ describe('an assembly of part files (B9.4)', () => {
     expect(file.doc).not.toHaveProperty('explosion');
   });
 
+  it('opens an assembly saved by version 5 (3b-4) with its mate and exploded view; no mate has further elements or limits (4a-2)', async () => {
+    const file = await readDocumentFile(new Uint8Array(readFileSync(new URL('../fixtures/old-versions/v5-assembly.3dba', import.meta.url))));
+    expect(file.kind).toBe('assembly');
+    if (file.kind !== 'assembly') return;
+    expect(file.doc.schemaVersion).toBe(ASSEMBLY_SCHEMA_VERSION);
+    expect(file.doc.mates.map((m) => [m.id, m.type, m.value])).toEqual([['mate1', 'distance', '15']]);
+    expect(file.doc.mates.every((m) => m.more === undefined && m.min === undefined && m.max === undefined)).toBe(true);
+    expect(file.doc.explosion!.map((s) => [s.id, s.distance])).toEqual([['explode1', '30']]);
+  });
+
   it('places each component where its pose puts it (A3.1)', async () => {
     type Placed = Awaited<ReturnType<typeof components>>[number];
     const [plate, lying, standing] = (await components(jig(), '')) as [Placed, Placed, Placed];

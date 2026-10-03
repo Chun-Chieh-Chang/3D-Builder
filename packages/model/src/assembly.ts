@@ -7,7 +7,7 @@ import { isFilePath, joinPath, relativePath } from './paths';
 import { isValidPose } from './pose';
 import { componentPatternProblem } from './componentPatterns';
 import { explodeStepProblem } from './explosion';
-import { ASSEMBLY_SCHEMA_VERSION, type AssemblyDoc, type Component, type ComponentPattern, type ExplodeStep, type FileRef, type Mate, type MateType, type Pose } from './schema';
+import { ASSEMBLY_SCHEMA_VERSION, type AssemblyDoc, type Component, type ComponentPattern, type ExplodeStep, type FileRef, type Mate, type MateRef, type MateType, type Pose } from './schema';
 
 /**
  * Assembly commands (B7.1): the only way to change an assembly document. As with parts, new objects
@@ -61,13 +61,16 @@ export function assemblyIdsInUse(doc: AssemblyDoc): Id[] {
   return [...doc.files.map((f) => f.id), ...doc.components.map((c) => c.id), ...doc.mates.map((m) => m.id), ...(doc.patterns ?? []).map((p) => p.id), ...(doc.explosion ?? []).map((s) => s.id)];
 }
 
-const MATE_TYPES: MateType[] = ['coincident', 'parallel', 'perpendicular', 'tangent', 'concentric', 'lock', 'distance', 'angle'];
+const MATE_TYPES: MateType[] = ['coincident', 'parallel', 'perpendicular', 'tangent', 'concentric', 'lock', 'distance', 'angle', 'width', 'symmetric'];
+
+/** Every element a mate joins: the two, and the further ones of a width or symmetric mate (C15.9). */
+export const mateEnds = (m: Mate): MateRef[] => [m.a, m.b, ...(m.more ?? [])];
 
 /** What a mate needs to be well formed; whether it can hold is for the solver. */
 function checkMate(doc: AssemblyDoc, m: Mate): void {
   if (!m.name.trim()) throw new CommandError('名稱不可空白');
   if (!MATE_TYPES.includes(m.type)) throw new CommandError(`不明的結合類型：${m.type}`);
-  for (const end of [m.a, m.b]) {
+  for (const end of mateEnds(m)) {
     if (end.component !== null && !doc.components.some((c) => c.id === end.component)) throw new CommandError(`找不到零組件：${end.component}`);
     if (end.component === null && (end.ref.kind !== 'datum' || !/^(plane:(front|top|right)|origin)$/.test(end.ref.name))) {
       throw new CommandError('組合件本身只能選基準面或原點');
@@ -81,6 +84,15 @@ function checkMate(doc: AssemblyDoc, m: Mate): void {
   }
   if (m.a.component === m.b.component) throw new CommandError('結合的兩個元素必須在不同的零組件上');
   if (m.align !== undefined && m.align !== 'aligned' && m.align !== 'antiAligned') throw new CommandError('對齊方式無效');
+  // width and symmetric mates have more elements, the others have none (C15.9)
+  const more = m.more?.length ?? 0;
+  if (m.type === 'width') {
+    if (more !== 2) throw new CommandError(t('mate.widthNeedsFour'));
+    if (m.more![0]!.component !== m.a.component || m.more![1]!.component !== m.b.component) throw new CommandError(t('mate.widthSameComponent'));
+  } else if (m.type === 'symmetric') {
+    if (more !== 1) throw new CommandError(t('mate.symmetricNeedsPlane'));
+  } else if (m.more !== undefined) throw new CommandError(t('mate.noMore'));
+  if ((m.min !== undefined || m.max !== undefined) && m.type !== 'distance' && m.type !== 'angle') throw new CommandError(t('mate.limitOnlyDistanceAngle'));
   if (m.type === 'distance' || m.type === 'angle') {
     if (m.value === undefined) throw new CommandError(`${m.type === 'distance' ? '距離' : '角度'}結合需要數值`);
     let v: number;
@@ -91,6 +103,21 @@ function checkMate(doc: AssemblyDoc, m: Mate): void {
     }
     if (m.type === 'distance' && !(v >= 0)) throw new CommandError(`距離不可為負：「${m.value}」`);
     if (m.type === 'angle' && !(v >= 0 && v <= Math.PI + 1e-12)) throw new CommandError(`角度必須在 0° 到 180° 之間：「${m.value}」`);
+    // the limits (C15.9): numbers of the same kind, the least not above the greatest, and the value between them
+    const limit = (e: string | undefined): number | undefined => {
+      if (e === undefined) return undefined;
+      try {
+        return m.type === 'distance' ? evalLength(e) : evalAngle(e);
+      } catch (err) {
+        throw new CommandError(err instanceof ExprError ? err.message : String(err));
+      }
+    };
+    const lo = limit(m.min);
+    const hi = limit(m.max);
+    if (lo !== undefined && !(lo >= 0)) throw new CommandError(t('mate.limitNegative', { value: String(m.min) }));
+    if (m.type === 'angle' && hi !== undefined && !(hi <= Math.PI + 1e-12)) throw new CommandError(t('mate.limitAngleRange', { value: String(m.max) }));
+    if (lo !== undefined && hi !== undefined && lo > hi + 1e-12) throw new CommandError(t('mate.limitOrder', { min: String(m.min), max: String(m.max) }));
+    if ((lo !== undefined && v < lo - 1e-9) || (hi !== undefined && v > hi + 1e-9)) throw new CommandError(t('mate.valueOutsideLimits', { value: String(m.value) }));
   } else if (m.value !== undefined) {
     throw new CommandError('只有距離與角度結合有數值');
   }
@@ -211,7 +238,7 @@ export function mutateAssembly(draft: Draft<AssemblyDoc>, cmd: AssemblyCommand):
       if (ids.size === 0) return;
       countersFor([...ids, ...draft.files.map((f) => f.id), ...draft.mates.map((m) => m.id)], draft.idCounters); // deleted ids are never handed out again
       draft.components = draft.components.filter((c) => !ids.has(c.id));
-      draft.mates = draft.mates.filter((m) => !ids.has(m.a.component ?? '') && !ids.has(m.b.component ?? ''));
+      draft.mates = draft.mates.filter((m) => !mateEnds(m as Mate).some((e) => ids.has(e.component ?? '')));
       if (draft.patterns) {
         // a pattern of a deleted component goes with it, and so does one whose axis is an element of it (its instances would have no axis)
         const gone = draft.patterns.filter((p) => ids.has(p.seed) || [p.axis1, p.axis2].some((a) => a?.kind === 'ref' && ids.has(a.ref.component ?? '')));

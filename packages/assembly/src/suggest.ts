@@ -17,7 +17,7 @@ export function supportedTypes(a: MateGeometry, b: MateGeometry, bothComponents 
   return TYPES.filter((type) => {
     if (type === 'lock') return bothComponents;
     const spec: MateSpec = { id: 'probe', type, a: { body: 'a', geom: a }, b: { body: 'b', geom: b }, ...(type === 'distance' ? { value: 1 } : type === 'angle' ? { value: 0.5 } : {}), relative: ORIGIN };
-    return !('unsupported' in compileMate(spec, a, b));
+    return !('unsupported' in compileMate(spec, [a, b]));
   });
 }
 

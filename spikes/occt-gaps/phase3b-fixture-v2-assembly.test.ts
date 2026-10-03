@@ -52,3 +52,15 @@ it.skipIf(process.env.WRITE_FIXTURE_V4 !== '1')('writes the version-4 assembly s
   doc = applyAssemblyCommand(doc, { type: 'insertPattern', pattern: { id: 'pattern2', name: '鏡射零組件1', kind: 'mirror', seed: 'comp2', plane: 'plane:right' } });
   writeFileSync(new URL('../../tests/fixtures/old-versions/v4-assembly.3dba', import.meta.url), await writeAssemblyFile({ ...doc, schemaVersion: 4 }));
 });
+
+// Schema 5 sample (4a-2): the Schema 4 sample's components and patterns, and a step of the exploded view. Written by the Schema 6 code with schemaVersion set to 5:
+// Schema 6 only adds the optional `more`, `min` and `max` of a mate, so a Schema 5 file is exactly this text.
+it.skipIf(process.env.WRITE_FIXTURE_V5 !== '1')('writes the version-5 assembly sample', async () => {
+  let doc = createEmptyAssembly();
+  doc = applyAssemblyCommand(doc, { type: 'insertComponent', file: { id: 'file1', path: '../定位板.3dbx' }, component: { id: 'comp1', file: 'file1', instance: 1, fixed: true, placement: { position: [0, 0, 0], rotation: [0, 0, 0, 1] } } });
+  doc = applyAssemblyCommand(doc, { type: 'insertComponent', file: { id: 'file2', path: '../零件/削邊銷.3dbx' }, component: { id: 'comp2', file: 'file2', instance: 1, fixed: false, placement: { position: [-40, 15, 0], rotation: [0, 0, 0, 1] } } });
+  doc = applyAssemblyCommand(doc, { type: 'insertMate', mate: { id: 'mate1', name: '結合1', type: 'distance', a: { component: 'comp1', ref: { kind: 'datum', name: 'plane:top' } }, b: { component: 'comp2', ref: { kind: 'datum', name: 'plane:top' } }, align: 'aligned', value: '15', suppressed: false } });
+  doc = applyAssemblyCommand(doc, { type: 'insertExplodeStep', step: { id: 'explode1', name: '爆炸步驟1', components: ['comp2'], axis: { kind: 'axis', axis: 'y' }, distance: '30' } });
+  writeFileSync(new URL('../../tests/fixtures/old-versions/v5-assembly.3dba', import.meta.url), await writeAssemblyFile({ ...doc, schemaVersion: 5 }));
+});
+

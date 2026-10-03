@@ -586,7 +586,7 @@ export function findFeature(doc: PartDoc, id: Id): Feature | undefined {
 // ---------------------------------------------------------------- assembly (C15, A3.1, B9.4)
 
 /** Assemblies have their own version line: a part and an assembly change for different reasons. */
-export const ASSEMBLY_SCHEMA_VERSION = 5;
+export const ASSEMBLY_SCHEMA_VERSION = 6;
 
 /** Unit quaternion [x, y, z, w]. */
 export type Quat = [number, number, number, number];
@@ -633,7 +633,7 @@ export interface Component {
 }
 
 /** The standard mates of SolidWorks 2010 (C15.8). */
-export type MateType = 'coincident' | 'parallel' | 'perpendicular' | 'tangent' | 'concentric' | 'lock' | 'distance' | 'angle';
+export type MateType = 'coincident' | 'parallel' | 'perpendicular' | 'tangent' | 'concentric' | 'lock' | 'distance' | 'angle' | 'width' | 'symmetric';
 
 /**
  * An element a mate uses: of a component, by the persistent name in its part (a face, edge or vertex;
@@ -671,6 +671,17 @@ export interface Mate {
   flip?: boolean;
   /** Lock: b's pose relative to a's, as it was when locked. */
   relative?: Pose;
+  /**
+   * Further elements (C15.9, v6). Width: [the other width face, on a's component; the other tab face, on b's]: the tab (b's faces) is centred
+   * between the width faces (a's). Symmetric: [the plane] a and b mirror each other in; a datum plane of the assembly or any plane of a component.
+   */
+  more?: MateRef[];
+  /**
+   * Limit (C15.9, v6), distance and angle mates only: the least and the greatest the value may be; `value` is where it starts. Within them the
+   * mate holds nothing; outside, it pulls back to the nearer. Either may be left out.
+   */
+  min?: Expr;
+  max?: Expr;
   suppressed: boolean;
 }
 
