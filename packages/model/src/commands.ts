@@ -82,6 +82,8 @@ ull). */
   | { type: 'setShell'; featureId: Id; faces: Ref[]; thickness: Expr; outward?: boolean }
   /** Changes an offset surface (C9.2): the faces, the distance, and how it goes round a corner of the region (absent: rounded). */
   | { type: 'setOffsetSurface'; featureId: Id; faces: Ref[]; distance: Expr; join?: 'arc' | 'intersection' }
+  /** Changes a split line (C8.1): the sketch, the face it is projected on, the way round and whether it goes through all. */
+  | { type: 'setSplitLine'; featureId: Id; sketch: Id; face: Ref; reverse?: boolean; throughAll?: boolean }
   /** Faces of a Delete Face feature (C10.2), and whether the rest of a hole goes with them. */
   | { type: 'setFaces'; featureId: Id; faces: Ref[]; hole?: boolean }
   /** How an imported body's surfaces are sewn (F2.2); without `sewTolerance` the default is used again. */
@@ -472,6 +474,10 @@ function validateNewFeature(doc: PartDoc, f: Feature, index: number): void {
     case 'moveFace':
       if (f.face.kind !== 'face') throw new CommandError(t('cmd.moveFaceOnlyFace'));
       return;
+    case 'splitLine':
+      sketchBefore(doc, f.sketch, index, t('feature.splitLine'));
+      if (f.face.kind !== 'face') throw new CommandError(t('cmd.splitLineOnlyFace'));
+      return;
     case 'combine':
       combineRefs(f.main, f.tools);
       return;
@@ -764,6 +770,19 @@ export function mutate(draft: Draft<PartDoc>, cmd: Command): void {
       if (cmd.join && cmd.join !== 'arc') f.join = cmd.join;
       else delete f.join;
       checkExprs(draft as PartDoc, f as Feature);
+      return;
+    }
+    case 'setSplitLine': {
+      const f = feature(draft, cmd.featureId);
+      if (f.type !== 'splitLine') throw new CommandError(t('cmd.onlySplitLineHasParams'));
+      if (cmd.face.kind !== 'face') throw new CommandError(t('cmd.splitLineOnlyFace'));
+      sketchBefore(draft as PartDoc, cmd.sketch, draft.features.findIndex((x) => x.id === f.id), t('feature.splitLine'));
+      f.sketch = cmd.sketch;
+      f.face = cmd.face;
+      if (cmd.reverse) f.reverse = true;
+      else delete f.reverse;
+      if (cmd.throughAll) f.throughAll = true;
+      else delete f.throughAll;
       return;
     }
     case 'setShell': {

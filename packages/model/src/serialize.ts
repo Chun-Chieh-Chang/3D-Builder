@@ -130,6 +130,8 @@ const migrations: Record<number, (doc: Json) => Json> = {
   26: (doc) => doc,
   // v28: the offset surface feature (C9.2, Phase 4b) and surface bodies (bodies with no solid). Nothing to convert; the version keeps older programs from opening a feature they would skip.
   27: (doc) => doc,
+  // v29: the split line feature (C8.1, Phase 4b). Nothing to convert; the version keeps older programs from opening a feature they would skip.
+  28: (doc) => doc,
 };
 
 export class FormatError extends Error {

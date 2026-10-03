@@ -6,7 +6,7 @@ import type { Id } from './ids';
  * DOF status, mass properties and error lists are derived data and never stored.
  */
 
-export const SCHEMA_VERSION = 28;
+export const SCHEMA_VERSION = 29;
 
 /** Value expression (B5.2, B5.3): "20", "25.4mm", "30deg", "wall_t*2", "D1@草圖1/2", "property('厚度')"; see `expr/`. */
 export type Expr = string;
@@ -450,6 +450,19 @@ export interface OffsetSurfaceFeature extends FeatureBase {
 }
 
 /**
+ * Split line (分割線, C8.1, v29): the closed outlines of a sketch projected onto one face and the face cut along them, so that the regions they enclose are faces of their own
+ * (with persistent names, to be picked for an offset surface). The projection goes along the sketch normal, `reverse` the other way; only the nearest layer of the face is cut
+ * unless `throughAll` (a line of sight that crosses the body twice then cuts both crossings).
+ */
+export interface SplitLineFeature extends FeatureBase {
+  type: 'splitLine';
+  sketch: Id;
+  face: Ref;
+  reverse?: boolean;
+  throughAll?: boolean;
+}
+
+/**
  * Shell (薄殼, C5.4, v15): the body hollowed out to a wall of 	hickness, the picked aces taken away to open it; the wall grows inward, or
  * outward with outward.
  */
@@ -495,6 +508,7 @@ export type Feature =
   | PatternFeature
   | MirrorFeature
   | OffsetSurfaceFeature
+  | SplitLineFeature
   | FilletFeature
   | ChamferFeature
   | RefPlaneFeature

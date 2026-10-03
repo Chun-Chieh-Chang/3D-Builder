@@ -316,7 +316,7 @@ describe('split line (C8.1)', () => {
   it('splits the side of a cone frustum along a rectangle projected onto it: four faces, and one is the region, whose area is the integral', () => {
     const cone = lofted([25, 15]);
     const side = faceOf(cone, 'cone');
-    const r = kernel.splitByProjection(cone, side, frame, rectangleLoop(5, 25), [-1, 0, 0]);
+    const r = kernel.splitByProjection(cone, side, frame, [rectangleLoop(5, 25)], [-1, 0, 0]);
     const faces = kernel.topology(r.shape).faces;
     expect(kernel.isValid(r.shape)).toBe(true);
     expect(faces).toHaveLength(4);
@@ -333,12 +333,12 @@ describe('split line (C8.1)', () => {
 
   it('a loop that does not reach the face (projected the other way) is refused with a reason', () => {
     const cone = lofted([25, 15]);
-    expect(() => kernel.splitByProjection(cone, faceOf(cone, 'cone'), frame, rectangleLoop(5, 25), [1, 0, 0])).toThrow(/投影不到/);
+    expect(() => kernel.splitByProjection(cone, faceOf(cone, 'cone'), frame, [rectangleLoop(5, 25)], [1, 0, 0])).toThrow(/投影不到/);
   });
 
   it('through all: the line of sight crosses the cone twice, and the loop is cut on both crossings (two regions)', () => {
     const cone = lofted([25, 15]);
-    const r = kernel.splitByProjection(cone, faceOf(cone, 'cone'), frame, rectangleLoop(5, 25), [-1, 0, 0], true);
+    const r = kernel.splitByProjection(cone, faceOf(cone, 'cone'), frame, [rectangleLoop(5, 25)], [-1, 0, 0], true);
     expect(r.regions).toHaveLength(2);
     expect(kernel.topology(r.shape).faces).toHaveLength(5);
   });

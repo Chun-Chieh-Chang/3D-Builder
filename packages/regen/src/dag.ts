@@ -43,6 +43,9 @@ export function parentsOf(feature: Feature, doc: PartDoc): Id[] {
     case 'moveFace':
       parents = fromRefs([feature.face]);
       break;
+    case 'splitLine':
+      parents = [feature.sketch, ...fromRefs([feature.face])];
+      break;
     case 'draft':
       parents = fromRefs([feature.neutral, ...feature.faces]);
       break;

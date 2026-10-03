@@ -70,6 +70,7 @@ export function mapRefs(feature: Feature, map: (ref: Ref) => Ref): { feature: Fe
     case 'draft':
       return { feature: { ...feature, neutral: one(feature.neutral), faces: feature.faces.map(one) }, replaced };
     case 'moveFace':
+    case 'splitLine':
       return { feature: { ...feature, face: one(feature.face) }, replaced };
     case 'combine':
       return { feature: { ...feature, main: one(feature.main), tools: feature.tools.map(one) }, replaced };

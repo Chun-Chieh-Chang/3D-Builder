@@ -38,6 +38,7 @@ import {
   type RevolveFeature,
   type RibFeature,
   type OffsetSurfaceFeature,
+  type SplitLineFeature,
   type ShellFeature,
   type SketchFeature,
   type SweepFeature,
@@ -421,6 +422,10 @@ export class Regenerator {
           }
           case 'offsetSurface': {
             set = this.advance(set, this.offsetSurface(feature, set));
+            return done({ status: 'ok' });
+          }
+          case 'splitLine': {
+            set = this.advance(set, this.splitLine(feature, sketches, set));
             return done({ status: 'ok' });
           }
           case 'extrude':
@@ -1738,6 +1743,32 @@ export class Regenerator {
     const topology = this.kernel.topology(r.shape);
     const names = nameElements(r.faceOrigins, topology, { featureId: f.id, role: 'offset', input: body.names });
     return [...set.list, { id: f.id, shape: r.shape, topology, names, by: f.id, surface: true }];
+  }
+
+  /**
+   * 「分割線」 (C8.1): the closed outlines of a sketch projected onto a face (4b, ADR 0069), which is cut along them. A region is named like a face the sketch made,
+   * `<feature>:side:<sketch>.<outline>`, the outline being the smallest id of the entities that bound it, so it follows the model and the sketch's edits; the rest
+   * of the face keeps the face's name.
+   */
+  private splitLine(f: SplitLineFeature, sketches: RebuildResult['sketches'], set: Bodies): BodyState[] {
+    const s = this.profileOf(sketches, f.sketch);
+    const loops = s.profiles.regions.map((r) => r.outer);
+    const key = (loop: (typeof loops)[number]) => loop.map((seg) => seg.source).sort()[0]!;
+    const n = s.frame.normal;
+    const sign = f.reverse ? -1 : 1;
+    return this.perBody(set, [f.face], 'face', t('surface.noBodyForSplit'), () => t('surface.splitFacesLost'), (body) => {
+      const [face] = this.faceIndices([f.face], body);
+      const r = this.kernel.splitByProjection(body.shape, face!, s.frame, loops, [n[0] * sign, n[1] * sign, n[2] * sign], !!f.throughAll);
+      if (r.regions.length === 0) {
+        this.kernel.release(r.shape);
+        throw new FeatureError(t('surface.noRegion'));
+      }
+      const origins = r.faceOrigins.map((o) => o.slice());
+      r.regions.forEach((j, k) => (origins[j] = [{ rel: 'generated', kind: 'profileEdge', source: key(loops[r.regionLoops[k]!]!) }]));
+      const topology = this.kernel.topology(r.shape);
+      const state: BodyState = { id: body.id, shape: r.shape, topology, names: nameElements(origins, topology, { featureId: f.id, sketchId: f.sketch, input: body.names }), by: f.id };
+      return body.surface ? { ...state, surface: true } : state;
+    });
   }
 
   private shell(f: ShellFeature, set: Bodies): BodyState[] {

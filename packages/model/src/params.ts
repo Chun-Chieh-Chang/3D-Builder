@@ -196,6 +196,7 @@ export function mapExprs(feature: Feature, fn: (expr: Expr, kind: ExprKind, role
     case 'coordSys':
     case 'mirror':
     case 'derivedBody':
+    case 'splitLine':
       return feature;
   }
 }

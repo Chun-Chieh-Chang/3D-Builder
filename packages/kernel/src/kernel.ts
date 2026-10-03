@@ -2280,14 +2280,15 @@ export class Kernel {
   }
 
   /**
-   * Splits a face along a curve projected onto it (C8.1 分割線): the loop of `segments` drawn in `frame` is projected along `dir` onto face `faceIndex` of the
-   * target, and the face is cut along it. A line of sight crosses the shape more than once, and the projection has a wire on each crossing: only the nearest to the
+   * Splits a face along curves projected onto it (C8.1 分割線): each closed loop of `loops` drawn in `frame` is projected along `dir` onto face `faceIndex` of the
+   * target, and the face is cut along them. A line of sight crosses the shape more than once, and the projection has a wire on each crossing: only the nearest to the
    * drawn loop (the first one met) is used, unless `throughAll`. Where a region crosses the seam of a periodic face the cut leaves it in two pieces, which are
-   * merged again with the edges of the loop kept. `regions` are the faces of the result that the loop bounds: the numbers of the pieces inside it.
+   * merged again with the edges of the loop kept. `regions` are the faces of the result that the loops bound (the numbers of the pieces inside them), and `regionLoops` the loop each is of.
    */
-  splitByProjection(target: ShapeId, faceIndex: number, frame: Frame, segments: Segment[], dir: Vec3, throughAll = false): OpResult & { regions: number[] } {
+  splitByProjection(target: ShapeId, faceIndex: number, frame: Frame, loops: Segment[][], dir: Vec3, throughAll = false): OpResult & { regions: number[]; regionLoops: number[] } {
     const len = Math.hypot(dir[0], dir[1], dir[2]);
     if (!(len > 0)) throw new KernelError(t('kernel.badViewDirection'));
+    if (loops.length === 0) throw new KernelError(t('surface.nothingProjected'));
     const oc = this.oc;
     const arena = new Arena();
     const shape = this.get(target);
@@ -2295,11 +2296,6 @@ export class Kernel {
     try {
       const face = faces.keys[faceIndex];
       if (!face) throw new KernelError(t('edit.faceOutOfRange', { index: faceIndex }));
-      const sources = new Map<TopoDS_Shape, string>();
-      const wire = this.wire(arena, frame, segments, false, sources);
-      const proj = arena.own(new oc.BRepProj_Projection(wire, face, arena.own(this.dir(arena, [dir[0] / len, dir[1] / len, dir[2] / len]))));
-      if (!proj.IsDone()) throw new KernelError(t('surface.nothingProjected'));
-      // the drawn loop's centre, and each projected wire's: the nearest along the line of sight is the first one met
       const centre = (s: TopoDS_Shape): Vec3 => {
         const box = arena.own(new oc.Bnd_Box());
         oc.BRepBndLib.Add(s, box, false);
@@ -2307,18 +2303,24 @@ export class Kernel {
         const hi = this.xyz(arena.own(box.CornerMax()));
         return [(lo[0] + hi[0]) / 2, (lo[1] + hi[1]) / 2, (lo[2] + hi[2]) / 2];
       };
-      const from = centre(wire);
-      const found: { wire: TopoDS_Shape; along: number }[] = [];
-      for (proj.Init(); proj.More(); proj.Next()) {
-        const w = proj.Current();
-        const c = centre(w);
-        found.push({ wire: w, along: ((c[0] - from[0]) * dir[0] + (c[1] - from[1]) * dir[1] + (c[2] - from[2]) * dir[2]) / len });
-      }
-      if (found.length === 0) throw new KernelError(t('surface.nothingProjected'));
-      // the projection runs both ways along the line; the sight is the way `dir` points
-      const ahead = found.filter((f) => f.along > -1e-6);
-      if (ahead.length === 0) throw new KernelError(t('surface.nothingProjected'));
-      const used = throughAll ? ahead : [ahead.sort((x, y) => x.along - y.along)[0]!];
+      // each loop projected: the drawn loop's centre, and each projected wire's: the nearest along the line of sight is the first one met
+      const used: { wire: TopoDS_Shape; loop: number }[] = [];
+      loops.forEach((segments, li) => {
+        const wire = this.wire(arena, frame, segments, false, new Map<TopoDS_Shape, string>());
+        const proj = arena.own(new oc.BRepProj_Projection(wire, face, arena.own(this.dir(arena, [dir[0] / len, dir[1] / len, dir[2] / len]))));
+        if (!proj.IsDone()) throw new KernelError(t('surface.nothingProjected'));
+        const from = centre(wire);
+        const found: { wire: TopoDS_Shape; along: number }[] = [];
+        for (proj.Init(); proj.More(); proj.Next()) {
+          const w = proj.Current();
+          const c = centre(w);
+          found.push({ wire: w, along: ((c[0] - from[0]) * dir[0] + (c[1] - from[1]) * dir[1] + (c[2] - from[2]) * dir[2]) / len });
+        }
+        // the projection runs both ways along the line; the sight is the way `dir` points
+        const ahead = found.filter((f) => f.along > -1e-6);
+        if (ahead.length === 0) throw new KernelError(t('surface.nothingProjected'));
+        for (const u of throughAll ? ahead : [ahead.sort((x, y) => x.along - y.along)[0]!]) used.push({ wire: u.wire, loop: li });
+      });
       const split = arena.own(new oc.BRepFeat_SplitShape(shape));
       for (const u of used) split.Add(arena.own(oc.TopoDS.Wire(u.wire)), arena.own(oc.TopoDS.Face(face)));
       try {
@@ -2327,18 +2329,18 @@ export class Kernel {
         throw new KernelError(t('surface.splitFailed', { why: this.errorText(e) }));
       }
       const cut = arena.own(split.Shape());
-      // the loop's edges as the cut has them, kept while the pieces of one region are merged
-      const loopEdges: TopoDS_Shape[] = [];
+      // the loops' edges as the cut has them, kept while the pieces of one region are merged
+      const loopEdges: { edge: TopoDS_Shape; loop: number }[] = [];
       for (const u of used) {
         const ex = arena.own(new oc.TopExp_Explorer(u.wire, oc.TopAbs_ShapeEnum.TopAbs_EDGE, oc.TopAbs_ShapeEnum.TopAbs_SHAPE));
         for (; ex.More(); ex.Next()) {
           const e = ex.Current();
           const modified = this.list(split.Modified(e));
-          loopEdges.push(...(modified.length > 0 ? modified : [e]));
+          for (const m of modified.length > 0 ? modified : [e]) loopEdges.push({ edge: m, loop: u.loop });
         }
       }
       const unifier = arena.own(new oc.ShapeUpgrade_UnifySameDomain(cut, true, true, false));
-      for (const e of loopEdges) unifier.KeepShape(e);
+      for (const e of loopEdges) unifier.KeepShape(e.edge);
       unifier.Build();
       const out = unifier.Shape();
       if (!this.valid(out)) {
@@ -2348,10 +2350,11 @@ export class Kernel {
       const history = arena.own(unifier.History());
       const before = ShapeIndex.of(oc, shape, T.FACE, arena);
       const after = ShapeIndex.of(oc, out, T.FACE, arena);
-      const loop = ShapeIndex.of(oc, out, T.EDGE, arena);
+      const edgesOut = ShapeIndex.of(oc, out, T.EDGE, arena);
       try {
         const origins: FaceOrigin[][] = after.keys.map(() => []);
         const regions: number[] = [];
+        const regionLoops: number[] = [];
         // every face of the result comes from a face of the target (the split one gives several)
         before.keys.forEach((f, i) => {
           const pieces = i === faceIndex ? this.list(split.Modified(f)) : [f];
@@ -2365,16 +2368,16 @@ export class Kernel {
             if (j >= 0 && !origins[j]!.some((o) => 'index' in o && o.index === i)) origins[j]!.push({ rel: i === faceIndex ? 'modified' : 'same', kind: 'face', index: i });
           }
         });
-        // a piece of the split face is a region when every edge round it is an edge of the loop
-        const keep = new Set<number>();
+        // a piece of the split face is a region when every edge round it is an edge of a loop; the loop it is of is the first that bounds it
+        const keep = new Map<number, number>();
         for (const e of loopEdges) {
-          const k = loop.indexOf(e);
-          if (k >= 0) keep.add(k);
+          const k = edgesOut.indexOf(e.edge);
+          if (k >= 0 && !keep.has(k)) keep.set(k, e.loop);
         }
         const around = (f: TopoDS_Shape): number[] => {
           const sub = ShapeIndex.of(oc, f, T.EDGE, arena);
           try {
-            return sub.keys.map((e) => loop.indexOf(e));
+            return sub.keys.map((e) => edgesOut.indexOf(e));
           } finally {
             sub.dispose();
           }
@@ -2382,13 +2385,16 @@ export class Kernel {
         after.keys.forEach((f, j) => {
           if (!origins[j]!.some((o) => 'index' in o && o.index === faceIndex)) return;
           const es = around(f);
-          if (es.length > 0 && es.every((k) => keep.has(k))) regions.push(j);
+          if (es.length > 0 && es.every((k) => keep.has(k))) {
+            regions.push(j);
+            regionLoops.push(Math.min(...es.map((k) => keep.get(k)!)));
+          }
         });
-        return { shape: this.put(out), faceOrigins: origins, regions };
+        return { shape: this.put(out), faceOrigins: origins, regions, regionLoops };
       } finally {
         before.dispose();
         after.dispose();
-        loop.dispose();
+        edgesOut.dispose();
       }
     } finally {
       faces.dispose();

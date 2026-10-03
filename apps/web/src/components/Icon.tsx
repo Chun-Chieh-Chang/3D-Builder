@@ -1,6 +1,6 @@
 import type { ReactElement } from 'react';
 
-type IconName = 'part' | 'assembly' | 'mates' | 'origin' | 'plane' | 'refPlane' | 'refAxis' | 'refPoint' | 'coordSys' | 'sketch' | 'extrude' | 'revolve' | 'sweep' | 'loft' | 'rib' | 'pattern' | 'mirror' | 'fillet' | 'chamfer' | 'importedBody' | 'derivedBody' | 'deleteFace' | 'moveFace' | 'shell' | 'draft' | 'hole' | 'combine' | 'offsetSurface' | 'body' | 'error' | 'warning' | 'ok' | 'cancel' | 'eye' | 'eyeOff';
+type IconName = 'part' | 'assembly' | 'mates' | 'origin' | 'plane' | 'refPlane' | 'refAxis' | 'refPoint' | 'coordSys' | 'sketch' | 'extrude' | 'revolve' | 'sweep' | 'loft' | 'rib' | 'pattern' | 'mirror' | 'fillet' | 'chamfer' | 'importedBody' | 'derivedBody' | 'deleteFace' | 'moveFace' | 'shell' | 'draft' | 'hole' | 'combine' | 'offsetSurface' | 'splitLine' | 'body' | 'error' | 'warning' | 'ok' | 'cancel' | 'eye' | 'eyeOff';
 
 /** Default planes and reference planes share one icon, as in SolidWorks. */
 const PLANE = <path d="M4 4h10l-2 8H2z" />;
@@ -26,6 +26,7 @@ const PATHS: Record<IconName, ReactElement> = {
   moveFace: <path d="M3 13V6l5-3h5v7l-5 3z M8 3v7 M5.5 7.5L8 5l2.5 2.5" />,
   draft: <path d="M4 14L2 3h12l-2 11z M2 8h12" />,
   offsetSurface: <path d="M2 11c3-5 9-5 12 0 M2 6c3-5 9-5 12 0" />,
+  splitLine: <path d="M2 12c3-6 9-6 12 0 M5 4l6 8" />,
   sweep: <path d="M2 13c4 0 4-9 8-9h4 M2 11c4 0 4-9 8-9 M2 15c4 0 4-9 8-9" />,
   loft: <path d="M3 13h10l-2-4H5z M5 9h6l-1.5-4h-3z M6.5 5h3l-.5-3h-2z" />,
   mirror: <path d="M8 2v12 M5.5 5L2 11h3.5z M10.5 5L14 11h-3.5z" />,
