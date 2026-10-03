@@ -232,6 +232,8 @@ export const features = {
   'cmd.offsetSurfaceOnlyFaces': '偏移曲面只能選面',
   'feature.offsetSurface': '偏移曲面',
   'feature.splitLine': '分割線',
+  'surface.ownFace': '這個面是這個特徵自己做出來的，不能再選它',
+  'surface.gapInfo': '量到的間隙：最小 {min} mm、最大 {max} mm、平均 {mean} mm；與要求的差最多 {deviation} mm（容許 {tolerance} mm）',
   'cmd.splitLineOnlyFace': '分割線只能投影到面上',
   'cmd.onlySplitLineHasParams': '只有分割線有這些參數',
   'surface.noBodyForSplit': '要分割的面所在的本體不存在',

@@ -38,6 +38,8 @@ import {
   type ImportedBodyFeature,
   type LoftFeature,
   type MoveFaceFeature,
+  type OffsetSurfaceFeature,
+  type SplitLineFeature,
   type MirrorFeature,
   type PartDoc,
   type PatternDefinition,
@@ -1547,6 +1549,93 @@ function MoveFacePanel({ f }: { f: MoveFaceFeature }) {
   );
 }
 
+/** One row of a selection box of faces: the name, and the nearest face to use when the reference is lost. */
+function FaceRow({ featureId, r, label }: { featureId: string; r: Ref; label: string }) {
+  const result = useStore((s) => s.result);
+  const found = !!r.name && !!result?.faceNames.includes(r.name);
+  return (
+    <li className={found ? '' : 'missing'} title={r.name}>
+      {label}
+      {!found && t('pm.lost')}
+      <code>{r.name}</code>
+      {!found && <UseNearest featureId={featureId} refr={r} />}
+    </li>
+  );
+}
+
+/** Offset surface (C9.2): the faces, how far (positive: outward), how it goes round a corner; and the gap the result was measured to have. */
+function OffsetSurfacePanel({ f }: { f: OffsetSurfaceFeature }) {
+  const status = useStore((s) => s.result?.features.find((r) => r.id === f.id));
+  const run = (patch: Partial<Pick<OffsetSurfaceFeature, 'faces' | 'distance' | 'join'>>): Command => {
+    const next = { faces: f.faces, distance: f.distance, join: f.join, ...patch };
+    return { type: 'setOffsetSurface', featureId: f.id, faces: next.faces, distance: next.distance, ...(next.join ? { join: next.join } : {}) };
+  };
+  return (
+    <section className="pm-group">
+      <h4>{t('pm.offsetSurface.heading')}</h4>
+      <ul className="selection-box">
+        {f.faces.length === 0 && <li className="muted">{t('pm.offsetSurface.empty')}</li>}
+        {f.faces.map((r, i) => (
+          <FaceRow key={r.name} featureId={f.id} r={r} label={t('pm.face', { n: i + 1 })} />
+        ))}
+      </ul>
+      <label className="pm-row">
+        <span>{t('pm.offsetSurface.distance')}</span>
+        <ValueInput value={f.distance} toCommand={(distance) => run({ distance })} />
+      </label>
+      <label className="pm-row">
+        <span>{t('pm.offsetSurface.join')}</span>
+        <select value={f.join ?? 'arc'} onChange={(e) => store.execute(run({ join: e.target.value === 'intersection' ? 'intersection' : undefined }))}>
+          <option value="arc">{t('pm.offsetSurface.joinArc', { distance: f.distance })}</option>
+          <option value="intersection">{t('pm.offsetSurface.joinSharp')}</option>
+        </select>
+      </label>
+      {status?.status === 'ok' && status.info && <p className="hint gap-info">{status.info}</p>}
+      <p className="hint">{t('pm.offsetSurface.hint')}</p>
+    </section>
+  );
+}
+
+/** Split line (C8.1): the sketch to project, the face it is projected onto, which way, and whether through every layer. */
+function SplitLinePanel({ f }: { f: SplitLineFeature }) {
+  const doc = useStore((s) => s.doc);
+  const sketches = doc.features.slice(0, Math.max(0, doc.features.findIndex((x) => x.id === f.id))).filter((x) => x.type === 'sketch');
+  const run = (patch: Partial<Pick<SplitLineFeature, 'sketch' | 'face' | 'reverse' | 'throughAll'>>): Command => {
+    const next = { sketch: f.sketch, face: f.face, reverse: f.reverse, throughAll: f.throughAll, ...patch };
+    return { type: 'setSplitLine', featureId: f.id, sketch: next.sketch, face: next.face, ...(next.reverse ? { reverse: true } : {}), ...(next.throughAll ? { throughAll: true } : {}) };
+  };
+  return (
+    <section className="pm-group">
+      <h4>{t('pm.splitLine.sketch')}</h4>
+      {sketches.length === 0 ? (
+        <p className="muted">{t('pm.splitLine.noSketch')}</p>
+      ) : (
+        <select value={f.sketch} onChange={(e) => store.execute(run({ sketch: e.target.value }))}>
+          {sketches.map((s) => (
+            <option key={s.id} value={s.id}>
+              {s.name}
+            </option>
+          ))}
+        </select>
+      )}
+      <h4 className="sub">{t('pm.splitLine.face')}</h4>
+      <ul className="selection-box">
+        {!f.face.name && <li className="muted">{t('pm.splitLine.faceEmpty')}</li>}
+        {f.face.name && <FaceRow featureId={f.id} r={f.face} label={t('pm.face', { n: 1 })} />}
+      </ul>
+      <label className="pm-row checkbox">
+        <input type="checkbox" checked={!!f.reverse} onChange={(e) => store.execute(run({ reverse: e.target.checked }))} />
+        <span>{t('pm.splitLine.reverse')}</span>
+      </label>
+      <label className="pm-row checkbox">
+        <input type="checkbox" checked={!!f.throughAll} onChange={(e) => store.execute(run({ throughAll: e.target.checked }))} />
+        <span>{t('pm.splitLine.throughAll')}</span>
+      </label>
+      <p className="hint">{t('pm.splitLine.hint')}</p>
+    </section>
+  );
+}
+
 /** Combine (C7.2): what is done, to which body, with which bodies. */
 function CombinePanel({ f }: { f: CombineFeature }) {
   const result = useStore((s) => s.result);
@@ -1702,6 +1791,8 @@ export function PropertyManager() {
       {f.type === 'draft' && <DraftPanel f={f} />}
       {f.type === 'hole' && <HolePanel f={f} />}
       {f.type === 'moveFace' && <MoveFacePanel f={f} />}
+      {f.type === 'offsetSurface' && <OffsetSurfacePanel f={f} />}
+      {f.type === 'splitLine' && <SplitLinePanel f={f} />}
       {f.type === 'combine' && <CombinePanel f={f} />}
     </div>
   );

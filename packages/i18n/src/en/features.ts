@@ -234,6 +234,8 @@ export const features: Translation = {
   'cmd.offsetSurfaceOnlyFaces': 'An offset surface can only be made of faces',
   'feature.offsetSurface': 'Offset Surface',
   'feature.splitLine': 'Split Line',
+  'surface.ownFace': 'This face is made by the feature itself and cannot be picked for it',
+  'surface.gapInfo': 'Gap measured: min {min} mm, max {max} mm, mean {mean} mm; at most {deviation} mm from what was asked (tolerance {tolerance} mm)',
   'cmd.splitLineOnlyFace': 'A split line can only be projected onto a face',
   'cmd.onlySplitLineHasParams': 'Only a split line has these parameters',
   'surface.noBodyForSplit': 'The body of the face to split does not exist',

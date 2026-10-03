@@ -46,7 +46,7 @@ import {
   type Vec3,
 } from '@3db/model';
 import { findOutlines, findProfiles, reversePath, selectContours, ThinProblem, thinRegions, type ProfileResult, type SketchSolver, type SketchStatus, type SolvedSketch } from '@3db/sketch';
-import { KernelError, type SweepSpec, type FaceOrigin, type ImportDiagnostics, type Kernel, type OpResult, type ShapeId, type Topology } from '@3db/kernel';
+import { KernelError, SURFACE_TOLERANCE, type SweepSpec, type FaceOrigin, type ImportDiagnostics, type Kernel, type OpResult, type ShapeId, type Topology } from '@3db/kernel';
 import { nameElements, nameFromFaces, resolveRef, type Candidate, type ElementNames } from '@3db/naming';
 import { Bodies, type BodyState, type BodyView } from './bodies';
 import { followReferences, ReferenceProblem } from './references';
@@ -70,6 +70,8 @@ export interface FeatureResult {
   warnings?: string[];
   /** An imported body: what the file held and what was done to it (F2.2). */
   diagnostics?: ImportDiagnostics;
+  /** What the feature measured of its own result and says to the user (an offset surface: the gap it found, 4b-3). */
+  info?: string;
   ms: number;
 }
 
@@ -277,6 +279,8 @@ export class Regenerator {
   private warnings: string[] = [];
   /** What reading the file of the imported body being evaluated turned up (F2.2). */
   private diagnostics: ImportDiagnostics | null = null;
+  /** What the feature being evaluated says of its result (`FeatureResult.info`). */
+  private info: string | null = null;
   /** Reference planes built so far in this rebuild (C3.2). */
   private planes = new Map<Id, PlaneFrame>();
   /** Reference axes, points and coordinate systems built so far in this rebuild (C3.3–C3.5). */
@@ -367,9 +371,10 @@ export class Regenerator {
       const started = performance.now();
       this.warnings = [];
       this.diagnostics = null;
+      this.info = null;
       const done = (r: Omit<FeatureResult, 'id' | 'ms'>) => {
         this.statuses.set(feature.id, r.status);
-        return results.push({ id: feature.id, ms: performance.now() - started, ...r, ...(this.warnings.length > 0 ? { warnings: this.warnings } : {}), ...(this.diagnostics ? { diagnostics: this.diagnostics } : {}) });
+        return results.push({ id: feature.id, ms: performance.now() - started, ...r, ...(this.warnings.length > 0 ? { warnings: this.warnings } : {}), ...(this.diagnostics ? { diagnostics: this.diagnostics } : {}), ...(this.info ? { info: this.info } : {}) });
       };
       // a pattern's seeds are compared with the bodies as they were before the first of them
       if (firstSeeds.has(feature.id) && index < limit && !feature.suppressed) this.snapshots.set(feature.id, this.snapshot(set));
@@ -1740,6 +1745,8 @@ export class Regenerator {
     if (owners.size !== 1) throw new FeatureError(t('surface.oneBody'));
     const [body, mine] = [...owners][0]!;
     const r = this.kernel.offsetFaces(body.shape, this.faceIndices(mine, body), evalLength(f.distance), f.join ? { join: f.join } : {});
+    const g = r.gap;
+    this.info = t('surface.gapInfo', { min: g.min.toFixed(3), max: g.max.toFixed(3), mean: g.mean.toFixed(3), deviation: g.deviation.toFixed(4), tolerance: String(SURFACE_TOLERANCE) });
     const topology = this.kernel.topology(r.shape);
     const names = nameElements(r.faceOrigins, topology, { featureId: f.id, role: 'offset', input: body.names });
     return [...set.list, { id: f.id, shape: r.shape, topology, names, by: f.id, surface: true }];

@@ -1236,6 +1236,43 @@ class AppStore {
     this.openNew({ id: this.allocator().take('moveface'), type: 'moveFace', name: nextName(this.history.doc, name), suppressed: false, face: picked, distance: '5' }, name);
   }
 
+  /** 「偏移曲面」 (C9.2): starts with the face selected in the graphics area, if there is one; 3 mm is the gap of a gauge. */
+  newOffsetSurface(): void {
+    const face = this.state.selectedFace;
+    const name = t('feature.offsetSurface');
+    this.openNew({ id: this.allocator().take('offset'), type: 'offsetSurface', name: nextName(this.history.doc, name), suppressed: false, faces: face?.kind === 'face' ? [face] : [], distance: '3' }, name);
+  }
+
+  /** Face list of an offset surface: clicking a face toggles it; the faces the feature itself made are not for it to take. */
+  toggleOffsetFace(ref: Ref): void {
+    const f = this.editedFeature();
+    if (f?.type !== 'offsetSurface' || ref.kind !== 'face') return;
+    if (ref.name.startsWith(`${f.id}:`)) return void this.notify(t('surface.ownFace'), 'error');
+    const faces = f.faces.some((x) => x.name === ref.name) ? f.faces.filter((x) => x.name !== ref.name) : [...f.faces, ref];
+    this.execute({ type: 'setOffsetSurface', featureId: f.id, faces, distance: f.distance, ...(f.join ? { join: f.join } : {}) });
+  }
+
+  /**
+   * 「分割線」 (C8.1): the selected sketch (else the latest one) is projected onto the face selected in the graphics area, if there is one; the PropertyManager
+   * changes either.
+   */
+  newSplitLine(): void {
+    const selected = findFeature(this.history.doc, this.state.selected ?? '');
+    const sketch = selected?.type === 'sketch' ? selected : [...this.history.doc.features].reverse().find((f): f is SketchFeature => f.type === 'sketch');
+    if (!sketch) return void this.notify(t('sketch.pickInTree'));
+    const face = this.state.selectedFace;
+    const name = t('feature.splitLine');
+    this.openNew({ id: this.allocator().take('split'), type: 'splitLine', name: nextName(this.history.doc, name), suppressed: false, sketch: sketch.id, face: face?.kind === 'face' ? face : { kind: 'face', name: '' } }, name);
+  }
+
+  /** The face a split line cuts: the face clicked in the graphics area (not one the feature made itself). */
+  setSplitFace(ref: Ref): void {
+    const f = this.editedFeature();
+    if (f?.type !== 'splitLine' || ref.kind !== 'face') return;
+    if (ref.name.startsWith(`${f.id}:`)) return void this.notify(t('surface.ownFace'), 'error');
+    this.execute({ type: 'setSplitLine', featureId: f.id, sketch: f.sketch, face: ref, ...(f.reverse ? { reverse: true } : {}), ...(f.throughAll ? { throughAll: true } : {}) });
+  }
+
   /** 「組合」 (C7.2): the body of the selected face is the main body to start with; the PropertyManager picks the rest. */
   newCombine(): void {
     const face = this.state.selectedFace;
@@ -1347,6 +1384,8 @@ class AppStore {
     else if (f?.type === 'shell') this.toggleShellFace(ref);
     else if (f?.type === 'draft') this.pickDraftFace(ref);
     else if (f?.type === 'moveFace') this.setMoveFace(ref);
+    else if (f?.type === 'offsetSurface') this.toggleOffsetFace(ref);
+    else if (f?.type === 'splitLine') this.setSplitFace(ref);
     else if (f?.type === 'combine' && ref.kind === 'face') this.pickBody(ref.name);
   }
 
@@ -1354,7 +1393,7 @@ class AppStore {
   multiPickKind(): 'edge' | 'face' | null {
     const f = this.editedFeature();
     if (f?.type === 'fillet' || f?.type === 'chamfer') return 'edge';
-    if (f?.type === 'deleteFace' || f?.type === 'shell' || f?.type === 'draft') return 'face';
+    if (f?.type === 'deleteFace' || f?.type === 'shell' || f?.type === 'draft' || f?.type === 'offsetSurface') return 'face';
     return null;
   }
 
@@ -1368,6 +1407,7 @@ class AppStore {
     if (f?.type === 'fillet' || f?.type === 'chamfer') this.execute({ type: 'setEdges', featureId: f.id, edges: more(f.edges, 'edge') });
     else if (f?.type === 'deleteFace') this.execute({ type: 'setFaces', featureId: f.id, faces: more(f.faces, 'face'), ...(f.hole ? { hole: true } : {}) });
     else if (f?.type === 'shell') this.execute({ type: 'setShell', featureId: f.id, faces: more(f.faces, 'face'), thickness: f.thickness, ...(f.outward ? { outward: true } : {}) });
+    else if (f?.type === 'offsetSurface') this.execute({ type: 'setOffsetSurface', featureId: f.id, faces: more(f.faces, 'face', undefined).filter((r) => !r.name.startsWith(`${f.id}:`)), distance: f.distance, ...(f.join ? { join: f.join } : {}) });
     else if (f?.type === 'draft' && f.neutral.name) this.execute({ type: 'setDraftFeature', featureId: f.id, neutral: f.neutral, faces: more(f.faces, 'face', f.neutral.name), angle: f.angle, ...(f.reverse ? { reverse: true } : {}) });
   }
 
@@ -1426,7 +1466,7 @@ class AppStore {
     if (!e) return undefined;
     const i = this.history.doc.features.findIndex((f) => f.id === e.featureId);
     const type = this.history.doc.features[i]?.type;
-    if (type === 'refPlane' || type === 'refAxis' || type === 'refPoint' || type === 'coordSys' || type === 'pattern' || type === 'mirror') return i + 1;
+    if (type === 'refPlane' || type === 'refAxis' || type === 'refPoint' || type === 'coordSys' || type === 'pattern' || type === 'mirror' || type === 'offsetSurface' || type === 'splitLine') return i + 1;
     return type === 'fillet' || type === 'chamfer' || type === 'deleteFace' || type === 'moveFace' || type === 'shell' || type === 'draft' || type === 'combine' || type === 'sketch' ? i : undefined;
   }
 

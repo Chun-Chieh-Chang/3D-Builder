@@ -89,6 +89,8 @@ export const ACTIONS: UiAction[] = [
   { id: 'draft', get label() { return t('feature.draftFeature'); }, group: 'feature', enabled: hasBody, run: () => store.newDraft() },
   { id: 'shell', get label() { return t('feature.shell'); }, group: 'feature', enabled: hasBody, run: () => store.newShell() },
   { id: 'move-face', get label() { return t('feature.moveFace'); }, group: 'feature', enabled: hasBody, run: () => store.newMoveFace() },
+  { id: 'offset-surface', get label() { return t('feature.offsetSurface'); }, group: 'feature', enabled: hasBody, run: () => store.newOffsetSurface() },
+  { id: 'split-line', get label() { return t('feature.splitLine'); }, group: 'feature', enabled: (s) => hasBody(s) && s.doc.features.some((f) => f.type === 'sketch'), run: () => store.newSplitLine() },
   { id: 'combine', get label() { return t('feature.combine'); }, group: 'feature', enabled: (s) => hasBody(s) && (s.result?.bodies.length ?? 0) > 1, run: () => store.newCombine() },
   { id: 'linear-pattern', get label() { return t('action.linearPattern'); }, group: 'feature', enabled: canPattern, run: () => store.newPattern('linear') },
   { id: 'circular-pattern', get label() { return t('action.circularPattern'); }, group: 'feature', enabled: canPattern, run: () => store.newPattern('circular') },
