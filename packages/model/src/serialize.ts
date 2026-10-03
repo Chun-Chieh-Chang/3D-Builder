@@ -1,5 +1,6 @@
 import { t } from '@3db/i18n';
 import { countersFor } from './ids';
+import { DRAWING_SCHEMA_VERSION, type DrawingDoc } from './drawing';
 import { ASSEMBLY_SCHEMA_VERSION, SCHEMA_VERSION, type AssemblyDoc, type PartDoc } from './schema';
 
 /**
@@ -11,6 +12,10 @@ export function serializePart(doc: PartDoc): string {
 }
 
 export function serializeAssembly(doc: AssemblyDoc): string {
+  return canonical(doc);
+}
+
+export function serializeDrawing(doc: DrawingDoc): string {
   return canonical(doc);
 }
 
@@ -163,9 +168,9 @@ function upgrade(raw: Json, current: number, steps: Record<number, (doc: Json) =
 }
 
 /** What a document text holds, from its `kind`, without checking the rest. */
-export function documentKind(text: string): 'part' | 'assembly' {
+export function documentKind(text: string): 'part' | 'assembly' | 'drawing' {
   const kind = parseJson(text).kind;
-  if (kind === 'part' || kind === 'assembly') return kind;
+  if (kind === 'part' || kind === 'assembly' || kind === 'drawing') return kind;
   throw new FormatError(t('format.unknownKind'));
 }
 
@@ -205,3 +210,20 @@ export function parseAssembly(text: string): AssemblyDoc {
   raw.properties ??= {};
   return raw as unknown as AssemblyDoc;
 }
+
+/** Forward migrations of drawings (B9.2): drawingMigrations[n] upgrades version n to n+1. None yet. */
+const drawingMigrations: Record<number, (doc: Json) => Json> = {};
+
+export function parseDrawing(text: string): DrawingDoc {
+  let raw = parseJson(text);
+  if (raw.kind !== 'drawing') throw new FormatError(t('format.notDrawing'));
+  raw = upgrade(raw, DRAWING_SCHEMA_VERSION, drawingMigrations);
+  if (!Array.isArray(raw.views) || !raw.sheet || typeof raw.sheet !== 'object') throw new FormatError(t('format.noViews'));
+  const ids = (raw.views as Json[]).map((v) => v.id as string);
+  // As for parts: counters cover every id in the file, even one edited by hand or by a script.
+  raw.idCounters = countersFor(ids, { ...((raw.idCounters as Record<string, number> | undefined) ?? {}) });
+  raw.properties ??= {};
+  raw.title ??= {};
+  return raw as unknown as DrawingDoc;
+}
+

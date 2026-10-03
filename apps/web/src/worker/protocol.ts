@@ -1,7 +1,7 @@
 import type { Locale } from '@3db/i18n';
-import type { InterferenceComponent, MeasureReport, MeasureTarget, PartMass } from '@3db/model';
+import type { InterferenceComponent, MeasureReport, MeasureTarget, PartMass, ViewName } from '@3db/model';
 import type { AssemblyDoc, Axis3, CoordSystem, Fingerprint, Id, PartDoc, PlaneFrame, Pose, Ref, SketchFeature, SourceTree, Vec3 } from '@3db/model';
-import type { GeometryReport, MassProps, MeshData } from '@3db/kernel';
+import type { GeometryReport, MassProps, MeshData, ProjectedView } from '@3db/kernel';
 import type { AssemblyResult, AssemblySolveOptions, ClearanceRow, Converted, FeatureResult, SweepResult } from '@3db/regen';
 import type { MateGeometry } from '@3db/assembly';
 import type { StepAssemblyPlan, StepInstance, StepSub } from '@3db/io';
@@ -193,6 +193,15 @@ export interface CollisionResult {
   ms: number;
 }
 
+/** A view of a drawing asked for (C16.2): the parts it shows, as built for the app (by key), where each is, and the direction it is seen from. */
+export interface DrawingViewRequest {
+  parts: { part: string; mirrored: boolean; pose: Pose }[];
+  direction: ViewName;
+}
+
+/** What a view of a drawing looks like: its lines at full size, or why they could not be made. */
+export type DrawingViewResult = { lines: ProjectedView; ms: number } | { error: string };
+
 export interface KernelApi {
   init(): Promise<{ occtMs: number; gcsMs: number }>;
   /** The language of the messages the worker makes (errors, warnings); what it made before keeps its language. */
@@ -223,6 +232,8 @@ export interface KernelApi {
   measure(targets: MeasureTarget[]): Promise<MeasureReport>;
   /** The interference of components (E2.1): the volume their parts share, each overlap as a mesh. Parts are the ones rebuilt for the assembly (uildPart). */
   interference(components: InterferenceComponent[]): Promise<InterferenceResult>;
+  /** The lines of the views of a drawing (C16.2, A4.4): exact hidden-line removal on parts built for the app (`buildPart`); one result for each request. */
+  drawingViews(requests: DrawingViewRequest[]): Promise<DrawingViewResult[]>;
   /** The clearance between components (E2.2): the pairs closer than `least` mm, the closest first; with `only`, just those with one of these components. */
   clearance(components: InterferenceComponent[], least: number, only?: string[]): Promise<ClearanceResult>;
   /** How far `mover` can move along `dir` before it meets another component, at most `length` mm (E2.2). */

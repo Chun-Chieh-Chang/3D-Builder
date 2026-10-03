@@ -288,3 +288,14 @@ html[lang="en"] .view-cube .cube-face { font-size: 10px; }
 .flyout-leaf { padding-left: 10px; }
 .tree-row.suppressed .name { opacity: 0.5; text-decoration: line-through; }
 .tree-row.hidden-component .name { opacity: 0.6; font-style: italic; }
+
+/* The drawing (Phase 5): the sheet as a page on a grey desk */
+.drawing-viewport { background: #8a919b; overflow: hidden; touch-action: none; cursor: grab; }
+.drawing-stage { position: absolute; left: 0; top: 0; transform-origin: 0 0; }
+.drawing-paper { line-height: 0; box-shadow: 0 2px 10px rgba(0, 0, 0, 0.35); background: #fff; }
+.drawing-paper svg { display: block; }
+.drawing-selection { position: absolute; border: 1px dashed var(--accent, #1864ab); pointer-events: none; }
+.drawing-panel .drawing-views li { display: flex; gap: 6px; align-items: center; }
+.drawing-panel .drawing-views li .name { flex: 1; }
+.drawing-panel .drawing-views li.selected { background: var(--accent-soft); }
+

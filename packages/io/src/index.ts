@@ -4,6 +4,7 @@ export * from './zip';
 export * from './container';
 export * from './partFile';
 export * from './assemblyFile';
+export * from './drawingFile';
 export * from './stepPart';
 export * from './stepAssembly';
 export * from './derivedAssembly';

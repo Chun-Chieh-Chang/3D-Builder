@@ -59,6 +59,7 @@ export const ACTIONS: UiAction[] = [
   { id: 'export-step', get label() { return t('export.step'); }, group: 'file', enabled: (s) => (partIdle(s) || (assemblyIdle(s) && hasComponents(s))) && s.bootMs !== null, run: () => store.exportStep() },
   { id: 'export-stl', get label() { return t('export.stl'); }, group: 'file', enabled: (s) => hasBody(s) && s.bootMs !== null, run: () => void store.exportStl() },
   { id: 'export-image', get label() { return t('export.image'); }, group: 'file', enabled: (s) => (s.active === 'assembly' ? assemblyIdle(s) && hasComponents(s) : hasBody(s)), run: () => void store.exportImage() },
+  { id: 'new-drawing', get label() { return t('drawing.act'); }, group: 'file', enabled: (s) => partIdle(s) && s.fileName !== null && !s.dirty && s.bootMs !== null, run: () => void store.newDrawing() },
   { id: 'generate-assembly', get label() { return t('derived.act'); }, group: 'file', enabled: (s) => partIdle(s) && !!s.result?.mesh && s.bootMs !== null, run: () => void store.generateAssembly() },
   { id: 'import-step-assembly', get label() { return t('stepasm.act'); }, group: 'file', enabled: (s) => idle(s) && s.bootMs !== null, run: () => store.importStepAssembly() },
   { id: 'return-assembly', get label() { return t('act.returnAssembly'); }, group: 'file', enabled: (s) => (partIdle(s) || assemblyIdle(s)) && s.returnTo !== null, run: () => store.returnToAssembly() },
@@ -142,8 +143,8 @@ export const ACTIONS: UiAction[] = [
   { id: 'construction', get label() { return t('act.construction'); }, group: 'sketch-tool', enabled: sketching, run: () => toggleConstruction() },
   { id: 'exit-sketch', get label() { return t('act.exitSketch'); }, group: 'sketch-tool', enabled: sketching, run: () => store.commitEdit() },
 
-  { id: 'undo', get label() { return t('act.undo'); }, shortcut: 'Ctrl+Z', group: 'edit', enabled: (s) => (s.asm ? s.asm.canUndo && idle(s) : s.canUndo), run: () => store.undo() },
-  { id: 'redo', get label() { return t('act.redo'); }, shortcut: 'Ctrl+Y', group: 'edit', enabled: (s) => (s.asm ? s.asm.canRedo && idle(s) : s.canRedo), run: () => store.redo() },
+  { id: 'undo', get label() { return t('act.undo'); }, shortcut: 'Ctrl+Z', group: 'edit', enabled: (s) => (s.drw ? s.drw.canUndo : s.asm ? s.asm.canUndo && idle(s) : s.canUndo), run: () => store.undo() },
+  { id: 'redo', get label() { return t('act.redo'); }, shortcut: 'Ctrl+Y', group: 'edit', enabled: (s) => (s.drw ? s.drw.canRedo : s.asm ? s.asm.canRedo && idle(s) : s.canRedo), run: () => store.redo() },
   { id: 'rebuild', get label() { return t('act.rebuild'); }, shortcut: 'Ctrl+B', group: 'edit', enabled: () => true, run: () => store.rebuild() },
 
   { id: 'fit', get label() { return t('act.fit'); }, shortcut: 'F', group: 'view', enabled: () => true, run: () => store.viewer?.fitAll() },

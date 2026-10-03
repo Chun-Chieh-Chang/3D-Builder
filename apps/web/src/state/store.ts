@@ -40,10 +40,15 @@ import {
   type Ref,
   type SketchFeature,
   type Vec3,
+  type DrawingDoc,
+  applyDrawingCommand,
+  baseName,
+  createEmptyDrawing,
   mirrorKey,
 } from '@3db/model';
-import { ASSEMBLY_FILE_EXTENSION, assemblyName, derivedAssemblyFiles, PART_FILE_EXTENSION, partFileName, partName, readDocumentFile, sha256Hex, imageFileName, stepAssemblyFiles, stepFileName, stlFileName, writePartFile } from '@3db/io';
+import { readAnyDocumentFile, ASSEMBLY_FILE_EXTENSION, assemblyName, derivedAssemblyFiles, PART_FILE_EXTENSION, partFileName, partName, readDocumentFile, sha256Hex, imageFileName, stepAssemblyFiles, stepFileName, stlFileName, writePartFile } from '@3db/io';
 import { gatherSources } from './sources';
+import { DrawingStore, type DrawingSource, type DrawingState } from './drawing';
 import { orderProblem, suppressionTargets, type SuppressAction } from '@3db/regen/dag';
 import { contourChoices, findProfiles, type ContourChoice } from '@3db/sketch/profiles';
 import type { PickFilter, Viewer } from '@3db/render';
@@ -178,7 +183,7 @@ export interface Notice {
 export type PendingFileAction = 'new-part' | 'new-demo' | 'new-assembly' | 'open' | 'open-part' | 'return-assembly' | 'import-step-assembly';
 
 /** One document is open at a time (2026-09-28 decision): a part or an assembly. */
-export type DocumentKind = 'part' | 'assembly';
+export type DocumentKind = 'part' | 'assembly' | 'drawing';
 
 /**
  * UI state. The document inside DocHistory is the only source of truth for the design;
@@ -244,6 +249,8 @@ export interface UiState {
   measure: MeasureState | null;
   /** The interference detection (E2.1) while its window is open. Null when closed. */
   interference: InterferenceState | null;
+  /** The open drawing (Phase 5); null unless the open document is a drawing. */
+  drw: DrawingState | null;
   /** The clearance verification (E2.2) while its window is open. Null when closed. */
   clearance: ClearanceState | null;
   /** The geometry check (E3.1) while its dialog is open. Null when closed. */
@@ -427,6 +434,7 @@ class AppStore {
       notice: null,
       active: 'part',
       asm: null,
+      drw: null,
       projectName: null,
       folderRequest: null,
       folderWrite: false,
@@ -461,9 +469,15 @@ class AppStore {
     });
     // Back in this window: part files saved meanwhile (in another window) show as they are now (B9.4).
     document.addEventListener('visibilitychange', () => {
-      if (!document.hidden) void this.assembly?.refresh();
+      if (!document.hidden) {
+        void this.assembly?.refresh();
+        void this.drawing?.refresh();
+      }
     });
-    window.addEventListener('focus', () => void this.assembly?.refresh());
+    window.addEventListener('focus', () => {
+      void this.assembly?.refresh();
+      void this.drawing?.refresh();
+    });
     void rememberedFolder().then((folder) => {
       if (!folder || this.project) return;
       this.remembered = folder;
@@ -807,11 +821,13 @@ class AppStore {
   }
 
   undo(): void {
+    if (this.drawing) return this.drawing.undo();
     if (this.assembly) return this.assembly.undo();
     this.history.undo();
   }
 
   redo(): void {
+    if (this.drawing) return this.drawing.redo();
     if (this.assembly) return this.assembly.redo();
     this.history.redo();
   }
@@ -1681,7 +1697,7 @@ class AppStore {
   }
 
   private activeDirty(): boolean {
-    return this.assembly ? this.assembly.getState().dirty : this.state.dirty;
+    return this.drawing ? this.drawing.getState().dirty : this.assembly ? this.assembly.getState().dirty : this.state.dirty;
   }
 
   /** Replacing a modified document asks 「要儲存變更嗎？」 first, as SolidWorks does. */
@@ -1724,8 +1740,9 @@ class AppStore {
         this.load(createEmptyPart(), null, null, new Map(), picked.name.replace(/\.(step|stp)$/i, ''));
         return await this.importData(picked.name, picked.bytes);
       }
-      const file = await readDocumentFile(picked.bytes);
+      const file = await readAnyDocumentFile(picked.bytes);
       if (file.kind === 'assembly') return await this.openAssembly(picked, file.doc);
+      if (file.kind === 'drawing') return await this.openDrawing(picked, file.doc);
       // A file in the old format is never overwritten with the new one: its first save asks for a name.
       this.load(file.doc, file.format === '3dbx' ? picked.handle : null, picked.name, file.blobs);
       const notes = [...(file.format === 'json' ? [t('file.oldFormat')] : []), ...file.warnings];
@@ -1831,12 +1848,14 @@ class AppStore {
 
   /** 「儲存檔案」: into the file the document came from; one never saved asks for a name. True when saved. */
   async save(): Promise<boolean> {
+    if (this.drawing) return this.drawing.save();
     if (this.assembly) return this.assembly.save();
     return this.fileHandle ? this.write(this.fileHandle) : this.saveAs();
   }
 
   /** 「另存新檔」. True when saved. */
   async saveAs(): Promise<boolean> {
+    if (this.drawing) return this.drawing.saveAs();
     if (this.assembly) return this.assembly.saveAs();
     const name = partFileName(this.documentName());
     try {
@@ -1877,6 +1896,7 @@ class AppStore {
 
   private load(doc: PartDoc, handle: FileSystemFileHandle | null, fileName: string | null, blobs = new Map<string, Uint8Array>(), untitled = this.state.untitled): void {
     this.closeAssembly();
+    this.closeDrawing();
     if (this.state.editing) this.cancelEdit();
     this.history = new DocHistory(doc);
     this.history.subscribe(() => this.onDocChanged());
@@ -1888,6 +1908,83 @@ class AppStore {
     if (!this.state.recovery) void this.autosave.clear();
     this.set({ active: 'part', selected: null, selectedFace: null, result: null, fileName, untitled, fitRequest: this.state.fitRequest + 1, documentSerial: this.state.documentSerial + 1, measure: null, interference: null, clearance: null, check: null });
     this.onDocChanged();
+  }
+
+  // ------------------------------------------------------------ drawings (B1.1, C16)
+
+  private drawing: DrawingStore | null = null;
+
+  /** The open drawing's store, for the components that show it. */
+  get drawingStore(): DrawingStore | null {
+    return this.drawing;
+  }
+
+  /** The drawing becomes the open document; the part (or assembly) is put away (one document at a time). */
+  private showDrawing(source: DrawingSource): void {
+    this.load(createEmptyPart(), null, null);
+    this.returnFile = null;
+    this.drawing = new DrawingStore(
+      {
+        api: this.api,
+        changed: (drw) => this.set({ drw }),
+        notify: (text, kind) => this.notify(text, kind),
+        projectFolder: (reason) => this.projectFolder(reason),
+      },
+      source,
+    );
+    this.set({ active: 'drawing', drw: this.drawing.getState(), documentSerial: this.state.documentSerial + 1, measure: null, interference: null, clearance: null, check: null });
+  }
+
+  private closeDrawing(): void {
+    if (!this.drawing) return;
+    this.drawing.close();
+    this.drawing = null;
+    this.set({ drw: null });
+  }
+
+  /**
+   * 「新工程圖」 (C16.2): a drawing of the open part, with its front, top and right views, in the folder the part is in. The drawing reads the saved file, so a
+   * part with changes is saved first. The scale is chosen once the lines of the views are known.
+   */
+  async newDrawing(): Promise<void> {
+    try {
+      const handle = this.fileHandle;
+      if (this.assembly || this.drawing || !handle || this.state.dirty) return this.notify(t('drawing.saveFirst'), 'error');
+      const project = await this.projectFolder(t('drawing.askProject'));
+      if (!project) return;
+      const path = await pathIn(project, handle);
+      if (path === null) return this.notify(t('drawing.notInProject', { folder: project.name }), 'error');
+      const part = this.history.doc;
+      let doc = createEmptyDrawing();
+      const name = partName(part, this.state.fileName, this.state.untitled);
+      const source = baseName(path);
+      doc = applyDrawingCommand(doc, {
+        type: 'insertViews',
+        views: (['front', 'top', 'right'] as const).map((direction, i) => ({ id: `view${i + 1}`, name: t(`drawing.view.${direction}`), source, direction })),
+      });
+      doc = applyDrawingCommand(doc, { type: 'setTitle', field: 'drawingName', value: name });
+      if (part.material) doc = applyDrawingCommand(doc, { type: 'setTitle', field: 'material', value: part.material.name });
+      this.showDrawing({ doc, handle: null, fileName: null, folder: dirName(path), untitled: t('drawing.untitled', { name }), project, autoScale: true });
+    } catch (e) {
+      this.notify(t('drawing.newFailed', { why: e instanceof Error ? e.message : String(e) }), 'error');
+    }
+  }
+
+  /** A drawing file is opened inside a project folder that contains it: the parts its views show are found from there. */
+  private async openDrawing(picked: OpenedFile, doc: DrawingDoc): Promise<void> {
+    if (!picked.handle) return this.notify(foldersUnsupported(), 'error');
+    let folder = this.project ?? (await this.rememberedWithAccess());
+    let path = folder ? await pathIn(folder, picked.handle) : null;
+    let reason = t('folder.askRefs', { name: picked.name });
+    while (path === null) {
+      folder = await this.askForFolder(reason);
+      if (!folder) return;
+      path = await pathIn(folder, picked.handle);
+      reason = t('folder.askNotIn', { folder: folder.name, name: picked.name });
+    }
+    this.useProject(folder!);
+    this.showDrawing({ doc, handle: picked.handle, fileName: picked.name, folder: dirName(path), untitled: t('drawing.untitled', { name: picked.name }), project: folder });
+    this.notify(t('file.opened', { name: picked.name }));
   }
 
   // ------------------------------------------------------------ assemblies (B1.1, B9.4)
@@ -2089,6 +2186,8 @@ export function useDocumentName(): string {
   const fileName = useStore((s) => s.fileName);
   const untitled = useStore((s) => s.untitled);
   const asm = useStore((s) => s.asm);
+  const drw = useStore((s) => s.drw);
+  if (drw) return drw.doc.title.drawingName ?? drw.fileName?.replace(/\.3dbd$/i, '') ?? drw.untitled;
   return asm ? assemblyName(asm.fileName, asm.untitled) : partName(doc, fileName, untitled);
 }
 
@@ -2097,8 +2196,9 @@ export function useDocumentTitle(): string {
   const partFile = useStore((s) => s.fileName);
   const partDirty = useStore((s) => s.dirty);
   const asm = useStore((s) => s.asm);
+  const drw = useStore((s) => s.drw);
   const name = useDocumentName();
-  const [fileName, dirty] = asm ? [asm.fileName, asm.dirty] : [partFile, partDirty];
+  const [fileName, dirty] = drw ? [drw.fileName, drw.dirty] : asm ? [asm.fileName, asm.dirty] : [partFile, partDirty];
   return `${fileName ?? name}${dirty ? ' *' : ''}`;
 }
 

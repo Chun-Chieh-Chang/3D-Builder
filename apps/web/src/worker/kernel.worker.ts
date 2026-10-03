@@ -6,12 +6,12 @@ import gcsWasm from '@salusoft89/planegcs/dist/planegcs_dist/planegcs.wasm?url';
 import { bodyKey, combineMass, isShown, mirrorKey, MESH_QUALITY, settingsOf, type AssemblyDoc, type Id, type MeasureReport, type PartDoc, type SourceTree } from '@3db/model';
 import { findProfiles, PlaneGcsSolver } from '@3db/sketch';
 import { COMPONENT_MESH, Kernel, type GeometryReport, type MassProps, type MeshData, type MeshOptions, type ShapeId } from '@3db/kernel';
-import { findClearance, findInterference, sweepClearance, measureTargets, convertEdges, edgeMateGeometry, exportFaces, faceColors, intoFrame, faceEdges, faceMateGeometry, followReferences, ReferenceProblem, Regenerator, solveAssemblyTree, type AssemblyResult, type AssemblySolveOptions, type BodyInfo, type RebuildResult } from '@3db/regen';
+import { projectDrawingView, findClearance, findInterference, sweepClearance, measureTargets, convertEdges, edgeMateGeometry, exportFaces, faceColors, intoFrame, faceEdges, faceMateGeometry, followReferences, ReferenceProblem, Regenerator, solveAssemblyTree, type AssemblyResult, type AssemblySolveOptions, type BodyInfo, type RebuildResult } from '@3db/regen';
 import { edgeFingerprint, faceFingerprint, vertexFingerprint } from '@3db/naming';
 import { binaryStl, exportAssemblyStep, exportPartStep, readComponentFile, stepAssemblyPlan, type StepAssemblyPlan } from '@3db/io';
 import type { SourcePart, SourceProvider } from '@3db/regen';
 import { mergeMeshes } from './mergeMesh';
-import type { AssemblyStepRequest, ClearanceResult, CollisionResult, SweepOutcome, ConvertPayload, InterferenceResult, PartExportOptions, ConvertRequest, KernelApi, PartBuildPayload, PartStage, RebuildPayload, RebuildRequest, SketchSolvePayload, SketchSolveRequest, SourceFileData } from './protocol';
+import type { AssemblyStepRequest, DrawingViewResult, ClearanceResult, CollisionResult, SweepOutcome, ConvertPayload, InterferenceResult, PartExportOptions, ConvertRequest, KernelApi, PartBuildPayload, PartStage, RebuildPayload, RebuildRequest, SketchSolvePayload, SketchSolveRequest, SourceFileData } from './protocol';
 
 let kernel: Kernel;
 let solver: PlaneGcsSolver;
@@ -369,6 +369,37 @@ const api: KernelApi = {
     const shapes = new Map<string, ShapeId | null>();
     for (const key of new Set(targets.flatMap((x) => (x.part === null ? [] : [x.part])))) shapes.set(key, (await parts.get(key)?.catch(() => null))?.result.body?.shape ?? null);
     return measureTargets(kernel, (x) => (x.part === null ? (lastResult?.body?.shape ?? null) : (shapes.get(x.part) ?? null)), targets);
+  },
+
+  async drawingViews(requests): Promise<DrawingViewResult[]> {
+    await api.init();
+    const out: DrawingViewResult[] = [];
+    for (const r of requests) {
+      const began = performance.now();
+      const made: ShapeId[] = [];
+      try {
+        const viewParts = [];
+        for (const p of r.parts) {
+          const built = await parts.get(p.part)?.catch(() => null);
+          const body = built?.result.body;
+          if (!built || !body) throw new Error(t('drawing.noBody'));
+          // what is drawn of a part is what it is made of: the reference bodies (a workpiece) are left out, unless they are all there is
+          const own = built.result.bodies.filter((b) => !b.reference);
+          let shape = body.shape;
+          if (own.length > 0 && own.length < built.result.bodies.length) {
+            shape = own.length === 1 ? own[0]!.shape : kernel.join(own.map((b) => b.shape));
+            if (own.length > 1) made.push(shape);
+          }
+          viewParts.push({ shape, pose: p.pose, mirrored: p.mirrored });
+        }
+        out.push({ lines: projectDrawingView(kernel, viewParts, r.direction), ms: performance.now() - began });
+      } catch (e) {
+        out.push({ error: e instanceof Error ? e.message : String(e) });
+      } finally {
+        for (const id of made) kernel.release(id);
+      }
+    }
+    return out;
   },
 
   async clearance(components, least, only): Promise<ClearanceResult> {

@@ -3,6 +3,7 @@ import { applyPatches, enablePatches, produceWithPatches, type Draft, type Patch
 import type { AssemblyDoc, PartDoc } from './schema';
 import { mutate, type Command } from './commands';
 import { mutateAssembly, type AssemblyCommand } from './assembly';
+import { mutateDrawing, type DrawingCommand, type DrawingDoc } from './drawing';
 
 enablePatches();
 
@@ -185,3 +186,11 @@ export class AssemblyHistory extends History<AssemblyDoc, AssemblyCommand> {
     super(doc, mutateAssembly);
   }
 }
+
+/** Undo/redo of a drawing. */
+export class DrawingHistory extends History<DrawingDoc, DrawingCommand> {
+  constructor(doc: DrawingDoc) {
+    super(doc, mutateDrawing);
+  }
+}
+

@@ -15,6 +15,8 @@ import { PatternPanel } from './components/PatternPanel';
 import { BomDialog } from './components/BomDialog';
 import { PhysicalDialog } from './components/PhysicalDialog';
 import { CheckDialog } from './components/CheckDialog';
+import { DrawingPanel } from './components/DrawingPanel';
+import { DrawingViewport } from './components/DrawingViewport';
 import { ExplodePanel } from './components/ExplodePanel';
 import { PropertyManager } from './components/PropertyManager';
 import { StatusBar } from './components/StatusBar';
@@ -27,6 +29,7 @@ export function App() {
     document.documentElement.lang = locale;
   }, [locale]);
   const assembly = useStore((s) => s.active === 'assembly');
+  const drawing = useStore((s) => s.active === 'drawing');
   const inserting = useStore((s) => !!s.asm?.insert);
   const mating = useStore((s) => !!s.asm?.mate);
   const moving = useStore((s) => !!s.asm?.move);
@@ -48,9 +51,9 @@ export function App() {
             <span className={editing ? '' : 'active'}>FeatureManager</span>
             <span className={editing ? 'active' : ''}>PropertyManager</span>
           </div>
-          {assembly ? mating ? <MatePanel /> : inserting ? <InsertComponentPanel /> : moving ? <MovePanel /> : patterning ? <PatternPanel /> : exploding ? <ExplodePanel /> : <AssemblyTree /> : editing ? <PropertyManager /> : <FeatureTree />}
+          {drawing ? <DrawingPanel /> : assembly ? mating ? <MatePanel /> : inserting ? <InsertComponentPanel /> : moving ? <MovePanel /> : patterning ? <PatternPanel /> : exploding ? <ExplodePanel /> : <AssemblyTree /> : editing ? <PropertyManager /> : <FeatureTree />}
         </aside>
-        {assembly ? <AssemblyViewport /> : <Viewport />}
+        {drawing ? <DrawingViewport /> : assembly ? <AssemblyViewport /> : <Viewport />}
       </div>
       <StatusBar />
       <DeleteDialog />

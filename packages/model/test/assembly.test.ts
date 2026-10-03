@@ -280,7 +280,8 @@ describe('assembly text format (B9.1, B9.6)', () => {
     expect(() => parseAssembly('{"kind":"assembly","schemaVersion":1}')).toThrow(/缺少零組件清單/);
     expect(() => parseAssembly('{"kind":"assembly","schemaVersion":2,"files":[],"components":[]}')).toThrow(/缺少結合清單/);
     expect(() => parseAssembly('[]')).toThrow(FormatError);
-    expect(() => documentKind('{"kind":"drawing"}')).toThrow(FormatError);
+    expect(() => documentKind('{"kind":"spreadsheet"}')).toThrow(FormatError);
+    expect(documentKind('{"kind":"drawing"}')).toBe('drawing');
   });
 });
 

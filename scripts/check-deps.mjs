@@ -14,6 +14,7 @@ const ALLOWED = {
   regen: ['model', 'sketch', 'naming', 'assembly', 'kernel', 'i18n'],
   io: ['model', 'kernel', 'i18n'],
   library: ['model', 'i18n'],
+  drawing: ['model', 'i18n'],
   render: [],
 };
 

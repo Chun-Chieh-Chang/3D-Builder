@@ -1,5 +1,5 @@
 import { t } from '@3db/i18n';
-import { ASSEMBLY_FILE_EXTENSION, isStepData, PART_FILE_EXTENSION } from '@3db/io';
+import { ASSEMBLY_FILE_EXTENSION, DRAWING_FILE_EXTENSION, isStepData, PART_FILE_EXTENSION } from '@3db/io';
 import type { Recovery } from './autosave';
 
 /**
@@ -47,12 +47,13 @@ const PART_TYPE: PickerType = { get description() { return t('picker.part'); }, 
 const OLD_PART_TYPE: PickerType = { get description() { return t('picker.oldPart'); }, accept: { 'application/json': ['.json'] } };
 const STEP_TYPE: PickerType = { get description() { return t('picker.step'); }, accept: { 'application/step': ['.step', '.stp'] } };
 const ASSEMBLY_TYPE: PickerType = { get description() { return t('picker.assembly'); }, accept: { 'application/x-3db-assembly': [ASSEMBLY_FILE_EXTENSION] } };
+const DRAWING_TYPE: PickerType = { get description() { return t('picker.drawing'); }, accept: { 'application/x-3db-drawing': [DRAWING_FILE_EXTENSION] } };
 /** The first type is the dialog's default filter: everything 「開啟舊檔」 can open. */
 const ANY_TYPE: PickerType = {
   get description() {
     return t('picker.any');
   },
-  accept: { 'application/octet-stream': [PART_FILE_EXTENSION, ASSEMBLY_FILE_EXTENSION], ...STEP_TYPE.accept, ...OLD_PART_TYPE.accept },
+  accept: { 'application/octet-stream': [PART_FILE_EXTENSION, ASSEMBLY_FILE_EXTENSION, DRAWING_FILE_EXTENSION], ...STEP_TYPE.accept, ...OLD_PART_TYPE.accept },
 };
 
 const acceptOf = (types: PickerType[]) => types.flatMap((t) => Object.values(t.accept).flat()).join(',');
@@ -73,7 +74,7 @@ const cancelled = (e: unknown) => e instanceof DOMException && e.name === 'Abort
 
 /** 「開啟舊檔」: a part, an assembly, or a STEP file to start a part from; null when the user cancels. */
 export function pickFileToOpen(startIn: FileSystemDirectoryHandle | null = null): Promise<OpenedFile | null> {
-  return pick([ANY_TYPE, PART_TYPE, ASSEMBLY_TYPE, STEP_TYPE, OLD_PART_TYPE], startIn);
+  return pick([ANY_TYPE, PART_TYPE, ASSEMBLY_TYPE, DRAWING_TYPE, STEP_TYPE, OLD_PART_TYPE], startIn);
 }
 
 /** 「輸入 STEP」: a STEP file to import into the part. */
@@ -130,6 +131,17 @@ export async function pickAssemblySaveTarget(folder: FileSystemDirectoryHandle, 
   if (!window.showSaveFilePicker) throw new Error(foldersUnsupported());
   try {
     return await window.showSaveFilePicker({ id: PICKER_ID, suggestedName, types: [ASSEMBLY_TYPE], startIn: folder });
+  } catch (e) {
+    if (cancelled(e)) return null;
+    throw e;
+  }
+}
+
+/** Where to save a drawing, starting in the project folder; null when the user cancels. */
+export async function pickDrawingSaveTarget(folder: FileSystemDirectoryHandle, suggestedName: string): Promise<FileSystemFileHandle | null> {
+  if (!window.showSaveFilePicker) throw new Error(foldersUnsupported());
+  try {
+    return await window.showSaveFilePicker({ id: PICKER_ID, suggestedName, types: [DRAWING_TYPE], startIn: folder });
   } catch (e) {
     if (cancelled(e)) return null;
     throw e;
