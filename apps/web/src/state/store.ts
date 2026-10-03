@@ -79,7 +79,7 @@ import {
   keepRecovery,
   recoveryCopy,
 } from '../files';
-import type { DraftReport, GeometryReport, MeshData } from '@3db/kernel';
+import type { DraftReport, GeometryReport, MeshData, UndercutReport } from '@3db/kernel';
 import { AssemblyStore, type AssemblySource, type AssemblyState } from './assembly';
 
 export interface EditSession {
@@ -106,6 +106,15 @@ export interface DraftState {
   required: string;
   status: 'running' | 'done' | 'error';
   report: DraftReport | null;
+  error: string | null;
+}
+
+/** The 「底切分析」 window (E3.3): the direction, and what the worker last said for it. Not saved with the part. */
+export interface UndercutState {
+  pull: Vec3;
+  label: string;
+  status: 'running' | 'done' | 'error';
+  report: UndercutReport | null;
   error: string | null;
 }
 
@@ -263,6 +272,7 @@ export interface UiState {
   /** The measure tool (E1.1) while it is on: the elements picked and what is known of them. Null when it is off. */
   measure: MeasureState | null;
   draft: DraftState | null;
+  undercut: UndercutState | null;
   /** The interference detection (E2.1) while its window is open. Null when closed. */
   interference: InterferenceState | null;
   /** The open drawing (Phase 5); null unless the open document is a drawing. */
@@ -461,6 +471,7 @@ class AppStore {
       measure: null,
       interference: null,
       clearance: null,
+      undercut: null,
       draft: null,
       check: null,
     };
@@ -517,13 +528,15 @@ class AppStore {
     if (this.state.measure?.picks.length && ('result' in patch || 'asm' in patch)) void this.runMeasure();
     // the draft analysis follows the model too
     if (this.state.draft && 'result' in patch) void this.runDraft();
+    if (this.state.undercut && 'result' in patch) void this.runUndercut();
   }
 
   private draftSeq = 0;
 
   /** 「拔模分析」 (E3.2) on: along +z to start with (the way a part grows from the front plane), 1° required; it is worked out for the part as shown. */
   startDraft(): void {
-    this.set({ draft: { pull: [0, 0, 1], label: '+z', required: '1', status: 'running', report: null, error: null } });
+    this.undercutSeq++;
+    this.set({ undercut: null, draft: { pull: [0, 0, 1], label: '+z', required: '1', status: 'running', report: null, error: null } });
     void this.runDraft();
   }
 
@@ -555,6 +568,39 @@ class AppStore {
       if (seq === this.draftSeq && this.state.draft) this.set({ draft: { ...this.state.draft, status: 'done', report, error: null } });
     } catch (e) {
       if (seq === this.draftSeq && this.state.draft) this.set({ draft: { ...this.state.draft, status: 'error', report: null, error: t('draftAnalysis.failed', { why: e instanceof Error ? e.message : String(e) }) } });
+    }
+  }
+
+  private undercutSeq = 0;
+
+  /** 「底切分析」 (E3.3) on: along the pull of the draft analysis if that was open (else +z); it closes the draft analysis, which colors the same faces. */
+  startUndercut(): void {
+    const from = this.state.draft;
+    this.draftSeq++;
+    this.set({ draft: null, undercut: { pull: from?.pull ?? [0, 0, 1], label: from?.label ?? '+z', status: 'running', report: null, error: null } });
+    void this.runUndercut();
+  }
+
+  stopUndercut(): void {
+    this.undercutSeq++;
+    if (this.state.undercut) this.set({ undercut: null });
+  }
+
+  setUndercutPull(pull: Vec3, label: string): void {
+    if (!this.state.undercut) return;
+    this.set({ undercut: { ...this.state.undercut, pull, label, report: null } });
+    void this.runUndercut();
+  }
+
+  private async runUndercut(): Promise<void> {
+    const u = this.state.undercut;
+    if (!u) return;
+    const seq = ++this.undercutSeq;
+    try {
+      const report = await this.api.analyzeUndercut(u.pull);
+      if (seq === this.undercutSeq && this.state.undercut) this.set({ undercut: { ...this.state.undercut, status: 'done', report, error: null } });
+    } catch (e) {
+      if (seq === this.undercutSeq && this.state.undercut) this.set({ undercut: { ...this.state.undercut, status: 'error', report: null, error: t('undercutAnalysis.failed', { why: e instanceof Error ? e.message : String(e) }) } });
     }
   }
 
@@ -2126,7 +2172,7 @@ class AppStore {
     void this.api.setBlobs(blobs); // posted before the rebuild request, so the worker has them first
     this.savedText = serializePart(doc);
     if (!this.state.recovery) void this.autosave.clear();
-    this.set({ active: 'part', selected: null, selectedFace: null, result: null, fileName, untitled, fitRequest: this.state.fitRequest + 1, documentSerial: this.state.documentSerial + 1, measure: null, draft: null, interference: null, clearance: null, check: null });
+    this.set({ active: 'part', selected: null, selectedFace: null, result: null, fileName, untitled, fitRequest: this.state.fitRequest + 1, documentSerial: this.state.documentSerial + 1, measure: null, draft: null, undercut: null, interference: null, clearance: null, check: null });
     this.onDocChanged();
   }
 
@@ -2152,7 +2198,7 @@ class AppStore {
       },
       source,
     );
-    this.set({ active: 'drawing', drw: this.drawing.getState(), documentSerial: this.state.documentSerial + 1, measure: null, draft: null, interference: null, clearance: null, check: null });
+    this.set({ active: 'drawing', drw: this.drawing.getState(), documentSerial: this.state.documentSerial + 1, measure: null, draft: null, undercut: null, interference: null, clearance: null, check: null });
   }
 
   private closeDrawing(): void {
@@ -2309,7 +2355,7 @@ class AppStore {
       },
       source,
     );
-    this.set({ active: 'assembly', asm: this.assembly.getState(), returnTo: null, documentSerial: this.state.documentSerial + 1, measure: null, draft: null, interference: null, clearance: null, check: null });
+    this.set({ active: 'assembly', asm: this.assembly.getState(), returnTo: null, documentSerial: this.state.documentSerial + 1, measure: null, draft: null, undercut: null, interference: null, clearance: null, check: null });
   }
 
   private closeAssembly(): void {

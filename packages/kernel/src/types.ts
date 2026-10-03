@@ -40,6 +40,35 @@ export interface DraftReport {
   totals: Record<DraftClass, { faces: number; area: number }>;
 }
 
+/**
+ * What a face is to a mold that opens along a direction, by what can be seen of it (undercut analysis, E3.3): `up` only from the `+pull` side, `down` only from the
+ * `-pull` side, `both` from either (a wall along the pull: it needs draft), `split` seen from each side in different parts (the mold parts across it), `partial` with
+ * some of it seen from neither side, `undercut` all of it seen from neither (it cannot be formed without a slide), `unknown` for a face that could not be sampled.
+ */
+export type UndercutClass = 'up' | 'down' | 'both' | 'split' | 'partial' | 'undercut' | 'unknown';
+
+export interface UndercutFace {
+  face: number;
+  kind: UndercutClass;
+  /** The share (0 to 1, by area) of the face that nothing is in the way of along `+pull`, along `-pull`, and that is seen from neither. */
+  up: number;
+  down: number;
+  blocked: number;
+  samples: number;
+  area: number;
+}
+
+export interface UndercutReport {
+  faces: UndercutFace[];
+  totals: Record<UndercutClass, { faces: number; area: number }>;
+  /** The area (mm2) seen from neither side, over all the faces: the part of the surface a slide has to form. */
+  undercutArea: number;
+  /** The triangles of the mesh the rays were shot at, the points they were shot from, and how long it took (ms). */
+  triangles: number;
+  samples: number;
+  ms: number;
+}
+
 /** How far a shape is from another, by points sampled on it (`Kernel.gapReport`): the nearest distances from those points to the other shape. */
 export interface GapReport {
   samples: number;

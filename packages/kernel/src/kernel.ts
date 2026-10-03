@@ -1,5 +1,6 @@
 import { t } from '@3db/i18n';
 import type { BRepBuilderAPI_MakeShape, NCollection_List_TopoDS_Shape, TopoDS_Shape, TopoDS_Wire } from 'libcascade/single/init';
+import { anyHit, buildBvh } from './rays';
 import { Arena, loadOcct, ShapeIndex, type LoadOptions, type OC } from './occt';
 import {
   KernelError,
@@ -10,6 +11,9 @@ import {
   type Distance,
   type DraftFace,
   type DraftReport,
+  type UndercutClass,
+  type UndercutFace,
+  type UndercutReport,
   type GapReport,
   type GeometryReport,
   type ImportDiagnostics,
@@ -34,6 +38,16 @@ import {
 
 /** How far a surface made by offsetting may be from the gap asked for (mm): the check of every surface feature (ADR 0067). */
 export const SURFACE_TOLERANCE = 0.05;
+
+/** The class of a face from the share of its area seen along +pull, along -pull, and from neither: see `Kernel.undercutAnalysis`. */
+function undercutClass(up: number, down: number, blocked: number): Exclude<UndercutClass, 'unknown'> {
+  if (blocked >= 0.95) return 'undercut';
+  if (blocked > 0.05) return 'partial';
+  if (up >= 0.95 && down >= 0.95) return 'both';
+  if (up >= 0.95) return 'up';
+  if (down >= 0.95) return 'down';
+  return 'split';
+}
 
 /** The class of a face whose samples run from `min` to `max` (radians) for a required draft: see `Kernel.draftAnalysis`. */
 function draftClass(min: number, max: number, required: number): 'positive' | 'negative' | 'required' | 'straddle' {
@@ -2694,6 +2708,80 @@ export class Kernel {
       }
     } finally {
       arena.dispose();
+      this.release(copy);
+    }
+  }
+
+  /**
+   * Undercut analysis (E3.3): what of each face can be seen along the pull direction, from either end (a face that can be seen from neither cannot be formed by a mold that
+   * just opens, and needs a slide). Every triangle of the mesh (made on a copy, as fine as `angular` and `tolerance` say) is a point: a ray starts a hair off its centre along
+   * its outward normal and runs along `+pull` and `-pull` against all the other triangles (a bounding-volume tree: `anyHit`). The share of a face's area clear each way,
+   * and clear neither way, makes its class. With more than `maxSamples` triangles every few are used, the same share of each face. A wall along the pull is clear
+   * both ways (it is a draft problem, not an undercut).
+   */
+  undercutAnalysis(id: ShapeId, pull: Vec3, options: { angular?: number; tolerance?: number; maxSamples?: number; offset?: number } = {}): UndercutReport {
+    const len = Math.hypot(pull[0], pull[1], pull[2]);
+    if (!(len > 0) || !Number.isFinite(len)) throw new KernelError(t('kernel.badViewDirection'));
+    const began = performance.now();
+    const up: Vec3 = [pull[0] / len, pull[1] / len, pull[2] / len];
+    const down: Vec3 = [-up[0], -up[1], -up[2]];
+    const topology = this.topology(id);
+    const copy = this.clone(id);
+    try {
+      // the mesh deviates from the surface by up to its tolerance, so a ray that starts a hair off a facet can meet the facets beside it where the surface curves along the
+      // ray (the equator of a sphere seen from above): the rays start about the tolerance off the surface instead
+      const size = this.bounds(id);
+      const tolerance = options.tolerance ?? Math.min(1, Math.max(0.002, Math.hypot(size.max[0] - size.min[0], size.max[1] - size.min[1], size.max[2] - size.min[2]) * 2e-3));
+      const mesh = this.mesh(copy, { tolerance, angular: options.angular ?? 0.2 });
+      const bvh = buildBvh(mesh.positions, mesh.indices);
+      const stride = Math.max(1, Math.ceil(mesh.indices.length / 3 / (options.maxSamples ?? 60000)));
+      const off = Math.max(1e-4, options.offset ?? 0.75 * tolerance);
+      const faces = topology.faces.map(() => ({ up: 0, down: 0, blocked: 0, area: 0, samples: 0 }));
+      let samples = 0;
+      for (let r = 0; r < mesh.faceRanges.length; r += 3) {
+        const [from, n, face] = [mesh.faceRanges[r]!, mesh.faceRanges[r + 1]!, mesh.faceRanges[r + 2]!];
+        const acc = faces[face];
+        if (!acc) continue;
+        for (let i = from, k = 0; i < from + n; i += 3, k++) {
+          if (k % stride !== 0) continue;
+          const p = (v: number): Vec3 => [mesh.positions[3 * v]!, mesh.positions[3 * v + 1]!, mesh.positions[3 * v + 2]!];
+          const [a, b, c] = [p(mesh.indices[i]!), p(mesh.indices[i + 1]!), p(mesh.indices[i + 2]!)];
+          const e1: Vec3 = [b[0] - a[0], b[1] - a[1], b[2] - a[2]];
+          const e2: Vec3 = [c[0] - a[0], c[1] - a[1], c[2] - a[2]];
+          const cr: Vec3 = [e1[1] * e2[2] - e1[2] * e2[1], e1[2] * e2[0] - e1[0] * e2[2], e1[0] * e2[1] - e1[1] * e2[0]];
+          const twice = Math.hypot(cr[0], cr[1], cr[2]);
+          if (twice < 1e-12) continue;
+          // the winding of the mesh is outward (a reversed face's is flipped when it is made)
+          const nrm: Vec3 = [cr[0] / twice, cr[1] / twice, cr[2] / twice];
+          const o: Vec3 = [(a[0] + b[0] + c[0]) / 3 + nrm[0] * off, (a[1] + b[1] + c[1]) / 3 + nrm[1] * off, (a[2] + b[2] + c[2]) / 3 + nrm[2] * off];
+          const self = i / 3;
+          const clearUp = !anyHit(bvh, o, up, self);
+          const clearDown = !anyHit(bvh, o, down, self);
+          const w = twice / 2;
+          acc.area += w;
+          acc.samples++;
+          samples++;
+          if (clearUp) acc.up += w;
+          if (clearDown) acc.down += w;
+          if (!clearUp && !clearDown) acc.blocked += w;
+        }
+      }
+      const report: UndercutFace[] = faces.map((f, i) => {
+        const area = topology.faces[i]!.area;
+        if (f.samples === 0 || !(f.area > 0)) return { face: i, kind: 'unknown', up: NaN, down: NaN, blocked: NaN, samples: 0, area };
+        const [u, d, bl] = [f.up / f.area, f.down / f.area, f.blocked / f.area];
+        return { face: i, kind: undercutClass(u, d, bl), up: u, down: d, blocked: bl, samples: f.samples, area };
+      });
+      const totals = {} as UndercutReport['totals'];
+      for (const k of ['up', 'down', 'both', 'split', 'partial', 'undercut', 'unknown'] as const) totals[k] = { faces: 0, area: 0 };
+      let undercutArea = 0;
+      for (const f of report) {
+        totals[f.kind].faces++;
+        totals[f.kind].area += f.area;
+        if (f.kind !== 'unknown') undercutArea += f.blocked * f.area;
+      }
+      return { faces: report, totals, undercutArea, triangles: Math.floor(mesh.indices.length / 3), samples, ms: performance.now() - began };
+    } finally {
       this.release(copy);
     }
   }

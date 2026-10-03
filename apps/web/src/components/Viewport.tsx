@@ -12,8 +12,9 @@ import { FEATURE_LABEL } from '../strings';
 import type { RebuildPayload } from '../worker/protocol';
 import { Topology } from '../state/selectionSets';
 import { Icon } from './Icon';
-import { draftColors } from '../state/analysis';
+import { draftColors, undercutColors } from '../state/analysis';
 import { DraftPanel } from './DraftPanel';
+import { UndercutPanel } from './UndercutPanel';
 import { MeasurePanel } from './MeasurePanel';
 
 /** Topology for selecting loops, tangent chains and the like, built once per rebuilt model (D5.6). */
@@ -194,7 +195,9 @@ export function Viewport() {
   const modelTool = sketching && (view?.tool === 'convert' || view?.tool === 'pierce') ? view.tool : null;
   const measure = useStore((s) => s.measure);
   const draftReport = useStore((s) => s.draft?.report ?? null);
-  const analysisColors = draftReport && draftReport.faces.length === (result?.faceNames.length ?? -1) ? draftColors(draftReport) : null;
+  const undercutReport = useStore((s) => s.undercut?.report ?? null);
+  const faceCount = result?.faceNames.length ?? -1;
+  const analysisColors = draftReport && draftReport.faces.length === faceCount ? draftColors(draftReport) : undercutReport && undercutReport.faces.length === faceCount ? undercutColors(undercutReport) : null;
   const pick = picking(feature, !!editing, modelTool, measure !== null);
 
   useEffect(() => {
@@ -404,6 +407,7 @@ export function Viewport() {
       {sketching && view && <div className="pick-hint">{view.hint}</div>}
       <MeasurePanel />
       <DraftPanel />
+      <UndercutPanel />
       {menu && <ContextMenu x={menu.x} y={menu.y} items={menu.items} onItems={(items) => setMenu({ ...menu, items })} onClose={() => setMenu(null)} />}
     </main>
   );

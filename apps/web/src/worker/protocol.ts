@@ -1,7 +1,7 @@
 import type { Locale } from '@3db/i18n';
 import type { InterferenceComponent, MeasureReport, MeasureTarget, PartMass, ElementFacts, ViewAxes, ViewFeature } from '@3db/model';
 import type { AssemblyDoc, Axis3, CoordSystem, Fingerprint, Id, PartDoc, PlaneFrame, Pose, Ref, SketchFeature, SourceTree, Vec3 } from '@3db/model';
-import type { DraftReport, GeometryReport, MassProps, MeshData, ProjectedView } from '@3db/kernel';
+import type { DraftReport, UndercutReport, GeometryReport, MassProps, MeshData, ProjectedView } from '@3db/kernel';
 import type { AssemblyResult, AssemblySolveOptions, ClearanceRow, Converted, FeatureResult, SweepResult } from '@3db/regen';
 import type { MateGeometry } from '@3db/assembly';
 import type { StepAssemblyPlan, StepInstance, StepSub } from '@3db/io';
@@ -267,6 +267,8 @@ export interface KernelApi {
   checkGeometry(parts: (string | null)[]): Promise<(GeometryReport | null)[]>;
   /** The draft of every face of the part as it is shown to a mold that opens along `pull` (E3.2); `required` is the angle in radians. */
   analyzeDraft(pull: [number, number, number], required: number): Promise<DraftReport>;
+  /** What of every face of the part as it is shown a mold that opens along `pull` can see from either end (E3.3). */
+  analyzeUndercut(pull: [number, number, number]): Promise<UndercutReport>;
   /** Lets go of every rebuilt part file except these. */
   retainParts(keys: string[]): Promise<void>;
   /**

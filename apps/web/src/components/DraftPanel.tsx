@@ -1,18 +1,10 @@
 import { t } from '@3db/i18n';
 import type { DraftClass } from '@3db/kernel';
-import type { Vec3 } from '@3db/model';
 import { DRAFT_COLORS } from '../state/analysis';
 import { store, useStore } from '../state/store';
+import { PullControls } from './PullControls';
 
 const CLASSES: Exclude<DraftClass, 'unknown'>[] = ['positive', 'negative', 'required', 'straddle'];
-const AXES: { id: string; label: string; dir: Vec3 }[] = [
-  { id: '+z', label: '+Z', dir: [0, 0, 1] },
-  { id: '-z', label: '−Z', dir: [0, 0, -1] },
-  { id: '+y', label: '+Y', dir: [0, 1, 0] },
-  { id: '-y', label: '−Y', dir: [0, -1, 0] },
-  { id: '+x', label: '+X', dir: [1, 0, 0] },
-  { id: '-x', label: '−X', dir: [-1, 0, 0] },
-];
 /** Degrees to a hundredth, without trailing zeros; "+ 0" turns −0 into 0. */
 const deg = (rad: number) => String(Math.round(((rad * 180) / Math.PI) * 100) / 100 + 0);
 const area = (v: number) => String(Math.round(v * 100) / 100);
@@ -24,14 +16,11 @@ const area = (v: number) => String(Math.round(v * 100) / 100);
  */
 export function DraftPanel() {
   const draft = useStore((s) => s.draft);
-  const selected = useStore((s) => s.selectedFace);
   // (a selector that makes a new array each time makes React render for ever)
   const names = useStore((s) => s.result?.faceNames);
   const faceNames = names ?? [];
   if (!draft) return null;
   const { report, error, status } = draft;
-  const axis = AXES.find((a) => a.dir.every((v, i) => v === draft.pull[i]));
-  const plane = selected?.kind === 'face' && selected.fingerprint?.type === 'plane' && selected.fingerprint.dir ? selected : null;
   const valid = Number.isFinite(Number(draft.required)) && draft.required.trim() !== '' && Number(draft.required) >= 0;
   return (
     <div className="measure-panel draft-panel" role="region" aria-label={t('draftAnalysis.title')} data-draft>
@@ -42,23 +31,7 @@ export function DraftPanel() {
           {t('draftAnalysis.done')}
         </button>
       </div>
-      <label className="pm-row">
-        <span>{t('draftAnalysis.direction')}</span>
-        <select value={axis?.id ?? 'face'} onChange={(e) => AXES.some((a) => a.id === e.target.value) && store.setDraftPull(AXES.find((a) => a.id === e.target.value)!.dir, e.target.value)}>
-          {!axis && <option value="face">{draft.label}</option>}
-          {AXES.map((a) => (
-            <option key={a.id} value={a.id}>
-              {a.label}
-            </option>
-          ))}
-        </select>
-      </label>
-      <div className="pm-row">
-        <button disabled={!plane} title={plane ? '' : t('draftAnalysis.noPlane')} onClick={() => plane && store.setDraftPull(plane.fingerprint!.dir as Vec3, t('draftAnalysis.faceDirection', { name: plane.name }))}>
-          {t('draftAnalysis.useFace')}
-        </button>
-        <button onClick={() => store.setDraftPull([-draft.pull[0], -draft.pull[1], -draft.pull[2]], draft.label)}>{t('draftAnalysis.flip')}</button>
-      </div>
+      <PullControls pull={draft.pull} label={draft.label} onPull={(pull, label) => store.setDraftPull(pull, label)} />
       <label className="pm-row">
         <span>{t('draftAnalysis.required')}</span>
         <input data-field="required" className={valid ? '' : 'invalid'} value={draft.required} onChange={(e) => store.setDraftRequired(e.target.value)} />
