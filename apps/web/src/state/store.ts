@@ -41,11 +41,12 @@ import {
   type SketchFeature,
   mirrorKey,
 } from '@3db/model';
-import { ASSEMBLY_FILE_EXTENSION, assemblyName, PART_FILE_EXTENSION, partFileName, partName, readDocumentFile, sha256Hex, imageFileName, stepAssemblyFiles, stepFileName, stlFileName, writePartFile } from '@3db/io';
+import { ASSEMBLY_FILE_EXTENSION, assemblyName, derivedAssemblyFiles, PART_FILE_EXTENSION, partFileName, partName, readDocumentFile, sha256Hex, imageFileName, stepAssemblyFiles, stepFileName, stlFileName, writePartFile } from '@3db/io';
+import { gatherSources } from './sources';
 import { orderProblem, suppressionTargets, type SuppressAction } from '@3db/regen/dag';
 import { contourChoices, findProfiles, type ContourChoice } from '@3db/sketch/profiles';
 import type { PickFilter, Viewer } from '@3db/render';
-import type { KernelApi, PartExportOptions, RebuildPayload, SketchSolvePayload, SketchSolveRequest } from '../worker/protocol';
+import type { KernelApi, PartExportOptions, RebuildPayload, SketchSolvePayload, SketchSolveRequest, SourceFileData } from '../worker/protocol';
 import { SketchController, type ControllerView, type SketchHost } from '../sketcher/controller';
 import { axisDefinitionFor, emptyRef, put, treeRef } from './datumSlots';
 import { Autosaver, type Recovery } from '../autosave';
@@ -1407,6 +1408,24 @@ class AppStore {
     void this.run();
   }
 
+  /**
+   * The master files of the open part's derived bodies (C7.5), read from the project folder; none when it has no derived body or is not a file in the
+   * project (the rebuild then says it cannot read the master).
+   */
+  private async masterFiles(doc: PartDoc): Promise<SourceFileData[] | undefined> {
+    const project = this.project;
+    const handle = this.fileHandle;
+    if (!project || !handle || !doc.features.some((f) => f.type === 'derivedBody')) return undefined;
+    try {
+      const path = await pathIn(project, handle);
+      if (path === null) return undefined;
+      const { sources } = await gatherSources(project, path, doc);
+      return sources;
+    } catch {
+      return undefined;
+    }
+  }
+
   /** The answer, or `StalledError` when the worker has taken longer than `rebuildLimitMs` once its kernel is loaded. */
   private withinLimit<T>(answer: Promise<T>): Promise<T> {
     return new Promise<T>((resolve, reject) => {
@@ -1434,7 +1453,9 @@ class AppStore {
     this.set({ rebuilding: true });
     try {
       const until = this.until();
-      const result = await this.withinLimit(this.api.rebuild({ seq, doc: this.history.doc, ...(until === undefined ? {} : { until }) }));
+      const doc = this.history.doc;
+      const sources = await this.masterFiles(doc);
+      const result = await this.withinLimit(this.api.rebuild({ seq, doc, ...(sources ? { sources } : {}), ...(until === undefined ? {} : { until }) }));
       if (worker !== this.workerGeneration) return; // the worker was replaced meanwhile: this is not an answer to use
       // A queued request supersedes this result: showing it would briefly contradict the current document.
       if (result.seq === this.seq && !this.pending) this.set({ result });
@@ -1600,6 +1621,36 @@ class AppStore {
   /** 「輸入 STEP 組合件」 (F2.8): replaces the open document, so a modified one is asked about first. */
   importStepAssembly(): void {
     this.guard('import-step-assembly');
+  }
+
+  /**
+   * 「從本體產生組合件」 (C7.5): each body of the open part, saved, becomes a derived part file next to it, and an assembly with a component for
+   * each, in place and fixed, is written and opened. The derived parts read the saved file, so a part with changes is saved first. The user picks the
+   * part's own folder (with write access; it is a click of its own), and nothing that is in it is touched.
+   */
+  async generateAssembly(): Promise<void> {
+    try {
+      const handle = this.fileHandle;
+      const bodies = this.state.result?.bodies ?? [];
+      if (this.assembly || !handle || this.state.dirty) return this.notify(t('derived.saveFirst'), 'error');
+      if (bodies.length === 0) return this.notify(t('derived.noBodies'), 'error');
+      const folder = await this.askForFolder(t('derived.askFolder', { name: handle.name, n: bodies.length }), true);
+      if (!folder) return;
+      const here = await folder.resolve(handle);
+      if (!here || here.length !== 1) return this.notify(t('derived.notThatFolder', { name: handle.name }), 'error');
+      const taken = (await listFiles(folder, [PART_FILE_EXTENSION, ASSEMBLY_FILE_EXTENSION])).files;
+      const out = await derivedAssemblyFiles({ masterFile: handle.name, stem: partName(this.history.doc, this.state.fileName, this.state.untitled), bodies: bodies.map((b) => ({ id: b.id, name: b.name })), taken });
+      await writeFilesInto(folder, out.files);
+      this.useProject(folder);
+      const main = await fileIn(folder, out.main);
+      const bytes = await readBytes(main);
+      const file = await readDocumentFile(bytes);
+      if (file.kind === 'assembly') await this.openAssembly({ name: main.name, bytes, handle: main }, file.doc);
+      this.notify(t('derived.done', { parts: bodies.length, folder: folder.name }));
+    } catch (e) {
+      if (e instanceof DOMException && (e.name === 'SecurityError' || e.name === 'NotAllowedError')) return this.notify(t('file.again'));
+      this.notify(t('derived.failed', { why: e instanceof Error ? e.message : String(e) }), 'error');
+    }
   }
 
   /**

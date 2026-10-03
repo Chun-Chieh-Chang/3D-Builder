@@ -32,9 +32,21 @@ export interface PartExportOptions {
   coordSys?: Id | null;
 }
 
+/** A part file a derived body reads (C7.5), read by the app from the project folder, with the files it reads in turn. */
+export interface SourceFileData {
+  /** The path as the derived body writes it (relative to the file that reads it). */
+  ref: string;
+  /** The file in the project folder: what tells a cycle. */
+  path: string;
+  bytes: Uint8Array;
+  sources?: SourceFileData[];
+}
+
 export interface RebuildRequest {
   seq: number;
   doc: PartDoc;
+  /** The master files of the document's derived bodies (C7.5); absent when it has none. */
+  sources?: SourceFileData[];
   /** Edit sessions evaluate features [0, until). */
   until?: number;
 }
@@ -107,6 +119,8 @@ export interface PartBuildPayload {
   vertexFingerprints: Fingerprint[];
   /** The part's reference planes (its default planes are the same in every part). */
   planes: { id: Id; name: string; frame: PlaneFrame }[];
+  /** Every body it has is a reference body (C7.1): a design aid, not a part to count (C15.16). */
+  referenceOnly: boolean;
   /** The part file's properties (B8.3): the parts list reads the vendor and the part number from them (C15.16). */
   properties: Record<string, string>;
   /** Its mass properties (E1.2): the bodies that count, for a density of one, and the density of its material in g/cm³ (null: none chosen). Null when it has no body. */
@@ -175,7 +189,7 @@ export interface KernelApi {
   /** Binary STL of the bodies that count, meshed as finely as the document's quality says (F4.1). */
   exportStl(doc: PartDoc, name: string, options?: PartExportOptions): Promise<Uint8Array>;
   /** Rebuilds a part file of an assembly, once per content (`key` = SHA-256 of `bytes`). */
-  buildPart(key: string, bytes: Uint8Array, onStage?: (stage: PartStage) => void): Promise<PartBuildPayload>;
+  buildPart(key: string, bytes: Uint8Array, onStage?: (stage: PartStage) => void, sources?: SourceFileData[]): Promise<PartBuildPayload>;
   /** STEP of an assembly (F1.2) as the components are placed in `req`; parts are the ones rebuilt for it (`buildPart`). */
   exportAssemblyStep(req: AssemblyStepRequest): Promise<string>;
   /**

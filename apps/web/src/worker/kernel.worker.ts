@@ -9,8 +9,9 @@ import { COMPONENT_MESH, Kernel, type GeometryReport, type MassProps, type MeshD
 import { findInterference, measureTargets, convertEdges, edgeMateGeometry, exportFaces, faceColors, intoFrame, faceEdges, faceMateGeometry, followReferences, ReferenceProblem, Regenerator, solveAssemblyTree, type AssemblyResult, type AssemblySolveOptions, type BodyInfo, type RebuildResult } from '@3db/regen';
 import { edgeFingerprint, faceFingerprint, vertexFingerprint } from '@3db/naming';
 import { binaryStl, exportAssemblyStep, exportPartStep, readComponentFile, stepAssemblyPlan, type StepAssemblyPlan } from '@3db/io';
+import type { SourcePart, SourceProvider } from '@3db/regen';
 import { mergeMeshes } from './mergeMesh';
-import type { AssemblyStepRequest, ConvertPayload, InterferenceResult, PartExportOptions, ConvertRequest, KernelApi, PartBuildPayload, PartStage, RebuildPayload, RebuildRequest, SketchSolvePayload, SketchSolveRequest } from './protocol';
+import type { AssemblyStepRequest, ConvertPayload, InterferenceResult, PartExportOptions, ConvertRequest, KernelApi, PartBuildPayload, PartStage, RebuildPayload, RebuildRequest, SketchSolvePayload, SketchSolveRequest, SourceFileData } from './protocol';
 
 let kernel: Kernel;
 let solver: PlaneGcsSolver;
@@ -38,10 +39,22 @@ interface BuiltPart {
 /** By content: an unchanged file is never rebuilt again, a changed one is a new entry (B9.4). */
 const parts = new Map<string, Promise<BuiltPart>>();
 
-async function build(bytes: Uint8Array): Promise<BuiltPart> {
+/** The master files of derived bodies (C7.5) read into documents, so that the regenerator can ask for them one after another without waiting. */
+async function sourcesOf(data: SourceFileData[] | undefined): Promise<SourceProvider | undefined> {
+  if (!data || data.length === 0) return undefined;
+  const read = new Map<string, SourcePart>();
+  for (const d of data) {
+    const file = await readComponentFile(d.bytes, '');
+    const sources = await sourcesOf(d.sources);
+    read.set(d.ref, { key: d.path, doc: file.doc, blobs: file.blobs, ...(sources ? { sources } : {}) });
+  }
+  return { get: (ref) => read.get(ref) };
+}
+
+async function build(bytes: Uint8Array, sources?: SourceFileData[]): Promise<BuiltPart> {
   await api.init();
   const file = await readComponentFile(bytes, '');
-  const regen = new Regenerator(kernel, solver, file.blobs);
+  const regen = new Regenerator(kernel, solver, file.blobs, await sourcesOf(sources));
   const result = regen.rebuild(file.doc);
   const name = (id: string) => file.doc.features.find((f) => f.id === id)?.name ?? id;
   const failed = result.features.filter((f) => f.status === 'error').map((f) => `${name(f.id)}: ${f.message ?? t('worker.failedShort')}`);
@@ -126,8 +139,9 @@ const api: KernelApi = {
     blobs.set(sha256, data);
   },
 
-  async rebuild({ seq, doc, until }: RebuildRequest): Promise<RebuildPayload> {
+  async rebuild({ seq, doc, until, sources }: RebuildRequest): Promise<RebuildPayload> {
     await api.init();
+    regen.useSources(await sourcesOf(sources));
     const r = regen.rebuild(doc, until === undefined ? {} : { until });
     const body = r.body;
     lastResult = r;
@@ -220,7 +234,7 @@ const api: KernelApi = {
     }
   },
 
-  async buildPart(key: string, bytes: Uint8Array, onStage?: (stage: PartStage) => void): Promise<PartBuildPayload> {
+  async buildPart(key: string, bytes: Uint8Array, onStage?: (stage: PartStage) => void, sources?: SourceFileData[]): Promise<PartBuildPayload> {
     const t = performance.now();
     // A callback that cannot be reached (the page went away) must not fail the build.
     const stage = (s: PartStage) => void Promise.resolve(onStage?.(s)).catch(() => {});
@@ -228,7 +242,7 @@ const api: KernelApi = {
     const fresh = !entry;
     if (!entry) {
       stage('building');
-      entry = build(bytes);
+      entry = build(bytes, sources);
       parts.set(key, entry);
       entry.catch(() => parts.delete(key)); // a file that cannot be read is tried again next time
     }
@@ -251,6 +265,7 @@ const api: KernelApi = {
       vertexPoints: Float32Array.from(topo?.vertices.flatMap((v) => v.point) ?? []),
       vertexFingerprints: topo ? topo.vertices.map((_, i) => vertexFingerprint(topo, i)) : [],
       planes: part.planes,
+      referenceOnly: part.result.bodies.length > 0 && part.result.bodies.every((b) => b.reference),
       properties: part.properties,
       mass: (() => {
         const m = massOf(part.result);
@@ -305,7 +320,8 @@ const api: KernelApi = {
 
   async buildMirrorPart(partKey: string): Promise<PartBuildPayload | null> {
     await api.init();
-    const body = (await parts.get(partKey)?.catch(() => null))?.result.body;
+    const original = await parts.get(partKey)?.catch(() => null);
+    const body = original?.result.body;
     if (!body) return null;
     const t0 = performance.now();
     // the part's own x → −x: faces, edges and vertices keep their order, so the mesh's face and edge numbers still mean the same names
@@ -326,6 +342,7 @@ const api: KernelApi = {
         vertexPoints: new Float32Array(0),
         vertexFingerprints: [],
         planes: [],
+        referenceOnly: original!.result.bodies.every((b) => b.reference),
         properties: {},
         mass: null,
         ms: performance.now() - t0,

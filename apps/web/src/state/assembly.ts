@@ -60,6 +60,7 @@ import {
   type Vec3,
 } from '@3db/model';
 import { axisOf, closerAlignment, currentValue, defaultType, hasAlignment, MATE_LABEL, placed, supportedTypes, type GoalTerm, type MateGeometry } from '@3db/assembly';
+import { contentKey, gatherSources } from './sources';
 import { ASSEMBLY_FILE_EXTENSION, assemblyFileName, assemblyName, componentName, PART_FILE_EXTENSION, readDocumentFile, sha256Hex, stepStructure, writeAssemblyFile } from '@3db/io';
 import { t } from '@3db/i18n';
 import type { AssemblyResult } from '@3db/regen';
@@ -230,6 +231,8 @@ export class AssemblyStore {
   private solveAgain = false;
   /** Each part file as it was when read (modified time and size), to notice when it is saved again. */
   private stamps = new Map<string, string>();
+  /** The master files a derived part was built from (C7.5), by the part's path, with the stamp each had: a part is read again when one of them changes. */
+  private masterStamps = new Map<string, Map<string, string>>();
   private refreshing = false;
   /** Missing files are pointed out once, when the assembly has been read. */
   private missingShown = false;
@@ -422,14 +425,18 @@ export class AssemblyStore {
       const file = await (await fileIn(project, path)).getFile();
       this.stamps.set(path, `${file.lastModified}:${file.size}`);
       const bytes = new Uint8Array(await file.arrayBuffer());
-      const key = await sha256Hex(bytes);
+      let key = await sha256Hex(bytes);
       if (path.toLowerCase().endsWith(ASSEMBLY_FILE_EXTENSION)) {
         const opened = await readDocumentFile(bytes);
         if (opened.kind !== 'assembly') return { status: 'error', message: t('subassembly.notAssembly', { path }) };
         return { status: 'ok', key, assembly: opened.doc }; // its own files are read when this is known (readInto)
       }
+      // a part derived from another file (C7.5) is built from that file's content too
+      const masters = await gatherSources(project, path, bytes);
+      this.masterStamps.set(path, masters.stamps);
+      key = await contentKey(bytes, masters.sources);
       if (!this.state.builds.has(key)) {
-        const build = await this.host.api.buildPart(key, bytes, proxy((stage: PartStage) => this.stageReached(path, stage, generation)));
+        const build = await this.host.api.buildPart(key, bytes, proxy((stage: PartStage) => this.stageReached(path, stage, generation)), masters.sources.length > 0 ? masters.sources : undefined);
         // A file that gave no body and said why (a STEP file that is none, a part whose features all failed) is an error, not a part to place. An empty part has nothing to say and stays.
         if (!build.mesh && build.problems.length > 0) return { status: 'error', message: `無法使用「${path}」：${build.problems.join('；')}` };
         this.set({ builds: new Map(this.state.builds).set(key, build) });
@@ -463,12 +470,25 @@ export class AssemblyStore {
         } catch {
           stamp = null;
         }
-        if (stamp === null ? status.status === 'missing' : stamp === this.stamps.get(path) && status.status === 'ok') continue;
+        if (stamp === null ? status.status === 'missing' : stamp === this.stamps.get(path) && status.status === 'ok' && !(await this.mastersChanged(project, path))) continue;
         this.readInto(path);
       }
     } finally {
       this.refreshing = false;
     }
+  }
+
+  /** Whether a master file that the derived part at `path` was built from has changed, or gone, since (C7.5). */
+  private async mastersChanged(project: FileSystemDirectoryHandle, path: string): Promise<boolean> {
+    for (const [master, stamp] of this.masterStamps.get(path) ?? []) {
+      try {
+        const file = await (await fileIn(project, master)).getFile();
+        if (`${file.lastModified}:${file.size}` !== stamp) return true;
+      } catch {
+        return true;
+      }
+    }
+    return false;
   }
 
   /** Every file has been read: the worker lets go of parts nothing here uses. */
@@ -584,7 +604,7 @@ export class AssemblyStore {
 
   /** The parts list (C15.16) of the assembly as it is now: flat and indented. Derived from the document and the parts read, never stored. */
   bom(): { flat: BomRow[]; indented: BomRow[] } {
-    return buildBom({ doc: this.history.doc, trees: this.trees(), propsOf: (key) => this.state.builds.get(key)?.properties, problems: this.patternProblems() });
+    return buildBom({ doc: this.history.doc, trees: this.trees(), propsOf: (key) => this.state.builds.get(key)?.properties, isReference: (key) => this.state.builds.get(key)?.referenceOnly === true, problems: this.patternProblems() });
   }
 
   /** Why a pattern has no instances (its axis is gone, its definition does not read); empty when all is well. Derived. */

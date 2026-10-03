@@ -1,6 +1,6 @@
 # 交接文件
 
-- 最後更新：2026-10-03。**`npm run check` 944 項測試通過。Phase 3a 全部完成；Phase 3b 的 3b-0 到 3b-6 都已完成並推送，3b-7 的 A 段（不需樣本）已做（ADR 0053），B 段（真實組合件 STEP）與 C 段（桌面版人工驗收）待使用者。** 最新狀態以 `git log` 為準。 先讀 §0.0；各階段的歷史狀態在 §3；以 `git log` 為準。
+- 最後更新：2026-10-03。**Phase 4a 進行中：4a-0（計畫）、4a-1（衍生本體與從本體產生組合件，ADR 0054，零件 Schema 26）已做，下一個是 4a-2（C15.9 結合），見 [phase4a-plan](docs/phase4a-plan.md)。** `npm run check` 961 項測試通過。Phase 3a 全部完成；Phase 3b 的 3b-0 到 3b-6 都已完成並推送，3b-7 的 A 段（不需樣本）已做（ADR 0053），B 段（真實組合件 STEP）與 C 段（桌面版人工驗收）待使用者。** 最新狀態以 `git log` 為準。 先讀 §0.0；各階段的歷史狀態在 §3；以 `git log` 為準。
 - 用途：讓下一個工作階段（人或 AI）不讀對話紀錄也能接手。
 - 本文件只記錄「目前狀態、待辦、下一步、工作約定」。範圍與設計以藍圖、ADR、程式碼為準；若有衝突，以它們為準並更新本文件。
 
@@ -94,6 +94,8 @@
 | [phase3-plan.md](docs/phase3-plan.md) | Phase 3 的里程碑、驗收標準、需要的樣本與決定（決定 1–6 已確認；§5 數值暫時認定為 Pass） |
 | [ADR 0050](docs/adr/0050-parts-list-and-exploded-view.md) | 零件表與爆炸視圖（3b-4，C15.16、C15.14，**組合件 Schema 5**）：`buildBom`（扁平／縮排、次組合件展開、排列與鏡射算數量、廠商／料號取自零件檔屬性）、CSV（BOM、引號）、`explosion`（步驟只存意圖，位移相加，展開／收合只是顯示，爆炸中不能動、STEP 仍是組裝位置） |
 | [ADR 0051](docs/adr/0051-evaluation-tools.md) | 評估工具（3b-5，E1.1、E1.2、E2.1、E3.1，Schema 不變）：物質特性（慣性矩、主慣性矩、零件合成）、測量（精確距離、銳角、位姿與鏡射）、干涉檢查（頂層零組件、接觸不算、紅色重疊）、檢查模型幾何；7 項驗收與限制 |
+| [phase4a-plan.md](docs/phase4a-plan.md) | Phase 4a 的里程碑、量化驗收（金樣）、預設假設（使用者沒有 SW 與真實工件，2026-10-03 決定先走完開發）、設計取捨與風險 |
+| [ADR 0054](docs/adr/0054-derived-bodies.md) | 衍生本體與從本體產生組合件（4a-1，C7.5，**零件 Schema 26**）：`derivedBody`（只存來源與本體 id）、`SourceProvider`、名稱沿用主模型、內容鍵含主模型、零件表排除參考零件；限制：不即時更新、跨零件不共用主模型重算 |
 | [ADR 0053](docs/adr/0053-acceptance-3b.md) | 3b 驗收 A 段（3b-7，不需樣本）：金樣夾具 STEP → 檔案 → 再輸出，平的與巢狀；B、C 段待使用者；測試支援 `goldenJig.ts`、`stepRoundTrip.ts` |
 | [ADR 0052](docs/adr/0052-desktop-shell.md) | 桌面版（3b-6，F8.1）：Tauri 2 包網頁版，`files.ts` 不改（WebView2 的選擇器可用）、NSIS、離線；驗收第 3、7 項待使用者；`useLocalToolsDir` 的坑 |
 | [ADR 0049](docs/adr/0049-step-assembly-import.md) | STEP 組合件輸入（3b-3，F2.8，Schema 不變）：`Kernel.readAssemblyStep`（階層、名稱、剛體位置、零件形狀、面顏色）、`stepAssemblyPlan`／`stepAssemblyFiles`（一個產品一個檔案：`.3dba`、`組件/`、`零件/`）、「檔案」→「輸入 STEP 組合件…」（每次選資料夾，寫入模式）、組合件輸出帶面顏色、顏色往返；金樣夾具 15 個零組件匯入 129 ms |

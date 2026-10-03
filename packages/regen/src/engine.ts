@@ -302,10 +302,15 @@ export class Regenerator {
     private readonly solver: SketchSolver,
     private readonly blobs: BlobSource = new Map(),
     /** Where the files that derived bodies come from are found (C7.5). */
-    private readonly sources?: SourceProvider,
+    private sources?: SourceProvider,
     /** The keys of the files this one is a master's master of, up from the top: a file that comes round again is a cycle. */
     private readonly trail: readonly string[] = [],
   ) {}
+
+  /** Where the files that derived bodies come from are found, for the rebuilds that follow (C7.5). */
+  useSources(sources: SourceProvider | undefined): void {
+    this.sources = sources;
+  }
 
   /** Releases every shape the regenerator holds; call before discarding it. */
   dispose(): void {

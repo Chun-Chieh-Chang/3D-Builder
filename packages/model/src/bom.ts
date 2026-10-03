@@ -52,6 +52,8 @@ export interface BomInput {
   trees: Readonly<Record<Id, SourceTree>>;
   /** The properties of a part, by its content key (null: not known). */
   propsOf: (key: string) => Record<string, string> | undefined;
+  /** Whether a part (by its content key) is only reference bodies (C7.1): a design aid such as the workpiece, which is not a part to buy or make and is left out of the list. */
+  isReference?: (key: string) => boolean;
   /** Patterns that have no instances because of a problem (`patternProblems`): they add nothing to the count. */
   problems?: ReadonlyMap<Id, string>;
 }
@@ -75,10 +77,10 @@ interface Counted {
 }
 
 /** What a document's components are, counted by file (and by mirror): in the order they first appear. */
-function group(components: AssemblyDoc['components'], trees: Readonly<Record<Id, SourceTree>>, times: (id: Id) => { plain: number; mirrors: number }): Counted[] {
+function group(components: AssemblyDoc['components'], trees: Readonly<Record<Id, SourceTree>>, times: (id: Id) => { plain: number; mirrors: number }, skip?: (tree: SourceTree) => boolean): Counted[] {
   const out = new Map<string, Counted>();
   const add = (tree: SourceTree, mirrored: boolean, qty: number) => {
-    if (qty <= 0) return;
+    if (qty <= 0 || skip?.(tree)) return;
     const key = `${tree.path ?? (tree.kind === 'part' ? tree.key : '')}|${mirrored}`;
     const known = out.get(key);
     if (known) known.qty += qty;
@@ -96,6 +98,7 @@ function group(components: AssemblyDoc['components'], trees: Readonly<Record<Id,
 
 /** The parts list, flat (every part once, however many times it is used, in any assembly) and indented (a sub-assembly with what is in it). */
 export function buildBom(input: BomInput): { flat: BomRow[]; indented: BomRow[] } {
+  const skip = (tree: SourceTree) => tree.kind === 'part' && input.isReference?.(tree.key) === true;
   const rowOf = (tree: SourceTree, mirrored: boolean, qty: number, item: string, level: number): BomRow => {
     const path = tree.path ?? '';
     const props = tree.kind === 'part' ? (input.propsOf(tree.key) ?? {}) : tree.doc.properties;
@@ -125,12 +128,12 @@ export function buildBom(input: BomInput): { flat: BomRow[]; indented: BomRow[] 
         else flat.set(key, { tree: c.tree, mirrored: c.mirrored, qty: c.qty * factor });
       } else {
         // what is inside counts once for each use; a mirrored sub-assembly is made of mirrored parts
-        const inside = group(c.tree.doc.components, c.tree.children, () => ({ plain: 1, mirrors: 0 }));
+        const inside = group(c.tree.doc.components, c.tree.children, () => ({ plain: 1, mirrors: 0 }), skip);
         spread(inside.map((i) => ({ ...i, mirrored: i.mirrored || c.mirrored })), c.qty * factor);
       }
     }
   };
-  spread(group(input.doc.components, input.trees, (id) => copies(input, id)), 1);
+  spread(group(input.doc.components, input.trees, (id) => copies(input, id), skip), 1);
   const flatRows = [...flat.values()].map((f, i) => rowOf(f.tree, f.mirrored, f.qty, String(i + 1), 0));
 
   // Indented: each sub-assembly once with its own, per use.
@@ -139,9 +142,9 @@ export function buildBom(input: BomInput): { flat: BomRow[]; indented: BomRow[] 
       const item = prefix ? `${prefix}.${i + 1}` : String(i + 1);
       const row = rowOf(c.tree, c.mirrored, c.qty, item, level);
       if (c.tree.kind !== 'assembly') return [row];
-      const inside = group(c.tree.doc.components, c.tree.children, () => ({ plain: 1, mirrors: 0 })).map((x) => ({ ...x, mirrored: x.mirrored || c.mirrored }));
+      const inside = group(c.tree.doc.components, c.tree.children, () => ({ plain: 1, mirrors: 0 }), skip).map((x) => ({ ...x, mirrored: x.mirrored || c.mirrored }));
       return [row, ...down(inside, item, level + 1)];
     });
-  const indented = down(group(input.doc.components, input.trees, (id) => copies(input, id)), '', 0);
+  const indented = down(group(input.doc.components, input.trees, (id) => copies(input, id), skip), '', 0);
   return { flat: flatRows, indented };
 }
