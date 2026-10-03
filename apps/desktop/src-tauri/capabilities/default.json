@@ -1,0 +1,7 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "What the 3D-Builder window may ask the shell for: nothing beyond the window itself. Files are reached through the web view's own file pickers.",
+  "windows": ["main"],
+  "permissions": ["core:default"]
+}
