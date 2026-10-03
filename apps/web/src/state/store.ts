@@ -79,7 +79,7 @@ import {
   keepRecovery,
   recoveryCopy,
 } from '../files';
-import type { GeometryReport, MeshData } from '@3db/kernel';
+import type { DraftReport, GeometryReport, MeshData } from '@3db/kernel';
 import { AssemblyStore, type AssemblySource, type AssemblyState } from './assembly';
 
 export interface EditSession {
@@ -94,6 +94,19 @@ export interface MeasurePick {
   kind: MeasureKind;
   index: number;
   label: string;
+}
+
+/** The 「拔模分析」 window (E3.2): its settings, and what the worker last said for them. None of it is saved with the part. */
+export interface DraftState {
+  /** The direction the mold opens along. */
+  pull: Vec3;
+  /** What it is called in the window when it is not one of the axes. */
+  label: string;
+  /** The draft angle required, as typed (degrees). */
+  required: string;
+  status: 'running' | 'done' | 'error';
+  report: DraftReport | null;
+  error: string | null;
 }
 
 export interface MeasureState {
@@ -249,6 +262,7 @@ export interface UiState {
   documentSerial: number;
   /** The measure tool (E1.1) while it is on: the elements picked and what is known of them. Null when it is off. */
   measure: MeasureState | null;
+  draft: DraftState | null;
   /** The interference detection (E2.1) while its window is open. Null when closed. */
   interference: InterferenceState | null;
   /** The open drawing (Phase 5); null unless the open document is a drawing. */
@@ -447,6 +461,7 @@ class AppStore {
       measure: null,
       interference: null,
       clearance: null,
+      draft: null,
       check: null,
     };
     this.sketchRunner = new LatestRunner(
@@ -500,6 +515,47 @@ class AppStore {
     for (const fn of this.listeners) fn();
     // what is measured follows the model: a part rebuilt, or components placed anew, are measured again
     if (this.state.measure?.picks.length && ('result' in patch || 'asm' in patch)) void this.runMeasure();
+    // the draft analysis follows the model too
+    if (this.state.draft && 'result' in patch) void this.runDraft();
+  }
+
+  private draftSeq = 0;
+
+  /** 「拔模分析」 (E3.2) on: along +z to start with (the way a part grows from the front plane), 1° required; it is worked out for the part as shown. */
+  startDraft(): void {
+    this.set({ draft: { pull: [0, 0, 1], label: '+z', required: '1', status: 'running', report: null, error: null } });
+    void this.runDraft();
+  }
+
+  stopDraft(): void {
+    this.draftSeq++;
+    if (this.state.draft) this.set({ draft: null });
+  }
+
+  setDraftPull(pull: Vec3, label: string): void {
+    if (!this.state.draft) return;
+    this.set({ draft: { ...this.state.draft, pull, label, report: null } });
+    void this.runDraft();
+  }
+
+  setDraftRequired(required: string): void {
+    if (!this.state.draft) return;
+    this.set({ draft: { ...this.state.draft, required } });
+    void this.runDraft();
+  }
+
+  private async runDraft(): Promise<void> {
+    const d = this.state.draft;
+    if (!d) return;
+    const required = Number(d.required);
+    if (d.required.trim() === '' || !Number.isFinite(required) || required < 0) return;
+    const seq = ++this.draftSeq;
+    try {
+      const report = await this.api.analyzeDraft(d.pull, (required * Math.PI) / 180);
+      if (seq === this.draftSeq && this.state.draft) this.set({ draft: { ...this.state.draft, status: 'done', report, error: null } });
+    } catch (e) {
+      if (seq === this.draftSeq && this.state.draft) this.set({ draft: { ...this.state.draft, status: 'error', report: null, error: t('draftAnalysis.failed', { why: e instanceof Error ? e.message : String(e) }) } });
+    }
   }
 
   private measureSeq = 0;
@@ -2070,7 +2126,7 @@ class AppStore {
     void this.api.setBlobs(blobs); // posted before the rebuild request, so the worker has them first
     this.savedText = serializePart(doc);
     if (!this.state.recovery) void this.autosave.clear();
-    this.set({ active: 'part', selected: null, selectedFace: null, result: null, fileName, untitled, fitRequest: this.state.fitRequest + 1, documentSerial: this.state.documentSerial + 1, measure: null, interference: null, clearance: null, check: null });
+    this.set({ active: 'part', selected: null, selectedFace: null, result: null, fileName, untitled, fitRequest: this.state.fitRequest + 1, documentSerial: this.state.documentSerial + 1, measure: null, draft: null, interference: null, clearance: null, check: null });
     this.onDocChanged();
   }
 
@@ -2096,7 +2152,7 @@ class AppStore {
       },
       source,
     );
-    this.set({ active: 'drawing', drw: this.drawing.getState(), documentSerial: this.state.documentSerial + 1, measure: null, interference: null, clearance: null, check: null });
+    this.set({ active: 'drawing', drw: this.drawing.getState(), documentSerial: this.state.documentSerial + 1, measure: null, draft: null, interference: null, clearance: null, check: null });
   }
 
   private closeDrawing(): void {
@@ -2253,7 +2309,7 @@ class AppStore {
       },
       source,
     );
-    this.set({ active: 'assembly', asm: this.assembly.getState(), returnTo: null, documentSerial: this.state.documentSerial + 1, measure: null, interference: null, clearance: null, check: null });
+    this.set({ active: 'assembly', asm: this.assembly.getState(), returnTo: null, documentSerial: this.state.documentSerial + 1, measure: null, draft: null, interference: null, clearance: null, check: null });
   }
 
   private closeAssembly(): void {

@@ -1,7 +1,7 @@
 import type { Locale } from '@3db/i18n';
 import type { InterferenceComponent, MeasureReport, MeasureTarget, PartMass, ElementFacts, ViewAxes, ViewFeature } from '@3db/model';
 import type { AssemblyDoc, Axis3, CoordSystem, Fingerprint, Id, PartDoc, PlaneFrame, Pose, Ref, SketchFeature, SourceTree, Vec3 } from '@3db/model';
-import type { GeometryReport, MassProps, MeshData, ProjectedView } from '@3db/kernel';
+import type { DraftReport, GeometryReport, MassProps, MeshData, ProjectedView } from '@3db/kernel';
 import type { AssemblyResult, AssemblySolveOptions, ClearanceRow, Converted, FeatureResult, SweepResult } from '@3db/regen';
 import type { MateGeometry } from '@3db/assembly';
 import type { StepAssemblyPlan, StepInstance, StepSub } from '@3db/io';
@@ -265,6 +265,8 @@ export interface KernelApi {
   collisions(components: InterferenceComponent[], movers: string[]): Promise<CollisionResult>;
   /** The geometry check (E3.1) of parts: each by its key as built for the assembly, or the open part for null. Null for one that has no body or is not built. */
   checkGeometry(parts: (string | null)[]): Promise<(GeometryReport | null)[]>;
+  /** The draft of every face of the part as it is shown to a mold that opens along `pull` (E3.2); `required` is the angle in radians. */
+  analyzeDraft(pull: [number, number, number], required: number): Promise<DraftReport>;
   /** Lets go of every rebuilt part file except these. */
   retainParts(keys: string[]): Promise<void>;
   /**

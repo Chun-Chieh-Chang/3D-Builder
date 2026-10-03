@@ -232,6 +232,7 @@ export const features = {
   'cmd.offsetSurfaceOnlyFaces': '偏移曲面只能選面',
   'feature.offsetSurface': '偏移曲面',
   'feature.splitLine': '分割線',
+  'analysis.badAngle': '要求的拔模角不能是負的',
   'feature.thicken': '厚面',
   'feature.cutWithSurface': '以曲面除料',
   'cmd.surfaceOnlyBodies': '這個特徵只能選本體',

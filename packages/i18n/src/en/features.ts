@@ -234,6 +234,7 @@ export const features: Translation = {
   'cmd.offsetSurfaceOnlyFaces': 'An offset surface can only be made of faces',
   'feature.offsetSurface': 'Offset Surface',
   'feature.splitLine': 'Split Line',
+  'analysis.badAngle': 'The draft angle required cannot be negative',
   'feature.thicken': 'Thicken',
   'feature.cutWithSurface': 'Cut with Surface',
   'cmd.surfaceOnlyBodies': 'This feature can only take bodies',

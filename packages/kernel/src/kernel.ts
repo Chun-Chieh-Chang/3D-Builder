@@ -8,6 +8,8 @@ import {
   type FaceInfo,
   type FaceOrigin,
   type Distance,
+  type DraftFace,
+  type DraftReport,
   type GapReport,
   type GeometryReport,
   type ImportDiagnostics,
@@ -32,6 +34,13 @@ import {
 
 /** How far a surface made by offsetting may be from the gap asked for (mm): the check of every surface feature (ADR 0067). */
 export const SURFACE_TOLERANCE = 0.05;
+
+/** The class of a face whose samples run from `min` to `max` (radians) for a required draft: see `Kernel.draftAnalysis`. */
+function draftClass(min: number, max: number, required: number): 'positive' | 'negative' | 'required' | 'straddle' {
+  if (min >= required) return 'positive';
+  if (max <= -required) return 'negative';
+  return min < -required && max > required ? 'straddle' : 'required';
+}
 
 const round3 = (v: number) => Math.round(v * 1000) / 1000;
 
@@ -2612,6 +2621,80 @@ export class Kernel {
     } finally {
       faces.dispose();
       arena.dispose();
+    }
+  }
+
+  // ------------------------------------------------------------------ analysis (E3.2, Phase 6)
+
+  /**
+   * Draft analysis (E3.2): the angle of every face's surface to the direction a mold opens along. For each face the surface's own normal is worked out at the nodes of its
+   * mesh (the surface evaluated at the node's (u, v): exact; the mesh's own normals, averaged from its triangles, are 0.1° out on a 5° cone, ADR 0074), turned outward, and
+   * the angle is asin(normal · pull). A face is `positive` when every sample is at least `required` (radians), `negative` when every one is at most −required,
+   * `straddle` when it has both, `required` when it is nearer to the direction than that (a wall that has to be given draft). The mesh is made on a copy of the shape, as
+   * fine as `angular` says (a shape is meshed once, at the first fineness asked: ADR 0074), so the answer does not depend on how the shape is shown.
+   */
+  draftAnalysis(id: ShapeId, pull: Vec3, required: number, options: { angular?: number } = {}): DraftReport {
+    const len = Math.hypot(pull[0], pull[1], pull[2]);
+    if (!(len > 0) || !Number.isFinite(len)) throw new KernelError(t('kernel.badViewDirection'));
+    if (!(required >= 0) || !Number.isFinite(required)) throw new KernelError(t('analysis.badAngle'));
+    const dir: Vec3 = [pull[0] / len, pull[1] / len, pull[2] / len];
+    const oc = this.oc;
+    const topology = this.topology(id);
+    const copy = this.clone(id);
+    const arena = new Arena();
+    try {
+      this.mesh(copy, { relative: 2e-3, angular: options.angular ?? 0.1 });
+      const faces = ShapeIndex.of(oc, this.get(copy), T.FACE, arena);
+      try {
+        if (faces.size !== topology.faces.length) throw new KernelError(t('regen.internal', { why: 'the copy of the shape has other faces than the shape' }));
+        const report: DraftFace[] = faces.keys.map((f, i) => {
+          const face = arena.own(oc.TopoDS.Face(f));
+          const loc = arena.own(new oc.TopLoc_Location());
+          const tri = oc.BRep_Tool.Triangulation(face, loc, 0);
+          let min = Infinity;
+          let max = -Infinity;
+          let samples = 0;
+          if (tri && tri.HasUVNodes()) {
+            arena.own(tri);
+            const trsf = arena.own(loc.Transformation());
+            const surface = arena.own(new oc.BRepAdaptor_Surface(face, true));
+            const reversed = face.Orientation() === oc.TopAbs_Orientation.TopAbs_REVERSED;
+            for (let n = 1; n <= tri.NbNodes(); n++) {
+              const uv = arena.own(tri.UVNode(n));
+              const props = arena.own(new oc.BRepLProp_SLProps(surface, uv.X(), uv.Y(), 1, 1e-9));
+              if (!props.IsNormalDefined()) continue; // the pole of a sphere, the apex of a cone
+              const nd = arena.own(props.Normal());
+              const v = arena.own(new oc.gp_Vec(nd.X(), nd.Y(), nd.Z()));
+              v.Transform(trsf);
+              const s = reversed ? -1 : 1;
+              const a = Math.asin(Math.max(-1, Math.min(1, s * (v.X() * dir[0] + v.Y() * dir[1] + v.Z() * dir[2]))));
+              min = Math.min(min, a);
+              max = Math.max(max, a);
+              samples++;
+            }
+          }
+          const area = topology.faces[i]!.area;
+          if (samples === 0) {
+            // nothing to sample (a face too small to mesh, or all poles): a flat face has the one normal
+            const n = topology.faces[i]!.normal;
+            if (!n) return { face: i, kind: 'unknown', min: NaN, max: NaN, samples: 0, area };
+            const a = Math.asin(Math.max(-1, Math.min(1, n[0] * dir[0] + n[1] * dir[1] + n[2] * dir[2])));
+            return { face: i, kind: draftClass(a, a, required), min: a, max: a, samples: 0, area };
+          }
+          return { face: i, kind: draftClass(min, max, required), min, max, samples, area };
+        });
+        const totals = { positive: { faces: 0, area: 0 }, negative: { faces: 0, area: 0 }, required: { faces: 0, area: 0 }, straddle: { faces: 0, area: 0 }, unknown: { faces: 0, area: 0 } };
+        for (const f of report) {
+          totals[f.kind].faces++;
+          totals[f.kind].area += f.area;
+        }
+        return { required, faces: report, totals };
+      } finally {
+        faces.dispose();
+      }
+    } finally {
+      arena.dispose();
+      this.release(copy);
     }
   }
 

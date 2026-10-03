@@ -17,6 +17,29 @@ export type SurfaceGeometry =
 /** The analytic curve under an edge (A5.2). */
 export type CurveGeometry = { type: 'line'; origin: Vec3; dir: Vec3 } | { type: 'circle'; center: Vec3; normal: Vec3; radius: number };
 
+/** What a face is to a mold that opens along a direction (draft analysis, E3.2): the four classes of SolidWorks's analysis, and `unknown` for a face the analysis could not sample. */
+export type DraftClass = 'positive' | 'negative' | 'required' | 'straddle' | 'unknown';
+
+/** One face's draft: the least and the greatest angle (radians) of its surface to the direction, over the points sampled, and what that makes it. */
+export interface DraftFace {
+  /** The face's number in the shape (the order of `Kernel.topology`). */
+  face: number;
+  kind: DraftClass;
+  /** asin(normal · pull): positive when the face leans so that the part leaves along the pull; ±90° for a face square to it. */
+  min: number;
+  max: number;
+  samples: number;
+  area: number;
+}
+
+export interface DraftReport {
+  /** The angle (radians) a wall has to have to count as drafted. */
+  required: number;
+  faces: DraftFace[];
+  /** Per class: the number of faces and their area (mm²). */
+  totals: Record<DraftClass, { faces: number; area: number }>;
+}
+
 /** How far a shape is from another, by points sampled on it (`Kernel.gapReport`): the nearest distances from those points to the other shape. */
 export interface GapReport {
   samples: number;

@@ -12,6 +12,8 @@ import { FEATURE_LABEL } from '../strings';
 import type { RebuildPayload } from '../worker/protocol';
 import { Topology } from '../state/selectionSets';
 import { Icon } from './Icon';
+import { draftColors } from '../state/analysis';
+import { DraftPanel } from './DraftPanel';
 import { MeasurePanel } from './MeasurePanel';
 
 /** Topology for selecting loops, tangent chains and the like, built once per rebuilt model (D5.6). */
@@ -191,6 +193,8 @@ export function Viewport() {
   // 「轉換實體引用」 and 「貫穿」 pick the model, not points on the sketch plane (C1.18)
   const modelTool = sketching && (view?.tool === 'convert' || view?.tool === 'pierce') ? view.tool : null;
   const measure = useStore((s) => s.measure);
+  const draftReport = useStore((s) => s.draft?.report ?? null);
+  const analysisColors = draftReport && draftReport.faces.length === (result?.faceNames.length ?? -1) ? draftColors(draftReport) : null;
   const pick = picking(feature, !!editing, modelTool, measure !== null);
 
   useEffect(() => {
@@ -198,11 +202,16 @@ export function Viewport() {
     if (!v) return;
     const fit = !!result?.mesh && fittedFor.current !== fitRequest;
     v.setMesh(result?.mesh ?? null, fit);
-    v.setFaceColors(result?.faceColors ?? []);
+    v.setFaceColors(analysisColors ?? result?.faceColors ?? []);
     v.setVertices(result?.vertexPoints ?? new Float32Array(0));
     displayed.current = result;
     if (fit) fittedFor.current = fitRequest;
   }, [result]);
+
+  // what an analysis colors replaces the colors of the part while it is open, if it is of the model on show
+  useEffect(() => {
+    store.viewer?.setFaceColors(analysisColors ?? result?.faceColors ?? []);
+  }, [analysisColors]);
 
   useEffect(() => {
     const v = store.viewer;
@@ -394,6 +403,7 @@ export function Viewport() {
       )}
       {sketching && view && <div className="pick-hint">{view.hint}</div>}
       <MeasurePanel />
+      <DraftPanel />
       {menu && <ContextMenu x={menu.x} y={menu.y} items={menu.items} onItems={(items) => setMenu({ ...menu, items })} onClose={() => setMenu(null)} />}
     </main>
   );
