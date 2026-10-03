@@ -1,10 +1,24 @@
 # 交接文件
 
-- 最後更新：2026-10-01（Phase 2 完成、閘門通過；Phase 3a 進行中：3a-0 驗證、Phase 1 遺留 P0、多語系機制、3a-1 運算式與變數都已提交；3a-2 輸入修復與直接編輯已提交推送（`78e0cad`，見 §3、ADR 0021）；3a-4 草圖工具 P1、3a-5 特徵 I、3a-6 特徵 II（異型孔、掃出、疊層拉伸、肋材，Schema 17–20，ADR 0030–0033）都已實作並推送，3a-7 參考幾何與複製排列已確認範圍（完整 P1 分 7a/7b/7c）並全部實作：7a 參考幾何（基準面 P1、基準軸、參考點、座標系統，Schema 21，ADR 0034）、7b 直線／環狀複製排列（Schema 22，ADR 0035）、7c 鏡射（Schema 23，ADR 0036）；3a-8 材質、屬性與輸出（8a 材質質量與文件設定 ADR 0037、8b 外觀與顏色 ADR 0038、8c STL／STEP 選項／影像 ADR 0039，Schema 24）也已實作，**3a-9 重算、存檔與介面分三段做：9a 自動存檔與文字化格式工具（ADR 0040，已實作）、9b 設計樹與範本與快速鍵（ADR 0041，已實作，Schema 25）、9c 檢視與選取（ADR 0042 起；9c-1 檢視、9c-2 選取已實作）；下一個是 9c-3 系統選項與英文**；使用者 2026-10-01 說「驗證的事先擺一邊」，所以 3a-8 起不再另外跑瀏覽器腳本做實機驗收（單元測試與 `npm run check` 照常；3a-8 做完時順手跑過一次，找到兩個只有瀏覽器看得到的錯，見 §6）；藍圖在 `docs/blueprint.md`；Phase 3 計畫 [docs/phase3-plan.md](docs/phase3-plan.md) 的決定 1–6 已由使用者確認；以 `git log` 為準）
+- 最後更新：2026-10-03，收工換電腦。**`main` 在 `3bded0f` 已推送、工作樹乾淨、933 項測試通過。Phase 3a 全部完成；Phase 3b 的 3b-0 到 3b-6 都已完成並推送，只剩 3b-7 驗收。** 先讀 §0.0；各階段的歷史狀態在 §3；以 `git log` 為準。
 - 用途：讓下一個工作階段（人或 AI）不讀對話紀錄也能接手。
 - 本文件只記錄「目前狀態、待辦、下一步、工作約定」。範圍與設計以藍圖、ADR、程式碼為準；若有衝突，以它們為準並更新本文件。
 
 ## 0. 換電腦之前，先讀這裡
+
+### 0.0 快速接手（2026-10-03 收工時的狀態，換電腦先看這段）
+
+**狀態**：`main` 與 `origin/main` 同步（`3bded0f`），沒有未提交的東西，`npm run check` 933 項通過、20 項略過。這一輪（2026-10-02 到 03）做完的：3b-1 剛性次組合件、3b-2 零組件排列與鏡射、3b-3 STEP 組合件輸入、3b-4 零件表與爆炸視圖、**3b-5 評估（測量、物質特性、干涉檢查、檢查模型幾何，ADR 0051）**、**3b-6 桌面版（Tauri 2、NSIS 安裝檔，ADR 0052）**。每個里程碑的 ADR、驗收表與限制都在對應的 ADR 裡，§3 有一行摘要。
+
+**在新電腦上**：`git pull`（私人專案）→ `npm install` → `npm run check`（應全過）→ `npm run dev`。**只用網頁版不需要 Rust 與 MSVC**；要建桌面版才裝（`apps/desktop/README.md` 的「需要」）。
+
+**下一步（建議順序）**
+1. **3b-7 驗收**（[phase3-plan](docs/phase3-plan.md) §4、§5）：需要使用者的真實樣本——每個不同零件一個 STEP，外加一個保留結構的組合件 STEP（搜尋 `NEXT_ASSEMBLY_USAGE_OCCURRENCE`，應有 10 次以上，見 §8 第 1 項）。**沒有樣本就不要假裝能驗收**：先問使用者有沒有；沒有的話，只做能自動化的部分並誠實標出沒做的。照約定先提計畫、量化驗收標準與反向提問，使用者確認後才動手。
+2. **使用者的待辦**（§8）：桌面版的人工驗收（第 0 項：原生對話框、沒裝過開發工具的帳號安裝、斷網）、eDrawings 目測巢狀與排列的 STEP 輸出、真實的第三方組合件 STEP、用 Excel 開零件表 CSV、3a 的真實零件對照。
+3. **要使用者許可才能動的**：刪檔（全域規則 §8）。目前待決定的：`%LOCALAPPDATA%\app.3dbuilder.desktop`（桌面版的使用者資料，含我開發時跑出的內容）、`tests/phase3/zz-bisect.test.ts` 若還在。
+4. 還沒做、不在 3b 範圍的：桌面版自動更新與簽章、次組合件內部的干涉檢查（目前只比頂層零組件，ADR 0051）。
+
+**工作約定提醒**（完整在 §7）：每個子步驟提交**並推送**；動手前先給計畫、量化驗收標準、反向提問；刪檔先問；限制與沒做的驗收要誠實寫出；每個里程碑更新 ADR、本文件與 phase3-plan；使用者說「ok, 接著做 …」就是照 phase3-plan 下一列開始（先提計畫與問題）。
 
 ### 0.1 藍圖（已完成）
 
@@ -290,6 +304,13 @@ npm run build -w @3db/desktop   # 桌面版安裝檔（要 Rust 與 MSVC，見 a
   - Git 的 LF→CRLF 警告無害。
   - 沒有 pnpm，使用 npm workspaces。
   - Node 26。
+- **這一輪（3b-5、3b-6）踩到的坑**（2026-10-03）：
+  - **PowerShell 5.1 與中文**：`.ps1` 檔沒有 BOM 時會以 ANSI 讀，裡面的中文會變亂碼而解析失敗。要改含中文的檔案：把中文放進 UTF-8 的 JSON 或文字檔，腳本只有 ASCII，用 `[IO.File]::ReadAllText(路徑, (New-Object Text.UTF8Encoding($false)))` 讀；直接寫在命令列裡的中文沒問題。多行修改用 Edit 工具，不要在 PowerShell 字串裡用反引號、`${`、`\n`。`handoff.md` 是 CRLF、**沒有 BOM**，不要用 `Get-Content | Set-Content`。
+  - **Claude 桌面版把 `%LOCALAPPDATA%` 重新導向到它的套件資料夾**（`C:\WpSystem\…\Claude_*\LocalCache\Local`）：Rust 的 `fs::rename` 在那裡會失敗（「系統無法將檔案移到不同的磁碟機」）。Tauri 的 NSIS 工具因此要設 `bundle.useLocalToolsDir`（已設）；環境變數 `TAURI_BUNDLER_TOOLS_PATH`、改 `LOCALAPPDATA` 都沒用。別的 Rust 工具若遇到同樣的錯，也是這個原因。Claude 的「終端機」面板的 shell 整合在這台壞了（`claude-desktop.ps1` 找不到），`run_in_terminal` 打不出命令。
+  - **計時型測試會隨負載波動**：`rebuild-speed`、`interference` 在整套平行跑時時間會變成三倍以上。`rebuild-speed` 量 CPU 時間（預算 5000 ms）；`interference` 以「比對的零件對數」把關（37 對，不是 190 對），時間只留寬鬆的上限；真正的時間要在安靜時單獨跑量（20 個零組件約 1.0 s 牆上時間）。
+  - **預覽伺服器的埠 5391 是 `strictPort`**：`npm run dev -w @3db/desktop`（`tauri dev`）會自己開 vite，要先 `preview_stop` 內建瀏覽器的伺服器。
+  - **內建瀏覽器**：視窗約 1024 × 768，截圖常逾時，改用 `read_page`、`javascript_tool` 驗證；`computer` 的座標是縮放後的截圖座標（800 × 600），不是頁面座標。要模擬畫布上的點擊，對 `canvas` 派發 `click` 事件（`MouseEvent`，帶 `clientX`、`clientY`；先 `mousemove`），Viewer 聽的是 `click`。舊的 `tests/e2e/phase2-assembly.js`（`__asm.all`）假設 1280 × 720，在這個視窗和桌面視窗都失敗，不要拿它當證據。
+  - **干涉與測量的資料**：夾具裡削邊銷的 r = 5 本體站在板的 r = 4 孔裡（每支約 405 mm³），是夾具本身的幾何；次組合件內部不比對，所以頂層檢查看不到。
 - **Docker**：canary 映像已刪，但 `docker_data.vhdx` 仍佔 25 GB（非稀疏檔）。要把空間還給 C 槽，需要壓縮這個檔案：要系統管理員權限，並會暫停 Docker/WSL。
 
 ## 7. 與使用者的工作約定
