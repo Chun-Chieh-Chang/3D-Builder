@@ -1,23 +1,46 @@
-import type { Kernel, ShapeId, StepExportOptions } from '@3db/kernel';
+import { KernelError, type Kernel, type ShapeId, type StepExportOptions } from '@3db/kernel';
 import { t } from '@3db/i18n';
 import { componentPatternInstances, composePose, dirName, joinPath, mirrorKey, mirroredInside, mirroredPose, type AssemblyDoc, type Id, type InnerPoses, type PatternAxis, type PatternLine, type Pose, type SourceTree } from '@3db/model';
 import { componentName, partNameOf } from './names';
 
 /**
+ * A shape fit to be written (4b-5): the offset surfaces OCCT makes (an offset of a face or a solid) are a type other CAD programs may not read, so a shape that has
+ * them is converted to B-splines (the same to 1e-4 mm, the faces in the order they were). If the converter stops (ADR 0067: an offset round a freeform edge) the shape is
+ * written as it is: `failed` says so, for the caller to tell the user. `shape` is the caller's to release when `converted`.
+ */
+export function portableShape(kernel: Kernel, shape: ShapeId): { shape: ShapeId; converted: boolean; failed: boolean } {
+  const faces = kernel.topology(shape).faces;
+  if (!faces.some((f) => f.surface === 'offsetsurface')) return { shape, converted: false, failed: false };
+  try {
+    const nurbs = kernel.toBSpline(shape);
+    if (kernel.topology(nurbs).faces.length === faces.length) return { shape: nurbs, converted: true, failed: false };
+    kernel.release(nurbs);
+  } catch (e) {
+    if (!(e instanceof KernelError)) throw e;
+  }
+  return { shape, converted: false, failed: true };
+}
+
+/**
  * STEP export of a part (F1.1, F1.3): one body or the bodies that count put together, its product named after the part, AP214 or AP242, with the colors
  * of its faces. `place` moves the shape first (a coordinate system's frame to the origin, C3.4): a 3 × 4 motion as `Kernel.transformed` takes it.
  */
-export function exportPartStep(kernel: Kernel, bodies: ShapeId | readonly ShapeId[], name: string, options: StepExportOptions & { place?: readonly number[] } = {}): string {
-  const list = Array.isArray(bodies) ? (bodies as readonly ShapeId[]) : [bodies as ShapeId];
+export function exportPartStep(kernel: Kernel, bodies: ShapeId | readonly ShapeId[], name: string, options: StepExportOptions & { place?: readonly number[]; warnings?: string[] } = {}): string {
+  const given = Array.isArray(bodies) ? (bodies as readonly ShapeId[]) : [bodies as ShapeId];
   const made: ShapeId[] = [];
   try {
+    const fit = given.map((s) => portableShape(kernel, s));
+    for (const f of fit) if (f.converted) made.push(f.shape);
+    const stuck = fit.filter((f) => f.failed).length;
+    if (stuck > 0) options.warnings?.push(t('export.offsetKept', { n: String(stuck) }));
+    const list = fit.map((f) => f.shape);
     let shape = list.length === 1 ? list[0]! : kernel.join([...list]);
     if (list.length !== 1) made.push(shape);
     if (options.place) {
       shape = kernel.transformed(shape, options.place);
       made.push(shape);
     }
-    const { place: _place, ...step } = options;
+    const { place: _place, warnings: _warnings, ...step } = options;
     return kernel.exportStep(shape, name, 'MM', step);
   } finally {
     for (const id of made) kernel.release(id);

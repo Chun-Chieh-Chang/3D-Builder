@@ -1,6 +1,6 @@
 import type { ReactElement } from 'react';
 
-type IconName = 'part' | 'assembly' | 'mates' | 'origin' | 'plane' | 'refPlane' | 'refAxis' | 'refPoint' | 'coordSys' | 'sketch' | 'extrude' | 'revolve' | 'sweep' | 'loft' | 'rib' | 'pattern' | 'mirror' | 'fillet' | 'chamfer' | 'importedBody' | 'derivedBody' | 'deleteFace' | 'moveFace' | 'shell' | 'draft' | 'hole' | 'combine' | 'offsetSurface' | 'splitLine' | 'knit' | 'fillSurface' | 'flatSurface' | 'trimSurface' | 'extendSurface' | 'body' | 'error' | 'warning' | 'ok' | 'cancel' | 'eye' | 'eyeOff';
+type IconName = 'part' | 'assembly' | 'mates' | 'origin' | 'plane' | 'refPlane' | 'refAxis' | 'refPoint' | 'coordSys' | 'sketch' | 'extrude' | 'revolve' | 'sweep' | 'loft' | 'rib' | 'pattern' | 'mirror' | 'fillet' | 'chamfer' | 'importedBody' | 'derivedBody' | 'deleteFace' | 'moveFace' | 'shell' | 'draft' | 'hole' | 'combine' | 'offsetSurface' | 'splitLine' | 'knit' | 'fillSurface' | 'flatSurface' | 'trimSurface' | 'extendSurface' | 'thicken' | 'cutWithSurface' | 'body' | 'error' | 'warning' | 'ok' | 'cancel' | 'eye' | 'eyeOff';
 
 /** Default planes and reference planes share one icon, as in SolidWorks. */
 const PLANE = <path d="M4 4h10l-2 8H2z" />;
@@ -31,6 +31,8 @@ const PATHS: Record<IconName, ReactElement> = {
   fillSurface: <path d="M2 10c3-6 9-6 12 0 M4 9c2-3 6-3 8 0 M6 8h4" />,
   flatSurface: <path d="M2 11l3-6h9l-3 6z" />,
   trimSurface: <path d="M2 11c3-5 9-5 12 0 M4 3l8 10" />,
+  thicken: <path d="M2 7c3-4 9-4 12 0 M2 11c3-4 9-4 12 0 M2 7v4 M14 7v4" />,
+  cutWithSurface: <path d="M3 4h10v8H3z M2 9c3-4 9-4 12 0" />,
   extendSurface: <path d="M2 11c3-5 6-5 8-3 M10 8l4-2 M12 6l2 0 M14 6l-1 2" />,
   sweep: <path d="M2 13c4 0 4-9 8-9h4 M2 11c4 0 4-9 8-9 M2 15c4 0 4-9 8-9" />,
   loft: <path d="M3 13h10l-2-4H5z M5 9h6l-1.5-4h-3z M6.5 5h3l-.5-3h-2z" />,

@@ -178,6 +178,10 @@ export function mapExprs(feature: Feature, fn: (expr: Expr, kind: ExprKind, role
       const thickness = fn(feature.thickness, 'length', 'positive');
       return thickness === feature.thickness ? feature : { ...feature, thickness };
     }
+    case 'thicken': {
+      const thickness = fn(feature.thickness, 'length', 'nonZero');
+      return thickness === feature.thickness ? feature : { ...feature, thickness };
+    }
     case 'extendSurface': {
       const distance = fn(feature.distance, 'length', 'positive');
       return distance === feature.distance ? feature : { ...feature, distance };
@@ -209,6 +213,7 @@ export function mapExprs(feature: Feature, fn: (expr: Expr, kind: ExprKind, role
     case 'fillSurface':
     case 'flatSurface':
     case 'trimSurface':
+    case 'cutWithSurface':
       return feature;
   }
 }

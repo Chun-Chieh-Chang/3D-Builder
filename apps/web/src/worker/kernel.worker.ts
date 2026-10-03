@@ -8,10 +8,10 @@ import { findProfiles, PlaneGcsSolver } from '@3db/sketch';
 import { COMPONENT_MESH, Kernel, type GeometryReport, type MassProps, type MeshData, type MeshOptions, type ShapeId } from '@3db/kernel';
 import { drawingAnchors, projectDrawingView, elementFacts, viewFeatures, findClearance, findInterference, sweepClearance, measureTargets, convertEdges, edgeMateGeometry, exportFaces, faceColors, intoFrame, faceEdges, faceMateGeometry, followReferences, ReferenceProblem, Regenerator, solveAssemblyTree, type AssemblyResult, type AssemblySolveOptions, type BodyInfo, type RebuildResult } from '@3db/regen';
 import { edgeFingerprint, faceFingerprint, vertexFingerprint } from '@3db/naming';
-import { binaryStl, exportAssemblyStep, exportPartStep, readComponentFile, stepAssemblyPlan, type StepAssemblyPlan } from '@3db/io';
+import { binaryStl, exportAssemblyStep, exportPartStep, portableShape, readComponentFile, stepAssemblyPlan, type StepAssemblyPlan } from '@3db/io';
 import type { SourcePart, SourceProvider } from '@3db/regen';
 import { mergeMeshes } from './mergeMesh';
-import type { AssemblyStepRequest, DrawingElementsResult, DrawingFeaturesResult, DrawingViewResult, ClearanceResult, CollisionResult, SweepOutcome, ConvertPayload, InterferenceResult, PartExportOptions, ConvertRequest, KernelApi, PartBuildPayload, PartStage, RebuildPayload, RebuildRequest, SketchSolvePayload, SketchSolveRequest, SourceFileData } from './protocol';
+import type { AssemblyStepRequest, DrawingElementsResult, DrawingFeaturesResult, DrawingViewResult, ClearanceResult, CollisionResult, SweepOutcome, ConvertPayload, InterferenceResult, PartExportOptions, ConvertRequest, KernelApi, PartBuildPayload, PartStage, RebuildPayload, RebuildRequest, SketchSolvePayload, SketchSolveRequest, SourceFileData, StepOutput } from './protocol';
 
 let kernel: Kernel;
 let solver: PlaneGcsSolver;
@@ -232,16 +232,19 @@ const api: KernelApi = {
     }
   },
 
-  async exportStep(doc: PartDoc, name: string, options: PartExportOptions = {}): Promise<string> {
+  async exportStep(doc: PartDoc, name: string, options: PartExportOptions = {}): Promise<StepOutput> {
     await api.init();
     const r = regen.rebuild(doc);
     lastResult = r; // the regenerator lets go of what it made before (the shapes measuring reads)
     const { shapes, colors } = ownBodies(doc, r);
-    return exportPartStep(kernel, shapes, name, {
+    const warnings: string[] = [];
+    const text = exportPartStep(kernel, shapes, name, {
       schema: options.schema ?? 'AP214',
       ...(options.colors === false ? {} : { faceColors: colors }),
       ...placing(r, options),
+      warnings,
     });
+    return { text, warnings };
   },
 
   async exportStl(doc: PartDoc, name: string, options: PartExportOptions = {}): Promise<Uint8Array> {
@@ -324,10 +327,11 @@ const api: KernelApi = {
     );
   },
 
-  async exportAssemblyStep({ name, parts: used, subs, instances }: AssemblyStepRequest): Promise<string> {
+  async exportAssemblyStep({ name, parts: used, subs, instances }: AssemblyStepRequest): Promise<StepOutput> {
     await api.init();
     const shapes: { shape: ShapeId; name: string; faceColors: (string | null)[] }[] = [];
     const made: ShapeId[] = [];
+    let stuck = 0;
     try {
       for (const u of used) {
         // a mirrored part (C15.13): the part's own shape mirrored in its x = 0 plane, as the screen shows it
@@ -335,11 +339,15 @@ const api: KernelApi = {
         const part = await parts.get(mirrored ? u.key.slice(0, -mirrorKey('').length) : u.key)?.catch(() => null);
         const body = part?.result.body;
         if (!part || !body) throw new Error(t('worker.noBodyForPart', { name: u.name }));
-        const shape = mirrored ? kernel.transformed(body.shape, [-1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0]) : body.shape;
-        if (mirrored) made.push(shape);
-        shapes.push({ shape, name: u.name, faceColors: part.colors }); // a mirror keeps the order of the faces, so the same colors
+        const placed = mirrored ? kernel.transformed(body.shape, [-1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0]) : body.shape;
+        if (mirrored) made.push(placed);
+        const fit = portableShape(kernel, placed);
+        if (fit.converted) made.push(fit.shape);
+        if (fit.failed) stuck++;
+        shapes.push({ shape: fit.shape, name: u.name, faceColors: part.colors }); // a mirror keeps the order of the faces, so the same colors
       }
-      return exportAssemblyStep(kernel, name, shapes, instances, subs);
+      const text = exportAssemblyStep(kernel, name, shapes, instances, subs);
+      return { text, warnings: stuck > 0 ? [t('export.offsetKept', { n: String(stuck) })] : [] };
     } finally {
       for (const id of made) kernel.release(id);
     }

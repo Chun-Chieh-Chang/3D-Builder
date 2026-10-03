@@ -44,6 +44,8 @@ import {
   type FlatSurfaceFeature,
   type TrimSurfaceFeature,
   type ExtendSurfaceFeature,
+  type ThickenFeature,
+  type CutWithSurfaceFeature,
   type ShellFeature,
   type SketchFeature,
   type SweepFeature,
@@ -459,6 +461,14 @@ export class Regenerator {
           }
           case 'extendSurface': {
             set = this.advance(set, this.extendSurface(feature, set));
+            return done({ status: 'ok' });
+          }
+          case 'thicken': {
+            set = this.advance(set, this.thicken(feature, set));
+            return done({ status: 'ok' });
+          }
+          case 'cutWithSurface': {
+            set = this.advance(set, this.cutWithSurface(feature, set));
             return done({ status: 'ok' });
           }
           case 'extrude':
@@ -1578,7 +1588,7 @@ export class Regenerator {
       vertices: view.vertices.slice(info.vertex0, info.vertex0 + info.vertices),
     };
     this.inherited.set(f.id, { name: info.name, reference: info.reference });
-    return [...set.list, { id: f.id, shape, topology, names, by: f.id }];
+    return [...set.list, { id: f.id, shape, topology, names, by: f.id, ...(info.surface ? { surface: true } : {}) }];
   }
 
   // ------------------------------------------------------------------ fillet and chamfer (C5.1, C5.3)
@@ -1918,6 +1928,58 @@ export class Regenerator {
     const topology = this.kernel.topology(shape);
     const names = nameElements([[{ rel: 'generated', kind: 'edge', index: indices[0]! }]], topology, { featureId: f.id, role: 'flat', input: body.names });
     return [...set.list, { id: f.id, shape, topology, names, by: f.id, surface: true }];
+  }
+
+  /** A body of the set by the reference to it, said when it is not picked or not there. */
+  private bodyByRef(set: Bodies, ref: Ref, what: string): BodyState {
+    if (!ref.name) throw new FeatureError(t('body.pick', { what }));
+    const b = set.list.find((x) => x.id === ref.name);
+    if (!b) throw new FeatureError(t('body.lost', { name: ref.name }), [{ ref, reason: 'missing', candidates: [] }]);
+    return b;
+  }
+
+  /**
+   * 「厚面」 (C9.4): a surface body made a solid, in the place of the surface (its id): the faces keep the name of the surface's, the face made from each is
+   * `<feature>:thicken:<face>`, the walls round its edges `<feature>:thicken:<edge>`. The thickness is measured (no point of the solid is farther from the surface),
+   * and what it came to is in `info`.
+   */
+  private thicken(f: ThickenFeature, set: Bodies): BodyState[] {
+    const b = this.bodyByRef(set, f.body, t('surface.thickenBody'));
+    if (!b.surface) throw new FeatureError(t('surface.thickenNeedsSurface', { name: b.id }));
+    const thickness = evalLength(f.thickness);
+    const r = this.kernel.thicken(b.shape, thickness);
+    const topology = this.kernel.topology(r.shape);
+    this.info = t('surface.thickenInfo', { max: r.gap.max.toFixed(3), thickness: String(Math.abs(thickness)), volume: this.kernel.massProps(r.shape).volume.toFixed(1) });
+    const state: BodyState = { id: b.id, shape: r.shape, topology, names: nameElements(r.faceOrigins, topology, { featureId: f.id, role: 'thicken', input: b.names }), by: f.id };
+    return set.list.map((x) => (x === b ? state : x));
+  }
+
+  /**
+   * 「以曲面除料」 (C9.4): the surface body is swept along the normal of the direction plane (`reverse`: the other way) and what it goes through is taken from the solid.
+   * The surface is left as it is. The new face is the surface as it was, named `<feature>:cut:<face of the surface>`; the pieces a cut leaves are as for any cut.
+   */
+  private cutWithSurface(f: CutWithSurfaceFeature, set: Bodies): BodyState[] {
+    const target = this.bodyByRef(set, f.target, t('surface.cutTarget'));
+    const surface = this.bodyByRef(set, f.surface, t('surface.cutSurface'));
+    if (target.surface) throw new FeatureError(t('surface.cutNeedsSolid', { name: target.id }));
+    if (!surface.surface) throw new FeatureError(t('surface.cutNeedsSurface', { name: surface.id }));
+    const normal = this.planeOf(f.direction, set, { what: t('surface.cutDirection'), notPlanar: t('surface.cutDirectionNotPlanar') }).normal;
+    const sign = f.reverse ? -1 : 1;
+    const k = this.kernel;
+    const tool = k.surfaceTool(target.shape, surface.shape, [normal[0] * sign, normal[1] * sign, normal[2] * sign]);
+    const made: ShapeId[] = [];
+    try {
+      const toolNames = nameElements(tool.faceOrigins, k.topology(tool.shape), { featureId: f.id, role: 'cut', input: surface.names });
+      const r = this.boolBodies(f.id, 'cut', [target], tool.shape, toolNames, made);
+      k.release(tool.shape);
+      if (!r.changed) throw new FeatureError(t('feature.cutRemovedNothing'));
+      if (r.out.length === 0) throw new FeatureError(t('regen.cutRemovedAll'));
+      return set.list.flatMap((b) => (b === target ? r.out : [b]));
+    } catch (e) {
+      for (const s of made) k.release(s);
+      k.release(tool.shape);
+      throw e;
+    }
   }
 
   /** 「延伸曲面」 (C9.3): a surface body of one face made `distance` longer past the edges picked; the face keeps its name. */

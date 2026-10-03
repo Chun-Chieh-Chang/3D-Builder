@@ -94,6 +94,10 @@ ull). */
   | { type: 'setTrimSurface'; featureId: Id; sketch: Id; face: Ref; keep?: 'outside'; reverse?: boolean; throughAll?: boolean }
   /** Changes an extend surface (C9.3): the edges to extend past and by how much. */
   | { type: 'setExtendSurface'; featureId: Id; edges: Ref[]; distance: Expr }
+  /** Changes a thicken (C9.4): the surface body and the thickness (negative: the other way). */
+  | { type: 'setThicken'; featureId: Id; body: Ref; thickness: Expr }
+  /** Changes a cut with surface (C9.4): the solid, the surface, the plane whose normal is the way of the sweep, and whether it goes the other way. */
+  | { type: 'setCutWithSurface'; featureId: Id; target: Ref; surface: Ref; direction: Ref; reverse?: boolean }
   /** Faces of a Delete Face feature (C10.2), and whether the rest of a hole goes with them. */
   | { type: 'setFaces'; featureId: Id; faces: Ref[]; hole?: boolean }
   /** How an imported body's surfaces are sewn (F2.2); without `sewTolerance` the default is used again. */
@@ -495,6 +499,13 @@ function validateNewFeature(doc: PartDoc, f: Feature, index: number): void {
     case 'knit':
       if (f.bodies.some((r) => r.kind !== 'body')) throw new CommandError(t('cmd.knitOnlyBodies'));
       return;
+    case 'thicken':
+      if (f.body.kind !== 'body') throw new CommandError(t('cmd.surfaceOnlyBodies'));
+      return;
+    case 'cutWithSurface':
+      if (f.target.kind !== 'body' || f.surface.kind !== 'body') throw new CommandError(t('cmd.surfaceOnlyBodies'));
+      if (f.direction.kind !== 'datum' && f.direction.kind !== 'face') throw new CommandError(t('cmd.cutDirectionKind'));
+      return;
     case 'fillSurface':
     case 'flatSurface':
     case 'extendSurface':
@@ -805,6 +816,27 @@ export function mutate(draft: Draft<PartDoc>, cmd: Command): void {
       else delete f.reverse;
       if (cmd.throughAll) f.throughAll = true;
       else delete f.throughAll;
+      return;
+    }
+    case 'setThicken': {
+      const f = feature(draft, cmd.featureId);
+      if (f.type !== 'thicken') throw new CommandError(t('cmd.onlyThickenHasParams'));
+      if (cmd.body.kind !== 'body') throw new CommandError(t('cmd.surfaceOnlyBodies'));
+      f.body = cmd.body;
+      f.thickness = cmd.thickness;
+      checkExprs(draft as PartDoc, f as Feature);
+      return;
+    }
+    case 'setCutWithSurface': {
+      const f = feature(draft, cmd.featureId);
+      if (f.type !== 'cutWithSurface') throw new CommandError(t('cmd.onlyCutHasParams'));
+      if (cmd.target.kind !== 'body' || cmd.surface.kind !== 'body') throw new CommandError(t('cmd.surfaceOnlyBodies'));
+      if (cmd.direction.kind !== 'datum' && cmd.direction.kind !== 'face') throw new CommandError(t('cmd.cutDirectionKind'));
+      f.target = cmd.target;
+      f.surface = cmd.surface;
+      f.direction = cmd.direction;
+      if (cmd.reverse) f.reverse = true;
+      else delete f.reverse;
       return;
     }
     case 'setKnit': {

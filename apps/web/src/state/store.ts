@@ -197,8 +197,8 @@ export interface UiState {
   selected: Id | null;
   /** Face selected in the graphics area (by persistent name, resolved against the displayed model). */
   selectedFace: Ref | null;
-  /** The surface bodies there were when a knit was started: what it can sew (the bodies it uses up are not in the model it shows). */
-  knitPool: { id: Id; name: string }[];
+  /** The bodies there were when a knit, thicken or cut with surface was started: what it can pick from (a body it uses up, or turns into a solid, is not what the model it shows has). */
+  bodyPool: { id: Id; name: string; surface: boolean }[];
   /** Which kinds of element the graphics area lets be picked (D5.4): a command asks for kinds, this narrows them. */
   pickFilter: PickFilter;
   /** What belongs to this browser and its user (D8.1). */
@@ -415,7 +415,7 @@ class AppStore {
       canRedo: false,
       selected: null,
       selectedFace: null,
-      knitPool: [],
+      bodyPool: [],
       pickFilter: { ...loadOptions().pickFilter },
       options: loadOptions(),
       editing: null,
@@ -1279,12 +1279,61 @@ class AppStore {
   /** 「縫織曲面」 (C9.3): starts with the surface body of the selected face, if there is one, and remembers which surface bodies there are to choose from. */
   newKnit(): void {
     const result = this.state.result;
-    const pool = (result?.bodies ?? []).filter((b) => b.surface).map((b) => ({ id: b.id, name: b.name }));
+    const pool = this.snapshotBodies(result);
     const face = this.state.selectedFace;
     const first = face?.kind === 'face' ? this.bodyOfFace(face.name) : undefined;
     const name = t('feature.knit');
-    this.set({ knitPool: pool });
-    this.openNew({ id: this.allocator().take('knit'), type: 'knit', name: nextName(this.history.doc, name), suppressed: false, bodies: first && pool.some((b) => b.id === first) ? [{ kind: 'body', name: first }] : [] }, name);
+    this.openNew({ id: this.allocator().take('knit'), type: 'knit', name: nextName(this.history.doc, name), suppressed: false, bodies: first && pool.some((b) => b.id === first && b.surface) ? [{ kind: 'body', name: first }] : [] }, name);
+  }
+
+  /** The bodies of the model on screen, kept for the session that is about to start (`bodyPool`). */
+  private snapshotBodies(result: UiState['result']): UiState['bodyPool'] {
+    const pool = (result?.bodies ?? []).map((b) => ({ id: b.id, name: b.name, surface: b.surface }));
+    this.set({ bodyPool: pool });
+    return pool;
+  }
+
+  /** 「厚面」 (C9.4): the surface body of the selected face (else the first surface body), 2 mm to start with; the PropertyManager changes either. */
+  newThicken(): void {
+    const pool = this.snapshotBodies(this.state.result);
+    const face = this.state.selectedFace;
+    const picked = face?.kind === 'face' ? this.bodyOfFace(face.name) : undefined;
+    const body = pool.find((b) => b.surface && b.id === picked) ?? pool.find((b) => b.surface);
+    const name = t('feature.thicken');
+    this.openNew({ id: this.allocator().take('thicken'), type: 'thicken', name: nextName(this.history.doc, name), suppressed: false, body: { kind: 'body', name: body?.id ?? '' }, thickness: '2' }, name);
+  }
+
+  /** 「以曲面除料」 (C9.4): the solid of the selected face (else the first solid) cut with the first surface body, along the normal of the front plane to start with. */
+  newCutWithSurface(): void {
+    const pool = this.snapshotBodies(this.state.result);
+    const face = this.state.selectedFace;
+    const picked = face?.kind === 'face' ? this.bodyOfFace(face.name) : undefined;
+    const target = pool.find((b) => !b.surface && b.id === picked) ?? pool.find((b) => !b.surface);
+    const surface = pool.find((b) => b.surface && b.id === picked) ?? pool.find((b) => b.surface);
+    const name = t('feature.cutWithSurface');
+    this.openNew({ id: this.allocator().take('surfacecut'), type: 'cutWithSurface', name: nextName(this.history.doc, name), suppressed: false, target: { kind: 'body', name: target?.id ?? '' }, surface: { kind: 'body', name: surface?.id ?? '' }, direction: { kind: 'datum', name: 'plane:front' } }, name);
+  }
+
+  /** A face picked while a thicken or a cut with surface is edited: its body is the one to thicken, or (by whether it is a surface) the one to cut or to cut with. */
+  pickSurfaceBody(faceName: string): void {
+    const f = this.editedFeature();
+    const id = this.bodyOfFace(faceName);
+    if (!id) return;
+    const surface = !!this.state.bodyPool.find((b) => b.id === id)?.surface;
+    if (f?.type === 'thicken') {
+      if (!surface) return void this.notify(t('surface.thickenNeedsSurface', { name: id }), 'error');
+      this.execute({ type: 'setThicken', featureId: f.id, body: { kind: 'body', name: id }, thickness: f.thickness });
+    } else if (f?.type === 'cutWithSurface') {
+      this.setCut({ ...(surface ? { surface: { kind: 'body', name: id } as Ref } : { target: { kind: 'body', name: id } as Ref }) });
+    }
+  }
+
+  /** Changes what a cut with surface is made of, the rest as it was. */
+  setCut(patch: Partial<{ target: Ref; surface: Ref; direction: Ref; reverse: boolean }>): void {
+    const f = this.editedFeature();
+    if (f?.type !== 'cutWithSurface') return;
+    const next = { target: f.target, surface: f.surface, direction: f.direction, reverse: f.reverse, ...patch };
+    this.execute({ type: 'setCutWithSurface', featureId: f.id, target: next.target, surface: next.surface, direction: next.direction, ...(next.reverse ? { reverse: true } : {}) });
   }
 
   /** A face picked while a knit is edited: its body is added to the bodies, or taken out of them. */
@@ -1459,6 +1508,7 @@ class AppStore {
     else if (f?.type === 'trimSurface') this.setTrimFace(ref);
     else if (f?.type === 'fillSurface' || f?.type === 'flatSurface' || f?.type === 'extendSurface') this.toggleSurfaceEdge(ref);
     else if (f?.type === 'knit' && ref.kind === 'face') this.pickKnitBody(ref.name);
+    else if ((f?.type === 'thicken' || f?.type === 'cutWithSurface') && ref.kind === 'face') this.pickSurfaceBody(ref.name);
     else if (f?.type === 'combine' && ref.kind === 'face') this.pickBody(ref.name);
   }
 
@@ -1540,7 +1590,7 @@ class AppStore {
     if (!e) return undefined;
     const i = this.history.doc.features.findIndex((f) => f.id === e.featureId);
     const type = this.history.doc.features[i]?.type;
-    if (type === 'refPlane' || type === 'refAxis' || type === 'refPoint' || type === 'coordSys' || type === 'pattern' || type === 'mirror' || type === 'offsetSurface' || type === 'splitLine' || type === 'trimSurface' || type === 'knit' || type === 'fillSurface' || type === 'flatSurface' || type === 'extendSurface') return i + 1;
+    if (type === 'refPlane' || type === 'refAxis' || type === 'refPoint' || type === 'coordSys' || type === 'pattern' || type === 'mirror' || type === 'offsetSurface' || type === 'splitLine' || type === 'trimSurface' || type === 'knit' || type === 'fillSurface' || type === 'flatSurface' || type === 'extendSurface' || type === 'thicken' || type === 'cutWithSurface') return i + 1;
     return type === 'fillet' || type === 'chamfer' || type === 'deleteFace' || type === 'moveFace' || type === 'shell' || type === 'draft' || type === 'combine' || type === 'sketch' ? i : undefined;
   }
 
@@ -1754,9 +1804,9 @@ class AppStore {
   async writeStep(options: PartExportOptions = {}): Promise<void> {
     try {
       const name = this.documentName();
-      const text = this.assembly ? await this.api.exportAssemblyStep(this.assembly.stepRequest()) : await this.api.exportStep(this.history.doc, name, options);
+      const { text, warnings } = this.assembly ? await this.api.exportAssemblyStep(this.assembly.stepRequest()) : await this.api.exportStep(this.history.doc, name, options);
       download(stepFileName(name), text, 'application/step');
-      this.notify(t('export.done', { file: stepFileName(name) }));
+      this.notify(warnings.length > 0 ? `${t('export.done', { file: stepFileName(name) })} ${warnings.join('; ')}` : t('export.done', { file: stepFileName(name) }), warnings.length > 0 ? 'error' : 'info');
     } catch (e) {
       this.notify(t('export.failed', { what: 'STEP', why: e instanceof Error ? e.message : String(e) }), 'error');
     }

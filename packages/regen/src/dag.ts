@@ -50,6 +50,12 @@ export function parentsOf(feature: Feature, doc: PartDoc): Id[] {
     case 'knit':
       parents = feature.bodies.filter((r) => r.name).map((r) => bodyFeature(r.name));
       break;
+    case 'thicken':
+      parents = feature.body.name ? [bodyFeature(feature.body.name)] : [];
+      break;
+    case 'cutWithSurface':
+      parents = [...[feature.target, feature.surface].filter((r) => r.name).map((r) => bodyFeature(r.name)), ...fromRefs([feature.direction])];
+      break;
     case 'fillSurface':
     case 'flatSurface':
     case 'extendSurface':

@@ -96,6 +96,8 @@ export const ACTIONS: UiAction[] = [
   { id: 'flat-surface', get label() { return t('feature.flatSurface'); }, group: 'feature', enabled: hasBody, run: () => store.newSurfaceEdges('flatSurface') },
   { id: 'trim-surface', get label() { return t('feature.trimSurface'); }, group: 'feature', enabled: (s) => hasBody(s) && !!s.result?.bodies.some((b) => b.surface) && s.doc.features.some((f) => f.type === 'sketch'), run: () => store.newTrimSurface() },
   { id: 'extend-surface', get label() { return t('feature.extendSurface'); }, group: 'feature', enabled: (s) => hasBody(s) && !!s.result?.bodies.some((b) => b.surface), run: () => store.newSurfaceEdges('extendSurface') },
+  { id: 'thicken', get label() { return t('feature.thicken'); }, group: 'feature', enabled: (s) => hasBody(s) && !!s.result?.bodies.some((b) => b.surface), run: () => store.newThicken() },
+  { id: 'cut-with-surface', get label() { return t('feature.cutWithSurface'); }, group: 'feature', enabled: (s) => hasBody(s) && !!s.result?.bodies.some((b) => b.surface) && !!s.result?.bodies.some((b) => !b.surface), run: () => store.newCutWithSurface() },
   { id: 'combine', get label() { return t('feature.combine'); }, group: 'feature', enabled: (s) => hasBody(s) && (s.result?.bodies.length ?? 0) > 1, run: () => store.newCombine() },
   { id: 'linear-pattern', get label() { return t('action.linearPattern'); }, group: 'feature', enabled: canPattern, run: () => store.newPattern('linear') },
   { id: 'circular-pattern', get label() { return t('action.circularPattern'); }, group: 'feature', enabled: canPattern, run: () => store.newPattern('circular') },

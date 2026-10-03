@@ -6,7 +6,7 @@ import type { Id } from './ids';
  * DOF status, mass properties and error lists are derived data and never stored.
  */
 
-export const SCHEMA_VERSION = 30;
+export const SCHEMA_VERSION = 31;
 
 /** Value expression (B5.2, B5.3): "20", "25.4mm", "30deg", "wall_t*2", "D1@草圖1/2", "property('厚度')"; see `expr/`. */
 export type Expr = string;
@@ -515,6 +515,29 @@ export interface ExtendSurfaceFeature extends FeatureBase {
 }
 
 /**
+ * Thicken (厚面, C9.4, v31): a surface body made a solid `thickness` thick, toward the side its faces point to when positive, the other way when negative. The result is
+ * the same body (its id), now a solid: the surface is used up.
+ */
+export interface ThickenFeature extends FeatureBase {
+  type: 'thicken';
+  /** The surface body (kind `body`, the name is the body's id). */
+  body: Ref;
+  thickness: Expr;
+}
+
+/**
+ * Cut with surface (以曲面除料, C9.4, v31): the surface body `surface` is swept along the normal of `direction` (a plane, or a planar face) and what it sweeps through is
+ * taken from the solid body `target`; `reverse` sweeps the other way, so the other side of the surface goes. The surface body is left as it is.
+ */
+export interface CutWithSurfaceFeature extends FeatureBase {
+  type: 'cutWithSurface';
+  target: Ref;
+  surface: Ref;
+  direction: Ref;
+  reverse?: boolean;
+}
+
+/**
  * Shell (薄殼, C5.4, v15): the body hollowed out to a wall of 	hickness, the picked aces taken away to open it; the wall grows inward, or
  * outward with outward.
  */
@@ -566,6 +589,8 @@ export type Feature =
   | FlatSurfaceFeature
   | TrimSurfaceFeature
   | ExtendSurfaceFeature
+  | ThickenFeature
+  | CutWithSurfaceFeature
   | FilletFeature
   | ChamferFeature
   | RefPlaneFeature

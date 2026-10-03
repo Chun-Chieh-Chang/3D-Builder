@@ -2210,11 +2210,13 @@ export class Kernel {
    * A surface made into a solid `thickness` thick (C9.4 厚面): positive toward the side its normals point to, negative the other way. OCCT can give the solid inside out
    * (a negative volume); it is turned the right way. Checked: valid, one solid, and its farthest point from the surface is the thickness.
    */
-  thicken(surface: ShapeId, thickness: number, options: { tolerance?: number } = {}): { shape: ShapeId; gap: GapReport } {
+  thicken(surface: ShapeId, thickness: number, options: { tolerance?: number } = {}): { shape: ShapeId; gap: GapReport; faceOrigins: FaceOrigin[][] } {
     if (!(Math.abs(thickness) > 0) || !Number.isFinite(thickness)) throw new KernelError(t('surface.zeroThickness'));
     if (this.solidCount(surface) > 0) throw new KernelError(t('surface.notSurface'));
     const oc = this.oc;
     const arena = new Arena();
+    const inFaces = ShapeIndex.of(oc, this.get(surface), T.FACE, arena);
+    const inEdges = ShapeIndex.of(oc, this.get(surface), T.EDGE, arena);
     try {
       const mk = arena.own(new oc.BRepOffsetAPI_MakeThickSolid());
       try {
@@ -2224,7 +2226,9 @@ export class Kernel {
         throw new KernelError(t('surface.thickenFailed', { why: this.errorText(e) }));
       }
       if (!mk.IsDone()) throw new KernelError(t('surface.thickenFailed', { why: t('surface.notDone') }));
-      let id = this.put(mk.Shape());
+      // copied with its geometry, as an offset is: what the builder made may refer to what it holds
+      const copier = arena.own(new oc.BRepBuilderAPI_Copy(arena.own(mk.Shape()), true, false));
+      let id = this.put(copier.Shape());
       if (this.massProps(id).volume < 0) {
         const turned = this.get(id).Reversed();
         this.release(id);
@@ -2241,8 +2245,45 @@ export class Kernel {
         this.release(id);
         throw new KernelError(t('surface.thickenWrong', { thickness: Math.abs(thickness), got: round3(gap.max), tolerance }));
       }
-      return { shape: id, gap };
+      // where each face of the solid came from: the face of the surface that is still there, the face made from it, and the faces made from its edges
+      const out = ShapeIndex.of(oc, this.get(id), T.FACE, arena);
+      try {
+        const origins: FaceOrigin[][] = out.keys.map(() => []);
+        const into = (s: TopoDS_Shape): number => out.indexOf(arena.own(copier.ModifiedShape(s)));
+        inFaces.keys.forEach((f, i) => {
+          const same = into(f);
+          if (same >= 0) origins[same]!.push({ rel: 'same', kind: 'face', index: i });
+          for (const g of [...this.list(mk.Generated(f)), ...this.list(mk.Modified(f))]) {
+            const j = into(g);
+            if (j >= 0 && j !== same && origins[j]!.length === 0) origins[j]!.push({ rel: 'generated', kind: 'face', index: i });
+            g.delete();
+          }
+        });
+        inEdges.keys.forEach((e, i) => {
+          for (const g of this.list(mk.Generated(e))) {
+            const j = into(g);
+            if (j >= 0 && origins[j]!.length === 0) origins[j]!.push({ rel: 'generated', kind: 'edge', index: i });
+            g.delete();
+          }
+        });
+        // the walls round the edges are not in the builder's history: such a face is the one an edge of the surface lies on
+        const mids = this.topology(surface).edges.map((e) => e.mid);
+        out.keys.forEach((face, j) => {
+          if (origins[j]!.length > 0) return;
+          const i = mids.findIndex((mid) => {
+            const vertex = arena.own(arena.own(new oc.BRepBuilderAPI_MakeVertex(this.pnt(arena, mid))).Vertex());
+            const d = arena.own(new (oc.BRepExtrema_DistShapeShape as unknown as new (a: TopoDS_Shape, b: TopoDS_Shape) => InstanceType<OC['BRepExtrema_DistShapeShape']>)(vertex, face));
+            return d.IsDone() && d.NbSolution() > 0 && d.Value() < 1e-5;
+          });
+          if (i >= 0) origins[j]!.push({ rel: 'generated', kind: 'edge', index: i });
+        });
+        return { shape: id, gap, faceOrigins: origins };
+      } finally {
+        out.dispose();
+      }
     } finally {
+      inFaces.dispose();
+      inEdges.dispose();
       arena.dispose();
     }
   }
@@ -2252,11 +2293,29 @@ export class Kernel {
    * the surface the direction points away from (`keep: 'behind'`) or toward (`'ahead'`). The surface has to reach across the solid.
    */
   cutWithSurface(target: ShapeId, surface: ShapeId, dir: Vec3, keep: 'behind' | 'ahead' = 'behind'): OpResult {
+    const tool = this.surfaceTool(target, surface, dir);
+    try {
+      return this.boolean(keep === 'behind' ? 'cut' : 'common', target, tool.shape);
+    } catch (e) {
+      if (e instanceof KernelError) throw e;
+      throw new KernelError(t('surface.cutFailed', { why: this.errorText(e) }));
+    } finally {
+      this.release(tool.shape);
+    }
+  }
+
+  /**
+   * The surface (a face or a shell) swept along `dir` far enough to clear `target` wherever the surface is: the solid that a cut with the surface takes away. The faces of
+   * it that are the surface as it was are `generated` from the face of the surface, those made from an edge of the surface from that edge. It is the caller's to release.
+   */
+  surfaceTool(target: ShapeId, surface: ShapeId, dir: Vec3): OpResult {
     const len = Math.hypot(dir[0], dir[1], dir[2]);
     if (!(len > 0)) throw new KernelError(t('kernel.badViewDirection'));
     if (this.solidCount(surface) > 0) throw new KernelError(t('surface.notSurface'));
     const oc = this.oc;
     const arena = new Arena();
+    const inFaces = ShapeIndex.of(oc, this.get(surface), T.FACE, arena);
+    const inEdges = ShapeIndex.of(oc, this.get(surface), T.EDGE, arena);
     let tool: ShapeId | null = null;
     try {
       const box = arena.own(new oc.Bnd_Box());
@@ -2271,12 +2330,33 @@ export class Kernel {
       if (!sweep.IsDone()) throw new KernelError(t('surface.cutFailed', { why: t('surface.notDone') }));
       tool = this.put(sweep.Shape());
       if (this.solidCount(tool) === 0) throw new KernelError(t('surface.cutFailed', { why: t('surface.notClosedSweep') }));
-      return this.boolean(keep === 'behind' ? 'cut' : 'common', target, tool);
+      const out = ShapeIndex.of(oc, this.get(tool), T.FACE, arena);
+      try {
+        const origins: FaceOrigin[][] = out.keys.map(() => []);
+        inFaces.keys.forEach((f, i) => {
+          const j = out.indexOf(arena.own(sweep.FirstShape(f)));
+          if (j >= 0) origins[j]!.push({ rel: 'generated', kind: 'face', index: i });
+        });
+        inEdges.keys.forEach((e, i) => {
+          for (const g of this.list(sweep.Generated(e))) {
+            const j = out.indexOf(g);
+            if (j >= 0 && origins[j]!.length === 0) origins[j]!.push({ rel: 'generated', kind: 'edge', index: i });
+            g.delete();
+          }
+        });
+        const made = tool;
+        tool = null;
+        return { shape: made, faceOrigins: origins };
+      } finally {
+        out.dispose();
+      }
     } catch (e) {
       if (e instanceof KernelError) throw e;
       throw new KernelError(t('surface.cutFailed', { why: this.errorText(e) }));
     } finally {
       if (tool !== null) this.release(tool);
+      inFaces.dispose();
+      inEdges.dispose();
       arena.dispose();
     }
   }

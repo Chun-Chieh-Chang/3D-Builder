@@ -37,6 +37,8 @@ export const FEATURE_LABEL: Record<FeatureType, string> = labelsOf({
   flatSurface: 'feature.flatSurface',
   trimSurface: 'feature.trimSurface',
   extendSurface: 'feature.extendSurface',
+  thicken: 'feature.thicken',
+  cutWithSurface: 'feature.cutWithSurface',
   shell: 'feature.shell',
   sweep: 'feature.sweep',
   loft: 'feature.loft',

@@ -48,9 +48,9 @@ function picking(feature: Feature | undefined, editing: boolean, modelTool: 'con
   const upTo = endFaces.length > 0 || endVertices.length > 0 || endBody ? ends : null;
   const edgeFeature = feature?.type === 'fillet' || feature?.type === 'chamfer' || feature?.type === 'fillSurface' || feature?.type === 'flatSurface' || feature?.type === 'extendSurface' ? feature : null;
   const faceFeature = feature?.type === 'deleteFace' || feature?.type === 'moveFace' || feature?.type === 'shell' || feature?.type === 'draft' || feature?.type === 'offsetSurface' || feature?.type === 'splitLine' || feature?.type === 'trimSurface' ? feature : null;
-  const combine = feature?.type === 'combine' || feature?.type === 'knit';
+  const combine = feature?.type === 'combine' || feature?.type === 'knit' || feature?.type === 'thicken' || feature?.type === 'cutWithSurface';
   const prompt_ = combine
-    ? t(feature?.type === 'knit' ? 'pick.knit' : 'pick.combine')
+    ? t(feature?.type === 'knit' ? 'pick.knit' : feature?.type === 'thicken' ? 'pick.thicken' : feature?.type === 'cutWithSurface' ? 'pick.cutWithSurface' : 'pick.combine')
     : faceFeature
     ? t(faceFeature.type === 'deleteFace' ? 'pick.deleteFace' : faceFeature.type === 'shell' ? 'pick.shell' : faceFeature.type === 'draft' ? 'pick.draft' : faceFeature.type === 'offsetSurface' ? 'pick.offsetSurface' : faceFeature.type === 'splitLine' ? 'pick.splitLine' : faceFeature.type === 'trimSurface' ? 'pick.trimSurface' : 'pick.moveFace')
     : edgeFeature

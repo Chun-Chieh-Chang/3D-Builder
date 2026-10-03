@@ -75,6 +75,10 @@ export function mapRefs(feature: Feature, map: (ref: Ref) => Ref): { feature: Fe
       return { feature: { ...feature, face: one(feature.face) }, replaced };
     case 'knit':
       return { feature: { ...feature, bodies: feature.bodies.map(one) }, replaced };
+    case 'thicken':
+      return { feature: { ...feature, body: one(feature.body) }, replaced };
+    case 'cutWithSurface':
+      return { feature: { ...feature, target: one(feature.target), surface: one(feature.surface), direction: one(feature.direction) }, replaced };
     case 'fillSurface':
     case 'flatSurface':
     case 'extendSurface':

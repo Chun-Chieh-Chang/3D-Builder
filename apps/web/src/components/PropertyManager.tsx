@@ -45,6 +45,8 @@ import {
   type FlatSurfaceFeature,
   type TrimSurfaceFeature,
   type ExtendSurfaceFeature,
+  type ThickenFeature,
+  type CutWithSurfaceFeature,
   type MirrorFeature,
   type PartDoc,
   type PatternDefinition,
@@ -1726,7 +1728,7 @@ function ExtendSurfacePanel({ f }: { f: ExtendSurfaceFeature }) {
 
 /** Knit (C9.3): the surface bodies to sew (ticked from the ones there were), the tolerance, whether a closed result becomes a solid, and what came of it. */
 function KnitPanel({ f }: { f: KnitFeature }) {
-  const pool = useStore((s) => s.knitPool);
+  const pool = useStore((s) => s.bodyPool).filter((b) => b.surface);
   const status = useStore((s) => s.result?.features.find((r) => r.id === f.id));
   const picked = (id: string) => f.bodies.some((x) => x.name === id);
   const command = (patch: Partial<Pick<KnitFeature, 'bodies' | 'tolerance' | 'solid'>>): Command => {
@@ -1754,6 +1756,83 @@ function KnitPanel({ f }: { f: KnitFeature }) {
       </label>
       {status?.status === 'ok' && status.info && <p className="hint gap-info">{status.info}</p>}
       <p className="hint">{t('pm.knit.hint')}</p>
+    </section>
+  );
+}
+
+/** Thicken (C9.4): the surface body, the thickness (negative: the other way), and what was measured of the solid. */
+function ThickenPanel({ f }: { f: ThickenFeature }) {
+  const pool = useStore((s) => s.bodyPool).filter((b) => b.surface);
+  const status = useStore((s) => s.result?.features.find((r) => r.id === f.id));
+  return (
+    <section className="pm-group">
+      <h4>{t('pm.thicken.body')}</h4>
+      {pool.length === 0 ? (
+        <p className="muted">{t('pm.cut.empty')}</p>
+      ) : (
+        <select value={f.body.name} onChange={(e) => store.execute({ type: 'setThicken', featureId: f.id, body: { kind: 'body', name: e.target.value }, thickness: f.thickness })}>
+          {!f.body.name && <option value="">{t('pm.cut.empty')}</option>}
+          {f.body.name && !pool.some((b) => b.id === f.body.name) && <option value={f.body.name}>{f.body.name}{t('pm.lost')}</option>}
+          {pool.map((b) => (
+            <option key={b.id} value={b.id}>
+              {b.name}
+            </option>
+          ))}
+        </select>
+      )}
+      <label className="pm-row">
+        <span>{t('pm.thicken.thickness')}</span>
+        <ValueInput value={f.thickness} toCommand={(thickness) => ({ type: 'setThicken', featureId: f.id, body: f.body, thickness })} />
+      </label>
+      {status?.status === 'ok' && status.info && <p className="hint gap-info">{status.info}</p>}
+      <p className="hint">{t('pm.thicken.hint')}</p>
+    </section>
+  );
+}
+
+/** Cut with surface (C9.4): the solid, the surface body, the plane whose normal is the way of the sweep, and which way. */
+function CutWithSurfacePanel({ f }: { f: CutWithSurfaceFeature }) {
+  const pool = useStore((s) => s.bodyPool);
+  const doc = useStore((s) => s.doc);
+  const planes = [
+    ...DATUM_ITEMS.filter((d) => d.icon === 'plane').map((d) => ({ id: d.id as string, label: d.label })),
+    ...doc.features.slice(0, Math.max(0, doc.features.findIndex((x) => x.id === f.id))).filter((x) => x.type === 'refPlane').map((x) => ({ id: x.id, label: x.name })),
+  ];
+  const pick = (label: string, value: Ref, surface: boolean, set: (ref: Ref) => void) => {
+    const list = pool.filter((b) => b.surface === surface);
+    return (
+      <>
+        <h4 className="sub">{label}</h4>
+        <select value={value.name} onChange={(e) => set({ kind: 'body', name: e.target.value })}>
+          {!value.name && <option value="">{t('pm.cut.empty')}</option>}
+          {value.name && !list.some((b) => b.id === value.name) && <option value={value.name}>{value.name}{t('pm.lost')}</option>}
+          {list.map((b) => (
+            <option key={b.id} value={b.id}>
+              {b.name}
+            </option>
+          ))}
+        </select>
+      </>
+    );
+  };
+  return (
+    <section className="pm-group">
+      {pick(t('pm.cut.target'), f.target, false, (target) => store.setCut({ target }))}
+      {pick(t('pm.cut.surface'), f.surface, true, (surface) => store.setCut({ surface }))}
+      <h4 className="sub">{t('pm.cut.direction')}</h4>
+      <select value={f.direction.name} onChange={(e) => store.setCut({ direction: { kind: 'datum', name: e.target.value } })}>
+        {f.direction.kind === 'face' && <option value={f.direction.name}>{f.direction.name}</option>}
+        {planes.map((p) => (
+          <option key={p.id} value={p.id}>
+            {p.label}
+          </option>
+        ))}
+      </select>
+      <label className="pm-row checkbox">
+        <input type="checkbox" checked={!!f.reverse} onChange={(e) => store.setCut({ reverse: e.target.checked })} />
+        <span>{t('pm.cut.reverse')}</span>
+      </label>
+      <p className="hint">{t('pm.cut.hint')}</p>
     </section>
   );
 }
@@ -1920,6 +1999,8 @@ export function PropertyManager() {
       {f.type === 'fillSurface' && <FillSurfacePanel f={f} />}
       {f.type === 'flatSurface' && <FlatSurfacePanel f={f} />}
       {f.type === 'extendSurface' && <ExtendSurfacePanel f={f} />}
+      {f.type === 'thicken' && <ThickenPanel f={f} />}
+      {f.type === 'cutWithSurface' && <CutWithSurfacePanel f={f} />}
       {f.type === 'combine' && <CombinePanel f={f} />}
     </div>
   );

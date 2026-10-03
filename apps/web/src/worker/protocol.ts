@@ -67,6 +67,12 @@ export interface BodyPayload {
 }
 
 /** Everything the UI needs from one rebuild; all derived data (never written back into the document). */
+/** A STEP file and what was said about writing it (4b-5): a shape written as it is when it could not be made portable. */
+export interface StepOutput {
+  text: string;
+  warnings: string[];
+}
+
 export interface RebuildPayload {
   seq: number;
   features: FeatureResult[];
@@ -227,13 +233,13 @@ export interface KernelApi {
   /** What these model edges and face outlines look like on the plane of the sketch being edited. */
   convertReferences(req: ConvertRequest): Promise<ConvertPayload>;
   /** STEP of the rebuilt part, its product named `name`. */
-  exportStep(doc: PartDoc, name: string, options?: PartExportOptions): Promise<string>;
+  exportStep(doc: PartDoc, name: string, options?: PartExportOptions): Promise<StepOutput>;
   /** Binary STL of the bodies that count, meshed as finely as the document's quality says (F4.1). */
   exportStl(doc: PartDoc, name: string, options?: PartExportOptions): Promise<Uint8Array>;
   /** Rebuilds a part file of an assembly, once per content (`key` = SHA-256 of `bytes`). */
   buildPart(key: string, bytes: Uint8Array, onStage?: (stage: PartStage) => void, sources?: SourceFileData[]): Promise<PartBuildPayload>;
   /** STEP of an assembly (F1.2) as the components are placed in `req`; parts are the ones rebuilt for it (`buildPart`). */
-  exportAssemblyStep(req: AssemblyStepRequest): Promise<string>;
+  exportAssemblyStep(req: AssemblyStepRequest): Promise<StepOutput>;
   /**
    * The mirror of a part already built (C15.13): its shape mirrored in its own x = 0 plane, meshed. key is the mirror's (mirrorKey);
    * only the mesh is given, a derived copy has no elements to pick. Null when the part has no body or is not built.
