@@ -71,7 +71,8 @@ export function holeInfo(topology: Topology, face: number): HoleInfo | null {
     const f = e.edge.faces.find((x) => x !== face);
     const o = f === undefined ? undefined : topology.faces[f]!;
     if (!o?.geometry) return false;
-    if (o.geometry.type === 'cone') return true;
+    // a cone that comes to a point (one circular edge: the hole's) is a drill point; a chamfer or countersink (two circular edges) leaves the hole open
+    if (o.geometry.type === 'cone') return topology.edges.filter((x) => x.geometry?.type === 'circle' && x.faces.includes(f!)).length <= 1;
     return o.geometry.type === 'plane' && parallel(o.geometry.normal, g.axis) && Math.abs(o.area - disc) <= 1e-3 * disc;
   });
   if (closed[0] && closed[1]) return null;
