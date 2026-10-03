@@ -82,6 +82,12 @@ export function pickStepFile(): Promise<OpenedFile | null> {
   return pick([STEP_TYPE]);
 }
 
+/** 「PDF 字型」: a TrueType font file (.ttf, or .ttc such as Microsoft JhengHei) to embed in the PDF for the characters the standard font does not have. */
+export function pickFontFile(): Promise<OpenedFile | null> {
+  const font: PickerType = { get description() { return t('picker.font'); }, accept: { 'font/ttf': ['.ttf', '.ttc'] } };
+  return pick([font]);
+}
+
 /** 「插入零組件」→「瀏覽」: a part file or a STEP file, starting in the project folder. */
 export function pickPartFile(startIn: FileSystemDirectoryHandle): Promise<OpenedFile | null> {
   const either: PickerType = { get description() { return t('picker.partOrStep'); }, accept: { ...PART_TYPE.accept, ...STEP_TYPE.accept } };

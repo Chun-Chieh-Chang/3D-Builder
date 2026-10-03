@@ -270,6 +270,25 @@ export function DrawingPanel() {
           <button className="pm-button" data-action="exportSvg" onClick={() => d.exportSvg()}>
             {t('drawingUi.exportSvg')}
           </button>
+          <button className="pm-button" data-action="exportDxf" onClick={() => d.exportDxf()}>
+            {t('drawingUi.exportDxf')}
+          </button>
+          <button className="pm-button" data-action="exportPdf" onClick={() => d.exportPdf()}>
+            {t('drawingUi.exportPdf')}
+          </button>
+        </div>
+        <div className="pm-row">
+          <button className="pm-button" data-action="chooseFont" onClick={() => void d.chooseFont()}>
+            {t('drawingUi.pdfFont')}
+          </button>
+          <span className="muted" data-field="pdfFont">
+            {drw.pdfFont ?? t('drawingUi.pdfFontNone')}
+          </span>
+          {drw.pdfFont && (
+            <button title={t('drawingUi.pdfFontClear')} data-action="clearFont" onClick={() => d.clearFont()}>
+              ✕
+            </button>
+          )}
         </div>
         {drw.computing && <p className="muted">{t('drawingUi.computing')}</p>}
       </div>

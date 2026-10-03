@@ -38,9 +38,10 @@ import {
   type ViewSide,
 } from '@3db/model';
 import { drawingFileName, writeDrawingFile } from '@3db/io';
+import { FontError, readTrueType, toDxf, toPdf, type TrueTypeFont } from '@3db/drawing';
 import { autoDimensions, buildScene, FIRST_OFFSET, OFFSET_STEP, ratio, scaleOf, STANDARD_SCALES, suggestScale, toSvg, type AutoDimensionOptions, type DimensionOutcome, type ElementsResult, type HoleRow, type PlacedView, type ViewBom, type Scene, type ViewLines } from '@3db/drawing';
 import type { Remote } from 'comlink';
-import { download, fileIn, pathIn, pickDrawingSaveTarget, writeFile } from '../files';
+import { download, fileIn, pathIn, pickDrawingSaveTarget, pickFontFile, writeFile } from '../files';
 import type { KernelApi } from '../worker/protocol';
 import type { AssemblyData } from './assemblySource';
 import { buildSource, type SourceStatus } from './partSource';
@@ -90,6 +91,8 @@ export interface DrawingState {
   elements: Map<Id, ElementsResult>;
   /** For each view of an assembly: its parts list and the parts it was made of (C16.6). */
   boms: Map<Id, ViewBom>;
+  /** The name of the font file the PDF embeds for the characters the standard font does not have; null: none. */
+  pdfFont: string | null;
   selected: Id | null;
   /** The lines are being worked out. */
   computing: boolean;
@@ -121,6 +124,8 @@ export class DrawingStore {
   /** What a view can be dimensioned from, by the part's key and where it looks from; and what an element is, by the part's key and the reference. */
   private featureCache = new Map<string, ViewFeature[] | { error: string }>();
   private elementCache = new Map<string, ElementFacts | { error: string }>();
+  /** The font the PDF embeds (read from the file the user chose; not part of the drawing). */
+  private font: TrueTypeFont | null = null;
   private featuring = false;
   private featureAgain = false;
 
@@ -148,6 +153,7 @@ export class DrawingStore {
       features: new Map(),
       elements: new Map(),
       boms: new Map(),
+      pdfFont: null,
       selected: null,
       computing: false,
       fitRequest: 1,
@@ -680,6 +686,46 @@ export class DrawingStore {
     const name = this.name();
     download(`${name}.svg`, toSvg(this.scene().scene), 'image/svg+xml');
     this.host.notify(t('drawing.exported', { name: `${name}.svg` }));
+  }
+
+  /** The drawing as DXF (AC1015), handed to the browser as a download. */
+  exportDxf(): void {
+    const name = this.name();
+    download(`${name}.dxf`, toDxf(this.scene().scene), 'application/dxf');
+    this.host.notify(t('drawing.exported', { name: `${name}.dxf` }));
+  }
+
+  /** The drawing as a PDF, with the font chosen for the characters Helvetica does not have; what could not be written is said. */
+  exportPdf(): void {
+    const name = this.name();
+    try {
+      const { bytes, warnings } = toPdf(this.scene().scene, { title: name, font: this.font });
+      download(`${name}.pdf`, bytes as BlobPart, 'application/pdf');
+      this.host.notify(t('drawing.exported', { name: `${name}.pdf` }));
+      for (const w of warnings) this.host.notify(w, 'error');
+    } catch (e) {
+      this.host.notify(e instanceof FontError ? e.message : t('drawing.exportFailed', { why: e instanceof Error ? e.message : String(e) }), 'error');
+    }
+  }
+
+  /** 「PDF 字型」: the user chooses a TrueType font file; it is read now so that a file that cannot be used is said at once. */
+  async chooseFont(): Promise<void> {
+    try {
+      const file = await pickFontFile();
+      if (!file) return;
+      const font = readTrueType(file.bytes);
+      if (!font.embeddable) throw new FontError(t('font.restricted'));
+      this.font = font;
+      this.set({ pdfFont: file.name });
+      this.host.notify(t('drawing.fontChosen', { name: file.name }));
+    } catch (e) {
+      this.host.notify(e instanceof Error ? e.message : String(e), 'error');
+    }
+  }
+
+  clearFont(): void {
+    this.font = null;
+    this.set({ pdfFont: null });
   }
 
   async save(): Promise<boolean> {
