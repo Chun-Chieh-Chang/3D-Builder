@@ -21,7 +21,7 @@ export interface UiAction {
 }
 
 /** Nothing going on in the open assembly: no PropertyManager, no drag. */
-const assemblyFree = (s: UiState) => !s.asm?.insert && !s.asm?.mate && !s.asm?.move && !s.asm?.drag && !s.asm?.pattern && !s.asm?.explode && !s.measure && !s.interference;
+const assemblyFree = (s: UiState) => !s.asm?.insert && !s.asm?.mate && !s.asm?.move && !s.asm?.drag && !s.asm?.pattern && !s.asm?.explode && !s.measure && !s.interference && !s.clearance;
 /** No PropertyManager session in the open document: file commands may replace or save it. */
 const idle = (s: UiState) => (s.active === 'assembly' ? assemblyFree(s) : s.editing === null && !s.measure);
 /** A part is open and nothing is being edited in it. */
@@ -104,6 +104,7 @@ export const ACTIONS: UiAction[] = [
   { id: 'rotate-component', get label() { return t('act.rotateComponent'); }, group: 'assembly', enabled: (s) => assemblyIdle(s) && hasComponents(s), run: () => store.assembly?.startMove('rotate') },
   { id: 'explode', get label() { return t('explode.act'); }, group: 'assembly', enabled: (s) => assemblyIdle(s) && hasComponents(s), run: () => store.assembly?.startExplode() },
   { id: 'measure-assembly', get label() { return t('measure.act'); }, group: 'assembly', enabled: (s) => s.active === 'assembly' && canMeasure(s), run: toggleMeasure, active: () => store.getState().measure !== null },
+  { id: 'clearance', get label() { return t('clearance.act'); }, group: 'assembly', enabled: (s) => s.bootMs !== null && assemblyIdle(s) && hasComponents(s), run: () => store.startClearance() },
   { id: 'interference', get label() { return t('interference.act'); }, group: 'assembly', enabled: (s) => s.bootMs !== null && assemblyIdle(s) && hasComponents(s), run: () => store.startInterference() },
   { id: 'check-assembly', get label() { return t('check.act'); }, group: 'assembly', enabled: (s) => s.bootMs !== null && assemblyIdle(s) && hasComponents(s), run: () => void store.startCheck() },
   { id: 'physical-assembly', get label() { return t('physical.act'); }, group: 'assembly', enabled: (s) => assemblyIdle(s) && hasComponents(s), run: () => store.openDialog('physical') },
@@ -210,6 +211,7 @@ export function installShortcuts(): () => void {
     if (s.measure && (e.key === 'Escape' || e.key === 'Delete')) return void (e.key === 'Escape' && store.stopMeasure());
     if (s.check) return void (e.key === 'Escape' && store.stopCheck());
     if (s.interference && (e.key === 'Escape' || e.key === 'Delete')) return void (e.key === 'Escape' && store.stopInterference());
+    if (s.clearance && (e.key === 'Escape' || e.key === 'Delete')) return void (e.key === 'Escape' && store.stopClearance());
     if (s.asm) {
       const a = store.assembly;
       const selected = s.asm.selected;

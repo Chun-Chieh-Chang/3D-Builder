@@ -7,3 +7,4 @@ export * from './placements';
 export * from './appearance';
 export * from './measure';
 export * from './interference';
+export * from './clearance';

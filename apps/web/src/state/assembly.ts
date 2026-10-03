@@ -7,6 +7,7 @@ import {
   CommandError,
   composePose,
   composeRotations,
+  lerpPose,
   cycleMessage,
   DATUM_PLANES,
   dirName,
@@ -129,6 +130,8 @@ export interface DragState {
   mode: 'move' | 'rotate';
   /** Every component where the latest pointer position puts it (derived; shown instead of the solution). */
   poses: ReadonlyMap<Id, Pose> | null;
+  /** The component stopped at what it ran into (A3.6): what they are called, and the components of the assembly they are (drawn red). */
+  blocked?: { names: string[]; tops: Id[] };
 }
 
 /** 「移動零組件」/「旋轉零組件」 (C15.3): what a left-button drag does while the PropertyManager is open. */
@@ -195,6 +198,8 @@ export interface AssemblyState {
   /** Bumped when the view should fit the assembly once its parts are shown. */
   fitRequest: number;
   drag: DragState | null;
+  /** A drag stops where the component would run into another (A3.6); off until the move PropertyManager asks for it. */
+  collisionStop: boolean;
   /** The move PropertyManager (C15.3); null while it is closed. */
   move: MoveState | null;
   /** The dialog for part files that cannot be found (B9.4); null while it is closed. */
@@ -272,6 +277,8 @@ export class AssemblyStore {
     goal: GoalTerm[] | null;
     running: boolean;
     ending: boolean;
+    /** The pairs that shared volume when the drag began (A3.6): not held against it. */
+    baseline?: Set<string>;
   } | null = null;
   private centers = new Map<string, Vec3>();
 
@@ -301,6 +308,7 @@ export class AssemblyStore {
       confirmDelete: null,
       fitRequest: 1,
       drag: null,
+      collisionStop: false,
       move: null,
       relink: null,
       pattern: null,
@@ -586,6 +594,12 @@ export class AssemblyStore {
     return leaves;
   }
 
+  /** Every part with the components at the poses given (and the parts inside sub-assemblies where `inner` has them): what a drag asks about before it shows a pose (A3.6). */
+  private leavesAt(poses: ReadonlyMap<Id, Pose>, inner: AssemblyResult['inner']): Leaf[] {
+    const base = leavesOf(this.history.doc, this.trees(), (id) => poses.get(id) ?? null, inner);
+    return [...base, ...patternLeavesOf(this.shownDoc(), base, (axis) => this.lineOf(axis, base)).leaves];
+  }
+
   /** Every part where it is assembled (the exploded view does not move it): what mass properties and interference are worked out on. */
   assembledLeaves(): Leaf[] {
     if (!this.state.exploded) return this.leaves();
@@ -598,11 +612,11 @@ export class AssemblyStore {
    * What interference (E2.1) is asked of: the components as the user sees them (a sub-assembly one, each copy of a pattern or mirror its own), each as its
    * parts and where they are assembled, and what each is called in the list.
    */
-  interferenceInput(): { components: InterferenceComponent[]; names: Map<string, string>; tops: Map<string, string> } {
+  interferenceInput(at?: { poses: ReadonlyMap<Id, Pose>; inner?: AssemblyResult['inner'] }): { components: InterferenceComponent[]; names: Map<string, string>; tops: Map<string, string> } {
     const unmirror = (key: string) => key.slice(0, -mirrorKey('').length);
     const names = new Map<string, string>();
     const tops = new Map<string, string>();
-    const groups = interferenceGroups(this.assembledLeaves());
+    const groups = interferenceGroups(at ? this.leavesAt(at.poses, at.inner) : this.assembledLeaves());
     for (const g of groups) {
       const base = this.ownerLabel(g.top);
       const pattern = g.instance ? (this.history.doc.patterns?.find((p) => p.id === g.instance!.pattern)?.name ?? g.instance.pattern) : '';
@@ -1474,11 +1488,14 @@ export class AssemblyStore {
       while (d.goal && this.dragging === d) {
         const terms = d.goal;
         d.goal = null;
-        const r = await this.host.api.solveAssembly(this.history.doc, this.trees(), { start: d.latest, goal: { body: d.component, terms } });
+        const solved = await this.host.api.solveAssembly(this.history.doc, this.trees(), { start: d.latest, goal: { body: d.component, terms } });
         if (this.dragging !== d) return;
+        const guarded = this.state.collisionStop ? await this.stopBeforeContact(d, solved) : { result: solved, hit: null };
+        if (this.dragging !== d) return;
+        const r = guarded.result;
         d.latest = r.poses;
         d.result = r;
-        this.set({ drag: { component: d.component, mode: d.mode, poses: r.poses } });
+        this.set({ drag: { component: d.component, mode: d.mode, poses: r.poses, ...(guarded.hit ? { blocked: guarded.hit } : {}) } });
       }
     } catch (e) {
       this.host.notify(`移動失敗：${e instanceof Error ? e.message : String(e)}`, 'error');
@@ -1486,6 +1503,72 @@ export class AssemblyStore {
       d.running = false;
       if (d.ending && this.dragging === d) this.finishDrag();
     }
+  }
+
+  /** 「碰撞偵測」 of the move PropertyManager (A3.6): a drag stops where the component would run into another, and the others it touches show red. */
+  setCollisionStop(on: boolean): void {
+    this.set({ collisionStop: on });
+  }
+
+  /**
+   * A drag asked the solver for `candidate`; where it puts the moving components may be inside another component (A3.6). Then the poses are found a fraction of
+   * the way from where the drag was to where the solver put them, the largest one that is free (found by halving, ten times), the mates are settled there, and
+   * that is what is shown, with what it ran into. Collisions that were there when the drag began are not held against it.
+   */
+  private async stopBeforeContact(d: NonNullable<AssemblyStore['dragging']>, candidate: AssemblyResult): Promise<{ result: AssemblyResult; hit: { names: string[]; tops: Id[] } | null }> {
+    const api = this.host.api;
+    const movers = new Set(candidate.group && candidate.group.length > 0 ? candidate.group : [d.component]);
+    /** The pairs with a moving component that share volume at these poses, apart from the ones the drag began with. */
+    const hits = async (poses: ReadonlyMap<Id, Pose>, inner: AssemblyResult['inner']) => {
+      const input = this.interferenceInput({ poses, inner });
+      const moving = [...input.tops].filter(([, top]) => movers.has(top)).map(([id]) => id);
+      if (moving.length === 0 || input.components.length < 2) return { pairs: [] as { a: string; b: string }[], input };
+      const r = await api.collisions(input.components, moving);
+      return { pairs: r.pairs.filter((p) => !d.baseline?.has(`${p.a}|${p.b}`)), input };
+    };
+    if (!d.baseline) {
+      // what already shares volume where the drag began: nothing is filtered yet
+      d.baseline = new Set((await hits(d.latest, this.state.solution?.inner)).pairs.map((p) => `${p.a}|${p.b}`));
+    }
+    const at1 = await hits(candidate.poses, candidate.inner);
+    if (at1.pairs.length === 0) return { result: candidate, hit: null };
+    const blend = (t: number): Map<Id, Pose> => {
+      const out = new Map(candidate.poses);
+      for (const id of movers) {
+        const from = d.latest.get(id);
+        const to = candidate.poses.get(id);
+        if (from && to) out.set(id, lerpPose(from, to, t));
+      }
+      return out;
+    };
+    let lo = 0;
+    let hi = 1;
+    for (let i = 0; i < 10; i++) {
+      const mid = (lo + hi) / 2;
+      if ((await hits(blend(mid), candidate.inner)).pairs.length === 0) lo = mid;
+      else hi = mid;
+    }
+    let poses: Map<Id, Pose> = new Map(lo === 0 ? d.latest : blend(lo));
+    let inner = candidate.inner;
+    if (lo > 0) {
+      // the blend is a step along a straight path: let the mates settle it, and keep that if it is still free
+      const settled = await api.solveAssembly(this.history.doc, this.trees(), { start: poses });
+      if ((await hits(settled.poses, settled.inner)).pairs.length === 0) {
+        poses = new Map(settled.poses);
+        inner = settled.inner;
+      }
+    }
+    const names = new Set<string>();
+    const tops = new Set<Id>();
+    for (const p of at1.pairs) {
+      for (const id of [p.a, p.b]) {
+        const top = at1.input.tops.get(id) ?? id;
+        if (movers.has(top)) continue;
+        names.add(at1.input.names.get(id) ?? id);
+        tops.add(top);
+      }
+    }
+    return { result: { ...candidate, poses, ...(inner ? { inner } : {}) }, hit: { names: [...names], tops: [...tops] } };
   }
 
   /** The button is released: where the drag left things becomes their placement (one undo step). Cancelled (Esc): nothing changes. */

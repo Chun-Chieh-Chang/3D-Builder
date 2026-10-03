@@ -6,12 +6,12 @@ import gcsWasm from '@salusoft89/planegcs/dist/planegcs_dist/planegcs.wasm?url';
 import { bodyKey, combineMass, isShown, mirrorKey, MESH_QUALITY, settingsOf, type AssemblyDoc, type Id, type MeasureReport, type PartDoc, type SourceTree } from '@3db/model';
 import { findProfiles, PlaneGcsSolver } from '@3db/sketch';
 import { COMPONENT_MESH, Kernel, type GeometryReport, type MassProps, type MeshData, type MeshOptions, type ShapeId } from '@3db/kernel';
-import { findInterference, measureTargets, convertEdges, edgeMateGeometry, exportFaces, faceColors, intoFrame, faceEdges, faceMateGeometry, followReferences, ReferenceProblem, Regenerator, solveAssemblyTree, type AssemblyResult, type AssemblySolveOptions, type BodyInfo, type RebuildResult } from '@3db/regen';
+import { findClearance, findInterference, sweepClearance, measureTargets, convertEdges, edgeMateGeometry, exportFaces, faceColors, intoFrame, faceEdges, faceMateGeometry, followReferences, ReferenceProblem, Regenerator, solveAssemblyTree, type AssemblyResult, type AssemblySolveOptions, type BodyInfo, type RebuildResult } from '@3db/regen';
 import { edgeFingerprint, faceFingerprint, vertexFingerprint } from '@3db/naming';
 import { binaryStl, exportAssemblyStep, exportPartStep, readComponentFile, stepAssemblyPlan, type StepAssemblyPlan } from '@3db/io';
 import type { SourcePart, SourceProvider } from '@3db/regen';
 import { mergeMeshes } from './mergeMesh';
-import type { AssemblyStepRequest, ConvertPayload, InterferenceResult, PartExportOptions, ConvertRequest, KernelApi, PartBuildPayload, PartStage, RebuildPayload, RebuildRequest, SketchSolvePayload, SketchSolveRequest, SourceFileData } from './protocol';
+import type { AssemblyStepRequest, ClearanceResult, CollisionResult, SweepOutcome, ConvertPayload, InterferenceResult, PartExportOptions, ConvertRequest, KernelApi, PartBuildPayload, PartStage, RebuildPayload, RebuildRequest, SketchSolvePayload, SketchSolveRequest, SourceFileData } from './protocol';
 
 let kernel: Kernel;
 let solver: PlaneGcsSolver;
@@ -118,6 +118,13 @@ async function boot() {
   const occtMs = performance.now() - t;
   regen = new Regenerator(kernel, solver, blobs);
   return { occtMs, gcsMs };
+}
+
+/** The shapes of the parts the components use, by their keys, as built for the assembly (null: not built). */
+async function shapesOf(components: readonly { parts: readonly { part: string }[] }[]): Promise<Map<string, ShapeId | null>> {
+  const shapes = new Map<string, ShapeId | null>();
+  for (const key of new Set(components.flatMap((c) => c.parts.map((p) => p.part)))) shapes.set(key, (await parts.get(key)?.catch(() => null))?.result.body?.shape ?? null);
+  return shapes;
 }
 
 const api: KernelApi = {
@@ -362,6 +369,30 @@ const api: KernelApi = {
     const shapes = new Map<string, ShapeId | null>();
     for (const key of new Set(targets.flatMap((x) => (x.part === null ? [] : [x.part])))) shapes.set(key, (await parts.get(key)?.catch(() => null))?.result.body?.shape ?? null);
     return measureTargets(kernel, (x) => (x.part === null ? (lastResult?.body?.shape ?? null) : (shapes.get(x.part) ?? null)), targets);
+  },
+
+  async clearance(components, least, only): Promise<ClearanceResult> {
+    await api.init();
+    const began = performance.now();
+    const shapes = await shapesOf(components);
+    const found = findClearance(kernel, components, (key) => shapes.get(key) ?? null, least, only ? new Set(only) : undefined);
+    return { ...found, ms: performance.now() - began };
+  },
+
+  async sweep(components, mover, dir, length): Promise<SweepOutcome> {
+    await api.init();
+    const began = performance.now();
+    const shapes = await shapesOf(components);
+    return { ...sweepClearance(kernel, components, mover, dir, length, (key) => shapes.get(key) ?? null), ms: performance.now() - began };
+  },
+
+  async collisions(components, movers): Promise<CollisionResult> {
+    await api.init();
+    const began = performance.now();
+    const shapes = await shapesOf(components);
+    const found = findInterference(kernel, components, (key) => shapes.get(key) ?? null, undefined, new Set(movers));
+    for (const o of found.overlaps) kernel.release(o.shape);
+    return { pairs: [...new Set(found.overlaps.map((o) => `${o.a}|${o.b}`))].map((k) => ({ a: k.split('|')[0]!, b: k.split('|')[1]! })), ms: performance.now() - began };
   },
 
   async interference(components): Promise<InterferenceResult> {

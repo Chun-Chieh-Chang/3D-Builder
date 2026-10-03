@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { t } from '@3db/i18n';
 import { evalAngle, evalLength, type Vec3 } from '@3db/model';
 import { store, useStore } from '../state/store';
 import type { MoveOp } from '../state/assembly';
@@ -97,6 +98,12 @@ export function MovePanel() {
           </button>
         </span>
         <p className="hint">在圖面中按住零組件拖曳（右鍵拖曳一律旋轉）。零組件只沿結合留下的自由度移動；Esc 取消這次拖曳。</p>
+        <label className="pm-row checkbox">
+          <input type="checkbox" data-field="collisionStop" checked={asm.collisionStop} onChange={(e) => a?.setCollisionStop(e.target.checked)} />
+          <span>{t('move.collision')}</span>
+        </label>
+        {asm.collisionStop && <p className="hint">{t('move.collisionHint')}</p>}
+        {asm.drag?.blocked && <p className="error-text" data-field="collisionHit">{t('move.collisionHit', { names: asm.drag.blocked.names.join(', ') })}</p>}
       </div>
       {tool === 'move' ? (
         <div className="pm-group">

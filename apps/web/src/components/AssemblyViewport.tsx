@@ -11,6 +11,7 @@ import { dragHint } from '../state/movability';
 import { LoadProgress } from './LoadProgress';
 import { MateFlyout } from './MatePanel';
 import { InterferencePanel } from './InterferencePanel';
+import { ClearancePanel } from './ClearancePanel';
 import { MeasurePanel } from './MeasurePanel';
 
 const KIND_WORD = { face: '面', edge: '邊線', vertex: '頂點' } as const;
@@ -63,6 +64,7 @@ export function AssemblyViewport() {
   const bootError = useStore((s) => s.bootError);
   const measure = useStore((s) => s.measure);
   const interference = useStore((s) => s.interference);
+  const clearance = useStore((s) => s.clearance);
   const measuring = measure !== null;
   const [hover, setHover] = useState<string | null>(null);
   const [hoverElement, setHoverElement] = useState<InstanceElement | null>(null);
@@ -140,8 +142,14 @@ export function AssemblyViewport() {
     if (!asm.mate && asm.selected && isDatumPlaneName(asm.selected)) planes.push({ key: asm.selected, frame: DATUM_PLANES[asm.selected], highlighted: true });
     v.setPlanes(planes);
     const pair = interference && interference.selected !== null ? interference.pairs[interference.selected] : undefined;
-    v.setSelectedComponents(pair ? [pair.aTop, pair.bTop] : !asm.mate && asm.selected && asm.doc.components.some((c) => c.id === asm.selected) ? [asm.selected] : []);
-  }, [asm.mate, asm.selected, asm.doc, asm.solution, asm.drag, asm.builds, measure, interference]);
+    const close = clearance && clearance.selected !== null ? clearance.pairs[clearance.selected] : undefined;
+    v.setSelectedComponents(pair ? [pair.aTop, pair.bTop] : close ? [close.aTop, close.bTop] : !asm.mate && asm.selected && asm.doc.components.some((c) => c.id === asm.selected) ? [asm.selected] : []);
+  }, [asm.mate, asm.selected, asm.doc, asm.solution, asm.drag, asm.builds, measure, interference, clearance]);
+
+  // What a dragged component has run into (A3.6): those components are red
+  useEffect(() => {
+    store.viewer?.setCollidedComponents(asm.drag?.blocked?.tops ?? []);
+  }, [asm.drag]);
 
   // Where components share volume (E2.1): the overlaps in red, or only the chosen pair's
   useEffect(() => {
@@ -239,6 +247,7 @@ export function AssemblyViewport() {
       <LoadProgress />
       <MeasurePanel />
       <InterferencePanel />
+      <ClearancePanel />
       {hint && <div className="pick-hint">{hint}</div>}
     </main>
   );

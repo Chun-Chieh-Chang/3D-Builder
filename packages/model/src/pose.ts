@@ -98,3 +98,12 @@ function mul([ax, ay, az, aw]: Quat, [bx, by, bz, bw]: Quat): Quat {
 function turn(q: Quat, v: Vec3): Vec3 {
   return transformPoint({ position: [0, 0, 0], rotation: q }, v);
 }
+
+/** The pose a fraction `t` of the way from `a` to `b`: the positions blended, the rotations by normalized linear interpolation along the shorter way (small steps, as a drag takes). */
+export function lerpPose(a: Pose, b: Pose, t: number): Pose {
+  const flip = a.rotation[0] * b.rotation[0] + a.rotation[1] * b.rotation[1] + a.rotation[2] * b.rotation[2] + a.rotation[3] * b.rotation[3] < 0 ? -1 : 1;
+  const q = [0, 1, 2, 3].map((k) => a.rotation[k]! * (1 - t) + flip * b.rotation[k]! * t);
+  const n = Math.hypot(q[0]!, q[1]!, q[2]!, q[3]!) || 1;
+  return { position: [0, 1, 2].map((k) => a.position[k]! * (1 - t) + b.position[k]! * t) as Vec3, rotation: [q[0]! / n, q[1]! / n, q[2]! / n, q[3]! / n] };
+}
+

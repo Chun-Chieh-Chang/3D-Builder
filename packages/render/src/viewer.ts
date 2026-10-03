@@ -49,6 +49,7 @@ const COLORS = {
   background: 0xf3f5f8,
   componentHover: 0xf2c48d,
   componentSelected: 0x8fb8e8,
+  componentCollided: 0xe5484d,
 };
 
 /**
@@ -283,6 +284,7 @@ export class Viewer {
   private pickInstances = false;
   private hoveredInstance: string | null = null;
   private selectedInstances = new Set<string>();
+  private collidedInstances = new Set<string>();
   /** A see-through instance following the cursor while a component is being placed. */
   private ghost: Instance | null = null;
   private dragInstances = false;
@@ -674,6 +676,12 @@ export class Viewer {
     this.paintInstances();
   }
 
+  /** Components shown red: what a dragged component has run into (A3.6). */
+  setCollidedComponents(keys: Iterable<string>): void {
+    this.collidedInstances = new Set(keys);
+    this.paintInstances();
+  }
+
   private setHoveredInstance(key: string | null): void {
     if (key === this.hoveredInstance) return;
     this.hoveredInstance = key;
@@ -683,7 +691,7 @@ export class Viewer {
 
   private paintInstances(): void {
     for (const inst of this.instances.values()) {
-      const color = inst.owner === this.hoveredInstance ? COLORS.componentHover : this.selectedInstances.has(inst.owner) ? COLORS.componentSelected : COLORS.body;
+      const color = this.collidedInstances.has(inst.owner) ? COLORS.componentCollided : inst.owner === this.hoveredInstance ? COLORS.componentHover : this.selectedInstances.has(inst.owner) ? COLORS.componentSelected : COLORS.body;
       (inst.body.material as THREE.MeshStandardMaterial).color.setHex(color);
     }
     this.requestRender();

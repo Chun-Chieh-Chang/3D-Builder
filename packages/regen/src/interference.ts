@@ -26,8 +26,9 @@ const meet = (p: { min: number[]; max: number[] }, q: { min: number[]; max: numb
  * The interference of components (E2.1): for every two components, the volume their parts have in common. A part is put where the assembly has it
  * first (`shapeOf` gives the part's own shape by its key), and two parts are only compared when their boxes meet. Parts of one component are not
  * compared with each other. Two parts that only touch share no volume (see MIN_INTERFERENCE_VOLUME). Everything made here but the overlaps is released.
+ * With `involving`, only the pairs that have one of those components are compared (what a drag asks, A3.6).
  */
-export function findInterference(kernel: Kernel, components: readonly InterferenceComponent[], shapeOf: (part: string) => ShapeId | null, minVolume = MIN_INTERFERENCE_VOLUME): InterferenceFound {
+export function findInterference(kernel: Kernel, components: readonly InterferenceComponent[], shapeOf: (part: string) => ShapeId | null, minVolume = MIN_INTERFERENCE_VOLUME, involving?: ReadonlySet<string>): InterferenceFound {
   const made: ShapeId[] = [];
   const found: InterferenceFound = { overlaps: [], checked: 0, unknown: [], failed: [] };
   try {
@@ -51,6 +52,7 @@ export function findInterference(kernel: Kernel, components: readonly Interferen
       for (let j = i + 1; j < placed.length; j++) {
         const a = placed[i]!;
         const b = placed[j]!;
+        if (involving && !involving.has(a.id) && !involving.has(b.id)) continue; // only what moves is asked about (a drag, A3.6)
         const first = found.overlaps.length;
         try {
           for (const pa of a.parts) {

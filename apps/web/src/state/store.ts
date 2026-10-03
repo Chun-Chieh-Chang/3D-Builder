@@ -39,6 +39,7 @@ import {
   bomName,
   type Ref,
   type SketchFeature,
+  type Vec3,
   mirrorKey,
 } from '@3db/model';
 import { ASSEMBLY_FILE_EXTENSION, assemblyName, derivedAssemblyFiles, PART_FILE_EXTENSION, partFileName, partName, readDocumentFile, sha256Hex, imageFileName, stepAssemblyFiles, stepFileName, stlFileName, writePartFile } from '@3db/io';
@@ -108,6 +109,43 @@ export interface InterferencePair {
   /** mm³, the overlaps together. */
   volume: number;
   overlaps: MeshData[];
+}
+
+/** One pair of components that are closer than the least clearance asked for (E2.2). */
+export interface ClearancePair {
+  a: string;
+  b: string;
+  aName: string;
+  bName: string;
+  aTop: string;
+  bTop: string;
+  distance: number;
+  interferes: boolean;
+  /** The closest point on the first, in the assembly's frame. */
+  at: Vec3;
+}
+
+export const SWEEP_DIRECTIONS = ['+x', '-x', '+y', '-y', '+z', '-z'] as const;
+export type SweepDirection = (typeof SWEEP_DIRECTIONS)[number];
+
+/** The clearance verification (E2.2) while its window is open. */
+export interface ClearanceState {
+  status: 'idle' | 'running' | 'done' | 'error';
+  /** The least clearance, as typed (mm). */
+  least: string;
+  pairs: ClearancePair[];
+  selected: number | null;
+  unknown: string[];
+  failed: string[];
+  checked: number;
+  ms: number;
+  tooFew: boolean;
+  error: string | null;
+  /** The document and solution it was worked out on: when the assembly shows others, the result is out of date. */
+  doc: unknown;
+  solution: unknown;
+  /** Room to take a component out: the direction and length as typed, and the answer in words. */
+  sweep: { dir: SweepDirection; length: string; status: 'idle' | 'running' | 'done' | 'error'; text: string | null; blocked: boolean };
 }
 
 export interface InterferenceState {
@@ -206,6 +244,8 @@ export interface UiState {
   measure: MeasureState | null;
   /** The interference detection (E2.1) while its window is open. Null when closed. */
   interference: InterferenceState | null;
+  /** The clearance verification (E2.2) while its window is open. Null when closed. */
+  clearance: ClearanceState | null;
   /** The geometry check (E3.1) while its dialog is open. Null when closed. */
   check: CheckState | null;
 }
@@ -395,6 +435,7 @@ class AppStore {
       documentSerial: 0,
       measure: null,
       interference: null,
+      clearance: null,
       check: null,
     };
     this.sketchRunner = new LatestRunner(
@@ -497,6 +538,94 @@ class AppStore {
       if (seq === this.checkSeq) this.set({ check: { status: 'done', rows: entries.map(([, name], i) => ({ name, report: reports[i] ?? null })), error: null } });
     } catch (e) {
       if (seq === this.checkSeq) this.set({ check: { status: 'error', rows: [], error: t('check.failed', { why: e instanceof Error ? e.message : String(e) }) } });
+    }
+  }
+
+  private clearanceSeq = 0;
+
+  /** 「餘隙確認」 (E2.2): opens its window with the least clearance of 1 mm, and checks the assembly as it is now. */
+  startClearance(): void {
+    const idle: ClearanceState = { status: 'idle', least: '1', pairs: [], selected: null, unknown: [], failed: [], checked: 0, ms: 0, tooFew: false, error: null, doc: undefined, solution: undefined, sweep: { dir: '+z', length: '100', status: 'idle', text: null, blocked: false } };
+    this.set({ clearance: this.state.clearance ?? idle });
+    void this.runClearance();
+  }
+
+  stopClearance(): void {
+    this.clearanceSeq++;
+    if (this.state.clearance) this.set({ clearance: null });
+  }
+
+  selectClearance(index: number | null): void {
+    if (this.state.clearance) this.set({ clearance: { ...this.state.clearance, selected: index } });
+  }
+
+  setClearanceLeast(least: string): void {
+    if (this.state.clearance) this.set({ clearance: { ...this.state.clearance, least } });
+  }
+
+  setSweep(patch: Partial<Pick<ClearanceState['sweep'], 'dir' | 'length'>>): void {
+    const c = this.state.clearance;
+    if (c) this.set({ clearance: { ...c, sweep: { ...c.sweep, ...patch, status: 'idle', text: null, blocked: false } } });
+  }
+
+  async runClearance(): Promise<void> {
+    const a = this.assembly;
+    const open = this.state.clearance;
+    if (!a || !open) return;
+    const least = Number(open.least);
+    const input = a.interferenceInput();
+    const seq = ++this.clearanceSeq;
+    const base: ClearanceState = { ...open, status: 'running', pairs: [], selected: null, unknown: [], failed: [], checked: 0, ms: 0, tooFew: input.components.length < 2, error: null, doc: this.state.asm?.doc, solution: this.state.asm?.solution };
+    if (!(least > 0) || !Number.isFinite(least)) return void this.set({ clearance: { ...base, status: 'error', error: t('clearance.error', { why: t('clearance.sweepBadLength') }) } });
+    if (base.tooFew) return void this.set({ clearance: { ...base, status: 'done' } });
+    this.set({ clearance: base });
+    try {
+      const r = await this.api.clearance(input.components, least);
+      if (seq !== this.clearanceSeq || !this.state.clearance) return;
+      const nameOf = (id: string) => input.names.get(id) ?? id;
+      this.set({
+        clearance: {
+          ...this.state.clearance,
+          ...base,
+          sweep: this.state.clearance.sweep,
+          status: 'done',
+          pairs: r.rows.map((row) => ({ a: row.a, b: row.b, aName: nameOf(row.a), bName: nameOf(row.b), aTop: input.tops.get(row.a) ?? row.a, bTop: input.tops.get(row.b) ?? row.b, distance: row.distance, interferes: row.interferes, at: row.pointA })),
+          unknown: r.unknown.map(nameOf),
+          failed: r.failed.map((f) => `${nameOf(f.a)} × ${nameOf(f.b)}`),
+          checked: r.checked,
+          ms: Math.round(r.ms),
+        },
+      });
+    } catch (e) {
+      if (seq === this.clearanceSeq && this.state.clearance) this.set({ clearance: { ...base, sweep: this.state.clearance.sweep, status: 'error', error: t('clearance.error', { why: e instanceof Error ? e.message : String(e) }) } });
+    }
+  }
+
+  /** Room to take the selected component out (E2.2): how far it moves along the direction before it meets another component. */
+  async runSweep(): Promise<void> {
+    const a = this.assembly;
+    const c = this.state.clearance;
+    if (!a || !c) return;
+    const asm = this.state.asm;
+    const mover = asm?.selected && asm.doc.components.some((x) => x.id === asm.selected) ? asm.selected : null;
+    const say = (patch: Partial<ClearanceState['sweep']>): void => {
+      if (this.state.clearance) this.set({ clearance: { ...this.state.clearance, sweep: { ...this.state.clearance.sweep, ...patch } } });
+    };
+    if (!mover) return say({ status: 'error', text: t('clearance.sweepNone'), blocked: false });
+    const length = Number(c.sweep.length);
+    if (!(length > 0) || !Number.isFinite(length)) return say({ status: 'error', text: t('clearance.sweepBadLength'), blocked: false });
+    const dir: Vec3 = [c.sweep.dir.endsWith('x') ? 1 : 0, c.sweep.dir.endsWith('y') ? 1 : 0, c.sweep.dir.endsWith('z') ? 1 : 0].map((v) => (c.sweep.dir.startsWith('-') ? -v : v)) as Vec3;
+    const input = a.interferenceInput();
+    const name = input.names.get(mover) ?? mover;
+    say({ status: 'running', text: t('clearance.sweepRunning'), blocked: false });
+    try {
+      const r = await this.api.sweep(input.components, mover, dir, length);
+      const shown = String(Math.round(r.travel * 1000) / 1000 + 0);
+      const blocker = r.blocker ? (input.names.get(r.blocker) ?? r.blocker) : '';
+      const text = r.startsInside ? t('clearance.sweepInside', { name, blocker }) : r.blocker ? t('clearance.sweepBlocked', { name, dir: c.sweep.dir.toUpperCase(), travel: shown, blocker }) : t('clearance.sweepFree', { name, dir: c.sweep.dir.toUpperCase(), length: shown });
+      say({ status: 'done', text: r.approximate ? `${text} ${t('clearance.sweepApprox', { travel: shown })}` : text, blocked: !!r.blocker });
+    } catch (e) {
+      say({ status: 'error', text: t('clearance.sweepError', { why: e instanceof Error ? e.message : String(e) }), blocked: false });
     }
   }
 
@@ -1757,7 +1886,7 @@ class AppStore {
     void this.api.setBlobs(blobs); // posted before the rebuild request, so the worker has them first
     this.savedText = serializePart(doc);
     if (!this.state.recovery) void this.autosave.clear();
-    this.set({ active: 'part', selected: null, selectedFace: null, result: null, fileName, untitled, fitRequest: this.state.fitRequest + 1, documentSerial: this.state.documentSerial + 1, measure: null, interference: null, check: null });
+    this.set({ active: 'part', selected: null, selectedFace: null, result: null, fileName, untitled, fitRequest: this.state.fitRequest + 1, documentSerial: this.state.documentSerial + 1, measure: null, interference: null, clearance: null, check: null });
     this.onDocChanged();
   }
 
@@ -1847,7 +1976,7 @@ class AppStore {
       },
       source,
     );
-    this.set({ active: 'assembly', asm: this.assembly.getState(), returnTo: null, documentSerial: this.state.documentSerial + 1, measure: null, interference: null, check: null });
+    this.set({ active: 'assembly', asm: this.assembly.getState(), returnTo: null, documentSerial: this.state.documentSerial + 1, measure: null, interference: null, clearance: null, check: null });
   }
 
   private closeAssembly(): void {

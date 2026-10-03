@@ -2,7 +2,7 @@ import type { Locale } from '@3db/i18n';
 import type { InterferenceComponent, MeasureReport, MeasureTarget, PartMass } from '@3db/model';
 import type { AssemblyDoc, Axis3, CoordSystem, Fingerprint, Id, PartDoc, PlaneFrame, Pose, Ref, SketchFeature, SourceTree, Vec3 } from '@3db/model';
 import type { GeometryReport, MassProps, MeshData } from '@3db/kernel';
-import type { AssemblyResult, AssemblySolveOptions, Converted, FeatureResult } from '@3db/regen';
+import type { AssemblyResult, AssemblySolveOptions, ClearanceRow, Converted, FeatureResult, SweepResult } from '@3db/regen';
 import type { MateGeometry } from '@3db/assembly';
 import type { StepAssemblyPlan, StepInstance, StepSub } from '@3db/io';
 import type { EntityStatus, SketchStatus, SolvedGeometry, SolveOptions } from '@3db/sketch';
@@ -173,6 +173,26 @@ export interface InterferenceResult {
   ms: number;
 }
 
+/** What the clearance check found (E2.2): the pairs of components closer than the least clearance asked for, the closest first. */
+export interface ClearanceResult {
+  rows: ClearanceRow[];
+  checked: number;
+  unknown: string[];
+  failed: { a: string; b: string; message: string }[];
+  ms: number;
+}
+
+/** Room to take a component out (E2.2): see `sweepClearance`. */
+export interface SweepOutcome extends SweepResult {
+  ms: number;
+}
+
+/** What a component that moves runs into (A3.6): the pairs of components that share volume, one of them a component that moves. */
+export interface CollisionResult {
+  pairs: { a: string; b: string }[];
+  ms: number;
+}
+
 export interface KernelApi {
   init(): Promise<{ occtMs: number; gcsMs: number }>;
   /** The language of the messages the worker makes (errors, warnings); what it made before keeps its language. */
@@ -203,6 +223,12 @@ export interface KernelApi {
   measure(targets: MeasureTarget[]): Promise<MeasureReport>;
   /** The interference of components (E2.1): the volume their parts share, each overlap as a mesh. Parts are the ones rebuilt for the assembly (uildPart). */
   interference(components: InterferenceComponent[]): Promise<InterferenceResult>;
+  /** The clearance between components (E2.2): the pairs closer than `least` mm, the closest first; with `only`, just those with one of these components. */
+  clearance(components: InterferenceComponent[], least: number, only?: string[]): Promise<ClearanceResult>;
+  /** How far `mover` can move along `dir` before it meets another component, at most `length` mm (E2.2). */
+  sweep(components: InterferenceComponent[], mover: string, dir: Vec3, length: number): Promise<SweepOutcome>;
+  /** The collisions of the components that move (A3.6): the pairs with a part that shares volume. */
+  collisions(components: InterferenceComponent[], movers: string[]): Promise<CollisionResult>;
   /** The geometry check (E3.1) of parts: each by its key as built for the assembly, or the open part for null. Null for one that has no body or is not built. */
   checkGeometry(parts: (string | null)[]): Promise<(GeometryReport | null)[]>;
   /** Lets go of every rebuilt part file except these. */
