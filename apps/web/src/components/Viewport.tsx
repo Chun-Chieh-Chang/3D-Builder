@@ -12,8 +12,9 @@ import { FEATURE_LABEL } from '../strings';
 import type { RebuildPayload } from '../worker/protocol';
 import { Topology } from '../state/selectionSets';
 import { Icon } from './Icon';
-import { draftColors, undercutColors } from '../state/analysis';
+import { draftColors, thicknessColors, undercutColors } from '../state/analysis';
 import { DraftPanel } from './DraftPanel';
+import { ThicknessPanel } from './ThicknessPanel';
 import { UndercutPanel } from './UndercutPanel';
 import { MeasurePanel } from './MeasurePanel';
 
@@ -197,7 +198,15 @@ export function Viewport() {
   const draftReport = useStore((s) => s.draft?.report ?? null);
   const undercutReport = useStore((s) => s.undercut?.report ?? null);
   const faceCount = result?.faceNames.length ?? -1;
-  const analysisColors = draftReport && draftReport.faces.length === faceCount ? draftColors(draftReport) : undercutReport && undercutReport.faces.length === faceCount ? undercutColors(undercutReport) : null;
+  const thicknessReport = useStore((s) => s.thickness?.report ?? null);
+  const analysisColors =
+    draftReport && draftReport.faces.length === faceCount
+      ? draftColors(draftReport)
+      : undercutReport && undercutReport.faces.length === faceCount
+        ? undercutColors(undercutReport)
+        : thicknessReport && thicknessReport.faces.length === faceCount
+          ? thicknessColors(thicknessReport)
+          : null;
   const pick = picking(feature, !!editing, modelTool, measure !== null);
 
   useEffect(() => {
@@ -408,6 +417,7 @@ export function Viewport() {
       <MeasurePanel />
       <DraftPanel />
       <UndercutPanel />
+      <ThicknessPanel />
       {menu && <ContextMenu x={menu.x} y={menu.y} items={menu.items} onItems={(items) => setMenu({ ...menu, items })} onClose={() => setMenu(null)} />}
     </main>
   );

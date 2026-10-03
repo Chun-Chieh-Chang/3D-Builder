@@ -233,6 +233,7 @@ export const features = {
   'feature.offsetSurface': '偏移曲面',
   'feature.splitLine': '分割線',
   'analysis.badAngle': '要求的拔模角不能是負的',
+  'analysis.badLimits': '壁厚的上下限要是大於 0 的數字，而且下限不能大於上限',
   'feature.thicken': '厚面',
   'feature.cutWithSurface': '以曲面除料',
   'cmd.surfaceOnlyBodies': '這個特徵只能選本體',

@@ -69,6 +69,50 @@ export interface UndercutReport {
   ms: number;
 }
 
+/**
+ * What a face is to the wall thickness asked for (thickness analysis, E3.5): `thin` where more than a twentieth of it is thinner than the least thickness, `thick` where more
+ * than half of it is thicker than the greatest (a corner can be thick in a wall that is not), `ok` otherwise, `open` where there is no surface on the other side to measure to (a sheet), `unknown` for a face that could
+ * not be sampled.
+ */
+export type ThicknessClass = 'thin' | 'ok' | 'thick' | 'open' | 'unknown';
+
+export interface ThicknessFace {
+  face: number;
+  kind: ThicknessClass;
+  /** The least, the median (by area) and the greatest thickness (mm) over the points of the face that have a surface on the other side; NaN when none has. The median, because
+   * near the edges and corners of a face the ray can run down the whole length of the wall next to it, which makes the greatest and the mean mean little (ADR 0077). */
+  min: number;
+  median: number;
+  max: number;
+  /** The share (0 to 1, by area) of the face thinner than the least thickness asked, thicker than the greatest, and with no surface on the other side to measure to. */
+  thinShare: number;
+  thickShare: number;
+  openShare: number;
+  samples: number;
+  area: number;
+}
+
+/** Where a thickness was found: the thickness (mm), the point on the surface, and the face. */
+export interface ThicknessSpot {
+  thickness: number;
+  point: Vec3;
+  face: number;
+}
+
+export interface ThicknessReport {
+  /** The limits asked for (mm); null for none. */
+  least: number | null;
+  greatest: number | null;
+  faces: ThicknessFace[];
+  totals: Record<ThicknessClass, { faces: number; area: number }>;
+  /** The thinnest and the thickest place found (null when no point had a surface to measure to). */
+  thinnest: ThicknessSpot | null;
+  thickest: ThicknessSpot | null;
+  triangles: number;
+  samples: number;
+  ms: number;
+}
+
 /** How far a shape is from another, by points sampled on it (`Kernel.gapReport`): the nearest distances from those points to the other shape. */
 export interface GapReport {
   samples: number;

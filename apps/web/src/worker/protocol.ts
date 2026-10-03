@@ -1,7 +1,7 @@
 import type { Locale } from '@3db/i18n';
 import type { InterferenceComponent, MeasureReport, MeasureTarget, PartMass, ElementFacts, ViewAxes, ViewFeature } from '@3db/model';
 import type { AssemblyDoc, Axis3, CoordSystem, Fingerprint, Id, PartDoc, PlaneFrame, Pose, Ref, SketchFeature, SourceTree, Vec3 } from '@3db/model';
-import type { DraftReport, UndercutReport, GeometryReport, MassProps, MeshData, ProjectedView } from '@3db/kernel';
+import type { DraftReport, ThicknessReport, UndercutReport, GeometryReport, MassProps, MeshData, ProjectedView } from '@3db/kernel';
 import type { AssemblyResult, AssemblySolveOptions, ClearanceRow, Converted, FeatureResult, SweepResult } from '@3db/regen';
 import type { MateGeometry } from '@3db/assembly';
 import type { StepAssemblyPlan, StepInstance, StepSub } from '@3db/io';
@@ -269,6 +269,8 @@ export interface KernelApi {
   analyzeDraft(pull: [number, number, number], required: number): Promise<DraftReport>;
   /** What of every face of the part as it is shown a mold that opens along `pull` can see from either end (E3.3). */
   analyzeUndercut(pull: [number, number, number]): Promise<UndercutReport>;
+  /** How thick the wall is at every face of the part as it is shown, and which faces are under `min` or over `max` mm (E3.5). */
+  analyzeThickness(limits: { min?: number; max?: number }): Promise<ThicknessReport>;
   /** Lets go of every rebuilt part file except these. */
   retainParts(keys: string[]): Promise<void>;
   /**

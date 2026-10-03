@@ -150,3 +150,91 @@ export function anyHit(bvh: Bvh, o: readonly [number, number, number], d: readon
   }
   return false;
 }
+
+/** Where the ray enters the box of `node` (its parameter, at least `tmin`), or Infinity when it misses the box or leaves it before `tmax`. */
+function entry(bvh: Bvh, node: number, o: readonly number[], d: readonly number[], inv: readonly number[], tmin: number, tmax: number): number {
+  let t0 = tmin;
+  let t1 = tmax;
+  for (let a = 0; a < 3; a++) {
+    const lo = bvh.bounds[6 * node + a]!;
+    const hi = bvh.bounds[6 * node + 3 + a]!;
+    const da = d[a]!;
+    const oa = o[a]!;
+    if (da === 0) {
+      if (oa < lo - 1e-9 || oa > hi + 1e-9) return Infinity;
+      continue;
+    }
+    let ta = (lo - oa) * inv[a]!;
+    let tb = (hi - oa) * inv[a]!;
+    if (ta > tb) [ta, tb] = [tb, ta];
+    if (ta > t0) t0 = ta;
+    if (tb < t1) t1 = tb;
+    if (t0 > t1 + 1e-9) return Infinity;
+  }
+  return t0;
+}
+
+/**
+ * The nearest triangle other than `skip` that the ray from `o` along the unit vector `d` meets (thickness analysis, E3.5: the surface on the other side of the wall): how
+ * far along the ray it is, and its number in the mesh; Infinity and −1 when it meets none. A box is visited only if the ray enters it before the nearest hit found so far,
+ * the nearer child first.
+ */
+export function nearestHitAt(bvh: Bvh, o: readonly [number, number, number], d: readonly [number, number, number], skip = -1, tmin = 1e-9): { distance: number; triangle: number } {
+  if (bvh.nodes === 0) return { distance: Infinity, triangle: -1 };
+  const inv = [d[0] === 0 ? Infinity : 1 / d[0], d[1] === 0 ? Infinity : 1 / d[1], d[2] === 0 ? Infinity : 1 / d[2]];
+  const c = bvh.corners;
+  let best = Infinity;
+  let at = -1;
+  const stack = [0];
+  while (stack.length > 0) {
+    const node = stack.pop()!;
+    if (entry(bvh, node, o, d, inv, tmin, best) === Infinity) continue;
+    if (bvh.left[node]! >= 0) {
+      const l = bvh.left[node]!;
+      const r = bvh.right[node]!;
+      // the farther child goes in first, so the nearer one comes out first
+      if (entry(bvh, l, o, d, inv, tmin, best) <= entry(bvh, r, o, d, inv, tmin, best)) stack.push(r, l);
+      else stack.push(l, r);
+      continue;
+    }
+    for (let p = bvh.start[node]!; p < bvh.start[node]! + bvh.count[node]!; p++) {
+      const t = bvh.order[p]!;
+      if (t === skip) continue;
+      const b = 9 * t;
+      const e1x = c[b + 3]! - c[b]!, e1y = c[b + 4]! - c[b + 1]!, e1z = c[b + 5]! - c[b + 2]!;
+      const e2x = c[b + 6]! - c[b]!, e2y = c[b + 7]! - c[b + 1]!, e2z = c[b + 8]! - c[b + 2]!;
+      const px = d[1] * e2z - d[2] * e2y, py = d[2] * e2x - d[0] * e2z, pz = d[0] * e2y - d[1] * e2x;
+      const det = e1x * px + e1y * py + e1z * pz;
+      if (Math.abs(det) < 1e-14) continue;
+      const idet = 1 / det;
+      const sx = o[0] - c[b]!, sy = o[1] - c[b + 1]!, sz = o[2] - c[b + 2]!;
+      const u = (sx * px + sy * py + sz * pz) * idet;
+      if (u < -1e-9 || u > 1 + 1e-9) continue;
+      const qx = sy * e1z - sz * e1y, qy = sz * e1x - sx * e1z, qz = sx * e1y - sy * e1x;
+      const v = (d[0] * qx + d[1] * qy + d[2] * qz) * idet;
+      if (v < -1e-9 || u + v > 1 + 1e-9) continue;
+      const dist = (e2x * qx + e2y * qy + e2z * qz) * idet;
+      if (dist > tmin && dist < best) {
+        best = dist;
+        at = t;
+      }
+    }
+  }
+  return { distance: best, triangle: at };
+}
+
+/** How far along the ray the nearest triangle other than `skip` is, or Infinity when it meets none (see `nearestHitAt`). */
+export function nearestHit(bvh: Bvh, o: readonly [number, number, number], d: readonly [number, number, number], skip = -1, tmin = 1e-9): number {
+  return nearestHitAt(bvh, o, d, skip, tmin).distance;
+}
+
+/** The outward unit normal of triangle `t` of the mesh (the winding of the mesh is outward). */
+export function triangleNormal(bvh: Bvh, t: number): [number, number, number] {
+  const c = bvh.corners;
+  const b = 9 * t;
+  const e1 = [c[b + 3]! - c[b]!, c[b + 4]! - c[b + 1]!, c[b + 5]! - c[b + 2]!];
+  const e2 = [c[b + 6]! - c[b]!, c[b + 7]! - c[b + 1]!, c[b + 8]! - c[b + 2]!];
+  const n = [e1[1]! * e2[2]! - e1[2]! * e2[1]!, e1[2]! * e2[0]! - e1[0]! * e2[2]!, e1[0]! * e2[1]! - e1[1]! * e2[0]!];
+  const len = Math.hypot(n[0]!, n[1]!, n[2]!) || 1;
+  return [n[0]! / len, n[1]! / len, n[2]! / len];
+}

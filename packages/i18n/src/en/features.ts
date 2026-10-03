@@ -235,6 +235,7 @@ export const features: Translation = {
   'feature.offsetSurface': 'Offset Surface',
   'feature.splitLine': 'Split Line',
   'analysis.badAngle': 'The draft angle required cannot be negative',
+  'analysis.badLimits': 'The limits of the wall thickness have to be numbers above 0, the least not above the greatest',
   'feature.thicken': 'Thicken',
   'feature.cutWithSurface': 'Cut with Surface',
   'cmd.surfaceOnlyBodies': 'This feature can only take bodies',

@@ -1,6 +1,7 @@
 import { t } from '@3db/i18n';
 import type { BRepBuilderAPI_MakeShape, NCollection_List_TopoDS_Shape, TopoDS_Shape, TopoDS_Wire } from 'libcascade/single/init';
-import { anyHit, buildBvh } from './rays';
+import { anyHit, buildBvh, nearestHitAt, triangleNormal } from './rays';
+import { forEachSample } from './sampling';
 import { Arena, loadOcct, ShapeIndex, type LoadOptions, type OC } from './occt';
 import {
   KernelError,
@@ -11,6 +12,10 @@ import {
   type Distance,
   type DraftFace,
   type DraftReport,
+  type ThicknessClass,
+  type ThicknessFace,
+  type ThicknessReport,
+  type ThicknessSpot,
   type UndercutClass,
   type UndercutFace,
   type UndercutReport,
@@ -2734,38 +2739,20 @@ export class Kernel {
       const tolerance = options.tolerance ?? Math.min(1, Math.max(0.002, Math.hypot(size.max[0] - size.min[0], size.max[1] - size.min[1], size.max[2] - size.min[2]) * 2e-3));
       const mesh = this.mesh(copy, { tolerance, angular: options.angular ?? 0.2 });
       const bvh = buildBvh(mesh.positions, mesh.indices);
-      const stride = Math.max(1, Math.ceil(mesh.indices.length / 3 / (options.maxSamples ?? 60000)));
       const off = Math.max(1e-4, options.offset ?? 0.75 * tolerance);
       const faces = topology.faces.map(() => ({ up: 0, down: 0, blocked: 0, area: 0, samples: 0 }));
-      let samples = 0;
-      for (let r = 0; r < mesh.faceRanges.length; r += 3) {
-        const [from, n, face] = [mesh.faceRanges[r]!, mesh.faceRanges[r + 1]!, mesh.faceRanges[r + 2]!];
+      const samples = forEachSample(mesh, { maxSamples: options.maxSamples ?? 60000 }, (face, triangle, point, nrm, w) => {
         const acc = faces[face];
-        if (!acc) continue;
-        for (let i = from, k = 0; i < from + n; i += 3, k++) {
-          if (k % stride !== 0) continue;
-          const p = (v: number): Vec3 => [mesh.positions[3 * v]!, mesh.positions[3 * v + 1]!, mesh.positions[3 * v + 2]!];
-          const [a, b, c] = [p(mesh.indices[i]!), p(mesh.indices[i + 1]!), p(mesh.indices[i + 2]!)];
-          const e1: Vec3 = [b[0] - a[0], b[1] - a[1], b[2] - a[2]];
-          const e2: Vec3 = [c[0] - a[0], c[1] - a[1], c[2] - a[2]];
-          const cr: Vec3 = [e1[1] * e2[2] - e1[2] * e2[1], e1[2] * e2[0] - e1[0] * e2[2], e1[0] * e2[1] - e1[1] * e2[0]];
-          const twice = Math.hypot(cr[0], cr[1], cr[2]);
-          if (twice < 1e-12) continue;
-          // the winding of the mesh is outward (a reversed face's is flipped when it is made)
-          const nrm: Vec3 = [cr[0] / twice, cr[1] / twice, cr[2] / twice];
-          const o: Vec3 = [(a[0] + b[0] + c[0]) / 3 + nrm[0] * off, (a[1] + b[1] + c[1]) / 3 + nrm[1] * off, (a[2] + b[2] + c[2]) / 3 + nrm[2] * off];
-          const self = i / 3;
-          const clearUp = !anyHit(bvh, o, up, self);
-          const clearDown = !anyHit(bvh, o, down, self);
-          const w = twice / 2;
-          acc.area += w;
-          acc.samples++;
-          samples++;
-          if (clearUp) acc.up += w;
-          if (clearDown) acc.down += w;
-          if (!clearUp && !clearDown) acc.blocked += w;
-        }
-      }
+        if (!acc) return;
+        const o: Vec3 = [point[0] + nrm[0] * off, point[1] + nrm[1] * off, point[2] + nrm[2] * off];
+        const clearUp = !anyHit(bvh, o, up, triangle);
+        const clearDown = !anyHit(bvh, o, down, triangle);
+        acc.area += w;
+        acc.samples++;
+        if (clearUp) acc.up += w;
+        if (clearDown) acc.down += w;
+        if (!clearUp && !clearDown) acc.blocked += w;
+      });
       const report: UndercutFace[] = faces.map((f, i) => {
         const area = topology.faces[i]!.area;
         if (f.samples === 0 || !(f.area > 0)) return { face: i, kind: 'unknown', up: NaN, down: NaN, blocked: NaN, samples: 0, area };
@@ -2781,6 +2768,91 @@ export class Kernel {
         if (f.kind !== 'unknown') undercutArea += f.blocked * f.area;
       }
       return { faces: report, totals, undercutArea, triangles: Math.floor(mesh.indices.length / 3), samples, ms: performance.now() - began };
+    } finally {
+      this.release(copy);
+    }
+  }
+
+  /**
+   * Thickness analysis (E3.5): how thick the wall is at every point of the surface, as the distance along the inward normal to the next surface. Every triangle of the
+   * mesh (made on a copy, as fine as `angular` and `tolerance` say) is a point: a ray starts at its centre, a hair into the material, and runs along minus its outward
+   * normal to the nearest triangle of the mesh (a bounding-volume tree: `nearestHit`). Per face: the least, mean and greatest thickness and the shares thinner than `min`
+   * and thicker than `max`; a face with no surface on the other side (a sheet) is `open`. ADR 0074: the edge face of an open shell is measured down the whole wall and so
+   * comes out thick, which it is. With more than `maxSamples` triangles every few are used.
+   */
+  thicknessAnalysis(id: ShapeId, options: { min?: number; max?: number; angular?: number; tolerance?: number; maxSamples?: number } = {}): ThicknessReport {
+    const { min, max } = options;
+    if ((min !== undefined && !(min > 0)) || (max !== undefined && !(max > 0)) || (min !== undefined && max !== undefined && min > max)) throw new KernelError(t('analysis.badLimits'));
+    const began = performance.now();
+    const topology = this.topology(id);
+    const copy = this.clone(id);
+    try {
+      const size = this.bounds(id);
+      const tolerance = options.tolerance ?? Math.min(1, Math.max(0.002, Math.hypot(size.max[0] - size.min[0], size.max[1] - size.min[1], size.max[2] - size.min[2]) * 2e-3));
+      const mesh = this.mesh(copy, { tolerance, angular: options.angular ?? 0.1 });
+      const bvh = buildBvh(mesh.positions, mesh.indices);
+      const into = 1e-4;
+      const acc = topology.faces.map(() => ({ area: 0, thin: 0, thick: 0, open: 0, hit: 0, rows: [] as [number, number][], samples: 0 }));
+      let thinnest: ThicknessSpot | null = null;
+      let thickest: ThicknessSpot | null = null;
+      const samples = forEachSample(mesh, { maxSamples: options.maxSamples ?? 60000 }, (face, triangle, point, nrm, w) => {
+        const f = acc[face];
+        if (!f) return;
+        // the mesh's winding is outward: the ray goes the other way, into the material
+        const dir: Vec3 = [-nrm[0], -nrm[1], -nrm[2]];
+        const o: Vec3 = [point[0] + dir[0] * into, point[1] + dir[1] * into, point[2] + dir[2] * into];
+        const found = nearestHitAt(bvh, o, dir, triangle);
+        f.area += w;
+        f.samples++;
+        // the surface on the other side is one that faces this one (within 60 degrees of straight on); a ray that leaves through the face next to this one, near an edge, has
+        // measured nothing of the wall
+        let opposite = false;
+        if (Number.isFinite(found.distance)) {
+          const h = triangleNormal(bvh, found.triangle);
+          opposite = h[0] * dir[0] + h[1] * dir[1] + h[2] * dir[2] > 0.5;
+        }
+        if (!opposite) {
+          f.open += w;
+          return;
+        }
+        const thickness = found.distance + into;
+        f.hit += w;
+        f.rows.push([thickness, w]);
+        if (min !== undefined && thickness < min) f.thin += w;
+        if (max !== undefined && thickness > max) f.thick += w;
+        if (!thinnest || thickness < thinnest.thickness) thinnest = { thickness, point, face };
+        if (!thickest || thickness > thickest.thickness) thickest = { thickness, point, face };
+      });
+      const faces: ThicknessFace[] = acc.map((f, i) => {
+        const area = topology.faces[i]!.area;
+        if (f.samples === 0 || !(f.area > 0)) return { face: i, kind: 'unknown', min: NaN, median: NaN, max: NaN, thinShare: NaN, thickShare: NaN, openShare: NaN, samples: 0, area };
+        const [thin, thick, open] = [f.thin / f.area, f.thick / f.area, f.open / f.area];
+        const kind: ThicknessClass = open >= 0.95 ? 'open' : thin > 0.05 ? 'thin' : thick > 0.5 ? 'thick' : 'ok';
+        let least = NaN;
+        let greatest = NaN;
+        let median = NaN;
+        if (f.rows.length > 0) {
+          f.rows.sort((x, y) => x[0] - y[0]);
+          least = f.rows[0]![0];
+          greatest = f.rows[f.rows.length - 1]![0];
+          let run = 0;
+          for (const [value, w] of f.rows) {
+            run += w;
+            if (run >= f.hit / 2) {
+              median = value;
+              break;
+            }
+          }
+        }
+        return { face: i, kind, min: least, median, max: greatest, thinShare: thin, thickShare: thick, openShare: open, samples: f.samples, area };
+      });
+      const totals = {} as ThicknessReport['totals'];
+      for (const k of ['thin', 'ok', 'thick', 'open', 'unknown'] as const) totals[k] = { faces: 0, area: 0 };
+      for (const f of faces) {
+        totals[f.kind].faces++;
+        totals[f.kind].area += f.area;
+      }
+      return { least: min ?? null, greatest: max ?? null, faces, totals, thinnest, thickest, triangles: Math.floor(mesh.indices.length / 3), samples, ms: performance.now() - began };
     } finally {
       this.release(copy);
     }

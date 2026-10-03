@@ -79,7 +79,7 @@ import {
   keepRecovery,
   recoveryCopy,
 } from '../files';
-import type { DraftReport, GeometryReport, MeshData, UndercutReport } from '@3db/kernel';
+import type { DraftReport, GeometryReport, MeshData, ThicknessReport, UndercutReport } from '@3db/kernel';
 import { AssemblyStore, type AssemblySource, type AssemblyState } from './assembly';
 
 export interface EditSession {
@@ -116,6 +116,23 @@ export interface UndercutState {
   status: 'running' | 'done' | 'error';
   report: UndercutReport | null;
   error: string | null;
+}
+
+/** The 「厚度分析」 window (E3.5): the limits as typed (mm, empty for none), and what the worker last said for them. Not saved with the part. */
+export interface ThicknessState {
+  least: string;
+  greatest: string;
+  status: 'running' | 'done' | 'error';
+  report: ThicknessReport | null;
+  error: string | null;
+}
+
+/** The limits of a thickness analysis from what was typed: undefined for an empty one, null when what is typed is not a number above 0 or the least is above the greatest. */
+export function thicknessLimits(least: string, greatest: string): { min?: number; max?: number } | null {
+  const one = (s: string): number | undefined | null => (s.trim() === '' ? undefined : Number.isFinite(Number(s)) && Number(s) > 0 ? Number(s) : null);
+  const [min, max] = [one(least), one(greatest)];
+  if (min === null || max === null || (min !== undefined && max !== undefined && min > max)) return null;
+  return { ...(min === undefined ? {} : { min }), ...(max === undefined ? {} : { max }) };
 }
 
 export interface MeasureState {
@@ -273,6 +290,7 @@ export interface UiState {
   measure: MeasureState | null;
   draft: DraftState | null;
   undercut: UndercutState | null;
+  thickness: ThicknessState | null;
   /** The interference detection (E2.1) while its window is open. Null when closed. */
   interference: InterferenceState | null;
   /** The open drawing (Phase 5); null unless the open document is a drawing. */
@@ -471,6 +489,7 @@ class AppStore {
       measure: null,
       interference: null,
       clearance: null,
+      thickness: null,
       undercut: null,
       draft: null,
       check: null,
@@ -529,6 +548,7 @@ class AppStore {
     // the draft analysis follows the model too
     if (this.state.draft && 'result' in patch) void this.runDraft();
     if (this.state.undercut && 'result' in patch) void this.runUndercut();
+    if (this.state.thickness && 'result' in patch) void this.runThickness();
   }
 
   private draftSeq = 0;
@@ -536,7 +556,8 @@ class AppStore {
   /** 「拔模分析」 (E3.2) on: along +z to start with (the way a part grows from the front plane), 1° required; it is worked out for the part as shown. */
   startDraft(): void {
     this.undercutSeq++;
-    this.set({ undercut: null, draft: { pull: [0, 0, 1], label: '+z', required: '1', status: 'running', report: null, error: null } });
+    this.thicknessSeq++;
+    this.set({ undercut: null, thickness: null, draft: { pull: [0, 0, 1], label: '+z', required: '1', status: 'running', report: null, error: null } });
     void this.runDraft();
   }
 
@@ -577,7 +598,8 @@ class AppStore {
   startUndercut(): void {
     const from = this.state.draft;
     this.draftSeq++;
-    this.set({ draft: null, undercut: { pull: from?.pull ?? [0, 0, 1], label: from?.label ?? '+z', status: 'running', report: null, error: null } });
+    this.thicknessSeq++;
+    this.set({ draft: null, thickness: null, undercut: { pull: from?.pull ?? [0, 0, 1], label: from?.label ?? '+z', status: 'running', report: null, error: null } });
     void this.runUndercut();
   }
 
@@ -601,6 +623,41 @@ class AppStore {
       if (seq === this.undercutSeq && this.state.undercut) this.set({ undercut: { ...this.state.undercut, status: 'done', report, error: null } });
     } catch (e) {
       if (seq === this.undercutSeq && this.state.undercut) this.set({ undercut: { ...this.state.undercut, status: 'error', report: null, error: t('undercutAnalysis.failed', { why: e instanceof Error ? e.message : String(e) }) } });
+    }
+  }
+
+  private thicknessSeq = 0;
+
+  /** 「厚度分析」 (E3.5) on: at least 1 and at most 4 mm to start with (a wall of a plastic part); it closes the draft and undercut analyses, which color the same faces. */
+  startThickness(): void {
+    this.draftSeq++;
+    this.undercutSeq++;
+    this.set({ draft: null, undercut: null, thickness: { least: '1', greatest: '4', status: 'running', report: null, error: null } });
+    void this.runThickness();
+  }
+
+  stopThickness(): void {
+    this.thicknessSeq++;
+    if (this.state.thickness) this.set({ thickness: null });
+  }
+
+  setThicknessLimits(least: string, greatest: string): void {
+    if (!this.state.thickness) return;
+    this.set({ thickness: { ...this.state.thickness, least, greatest } });
+    void this.runThickness();
+  }
+
+  private async runThickness(): Promise<void> {
+    const th = this.state.thickness;
+    if (!th) return;
+    const limits = thicknessLimits(th.least, th.greatest);
+    if (!limits) return;
+    const seq = ++this.thicknessSeq;
+    try {
+      const report = await this.api.analyzeThickness(limits);
+      if (seq === this.thicknessSeq && this.state.thickness) this.set({ thickness: { ...this.state.thickness, status: 'done', report, error: null } });
+    } catch (e) {
+      if (seq === this.thicknessSeq && this.state.thickness) this.set({ thickness: { ...this.state.thickness, status: 'error', report: null, error: t('thicknessAnalysis.failed', { why: e instanceof Error ? e.message : String(e) }) } });
     }
   }
 
@@ -2172,7 +2229,7 @@ class AppStore {
     void this.api.setBlobs(blobs); // posted before the rebuild request, so the worker has them first
     this.savedText = serializePart(doc);
     if (!this.state.recovery) void this.autosave.clear();
-    this.set({ active: 'part', selected: null, selectedFace: null, result: null, fileName, untitled, fitRequest: this.state.fitRequest + 1, documentSerial: this.state.documentSerial + 1, measure: null, draft: null, undercut: null, interference: null, clearance: null, check: null });
+    this.set({ active: 'part', selected: null, selectedFace: null, result: null, fileName, untitled, fitRequest: this.state.fitRequest + 1, documentSerial: this.state.documentSerial + 1, measure: null, draft: null, undercut: null, thickness: null, interference: null, clearance: null, check: null });
     this.onDocChanged();
   }
 
@@ -2198,7 +2255,7 @@ class AppStore {
       },
       source,
     );
-    this.set({ active: 'drawing', drw: this.drawing.getState(), documentSerial: this.state.documentSerial + 1, measure: null, draft: null, undercut: null, interference: null, clearance: null, check: null });
+    this.set({ active: 'drawing', drw: this.drawing.getState(), documentSerial: this.state.documentSerial + 1, measure: null, draft: null, undercut: null, thickness: null, interference: null, clearance: null, check: null });
   }
 
   private closeDrawing(): void {
@@ -2355,7 +2412,7 @@ class AppStore {
       },
       source,
     );
-    this.set({ active: 'assembly', asm: this.assembly.getState(), returnTo: null, documentSerial: this.state.documentSerial + 1, measure: null, draft: null, undercut: null, interference: null, clearance: null, check: null });
+    this.set({ active: 'assembly', asm: this.assembly.getState(), returnTo: null, documentSerial: this.state.documentSerial + 1, measure: null, draft: null, undercut: null, thickness: null, interference: null, clearance: null, check: null });
   }
 
   private closeAssembly(): void {
