@@ -14,6 +14,7 @@ import { MovePanel } from './components/MovePanel';
 import { PatternPanel } from './components/PatternPanel';
 import { BomDialog } from './components/BomDialog';
 import { PhysicalDialog } from './components/PhysicalDialog';
+import { CheckDialog } from './components/CheckDialog';
 import { ExplodePanel } from './components/ExplodePanel';
 import { PropertyManager } from './components/PropertyManager';
 import { StatusBar } from './components/StatusBar';
@@ -59,6 +60,7 @@ export function App() {
       <PropertiesDialog />
       <BomDialog />
       <PhysicalDialog />
+      <CheckDialog />
       <AppearanceDialog />
       <StepOptionsDialog />
       <TemplateDialog />

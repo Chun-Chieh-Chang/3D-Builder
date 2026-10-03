@@ -21,7 +21,7 @@ export interface UiAction {
 }
 
 /** Nothing going on in the open assembly: no PropertyManager, no drag. */
-const assemblyFree = (s: UiState) => !s.asm?.insert && !s.asm?.mate && !s.asm?.move && !s.asm?.drag && !s.asm?.pattern && !s.asm?.explode && !s.measure;
+const assemblyFree = (s: UiState) => !s.asm?.insert && !s.asm?.mate && !s.asm?.move && !s.asm?.drag && !s.asm?.pattern && !s.asm?.explode && !s.measure && !s.interference;
 /** No PropertyManager session in the open document: file commands may replace or save it. */
 const idle = (s: UiState) => (s.active === 'assembly' ? assemblyFree(s) : s.editing === null && !s.measure);
 /** A part is open and nothing is being edited in it. */
@@ -67,6 +67,7 @@ export const ACTIONS: UiAction[] = [
   { id: 'options', get label() { return t('action.options'); }, group: 'tools', enabled: () => true, run: () => store.openDialog('options') },
   { id: 'shortcuts', get label() { return t('action.shortcuts'); }, group: 'tools', enabled: () => true, run: () => store.openDialog('shortcuts') },
   { id: 'measure-part', get label() { return t('measure.act'); }, group: 'tools', enabled: (s) => s.active === 'part' && canMeasure(s), run: toggleMeasure, active: () => store.getState().measure !== null },
+  { id: 'check-part', get label() { return t('check.act'); }, group: 'tools', enabled: (s) => hasBody(s) && s.bootMs !== null, run: () => void store.startCheck() },
   { id: 'physical-part', get label() { return t('physical.act'); }, group: 'tools', enabled: hasBody, run: () => store.openDialog('physical') },
   { id: 'properties', get label() { return t('action.properties'); }, group: 'tools', enabled: partIdle, run: () => store.openDialog('properties') },
 
@@ -102,6 +103,8 @@ export const ACTIONS: UiAction[] = [
   { id: 'rotate-component', get label() { return t('act.rotateComponent'); }, group: 'assembly', enabled: (s) => assemblyIdle(s) && hasComponents(s), run: () => store.assembly?.startMove('rotate') },
   { id: 'explode', get label() { return t('explode.act'); }, group: 'assembly', enabled: (s) => assemblyIdle(s) && hasComponents(s), run: () => store.assembly?.startExplode() },
   { id: 'measure-assembly', get label() { return t('measure.act'); }, group: 'assembly', enabled: (s) => s.active === 'assembly' && canMeasure(s), run: toggleMeasure, active: () => store.getState().measure !== null },
+  { id: 'interference', get label() { return t('interference.act'); }, group: 'assembly', enabled: (s) => s.bootMs !== null && assemblyIdle(s) && hasComponents(s), run: () => store.startInterference() },
+  { id: 'check-assembly', get label() { return t('check.act'); }, group: 'assembly', enabled: (s) => s.bootMs !== null && assemblyIdle(s) && hasComponents(s), run: () => void store.startCheck() },
   { id: 'physical-assembly', get label() { return t('physical.act'); }, group: 'assembly', enabled: (s) => assemblyIdle(s) && hasComponents(s), run: () => store.openDialog('physical') },
   { id: 'bom', get label() { return t('bom.act'); }, group: 'assembly', enabled: (s) => assemblyIdle(s) && hasComponents(s), run: () => store.openDialog('bom') },
   { id: 'pattern-linear', get label() { return t('pattern.actLinear'); }, group: 'assembly', enabled: (s) => assemblyIdle(s) && hasComponents(s), run: () => store.assembly?.startPattern('linear') },
@@ -204,6 +207,8 @@ export function installShortcuts(): () => void {
     }
     // Measuring owns the keyboard too: Esc turns it off, and nothing is deleted meanwhile
     if (s.measure && (e.key === 'Escape' || e.key === 'Delete')) return void (e.key === 'Escape' && store.stopMeasure());
+    if (s.check) return void (e.key === 'Escape' && store.stopCheck());
+    if (s.interference && (e.key === 'Escape' || e.key === 'Delete')) return void (e.key === 'Escape' && store.stopInterference());
     if (s.asm) {
       const a = store.assembly;
       const selected = s.asm.selected;

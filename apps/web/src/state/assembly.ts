@@ -19,6 +19,9 @@ import {
   joinPath,
   ASSEMBLY_AXES,
   assemblyPhysical,
+  interferenceGroups,
+  interferencePart,
+  type InterferenceComponent,
   bomName,
   buildBom,
   explodeLeaves,
@@ -548,6 +551,24 @@ export class AssemblyStore {
     const doc = this.history.doc;
     const base = leavesOf(doc, this.trees(), (id) => this.poseOf(id), this.state.solution?.inner);
     return [...base, ...patternLeavesOf(this.shownDoc(), base, (axis) => this.lineOf(axis, base)).leaves];
+  }
+
+  /**
+   * What interference (E2.1) is asked of: the components as the user sees them (a sub-assembly one, each copy of a pattern or mirror its own), each as its
+   * parts and where they are assembled, and what each is called in the list.
+   */
+  interferenceInput(): { components: InterferenceComponent[]; names: Map<string, string>; tops: Map<string, string> } {
+    const unmirror = (key: string) => key.slice(0, -mirrorKey('').length);
+    const names = new Map<string, string>();
+    const tops = new Map<string, string>();
+    const groups = interferenceGroups(this.assembledLeaves());
+    for (const g of groups) {
+      const base = this.ownerLabel(g.top);
+      const pattern = g.instance ? (this.history.doc.patterns?.find((p) => p.id === g.instance!.pattern)?.name ?? g.instance.pattern) : '';
+      names.set(g.id, g.instance ? (g.instance.label === null ? t('interference.mirror', { name: base, pattern }) : t('interference.instance', { name: base, pattern, label: g.instance.label })) : base);
+      tops.set(g.id, g.top);
+    }
+    return { components: groups.map((g) => ({ id: g.id, parts: g.leaves.map((l) => interferencePart(l, unmirror)) })), names, tops };
   }
 
   /** The mass properties of the assembly (E1.2): its parts put together at their positions. Derived. */

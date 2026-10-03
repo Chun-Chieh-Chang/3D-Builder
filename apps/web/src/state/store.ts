@@ -36,6 +36,7 @@ import {
   type MeasureKind,
   type MeasureReport,
   type MeasureTarget,
+  bomName,
   type Ref,
   type SketchFeature,
   mirrorKey,
@@ -71,6 +72,7 @@ import {
   keepRecovery,
   recoveryCopy,
 } from '../files';
+import type { GeometryReport, MeshData } from '@3db/kernel';
 import { AssemblyStore, type AssemblySource, type AssemblyState } from './assembly';
 
 export interface EditSession {
@@ -91,6 +93,38 @@ export interface MeasureState {
   picks: MeasurePick[];
   report: MeasureReport | null;
   error: string | null;
+}
+
+/** Two components that share volume, and what they share (one overlap for each pair of their parts that meet). */
+export interface InterferencePair {
+  a: string;
+  b: string;
+  aName: string;
+  bName: string;
+  /** The components of the assembly they are (what is shown as selected). */
+  aTop: string;
+  bTop: string;
+  /** mm³, the overlaps together. */
+  volume: number;
+  overlaps: MeshData[];
+}
+
+export interface InterferenceState {
+  status: 'running' | 'done' | 'error';
+  pairs: InterferencePair[];
+  /** The pair shown alone in the view; null shows them all. */
+  selected: number | null;
+  /** Components with a part not built (not compared), and the pairs the kernel could not work out. */
+  unknown: string[];
+  failed: string[];
+  checked: number;
+  ms: number;
+  /** There were fewer than two components: nothing to compare. */
+  tooFew: boolean;
+  error: string | null;
+  /** The document and solution it was worked out on: when the assembly shows others, the result is out of date. */
+  doc: unknown;
+  solution: unknown;
 }
 
 export interface Notice {
@@ -169,6 +203,22 @@ export interface UiState {
   documentSerial: number;
   /** The measure tool (E1.1) while it is on: the elements picked and what is known of them. Null when it is off. */
   measure: MeasureState | null;
+  /** The interference detection (E2.1) while its window is open. Null when closed. */
+  interference: InterferenceState | null;
+  /** The geometry check (E3.1) while its dialog is open. Null when closed. */
+  check: CheckState | null;
+}
+
+/** One part checked: what it is called, and what the kernel found (null: it has no body, or is not built yet). */
+export interface CheckRow {
+  name: string;
+  report: GeometryReport | null;
+}
+
+export interface CheckState {
+  status: 'running' | 'done' | 'error';
+  rows: CheckRow[];
+  error: string | null;
 }
 
 /** Next free display name like SolidWorks does: 草圖3 after 草圖2 (names are labels, ids stay permanent). */
@@ -343,6 +393,8 @@ class AppStore {
       returnTo: null,
       documentSerial: 0,
       measure: null,
+      interference: null,
+      check: null,
     };
     this.sketchRunner = new LatestRunner(
       (req) => this.api.solveSketch(req),
@@ -421,6 +473,83 @@ class AppStore {
     this.measureSeq++;
     this.set({ measure: { picks, report: null, error: null } });
     void this.runMeasure();
+  }
+
+  private checkSeq = 0;
+
+  stopCheck(): void {
+    this.checkSeq++;
+    if (this.state.check) this.set({ check: null });
+  }
+
+  /** 「檢查幾何」 (E3.1): checks the open part, or every part file of the open assembly (each once), and shows what the kernel found. */
+  async startCheck(): Promise<void> {
+    const seq = ++this.checkSeq;
+    const a = this.state.active === 'assembly' ? this.assembly : null;
+    // an assembly: each part file once (a copy made by a pattern or mirror is the same shape as its seed's)
+    const entries = a
+      ? [...new Map(a.leaves().filter((l) => !l.instanceOf).map((l) => [l.key, bomName(l.file ?? l.key)] as const)).entries()]
+      : [[null, this.state.fileName ?? this.state.untitled] as const];
+    this.set({ check: { status: 'running', rows: entries.map(([, name]) => ({ name, report: null })), error: null } });
+    try {
+      const reports = await this.api.checkGeometry(entries.map(([key]) => key));
+      if (seq === this.checkSeq) this.set({ check: { status: 'done', rows: entries.map(([, name], i) => ({ name, report: reports[i] ?? null })), error: null } });
+    } catch (e) {
+      if (seq === this.checkSeq) this.set({ check: { status: 'error', rows: [], error: t('check.failed', { why: e instanceof Error ? e.message : String(e) }) } });
+    }
+  }
+
+  private interferenceSeq = 0;
+
+  /** 「干涉檢查」 (E2.1): opens its window and checks the assembly as it is now. */
+  startInterference(): void {
+    void this.runInterference();
+  }
+
+  stopInterference(): void {
+    this.interferenceSeq++;
+    if (this.state.interference) this.set({ interference: null });
+  }
+
+  /** One pair alone in the view, or (null) all of them. */
+  selectInterference(index: number | null): void {
+    if (this.state.interference) this.set({ interference: { ...this.state.interference, selected: index } });
+  }
+
+  async runInterference(): Promise<void> {
+    const a = this.assembly;
+    if (!a) return;
+    const input = a.interferenceInput();
+    const seq = ++this.interferenceSeq;
+    const base = { status: 'running' as const, pairs: [], selected: null, unknown: [], failed: [], checked: 0, ms: 0, tooFew: input.components.length < 2, error: null, doc: this.state.asm?.doc, solution: this.state.asm?.solution };
+    if (base.tooFew) return void this.set({ interference: { ...base, status: 'done' } });
+    this.set({ interference: base });
+    try {
+      const r = await this.api.interference(input.components);
+      if (seq !== this.interferenceSeq) return;
+      const pairs = new Map<string, InterferencePair>();
+      for (const o of r.overlaps) {
+        const key = `${o.a}|${o.b}`;
+        const pair = pairs.get(key) ?? { a: o.a, b: o.b, aName: input.names.get(o.a) ?? o.a, bName: input.names.get(o.b) ?? o.b, aTop: input.tops.get(o.a) ?? o.a, bTop: input.tops.get(o.b) ?? o.b, volume: 0, overlaps: [] };
+        pair.volume += o.volume;
+        pair.overlaps.push(o.mesh);
+        pairs.set(key, pair);
+      }
+      const nameOf = (id: string) => input.names.get(id) ?? id;
+      this.set({
+        interference: {
+          ...base,
+          status: 'done',
+          pairs: [...pairs.values()].sort((x, y) => y.volume - x.volume),
+          unknown: r.unknown.map(nameOf),
+          failed: r.failed.map((f) => `${nameOf(f.a)} × ${nameOf(f.b)}`),
+          checked: r.checked,
+          ms: Math.round(r.ms),
+        },
+      });
+    } catch (e) {
+      if (seq === this.interferenceSeq) this.set({ interference: { ...base, status: 'error', error: t('interference.error', { why: e instanceof Error ? e.message : String(e) }) } });
+    }
   }
 
   /** The picks as the kernel is asked about them: a part by its file and the pose it is at now. Null when the component is gone. */
@@ -1577,7 +1706,7 @@ class AppStore {
     void this.api.setBlobs(blobs); // posted before the rebuild request, so the worker has them first
     this.savedText = serializePart(doc);
     if (!this.state.recovery) void this.autosave.clear();
-    this.set({ active: 'part', selected: null, selectedFace: null, result: null, fileName, untitled, fitRequest: this.state.fitRequest + 1, documentSerial: this.state.documentSerial + 1, measure: null });
+    this.set({ active: 'part', selected: null, selectedFace: null, result: null, fileName, untitled, fitRequest: this.state.fitRequest + 1, documentSerial: this.state.documentSerial + 1, measure: null, interference: null, check: null });
     this.onDocChanged();
   }
 
@@ -1667,7 +1796,7 @@ class AppStore {
       },
       source,
     );
-    this.set({ active: 'assembly', asm: this.assembly.getState(), returnTo: null, documentSerial: this.state.documentSerial + 1, measure: null });
+    this.set({ active: 'assembly', asm: this.assembly.getState(), returnTo: null, documentSerial: this.state.documentSerial + 1, measure: null, interference: null, check: null });
   }
 
   private closeAssembly(): void {

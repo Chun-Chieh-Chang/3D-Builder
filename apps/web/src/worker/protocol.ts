@@ -1,7 +1,7 @@
 import type { Locale } from '@3db/i18n';
-import type { MeasureReport, MeasureTarget, PartMass } from '@3db/model';
+import type { InterferenceComponent, MeasureReport, MeasureTarget, PartMass } from '@3db/model';
 import type { AssemblyDoc, Axis3, CoordSystem, Fingerprint, Id, PartDoc, PlaneFrame, Pose, Ref, SketchFeature, SourceTree, Vec3 } from '@3db/model';
-import type { MassProps, MeshData } from '@3db/kernel';
+import type { GeometryReport, MassProps, MeshData } from '@3db/kernel';
 import type { AssemblyResult, AssemblySolveOptions, Converted, FeatureResult } from '@3db/regen';
 import type { MateGeometry } from '@3db/assembly';
 import type { StepAssemblyPlan, StepInstance, StepSub } from '@3db/io';
@@ -148,6 +148,17 @@ export interface ConvertPayload {
   errors: string[];
 }
 
+/** What interference found (E2.1): where components share volume (each overlap meshed, in the assembly's frame), and what could not be compared. */
+export interface InterferenceResult {
+  overlaps: { a: string; b: string; volume: number; mesh: MeshData }[];
+  /** Pairs of parts the kernel was asked about. */
+  checked: number;
+  /** Components with a part that is not built. */
+  unknown: string[];
+  failed: { a: string; b: string; message: string }[];
+  ms: number;
+}
+
 export interface KernelApi {
   init(): Promise<{ occtMs: number; gcsMs: number }>;
   /** The language of the messages the worker makes (errors, warnings); what it made before keeps its language. */
@@ -176,6 +187,10 @@ export interface KernelApi {
   readStepAssembly(bytes: Uint8Array): Promise<StepAssemblyPlan>;
   /** Measures one or two elements (E1.1): of the part that is open (part null in the targets) or of parts as the assembly places them; see measureTargets. */
   measure(targets: MeasureTarget[]): Promise<MeasureReport>;
+  /** The interference of components (E2.1): the volume their parts share, each overlap as a mesh. Parts are the ones rebuilt for the assembly (uildPart). */
+  interference(components: InterferenceComponent[]): Promise<InterferenceResult>;
+  /** The geometry check (E3.1) of parts: each by its key as built for the assembly, or the open part for null. Null for one that has no body or is not built. */
+  checkGeometry(parts: (string | null)[]): Promise<(GeometryReport | null)[]>;
   /** Lets go of every rebuilt part file except these. */
   retainParts(keys: string[]): Promise<void>;
   /**

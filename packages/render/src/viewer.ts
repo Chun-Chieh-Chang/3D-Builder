@@ -344,6 +344,7 @@ export class Viewer {
     this.setPlanes([]);
     this.setVertices(new Float32Array(0));
     this.setGhost(null);
+    this.setHighlights([]);
     this.setParts(new Map());
     this.instanceEdges.dispose();
     this.renderer.dispose();
@@ -695,6 +696,31 @@ export class Viewer {
     if (!hit) return null;
     for (const inst of this.instances.values()) if (inst.body === hit.object) return inst.owner;
     return null;
+  }
+
+  private highlights: THREE.Mesh[] = [];
+
+  /**
+   * Volumes pointed out in the scene, in its coordinates (the overlap of two components, E2.1): red, drawn over what is in front of them, never hovered or picked.
+   * The list replaces the one before; an empty list takes them away.
+   */
+  setHighlights(list: readonly { mesh: ViewMesh }[]): void {
+    for (const m of this.highlights) {
+      this.scene.remove(m);
+      m.geometry.dispose();
+      (m.material as THREE.Material).dispose();
+    }
+    this.highlights = list.map(({ mesh }) => {
+      const g = new THREE.BufferGeometry();
+      g.setAttribute('position', new THREE.BufferAttribute(mesh.positions, 3));
+      g.setAttribute('normal', new THREE.BufferAttribute(mesh.normals, 3));
+      g.setIndex(new THREE.BufferAttribute(mesh.indices, 1));
+      const m = new THREE.Mesh(g, new THREE.MeshBasicMaterial({ color: 0xe53935, transparent: true, opacity: 0.8, depthTest: false, side: THREE.DoubleSide }));
+      m.renderOrder = 10;
+      this.scene.add(m);
+      return m;
+    });
+    this.requestRender();
   }
 
   /** Shows a see-through copy of a part (null removes it); moveGhost places it. */

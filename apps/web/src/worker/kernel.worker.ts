@@ -5,12 +5,12 @@ import occtWasm from 'libcascade/single/wasm?url';
 import gcsWasm from '@salusoft89/planegcs/dist/planegcs_dist/planegcs.wasm?url';
 import { bodyKey, combineMass, isShown, mirrorKey, MESH_QUALITY, settingsOf, type AssemblyDoc, type Id, type MeasureReport, type PartDoc, type SourceTree } from '@3db/model';
 import { findProfiles, PlaneGcsSolver } from '@3db/sketch';
-import { COMPONENT_MESH, Kernel, type MassProps, type MeshData, type MeshOptions, type ShapeId } from '@3db/kernel';
-import { measureTargets, convertEdges, edgeMateGeometry, exportFaces, faceColors, intoFrame, faceEdges, faceMateGeometry, followReferences, ReferenceProblem, Regenerator, solveAssemblyTree, type AssemblyResult, type AssemblySolveOptions, type BodyInfo, type RebuildResult } from '@3db/regen';
+import { COMPONENT_MESH, Kernel, type GeometryReport, type MassProps, type MeshData, type MeshOptions, type ShapeId } from '@3db/kernel';
+import { findInterference, measureTargets, convertEdges, edgeMateGeometry, exportFaces, faceColors, intoFrame, faceEdges, faceMateGeometry, followReferences, ReferenceProblem, Regenerator, solveAssemblyTree, type AssemblyResult, type AssemblySolveOptions, type BodyInfo, type RebuildResult } from '@3db/regen';
 import { edgeFingerprint, faceFingerprint, vertexFingerprint } from '@3db/naming';
 import { binaryStl, exportAssemblyStep, exportPartStep, readComponentFile, stepAssemblyPlan, type StepAssemblyPlan } from '@3db/io';
 import { mergeMeshes } from './mergeMesh';
-import type { AssemblyStepRequest, ConvertPayload, PartExportOptions, ConvertRequest, KernelApi, PartBuildPayload, PartStage, RebuildPayload, RebuildRequest, SketchSolvePayload, SketchSolveRequest } from './protocol';
+import type { AssemblyStepRequest, ConvertPayload, InterferenceResult, PartExportOptions, ConvertRequest, KernelApi, PartBuildPayload, PartStage, RebuildPayload, RebuildRequest, SketchSolvePayload, SketchSolveRequest } from './protocol';
 
 let kernel: Kernel;
 let solver: PlaneGcsSolver;
@@ -345,6 +345,31 @@ const api: KernelApi = {
     const shapes = new Map<string, ShapeId | null>();
     for (const key of new Set(targets.flatMap((x) => (x.part === null ? [] : [x.part])))) shapes.set(key, (await parts.get(key)?.catch(() => null))?.result.body?.shape ?? null);
     return measureTargets(kernel, (x) => (x.part === null ? (lastResult?.body?.shape ?? null) : (shapes.get(x.part) ?? null)), targets);
+  },
+
+  async interference(components): Promise<InterferenceResult> {
+    await api.init();
+    const began = performance.now();
+    const shapes = new Map<string, ShapeId | null>();
+    for (const key of new Set(components.flatMap((c) => c.parts.map((p) => p.part)))) shapes.set(key, (await parts.get(key)?.catch(() => null))?.result.body?.shape ?? null);
+    const found = findInterference(kernel, components, (key) => shapes.get(key) ?? null);
+    try {
+      const overlaps = found.overlaps.map((o) => ({ a: o.a, b: o.b, volume: o.volume, mesh: kernel.mesh(o.shape, COMPONENT_MESH) }));
+      const result: InterferenceResult = { overlaps, checked: found.checked, unknown: found.unknown, failed: found.failed, ms: performance.now() - began };
+      return Comlink.transfer(result, overlaps.flatMap((o) => [o.mesh.positions, o.mesh.normals, o.mesh.indices, o.mesh.faceRanges, o.mesh.edgePoints, o.mesh.edgeRanges].map((a) => a.buffer as ArrayBuffer)));
+    } finally {
+      for (const o of found.overlaps) kernel.release(o.shape);
+    }
+  },
+
+  async checkGeometry(keys): Promise<(GeometryReport | null)[]> {
+    await api.init();
+    const out: (GeometryReport | null)[] = [];
+    for (const key of keys) {
+      const shape = key === null ? lastResult?.body?.shape : (await parts.get(key)?.catch(() => null))?.result.body?.shape;
+      out.push(shape === undefined ? null : kernel.check(shape));
+    }
+    return out;
   },
 
   async retainParts(keys: string[]): Promise<void> {

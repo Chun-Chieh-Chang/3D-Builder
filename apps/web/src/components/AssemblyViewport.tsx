@@ -10,6 +10,7 @@ import { componentInfo } from './AssemblyTree';
 import { dragHint } from '../state/movability';
 import { LoadProgress } from './LoadProgress';
 import { MateFlyout } from './MatePanel';
+import { InterferencePanel } from './InterferencePanel';
 import { MeasurePanel } from './MeasurePanel';
 
 const KIND_WORD = { face: '面', edge: '邊線', vertex: '頂點' } as const;
@@ -61,6 +62,7 @@ export function AssemblyViewport() {
   const bootMs = useStore((s) => s.bootMs);
   const bootError = useStore((s) => s.bootError);
   const measure = useStore((s) => s.measure);
+  const interference = useStore((s) => s.interference);
   const measuring = measure !== null;
   const [hover, setHover] = useState<string | null>(null);
   const [hoverElement, setHoverElement] = useState<InstanceElement | null>(null);
@@ -137,8 +139,17 @@ export function AssemblyViewport() {
     const planes = shown.flatMap((s) => (s.plane ? [s.plane] : []));
     if (!asm.mate && asm.selected && isDatumPlaneName(asm.selected)) planes.push({ key: asm.selected, frame: DATUM_PLANES[asm.selected], highlighted: true });
     v.setPlanes(planes);
-    v.setSelectedComponents(!asm.mate && asm.selected && asm.doc.components.some((c) => c.id === asm.selected) ? [asm.selected] : []);
-  }, [asm.mate, asm.selected, asm.doc, asm.solution, asm.drag, asm.builds, measure]);
+    const pair = interference && interference.selected !== null ? interference.pairs[interference.selected] : undefined;
+    v.setSelectedComponents(pair ? [pair.aTop, pair.bTop] : !asm.mate && asm.selected && asm.doc.components.some((c) => c.id === asm.selected) ? [asm.selected] : []);
+  }, [asm.mate, asm.selected, asm.doc, asm.solution, asm.drag, asm.builds, measure, interference]);
+
+  // Where components share volume (E2.1): the overlaps in red, or only the chosen pair's
+  useEffect(() => {
+    const v = store.viewer;
+    if (!v) return;
+    const shown = interference?.status === 'done' ? (interference.selected === null ? interference.pairs : interference.pairs.slice(interference.selected, interference.selected + 1)) : [];
+    v.setHighlights(shown.flatMap((p) => p.overlaps.map((mesh) => ({ mesh }))));
+  }, [interference]);
 
   // Placing a component: the chosen part follows the cursor, a click puts it down.
   const chosen = asm.insert?.chosen ?? null;
@@ -227,6 +238,7 @@ export function AssemblyViewport() {
       {!bootMs && <div className="boot-overlay">{bootError ? `幾何核心載入失敗：${bootError}` : '正在載入幾何核心（OCCT WASM，約 43 MB）…'}</div>}
       <LoadProgress />
       <MeasurePanel />
+      <InterferencePanel />
       {hint && <div className="pick-hint">{hint}</div>}
     </main>
   );
