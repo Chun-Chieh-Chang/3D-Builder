@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import { labelsOf, t } from '@3db/i18n';
 import {
   canBeSeed,
@@ -40,6 +40,11 @@ import {
   type MoveFaceFeature,
   type OffsetSurfaceFeature,
   type SplitLineFeature,
+  type KnitFeature,
+  type FillSurfaceFeature,
+  type FlatSurfaceFeature,
+  type TrimSurfaceFeature,
+  type ExtendSurfaceFeature,
   type MirrorFeature,
   type PartDoc,
   type PatternDefinition,
@@ -808,7 +813,7 @@ function RibPanel({ f }: { f: RibFeature }) {
 }
 
 /** Edge selection box of a fillet or chamfer (D2.1): edges by persistent name, missing ones marked. */
-function EdgeList({ f }: { f: FilletFeature | ChamferFeature }) {
+function EdgeList({ f }: { f: FilletFeature | ChamferFeature | FillSurfaceFeature | FlatSurfaceFeature | ExtendSurfaceFeature }) {
   const r = useStore((s) => s.result);
   const label = FEATURE_LABEL[f.type];
   return (
@@ -828,7 +833,7 @@ function EdgeList({ f }: { f: FilletFeature | ChamferFeature }) {
           );
         })}
       </ul>
-      <p className="hint">{t('pm.edges.hint', { label })}</p>
+      {(f.type === 'fillet' || f.type === 'chamfer') && <p className="hint">{t('pm.edges.hint', { label })}</p>}
     </section>
   );
 }
@@ -1596,21 +1601,17 @@ function OffsetSurfacePanel({ f }: { f: OffsetSurfaceFeature }) {
   );
 }
 
-/** Split line (C8.1): the sketch to project, the face it is projected onto, which way, and whether through every layer. */
-function SplitLinePanel({ f }: { f: SplitLineFeature }) {
+/** The sketch, the face, the way round and through-all of a feature that projects a sketch onto a face (a split line, a trim surface). */
+function ProjectionFields({ f, command, children }: { f: SplitLineFeature | TrimSurfaceFeature; command: (patch: Partial<Pick<SplitLineFeature, 'sketch' | 'face' | 'reverse' | 'throughAll'>>) => Command; children?: ReactNode }) {
   const doc = useStore((s) => s.doc);
   const sketches = doc.features.slice(0, Math.max(0, doc.features.findIndex((x) => x.id === f.id))).filter((x) => x.type === 'sketch');
-  const run = (patch: Partial<Pick<SplitLineFeature, 'sketch' | 'face' | 'reverse' | 'throughAll'>>): Command => {
-    const next = { sketch: f.sketch, face: f.face, reverse: f.reverse, throughAll: f.throughAll, ...patch };
-    return { type: 'setSplitLine', featureId: f.id, sketch: next.sketch, face: next.face, ...(next.reverse ? { reverse: true } : {}), ...(next.throughAll ? { throughAll: true } : {}) };
-  };
   return (
-    <section className="pm-group">
+    <>
       <h4>{t('pm.splitLine.sketch')}</h4>
       {sketches.length === 0 ? (
         <p className="muted">{t('pm.splitLine.noSketch')}</p>
       ) : (
-        <select value={f.sketch} onChange={(e) => store.execute(run({ sketch: e.target.value }))}>
+        <select value={f.sketch} onChange={(e) => store.execute(command({ sketch: e.target.value }))}>
           {sketches.map((s) => (
             <option key={s.id} value={s.id}>
               {s.name}
@@ -1623,15 +1624,136 @@ function SplitLinePanel({ f }: { f: SplitLineFeature }) {
         {!f.face.name && <li className="muted">{t('pm.splitLine.faceEmpty')}</li>}
         {f.face.name && <FaceRow featureId={f.id} r={f.face} label={t('pm.face', { n: 1 })} />}
       </ul>
+      {children}
       <label className="pm-row checkbox">
-        <input type="checkbox" checked={!!f.reverse} onChange={(e) => store.execute(run({ reverse: e.target.checked }))} />
+        <input type="checkbox" checked={!!f.reverse} onChange={(e) => store.execute(command({ reverse: e.target.checked }))} />
         <span>{t('pm.splitLine.reverse')}</span>
       </label>
       <label className="pm-row checkbox">
-        <input type="checkbox" checked={!!f.throughAll} onChange={(e) => store.execute(run({ throughAll: e.target.checked }))} />
+        <input type="checkbox" checked={!!f.throughAll} onChange={(e) => store.execute(command({ throughAll: e.target.checked }))} />
         <span>{t('pm.splitLine.throughAll')}</span>
       </label>
+    </>
+  );
+}
+
+/** Split line (C8.1): the sketch to project, the face it is projected onto, which way, and whether through every layer. */
+function SplitLinePanel({ f }: { f: SplitLineFeature }) {
+  const command = (patch: Partial<Pick<SplitLineFeature, 'sketch' | 'face' | 'reverse' | 'throughAll'>>): Command => {
+    const next = { sketch: f.sketch, face: f.face, reverse: f.reverse, throughAll: f.throughAll, ...patch };
+    return { type: 'setSplitLine', featureId: f.id, sketch: next.sketch, face: next.face, ...(next.reverse ? { reverse: true } : {}), ...(next.throughAll ? { throughAll: true } : {}) };
+  };
+  return (
+    <section className="pm-group">
+      <ProjectionFields f={f} command={command} />
       <p className="hint">{t('pm.splitLine.hint')}</p>
+    </section>
+  );
+}
+
+/** Trim surface (C9.3): as a split line, and which side of the outline is kept. */
+function TrimSurfacePanel({ f }: { f: TrimSurfaceFeature }) {
+  const status = useStore((s) => s.result?.features.find((r) => r.id === f.id));
+  const command = (patch: Partial<Pick<TrimSurfaceFeature, 'sketch' | 'face' | 'keep' | 'reverse' | 'throughAll'>>): Command => {
+    const next = { sketch: f.sketch, face: f.face, keep: f.keep, reverse: f.reverse, throughAll: f.throughAll, ...patch };
+    return { type: 'setTrimSurface', featureId: f.id, sketch: next.sketch, face: next.face, ...(next.keep ? { keep: next.keep } : {}), ...(next.reverse ? { reverse: true } : {}), ...(next.throughAll ? { throughAll: true } : {}) };
+  };
+  return (
+    <section className="pm-group">
+      <ProjectionFields f={f} command={command}>
+        <label className="pm-row">
+          <span>{t('pm.trim.keep')}</span>
+          <select value={f.keep ?? 'inside'} onChange={(e) => store.execute(command({ keep: e.target.value === 'outside' ? 'outside' : undefined }))}>
+            <option value="inside">{t('pm.trim.inside')}</option>
+            <option value="outside">{t('pm.trim.outside')}</option>
+          </select>
+        </label>
+      </ProjectionFields>
+      {status?.status === 'ok' && status.info && <p className="hint gap-info">{status.info}</p>}
+      <p className="hint">{t('pm.trim.hint')}</p>
+    </section>
+  );
+}
+
+/** Fill surface (C9.2): the edges of the boundary, how the patch meets the faces beside them, and what was measured of it. */
+function FillSurfacePanel({ f }: { f: FillSurfaceFeature }) {
+  const status = useStore((s) => s.result?.features.find((r) => r.id === f.id));
+  return (
+    <>
+      <EdgeList f={f} />
+      <section className="pm-group">
+      <label className="pm-row">
+        <span>{t('pm.fill.continuity')}</span>
+        <select value={f.continuity ?? 'tangent'} onChange={(e) => store.execute({ type: 'setFillSurface', featureId: f.id, edges: f.edges, ...(e.target.value === 'contact' ? { continuity: 'contact' as const } : {}) })}>
+          <option value="tangent">{t('pm.fill.tangent')}</option>
+          <option value="contact">{t('pm.fill.contact')}</option>
+        </select>
+      </label>
+      {status?.status === 'ok' && status.info && <p className="hint gap-info">{status.info}</p>}
+      <p className="hint">{t('pm.fill.hint')}</p>
+      </section>
+    </>
+  );
+}
+
+/** Flat surface (C9.2): the loop of edges. */
+function FlatSurfacePanel({ f }: { f: FlatSurfaceFeature }) {
+  return (
+    <>
+      <EdgeList f={f} />
+      <section className="pm-group">
+        <p className="hint">{t('pm.flat.hint')}</p>
+      </section>
+    </>
+  );
+}
+
+/** Extend surface (C9.3): the edges to extend past and how far. */
+function ExtendSurfacePanel({ f }: { f: ExtendSurfaceFeature }) {
+  return (
+    <>
+      <EdgeList f={f} />
+      <section className="pm-group">
+        <label className="pm-row">
+          <span>{t('pm.extend.distance')}</span>
+          <ValueInput value={f.distance} toCommand={(distance) => ({ type: 'setExtendSurface', featureId: f.id, edges: f.edges, distance })} />
+        </label>
+        <p className="hint">{t('pm.extend.hint')}</p>
+      </section>
+    </>
+  );
+}
+
+/** Knit (C9.3): the surface bodies to sew (ticked from the ones there were), the tolerance, whether a closed result becomes a solid, and what came of it. */
+function KnitPanel({ f }: { f: KnitFeature }) {
+  const pool = useStore((s) => s.knitPool);
+  const status = useStore((s) => s.result?.features.find((r) => r.id === f.id));
+  const picked = (id: string) => f.bodies.some((x) => x.name === id);
+  const command = (patch: Partial<Pick<KnitFeature, 'bodies' | 'tolerance' | 'solid'>>): Command => {
+    const next = { bodies: f.bodies, tolerance: f.tolerance, solid: f.solid, ...patch };
+    return { type: 'setKnit', featureId: f.id, bodies: next.bodies, ...(next.tolerance === undefined ? {} : { tolerance: next.tolerance }), ...(next.solid === false ? { solid: false } : {}) };
+  };
+  return (
+    <section className="pm-group">
+      <h4>{t('pm.knit.bodies')}</h4>
+      {pool.length === 0 && <p className="muted">{t('pm.knit.empty')}</p>}
+      {pool.map((b) => (
+        <label key={b.id} className="pm-row checkbox">
+          <input type="checkbox" checked={picked(b.id)} onChange={() => store.setKnitBodies(picked(b.id) ? f.bodies.filter((x) => x.name !== b.id) : [...f.bodies, { kind: 'body', name: b.id }])} />
+          <span>{b.name}</span>
+        </label>
+      ))}
+      <label className="pm-row">
+        <span>{t('pm.knit.tolerance')}</span>
+        <ValueInput value={f.tolerance ?? ''} toCommand={(tolerance) => command({ tolerance: tolerance.trim() === '' ? undefined : tolerance })} />
+      </label>
+      <p className="hint">{t('pm.knit.toleranceHint')}</p>
+      <label className="pm-row checkbox">
+        <input type="checkbox" checked={f.solid !== false} onChange={(e) => store.execute(command({ solid: e.target.checked }))} />
+        <span>{t('pm.knit.solid')}</span>
+      </label>
+      {status?.status === 'ok' && status.info && <p className="hint gap-info">{status.info}</p>}
+      <p className="hint">{t('pm.knit.hint')}</p>
     </section>
   );
 }
@@ -1793,6 +1915,11 @@ export function PropertyManager() {
       {f.type === 'moveFace' && <MoveFacePanel f={f} />}
       {f.type === 'offsetSurface' && <OffsetSurfacePanel f={f} />}
       {f.type === 'splitLine' && <SplitLinePanel f={f} />}
+      {f.type === 'trimSurface' && <TrimSurfacePanel f={f} />}
+      {f.type === 'knit' && <KnitPanel f={f} />}
+      {f.type === 'fillSurface' && <FillSurfacePanel f={f} />}
+      {f.type === 'flatSurface' && <FlatSurfacePanel f={f} />}
+      {f.type === 'extendSurface' && <ExtendSurfacePanel f={f} />}
       {f.type === 'combine' && <CombinePanel f={f} />}
     </div>
   );

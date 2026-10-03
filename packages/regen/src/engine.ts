@@ -1901,7 +1901,11 @@ export class Regenerator {
       this.kernel.release(r.shape);
       throw new FeatureError(t('surface.fillTangent', { g1: ((r.g1 * 180) / Math.PI).toFixed(1), tolerance: ((FILL_TANGENT_TOLERANCE * 180) / Math.PI).toFixed(1) }));
     }
-    this.info = t('surface.fillInfo', { g0: r.g0.toFixed(4), g1: ((r.g1 * 180) / Math.PI).toFixed(3) });
+    const followed = support.filter((s) => s !== null).length;
+    this.info =
+      followed === 0
+        ? t(contact ? 'surface.fillInfoContact' : 'surface.fillNoSupport', { g0: r.g0.toFixed(4) })
+        : t('surface.fillInfo', { g0: r.g0.toFixed(4), g1: ((r.g1 * 180) / Math.PI).toFixed(3) }) + (followed < indices.length ? t('surface.fillPartial', { n: String(indices.length - followed) }) : '');
     const topology = this.kernel.topology(r.shape);
     const names = nameElements([[{ rel: 'generated', kind: 'edge', index: indices[0]! }]], topology, { featureId: f.id, role: 'fill', input: body.names });
     return [...set.list, { id: f.id, shape: r.shape, topology, names, by: f.id, surface: true }];

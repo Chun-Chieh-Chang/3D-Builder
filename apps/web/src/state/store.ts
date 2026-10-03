@@ -197,6 +197,8 @@ export interface UiState {
   selected: Id | null;
   /** Face selected in the graphics area (by persistent name, resolved against the displayed model). */
   selectedFace: Ref | null;
+  /** The surface bodies there were when a knit was started: what it can sew (the bodies it uses up are not in the model it shows). */
+  knitPool: { id: Id; name: string }[];
   /** Which kinds of element the graphics area lets be picked (D5.4): a command asks for kinds, this narrows them. */
   pickFilter: PickFilter;
   /** What belongs to this browser and its user (D8.1). */
@@ -413,6 +415,7 @@ class AppStore {
       canRedo: false,
       selected: null,
       selectedFace: null,
+      knitPool: [],
       pickFilter: { ...loadOptions().pickFilter },
       options: loadOptions(),
       editing: null,
@@ -1273,6 +1276,73 @@ class AppStore {
     this.execute({ type: 'setSplitLine', featureId: f.id, sketch: f.sketch, face: ref, ...(f.reverse ? { reverse: true } : {}), ...(f.throughAll ? { throughAll: true } : {}) });
   }
 
+  /** 「縫織曲面」 (C9.3): starts with the surface body of the selected face, if there is one, and remembers which surface bodies there are to choose from. */
+  newKnit(): void {
+    const result = this.state.result;
+    const pool = (result?.bodies ?? []).filter((b) => b.surface).map((b) => ({ id: b.id, name: b.name }));
+    const face = this.state.selectedFace;
+    const first = face?.kind === 'face' ? this.bodyOfFace(face.name) : undefined;
+    const name = t('feature.knit');
+    this.set({ knitPool: pool });
+    this.openNew({ id: this.allocator().take('knit'), type: 'knit', name: nextName(this.history.doc, name), suppressed: false, bodies: first && pool.some((b) => b.id === first) ? [{ kind: 'body', name: first }] : [] }, name);
+  }
+
+  /** A face picked while a knit is edited: its body is added to the bodies, or taken out of them. */
+  pickKnitBody(faceName: string): void {
+    const f = this.editedFeature();
+    const id = this.bodyOfFace(faceName);
+    if (f?.type !== 'knit' || !id) return;
+    if (!this.state.result?.bodies.find((b) => b.id === id)?.surface) return void this.notify(t('surface.knitNeedsSurface', { name: id }), 'error');
+    this.setKnitBodies(f.bodies.some((x) => x.name === id) ? f.bodies.filter((x) => x.name !== id) : [...f.bodies, { kind: 'body', name: id }]);
+  }
+
+  setKnitBodies(bodies: Ref[]): void {
+    const f = this.editedFeature();
+    if (f?.type !== 'knit') return;
+    this.execute({ type: 'setKnit', featureId: f.id, bodies, ...(f.tolerance === undefined ? {} : { tolerance: f.tolerance }), ...(f.solid === false ? { solid: false } : {}) });
+  }
+
+  /** 「填補曲面」, 「平坦曲面」 and 「延伸曲面」 (C9.2, C9.3): all take the edges picked in the graphics area, none to begin with. */
+  newSurfaceEdges(type: 'fillSurface' | 'flatSurface' | 'extendSurface'): void {
+    const name = t(`feature.${type}`);
+    const base = { id: this.allocator().take(type === 'fillSurface' ? 'fill' : type === 'flatSurface' ? 'flat' : 'extend'), name: nextName(this.history.doc, name), suppressed: false, edges: [] as Ref[] };
+    this.openNew(type === 'extendSurface' ? { ...base, type, distance: '5' } : { ...base, type }, name);
+  }
+
+  /** A click while the edges of a fill, flat or extend surface are edited: toggled in or out; the edges the feature itself made are not for it to take. */
+  toggleSurfaceEdge(ref: Ref): void {
+    const f = this.editedFeature();
+    if (f?.type !== 'fillSurface' && f?.type !== 'flatSurface' && f?.type !== 'extendSurface') return;
+    if (ref.kind !== 'edge') return;
+    if (ref.name.includes(`${f.id}:`)) return void this.notify(t('surface.ownFace'), 'error');
+    this.setSurfaceEdges(f.edges.some((x) => x.name === ref.name) ? f.edges.filter((x) => x.name !== ref.name) : [...f.edges, ref]);
+  }
+
+  setSurfaceEdges(edges: Ref[]): void {
+    const f = this.editedFeature();
+    if (f?.type === 'fillSurface') this.execute({ type: 'setFillSurface', featureId: f.id, edges, ...(f.continuity ? { continuity: f.continuity } : {}) });
+    else if (f?.type === 'flatSurface') this.execute({ type: 'setFlatSurface', featureId: f.id, edges });
+    else if (f?.type === 'extendSurface') this.execute({ type: 'setExtendSurface', featureId: f.id, edges, distance: f.distance });
+  }
+
+  /** 「修剪曲面」 (C9.3): the selected sketch (else the latest one) and the face selected in the graphics area, if there is one, as for a split line. */
+  newTrimSurface(): void {
+    const selected = findFeature(this.history.doc, this.state.selected ?? '');
+    const sketch = selected?.type === 'sketch' ? selected : [...this.history.doc.features].reverse().find((f): f is SketchFeature => f.type === 'sketch');
+    if (!sketch) return void this.notify(t('sketch.pickInTree'));
+    const face = this.state.selectedFace;
+    const name = t('feature.trimSurface');
+    this.openNew({ id: this.allocator().take('trim'), type: 'trimSurface', name: nextName(this.history.doc, name), suppressed: false, sketch: sketch.id, face: face?.kind === 'face' ? face : { kind: 'face', name: '' } }, name);
+  }
+
+  /** The face a trim cuts: the face clicked in the graphics area (not one the feature made itself). */
+  setTrimFace(ref: Ref): void {
+    const f = this.editedFeature();
+    if (f?.type !== 'trimSurface' || ref.kind !== 'face') return;
+    if (ref.name.startsWith(`${f.id}:`)) return void this.notify(t('surface.ownFace'), 'error');
+    this.execute({ type: 'setTrimSurface', featureId: f.id, sketch: f.sketch, face: ref, ...(f.keep ? { keep: f.keep } : {}), ...(f.reverse ? { reverse: true } : {}), ...(f.throughAll ? { throughAll: true } : {}) });
+  }
+
   /** 「組合」 (C7.2): the body of the selected face is the main body to start with; the PropertyManager picks the rest. */
   newCombine(): void {
     const face = this.state.selectedFace;
@@ -1386,13 +1456,16 @@ class AppStore {
     else if (f?.type === 'moveFace') this.setMoveFace(ref);
     else if (f?.type === 'offsetSurface') this.toggleOffsetFace(ref);
     else if (f?.type === 'splitLine') this.setSplitFace(ref);
+    else if (f?.type === 'trimSurface') this.setTrimFace(ref);
+    else if (f?.type === 'fillSurface' || f?.type === 'flatSurface' || f?.type === 'extendSurface') this.toggleSurfaceEdge(ref);
+    else if (f?.type === 'knit' && ref.kind === 'face') this.pickKnitBody(ref.name);
     else if (f?.type === 'combine' && ref.kind === 'face') this.pickBody(ref.name);
   }
 
   /** The kind of element the feature being edited takes in a list, if it takes several at a time (a fillet's edges, the faces of a shell). */
   multiPickKind(): 'edge' | 'face' | null {
     const f = this.editedFeature();
-    if (f?.type === 'fillet' || f?.type === 'chamfer') return 'edge';
+    if (f?.type === 'fillet' || f?.type === 'chamfer' || f?.type === 'fillSurface' || f?.type === 'flatSurface' || f?.type === 'extendSurface') return 'edge';
     if (f?.type === 'deleteFace' || f?.type === 'shell' || f?.type === 'draft' || f?.type === 'offsetSurface') return 'face';
     return null;
   }
@@ -1407,6 +1480,7 @@ class AppStore {
     if (f?.type === 'fillet' || f?.type === 'chamfer') this.execute({ type: 'setEdges', featureId: f.id, edges: more(f.edges, 'edge') });
     else if (f?.type === 'deleteFace') this.execute({ type: 'setFaces', featureId: f.id, faces: more(f.faces, 'face'), ...(f.hole ? { hole: true } : {}) });
     else if (f?.type === 'shell') this.execute({ type: 'setShell', featureId: f.id, faces: more(f.faces, 'face'), thickness: f.thickness, ...(f.outward ? { outward: true } : {}) });
+    else if (f?.type === 'fillSurface' || f?.type === 'flatSurface' || f?.type === 'extendSurface') this.setSurfaceEdges(more(f.edges, 'edge').filter((r) => !r.name.includes(`${f.id}:`)));
     else if (f?.type === 'offsetSurface') this.execute({ type: 'setOffsetSurface', featureId: f.id, faces: more(f.faces, 'face', undefined).filter((r) => !r.name.startsWith(`${f.id}:`)), distance: f.distance, ...(f.join ? { join: f.join } : {}) });
     else if (f?.type === 'draft' && f.neutral.name) this.execute({ type: 'setDraftFeature', featureId: f.id, neutral: f.neutral, faces: more(f.faces, 'face', f.neutral.name), angle: f.angle, ...(f.reverse ? { reverse: true } : {}) });
   }
@@ -1466,7 +1540,7 @@ class AppStore {
     if (!e) return undefined;
     const i = this.history.doc.features.findIndex((f) => f.id === e.featureId);
     const type = this.history.doc.features[i]?.type;
-    if (type === 'refPlane' || type === 'refAxis' || type === 'refPoint' || type === 'coordSys' || type === 'pattern' || type === 'mirror' || type === 'offsetSurface' || type === 'splitLine') return i + 1;
+    if (type === 'refPlane' || type === 'refAxis' || type === 'refPoint' || type === 'coordSys' || type === 'pattern' || type === 'mirror' || type === 'offsetSurface' || type === 'splitLine' || type === 'trimSurface' || type === 'knit' || type === 'fillSurface' || type === 'flatSurface' || type === 'extendSurface') return i + 1;
     return type === 'fillet' || type === 'chamfer' || type === 'deleteFace' || type === 'moveFace' || type === 'shell' || type === 'draft' || type === 'combine' || type === 'sketch' ? i : undefined;
   }
 
