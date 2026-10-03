@@ -1,8 +1,68 @@
+import { useState } from 'react';
+import { t } from '@3db/i18n';
 import { dirName } from '@3db/model';
+import { standardLengths, standardSizes, STANDARD_KINDS, STANDARD_NUMBER, type StandardKind } from '@3db/library';
 import { partNameOf } from '@3db/io';
 import { store, useStore } from '../state/store';
 import { Icon } from './Icon';
 import { Busy, loadingText, useLoadingParts } from './LoadProgress';
+
+/** The standard parts library (F6.1): a kind, a size and a length make a part file in the project folder and choose it. */
+function StandardParts() {
+  const [kind, setKind] = useState<StandardKind>('socketScrew');
+  const [size, setSize] = useState('M6');
+  const [length, setLength] = useState(20);
+  const sizes = standardSizes(kind);
+  const lengths = standardLengths(kind);
+  const pickKind = (k: StandardKind) => {
+    setKind(k);
+    setSize(standardSizes(k).includes(size) ? size : standardSizes(k)[Math.min(3, standardSizes(k).length - 1)]!);
+    if (standardLengths(k).length > 0 && !standardLengths(k).includes(length)) setLength(standardLengths(k)[5]!);
+  };
+  return (
+    <div className="pm-group">
+      <h4>{t('library.title')}</h4>
+      <label className="pm-row">
+        <span>{t('library.kind')}</span>
+        <select value={kind} onChange={(e) => pickKind(e.target.value as StandardKind)}>
+          {STANDARD_KINDS.map((k) => (
+            <option key={k} value={k}>
+              {`${STANDARD_NUMBER[k]} ${t(`library.kind.${k}`)}`}
+            </option>
+          ))}
+        </select>
+      </label>
+      <label className="pm-row">
+        <span>{t('library.size')}</span>
+        <select value={size} onChange={(e) => setSize(e.target.value)}>
+          {sizes.map((s) => (
+            <option key={s} value={s}>
+              {kind === 'dowelPin' ? `Ø${s}` : s}
+            </option>
+          ))}
+        </select>
+      </label>
+      {lengths.length > 0 && (
+        <label className="pm-row">
+          <span>{t('library.length')}</span>
+          <select value={length} onChange={(e) => setLength(Number(e.target.value))}>
+            {lengths.map((l) => (
+              <option key={l} value={l}>
+                {l}
+              </option>
+            ))}
+          </select>
+        </label>
+      )}
+      <div className="pm-row">
+        <button className="pm-button" onClick={() => void store.assembly?.addStandardPart({ kind, size, ...(lengths.length > 0 ? { length } : {}) })}>
+          {t('library.add')}
+        </button>
+      </div>
+      <p className="hint">{t('library.hint')}</p>
+    </div>
+  );
+}
 
 /**
  * 「插入零組件」 PropertyManager (C15.1): the part files of the project folder, or 「瀏覽」. The chosen
@@ -59,6 +119,7 @@ export function InsertComponentPanel() {
           </button>
         </div>
       </div>
+      <StandardParts />
       {chosen && (
         <div className="pm-group">
           <h4>放置</h4>

@@ -61,11 +61,12 @@ import {
 } from '@3db/model';
 import { axisOf, closerAlignment, currentValue, defaultType, hasAlignment, MATE_LABEL, placed, supportedTypes, type GoalTerm, type MateGeometry } from '@3db/assembly';
 import { contentKey, gatherSources } from './sources';
-import { ASSEMBLY_FILE_EXTENSION, assemblyFileName, assemblyName, componentName, PART_FILE_EXTENSION, readDocumentFile, sha256Hex, stepStructure, writeAssemblyFile } from '@3db/io';
+import { ASSEMBLY_FILE_EXTENSION, assemblyFileName, assemblyName, componentName, PART_FILE_EXTENSION, readDocumentFile, sha256Hex, stepStructure, writeAssemblyFile, writePartFile } from '@3db/io';
 import { t } from '@3db/i18n';
 import type { AssemblyResult } from '@3db/regen';
 import type { AssemblyStepRequest, KernelApi, PartBuildPayload, PartStage } from '../worker/protocol';
-import { fileIn, listFiles, pathIn, pickAssemblySaveTarget, pickPartFile, writeFile } from '../files';
+import { fileIn, listFiles, pathIn, pickAssemblySaveTarget, pickPartFile, writeFile, writeFilesInto } from '../files';
+import { standardName, standardPartDoc, standardProblem, type StandardSpec } from '@3db/library';
 import { immovable } from './movability';
 
 /** A part file of the assembly, by its path in the project folder: read and rebuilt, or why not. */
@@ -1216,6 +1217,30 @@ export class AssemblyStore {
     if (!insert) return;
     this.set({ insert: { ...insert, chosen: path } });
     this.load(path);
+  }
+
+  /**
+   * The standard part library (F6.1): a part of the size asked for is made as a file in the project folder's 「標準件」 folder (unless it is there already)
+   * and chosen for placing, like any part of the list. The click that asks is the click that lets the browser write.
+   */
+  async addStandardPart(spec: StandardSpec): Promise<void> {
+    const insert = this.getState().insert;
+    const project = this.project;
+    if (!insert || !project) return;
+    const problem = standardProblem(spec);
+    if (problem) return this.host.notify(problem, 'error');
+    const path = `${t('library.folder')}/${standardName(spec)}${PART_FILE_EXTENSION}`;
+    try {
+      if (!insert.files?.includes(path)) {
+        await writeFilesInto(project, [{ path, bytes: await writePartFile(standardPartDoc(spec)) }]);
+        const now = this.getState().insert;
+        if (now) this.set({ insert: { ...now, files: [...(now.files ?? []), path].sort((a, b) => a.localeCompare(b, 'zh-Hant')) } });
+        this.host.notify(t('library.made', { name: standardName(spec) }));
+      }
+      this.choosePart(path);
+    } catch (e) {
+      this.host.notify(t('library.failed', { why: e instanceof Error ? e.message : String(e) }), 'error');
+    }
   }
 
   /** 「瀏覽」: a part file chosen with the system dialog; it must be inside the project folder. */
