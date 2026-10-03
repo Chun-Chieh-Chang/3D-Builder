@@ -178,7 +178,8 @@ export function mapExprs(feature: Feature, fn: (expr: Expr, kind: ExprKind, role
       const thickness = fn(feature.thickness, 'length', 'positive');
       return thickness === feature.thickness ? feature : { ...feature, thickness };
     }
-    case 'moveFace': {
+    case 'moveFace':
+    case 'offsetSurface': {
       const distance = fn(feature.distance, 'length', 'nonZero');
       return distance === feature.distance ? feature : { ...feature, distance };
     }

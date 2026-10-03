@@ -80,6 +80,8 @@ ull). */
   | { type: 'setDraftFeature'; featureId: Id; neutral: Ref; faces: Ref[]; angle: Expr; reverse?: boolean }
   /** What a shell takes away and how thick the wall is (C5.4). */
   | { type: 'setShell'; featureId: Id; faces: Ref[]; thickness: Expr; outward?: boolean }
+  /** Changes an offset surface (C9.2): the faces, the distance, and how it goes round a corner of the region (absent: rounded). */
+  | { type: 'setOffsetSurface'; featureId: Id; faces: Ref[]; distance: Expr; join?: 'arc' | 'intersection' }
   /** Faces of a Delete Face feature (C10.2), and whether the rest of a hole goes with them. */
   | { type: 'setFaces'; featureId: Id; faces: Ref[]; hole?: boolean }
   /** How an imported body's surfaces are sewn (F2.2); without `sewTolerance` the default is used again. */
@@ -464,6 +466,9 @@ function validateNewFeature(doc: PartDoc, f: Feature, index: number): void {
     case 'deleteFace':
       if (f.faces.some((r) => r.kind !== 'face')) throw new CommandError(t('cmd.deleteFaceOnlyFaces'));
       return;
+    case 'offsetSurface':
+      if (f.faces.some((r) => r.kind !== 'face')) throw new CommandError(t('cmd.offsetSurfaceOnlyFaces'));
+      return;
     case 'moveFace':
       if (f.face.kind !== 'face') throw new CommandError(t('cmd.moveFaceOnlyFace'));
       return;
@@ -747,6 +752,17 @@ export function mutate(draft: Draft<PartDoc>, cmd: Command): void {
       f.angle = cmd.angle;
       if (cmd.reverse) f.reverse = true;
       else delete f.reverse;
+      checkExprs(draft as PartDoc, f as Feature);
+      return;
+    }
+    case 'setOffsetSurface': {
+      const f = feature(draft, cmd.featureId);
+      if (f.type !== 'offsetSurface') throw new CommandError(t('cmd.onlyOffsetSurfaceHasParams'));
+      if (cmd.faces.some((r) => r.kind !== 'face')) throw new CommandError(t('cmd.offsetSurfaceOnlyFaces'));
+      f.faces = cmd.faces;
+      f.distance = cmd.distance;
+      if (cmd.join && cmd.join !== 'arc') f.join = cmd.join;
+      else delete f.join;
       checkExprs(draft as PartDoc, f as Feature);
       return;
     }

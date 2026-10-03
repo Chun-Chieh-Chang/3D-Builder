@@ -52,6 +52,7 @@ export const edit = {
   'body.common': '共同',
   'tree.bodies': '實體({n})',
   'tree.reference': '（參考）',
+  'tree.surface': '（曲面）',
   'tree.hide': '隱藏',
   'tree.show': '顯示',
   'tree.rename': '重新命名…',

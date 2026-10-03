@@ -135,7 +135,7 @@ function edgeSegments(mesh: ViewMesh): { segs: number[]; owner: number[] } {
 }
 
 const bodyMaterial = (options: THREE.MeshStandardMaterialParameters = {}) =>
-  new THREE.MeshStandardMaterial({ color: COLORS.body, metalness: 0.15, roughness: 0.55, polygonOffset: true, polygonOffsetFactor: 1, polygonOffsetUnits: 1, ...options });
+  new THREE.MeshStandardMaterial({ color: COLORS.body, metalness: 0.15, roughness: 0.55, side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: 1, polygonOffsetUnits: 1, ...options });
 
 function setMatrix(group: THREE.Object3D, matrix: ArrayLike<number>): void {
   group.matrix.fromArray(Array.from(matrix));

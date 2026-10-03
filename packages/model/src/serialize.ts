@@ -128,6 +128,8 @@ const migrations: Record<number, (doc: Json) => Json> = {
   25: (doc) => doc,
   // v27: the dowel pin hole (C4.8): `kind: 'dowel'` with a fit and an entrance chamfer. Nothing to convert; the version keeps older programs from opening a part with a hole they would make wrongly.
   26: (doc) => doc,
+  // v28: the offset surface feature (C9.2, Phase 4b) and surface bodies (bodies with no solid). Nothing to convert; the version keeps older programs from opening a feature they would skip.
+  27: (doc) => doc,
 };
 
 export class FormatError extends Error {

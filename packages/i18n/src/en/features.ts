@@ -231,4 +231,10 @@ export const features: Translation = {
   'surface.nothingProjected': 'The sketch does not project onto the face picked (check the direction and where the face is)',
   'surface.splitFailed': 'Split line failed: {why}',
   'surface.bsplineFailed': 'Conversion to B-splines failed: {why}',
+  'cmd.offsetSurfaceOnlyFaces': 'An offset surface can only be made of faces',
+  'feature.offsetSurface': 'Offset Surface',
+  'surface.oneBody': 'The faces of an offset surface have to be on one body',
+  'surface.noBodyForOffset': 'There is no body to offset',
+  'surface.facesLost': '{n} faces of the offset surface were not found',
+  'cmd.onlyOffsetSurfaceHasParams': 'Only an offset surface has these parameters',
 };

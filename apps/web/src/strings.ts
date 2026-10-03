@@ -30,6 +30,7 @@ export const FEATURE_LABEL: Record<FeatureType, string> = labelsOf({
   importedBody: 'feature.importedBody',
   derivedBody: 'feature.derivedBody',
   deleteFace: 'feature.deleteFace',
+  offsetSurface: 'feature.offsetSurface',
   shell: 'feature.shell',
   sweep: 'feature.sweep',
   loft: 'feature.loft',

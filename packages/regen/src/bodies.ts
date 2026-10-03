@@ -13,6 +13,8 @@ export interface BodyState {
   names: ElementNames;
   /** Feature that produced this state. */
   by: Id;
+  /** A surface body (4b): faces and shells and no solid. It is not a part: solid features leave it alone, and mass, parts lists, interference and drawings do not count it. */
+  surface?: boolean;
 }
 
 /** Where one body's elements lie in the numbering of a view of all the bodies. */

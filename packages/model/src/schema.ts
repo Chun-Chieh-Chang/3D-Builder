@@ -6,7 +6,7 @@ import type { Id } from './ids';
  * DOF status, mass properties and error lists are derived data and never stored.
  */
 
-export const SCHEMA_VERSION = 27;
+export const SCHEMA_VERSION = 28;
 
 /** Value expression (B5.2, B5.3): "20", "25.4mm", "30deg", "wall_t*2", "D1@草圖1/2", "property('厚度')"; see `expr/`. */
 export type Expr = string;
@@ -438,6 +438,18 @@ export interface MoveFaceFeature extends FeatureBase {
 }
 
 /**
+ * Offset surface (偏移曲面, C9.2, v28): the picked faces of one body, sewn into a region and offset by `distance` along their normals (positive: outward), as a surface
+ * body of its own (the body they are on is left as it is); the result is measured and refused when it is not `distance` from the faces (ADR 0067). `join` is how the offset
+ * goes round a corner of the region: rounded (the default, every point is `distance` away) or sharp.
+ */
+export interface OffsetSurfaceFeature extends FeatureBase {
+  type: 'offsetSurface';
+  faces: Ref[];
+  distance: Expr;
+  join?: 'arc' | 'intersection';
+}
+
+/**
  * Shell (薄殼, C5.4, v15): the body hollowed out to a wall of 	hickness, the picked aces taken away to open it; the wall grows inward, or
  * outward with outward.
  */
@@ -482,6 +494,7 @@ export type Feature =
   | RibFeature
   | PatternFeature
   | MirrorFeature
+  | OffsetSurfaceFeature
   | FilletFeature
   | ChamferFeature
   | RefPlaneFeature

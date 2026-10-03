@@ -218,6 +218,7 @@ export function FeatureTree() {
                 <span className="name">
                   {b.name}
                   {b.reference && t('tree.reference')}
+                  {b.surface && t('tree.surface')}
                 </span>
               )}
               {eye(key)}

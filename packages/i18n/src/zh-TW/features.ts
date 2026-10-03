@@ -229,4 +229,10 @@ export const features = {
   'surface.nothingProjected': '草圖投影不到選的面上（檢查方向與面的位置）',
   'surface.splitFailed': '分割線失敗：{why}',
   'surface.bsplineFailed': '轉成 B 樣條失敗：{why}',
+  'cmd.offsetSurfaceOnlyFaces': '偏移曲面只能選面',
+  'feature.offsetSurface': '偏移曲面',
+  'surface.oneBody': '偏移曲面選的面要在同一個本體上',
+  'surface.noBodyForOffset': '沒有可以偏移的本體',
+  'surface.facesLost': '偏移曲面選的 {n} 個面找不到了',
+  'cmd.onlyOffsetSurfaceHasParams': '只有偏移曲面有這些參數',
 } as const;

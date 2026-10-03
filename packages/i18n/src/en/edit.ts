@@ -54,6 +54,7 @@ export const edit: Translation = {
   'body.common': 'Common',
   'tree.bodies': 'Solid Bodies({n})',
   'tree.reference': '(reference)',
+  'tree.surface': '(surface)',
   'tree.hide': 'Hide',
   'tree.show': 'Show',
   'tree.rename': 'Rename…',

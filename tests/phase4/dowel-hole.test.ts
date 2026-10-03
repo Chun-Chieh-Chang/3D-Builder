@@ -3,7 +3,7 @@
  * chamfer, and what the document keeps and refuses.
  */
 import { beforeAll, describe, expect, it } from 'vitest';
-import { applyCommand, DOWEL_RANGE, fitClearance, holeLimits, parsePart, pinLimits, serializePart, type Feature, type HoleFeature, type PartDoc } from '@3db/model';
+import { applyCommand, DOWEL_RANGE, fitClearance, holeLimits, parsePart, pinLimits, serializePart, type Feature, type HoleFeature, type PartDoc, SCHEMA_VERSION } from '@3db/model';
 import { PlaneGcsSolver } from '@3db/sketch';
 import { Kernel } from '@3db/kernel';
 import { Regenerator, type RebuildResult } from '@3db/regen';
@@ -95,11 +95,11 @@ describe('the dowel pin hole (C4.8)', () => {
     expect(rebuild(make({ chamfer: '3' })).features.at(-1)!.message).toContain('導角');
   });
 
-  it('keeps the fit and the chamfer through setHole and through save and reopen (Schema 27)', () => {
+  it('keeps the fit and the chamfer through setHole and through save and reopen (the schema it was added in, 27, and the later ones)', () => {
     const doc = applyCommand(make({ chamfer: '0.5' }), { type: 'setHole', featureId: 'h1', hole: { kind: 'dowel', diameter: '8', fit: 'H8', chamfer: '0.3', end: { type: 'blind', depth: '8' } } });
     const h = doc.features.find((f) => f.id === 'h1') as HoleFeature;
     expect([h.kind, h.diameter, h.fit, h.chamfer]).toEqual(['dowel', '8', 'H8', '0.3']);
-    expect(JSON.parse(serializePart(doc)).schemaVersion).toBe(27);
+    expect(JSON.parse(serializePart(doc)).schemaVersion).toBe(SCHEMA_VERSION);
     expect(parsePart(serializePart(doc))).toEqual(doc);
   });
 

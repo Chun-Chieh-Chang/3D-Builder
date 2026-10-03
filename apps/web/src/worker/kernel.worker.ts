@@ -77,10 +77,11 @@ function meshOf(r: RebuildResult, shown: boolean[], quality: MeshOptions = {}): 
   return parts.length > 0 ? mergeMeshes(parts) : null;
 }
 
-/** Mass of the part: its bodies except the reference ones (C7.1), the centre weighted by volume. */
+/** Mass of the part: its bodies except the reference ones (C7.1) and the surface bodies (4b), the centre weighted by volume. */
 function massOf(r: RebuildResult): MassProps | null {
   if (!r.body) return null;
-  const own = r.bodies.filter((b) => !b.reference).map((b) => kernel.massProps(b.shape));
+  const own = r.bodies.filter((b) => !b.reference && !b.surface).map((b) => kernel.massProps(b.shape));
+  if (own.length === 0) return null;
   if (own.length === r.bodies.length && own.length === 1) return own[0]!;
   // the bodies as one: for a density of one the mass is the volume (see combineMass)
   const whole = combineMass(own.map((m) => ({ mass: m.volume, center: m.center, inertia: m.inertia })));
@@ -120,10 +121,29 @@ async function boot() {
   return { occtMs, gcsMs };
 }
 
-/** The shapes of the parts the components use, by their keys, as built for the assembly (null: not built). */
-async function shapesOf(components: readonly { parts: readonly { part: string }[] }[]): Promise<Map<string, ShapeId | null>> {
+/**
+ * The shapes of the parts the components use, by their keys, as built for the assembly (null: not built). The surface bodies of a part (4b) are not the part: a
+ * part that has some is given without them (joined, when several are left: the joined shape is added to `temp`, for the caller to release).
+ */
+async function shapesOf(components: readonly { parts: readonly { part: string }[] }[], temp: ShapeId[]): Promise<Map<string, ShapeId | null>> {
   const shapes = new Map<string, ShapeId | null>();
-  for (const key of new Set(components.flatMap((c) => c.parts.map((p) => p.part)))) shapes.set(key, (await parts.get(key)?.catch(() => null))?.result.body?.shape ?? null);
+  for (const key of new Set(components.flatMap((c) => c.parts.map((p) => p.part)))) {
+    const built = await parts.get(key)?.catch(() => null);
+    const body = built?.result.body;
+    if (!built || !body) {
+      shapes.set(key, null);
+      continue;
+    }
+    const own = built.result.bodies.filter((b) => !b.surface);
+    if (own.length === built.result.bodies.length) shapes.set(key, body.shape);
+    else if (own.length === 0) shapes.set(key, null);
+    else if (own.length === 1) shapes.set(key, own[0]!.shape);
+    else {
+      const joined = kernel.join(own.map((b) => b.shape));
+      temp.push(joined);
+      shapes.set(key, joined);
+    }
+  }
   return shapes;
 }
 
@@ -158,7 +178,7 @@ const api: KernelApi = {
     const payload: RebuildPayload = {
       seq,
       features: r.features,
-      bodies: r.bodies.map((b, i) => ({ id: b.id, name: b.name, reference: b.reference, shown: shown[i]!, face0: b.face0, faces: b.faces, volume: kernel.massProps(b.shape).volume })),
+      bodies: r.bodies.map((b, i) => ({ id: b.id, name: b.name, reference: b.reference, surface: b.surface, shown: shown[i]!, face0: b.face0, faces: b.faces, volume: kernel.massProps(b.shape).volume })),
       mesh,
       faceNames: body?.names.faces ?? [],
       faceFingerprints: body ? body.topology.faces.map((_, i) => faceFingerprint(body.topology, i)) : [],
@@ -272,7 +292,7 @@ const api: KernelApi = {
       vertexPoints: Float32Array.from(topo?.vertices.flatMap((v) => v.point) ?? []),
       vertexFingerprints: topo ? topo.vertices.map((_, i) => vertexFingerprint(topo, i)) : [],
       planes: part.planes,
-      referenceOnly: part.result.bodies.length > 0 && part.result.bodies.every((b) => b.reference),
+      referenceOnly: part.result.bodies.length > 0 && part.result.bodies.every((b) => b.reference || b.surface),
       properties: part.properties,
       mass: (() => {
         const m = massOf(part.result);
@@ -349,7 +369,7 @@ const api: KernelApi = {
         vertexPoints: new Float32Array(0),
         vertexFingerprints: [],
         planes: [],
-        referenceOnly: original!.result.bodies.every((b) => b.reference),
+        referenceOnly: original!.result.bodies.every((b) => b.reference || b.surface),
         properties: {},
         mass: null,
         ms: performance.now() - t0,
@@ -384,7 +404,7 @@ const api: KernelApi = {
           const body = built?.result.body;
           if (!built || !body) throw new Error(t('drawing.noBody'));
           // what is drawn of a part is what it is made of: the reference bodies (a workpiece) are left out, unless they are all there is
-          const own = built.result.bodies.filter((b) => !b.reference);
+          const own = built.result.bodies.filter((b) => !b.reference && !b.surface);
           let shape = body.shape;
           if (own.length > 0 && own.length < built.result.bodies.length) {
             shape = own.length === 1 ? own[0]!.shape : kernel.join(own.map((b) => b.shape));
@@ -412,7 +432,7 @@ const api: KernelApi = {
         const body = built?.result.body;
         if (!built || !body) throw new Error(t('drawing.noBody'));
         // the faces of a workpiece that is only there for reference are not the part's (as in the lines of its views)
-        const own = built.result.bodies.filter((b) => !b.reference);
+        const own = built.result.bodies.filter((b) => !b.reference && !b.surface);
         const only = own.length > 0 && own.length < built.result.bodies.length;
         out.push({ features: viewFeatures(body.topology, body.names, r.axes, only ? (i) => own.some((b) => i >= b.face0 && i < b.face0 + b.faces) : undefined) });
       } catch (e) {
@@ -441,32 +461,47 @@ const api: KernelApi = {
   async clearance(components, least, only): Promise<ClearanceResult> {
     await api.init();
     const began = performance.now();
-    const shapes = await shapesOf(components);
-    const found = findClearance(kernel, components, (key) => shapes.get(key) ?? null, least, only ? new Set(only) : undefined);
-    return { ...found, ms: performance.now() - began };
+    const temp: ShapeId[] = [];
+    try {
+      const shapes = await shapesOf(components, temp);
+      const found = findClearance(kernel, components, (key) => shapes.get(key) ?? null, least, only ? new Set(only) : undefined);
+      return { ...found, ms: performance.now() - began };
+    } finally {
+      for (const s of temp) kernel.release(s);
+    }
   },
 
   async sweep(components, mover, dir, length): Promise<SweepOutcome> {
     await api.init();
     const began = performance.now();
-    const shapes = await shapesOf(components);
-    return { ...sweepClearance(kernel, components, mover, dir, length, (key) => shapes.get(key) ?? null), ms: performance.now() - began };
+    const temp: ShapeId[] = [];
+    try {
+      const shapes = await shapesOf(components, temp);
+      return { ...sweepClearance(kernel, components, mover, dir, length, (key) => shapes.get(key) ?? null), ms: performance.now() - began };
+    } finally {
+      for (const s of temp) kernel.release(s);
+    }
   },
 
   async collisions(components, movers): Promise<CollisionResult> {
     await api.init();
     const began = performance.now();
-    const shapes = await shapesOf(components);
-    const found = findInterference(kernel, components, (key) => shapes.get(key) ?? null, undefined, new Set(movers));
-    for (const o of found.overlaps) kernel.release(o.shape);
-    return { pairs: [...new Set(found.overlaps.map((o) => `${o.a}|${o.b}`))].map((k) => ({ a: k.split('|')[0]!, b: k.split('|')[1]! })), ms: performance.now() - began };
+    const temp: ShapeId[] = [];
+    try {
+      const shapes = await shapesOf(components, temp);
+      const found = findInterference(kernel, components, (key) => shapes.get(key) ?? null, undefined, new Set(movers));
+      for (const o of found.overlaps) kernel.release(o.shape);
+      return { pairs: [...new Set(found.overlaps.map((o) => `${o.a}|${o.b}`))].map((k) => ({ a: k.split('|')[0]!, b: k.split('|')[1]! })), ms: performance.now() - began };
+    } finally {
+      for (const s of temp) kernel.release(s);
+    }
   },
 
   async interference(components): Promise<InterferenceResult> {
     await api.init();
     const began = performance.now();
-    const shapes = new Map<string, ShapeId | null>();
-    for (const key of new Set(components.flatMap((c) => c.parts.map((p) => p.part)))) shapes.set(key, (await parts.get(key)?.catch(() => null))?.result.body?.shape ?? null);
+    const temp: ShapeId[] = [];
+    const shapes = await shapesOf(components, temp);
     const found = findInterference(kernel, components, (key) => shapes.get(key) ?? null);
     try {
       const overlaps = found.overlaps.map((o) => ({ a: o.a, b: o.b, volume: o.volume, mesh: kernel.mesh(o.shape, COMPONENT_MESH) }));
@@ -474,6 +509,7 @@ const api: KernelApi = {
       return Comlink.transfer(result, overlaps.flatMap((o) => [o.mesh.positions, o.mesh.normals, o.mesh.indices, o.mesh.faceRanges, o.mesh.edgePoints, o.mesh.edgeRanges].map((a) => a.buffer as ArrayBuffer)));
     } finally {
       for (const o of found.overlaps) kernel.release(o.shape);
+      for (const s of temp) kernel.release(s);
     }
   },
 

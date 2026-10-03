@@ -56,6 +56,8 @@ export interface BodyPayload {
   id: Id;
   name: string;
   reference: boolean;
+  /** A surface body (4b): no solid, not a part. */
+  surface: boolean;
   /** Whether it is drawn (D4.6): a hidden body has no faces in mesh, so it cannot be picked either. */
   shown: boolean;
   /** Its faces are numbers ace0 … ace0 + faces - 1 of the names and fingerprints below. */

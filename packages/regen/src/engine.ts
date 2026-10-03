@@ -37,6 +37,7 @@ import {
   type RefPointFeature,
   type RevolveFeature,
   type RibFeature,
+  type OffsetSurfaceFeature,
   type ShellFeature,
   type SketchFeature,
   type SweepFeature,
@@ -77,6 +78,8 @@ export interface BodyInfo {
   /** The name the document gave it, else the name of the feature that made it (伸長1, 除料1#2). */
   name: string;
   reference: boolean;
+  /** A surface body (4b): no solid, not a part (see `BodyState.surface`). */
+  surface: boolean;
   shape: ShapeId;
   face0: number;
   faces: number;
@@ -416,6 +419,10 @@ export class Regenerator {
             set = this.advance(set, this.derivedBody(feature, set));
             return done({ status: 'ok' });
           }
+          case 'offsetSurface': {
+            set = this.advance(set, this.offsetSurface(feature, set));
+            return done({ status: 'ok' });
+          }
           case 'extrude':
           case 'revolve':
           case 'sweep':
@@ -498,6 +505,7 @@ export class Regenerator {
             id: b.id,
             name: doc.bodies[b.id]?.name ?? this.inherited.get(b.id)?.name ?? `${make?.name ?? bodyFeature(b.id)}${piece}`,
             reference: doc.bodies[b.id]?.reference ?? this.inherited.get(b.id)?.reference ?? false,
+            surface: !!b.surface,
             shape: b.shape,
             face0: p.face0,
             faces: p.faces,
@@ -1319,6 +1327,10 @@ export class Regenerator {
       const out: BodyState[] = [];
       let slot = -1;
       for (const b of list) {
+        if (b.surface) {
+          out.push(b); // a surface body is not joined to
+          continue;
+        }
         const r = k.boolean('fuse', b.shape, acc.shape);
         // Bodies that touch come out of the fuse as one solid; bodies apart come out as two, and stay apart.
         if (k.solidCount(r.shape) !== 1) {
@@ -1358,6 +1370,10 @@ export class Regenerator {
     const removed: Id[] = [];
     let changed = false;
     for (const b of list) {
+      if (b.surface) {
+        out.push(b); // a surface body is not cut
+        continue;
+      }
       const r = k.boolean(op, b.shape, toolShape);
       const before = k.massProps(b.shape).volume;
       const after = k.massProps(r.shape).volume;
@@ -1693,6 +1709,35 @@ export class Regenerator {
       const topology = this.kernel.topology(r.shape);
       return { id: body.id, shape: r.shape, topology, names: nameElements(r.faceOrigins, topology, { featureId: f.id, input: body.names }), by: f.id };
     });
+  }
+
+  /**
+   * 「偏移曲面」 (C9.2): faces of one body offset into a surface body of its own (4b, ADR 0067). The body they are on is left as it is; the result is measured, and
+   * refused with the gap that was found when it is not the distance asked for.
+   */
+  private offsetSurface(f: OffsetSurfaceFeature, set: Bodies): BodyState[] {
+    const view = set.view;
+    if (!view) throw new FeatureError(t('surface.noBodyForOffset'));
+    if (f.faces.length === 0) throw new FeatureError(t('edit.noFacePicked'));
+    const owners = new Map<BodyState, Ref[]>();
+    const unresolved: Unresolved[] = [];
+    for (const ref of f.faces) {
+      const r = resolveRef(ref, view.names, view.topology);
+      if (!r.ok) {
+        unresolved.push({ ref, reason: r.reason, candidates: r.candidates });
+        continue;
+      }
+      this.noteFingerprint(r.via, t('edit.faceNoun'), view.names.faces[r.index]!);
+      const { body } = set.locate('face', r.index);
+      owners.set(body, [...(owners.get(body) ?? []), ref]);
+    }
+    if (unresolved.length > 0) throw new FeatureError(t('surface.facesLost', { n: unresolved.length }), unresolved);
+    if (owners.size !== 1) throw new FeatureError(t('surface.oneBody'));
+    const [body, mine] = [...owners][0]!;
+    const r = this.kernel.offsetFaces(body.shape, this.faceIndices(mine, body), evalLength(f.distance), f.join ? { join: f.join } : {});
+    const topology = this.kernel.topology(r.shape);
+    const names = nameElements(r.faceOrigins, topology, { featureId: f.id, role: 'offset', input: body.names });
+    return [...set.list, { id: f.id, shape: r.shape, topology, names, by: f.id, surface: true }];
   }
 
   private shell(f: ShellFeature, set: Bodies): BodyState[] {
