@@ -1,5 +1,6 @@
 import { t } from '@3db/i18n';
-import { axesOf, sectionArrow, type DetailDrawingView, type DrawingDoc, type DrawingView, type Id, type Scale, type SectionDrawingView, type TitleField, type ViewSide } from '@3db/model';
+import { axesOf, sectionArrow, type DetailDrawingView, type DrawingDoc, type DrawingView, type Id, type Scale, type SectionDrawingView, type TitleField, type ViewFeature, type ViewSide } from '@3db/model';
+import { centreItems, holeRows, holeTableItems, type HoleRow } from './annotation';
 import { evaluateDimension, type DimensionOutcome, type ElementsResult } from './dimension';
 import { circlePolyline, hatch } from './geometry';
 import { layoutViews, resolveLines, scaleOf, toSheet, type PlacedView, type ViewLines } from './layout';
@@ -140,13 +141,15 @@ function detailItems(v: DetailDrawingView, parent: PlacedView, own: PlacedView, 
  * The whole drawing as a scene: the sheet, then each view's lines where the layout puts it, the cutting lines of the sections and the circles of the details on
  * their parents, and the titles of those views. `lines` is what the views look like from their directions at full size (a view not in it, or null, is not
  * drawn: its model could not be read); detail views are made from their parents' lines. The dimensions are drawn on their views from what `elements` says their
- * elements are (by the dimension's id); what each came to, its text or why it could not be drawn, is in `dimensions`.
+ * elements are (by the dimension's id); what each came to, its text or why it could not be drawn, is in `dimensions`. `features` is what each view can be dimensioned
+ * from (by view id): the centre marks and lines are drawn from it, and the hole tables are made from it (their rows are in `tables`).
  */
 export function buildScene(
   doc: DrawingDoc,
   lines: ReadonlyMap<Id, ViewLines | null>,
   elements: ReadonlyMap<Id, ElementsResult> = new Map(),
-): { scene: Scene; placed: Map<Id, PlacedView>; dimensions: Map<Id, DimensionOutcome> } {
+  features: ReadonlyMap<Id, readonly ViewFeature[]> = new Map(),
+): { scene: Scene; placed: Map<Id, PlacedView>; dimensions: Map<Id, DimensionOutcome>; tables: Map<Id, HoleRow[]> } {
   const m = sheetMetrics(doc.sheet);
   const placed = layoutViews(doc, lines);
   const resolved = resolveLines(doc, lines);
@@ -155,6 +158,7 @@ export function buildScene(
     const own = placed.get(v.id)!;
     items.push(...viewItems(v, resolved.get(v.id), own));
     if (!resolved.get(v.id)) continue;
+    items.push(...centreItems(v, features.get(v.id) ?? [], own));
     const parent = v.kind === 'section' || v.kind === 'detail' ? placed.get(v.parent) : undefined;
     if (v.kind === 'section' && parent) items.push(...sectionItems(v, parent, own));
     if (v.kind === 'detail' && parent) items.push(...detailItems(v, parent, own, scaleOf(doc, v)));
@@ -169,7 +173,15 @@ export function buildScene(
     dimensions.set(d.id, outcome);
     if (!('error' in outcome)) items.push(...outcome.items);
   }
-  return { scene: { width: m.width, height: m.height, items }, placed, dimensions };
+  const tables = new Map<Id, HoleRow[]>();
+  for (const table of doc.tables ?? []) {
+    const own = resolved.get(table.view) ? placed.get(table.view) : undefined;
+    if (!own) continue;
+    const rows = holeRows(features.get(table.view) ?? [], table.fits);
+    tables.set(table.id, rows);
+    items.push(...holeTableItems(table, rows, own, doc.sheet));
+  }
+  return { scene: { width: m.width, height: m.height, items }, placed, dimensions, tables };
 }
 
 export type { TitleField };

@@ -5,7 +5,9 @@ import { useState } from 'react';
 import { store, useStore } from '../state/store';
 
 /** The label of a thing a dimension can point at, as the list shows it. */
-const featureLabel = (f: ViewFeature): string =>
+type Pickable = Exclude<ViewFeature, { type: 'axis' }>;
+
+const featureLabel = (f: Pickable): string =>
   f.type === 'plane'
     ? t(f.axis === 'x' ? 'drawingUi.featurePlaneX' : 'drawingUi.featurePlaneY', { value: formatNumber(f.coord, 2) })
     : t(f.full ? (f.convex ? 'drawingUi.featureCylinder' : 'drawingUi.featureHole') : 'drawingUi.featureArc', {
@@ -55,15 +57,15 @@ export function DimensionPanel() {
   const drw = useStore((s) => s.drw)!;
   const d = store.drawingStore!;
   const view = drw.doc.views.find((v) => v.id === drw.selected);
-  const [opts, setOpts] = useState({ overall: true, holes: true, positions: false });
+  const [opts, setOpts] = useState({ overall: true, holes: true, positions: false, callouts: true });
   const [a, setA] = useState(0);
   const [b, setB] = useState(1);
   const [orientation, setOrientation] = useState<DimensionOrientation>('horizontal');
   const [round, setRound] = useState(0);
   const [selected, setSelected] = useState<string | null>(null);
   const features = view ? (drw.features.get(view.id) ?? null) : null;
-  const planes = (features ?? []).filter((f) => f.type === 'plane');
-  const circles = (features ?? []).filter((f) => f.type === 'circle');
+  const planes = (features ?? []).filter((f): f is Pickable => f.type === 'plane');
+  const circles = (features ?? []).filter((f): f is Pickable => f.type === 'circle');
   const linearPick = [...planes, ...circles];
   const mine = view ? drw.doc.dimensions.filter((x) => x.view === view.id) : [];
   const outcomes = d.scene().dimensions;
@@ -79,7 +81,7 @@ export function DimensionPanel() {
       {view && (
         <>
           {features && features.length === 0 && <p className="muted">{t('drawingUi.dimNoFeatures')}</p>}
-          {(['overall', 'holes', 'positions'] as const).map((k) => (
+          {(['overall', 'holes', 'callouts', 'positions'] as const).map((k) => (
             <label key={k} className="pm-row checkbox">
               <input type="checkbox" data-field={`auto-${k}`} checked={opts[k]} onChange={(e) => setOpts({ ...opts, [k]: e.target.checked })} />
               <span>{t(`drawingUi.dimAuto.${k}`)}</span>
@@ -162,6 +164,12 @@ export function DimensionPanel() {
                 <input type="checkbox" data-field="dimReference" checked={!!current.reference} onChange={(e) => d.setDimension(current.id, { reference: e.target.checked })} />
                 <span>{t('drawingUi.dimReference')}</span>
               </label>
+              {current.kind === 'diameter' && (
+                <label className="pm-row checkbox">
+                  <input type="checkbox" data-field="dimCallout" checked={!!current.callout} onChange={(e) => d.setDimension(current.id, { callout: e.target.checked })} />
+                  <span>{t('drawingUi.dimCallout')}</span>
+                </label>
+              )}
               {current.kind === 'linear' ? (
                 <label className="pm-row">
                   <span>{t('drawingUi.dimOffset')}</span>

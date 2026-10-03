@@ -3,6 +3,7 @@ import { SHEET_SIZES, TITLE_FIELDS, VIEW_NAMES, isDerived, type DrawingView, typ
 import { STANDARD_SCALES, scaleText, showsHidden } from '@3db/drawing';
 import { useState } from 'react';
 import { store, useStore } from '../state/store';
+import { AnnotationPanel } from './AnnotationPanel';
 import { DimensionPanel } from './DimensionPanel';
 
 const SIDES: readonly ViewSide[] = ['right', 'left', 'up', 'down'];
@@ -201,6 +202,7 @@ export function DrawingPanel() {
         </div>
       </div>
       <DimensionPanel />
+      <AnnotationPanel />
       {(() => {
         const parent = doc.views.find((x) => x.id === drw.selected);
         const box: { min: [number, number]; max: [number, number] } | null | undefined = parent ? (parent.kind === 'detail' ? { min: [parent.centre[0] - parent.radius, parent.centre[1] - parent.radius], max: [parent.centre[0] + parent.radius, parent.centre[1] + parent.radius] } : drw.lines.get(parent.id)?.box) : null;

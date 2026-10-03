@@ -12,7 +12,7 @@ import type { Ref } from './schema';
  * opened (exact hidden-line removal), so a drawing can never disagree with the model it shows.
  */
 
-export const DRAWING_SCHEMA_VERSION = 3;
+export const DRAWING_SCHEMA_VERSION = 4;
 
 export type SheetSize = 'A4' | 'A3' | 'A2' | 'A1' | 'A0';
 export const SHEET_SIZES: readonly SheetSize[] = ['A4', 'A3', 'A2', 'A1', 'A0'];
@@ -44,6 +44,8 @@ interface ViewCommon {
   scale?: Scale;
   /** Hidden lines are drawn (dashed). Absent: they are, except in a section view. */
   hidden?: boolean;
+  /** The centre marks of the circles and the centre lines of the cylinders are drawn (C16.5). Absent: they are, except in a section view. */
+  centreMarks?: boolean;
 }
 
 /** A view of a model from one of the named directions (C16.2). */
@@ -132,6 +134,8 @@ export interface DiameterDimension extends DimensionCommon {
   ref: Ref;
   angle: number;
   count?: number;
+  /** A hole callout (C16.5): what the model says of the hole is written after the diameter — through, or how deep, and its counterbore. */
+  callout?: boolean;
 }
 
 /** The radius (R) of a cylinder or circle seen as an arc or a circle in the view. */
@@ -154,6 +158,16 @@ export interface ElementFacts {
   /** A plane's normal, an axis, a line's direction. */
   dir?: [number, number, number];
   radius?: number;
+  /** A cylinder that is a hole: how deep it is. */
+  hole?: HoleInfo;
+}
+
+/** What the model says of a hole (a whole cylinder cut into the part): through or blind, its depth, and the counterbore at its mouth if it has one. */
+export interface HoleInfo {
+  through: boolean;
+  /** mm: the length of the cylinder (the thickness a through hole goes through). */
+  depth: number;
+  counterbore?: { diameter: number; depth: number };
 }
 
 /** What a dimension can be attached to in a view (the elements the view sees edge-on or as circles), found in the worker; the material of the automatic dimensions and of the choice in the panel. */
@@ -161,7 +175,26 @@ export type ViewFeature =
   /** A plane seen edge-on: a line across the view's x (`axis: 'x'`, at x = `coord`) or its y. */
   | { type: 'plane'; ref: Ref; axis: 'x' | 'y'; coord: number; area: number }
   /** A cylinder seen along its axis: a circle (a whole one, `full`, or an arc) with its middle in the view's coordinates and the direction (degrees) from there to the middle of the arc. */
-  | { type: 'circle'; ref: Ref; centre: [number, number]; radius: number; convex: boolean; full: boolean; outward: number };
+  | { type: 'circle'; ref: Ref; centre: [number, number]; radius: number; convex: boolean; full: boolean; outward: number; hole?: HoleInfo }
+  /** A whole cylinder seen from the side: its axis from one end to the other, in the view's coordinates. */
+  | { type: 'axis'; ref: Ref; from: [number, number]; to: [number, number]; radius: number };
+
+// ---------------------------------------------------------------- tables (C16.6)
+
+/**
+ * A hole table (C16.6): every hole the view sees as a whole circle, with a tag (A1, A2, B1 … by size), where it is from the left and bottom planes of the
+ * view, and its size (diameter, tolerance, through or deep). The tags are written beside the holes. `at` is the table's upper left corner on the sheet (absent:
+ * the upper right corner of the drawing area); `fits` gives a class of tolerance (「H7」) to the holes of a diameter, by the diameter as written (「6」).
+ */
+export interface HoleTable {
+  id: Id;
+  kind: 'holes';
+  view: Id;
+  at?: [number, number];
+  fits?: Record<string, string>;
+}
+
+export type DrawingTable = HoleTable;
 
 export interface DrawingDoc {
   kind: 'drawing';
@@ -170,6 +203,7 @@ export interface DrawingDoc {
   title: Partial<Record<TitleField, string>>;
   views: DrawingView[];
   dimensions: Dimension[];
+  tables: DrawingTable[];
   properties: Record<string, string>;
   idCounters: Record<string, number>;
 }
@@ -182,12 +216,13 @@ export function createEmptyDrawing(): DrawingDoc {
     title: {},
     views: [],
     dimensions: [],
+    tables: [],
     properties: {},
     idCounters: {},
   };
 }
 
-export const drawingIdsInUse = (doc: DrawingDoc): Id[] => [...doc.views.map((v) => v.id), ...doc.dimensions.map((d) => d.id)];
+export const drawingIdsInUse = (doc: DrawingDoc): Id[] => [...doc.views.map((v) => v.id), ...doc.dimensions.map((d) => d.id), ...doc.tables.map((x) => x.id)];
 
 export type DrawingCommand =
   /** Changes the sheet: its size, orientation, projection or scale (C16.1). */
@@ -204,7 +239,12 @@ export type DrawingCommand =
   | { type: 'insertDimensions'; dimensions: Dimension[] }
   /** Changes a dimension: what is given replaces what is there; `null` takes `reference`, `count` or `tolerance` away. A field that does not belong to its kind is refused. */
   | { type: 'setDimension'; dimensionId: Id; patch: DimensionPatch }
-  | { type: 'deleteDimensions'; dimensionIds: Id[] };
+  | { type: 'deleteDimensions'; dimensionIds: Id[] }
+  /** Adds tables (C16.6), each with its own new id, on views that are there. */
+  | { type: 'insertTables'; tables: DrawingTable[] }
+  /** Changes a table: `at: null` puts it back in the corner; `fits` replaces the classes (an empty one takes them all away). */
+  | { type: 'setTable'; tableId: Id; patch: { at?: [number, number] | null; fits?: Record<string, string> } }
+  | { type: 'deleteTables'; tableIds: Id[] };
 
 export type DimensionPatch = {
   reference?: boolean | null;
@@ -213,6 +253,7 @@ export type DimensionPatch = {
   orientation?: DimensionOrientation;
   angle?: number;
   count?: number | null;
+  callout?: boolean | null;
   a?: Ref;
   b?: Ref;
   ref?: Ref;
@@ -222,6 +263,7 @@ export type DimensionPatch = {
 export type ViewPatch = {
   name?: string;
   hidden?: boolean;
+  centreMarks?: boolean | null;
   at?: [number, number] | null;
   scale?: Scale | null;
   source?: string;
@@ -288,6 +330,7 @@ function checkDimension(d: Dimension, views: readonly DrawingView[]): void {
     if (!isRefValue(d.ref) || d.ref.kind === 'vertex') throw new CommandError(t('drawing.dimBadRef'));
     if (!Number.isFinite(d.angle)) throw new CommandError(t('drawing.dimBadAngle'));
     if (d.count !== undefined && !(Number.isInteger(d.count) && d.count >= 2)) throw new CommandError(t('drawing.dimBadCount'));
+    if (d.kind === 'radius' && (d as { callout?: boolean }).callout) throw new CommandError(t('drawing.notForKind', { field: 'callout', kind: d.kind }));
   } else throw new CommandError(t('drawing.dimBadKind', { kind: String((d as { kind?: unknown }).kind) }));
   const tol = d.tolerance;
   if (tol) {
@@ -297,6 +340,15 @@ function checkDimension(d: Dimension, views: readonly DrawingView[]): void {
       if (!parseFit(tol.fit)) throw new CommandError(t('drawing.dimBadFit', { fit: String(tol.fit) }));
     } else throw new CommandError(t('drawing.dimBadLimits'));
   }
+}
+
+/** Checks a table against the views it may be on. */
+function checkTable(x: DrawingTable, views: readonly DrawingView[]): void {
+  if (!x.id) throw new CommandError(t('drawing.idMissing'));
+  if (x.kind !== 'holes') throw new CommandError(t('drawing.tableBadKind', { kind: String((x as { kind?: unknown }).kind) }));
+  if (!viewById(views, x.view)) throw new CommandError(t('drawing.dimNoView', { id: String(x.view) }));
+  if (x.at && !(x.at.length === 2 && x.at.every(Number.isFinite))) throw new CommandError(t('drawing.badPosition'));
+  for (const [diameter, fit] of Object.entries(x.fits ?? {})) if (diameter.trim() === '' || !parseFit(fit)) throw new CommandError(t('drawing.dimBadFit', { fit: String(fit) }));
 }
 
 /** Immer recipe: mutates the draft or throws CommandError, leaving the document untouched. */
@@ -332,7 +384,7 @@ export function mutateDrawing(draft: Draft<DrawingDoc>, cmd: DrawingCommand): vo
     }
     case 'setView': {
       const v = viewOf(draft, cmd.viewId);
-      const { at, scale, flip, ...rest } = cmd.patch;
+      const { at, scale, flip, centreMarks, ...rest } = cmd.patch;
       const kind = v.kind ?? 'model';
       const belongs: Record<string, string[]> = { model: ['source', 'direction'], projected: ['side'], section: ['line', 'label'], detail: ['centre', 'radius', 'label'] };
       for (const k of Object.keys(rest)) if (!['name', 'hidden'].includes(k) && !belongs[kind]!.includes(k)) throw new CommandError(t('drawing.notForKind', { field: k, kind }));
@@ -342,6 +394,8 @@ export function mutateDrawing(draft: Draft<DrawingDoc>, cmd: DrawingCommand): vo
       else if (at !== undefined) next.at = at;
       if (scale === null) delete next.scale;
       else if (scale !== undefined) next.scale = scale;
+      if (centreMarks === null) delete next.centreMarks;
+      else if (centreMarks !== undefined) next.centreMarks = centreMarks;
       if (flip === null || flip === false) delete next.flip;
       else if (flip === true) next.flip = true;
       checkView(next, draft.views.filter((x) => x.id !== v.id) as DrawingView[]);
@@ -362,6 +416,8 @@ export function mutateDrawing(draft: Draft<DrawingDoc>, cmd: DrawingCommand): vo
       // the dimensions drawn on them go too
       countersFor(draft.dimensions.filter((d) => ids.has(d.view)).map((d) => d.id), draft.idCounters);
       draft.dimensions = draft.dimensions.filter((d) => !ids.has(d.view));
+      countersFor(draft.tables.filter((x) => ids.has(x.view)).map((x) => x.id), draft.idCounters);
+      draft.tables = draft.tables.filter((x) => !ids.has(x.view));
       return;
     }
     case 'insertDimensions': {
@@ -378,11 +434,14 @@ export function mutateDrawing(draft: Draft<DrawingDoc>, cmd: DrawingCommand): vo
     case 'setDimension': {
       const d = draft.dimensions.find((x) => x.id === cmd.dimensionId);
       if (!d) throw new CommandError(t('drawing.noDimension', { id: cmd.dimensionId }));
-      const { reference, tolerance, count, ...rest } = cmd.patch;
+      const { reference, tolerance, count, callout, ...rest } = cmd.patch;
       const belongs: Record<Dimension['kind'], string[]> = { linear: ['offset', 'orientation', 'a', 'b'], diameter: ['angle', 'ref'], radius: ['angle', 'ref'] };
+      if (callout !== undefined && d.kind !== 'diameter') throw new CommandError(t('drawing.notForKind', { field: 'callout', kind: d.kind }));
       for (const k of Object.keys(rest)) if (!belongs[d.kind].includes(k)) throw new CommandError(t('drawing.notForKind', { field: k, kind: d.kind }));
       if (count !== undefined && d.kind === 'linear') throw new CommandError(t('drawing.notForKind', { field: 'count', kind: d.kind }));
-      const next = { ...(JSON.parse(JSON.stringify(d)) as Dimension), ...rest } as Dimension & { reference?: boolean; count?: number; tolerance?: DimensionTolerance };
+      const next = { ...(JSON.parse(JSON.stringify(d)) as Dimension), ...rest } as Dimension & { reference?: boolean; count?: number; tolerance?: DimensionTolerance; callout?: boolean };
+      if (callout === null || callout === false) delete next.callout;
+      else if (callout === true) next.callout = true;
       if (reference === null || reference === false) delete next.reference;
       else if (reference === true) next.reference = true;
       if (count === null) delete next.count;
@@ -392,6 +451,40 @@ export function mutateDrawing(draft: Draft<DrawingDoc>, cmd: DrawingCommand): vo
       checkDimension(next, draft.views as DrawingView[]);
       for (const k of Object.keys(d)) delete (d as unknown as Record<string, unknown>)[k];
       Object.assign(d, next);
+      return;
+    }
+    case 'insertTables': {
+      const inUse = new Set(drawingIdsInUse(draft as DrawingDoc));
+      for (const x of cmd.tables) {
+        checkTable(x, draft.views as DrawingView[]);
+        if (inUse.has(x.id)) throw new CommandError(t('drawing.idInUse', { id: x.id }));
+        inUse.add(x.id);
+      }
+      for (const x of cmd.tables) draft.tables.push(x as Draft<DrawingTable>);
+      countersFor(cmd.tables.map((x) => x.id), draft.idCounters);
+      return;
+    }
+    case 'setTable': {
+      const x = draft.tables.find((y) => y.id === cmd.tableId);
+      if (!x) throw new CommandError(t('drawing.noTable', { id: cmd.tableId }));
+      const next = JSON.parse(JSON.stringify(x)) as DrawingTable;
+      const { at, fits } = cmd.patch;
+      if (at === null) delete next.at;
+      else if (at !== undefined) next.at = at;
+      if (fits !== undefined) {
+        if (Object.keys(fits).length === 0) delete next.fits;
+        else next.fits = fits;
+      }
+      checkTable(next, draft.views as DrawingView[]);
+      for (const k of Object.keys(x)) delete (x as unknown as Record<string, unknown>)[k];
+      Object.assign(x, next);
+      return;
+    }
+    case 'deleteTables': {
+      const ids = new Set(cmd.tableIds);
+      for (const id of ids) if (!draft.tables.some((x) => x.id === id)) throw new CommandError(t('drawing.noTable', { id }));
+      countersFor(ids, draft.idCounters);
+      draft.tables = draft.tables.filter((x) => !ids.has(x.id));
       return;
     }
     case 'deleteDimensions': {

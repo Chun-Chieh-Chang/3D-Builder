@@ -4,6 +4,8 @@ import type { Dimension, ViewFeature } from '@3db/model';
 export type DimensionDraft = Dimension extends infer D ? (D extends Dimension ? Omit<D, 'id' | 'view'> : never) : never;
 
 export interface AutoDimensionOptions {
+  /** Hole callouts: what the model says of each hole (through, how deep, counterbore) is written after its diameter. */
+  callouts?: boolean;
   /** The overall width and height of the view. */
   overall: boolean;
   /** The diameter of every hole and the radius of every arc (those that are equal are one dimension, 「4×Ø9」). */
@@ -20,6 +22,12 @@ const TOL = 1e-6;
 type Plane = Extract<ViewFeature, { type: 'plane' }>;
 type Circle = Extract<ViewFeature, { type: 'circle' }>;
 
+/** The planes that bound a view: the lowest and highest square to its x and to its y (null where there is none). */
+export function datumPlanes(features: readonly ViewFeature[]): { minX: Plane | null; maxX: Plane | null; minY: Plane | null; maxY: Plane | null } {
+  const planes = features.filter((f): f is Plane => f.type === 'plane');
+  return { minX: extreme(planes, 'x', false), maxX: extreme(planes, 'x', true), minY: extreme(planes, 'y', false), maxY: extreme(planes, 'y', true) };
+}
+
 /** The plane at the end of the view along an axis: the lowest or the highest, and of those at the same place the biggest. */
 function extreme(planes: Plane[], axis: 'x' | 'y', high: boolean): Plane | null {
   const on = planes.filter((p) => p.axis === axis);
@@ -35,12 +43,8 @@ function extreme(planes: Plane[], axis: 'x' | 'y', high: boolean): Plane | null 
  * the ones that stand for a hole nearest it and the overall ones outermost. A dimension that cannot be made (no plane bounds the view that way) is left out.
  */
 export function autoDimensions(features: readonly ViewFeature[], options: AutoDimensionOptions): DimensionDraft[] {
-  const planes = features.filter((f): f is Plane => f.type === 'plane');
   const circles = features.filter((f): f is Circle => f.type === 'circle');
-  const minX = extreme(planes, 'x', false);
-  const maxX = extreme(planes, 'x', true);
-  const minY = extreme(planes, 'y', false);
-  const maxY = extreme(planes, 'y', true);
+  const { minX, maxX, minY, maxY } = datumPlanes(features);
   const out: DimensionDraft[] = [];
 
   if (options.holes) {
@@ -53,7 +57,8 @@ export function autoDimensions(features: readonly ViewFeature[], options: AutoDi
     for (const g of groups.values()) {
       const first = g[0]!;
       const count = g.length > 1 ? { count: g.length } : {};
-      out.push(first.full ? { kind: 'diameter', ref: first.ref, angle: first.outward, ...count } : { kind: 'radius', ref: first.ref, angle: first.outward, ...count });
+      const callout = options.callouts && first.hole ? { callout: true } : {};
+      out.push(first.full ? { kind: 'diameter', ref: first.ref, angle: first.outward, ...count, ...callout } : { kind: 'radius', ref: first.ref, angle: first.outward, ...count });
     }
   }
 

@@ -1,5 +1,5 @@
 import { t } from '@3db/i18n';
-import { fitDeviations, rightOf, type Dimension, type DimensionTolerance, type ElementFacts, type ViewAxes } from '@3db/model';
+import { fitDeviations, rightOf, type Dimension, type DimensionTolerance, type ElementFacts, type HoleInfo, type ViewAxes } from '@3db/model';
 import { toSheet, type PlacedView } from './layout';
 import type { SceneItem } from './scene';
 
@@ -40,12 +40,23 @@ export function toleranceText(tol: DimensionTolerance, nominal: number): string 
   return d ? `${tol.fit} (${signed(d.upper)}/${signed(d.lower)})` : tol.fit;
 }
 
-/** What is written on the dimension: the count and the Ø or R, the number, the tolerance, in parentheses for a reference dimension. */
-export function dimensionText(d: Dimension, value: number): string {
+/** What is written of a hole after its diameter: 「貫穿」, 「深 12」, and 「沉頭 Ø15 深 8」 for a counterbore. */
+export function holeNote(h: HoleInfo): string {
+  const parts = [h.through ? t('drawing.holeThrough') : t('drawing.holeDeep', { depth: formatNumber(h.depth, 2) })];
+  if (h.counterbore) parts.push(t('drawing.holeCbore', { diameter: formatNumber(h.counterbore.diameter, 2), depth: formatNumber(h.counterbore.depth, 2) }));
+  return parts.join(' ');
+}
+
+/**
+ * What is written on the dimension: the count and the Ø or R, the number, the tolerance, and for a hole callout what the model says of the hole (`facts` is the
+ * element it points at); in parentheses for a reference dimension.
+ */
+export function dimensionText(d: Dimension, value: number, facts?: ElementFacts): string {
   const count = d.kind !== 'linear' && d.count ? `${d.count}×` : '';
   const prefix = d.kind === 'diameter' ? 'Ø' : d.kind === 'radius' ? 'R' : '';
   const tol = d.tolerance ? ` ${toleranceText(d.tolerance, value)}` : '';
-  const text = `${count}${prefix}${formatNumber(value)}${tol}`;
+  const note = d.kind === 'diameter' && d.callout && facts?.hole ? ` ${holeNote(facts.hole)}` : '';
+  const text = `${count}${prefix}${formatNumber(value)}${tol}${note}`;
   return d.reference ? `(${text})` : text;
 }
 
@@ -170,7 +181,7 @@ function circle(d: Extract<Dimension, { kind: 'diameter' | 'radius' }>, e: Eleme
   // the circle has to be seen as a circle: its axis along the direction the view looks
   if (e.type !== 'sphere' && !(e.dir && Math.abs(dot(e.dir, axes.dir)) >= PARALLEL)) return { error: t('drawing.dimNotTrueShape') };
   const value = d.kind === 'diameter' ? 2 * e.radius : e.radius;
-  const text = dimensionText(d, value);
+  const text = dimensionText(d, value, e);
   const [cx, cy] = inView(e, axes);
   const centre = toSheet(placed, cx, cy);
   const r = e.radius * placed.scale;

@@ -211,12 +211,14 @@ export function parseAssembly(text: string): AssemblyDoc {
   return raw as unknown as AssemblyDoc;
 }
 
-/** Forward migrations of drawings (B9.2): drawingMigrations[n] upgrades version n to n+1. 1 → 2 added the projected, section and detail kinds of view (a version-1 view is a model view as it is); 2 → 3 added the dimensions. */
+/** Forward migrations of drawings (B9.2): drawingMigrations[n] upgrades version n to n+1. 1 → 2 added the projected, section and detail kinds of view (a version-1 view is a model view as it is); 2 → 3 added the dimensions; 3 → 4 the tables. */
 const drawingMigrations: Record<number, (doc: Json) => Json> = {
   // v2: projected, section and detail views (C16.3), each with its own fields; a version-1 drawing has only the views of a model. Nothing to convert.
   1: (doc) => doc,
   // v3: dimensions (C16.4): a list, empty in an older file.
   2: (doc) => ({ ...doc, dimensions: doc.dimensions ?? [] }),
+  // v4: tables (C16.6) and the centre marks of a view (`centre`): a list, empty in an older file.
+  3: (doc) => ({ ...doc, tables: doc.tables ?? [] }),
 };
 
 export function parseDrawing(text: string): DrawingDoc {
@@ -225,7 +227,8 @@ export function parseDrawing(text: string): DrawingDoc {
   raw = upgrade(raw, DRAWING_SCHEMA_VERSION, drawingMigrations);
   if (!Array.isArray(raw.views) || !raw.sheet || typeof raw.sheet !== 'object') throw new FormatError(t('format.noViews'));
   raw.dimensions ??= [];
-  const ids = [...(raw.views as Json[]), ...(raw.dimensions as Json[])].map((v) => v.id as string);
+  raw.tables ??= [];
+  const ids = [...(raw.views as Json[]), ...(raw.dimensions as Json[]), ...(raw.tables as Json[])].map((v) => v.id as string);
   // As for parts: counters cover every id in the file, even one edited by hand or by a script.
   raw.idCounters = countersFor(ids, { ...((raw.idCounters as Record<string, number> | undefined) ?? {}) });
   raw.properties ??= {};

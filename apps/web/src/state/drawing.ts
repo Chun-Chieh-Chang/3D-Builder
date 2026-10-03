@@ -21,6 +21,7 @@ import {
   type Dimension,
   type DimensionOrientation,
   type DimensionPatch,
+  type DrawingTable,
   type ElementFacts,
   type Ref,
   type SectionDrawingView,
@@ -31,7 +32,7 @@ import {
   type ViewSide,
 } from '@3db/model';
 import { drawingFileName, writeDrawingFile } from '@3db/io';
-import { autoDimensions, buildScene, FIRST_OFFSET, OFFSET_STEP, ratio, scaleOf, STANDARD_SCALES, suggestScale, toSvg, type AutoDimensionOptions, type DimensionOutcome, type ElementsResult, type PlacedView, type Scene, type ViewLines } from '@3db/drawing';
+import { autoDimensions, buildScene, FIRST_OFFSET, OFFSET_STEP, ratio, scaleOf, STANDARD_SCALES, suggestScale, toSvg, type AutoDimensionOptions, type DimensionOutcome, type ElementsResult, type HoleRow, type PlacedView, type Scene, type ViewLines } from '@3db/drawing';
 import type { Remote } from 'comlink';
 import { download, fileIn, pathIn, pickDrawingSaveTarget, writeFile } from '../files';
 import type { KernelApi } from '../worker/protocol';
@@ -101,7 +102,7 @@ export class DrawingStore {
   private cache = new Map<string, ViewLines | { error: string }>();
   private computing = false;
   private computeAgain = false;
-  private sceneCache: { doc: DrawingDoc; lines: DrawingState['lines']; elements: DrawingState['elements']; value: { scene: Scene; placed: Map<Id, PlacedView>; dimensions: Map<Id, DimensionOutcome> } } | null = null;
+  private sceneCache: { doc: DrawingDoc; lines: DrawingState['lines']; elements: DrawingState['elements']; features: DrawingState['features']; value: { scene: Scene; placed: Map<Id, PlacedView>; dimensions: Map<Id, DimensionOutcome>; tables: Map<Id, HoleRow[]> } } | null = null;
   /** What a view can be dimensioned from, by the part's key and where it looks from; and what an element is, by the part's key and the reference. */
   private featureCache = new Map<string, ViewFeature[] | { error: string }>();
   private elementCache = new Map<string, ElementFacts | { error: string }>();
@@ -413,11 +414,11 @@ export class DrawingStore {
   }
 
   /** The drawing as a scene (the sheet and every view's lines where they are), kept while the document and what it is drawn from are the same. */
-  scene(): { scene: Scene; placed: Map<Id, PlacedView>; dimensions: Map<Id, DimensionOutcome> } {
+  scene(): { scene: Scene; placed: Map<Id, PlacedView>; dimensions: Map<Id, DimensionOutcome>; tables: Map<Id, HoleRow[]> } {
     const c = this.sceneCache;
-    if (c && c.doc === this.state.doc && c.lines === this.state.lines && c.elements === this.state.elements) return c.value;
-    const value = buildScene(this.state.doc, this.state.lines, this.state.elements);
-    this.sceneCache = { doc: this.state.doc, lines: this.state.lines, elements: this.state.elements, value };
+    if (c && c.doc === this.state.doc && c.lines === this.state.lines && c.elements === this.state.elements && c.features === this.state.features) return c.value;
+    const value = buildScene(this.state.doc, this.state.lines, this.state.elements, this.state.features);
+    this.sceneCache = { doc: this.state.doc, lines: this.state.lines, elements: this.state.elements, features: this.state.features, value };
     return value;
   }
 
@@ -535,6 +536,23 @@ export class DrawingStore {
 
   deleteDimensions(ids: Id[]): void {
     if (ids.length > 0) this.execute({ type: 'deleteDimensions', dimensionIds: ids });
+  }
+
+  // ------------------------------------------------------------ tables (C16.6)
+
+  /** A hole table for the view; the next free id. */
+  addHoleTable(viewId: Id): void {
+    const doc = this.history.doc;
+    const ids = new IdAllocator(doc.idCounters, drawingIdsInUse(doc));
+    this.execute({ type: 'insertTables', tables: [{ id: ids.take('tbl'), kind: 'holes', view: viewId }] });
+  }
+
+  setTable(id: Id, patch: Extract<DrawingCommand, { type: 'setTable' }>['patch']): void {
+    this.execute({ type: 'setTable', tableId: id, patch });
+  }
+
+  deleteTables(ids: Id[]): void {
+    if (ids.length > 0) this.execute({ type: 'deleteTables', tableIds: ids });
   }
 
   /** A message for the user (the panel's own: nothing went wrong). */
