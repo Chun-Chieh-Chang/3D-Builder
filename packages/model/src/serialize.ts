@@ -132,6 +132,8 @@ const migrations: Record<number, (doc: Json) => Json> = {
   27: (doc) => doc,
   // v29: the split line feature (C8.1, Phase 4b). Nothing to convert; the version keeps older programs from opening a feature they would skip.
   28: (doc) => doc,
+  // v30: knit, fill, flat, trim and extend surface (C9.2, C9.3, Phase 4b). Nothing to convert; the version keeps older programs from opening features they would skip.
+  29: (doc) => doc,
 };
 
 export class FormatError extends Error {

@@ -178,6 +178,15 @@ export function mapExprs(feature: Feature, fn: (expr: Expr, kind: ExprKind, role
       const thickness = fn(feature.thickness, 'length', 'positive');
       return thickness === feature.thickness ? feature : { ...feature, thickness };
     }
+    case 'extendSurface': {
+      const distance = fn(feature.distance, 'length', 'positive');
+      return distance === feature.distance ? feature : { ...feature, distance };
+    }
+    case 'knit': {
+      if (feature.tolerance === undefined) return feature;
+      const tolerance = fn(feature.tolerance, 'length', 'positive');
+      return tolerance === feature.tolerance ? feature : { ...feature, tolerance };
+    }
     case 'moveFace':
     case 'offsetSurface': {
       const distance = fn(feature.distance, 'length', 'nonZero');
@@ -197,6 +206,9 @@ export function mapExprs(feature: Feature, fn: (expr: Expr, kind: ExprKind, role
     case 'mirror':
     case 'derivedBody':
     case 'splitLine':
+    case 'fillSurface':
+    case 'flatSurface':
+    case 'trimSurface':
       return feature;
   }
 }

@@ -6,7 +6,7 @@ import type { Id } from './ids';
  * DOF status, mass properties and error lists are derived data and never stored.
  */
 
-export const SCHEMA_VERSION = 29;
+export const SCHEMA_VERSION = 30;
 
 /** Value expression (B5.2, B5.3): "20", "25.4mm", "30deg", "wall_t*2", "D1@草圖1/2", "property('厚度')"; see `expr/`. */
 export type Expr = string;
@@ -463,6 +463,58 @@ export interface SplitLineFeature extends FeatureBase {
 }
 
 /**
+ * Knit (縫織曲面, C9.3, v30): surface bodies sewn into one (edges closer than `tolerance`, 0.01 mm when absent); when what comes out is closed it is made the solid
+ * it bounds unless `solid` is false. The result is the first body (the others are used up).
+ */
+export interface KnitFeature extends FeatureBase {
+  type: 'knit';
+  /** Bodies (kind `body`, the name is the body's id). */
+  bodies: Ref[];
+  tolerance?: Expr;
+  /** `false` keeps a closed result a shell. */
+  solid?: boolean;
+}
+
+/**
+ * Fill surface (填補曲面, C9.2, v30): a patch over the boundary made of the picked edges of one body, as a surface body of its own. `continuity` is how it meets the
+ * face beside each edge: tangent (the default; absent) or only touching.
+ */
+export interface FillSurfaceFeature extends FeatureBase {
+  type: 'fillSurface';
+  edges: Ref[];
+  continuity?: 'contact';
+}
+
+/** Flat surface (平坦曲面, C9.2, v30): a flat face over a closed loop of edges of one body that lie in a plane, as a surface body of its own. */
+export interface FlatSurfaceFeature extends FeatureBase {
+  type: 'flatSurface';
+  edges: Ref[];
+}
+
+/**
+ * Trim surface (修剪曲面, C9.3, v30): the closed outlines of a sketch are projected onto a face of a surface body, as for a split line, and what is inside them is kept
+ * (what is outside them with `keep: 'outside'`); the rest of that face is taken away.
+ */
+export interface TrimSurfaceFeature extends FeatureBase {
+  type: 'trimSurface';
+  sketch: Id;
+  face: Ref;
+  keep?: 'outside';
+  reverse?: boolean;
+  throughAll?: boolean;
+}
+
+/**
+ * Extend surface (延伸曲面, C9.3, v30): a surface body of one face made `distance` longer past the picked edges (the face grows along its own parameters, so it
+ * carries on the way it was going).
+ */
+export interface ExtendSurfaceFeature extends FeatureBase {
+  type: 'extendSurface';
+  edges: Ref[];
+  distance: Expr;
+}
+
+/**
  * Shell (薄殼, C5.4, v15): the body hollowed out to a wall of 	hickness, the picked aces taken away to open it; the wall grows inward, or
  * outward with outward.
  */
@@ -509,6 +561,11 @@ export type Feature =
   | MirrorFeature
   | OffsetSurfaceFeature
   | SplitLineFeature
+  | KnitFeature
+  | FillSurfaceFeature
+  | FlatSurfaceFeature
+  | TrimSurfaceFeature
+  | ExtendSurfaceFeature
   | FilletFeature
   | ChamferFeature
   | RefPlaneFeature

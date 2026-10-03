@@ -39,6 +39,11 @@ import {
   type RibFeature,
   type OffsetSurfaceFeature,
   type SplitLineFeature,
+  type KnitFeature,
+  type FillSurfaceFeature,
+  type FlatSurfaceFeature,
+  type TrimSurfaceFeature,
+  type ExtendSurfaceFeature,
   type ShellFeature,
   type SketchFeature,
   type SweepFeature,
@@ -269,6 +274,9 @@ const concatNames = (a: ElementNames, b: ElementNames): ElementNames => ({
   vertices: [...a.vertices, ...b.vertices],
 });
 
+/** How far (radians) a tangent fill may be from the tangent of the face beside it: about 1°. A patch that cannot meet the face tangent is refused, not passed off as tangent. */
+const FILL_TANGENT_TOLERANCE = 0.02;
+
 /**
  * Deterministic rebuild (B3.1): the result is a pure function of the document.
  * A failing feature is skipped and reported; later features keep evaluating (B3.3).
@@ -431,6 +439,26 @@ export class Regenerator {
           }
           case 'splitLine': {
             set = this.advance(set, this.splitLine(feature, sketches, set));
+            return done({ status: 'ok' });
+          }
+          case 'trimSurface': {
+            set = this.advance(set, this.trimSurface(feature, sketches, set));
+            return done({ status: 'ok' });
+          }
+          case 'knit': {
+            set = this.advance(set, this.knit(feature, set));
+            return done({ status: 'ok' });
+          }
+          case 'fillSurface': {
+            set = this.advance(set, this.fillSurface(feature, set));
+            return done({ status: 'ok' });
+          }
+          case 'flatSurface': {
+            set = this.advance(set, this.flatSurface(feature, set));
+            return done({ status: 'ok' });
+          }
+          case 'extendSurface': {
+            set = this.advance(set, this.extendSurface(feature, set));
             return done({ status: 'ok' });
           }
           case 'extrude':
@@ -1753,28 +1781,148 @@ export class Regenerator {
   }
 
   /**
-   * 「分割線」 (C8.1): the closed outlines of a sketch projected onto a face (4b, ADR 0069), which is cut along them. A region is named like a face the sketch made,
+   * The projection of a sketch onto a face of `body` and the cut along it (ADR 0069), named: a region is named like a face the sketch made,
    * `<feature>:side:<sketch>.<outline>`, the outline being the smallest id of the entities that bound it, so it follows the model and the sketch's edits; the rest
-   * of the face keeps the face's name.
+   * of the face keeps the face's name. `regions` are the faces inside the outlines, `pieces` all the faces the cut face became. The shape in `r` is the caller's to release.
    */
-  private splitLine(f: SplitLineFeature, sketches: RebuildResult['sketches'], set: Bodies): BodyState[] {
+  private projectSplit(f: SplitLineFeature | TrimSurfaceFeature, sketches: RebuildResult['sketches'], body: BodyState) {
     const s = this.profileOf(sketches, f.sketch);
     const loops = s.profiles.regions.map((r) => r.outer);
     const key = (loop: (typeof loops)[number]) => loop.map((seg) => seg.source).sort()[0]!;
     const n = s.frame.normal;
     const sign = f.reverse ? -1 : 1;
+    const [face] = this.faceIndices([f.face], body);
+    const r = this.kernel.splitByProjection(body.shape, face!, s.frame, loops, [n[0] * sign, n[1] * sign, n[2] * sign], !!f.throughAll);
+    if (r.regions.length === 0) {
+      this.kernel.release(r.shape);
+      throw new FeatureError(t('surface.noRegion'));
+    }
+    const pieces = r.faceOrigins.flatMap((o, j) => (o.some((x) => 'index' in x && x.index === face) ? [j] : []));
+    const origins = r.faceOrigins.map((o) => o.slice());
+    r.regions.forEach((j, k) => (origins[j] = [{ rel: 'generated', kind: 'profileEdge', source: key(loops[r.regionLoops[k]!]!) }]));
+    const topology = this.kernel.topology(r.shape);
+    const names = nameElements(origins, topology, { featureId: f.id, sketchId: f.sketch, input: body.names });
+    return { r, topology, names, regions: r.regions, pieces };
+  }
+
+  /** 「分割線」 (C8.1): the closed outlines of a sketch projected onto a face (4b, ADR 0069), which is cut along them. */
+  private splitLine(f: SplitLineFeature, sketches: RebuildResult['sketches'], set: Bodies): BodyState[] {
     return this.perBody(set, [f.face], 'face', t('surface.noBodyForSplit'), () => t('surface.splitFacesLost'), (body) => {
-      const [face] = this.faceIndices([f.face], body);
-      const r = this.kernel.splitByProjection(body.shape, face!, s.frame, loops, [n[0] * sign, n[1] * sign, n[2] * sign], !!f.throughAll);
-      if (r.regions.length === 0) {
-        this.kernel.release(r.shape);
-        throw new FeatureError(t('surface.noRegion'));
-      }
-      const origins = r.faceOrigins.map((o) => o.slice());
-      r.regions.forEach((j, k) => (origins[j] = [{ rel: 'generated', kind: 'profileEdge', source: key(loops[r.regionLoops[k]!]!) }]));
-      const topology = this.kernel.topology(r.shape);
-      const state: BodyState = { id: body.id, shape: r.shape, topology, names: nameElements(origins, topology, { featureId: f.id, sketchId: f.sketch, input: body.names }), by: f.id };
+      const p = this.projectSplit(f, sketches, body);
+      const state: BodyState = { id: body.id, shape: p.r.shape, topology: p.topology, names: p.names, by: f.id };
       return body.surface ? { ...state, surface: true } : state;
+    });
+  }
+
+  /**
+   * 「修剪曲面」 (C9.3): the face of a surface body is cut along the outlines of a sketch as for a split line, and what is inside them is kept (outside with
+   * `keep: 'outside'`); the other pieces of that face go. The faces keep the names they had in the cut.
+   */
+  private trimSurface(f: TrimSurfaceFeature, sketches: RebuildResult['sketches'], set: Bodies): BodyState[] {
+    return this.perBody(set, [f.face], 'face', t('surface.noBodyForSplit'), () => t('surface.splitFacesLost'), (body) => {
+      if (!body.surface) throw new FeatureError(t('surface.trimNeedsSurface'));
+      const p = this.projectSplit(f, sketches, body);
+      try {
+        const gone = new Set(f.keep === 'outside' ? p.regions : p.pieces.filter((j) => !p.regions.includes(j)));
+        if (gone.size === 0) throw new FeatureError(t('surface.trimNothing'));
+        const keep = p.topology.faces.flatMap((_, j) => (gone.has(j) ? [] : [j]));
+        if (keep.length === 0) throw new FeatureError(t('surface.trimNothing'));
+        const k = this.kernel.keepFaces(p.r.shape, keep);
+        const topology = this.kernel.topology(k.shape);
+        const names = nameFromFaces(k.faceOrigins.map((o) => p.names.faces[(o[0] as { index: number }).index]!), topology);
+        return { id: body.id, shape: k.shape, topology, names, by: f.id, surface: true };
+      } finally {
+        this.kernel.release(p.r.shape);
+      }
+    });
+  }
+
+  /**
+   * 「縫織曲面」 (C9.3): surface bodies sewn into one. The first body is the result's (its place in the list and its id); the others are used up. The faces keep the
+   * names they had. What is left open (free edges) and whether it closed into a solid is said in `info`.
+   */
+  private knit(f: KnitFeature, set: Bodies): BodyState[] {
+    if (f.bodies.length === 0 || f.bodies.every((r) => !r.name)) throw new FeatureError(t('surface.knitNone'));
+    const bodies: BodyState[] = [];
+    for (const ref of f.bodies) {
+      if (!ref.name) throw new FeatureError(t('body.pick', { what: t('surface.knitNone') }));
+      const b = set.list.find((x) => x.id === ref.name);
+      if (!b) throw new FeatureError(t('body.lost', { name: ref.name }), [{ ref, reason: 'missing', candidates: [] }]);
+      if (!b.surface) throw new FeatureError(t('surface.knitNeedsSurface', { name: b.id }));
+      if (!bodies.includes(b)) bodies.push(b);
+    }
+    const r = this.kernel.knit(bodies.map((b) => b.shape), f.tolerance ? evalLength(f.tolerance) : 0.01, f.solid !== false);
+    const topology = this.kernel.topology(r.shape);
+    const input = bodies.reduce<ElementNames>((acc, b) => concatNames(acc, b.names), { faces: [], edges: [], vertices: [] });
+    this.info = t('surface.knitInfo', { faces: String(topology.faces.length), free: String(r.freeEdges), multiple: String(r.multipleEdges), kind: t(r.solid ? 'surface.knitKindSolid' : 'surface.knitKindShell') });
+    const first = bodies[0]!;
+    const state: BodyState = { id: first.id, shape: r.shape, topology, names: nameElements(r.faceOrigins, topology, { featureId: f.id, input }), by: f.id, ...(r.solid ? {} : { surface: true }) };
+    return set.list.flatMap((b) => (b === first ? [state] : bodies.includes(b) ? [] : [b]));
+  }
+
+  /** The edges picked, which have to be on one body: that body and the edges' numbers in it. Lost ones are reported together. */
+  private edgesOnOneBody(refs: Ref[], set: Bodies, none: string): { body: BodyState; indices: number[] } {
+    const view = set.view;
+    if (!view) throw new FeatureError(none);
+    if (refs.length === 0) throw new FeatureError(t('edit.noEdgePicked'));
+    const owners = new Map<BodyState, Ref[]>();
+    const unresolved: Unresolved[] = [];
+    for (const ref of refs) {
+      const r = resolveRef(ref, view.names, view.topology);
+      if (!r.ok) {
+        unresolved.push({ ref, reason: r.reason, candidates: r.candidates });
+        continue;
+      }
+      this.noteFingerprint(r.via, t('regen.edgeNoun'), view.names.edges[r.index]!);
+      const { body } = set.locate('edge', r.index);
+      owners.set(body, [...(owners.get(body) ?? []), ref]);
+    }
+    if (unresolved.length > 0) throw new FeatureError(t('edit.edgesLost', { n: unresolved.length }), unresolved);
+    if (owners.size !== 1) throw new FeatureError(t('surface.edgesOneBody'));
+    const [body, mine] = [...owners][0]!;
+    return { body, indices: this.edgeIndices(mine, body) };
+  }
+
+  /**
+   * 「填補曲面」 (C9.2): a patch over the boundary of the edges picked, meeting the face beside each edge tangent (when an edge has one face beside it, as the edge of a
+   * hole in a surface does), as a surface body of its own. How far it is from the edges and from the tangent is said in `info`; a patch more than the tolerance from
+   * the edges is refused.
+   */
+  private fillSurface(f: FillSurfaceFeature, set: Bodies): BodyState[] {
+    const { body, indices } = this.edgesOnOneBody(f.edges, set, t('surface.noBodyForFill'));
+    const contact = f.continuity === 'contact';
+    const support = indices.map((e) => (!contact && body.topology.edges[e]!.faces.length === 1 ? body.topology.edges[e]!.faces[0]! : null));
+    const r = this.kernel.fillSurface(body.shape, indices, support, contact ? 'contact' : 'tangent');
+    if (r.g0 > SURFACE_TOLERANCE) {
+      this.kernel.release(r.shape);
+      throw new FeatureError(t('surface.fillGap', { g0: r.g0.toFixed(3), tolerance: String(SURFACE_TOLERANCE) }));
+    }
+    if (!contact && r.g1 > FILL_TANGENT_TOLERANCE) {
+      this.kernel.release(r.shape);
+      throw new FeatureError(t('surface.fillTangent', { g1: ((r.g1 * 180) / Math.PI).toFixed(1), tolerance: ((FILL_TANGENT_TOLERANCE * 180) / Math.PI).toFixed(1) }));
+    }
+    this.info = t('surface.fillInfo', { g0: r.g0.toFixed(4), g1: ((r.g1 * 180) / Math.PI).toFixed(3) });
+    const topology = this.kernel.topology(r.shape);
+    const names = nameElements([[{ rel: 'generated', kind: 'edge', index: indices[0]! }]], topology, { featureId: f.id, role: 'fill', input: body.names });
+    return [...set.list, { id: f.id, shape: r.shape, topology, names, by: f.id, surface: true }];
+  }
+
+  /** 「平坦曲面」 (C9.2): a flat face over a closed loop of the edges picked that lie in one plane, as a surface body of its own. */
+  private flatSurface(f: FlatSurfaceFeature, set: Bodies): BodyState[] {
+    const { body, indices } = this.edgesOnOneBody(f.edges, set, t('surface.noBodyForFill'));
+    const shape = this.kernel.flatSurface(body.shape, indices);
+    const topology = this.kernel.topology(shape);
+    const names = nameElements([[{ rel: 'generated', kind: 'edge', index: indices[0]! }]], topology, { featureId: f.id, role: 'flat', input: body.names });
+    return [...set.list, { id: f.id, shape, topology, names, by: f.id, surface: true }];
+  }
+
+  /** 「延伸曲面」 (C9.3): a surface body of one face made `distance` longer past the edges picked; the face keeps its name. */
+  private extendSurface(f: ExtendSurfaceFeature, set: Bodies): BodyState[] {
+    return this.perBody(set, f.edges, 'edge', t('surface.noBodyForExtend'), (n) => t('edit.edgesLost', { n }), (body, mine) => {
+      if (!body.surface) throw new FeatureError(t('surface.notSurface'));
+      const r = this.kernel.extendFace(body.shape, this.edgeIndices(mine, body), evalLength(f.distance));
+      const topology = this.kernel.topology(r.shape);
+      return { id: body.id, shape: r.shape, topology, names: nameElements(r.faceOrigins, topology, { featureId: f.id, input: body.names }), by: f.id, surface: true };
     });
   }
 

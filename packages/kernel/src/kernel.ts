@@ -2085,12 +2085,14 @@ export class Kernel {
 
   /**
    * Surfaces sewn into one (C9.3 縫織): shapes whose edges meet to `tolerance` become one shell; closed, and when `makeSolid` is asked, the solid it bounds. Reports the
-   * edges left free (the open boundary) and those shared by more than two faces.
+   * edges left free (the open boundary) and those shared by more than two faces. Sewing does not make faces, so every face of the result is a face of the shapes put in
+   * (counted one shape after the other) that is the same or was mended to meet its neighbours: `faceOrigins`.
    */
-  knit(shapes: ShapeId[], tolerance = 1e-4, makeSolid = true): { shape: ShapeId; freeEdges: number; multipleEdges: number; solid: boolean } {
+  knit(shapes: ShapeId[], tolerance = 1e-4, makeSolid = true): { shape: ShapeId; freeEdges: number; multipleEdges: number; solid: boolean; faceOrigins: FaceOrigin[][] } {
     if (shapes.length === 0) throw new KernelError(t('surface.nothingToKnit'));
     const oc = this.oc;
     const arena = new Arena();
+    const inputs = shapes.map((s) => ShapeIndex.of(oc, this.get(s), T.FACE, arena));
     try {
       const sewing = arena.own(new oc.BRepBuilderAPI_Sewing(tolerance, true, true, true, false));
       for (const s of shapes) sewing.Add(this.get(s));
@@ -2102,6 +2104,24 @@ export class Kernel {
       const sewn = arena.own(sewing.SewedShape());
       const freeEdges = sewing.NbFreeEdges();
       const multipleEdges = sewing.NbMultipleEdges();
+      const originsOf = (id: ShapeId): FaceOrigin[][] => {
+        const out = ShapeIndex.of(oc, this.get(id), T.FACE, arena);
+        try {
+          const origins: FaceOrigin[][] = out.keys.map(() => []);
+          let n = 0;
+          for (const input of inputs) {
+            for (const f of input.keys) {
+              const piece = sewing.IsModified(f) ? arena.own(sewing.Modified(f)) : f;
+              const k = out.indexOf(piece);
+              if (k >= 0) origins[k]!.push({ rel: 'same', kind: 'face', index: n });
+              n++;
+            }
+          }
+          return origins;
+        } finally {
+          out.dispose();
+        }
+      };
       if (makeSolid && freeEdges === 0 && multipleEdges === 0) {
         const shells = ShapeIndex.of(oc, sewn, 'TopAbs_SHELL', arena);
         try {
@@ -2109,15 +2129,17 @@ export class Kernel {
             const fix = arena.own(new oc.ShapeFix_Solid());
             const solid = arena.own(fix.SolidFromShell(arena.own(oc.TopoDS.Shell(shells.keys[0]!))));
             const id = this.put(solid.Oriented(solid.Orientation()));
-            if (this.isValid(id) && this.massProps(id).volume > 0) return { shape: id, freeEdges, multipleEdges, solid: true };
+            if (this.isValid(id) && this.massProps(id).volume > 0) return { shape: id, freeEdges, multipleEdges, solid: true, faceOrigins: originsOf(id) };
             this.release(id);
           }
         } finally {
           shells.dispose();
         }
       }
-      return { shape: this.put(sewn.Oriented(sewn.Orientation())), freeEdges, multipleEdges, solid: false };
+      const id = this.put(sewn.Oriented(sewn.Orientation()));
+      return { shape: id, freeEdges, multipleEdges, solid: false, faceOrigins: originsOf(id) };
     } finally {
+      for (const input of inputs) input.dispose();
       arena.dispose();
     }
   }
@@ -2255,6 +2277,117 @@ export class Kernel {
       throw new KernelError(t('surface.cutFailed', { why: this.errorText(e) }));
     } finally {
       if (tool !== null) this.release(tool);
+      arena.dispose();
+    }
+  }
+
+  /**
+   * Only the faces `faceIndices` of a shape (C9.3 修剪, after a split): the others go, and what is left is a compound of those faces, which still share the edges they
+   * shared. Every face of the result is the face it was (`faceOrigins`).
+   */
+  keepFaces(target: ShapeId, faceIndices: number[]): OpResult {
+    const oc = this.oc;
+    const arena = new Arena();
+    const faces = ShapeIndex.of(oc, this.get(target), T.FACE, arena);
+    try {
+      const picked = [...new Set(faceIndices)].sort((x, y) => x - y);
+      if (picked.length === 0) throw new KernelError(t('surface.noFaces'));
+      const kept = picked.map((i) => {
+        const f = faces.keys[i];
+        if (!f) throw new KernelError(t('edit.faceOutOfRange', { index: i }));
+        return f;
+      });
+      const id = this.put(this.compound(kept, arena));
+      const out = ShapeIndex.of(oc, this.get(id), T.FACE, arena);
+      try {
+        const origins: FaceOrigin[][] = out.keys.map(() => []);
+        picked.forEach((index, k) => {
+          const j = out.indexOf(kept[k]!);
+          if (j >= 0) origins[j]!.push({ rel: 'same', kind: 'face', index });
+        });
+        return { shape: id, faceOrigins: origins };
+      } finally {
+        out.dispose();
+      }
+    } finally {
+      faces.dispose();
+      arena.dispose();
+    }
+  }
+
+  /**
+   * A one-face surface made longer past the edges `edgeIndices` by `length` (C9.3 延伸): the face is grown along its own parameters (`BRepLib::ExtendFace`, tried in
+   * ADR 0071 on a plane, a cylinder, a cone and a freeform side). Which side of the face each edge is one of is found by trying them: extending a side takes the edge
+   * from the boundary of the face, so the side that does is the edge's. A periodic side (the way round a cylinder) has no end to extend and is refused. The result
+   * is checked: valid, larger, and the face it was lies within it.
+   */
+  extendFace(target: ShapeId, edgeIndices: number[], length: number, options: { tolerance?: number } = {}): OpResult {
+    if (edgeIndices.length === 0) throw new KernelError(t('surface.noEdges'));
+    if (!(length > 0) || !Number.isFinite(length)) throw new KernelError(t('surface.zeroDistance'));
+    if (this.solidCount(target) > 0) throw new KernelError(t('surface.notSurface'));
+    const oc = this.oc;
+    const arena = new Arena();
+    const faces = ShapeIndex.of(oc, this.get(target), T.FACE, arena);
+    const topology = this.topology(target);
+    try {
+      if (faces.size !== 1) throw new KernelError(t('surface.extendOneFace'));
+      const face = arena.own(oc.TopoDS.Face(faces.keys[0]!));
+      type Sides = [boolean, boolean, boolean, boolean];
+      const extendOn = (sides: Sides): TopoDS_Shape => {
+        const out = arena.own(new oc.TopoDS_Face());
+        oc.BRepLib.ExtendFace(face, length, sides[0], sides[1], sides[2], sides[3], out);
+        return out;
+      };
+      const chosen: Sides = [false, false, false, false];
+      for (const ei of edgeIndices) {
+        const e = topology.edges[ei];
+        if (!e) throw new KernelError(t('kernel.edgeOutOfRange', { index: ei }));
+        const mid = arena.own(arena.own(new oc.BRepBuilderAPI_MakeVertex(this.pnt(arena, e.mid))).Vertex());
+        let best = -1;
+        let far = length / 4;
+        for (let k = 0; k < 4; k++) {
+          const sides: Sides = [k === 0, k === 1, k === 2, k === 3];
+          let grown: TopoDS_Shape;
+          try {
+            grown = extendOn(sides);
+          } catch {
+            continue;
+          }
+          const boundary = ShapeIndex.of(oc, grown, T.EDGE, arena);
+          try {
+            const d = arena.own(new (oc.BRepExtrema_DistShapeShape as unknown as new (a: TopoDS_Shape, b: TopoDS_Shape) => InstanceType<OC['BRepExtrema_DistShapeShape']>)(mid, this.compound(boundary.keys, arena)));
+            if (d.IsDone() && d.NbSolution() > 0 && d.Value() > far) {
+              far = d.Value();
+              best = k;
+            }
+          } finally {
+            boundary.dispose();
+          }
+        }
+        if (best < 0) throw new KernelError(t('surface.extendNoSide'));
+        chosen[best] = true;
+      }
+      let grown: TopoDS_Shape;
+      try {
+        grown = extendOn(chosen);
+      } catch (e) {
+        throw new KernelError(t('surface.extendFailed', { why: this.errorText(e) }));
+      }
+      const id = this.put(grown.Oriented(grown.Orientation()));
+      const fail = (why: string): never => {
+        this.release(id);
+        throw new KernelError(t('surface.extendFailed', { why }));
+      };
+      if (!this.isValid(id)) fail(t('surface.invalid'));
+      const before = topology.faces[0]!.area;
+      const after = this.topology(id).faces.reduce((a, f) => a + f.area, 0);
+      if (!(after > before * (1 + 1e-6))) fail(t('surface.extendNoGrowth'));
+      // what was there is still there: the old face's points are on the new one
+      const kept = this.gapReport(target, id);
+      if (kept.max > (options.tolerance ?? SURFACE_TOLERANCE)) fail(t('surface.extendMoved', { moved: round3(kept.max) }));
+      return { shape: id, faceOrigins: [[{ rel: 'modified', kind: 'face', index: 0 }]] };
+    } finally {
+      faces.dispose();
       arena.dispose();
     }
   }

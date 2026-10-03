@@ -44,7 +44,16 @@ export function parentsOf(feature: Feature, doc: PartDoc): Id[] {
       parents = fromRefs([feature.face]);
       break;
     case 'splitLine':
+    case 'trimSurface':
       parents = [feature.sketch, ...fromRefs([feature.face])];
+      break;
+    case 'knit':
+      parents = feature.bodies.filter((r) => r.name).map((r) => bodyFeature(r.name));
+      break;
+    case 'fillSurface':
+    case 'flatSurface':
+    case 'extendSurface':
+      parents = fromRefs(feature.edges);
       break;
     case 'draft':
       parents = fromRefs([feature.neutral, ...feature.faces]);

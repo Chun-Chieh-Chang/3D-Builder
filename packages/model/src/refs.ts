@@ -71,7 +71,14 @@ export function mapRefs(feature: Feature, map: (ref: Ref) => Ref): { feature: Fe
       return { feature: { ...feature, neutral: one(feature.neutral), faces: feature.faces.map(one) }, replaced };
     case 'moveFace':
     case 'splitLine':
+    case 'trimSurface':
       return { feature: { ...feature, face: one(feature.face) }, replaced };
+    case 'knit':
+      return { feature: { ...feature, bodies: feature.bodies.map(one) }, replaced };
+    case 'fillSurface':
+    case 'flatSurface':
+    case 'extendSurface':
+      return { feature: { ...feature, edges: feature.edges.map(one) }, replaced };
     case 'combine':
       return { feature: { ...feature, main: one(feature.main), tools: feature.tools.map(one) }, replaced };
     case 'revolve':

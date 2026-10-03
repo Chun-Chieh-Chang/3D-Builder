@@ -84,6 +84,16 @@ ull). */
   | { type: 'setOffsetSurface'; featureId: Id; faces: Ref[]; distance: Expr; join?: 'arc' | 'intersection' }
   /** Changes a split line (C8.1): the sketch, the face it is projected on, the way round and whether it goes through all. */
   | { type: 'setSplitLine'; featureId: Id; sketch: Id; face: Ref; reverse?: boolean; throughAll?: boolean }
+  /** Changes a knit (C9.3): the bodies sewn, the tolerance (absent: the default) and whether a closed result becomes a solid (absent: it does). */
+  | { type: 'setKnit'; featureId: Id; bodies: Ref[]; tolerance?: Expr; solid?: boolean }
+  /** Changes a fill surface (C9.2): the edges of the boundary and how the patch meets the faces beside them (absent: tangent). */
+  | { type: 'setFillSurface'; featureId: Id; edges: Ref[]; continuity?: 'contact' }
+  /** Changes a flat surface (C9.2): the edges of the loop. */
+  | { type: 'setFlatSurface'; featureId: Id; edges: Ref[] }
+  /** Changes a trim surface (C9.3): the sketch, the face, what is kept (absent: the inside), the way round and whether through all. */
+  | { type: 'setTrimSurface'; featureId: Id; sketch: Id; face: Ref; keep?: 'outside'; reverse?: boolean; throughAll?: boolean }
+  /** Changes an extend surface (C9.3): the edges to extend past and by how much. */
+  | { type: 'setExtendSurface'; featureId: Id; edges: Ref[]; distance: Expr }
   /** Faces of a Delete Face feature (C10.2), and whether the rest of a hole goes with them. */
   | { type: 'setFaces'; featureId: Id; faces: Ref[]; hole?: boolean }
   /** How an imported body's surfaces are sewn (F2.2); without `sewTolerance` the default is used again. */
@@ -478,6 +488,18 @@ function validateNewFeature(doc: PartDoc, f: Feature, index: number): void {
       sketchBefore(doc, f.sketch, index, t('feature.splitLine'));
       if (f.face.kind !== 'face') throw new CommandError(t('cmd.splitLineOnlyFace'));
       return;
+    case 'trimSurface':
+      sketchBefore(doc, f.sketch, index, t('feature.trimSurface'));
+      if (f.face.kind !== 'face') throw new CommandError(t('cmd.splitLineOnlyFace'));
+      return;
+    case 'knit':
+      if (f.bodies.some((r) => r.kind !== 'body')) throw new CommandError(t('cmd.knitOnlyBodies'));
+      return;
+    case 'fillSurface':
+    case 'flatSurface':
+    case 'extendSurface':
+      if (f.edges.some((r) => r.kind !== 'edge')) throw new CommandError(t('cmd.surfaceOnlyEdges'));
+      return;
     case 'combine':
       combineRefs(f.main, f.tools);
       return;
@@ -783,6 +805,58 @@ export function mutate(draft: Draft<PartDoc>, cmd: Command): void {
       else delete f.reverse;
       if (cmd.throughAll) f.throughAll = true;
       else delete f.throughAll;
+      return;
+    }
+    case 'setKnit': {
+      const f = feature(draft, cmd.featureId);
+      if (f.type !== 'knit') throw new CommandError(t('cmd.onlyKnitHasParams'));
+      if (cmd.bodies.some((r) => r.kind !== 'body')) throw new CommandError(t('cmd.knitOnlyBodies'));
+      f.bodies = cmd.bodies;
+      if (cmd.tolerance === undefined) delete f.tolerance;
+      else f.tolerance = cmd.tolerance;
+      if (cmd.solid === false) f.solid = false;
+      else delete f.solid;
+      checkExprs(draft as PartDoc, f as Feature);
+      return;
+    }
+    case 'setFillSurface': {
+      const f = feature(draft, cmd.featureId);
+      if (f.type !== 'fillSurface') throw new CommandError(t('cmd.onlyFillHasParams'));
+      if (cmd.edges.some((r) => r.kind !== 'edge')) throw new CommandError(t('cmd.surfaceOnlyEdges'));
+      f.edges = cmd.edges;
+      if (cmd.continuity === 'contact') f.continuity = 'contact';
+      else delete f.continuity;
+      return;
+    }
+    case 'setFlatSurface': {
+      const f = feature(draft, cmd.featureId);
+      if (f.type !== 'flatSurface') throw new CommandError(t('cmd.onlyFlatHasParams'));
+      if (cmd.edges.some((r) => r.kind !== 'edge')) throw new CommandError(t('cmd.surfaceOnlyEdges'));
+      f.edges = cmd.edges;
+      return;
+    }
+    case 'setTrimSurface': {
+      const f = feature(draft, cmd.featureId);
+      if (f.type !== 'trimSurface') throw new CommandError(t('cmd.onlyTrimHasParams'));
+      if (cmd.face.kind !== 'face') throw new CommandError(t('cmd.splitLineOnlyFace'));
+      sketchBefore(draft as PartDoc, cmd.sketch, draft.features.findIndex((x) => x.id === f.id), t('feature.trimSurface'));
+      f.sketch = cmd.sketch;
+      f.face = cmd.face;
+      if (cmd.keep === 'outside') f.keep = 'outside';
+      else delete f.keep;
+      if (cmd.reverse) f.reverse = true;
+      else delete f.reverse;
+      if (cmd.throughAll) f.throughAll = true;
+      else delete f.throughAll;
+      return;
+    }
+    case 'setExtendSurface': {
+      const f = feature(draft, cmd.featureId);
+      if (f.type !== 'extendSurface') throw new CommandError(t('cmd.onlyExtendHasParams'));
+      if (cmd.edges.some((r) => r.kind !== 'edge')) throw new CommandError(t('cmd.surfaceOnlyEdges'));
+      f.edges = cmd.edges;
+      f.distance = cmd.distance;
+      checkExprs(draft as PartDoc, f as Feature);
       return;
     }
     case 'setShell': {
