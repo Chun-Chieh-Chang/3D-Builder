@@ -24,6 +24,7 @@ import {
   type Id,
   type ImportedBodyFeature,
   type DerivedBodyFeature,
+  DOWEL_RANGE,
   type LoftFeature,
   type MirrorFeature,
   type MoveFaceFeature,
@@ -1645,6 +1646,19 @@ export class Regenerator {
       step(Rs, -lead, 'top');
       step(Rs, 0, 'above');
       step(R, zc, 'cone');
+    } else if (f.kind === 'dowel') {
+      // a dowel pin hole (4a-3): made at its nominal diameter, which has to be one the fit tables cover, with a 45° chamfer at the entrance if asked
+      const nominal = R * 2;
+      if (!(nominal >= DOWEL_RANGE.min - 1e-9 && nominal <= DOWEL_RANGE.max + 1e-9)) throw new FeatureError(t('feature.holeDowelRange', { min: DOWEL_RANGE.min, max: DOWEL_RANGE.max }));
+      const c = f.chamfer === undefined ? 0 : evalLength(f.chamfer);
+      if (c > 0) {
+        if (c >= R || c >= depth) throw new FeatureError(t('feature.holeDowelChamfer'));
+        step(R + c, -lead, 'top');
+        step(R + c, 0, 'above');
+        step(R, c, 'cone');
+      } else {
+        step(R, -lead, 'top');
+      }
     } else {
       step(R, -lead, 'top');
     }

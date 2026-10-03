@@ -23,3 +23,4 @@ export * from './patterns';
 export * from './materials';
 export * from './measure';
 export * from './interference';
+export * from './dowel';

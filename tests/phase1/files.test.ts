@@ -370,6 +370,16 @@ describe('a part file written by version 25 (notes, tags and folders on features
   });
 });
 
+describe('a part file written by version 26 (derived bodies) opens in version 27 (dowel pin holes, C4.8)', () => {
+  it('keeps its derived body, which says where it comes from; no hole has a fit or a chamfer', async () => {
+    const file = await readPartFile(oldFile('v26-derived.3dbx'));
+    expect(file.warnings).toEqual([]);
+    expect(JSON.parse(new TextDecoder().decode((await readZip(oldFile('v26-derived.3dbx')))[0]!.data)).schemaVersion).toBe(26);
+    expect(file.doc.schemaVersion).toBe(SCHEMA_VERSION);
+    expect(file.doc.features).toEqual([{ id: 'derived1', type: 'derivedBody', name: '基板', suppressed: false, source: '../夾具.3dbx', body: 'eb' }]);
+  });
+});
+
 describe('the .3dbx file (B9.1, F7.1)', () => {
   const docs = async (): Promise<[string, PartDoc][]> => [
     ['the demo part', createDemoPart()],

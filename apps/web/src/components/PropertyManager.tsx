@@ -21,6 +21,12 @@ import {
   holeSize,
   HOLE_STANDARD_SOURCE,
   ISO_HOLE_SIZES,
+  DOWEL_FITS,
+  DOWEL_STANDARD_SOURCE,
+  fitClearance,
+  holeLimits,
+  ISO_DOWEL_DIAMETERS,
+  pinLimits,
   type EndCondition,
   type Draft,
   type ExtrudeFeature,
@@ -1318,7 +1324,14 @@ function HolePanel({ f }: { f: HoleFeature }) {
     if (kind === 'countersink') return { ...base, csDiameter: String(s.csDiameter), csAngle: '90deg' };
     return base;
   };
-  const kindChange = (kind: HoleFeature['kind']) => run({ ...fill(kind, f.size ?? ''), kind, ...(kind === 'counterbore' && !f.cbDiameter ? { cbDiameter: String(Number(f.diameter) * 1.8 || 11), cbDepth: '3' } : {}), ...(kind === 'countersink' && !f.csDiameter ? { csDiameter: String(Number(f.diameter) * 2 || 12), csAngle: '90deg' } : {}) });
+  const dowelNominal = Number(f.diameter);
+  const limits = f.kind === 'dowel' && Number.isFinite(dowelNominal) ? holeLimits(dowelNominal, f.fit ?? 'H7') : undefined;
+  const pin = f.kind === 'dowel' && limits ? pinLimits(dowelNominal, 'm6') : undefined;
+  const clearance = f.kind === 'dowel' && limits ? fitClearance(dowelNominal, f.fit ?? 'H7', 'm6') : undefined;
+  const kindChange = (kind: HoleFeature['kind']) =>
+    kind === 'dowel'
+      ? run({ kind, size: undefined, fit: f.fit ?? 'H7', chamfer: f.chamfer ?? '0.5', diameter: ISO_DOWEL_DIAMETERS.includes(dowelNominal) ? f.diameter : '6', cbDiameter: undefined, cbDepth: undefined, csDiameter: undefined, csAngle: undefined })
+      : run({ ...fill(kind, f.size ?? ''), kind, fit: undefined, chamfer: undefined, ...(kind === 'counterbore' && !f.cbDiameter ? { cbDiameter: String(Number(f.diameter) * 1.8 || 11), cbDepth: '3' } : {}), ...(kind === 'countersink' && !f.csDiameter ? { csDiameter: String(Number(f.diameter) * 2 || 12), csAngle: '90deg' } : {}) });
   return (
     <section className="pm-group">
       <h4>{t('pm.hole.kind')}</h4>
@@ -1327,22 +1340,60 @@ function HolePanel({ f }: { f: HoleFeature }) {
         <option value="counterbore">{t('pm.hole.counterbore')}</option>
         <option value="countersink">{t('pm.hole.countersink')}</option>
         <option value="tapped">{t('pm.hole.tapped')}</option>
+        <option value="dowel">{t('pm.hole.dowel')}</option>
       </select>
-      <label className="pm-row">
-        <span>{t('pm.hole.size')}</span>
-        <select value={f.size ?? ''} onChange={(e) => run(fill(f.kind, e.target.value))}>
-          <option value="">{t('pm.hole.custom')}</option>
-          {ISO_HOLE_SIZES.map((s) => (
-            <option key={s.name} value={s.name}>
-              {s.name}
-            </option>
-          ))}
-        </select>
-      </label>
+      {f.kind === 'dowel' ? (
+        <label className="pm-row">
+          <span>{t('pm.hole.size')}</span>
+          <select value={ISO_DOWEL_DIAMETERS.includes(dowelNominal) ? f.diameter : ''} onChange={(e) => e.target.value && run({ diameter: e.target.value })}>
+            <option value="">{t('pm.hole.custom')}</option>
+            {ISO_DOWEL_DIAMETERS.map((d) => (
+              <option key={d} value={String(d)}>
+                {`Ø${d}`}
+              </option>
+            ))}
+          </select>
+        </label>
+      ) : (
+        <label className="pm-row">
+          <span>{t('pm.hole.size')}</span>
+          <select value={f.size ?? ''} onChange={(e) => run(fill(f.kind, e.target.value))}>
+            <option value="">{t('pm.hole.custom')}</option>
+            {ISO_HOLE_SIZES.map((s) => (
+              <option key={s.name} value={s.name}>
+                {s.name}
+              </option>
+            ))}
+          </select>
+        </label>
+      )}
       <label className="pm-row">
         <span>{t('pm.hole.diameter')}</span>
         <ValueInput value={f.diameter} toCommand={(diameter) => ({ type: 'setHole', featureId: f.id, hole: { ...settings, diameter, size: undefined } })} />
       </label>
+      {f.kind === 'dowel' && (
+        <>
+          <label className="pm-row">
+            <span>{t('pm.hole.fit')}</span>
+            <select value={f.fit ?? 'H7'} onChange={(e) => run({ fit: e.target.value as 'H6' | 'H7' | 'H8' })}>
+              {DOWEL_FITS.map((fit) => (
+                <option key={fit} value={fit}>
+                  {fit}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="pm-row">
+            <span>{t('pm.hole.chamfer')}</span>
+            <ValueInput value={f.chamfer ?? '0'} toCommand={(chamfer) => ({ type: 'setHole', featureId: f.id, hole: { ...settings, chamfer } })} />
+          </label>
+          {limits && pin && clearance && (
+            <p className="hint">
+              {t('pm.hole.fitLimits', { fit: f.fit ?? 'H7', min: limits.min.toFixed(3), max: limits.max.toFixed(3), pin: 'm6', pinMin: pin.min.toFixed(3), pinMax: pin.max.toFixed(3), loosest: clearance.loosest.toFixed(3), tightest: clearance.tightest.toFixed(3) })}
+            </p>
+          )}
+        </>
+      )}
       {f.kind === 'counterbore' && (
         <>
           <label className="pm-row">
@@ -1384,7 +1435,7 @@ function HolePanel({ f }: { f: HoleFeature }) {
         <input type="checkbox" checked={!!f.reverse} onChange={(e) => run({ reverse: e.target.checked ? true : undefined })} />
         <span>{t('pm.reverseDirection')}</span>
       </label>
-      <p className="hint">{size ? t('pm.hole.sourceHint', { source: HOLE_STANDARD_SOURCE }) : t('pm.hole.hint')}</p>
+      <p className="hint">{f.kind === 'dowel' ? t('pm.hole.dowelHint') : size ? t('pm.hole.sourceHint', { source: HOLE_STANDARD_SOURCE }) : t('pm.hole.hint')}</p>
     </section>
   );
 }

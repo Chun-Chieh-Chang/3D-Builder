@@ -145,9 +145,10 @@ export function mapExprs(feature: Feature, fn: (expr: Expr, kind: ExprKind, role
       const cbDepth = one(f.cbDepth, 'length', 'positive');
       const csDiameter = one(f.csDiameter, 'length', 'positive');
       const csAngle = one(f.csAngle, 'angle', 'includedAngle');
-      const same = diameter === f.diameter && JSON.stringify(end) === JSON.stringify(f.end) && cbDiameter === f.cbDiameter && cbDepth === f.cbDepth && csDiameter === f.csDiameter && csAngle === f.csAngle;
+      const chamfer = one(f.chamfer, 'length', 'positive');
+      const same = diameter === f.diameter && JSON.stringify(end) === JSON.stringify(f.end) && cbDiameter === f.cbDiameter && cbDepth === f.cbDepth && csDiameter === f.csDiameter && csAngle === f.csAngle && chamfer === f.chamfer;
       if (same) return feature;
-      return { ...f, diameter, end, ...(cbDiameter === undefined ? {} : { cbDiameter }), ...(cbDepth === undefined ? {} : { cbDepth }), ...(csDiameter === undefined ? {} : { csDiameter }), ...(csAngle === undefined ? {} : { csAngle }) };
+      return { ...f, diameter, end, ...(cbDiameter === undefined ? {} : { cbDiameter }), ...(cbDepth === undefined ? {} : { cbDepth }), ...(csDiameter === undefined ? {} : { csDiameter }), ...(csAngle === undefined ? {} : { csAngle }), ...(chamfer === undefined ? {} : { chamfer }) };
     }
     case 'pattern': {
       const d = feature.def;

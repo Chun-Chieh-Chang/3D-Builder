@@ -6,6 +6,7 @@ import { isDatumPlaneName } from './datums';
 import { canBeSeed } from './patterns';
 import { colorOk, materialOk, sameTarget } from './materials';
 import { isFilePath } from './paths';
+import { DOWEL_FITS } from './dowel';
 import { mapRefs } from './refs';
 import { bodyFeature, isBodyKey, isHideable } from './visibility';
 import { dimensionName, Parameters, renameInDoc, resolveDoc, variableUsers, type ExprKind } from './params';
@@ -472,11 +473,23 @@ function validateNewFeature(doc: PartDoc, f: Feature, index: number): void {
     case 'importedBody':
       if (!doc.blobs.some((b) => b.id === f.blob)) throw new CommandError(t('cmd.importDataNotFound', { id: f.blob }));
       return;
+    case 'hole':
+      checkDowel(f);
+      return;
     case 'derivedBody':
       if (!isFilePath(f.source)) throw new CommandError(t('cmd.derivedSourceInvalid', { path: f.source }));
       if (f.body.trim() === '') throw new CommandError(t('cmd.derivedBodyEmpty'));
       return;
   }
+}
+
+/** What a dowel pin hole (C4.8, v27) needs to be well formed: a fit that is in the tables; only that kind has one or an entrance chamfer. */
+function checkDowel(f: HoleFeature): void {
+  if (f.kind !== 'dowel') {
+    if (f.fit !== undefined || f.chamfer !== undefined) throw new CommandError(t('cmd.holeDowelOnly'));
+    return;
+  }
+  if (f.fit !== undefined && !DOWEL_FITS.includes(f.fit)) throw new CommandError(t('cmd.holeFitUnknown', { fit: String(f.fit) }));
 }
 
 /** Inserts a feature at `index` (at or above the rollback bar) after checking it. */
@@ -710,6 +723,7 @@ export function mutate(draft: Draft<PartDoc>, cmd: Command): void {
       const keep = { id: f.id, type: f.type, name: f.name, suppressed: f.suppressed, sketch: f.sketch } as const;
       for (const k of Object.keys(f)) delete (f as unknown as Record<string, unknown>)[k];
       Object.assign(f, keep, cmd.hole);
+      checkDowel(f as HoleFeature);
       checkExprs(draft as PartDoc, f as Feature);
       return;
     }

@@ -29,6 +29,7 @@
 | `v21-datums.3dbx` | 21 | `bbeb630`（Schema 21 的最後一個提交，3a-7a） | 60 × 20 × 5 的板、板上半徑 2 高 5 的柱，加基準軸（柱面的軸）、參考點（柱頂的中心）、基準面（垂直於該軸通過該點）、座標系統（原點在該點）（`refAxis`／`refPoint`／`coordSys` 和基準面的 `perpendicular`，v21 加入）；不是示範件 |
 | `v22-pattern.3dbx` | 22 | `245f3d7`（Schema 22 的最後一個提交，3a-7b） | 60 × 20 × 5 的板、板上半徑 2 高 5 的柱，加「線性複製排列」：沿右基準面法向（x）4 個、間距 10、跳過第 2 個（`pattern`，v22 加入）；不是示範件 |
 | `v23-mirror.3dbx` | 23 | `b1b00b4`（Schema 23 的最後一個提交，3a-7c） | 60 × 20 × 5 的板、板上半徑 2 高 5 的柱、x = 30 的基準面，加「鏡射」柱（特徵鏡射，`mirror`，v23 加入）；不是示範件 |
+| `v26-derived.3dbx` | 26 | **不是舊版程式寫的**：Schema 27 的程式寫出，再把 `schemaVersion` 設為 26（Schema 27 只多異型孔的可省略欄位 `fit`、`chamfer` 與 `kind: 'dowel'`，所以 Schema 26 的檔案就是這段文字；沒有另外的產生器，用 `applyCommand` 插入一個 `derivedBody` 後寫出） | 一個衍生零件：只有 `derivedBody`（來源 `../夾具.3dbx`、本體 `eb`）（`derivedBody`，v26 加入）；不能單獨重算（要有主模型） |
 | `v25-notes.3dbx` | 25 | `ec053be`（Schema 25 的最後一個提交，4a-0 之前） | 40 × 30 × 10 的板、板內半徑 4 高 5 的圓柱（整個在板裡面，不改變體積），加底板的註解「底板」與標籤「主體」（`comment`／`tag`，v25 加入）；不是示範件 |
 | `v24-material.3dbx` | 24 | `b4cea8c`（Schema 24 的最後一個提交，3a-9a） | 60 × 20 × 5 的板與柱，加材質（碳鋼）、文件設定（CNS、小數 2 位）、柱的外觀（藍色）（`material`／`settings`／外觀對象，v24 加入）；不是示範件 |
 | `v5-assembly.3dba` | 組合件 5 | **不是舊版程式寫的**：組合件 Schema 6 的程式寫出，再把 `schemaVersion` 設為 5（Schema 6 只多結合的可省略欄位 `more`、`min`、`max`；產生器同上，第四個測試，`WRITE_FIXTURE_V5=1`，跑法要用只含 `spikes/` 的暫時設定檔） | 存在「組合件/」：定位板<1> 固定、削邊銷<1>、板頂與銷頂的距離結合（15）、削邊銷的爆炸步驟（沿 y 30）（組合件 Schema 6 加入 `more`／`min`／`max`） |

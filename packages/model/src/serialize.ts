@@ -121,6 +121,8 @@ const migrations: Record<number, (doc: Json) => Json> = {
   24: (doc) => doc,
   // v26: the derived body (C7.5), a body of another part file. Nothing to convert; the version keeps older programs from opening a part with a feature they would skip.
   25: (doc) => doc,
+  // v27: the dowel pin hole (C4.8): `kind: 'dowel'` with a fit and an entrance chamfer. Nothing to convert; the version keeps older programs from opening a part with a hole they would make wrongly.
+  26: (doc) => doc,
 };
 
 export class FormatError extends Error {
