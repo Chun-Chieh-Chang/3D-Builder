@@ -5,21 +5,24 @@
  */
 import { readFileSync } from 'node:fs';
 import { beforeAll, describe, expect, it } from 'vitest';
-import { axisAngle, dirName, joinPath, type Quat, type SourceTree } from '@3db/model';
-import { exportAssemblyStep, readDocumentFile, readPartFile, stepAssemblyFiles, stepAssemblyPlan, stepStructure, type StepAssemblyFiles } from '@3db/io';
+import { axisAngle, type Quat } from '@3db/model';
+import { readDocumentFile, readPartFile, stepAssemblyFiles, stepAssemblyPlan, type StepAssemblyFiles } from '@3db/io';
 import { PlaneGcsSolver } from '@3db/sketch';
 import { Kernel, type ShapeId } from '@3db/kernel';
-import { Regenerator, solveAssemblyTree } from '@3db/regen';
-import { readAssemblyTree, type StepNode } from '../support/readAssemblyStep';
+import { Regenerator } from '@3db/regen';
+import { readAssemblyTree } from '../support/readAssemblyStep';
+import { stepRoundTrip, treeShape, worldParts } from '../support/stepRoundTrip';
 
 let kernel: Kernel;
 let solver: PlaneGcsSolver;
 const built = {} as Record<'plate' | 'pin', ShapeId>;
 const kept: Regenerator[] = [];
+let trip: ReturnType<typeof stepRoundTrip>;
 
 beforeAll(async () => {
   kernel = await Kernel.load();
   solver = await PlaneGcsSolver.create();
+  trip = stepRoundTrip(kernel, solver, kept);
   for (const [k, file] of [['plate', 'locating-plate.3dbx'], ['pin', 'diamond-pin.3dbx']] as const) {
     const doc = (await readPartFile(new Uint8Array(readFileSync(new URL(`../golden/${file}`, import.meta.url))))).doc;
     const regen = new Regenerator(kernel, solver);
@@ -45,49 +48,8 @@ function source(): string {
   );
 }
 
-async function filesOf(text: string, stem = '夾具') {
-  const plan = stepAssemblyPlan(kernel, text);
-  return { plan, out: await stepAssemblyFiles(plan, stem) };
-}
-
-/** The project as a map of path → bytes, opened the way the app opens it: files read, parts rebuilt, assemblies solved from their placements. */
-async function reopen(out: StepAssemblyFiles) {
-  const bytes = new Map(out.files.map((f) => [f.path, f.bytes]));
-  const shapes = new Map<string, ShapeId>();
-  const treeOf = async (path: string): Promise<SourceTree> => {
-    const file = await readDocumentFile(bytes.get(path)!);
-    if (file.kind === 'part') {
-      const regen = new Regenerator(kernel, solver, file.blobs);
-      kept.push(regen);
-      shapes.set(path, regen.rebuild(file.doc).body!.shape);
-      return { kind: 'part', key: path };
-    }
-    const children: Record<string, SourceTree> = {};
-    for (const c of file.doc.components) {
-      const f = file.doc.files.find((x) => x.id === c.file)!;
-      children[c.id] = await treeOf(joinPath(dirName(path), f.path));
-    }
-    return { kind: 'assembly', doc: file.doc, children };
-  };
-  const top = await treeOf(out.main);
-  return { bytes, shapes, top: top as Extract<SourceTree, { kind: 'assembly' }> };
-}
-
-/** `child` placed in the frame of `parent`. */
-function compose(parent: { matrix: number[]; origin: number[] }, child: { matrix: number[]; origin: number[] }) {
-  const p = parent.matrix;
-  const c = child.matrix;
-  const matrix: number[] = [];
-  for (let r = 0; r < 3; r++) for (let k = 0; k < 3; k++) matrix.push(p[3 * r]! * c[k]! + p[3 * r + 1]! * c[3 + k]! + p[3 * r + 2]! * c[6 + k]!);
-  const origin = [0, 1, 2].map((r) => p[3 * r]! * child.origin[0]! + p[3 * r + 1]! * child.origin[1]! + p[3 * r + 2]! * child.origin[2]! + parent.origin[r]!);
-  return { matrix, origin };
-}
-const walk = (nodes: StepNode[], above = { matrix: [1, 0, 0, 0, 1, 0, 0, 0, 1], origin: [0, 0, 0] }): { name: string; product: string; world: ReturnType<typeof compose> }[] =>
-  nodes.flatMap((n) => {
-    const world = compose(above, n);
-    return n.isAssembly ? walk(n.children, world) : [{ name: n.name ?? '', product: n.product ?? '', world }];
-  });
-const shape = (nodes: StepNode[]): unknown[] => nodes.map((n) => [n.name, n.product, n.isAssembly, shape(n.children)]);
+const filesOf = (text: string, stem?: string) => trip.filesOf(text, stem);
+const reopen = (out: StepAssemblyFiles) => trip.reopen(out);
 
 describe('an assembly STEP as files (3b-3b)', () => {
   it('writes one assembly file, one sub-assembly file and one part file per part product', async () => {
@@ -110,22 +72,13 @@ describe('an assembly STEP as files (3b-3b)', () => {
   it('is the same assembly written out again: the same tree, names, and every part where the file had it (< 1e-6)', async () => {
     const original = source();
     const { out } = await filesOf(original);
-    const { top, shapes } = await reopen(out);
-    const solved = solveAssemblyTree(top.doc, top.children, () => null);
-    const structure = stepStructure(top.doc, '', top.children, (id) => solved.poses.get(id) ?? null, solved.inner, () => '?');
-    const again = exportAssemblyStep(
-      kernel,
-      '夾具',
-      structure.parts.map((p) => ({ shape: shapes.get(p.key)!, name: p.name })),
-      structure.instances,
-      structure.subs,
-    );
+    const again = trip.reexport(await reopen(out));
     const a = readAssemblyTree(kernel.oc, original);
     const b = readAssemblyTree(kernel.oc, again);
-    expect(shape(b.nodes)).toEqual(shape(a.nodes));
+    expect(treeShape(b.nodes)).toEqual(treeShape(a.nodes));
     expect(b.usages).toBe(a.usages);
-    const pa = walk(a.nodes);
-    const pb = walk(b.nodes);
+    const pa = worldParts(a.nodes);
+    const pb = worldParts(b.nodes);
     expect(pb).toHaveLength(pa.length);
     pa.forEach((x, i) => {
       expect(pb[i]!.name).toBe(x.name);

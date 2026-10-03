@@ -1,6 +1,6 @@
 # 交接文件
 
-- 最後更新：2026-10-03，收工換電腦。**`main` 在 `3bded0f` 已推送、工作樹乾淨、933 項測試通過。Phase 3a 全部完成；Phase 3b 的 3b-0 到 3b-6 都已完成並推送，只剩 3b-7 驗收。** 先讀 §0.0；各階段的歷史狀態在 §3；以 `git log` 為準。
+- 最後更新：2026-10-03。**`npm run check` 944 項測試通過。Phase 3a 全部完成；Phase 3b 的 3b-0 到 3b-6 都已完成並推送，3b-7 的 A 段（不需樣本）已做（ADR 0053），B 段（真實組合件 STEP）與 C 段（桌面版人工驗收）待使用者。** 最新狀態以 `git log` 為準。 先讀 §0.0；各階段的歷史狀態在 §3；以 `git log` 為準。
 - 用途：讓下一個工作階段（人或 AI）不讀對話紀錄也能接手。
 - 本文件只記錄「目前狀態、待辦、下一步、工作約定」。範圍與設計以藍圖、ADR、程式碼為準；若有衝突，以它們為準並更新本文件。
 
@@ -8,12 +8,12 @@
 
 ### 0.0 快速接手（2026-10-03 收工時的狀態，換電腦先看這段）
 
-**狀態**：`main` 與 `origin/main` 同步（`3bded0f`），沒有未提交的東西，`npm run check` 933 項通過、20 項略過。這一輪（2026-10-02 到 03）做完的：3b-1 剛性次組合件、3b-2 零組件排列與鏡射、3b-3 STEP 組合件輸入、3b-4 零件表與爆炸視圖、**3b-5 評估（測量、物質特性、干涉檢查、檢查模型幾何，ADR 0051）**、**3b-6 桌面版（Tauri 2、NSIS 安裝檔，ADR 0052）**。每個里程碑的 ADR、驗收表與限制都在對應的 ADR 裡，§3 有一行摘要。
+**狀態**：`npm run check` 944 項通過、20 項略過；**3b-7 的 A 段已做（ADR 0053：金樣夾具 STEP → 檔案 → 再輸出，平的 15 零組件與巢狀 3×5，位姿差 0 mm）**，B、C 段待使用者。這一輪（2026-10-02 到 03）做完的：3b-1 剛性次組合件、3b-2 零組件排列與鏡射、3b-3 STEP 組合件輸入、3b-4 零件表與爆炸視圖、**3b-5 評估（測量、物質特性、干涉檢查、檢查模型幾何，ADR 0051）**、**3b-6 桌面版（Tauri 2、NSIS 安裝檔，ADR 0052）**。每個里程碑的 ADR、驗收表與限制都在對應的 ADR 裡，§3 有一行摘要。
 
 **在新電腦上**：`git pull`（私人專案）→ `npm install` → `npm run check`（應全過）→ `npm run dev`。**只用網頁版不需要 Rust 與 MSVC**；要建桌面版才裝（`apps/desktop/README.md` 的「需要」）。
 
 **下一步（建議順序）**
-1. **3b-7 驗收**（[phase3-plan](docs/phase3-plan.md) §4、§5）：需要使用者的真實樣本——每個不同零件一個 STEP，外加一個保留結構的組合件 STEP（搜尋 `NEXT_ASSEMBLY_USAGE_OCCURRENCE`，應有 10 次以上，見 §8 第 1 項）。**沒有樣本就不要假裝能驗收**：先問使用者有沒有；沒有的話，只做能自動化的部分並誠實標出沒做的。照約定先提計畫、量化驗收標準與反向提問，使用者確認後才動手。
+1. **3b-7 驗收的 B、C 段**（A 段已做，見 [ADR 0053](docs/adr/0053-acceptance-3b.md)；[phase3-plan](docs/phase3-plan.md) §4、§5）：需要使用者的真實樣本——每個不同零件一個 STEP，外加一個保留結構的組合件 STEP（搜尋 `NEXT_ASSEMBLY_USAGE_OCCURRENCE`，應有 10 次以上，見 §8 第 1 項）。**沒有樣本就不要假裝能驗收**：先問使用者有沒有；沒有的話，只做能自動化的部分並誠實標出沒做的。照約定先提計畫、量化驗收標準與反向提問，使用者確認後才動手。
 2. **使用者的待辦**（§8）：桌面版的人工驗收（第 0 項：原生對話框、沒裝過開發工具的帳號安裝、斷網）、eDrawings 目測巢狀與排列的 STEP 輸出、真實的第三方組合件 STEP、用 Excel 開零件表 CSV、3a 的真實零件對照。
 3. **要使用者許可才能動的**：刪檔（全域規則 §8）。目前待決定的：`%LOCALAPPDATA%\app.3dbuilder.desktop`（桌面版的使用者資料，含我開發時跑出的內容）、`tests/phase3/zz-bisect.test.ts` 若還在。
 4. 還沒做、不在 3b 範圍的：桌面版自動更新與簽章、次組合件內部的干涉檢查（目前只比頂層零組件，ADR 0051）。
@@ -94,6 +94,7 @@
 | [phase3-plan.md](docs/phase3-plan.md) | Phase 3 的里程碑、驗收標準、需要的樣本與決定（決定 1–6 已確認；§5 數值暫時認定為 Pass） |
 | [ADR 0050](docs/adr/0050-parts-list-and-exploded-view.md) | 零件表與爆炸視圖（3b-4，C15.16、C15.14，**組合件 Schema 5**）：`buildBom`（扁平／縮排、次組合件展開、排列與鏡射算數量、廠商／料號取自零件檔屬性）、CSV（BOM、引號）、`explosion`（步驟只存意圖，位移相加，展開／收合只是顯示，爆炸中不能動、STEP 仍是組裝位置） |
 | [ADR 0051](docs/adr/0051-evaluation-tools.md) | 評估工具（3b-5，E1.1、E1.2、E2.1、E3.1，Schema 不變）：物質特性（慣性矩、主慣性矩、零件合成）、測量（精確距離、銳角、位姿與鏡射）、干涉檢查（頂層零組件、接觸不算、紅色重疊）、檢查模型幾何；7 項驗收與限制 |
+| [ADR 0053](docs/adr/0053-acceptance-3b.md) | 3b 驗收 A 段（3b-7，不需樣本）：金樣夾具 STEP → 檔案 → 再輸出，平的與巢狀；B、C 段待使用者；測試支援 `goldenJig.ts`、`stepRoundTrip.ts` |
 | [ADR 0052](docs/adr/0052-desktop-shell.md) | 桌面版（3b-6，F8.1）：Tauri 2 包網頁版，`files.ts` 不改（WebView2 的選擇器可用）、NSIS、離線；驗收第 3、7 項待使用者；`useLocalToolsDir` 的坑 |
 | [ADR 0049](docs/adr/0049-step-assembly-import.md) | STEP 組合件輸入（3b-3，F2.8，Schema 不變）：`Kernel.readAssemblyStep`（階層、名稱、剛體位置、零件形狀、面顏色）、`stepAssemblyPlan`／`stepAssemblyFiles`（一個產品一個檔案：`.3dba`、`組件/`、`零件/`）、「檔案」→「輸入 STEP 組合件…」（每次選資料夾，寫入模式）、組合件輸出帶面顏色、顏色往返；金樣夾具 15 個零組件匯入 129 ms |
 | [ADR 0048](docs/adr/0048-component-patterns-and-mirrors.md) | 零組件的複製排列與鏡射（3b-2，**組合件 Schema 4**）：只存定義（`patterns`，可省略）、實例是衍生位姿跟著種子、方向與軸可選組合件軸或零組件的元素、鏡射件在載入時由原件算出（不另存檔，取代決定 4）、`mirroredPose`、STEP 的鏡射產品；2a–2d 都做完 |
@@ -168,7 +169,8 @@
 - **3b-4 零件表與爆炸視圖已完成（2026-10-02，ADR 0050，組合件 Schema 升為 5）**：使用者確認：零件表兩種結構可切換、爆炸方向用軸或任一元素。命令列「組合件」→「零件表…」「爆炸視圖」；瀏覽器腳本 `tests/e2e/phase3-bom.js`（`await __bom.run()`）、`tests/e2e/phase3-explode.js`（`await __exp.run()`）。限制：爆炸只能動頂層零組件、沒有爆炸線與動畫、只有一組爆炸視圖；CSV 不防公式注入；廠商／料號從真實零件檔屬性到零件表沒用真實檔走過一次。**下一個是 3b-5 評估（測量、物質特性、檢查模型幾何、干涉檢查，phase3-plan §4）。**
 - **3b-5 評估已完成（2026-10-03，ADR 0051，Schema 不變）**：使用者確認：干涉的比對單位是頂層零組件（次組合件一個，排列與鏡射的複製品各一個）、結果是清單加圖面紅色重疊體積。命令：零件「工具」→「測量」「物質特性…」「檢查幾何…」；組合件「組合件」→「測量」「干涉檢查」「物質特性…」「檢查幾何…」。瀏覽器腳本 `tests/e2e/phase3-physical.js`（`await __physical.run()`）、`phase3-measure.js`（`__measure.assembly()`／`.part()`）、`phase3-interference.js`（`__interference.run()`）、`phase3-check.js`（`__check.assembly()`／`.part()`）。核心新增 `inertia`、`distance`、`common`、`check`、`subShape`；model 的 `mass.ts`、`measure.ts`、`interference.ts`；regen 的 `measure.ts`、`interference.ts`；`Viewer.setHighlights`。限制：次組合件內部的干涉不查（**夾具裡削邊銷的 r=5 本體站在板的 r=4 孔裡，約 405 mm³ 一支，是夾具本身的幾何**）；接觸不算干涉，重疊 < 1e-3 mm³ 不報；夾角是銳角；表面積是各零件的總和；20 個零組件單獨跑 1.04 s 牆上時間，整套平行時測試改量 CPU 時間（預算 4 s，只擋退步）；紅色重疊是用 Viewer 物件驗證的，沒有用眼睛看截圖（截圖在這台機器上不穩）；沒用第三方零件檔驗證。**下一個是 3b-6 桌面版（Tauri，需要裝 Rust 與 MSVC，先問使用者許可）。**
 - **3b-6 桌面版已完成（2026-10-03，ADR 0052，Schema 不變）**：使用者確認：用 winget 裝 Rust 與 VS Build Tools、先驗證 WebView2 再決定要不要原生外掛、NSIS。`apps/desktop`（Tauri 2.12）只是載入 `apps/web/dist` 的視窗，**`files.ts` 沒動**（WebView2 裡三個選擇器、OPFS、IndexedDB 都可用，來源 `http://tauri.localhost` 是安全環境）。`npm run build -w @3db/desktop` 產生 `apps/desktop/src-tauri/target/release/bundle/nsis/3D-Builder_0.1.0_x64-setup.exe`（11.02 MiB）；`tests/e2e/desktop-probe.mjs` 用 DevTools Protocol 檢查視窗並在裡面跑瀏覽器腳本（9 個全過）。**驗收 7 項裡第 3 項（原生對話框開啟、儲存）與第 7 項（沒裝過開發工具的帳號安裝）沒做，要使用者做（ADR 0052 有步驟）；第 2 項斷網沒真的拔網路。** 限制：沒有自動更新、安裝檔沒簽章、圖示是暫用的、解除安裝留下 `%LOCALAPPDATA%\app.3dbuilder.desktop`（使用者資料）。坑：在 Claude 桌面版的工作階段裡建置，`%LOCALAPPDATA%` 被重新導向，Tauri 改 NSIS 工具資料夾名稱會失敗，所以設了 `bundle.useLocalToolsDir`。**下一個是 3b-7 驗收（phase3-plan §4，需要真實樣本，見 §8）。**
-- **檢查**：**933 項測試通過（3b-6 之後，沒有新測試；桌面版靠 `tests/e2e/desktop-probe.mjs`）、20 項略過**；舊紀錄：933 項（3b-5 之後；`interference.test.ts` 的時間預算會隨負載波動，改為數比對的零件對數）、891 項（3b-4 之後）、869 項（3b-3 之後）；`rebuild-speed` 改量 CPU 時間（牆上時間在整套平行時會超時）；舊紀錄：854 項測試通過（3b-2d 之後，開發伺服器停掉時）、20 項略過；舊紀錄：845 項（3b-2a 之後）；831 項測試通過（3b-1e 之後，開發伺服器停掉時；開著伺服器與瀏覽器時 `rebuild-speed` 會超時）、20 項略過；舊紀錄：826 項（3b-1d 之後；3b-1c 是 819 項；`tests/phase3/rebuild-speed.test.ts` 在開發伺服器與瀏覽器同時開著時可能超過時間預算而失敗，單獨跑會過）、20 項略過；舊紀錄：819 項（3b-1c 之後；3b-1b 是 816 項、3b-1a 是 810 項、3b-0 時是 795 項）、20 項略過**；`tests/phase3/zz-bisect.test.ts` 是我查 `cpSync` 崩潰時留下的暫存測試（未提交），**刪除前要使用者許可**；以下舊紀錄：**795 項測試通過、20 項需要樣本而略過**（3a-10 工具之後；3a-9c-3 時是 787 項；3a-9c-2 時是 777 項；3a-9b／9c-1 時是 773 項，2026-10-01，雲端工作階段；3a-9a 之後是 756 項；3a-7b 之後是 700 項；3a-7a 之後是 671 項；3a-6d 之後是 640 項，本機 `C:` 磁碟；3a-3 之後是 472 項、3a-2 之後 438 項）（型別、分層、i18n、測試），`vite build` 成功（2026-10-01，在 `D:` 磁碟上，NTFS，`npm install` 的連結正常）。上一個提交（3a-1）是 381 項／10 項略過。真實 STEP 的 10 項（`tests/phase3/real-sample-edit.test.ts`，9 項執行、1 項略過）要設 `SW_SAMPLE_DIR`，約 10 分鐘，全過。草圖效能預算測試（`packages/sketch/test/perf.test.ts`）在機器同時有別的負載時會超過 16 ms，安靜時過（§6「效能測試」）。（2E 的檢查在 `F:` 磁碟上以暫存設定執行，原因見 §6「工作區連結」。）
+- **3b-7 A 段已完成（2026-10-03，ADR 0053）**：`tests/phase3/acceptance-3b.test.ts` 11 項。金樣夾具（15 零組件、39 結合）輸出 STEP → `stepAssemblyFiles` → 重新開啟 → 再輸出，平的與巢狀（次組合件用 3 次）樹、名稱、位姿（差 0 mm，標準 < 0.01）、零件體積（對手算）都一致，且為不動點。**沒做：**真實第三方 STEP（B 段）、eDrawings 目測、桌面版人工驗收（C 段）。3b 閘門因此是「有條件通過」。這台電腦要先 `npm install` 才有 `node_modules/@3db` 連結。
+- **檢查**：**944 項測試通過（3b-7 A 段之後，+11）、20 項略過**；舊紀錄：933 項（3b-6 之後，沒有新測試；桌面版靠 `tests/e2e/desktop-probe.mjs`）；933 項（3b-5 之後；`interference.test.ts` 的時間預算會隨負載波動，改為數比對的零件對數）、891 項（3b-4 之後）、869 項（3b-3 之後）；`rebuild-speed` 改量 CPU 時間（牆上時間在整套平行時會超時）；舊紀錄：854 項測試通過（3b-2d 之後，開發伺服器停掉時）、20 項略過；舊紀錄：845 項（3b-2a 之後）；831 項測試通過（3b-1e 之後，開發伺服器停掉時；開著伺服器與瀏覽器時 `rebuild-speed` 會超時）、20 項略過；舊紀錄：826 項（3b-1d 之後；3b-1c 是 819 項；`tests/phase3/rebuild-speed.test.ts` 在開發伺服器與瀏覽器同時開著時可能超過時間預算而失敗，單獨跑會過）、20 項略過；舊紀錄：819 項（3b-1c 之後；3b-1b 是 816 項、3b-1a 是 810 項、3b-0 時是 795 項）、20 項略過**；`tests/phase3/zz-bisect.test.ts` 是我查 `cpSync` 崩潰時留下的暫存測試（未提交），**刪除前要使用者許可**；以下舊紀錄：**795 項測試通過、20 項需要樣本而略過**（3a-10 工具之後；3a-9c-3 時是 787 項；3a-9c-2 時是 777 項；3a-9b／9c-1 時是 773 項，2026-10-01，雲端工作階段；3a-9a 之後是 756 項；3a-7b 之後是 700 項；3a-7a 之後是 671 項；3a-6d 之後是 640 項，本機 `C:` 磁碟；3a-3 之後是 472 項、3a-2 之後 438 項）（型別、分層、i18n、測試），`vite build` 成功（2026-10-01，在 `D:` 磁碟上，NTFS，`npm install` 的連結正常）。上一個提交（3a-1）是 381 項／10 項略過。真實 STEP 的 10 項（`tests/phase3/real-sample-edit.test.ts`，9 項執行、1 項略過）要設 `SW_SAMPLE_DIR`，約 10 分鐘，全過。草圖效能預算測試（`packages/sketch/test/perf.test.ts`）在機器同時有別的負載時會超過 16 ms，安靜時過（§6「效能測試」）。（2E 的檢查在 `F:` 磁碟上以暫存設定執行，原因見 §6「工作區連結」。）
 
 ## 4. 如何執行
 
