@@ -6,7 +6,7 @@ import gcsWasm from '@salusoft89/planegcs/dist/planegcs_dist/planegcs.wasm?url';
 import { bodyKey, combineMass, isShown, mirrorKey, MESH_QUALITY, settingsOf, type AssemblyDoc, type Id, type MeasureReport, type PartDoc, type SourceTree } from '@3db/model';
 import { findProfiles, PlaneGcsSolver } from '@3db/sketch';
 import { COMPONENT_MESH, Kernel, type GeometryReport, type MassProps, type MeshData, type MeshOptions, type ShapeId } from '@3db/kernel';
-import { projectDrawingView, elementFacts, viewFeatures, findClearance, findInterference, sweepClearance, measureTargets, convertEdges, edgeMateGeometry, exportFaces, faceColors, intoFrame, faceEdges, faceMateGeometry, followReferences, ReferenceProblem, Regenerator, solveAssemblyTree, type AssemblyResult, type AssemblySolveOptions, type BodyInfo, type RebuildResult } from '@3db/regen';
+import { drawingAnchors, projectDrawingView, elementFacts, viewFeatures, findClearance, findInterference, sweepClearance, measureTargets, convertEdges, edgeMateGeometry, exportFaces, faceColors, intoFrame, faceEdges, faceMateGeometry, followReferences, ReferenceProblem, Regenerator, solveAssemblyTree, type AssemblyResult, type AssemblySolveOptions, type BodyInfo, type RebuildResult } from '@3db/regen';
 import { edgeFingerprint, faceFingerprint, vertexFingerprint } from '@3db/naming';
 import { binaryStl, exportAssemblyStep, exportPartStep, readComponentFile, stepAssemblyPlan, type StepAssemblyPlan } from '@3db/io';
 import type { SourcePart, SourceProvider } from '@3db/regen';
@@ -392,7 +392,8 @@ const api: KernelApi = {
           }
           viewParts.push({ shape, pose: p.pose, mirrored: p.mirrored });
         }
-        out.push({ lines: projectDrawingView(kernel, viewParts, r.axes, r.cut), ms: performance.now() - began });
+        const lines = projectDrawingView(kernel, viewParts, r.axes, r.cut);
+        out.push({ lines, ...(r.anchors ? { anchors: drawingAnchors(kernel, viewParts, r.axes) } : {}), ms: performance.now() - began });
       } catch (e) {
         out.push({ error: e instanceof Error ? e.message : String(e) });
       } finally {

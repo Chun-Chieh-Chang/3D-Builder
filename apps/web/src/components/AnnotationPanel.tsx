@@ -39,12 +39,42 @@ export function AnnotationPanel() {
   const view = drw.doc.views.find((v) => v.id === drw.selected);
   if (!view) return null;
   const features = drw.features.get(view.id) ?? [];
-  const tables = drw.doc.tables.filter((x) => x.view === view.id);
+  const tables = drw.doc.tables.flatMap((x) => (x.view === view.id && x.kind === 'holes' ? [x] : []));
   const centre = view.centreMarks ?? view.kind !== 'section';
+  const assembly = drw.boms.has(view.id);
+  const boms = drw.doc.tables.flatMap((x) => (x.view === view.id && x.kind === 'bom' ? [x] : []));
   const sizes = [...new Set(holeRows(features).map((r) => formatNumber(2 * r.radius)))];
   return (
     <div className="pm-group" data-group="annotations">
       <h4>{t('drawingUi.annotations')}</h4>
+      {assembly && (
+        <>
+          <div className="pm-row">
+            <button className="pm-button" data-action="addBomTable" disabled={boms.length > 0} onClick={() => d.addBomTable(view.id)}>
+              {t('drawingUi.addBomTable')}
+            </button>
+          </div>
+          {boms.map((table) => (
+            <div key={table.id} data-table={table.id}>
+              <div className="pm-row">
+                <span className="name">{t('bom.title')}</span>
+                <button className="pm-button" data-action="tableHome" disabled={!table.at} onClick={() => d.setTable(table.id, { at: null })}>
+                  {t('drawingUi.bomAutoPosition')}
+                </button>
+                <button title={t('drawingUi.deleteTable')} data-action="deleteTable" onClick={() => d.deleteTables([table.id])}>
+                  ✕
+                </button>
+              </div>
+              <label className="pm-row checkbox">
+                <input type="checkbox" data-field="balloons" checked={!!table.balloons} onChange={(e) => d.setTable(table.id, { balloons: e.target.checked })} />
+                <span>{t('drawingUi.balloons')}</span>
+              </label>
+            </div>
+          ))}
+        </>
+      )}
+      {!assembly && (
+      <>
       <label className="pm-row checkbox">
         <input type="checkbox" data-field="centreMarks" checked={centre} onChange={(e) => d.setView(view.id, { centreMarks: e.target.checked })} />
         <span>{t('drawingUi.centreMarks')}</span>
@@ -83,6 +113,8 @@ export function AnnotationPanel() {
           ))}
         </div>
       ))}
+      </>
+      )}
     </div>
   );
 }

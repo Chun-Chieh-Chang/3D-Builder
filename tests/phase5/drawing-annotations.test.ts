@@ -118,7 +118,7 @@ describe('the annotations in the document', () => {
     expect(d.idCounters).toMatchObject({ tbl: 1 });
     expect(() => applyDrawingCommand(d, { type: 'insertTables', tables: [{ id: 'tbl1', kind: 'holes', view: 'view1' }] })).toThrow(/已被使用/);
     expect(() => applyDrawingCommand(d, { type: 'insertTables', tables: [{ id: 'tbl2', kind: 'holes', view: 'zzz' }] })).toThrow(/找不到尺寸所在的視圖/);
-    expect(() => applyDrawingCommand(d, { type: 'insertTables', tables: [{ id: 'tbl2', kind: 'bom' as never, view: 'view1' }] })).toThrow(/不明的表格種類/);
+    expect(() => applyDrawingCommand(d, { type: 'insertTables', tables: [{ id: 'tbl2', kind: 'chart' as never, view: 'view1' }] })).toThrow(/不明的表格種類/);
     expect(() => applyDrawingCommand(d, { type: 'insertTables', tables: [{ id: 'tbl2', kind: 'holes', view: 'view1', fits: { '9': 'X9' } }] })).toThrow(/不支援的配合等級/);
     d = applyDrawingCommand(d, { type: 'setTable', tableId: 'tbl1', patch: { at: [300, 250], fits: { '6': 'H7' } } });
     expect(d.tables[0]).toMatchObject({ at: [300, 250], fits: { '6': 'H7' } });

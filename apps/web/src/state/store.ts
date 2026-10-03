@@ -1948,12 +1948,28 @@ class AppStore {
    */
   async newDrawing(): Promise<void> {
     try {
-      const handle = this.fileHandle;
-      if (this.assembly || this.drawing || !handle || this.state.dirty) return this.notify(t('drawing.saveFirst'), 'error');
+      const asm = this.state.active === 'assembly' ? this.assembly : null;
+      const handle = asm ? asm.fileHandle() : this.fileHandle;
+      const dirty = asm ? asm.getState().dirty : this.state.dirty;
+      if (this.drawing || !handle || dirty) return this.notify(t('drawing.saveFirst'), 'error');
       const project = await this.projectFolder(t('drawing.askProject'));
       if (!project) return;
       const path = await pathIn(project, handle);
       if (path === null) return this.notify(t('drawing.notInProject', { folder: project.name }), 'error');
+      if (asm) {
+        // an assembly: its front and isometric views, with its parts list and balloons (C16.6)
+        const title = asm.name();
+        let drawing = createEmptyDrawing();
+        const source = baseName(path);
+        drawing = applyDrawingCommand(drawing, {
+          type: 'insertViews',
+          views: (['front', 'isometric'] as const).map((direction, i) => ({ id: `view${i + 1}`, name: t(`drawing.view.${direction}`), source, direction })),
+        });
+        drawing = applyDrawingCommand(drawing, { type: 'insertTables', tables: [{ id: 'tbl1', kind: 'bom', view: 'view1', balloons: true }] });
+        drawing = applyDrawingCommand(drawing, { type: 'setTitle', field: 'drawingName', value: title });
+        this.showDrawing({ doc: drawing, handle: null, fileName: null, folder: dirName(path), untitled: t('drawing.untitled', { name: title }), project, autoScale: true });
+        return;
+      }
       const part = this.history.doc;
       let doc = createEmptyDrawing();
       const name = partName(part, this.state.fileName, this.state.untitled);

@@ -162,4 +162,10 @@ export const drawing = {
   'drawingUi.tableFit': 'Ø{d} 的公差等級',
   'drawingUi.tableEmpty': '這個視圖沒有看成圓的孔',
   'drawingUi.tableAutoPosition': '放回右上角',
+  'drawing.sourceCycle': '組合件包含了它自己：{path}',
+  'drawing.sourceNotAssembly': '「{path}」不是組合件',
+  'drawing.dimAssembly': '組合件的視圖還不能標註尺寸（尺寸指到單一零件的面與圓）',
+  'drawingUi.addBomTable': '加入零件表（含零件號球）',
+  'drawingUi.balloons': '零件號球',
+  'drawingUi.bomAutoPosition': '放回右下角',
 } as const;

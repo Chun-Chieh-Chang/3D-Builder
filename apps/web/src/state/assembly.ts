@@ -322,6 +322,11 @@ export class AssemblyStore {
 
   getState = (): AssemblyState => this.state;
 
+  /** The file the assembly is saved in; null while it has not been saved. */
+  fileHandle(): FileSystemFileHandle | null {
+    return this.handle;
+  }
+
   /** The assembly is replaced by another document: nothing it still has running may show up. */
   close(): void {
     this.closed = true;

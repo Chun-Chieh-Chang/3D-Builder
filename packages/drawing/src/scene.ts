@@ -1,6 +1,7 @@
 import { t } from '@3db/i18n';
 import { axesOf, sectionArrow, type DetailDrawingView, type DrawingDoc, type DrawingView, type Id, type Scale, type SectionDrawingView, type TitleField, type ViewFeature, type ViewSide } from '@3db/model';
 import { centreItems, holeRows, holeTableItems, type HoleRow } from './annotation';
+import { balloonItems, bomTableItems, type ViewBom } from './bomTable';
 import { evaluateDimension, type DimensionOutcome, type ElementsResult } from './dimension';
 import { circlePolyline, hatch } from './geometry';
 import { layoutViews, resolveLines, scaleOf, toSheet, type PlacedView, type ViewLines } from './layout';
@@ -142,13 +143,15 @@ function detailItems(v: DetailDrawingView, parent: PlacedView, own: PlacedView, 
  * their parents, and the titles of those views. `lines` is what the views look like from their directions at full size (a view not in it, or null, is not
  * drawn: its model could not be read); detail views are made from their parents' lines. The dimensions are drawn on their views from what `elements` says their
  * elements are (by the dimension's id); what each came to, its text or why it could not be drawn, is in `dimensions`. `features` is what each view can be dimensioned
- * from (by view id): the centre marks and lines are drawn from it, and the hole tables are made from it (their rows are in `tables`).
+ * from (by view id): the centre marks and lines are drawn from it, and the hole tables are made from it (their rows are in `tables`). `boms` is what the views of
+ * assemblies say of what they show (by view id): the parts lists and their balloons are drawn from it.
  */
 export function buildScene(
   doc: DrawingDoc,
   lines: ReadonlyMap<Id, ViewLines | null>,
   elements: ReadonlyMap<Id, ElementsResult> = new Map(),
   features: ReadonlyMap<Id, readonly ViewFeature[]> = new Map(),
+  boms: ReadonlyMap<Id, ViewBom> = new Map(),
 ): { scene: Scene; placed: Map<Id, PlacedView>; dimensions: Map<Id, DimensionOutcome>; tables: Map<Id, HoleRow[]> } {
   const m = sheetMetrics(doc.sheet);
   const placed = layoutViews(doc, lines);
@@ -177,6 +180,13 @@ export function buildScene(
   for (const table of doc.tables ?? []) {
     const own = resolved.get(table.view) ? placed.get(table.view) : undefined;
     if (!own) continue;
+    if (table.kind === 'bom') {
+      const bom = boms.get(table.view);
+      if (!bom) continue;
+      items.push(...bomTableItems(table, bom.rows, doc.sheet));
+      if (table.balloons) items.push(...balloonItems(bom, resolved.get(table.view)?.anchors, own));
+      continue;
+    }
     const rows = holeRows(features.get(table.view) ?? [], table.fits);
     tables.set(table.id, rows);
     items.push(...holeTableItems(table, rows, own, doc.sheet));

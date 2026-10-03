@@ -164,4 +164,10 @@ export const drawing: Translation = {
   'drawingUi.tableFit': 'Tolerance class of Ø{d}',
   'drawingUi.tableEmpty': 'This view sees no holes as circles',
   'drawingUi.tableAutoPosition': 'Back to the upper right corner',
+  'drawing.sourceCycle': 'The assembly contains itself: {path}',
+  'drawing.sourceNotAssembly': '"{path}" is not an assembly',
+  'drawing.dimAssembly': 'The views of an assembly cannot be dimensioned yet (a dimension points at the faces and circles of one part)',
+  'drawingUi.addBomTable': 'Add parts list (with balloons)',
+  'drawingUi.balloons': 'Balloons',
+  'drawingUi.bomAutoPosition': 'Back to the lower right corner',
 };

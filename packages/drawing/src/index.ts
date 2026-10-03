@@ -6,3 +6,4 @@ export * from './geometry';
 export * from './dimension';
 export * from './autoDimension';
 export * from './annotation';
+export * from './bomTable';

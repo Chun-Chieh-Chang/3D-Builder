@@ -194,7 +194,19 @@ export interface HoleTable {
   fits?: Record<string, string>;
 }
 
-export type DrawingTable = HoleTable;
+/**
+ * The parts list of the assembly a view shows (C16.6, C15.16), flat, as a table; with `balloons` each item also has its number in a circle by the part in the view
+ * (C16.6), joined to the part by a leader. `at` is its upper left corner on the sheet (absent: the lower right corner of the drawing area, above the title block).
+ */
+export interface BomTable {
+  id: Id;
+  kind: 'bom';
+  view: Id;
+  at?: [number, number];
+  balloons?: boolean;
+}
+
+export type DrawingTable = HoleTable | BomTable;
 
 export interface DrawingDoc {
   kind: 'drawing';
@@ -243,7 +255,7 @@ export type DrawingCommand =
   /** Adds tables (C16.6), each with its own new id, on views that are there. */
   | { type: 'insertTables'; tables: DrawingTable[] }
   /** Changes a table: `at: null` puts it back in the corner; `fits` replaces the classes (an empty one takes them all away). */
-  | { type: 'setTable'; tableId: Id; patch: { at?: [number, number] | null; fits?: Record<string, string> } }
+  | { type: 'setTable'; tableId: Id; patch: { at?: [number, number] | null; fits?: Record<string, string>; balloons?: boolean | null } }
   | { type: 'deleteTables'; tableIds: Id[] };
 
 export type DimensionPatch = {
@@ -345,10 +357,12 @@ function checkDimension(d: Dimension, views: readonly DrawingView[]): void {
 /** Checks a table against the views it may be on. */
 function checkTable(x: DrawingTable, views: readonly DrawingView[]): void {
   if (!x.id) throw new CommandError(t('drawing.idMissing'));
-  if (x.kind !== 'holes') throw new CommandError(t('drawing.tableBadKind', { kind: String((x as { kind?: unknown }).kind) }));
+  if (x.kind !== 'holes' && x.kind !== 'bom') throw new CommandError(t('drawing.tableBadKind', { kind: String((x as { kind?: unknown }).kind) }));
   if (!viewById(views, x.view)) throw new CommandError(t('drawing.dimNoView', { id: String(x.view) }));
   if (x.at && !(x.at.length === 2 && x.at.every(Number.isFinite))) throw new CommandError(t('drawing.badPosition'));
-  for (const [diameter, fit] of Object.entries(x.fits ?? {})) if (diameter.trim() === '' || !parseFit(fit)) throw new CommandError(t('drawing.dimBadFit', { fit: String(fit) }));
+  if (x.kind === 'bom' && (x as { fits?: unknown }).fits) throw new CommandError(t('drawing.notForKind', { field: 'fits', kind: x.kind }));
+  if (x.kind === 'holes' && (x as { balloons?: unknown }).balloons !== undefined) throw new CommandError(t('drawing.notForKind', { field: 'balloons', kind: x.kind }));
+  if (x.kind === 'holes') for (const [diameter, fit] of Object.entries(x.fits ?? {})) if (diameter.trim() === '' || !parseFit(fit)) throw new CommandError(t('drawing.dimBadFit', { fit: String(fit) }));
 }
 
 /** Immer recipe: mutates the draft or throws CommandError, leaving the document untouched. */
@@ -468,12 +482,18 @@ export function mutateDrawing(draft: Draft<DrawingDoc>, cmd: DrawingCommand): vo
       const x = draft.tables.find((y) => y.id === cmd.tableId);
       if (!x) throw new CommandError(t('drawing.noTable', { id: cmd.tableId }));
       const next = JSON.parse(JSON.stringify(x)) as DrawingTable;
-      const { at, fits } = cmd.patch;
+      const { at, fits, balloons } = cmd.patch;
       if (at === null) delete next.at;
       else if (at !== undefined) next.at = at;
       if (fits !== undefined) {
+        if (next.kind !== 'holes') throw new CommandError(t('drawing.notForKind', { field: 'fits', kind: next.kind }));
         if (Object.keys(fits).length === 0) delete next.fits;
         else next.fits = fits;
+      }
+      if (balloons !== undefined) {
+        if (next.kind !== 'bom') throw new CommandError(t('drawing.notForKind', { field: 'balloons', kind: next.kind }));
+        if (balloons === null || balloons === false) delete next.balloons;
+        else next.balloons = true;
       }
       checkTable(next, draft.views as DrawingView[]);
       for (const k of Object.keys(x)) delete (x as unknown as Record<string, unknown>)[k];

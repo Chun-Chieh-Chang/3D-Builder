@@ -200,10 +200,12 @@ export interface DrawingViewRequest {
   axes: ViewAxes;
   /** A section (C16.3): the plane that cuts it, its normal toward the viewer (the side taken away). */
   cut?: { origin: [number, number, number]; normal: [number, number, number] };
+  /** Also where each part is in the view (C16.6): what the balloons of an assembly drawing point at. */
+  anchors?: boolean;
 }
 
 /** What a view of a drawing looks like: its lines at full size, or why they could not be made. */
-export type DrawingViewResult = { lines: ProjectedView; ms: number } | { error: string };
+export type DrawingViewResult = { lines: ProjectedView; /** Where each part is, in the order asked, when asked for. */ anchors?: [number, number][]; ms: number } | { error: string };
 
 /** What a view of a drawing can be dimensioned from, or why not (C16.4). */
 export type DrawingFeaturesResult = { features: ViewFeature[] } | { error: string };

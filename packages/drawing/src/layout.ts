@@ -8,6 +8,8 @@ export interface ViewLines {
   hidden: number[][];
   box: { min: [number, number]; max: [number, number] } | null;
   cut?: number[][];
+  /** A view of an assembly: where each part of it is (the middle of its mass), in the view's coordinates, in the order the parts were asked for (C16.6: the balloons point there). */
+  anchors?: [number, number][];
 }
 
 /** A view placed on the sheet: the middle of its box (mm), the scale as a number, and the size it takes (mm). */

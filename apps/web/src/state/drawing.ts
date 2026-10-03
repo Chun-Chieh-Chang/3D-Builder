@@ -7,8 +7,13 @@ import {
   drawingIdsInUse,
   joinPath,
   relocateDrawing,
+  ASSEMBLY_AXES,
   axesOf,
+  buildBom,
   isDerived,
+  leavesOf,
+  mirrorKey,
+  patternLeavesOf,
   sectionPlane,
   sourceOf,
   viewById,
@@ -18,6 +23,7 @@ import {
   type DrawingSheet,
   type DrawingView,
   type Id,
+  type Leaf,
   type Dimension,
   type DimensionOrientation,
   type DimensionPatch,
@@ -32,10 +38,11 @@ import {
   type ViewSide,
 } from '@3db/model';
 import { drawingFileName, writeDrawingFile } from '@3db/io';
-import { autoDimensions, buildScene, FIRST_OFFSET, OFFSET_STEP, ratio, scaleOf, STANDARD_SCALES, suggestScale, toSvg, type AutoDimensionOptions, type DimensionOutcome, type ElementsResult, type HoleRow, type PlacedView, type Scene, type ViewLines } from '@3db/drawing';
+import { autoDimensions, buildScene, FIRST_OFFSET, OFFSET_STEP, ratio, scaleOf, STANDARD_SCALES, suggestScale, toSvg, type AutoDimensionOptions, type DimensionOutcome, type ElementsResult, type HoleRow, type PlacedView, type ViewBom, type Scene, type ViewLines } from '@3db/drawing';
 import type { Remote } from 'comlink';
 import { download, fileIn, pathIn, pickDrawingSaveTarget, writeFile } from '../files';
 import type { KernelApi } from '../worker/protocol';
+import type { AssemblyData } from './assemblySource';
 import { buildSource, type SourceStatus } from './partSource';
 
 /**
@@ -81,10 +88,18 @@ export interface DrawingState {
   features: Map<Id, ViewFeature[]>;
   /** What the elements each dimension points at are, by dimension id; absent while not known. */
   elements: Map<Id, ElementsResult>;
+  /** For each view of an assembly: its parts list and the parts it was made of (C16.6). */
+  boms: Map<Id, ViewBom>;
   selected: Id | null;
   /** The lines are being worked out. */
   computing: boolean;
   fitRequest: number;
+}
+
+/** What a view of an assembly is made of: the parts and where they are. */
+interface AssemblyView {
+  leaves: Leaf[];
+  problems: ReadonlyMap<Id, string>;
 }
 
 const IDENTITY = { position: [0, 0, 0] as [number, number, number], rotation: [0, 0, 0, 1] as [number, number, number, number] };
@@ -102,7 +117,7 @@ export class DrawingStore {
   private cache = new Map<string, ViewLines | { error: string }>();
   private computing = false;
   private computeAgain = false;
-  private sceneCache: { doc: DrawingDoc; lines: DrawingState['lines']; elements: DrawingState['elements']; features: DrawingState['features']; value: { scene: Scene; placed: Map<Id, PlacedView>; dimensions: Map<Id, DimensionOutcome>; tables: Map<Id, HoleRow[]> } } | null = null;
+  private sceneCache: { doc: DrawingDoc; lines: DrawingState['lines']; elements: DrawingState['elements']; features: DrawingState['features']; boms: DrawingState['boms']; value: { scene: Scene; placed: Map<Id, PlacedView>; dimensions: Map<Id, DimensionOutcome>; tables: Map<Id, HoleRow[]> } } | null = null;
   /** What a view can be dimensioned from, by the part's key and where it looks from; and what an element is, by the part's key and the reference. */
   private featureCache = new Map<string, ViewFeature[] | { error: string }>();
   private elementCache = new Map<string, ElementFacts | { error: string }>();
@@ -132,6 +147,7 @@ export class DrawingStore {
       problems: new Map(),
       features: new Map(),
       elements: new Map(),
+      boms: new Map(),
       selected: null,
       computing: false,
       fitRequest: 1,
@@ -168,6 +184,7 @@ export class DrawingStore {
       selected: selected && doc.views.some((v) => v.id === selected) ? selected : null,
     });
     this.loadSources();
+    this.refreshBoms();
     void this.computeLines();
     void this.computeDimensionData();
   }
@@ -212,9 +229,10 @@ export class DrawingStore {
     for (const path of wanted) {
       if (this.state.sources.has(path)) continue;
       this.set({ sources: new Map(this.state.sources).set(path, { status: 'loading' }) });
-      void buildSource(this.host.api, project, path, { missing: (p) => t('drawing.sourceMissing', { path: p }), assembly: (p) => t('drawing.sourceAssembly', { path: p }) }).then((status) => {
+      void buildSource(this.host.api, project, path, { missing: (p) => t('drawing.sourceMissing', { path: p }), assembly: (p) => t('drawing.sourceAssembly', { path: p }), cycle: (p) => t('drawing.sourceCycle', { path: p }), notAssembly: (p) => t('drawing.sourceNotAssembly', { path: p }) }).then((status) => {
         if (this.closed) return;
         this.set({ sources: new Map(this.state.sources).set(path, status) });
+        this.refreshBoms();
         void this.computeLines();
         void this.computeDimensionData();
       });
@@ -264,7 +282,7 @@ export class DrawingStore {
    * What the worker is asked for a view: the part, where it looks from and for a section the plane that cuts it. A detail is asked for nothing (it is cut from its
    * parent's lines in the layout); a view whose part is not built or whose chain of parents is broken, nothing yet.
    */
-  private requestOf(view: DrawingView): { id: string; featureId: string; key: string; axes: ViewAxes; cut?: { origin: [number, number, number]; normal: [number, number, number] } } | null {
+  private requestOf(view: DrawingView): { id: string; featureId?: string; key: string; parts: { part: string; mirrored: boolean; pose: typeof IDENTITY }[]; anchors: boolean; axes: ViewAxes; cut?: { origin: [number, number, number]; normal: [number, number, number] } } | null {
     if (view.kind === 'detail') return null;
     const doc = this.history.doc;
     const key = this.keyOf(view);
@@ -277,7 +295,70 @@ export class DrawingStore {
       if (!parentAxes) return null;
       cut = sectionPlane(parentAxes, view);
     }
-    return { id: `${key}|${JSON.stringify(axes)}|${cut ? JSON.stringify(cut) : ''}`, featureId: `${key}|${JSON.stringify(axes)}`, key, axes, ...(cut ? { cut } : {}) };
+    const id = `${key}|${JSON.stringify(axes)}|${cut ? JSON.stringify(cut) : ''}`;
+    const assembly = this.assemblyOf(view);
+    if (assembly) {
+      // the parts of the assembly where they are (a mirror is the file's part reflected); the balloons need to know where each is
+      const unmirror = (k: string) => k.slice(0, -mirrorKey('').length);
+      const parts = assembly.leaves.map((l) => ({ part: l.mirrored ? unmirror(l.key) : l.key, mirrored: !!l.mirrored, pose: l.pose }));
+      return { id, key, parts, anchors: true, axes, ...(cut ? { cut } : {}) };
+    }
+    return { id, featureId: `${key}|${JSON.stringify(axes)}`, key, parts: [{ part: key, mirrored: false, pose: IDENTITY }], anchors: false, axes, ...(cut ? { cut } : {}) };
+  }
+
+  // ------------------------------------------------------------ assemblies as the source of a view (C16.6)
+
+  private assemblyViews = new WeakMap<AssemblyData, AssemblyView>();
+
+  /** The assembly a view shows, when its source is one that has been read. */
+  private assemblyData(view: DrawingView): AssemblyData | null {
+    const path = this.pathOf(view);
+    const s = path === null ? undefined : this.state.sources.get(path);
+    return s?.status === 'ok' && s.assembly ? s.assembly : null;
+  }
+
+  /** The parts an assembly view is made of: every part of the assembly (and of its patterns and mirrors) that is shown and that counts, where the mates put it. */
+  private assemblyOf(view: DrawingView): AssemblyView | null {
+    const data = this.assemblyData(view);
+    if (!data) return null;
+    const known = this.assemblyViews.get(data);
+    if (known) return known;
+    const base = leavesOf(data.doc, data.trees, (id) => data.solution.poses.get(id) ?? data.doc.components.find((c) => c.id === id)?.placement ?? null, data.solution.inner);
+    // a pattern whose axis is an element of a component cannot be placed here: the parts list says it has no instances (it is the same rule for the count and the drawing)
+    const made = patternLeavesOf(data.doc, base, (axis) => (axis.kind === 'axis' ? ASSEMBLY_AXES[axis.axis] : null));
+    const unmirror = (k: string) => k.slice(0, -mirrorKey('').length);
+    const counts = (l: Leaf) => {
+      const info = data.parts.get(l.mirrored ? unmirror(l.key) : l.key);
+      return !l.hidden && !info?.referenceOnly && !info?.empty;
+    };
+    const view2: AssemblyView = { leaves: [...base, ...made.leaves].filter(counts), problems: made.problems };
+    this.assemblyViews.set(data, view2);
+    return view2;
+  }
+
+  /** The parts lists and the parts of the views of assemblies (derived: kept in the state so that the scene is made from the state alone). */
+  private refreshBoms(): void {
+    const boms = new Map<Id, ViewBom>();
+    for (const v of this.history.doc.views) {
+      const data = this.assemblyData(v);
+      const own = this.assemblyOf(v);
+      if (!data || !own) continue;
+      const rows = buildBom({
+        doc: data.doc,
+        trees: data.trees,
+        propsOf: (key) => data.parts.get(key)?.properties,
+        isReference: (key) => data.parts.get(key)?.referenceOnly === true,
+        problems: own.problems,
+      }).flat;
+      boms.set(v.id, { rows, parts: own.leaves.map((l) => ({ ...(l.file ? { file: l.file } : {}), mirrored: !!l.mirrored })) });
+    }
+    const same = boms.size === this.state.boms.size && [...boms].every(([id, b]) => JSON.stringify(b) === JSON.stringify(this.state.boms.get(id)));
+    if (!same) this.set({ boms });
+  }
+
+  /** Whether the view shows an assembly (its parts list and balloons can be had). */
+  isAssemblyView(viewId: Id): boolean {
+    return this.state.boms.has(viewId);
   }
 
   /** Asks the worker for the lines of every view whose part is built and whose lines are not known; one request at a time, the newest wanted last. */
@@ -298,11 +379,11 @@ export class DrawingStore {
         const unique = [...new Map(wanted.map((w) => [w.id, w])).values()];
         if (unique.length > 0) {
           this.set({ computing: true });
-          const results = await this.host.api.drawingViews(unique.map((w) => ({ parts: [{ part: w.key, mirrored: false, pose: IDENTITY }], axes: w.axes, ...(w.cut ? { cut: w.cut } : {}) })));
+          const results = await this.host.api.drawingViews(unique.map((w) => ({ parts: w.parts, axes: w.axes, ...(w.anchors ? { anchors: true } : {}), ...(w.cut ? { cut: w.cut } : {}) })));
           if (this.closed) return;
           unique.forEach((w, i) => {
             const r = results[i]!;
-            this.cache.set(w.id, 'error' in r ? { error: r.error } : r.lines);
+            this.cache.set(w.id, 'error' in r ? { error: r.error } : r.anchors ? { ...r.lines, anchors: r.anchors } : r.lines);
           });
         }
         const lines = new Map<Id, ViewLines | null>();
@@ -347,7 +428,7 @@ export class DrawingStore {
         // what the views can be dimensioned from
         const wantedFeatures = doc.views.flatMap((v) => {
           const r = this.requestOf(v);
-          if (!r || this.featureCache.has(r.featureId)) return [];
+          if (!r || !r.featureId || this.featureCache.has(r.featureId)) return [];
           return [{ id: r.featureId, part: r.key, axes: r.axes }];
         });
         const uniqueFeatures = [...new Map(wantedFeatures.map((w) => [w.id, w])).values()];
@@ -361,7 +442,7 @@ export class DrawingStore {
         const refsOf = (d: Dimension): Ref[] => (d.kind === 'linear' ? [d.a, d.b] : [d.ref]);
         const keyOfDim = (d: Dimension): string | null => {
           const view = doc.views.find((v) => v.id === d.view);
-          return view ? this.keyOf(view) : null;
+          return view && !this.assemblyData(view) ? this.keyOf(view) : null;
         };
         for (const d of doc.dimensions) {
           const key = keyOfDim(d);
@@ -385,11 +466,16 @@ export class DrawingStore {
         for (const v of doc.views) {
           const own = v.kind === 'detail' ? this.ancestor(doc.views, v) : v;
           const r = own ? this.requestOf(own) : null;
-          const found = r ? this.featureCache.get(r.featureId) : undefined;
+          const found = r?.featureId ? this.featureCache.get(r.featureId) : undefined;
           if (found && !('error' in found)) features.set(v.id, found);
         }
         const elements = new Map<Id, ElementsResult>();
         for (const d of doc.dimensions) {
+          const view = doc.views.find((v) => v.id === d.view);
+          if (view && this.assemblyData(view)) {
+            elements.set(d.id, { error: t('drawing.dimAssembly') }); // the elements of an assembly's parts are not what a drawing's dimensions point at (yet)
+            continue;
+          }
           const key = keyOfDim(d);
           if (!key) continue;
           const got = refsOf(d).map((ref) => this.elementCache.get(`${key}|${ref.kind}|${ref.name}`));
@@ -416,9 +502,9 @@ export class DrawingStore {
   /** The drawing as a scene (the sheet and every view's lines where they are), kept while the document and what it is drawn from are the same. */
   scene(): { scene: Scene; placed: Map<Id, PlacedView>; dimensions: Map<Id, DimensionOutcome>; tables: Map<Id, HoleRow[]> } {
     const c = this.sceneCache;
-    if (c && c.doc === this.state.doc && c.lines === this.state.lines && c.elements === this.state.elements && c.features === this.state.features) return c.value;
-    const value = buildScene(this.state.doc, this.state.lines, this.state.elements, this.state.features);
-    this.sceneCache = { doc: this.state.doc, lines: this.state.lines, elements: this.state.elements, features: this.state.features, value };
+    if (c && c.doc === this.state.doc && c.lines === this.state.lines && c.elements === this.state.elements && c.features === this.state.features && c.boms === this.state.boms) return c.value;
+    const value = buildScene(this.state.doc, this.state.lines, this.state.elements, this.state.features, this.state.boms);
+    this.sceneCache = { doc: this.state.doc, lines: this.state.lines, elements: this.state.elements, features: this.state.features, boms: this.state.boms, value };
     return value;
   }
 
@@ -545,6 +631,13 @@ export class DrawingStore {
     const doc = this.history.doc;
     const ids = new IdAllocator(doc.idCounters, drawingIdsInUse(doc));
     this.execute({ type: 'insertTables', tables: [{ id: ids.take('tbl'), kind: 'holes', view: viewId }] });
+  }
+
+  /** A parts list for the view of an assembly, with the balloons by its parts. */
+  addBomTable(viewId: Id): void {
+    const doc = this.history.doc;
+    const ids = new IdAllocator(doc.idCounters, drawingIdsInUse(doc));
+    this.execute({ type: 'insertTables', tables: [{ id: ids.take('tbl'), kind: 'bom', view: viewId, balloons: true }] });
   }
 
   setTable(id: Id, patch: Extract<DrawingCommand, { type: 'setTable' }>['patch']): void {
