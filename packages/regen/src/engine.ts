@@ -3,6 +3,7 @@ import {
   DATUM_PLANES,
   evalAngle,
   evalLength,
+  evalNumber,
   isDatumPlaneName,
   patternInstances,
   planeFrame,
@@ -46,6 +47,7 @@ import {
   type ExtendSurfaceFeature,
   type ThickenFeature,
   type LipGrooveFeature,
+  type ScrewBossFeature,
   type CutWithSurfaceFeature,
   type ShellFeature,
   type SketchFeature,
@@ -470,6 +472,10 @@ export class Regenerator {
           }
           case 'lipGroove': {
             set = this.advance(set, this.lipGroove(feature, set));
+            return done({ status: 'ok' });
+          }
+          case 'screwBoss': {
+            set = this.advance(set, this.screwBoss(feature, sketches, set));
             return done({ status: 'ok' });
           }
           case 'cutWithSurface': {
@@ -1752,6 +1758,73 @@ export class Regenerator {
     }
     return [...list];
   }
+  /**
+   * 「螺柱」 (C4.11, ADR 0080): at each free point of the sketch a column turned about its axis (as the hole wizard turns its tool): from a little below the sketch plane (so that
+   * it runs into the body it stands on and joins), up the outside wall (leaning in by `draft`), across the top, down the pilot hole to its bottom, and back to the axis.
+   * Round it, if asked, the gussets: a triangle in the plane through the axis, from the wall out along the floor, `thickness` thick about that plane, `count` of them evenly
+   * from `angle`. Each is joined to the bodies like a boss; a column that joins nothing is an error. The faces are named by the point and the part of the profile:
+   * `<feature>:side:<sketch>.<point>.wall` (`top`, `hole`, `bottom`), and `….rib<k>.<edge>` for a gusset.
+   */
+  private screwBoss(f: ScrewBossFeature, sketches: RebuildResult['sketches'], set: Bodies): BodyState[] {
+    const s = sketches.get(f.sketch);
+    if (!s) throw new FeatureError(t('feature.sketchGone'));
+    if (!set.view) throw new FeatureError(t('feature.needsBody', { what: t('feature.screwBoss') }));
+    const used = new Set(s.sketch.entities.flatMap((e) => (e.type === 'line' ? [e.p1, e.p2] : e.type === 'circle' ? [e.center] : e.type === 'arc' ? [e.center, e.start, e.end] : [])));
+    const points = s.sketch.entities.flatMap((e) => (e.type === 'point' && !e.construction && !used.has(e.id) && s.solved.geometry.get(e.id)?.type === 'point' ? [{ id: e.id, at: (s.solved.geometry.get(e.id) as { p: [number, number] }).p }] : []));
+    if (points.length === 0) throw new FeatureError(t('feature.holeNoPoints'));
+    const n = s.frame.normal;
+    const up: Vec3 = f.reverse ? [-n[0], -n[1], -n[2]] : n;
+    const R = evalLength(f.diameter) / 2;
+    const rh = evalLength(f.holeDiameter) / 2;
+    const height = evalLength(f.height);
+    const depth = f.holeDepth === undefined ? height : evalLength(f.holeDepth);
+    const lean = f.draft === undefined ? 0 : Math.tan(evalAngle(f.draft));
+    const top = R - height * lean;
+    if (!(rh > 0) || !(R > rh)) throw new FeatureError(t('boss.holeTooWide'));
+    if (depth > height + 1e-9) throw new FeatureError(t('boss.holeTooDeep'));
+    if (!(top > rh + 1e-6)) throw new FeatureError(t('boss.draftTooMuch'));
+    const sink = 0.5; // the column starts this far below the plane, inside the body it stands on
+    const bottom = height - depth;
+    const profile: [number, number][] = [[0, -sink], [R, -sink], [R, 0], [top, height], [rh, height], [rh, bottom], [0, bottom]];
+    const names = ['base', 'foot', 'wall', 'top', 'hole', 'bottom', 'axis'];
+    const turn = (profile: [number, number][], edge: string[], id: string, origin: Vec3, x: Vec3) => {
+      const plane: PlaneFrame = { origin, xDir: x, yDir: up, normal: cross(x, up) };
+      const area = profile.reduce((a, p, i) => a + (p[0] * profile[(i + 1) % profile.length]![1] - profile[(i + 1) % profile.length]![0] * p[1]), 0);
+      const loop = profile.map((a, i) => ({ kind: 'line' as const, a, b: profile[(i + 1) % profile.length]!, source: `${id}.${edge[i]!}` }));
+      return { plane, outer: area >= 0 ? loop : loop.map((l) => ({ ...l, a: l.b, b: l.a })).reverse() };
+    };
+    const count = f.ribs ? Math.round(evalNumber(f.ribs.count)) : 0;
+    if (f.ribs && (!Number.isInteger(count) || count < 1 || count > 8)) throw new FeatureError(t('boss.ribCount'));
+    const ribHeight = f.ribs ? evalLength(f.ribs.height) : 0;
+    if (f.ribs && ribHeight > height + 1e-9) throw new FeatureError(t('boss.ribTooHigh'));
+    let list: readonly BodyState[] = set.list;
+    const join = (tool: OpResult) => {
+      const before = list.length;
+      list = this.apply(f.id, 'boss', tool, { featureId: f.id, sketchId: f.sketch }, list, true);
+      if (list.length > before) throw new FeatureError(t('boss.floating'));
+    };
+    for (const pt of points) {
+      const origin = add(add(s.frame.origin, s.frame.xDir, pt.at[0]), s.frame.yDir, pt.at[1]);
+      const column = turn(profile, names, pt.id, origin, s.frame.xDir);
+      join(this.kernel.revolve(column.plane, [{ outer: column.outer, holes: [] }], { origin, dir: up }, 2 * Math.PI));
+      if (!f.ribs) continue;
+      const thickness = evalLength(f.ribs.thickness);
+      const length = evalLength(f.ribs.length);
+      const start = f.ribs.angle === undefined ? 0 : evalAngle(f.ribs.angle);
+      // a gusset: from inside the wall (halfway between the pilot hole and the outside) out along the floor, up the wall to its height
+      const e = (R - rh) / 2;
+      const gusset: [number, number][] = [[R - e, 0], [R + length, 0], [R - e, ribHeight]];
+      for (let k = 0; k < count; k++) {
+        const a = start + (2 * Math.PI * k) / count;
+        const radial = add(add([0, 0, 0], s.frame.xDir, Math.cos(a)), s.frame.yDir, Math.sin(a));
+        const frame: PlaneFrame = { origin, xDir: radial, yDir: up, normal: cross(radial, up) };
+        const loop = gusset.map((p, i) => ({ kind: 'line' as const, a: p, b: gusset[(i + 1) % 3]!, source: `${pt.id}.rib${k}.${['floor', 'slope', 'wall'][i]!}` }));
+        join(this.kernel.extrude(frame, [{ outer: loop, holes: [] }], add([0, 0, 0], frame.normal, thickness), -thickness / 2));
+      }
+    }
+    return [...list];
+  }
+
   private draftFeature(f: DraftFeature, set: Bodies): BodyState[] {
     return this.perBody(set, f.faces, 'face', t('feature.noBodyForDraft'), (n) => t('edit.facesLost', { n }), (body, mine) => {
       const neutral = this.planeOf(f.neutral, set, { what: t('feature.neutralPlane'), notPlanar: t('feature.neutralNotPlanar') });

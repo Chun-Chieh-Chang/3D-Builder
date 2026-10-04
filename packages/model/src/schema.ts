@@ -6,7 +6,7 @@ import type { Id } from './ids';
  * DOF status, mass properties and error lists are derived data and never stored.
  */
 
-export const SCHEMA_VERSION = 33;
+export const SCHEMA_VERSION = 34;
 
 /** Value expression (B5.2, B5.3): "20", "25.4mm", "30deg", "wall_t*2", "D1@草圖1/2", "property('厚度')"; see `expr/`. */
 export type Expr = string;
@@ -553,6 +553,24 @@ export interface LipGrooveFeature extends FeatureBase {
 }
 
 /**
+ * Screw boss (螺柱, C4.11, v34): at the free points of a sketch (as for the hole wizard), standing on the sketch plane and growing `height` along its normal (`reverse`: the
+ * other way), a column of outside diameter `diameter` with a pilot hole of `holeDiameter` that goes `holeDepth` down from the top (the height when absent: down to the plane).
+ * `draft` leans the outside wall (narrowing toward the top), as a molded boss has it. `ribs` are triangular gussets round the foot, `count` of them, from the angle `angle`
+ * (0° is the sketch's x), each `thickness` thick, reaching `length` out from the wall and `height` up it. The column runs a little into the body it stands on so that it joins.
+ */
+export interface ScrewBossFeature extends FeatureBase {
+  type: 'screwBoss';
+  sketch: Id;
+  diameter: Expr;
+  holeDiameter: Expr;
+  height: Expr;
+  holeDepth?: Expr;
+  draft?: Expr;
+  ribs?: { count: Expr; thickness: Expr; length: Expr; height: Expr; angle?: Expr };
+  reverse?: boolean;
+}
+
+/**
  * Shell (薄殼, C5.4, v15): the body hollowed out to a wall of 	hickness, the picked aces taken away to open it; the wall grows inward, or
  * outward with outward.
  */
@@ -612,6 +630,7 @@ export type Feature =
   | ExtendSurfaceFeature
   | ThickenFeature
   | LipGrooveFeature
+  | ScrewBossFeature
   | CutWithSurfaceFeature
   | FilletFeature
   | ChamferFeature

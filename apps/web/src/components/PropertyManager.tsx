@@ -47,6 +47,7 @@ import {
   type ExtendSurfaceFeature,
   type ThickenFeature,
   type LipGrooveFeature,
+  type ScrewBossFeature,
   type CutWithSurfaceFeature,
   type MirrorFeature,
   type PartDoc,
@@ -1789,6 +1790,61 @@ function KnitPanel({ f }: { f: KnitFeature }) {
   );
 }
 
+/** Screw boss (C4.11): the outside and the pilot hole, the height and how deep the hole goes, the draft of the wall, and the gussets round the foot. */
+function ScrewBossPanel({ f }: { f: ScrewBossFeature }) {
+  const { id, type, name, suppressed, sketch, ...settings } = f;
+  void [id, type, name, suppressed, sketch];
+  const run = (patch: Partial<typeof settings>): Command => {
+    const next = { ...settings, ...patch } as Record<string, unknown>;
+    for (const k of Object.keys(next)) if (next[k] === undefined || next[k] === '') delete next[k];
+    return { type: 'setScrewBoss', featureId: f.id, boss: next as typeof settings };
+  };
+  const ribs = f.ribs;
+  const rib = (patch: Partial<NonNullable<typeof ribs>>): Command => {
+    const next = { ...ribs!, ...patch } as Record<string, unknown>;
+    if (next.angle === '') delete next.angle;
+    return run({ ribs: next as NonNullable<typeof ribs> });
+  };
+  const row = (label: string, value: string, toCommand: (v: string) => Command, suffix?: string) => (
+    <label className="pm-row">
+      <span>{label}</span>
+      <ValueInput value={value} toCommand={toCommand} {...(suffix ? { suffix } : {})} />
+    </label>
+  );
+  return (
+    <section className="pm-group">
+      {row(t('pm.boss.diameter'), f.diameter, (diameter) => run({ diameter }))}
+      {row(t('pm.boss.holeDiameter'), f.holeDiameter, (holeDiameter) => run({ holeDiameter }))}
+      {row(t('pm.boss.height'), f.height, (height) => run({ height }))}
+      {row(t('pm.boss.holeDepth'), f.holeDepth ?? '', (holeDepth) => run({ holeDepth }))}
+      {row(t('pm.boss.draft'), f.draft ?? '', (draft) => run({ draft }), '°')}
+      <label className="pm-row checkbox">
+        <input type="checkbox" checked={!!f.reverse} onChange={(e) => store.execute(run({ reverse: e.target.checked ? true : undefined }))} />
+        <span>{t('pm.reverseDirection')}</span>
+      </label>
+      <h4 className="sub">{t('pm.boss.ribs')}</h4>
+      {!ribs && (
+        <button type="button" className="link" data-field="add-ribs" onClick={() => store.execute(run({ ribs: { count: '3', thickness: '1', length: '3', height: f.height } }))}>
+          {t('pm.boss.addRibs')}
+        </button>
+      )}
+      {ribs && (
+        <>
+          {row(t('pm.boss.ribCount'), ribs.count, (count) => rib({ count }))}
+          {row(t('pm.boss.ribThickness'), ribs.thickness, (thickness) => rib({ thickness }))}
+          {row(t('pm.boss.ribLength'), ribs.length, (length) => rib({ length }))}
+          {row(t('pm.boss.ribHeight'), ribs.height, (height) => rib({ height }))}
+          {row(t('pm.boss.ribAngle'), ribs.angle ?? '', (angle) => rib({ angle }), '°')}
+          <button type="button" className="link" onClick={() => store.execute(run({ ribs: undefined }))}>
+            {t('pm.boss.removeRibs')}
+          </button>
+        </>
+      )}
+      <p className="hint">{t('pm.boss.hint')}</p>
+    </section>
+  );
+}
+
 /** Lip and groove (C4.11): the planar face, which of the two, how far in from the edge, how wide and how high (deep), and what the ring came to. */
 function LipGroovePanel({ f }: { f: LipGrooveFeature }) {
   const status = useStore((s) => s.result?.features.find((r) => r.id === f.id));
@@ -2069,6 +2125,7 @@ export function PropertyManager() {
       {f.type === 'extendSurface' && <ExtendSurfacePanel f={f} />}
       {f.type === 'thicken' && <ThickenPanel f={f} />}
       {f.type === 'lipGroove' && <LipGroovePanel f={f} />}
+      {f.type === 'screwBoss' && <ScrewBossPanel f={f} />}
       {f.type === 'cutWithSurface' && <CutWithSurfacePanel f={f} />}
       {f.type === 'combine' && <CombinePanel f={f} />}
     </div>

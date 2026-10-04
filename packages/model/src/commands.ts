@@ -1,7 +1,7 @@
 import { t } from '@3db/i18n';
 import { current, produce, type Draft } from 'immer';
 import { countersFor, type Id } from './ids';
-import type { AppearanceTarget, DocSettings, MaterialRef, Variable, BlobRef, ChamferFeature, CombineFeature, HoleFeature, LoftFeature, RibFeature, SweepFeature, Draft as WallDraft, EndCondition, Thin, Expr, Feature, ImportedBodyFeature, AxisDefinition, CoordSysFeature, MirrorFeature, PartDoc, PatternDefinition, PatternFeature, PlaneDefinition, PointDefinition, Ref, RevolveCondition, SketchConstraint, SketchEntity, SketchFeature } from './schema';
+import type { AppearanceTarget, DocSettings, MaterialRef, Variable, BlobRef, ChamferFeature, CombineFeature, HoleFeature, ScrewBossFeature, LoftFeature, RibFeature, SweepFeature, Draft as WallDraft, EndCondition, Thin, Expr, Feature, ImportedBodyFeature, AxisDefinition, CoordSysFeature, MirrorFeature, PartDoc, PatternDefinition, PatternFeature, PlaneDefinition, PointDefinition, Ref, RevolveCondition, SketchConstraint, SketchEntity, SketchFeature } from './schema';
 import { isDatumPlaneName } from './datums';
 import { canBeSeed } from './patterns';
 import { colorOk, materialOk, sameTarget } from './materials';
@@ -95,6 +95,8 @@ ull). */
   | { type: 'setTrimSurface'; featureId: Id; sketch: Id; face: Ref; keep?: 'outside'; reverse?: boolean; throughAll?: boolean }
   /** Changes an extend surface (C9.3): the edges to extend past and by how much. */
   | { type: 'setExtendSurface'; featureId: Id; edges: Ref[]; distance: Expr }
+  /** The screw boss's settings (C4.11): everything but which sketch it stands at. */
+  | { type: 'setScrewBoss'; featureId: Id; boss: Omit<ScrewBossFeature, 'id' | 'type' | 'name' | 'suppressed' | 'sketch'> }
   /** Changes a lip or groove (C4.11): the planar face, which of the two, how far in from the edge, how wide and how high (deep). */
   | { type: 'setLipGroove'; featureId: Id; face: Ref; kind: 'lip' | 'groove'; offset: Expr; width: Expr; height: Expr }
   /** Changes a thicken (C9.4): the surface body and the thickness (negative: the other way). */
@@ -526,6 +528,9 @@ function validateNewFeature(doc: PartDoc, f: Feature, index: number): void {
     case 'hole':
       checkDowel(f);
       return;
+    case 'screwBoss':
+      sketchBefore(doc, f.sketch, index, t('feature.screwBoss'));
+      return;
     case 'derivedBody':
       if (!isFilePath(f.source)) throw new CommandError(t('cmd.derivedSourceInvalid', { path: f.source }));
       if (f.body.trim() === '') throw new CommandError(t('cmd.derivedBodyEmpty'));
@@ -822,6 +827,15 @@ export function mutate(draft: Draft<PartDoc>, cmd: Command): void {
       else delete f.reverse;
       if (cmd.throughAll) f.throughAll = true;
       else delete f.throughAll;
+      return;
+    }
+    case 'setScrewBoss': {
+      const f = feature(draft, cmd.featureId);
+      if (f.type !== 'screwBoss') throw new CommandError(t('cmd.onlyBossHasParams'));
+      const keep = { id: f.id, type: f.type, name: f.name, suppressed: f.suppressed, sketch: f.sketch } as const;
+      for (const k of Object.keys(f)) delete (f as unknown as Record<string, unknown>)[k];
+      Object.assign(f, keep, cmd.boss);
+      checkExprs(draft as PartDoc, f as Feature);
       return;
     }
     case 'setLipGroove': {

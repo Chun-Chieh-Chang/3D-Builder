@@ -152,6 +152,19 @@ export function mapExprs(feature: Feature, fn: (expr: Expr, kind: ExprKind, role
       if (same) return feature;
       return { ...f, diameter, end, ...(cbDiameter === undefined ? {} : { cbDiameter }), ...(cbDepth === undefined ? {} : { cbDepth }), ...(csDiameter === undefined ? {} : { csDiameter }), ...(csAngle === undefined ? {} : { csAngle }), ...(chamfer === undefined ? {} : { chamfer }) };
     }
+    case 'screwBoss': {
+      const f = feature;
+      const one = (v: string | undefined, kind: ExprKind, role: ExprRole): string | undefined => (v === undefined ? v : fn(v, kind, role));
+      const diameter = fn(f.diameter, 'length', 'positive');
+      const holeDiameter = fn(f.holeDiameter, 'length', 'positive');
+      const height = fn(f.height, 'length', 'positive');
+      const holeDepth = one(f.holeDepth, 'length', 'positive');
+      const draft = one(f.draft, 'angle', 'draftAngle');
+      const ribs = f.ribs && { count: fn(f.ribs.count, 'count', 'positive'), thickness: fn(f.ribs.thickness, 'length', 'positive'), length: fn(f.ribs.length, 'length', 'positive'), height: fn(f.ribs.height, 'length', 'positive'), ...(f.ribs.angle === undefined ? {} : { angle: fn(f.ribs.angle, 'angle', 'any') }) };
+      const same = diameter === f.diameter && holeDiameter === f.holeDiameter && height === f.height && holeDepth === f.holeDepth && draft === f.draft && JSON.stringify(ribs) === JSON.stringify(f.ribs);
+      if (same) return feature;
+      return { ...f, diameter, holeDiameter, height, ...(holeDepth === undefined ? {} : { holeDepth }), ...(draft === undefined ? {} : { draft }), ...(ribs ? { ribs } : {}) };
+    }
     case 'pattern': {
       const d = feature.def;
       const direction = (x: PatternDirection): PatternDirection => {

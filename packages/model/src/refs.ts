@@ -92,6 +92,7 @@ export function mapRefs(feature: Feature, map: (ref: Ref) => Ref): { feature: Fe
     case 'loft':
     case 'rib':
     case 'hole':
+    case 'screwBoss':
     case 'importedBody':
     case 'derivedBody':
       return { feature, replaced };

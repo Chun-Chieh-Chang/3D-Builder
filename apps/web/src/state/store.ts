@@ -1228,6 +1228,14 @@ class AppStore {
     this.openNew({ id: this.allocator().take('hole'), type: 'hole', name: nextName(this.history.doc, name), suppressed: false, sketch: sketch.id, kind: 'straight', diameter: '6', end: { type: 'blind', depth: '10' } }, name);
   }
 
+  /** 「螺柱」 (C4.11): a column Ø6 with a Ø2.5 pilot hole and 10 high at the free points of the selected sketch, to be set in the PropertyManager. */
+  newScrewBoss(): void {
+    const sketch = this.selectedSketch();
+    if (!sketch) return;
+    const name = t('feature.screwBoss');
+    this.openNew({ id: this.allocator().take('boss'), type: 'screwBoss', name: nextName(this.history.doc, name), suppressed: false, sketch: sketch.id, diameter: '6', holeDiameter: '2.5', height: '10' }, name);
+  }
+
   /** 「肋材」 (C4.7): the one line of the selected sketch as a wall of 4 mm about the sketch plane, grown to the body in the PropertyManager's session. */
   newRib(): void {
     const sketch = this.selectedSketch();
