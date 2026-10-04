@@ -145,6 +145,9 @@ export interface FoldGeometry {
   trim: number;
   /** The notches of the relief: along the edge from `x0` to `x1`, `deep` in from the edge. */
   notches: { x0: number; x1: number; deep: number }[];
+  /** The flat piece after the bend, along the edge: from `pa` to `pb` (the bend's own range, widened at an end where the corner is closed). */
+  pa: number;
+  pb: number;
   /** Where the flat piece after the bend starts, the way it goes and its thickness direction (to find the piece an edge picked later is on). */
   origin2: Vec3;
   d: Vec3;
@@ -173,6 +176,8 @@ export interface SheetFlange {
   /** How far it stops short of the ends of the edge (the start, the end), and the relief notches beside it ({width, depth} or null). */
   inset: [number, number];
   relief: { width: number; depth: number } | null;
+  /** How far the flat piece goes on past the end of the bend at the start and at the end, to close the corner (0 where it does not). */
+  corner: [number, number];
   /** The flange (index in `SheetInfo.flanges`) whose flat piece the edge is on, or -1 for the base. */
   parent: number;
   fold: FoldGeometry;
@@ -2182,7 +2187,7 @@ export class Regenerator {
    * and how much of the sheet is cut back. The edge is between a face of the sheet and its end face; the piece bends toward the side of the face the edge is on (`flip`: the other).
    */
   private foldEdge(
-    f: { id: Id; edge: Ref; flip?: boolean; inset?: { start: string; end: string }; relief?: { width: string; depth: string } },
+    f: { id: Id; edge: Ref; flip?: boolean; inset?: { start: string; end: string }; relief?: { width: string; depth: string }; corner?: { start?: string; end?: string } },
     set: Bodies,
     plan: (sheet: SheetInfo) => { rb: number; theta: number; straight: number; trim: number; info: (allowance: number) => string },
   ): BodyState[] {
@@ -2237,7 +2242,33 @@ export class Regenerator {
     const n2 = cross(e, m2);
     const s2 = dot(n2, d) > 0 ? 1 : -1;
     const frame2: PlaneFrame = { origin: origin2, xDir: e, yDir: m2, normal: n2 };
-    const flangeTool = this.capsNamed(this.kernel.extrude(frame2, [strip('flange', ylo, yhi)], add([0, 0, 0], n2, s2 * straight), 0), 'flange', 'start', 'end');
+    // closed corners: the flat piece goes on past the end of the bend, up to the inside of the flange next to it (the nearest face of a flange earlier made that faces the end of this one,
+    // square to the edge), less the gap asked for
+    let extA = 0;
+    let extB = 0;
+    const closeAt = (x: number, outward: 1 | -1, gap: number): number => {
+      const u = add([0, 0, 0], e, outward);
+      const q = add(add(add(origin2, e, x), d, straight / 2), m2, (ylo + yhi) / 2);
+      let best: number | null = null;
+      let facing = false;
+      for (const g of sheet.flanges) {
+        const n = g.fold.m2;
+        if (Math.abs(dot(u, n)) < 0.99) continue;
+        facing = true;
+        const [lo, hi] = [dot(sub(q, g.fold.origin2), g.fold.d), dot(sub(q, g.fold.origin2), g.fold.e)];
+        if (lo < -1e-6 || lo > g.straight + 1e-6 || hi < g.fold.pa - 1e-6 || hi > g.fold.pb + 1e-6) continue;
+        for (const y of [g.fold.ylo, g.fold.yhi]) {
+          const t = dot(sub(add(g.fold.origin2, n, y), q), n) / dot(u, n);
+          if (t > 1e-6 && (best === null || t < best)) best = t;
+        }
+      }
+      if (best === null) throw new FeatureError(t(facing ? 'flange.cornerCover' : 'flange.cornerNone'));
+      if (best - gap < -1e-9) throw new FeatureError(t('flange.cornerGap', { reach: best.toFixed(3), gap: gap.toFixed(3) }));
+      return best - gap;
+    };
+    if (f.corner?.start !== undefined) extA = closeAt(xa, -1, evalLength(f.corner.start));
+    if (f.corner?.end !== undefined) extB = closeAt(xb, 1, evalLength(f.corner.end));
+    const flangeTool = this.capsNamed(this.kernel.extrude(frame2, [strip('flange', ylo, yhi, xa - extA, xb + extB)], add([0, 0, 0], n2, s2 * straight), 0), 'flange', 'start', 'end');
 
     const volume = (list: readonly BodyState[]) => list.reduce((a, b) => a + (b.surface ? 0 : this.kernel.massProps(b.shape).volume), 0);
     const near = (a: number, b: number, scale: number) => Math.abs(a - b) <= 1e-3 * scale + 1e-6;
@@ -2269,7 +2300,7 @@ export class Regenerator {
     if (expected > 0 && !near(before - cut, expected, expected)) throw new FeatureError(t('flange.trimBad'));
     list = this.apply(f.id, 'boss', bendTool, { featureId: f.id, sketchId: 'flange' }, list, true);
     list = this.apply(f.id, 'boss', flangeTool, { featureId: f.id, sketchId: 'flange' }, list, true);
-    const added = theta * T * Wf * (rb + T / 2) + T * Wf * straight;
+    const added = theta * T * Wf * (rb + T / 2) + T * (Wf + extA + extB) * straight;
     if (!near(volume(list) - cut, added, added)) throw new FeatureError(t('flange.collides'));
     const allowance = theta * (rb + sheet.kFactor * T);
     sheet.bends.push({ feature: f.id, name: 'bend', angle: theta, radius: rb, thickness: T, width: Wf, kFactor: sheet.kFactor, allowance });
@@ -2280,12 +2311,12 @@ export class Regenerator {
         const rel = sub(edge.mid, g.fold.origin2);
         const [u, v, w] = [dot(rel, g.fold.e), dot(rel, g.fold.d), dot(rel, g.fold.m2)];
         const tol = 1e-6;
-        if (u >= g.fold.xa - tol && u <= g.fold.xb + tol && v >= -tol && v <= g.straight + tol && w >= g.fold.ylo - tol && w <= g.fold.yhi + tol) return j;
+        if (u >= g.fold.pa - tol && u <= g.fold.pb + tol && v >= -tol && v <= g.straight + tol && w >= g.fold.ylo - tol && w <= g.fold.yhi + tol) return j;
       }
       return -1;
     })();
-    const fold: FoldGeometry = { mid: edge.mid, origin, center, axis, e, o, m, xa, xb, ylo, yhi, trim, notches, origin2, d, m2 };
-    sheet.flanges.push({ feature: f.id, edge: f.edge.name, width: Wf, angle: theta, radius: rb, trim, straight, allowance, inset: [insetA, insetB], relief, parent, fold });
+    const fold: FoldGeometry = { mid: edge.mid, origin, center, axis, e, o, m, xa, xb, pa: xa - extA, pb: xb + extB, ylo, yhi, trim, notches, origin2, d, m2 };
+    sheet.flanges.push({ feature: f.id, edge: f.edge.name, width: Wf, angle: theta, radius: rb, trim, straight, allowance, inset: [insetA, insetB], relief, corner: [extA, extB], parent, fold });
     this.info = info(allowance) + (insetA > 0 || insetB > 0 ? t('flange.info.inset', { start: String(insetA), end: String(insetB) }) : '');
     return [...list];
   }

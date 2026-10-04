@@ -1951,6 +1951,9 @@ function FlangeExtras({ f, run }: { f: EdgeFlangeFeature | HemFeature; run: (pat
 }
 
 /** Edge flange (C11.2): the edge, the length and where it is measured from, the angle, the radius, where the flange sits and which way it bends. */
+/** The closed corners of an edge flange as the feature keeps them: only the ends that have a gap, none at all when neither does. */
+const closed = (start?: string, end?: string) => (start === undefined && end === undefined ? undefined : { ...(start === undefined ? {} : { start }), ...(end === undefined ? {} : { end }) });
+
 function EdgeFlangePanel({ f }: { f: EdgeFlangeFeature }) {
   const status = useStore((s) => s.result?.features.find((r) => r.id === f.id));
   const found = useStore((s) => !!f.edge.name && !!s.result?.edgeNames.includes(f.edge.name));
@@ -2007,6 +2010,15 @@ function EdgeFlangePanel({ f }: { f: EdgeFlangeFeature }) {
         <span>{t('pm.eflange.flip')}</span>
       </label>
       <FlangeExtras f={f} run={run} />
+      <label className="pm-row">
+        <span>{t('pm.eflange.cornerStart')}</span>
+        <ValueInput value={f.corner?.start ?? ''} toCommand={(start) => run({ corner: closed(start === '' ? undefined : start, f.corner?.end) })} />
+      </label>
+      <label className="pm-row">
+        <span>{t('pm.eflange.cornerEnd')}</span>
+        <ValueInput value={f.corner?.end ?? ''} toCommand={(end) => run({ corner: closed(f.corner?.start, end === '' ? undefined : end) })} />
+      </label>
+      <p className="hint">{t('pm.eflange.cornerHint')}</p>
       {status?.status === 'ok' && status.info && <p className="hint gap-info">{status.info}</p>}
       <p className="hint">{t('pm.eflange.hint')}</p>
     </section>

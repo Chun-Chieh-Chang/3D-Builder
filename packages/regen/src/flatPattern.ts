@@ -131,8 +131,12 @@ export function flatPattern(kernel: Kernel, sheet: SheetInfo): FlatPattern {
         };
         if (g.trim > 0) cut(kernel.extrude(place(g.origin), [strip(g.ylo - 1, g.yhi + 1)], addv([0, 0, 0], n, s * (g.trim + 1)), 0).shape);
         for (const notch of g.notches) cut(kernel.extrude(place(addv(g.mid, g.o, -notch.deep)), [strip(g.ylo - 1, g.yhi + 1, notch.x0, notch.x1)], addv([0, 0, 0], n, s * (notch.deep + 1)), 0).shape);
-        const tool = keep(kernel.extrude(place(g.origin), [strip(g.ylo, g.yhi)], addv([0, 0, 0], n, s * (fl.allowance + fl.straight)), 0).shape);
-        body = keep(kernel.boolean('fuse', body, tool).shape);
+        // the bend (as wide as the flange), then the flat piece (wider at an end where the corner is closed)
+        const bendTool = keep(kernel.extrude(place(g.origin), [strip(g.ylo, g.yhi)], addv([0, 0, 0], n, s * fl.allowance), 0).shape);
+        body = keep(kernel.boolean('fuse', body, bendTool).shape);
+        const flatFrame = place(addv(g.origin, g.o, fl.allowance));
+        const pieceTool = keep(kernel.extrude(flatFrame, [strip(g.ylo, g.yhi, g.pa, g.pb)], addv([0, 0, 0], n, s * fl.straight), 0).shape);
+        body = keep(kernel.boolean('fuse', body, pieceTool).shape);
         // the bend line is the middle of the strip of allowance: half of it from the cut, along the inside face
         const c = addv(move(F, g.origin), o, fl.allowance / 2);
         const inner = addv(c, m, g.yhi);

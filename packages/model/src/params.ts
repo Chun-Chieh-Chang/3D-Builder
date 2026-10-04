@@ -192,8 +192,10 @@ export function mapExprs(feature: Feature, fn: (expr: Expr, kind: ExprKind, role
       const angle = f.angle === undefined ? undefined : fn(f.angle, 'angle', 'includedAngle');
       const radius = f.radius === undefined ? undefined : fn(f.radius, 'length', 'positive');
       const extras = flangeExtras(f, fn);
-      if (length === f.length && angle === f.angle && radius === f.radius && extras === null) return feature;
-      return { ...f, length, ...(angle === undefined ? {} : { angle }), ...(radius === undefined ? {} : { radius }), ...(extras ?? {}) };
+      const corner = f.corner && { ...(f.corner.start === undefined ? {} : { start: fn(f.corner.start, 'length', 'nonNegative') }), ...(f.corner.end === undefined ? {} : { end: fn(f.corner.end, 'length', 'nonNegative') }) };
+      const cornerSame = !corner || (corner.start === f.corner!.start && corner.end === f.corner!.end);
+      if (length === f.length && angle === f.angle && radius === f.radius && extras === null && cornerSame) return feature;
+      return { ...f, length, ...(angle === undefined ? {} : { angle }), ...(radius === undefined ? {} : { radius }), ...(extras ?? {}), ...(corner ? { corner } : {}) };
     }
     case 'hem': {
       const length = fn(feature.length, 'length', 'positive');

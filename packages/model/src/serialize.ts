@@ -156,6 +156,8 @@ const migrations: Record<number, (doc: Json) => Json> = {
   39: (doc) => doc,
   // v41: the draft of the pilot hole of a screw boss (C4.11, hardening H-4). Absent means a straight hole, as before; nothing to convert.
   40: (doc) => doc,
+  // v42: the closed corner of the edge flange (C11.4, hardening). Absent means an open corner, as before; nothing to convert.
+  41: (doc) => doc,
 };
 
 export class FormatError extends Error {

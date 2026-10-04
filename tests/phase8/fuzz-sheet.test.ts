@@ -280,3 +280,53 @@ describe('a profile that crosses itself', () => {
     expect(f.status).toBe('error'); // this one crosses: it has to be said
   });
 });
+
+describe('closed corners made at random, against the numbers worked out here', () => {
+  it.each(Array.from({ length: 24 }, (_, i) => 900 + i * 19))('corner seed %i: two 90° flanges on neighbouring edges, the second closed against the first', (seed) => {
+    const r = rng(seed);
+    const L = r.round(r.between(70, 150), 5);
+    const W = r.round(r.between(50, 110), 5);
+    const T = r.pick([1, 1.5, 2, 3]);
+    const radius = r.round(r.between(T, 2.5 * T), 0.1);
+    const Ro = radius + T;
+    const LA = r.round(r.between(Ro + 8, 45), 1);
+    const LB = r.round(r.between(Ro + 8, 45), 1);
+    const inset = r.round(r.between(0, 2), 0.1);
+    const gap = r.round(r.between(0, radius + inset + 1), 0.1); // (more than the way there: said)
+    const base = { id: 'bf', type: 'baseFlange', name: 'bf', suppressed: false, sketch: 'sk', thickness: String(T), radius: String(radius), kFactor: '0.5' } as Feature;
+    const plate = sketch('sk', front, rectangle('r', 0, 0, L, W)) as Feature;
+    const edge = (rb: RebuildResult, mid: [number, number, number]): Ref => {
+      const i = rb.body!.topology.edges.findIndex((e) => e.curve === 'line' && Math.hypot(e.mid[0] - mid[0], e.mid[1] - mid[1], e.mid[2] - mid[2]) < 1e-6);
+      expect(i, `an edge at ${mid}`).toBeGreaterThanOrEqual(0);
+      return { kind: 'edge', name: rb.body!.names.edges[i]!, fingerprint: edgeFingerprint(rb.body!.topology, i) };
+    };
+    const a = { id: 'fa', type: 'edgeFlange', name: 'fa', suppressed: false, edge: edge(rebuild(build([plate, base])), [L, W / 2, T]), length: String(LA) } as Feature;
+    const withA = rebuild(build([plate, base, a]));
+    const b = { id: 'fb', type: 'edgeFlange', name: 'fb', suppressed: false, edge: edge(withA, [(L - Ro) / 2, W, T]), length: String(LB), inset: { start: String(inset), end: '0' }, corner: { start: String(gap) } } as Feature;
+    const why = `corner seed ${seed}: ${L} × ${W} × ${T}, r ${radius}, flanges ${LA} and ${LB}, inset ${inset}, gap ${gap}`;
+    const res = rebuild(build([plate, base, a, b]));
+    const reach = radius + inset; // from the end of the bend of the second flange to the inside of the first
+    // (the first flange has to cover the middle of the flat piece of the second: it stands as high as LA, the middle of that piece is at Ro + (LB − Ro)/2)
+    if (Ro + (LB - Ro) / 2 > LA + 1e-9) {
+      expect(res.features.find((f) => f.id === 'fb'), why).toMatchObject({ status: 'error', message: expect.stringContaining('蓋住') });
+      return;
+    }
+    if (gap > reach + 1e-9) {
+      expect(res.features.find((f) => f.id === 'fb')!.status, why).toBe('error');
+      return;
+    }
+    expect(res.features.map((f) => f.status), why).toEqual(['ok', 'ok', 'ok', 'ok']);
+    expect(kernel.isValid(res.body!.shape), why).toBe(true);
+    expect(kernel.solidCount(res.body!.shape), why).toBe(1);
+    const ext = reach - gap;
+    expect(res.sheet!.flanges[1]!.corner[0], why).toBeCloseTo(ext, 6);
+    const bend = (w: number) => (Math.PI / 2) * T * w * (radius + T / 2);
+    const WB = L - Ro - inset;
+    const expected = T * (L * W - Ro * W - Ro * WB) + bend(W) + T * W * (LA - Ro) + bend(WB) + T * (WB + ext) * (LB - Ro);
+    expect(kernel.massProps(res.body!.shape).volume, why).toBeCloseTo(expected, 3);
+    const pattern = flatPattern(kernel, res.sheet!);
+    kernel.release(pattern.shape);
+    expect(pattern.volume, why).toBeCloseTo(kernel.massProps(res.body!.shape).volume, 2);
+    expect(pattern.width, why).toBeCloseTo(L - Ro + (Math.PI / 2) * (radius + T / 2) + LA - Ro, 3);
+  }, 60000);
+});

@@ -6,7 +6,7 @@ import type { Id } from './ids';
  * DOF status, mass properties and error lists are derived data and never stored.
  */
 
-export const SCHEMA_VERSION = 41;
+export const SCHEMA_VERSION = 42;
 
 /** Value expression (B5.2, B5.3): "20", "25.4mm", "30deg", "wall_t*2", "D1@草圖1/2", "property('厚度')"; see `expr/`. */
 export type Expr = string;
@@ -607,6 +607,12 @@ export interface EdgeFlangeFeature extends FeatureBase {
   position?: 'materialInside' | 'bendOutside';
   radius?: Expr;
   flip?: boolean;
+  /**
+   * Closed corner (封閉角落, C11.4, v42): at the start and/or the end of the flange (as for `inset`), its flat piece goes on past the end of the bend toward the flange next to it,
+   * stopping the `gap` given from the inside of that flange: the bend itself stays clear of the neighbouring bend (by the inset), so the corner is closed by the flat pieces. An end
+   * with no flange to close against is said.
+   */
+  corner?: { start?: Expr; end?: Expr };
   /**
    * The flange stops short of the ends of the edge (v39, C11.4): `start` from the end where the edge begins when it is walked with the face it is on in front of you and the outside
    * on your right, `end` from the other. Where it stops short, `relief` cuts a rectangular notch into the sheet beside it, `width` along the edge and `depth` deeper than the bend starts,
