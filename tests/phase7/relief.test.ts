@@ -114,9 +114,10 @@ describe('flanges on two edges that meet at a corner, one stopping short of it',
     expect(kernel.solidCount(r.body!.shape)).toBe(1);
     expect(kernel.isValid(r.body!.shape)).toBe(true);
     // the second flange ends at x = 96, half a millimetre from where the first one's bend starts (96.5)
-    const xs = ['ef2:side:flange.flange.s0', 'ef2:side:flange.flange.s1'].map((n) => face(r, n).center[0]).sort((a, b) => a - b);
-    expect(xs[0]).toBeCloseTo(0, 6);
-    expect(xs[1]).toBeCloseTo(96, 6);
+    // (its side at x = 0 lies in the side of the plate and is the plate's face, called what it was; the end at x = 96 is one face of the bend and the flat piece, called after the bend)
+    const names = r.body!.names.faces;
+    expect(names).toContain('bf:side:sk.rl3');
+    expect(face(r, 'ef2:side:flange.bend.s0').center[0]).toBeCloseTo(96, 6);
     expect(r.sheet!.flanges.map((f) => f.width)).toEqual([47, W2]);
   });
 });

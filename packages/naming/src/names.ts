@@ -70,7 +70,10 @@ const PRIORITY: Record<string, number> = { edge: 0, vertex: 1, face: 2, profileE
 function faceBaseName(origins: Origin[], ctx: NamingContext): string {
   const f = ctx.featureId;
   const rank = (o: Origin) => PRIORITY[o.rel === 'cap' || o.rel === 'imported' ? o.rel : o.kind]!;
-  const sorted = origins.slice().sort((a, b) => rank(a) - rank(b));
+  // among origins of one kind the lowest index wins: when a fuse joins two faces that lie in one plane, the operands are numbered body first and tool after, so the face keeps the
+  // name the body's had (the order the kernel lists the origins in is not something a name may depend on)
+  const index = (o: Origin) => ('index' in o ? o.index : 0);
+  const sorted = origins.slice().sort((a, b) => rank(a) - rank(b) || index(a) - index(b));
   const o = sorted[0];
   if (!o) return `${f}:face`;
   if (o.rel === 'cap') return `${f}:cap:${o.which}`;
