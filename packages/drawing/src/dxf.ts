@@ -49,8 +49,27 @@ class Out {
   }
 }
 
+/** What more than the scene a DXF can be given (the flat pattern of a sheet metal part, C11.3): its own layers in place of the line styles', and entities written after the scene's. */
+/** Group codes written one after the other. */
+export interface DxfWrite {
+  g: (code: number, value: string | number) => DxfWrite;
+  int: (code: number, value: number) => DxfWrite;
+}
+
+export interface DxfExtras {
+  layers?: { name: string; linetype: string; weight: number }[];
+  entities?: (out: {
+    /** Starts an entity on a layer; the group codes of the entity follow through `g` and `int`. */
+    entity: (type: string, layer: string, subclass: string) => void;
+    g: (code: number, value: string | number) => DxfWrite;
+    int: (code: number, value: number) => DxfWrite;
+    /** Tells the header the extent of what was written. */
+    extent: (x: number, y: number) => void;
+  }) => void;
+}
+
 /** The scene as a DXF (AC1015). */
-export function toDxf(scene: Scene): string {
+export function toDxf(scene: Scene, extras?: DxfExtras): string {
   let next = 0x30;
   const handle = () => (next++).toString(16).toUpperCase();
   const o = new Out();
@@ -63,7 +82,7 @@ export function toDxf(scene: Scene): string {
 
   const layers: { name: string; linetype: string; weight: number }[] = [
     { name: '0', linetype: 'CONTINUOUS', weight: 25 },
-    ...(Object.keys(LINE_STYLES) as LineStyle[]).map((k) => ({ name: LINE_STYLES[k].layer, linetype: LINE_STYLES[k].linetype, weight: Math.round(LINE_STYLES[k].width * 100) })),
+    ...(extras?.layers ?? (Object.keys(LINE_STYLES) as LineStyle[]).map((k) => ({ name: LINE_STYLES[k].layer, linetype: LINE_STYLES[k].linetype, weight: Math.round(LINE_STYLES[k].width * 100) }))),
     { name: TEXT_LAYER, linetype: 'CONTINUOUS', weight: 25 },
   ];
 
@@ -183,6 +202,26 @@ export function toDxf(scene: Scene): string {
       maxY = Math.max(maxY, item.at[1] + item.height);
     }
   }
+  const write: DxfWrite = {
+    g: (code, value) => {
+      o.g(code, value);
+      return write;
+    },
+    int: (code, value) => {
+      o.int(code, value);
+      return write;
+    },
+  };
+  extras?.entities?.({
+    entity,
+    ...write,
+    extent: (x, y) => {
+      minX = Math.min(minX, x);
+      maxX = Math.max(maxX, x);
+      minY = Math.min(minY, y);
+      maxY = Math.max(maxY, y);
+    },
+  });
   o.g(0, 'ENDSEC');
 
   // ---- objects

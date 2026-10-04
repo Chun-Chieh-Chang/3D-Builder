@@ -267,6 +267,7 @@ export const edit: Translation = {
   'flat.act': 'Flat Pattern',
   'flat.title': 'Flat Pattern',
   'flat.done': 'Close',
+  'flat.exportDxf': 'Export DXF',
   'flat.running': 'Working it out…',
   'flat.failed': 'The flat pattern failed: {why}',
   'flat.noSheet': 'This part is not a sheet metal part (it has no base flange)',

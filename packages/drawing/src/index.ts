@@ -13,3 +13,4 @@ export * from './pdf';
 export * from './pdfRead';
 export * from './dxf';
 export * from './dxfRead';
+export * from './flatDxf';

@@ -31,6 +31,9 @@ export function FlatPanel() {
       <div className="measure-head">
         <strong>{t('flat.title')}</strong>
         <span className="spacer" />
+        <button data-action="exportFlatDxf" disabled={!report} onClick={() => store.exportFlatDxf()}>
+          {t('flat.exportDxf')}
+        </button>
         <button className="primary" onClick={() => store.stopFlat()}>
           {t('flat.done')}
         </button>

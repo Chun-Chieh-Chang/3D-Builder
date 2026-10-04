@@ -51,6 +51,7 @@ import {
 import { readAnyDocumentFile, ASSEMBLY_FILE_EXTENSION, assemblyName, derivedAssemblyFiles, PART_FILE_EXTENSION, partFileName, partName, readDocumentFile, sha256Hex, imageFileName, stepAssemblyFiles, stepFileName, stlFileName, writePartFile } from '@3db/io';
 import { gatherSources } from './sources';
 import { DrawingStore, type DrawingSource, type DrawingState } from './drawing';
+import { flatPatternDxf } from '@3db/drawing';
 import type { FlatReport } from '@3db/regen';
 import { orderProblem, suppressionTargets, type SuppressAction } from '@3db/regen/dag';
 import { contourChoices, findProfiles, type ContourChoice } from '@3db/sketch/profiles';
@@ -675,6 +676,19 @@ class AppStore {
       if (seq === this.thicknessSeq && this.state.thickness) this.set({ thickness: { ...this.state.thickness, status: 'done', report, error: null } });
     } catch (e) {
       if (seq === this.thicknessSeq && this.state.thickness) this.set({ thickness: { ...this.state.thickness, status: 'error', report: null, error: t('thicknessAnalysis.failed', { why: e instanceof Error ? e.message : String(e) }) } });
+    }
+  }
+
+  /** 「輸出 DXF」 of the flat pattern window (C11.3): the pattern as a DXF (the outline, the bend lines on their own layer, notes), handed to the browser as a download. */
+  exportFlatDxf(): void {
+    const report = this.state.flat?.report;
+    if (!report) return;
+    try {
+      const file = `${this.documentName()}-flat.dxf`;
+      download(file, flatPatternDxf(report), 'application/dxf');
+      this.notify(t('export.done', { file }));
+    } catch (e) {
+      this.notify(t('export.failed', { what: 'DXF', why: e instanceof Error ? e.message : String(e) }), 'error');
     }
   }
 

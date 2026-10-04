@@ -265,6 +265,7 @@ export const edit = {
   'flat.act': '平板型式',
   'flat.title': '平板型式',
   'flat.done': '關閉',
+  'flat.exportDxf': '輸出 DXF',
   'flat.running': '計算中…',
   'flat.failed': '平板型式失敗：{why}',
   'flat.noSheet': '這個零件不是鈑金件（沒有基材凸緣）',

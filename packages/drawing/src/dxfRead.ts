@@ -39,6 +39,25 @@ export interface DxfText extends DxfEntity {
   align: number;
 }
 
+export interface DxfLine extends DxfEntity {
+  type: 'LINE';
+  a: [number, number];
+  b: [number, number];
+}
+export interface DxfArc extends DxfEntity {
+  type: 'ARC';
+  c: [number, number];
+  r: number;
+  /** Degrees, counter-clockwise from the start to the end. */
+  start: number;
+  end: number;
+}
+export interface DxfCircle extends DxfEntity {
+  type: 'CIRCLE';
+  c: [number, number];
+  r: number;
+}
+
 export interface DxfTableEntry {
   name: string;
   handle: string;
@@ -53,7 +72,7 @@ export interface DxfDocument {
   blocks: string[];
   /** The handles of the BLOCK and ENDBLK records, with the owner each says. */
   blockHandles: { handle: string; owner: string }[];
-  entities: (DxfPolyline | DxfSolid | DxfText | DxfEntity)[];
+  entities: (DxfPolyline | DxfSolid | DxfText | DxfLine | DxfArc | DxfCircle | DxfEntity)[];
   objects: DxfEntity[];
   /** The sections in the order they come. */
   sections: string[];
@@ -148,7 +167,7 @@ export function readDxf(text: string): DxfDocument {
   return doc;
 }
 
-function entityOf(rec: Pair[]): DxfPolyline | DxfSolid | DxfText | DxfEntity {
+function entityOf(rec: Pair[]): DxfPolyline | DxfSolid | DxfText | DxfLine | DxfArc | DxfCircle | DxfEntity {
   const base = { type: rec[0]![1], handle: first(rec, 5) ?? '', owner: first(rec, 330) ?? '', layer: first(rec, 8) ?? '', pairs: rec };
   if (base.type === 'LWPOLYLINE') {
     const points: number[] = [];
@@ -165,6 +184,9 @@ function entityOf(rec: Pair[]): DxfPolyline | DxfSolid | DxfText | DxfEntity {
     const at: [number, number] = align === 0 ? [numberOf(rec, 10), numberOf(rec, 20)] : [numberOf(rec, 11), numberOf(rec, 21)];
     return { ...base, type: 'TEXT', at, height: numberOf(rec, 40), text: dxfUnescape(first(rec, 1) ?? ''), angle: numberOf(rec, 50), align };
   }
+  if (base.type === 'LINE') return { ...base, type: 'LINE', a: [numberOf(rec, 10), numberOf(rec, 20)], b: [numberOf(rec, 11), numberOf(rec, 21)] };
+  if (base.type === 'ARC') return { ...base, type: 'ARC', c: [numberOf(rec, 10), numberOf(rec, 20)], r: numberOf(rec, 40), start: numberOf(rec, 50), end: numberOf(rec, 51) };
+  if (base.type === 'CIRCLE') return { ...base, type: 'CIRCLE', c: [numberOf(rec, 10), numberOf(rec, 20)], r: numberOf(rec, 40) };
   return base;
 }
 
@@ -211,7 +233,7 @@ export function checkDxf(doc: DxfDocument): string[] {
       const n = numberOf(e.pairs, 90);
       if ((e as DxfPolyline).points.length !== 2 * n) problems.push(t('dxf.vertexCount', { handle: e.handle }));
     }
-    if (!['LWPOLYLINE', 'SOLID', 'TEXT'].includes(e.type)) problems.push(t('dxf.unknownEntity', { type: e.type }));
+    if (!['LWPOLYLINE', 'SOLID', 'TEXT', 'LINE', 'ARC', 'CIRCLE'].includes(e.type)) problems.push(t('dxf.unknownEntity', { type: e.type }));
     if (e.type === 'TEXT' && !doc.tables.get('STYLE')?.entries.some((s) => s.name === (first(e.pairs, 7) ?? 'STANDARD'))) problems.push(t('dxf.noStyle', { handle: e.handle }));
   }
   if (!doc.tables.get('BLOCK_RECORD')?.entries.some((e) => e.name === '*Model_Space')) problems.push(t('dxf.noModelSpace'));

@@ -4,7 +4,7 @@
 //   await __flatUi.run();
 //
 // A plate 100 × 50 × 1.5 with an edge flange (90°, 30 from the outside, material inside, radius 2, K 0.5) is opened. 「鈑金」→「平板型式」: the window says 127.319 × 50, the area 6365.98,
-// and has one bend of 90° bending up, drawn dashed; the K-factor made 0.4 in the base flange and the window follows (127.084); closed again.
+// and has one bend of 90° bending up, drawn dashed; the DXF button hands over a file with OUTLINE and BEND; the K-factor made 0.4 in the base flange and the window follows (127.084); closed again.
 
 const here = new URL(import.meta.url).pathname;
 const root = here.replace(/tests\/e2e\/[^/]*$/, '');
@@ -52,8 +52,22 @@ g.run = async () => {
   await H.waitFor(() => Math.abs(Number(text('size').match(/[\d.]+/g)[0]) - (100 - 7 + 30 + (Math.PI / 2) * 2.6)) < 2e-3, 10000, 'the pattern follows the K-factor');
   H.check(true, 'K 0.4 shortens the pattern');
 
+  // the DXF: what the download is handed is a file with the outline and the bend line on their own layers
+  let captured = null;
+  const make = URL.createObjectURL;
+  URL.createObjectURL = (blob) => {
+    captured = blob;
+    return make.call(URL, blob);
+  };
+  panel().querySelector('[data-action="exportFlatDxf"]').click();
+  await H.settle();
+  URL.createObjectURL = make;
+  H.check(!!captured, 'the DXF is handed to the browser');
+  const dxf = await captured.text();
+  H.check(dxf.includes('AC1015') && dxf.includes('OUTLINE') && dxf.includes('BEND') && dxf.includes('DASHED'), 'the DXF has the layers of the pattern');
+
   // closing it
-  panel().querySelector('button').click();
+  panel().querySelector('button.primary').click();
   await H.settle();
   H.check(!panel(), 'the window closes');
 
