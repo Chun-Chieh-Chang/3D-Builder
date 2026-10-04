@@ -91,6 +91,7 @@ g.run = async () => {
   await H.settle();
   near(volume(), 15552 + 230.4, 'accepted');
   H.check(document.querySelector('.feature-tree')?.textContent.includes('唇與溝槽'), 'the tree has it');
+  await H.tidy();
   console.log('phase6-lip-ui: all checks passed');
   return true;
 };

@@ -90,6 +90,7 @@ g.run = async () => {
   [...document.querySelectorAll('[data-draft] button')].find((b) => b.textContent === '關閉').click();
   await H.wait(200);
   H.check(!document.querySelector('[data-draft]') && Object.keys(painted()).length === 0, 'closed, the colors are gone');
+  await H.tidy();
   console.log('phase6-draft-ui: all checks passed');
   return true;
 };

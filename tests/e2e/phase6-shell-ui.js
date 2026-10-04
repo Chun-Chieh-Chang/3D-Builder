@@ -95,6 +95,7 @@ g.run = async () => {
   store.commitEdit();
   await H.settle();
   near(volume(), 72000 - 56 * 36 * 28, 'the walls all 2 again');
+  await H.tidy();
   console.log('phase6-shell-ui: all checks passed');
   return true;
 };

@@ -178,6 +178,10 @@ H.save = async (path) => {
   await H.action('檔案', '儲存檔案');
   await H.waitFor(() => H.asm() ? !H.asm().dirty : !store.getState().dirty, 10000, 'the save');
 };
+/** Leaves nothing unsaved behind (a part with changes keeps a recovery copy in the browser, which the next load offers: 找到沒有儲存的零件): saves it into the e2e project. */
+H.tidy = async () => {
+  if (!H.asm() && store.getState().dirty) await H.save('tidy.3dbx');
+};
 H.open = async (path) => {
   document.querySelector('.status-bar .notice')?.click(); // dismiss the last notice, so the next one is this open's
   H.next.open = path;

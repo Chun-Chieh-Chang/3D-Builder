@@ -76,6 +76,7 @@ g.run = async () => {
   [...document.querySelectorAll('[data-undercut] button')].find((b) => b.textContent === '關閉').click();
   await H.wait(200);
   H.check(!document.querySelector('[data-undercut]') && Object.keys(painted()).length === 0, 'closed, the colors are gone');
+  await H.tidy();
   console.log('phase6-undercut-ui: all checks passed');
   return true;
 };

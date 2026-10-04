@@ -99,6 +99,7 @@ g.run = async () => {
   [...document.querySelectorAll('[data-thickness] button')].find((b) => b.textContent === '關閉').click();
   await H.wait(200);
   H.check(!document.querySelector('[data-thickness]') && Object.keys(painted()).length === 0, 'closed, the colors are gone');
+  await H.tidy();
   console.log('phase6-thickness-ui: all checks passed');
   return true;
 };

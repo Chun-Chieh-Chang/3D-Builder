@@ -67,6 +67,7 @@ g.hook = async () => {
   await H.settle();
   near(volume(), SHELLED + 2 * 6 * 12 + 0.5 * 1.2 * 3 * 6, 'accepted');
   H.check(document.querySelector('.feature-tree')?.textContent.includes('卡榫'), 'the tree has the hook');
+  await H.tidy();
   console.log('phase6-snap-ui hook: all checks passed');
   return true;
 };
@@ -115,6 +116,7 @@ g.wall = async () => {
   store.commitEdit();
   await H.settle();
   H.check(document.querySelector('.feature-tree')?.textContent.includes('排氣口'), 'the tree has the vent');
+  await H.tidy();
   console.log('phase6-snap-ui wall: all checks passed');
   return true;
 };

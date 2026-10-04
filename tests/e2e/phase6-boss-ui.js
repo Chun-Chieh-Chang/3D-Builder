@@ -85,6 +85,7 @@ g.run = async () => {
   await H.settle();
   near(volume(), SHELLED + column(12, 8), 'accepted');
   H.check(document.querySelector('.feature-tree')?.textContent.includes('螺柱'), 'the tree has the boss');
+  await H.tidy();
   console.log('phase6-boss-ui: all checks passed');
   return true;
 };
