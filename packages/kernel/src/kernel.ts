@@ -895,7 +895,7 @@ export class Kernel {
 
   /**
    * The solids of a result as separate shapes, each with the origins of its own faces and the numbers those faces have in the
-   * whole result (aces; an imported face keeps its origin's number). Largest first, ties by position, so the order is
+   * whole result (faces; an imported face keeps its origin's number). Largest first, ties by position, so the order is
    * the same on every rebuild. The result itself stays the caller's.
    */
   splitSolids(result: OpResult): (OpResult & { faces: number[] })[] {
@@ -1078,7 +1078,7 @@ export class Kernel {
   }
 
   /**
-   * Leans the picked faces of a body (draft feature, C5.5) by ngle about the neutral plane, pulled along pull; a positive angle narrows
+   * Leans the picked faces of a body (draft feature, C5.5) by angle about the neutral plane, pulled along pull; a positive angle narrows
    * them along pull. The faces keep their identity (modified), so their names do not change. A face that cannot lean is an error.
    */
   draft(target: ShapeId, faceIndices: number[], pull: Vec3, neutral: { origin: Vec3; normal: Vec3 }, angle: number): OpResult {

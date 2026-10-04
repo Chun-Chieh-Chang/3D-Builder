@@ -197,7 +197,7 @@ export interface SheetInfo {
 
 export interface RebuildResult {
   features: FeatureResult[];
-  /** All the bodies seen as one: the body itself when there is one (odies), a view of them all (a compound) when there are several. */
+  /** All the bodies seen as one: the body itself when there is one (bodies), a view of them all (a compound) when there are several. */
   body: BodyView | null;
   bodies: BodyInfo[];
   sketches: Map<Id, { frame: PlaneFrame; solved: SolvedSketch; profiles: ProfileResult; sketch: SketchFeature }>;

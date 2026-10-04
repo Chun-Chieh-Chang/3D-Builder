@@ -60,7 +60,7 @@ export interface BodyPayload {
   surface: boolean;
   /** Whether it is drawn (D4.6): a hidden body has no faces in mesh, so it cannot be picked either. */
   shown: boolean;
-  /** Its faces are numbers ace0 … ace0 + faces - 1 of the names and fingerprints below. */
+  /** Its faces are numbers face0 … face0 + faces - 1 of the names and fingerprints below. */
   face0: number;
   faces: number;
   volume: number;
@@ -249,7 +249,7 @@ export interface KernelApi {
   readStepAssembly(bytes: Uint8Array): Promise<StepAssemblyPlan>;
   /** Measures one or two elements (E1.1): of the part that is open (part null in the targets) or of parts as the assembly places them; see measureTargets. */
   measure(targets: MeasureTarget[]): Promise<MeasureReport>;
-  /** The interference of components (E2.1): the volume their parts share, each overlap as a mesh. Parts are the ones rebuilt for the assembly (uildPart). */
+  /** The interference of components (E2.1): the volume their parts share, each overlap as a mesh. Parts are the ones rebuilt for the assembly (buildPart). */
   interference(components: InterferenceComponent[]): Promise<InterferenceResult>;
   /** The lines of the views of a drawing (C16.2, A4.4): exact hidden-line removal on parts built for the app (`buildPart`); one result for each request. */
   drawingViews(requests: DrawingViewRequest[]): Promise<DrawingViewResult[]>;

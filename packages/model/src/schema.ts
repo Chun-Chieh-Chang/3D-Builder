@@ -128,12 +128,12 @@ export type EndCondition =
   | { type: 'upToNext'; reverse?: boolean }
   /** Up to the plane through a vertex, parallel to the sketch (成形至頂點, v14). */
   | { type: 'upToVertex'; vertex: Ref; reverse?: boolean }
-  /** Up to the surface of another body, which it takes the shape of (成形至本體, v14); ody is a kind: 'body' reference. */
+  /** Up to the surface of another body, which it takes the shape of (成形至本體, v14); body is a kind: 'body' reference. */
   | { type: 'upToBody'; body: Ref; reverse?: boolean }
-  /** To offset short of a face parallel to the sketch, or beyond it with eyond (從曲面偏移, v14). */
+  /** To offset short of a face parallel to the sketch, or beyond it with beyond (從曲面偏移, v14). */
   | { type: 'offsetFromFace'; face: Ref; offset: Expr; beyond?: boolean; reverse?: boolean };
 
-/** The walls of an extrusion lean by ngle (拔模, v14): away from the profile, or towards it with inward. */
+/** The walls of an extrusion lean by angle (拔模, v14): away from the profile, or towards it with inward. */
 export interface Draft {
   angle: Expr;
   inward?: boolean;
@@ -143,7 +143,7 @@ export interface Draft {
 export interface Thin {
   mode: 'one' | 'mid' | 'two';
   thickness: Expr;
-  /** The other side's thickness, for 	wo. */
+  /** The other side's thickness, for two. */
   thickness2?: Expr;
   /** One side: the other way round (to the outside of a closed profile, or the other side of an open one). */
   reverse?: boolean;
@@ -173,7 +173,7 @@ export type RevolveCondition = { type: 'blind'; angle: Expr; reverse?: boolean }
  * Hole wizard (異型孔, C4.8, v17): a hole of one of four kinds drilled into the material at every point of a sketch, from the sketch plane inward (against
  * the normal; 
 everse the other way). size is only the label of the standard size the diameters were taken from; the values that count are the
- * expressions. 	apped is the tap-drill hole of a thread, which is not modelled.
+ * expressions. tapped is the tap-drill hole of a thread, which is not modelled.
  */
 export interface HoleFeature extends FeatureBase {
   type: 'hole';
@@ -691,7 +691,7 @@ export interface VentFeature extends FeatureBase {
 }
 
 /**
- * Shell (薄殼, C5.4, v15): the body hollowed out to a wall of 	hickness, the picked aces taken away to open it; the wall grows inward, or
+ * Shell (薄殼, C5.4, v15): the body hollowed out to a wall of thickness, the picked faces taken away to open it; the wall grows inward, or
  * outward with outward.
  */
 export interface ShellFeature extends FeatureBase {
@@ -708,7 +708,7 @@ export interface ShellFeature extends FeatureBase {
 }
 
 /**
- * Draft (拔模, C5.5, v16): the walls aces lean by ngle about the neutral plane 
+ * Draft (拔模, C5.5, v16): the walls' faces lean by angle about the neutral plane 
 eutral (a planar face of the body, or a plane), so that they
  * narrow away from it; 
 everse leans them the other way (they widen away from it).

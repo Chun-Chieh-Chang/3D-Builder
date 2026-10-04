@@ -5,7 +5,7 @@ import type { PartDoc } from './schema';
 /** The part's origin, as a key of `PartDoc.visibility` (D4.6). */
 export const ORIGIN_KEY = 'origin';
 
-/** A body's key in PartDoc.visibility (C7.1, D4.6): ody: and its id, which cannot be mistaken for a feature's id. */
+/** A body's key in PartDoc.visibility (C7.1, D4.6): body: and its id, which cannot be mistaken for a feature's id. */
 export const bodyKey = (id: Id): string => `body:${id}`;
 export const isBodyKey = (key: string): boolean => key.startsWith('body:');
 
