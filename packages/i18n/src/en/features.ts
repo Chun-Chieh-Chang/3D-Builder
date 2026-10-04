@@ -269,6 +269,7 @@ export const features: Translation = {
   'bend.doubles': 'The profile doubles back at the end of "{at}" (a corner of nearly 180°), so there is no bend to make',
   'bend.short': '"{at}" is too short for the bends at its ends: it needs {need} and has {have}',
   'flange.oneOutline': 'A base flange takes one open polyline, or closed outlines, not both, and only one open one',
+  'flange.selfCrossing': 'The profile of the sheet crosses itself (the path goes through itself), so there is no sheet to make',
   'flange.needsDepth': 'An open profile needs the width of the sheet',
   'sheet.second': 'This part already has a base flange (a sheet metal part has one base)',
   'sheet.kRange': 'The K-factor has to be between 0 and 1',

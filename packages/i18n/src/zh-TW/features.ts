@@ -267,6 +267,7 @@ export const features = {
   'bend.doubles': '輪廓在「{at}」的尾端折回去了（轉角接近 180°），做不出折彎',
   'bend.short': '「{at}」這一段太短，放不下兩端的折彎：要 {need}，只有 {have}',
   'flange.oneOutline': '基材凸緣要一條開放的折線，或一個以上的封閉輪廓，不能兩種都有，開放的也只能有一條',
+  'flange.selfCrossing': '板的輪廓自己交疊（路徑穿過了自己），做不出一片板',
   'flange.needsDepth': '開放的輪廓要填板的寬度',
   'sheet.second': '這個零件已經有基材凸緣了（鈑金零件只有一個基材）',
   'sheet.kRange': 'K 因子要在 0 到 1 之間',

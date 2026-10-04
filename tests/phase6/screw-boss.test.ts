@@ -130,6 +130,16 @@ describe('a boss on the inside of the floor of a shell', () => {
     expect(rebuild(doc(boss({ holeDraft: '15deg' }))).features.find((f) => f.id === 'sb1')).toMatchObject({ status: 'error', message: expect.stringContaining('孔的拔模') });
   });
 
+  it('with four gussets (or eight) every face has a name of its own — the sides of each gusset are named for it (found by the random test: the same name was given twice from the fourth)', () => {
+    for (const count of ['4', '8']) {
+      const r = rebuild(doc(boss({ ribs: { count, thickness: '1', length: '3', height: '6' } })));
+      expect(failures(r)).toEqual([]);
+      const names = r.body!.names.faces;
+      expect(names.filter((n, i) => names.indexOf(n) !== i)).toEqual([]);
+      for (let k = 0; k < Number(count); k++) expect(names.some((n) => n.startsWith(`sb1:side:sk.p1.rib${k}.side`))).toBe(true);
+    }
+  });
+
   it('two points make two columns', () => {
     const r = rebuild(build(...shell(), points('sk', face(floor), ['p1', 15, 10], ['p2', -15, -10]), boss()));
     expect(failures(r)).toEqual([]);

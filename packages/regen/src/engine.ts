@@ -1939,7 +1939,8 @@ export class Regenerator {
         const radial = add(add([0, 0, 0], s.frame.xDir, Math.cos(a)), s.frame.yDir, Math.sin(a));
         const frame: PlaneFrame = { origin, xDir: radial, yDir: up, normal: cross(radial, up) };
         const loop = gusset.map((p, i) => ({ kind: 'line' as const, a: p, b: gusset[(i + 1) % 3]!, source: `${pt.id}.rib${k}.${['floor', 'slope', 'wall'][i]!}` }));
-        join(this.kernel.extrude(frame, [{ outer: loop, holes: [] }], add([0, 0, 0], frame.normal, thickness), -thickness / 2));
+        // (the two sides of a gusset are named for the point and the gusset, not just `cap`: with four of them the same name would be given twice)
+        join(this.capsNamed(this.kernel.extrude(frame, [{ outer: loop, holes: [] }], add([0, 0, 0], frame.normal, thickness), -thickness / 2), `${pt.id}.rib${k}`, 'side0', 'side1'));
       }
     }
     return [...list];
@@ -2097,6 +2098,11 @@ export class Regenerator {
         const bent = bentPath(found.chains[0]!, r, T, side);
         const region = ribbonOf(bent.path, side === 'left' ? { inward: T, outward: 0 } : { inward: 0, outward: T });
         tool = this.kernel.extrude(s.frame, [region], add([0, 0, 0], dir, width), 0);
+        // a path that crosses itself makes a sheet that passes through itself: it is said, not made
+        if (!this.kernel.isValid(tool.shape)) {
+          this.kernel.release(tool.shape);
+          throw new FeatureError(t('flange.selfCrossing'));
+        }
         for (const b of bent.bends) sheet.bends.push({ feature: f.id, name: b.source, angle: b.angle, radius: r, thickness: T, width, kFactor: k, allowance: b.angle * (r + k * T) });
         const allowance = sheet.bends.reduce((a, b) => a + b.allowance, 0);
         sheet.flatLength = bent.straight + allowance;
