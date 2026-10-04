@@ -28,7 +28,8 @@
 - 專案會放在隨身碟帶著走，所以換電腦時壞掉的都是「這台電腦」的事，不是程式的事：`node_modules` 裡 npm workspaces 的連結是絕對路徑（磁碟代號變了就指到不存在的地方，exFAT／FAT 上根本做不出來）、每台電腦各自裝的工具（Node、git、Rust 與 C++ 編譯器）、git 的每個 clone 各自的設定（`npm run setup:git`）。
 - 新增 `npm run doctor`（`scripts/doctor.mjs`，唯讀）：檢查 Node 版本、git 與 `.3dbx` 差異顯示設定、**每個工作區連結是否指向這個資料夾**、這個磁碟能不能做連結（用一個馬上刪掉的暫時連結測）、埠 5391、Rust 與 C++ 工具（只有桌面版需要）、`SW_SAMPLE_DIR`；每個問題附修法，只有會讓 `npm run check`／`npm run dev` 失敗的才讓結束代碼是 1。在一個暫時的專案裡驗證了「連結指到別處」「連結不存在」兩種失敗的訊息與結束代碼。
 - 盤點程式與設定裡沒有寫死的本機路徑（只有兩個需要真實樣本的測試的註解範例，樣本資料夾走環境變數 `SW_SAMPLE_DIR`；e2e 腳本的黃金檔案路徑由 `import.meta.url` 推出）。
-- **建議但沒做**（要你決定）：① 在 `.gitattributes` 加 `* text=auto eol=lf`，讓各電腦的工作檔行尾一致（現在靠各電腦的 `core.autocrlf`，這台是 `true`，換成 `false` 的電腦可能出現多餘的差異）；② 讓套件解析不靠符號連結（在 tsconfig／vite／vitest 加別名），exFAT 隨身碟上就能直接跑，不必再搬到 NTFS。
+- **已做（使用者選 A）：行尾一致。** `.gitattributes` 加 `* text=auto eol=lf`（後面原有的 `binary`、`-text`、`diff=3dbx` 規則照舊）。原因：隨身碟帶著工作樹換到 `autocrlf=false` 的電腦時，上一台留下的 CRLF 檔會原樣被提交，變成整檔差異。重新正規化後索引沒有任何內容變動（版本庫本來就是 LF）；把這台 357 個 CRLF 或混合行尾的工作檔轉成 LF（等於全新 checkout 的樣子，其中 12 個混合行尾是我今天用腳本改出來的）後，`npm run check` 仍是 1985 項通過、21 項略過。
+- **決定不做（使用者選 A）：讓套件解析不靠符號連結**（在 tsconfig／vite／vitest 加別名，讓 exFAT 隨身碟上也能直接跑）。理由：它用「兩套解析機制並存」換來「少一個前提」，長期維護成本高於它省下的；跨電腦的主要做法是每台電腦把專案放在自己的 NTFS 磁碟，用 git 搬原始碼。專案放在 exFAT 或 FAT 上時 `npm run doctor` 會直接說原因與修法。若日後真的需要，做法與風險見 handoff §6「工作區連結」的暫時別名，與下列：要 12 個套件加 5 個子路徑（如 `@3db/sketch/interact`）在 tsconfig（`paths` 是靜態的，要另加檢查防止漏改）、vite、vitest 三處維護，vitest 要限制平行數，桌面版打包也要驗證。
 
 ## 限制
 

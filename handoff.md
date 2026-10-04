@@ -51,8 +51,9 @@
 2. `git clone https://github.com/Chun-Chieh-Chang/3D-Builder`（私人專案，需要 GitHub 登入）。
 3. **專案要放在支援符號連結的磁碟**（NTFS，例如 `C:`），不要放在 exFAT 或 FAT 的 USB 隨身碟：npm workspaces 靠符號連結，在 USB 上 `node_modules/@3db` 是空的，`npm run check`、`npm run dev`、`npm run build` 都會失敗（另一台電腦就是這樣，繞法見 §6「工作區連結」）。
 4. `npm run doctor`（診斷這台電腦；搬過專案或換過磁碟代號時，`node_modules` 裡的連結是絕對路徑，會指到不存在的地方，它會說，修法是 `npm install`），然後 `npm run check`（型別、分層、全部測試，應全過），`npm run dev`，用 Chrome 或 Edge 開 http://127.0.0.1:5391。
-5. 確認 `docs/blueprint.md` 在；不在的話，先 `git pull`。
-6. 對 Claude 說：「讀取 handoff.md，接手開發任務」。
+5. 行尾：`.gitattributes` 規定文字檔一律以 LF 存、LF 檢出，不管這台電腦的 `core.autocrlf`；若隨身碟帶來的工作檔是 CRLF，`git status` 不會因此變髒，提交時也會自動轉成 LF。
+6. 確認 `docs/blueprint.md` 在；不在的話，先 `git pull`。
+7. 對 Claude 說：「讀取 handoff.md，接手開發任務」。
 
 ## 1. 專案
 

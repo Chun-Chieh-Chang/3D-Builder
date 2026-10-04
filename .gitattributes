@@ -1,3 +1,7 @@
+# Text files are stored with LF and checked out with LF on every computer, whatever that computer's core.autocrlf says (the project moves between computers
+# on a USB drive with its working tree: without this, a computer set to autocrlf=false would commit the CRLF files that another one left there, as whole-file diffs).
+# Git decides by looking at the content what is text; the lines below say what is not.
+* text=auto eol=lf
 # Binary fixtures and part files must reach the tests byte for byte.
 *.zip binary
 *.3dbx binary
