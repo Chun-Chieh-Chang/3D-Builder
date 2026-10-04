@@ -6,7 +6,7 @@ import type { Id } from './ids';
  * DOF status, mass properties and error lists are derived data and never stored.
  */
 
-export const SCHEMA_VERSION = 34;
+export const SCHEMA_VERSION = 35;
 
 /** Value expression (B5.2, B5.3): "20", "25.4mm", "30deg", "wall_t*2", "D1@草圖1/2", "property('厚度')"; see `expr/`. */
 export type Expr = string;
@@ -571,6 +571,54 @@ export interface ScrewBossFeature extends FeatureBase {
 }
 
 /**
+ * Snap hook (卡榫, C4.11, v35): at the free points of a sketch, a cantilever beam standing on the sketch plane and growing `length` along its normal (`reverse`: the other
+ * way), `thickness` thick in the direction `angle` (0° is the sketch's x) and `width` wide across it, with a wedge at its free end: `hookHeight` of the beam's end, standing
+ * out `hookDepth` from its front, flat on the side toward the base (the catch face), sloped on the tip side (the lead-in). The beam runs a little into the body it stands on.
+ */
+export interface SnapHookFeature extends FeatureBase {
+  type: 'snapHook';
+  sketch: Id;
+  width: Expr;
+  thickness: Expr;
+  length: Expr;
+  hookHeight: Expr;
+  hookDepth: Expr;
+  angle?: Expr;
+  reverse?: boolean;
+}
+
+/**
+ * Snap catch (卡榫的窗, C4.11, v35): at the free points of a sketch, a rectangular window `length` long in the direction `angle` and `width` across it, cut `depth` into the body
+ * from the sketch plane (against its normal; `reverse`: along it). The size is typed in (the hook's width and depth plus the clearance the process needs).
+ */
+export interface SnapCatchFeature extends FeatureBase {
+  type: 'snapCatch';
+  sketch: Id;
+  length: Expr;
+  width: Expr;
+  depth: Expr;
+  angle?: Expr;
+  reverse?: boolean;
+}
+
+/**
+ * Vent (排氣口, C4.11, v35): at the free points of a sketch, a row of `count` slots, each `length` long in the direction `angle` and `width` across it (round-ended with
+ * `rounded`), `pitch` apart from center to center across `angle`, the row centered on the point; cut `depth` into the body from the sketch plane.
+ */
+export interface VentFeature extends FeatureBase {
+  type: 'vent';
+  sketch: Id;
+  count: Expr;
+  pitch: Expr;
+  length: Expr;
+  width: Expr;
+  depth: Expr;
+  angle?: Expr;
+  rounded?: boolean;
+  reverse?: boolean;
+}
+
+/**
  * Shell (薄殼, C5.4, v15): the body hollowed out to a wall of 	hickness, the picked aces taken away to open it; the wall grows inward, or
  * outward with outward.
  */
@@ -631,6 +679,9 @@ export type Feature =
   | ThickenFeature
   | LipGrooveFeature
   | ScrewBossFeature
+  | SnapHookFeature
+  | SnapCatchFeature
+  | VentFeature
   | CutWithSurfaceFeature
   | FilletFeature
   | ChamferFeature

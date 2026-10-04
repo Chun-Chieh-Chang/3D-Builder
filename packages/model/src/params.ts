@@ -165,6 +165,40 @@ export function mapExprs(feature: Feature, fn: (expr: Expr, kind: ExprKind, role
       if (same) return feature;
       return { ...f, diameter, holeDiameter, height, ...(holeDepth === undefined ? {} : { holeDepth }), ...(draft === undefined ? {} : { draft }), ...(ribs ? { ribs } : {}) };
     }
+    case 'snapHook': {
+      const f = feature;
+      const width = fn(f.width, 'length', 'positive');
+      const thickness = fn(f.thickness, 'length', 'positive');
+      const length = fn(f.length, 'length', 'positive');
+      const hookHeight = fn(f.hookHeight, 'length', 'positive');
+      const hookDepth = fn(f.hookDepth, 'length', 'positive');
+      const angle = f.angle === undefined ? undefined : fn(f.angle, 'angle', 'any');
+      const same = width === f.width && thickness === f.thickness && length === f.length && hookHeight === f.hookHeight && hookDepth === f.hookDepth && angle === f.angle;
+      if (same) return feature;
+      return { ...f, width, thickness, length, hookHeight, hookDepth, ...(angle === undefined ? {} : { angle }) };
+    }
+    case 'snapCatch': {
+      const f = feature;
+      const length = fn(f.length, 'length', 'positive');
+      const width = fn(f.width, 'length', 'positive');
+      const depth = fn(f.depth, 'length', 'positive');
+      const angle = f.angle === undefined ? undefined : fn(f.angle, 'angle', 'any');
+      const same = length === f.length && width === f.width && depth === f.depth && angle === f.angle;
+      if (same) return feature;
+      return { ...f, length, width, depth, ...(angle === undefined ? {} : { angle }) };
+    }
+    case 'vent': {
+      const f = feature;
+      const count = fn(f.count, 'count', 'positive');
+      const pitch = fn(f.pitch, 'length', 'positive');
+      const length = fn(f.length, 'length', 'positive');
+      const width = fn(f.width, 'length', 'positive');
+      const depth = fn(f.depth, 'length', 'positive');
+      const angle = f.angle === undefined ? undefined : fn(f.angle, 'angle', 'any');
+      const same = count === f.count && pitch === f.pitch && length === f.length && width === f.width && depth === f.depth && angle === f.angle;
+      if (same) return feature;
+      return { ...f, count, pitch, length, width, depth, ...(angle === undefined ? {} : { angle }) };
+    }
     case 'pattern': {
       const d = feature.def;
       const direction = (x: PatternDirection): PatternDirection => {

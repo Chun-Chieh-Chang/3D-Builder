@@ -142,6 +142,8 @@ const migrations: Record<number, (doc: Json) => Json> = {
   32: (doc) => doc,
   // v34: the screw boss (C4.11, Phase 6). Nothing to convert; the version keeps older programs from opening a feature they would skip.
   33: (doc) => doc,
+  // v35: the snap hook, its catch window and the vent (C4.11, Phase 6). Nothing to convert; the version keeps older programs from opening a feature they would skip.
+  34: (doc) => doc,
 };
 
 export class FormatError extends Error {

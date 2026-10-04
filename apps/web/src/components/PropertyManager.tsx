@@ -48,6 +48,9 @@ import {
   type ThickenFeature,
   type LipGrooveFeature,
   type ScrewBossFeature,
+  type SnapHookFeature,
+  type SnapCatchFeature,
+  type VentFeature,
   type CutWithSurfaceFeature,
   type MirrorFeature,
   type PartDoc,
@@ -1790,6 +1793,46 @@ function KnitPanel({ f }: { f: KnitFeature }) {
   );
 }
 
+/**
+ * The hook, its window and the vent (C4.11): features at the points of a sketch with a handful of sizes, an angle and (for the vent) round ends. The sizes are `fields`
+ * (the key in the feature, its label), the angle is optional (empty = none); `flags` are the checkboxes.
+ */
+function SketchPointsPanel({ f, fields, hint }: { f: SnapHookFeature | SnapCatchFeature | VentFeature; fields: [string, string][]; hint: string }) {
+  const { id, type, name, suppressed, sketch, ...settings } = f;
+  void [id, type, name, suppressed, sketch];
+  const run = (patch: Record<string, unknown>): Command => {
+    const next = { ...settings, ...patch } as Record<string, unknown>;
+    for (const k of Object.keys(next)) if (next[k] === undefined || next[k] === '' || next[k] === false) delete next[k];
+    return f.type === 'snapHook' ? { type: 'setSnapHook', featureId: f.id, hook: next as never } : f.type === 'snapCatch' ? { type: 'setSnapCatch', featureId: f.id, window: next as never } : { type: 'setVent', featureId: f.id, vent: next as never };
+  };
+  const value = (key: string): string => String((f as unknown as Record<string, unknown>)[key] ?? '');
+  return (
+    <section className="pm-group">
+      {fields.map(([key, label]) => (
+        <label className="pm-row" key={key}>
+          <span>{label}</span>
+          <ValueInput value={value(key)} toCommand={(v) => run({ [key]: v })} />
+        </label>
+      ))}
+      <label className="pm-row">
+        <span>{t('pm.slots.angle')}</span>
+        <ValueInput value={value('angle')} toCommand={(v) => run({ angle: v })} suffix="°" />
+      </label>
+      {f.type === 'vent' && (
+        <label className="pm-row checkbox">
+          <input type="checkbox" checked={!!f.rounded} onChange={(e) => store.execute(run({ rounded: e.target.checked }))} />
+          <span>{t('pm.slots.rounded')}</span>
+        </label>
+      )}
+      <label className="pm-row checkbox">
+        <input type="checkbox" checked={!!f.reverse} onChange={(e) => store.execute(run({ reverse: e.target.checked }))} />
+        <span>{t('pm.reverseDirection')}</span>
+      </label>
+      <p className="hint">{hint}</p>
+    </section>
+  );
+}
+
 /** Screw boss (C4.11): the outside and the pilot hole, the height and how deep the hole goes, the draft of the wall, and the gussets round the foot. */
 function ScrewBossPanel({ f }: { f: ScrewBossFeature }) {
   const { id, type, name, suppressed, sketch, ...settings } = f;
@@ -2126,6 +2169,13 @@ export function PropertyManager() {
       {f.type === 'thicken' && <ThickenPanel f={f} />}
       {f.type === 'lipGroove' && <LipGroovePanel f={f} />}
       {f.type === 'screwBoss' && <ScrewBossPanel f={f} />}
+      {f.type === 'snapHook' && (
+        <SketchPointsPanel f={f} hint={t('pm.hook.hint')} fields={[['width', t('pm.hook.width')], ['thickness', t('pm.hook.thickness')], ['length', t('pm.hook.length')], ['hookHeight', t('pm.hook.hookHeight')], ['hookDepth', t('pm.hook.hookDepth')]]} />
+      )}
+      {f.type === 'snapCatch' && <SketchPointsPanel f={f} hint={t('pm.catch.hint')} fields={[['length', t('pm.slots.length')], ['width', t('pm.slots.width')], ['depth', t('pm.slots.depth')]]} />}
+      {f.type === 'vent' && (
+        <SketchPointsPanel f={f} hint={t('pm.vent.hint')} fields={[['count', t('pm.slots.count')], ['pitch', t('pm.slots.pitch')], ['length', t('pm.slots.length')], ['width', t('pm.slots.width')], ['depth', t('pm.slots.depth')]]} />
+      )}
       {f.type === 'cutWithSurface' && <CutWithSurfacePanel f={f} />}
       {f.type === 'combine' && <CombinePanel f={f} />}
     </div>

@@ -1236,6 +1236,30 @@ class AppStore {
     this.openNew({ id: this.allocator().take('boss'), type: 'screwBoss', name: nextName(this.history.doc, name), suppressed: false, sketch: sketch.id, diameter: '6', holeDiameter: '2.5', height: '10' }, name);
   }
 
+  /** 「卡榫」 (C4.11): a beam 15 long, 2 thick and 6 wide with a hook 3 high standing out 1.2, at the free points of the selected sketch, to be set in the PropertyManager. */
+  newSnapHook(): void {
+    const sketch = this.selectedSketch();
+    if (!sketch) return;
+    const name = t('feature.snapHook');
+    this.openNew({ id: this.allocator().take('hook'), type: 'snapHook', name: nextName(this.history.doc, name), suppressed: false, sketch: sketch.id, width: '6', thickness: '2', length: '15', hookHeight: '3', hookDepth: '1.2' }, name);
+  }
+
+  /** 「卡榫的窗」 (C4.11): a window 8 × 4 cut 3 deep at the free points of the selected sketch. */
+  newSnapCatch(): void {
+    const sketch = this.selectedSketch();
+    if (!sketch) return;
+    const name = t('feature.snapCatch');
+    this.openNew({ id: this.allocator().take('catch'), type: 'snapCatch', name: nextName(this.history.doc, name), suppressed: false, sketch: sketch.id, length: '8', width: '4', depth: '3' }, name);
+  }
+
+  /** 「排氣口」 (C4.11): a row of five slots 10 × 2, 4 apart, cut 3 deep at the free points of the selected sketch. */
+  newVent(): void {
+    const sketch = this.selectedSketch();
+    if (!sketch) return;
+    const name = t('feature.vent');
+    this.openNew({ id: this.allocator().take('vent'), type: 'vent', name: nextName(this.history.doc, name), suppressed: false, sketch: sketch.id, count: '5', pitch: '4', length: '10', width: '2', depth: '3' }, name);
+  }
+
   /** 「肋材」 (C4.7): the one line of the selected sketch as a wall of 4 mm about the sketch plane, grown to the body in the PropertyManager's session. */
   newRib(): void {
     const sketch = this.selectedSketch();

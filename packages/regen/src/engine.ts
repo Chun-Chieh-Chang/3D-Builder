@@ -48,6 +48,9 @@ import {
   type ThickenFeature,
   type LipGrooveFeature,
   type ScrewBossFeature,
+  type SnapHookFeature,
+  type SnapCatchFeature,
+  type VentFeature,
   type CutWithSurfaceFeature,
   type ShellFeature,
   type SketchFeature,
@@ -476,6 +479,18 @@ export class Regenerator {
           }
           case 'screwBoss': {
             set = this.advance(set, this.screwBoss(feature, sketches, set));
+            return done({ status: 'ok' });
+          }
+          case 'snapHook': {
+            set = this.advance(set, this.snapHook(feature, sketches, set));
+            return done({ status: 'ok' });
+          }
+          case 'snapCatch': {
+            set = this.advance(set, this.cutSlots(feature, sketches, set));
+            return done({ status: 'ok' });
+          }
+          case 'vent': {
+            set = this.advance(set, this.cutSlots(feature, sketches, set));
             return done({ status: 'ok' });
           }
           case 'cutWithSurface': {
@@ -1820,6 +1835,121 @@ export class Regenerator {
         const frame: PlaneFrame = { origin, xDir: radial, yDir: up, normal: cross(radial, up) };
         const loop = gusset.map((p, i) => ({ kind: 'line' as const, a: p, b: gusset[(i + 1) % 3]!, source: `${pt.id}.rib${k}.${['floor', 'slope', 'wall'][i]!}` }));
         join(this.kernel.extrude(frame, [{ outer: loop, holes: [] }], add([0, 0, 0], frame.normal, thickness), -thickness / 2));
+      }
+    }
+    return [...list];
+  }
+
+  /** The free points of a sketch (single points, not end points or centers of lines), where a hole, a boss, a hook or a slot goes. */
+  private freePoints(s: NonNullable<ReturnType<RebuildResult['sketches']['get']>>): { id: string; at: [number, number] }[] {
+    const used = new Set(s.sketch.entities.flatMap((e) => (e.type === 'line' ? [e.p1, e.p2] : e.type === 'circle' ? [e.center] : e.type === 'arc' ? [e.center, e.start, e.end] : [])));
+    return s.sketch.entities.flatMap((e) => (e.type === 'point' && !e.construction && !used.has(e.id) && s.solved.geometry.get(e.id)?.type === 'point' ? [{ id: e.id, at: (s.solved.geometry.get(e.id) as { p: [number, number] }).p }] : []));
+  }
+
+  /** The caps of an extruded tool have no profile edge to be named after: they are named for the point and the part (`<sketch>.<point>.<name>`), so each one is its own. */
+  private capsNamed(tool: OpResult, id: string, start: string, end: string): OpResult {
+    const origins = tool.faceOrigins.map((o) => o.map((x): FaceOrigin => (x.rel === 'cap' ? { rel: 'generated', kind: 'profileEdge', source: `${id}.${x.which === 'start' ? start : end}` } : x)));
+    return { shape: tool.shape, faceOrigins: origins };
+  }
+
+  /**
+   * 「卡榫」 (C4.11, ADR 0081): at each free point a cantilever beam standing on the sketch plane, grown along its normal: the profile in the plane of the direction `angle` and
+   * the normal is the beam (from a little below the plane, so that it joins) with the wedge of the hook at its end, swept `width` across, centered. The faces are named
+   * `<feature>:side:<sketch>.<point>.<part>`: `base`, `back`, `front`, `catch` (the flat under the hook), `ramp` (the lead-in), `tip`, and `left` and `right` for the sides of the beam.
+   */
+  private snapHook(f: SnapHookFeature, sketches: RebuildResult['sketches'], set: Bodies): BodyState[] {
+    const s = sketches.get(f.sketch);
+    if (!s) throw new FeatureError(t('feature.sketchGone'));
+    if (!set.view) throw new FeatureError(t('feature.needsBody', { what: t('feature.snapHook') }));
+    const points = this.freePoints(s);
+    if (points.length === 0) throw new FeatureError(t('feature.holeNoPoints'));
+    const n = s.frame.normal;
+    const up: Vec3 = f.reverse ? [-n[0], -n[1], -n[2]] : n;
+    const width = evalLength(f.width);
+    const thickness = evalLength(f.thickness);
+    const length = evalLength(f.length);
+    const hh = evalLength(f.hookHeight);
+    const depth = evalLength(f.hookDepth);
+    if (!(hh < length - 1e-9)) throw new FeatureError(t('hook.tooShort'));
+    const a = f.angle === undefined ? 0 : evalAngle(f.angle);
+    const along = add(add([0, 0, 0], s.frame.xDir, Math.cos(a)), s.frame.yDir, Math.sin(a));
+    const sink = 0.5; // the beam starts this far below the plane, inside the body it stands on
+    const profile: [number, number][] = [[0, -sink], [thickness, -sink], [thickness, length - hh], [thickness + depth, length - hh], [thickness, length], [0, length]];
+    const edges = ['base', 'front', 'catch', 'ramp', 'tip', 'back'];
+    // the wedge is turned the way the beam is drawn (counter-clockwise in (direction, up)); `cross(along, up)` is the way it is swept across
+    let list: readonly BodyState[] = set.list;
+    for (const pt of points) {
+      const origin = add(add(s.frame.origin, s.frame.xDir, pt.at[0]), s.frame.yDir, pt.at[1]);
+      const frame: PlaneFrame = { origin, xDir: along, yDir: up, normal: cross(along, up) };
+      const loop = profile.map((q, i) => ({ kind: 'line' as const, a: q, b: profile[(i + 1) % profile.length]!, source: `${pt.id}.${edges[i]!}` }));
+      const tool = this.capsNamed(this.kernel.extrude(frame, [{ outer: loop, holes: [] }], add([0, 0, 0], frame.normal, width), -width / 2), pt.id, 'left', 'right');
+      const before = list.length;
+      list = this.apply(f.id, 'boss', tool, { featureId: f.id, sketchId: f.sketch }, list, true);
+      if (list.length > before) throw new FeatureError(t('hook.floating'));
+    }
+    return [...list];
+  }
+
+  /**
+   * 「卡榫的窗」 and 「排氣口」 (C4.11, ADR 0081): at each free point a row of `count` slots (one for the window), each a rectangle `length` long along the direction `angle` and
+   * `width` across it, or with round ends, centered on the point and spaced `pitch` across, cut `depth` from the sketch plane against its normal. The tool starts a little
+   * above the plane for a clean cut. Named `<feature>:side:<sketch>.<point>.s<k>.<part>`: `xlo`, `xhi` (the ends), `ylo`, `yhi` (the sides), and `floor` (the bottom of a blind slot).
+   */
+  private cutSlots(f: SnapCatchFeature | VentFeature, sketches: RebuildResult['sketches'], set: Bodies): BodyState[] {
+    const what = t(f.type === 'vent' ? 'feature.vent' : 'feature.snapCatch');
+    const s = sketches.get(f.sketch);
+    if (!s) throw new FeatureError(t('feature.sketchGone'));
+    if (!set.view) throw new FeatureError(t('feature.needsBody', { what }));
+    const points = this.freePoints(s);
+    if (points.length === 0) throw new FeatureError(t('feature.holeNoPoints'));
+    const n = s.frame.normal;
+    const down: Vec3 = f.reverse ? n : [-n[0], -n[1], -n[2]];
+    const length = evalLength(f.length);
+    const width = evalLength(f.width);
+    const depth = evalLength(f.depth);
+    const vent = f.type === 'vent';
+    const count = vent ? Math.round(evalNumber(f.count)) : 1;
+    const pitch = vent ? evalLength(f.pitch) : 0;
+    const rounded = vent && !!f.rounded;
+    if (vent && (!Number.isInteger(count) || count < 1 || count > 50)) throw new FeatureError(t('slots.count'));
+    if (vent && count > 1 && !(pitch > width + 1e-9)) throw new FeatureError(t('slots.pitch'));
+    if (rounded && !(length > width + 1e-9)) throw new FeatureError(t('slots.rounded'));
+    const a = f.angle === undefined ? 0 : evalAngle(f.angle);
+    const along = add(add([0, 0, 0], s.frame.xDir, Math.cos(a)), s.frame.yDir, Math.sin(a));
+    const across = cross(down, along); // right-handed with the way of the cut: along × across = down
+    const lead = 1;
+    const hx = length / 2;
+    const hy = width / 2;
+    const r = hy;
+    const x = hx - r;
+    const outline = (src: (part: string) => string) =>
+      rounded
+        ? [
+            { kind: 'line' as const, a: [-x, -hy] as [number, number], b: [x, -hy] as [number, number], source: src('ylo') },
+            { kind: 'arc' as const, c: [x, 0] as [number, number], r, from: [x, -hy] as [number, number], to: [x, hy] as [number, number], ccw: true, source: src('xhi') },
+            { kind: 'line' as const, a: [x, hy] as [number, number], b: [-x, hy] as [number, number], source: src('yhi') },
+            { kind: 'arc' as const, c: [-x, 0] as [number, number], r, from: [-x, hy] as [number, number], to: [-x, -hy] as [number, number], ccw: true, source: src('xlo') },
+          ]
+        : [
+            { kind: 'line' as const, a: [-hx, -hy] as [number, number], b: [hx, -hy] as [number, number], source: src('ylo') },
+            { kind: 'line' as const, a: [hx, -hy] as [number, number], b: [hx, hy] as [number, number], source: src('xhi') },
+            { kind: 'line' as const, a: [hx, hy] as [number, number], b: [-hx, hy] as [number, number], source: src('yhi') },
+            { kind: 'line' as const, a: [-hx, hy] as [number, number], b: [-hx, -hy] as [number, number], source: src('xlo') },
+          ];
+    let list: readonly BodyState[] = set.list;
+    for (const pt of points) {
+      const center = add(add(s.frame.origin, s.frame.xDir, pt.at[0]), s.frame.yDir, pt.at[1]);
+      for (let k = 0; k < count; k++) {
+        const origin = add(add(center, across, (k - (count - 1) / 2) * pitch), down, -lead);
+        const frame: PlaneFrame = { origin, xDir: along, yDir: across, normal: down };
+        const id = `${pt.id}.s${k}`;
+        const tool = this.capsNamed(this.kernel.extrude(frame, [{ outer: outline((part) => `${id}.${part}`), holes: [] }], add([0, 0, 0], down, depth + lead), 0), id, 'lid', 'floor');
+        try {
+          list = this.apply(f.id, 'cut', tool, { featureId: f.id, sketchId: f.sketch }, list, false);
+        } catch (e) {
+          if (e instanceof FeatureError) throw new FeatureError(t('slots.missed', { id: pt.id }));
+          throw e;
+        }
       }
     }
     return [...list];
