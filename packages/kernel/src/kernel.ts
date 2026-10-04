@@ -12,6 +12,7 @@ import {
   type Distance,
   type DraftFace,
   type DraftReport,
+  type RingSide,
   type ThicknessClass,
   type ThicknessFace,
   type ThicknessReport,
@@ -2639,6 +2640,110 @@ export class Kernel {
       }
     } finally {
       faces.dispose();
+      arena.dispose();
+    }
+  }
+
+  // ------------------------------------------------------------------ plastic part features (C4.11, Phase 6)
+
+  /**
+   * The solid of a lip or a groove (C4.11, ADR 0079): on the planar face `faceIndex` of `target`, a ring that follows the outer outline of the face. The outline is offset inward
+   * (`BRepOffsetAPI_MakeOffset`) by `offset` and by `offset + width`, and the ring between the two is grown `height` along the outward normal of the face (`out`: a lip) or along
+   * the inward one (`in`: what a groove takes away). The ring has to lie on the face (the face itself, with its holes: a ring over the cavity of a shell is refused), and it
+   * has to be there: an offset that is larger than the face is wide fails. `sides` says what each face of the tool is, for its name: an end, or a side made from an
+   * edge of the face's outline (the body's edge number) on the outer or the inner side of the ring. The tool is the caller's to release.
+   */
+  ringTool(target: ShapeId, faceIndex: number, offset: number, width: number, height: number, direction: 'out' | 'in'): { shape: ShapeId; sides: RingSide[]; area: number } {
+    if (![offset, width, height].every(Number.isFinite) || !(offset >= 0) || !(width > 0) || !(height > 0)) throw new KernelError(t('lip.badSizes'));
+    const oc = this.oc;
+    const arena = new Arena();
+    const topology = this.topology(target);
+    const info = topology.faces[faceIndex];
+    if (!info) throw new KernelError(t('edit.faceOutOfRange', { index: faceIndex }));
+    if (info.surface !== 'plane' || !info.normal) throw new KernelError(t('lip.planeOnly'));
+    const faces = ShapeIndex.of(oc, this.get(target), T.FACE, arena);
+    const bodyEdges = ShapeIndex.of(oc, this.get(target), T.EDGE, arena);
+    const made: ShapeId[] = [];
+    try {
+      const face = arena.own(oc.TopoDS.Face(faces.keys[faceIndex]!));
+      const outer = arena.own(oc.BRepTools.OuterWire(face));
+      const diagonal = (s: TopoDS_Shape) => {
+        const box = arena.own(new oc.Bnd_Box());
+        oc.BRepBndLib.Add(s, box, false);
+        const lo = this.xyz(arena.own(box.CornerMin()));
+        const hi = this.xyz(arena.own(box.CornerMax()));
+        return Math.hypot(hi[0] - lo[0], hi[1] - lo[1], hi[2] - lo[2]);
+      };
+      // the outline offset inward by d (the wire does not say which side is in: the one that is smaller is)
+      const inward = (d: number): TopoDS_Shape => {
+        if (d < 1e-12) return outer;
+        const size = diagonal(outer);
+        for (const sign of [-1, 1]) {
+          const mk = arena.own(new oc.BRepOffsetAPI_MakeOffset(outer, oc.GeomAbs_JoinType.GeomAbs_Intersection, false));
+          try {
+            mk.Perform(sign * d);
+            if (!mk.IsDone()) continue;
+          } catch {
+            continue;
+          }
+          const wires = ShapeIndex.of(oc, arena.own(mk.Shape()), 'TopAbs_WIRE', arena);
+          if (wires.size !== 1) continue;
+          const wire = arena.own(oc.TopoDS.Wire(wires.keys[0]!));
+          if (diagonal(wire) < size - 1e-9) return wire;
+        }
+        throw new KernelError(t('lip.offsetFailed', { distance: d }));
+      };
+      const w1 = inward(offset);
+      const w2 = inward(offset + width);
+      const mkRing = arena.own(new oc.BRepBuilderAPI_MakeFace(w1 as never, true));
+      mkRing.Add(arena.own(oc.TopoDS.Wire(w2.Reversed())));
+      if (!mkRing.IsDone()) throw new KernelError(t('lip.offsetFailed', { distance: offset + width }));
+      const ring = arena.own(mkRing.Face());
+      const ringId = this.put(ring.Oriented(ring.Orientation()));
+      made.push(ringId);
+      const area = this.topology(ringId).faces.reduce((a, f) => a + f.area, 0);
+      if (!(area > 1e-9)) throw new KernelError(t('lip.offsetFailed', { distance: offset + width }));
+      const n = info.normal;
+      const sign = direction === 'out' ? 1 : -1;
+      const step: Vec3 = [n[0] * sign * height, n[1] * sign * height, n[2] * sign * height];
+      const prism = (f: TopoDS_Shape) => {
+        const mk = arena.own(new oc.BRepPrimAPI_MakePrism(f, arena.own(new oc.gp_Vec(step[0], step[1], step[2])), false, true));
+        return mk.Shape();
+      };
+      const tool = this.put(prism(ring));
+      made.push(tool);
+      if (this.solidCount(tool) !== 1) throw new KernelError(t('lip.offsetFailed', { distance: offset + width }));
+      // the ring must lie on the face (with its holes): what the ring and the face have in common, grown the same height, is all of the ring
+      const common = this.boolean('common', tool, this.put(prism(face)));
+      const shared = this.massProps(common.shape).volume;
+      this.release(common.shape);
+      if (!(shared >= area * height * (1 - 1e-6))) throw new KernelError(t('lip.notOnFace'));
+
+      // what each face of the tool is
+      const dirv: Vec3 = [n[0] * sign, n[1] * sign, n[2] * sign];
+      const along = (p: Vec3) => p[0] * dirv[0] + p[1] * dirv[1] + p[2] * dirv[2];
+      const base = along(info.center);
+      const outline = ShapeIndex.of(oc, outer, T.EDGE, arena);
+      const candidates = outline.keys.map((e) => ({ edge: e, index: bodyEdges.indexOf(e) }));
+      const sides: RingSide[] = this.topology(tool).faces.map((f): RingSide => {
+        if (f.surface === 'plane' && f.normal && Math.abs(f.normal[0] * dirv[0] + f.normal[1] * dirv[1] + f.normal[2] * dirv[2]) > 0.999) return { kind: 'cap', which: Math.abs(along(f.center) - base) < 1e-6 ? 'start' : 'end' };
+        // a side: the edge of the outline it came from is the nearest one, seen from the plane of the face
+        const lift = along(f.center) - base;
+        const flat: Vec3 = [f.center[0] - dirv[0] * lift, f.center[1] - dirv[1] * lift, f.center[2] - dirv[2] * lift];
+        const vertex = arena.own(arena.own(new oc.BRepBuilderAPI_MakeVertex(this.pnt(arena, flat))).Vertex());
+        let best = { index: -1, distance: Infinity };
+        for (const c of candidates) {
+          const d = arena.own(new (oc.BRepExtrema_DistShapeShape as unknown as new (a: TopoDS_Shape, b: TopoDS_Shape) => InstanceType<OC['BRepExtrema_DistShapeShape']>)(vertex, c.edge));
+          if (d.IsDone() && d.NbSolution() > 0 && d.Value() < best.distance) best = { index: c.index, distance: d.Value() };
+        }
+        return { kind: 'side', edge: best.index, inner: best.distance > offset + width / 2 };
+      });
+      made.pop();
+      return { shape: tool, sides, area };
+    } finally {
+      for (const id of made) this.release(id);
+      faces.dispose();
+      bodyEdges.dispose();
       arena.dispose();
     }
   }

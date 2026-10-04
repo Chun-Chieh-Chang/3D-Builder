@@ -46,6 +46,7 @@ import {
   type TrimSurfaceFeature,
   type ExtendSurfaceFeature,
   type ThickenFeature,
+  type LipGrooveFeature,
   type CutWithSurfaceFeature,
   type MirrorFeature,
   type PartDoc,
@@ -1788,6 +1789,45 @@ function KnitPanel({ f }: { f: KnitFeature }) {
   );
 }
 
+/** Lip and groove (C4.11): the planar face, which of the two, how far in from the edge, how wide and how high (deep), and what the ring came to. */
+function LipGroovePanel({ f }: { f: LipGrooveFeature }) {
+  const status = useStore((s) => s.result?.features.find((r) => r.id === f.id));
+  const run = (patch: Partial<Pick<LipGrooveFeature, 'face' | 'kind' | 'offset' | 'width' | 'height'>>): Command => {
+    const next = { face: f.face, kind: f.kind, offset: f.offset, width: f.width, height: f.height, ...patch };
+    return { type: 'setLipGroove', featureId: f.id, ...next };
+  };
+  return (
+    <section className="pm-group">
+      <h4>{t('pm.lip.face')}</h4>
+      <ul className="selection-box">
+        {!f.face.name && <li className="muted">{t('pm.lip.faceEmpty')}</li>}
+        {f.face.name && <FaceRow featureId={f.id} r={f.face} label={t('pm.face', { n: 1 })} />}
+      </ul>
+      <label className="pm-row">
+        <span>{t('pm.lip.kind')}</span>
+        <select value={f.kind} onChange={(e) => store.execute(run({ kind: e.target.value === 'groove' ? 'groove' : 'lip' }))}>
+          <option value="lip">{t('lip.kindLip')}</option>
+          <option value="groove">{t('lip.kindGroove')}</option>
+        </select>
+      </label>
+      <label className="pm-row">
+        <span>{t('pm.lip.offset')}</span>
+        <ValueInput value={f.offset} toCommand={(offset) => run({ offset })} />
+      </label>
+      <label className="pm-row">
+        <span>{t('pm.lip.width')}</span>
+        <ValueInput value={f.width} toCommand={(width) => run({ width })} />
+      </label>
+      <label className="pm-row">
+        <span>{t('pm.lip.height')}</span>
+        <ValueInput value={f.height} toCommand={(height) => run({ height })} />
+      </label>
+      {status?.status === 'ok' && status.info && <p className="hint gap-info">{status.info}</p>}
+      <p className="hint">{t('pm.lip.hint')}</p>
+    </section>
+  );
+}
+
 /** Thicken (C9.4): the surface body, the thickness (negative: the other way), and what was measured of the solid. */
 function ThickenPanel({ f }: { f: ThickenFeature }) {
   const pool = useStore((s) => s.bodyPool).filter((b) => b.surface);
@@ -2028,6 +2068,7 @@ export function PropertyManager() {
       {f.type === 'flatSurface' && <FlatSurfacePanel f={f} />}
       {f.type === 'extendSurface' && <ExtendSurfacePanel f={f} />}
       {f.type === 'thicken' && <ThickenPanel f={f} />}
+      {f.type === 'lipGroove' && <LipGroovePanel f={f} />}
       {f.type === 'cutWithSurface' && <CutWithSurfacePanel f={f} />}
       {f.type === 'combine' && <CombinePanel f={f} />}
     </div>

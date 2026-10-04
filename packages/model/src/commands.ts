@@ -95,6 +95,8 @@ ull). */
   | { type: 'setTrimSurface'; featureId: Id; sketch: Id; face: Ref; keep?: 'outside'; reverse?: boolean; throughAll?: boolean }
   /** Changes an extend surface (C9.3): the edges to extend past and by how much. */
   | { type: 'setExtendSurface'; featureId: Id; edges: Ref[]; distance: Expr }
+  /** Changes a lip or groove (C4.11): the planar face, which of the two, how far in from the edge, how wide and how high (deep). */
+  | { type: 'setLipGroove'; featureId: Id; face: Ref; kind: 'lip' | 'groove'; offset: Expr; width: Expr; height: Expr }
   /** Changes a thicken (C9.4): the surface body and the thickness (negative: the other way). */
   | { type: 'setThicken'; featureId: Id; body: Ref; thickness: Expr }
   /** Changes a cut with surface (C9.4): the solid, the surface, the plane whose normal is the way of the sweep, and whether it goes the other way. */
@@ -500,6 +502,9 @@ function validateNewFeature(doc: PartDoc, f: Feature, index: number): void {
     case 'knit':
       if (f.bodies.some((r) => r.kind !== 'body')) throw new CommandError(t('cmd.knitOnlyBodies'));
       return;
+    case 'lipGroove':
+      if (f.face.kind !== 'face') throw new CommandError(t('cmd.lipOnlyFace'));
+      return;
     case 'thicken':
       if (f.body.kind !== 'body') throw new CommandError(t('cmd.surfaceOnlyBodies'));
       return;
@@ -817,6 +822,18 @@ export function mutate(draft: Draft<PartDoc>, cmd: Command): void {
       else delete f.reverse;
       if (cmd.throughAll) f.throughAll = true;
       else delete f.throughAll;
+      return;
+    }
+    case 'setLipGroove': {
+      const f = feature(draft, cmd.featureId);
+      if (f.type !== 'lipGroove') throw new CommandError(t('cmd.onlyLipHasParams'));
+      if (cmd.face.kind !== 'face') throw new CommandError(t('cmd.lipOnlyFace'));
+      f.face = cmd.face;
+      f.kind = cmd.kind;
+      f.offset = cmd.offset;
+      f.width = cmd.width;
+      f.height = cmd.height;
+      checkExprs(draft as PartDoc, f as Feature);
       return;
     }
     case 'setThicken': {

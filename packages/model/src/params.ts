@@ -16,7 +16,7 @@ import { isDimension } from './schema';
 export type ExprKind = 'length' | 'angle' | 'count';
 
 /** What a value must be for the feature to make sense: a size above zero, or an angle in the range its feature allows. */
-export type ExprRole = 'positive' | 'nonZero' | 'revolveAngle' | 'chamferAngle' | 'draftAngle' | 'includedAngle' | 'planeAngle' | 'count' | 'any';
+export type ExprRole = 'positive' | 'nonNegative' | 'nonZero' | 'revolveAngle' | 'chamferAngle' | 'draftAngle' | 'includedAngle' | 'planeAngle' | 'count' | 'any';
 
 /** Why a value is not acceptable for its role (in words), or null. `expr` is what the user wrote. */
 export function roleProblem(v: number, role: ExprRole, expr: Expr): string | null {
@@ -24,6 +24,8 @@ export function roleProblem(v: number, role: ExprRole, expr: Expr): string | nul
   switch (role) {
     case 'positive':
       return v > 0 ? null : t('cmd.mustBePositive', { value: expr });
+    case 'nonNegative':
+      return v >= 0 ? null : t('cmd.mustNotBeNegative', { value: expr });
     case 'nonZero':
       return Math.abs(v) > 1e-9 ? null : t('cmd.mustNotBeZero', { value: expr });
     case 'revolveAngle':
@@ -179,6 +181,12 @@ export function mapExprs(feature: Feature, fn: (expr: Expr, kind: ExprKind, role
       const each = feature.faceThickness?.map((x) => ({ ...x, thickness: fn(x.thickness, 'length', 'positive') }));
       const same = thickness === feature.thickness && (!each || each.every((x, i) => x.thickness === feature.faceThickness![i]!.thickness));
       return same ? feature : { ...feature, thickness, ...(each ? { faceThickness: each } : {}) };
+    }
+    case 'lipGroove': {
+      const offset = fn(feature.offset, 'length', 'nonNegative');
+      const width = fn(feature.width, 'length', 'positive');
+      const height = fn(feature.height, 'length', 'positive');
+      return offset === feature.offset && width === feature.width && height === feature.height ? feature : { ...feature, offset, width, height };
     }
     case 'thicken': {
       const thickness = fn(feature.thickness, 'length', 'nonZero');

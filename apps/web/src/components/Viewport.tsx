@@ -51,12 +51,12 @@ function picking(feature: Feature | undefined, editing: boolean, modelTool: 'con
   const endBody = ends.some((d) => d.type === 'upToBody');
   const upTo = endFaces.length > 0 || endVertices.length > 0 || endBody ? ends : null;
   const edgeFeature = feature?.type === 'fillet' || feature?.type === 'chamfer' || feature?.type === 'fillSurface' || feature?.type === 'flatSurface' || feature?.type === 'extendSurface' ? feature : null;
-  const faceFeature = feature?.type === 'deleteFace' || feature?.type === 'moveFace' || feature?.type === 'shell' || feature?.type === 'draft' || feature?.type === 'offsetSurface' || feature?.type === 'splitLine' || feature?.type === 'trimSurface' ? feature : null;
+  const faceFeature = feature?.type === 'deleteFace' || feature?.type === 'moveFace' || feature?.type === 'shell' || feature?.type === 'draft' || feature?.type === 'offsetSurface' || feature?.type === 'splitLine' || feature?.type === 'trimSurface' || feature?.type === 'lipGroove' ? feature : null;
   const combine = feature?.type === 'combine' || feature?.type === 'knit' || feature?.type === 'thicken' || feature?.type === 'cutWithSurface';
   const prompt_ = combine
     ? t(feature?.type === 'knit' ? 'pick.knit' : feature?.type === 'thicken' ? 'pick.thicken' : feature?.type === 'cutWithSurface' ? 'pick.cutWithSurface' : 'pick.combine')
     : faceFeature
-    ? t(faceFeature.type === 'deleteFace' ? 'pick.deleteFace' : faceFeature.type === 'shell' ? 'pick.shell' : faceFeature.type === 'draft' ? 'pick.draft' : faceFeature.type === 'offsetSurface' ? 'pick.offsetSurface' : faceFeature.type === 'splitLine' ? 'pick.splitLine' : faceFeature.type === 'trimSurface' ? 'pick.trimSurface' : 'pick.moveFace')
+    ? t(faceFeature.type === 'deleteFace' ? 'pick.deleteFace' : faceFeature.type === 'shell' ? 'pick.shell' : faceFeature.type === 'draft' ? 'pick.draft' : faceFeature.type === 'offsetSurface' ? 'pick.offsetSurface' : faceFeature.type === 'splitLine' ? 'pick.splitLine' : faceFeature.type === 'trimSurface' ? 'pick.trimSurface' : faceFeature.type === 'lipGroove' ? 'pick.lipGroove' : 'pick.moveFace')
     : edgeFeature
     ? t('pick.edges', { what: FEATURE_LABEL[edgeFeature.type] })
     : upTo

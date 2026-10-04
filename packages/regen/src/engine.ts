@@ -45,6 +45,7 @@ import {
   type TrimSurfaceFeature,
   type ExtendSurfaceFeature,
   type ThickenFeature,
+  type LipGrooveFeature,
   type CutWithSurfaceFeature,
   type ShellFeature,
   type SketchFeature,
@@ -465,6 +466,10 @@ export class Regenerator {
           }
           case 'thicken': {
             set = this.advance(set, this.thicken(feature, set));
+            return done({ status: 'ok' });
+          }
+          case 'lipGroove': {
+            set = this.advance(set, this.lipGroove(feature, set));
             return done({ status: 'ok' });
           }
           case 'cutWithSurface': {
@@ -1928,6 +1933,28 @@ export class Regenerator {
     const topology = this.kernel.topology(shape);
     const names = nameElements([[{ rel: 'generated', kind: 'edge', index: indices[0]! }]], topology, { featureId: f.id, role: 'flat', input: body.names });
     return [...set.list, { id: f.id, shape, topology, names, by: f.id, surface: true }];
+  }
+
+  /**
+   * 「唇與溝槽」 (C4.11): a ring on a planar face that follows the outline of the face, grown out of it (a lip) or cut into the body (a groove) — the tool is made by
+   * `Kernel.ringTool` and joined to the bodies or cut from them like the tool of any boss or cut. Its faces are named after the edge of the outline they came from:
+   * `<feature>:side:ring.<edge name>` for the outside of the ring, the same with `~` for the inside, `<feature>:cap:end` for the far end; so the names follow the model.
+   */
+  private lipGroove(f: LipGrooveFeature, set: Bodies): BodyState[] {
+    const view = set.view;
+    if (!view) throw new FeatureError(t('lip.noBody'));
+    const r = resolveRef(f.face, view.names, view.topology);
+    if (!f.face.name) throw new FeatureError(t('edit.noFacePicked'));
+    if (!r.ok) throw new FeatureError(t('edit.facesLost', { n: 1 }), [{ ref: f.face, reason: r.reason, candidates: r.candidates }]);
+    this.noteFingerprint(r.via, t('edit.faceNoun'), view.names.faces[r.index]!);
+    const { body, local } = set.locate('face', r.index);
+    const lip = f.kind === 'lip';
+    const tool = this.kernel.ringTool(body.shape, local, evalLength(f.offset), evalLength(f.width), evalLength(f.height), lip ? 'out' : 'in');
+    const topology = this.kernel.topology(tool.shape);
+    const origins: FaceOrigin[][] = tool.sides.map((s) => [s.kind === 'cap' ? { rel: 'cap', which: s.which } : { rel: 'generated', kind: 'profileEdge', source: `${body.names.edges[s.edge] ?? `?e${s.edge}`}${s.inner ? '~' : ''}` }]);
+    const named = nameElements(origins, topology, { featureId: f.id, sketchId: 'ring' });
+    this.info = t('lip.info', { kind: t(lip ? 'lip.kindLip' : 'lip.kindGroove'), area: tool.area.toFixed(2), volume: (tool.area * evalLength(f.height)).toFixed(2) });
+    return this.apply(f.id, lip ? 'boss' : 'cut', { shape: tool.shape, faceOrigins: origins }, { featureId: f.id }, set.list, true, f.id, named);
   }
 
   /** A body of the set by the reference to it, said when it is not picked or not there. */

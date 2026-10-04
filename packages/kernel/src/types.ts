@@ -113,6 +113,9 @@ export interface ThicknessReport {
   ms: number;
 }
 
+/** What a face of the tool of a lip or groove is (`Kernel.ringTool`): its end (`start` on the face it stands on, `end` the far one), or a side made from an edge of that face, on the outside of the ring or the inside. */
+export type RingSide = { kind: 'cap'; which: 'start' | 'end' } | { kind: 'side'; edge: number; inner: boolean };
+
 /** How far a shape is from another, by points sampled on it (`Kernel.gapReport`): the nearest distances from those points to the other shape. */
 export interface GapReport {
   samples: number;

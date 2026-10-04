@@ -138,6 +138,8 @@ const migrations: Record<number, (doc: Json) => Json> = {
   30: (doc) => doc,
   // v32: walls of another thickness on a shell (C5.4, Phase 6). Nothing to convert; the version keeps older programs from opening a shell they would make evenly.
   31: (doc) => doc,
+  // v33: the lip and groove feature (C4.11, Phase 6). Nothing to convert; the version keeps older programs from opening a feature they would skip.
+  32: (doc) => doc,
 };
 
 export class FormatError extends Error {

@@ -1451,6 +1451,22 @@ class AppStore {
     this.openNew({ id: this.allocator().take('split'), type: 'splitLine', name: nextName(this.history.doc, name), suppressed: false, sketch: sketch.id, face: face?.kind === 'face' ? face : { kind: 'face', name: '' } }, name);
   }
 
+  /** 「唇與溝槽」 (C4.11): on the planar face selected in the graphics area, if there is one (the rim of a shell); a lip 1 high, 1 wide, 0.5 in from the edge to begin with. */
+  newLipGroove(): void {
+    const face = this.state.selectedFace;
+    const name = t('feature.lipGroove');
+    this.openNew({ id: this.allocator().take('lip'), type: 'lipGroove', name: nextName(this.history.doc, name), suppressed: false, face: face?.kind === 'face' ? face : { kind: 'face', name: '' }, kind: 'lip', offset: '0.5', width: '1', height: '1' }, name);
+  }
+
+  /** The face a lip or groove is on: the planar face clicked in the graphics area (not one the feature made itself). */
+  setLipFace(ref: Ref): void {
+    const f = this.editedFeature();
+    if (f?.type !== 'lipGroove' || ref.kind !== 'face') return;
+    if (ref.name.startsWith(`${f.id}:`)) return void this.notify(t('surface.ownFace'), 'error');
+    if (ref.fingerprint?.type !== 'plane') return void this.notify(t('lip.planeOnly'), 'error');
+    this.execute({ type: 'setLipGroove', featureId: f.id, face: ref, kind: f.kind, offset: f.offset, width: f.width, height: f.height });
+  }
+
   /** The face a split line cuts: the face clicked in the graphics area (not one the feature made itself). */
   setSplitFace(ref: Ref): void {
     const f = this.editedFeature();
@@ -1689,6 +1705,7 @@ class AppStore {
     else if (f?.type === 'offsetSurface') this.toggleOffsetFace(ref);
     else if (f?.type === 'splitLine') this.setSplitFace(ref);
     else if (f?.type === 'trimSurface') this.setTrimFace(ref);
+    else if (f?.type === 'lipGroove') this.setLipFace(ref);
     else if (f?.type === 'fillSurface' || f?.type === 'flatSurface' || f?.type === 'extendSurface') this.toggleSurfaceEdge(ref);
     else if (f?.type === 'knit' && ref.kind === 'face') this.pickKnitBody(ref.name);
     else if ((f?.type === 'thicken' || f?.type === 'cutWithSurface') && ref.kind === 'face') this.pickSurfaceBody(ref.name);
@@ -1773,7 +1790,7 @@ class AppStore {
     if (!e) return undefined;
     const i = this.history.doc.features.findIndex((f) => f.id === e.featureId);
     const type = this.history.doc.features[i]?.type;
-    if (type === 'refPlane' || type === 'refAxis' || type === 'refPoint' || type === 'coordSys' || type === 'pattern' || type === 'mirror' || type === 'offsetSurface' || type === 'splitLine' || type === 'trimSurface' || type === 'knit' || type === 'fillSurface' || type === 'flatSurface' || type === 'extendSurface' || type === 'thicken' || type === 'cutWithSurface') return i + 1;
+    if (type === 'refPlane' || type === 'refAxis' || type === 'refPoint' || type === 'coordSys' || type === 'pattern' || type === 'mirror' || type === 'offsetSurface' || type === 'splitLine' || type === 'trimSurface' || type === 'knit' || type === 'fillSurface' || type === 'flatSurface' || type === 'extendSurface' || type === 'thicken' || type === 'cutWithSurface' || type === 'lipGroove') return i + 1;
     return type === 'fillet' || type === 'chamfer' || type === 'deleteFace' || type === 'moveFace' || type === 'shell' || type === 'draft' || type === 'combine' || type === 'sketch' ? i : undefined;
   }
 

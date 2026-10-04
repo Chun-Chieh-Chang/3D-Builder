@@ -6,7 +6,7 @@ import type { Id } from './ids';
  * DOF status, mass properties and error lists are derived data and never stored.
  */
 
-export const SCHEMA_VERSION = 32;
+export const SCHEMA_VERSION = 33;
 
 /** Value expression (B5.2, B5.3): "20", "25.4mm", "30deg", "wall_t*2", "D1@草圖1/2", "property('厚度')"; see `expr/`. */
 export type Expr = string;
@@ -538,6 +538,21 @@ export interface CutWithSurfaceFeature extends FeatureBase {
 }
 
 /**
+ * Lip or groove (唇與溝槽, C4.11, v33): on the planar face `face` (the rim of a shell, say) a ring that follows its outer outline: from `offset` in from the edge, `width` wide
+ * (the outline offset inward twice, the ring between). A lip grows out of the face `height` along its outward normal; a groove is cut into the body `height` deep. The
+ * ring has to lie on the face. The cover's groove is the same feature with the width and depth the fit calls for.
+ */
+export interface LipGrooveFeature extends FeatureBase {
+  type: 'lipGroove';
+  face: Ref;
+  kind: 'lip' | 'groove';
+  /** How far in from the edge of the face the ring starts (0 or more). */
+  offset: Expr;
+  width: Expr;
+  height: Expr;
+}
+
+/**
  * Shell (薄殼, C5.4, v15): the body hollowed out to a wall of 	hickness, the picked aces taken away to open it; the wall grows inward, or
  * outward with outward.
  */
@@ -596,6 +611,7 @@ export type Feature =
   | TrimSurfaceFeature
   | ExtendSurfaceFeature
   | ThickenFeature
+  | LipGrooveFeature
   | CutWithSurfaceFeature
   | FilletFeature
   | ChamferFeature
