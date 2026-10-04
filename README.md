@@ -8,6 +8,7 @@
 
 ```bash
 npm install
+npm run doctor     # 換電腦時先跑：診斷這台電腦（Node、git、node_modules 的連結、磁碟、埠、Rust），每個問題附修法
 npm run dev        # 自動開啟 http://127.0.0.1:5391（用 Edge 或 Chrome）
 npm run check      # 型別檢查 + 分層檢查 + i18n 檢查 + 全部測試
 npm run build      # 網頁版正式建置

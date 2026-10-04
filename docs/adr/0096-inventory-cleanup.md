@@ -23,6 +23,13 @@
 - 遠端是 GitHub 私人倉庫（`gh repo view` 確認 `PRIVATE`）；提交作者信箱是 git 設定的帳號信箱。
 - `.gitignore` 排除 `node_modules`、`dist`、`target`、輸出目錄；`SW_SAMPLE_DIR` 的專有樣本不進版本庫。
 
+## 跨電腦開發（使用者的要求：專案要保留在不同電腦開發的彈性）
+
+- 專案會放在隨身碟帶著走，所以換電腦時壞掉的都是「這台電腦」的事，不是程式的事：`node_modules` 裡 npm workspaces 的連結是絕對路徑（磁碟代號變了就指到不存在的地方，exFAT／FAT 上根本做不出來）、每台電腦各自裝的工具（Node、git、Rust 與 C++ 編譯器）、git 的每個 clone 各自的設定（`npm run setup:git`）。
+- 新增 `npm run doctor`（`scripts/doctor.mjs`，唯讀）：檢查 Node 版本、git 與 `.3dbx` 差異顯示設定、**每個工作區連結是否指向這個資料夾**、這個磁碟能不能做連結（用一個馬上刪掉的暫時連結測）、埠 5391、Rust 與 C++ 工具（只有桌面版需要）、`SW_SAMPLE_DIR`；每個問題附修法，只有會讓 `npm run check`／`npm run dev` 失敗的才讓結束代碼是 1。在一個暫時的專案裡驗證了「連結指到別處」「連結不存在」兩種失敗的訊息與結束代碼。
+- 盤點程式與設定裡沒有寫死的本機路徑（只有兩個需要真實樣本的測試的註解範例，樣本資料夾走環境變數 `SW_SAMPLE_DIR`；e2e 腳本的黃金檔案路徑由 `import.meta.url` 推出）。
+- **建議但沒做**（要你決定）：① 在 `.gitattributes` 加 `* text=auto eol=lf`，讓各電腦的工作檔行尾一致（現在靠各電腦的 `core.autocrlf`，這台是 `true`，換成 `false` 的電腦可能出現多餘的差異）；② 讓套件解析不靠符號連結（在 tsconfig／vite／vitest 加別名），exFAT 隨身碟上就能直接跑，不必再搬到 NTFS。
+
 ## 限制
 
 - 掃描只找得到「靜態」沒人用的符號；經由字串或動態引用的（例如 Worker 路徑、`window.__…` 腳本入口）不會被當成死碼，也可能漏掉經由 `index.ts` 再匯出的間接用法。

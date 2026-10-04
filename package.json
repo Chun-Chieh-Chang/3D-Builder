@@ -13,6 +13,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "setup:git": "git config diff.3dbx.textconv \"node scripts/3dbx.mjs cat\"",
+    "doctor": "node scripts/doctor.mjs",
     "lint:deps": "node scripts/check-deps.mjs",
     "lint:i18n": "node scripts/check-i18n.mjs",
     "check": "npm run typecheck && npm run lint:deps && npm run lint:i18n && npm test"

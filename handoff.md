@@ -10,7 +10,7 @@
 
 **狀態**：Phase 0 到 7 開發完成；`npm run check` 1985 項通過、21 項略過；零件 Schema 42、組合件 Schema 6、工程圖 Schema 4。已經沒有「進行中」的里程碑；使用者採納「先鞏固再加功能」，鞏固 H-1 到 H-11 已做完（[hardening-plan](docs/hardening-plan.md)）。每個里程碑的 ADR、驗收表與限制在對應的 ADR，§3 有一行摘要。
 
-**在新電腦上**：`git pull`（私人專案）→ `npm install` → `npm run check`（應全過）→ `npm run dev`。**只用網頁版不需要 Rust 與 MSVC**；要建桌面版才裝（`apps/desktop/README.md` 的「需要」）。
+**換電腦（本專案要能在不同電腦開發，下面都是每台電腦自己的事，程式與文件不依賴任何一台）**：`git pull`（私人專案）→ **`npm run doctor`**（唯讀診斷：Node、git、`node_modules` 的工作區連結是否指向這個資料夾、這個磁碟能不能做連結、埠 5391、Rust 與 C++ 工具；每個問題都附修法）→ 有問題照它說的做（多半是 `npm install`）→ `npm run check`（應全過）→ `npm run dev`。**只用網頁版不需要 Rust 與 MSVC**；要建桌面版才裝（`apps/desktop/README.md` 的「需要」）。
 
 **下一步（建議順序）**
 1. **使用者的實機驗證**：[docs/manual-verification.html](docs/manual-verification.html)（84 項，每項有步驟、預期結果、回報格式；做完按「複製結果」貼回來）。這是現在最大的缺口：3a、3b、4a、4b、5、6、7 的閘門都只是「有條件通過」。
@@ -39,7 +39,7 @@
 |---|---|---|
 | ~~藍圖~~ | 已在版本庫 `docs/blueprint.md`（0.1） | 不用做什麼 |
 | 使用者的全域規則 `CLAUDE.md`（SkillsBuilder 開發標準、反向提問、智囊團審查、檔案刪除保護） | 每台電腦各自的 `C:\Users\<使用者>\.claude\CLAUDE.md` | 從舊電腦複製，或依那份檔案最後一行的說明執行 SkillsBuilder 的 `INSTALL.ps1 -Global`。沒有它，§7 的工作約定不會自動生效 |
-| 桌面版的建置環境（Rust 1.99、rustup、VS 2022 Build Tools 的 C++ 工作負載、`@tauri-apps/cli`） | 2026-10-03 在另一台電腦用 winget 裝的；**2026-10-04 在這台（`C:\Users\3kids`）也裝好了**：Rust 1.99（rustup，在 `%USERPROFILE%\.cargo\bin`，終端機要把它加進 PATH）；C++ 編譯器用的是這台原本就有的 VS Build Tools **2026**（MSVC 14.50）與 Windows SDK 10.0.26100，Tauri 認得，不必再裝 2022 版（winget 對 2022 版會說「已安裝」而失敗，那是一個不完整的舊實例，不用管它）；安裝檔已用 Phase 4a–7 的程式重建；`node_modules` 之外都不在版本庫 | 新電腦要建桌面版：照 `apps/desktop/README.md` 的「需要」裝；只用網頁版不需要 |
+| 桌面版的建置環境（Rust 1.99、rustup、VS 2022 Build Tools 的 C++ 工作負載、`@tauri-apps/cli`） | **每台電腦各自裝**（`npm run doctor` 會說這台有沒有）：Rust（`winget install Rustlang.Rustup`，在 `%USERPROFILE%\.cargo\bin`，新終端機要把它加進 PATH）；C++ 編譯器 VS Build Tools（2022 或 2026 都行，MSVC 14.44 與 14.50 都有人用過，Tauri 認得；若 winget 對 2022 版說「已安裝」卻失敗，是有一個不完整的舊實例，改用 `setup.exe modify` 補 C++ 工作負載，或直接用已有的 2026 版）與 Windows SDK。2026-10-04 在 `C:\Users\3kids` 這台裝好並用 Phase 4a–7 的程式重建了安裝檔（安裝檔在 `target/`，不在版本庫，各電腦自己建）；`node_modules` 之外都不在版本庫 | 新電腦要建桌面版：照 `apps/desktop/README.md` 的「需要」裝；只用網頁版不需要 |
 | SolidWorks 樣本（專有檔案，不進版本庫） | `C:\Users\ws61\Downloads\SW樣本`：`T1405001.SLDASM`、兩個單一實體的 STEP | 看 §8 第 1 項；用到它的測試靠環境變數 `SW_SAMPLE_DIR`，沒設就略過 |
 | 實機測試用的專案資料夾 | `C:\Users\ws61\Downloads\3DB實機確認` | 只是金樣零件的複本，可從 `tests/golden/` 重建（三個檔案：`定位板.3dbx`、`V型塊.3dbx`、`零件\削邊銷.3dbx`） |
 | 對話紀錄與 Claude 的記憶 | 各電腦本機，不同步 | 沒有：**本文件是唯一的交接** |
@@ -50,7 +50,7 @@
 1. 安裝 Node（開發用 26）與 git。
 2. `git clone https://github.com/Chun-Chieh-Chang/3D-Builder`（私人專案，需要 GitHub 登入）。
 3. **專案要放在支援符號連結的磁碟**（NTFS，例如 `C:`），不要放在 exFAT 或 FAT 的 USB 隨身碟：npm workspaces 靠符號連結，在 USB 上 `node_modules/@3db` 是空的，`npm run check`、`npm run dev`、`npm run build` 都會失敗（另一台電腦就是這樣，繞法見 §6「工作區連結」）。
-4. `npm install`，然後 `npm run check`（型別、分層、全部測試，應全過），`npm run dev`，用 Chrome 或 Edge 開 http://127.0.0.1:5391。
+4. `npm run doctor`（診斷這台電腦；搬過專案或換過磁碟代號時，`node_modules` 裡的連結是絕對路徑，會指到不存在的地方，它會說，修法是 `npm install`），然後 `npm run check`（型別、分層、全部測試，應全過），`npm run dev`，用 Chrome 或 Edge 開 http://127.0.0.1:5391。
 5. 確認 `docs/blueprint.md` 在；不在的話，先 `git pull`。
 6. 對 Claude 說：「讀取 handoff.md，接手開發任務」。
 
