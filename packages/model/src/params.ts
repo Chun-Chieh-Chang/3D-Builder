@@ -65,6 +65,14 @@ export function dimensionName(c: SketchConstraint): string {
   return m ? `D${m[1]}` : c.id;
 }
 
+/** The insets and the relief of an edge flange or a hem with their expressions rewritten, or null when there are none or they are as they were. */
+function flangeExtras(f: { inset?: { start: Expr; end: Expr }; relief?: { width: Expr; depth: Expr } }, fn: (expr: Expr, kind: ExprKind, role: ExprRole) => Expr): { inset?: { start: Expr; end: Expr }; relief?: { width: Expr; depth: Expr } } | null {
+  const inset = f.inset && { start: fn(f.inset.start, 'length', 'nonNegative'), end: fn(f.inset.end, 'length', 'nonNegative') };
+  const relief = f.relief && { width: fn(f.relief.width, 'length', 'positive'), depth: fn(f.relief.depth, 'length', 'positive') };
+  const same = (!inset || (inset.start === f.inset!.start && inset.end === f.inset!.end)) && (!relief || (relief.width === f.relief!.width && relief.depth === f.relief!.depth));
+  return same ? null : { ...(inset ? { inset } : {}), ...(relief ? { relief } : {}) };
+}
+
 /** Applies `fn` to every expression a feature holds, with the kind of value it stands for; a feature whose expressions are unchanged is returned as it was. */
 export function mapExprs(feature: Feature, fn: (expr: Expr, kind: ExprKind, role: ExprRole) => Expr): Feature {
   switch (feature.type) {
@@ -182,13 +190,15 @@ export function mapExprs(feature: Feature, fn: (expr: Expr, kind: ExprKind, role
       const length = fn(f.length, 'length', 'positive');
       const angle = f.angle === undefined ? undefined : fn(f.angle, 'angle', 'includedAngle');
       const radius = f.radius === undefined ? undefined : fn(f.radius, 'length', 'positive');
-      if (length === f.length && angle === f.angle && radius === f.radius) return feature;
-      return { ...f, length, ...(angle === undefined ? {} : { angle }), ...(radius === undefined ? {} : { radius }) };
+      const extras = flangeExtras(f, fn);
+      if (length === f.length && angle === f.angle && radius === f.radius && extras === null) return feature;
+      return { ...f, length, ...(angle === undefined ? {} : { angle }), ...(radius === undefined ? {} : { radius }), ...(extras ?? {}) };
     }
     case 'hem': {
       const length = fn(feature.length, 'length', 'positive');
       const gap = fn(feature.gap, 'length', 'positive');
-      return length === feature.length && gap === feature.gap ? feature : { ...feature, length, gap };
+      const extras = flangeExtras(feature, fn);
+      return length === feature.length && gap === feature.gap && extras === null ? feature : { ...feature, length, gap, ...(extras ?? {}) };
     }
     case 'snapHook': {
       const f = feature;

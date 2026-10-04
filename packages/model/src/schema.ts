@@ -6,7 +6,7 @@ import type { Id } from './ids';
  * DOF status, mass properties and error lists are derived data and never stored.
  */
 
-export const SCHEMA_VERSION = 38;
+export const SCHEMA_VERSION = 39;
 
 /** Value expression (B5.2, B5.3): "20", "25.4mm", "30deg", "wall_t*2", "D1@草圖1/2", "property('厚度')"; see `expr/`. */
 export type Expr = string;
@@ -605,6 +605,13 @@ export interface EdgeFlangeFeature extends FeatureBase {
   position?: 'materialInside' | 'bendOutside';
   radius?: Expr;
   flip?: boolean;
+  /**
+   * The flange stops short of the ends of the edge (v39, C11.4): `start` from the end where the edge begins when it is walked with the face it is on in front of you and the outside
+   * on your right, `end` from the other. Where it stops short, `relief` cuts a rectangular notch into the sheet beside it, `width` along the edge and `depth` deeper than the bend starts,
+   * so that the bend can form without tearing the sheet next to it.
+   */
+  inset?: { start: Expr; end: Expr };
+  relief?: { width: Expr; depth: Expr };
 }
 
 /**
@@ -618,6 +625,13 @@ export interface HemFeature extends FeatureBase {
   gap: Expr;
   position?: 'materialInside' | 'bendOutside';
   flip?: boolean;
+  /**
+   * The flange stops short of the ends of the edge (v39, C11.4): `start` from the end where the edge begins when it is walked with the face it is on in front of you and the outside
+   * on your right, `end` from the other. Where it stops short, `relief` cuts a rectangular notch into the sheet beside it, `width` along the edge and `depth` deeper than the bend starts,
+   * so that the bend can form without tearing the sheet next to it.
+   */
+  inset?: { start: Expr; end: Expr };
+  relief?: { width: Expr; depth: Expr };
 }
 
 /**

@@ -288,6 +288,8 @@ export const features: Translation = {
   'feature.hem': 'Hem',
   'hem.sizes': 'The gap and the length of a hem both have to be above 0',
   'hem.info': 'Hem: bend of 180°, bend allowance {allowance}, flat piece folded back {length}, {gap} between the layers; {trim} cut from the sheet',
+  'flange.insets': 'The insets at the two ends have to add up to less than the edge',
+  'flange.info.inset': '; inset {start}/{end}',
   'feature.lipGroove': 'Lip and Groove',
   'cmd.lipOnlyFace': 'A lip or groove can only be put on a face',
   'cmd.onlyLipHasParams': 'Only a lip or groove has these parameters',

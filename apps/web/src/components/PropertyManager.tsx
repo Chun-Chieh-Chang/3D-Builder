@@ -1872,6 +1872,40 @@ function BaseFlangePanel({ f }: { f: BaseFlangeFeature }) {
   );
 }
 
+/** What an edge flange and a hem share beyond the edge (C11.4): how far they stop short of the two ends of it, and the relief notches beside them where they do. */
+function FlangeExtras({ f, run }: { f: EdgeFlangeFeature | HemFeature; run: (patch: Record<string, unknown>) => Command }) {
+  const inset = f.inset ?? { start: '0', end: '0' };
+  return (
+    <>
+      <label className="pm-row">
+        <span>{t('pm.flange.insetStart')}</span>
+        <ValueInput value={inset.start} toCommand={(start) => run({ inset: { start, end: inset.end } })} />
+      </label>
+      <label className="pm-row">
+        <span>{t('pm.flange.insetEnd')}</span>
+        <ValueInput value={inset.end} toCommand={(end) => run({ inset: { start: inset.start, end } })} />
+      </label>
+      <label className="pm-row checkbox">
+        <input type="checkbox" checked={!!f.relief} onChange={(e) => store.execute(run({ relief: e.target.checked ? { width: '1.5', depth: '1.5' } : undefined }))} />
+        <span>{t('pm.flange.relief')}</span>
+      </label>
+      {f.relief && (
+        <>
+          <label className="pm-row">
+            <span>{t('pm.flange.reliefWidth')}</span>
+            <ValueInput value={f.relief.width} toCommand={(width) => run({ relief: { width, depth: f.relief!.depth } })} />
+          </label>
+          <label className="pm-row">
+            <span>{t('pm.flange.reliefDepth')}</span>
+            <ValueInput value={f.relief.depth} toCommand={(depth) => run({ relief: { width: f.relief!.width, depth } })} />
+          </label>
+        </>
+      )}
+      <p className="hint">{t('pm.flange.insetHint')}</p>
+    </>
+  );
+}
+
 /** Edge flange (C11.2): the edge, the length and where it is measured from, the angle, the radius, where the flange sits and which way it bends. */
 function EdgeFlangePanel({ f }: { f: EdgeFlangeFeature }) {
   const status = useStore((s) => s.result?.features.find((r) => r.id === f.id));
@@ -1928,6 +1962,7 @@ function EdgeFlangePanel({ f }: { f: EdgeFlangeFeature }) {
         <input type="checkbox" checked={!!f.flip} onChange={(e) => store.execute(run({ flip: e.target.checked }))} />
         <span>{t('pm.eflange.flip')}</span>
       </label>
+      <FlangeExtras f={f} run={run} />
       {status?.status === 'ok' && status.info && <p className="hint gap-info">{status.info}</p>}
       <p className="hint">{t('pm.eflange.hint')}</p>
     </section>
@@ -1977,6 +2012,7 @@ function HemPanel({ f }: { f: HemFeature }) {
         <input type="checkbox" checked={!!f.flip} onChange={(e) => store.execute(run({ flip: e.target.checked }))} />
         <span>{t('pm.eflange.flip')}</span>
       </label>
+      <FlangeExtras f={f} run={run} />
       <p className="hint">{t('pm.hem.hint')}</p>
     </section>
   );

@@ -139,6 +139,9 @@ export interface SheetFlange {
   straight: number;
   /** The bend allowance. */
   allowance: number;
+  /** How far it stops short of the ends of the edge (the start, the end), and the relief notches beside it ({width, depth} or null). */
+  inset: [number, number];
+  relief: { width: number; depth: number } | null;
 }
 
 /** What the sheet metal features of a part have recorded (null for a part that is not sheet metal). */
@@ -2127,7 +2130,7 @@ export class Regenerator {
    * and how much of the sheet is cut back. The edge is between a face of the sheet and its end face; the piece bends toward the side of the face the edge is on (`flip`: the other).
    */
   private foldEdge(
-    f: { id: Id; edge: Ref; flip?: boolean },
+    f: { id: Id; edge: Ref; flip?: boolean; inset?: { start: string; end: string }; relief?: { width: string; depth: string } },
     set: Bodies,
     plan: (sheet: SheetInfo) => { rb: number; theta: number; straight: number; trim: number; info: (allowance: number) => string },
   ): BodyState[] {
@@ -2151,9 +2154,17 @@ export class Regenerator {
     const [endFace, big] = a ? [sides[1]!, sides[0]!] : [sides[0]!, sides[1]!];
     const o = endFace.normal!;
     const nF = big.normal!;
-    const e = unit(edge.dir);
-    if (Math.abs(dot(o, nF)) > 1e-6 || Math.abs(dot(e, o)) > 1e-6) throw new FeatureError(t('flange.notSheetEdge'));
+    // walked with the face in front of you and the outside on your right: e = nF × o (so that the two ends of the edge have a name)
+    const e = unit(cross(nF, o));
+    if (Math.abs(dot(o, nF)) > 1e-6 || Math.abs(dot(e, unit(edge.dir))) < 1 - 1e-6) throw new FeatureError(t('flange.notSheetEdge'));
     const { rb, theta, straight, trim, info } = plan(sheet);
+    const insetA = f.inset ? evalLength(f.inset.start) : 0;
+    const insetB = f.inset ? evalLength(f.inset.end) : 0;
+    const Wf = W - insetA - insetB;
+    if (insetA < 0 || insetB < 0 || !(Wf > 1e-6)) throw new FeatureError(t('flange.insets'));
+    const xa = -W / 2 + insetA;
+    const xb = W / 2 - insetB;
+    const relief = f.relief ? { width: evalLength(f.relief.width), depth: evalLength(f.relief.depth) } : null;
     const neg = (v: Vec3): Vec3 => [-v[0], -v[1], -v[2]];
     const m: Vec3 = f.flip ? neg(nF) : nF;
     // along m the sheet is from y = -T to 0 when it bends toward the face the edge is on, from 0 to T when the other way; the inside of the bend is the face on the side of m
@@ -2162,9 +2173,9 @@ export class Regenerator {
     const center = add(origin, m, yhi + rb);
     const spin = dot(cross(e, neg(m)), o) > 0 ? 1 : -1; // the turn that moves the inside of the sheet out along o first
     const axis: Vec3 = [e[0] * spin, e[1] * spin, e[2] * spin];
-    const strip = (prefix: string, lo: number, hi: number): Region => {
+    const strip = (prefix: string, lo: number, hi: number, x0 = xa, x1 = xb): Region => {
       const line = (a: [number, number], b: [number, number], source: string) => ({ kind: 'line' as const, a, b, source: `${prefix}.${source}` });
-      return { outer: [line([-W / 2, lo], [W / 2, lo], 'out'), line([W / 2, lo], [W / 2, hi], 's1'), line([W / 2, hi], [-W / 2, hi], 'in'), line([-W / 2, hi], [-W / 2, lo], 's0')], holes: [] };
+      return { outer: [line([x0, lo], [x1, lo], 'out'), line([x1, lo], [x1, hi], 's1'), line([x1, hi], [x0, hi], 'in'), line([x0, hi], [x0, lo], 's0')], holes: [] };
     };
     const frame: PlaneFrame = { origin, xDir: e, yDir: m, normal: cross(e, m) };
     const bendTool = this.capsNamed(this.kernel.revolve(frame, [strip('bend', ylo, yhi)], { origin: center, dir: axis }, theta), 'bend', 'start', 'end');
@@ -2180,22 +2191,35 @@ export class Regenerator {
     const near = (a: number, b: number, scale: number) => Math.abs(a - b) <= 1e-3 * scale + 1e-6;
     let list: readonly BodyState[] = set.list;
     const before = volume(list);
+    const n3 = cross(e, m);
+    const s3 = dot(n3, o) > 0 ? 1 : -1;
+    let expected = 0;
     if (trim > 0) {
-      const n3 = cross(e, m);
-      const s3 = dot(n3, o) > 0 ? 1 : -1;
       const cutTool = this.capsNamed(this.kernel.extrude(frame, [strip('trim', ylo - 1, yhi + 1)], add([0, 0, 0], n3, s3 * (trim + 1)), 0), 'trim', 'start', 'end');
       list = this.apply(f.id, 'cut', cutTool, { featureId: f.id, sketchId: 'flange' }, list, false);
-      if (!near(before - volume(list), trim * W * T, trim * W * T)) throw new FeatureError(t('flange.trimBad'));
+      expected += trim * Wf * T;
     }
+    // a rectangular notch in the sheet beside each end where the flange stops short: `width` along the edge, from `depth` deeper than the bend starts out to past the edge
+    if (relief) {
+      const deep = trim + relief.depth;
+      const frameN: PlaneFrame = { origin: add(edge.mid, o, -deep), xDir: e, yDir: m, normal: cross(e, m) };
+      for (const [name, inset, x0, x1] of [['reliefA', insetA, xa - Math.min(relief.width, insetA), xa], ['reliefB', insetB, xb, xb + Math.min(relief.width, insetB)]] as const) {
+        if (!(inset > 1e-9)) continue;
+        const notch = this.capsNamed(this.kernel.extrude(frameN, [strip(name, ylo - 1, yhi + 1, x0, x1)], add([0, 0, 0], n3, s3 * (deep + 1)), 0), name, 'start', 'end');
+        list = this.apply(f.id, 'cut', notch, { featureId: f.id, sketchId: 'flange' }, list, false);
+        expected += (x1 - x0) * deep * T;
+      }
+    }
+    if (expected > 0 && !near(before - volume(list), expected, expected)) throw new FeatureError(t('flange.trimBad'));
     const cut = volume(list);
     list = this.apply(f.id, 'boss', bendTool, { featureId: f.id, sketchId: 'flange' }, list, true);
     list = this.apply(f.id, 'boss', flangeTool, { featureId: f.id, sketchId: 'flange' }, list, true);
-    const added = theta * T * W * (rb + T / 2) + T * W * straight;
+    const added = theta * T * Wf * (rb + T / 2) + T * Wf * straight;
     if (!near(volume(list) - cut, added, added)) throw new FeatureError(t('flange.collides'));
     const allowance = theta * (rb + sheet.kFactor * T);
-    sheet.bends.push({ feature: f.id, name: 'bend', angle: theta, radius: rb, thickness: T, width: W, kFactor: sheet.kFactor, allowance });
-    sheet.flanges.push({ feature: f.id, edge: f.edge.name, width: W, angle: theta, radius: rb, trim, straight, allowance });
-    this.info = info(allowance);
+    sheet.bends.push({ feature: f.id, name: 'bend', angle: theta, radius: rb, thickness: T, width: Wf, kFactor: sheet.kFactor, allowance });
+    sheet.flanges.push({ feature: f.id, edge: f.edge.name, width: Wf, angle: theta, radius: rb, trim, straight, allowance, inset: [insetA, insetB], relief });
+    this.info = info(allowance) + (insetA > 0 || insetB > 0 ? t('flange.info.inset', { start: String(insetA), end: String(insetB) }) : '');
     return [...list];
   }
 

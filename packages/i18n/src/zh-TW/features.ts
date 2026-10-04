@@ -286,6 +286,8 @@ export const features = {
   'feature.hem': '摺邊',
   'hem.sizes': '摺邊的間隙與長度都要大於 0',
   'hem.info': '摺邊：180° 折彎，折彎裕度 {allowance}，回折的平直段 {length}，兩層之間隔 {gap}；板切掉 {trim}',
+  'flange.insets': '凸緣兩端縮短的總和要比邊短',
+  'flange.info.inset': '；縮短 {start}／{end}',
   'feature.lipGroove': '唇與溝槽',
   'cmd.lipOnlyFace': '唇與溝槽只能放在面上',
   'cmd.onlyLipHasParams': '只有唇與溝槽有這些參數',
