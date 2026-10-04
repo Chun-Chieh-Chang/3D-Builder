@@ -39,7 +39,7 @@
 |---|---|---|
 | ~~藍圖~~ | 已在版本庫 `docs/blueprint.md`（0.1） | 不用做什麼 |
 | 使用者的全域規則 `CLAUDE.md`（SkillsBuilder 開發標準、反向提問、智囊團審查、檔案刪除保護） | 每台電腦各自的 `C:\Users\<使用者>\.claude\CLAUDE.md` | 從舊電腦複製，或依那份檔案最後一行的說明執行 SkillsBuilder 的 `INSTALL.ps1 -Global`。沒有它，§7 的工作約定不會自動生效 |
-| 桌面版的建置環境（Rust 1.99、rustup、VS 2022 Build Tools 的 C++ 工作負載、`@tauri-apps/cli`） | 2026-10-03 在建出安裝檔的那台電腦用 winget 裝的；**2026-10-04 的這台（`C:\Users\3kids`）找不到 `cargo`／`rustc`**，所以現有的安裝檔（`target/release/bundle/nsis/`，10-03 建置）早於 Phase 4a–7，要在有 Rust 與 MSVC 的電腦重建；`node_modules` 之外都不在版本庫 | 新電腦要建桌面版：照 `apps/desktop/README.md` 的「需要」裝；只用網頁版不需要 |
+| 桌面版的建置環境（Rust 1.99、rustup、VS 2022 Build Tools 的 C++ 工作負載、`@tauri-apps/cli`） | 2026-10-03 在另一台電腦用 winget 裝的；**2026-10-04 在這台（`C:\Users\3kids`）也裝好了**：Rust 1.99（rustup，在 `%USERPROFILE%\.cargo\bin`，終端機要把它加進 PATH）；C++ 編譯器用的是這台原本就有的 VS Build Tools **2026**（MSVC 14.50）與 Windows SDK 10.0.26100，Tauri 認得，不必再裝 2022 版（winget 對 2022 版會說「已安裝」而失敗，那是一個不完整的舊實例，不用管它）；安裝檔已用 Phase 4a–7 的程式重建；`node_modules` 之外都不在版本庫 | 新電腦要建桌面版：照 `apps/desktop/README.md` 的「需要」裝；只用網頁版不需要 |
 | SolidWorks 樣本（專有檔案，不進版本庫） | `C:\Users\ws61\Downloads\SW樣本`：`T1405001.SLDASM`、兩個單一實體的 STEP | 看 §8 第 1 項；用到它的測試靠環境變數 `SW_SAMPLE_DIR`，沒設就略過 |
 | 實機測試用的專案資料夾 | `C:\Users\ws61\Downloads\3DB實機確認` | 只是金樣零件的複本，可從 `tests/golden/` 重建（三個檔案：`定位板.3dbx`、`V型塊.3dbx`、`零件\削邊銷.3dbx`） |
 | 對話紀錄與 Claude 的記憶 | 各電腦本機，不同步 | 沒有：**本文件是唯一的交接** |
