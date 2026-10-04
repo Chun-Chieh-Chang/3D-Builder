@@ -23,6 +23,7 @@ export function parentsOf(feature: Feature, doc: PartDoc): Id[] {
     case 'revolve':
     case 'hole':
     case 'screwBoss':
+    case 'baseFlange':
     case 'snapHook':
     case 'snapCatch':
     case 'vent':

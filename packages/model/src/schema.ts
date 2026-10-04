@@ -6,7 +6,7 @@ import type { Id } from './ids';
  * DOF status, mass properties and error lists are derived data and never stored.
  */
 
-export const SCHEMA_VERSION = 35;
+export const SCHEMA_VERSION = 36;
 
 /** Value expression (B5.2, B5.3): "20", "25.4mm", "30deg", "wall_t*2", "D1@草圖1/2", "property('厚度')"; see `expr/`. */
 export type Expr = string;
@@ -571,6 +571,25 @@ export interface ScrewBossFeature extends FeatureBase {
 }
 
 /**
+ * Base flange (基材凸緣, C11.1, v36): the first feature of a sheet metal part and the one that holds its parameters: the sheet is `thickness` thick, its bends have the
+ * inner radius `radius`, and `kFactor` (0 to 1, where in the thickness the length stays the same: 0.5 is the middle) gives the bend allowance of every bend of the part.
+ * A closed profile of the sketch is a plate that grows `thickness` along the sketch normal (`reverse`: the other way). An open profile (a polyline of lines) is a sheet that
+ * follows it, bent at every corner, `depth` wide along the normal (`reverse`: the other way) and `thickness` thick to the left of the way the path is walked (`flipSide`: the
+ * right); the sketch is one face of the sheet.
+ */
+export interface BaseFlangeFeature extends FeatureBase {
+  type: 'baseFlange';
+  sketch: Id;
+  thickness: Expr;
+  radius: Expr;
+  kFactor: Expr;
+  /** An open profile only: how wide the sheet is. */
+  depth?: Expr;
+  reverse?: boolean;
+  flipSide?: boolean;
+}
+
+/**
  * Snap hook (卡榫, C4.11, v35): at the free points of a sketch, a cantilever beam standing on the sketch plane and growing `length` along its normal (`reverse`: the other
  * way), `thickness` thick in the direction `angle` (0° is the sketch's x) and `width` wide across it, with a wedge at its free end: `hookHeight` of the beam's end, standing
  * out `hookDepth` from its front, flat on the side toward the base (the catch face), sloped on the tip side (the lead-in). The beam runs a little into the body it stands on.
@@ -679,6 +698,7 @@ export type Feature =
   | ThickenFeature
   | LipGrooveFeature
   | ScrewBossFeature
+  | BaseFlangeFeature
   | SnapHookFeature
   | SnapCatchFeature
   | VentFeature

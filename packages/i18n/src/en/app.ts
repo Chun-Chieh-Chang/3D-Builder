@@ -3,6 +3,7 @@ import type { Translation } from '../index';
 /** app: wording of the app that used to be in the code (D9.1). */
 export const app: Translation = {
   'tab.features': 'Features',
+  'tab.sheet': 'Sheet Metal',
   'tab.sketch': 'Sketch',
   'tab.file': 'File',
   'tab.view': 'View',

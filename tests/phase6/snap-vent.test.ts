@@ -272,6 +272,6 @@ describe('the commands and the file', () => {
     expect(() => applyCommand(d, { type: 'setVent', featureId: 'h1', vent: { count: '3', pitch: '4', length: '10', width: '2', depth: '3' } })).toThrow();
     expect(() => applyCommand(d, { type: 'setSnapCatch', featureId: 'h1', window: { length: '8', width: '4', depth: '3' } })).toThrow();
     expect(d.schemaVersion).toBe(SCHEMA_VERSION);
-    expect(SCHEMA_VERSION).toBe(35);
+    expect(SCHEMA_VERSION).toBeGreaterThanOrEqual(35);
   });
 });

@@ -13,7 +13,7 @@ export interface UiAction {
   id: string;
   label: string;
   shortcut?: string;
-  group: 'file' | 'edit' | 'feature' | 'sketch' | 'sketch-tool' | 'assembly' | 'view' | 'tools';
+  group: 'file' | 'edit' | 'feature' | 'sheet' | 'sketch' | 'sketch-tool' | 'assembly' | 'view' | 'tools';
   enabled(s: UiState): boolean;
   run(): void;
   /** Toggle state for tool buttons (the active sketch tool). */
@@ -90,6 +90,7 @@ export const ACTIONS: UiAction[] = [
   { id: 'delete-face', get label() { return t('feature.deleteFace'); }, group: 'feature', enabled: hasBody, run: () => store.newDeleteFace() },
   { id: 'hole', get label() { return t('feature.hole'); }, group: 'feature', enabled: (s) => sketchSelected(s) && !!s.result?.mesh, run: () => store.newHole() },
   { id: 'screw-boss', get label() { return t('feature.screwBoss'); }, group: 'feature', enabled: (s) => sketchSelected(s) && !!s.result?.mesh, run: () => store.newScrewBoss() },
+  { id: 'base-flange', get label() { return t('feature.baseFlange'); }, group: 'sheet', enabled: sketchSelected, run: () => store.newBaseFlange() },
   { id: 'snap-hook', get label() { return t('feature.snapHook'); }, group: 'feature', enabled: (s) => sketchSelected(s) && !!s.result?.mesh, run: () => store.newSnapHook() },
   { id: 'snap-catch', get label() { return t('feature.snapCatch'); }, group: 'feature', enabled: (s) => sketchSelected(s) && !!s.result?.mesh, run: () => store.newSnapCatch() },
   { id: 'vent', get label() { return t('feature.vent'); }, group: 'feature', enabled: (s) => sketchSelected(s) && !!s.result?.mesh, run: () => store.newVent() },

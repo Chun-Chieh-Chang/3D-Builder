@@ -48,6 +48,7 @@ import {
   type ThickenFeature,
   type LipGrooveFeature,
   type ScrewBossFeature,
+  type BaseFlangeFeature,
   type SnapHookFeature,
   type SnapCatchFeature,
   type VentFeature,
@@ -1833,6 +1834,42 @@ function SketchPointsPanel({ f, fields, hint }: { f: SnapHookFeature | SnapCatch
   );
 }
 
+/** Base flange (C11.1): the sheet's thickness, bend radius and K-factor, and for an open profile its width; which side the thickness grows to and which way the sheet goes. */
+function BaseFlangePanel({ f }: { f: BaseFlangeFeature }) {
+  const status = useStore((s) => s.result?.features.find((r) => r.id === f.id));
+  const { id, type, name, suppressed, sketch, ...settings } = f;
+  void [id, type, name, suppressed, sketch];
+  const run = (patch: Record<string, unknown>): Command => {
+    const next = { ...settings, ...patch } as Record<string, unknown>;
+    for (const k of Object.keys(next)) if (next[k] === undefined || next[k] === '' || next[k] === false) delete next[k];
+    return { type: 'setBaseFlange', featureId: f.id, flange: next as never };
+  };
+  const row = (label: string, value: string, key: string) => (
+    <label className="pm-row">
+      <span>{label}</span>
+      <ValueInput value={value} toCommand={(v) => run({ [key]: v })} />
+    </label>
+  );
+  return (
+    <section className="pm-group">
+      {row(t('pm.flange.thickness'), f.thickness, 'thickness')}
+      {row(t('pm.flange.radius'), f.radius, 'radius')}
+      {row(t('pm.flange.kFactor'), f.kFactor, 'kFactor')}
+      {row(t('pm.flange.depth'), f.depth ?? '', 'depth')}
+      <label className="pm-row checkbox">
+        <input type="checkbox" checked={!!f.flipSide} onChange={(e) => store.execute(run({ flipSide: e.target.checked }))} />
+        <span>{t('pm.flange.flipSide')}</span>
+      </label>
+      <label className="pm-row checkbox">
+        <input type="checkbox" checked={!!f.reverse} onChange={(e) => store.execute(run({ reverse: e.target.checked }))} />
+        <span>{t('pm.reverseDirection')}</span>
+      </label>
+      {status?.status === 'ok' && status.info && <p className="hint gap-info">{status.info}</p>}
+      <p className="hint">{t('pm.flange.hint')}</p>
+    </section>
+  );
+}
+
 /** Screw boss (C4.11): the outside and the pilot hole, the height and how deep the hole goes, the draft of the wall, and the gussets round the foot. */
 function ScrewBossPanel({ f }: { f: ScrewBossFeature }) {
   const { id, type, name, suppressed, sketch, ...settings } = f;
@@ -2169,6 +2206,7 @@ export function PropertyManager() {
       {f.type === 'thicken' && <ThickenPanel f={f} />}
       {f.type === 'lipGroove' && <LipGroovePanel f={f} />}
       {f.type === 'screwBoss' && <ScrewBossPanel f={f} />}
+      {f.type === 'baseFlange' && <BaseFlangePanel f={f} />}
       {f.type === 'snapHook' && (
         <SketchPointsPanel f={f} hint={t('pm.hook.hint')} fields={[['width', t('pm.hook.width')], ['thickness', t('pm.hook.thickness')], ['length', t('pm.hook.length')], ['hookHeight', t('pm.hook.hookHeight')], ['hookDepth', t('pm.hook.hookDepth')]]} />
       )}

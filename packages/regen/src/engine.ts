@@ -48,6 +48,7 @@ import {
   type ThickenFeature,
   type LipGrooveFeature,
   type ScrewBossFeature,
+  type BaseFlangeFeature,
   type SnapHookFeature,
   type SnapCatchFeature,
   type VentFeature,
@@ -58,7 +59,7 @@ import {
   type Thin,
   type Vec3,
 } from '@3db/model';
-import { findOutlines, findProfiles, reversePath, selectContours, ThinProblem, thinRegions, type ProfileResult, type SketchSolver, type SketchStatus, type SolvedSketch } from '@3db/sketch';
+import { bentPath, BendProblem, findOutlines, findProfiles, reversePath, ribbonOf, selectContours, ThinProblem, thinRegions, type ProfileResult, type SketchSolver, type SketchStatus, type SolvedSketch } from '@3db/sketch';
 import { KernelError, SURFACE_TOLERANCE, type SweepSpec, type FaceOrigin, type ImportDiagnostics, type Kernel, type OpResult, type ShapeId, type Topology } from '@3db/kernel';
 import { nameElements, nameFromFaces, resolveRef, type Candidate, type ElementNames } from '@3db/naming';
 import { Bodies, type BodyState, type BodyView } from './bodies';
@@ -105,6 +106,33 @@ export interface BodyInfo {
   vertices: number;
 }
 
+/** One bend of a sheet metal part (C11.1): what is recorded when it is made, and from which the flat pattern is worked out (ADR 0083, 0084). */
+export interface SheetBend {
+  feature: Id;
+  /** The name of the bend in its sketch (`bend1`, …). */
+  name: string;
+  /** How far the sheet turns (radians). */
+  angle: number;
+  /** The inner radius of the bend. */
+  radius: number;
+  thickness: number;
+  /** How wide the bend is along its axis. */
+  width: number;
+  kFactor: number;
+  /** The bend allowance: the length the bend takes up in the flat pattern, angle · (radius + K · thickness). */
+  allowance: number;
+}
+
+/** What the sheet metal features of a part have recorded (null for a part that is not sheet metal). */
+export interface SheetInfo {
+  thickness: number;
+  radius: number;
+  kFactor: number;
+  bends: SheetBend[];
+  /** The length of the flat pattern of a bent base flange along its profile (the straight pieces and the allowances); null for a plate. */
+  flatLength: number | null;
+}
+
 export interface RebuildResult {
   features: FeatureResult[];
   /** All the bodies seen as one: the body itself when there is one (odies), a view of them all (a compound) when there are several. */
@@ -121,6 +149,8 @@ export interface RebuildResult {
   axes: Map<Id, Axis3>;
   points: Map<Id, Vec3>;
   systems: Map<Id, CoordSystem>;
+  /** The sheet metal data of the part (C11), recorded by its features as they were made. */
+  sheet: SheetInfo | null;
   totalMs: number;
 }
 
@@ -297,6 +327,8 @@ export class Regenerator {
   private diagnostics: ImportDiagnostics | null = null;
   /** What the feature being evaluated says of its result (`FeatureResult.info`). */
   private info: string | null = null;
+  /** The sheet metal data recorded so far in this rebuild (C11). */
+  private sheet: SheetInfo | null = null;
   /** Reference planes built so far in this rebuild (C3.2). */
   private planes = new Map<Id, PlaneFrame>();
   /** Reference axes, points and coordinate systems built so far in this rebuild (C3.3–C3.5). */
@@ -383,6 +415,7 @@ export class Regenerator {
       this.imports.delete(key);
     }
     this.usedImports = new Set();
+    this.sheet = null;
     resolved.features.forEach((feature, index) => {
       const started = performance.now();
       this.warnings = [];
@@ -479,6 +512,10 @@ export class Regenerator {
           }
           case 'screwBoss': {
             set = this.advance(set, this.screwBoss(feature, sketches, set));
+            return done({ status: 'ok' });
+          }
+          case 'baseFlange': {
+            set = this.advance(set, this.baseFlange(feature, sketches, set));
             return done({ status: 'ok' });
           }
           case 'snapHook': {
@@ -590,7 +627,7 @@ export class Regenerator {
           };
         })
       : [];
-    return { features: results, body: view, bodies, sketches, frames, axes: this.axes, points: this.points, systems: this.systems, totalMs: performance.now() - t0 };
+    return { features: results, body: view, bodies, sketches, frames, axes: this.axes, points: this.points, systems: this.systems, sheet: this.sheet, totalMs: performance.now() - t0 };
   }
 
   /**
@@ -1953,6 +1990,56 @@ export class Regenerator {
       }
     }
     return [...list];
+  }
+
+  /**
+   * 「基材凸緣」 (C11.1, ADR 0084): the first feature of a sheet metal part, which also records its parameters. A closed profile is a plate grown `thickness` along the sketch
+   * normal. An open profile (a polyline) is rounded at its corners (`bentPath`: the inside of every bend has the radius asked for), thickened to one side
+   * (`ribbonOf`) and extruded `depth` wide; every bend is recorded (`SheetBend`) with its allowance, and the length of the flat pattern along the profile is the straight
+   * pieces plus the allowances. The faces are named `<feature>:side:<sketch>.<line>` for a flat face of the path and `….<line>_l` (`_r`) for its other face,
+   * `….bend<k>` and `….bend<k>_l` for the two faces of a bend, `….<line>_s` and `_e` for the ends of the sheet, `<feature>:cap:start` and `:end` for the two sides.
+   */
+  private baseFlange(f: BaseFlangeFeature, sketches: RebuildResult['sketches'], set: Bodies): BodyState[] {
+    const s = sketches.get(f.sketch);
+    if (!s) throw new FeatureError(t('feature.sketchGone'));
+    if (this.sheet) throw new FeatureError(t('sheet.second'));
+    const T = evalLength(f.thickness);
+    const r = evalLength(f.radius);
+    const k = evalNumber(f.kFactor);
+    if (!(k >= 0 && k <= 1)) throw new FeatureError(t('sheet.kRange'));
+    const n = s.frame.normal;
+    const dir: Vec3 = f.reverse ? [-n[0], -n[1], -n[2]] : n;
+    const found = findOutlines(s.sketch, s.solved);
+    if (found.problems.length > 0) throw new FeatureError(found.problems.join(t('cmd.listSeparator')));
+    const open = found.chains.length > 0;
+    if (open && (found.chains.length !== 1 || found.loops.length > 0)) throw new FeatureError(t('flange.oneOutline'));
+    const sheet: SheetInfo = { thickness: T, radius: r, kFactor: k, bends: [], flatLength: null };
+    let tool: OpResult;
+    if (!open) {
+      if (s.profiles.problems.length > 0) throw new FeatureError(t('regen.sketchUnusable', { problems: s.profiles.problems.join('; ') }));
+      if (s.profiles.regions.length === 0) throw new FeatureError(t('regen.noClosedProfile'));
+      tool = this.kernel.extrude(s.frame, s.profiles.regions, add([0, 0, 0], dir, T), 0);
+      this.info = t('flange.infoPlate', { t: String(T), r: String(r), k: String(k) });
+    } else {
+      if (f.depth === undefined) throw new FeatureError(t('flange.needsDepth'));
+      const width = evalLength(f.depth);
+      const side = f.flipSide ? 'right' : 'left';
+      try {
+        const bent = bentPath(found.chains[0]!, r, T, side);
+        const region = ribbonOf(bent.path, side === 'left' ? { inward: T, outward: 0 } : { inward: 0, outward: T });
+        tool = this.kernel.extrude(s.frame, [region], add([0, 0, 0], dir, width), 0);
+        for (const b of bent.bends) sheet.bends.push({ feature: f.id, name: b.source, angle: b.angle, radius: r, thickness: T, width, kFactor: k, allowance: b.angle * (r + k * T) });
+        const allowance = sheet.bends.reduce((a, b) => a + b.allowance, 0);
+        sheet.flatLength = bent.straight + allowance;
+        this.info = t('flange.infoOpen', { flat: sheet.flatLength.toFixed(3), straight: bent.straight.toFixed(3), n: String(sheet.bends.length), allowance: allowance.toFixed(3), t: String(T), r: String(r), k: String(k) });
+      } catch (e) {
+        if (e instanceof BendProblem || e instanceof ThinProblem) throw new FeatureError(e.message);
+        throw e;
+      }
+    }
+    const out = this.apply(f.id, 'boss', tool, { featureId: f.id, sketchId: f.sketch }, set.list, true);
+    this.sheet = sheet;
+    return out;
   }
 
   private draftFeature(f: DraftFeature, set: Bodies): BodyState[] {

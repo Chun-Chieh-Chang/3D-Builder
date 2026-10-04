@@ -1236,6 +1236,14 @@ class AppStore {
     this.openNew({ id: this.allocator().take('boss'), type: 'screwBoss', name: nextName(this.history.doc, name), suppressed: false, sketch: sketch.id, diameter: '6', holeDiameter: '2.5', height: '10' }, name);
   }
 
+  /** 「基材凸緣」 (C11.1): a sheet 1.5 thick with an inside bend radius of 1.5 and K 0.5 from the selected sketch (closed: a plate; open: a bent sheet 50 wide). */
+  newBaseFlange(): void {
+    const sketch = this.selectedSketch();
+    if (!sketch) return;
+    const name = t('feature.baseFlange');
+    this.openNew({ id: this.allocator().take('flange'), type: 'baseFlange', name: nextName(this.history.doc, name), suppressed: false, sketch: sketch.id, thickness: '1.5', radius: '1.5', kFactor: '0.5', depth: '50' }, name);
+  }
+
   /** 「卡榫」 (C4.11): a beam 15 long, 2 thick and 6 wide with a hook 3 high standing out 1.2, at the free points of the selected sketch, to be set in the PropertyManager. */
   newSnapHook(): void {
     const sketch = this.selectedSketch();

@@ -1,6 +1,7 @@
 /** app: wording of the app that used to be in the code (D9.1). */
 export const app = {
   'tab.features': '特徵',
+  'tab.sheet': '鈑金',
   'tab.sketch': '草圖',
   'tab.file': '檔案',
   'tab.view': '檢視',

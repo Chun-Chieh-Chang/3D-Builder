@@ -16,7 +16,7 @@ import { isDimension } from './schema';
 export type ExprKind = 'length' | 'angle' | 'count';
 
 /** What a value must be for the feature to make sense: a size above zero, or an angle in the range its feature allows. */
-export type ExprRole = 'positive' | 'nonNegative' | 'nonZero' | 'revolveAngle' | 'chamferAngle' | 'draftAngle' | 'includedAngle' | 'planeAngle' | 'count' | 'any';
+export type ExprRole = 'positive' | 'unitInterval' | 'nonNegative' | 'nonZero' | 'revolveAngle' | 'chamferAngle' | 'draftAngle' | 'includedAngle' | 'planeAngle' | 'count' | 'any';
 
 /** Why a value is not acceptable for its role (in words), or null. `expr` is what the user wrote. */
 export function roleProblem(v: number, role: ExprRole, expr: Expr): string | null {
@@ -24,6 +24,8 @@ export function roleProblem(v: number, role: ExprRole, expr: Expr): string | nul
   switch (role) {
     case 'positive':
       return v > 0 ? null : t('cmd.mustBePositive', { value: expr });
+    case 'unitInterval':
+      return v >= 0 && v <= 1 ? null : t('cmd.mustBeUnit', { value: expr });
     case 'nonNegative':
       return v >= 0 ? null : t('cmd.mustNotBeNegative', { value: expr });
     case 'nonZero':
@@ -164,6 +166,16 @@ export function mapExprs(feature: Feature, fn: (expr: Expr, kind: ExprKind, role
       const same = diameter === f.diameter && holeDiameter === f.holeDiameter && height === f.height && holeDepth === f.holeDepth && draft === f.draft && JSON.stringify(ribs) === JSON.stringify(f.ribs);
       if (same) return feature;
       return { ...f, diameter, holeDiameter, height, ...(holeDepth === undefined ? {} : { holeDepth }), ...(draft === undefined ? {} : { draft }), ...(ribs ? { ribs } : {}) };
+    }
+    case 'baseFlange': {
+      const f = feature;
+      const thickness = fn(f.thickness, 'length', 'positive');
+      const radius = fn(f.radius, 'length', 'positive');
+      const kFactor = fn(f.kFactor, 'count', 'unitInterval');
+      const depth = f.depth === undefined ? undefined : fn(f.depth, 'length', 'positive');
+      const same = thickness === f.thickness && radius === f.radius && kFactor === f.kFactor && depth === f.depth;
+      if (same) return feature;
+      return { ...f, thickness, radius, kFactor, ...(depth === undefined ? {} : { depth }) };
     }
     case 'snapHook': {
       const f = feature;

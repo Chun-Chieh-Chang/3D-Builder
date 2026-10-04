@@ -8,6 +8,7 @@ type Tab = { id: string; label: string; groups: UiAction['group'][] };
 /** The CommandManager's tabs follow the open document, as in SolidWorks. */
 const PART_TABS: Tab[] = [
   { id: 'features', get label() { return t('tab.features'); }, groups: ['feature', 'edit'] },
+  { id: 'sheet', get label() { return t('tab.sheet'); }, groups: ['sheet'] },
   { id: 'sketch', get label() { return t('tab.sketch'); }, groups: ['sketch', 'sketch-tool'] },
   { id: 'tools', get label() { return t('tab.tools'); }, groups: ['tools'] },
   { id: 'file', get label() { return t('tab.file'); }, groups: ['file'] },
