@@ -170,10 +170,11 @@ export function mapExprs(feature: Feature, fn: (expr: Expr, kind: ExprKind, role
       const height = fn(f.height, 'length', 'positive');
       const holeDepth = one(f.holeDepth, 'length', 'positive');
       const draft = one(f.draft, 'angle', 'draftAngle');
+      const holeDraft = one(f.holeDraft, 'angle', 'draftAngle');
       const ribs = f.ribs && { count: fn(f.ribs.count, 'count', 'positive'), thickness: fn(f.ribs.thickness, 'length', 'positive'), length: fn(f.ribs.length, 'length', 'positive'), height: fn(f.ribs.height, 'length', 'positive'), ...(f.ribs.angle === undefined ? {} : { angle: fn(f.ribs.angle, 'angle', 'any') }) };
-      const same = diameter === f.diameter && holeDiameter === f.holeDiameter && height === f.height && holeDepth === f.holeDepth && draft === f.draft && JSON.stringify(ribs) === JSON.stringify(f.ribs);
+      const same = diameter === f.diameter && holeDiameter === f.holeDiameter && height === f.height && holeDepth === f.holeDepth && draft === f.draft && holeDraft === f.holeDraft && JSON.stringify(ribs) === JSON.stringify(f.ribs);
       if (same) return feature;
-      return { ...f, diameter, holeDiameter, height, ...(holeDepth === undefined ? {} : { holeDepth }), ...(draft === undefined ? {} : { draft }), ...(ribs ? { ribs } : {}) };
+      return { ...f, diameter, holeDiameter, height, ...(holeDepth === undefined ? {} : { holeDepth }), ...(draft === undefined ? {} : { draft }), ...(holeDraft === undefined ? {} : { holeDraft }), ...(ribs ? { ribs } : {}) };
     }
     case 'baseFlange': {
       const f = feature;

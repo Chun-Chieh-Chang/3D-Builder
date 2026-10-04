@@ -177,13 +177,14 @@ describe('the DXF of the golden bracket, read back (7-8)', () => {
 });
 
 describe('the manufacturability checks of the golden bracket (7-8)', () => {
-  it('with the limits at their starting values every check passes but one — the inside radius of the hem, 0.5 against 1.5 — and with that limit at 0.3 thicknesses all pass', () => {
+  it('with the limits at their starting values every check passes — the hem is not a bend that has a radius to ask for, so it is not in the radius rule, and its flat piece is in the other (7 against 4 thicknesses = 6) — and a radius asked for of 1.5 thicknesses (2.25) fails the two bends', () => {
     const r = rebuild(build(bracket()));
     const checks = sheetChecks(kernel, r.sheet!);
-    // three bends and three flat pieces, two reliefs (the hem is the whole width), two holes
-    expect(checks.map((c) => c.rule).sort()).toEqual(['bendRadius', 'bendRadius', 'bendRadius', 'flangeLength', 'flangeLength', 'flangeLength', 'holeToBend', 'holeToBend', 'reliefMissing', 'reliefMissing']);
-    expect(checks.filter((c) => !c.ok).map((c) => [c.rule, c.feature, c.value, c.limit])).toEqual([['bendRadius', 'hm', 0.5, 1.5]]);
-    expect(sheetChecks(kernel, r.sheet!, { radius: 0.3, flange: 4, hole: 2 }).every((c) => c.ok)).toBe(true);
+    // two bends (not the hem) and three flat pieces, two reliefs (the hem is the whole width), two holes
+    expect(checks.map((c) => c.rule).sort()).toEqual(['bendRadius', 'bendRadius', 'flangeLength', 'flangeLength', 'flangeLength', 'holeToBend', 'holeToBend', 'reliefMissing', 'reliefMissing']);
+    expect(checks.every((c) => c.ok)).toBe(true);
+    expect(checks.filter((c) => c.rule === 'flangeLength').map((c) => c.feature).sort()).toEqual(['fa', 'fb', 'hm']);
+    expect(sheetChecks(kernel, r.sheet!, { radius: 1.5, flange: 4, hole: 2 }).filter((c) => !c.ok).map((c) => [c.rule, c.feature, c.limit])).toEqual([['bendRadius', 'fa', 2.25], ['bendRadius', 'fb', 2.25]]);
     // a hole moved to x = 112 is 2.0 from the zone of the 90° bend (120 − 3.5 − 112 − 2.5 = 2): not enough, 2 thicknesses (3) are wanted
     const near = rebuild(build(bracket(120, {}, 112)));
     expect(failures(near)).toEqual([]);

@@ -1902,7 +1902,10 @@ export class Regenerator {
     if (!(top > rh + 1e-6)) throw new FeatureError(t('boss.draftTooMuch'));
     const sink = 0.5; // the column starts this far below the plane, inside the body it stands on
     const bottom = height - depth;
-    const profile: [number, number][] = [[0, -sink], [R, -sink], [R, 0], [top, height], [rh, height], [rh, bottom], [0, bottom]];
+    // the pilot hole narrows toward its bottom by `holeDraft` (rh is its radius at the opening)
+    const rhBottom = f.holeDraft === undefined ? rh : rh - depth * Math.tan(evalAngle(f.holeDraft));
+    if (!(rhBottom > 1e-6)) throw new FeatureError(t('boss.holeDraftTooMuch'));
+    const profile: [number, number][] = [[0, -sink], [R, -sink], [R, 0], [top, height], [rh, height], [rhBottom, bottom], [0, bottom]];
     const names = ['base', 'foot', 'wall', 'top', 'hole', 'bottom', 'axis'];
     const turn = (profile: [number, number][], edge: string[], id: string, origin: Vec3, x: Vec3) => {
       const plane: PlaneFrame = { origin, xDir: x, yDir: up, normal: cross(x, up) };

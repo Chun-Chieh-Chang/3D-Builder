@@ -62,6 +62,18 @@ g.run = async () => {
   await H.pmInput('外壁拔模（空白＝沒有）', '');
   near(volume(), SHELLED + column(12, 8), 'draft taken away again (empty)');
 
+  // the draft of the hole: Ø2.5 at the opening, narrowing toward the bottom 8 down (H-4)
+  await H.pmInput('孔的拔模（空白＝直孔）', '1');
+  const rb = rh - 8 * Math.tan(Math.PI / 180);
+  near(volume(), SHELLED + Math.PI * 12 * R * R - (Math.PI * 8 * (rh * rh + rh * rb + rb * rb)) / 3, 'the hole narrowing toward its bottom');
+  await H.pmInput('外壁拔模（空白＝沒有）', '2');
+  document.querySelector('.property-manager [data-field="hole-draft-same"]').click();
+  await H.settle();
+  H.check(feature().holeDraft === '2', 'the hole takes the draft of the outside');
+  await H.pmInput('外壁拔模（空白＝沒有）', '');
+  await H.pmInput('孔的拔模（空白＝直孔）', '');
+  near(volume(), SHELLED + column(12, 8), 'the hole straight again');
+
   // ribs
   document.querySelector('.property-manager [data-field="add-ribs"]').click();
   await H.settle();

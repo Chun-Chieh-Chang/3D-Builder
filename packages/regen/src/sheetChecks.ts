@@ -50,6 +50,8 @@ export function sheetChecks(kernel: Kernel, sheet: SheetInfo, limits: SheetCheck
   const T = sheet.thickness;
   const checks: SheetCheck[] = [];
   for (const b of sheet.bends) {
+    // a hem (a bend of 180°) is not bent to its radius: it is folded and pressed, so the rule about the radius of a bend does not apply to it (its flat piece is checked below)
+    if (b.angle > Math.PI - 1e-6) continue;
     const limit = limits.radius * T;
     const ok = b.radius >= limit - 1e-9;
     checks.push({ rule: 'bendRadius', feature: b.feature, name: b.name, value: b.radius, limit, ok, message: t('sheetCheck.bendRadius', { feature: b.feature, name: b.name, value: num(b.radius), limit: num(limit) }) });

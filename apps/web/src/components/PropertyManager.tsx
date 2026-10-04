@@ -2090,6 +2090,12 @@ function ScrewBossPanel({ f }: { f: ScrewBossFeature }) {
       {row(t('pm.boss.height'), f.height, (height) => run({ height }))}
       {row(t('pm.boss.holeDepth'), f.holeDepth ?? '', (holeDepth) => run({ holeDepth }))}
       {row(t('pm.boss.draft'), f.draft ?? '', (draft) => run({ draft }), '°')}
+      {row(t('pm.boss.holeDraft'), f.holeDraft ?? '', (holeDraft) => run({ holeDraft }), '°')}
+      {f.draft && f.holeDraft !== f.draft && (
+        <button type="button" className="link" data-field="hole-draft-same" onClick={() => store.execute(run({ holeDraft: f.draft }))}>
+          {t('pm.boss.holeDraftSame')}
+        </button>
+      )}
       <label className="pm-row checkbox">
         <input type="checkbox" checked={!!f.reverse} onChange={(e) => store.execute(run({ reverse: e.target.checked ? true : undefined }))} />
         <span>{t('pm.reverseDirection')}</span>

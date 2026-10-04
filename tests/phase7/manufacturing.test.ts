@@ -90,6 +90,18 @@ describe('the inside radius of a bend', () => {
   });
 });
 
+describe('a hem', () => {
+  it('has no radius to ask for (a hem is folded and pressed, not bent to a radius): of a hem with an inside radius of 0.5 against a plate of 1.5 only its flat piece is checked', () => {
+    const hem = { id: 'hm', type: 'hem', name: 'hm', suppressed: false, edge: topEdge, length: '7', gap: '1' } as Feature;
+    const checks = checksOf([plate(), baseFlange(), hem]);
+    expect(of(checks, 'bendRadius')).toEqual([]);
+    expect(of(checks, 'flangeLength')).toHaveLength(1);
+    expect(of(checks, 'flangeLength')[0]).toMatchObject({ ok: true, value: 7, limit: 6 });
+    // an ordinary bend of the same small radius is still caught
+    expect(of(checksOf([plate(), baseFlange({ radius: '0.5' }), flange()]), 'bendRadius')[0]).toMatchObject({ ok: false, value: 0.5 });
+  });
+});
+
 describe('the flat piece after a bend', () => {
   it('26.5 against 4 thicknesses (6): it passes; a flange 8 long from the outside, a flat piece of 4.5, does not', () => {
     const ok = of(checksOf([plate(), baseFlange(), flange()]), 'flangeLength');

@@ -6,7 +6,7 @@ import type { Id } from './ids';
  * DOF status, mass properties and error lists are derived data and never stored.
  */
 
-export const SCHEMA_VERSION = 40;
+export const SCHEMA_VERSION = 41;
 
 /** Value expression (B5.2, B5.3): "20", "25.4mm", "30deg", "wall_t*2", "D1@草圖1/2", "property('厚度')"; see `expr/`. */
 export type Expr = string;
@@ -566,6 +566,8 @@ export interface ScrewBossFeature extends FeatureBase {
   height: Expr;
   holeDepth?: Expr;
   draft?: Expr;
+  /** The draft of the pilot hole (v41): the hole narrows toward its bottom by this angle, `holeDiameter` being the diameter at the opening; absent: a straight hole. */
+  holeDraft?: Expr;
   ribs?: { count: Expr; thickness: Expr; length: Expr; height: Expr; angle?: Expr };
   reverse?: boolean;
 }

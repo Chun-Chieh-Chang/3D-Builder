@@ -168,6 +168,20 @@ describe('the golden housing, made as a document (6-8)', () => {
     expect(down.faces.filter((f) => own(f) && wall(f).surface === 'plane' && Math.abs(wall(f).normal![2]) < 0.1).map((f) => f.kind).sort()).toEqual(['negative', 'negative', 'negative', 'negative', 'positive', 'positive', 'positive', 'positive']);
   });
 
+  it('②b the pilot holes of the bosses with a draft of 1° (the hardening decision H-4) no longer need one: they lean +1.000° like the other inside walls, and nothing of the bosses is asked for draft', () => {
+    const drafted = rebuild(make(...housing(rim).map((f) => (f.type === 'screwBoss' ? ({ ...f, holeDraft: '1deg' } as Feature) : f))));
+    expect(failures(drafted)).toEqual([]);
+    const names = drafted.body!.names.faces;
+    const report = kernel.draftAnalysis(drafted.body!.shape, [0, 0, 1], rad(0.5));
+    expect(report.faces.filter((f) => f.kind === 'required' && names[f.face]!.startsWith('sb:'))).toEqual([]);
+    const holes = report.faces.filter((f) => /^sb:.*\.hole$/.test(names[f.face]!));
+    expect(holes).toHaveLength(2);
+    for (const f of holes) {
+      expect(f.kind).toBe('positive');
+      expect((f.min * 180) / Math.PI).toBeCloseTo(1, 6);
+    }
+  });
+
   it('③ undercut (along z): the hook on a floor shuts itself in — its front face (6 × 30) and its catch face (6 × 1.2) are seen from neither end, 187.2 mm²; a window through the floor under the catch face opens them, and then nothing is an undercut', () => {
     const bare = rebuild(make(...housing(rim, false)));
     const report = kernel.undercutAnalysis(bare.body!.shape, [0, 0, 1]);

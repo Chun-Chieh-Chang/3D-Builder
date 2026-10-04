@@ -112,6 +112,24 @@ describe('a boss on the inside of the floor of a shell', () => {
     expect(new Set(names).size).toBe(names.length);
   });
 
+  it('with 1° of draft on the hole (Ø2.5 at the opening, narrowing toward the bottom 10 down): a hole of π·10/3·(rh² + rh·rb + rb²), rb = 1.25 − 10·tan 1°; the hole is a cone and the outside is as it was', () => {
+    const rb = rh - 10 * Math.tan((1 * Math.PI) / 180);
+    const hole = (Math.PI * 10 * (rh * rh + rh * rb + rb * rb)) / 3;
+    const r = rebuild(doc(boss({ holeDraft: '1deg' })));
+    expect(failures(r)).toEqual([]);
+    expect(volume(r)).toBeCloseTo(SHELLED + Math.PI * 10 * 9 - hole, 5);
+    expect(rb).toBeCloseTo(1.07545, 4);
+    expect(r.body!.topology.faces[r.body!.names.faces.indexOf('sb1:side:sk.p1.hole')]!.surface).toBe('cone');
+    // with the draft of the outside too: both at once
+    const both = rebuild(doc(boss({ holeDraft: '1deg', draft: '1deg' })));
+    const top = R - 10 * Math.tan((1 * Math.PI) / 180);
+    expect(volume(both)).toBeCloseTo(SHELLED + (Math.PI * 10 * (R * R + R * top + top * top)) / 3 - hole, 5);
+  });
+
+  it('a hole that closes before its bottom is said', () => {
+    expect(rebuild(doc(boss({ holeDraft: '15deg' }))).features.find((f) => f.id === 'sb1')).toMatchObject({ status: 'error', message: expect.stringContaining('孔的拔模') });
+  });
+
   it('two points make two columns', () => {
     const r = rebuild(build(...shell(), points('sk', face(floor), ['p1', 15, 10], ['p2', -15, -10]), boss()));
     expect(failures(r)).toEqual([]);

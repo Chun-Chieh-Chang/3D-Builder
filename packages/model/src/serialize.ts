@@ -154,6 +154,8 @@ const migrations: Record<number, (doc: Json) => Json> = {
   38: (doc) => doc,
   // v40: the gauge table of a sheet metal part (C11.1, Phase 7). Absent until a row is added; nothing to convert.
   39: (doc) => doc,
+  // v41: the draft of the pilot hole of a screw boss (C4.11, hardening H-4). Absent means a straight hole, as before; nothing to convert.
+  40: (doc) => doc,
 };
 
 export class FormatError extends Error {

@@ -249,6 +249,7 @@ export const features = {
   'boss.draftTooMuch': '外壁的拔模太大：到螺柱頂端外徑已經比孔還小',
   'boss.ribCount': '肋的數量要是 1 到 8 的整數',
   'boss.ribTooHigh': '肋的高度不能比螺柱高',
+  'boss.holeDraftTooMuch': '孔的拔模太大：到孔底孔徑已經縮到零',
   'boss.floating': '螺柱沒有接到本體（草圖要放在本體的面上，例如殼的內側底面）',
   'feature.snapHook': '卡榫',
   'feature.snapCatch': '卡榫的窗',

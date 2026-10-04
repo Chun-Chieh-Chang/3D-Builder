@@ -251,6 +251,7 @@ export const features: Translation = {
   'boss.draftTooMuch': 'The draft of the outside wall is too much: at the top the outside is already smaller than the hole',
   'boss.ribCount': 'The number of ribs has to be a whole number from 1 to 8',
   'boss.ribTooHigh': 'A rib cannot be higher than the boss',
+  'boss.holeDraftTooMuch': 'The draft of the hole is too much: at its bottom the hole has narrowed to nothing',
   'boss.floating': 'The boss does not join the body (the sketch has to be on a face of the body, such as the inside of the floor of a shell)',
   'feature.snapHook': 'Snap Hook',
   'feature.snapCatch': 'Snap Catch',
