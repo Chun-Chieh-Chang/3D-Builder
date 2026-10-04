@@ -13,7 +13,6 @@ export const DOWEL_FITS: readonly DowelFit[] = ['H6', 'H7', 'H8'];
 
 /** The pins that go in them (ISO 8734 type A is m6, type B h8; h6 slides). */
 export type PinClass = 'm6' | 'h6' | 'h8';
-export const PIN_CLASSES: readonly PinClass[] = ['m6', 'h6', 'h8'];
 
 export const DOWEL_STANDARD_SOURCE = 'ISO 286-1 / ISO 8734';
 

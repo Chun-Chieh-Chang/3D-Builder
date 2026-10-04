@@ -222,10 +222,6 @@ export function chosen(f: Feature | undefined): { edges: Ref[]; faces: Ref[]; ve
 
 // ------------------------------------------------------------------ definitions by kind
 
-export const PLANE_MODES: PlaneDefinition['mode'][] = ['offset', 'angle', 'threePoint', 'parallel', 'perpendicular', 'midplane', 'tangent'];
-export const AXIS_MODES: AxisDefinition['mode'][] = ['edge', 'twoPoints', 'cylinder', 'planes'];
-export const POINT_MODES: PointDefinition['mode'][] = ['coords', 'center', 'axisPlane'];
-
 const FRONT: Ref = { kind: 'datum', name: 'plane:front' };
 
 /** A definition of the given kind, taking over the plane the old one had (the front plane when it had none). */

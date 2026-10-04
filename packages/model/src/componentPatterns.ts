@@ -155,5 +155,3 @@ export function mirroredInside(pose: Pose): Pose {
   return { position: [-pose.position[0], pose.position[1], pose.position[2]], rotation: quatFromRows(rows) };
 }
 
-/** The 4 × 4 reflection (column-major, for the viewer) that makes a part's mirror: x → −x in the part's own coordinates. */
-export const MIRROR_IN_PART = [-1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1] as const;

@@ -4,7 +4,7 @@
  * so what comes after them stays where the user put it (ADR 0021).
  */
 import { beforeAll, describe, expect, it } from 'vitest';
-import { applyCommand, createEmptyPart, CommandError, parsePart, SCHEMA_VERSION, serializePart, type Feature, type PartDoc } from '@3db/model';
+import { applyCommand, createEmptyPart, parsePart, SCHEMA_VERSION, serializePart, type Feature, type PartDoc } from '@3db/model';
 import { readPartFile, sha256Hex, writePartFile } from '@3db/io';
 import { PlaneGcsSolver } from '@3db/sketch';
 import { Kernel } from '@3db/kernel';

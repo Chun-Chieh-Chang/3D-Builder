@@ -22,7 +22,7 @@ import {
   type SourceTree,
   type ViewFeature,
 } from '@3db/model';
-import { readAnyDocumentFile, readDocumentFile, writeDrawingFile } from '@3db/io';
+import { readAnyDocumentFile, writeDrawingFile } from '@3db/io';
 import { PlaneGcsSolver } from '@3db/sketch';
 import { Kernel } from '@3db/kernel';
 import { drawingAnchors, elementFacts, projectDrawingView, Regenerator, viewFeatures } from '@3db/regen';

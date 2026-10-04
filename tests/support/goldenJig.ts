@@ -4,7 +4,6 @@
  * Its hand count (components defined, poses, mates) is checked in `tests/phase2/golden-assembly.test.ts`; here it is only built.
  */
 import { readFileSync } from 'node:fs';
-import { expect } from 'vitest';
 import { applyAssemblyCommand, axisAngle, createEmptyAssembly, type AssemblyDoc, type Mate, type MateType, type PartDoc, type Pose, type Vec3 } from '@3db/model';
 import { readPartFile } from '@3db/io';
 import type { PlaneGcsSolver } from '@3db/sketch';

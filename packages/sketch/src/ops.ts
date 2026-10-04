@@ -1,6 +1,6 @@
 import { t, type PlainKey } from '@3db/i18n';
 import { constraintRefs, isDimension, SKETCH_ORIGIN, type Id, type IdAllocator, type Ref, type SketchConstraint, type SketchEdit, type SketchEntity, type SketchFeature } from '@3db/model';
-import { closestOn, onSweep } from './interact';
+import { closestOn } from './interact';
 import type { P2, SolvedGeometry } from './types';
 
 /**

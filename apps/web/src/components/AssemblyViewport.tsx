@@ -1,6 +1,6 @@
 import { t } from '@3db/i18n';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { DATUM_PLANES, IDENTITY_ROTATION, isDatumPlaneName, joinPath, poseMatrix, transformPoint, type MateRef, type PlaneFrame, type Pose, type Vec3 } from '@3db/model';
+import { DATUM_PLANES, IDENTITY_ROTATION, isDatumPlaneName, poseMatrix, transformPoint, type MateRef, type PlaneFrame, type Pose, type Vec3 } from '@3db/model';
 import { partNameOf } from '@3db/io';
 import { Viewer, type InstanceElement, type PlaneDisplay, type ViewInstance, type ViewPart } from '@3db/render';
 import { ACTIONS, shortcutOf } from '../actions';

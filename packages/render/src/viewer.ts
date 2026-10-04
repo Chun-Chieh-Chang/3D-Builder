@@ -256,16 +256,12 @@ export class Viewer {
   /** The color of each face (C14.2): "#rrggbb" or null for the body's own. */
   private faceColors: readonly (string | null)[] = [];
   private displayMode: DisplayMode = 'shadedEdges';
-  private section: SectionPlane | null = null;
   private clip: THREE.Plane[] = [];
   /** The edges that lie behind the body, drawn dashed in 'hiddenVisible'. */
   private hiddenEdges: THREE.LineSegments | null = null;
   private readonly viewListeners = new Set<() => void>();
   private planes: PlaneDisplay[] = [];
   private planeGroup: THREE.Group | null = null;
-  private overlay: SketchOverlay | null = null;
-  /** Sketches that are shown next to the model (D4.6), each drawn like the sketch being edited, without labels. */
-  private sketches: SketchOverlay[] = [];
   private sketchGroup: THREE.Group | null = null;
   private originShown = false;
   private originGroup: THREE.Group | null = null;
@@ -783,7 +779,6 @@ export class Viewer {
       disposeGroup(this.overlayGroup);
       this.overlayGroup = null;
     }
-    this.overlay = overlay;
     if (overlay) {
       this.overlayGroup = buildOverlayObjects(overlay, this.pixelSize());
       this.overlayScene.add(this.overlayGroup);
@@ -1104,7 +1099,6 @@ export class Viewer {
       disposeGroup(this.sketchGroup);
       this.sketchGroup = null;
     }
-    this.sketches = sketches;
     if (sketches.length > 0) {
       const group = new THREE.Group();
       const px = this.pixelSize();
@@ -1391,7 +1385,6 @@ export class Viewer {
 
   /** Cuts the model open at a plane, or (null) puts it back. */
   setSection(section: SectionPlane | null): void {
-    this.section = section;
     this.clip = section ? [new THREE.Plane(new THREE.Vector3(...section.normal).normalize().negate(), section.offset)] : [];
     this.applyDisplay();
   }

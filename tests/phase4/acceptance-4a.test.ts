@@ -6,15 +6,13 @@
  * through the whole round again.
  */
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { applyAssemblyCommand, applyCommand, buildBom, createEmptyPart, type AssemblyDoc, type Feature, type Mate, type MateRef, type PartDoc, type Pose, type SourceTree, type Vec3 } from '@3db/model';
-import { componentName, derivedAssemblyFiles, exportAssemblyStep, partNameOf, readDocumentFile, sha256Hex, writePartFile } from '@3db/io';
+import { buildBom, type SourceTree, type Vec3 } from '@3db/model';
+import { componentName, exportAssemblyStep, partNameOf, readDocumentFile } from '@3db/io';
 import { PlaneGcsSolver } from '@3db/sketch';
 import { Kernel } from '@3db/kernel';
-import { faceMateGeometry, findClearance, findInterference, Regenerator, solveAssembly, sweepClearance } from '@3db/regen';
-import { standardName, standardPartDoc, STANDARD_FACES, type StandardSpec } from '@3db/library';
-import { build, extrude, front, rectangle, sketch } from '../phase1/builders';
+import { findClearance, findInterference, Regenerator, sweepClearance } from '@3db/regen';
 import { openPart } from '../support/derivedProject';
-import { assemble as jigAssemble, componentsAt, master as jigMaster, PIN, PIN_PATH, SCREW, SCREW_PATH, shapeOf, workpieceStep, type Opened, type Project } from '../support/jigFixture';
+import { assemble as jigAssemble, componentsAt, master as jigMaster, PIN_PATH, SCREW_PATH, shapeOf, workpieceStep, type Opened, type Project } from '../support/jigFixture';
 import { readAssemblyTree } from '../support/readAssemblyStep';
 import { stepRoundTrip, treeShape, worldParts } from '../support/stepRoundTrip';
 

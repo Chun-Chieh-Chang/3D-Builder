@@ -33,7 +33,6 @@ import {
   type ImportedBodyFeature,
   type PartDoc,
   type PatternDefinition,
-  type PlaneDefinition,
   type PlaneFrame,
   type MeasureKind,
   type MeasureReport,

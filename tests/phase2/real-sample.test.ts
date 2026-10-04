@@ -18,8 +18,7 @@ import { applyAssemblyCommand, axisAngle, createEmptyAssembly, transformPoint, t
 import { componentName, exportAssemblyStep, partNameOf, readDocumentFile, readComponentFile, writeAssemblyFile } from '@3db/io';
 import { PlaneGcsSolver } from '@3db/sketch';
 import { COMPONENT_MESH, Kernel, type FaceInfo } from '@3db/kernel';
-import { edgeMateGeometry, faceMateGeometry, Regenerator, solveAssembly, type MatePart } from '@3db/regen';
-import { edgeFingerprint, faceFingerprint, vertexFingerprint } from '@3db/naming';
+import { Regenerator, solveAssembly, type MatePart } from '@3db/regen';
 import { readAssemblyStep, rotationMatrix } from '../support/readAssemblyStep';
 
 const dir = process.env.SW_SAMPLE_DIR;

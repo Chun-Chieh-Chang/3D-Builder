@@ -5,7 +5,6 @@ import {
   axisAngle,
   baseName,
   CommandError,
-  composePose,
   composeRotations,
   lerpPose,
   cycleMessage,

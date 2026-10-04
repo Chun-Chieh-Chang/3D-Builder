@@ -27,7 +27,6 @@ import {
   type Dimension,
   type DimensionOrientation,
   type DimensionPatch,
-  type DrawingTable,
   type ElementFacts,
   type Ref,
   type SectionDrawingView,

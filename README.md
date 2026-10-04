@@ -1,44 +1,54 @@
 # 3D-Builder
 
-類 SolidWorks 的參數式 3D CAD（Web 先行）。設計意圖是唯一真相（SSOT）：幾何、網格、STEP 都由文件重新計算而來；參考一律用持久名稱，不用拓撲索引。
+類 SolidWorks 的參數式 3D CAD（Web 先行，另有 Windows 桌面版）。設計意圖是唯一真相（SSOT）：幾何、網格、STEP 都由文件重新計算而來；參考一律用持久名稱，不用拓撲索引。
 
-目前進度：**Phase 0、Phase 1（零件 MVP）完成，閘門皆已通過**（見 [phase1-verification.md](docs/phase1-verification.md)）。Phase 2 組合件 MVP 進行中：2A 組合件骨架（[ADR 0011](docs/adr/0011-assembly-skeleton.md)）、2B 結合求解器（[ADR 0012](docs/adr/0012-mate-solver.md)）、2C 結合的介面（[ADR 0013](docs/adr/0013-mate-ui.md)）、2D 移動零組件與參考檔（[ADR 0014](docs/adr/0014-moving-and-reference-files.md)）已完成。Phase 0 的流程是：
-
-1. 草圖（PlaneGCS 求解）
-2. 伸長
-3. 圓角（以持久名稱參考邊線）
-4. 改尺寸後重新計算
-5. STEP 輸出
-
-開發藍圖見 `C:\Users\3kids\.claude\plans\solidworks-3d-solidworks-solidworks-3d-serene-crayon.md`。目前狀態、待辦與下一步見 [handoff.md](handoff.md)。
+目前進度：**Phase 0 到 7 的開發都完成**（零件、組合件、夾治具、檢具、工程圖、塑膠件、鈑金）。Phase 0、1、2 的閘門已通過；3a、3b、4a、4b、5、6、7 是「有條件通過」：只用手算的金樣與種子固定的隨機測試驗過，**還沒有用真實檔案與 SolidWorks 對照**。逐階段的狀態在 [handoff.md](handoff.md) §3，待使用者做的實機驗證在 [docs/manual-verification.html](docs/manual-verification.html)（84 項，用瀏覽器開）。
 
 ## 快速開始
 
 ```bash
 npm install
-npm run dev        # 自動開啟 http://127.0.0.1:5391
-npm run check      # 型別檢查 + 分層檢查 + 全部測試
+npm run dev        # 自動開啟 http://127.0.0.1:5391（用 Edge 或 Chrome）
+npm run check      # 型別檢查 + 分層檢查 + i18n 檢查 + 全部測試
+npm run build      # 網頁版正式建置
+npm run build -w @3db/desktop   # 桌面版安裝檔（要 Rust 與 MSVC，見 apps/desktop/README.md）
 ```
+
+專案要放在支援符號連結的磁碟（NTFS）：npm workspaces 靠符號連結，在 USB 隨身碟上 `node_modules/@3db` 會是空的（見 handoff.md §6「工作區連結」）。
+
+## 文件
+
+| 文件 | 內容 |
+|---|---|
+| [handoff.md](handoff.md) | 目前狀態、待辦、下一步、工作約定、已知陷阱（換電腦先讀 §0） |
+| [docs/blueprint.md](docs/blueprint.md) | 範圍、架構、階段與驗收標準 |
+| [docs/adr/](docs/adr) | 架構決策紀錄（0001–0095），每個里程碑一份，含驗收表與限制 |
+| `docs/phase*-plan.md` | 各階段的里程碑與驗收標準；[docs/hardening-plan.md](docs/hardening-plan.md) 為鞏固（H-1 到 H-11） |
+| [docs/manual-verification.html](docs/manual-verification.html) | 逐項實機驗證清單 |
 
 ## 結構
 
 ```
-packages/model     SSOT：零件與組合件的 schema、文件指令、復原/重做、序列化、檔案路徑與位姿（零內部相依）
-packages/sketch    草圖求解（PlaneGCS WASM：拖曳、逐圖元定義狀態）、封閉輪廓偵測；/interact 為拾取、吸附、推斷、智慧型尺寸
+packages/model     SSOT：零件、組合件、工程圖的 schema、文件指令、復原/重做、序列化、檔案路徑與位姿（零內部相依）
+packages/sketch    草圖求解（PlaneGCS WASM）、封閉輪廓偵測、折彎路徑；/interact 為拾取、吸附、推斷、智慧型尺寸
 packages/naming    持久命名（TNP）與參考解析
-packages/kernel    OCCT 8.0.1（libcascade WASM）門面：伸長、旋轉、布林（含合併共面）、圓角、導角、拓撲、網格、物質特性、STEP 輸出/輸入
-packages/assembly  結合求解器（純 TS）：標準結合、LM 求解、衝突與自由度
-packages/regen     確定性的重新計算引擎、父子關係推導、組合件結合的求解接線
-packages/io        檔案層：零件檔 .3dbx、組合件檔 .3dba（同一個自寫 ZIP 容器）、零件與零組件的名稱、STEP 輸出命名
-packages/render    Three.js 圖面：SW 式視圖操作、頂點/邊線/面拾取、基準面顯示、三度空間參考、草圖疊加層、零組件（共用網格的實例）
-apps/web           React 介面：CommandManager、FeatureManager、PropertyManager、狀態列；src/sketcher 為草圖工具；src/state/assembly.ts 為組合件
-tests/phase0       Phase 0 驗收與效能量測
-tests/phase1       Phase 1 回歸：特徵與布林後的持久命名（TNP）、設計樹操作、基準面、零件檔、STEP 輸入
-tests/phase2       Phase 2：組合件以相對路徑找到零件檔、零組件的位姿、真實零件上的結合
+packages/kernel    OCCT 8.0.1（libcascade WASM）門面：特徵、布林、圓角、拓撲、網格、曲面、投影與剖面、物質特性、STEP
+packages/assembly  結合求解器（純 TS）：標準與進階結合、LM 求解、衝突與自由度
+packages/regen     確定性的重新計算引擎（零件特徵、鈑金、塑膠分析、平板型式）、組合件求解接線、干涉與餘隙
+packages/io        檔案層：零件 .3dbx、組合件 .3dba、工程圖 .3dbd（同一個自寫 ZIP 容器）、STEP 輸出命名
+packages/drawing   工程圖場景：視圖、尺寸、孔表、零件表，輸出 SVG、DXF、PDF（含讀取器與檢查）
+packages/library   標準件圖庫（螺絲、定位銷、墊圈）
+packages/render    Three.js 圖面：視圖操作、拾取、基準顯示、草圖疊加層、零組件、分析著色
+packages/i18n      介面文字目錄（zh-TW 與 en）
+apps/web           React 介面：CommandManager、FeatureManager、PropertyManager、狀態列；Worker 跑幾何核心
+apps/desktop       Tauri 2 桌面版：載入 apps/web 的建置結果（NSIS 安裝檔）
+tests/phase0–8     各階段的驗收、回歸與隨機測試（phase8 是鞏固的種子固定隨機測試）
+tests/support      測試共用的夾具與輔助
 tests/fixtures     舊版程式寫出的文件樣本（證明舊檔可開啟）、STEP 金樣
-tests/golden       只用 UI 做出的三個示範零件（Phase 1 驗收）與金樣測試
-tests/e2e          在瀏覽器中只用 UI 操作的驗收腳本（零件建模、組合件）
-docs/adr           架構決策紀錄
+tests/golden       只用 UI 做出的三個示範零件
+tests/e2e          在瀏覽器中只用 UI 操作的驗收腳本
+scripts            分層檢查、i18n 檢查、文字化檔案工具
+spikes             技術驗證腳本（ADR 的證據，不屬於產品程式碼）
 ```
 
 分層規則由 `scripts/check-deps.mjs` 定義並強制執行。模組與藍圖目錄 ID 的對應見 `docs/adr/0001-ssot-mece-rules.md`。

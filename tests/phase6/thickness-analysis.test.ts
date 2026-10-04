@@ -8,7 +8,7 @@ import type { Feature } from '@3db/model';
 import { PlaneGcsSolver } from '@3db/sketch';
 import { buildBvh, forEachSample, Kernel, KernelError, nearestHit, nearestHitAt, triangleNormal, type ShapeId } from '@3db/kernel';
 import { Regenerator } from '@3db/regen';
-import { build, circle, extrude, front, rectangle, sketch } from '../phase1/builders';
+import { build, extrude, front, rectangle, sketch } from '../phase1/builders';
 
 let kernel: Kernel;
 let solver: PlaneGcsSolver;

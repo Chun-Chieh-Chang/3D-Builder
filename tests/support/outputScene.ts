@@ -13,7 +13,7 @@ import { readPartFile } from '@3db/io';
 import { PlaneGcsSolver } from '@3db/sketch';
 import { Kernel } from '@3db/kernel';
 import { Regenerator, elementFacts, projectDrawingView, viewFeatures } from '@3db/regen';
-import { autoDimensions, assemble, buildScene, type ElementsResult, type Scene, type ViewLines } from '@3db/drawing';
+import { autoDimensions, buildScene, type ElementsResult, type Scene, type ViewLines } from '@3db/drawing';
 
 /**
  * The plate in its top and front views on an A3 sheet in first angle, the overall size, the holes with their callouts and the positions as dimensions (one with

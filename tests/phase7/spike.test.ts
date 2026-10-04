@@ -21,7 +21,6 @@ afterAll(() => {
 
 const T = 1.5;
 const r = 2;
-const k = 0.4;
 const w = 50;
 type V3 = [number, number, number];
 const line = (a: [number, number], b: [number, number], source: string): Segment => ({ kind: 'line', a, b, source });

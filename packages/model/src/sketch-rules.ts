@@ -1,6 +1,6 @@
 import { t } from '@3db/i18n';
 import type { Id } from './ids';
-import { isDimension, SKETCH_ORIGIN, type PartDoc, type SketchConstraint, type SketchEntity, type SketchFeature } from './schema';
+import { SKETCH_ORIGIN, type PartDoc, type SketchConstraint, type SketchEntity, type SketchFeature } from './schema';
 
 /**
  * Structural rules of a sketch (B1.2): which entities a relation or dimension may reference, and

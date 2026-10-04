@@ -22,7 +22,6 @@ import {
   HOLE_STANDARD_SOURCE,
   ISO_HOLE_SIZES,
   DOWEL_FITS,
-  DOWEL_STANDARD_SOURCE,
   fitClearance,
   holeLimits,
   ISO_DOWEL_DIAMETERS,

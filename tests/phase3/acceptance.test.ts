@@ -14,7 +14,7 @@ import { PlaneGcsSolver } from '@3db/sketch';
 import { Kernel } from '@3db/kernel';
 import { Regenerator } from '@3db/regen';
 import { build, circle, extrude, face, front, rectangle, sketch } from '../phase1/builders';
-import { compareToReference, expectSweepPasses, featureIdOf, REFERENCE_LIMITS, runCommand, SWEEP_FACTORS, setSketchDimension, sweepKeyDimensions, symmetricDifference, type KeyDimension } from '../support/acceptance';
+import { compareToReference, expectSweepPasses, featureIdOf, REFERENCE_LIMITS, runCommand, SWEEP_FACTORS, sweepKeyDimensions, symmetricDifference, type KeyDimension } from '../support/acceptance';
 
 let kernel: Kernel;
 let solver: PlaneGcsSolver;

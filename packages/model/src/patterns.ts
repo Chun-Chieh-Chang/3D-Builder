@@ -1,4 +1,4 @@
-import type { Feature, PatternDefinition } from './schema';
+import type { Feature } from './schema';
 
 /**
  * The features a pattern can repeat (C6.1, C6.2): the ones that add to or take away from the bodies at one place. A pattern repeats what a feature did to
@@ -27,5 +27,3 @@ export function patternInstances(n1: number, n2: number | null): Instance[] {
   return out;
 }
 
-/** Does the definition lay the instances out in a grid? */
-export const isGrid = (d: PatternDefinition): boolean => d.mode === 'linear' && d.dir2 !== undefined;

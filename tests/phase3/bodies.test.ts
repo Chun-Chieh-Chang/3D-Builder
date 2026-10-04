@@ -23,7 +23,6 @@ const rebuild = (doc: PartDoc, blobs = new Map<string, Uint8Array>()) => new Reg
 const ok = (r: RebuildResult) => statuses(r).filter((s) => !s.endsWith('=ok'));
 const volumes = (r: RebuildResult) => r.bodies.map((b) => Math.round(kernel.massProps(b.shape).volume * 1e6) / 1e6);
 const ids = (r: RebuildResult) => r.bodies.map((b) => b.id);
-const apart = (f: Feature): Feature => ({ ...f, merge: false }) as Feature;
 const add = (doc: PartDoc, ...features: Feature[]) => features.reduce((d, feature) => applyCommand(d, { type: 'insertFeature', feature, index: d.features.length }), doc);
 const combine = (id: string, op: CombineFeature['op'], main: string, ...tools: string[]): Feature => ({
   id,
