@@ -9,7 +9,7 @@ import { PlaneGcsSolver } from '@3db/sketch';
 import { Kernel } from '@3db/kernel';
 import { elementFacts, projectDrawingView, Regenerator, viewFeatures } from '@3db/regen';
 import { autoDimensions, buildScene, checkDxf, checkPdf, readDxf, readPdf, readTrueType, toDxf, toPdf, toSvg, type DxfPolyline, type ElementsResult, type Scene, type ViewLines } from '@3db/drawing';
-import { circle, extrude, front, rectangle, sketch } from '../phase1/builders';
+import { circle, extrude, fillet, front, rectangle, sketch } from '../phase1/builders';
 import { areaOf } from '../support/sectionArea';
 import { testFont } from '../support/testFont';
 
@@ -59,14 +59,28 @@ describe('drawings of parts made at random', () => {
       holes.push([r.round(x, 1), d]);
     }
     const features: Feature[] = [sketch('s1', front, rectangle('a', -L / 2, -W / 2, L, W)), extrude('e1', 's1', 'boss', { type: 'blind', depth: String(H) })];
+    // the top edges rounded or chamfered, half the time: the section through the middle loses a corner at each end of the top
+    const edgeKind = r.pick(['none', 'fillet', 'chamfer', 'none'] as const);
+    const edgeSize = r.round(r.between(1, 4), 0.5);
+    const topEdges: Ref[] = ['al0', 'al1', 'al2', 'al3'].map((n) => ({ kind: 'edge', name: `{${['e1:cap:end', `e1:side:s1.${n}`].sort().join('|')}}` }));
+    if (edgeKind === 'fillet') features.push(fillet('f1', topEdges, String(edgeSize)));
+    if (edgeKind === 'chamfer') features.push({ id: 'f1', type: 'chamfer', name: 'f1', suppressed: false, edges: topEdges, mode: 'angleDistance', distance: String(edgeSize), second: '45deg' } as Feature);
+    // what that takes off one end of the section, and the most it can take off the volume (the four edges, counted whole)
+    const cornerArea = edgeKind === 'fillet' ? (1 - Math.PI / 4) * edgeSize ** 2 : edgeKind === 'chamfer' ? edgeSize ** 2 / 2 : 0;
     if (holes.length > 0) features.push(sketch('s2', front, ...holes.map(([x, d], i) => circle(`k${i}`, x, 0, d / 2))), extrude('c1', 's2', 'cut', { type: 'throughAll', reverse: true }));
-    const why = `drawing seed ${seed}: ${L} × ${W} × ${H}, holes ${holes.map(([x, d]) => `Ø${d} at ${x}`).join(', ') || 'none'}`;
+    const why = `drawing seed ${seed}: ${L} × ${W} × ${H}, holes ${holes.map(([x, d]) => `Ø${d} at ${x}`).join(', ') || 'none'}, ${edgeKind === 'none' ? 'sharp' : `${edgeKind} ${edgeSize}`}`;
     const regen = new Regenerator(kernel, solver, new Map());
     kept.push(regen);
     const res = regen.rebuild(build(features));
     expect(res.features.every((f) => f.status === 'ok'), why).toBe(true);
     const body = res.body!;
-    expect(Math.abs(kernel.massProps(body.shape).volume - (L * W * H - holes.reduce((a, [, d]) => a + Math.PI * (d / 2) ** 2 * H, 0))) / (L * W * H), `${why}: volume`).toBeLessThan(1e-6);
+    const plain = L * W * H - holes.reduce((a, [, d]) => a + Math.PI * (d / 2) ** 2 * H, 0);
+    const volume = kernel.massProps(body.shape).volume;
+    if (edgeKind === 'none') expect(Math.abs(volume - plain) / (L * W * H), `${why}: volume`).toBeLessThan(1e-6);
+    else {
+      expect(volume, `${why}: volume less`).toBeLessThan(plain - 1e-6);
+      expect(volume, `${why}: volume not less than the four edges whole`).toBeGreaterThanOrEqual(plain - 2 * (L + W) * cornerArea - 1e-6);
+    }
 
     const PART = 'part.3dbx';
     const views: DrawingView[] = [
@@ -96,9 +110,9 @@ describe('drawings of parts made at random', () => {
     expect(box('view1'), `${why}: front`).toEqual([expect.closeTo(L, 5), expect.closeTo(W, 5)]);
     expect(box('view2'), `${why}: top`).toEqual([expect.closeTo(L, 5), expect.closeTo(H, 5)]);
     expect(box('view3'), `${why}: right`).toEqual([expect.closeTo(H, 5), expect.closeTo(W, 5)]);
-    // the section through the holes: the block's L × H less each hole's diameter across the thickness
+    // the section through the holes (an arc is drawn in short chords, so a rounded edge is allowed a little more): the block's L × H less each hole's diameter across the thickness
     const cut = lines.get('view4')!.cut!;
-    expect(Math.abs(areaOf(cut) - (L * H - holes.reduce((a, [, d]) => a + d * H, 0))) / (L * H), `${why}: section`).toBeLessThan(1e-5);
+    expect(Math.abs(areaOf(cut) - (L * H - holes.reduce((a, [, d]) => a + d * H, 0) - 2 * cornerArea)) / (L * H), `${why}: section`).toBeLessThan(edgeKind === 'fillet' ? 1e-4 : 1e-5);
 
     const drafts = autoDimensions(features2.get('view1')!, { overall: true, holes: true, positions: true, callouts: true });
     expect(drafts.length, `${why}: dimensions made`).toBeGreaterThanOrEqual(2 + holes.length);
