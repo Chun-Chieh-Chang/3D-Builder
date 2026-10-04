@@ -724,13 +724,14 @@ class AppStore {
     const done = (patch: Partial<FlatState>) => {
       if (seq === this.flatSeq && this.state.flat) this.set({ flat: { ...this.state.flat, ...patch } });
     };
-    // the checks do not need the pattern, only the data; the pattern may be one the program cannot make (and says so)
-    const checks = limits.radius === null || limits.flange === null || limits.hole === null ? Promise.resolve(null) : this.api.sheetChecks({ radius: limits.radius, flange: limits.flange, hole: limits.hole }).catch(() => null);
+    // limits that are not numbers keep the checks of the last ones
+    const asked = limits.radius === null || limits.flange === null || limits.hole === null ? { radius: 1, flange: 4, hole: 2 } : { radius: limits.radius, flange: limits.flange, hole: limits.hole };
     try {
-      const report = await this.api.flatPattern();
-      done({ status: 'done', report, error: null, checks: (await checks) ?? this.state.flat?.checks ?? [] });
+      const { report, error, checks } = await this.api.flatPattern(asked);
+      const keep = asked.radius === limits.radius && asked.flange === limits.flange && asked.hole === limits.hole;
+      done(report ? { status: 'done', report, error: null, checks: keep ? checks : (this.state.flat?.checks ?? checks) } : { status: 'error', report: null, error: t('flat.failed', { why: error ?? '' }), checks: keep ? checks : (this.state.flat?.checks ?? checks) });
     } catch (e) {
-      done({ status: 'error', report: null, error: t('flat.failed', { why: e instanceof Error ? e.message : String(e) }), checks: (await checks) ?? [] });
+      done({ status: 'error', report: null, error: t('flat.failed', { why: e instanceof Error ? e.message : String(e) }), checks: [] });
     }
   }
 

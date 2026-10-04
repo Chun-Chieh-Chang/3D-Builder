@@ -271,10 +271,11 @@ export interface KernelApi {
   analyzeUndercut(pull: [number, number, number]): Promise<UndercutReport>;
   /** How thick the wall is at every face of the part as it is shown, and which faces are under `min` or over `max` mm (E3.5). */
   analyzeThickness(limits: { min?: number; max?: number }): Promise<ThicknessReport>;
-  /** The flat pattern of the sheet metal part as it is shown: its outline, bend lines and sizes (C11.3). */
-  flatPattern(): Promise<FlatReport>;
-  /** The manufacturability checks of the sheet metal part as it is shown, against the limits given (C11, ADR 0090). */
-  sheetChecks(limits: SheetCheckLimits): Promise<SheetCheck[]>;
+  /**
+   * The flat pattern of the sheet metal part as it is shown (its outline, bend lines and sizes, C11.3) and its manufacturability checks against the limits given (ADR 0090); the
+   * pattern is made once for both. `report` is null, and `error` says why, when the pattern cannot be made; the checks are still those that need no pattern.
+   */
+  flatPattern(limits: SheetCheckLimits): Promise<{ report: FlatReport | null; error: string | null; checks: SheetCheck[] }>;
   /** Lets go of every rebuilt part file except these. */
   retainParts(keys: string[]): Promise<void>;
   /**

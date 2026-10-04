@@ -123,7 +123,8 @@ code { font-family: Consolas, 'Cascadia Mono', monospace; font-size: 11px; }
 .pm-group h4 { margin: 0 0 6px; font-size: 12px; color: var(--accent); }
 .pm-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 3px 0; }
 .pm-row.checkbox { justify-content: flex-start; }
-.pm-row select { font: inherit; padding: 3px; }
+.pm-row select { font: inherit; padding: 3px; min-width: 0; max-width: 62%; }
+.pm-row > span:first-child { flex: 0 0 auto; max-width: 45%; }
 .value-input { display: inline-flex; align-items: center; gap: 4px; }
 .value-input input { width: 90px; font: inherit; padding: 3px 5px; border: 1px solid var(--line); border-radius: 3px; text-align: right; }
 .value-input input.invalid { border-color: var(--error); background: #fff5f5; }
@@ -188,7 +189,7 @@ code { font-family: Consolas, 'Cascadia Mono', monospace; font-size: 11px; }
 .pick-hint { position: absolute; left: 110px; bottom: 10px; right: 10px; background: rgba(255, 255, 255, 0.92); border: 1px solid var(--line); border-radius: 4px; padding: 5px 8px; font-size: 12px; }
 
 /* The measure tool (E1.1) */
-.measure-panel { position: absolute; right: 10px; top: 44px; width: 320px; max-height: calc(100% - 110px); overflow: auto; background: rgba(255, 255, 255, 0.96); border: 1px solid var(--line); border-radius: 4px; padding: 8px 10px; font-size: 13px; box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12); }
+.measure-panel { position: absolute; z-index: 10; right: 10px; top: 44px; width: 320px; max-height: calc(100% - 110px); overflow: auto; background: rgba(255, 255, 255, 0.96); border: 1px solid var(--line); border-radius: 4px; padding: 8px 10px; font-size: 13px; box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12); }
 .measure-panel .measure-head { display: flex; gap: 6px; align-items: center; margin-bottom: 6px; }
 .measure-panel .measure-head .spacer { flex: 1; }
 .measure-panel table { width: 100%; margin-bottom: 6px; }

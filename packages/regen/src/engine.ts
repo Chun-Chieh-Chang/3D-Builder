@@ -2255,8 +2255,9 @@ export class Regenerator {
         notches.push({ x0, x1, deep });
       }
     }
-    if (expected > 0 && !near(before - volume(list), expected, expected)) throw new FeatureError(t('flange.trimBad'));
-    const cut = volume(list);
+    // (the volume of a body is integrated over all its faces, which costs most on a plate with many holes: it is taken as few times as the checks need)
+    const cut = expected > 0 ? volume(list) : before;
+    if (expected > 0 && !near(before - cut, expected, expected)) throw new FeatureError(t('flange.trimBad'));
     list = this.apply(f.id, 'boss', bendTool, { featureId: f.id, sketchId: 'flange' }, list, true);
     list = this.apply(f.id, 'boss', flangeTool, { featureId: f.id, sketchId: 'flange' }, list, true);
     const added = theta * T * Wf * (rb + T / 2) + T * Wf * straight;

@@ -2,7 +2,7 @@ import { t } from '@3db/i18n';
 import type { Kernel } from '@3db/kernel';
 import type { Id } from '@3db/model';
 import type { SheetInfo } from './engine';
-import { flatPattern, FlatError } from './flatPattern';
+import { flatPattern, FlatError, type FlatPattern } from './flatPattern';
 
 /**
  * The manufacturability checks of a sheet metal part (C11, ADR 0090): rules of thumb about what a shop can make, worked out from the bend data and the flat pattern. The limits
@@ -45,7 +45,8 @@ function distance(p: [number, number], a: [number, number], b: [number, number])
   return Math.hypot(p[0] - (a[0] + k * dx), p[1] - (a[1] + k * dy));
 }
 
-export function sheetChecks(kernel: Kernel, sheet: SheetInfo, limits: SheetCheckLimits = DEFAULT_SHEET_LIMITS): SheetCheck[] {
+/** `made` is the pattern when the caller has it (it is not released here); `null` when it could not be made; absent, it is made here. */
+export function sheetChecks(kernel: Kernel, sheet: SheetInfo, limits: SheetCheckLimits = DEFAULT_SHEET_LIMITS, made?: FlatPattern | null): SheetCheck[] {
   const T = sheet.thickness;
   const checks: SheetCheck[] = [];
   for (const b of sheet.bends) {
@@ -63,13 +64,16 @@ export function sheetChecks(kernel: Kernel, sheet: SheetInfo, limits: SheetCheck
     }
   }
   // the holes of the pattern against the zone of the bend nearest to each
-  let pattern;
-  try {
-    pattern = flatPattern(kernel, sheet);
-  } catch (e) {
-    if (e instanceof FlatError) return checks;
-    throw e;
+  let pattern: FlatPattern | null | undefined = made;
+  if (pattern === undefined) {
+    try {
+      pattern = flatPattern(kernel, sheet);
+    } catch (e) {
+      if (e instanceof FlatError) return checks;
+      throw e;
+    }
   }
+  if (!pattern) return checks;
   try {
     const holes = pattern.outline.flatMap((s) => (s.kind === 'circle' && 2 * s.r < Math.min(pattern.width, pattern.height) - 1e-6 ? [s] : []));
     for (const h of holes) {
@@ -84,7 +88,7 @@ export function sheetChecks(kernel: Kernel, sheet: SheetInfo, limits: SheetCheck
       checks.push({ rule: 'holeToBend', feature: best.feature, name: `${at} Ø${num(2 * h.r)}`, value: best.gap, limit, ok: best.gap >= limit - 1e-9, message: t('sheetCheck.holeToBend', { at, d: num(2 * h.r), feature: best.feature, value: num(best.gap), limit: num(limit) }) });
     }
   } finally {
-    kernel.release(pattern.shape);
+    if (made === undefined) kernel.release(pattern.shape);
   }
   return checks;
 }

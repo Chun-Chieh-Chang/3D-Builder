@@ -552,20 +552,27 @@ const api: KernelApi = {
     return kernel.thicknessAnalysis(shape, limits);
   },
 
-  async flatPattern(): Promise<FlatReport> {
+  async flatPattern(limits: SheetCheckLimits): Promise<{ report: FlatReport | null; error: string | null; checks: SheetCheck[] }> {
     await api.init();
     const sheet = lastResult?.sheet;
     if (!sheet) throw new FlatError(t('flat.noSheet'));
-    const { shape, ...report } = flatPattern(kernel, sheet);
-    kernel.release(shape);
-    return report;
-  },
-
-  async sheetChecks(limits: SheetCheckLimits): Promise<SheetCheck[]> {
-    await api.init();
-    const sheet = lastResult?.sheet;
-    if (!sheet) throw new FlatError(t('flat.noSheet'));
-    return sheetChecks(kernel, sheet, limits);
+    let pattern: ReturnType<typeof flatPattern> | null = null;
+    let error: string | null = null;
+    try {
+      pattern = flatPattern(kernel, sheet);
+    } catch (e) {
+      if (!(e instanceof FlatError)) throw e;
+      error = e.message;
+    }
+    try {
+      const checks = sheetChecks(kernel, sheet, limits, pattern);
+      if (!pattern) return { report: null, error, checks };
+      const { shape, ...report } = pattern;
+      void shape;
+      return { report, error: null, checks };
+    } finally {
+      if (pattern) kernel.release(pattern.shape);
+    }
   },
 
   async retainParts(keys: string[]): Promise<void> {
