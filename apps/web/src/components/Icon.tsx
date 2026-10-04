@@ -1,6 +1,6 @@
 import type { ReactElement } from 'react';
 
-type IconName = 'part' | 'assembly' | 'mates' | 'origin' | 'plane' | 'refPlane' | 'refAxis' | 'refPoint' | 'coordSys' | 'sketch' | 'extrude' | 'revolve' | 'sweep' | 'loft' | 'rib' | 'pattern' | 'mirror' | 'fillet' | 'chamfer' | 'importedBody' | 'derivedBody' | 'deleteFace' | 'moveFace' | 'shell' | 'draft' | 'hole' | 'combine' | 'offsetSurface' | 'splitLine' | 'knit' | 'fillSurface' | 'flatSurface' | 'trimSurface' | 'extendSurface' | 'thicken' | 'cutWithSurface' | 'lipGroove' | 'screwBoss' | 'baseFlange' | 'edgeFlange' | 'snapHook' | 'snapCatch' | 'vent' | 'body' | 'error' | 'warning' | 'ok' | 'cancel' | 'eye' | 'eyeOff';
+type IconName = 'part' | 'assembly' | 'mates' | 'origin' | 'plane' | 'refPlane' | 'refAxis' | 'refPoint' | 'coordSys' | 'sketch' | 'extrude' | 'revolve' | 'sweep' | 'loft' | 'rib' | 'pattern' | 'mirror' | 'fillet' | 'chamfer' | 'importedBody' | 'derivedBody' | 'deleteFace' | 'moveFace' | 'shell' | 'draft' | 'hole' | 'combine' | 'offsetSurface' | 'splitLine' | 'knit' | 'fillSurface' | 'flatSurface' | 'trimSurface' | 'extendSurface' | 'thicken' | 'cutWithSurface' | 'lipGroove' | 'screwBoss' | 'baseFlange' | 'edgeFlange' | 'hem' | 'snapHook' | 'snapCatch' | 'vent' | 'body' | 'error' | 'warning' | 'ok' | 'cancel' | 'eye' | 'eyeOff';
 
 /** Default planes and reference planes share one icon, as in SolidWorks. */
 const PLANE = <path d="M4 4h10l-2 8H2z" />;
@@ -34,6 +34,7 @@ const PATHS: Record<IconName, ReactElement> = {
   screwBoss: <path d="M5 13V6h6v7 M7 6V3h2v3 M2 13h12" />,
   baseFlange: <path d="M2 12h7a4 4 0 0 0 4-4V3 M2 14h8a5 5 0 0 0 5-5V3" />,
   edgeFlange: <path d="M2 13h8 M10 13a3 3 0 0 0 3-3V3" />,
+  hem: <path d="M2 12h9a2.5 2.5 0 0 0 0-5H4" />,
   snapHook: <path d="M4 14V3h3v8h3l-3 3 M2 14h8" />,
   snapCatch: <path d="M2 3h12v10H2z M5 6h6v4H5z" />,
   vent: <path d="M3 3v10 M6.5 3v10 M10 3v10 M13.5 3v10" />,

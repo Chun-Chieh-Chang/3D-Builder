@@ -185,6 +185,11 @@ export function mapExprs(feature: Feature, fn: (expr: Expr, kind: ExprKind, role
       if (length === f.length && angle === f.angle && radius === f.radius) return feature;
       return { ...f, length, ...(angle === undefined ? {} : { angle }), ...(radius === undefined ? {} : { radius }) };
     }
+    case 'hem': {
+      const length = fn(feature.length, 'length', 'positive');
+      const gap = fn(feature.gap, 'length', 'positive');
+      return length === feature.length && gap === feature.gap ? feature : { ...feature, length, gap };
+    }
     case 'snapHook': {
       const f = feature;
       const width = fn(f.width, 'length', 'positive');

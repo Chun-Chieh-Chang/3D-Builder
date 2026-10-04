@@ -50,6 +50,7 @@ import {
   type ScrewBossFeature,
   type BaseFlangeFeature,
   type EdgeFlangeFeature,
+  type HemFeature,
   type SnapHookFeature,
   type SnapCatchFeature,
   type VentFeature,
@@ -538,6 +539,10 @@ export class Regenerator {
           }
           case 'edgeFlange': {
             set = this.advance(set, this.edgeFlange(feature, set));
+            return done({ status: 'ok' });
+          }
+          case 'hem': {
+            set = this.advance(set, this.hem(feature, set));
             return done({ status: 'ok' });
           }
           case 'snapHook': {
@@ -2072,6 +2077,60 @@ export class Regenerator {
    * flange T·w·length): a flange that runs into the sheet or a sheet too short to be cut back is said, not made wrong.
    */
   private edgeFlange(f: EdgeFlangeFeature, set: Bodies): BodyState[] {
+    return this.foldEdge(f, set, (sheet) => {
+      const T = sheet.thickness;
+      const rb = f.radius === undefined ? sheet.radius : evalLength(f.radius);
+      const theta = f.angle === undefined ? Math.PI / 2 : evalAngle(f.angle);
+      if (!(rb > 0) || !(theta > 1e-6 && theta < Math.PI - 0.01)) throw new FeatureError(t('flange.angleRange'));
+      const L = evalLength(f.length);
+      const half = Math.tan(theta / 2);
+      const outerSetback = (rb + T) * half;
+      const from = f.lengthFrom ?? 'outer';
+      const setback = from === 'inner' ? rb * half : from === 'tangent' ? 0 : outerSetback;
+      const straight = L - setback;
+      if (straight < 1e-6) throw new FeatureError(t('flange.tooShort', { need: setback.toFixed(3) }));
+      const trim = f.position === 'bendOutside' ? 0 : outerSetback;
+      return {
+        rb,
+        theta,
+        straight,
+        trim,
+        info: (allowance) => t('flange.info', { angle: ((theta * 180) / Math.PI).toFixed(1), allowance: allowance.toFixed(3), straight: straight.toFixed(3), length: String(L), from: t(from === 'inner' ? 'flange.fromInner' : from === 'tangent' ? 'flange.fromTangent' : 'flange.fromOuter'), trim: trim.toFixed(3) }),
+      };
+    });
+  }
+
+  /**
+   * 「摺邊」 (C11.2, ADR 0086): a bend of 180° on an edge of the sheet and a flat piece folded back over it, `length` long after the bend, with `gap` between the two layers
+   * (the inside diameter of the bend, so the inside radius is half of it). With `materialInside` the fold is flush with the edge: the sheet is cut back by the outside radius
+   * of the bend. A closed hem is a small gap, not none: a bend with no inside has no shape to make.
+   */
+  private hem(f: HemFeature, set: Bodies): BodyState[] {
+    return this.foldEdge(f, set, (sheet) => {
+      const T = sheet.thickness;
+      const rb = evalLength(f.gap) / 2;
+      const length = evalLength(f.length);
+      if (!(rb > 0) || !(length > 0)) throw new FeatureError(t('hem.sizes'));
+      const trim = f.position === 'bendOutside' ? 0 : rb + T;
+      return {
+        rb,
+        theta: Math.PI,
+        straight: length,
+        trim,
+        info: (allowance) => t('hem.info', { allowance: allowance.toFixed(3), length: String(length), gap: String(rb * 2), trim: trim.toFixed(3) }),
+      };
+    });
+  }
+
+  /**
+   * The bend and the flat piece on an edge of the sheet, for the edge flange and the hem: the feature says (`plan`) how far the sheet turns, the inside radius, how long the flat piece is
+   * and how much of the sheet is cut back. The edge is between a face of the sheet and its end face; the piece bends toward the side of the face the edge is on (`flip`: the other).
+   */
+  private foldEdge(
+    f: { id: Id; edge: Ref; flip?: boolean },
+    set: Bodies,
+    plan: (sheet: SheetInfo) => { rb: number; theta: number; straight: number; trim: number; info: (allowance: number) => string },
+  ): BodyState[] {
     const sheet = this.sheet;
     if (!sheet) throw new FeatureError(t('flange.needsSheet'));
     const view = set.view;
@@ -2094,17 +2153,7 @@ export class Regenerator {
     const nF = big.normal!;
     const e = unit(edge.dir);
     if (Math.abs(dot(o, nF)) > 1e-6 || Math.abs(dot(e, o)) > 1e-6) throw new FeatureError(t('flange.notSheetEdge'));
-    const rb = f.radius === undefined ? sheet.radius : evalLength(f.radius);
-    const theta = f.angle === undefined ? Math.PI / 2 : evalAngle(f.angle);
-    if (!(rb > 0) || !(theta > 1e-6 && theta < Math.PI - 0.01)) throw new FeatureError(t('flange.angleRange'));
-    const L = evalLength(f.length);
-    const half = Math.tan(theta / 2);
-    const outerSetback = (rb + T) * half;
-    const from = f.lengthFrom ?? 'outer';
-    const setback = from === 'inner' ? rb * half : from === 'tangent' ? 0 : outerSetback;
-    const straight = L - setback;
-    if (straight < 1e-6) throw new FeatureError(t('flange.tooShort', { need: setback.toFixed(3) }));
-    const trim = f.position === 'bendOutside' ? 0 : outerSetback;
+    const { rb, theta, straight, trim, info } = plan(sheet);
     const neg = (v: Vec3): Vec3 => [-v[0], -v[1], -v[2]];
     const m: Vec3 = f.flip ? neg(nF) : nF;
     // along m the sheet is from y = -T to 0 when it bends toward the face the edge is on, from 0 to T when the other way; the inside of the bend is the face on the side of m
@@ -2146,7 +2195,7 @@ export class Regenerator {
     const allowance = theta * (rb + sheet.kFactor * T);
     sheet.bends.push({ feature: f.id, name: 'bend', angle: theta, radius: rb, thickness: T, width: W, kFactor: sheet.kFactor, allowance });
     sheet.flanges.push({ feature: f.id, edge: f.edge.name, width: W, angle: theta, radius: rb, trim, straight, allowance });
-    this.info = t('flange.info', { angle: ((theta * 180) / Math.PI).toFixed(1), allowance: allowance.toFixed(3), straight: straight.toFixed(3), length: String(L), from: t(from === 'inner' ? 'flange.fromInner' : from === 'tangent' ? 'flange.fromTangent' : 'flange.fromOuter'), trim: trim.toFixed(3) });
+    this.info = info(allowance);
     return [...list];
   }
 

@@ -6,7 +6,7 @@ import type { Id } from './ids';
  * DOF status, mass properties and error lists are derived data and never stored.
  */
 
-export const SCHEMA_VERSION = 37;
+export const SCHEMA_VERSION = 38;
 
 /** Value expression (B5.2, B5.3): "20", "25.4mm", "30deg", "wall_t*2", "D1@草圖1/2", "property('厚度')"; see `expr/`. */
 export type Expr = string;
@@ -608,6 +608,19 @@ export interface EdgeFlangeFeature extends FeatureBase {
 }
 
 /**
+ * Hem (摺邊, C11.2, v38): on a straight edge of the sheet (as for the edge flange) a bend of 180° and a flat piece folded back over the sheet, `length` long after the bend, with
+ * `gap` between the two layers (so the inside radius of the bend is half of it); a closed hem is a small gap. `position` and `flip` as for the edge flange.
+ */
+export interface HemFeature extends FeatureBase {
+  type: 'hem';
+  edge: Ref;
+  length: Expr;
+  gap: Expr;
+  position?: 'materialInside' | 'bendOutside';
+  flip?: boolean;
+}
+
+/**
  * Snap hook (卡榫, C4.11, v35): at the free points of a sketch, a cantilever beam standing on the sketch plane and growing `length` along its normal (`reverse`: the other
  * way), `thickness` thick in the direction `angle` (0° is the sketch's x) and `width` wide across it, with a wedge at its free end: `hookHeight` of the beam's end, standing
  * out `hookDepth` from its front, flat on the side toward the base (the catch face), sloped on the tip side (the lead-in). The beam runs a little into the body it stands on.
@@ -718,6 +731,7 @@ export type Feature =
   | ScrewBossFeature
   | BaseFlangeFeature
   | EdgeFlangeFeature
+  | HemFeature
   | SnapHookFeature
   | SnapCatchFeature
   | VentFeature

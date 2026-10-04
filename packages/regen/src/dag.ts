@@ -37,6 +37,7 @@ export function parentsOf(feature: Feature, doc: PartDoc): Id[] {
       parents = [...feature.sections];
       break;
     case 'edgeFlange':
+    case 'hem':
       parents = fromRefs([feature.edge]);
       break;
     case 'fillet':
