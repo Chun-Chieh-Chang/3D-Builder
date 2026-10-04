@@ -125,6 +125,37 @@ export interface SheetBend {
   allowance: number;
 }
 
+/** Where an edge flange or a hem was made, in the folded sheet, as the flat pattern needs it to put it back (ADR 0088). */
+export interface FoldGeometry {
+  /** The middle of the edge, and where the bend starts (the edge cut back by the trim). */
+  mid: Vec3;
+  origin: Vec3;
+  /** The centre and the axis of the bend (the axis turns the sheet the way it was bent). */
+  center: Vec3;
+  axis: Vec3;
+  /** Along the edge, the way the flange goes out from the sheet, and the way the bend bends. */
+  e: Vec3;
+  o: Vec3;
+  m: Vec3;
+  /** The strip along the edge (from `xa` to `xb`) and across the thickness along `m` (from `ylo` to `yhi`). */
+  xa: number;
+  xb: number;
+  ylo: number;
+  yhi: number;
+  trim: number;
+  /** The notches of the relief: along the edge from `x0` to `x1`, `deep` in from the edge. */
+  notches: { x0: number; x1: number; deep: number }[];
+  /** Where the flat piece after the bend starts, the way it goes and its thickness direction (to find the piece an edge picked later is on). */
+  origin2: Vec3;
+  d: Vec3;
+  m2: Vec3;
+}
+
+/** How the base of a sheet metal part was made, for the flat pattern: a plate (the regions of a profile) or a bent sheet (the straight pieces and bends in the order of the path). */
+export type SheetBase =
+  | { kind: 'plate'; frame: PlaneFrame; regions: Region[]; dir: Vec3 }
+  | { kind: 'bent'; frame: PlaneFrame; width: number; flatLength: number; pieces: ({ type: 'straight'; length: number } | { type: 'bend'; bend: number; toward: boolean })[] };
+
 /** One edge flange (C11.2) as the flat pattern needs it: the edge it grew from, and how much it took from the sheet and added to the flat pattern. */
 export interface SheetFlange {
   feature: Id;
@@ -142,6 +173,9 @@ export interface SheetFlange {
   /** How far it stops short of the ends of the edge (the start, the end), and the relief notches beside it ({width, depth} or null). */
   inset: [number, number];
   relief: { width: number; depth: number } | null;
+  /** The flange (index in `SheetInfo.flanges`) whose flat piece the edge is on, or -1 for the base. */
+  parent: number;
+  fold: FoldGeometry;
 }
 
 /** What the sheet metal features of a part have recorded (null for a part that is not sheet metal). */
@@ -151,6 +185,7 @@ export interface SheetInfo {
   kFactor: number;
   bends: SheetBend[];
   flanges: SheetFlange[];
+  base: SheetBase | null;
   /** The length of the flat pattern of a bent base flange along its profile (the straight pieces and the allowances); null for a plate. */
   flatLength: number | null;
 }
@@ -2043,12 +2078,13 @@ export class Regenerator {
     if (found.problems.length > 0) throw new FeatureError(found.problems.join(t('cmd.listSeparator')));
     const open = found.chains.length > 0;
     if (open && (found.chains.length !== 1 || found.loops.length > 0)) throw new FeatureError(t('flange.oneOutline'));
-    const sheet: SheetInfo = { thickness: T, radius: r, kFactor: k, bends: [], flanges: [], flatLength: null };
+    const sheet: SheetInfo = { thickness: T, radius: r, kFactor: k, bends: [], flanges: [], base: null, flatLength: null };
     let tool: OpResult;
     if (!open) {
       if (s.profiles.problems.length > 0) throw new FeatureError(t('regen.sketchUnusable', { problems: s.profiles.problems.join('; ') }));
       if (s.profiles.regions.length === 0) throw new FeatureError(t('regen.noClosedProfile'));
       tool = this.kernel.extrude(s.frame, s.profiles.regions, add([0, 0, 0], dir, T), 0);
+      sheet.base = { kind: 'plate', frame: s.frame, regions: s.profiles.regions as Region[], dir };
       this.info = t('flange.infoPlate', { t: String(T), r: String(r), k: String(k) });
     } else {
       if (f.depth === undefined) throw new FeatureError(t('flange.needsDepth'));
@@ -2061,6 +2097,13 @@ export class Regenerator {
         for (const b of bent.bends) sheet.bends.push({ feature: f.id, name: b.source, angle: b.angle, radius: r, thickness: T, width, kFactor: k, allowance: b.angle * (r + k * T) });
         const allowance = sheet.bends.reduce((a, b) => a + b.allowance, 0);
         sheet.flatLength = bent.straight + allowance;
+        const pieces: Extract<SheetBase, { kind: 'bent' }>['pieces'] = [];
+        let bendIndex = 0;
+        for (const seg of bent.path) {
+          if (seg.kind === 'line') pieces.push({ type: 'straight', length: Math.hypot(seg.b[0] - seg.a[0], seg.b[1] - seg.a[1]) });
+          else pieces.push({ type: 'bend', bend: bendIndex, toward: bent.bends[bendIndex++]!.left === (side === 'left') });
+        }
+        sheet.base = { kind: 'bent', frame: s.frame, width, flatLength: sheet.flatLength, pieces };
         this.info = t('flange.infoOpen', { flat: sheet.flatLength.toFixed(3), straight: bent.straight.toFixed(3), n: String(sheet.bends.length), allowance: allowance.toFixed(3), t: String(T), r: String(r), k: String(k) });
       } catch (e) {
         if (e instanceof BendProblem || e instanceof ThinProblem) throw new FeatureError(e.message);
@@ -2194,6 +2237,7 @@ export class Regenerator {
     const n3 = cross(e, m);
     const s3 = dot(n3, o) > 0 ? 1 : -1;
     let expected = 0;
+    const notches: FoldGeometry['notches'] = [];
     if (trim > 0) {
       const cutTool = this.capsNamed(this.kernel.extrude(frame, [strip('trim', ylo - 1, yhi + 1)], add([0, 0, 0], n3, s3 * (trim + 1)), 0), 'trim', 'start', 'end');
       list = this.apply(f.id, 'cut', cutTool, { featureId: f.id, sketchId: 'flange' }, list, false);
@@ -2208,6 +2252,7 @@ export class Regenerator {
         const notch = this.capsNamed(this.kernel.extrude(frameN, [strip(name, ylo - 1, yhi + 1, x0, x1)], add([0, 0, 0], n3, s3 * (deep + 1)), 0), name, 'start', 'end');
         list = this.apply(f.id, 'cut', notch, { featureId: f.id, sketchId: 'flange' }, list, false);
         expected += (x1 - x0) * deep * T;
+        notches.push({ x0, x1, deep });
       }
     }
     if (expected > 0 && !near(before - volume(list), expected, expected)) throw new FeatureError(t('flange.trimBad'));
@@ -2218,7 +2263,19 @@ export class Regenerator {
     if (!near(volume(list) - cut, added, added)) throw new FeatureError(t('flange.collides'));
     const allowance = theta * (rb + sheet.kFactor * T);
     sheet.bends.push({ feature: f.id, name: 'bend', angle: theta, radius: rb, thickness: T, width: Wf, kFactor: sheet.kFactor, allowance });
-    sheet.flanges.push({ feature: f.id, edge: f.edge.name, width: Wf, angle: theta, radius: rb, trim, straight, allowance, inset: [insetA, insetB], relief });
+    // the flange whose flat piece the edge picked is on (the base when none): by where the middle of the edge is in each piece
+    const parent = (() => {
+      for (let j = sheet.flanges.length - 1; j >= 0; j--) {
+        const g = sheet.flanges[j]!;
+        const rel = sub(edge.mid, g.fold.origin2);
+        const [u, v, w] = [dot(rel, g.fold.e), dot(rel, g.fold.d), dot(rel, g.fold.m2)];
+        const tol = 1e-6;
+        if (u >= g.fold.xa - tol && u <= g.fold.xb + tol && v >= -tol && v <= g.straight + tol && w >= g.fold.ylo - tol && w <= g.fold.yhi + tol) return j;
+      }
+      return -1;
+    })();
+    const fold: FoldGeometry = { mid: edge.mid, origin, center, axis, e, o, m, xa, xb, ylo, yhi, trim, notches, origin2, d, m2 };
+    sheet.flanges.push({ feature: f.id, edge: f.edge.name, width: Wf, angle: theta, radius: rb, trim, straight, allowance, inset: [insetA, insetB], relief, parent, fold });
     this.info = info(allowance) + (insetA > 0 || insetB > 0 ? t('flange.info.inset', { start: String(insetA), end: String(insetB) }) : '');
     return [...list];
   }

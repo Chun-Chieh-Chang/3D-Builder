@@ -2,7 +2,7 @@ import type { Locale } from '@3db/i18n';
 import type { InterferenceComponent, MeasureReport, MeasureTarget, PartMass, ElementFacts, ViewAxes, ViewFeature } from '@3db/model';
 import type { AssemblyDoc, Axis3, CoordSystem, Fingerprint, Id, PartDoc, PlaneFrame, Pose, Ref, SketchFeature, SourceTree, Vec3 } from '@3db/model';
 import type { DraftReport, ThicknessReport, UndercutReport, GeometryReport, MassProps, MeshData, ProjectedView } from '@3db/kernel';
-import type { AssemblyResult, AssemblySolveOptions, ClearanceRow, Converted, FeatureResult, SweepResult } from '@3db/regen';
+import type { AssemblyResult, AssemblySolveOptions, ClearanceRow, Converted, FeatureResult, FlatReport, SweepResult } from '@3db/regen';
 import type { MateGeometry } from '@3db/assembly';
 import type { StepAssemblyPlan, StepInstance, StepSub } from '@3db/io';
 import type { EntityStatus, SketchStatus, SolvedGeometry, SolveOptions } from '@3db/sketch';
@@ -271,6 +271,8 @@ export interface KernelApi {
   analyzeUndercut(pull: [number, number, number]): Promise<UndercutReport>;
   /** How thick the wall is at every face of the part as it is shown, and which faces are under `min` or over `max` mm (E3.5). */
   analyzeThickness(limits: { min?: number; max?: number }): Promise<ThicknessReport>;
+  /** The flat pattern of the sheet metal part as it is shown: its outline, bend lines and sizes (C11.3). */
+  flatPattern(): Promise<FlatReport>;
   /** Lets go of every rebuilt part file except these. */
   retainParts(keys: string[]): Promise<void>;
   /**

@@ -44,7 +44,7 @@ describe('a plate from a closed profile', () => {
     expect(failures(r)).toEqual([]);
     expect(volume(r)).toBeCloseTo(60 * 40 * T, 6);
     expect(kernel.solidCount(r.body!.shape)).toBe(1);
-    expect(r.sheet).toEqual({ thickness: T, radius: r0, kFactor: 0.5, bends: [], flanges: [], flatLength: null });
+    expect(r.sheet).toMatchObject({ thickness: T, radius: r0, kFactor: 0.5, bends: [], flanges: [], flatLength: null });
     expect(r.body!.names.faces).toContain('bf:cap:end');
     expect(kernel.bounds(r.body!.shape).max[2]).toBeCloseTo(T, 6);
   });

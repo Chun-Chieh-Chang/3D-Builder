@@ -51,6 +51,7 @@ import {
 import { readAnyDocumentFile, ASSEMBLY_FILE_EXTENSION, assemblyName, derivedAssemblyFiles, PART_FILE_EXTENSION, partFileName, partName, readDocumentFile, sha256Hex, imageFileName, stepAssemblyFiles, stepFileName, stlFileName, writePartFile } from '@3db/io';
 import { gatherSources } from './sources';
 import { DrawingStore, type DrawingSource, type DrawingState } from './drawing';
+import type { FlatReport } from '@3db/regen';
 import { orderProblem, suppressionTargets, type SuppressAction } from '@3db/regen/dag';
 import { contourChoices, findProfiles, type ContourChoice } from '@3db/sketch/profiles';
 import type { PickFilter, Viewer } from '@3db/render';
@@ -121,6 +122,13 @@ export interface UndercutState {
 }
 
 /** The 「厚度分析」 window (E3.5): the limits as typed (mm, empty for none), and what the worker last said for them. Not saved with the part. */
+/** The flat pattern window (C11.3) while it is open: the pattern of the sheet metal part as it is shown, worked out again when the model changes. */
+export interface FlatState {
+  status: 'running' | 'done' | 'error';
+  report: FlatReport | null;
+  error: string | null;
+}
+
 export interface ThicknessState {
   least: string;
   greatest: string;
@@ -293,6 +301,8 @@ export interface UiState {
   draft: DraftState | null;
   undercut: UndercutState | null;
   thickness: ThicknessState | null;
+  /** The flat pattern of a sheet metal part (C11.3) while its window is open. Null when closed. */
+  flat: FlatState | null;
   /** What a face picked in the view is while a shell is edited: one to take away (open), or one with a wall of its own (C5.4). */
   shellPick: 'open' | 'thickness';
   /** The interference detection (E2.1) while its window is open. Null when closed. */
@@ -495,6 +505,7 @@ class AppStore {
       clearance: null,
       shellPick: 'open',
       thickness: null,
+      flat: null,
       undercut: null,
       draft: null,
       check: null,
@@ -554,6 +565,7 @@ class AppStore {
     if (this.state.draft && 'result' in patch) void this.runDraft();
     if (this.state.undercut && 'result' in patch) void this.runUndercut();
     if (this.state.thickness && 'result' in patch) void this.runThickness();
+    if (this.state.flat && 'result' in patch) void this.runFlat();
   }
 
   private draftSeq = 0;
@@ -663,6 +675,30 @@ class AppStore {
       if (seq === this.thicknessSeq && this.state.thickness) this.set({ thickness: { ...this.state.thickness, status: 'done', report, error: null } });
     } catch (e) {
       if (seq === this.thicknessSeq && this.state.thickness) this.set({ thickness: { ...this.state.thickness, status: 'error', report: null, error: t('thicknessAnalysis.failed', { why: e instanceof Error ? e.message : String(e) }) } });
+    }
+  }
+
+  private flatSeq = 0;
+
+  /** 「平板型式」 (C11.3) on: the pattern of the sheet metal part as it is shown, in a window; it is worked out again when the model changes. Nothing of it is saved. */
+  startFlat(): void {
+    this.set({ flat: { status: 'running', report: null, error: null } });
+    void this.runFlat();
+  }
+
+  stopFlat(): void {
+    this.flatSeq++;
+    if (this.state.flat) this.set({ flat: null });
+  }
+
+  private async runFlat(): Promise<void> {
+    if (!this.state.flat) return;
+    const seq = ++this.flatSeq;
+    try {
+      const report = await this.api.flatPattern();
+      if (seq === this.flatSeq && this.state.flat) this.set({ flat: { status: 'done', report, error: null } });
+    } catch (e) {
+      if (seq === this.flatSeq && this.state.flat) this.set({ flat: { status: 'error', report: null, error: t('flat.failed', { why: e instanceof Error ? e.message : String(e) }) } });
     }
   }
 
@@ -2335,7 +2371,7 @@ class AppStore {
     void this.api.setBlobs(blobs); // posted before the rebuild request, so the worker has them first
     this.savedText = serializePart(doc);
     if (!this.state.recovery) void this.autosave.clear();
-    this.set({ active: 'part', selected: null, selectedFace: null, result: null, fileName, untitled, fitRequest: this.state.fitRequest + 1, documentSerial: this.state.documentSerial + 1, measure: null, draft: null, undercut: null, thickness: null, interference: null, clearance: null, check: null });
+    this.set({ active: 'part', selected: null, selectedFace: null, result: null, fileName, untitled, fitRequest: this.state.fitRequest + 1, documentSerial: this.state.documentSerial + 1, measure: null, draft: null, undercut: null, thickness: null, flat: null, interference: null, clearance: null, check: null });
     this.onDocChanged();
   }
 
@@ -2361,7 +2397,7 @@ class AppStore {
       },
       source,
     );
-    this.set({ active: 'drawing', drw: this.drawing.getState(), documentSerial: this.state.documentSerial + 1, measure: null, draft: null, undercut: null, thickness: null, interference: null, clearance: null, check: null });
+    this.set({ active: 'drawing', drw: this.drawing.getState(), documentSerial: this.state.documentSerial + 1, measure: null, draft: null, undercut: null, thickness: null, flat: null, interference: null, clearance: null, check: null });
   }
 
   private closeDrawing(): void {
@@ -2518,7 +2554,7 @@ class AppStore {
       },
       source,
     );
-    this.set({ active: 'assembly', asm: this.assembly.getState(), returnTo: null, documentSerial: this.state.documentSerial + 1, measure: null, draft: null, undercut: null, thickness: null, interference: null, clearance: null, check: null });
+    this.set({ active: 'assembly', asm: this.assembly.getState(), returnTo: null, documentSerial: this.state.documentSerial + 1, measure: null, draft: null, undercut: null, thickness: null, flat: null, interference: null, clearance: null, check: null });
   }
 
   private closeAssembly(): void {

@@ -6,7 +6,7 @@ import gcsWasm from '@salusoft89/planegcs/dist/planegcs_dist/planegcs.wasm?url';
 import { bodyKey, combineMass, isShown, mirrorKey, MESH_QUALITY, settingsOf, type AssemblyDoc, type Id, type MeasureReport, type PartDoc, type SourceTree } from '@3db/model';
 import { findProfiles, PlaneGcsSolver } from '@3db/sketch';
 import { COMPONENT_MESH, Kernel, type ThicknessReport, type UndercutReport, type DraftReport, type GeometryReport, type MassProps, type MeshData, type MeshOptions, type ShapeId } from '@3db/kernel';
-import { drawingAnchors, projectDrawingView, elementFacts, viewFeatures, findClearance, findInterference, sweepClearance, measureTargets, convertEdges, edgeMateGeometry, exportFaces, faceColors, intoFrame, faceEdges, faceMateGeometry, followReferences, ReferenceProblem, Regenerator, solveAssemblyTree, type AssemblyResult, type AssemblySolveOptions, type BodyInfo, type RebuildResult } from '@3db/regen';
+import { drawingAnchors, projectDrawingView, elementFacts, viewFeatures, findClearance, findInterference, flatPattern, FlatError, sweepClearance, measureTargets, convertEdges, edgeMateGeometry, exportFaces, faceColors, intoFrame, faceEdges, faceMateGeometry, followReferences, ReferenceProblem, Regenerator, solveAssemblyTree, type AssemblyResult, type AssemblySolveOptions, type BodyInfo, type FlatReport, type RebuildResult } from '@3db/regen';
 import { edgeFingerprint, faceFingerprint, vertexFingerprint } from '@3db/naming';
 import { binaryStl, exportAssemblyStep, exportPartStep, portableShape, readComponentFile, stepAssemblyPlan, type StepAssemblyPlan } from '@3db/io';
 import type { SourcePart, SourceProvider } from '@3db/regen';
@@ -550,6 +550,15 @@ const api: KernelApi = {
     const shape = lastResult?.body?.shape;
     if (!shape) throw new Error(t('worker.noBodyExport'));
     return kernel.thicknessAnalysis(shape, limits);
+  },
+
+  async flatPattern(): Promise<FlatReport> {
+    await api.init();
+    const sheet = lastResult?.sheet;
+    if (!sheet) throw new FlatError(t('flat.noSheet'));
+    const { shape, ...report } = flatPattern(kernel, sheet);
+    kernel.release(shape);
+    return report;
   },
 
   async retainParts(keys: string[]): Promise<void> {

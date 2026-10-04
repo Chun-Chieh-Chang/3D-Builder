@@ -15,6 +15,7 @@ import { Icon } from './Icon';
 import { draftColors, thicknessColors, undercutColors } from '../state/analysis';
 import { DraftPanel } from './DraftPanel';
 import { ThicknessPanel } from './ThicknessPanel';
+import { FlatPanel } from './FlatPanel';
 import { UndercutPanel } from './UndercutPanel';
 import { MeasurePanel } from './MeasurePanel';
 
@@ -417,6 +418,7 @@ export function Viewport() {
       <MeasurePanel />
       <DraftPanel />
       <UndercutPanel />
+      <FlatPanel />
       <ThicknessPanel />
       {menu && <ContextMenu x={menu.x} y={menu.y} items={menu.items} onItems={(items) => setMenu({ ...menu, items })} onClose={() => setMenu(null)} />}
     </main>
