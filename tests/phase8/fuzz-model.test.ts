@@ -9,6 +9,7 @@ import { PlaneGcsSolver } from '@3db/sketch';
 import { Kernel } from '@3db/kernel';
 import { Regenerator, type RebuildResult } from '@3db/regen';
 import { circle, extrude, fillet, front, rectangle, sketch } from '../phase1/builders';
+import { viaStep } from '../support/viaStep';
 
 let kernel: Kernel;
 let solver: PlaneGcsSolver;
@@ -112,6 +113,11 @@ describe('ordinary parts made at random', () => {
     const read = rebuild((await readPartFile(await writePartFile(build(features)))).doc);
     expect(read.features.every((f) => f.status === 'ok'), `${why}: read back`).toBe(true);
     expect(read.body!.names.faces.slice().sort(), `${why}: read back`).toEqual(sorted);
+
+    const stepped = await viaStep(kernel, solver, shape, (g) => kept.push(g));
+    expect(stepped.features[0]!.status, `${why}: STEP`).toBe('ok');
+    expect(Math.abs(kernel.massProps(stepped.body!.shape).volume - volume) / volume, `${why}: STEP volume`).toBeLessThan(1e-5);
+    expect(stepped.body!.topology.faces.length, `${why}: STEP faces`).toBe(r.body!.topology.faces.length);
 
     // a feature suppressed and brought back: the part is what it was
     if (movable.length > 0) {

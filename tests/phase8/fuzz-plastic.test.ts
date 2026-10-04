@@ -9,6 +9,7 @@ import { PlaneGcsSolver } from '@3db/sketch';
 import { Kernel } from '@3db/kernel';
 import { Regenerator, type RebuildResult } from '@3db/regen';
 import { extrude, front, rectangle, sketch } from '../phase1/builders';
+import { viaStep } from '../support/viaStep';
 
 let kernel: Kernel;
 let solver: PlaneGcsSolver;
@@ -126,6 +127,11 @@ describe('plastic parts made at random', () => {
     expect(read.features.every((f) => f.status === 'ok'), `${why}: read back`).toBe(true);
     expect(read.body!.names.faces.slice().sort(), `${why}: read back`).toEqual(names.slice().sort());
     expect(kernel.massProps(read.body!.shape).volume, why).toBeCloseTo(volume, 6);
+
+    const stepped = await viaStep(kernel, solver, shape, (g) => kept.push(g));
+    expect(stepped.features[0]!.status, `${why}: STEP`).toBe('ok');
+    expect(Math.abs(kernel.massProps(stepped.body!.shape).volume - volume) / volume, `${why}: STEP volume`).toBeLessThan(1e-5);
+    expect(stepped.body!.topology.faces.length, `${why}: STEP faces`).toBe(r.body!.topology.faces.length);
 
     // the analyses: a verdict for every face, the areas of the classes adding up to the area of the part
     const area = r.body!.topology.faces.reduce((a, f) => a + f.area, 0);

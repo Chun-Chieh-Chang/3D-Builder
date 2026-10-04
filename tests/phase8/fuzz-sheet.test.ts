@@ -13,6 +13,7 @@ import { PlaneGcsSolver } from '@3db/sketch';
 import { Kernel } from '@3db/kernel';
 import { flatPattern, Regenerator, sheetChecks, type RebuildResult } from '@3db/regen';
 import { circle, front, rectangle, sketch } from '../phase1/builders';
+import { viaStep } from '../support/viaStep';
 
 let kernel: Kernel;
 let solver: PlaneGcsSolver;
@@ -135,6 +136,12 @@ async function check(c: Case, tally: { ok: number; said: number; flanges: number
       expect(Math.max(...outline.flatMap((l) => [l.a[1], l.b[1]])), `${why}: height`).toBeCloseTo(pattern.height, 3);
     }
     expect(dxf.entities.filter((e) => e.type === 'LINE' && e.layer === 'BEND'), why).toHaveLength(r.sheet!.bends.length);
+
+    // sent out as STEP and read back: the same solid (its volume, its number of faces)
+    const stepped = await viaStep(kernel, solver, shape, (g) => kept.push(g));
+    expect(stepped.features[0]!.status, `${why}: STEP`).toBe('ok');
+    expect(Math.abs(kernel.massProps(stepped.body!.shape).volume - volume) / volume, `${why}: STEP volume`).toBeLessThan(1e-5);
+    expect(stepped.body!.topology.faces.length, `${why}: STEP faces`).toBe(r.body!.topology.faces.length);
 
     // the checks run on any of them and say something about every flat piece
     const checks = sheetChecks(kernel, r.sheet!);
