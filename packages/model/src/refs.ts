@@ -75,6 +75,8 @@ export function mapRefs(feature: Feature, map: (ref: Ref) => Ref): { feature: Fe
     case 'trimSurface':
     case 'lipGroove':
       return { feature: { ...feature, face: one(feature.face) }, replaced };
+    case 'edgeFlange':
+      return { feature: { ...feature, edge: one(feature.edge) }, replaced };
     case 'knit':
       return { feature: { ...feature, bodies: feature.bodies.map(one) }, replaced };
     case 'thicken':

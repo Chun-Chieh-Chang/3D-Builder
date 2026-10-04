@@ -146,6 +146,8 @@ const migrations: Record<number, (doc: Json) => Json> = {
   34: (doc) => doc,
   // v36: the base flange of a sheet metal part (C11.1, Phase 7). Nothing to convert; the version keeps older programs from opening a feature they would skip.
   35: (doc) => doc,
+  // v37: the edge flange (C11.2, Phase 7). Nothing to convert; the version keeps older programs from opening a feature they would skip.
+  36: (doc) => doc,
 };
 
 export class FormatError extends Error {

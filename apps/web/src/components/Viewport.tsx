@@ -50,7 +50,7 @@ function picking(feature: Feature | undefined, editing: boolean, modelTool: 'con
   const endVertices = ends.flatMap((d) => (d.type === 'upToVertex' ? [d.vertex] : []));
   const endBody = ends.some((d) => d.type === 'upToBody');
   const upTo = endFaces.length > 0 || endVertices.length > 0 || endBody ? ends : null;
-  const edgeFeature = feature?.type === 'fillet' || feature?.type === 'chamfer' || feature?.type === 'fillSurface' || feature?.type === 'flatSurface' || feature?.type === 'extendSurface' ? feature : null;
+  const edgeFeature = feature?.type === 'fillet' || feature?.type === 'chamfer' || feature?.type === 'fillSurface' || feature?.type === 'flatSurface' || feature?.type === 'extendSurface' || feature?.type === 'edgeFlange' ? feature : null;
   const faceFeature = feature?.type === 'deleteFace' || feature?.type === 'moveFace' || feature?.type === 'shell' || feature?.type === 'draft' || feature?.type === 'offsetSurface' || feature?.type === 'splitLine' || feature?.type === 'trimSurface' || feature?.type === 'lipGroove' ? feature : null;
   const combine = feature?.type === 'combine' || feature?.type === 'knit' || feature?.type === 'thicken' || feature?.type === 'cutWithSurface';
   const prompt_ = combine
@@ -66,7 +66,7 @@ function picking(feature: Feature | undefined, editing: boolean, modelTool: 'con
     edges: !!edgeFeature || !!slots?.edges || modelTool !== null || measuring,
     faces: !editing || modelTool === 'convert' || !!upTo || !!faceFeature || combine || !!slots?.faces || measuring,
     vertices: !!slots?.vertices || endVertices.length > 0 || measuring,
-    pickedEdges: edgeFeature ? edgeFeature.edges : (slots?.edges ?? []),
+    pickedEdges: edgeFeature ? (edgeFeature.type === 'edgeFlange' ? (edgeFeature.edge.name ? [edgeFeature.edge] : []) : edgeFeature.edges) : (slots?.edges ?? []),
     pickedFaces: faceFeature ? (faceFeature.type === 'shell' ? [...faceFeature.faces, ...(faceFeature.faceThickness ?? []).map((x) => x.face)] : faceFeature.type === 'deleteFace' || faceFeature.type === 'offsetSurface' ? faceFeature.faces : faceFeature.type === 'draft' ? [faceFeature.neutral, ...faceFeature.faces] : [faceFeature.face]) : upTo ? endFaces : (slots?.faces ?? []),
     pickedVertices: slots ? slots.vertices : endVertices,
     /** Default and reference planes, axes and points the geometry being defined is based on: they are drawn while they are used. */

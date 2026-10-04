@@ -177,6 +177,14 @@ export function mapExprs(feature: Feature, fn: (expr: Expr, kind: ExprKind, role
       if (same) return feature;
       return { ...f, thickness, radius, kFactor, ...(depth === undefined ? {} : { depth }) };
     }
+    case 'edgeFlange': {
+      const f = feature;
+      const length = fn(f.length, 'length', 'positive');
+      const angle = f.angle === undefined ? undefined : fn(f.angle, 'angle', 'includedAngle');
+      const radius = f.radius === undefined ? undefined : fn(f.radius, 'length', 'positive');
+      if (length === f.length && angle === f.angle && radius === f.radius) return feature;
+      return { ...f, length, ...(angle === undefined ? {} : { angle }), ...(radius === undefined ? {} : { radius }) };
+    }
     case 'snapHook': {
       const f = feature;
       const width = fn(f.width, 'length', 'positive');

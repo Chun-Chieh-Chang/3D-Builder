@@ -49,6 +49,7 @@ import {
   type LipGrooveFeature,
   type ScrewBossFeature,
   type BaseFlangeFeature,
+  type EdgeFlangeFeature,
   type SnapHookFeature,
   type SnapCatchFeature,
   type VentFeature,
@@ -1870,6 +1871,68 @@ function BaseFlangePanel({ f }: { f: BaseFlangeFeature }) {
   );
 }
 
+/** Edge flange (C11.2): the edge, the length and where it is measured from, the angle, the radius, where the flange sits and which way it bends. */
+function EdgeFlangePanel({ f }: { f: EdgeFlangeFeature }) {
+  const status = useStore((s) => s.result?.features.find((r) => r.id === f.id));
+  const found = useStore((s) => !!f.edge.name && !!s.result?.edgeNames.includes(f.edge.name));
+  const { id, type, name, suppressed, ...settings } = f;
+  void [id, type, name, suppressed];
+  const run = (patch: Record<string, unknown>): Command => {
+    const next = { ...settings, ...patch } as Record<string, unknown>;
+    for (const k of Object.keys(next)) if (next[k] === undefined || next[k] === '' || next[k] === false) delete next[k];
+    return { type: 'setEdgeFlange', featureId: f.id, flange: next as never };
+  };
+  return (
+    <section className="pm-group">
+      <h4>{t('pm.eflange.edge')}</h4>
+      <ul className="selection-box">
+        {!f.edge.name && <li className="muted">{t('pm.eflange.edgeEmpty')}</li>}
+        {f.edge.name && (
+          <li className={found ? '' : 'missing'} title={f.edge.name}>
+            {t('pm.eflange.edgeItem')}
+            {!found && t('pm.lost')}
+            <code>{f.edge.name}</code>
+            {!found && <UseNearest featureId={f.id} refr={f.edge} />}
+          </li>
+        )}
+      </ul>
+      <label className="pm-row">
+        <span>{t('pm.eflange.length')}</span>
+        <ValueInput value={f.length} toCommand={(length) => run({ length })} />
+      </label>
+      <label className="pm-row">
+        <span>{t('pm.eflange.lengthFrom')}</span>
+        <select value={f.lengthFrom ?? 'outer'} onChange={(e) => store.execute(run({ lengthFrom: e.target.value === 'outer' ? undefined : e.target.value }))}>
+          <option value="outer">{t('flange.fromOuter')}</option>
+          <option value="inner">{t('flange.fromInner')}</option>
+          <option value="tangent">{t('flange.fromTangent')}</option>
+        </select>
+      </label>
+      <label className="pm-row">
+        <span>{t('pm.eflange.angle')}</span>
+        <ValueInput value={f.angle ?? ''} toCommand={(angle) => run({ angle })} suffix="°" />
+      </label>
+      <label className="pm-row">
+        <span>{t('pm.eflange.radius')}</span>
+        <ValueInput value={f.radius ?? ''} toCommand={(radius) => run({ radius })} />
+      </label>
+      <label className="pm-row">
+        <span>{t('pm.eflange.position')}</span>
+        <select value={f.position ?? 'materialInside'} onChange={(e) => store.execute(run({ position: e.target.value === 'materialInside' ? undefined : e.target.value }))}>
+          <option value="materialInside">{t('pm.eflange.posInside')}</option>
+          <option value="bendOutside">{t('pm.eflange.posOutside')}</option>
+        </select>
+      </label>
+      <label className="pm-row checkbox">
+        <input type="checkbox" checked={!!f.flip} onChange={(e) => store.execute(run({ flip: e.target.checked }))} />
+        <span>{t('pm.eflange.flip')}</span>
+      </label>
+      {status?.status === 'ok' && status.info && <p className="hint gap-info">{status.info}</p>}
+      <p className="hint">{t('pm.eflange.hint')}</p>
+    </section>
+  );
+}
+
 /** Screw boss (C4.11): the outside and the pilot hole, the height and how deep the hole goes, the draft of the wall, and the gussets round the foot. */
 function ScrewBossPanel({ f }: { f: ScrewBossFeature }) {
   const { id, type, name, suppressed, sketch, ...settings } = f;
@@ -2207,6 +2270,7 @@ export function PropertyManager() {
       {f.type === 'lipGroove' && <LipGroovePanel f={f} />}
       {f.type === 'screwBoss' && <ScrewBossPanel f={f} />}
       {f.type === 'baseFlange' && <BaseFlangePanel f={f} />}
+      {f.type === 'edgeFlange' && <EdgeFlangePanel f={f} />}
       {f.type === 'snapHook' && (
         <SketchPointsPanel f={f} hint={t('pm.hook.hint')} fields={[['width', t('pm.hook.width')], ['thickness', t('pm.hook.thickness')], ['length', t('pm.hook.length')], ['hookHeight', t('pm.hook.hookHeight')], ['hookDepth', t('pm.hook.hookDepth')]]} />
       )}

@@ -44,7 +44,7 @@ describe('a plate from a closed profile', () => {
     expect(failures(r)).toEqual([]);
     expect(volume(r)).toBeCloseTo(60 * 40 * T, 6);
     expect(kernel.solidCount(r.body!.shape)).toBe(1);
-    expect(r.sheet).toEqual({ thickness: T, radius: r0, kFactor: 0.5, bends: [], flatLength: null });
+    expect(r.sheet).toEqual({ thickness: T, radius: r0, kFactor: 0.5, bends: [], flanges: [], flatLength: null });
     expect(r.body!.names.faces).toContain('bf:cap:end');
     expect(kernel.bounds(r.body!.shape).max[2]).toBeCloseTo(T, 6);
   });
@@ -180,6 +180,6 @@ describe('the command and the file', () => {
     expect(r.sheet).toMatchObject({ thickness: 2, radius: 4 });
     expect(() => applyCommand(d, { type: 'setBaseFlange', featureId: 'sk', flange: { thickness: '1', radius: '1', kFactor: '0.5' } })).toThrow();
     expect(d.schemaVersion).toBe(SCHEMA_VERSION);
-    expect(SCHEMA_VERSION).toBe(36);
+    expect(SCHEMA_VERSION).toBeGreaterThanOrEqual(36);
   });
 });

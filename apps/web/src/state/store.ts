@@ -1236,6 +1236,21 @@ class AppStore {
     this.openNew({ id: this.allocator().take('boss'), type: 'screwBoss', name: nextName(this.history.doc, name), suppressed: false, sketch: sketch.id, diameter: '6', holeDiameter: '2.5', height: '10' }, name);
   }
 
+  /** 「邊線凸緣」 (C11.2): a flange 20 long (from the outside virtual sharp), 90°, along the edge of the sheet to be picked in the graphics area. */
+  newEdgeFlange(): void {
+    const name = t('feature.edgeFlange');
+    this.openNew({ id: this.allocator().take('eflange'), type: 'edgeFlange', name: nextName(this.history.doc, name), suppressed: false, edge: { kind: 'edge', name: '' }, length: '20' }, name);
+  }
+
+  /** The edge an edge flange is on: the edge clicked in the graphics area. */
+  setFlangeEdge(ref: Ref): void {
+    const f = this.editedFeature();
+    if (f?.type !== 'edgeFlange' || ref.kind !== 'edge') return;
+    const { id, type, name, suppressed, ...rest } = f;
+    void [id, type, name, suppressed];
+    this.execute({ type: 'setEdgeFlange', featureId: f.id, flange: { ...rest, edge: ref } });
+  }
+
   /** 「基材凸緣」 (C11.1): a sheet 1.5 thick with an inside bend radius of 1.5 and K 0.5 from the selected sketch (closed: a plate; open: a bent sheet 50 wide). */
   newBaseFlange(): void {
     const sketch = this.selectedSketch();
@@ -1746,6 +1761,7 @@ class AppStore {
     else if (f?.type === 'splitLine') this.setSplitFace(ref);
     else if (f?.type === 'trimSurface') this.setTrimFace(ref);
     else if (f?.type === 'lipGroove') this.setLipFace(ref);
+    else if (f?.type === 'edgeFlange') this.setFlangeEdge(ref);
     else if (f?.type === 'fillSurface' || f?.type === 'flatSurface' || f?.type === 'extendSurface') this.toggleSurfaceEdge(ref);
     else if (f?.type === 'knit' && ref.kind === 'face') this.pickKnitBody(ref.name);
     else if ((f?.type === 'thicken' || f?.type === 'cutWithSurface') && ref.kind === 'face') this.pickSurfaceBody(ref.name);
@@ -1831,7 +1847,7 @@ class AppStore {
     const i = this.history.doc.features.findIndex((f) => f.id === e.featureId);
     const type = this.history.doc.features[i]?.type;
     if (type === 'refPlane' || type === 'refAxis' || type === 'refPoint' || type === 'coordSys' || type === 'pattern' || type === 'mirror' || type === 'offsetSurface' || type === 'splitLine' || type === 'trimSurface' || type === 'knit' || type === 'fillSurface' || type === 'flatSurface' || type === 'extendSurface' || type === 'thicken' || type === 'cutWithSurface' || type === 'lipGroove') return i + 1;
-    return type === 'fillet' || type === 'chamfer' || type === 'deleteFace' || type === 'moveFace' || type === 'shell' || type === 'draft' || type === 'combine' || type === 'sketch' ? i : undefined;
+    return type === 'fillet' || type === 'chamfer' || type === 'edgeFlange' || type === 'deleteFace' || type === 'moveFace' || type === 'shell' || type === 'draft' || type === 'combine' || type === 'sketch' ? i : undefined;
   }
 
   // ------------------------------------------------------------ sketch sessions (C1)

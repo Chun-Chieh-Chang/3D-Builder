@@ -49,6 +49,7 @@ import {
   type LipGrooveFeature,
   type ScrewBossFeature,
   type BaseFlangeFeature,
+  type EdgeFlangeFeature,
   type SnapHookFeature,
   type SnapCatchFeature,
   type VentFeature,
@@ -60,7 +61,7 @@ import {
   type Vec3,
 } from '@3db/model';
 import { bentPath, BendProblem, findOutlines, findProfiles, reversePath, ribbonOf, selectContours, ThinProblem, thinRegions, type ProfileResult, type SketchSolver, type SketchStatus, type SolvedSketch } from '@3db/sketch';
-import { KernelError, SURFACE_TOLERANCE, type SweepSpec, type FaceOrigin, type ImportDiagnostics, type Kernel, type OpResult, type ShapeId, type Topology } from '@3db/kernel';
+import { KernelError, SURFACE_TOLERANCE, type Region, type SweepSpec, type FaceOrigin, type ImportDiagnostics, type Kernel, type OpResult, type ShapeId, type Topology } from '@3db/kernel';
 import { nameElements, nameFromFaces, resolveRef, type Candidate, type ElementNames } from '@3db/naming';
 import { Bodies, type BodyState, type BodyView } from './bodies';
 import { followReferences, ReferenceProblem } from './references';
@@ -123,12 +124,29 @@ export interface SheetBend {
   allowance: number;
 }
 
+/** One edge flange (C11.2) as the flat pattern needs it: the edge it grew from, and how much it took from the sheet and added to the flat pattern. */
+export interface SheetFlange {
+  feature: Id;
+  /** The name of the edge it was made on. */
+  edge: string;
+  width: number;
+  angle: number;
+  radius: number;
+  /** How much of the sheet was cut back at the edge (0 for `bendOutside`). */
+  trim: number;
+  /** The flat piece after the bend. */
+  straight: number;
+  /** The bend allowance. */
+  allowance: number;
+}
+
 /** What the sheet metal features of a part have recorded (null for a part that is not sheet metal). */
 export interface SheetInfo {
   thickness: number;
   radius: number;
   kFactor: number;
   bends: SheetBend[];
+  flanges: SheetFlange[];
   /** The length of the flat pattern of a bent base flange along its profile (the straight pieces and the allowances); null for a plate. */
   flatLength: number | null;
 }
@@ -516,6 +534,10 @@ export class Regenerator {
           }
           case 'baseFlange': {
             set = this.advance(set, this.baseFlange(feature, sketches, set));
+            return done({ status: 'ok' });
+          }
+          case 'edgeFlange': {
+            set = this.advance(set, this.edgeFlange(feature, set));
             return done({ status: 'ok' });
           }
           case 'snapHook': {
@@ -2013,7 +2035,7 @@ export class Regenerator {
     if (found.problems.length > 0) throw new FeatureError(found.problems.join(t('cmd.listSeparator')));
     const open = found.chains.length > 0;
     if (open && (found.chains.length !== 1 || found.loops.length > 0)) throw new FeatureError(t('flange.oneOutline'));
-    const sheet: SheetInfo = { thickness: T, radius: r, kFactor: k, bends: [], flatLength: null };
+    const sheet: SheetInfo = { thickness: T, radius: r, kFactor: k, bends: [], flanges: [], flatLength: null };
     let tool: OpResult;
     if (!open) {
       if (s.profiles.problems.length > 0) throw new FeatureError(t('regen.sketchUnusable', { problems: s.profiles.problems.join('; ') }));
@@ -2040,6 +2062,92 @@ export class Regenerator {
     const out = this.apply(f.id, 'boss', tool, { featureId: f.id, sketchId: f.sketch }, set.list, true);
     this.sheet = sheet;
     return out;
+  }
+
+  /**
+   * 「邊線凸緣」 (C11.2, ADR 0085): a bend and a flange along a straight edge of the sheet. The edge is between a face of the sheet (`big`) and its end face, a strip `thickness` wide
+   * (the one with the smaller area); the flange bends toward the side of the face the edge is on. The bend is the end section of the sheet revolved about the axis
+   * through the centre of the bend, the flange that section moved on and extruded; with `materialInside` the sheet is first cut back by the setback of the outside virtual sharp so
+   * that the outside of the flange is flush with the edge. The volumes are checked against what they should be (a strip cut from the sheet, the bend θ·T·w·(r + T/2), the
+   * flange T·w·length): a flange that runs into the sheet or a sheet too short to be cut back is said, not made wrong.
+   */
+  private edgeFlange(f: EdgeFlangeFeature, set: Bodies): BodyState[] {
+    const sheet = this.sheet;
+    if (!sheet) throw new FeatureError(t('flange.needsSheet'));
+    const view = set.view;
+    if (!view) throw new FeatureError(t('feature.needsBody', { what: t('feature.edgeFlange') }));
+    if (!f.edge.name) throw new FeatureError(t('edit.noEdgePicked'));
+    const [index] = this.edgeIndices([f.edge], view);
+    const { body, local } = set.locate('edge', index!);
+    const topo = body.topology;
+    const edge = topo.edges[local]!;
+    const sides = edge.faces.map((i) => topo.faces[i]!);
+    if (edge.curve !== 'line' || !edge.dir || sides.length !== 2 || sides.some((s) => s.surface !== 'plane' || !s.normal)) throw new FeatureError(t('flange.notSheetEdge'));
+    const T = sheet.thickness;
+    const W = edge.length;
+    // a face of the sheet has a face parallel to it, the thickness away, behind it; the end face does not (a strip that has been merged with the side of a flange is not either)
+    const sheetFace = (g: (typeof sides)[number]) => topo.faces.some((h) => h !== g && h.surface === 'plane' && h.normal && dot(h.normal, g.normal!) < -1 + 1e-9 && Math.abs(dot(sub(h.center, g.center), g.normal!) + T) < 1e-6 * (1 + T));
+    const [a, b] = [sheetFace(sides[0]!), sheetFace(sides[1]!)];
+    if (a === b) throw new FeatureError(t('flange.notSheetEdge'));
+    const [endFace, big] = a ? [sides[1]!, sides[0]!] : [sides[0]!, sides[1]!];
+    const o = endFace.normal!;
+    const nF = big.normal!;
+    const e = unit(edge.dir);
+    if (Math.abs(dot(o, nF)) > 1e-6 || Math.abs(dot(e, o)) > 1e-6) throw new FeatureError(t('flange.notSheetEdge'));
+    const rb = f.radius === undefined ? sheet.radius : evalLength(f.radius);
+    const theta = f.angle === undefined ? Math.PI / 2 : evalAngle(f.angle);
+    if (!(rb > 0) || !(theta > 1e-6 && theta < Math.PI - 0.01)) throw new FeatureError(t('flange.angleRange'));
+    const L = evalLength(f.length);
+    const half = Math.tan(theta / 2);
+    const outerSetback = (rb + T) * half;
+    const from = f.lengthFrom ?? 'outer';
+    const setback = from === 'inner' ? rb * half : from === 'tangent' ? 0 : outerSetback;
+    const straight = L - setback;
+    if (straight < 1e-6) throw new FeatureError(t('flange.tooShort', { need: setback.toFixed(3) }));
+    const trim = f.position === 'bendOutside' ? 0 : outerSetback;
+    const neg = (v: Vec3): Vec3 => [-v[0], -v[1], -v[2]];
+    const m: Vec3 = f.flip ? neg(nF) : nF;
+    // along m the sheet is from y = -T to 0 when it bends toward the face the edge is on, from 0 to T when the other way; the inside of the bend is the face on the side of m
+    const [ylo, yhi] = f.flip ? [0, T] : [-T, 0];
+    const origin = add(edge.mid, o, -trim);
+    const center = add(origin, m, yhi + rb);
+    const spin = dot(cross(e, neg(m)), o) > 0 ? 1 : -1; // the turn that moves the inside of the sheet out along o first
+    const axis: Vec3 = [e[0] * spin, e[1] * spin, e[2] * spin];
+    const strip = (prefix: string, lo: number, hi: number): Region => {
+      const line = (a: [number, number], b: [number, number], source: string) => ({ kind: 'line' as const, a, b, source: `${prefix}.${source}` });
+      return { outer: [line([-W / 2, lo], [W / 2, lo], 'out'), line([W / 2, lo], [W / 2, hi], 's1'), line([W / 2, hi], [-W / 2, hi], 'in'), line([-W / 2, hi], [-W / 2, lo], 's0')], holes: [] };
+    };
+    const frame: PlaneFrame = { origin, xDir: e, yDir: m, normal: cross(e, m) };
+    const bendTool = this.capsNamed(this.kernel.revolve(frame, [strip('bend', ylo, yhi)], { origin: center, dir: axis }, theta), 'bend', 'start', 'end');
+    const origin2 = add(center, rotate(sub(origin, center), axis, theta), 1);
+    const m2 = rotate(m, axis, theta);
+    const d = rotate(o, axis, theta);
+    const n2 = cross(e, m2);
+    const s2 = dot(n2, d) > 0 ? 1 : -1;
+    const frame2: PlaneFrame = { origin: origin2, xDir: e, yDir: m2, normal: n2 };
+    const flangeTool = this.capsNamed(this.kernel.extrude(frame2, [strip('flange', ylo, yhi)], add([0, 0, 0], n2, s2 * straight), 0), 'flange', 'start', 'end');
+
+    const volume = (list: readonly BodyState[]) => list.reduce((a, b) => a + (b.surface ? 0 : this.kernel.massProps(b.shape).volume), 0);
+    const near = (a: number, b: number, scale: number) => Math.abs(a - b) <= 1e-3 * scale + 1e-6;
+    let list: readonly BodyState[] = set.list;
+    const before = volume(list);
+    if (trim > 0) {
+      const n3 = cross(e, m);
+      const s3 = dot(n3, o) > 0 ? 1 : -1;
+      const cutTool = this.capsNamed(this.kernel.extrude(frame, [strip('trim', ylo - 1, yhi + 1)], add([0, 0, 0], n3, s3 * (trim + 1)), 0), 'trim', 'start', 'end');
+      list = this.apply(f.id, 'cut', cutTool, { featureId: f.id, sketchId: 'flange' }, list, false);
+      if (!near(before - volume(list), trim * W * T, trim * W * T)) throw new FeatureError(t('flange.trimBad'));
+    }
+    const cut = volume(list);
+    list = this.apply(f.id, 'boss', bendTool, { featureId: f.id, sketchId: 'flange' }, list, true);
+    list = this.apply(f.id, 'boss', flangeTool, { featureId: f.id, sketchId: 'flange' }, list, true);
+    const added = theta * T * W * (rb + T / 2) + T * W * straight;
+    if (!near(volume(list) - cut, added, added)) throw new FeatureError(t('flange.collides'));
+    const allowance = theta * (rb + sheet.kFactor * T);
+    sheet.bends.push({ feature: f.id, name: 'bend', angle: theta, radius: rb, thickness: T, width: W, kFactor: sheet.kFactor, allowance });
+    sheet.flanges.push({ feature: f.id, edge: f.edge.name, width: W, angle: theta, radius: rb, trim, straight, allowance });
+    this.info = t('flange.info', { angle: ((theta * 180) / Math.PI).toFixed(1), allowance: allowance.toFixed(3), straight: straight.toFixed(3), length: String(L), from: t(from === 'inner' ? 'flange.fromInner' : from === 'tangent' ? 'flange.fromTangent' : 'flange.fromOuter'), trim: trim.toFixed(3) });
+    return [...list];
   }
 
   private draftFeature(f: DraftFeature, set: Bodies): BodyState[] {

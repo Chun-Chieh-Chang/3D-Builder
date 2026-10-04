@@ -1,7 +1,7 @@
 import { t } from '@3db/i18n';
 import { current, produce, type Draft } from 'immer';
 import { countersFor, type Id } from './ids';
-import type { AppearanceTarget, DocSettings, MaterialRef, Variable, BlobRef, ChamferFeature, CombineFeature, HoleFeature, ScrewBossFeature, BaseFlangeFeature, SnapHookFeature, SnapCatchFeature, VentFeature, LoftFeature, RibFeature, SweepFeature, Draft as WallDraft, EndCondition, Thin, Expr, Feature, ImportedBodyFeature, AxisDefinition, CoordSysFeature, MirrorFeature, PartDoc, PatternDefinition, PatternFeature, PlaneDefinition, PointDefinition, Ref, RevolveCondition, SketchConstraint, SketchEntity, SketchFeature } from './schema';
+import type { AppearanceTarget, DocSettings, MaterialRef, Variable, BlobRef, ChamferFeature, CombineFeature, HoleFeature, ScrewBossFeature, BaseFlangeFeature, EdgeFlangeFeature, SnapHookFeature, SnapCatchFeature, VentFeature, LoftFeature, RibFeature, SweepFeature, Draft as WallDraft, EndCondition, Thin, Expr, Feature, ImportedBodyFeature, AxisDefinition, CoordSysFeature, MirrorFeature, PartDoc, PatternDefinition, PatternFeature, PlaneDefinition, PointDefinition, Ref, RevolveCondition, SketchConstraint, SketchEntity, SketchFeature } from './schema';
 import { isDatumPlaneName } from './datums';
 import { canBeSeed } from './patterns';
 import { colorOk, materialOk, sameTarget } from './materials';
@@ -99,6 +99,8 @@ ull). */
   | { type: 'setScrewBoss'; featureId: Id; boss: Omit<ScrewBossFeature, 'id' | 'type' | 'name' | 'suppressed' | 'sketch'> }
   /** The base flange's settings (C11.1): everything but which sketch it is made from. */
   | { type: 'setBaseFlange'; featureId: Id; flange: Omit<BaseFlangeFeature, 'id' | 'type' | 'name' | 'suppressed' | 'sketch'> }
+  /** The edge flange's settings (C11.2): the edge and everything else. */
+  | { type: 'setEdgeFlange'; featureId: Id; flange: Omit<EdgeFlangeFeature, 'id' | 'type' | 'name' | 'suppressed'> }
   /** The snap hook's, the catch window's and the vent's settings (C4.11): everything but which sketch they stand at. */
   | { type: 'setSnapHook'; featureId: Id; hook: Omit<SnapHookFeature, 'id' | 'type' | 'name' | 'suppressed' | 'sketch'> }
   | { type: 'setSnapCatch'; featureId: Id; window: Omit<SnapCatchFeature, 'id' | 'type' | 'name' | 'suppressed' | 'sketch'> }
@@ -537,6 +539,9 @@ function validateNewFeature(doc: PartDoc, f: Feature, index: number): void {
     case 'screwBoss':
       sketchBefore(doc, f.sketch, index, t('feature.screwBoss'));
       return;
+    case 'edgeFlange':
+      if (f.edge.kind !== 'edge') throw new CommandError(t('cmd.flangeOnlyEdge'));
+      return;
     case 'baseFlange':
       sketchBefore(doc, f.sketch, index, t('feature.baseFlange'));
       return;
@@ -854,6 +859,16 @@ export function mutate(draft: Draft<PartDoc>, cmd: Command): void {
       for (const k of Object.keys(f)) delete (f as unknown as Record<string, unknown>)[k];
       Object.assign(f, keep, cmd.boss);
       checkExprs(draft as PartDoc, f as Feature);
+      return;
+    }
+    case 'setEdgeFlange': {
+      const f = feature(draft, cmd.featureId);
+      if (f.type !== 'edgeFlange') throw new CommandError(t('cmd.onlyThisHasParams', { what: t('feature.edgeFlange') }));
+      const keep = { id: f.id, type: f.type, name: f.name, suppressed: f.suppressed } as const;
+      for (const k of Object.keys(f)) delete (f as unknown as Record<string, unknown>)[k];
+      Object.assign(f, keep, cmd.flange);
+      checkExprs(draft as PartDoc, f as Feature);
+      if ((f as EdgeFlangeFeature).edge.kind !== 'edge') throw new CommandError(t('cmd.flangeOnlyEdge'));
       return;
     }
     case 'setBaseFlange': {
