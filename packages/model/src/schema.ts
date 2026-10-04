@@ -6,7 +6,7 @@ import type { Id } from './ids';
  * DOF status, mass properties and error lists are derived data and never stored.
  */
 
-export const SCHEMA_VERSION = 39;
+export const SCHEMA_VERSION = 40;
 
 /** Value expression (B5.2, B5.3): "20", "25.4mm", "30deg", "wall_t*2", "D1@草圖1/2", "property('厚度')"; see `expr/`. */
 export type Expr = string;
@@ -820,6 +820,17 @@ export interface BodyProps {
   reference?: boolean;
 }
 
+/**
+ * One row of the gauge table of a sheet metal part (量規表, C11.1, v40): a name, the thickness, the inside bend radius and the K-factor (mm, and a number) the shop uses for it.
+ * Applying a row to a base flange copies its numbers into the base flange; they are not linked (a row changed later changes no feature).
+ */
+export interface SheetGauge {
+  name: string;
+  thickness: number;
+  radius: number;
+  kFactor: number;
+}
+
 export interface PartDoc {
   kind: 'part';
   schemaVersion: number;
@@ -833,6 +844,8 @@ export interface PartDoc {
   appearances: AppearanceOverride[];
   /** C14.1 (v24): absent until one is chosen; the mass is then known. */
   material?: MaterialRef;
+  /** The gauge table of a sheet metal part (C11.1, v40): absent until a row is added. */
+  sheetGauges?: SheetGauge[];
   /** B8.4 (v24): only what was chosen; see `settingsOf` for the rest. */
   settings?: Partial<DocSettings>;
   blobs: BlobRef[];

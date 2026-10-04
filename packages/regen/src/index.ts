@@ -1,5 +1,6 @@
 export * from './engine';
 export * from './flatPattern';
+export * from './sheetChecks';
 export * from './bodies';
 export * from './dag';
 export * from './assembly';

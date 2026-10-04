@@ -52,6 +52,17 @@ g.run = async () => {
   await H.waitFor(() => Math.abs(Number(text('size').match(/[\d.]+/g)[0]) - (100 - 7 + 30 + (Math.PI / 2) * 2.6)) < 2e-3, 10000, 'the pattern follows the K-factor');
   H.check(true, 'K 0.4 shortens the pattern');
 
+  // the manufacturability checks: the radius and the flat piece of the one flange pass; a limit of 30 thicknesses on the flat piece does not
+  await H.waitFor(() => /2 項檢查：2 通過、0 不通過/.test(text('summary')), 10000, 'the checks');
+  const limit = panel().querySelector('[data-limit="flange"]');
+  Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(limit, '30');
+  limit.dispatchEvent(new Event('input', { bubbles: true }));
+  await H.waitFor(() => /2 項檢查：1 通過、1 不通過/.test(text('summary')), 10000, 'the checks with a limit of 30');
+  H.check(panel().querySelector('[data-rule="flangeLength"][data-ok="false"]') !== null, 'the flat piece is the check that fails');
+  Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(limit, '4');
+  limit.dispatchEvent(new Event('input', { bubbles: true }));
+  await H.waitFor(() => /2 項檢查：2 通過/.test(text('summary')), 10000, 'the checks back to 4');
+
   // the DXF: what the download is handed is a file with the outline and the bend line on their own layers
   let captured = null;
   const make = URL.createObjectURL;

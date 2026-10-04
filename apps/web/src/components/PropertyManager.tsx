@@ -49,6 +49,7 @@ import {
   type LipGrooveFeature,
   type ScrewBossFeature,
   type BaseFlangeFeature,
+  type SheetGauge,
   type EdgeFlangeFeature,
   type HemFeature,
   type SnapHookFeature,
@@ -1836,9 +1837,51 @@ function SketchPointsPanel({ f, fields, hint }: { f: SnapHookFeature | SnapCatch
   );
 }
 
+/** The gauge table of the part (C11.1): its rows, a row applied to the base flange, and the current parameters added as a row. */
+function GaugeTable({ gauges, flange, apply }: { gauges: SheetGauge[]; flange: BaseFlangeFeature; apply: (g: SheetGauge) => void }) {
+  const edit = (next: SheetGauge[]) => store.execute({ type: 'setSheetGauges', gauges: next });
+  const number = (v: string) => (Number.isFinite(Number(v)) && v.trim() !== '' ? Number(v) : null);
+  const change = (i: number, patch: Partial<SheetGauge>) => edit(gauges.map((g, k) => (k === i ? { ...g, ...patch } : g)));
+  const current = () => ({ name: `${flange.thickness} mm`, thickness: number(flange.thickness) ?? 1, radius: number(flange.radius) ?? 1, kFactor: number(flange.kFactor) ?? 0.5 });
+  return (
+    <div className="pm-group" data-gauges>
+      <h4>{t('pm.gauge.heading')}</h4>
+      {gauges.length > 0 && (
+        <label className="pm-row">
+          <span>{t('pm.gauge.apply')}</span>
+          <select value="" onChange={(e) => gauges[Number(e.target.value)] && apply(gauges[Number(e.target.value)]!)}>
+            <option value="" />
+            {gauges.map((g, i) => (
+              <option key={g.name} value={i}>
+                {g.name}
+              </option>
+            ))}
+          </select>
+        </label>
+      )}
+      {gauges.map((g, i) => (
+        <div className="pm-row" key={i} data-gauge={g.name}>
+          <input value={g.name} aria-label={t('pm.gauge.name')} onChange={(e) => change(i, { name: e.target.value })} style={{ width: '5em' }} />
+          <ValueInput value={String(g.thickness)} toCommand={(v) => ({ type: 'setSheetGauges', gauges: gauges.map((x, k) => (k === i ? { ...x, thickness: number(v) ?? x.thickness } : x)) })} />
+          <ValueInput value={String(g.radius)} toCommand={(v) => ({ type: 'setSheetGauges', gauges: gauges.map((x, k) => (k === i ? { ...x, radius: number(v) ?? x.radius } : x)) })} />
+          <ValueInput value={String(g.kFactor)} toCommand={(v) => ({ type: 'setSheetGauges', gauges: gauges.map((x, k) => (k === i ? { ...x, kFactor: number(v) ?? x.kFactor } : x)) })} />
+          <button type="button" className="link" data-field="remove-gauge" onClick={() => edit(gauges.filter((_, k) => k !== i))}>
+            {t('pm.gauge.remove')}
+          </button>
+        </div>
+      ))}
+      <button type="button" className="link" data-field="add-gauge" onClick={() => edit([...gauges, current()])}>
+        {t('pm.gauge.add')}
+      </button>
+      <p className="hint">{t('pm.gauge.hint')}</p>
+    </div>
+  );
+}
+
 /** Base flange (C11.1): the sheet's thickness, bend radius and K-factor, and for an open profile its width; which side the thickness grows to and which way the sheet goes. */
 function BaseFlangePanel({ f }: { f: BaseFlangeFeature }) {
   const status = useStore((s) => s.result?.features.find((r) => r.id === f.id));
+  const gauges = useStore((s) => s.doc.sheetGauges);
   const { id, type, name, suppressed, sketch, ...settings } = f;
   void [id, type, name, suppressed, sketch];
   const run = (patch: Record<string, unknown>): Command => {
@@ -1867,6 +1910,7 @@ function BaseFlangePanel({ f }: { f: BaseFlangeFeature }) {
         <span>{t('pm.reverseDirection')}</span>
       </label>
       {status?.status === 'ok' && status.info && <p className="hint gap-info">{status.info}</p>}
+      <GaugeTable gauges={gauges ?? []} flange={f} apply={(g) => store.execute(run({ thickness: String(g.thickness), radius: String(g.radius), kFactor: String(g.kFactor) }))} />
       <p className="hint">{t('pm.flange.hint')}</p>
     </section>
   );

@@ -20,6 +20,44 @@ function arcPath(s: Extract<FlatSegment, { kind: 'arc' }>, y: (v: number) => num
  * The 「平板型式」 window in the graphics area (C11.3): the flat pattern of the sheet metal part as it is shown, drawn (the outline in full, the bend lines dashed), its overall size
  * and area, and the bends with their angle, inside radius, direction and allowance. It is worked out again when the model changes. Nothing of it is saved.
  */
+/** The manufacturability checks (C11): the three limits, and every check that was made with whether it passed. */
+function Checks() {
+  const flat = useStore((s) => s.flat);
+  if (!flat || (flat.status === 'running' && flat.checks.length === 0)) return null;
+  const { checks, limits } = flat;
+  const bad = checks.filter((c) => !c.ok);
+  const field = (key: 'radius' | 'flange' | 'hole', label: string) => (
+    <label className="pm-row">
+      <span>{label}</span>
+      <input data-limit={key} value={limits[key]} onChange={(e) => store.setFlatLimits({ ...limits, [key]: e.target.value })} style={{ width: '4em' }} />
+    </label>
+  );
+  return (
+    <div data-checks>
+      <strong>{t('flat.checks')}</strong>
+      {field('radius', t('flat.checkRadius'))}
+      {field('flange', t('flat.checkFlange'))}
+      {field('hole', t('flat.checkHole'))}
+      {checks.length === 0 ? (
+        <p className="muted">{t('flat.checksNone')}</p>
+      ) : (
+        <>
+          <p data-field="summary">{t('flat.checksSummary', { total: checks.length, ok: checks.length - bad.length, bad: bad.length })}</p>
+          <ul data-field="checks">
+            {[...bad, ...checks.filter((c) => c.ok)].map((c, i) => (
+              <li key={i} data-rule={c.rule} data-ok={c.ok} className={c.ok ? 'muted' : 'error'}>
+                {c.ok ? '✓ ' : '✗ '}
+                {c.message}
+              </li>
+            ))}
+          </ul>
+        </>
+      )}
+      <p className="muted">{t('flat.checksHint')}</p>
+    </div>
+  );
+}
+
 export function FlatPanel() {
   const flat = useStore((s) => s.flat);
   if (!flat) return null;
@@ -108,6 +146,7 @@ export function FlatPanel() {
           <p className="muted">{t('flat.hint')}</p>
         </>
       )}
+      <Checks />
     </div>
   );
 }

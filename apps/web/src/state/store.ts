@@ -52,7 +52,7 @@ import { readAnyDocumentFile, ASSEMBLY_FILE_EXTENSION, assemblyName, derivedAsse
 import { gatherSources } from './sources';
 import { DrawingStore, type DrawingSource, type DrawingState } from './drawing';
 import { flatPatternDxf } from '@3db/drawing';
-import type { FlatReport } from '@3db/regen';
+import type { FlatReport, SheetCheck } from '@3db/regen';
 import { orderProblem, suppressionTargets, type SuppressAction } from '@3db/regen/dag';
 import { contourChoices, findProfiles, type ContourChoice } from '@3db/sketch/profiles';
 import type { PickFilter, Viewer } from '@3db/render';
@@ -128,6 +128,9 @@ export interface FlatState {
   status: 'running' | 'done' | 'error';
   report: FlatReport | null;
   error: string | null;
+  /** The limits of the manufacturability checks (in thicknesses), as typed, and what the checks found with them. */
+  limits: { radius: string; flange: string; hole: string };
+  checks: SheetCheck[];
 }
 
 export interface ThicknessState {
@@ -696,7 +699,7 @@ class AppStore {
 
   /** 「平板型式」 (C11.3) on: the pattern of the sheet metal part as it is shown, in a window; it is worked out again when the model changes. Nothing of it is saved. */
   startFlat(): void {
-    this.set({ flat: { status: 'running', report: null, error: null } });
+    this.set({ flat: { status: 'running', report: null, error: null, limits: { radius: '1', flange: '4', hole: '2' }, checks: [] } });
     void this.runFlat();
   }
 
@@ -705,14 +708,29 @@ class AppStore {
     if (this.state.flat) this.set({ flat: null });
   }
 
-  private async runFlat(): Promise<void> {
+  /** The limits of the manufacturability checks typed in the flat pattern window. */
+  setFlatLimits(limits: { radius: string; flange: string; hole: string }): void {
     if (!this.state.flat) return;
+    this.set({ flat: { ...this.state.flat, limits } });
+    void this.runFlat();
+  }
+
+  private async runFlat(): Promise<void> {
+    const flat = this.state.flat;
+    if (!flat) return;
     const seq = ++this.flatSeq;
+    const ratio = (v: string) => (Number.isFinite(Number(v)) && v.trim() !== '' && Number(v) >= 0 ? Number(v) : null);
+    const limits = { radius: ratio(flat.limits.radius), flange: ratio(flat.limits.flange), hole: ratio(flat.limits.hole) };
+    const done = (patch: Partial<FlatState>) => {
+      if (seq === this.flatSeq && this.state.flat) this.set({ flat: { ...this.state.flat, ...patch } });
+    };
+    // the checks do not need the pattern, only the data; the pattern may be one the program cannot make (and says so)
+    const checks = limits.radius === null || limits.flange === null || limits.hole === null ? Promise.resolve(null) : this.api.sheetChecks({ radius: limits.radius, flange: limits.flange, hole: limits.hole }).catch(() => null);
     try {
       const report = await this.api.flatPattern();
-      if (seq === this.flatSeq && this.state.flat) this.set({ flat: { status: 'done', report, error: null } });
+      done({ status: 'done', report, error: null, checks: (await checks) ?? this.state.flat?.checks ?? [] });
     } catch (e) {
-      if (seq === this.flatSeq && this.state.flat) this.set({ flat: { status: 'error', report: null, error: t('flat.failed', { why: e instanceof Error ? e.message : String(e) }) } });
+      done({ status: 'error', report: null, error: t('flat.failed', { why: e instanceof Error ? e.message : String(e) }), checks: (await checks) ?? [] });
     }
   }
 

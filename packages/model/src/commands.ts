@@ -1,7 +1,7 @@
 import { t } from '@3db/i18n';
 import { current, produce, type Draft } from 'immer';
 import { countersFor, type Id } from './ids';
-import type { AppearanceTarget, DocSettings, MaterialRef, Variable, BlobRef, ChamferFeature, CombineFeature, HoleFeature, ScrewBossFeature, BaseFlangeFeature, EdgeFlangeFeature, HemFeature, SnapHookFeature, SnapCatchFeature, VentFeature, LoftFeature, RibFeature, SweepFeature, Draft as WallDraft, EndCondition, Thin, Expr, Feature, ImportedBodyFeature, AxisDefinition, CoordSysFeature, MirrorFeature, PartDoc, PatternDefinition, PatternFeature, PlaneDefinition, PointDefinition, Ref, RevolveCondition, SketchConstraint, SketchEntity, SketchFeature } from './schema';
+import type { SheetGauge, AppearanceTarget, DocSettings, MaterialRef, Variable, BlobRef, ChamferFeature, CombineFeature, HoleFeature, ScrewBossFeature, BaseFlangeFeature, EdgeFlangeFeature, HemFeature, SnapHookFeature, SnapCatchFeature, VentFeature, LoftFeature, RibFeature, SweepFeature, Draft as WallDraft, EndCondition, Thin, Expr, Feature, ImportedBodyFeature, AxisDefinition, CoordSysFeature, MirrorFeature, PartDoc, PatternDefinition, PatternFeature, PlaneDefinition, PointDefinition, Ref, RevolveCondition, SketchConstraint, SketchEntity, SketchFeature } from './schema';
 import { isDatumPlaneName } from './datums';
 import { canBeSeed } from './patterns';
 import { colorOk, materialOk, sameTarget } from './materials';
@@ -182,6 +182,8 @@ ull). */
   | { type: 'setProperty'; name: string; value: string }
   /** The material of the part (C14.1); `null` takes it away. */
   | { type: 'setMaterial'; material: MaterialRef | null }
+  /** The gauge table of a sheet metal part (C11.1): all its rows; an empty list takes it away. */
+  | { type: 'setSheetGauges'; gauges: SheetGauge[] }
   /** The color of a part, body, feature or face (C14.2); `null` takes the color of that target away. */
   | { type: 'setAppearance'; target: AppearanceTarget; color: string | null }
   /** Document settings (B8.4): the ones given are changed. */
@@ -1290,6 +1292,19 @@ export function mutate(draft: Draft<PartDoc>, cmd: Command): void {
         if (!materialOk(cmd.material)) throw new CommandError(t('cmd.materialInvalid'));
         draft.material = { ...(cmd.material.id ? { id: cmd.material.id } : {}), name: cmd.material.name.trim(), density: cmd.material.density };
       }
+      return;
+    }
+    case 'setSheetGauges': {
+      const seen = new Set<string>();
+      for (const g of cmd.gauges) {
+        const name = g.name.trim();
+        if (name === '') throw new CommandError(t('cmd.gaugeName'));
+        if (seen.has(name)) throw new CommandError(t('cmd.gaugeDuplicate', { name }));
+        seen.add(name);
+        if (!(g.thickness > 0) || !(g.radius > 0) || !Number.isFinite(g.thickness + g.radius) || !(g.kFactor >= 0 && g.kFactor <= 1)) throw new CommandError(t('cmd.gaugeSizes', { name }));
+      }
+      if (cmd.gauges.length === 0) delete draft.sheetGauges;
+      else draft.sheetGauges = cmd.gauges.map((g) => ({ name: g.name.trim(), thickness: g.thickness, radius: g.radius, kFactor: g.kFactor }));
       return;
     }
     case 'setAppearance': {
