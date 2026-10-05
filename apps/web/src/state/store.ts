@@ -415,7 +415,8 @@ const REBUILD_SUSPECT_MS = 15_000;
 class StalledError extends Error {}
 
 class AppStore {
-  private history = new DocHistory(createDemoPart());
+  // Like SolidWorks the program starts on an empty part; the demo part is 「新示範件」 in the file menu.
+  private history = new DocHistory(createEmptyPart());
   /** What the rest of the program calls: always the current worker, which is replaced when a rebuild stalls (`restartWorker`). */
   private api: Comlink.Remote<KernelApi>;
   private worker!: Worker;
