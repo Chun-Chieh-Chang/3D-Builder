@@ -98,7 +98,9 @@ describe('an assembly with sub-assemblies as STEP (3b-1e)', () => {
     expect(back.rootName).toBe('夾具');
     // three uses at the top, three components inside the one sub-assembly: six usages, not twelve
     expect(back.usages).toBe(6);
-    expect([...new Set([...text.matchAll(/PRODUCT\('([^']*)'/g)].map((m) => m[1]))].sort()).toEqual(['夾具', '定位板', '定位組', '削邊銷'].sort());
+    // the names are in the file as ISO 10303-21 escapes (\X2\ and four hex digits for each character), which are undone here
+    const plain = (s: string) => s.replace(/\\X2\\([0-9A-F]+)\\X0\\/g, (_, h: string) => (h.match(/.{4}/g) ?? []).map((u) => String.fromCharCode(parseInt(u, 16))).join(''));
+    expect([...new Set([...text.matchAll(/PRODUCT\('([^']*)'/g)].map((m) => plain(m[1]!)))].sort()).toEqual(['夾具', '定位板', '定位組', '削邊銷'].sort());
   });
 
   it('reads back as the same tree, with the same names and poses (< 1e-6): every part where the assembly puts it', () => {

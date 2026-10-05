@@ -79,7 +79,9 @@ describe('Phase 0 acceptance', () => {
     const res = regen.rebuild(doc);
     const step = exportPartStep(kernel, res.body!.shape, partName(doc, null));
     expect(step).toMatch(/^ISO-10303-21;/);
-    expect(step).toContain("PRODUCT('行走骨架示範件'");
+    // the name is escaped (ISO 10303-21 has ASCII only): 行走骨架示範件 begins 884C 8D70
+    expect(step).toContain("PRODUCT('\\X2\\884C8D70");
+    expect(step).not.toMatch(/[^\x00-\x7f]/u);
     expect(step).toMatch(/SI_UNIT\(\.MILLI\.,\.METRE\.\)/);
     const back = kernel.importStep(step).shape;
     try {

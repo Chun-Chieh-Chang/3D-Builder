@@ -2,6 +2,7 @@ import { t } from '@3db/i18n';
 import type { BRepBuilderAPI_MakeShape, NCollection_List_TopoDS_Shape, TopoDS_Shape, TopoDS_Wire } from 'libcascade/single/init';
 import { anyHit, buildBvh, nearestHitAt, triangleNormal } from './rays';
 import { forEachSample } from './sampling';
+import { escapeStepText } from './stepText';
 import { Arena, loadOcct, ShapeIndex, type LoadOptions, type OC } from './occt';
 import {
   KernelError,
@@ -2995,7 +2996,7 @@ export class Kernel {
         throw new KernelError(t('kernel.stepFailedWhy', { why: this.errorText(e) }));
       }
       if (!ok) throw new KernelError(t('kernel.stepFailed'));
-      return oc.FS.readFile(path, { encoding: 'utf8' }) as string;
+      return escapeStepText(oc.FS.readFile(path, { encoding: 'utf8' }) as string);
     } finally {
       oc.Interface_Static.SetCVal('write.step.schema', 'AP214IS');
       doc.delete();
@@ -3096,7 +3097,7 @@ export class Kernel {
         throw new KernelError(t('kernel.stepFailedWhy', { why: this.errorText(e) }));
       }
       if (!ok) throw new KernelError(t('kernel.stepFailed'));
-      return oc.FS.readFile(path, { encoding: 'utf8' }) as string;
+      return escapeStepText(oc.FS.readFile(path, { encoding: 'utf8' }) as string);
     } finally {
       doc.delete();
       try {
