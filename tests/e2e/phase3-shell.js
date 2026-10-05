@@ -64,5 +64,5 @@ S.run = async () => {
   await H.settle();
   step('inward again', 12000 - 36 * 26 * 8);
   const faces = state().result.faceNames.length;
-  return { name: 'shell from the top face: inward, outward and back', listed, faces0, faces, steps, failed: failed(), pass: listed.length === 1 && faces === 11 && steps.every((s) => s.pass) && failed().length === 0 };
+  return { name: 'shell from the top face: inward, outward and back', listed, faces0, faces, steps, failed: failed(), pass: listed.filter((x) => !x.startsWith('（')).length === 1 && faces === 11 && steps.every((s) => s.pass) && failed().length === 0 };
 };

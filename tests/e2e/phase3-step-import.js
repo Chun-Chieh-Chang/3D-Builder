@@ -17,9 +17,10 @@ imp.run = async () => {
   // the source: the STEP the app itself writes of the 夾具
   await __sub.open();
   const req = store.assembly.stepRequest();
-  const text = await store.api.exportAssemblyStep(req);
+  const { text: raw } = await store.api.exportAssemblyStep(req);
+  const text = H.decodeStep(raw);
   const original = [...new Set([...text.matchAll(/PRODUCT\('([^']*)'/g)].map((m) => m[1]))].sort();
-  await H.writeAt('in/夾具.step', new TextEncoder().encode(text));
+  await H.writeAt('in/夾具.step', new TextEncoder().encode(raw));
   const out = await H.root.getDirectoryHandle('out', { create: true });
   window.showDirectoryPicker = async (o) => {
     H.dialogs.push(['folder', o?.id, o?.mode]);
@@ -66,7 +67,7 @@ imp.run = async () => {
 
   // written out again it is what it came from
   await H.waitFor(() => H.asm().solution, 10000, 'solved');
-  const again = await store.api.exportAssemblyStep(store.assembly.stepRequest());
+  const again = H.decodeStep((await store.api.exportAssemblyStep(store.assembly.stepRequest())).text);
   const products = [...new Set([...again.matchAll(/PRODUCT\('([^']*)'/g)].map((m) => m[1]))].sort();
   const usages = (again.match(/NEXT_ASSEMBLY_USAGE_OCCURRENCE\(/g) ?? []).length;
   const usagesBefore = (text.match(/NEXT_ASSEMBLY_USAGE_OCCURRENCE\(/g) ?? []).length;

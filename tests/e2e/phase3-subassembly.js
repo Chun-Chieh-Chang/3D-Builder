@@ -269,7 +269,9 @@ sub.step = async () => {
   await sub.open();
   const req = store.assembly.stepRequest();
   H.check(req.parts.length === 2 && req.subs.length === 1 && req.instances.length === 2, `request: ${req.parts.length} parts, ${req.subs.length} sub-assembly, ${req.instances.length} components`);
-  const text = await store.api.exportAssemblyStep(req);
+  const { text: raw } = await store.api.exportAssemblyStep(req);
+  // names outside ASCII are written as ISO 10303-21 \X2\…\X0\ escapes (four hex digits a character)
+  const text = raw.replace(/\\X2\\([0-9A-F]+)\\X0\\/g, (_, hex) => hex.match(/.{4}/g).map((h) => String.fromCharCode(parseInt(h, 16))).join(''));
   const usages = (text.match(/NEXT_ASSEMBLY_USAGE_OCCURRENCE\(/g) ?? []).length;
   const products = [...new Set([...text.matchAll(/PRODUCT\('([^']*)'/g)].map((m) => m[1]))].sort();
   H.check(usages === 5, `two uses at the top and three inside the one sub-assembly: ${usages}`);
@@ -277,10 +279,10 @@ sub.step = async () => {
   // suppressed components are left out of the file
   store.assembly.setComponentState(['s1'], 'suppressed', true);
   await H.wait(1500);
-  const after = await store.api.exportAssemblyStep(store.assembly.stepRequest());
+  const { text: after } = await store.api.exportAssemblyStep(store.assembly.stepRequest());
   H.check((after.match(/NEXT_ASSEMBLY_USAGE_OCCURRENCE\(/g) ?? []).length === 4, 'one use less at the top: four usages');
   store.assembly.undo();
-  return { usages, products, bytes: text.length };
+  return { usages, products, bytes: raw.length };
 };
 
 /** Everything, then the console is checked by the caller. */

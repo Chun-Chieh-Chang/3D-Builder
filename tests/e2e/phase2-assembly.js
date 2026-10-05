@@ -182,6 +182,8 @@ H.save = async (path) => {
 H.tidy = async () => {
   if (!H.asm() && store.getState().dirty) await H.save('tidy.3dbx');
 };
+/** The text of a STEP file the app wrote, with the \X2\…\X0\ escapes (names outside ASCII, four hex digits a character) turned back into characters. */
+H.decodeStep = (raw) => raw.replace(/\\X2\\([0-9A-F]+)\\X0\\/g, (_, hex) => hex.match(/.{4}/g).map((h) => String.fromCharCode(parseInt(h, 16))).join(''));
 H.open = async (path) => {
   document.querySelector('.status-bar .notice')?.click(); // dismiss the last notice, so the next one is this open's
   H.next.open = path;

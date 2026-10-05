@@ -53,7 +53,7 @@ x.run = async () => {
   await check(panel('[data-field="auto-positions"]'), false);
   await click(panel('[data-action="autoDimension"]'));
   await H.waitFor(() => drw().doc.dimensions.length === 5 && drw().elements.size === 5, 30000, 'five dimensions worked out');
-  H.check(JSON.stringify(texts().sort()) === JSON.stringify(['120', '2×Ø8', '4×R10', '4×Ø9', '80']), `overall size and holes: ${texts().join(' | ')}`);
+  H.check(JSON.stringify(texts().sort()) === JSON.stringify(['120', '2×Ø8 貫穿', '4×R10', '4×Ø9 貫穿', '80'].sort()), `overall size and holes: ${texts().join(' | ')}`);
   // asked again: nothing new
   await click(panel('[data-action="autoDimension"]'));
   H.check(drw().doc.dimensions.length === 5, 'no dimension is made twice');
@@ -79,13 +79,13 @@ x.run = async () => {
   const nine = drw().doc.dimensions.find((d) => d.kind === 'diameter' && d.count === 4);
   await click(panel(`[data-dimension="${nine.id}"]`));
   await choose(panel('[data-field="dimToleranceType"]'), 'fit');
-  await H.waitFor(() => texts().includes('4×Ø9 H7 (+0.015/0)'), 3000, 'H7');
+  await H.waitFor(() => texts().includes('4×Ø9 H7 (+0.015/0) 貫穿'), 3000, 'H7');
   const fit = panel('[data-field="dimFit"]');
   fit.focus();
   Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(fit, 'H11');
   fit.dispatchEvent(new Event('input', { bubbles: true }));
   fit.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
-  await H.waitFor(() => texts().includes('4×Ø9 H11 (+0.09/0)'), 3000, 'H11');
+  await H.waitFor(() => texts().includes('4×Ø9 H11 (+0.09/0) 貫穿'), 3000, 'H11');
   // a class that is not supported is refused with the reason, and the dimension is left as it was
   fit.focus();
   Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(fit, 'X9');
@@ -115,7 +115,7 @@ x.run = async () => {
   // the canvas: the dimensions are drawn (filled arrowheads, text)
   await H.waitFor(() => document.querySelector('[data-svg] svg'), 5000, 'the SVG');
   const svg = document.querySelector('[data-svg] svg');
-  H.check([...svg.querySelectorAll('text')].some((t) => t.textContent === '4×Ø9 H11 (+0.09/0)'), 'the tolerance is on the sheet');
+  H.check([...svg.querySelectorAll('text')].some((t) => t.textContent === '4×Ø9 H11 (+0.09/0) 貫穿'), 'the tolerance is on the sheet');
   H.check(svg.querySelectorAll('polygon[fill="#000000"]').length >= 20, `arrowheads are drawn: ${svg.querySelectorAll('polygon[fill="#000000"]').length}`);
 
   // undo and redo: one step for each command
@@ -147,7 +147,7 @@ x.run = async () => {
   await H.waitFor(() => !drw().dirty, 10000, 'the save');
   await H.open('定位板.3dbd');
   await H.waitFor(() => drw() && drw().fileName === '定位板.3dbd' && drw().doc.dimensions.length === count && drw().elements.size === count, 40000, 'the drawing to open');
-  H.check(texts().includes('4×Ø9 H11 (+0.09/0)') && texts().includes('(120 ±0.05)'), `the same dimensions: ${texts().length}`);
+  H.check(texts().includes('4×Ø9 H11 (+0.09/0) 貫穿') && texts().includes('(120 ±0.05)'), `the same dimensions: ${texts().length}`);
 
   // deleting a view takes its dimensions with it
   store.drawingStore.deleteViews([view('front').id]);

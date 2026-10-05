@@ -171,7 +171,7 @@ pat.saveReopen = async () => {
 pat.step = async () => {
   await pat.saveReopen();
   const req = store.assembly.stepRequest();
-  const text = await store.api.exportAssemblyStep(req);
+  const text = H.decodeStep((await store.api.exportAssemblyStep(req)).text);
   const products = [...new Set([...text.matchAll(/PRODUCT\('([^']*)'/g)].map((m) => m[1]))];
   const usages = (text.match(/NEXT_ASSEMBLY_USAGE_OCCURRENCE\(/g) ?? []).length;
   H.check(products.some((p) => p.includes('鏡射')), `a mirrored product: ${products}`);

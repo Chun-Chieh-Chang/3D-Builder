@@ -78,7 +78,16 @@ v.run = async () => {
   await click(panel('[data-field="flip"]'));
   await H.waitFor(() => drw().doc.views[3].flip === true, 3000, 'the flip');
   await H.waitFor(() => drw().lines.get(section.id)?.cut?.length > 4, 30000, 'the other half');
-  H.check(placed().get(section.id).at[0] < placed().get(front.id).at[0], 'flipped: the section is on the left');
+  // the side its arrows look to is taken by the right view (first angle: left of the front view), so the section goes to the next free side:
+  // the rule is that no two views overlap
+  const rect = (id) => {
+    const p = placed().get(id);
+    const b = drw().lines.get(id).box;
+    return [p.at[0] + (b.min[0] - p.centre[0]) * p.scale, p.at[1] + (b.min[1] - p.centre[1]) * p.scale, p.at[0] + (b.max[0] - p.centre[0]) * p.scale, p.at[1] + (b.max[1] - p.centre[1]) * p.scale];
+  };
+  const overlap = (a, b) => a[0] < b[2] - 1e-6 && b[0] < a[2] - 1e-6 && a[1] < b[3] - 1e-6 && b[1] < a[3] - 1e-6;
+  const others = drw().doc.views.filter((x) => x.id !== section.id && drw().lines.get(x.id));
+  H.check(others.length === 3 && others.every((x) => !overlap(rect(section.id), rect(x.id))), 'flipped: the section overlaps no other view');
   await click(panel('[data-field="flip"]'));
   await H.waitFor(() => !drw().doc.views[3].flip, 3000, 'the flip back');
 
