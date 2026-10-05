@@ -263,6 +263,26 @@ describe('where the derived views go and what is drawn on the parent', () => {
     expect((x0 + x1) / 2).toBeCloseTo(215, 6);
   });
 
+  it('a section whose side is taken by another view goes beside its parent instead, in line with it: the section of a front view looking down, with the top view where it would be (first angle)', () => {
+    const top: DrawingView = { id: 't', name: 't', source: 'a.3dbx', direction: 'top' };
+    const right: DrawingView = { id: 'r', name: 'r', source: 'a.3dbx', direction: 'right' };
+    const section: DrawingView = { id: 's', name: 'A-A', kind: 'section', parent: 'f', line: [[0, 5], [100, 5]], label: 'A' };
+    const raw = new Map([['f', lines(100, 60)], ['t', lines(100, 15)], ['r', lines(15, 60)], ['s', lines(100, 15)]]);
+    // alone, the section is below the front view (the arrows look down)
+    const alone = layoutViews(doc([front, section]), new Map([['f', raw.get('f')!], ['s', raw.get('s')!]]));
+    expect(alone.get('s')!.at[1]).toBeLessThan(alone.get('f')!.at[1]);
+    expect(alone.get('s')!.at[0]).toBeCloseTo(alone.get('f')!.at[0], 9);
+    // with the top view there, it is to the right, a gap from the front view, at the same height (the origins of the model level)
+    const placed = layoutViews(doc([front, top, right, section]), raw);
+    const f = placed.get('f')!;
+    const s = placed.get('s')!;
+    expect(s.at[0] - f.at[0]).toBeCloseTo(50 + 25 + 50, 9);
+    expect(f.at[1] - f.centre[1]).toBeCloseTo(s.at[1] - s.centre[1], 9);
+    // and no two views overlap
+    const all = [...placed.values()];
+    for (const a of all) for (const b of all) if (a.id < b.id) expect(Math.abs(a.at[0] - b.at[0]) >= (a.w + b.w) / 2 - 1e-9 || Math.abs(a.at[1] - b.at[1]) >= (a.h + b.h) / 2 - 1e-9, `${a.id} and ${b.id}`).toBe(true);
+  });
+
   it('a detail has the box of its circle whatever is in it, its own scale, and goes beside its parent', () => {
     const detail: DrawingView = { id: 'd', name: 'B', kind: 'detail', parent: 'f', centre: [50, 30], radius: 10, label: 'B', scale: [5, 1] };
     const raw = new Map([['f', { visible: [[0, 0, 100, 0, 100, 60, 0, 60, 0, 0]], hidden: [], box: { min: [0, 0], max: [100, 60] } } as ViewLines]]);

@@ -179,20 +179,33 @@ export function layoutViews(doc: DrawingDoc, rawLines: ReadonlyMap<Id, ViewLines
       const p = measured.get(v.parent)!;
       const c = measured.get(v.id)!;
       const [px, py] = frame.get(v.parent)!;
-      const side = sideOf(doc, v);
-      const key = `${v.parent}|${side}`;
-      const used = stacked.get(key) ?? 0;
-      stacked.set(key, used + (side === 'left' || side === 'right' ? c.w : c.h) + VIEW_GAP);
-      let x: number;
-      let y: number;
-      if (side === 'left' || side === 'right') {
-        x = px + (side === 'right' ? 1 : -1) * (p.w / 2 + VIEW_GAP + used + c.w / 2);
-        // in line: the origin of the model is at the same height in both (a detail is simply level with its parent)
-        y = v.kind === 'detail' ? py : py - p.centre[1] * p.scale + c.centre[1] * c.scale;
-      } else {
-        y = py + (side === 'up' ? 1 : -1) * (p.h / 2 + VIEW_GAP + used + c.h / 2);
-        x = v.kind === 'detail' ? px : px - p.centre[0] * p.scale + c.centre[0] * c.scale;
+      /** Where the view goes on a side of its parent, and how much of that side is taken already. */
+      const spot = (side: ViewSide) => {
+        const used = stacked.get(`${v.parent}|${side}`) ?? 0;
+        if (side === 'left' || side === 'right') {
+          // in line: the origin of the model is at the same height in both (a detail is simply level with its parent)
+          const y = v.kind === 'detail' ? py : py - p.centre[1] * p.scale + c.centre[1] * c.scale;
+          return { side, used, x: px + (side === 'right' ? 1 : -1) * (p.w / 2 + VIEW_GAP + used + c.w / 2), y };
+        }
+        const x = v.kind === 'detail' ? px : px - p.centre[0] * p.scale + c.centre[0] * c.scale;
+        return { side, used, x, y: py + (side === 'up' ? 1 : -1) * (p.h / 2 + VIEW_GAP + used + c.h / 2) };
+      };
+      let chosen = spot(sideOf(doc, v));
+      if (v.kind === 'section') {
+        // A section goes on the side its arrow looks to, but where that side is taken by another view (the top view of the first angle sits just where the section of
+        // a front view looking down would) it goes beside its parent instead: its label says which cut it is.
+        const clear = (s: ReturnType<typeof spot>) =>
+          ![...frame].some(([id, [ox, oy]]) => {
+            const o = measured.get(id);
+            return id !== v.id && o !== undefined && Math.abs(s.x - ox) < (c.w + o.w) / 2 - 1e-9 && Math.abs(s.y - oy) < (c.h + o.h) / 2 - 1e-9;
+          });
+        if (!clear(chosen)) {
+          const free = (['right', 'left', 'up', 'down'] as const).filter((s) => s !== chosen.side).map(spot).find(clear);
+          if (free) chosen = free;
+        }
       }
+      const { side, used, x, y } = chosen;
+      stacked.set(`${v.parent}|${side}`, used + (side === 'left' || side === 'right' ? c.w : c.h) + VIEW_GAP);
       frame.set(v.id, [x, y]);
       pending.splice(pending.indexOf(v), 1);
     }
