@@ -302,6 +302,11 @@ function SketchPanel({ f }: { f: SketchFeature }) {
 
   return (
     <>
+      {view?.message && (
+        <p className="pm-note" role="status">
+          {view.message}
+        </p>
+      )}
       <section className="pm-group">
         <h4>{t('pm.sketchStatus')}</h4>
         {solve ? (

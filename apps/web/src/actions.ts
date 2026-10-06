@@ -204,7 +204,10 @@ function toggleConstruction(): void {
   const sketch = store.editedSketch();
   if (!sketcher || !sketch) return;
   const curves = sketch.entities.filter((e) => e.type !== 'point' && sketcher.getView().selection.includes(e.id));
-  if (curves.length === 0) return store.notify(t('sketch.selectCurves'));
+  if (curves.length === 0) {
+    sketcher.notice(t('sketch.selectCurves'));
+    return store.notify(t('sketch.selectCurves'));
+  }
   sketcher.setConstruction(!curves.every((e) => 'construction' in e && e.construction));
 }
 

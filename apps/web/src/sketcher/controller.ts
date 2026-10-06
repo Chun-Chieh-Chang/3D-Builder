@@ -137,6 +137,8 @@ export interface ControllerView {
   picks: Id[];
   cursor: P2 | null;
   hint: string;
+  /** Why the last button press did nothing (a tool that needs a selection pressed with none): shown in the sketch panel until the selection changes or a tool starts. */
+  message: string | null;
   options: ToolOptions;
 }
 
@@ -190,6 +192,8 @@ export class SketchController {
   private options: ToolOptions = { ...DEFAULT_OPTIONS };
   /** An operation (trim, round, mirror …) being checked by the solver: clicks wait until it is done. */
   private busy = false;
+  /** See ControllerView.message: the text and the selection it was said for. */
+  private message: { text: string; selection: string } | null = null;
   private pending: Promise<void> = Promise.resolve();
   private listeners = new Set<() => void>();
   private view: ControllerView;
@@ -212,7 +216,14 @@ export class SketchController {
     for (const fn of this.listeners) fn();
   }
 
+  /** Says in the sketch panel why a button did nothing; it goes away when the selection changes or a tool starts. */
+  notice(text: string): void {
+    this.message = { text, selection: [...this.selection].join(',') };
+    this.changed();
+  }
+
   private snapshot(): ControllerView {
+    if (this.message && (this.tool !== 'select' || this.message.selection !== [...this.selection].join(','))) this.message = null;
     const drawingLine = this.tool === 'line' || this.tool === 'centerline';
     const step = this.tool === 'dimension' ? Math.min(this.picks.length, 2) : drawingLine && this.chain ? 1 : this.clicks.length;
     return {
@@ -225,6 +236,7 @@ export class SketchController {
       picks: [...this.picks],
       cursor: this.cursor,
       hint: this.hint(step),
+      message: this.message?.text ?? null,
       options: { ...this.options },
     };
   }
@@ -287,7 +299,9 @@ export class SketchController {
     // mirror and offset act on what is selected when the tool starts (SolidWorks takes a pre-selection too)
     const chosen = tool === 'mirror' ? this.mirrorTargets() : tool === 'offset' ? this.offsetTargets() : [];
     if ((tool === 'mirror' || tool === 'offset') && chosen.length === 0) {
-      this.host.notify(t(tool === 'mirror' ? 'sketch.needMirrorSelection' : 'sketch.needOffsetSelection'), 'info');
+      const why = t(tool === 'mirror' ? 'sketch.needMirrorSelection' : 'sketch.needOffsetSelection');
+      this.host.notify(why, 'info');
+      this.notice(why);
       return;
     }
     this.tool = tool;
