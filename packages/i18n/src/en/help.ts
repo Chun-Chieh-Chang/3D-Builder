@@ -610,29 +610,148 @@ export const help: Translation = {
     '- The start can snap to sketch points, the origin and the edges and vertices of the model; next to the cursor you see what it is (coincident, midpoint, model end point…).\n- A line within 3° of horizontal or vertical gets a horizontal or vertical relation; one in the direction of another line gets collinear, parallel or perpendicular; one drawn from the end of an arc along its tangent gets tangent.\n- When the cursor is level or plumb (within 5 pixels) with another sketch point, a gray dotted line appears and the alignment relation is added.\n- Drawing back to the first point closes the chain and ends it.',
   'help.toolLine.see': 'concept.sketch-snaps',
   'help.toolCenterline.summary': 'Draws a centerline (construction geometry), which can be an axis of revolution or a mirror line.',
+
+  'help.toolCenterline.body':
+    'In a sketch choose Sketch → Centerline: click to set the start, click again to set the end, and press Esc to finish.\n\n- A centerline is construction geometry (dashed): it is not part of the outline and is not extruded.\n- Use it as the axis of a revolve, or as the mirror line of the sketch "Mirror".\n- The start and the end can snap to sketch points, the origin, and edges and vertices of the model; see "Sketch snaps and inference".',
+
+  'help.toolCenterline.keywords': 'centerline axis construction revolve axis mirror line',
+
+  'help.toolCenterline.see': 'tool-line tool-mirror revolve',
   'help.toolRect.summary': 'Draws a rectangle from two opposite corners; its sides get horizontal and vertical relations.',
+
+  'help.toolRect.body':
+    'Click to set the first corner and click again to set the opposite corner; the rectangle is drawn (no dragging between the two clicks).\n\n- The four sides get horizontal and vertical relations automatically, so the rectangle is always upright; dimensions (with "Smart dimension") decide its size and place.\n- The corners can snap to sketch points, the origin, and edges and vertices of the model; see "Sketch snaps and inference".\n- To center it on the origin use "Center rectangle".',
+
+  'help.toolRect.keywords': 'rectangle corner diagonal horizontal vertical',
+
+  'help.toolRect.see': 'tool-centerRect tool-dimension concept.sketch-snaps tool-line sketch',
   'help.toolCenterRect.summary': 'Draws a rectangle from its center and a corner.',
+
+  'help.toolCenterRect.body':
+    'Click to set the center of the rectangle (the origin of the coordinates, for example) and click again to set a corner.\n\n- The rectangle is symmetric about its center, and the four sides get horizontal and vertical relations automatically.\n- The center can snap to the origin, sketch points and points of the model, so the rectangle is centered on it.',
+
+  'help.toolCenterRect.keywords': 'center rectangle symmetric origin',
+
+  'help.toolCenterRect.see': 'tool-rect tool-dimension concept.sketch-snaps tool-line sketch',
   'help.toolCircle.summary': 'Draws a circle: click the center, then the radius.',
+
+  'help.toolCircle.body':
+    'Click to set the center and click again to set the radius.\n\n- The center can snap to sketch points, the origin and points of the model (the center of a hole, for example).\n- Use "Smart dimension" to give the diameter and then the place of the center.\n- A circle is used for extruding (a cylinder); the "Hole" feature uses single points, not circles.',
+
+  'help.toolCircle.keywords': 'circle center radius diameter',
+
+  'help.toolCircle.see': 'tool-perimeterCircle tool-dimension concept.sketch-snaps tool-line sketch',
   'help.toolPerimeterCircle.summary': 'Draws a circle through three points on its circumference.',
+
+  'help.toolPerimeterCircle.body':
+    'Click three times, on three points of the circle: the first, the second, the third.\n\n- Three points on one line make no circle, and it says "Three points are collinear, cannot make a circle".\n- To draw by the center and the radius use "Circle".',
+
+  'help.toolPerimeterCircle.keywords': 'perimeter circle three points circle',
+
+  'help.toolPerimeterCircle.see': 'tool-circle tool-threePointArc concept.sketch-snaps tool-line sketch',
   'help.toolArc.summary': 'Draws an arc from its center, start and end.',
+
+  'help.toolArc.body':
+    'Click to set the center, click to set the start (which decides the radius) and click to set the end.\n\n- The two ends of the arc are sketch points, and other elements can join them.\n- The start and the end can snap to sketch points and points of the model.\n- The other ways: the "Tangent arc" (continuing from the end of a line or arc) and the "Three-point arc" (start, end, a point on the arc).',
+
+  'help.toolArc.keywords': 'arc center start end',
+
+  'help.toolArc.see': 'tool-tangentArc tool-threePointArc concept.sketch-snaps tool-line sketch',
   'help.toolTangentArc.summary': 'Draws an arc tangent to a line or arc at its end point.',
+
+  'help.toolTangentArc.body':
+    'Click the end of a line or arc and click again to set the end: an arc tangent to that line or arc is drawn, with a tangent relation added automatically.\n\n- The start has to be the end of a line or arc; otherwise it says "A tangent arc must start at the end of a line or arc".\n- Use it for outlines that join smoothly, such as a line, an arc and a line.',
+
+  'help.toolTangentArc.keywords': 'tangent arc end smooth outline',
+
+  'help.toolTangentArc.see': 'tool-arc tool-threePointArc concept.sketch-snaps tool-line sketch',
   'help.toolThreePointArc.summary': 'Draws an arc from its start, end and a point on it.',
+
+  'help.toolThreePointArc.body':
+    'Click to set the start, click to set the end and click a point on the arc: the arc through the three points is drawn.\n\n- Three points on one line make no arc, and it says "Three points are collinear, cannot make an arc".\n- Put the start and the end where the arc has to join, then pull out the bulge with the third.',
+
+  'help.toolThreePointArc.keywords': 'three point arc start end point on arc',
+
+  'help.toolThreePointArc.see': 'tool-arc tool-tangentArc concept.sketch-snaps tool-line sketch',
   'help.toolPoint.summary': 'Places a point.',
+
+  'help.toolPoint.body':
+    'Click to place a point.\n\n- "Hole" (and the screw boss, the snap hook and the vent) use the single points of a sketch as positions, not the ends of lines or centers of circles.\n- A point can snap to the origin and points of the model, and can be positioned with dimensions.\n- A single point is not part of an outline and is not extruded.',
+
+  'help.toolPoint.keywords': 'point hole position location',
+
+  'help.toolPoint.see': 'hole screw-boss concept.sketch-snaps tool-line sketch',
   'help.toolDimension.summary': 'Dimensions: pick one or two entities, click to place, type the value and press Enter.',
   'help.toolDimension.body': '- Pick a line for its length; a circle for its diameter and an arc for its radius (arc length: "Dimension arc length" in the panel); two lines for the angle; two points for the distance.\n- A dimension that would over-define the sketch becomes a driven dimension, shown in gray italics in parentheses, only showing what is measured; the dimension list in the panel can switch it between driven and driving.\n- Double-click a dimension to change it; the box takes an expression or an equation variable.',
   'help.toolSlot.summary': 'Draws the outline of a slot from two centers and a width.',
+
+  'help.toolSlot.body':
+    'Click to set the first center, click to set the second center, move the mouse to decide the width and click to finish.\n\n- The outline of a slot is two lines and two half circles: the sides are tangent to both arcs and the arcs have equal radii; the five freedoms that are left (the places of the two centers and the width) are decided with dimensions.\n- The two centers can snap to sketch points and points of the model.',
+
+  'help.toolSlot.keywords': 'slot oblong centers width',
+
+  'help.toolSlot.see': 'tool-circle tool-dimension concept.sketch-snaps tool-line sketch',
   'help.toolPolygon.summary': 'Draws a regular polygon; the number of sides and inscribed or circumscribed are set in the panel.',
+
+  'help.toolPolygon.body':
+    'Click to set the center of the polygon and click again to set the size and the direction.\n\n- The panel on the left sets the "number of sides" (6 at first) and "inscribed / circumscribed": when circumscribed the second click is the middle of a side, otherwise a corner.\n- The polygon is a construction circle, corners on the circle and equal sides; the four freedoms that are left (center, size, turn) are decided with dimensions.',
+
+  'help.toolPolygon.keywords': 'polygon regular sides inscribed circumscribed hexagon',
+
+  'help.toolPolygon.see': 'tool-circle tool-dimension concept.sketch-snaps tool-line sketch',
   'help.toolSketchFillet.summary': 'Rounds the corner of two lines (sketch fillet).',
+
+  'help.toolSketchFillet.body':
+    'Rounds the corner of two lines: click the corner point where two lines meet, or click the two lines in turn.\n\n- The panel on the left sets the "fillet radius" (5 at first); it has to be more than 0.\n- The two lines are shortened to where the arc touches them and the arc is tangent to both; the corner stays where it was as a virtual sharp, so a dimension that was given to the corner still holds. The radius itself is a dimension.\n- When the radius is too big and the arc would run beyond the length of a line, it says so and does nothing.\n- This is the fillet of a sketch; edges of a part are rounded with the "Fillet" feature.',
+
+  'help.toolSketchFillet.keywords': 'sketch fillet round corner radius virtual sharp',
+
+  'help.toolSketchFillet.see': 'tool-sketchChamfer fillet tool-trim',
   'help.toolSketchChamfer.summary': 'Bevels the corner of two lines (sketch chamfer).',
+
+  'help.toolSketchChamfer.body':
+    'Chamfers the corner of two lines: click the corner point where two lines meet, or click the two lines in turn.\n\n- The panel on the left sets the two "chamfer distances" (5 each at first): how far back along each line from the corner; they can differ, and have to be more than 0.\n- The two lines are shortened to those two points and joined by a new line; the corner stays where it was as a virtual sharp, and the two distances are dimensions measured from it.\n- When a distance is too big and would run beyond the length of a line, it says so and does nothing.\n- This is the chamfer of a sketch; edges of a part are chamfered with the "Chamfer" feature.',
+
+  'help.toolSketchChamfer.keywords': 'sketch chamfer bevel corner distance virtual sharp',
+
+  'help.toolSketchChamfer.see': 'tool-sketchFillet chamfer tool-trim',
   'help.toolTrim.summary': 'Trims: click a piece of a line between crossings to remove it.',
+
+  'help.toolTrim.body':
+    'Click the stretch to trim away: on a line, arc or circle, the part between the nearest two crossings (or ends) is removed.\n\n- When a stretch in the middle goes, the curve is split in two; the second piece takes over the horizontal, vertical, parallel, perpendicular and collinear relations, and the two pieces of an arc have equal radii. The new ends lie on the curves that cut them off.\n- A curve with no crossing at all is deleted with one click.\n- The length and the equalities of the whole curve go (it is not one whole curve any more).\n- Only lines, arcs and circles can be trimmed.',
+
+  'help.toolTrim.keywords': 'trim cut crossing segment',
+
+  'help.toolTrim.see': 'tool-extend tool-sketchFillet concept.sketch-snaps tool-line sketch',
   'help.toolExtend.summary': 'Extends: click the end of a line to lengthen it up to the line in its way.',
+
+  'help.toolExtend.body':
+    'Click near the end of a line or arc to extend: that end grows until it meets the first curve in its way.\n\n- The new end lies on that curve; the old end goes together with what was attached to it, and so do the length and the equalities of the whole curve.\n- An end that other elements also use (they share the point) cannot be extended, and it says so; separate them first.\n- When there is nothing ahead of the end to extend to, it says so too.\n- Only lines and arcs can be extended.',
+
+  'help.toolExtend.keywords': 'extend lengthen end meet curve',
+
+  'help.toolExtend.see': 'tool-trim tool-sketchFillet concept.sketch-snaps tool-line sketch',
   'help.toolOffset.summary': 'Offsets the selected entities to one side by a distance.',
   'help.toolOffset.body': 'Select the lines to offset, then press this command; the left panel has the offset distance. Pressed with nothing selected, the top of the panel asks you to select first.',
   'help.toolMirror.summary': 'Mirrors the selected entities about a line.',
+
+  'help.toolMirror.body':
+    'Select the elements to mirror first, press this command, and then click the mirror line (a line, which can be a centerline).\n\n- Each point gets a mirrored twin joined by a "symmetric" relation, so the image follows when the originals change; curves are built on the twins (an arc runs the other way round) and a circle\'s radius is kept equal. A point on the axis is its own twin.\n- The relations among the originals are not copied; the symmetry carries them over.\n- Without a selection first it says "Select the elements to mirror first"; when all the selected elements are on the axis it says there is nothing to mirror.\n- It returns to Select after one mirror.',
+
+  'help.toolMirror.keywords': 'sketch mirror symmetric image centerline',
+
+  'help.toolMirror.see': 'tool-centerline tool-offset concept.sketch-snaps tool-line sketch',
   'help.toolConvert.summary': 'Brings the edges or the outline of a face of the model into the sketch as entities that follow the model.',
   'help.toolConvert.body': 'When sketching on a face, press this and click an edge or a face of the model: an edge is projected into an entity; a face becomes its outline and holes. These entities are purple, their place is the model\'s, and they move when the model changes; if the edge is gone the sketch reports "missing reference".\n\nYou do not have to press it: moving the cursor onto an edge of the model while drawing also works, see "Sketch Snaps and Inference".',
   'help.toolConvert.see': 'concept.sketch-snaps tool-pierce',
   'help.toolPierce.summary': 'Puts a point where an edge of the model that crosses the sketch plane goes through it.',
+
+  'help.toolPierce.body':
+    'Places a point where an edge of the model, square to the sketch plane, pierces the sketch plane.\n\n- Press this command and click, in the view, a straight edge that goes through the sketch plane; a point appears where it passes through.\n- The point is a reference that follows the model: it moves when the model changes, and the sketch reports "lost reference" when the edge is gone.\n- Use it to find where the axis of a hole or the center line of a post meets the sketch plane.',
+
+  'help.toolPierce.keywords': 'pierce point edge through sketch plane reference',
+
+  'help.toolPierce.see': 'tool-convert concept.sketch-snaps hole',
 
   // ---------------------------------------------------------------- edit and view
   'help.undo.summary': 'Undoes the last change.',

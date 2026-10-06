@@ -617,29 +617,148 @@ export const help = {
     '- 起點可以吸到草圖的點、原點、模型的邊與頂點；游標旁會顯示是什麼（重合、中點、模型端點…）。\n- 接近水平或垂直（3° 內）自動加水平或垂直關係；方向接近另一條線時自動加共線、平行或互相垂直；從圓弧端點沿切線畫加相切。\n- 與其他草圖點水平或垂直對齊（5 像素內）時，出現灰色虛線並加對齊關係。\n- 畫回第一個點會封閉並結束連續畫線。',
   'help.toolLine.see': 'concept.sketch-snaps',
   'help.toolCenterline.summary': '畫中心線（幾何建構線），可當旋轉軸或鏡射線。',
+
+  'help.toolCenterline.body':
+    '在草圖裡按「草圖」→「中心線」：按一下設定起點，再按一下設定終點，按 Esc 結束。\n\n- 中心線是幾何建構線（虛線），不參與輪廓，也不會被伸長。\n- 用來當旋轉特徵的旋轉軸，或當草圖「鏡射」的鏡射軸。\n- 起點與終點可以吸到草圖的點、原點、模型的邊與頂點，見「草圖的吸附與推斷」。',
+
+  'help.toolCenterline.keywords': '中心線 軸 建構線 旋轉軸 鏡射軸',
+
+  'help.toolCenterline.see': 'tool-line tool-mirror revolve',
   'help.toolRect.summary': '用兩個對角畫矩形，四邊自動加水平與垂直關係。',
+
+  'help.toolRect.body':
+    '按一下設定第一個角落，再按一下設定對角，畫出矩形（兩次按之間不用拖曳）。\n\n- 四條邊自動加水平與垂直關係，所以矩形永遠是正的；尺寸（用「智慧型尺寸」）才決定它的大小與位置。\n- 角落可以吸到草圖的點、原點、模型的邊與頂點，見「草圖的吸附與推斷」。\n- 要以原點為中心時用「中心矩形」。',
+
+  'help.toolRect.keywords': '邊角矩形 矩形 對角 水平 垂直',
+
+  'help.toolRect.see': 'tool-centerRect tool-dimension concept.sketch-snaps tool-line sketch',
   'help.toolCenterRect.summary': '用中心與一個角落畫矩形。',
+
+  'help.toolCenterRect.body':
+    '按一下設定矩形的中心（例如座標原點），再按一下設定一個角落。\n\n- 矩形對中心對稱，四邊自動加水平與垂直關係。\n- 中心可以吸到原點、草圖的點、模型的點，這樣矩形就以它為中心。',
+
+  'help.toolCenterRect.keywords': '中心矩形 矩形 中心 原點 對稱',
+
+  'help.toolCenterRect.see': 'tool-rect tool-dimension concept.sketch-snaps tool-line sketch',
   'help.toolCircle.summary': '畫圓：按一下設圓心，再按一下設半徑。',
+
+  'help.toolCircle.body':
+    '按一下設定圓心，再按一下設定半徑。\n\n- 圓心可以吸到草圖的點、原點、模型的點（例如孔的圓心）。\n- 用「智慧型尺寸」標直徑，再標圓心的位置。\n- 圓用在伸長（成為圓柱）、孔的位置（異型孔用的是單獨的點，不是圓）等。',
+
+  'help.toolCircle.keywords': '圓 圓心 半徑 直徑',
+
+  'help.toolCircle.see': 'tool-perimeterCircle tool-dimension concept.sketch-snaps tool-line sketch',
   'help.toolPerimeterCircle.summary': '用圓周上的三個點畫圓。',
+
+  'help.toolPerimeterCircle.body':
+    '按三下，在圓周上的三個點畫圓：第一點、第二點、第三點。\n\n- 三點在同一條線上時沒有圓，會說「三點共線，無法產生圓」。\n- 要用圓心與半徑畫圓時用「圓」。',
+
+  'help.toolPerimeterCircle.keywords': '周圍圓 三點圓 圓周 圓',
+
+  'help.toolPerimeterCircle.see': 'tool-circle tool-threePointArc concept.sketch-snaps tool-line sketch',
   'help.toolArc.summary': '用圓心、起點、終點畫圓弧。',
+
+  'help.toolArc.body':
+    '按一下設定圓心，再按一下設定起點（決定半徑），再按一下設定終點。\n\n- 圓弧的兩個端點是草圖的點，其他圖元可以接在上面。\n- 起點與終點的位置可以吸到草圖的點與模型的點。\n- 其他畫法：「相切弧」（從線或弧的端點接下去）與「三點弧」（起點、終點、弧上一點）。',
+
+  'help.toolArc.keywords': '圓弧 圓心 起點 終點',
+
+  'help.toolArc.see': 'tool-tangentArc tool-threePointArc concept.sketch-snaps tool-line sketch',
   'help.toolTangentArc.summary': '從直線或圓弧的端點畫相切的圓弧。',
+
+  'help.toolTangentArc.body':
+    '按一下直線或圓弧的端點，再按一下設定終點：畫出與那條線或弧相切的圓弧，並自動加相切關係。\n\n- 起點必須是直線或圓弧的端點，否則會說「切線弧必須從直線或圓弧的端點開始」。\n- 用來畫圓滑接合的輪廓，例如直線接圓弧再接直線。',
+
+  'help.toolTangentArc.keywords': '相切弧 切線弧 圓弧 端點',
+
+  'help.toolTangentArc.see': 'tool-arc tool-threePointArc concept.sketch-snaps tool-line sketch',
   'help.toolThreePointArc.summary': '用起點、終點與弧上一點畫圓弧。',
+
+  'help.toolThreePointArc.body':
+    '按一下設定起點，再按一下設定終點，再按一下圓弧上的一點：畫出通過三點的圓弧。\n\n- 三點在同一條線上時沒有圓弧，會說「三點共線，無法產生圓弧」。\n- 起點與終點可以先放在要接的位置，再拉出弧的凸度。',
+
+  'help.toolThreePointArc.keywords': '三點弧 圓弧 起點 終點 弧上一點',
+
+  'help.toolThreePointArc.see': 'tool-arc tool-tangentArc concept.sketch-snaps tool-line sketch',
   'help.toolPoint.summary': '放置一個點。',
+
+  'help.toolPoint.body':
+    '按一下放置一個點。\n\n- 「異型孔」（及螺柱、卡榫、排氣口）用草圖裡單獨的點當位置，不是線的端點或圓心。\n- 點可以吸到原點、模型的點，也可以用尺寸定位。\n- 單獨的點不屬於輪廓，不會被伸長。',
+
+  'help.toolPoint.keywords': '點 孔位 位置',
+
+  'help.toolPoint.see': 'hole screw-boss concept.sketch-snaps tool-line sketch',
   'help.toolDimension.summary': '標註尺寸：選一或兩個圖元，再點一下放置，輸入數值按 Enter。',
   'help.toolDimension.body': '- 選一條線標長度；選圓標直徑、選圓弧標半徑（弧長用面板的「標註弧長」）；選兩條線標角度；選兩點標距離。\n- 多餘的尺寸（會讓草圖過多定義的）會變成從動尺寸，顯示成灰色斜體加括號，只顯示量到的值，面板的尺寸清單可以切換「設為從動／設為驅動」。\n- 雙擊尺寸可以改數值，數值欄可以輸入運算式或方程式的變數。',
   'help.toolSlot.summary': '用兩個圓心與寬度畫長圓孔輪廓。',
+
+  'help.toolSlot.body':
+    '按一下設定第一個圓心，再按一下設定第二個圓心，再移動滑鼠決定寬度，按一下完成。\n\n- 長圓孔輪廓是兩條直線加兩個半圓：兩條邊與兩個圓弧相切，兩個圓弧半徑相等；剩下五個自由度（兩個圓心的位置與寬度）用尺寸決定。\n- 兩個圓心可以吸到草圖的點與模型的點。',
+
+  'help.toolSlot.keywords': '長圓孔 槽 長槽 圓心 寬度',
+
+  'help.toolSlot.see': 'tool-circle tool-dimension concept.sketch-snaps tool-line sketch',
   'help.toolPolygon.summary': '畫正多邊形，邊數與內切／外接在面板設定。',
+
+  'help.toolPolygon.body':
+    '按一下設定多邊形的中心，再按一下設定大小與方向。\n\n- 左邊面板設「邊數」（預設 6）與「內切／外接」：外接時第二下點的是邊的中點，否則點的是頂點。\n- 多邊形由一個建構圓、落在圓上的頂點與相等的邊組成；剩下四個自由度（中心、大小、旋轉）用尺寸決定。',
+
+  'help.toolPolygon.keywords': '多邊形 正多邊形 邊數 內切 外接 六角',
+
+  'help.toolPolygon.see': 'tool-circle tool-dimension concept.sketch-snaps tool-line sketch',
   'help.toolSketchFillet.summary': '把兩條線的角落倒成圓角（草圖圓角）。',
+
+  'help.toolSketchFillet.body':
+    '把兩條線的角落倒成圓角：按一下兩條直線相交的角點，或依序按兩條直線。\n\n- 左邊面板設「圓角半徑」（預設 5）；半徑要大於 0。\n- 兩條線在圓弧接觸的位置縮短，圓弧與兩條線相切；角點留在原處當成虛擬交點，所以原來標到角點的尺寸仍然有效。半徑本身是一個尺寸。\n- 半徑太大、圓弧會超出直線的長度時，會說明並且不做。\n- 這是草圖的圓角；零件上的邊用「圓角」特徵。',
+
+  'help.toolSketchFillet.keywords': '草圖圓角 圓角 角落 半徑 虛擬交點',
+
+  'help.toolSketchFillet.see': 'tool-sketchChamfer fillet tool-trim',
   'help.toolSketchChamfer.summary': '把兩條線的角落倒成斜角（草圖導角）。',
+
+  'help.toolSketchChamfer.body':
+    '把兩條線的角落倒成斜角：按一下兩條直線相交的角點，或依序按兩條直線。\n\n- 左邊面板設兩個「導角距離」（預設都是 5）：從角點沿兩條線各退回的距離，兩個距離可以不同；要大於 0。\n- 兩條線在那兩個點縮短，用一條新的線連起來；角點留在原處當成虛擬交點，兩個距離是從它量起的尺寸。\n- 距離太大、會超出直線的長度時，會說明並且不做。\n- 這是草圖的導角；零件上的邊用「導角」特徵。',
+
+  'help.toolSketchChamfer.keywords': '草圖導角 導角 斜角 距離 角落',
+
+  'help.toolSketchChamfer.see': 'tool-sketchFillet chamfer tool-trim',
   'help.toolTrim.summary': '修剪：點線上被交點切出的一段，把它去掉。',
+
+  'help.toolTrim.body':
+    '按一下要修剪掉的那一段：直線、圓弧或圓上，夾在最近的兩個交點（或端點）之間的部分被去掉。\n\n- 中間的一段被去掉時，曲線分成兩段；後面那段繼承水平、垂直、平行、垂直與共線關係，圓弧的兩段半徑相等。新的端點落在切掉它的那條線上。\n- 沒有任何交點的曲線，點一下整條刪掉。\n- 整條曲線的長度與相等關係會被去掉（它不再是完整的一條）。\n- 只能修剪直線、圓弧或圓。',
+
+  'help.toolTrim.keywords': '修剪 剪掉 交點 線段',
+
+  'help.toolTrim.see': 'tool-extend tool-sketchFillet concept.sketch-snaps tool-line sketch',
   'help.toolExtend.summary': '延伸：點線的一端，延伸到擋住它的線。',
+
+  'help.toolExtend.body':
+    '按一下直線或圓弧要延伸的那一端附近：那一端延伸到路上遇到的第一條線。\n\n- 新的端點落在那條線上；舊的端點連同接在上面的東西一起去掉，整條曲線的長度與相等關係也去掉。\n- 這一端和其他圖元共用（別的圖元也用這個點）時不能延伸，會說明，要先把它們分開。\n- 這一端往前沒有可以延伸到的圖元時，也會說明。\n- 只能延伸直線或圓弧。',
+
+  'help.toolExtend.keywords': '延伸 延長 端點 擋住',
+
+  'help.toolExtend.see': 'tool-trim tool-sketchFillet concept.sketch-snaps tool-line sketch',
   'help.toolOffset.summary': '把選取的圖元向一側偏移一個距離。',
   'help.toolOffset.body': '先選取要偏移的線，再按這個指令；左邊面板有「偏移距離」。沒有選取就按時，面板最上方會提示先選取。',
   'help.toolMirror.summary': '以一條線為鏡像軸，鏡射選取的圖元。',
+
+  'help.toolMirror.body':
+    '先選取要鏡射的圖元，再按這個指令，再按一下鏡射軸（一條直線，可以是中心線）。\n\n- 每個點得到一個鏡射的對稱點，用「對稱」關係連在一起，所以原件改了，鏡像件跟著變；曲線建在對稱點上（圓弧轉向相反），圓的半徑保持相等。鏡射軸上的點是它自己的鏡像。\n- 原件之間的關係不複製，由對稱關係帶過去。\n- 沒有先選圖元時會說「請先選取要鏡射的圖元」；選的圖元都在鏡射軸上時說沒有東西可以鏡射。\n- 鏡射一次後回到選取。',
+
+  'help.toolMirror.keywords': '草圖鏡射 鏡射 對稱 鏡像 中心線',
+
+  'help.toolMirror.see': 'tool-centerline tool-offset concept.sketch-snaps tool-line sketch',
   'help.toolConvert.summary': '把模型的邊或面的外框轉進草圖，成為跟著模型走的圖元。',
   'help.toolConvert.body': '在面上畫草圖時按這個指令，再點模型的邊或面：邊的投影成為圖元；面會轉成它的外框與孔。這些圖元是紫色的，位置由模型決定，模型改了它們跟著動；邊不見了草圖會報「遺失參考」。\n\n也可以不按這個指令，直接把游標移到模型的邊上畫，見「草圖的吸附與推斷」。',
   'help.toolConvert.see': 'concept.sketch-snaps tool-pierce',
   'help.toolPierce.summary': '在模型的一條垂直邊穿過草圖面的位置放一個點。',
+
+  'help.toolPierce.body':
+    '在模型的一條垂直於草圖面的邊穿過草圖面的位置放一個點。\n\n- 按這個指令，再在圖面點一條穿過草圖面的直線邊線；穿過的位置多一個點。\n- 這個點是跟著模型走的參考，模型改了它跟著動；邊不見了草圖會報「遺失參考」。\n- 用來找出孔軸、柱子的中心線與草圖面相交的位置。',
+
+  'help.toolPierce.keywords': '穿透點 穿過 垂直邊 參考 孔軸',
+
+  'help.toolPierce.see': 'tool-convert concept.sketch-snaps hole',
 
   // ---------------------------------------------------------------- edit and view
   'help.undo.summary': '復原上一個修改。',
