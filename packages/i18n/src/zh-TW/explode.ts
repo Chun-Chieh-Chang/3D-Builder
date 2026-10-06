@@ -13,6 +13,7 @@ export const explode = {
   'explode.title': '爆炸視圖',
   'explode.explode': '爆炸',
   'explode.collapse': '收合',
+  'explode.showLines': '顯示爆炸線（每個零組件走的路）',
   'explode.steps': '爆炸步驟',
   'explode.noSteps': '還沒有步驟：選零組件、方向與距離，按「加入步驟」。',
   'explode.components': '要移動的零組件',

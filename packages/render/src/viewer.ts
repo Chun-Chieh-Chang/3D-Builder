@@ -265,6 +265,7 @@ export class Viewer {
   private sketchGroup: THREE.Group | null = null;
   private originShown = false;
   private originGroup: THREE.Group | null = null;
+  private guidesGroup: THREE.Group | null = null;
   private datums: DatumDisplay = { axes: [], points: [], systems: [] };
   private datumGroup: THREE.Group | null = null;
   private overlayGroup: THREE.Group | null = null;
@@ -339,6 +340,7 @@ export class Viewer {
     this.setOverlay(null);
     this.setSketches([]);
     this.setOrigin(false);
+    this.setGuides([]);
     this.setPlanes([]);
     this.setVertices(new Float32Array(0));
     this.setGhost(null);
@@ -1110,6 +1112,32 @@ export class Viewer {
   }
 
   /** The part's origin: three short axes, a constant length on screen. */
+  /**
+   * Guide lines drawn over the model, each a polyline (x, y, z, x, y, z …) in the coordinates of the view: the explode lines of an assembly. Dashed, in a dark blue, never
+   * hidden by the parts. An empty list takes them away.
+   */
+  setGuides(lines: readonly (readonly number[])[]): void {
+    if (this.guidesGroup) {
+      this.overlayScene.remove(this.guidesGroup);
+      disposeGroup(this.guidesGroup);
+      this.guidesGroup = null;
+    }
+    const drawn = lines.filter((l) => l.length >= 6);
+    if (drawn.length > 0) {
+      const group = new THREE.Group();
+      const size = 4 * this.pixelSize();
+      for (const l of drawn) {
+        const line = new THREE.Line(new THREE.BufferGeometry().setAttribute('position', new THREE.Float32BufferAttribute(l, 3)), new THREE.LineDashedMaterial({ color: 0x1c4e9a, dashSize: size, gapSize: size * 0.6, depthTest: false }));
+        line.computeLineDistances();
+        line.renderOrder = 2;
+        group.add(line);
+      }
+      this.guidesGroup = group;
+      this.overlayScene.add(group);
+    }
+    this.requestRender();
+  }
+
   setOrigin(show: boolean): void {
     this.originShown = show;
     this.paintOrigin();

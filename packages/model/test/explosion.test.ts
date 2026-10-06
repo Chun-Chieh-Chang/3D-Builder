@@ -8,6 +8,7 @@ import {
   CommandError,
   createEmptyAssembly,
   explodeLeaves,
+  leavesCentre,
   explodeStepProblem,
   explosionOffsets,
   leavesOf,
@@ -62,7 +63,7 @@ describe('where the steps move the components (C15.14)', () => {
 
   it('reports a step whose axis is gone, and moves nothing for it; a suppressed component is not moved', () => {
     let d = applyAssemblyCommand(doc(), { type: 'insertExplodeStep', step: step() });
-    expect(explosionOffsets(d, () => null)).toEqual({ offsets: new Map(), problems: new Map([['explode1', expect.stringMatching(/找不到爆炸的方向/)]]) });
+    expect(explosionOffsets(d, () => null)).toEqual({ offsets: new Map(), paths: new Map(), problems: new Map([['explode1', expect.stringMatching(/找不到爆炸的方向/)]]) });
     d = applyAssemblyCommand(d, { type: 'setComponentState', componentIds: ['c1'], state: 'suppressed', value: true });
     expect(explosionOffsets(d, axisOf).offsets.size).toBe(0);
   });
@@ -157,5 +158,68 @@ describe('explode step commands', () => {
     const raw = JSON.parse(serializeAssembly(d));
     delete raw.idCounters;
     expect(parseAssembly(JSON.stringify(raw)).idCounters.explode).toBe(1);
+  });
+});
+
+describe('the way each component goes (explode lines) and how far along it is (animation)', () => {
+  const trees = (): Record<string, SourceTree> => ({ c0: { kind: 'part', key: 'plate' }, c1: { kind: 'part', key: 'pin' }, c2: { kind: 'assembly', doc: createEmptyAssembly(), children: {} } });
+  const two = (): AssemblyDoc => {
+    let d = applyAssemblyCommand(doc(), { type: 'insertExplodeStep', step: step({ distance: '50' }) });
+    d = applyAssemblyCommand(d, { type: 'insertExplodeStep', step: step({ id: 'explode2', components: ['c1', 'c2'], axis: { kind: 'axis', axis: 'x' }, distance: '30' }) });
+    return d;
+  };
+
+  it('is the sum so far after each step that names the component: 50 along z, then 30 along x is (0,0,50) then (30,0,50); the last is its offset', () => {
+    const { offsets, paths } = explosionOffsets(two(), axisOf);
+    expect(paths.get('c1')).toEqual([[0, 0, 50], [30, 0, 50]]);
+    expect(paths.get('c2')).toEqual([[30, 0, 0]]);
+    expect(paths.has('c0')).toBe(false);
+    for (const [id, way] of paths) expect(way.at(-1)).toEqual(offsets.get(id));
+  });
+
+  it('leaves out a step whose direction is gone, as the offsets do', () => {
+    const d = applyAssemblyCommand(two(), { type: 'insertExplodeStep', step: step({ id: 'explode3', components: ['c1'], axis: { kind: 'ref', ref: { component: 'c0', ref: { kind: 'edge', name: 'gone' } } } }) });
+    const { paths, problems } = explosionOffsets(d, axisOf);
+    expect(problems.has('explode3')).toBe(true);
+    expect(paths.get('c1')).toHaveLength(2);
+  });
+
+  it('puts the leaves along the way by the progress: half way, a pin at (10, 0, 5) is at (25, 0, 30); 0 is the assembled leaves and 1 the exploded ones', () => {
+    const d = two();
+    const base = leavesOf(d, trees(), (id) => d.components.find((c) => c.id === id)!.placement);
+    const { offsets } = explosionOffsets(d, axisOf);
+    const half = explodeLeaves(base, offsets, 0.5);
+    expect(half.find((l) => l.id === 'c1')!.pose.position).toEqual([25, 0, 30]);
+    expect(half.find((l) => l.id === 'c0')!.pose.position).toEqual([0, 0, 0]);
+    expect(explodeLeaves(base, offsets, 0)).toEqual(base);
+    expect(explodeLeaves(base, offsets, 1)).toEqual(explodeLeaves(base, offsets));
+    expect(explodeLeaves(base, offsets).find((l) => l.id === 'c1')!.pose.position).toEqual([40, 0, 55]);
+  });
+});
+
+describe('where a component is, for its explode line', () => {
+  const box = { min: [0, 0, 0] as Vec3, max: [10, 4, 2] as Vec3 };
+  const leaf = (id: string, pose: Pose) => ({ id, top: 'c1', path: [], key: 'pin', pose, hidden: false, transparent: false });
+  const quarter = Math.SQRT1_2;
+
+  it('is the middle of the box of the part, turned and moved with it: a 10 × 4 × 2 box turned 90° about z and put at (10, 0, 5) has its middle at (8, 5, 6)', () => {
+    const turned: Pose = { position: [10, 0, 5], rotation: [0, 0, quarter, quarter] };
+    const c = leavesCentre([leaf('c1', turned)], () => box)!;
+    expect(c[0]).toBeCloseTo(8, 12);
+    expect(c[1]).toBeCloseTo(5, 12);
+    expect(c[2]).toBeCloseTo(6, 12);
+  });
+
+  it('is the middle of the box round all the leaves: that one and the same part left at the origin make the box (0..10, 0..10, 0..7), middle (5, 5, 3.5)', () => {
+    const turned: Pose = { position: [10, 0, 5], rotation: [0, 0, quarter, quarter] };
+    const c = leavesCentre([leaf('c1', turned), leaf('c1b', at([0, 0, 0]))], () => box)!;
+    expect(c[0]).toBeCloseTo(5, 12);
+    expect(c[1]).toBeCloseTo(5, 12);
+    expect(c[2]).toBeCloseTo(3.5, 12);
+  });
+
+  it('is nothing for leaves that have no box', () => {
+    expect(leavesCentre([leaf('c1', at([1, 2, 3]))], () => null)).toBeNull();
+    expect(leavesCentre([], () => box)).toBeNull();
   });
 });

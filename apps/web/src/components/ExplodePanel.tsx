@@ -44,6 +44,10 @@ export function ExplodePanel() {
             {t('explode.collapse')}
           </button>
         </div>
+        <label className="pm-row checkbox">
+          <input type="checkbox" data-field="explodeLines" checked={asm.explodeLines} onChange={(e) => a.setExplodeLines(e.target.checked)} />
+          <span>{t('explode.showLines')}</span>
+        </label>
       </div>
       <div className="pm-group">
         <h4>{t('explode.steps')}</h4>

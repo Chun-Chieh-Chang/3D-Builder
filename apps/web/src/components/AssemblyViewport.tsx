@@ -127,7 +127,8 @@ export function AssemblyViewport() {
       v.fitAll();
       fitted.current = { store: store.assembly, request: asm.fitRequest };
     }
-  }, [asm.doc, asm.files, asm.folder, asm.fitRequest, asm.solution, asm.drag, asm.pattern, asm.exploded, parts]);
+    v.setGuides(store.assembly?.explodeGuides() ?? []);
+  }, [asm.doc, asm.files, asm.folder, asm.fitRequest, asm.solution, asm.drag, asm.pattern, asm.explodeT, asm.explodeLines, parts]);
 
   // What is shown as chosen: the mate being defined, else the mate or component selected in the tree.
   const selectedMate = asm.selected ? asm.doc.mates.find((m) => m.id === asm.selected) : undefined;

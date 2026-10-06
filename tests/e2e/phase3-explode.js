@@ -25,6 +25,14 @@ exp.run = async () => {
   await H.action('組合件', '爆炸視圖');
   await H.waitFor(() => H.asm().explode && document.querySelector('[data-explode-components]'), 5000, 'the PropertyManager');
   H.check(H.asm().exploded === true, 'opening it shows the view exploded');
+  // it opens over half a second: the progress passes through the values between 0 and 1 and ends at 1
+  const seen = [];
+  const t0 = performance.now();
+  while (H.asm().explodeT < 1 && performance.now() - t0 < 3000) {
+    seen.push(H.asm().explodeT);
+    await H.wait(30);
+  }
+  H.check(H.asm().explodeT === 1 && seen.some((v) => v > 0 && v < 1), `the view opened in steps: ${seen.map((v) => v.toFixed(2)).join(' ')}`);
   // step 1: 定位組<2> up 100
   a.setExplodeDraft({ components: ['s1'], axis: { kind: 'axis', axis: 'z' }, distance: '100' });
   await H.wait(200);
@@ -54,12 +62,20 @@ exp.run = async () => {
   H.check(rows === 2, `two steps listed: ${rows}`);
 
   // collapse: everything where it was, bit for bit
+  const lines = (a2) => a2.explodeGuides();
+  H.check(lines(a).length === 2 && lines(a).every((l) => l.length === 3 + 3 * 2 || l.length === 3 + 3 * 1), `explode lines: one for each of the two components moved (${lines(a).map((l) => l.length / 3 - 1)} legs)`);
+  const legs = Object.fromEntries(lines(a).map((l) => [l.length / 3 - 1, l]));
+  H.check(legs[2] && legs[1], 'the one that was moved twice has two legs, the other one');
+  a.setExplodeLines(false);
+  H.check(lines(a).length === 0, 'with the lines off there are none');
+  a.setExplodeLines(true);
   a.setExploded(false);
-  await H.wait(300);
+  await H.waitFor(() => H.asm().explodeT === 0, 3000, 'the view closed');
+  H.check(lines(a).length === 0, 'collapsed: no explode lines');
   H.check(JSON.stringify(positions()) === JSON.stringify(before), 'collapsed: every part where it was before');
   H.check(placements() === placed, 'and the document placements are the same bytes');
   a.setExploded(true);
-  await H.wait(300);
+  await H.waitFor(() => H.asm().explodeT === 1, 3000, 'the view opened');
   H.check(JSON.stringify(positions()) === JSON.stringify(two), 'exploded again: as it was');
 
   // while it is exploded nothing can be dragged

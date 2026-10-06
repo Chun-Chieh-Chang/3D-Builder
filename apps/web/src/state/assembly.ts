@@ -26,6 +26,7 @@ import {
   buildBom,
   explodeLeaves,
   explosionOffsets,
+  leavesCentre,
   leafAt,
   leavesOf,
   mirrorKey,
@@ -207,8 +208,12 @@ export interface AssemblyState {
   pattern: PatternDraft | null;
   /** The exploded view's PropertyManager (C15.14); null while it is closed. */
   explode: ExplodeDraft | null;
-  /** The view shows the assembly exploded (a display only: no pose is changed, and nothing can be moved or mated while it is). */
+  /** The view shows the assembly exploded (a display only: no pose is changed, and nothing can be moved or mated while it is). The state it is going to: see `explodeT`. */
   exploded: boolean;
+  /** How far the view is along the way from assembled (0) to exploded (1): it runs there over half a second when `exploded` changes. Only for what is drawn. */
+  explodeT: number;
+  /** The explode lines (the way each component goes) are drawn while the view is exploded. A display choice, not kept in the file. */
+  explodeLines: boolean;
 }
 
 export interface AssemblyHost {
@@ -240,6 +245,9 @@ const shown = (type: MateType, v: number) => String(Math.round((type === 'angle'
  * (B9.4) and rebuilt in the worker once per file content, so an unchanged part is never rebuilt twice
  * and a changed one shows as it is now.
  */
+/** How long the exploded view takes to open or close (ms). */
+export const EXPLODE_MS = 500;
+
 export class AssemblyStore {
   private history: AssemblyHistory;
   private handle: FileSystemFileHandle | null;
@@ -313,6 +321,8 @@ export class AssemblyStore {
       pattern: null,
       explode: null,
       exploded: false,
+      explodeT: 0,
+      explodeLines: true,
     };
     this.history.subscribe(() => this.onDocChanged());
     this.loadFiles();
@@ -568,7 +578,7 @@ export class AssemblyStore {
     return trees;
   }
 
-  private leafCache: { doc: AssemblyDoc; files: AssemblyState['files']; solution: AssemblyResult | null; drag: AssemblyState['drag']; pattern: PatternDraft | null; exploded: boolean; leaves: Leaf[]; problems: Map<Id, string>; explodeProblems: Map<Id, string> } | null = null;
+  private leafCache: { doc: AssemblyDoc; files: AssemblyState['files']; solution: AssemblyResult | null; drag: AssemblyState['drag']; pattern: PatternDraft | null; explodeT: number; leaves: Leaf[]; problems: Map<Id, string>; explodeProblems: Map<Id, string> } | null = null;
 
   /** The document with the pattern being defined in it (as a preview), for what is drawn. */
   private shownDoc(): AssemblyDoc {
@@ -582,18 +592,18 @@ export class AssemblyStore {
 
   /** Every part to draw, where it is now (see `leavesOf`). Derived; kept while nothing it depends on changes. */
   leaves(): Leaf[] {
-    const { files, solution, drag, pattern, exploded } = this.state;
+    const { files, solution, drag, pattern, explodeT } = this.state;
     const doc = this.history.doc;
     const c = this.leafCache;
-    if (c && c.doc === doc && c.files === files && c.solution === solution && c.drag === drag && c.pattern === pattern && c.exploded === exploded) return c.leaves;
+    if (c && c.doc === doc && c.files === files && c.solution === solution && c.drag === drag && c.pattern === pattern && c.explodeT === explodeT) return c.leaves;
     const base = leavesOf(doc, this.trees(), (id) => this.poseOf(id), solution?.inner);
     // the parts patterns and mirrors add (C15.13); their axes are found among the parts of the components themselves
     const made = patternLeavesOf(this.shownDoc(), base, (axis) => this.lineOf(axis, base));
     let leaves = [...base, ...made.leaves];
     // the exploded view (C15.14): each component's leaves, its sub-assembly's parts and its pattern's instances moved by its offset; no pose is changed
     const exploding = explosionOffsets(doc, (axis) => this.lineOf(axis, base));
-    if (exploded) leaves = explodeLeaves(leaves, exploding.offsets);
-    this.leafCache = { doc, files, solution, drag, pattern, exploded, leaves, problems: made.problems, explodeProblems: exploding.problems };
+    if (explodeT > 0) leaves = explodeLeaves(leaves, exploding.offsets, explodeT);
+    this.leafCache = { doc, files, solution, drag, pattern, explodeT, leaves, problems: made.problems, explodeProblems: exploding.problems };
     this.ensureMirrors(leaves);
     return leaves;
   }
@@ -606,7 +616,7 @@ export class AssemblyStore {
 
   /** Every part where it is assembled (the exploded view does not move it): what mass properties and interference are worked out on. */
   assembledLeaves(): Leaf[] {
-    if (!this.state.exploded) return this.leaves();
+    if (this.state.explodeT === 0) return this.leaves();
     const doc = this.history.doc;
     const base = leavesOf(doc, this.trees(), (id) => this.poseOf(id), this.state.solution?.inner);
     return [...base, ...patternLeavesOf(this.shownDoc(), base, (axis) => this.lineOf(axis, base)).leaves];
@@ -1141,7 +1151,8 @@ export class AssemblyStore {
     if (this.state.mate) this.cancelMate();
     if (this.state.move) this.closeMove();
     if (this.state.pattern) this.cancelPattern();
-    this.set({ explode: { editing: null, step: this.newExplodeStep(), picking: false }, exploded: true });
+    this.set({ explode: { editing: null, step: this.newExplodeStep(), picking: false } });
+    this.setExploded(true);
   }
 
   private newExplodeStep(): ExplodeStep {
@@ -1153,16 +1164,94 @@ export class AssemblyStore {
 
   /** What needs the assembled positions (mating, moving, inserting, patterns) closes the exploded view first. */
   private leaveExplode(): void {
-    if (this.state.explode || this.state.exploded) this.set({ explode: null, exploded: false });
+    if (this.state.explode || this.state.exploded || this.state.explodeT !== 0) {
+      this.stopExplodeAnimation();
+      this.set({ explode: null, exploded: false, explodeT: 0 });
+    }
   }
 
   closeExplode(): void {
     if (this.state.explode) this.set({ explode: null });
   }
 
-  /** Shows the assembly exploded, or as it is assembled (a display: no pose changes). */
+  /** Shows the assembly exploded, or as it is assembled (a display: no pose changes). The view goes there over half a second. */
   setExploded(value: boolean): void {
     if (this.state.exploded !== value) this.set({ exploded: value });
+    this.animateExplode(value ? 1 : 0);
+  }
+
+  /** What asks for the next frame of the animation; null where there are no frames (a test, a worker): the view then jumps to where it goes. Replaceable. */
+  frameRequest: ((callback: (now: number) => void) => number) | null = typeof requestAnimationFrame === 'function' ? (cb) => requestAnimationFrame(cb) : null;
+  frameCancel: (id: number) => void = (id) => (typeof cancelAnimationFrame === 'function' ? cancelAnimationFrame(id) : undefined);
+  private explodeFrame: number | null = null;
+
+  private stopExplodeAnimation(): void {
+    if (this.explodeFrame !== null) this.frameCancel(this.explodeFrame);
+    this.explodeFrame = null;
+  }
+
+  /** Runs `explodeT` to `to` (0 or 1) at the pace of half a second for the whole way, slow at both ends. */
+  private animateExplode(to: 0 | 1): void {
+    this.stopExplodeAnimation();
+    const from = this.state.explodeT;
+    if (from === to) return;
+    const request = this.frameRequest;
+    if (!request) {
+      this.set({ explodeT: to });
+      return;
+    }
+    const duration = EXPLODE_MS * Math.abs(to - from);
+    let start: number | null = null;
+    const tick = (now: number) => {
+      start ??= now;
+      const k = Math.min(1, (now - start) / duration);
+      const eased = k < 0.5 ? 2 * k * k : 1 - (-2 * k + 2) ** 2 / 2;
+      this.set({ explodeT: k >= 1 ? to : from + (to - from) * eased });
+      this.explodeFrame = k >= 1 ? null : request(tick);
+    };
+    this.explodeFrame = request(tick);
+  }
+
+  /** Shows or hides the explode lines. */
+  setExplodeLines(value: boolean): void {
+    if (this.state.explodeLines !== value) this.set({ explodeLines: value });
+  }
+
+  /**
+   * The explode lines: for each component that is moved, the way it goes as one polyline (x, y, z …) from the middle of its parts where they are assembled through where each
+   * step puts it, as far as the view has gone (`explodeT`). None while the view is assembled or when the lines are off. Derived.
+   */
+  explodeGuides(): number[][] {
+    const { explodeT, explodeLines, builds } = this.state;
+    if (!explodeLines || explodeT <= 0) return [];
+    const doc = this.history.doc;
+    const base = leavesOf(doc, this.trees(), (id) => this.poseOf(id), this.state.solution?.inner);
+    const all = [...base, ...patternLeavesOf(this.shownDoc(), base, (axis) => this.lineOf(axis, base)).leaves];
+    const { paths } = explosionOffsets(doc, (axis) => this.lineOf(axis, base));
+    const box = new Map<string, { min: Vec3; max: Vec3 } | null>();
+    const boundsOf = (key: string) => {
+      if (!box.has(key)) {
+        const p = builds.get(key)?.mesh?.positions;
+        if (!p || p.length < 3) box.set(key, null);
+        else {
+          const min: Vec3 = [Infinity, Infinity, Infinity];
+          const max: Vec3 = [-Infinity, -Infinity, -Infinity];
+          for (let i = 0; i < p.length; i += 3) for (let k = 0; k < 3; k++) {
+            min[k] = Math.min(min[k]!, p[i + k]!);
+            max[k] = Math.max(max[k]!, p[i + k]!);
+          }
+          box.set(key, { min, max });
+        }
+      }
+      return box.get(key)!;
+    };
+    const lines: number[][] = [];
+    for (const [id, way] of paths) {
+      const centre = leavesCentre(all.filter((l) => l.top === id && !l.hidden), boundsOf);
+      if (!centre) continue;
+      lines.push([...centre, ...way.flatMap((o) => [centre[0] + o[0] * explodeT, centre[1] + o[1] * explodeT, centre[2] + o[2] * explodeT])]);
+    }
+    return lines;
   }
 
   /** Changes the step being made. */

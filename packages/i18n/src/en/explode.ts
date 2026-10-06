@@ -15,6 +15,7 @@ export const explode: Translation = {
   'explode.title': 'Exploded View',
   'explode.explode': 'Explode',
   'explode.collapse': 'Collapse',
+  'explode.showLines': 'Show explode lines (the way each component goes)',
   'explode.steps': 'Explode steps',
   'explode.noSteps': 'No steps yet: choose components, a direction and a distance, then Add Step.',
   'explode.components': 'Components to move',
