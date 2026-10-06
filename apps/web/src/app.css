@@ -255,7 +255,7 @@ code { font-family: Consolas, 'Cascadia Mono', monospace; font-size: 11px; }
 
 .tree-filter { padding: 4px 6px; }
 .tree-filter input { width: 100%; box-sizing: border-box; }
-.tree-row.in-folder { padding-left: 22px; }
+.tree-row.in-folder, .tree-row.body { padding-left: 22px; }
 .tree-row.folder-head { font-weight: 600; cursor: pointer; }
 .tree-row .twisty { display: inline-block; width: 14px; color: var(--muted); }
 .tree-row .tag { margin-left: 6px; padding: 0 5px; border-radius: 8px; background: #e7f0fa; color: #1c5a99; font-size: 11px; }
