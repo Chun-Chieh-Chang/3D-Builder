@@ -64,6 +64,13 @@ export const help: Translation = {
   'help.newPart.summary': 'Starts an empty part with the Front, Top and Right planes.',
   'help.newPartTemplate.summary': 'Starts a new part from a template, which sets the material and document settings (blank, carbon steel, aluminium, plastic, CNS drafting).',
   'help.newAssembly.summary': 'Starts an empty assembly; then insert components and add mates.',
+
+  'help.newAssembly.body':
+    'Starts an empty assembly (.3dba): several parts put together.\n\n- The first time you "Choose the project folder": an assembly finds its parts by relative paths, so the program has to be told which folder the parts are in; allow the browser to access it when it asks.\n- The "Start the assembly" panel appears, and the list "Parts to insert" holds the parts (.3dbx) and assemblies (.3dba, marked "3DBA") of the project folder. Click one, wait for it to load (the panel shows progress), and press ✔ to put it at the origin.\n- The first component is fixed at the origin automatically; add the others with "Insert component" and position them with mates.',
+
+  'help.newAssembly.keywords': 'new assembly project folder components',
+
+  'help.newAssembly.see': 'insert-component mate fix-component',
   'help.newDemo.summary': 'Opens a demo part to look at what features can make.',
   'help.open.summary': 'Opens a part (.3dbx) or an assembly (.3dba) file.',
   'help.save.summary': 'Saves the file; asks where when it has no name yet.',
@@ -73,8 +80,29 @@ export const help: Translation = {
   'help.exportImage.summary': 'Saves what the graphics area shows as a PNG image.',
   'help.newDrawing.summary': 'Makes a drawing of a saved part or assembly (not while the file has unsaved changes).',
   'help.generateAssembly.summary': 'Writes a derived part file for each body of the part, then an assembly made of them (save the part first).',
+
+  'help.generateAssembly.body':
+    'Writes a derived part file for each body of the part, and then makes the assembly built from them; it takes a multi-body part (a jig master model, for example) apart into parts, placed already.\n\n- The part has to be saved first.\n- A derived part keeps only its source (the master model) and the body number, and the names of faces carry over from the master model; when the master model changes, generate again and it follows (it does not update live).\n- The parts list leaves out reference parts; one body of the master model is one component of the assembly.\n- Limits: no live update, and parts do not share the master model\'s rebuild.',
+
+  'help.generateAssembly.keywords': 'generate assembly derived part body master model jig',
+
+  'help.generateAssembly.see': 'new-assembly insert-component bom',
   'help.importStepAssembly.summary': 'Reads a STEP assembly and splits it into part files and an assembly.',
+
+  'help.importStepAssembly.body':
+    'Reads a STEP assembly and keeps its structure: a .3dbx for every part and a .3dba for every sub-assembly.\n\n- After you pick the STEP file the program says how many parts and sub-assemblies there are and asks for a folder to put the converted files in (each time; it needs write access); allow it when the browser asks.\n- The folder gets the part files, and an "assemblies" folder when there are sub-assemblies; positions and face colors are kept.\n- Component names are "file name + number", not the names in the STEP file.\n- A file that AP203 has merged into a single solid reads as one part.',
+
+  'help.importStepAssembly.keywords': 'import step assembly structure parts sub-assemblies colors',
+
+  'help.importStepAssembly.see': 'import-step export-step new-assembly',
   'help.returnAssembly.summary': 'Goes back from the part being edited to the assembly that opened it.',
+
+  'help.returnAssembly.body':
+    'Goes back from the part being edited to the assembly it was opened from.\n\n- It works only when you opened a part from an assembly to change it.\n- When the part has been changed and saved, the component is updated on returning to the assembly.\n- Save the changes to the part first, so that the assembly can read them.',
+
+  'help.returnAssembly.keywords': 'return to assembly open part edit part',
+
+  'help.returnAssembly.see': 'open insert-component new-assembly',
 
   // ---------------------------------------------------------------- tools
   'help.equations.summary': 'Defines global variables and expressions that dimensions and feature values can use.',
@@ -82,11 +110,32 @@ export const help: Translation = {
   'help.options.summary': 'System options: interface language, autosave, the template of New Part, what can be picked at the start; kept in this browser, not in the part file.',
   'help.shortcuts.summary': 'Shows and changes the shortcut key of each command.',
   'help.measurePart.summary': 'Measures distances and angles between the points, edges and faces you pick; press again to end.',
+
+  'help.measurePart.body':
+    'Measures distances and angles between the points, edges and faces picked on the part; press it again or "Done" to finish.\n\n- Click elements in the 3D window; picking another starts over, and picking an element again takes it off.\n- One element: a face gives its area, an edge its length, a circle its radius and diameter, a vertex its coordinates. Two elements: the shortest distance (0 when they touch), with ΔX, ΔY, ΔZ for two vertices; the angle is the acute one (0 to 90 degrees).\n- The units are mm and degrees.',
+
+  'help.measurePart.keywords': 'measure part distance angle area radius coordinates',
+
+  'help.measurePart.see': 'measure-assembly physical-part check-part',
   'help.draftAnalysis.summary': 'Analyses the draft angle of each face against the pull direction and colors the faces.',
   'help.undercutAnalysis.summary': 'Finds the faces that are blocked at both ends along the pull direction (undercuts).',
   'help.thicknessAnalysis.summary': 'Measures the wall thickness of each face along its inward normal and shows the thinnest and thickest places.',
   'help.checkPart.summary': 'Checks the geometry: whether it passes the validity check, whether the shell is closed (no open edges) and whether the volume is positive.',
+
+  'help.checkPart.body':
+    'Checks the model geometry of the part: the solids, the faces, the faulty faces, the open edges and the volume.\n\n- "Has a problem" means: the OCCT validity check did not pass, the shell is not closed (an open edge that belongs to one face only), or the volume is zero or negative.\n- Imported STEP files and repaired models need it most; the numbers of the faulty faces are listed.\n- A sound part shows "1 part in all, all fine".',
+
+  'help.checkPart.keywords': 'check geometry validity open edges shell volume',
+
+  'help.checkPart.see': 'check-assembly import-step physical-part',
   'help.physicalPart.summary': 'Sets the material and works out mass, center of mass and moments of inertia.',
+
+  'help.physicalPart.body':
+    'Sets the material and works out the mass, volume, surface area, center of mass and moments of inertia of the part.\n\n- First choose the material in Tools → File properties (carbon steel, cast iron, stainless 304, aluminium 6061 and 7075, copper, brass, titanium, ABS, PC, nylon PA6, POM, PP, acrylic) or choose "Custom…" and type the density (g/cm³). Mass = volume × density, reference bodies left out.\n- The window lists the mass, volume, surface area, center of mass, moments of inertia (about the center of mass, along the axes) and the principal moments (smallest first) with their directions.\n- Units: mass g, volume mm³, surface area mm², center mm, moments g·mm².\n- The densities of the built-in materials are round values for common grades; use "Custom" for other grades.\n\nWorked by hand: a block of 40 × 30 × 10 has a volume of 12000 mm³ and, in carbon steel (7.85 g/cm³), a mass of 94.20 g.',
+
+  'help.physicalPart.keywords': 'physical properties mass material density center of mass inertia',
+
+  'help.physicalPart.see': 'properties physical-assembly check-part',
   'help.properties.summary': 'Edits the file properties (part number, supplier, description…), which the bill of materials reads.',
 
   // ---------------------------------------------------------------- features
@@ -269,14 +318,77 @@ export const help: Translation = {
 
   'help.moveFace.see': 'delete-face fillet import-step',
   'help.offsetSurface.summary': 'Offsets the selected faces by a distance into a surface body.',
+
+  'help.offsetSurface.body':
+    'Click the faces to offset (all the faces of a region offsets that region), type the "offset distance" and press ✔: a new surface body is made and the original body stays.\n\n- A positive value goes to the outside of the face, a negative one to the inside.\n- Corner join: arc (every point is the same distance from its source) or sharp (a meeting of the faces).\n- The result is measured after the offset; when it differs from the distance asked by more than the tolerance (0.05 mm) the feature fails and says by how much.\n- A surface body is not a part: it has no mass, is not in the parts list, takes no part in interference or drawings, and goes into STEP as a shell.\n- While editing, the result of the offset is shown.',
+
+  'help.offsetSurface.keywords': 'offset surface surface body distance',
+
+  'help.offsetSurface.see': 'thicken knit split-line',
   'help.splitLine.summary': 'Projects the closed outer loop of a sketch onto a face and splits the face into regions.',
+
+  'help.splitLine.body':
+    'First sketch a closed outline, then press this command: choose the "sketch to project" and the "face to split"; the outline is projected along the sketch normal onto the face and the face is cut into regions.\n\n- The faces of the regions have names of their own (`<feature>:side:<sketch>.<loop>`) which do not change when the sketch does, and can be picked for an offset surface.\n- When the direction is wrong tick "Reverse projection direction"; "Through all" splits every layer of faces the view passes through.\n- The edges of the outline must not lie along the seam of a cylinder or cone, otherwise it fails.\n- A projection that does not reach the face, a face that is gone, and a sketch that is not closed are each explained.',
+
+  'help.splitLine.keywords': 'split line project region face sketch',
+
+  'help.splitLine.see': 'offset-surface trim-surface sketch',
   'help.knit.summary': 'Sews surfaces together into one surface body or a solid.',
+
+  'help.knit.body':
+    'Sews several surface bodies into one: tick the bodies in the list, or click faces of bodies in the view.\n\n- Knit tolerance: edges closer than this are sewn together; blank means 0.01 mm.\n- When the sewn result is closed, tick "Make a solid when closed" to get a solid; free edges left after sewing mean it is not closed, and the result is still a surface.\n- The result is the first body picked, the others are used up; the names of the faces stay.\n- When there is no surface body to pick, first make an offset, fill or flat surface.',
+
+  'help.knit.keywords': 'knit sew surface body solid tolerance',
+
+  'help.knit.see': 'offset-surface thicken fill-surface',
   'help.fillSurface.summary': 'Patches a surface across a loop of edges.',
+
+  'help.fillSurface.body':
+    'Click the edges that enclose a boundary and a surface is made across it, a new surface body.\n\n- Continuity with the neighboring faces: tangent or contact only. Tangent applies only where an edge has a single neighboring face (a hole in a surface, for example).\n- How far the fill lies from the edges at most, and how many degrees the tangents differ, are shown under the panel; beyond the tolerance it fails.\n- Often used to close a hole in a surface, then knit into a solid.',
+
+  'help.fillSurface.keywords': 'fill surface patch hole tangent continuity',
+
+  'help.fillSurface.see': 'knit flat-surface offset-surface',
   'help.flatSurface.summary': 'Patches a flat surface across a closed loop of edges.',
+
+  'help.flatSurface.body':
+    'Select a closed loop of edges lying in one plane and a planar face is made across it, a new surface body.\n\n- The edges have to form a loop and all lie in one plane; otherwise the feature fails and says why.\n- The result can be knitted with other surfaces into a solid.',
+
+  'help.flatSurface.keywords': 'flat surface planar cap close',
+
+  'help.flatSurface.see': 'fill-surface knit',
   'help.trimSurface.summary': 'Cuts regions in a surface with a sketch and keeps one side.',
+
+  'help.trimSurface.body':
+    'The closed outline of a sketch is projected along the sketch normal onto the faces of a surface body, which cuts them apart; the inside (or the outside) of the outline is kept and the rest dropped.\n\n- Choose the sketch and the surface body, and for "Keep" the inside or the outside of the outline.\n- When the direction is wrong choose "Reverse".\n- The edges of the outline must not lie along the seam of a cylinder or cone.\n- Only the outer loop of the outline is used; holes inside the sketch are not handled.',
+
+  'help.trimSurface.keywords': 'trim surface keep inside outside outline project',
+
+  'help.trimSurface.see': 'split-line extend-surface knit',
   'help.extendSurface.summary': 'Extends the edges of a surface body by a distance.',
+
+  'help.extendSurface.body':
+    'Select an edge of a surface body and type the "extend distance": the face grows on in its own direction.\n\n- Only a surface body of a single face can be extended.\n- The edge you pick decides which side extends; an edge that goes all the way round (with no ends) cannot be extended.\n- Use it before "Cut with surface" to make the surface go right through the solid.',
+
+  'help.extendSurface.keywords': 'extend surface distance edge',
+
+  'help.extendSurface.see': 'cut-with-surface trim-surface offset-surface',
   'help.thicken.summary': 'Gives a surface body a thickness and makes it a solid.',
+
+  'help.thicken.body':
+    'Select a surface body, type the "thickness" and press ✔: the surface is thickened into a solid.\n\n- A positive value goes to the side of the surface normal, a negative one to the other side.\n- The result replaces the surface body and becomes a solid (the surface is used up).\n- It measures afterward whether the farthest point is this far from the surface, and fails when it is far off.',
+
+  'help.thicken.keywords': 'thicken surface solid thickness',
+
+  'help.thicken.see': 'knit offset-surface cut-with-surface',
   'help.cutWithSurface.summary': 'Uses a surface as a knife to cut one side away from a solid.',
+
+  'help.cutWithSurface.body':
+    'Cuts one side off a solid with a surface body: choose the "solid to cut" and the "surface body to cut with", and set the "cut direction" (the normal of a plane).\n\n- The part the surface sweeps along the direction is removed from the solid, and the surface body stays.\n- The surface has to go right through the solid; when it is too small use "Extend surface" first.\n- "Reverse direction" removes the other side of the surface.\n- Clicking faces of the solid or the surface in the view picks them too.',
+
+  'help.cutWithSurface.keywords': 'cut with surface split solid remove side',
+
+  'help.cutWithSurface.see': 'extend-surface thicken extrude-cut',
   'help.lipGroove.summary': 'Makes a lip or a groove along the outline in a face of a plastic part, so that two halves fit together.',
 
   'help.lipGroove.body':
@@ -353,24 +465,129 @@ export const help: Translation = {
 
   // ---------------------------------------------------------------- assembly
   'help.insertComponent.summary': 'Inserts a part file into the assembly as a component.',
+
+  'help.insertComponent.body':
+    'Adds a part file (.3dbx) or another assembly (.3dba, which becomes a sub-assembly) to the assembly as a component.\n\n- Click one in the "Parts to insert" list, wait for it to load, and click an empty place in the 3D window to put it there; ✔ on the panel puts it at the origin.\n- The same part can be inserted many times; the names in the tree carry numbers: dowel<1>, dowel<2>.\n- A sub-assembly is rigid: its own mates do not change because of what is done outside, and the parts inside cannot be moved one by one here; open the sub-assembly to change them.\n- "Standard parts library": choose the kind (socket head screw ISO 4762, dowel pin ISO 8734, plain washer ISO 7089), the size and the length and add it; they are part files made with variables, and have no thread.',
+
+  'help.insertComponent.keywords': 'insert component part sub-assembly standard library screw dowel washer',
+
+  'help.insertComponent.see': 'new-assembly mate move-component',
   'help.mate.summary': 'Fixes the position of components relative to each other with mates (coincident, parallel, perpendicular, concentric, distance…).',
+
+  'help.mate.body':
+    'A mate says how faces, edges or vertices of two components lie against each other, which positions the parts.\n\n- Click, in the 3D window, elements on two different components (for example the cylinder of a pin, then the inside wall of a hole in the plate); datum planes and the origin are picked from the small tree in the top left corner of the view. With a sub-assembly you can click a face of a part inside it directly.\n- "Standard mates": coincident, parallel, perpendicular, tangent, concentric, lock, distance, angle. The program suggests one for the elements you picked (lit); the ones that cannot be used are grayed.\n- "Mate alignment" (aligned / anti-aligned) can be changed; distance and angle need a value, and can have a minimum and maximum limit.\n- "Advanced mates": width (two width faces and two tab faces), symmetric (two elements of one kind and a plane of symmetry).\n- When the panel says the mate holds, press ✔ to add it; when it says it contradicts the earlier mates and the assembly would be over-defined, do not add it.\n- The tree has a "Mates" folder with a row for each, showing its state.\n- In the tree, (f) before a name is fixed and (-) can move; the first component is fixed automatically.',
+
+  'help.mate.keywords': 'mate coincident parallel perpendicular tangent concentric lock distance angle width symmetric position',
+
+  'help.mate.see': 'move-component fix-component insert-component',
   'help.moveComponent.summary': 'Moves a component by dragging or by typing values.',
+
+  'help.moveComponent.body':
+    'Moves a component by dragging or by typing numbers; it also rotates (see "Rotate component").\n\n- Hold the left button on a component in the 3D window and drag; the component moves only along the freedoms its mates leave. Esc cancels the drag.\n- "By Delta XYZ": moves by ΔX, ΔY, ΔZ; "To XYZ position": moves the origin of the component to that position (assembly coordinates); press "Apply" or Enter after typing. Each move is one undo step.\n- "Collision detection (stop before contact)": when ticked, a component dragged against another stops before touching it and what it hit shows red; what already overlapped before the drag does not count.\n- A component that is fixed, fully defined by mates or suppressed cannot be moved, and the panel says why; nor can anything move while the exploded view is open, press "Collapse" first. A part inside a sub-assembly cannot be moved by itself.',
+
+  'help.moveComponent.keywords': 'move component drag delta position collision freedom',
+
+  'help.moveComponent.see': 'rotate-component mate fix-component',
   'help.rotateComponent.summary': 'Rotates a component.',
+
+  'help.rotateComponent.body':
+    'Turns a component: by dragging, or by typing angles about the X, Y and Z axes of the assembly.\n\n- Choose "Rotate" on the panel, then dragging a component in the 3D window turns it; dragging with the right button always turns. The component turns only about the freedoms its mates leave.\n- You can also type angles (degrees) about the X, Y and Z axes of the assembly and press "Apply"; each is one undo step.\n- A component that is fixed, fully defined by mates or suppressed cannot be turned.',
+
+  'help.rotateComponent.keywords': 'rotate component turn angle drag right button',
+
+  'help.rotateComponent.see': 'move-component mate fix-component',
   'help.explode.summary': 'Makes an exploded view: moves components apart along directions; it only changes the display, not where they are assembled.',
+
+  'help.explode.body':
+    'Makes an exploded view: the components are drawn apart along directions. It is only a display; the true positions of the components do not change.\n\n- Tick the "components to move", choose the "direction" (an axis of the assembly, or an element of a component) and the "distance", and press "Add step"; the displacements of the steps add up.\n- "Explode" opens it and "Collapse" returns to the assembled picture exactly; opening and collapsing are reversible and one undo step works.\n- Steps can be edited ("Edit", "Update step"), reordered with "Up" and "Down", and deleted.\n- Nothing can be moved and no mate edited while it is open; press "Collapse" first. STEP output is always the assembled positions.\n- Limits: only top-level components can be moved, there are no explode lines or animation, and only one explode.',
+
+  'help.explode.keywords': 'explode exploded view collapse steps',
+
+  'help.explode.see': 'bom interference mate',
   'help.measureAssembly.summary': 'Measures distances and angles between the elements you pick in the assembly.',
+
+  'help.measureAssembly.body':
+    'Measures distances and angles between the elements picked in the assembly, in assembly coordinates.\n\n- Click elements in the 3D window (faces, edges, vertices, on different components if you like); after two are picked, picking another starts over, and picking an element again takes it off.\n- One element: a face gives its area, an edge its length, a circle its radius and diameter, a vertex its coordinates. Two elements: the shortest distance (0 when they touch), with ΔX, ΔY, ΔZ for two vertices; the angle is the acute one (0 to 90 degrees).\n- "Done" or Esc closes it.',
+
+  'help.measureAssembly.keywords': 'measure assembly distance angle area radius coordinates',
+
+  'help.measureAssembly.see': 'measure-part clearance interference',
   'help.clearance.summary': 'Checks that the smallest gap between components is large enough.',
+
+  'help.clearance.body':
+    'Checks whether the least clearance between components is enough, and works out the room a component has to be taken out.\n\n- Type a "Least clearance" and press "Check": it lists the pairs of components closer than that, with their distance (the exact shortest distance); touching is 0, sharing volume is marked "interference"; the place of the nearest points is listed too.\n- "Room to move": select a component first, choose a direction and a length, and press "Work out": how far it can move along that direction before it touches another component, and which one; when it already overlaps, it says it cannot move that way.\n- When the assembly was changed after the check, the result is stale; check again.',
+
+  'help.clearance.keywords': 'clearance gap distance room to move interference',
+
+  'help.clearance.see': 'interference check-assembly move-component',
   'help.interference.summary': 'Finds the volume where components overlap (touching does not count).',
   'help.interference.body':
     'Assembly > Interference Detection: the window lists each pair of components that share volume and how much, and the overlap is red in the 3D view; click a pair in the table to show only those two components, click again to show all.\n\n- By default the unit is the top-level component: a sub-assembly counts as one, and every copy of a pattern or mirror counts on its own.\n- Check "Also check the parts inside sub-assemblies" and every part counts on its own, so the parts inside a sub-assembly are compared with each other too; they are named "sub-assembly › part", and parts of one name in a sub-assembly are told apart by <2>, <3>.\n- Touching is not interference, and an overlap under 0.001 mm³ is not reported. Hidden components are checked, suppressed ones are not. After the model changes the window says so; press Check again.\n\nChecked example: the two sub-assemblies of the golden fixture, each with a locating plate and two pins whose shanks (radius 5) stand in the holes (radius 4) of the plate: checked inside, 4 pairs of about 405.4 mm³ each, 1621.6 in all; not checked inside, none.',
   'help.interference.keywords': 'interference overlap collision sub-assembly inside volume',
   'help.checkAssembly.summary': 'Checks that the geometry of the assembly is valid.',
+
+  'help.checkAssembly.body':
+    'Checks the model geometry of each kind of part in the assembly: a table with a row for each part file.\n\n- "Has a problem" means: the validity check did not pass, the shell is not closed (an open edge that belongs to one face only), or the volume is zero or negative.\n- It lists the solids, the faces, the faulty faces, the open edges and the volume; when all is well it says all are fine.\n- Imported STEP files and repaired models need it most; the numbers of the faulty faces are listed.',
+
+  'help.checkAssembly.keywords': 'check geometry validity open edges shell volume',
+
+  'help.checkAssembly.see': 'check-part clearance interference',
   'help.physicalAssembly.summary': 'Works out mass, center of mass and moments of inertia of the assembly.',
+
+  'help.physicalAssembly.body':
+    'Works out the mass, volume, surface area, center of mass and moments of inertia of the assembly, put together from the parts by their positions (the exploded view makes no difference).\n\n- The mass is complete only when every part has a material: a part with no material is left out of the total mass, and the window lists its name.\n- It lists the quantity and the mass of each part; parts not yet read are listed by name.\n- The surface area is the sum of the areas of the parts, not the area of the outside of the assembly.\n- Units: mass g, volume mm³, surface area mm², center mm, moments g·mm².',
+
+  'help.physicalAssembly.keywords': 'physical properties assembly mass material center of mass inertia',
+
+  'help.physicalAssembly.see': 'physical-part bom properties',
   'help.bom.summary': 'Makes the bill of materials (quantity, part number, supplier); can be written as CSV.',
+
+  'help.bom.body':
+    'Makes the parts list: it counts each kind of part in the assembly; the vendor and part number come from the "File properties" of the part files.\n\n- Two structures: "Parts only" (flattened, sub-assemblies expanded) and "Indented (with sub-assemblies)" (a sub-assembly is one row with its parts indented below it, the quantity being that of each level).\n- Columns: item, name, quantity, vendor, part number, file.\n- The instances of patterns and mirrors count in the quantity; suppressed components are left out, hidden ones are listed; reference parts (derived bodies) are left out.\n- Add the properties "Vendor" and "PartNo" to a part under Tools → File properties; they appear after saving and reopening the assembly.\n- "Export CSV" writes a .csv file to open in Excel.',
+
+  'help.bom.keywords': 'bom parts list quantity part number vendor csv',
+
+  'help.bom.see': 'properties explode physical-assembly',
   'help.patternLinear.summary': 'Repeats components along a direction.',
+
+  'help.patternLinear.body':
+    'Copies a component along one or two directions: the seed (the original) and its copies.\n\n- Select the seed component, choose "Direction 1" (the X, Y or Z axis of the assembly, or an element of a component), give the "number of instances (including the seed)" and the "spacing"; "Reverse direction" goes the other way.\n- "Add direction 2" adds another direction, making a grid; the numbers are "row × column".\n- "Instances to skip": numbers separated by commas to leave out.\n- The copies are derived from the seed: move the seed and they follow; hide or suppress it and they vanish; a copy cannot take mates of its own (pick the elements on the seed).\n- A pattern has a limited number of instances at most; the spacing has to be more than 0.\n\nExample: 4 dowels at a spacing of 40: the third is 80 mm from the seed.',
+
+  'help.patternLinear.keywords': 'component pattern linear array seed instances spacing',
+
+  'help.patternLinear.see': 'pattern-circular mirror-component insert-component',
   'help.patternCircular.summary': 'Repeats components around an axis.',
+
+  'help.patternCircular.body':
+    'Copies a component round an axis.\n\n- Select the seed component, and choose the "Axis" (the X, Y or Z axis of the assembly, or an element of a component: a straight edge, a cylindrical face or circular edge, a plane).\n- The "number of instances (including the seed)" and the "angle"; with "Equal spacing (the angle is the total)" the angle is shared by all the instances. "Reverse direction" turns the other way.\n- "Instances to skip" leaves some out.\n- The copies are derived from the seed, as in the linear pattern.\n\nExample: 4 dowels about the Z axis of the assembly, angle 90: 90° each turn.',
+
+  'help.patternCircular.keywords': 'component pattern circular array axis angle seed',
+
+  'help.patternCircular.see': 'pattern-linear mirror-component insert-component',
   'help.mirrorComponent.summary': 'Mirrors components.',
+
+  'help.mirrorComponent.body':
+    'Mirrors a component to the other side of a mirror plane as a rigid mirror image.\n\n- Select the component and choose the "Mirror plane": the front, top or right datum plane.\n- The mirror image is not saved in a file of its own: it is worked out from the original when the file is opened; it follows the original.\n- A mirror image is a row of its own in the parts list; it cannot take mates of its own.',
+
+  'help.mirrorComponent.keywords': 'mirror component symmetric image parts list',
+
+  'help.mirrorComponent.see': 'pattern-linear pattern-circular bom',
   'help.fixComponent.summary': 'Holds the component where it is, whatever the mates say.',
+
+  'help.fixComponent.body':
+    'Fixes a component at its present position: neither mates nor dragging move it.\n\n- The first component put into an assembly is fixed at the origin automatically; (f) before the name in the tree means fixed.\n- A fixed component cannot be dragged or turned, and the panel says it is fixed.\n- Use "Float" to make it movable again.',
+
+  'help.fixComponent.keywords': 'fix component position origin',
+
+  'help.fixComponent.see': 'float-component mate move-component',
   'help.floatComponent.summary': 'Lets a fixed component be moved by mates and by dragging.',
+
+  'help.floatComponent.body':
+    'Lets a fixed component be moved by mates and dragging.\n\n- (-) before the name in the tree means it can move.\n- A floating component is positioned by mates; in the directions no mate restrains it, it can be dragged freely.',
+
+  'help.floatComponent.keywords': 'float component free move',
+
+  'help.floatComponent.see': 'fix-component mate move-component',
 
   // ---------------------------------------------------------------- sketch
   'help.construction.summary': 'Switches the selected entities to construction geometry (dashed, not part of the outline).',

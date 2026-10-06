@@ -71,6 +71,13 @@ export const help = {
   'help.newPart.summary': '開始一個空白零件，附前、上、右三個預設基準面。',
   'help.newPartTemplate.summary': '從範本開始新零件，範本先選好材質與文件設定（空白、碳鋼、鋁件、塑膠件、CNS 製圖）。',
   'help.newAssembly.summary': '開始一個空白組合件，之後插入零組件並加結合。',
+
+  'help.newAssembly.body':
+    '開始一個空白組合件（.3dba）：把好幾個零件「組」在一起。\n\n- 第一次要「選擇專案資料夾」：組合件用相對路徑找零件，所以要告訴程式零件放在哪個資料夾；瀏覽器問能不能存取時按「允許」。\n- 左邊出現「開始組合件」面板，「要插入的零件」清單列出專案資料夾裡的零件（.3dbx）與組合件（.3dba，標「3DBA」）。點一個、等它載入完（面板顯示進度），按 ✔ 放在原點。\n- 第一個零組件自動固定在原點；之後用「插入零組件」加入其他的，再用「結合」定位。',
+
+  'help.newAssembly.keywords': '新組合件 組合件 專案資料夾 零組件',
+
+  'help.newAssembly.see': 'insert-component mate fix-component',
   'help.newDemo.summary': '開啟一個示範零件，用來看各種特徵的樣子。',
   'help.open.summary': '開啟零件（.3dbx）或組合件（.3dba）檔案。',
   'help.save.summary': '儲存目前的檔案；還沒有檔名時會問存在哪裡。',
@@ -80,8 +87,29 @@ export const help = {
   'help.exportImage.summary': '把圖形區現在看到的畫面存成 PNG 圖片。',
   'help.newDrawing.summary': '為已儲存的零件或組合件建立工程圖（檔案有未儲存的修改時不能用）。',
   'help.generateAssembly.summary': '為零件的每個本體各寫一個衍生零件檔，再產生用它們組成的組合件（要先儲存零件）。',
+
+  'help.generateAssembly.body':
+    '為零件的每個本體各寫一個衍生零件檔，再產生用它們組成的組合件；用來把多本體的零件（例如夾具主模型）拆成零件並自動排好。\n\n- 零件要先儲存。\n- 衍生零件只存來源（主模型）與本體編號，面的名稱沿用主模型；主模型改了，重新產生就跟著變（不即時更新）。\n- 零件表排除參考零件；主模型的一個本體就是組合件的一個零組件。\n- 限制：不即時更新，跨零件不共用主模型的重算。',
+
+  'help.generateAssembly.keywords': '產生組合件 衍生零件 本體 夾具 主模型',
+
+  'help.generateAssembly.see': 'new-assembly insert-component bom',
   'help.importStepAssembly.summary': '把 STEP 組合件讀進來，拆成零件檔與組合件。',
+
+  'help.importStepAssembly.body':
+    '把 STEP 組合件讀進來，保留結構：每個零件一個 .3dbx、每個次組合件一個 .3dba。\n\n- 選 STEP 檔後，程式說有幾個零件、幾個次組合件，要你選一個資料夾放轉出來的檔案（每次都要選，是寫入模式）；瀏覽器問時按「允許」。\n- 資料夾裡有零件檔，有次組合件時還有「組件」資料夾；位置與面的顏色保留。\n- 零組件名稱是「檔名＋編號」，不沿用 STEP 裡的名稱。\n- 只有 AP203 把組合件併成單一實體的檔案，讀進來只有一個零件。',
+
+  'help.importStepAssembly.keywords': '輸入 STEP 組合件 匯入 結構 零件 次組合件 顏色',
+
+  'help.importStepAssembly.see': 'import-step export-step new-assembly',
   'help.returnAssembly.summary': '從編輯中的零件回到開啟它的組合件。',
+
+  'help.returnAssembly.body':
+    '從編輯中的零件回到開啟它的組合件。\n\n- 在組合件裡開啟某個零件修改時，這個鈕才有作用。\n- 零件改過、存檔後，回到組合件會更新那個零組件。\n- 零件的修改要先存檔，組合件才讀得到。',
+
+  'help.returnAssembly.keywords': '返回組合件 開啟零件 編輯零件',
+
+  'help.returnAssembly.see': 'open insert-component new-assembly',
 
   // ---------------------------------------------------------------- tools
   'help.equations.summary': '定義全域變數與運算式，尺寸和特徵數值可以引用它們。',
@@ -89,11 +117,32 @@ export const help = {
   'help.options.summary': '系統選項：介面語言、自動存檔、「新零件」用的範本、開始時可點選的元素；存在這個瀏覽器，不屬於零件檔。',
   'help.shortcuts.summary': '查看與自訂每個指令的快速鍵。',
   'help.measurePart.summary': '量測零件上選取的點、邊、面之間的距離與角度；再按一次結束。',
+
+  'help.measurePart.body':
+    '量測零件上選取的點、邊、面之間的距離與角度；再按一次或按「結束」結束。\n\n- 在 3D 視窗點元素；再點一下別的元素就重新開始，同一個元素再點一次取消它。\n- 一個元素：面是面積，邊是長度，圓是半徑與直徑，頂點是座標。兩個元素：最短距離（接觸時是 0），兩個頂點還有 ΔX、ΔY、ΔZ；夾角是銳角（0 到 90 度）。\n- 數字的單位是 mm 與度。',
+
+  'help.measurePart.keywords': '量測 測量 距離 夾角 面積 半徑 座標',
+
+  'help.measurePart.see': 'measure-assembly physical-part check-part',
   'help.draftAnalysis.summary': '分析各面相對脫模方向的拔模角，並在圖形區上色。',
   'help.undercutAnalysis.summary': '找出沿脫模方向兩端都被擋住的面（底切）。',
   'help.thicknessAnalysis.summary': '沿內法向量測各面的壁厚，標出最薄與最厚的地方。',
   'help.checkPart.summary': '檢查模型幾何：是否通過有效性檢查、外殼是否封閉（有沒有開放邊）、體積是否為正。',
+
+  'help.checkPart.body':
+    '檢查零件的模型幾何：實體數、面數、有問題的面、開放邊與體積。\n\n- 「有問題」是指：OCCT 的有效性檢查沒通過、外殼沒有封閉（有只屬於一個面的開放邊），或體積為零或負數。\n- 匯入的 STEP 與修復過的模型最需要檢查；有問題的面編號會列出來。\n- 一個正常的零件，下方寫「共 1 個零件，全部正常」。',
+
+  'help.checkPart.keywords': '檢查幾何 有效性 開放邊 外殼 體積',
+
+  'help.checkPart.see': 'check-assembly import-step physical-part',
   'help.physicalPart.summary': '設定材質並計算質量、重心與慣性矩。',
+
+  'help.physicalPart.body':
+    '設定材質並計算零件的質量、體積、表面積、質心與慣性矩。\n\n- 先在「工具」→「檔案屬性」選材質（碳鋼、鑄鐵、不鏽鋼 304、鋁合金 6061 與 7075、銅、黃銅、鈦合金、ABS、PC、尼龍 PA6、POM、PP、壓克力）或選「自訂…」輸入密度（g/cm³）。質量 ＝ 體積 × 密度，不含參考本體。\n- 視窗列出質量、體積、表面積、質心、慣性矩（對質心，座標軸方向）、主慣性矩（由小到大）與方向。\n- 單位：質量 g、體積 mm³、表面積 mm²、質心 mm、慣性矩 g·mm²。\n- 內建材質的密度是常用牌號的整數值，其他牌號請用「自訂」。\n\n手算的例子：40 × 30 × 10 的方塊體積 12000 mm³，碳鋼（7.85 g/cm³）質量 94.20 g。',
+
+  'help.physicalPart.keywords': '物質特性 質量 材質 密度 質心 慣性矩',
+
+  'help.physicalPart.see': 'properties physical-assembly check-part',
   'help.properties.summary': '編輯檔案屬性（料號、廠商、說明等），零件表會讀它。',
 
   // ---------------------------------------------------------------- features
@@ -276,14 +325,77 @@ export const help = {
 
   'help.moveFace.see': 'delete-face fillet import-step',
   'help.offsetSurface.summary': '把選取的面偏移一段距離，做成曲面本體。',
+
+  'help.offsetSurface.body':
+    '點要偏移的面（選一個區域的所有面就偏移那個區域），輸入「偏移距離」，按 ✔：做出一個新的曲面本體，原本的本體不動。\n\n- 正值往面的外側，負值往內側。\n- 轉角的接合：圓弧（每一點都離來源同樣的距離）或交會（尖角）。\n- 偏移完會量測結果，與要求的距離差超過容許值（0.05 mm）就失敗，並說出差多少。\n- 曲面本體不是零件：不算質量、不列入零件表、不參與干涉與工程圖，輸出 STEP 時當殼。\n- 編輯時顯示偏移後的結果。',
+
+  'help.offsetSurface.keywords': '偏移曲面 曲面 偏移 型面',
+
+  'help.offsetSurface.see': 'thicken knit split-line',
   'help.splitLine.summary': '把草圖的封閉外圈投影到面上，把面切成區域。',
+
+  'help.splitLine.body':
+    '先畫一個封閉輪廓的草圖，再按這個指令：選「要投影的草圖」與「要分割的面」，輪廓沿草圖法向投影到面上，面被分成幾個區域。\n\n- 區域面有自己的名稱（`<特徵>:side:<草圖>.<圈>`），改了草圖名字不變，可以選來做偏移曲面。\n- 方向不對時選「反轉投影方向」；「穿透全部」讓視線穿過的每一層面都分割。\n- 輪廓的邊不要貼著圓柱或圓錐的接縫，否則會失敗。\n- 投影不到面、面不見、草圖沒有封閉，都說明原因。',
+
+  'help.splitLine.keywords': '分割線 投影 區域 面 草圖',
+
+  'help.splitLine.see': 'offset-surface trim-surface sketch',
   'help.knit.summary': '把數個曲面縫成一個曲面本體或實體。',
+
+  'help.knit.body':
+    '把幾個曲面本體縫成一個：勾選清單裡的本體，或在圖面點本體的面。\n\n- 縫織容差：相距不到這個值的邊縫在一起；空白表示 0.01 mm。\n- 縫完是封閉的，可以勾「封閉時做成實體」得到實體；縫完還有自由邊表示沒有封閉，結果仍是曲面。\n- 結果是第一個選的本體，其餘被用掉；面的名稱不變。\n- 沒有曲面本體可選時，先做偏移、填補或平坦曲面。',
+
+  'help.knit.keywords': '縫織 曲面 縫合 實體 容差',
+
+  'help.knit.see': 'offset-surface thicken fill-surface',
   'help.fillSurface.summary': '用一圈邊界補出一個曲面。',
+
+  'help.fillSurface.body':
+    '點一圈邊線圍出的邊界，在上面補一個曲面，是一個新的曲面本體。\n\n- 與相鄰面的連續性：相切或只接觸。相切時，邊線只有一個相鄰面（例如曲面上的洞）才會貼著它。\n- 填補的結果離邊線最遠多少、切線差幾度，會顯示在面板下方；超過容許值就失敗。\n- 常用來補曲面上的洞，再縫織成實體。',
+
+  'help.fillSurface.keywords': '填補曲面 補洞 相切 連續性',
+
+  'help.fillSurface.see': 'knit flat-surface offset-surface',
   'help.flatSurface.summary': '用一圈封閉的邊補出一個平坦曲面。',
+
+  'help.flatSurface.body':
+    '選一圈在同一個平面上的邊線，補一個平面，是一個新的曲面本體。\n\n- 邊線要連成一圈、全在同一個平面上，否則特徵出錯並說明。\n- 結果可以與其他曲面縫織成實體。',
+
+  'help.flatSurface.keywords': '平坦曲面 平面 補面 封口',
+
+  'help.flatSurface.see': 'fill-surface knit',
   'help.trimSurface.summary': '用草圖在曲面上切出區域，保留其中一側。',
+
+  'help.trimSurface.body':
+    '草圖的封閉輪廓沿草圖法向投影到曲面本體的面上，把面分開，保留輪廓裡面（或外面），其餘去掉。\n\n- 選草圖與曲面本體，「保留」選「輪廓裡面」或「輪廓外面」。\n- 方向不對時選「反轉」。\n- 輪廓的邊不要貼著圓柱或圓錐的接縫。\n- 只用輪廓的外圈，不處理草圖裡面的洞。',
+
+  'help.trimSurface.keywords': '修剪曲面 修剪 保留 輪廓 曲面',
+
+  'help.trimSurface.see': 'split-line extend-surface knit',
   'help.extendSurface.summary': '把曲面本體的邊延伸一段距離。',
+
+  'help.extendSurface.body':
+    '選曲面本體的邊線，輸入「延伸距離」：面順著原本的走向長出去。\n\n- 只能延伸只有一個面的曲面本體。\n- 選的邊線決定延伸哪一邊；繞一圈的邊（沒有端點）不能延伸。\n- 用在「以曲面除料」之前，把曲面延伸到整個穿過實體。',
+
+  'help.extendSurface.keywords': '延伸曲面 延伸 距離 邊線',
+
+  'help.extendSurface.see': 'cut-with-surface trim-surface offset-surface',
   'help.thicken.summary': '把曲面本體加厚成實體。',
+
+  'help.thicken.body':
+    '選一個曲面本體，輸入「厚度」，按 ✔：曲面加厚成實體。\n\n- 正值往曲面的法向那一側，負值往另一側。\n- 結果取代這個曲面本體，成為實體（曲面用掉了）。\n- 做完會量測最遠點離曲面是不是這個厚度，差太多就失敗。',
+
+  'help.thicken.keywords': '加厚 厚面 曲面 實體 厚度',
+
+  'help.thicken.see': 'knit offset-surface cut-with-surface',
   'help.cutWithSurface.summary': '用曲面當刀具，從實體切除一側。',
+
+  'help.cutWithSurface.body':
+    '用曲面本體把實體切掉一側：選「要除料的實體」與「除料用的曲面本體」，設定「除料的方向」（平面的法向）。\n\n- 曲面沿方向掃過的部分從實體除去，曲面本體不變。\n- 曲面要整個穿過實體；太小就先用「延伸曲面」。\n- 「反轉方向」除去曲面的另一側。\n- 在圖面點實體或曲面的面也可以選。',
+
+  'help.cutWithSurface.keywords': '以曲面除料 曲面切割 分模 除料',
+
+  'help.cutWithSurface.see': 'extend-surface thicken extrude-cut',
   'help.lipGroove.summary': '在塑膠件的面上依外輪廓做出唇或溝槽，讓上下蓋扣合。',
 
   'help.lipGroove.body':
@@ -360,24 +472,129 @@ export const help = {
 
   // ---------------------------------------------------------------- assembly
   'help.insertComponent.summary': '把零件檔插入組合件，成為零組件。',
+
+  'help.insertComponent.body':
+    '把零件檔（.3dbx）或另一個組合件（.3dba，成為次組合件）加進組合件，成為零組件。\n\n- 在「要插入的零件」清單點一個，等它載入完，在 3D 視窗空白處按一下放置；按面板上的 ✔ 則放在原點。\n- 同一個零件可以插入很多次，設計樹的名字帶編號：削邊銷<1>、削邊銷<2>。\n- 次組合件是剛性的：它自己的結合不會因為外面的動作而改變，裡面的零件在這裡不能單獨移動，要改請開啟次組合件。\n- 「標準件圖庫」：選種類（內六角螺絲 ISO 4762、定位銷 ISO 8734、平墊圈 ISO 7089）、規格與長度，加進來；它們是用變數做成的零件檔，沒有螺紋。',
+
+  'help.insertComponent.keywords': '插入零組件 零件 次組合件 標準件 圖庫 螺絲 銷',
+
+  'help.insertComponent.see': 'new-assembly mate move-component',
   'help.mate.summary': '用結合限制零組件之間的位置關係（重合、平行、同心、距離…）。',
+
+  'help.mate.body':
+    '用結合規定兩個零組件的面、邊或頂點怎麼貼，讓零件定位。\n\n- 在 3D 視窗依序點兩個不同零組件上的元素（例如銷的圓柱面，再點板上孔的內壁）；基準面與原點用圖面左上角那棵小樹選。點次組合件時，可以直接點它裡面零件的面。\n- 「標準結合」：重合、平行、垂直、相切、同軸心、鎖住、距離、角度。程式依你選的元素建議一個（亮著的），不能用的是灰色。\n- 「結合對正」（同向對齊／反向對齊）可以換；選距離或角度要填數值，也可以設最小與最大的限制。\n- 「進階結合」：寬度（兩個寬度面與兩個薄片面）、相互對稱（兩個同類元素與一個對稱面）。\n- 面板寫「結合成立」就按 ✔ 加入；寫「這個結合與之前的結合矛盾，組合件會過多定義」就不要加。\n- 設計樹有「結合」資料夾，每個結合一列，並標出它的狀態。\n- 設計樹裡名字前的 (f) 是固定、(-) 是可以動的；第一個零組件自動固定。',
+
+  'help.mate.keywords': '結合 重合 平行 垂直 相切 同軸心 鎖住 距離 角度 寬度 對稱 定位',
+
+  'help.mate.see': 'move-component fix-component insert-component',
   'help.moveComponent.summary': '用拖曳或輸入數值移動零組件。',
+
+  'help.moveComponent.body':
+    '拖曳或輸入數值移動零組件；也用來旋轉（見「旋轉零組件」）。\n\n- 在 3D 視窗按住零組件左鍵拖曳；零組件只沿結合留下的自由度移動。Esc 取消這次拖曳。\n- 「依據 Delta XYZ」：移動一段 ΔX、ΔY、ΔZ；「至 XYZ 位置」：把零組件的原點移到這個位置（組合件座標）；輸入後按「套用」或 Enter。每次移動是一個復原步驟。\n- 「碰撞偵測（停在接觸前）」：勾選後，拖曳時零組件碰到別的零組件就停在接觸前，碰到的顯示成紅色；開始拖曳前就已經重疊的不算。\n- 固定的、已被結合完全定義的、被抑制的零組件不能移動，面板會說原因；爆炸視圖展開時也不能移動，要先按「收合」。次組合件裡面的零件不能單獨移動。',
+
+  'help.moveComponent.keywords': '移動零組件 拖曳 delta 位置 碰撞 自由度',
+
+  'help.moveComponent.see': 'rotate-component mate fix-component',
   'help.rotateComponent.summary': '旋轉零組件。',
+
+  'help.rotateComponent.body':
+    '旋轉零組件：用拖曳，或輸入繞組合件 X、Y、Z 軸的角度。\n\n- 面板上選「旋轉」後，在 3D 視窗拖曳零組件就是旋轉；右鍵拖曳一律旋轉。零組件只沿結合留下的自由度轉。\n- 也可以輸入角度（度）繞組合件的 X、Y、Z 軸轉，按「套用」；每次是一個復原步驟。\n- 固定的、已被結合完全定義的、被抑制的零組件不能旋轉。',
+
+  'help.rotateComponent.keywords': '旋轉零組件 旋轉 角度 拖曳 右鍵',
+
+  'help.rotateComponent.see': 'move-component mate fix-component',
   'help.explode.summary': '建立爆炸視圖：把零組件沿方向分開，只是顯示，不改變組裝位置。',
+
+  'help.explode.body':
+    '建立爆炸視圖：把零組件沿方向分開來看。這只是顯示，零組件真正的位置不變。\n\n- 勾「要移動的零組件」，選「方向」（組合件的軸，或零組件的元素）與「距離」，按「加入步驟」；步驟的位移會累加。\n- 「爆炸」展開、「收合」回到組裝的樣子，一點不差；展開與收合可逆，復原一步有效。\n- 步驟可以「編輯」「更新步驟」，用「上移」「下移」換順序，「刪除」。\n- 展開時不能移動零組件或編輯結合，要先按「收合」。輸出 STEP 永遠是組裝的位置。\n- 限制：只能移動頂層零組件、沒有爆炸線與動畫、只有一組爆炸。',
+
+  'help.explode.keywords': '爆炸視圖 爆炸 分解 收合 步驟',
+
+  'help.explode.see': 'bom interference mate',
   'help.measureAssembly.summary': '量測組合件中選取元素之間的距離與角度。',
+
+  'help.measureAssembly.body':
+    '量測組合件中選取元素之間的距離與角度，數字是在組合件座標下量的。\n\n- 在 3D 視窗點元素（面、邊、頂點，可以在不同零組件上）；選了兩個之後再點別的元素就重新開始，同一個元素再點一次取消它。\n- 一個元素：面是面積，邊是長度，圓是半徑與直徑，頂點是座標。兩個元素：最短距離（接觸時是 0），兩個頂點還有 ΔX、ΔY、ΔZ；夾角是銳角（0 到 90 度）。\n- 按「結束」或 Esc 關閉。',
+
+  'help.measureAssembly.keywords': '量測 測量 距離 夾角 面積 半徑 座標',
+
+  'help.measureAssembly.see': 'measure-part clearance interference',
   'help.clearance.summary': '檢查零組件之間的最小間隙是否夠。',
+
+  'help.clearance.body':
+    '檢查零組件之間的最小間隙夠不夠，並算零組件的取放空間。\n\n- 「最小餘隙」輸入一個數值，按「檢查」：列出比這個值更近的零組件對，與它們的距離（精確的最短距離）；接觸的是 0，共用體積的標「干涉」；最近的點的位置也會列出。\n- 「取放空間」：先選一個零組件，選方向與長度，按「算取放空間」：算它沿這個方向最多能移動多遠才碰到別的零組件，並說碰到哪一個；已經重疊時說這個方向不能移動。\n- 組合件在檢查之後改過，結果已經過時，要再檢查一次。',
+
+  'help.clearance.keywords': '餘隙 間隙 取放空間 距離 干涉',
+
+  'help.clearance.see': 'interference check-assembly move-component',
   'help.interference.summary': '找出零組件之間重疊的體積（接觸不算）。',
   'help.interference.body':
     '「組合件」→「干涉檢查」：視窗列出共用體積的每一組零組件與重疊的體積，3D 視窗裡重疊的部分是紅色；在表格點一組，只顯示那兩個零組件，再點一次全部顯示。\n\n- 預設以頂層零組件為單位：子組合件算一個，陣列與鏡射的每個複製品各算一個。\n- 勾選「也檢查子組合件裡面的零件」，每個零件各算一個，子組合件裡面的零件也會互相比；名稱寫成「子組合件 › 零件」，同一個子組合件裡同名的零件以 <2>、<3> 分開。\n- 只有接觸不算干涉，重疊體積小於 0.001 mm³ 的也不報。隱藏的零組件會檢查，被抑制的不會。模型改變後視窗會說「模型已經變更」，按「重新檢查」。\n\n驗證過的例子：金樣夾具的兩個子組合件，各有一片定位板與兩根削邊銷，銷柄（半徑 5）放在板的孔（半徑 4）裡：勾選後 4 組，每組約 405.4 mm³，合計 1621.6；不勾選沒有干涉。',
   'help.interference.keywords': '干涉 重疊 碰撞 子組合件 子組合件內部 體積',
   'help.checkAssembly.summary': '檢查組合件的幾何是否有效。',
+
+  'help.checkAssembly.body':
+    '檢查組合件裡每一種零件的模型幾何：表格一列一個零件檔。\n\n- 「有問題」是指：有效性檢查沒通過、外殼沒有封閉（有只屬於一個面的開放邊），或體積為零或負數。\n- 列出實體數、面數、有問題的面、開放邊與體積；全部正常時下方寫「全部正常」。\n- 匯入的 STEP 與修復過的模型最需要檢查；有問題的面編號會列出來。',
+
+  'help.checkAssembly.keywords': '檢查幾何 有效性 開放邊 外殼 體積',
+
+  'help.checkAssembly.see': 'check-part clearance interference',
   'help.physicalAssembly.summary': '計算組合件的質量、重心與慣性矩。',
+
+  'help.physicalAssembly.body':
+    '計算組合件的質量、體積、表面積、質心與慣性矩，由各零件依位置合成（爆炸視圖不影響）。\n\n- 質量要每個零件都有材質才算完整：沒有選材質的零件，質量不在總質量裡，視窗會列出名字。\n- 列出每個零件的數量與單件質量；零件還沒讀好時會列出名字。\n- 表面積是各零件表面積的總和，不是組合件外殼的面積。\n- 單位：質量 g、體積 mm³、表面積 mm²、質心 mm、慣性矩 g·mm²。',
+
+  'help.physicalAssembly.keywords': '物質特性 質量 質心 慣性矩 組合件 材質',
+
+  'help.physicalAssembly.see': 'physical-part bom properties',
   'help.bom.summary': '產生零件表（數量、料號、廠商），可輸出 CSV。',
+
+  'help.bom.body':
+    '產生零件表：從組合件統計每種零件的數量，廠商與料號取自零件檔的「檔案屬性」。\n\n- 兩種結構：「只列零件」（攤平，次組合件展開）與「縮排（含次組合件）」（次組合件一列，裡面的零件縮排列在底下，數量是各層的數量）。\n- 欄位：項次、名稱、數量、廠商、料號、檔案。\n- 複製排列與鏡射的實例算進數量；被抑制的零組件不列，隱藏的要列；參考零件（衍生本體）不列。\n- 廠商與料號在零件的「工具」→「檔案屬性」加屬性「廠商」「料號」，存檔後重新開啟組合件才會出現。\n- 「輸出 CSV」寫成 .csv 檔，用 Excel 開。',
+
+  'help.bom.keywords': '零件表 BOM 數量 料號 廠商 CSV 次組合件',
+
+  'help.bom.see': 'properties explode physical-assembly',
   'help.patternLinear.summary': '沿方向複製排列零組件。',
+
+  'help.patternLinear.body':
+    '把一個零組件沿一或兩個方向複製成幾份：種子（原來的那個）加上它的複製品。\n\n- 選種子零組件，「方向 1」選組合件的 X、Y、Z 軸或零組件上的元素；填「實例數（含種子）」與「間距」，「反轉方向」換邊。\n- 「加入方向 2」再加一個方向，成為格子；編號是「列×行」。\n- 「要跳過的實例」：用逗號分隔的編號，略過那幾個。\n- 複製品是跟著種子的衍生零件：移動種子，它們跟著動；隱藏或抑制種子，它們也消失；複製品本身不能再加結合（請選種子上的元素）。\n- 一個排列最多有限定的實例數；間距要大於 0。\n\n例子：削邊銷排 4 支、間距 40：第 3 支在種子旁邊 80 mm 處。',
+
+  'help.patternLinear.keywords': '零組件排列 線性複製排列 陣列 種子 實例',
+
+  'help.patternLinear.see': 'pattern-circular mirror-component insert-component',
   'help.patternCircular.summary': '繞軸複製排列零組件。',
+
+  'help.patternCircular.body':
+    '把一個零組件繞一條軸複製成幾份。\n\n- 選種子零組件，「旋轉軸」選組合件的 X、Y、Z 軸或零組件上的元素（直線邊線、圓柱面或圓形邊線、平面）。\n- 「實例數（含種子）」與「角度」；勾「等間距（角度是總角度）」時，角度由所有實例平分。「反轉方向」換轉的方向。\n- 「要跳過的實例」略過幾個。\n- 複製品是跟著種子的衍生零件，與線性排列相同。\n\n例子：削邊銷繞組合件的 Z 軸排 4 支、角度 90：每次轉 90°。',
+
+  'help.patternCircular.keywords': '零組件排列 環狀複製排列 陣列 軸 角度',
+
+  'help.patternCircular.see': 'pattern-linear mirror-component insert-component',
   'help.mirrorComponent.summary': '鏡射零組件。',
+
+  'help.mirrorComponent.body':
+    '把一個零組件鏡射到鏡射面的另一側，成為剛體的鏡像件。\n\n- 選零組件，「鏡射面」選前、上或右基準面。\n- 鏡像件不另存檔：開檔時由原件算出來；它跟著原件走。\n- 鏡像件列在零件表裡自成一項；本身不能再加結合。',
+
+  'help.mirrorComponent.keywords': '鏡射零組件 鏡像 對稱 零件表',
+
+  'help.mirrorComponent.see': 'pattern-linear pattern-circular bom',
   'help.fixComponent.summary': '把零組件固定在目前的位置，不受結合影響。',
+
+  'help.fixComponent.body':
+    '把零組件固定在目前的位置：結合與拖曳都不會移動它。\n\n- 第一個放進組合件的零組件自動固定在原點；設計樹裡名字前的 (f) 表示固定。\n- 固定的零組件不能拖曳或旋轉，面板會說「已固定」。\n- 要讓它又能動，用「浮動」。',
+
+  'help.fixComponent.keywords': '固定 零組件 位置 原點',
+
+  'help.fixComponent.see': 'float-component mate move-component',
   'help.floatComponent.summary': '讓固定的零組件可以被結合與拖曳移動。',
+
+  'help.floatComponent.body':
+    '讓固定的零組件可以被結合與拖曳移動。\n\n- 設計樹裡名字前的 (-) 表示可以動。\n- 浮動的零組件要靠結合定位；沒有結合限制的方向它可以自由拖動。',
+
+  'help.floatComponent.keywords': '浮動 固定 零組件 移動',
+
+  'help.floatComponent.see': 'fix-component mate move-component',
 
   // ---------------------------------------------------------------- sketch
   'help.construction.summary': '把選取的圖元切換成幾何建構線（虛線，不參與輪廓）。',

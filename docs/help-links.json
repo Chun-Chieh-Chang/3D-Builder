@@ -1,7 +1,8 @@
 {
   "_about": "Which help topics (docs/help-plan.md) each item of docs/manual-verification.html is about. When an item is marked 有問題 and fixed, correct these topics in packages/i18n/src/zh-TW/help.ts too. tests/phase8/help.test.ts checks that the items and the topics exist.",
   "_untied": {
-    "concept.overview": "general, not one item"
+    "concept.overview": "general, not one item",
+    "return-assembly": "no item of the manual opens a part from an assembly and goes back yet"
   },
   "C1": [
     "equations",
@@ -117,6 +118,7 @@
     "options"
   ],
   "D1": [
+    "new-assembly",
     "insert-component",
     "mate",
     "fix-component",
@@ -139,8 +141,11 @@
     "explode"
   ],
   "D6": [
+    "measure-part",
     "measure-assembly",
+    "physical-part",
     "physical-assembly",
+    "check-part",
     "check-assembly"
   ],
   "D7": [
