@@ -78,10 +78,10 @@ code{background:var(--chip);padding:0 4px;border-radius:4px}
 <nav><ol><li><a href="#prep">0. 開始之前（只做一次）<span class="cnt" data-sec="prep"></span></a></li><li><a href="#desktop">A. 桌面版安裝<span class="cnt" data-sec="desktop"></span></a></li><li><a href="#basic">B. 基礎功能殘留<span class="cnt" data-sec="basic"></span></a></li><li><a href="#p3a">C. 零件建模（Phase 3a）<span class="cnt" data-sec="p3a"></span></a></li><li><a href="#p3b">D. 組合件（Phase 3b）<span class="cnt" data-sec="p3b"></span></a></li><li><a href="#p4a">E. 夾治具（Phase 4a）<span class="cnt" data-sec="p4a"></span></a></li><li><a href="#p5">F. 工程圖（Phase 5）<span class="cnt" data-sec="p5"></span></a></li><li><a href="#p4b">G. 檢具型面塊（Phase 4b）<span class="cnt" data-sec="p4b"></span></a></li><li><a href="#p6">H. 塑膠件（Phase 6）<span class="cnt" data-sec="p6"></span></a></li><li><a href="#p7">I. 鈑金（Phase 7）<span class="cnt" data-sec="p7"></span></a></li><li><a href="#samples">J. 需要真實樣本的驗證<span class="cnt" data-sec="samples"></span></a></li><li><a href="#standards">K. 對照你的標準<span class="cnt" data-sec="standards"></span></a></li><li><a href="#cleanup">L. 清理與收尾<span class="cnt" data-sec="cleanup"></span></a></li></ol></nav>
 <main>
 <div class="lead">
-<p><b>這份清單是什麼：</b>自動化測試（共 1985 項）都通過了，但它們是用程式驅動畫面與手算的標準答案驗的。下面是<b>還沒有人用滑鼠、鍵盤、別的軟體實際走過</b>的項目，共 84 項。每一項都寫了「為什麼要做、怎麼做、應該看到什麼、有問題時回報什麼」。</p>
+<p><b>這份清單是什麼：</b>自動化測試（共 1996 項）都通過了，但它們是用程式驅動畫面與手算的標準答案驗的。下面是<b>還沒有人用滑鼠、鍵盤、別的軟體實際走過</b>的項目，共 84 項。每一項都寫了「為什麼要做、怎麼做、應該看到什麼、有問題時回報什麼」。</p>
 <p><b>怎麼用：</b>點項目標題展開；做完在右邊的下拉選單選「通過」「有問題」「略過」，並在備註寫下觀察。進度會自動存在這個瀏覽器裡。全部做完（或做到一個段落）按上方的「複製結果」把整份貼給我。</p>
 <p><b>建議順序：</b>先做 0（準備）→ C（零件，每項十分鐘內）→ D、E（組合件與夾具）→ F（工程圖）→ H、I（塑膠與鈑金），標「必做」的優先；標「需樣本」「需你決定」的是等你提供資料或下決定，不用現在做。</p>
-<p class="stat">產生日期 2026-10-04；對應的程式版本：提交 3149a54（H-10）之後，檔案格式 Schema 42。</p>
+<p class="stat">產生日期 2026-10-04，2026-10-06 更新；對應的程式版本：提交 a950822 之後，檔案格式 Schema 42。下文的「驗證資料夾」指 P2 用 KIT_OUT 做出來的那個資料夾（本文的例子寫 D:\3DB實機確認，你的在哪裡就用哪裡）。</p>
 </div>
 <section id="prep" class="sec"><h2>0. 開始之前（只做一次）</h2><p class="intro">這一節不是驗證項目，是把環境與測試用的檔案準備好。後面的項目都假設你做完了這一節。</p><details class="item" id="item-P1" data-id="P1" data-sec="prep" data-tag="prep">
 <summary><span class="iid">P1</span><span class="ttl">啟動程式、選對瀏覽器</span><span class="tag t-prep">準備</span>
@@ -97,7 +97,7 @@ code{background:var(--chip);padding:0 4px;border-radius:4px}
 <select class="st" aria-label="P2 狀態"><option value="">未做</option><option value="ok">通過</option><option value="bad">有問題</option><option value="skip">略過</option></select></summary>
 <div class="inner">
 <p class="why"><b>為什麼要做：</b>之後要存檔、開檔、插入零件，都要有一個你可以隨便弄髒的資料夾。</p>
-<h4>怎麼做</h4><ol><li>在專案資料夾開終端機（PowerShell），輸入：<code>$env:KIT_OUT = 'C:\3DB實機確認'; npm run make:kit</code>（資料夾位置可自己換，不要用「下載」資料夾；沒設 KIT_OUT 時寫到 D:\3DB實機確認，這個磁碟不存在就會失敗）。這個指令會產生驗證用的所有檔案，檔案不在版本庫裡，每台電腦要自己產生一次。</li><li>資料夾的根目錄會有 4 個檔案：locating-plate.3dbx（定位板）、diamond-pin.3dbx（削邊銷）、v-block.3dbx（V 型塊）、plate-with-hole.step（40 × 30 × 10 的板、中間一個半徑 4 的孔）。</li><li>另有子資料夾：夾具組、組合件金樣、塑膠件、鈑金、STEP替身、輸出（含 看圖清單.md）。這些是程式自己做的替身，不是真實的 SolidWorks 檔案。弄壞了再執行一次 make:kit 就會覆蓋回來。</li></ol>
+<h4>怎麼做</h4><ol><li>在專案資料夾開終端機（PowerShell），輸入：<code>$env:KIT_OUT = 'D:\3DB實機確認'; npm run make:kit</code>（資料夾位置可自己換，這台電腦沒有 D: 就改成 C:\3DB實機確認；不要用「下載」資料夾；沒設 KIT_OUT 時寫到 D:\3DB實機確認，這個磁碟不存在就會失敗。這個資料夾就是下文的「驗證資料夾」）。這個指令會產生驗證用的所有檔案，檔案不在版本庫裡，每台電腦要自己產生一次。</li><li>資料夾的根目錄會有 4 個檔案：locating-plate.3dbx（定位板）、diamond-pin.3dbx（削邊銷）、v-block.3dbx（V 型塊）、plate-with-hole.step（40 × 30 × 10 的板、中間一個半徑 4 的孔）。</li><li>另有子資料夾：夾具組、組合件金樣、塑膠件、鈑金、STEP替身、輸出（含 看圖清單.md）。這些是程式自己做的替身，不是真實的 SolidWorks 檔案。弄壞了再執行一次 make:kit 就會覆蓋回來。</li></ol>
 <h4>應該看到</h4><ul><li>資料夾根目錄有 4 個檔案，另有 6 個子資料夾（夾具組、組合件金樣、塑膠件、鈑金、STEP替身、輸出）。</li></ul>
 
 <label class="note">備註<textarea rows="2" placeholder="做到哪一步、畫面訊息原文、和預期的差別…"></textarea></label>
@@ -298,7 +298,7 @@ code{background:var(--chip);padding:0 4px;border-radius:4px}
 <select class="st" aria-label="C18 狀態"><option value="">未做</option><option value="ok">通過</option><option value="bad">有問題</option><option value="skip">略過</option></select></summary>
 <div class="inner">
 <p class="why"><b>為什麼要做：</b>當機或不小心關掉視窗時，不要丟掉作品。</p>
-<h4>怎麼做</h4><ol><li>新零件，畫幾筆、伸長，不要存檔。等 5 秒（自動存檔）。</li><li>直接關掉瀏覽器視窗（或整個分頁）再開，網址同上。</li><li>應出現「找到沒有儲存的零件」視窗：按「復原」得到未存檔的零件（要另存新檔）；另做一次，按「捨棄」。</li><li>（進階）在專案資料夾終端機執行 node scripts/3dbx.mjs cat C:\3DB實機確認\locating-plate.3dbx 會印出文字格式；npm run setup:git 之後，用 git diff 可以看到零件檔的文字差異。</li></ol>
+<h4>怎麼做</h4><ol><li>新零件，畫幾筆、伸長，不要存檔。等 5 秒（自動存檔）。</li><li>直接關掉瀏覽器視窗（或整個分頁）再開，網址同上。</li><li>應出現「找到沒有儲存的零件」視窗：按「復原」得到未存檔的零件（要另存新檔）；另做一次，按「捨棄」。</li><li>（進階）在專案資料夾終端機執行 node scripts/3dbx.mjs cat D:\3DB實機確認\locating-plate.3dbx（路徑換成你的驗證資料夾） 會印出文字格式；npm run setup:git 之後，用 git diff 可以看到零件檔的文字差異。</li></ol>
 <h4>應該看到</h4><ul><li>復原的內容是最後編輯的狀態；捨棄後不再出現。</li></ul>
 <p class="report"><b>有問題時請回報：</b>這個視窗殘留太多次的話請告訴我（先前你問過為什麼老是出現）。</p>
 <label class="note">備註<textarea rows="2" placeholder="做到哪一步、畫面訊息原文、和預期的差別…"></textarea></label>
@@ -338,7 +338,7 @@ code{background:var(--chip);padding:0 4px;border-radius:4px}
 <h4>應該看到</h4><ul><li>已知：組合件的畫面與示範件內容仍是中文（約 183 行沒搬完）。</li></ul>
 <p class="report"><b>有問題時請回報：</b>看到英文模式下還有哪些中文，請回報（或截圖）。</p>
 <label class="note">備註<textarea rows="2" placeholder="做到哪一步、畫面訊息原文、和預期的差別…"></textarea></label>
-</div></details></section><section id="p3b" class="sec"><h2>D. 組合件（Phase 3b）</h2><p class="intro">前置：先做一個小組合件。「檔案」→「新組合件」→ 開始組合件，選 C:\3DB實機確認，點 locating-plate 按 ✓ 放在原點（固定），再用「組合件」→「插入零組件」插入 diamond-pin 兩次。用「結合」把銷插進板的孔（同軸心加重合）。存檔成 小夾具.3dba。</p><details class="item" id="item-D1" data-id="D1" data-sec="p3b" data-tag="core">
+</div></details></section><section id="p3b" class="sec"><h2>D. 組合件（Phase 3b）</h2><p class="intro">前置：先做一個小組合件。「檔案」→「新組合件」→ 開始組合件，選驗證資料夾（D:\3DB實機確認），點 locating-plate 按 ✓ 放在原點（固定），再用「組合件」→「插入零組件」插入 diamond-pin 兩次。用「結合」把銷插進板的孔（同軸心加重合）。存檔成 小夾具.3dba。</p><details class="item" id="item-D1" data-id="D1" data-sec="p3b" data-tag="core">
 <summary><span class="iid">D1</span><span class="ttl">剛性次組合件（3b-1）</span><span class="tag t-core">必做</span>
 <select class="st" aria-label="D1 狀態"><option value="">未做</option><option value="ok">通過</option><option value="bad">有問題</option><option value="skip">略過</option></select></summary>
 <div class="inner">
@@ -420,7 +420,7 @@ code{background:var(--chip);padding:0 4px;border-radius:4px}
 <h4>應該看到</h4><ul><li>結構與位置一致。</li></ul>
 <p class="report"><b>有問題時請回報：</b>請截圖 eDrawings 的零件樹。</p>
 <label class="note">備註<textarea rows="2" placeholder="做到哪一步、畫面訊息原文、和預期的差別…"></textarea></label>
-</div></details></section><section id="p4a" class="sec"><h2>E. 夾治具（Phase 4a）</h2><p class="intro">前置：新零件，用多本體做一個主模型：基板（一個方塊）、兩個定位銷孔位置、一個壓板，各是獨立的本體。存成 夾具主模型.3dbx 在 C:\3DB實機確認。</p><details class="item" id="item-E1" data-id="E1" data-sec="p4a" data-tag="core">
+</div></details></section><section id="p4a" class="sec"><h2>E. 夾治具（Phase 4a）</h2><p class="intro">前置：新零件，用多本體做一個主模型：基板（一個方塊）、兩個定位銷孔位置、一個壓板，各是獨立的本體。存成 夾具主模型.3dbx 在驗證資料夾（D:\3DB實機確認）。</p><details class="item" id="item-E1" data-id="E1" data-sec="p4a" data-tag="core">
 <summary><span class="iid">E1</span><span class="ttl">從本體產生組合件（衍生零件）</span><span class="tag t-core">必做</span>
 <select class="st" aria-label="E1 狀態"><option value="">未做</option><option value="ok">通過</option><option value="bad">有問題</option><option value="skip">略過</option></select></summary>
 <div class="inner">
@@ -482,7 +482,7 @@ code{background:var(--chip);padding:0 4px;border-radius:4px}
 <h4>應該看到</h4><ul><li>停止位置是接觸面，不會彈回或卡住。</li></ul>
 
 <label class="note">備註<textarea rows="2" placeholder="做到哪一步、畫面訊息原文、和預期的差別…"></textarea></label>
-</div></details></section><section id="p5" class="sec"><h2>F. 工程圖（Phase 5）</h2><p class="intro">工程圖檔是第三種檔案（.3dbd），必須存在專案資料夾裡，零件才能以相對路徑找到。前置：先把夾具主模型或 locating-plate.3dbx 放在 C:\3DB實機確認，並先儲存零件（工程圖讀的是零件檔）。</p><details class="item" id="item-F1" data-id="F1" data-sec="p5" data-tag="core">
+</div></details></section><section id="p5" class="sec"><h2>F. 工程圖（Phase 5）</h2><p class="intro">工程圖檔是第三種檔案（.3dbd），必須存在專案資料夾裡，零件才能以相對路徑找到。前置：先把夾具主模型或 locating-plate.3dbx 放在驗證資料夾（D:\3DB實機確認），並先儲存零件（工程圖讀的是零件檔）。</p><details class="item" id="item-F1" data-id="F1" data-sec="p5" data-tag="core">
 <summary><span class="iid">F1</span><span class="ttl">新工程圖：三視圖、圖頁與標題圖塊</span><span class="tag t-core">必做</span>
 <select class="st" aria-label="F1 狀態"><option value="">未做</option><option value="ok">通過</option><option value="bad">有問題</option><option value="skip">略過</option></select></summary>
 <div class="inner">
