@@ -334,3 +334,95 @@ describe('the commands of a fillet with groups of faces', () => {
     expect(back.features.find((x) => x.id === 'f1')).toMatchObject({ kind: 'face', faces: [{ name: 'e1:cap:end' }], faces2: [{ name: 'e1:cap:start' }] });
   });
 });
+
+const fullRoundOf = (id: string, side1: string[], center: string[], side2: string[]): Feature => ({ id, type: 'fillet', name: id, suppressed: false, edges: [], kind: 'full', faces: side1.map(face), center: center.map(face), faces2: side2.map(face), radius: '2' });
+
+describe('a full round fillet (完整圓角): the top between two parallel sides becomes half a cylinder', () => {
+  /** 40 × 30 × 20, or 40 wide and `d` deep. */
+  const tall = (d = '30', h = '20'): Feature[] => [
+    sketch('s1', front, rectangle('a', 0, 0, 40, Number(d))),
+    extrude('e1', 's1', 'boss', { type: 'blind', depth: h }),
+  ];
+  const sides = (r: RebuildResult, d: number): [string, string] => [faceName(r, [0, -1, 0], 0), faceName(r, [0, 1, 0], d)];
+
+  it('40 × 30 × 20, the top between the front and the back: 24000 − 40 (30 · 15 − π 15² / 2) = 20137.17, and one half cylinder instead of the top', () => {
+    const base = rebuild(build(...tall()));
+    const [s1, s2] = sides(base, 30);
+    const r = rebuild(add(build(...tall()), fullRoundOf('f1', [s1], ['e1:cap:end'], [s2])));
+    expect(statuses(r).at(-1)).toBe('f1=ok');
+    expect(volume(r)).toBeCloseTo(24000 - 40 * (30 * 15 - (Math.PI * 225) / 2), 6);
+    const topo = r.body!.topology;
+    expect(topo.faces).toHaveLength(6);
+    const round = topo.faces.findIndex((f) => f.surface === 'cylinder');
+    expect(round).toBeGreaterThanOrEqual(0);
+    expect(topo.faces[round]!.geometry).toMatchObject({ radius: 15 });
+    // the round is the top, rounded: it keeps the name the top had
+    expect(r.body!.names.faces[round]).toBe('e1:cap:end');
+    expect(topo.faces.filter((f) => f.surface === 'plane' && f.normal && f.normal[2] > 0.9)).toHaveLength(0); // no flat top is left
+  });
+
+  it('follows the model: 36 deep, the radius becomes 18 by itself', () => {
+    const doc = (d: string) => {
+      const features = tall(d);
+      const base = rebuild(build(...features));
+      const [s1, s2] = sides(base, Number(d));
+      return add(build(...features), fullRoundOf('f1', [s1], ['e1:cap:end'], [s2]));
+    };
+    const r = rebuild(doc('36'));
+    expect(statuses(r).at(-1)).toBe('f1=ok');
+    expect(volume(r)).toBeCloseTo(36 * 40 * 20 - 40 * (36 * 18 - (Math.PI * 324) / 2), 6);
+    const round = r.body!.topology.faces.find((f) => f.surface === 'cylinder')!;
+    expect(round.geometry).toMatchObject({ radius: 18 });
+  });
+
+  it('a feature after it can still refer to the round by the name of the top', () => {
+    const base = rebuild(build(...tall()));
+    const [s1, s2] = sides(base, 30);
+    const r = rebuild(add(build(...tall()), fullRoundOf('f1', [s1], ['e1:cap:end'], [s2]), filletOf('f2', [face('e1:cap:end')], '1')));
+    // the round is smooth with nothing: its edges with the sides are smooth (tangent), those with the ends are not, so the second fillet works on the ends
+    expect(statuses(r).at(-1)).toBe('f2=ok');
+  });
+
+  it('is an error that says why when the sides are not parallel: the front and the left', () => {
+    const base = rebuild(build(...tall()));
+    const r = rebuild(add(build(...tall()), fullRoundOf('f1', [faceName(base, [0, -1, 0], 0)], ['e1:cap:end'], [faceName(base, [-1, 0, 0], 0)])));
+    expect(r.features.find((f) => f.id === 'f1')!.message).toContain('互相平行');
+  });
+
+  it('is an error when the sides are lower than half the width: 30 wide, 10 high', () => {
+    const features = tall('30', '10');
+    const base = rebuild(build(...features));
+    const [s1, s2] = sides(base, 30);
+    const r = rebuild(add(build(...features), fullRoundOf('f1', [s1], ['e1:cap:end'], [s2])));
+    const f1 = r.features.find((f) => f.id === 'f1')!;
+    expect(f1.status).toBe('error');
+    expect(f1.message).toContain('做不出來');
+    expect(volume(r)).toBeCloseTo(40 * 30 * 10, 6); // nothing was taken off
+  });
+
+  it('is an error when the center is not a rectangle between the sides: a hole in the top', () => {
+    const features = [...tall(), sketch('s2', front, circle('k', 20, 15, 4)), extrude('c1', 's2', 'cut', { type: 'throughAll', reverse: true })];
+    const base = rebuild(build(...features));
+    expect(statuses(base).at(-1)).toBe('c1=ok');
+    expect(volume(base)).toBeLessThan(24000 - 1000); // the hole is there
+    const r = rebuild(add(build(...features), fullRoundOf('f1', [faceName(base, [0, -1, 0], 0)], ['e1:cap:end'], [faceName(base, [0, 1, 0], 30)])));
+    expect(r.features.find((f) => f.id === 'f1')!.status).toBe('error');
+  });
+
+  it('needs the two sides and a center, and one center', () => {
+    const base = rebuild(build(...tall()));
+    const [s1, s2] = sides(base, 30);
+    const missing = rebuild(add(build(...tall()), fullRoundOf('f1', [s1], ['e1:cap:end'], [])));
+    expect(missing.features.find((f) => f.id === 'f1')!.message).toContain('兩個側面組與一個中央面');
+    const two = rebuild(add(build(...tall()), fullRoundOf('f1', [s1], ['e1:cap:end', faceName(base, [0, 0, -1], 0)], [s2])));
+    expect(two.features.find((f) => f.id === 'f1')!.message).toContain('只能選一個面');
+  });
+
+  it('is set and read back with the commands', () => {
+    let doc = add(build(...tall()), filletOf('f1', []));
+    doc = applyCommand(doc, { type: 'setFilletSets', featureId: 'f1', kind: 'full', faces: [face('a')], center: [face('b')], faces2: [face('c')] });
+    const back = parsePart(serializePart(doc));
+    expect(back.features.find((x) => x.id === 'f1')).toMatchObject({ kind: 'full', faces: [{ name: 'a' }], center: [{ name: 'b' }], faces2: [{ name: 'c' }] });
+    expect(dependencies(doc).parents.get('f1')).toBeDefined();
+  });
+});

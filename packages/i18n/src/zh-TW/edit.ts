@@ -46,6 +46,8 @@ export const edit = {
   'edit.faceFilletTwoGroups': '面圓角要在兩組面各選至少一個面',
   'edit.faceFilletApart': '兩組面沒有共同的邊：不相鄰的面之間的面圓角還沒做',
   'edit.faceFilletSmooth': '兩組面相接的邊都是相切連續的，沒有可以倒的邊',
+  'edit.fullRoundGroups': '完整圓角要選兩個側面組與一個中央面',
+  'edit.fullRoundOneCenter': '完整圓角的中央面目前只能選一個面',
   'edit.refsLost': '遺失參考：{n} 個選取（邊線或面）找不到，請重新選擇',
   'edit.faceNoEdges': '選的面沒有可以倒的邊：它的邊都是相切連續的邊或接縫',
   'edit.noEdgePicked': '尚未選擇邊線',

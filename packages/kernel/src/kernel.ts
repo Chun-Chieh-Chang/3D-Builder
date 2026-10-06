@@ -998,6 +998,82 @@ export class Kernel {
   }
 
   /**
+   * A full round fillet (完整圓角, F-3): the flat `center` face between two parallel flat sides is replaced by half a cylinder, tangent to both sides and to the
+   * plane the face was in, so its radius is half the distance between the sides. Two fillets of that radius cannot do it (OCCT fails when they take the whole
+   * face, ADR 0097); the strip over the half cylinder is cut away instead, which is exact. The center face has to be a rectangle (the volume that went is checked
+   * against the half cylinder's, and a face that is not one, or sides that are lower than the radius, make it fail with that said). The new face takes the
+   * origin of the center face it replaces.
+   */
+  fullRound(target: ShapeId, centerFace: number, side1: number[], side2: number[]): OpResult {
+    const topo = this.topology(target);
+    const plane = (i: number) => {
+      const f = topo.faces[i];
+      if (!f) throw new KernelError(t('edit.faceOutOfRange', { index: i }));
+      if (f.surface !== 'plane' || !f.normal) throw new KernelError(t('kernel.fullRoundSides'));
+      return { n: f.normal, c: f.center, area: f.area };
+    };
+    const [dotp, sub3] = [(a: Vec3, b: Vec3) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2], (a: Vec3, b: Vec3): Vec3 => [a[0] - b[0], a[1] - b[1], a[2] - b[2]]];
+    const center = plane(centerFace);
+    const groups = [side1, side2].map((g) => g.map(plane));
+    const firsts = groups.map((g) => g[0]!);
+    // the faces of a side lie in one plane
+    for (const g of groups) for (const f of g) if (dotp(f.n, g[0]!.n) < 1 - 1e-9 || Math.abs(dotp(sub3(f.c, g[0]!.c), g[0]!.n)) > 1e-6) throw new KernelError(t('kernel.fullRoundSides'));
+    const [a, b] = firsts as [typeof center, typeof center];
+    if (dotp(a.n, b.n) > -1 + 1e-9 || Math.abs(dotp(a.n, center.n)) > 1e-9) throw new KernelError(t('kernel.fullRoundSides'));
+    // the center face meets a face of each side
+    const meets = (g: number[]) => topo.edges.some((e) => e.faces.includes(centerFace) && e.faces.some((f) => g.includes(f)));
+    if (!meets(side1) || !meets(side2)) throw new KernelError(t('kernel.fullRoundNotAdjacent'));
+    const w = Math.abs(dotp(sub3(b.c, a.c), a.n));
+    const r = w / 2;
+    const nC = center.n;
+    const s: Vec3 = [-a.n[0], -a.n[1], -a.n[2]];
+    const along = (v: Vec3): Vec3 => [s[1] * v[2] - s[2] * v[1], s[2] * v[0] - s[0] * v[2], s[0] * v[1] - s[1] * v[0]];
+    const u = along(nC); // s × nC: the way the edges of the face run
+    const box = this.bounds(target);
+    const corners: Vec3[] = [0, 1, 2, 3, 4, 5, 6, 7].map((k) => [k & 1 ? box.max[0] : box.min[0], k & 2 ? box.max[1] : box.min[1], k & 4 ? box.max[2] : box.min[2]]);
+    const [lo, hi] = [Math.min(...corners.map((c) => dotp(c, u))), Math.max(...corners.map((c) => dotp(c, u)))];
+    const margin = 1;
+    // the origin of the profile: on the first side, r below the plane of the center face; and `margin` before the body along u
+    const up = dotp(center.c, nC) - r - dotp(a.c, nC);
+    const onSide: Vec3 = [a.c[0] + nC[0] * up, a.c[1] + nC[1] * up, a.c[2] + nC[2] * up];
+    const shift = lo - margin - dotp(onSide, u);
+    const origin: Vec3 = [onSide[0] + u[0] * shift, onSide[1] + u[1] * shift, onSide[2] + u[2] * shift];
+    const H = r + margin;
+    const profile: Region = {
+      outer: [
+        { kind: 'line', a: [0, 0], b: [0, H], source: 'l0' },
+        { kind: 'line', a: [0, H], b: [w, H], source: 'l1' },
+        { kind: 'line', a: [w, H], b: [w, 0], source: 'l2' },
+        { kind: 'arc', c: [w / 2, 0], r, from: [w, 0], to: [0, 0], ccw: true, source: 'a0' },
+      ],
+      holes: [],
+    };
+    const length = hi - lo + 2 * margin;
+    const tool = this.extrude({ origin, xDir: s, yDir: nC, normal: u }, [profile], [u[0] * length, u[1] * length, u[2] * length]);
+    let result: OpResult;
+    try {
+      result = this.boolean('cut', target, tool.shape);
+    } finally {
+      this.release(tool.shape);
+    }
+    // the volume that went has to be the strip over the half cylinder, along the face: a face that is not a rectangle between the sides, or sides lower than r, are not
+    const before = this.massProps(target).volume;
+    const after = this.massProps(result.shape).volume;
+    const expected = (w * r - (Math.PI * r * r) / 2) * (center.area / w);
+    if (!(Math.abs(before - after - expected) <= 1e-6 * Math.max(1, expected))) {
+      this.release(result.shape);
+      throw new KernelError(t('kernel.fullRoundShape'));
+    }
+    // the origins that point at the tool's faces (after the target's) are the center face's: the new face is that face, rounded
+    const n = topo.faces.length;
+    const faceOrigins = result.faceOrigins.map((list) => {
+      const own = list.filter((o) => 'kind' in o && o.kind === 'face' && 'index' in o && o.index < n && o.rel !== 'generated');
+      return own.length > 0 ? own : [{ rel: 'modified', kind: 'face', index: centerFace } as FaceOrigin];
+    });
+    return { shape: result.shape, faceOrigins };
+  }
+
+  /**
    * Which of these edges the faces on both sides continue smoothly across (tangent continuity, fillet by face): a fillet's own seam, the edge between a
    * face and the round that meets it. The two faces' normals are compared at three places along the edge (the middle and near each end); an edge with
    * not exactly two faces (a seam, an edge of an open shell) is not smooth in this sense, the caller treats those by themselves.

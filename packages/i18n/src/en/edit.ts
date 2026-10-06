@@ -48,6 +48,8 @@ export const edit: Translation = {
   'edit.faceFilletTwoGroups': 'A face fillet needs at least one face in each of the two groups',
   'edit.faceFilletApart': 'The two groups of faces share no edge: a fillet between faces that do not meet is not made yet',
   'edit.faceFilletSmooth': 'The edges where the two groups meet are all smooth ones, so there is nothing to round',
+  'edit.fullRoundGroups': 'A full round fillet needs the two side groups and a center face',
+  'edit.fullRoundOneCenter': 'A full round fillet takes only one center face for now',
   'edit.refsLost': 'Missing reference: {n} picked elements (edges or faces) were not found, please pick again',
   'edit.faceNoEdges': 'The face has no edge to round: its edges are all smooth ones or seams',
   'edit.noEdgePicked': 'No edge has been picked',

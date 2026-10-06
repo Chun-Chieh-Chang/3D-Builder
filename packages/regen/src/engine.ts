@@ -2718,8 +2718,27 @@ export class Regenerator {
 
   private fillet(f: FilletFeature, set: Bodies): BodyState[] {
     if (f.kind === 'face') return this.faceFillet(f, set);
+    if (f.kind === 'full') return this.fullRound(f, set);
     return this.perBody(set, [...f.edges, ...(f.faces ?? [])], 'edge', t('edit.noBodyForFillet'), lostRefs, (body, mine) => {
       const r = this.kernel.fillet(body.shape, this.edgesOfRefs(mine, body).edges, evalLength(f.radius));
+      const topology = this.kernel.topology(r.shape);
+      return { id: body.id, shape: r.shape, topology, names: nameElements(r.faceOrigins, topology, { featureId: f.id, role: 'fillet', input: body.names }), by: f.id };
+    });
+  }
+
+  /** 「完整圓角」: the center face between two parallel sides becomes half a cylinder tangent to both (`Kernel.fullRound`); the radius is half the width, not typed. */
+  private fullRound(f: FilletFeature, set: Bodies): BodyState[] {
+    const group = (list: Ref[] | undefined) => new Set((list ?? []).map((r) => r.name));
+    const [one, mid, two] = [group(f.faces), group(f.center), group(f.faces2)];
+    return this.perBody(set, [...(f.faces ?? []), ...(f.center ?? []), ...(f.faces2 ?? [])], 'face', t('edit.noBodyForFillet'), lostRefs, (body, mine) => {
+      const pick = (names: Set<string>, others: Set<string>[]) => mine.filter((r) => names.has(r.name) && !others.some((o) => o.has(r.name)));
+      const centers = pick(mid, []);
+      const side1 = pick(one, [mid]);
+      const side2 = pick(two, [mid, one]);
+      if (centers.length === 0 || side1.length === 0 || side2.length === 0) throw new FeatureError(t('edit.fullRoundGroups'));
+      if (centers.length > 1) throw new FeatureError(t('edit.fullRoundOneCenter'));
+      const [c] = this.faceIndices(centers, body);
+      const r = this.kernel.fullRound(body.shape, c!, this.faceIndices(side1, body), this.faceIndices(side2, body));
       const topology = this.kernel.topology(r.shape);
       return { id: body.id, shape: r.shape, topology, names: nameElements(r.faceOrigins, topology, { featureId: f.id, role: 'fillet', input: body.names }), by: f.id };
     });

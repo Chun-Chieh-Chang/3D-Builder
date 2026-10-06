@@ -885,7 +885,12 @@ function FaceList({ f, label }: { f: FilletFeature | ChamferFeature; label: stri
 }
 
 /** The groups of faces of a fillet that is not the usual one, in the order the panel lists them, with what each is called. */
-const FILLET_GROUPS: Record<'face', { group: FilletGroup; label: () => string }[]> = {
+const FILLET_GROUPS: Record<'face' | 'full', { group: FilletGroup; label: () => string }[]> = {
+  full: [
+    { group: 'faces', label: () => t('pm.fillet.side1') },
+    { group: 'center', label: () => t('pm.fillet.center') },
+    { group: 'faces2', label: () => t('pm.fillet.side2') },
+  ],
   face: [
     { group: 'faces', label: () => t('pm.fillet.group1') },
     { group: 'faces2', label: () => t('pm.fillet.group2') },
@@ -896,7 +901,7 @@ const FILLET_GROUPS: Record<'face', { group: FilletGroup; label: () => string }[
 function FilletGroups({ f }: { f: FilletFeature }) {
   const result = useStore((s) => s.result);
   const pick = useStore((s) => s.filletPick);
-  const groups = FILLET_GROUPS.face;
+  const groups = FILLET_GROUPS[f.kind === 'full' ? 'full' : 'face'];
   return (
     <section className="pm-group">
       {groups.map(({ group, label }) => {
@@ -924,7 +929,7 @@ function FilletGroups({ f }: { f: FilletFeature }) {
           </div>
         );
       })}
-      <p className="hint">{t('pm.fillet.groupHint')}</p>
+      <p className="hint">{t(f.kind === 'full' ? 'pm.fillet.fullHint' : 'pm.fillet.groupHint')}</p>
     </section>
   );
 }
@@ -940,12 +945,15 @@ function FilletPanel({ f }: { f: FilletFeature }) {
           <select value={kind} onChange={(e) => store.setFilletKind(e.target.value as FilletKind)}>
             <option value="constant">{t('pm.fillet.kindConstant')}</option>
             <option value="face">{t('pm.fillet.kindFace')}</option>
+            <option value="full">{t('pm.fillet.kindFull')}</option>
           </select>
         </label>
-        <label className="pm-row">
-          <span>{t('dimension.radius')}</span>
-          <ValueInput value={f.radius} toCommand={(value) => ({ type: 'setFilletRadius', featureId: f.id, value })} />
-        </label>
+        {kind !== 'full' && (
+          <label className="pm-row">
+            <span>{t('dimension.radius')}</span>
+            <ValueInput value={f.radius} toCommand={(value) => ({ type: 'setFilletRadius', featureId: f.id, value })} />
+          </label>
+        )}
       </section>
       {kind === 'constant' ? <EdgeList f={f} /> : <FilletGroups f={f} />}
     </>
