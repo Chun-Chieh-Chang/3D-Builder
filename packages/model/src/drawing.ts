@@ -177,12 +177,19 @@ export interface ElementFacts {
   center?: [number, number, number];
 }
 
-/** What the model says of a hole (a whole cylinder cut into the part): through or blind, its depth, and the counterbore at its mouth if it has one. */
+/**
+ * What the model says of a hole (a whole cylinder cut into the part): through or blind, its depth, the counterbore or the countersink at its mouth if it has one,
+ * and, when the hole is a tapped one, the thread. The countersink is read from the shape (the cone at the mouth: its diameter and included angle in degrees); the
+ * thread is not in the shape (the model drills to the tap size and has no thread), it comes from the feature that made the hole: `size` is its label (「M6」), absent
+ * for one whose diameter was typed.
+ */
 export interface HoleInfo {
   through: boolean;
   /** mm: the length of the cylinder (the thickness a through hole goes through). */
   depth: number;
   counterbore?: { diameter: number; depth: number };
+  countersink?: { diameter: number; angle: number };
+  thread?: { size?: string };
 }
 
 /** What a dimension can be attached to in a view (the elements the view sees edge-on or as circles), found in the worker; the material of the automatic dimensions and of the choice in the panel. */

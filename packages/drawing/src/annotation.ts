@@ -1,7 +1,7 @@
 import { t } from '@3db/i18n';
 import type { DrawingView, HoleInfo, HoleTable, ViewFeature } from '@3db/model';
 import { datumPlanes } from './autoDimension';
-import { DIM_TEXT, formatNumber, holeNote, toleranceText } from './dimension';
+import { DIM_TEXT, formatNumber, holeNote, holeSignature, threadedHoleText, toleranceText } from './dimension';
 import { clipToCircle } from './geometry';
 import { toSheet, type PlacedView } from './layout';
 import type { SceneItem } from './scene';
@@ -87,7 +87,7 @@ export function holeRows(features: readonly ViewFeature[], fits: Record<string, 
   const datum = datumPlanes(features);
   const ox = datum.minX?.coord ?? 0;
   const oy = datum.minY?.coord ?? 0;
-  const key = (r: number, h: HoleInfo) => `${Math.round(2 * r * 1e4)}|${h.through ? 'through' : Math.round(h.depth * 1e3)}|${h.counterbore ? `${Math.round(h.counterbore.diameter * 1e3)}/${Math.round(h.counterbore.depth * 1e3)}` : ''}`;
+  const key = (r: number, h: HoleInfo) => `${Math.round(2 * r * 1e4)}|${holeSignature(h)}`;
   const groups = new Map<string, typeof holes>();
   for (const h of holes) groups.set(key(h.f.type === 'circle' ? h.f.radius : 0, h.hole), [...(groups.get(key(h.f.type === 'circle' ? h.f.radius : 0, h.hole)) ?? []), h]);
   const ordered = [...groups.values()].sort((a, b) => {
@@ -101,7 +101,7 @@ export function holeRows(features: readonly ViewFeature[], fits: Record<string, 
     const radius = first.f.type === 'circle' ? first.f.radius : 0;
     const d = 2 * radius;
     const fit = fits[formatNumber(d)];
-    const size = [`Ø${formatNumber(d)}`, ...(fit ? [toleranceText({ type: 'fit', fit }, d)] : []), holeNote(first.hole)].join(' ');
+    const size = threadedHoleText(first.hole, d) ?? [`Ø${formatNumber(d)}`, ...(fit ? [toleranceText({ type: 'fit', fit }, d)] : []), holeNote(first.hole)].join(' ');
     const sorted = [...g].sort((a, b) => {
       const ca = a.f.type === 'circle' ? a.f.centre : [0, 0];
       const cb = b.f.type === 'circle' ? b.f.centre : [0, 0];

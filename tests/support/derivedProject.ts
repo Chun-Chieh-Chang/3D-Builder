@@ -6,7 +6,7 @@ import { dirName, joinPath } from '@3db/model';
 import { readDocumentFile } from '@3db/io';
 import type { PlaneGcsSolver } from '@3db/sketch';
 import type { Kernel, ShapeId } from '@3db/kernel';
-import { Regenerator, type MatePart, type SourcePart } from '@3db/regen';
+import { holeFeatures, Regenerator, type HoleFeatures, type MatePart, type SourcePart } from '@3db/regen';
 
 /** A file of the project as another part reads it: its document, and a way to find the files it is derived from (paths relative to it). */
 export async function sourceAt(files: Map<string, Uint8Array>, path: string): Promise<SourcePart | undefined> {
@@ -28,6 +28,8 @@ export interface OpenedPart {
   /** The regenerator that owns the shape: keep it alive as long as the shape is used. */
   regen: Regenerator;
   problems: string[];
+  /** The hole features of the part: what a drawing writes of its holes (as the worker passes it). */
+  holes: HoleFeatures;
 }
 
 /** A part file of the project rebuilt, with its masters. */
@@ -44,5 +46,6 @@ export async function openPart(kernel: Kernel, solver: PlaneGcsSolver, kept: Reg
     reference: r.bodies.map((b) => b.reference),
     regen,
     problems: r.features.filter((f) => f.status === 'error').map((f) => `${f.id}: ${f.message}`),
+    holes: holeFeatures(src.doc, src.sources),
   };
 }

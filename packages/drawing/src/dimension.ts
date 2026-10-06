@@ -40,11 +40,31 @@ export function toleranceText(tol: DimensionTolerance, nominal: number): string 
   return d ? `${tol.fit} (${signed(d.upper)}/${signed(d.lower)})` : tol.fit;
 }
 
-/** What is written of a hole after its diameter: 「貫穿」, 「深 12」, and 「沉頭 Ø15 深 8」 for a counterbore. */
+/** What is written of a hole after its diameter: 「貫穿」, 「深 12」, and 「沉頭 Ø15 深 8」 for a counterbore, 「錐孔 Ø12 90°」 for a countersink. */
 export function holeNote(h: HoleInfo): string {
   const parts = [h.through ? t('drawing.holeThrough') : t('drawing.holeDeep', { depth: formatNumber(h.depth, 2) })];
   if (h.counterbore) parts.push(t('drawing.holeCbore', { diameter: formatNumber(h.counterbore.diameter, 2), depth: formatNumber(h.counterbore.depth, 2) }));
+  if (h.countersink) parts.push(t('drawing.holeCsink', { diameter: formatNumber(h.countersink.diameter, 2), angle: formatNumber(h.countersink.angle, 2) }));
   return parts.join(' ');
+}
+
+/** What makes two holes of one diameter the same hole on a drawing: the same callout (through or how deep, counterbore, countersink, thread). */
+export function holeSignature(h: HoleInfo | undefined): string {
+  if (!h) return '';
+  const cb = h.counterbore ? `${Math.round(h.counterbore.diameter * 1e3)}/${Math.round(h.counterbore.depth * 1e3)}` : '';
+  const cs = h.countersink ? `${Math.round(h.countersink.diameter * 1e3)}/${Math.round(h.countersink.angle * 100)}` : '';
+  return `${h.through ? 'through' : Math.round(h.depth * 1e3)}|${cb}|${cs}|${h.thread ? (h.thread.size ?? 'tap') : ''}`;
+}
+
+/**
+ * What a tapped hole is called on a drawing, in place of its diameter: 「M6 貫穿（底孔 Ø5）」, the thread first and the drilled circle the model really has after it
+ * (`diameter`); a hole whose size was typed has no name to give: 「螺紋底孔 Ø5 貫穿」. Null for a hole that is not tapped. The depth is the depth the hole is drilled to
+ * (the model has no thread, so the thread is as deep as the hole).
+ */
+export function threadedHoleText(h: HoleInfo, diameter: number): string | null {
+  if (!h.thread) return null;
+  const d = formatNumber(diameter);
+  return h.thread.size ? `${h.thread.size} ${holeNote(h)}${t('drawing.holeTapDrill', { diameter: d })}` : `${t('drawing.holeTapPlain')} Ø${d} ${holeNote(h)}`;
 }
 
 /**
@@ -58,6 +78,9 @@ export function dimensionText(d: Dimension, value: number, facts?: ElementFacts)
     return d.reference ? `(${angle})` : angle;
   }
   const count = d.kind !== 'linear' && d.count ? `${d.count}×` : '';
+  // a tapped hole's callout names the thread in place of the diameter
+  const threaded = d.kind === 'diameter' && d.callout && facts?.hole ? threadedHoleText(facts.hole, value) : null;
+  if (threaded) return d.reference ? `(${count}${threaded})` : `${count}${threaded}`;
   const prefix = d.kind === 'diameter' ? 'Ø' : d.kind === 'radius' ? 'R' : '';
   const tol = d.tolerance ? ` ${toleranceText(d.tolerance, value)}` : '';
   const note = d.kind === 'diameter' && d.callout && facts?.hole ? ` ${holeNote(facts.hole)}` : '';

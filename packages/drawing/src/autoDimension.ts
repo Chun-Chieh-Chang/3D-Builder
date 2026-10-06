@@ -1,4 +1,5 @@
 import type { Dimension, ViewFeature } from '@3db/model';
+import { holeSignature } from './dimension';
 
 /** A dimension before it has an id and a view. */
 export type DimensionDraft = Dimension extends infer D ? (D extends Dimension ? Omit<D, 'id' | 'view'> : never) : never;
@@ -48,10 +49,10 @@ export function autoDimensions(features: readonly ViewFeature[], options: AutoDi
   const out: DimensionDraft[] = [];
 
   if (options.holes) {
-    // equal circles are one dimension with their count
+    // equal circles are one dimension with their count (with callouts, only those the callout says the same of: a countersunk Ø6 is not a dowel Ø6)
     const groups = new Map<string, Circle[]>();
     for (const c of circles) {
-      const key = `${c.full}|${c.convex}|${Math.round(c.radius * 1e4)}`;
+      const key = `${c.full}|${c.convex}|${Math.round(c.radius * 1e4)}|${options.callouts && c.full ? holeSignature(c.hole) : ''}`;
       groups.set(key, [...(groups.get(key) ?? []), c]);
     }
     for (const g of groups.values()) {

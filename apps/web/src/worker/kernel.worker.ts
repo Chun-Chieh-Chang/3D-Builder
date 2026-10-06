@@ -6,7 +6,7 @@ import gcsWasm from '@salusoft89/planegcs/dist/planegcs_dist/planegcs.wasm?url';
 import { bodyKey, combineMass, isShown, mirrorKey, MESH_QUALITY, settingsOf, type AssemblyDoc, type Id, type MeasureReport, type PartDoc, type SourceTree } from '@3db/model';
 import { findProfiles, PlaneGcsSolver } from '@3db/sketch';
 import { COMPONENT_MESH, Kernel, type ThicknessReport, type UndercutReport, type DraftReport, type GeometryReport, type MassProps, type MeshData, type MeshOptions, type ShapeId } from '@3db/kernel';
-import { drawingAnchors, projectDrawingView, elementFacts, viewFeatures, findClearance, findInterference, flatPattern, FlatError, sheetChecks, sweepClearance, measureTargets, convertEdges, planarEdgeItems, edgeMateGeometry, exportFaces, faceColors, intoFrame, faceEdges, faceMateGeometry, followReferences, ReferenceProblem, Regenerator, solveAssemblyTree, type AssemblyResult, type AssemblySolveOptions, type BodyInfo, type FlatReport, type RebuildResult, type SheetCheck, type SheetCheckLimits } from '@3db/regen';
+import { drawingAnchors, holeFeatures, projectDrawingView, elementFacts, viewFeatures, findClearance, findInterference, flatPattern, FlatError, sheetChecks, sweepClearance, measureTargets, convertEdges, planarEdgeItems, edgeMateGeometry, exportFaces, faceColors, intoFrame, faceEdges, faceMateGeometry, followReferences, ReferenceProblem, Regenerator, solveAssemblyTree, type AssemblyResult, type AssemblySolveOptions, type BodyInfo, type FlatReport, type HoleFeatures, type RebuildResult, type SheetCheck, type SheetCheckLimits } from '@3db/regen';
 import { edgeFingerprint, faceFingerprint, vertexFingerprint } from '@3db/naming';
 import { binaryStl, exportAssemblyStep, exportPartStep, portableShape, readComponentFile, stepAssemblyPlan, type StepAssemblyPlan } from '@3db/io';
 import type { SourcePart, SourceProvider } from '@3db/regen';
@@ -35,6 +35,8 @@ interface BuiltPart {
   colors: (string | null)[];
   properties: Record<string, string>;
   density: number | null;
+  /** The hole features of the part (the shape has no thread, and a chamfer is a countersink to it): what a drawing writes of its holes. */
+  holes: HoleFeatures;
 }
 /** By content: an unchanged file is never rebuilt again, a changed one is a new entry (B9.4). */
 const parts = new Map<string, Promise<BuiltPart>>();
@@ -54,7 +56,8 @@ async function sourcesOf(data: SourceFileData[] | undefined): Promise<SourceProv
 async function build(bytes: Uint8Array, sources?: SourceFileData[]): Promise<BuiltPart> {
   await api.init();
   const file = await readComponentFile(bytes, '');
-  const regen = new Regenerator(kernel, solver, file.blobs, await sourcesOf(sources));
+  const provider = await sourcesOf(sources);
+  const regen = new Regenerator(kernel, solver, file.blobs, provider);
   const result = regen.rebuild(file.doc);
   const name = (id: string) => file.doc.features.find((f) => f.id === id)?.name ?? id;
   const failed = result.features.filter((f) => f.status === 'error').map((f) => `${name(f.id)}: ${f.message ?? t('worker.failedShort')}`);
@@ -62,7 +65,7 @@ async function build(bytes: Uint8Array, sources?: SourceFileData[]): Promise<Bui
     const frame = f.type === 'refPlane' ? result.frames.get(f.id) : undefined;
     return frame ? [{ id: f.id, name: f.name, frame }] : [];
   });
-  return { regen, result, problems: [...file.warnings, ...failed], planes, colors: faceColors(file.doc, result), properties: { ...file.doc.properties }, density: file.doc.material?.density ?? null };
+  return { regen, result, problems: [...file.warnings, ...failed], planes, colors: faceColors(file.doc, result), properties: { ...file.doc.properties }, density: file.doc.material?.density ?? null, holes: holeFeatures(file.doc, provider) };
 }
 
 /**
@@ -449,7 +452,7 @@ const api: KernelApi = {
         // the faces of a workpiece that is only there for reference are not the part's (as in the lines of its views)
         const own = built.result.bodies.filter((b) => !b.reference && !b.surface);
         const only = own.length > 0 && own.length < built.result.bodies.length;
-        out.push({ features: viewFeatures(body.topology, body.names, r.axes, only ? (i) => own.some((b) => i >= b.face0 && i < b.face0 + b.faces) : undefined) });
+        out.push({ features: viewFeatures(body.topology, body.names, r.axes, only ? (i) => own.some((b) => i >= b.face0 && i < b.face0 + b.faces) : undefined, built.holes) });
       } catch (e) {
         out.push({ error: e instanceof Error ? e.message : String(e) });
       }
@@ -465,7 +468,7 @@ const api: KernelApi = {
         const built = await parts.get(r.part)?.catch(() => null);
         const body = built?.result.body;
         if (!built || !body) throw new Error(t('drawing.noBody'));
-        out.push({ elements: r.refs.map((ref) => elementFacts(body.topology, body.names, ref)) });
+        out.push({ elements: r.refs.map((ref) => elementFacts(body.topology, body.names, ref, built.holes)) });
       } catch (e) {
         out.push({ error: e instanceof Error ? e.message : String(e) });
       }

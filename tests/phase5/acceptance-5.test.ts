@@ -105,7 +105,7 @@ function plateDrawing(part: OpenedPart): PlateDrawing {
       lines.set(v.id, projectDrawingView(kernel, parts, axes, sectionPlane(axesOf(doc.views, doc.sheet.projection, parent)!, v)));
     } else {
       lines.set(v.id, projectDrawingView(kernel, parts, axes));
-      features.set(v.id, viewFeatures(part.mate.topology, part.mate.names, axes));
+      features.set(v.id, viewFeatures(part.mate.topology, part.mate.names, axes, undefined, part.holes));
     }
   }
   const drafts = autoDimensions(features.get('view1')!, { overall: true, holes: true, positions: true, callouts: true });
@@ -115,7 +115,7 @@ function plateDrawing(part: OpenedPart): PlateDrawing {
   const elements = new Map<string, ElementsResult>(
     doc.dimensions.map((d) => {
       const refs: Ref[] = d.kind === 'linear' || d.kind === 'angle' ? [d.a, d.b] : [d.ref];
-      return [d.id, { elements: refs.map((r) => elementFacts(part.mate.topology, part.mate.names, r)) as never }];
+      return [d.id, { elements: refs.map((r) => elementFacts(part.mate.topology, part.mate.names, r, part.holes)) as never }];
     }),
   );
   const built = buildScene(doc, lines, elements, features);

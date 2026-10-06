@@ -1,7 +1,8 @@
 import { t } from '@3db/i18n';
 import { edgeFingerprint, faceFingerprint, resolveRef, vertexFingerprint, type ElementNames } from '@3db/naming';
 import type { Topology } from '@3db/kernel';
-import { rightOf, type ElementFacts, type HoleInfo, type Ref, type ViewAxes, type ViewFeature } from '@3db/model';
+import type { SourceProvider } from './engine';
+import { rightOf, type ElementFacts, type HoleInfo, type PartDoc, type Ref, type ViewAxes, type ViewFeature } from '@3db/model';
 
 /**
  * What a drawing's dimensions need to know of the part a view shows (C16.4): the elements a dimension points at, by persistent name, as numbers; and the
@@ -54,10 +55,28 @@ function neighbour(topology: Topology, g: { origin: readonly number[]; axis: rea
   return null;
 }
 
+/** The countersink at a cylinder's end, when the face beyond it is a cone whose other circular edge is bigger and about the same axis: its diameter and included angle (degrees). */
+function countersinkAt(topology: Topology, g: { origin: readonly number[]; axis: readonly number[]; radius: number }, end: { edge: Topology['edges'][number] }, own: number): HoleInfo['countersink'] | null {
+  const f = end.edge.faces.find((x) => x !== own);
+  const cone = f === undefined ? undefined : topology.faces[f]!.geometry;
+  if (f === undefined || cone?.type !== 'cone' || !parallel(cone.axis, g.axis)) return null;
+  const tol = 1e-6 * Math.max(1, g.radius);
+  for (const e2 of topology.edges) {
+    const c = e2.geometry;
+    if (c?.type !== 'circle' || e2 === end.edge || !e2.faces.includes(f) || !parallel(c.normal, g.axis) || c.radius <= g.radius + tol) continue;
+    const rel = [c.center[0] - g.origin[0]!, c.center[1] - g.origin[1]!, c.center[2] - g.origin[2]!];
+    const t = rel[0]! * g.axis[0]! + rel[1]! * g.axis[1]! + rel[2]! * g.axis[2]!;
+    if (Math.hypot(rel[0]! - t * g.axis[0]!, rel[1]! - t * g.axis[1]!, rel[2]! - t * g.axis[2]!) > tol) continue;
+    return { diameter: 2 * c.radius, angle: (2 * Math.abs(cone.halfAngle) * 180) / Math.PI };
+  }
+  return null;
+}
+
 /**
  * What the model says of a hole (C16.5): a whole concave cylinder, how deep, through or blind (an end closed by a disc or a cone is blind), and a counterbore (the
- * annular plane at the mouth, with a bigger concentric cylinder beyond it). Null for what is not a hole: a convex cylinder, an arc, one closed at both ends, the
- * wall of a counterbore (it is part of the hole below it).
+ * annular plane at the mouth, with a bigger concentric cylinder beyond it) or a countersink (a cone with a circular edge on each side, the smaller the hole's: its
+ * diameter at the mouth and its included angle). Null for what is not a hole: a convex cylinder, an arc, one closed at both ends, the wall of a counterbore (it is part
+ * of the hole below it). The thread of a tapped hole is not in the shape: see `holeFeatures`.
  */
 export function holeInfo(topology: Topology, face: number): HoleInfo | null {
   const g = topology.faces[face]?.geometry;
@@ -78,7 +97,12 @@ export function holeInfo(topology: Topology, face: number): HoleInfo | null {
   if (closed[0] && closed[1]) return null;
   const info: HoleInfo = { through: !closed[0] && !closed[1], depth };
   ends.forEach((e, i) => {
-    if (closed[i] || info.counterbore) return;
+    if (closed[i] || info.counterbore || info.countersink) return;
+    const cone = countersinkAt(topology, g, e, face);
+    if (cone) {
+      info.countersink = cone;
+      return;
+    }
     const wall = neighbour(topology, g, e, face, true);
     if (wall === null) return;
     const wg = topology.faces[wall]!.geometry;
@@ -88,8 +112,43 @@ export function holeInfo(topology: Topology, face: number): HoleInfo | null {
   return info;
 }
 
+/**
+ * The hole features of a part, by id: what the shape cannot say of a hole (a tapped one has no thread in the model; a 45° chamfer at the mouth of a dowel hole is the
+ * same cone as a countersink), for `elementFacts` and `viewFeatures`. A hole whose feature is not here (an imported shape) is read from its shape alone.
+ */
+export type HoleFeatures = ReadonlyMap<string, { kind: HoleKindName; size?: string }>;
+type HoleKindName = Extract<PartDoc['features'][number], { type: 'hole' }>['kind'];
+
+/**
+ * The hole features of a part's document, and of the master models its derived bodies are taken from (`sources` finds them): a derived body keeps the names of
+ * its master's faces, so the holes the master made are the holes of the part. A feature of the document itself is the one a clashing id means.
+ */
+export function holeFeatures(doc: Pick<PartDoc, 'features'>, sources?: SourceProvider): HoleFeatures {
+  const out = new Map<string, { kind: HoleKindName; size?: string }>();
+  for (const f of doc.features) {
+    if (f.type !== 'derivedBody') continue;
+    const master = sources?.get(f.source);
+    if (master) for (const [id, h] of holeFeatures(master.doc, master.sources)) out.set(id, h);
+  }
+  for (const f of doc.features) if (f.type === 'hole') out.set(f.id, { kind: f.kind, ...(f.size ? { size: f.size } : {}) });
+  return out;
+}
+
+/**
+ * What the feature that made a hole adds to what the shape says (`<feature>:side:<sketch>.<point>.wall` is the wall of one of its holes): the thread of a tapped
+ * hole, and no countersink for the cone of anything but a countersunk hole (it is the chamfer of a dowel hole).
+ */
+function withFeature(hole: HoleInfo, name: string, features: HoleFeatures | undefined): HoleInfo {
+  const m = /^([^:]+):side:.*\.wall$/.exec(name);
+  const f = m ? features?.get(m[1]!) : undefined;
+  if (!f) return hole;
+  const { countersink, ...rest } = hole;
+  const out: HoleInfo = f.kind === 'countersink' && countersink ? { ...rest, countersink } : rest;
+  return f.kind === 'tapped' ? { ...out, thread: f.size ? { size: f.size } : {} } : out;
+}
+
 /** What the element a reference points at is (a face, edge or vertex of the part), or why it cannot be told: it is gone, or the name fits more than one. */
-export function elementFacts(topology: Topology, names: ElementNames, ref: Ref): ElementFacts | { error: string } {
+export function elementFacts(topology: Topology, names: ElementNames, ref: Ref, features?: HoleFeatures): ElementFacts | { error: string } {
   const r = resolveRef(ref, names, topology);
   if (!r.ok) return { error: t(r.reason === 'missing' ? 'drawing.refMissing' : 'drawing.refAmbiguous', { name: ref.name }) };
   if (ref.kind === 'vertex') return { kind: 'vertex', type: 'point', point: topology.vertices[r.index]!.point };
@@ -106,7 +165,7 @@ export function elementFacts(topology: Topology, names: ElementNames, ref: Ref):
     if (g?.type === 'plane') return { kind: 'face', type: 'plane', point: g.origin, dir: g.normal, center: f.center };
     if (g?.type === 'cylinder') {
       const hole = holeInfo(topology, r.index);
-      return { kind: 'face', type: 'cylinder', point: g.origin, dir: g.axis, radius: g.radius, ...(hole ? { hole } : {}) };
+      return { kind: 'face', type: 'cylinder', point: g.origin, dir: g.axis, radius: g.radius, ...(hole ? { hole: withFeature(hole, names.faces[r.index]!, features) } : {}) };
     }
     if (g?.type === 'sphere') return { kind: 'face', type: 'sphere', point: g.center, radius: g.radius };
     return { error: t('drawing.refKind', { name: ref.name }) };
@@ -118,7 +177,7 @@ export function elementFacts(topology: Topology, names: ElementNames, ref: Ref):
  * The elements of the part that a view looking from `axes` sees edge-on or as a circle, in the view's coordinates (x to its right, y up): the planes square to the
  * view's x or y, and the cylinders along its direction. `faceAllowed` leaves out faces (those of a workpiece that is only there for reference).
  */
-export function viewFeatures(topology: Topology, names: ElementNames, axes: ViewAxes, faceAllowed: (face: number) => boolean = () => true): ViewFeature[] {
+export function viewFeatures(topology: Topology, names: ElementNames, axes: ViewAxes, faceAllowed: (face: number) => boolean = () => true, features?: HoleFeatures): ViewFeature[] {
   const right = rightOf(axes);
   const up = axes.up;
   const out: ViewFeature[] = [];
@@ -150,7 +209,7 @@ export function viewFeatures(topology: Topology, names: ElementNames, axes: View
         radius: g.radius,
         convex: g.convex,
         full,
-        ...(hole ? { hole } : {}),
+        ...(hole ? { hole: withFeature(hole, names.faces[i]!, features) } : {}),
         // a whole circle has no middle of its arc: its leader goes up and to the right
         outward: full ? 45 : (Math.atan2(dot(to, up), dot(to, right)) * 180) / Math.PI,
       });

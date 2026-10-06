@@ -16,7 +16,7 @@ import { edgeFingerprint } from '@3db/naming';
 import { PlaneGcsSolver } from '@3db/sketch';
 import { Kernel, type ShapeId } from '@3db/kernel';
 import { elementFacts, flatPattern, projectDrawingView, Regenerator, sheetChecks, viewFeatures, type RebuildResult } from '@3db/regen';
-import { build, circle, edge, extrude, fillet, front, rectangle, sketch, statuses } from '../phase1/builders';
+import { build, circle, edge, extrude, face as faceRef, fillet, front, rectangle, sketch, statuses } from '../phase1/builders';
 import { FILES, jig, jigNames, loadGoldenParts, rebuildPart, solveJig, type Kind } from '../support/goldenJig';
 import { assemble, workpieceStep } from '../support/jigFixture';
 
@@ -100,6 +100,25 @@ describe('A. the basic files of the checklist (P2)', () => {
     copy('tests/golden/diamond-pin.3dbx', 'diamond-pin.3dbx', '削邊銷（金樣，體積 2487.0292 mm³）');
     copy('tests/fixtures/step/plate-with-hole.step', 'plate-with-hole.step', 'STEP：40×30×10 的板、中間一個半徑 4 的孔');
   });
+
+  it('writes a plate with every kind of hole a drawing writes a callout for (F4 of the manual: tapped, countersunk, counterbored, dowel)', async () => {
+    const hole = (n: number, x: number, y: number, extra: Record<string, unknown>): Feature[] => [
+      { ...sketch(`s${n}`, faceRef('e1:cap:end')), entities: [{ id: `p${n}`, type: 'point', x, y }] } as Feature,
+      { id: `h${n}`, type: 'hole', name: `h${n}`, suppressed: false, sketch: `s${n}`, kind: 'straight', diameter: '6', end: { type: 'throughAll' }, ...extra } as Feature,
+    ];
+    const doc = build(
+      sketch('s1', front, rectangle('a', 0, 0, 120, 80)),
+      extrude('e1', 's1', 'boss', { type: 'blind', depth: '15' }),
+      ...hole(2, 20, 20, { kind: 'tapped', size: 'M6', diameter: '5' }),
+      ...hole(3, 50, 20, { kind: 'tapped', size: 'M8', diameter: '6.8', end: { type: 'blind', depth: '12' } }),
+      ...hole(4, 80, 20, { kind: 'countersink', diameter: '6', csDiameter: '12', csAngle: '90deg' }),
+      ...hole(5, 20, 55, { kind: 'counterbore', diameter: '6.6', cbDiameter: '11', cbDepth: '6.5' }),
+      ...hole(6, 50, 55, { kind: 'dowel', diameter: '6', fit: 'H7', chamfer: '0.5' }),
+      ...hole(7, 80, 55, { diameter: '9', end: { type: 'blind', depth: '8' } }),
+    );
+    const r = await putPart('孔標註.3dbx', doc, '孔標註用的板 120×80×15：M6 貫穿、M8 深 12、錐孔 Ø6→Ø12 90°、柱孔、定位銷孔（入口導角 0.5）、盲孔 Ø9 深 8（手冊 F4）');
+    expect(kernel.isValid(r.body!.shape)).toBe(true);
+  });
 });
 
 describe('B. a jig made from a master model (checklist D, E, F)', () => {
@@ -137,7 +156,7 @@ describe('B. a jig made from a master model (checklist D, E, F)', () => {
         lines.set(v.id, projectDrawingView(kernel, shapes, axes, sectionPlane(axesOf(drawing.views, drawing.sheet.projection, parent)!, v)));
       } else {
         lines.set(v.id, projectDrawingView(kernel, shapes, axes));
-        features.set(v.id, viewFeatures(part.mate.topology, part.mate.names, axes));
+        features.set(v.id, viewFeatures(part.mate.topology, part.mate.names, axes, undefined, part.holes));
       }
     }
     const drafts = autoDimensions(features.get('view1')!, { overall: true, holes: true, positions: true, callouts: true });
@@ -147,7 +166,7 @@ describe('B. a jig made from a master model (checklist D, E, F)', () => {
     const elements = new Map<string, ElementsResult>(
       drawing.dimensions.map((d) => {
         const refs: Ref[] = d.kind === 'linear' || d.kind === 'angle' ? [d.a, d.b] : [d.ref];
-        return [d.id, { elements: refs.map((r) => elementFacts(part.mate.topology, part.mate.names, r)) as never }];
+        return [d.id, { elements: refs.map((r) => elementFacts(part.mate.topology, part.mate.names, r, part.holes)) as never }];
       }),
     );
     const built = buildScene(drawing, lines, elements, features);
