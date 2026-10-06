@@ -141,7 +141,7 @@ describe('the annotations in the document', () => {
     delete v3.tables;
     v3.schemaVersion = 3;
     const back = parseDrawing(JSON.stringify(v3));
-    expect(back.schemaVersion).toBe(4);
+    expect(back.schemaVersion).toBe(5);
     expect(back.tables).toEqual([]);
   });
 });
@@ -171,7 +171,7 @@ describe('the locating plate: centre marks, callouts and the hole table', () => 
     const drafts = autoDimensions(features(), { overall: false, holes: true, positions: false, callouts: true });
     const texts = drafts.map((draft) => {
       const d = { ...draft, id: 'd', view: 'view1' } as Dimension;
-      const refs: Ref[] = d.kind === 'linear' ? [d.a, d.b] : [d.ref];
+      const refs: Ref[] = d.kind === 'linear' || d.kind === 'angle' ? [d.a, d.b] : [d.ref];
       const resolved: ElementsResult = { elements: refs.map((r) => elementFacts(body.topology, body.names, r)) as never };
       const o = evaluateDimension(d, resolved, top, placed);
       return 'text' in o ? o.text : o.error;

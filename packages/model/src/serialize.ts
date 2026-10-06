@@ -243,7 +243,7 @@ export function parseAssembly(text: string): AssemblyDoc {
   return raw as unknown as AssemblyDoc;
 }
 
-/** Forward migrations of drawings (B9.2): drawingMigrations[n] upgrades version n to n+1. 1 → 2 added the projected, section and detail kinds of view (a version-1 view is a model view as it is); 2 → 3 added the dimensions; 3 → 4 the tables. */
+/** Forward migrations of drawings (B9.2): drawingMigrations[n] upgrades version n to n+1. 1 → 2 added the projected, section and detail kinds of view (a version-1 view is a model view as it is); 2 → 3 added the dimensions; 3 → 4 the tables; 4 → 5 the angle dimension. */
 const drawingMigrations: Record<number, (doc: Json) => Json> = {
   // v2: projected, section and detail views (C16.3), each with its own fields; a version-1 drawing has only the views of a model. Nothing to convert.
   1: (doc) => doc,
@@ -251,6 +251,8 @@ const drawingMigrations: Record<number, (doc: Json) => Json> = {
   2: (doc) => ({ ...doc, dimensions: doc.dimensions ?? [] }),
   // v4: tables (C16.6) and the centre marks of a view (`centre`): a list, empty in an older file.
   3: (doc) => ({ ...doc, tables: doc.tables ?? [] }),
+  // v5: the angle dimension (C16.4). A new kind of dimension; nothing to convert, the version keeps older programs from opening what they would not know how to draw.
+  4: (doc) => doc,
 };
 
 export function parseDrawing(text: string): DrawingDoc {

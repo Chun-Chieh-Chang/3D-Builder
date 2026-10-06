@@ -12,7 +12,7 @@ import type { Ref } from './schema';
  * opened (exact hidden-line removal), so a drawing can never disagree with the model it shows.
  */
 
-export const DRAWING_SCHEMA_VERSION = 4;
+export const DRAWING_SCHEMA_VERSION = 5;
 
 export type SheetSize = 'A4' | 'A3' | 'A2' | 'A1' | 'A0';
 export const SHEET_SIZES: readonly SheetSize[] = ['A4', 'A3', 'A2', 'A1', 'A0'];
@@ -146,7 +146,20 @@ export interface RadiusDimension extends DimensionCommon {
   count?: number;
 }
 
-export type Dimension = LinearDimension | DiameterDimension | RadiusDimension;
+/**
+ * The angle between two elements seen as lines in the view (an edge-on plane or a straight edge seen in its true direction): the angle the rays from where the two
+ * lines meet to the middles of the elements enclose, drawn as an arc of radius `arc` (mm on the sheet) with arrows at its ends. `supplementary` takes the other
+ * angle of the two lines (180° minus it), the one on the far side of the second element.
+ */
+export interface AngleDimension extends DimensionCommon {
+  kind: 'angle';
+  a: Ref;
+  b: Ref;
+  arc: number;
+  supplementary?: boolean;
+}
+
+export type Dimension = LinearDimension | DiameterDimension | RadiusDimension | AngleDimension;
 
 /** What the model says an element is, worked out in the worker from the part as built: the point and direction a dimension measures from, in the part's frame. */
 export interface ElementFacts {
@@ -160,6 +173,8 @@ export interface ElementFacts {
   radius?: number;
   /** A cylinder that is a hole: how deep it is. */
   hole?: HoleInfo;
+  /** A face's middle (the centroid of its area): where on the plane the face is, which a plane's own `point` does not say. */
+  center?: [number, number, number];
 }
 
 /** What the model says of a hole (a whole cylinder cut into the part): through or blind, its depth, and the counterbore at its mouth if it has one. */
@@ -177,7 +192,9 @@ export type ViewFeature =
   /** A cylinder seen along its axis: a circle (a whole one, `full`, or an arc) with its middle in the view's coordinates and the direction (degrees) from there to the middle of the arc. */
   | { type: 'circle'; ref: Ref; centre: [number, number]; radius: number; convex: boolean; full: boolean; outward: number; hole?: HoleInfo }
   /** A whole cylinder seen from the side: its axis from one end to the other, in the view's coordinates. */
-  | { type: 'axis'; ref: Ref; from: [number, number]; to: [number, number]; radius: number };
+  | { type: 'axis'; ref: Ref; from: [number, number]; to: [number, number]; radius: number }
+  /** A plane seen edge-on that is neither square to the view's x nor to its y (a slanted face): the middle of the face and the direction of the line it is seen as (a unit vector), in the view's coordinates. */
+  | { type: 'slant'; ref: Ref; at: [number, number]; dir: [number, number]; area: number };
 
 // ---------------------------------------------------------------- tables (C16.6)
 
@@ -266,6 +283,9 @@ export type DimensionPatch = {
   angle?: number;
   count?: number | null;
   callout?: boolean | null;
+  /** An angle dimension: the radius of its arc (mm), and the other angle of the two lines. */
+  arc?: number;
+  supplementary?: boolean | null;
   a?: Ref;
   b?: Ref;
   ref?: Ref;
@@ -338,6 +358,10 @@ function checkDimension(d: Dimension, views: readonly DrawingView[]): void {
     if (!isRefValue(d.a) || !isRefValue(d.b)) throw new CommandError(t('drawing.dimBadRef'));
     if (!ORIENTATIONS.includes(d.orientation)) throw new CommandError(t('drawing.dimBadOrientation', { orientation: String(d.orientation) }));
     if (!Number.isFinite(d.offset) || d.offset === 0) throw new CommandError(t('drawing.dimBadOffset'));
+  } else if (d.kind === 'angle') {
+    if (!isRefValue(d.a) || !isRefValue(d.b) || d.a.kind === 'vertex' || d.b.kind === 'vertex') throw new CommandError(t('drawing.dimBadRef'));
+    if (!Number.isFinite(d.arc) || !(d.arc > 0)) throw new CommandError(t('drawing.dimBadArc'));
+    if (d.tolerance && d.tolerance.type !== 'bilateral') throw new CommandError(t('drawing.dimAngleFit'));
   } else if (d.kind === 'diameter' || d.kind === 'radius') {
     if (!isRefValue(d.ref) || d.ref.kind === 'vertex') throw new CommandError(t('drawing.dimBadRef'));
     if (!Number.isFinite(d.angle)) throw new CommandError(t('drawing.dimBadAngle'));
@@ -448,12 +472,15 @@ export function mutateDrawing(draft: Draft<DrawingDoc>, cmd: DrawingCommand): vo
     case 'setDimension': {
       const d = draft.dimensions.find((x) => x.id === cmd.dimensionId);
       if (!d) throw new CommandError(t('drawing.noDimension', { id: cmd.dimensionId }));
-      const { reference, tolerance, count, callout, ...rest } = cmd.patch;
-      const belongs: Record<Dimension['kind'], string[]> = { linear: ['offset', 'orientation', 'a', 'b'], diameter: ['angle', 'ref'], radius: ['angle', 'ref'] };
+      const { reference, tolerance, count, callout, supplementary, ...rest } = cmd.patch;
+      const belongs: Record<Dimension['kind'], string[]> = { linear: ['offset', 'orientation', 'a', 'b'], diameter: ['angle', 'ref'], radius: ['angle', 'ref'], angle: ['arc', 'a', 'b'] };
       if (callout !== undefined && d.kind !== 'diameter') throw new CommandError(t('drawing.notForKind', { field: 'callout', kind: d.kind }));
+      if (supplementary !== undefined && d.kind !== 'angle') throw new CommandError(t('drawing.notForKind', { field: 'supplementary', kind: d.kind }));
       for (const k of Object.keys(rest)) if (!belongs[d.kind].includes(k)) throw new CommandError(t('drawing.notForKind', { field: k, kind: d.kind }));
-      if (count !== undefined && d.kind === 'linear') throw new CommandError(t('drawing.notForKind', { field: 'count', kind: d.kind }));
-      const next = { ...(JSON.parse(JSON.stringify(d)) as Dimension), ...rest } as Dimension & { reference?: boolean; count?: number; tolerance?: DimensionTolerance; callout?: boolean };
+      if (count !== undefined && (d.kind === 'linear' || d.kind === 'angle')) throw new CommandError(t('drawing.notForKind', { field: 'count', kind: d.kind }));
+      const next = { ...(JSON.parse(JSON.stringify(d)) as Dimension), ...rest } as Dimension & { reference?: boolean; count?: number; tolerance?: DimensionTolerance; callout?: boolean; supplementary?: boolean };
+      if (supplementary === null || supplementary === false) delete next.supplementary;
+      else if (supplementary === true) next.supplementary = true;
       if (callout === null || callout === false) delete next.callout;
       else if (callout === true) next.callout = true;
       if (reference === null || reference === false) delete next.reference;

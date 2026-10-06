@@ -61,6 +61,12 @@ export const help = {
   'help.conceptSketchSnaps.keywords': '吸附 推斷 抓取 虛線 水平點 垂直點 共線 平行 模型邊 磁吸',
   'help.conceptSketchSnaps.see': 'sketch tool-line tool-convert',
 
+  'help.conceptDrawingDimensions.title': '工程圖的尺寸',
+  'help.conceptDrawingDimensions.summary': '在工程圖的視圖上標註線性、直徑、半徑與角度尺寸，數字永遠來自模型。',
+  'help.conceptDrawingDimensions.body':
+    '在工程圖面板選一個視圖，「尺寸」區可以一次產生全部（外形尺寸、孔、孔的位置），或自己選：\n\n- 線性：兩個平面或圓（側視成線或圓）之間的水平、垂直或對齊距離。\n- 直徑與半徑：選一個圓或孔，可寫成「4×Ø9」，孔可加上貫穿或深度的註記。\n- 角度：選兩個側視成一條線的平面（與視圖的 x 或 y 垂直的，或斜面）；弧畫在兩條線相交處，半徑可以改（弧半徑），「用另一個夾角」換成補角。角度是兩個面「從相交處往各自面的中間」伸出去的兩條射線所夾的角，例如方塊頂面與 45° 的導角面夾 135°（勾補角是 45°）。兩個面互相平行時沒有夾角，會說明。\n\n- 每個尺寸可以加公差（上下限；直徑與線性也可以用 ISO 286 的配合）、設成參考尺寸（括號）。\n- 尺寸的數字每次都從模型算出，模型改了尺寸就跟著變；元素不見了會說明原因。',
+  'help.conceptDrawingDimensions.keywords': '尺寸 角度 直徑 半徑 公差 工程圖 標註',
+
   // ---------------------------------------------------------------- file
   'help.newPart.summary': '開始一個空白零件，附前、上、右三個預設基準面。',
   'help.newPartTemplate.summary': '從範本開始新零件，範本先選好材質與文件設定（空白、碳鋼、鋁件、塑膠件、CNS 製圖）。',

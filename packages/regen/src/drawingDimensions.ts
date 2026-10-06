@@ -103,7 +103,7 @@ export function elementFacts(topology: Topology, names: ElementNames, ref: Ref):
   if (ref.kind === 'face') {
     const f = topology.faces[r.index]!;
     const g = f.geometry;
-    if (g?.type === 'plane') return { kind: 'face', type: 'plane', point: g.origin, dir: g.normal };
+    if (g?.type === 'plane') return { kind: 'face', type: 'plane', point: g.origin, dir: g.normal, center: f.center };
     if (g?.type === 'cylinder') {
       const hole = holeInfo(topology, r.index);
       return { kind: 'face', type: 'cylinder', point: g.origin, dir: g.axis, radius: g.radius, ...(hole ? { hole } : {}) };
@@ -132,6 +132,12 @@ export function viewFeatures(topology: Topology, names: ElementNames, axes: View
     if (g.type === 'plane' && Math.abs(dot(g.normal, axes.dir)) < 1e-6) {
       if (parallel(g.normal, right)) out.push({ type: 'plane', ref: ref(), axis: 'x', coord: dot(g.origin, right), area: f.area });
       else if (parallel(g.normal, up)) out.push({ type: 'plane', ref: ref(), axis: 'y', coord: dot(g.origin, up), area: f.area });
+      else {
+        // edge-on but slanted: the line it is seen as runs square to its normal as seen in the view
+        const n: [number, number] = [dot(g.normal, right), dot(g.normal, up)];
+        const l = Math.hypot(n[0], n[1]);
+        out.push({ type: 'slant', ref: ref(), at: [dot(f.center, right), dot(f.center, up)], dir: [-n[1] / l, n[0] / l], area: f.area });
+      }
     } else if (g.type === 'cylinder' && parallel(g.axis, axes.dir)) {
       const centre: [number, number] = [dot(g.origin, right), dot(g.origin, up)];
       const to: V3 = [f.center[0] - g.origin[0], f.center[1] - g.origin[1], f.center[2] - g.origin[2]];

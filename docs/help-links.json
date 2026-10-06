@@ -234,5 +234,8 @@
     "tool-line",
     "tool-point",
     "tool-circle"
+  ],
+  "F3": [
+    "concept.drawing-dimensions"
   ]
 }

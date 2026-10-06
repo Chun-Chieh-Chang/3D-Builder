@@ -12,7 +12,7 @@ const withViews = (): DrawingDoc => applyDrawingCommand(createEmptyDrawing(), { 
 describe('the drawing document', () => {
   it('starts as an A3 landscape sheet at 1:1 in first angle, with no views and an empty title block', () => {
     const d = createEmptyDrawing();
-    expect(d).toMatchObject({ kind: 'drawing', schemaVersion: 4, sheet: { size: 'A3', orientation: 'landscape', projection: 'first', scale: [1, 1] }, views: [], title: {} });
+    expect(d).toMatchObject({ kind: 'drawing', schemaVersion: 5, sheet: { size: 'A3', orientation: 'landscape', projection: 'first', scale: [1, 1] }, views: [], title: {} });
   });
 
   it('inserts views with their ids kept apart, and refuses what is not a view', () => {

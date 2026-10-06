@@ -7,8 +7,18 @@ import { store, useStore } from '../state/store';
 /** The label of a thing a dimension can point at, as the list shows it. */
 type Pickable = Exclude<ViewFeature, { type: 'axis' }>;
 
+/** The direction of a slanted face's line, degrees counter-clockwise from the view's x axis, in (-90, 90]. */
+const slantAngle = (f: Extract<ViewFeature, { type: 'slant' }>): number => {
+  let a = (Math.atan2(f.dir[1], f.dir[0]) * 180) / Math.PI;
+  if (a > 90) a -= 180;
+  if (a <= -90) a += 180;
+  return a;
+};
+
 const featureLabel = (f: Pickable): string =>
-  f.type === 'plane'
+  f.type === 'slant'
+    ? t('drawingUi.featureSlant', { angle: formatNumber(slantAngle(f), 1), x: formatNumber(f.at[0], 1), y: formatNumber(f.at[1], 1) })
+    : f.type === 'plane'
     ? t(f.axis === 'x' ? 'drawingUi.featurePlaneX' : 'drawingUi.featurePlaneY', { value: formatNumber(f.coord, 2) })
     : t(f.full ? (f.convex ? 'drawingUi.featureCylinder' : 'drawingUi.featureHole') : 'drawingUi.featureArc', {
         size: formatNumber(f.full ? 2 * f.radius : f.radius, 2),
@@ -64,9 +74,14 @@ export function DimensionPanel() {
   const [round, setRound] = useState(0);
   const [selected, setSelected] = useState<string | null>(null);
   const features = view ? (drw.features.get(view.id) ?? null) : null;
-  const planes = (features ?? []).filter((f): f is Pickable => f.type === 'plane');
-  const circles = (features ?? []).filter((f): f is Pickable => f.type === 'circle');
+  const planes = (features ?? []).filter((f): f is Extract<Pickable, { type: 'plane' }> => f.type === 'plane');
+  const slants = (features ?? []).filter((f): f is Extract<Pickable, { type: 'slant' }> => f.type === 'slant');
+  const circles = (features ?? []).filter((f): f is Extract<Pickable, { type: 'circle' }> => f.type === 'circle');
   const linearPick = [...planes, ...circles];
+  /** What an angle can be between: the planes seen edge-on, the ones square to x and y and the slanted ones. */
+  const anglePick = [...planes, ...slants];
+  const [ang1, setAng1] = useState(0);
+  const [ang2, setAng2] = useState(1);
   const mine = view ? drw.doc.dimensions.filter((x) => x.view === view.id) : [];
   const outcomes = d.scene().dimensions;
   const current = mine.find((x) => x.id === selected) ?? null;
@@ -131,6 +146,31 @@ export function DimensionPanel() {
               </button>
             </div>
           )}
+          {anglePick.length >= 2 && (
+            <div className="pm-row">
+              <select data-field="angA" value={Math.min(ang1, anglePick.length - 1)} onChange={(e) => setAng1(Number(e.target.value))}>
+                {anglePick.map((f, i) => (
+                  <option key={i} value={i}>
+                    {featureLabel(f)}
+                  </option>
+                ))}
+              </select>
+              <select data-field="angB" value={Math.min(ang2, anglePick.length - 1)} onChange={(e) => setAng2(Number(e.target.value))}>
+                {anglePick.map((f, i) => (
+                  <option key={i} value={i}>
+                    {featureLabel(f)}
+                  </option>
+                ))}
+              </select>
+              <button
+                className="pm-button"
+                data-action="addAngle"
+                onClick={() => d.addAngle(view.id, anglePick[Math.min(ang1, anglePick.length - 1)]!.ref, anglePick[Math.min(ang2, anglePick.length - 1)]!.ref)}
+              >
+                {t('drawingUi.dimAngleButton')}
+              </button>
+            </div>
+          )}
           {circles.length > 0 && (
             <div className="pm-row">
               <select data-field="dimRound" value={Math.min(round, circles.length - 1)} onChange={(e) => setRound(Number(e.target.value))}>
@@ -175,6 +215,17 @@ export function DimensionPanel() {
                   <span>{t('drawingUi.dimOffset')}</span>
                   <NumberBox field="dimOffset" value={current.offset} onCommit={(v) => d.setDimension(current.id, { offset: v })} />
                 </label>
+              ) : current.kind === 'angle' ? (
+                <>
+                  <label className="pm-row">
+                    <span>{t('drawingUi.dimArc')}</span>
+                    <NumberBox field="dimArc" value={current.arc} onCommit={(v) => v > 0 && d.setDimension(current.id, { arc: v })} />
+                  </label>
+                  <label className="pm-row checkbox">
+                    <input type="checkbox" data-field="dimSupplementary" checked={!!current.supplementary} onChange={(e) => d.setDimension(current.id, { supplementary: e.target.checked })} />
+                    <span>{t('drawingUi.dimSupplementary')}</span>
+                  </label>
+                </>
               ) : (
                 <>
                   <label className="pm-row">

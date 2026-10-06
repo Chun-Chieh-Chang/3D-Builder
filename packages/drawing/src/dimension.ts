@@ -52,6 +52,11 @@ export function holeNote(h: HoleInfo): string {
  * element it points at); in parentheses for a reference dimension.
  */
 export function dimensionText(d: Dimension, value: number, facts?: ElementFacts): string {
+  if (d.kind === 'angle') {
+    const tolerance = d.tolerance ? ` ${toleranceText(d.tolerance, value)}°` : '';
+    const angle = `${formatNumber(value, 2)}°${tolerance}`;
+    return d.reference ? `(${angle})` : angle;
+  }
   const count = d.kind !== 'linear' && d.count ? `${d.count}×` : '';
   const prefix = d.kind === 'diameter' ? 'Ø' : d.kind === 'radius' ? 'R' : '';
   const tol = d.tolerance ? ` ${toleranceText(d.tolerance, value)}` : '';
@@ -122,7 +127,75 @@ export function evaluateDimension(d: Dimension, resolved: ElementsResult | undef
   if ('error' in resolved) return resolved;
   const els = resolved.elements;
   if (d.kind === 'linear') return linear(d, els[0]!, els[1]!, axes, placed);
+  if (d.kind === 'angle') return angle(d, els[0]!, els[1]!, axes, placed);
   return circle(d, els[0]!, axes, placed);
+}
+
+/** What an element is seen as in a view when it is a line: a point on it, its direction (unit), and the point of the element the angle is measured toward. */
+function seenAsLine(e: ElementFacts, axes: ViewAxes): { p: P; d: P; c: P } | { error: string } {
+  const right = rightOf(axes);
+  const to = (v: readonly number[]): P => [dot(v, right), dot(v, axes.up)];
+  if (!e.dir || (e.type !== 'plane' && e.type !== 'line')) return { error: t('drawing.dimNotAngle') };
+  // a plane has to be edge-on (its normal across the view's direction), a line true (its direction across it too)
+  if (Math.abs(dot(e.dir, axes.dir)) > 1e-6 && e.type === 'plane') return { error: t('drawing.dimNotEdgeOn') };
+  if (Math.abs(dot(e.dir, axes.dir)) > 1e-6 && e.type === 'line') return { error: t('drawing.dimNotEdgeOn') };
+  const v = to(e.dir);
+  const l = len(v);
+  if (l < 1e-9) return { error: t('drawing.dimNotEdgeOn') };
+  const d: P = e.type === 'plane' ? [-v[1] / l, v[0] / l] : [v[0] / l, v[1] / l];
+  const p = to(e.point);
+  return { p, d, c: e.center ? to(e.center) : p };
+}
+
+/**
+ * An angle between two lines of the view: the arc of radius `arc` (on the sheet) about where the lines meet, from the ray toward the first element to the ray toward
+ * the second, with an arrow at each end, extension lines along the rays and the value over the middle of the arc. The angle is the one the two rays enclose
+ * (0 to 180°); `supplementary` turns the second ray round.
+ */
+function angle(d: Extract<Dimension, { kind: 'angle' }>, ea: ElementFacts, eb: ElementFacts, axes: ViewAxes, placed: PlacedView): DimensionOutcome {
+  const la = seenAsLine(ea, axes);
+  if ('error' in la) return la;
+  const lb = seenAsLine(eb, axes);
+  if ('error' in lb) return lb;
+  const den = la.d[0] * lb.d[1] - la.d[1] * lb.d[0];
+  if (Math.abs(den) < 1e-9) return { error: t('drawing.dimParallel') };
+  // where the two lines meet
+  const w: P = sub(lb.p, la.p);
+  const s = (w[0] * lb.d[1] - w[1] * lb.d[0]) / den;
+  const meet: P = add(la.p, la.d, s);
+  const ray = (l: { d: P; c: P }): P => {
+    const along = (l.c[0] - meet[0]) * l.d[0] + (l.c[1] - meet[1]) * l.d[1];
+    return along < 0 ? [-l.d[0], -l.d[1]] : l.d;
+  };
+  const r1 = ray(la);
+  let r2 = ray(lb);
+  if (d.supplementary) r2 = [-r2[0], -r2[1]];
+  const sweep = Math.atan2(r1[0] * r2[1] - r1[1] * r2[0], r1[0] * r2[0] + r1[1] * r2[1]); // signed, -π..π
+  const value = (Math.abs(sweep) * 180) / Math.PI;
+  const text = dimensionText(d, value);
+  const centre = toSheet(placed, meet[0], meet[1]);
+  const R = d.arc;
+  const a1 = Math.atan2(r1[1], r1[0]);
+  const sign = sweep >= 0 ? 1 : -1;
+  const at = (ang: number): P => [centre[0] + R * Math.cos(ang), centre[1] + R * Math.sin(ang)];
+  const tangent = (ang: number): P => [-Math.sin(ang) * sign, Math.cos(ang) * sign]; // along the sweep
+  const items: SceneItem[] = [];
+  // the rays carry extension lines from just off the corner to a little past the arc
+  for (const r of [r1, r2]) items.push(line(add(centre, r, GAP), add(centre, r, R + OVERSHOOT)));
+  const arcLength = R * Math.abs(sweep);
+  const inside = arcLength >= 2 * ARROW + 1;
+  const stub = inside ? 0 : (ARROW + 2) / R;
+  const steps = Math.max(8, Math.ceil((Math.abs(sweep) + 2 * stub) / (Math.PI / 36)));
+  const from = a1 - sign * stub;
+  const total = sweep + sign * 2 * stub;
+  items.push(line(...Array.from({ length: steps + 1 }, (_, k) => at(from + (total * k) / steps))));
+  const end = a1 + sweep;
+  const forward = (ang: number): P => tangent(ang);
+  const backward = (ang: number): P => [-tangent(ang)[0], -tangent(ang)[1]];
+  items.push(arrowhead(at(a1), inside ? backward(a1) : forward(a1)), arrowhead(at(end), inside ? forward(end) : backward(end)));
+  const mid = a1 + sweep / 2;
+  items.push({ kind: 'text', at: [centre[0] + (R + DIM_TEXT) * Math.cos(mid), centre[1] + (R + DIM_TEXT) * Math.sin(mid) - DIM_TEXT / 2], text, height: DIM_TEXT, anchor: 'center' });
+  return { value, text, items };
 }
 
 function linear(d: Extract<Dimension, { kind: 'linear' }>, ea: ElementFacts, eb: ElementFacts, axes: ViewAxes, placed: PlacedView): DimensionOutcome {

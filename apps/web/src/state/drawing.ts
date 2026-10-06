@@ -106,6 +106,9 @@ interface AssemblyView {
 
 const IDENTITY = { position: [0, 0, 0] as [number, number, number], rotation: [0, 0, 0, 1] as [number, number, number, number] };
 
+/** How far from the corner the first angle dimension's arc is drawn (mm on the sheet). */
+const FIRST_ARC = 18;
+
 export class DrawingStore {
   private history: DrawingHistory;
   private handle: FileSystemFileHandle | null;
@@ -444,7 +447,7 @@ export class DrawingStore {
         }
         // what the elements are
         const need = new Map<string, Map<string, Ref>>();
-        const refsOf = (d: Dimension): Ref[] => (d.kind === 'linear' ? [d.a, d.b] : [d.ref]);
+        const refsOf = (d: Dimension): Ref[] => (d.kind === 'linear' || d.kind === 'angle' ? [d.a, d.b] : [d.ref]);
         const keyOfDim = (d: Dimension): string | null => {
           const view = doc.views.find((v) => v.id === d.view);
           return view && !this.assemblyData(view) ? this.keyOf(view) : null;
@@ -590,7 +593,7 @@ export class DrawingStore {
     const same = (a: Ref, b: Ref) => a.kind === b.kind && a.name === b.name;
     const have = doc.dimensions.filter((d) => d.view === viewId);
     const isNew = (d: ReturnType<typeof autoDimensions>[number]) =>
-      !have.some((h) => h.kind === d.kind && (h.kind === 'linear' && d.kind === 'linear' ? h.orientation === d.orientation && same(h.a, d.a) && same(h.b, d.b) : h.kind !== 'linear' && d.kind !== 'linear' && same(h.ref, d.ref)));
+      !have.some((h) => h.kind === d.kind && (h.kind === 'linear' && d.kind === 'linear' ? h.orientation === d.orientation && same(h.a, d.a) && same(h.b, d.b) : (h.kind === 'diameter' || h.kind === 'radius') && (d.kind === 'diameter' || d.kind === 'radius') && same(h.ref, d.ref)));
     const drafts = autoDimensions(features, options).filter(isNew);
     if (drafts.length === 0) return 0;
     // the offsets continue outside the dimension lines the view has already
@@ -612,6 +615,14 @@ export class DrawingStore {
     const n = doc.dimensions.filter((d) => d.view === viewId && d.kind === 'linear' && d.orientation === orientation && Math.sign(d.offset) === sign).length;
     const id = ids.take('dim');
     this.execute({ type: 'insertDimensions', dimensions: [{ id, view: viewId, kind: 'linear', a, b, orientation, offset: sign * (FIRST_OFFSET + n * OFFSET_STEP) }] });
+  }
+
+  /** The angle between two elements seen as lines in the view (planes edge-on, slanted ones too). */
+  addAngle(viewId: Id, a: Ref, b: Ref): void {
+    const doc = this.history.doc;
+    const ids = new IdAllocator(doc.idCounters, drawingIdsInUse(doc));
+    const n = doc.dimensions.filter((d) => d.view === viewId && d.kind === 'angle').length;
+    this.execute({ type: 'insertDimensions', dimensions: [{ id: ids.take('dim'), view: viewId, kind: 'angle', a, b, arc: FIRST_ARC + n * OFFSET_STEP }] });
   }
 
   /** The diameter or radius of a circle of the view. */

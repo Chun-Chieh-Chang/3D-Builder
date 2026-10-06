@@ -172,7 +172,7 @@ describe('the dimensions in the document', () => {
     delete v2.dimensions;
     v2.schemaVersion = 2;
     const back = parseDrawing(JSON.stringify(v2));
-    expect(back.schemaVersion).toBe(4);
+    expect(back.schemaVersion).toBe(5);
     expect(back.dimensions).toEqual([]);
   });
 });
@@ -200,7 +200,7 @@ describe('the locating plate dimensioned in its top view', () => {
   function evaluate(body: ReturnType<typeof built>, drafts: DimensionDraft[]) {
     return drafts.map((draft, i) => {
       const d = { ...draft, id: `dim${i + 1}`, view: 'view1' } as Dimension;
-      const refs = d.kind === 'linear' ? [d.a, d.b] : [d.ref];
+      const refs = d.kind === 'linear' || d.kind === 'angle' ? [d.a, d.b] : [d.ref];
       const facts = refs.map((r) => elementFacts(body.topology, body.names, r));
       const bad = facts.find((f) => 'error' in f) as { error: string } | undefined;
       const resolved: ElementsResult = bad ? { error: bad.error } : { elements: facts as never };
@@ -372,7 +372,7 @@ describe('the locating plate dimensioned in its top view', () => {
     const lines: ViewLines = { visible: [[-60, -40, 60, -40, 60, 40, -60, 40, -60, -40]], hidden: [], box: { min: [-60, -40], max: [60, 40] } };
     const elements = new Map<string, ElementsResult>(
       d.dimensions.map((x) => {
-        const refs = x.kind === 'linear' ? [x.a, x.b] : [x.ref];
+        const refs = x.kind === 'linear' || x.kind === 'angle' ? [x.a, x.b] : [x.ref];
         return [x.id, { elements: refs.map((r) => elementFacts(body.topology, body.names, r)) as never }];
       }),
     );
