@@ -103,11 +103,32 @@ export const help: Translation = {
   'help.extrude.see': 'extrude-cut sketch concept.property-manager',
 
   'help.revolve.summary': 'Turns the sketch around a centerline and adds it to the part.',
+
+  'help.revolve.body':
+    'Select a sketch, then press this command. The sketch needs a line to turn about (usually a centerline), with the profile drawn on one side of it.\n\n- Axis: the list holds the lines of the sketch (centerlines and ordinary lines).\n- Type: a given angle (turned from the sketch plane in one direction) or mid plane (the angle is shared between the two sides); "Reverse direction" turns the other way.\n- The angle is 360° at first; less than 360° gives a part of the turn.\n- The thin feature, the selected contours and "Merge result" work as they do for an extrusion.\n- A profile that is not closed makes the feature fail with the reason (no closed profile to turn).\n\nWorked by hand: a rectangle 10 wide and 20 high with one side on the axis, turned 360°, is a cylinder of radius 10 and height 20: π × 10² × 20 = 6283.19 mm³; turned 90° it is a quarter of that, 1570.80 mm³.',
+
+  'help.revolve.keywords': 'revolve boss base centerline axis angle lathe turn',
+
+  'help.revolve.see': 'revolve-cut sketch extrude concept.property-manager',
   'help.sweep.summary': 'Sweeps a profile sketch along a path drawn in another sketch and adds it to the part.',
   'help.loft.summary': 'Makes a shape that changes from one profile sketch to the next, and adds it to the part.',
   'help.rib.summary': 'Grows a rib of the given thickness from a sketch line, in the middle of the line or to one side.',
   'help.extrudeCut.summary': 'Pulls the selected sketch out and removes it from the part.',
+
+  'help.extrudeCut.body':
+    'Select a sketch, then press this command. It works like Extruded Boss/Base, except the shape that is pulled out is taken away from the part.\n\n- A cut goes into the material by default (against the sketch normal); tick "Reverse direction" to go the other way.\n- The end conditions, draft, direction 2, thin feature and the selected contours work as they do for an extrusion.\n- Through all cuts all the way through; a given depth cuts only that deep.\n\nWorked by hand: a 40 × 30 × 10 block, a 10 × 10 square sketched on the top face and a depth of 4: 12000 − 400 = 11600 mm³; through all: 12000 − 1000 = 11000 mm³.',
+
+  'help.extrudeCut.keywords': 'cut extruded cut remove through all depth slot pocket',
+
+  'help.extrudeCut.see': 'extrude sketch hole concept.property-manager',
   'help.revolveCut.summary': 'Turns the sketch around a centerline and removes it from the part.',
+
+  'help.revolveCut.body':
+    'Select a sketch, then press this command. It works like Revolved Boss/Base, except the revolved shape is taken away from the part; use it for grooves, cone-shaped holes and shoulders.\n\n- The axis, the type, the angle and "Reverse direction" work as they do for a revolved boss.\n- The revolved shape has to touch the part to cut anything.\n\nWorked by hand: a cylinder of radius 10 and height 20 (6283.19 mm³), a rectangle 5 wide and 20 high sketched against the axis and turned 360° as a cut leaves a tube with a bore of radius 5: π × (10² − 5²) × 20 = 4712.39 mm³.',
+
+  'help.revolveCut.keywords': 'revolve cut groove bore lathe remove',
+
+  'help.revolveCut.see': 'revolve extrude-cut sketch concept.property-manager',
   'help.sweepCut.summary': 'Sweeps the profile along the path and removes it from the part.',
   'help.loftCut.summary': 'Makes a shape between two or more profiles and removes it from the part.',
   'help.fillet.summary': 'Rounds the selected edges, or the edges of the selected faces.',
@@ -118,11 +139,46 @@ export const help: Translation = {
     'Select the edges or faces to chamfer, choose angle-distance or distance-distance, type the values and press ✔.\n\n- With a face, the first distance is measured on the face you picked (the second on the face on the other side of the edge); "Reverse direction" swaps them. With the top face and distances 3 and 1: the top shrinks by 3 and the sides are cut 1 down; reversed, the top shrinks by 1 and the sides are cut 3.\n- With an edge, the first distance is measured on the adjacent face whose name sorts first ("Reverse direction" takes the other).\n- A face stands for all its edges, except smooth ones and seams, and for the edges it gets later.\n\nChecked example: a 40 × 30 × 12 block, the top face chamfered 2 × 2: 14130.67 mm³.',
   'help.deleteFace.summary': 'Deletes the selected faces and extends the faces around them until they meet; often used to take out holes or fillets.',
   'help.hole.summary': 'Drills holes at the points of a sketch: straight, counterbore, countersink, tapped or dowel pin; diameter and depth are set in the panel.',
+
+  'help.hole.body':
+    'First sketch on the face to be drilled, with "single points" (not the ends of lines or the centers of circles) where the holes go; select that sketch and press this command. A hole is drilled at every single point of the sketch, into the material.\n\n- Kind of hole: straight, counterbore, countersink, tapped (the drilled hole), dowel.\n- Standard size: pick a size and the diameters come from the table (a tapped hole is drilled to the tap size, the others to the clearance); pick "Custom" to type the diameter. Check the table values against your company standard.\n- A counterbore needs a counterbore diameter and depth; a countersink a countersink diameter and an angle (90° at first); the counterbore has to be bigger than the hole and shallower than it is deep, otherwise the feature fails with the reason.\n- Depth: a given depth or through all; the direction can be reversed.\n- Dowel hole: give the nominal diameter, the tolerance grade (for example H7) and the entry chamfer; the hole is made at the nominal diameter, and the panel lists the limits of the hole and of the pin that goes with it.\n\nExample: an H7 dowel hole of Ø6 has the limits 6.000 to 6.012 mm (+0.012 / 0). When there is no material at the place of a point (the hole is outside the body, or the direction is wrong) the feature fails and says which point.',
+
+  'help.hole.keywords': 'hole wizard counterbore countersink tapped dowel drill tolerance H7',
+
+  'help.hole.see': 'sketch extrude-cut concept.property-manager',
   'help.screwBoss.summary': 'Grows screw bosses with a hole at the points of a sketch, with draft and ribs as options.',
   'help.baseFlange.summary': 'Makes the base of a sheet metal part from a sketch: a closed outline is a flat plate, an open polyline a bent one.',
+
+  'help.baseFlange.body':
+    'The first feature of a sheet metal part: select a sketch and press this command. It also holds the sheet metal settings of the whole part.\n\n- A closed profile is a flat plate; an open polyline is a bent plate (a U, for example), the corners rounded automatically.\n- Thickness, bend radius (inside), K factor (how far from the inside the layer that keeps its length lies, 0 to 1, 0.5 at first).\n- Width (open profile): the width of the bent plate (50 at first). "Thickness to the other side" turns the way the thickness grows: the polyline of a bent plate is the outside face at first, and the inside face once it is turned.\n- The flat length of a bend is the straight part + the bend allowance; the bend allowance = the angle (in radians) × (inside radius + K × thickness).\n\nVerified examples (thickness 1.5, bend radius 2): a closed profile of 60 × 40 is a plate of 60 × 40 × 1.5 = 3600 mm³; a U channel (60 outside wide, 20 outside high, 40 long) is 5678.3 mm³, the panel says a flat length of 94.639, and K = 0.4 gives 94.168.',
+
+  'help.baseFlange.keywords': 'sheet metal base flange thickness bend radius k factor flat length bend allowance',
+
+  'help.baseFlange.see': 'edge-flange hem flat-pattern sketch',
   'help.edgeFlange.summary': 'Folds a flange up from an edge of a sheet metal plate, with length, angle and bend radius.',
+
+  'help.edgeFlange.body':
+    'Grows a bend and a flat flange on a straight edge of a sheet metal plate, as wide as the whole edge.\n\n- Click an edge of the plate in the view (clicking a face does nothing). The flange folds to the side of the face the edge you clicked belongs to; "Flip to the other side" changes it.\n- Flange length, measured from the outside virtual sharp at first (the outside size on a drawing); it can also be measured from the inside virtual sharp or after the bend.\n- Bend angle (blank = 90°) and bend radius (blank = that of the base).\n- Position: "Material inside" (the outside is flush with the edge and the plate is cut away near the edge) or "Bend outside" (the bend starts at the edge, the plate does not move).\n- The start and the end can be shortened, with a rectangular relief cut at the shortened end, so that flanges on neighboring edges do not touch at the corner.\n\nVerified example: a plate 100 × 50 × 1.5 (7500 mm³), bend radius 2, 90°, length 30 from the outside, material inside: the plate loses 262.5, the bend is 323.98 and the flat is 1987.5, in all 9548.98 mm³.',
+
+  'help.edgeFlange.keywords': 'sheet metal edge flange bend length angle relief inset',
+
+  'help.edgeFlange.see': 'base-flange hem flat-pattern concept.property-manager',
   'help.hem.summary': 'Folds the edge of a sheet metal plate back on itself (a 180° bend).',
+
+  'help.hem.body':
+    'Makes a 180° bend on a straight edge of a sheet metal plate, a part of the plate folded back over the plate.\n\n- Click an edge of the plate in the view; "Return length (after the bend)" is the length of the flat that is folded back.\n- "Gap between the two layers (inside)" is the distance between the inside faces of the two layers, and the inside radius of the bend is half of it; a closed hem is a small gap (the gap cannot be 0: a bend with no inside has no shape).\n- Position: "Material inside" (the outside is flush with the edge) or "Bend outside".\n- Shortening the start and the end and the reliefs work as for an edge flange; a hem can also go on the end of a flange as a returned lip.\n\nVerified example: a plate 100 × 50 × 1.5, a gap of 1 (inside bend radius 0.5), a return of 10, material inside: 8394.52 mm³ (the plate loses 150, the bend is 294.52, the flat 750); with the bend outside: 8544.52 mm³.',
+
+  'help.hem.keywords': 'sheet metal hem fold back 180 gap closed lip',
+
+  'help.hem.see': 'edge-flange base-flange flat-pattern',
   'help.flatPattern.summary': 'Works out the flat pattern (the unfolded plate), bend lines and a bend table of a sheet metal part, and writes it as DXF.',
+
+  'help.flatPattern.body':
+    'Works out the flat pattern (the unfolded sheet) of a sheet metal part and draws the outline and the bend lines (red dashed) in a window. The part needs a base flange, otherwise it says "This part is not sheet metal".\n\n- The window lists the overall size, the area, the thickness, the volume and the bend table (angle, inside radius, direction "up / down", bend allowance, position).\n- "Export DXF" writes the outline and the bend lines to a DXF file.\n- The flat pattern is worked out from the bend data (the solid is not unfolded); the window follows when the model changes; nothing is saved in the file.\n- An edge flange or hem on a flange of a bent base flange cannot be unfolded yet; it says why.\n\nVerified example (plate 100 × 50 × 1.5, radius 2, K 0.5): add a flange of 90°, length 30 from the outside, material inside, and the flat length is 100 − 2 × (2 + 1.5) + 30 + 4.3197 = 127.3197, the width 50, the area 6365.98, one bend of 90° up; K = 0.4 gives 127.0841; the volume unfolded is that of the folded part (K = 0.5).',
+
+  'help.flatPattern.keywords': 'sheet metal flat pattern unfold bend line bend table dxf allowance',
+
+  'help.flatPattern.see': 'base-flange edge-flange hem',
   'help.snapHook.summary': 'Makes a snap hook on a plastic part: a cantilever beam with a wedge-shaped hook.',
   'help.snapCatch.summary': 'Makes the rectangular window a snap hook catches on in a plastic part.',
   'help.vent.summary': 'Makes a row of vent slots in a face of a plastic part.',
@@ -147,8 +203,29 @@ export const help: Translation = {
   'help.lipGroove.summary': 'Makes a lip or a groove along the outline in a face of a plastic part, so that two halves fit together.',
   'help.combine.summary': 'Adds bodies, subtracts them (the main body minus the tool bodies) or keeps what they share.',
   'help.linearPattern.summary': 'Repeats the selected features along one or two directions.',
+
+  'help.linearPattern.body':
+    'Copies the selected features along one or two directions.\n\n- Features to pattern: tick one feature, or several one after the other (sketches and datums may lie between); what is patterned is the material they add to and take from the body.\n- Direction 1: a straight edge, a datum axis or a plane (its normal); give the spacing and the number of instances (the original counts as one); "Reverse direction" goes the other way.\n- "Add direction 2 (a grid)" adds another direction, making a grid of rows × columns.\n- Instances to skip: press an instance to leave it out, press again to bring it back; number 0 is the original, in a grid they are "row × column".\n\nExample: one hole patterned 3 times at 15 mm puts the holes at 0, 15 and 30 mm; a 3 × 2 grid is 6 holes, 5 with one skipped.',
+
+  'help.linearPattern.keywords': 'linear pattern array spacing instances grid skip copy',
+
+  'help.linearPattern.see': 'circular-pattern mirror hole concept.property-manager',
   'help.circularPattern.summary': 'Repeats the selected features around an axis.',
+
+  'help.circularPattern.body':
+    'Copies the selected features round an axis.\n\n- Features to pattern: tick one feature, or several one after the other.\n- Axis: a straight edge, a datum axis, a cylindrical or conical face (its axis).\n- The angle and the number of instances (the original counts as one); with "Equal spacing (the angle is shared by the instances)" the angle is the total, shared by all the instances. "Reverse direction" turns the other way.\n- Instances to skip: press one to leave it out, press again to bring it back.\n\nExample: one hole patterned 6 times about the center axis, equal spacing, 360°, puts a hole every 60°; 4 times at 360° is every 90°.',
+
+  'help.circularPattern.keywords': 'circular pattern array round axis angle instances',
+
+  'help.circularPattern.see': 'linear-pattern mirror hole concept.property-manager',
   'help.mirror.summary': 'Mirrors the selected features or bodies about a plane.',
+
+  'help.mirror.body':
+    'Mirrors features, or a whole body, to the other side of a plane.\n\n- What to mirror: "Features" (the material they add to and take from the body) or "Bodies" (an image of the whole body).\n- Mirror plane: a datum plane or a planar face of the model.\n- "Merge result": the mirrored body joins the bodies it touches (the original too); without it the mirror is a new body.\n\nExample: a 10 × 10 × 10 block lying against the mirror plane (x = 0), its body mirrored in the right plane and merged: one solid of 20 × 10 × 10, 2000 mm³.',
+
+  'help.mirror.keywords': 'mirror symmetry plane body feature merge',
+
+  'help.mirror.see': 'linear-pattern circular-pattern concept.property-manager',
   'help.refPlane.summary': 'Makes a reference plane (offset, angle, three points, parallel…).',
   'help.refAxis.summary': 'Makes a reference axis.',
   'help.refPoint.summary': 'Makes a reference point.',

@@ -4,7 +4,7 @@
  */
 import { readFileSync } from 'node:fs';
 import { afterEach, describe, expect, it } from 'vitest';
-import { registerTranslation, setLocale, zhTW } from '@3db/i18n';
+import { en, registerTranslation, setLocale, zhTW } from '@3db/i18n';
 import { installHelp, topicAt, type HelpDeps } from '../../apps/web/src/help/install';
 import { closeHelp, goBack, helpState, openHelp, resetHelp, setPicking, setQuery, showContents, showTopic } from '../../apps/web/src/help/state';
 import { CONCEPTS, allTopics, contents, contextTopic, helpKey, helpTopic, searchTopics, tooltipOf, type ActionLike } from '../../apps/web/src/help/topics';
@@ -327,6 +327,14 @@ describe('F1 and 這是什麼？', () => {
     expect(page.count()).toBeGreaterThan(5);
     off();
     expect(page.count()).toBe(0);
+  });
+});
+
+describe('the texts (H-B)', () => {
+  it('has a text of its own for at least 25 topics, in both languages, and the two say the same topics', () => {
+    const own = (catalog: Record<string, string>) => Object.keys(catalog).filter((k) => k.startsWith('help.') && k.endsWith('.body')).sort();
+    expect(own(zhTW as Record<string, string>).length).toBeGreaterThanOrEqual(25);
+    expect(own(en as Record<string, string>)).toEqual(own(zhTW as Record<string, string>));
   });
 });
 
