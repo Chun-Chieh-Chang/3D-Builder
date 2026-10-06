@@ -89,7 +89,7 @@ window.showSaveFilePicker = async (o) => {
 
 // ---------------------------------------------------------------- command bar, tree, dialogs, PropertyManager
 H.tab = (name) => {
-  const t = [...document.querySelectorAll('.tabs button')].find((b) => b.textContent === name);
+  const t = [...document.querySelectorAll('.tabs .tab')].find((b) => b.textContent === name);
   if (!t) throw new Error(`no tab ${name}`);
   t.click();
 };

@@ -38,7 +38,7 @@ H.settle = async () => {
 };
 
 // ---------------------------------------------------------------- command bar, tree, PropertyManager
-H.tab = (name) => [...document.querySelectorAll('.tabs button')].find((b) => b.textContent === name).click();
+H.tab = (name) => [...document.querySelectorAll('.tabs .tab')].find((b) => b.textContent === name).click();
 H.btn = (label) => {
   const b = [...document.querySelectorAll('.tools button')].find((x) => x.textContent === label);
   if (!b) throw new Error(`no button ${label}`);

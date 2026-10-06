@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { t } from '@3db/i18n';
 import { ACTIONS, type UiAction } from '../actions';
 import { actionTooltip, currentTopicId } from '../help/context';
@@ -22,9 +22,15 @@ const ASSEMBLY_TABS: Tab[] = [
   { id: 'view', get label() { return t('tab.view'); }, groups: ['view'] },
 ];
 
-/** CommandManager-style tabbed toolbar (D3.2); buttons come from the action registry (D3.1). */
+/**
+ * CommandManager-style menu bar (D3.2); the commands come from the action registry (D3.1). Each name is a menu: pressing it lets the commands of its group
+ * drop down below it, in columns; one is chosen, or Esc, or a press anywhere else, and it folds up again. While one is open, moving over another name opens
+ * that one instead, as menus do. The commands of the menu last opened stay in the page (folded up, out of sight) so that what they say of themselves is there to read.
+ */
 export function CommandBar() {
   const [tab, setTab] = useState('features');
+  const [open, setOpen] = useState(false);
+  const bar = useRef<HTMLElement>(null);
   const state = useStore((s) => s);
   const title = useDocumentTitle();
   const help = useHelp();
@@ -38,37 +44,83 @@ export function CommandBar() {
   // Every document opened or created shows its main tab (組合件 or 特徵), as in SolidWorks.
   useEffect(() => {
     setTab(assembly ? 'assembly' : 'features');
+    setOpen(false);
   }, [assembly, state.documentSerial]);
+  // folds up on Esc, and on a press anywhere that is not the menu
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        e.stopPropagation();
+        setOpen(false);
+      }
+    };
+    const onPress = (e: PointerEvent) => {
+      if (!(e.target instanceof Node) || !bar.current?.querySelector('.menu')?.parentElement?.contains(e.target)) setOpen(false);
+    };
+    window.addEventListener('keydown', onKey, true);
+    window.addEventListener('pointerdown', onPress, true);
+    return () => {
+      window.removeEventListener('keydown', onKey, true);
+      window.removeEventListener('pointerdown', onPress, true);
+    };
+  }, [open]);
   const current = tabs.find((t) => t.id === tab) ?? tabs[0]!;
   // undo and redo are on every tab, outside the scrolling row of buttons: on the 特徵 tab they used to be at the far end of forty buttons, out of sight
   const quick = ACTIONS.filter((a) => a.id === 'undo' || a.id === 'redo');
   return (
-    <header className="command-bar">
+    <header className="command-bar" ref={bar}>
       <div className="brand">3D-Builder</div>
-      <nav className="tabs" role="tablist">
-        {tabs.map((t) => (
-          <button key={t.id} role="tab" aria-selected={t.id === current.id} className={t.id === current.id ? 'tab active' : 'tab'} onClick={() => setTab(t.id)}>
-            {t.label}
-          </button>
-        ))}
+      <nav className="tabs" role="menubar">
+        {tabs.map((m) => {
+          const here = m.id === current.id;
+          return (
+            <div key={m.id} className={here && open ? 'menu open' : 'menu'}>
+              <button
+                role="menuitem"
+                aria-haspopup="menu"
+                aria-expanded={here && open}
+                className={here ? (open ? 'tab active open' : 'tab active') : 'tab'}
+                onClick={() => {
+                  if (here && open) setOpen(false);
+                  else {
+                    setTab(m.id);
+                    setOpen(true);
+                  }
+                }}
+                onPointerEnter={() => {
+                  if (open && !here) setTab(m.id);
+                }}
+              >
+                {m.label}
+              </button>
+              {here && (
+                <div className={open ? 'tools menu-panel' : 'tools menu-panel folded'} role="menu">
+                  {ACTIONS.filter((a) => m.groups.includes(a.group) && !quick.includes(a)).map((a) => (
+                    <button
+                      key={a.id}
+                      role="menuitem"
+                      className={a.active?.() ? 'tool active' : 'tool'}
+                      data-help={a.id}
+                      disabled={!a.enabled(state)}
+                      onClick={() => {
+                        setOpen(false);
+                        a.run();
+                      }}
+                      title={actionTooltip(a)}
+                    >
+                      {a.label}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          );
+        })}
       </nav>
       <div className="quick-actions">
         {quick.map((a) => (
           <button key={a.id} className="tool" data-help={a.id} disabled={!a.enabled(state)} onClick={a.run} title={actionTooltip(a)}>
-            {a.label}
-          </button>
-        ))}
-      </div>
-      <div className="tools">
-        {ACTIONS.filter((a) => current.groups.includes(a.group) && !quick.includes(a)).map((a) => (
-          <button
-            key={a.id}
-            className={a.active?.() ? 'tool active' : 'tool'}
-            data-help={a.id}
-            disabled={!a.enabled(state)}
-            onClick={a.run}
-            title={actionTooltip(a)}
-          >
             {a.label}
           </button>
         ))}
