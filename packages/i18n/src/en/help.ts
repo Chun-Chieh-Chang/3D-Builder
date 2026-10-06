@@ -111,8 +111,29 @@ export const help: Translation = {
 
   'help.revolve.see': 'revolve-cut sketch extrude concept.property-manager',
   'help.sweep.summary': 'Sweeps a profile sketch along a path drawn in another sketch and adds it to the part.',
+
+  'help.sweep.body':
+    'First draw two sketches: the profile (one closed outline) and the path (one connected open chain of lines and arcs, one end of which lies on the plane of the profile). Select the profile sketch, press this command, and choose the path sketch in the panel.\n\n- The sweep starts at the end of the path that lies on the profile plane, and the angle between profile and path stays the same.\n- When the profile has holes, the result is the outline swept less the holes swept (a pipe is two concentric circles).\n- "Selected contours" and "Merge result" work as they do for an extrusion.\n- A closed path cannot be used (the volume comes out as 0) and it says why; a result that is not a valid solid is explained too.\n\nWorked by hand: a profile of 4 × 6 and a straight path of 40: 24 × 40 = 960 mm³; a path of a line of 30, a quarter arc of R10 and a line of 20 up, the profile on the path: 24 × (30 + 15.708 + 20) = 1577.0 mm³ (the area of the profile times the length of the path).',
+
+  'help.sweep.keywords': 'sweep profile path pipe tube bend',
+
+  'help.sweep.see': 'sweep-cut sketch loft',
   'help.loft.summary': 'Makes a shape that changes from one profile sketch to the next, and adds it to the part.',
+
+  'help.loft.body':
+    'First sketch a section on each of several planes (one closed outline each, without holes), select the first, press this command, and add the others in order with "Add section…".\n\n- The list of sections runs from the first to the last; "Move up", "Move down" and "Remove" change it.\n- The faces pass smoothly through all the sections; with two sections they are ruled.\n- Where the outlines start and which way they run need not match; the kernel pairs them.\n- The sections may have different numbers of edges (a square to a circle works).\n- A result that is not a valid solid makes the feature fail with the reason.\n\nWorked by hand: two 10 × 6 rectangles 20 apart make a prism of 1200 mm³; 20 × 20 to 10 × 10 over 20 is a pyramid frustum (20/3) × (400 + 200 + 100) = 4666.67 mm³; a circle of radius 5 to a circle of radius 2 over 20 is a cone frustum π × 20/3 × (25 + 10 + 4) = 816.81 mm³.',
+
+  'help.loft.keywords': 'loft sections frustum transition blend',
+
+  'help.loft.see': 'loft-cut sweep sketch',
   'help.rib.summary': 'Grows a rib of the given thickness from a sketch line, in the middle of the line or to one side.',
+
+  'help.rib.body':
+    'Draw one straight line in a sketch, select the sketch and press this command: the line, given a thickness, becomes a wall that grows from the line, in the plane of the sketch and square to the line, as far as the body, and joins it.\n\n- Rib thickness; "Thickness position": both sides (about the sketch plane), one side of the sketch normal, or the other.\n- "Reverse direction" changes the way the wall grows. The program does not choose the direction: when the wall cannot reach the body it says to reverse.\n- Put the sketch on a plane square to the plate; the position of the line is the top edge of the rib.\n\nWorked by hand: a plate of 40 × 40 × 10, the line 15 above the plate, 20 long, thickness 4: 16000 + 15 × 20 × 4 = 17200 mm³.',
+
+  'help.rib.keywords': 'rib web gusset reinforcement thickness reverse',
+
+  'help.rib.see': 'extrude sketch concept.property-manager',
   'help.extrudeCut.summary': 'Pulls the selected sketch out and removes it from the part.',
 
   'help.extrudeCut.body':
@@ -130,7 +151,21 @@ export const help: Translation = {
 
   'help.revolveCut.see': 'revolve extrude-cut sketch concept.property-manager',
   'help.sweepCut.summary': 'Sweeps the profile along the path and removes it from the part.',
+
+  'help.sweepCut.body':
+    'Works like Swept Boss/Base (one profile sketch, one path sketch), except the swept shape is taken away from the part; use it to cut a curved slot or hole.\n\n- One end of the path has to lie on the plane of the profile; the sweep starts there.\n- The swept shape has to touch the part to cut anything.\n- A profile with holes: the shape swept by the outline, less the shape swept by the holes, is what is removed.',
+
+  'help.sweepCut.keywords': 'swept cut remove path curved slot',
+
+  'help.sweepCut.see': 'sweep loft-cut extrude-cut',
   'help.loftCut.summary': 'Makes a shape between two or more profiles and removes it from the part.',
+
+  'help.loftCut.body':
+    'Works like Lofted Boss/Base (sections added in order), except the shape is taken away from the part.\n\n- Each section is one closed outline of a sketch, without holes; the list of sections can be put in order.\n- The lofted shape has to touch the part to cut anything.',
+
+  'help.loftCut.keywords': 'loft cut remove sections',
+
+  'help.loftCut.see': 'loft sweep-cut extrude-cut',
   'help.fillet.summary': 'Rounds the selected edges, or the edges of the selected faces.',
   'help.fillet.body':
     'Click the edges or faces to round in the graphics area (as many as you like), type the radius in the panel and press ✔. Clicking a selected one takes it away.\n\n- Pick an edge: only that edge is rounded (with the edges that continue it smoothly).\n- Pick a face: all its edges are rounded, the edges of its holes too; edges that are smooth already and the seam of a cylinder are left alone. Edges the face gets later (a slot cut into it, say) are rounded too, because each rebuild works the edges out from the face.\n- Both can be used together; an edge is rounded once.\n- When the face has no edge that can be rounded, the feature fails and says why.\n\nWith the fillet type "Face fillet" you pick no edges but two groups of faces (face set 1 and 2: choose the set first, then click faces in the graphics area); the edges where the two sets meet are rounded, convex ones take material away and concave ones (the inside corner of an L, say) add it. When the two sets share no edge the feature fails and says so (a fillet between faces that do not meet is not made yet).\n\n"Full round fillet": pick two side face sets and a center face (choose the set first, then click faces in the graphics area); the center face is replaced by a half cylinder tangent to both sides, whose radius is half the distance between the sides and is not typed. The sides have to be parallel and square to the center face, the center face a rectangle and the sides not lower than the radius; otherwise the feature fails and says why. The new cylindrical face keeps the name of the center face.\n\nChecked examples: a 40 × 30 × 12 block, the top face, radius 2: 14282.89 mm³ (the same as picking its 4 edges; the corners are mitred); the top and the bottom: 14165.78; a radius 1.5 round on the top of a cylinder agrees with the hand calculation; face fillet: the top and one side (the edge 30 long), radius 2: 14374.25, the inside corner of an L with radius 3 adds 77.26; full round: a 40 × 30 × 20 block with the top between the front and the back: 20137.17 mm³ (radius 15).',
@@ -138,6 +173,13 @@ export const help: Translation = {
   'help.chamfer.body':
     'Select the edges or faces to chamfer, choose angle-distance or distance-distance, type the values and press ✔.\n\n- With a face, the first distance is measured on the face you picked (the second on the face on the other side of the edge); "Reverse direction" swaps them. With the top face and distances 3 and 1: the top shrinks by 3 and the sides are cut 1 down; reversed, the top shrinks by 1 and the sides are cut 3.\n- With an edge, the first distance is measured on the adjacent face whose name sorts first ("Reverse direction" takes the other).\n- A face stands for all its edges, except smooth ones and seams, and for the edges it gets later.\n\nChecked example: a 40 × 30 × 12 block, the top face chamfered 2 × 2: 14130.67 mm³.',
   'help.deleteFace.summary': 'Deletes the selected faces and extends the faces around them until they meet; often used to take out holes or fillets.',
+
+  'help.deleteFace.body':
+    'Click the faces to delete (several; click again to take one off) and press ✔: the faces around them extend to close the gap, so holes and fillets vanish.\n\n- While editing, the view shows the model before this feature; clicking a face adds or removes it.\n- Tick "Delete holes" to delete with them the faces that only they enclose (the bottom of a blind hole, for instance).\n- It is for imported models (which have no feature history), to take out holes and fillets; in a part of your own it is better to delete the feature that made them.',
+
+  'help.deleteFace.keywords': 'delete face remove hole fillet imported direct edit',
+
+  'help.deleteFace.see': 'move-face fillet import-step',
   'help.hole.summary': 'Drills holes at the points of a sketch: straight, counterbore, countersink, tapped or dowel pin; diameter and depth are set in the panel.',
 
   'help.hole.body':
@@ -147,6 +189,13 @@ export const help: Translation = {
 
   'help.hole.see': 'sketch extrude-cut concept.property-manager',
   'help.screwBoss.summary': 'Grows screw bosses with a hole at the points of a sketch, with draft and ribs as options.',
+
+  'help.screwBoss.body':
+    'Makes a screw boss at every free point of the sketch, growing from the face the sketch is on (for example the inside floor of a shell) along its normal; the hole goes down from the top.\n\n- Outside diameter, hole diameter (the pilot hole, the diameter at the mouth; look up the screw\'s specification for a self-tapping screw), height, hole depth (blank = to the bottom).\n- Draft of the outside wall (narrowing to the top, blank = none); the hole can have its own draft (narrowing to the bottom, so that the core pin can be drawn out); "Same as outside" sets the two alike.\n- Ribs (gussets): triangular pieces at the foot; set the number, the rib thickness, how far out, the rib height and the start angle (0° is the x of the sketch), spread evenly; "Remove ribs" takes them away.\n- The boss sinks a little into the body, so it always joins; when it does not reach the body the feature fails. When the floor thickness of the shell is changed the bosses follow.',
+
+  'help.screwBoss.keywords': 'screw boss pilot hole rib draft plastic',
+
+  'help.screwBoss.see': 'shell draft snap-hook',
   'help.baseFlange.summary': 'Makes the base of a sheet metal part from a sketch: a closed outline is a flat plate, an open polyline a bent one.',
 
   'help.baseFlange.body':
@@ -180,8 +229,29 @@ export const help: Translation = {
 
   'help.flatPattern.see': 'base-flange edge-flange hem',
   'help.snapHook.summary': 'Makes a snap hook on a plastic part: a cantilever beam with a wedge-shaped hook.',
+
+  'help.snapHook.body':
+    'Makes a cantilever beam at every free point of the sketch, growing from the face the sketch is on along its normal; the end of the beam has a wedge-shaped hook sticking out along the angle: flat underneath (the face that catches), sloped on top (the lead-in).\n\n- Width, beam thickness (along the angle), beam length, hook height, hook depth (how far it sticks out).\n- The beam sinks a little into the body, so it always joins.\n- The sizes are typed by hand; the program does not work out the strain of the beam or choose the material and the angle for you.\n- Cut the other half with "Snap catch" (a window).',
+
+  'help.snapHook.keywords': 'snap hook cantilever beam latch plastic',
+
+  'help.snapHook.see': 'snap-catch vent screw-boss',
   'help.snapCatch.summary': 'Makes the rectangular window a snap hook catches on in a plastic part.',
+
+  'help.snapCatch.body':
+    'Cuts a rectangular window at every free point of the sketch, for the hook of a snap hook to catch in.\n\n- It cuts the "cut depth" into the body from the face the sketch is on; the depth has to be more than the wall to go through.\n- The sizes are typed by hand: the width of the hook and how far it sticks out, plus the clearance the process needs.\n- In the opening direction of the shell the undercut analysis finds this window (it is an undercut), so the mold needs a slider or a hand-loaded core.',
+
+  'help.snapCatch.keywords': 'snap catch window latch undercut',
+
+  'help.snapCatch.see': 'snap-hook vent undercut-analysis',
   'help.vent.summary': 'Makes a row of vent slots in a face of a plastic part.',
+
+  'help.vent.body':
+    'Cuts a row of slots at every free point of the sketch, for the vents of a housing.\n\n- The number of slots, the pitch (center to center), the size of the slots and the angle; the row is centered on the point and the long side of a slot runs along the angle; the slots can have round ends.\n- It cuts the "cut depth" into the body from the face the sketch is on; the depth has to be more than the wall to go through, but it also cuts into the walls behind, so do not go much beyond.',
+
+  'help.vent.keywords': 'vent slots ventilation housing cut',
+
+  'help.vent.see': 'snap-catch shell sketch',
   'help.draft.summary': 'Tilts the selected faces by a draft angle about a neutral face.',
   'help.draft.body':
     'Click the neutral face first, then the faces to draft, type the draft angle and press ✔. Away from the neutral face the walls narrow by default; with "Reverse draft direction" they widen the farther they are from it.\n\nChecked example: a 20 × 10 × 10 block with the top face as the neutral face and its four sides drafted 3° is about 1846.44 mm³; reversed, about 2160.89 mm³. Three of the sides can only be picked after turning the view.',
@@ -191,6 +261,13 @@ export const help: Translation = {
     'Click the faces to remove, type the wall thickness and press ✔ (while editing, the view is the model before the shell; press ✔ to see the result).\n\n- Walls go inward by default; check "Shell outward" to go outward.\n- "Faces with a different thickness" gives single flat walls their own thickness.\n- A wall thicker than the shape allows (for example more than half the side of a block) makes the feature fail with "The wall is thicker than this shape allows…"; make it smaller and it recovers.\n\nChecked example: a 40 × 30 × 10 block with its top face open and a wall of 2 inward is 4512 mm³; outward, 5952 mm³.',
   'help.shell.keywords': 'shell hollow wall thickness opening outward',
   'help.moveFace.summary': 'Pushes the selected flat face by a distance and extends the faces around it, to edit an imported model directly.',
+
+  'help.moveFace.body':
+    'Click a planar face, type the "distance" and press ✔: the face moves along its outward normal and the neighboring faces extend or shorten with it; it is for editing imported models directly.\n\n- A negative value goes into the material.\n- Slanted faces keep their slope.\n- Faces tangent to it (fillets, for example) have to be dealt with first; otherwise the feature fails and says why.',
+
+  'help.moveFace.keywords': 'move face direct edit imported distance',
+
+  'help.moveFace.see': 'delete-face fillet import-step',
   'help.offsetSurface.summary': 'Offsets the selected faces by a distance into a surface body.',
   'help.splitLine.summary': 'Projects the closed outer loop of a sketch onto a face and splits the face into regions.',
   'help.knit.summary': 'Sews surfaces together into one surface body or a solid.',
@@ -201,7 +278,21 @@ export const help: Translation = {
   'help.thicken.summary': 'Gives a surface body a thickness and makes it a solid.',
   'help.cutWithSurface.summary': 'Uses a surface as a knife to cut one side away from a solid.',
   'help.lipGroove.summary': 'Makes a lip or a groove along the outline in a face of a plastic part, so that two halves fit together.',
+
+  'help.lipGroove.body':
+    'Makes a ring along the outer outline of a face (usually the rim of a shell), as a lip or a groove, for a lid to fit.\n\n- Which face it goes on: click a planar face.\n- Kind: a lip (grows out from the face by the "height") or a groove (cut into the body by the "depth").\n- Offset from the edge and the width of the ring: the outline is offset inward by "offset" and by "offset + width", and the ring lies between the two lines.\n- The ring has to lie wholly on the face and not cover a hole in it, so the rim of the shell has to be wide enough; otherwise the feature fails and says why.\n- The groove in the lid is the same feature, with the width and depth enlarged by the clearance of the fit.',
+
+  'help.lipGroove.keywords': 'lip groove lid fit shell rim',
+
+  'help.lipGroove.see': 'shell draft snap-hook',
   'help.combine.summary': 'Adds bodies, subtracts them (the main body minus the tool bodies) or keeps what they share.',
+
+  'help.combine.body':
+    'Combines several bodies into one: choose the "main body" and the "bodies to combine", then the kind.\n\n- Add: bodies that touch are merged into one.\n- Subtract: the main body less the other bodies (the tools).\n- Common: only the part where the bodies overlap (the intersection) is kept.\n- The result is the main body and the others are used up. Click the faces of bodies in the view to add or remove them; adding needs the bodies to touch, subtracting and common take the main body\'s relation to them.',
+
+  'help.combine.keywords': 'combine bodies add subtract common intersect boolean',
+
+  'help.combine.see': 'mirror extrude concept.property-manager',
   'help.linearPattern.summary': 'Repeats the selected features along one or two directions.',
 
   'help.linearPattern.body':
@@ -227,9 +318,37 @@ export const help: Translation = {
 
   'help.mirror.see': 'linear-pattern circular-pattern concept.property-manager',
   'help.refPlane.summary': 'Makes a reference plane (offset, angle, three points, parallel…).',
+
+  'help.refPlane.body':
+    'Makes a datum plane for reference: to sketch on, to mirror in, or to end an extrusion at.\n\n- Kinds: offset (a distance from a reference plane), angle (0° is parallel to the reference, 90° square to it), three points (click vertices or reference points), parallel (through a point, parallel to a reference), perpendicular (through a point, square to a straight edge or datum axis), midplane (midway between two parallel faces), tangent (tangent to a cylinder and parallel to a reference; "Reverse direction" goes to the other side of the cylinder).\n- The reference can be a planar face in the view, or one of the datum buttons in the panel (front, top, right).\n- The datum plane follows the model: when the face it refers to changes, the plane moves with it.',
+
+  'help.refPlane.keywords': 'datum plane reference geometry offset angle midplane tangent',
+
+  'help.refPlane.see': 'ref-axis ref-point coord-sys',
   'help.refAxis.summary': 'Makes a reference axis.',
+
+  'help.refAxis.body':
+    'Makes a datum axis, to turn about, to pattern along, or as the axis of a circular pattern.\n\n- Kinds: straight edge (the axis runs along the edge you select), two points (through two vertices or reference points, directed from the first to the second), cylindrical or conical face (the axis of the face), two planes (the line where two planes meet).\n- Two parallel planes have no line of meeting; the feature fails and says so.\n- The axis follows the elements it refers to.',
+
+  'help.refAxis.keywords': 'datum axis edge two points cylinder planes reference geometry',
+
+  'help.refAxis.see': 'ref-plane ref-point circular-pattern',
   'help.refPoint.summary': 'Makes a reference point.',
+
+  'help.refPoint.body':
+    'Makes a reference point, for the points of a three-point datum plane, the ends of a datum axis, or places to measure.\n\n- Kinds: coordinates (X, Y, Z from the part origin, expressions allowed), center (the center of a circular edge, the midpoint of a straight edge, the center of a sphere, the center of any other face), axis and plane (where a datum axis or a straight edge passes through a plane).\n- An axis parallel to the plane has no point of crossing; the feature fails and says so.',
+
+  'help.refPoint.keywords': 'reference point coordinates center midpoint intersection',
+
+  'help.refPoint.see': 'ref-plane ref-axis coord-sys',
   'help.coordSys.summary': 'Makes a coordinate system, which can place the part when exporting STEP.',
+
+  'help.coordSys.body':
+    'Makes a coordinate system, which can be chosen as the origin and the directions when exporting STEP.\n\n- Origin: pick a vertex or reference point; without one it is the part origin.\n- The X axis runs along the direction you select (a straight edge, a datum axis or the normal of a plane); Y is the part of the selected direction square to X; Z = X × Y (always right-handed).\n- "Flip X axis" and "Flip Y axis" change the directions.\n- When X and Y are parallel Z cannot be decided; the feature fails and says so.',
+
+  'help.coordSys.keywords': 'coordinate system origin step export direction right-handed',
+
+  'help.coordSys.see': 'ref-plane export-step ref-point',
   'help.importStep.summary': 'Reads a STEP file as the body of the part, repairing it only when needed.',
 
   // ---------------------------------------------------------------- assembly
@@ -255,7 +374,19 @@ export const help: Translation = {
 
   // ---------------------------------------------------------------- sketch
   'help.construction.summary': 'Switches the selected entities to construction geometry (dashed, not part of the outline).',
+
+  'help.construction.body':
+    'Switches the selected sketch elements to construction geometry (dashed): they help to position things, but they are not part of the outline and are not extruded.\n\n- Select elements, then press; when all of them are construction lines already, one press turns them back into ordinary lines.\n- A centerline (the axis of a revolve) is construction geometry too.',
+
+  'help.construction.keywords': 'construction geometry dashed centerline helper line',
+
+  'help.construction.see': 'sketch exit-sketch revolve',
   'help.exitSketch.summary': 'Leaves the sketch, keeping the changes, and goes back to making features.',
+
+  'help.exitSketch.body':
+    'Leaves the sketch: the changes are saved and you are back at designing features; the feature tree gains a row for the sketch.\n\n- The green ✔ in the corner of the 3D window does the same.\n- To take back what you did in the sketch, use Undo.',
+
+  'help.exitSketch.keywords': 'exit sketch finish confirm',
   'help.exitSketch.see': 'sketch',
   'help.toolLine.summary': 'Draws a line: click the start, click the end; keep going for a chain, Esc or a double-click ends it.',
   'help.toolLine.body':
