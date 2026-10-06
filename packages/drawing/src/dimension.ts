@@ -1,7 +1,7 @@
 import { t } from '@3db/i18n';
 import { fitDeviations, rightOf, type Dimension, type DimensionTolerance, type ElementFacts, type HoleInfo, type ViewAxes } from '@3db/model';
 import { toSheet, type PlacedView } from './layout';
-import type { SceneItem } from './scene';
+import type { SceneDimensionGeometry, SceneItem } from './scene';
 
 /**
  * A dimension as text and lines on the sheet (C16.4, ISO 129-1): the number the model gives (measured in the view, at full size whatever the scale), the
@@ -11,14 +11,14 @@ import type { SceneItem } from './scene';
 /** The elements a dimension points at, as the worker found them (in the order of the dimension's references), or why not. */
 export type ElementsResult = { elements: ElementFacts[] } | { error: string };
 
-export type DimensionOutcome = { value: number; text: string; items: SceneItem[] } | { error: string };
+export type DimensionOutcome = { value: number; text: string; items: SceneItem[]; dxf?: { textAt: [number, number]; geometry: SceneDimensionGeometry } } | { error: string };
 
 /** Height of the text of a dimension (mm), the length and half-width of an arrowhead, the gap between a feature and its extension line, and how far an extension line passes the dimension line. */
 export const DIM_TEXT = 3.5;
-const ARROW = 3;
+export const ARROW = 3;
 const ARROW_HALF = 0.5;
-const GAP = 1;
-const OVERSHOOT = 2;
+export const GAP = 1;
+export const OVERSHOOT = 2;
 const LEADER = 8;
 
 const dot = (a: readonly number[], b: readonly number[]) => a[0]! * b[0]! + a[1]! * b[1]! + a[2]! * b[2]!;
@@ -217,8 +217,10 @@ function angle(d: Extract<Dimension, { kind: 'angle' }>, ea: ElementFacts, eb: E
   const backward = (ang: number): P => [-tangent(ang)[0], -tangent(ang)[1]];
   items.push(arrowhead(at(a1), inside ? backward(a1) : forward(a1)), arrowhead(at(end), inside ? forward(end) : backward(end)));
   const mid = a1 + sweep / 2;
-  items.push({ kind: 'text', at: [centre[0] + (R + DIM_TEXT) * Math.cos(mid), centre[1] + (R + DIM_TEXT) * Math.sin(mid) - DIM_TEXT / 2], text, height: DIM_TEXT, anchor: 'center' });
-  return { value, text, items };
+  const textAt: P = [centre[0] + (R + DIM_TEXT) * Math.cos(mid), centre[1] + (R + DIM_TEXT) * Math.sin(mid) - DIM_TEXT / 2];
+  items.push({ kind: 'text', at: textAt, text, height: DIM_TEXT, anchor: 'center' });
+  const far = (r: P): P => add(centre, r, R + OVERSHOOT);
+  return { value, text, items, dxf: { textAt: [textAt[0], textAt[1] + DIM_TEXT / 2], geometry: { kind: 'angular', first: [centre, far(r1)], second: [centre, far(r2)], arc: at(mid) } } };
 }
 
 function linear(d: Extract<Dimension, { kind: 'linear' }>, ea: ElementFacts, eb: ElementFacts, axes: ViewAxes, placed: PlacedView): DimensionOutcome {
@@ -268,8 +270,10 @@ function linear(d: Extract<Dimension, { kind: 'linear' }>, ea: ElementFacts, eb:
   const a = onLine(sA);
   const b = onLine(sB);
   items.push(...dimensionLine(a, b));
-  items.push(textOn([(a[0] + b[0]) / 2, (a[1] + b[1]) / 2], (Math.atan2(u[1], u[0]) * 180) / Math.PI, text));
-  return { value, text, items };
+  const label = textOn([(a[0] + b[0]) / 2, (a[1] + b[1]) / 2], (Math.atan2(u[1], u[0]) * 180) / Math.PI, text);
+  items.push(label);
+  const textAt: P = label.kind === 'text' ? add(label.at, n, DIM_TEXT / 2) : a;
+  return { value, text, items, dxf: { textAt, geometry: { kind: 'linear', a: sA, b: sB, line: a, ...(d.orientation === 'horizontal' ? { rotation: 0 } : d.orientation === 'vertical' ? { rotation: 90 } : {}) } } };
 }
 
 function circle(d: Extract<Dimension, { kind: 'diameter' | 'radius' }>, e: ElementFacts, axes: ViewAxes, placed: PlacedView): DimensionOutcome {
@@ -296,6 +300,13 @@ function circle(d: Extract<Dimension, { kind: 'diameter' | 'radius' }>, e: Eleme
     // a small circle, or a radius: the leader comes from outside and its arrow touches the circle pointing in
     items.push(line(shelfEnd, outer, near), arrowhead(near, [-u[0], -u[1]]));
   }
-  items.push({ kind: 'text', at: [outer[0] + dir * 1, outer[1] + 1], text, height: DIM_TEXT, anchor: dir > 0 ? 'left' : 'right' });
-  return { value, text, items };
+  const textAt: P = [outer[0] + dir * 1, outer[1] + 1];
+  items.push({ kind: 'text', at: textAt, text, height: DIM_TEXT, anchor: dir > 0 ? 'left' : 'right' });
+  const middle: P = [textAt[0] + (dir * textWidth(text, DIM_TEXT)) / 2, textAt[1] + DIM_TEXT / 2];
+  return {
+    value,
+    text,
+    items,
+    dxf: { textAt: middle, geometry: d.kind === 'diameter' ? { kind: 'diameter', far: add(centre, u, -r), near, leader: LEADER } : { kind: 'radius', centre, near, leader: LEADER } },
+  };
 }

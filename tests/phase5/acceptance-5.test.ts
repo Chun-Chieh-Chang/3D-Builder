@@ -31,6 +31,7 @@ import {
   buildScene,
   checkDxf,
   checkPdf,
+  drawnEntities,
   pathsInMm,
   readDxf,
   readPdf,
@@ -46,7 +47,7 @@ import {
 } from '@3db/drawing';
 import { assemble, workpieceStep, type Opened, type Project } from '../support/jigFixture';
 import { areaOf, near } from '../support/sectionArea';
-import { testFont } from '../support/testFont';
+import { byPlace, testFont } from '../support/testFont';
 import type { OpenedPart } from '../support/derivedProject';
 
 let kernel: Kernel;
@@ -197,8 +198,8 @@ describe('① the base plate\'s drawing (5-6)', () => {
   it('is written as DXF and PDF and both read back: the same lines to 0.01 mm, the same text, nothing wrong with either', () => {
     const dxf = readDxf(toDxf(d.scene));
     expect(checkDxf(dxf)).toEqual([]);
-    const dxfTexts = dxf.entities.filter((e): e is DxfText => e.type === 'TEXT').map((e) => e.text);
-    expect(dxfTexts).toEqual(sceneTexts(d.scene));
+    const dxfTexts = drawnEntities(dxf).filter((e): e is DxfText => e.type === 'TEXT').map((e) => e.text);
+    expect([...dxfTexts].sort()).toEqual([...sceneTexts(d.scene)].sort()); // the dimensions' texts are in their blocks, after the rest
     expect(dxfTexts).toContain('2×Ø6 H7 (+0.012/0) 貫穿');
     const chars = [...new Set(dxfTexts.join(''))].join('');
     const font = readTrueType(testFont(chars).bytes);
@@ -206,9 +207,9 @@ describe('① the base plate\'s drawing (5-6)', () => {
     expect(warnings).toEqual([]);
     const pdf = readPdf(bytes);
     expect(checkPdf(pdf)).toEqual([]);
-    expect(pdf.pages[0]!.texts.map((t) => t.text)).toEqual(dxfTexts);
-    const a = dxf.entities.filter((e): e is DxfPolyline => e.type === 'LWPOLYLINE');
-    const b = pathsInMm(pdf.pages[0]!.paths).filter((x) => !x.filled);
+    expect(pdf.pages[0]!.texts.map((t) => t.text).sort()).toEqual([...dxfTexts].sort());
+    const a = byPlace(drawnEntities(dxf).filter((e): e is DxfPolyline => e.type === 'LWPOLYLINE'));
+    const b = byPlace(pathsInMm(pdf.pages[0]!.paths).filter((x) => !x.filled));
     expect(b).toHaveLength(a.length);
     let worst = 0;
     a.forEach((e, k) => e.points.forEach((v, i) => (worst = Math.max(worst, Math.abs(v - b[k]!.points[i]!)))));
@@ -295,13 +296,13 @@ describe('② the assembly drawing (5-6)', () => {
     expect(warnings).toEqual([]);
     const pdf = readPdf(bytes);
     expect(checkPdf(pdf)).toEqual([]);
-    const a = dxf.entities.filter((e): e is DxfPolyline => e.type === 'LWPOLYLINE');
-    const b = pathsInMm(pdf.pages[0]!.paths).filter((x) => !x.filled);
+    const a = byPlace(drawnEntities(dxf).filter((e): e is DxfPolyline => e.type === 'LWPOLYLINE'));
+    const b = byPlace(pathsInMm(pdf.pages[0]!.paths).filter((x) => !x.filled));
     expect(b).toHaveLength(a.length);
     let worst = 0;
     a.forEach((e, k) => e.points.forEach((v, i) => (worst = Math.max(worst, Math.abs(v - b[k]!.points[i]!)))));
     expect(worst).toBeLessThan(0.01);
-    expect(pdf.pages[0]!.texts.map((t) => t.text)).toEqual(dxf.entities.filter((e): e is DxfText => e.type === 'TEXT').map((e) => e.text));
+    expect(pdf.pages[0]!.texts.map((t) => t.text).sort()).toEqual(drawnEntities(dxf).filter((e): e is DxfText => e.type === 'TEXT').map((e) => e.text).sort());
   });
 });
 

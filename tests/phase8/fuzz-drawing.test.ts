@@ -8,7 +8,7 @@ import { applyCommand, applyDrawingCommand, axesOf, createEmptyDrawing, createEm
 import { PlaneGcsSolver } from '@3db/sketch';
 import { Kernel } from '@3db/kernel';
 import { elementFacts, projectDrawingView, Regenerator, viewFeatures } from '@3db/regen';
-import { autoDimensions, buildScene, checkDxf, checkPdf, readDxf, readPdf, readTrueType, toDxf, toPdf, toSvg, type DxfPolyline, type ElementsResult, type Scene, type ViewLines } from '@3db/drawing';
+import { autoDimensions, buildScene, checkDxf, checkPdf, drawnEntities, readDxf, readPdf, readTrueType, toDxf, toPdf, toSvg, type DxfPolyline, type ElementsResult, type Scene, type ViewLines } from '@3db/drawing';
 import { circle, extrude, fillet, front, rectangle, sketch } from '../phase1/builders';
 import { areaOf } from '../support/sectionArea';
 import { testFont } from '../support/testFont';
@@ -143,7 +143,7 @@ describe('drawings of parts made at random', () => {
     expect(checkDxf(dxf), `${why}: DXF`).toEqual([]);
     const drawn = built.scene.items.filter((i) => i.kind === 'polyline' && !i.filled && i.points.length >= 4).length;
     expect(drawn, `${why}: lines drawn`).toBeGreaterThan(10);
-    expect(dxf.entities.filter((e): e is DxfPolyline => e.type === 'LWPOLYLINE').length, `${why}: DXF lines`).toBe(drawn);
+    expect(drawnEntities(dxf).filter((e): e is DxfPolyline => e.type === 'LWPOLYLINE').length, `${why}: DXF lines`).toBe(drawn);
     const font = readTrueType(testFont([...new Set(sceneTexts(built.scene).join(''))].join('')).bytes);
     const pdf = readPdf(toPdf(built.scene, { font }).bytes);
     expect(checkPdf(pdf), `${why}: PDF`).toEqual([]);

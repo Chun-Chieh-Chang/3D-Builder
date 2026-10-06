@@ -26,6 +26,8 @@ export const LINE_STYLES: Record<LineStyle, { width: number; dash: number[] | nu
 
 export interface ScenePolyline {
   kind: 'polyline';
+  /** The dimension (by id) this line is drawn for: a DXF writes it into the dimension's block, the other outputs draw it as it is. */
+  group?: string;
   /** x, y, x, y … */
   points: number[];
   style: LineStyle;
@@ -36,6 +38,8 @@ export interface ScenePolyline {
 
 export interface SceneText {
   kind: 'text';
+  /** The dimension (by id) this text is drawn for. */
+  group?: string;
   /** The left end of the text's baseline (or its middle or right end, by `anchor`). */
   at: [number, number];
   text: string;
@@ -48,10 +52,36 @@ export interface SceneText {
 
 export type SceneItem = ScenePolyline | SceneText;
 
+type P2 = [number, number];
+
+/**
+ * What a CAD program needs to know of a dimension to keep it a dimension (D-2, ADR 0102): its kind and the definition points of a DXF DIMENSION, in sheet millimetres.
+ * The lines and text it is drawn with are the scene's items of the same `group`; the text is the one the model's number made, written over what the CAD would measure.
+ */
+export type SceneDimensionGeometry =
+  /** Linear: where the two extension lines start, a point on the dimension line, and for a horizontal or vertical one the angle of the dimension line (0 or 90). */
+  | { kind: 'linear'; a: P2; b: P2; line: P2; rotation?: number }
+  /** Diameter: the two ends of the dimension line on the circle, and the length of the leader. */
+  | { kind: 'diameter'; far: P2; near: P2; leader: number }
+  /** Radius: the centre, a point on the circle and the length of the leader. */
+  | { kind: 'radius'; centre: P2; near: P2; leader: number }
+  /** Angle between two lines: each as the two points it runs through (from the vertex out), and a point on the arc. */
+  | { kind: 'angular'; first: [P2, P2]; second: [P2, P2]; arc: P2 };
+
+export interface SceneDimension {
+  id: string;
+  text: string;
+  /** Where the middle of the text is. */
+  textAt: P2;
+  geometry: SceneDimensionGeometry;
+}
+
 export interface Scene {
   width: number;
   height: number;
   items: SceneItem[];
+  /** The dimensions of the drawing as dimensions, for a DXF (the items of each are marked with its id as `group`). */
+  dimensions?: SceneDimension[];
 }
 
 const rect = (r: Rect, style: LineStyle): ScenePolyline => ({ kind: 'polyline', points: [r.x, r.y, r.x + r.w, r.y, r.x + r.w, r.y + r.h, r.x, r.y + r.h], style, closed: true });
@@ -167,6 +197,7 @@ export function buildScene(
     if (v.kind === 'detail' && parent) items.push(...detailItems(v, parent, own, scaleOf(doc, v)));
   }
   const dimensions = new Map<Id, DimensionOutcome>();
+  const sceneDimensions: SceneDimension[] = [];
   for (const d of doc.dimensions ?? []) {
     const view = doc.views.find((v) => v.id === d.view);
     const own = view && resolved.get(view.id) ? placed.get(view.id) : undefined;
@@ -174,7 +205,10 @@ export function buildScene(
     if (!view || !own || !axes) continue; // nothing to draw it on yet
     const outcome = evaluateDimension(d, elements.get(d.id), axes, own);
     dimensions.set(d.id, outcome);
-    if (!('error' in outcome)) items.push(...outcome.items);
+    if (!('error' in outcome)) {
+      items.push(...outcome.items.map((i) => ({ ...i, group: d.id })));
+      if (outcome.dxf) sceneDimensions.push({ id: d.id, text: outcome.text, textAt: outcome.dxf.textAt, geometry: outcome.dxf.geometry });
+    }
   }
   const tables = new Map<Id, HoleRow[]>();
   for (const table of doc.tables ?? []) {
@@ -191,7 +225,7 @@ export function buildScene(
     tables.set(table.id, rows);
     items.push(...holeTableItems(table, rows, own, doc.sheet));
   }
-  return { scene: { width: m.width, height: m.height, items }, placed, dimensions, tables };
+  return { scene: { width: m.width, height: m.height, items, ...(sceneDimensions.length > 0 ? { dimensions: sceneDimensions } : {}) }, placed, dimensions, tables };
 }
 
 export type { TitleField };

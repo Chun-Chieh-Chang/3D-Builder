@@ -19,7 +19,7 @@ import { autoDimensions, buildScene, type ElementsResult, type Scene, type ViewL
  * The plate in its top and front views on an A3 sheet in first angle, the overall size, the holes with their callouts and the positions as dimensions (one with
  * a fit), the centre marks and lines, a hole table, and a title block with Chinese in it.
  */
-export async function plateScene(): Promise<{ scene: Scene; doc: DrawingDoc }> {
+export async function plateScene(): Promise<{ scene: Scene; doc: DrawingDoc; values: Map<string, number> }> {
   const kernel = await Kernel.load();
   const solver = await PlaneGcsSolver.create();
   const regen = new Regenerator(kernel, solver);
@@ -58,9 +58,11 @@ export async function plateScene(): Promise<{ scene: Scene; doc: DrawingDoc }> {
         return [d.id, { elements: refs.map((r) => elementFacts(body.topology, body.names, r)) as never }];
       }),
     );
-    const { scene } = buildScene(doc, lines, elements, features);
+    const { scene, dimensions: outcomes } = buildScene(doc, lines, elements, features);
     void viewVectors;
-    return { scene, doc };
+    // what each dimension came to, in the order of the document
+    const values = new Map(doc.dimensions.flatMap((d) => { const o = outcomes.get(d.id); return o && 'value' in o ? [[d.id, o.value] as const] : []; }));
+    return { scene, doc, values };
   } finally {
     regen.dispose();
   }

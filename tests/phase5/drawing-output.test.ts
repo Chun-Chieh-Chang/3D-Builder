@@ -10,7 +10,9 @@ import {
   LINE_STYLES,
   checkDxf,
   checkPdf,
+  drawnEntities,
   dxfEscape,
+  dxfOrder,
   dxfUnescape,
   FontError,
   helveticaWidth,
@@ -32,6 +34,7 @@ import {
   type SceneText,
 } from '@3db/drawing';
 import { plateScene, testFont } from '../support/outputScene';
+import { byPlace } from '../support/testFont';
 
 let scene: Scene;
 beforeAll(async () => {
@@ -39,6 +42,9 @@ beforeAll(async () => {
 });
 
 const texts = (s: Scene) => s.items.filter((i): i is SceneText => i.kind === 'text' && i.text !== '');
+/** The same, in the order a DXF draws them (the block of each dimension after the rest). */
+const dxfTexts = (s: Scene) => dxfOrder(s).filter((i): i is SceneText => i.kind === 'text' && i.text !== '');
+
 const lines = (s: Scene) => s.items.filter((i) => i.kind === 'polyline' && i.points.length >= 4);
 const allChars = (s: Scene) => [...new Set(texts(s).flatMap((t) => [...t.text]))].join('');
 const nonAscii = (s: string) => [...s].filter((c) => c.codePointAt(0)! > 0x7e);
@@ -98,10 +104,11 @@ describe('DXF (AC1015)', () => {
 
   it('every polyline of the scene is an LWPOLYLINE on the layer of its style, with the same points and the same closing; filled polygons are fans of SOLIDs', () => {
     const doc = readDxf(text);
-    const polylines = doc.entities.filter((e): e is DxfPolyline => e.type === 'LWPOLYLINE');
-    const solids = doc.entities.filter((e): e is DxfSolid => e.type === 'SOLID');
-    const open = scene.items.filter((i) => i.kind === 'polyline' && !i.filled && i.points.length >= 4);
-    const filled = scene.items.filter((i) => i.kind === 'polyline' && i.filled && i.points.length >= 4);
+    const drawn = drawnEntities(doc); // the dimensions' lines are in their blocks
+    const polylines = drawn.filter((e): e is DxfPolyline => e.type === 'LWPOLYLINE');
+    const solids = drawn.filter((e): e is DxfSolid => e.type === 'SOLID');
+    const open = dxfOrder(scene).filter((i) => i.kind === 'polyline' && !i.filled && i.points.length >= 4);
+    const filled = dxfOrder(scene).filter((i) => i.kind === 'polyline' && i.filled && i.points.length >= 4);
     expect(polylines).toHaveLength(open.length);
     open.forEach((item, k) => {
       if (item.kind !== 'polyline') return;
@@ -121,8 +128,8 @@ describe('DXF (AC1015)', () => {
 
   it('every text of the scene is a TEXT on layer TEXT with its place, height, angle and alignment, and its string reads back the same (Chinese, Ø, ×, ±)', () => {
     const doc = readDxf(text);
-    const found = doc.entities.filter((e): e is DxfText => e.type === 'TEXT');
-    const want = texts(scene);
+    const found = drawnEntities(doc).filter((e): e is DxfText => e.type === 'TEXT');
+    const want = dxfTexts(scene);
     expect(found).toHaveLength(want.length);
     want.forEach((item, k) => {
       const e = found[k]!;
@@ -324,8 +331,8 @@ describe('PDF', () => {
 
 describe('DXF and PDF from the same scene', () => {
   it('draw the same lines: the polylines of the two files are the same points to 0.01 mm', () => {
-    const dxf = readDxf(toDxf(scene)).entities.filter((e): e is DxfPolyline => e.type === 'LWPOLYLINE');
-    const pdf = pathsInMm(readPdf(toPdf(scene).bytes).pages[0]!.paths).filter((p) => !p.filled);
+    const dxf = byPlace(drawnEntities(readDxf(toDxf(scene))).filter((e): e is DxfPolyline => e.type === 'LWPOLYLINE'));
+    const pdf = byPlace(pathsInMm(readPdf(toPdf(scene).bytes).pages[0]!.paths).filter((p) => !p.filled));
     expect(pdf).toHaveLength(dxf.length);
     let worst = 0;
     dxf.forEach((e, k) => {
@@ -336,11 +343,11 @@ describe('DXF and PDF from the same scene', () => {
     expect(worst).toBeLessThan(0.01);
   });
 
-  it('write the same text: the same strings in the same order', () => {
-    const dxf = readDxf(toDxf(scene)).entities.filter((e): e is DxfText => e.type === 'TEXT').map((e) => e.text);
+  it('write the same text: the same strings (a DXF draws the dimensions last, a PDF in the order of the scene)', () => {
+    const dxf = drawnEntities(readDxf(toDxf(scene))).filter((e): e is DxfText => e.type === 'TEXT').map((e) => e.text);
     const font = readTrueType(testFont(allChars(scene)).bytes);
     const pdf = readPdf(toPdf(scene, { font }).bytes).pages[0]!.texts.map((t) => t.text);
-    expect(pdf).toEqual(dxf);
+    expect([...pdf].sort()).toEqual([...dxf].sort());
   });
 });
 

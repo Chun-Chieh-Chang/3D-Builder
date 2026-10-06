@@ -97,3 +97,7 @@ export function testFont(chars: string, options: TestFontOptions = {}): { bytes:
   }
   return { bytes, glyphOf: new Map(list.map((c, i) => [c, i + 1])) };
 }
+
+/** The lines of a drawing in a fixed order that does not depend on how a file is made (where each starts, then how long it is), for the lines of two files to be set side by side. */
+export const byPlace = <T extends { points: number[] }>(lines: T[]): T[] =>
+  [...lines].sort((a, b) => a.points[0]! - b.points[0]! || a.points[1]! - b.points[1]! || a.points.length - b.points.length || a.points[2]! - b.points[2]! || a.points[3]! - b.points[3]!);

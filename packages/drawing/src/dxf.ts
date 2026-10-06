@@ -1,10 +1,15 @@
-import { LINE_STYLES, type LineStyle, type Scene } from './scene';
+import { ARROW, DIM_TEXT, GAP, OVERSHOOT } from './dimension';
+import { LINE_STYLES, type LineStyle, type Scene, type SceneDimension, type SceneItem } from './scene';
 
 /**
  * The drawing as a DXF (F3.1): ASCII, release 2000 (AC1015), in millimetres, model space, written from the same scene as the SVG and the PDF. Each line style is
  * a layer (VISIBLE, HIDDEN, CENTER, THIN, FRAME, DIMENSION, with the linetype and lineweight of ISO 128), the text is on TEXT; a polyline is an LWPOLYLINE, a
  * filled polygon (an arrowhead) SOLIDs (a triangle fan), text is TEXT with every character outside ASCII written as `\U+XXXX` (any reader knows it). The
  * file has the handles, owners and tables a 2000 file has, and `readDxf` checks all of it.
+ *
+ * A dimension of the scene (`scene.dimensions`) is written as a DIMENSION entity (D-2, ADR 0102): the definition points a CAD program measures from, the text of the
+ * model's number written over what it would measure, and the anonymous block `*D<n>` with the lines and text the drawing draws it with (the items of the same `group`),
+ * which is what a viewer shows. The style it names, STANDARD, carries the sizes of the arrows, gaps and text.
  */
 
 export const DXF_VERSION = 'AC1015';
@@ -68,6 +73,28 @@ export interface DxfExtras {
   }) => void;
 }
 
+/**
+ * The items of a scene in the order a DXF draws them: those of no dimension first, then the items of each dimension (in the block of its DIMENSION), a dimension after
+ * the other. Without dimensions in the scene it is the scene's own order.
+ */
+export function dxfOrder(scene: Scene): SceneItem[] {
+  const { loose, blocks } = splitByDimension(scene);
+  return [...loose, ...blocks.flat()];
+}
+
+/** The items that belong to no dimension, and for each dimension of the scene (in order) the items drawn for it. */
+function splitByDimension(scene: Scene): { loose: SceneItem[]; blocks: SceneItem[][] } {
+  const index = new Map((scene.dimensions ?? []).map((d, i) => [d.id, i] as const));
+  const blocks: SceneItem[][] = (scene.dimensions ?? []).map(() => []);
+  const loose: SceneItem[] = [];
+  for (const item of scene.items) {
+    const at = item.group === undefined ? undefined : index.get(item.group);
+    if (at === undefined) loose.push(item);
+    else blocks[at]!.push(item);
+  }
+  return { loose, blocks };
+}
+
 /** The scene as a DXF (AC1015). */
 export function toDxf(scene: Scene, extras?: DxfExtras): string {
   let next = 0x30;
@@ -77,8 +104,13 @@ export function toDxf(scene: Scene, extras?: DxfExtras): string {
   // the fixed objects: their handles are chosen first so that tables can point at each other
   const H = {
     vportTable: '8', ltypeTable: '5', layerTable: '2', styleTable: '3', viewTable: '6', ucsTable: '7', appidTable: '9', dimstyleTable: 'A', blockRecordTable: '1',
-    modelRecord: 'B', paperRecord: 'C', rootDict: 'D', groupDict: 'E', byBlock: '10', byLayer: '11',
+    modelRecord: 'B', paperRecord: 'C', rootDict: 'D', groupDict: 'E', byBlock: '10', byLayer: '11', standardStyle: '12',
   };
+
+  // the dimensions: each gets an anonymous block for what it is drawn with (the items marked with its id), the other items stay in model space
+  const dims = scene.dimensions ?? [];
+  const { loose, blocks: blockItems } = splitByDimension(scene);
+  const blockRecords = dims.map(() => handle());
 
   const layers: { name: string; linetype: string; weight: number }[] = [
     { name: '0', linetype: 'CONTINUOUS', weight: 25 },
@@ -107,6 +139,7 @@ export function toDxf(scene: Scene, extras?: DxfExtras): string {
   o.g(9, '$LUNITS').int(70, 2);
   o.g(9, '$LUPREC').int(70, 4);
   o.g(9, '$TEXTSTYLE').g(7, 'STANDARD');
+  o.g(9, '$DIMSTYLE').g(2, 'STANDARD');
   o.g(9, '$CLAYER').g(8, '0');
   o.g(9, '$CELTYPE').g(6, 'BYLAYER');
   o.g(9, '$LWDISPLAY').int(290, 1);
@@ -140,35 +173,32 @@ export function toDxf(scene: Scene, extras?: DxfExtras): string {
     for (const l of layers) o.g(0, 'LAYER').g(5, handle()).g(330, H.layerTable).g(100, 'AcDbSymbolTableRecord').g(100, 'AcDbLayerTableRecord').g(2, l.name).int(70, 0).int(62, 7).g(6, l.linetype).int(370, l.weight);
   });
   table('STYLE', H.styleTable, 1, () => {
-    o.g(0, 'STYLE').g(5, handle()).g(330, H.styleTable).g(100, 'AcDbSymbolTableRecord').g(100, 'AcDbTextStyleTableRecord').g(2, 'STANDARD').int(70, 0).g(40, 0).g(41, 1).g(50, 0).int(71, 0).g(42, 2.5).g(3, 'txt').g(4, '');
+    o.g(0, 'STYLE').g(5, H.standardStyle).g(330, H.styleTable).g(100, 'AcDbSymbolTableRecord').g(100, 'AcDbTextStyleTableRecord').g(2, 'STANDARD').int(70, 0).g(40, 0).g(41, 1).g(50, 0).int(71, 0).g(42, 2.5).g(3, 'txt').g(4, '');
   });
   table('VIEW', H.viewTable, 0, () => undefined);
   table('UCS', H.ucsTable, 0, () => undefined);
   table('APPID', H.appidTable, 1, () => {
     o.g(0, 'APPID').g(5, handle()).g(330, H.appidTable).g(100, 'AcDbSymbolTableRecord').g(100, 'AcDbRegAppTableRecord').g(2, 'ACAD').int(70, 0);
   });
-  table('DIMSTYLE', H.dimstyleTable, 0, () => undefined);
-  table('BLOCK_RECORD', H.blockRecordTable, 2, () => {
+  // the style the dimensions name: the sizes the drawing draws them with (arrows, extension lines, text above the line, read horizontally or along the line)
+  o.g(0, 'TABLE').g(2, 'DIMSTYLE').g(5, H.dimstyleTable).g(330, '0').g(100, 'AcDbSymbolTable').int(70, 1).g(100, 'AcDbDimStyleTable').int(71, 1);
+  o.g(0, 'DIMSTYLE').g(105, handle()).g(330, H.dimstyleTable).g(100, 'AcDbSymbolTableRecord').g(100, 'AcDbDimStyleTableRecord').g(2, 'STANDARD').int(70, 0);
+  o.g(40, 1).g(41, ARROW).g(42, GAP).g(43, 3.75).g(44, OVERSHOOT).g(140, DIM_TEXT).g(141, 2.5).g(147, 1).int(73, 0).int(74, 0).int(77, 1).int(78, 8).int(171, 3).int(172, 1).int(271, 2).int(272, 2).int(275, 0).g(340, H.standardStyle);
+  o.g(0, 'ENDTAB');
+  table('BLOCK_RECORD', H.blockRecordTable, 2 + dims.length, () => {
     o.g(0, 'BLOCK_RECORD').g(5, H.modelRecord).g(330, H.blockRecordTable).g(100, 'AcDbSymbolTableRecord').g(100, 'AcDbBlockTableRecord').g(2, '*Model_Space');
     o.g(0, 'BLOCK_RECORD').g(5, H.paperRecord).g(330, H.blockRecordTable).g(100, 'AcDbSymbolTableRecord').g(100, 'AcDbBlockTableRecord').g(2, '*Paper_Space');
+    dims.forEach((_, i) => o.g(0, 'BLOCK_RECORD').g(5, blockRecords[i]!).g(330, H.blockRecordTable).g(100, 'AcDbSymbolTableRecord').g(100, 'AcDbBlockTableRecord').g(2, `*D${i + 1}`));
   });
   o.g(0, 'ENDSEC');
 
-  // ---- blocks
-  o.g(0, 'SECTION').g(2, 'BLOCKS');
-  for (const [name, owner] of [['*Model_Space', H.modelRecord], ['*Paper_Space', H.paperRecord]] as const) {
-    o.g(0, 'BLOCK').g(5, handle()).g(330, owner).g(100, 'AcDbEntity').g(8, '0').g(100, 'AcDbBlockBegin').g(2, name).int(70, 0).g(10, 0).g(20, 0).g(30, 0).g(3, name).g(1, '');
-    o.g(0, 'ENDBLK').g(5, handle()).g(330, owner).g(100, 'AcDbEntity').g(8, '0').g(100, 'AcDbBlockEnd');
-  }
-  o.g(0, 'ENDSEC');
-
-  // ---- entities
-  o.g(0, 'SECTION').g(2, 'ENTITIES');
-  const entity = (type: string, layer: string, sub: string) => o.g(0, type).g(5, handle()).g(330, H.modelRecord).g(100, 'AcDbEntity').g(8, layer).g(100, sub);
-  for (const item of scene.items) {
+  // ---- what is drawn: an entity of an owner (model space, or the block of a dimension), written from the scene's items
+  let owner = H.modelRecord;
+  const entity = (type: string, layer: string, sub: string) => o.g(0, type).g(5, handle()).g(330, owner).g(100, 'AcDbEntity').g(8, layer).g(100, sub);
+  const writeItem = (item: SceneItem): void => {
     if (item.kind === 'polyline') {
       const n = item.points.length / 2;
-      if (n < 2) continue;
+      if (n < 2) return;
       for (let i = 0; i < item.points.length; i += 2) {
         minX = Math.min(minX, item.points[i]!);
         maxX = Math.max(maxX, item.points[i]!);
@@ -182,7 +212,7 @@ export function toDxf(scene: Scene, extras?: DxfExtras): string {
           const p = [0, k, k + 1].map((j) => [item.points[2 * j]!, item.points[2 * j + 1]!] as const);
           o.g(10, p[0]![0]).g(20, p[0]![1]).g(30, 0).g(11, p[1]![0]).g(21, p[1]![1]).g(31, 0).g(12, p[2]![0]).g(22, p[2]![1]).g(32, 0).g(13, p[2]![0]).g(23, p[2]![1]).g(33, 0);
         }
-        continue;
+        return;
       }
       entity('LWPOLYLINE', LINE_STYLES[item.style].layer, 'AcDbPolyline');
       o.int(90, n).int(70, item.closed ? 1 : 0);
@@ -201,7 +231,67 @@ export function toDxf(scene: Scene, extras?: DxfExtras): string {
       minY = Math.min(minY, item.at[1]);
       maxY = Math.max(maxY, item.at[1] + item.height);
     }
+  };
+
+  /** A DIMENSION entity for a dimension of the scene: the definition points to measure from, the model's text over what would be measured, and the block it is drawn with. */
+  const writeDimension = (d: SceneDimension, block: string): void => {
+    const gm = d.geometry;
+    // 0 rotated (horizontal or vertical), 1 aligned, 2 angular between two lines, 3 diameter, 4 radius; 32 says the block is this dimension's own, 128 that the text is where it is given
+    const kind = gm.kind === 'linear' ? (gm.rotation === undefined ? 1 : 0) : gm.kind === 'diameter' ? 3 : gm.kind === 'radius' ? 4 : 2;
+    const def = gm.kind === 'linear' ? gm.line : gm.kind === 'diameter' ? gm.far : gm.kind === 'radius' ? gm.centre : gm.second[1];
+    entity('DIMENSION', LINE_STYLES.dimension.layer, 'AcDbDimension');
+    o.g(2, block).g(10, def[0]).g(20, def[1]).g(30, 0).g(11, d.textAt[0]).g(21, d.textAt[1]).g(31, 0).int(70, kind + 32 + 128).int(71, 5).g(3, 'STANDARD').g(1, dxfEscape(d.text));
+    const point = (code: number, p: readonly [number, number]) => o.g(code, p[0]).g(code + 10, p[1]).g(code + 20, 0);
+    if (gm.kind === 'linear') {
+      o.g(100, 'AcDbAlignedDimension');
+      point(13, gm.a);
+      point(14, gm.b);
+      if (gm.rotation !== undefined) {
+        o.g(50, gm.rotation);
+        o.g(100, 'AcDbRotatedDimension');
+      }
+    } else if (gm.kind === 'diameter') {
+      o.g(100, 'AcDbDiametricDimension');
+      point(15, gm.near);
+      o.g(40, gm.leader);
+    } else if (gm.kind === 'radius') {
+      o.g(100, 'AcDbRadialDimension');
+      point(15, gm.near);
+      o.g(40, gm.leader);
+    } else {
+      o.g(100, 'AcDb2LineAngularDimension');
+      point(13, gm.first[0]);
+      point(14, gm.first[1]);
+      point(15, gm.second[0]);
+      point(16, gm.arc);
+    }
+    minX = Math.min(minX, d.textAt[0]);
+    maxX = Math.max(maxX, d.textAt[0]);
+    minY = Math.min(minY, d.textAt[1]);
+    maxY = Math.max(maxY, d.textAt[1]);
+  };
+
+  // ---- blocks
+  o.g(0, 'SECTION').g(2, 'BLOCKS');
+  for (const [name, own] of [['*Model_Space', H.modelRecord], ['*Paper_Space', H.paperRecord]] as const) {
+    o.g(0, 'BLOCK').g(5, handle()).g(330, own).g(100, 'AcDbEntity').g(8, '0').g(100, 'AcDbBlockBegin').g(2, name).int(70, 0).g(10, 0).g(20, 0).g(30, 0).g(3, name).g(1, '');
+    o.g(0, 'ENDBLK').g(5, handle()).g(330, own).g(100, 'AcDbEntity').g(8, '0').g(100, 'AcDbBlockEnd');
   }
+  // the block of each dimension (anonymous: flag 1): what it is drawn with
+  dims.forEach((_, i) => {
+    const name = `*D${i + 1}`;
+    o.g(0, 'BLOCK').g(5, handle()).g(330, blockRecords[i]!).g(100, 'AcDbEntity').g(8, '0').g(100, 'AcDbBlockBegin').g(2, name).int(70, 1).g(10, 0).g(20, 0).g(30, 0).g(3, name).g(1, '');
+    owner = blockRecords[i]!;
+    for (const item of blockItems[i]!) writeItem(item);
+    owner = H.modelRecord;
+    o.g(0, 'ENDBLK').g(5, handle()).g(330, blockRecords[i]!).g(100, 'AcDbEntity').g(8, '0').g(100, 'AcDbBlockEnd');
+  });
+  o.g(0, 'ENDSEC');
+
+  // ---- entities
+  o.g(0, 'SECTION').g(2, 'ENTITIES');
+  for (const item of loose) writeItem(item);
+  dims.forEach((d, i) => writeDimension(d, `*D${i + 1}`));
   const write: DxfWrite = {
     g: (code, value) => {
       o.g(code, value);
