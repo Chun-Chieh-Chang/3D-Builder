@@ -448,13 +448,16 @@ function endCondition(type: EndCondition['type'], old: EndCondition): EndConditi
 /** The element an end condition ends on, with a mark when the model no longer has it. */
 function EndRef({ f, d }: { f: ExtrudeFeature; d: EndCondition }) {
   const result = useStore((s) => s.result);
+  // the body an extrusion goes up to is looked up in the model before the feature: once the extrusion has joined it, the final bodies no longer list it,
+  // so it is the feature's own report that says it is lost
+  const bodyLost = !!result?.features.find((x) => x.id === f.id)?.unresolved?.some((u) => d.type === 'upToBody' && u.ref.name === d.body.name);
   const [ref, found, prompt] =
     d.type === 'upToFace' || d.type === 'offsetFromFace'
       ? ([d.face, !!result?.faceNames.includes(d.face.name), t('pm.pickFace')] as const)
       : d.type === 'upToVertex'
         ? ([d.vertex, !!result?.vertexNames.includes(d.vertex.name), t('pm.pickVertex')] as const)
         : d.type === 'upToBody'
-          ? ([d.body, !!result?.bodies.some((b) => b.id === d.body.name), t('pm.pickBody')] as const)
+          ? ([d.body, !bodyLost, t('pm.pickBody')] as const)
           : [null, true, ''];
   if (!ref) return null;
   return (
