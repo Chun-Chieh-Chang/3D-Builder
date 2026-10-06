@@ -58,6 +58,8 @@ export const model = {
   'cmd.idInUse': 'ID 已被使用：{id}',
   'cmd.nameEmpty': '名稱不可空白',
   'cmd.sketchNeedsPlane': '草圖必須放在基準面或平面上',
+  'cmd.onlyFilletHasKind': '只有圓角特徵有圓角種類',
+  'cmd.filletSetsFaces': '圓角的面組只能放面（固定半徑沒有第二組與中央面組）',
   'cmd.filletOnlyEdges': '圓角只能選邊線與面',
   'cmd.chamferOnlyEdges': '導角只能選邊線與面',
   'cmd.importDataNotFound': '找不到輸入的資料：{id}',

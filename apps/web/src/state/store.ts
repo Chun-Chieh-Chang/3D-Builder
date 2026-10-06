@@ -26,6 +26,7 @@ import {
   type DatumPlaneName,
   type BlobRef,
   type Feature,
+  type FilletKind,
   type EdgeFlangeFeature,
   type HemFeature,
   type Fingerprint,
@@ -238,6 +239,9 @@ export type PendingFileAction = 'new-part' | 'new-demo' | 'new-assembly' | 'open
 /** One document is open at a time (2026-09-28 decision): a part or an assembly. */
 export type DocumentKind = 'part' | 'assembly' | 'drawing';
 
+/** A group of faces of a face fillet (`faces`, `faces2`) or a full round fillet (the two sides and the `center`). */
+export type FilletGroup = 'faces' | 'faces2' | 'center';
+
 /**
  * UI state. The document inside DocHistory is the only source of truth for the design;
  * everything else here is session state (selection, edit session) or derived data (results).
@@ -309,6 +313,8 @@ export interface UiState {
   flat: FlatState | null;
   /** What a face picked in the view is while a shell is edited: one to take away (open), or one with a wall of its own (C5.4). */
   shellPick: 'open' | 'thickness';
+  /** The group of faces a face picked in the view goes to while a face fillet or a full round fillet is edited. */
+  filletPick: FilletGroup;
   /** The interference detection (E2.1) while its window is open. Null when closed. */
   interference: InterferenceState | null;
   /** The open drawing (Phase 5); null unless the open document is a drawing. */
@@ -511,6 +517,7 @@ class AppStore {
       interference: null,
       clearance: null,
       shellPick: 'open',
+      filletPick: 'faces',
       thickness: null,
       flat: null,
       undercut: null,
@@ -1412,6 +1419,7 @@ class AppStore {
 
   /** 「圓角」 (C5.1): picks edges on the model in the PropertyManager session. */
   newFillet(): void {
+    this.set({ filletPick: 'faces' });
     const id = this.allocator().take('fillet');
     this.openNew({ id, type: 'fillet', name: nextName(this.history.doc, t('feature.fillet')), suppressed: false, edges: [], radius: '2' }, t('feature.fillet'));
   }
@@ -1822,6 +1830,28 @@ class AppStore {
     this.execute({ type: 'setEdges', featureId: f.id, edges });
   }
 
+  /** The kind of the fillet being edited: the groups of faces start empty (what they mean changes with the kind). */
+  setFilletKind(kind: FilletKind): void {
+    const f = this.editedFeature();
+    if (f?.type !== 'fillet') return;
+    this.set({ filletPick: 'faces' });
+    this.execute({ type: 'setFilletSets', featureId: f.id, kind });
+  }
+
+  setFilletPick(group: FilletGroup): void {
+    this.set({ filletPick: group });
+  }
+
+  /** A face picked for a face fillet or a full round fillet: put in the group that waits for it, or taken out when it is there. */
+  toggleFilletGroupFace(ref: Ref): void {
+    const f = this.editedFeature();
+    if (f?.type !== 'fillet' || ref.kind !== 'face') return;
+    const group = this.state.filletPick;
+    const now = f[group] ?? [];
+    const next = now.some((x) => x.name === ref.name) ? now.filter((x) => x.name !== ref.name) : [...now, ref];
+    this.execute({ type: 'setFilletSets', featureId: f.id, kind: f.kind ?? 'constant', faces: f.faces, faces2: f.faces2, center: f.center, ...{ [group]: next } });
+  }
+
   /** A face picked for a fillet or a chamfer (fillet and chamfer by face): toggled in its list, like an edge. */
   toggleEdgeFeatureFace(ref: Ref): void {
     const e = this.state.editing;
@@ -1843,7 +1873,8 @@ class AppStore {
   pick(ref: Ref): void {
     if (this.state.editing?.kind === 'sketch') return void this.convertPicked(ref);
     const f = this.editedFeature();
-    if (f?.type === 'fillet' || f?.type === 'chamfer') (ref.kind === 'face' ? this.toggleEdgeFeatureFace(ref) : this.toggleEdge(ref));
+    if (f?.type === 'fillet' && f.kind && f.kind !== 'constant') this.toggleFilletGroupFace(ref);
+    else if (f?.type === 'fillet' || f?.type === 'chamfer') (ref.kind === 'face' ? this.toggleEdgeFeatureFace(ref) : this.toggleEdge(ref));
     else if (f?.type === 'extrude') this.setUpToFace(ref);
     else if (f?.type === 'refPlane' || f?.type === 'refAxis' || f?.type === 'refPoint' || f?.type === 'coordSys' || f?.type === 'pattern' || f?.type === 'mirror') this.putDatumRef(ref);
     else if (f?.type === 'deleteFace') this.toggleFace(ref);
@@ -1864,6 +1895,7 @@ class AppStore {
   /** The kind of element the feature being edited takes in a list, if it takes several at a time (a fillet's edges, the faces of a shell). */
   multiPickKind(): 'edge' | 'face' | null {
     const f = this.editedFeature();
+    if (f?.type === 'fillet' && f.kind && f.kind !== 'constant') return 'face';
     if (f?.type === 'fillet' || f?.type === 'chamfer' || f?.type === 'fillSurface' || f?.type === 'flatSurface' || f?.type === 'extendSurface') return 'edge';
     if (f?.type === 'deleteFace' || f?.type === 'shell' || f?.type === 'draft' || f?.type === 'offsetSurface') return 'face';
     return null;
@@ -1876,7 +1908,10 @@ class AppStore {
   pickMany(refs: Ref[]): void {
     const f = this.editedFeature();
     const more = (list: Ref[], kind: Ref['kind'], skip?: string) => [...list, ...refs.filter((r, i) => r.kind === kind && r.name !== skip && !list.some((x) => x.name === r.name) && refs.findIndex((q) => q.name === r.name) === i)];
-    if (f?.type === 'fillet' || f?.type === 'chamfer') this.execute({ type: 'setEdges', featureId: f.id, edges: more(f.edges, 'edge') });
+    if (f?.type === 'fillet' && f.kind && f.kind !== 'constant') {
+      const group = this.state.filletPick;
+      this.execute({ type: 'setFilletSets', featureId: f.id, kind: f.kind, faces: f.faces, faces2: f.faces2, center: f.center, ...{ [group]: more(f[group] ?? [], 'face') } });
+    } else if (f?.type === 'fillet' || f?.type === 'chamfer') this.execute({ type: 'setEdges', featureId: f.id, edges: more(f.edges, 'edge') });
     else if (f?.type === 'deleteFace') this.execute({ type: 'setFaces', featureId: f.id, faces: more(f.faces, 'face'), ...(f.hole ? { hole: true } : {}) });
     else if (f?.type === 'shell') this.execute({ type: 'setShell', featureId: f.id, faces: more(f.faces, 'face'), thickness: f.thickness, ...(f.outward ? { outward: true } : {}) });
     else if (f?.type === 'fillSurface' || f?.type === 'flatSurface' || f?.type === 'extendSurface') this.setSurfaceEdges(more(f.edges, 'edge').filter((r) => !r.name.includes(`${f.id}:`)));

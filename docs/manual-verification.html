@@ -81,7 +81,7 @@ code{background:var(--chip);padding:0 4px;border-radius:4px}
 <nav><ol><li><a href="#prep">0. 開始之前（只做一次）<span class="cnt" data-sec="prep"></span></a></li><li><a href="#desktop">A. 桌面版安裝<span class="cnt" data-sec="desktop"></span></a></li><li><a href="#basic">B. 基礎功能殘留<span class="cnt" data-sec="basic"></span></a></li><li><a href="#p3a">C. 零件建模（Phase 3a）<span class="cnt" data-sec="p3a"></span></a></li><li><a href="#p3b">D. 組合件（Phase 3b）<span class="cnt" data-sec="p3b"></span></a></li><li><a href="#p4a">E. 夾治具（Phase 4a）<span class="cnt" data-sec="p4a"></span></a></li><li><a href="#p5">F. 工程圖（Phase 5）<span class="cnt" data-sec="p5"></span></a></li><li><a href="#p4b">G. 檢具型面塊（Phase 4b）<span class="cnt" data-sec="p4b"></span></a></li><li><a href="#p6">H. 塑膠件（Phase 6）<span class="cnt" data-sec="p6"></span></a></li><li><a href="#p7">I. 鈑金（Phase 7）<span class="cnt" data-sec="p7"></span></a></li><li><a href="#samples">J. 需要真實樣本的驗證<span class="cnt" data-sec="samples"></span></a></li><li><a href="#standards">K. 對照你的標準<span class="cnt" data-sec="standards"></span></a></li><li><a href="#cleanup">L. 清理與收尾<span class="cnt" data-sec="cleanup"></span></a></li></ol></nav>
 <main>
 <div class="lead">
-<p><b>這份清單是什麼：</b>自動化測試（共 2131 項）都通過了，但它們是用程式驅動畫面與手算的標準答案驗的。下面是<b>還沒有人用滑鼠、鍵盤、別的軟體實際走過</b>的項目，共 84 項。每一項都寫了「為什麼要做、先準備什麼、怎麼做、應該看到什麼、有問題時回報什麼」。第一次用請先讀下面的「先看這裡」（畫面怎麼認、共用做法、名詞）；步驟裡每個動作下面以「→」開頭的小字，是做完那個動作你應該看到的畫面。C 章到 I 章（C1 到 I10）都已改寫成逐步做法；A、B、J、K、L 與 0 章維持原樣（要另一台電腦、你的樣本或你的決定）。</p>
+<p><b>這份清單是什麼：</b>自動化測試（共 2142 項）都通過了，但它們是用程式驅動畫面與手算的標準答案驗的。下面是<b>還沒有人用滑鼠、鍵盤、別的軟體實際走過</b>的項目，共 84 項。每一項都寫了「為什麼要做、先準備什麼、怎麼做、應該看到什麼、有問題時回報什麼」。第一次用請先讀下面的「先看這裡」（畫面怎麼認、共用做法、名詞）；步驟裡每個動作下面以「→」開頭的小字，是做完那個動作你應該看到的畫面。C 章到 I 章（C1 到 I10）都已改寫成逐步做法；A、B、J、K、L 與 0 章維持原樣（要另一台電腦、你的樣本或你的決定）。</p>
 <p><b>怎麼用：</b>點項目標題展開；做完在右邊的下拉選單選「通過」「有問題」「略過」，並在備註寫下觀察。進度會自動存在這個瀏覽器裡。全部做完（或做到一個段落）按上方的「複製結果」把整份貼給我。</p>
 <p><b>建議順序：</b>先做 0（準備）→ C（零件，每項十分鐘內）→ D、E（組合件與夾具）→ F（工程圖）→ H、I（塑膠與鈑金），標「必做」的優先；標「需樣本」「需你決定」的是等你提供資料或下決定，不用現在做。</p>
 <p class="stat">產生日期 2026-10-04，2026-10-06 更新；對應的程式版本：提交 a950822 之後，檔案格式 Schema 42。下文的「驗證資料夾」指 P2 用 KIT_OUT 做出來的那個資料夾（本文的例子寫 D:\3DB實機確認，你的在哪裡就用哪裡）。</p>
@@ -471,6 +471,24 @@ code{background:var(--chip);padding:0 4px;border-radius:4px}
 </ol>
 <h4>應該看到</h4><ul><li>選面就是處理它所有的邊線；相切的邊與接縫不處理；導角的第一個距離量在選的面上，反轉方向換到另一面。</li></ul>
 <p class="report"><b>有問題時請回報：</b>哪一步、面板的訊息原文，和預期差多少（體積或邊長）。</p>
+<label class="note">備註<textarea rows="2" placeholder="做到哪一步、畫面訊息原文、和預期的差別…"></textarea></label>
+</div></details><details class="item" id="item-C24" data-id="C24" data-sec="p3a" data-tag="core">
+<summary><span class="iid">C24</span><span class="ttl">面圓角：兩組面之間（F-2）</span><span class="tag t-core">必做</span>
+<select class="st" aria-label="C24 狀態"><option value="">未做</option><option value="ok">通過</option><option value="bad">有問題</option><option value="skip">略過</option></select></summary>
+<div class="inner">
+<p class="why"><b>為什麼要做：</b>SW 的「面圓角」：不選邊線，選兩組面，兩組面相接的邊就倒圓角；凸的邊去料、凹的邊（如 L 形的內角）補料。</p>
+<p class="why"><b>預跑（2026-10-06，內建瀏覽器照 UI 操作）：</b>方塊頂面當面組 1、右側面當面組 2，半徑 2：14374.2478 mm³ = 14400 − (1 − π/4)·4·30，與手算相同；L 形內角補料、兩組面不相鄰的錯誤訊息、多個面一組、之後改尺寸仍在那條邊上，都由 tests/phase8/fillet-by-face.test.ts 驗過。腳本沒涵蓋：面板兩組面的選取手感與圖面高亮。</p>
+<h4>先準備</h4><p>做一個 40 × 30 × 12 的長方體（<a href="#recipe-a">做法 A</a>，伸長深度 <code>12</code>），按「檢視」→「等角」。</p><h4>怎麼做</h4><ol>
+<li>按「特徵」→「圓角」。「圓角種類」選「面圓角」。<span class="see">面板出現「面組 1」「面組 2」兩個清單，各有一個圓鈕；「邊線」那一區不見了。</span></li>
+<li>選著「面組 1」，在圖形區點方塊的<b>頂面</b>。<span class="see">頂面列入面組 1。</span></li>
+<li>點「面組 2」的圓鈕，再點方塊<b>右側的一個側面</b>（看得到的那一面）。<span class="see">側面列入面組 2。</span></li>
+<li>「半徑」輸入 <code>2</code>，按 ✔。<span class="see">只有頂面和那個側面相接的一條邊變成圓角（長 30）；體積 14374.25 mm³。</span></li>
+<li>雙擊「圓角1」，在面組 2 再加方塊另一個相鄰的側面（頂面另一邊的側面），按 ✔。<span class="see">兩條邊都是圓角；體積比單一條少一條邊的量。再點已選的側面可以取消。</span></li>
+<li>雙擊「圓角1」，把面組 2 換成方塊<b>正對面（與面組 1 的頂面不相接的底面）</b>：先點掉面組 2 的面，再點底面，按 ✔。<span class="see">特徵出錯：「兩組面沒有共同的邊：不相鄰的面之間的面圓角還沒做」；文件的其他部分正常。</span></li>
+<li>（選做）凹的邊：新零件，做 L 形（板 40 × 30 × 10 加沿一邊的壁 40 × 10 × 30，兩個伸長合成一個本體），「圓角」→「面圓角」，面組 1 點壁的內側面、面組 2 點板的頂面，半徑 <code>3</code>。<span class="see">內角補上圓弧的料，體積增加 77.26 mm³（= (1 − π/4)·9·40）。</span></li>
+</ol>
+<h4>應該看到</h4><ul><li>兩組面相接的邊被倒圓角；不相接時明確說明；凹邊補料、凸邊去料。</li></ul>
+<p class="report"><b>有問題時請回報：</b>哪一步、面板的訊息原文，和預期差多少（體積）。</p>
 <label class="note">備註<textarea rows="2" placeholder="做到哪一步、畫面訊息原文、和預期的差別…"></textarea></label>
 </div></details></section><section id="p3b" class="sec"><h2>D. 組合件（Phase 3b）</h2><p class="intro">前置：先做一個小組合件。「檔案」→「新組合件」→ 開始組合件，選驗證資料夾（D:\3DB實機確認），點 locating-plate 按 ✓ 放在原點（固定），再用「組合件」→「插入零組件」插入 diamond-pin 兩次。用「結合」把銷插進板的孔（同軸心加重合）。存檔成 小夾具.3dba。</p><details class="item" id="item-D1" data-id="D1" data-sec="p3b" data-tag="core">
 <summary><span class="iid">D1</span><span class="ttl">剛性次組合件（3b-1）</span><span class="tag t-core">必做</span>

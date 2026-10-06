@@ -50,9 +50,19 @@ export function mapRefs(feature: Feature, map: (ref: Ref) => Ref): { feature: Fe
       const next = { ...feature, dir1: cond(feature.dir1), ...(feature.dir2 ? { dir2: cond(feature.dir2) } : {}) };
       return { feature: next, replaced };
     }
-    case 'fillet':
     case 'chamfer':
       return { feature: { ...feature, edges: feature.edges.map(one), ...(feature.faces ? { faces: feature.faces.map(one) } : {}) }, replaced };
+    case 'fillet':
+      return {
+        feature: {
+          ...feature,
+          edges: feature.edges.map(one),
+          ...(feature.faces ? { faces: feature.faces.map(one) } : {}),
+          ...(feature.faces2 ? { faces2: feature.faces2.map(one) } : {}),
+          ...(feature.center ? { center: feature.center.map(one) } : {}),
+        },
+        replaced,
+      };
     case 'refPlane':
     case 'refAxis':
     case 'refPoint':

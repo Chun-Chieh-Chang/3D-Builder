@@ -60,6 +60,8 @@ export const model: Translation = {
   'cmd.idInUse': 'The ID is already used: {id}',
   'cmd.nameEmpty': 'The name cannot be empty',
   'cmd.sketchNeedsPlane': 'A sketch must lie on a plane or a planar face',
+  'cmd.onlyFilletHasKind': 'Only a fillet has a kind of fillet',
+  'cmd.filletSetsFaces': 'The groups of faces of a fillet take only faces (a constant radius has no second group or center)',
   'cmd.filletOnlyEdges': 'A fillet can only take edges and faces',
   'cmd.chamferOnlyEdges': 'A chamfer can only take edges and faces',
   'cmd.importDataNotFound': 'The imported data was not found: {id}',

@@ -224,3 +224,113 @@ describe('the document with faces in a fillet', () => {
     expect(dependencies(doc).parents.get('f1')).toContain('e1');
   });
 });
+
+/** The name of the planar face of the rebuilt body that faces `n` and whose center is `along` along it. */
+function faceName(r: RebuildResult, n: [number, number, number], along: number): string {
+  const topo = r.body!.topology;
+  const i = topo.faces.findIndex((f) => f.surface === 'plane' && f.normal && f.normal[0] * n[0] + f.normal[1] * n[1] + f.normal[2] * n[2] > 1 - 1e-9 && Math.abs(f.center[0] * n[0] + f.center[1] * n[1] + f.center[2] * n[2] - along) < 1e-6);
+  expect(i, `a face facing ${n} at ${along}`).toBeGreaterThanOrEqual(0);
+  return r.body!.names.faces[i]!;
+}
+
+const faceFilletOf = (id: string, first: string[], second: string[], radius = '2'): Feature => ({ id, type: 'fillet', name: id, suppressed: false, edges: [], kind: 'face', faces: first.map(face), faces2: second.map(face), radius });
+
+describe('a face fillet (面圓角): between two groups of faces that meet', () => {
+  /** An L: a plate 40 × 30 × 10 and a wall 40 × 10 × 30 along its y = 0 edge. */
+  const bracket = (): Feature[] => [
+    sketch('s1', front, rectangle('a', 0, 0, 40, 30)),
+    extrude('e1', 's1', 'boss', { type: 'blind', depth: '10' }),
+    sketch('s2', front, rectangle('w', 0, 0, 40, 10)),
+    extrude('e2', 's2', 'boss', { type: 'blind', depth: '30' }),
+  ];
+
+  it('rounds the inside corner of the L, a concave edge: it adds (1 − π/4) r² L', () => {
+    const base = rebuild(build(...bracket()));
+    const wall = faceName(base, [0, 1, 0], 10); // the inner face of the wall, y = 10
+    const plate = faceName(base, [0, 0, 1], 10); // the top of the plate, z = 10
+    const r = rebuild(add(build(...bracket()), faceFilletOf('f1', [wall], [plate], '3')));
+    expect(statuses(r).at(-1)).toBe('f1=ok');
+    expect(volume(r) - volume(base)).toBeCloseTo((1 - Math.PI / 4) * 9 * 40, 6);
+  });
+
+  it('rounds a convex edge, the same as picking the edge: the top and the front of a block', () => {
+    const base = rebuild(build(...block()));
+    const r = rebuild(add(build(...block()), faceFilletOf('f1', ['e1:cap:end'], [faceName(base, [0, -1, 0], 0)])));
+    expect(statuses(r).at(-1)).toBe('f1=ok');
+    expect(volume(r)).toBeCloseTo(14400 - (1 - Math.PI / 4) * 4 * 40, 6);
+  });
+
+  it('rounds every edge where the groups meet: the top against the front and the back', () => {
+    const base = rebuild(build(...block()));
+    const r = rebuild(add(build(...block()), faceFilletOf('f1', ['e1:cap:end'], [faceName(base, [0, -1, 0], 0), faceName(base, [0, 1, 0], 30)])));
+    expect(statuses(r).at(-1)).toBe('f1=ok');
+    expect(volume(r)).toBeCloseTo(14400 - (1 - Math.PI / 4) * 4 * 80, 6);
+  });
+
+  it('is an error that says why when the groups share no edge: the front and the back of a block', () => {
+    const base = rebuild(build(...block()));
+    const r = rebuild(add(build(...block()), faceFilletOf('f1', [faceName(base, [0, -1, 0], 0)], [faceName(base, [0, 1, 0], 30)])));
+    const f1 = r.features.find((f) => f.id === 'f1')!;
+    expect(f1.status).toBe('error');
+    expect(f1.message).toContain('沒有共同的邊');
+    expect(volume(r)).toBeCloseTo(14400, 6); // the document is not harmed: the rest is as it was
+  });
+
+  it('needs a face in each group', () => {
+    const r = rebuild(add(build(...block()), faceFilletOf('f1', ['e1:cap:end'], [])));
+    expect(r.features.find((f) => f.id === 'f1')!.message).toContain('兩組面各選至少一個面');
+  });
+
+  it('says so when the edges where the groups meet are smooth ones already: the top and the round beside it', () => {
+    const rounded = rebuild(add(build(...block()), filletOf('f1', [TOP], '2')));
+    const topo = rounded.body!.topology;
+    const round = rounded.body!.names.faces[topo.faces.findIndex((f) => f.surface === 'cylinder')]!;
+    const r = rebuild(add(build(...block()), filletOf('f1', [TOP], '2'), faceFilletOf('f2', ['e1:cap:end'], [round], '0.5')));
+    expect(r.features.find((f) => f.id === 'f2')!.message).toContain('相切');
+  });
+
+  it('follows the model: widen the block and the fillet stays on the edge, with the same radius', () => {
+    const wide = (w: string) => block().map((f) => (f.type === 'sketch' ? { ...f, constraints: f.constraints.map((c) => (c.id === 'aw' ? { ...c, value: w } : c)) } : f));
+    const base = rebuild(build(...wide('40')));
+    const front_ = faceName(base, [0, -1, 0], 0);
+    const doc = (w: string) => add(build(...wide(w)), faceFilletOf('f1', ['e1:cap:end'], [front_]));
+    expect(volume(rebuild(doc('40')))).toBeCloseTo(14400 - (1 - Math.PI / 4) * 4 * 40, 6);
+    const r = rebuild(doc('60'));
+    expect(statuses(r).at(-1)).toBe('f1=ok');
+    expect(volume(r)).toBeCloseTo(60 * 30 * 12 - (1 - Math.PI / 4) * 4 * 60, 6);
+  });
+});
+
+describe('the commands of a fillet with groups of faces', () => {
+  it('sets the kind and the groups, and takes them away with the constant radius', () => {
+    let doc = add(build(...block()), filletOf('f1', []));
+    doc = applyCommand(doc, { type: 'setFilletSets', featureId: 'f1', kind: 'face', faces: [TOP], faces2: [BOTTOM] });
+    const f = () => doc.features.find((x) => x.id === 'f1') as Extract<Feature, { type: 'fillet' }>;
+    expect(f()).toMatchObject({ kind: 'face', faces: [{ name: 'e1:cap:end' }], faces2: [{ name: 'e1:cap:start' }] });
+    doc = applyCommand(doc, { type: 'setFilletSets', featureId: 'f1', kind: 'constant', faces: [TOP] });
+    expect(f().kind).toBeUndefined();
+    expect(f().faces2).toBeUndefined();
+    expect(f().faces).toHaveLength(1);
+  });
+
+  it('takes only faces, and only a fillet has a kind', () => {
+    const doc = add(build(...block()), filletOf('f1', []), chamferOf('c1', [], '1', '1'));
+    expect(() => applyCommand(doc, { type: 'setFilletSets', featureId: 'f1', kind: 'face', faces: [edgeRef('x')] })).toThrow();
+    expect(() => applyCommand(doc, { type: 'setFilletSets', featureId: 'f1', kind: 'constant', faces: [TOP], faces2: [BOTTOM] })).toThrow();
+    expect(() => applyCommand(doc, { type: 'setFilletSets', featureId: 'c1', kind: 'face', faces: [TOP] })).toThrow();
+  });
+
+  it('has its groups repaired and followed as dependencies like the rest', () => {
+    let doc = add(build(...block()), faceFilletOf('f1', ['old'], ['older']));
+    doc = applyCommand(doc, { type: 'replaceRef', featureId: 'f1', from: face('older'), to: BOTTOM });
+    expect((doc.features.find((x) => x.id === 'f1') as Extract<Feature, { type: 'fillet' }>).faces2!.map((r) => r.name)).toEqual(['e1:cap:start']);
+    const parents = dependencies(add(build(...block()), faceFilletOf('f1', ['e1:cap:end'], ['e1:cap:start']))).parents.get('f1');
+    expect(parents).toContain('e1');
+  });
+
+  it('is written and read back', () => {
+    const doc = add(build(...block()), faceFilletOf('f1', ['e1:cap:end'], ['e1:cap:start']));
+    const back = parsePart(serializePart(doc));
+    expect(back.features.find((x) => x.id === 'f1')).toMatchObject({ kind: 'face', faces: [{ name: 'e1:cap:end' }], faces2: [{ name: 'e1:cap:start' }] });
+  });
+});

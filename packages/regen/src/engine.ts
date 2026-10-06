@@ -2695,9 +2695,44 @@ export class Regenerator {
     return { edges: [...new Set([...own, ...via.keys()])], via };
   }
 
+  /**
+   * The edges a face fillet rounds: the ones where a face of the first group meets a face of the second (not the ones the two continue smoothly across). The
+   * groups have to meet; groups that do not share an edge need a fillet that rolls a ball between faces apart, which OCCT cannot make (ADR 0097).
+   */
+  private edgesBetween(first: Ref[], second: Ref[], body: BodyState): number[] {
+    const a = new Set(first.length > 0 ? this.faceIndices(first, body) : []);
+    const b = new Set(second.length > 0 ? this.faceIndices(second, body) : []);
+    if (a.size === 0 || b.size === 0) throw new FeatureError(t('edit.faceFilletTwoGroups'));
+    const shared: number[] = [];
+    body.topology.edges.forEach((e, i) => {
+      const faces = [...new Set(e.faces)];
+      if (e.curve === 'degenerated' || faces.length !== 2) return;
+      if ((a.has(faces[0]!) && b.has(faces[1]!)) || (a.has(faces[1]!) && b.has(faces[0]!))) shared.push(i);
+    });
+    if (shared.length === 0) throw new FeatureError(t('edit.faceFilletApart'));
+    const smooth = this.kernel.smoothEdges(body.shape, shared);
+    const edges = shared.filter((_, k) => !smooth[k]);
+    if (edges.length === 0) throw new FeatureError(t('edit.faceFilletSmooth'));
+    return edges;
+  }
+
   private fillet(f: FilletFeature, set: Bodies): BodyState[] {
+    if (f.kind === 'face') return this.faceFillet(f, set);
     return this.perBody(set, [...f.edges, ...(f.faces ?? [])], 'edge', t('edit.noBodyForFillet'), lostRefs, (body, mine) => {
       const r = this.kernel.fillet(body.shape, this.edgesOfRefs(mine, body).edges, evalLength(f.radius));
+      const topology = this.kernel.topology(r.shape);
+      return { id: body.id, shape: r.shape, topology, names: nameElements(r.faceOrigins, topology, { featureId: f.id, role: 'fillet', input: body.names }), by: f.id };
+    });
+  }
+
+  /** 「面圓角」: the edges where the two groups of faces meet, rounded by the radius. */
+  private faceFillet(f: FilletFeature, set: Bodies): BodyState[] {
+    const names = new Set((f.faces2 ?? []).map((r) => r.name));
+    return this.perBody(set, [...(f.faces ?? []), ...(f.faces2 ?? [])], 'face', t('edit.noBodyForFillet'), lostRefs, (body, mine) => {
+      // a name in both groups is in the second only: a face does not meet itself
+      const second = mine.filter((r) => names.has(r.name));
+      const first = mine.filter((r) => !names.has(r.name) && (f.faces ?? []).some((x) => x.name === r.name));
+      const r = this.kernel.fillet(body.shape, this.edgesBetween(first, second, body), evalLength(f.radius));
       const topology = this.kernel.topology(r.shape);
       return { id: body.id, shape: r.shape, topology, names: nameElements(r.faceOrigins, topology, { featureId: f.id, role: 'fillet', input: body.names }), by: f.id };
     });

@@ -1,7 +1,7 @@
 import { t } from '@3db/i18n';
 import { current, produce, type Draft } from 'immer';
 import { countersFor, type Id } from './ids';
-import type { SheetGauge, AppearanceTarget, DocSettings, MaterialRef, Variable, BlobRef, ChamferFeature, CombineFeature, HoleFeature, ScrewBossFeature, BaseFlangeFeature, EdgeFlangeFeature, HemFeature, SnapHookFeature, SnapCatchFeature, VentFeature, LoftFeature, RibFeature, SweepFeature, Draft as WallDraft, EndCondition, Thin, Expr, Feature, ImportedBodyFeature, AxisDefinition, CoordSysFeature, MirrorFeature, PartDoc, PatternDefinition, PatternFeature, PlaneDefinition, PointDefinition, Ref, RevolveCondition, SketchConstraint, SketchEntity, SketchFeature } from './schema';
+import type { SheetGauge, AppearanceTarget, DocSettings, MaterialRef, Variable, BlobRef, ChamferFeature, FilletKind, CombineFeature, HoleFeature, ScrewBossFeature, BaseFlangeFeature, EdgeFlangeFeature, HemFeature, SnapHookFeature, SnapCatchFeature, VentFeature, LoftFeature, RibFeature, SweepFeature, Draft as WallDraft, EndCondition, Thin, Expr, Feature, ImportedBodyFeature, AxisDefinition, CoordSysFeature, MirrorFeature, PartDoc, PatternDefinition, PatternFeature, PlaneDefinition, PointDefinition, Ref, RevolveCondition, SketchConstraint, SketchEntity, SketchFeature } from './schema';
 import { isDatumPlaneName } from './datums';
 import { canBeSeed } from './patterns';
 import { colorOk, materialOk, sameTarget } from './materials';
@@ -71,6 +71,8 @@ ull). */
   | { type: 'setFilletRadius'; featureId: Id; value: Expr }
   /** Edges of an edge-based feature (fillet, chamfer). */
   | { type: 'setEdges'; featureId: Id; edges: Ref[]; faces?: Ref[] }
+  /** The kind of a fillet and the groups of faces it takes (face fillet: two groups; full round: two sides and a center); each group left out or empty is taken away. */
+  | { type: 'setFilletSets'; featureId: Id; kind: FilletKind; faces?: Ref[]; faces2?: Ref[]; center?: Ref[] }
   | { type: 'setChamfer'; featureId: Id; value: Pick<ChamferFeature, 'mode' | 'distance' | 'second' | 'flip'> }
   /** The hole wizard's settings (C4.8): everything but which sketch it drills at. */
   | { type: 'setHole'; featureId: Id; hole: Omit<HoleFeature, 'id' | 'type' | 'name' | 'suppressed' | 'sketch'> }
@@ -784,6 +786,21 @@ export function mutate(draft: Draft<PartDoc>, cmd: Command): void {
       checkExprs(draft as PartDoc, f as Feature);
       return;
     }
+    case 'setFilletSets': {
+      const f = feature(draft, cmd.featureId);
+      if (f.type !== 'fillet') throw new CommandError(t('cmd.onlyFilletHasKind'));
+      const groups = [cmd.faces, cmd.faces2, cmd.center];
+      if (groups.some((g) => (g ?? []).some((r) => r.kind !== 'face'))) throw new CommandError(t('cmd.filletSetsFaces'));
+      if (cmd.kind === 'constant') {
+        if (cmd.faces2?.length || cmd.center?.length) throw new CommandError(t('cmd.filletSetsFaces'));
+        delete f.kind;
+      } else f.kind = cmd.kind;
+      for (const [key, value] of [['faces', cmd.faces], ['faces2', cmd.faces2], ['center', cmd.center]] as const) {
+        if (value && value.length > 0) f[key] = value;
+        else delete f[key];
+      }
+      return;
+    }
     case 'setEdges': {
       const f = feature(draft, cmd.featureId);
       if (f.type !== 'fillet' && f.type !== 'chamfer') throw new CommandError(t('cmd.onlyEdgeFeaturesPickEdges'));
@@ -1247,6 +1264,12 @@ export function mutate(draft: Draft<PartDoc>, cmd: Command): void {
       if (next.type === 'fillet' || next.type === 'chamfer') {
         next.edges = next.edges.filter((r, i) => next.edges.findIndex((x) => x.kind === r.kind && x.name === r.name) === i);
         if (next.faces) next.faces = next.faces.filter((r, i) => next.faces!.findIndex((x) => x.name === r.name) === i);
+        if (next.type === 'fillet') {
+          for (const key of ['faces2', 'center'] as const) {
+            const list = next[key];
+            if (list) next[key] = list.filter((r, i) => list.findIndex((x) => x.name === r.name) === i);
+          }
+        }
       }
       if (next.type === 'deleteFace') next.faces = next.faces.filter((r, i) => next.faces.findIndex((x) => x.name === r.name) === i);
       draft.features[at] = next as Draft<Feature>;

@@ -222,5 +222,8 @@
   "C23": [
     "fillet",
     "chamfer"
+  ],
+  "C24": [
+    "fillet"
   ]
 }

@@ -31,6 +31,7 @@ import {
   type Draft,
   type ExtrudeFeature,
   type FilletFeature,
+  type FilletKind,
   type Id,
   type AxisDefinition,
   type CoordSysFeature,
@@ -78,7 +79,7 @@ import {
 import type { RebuildPayload, SketchSolvePayload } from '../worker/protocol';
 import { applicableRelations, constraintsOf, dimensionText, measuredText, sameRelation } from '@3db/sketch/interact';
 import { nearestElement } from '../state/candidates';
-import { store, useSketcherView, useStore } from '../state/store';
+import { store, useSketcherView, useStore, type FilletGroup } from '../state/store';
 import { accepts, axisDefinitionFor, fill, filled, planeDefinitionFor, pointDefinitionFor, slotsOf } from '../state/datumSlots';
 import { AXIS_MODE_LABEL, DATUM_ITEMS, DIMENSION_LABEL, FEATURE_LABEL, featureLabel, PLANE_MODE_LABEL, POINT_MODE_LABEL, RELATION_LABEL, SKETCH_STATUS_LABEL, TOOL_LABEL } from '../strings';
 import { Icon } from './Icon';
@@ -883,17 +884,70 @@ function FaceList({ f, label }: { f: FilletFeature | ChamferFeature; label: stri
   );
 }
 
+/** The groups of faces of a fillet that is not the usual one, in the order the panel lists them, with what each is called. */
+const FILLET_GROUPS: Record<'face', { group: FilletGroup; label: () => string }[]> = {
+  face: [
+    { group: 'faces', label: () => t('pm.fillet.group1') },
+    { group: 'faces2', label: () => t('pm.fillet.group2') },
+  ],
+};
+
+/** The groups of faces of a face fillet (面圓角): which one the next face picked goes into, and what each holds. */
+function FilletGroups({ f }: { f: FilletFeature }) {
+  const result = useStore((s) => s.result);
+  const pick = useStore((s) => s.filletPick);
+  const groups = FILLET_GROUPS.face;
+  return (
+    <section className="pm-group">
+      {groups.map(({ group, label }) => {
+        const list = f[group] ?? [];
+        return (
+          <div key={group} data-group={group}>
+            <label className="pm-row checkbox">
+              <input type="radio" name="fillet-group" checked={pick === group} onChange={() => store.setFilletPick(group)} />
+              <span>{label()}</span>
+            </label>
+            <ul className="selection-box">
+              {list.length === 0 && <li className="muted">{t('pm.fillet.groupEmpty')}</li>}
+              {list.map((x, i) => {
+                const found = result?.faceNames.includes(x.name);
+                return (
+                  <li key={x.name} className={found ? '' : 'missing'} title={x.name}>
+                    {t('pm.faces.item', { n: i + 1 })}
+                    {!found && t('pm.lost')}
+                    <code>{x.name}</code>
+                    {!found && <UseNearest featureId={f.id} refr={x} />}
+                  </li>
+                );
+              })}
+            </ul>
+          </div>
+        );
+      })}
+      <p className="hint">{t('pm.fillet.groupHint')}</p>
+    </section>
+  );
+}
+
 function FilletPanel({ f }: { f: FilletFeature }) {
+  const kind = f.kind ?? 'constant';
   return (
     <>
       <section className="pm-group">
         <h4>{t('pm.fillet.params')}</h4>
         <label className="pm-row">
+          <span>{t('pm.fillet.kind')}</span>
+          <select value={kind} onChange={(e) => store.setFilletKind(e.target.value as FilletKind)}>
+            <option value="constant">{t('pm.fillet.kindConstant')}</option>
+            <option value="face">{t('pm.fillet.kindFace')}</option>
+          </select>
+        </label>
+        <label className="pm-row">
           <span>{t('dimension.radius')}</span>
           <ValueInput value={f.radius} toCommand={(value) => ({ type: 'setFilletRadius', featureId: f.id, value })} />
         </label>
       </section>
-      <EdgeList f={f} />
+      {kind === 'constant' ? <EdgeList f={f} /> : <FilletGroups f={f} />}
     </>
   );
 }

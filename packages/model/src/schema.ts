@@ -306,8 +306,18 @@ export interface FilletFeature extends FeatureBase {
    * face gains later is rounded too. The seam of a round or a cylinder and an edge the faces beside continue smoothly are left out.
    */
   faces?: Ref[];
+  /**
+   * What kind of fillet (v43): absent is the usual one (constant radius, `edges` and `faces`). `face` (面圓角) rounds the edges where a face of `faces` meets a
+   * face of `faces2`; `full` (完整圓角) takes the faces of `center` away and rounds across them, tangent to `faces` on one side and `faces2` on the other.
+   * For those two `edges` is not used.
+   */
+  kind?: FilletKind;
+  faces2?: Ref[];
+  center?: Ref[];
   radius: Expr;
 }
+
+export type FilletKind = 'constant' | 'face' | 'full';
 
 /** Chamfer (C5.3): SolidWorks 「角度-距離」 or 「距離-距離」. */
 export interface ChamferFeature extends FeatureBase {
