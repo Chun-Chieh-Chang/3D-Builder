@@ -158,6 +158,9 @@ export const help: Translation = {
   'help.measureAssembly.summary': 'Measures distances and angles between the elements you pick in the assembly.',
   'help.clearance.summary': 'Checks that the smallest gap between components is large enough.',
   'help.interference.summary': 'Finds the volume where components overlap (touching does not count).',
+  'help.interference.body':
+    'Assembly > Interference Detection: the window lists each pair of components that share volume and how much, and the overlap is red in the 3D view; click a pair in the table to show only those two components, click again to show all.\n\n- By default the unit is the top-level component: a sub-assembly counts as one, and every copy of a pattern or mirror counts on its own.\n- Check "Also check the parts inside sub-assemblies" and every part counts on its own, so the parts inside a sub-assembly are compared with each other too; they are named "sub-assembly › part", and parts of one name in a sub-assembly are told apart by <2>, <3>.\n- Touching is not interference, and an overlap under 0.001 mm³ is not reported. Hidden components are checked, suppressed ones are not. After the model changes the window says so; press Check again.\n\nChecked example: the two sub-assemblies of the golden fixture, each with a locating plate and two pins whose shanks (radius 5) stand in the holes (radius 4) of the plate: checked inside, 4 pairs of about 405.4 mm³ each, 1621.6 in all; not checked inside, none.',
+  'help.interference.keywords': 'interference overlap collision sub-assembly inside volume',
   'help.checkAssembly.summary': 'Checks that the geometry of the assembly is valid.',
   'help.physicalAssembly.summary': 'Works out mass, center of mass and moments of inertia of the assembly.',
   'help.bom.summary': 'Makes the bill of materials (quantity, part number, supplier); can be written as CSV.',

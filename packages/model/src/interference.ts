@@ -15,17 +15,20 @@ export interface InterferenceGroup {
   leaves: Leaf[];
 }
 
-/** The leaves as the components they make up, in the order they first appear. */
-export function interferenceGroups(leaves: readonly Leaf[]): InterferenceGroup[] {
+/**
+ * The leaves as the components they make up, in the order they first appear. With `parts` every leaf is a component of its own (the parts inside a
+ * sub-assembly are compared with each other too); its `top` still says which component of the assembly it is in.
+ */
+export function interferenceGroups(leaves: readonly Leaf[], options: { parts?: boolean } = {}): InterferenceGroup[] {
   const out = new Map<string, InterferenceGroup>();
   for (const l of leaves) {
-    let id = l.top;
+    let id = options.parts ? l.id : l.top;
     let instance: InterferenceGroup['instance'] = null;
     if (l.instanceOf) {
       // the id of an instance's leaf is the seed's leaf id, "@", the pattern, and for a pattern "#" and the number of the instance
       const rest = l.id.slice(l.id.indexOf('@') + 1);
       const hash = rest.indexOf('#');
-      id = `${l.top}@${rest}`;
+      id = options.parts ? l.id : `${l.top}@${rest}`;
       instance = { pattern: l.instanceOf, label: hash < 0 ? null : rest.slice(hash + 1) };
     }
     const group = out.get(id) ?? { id, top: l.top, instance, leaves: [] };

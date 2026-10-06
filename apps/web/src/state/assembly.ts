@@ -616,13 +616,27 @@ export class AssemblyStore {
    * What interference (E2.1) is asked of: the components as the user sees them (a sub-assembly one, each copy of a pattern or mirror its own), each as its
    * parts and where they are assembled, and what each is called in the list.
    */
-  interferenceInput(at?: { poses: ReadonlyMap<Id, Pose>; inner?: AssemblyResult['inner'] }): { components: InterferenceComponent[]; names: Map<string, string>; tops: Map<string, string> } {
+  interferenceInput(at?: { poses: ReadonlyMap<Id, Pose>; inner?: AssemblyResult['inner'] }, within = false): { components: InterferenceComponent[]; names: Map<string, string>; tops: Map<string, string> } {
     const unmirror = (key: string) => key.slice(0, -mirrorKey('').length);
     const names = new Map<string, string>();
     const tops = new Map<string, string>();
-    const groups = interferenceGroups(at ? this.leavesAt(at.poses, at.inner) : this.assembledLeaves());
+    const leaves = at ? this.leavesAt(at.poses, at.inner) : this.assembledLeaves();
+    // with `within` every part is a component (the ones inside a sub-assembly are compared with each other): a part in a sub-assembly is named after it
+    const groups = interferenceGroups(leaves, { parts: within });
+    const perTop = new Map<string, number>();
+    for (const l of leaves) perTop.set(l.top, (perTop.get(l.top) ?? 0) + 1);
+    const seen = new Map<string, number>();
     for (const g of groups) {
-      const base = this.ownerLabel(g.top);
+      const owner = this.ownerLabel(g.top);
+      const inside = within && g.instance === null && (perTop.get(g.top) ?? 0) > 1;
+      let partName = inside ? bomName(g.leaves[0]!.file ?? g.leaves[0]!.key) : '';
+      if (inside) {
+        // two parts of one name in a sub-assembly (a pair of pins): the second is <2>, as the components of an assembly are
+        const n = (seen.get(`${g.top}|${partName}`) ?? 0) + 1;
+        seen.set(`${g.top}|${partName}`, n);
+        if (n > 1) partName = `${partName}<${n}>`;
+      }
+      const base = inside ? t('interference.inside', { owner, part: partName }) : owner;
       const pattern = g.instance ? (this.history.doc.patterns?.find((p) => p.id === g.instance!.pattern)?.name ?? g.instance.pattern) : '';
       names.set(g.id, g.instance ? (g.instance.label === null ? t('interference.mirror', { name: base, pattern }) : t('interference.instance', { name: base, pattern, label: g.instance.label })) : base);
       tops.set(g.id, g.top);

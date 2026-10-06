@@ -220,6 +220,8 @@ export interface InterferenceState {
   /** There were fewer than two components: nothing to compare. */
   tooFew: boolean;
   error: string | null;
+  /** The parts inside sub-assemblies were compared with each other too (every part a component of its own). */
+  within: boolean;
   /** The document and solution it was worked out on: when the assembly shows others, the result is out of date. */
   doc: unknown;
   solution: unknown;
@@ -893,7 +895,12 @@ class AppStore {
 
   /** 「干涉檢查」 (E2.1): opens its window and checks the assembly as it is now. */
   startInterference(): void {
-    void this.runInterference();
+    void this.runInterference(false);
+  }
+
+  /** Whether the next check also compares the parts inside sub-assemblies with each other; checks again at once. */
+  setInterferenceWithin(within: boolean): void {
+    void this.runInterference(within);
   }
 
   stopInterference(): void {
@@ -906,12 +913,12 @@ class AppStore {
     if (this.state.interference) this.set({ interference: { ...this.state.interference, selected: index } });
   }
 
-  async runInterference(): Promise<void> {
+  async runInterference(within: boolean = this.state.interference?.within ?? false): Promise<void> {
     const a = this.assembly;
     if (!a) return;
-    const input = a.interferenceInput();
+    const input = a.interferenceInput(undefined, within);
     const seq = ++this.interferenceSeq;
-    const base = { status: 'running' as const, pairs: [], selected: null, unknown: [], failed: [], checked: 0, ms: 0, tooFew: input.components.length < 2, error: null, doc: this.state.asm?.doc, solution: this.state.asm?.solution };
+    const base = { status: 'running' as const, pairs: [], selected: null, unknown: [], failed: [], checked: 0, ms: 0, tooFew: input.components.length < 2, error: null, within, doc: this.state.asm?.doc, solution: this.state.asm?.solution };
     if (base.tooFew) return void this.set({ interference: { ...base, status: 'done' } });
     this.set({ interference: base });
     try {

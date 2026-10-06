@@ -87,3 +87,28 @@ interference.run = async () => {
   H.check(store.getState().interference === null && !document.querySelector('[data-interference]'), 'Esc closes the window');
   return { volume, shared: p.volume, checked: r.checked, ms: r.ms };
 };
+
+// Inside the sub-assemblies (2026-10-07): with the check box on, every part is a component of its own. The first sub-assembly has two pins whose r = 5 shanks
+// stand in r = 4 holes of the plate (the fixture's own geometry), so each pin shares about pi (5^2 - 4^2) 14.3 = 404 mm3 with the plate (405.4 measured), in each
+// of the two sub-assemblies: four pairs; off, it finds none.
+interference.within = async () => {
+  await __sub.open();
+  let r = await open();
+  H.check(r.pairs.length === 0, `as one component, the sub-assembly has no interference: ${r.pairs.length}`);
+  H.check(!document.querySelector('[data-interference] [data-field="within"]').checked, 'the box is off at the start');
+  document.querySelector('[data-interference] [data-field="within"]').click();
+  r = await done();
+  await H.wait(200);
+  H.check(r.within === true && r.status === 'done', 'checked again with the parts inside');
+  H.check(r.pairs.length === 4, `two pins against the plate in each of the two sub-assemblies: ${JSON.stringify(r.pairs.map((p) => [p.aName, p.bName, p.volume]))}`);
+  const total = r.pairs.reduce((n, p) => n + p.volume, 0);
+  H.check(Math.abs(total - 4 * Math.PI * (25 - 16) * 14.3) < 30, `the shanks in the holes: ${total.toFixed(1)} mm3`);
+  H.check(new Set(r.pairs.map((p) => `${p.aName}|${p.bName}`)).size === 4, `the two pins of a sub-assembly are told apart: ${r.pairs.map((p) => p.bName).join(', ')}`);
+  H.check(r.pairs.every((p) => p.aName.includes('›') && p.bName.includes('›')), `named by the sub-assembly and the part: ${r.pairs.map((p) => p.aName + ' × ' + p.bName).join('; ')}`);
+  H.check(r.pairs.every((p) => p.aTop === p.bTop), 'both parts are in the same component of the assembly');
+  document.querySelector('[data-interference] [data-field="within"]').click();
+  r = await done();
+  H.check(r.within === false && r.pairs.length === 0, 'the box off again: none');
+  close();
+  return { total };
+};

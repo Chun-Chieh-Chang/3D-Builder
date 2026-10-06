@@ -70,6 +70,8 @@ export const evaluate: Translation = {
   'interference.failed': 'These could not be worked out: {pairs}',
   'interference.checked': '{pairs} pairs of parts compared in {ms} ms.',
   'interference.note': 'The unit is the top-level component: a sub-assembly counts as one, and each copy made by a pattern or mirror counts as its own. Touching is not interference, and an overlap under {min} mm³ is not reported. Hidden components are checked; suppressed ones are not.',
+  'interference.within': 'Also check the parts inside sub-assemblies (every part counts on its own)',
+  'interference.inside': '{owner} › {part}',
   'interference.instance': '{name} - {pattern} #{label}',
   'interference.mirror': '{name} - {pattern}',
   'interference.error': 'Interference detection failed: {why}',

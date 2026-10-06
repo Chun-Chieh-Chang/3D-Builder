@@ -26,6 +26,10 @@ export function InterferencePanel() {
           {t('interference.close')}
         </button>
       </div>
+      <label className="pm-row checkbox">
+        <input type="checkbox" data-field="within" checked={state.within} disabled={state.status === 'running'} onChange={(e) => store.setInterferenceWithin(e.target.checked)} />
+        <span>{t('interference.within')}</span>
+      </label>
       {state.status === 'running' && <p className="muted" data-field="running">{t('interference.running')}</p>}
       {state.error && <p className="error" data-field="error">{state.error}</p>}
       {stale && <p className="error" data-field="stale">{t('interference.stale')}</p>}

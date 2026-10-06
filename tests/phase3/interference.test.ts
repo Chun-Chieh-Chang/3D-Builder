@@ -135,6 +135,40 @@ describe('which parts make which components (3b-5d)', () => {
   });
 });
 
+describe('the parts inside a sub-assembly (compared with each other when asked)', () => {
+  const leaf = (id: string, top: string, extra: Partial<Leaf> = {}): Leaf => ({ id, top, path: [], key: 'k', pose: at(0), hidden: false, transparent: false, ...extra });
+
+  it('with parts, every leaf is a component of its own and still says which component of the assembly it is in', () => {
+    const groups = interferenceGroups(
+      [leaf('c1', 'c1'), leaf('c2/pa', 'c2', { path: ['pa'] }), leaf('c2/pb', 'c2', { path: ['pb'] }), leaf('c1@p1#2', 'c1', { instanceOf: 'p1' }), leaf('c2/pa@p2#1x2', 'c2', { path: ['pa'], instanceOf: 'p2' }), leaf('c1@m1', 'c1', { instanceOf: 'm1', mirrored: true })],
+      { parts: true },
+    );
+    expect(groups.map((g) => g.id)).toEqual(['c1', 'c2/pa', 'c2/pb', 'c1@p1#2', 'c2/pa@p2#1x2', 'c1@m1']);
+    expect(groups.map((g) => g.top)).toEqual(['c1', 'c2', 'c2', 'c1', 'c2', 'c1']);
+    expect(groups.every((g) => g.leaves.length === 1)).toBe(true);
+    expect(groups[3]!.instance).toEqual({ pattern: 'p1', label: '2' });
+    expect(groups[5]!.instance).toEqual({ pattern: 'm1', label: null });
+  });
+
+  it('without parts nothing changed: a sub-assembly is one component', () => {
+    const groups = interferenceGroups([leaf('c2/pa', 'c2', { path: ['pa'] }), leaf('c2/pb', 'c2', { path: ['pb'] })]);
+    expect(groups.map((g) => g.id)).toEqual(['c2']);
+  });
+
+  it('two blocks of one sub-assembly that overlap by 5: not found as one component, found as two (5 × 20 × 30 = 3000), and the rest as before', () => {
+    const sub = [part('box', at(0)), part('box', at(5))];
+    expect(find([{ id: 'sub', parts: sub }, { id: 'far', parts: [part('box', at(100))] }]).overlaps).toHaveLength(0);
+    const r = find([
+      { id: 'sub/pa', parts: [sub[0]!] },
+      { id: 'sub/pb', parts: [sub[1]!] },
+      { id: 'far', parts: [part('box', at(100))] },
+    ]);
+    expect(r.overlaps.map((o) => [o.a, o.b])).toEqual([['sub/pa', 'sub/pb']]);
+    expect(r.overlaps[0]!.volume).toBeCloseTo(3000, 6);
+    release(r);
+  });
+});
+
 describe('how long it takes (3b-5d)', () => {
   it('20 components of the locating plate in a row, each overlapping its neighbors: all of them found, within the time budget', () => {
     const faces = kernel.topology(shapes.plate!).faces.length;

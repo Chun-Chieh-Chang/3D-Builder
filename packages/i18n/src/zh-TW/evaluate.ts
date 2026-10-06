@@ -68,6 +68,8 @@ export const evaluate = {
   'interference.failed': '算不出這幾組：{pairs}',
   'interference.checked': '比對了 {pairs} 組零件，用了 {ms} 毫秒。',
   'interference.note': '以頂層零組件為單位：子組合件算一個，陣列和鏡射的每個複製品各算一個。只有接觸不算干涉，重疊體積小於 {min} mm³ 的也不報。隱藏的零組件會檢查，被抑制的不會。',
+  'interference.within': '也檢查子組合件裡面的零件（每個零件各算一個）',
+  'interference.inside': '{owner} › {part}',
   'interference.instance': '{name} - {pattern} #{label}',
   'interference.mirror': '{name} - {pattern}',
   'interference.error': '干涉檢查失敗：{why}',
