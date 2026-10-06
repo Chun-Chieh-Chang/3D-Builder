@@ -62,7 +62,21 @@ export const help: Translation = {
 
   // ---------------------------------------------------------------- file
   'help.newPart.summary': 'Starts an empty part with the Front, Top and Right planes.',
+
+  'help.newPart.body':
+    'Starts an empty part.\n\n- When the present part has unsaved changes it asks first whether to save.\n- The feature tree of the new part holds only the "Origin" and the front, top and right planes, and the 3D window is empty.\n- The material and other settings of the new part come from the "template for New part" in System options (blank at first); to choose a template use "New part (template)…".\n- Next: select a plane, press "Sketch" to draw an outline, and grow a shape with "Extruded Boss/Base".',
+
+  'help.newPart.keywords': 'new part empty planes template',
+
+  'help.newPart.see': 'new-part-template sketch extrude',
   'help.newPartTemplate.summary': 'Starts a new part from a template, which sets the material and document settings (blank, carbon steel, aluminium, plastic, CNS drafting).',
+
+  'help.newPartTemplate.body':
+    'Starts a new part from a template: choose one and the material and document settings of the new part are set already.\n\n- Blank: no material.\n- Carbon steel, Aluminium (material aluminium alloy 6061), Plastic (material ABS), CNS drawing (carbon steel, drawing standard CNS, 2 decimals).\n- To have "New part" always use a template, choose it in System options under "Template used by New part".\n- There are no custom templates.',
+
+  'help.newPartTemplate.keywords': 'template new part material aluminium plastic CNS',
+
+  'help.newPartTemplate.see': 'new-part options properties',
   'help.newAssembly.summary': 'Starts an empty assembly; then insert components and add mates.',
 
   'help.newAssembly.body':
@@ -72,13 +86,69 @@ export const help: Translation = {
 
   'help.newAssembly.see': 'insert-component mate fix-component',
   'help.newDemo.summary': 'Opens a demo part to look at what features can make.',
+
+  'help.newDemo.body':
+    'Opens a demonstration part: a block of 20 × 10 × 5 mm with one rounded edge.\n\n- The feature tree has "Sketch1", "Extrude1" and "Fillet1", and the volume at the bottom is 991.416 mm³.\n- Use it to see what features look like, or for the steps of the verification manual, without drawing anything.\n- It is a new unsaved part and can be changed freely.',
+
+  'help.newDemo.keywords': 'demo part example block fillet',
+
+  'help.newDemo.see': 'new-part sketch fillet',
   'help.open.summary': 'Opens a part (.3dbx) or an assembly (.3dba) file.',
+
+  'help.open.body':
+    'Opens a part (.3dbx) or assembly (.3dba) file.\n\n- The browser\'s own "Open file" window appears; find the file and press "Open". Press "Allow" when the browser asks for access; when the present file has unsaved changes it asks first whether to save.\n- When opening an assembly, the first time you choose the "project folder" (the folder the .3dba is in), because an assembly finds its parts by relative paths.\n- While parts load, the bottom of the window shows progress.\n- After a crash, or when the tab was closed by accident, the program asks whether to recover the unsaved part.',
+
+  'help.open.keywords': 'open file part assembly project folder',
+
+  'help.open.see': 'save save-as new-assembly',
   'help.save.summary': 'Saves the file; asks where when it has no name yet.',
+
+  'help.save.body':
+    'Saves the present file; when it has no name yet it asks where to save.\n\n- A "*" after the tab title and the file name means there are unsaved changes.\n- After saving, the bottom of the window says "Saved …".\n- There is also autosave: some seconds after the last change (changeable in System options, 5 seconds at first) a temporary copy is kept; after a crash, or after closing the tab, "Found an unsaved part" appears and you can "Recover" or "Discard"; a recovered part has not been saved yet and needs "Save as".',
+
+  'help.save.keywords': 'save autosave recover unsaved',
+
+  'help.save.see': 'save-as open options',
   'help.saveAs.summary': 'Saves under a new name or place; saving an assembly elsewhere rewrites the relative paths of its parts.',
+
+  'help.saveAs.body':
+    'Saves under a new file name or in a new place.\n\n- When an assembly is saved in another folder, the relative paths of the parts are rewritten, and the undo history with them.\n- A drawing has to be saved inside the project folder; outside it, it says "A drawing must be saved inside the project folder …".\n- A part that has not been saved yet (a new part, a recovered part) uses this for its first save too.',
+
+  'help.saveAs.keywords': 'save as rename folder relative paths',
+
+  'help.saveAs.see': 'save open new-drawing',
   'help.exportStep.summary': 'Writes the part or assembly as a STEP file, which other CAD programs can open.',
+
+  'help.exportStep.body':
+    'Exports the part or assembly as a STEP file that other CAD programs can open.\n\n- Part: a window appears; choose the "format" (AP242, for example), tick "With colors", choose the "coordinate system" ("Part origin" at first, or one you made, whose origin and axes then become those of the file) and press "Export".\n- The browser downloads a .step file, and the bottom of the window says "Exported …".\n- Assembly: the hierarchy is the components, in their assembled positions (not the exploded ones), a sub-assembly is one level, and face colors go out too.\n- Surface bodies go out as shells; offset surfaces are converted to B-splines, and whether other CAD programs can read that has not been tried.\n- Open it in eDrawings or another CAD to see whether the shape and the colors are right.',
+
+  'help.exportStep.keywords': 'export step file coordinate system colors AP242',
+
+  'help.exportStep.see': 'import-step coord-sys export-stl',
   'help.exportStl.summary': 'Writes the solids of the part as an STL (triangle mesh) file; the fineness follows the document\'s mesh quality.',
+
+  'help.exportStl.body':
+    'Exports the solids of the part as an STL (triangle mesh) file, for 3D printing and slicing programs.\n\n- The fineness follows the document\'s "Display and export quality" (set in "File properties", fine or coarse): on the coarse setting a cylinder shows the edges of a polygon.\n- The browser downloads an .stl file.',
+
+  'help.exportStl.keywords': 'export stl mesh printing fineness quality',
+
+  'help.exportStl.see': 'export-step properties export-image',
   'help.exportImage.summary': 'Saves what the graphics area shows as a PNG image.',
+
+  'help.exportImage.body':
+    'Saves what the graphics area shows now as a PNG picture.\n\n- The view, the display type and the section are as they are now.\n- The browser downloads a .png file; open it in a picture viewer.',
+
+  'help.exportImage.keywords': 'export image png picture screenshot',
+
+  'help.exportImage.see': 'export-stl view-iso',
   'help.newDrawing.summary': 'Makes a drawing of a saved part or assembly (not while the file has unsaved changes).',
+
+  'help.newDrawing.body':
+    'Makes a drawing of a saved part or assembly (the command is grayed while the part has unsaved changes).\n\n- The first time you choose the "project folder" (the folder with the part files); the drawing has to be saved inside that folder too (.3dbd).\n- The window becomes the drawing: an A3 landscape sheet with the front, top and right views (first angle projection), and a title block at the bottom right (the drawing name is taken from the part).\n- The sheet section: size (A4, A3 …), orientation, scale (with "Best fit"), projection (first or third angle); the views always stay on the sheet.\n- Views: "Show hidden lines" can be ticked; drag a view to move it (it is remembered) and "Auto layout" returns to the automatic places.\n- The title block is filled in field by field: company, name, number, material, drawn by, date, revision, general tolerance, scale, projection.\n- Projected views, section views and detail views can be added, and dimensions put on (see "Dimensions on a drawing").\n- The drawing reads the part files from the project folder: change the part, save, reopen the drawing and it follows; when an element a dimension refers to is gone, the dimension says "the element the dimension refers to was not found".',
+
+  'help.newDrawing.keywords': 'drawing sheet views title block three views first angle third angle',
+
+  'help.newDrawing.see': 'concept.drawing-dimensions save-as export-step',
   'help.generateAssembly.summary': 'Writes a derived part file for each body of the part, then an assembly made of them (save the part first).',
 
   'help.generateAssembly.body':
@@ -106,9 +176,37 @@ export const help: Translation = {
 
   // ---------------------------------------------------------------- tools
   'help.equations.summary': 'Defines global variables and expressions that dimensions and feature values can use.',
+
+  'help.equations.body':
+    'Defines global variables and expressions that dimensions and feature values can use. Leave the sketch first (it is grayed while a sketch is edited).\n\n- "Global variables": type a name and an expression in the bottom row (w and 30, for example) and press "Add"; dimensions can then say w*2. Change the expression of a variable and every dimension that uses it follows at once.\n- The "Sketch dimensions" table lists the dimensions of each sketch, and a number can be changed into an expression right there.\n- A wrong expression (w*, for example) is marked invalid, the bottom of the window says the expression is incomplete, and the model keeps its last size.\n- A circular reference (b uses a, a uses b) is refused and the route around the circle is given (circular reference: b → a → b).\n- When a variable is renamed, the expressions that use it are changed to the new name.\n- The number boxes of feature panels can hold expressions too (a depth of h/2, with "= 7.5 mm" beside the box); file properties can be used as well: property(\'thickness\').\n- A dimension in a sketch that comes from an expression is shown like Σ60.',
+
+  'help.equations.keywords': 'equations global variables expressions parameters dimension reference',
+
+  'help.equations.see': 'properties sketch concept.property-manager',
   'help.appearance.summary': 'Sets the color of the part, a body, a feature or a face; a face beats a feature, then a body, then the part.',
+
+  'help.appearance.body':
+    'Gives a color to the part, a body, a feature or a face. First click a face in the view (or select something in the tree), then press this command.\n\n- "Color applies to": the whole part, a body, a feature or a face; pick the color with the swatch beside "Color" and press "Apply"; the "Colored" list shows what has been set and "Remove color" takes one away.\n- Priority: face > feature > body > part; the faces made by patterns and mirrors carry the color of the same feature.\n- Tick "With colors" when exporting STEP and they go out with it.',
+
+  'help.appearance.keywords': 'appearance color paint face feature body',
+
+  'help.appearance.see': 'export-step properties',
   'help.options.summary': 'System options: interface language, autosave, the template of New Part, what can be picked at the start; kept in this browser, not in the part file.',
+
+  'help.options.body':
+    'System options: the interface language, autosave, the template for new parts, the elements that can be picked at the start, and sketch snaps. They are kept in this browser, not in the part file.\n\n- Interface language: Traditional Chinese or English; it takes effect at once (some of the assembly screens and the content of the demo part are still in Chinese).\n- Autosave: on or off, and "seconds after the last change" (5 at first).\n- "Template used by New part": blank, carbon steel, aluminium, plastic, CNS drawing.\n- Elements that can be picked at the start: faces, edges, vertices (one that is unticked starts unticked in the "Selection filter").\n- Sketch snaps: the master switch and each kind (end points, midpoints, nearest point on a curve, quadrants, intersections, tangent, perpendicular foot, horizontal and vertical points, edges and vertices of the model, grid, angle), the grid spacing and the angle step; grid and angle are off at first. See "Sketch snaps and inference".',
+
+  'help.options.keywords': 'system options language autosave template selection sketch snap settings',
+
+  'help.options.see': 'concept.sketch-snaps new-part-template save',
   'help.shortcuts.summary': 'Shows and changes the shortcut key of each command.',
+
+  'help.shortcuts.body':
+    'Shows and customizes the keyboard shortcut of every command.\n\n- Click the cell to the right of a command, press the key combination you want (Ctrl+Shift+E, for example) and press "Close"; from then on that combination runs the command.\n- "Restore defaults" changes everything back.\n- Undo is Ctrl+Z, redo is Ctrl+Y; F1 opens the help.',
+
+  'help.shortcuts.keywords': 'shortcuts keyboard keys hotkey customize',
+
+  'help.shortcuts.see': 'undo redo concept.overview',
   'help.measurePart.summary': 'Measures distances and angles between the points, edges and faces you pick; press again to end.',
 
   'help.measurePart.body':
@@ -118,8 +216,29 @@ export const help: Translation = {
 
   'help.measurePart.see': 'measure-assembly physical-part check-part',
   'help.draftAnalysis.summary': 'Analyses the draft angle of each face against the pull direction and colors the faces.',
+
+  'help.draftAnalysis.body':
+    'Analyzes the draft angle of each face against the pull direction and colors the graphics area, to see whether a plastic part has enough draft.\n\n- The window\'s settings: "Pull direction (the way the mold opens)" (+Z at first, so make the shell on the front plane with the opening toward you), "Required draft angle (degrees)", "Reverse direction", "Use the normal of the selected plane" (click a plane in the view first).\n- The angle is defined as the angle between the face normal and the direction, less 90°; a positive value means the part can be released along that direction.\n- The result table classifies: positive draft, negative draft, needs draft (less than required), straddling, cannot be sampled, each with the number of faces and the area; the "Faces" list gives the smallest to the largest angle.\n- "Reverse direction" swaps the classes. "Close" removes the colors. It colors the same faces as "Undercut analysis", so only one is open at a time.\n\nVerified example: a straight-walled shell of 60 × 40 × 30, wall 2, open at the top, direction +Z: positive draft 2 faces (2400 mm²), negative draft 1 face (2400), needs draft 8 faces (11152 mm²), straddling 0.',
+
+  'help.draftAnalysis.keywords': 'draft analysis mold release angle plastic direction',
+
+  'help.draftAnalysis.see': 'undercut-analysis draft thickness-analysis',
   'help.undercutAnalysis.summary': 'Finds the faces that are blocked at both ends along the pull direction (undercuts).',
+
+  'help.undercutAnalysis.body':
+    'Finds the faces that are hidden at both ends along the pull direction (undercuts), which the mold cannot release and which need a side core.\n\n- The window\'s settings: the direction (along the opening at first); the result table lists the number and area of undercut faces; the "Faces" list gives for each face the share seen from above, from below or from neither.\n- The classes: undercut (needs a side core), seen only from above, seen only from below, seen from both (walls along the direction, which need draft).\n- Turn the direction to the direction of a hole and the wall of the hole is no longer an undercut. A part with no undercut shows an undercut area of 0.\n- The window gives the number of triangles, the number of sample points and the milliseconds used.\n- It colors the same faces as "Draft analysis", so only one is open at a time; the direction carries over when the other is opened.\n\nVerified example: the shell (60 × 40 × 30, wall 2) with a hole through it sideways: the wall of the hole, 753.98 mm², is the only undercut; the shell without the hole has 0 undercut faces, 6 faces seen only from above (7552 mm²), 1 only from below and 4 from both.',
+
+  'help.undercutAnalysis.keywords': 'undercut analysis side core mold direction hole',
+
+  'help.undercutAnalysis.see': 'draft-analysis thickness-analysis shell',
   'help.thicknessAnalysis.summary': 'Measures the wall thickness of each face along its inward normal and shows the thinnest and thickest places.',
+
+  'help.thicknessAnalysis.body':
+    'Measures the wall thickness of each face along the inward normal and marks places that are too thin or too thick.\n\n- The window\'s settings: "Minimum wall thickness (mm, blank = no limit)" and "Maximum wall thickness"; it recalculates when they are filled in; both have to be numbers above 0 with the minimum not above the maximum, otherwise they are marked invalid and it says why.\n- The result table classifies: within limits (green), too thin (red), too thick (blue), no face opposite to measure, cannot be sampled; it also lists "the thinnest place", "the thickest place" and "Faces (least / median / greatest mm)".\n- The thickness is the distance along the inward normal to the face opposite; for the faces of the rim at the opening it is the height of the whole wall, so they count as too thick (it is their distance, not a wall thickness).\n- SolidWorks may define thickness differently; note the difference when comparing with it.\n\nVerified example: the shell of 60 × 40 × 30 with walls of 2, minimum 1 and maximum 4: 10 faces are within limits, the rim faces at the opening are too thick, and the thinnest place is 2 mm; with the minimum changed to 3, the ten faces become too thin.',
+
+  'help.thicknessAnalysis.keywords': 'thickness analysis wall thin thick plastic measure',
+
+  'help.thicknessAnalysis.see': 'draft-analysis undercut-analysis shell',
   'help.checkPart.summary': 'Checks the geometry: whether it passes the validity check, whether the shell is closed (no open edges) and whether the volume is positive.',
 
   'help.checkPart.body':
@@ -137,6 +256,13 @@ export const help: Translation = {
 
   'help.physicalPart.see': 'properties physical-assembly check-part',
   'help.properties.summary': 'Edits the file properties (part number, supplier, description…), which the bill of materials reads.',
+
+  'help.properties.body':
+    'Edits the file properties: material, display and export quality, custom properties (part number, vendor, description …). The command is grayed while a sketch is edited; leave the sketch first.\n\n- Material: choose from the list (carbon steel, cast iron, stainless 304, aluminium 6061 and 7075, copper, brass, titanium, ABS, PC, nylon PA6, POM, PP, acrylic) or "Custom…" and type the density (g/cm³); after that the window shows "Mass: … g" and the status bar gains a mass (mass = volume × density).\n- Display and export quality: fine or coarse, which sets how fine the mesh is (display and STL).\n- Custom properties: in the bottom row type a name and a value (Thickness and 4mm, for example) and press "Add". Dimensions and feature values can refer to it as property(\'Thickness\'); the parts list reads "Vendor" and "PartNo".\n\nWorked by hand: a block of 8000 mm³ in carbon steel (7.85 g/cm³) has a mass of 62.80 g.',
+
+  'help.properties.keywords': 'file properties material density quality custom part number vendor',
+
+  'help.properties.see': 'equations physical-part bom',
 
   // ---------------------------------------------------------------- features
   'help.sketch.summary': 'Makes a sketch on the selected plane or face and enters it.',
@@ -463,6 +589,13 @@ export const help: Translation = {
   'help.coordSys.see': 'ref-plane export-step ref-point',
   'help.importStep.summary': 'Reads a STEP file as the body of the part, repairing it only when needed.',
 
+  'help.importStep.body':
+    'Reads a STEP file in as a body of the part, repairing it when necessary.\n\n- Press it in a new part, choose the .step file in the browser\'s window, wait a few seconds; the model appears in the 3D window and the tree gains a row "Import1".\n- Double-click "Import1" (a single click only selects) to open its panel: "Imported data" (the file name; the data is kept in the part file, so the original is not needed) and "Diagnostic report" (how many solids and faces the file holds, the result of the validity check, what was changed).\n- The "sewing tolerance" (0.01 at first) matters only when the file holds surfaces and no solid.\n- You can then add features to it: sketch on its faces, extrude, delete faces, move faces and so on.\n- When the diagnostic report has warnings, look again with "Check geometry".\n\nVerified example: a plate of 40 × 30 × 10 with a hole of radius 4 in the middle: volume 40 × 30 × 10 − π × 4² × 10 ≈ 11497 mm³.',
+
+  'help.importStep.keywords': 'import step body diagnostic report repair sewing',
+
+  'help.importStep.see': 'delete-face move-face check-part export-step',
+
   // ---------------------------------------------------------------- assembly
   'help.insertComponent.summary': 'Inserts a part file into the assembly as a component.',
 
@@ -755,12 +888,73 @@ export const help: Translation = {
 
   // ---------------------------------------------------------------- edit and view
   'help.undo.summary': 'Undoes the last change.',
+
+  'help.undo.body':
+    'Takes back the last change.\n\n- Shortcut Ctrl+Z; the "Undo" button is visible on every tab (gray means there is nothing to take back).\n- Each command is one undo step: a feature, a sketch operation (fillet, trim, mirror …), a move of a component each count as one.',
+
+  'help.undo.keywords': 'undo step back Ctrl+Z',
+
+  'help.undo.see': 'redo rebuild shortcuts',
   'help.redo.summary': 'Does again what was undone.',
+
+  'help.redo.body':
+    'Does again the change that was just taken back.\n\n- Shortcut Ctrl+Y; the "Redo" button is visible on every tab (gray means there is nothing to do again).',
+
+  'help.redo.keywords': 'redo again Ctrl+Y',
+
+  'help.redo.see': 'undo rebuild shortcuts',
   'help.rebuild.summary': 'Rebuilds the whole part.',
+
+  'help.rebuild.body':
+    'Recalculates the whole part: every feature is worked out again in order.\n\n- Normally it recalculates automatically after each change; use this command to force one more recalculation.\n- A feature that cannot be worked out turns red in the tree, the bottom of the window says "N errors", and "Why the error?" in the right-click menu of the row explains.',
+
+  'help.rebuild.keywords': 'rebuild recalculate regenerate errors',
+
+  'help.rebuild.see': 'undo concept.feature-tree',
   'help.fit.summary': 'Changes the view so that the whole model can be seen.',
+
+
+  'help.fit.keywords': 'fit zoom view show all',
+
+  'help.fit.see': 'view-iso view-front concept.overview',
   'help.viewFront.summary': 'Shows the front view.',
+
+  'help.viewFront.body':
+    'Switches to the front view: seen from the front, orthographic (no perspective).\n\n- Clicking the "Front" face of the view cube at the top right of the 3D window does the same.\n- Dragging with the middle button (the wheel) turns the model freely, and the view cube turns with it.',
+
+  'help.viewFront.keywords': 'front view orthographic',
+
+  'help.viewFront.see': 'view-top view-right view-iso',
   'help.viewTop.summary': 'Shows the top view.',
+
+  'help.viewTop.body':
+    'Switches to the top view: seen from above, orthographic (no perspective).\n\n- Clicking the "Top" face of the view cube does the same.',
+
+  'help.viewTop.keywords': 'top view orthographic',
+
+  'help.viewTop.see': 'view-front view-right view-iso',
   'help.viewRight.summary': 'Shows the right view.',
+
+  'help.viewRight.body':
+    'Switches to the right view: seen from the right, orthographic (no perspective).\n\n- Clicking the "Right" face of the view cube does the same.',
+
+  'help.viewRight.keywords': 'right view orthographic',
+
+  'help.viewRight.see': 'view-front view-top view-iso',
   'help.viewIso.summary': 'Shows the isometric view.',
+
+  'help.viewIso.body':
+    'Switches to the isometric view: seen obliquely from above, three faces can be seen at once.\n\n- It is the usual view for checking a shape while making features, and for seeing which face to click before sketching on it.\n- It is orthographic, without perspective.',
+
+  'help.viewIso.keywords': 'isometric view 3d',
+
+  'help.viewIso.see': 'view-front view-top fit',
   'help.viewNormal.summary': 'Normal To: turns to look straight at the sketch plane being edited.',
+
+  'help.viewNormal.body':
+    'Normal to: turns the view to look squarely at the sketch plane being edited.\n\n- Use it while sketching, so that the elements are not distorted by an oblique view.',
+
+  'help.viewNormal.keywords': 'normal to view sketch plane square',
+
+  'help.viewNormal.see': 'sketch view-front fit',
 };

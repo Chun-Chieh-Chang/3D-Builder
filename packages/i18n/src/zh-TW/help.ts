@@ -69,7 +69,21 @@ export const help = {
 
   // ---------------------------------------------------------------- file
   'help.newPart.summary': '開始一個空白零件，附前、上、右三個預設基準面。',
+
+  'help.newPart.body':
+    '開始一個空白零件。\n\n- 目前的零件有未存的修改時，會先問要不要儲存。\n- 新零件的設計樹只有「原點」和前、上、右三個基準面，3D 視窗是空的。\n- 新零件的材質等設定取自系統選項的「新零件使用的範本」（預設空白）；要指定範本時用「新零件（範本）…」。\n- 接下來：選一個基準面，按「草圖」畫輪廓，再用「伸長填料/基材」長出形狀。',
+
+  'help.newPart.keywords': '新零件 空白零件 基準面',
+
+  'help.newPart.see': 'new-part-template sketch extrude',
   'help.newPartTemplate.summary': '從範本開始新零件，範本先選好材質與文件設定（空白、碳鋼、鋁件、塑膠件、CNS 製圖）。',
+
+  'help.newPartTemplate.body':
+    '從範本開始新零件：選一個範本，新零件的材質與文件設定就先設好。\n\n- 空白：沒有材質。\n- 碳鋼、鋁件（材質是鋁合金 6061）、塑膠件（材質是 ABS）、CNS 製圖（碳鋼，製圖標準 CNS，小數 2 位）。\n- 要讓「新零件」一律用某個範本，在「系統選項」的「新零件使用的範本」選。\n- 沒有自訂範本的功能。',
+
+  'help.newPartTemplate.keywords': '範本 新零件 材質 鋁件 塑膠件 CNS',
+
+  'help.newPartTemplate.see': 'new-part options properties',
   'help.newAssembly.summary': '開始一個空白組合件，之後插入零組件並加結合。',
 
   'help.newAssembly.body':
@@ -79,13 +93,69 @@ export const help = {
 
   'help.newAssembly.see': 'insert-component mate fix-component',
   'help.newDemo.summary': '開啟一個示範零件，用來看各種特徵的樣子。',
+
+  'help.newDemo.body':
+    '開啟一個示範零件：20 × 10 × 5 mm 的方塊，一邊有圓角。\n\n- 設計樹有「草圖1」「伸長1」「圓角1」，最下方的體積是 991.416 mm³。\n- 用來看各種特徵的樣子，或做驗證手冊的步驟，不用自己畫。\n- 它是一個新的未存檔零件，可以隨意修改。',
+
+  'help.newDemo.keywords': '示範件 示範零件 範例 方塊 圓角',
+
+  'help.newDemo.see': 'new-part sketch fillet',
   'help.open.summary': '開啟零件（.3dbx）或組合件（.3dba）檔案。',
+
+  'help.open.body':
+    '開啟零件（.3dbx）或組合件（.3dba）檔案。\n\n- 跳出瀏覽器自己的「開啟檔案」視窗；找到檔案按「開啟」。瀏覽器問能不能存取時按「允許」；目前的檔案有未存的修改時會先問要不要儲存。\n- 開啟組合件時，第一次要選「專案資料夾」（就是那個 .3dba 所在的資料夾），因為組合件用相對路徑找零件。\n- 零件載入時，最下方顯示進度。\n- 當機或不小心關掉分頁後再開，程式會問是否復原沒存的零件。',
+
+  'help.open.keywords': '開啟舊檔 開啟 檔案 專案資料夾',
+
+  'help.open.see': 'save save-as new-assembly',
   'help.save.summary': '儲存目前的檔案；還沒有檔名時會問存在哪裡。',
+
+  'help.save.body':
+    '儲存目前的檔案；還沒有檔名時會問存在哪裡。\n\n- 分頁標題與檔名後面的「*」表示有尚未儲存的修改。\n- 存檔後最下方出現「已儲存 …」。\n- 另外有自動存檔：最後一次變更幾秒後（系統選項可改，預設 5 秒）存一份暫存，當機或關掉分頁後重開，會出現「找到沒有儲存的零件」，可以「復原」或「捨棄」；復原回來的零件還沒存檔，要再「另存新檔」。',
+
+  'help.save.keywords': '儲存 存檔 自動存檔 復原',
+
+  'help.save.see': 'save-as open options',
   'help.saveAs.summary': '用新的檔名或位置儲存；組合件另存時會改寫零件的相對路徑。',
+
+  'help.saveAs.body':
+    '用新的檔名或位置儲存。\n\n- 組合件另存到別的資料夾時，零件的相對路徑會改寫，復原記錄也跟著改。\n- 工程圖要存在專案資料夾之內，存到外面時會說「工程圖必須存在專案資料夾…之內」。\n- 還沒存過的零件（新零件、復原回來的零件）第一次存檔也用這個。',
+
+  'help.saveAs.keywords': '另存新檔 另存 檔名 位置',
+
+  'help.saveAs.see': 'save open new-drawing',
   'help.exportStep.summary': '把零件或組合件輸出成 STEP 檔，可以給別的 CAD 開啟。',
+
+  'help.exportStep.body':
+    '把零件或組合件輸出成 STEP 檔，可以給別的 CAD 開啟。\n\n- 零件：跳出視窗，選「格式」（例如 AP242），勾「帶著顏色」，選「座標系統」（預設「零件原點」，也可以選自己做的座標系統，檔案的原點與軸向就取自它），按「輸出」。\n- 瀏覽器下載一個 .step 檔，最下方出現「已輸出 …」。\n- 組合件：輸出的階層是零組件，位置是組裝的位置（不是爆炸後的位置），次組合件是一層，面的顏色也帶出去。\n- 曲面本體當殼輸出；偏移曲面轉成 B 樣條，別的 CAD 讀不讀得進沒有試過。\n- 用 eDrawings 或別的 CAD 開來看形狀與顏色對不對。',
+
+  'help.exportStep.keywords': '輸出 STEP 檔案 匯出 座標系統 顏色 AP242',
+
+  'help.exportStep.see': 'import-step coord-sys export-stl',
   'help.exportStl.summary': '把零件的實體輸出成 STL（三角網格）檔，精細度依文件的網格品質設定。',
+
+  'help.exportStl.body':
+    '把零件的實體輸出成 STL（三角網格）檔，用於 3D 列印與切片軟體。\n\n- 精細度依文件的「顯示與輸出品質」（在「檔案屬性」設，細或粗）：粗的圓柱看得出多邊形的稜。\n- 瀏覽器下載一個 .stl 檔。',
+
+  'help.exportStl.keywords': '輸出 STL 三角網格 列印 精細度',
+
+  'help.exportStl.see': 'export-step properties export-image',
   'help.exportImage.summary': '把圖形區現在看到的畫面存成 PNG 圖片。',
+
+  'help.exportImage.body':
+    '把圖形區現在看到的畫面存成 PNG 圖片。\n\n- 視角、顯示類型與剖面都照現在的樣子。\n- 瀏覽器下載一個 .png 檔，用看圖程式開。',
+
+  'help.exportImage.keywords': '輸出影像 圖片 PNG 截圖',
+
+  'help.exportImage.see': 'export-stl view-iso',
   'help.newDrawing.summary': '為已儲存的零件或組合件建立工程圖（檔案有未儲存的修改時不能用）。',
+
+  'help.newDrawing.body':
+    '為已儲存的零件或組合件建立工程圖（零件有未存的修改時這個指令是灰的）。\n\n- 第一次要選「專案資料夾」（放著零件檔的資料夾）；工程圖也要存在這個資料夾之內（.3dbd）。\n- 畫面變成工程圖：A3 橫向的圖頁，前視、上視、右視三個視圖（第一角投影），右下有標題圖塊（圖名取自零件名）。\n- 圖頁區：大小（A4、A3…）、方向、比例（可「最適比例」）、投影法（第一角或第三角）；視圖始終在圖頁內。\n- 視圖：可勾「顯示隱藏線」；拖曳視圖移動位置（會記住），「自動排版」回到自動排好的位置。\n- 標題圖塊逐欄填：公司、圖名、圖號、材質、繪製、日期、版次、通則公差、比例、投影法。\n- 可以加投影視圖、剖面視圖、細部放大圖，標註尺寸（見「工程圖的尺寸」）。\n- 工程圖從專案資料夾讀取零件檔：零件改了、存檔，重新開啟工程圖就跟著變；模型的參考不見了，尺寸會寫「找不到尺寸指的元素」。',
+
+  'help.newDrawing.keywords': '工程圖 圖頁 視圖 標題圖塊 三視圖 第一角 第三角',
+
+  'help.newDrawing.see': 'concept.drawing-dimensions save-as export-step',
   'help.generateAssembly.summary': '為零件的每個本體各寫一個衍生零件檔，再產生用它們組成的組合件（要先儲存零件）。',
 
   'help.generateAssembly.body':
@@ -113,9 +183,37 @@ export const help = {
 
   // ---------------------------------------------------------------- tools
   'help.equations.summary': '定義全域變數與運算式，尺寸和特徵數值可以引用它們。',
+
+  'help.equations.body':
+    '定義全域變數與運算式，尺寸和特徵數值可以引用它們。要先離開草圖才能按（編輯草圖時是灰色的）。\n\n- 「全域變數」：在最下面一列輸入名稱與運算式（例如 w 與 30），按「新增」；之後尺寸可以寫 w*2。改變數的運算式，用到它的尺寸立刻跟著變。\n- 「草圖尺寸」表：列出每張草圖的尺寸，可以直接把數字改成運算式。\n- 運算式寫錯（例如 w*）時，那一格標成無效，最下方說「運算式不完整」，模型維持上一次的大小。\n- 循環引用（b 用 a、a 用 b）會被擋下，並說出轉一圈的路徑（循環引用：b → a → b）。\n- 變數改名時，用到它的運算式自動改成新名字。\n- 特徵面板的數字格也可以寫運算式（例如深度 h/2，格子旁顯示「= 7.5 mm」）；也可以用檔案屬性：property(\'板厚\')。\n- 草圖上由運算式算出來的尺寸顯示成 Σ60 的樣子。',
+
+  'help.equations.keywords': '方程式 全域變數 運算式 參數 尺寸 引用',
+
+  'help.equations.see': 'properties sketch concept.property-manager',
   'help.appearance.summary': '為零件、本體、特徵或面指定顏色；優先順序是面 ＞ 特徵 ＞ 本體 ＞ 零件。',
+
+  'help.appearance.body':
+    '為零件、本體、特徵或面指定顏色。先在圖面點一個面（或在設計樹選一個東西），再按這個指令。\n\n- 「上色的對象」：整個零件、本體、特徵或面；按「顏色」旁的色塊挑顏色，按「套用」；「已上色的」清單列出設定過的，「移除顏色」取消。\n- 優先順序：面 ＞ 特徵 ＞ 本體 ＞ 零件；圖案與鏡射做出來的面也帶同一個特徵的顏色。\n- 輸出 STEP 時勾「帶著顏色」就會帶出去。',
+
+  'help.appearance.keywords': '外觀 顏色 上色 面 特徵 本體',
+
+  'help.appearance.see': 'export-step properties',
   'help.options.summary': '系統選項：介面語言、自動存檔、「新零件」用的範本、開始時可點選的元素；存在這個瀏覽器，不屬於零件檔。',
+
+  'help.options.body':
+    '系統選項：介面語言、自動存檔、新零件的範本、開始時可點選的元素、草圖抓取。這些存在這個瀏覽器，不屬於零件檔。\n\n- 介面語言：繁體中文或 English，選了立刻生效（組合件的畫面與示範件的內容還有部分中文）。\n- 自動存檔：開或關，與「最後一次變更後幾秒存檔」（預設 5 秒）。\n- 「新零件」使用的範本：空白、碳鋼、鋁件、塑膠件、CNS 製圖。\n- 開始時可以點選的元素：面、邊線、頂點（取消勾的，「選擇濾器」一開始就是取消的）。\n- 草圖抓取：總開關與各項（端點、中點、圖元上的最近點、四分之一點、交點、相切、垂足、水平點與垂直點、模型的邊與頂點、網格、角度），網格間距與角度間隔；網格與角度預設不啟用。見「草圖的吸附與推斷」。',
+
+  'help.options.keywords': '系統選項 語言 自動存檔 範本 選取 草圖抓取 設定',
+
+  'help.options.see': 'concept.sketch-snaps new-part-template save',
   'help.shortcuts.summary': '查看與自訂每個指令的快速鍵。',
+
+  'help.shortcuts.body':
+    '查看與自訂每個指令的快速鍵。\n\n- 點指令右邊的格子，按下想用的組合鍵（例如 Ctrl+Shift+E），按「關閉」；之後按那個組合鍵就執行那個指令。\n- 「還原預設」把全部改回預設。\n- 復原是 Ctrl+Z，重做是 Ctrl+Y；F1 開說明。',
+
+  'help.shortcuts.keywords': '快速鍵 快捷鍵 熱鍵 自訂',
+
+  'help.shortcuts.see': 'undo redo concept.overview',
   'help.measurePart.summary': '量測零件上選取的點、邊、面之間的距離與角度；再按一次結束。',
 
   'help.measurePart.body':
@@ -125,8 +223,29 @@ export const help = {
 
   'help.measurePart.see': 'measure-assembly physical-part check-part',
   'help.draftAnalysis.summary': '分析各面相對脫模方向的拔模角，並在圖形區上色。',
+
+  'help.draftAnalysis.body':
+    '分析各面相對脫模方向的拔模角，並在圖形區上色，看塑膠件有沒有足夠的脫模斜度。\n\n- 視窗設定：「拔模方向（模具打開的方向）」（預設 +Z，所以外殼要用前基準面做、開口朝向你）、「要求的拔模角（度）」、「反轉方向」、「用選取的平面的法向」（先在圖面點一個平面）。\n- 角度的定義：面的法向與方向的夾角減 90°，正值表示沿這個方向脫得出來。\n- 結果表分類：正拔模、負拔模、需要拔模（角度小於要求的）、跨越、無法取樣，各有面數與面積；「各個面」清單列最小到最大角度。\n- 「反轉方向」讓類別互換。「關閉」取消顏色。與「底切分析」塗同一批面，一次只開一個。\n\n驗證過的例子：60 × 40 × 30、壁 2、頂面開口的直壁外殼，方向 +Z：正拔模 2 個面（2400 mm²）、負拔模 1 個面（2400）、需要拔模 8 個面（11152 mm²）、跨越 0 個。',
+
+  'help.draftAnalysis.keywords': '拔模分析 脫模 拔模角 模具 塑膠 方向',
+
+  'help.draftAnalysis.see': 'undercut-analysis draft thickness-analysis',
   'help.undercutAnalysis.summary': '找出沿脫模方向兩端都被擋住的面（底切）。',
+
+  'help.undercutAnalysis.body':
+    '找出沿脫模方向兩端都被擋住的面（底切），這些面模具打不開，要側向抽芯。\n\n- 視窗設定：方向（預設沿開口方向）；結果表列出底切的面數與面積；「各個面」列出每面「上方／下方／都看不到」的比例。\n- 結果分類：底切（要側向抽芯）、只從上方看得到、只從下方看得到、上下都看得到（沿方向的牆，要拔模）。\n- 把方向改成孔的方向，孔壁就不再是底切。沒有底切的零件，底切面積顯示 0。\n- 視窗寫三角形數、取樣點數與用了幾毫秒。\n- 與「拔模分析」塗同一批面，一次只開一個；開另一個時，方向沿用。\n\n驗證過的例子：外殼（60 × 40 × 30、壁 2）加一個橫向貫穿的孔：孔壁 753.98 mm² 是唯一的底切；沒有孔的殼：底切 0 個面，只從上方看得到 6 個面（7552 mm²）、只從下方 1 個、上下都看得到 4 個。',
+
+  'help.undercutAnalysis.keywords': '底切分析 底切 側向抽芯 模具 方向',
+
+  'help.undercutAnalysis.see': 'draft-analysis thickness-analysis shell',
   'help.thicknessAnalysis.summary': '沿內法向量測各面的壁厚，標出最薄與最厚的地方。',
+
+  'help.thicknessAnalysis.body':
+    '沿內法向量測各面的壁厚，標出太薄與太厚的地方。\n\n- 視窗設定：「最小壁厚（mm，空白＝不限）」與「最大壁厚」，填完自動重算；兩格要是大於 0 的數字，而且最小不能大於最大，否則標成無效並說明。\n- 結果表分類：符合（綠）、太薄（紅）、太厚（藍）、對面沒有面可量、無法取樣；另列「最薄的地方」「最厚的地方」與「各個面（最小／中位數／最大 mm）」。\n- 厚度是沿內法向到對面的距離；開口那圈邊緣面量到的是整面牆的高度，所以會算成太厚（它的距離不是壁厚）。\n- SolidWorks 的厚度定義可能不同，與它對照時請記下差多少。\n\n驗證過的例子：60 × 40 × 30、壁 2 的外殼，最小壁厚 1、最大 4：10 個面符合、開口那圈邊緣面太厚、最薄的地方是 2 mm；最小壁厚改成 3，十個面變成太薄。',
+
+  'help.thicknessAnalysis.keywords': '厚度分析 壁厚 太薄 太厚 塑膠 量測',
+
+  'help.thicknessAnalysis.see': 'draft-analysis undercut-analysis shell',
   'help.checkPart.summary': '檢查模型幾何：是否通過有效性檢查、外殼是否封閉（有沒有開放邊）、體積是否為正。',
 
   'help.checkPart.body':
@@ -144,6 +263,13 @@ export const help = {
 
   'help.physicalPart.see': 'properties physical-assembly check-part',
   'help.properties.summary': '編輯檔案屬性（料號、廠商、說明等），零件表會讀它。',
+
+  'help.properties.body':
+    '編輯檔案屬性：材質、顯示與輸出品質、自訂屬性（料號、廠商、說明等）。編輯草圖時這個指令是灰的，要先離開草圖。\n\n- 材質：下拉選（碳鋼、鑄鐵、不鏽鋼 304、鋁合金 6061 與 7075、銅、黃銅、鈦合金、ABS、PC、尼龍 PA6、POM、PP、壓克力）或「自訂…」輸入密度（g/cm³）；選了之後視窗顯示「質量：… g」，狀態列也多一個質量（質量 ＝ 體積 × 密度）。\n- 顯示與輸出品質：細或粗，影響網格的精細度（顯示與 STL）。\n- 自訂屬性：在最下面一列輸入屬性名稱與值（例如 板厚 與 4mm），按「新增」。尺寸與特徵數值可以用 property(\'板厚\') 引用；零件表讀「廠商」「料號」。\n\n手算的例子：8000 mm³ 的方塊，碳鋼（7.85 g/cm³）質量 62.80 g。',
+
+  'help.properties.keywords': '檔案屬性 屬性 材質 料號 廠商 品質 自訂',
+
+  'help.properties.see': 'equations physical-part bom',
 
   // ---------------------------------------------------------------- features
   'help.sketch.summary': '在選取的基準面或平面上建立並進入草圖。',
@@ -470,6 +596,13 @@ export const help = {
   'help.coordSys.see': 'ref-plane export-step ref-point',
   'help.importStep.summary': '把 STEP 檔讀進來成為零件的本體，必要時自動修復。',
 
+  'help.importStep.body':
+    '把 STEP 檔讀進來成為零件的一個本體，必要時自動修復。\n\n- 在新零件按它，在瀏覽器的視窗選 .step 檔；等幾秒，3D 視窗出現模型，設計樹多一列「輸入1」。\n- 雙擊「輸入1」（單擊只是選取）打開面板：「輸入的資料」（檔名，資料存放在零件檔中，不需要原始檔案）與「診斷報告」（檔案內容有幾個實體與面、有效性檢查結果、做了什麼修改）。\n- 「縫合容差」（預設 0.01）只有檔案裡只有曲面、沒有實體時才有作用。\n- 之後可以在它上面加特徵：草圖畫在它的面上、伸長、刪除面、移動面等。\n- 診斷報告有警告時，用「檢查幾何」再看一次。\n\n驗證過的例子：40 × 30 × 10 的板、中間一個半徑 4 的孔：體積 40 × 30 × 10 − π × 4² × 10 ≈ 11497 mm³。',
+
+  'help.importStep.keywords': '輸入 STEP 匯入 本體 診斷報告 修復 縫合',
+
+  'help.importStep.see': 'delete-face move-face check-part export-step',
+
   // ---------------------------------------------------------------- assembly
   'help.insertComponent.summary': '把零件檔插入組合件，成為零組件。',
 
@@ -762,12 +895,73 @@ export const help = {
 
   // ---------------------------------------------------------------- edit and view
   'help.undo.summary': '復原上一個修改。',
+
+  'help.undo.body':
+    '復原上一個修改。\n\n- 快速鍵 Ctrl+Z；每個分頁都看得到「復原」按鈕（灰色表示沒有可以退的）。\n- 每個指令是一個復原步驟：一個特徵、一個草圖操作（圓角、修剪、鏡射…）、一次移動零組件都是一步。',
+
+  'help.undo.keywords': '復原 上一步 Ctrl+Z',
+
+  'help.undo.see': 'redo rebuild shortcuts',
   'help.redo.summary': '重做剛復原的修改。',
+
+  'help.redo.body':
+    '重做剛復原的修改。\n\n- 快速鍵 Ctrl+Y；每個分頁都看得到「重做」按鈕（灰色表示沒有可以重做的）。',
+
+  'help.redo.keywords': '重做 Ctrl+Y',
+
+  'help.redo.see': 'undo rebuild shortcuts',
   'help.rebuild.summary': '重新計算整個零件。',
+
+  'help.rebuild.body':
+    '重新計算整個零件：每個特徵依序再算一遍。\n\n- 平常每次修改後會自動重算，這個指令是要強制再算一次時用。\n- 算不出來的特徵，設計樹那一列變紅，最下方寫「N 個錯誤」，在那一列按右鍵 →「錯誤為何？」會說明原因。',
+
+  'help.rebuild.keywords': '重建 重新計算 錯誤',
+
+  'help.rebuild.see': 'undo concept.feature-tree',
   'help.fit.summary': '調整視角，讓整個模型都看得到。',
+
+
+  'help.fit.keywords': '全部顯示 縮放 視角 顯示全部',
+
+  'help.fit.see': 'view-iso view-front concept.overview',
   'help.viewFront.summary': '切換成前視。',
+
+  'help.viewFront.body':
+    '切換成前視：從正面看，是正交視圖（沒有透視）。\n\n- 也可以點 3D 視窗右上角視角方塊的「前」面。\n- 按住滑鼠中鍵（滾輪）拖曳可以隨意旋轉，視角方塊跟著轉。',
+
+  'help.viewFront.keywords': '前視 視角 正面',
+
+  'help.viewFront.see': 'view-top view-right view-iso',
   'help.viewTop.summary': '切換成上視。',
+
+  'help.viewTop.body':
+    '切換成上視：從上面往下看，是正交視圖（沒有透視）。\n\n- 也可以點視角方塊的「上」面。',
+
+  'help.viewTop.keywords': '上視 視角 俯視',
+
+  'help.viewTop.see': 'view-front view-right view-iso',
   'help.viewRight.summary': '切換成右視。',
+
+  'help.viewRight.body':
+    '切換成右視：從右側看，是正交視圖（沒有透視）。\n\n- 也可以點視角方塊的「右」面。',
+
+  'help.viewRight.keywords': '右視 視角 側視',
+
+  'help.viewRight.see': 'view-front view-top view-iso',
   'help.viewIso.summary': '切換成等角視。',
+
+  'help.viewIso.body':
+    '切換成等角視：從斜上方看，同時看得到三個面。\n\n- 做特徵時常用它檢查形狀；在面上畫草圖前，也用它先看清楚要點哪個面。\n- 沿用正交投影，沒有透視。',
+
+  'help.viewIso.keywords': '等角 視角 立體',
+
+  'help.viewIso.see': 'view-front view-top fit',
   'help.viewNormal.summary': '正視於：轉到垂直看編輯中的草圖面。',
+
+  'help.viewNormal.body':
+    '正視於：把視角轉到垂直看編輯中的草圖面。\n\n- 畫草圖時用它，圖元就不會因為斜視而變形。',
+
+  'help.viewNormal.keywords': '正視於 草圖面 垂直 視角',
+
+  'help.viewNormal.see': 'sketch view-front fit',
 } as const;
