@@ -1,5 +1,6 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import { labelsOf, t } from '@3db/i18n';
+import { currentTopicId } from '../help/context';
 import {
   canBeSeed,
   evalQuantity,
@@ -2379,7 +2380,7 @@ export function PropertyManager() {
   // Like the message box at the top of a SolidWorks PropertyManager: why the feature cannot be built yet.
   const status = sketching ? undefined : result?.features.find((r) => r.id === f.id);
   return (
-    <div className="property-manager">
+    <div className="property-manager" data-help={currentTopicId()}>
       <div className="pm-header">
         <Icon name={f.type} />
         <span className="pm-title">

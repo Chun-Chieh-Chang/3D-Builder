@@ -73,7 +73,7 @@ export function MatePanel() {
   const refs = advanced ? mateSlots(d) : [d.a, d.b];
   const slotLabels = d.type === 'width' ? ['width1', 'width2', 'tab1', 'tab2'] : ['entity1', 'entity2', 'plane'];
   return (
-    <div className="property-manager">
+    <div className="property-manager" data-help="mate">
       <div className="pm-header">
         <Icon name="mates" />
         <span className="pm-title">{editing ? `編輯結合：${editing.name}` : '結合'}</span>

@@ -90,7 +90,7 @@ export function PatternPanel() {
     />
   );
   return (
-    <div className="property-manager">
+    <div className="property-manager" data-help="pattern-linear">
       <div className="pm-header">
         <Icon name="assembly" />
         <span className="pm-title">{title}</span>

@@ -81,7 +81,7 @@ export function InsertComponentPanel() {
   // a sub-assembly can be placed once the files it uses are read too
   const ready = status?.status === 'ok' && !(status.assembly && [...asm.files.values()].some((s) => s.status === 'loading'));
   return (
-    <div className="property-manager">
+    <div className="property-manager" data-help="insert-component">
       <div className="pm-header">
         <Icon name="assembly" />
         <span className="pm-title">{first ? '開始組合件' : '插入零組件'}</span>

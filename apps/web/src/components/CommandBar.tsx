@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react';
 import { t } from '@3db/i18n';
-import { ACTIONS, shortcutOf, type UiAction } from '../actions';
+import { ACTIONS, type UiAction } from '../actions';
+import { actionTooltip, currentTopicId } from '../help/context';
+import { closeHelp, openHelp, setPicking, useHelp } from '../help/state';
 import { useDocumentTitle, useSketcherView, useStore } from '../state/store';
 
 type Tab = { id: string; label: string; groups: UiAction['group'][] };
@@ -25,6 +27,7 @@ export function CommandBar() {
   const [tab, setTab] = useState('features');
   const state = useStore((s) => s);
   const title = useDocumentTitle();
+  const help = useHelp();
   useSketcherView(); // re-render when the active sketch tool changes
   const sketching = state.editing?.kind === 'sketch';
   const assembly = state.active === 'assembly';
@@ -51,7 +54,7 @@ export function CommandBar() {
       </nav>
       <div className="quick-actions">
         {quick.map((a) => (
-          <button key={a.id} className="tool" disabled={!a.enabled(state)} onClick={a.run} title={shortcutOf(a) ? `${a.label} (${shortcutOf(a)})` : a.label}>
+          <button key={a.id} className="tool" data-help={a.id} disabled={!a.enabled(state)} onClick={a.run} title={actionTooltip(a)}>
             {a.label}
           </button>
         ))}
@@ -61,13 +64,22 @@ export function CommandBar() {
           <button
             key={a.id}
             className={a.active?.() ? 'tool active' : 'tool'}
+            data-help={a.id}
             disabled={!a.enabled(state)}
             onClick={a.run}
-            title={shortcutOf(a) ? `${a.label} (${shortcutOf(a)})` : a.label}
+            title={actionTooltip(a)}
           >
             {a.label}
           </button>
         ))}
+      </div>
+      <div className="help-buttons">
+        <button className={help.open ? 'tool active' : 'tool'} title={t('helpui.buttonTip')} onClick={() => (help.open ? closeHelp() : openHelp(currentTopicId()))}>
+          {t('helpui.button')}
+        </button>
+        <button className={help.picking ? 'tool active' : 'tool'} title={t('helpui.whatIsThisTip')} onClick={() => setPicking(!help.picking)}>
+          {t('helpui.whatIsThis')}
+        </button>
       </div>
       <div className="doc-title" title={state.dirty ? t('doc.unsaved') : undefined}>
         {title}

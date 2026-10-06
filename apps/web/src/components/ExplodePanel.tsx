@@ -27,7 +27,7 @@ export function ExplodePanel() {
   };
   const steps = asm.doc.explosion ?? [];
   return (
-    <div className="property-manager">
+    <div className="property-manager" data-help="explode">
       <div className="pm-header">
         <Icon name="assembly" />
         <span className="pm-title">{t('explode.title')}</span>

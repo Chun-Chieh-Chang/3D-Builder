@@ -366,7 +366,7 @@ export function Viewport() {
 
   return (
     <main className="viewport">
-      <div ref={host} className="viewport-canvas" />
+      <div ref={host} className="viewport-canvas" data-help={sketching ? 'concept.sketch-snaps' : 'concept.selection'} />
       <ViewCube />
       <ViewOptions />
       <div className="heads-up">

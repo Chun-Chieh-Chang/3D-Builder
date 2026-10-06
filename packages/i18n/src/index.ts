@@ -52,6 +52,16 @@ export function t<K extends MessageKey>(key: K, ...args: Params<K>): string {
   return template.replace(/\{(\w+)\}/g, (whole, name: string) => (name in params ? String(params[name]) : whole));
 }
 
+/** Whether the catalog has this key (a key made up at run time, like a help topic's, may not). */
+export function hasText(key: string): key is MessageKey {
+  return key in zhTW;
+}
+
+/** The text of a key made up at run time, or `undefined` when there is none (in the current language, else `zh-TW`). */
+export function textOf(key: string): string | undefined {
+  return hasText(key) ? (catalogs[current][key] ?? zhTW[key]) : undefined;
+}
+
 /**
  * An object of texts that reads them when they are asked for, so a table written once at module level
  * (`FEATURE_LABEL`) follows the language: `labelsOf({ a: 'x.a' }).a` is `t('x.a')` at the time of the read.

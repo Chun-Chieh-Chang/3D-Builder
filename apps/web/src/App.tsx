@@ -8,6 +8,9 @@ import { CommandBar } from './components/CommandBar';
 import { AppearanceDialog, EquationsDialog, OptionsDialog, PropertiesDialog, ShortcutsDialog, StepOptionsDialog, TemplateDialog } from './components/ParametersDialogs';
 import { DeleteComponentsDialog, DeleteDialog, FolderDialog, MissingFilesDialog, RecoveryDialog, UnsavedDialog, WhatsWrongDialog } from './components/Dialogs';
 import { FeatureTree } from './components/FeatureTree';
+import { HelpPanel } from './components/HelpPanel';
+import { currentTopicId, topicOf } from './help/context';
+import { installHelp } from './help/install';
 import { InsertComponentPanel } from './components/InsertComponentPanel';
 import { MatePanel } from './components/MatePanel';
 import { MovePanel } from './components/MovePanel';
@@ -39,6 +42,7 @@ export function App() {
   const editing = assembly ? inserting || mating || moving || patterning || exploding : !!partEditing;
   const title = useDocumentTitle();
   useEffect(() => installShortcuts(), []);
+  useEffect(() => installHelp({ currentTopic: currentTopicId, hasTopic: (id) => topicOf(id) !== null }), []);
   useEffect(() => {
     document.title = `${title} - 3D-Builder`;
   }, [title]);
@@ -46,7 +50,7 @@ export function App() {
     <div className="app">
       <CommandBar />
       <div className="workspace">
-        <aside className="left-panel">
+        <aside className="left-panel" data-help={editing ? 'concept.property-manager' : 'concept.feature-tree'}>
           <div className="panel-tabs">
             <span className={editing ? '' : 'active'}>FeatureManager</span>
             <span className={editing ? 'active' : ''}>PropertyManager</span>
@@ -56,6 +60,7 @@ export function App() {
         {drawing ? <DrawingViewport /> : assembly ? <AssemblyViewport /> : <Viewport />}
       </div>
       <StatusBar />
+      <HelpPanel />
       <DeleteDialog />
       <DeleteComponentsDialog />
       <WhatsWrongDialog />

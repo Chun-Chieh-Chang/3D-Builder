@@ -1,0 +1,223 @@
+{
+  "_about": "Which help topics (docs/help-plan.md) each item of docs/manual-verification.html is about. When an item is marked 有問題 and fixed, correct these topics in packages/i18n/src/zh-TW/help.ts too. tests/phase8/help.test.ts checks that the items and the topics exist.",
+  "_untied": {
+    "chamfer": "no item of the manual walks the 3D chamfer yet; the fillet/chamfer-by-face work adds one",
+    "concept.overview": "general, not one item"
+  },
+  "C1": [
+    "equations",
+    "properties"
+  ],
+  "C2": [
+    "delete-face",
+    "move-face",
+    "fillet"
+  ],
+  "C3": [
+    "import-step"
+  ],
+  "C4": [
+    "combine"
+  ],
+  "C5": [
+    "tool-line",
+    "tool-rect",
+    "tool-centerRect",
+    "tool-circle",
+    "tool-perimeterCircle",
+    "tool-arc",
+    "tool-tangentArc",
+    "tool-threePointArc",
+    "tool-point",
+    "tool-slot",
+    "tool-polygon",
+    "tool-sketchFillet",
+    "tool-sketchChamfer",
+    "tool-trim",
+    "tool-extend",
+    "tool-offset",
+    "tool-mirror",
+    "construction"
+  ],
+  "C6": [
+    "tool-dimension",
+    "sketch",
+    "exit-sketch"
+  ],
+  "C7": [
+    "tool-convert",
+    "tool-pierce",
+    "concept.sketch-snaps"
+  ],
+  "C8": [
+    "extrude",
+    "extrude-cut",
+    "revolve",
+    "revolve-cut"
+  ],
+  "C9": [
+    "shell",
+    "draft"
+  ],
+  "C10": [
+    "hole"
+  ],
+  "C11": [
+    "sweep",
+    "sweep-cut"
+  ],
+  "C12": [
+    "loft",
+    "loft-cut"
+  ],
+  "C13": [
+    "rib"
+  ],
+  "C14": [
+    "ref-plane",
+    "ref-axis",
+    "ref-point",
+    "coord-sys"
+  ],
+  "C15": [
+    "linear-pattern",
+    "circular-pattern"
+  ],
+  "C16": [
+    "mirror"
+  ],
+  "C17": [
+    "appearance",
+    "physical-part",
+    "export-step",
+    "export-stl",
+    "export-image"
+  ],
+  "C18": [
+    "save",
+    "save-as",
+    "open"
+  ],
+  "C19": [
+    "concept.feature-tree",
+    "concept.property-manager",
+    "shortcuts"
+  ],
+  "C20": [
+    "fit",
+    "view-front",
+    "view-top",
+    "view-right",
+    "view-iso",
+    "view-normal"
+  ],
+  "C21": [
+    "concept.selection"
+  ],
+  "C22": [
+    "options"
+  ],
+  "D1": [
+    "insert-component",
+    "mate",
+    "fix-component",
+    "float-component",
+    "move-component",
+    "rotate-component"
+  ],
+  "D2": [
+    "pattern-linear",
+    "pattern-circular",
+    "mirror-component"
+  ],
+  "D3": [
+    "import-step-assembly"
+  ],
+  "D4": [
+    "bom"
+  ],
+  "D5": [
+    "explode"
+  ],
+  "D6": [
+    "measure-assembly",
+    "physical-assembly",
+    "check-assembly"
+  ],
+  "D7": [
+    "interference"
+  ],
+  "D8": [
+    "export-step"
+  ],
+  "E1": [
+    "generate-assembly"
+  ],
+  "E5": [
+    "clearance"
+  ],
+  "F1": [
+    "new-drawing"
+  ],
+  "G1": [
+    "split-line"
+  ],
+  "G2": [
+    "offset-surface"
+  ],
+  "G3": [
+    "fill-surface",
+    "flat-surface",
+    "knit",
+    "trim-surface",
+    "extend-surface"
+  ],
+  "G4": [
+    "thicken",
+    "cut-with-surface"
+  ],
+  "H1": [
+    "draft-analysis"
+  ],
+  "H2": [
+    "undercut-analysis"
+  ],
+  "H3": [
+    "thickness-analysis"
+  ],
+  "H4": [
+    "shell"
+  ],
+  "H5": [
+    "lip-groove"
+  ],
+  "H6": [
+    "screw-boss"
+  ],
+  "H7": [
+    "snap-hook",
+    "snap-catch"
+  ],
+  "H8": [
+    "vent"
+  ],
+  "I1": [
+    "base-flange"
+  ],
+  "I2": [
+    "edge-flange"
+  ],
+  "I3": [
+    "hem"
+  ],
+  "I6": [
+    "flat-pattern"
+  ],
+  "K4": [
+    "concept.sketch-snaps"
+  ],
+  "B1": [
+    "fillet",
+    "concept.feature-tree"
+  ]
+}

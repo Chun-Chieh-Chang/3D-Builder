@@ -302,3 +302,25 @@ html[lang="en"] .view-cube .cube-face { font-size: 10px; }
 .drawing-panel .drawing-views li .name { flex: 1; }
 .drawing-panel .drawing-views li.selected { background: var(--accent-soft); }
 
+
+/* ---- help (docs/help-plan.md) ---- */
+.help-buttons { display: flex; gap: 4px; align-items: center; padding-left: 8px; border-left: 1px solid var(--line); }
+.help-picking, .help-picking * { cursor: help !important; }
+.help-panel { position: fixed; top: 44px; right: 0; bottom: 24px; width: 360px; max-width: 100vw; z-index: 50; display: flex; flex-direction: column; background: #fff; border-left: 1px solid var(--line); box-shadow: -4px 0 12px rgba(0, 0, 0, 0.12); font-size: 13px; }
+.help-panel > header { display: flex; align-items: center; gap: 8px; padding: 8px 10px; border-bottom: 1px solid var(--line); }
+.help-panel > header .help-close { margin-left: auto; }
+.help-panel .help-search { margin: 8px 10px; padding: 5px 8px; border: 1px solid var(--line); border-radius: 4px; }
+.help-panel .help-body { flex: 1; overflow-y: auto; padding: 0 12px 16px; line-height: 1.6; }
+.help-panel h2 { font-size: 16px; margin: 8px 0 4px; }
+.help-panel h3 { font-size: 13px; margin: 12px 0 4px; color: var(--muted); }
+.help-panel p { margin: 6px 0; }
+.help-panel ul { margin: 4px 0 8px; padding-left: 18px; }
+.help-panel .help-summary { font-weight: 600; }
+.help-panel .help-shortcut, .help-panel .help-empty { color: var(--muted); }
+.help-panel .help-results { list-style: none; padding-left: 0; }
+.help-panel .help-results li { display: flex; flex-direction: column; margin: 4px 0; }
+.help-panel .help-results li span { color: var(--muted); font-size: 12px; }
+.help-link { background: none; border: 0; padding: 2px 0; color: #1c7ed6; text-align: left; cursor: pointer; font: inherit; }
+.help-link:hover { text-decoration: underline; }
+.help-topic footer { margin-top: 12px; display: flex; flex-wrap: wrap; gap: 4px 12px; align-items: baseline; }
+.help-topic footer h3 { width: 100%; margin: 0; }

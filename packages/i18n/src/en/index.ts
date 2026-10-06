@@ -26,6 +26,7 @@ import { stepasm } from './stepasm';
 import { bom } from './bom';
 import { explode } from './explode';
 import { evaluate } from './evaluate';
+import { help } from './help';
 
 /** The English catalog (D9.1). Same keys as the source catalog (`zh-TW`); a key left out shows in `zh-TW`. */
-export const en: Translation = { ...ui, ...model, ...expr, ...equations, ...edit, ...sketch, ...features, ...datums, ...output, ...app, ...viewport, ...tree, ...pmpanels, ...dialogs, ...storemsg, ...sketchtools, ...core, ...lowlevel, ...subassembly, ...patterns, ...mates, ...library, ...drawing, ...stepasm, ...bom, ...explode, ...evaluate };
+export const en: Translation = { ...ui, ...model, ...expr, ...equations, ...edit, ...sketch, ...features, ...datums, ...output, ...app, ...viewport, ...tree, ...pmpanels, ...dialogs, ...storemsg, ...sketchtools, ...core, ...lowlevel, ...subassembly, ...patterns, ...mates, ...library, ...drawing, ...stepasm, ...bom, ...explode, ...evaluate, ...help };

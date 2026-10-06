@@ -74,7 +74,7 @@ export function MovePanel() {
   };
   const state = !c ? null : c.fixed ? '已固定：不能移動' : result?.dof === 0 ? '已被結合完全定義：不能移動' : result ? `可移動的自由度：${result.dof}` : null;
   return (
-    <div className="property-manager">
+    <div className="property-manager" data-help="move-component">
       <div className="pm-header">
         <Icon name="assembly" />
         <span className="pm-title">{tool === 'move' ? '移動零組件' : '旋轉零組件'}</span>
