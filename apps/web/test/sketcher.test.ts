@@ -174,7 +174,8 @@ describe('sketch tools', () => {
     click(c, -10, 0); // back onto the first line's start
     const tangents = h.sketch().constraints.filter((x) => x.type === 'tangent');
     expect(tangents).toHaveLength(3);
-    expect(h.sketch().constraints.filter((x) => x.type === 'horizontal')).toHaveLength(1);
+    // the first line's own horizontal, and the start of it lined up with the origin (its y is 0)
+    expect(h.sketch().constraints.filter((x) => x.type === 'horizontal')).toHaveLength(2);
     expect(h.last!.status).toBe('under');
     expect(h.last!.problems).toEqual([]);
   });
@@ -507,5 +508,213 @@ describe('sketch operations (C1.8, C1.9, C1.15, C1.16, C1.17, C1.19)', () => {
     await rc.settled();
     expect(refused.sketch().entities).toEqual([]);
     expect(refused.notices.join()).toContain('過多定義');
+  });
+});
+
+describe('lining up with other sketch points (D5.3a)', () => {
+  it('pulls the first point of a line into line with an end point, with a dotted guide and a horizontal relation', () => {
+    const h = new Host();
+    const c = new SketchController(h);
+    c.setTool('line');
+    click(c, 0, 0);
+    click(c, 10, 5);
+    c.escape();
+    c.pointerMove(at(30, 5.1), false); // 0.1 mm off the height of the end point (5 px = 0.25 mm)
+    expect(c.getView().snap).toMatchObject({ kind: 'free', p: [30, 5], align: { h: { p: [10, 5] } } });
+    expect(c.getView().inference).toBe('水平點');
+    click(c, 30, 5.1);
+    click(c, 30.1, 20); // nearly vertical from there: vertical
+    const s = h.sketch();
+    const [first, second] = s.entities.filter((e) => e.type === 'line') as Extract<SketchFeature['entities'][number], { type: 'line' }>[];
+    expect(second).toBeDefined();
+    expect(s.constraints).toContainEqual(expect.objectContaining({ type: 'horizontal', a: second!.p1, b: first!.p2 }));
+    expect(point(h, second!.p1)).toEqual([30, 5]);
+    expect(h.last!.status).not.toBe('over');
+    expect(h.last!.conflicting).toEqual([]);
+    expect(h.last!.redundant).toEqual([]);
+  });
+
+  it('undoes in one step, the relation and the point together', () => {
+    const h = new Host();
+    const c = new SketchController(h);
+    c.setTool('point');
+    click(c, 10, 5);
+    const before = h.sketch().constraints.length;
+    click(c, 30, 5.1);
+    expect(h.sketch().constraints.length).toBe(before + 1);
+    h.history.undo();
+    expect(h.sketch().constraints.length).toBe(before);
+    expect(h.sketch().entities).toHaveLength(1);
+  });
+
+  it('lines up with the other axis when a horizontal line is inferred, and does not over-define', () => {
+    const h = new Host();
+    const c = new SketchController(h);
+    c.setTool('point');
+    click(c, 20, 15);
+    c.setTool('line');
+    click(c, 1, 3);
+    c.pointerMove(at(20.1, 3.2), false); // nearly horizontal from (1, 3), and 0.1 mm from x = 20
+    const v = c.getView();
+    expect(v.snap).toMatchObject({ kind: 'free', p: [20, 3], align: { v: { p: [20, 15] } } });
+    expect(v.snap && v.snap.kind === 'free' && v.snap.align?.h).toBeUndefined();
+    expect(v.inference).toBe('水平'); // the line's own relation is what is named
+    click(c, 20.1, 3.2);
+    expect(types(h)).toEqual(expect.arrayContaining(['horizontal', 'vertical']));
+    expect(h.last!.conflicting).toEqual([]);
+    expect(h.last!.redundant).toEqual([]);
+    expect(h.last!.status).not.toBe('over');
+  });
+
+  it('does not take over from a point the cursor is on: that merges', () => {
+    const h = new Host();
+    const c = new SketchController(h);
+    c.setTool('point');
+    click(c, 10, 5);
+    c.setTool('line');
+    c.pointerMove(at(10.1, 5.1), false);
+    expect(c.getView().snap).toMatchObject({ kind: 'point' });
+    expect(c.getView().inference).toBe('重合');
+  });
+
+  it('lines up the corner of a rectangle and keeps it solvable', () => {
+    const h = new Host();
+    const c = new SketchController(h);
+    c.setTool('point');
+    click(c, 40, 12);
+    c.setTool('rect');
+    click(c, 0, 0);
+    click(c, 25, 12.1); // the opposite corner is level with the point
+    const s = h.sketch();
+    expect(s.entities.filter((e) => e.type === 'line')).toHaveLength(4);
+    expect(types(h).filter((t) => t === 'horizontal')).toHaveLength(3); // two sides and the alignment
+    expect(h.last!.conflicting).toEqual([]);
+    expect(h.last!.redundant).toEqual([]);
+    const corner = s.entities.find((e) => e.type === 'point' && Math.abs(point(h, e.id)[0] - 25) < 1e-9 && Math.abs(point(h, e.id)[1] - 12) < 1e-9);
+    expect(corner).toBeDefined();
+  });
+
+  it('does not line up the radius click of a circle, nor the cursor when the tool is a selection', () => {
+    const h = new Host();
+    const c = new SketchController(h);
+    c.setTool('point');
+    click(c, 30, 5);
+    c.setTool('circle');
+    click(c, 0, 0);
+    c.pointerMove(at(10, 5.1), false); // a radius: it must not be bent toward the point at y = 5
+    expect(c.getView().snap).toMatchObject({ kind: 'free', p: [10, 5.1] });
+    c.escape();
+    c.setTool('select');
+    c.pointerMove(at(40, 5.1), false);
+    expect(c.getView().snap).toBeNull();
+  });
+
+  it('the guide is gone once the cursor moves away', () => {
+    const h = new Host();
+    const c = new SketchController(h);
+    c.setTool('point');
+    click(c, 10, 5);
+    c.pointerMove(at(30, 5.1), false);
+    expect(c.getView().snap).toMatchObject({ align: expect.anything() });
+    c.pointerMove(at(30, 9), false);
+    expect(c.getView().snap).toMatchObject({ kind: 'free', p: [30, 9] });
+    expect(c.getView().inference).toBeNull();
+  });
+});
+
+describe('collinear, parallel and perpendicular inference while drawing (D5.3a)', () => {
+  const twoLines = () => {
+    const h = new Host();
+    const c = new SketchController(h);
+    c.setTool('line');
+    click(c, 0.5, 0.3); // off the origin: this is about the other line
+    click(c, 10.5, 5.3);
+    c.escape();
+    return { h, c };
+  };
+  const lastLine = (h: Host) => h.sketch().entities.filter((e) => e.type === 'line').at(-1)!;
+
+  it('makes a line leaving the end of another along its direction collinear', () => {
+    const { h, c } = twoLines();
+    c.setTool('line');
+    click(c, 10.5, 5.3); // snaps onto the end of the first line
+    c.pointerMove(at(30.5, 15.6), false);
+    expect(c.getView().inference).toBe('共線');
+    expect(c.getView().inferLine).toMatchObject({ kind: 'collinear', line: 'l1' });
+    expect(c.getView().hover).toBe('l1'); // the line it follows is lit
+    click(c, 30.5, 15.6);
+    expect(h.sketch().constraints).toContainEqual(expect.objectContaining({ type: 'collinear', a: lastLine(h).id, b: 'l1' }));
+    expect(h.last!.conflicting).toEqual([]);
+    expect(h.last!.redundant).toEqual([]);
+  });
+
+  it('makes a line drawn beside another parallel to it', () => {
+    const { h, c } = twoLines();
+    c.setTool('line');
+    click(c, 0, 20);
+    c.pointerMove(at(20, 30.3), false);
+    expect(c.getView().inference).toBe('平行');
+    click(c, 20, 30.3);
+    expect(h.sketch().constraints).toContainEqual(expect.objectContaining({ type: 'parallel', a: lastLine(h).id, b: 'l1' }));
+    expect(h.last!.conflicting).toEqual([]);
+    expect(h.last!.redundant).toEqual([]);
+  });
+
+  it('makes a line drawn across another perpendicular to it', () => {
+    const { h, c } = twoLines();
+    c.setTool('line');
+    click(c, 30, 0);
+    c.pointerMove(at(28, 4.1), false);
+    expect(c.getView().inference).toBe('互相垂直');
+    click(c, 28, 4.1);
+    expect(h.sketch().constraints).toContainEqual(expect.objectContaining({ type: 'perpendicular', a: lastLine(h).id, b: 'l1' }));
+    expect(h.last!.conflicting).toEqual([]);
+    expect(h.last!.redundant).toEqual([]);
+  });
+
+  it('leaves horizontal and vertical to their own inference', () => {
+    const { h, c } = twoLines();
+    c.setTool('line');
+    click(c, 0, 20);
+    c.pointerMove(at(20, 20.2), false);
+    expect(c.getView().inference).toBe('水平');
+    expect(c.getView().inferLine).toBeNull();
+    click(c, 20, 20.2);
+    expect(types(h)).toContain('horizontal');
+    expect(types(h)).not.toContain('parallel');
+  });
+
+  it('infers nothing for a line that is too short to have a direction, or beyond a few degrees', () => {
+    const { c } = twoLines();
+    c.setTool('line');
+    click(c, 0, 20);
+    c.pointerMove(at(0.2, 20.1), false);
+    expect(c.getView().inferLine).toBeNull();
+    c.pointerMove(at(20, 33), false);
+    expect(c.getView().inferLine).toBeNull();
+    expect(c.getView().inference).toBeNull();
+  });
+
+  it('does not line up with a point when the line already follows another line', () => {
+    const { c } = twoLines();
+    c.setTool('point');
+    click(c, 30.4, 40);
+    c.setTool('line');
+    click(c, 0, 20);
+    c.pointerMove(at(30.2, 35.3), false); // slope 0.51 from (0, 20): parallel; also 0.2 mm from x = 30.4
+    expect(c.getView().inferLine).toMatchObject({ kind: 'parallel' });
+    const snap = c.getView().snap;
+    expect(snap && snap.kind === 'free' && snap.align).toBeFalsy();
+  });
+
+  it('undoes a line with its inferred relation in one step', () => {
+    const { h, c } = twoLines();
+    const before = h.sketch().constraints.length;
+    c.setTool('line');
+    click(c, 1.5, 20); // not level or in line with a point: only the parallel relation
+    click(c, 21.5, 30.3);
+    expect(h.sketch().constraints.length).toBe(before + 1);
+    h.history.undo();
+    expect(h.sketch().constraints.length).toBe(before);
   });
 });

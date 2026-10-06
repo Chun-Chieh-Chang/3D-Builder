@@ -26,8 +26,8 @@ R.coradial = async () => {
   await H.tool('圓');
   await H.sk(0, 0);
   await H.sk(10, 0);
-  await H.sk(30, 0);
-  await H.sk(34, 0);
+  await H.sk(30, 2); // not level with the first center: that would line up (D5.3a) and a coradial relation would be redundant with it
+  await H.sk(34, 2);
   await H.solved();
   const [c1, c2] = [...H.geom()].filter(([, g]) => g.type === 'circle').map(([id]) => id);
   await H.rel([c1, c2], '同心同徑');

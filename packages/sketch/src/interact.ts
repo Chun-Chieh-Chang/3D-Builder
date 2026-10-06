@@ -133,13 +133,26 @@ export function inBox(geometry: Geometry, lo: P2, hi: P2): Id[] {
 
 // ---------------------------------------------------------------- snapping and inference (C1.25, D5.3)
 
+/** A sketch point (or the origin) the cursor lines up with: `p` is where it is. */
+export interface AlignTarget {
+  id: Id;
+  p: P2;
+}
+
+/** The points a free point was pulled into line with: `h` has the same y (horizontal), `v` the same x (vertical). */
+export interface Alignment {
+  h?: AlignTarget;
+  v?: AlignTarget;
+}
+
 export type Snap =
   /** An existing sketch point or the origin: the new point merges with it. */
   | { kind: 'point'; id: Id; p: P2 }
   | { kind: 'midpoint'; line: Id; p: P2 }
   /** On a line, circle or arc: the new point gets a coincident (point-on-curve) relation. */
   | { kind: 'curve'; id: Id; p: P2 }
-  | { kind: 'free'; p: P2 };
+  /** Nowhere in particular, or (`align`) in line with other points: the new point gets a horizontal / vertical relation to each. */
+  | { kind: 'free'; p: P2; align?: Alignment };
 
 /** SolidWorks snap priority: end/center points, then midpoints, then anywhere on a curve. */
 export function snap(geometry: Geometry, p: P2, tol: number, exclude: ReadonlySet<Id> = new Set()): Snap {
@@ -155,6 +168,74 @@ export function snap(geometry: Geometry, p: P2, tol: number, exclude: ReadonlySe
   if (best) return { kind: 'midpoint', line: best.line, p: best.p };
   if (hit) return { kind: 'curve', id: hit.id, p: hit.q };
   return { kind: 'free', p };
+}
+
+/**
+ * Horizontal / vertical points (D5.3a, SolidWorks 「水平點」「垂直點」): the sketch points (and the origin) the cursor is
+ * within `tol` of in x or in y. Each axis takes the nearest one; `axes` limits which are looked for (a line already
+ * inferred horizontal keeps its y). The returned point has the matching coordinates put on the targets', so lined up
+ * with both it lands exactly on the crossing.
+ */
+export function alignments(geometry: Geometry, p: P2, tol: number, exclude: ReadonlySet<Id> = new Set(), axes: { h: boolean; v: boolean } = { h: true, v: true }): { p: P2; align: Alignment } | null {
+  let h: AlignTarget | undefined;
+  let v: AlignTarget | undefined;
+  const consider = (id: Id, q: P2) => {
+    if (axes.h && Math.abs(q[1] - p[1]) <= tol && (!h || Math.abs(q[1] - p[1]) < Math.abs(h.p[1] - p[1]))) h = { id, p: q };
+    if (axes.v && Math.abs(q[0] - p[0]) <= tol && (!v || Math.abs(q[0] - p[0]) < Math.abs(v.p[0] - p[0]))) v = { id, p: q };
+  };
+  for (const [id, g] of geometry) if (g.type === 'point' && !exclude.has(id)) consider(id, g.p);
+  if (!exclude.has(SKETCH_ORIGIN)) consider(SKETCH_ORIGIN, [0, 0]);
+  if (!h && !v) return null;
+  return { p: [v ? v.p[0] : p[0], h ? h.p[1] : p[1]], align: { ...(h ? { h } : {}), ...(v ? { v } : {}) } };
+}
+
+export type LineInferenceKind = 'collinear' | 'parallel' | 'perpendicular';
+
+export interface LineInference {
+  kind: LineInferenceKind;
+  /** The existing line the new one is made collinear / parallel / perpendicular to. */
+  line: Id;
+  /** The end of the new line moved onto the inferred direction. */
+  b: P2;
+}
+
+/**
+ * Collinear, parallel and perpendicular inference for a line from `a` toward `b` (D5.3a, SolidWorks 「推斷」): within
+ * `angleTol` of an existing line's direction (or of the direction turned a quarter) the end is moved onto it; when the
+ * start also lies on that line (within `distTol`) it is collinear, not just parallel. The smallest angle wins and
+ * collinear beats parallel at equal angles. A line too short to have a direction (< `minLength`) infers nothing.
+ */
+export function inferLine(
+  geometry: Geometry,
+  a: P2,
+  b: P2,
+  exclude: ReadonlySet<Id> = new Set(),
+  angleTol = (3 * Math.PI) / 180,
+  distTol = 0,
+  minLength = 0,
+): LineInference | null {
+  const ab = sub(b, a);
+  const length = len(ab);
+  if (length === 0 || length < minLength) return null;
+  const v = scale(ab, 1 / length);
+  const sinTol = Math.sin(angleTol);
+  let best: (LineInference & { err: number; rank: number }) | null = null;
+  for (const [id, g] of geometry) {
+    if (g.type !== 'line' || exclude.has(id) || dist(g.a, g.b) === 0) continue;
+    const u = unit(sub(g.b, g.a));
+    const along = dot(v, u);
+    const across = cross(v, u);
+    const onLine = Math.abs(cross(u, sub(a, g.a))) <= distTol;
+    let candidate: (LineInference & { err: number; rank: number }) | null = null;
+    if (Math.abs(across) <= sinTol && Math.abs(along) > 0.5) {
+      candidate = { kind: onLine ? 'collinear' : 'parallel', line: id, b: add(a, scale(u, dot(ab, u))), err: Math.abs(across), rank: onLine ? 0 : 1 };
+    } else if (Math.abs(along) <= sinTol && Math.abs(across) > 0.5) {
+      const n = perp(u);
+      candidate = { kind: 'perpendicular', line: id, b: add(a, scale(n, dot(ab, n))), err: Math.abs(along), rank: 1 };
+    }
+    if (candidate && (!best || candidate.err < best.err - 1e-12 || (Math.abs(candidate.err - best.err) <= 1e-12 && candidate.rank < best.rank))) best = candidate;
+  }
+  return best && { kind: best.kind, line: best.line, b: best.b };
 }
 
 export type Direction = 'horizontal' | 'vertical';

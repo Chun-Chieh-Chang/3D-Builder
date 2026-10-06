@@ -145,10 +145,9 @@ function toPrimitives(sketch: SketchFeature, start: Start, pinned: ReadonlySet<I
       case 'collinear': {
         const a = line(c.a);
         const b = line(c.b);
-        add(id, [
-          { id, type: 'parallel', l1_id: a.id, l2_id: b.id },
-          { id, type: 'point_on_line_pl', p_id: a.p1, l_id: b.id },
-        ]);
+        // Parallel and one end on the other line. Lines that share an end are collinear by being parallel: asking an end to lie on the line as well would be redundant.
+        const shares = a.p1 === b.p1 || a.p1 === b.p2 || a.p2 === b.p1 || a.p2 === b.p2;
+        add(id, [{ id, type: 'parallel', l1_id: a.id, l2_id: b.id }, ...(shares ? [] : [{ id, type: 'point_on_line_pl' as const, p_id: a.p1, l_id: b.id }])]);
         break;
       }
       case 'tangent': {

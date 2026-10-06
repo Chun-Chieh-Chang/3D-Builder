@@ -15,6 +15,7 @@ export const SKETCH_COLORS = {
   selected: 0x0ca678,
   hover: 0xf08c00,
   preview: 0x74b0e8,
+  guide: 0x868e96,
   dimension: 0x3d4650,
   origin: 0xe03131,
   reference: 0x7048e8,
@@ -126,6 +127,22 @@ export function buildOverlay(frame: PlaneFrame, sketch: SketchFeature, solve: Sk
 
   curves.push(...previewCurves(view.preview, px));
   if (view.snap && view.snap.kind !== 'free') points.push({ p: view.snap.p, color: SKETCH_COLORS.hover, size: 9 });
+  // the dotted lines to the points the cursor lines up with (D5.3a)
+  if (view.snap?.kind === 'free' && view.snap.align) {
+    for (const target of [view.snap.align.h, view.snap.align.v]) {
+      if (!target) continue;
+      curves.push({ points: [target.p, view.snap.p], color: SKETCH_COLORS.guide, dashed: true });
+      points.push({ p: target.p, color: SKETCH_COLORS.guide, size: 7 });
+    }
+  }
+  // a collinear line is shown as the dotted extension of the line it continues
+  if (view.snap && view.inferLine?.kind === 'collinear') {
+    const ref = geometry.get(view.inferLine.line);
+    if (ref?.type === 'line') {
+      const far = Math.hypot(ref.a[0] - view.snap.p[0], ref.a[1] - view.snap.p[1]) > Math.hypot(ref.b[0] - view.snap.p[0], ref.b[1] - view.snap.p[1]) ? ref.a : ref.b;
+      curves.push({ points: [far, view.snap.p], color: SKETCH_COLORS.guide, dashed: true });
+    }
+  }
   if (view.cursor && view.inference) {
     labels.push({ key: 'inference', p: add(view.cursor, [14 * px, -14 * px]), text: view.inference, className: 'hint' });
   }

@@ -199,3 +199,32 @@ describe('merge (C1.26)', () => {
     expect(mergePoints(sketchOf(doc), 'a', SKETCH_ORIGIN)).toMatchObject({ error: expect.stringContaining('原點') });
   });
 });
+
+describe('collinear lines that share an end (D5.3a)', () => {
+  const chain = (...more: SketchConstraint[]) =>
+    start(
+      [point('a', 0, 0), point('b', 10, 5), point('c', 30, 17), { id: 'l1', type: 'line', p1: 'a', p2: 'b' }, { id: 'l2', type: 'line', p1: 'b', p2: 'c' }],
+      [{ id: 'f', type: 'coincident', a: 'a', b: SKETCH_ORIGIN }, ...more],
+    );
+
+  it('are not reported redundant: the shared end is on the line already, so only the direction is asked', () => {
+    const s = solve(chain({ id: 'k', type: 'collinear', a: 'l2', b: 'l1' }));
+    expect(s.redundant).toEqual([]);
+    expect(s.conflicting).toEqual([]);
+    const [b, c] = [at(s, 'b'), at(s, 'c')];
+    expect(Math.abs((c[1]! - b[1]!) * (b[0]! - 0) - (c[0]! - b[0]!) * (b[1]! - 0))).toBeLessThan(1e-4); // c, b, a on one line
+  });
+
+  it('still asks both ends when the lines are apart', () => {
+    const doc = start(
+      [point('a', 0, 0), point('b', 10, 5), point('c', 30, 20), point('d', 40, 27), { id: 'l1', type: 'line', p1: 'a', p2: 'b' }, { id: 'l2', type: 'line', p1: 'c', p2: 'd' }],
+      [{ id: 'f', type: 'coincident', a: 'a', b: SKETCH_ORIGIN }, { id: 'k', type: 'collinear', a: 'l2', b: 'l1' }],
+    );
+    const s = solve(doc);
+    expect(s.redundant).toEqual([]);
+    const [a, b, c, d] = [at(s, 'a'), at(s, 'b'), at(s, 'c'), at(s, 'd')];
+    const side = (p: number[]) => (b[0]! - a[0]!) * (p[1]! - a[1]!) - (b[1]! - a[1]!) * (p[0]! - a[0]!);
+    expect(Math.abs(side(c!))).toBeLessThan(1e-4); // all four on one line
+    expect(Math.abs(side(d!))).toBeLessThan(1e-4);
+  });
+});
