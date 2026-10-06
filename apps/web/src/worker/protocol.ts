@@ -232,6 +232,8 @@ export interface KernelApi {
   solveSketch(req: SketchSolveRequest): Promise<SketchSolvePayload>;
   /** What these model edges and face outlines look like on the plane of the sketch being edited. */
   convertReferences(req: ConvertRequest): Promise<ConvertPayload>;
+  /** The model's edges lying in a sketch's plane, projected (what the sketch can snap to); the model before the sketch, as the last rebuild left it. */
+  sketchSnapItems(sketchId: Id): Promise<Converted[]>;
   /** STEP of the rebuilt part, its product named `name`. */
   exportStep(doc: PartDoc, name: string, options?: PartExportOptions): Promise<StepOutput>;
   /** Binary STL of the bodies that count, meshed as finely as the document's quality says (F4.1). */

@@ -54,6 +54,7 @@ import { flatPatternDxf } from '@3db/drawing';
 import type { FlatReport, SheetCheck } from '@3db/regen';
 import { orderProblem, suppressionTargets, type SuppressAction } from '@3db/regen/dag';
 import { contourChoices, findProfiles, type ContourChoice } from '@3db/sketch/profiles';
+import type { ModelItem } from '@3db/sketch/ops';
 import type { PickFilter, Viewer } from '@3db/render';
 import type { KernelApi, PartExportOptions, RebuildPayload, SketchSolvePayload, SketchSolveRequest, SourceFileData } from '../worker/protocol';
 import { SketchController, type ControllerView, type SketchHost } from '../sketcher/controller';
@@ -432,6 +433,8 @@ class AppStore {
   private inFlight = false;
   private pending = false;
   private sketchSeq = 0;
+  /** The model's edges in the plane of the sketch being edited, projected (what the cursor can snap to, D5.3b); empty outside a sketch. */
+  private modelSnap: ModelItem[] = [];
   private sketchRunner: LatestRunner<SketchSolveRequest, SketchSolvePayload>;
   private state: UiState;
   /** Where 「儲存檔案」 writes (F7.1); null until the part is saved or opened from a writable file. */
@@ -1799,6 +1802,7 @@ class AppStore {
 
   private leaveSession(): void {
     this.sketcher = null;
+    this.modelSnap = [];
     this.set({ editing: null, sketchSolve: null, dimensionEdit: null, canUndo: this.history.canUndo, canRedo: this.history.canRedo });
     this.requestRebuild();
   }
@@ -1955,6 +1959,7 @@ class AppStore {
       trial: (sketch, doc) => this.api.solveSketch({ seq: -1, sketch: resolveSketch(sketch, doc ?? this.history.doc) }),
       notify: (text, kind) => this.notify(text, kind),
       editDimension: (id) => this.set({ dimensionEdit: id }),
+      modelItems: () => this.modelSnap,
     };
   }
 
@@ -1972,6 +1977,21 @@ class AppStore {
     const r = await this.api.convertReferences({ sketchId: sketch.id, edges: ref.kind === 'edge' ? [ref] : [], faces: ref.kind === 'face' ? [ref] : [], mode });
     if (r.items.length > 0) sketcher.addReferences(r.items);
     if (r.errors.length > 0) this.notify(r.errors[0]!, r.items.length > 0 ? 'info' : 'error');
+  }
+
+  /** While a sketch is edited: asks the worker (which has the model before the sketch) for the edges in its plane, to snap to. */
+  private async refreshModelSnap(): Promise<void> {
+    const e = this.state.editing;
+    if (e?.kind !== 'sketch') {
+      this.modelSnap = [];
+      return;
+    }
+    try {
+      const items = await this.api.sketchSnapItems(e.featureId);
+      if (this.state.editing?.featureId === e.featureId) this.modelSnap = items.filter((i): i is ModelItem => 'projected' in i);
+    } catch {
+      this.modelSnap = []; // snapping to the model is a convenience: a failure only takes it away
+    }
   }
 
   /** The contours (closed regions) of a sketch as they are now, for 「所選輪廓」 (C1.34); none when the sketch cannot make a profile. */
@@ -2101,7 +2121,10 @@ class AppStore {
       const result = await this.withinLimit(this.api.rebuild({ seq, doc, ...(sources ? { sources } : {}), ...(until === undefined ? {} : { until }) }));
       if (worker !== this.workerGeneration) return; // the worker was replaced meanwhile: this is not an answer to use
       // A queued request supersedes this result: showing it would briefly contradict the current document.
-      if (result.seq === this.seq && !this.pending) this.set({ result });
+      if (result.seq === this.seq && !this.pending) {
+        this.set({ result });
+        void this.refreshModelSnap();
+      }
     } catch (e) {
       if (worker !== this.workerGeneration) return;
       if (e instanceof StalledError) {

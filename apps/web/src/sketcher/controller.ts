@@ -28,6 +28,7 @@ import {
   scale,
   smartDimension,
   snap,
+  snapModel,
   sub,
   tangentArcCenter,
   unit,
@@ -39,7 +40,7 @@ import {
 } from '@3db/sketch/interact';
 import type { P2, SolvedGeometry } from '@3db/sketch';
 import { checkSketch, repairSketch, type SketchIssue } from '@3db/sketch/check';
-import { chamfer, extend, fillet, mergePoints, mirror, offset, polygon, referenceEntities, slot, trim, type ModelItem, type OpResult } from '@3db/sketch/ops';
+import { anchorModel, chamfer, extend, fillet, mergePoints, mirror, offset, polygon, referenceEntities, slot, trim, type ModelItem, type OpResult } from '@3db/sketch/ops';
 import type { SketchSolvePayload } from '../worker/protocol';
 
 export type ToolId =
@@ -107,6 +108,8 @@ export interface SketchHost {
   notify(text: string, kind?: 'error' | 'info'): void;
   /** Opens the Modify box of a dimension (D6.1). */
   editDimension(constraintId: Id): void;
+  /** The model's edges in the sketch plane, projected (D5.3b): what the cursor can snap to besides the sketch itself. */
+  modelItems?(): readonly ModelItem[];
 }
 
 export interface PointerInput {
@@ -185,7 +188,7 @@ export class SketchController {
   private hover: Hit | null = null;
   private snapTarget: Snap | null = null;
   /** Inferred relation shown next to the cursor while drawing. */
-  private inference: 'coincident' | 'midpoint' | 'onCurve' | 'tangent' | 'horizontal' | 'vertical' | 'horizontalPoint' | 'verticalPoint' | 'alignedPoints' | 'collinear' | 'parallel' | 'perpendicular' | null = null;
+  private inference: 'coincident' | 'midpoint' | 'onCurve' | 'tangent' | 'horizontal' | 'vertical' | 'horizontalPoint' | 'verticalPoint' | 'alignedPoints' | 'collinear' | 'parallel' | 'perpendicular' | 'modelPoint' | 'modelMid' | 'modelCenter' | 'modelEdge' | null = null;
   /** Arc the line being drawn is inferred to be tangent to. */
   private tangentTo: Id | null = null;
   /** Line the one being drawn is inferred collinear / parallel / perpendicular to (D5.3a). */
@@ -299,6 +302,11 @@ export class SketchController {
 
   private geometry(): ReadonlyMap<Id, SolvedGeometry> {
     return this.host.solved()?.geometry ?? new Map();
+  }
+
+  /** What a drawing action collects its entities in; it can make the entities that follow the model that a click on the model needs. */
+  private builder(): Builder {
+    return new Builder(this.allocator(), (made, snap) => anchorModel(this.sketch(), this.geometry(), made, snap.item, snap.part, snap.p));
   }
 
   private allocator(): IdAllocator {
@@ -560,6 +568,14 @@ export class SketchController {
     }
     let s = snap(geometry, e.p, PICK_PX * e.px, this.excluded());
     this.inference = s.kind === 'point' ? 'coincident' : s.kind === 'midpoint' ? 'midpoint' : s.kind === 'curve' ? 'onCurve' : null;
+    // The model's edges in the plane (D5.3b): their ends, centers and middles beat a sketch curve, anywhere along one only a free point
+    if (s.kind !== 'point' && s.kind !== 'midpoint' && this.aligns()) {
+      const model = snapModel(this.host.modelItems?.() ?? [], e.p, PICK_PX * e.px, s.kind === 'curve');
+      if (model) {
+        s = model;
+        this.inference = model.part === 'center' ? 'modelCenter' : model.part === 'mid' ? 'modelMid' : model.part === 'curve' ? 'modelEdge' : 'modelPoint';
+      }
+    }
     this.tangentTo = null;
     this.lineTo = null;
     const from = this.lineStart();
@@ -673,7 +689,7 @@ export class SketchController {
       case 'centerline':
         return this.lineClick(s);
       case 'point':
-        this.commit(new Builder(this.allocator()).point(s));
+        this.commit(this.builder().point(s));
         return;
       case 'rect':
       case 'centerRect':
@@ -709,7 +725,7 @@ export class SketchController {
       this.clicks = [s];
       return;
     }
-    const b = new Builder(this.allocator());
+    const b = this.builder();
     const from = this.chain ? ({ kind: 'point', id: this.chain.from, p: this.positionOf(this.chain.from) ?? s.p } as Snap) : this.clicks[0]!;
     const p1 = b.pointFor(from);
     const p2 = b.pointFor(s);
@@ -742,7 +758,7 @@ export class SketchController {
 
   private finishTwoClick(s: Snap): void {
     const first = this.clicks[0]!;
-    const b = new Builder(this.allocator());
+    const b = this.builder();
     const [a, q] = [first.p, s.p];
     switch (this.tool) {
       case 'rect': {
@@ -786,7 +802,7 @@ export class SketchController {
 
   private finishThreeClick(): void {
     const [c1, c2, c3] = this.clicks as [Snap, Snap, Snap];
-    const b = new Builder(this.allocator());
+    const b = this.builder();
     switch (this.tool) {
       case 'perimeterCircle': {
         const circle3 = circleThrough(c1.p, c2.p, c3.p);
@@ -1168,7 +1184,10 @@ class Builder {
   readonly entities: SketchEntity[] = [];
   readonly constraints: SketchConstraint[] = [];
 
-  constructor(private readonly ids: IdAllocator) {}
+  constructor(
+    readonly ids: IdAllocator,
+    private readonly onModel: (made: Builder, snap: Extract<Snap, { kind: 'model' }>) => Id,
+  ) {}
 
   newPoint(p: P2): Id {
     const id = this.ids.take('p');
@@ -1179,6 +1198,7 @@ class Builder {
   /** The point a snap stands for: an existing point is reused (merged); otherwise a new point with its relation. */
   pointFor(s: Snap): Id {
     if (s.kind === 'point' && s.id !== SKETCH_ORIGIN) return s.id;
+    if (s.kind === 'model') return this.onModel(this, s);
     const id = this.newPoint(s.p);
     if (s.kind === 'free' && s.align) {
       if (s.align.h) this.relation({ type: 'horizontal', a: id, b: s.align.h.id });

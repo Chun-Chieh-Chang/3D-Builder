@@ -1,6 +1,7 @@
 import { beforeAll, describe, expect, it } from 'vitest';
 import { applyCommand, createEmptyPart, DocHistory, resolveSketch, type Command, type PartDoc, type SketchFeature } from '@3db/model';
 import { findProfiles, PlaneGcsSolver, type SolvedGeometry } from '@3db/sketch';
+import type { ModelItem } from '@3db/sketch/ops';
 import { SketchController, type PointerInput, type SketchHost } from '../src/sketcher/controller';
 import type { SketchSolvePayload } from '../src/worker/protocol';
 
@@ -22,6 +23,7 @@ class Host implements SketchHost {
   last: SketchSolvePayload | null = null;
   notices: string[] = [];
   edited: string | null = null;
+  modelItems?: () => readonly ModelItem[];
 
   constructor(doc: PartDoc = applyCommand(createEmptyPart(), EMPTY_SKETCH)) {
     this.history = new DocHistory(doc);
@@ -716,5 +718,111 @@ describe('collinear, parallel and perpendicular inference while drawing (D5.3a)'
     expect(h.sketch().constraints.length).toBe(before + 1);
     h.history.undo();
     expect(h.sketch().constraints.length).toBe(before);
+  });
+});
+
+describe('snapping to the model while drawing (D5.3b)', () => {
+  /** The model seen from the sketch plane: a plate 40 × 30 and a hole of radius 5 at (20, 15). */
+  const plate: ModelItem[] = [
+    { ref: { kind: 'edge', name: 'bottom' }, projected: { kind: 'line', a: [0, 0], b: [40, 0] } },
+    { ref: { kind: 'edge', name: 'right' }, projected: { kind: 'line', a: [40, 0], b: [40, 30] } },
+    { ref: { kind: 'edge', name: 'hole' }, projected: { kind: 'circle', c: [20, 15], r: 5 } },
+  ];
+  const withPlate = () => {
+    const h = new Host();
+    h.modelItems = () => plate;
+    return { h, c: new SketchController(h) };
+  };
+  const lines = (h: Host) => h.sketch().entities.filter((e) => e.type === 'line') as Extract<SketchFeature['entities'][number], { type: 'line' }>[];
+
+  it('offers the corner of the plate, the middle of an edge and the center of the hole, each named', () => {
+    const { c } = withPlate();
+    c.setTool('line');
+    c.pointerMove(at(39.9, 0.1), false);
+    expect(c.getView().snap).toMatchObject({ kind: 'model', p: [40, 0] });
+    expect(c.getView().inference).toBe('模型端點');
+    c.pointerMove(at(20.1, 0.1), false);
+    expect(c.getView().snap).toMatchObject({ kind: 'model', part: 'mid', p: [20, 0] });
+    expect(c.getView().inference).toBe('模型中點');
+    c.pointerMove(at(20.1, 15.1), false);
+    expect(c.getView().snap).toMatchObject({ kind: 'model', part: 'center', p: [20, 15] });
+    expect(c.getView().inference).toBe('模型圓心');
+    c.pointerMove(at(10, 0.1), false);
+    expect(c.getView().snap).toMatchObject({ kind: 'model', part: 'curve' });
+    expect(c.getView().inference).toBe('在模型邊上');
+  });
+
+  it('draws a circle from the center of the hole: the hole becomes an entity that follows the model and the circle shares its center, in one step', () => {
+    const { h, c } = withPlate();
+    c.setTool('circle');
+    click(c, 20.1, 15.1);
+    click(c, 28, 15);
+    const s = h.sketch();
+    const hole = s.entities.find((e) => e.type === 'circle' && e.ref)!;
+    const mine = s.entities.find((e) => e.type === 'circle' && !e.ref)!;
+    expect(hole).toMatchObject({ ref: { kind: 'edge', name: 'hole' } });
+    expect((mine as Extract<typeof mine, { type: 'circle' }>).center).toBe((hole as Extract<typeof hole, { type: 'circle' }>).center);
+    expect(s.entities.filter((e) => e.type === 'point')).toHaveLength(1);
+    h.history.undo();
+    expect(h.sketch().entities).toEqual([]); // the model entity went with the circle
+  });
+
+  it('draws a line between two corners: both edges followed, their shared corner one point', () => {
+    const { h, c } = withPlate();
+    c.setTool('line');
+    click(c, 40.1, 0.1); // the corner where the bottom edge ends and the right one starts
+    click(c, 40.1, 30.1); // the far end of the right edge
+    const s = h.sketch();
+    expect(lines(h).flatMap((l) => (l.ref ? [l.ref.name] : [])).sort()).toEqual(['bottom', 'right']);
+    expect(s.entities.filter((e) => e.type === 'line')).toHaveLength(3); // the two edges and the line drawn between the corners
+    const [bottom, right, mine] = [lines(h).find((l) => l.ref?.name === 'bottom')!, lines(h).find((l) => l.ref?.name === 'right')!, lines(h).find((l) => !l.ref)!];
+    expect(bottom.p2).toBe(right.p1); // (40, 0) is one point
+    expect(mine.p1).toBe(bottom.p2); // and the line starts there
+    expect(mine.p2).toBe(right.p2);
+  });
+
+  it('uses the edge it has already followed for a second click on it', () => {
+    const { h, c } = withPlate();
+    c.setTool('line');
+    click(c, 0.1, 0.1);
+    click(c, 39.9, 0.1); // the other end of the same edge
+    c.escape();
+    expect(h.sketch().entities.filter((e) => e.type === 'line' && e.ref)).toHaveLength(1);
+    c.setTool('line');
+    click(c, 20.1, 0.1); // the middle of it
+    expect(h.sketch().entities.filter((e) => e.type === 'line' && e.ref)).toHaveLength(1);
+    expect(types(h)).not.toContain('midpoint'); // a start alone makes no point yet
+    click(c, 20.1, 12);
+    expect(types(h)).toContain('midpoint');
+  });
+
+  it('lets a sketch point win over the model, and the model win over a free place', () => {
+    const { c } = withPlate();
+    c.setTool('point');
+    click(c, 20, 15); // on the hole's center: a model point, which makes the hole an entity (and its center the point)
+    c.setTool('line');
+    c.pointerMove(at(20.1, 15.1), false);
+    expect(c.getView().snap).toMatchObject({ kind: 'point' }); // now a point of the sketch
+    c.pointerMove(at(5, 8), false);
+    expect(c.getView().snap).toMatchObject({ kind: 'free' });
+  });
+
+  it('does not snap to the model with the select tool, or for the radius click of a circle', () => {
+    const { c } = withPlate();
+    c.setTool('select');
+    c.pointerMove(at(40, 0.1), false);
+    expect(c.getView().snap).toBeNull();
+    c.setTool('circle');
+    click(c, 10, 10);
+    c.pointerMove(at(40, 0.1), false);
+    expect(c.getView().snap).toMatchObject({ kind: 'free' });
+  });
+
+  it('draws nothing from the model when the host has none', () => {
+    const h = new Host();
+    const c = new SketchController(h);
+    c.setTool('line');
+    c.pointerMove(at(40, 0.1), false);
+    expect(c.getView().snap).toMatchObject({ kind: 'free' });
   });
 });

@@ -164,3 +164,33 @@ export function faceEdges(scope: Pick<ReferenceScope, 'names' | 'topology'>, fac
   if (!r.ok) throw new ReferenceProblem(t('reference.lost'));
   return scope.topology.edges.flatMap((e, i) => (e.faces.includes(r.index) ? [{ kind: 'edge' as const, name: scope.names.edges[i]!, fingerprint: fingerprintOf(i) }] : []));
 }
+
+/**
+ * The model's edges that lie in the sketch plane (a straight edge with both ends on it, a circle or arc in it), projected, with the
+ * edge each one is: what a sketch can snap to while drawing on that plane (D5.3b). Edges only near the plane or crossing it are left out,
+ * and so is a curve that is not a line, circle or arc.
+ */
+export function planarEdgeItems(scope: ReferenceScope, fingerprintOf: (edge: number) => Ref['fingerprint']): Converted[] {
+  const { topology, names, frame } = scope;
+  const off = (p: Vec3) => Math.abs(dot(sub(p, frame.origin), frame.normal));
+  const TOL = 1e-6;
+  const items: Converted[] = [];
+  topology.edges.forEach((e, i) => {
+    const name = names.edges[i];
+    if (!name) return;
+    const points = e.vertices.map((v) => topology.vertices[v]!.point);
+    const inPlane =
+      e.curve === 'line' && e.geometry?.type === 'line'
+        ? points.length >= 2 && points.every((p) => off(p) <= TOL)
+        : e.curve === 'circle' && e.geometry?.type === 'circle'
+          ? off(e.geometry.center) <= TOL && Math.abs(Math.abs(dot(e.geometry.normal, frame.normal)) - 1) < 1e-6
+          : false;
+    if (!inPlane) return;
+    try {
+      items.push({ ref: { kind: 'edge', name, fingerprint: fingerprintOf(i) }, projected: projectEdge(topology, i, frame) });
+    } catch (err) {
+      if (!(err instanceof ReferenceProblem)) throw err;
+    }
+  });
+  return items;
+}

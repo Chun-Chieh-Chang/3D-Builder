@@ -4,6 +4,7 @@
  * solver, so the UI thread can use it; everything works on solved (derived) geometry.
  */
 import { SKETCH_ORIGIN, constraintRefs, type DimensionConstraint, type Id, type SketchConstraint } from '@3db/model';
+import type { ModelEdge, ModelItem } from './ops';
 import type { P2, SolvedGeometry } from './types';
 
 export type Geometry = ReadonlyMap<Id, SolvedGeometry>;
@@ -151,8 +152,47 @@ export type Snap =
   | { kind: 'midpoint'; line: Id; p: P2 }
   /** On a line, circle or arc: the new point gets a coincident (point-on-curve) relation. */
   | { kind: 'curve'; id: Id; p: P2 }
+  /** A place on the model (D5.3b): the sketch gets the edge as a reference entity that follows it, and the new point goes with it. */
+  | { kind: 'model'; p: P2; item: ModelEdge; part: ModelPart }
   /** Nowhere in particular, or (`align`) in line with other points: the new point gets a horizontal / vertical relation to each. */
   | { kind: 'free'; p: P2; align?: Alignment };
+
+/** Which place of a model edge: an end, the center of a circle or arc, the middle of a line, or anywhere along it. */
+export type ModelPart = 'start' | 'end' | 'center' | 'mid' | 'curve';
+
+/** The places of the model's edges (in the sketch plane) the cursor is near, nearest first among the ends, centers and middles, then along an edge. */
+export function snapModel(items: readonly ModelItem[], p: P2, tol: number, pointsOnly = false): Extract<Snap, { kind: 'model' }> | null {
+  let best: { s: Extract<Snap, { kind: 'model' }>; d: number } | null = null;
+  const consider = (item: ModelEdge, part: ModelPart, at: P2) => {
+    const d = dist(p, at);
+    if (d <= tol && (!best || d < best.d)) best = { s: { kind: 'model', p: at, item, part }, d };
+  };
+  for (const item of items) {
+    if (!('projected' in item)) continue;
+    const q = item.projected;
+    if (q.kind === 'line') {
+      consider(item, 'start', q.a);
+      consider(item, 'end', q.b);
+      consider(item, 'mid', mid(q.a, q.b));
+    } else if (q.kind === 'circle') consider(item, 'center', q.c);
+    else {
+      consider(item, 'center', q.c);
+      consider(item, 'start', q.start);
+      consider(item, 'end', q.end);
+    }
+  }
+  if (best || pointsOnly) return best && (best as { s: Extract<Snap, { kind: 'model' }> }).s;
+  for (const item of items) {
+    if (!('projected' in item)) continue;
+    const q = item.projected;
+    const at =
+      q.kind === 'line'
+        ? closestOnSegment(p, q.a, q.b)
+        : closestOn(q.kind === 'circle' ? { type: 'circle', c: q.c, r: q.r, center: '', construction: false } : { type: 'arc', c: q.c, r: q.r, a0: Math.atan2(q.start[1] - q.c[1], q.start[0] - q.c[0]), a1: Math.atan2(q.end[1] - q.c[1], q.end[0] - q.c[0]), center: '', start: '', end: '', construction: false }, p);
+    if (at) consider(item, 'curve', at);
+  }
+  return best && (best as { s: Extract<Snap, { kind: 'model' }> }).s;
+}
 
 /** SolidWorks snap priority: end/center points, then midpoints, then anywhere on a curve. */
 export function snap(geometry: Geometry, p: P2, tol: number, exclude: ReadonlySet<Id> = new Set()): Snap {

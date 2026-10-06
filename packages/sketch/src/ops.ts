@@ -291,6 +291,64 @@ export type ModelItem =
   | { ref: Ref; projected: { kind: 'line'; a: P2; b: P2 } | { kind: 'circle'; c: P2; r: number } | { kind: 'arc'; c: P2; r: number; start: P2; end: P2 } }
   | { ref: Ref; pierce: P2 };
 
+/** A model edge as it lies in the sketch plane. */
+export type ModelEdge = Extract<ModelItem, { projected: unknown }>;
+
+/** What `anchorModel` works on: the entities and relations an action has made so far, and where it takes new ids from. */
+export interface Maker {
+  readonly ids: IdAllocator;
+  readonly entities: SketchEntity[];
+  readonly constraints: SketchConstraint[];
+}
+
+/**
+ * The point of a model edge a click stands for (D5.3b): the edge becomes an entity that follows it (unless the sketch, or this action,
+ * already has one) and the point is one of its ends or its center; the middle or any other place along it is a new point with a
+ * midpoint / on-curve relation to the entity. Ends that lie where an earlier entity of that kind already has a point are shared
+ * with it, so two edges meeting at a corner meet at one point.
+ */
+export function anchorModel(sketch: Pick<SketchFeature, 'entities'>, geometry: Geometry, made: Maker, item: ModelEdge, part: 'start' | 'end' | 'center' | 'mid' | 'curve', at: P2): Id {
+  const all = [...sketch.entities, ...made.entities];
+  let entity = all.find((e): e is Exclude<SketchEntity, { type: 'point' }> => e.type !== 'point' && e.ref?.name === item.ref.name);
+  if (!entity) {
+    // corners already there: the ends and centers of the entities that follow the model
+    const known: { id: Id; at: P2 }[] = [];
+    for (const e of all) {
+      if (e.type === 'point' || !e.ref) continue;
+      for (const id of e.type === 'line' ? [e.p1, e.p2] : e.type === 'circle' ? [e.center] : [e.center, e.start, e.end]) {
+        const g = geometry.get(id);
+        const made_ = all.find((x) => x.id === id && x.type === 'point') as Extract<SketchEntity, { type: 'point' }> | undefined;
+        const p = g?.type === 'point' ? g.p : made_ ? ([made_.x, made_.y] as P2) : null;
+        if (p) known.push({ id, at: p });
+      }
+    }
+    const corner = (p: P2): Id => {
+      const found = known.find((k) => dist(k.at, p) < 1e-6);
+      if (found) return found.id;
+      const id = made.ids.take('p');
+      made.entities.push({ id, type: 'point', x: p[0], y: p[1] });
+      known.push({ id, at: p });
+      return id;
+    };
+    const q = item.projected;
+    if (q.kind === 'line') entity = { id: made.ids.take('l'), type: 'line', p1: corner(q.a), p2: corner(q.b), ref: item.ref };
+    else if (q.kind === 'circle') entity = { id: made.ids.take('ci'), type: 'circle', center: corner(q.c), radius: q.r, ref: item.ref };
+    else entity = { id: made.ids.take('a'), type: 'arc', center: corner(q.c), start: corner(q.start), end: corner(q.end), ref: item.ref };
+    made.entities.push(entity);
+  }
+  if (part === 'center' && entity.type !== 'line') return entity.center;
+  if (part === 'start') return entity.type === 'line' ? entity.p1 : entity.type === 'arc' ? entity.start : entity.center;
+  if (part === 'end') return entity.type === 'line' ? entity.p2 : entity.type === 'arc' ? entity.end : entity.center;
+  const id = made.ids.take('p');
+  made.entities.push({ id, type: 'point', x: at[0], y: at[1] });
+  made.constraints.push(
+    part === 'mid' && entity.type === 'line'
+      ? { id: made.ids.take('c'), type: 'midpoint', point: id, line: entity.id }
+      : { id: made.ids.take('c'), type: 'pointOnCurve', point: id, curve: entity.id },
+  );
+  return id;
+}
+
 /**
  * Adds the model edges as entities that follow them (`ref`), or as pierce points. Corners shared by the new entities are one point; an edge
  * the sketch already follows is left out, and when there is nothing new that is the message.
