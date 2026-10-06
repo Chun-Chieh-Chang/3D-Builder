@@ -39,6 +39,7 @@ import {
   type Snap,
 } from '@3db/sketch/interact';
 import type { P2, SolvedGeometry } from '@3db/sketch';
+import { angleStep, DEFAULT_SNAPS, gridPoint, intersectionSnap, lengthStep, perpendicularSnap, quadrantSnap, quickSettings, tangentSnap, type SnapItem, type SnapSettings } from '@3db/sketch/snaps';
 import { checkSketch, repairSketch, type SketchIssue } from '@3db/sketch/check';
 import { anchorModel, chamfer, extend, fillet, mergePoints, mirror, offset, polygon, referenceEntities, slot, trim, type ModelItem, type OpResult } from '@3db/sketch/ops';
 import type { SketchSolvePayload } from '../worker/protocol';
@@ -110,6 +111,8 @@ export interface SketchHost {
   editDimension(constraintId: Id): void;
   /** The model's edges in the sketch plane, projected (D5.3b): what the cursor can snap to besides the sketch itself. */
   modelItems?(): readonly ModelItem[];
+  /** Which snaps are on (「啟用抓取」 and the choices under it); every one is when the host does not say. */
+  snapSettings?(): SnapSettings;
 }
 
 export interface PointerInput {
@@ -138,7 +141,9 @@ export interface ControllerView {
   /** Inferred relation shown next to the cursor while drawing. */
   inference: string | null;
   /** The line the one being drawn is inferred collinear / parallel / perpendicular to (it is also the hover). */
-  inferLine: { kind: 'collinear' | 'parallel' | 'perpendicular'; line: Id } | null;
+  inferLine: { kind: 'collinear' | 'parallel' | 'perpendicular' | 'tangent'; line: Id } | null;
+  /** The snap a 快速抓取 chose: only that one is on, until another is chosen or it is cleared. */
+  quickSnap: SnapItem | null;
   preview: PreviewShape[];
   /** Entities picked so far by the dimension tool. */
   picks: Id[];
@@ -188,11 +193,13 @@ export class SketchController {
   private hover: Hit | null = null;
   private snapTarget: Snap | null = null;
   /** Inferred relation shown next to the cursor while drawing. */
-  private inference: 'coincident' | 'midpoint' | 'onCurve' | 'tangent' | 'horizontal' | 'vertical' | 'horizontalPoint' | 'verticalPoint' | 'alignedPoints' | 'collinear' | 'parallel' | 'perpendicular' | 'modelPoint' | 'modelMid' | 'modelCenter' | 'modelEdge' | null = null;
+  private inference: 'coincident' | 'midpoint' | 'onCurve' | 'tangent' | 'horizontal' | 'vertical' | 'horizontalPoint' | 'verticalPoint' | 'alignedPoints' | 'collinear' | 'parallel' | 'perpendicular' | 'modelPoint' | 'modelMid' | 'modelCenter' | 'modelEdge' | 'intersection' | 'quadrant' | null = null;
   /** Arc the line being drawn is inferred to be tangent to. */
   private tangentTo: Id | null = null;
   /** Line the one being drawn is inferred collinear / parallel / perpendicular to (D5.3a). */
-  private lineTo: { kind: 'collinear' | 'parallel' | 'perpendicular'; line: Id } | null = null;
+  private lineTo: { kind: 'collinear' | 'parallel' | 'perpendicular' | 'tangent'; line: Id } | null = null;
+  /** The snap a 快速抓取 chose (D5.3c), or none. */
+  private quick: SnapItem | null = null;
   private cursor: P2 | null = null;
   /** Points (as snaps) clicked so far by the drawing tool. */
   private clicks: Snap[] = [];
@@ -248,6 +255,7 @@ export class SketchController {
       snap: this.snapTarget,
       inference: this.inference && t(`infer.${this.inference}`),
       inferLine: this.lineTo,
+      quickSnap: this.quick,
       preview: this.previewShapes(),
       picks: [...this.picks],
       cursor: this.cursor,
@@ -326,6 +334,7 @@ export class SketchController {
       return;
     }
     this.tool = tool;
+    this.quick = null;
     this.resetTool();
     this.picks = chosen;
     if (tool !== 'select') this.selection.clear();
@@ -558,6 +567,26 @@ export class SketchController {
     return ex;
   }
 
+  /** The snaps in force: the quick snap's when one is chosen, else the settings of the person (all on when the host has none). */
+  private settings(): SnapSettings {
+    return this.quick ? quickSettings(this.quick) : (this.host.snapSettings?.() ?? DEFAULT_SNAPS);
+  }
+
+  /** Chooses a 快速抓取 (only that snap is on), or ends it (null). It ends with the tool. */
+  setQuickSnap(item: SnapItem | null): void {
+    this.quick = item;
+    this.changed();
+  }
+
+  /** The curves that start at `id` (its ends, its center): a line from there cannot be made tangent to or square to them. */
+  private curvesAt(id: Id): Set<Id> {
+    const out = new Set<Id>();
+    for (const [cid, g] of this.geometry()) {
+      if ((g.type === 'line' && (g.p1 === id || g.p2 === id)) || (g.type === 'circle' && g.center === id) || (g.type === 'arc' && (g.center === id || g.start === id || g.end === id))) out.add(cid);
+    }
+    return out;
+  }
+
   private updateSnap(e: PointerInput): void {
     const geometry = this.geometry();
     if (PICK_TOOLS.has(this.tool)) {
@@ -566,23 +595,89 @@ export class SketchController {
       this.inference = null;
       return;
     }
-    let s = snap(geometry, e.p, PICK_PX * e.px, this.excluded());
-    this.inference = s.kind === 'point' ? 'coincident' : s.kind === 'midpoint' ? 'midpoint' : s.kind === 'curve' ? 'onCurve' : null;
-    // The model's edges in the plane (D5.3b): their ends, centers and middles beat a sketch curve, anywhere along one only a free point
-    if (s.kind !== 'point' && s.kind !== 'midpoint' && this.aligns()) {
-      const model = snapModel(this.host.modelItems?.() ?? [], e.p, PICK_PX * e.px, s.kind === 'curve');
+    const cfg = this.settings();
+    const tol = PICK_PX * e.px;
+    this.tangentTo = null;
+    this.lineTo = null;
+    this.inference = null;
+    if (!cfg.enabled) {
+      // nothing snaps, and nothing is added by itself
+      this.snapTarget = { kind: 'free', p: e.p };
+      this.hover = null;
+      return;
+    }
+    const excluded = this.excluded();
+    const makes = this.aligns();
+    const from = this.lineStart();
+    const drawingLine = (this.tool === 'line' || this.tool === 'centerline') && !!from;
+    const fromId = this.chain?.from ?? (this.clicks[0]?.kind === 'point' ? this.clicks[0].id : null);
+    const label = (s: Snap) => {
+      this.inference =
+        s.kind === 'point' ? 'coincident' : s.kind === 'midpoint' ? 'midpoint' : s.kind === 'curve' ? 'onCurve' : s.kind === 'intersection' ? 'intersection' : s.kind === 'quadrant' ? 'quadrant' : this.inference;
+    };
+    // In the order of what is meant: the sketch's own points and middles, the model's ends and centers, a crossing, a quarter point, where a line touches
+    // a circle or meets a line square, anywhere on a curve of the sketch, anywhere on an edge of the model
+    let s: Snap = snap(geometry, e.p, tol, excluded, { point: cfg.point, midpoint: cfg.midpoint, curve: false });
+    label(s);
+    const open = () => s.kind === 'free' && !this.lineTo; // a tangent or a square foot has been found when a line to follow is set
+    if (open() && makes && cfg.model) {
+      const model = snapModel(this.host.modelItems?.() ?? [], e.p, tol, true);
+      if (model) {
+        s = model;
+        this.inference = model.part === 'center' ? 'modelCenter' : model.part === 'mid' ? 'modelMid' : 'modelPoint';
+      }
+    }
+    if (open() && makes && cfg.intersection) {
+      const x = intersectionSnap(geometry, e.p, tol, excluded);
+      if (x) {
+        s = { kind: 'intersection', p: x.p, a: x.a, b: x.b };
+        label(s);
+      }
+    }
+    if (open() && makes && cfg.quadrant) {
+      const q = quadrantSnap(geometry, e.p, tol, excluded);
+      if (q) {
+        s = { kind: 'quadrant', p: q.p, curve: q.curve, center: q.center, axis: q.axis };
+        label(s);
+      }
+    }
+    if (open() && drawingLine && from && cfg.tangent) {
+      const near = fromId ? this.curvesAt(fromId) : new Set<Id>();
+      const t1 = tangentSnap(geometry, from, e.p, tol, near);
+      if (t1) {
+        s = { kind: 'free', p: t1.p };
+        this.inference = 'tangent';
+        this.lineTo = { kind: 'tangent', line: t1.curve };
+      }
+    }
+    if (open() && drawingLine && from && cfg.perpendicular) {
+      const near = fromId ? this.curvesAt(fromId) : new Set<Id>();
+      const f1 = perpendicularSnap(geometry, from, e.p, tol, near);
+      if (f1) {
+        s = { kind: 'curve', id: f1.line, p: f1.p };
+        this.inference = 'perpendicular';
+        this.lineTo = { kind: 'perpendicular', line: f1.line };
+      }
+    }
+    if (open() && cfg.curve) {
+      const c = snap(geometry, e.p, tol, excluded, { point: false, midpoint: false, curve: true });
+      if (c.kind === 'curve') {
+        s = c;
+        label(s);
+      }
+    }
+    if (open() && makes && cfg.model) {
+      const model = snapModel(this.host.modelItems?.() ?? [], e.p, tol, false);
       if (model) {
         s = model;
         this.inference = model.part === 'center' ? 'modelCenter' : model.part === 'mid' ? 'modelMid' : model.part === 'curve' ? 'modelEdge' : 'modelPoint';
       }
     }
-    this.tangentTo = null;
-    this.lineTo = null;
-    const from = this.lineStart();
-    if ((this.tool === 'line' || this.tool === 'centerline') && from && s.kind === 'free') {
+    // What a line leaving its start says: tangent to the arc it leaves, horizontal or vertical, collinear or parallel or square to another line
+    if (drawingLine && from && s.kind === 'free' && !this.lineTo) {
       // Leaving the end of an arc along its tangent → tangent (it wins over horizontal/vertical, so the
       // two are never added together and cannot over-define the sketch).
-      const arc = this.arcAtLineStart();
+      const arc = cfg.tangent ? this.arcAtLineStart() : null;
       const d = sub(s.p, from);
       const along = arc ? dot(d, arc.dir) : 0;
       if (arc && along > 0 && Math.abs(cross(arc.dir, d)) <= Math.tan(TANGENT_TOLERANCE) * along) {
@@ -590,11 +685,11 @@ export class SketchController {
         this.inference = 'tangent';
         this.tangentTo = arc.curve;
       } else {
-        const hv = inferDirection(from, s.p);
+        const hv = cfg.horizontalVertical ? inferDirection(from, s.p) : { b: s.p, direction: null };
         if (hv.direction) {
           s = { kind: 'free', p: hv.b };
           this.inference = hv.direction === 'horizontal' ? 'horizontal' : 'vertical';
-        } else {
+        } else if (cfg.lineRelations) {
           // Not horizontal or vertical: perhaps in line with, alongside or square to another line
           const other = inferLine(geometry, from, s.p, undefined, LINE_INFER_ANGLE, ALIGN_PX * e.px, LINE_INFER_MIN_PX * e.px);
           if (other) {
@@ -605,15 +700,22 @@ export class SketchController {
         }
       }
     }
+    const inferred = this.inference === 'tangent' || this.inference === 'horizontal' || this.inference === 'vertical' || !!this.lineTo;
     // In line with other sketch points (D5.3a): only where the click makes a new point, and only in the direction a line has not already fixed
-    if (s.kind === 'free' && this.aligns() && this.inference !== 'tangent' && !this.lineTo) {
+    if (s.kind === 'free' && makes && cfg.alignment && this.inference !== 'tangent' && !this.lineTo) {
       const lineHv = this.inference === 'horizontal' || this.inference === 'vertical';
-      const found = alignments(geometry, s.p, ALIGN_PX * e.px, this.excluded(), { h: this.inference !== 'horizontal', v: this.inference !== 'vertical' });
+      const found = alignments(geometry, s.p, ALIGN_PX * e.px, excluded, { h: this.inference !== 'horizontal', v: this.inference !== 'vertical' });
       if (found) {
         s = { kind: 'free', p: found.p, align: found.align };
         const both = found.align.h && found.align.v;
         if (!lineHv) this.inference = both ? 'alignedPoints' : found.align.h ? 'horizontalPoint' : 'verticalPoint';
       }
+    }
+    // The steps that ask for nothing of the sketch: the length (Shift), the angle, the grid; only for a place nothing else has taken
+    if (s.kind === 'free' && !s.align && !inferred && this.inference === null) {
+      if (drawingLine && from && e.shift) s = { kind: 'free', p: lengthStep(from, s.p, cfg.gridSpacing) };
+      else if (drawingLine && from && cfg.angle) s = { kind: 'free', p: angleStep(from, s.p, cfg.angleStep) };
+      else if (cfg.grid && makes) s = { kind: 'free', p: gridPoint(s.p, cfg.gridSpacing) };
     }
     this.snapTarget = s;
     this.hover = this.lineTo ? { id: this.lineTo.line, kind: 'line', q: s.p, d: 0 } : s.kind === 'point' ? { id: s.id, kind: 'point', q: s.p, d: 0 } : s.kind === 'curve' ? { id: s.id, kind: 'line', q: s.p, d: 0 } : null;
@@ -1200,6 +1302,15 @@ class Builder {
     if (s.kind === 'point' && s.id !== SKETCH_ORIGIN) return s.id;
     if (s.kind === 'model') return this.onModel(this, s);
     const id = this.newPoint(s.p);
+    if (s.kind === 'intersection') {
+      this.relation({ type: 'intersection', point: id, a: s.a, b: s.b });
+      return id;
+    }
+    if (s.kind === 'quadrant') {
+      this.relation({ type: 'pointOnCurve', point: id, curve: s.curve });
+      this.relation({ type: s.axis, a: id, b: s.center });
+      return id;
+    }
     if (s.kind === 'free' && s.align) {
       if (s.align.h) this.relation({ type: 'horizontal', a: id, b: s.align.h.id });
       if (s.align.v) this.relation({ type: 'vertical', a: id, b: s.align.v.id });

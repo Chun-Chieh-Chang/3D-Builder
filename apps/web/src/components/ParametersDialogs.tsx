@@ -1,3 +1,4 @@
+import { ANGLE_STEP, GRID_SPACING, SNAP_ITEMS } from '@3db/sketch/snaps';
 import { useEffect, useMemo, useState } from 'react';
 import { getLocale, LOCALES, t, type Locale } from '@3db/i18n';
 import { dimensionName, formatMass, formatQuantity, isDimension, massGrams, MATERIALS, materialById, Parameters, PART_TEMPLATES, settingsOf, type AppearanceTarget, type Command, type DocSettings, type SketchFeature } from '@3db/model';
@@ -556,6 +557,9 @@ export function ShortcutsDialog() {
 }
 
 /** 系統選項 (D8.1): the language, autosave, the template of a new part and what can be picked at first; kept in the browser. */
+/** The switches of the sketch snaps in the options, in the order the dialog lists them. */
+const SNAP_FLAGS = ['enabled', ...SNAP_ITEMS, 'grid', 'angle'] as const;
+
 export function OptionsDialog() {
   const open = useStore((s) => s.dialog === 'options');
   const options = useStore((s) => s.options);
@@ -601,6 +605,23 @@ export function OptionsDialog() {
               </option>
             ))}
           </select>
+          <label>{t('snap.title')}</label>
+          <span className="snap-options">
+            {SNAP_FLAGS.map((k) => (
+              <label key={k} className={k === 'enabled' ? 'snap-master' : ''}>
+                <input type="checkbox" checked={options.snap[k]} disabled={k !== 'enabled' && !options.snap.enabled} onChange={(e) => store.setOptions({ snap: { ...options.snap, [k]: e.target.checked } })} />
+                {t(`snap.${k}`)}
+              </label>
+            ))}
+            <label>
+              {t('snap.gridSpacing')}
+              <input type="number" min={GRID_SPACING.min} max={GRID_SPACING.max} step="0.5" disabled={!options.snap.enabled} value={options.snap.gridSpacing} onChange={(e) => e.target.value !== '' && store.setOptions({ snap: { ...options.snap, gridSpacing: Number(e.target.value) } })} />
+            </label>
+            <label>
+              {t('snap.angleStep')}
+              <input type="number" min={ANGLE_STEP.min} max={ANGLE_STEP.max} step="1" disabled={!options.snap.enabled} value={options.snap.angleStep} onChange={(e) => e.target.value !== '' && store.setOptions({ snap: { ...options.snap, angleStep: Number(e.target.value) } })} />
+            </label>
+          </span>
           <label>{t('options.pickFilter')}</label>
           <span className="pick-filter-options">
             {(['faces', 'edges', 'vertices'] as const).map((k) => (

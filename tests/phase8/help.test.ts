@@ -213,12 +213,12 @@ describe('one source: the tooltip, the window and 這是什麼？ say what the c
     const before = helpTopic('fit', a)!;
     expect(tooltipOf(before, 'F')).toContain(textIn('fit', 'summary'));
     setLocale('en');
-    registerTranslation('en', { [helpKey('fit', 'summary')]: 'Fits the whole model in the view.' } as never);
+    registerTranslation('en', { [helpKey('fit', 'summary')]: 'Frames everything: zoomzoom.' } as never);
     const after = helpTopic('fit', a)!;
-    expect(after.summary).toBe('Fits the whole model in the view.');
-    expect(tooltipOf(after, 'F')).toContain('Fits the whole model in the view.');
+    expect(after.summary).toBe('Frames everything: zoomzoom.');
+    expect(tooltipOf(after, 'F')).toContain('Frames everything: zoomzoom.');
     expect(tooltipOf(after, 'F')).not.toContain(textIn('fit', 'summary'));
-    expect(searchTopics(allTopics(a), 'whole model').map((t) => t.id)).toEqual(['fit']); // and the search finds by the new words
+    expect(searchTopics(allTopics(a), 'zoomzoom').map((t) => t.id)).toEqual(['fit']); // and the search finds by the new words
     registerTranslation('en', {});
   });
 

@@ -81,7 +81,7 @@ code{background:var(--chip);padding:0 4px;border-radius:4px}
 <nav><ol><li><a href="#prep">0. 開始之前（只做一次）<span class="cnt" data-sec="prep"></span></a></li><li><a href="#desktop">A. 桌面版安裝<span class="cnt" data-sec="desktop"></span></a></li><li><a href="#basic">B. 基礎功能殘留<span class="cnt" data-sec="basic"></span></a></li><li><a href="#p3a">C. 零件建模（Phase 3a）<span class="cnt" data-sec="p3a"></span></a></li><li><a href="#p3b">D. 組合件（Phase 3b）<span class="cnt" data-sec="p3b"></span></a></li><li><a href="#p4a">E. 夾治具（Phase 4a）<span class="cnt" data-sec="p4a"></span></a></li><li><a href="#p5">F. 工程圖（Phase 5）<span class="cnt" data-sec="p5"></span></a></li><li><a href="#p4b">G. 檢具型面塊（Phase 4b）<span class="cnt" data-sec="p4b"></span></a></li><li><a href="#p6">H. 塑膠件（Phase 6）<span class="cnt" data-sec="p6"></span></a></li><li><a href="#p7">I. 鈑金（Phase 7）<span class="cnt" data-sec="p7"></span></a></li><li><a href="#samples">J. 需要真實樣本的驗證<span class="cnt" data-sec="samples"></span></a></li><li><a href="#standards">K. 對照你的標準<span class="cnt" data-sec="standards"></span></a></li><li><a href="#cleanup">L. 清理與收尾<span class="cnt" data-sec="cleanup"></span></a></li></ol></nav>
 <main>
 <div class="lead">
-<p><b>這份清單是什麼：</b>自動化測試（共 2150 項）都通過了，但它們是用程式驅動畫面與手算的標準答案驗的。下面是<b>還沒有人用滑鼠、鍵盤、別的軟體實際走過</b>的項目，共 84 項。每一項都寫了「為什麼要做、先準備什麼、怎麼做、應該看到什麼、有問題時回報什麼」。第一次用請先讀下面的「先看這裡」（畫面怎麼認、共用做法、名詞）；步驟裡每個動作下面以「→」開頭的小字，是做完那個動作你應該看到的畫面。C 章到 I 章（C1 到 I10）都已改寫成逐步做法；A、B、J、K、L 與 0 章維持原樣（要另一台電腦、你的樣本或你的決定）。</p>
+<p><b>這份清單是什麼：</b>自動化測試（共 2183 項）都通過了，但它們是用程式驅動畫面與手算的標準答案驗的。下面是<b>還沒有人用滑鼠、鍵盤、別的軟體實際走過</b>的項目，共 84 項。每一項都寫了「為什麼要做、先準備什麼、怎麼做、應該看到什麼、有問題時回報什麼」。第一次用請先讀下面的「先看這裡」（畫面怎麼認、共用做法、名詞）；步驟裡每個動作下面以「→」開頭的小字，是做完那個動作你應該看到的畫面。C 章到 I 章（C1 到 I10）都已改寫成逐步做法；A、B、J、K、L 與 0 章維持原樣（要另一台電腦、你的樣本或你的決定）。</p>
 <p><b>怎麼用：</b>點項目標題展開；做完在右邊的下拉選單選「通過」「有問題」「略過」，並在備註寫下觀察。進度會自動存在這個瀏覽器裡。全部做完（或做到一個段落）按上方的「複製結果」把整份貼給我。</p>
 <p><b>建議順序：</b>先做 0（準備）→ C（零件，每項十分鐘內）→ D、E（組合件與夾具）→ F（工程圖）→ H、I（塑膠與鈑金），標「必做」的優先；標「需樣本」「需你決定」的是等你提供資料或下決定，不用現在做。</p>
 <p class="stat">產生日期 2026-10-04，2026-10-06 更新；對應的程式版本：提交 a950822 之後，檔案格式 Schema 42。下文的「驗證資料夾」指 P2 用 KIT_OUT 做出來的那個資料夾（本文的例子寫 D:\3DB實機確認，你的在哪裡就用哪裡）。</p>
@@ -507,6 +507,27 @@ code{background:var(--chip);padding:0 4px;border-radius:4px}
 </ol>
 <h4>應該看到</h4><ul><li>中央面被與兩側面相切的半圓柱面取代，半徑是寬度的一半；做不到的情形有明確的說明。</li></ul>
 <p class="report"><b>有問題時請回報：</b>哪一步、面板的訊息原文，和預期差多少（體積、半徑）。</p>
+<label class="note">備註<textarea rows="2" placeholder="做到哪一步、畫面訊息原文、和預期的差別…"></textarea></label>
+</div></details><details class="item" id="item-C26" data-id="C26" data-sec="p3a" data-tag="core">
+<summary><span class="iid">C26</span><span class="ttl">草圖抓取：交點、四分之一點、相切、垂足、網格、角度、快速抓取、開關（S-3、S-4）</span><span class="tag t-core">必做</span>
+<select class="st" aria-label="C26 狀態"><option value="">未做</option><option value="ok">通過</option><option value="bad">有問題</option><option value="skip">略過</option></select></summary>
+<div class="inner">
+<p class="why"><b>為什麼要做：</b>畫草圖時定位起訖點很難；這一項把游標吸附、虛線、自動關係與可以關掉的開關走一遍。水平點／垂直點與共線／平行／垂直、吸附模型邊請一併看（手冊 K4 的檢查項）。</p>
+<p class="why"><b>預跑（2026-10-06，內建瀏覽器照 UI 操作）：</b>圓的上方四分之一點被吸到並顯示「四分之一點」；在系統選項把「啟用抓取」關掉後同一個位置沒有吸附也沒有名稱；選項對話框列出 14 個開關與兩個間距。吸附的各種情形與數字由 packages/sketch/test/snaps.test.ts（23 項）與 apps/web/test/sketcher.test.ts（10 項）驗過。腳本沒涵蓋：虛線與亮顯的觀感、右鍵選單的「快速抓取」。</p>
+<h4>先準備</h4><p>新零件，在「上基準面」進入草圖（「草圖」→「草圖」）。</p><h4>怎麼做</h4><ol>
+<li>按「圓」，在約 (10, 10) 畫一個半徑 6 的圓。按「點」，把游標移到圓的正上方（頂端）附近，不要點。<span class="see">游標旁出現「四分之一點」，頂端亮起；點下去的點在圓上，並且與圓心垂直對齊（圓心與它在同一條鉛垂線上）。</span></li>
+<li>按「直線」畫兩條交叉的斜線（交叉處不要在任何一條的中點），按「點」，游標移到交叉處附近。<span class="see">出現「交點」；點下去的點就在交叉處。</span></li>
+<li>先畫一個圓（半徑 5），再按「直線」，在圓外某處按一下設起點，把游標移向圓，找到「相切」出現的位置（約是從起點看過去圓的邊緣、切線碰到圓的地方）。<span class="see">出現「相切」並吸到切點；按下去的直線與圓相切（用「智慧型尺寸」量圓心到線的距離會是半徑 5）。</span></li>
+<li>畫一條水平線 L，按「直線」在 L 的上方約 8 的地方設起點，把游標移向 L 正下方垂足附近。<span class="see">出現「互相垂直」並吸到垂足；按下去的線與 L 垂直，終點在 L 上。</span></li>
+<li>打開「工具」→「系統選項…」，找到「草圖抓取」區。把「四分之一點」取消勾選，回到草圖，再試步驟 1 的位置。<span class="see">不再吸到四分之一點（只剩圓上的最近點）。把它勾回來。</span></li>
+<li>在同一區把「啟用抓取」取消勾選，再畫一條直線，終點故意靠近水平。<span class="see">什麼都不吸；終點就在游標位置；不會自動加水平關係，連端點重合也不會。把它勾回來。</span></li>
+<li>勾選「網格」，間距 <code>5</code>，按「點」在 (12.4, 7.6) 附近按一下。<span class="see">點落在 (10, 10)（最近的網格點）。取消勾選網格。</span></li>
+<li>勾選「角度」，間隔 <code>15</code>，按「直線」畫一條大約 15° 的線（相差 3° 以內）。<span class="see">線被轉到剛好 15°。取消勾選角度。</span></li>
+<li>按「直線」，起點設好後，<b>按住 Shift</b> 再按終點。<span class="see">線的長度是網格間距（5）的整數倍。</span></li>
+<li>在「點」或「直線」工具啟用時按滑鼠右鍵 →「快速抓取」→ 選「交點」。把游標移到一條線的端點附近。<span class="see">只剩「交點」會吸；端點與中點都不吸；左邊面板寫「快速抓取：只留『交點』」。換一個工具（或在面板按「取消快速抓取」）就結束。</span></li>
+</ol>
+<h4>應該看到</h4><ul><li>每種抓取都顯示名稱並建立對應的關係；網格與角度預設不啟用；關掉「啟用抓取」什麼都不會自動做；快速抓取只留一種。</li></ul>
+<p class="report"><b>有問題時請回報：</b>哪一步、游標旁的名稱和實際吸到的位置、和預期的差別。</p>
 <label class="note">備註<textarea rows="2" placeholder="做到哪一步、畫面訊息原文、和預期的差別…"></textarea></label>
 </div></details></section><section id="p3b" class="sec"><h2>D. 組合件（Phase 3b）</h2><p class="intro">前置：先做一個小組合件。「檔案」→「新組合件」→ 開始組合件，選驗證資料夾（D:\3DB實機確認），點 locating-plate 按 ✓ 放在原點（固定），再用「組合件」→「插入零組件」插入 diamond-pin 兩次。用「結合」把銷插進板的孔（同軸心加重合）。存檔成 小夾具.3dba。</p><details class="item" id="item-D1" data-id="D1" data-sec="p3b" data-tag="core">
 <summary><span class="iid">D1</span><span class="ttl">剛性次組合件（3b-1）</span><span class="tag t-core">必做</span>

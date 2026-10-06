@@ -455,7 +455,7 @@ const sweepOf = (g: { a0: number; a1: number }) => norm(g.a1 - g.a0) || TAU;
 export const SAME = 1e-7;
 
 /** Where two whole curves meet (a line taken as infinite). A tangent touch is not a crossing. */
-function crossings(g: Curve, h: Curve): P2[] {
+export function crossings(g: Curve, h: Curve): P2[] {
   if (g.type === 'line' && h.type === 'line') {
     const [d1, d2] = [sub(g.b, g.a), sub(h.b, h.a)];
     const den = cross(d1, d2);
@@ -484,7 +484,7 @@ function lineCircle(l: Extract<Curve, { type: 'line' }>, c: { c: P2; r: number }
 }
 
 /** Whether a place that is on the whole curve is also on the curve as drawn. */
-function drawn(g: Curve, p: P2): boolean {
+export function drawn(g: Curve, p: P2): boolean {
   if (g.type === 'line') {
     const u = dot(sub(p, g.a), unit(sub(g.b, g.a)));
     return u >= -SAME && u <= dist(g.a, g.b) + SAME;

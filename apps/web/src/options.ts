@@ -1,4 +1,5 @@
 import { PART_TEMPLATES, type PartTemplateId } from '@3db/model';
+import { DEFAULT_SNAPS, parseSnapSettings, type SnapSettings } from '@3db/sketch/snaps';
 
 /**
  * System options (D8.1): what belongs to this browser and the person using it, not to the part — kept in the browser like the shortcuts. The language
@@ -13,6 +14,8 @@ export interface SystemOptions {
   defaultTemplate: PartTemplateId;
   /** Which kinds of element the graphics area starts out letting be picked (D5.4). */
   pickFilter: { faces: boolean; edges: boolean; vertices: boolean };
+  /** The sketch snaps (D5.3c): 「啟用抓取」 and the choices under it. */
+  snap: SnapSettings;
 }
 
 export const AUTOSAVE_SECONDS = { min: 2, max: 600 } as const;
@@ -22,6 +25,7 @@ export const DEFAULT_OPTIONS: SystemOptions = {
   autosaveSeconds: 5,
   defaultTemplate: 'blank',
   pickFilter: { faces: true, edges: true, vertices: true },
+  snap: DEFAULT_SNAPS,
 };
 
 const KEY = '3db.options';
@@ -37,6 +41,7 @@ export function parseOptions(raw: unknown): SystemOptions {
     autosaveSeconds: Math.min(AUTOSAVE_SECONDS.max, Math.max(AUTOSAVE_SECONDS.min, Math.round(seconds))),
     defaultTemplate: PART_TEMPLATES.some((x) => x.id === o.defaultTemplate) ? (o.defaultTemplate as PartTemplateId) : DEFAULT_OPTIONS.defaultTemplate,
     pickFilter: { faces: on(filter.faces), edges: on(filter.edges), vertices: on(filter.vertices) },
+    snap: parseSnapSettings(o.snap),
   };
 }
 

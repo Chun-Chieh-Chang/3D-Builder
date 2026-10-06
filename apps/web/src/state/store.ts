@@ -2006,6 +2006,7 @@ class AppStore {
       notify: (text, kind) => this.notify(text, kind),
       editDimension: (id) => this.set({ dimensionEdit: id }),
       modelItems: () => this.modelSnap,
+      snapSettings: () => this.state.options.snap,
     };
   }
 

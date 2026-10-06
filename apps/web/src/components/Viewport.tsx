@@ -1,3 +1,4 @@
+import { SNAP_ITEMS } from '@3db/sketch/snaps';
 import { useEffect, useRef, useState } from 'react';
 import { t } from '@3db/i18n';
 import { DATUM_PLANES, findFeature, isDimension, isShown, ORIGIN_KEY, Parameters, settingsOf, type DatumPlaneName, type Id, type Feature, type PlaneFrame, type Ref } from '@3db/model';
@@ -88,6 +89,9 @@ function picking(feature: Feature | undefined, editing: boolean, modelTool: 'con
  * Picked indices are resolved against the payload whose mesh is on screen — never against a newer
  * or older result — so an index can only ever name the element the user actually clicked.
  */
+/** The tools a 快速抓取 can be chosen for: the ones that put points down. */
+const QUICK_SNAP_TOOLS = new Set(['line', 'centerline', 'rect', 'centerRect', 'circle', 'perimeterCircle', 'arc', 'tangentArc', 'threePointArc', 'point', 'slot', 'polygon']);
+
 export function Viewport() {
   const host = useRef<HTMLDivElement>(null);
   const displayed = useRef<RebuildPayload | null>(null);
@@ -165,6 +169,18 @@ export function Viewport() {
           for (const f of topo.edgeFaces[el.edge] ?? []) items.push({ label: t('select.loopOf', { name: r.faceNames[f] ?? '' }), run: add(refs(topo.loop(f, el.edge), 'edge')) });
         }
         if (kind === 'face' && el.face >= 0) items.push({ label: t('select.tangentFaces'), run: add(refs(topo.tangentFaces(el.face), 'face')) });
+        const sketcher = store.sketcher;
+        const tool = sketcher?.getView().tool;
+        if (sketcher && tool && QUICK_SNAP_TOOLS.has(tool)) {
+          const chosen = sketcher.getView().quickSnap;
+          items.push({
+            label: t('snap.quickHeading'),
+            run: () => [
+              ...SNAP_ITEMS.map((k) => ({ label: `${chosen === k ? '✔ ' : ''}${t(`snap.name.${k}`)}`, run: () => sketcher.setQuickSnap(k) })),
+              ...(chosen ? [{ label: t('snap.quickOff'), run: () => sketcher.setQuickSnap(null) }] : []),
+            ],
+          });
+        }
         const stack = el.face >= 0 ? viewer.facesAt(x, y) : [];
         if (stack.length > 1) {
           const others: MenuItem[] = stack.map((f, i) => ({ label: t('select.otherFace', { n: i + 1, name: r.faceNames[f] ?? '' }), run: () => clickFace(f) }));

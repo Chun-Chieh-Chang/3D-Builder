@@ -325,6 +325,17 @@ function SketchPanel({ f }: { f: SketchFeature }) {
       {sketcher && solve && <DiagnosisBox f={f} solve={solve} sketcher={sketcher} />}
       {sketcher && solve && f.entities.length > 0 && <CheckBox f={f} view={view} sketcher={sketcher} />}
 
+      {view && view.quickSnap && (
+        <section className="pm-group">
+          <p className="hint">
+            {t('snap.quickOn', { name: t(`snap.name.${view.quickSnap}`) })}{' '}
+            <button className="link" onClick={() => sketcher?.setQuickSnap(null)}>
+              {t('snap.quickOff')}
+            </button>
+          </p>
+        </section>
+      )}
+
       {view && view.tool !== 'select' && (
         <section className="pm-group">
           <h4>{TOOL_LABEL[view.tool]}</h4>

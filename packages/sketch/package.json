@@ -9,6 +9,7 @@
     ".": "./src/index.ts",
     "./interact": "./src/interact.ts",
     "./ops": "./src/ops.ts",
+    "./snaps": "./src/snaps.ts",
     "./check": "./src/check.ts",
     "./profiles": "./src/profiles.ts"
   },

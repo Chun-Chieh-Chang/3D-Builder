@@ -2,6 +2,7 @@ import { beforeAll, describe, expect, it } from 'vitest';
 import { applyCommand, createEmptyPart, DocHistory, resolveSketch, type Command, type PartDoc, type SketchFeature } from '@3db/model';
 import { findProfiles, PlaneGcsSolver, type SolvedGeometry } from '@3db/sketch';
 import type { ModelItem } from '@3db/sketch/ops';
+import { DEFAULT_SNAPS, type SnapSettings } from '@3db/sketch/snaps';
 import { SketchController, type PointerInput, type SketchHost } from '../src/sketcher/controller';
 import type { SketchSolvePayload } from '../src/worker/protocol';
 
@@ -24,6 +25,7 @@ class Host implements SketchHost {
   notices: string[] = [];
   edited: string | null = null;
   modelItems?: () => readonly ModelItem[];
+  snapSettings?: () => SnapSettings;
 
   constructor(doc: PartDoc = applyCommand(createEmptyPart(), EMPTY_SKETCH)) {
     this.history = new DocHistory(doc);
@@ -824,5 +826,208 @@ describe('snapping to the model while drawing (D5.3b)', () => {
     c.setTool('line');
     c.pointerMove(at(40, 0.1), false);
     expect(c.getView().snap).toMatchObject({ kind: 'free' });
+  });
+});
+
+describe('the snaps beyond points and curves, and the settings (D5.3c)', () => {
+  const withSnaps = (patch: Partial<SnapSettings> = {}) => {
+    const h = new Host();
+    h.snapSettings = () => ({ ...DEFAULT_SNAPS, ...patch });
+    return { h, c: new SketchController(h) };
+  };
+  const lineAt = (h: Host, id: string) => h.last!.geometry.get(id) as Extract<SolvedGeometry, { type: 'line' }>;
+
+  it('snaps to the crossing of two lines, and the new point is made an intersection of both', () => {
+    const { h, c } = withSnaps();
+    c.setTool('line');
+    click(c, 0, 0);
+    click(c, 20, 10); // slope 0.5
+    c.escape();
+    click(c, 0, 16);
+    click(c, 20, 0); // crosses the first at (12.31, 6.15), away from the middle of either
+    c.escape();
+    c.setTool('point');
+    c.pointerMove(at(12.4, 6.2), false);
+    expect(c.getView().snap).toMatchObject({ kind: 'intersection' });
+    expect(c.getView().inference).toBe('交點');
+    click(c, 12.4, 6.2);
+    const k = h.sketch().constraints.find((x) => x.type === 'intersection');
+    expect(k).toBeDefined();
+    expect(h.last!.conflicting).toEqual([]);
+    expect(h.last!.redundant).toEqual([]);
+  });
+
+  it('snaps to a quarter point of a circle: on the circle and level or plumb with its center', () => {
+    const { h, c } = withSnaps();
+    c.setTool('circle');
+    click(c, 10, 10);
+    click(c, 16, 10); // r = 6
+    c.escape();
+    c.setTool('point');
+    c.pointerMove(at(10.1, 16.1), false); // the top: (10, 16)
+    expect(c.getView().snap).toMatchObject({ kind: 'quadrant', axis: 'vertical', p: [10, 16] });
+    expect(c.getView().inference).toBe('四分之一點');
+    click(c, 10.1, 16.1);
+    const types_ = types(h);
+    expect(types_).toContain('pointOnCurve');
+    expect(types_).toContain('vertical');
+    expect(h.last!.conflicting).toEqual([]);
+    const p = h.sketch().entities.filter((e) => e.type === 'point').at(-1)!;
+    expect(point(h, p.id)[0]).toBeCloseTo(10, 6);
+    expect(point(h, p.id)[1]).toBeCloseTo(16, 6);
+  });
+
+  it('snaps to where a line from its start touches a circle, and makes the line tangent to it', () => {
+    const { h, c } = withSnaps();
+    c.setTool('circle');
+    click(c, 30, 0.5);
+    click(c, 35, 0.5); // r = 5, center (30, 0.5)
+    c.escape();
+    c.setTool('line');
+    click(c, 0, 20);
+    const dx = 30;
+    const dy = 0.5 - 20;
+    const d = Math.hypot(dx, dy);
+    const phi = Math.acos(5 / d);
+    const base = Math.atan2(-dy, -dx); // from the center back to the start
+    const t1 = [30 + 5 * Math.cos(base + phi), 0.5 + 5 * Math.sin(base + phi)] as const;
+    c.pointerMove(at(t1[0] + 0.1, t1[1] - 0.1), false);
+    expect(c.getView().inference).toBe('相切');
+    expect(c.getView().inferLine).toMatchObject({ kind: 'tangent' });
+    click(c, t1[0] + 0.1, t1[1] - 0.1);
+    const line = h.sketch().entities.filter((e) => e.type === 'line').at(-1)!;
+    expect(h.sketch().constraints).toContainEqual(expect.objectContaining({ type: 'tangent', a: line.id }));
+    expect(h.last!.conflicting).toEqual([]);
+    expect(h.last!.redundant).toEqual([]);
+    // the line touches: its distance from the center is the radius
+    const g = lineAt(h, line.id);
+    const u = [g.b[0] - g.a[0], g.b[1] - g.a[1]];
+    const dist = Math.abs(u[0]! * (0.5 - g.a[1]) - u[1]! * (30 - g.a[0])) / Math.hypot(u[0]!, u[1]!);
+    expect(dist).toBeCloseTo(5, 4);
+  });
+
+  it('snaps to the foot of the perpendicular onto a line, and makes the new line perpendicular to it with its end on it', () => {
+    const { h, c } = withSnaps();
+    c.setTool('line');
+    click(c, 0, 0);
+    click(c, 20, 0.3);
+    c.escape();
+    click(c, 5, 8);
+    c.pointerMove(at(4.95, 0.15), false); // about the foot (4.9, 0.07)
+    expect(c.getView().inference).toBe('互相垂直');
+    expect(c.getView().inferLine).toMatchObject({ kind: 'perpendicular' });
+    click(c, 4.95, 0.15);
+    const lines = h.sketch().entities.filter((e) => e.type === 'line');
+    expect(h.sketch().constraints).toContainEqual(expect.objectContaining({ type: 'perpendicular', a: lines.at(-1)!.id }));
+    expect(h.sketch().constraints).toContainEqual(expect.objectContaining({ type: 'pointOnCurve' }));
+    expect(h.last!.conflicting).toEqual([]);
+    expect(h.last!.redundant).toEqual([]);
+  });
+
+  it('does nothing by itself when snapping is off: no snap, no merge, no relation', () => {
+    const { h, c } = withSnaps({ enabled: false });
+    c.setTool('line');
+    click(c, 0, 0);
+    click(c, 10, 0.2); // nearly horizontal
+    c.escape();
+    c.setTool('point');
+    c.pointerMove(at(10.05, 0.25), false);
+    expect(c.getView().snap).toMatchObject({ kind: 'free', p: [10.05, 0.25] });
+    expect(c.getView().inference).toBeNull();
+    click(c, 10.05, 0.25);
+    expect(h.sketch().constraints).toEqual([]);
+    expect(h.sketch().entities.filter((e) => e.type === 'point')).toHaveLength(3); // the two ends and the new one
+  });
+
+  it('leaves out the one that is switched off and keeps the rest', () => {
+    const horizontal = withSnaps({ horizontalVertical: false });
+    horizontal.c.setTool('line');
+    click(horizontal.c, 0, 0);
+    click(horizontal.c, 10, 0.2);
+    expect(types(horizontal.h)).not.toContain('horizontal');
+    const points = withSnaps({ point: false });
+    points.c.setTool('point');
+    click(points.c, 5, 5);
+    points.c.pointerMove(at(5.1, 5.1), false);
+    expect(points.c.getView().snap).toMatchObject({ kind: 'free' }); // the point is there, and not snapped to
+    const model = withSnaps({ lineRelations: false });
+    model.c.setTool('line');
+    click(model.c, 0, 0.5);
+    click(model.c, 10, 5.5);
+    model.c.escape();
+    click(model.c, 0, 20);
+    model.c.pointerMove(at(10, 25.1), false);
+    expect(model.c.getView().inferLine).toBeNull();
+  });
+
+  it('goes to the grid when the grid is on, and to nothing when it is off', () => {
+    const on = withSnaps({ grid: true, gridSpacing: 5 });
+    on.c.setTool('point');
+    click(on.c, 12.4, 7.6);
+    expect(point(on.h, on.h.sketch().entities.at(-1)!.id)).toEqual([10, 10]);
+    expect(on.h.sketch().constraints).toEqual([]);
+    const off = withSnaps();
+    off.c.setTool('point');
+    click(off.c, 12.4, 7.6);
+    expect(point(off.h, off.h.sketch().entities.at(-1)!.id)).toEqual([12.4, 7.6]);
+  });
+
+  it('turns a line onto a multiple of the angle step, and makes its length a multiple of the spacing with Shift', () => {
+    const angle = withSnaps({ angle: true, angleStep: 15 });
+    angle.c.setTool('line');
+    click(angle.c, 0, 0.3);
+    click(angle.c, 10, 3.0); // 15.1° from the start (0, 0.3)
+    const l = angle.h.sketch().entities.find((e) => e.type === 'line') as Extract<SketchFeature['entities'][number], { type: 'line' }>;
+    const g = lineAt(angle.h, l.id);
+    expect(Math.atan2(g.b[1] - g.a[1], g.b[0] - g.a[0])).toBeCloseTo((15 * Math.PI) / 180, 9);
+    const length = withSnaps({ gridSpacing: 5 });
+    length.c.setTool('line');
+    click(length.c, 0, 0.3);
+    click(length.c, 12, 6.3, { shift: true }); // from (0, 0.3): 13.4 long, in the direction of (12, 6)
+    const m = length.h.sketch().entities.find((e) => e.type === 'line') as Extract<SketchFeature['entities'][number], { type: 'line' }>;
+    const gm = lineAt(length.h, m.id);
+    expect(Math.hypot(gm.b[0] - gm.a[0], gm.b[1] - gm.a[1])).toBeCloseTo(15, 9);
+  });
+
+  it('can be limited to one snap (a quick snap), which ends with the tool or when it is cleared', () => {
+    const { h, c } = withSnaps();
+    c.setTool('circle');
+    click(c, 10, 10);
+    click(c, 16, 10);
+    c.escape();
+    c.setTool('point');
+    click(c, 10, 16.05); // a point at the top, near the quarter point
+    c.pointerMove(at(10.05, 16.1), false);
+    expect(c.getView().snap).toMatchObject({ kind: 'point' }); // the point just made comes first
+    c.setQuickSnap('quadrant');
+    expect(c.getView().quickSnap).toBe('quadrant');
+    c.pointerMove(at(10.05, 16.1), false);
+    expect(c.getView().snap).toMatchObject({ kind: 'quadrant' }); // only that one is on
+    c.pointerMove(at(14, 14), false);
+    expect(c.getView().snap).toMatchObject({ kind: 'free' }); // not even a place on the circle
+    c.setQuickSnap(null);
+    expect(c.getView().quickSnap).toBeNull();
+    c.setQuickSnap('curve');
+    c.setTool('line');
+    expect(c.getView().quickSnap).toBeNull(); // another tool, another choice
+    expect(h.sketch().entities.length).toBeGreaterThan(0);
+  });
+
+  it('keeps the priority of the others: a point before a crossing, a crossing before a place on a curve', () => {
+    const { c } = withSnaps();
+    c.setTool('line');
+    click(c, 0, 0);
+    click(c, 20, 10);
+    c.escape();
+    click(c, 0, 16);
+    click(c, 20, 0);
+    c.escape();
+    c.setTool('point');
+    c.pointerMove(at(12.4, 6.2), false);
+    expect(c.getView().snap).toMatchObject({ kind: 'intersection' });
+    c.pointerMove(at(19.9, 9.95), false);
+    expect(c.getView().snap).toMatchObject({ kind: 'point' }); // the end of the first line
+    c.pointerMove(at(5, 2.52), false);
+    expect(c.getView().snap).toMatchObject({ kind: 'curve' });
   });
 });

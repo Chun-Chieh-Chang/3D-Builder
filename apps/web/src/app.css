@@ -324,3 +324,7 @@ html[lang="en"] .view-cube .cube-face { font-size: 10px; }
 .help-link:hover { text-decoration: underline; }
 .help-topic footer { margin-top: 12px; display: flex; flex-wrap: wrap; gap: 4px 12px; align-items: baseline; }
 .help-topic footer h3 { width: 100%; margin: 0; }
+.snap-options { display: flex; flex-direction: column; gap: 2px; }
+.snap-options label { display: flex; align-items: center; gap: 6px; }
+.snap-options .snap-master { font-weight: 600; margin-bottom: 4px; }
+.snap-options input[type='number'] { width: 80px; }

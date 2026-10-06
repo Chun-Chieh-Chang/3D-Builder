@@ -152,6 +152,10 @@ export type Snap =
   | { kind: 'midpoint'; line: Id; p: P2 }
   /** On a line, circle or arc: the new point gets a coincident (point-on-curve) relation. */
   | { kind: 'curve'; id: Id; p: P2 }
+  /** Where two curves cross (交點): the new point gets an intersection relation with both. */
+  | { kind: 'intersection'; p: P2; a: Id; b: Id }
+  /** A quarter point of a circle or arc (四分之一點): on the curve, and level or plumb with its center. */
+  | { kind: 'quadrant'; p: P2; curve: Id; center: Id; axis: 'horizontal' | 'vertical' }
   /** A place on the model (D5.3b): the sketch gets the edge as a reference entity that follows it, and the new point goes with it. */
   | { kind: 'model'; p: P2; item: ModelEdge; part: ModelPart }
   /** Nowhere in particular, or (`align`) in line with other points: the new point gets a horizontal / vertical relation to each. */
@@ -194,19 +198,28 @@ export function snapModel(items: readonly ModelItem[], p: P2, tol: number, point
   return best && (best as { s: Extract<Snap, { kind: 'model' }> }).s;
 }
 
+/** Which of the three plain snaps `snap` may make (all, unless the settings leave some out). */
+export interface SnapAllow {
+  point?: boolean;
+  midpoint?: boolean;
+  curve?: boolean;
+}
+
 /** SolidWorks snap priority: end/center points, then midpoints, then anywhere on a curve. */
-export function snap(geometry: Geometry, p: P2, tol: number, exclude: ReadonlySet<Id> = new Set()): Snap {
-  const hit = hitTest(geometry, p, tol, exclude);
-  if (hit && (hit.kind === 'point' || hit.kind === 'origin')) return { kind: 'point', id: hit.id, p: hit.q };
+export function snap(geometry: Geometry, p: P2, tol: number, exclude: ReadonlySet<Id> = new Set(), allow: SnapAllow = {}): Snap {
+  const [byPoint, byMidpoint, byCurve] = [allow.point !== false, allow.midpoint !== false, allow.curve !== false];
+  // without the points, what is under the cursor is a curve (a point on it is not a place to snap to then)
+  const hit = hitTest(byPoint ? geometry : new Map([...geometry].filter(([, g]) => g.type !== 'point')), p, tol, exclude);
+  if (byPoint && hit && (hit.kind === 'point' || hit.kind === 'origin')) return { kind: 'point', id: hit.id, p: hit.q };
   let best: { line: Id; p: P2; d: number } | null = null;
-  for (const [id, g] of geometry) {
+  for (const [id, g] of byMidpoint ? geometry : []) {
     if (g.type !== 'line' || exclude.has(id)) continue;
     const m = mid(g.a, g.b);
     const d = dist(p, m);
     if (d <= tol && (!best || d < best.d)) best = { line: id, p: m, d };
   }
   if (best) return { kind: 'midpoint', line: best.line, p: best.p };
-  if (hit) return { kind: 'curve', id: hit.id, p: hit.q };
+  if (byCurve && hit && hit.kind !== 'point' && hit.kind !== 'origin') return { kind: 'curve', id: hit.id, p: hit.q };
   return { kind: 'free', p };
 }
 
