@@ -6,7 +6,7 @@ import type { Id } from './ids';
  * DOF status, mass properties and error lists are derived data and never stored.
  */
 
-export const SCHEMA_VERSION = 42;
+export const SCHEMA_VERSION = 43;
 
 /** Value expression (B5.2, B5.3): "20", "25.4mm", "30deg", "wall_t*2", "D1@草圖1/2", "property('厚度')"; see `expr/`. */
 export type Expr = string;
@@ -301,6 +301,11 @@ export interface RevolveFeature extends FeatureBase {
 export interface FilletFeature extends FeatureBase {
   type: 'fillet';
   edges: Ref[];
+  /**
+   * Faces whose every edge is rounded as well (v43, 選面): the edges are worked out from the faces each time the model is rebuilt, not kept, so an edge the
+   * face gains later is rounded too. The seam of a round or a cylinder and an edge the faces beside continue smoothly are left out.
+   */
+  faces?: Ref[];
   radius: Expr;
 }
 
@@ -308,6 +313,8 @@ export interface FilletFeature extends FeatureBase {
 export interface ChamferFeature extends FeatureBase {
   type: 'chamfer';
   edges: Ref[];
+  /** As for a fillet (v43): the edges of these faces, with the first distance measured on the face the edge comes from. */
+  faces?: Ref[];
   mode: 'angleDistance' | 'distanceDistance';
   /** Measured on the first adjacent face of each edge (see `flip`). */
   distance: Expr;

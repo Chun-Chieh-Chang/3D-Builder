@@ -1822,6 +1822,17 @@ class AppStore {
     this.execute({ type: 'setEdges', featureId: f.id, edges });
   }
 
+  /** A face picked for a fillet or a chamfer (fillet and chamfer by face): toggled in its list, like an edge. */
+  toggleEdgeFeatureFace(ref: Ref): void {
+    const e = this.state.editing;
+    if (!e || ref.kind !== 'face') return;
+    const f = this.history.doc.features.find((x) => x.id === e.featureId);
+    if (f?.type !== 'fillet' && f?.type !== 'chamfer') return;
+    const faces = f.faces ?? [];
+    const next = faces.some((x) => x.name === ref.name) ? faces.filter((x) => x.name !== ref.name) : [...faces, ref];
+    this.execute({ type: 'setEdges', featureId: f.id, edges: f.edges, faces: next });
+  }
+
   /** The feature of the PropertyManager session, as it is in the document now. */
   private editedFeature(): Feature | undefined {
     const e = this.state.editing;
@@ -1832,7 +1843,7 @@ class AppStore {
   pick(ref: Ref): void {
     if (this.state.editing?.kind === 'sketch') return void this.convertPicked(ref);
     const f = this.editedFeature();
-    if (f?.type === 'fillet' || f?.type === 'chamfer') this.toggleEdge(ref);
+    if (f?.type === 'fillet' || f?.type === 'chamfer') (ref.kind === 'face' ? this.toggleEdgeFeatureFace(ref) : this.toggleEdge(ref));
     else if (f?.type === 'extrude') this.setUpToFace(ref);
     else if (f?.type === 'refPlane' || f?.type === 'refAxis' || f?.type === 'refPoint' || f?.type === 'coordSys' || f?.type === 'pattern' || f?.type === 'mirror') this.putDatumRef(ref);
     else if (f?.type === 'deleteFace') this.toggleFace(ref);

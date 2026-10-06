@@ -59,16 +59,16 @@ function picking(feature: Feature | undefined, editing: boolean, modelTool: 'con
     : faceFeature
     ? t(faceFeature.type === 'deleteFace' ? 'pick.deleteFace' : faceFeature.type === 'shell' ? 'pick.shell' : faceFeature.type === 'draft' ? 'pick.draft' : faceFeature.type === 'offsetSurface' ? 'pick.offsetSurface' : faceFeature.type === 'splitLine' ? 'pick.splitLine' : faceFeature.type === 'trimSurface' ? 'pick.trimSurface' : faceFeature.type === 'lipGroove' ? 'pick.lipGroove' : 'pick.moveFace')
     : edgeFeature
-    ? t('pick.edges', { what: FEATURE_LABEL[edgeFeature.type] })
+    ? t(edgeFeature.type === 'fillet' || edgeFeature.type === 'chamfer' ? 'pick.edgesOrFaces' : 'pick.edges', { what: FEATURE_LABEL[edgeFeature.type] })
     : upTo
       ? t('pick.extrudeEnd')
       : (slots?.prompt ?? null);
   return {
     edges: !!edgeFeature || !!slots?.edges || modelTool !== null || measuring,
-    faces: !editing || modelTool === 'convert' || !!upTo || !!faceFeature || combine || !!slots?.faces || measuring,
+    faces: !editing || modelTool === 'convert' || !!upTo || !!faceFeature || combine || !!slots?.faces || measuring || edgeFeature?.type === 'fillet' || edgeFeature?.type === 'chamfer',
     vertices: !!slots?.vertices || endVertices.length > 0 || measuring,
     pickedEdges: edgeFeature ? (edgeFeature.type === 'edgeFlange' || edgeFeature.type === 'hem' ? (edgeFeature.edge.name ? [edgeFeature.edge] : []) : edgeFeature.edges) : (slots?.edges ?? []),
-    pickedFaces: faceFeature ? (faceFeature.type === 'shell' ? [...faceFeature.faces, ...(faceFeature.faceThickness ?? []).map((x) => x.face)] : faceFeature.type === 'deleteFace' || faceFeature.type === 'offsetSurface' ? faceFeature.faces : faceFeature.type === 'draft' ? [faceFeature.neutral, ...faceFeature.faces] : [faceFeature.face]) : upTo ? endFaces : (slots?.faces ?? []),
+    pickedFaces: edgeFeature?.type === 'fillet' || edgeFeature?.type === 'chamfer' ? (edgeFeature.faces ?? []) : faceFeature ? (faceFeature.type === 'shell' ? [...faceFeature.faces, ...(faceFeature.faceThickness ?? []).map((x) => x.face)] : faceFeature.type === 'deleteFace' || faceFeature.type === 'offsetSurface' ? faceFeature.faces : faceFeature.type === 'draft' ? [faceFeature.neutral, ...faceFeature.faces] : [faceFeature.face]) : upTo ? endFaces : (slots?.faces ?? []),
     pickedVertices: slots ? slots.vertices : endVertices,
     /** Default and reference planes, axes and points the geometry being defined is based on: they are drawn while they are used. */
     referenceDatums: slots?.datums ?? [],

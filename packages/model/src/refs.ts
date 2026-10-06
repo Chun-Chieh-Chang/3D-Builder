@@ -52,7 +52,7 @@ export function mapRefs(feature: Feature, map: (ref: Ref) => Ref): { feature: Fe
     }
     case 'fillet':
     case 'chamfer':
-      return { feature: { ...feature, edges: feature.edges.map(one) }, replaced };
+      return { feature: { ...feature, edges: feature.edges.map(one), ...(feature.faces ? { faces: feature.faces.map(one) } : {}) }, replaced };
     case 'refPlane':
     case 'refAxis':
     case 'refPoint':

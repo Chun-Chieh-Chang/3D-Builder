@@ -852,8 +852,34 @@ function EdgeList({ f }: { f: FilletFeature | ChamferFeature | FillSurfaceFeatur
           );
         })}
       </ul>
-      {(f.type === 'fillet' || f.type === 'chamfer') && <p className="hint">{t('pm.edges.hint', { label })}</p>}
+      {(f.type === 'fillet' || f.type === 'chamfer') && <p className="hint">{t('pm.edges.hintFaces', { label })}</p>}
+      {(f.type === 'fillet' || f.type === 'chamfer') && <FaceList f={f} label={label} />}
     </section>
+  );
+}
+
+/** The faces of a fillet or a chamfer (fillet and chamfer by face): every edge of each is done, worked out at each rebuild. */
+function FaceList({ f, label }: { f: FilletFeature | ChamferFeature; label: string }) {
+  const r = useStore((s) => s.result);
+  const faces = f.faces ?? [];
+  return (
+    <>
+      <h4>{t('pm.faces.heading', { label })}</h4>
+      <ul className="selection-box">
+        {faces.length === 0 && <li className="muted">{t('pm.faces.empty')}</li>}
+        {faces.map((x, i) => {
+          const found = r?.faceNames.includes(x.name);
+          return (
+            <li key={x.name} className={found ? '' : 'missing'} title={x.name}>
+              {t('pm.faces.item', { n: i + 1 })}
+              {!found && t('pm.lost')}
+              <code>{x.name}</code>
+              {!found && <UseNearest featureId={f.id} refr={x} />}
+            </li>
+          );
+        })}
+      </ul>
+    </>
   );
 }
 

@@ -381,6 +381,10 @@ const FILL_TANGENT_TOLERANCE = 0.02;
  * Deterministic rebuild (B3.1): the result is a pure function of the document.
  * A failing feature is skipped and reported; later features keep evaluating (B3.3).
  */
+/** The message for references that are not found among edges and faces: it says which of the two. */
+const lostRefs = (n: number, unresolved: Unresolved[]): string =>
+  unresolved.every((u) => u.ref.kind === 'face') ? t('edit.facesLost', { n }) : unresolved.every((u) => u.ref.kind === 'edge') ? t('edit.edgesLost', { n }) : t('edit.refsLost', { n });
+
 export class Regenerator {
   private owned: ShapeId[] = [];
   /** Warnings of the feature being evaluated. */
@@ -1746,7 +1750,7 @@ export class Regenerator {
    * a lost one is reported with the nearest candidates of the whole model; each body is then given its own references
    * (and finds them again by name). Bodies no reference points into are left as they are, in their place.
    */
-  private perBody(set: Bodies, refs: Ref[], kind: 'face' | 'edge', none: string, lost: (n: number) => string, edit: (body: BodyState, mine: Ref[]) => BodyState): BodyState[] {
+  private perBody(set: Bodies, refs: Ref[], kind: 'face' | 'edge', none: string, lost: (n: number, unresolved: Unresolved[]) => string, edit: (body: BodyState, mine: Ref[]) => BodyState): BodyState[] {
     const view = set.view;
     if (!view) throw new FeatureError(none);
     if (refs.length === 0) throw new FeatureError(t(kind === 'edge' ? 'edit.noEdgePicked' : 'edit.noFacePicked'));
@@ -1758,12 +1762,14 @@ export class Regenerator {
         unresolved.push({ ref, reason: r.reason, candidates: r.candidates });
         continue;
       }
+      // a list may hold edges and faces (a fillet of the edges of a face): each is looked for as what it is
+      const of: 'face' | 'edge' = ref.kind === 'face' ? 'face' : ref.kind === 'edge' ? 'edge' : kind;
       // Among all the bodies a name may be shared (the pieces of a split face); the body alone then finds it by name.
-      this.noteFingerprint(r.via, kind === 'edge' ? t('regen.edgeNoun') : t('edit.faceNoun'), view.names[kind === 'edge' ? 'edges' : 'faces'][r.index]!);
-      const { body } = set.locate(kind, r.index);
+      this.noteFingerprint(r.via, of === 'edge' ? t('regen.edgeNoun') : t('edit.faceNoun'), view.names[of === 'edge' ? 'edges' : 'faces'][r.index]!);
+      const { body } = set.locate(of, r.index);
       owners.set(body, [...(owners.get(body) ?? []), ref]);
     }
-    if (unresolved.length > 0) throw new FeatureError(lost(unresolved.length), unresolved);
+    if (unresolved.length > 0) throw new FeatureError(lost(unresolved.length, unresolved), unresolved);
     const done: BodyState[] = [];
     try {
       return set.list.map((b) => {
@@ -2660,21 +2666,53 @@ export class Regenerator {
     });
   }
 
+  /**
+   * The edges of a fillet or a chamfer: the ones picked, and every edge of the faces picked (worked out here from the faces as they are now). Left out of a
+   * face's: an edge with only one face of its own (a seam, the rim of an open shell) and an edge the faces on both sides continue smoothly across (the
+   * seam of a round; it is rounded already). `via` says, for an edge that came from a face, which face (a chamfer measures its first distance on it).
+   */
+  private edgesOfRefs(refs: Ref[], body: BodyState): { edges: number[]; via: Map<number, number> } {
+    const picked = refs.filter((r) => r.kind === 'edge');
+    const faces = refs.filter((r) => r.kind === 'face');
+    const own = picked.length > 0 ? this.edgeIndices(picked, body) : [];
+    const via = new Map<number, number>();
+    if (faces.length > 0) {
+      const topo = body.topology;
+      const candidates: number[] = [];
+      for (const face of this.faceIndices(faces, body).sort((a, b) => (body.names.faces[a]! < body.names.faces[b]! ? -1 : 1))) {
+        topo.edges.forEach((e, i) => {
+          if (e.curve === 'degenerated' || !e.faces.includes(face) || new Set(e.faces).size !== 2 || via.has(i)) return;
+          via.set(i, face);
+          candidates.push(i);
+        });
+      }
+      const smooth = this.kernel.smoothEdges(body.shape, candidates);
+      candidates.forEach((i, k) => {
+        if (smooth[k]) via.delete(i);
+      });
+      if (own.length === 0 && via.size === 0) throw new FeatureError(t('edit.faceNoEdges'));
+    }
+    return { edges: [...new Set([...own, ...via.keys()])], via };
+  }
+
   private fillet(f: FilletFeature, set: Bodies): BodyState[] {
-    return this.perBody(set, f.edges, 'edge', t('edit.noBodyForFillet'), (n) => t('edit.edgesLost', { n }), (body, mine) => {
-      const r = this.kernel.fillet(body.shape, this.edgeIndices(mine, body), evalLength(f.radius));
+    return this.perBody(set, [...f.edges, ...(f.faces ?? [])], 'edge', t('edit.noBodyForFillet'), lostRefs, (body, mine) => {
+      const r = this.kernel.fillet(body.shape, this.edgesOfRefs(mine, body).edges, evalLength(f.radius));
       const topology = this.kernel.topology(r.shape);
       return { id: body.id, shape: r.shape, topology, names: nameElements(r.faceOrigins, topology, { featureId: f.id, role: 'fillet', input: body.names }), by: f.id };
     });
   }
 
   private chamfer(f: ChamferFeature, set: Bodies): BodyState[] {
-    return this.perBody(set, f.edges, 'edge', t('edit.noBodyForChamfer'), (n) => t('edit.edgesLost', { n }), (body, mine) => {
-      const specs = this.edgeIndices(mine, body).map((edge) => {
-        // The first distance is measured on the adjacent face whose persistent name sorts first
-        // (the other one with 「反轉方向」): a choice that survives rebuilds, unlike face order.
-        const faces = [...body.topology.edges[edge]!.faces].sort((a, b) => (body.names.faces[a]! < body.names.faces[b]! ? -1 : 1));
-        const face = faces[f.flip ? faces.length - 1 : 0];
+    return this.perBody(set, [...f.edges, ...(f.faces ?? [])], 'edge', t('edit.noBodyForChamfer'), lostRefs, (body, mine) => {
+      const { edges, via } = this.edgesOfRefs(mine, body);
+      const specs = edges.map((edge) => {
+        // The first distance is measured on the face the edge came from when a face was picked (「反轉方向」: the face on the other side of the edge);
+        // for an edge picked by itself, on the adjacent face whose persistent name sorts first (the other one with 「反轉方向」): a choice that
+        // survives rebuilds, unlike face order.
+        const faces = [...new Set(body.topology.edges[edge]!.faces)].sort((a, b) => (body.names.faces[a]! < body.names.faces[b]! ? -1 : 1));
+        const from = via.get(edge);
+        const face = from !== undefined ? (f.flip ? faces.find((g) => g !== from) : from) : faces[f.flip ? faces.length - 1 : 0];
         if (face === undefined) throw new FeatureError(t('regen.edgeNoFace'));
         return { edge, face };
       });

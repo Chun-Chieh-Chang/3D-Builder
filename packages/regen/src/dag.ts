@@ -42,7 +42,7 @@ export function parentsOf(feature: Feature, doc: PartDoc): Id[] {
       break;
     case 'fillet':
     case 'chamfer':
-      parents = fromRefs(feature.edges);
+      parents = fromRefs([...feature.edges, ...(feature.faces ?? [])]);
       break;
     case 'deleteFace':
     case 'offsetSurface':

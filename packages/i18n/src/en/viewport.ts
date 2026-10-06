@@ -3,6 +3,7 @@ import type { Translation } from '../index';
 /** viewport: wording of the app that used to be in the code (D9.1). */
 export const viewport: Translation = {
   'pick.edges': 'Pick edges to add to the {what}',
+  'pick.edgesOrFaces': 'Pick edges or faces to add to the {what} (a face stands for all its edges)',
   'sketch.exitKeep': 'Exit sketch (keep the changes)',
   'sketch.exitDiscard': 'Discard the changes and exit the sketch',
   'boot.failed': 'The geometry kernel failed to load: {why}',

@@ -81,7 +81,7 @@ code{background:var(--chip);padding:0 4px;border-radius:4px}
 <nav><ol><li><a href="#prep">0. 開始之前（只做一次）<span class="cnt" data-sec="prep"></span></a></li><li><a href="#desktop">A. 桌面版安裝<span class="cnt" data-sec="desktop"></span></a></li><li><a href="#basic">B. 基礎功能殘留<span class="cnt" data-sec="basic"></span></a></li><li><a href="#p3a">C. 零件建模（Phase 3a）<span class="cnt" data-sec="p3a"></span></a></li><li><a href="#p3b">D. 組合件（Phase 3b）<span class="cnt" data-sec="p3b"></span></a></li><li><a href="#p4a">E. 夾治具（Phase 4a）<span class="cnt" data-sec="p4a"></span></a></li><li><a href="#p5">F. 工程圖（Phase 5）<span class="cnt" data-sec="p5"></span></a></li><li><a href="#p4b">G. 檢具型面塊（Phase 4b）<span class="cnt" data-sec="p4b"></span></a></li><li><a href="#p6">H. 塑膠件（Phase 6）<span class="cnt" data-sec="p6"></span></a></li><li><a href="#p7">I. 鈑金（Phase 7）<span class="cnt" data-sec="p7"></span></a></li><li><a href="#samples">J. 需要真實樣本的驗證<span class="cnt" data-sec="samples"></span></a></li><li><a href="#standards">K. 對照你的標準<span class="cnt" data-sec="standards"></span></a></li><li><a href="#cleanup">L. 清理與收尾<span class="cnt" data-sec="cleanup"></span></a></li></ol></nav>
 <main>
 <div class="lead">
-<p><b>這份清單是什麼：</b>自動化測試（共 1996 項）都通過了，但它們是用程式驅動畫面與手算的標準答案驗的。下面是<b>還沒有人用滑鼠、鍵盤、別的軟體實際走過</b>的項目，共 84 項。每一項都寫了「為什麼要做、先準備什麼、怎麼做、應該看到什麼、有問題時回報什麼」。第一次用請先讀下面的「先看這裡」（畫面怎麼認、共用做法、名詞）；步驟裡每個動作下面以「→」開頭的小字，是做完那個動作你應該看到的畫面。C 章到 I 章（C1 到 I10）都已改寫成逐步做法；A、B、J、K、L 與 0 章維持原樣（要另一台電腦、你的樣本或你的決定）。</p>
+<p><b>這份清單是什麼：</b>自動化測試（共 2131 項）都通過了，但它們是用程式驅動畫面與手算的標準答案驗的。下面是<b>還沒有人用滑鼠、鍵盤、別的軟體實際走過</b>的項目，共 84 項。每一項都寫了「為什麼要做、先準備什麼、怎麼做、應該看到什麼、有問題時回報什麼」。第一次用請先讀下面的「先看這裡」（畫面怎麼認、共用做法、名詞）；步驟裡每個動作下面以「→」開頭的小字，是做完那個動作你應該看到的畫面。C 章到 I 章（C1 到 I10）都已改寫成逐步做法；A、B、J、K、L 與 0 章維持原樣（要另一台電腦、你的樣本或你的決定）。</p>
 <p><b>怎麼用：</b>點項目標題展開；做完在右邊的下拉選單選「通過」「有問題」「略過」，並在備註寫下觀察。進度會自動存在這個瀏覽器裡。全部做完（或做到一個段落）按上方的「複製結果」把整份貼給我。</p>
 <p><b>建議順序：</b>先做 0（準備）→ C（零件，每項十分鐘內）→ D、E（組合件與夾具）→ F（工程圖）→ H、I（塑膠與鈑金），標「必做」的優先；標「需樣本」「需你決定」的是等你提供資料或下決定，不用現在做。</p>
 <p class="stat">產生日期 2026-10-04，2026-10-06 更新；對應的程式版本：提交 a950822 之後，檔案格式 Schema 42。下文的「驗證資料夾」指 P2 用 KIT_OUT 做出來的那個資料夾（本文的例子寫 D:\3DB實機確認，你的在哪裡就用哪裡）。</p>
@@ -450,6 +450,27 @@ code{background:var(--chip);padding:0 4px;border-radius:4px}
 <h4>先準備</h4><p>用 Edge 或 Chrome 操作。這些選項存在這個瀏覽器裡，不屬於零件檔。</p><h4>怎麼做</h4><ol><li>「工具」→「系統選項…」。在「介面語言」選「English」。<span class="see">零件介面（功能區按鈕、屬性面板、對話框、狀態列、錯誤訊息）變成英文。把它改回「繁體中文」。</span></li><li>在同一個視窗，「自動存檔」那一格取消勾，再勾回；把「最後一次變更後幾秒存檔」改成 <code>10</code>。<span class="see">選項改了就生效；C18 的等待時間會跟著變。改回 5。</span></li><li>「「新零件」使用的範本」改選「鋁件」，按「關閉」。再「檔案」→「新零件」。<span class="see">新零件的材質（看「工具」→「檔案屬性」）是「鋁合金 6061」。改回「空白」。</span></li><li>在「開始時可以點選的元素」取消勾「頂點」，按「關閉」，「檔案」→「新零件」做個東西。<span class="see">3D 視窗左上的「選擇濾器」，「頂點」一開始就是取消的。勾回來。</span></li><li>（已知）切換成英文後，組合件的畫面與示範件的內容仍有中文（約 183 行沒搬完）；有看到其他地方是中文，請記下是哪個畫面。</li></ol>
 <h4>應該看到</h4><ul><li>已知：組合件的畫面與示範件內容仍是中文（約 183 行沒搬完）。</li></ul>
 <p class="report"><b>有問題時請回報：</b>看到英文模式下還有哪些中文，請回報（或截圖）。</p>
+<label class="note">備註<textarea rows="2" placeholder="做到哪一步、畫面訊息原文、和預期的差別…"></textarea></label>
+</div></details><details class="item" id="item-C23" data-id="C23" data-sec="p3a" data-tag="core">
+<summary><span class="iid">C23</span><span class="ttl">圓角與導角：選邊線、選面（F-1）</span><span class="tag t-core">必做</span>
+<select class="st" aria-label="C23 狀態"><option value="">未做</option><option value="ok">通過</option><option value="bad">有問題</option><option value="skip">略過</option></select></summary>
+<div class="inner">
+<p class="why"><b>為什麼要做：</b>圓角與導角現在可以選面（選面＝處理它的所有邊線），與 SW 一致；這一項把選邊線與選面都走一遍。</p>
+<p class="why"><b>預跑（2026-10-06，內建瀏覽器照 UI 操作）：</b>方塊頂面圓角 R 2，在圖形區點頂面，面板的「面」清單列出它，按 ✔ 後體積 14282.8908 mm³，與手算相同；選面的圓角與導角的體積、距離量在選的面上、面之後多出的邊也處理、舊檔與存檔，都由 tests/phase8/fillet-by-face.test.ts 的 19 項驗過。腳本沒涵蓋：按鈕與面板的觀感、面被高亮的樣子、導角的反轉方向在畫面上的差別。</p>
+<h4>先準備</h4><p>做一個 40 × 30 × 12 的長方體（<a href="#recipe-a">做法 A</a>，伸長深度 <code>12</code>），按「檢視」→「等角」。體積是 14400 mm³。</p><h4>怎麼做</h4><ol>
+<li>按「特徵」→「圓角」。在圖形區點方塊的<b>頂面</b>。<span class="see">左邊面板「要產生圓角的面」列出「面 1」，「邊線」那一區是空的；頂面變色。</span></li>
+<li>「半徑」輸入 <code>2</code>，按 ✔。<span class="see">頂面的四條邊都變成圓角；體積 14282.89 mm³（用「工具」→「物質特性…」看）。</span></li>
+<li>在設計樹雙擊「圓角1」，再點方塊的<b>底面</b>（要先轉到看得到底面，或用「選擇其他」），按 ✔。<span class="see">面清單有兩列；底面的四條邊也圓了；體積 14165.78 mm³。</span></li>
+<li>雙擊「圓角1」，再點一次底面。<span class="see">底面從清單消失（點已選的就是取消）；✔ 之後回到 14282.89 mm³。</span></li>
+<li>在「圓角1」之後再做一個「圓角」，點頂面，半徑 <code>1</code>，按 ✔。<span class="see">特徵出錯，說「選的面沒有可以倒的邊：它的邊都是相切連續的邊或接縫」（頂面的邊都已經是圓角的接縫）；按 ✖ 放棄。</span></li>
+<li>新零件，做同樣的方塊；在頂面畫一個 6 × 6 的矩形（離邊緣至少 5），「伸長除料」深度 <code>4</code>；再做「圓角」，點<b>頂面</b>，半徑 <code>1</code>，按 ✔。<span class="see">外緣四條邊和<b>槽口的邊</b>都變成圓角（槽口邊緣是圓的）。面在槽之後多出來的邊也算進去；只選邊線做不到這點。</span></li>
+<li>新零件，同樣的方塊，按「特徵」→「導角」，類型選「距離-距離」，兩個距離都輸入 <code>2</code>，點頂面，按 ✔。<span class="see">頂面四條邊都是 2 × 2 的斜角；體積 14130.67 mm³。</span></li>
+<li>雙擊「導角1」，距離改 <code>3</code>、第二個距離改 <code>1</code>，按 ✔。用「工具」→「測量」量頂面的長邊。<span class="see">頂面的長邊是 <b>34</b> mm（在你選的頂面上縮 3），側面往下只切 1。</span></li>
+<li>雙擊「導角1」，勾「反轉方向」，按 ✔，再量頂面的長邊。<span class="see">長邊變成 <b>38</b> mm（頂面縮 1，側面往下切 3）。</span></li>
+<li>（選做）只點邊線也照舊：新零件方塊，按「圓角」，點頂面的一條長邊，半徑 2，按 ✔。<span class="see">只有那一條邊（以及與它相切連續的邊）變成圓角。</span></li>
+</ol>
+<h4>應該看到</h4><ul><li>選面就是處理它所有的邊線；相切的邊與接縫不處理；導角的第一個距離量在選的面上，反轉方向換到另一面。</li></ul>
+<p class="report"><b>有問題時請回報：</b>哪一步、面板的訊息原文，和預期差多少（體積或邊長）。</p>
 <label class="note">備註<textarea rows="2" placeholder="做到哪一步、畫面訊息原文、和預期的差別…"></textarea></label>
 </div></details></section><section id="p3b" class="sec"><h2>D. 組合件（Phase 3b）</h2><p class="intro">前置：先做一個小組合件。「檔案」→「新組合件」→ 開始組合件，選驗證資料夾（D:\3DB實機確認），點 locating-plate 按 ✓ 放在原點（固定），再用「組合件」→「插入零組件」插入 diamond-pin 兩次。用「結合」把銷插進板的孔（同軸心加重合）。存檔成 小夾具.3dba。</p><details class="item" id="item-D1" data-id="D1" data-sec="p3b" data-tag="core">
 <summary><span class="iid">D1</span><span class="ttl">剛性次組合件（3b-1）</span><span class="tag t-core">必做</span>

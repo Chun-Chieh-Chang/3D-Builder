@@ -70,7 +70,7 @@ ull). */
   | { type: 'setLoftSections'; featureId: Id; sections: Id[] }
   | { type: 'setFilletRadius'; featureId: Id; value: Expr }
   /** Edges of an edge-based feature (fillet, chamfer). */
-  | { type: 'setEdges'; featureId: Id; edges: Ref[] }
+  | { type: 'setEdges'; featureId: Id; edges: Ref[]; faces?: Ref[] }
   | { type: 'setChamfer'; featureId: Id; value: Pick<ChamferFeature, 'mode' | 'distance' | 'second' | 'flip'> }
   /** The hole wizard's settings (C4.8): everything but which sketch it drills at. */
   | { type: 'setHole'; featureId: Id; hole: Omit<HoleFeature, 'id' | 'type' | 'name' | 'suppressed' | 'sketch'> }
@@ -473,10 +473,10 @@ function validateNewFeature(doc: PartDoc, f: Feature, index: number): void {
       sketchBefore(doc, f.sketch, index, t('feature.rib'));
       return;
     case 'fillet':
-      if (f.edges.some((r) => r.kind !== 'edge')) throw new CommandError(t('cmd.filletOnlyEdges'));
+      if (f.edges.some((r) => r.kind !== 'edge') || (f.faces ?? []).some((r) => r.kind !== 'face')) throw new CommandError(t('cmd.filletOnlyEdges'));
       return;
     case 'chamfer':
-      if (f.edges.some((r) => r.kind !== 'edge')) throw new CommandError(t('cmd.chamferOnlyEdges'));
+      if (f.edges.some((r) => r.kind !== 'edge') || (f.faces ?? []).some((r) => r.kind !== 'face')) throw new CommandError(t('cmd.chamferOnlyEdges'));
       return;
     case 'refPlane':
       planeDefinition(doc, f.def, index);
@@ -787,8 +787,12 @@ export function mutate(draft: Draft<PartDoc>, cmd: Command): void {
     case 'setEdges': {
       const f = feature(draft, cmd.featureId);
       if (f.type !== 'fillet' && f.type !== 'chamfer') throw new CommandError(t('cmd.onlyEdgeFeaturesPickEdges'));
-      if (cmd.edges.some((r) => r.kind !== 'edge')) throw new CommandError(t('cmd.mustPickEdges'));
+      if (cmd.edges.some((r) => r.kind !== 'edge') || (cmd.faces ?? []).some((r) => r.kind !== 'face')) throw new CommandError(t('cmd.mustPickEdges'));
       f.edges = cmd.edges;
+      if (cmd.faces !== undefined) {
+        if (cmd.faces.length > 0) f.faces = cmd.faces;
+        else delete f.faces;
+      }
       return;
     }
     case 'setFaces': {
@@ -1240,7 +1244,10 @@ export function mutate(draft: Draft<PartDoc>, cmd: Command): void {
       const { feature: next, replaced } = mapRefs(current(draft.features[at]!) as Feature, (r) => (r.kind === from.kind && r.name === from.name ? to : r));
       if (replaced === 0) throw new CommandError(t('cmd.replaceRefMissing', { name: from.name }));
       // Two edges of a fillet may now name the same edge: keep one.
-      if (next.type === 'fillet' || next.type === 'chamfer') next.edges = next.edges.filter((r, i) => next.edges.findIndex((x) => x.kind === r.kind && x.name === r.name) === i);
+      if (next.type === 'fillet' || next.type === 'chamfer') {
+        next.edges = next.edges.filter((r, i) => next.edges.findIndex((x) => x.kind === r.kind && x.name === r.name) === i);
+        if (next.faces) next.faces = next.faces.filter((r, i) => next.faces!.findIndex((x) => x.name === r.name) === i);
+      }
       if (next.type === 'deleteFace') next.faces = next.faces.filter((r, i) => next.faces.findIndex((x) => x.name === r.name) === i);
       draft.features[at] = next as Draft<Feature>;
       return;

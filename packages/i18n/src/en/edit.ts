@@ -45,6 +45,8 @@ export const edit: Translation = {
   'body.subtractNothing': 'Body "{name}" does not touch the main body; no material was removed',
   'body.subtractAll': 'Nothing is left of the main body after subtracting "{name}"',
   'body.noCommon': '"{name}" has nothing in common with the main body',
+  'edit.refsLost': 'Missing reference: {n} picked elements (edges or faces) were not found, please pick again',
+  'edit.faceNoEdges': 'The face has no edge to round: its edges are all smooth ones or seams',
   'edit.noEdgePicked': 'No edge has been picked',
   'edit.edgesLost': 'Lost references: {n} edge(s) not found, pick them again',
   'edit.noBodyForFillet': 'There is no body before the fillet',

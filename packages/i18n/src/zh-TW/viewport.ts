@@ -1,6 +1,7 @@
 /** viewport: wording of the app that used to be in the code (D9.1). */
 export const viewport = {
   'pick.edges': '點選邊線以加入{what}',
+  'pick.edgesOrFaces': '點選邊線或面以加入{what}（選面＝它的所有邊線）',
   'sketch.exitKeep': '離開草圖（保留變更）',
   'sketch.exitDiscard': '放棄變更並離開草圖',
   'boot.failed': '幾何核心載入失敗：{why}',

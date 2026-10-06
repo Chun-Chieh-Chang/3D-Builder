@@ -158,6 +158,8 @@ const migrations: Record<number, (doc: Json) => Json> = {
   40: (doc) => doc,
   // v42: the closed corner of the edge flange (C11.4, hardening). Absent means an open corner, as before; nothing to convert.
   41: (doc) => doc,
+  // v43: faces of a fillet or a chamfer (fillet and chamfer by face). Absent until a face is picked; nothing to convert.
+  42: (doc) => doc,
 };
 
 export class FormatError extends Error {

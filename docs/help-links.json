@@ -1,7 +1,6 @@
 {
   "_about": "Which help topics (docs/help-plan.md) each item of docs/manual-verification.html is about. When an item is marked 有問題 and fixed, correct these topics in packages/i18n/src/zh-TW/help.ts too. tests/phase8/help.test.ts checks that the items and the topics exist.",
   "_untied": {
-    "chamfer": "no item of the manual walks the 3D chamfer yet; the fillet/chamfer-by-face work adds one",
     "concept.overview": "general, not one item"
   },
   "C1": [
@@ -219,5 +218,9 @@
   "B1": [
     "fillet",
     "concept.feature-tree"
+  ],
+  "C23": [
+    "fillet",
+    "chamfer"
   ]
 }

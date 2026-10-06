@@ -43,6 +43,8 @@ export const edit = {
   'body.subtractNothing': '本體「{name}」沒有碰到主要本體，沒有移除任何材料',
   'body.subtractAll': '減除「{name}」之後，主要本體什麼都沒有剩下',
   'body.noCommon': '「{name}」與主要本體沒有共同的部分',
+  'edit.refsLost': '遺失參考：{n} 個選取（邊線或面）找不到，請重新選擇',
+  'edit.faceNoEdges': '選的面沒有可以倒的邊：它的邊都是相切連續的邊或接縫',
   'edit.noEdgePicked': '尚未選擇邊線',
   'edit.edgesLost': '遺失參考：{n} 條邊線找不到，請重新選擇',
   'edit.noBodyForFillet': '圓角之前沒有本體',
