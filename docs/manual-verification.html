@@ -456,7 +456,7 @@ code{background:var(--chip);padding:0 4px;border-radius:4px}
 <select class="st" aria-label="C23 狀態"><option value="">未做</option><option value="ok">通過</option><option value="bad">有問題</option><option value="skip">略過</option></select></summary>
 <div class="inner">
 <p class="why"><b>為什麼要做：</b>圓角與導角現在可以選面（選面＝處理它的所有邊線），與 SW 一致；這一項把選邊線與選面都走一遍。</p>
-<p class="why"><b>預跑（2026-10-06，內建瀏覽器照 UI 操作）：</b>方塊頂面圓角 R 2，在圖形區點頂面，面板的「面」清單列出它，按 ✔ 後體積 14282.8908 mm³，與手算相同；選面的圓角與導角的體積、距離量在選的面上、面之後多出的邊也處理、舊檔與存檔，都由 tests/phase8/fillet-by-face.test.ts 的 19 項驗過。腳本沒涵蓋：按鈕與面板的觀感、面被高亮的樣子、導角的反轉方向在畫面上的差別。</p>
+<p class="why"><b>預跑（2026-10-06，內建瀏覽器照 UI 操作）：</b>方塊頂面圓角 R 2，在圖形區點頂面，面板的「面」清單列出它，按 ✔ 後體積 14282.8908 mm³，與手算相同；選面的圓角與導角的體積、距離量在選的面上、面之後多出的邊也處理、舊檔與存檔，都由 tests/phase8/fillet-by-face.test.ts 的 19 項驗過；瀏覽器腳本 tests/e2e/phase3-fillet-face.js 的 constant 與 chamfer 走過 UI。腳本沒涵蓋：按鈕與面板的觀感、面被高亮的樣子、導角的反轉方向在畫面上的差別。</p>
 <h4>先準備</h4><p>做一個 40 × 30 × 12 的長方體（<a href="#recipe-a">做法 A</a>，伸長深度 <code>12</code>），按「檢視」→「等角」。體積是 14400 mm³。</p><h4>怎麼做</h4><ol>
 <li>按「特徵」→「圓角」。在圖形區點方塊的<b>頂面</b>。<span class="see">左邊面板「要產生圓角的面」列出「面 1」，「邊線」那一區是空的；頂面變色。</span></li>
 <li>「半徑」輸入 <code>2</code>，按 ✔。<span class="see">頂面的四條邊都變成圓角；體積 14282.89 mm³（用「工具」→「物質特性…」看）。</span></li>

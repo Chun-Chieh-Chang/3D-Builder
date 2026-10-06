@@ -1,7 +1,7 @@
 # 圓角與導角可選面的計畫（含面圓角、完整圓角）
 
 - 日期：2026-10-06。來源：使用者做手動驗證 C7 時發現「做圓角只能選邊線，不能選一個面，SW 可以選邊線也可以選面」；決定範圍：① 圓角與導角都要能選面（選面＝倒那個面的所有邊）；② 也要 SW 的其他圓角種類：面圓角、完整圓角。
-- **狀態：F-0（[ADR 0097](adr/0097-fillet-by-face-validation.md)）與 F-1（選面：固定半徑圓角與導角，零件 Schema 43，19 項測試 `tests/phase8/fillet-by-face.test.ts`，手冊 C23）完成；F-2（面圓角：`kind: 'face'`、`faces2`，兩組面相接的邊倒圓角、不相鄰時明確拒絕，手冊 C24）完成；F-3（完整圓角：`kind: 'full'`、`center`，用布林切除，手冊 C25）完成，下一個是 F-4（驗收與文件）。使用者要求一路做到全部完成。** 使用者的回答（2026-10-06）：導角距離 1 量在選的面上（SW 也是）；不相鄰的面圓角接受「明確拒絕」（F-5 取消）；完整圓角兩側不平行可以先不做；每個里程碑做完就提交推送。F-0 的結果：斜接的手算正確（誤差 2e-10）；完整圓角**不能**用兩個圓角（R=w/2 失敗、略小會留細條），改用布林切除（精確）。
+- **狀態：全部完成（F-0 到 F-4，ADR [0097](adr/0097-fillet-by-face-validation.md)、[0098](adr/0098-fillet-by-face.md)，F-5 取消）；以下是當時的計畫。** F-0（[ADR 0097](adr/0097-fillet-by-face-validation.md)）與 F-1（選面：固定半徑圓角與導角，零件 Schema 43，19 項測試 `tests/phase8/fillet-by-face.test.ts`，手冊 C23）完成；F-2（面圓角：`kind: 'face'`、`faces2`，兩組面相接的邊倒圓角、不相鄰時明確拒絕，手冊 C24）完成；F-3（完整圓角：`kind: 'full'`、`center`，用布林切除，手冊 C25）完成，F-4（ADR 0098、手冊 C23 到 C25、UI 腳本 `tests/e2e/phase3-fillet-face.js`）完成。使用者的回答（2026-10-06）：導角距離 1 量在選的面上（SW 也是）；不相鄰的面圓角接受「明確拒絕」（F-5 取消）；完整圓角兩側不平行可以先不做；每個里程碑做完就提交推送。F-0 的結果：斜接的手算正確（誤差 2e-10）；完整圓角**不能**用兩個圓角（R=w/2 失敗、略小會留細條），改用布林切除（精確）。
 - 對應藍圖：C5.1（圓角）、C5.3（導角）。現況：[`FilletFeature`／`ChamferFeature`](../packages/model/src/schema.ts) 只有 `edges: Ref[]`；核心 `Kernel.fillet(shape, edgeIndices, radius)`、`Kernel.chamfer(shape, [{edge, face}], mode, d1, d2)`（OCCT `BRepFilletAPI_MakeFillet` 與 `MakeChamfer`）；引擎的 `fillet`／`chamfer` 以持久名稱找邊（`edgeIndices`）；面板的邊選取清單與 `toggleEdge` 在 `PropertyManager.tsx`／`store.ts`。零件 Schema 目前是 42。
 
 ## 1. SW 的行為（要複製的目標；SW 2010 的圓角 PropertyManager）
