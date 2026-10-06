@@ -998,6 +998,52 @@ export class Kernel {
   }
 
   /**
+   * Which of these edges the faces on both sides continue smoothly across (tangent continuity, fillet by face): a fillet's own seam, the edge between a
+   * face and the round that meets it. The two faces' normals are compared at three places along the edge (the middle and near each end); an edge with
+   * not exactly two faces (a seam, an edge of an open shell) is not smooth in this sense, the caller treats those by themselves.
+   */
+  smoothEdges(target: ShapeId, edgeIndices: number[]): boolean[] {
+    const oc = this.oc;
+    const arena = new Arena();
+    const shape = this.get(target);
+    const topo = this.topology(target);
+    const faces = ShapeIndex.of(oc, shape, T.FACE, arena);
+    const edges = ShapeIndex.of(oc, shape, T.EDGE, arena);
+    try {
+      const normalAt = (face: TopoDS_Shape, p: Vec3): Vec3 | null => {
+        const f = arena.own(oc.TopoDS.Face(face));
+        const uv = oc.GeomLib_Tool.Parameters(arena.own(oc.BRep_Tool.Surface(f)), this.pnt(arena, p), 1e-3);
+        if (!uv.returnValue) return null;
+        const ad = arena.own(new oc.BRepAdaptor_Surface(f, true));
+        const d1 = ad.EvalD1(uv.U, uv.V);
+        const c = cross3(this.xyz(arena.own(d1.D1U)), this.xyz(arena.own(d1.D1V)));
+        arena.own(d1.Point);
+        const len = Math.hypot(...c);
+        return len < 1e-12 ? null : [c[0] / len, c[1] / len, c[2] / len];
+      };
+      return edgeIndices.map((i) => {
+        const info = topo.edges[i];
+        const key = edges.keys[i];
+        if (!info || !key) throw new KernelError(t('kernel.edgeOutOfRange', { index: i }));
+        const sides = [...new Set(info.faces)];
+        if (sides.length !== 2) return false;
+        const ad = arena.own(new oc.BRepAdaptor_Curve(arena.own(oc.TopoDS.Edge(key))));
+        const [a, b] = [ad.FirstParameter(), ad.LastParameter()];
+        return [0.5, 0.15, 0.85].every((k) => {
+          const p = this.xyz(arena.own(ad.EvalD0(a + (b - a) * k)));
+          const n1 = normalAt(faces.keys[sides[0]!]!, p);
+          const n2 = normalAt(faces.keys[sides[1]!]!, p);
+          return !!n1 && !!n2 && Math.abs(n1[0] * n2[0] + n1[1] * n2[1] + n1[2] * n2[2]) > 1 - 1e-6;
+        });
+      });
+    } finally {
+      faces.dispose();
+      edges.dispose();
+      arena.dispose();
+    }
+  }
+
+  /**
    * Chamfer (C5.3). Each edge names the adjacent face its first distance is measured on:
    * distance–distance takes two lengths, angle–distance a length and an angle (radians).
    */
