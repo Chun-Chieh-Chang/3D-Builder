@@ -37,6 +37,8 @@ export function CommandBar() {
     setTab(assembly ? 'assembly' : 'features');
   }, [assembly, state.documentSerial]);
   const current = tabs.find((t) => t.id === tab) ?? tabs[0]!;
+  // undo and redo are on every tab, outside the scrolling row of buttons: on the 特徵 tab they used to be at the far end of forty buttons, out of sight
+  const quick = ACTIONS.filter((a) => a.id === 'undo' || a.id === 'redo');
   return (
     <header className="command-bar">
       <div className="brand">3D-Builder</div>
@@ -47,8 +49,15 @@ export function CommandBar() {
           </button>
         ))}
       </nav>
+      <div className="quick-actions">
+        {quick.map((a) => (
+          <button key={a.id} className="tool" disabled={!a.enabled(state)} onClick={a.run} title={shortcutOf(a) ? `${a.label} (${shortcutOf(a)})` : a.label}>
+            {a.label}
+          </button>
+        ))}
+      </div>
       <div className="tools">
-        {ACTIONS.filter((a) => current.groups.includes(a.group)).map((a) => (
+        {ACTIONS.filter((a) => current.groups.includes(a.group) && !quick.includes(a)).map((a) => (
           <button
             key={a.id}
             className={a.active?.() ? 'tool active' : 'tool'}
