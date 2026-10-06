@@ -228,6 +228,11 @@ const assemblyMigrations: Record<number, (doc: Json) => Json> = {
   4: (doc) => doc,
   // v6: width and symmetric mates (`Mate.more`) and limits (`Mate.min`, `Mate.max`, C15.9): optional, absent in older files.
   5: (doc) => doc,
+  // v7: several exploded views (C15.14): the one list of steps `explosion` is the first of `explosions`, and the active one.
+  6: (doc) => {
+    const { explosion, ...rest } = doc as { explosion?: Json[] } & Json;
+    return Array.isArray(explosion) && explosion.length > 0 ? { ...rest, explosions: [{ id: 'explosion1', name: t('explode.viewName', { n: 1 }), steps: explosion }], activeExplosion: 'explosion1' } : rest;
+  },
 };
 
 export function parseAssembly(text: string): AssemblyDoc {
@@ -236,7 +241,7 @@ export function parseAssembly(text: string): AssemblyDoc {
   raw = upgrade(raw, ASSEMBLY_SCHEMA_VERSION, assemblyMigrations);
   if (!Array.isArray(raw.files) || !Array.isArray(raw.components)) throw new FormatError(t('format.noComponents'));
   if (!Array.isArray(raw.mates)) throw new FormatError(t('format.noMates'));
-  const ids = [...(raw.files as Json[]), ...(raw.components as Json[]), ...(raw.mates as Json[]), ...((raw.patterns as Json[] | undefined) ?? []), ...((raw.explosion as Json[] | undefined) ?? [])].map((x) => x.id as string);
+  const ids = [...(raw.files as Json[]), ...(raw.components as Json[]), ...(raw.mates as Json[]), ...((raw.patterns as Json[] | undefined) ?? []), ...((raw.explosions as { id: string; steps?: Json[] }[] | undefined) ?? []).flatMap((v) => [v as Json, ...(v.steps ?? [])])].map((x) => x.id as string);
   // As for parts: counters cover every id in the file, even one edited by hand or by a script.
   raw.idCounters = countersFor(ids, { ...((raw.idCounters as Record<string, number> | undefined) ?? {}) });
   raw.properties ??= {};

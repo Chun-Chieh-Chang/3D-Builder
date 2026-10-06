@@ -896,7 +896,7 @@ export function findFeature(doc: PartDoc, id: Id): Feature | undefined {
 // ---------------------------------------------------------------- assembly (C15, A3.1, B9.4)
 
 /** Assemblies have their own version line: a part and an assembly change for different reasons. */
-export const ASSEMBLY_SCHEMA_VERSION = 6;
+export const ASSEMBLY_SCHEMA_VERSION = 7;
 
 /** Unit quaternion [x, y, z, w]. */
 export type Quat = [number, number, number, number];
@@ -1048,6 +1048,17 @@ export interface ExplodeStep {
   flip?: boolean;
 }
 
+/**
+ * One exploded view of the assembly (C15.14, v7): a name and its steps in the order they were made. An assembly can have several (one to show how it goes together,
+ * one to take it apart …); the one that is `activeExplosion` is the one the view shows when it is exploded and the one the steps are made in.
+ */
+export interface ExplodeView {
+  id: Id;
+  /** 「爆炸視圖1」 … */
+  name: string;
+  steps: ExplodeStep[];
+}
+
 export interface AssemblyDoc {
   kind: 'assembly';
   schemaVersion: number;
@@ -1059,8 +1070,10 @@ export interface AssemblyDoc {
   properties: Record<string, string>;
   /** Patterns and mirrors of components, in FeatureManager order (C15.13). Absent: none. */
   patterns?: ComponentPattern[];
-  /** The steps of the exploded view, in the order they were made (C15.14). Absent: none. */
-  explosion?: ExplodeStep[];
+  /** The exploded views (C15.14, v7), each with its steps in the order they were made. Absent: none. (Before v7 there was one list of steps, `explosion`; it is the first view of an older file.) */
+  explosions?: ExplodeView[];
+  /** The one of `explosions` that is shown and made; absent when there is none (or, as a file written by hand, the first). */
+  activeExplosion?: Id;
   /** As in parts (B1.3): ids are never reused. */
   idCounters: Record<string, number>;
 }

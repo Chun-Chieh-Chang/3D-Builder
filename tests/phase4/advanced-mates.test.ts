@@ -3,7 +3,7 @@
  * of a plate), width (a V-block centred on the plate), limits (a V-block that may stand up to 10 mm above the plate).
  */
 import { beforeAll, describe, expect, it } from 'vitest';
-import { applyAssemblyCommand, createEmptyAssembly, parseAssembly, serializeAssembly, transformPoint, type AssemblyDoc, type Mate, type MateRef, type Pose, type Vec3 } from '@3db/model';
+import { applyAssemblyCommand, ASSEMBLY_SCHEMA_VERSION, createEmptyAssembly, parseAssembly, serializeAssembly, transformPoint, type AssemblyDoc, type Mate, type MateRef, type Pose, type Vec3 } from '@3db/model';
 import { PlaneGcsSolver } from '@3db/sketch';
 import { Kernel } from '@3db/kernel';
 import { Regenerator, solveAssembly } from '@3db/regen';
@@ -99,10 +99,10 @@ describe('symmetric: the two pins of a plate (C15.9)', () => {
     expect(position(r, 'pinB', [0, 15, 0])[1]).toBeCloseTo(position(r, 'pinA', [0, 15, 0])[1], 6); // both flanges on the same top
   });
 
-  it('is written and read back as the same document (Schema 6)', () => {
+  it('is written and read back as the same document (the current schema)', () => {
     const d = doc();
     const text = serializeAssembly(d);
-    expect(JSON.parse(text).schemaVersion).toBe(6);
+    expect(JSON.parse(text).schemaVersion).toBe(ASSEMBLY_SCHEMA_VERSION);
     expect(parseAssembly(text)).toEqual(d);
   });
 });

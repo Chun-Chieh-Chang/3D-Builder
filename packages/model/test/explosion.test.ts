@@ -7,7 +7,9 @@ import {
   ASSEMBLY_AXES,
   CommandError,
   createEmptyAssembly,
+  activeExplosion,
   explodeLeaves,
+  explosionSteps,
   leavesCentre,
   explodeStepProblem,
   explosionOffsets,
@@ -108,14 +110,15 @@ describe('explode step commands', () => {
     const h = new AssemblyHistory(doc());
     h.execute({ type: 'insertExplodeStep', step: step() });
     h.execute({ type: 'insertExplodeStep', step: step({ id: 'explode2', components: ['c2'] }) });
-    expect(assemblyIdsInUse(h.doc)).toEqual(expect.arrayContaining(['explode1', 'explode2']));
+    expect(assemblyIdsInUse(h.doc)).toEqual(expect.arrayContaining(['explosion1', 'explode1', 'explode2']));
     h.execute({ type: 'setExplodeStep', step: step({ distance: '60' }) });
-    expect(h.doc.explosion![0]!.distance).toBe('60');
+    expect(h.doc.explosions![0]!.steps[0]!.distance).toBe('60');
     h.execute({ type: 'moveExplodeStep', stepId: 'explode2', to: 0 });
-    expect(h.doc.explosion!.map((s) => s.id)).toEqual(['explode2', 'explode1']);
+    expect(h.doc.explosions![0]!.steps.map((s) => s.id)).toEqual(['explode2', 'explode1']);
     h.execute({ type: 'deleteExplodeSteps', stepIds: ['explode1', 'explode2'] });
-    expect(h.doc.explosion).toBeUndefined();
+    expect(h.doc.explosions![0]!.steps).toEqual([]); // the view stays, empty
     expect(h.doc.idCounters.explode).toBe(2);
+    expect(h.doc.idCounters.explosion).toBe(1);
     for (let i = 0; i < 5; i++) h.undo();
     expect(h.doc).toEqual(doc());
   });
@@ -133,7 +136,7 @@ describe('explode step commands', () => {
     expect(insert(step({ id: 'c1' }))).toThrow(/ID 已被使用/);
     expect(() => applyAssemblyCommand(d, { type: 'setExplodeStep', step: step() })).toThrow(/找不到爆炸步驟/);
     expect(() => applyAssemblyCommand(d, { type: 'deleteExplodeSteps', stepIds: ['x'] })).toThrow(/找不到爆炸步驟/);
-    expect(d.explosion).toBeUndefined();
+    expect(d.explosions).toBeUndefined();
     const one = applyAssemblyCommand(d, { type: 'insertExplodeStep', step: step() });
     expect(() => applyAssemblyCommand(one, { type: 'moveExplodeStep', stepId: 'explode1', to: 3 })).toThrow(/位置無效/);
     expect(explodeStepProblem(step(), d)).toBeNull();
@@ -144,7 +147,7 @@ describe('explode step commands', () => {
     d = applyAssemblyCommand(d, { type: 'insertExplodeStep', step: step({ id: 'explode2', components: ['c2'], axis: { kind: 'ref', ref: { component: 'c1', ref: { kind: 'edge', name: 'e' } } } }) });
     d = applyAssemblyCommand(d, { type: 'insertExplodeStep', step: step({ id: 'explode3', components: ['c1'] }) });
     const gone = applyAssemblyCommand(d, { type: 'deleteComponents', componentIds: ['c1'] });
-    expect(gone.explosion!.map((s) => [s.id, s.components])).toEqual([['explode1', ['c2']]]); // explode2's axis was c1's, explode3 moved only c1
+    expect(gone.explosions![0]!.steps.map((s) => [s.id, s.components])).toEqual([['explode1', ['c2']]]); // explode2's axis was c1's, explode3 moved only c1
     expect(gone.idCounters.explode).toBe(3);
   });
 
@@ -153,7 +156,7 @@ describe('explode step commands', () => {
     expect(parseAssembly(serializeAssembly(d))).toEqual(d);
     expect(ASSEMBLY_SCHEMA_VERSION).toBeGreaterThanOrEqual(5);
     const plain = JSON.parse(serializeAssembly(doc()));
-    expect(plain).not.toHaveProperty('explosion');
+    expect(plain).not.toHaveProperty('explosions');
     expect(parseAssembly(JSON.stringify({ ...plain, schemaVersion: 4 }))).toEqual(doc());
     const raw = JSON.parse(serializeAssembly(d));
     delete raw.idCounters;
@@ -221,5 +224,90 @@ describe('where a component is, for its explode line', () => {
   it('is nothing for leaves that have no box', () => {
     expect(leavesCentre([leaf('c1', at([1, 2, 3]))], () => null)).toBeNull();
     expect(leavesCentre([], () => box)).toBeNull();
+  });
+});
+
+describe('several exploded views (v7)', () => {
+  const view = (id: string, name: string, steps: ExplodeStep[] = []) => ({ id, name, steps });
+  const withViews = (): AssemblyDoc => {
+    let d = applyAssemblyCommand(doc(), { type: 'insertExplosion', explosion: view('explosion1', '裝配', [step({ distance: '50' })]) });
+    d = applyAssemblyCommand(d, { type: 'insertExplosion', explosion: view('explosion2', '拆卸', [step({ id: 'explode2', components: ['c2'], axis: { kind: 'axis', axis: 'x' }, distance: '30' })]) });
+    return d;
+  };
+
+  it('a new view becomes the active one; the offsets are those of the active view only: 50 along z for the first, 30 along x for the second', () => {
+    let d = withViews();
+    expect(d.activeExplosion).toBe('explosion2');
+    expect(activeExplosion(d)!.name).toBe('拆卸');
+    expect([...explosionOffsets(d, axisOf).offsets]).toEqual([['c2', [30, 0, 0]]]);
+    d = applyAssemblyCommand(d, { type: 'setActiveExplosion', explosionId: 'explosion1' });
+    expect([...explosionOffsets(d, axisOf).offsets]).toEqual([['c1', [0, 0, 50]]]);
+    expect(explosionSteps(d).map((s) => s.id)).toEqual(['explode1']);
+  });
+
+  it('the steps are made in the active view; with no view the first step makes one, named 爆炸視圖1', () => {
+    const made = applyAssemblyCommand(doc(), { type: 'insertExplodeStep', step: step() });
+    expect(made.explosions).toEqual([{ id: 'explosion1', name: '爆炸視圖1', steps: [step()] }]);
+    expect(made.activeExplosion).toBe('explosion1');
+    let d = withViews();
+    d = applyAssemblyCommand(d, { type: 'insertExplodeStep', step: step({ id: 'explode3', components: ['c1'], distance: '10' }) });
+    expect(d.explosions![1]!.steps.map((s) => s.id)).toEqual(['explode2', 'explode3']);
+    expect(d.explosions![0]!.steps.map((s) => s.id)).toEqual(['explode1']);
+  });
+
+  it('renames, and refuses an empty name; deletes the active view and shows the next; deleting the last takes the fields away; ids are not reused', () => {
+    let d = withViews();
+    d = applyAssemblyCommand(d, { type: 'renameExplosion', explosionId: 'explosion1', name: ' 組裝 ' });
+    expect(d.explosions![0]!.name).toBe('組裝');
+    expect(() => applyAssemblyCommand(d, { type: 'renameExplosion', explosionId: 'explosion1', name: ' ' })).toThrow(/名稱不可空白/);
+    expect(() => applyAssemblyCommand(d, { type: 'renameExplosion', explosionId: 'nope', name: 'x' })).toThrow(/找不到爆炸視圖/);
+    d = applyAssemblyCommand(d, { type: 'deleteExplosion', explosionId: 'explosion2' }); // the active one
+    expect(d.activeExplosion).toBe('explosion1');
+    expect(d.explosions!.map((v) => v.id)).toEqual(['explosion1']);
+    d = applyAssemblyCommand(d, { type: 'deleteExplosion', explosionId: 'explosion1' });
+    expect(d.explosions).toBeUndefined();
+    expect(d.activeExplosion).toBeUndefined();
+    expect(d.idCounters.explosion).toBe(2);
+    expect(d.idCounters.explode).toBe(2);
+    expect(() => applyAssemblyCommand(d, { type: 'deleteExplosion', explosionId: 'explosion1' })).toThrow(/找不到爆炸視圖/);
+    expect(() => applyAssemblyCommand(withViews(), { type: 'insertExplosion', explosion: view('explosion1', 'again') })).toThrow(/ID 已被使用/);
+    expect(() => applyAssemblyCommand(withViews(), { type: 'insertExplosion', explosion: view('explosion3', 'x', [step({ id: 'explode1' })]) })).toThrow(/ID 已被使用/);
+  });
+
+  it('deleting a component takes it out of the steps of every view, and the views stay', () => {
+    const gone = applyAssemblyCommand(withViews(), { type: 'deleteComponents', componentIds: ['c2'] });
+    expect(gone.explosions!.map((v) => [v.id, v.steps.map((s) => s.id)])).toEqual([['explosion1', ['explode1']], ['explosion2', []]]);
+  });
+
+  it('a version-6 file with one list of steps is the first view, and the active one; a file without steps has none; the counters cover the views', () => {
+    const v6 = JSON.parse(serializeAssembly(doc()));
+    v6.schemaVersion = 6;
+    v6.explosion = [step({ distance: '30' })];
+    v6.idCounters = {};
+    const d = parseAssembly(JSON.stringify(v6));
+    expect(d.schemaVersion).toBe(ASSEMBLY_SCHEMA_VERSION);
+    expect(d.explosions).toEqual([{ id: 'explosion1', name: '爆炸視圖1', steps: [step({ distance: '30' })] }]);
+    expect(d.activeExplosion).toBe('explosion1');
+    expect(d).not.toHaveProperty('explosion');
+    expect(d.idCounters.explosion).toBe(1);
+    expect(d.idCounters.explode).toBe(1);
+    expect([...explosionOffsets(d, axisOf).offsets]).toEqual([['c1', [0, 0, 30]]]);
+    const none = JSON.parse(serializeAssembly(doc()));
+    none.schemaVersion = 6;
+    expect(parseAssembly(JSON.stringify(none))).toEqual(doc());
+  });
+
+  it('is written and read back with its views, the active one, and every undo step', () => {
+    const d = withViews();
+    expect(parseAssembly(serializeAssembly(d))).toEqual(d);
+    const h = new AssemblyHistory(doc());
+    h.execute({ type: 'insertExplosion', explosion: view('explosion1', 'a') });
+    h.execute({ type: 'insertExplosion', explosion: view('explosion2', 'b') });
+    h.execute({ type: 'setActiveExplosion', explosionId: 'explosion1' });
+    h.execute({ type: 'renameExplosion', explosionId: 'explosion1', name: 'c' });
+    h.execute({ type: 'deleteExplosion', explosionId: 'explosion1' });
+    expect(h.doc.activeExplosion).toBe('explosion2');
+    for (let i = 0; i < 5; i++) h.undo();
+    expect(h.doc).toEqual(doc());
   });
 });

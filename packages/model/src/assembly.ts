@@ -1,13 +1,13 @@
 import { produce, type Draft } from 'immer';
 import { t } from '@3db/i18n';
-import { countersFor, type Id } from './ids';
+import { countersFor, IdAllocator, type Id } from './ids';
 import { CommandError } from './commands';
 import { evalAngle, evalLength, ExprError } from './expr';
 import { isFilePath, joinPath, relativePath } from './paths';
 import { isValidPose } from './pose';
 import { componentPatternProblem } from './componentPatterns';
-import { explodeStepProblem } from './explosion';
-import { ASSEMBLY_SCHEMA_VERSION, type AssemblyDoc, type Component, type ComponentPattern, type ExplodeStep, type FileRef, type Mate, type MateRef, type MateType, type Pose } from './schema';
+import { activeExplosion, explodeStepProblem } from './explosion';
+import { ASSEMBLY_SCHEMA_VERSION, type AssemblyDoc, type Component, type ComponentPattern, type ExplodeStep, type ExplodeView, type FileRef, type Mate, type MateRef, type MateType, type Pose } from './schema';
 
 /**
  * Assembly commands (B7.1): the only way to change an assembly document. As with parts, new objects
@@ -48,7 +48,12 @@ export type AssemblyCommand =
   | { type: 'setExplodeStep'; step: ExplodeStep }
   | { type: 'deleteExplodeSteps'; stepIds: Id[] }
   /** Puts a step at another place in the list (they add up, so the order only matters for how they are read). */
-  | { type: 'moveExplodeStep'; stepId: Id; to: number };
+  | { type: 'moveExplodeStep'; stepId: Id; to: number }
+  /** The exploded views (v7): a new one (it becomes the active one), another name, one deleted (the first left becomes active when it was), another one shown. */
+  | { type: 'insertExplosion'; explosion: ExplodeView }
+  | { type: 'renameExplosion'; explosionId: Id; name: string }
+  | { type: 'deleteExplosion'; explosionId: Id }
+  | { type: 'setActiveExplosion'; explosionId: Id };
 
 /** The flags of a component (C15.5). */
 export type ComponentState = 'hidden' | 'suppressed' | 'transparent';
@@ -58,7 +63,7 @@ export function createEmptyAssembly(): AssemblyDoc {
 }
 
 export function assemblyIdsInUse(doc: AssemblyDoc): Id[] {
-  return [...doc.files.map((f) => f.id), ...doc.components.map((c) => c.id), ...doc.mates.map((m) => m.id), ...(doc.patterns ?? []).map((p) => p.id), ...(doc.explosion ?? []).map((s) => s.id)];
+  return [...doc.files.map((f) => f.id), ...doc.components.map((c) => c.id), ...doc.mates.map((m) => m.id), ...(doc.patterns ?? []).map((p) => p.id), ...(doc.explosions ?? []).flatMap((v) => [v.id, ...v.steps.map((s) => s.id)])];
 }
 
 const MATE_TYPES: MateType[] = ['coincident', 'parallel', 'perpendicular', 'tangent', 'concentric', 'lock', 'distance', 'angle', 'width', 'symmetric'];
@@ -246,13 +251,12 @@ export function mutateAssembly(draft: Draft<AssemblyDoc>, cmd: AssemblyCommand):
         draft.patterns = draft.patterns.filter((p) => !gone.includes(p));
         if (draft.patterns.length === 0) delete draft.patterns;
       }
-      if (draft.explosion) {
-        // a deleted component leaves the steps that moved it; a step left with none, or whose axis is an element of it, goes
-        for (const s of draft.explosion) s.components = s.components.filter((id) => !ids.has(id));
-        const gone = draft.explosion.filter((s) => s.components.length === 0 || (s.axis.kind === 'ref' && ids.has(s.axis.ref.component ?? '')));
+      for (const view of draft.explosions ?? []) {
+        // a deleted component leaves the steps that moved it, in every exploded view; a step left with none, or whose axis is an element of it, goes (the view stays, empty or not)
+        for (const s of view.steps) s.components = s.components.filter((id) => !ids.has(id));
+        const gone = view.steps.filter((s) => s.components.length === 0 || (s.axis.kind === 'ref' && ids.has(s.axis.ref.component ?? '')));
         countersFor(gone.map((s) => s.id), draft.idCounters);
-        draft.explosion = draft.explosion.filter((s) => !gone.includes(s));
-        if (draft.explosion.length === 0) delete draft.explosion;
+        view.steps = view.steps.filter((s) => !gone.includes(s));
       }
       const used = new Set(draft.components.map((c) => c.file));
       draft.files = draft.files.filter((f) => used.has(f.id));
@@ -299,28 +303,77 @@ export function mutateAssembly(draft: Draft<AssemblyDoc>, cmd: AssemblyCommand):
       if (!s.id || assemblyIdsInUse(draft as AssemblyDoc).includes(s.id)) throw new CommandError(t('pattern.idInUse', { id: s.id }));
       const problem = explodeStepProblem(s, draft as AssemblyDoc);
       if (problem) throw new CommandError(problem);
-      (draft.explosion ??= []).push(s as Draft<ExplodeStep>);
+      // the steps are made in the view that is shown; an assembly with none gets its first
+      let view = activeExplosion(draft as AssemblyDoc) as Draft<ExplodeView> | undefined;
+      if (!view) {
+        const id = new IdAllocator(draft.idCounters, assemblyIdsInUse(draft as AssemblyDoc)).take('explosion');
+        view = { id, name: t('explode.viewName', { n: 1 }), steps: [] };
+        (draft.explosions ??= []).push(view);
+        draft.activeExplosion = id;
+        countersFor([id], draft.idCounters);
+      }
+      view.steps.push(s as Draft<ExplodeStep>);
       countersFor([s.id], draft.idCounters);
       return;
     }
     case 'setExplodeStep': {
-      const at = draft.explosion?.findIndex((x) => x.id === cmd.step.id) ?? -1;
-      if (at < 0) throw new CommandError(t('explode.notFound', { id: cmd.step.id }));
+      const steps = (activeExplosion(draft as AssemblyDoc) as Draft<ExplodeView> | undefined)?.steps;
+      const at = steps?.findIndex((x) => x.id === cmd.step.id) ?? -1;
+      if (!steps || at < 0) throw new CommandError(t('explode.notFound', { id: cmd.step.id }));
       const problem = explodeStepProblem(cmd.step, draft as AssemblyDoc);
       if (problem) throw new CommandError(problem);
-      draft.explosion![at] = cmd.step as Draft<ExplodeStep>;
+      steps[at] = cmd.step as Draft<ExplodeStep>;
       return;
     }
     case 'deleteExplodeSteps': {
+      const view = activeExplosion(draft as AssemblyDoc) as Draft<ExplodeView> | undefined;
       const ids = new Set(cmd.stepIds);
-      for (const id of ids) if (!draft.explosion?.some((s) => s.id === id)) throw new CommandError(t('explode.notFound', { id }));
+      for (const id of ids) if (!view?.steps.some((s) => s.id === id)) throw new CommandError(t('explode.notFound', { id }));
       countersFor(ids, draft.idCounters);
-      draft.explosion = draft.explosion!.filter((s) => !ids.has(s.id));
-      if (draft.explosion.length === 0) delete draft.explosion;
+      view!.steps = view!.steps.filter((s) => !ids.has(s.id));
+      return;
+    }
+    case 'insertExplosion': {
+      const v = cmd.explosion;
+      if (!v.id || assemblyIdsInUse(draft as AssemblyDoc).includes(v.id)) throw new CommandError(t('pattern.idInUse', { id: v.id }));
+      if (!v.name.trim()) throw new CommandError(t('explode.nameEmpty'));
+      const used = assemblyIdsInUse(draft as AssemblyDoc);
+      for (const s of v.steps) {
+        if (!s.id || used.includes(s.id) || v.steps.filter((x) => x.id === s.id).length > 1) throw new CommandError(t('pattern.idInUse', { id: s.id }));
+        const problem = explodeStepProblem(s, draft as AssemblyDoc);
+        if (problem) throw new CommandError(problem);
+      }
+      (draft.explosions ??= []).push(v as Draft<ExplodeView>);
+      draft.activeExplosion = v.id;
+      countersFor([v.id, ...v.steps.map((s) => s.id)], draft.idCounters);
+      return;
+    }
+    case 'renameExplosion': {
+      const view = draft.explosions?.find((v) => v.id === cmd.explosionId);
+      if (!view) throw new CommandError(t('explode.viewNotFound', { id: cmd.explosionId }));
+      if (!cmd.name.trim()) throw new CommandError(t('explode.nameEmpty'));
+      view.name = cmd.name.trim();
+      return;
+    }
+    case 'deleteExplosion': {
+      const at = draft.explosions?.findIndex((v) => v.id === cmd.explosionId) ?? -1;
+      if (!draft.explosions || at < 0) throw new CommandError(t('explode.viewNotFound', { id: cmd.explosionId }));
+      const gone = draft.explosions[at]!;
+      countersFor([gone.id, ...gone.steps.map((s) => s.id)], draft.idCounters);
+      draft.explosions.splice(at, 1);
+      if (draft.explosions.length === 0) {
+        delete draft.explosions;
+        delete draft.activeExplosion;
+      } else if (draft.activeExplosion === gone.id || !draft.explosions.some((v) => v.id === draft.activeExplosion)) draft.activeExplosion = draft.explosions[Math.min(at, draft.explosions.length - 1)]!.id;
+      return;
+    }
+    case 'setActiveExplosion': {
+      if (!draft.explosions?.some((v) => v.id === cmd.explosionId)) throw new CommandError(t('explode.viewNotFound', { id: cmd.explosionId }));
+      draft.activeExplosion = cmd.explosionId;
       return;
     }
     case 'moveExplodeStep': {
-      const list = draft.explosion;
+      const list = (activeExplosion(draft as AssemblyDoc) as Draft<ExplodeView> | undefined)?.steps;
       const from = list?.findIndex((x) => x.id === cmd.stepId) ?? -1;
       if (!list || from < 0) throw new CommandError(t('explode.notFound', { id: cmd.stepId }));
       if (!Number.isInteger(cmd.to) || cmd.to < 0 || cmd.to >= list.length) throw new CommandError(t('explode.badPlace'));

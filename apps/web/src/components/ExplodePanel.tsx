@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { t } from '@3db/i18n';
-import { explodeStepProblem } from '@3db/model';
+import { activeExplosion, explodeStepProblem, explosionSteps } from '@3db/model';
 import { store, useStore } from '../state/store';
 import { componentInfo } from './AssemblyTree';
 import { Icon } from './Icon';
@@ -25,7 +25,11 @@ export function ExplodePanel() {
     const c = asm.doc.components.find((x) => x.id === id);
     return c ? componentInfo(asm, c).name : id;
   };
-  const steps = asm.doc.explosion ?? [];
+  const steps = explosionSteps(asm.doc);
+  const views = asm.doc.explosions ?? [];
+  const active = activeExplosion(asm.doc);
+  const [viewName, setViewName] = useState(active?.name ?? '');
+  useEffect(() => setViewName(active?.name ?? ''), [active?.id, active?.name]);
   return (
     <div className="property-manager" data-help="explode">
       <div className="pm-header">
@@ -48,6 +52,42 @@ export function ExplodePanel() {
           <input type="checkbox" data-field="explodeLines" checked={asm.explodeLines} onChange={(e) => a.setExplodeLines(e.target.checked)} />
           <span>{t('explode.showLines')}</span>
         </label>
+      </div>
+      <div className="pm-group">
+        <h4>{t('explode.views')}</h4>
+        <div className="pm-row">
+          <select data-field="explosionView" aria-label={t('explode.views')} value={active?.id ?? ''} disabled={views.length === 0} onChange={(e) => a.selectExplosion(e.target.value)}>
+            {views.length === 0 && <option value="">{t('explode.noViews')}</option>}
+            {views.map((v) => (
+              <option key={v.id} value={v.id}>
+                {v.name}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div className="pm-row">
+          <button className="pm-button" data-action="addExplosion" onClick={() => a.addExplosion()}>
+            {t('explode.addView')}
+          </button>
+          <button className="pm-button" data-action="deleteExplosion" disabled={!active} onClick={() => a.deleteExplosion()}>
+            {t('explode.deleteView')}
+          </button>
+        </div>
+        {active && (
+          <div className="pm-row">
+            <input
+              data-field="explosionName"
+              aria-label={t('explode.viewLabel')}
+              value={viewName}
+              onChange={(e) => setViewName(e.target.value)}
+              onBlur={() => viewName.trim() !== '' && viewName.trim() !== active.name && a.renameExplosion(viewName)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && viewName.trim() !== '') a.renameExplosion(viewName);
+                e.stopPropagation();
+              }}
+            />
+          </div>
+        )}
       </div>
       <div className="pm-group">
         <h4>{t('explode.steps')}</h4>

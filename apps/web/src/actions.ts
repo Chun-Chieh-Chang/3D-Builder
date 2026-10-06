@@ -1,4 +1,4 @@
-import { canBeSeed, isDatumPlaneName, type DatumPlaneName, type Ref } from '@3db/model';
+import { canBeSeed, explosionSteps, isDatumPlaneName, type DatumPlaneName, type Ref } from '@3db/model';
 import { store, type UiState } from './state/store';
 import { t } from '@3db/i18n';
 import { TOOL_LABEL } from './strings';
@@ -259,7 +259,7 @@ export function installShortcuts(): () => void {
       } else if (s.asm.insert) {
         if (e.key === 'Escape') return void a?.cancelInsert();
         if (e.key === 'Enter') return void a?.place(null);
-      } else if (e.key === 'Delete' && selected && s.asm.doc.explosion?.some((x) => x.id === selected)) {
+      } else if (e.key === 'Delete' && selected && explosionSteps(s.asm.doc).some((x) => x.id === selected)) {
         return void a?.deleteExplodeSteps([selected]);
       } else if (e.key === 'Delete' && selected && s.asm.doc.patterns?.some((p) => p.id === selected)) {
         return void a?.deletePatterns([selected]); // a pattern's instances are derived: nothing else goes with it

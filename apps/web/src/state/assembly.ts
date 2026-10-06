@@ -24,8 +24,10 @@ import {
   type InterferenceComponent,
   bomName,
   buildBom,
+  activeExplosion,
   explodeLeaves,
   explosionOffsets,
+  explosionSteps,
   leavesCentre,
   leafAt,
   leavesOf,
@@ -1159,7 +1161,7 @@ export class AssemblyStore {
     const doc = this.history.doc;
     const id = new IdAllocator(doc.idCounters, assemblyIdsInUse(doc)).take('explode');
     const seed = doc.components.find((c) => c.id === this.state.selected && !c.suppressed);
-    return { id, name: t('explode.stepName', { n: (doc.explosion?.length ?? 0) + 1 }), components: seed ? [seed.id] : [], axis: { kind: 'axis', axis: 'z' }, distance: '50' };
+    return { id, name: t('explode.stepName', { n: explosionSteps(doc).length + 1 }), components: seed ? [seed.id] : [], axis: { kind: 'axis', axis: 'z' }, distance: '50' };
   }
 
   /** What needs the assembled positions (mating, moving, inserting, patterns) closes the exploded view first. */
@@ -1254,6 +1256,36 @@ export class AssemblyStore {
     return lines;
   }
 
+  /** 「新增一組」: another exploded view, empty, which becomes the one that is shown and made (one undo step). */
+  addExplosion(): void {
+    const doc = this.history.doc;
+    const id = new IdAllocator(doc.idCounters, assemblyIdsInUse(doc)).take('explosion');
+    if (this.execute({ type: 'insertExplosion', explosion: { id, name: t('explode.viewName', { n: (doc.explosions?.length ?? 0) + 1 }), steps: [] } })) this.restartExplodeDraft();
+  }
+
+  /** Shows and makes the steps of another exploded view. */
+  selectExplosion(id: Id): void {
+    if (activeExplosion(this.history.doc)?.id === id) return;
+    if (this.execute({ type: 'setActiveExplosion', explosionId: id })) this.restartExplodeDraft();
+  }
+
+  /** Another name for the exploded view that is shown. */
+  renameExplosion(name: string): void {
+    const v = activeExplosion(this.history.doc);
+    if (v) this.execute({ type: 'renameExplosion', explosionId: v.id, name });
+  }
+
+  /** Deletes the exploded view that is shown, with its steps; the next one is shown. */
+  deleteExplosion(): void {
+    const v = activeExplosion(this.history.doc);
+    if (v && this.execute({ type: 'deleteExplosion', explosionId: v.id })) this.restartExplodeDraft();
+  }
+
+  /** What was being made in the PropertyManager belongs to the exploded view that was shown: a new step in the one that is now. */
+  private restartExplodeDraft(): void {
+    if (this.state.explode) this.set({ explode: { editing: null, step: this.newExplodeStep(), picking: false }, selected: null });
+  }
+
   /** Changes the step being made. */
   setExplodeDraft(patch: Partial<ExplodeStep>): void {
     const d = this.state.explode;
@@ -1268,7 +1300,7 @@ export class AssemblyStore {
 
   /** 「編輯」 on a step of the list. */
   editExplodeStep(id: Id): void {
-    const s = this.history.doc.explosion?.find((x) => x.id === id);
+    const s = explosionSteps(this.history.doc).find((x) => x.id === id);
     if (!s) return;
     if (!this.state.explode) this.startExplode();
     this.set({ explode: { editing: id, step: s, picking: false }, exploded: true, selected: id });

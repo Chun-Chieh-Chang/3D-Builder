@@ -4,12 +4,23 @@ import { transformPoint } from './pose';
 import type { PatternLine } from './componentPatterns';
 import { evalLength, ExprError } from './expr';
 import type { Id } from './ids';
-import type { AssemblyDoc, ExplodeStep, PatternAxis, Vec3 } from './schema';
+import type { AssemblyDoc, ExplodeStep, ExplodeView, PatternAxis, Vec3 } from './schema';
 
 /**
  * The exploded view (C15.14). Only arithmetic lives here: where each component is moved to, given the steps and what their axes are in the assembly.
  * Nothing is stored of it and no pose is changed: the view draws each component at its own pose plus its offset, and the collapsed view has none.
  */
+
+/** The exploded view that is shown and made: the one `activeExplosion` names, else the first; undefined when the assembly has none. */
+export function activeExplosion(doc: Pick<AssemblyDoc, 'explosions' | 'activeExplosion'>): ExplodeView | undefined {
+  const list = doc.explosions ?? [];
+  return list.find((v) => v.id === doc.activeExplosion) ?? list[0];
+}
+
+/** The steps of the exploded view that is shown. */
+export function explosionSteps(doc: Pick<AssemblyDoc, 'explosions' | 'activeExplosion'>): ExplodeStep[] {
+  return activeExplosion(doc)?.steps ?? [];
+}
 
 /** Why a step cannot be used (its distance, what it moves); null when it can. */
 export function explodeStepProblem(step: ExplodeStep, doc: Pick<AssemblyDoc, 'components'>): string | null {
@@ -35,7 +46,7 @@ export function explosionOffsets(doc: AssemblyDoc, axisOf: (axis: PatternAxis) =
   const offsets = new Map<Id, Vec3>();
   const paths = new Map<Id, Vec3[]>();
   const problems = new Map<Id, string>();
-  for (const step of doc.explosion ?? []) {
+  for (const step of explosionSteps(doc)) {
     const bad = explodeStepProblem(step, doc);
     if (bad) {
       problems.set(step.id, bad);

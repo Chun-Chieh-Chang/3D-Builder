@@ -1,6 +1,6 @@
 import { Fragment, useEffect, useState } from 'react';
 import { t } from '@3db/i18n';
-import { componentPatternLabels, joinPath, type Component, type ComponentPattern, type Id, type Mate } from '@3db/model';
+import { activeExplosion, componentPatternLabels, explosionSteps, joinPath, type Component, type ComponentPattern, type Id, type Mate } from '@3db/model';
 import { componentName } from '@3db/io';
 import { store, useDocumentName, useStore } from '../state/store';
 import type { AssemblyState } from '../state/assembly';
@@ -167,15 +167,16 @@ export function AssemblyTree() {
             </li>
           );
         })}
-        {(asm.doc.explosion ?? []).length > 0 && (
+        {explosionSteps(asm.doc).length > 0 && (
           <li className="tree-row folder" data-explode-folder title={asm.exploded ? t('explode.collapse') : t('explode.explode')} onClick={() => a?.setExploded(!asm.exploded)}>
             <Icon name="assembly" />
             <span className="name">
-              {t('explode.title')} {asm.exploded ? '▾' : '▸'}
+              {t('explode.title')}
+              {(asm.doc.explosions?.length ?? 0) > 1 ? t('explode.viewTag', { name: activeExplosion(asm.doc)?.name ?? '' }) : ''} {asm.exploded ? '▾' : '▸'}
             </span>
           </li>
         )}
-        {(asm.doc.explosion ?? []).map((s) => {
+        {explosionSteps(asm.doc).map((s) => {
           const problem = a?.explodeProblems().get(s.id);
           return (
             <li

@@ -172,7 +172,9 @@ describe('an assembly of part files (B9.4)', () => {
     expect(file.doc.schemaVersion).toBe(ASSEMBLY_SCHEMA_VERSION);
     expect(file.doc.mates.map((m) => [m.id, m.type, m.value])).toEqual([['mate1', 'distance', '15']]);
     expect(file.doc.mates.every((m) => m.more === undefined && m.min === undefined && m.max === undefined)).toBe(true);
-    expect(file.doc.explosion!.map((s) => [s.id, s.distance])).toEqual([['explode1', '30']]);
+    expect(file.doc.explosions!.map((v) => [v.id, v.steps.map((s) => [s.id, s.distance])])).toEqual([['explosion1', [['explode1', '30']]]]);
+    expect(file.doc.activeExplosion).toBe('explosion1');
+    expect(file.doc).not.toHaveProperty('explosion');
   });
 
   it('places each component where its pose puts it (A3.1)', async () => {
