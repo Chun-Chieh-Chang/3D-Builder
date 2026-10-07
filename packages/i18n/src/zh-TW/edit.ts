@@ -138,6 +138,8 @@ export const edit = {
   'pick.trimSurface': '點選要修剪的曲面的面',
   'pm.thicken.body': '要加厚的曲面本體',
   'pm.thicken.thickness': '厚度',
+  'pm.thicken.both': '兩側（厚度是總厚，曲面兩邊各一半）',
+  'pm.thicken.keep': '保留曲面（結果是新的實體，曲面本體不動）',
   'pm.thicken.hint': '正值往曲面的法向那一側，負值往另一側；結果取代這個曲面本體，成為實體（曲面用掉了）。量測最遠點離曲面是不是這個厚度，差太多就失敗。',
   'pm.cut.target': '要除料的實體',
   'pm.cut.surface': '除料用的曲面本體',

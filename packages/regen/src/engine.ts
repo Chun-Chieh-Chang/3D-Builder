@@ -2584,11 +2584,29 @@ export class Regenerator {
     const b = this.bodyByRef(set, f.body, t('surface.thickenBody'));
     if (!b.surface) throw new FeatureError(t('surface.thickenNeedsSurface', { name: b.id }));
     const thickness = evalLength(f.thickness);
-    const r = this.kernel.thicken(b.shape, thickness);
-    const topology = this.kernel.topology(r.shape);
-    this.info = t('surface.thickenInfo', { max: r.gap.max.toFixed(3), thickness: String(Math.abs(thickness)), volume: this.kernel.massProps(r.shape).volume.toFixed(1) });
-    const state: BodyState = { id: b.id, shape: r.shape, topology, names: nameElements(r.faceOrigins, topology, { featureId: f.id, role: 'thicken', input: b.names }), by: f.id };
-    return set.list.map((x) => (x === b ? state : x));
+    const k = this.kernel;
+    // a copy of the surface for the solid when it is kept: its names are changed so that no name is in two bodies
+    const copy = (a: string[]) => a.map((n) => `${f.id}:copy:${n}`);
+    let names: ElementNames = f.keepSurface ? { faces: copy(b.names.faces), edges: copy(b.names.edges), vertices: copy(b.names.vertices) } : b.names;
+    let from = b.shape;
+    let half: ShapeId | undefined;
+    try {
+      if (f.both) {
+        // both sides: the surface moved half the thickness against its normals, and thickened by the whole of it
+        const o = k.offsetFaces(b.shape, b.topology.faces.map((_, i) => i), -Math.abs(thickness) / 2);
+        half = o.shape;
+        names = nameElements(o.faceOrigins, k.topology(o.shape), { featureId: f.id, role: 'half', input: names });
+        from = o.shape;
+      }
+      const r = k.thicken(from, f.both ? Math.abs(thickness) : thickness);
+      const topology = k.topology(r.shape);
+      this.info = t('surface.thickenInfo', { max: r.gap.max.toFixed(3), thickness: String(Math.abs(thickness)), volume: k.massProps(r.shape).volume.toFixed(1) });
+      const state: BodyState = { id: f.keepSurface ? f.id : b.id, shape: r.shape, topology, names: nameElements(r.faceOrigins, topology, { featureId: f.id, role: 'thicken', input: names }), by: f.id };
+      if (f.keepSurface) return [...set.list, state];
+      return set.list.map((x) => (x === b ? state : x));
+    } finally {
+      if (half !== undefined) k.release(half);
+    }
   }
 
   /**

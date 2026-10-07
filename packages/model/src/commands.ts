@@ -112,7 +112,7 @@ ull). */
   /** Changes a lip or groove (C4.11): the planar face, which of the two, how far in from the edge, how wide and how high (deep). */
   | { type: 'setLipGroove'; featureId: Id; face: Ref; kind: 'lip' | 'groove'; offset: Expr; width: Expr; height: Expr }
   /** Changes a thicken (C9.4): the surface body and the thickness (negative: the other way). */
-  | { type: 'setThicken'; featureId: Id; body: Ref; thickness: Expr }
+  | { type: 'setThicken'; featureId: Id; body: Ref; thickness: Expr; both?: boolean; keepSurface?: boolean }
   /** Changes a cut with surface (C9.4): the solid, the surface, the plane whose normal is the way of the sweep, and whether it goes the other way. */
   | { type: 'setCutWithSurface'; featureId: Id; target: Ref; surface: Ref; direction: Ref; reverse?: boolean }
   /** Faces of a Delete Face feature (C10.2), and whether the rest of a hole goes with them. */
@@ -946,6 +946,10 @@ export function mutate(draft: Draft<PartDoc>, cmd: Command): void {
       if (cmd.body.kind !== 'body') throw new CommandError(t('cmd.surfaceOnlyBodies'));
       f.body = cmd.body;
       f.thickness = cmd.thickness;
+      if (cmd.both) f.both = true;
+      else delete f.both;
+      if (cmd.keepSurface) f.keepSurface = true;
+      else delete f.keepSurface;
       checkExprs(draft as PartDoc, f as Feature);
       return;
     }

@@ -92,6 +92,23 @@ g.cylinder = async () => {
   H.check(result().bodies.find((b) => b.id === 'os1').surface === false, 'it is a solid body now');
   await H.pmInput('厚度', '-2');
   near(volumeOf('os1'), Math.PI * (169 - 121) * 20, 1e-2, 'negative thickness, the wall inside');
+  // both sides: 4 thick in total round the surface R13 is the wall between R11 and R15; kept, the surface is still there and the solid is a body of its own
+  await H.pmInput('厚度', '4');
+  const box = (label) => [...document.querySelectorAll('.property-manager label.checkbox')].find((l) => l.textContent.includes(label)).querySelector('input');
+  box('兩側').click();
+  await H.settle();
+  H.check(status(thickenId).status === 'ok', `both sides: ${status(thickenId).message ?? 'ok'}`);
+  near(volumeOf('os1'), Math.PI * (225 - 121) * 20, 1e-2, 'both sides, 4 in total');
+  box('保留曲面').click();
+  await H.settle();
+  H.check(status(thickenId).status === 'ok', `kept: ${status(thickenId).message ?? 'ok'}`);
+  H.check(result().bodies.length === 3 && result().bodies[1].id === 'os1' && result().bodies[1].surface && !result().bodies[2].surface, `the surface stays and the solid is another body: ${JSON.stringify(result().bodies.map((b) => [b.id, b.surface]))}`);
+  near(volumeOf(thickenId), Math.PI * (225 - 121) * 20, 1e-2, 'the solid of the kept surface');
+  box('保留曲面').click();
+  box('兩側').click();
+  await H.settle();
+  await H.pmInput('厚度', '-2');
+  near(volumeOf('os1'), Math.PI * (169 - 121) * 20, 1e-2, 'both options off again: the wall inside');
   await accept();
   H.check(document.querySelector('.feature-tree')?.textContent.includes('厚面'), 'the tree has the thicken');
   console.log('phase4b-thicken-cut-ui (cylinder): all checks passed');

@@ -1672,7 +1672,7 @@ class AppStore {
     const surface = !!this.state.bodyPool.find((b) => b.id === id)?.surface;
     if (f?.type === 'thicken') {
       if (!surface) return void this.notify(t('surface.thickenNeedsSurface', { name: id }), 'error');
-      this.execute({ type: 'setThicken', featureId: f.id, body: { kind: 'body', name: id }, thickness: f.thickness });
+      this.execute({ type: 'setThicken', featureId: f.id, body: { kind: 'body', name: id }, thickness: f.thickness, both: f.both, keepSurface: f.keepSurface });
     } else if (f?.type === 'cutWithSurface') {
       this.setCut({ ...(surface ? { surface: { kind: 'body', name: id } as Ref } : { target: { kind: 'body', name: id } as Ref }) });
     }

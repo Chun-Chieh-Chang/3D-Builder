@@ -2317,7 +2317,7 @@ function ThickenPanel({ f }: { f: ThickenFeature }) {
       {pool.length === 0 ? (
         <p className="muted">{t('pm.cut.empty')}</p>
       ) : (
-        <select value={f.body.name} onChange={(e) => store.execute({ type: 'setThicken', featureId: f.id, body: { kind: 'body', name: e.target.value }, thickness: f.thickness })}>
+        <select value={f.body.name} onChange={(e) => store.execute({ type: 'setThicken', featureId: f.id, body: { kind: 'body', name: e.target.value }, thickness: f.thickness, both: f.both, keepSurface: f.keepSurface })}>
           {!f.body.name && <option value="">{t('pm.cut.empty')}</option>}
           {f.body.name && !pool.some((b) => b.id === f.body.name) && <option value={f.body.name}>{f.body.name}{t('pm.lost')}</option>}
           {pool.map((b) => (
@@ -2329,7 +2329,15 @@ function ThickenPanel({ f }: { f: ThickenFeature }) {
       )}
       <label className="pm-row">
         <span>{t('pm.thicken.thickness')}</span>
-        <ValueInput value={f.thickness} toCommand={(thickness) => ({ type: 'setThicken', featureId: f.id, body: f.body, thickness })} />
+        <ValueInput value={f.thickness} toCommand={(thickness) => ({ type: 'setThicken', featureId: f.id, body: f.body, thickness, both: f.both, keepSurface: f.keepSurface })} />
+      </label>
+      <label className="pm-row checkbox">
+        <input type="checkbox" data-field="thickenBoth" checked={!!f.both} onChange={(e) => store.execute({ type: 'setThicken', featureId: f.id, body: f.body, thickness: f.thickness, both: e.target.checked, keepSurface: f.keepSurface })} />
+        <span>{t('pm.thicken.both')}</span>
+      </label>
+      <label className="pm-row checkbox">
+        <input type="checkbox" data-field="thickenKeep" checked={!!f.keepSurface} onChange={(e) => store.execute({ type: 'setThicken', featureId: f.id, body: f.body, thickness: f.thickness, both: f.both, keepSurface: e.target.checked })} />
+        <span>{t('pm.thicken.keep')}</span>
       </label>
       {status?.status === 'ok' && status.info && <p className="hint gap-info">{status.info}</p>}
       <p className="hint">{t('pm.thicken.hint')}</p>

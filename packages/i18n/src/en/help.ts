@@ -502,7 +502,7 @@ export const help: Translation = {
   'help.thicken.summary': 'Gives a surface body a thickness and makes it a solid.',
 
   'help.thicken.body':
-    'Select a surface body, type the "thickness" and press ✔: the surface is thickened into a solid.\n\n- A positive value goes to the side of the surface normal, a negative one to the other side.\n- The result replaces the surface body and becomes a solid (the surface is used up).\n- It measures afterward whether the farthest point is this far from the surface, and fails when it is far off.',
+    'Select a surface body, type the "thickness" and press ✔: the surface is thickened into a solid.\n\n- A positive value goes to the side of the surface normal, a negative one to the other side.\n- Tick "Both sides": the thickness is the total, half each side of the surface (a negative value is the same as a positive one).\n- Tick "Keep the surface": the surface body is left as it is, and the result is another, new solid body; the faces of the solid have "copy" in their names, so that no two bodies have a face of the same name.\n- The result replaces the surface body and becomes a solid (the surface is used up) when the surface is not kept.\n- It measures afterward whether the farthest point is this far from the surface, and fails when it is far off.',
 
   'help.thicken.keywords': 'thicken surface solid thickness',
 

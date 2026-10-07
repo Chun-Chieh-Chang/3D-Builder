@@ -140,6 +140,8 @@ export const edit: Translation = {
   'pick.trimSurface': 'Pick the face of the surface to trim',
   'pm.thicken.body': 'Surface Body to Thicken',
   'pm.thicken.thickness': 'Thickness',
+  'pm.thicken.both': 'Both sides (the thickness is the total, half each side of the surface)',
+  'pm.thicken.keep': 'Keep the surface (the result is a new solid, the surface body is left as it is)',
   'pm.thicken.hint': 'Positive goes to the side the surface faces, negative to the other; the result takes the place of the surface body and is a solid (the surface is used up). The farthest point is measured against the thickness and a result that differs fails.',
   'pm.cut.target': 'Solid to Cut',
   'pm.cut.surface': 'Surface Body to Cut With',

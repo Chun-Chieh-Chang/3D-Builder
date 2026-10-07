@@ -210,3 +210,67 @@ describe('STEP out of offset surfaces (4b-5)', () => {
     expect(fit).toMatchObject({ converted: false, failed: false });
   });
 });
+
+describe('thicken on both sides, and keeping the surface (v45)', () => {
+  /** The block 40 × 30 × 20 and the surface of its top offset 8 down: a plane 40 × 30 at z = 12, its normal up. */
+  const plane = (): PartDoc => build(sketch('s1', front, rectangle('r', 0, 0, 40, 30)), extrude('e1', 's1', 'boss', { type: 'blind', depth: '20' }), { id: 'os1', type: 'offsetSurface', name: 'os1', suppressed: false, faces: [{ kind: 'face', name: 'e1:cap:end' }], distance: '-8' } as Feature);
+  const box = (r: RebuildResult, id: string) => {
+    const b = r.bodies.find((x) => x.id === id)!;
+    return kernel.topology(b.shape).faces.reduce((a, f) => ({ lo: Math.min(a.lo, f.center[2]), hi: Math.max(a.hi, f.center[2]) }), { lo: Infinity, hi: -Infinity });
+  };
+
+  it('both sides: 4 thick in total is 2 each side of z = 12, 40 × 30 × 4 = 4800 mm³ between z = 10 and z = 14; one side is 4 on the normal side only', () => {
+    const one = rebuild(insert(plane(), thicken('4')));
+    expect(failures(one)).toEqual([]);
+    expect(volume(one, 'os1')).toBeCloseTo(4800, 4);
+    expect(box(one, 'os1')).toEqual({ lo: expect.closeTo(12, 6), hi: expect.closeTo(16, 6) });
+    const both = rebuild(insert(plane(), { ...thicken('4'), both: true } as Feature));
+    expect(failures(both)).toEqual([]);
+    expect(both.bodies.map((b) => [b.id, b.surface])).toEqual([['e1', false], ['os1', false]]);
+    expect(volume(both, 'os1')).toBeCloseTo(4800, 4);
+    expect(kernel.solidCount(both.bodies[1]!.shape)).toBe(1);
+    expect(kernel.isValid(both.bodies[1]!.shape)).toBe(true);
+    expect(box(both, 'os1')).toEqual({ lo: expect.closeTo(10, 6), hi: expect.closeTo(14, 6) });
+    // a negative thickness is the same total
+    const negative = rebuild(insert(plane(), { ...thicken('-4'), both: true } as Feature));
+    expect(volume(negative, 'os1')).toBeCloseTo(4800, 4);
+    expect(box(negative, 'os1')).toEqual({ lo: expect.closeTo(10, 6), hi: expect.closeTo(14, 6) });
+    const names = both.body!.names.faces;
+    expect(new Set(names).size).toBe(names.length);
+  });
+
+  it('both sides of a cylinder wall: R13 with 4 total is the wall between R11 and R15, π(15² − 11²)·20', () => {
+    const r = rebuild(insert(cylinder(), { ...thicken('4'), both: true } as Feature));
+    expect(failures(r)).toEqual([]);
+    expect(volume(r, 'os1')).toBeCloseTo(Math.PI * (225 - 121) * 20, 3);
+    const names = r.body!.names.faces;
+    expect(new Set(names).size).toBe(names.length);
+  });
+
+  it('keep the surface: the surface body stays as it was (1200 mm²), the solid is a new body of the feature (4800 mm³), and no name is in two bodies', () => {
+    const r = rebuild(insert(plane(), { ...thicken('4'), keepSurface: true } as Feature));
+    expect(failures(r)).toEqual([]);
+    expect(r.bodies.map((b) => [b.id, b.surface])).toEqual([['e1', false], ['os1', true], ['th1', false]]);
+    expect(area(r, 'os1')).toBeCloseTo(1200, 4);
+    expect(volume(r, 'th1')).toBeCloseTo(4800, 4);
+    const names = r.body!.names.faces;
+    expect(new Set(names).size).toBe(names.length);
+    expect(names.some((n) => n.startsWith('th1:thicken:th1:copy:'))).toBe(true);
+    const keptBoth = rebuild(insert(plane(), { ...thicken('4'), both: true, keepSurface: true } as Feature));
+    expect(failures(keptBoth)).toEqual([]);
+    expect(volume(keptBoth, 'th1')).toBeCloseTo(4800, 4);
+    expect(box(keptBoth, 'th1')).toEqual({ lo: expect.closeTo(10, 6), hi: expect.closeTo(14, 6) });
+    expect(new Set(keptBoth.body!.names.faces).size).toBe(keptBoth.body!.names.faces.length);
+  });
+
+  it('the command keeps the two options and can take them away; a document of version 44 is read as it was', () => {
+    let doc = insert(plane(), thicken('4'));
+    doc = applyCommand(doc, { type: 'setThicken', featureId: 'th1', body: body('os1'), thickness: '4', both: true, keepSurface: true });
+    expect(doc.features.find((f) => f.id === 'th1')).toMatchObject({ both: true, keepSurface: true });
+    doc = applyCommand(doc, { type: 'setThicken', featureId: 'th1', body: body('os1'), thickness: '4' });
+    const f = doc.features.find((x) => x.id === 'th1')!;
+    expect(f).not.toHaveProperty('both');
+    expect(f).not.toHaveProperty('keepSurface');
+    expect(volume(rebuild(doc), 'os1')).toBeCloseTo(4800, 4);
+  });
+});

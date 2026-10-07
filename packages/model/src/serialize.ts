@@ -162,6 +162,8 @@ const migrations: Record<number, (doc: Json) => Json> = {
   42: (doc) => doc,
   // v44: the window under a snap hook (`windowClearance`, `windowDepth`). Absent means no window, as before; nothing to convert.
   43: (doc) => doc,
+  // v45: thicken on both sides, and keeping the surface (`both`, `keepSurface`). Absent means as before; nothing to convert.
+  44: (doc) => doc,
 };
 
 export class FormatError extends Error {
