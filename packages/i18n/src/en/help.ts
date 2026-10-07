@@ -271,6 +271,15 @@ export const help: Translation = {
   'help.sketch.keywords': 'sketch enter fully defined under defined over defined open end point gap tolerance',
   'help.sketch.see': 'exit-sketch tool-dimension concept.sketch-snaps extrude',
 
+  'help.sketchPicture.summary': 'Lay a PNG or JPEG image in the plane of a sketch to trace over.',
+
+  'help.sketchPicture.body':
+    'While a sketch is edited, press "Sketch Picture…" and pick an image (for example a standard view saved from eDrawings): it is laid in the plane of the sketch as a background to trace.\n\n- A picture is only a background: it takes no part in the profiles, relations or dimensions of the sketch, it is not a feature of the part, and it is shown only while this sketch is edited.\n- The panel changes its centre, size, turn and opacity; changing the width keeps the proportions.\n- "Scale from two points": click two points on the picture and type the real distance between them (for example a length measured in eDrawings): the picture grows or shrinks about the first point to the right size.\n- The image is kept in the part file as it was (PNG or JPEG), and goes when the picture is deleted unless another picture uses it.\n- How exact the tracing is depends on the resolution of the image and where you click; put the measured numbers on the sketch as dimensions.',
+
+  'help.sketchPicture.keywords': 'sketch picture trace background image scale eDrawings',
+
+  'help.sketchPicture.see': 'sketch tool-line tool-dimension',
+
   'help.extrude.summary': 'Pulls the selected sketch out to a thickness and adds it to the part.',
   'help.extrude.body':
     'Select a sketch, then press this command. In the panel:\n\n- End condition: blind, mid plane, through all, up to a face, up to next, up to a vertex, up to a body, offset from a surface.\n- Reverse direction, draft (with "draft inward"), direction 2 (pull the other way too), thin feature (only a wall of the given thickness; inward, mid plane or two different thicknesses).\n- When the sketch has several closed regions, the "Selected contours" list lets you take only some of them (at least one stays).\n- Merge result: when checked it joins the bodies it touches, otherwise it is a new body.\n\nChecked examples: a 20 × 10 rectangle, depth 10, is 2000 mm³; with a 3° outward draft about 2160.89; direction 2 with depth 4 is 2800; a thin wall of 2 inward is 1040.',

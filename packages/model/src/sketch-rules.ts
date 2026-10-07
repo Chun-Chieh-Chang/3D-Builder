@@ -82,6 +82,7 @@ export function idsInUse(doc: PartDoc): Id[] {
     if (f.type === 'sketch') {
       for (const e of f.entities) out.push(e.id);
       for (const c of f.constraints) out.push(c.id);
+      for (const p of f.pictures ?? []) out.push(p.id);
     }
   }
   for (const b of doc.blobs) out.push(b.id);

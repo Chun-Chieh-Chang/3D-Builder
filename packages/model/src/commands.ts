@@ -1,7 +1,7 @@
 import { t } from '@3db/i18n';
 import { current, produce, type Draft } from 'immer';
 import { countersFor, type Id } from './ids';
-import type { SheetGauge, AppearanceTarget, DocSettings, MaterialRef, Variable, BlobRef, ChamferFeature, FilletKind, CombineFeature, HoleFeature, ScrewBossFeature, BaseFlangeFeature, MidBendFeature, EdgeFlangeFeature, HemFeature, SnapHookFeature, SnapCatchFeature, VentFeature, LoftFeature, RibFeature, SweepFeature, Draft as WallDraft, EndCondition, Thin, Expr, Feature, ImportedBodyFeature, AxisDefinition, CoordSysFeature, MirrorFeature, PartDoc, PatternDefinition, PatternFeature, PlaneDefinition, PointDefinition, Ref, RevolveCondition, SketchConstraint, SketchEntity, SketchFeature } from './schema';
+import type { SheetGauge, AppearanceTarget, DocSettings, MaterialRef, Variable, BlobRef, ChamferFeature, FilletKind, CombineFeature, HoleFeature, ScrewBossFeature, BaseFlangeFeature, MidBendFeature, EdgeFlangeFeature, HemFeature, SnapHookFeature, SnapCatchFeature, VentFeature, LoftFeature, RibFeature, SweepFeature, Draft as WallDraft, EndCondition, Thin, Expr, Feature, ImportedBodyFeature, AxisDefinition, CoordSysFeature, MirrorFeature, PartDoc, PatternDefinition, PatternFeature, PlaneDefinition, PointDefinition, Ref, RevolveCondition, SketchConstraint, SketchEntity, SketchFeature, SketchPicture } from './schema';
 import { isDatumPlaneName } from './datums';
 import { canBeSeed } from './patterns';
 import { colorOk, materialOk, sameTarget } from './materials';
@@ -14,6 +14,7 @@ import type { NameRef } from './expr';
 import { isDimension } from './schema';
 import { ExprError } from './expr';
 import { idsInUse, removalSet, sketchError } from './sketch-rules';
+import { pictureBlobs } from './picture';
 
 /** The point references of a curve that an edit may change. */
 export type EntityRefs = Partial<Record<'p1' | 'p2' | 'start' | 'end' | 'center', Id>>;
@@ -144,6 +145,12 @@ ull). */
   | { type: 'setCoordSys'; featureId: Id; value: Pick<CoordSysFeature, 'origin' | 'x' | 'y' | 'flipX' | 'flipY'> }
   /** Adds imported data and the feature that uses it, as one step (F2.1). */
   | { type: 'importBody'; blob: BlobRef; feature: ImportedBodyFeature; index: number }
+  /** A picture laid in a sketch (ADR 0116): its image data comes with it (a blob of kind png or jpg, the same one for pictures with the same bytes). */
+  | { type: 'addSketchPicture'; featureId: Id; blob: BlobRef; picture: SketchPicture }
+  /** Changes the placement of a picture of a sketch. */
+  | { type: 'setSketchPicture'; featureId: Id; pictureId: Id; picture: Partial<Omit<SketchPicture, 'id' | 'blob'>> }
+  /** Takes a picture out of a sketch (its data goes with it when nothing else uses it). */
+  | { type: 'removeSketchPicture'; featureId: Id; pictureId: Id }
   /** Suppresses or unsuppresses several features at once; which ones follows from their dependencies (B2.6). */
   | { type: 'setSuppressed'; featureIds: Id[]; value: boolean }
   /** Deletes features (B2.8). Their ids stay issued; references to them become missing, never rebound. */
@@ -442,6 +449,13 @@ function featureIds(f: Feature): Id[] {
   return f.type === 'sketch' ? [f.id, ...f.entities.map((e) => e.id), ...f.constraints.map((c) => c.id)] : [f.id];
 }
 
+/** A picture has a size, an angle and an opacity that mean something. */
+function pictureValues(p: SketchPicture): void {
+  if (![p.x, p.y, p.width, p.height, p.angle, p.opacity].every(Number.isFinite)) throw new CommandError(t('cmd.pictureNumbers'));
+  if (!(p.width > 0 && p.height > 0)) throw new CommandError(t('cmd.pictureSize'));
+  if (!(p.opacity >= 0 && p.opacity <= 1)) throw new CommandError(t('cmd.pictureOpacity'));
+}
+
 function assertFresh(doc: PartDoc, ids: Id[]): void {
   const inUse = new Set(idsInUse(doc));
   const seen = new Set<Id>();
@@ -631,6 +645,46 @@ export function mutate(draft: Draft<PartDoc>, cmd: Command): void {
       draft.blobs.push(blob);
       countersFor([blob.id], draft.idCounters);
       return insert(draft, feature, cmd.index); // throws before anything is kept if the feature is wrong
+    }
+    case 'addSketchPicture': {
+      const f = sketchOf(draft, cmd.featureId);
+      const { blob, picture } = cmd;
+      if (!/^[0-9a-f]{64}$/.test(blob.sha256)) throw new CommandError(t('cmd.importHashInvalid'));
+      if (blob.kind !== 'png' && blob.kind !== 'jpg') throw new CommandError(t('cmd.pictureKind'));
+      if (picture.blob !== blob.id && !draft.blobs.some((b) => b.id === picture.blob)) throw new CommandError(t('cmd.pictureNeedsData'));
+      pictureValues(picture);
+      const known = draft.blobs.find((b) => b.sha256 === blob.sha256 && b.kind === blob.kind);
+      // the same image used twice is one blob
+      const use = known ?? blob;
+      if (!known) {
+        assertFresh(draft as PartDoc, [blob.id]);
+        draft.blobs.push(blob);
+        countersFor([blob.id], draft.idCounters);
+      }
+      assertFresh(draft as PartDoc, [picture.id]);
+      (f.pictures ??= []).push({ ...picture, blob: use.id });
+      countersFor([picture.id], draft.idCounters);
+      return;
+    }
+    case 'setSketchPicture': {
+      const f = sketchOf(draft, cmd.featureId);
+      const p = f.pictures?.find((x) => x.id === cmd.pictureId);
+      if (!p) throw new CommandError(t('cmd.pictureNotFound', { id: cmd.pictureId }));
+      const next = { ...p, ...cmd.picture };
+      pictureValues(next);
+      Object.assign(p, next);
+      return;
+    }
+    case 'removeSketchPicture': {
+      const f = sketchOf(draft, cmd.featureId);
+      const i = f.pictures?.findIndex((x) => x.id === cmd.pictureId) ?? -1;
+      if (i < 0) throw new CommandError(t('cmd.pictureNotFound', { id: cmd.pictureId }));
+      const [gone] = f.pictures!.splice(i, 1);
+      if (f.pictures!.length === 0) delete f.pictures;
+      countersFor([gone!.id], draft.idCounters);
+      // the data stays in the file only while a picture still uses it
+      if (!pictureBlobs(draft.features as never).has(gone!.blob)) draft.blobs = draft.blobs.filter((b) => b.id !== gone!.blob);
+      return;
     }
     case 'setDimension': {
       const f = sketchOf(draft, cmd.featureId);

@@ -240,6 +240,7 @@ export const drawing: Translation = {
   'pdf.fontFile': 'PDF font {num} has no font file',
   'pdf.fontChecksum': 'The font file of PDF font {num} has a wrong checksum',
   'picker.font': 'Font (.ttf, .ttc)',
+  'picker.image': 'PNG or JPEG image',
   'drawing.fontChosen': 'Using the font {name}',
   'drawing.exportFailed': 'Could not export: {why}',
   'drawingUi.exportDxf': 'Export DXF',

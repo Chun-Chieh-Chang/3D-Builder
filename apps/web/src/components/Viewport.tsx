@@ -1,5 +1,6 @@
 import { SNAP_ITEMS } from '@3db/sketch/snaps';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { imageBitmapOf } from '../state/pictures';
 import { t } from '@3db/i18n';
 import { DATUM_PLANES, findFeature, isDimension, isShown, ORIGIN_KEY, Parameters, settingsOf, type DatumPlaneName, type Id, type Feature, type PlaneFrame, type Ref } from '@3db/model';
 import { ownerFeatures } from '@3db/naming';
@@ -343,6 +344,38 @@ export function Viewport() {
     v.setSketches(overlays);
   }, [doc, result, editing?.featureId, zoomBand]);
 
+  // The pictures of the sketch being edited, under its curves (ADR 0116): decoded once per image, and drawn again when a picture changes.
+  const pictureCount = useRef(0);
+  const pictures = useMemo(() => (sketching ? (store.editedSketch()?.pictures ?? []) : []), [sketching, doc]);
+  useEffect(() => {
+    const v = store.viewer;
+    if (!v) return;
+    const frame = sketching ? (store.editedSketch() ? store.frameOf(store.editedSketch()!) : null) : null;
+    if (!frame || pictures.length === 0) {
+      v.setPictures([]);
+      return;
+    }
+    let live = true;
+    const grew = pictures.length > pictureCount.current;
+    pictureCount.current = pictures.length;
+    void Promise.all(
+      pictures.map(async (p) => {
+        const blob = doc.blobs.find((b) => b.id === p.blob);
+        const bytes = blob ? store.imageBytes(blob.sha256) : undefined;
+        if (!blob || !bytes) return null;
+        const image = await imageBitmapOf(blob.sha256, bytes, blob.kind === 'jpg' ? 'image/jpeg' : 'image/png');
+        return image ? { frame, x: p.x, y: p.y, width: p.width, height: p.height, angle: p.angle, opacity: p.opacity, image } : null;
+      }),
+    ).then((list) => {
+      if (!live) return;
+      v.setPictures(list.filter((x): x is NonNullable<typeof x> => x !== null));
+      if (grew) v.fitAll(); // a picture just added: the whole of it in view
+    });
+    return () => {
+      live = false;
+    };
+  }, [pictures, sketching]);
+
   // Sketch tools own the left mouse button while a sketch is being edited.
   useEffect(() => {
     const v = store.viewer;
@@ -353,6 +386,11 @@ export function Viewport() {
     v.setToolHandler((e) => {
       const p = v.planePoint(e.clientX, e.clientY, frame);
       if (!p && e.type !== 'leave') return;
+      // setting the scale of a picture from two points of it: the clicks are the points, and the sketch tools are not used
+      if (store.getState().pictureScale) {
+        if (e.type === 'down' && p) store.pictureScaleClick(p);
+        return;
+      }
       const input = { p: p ?? [0, 0], px: v.pixelSize(), ctrl: e.ctrl, shift: e.shift } as const;
       if (e.type === 'down') sketcher.pointerDown(input);
       else if (e.type === 'move') sketcher.pointerMove(input, e.pressed);

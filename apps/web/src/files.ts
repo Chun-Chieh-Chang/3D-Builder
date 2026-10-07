@@ -82,6 +82,12 @@ export function pickStepFile(): Promise<OpenedFile | null> {
   return pick([STEP_TYPE]);
 }
 
+/** 「草圖圖片」: a PNG or a JPEG to lay in a sketch. */
+export function pickImageFile(): Promise<OpenedFile | null> {
+  const image: PickerType = { get description() { return t('picker.image'); }, accept: { 'image/png': ['.png'], 'image/jpeg': ['.jpg', '.jpeg'] } };
+  return pick([image]);
+}
+
 /** 「PDF 字型」: a TrueType font file (.ttf, or .ttc such as Microsoft JhengHei) to embed in the PDF for the characters the standard font does not have. */
 export function pickFontFile(): Promise<OpenedFile | null> {
   const font: PickerType = { get description() { return t('picker.font'); }, accept: { 'font/ttf': ['.ttf', '.ttc'] } };

@@ -289,6 +289,82 @@ function CheckBox({ f, view, sketcher }: { f: SketchFeature; view: ControllerVie
 }
 
 /** Sketch PropertyManager (C1.26, C1.27, C1.31): status, tool, selection, relations and dimensions. */
+/** A number typed in a box: kept as text while it is typed, and given when the box is left or Enter is pressed (a bad number puts the old one back). */
+function PlainNumber({ label, value, onChange, field }: { label: string; value: number; onChange: (v: number) => void; field: string }) {
+  const shown = String(Math.round(value * 1000) / 1000);
+  const [text, setText] = useState<string | null>(null);
+  const give = () => {
+    const v = Number(text);
+    setText(null);
+    if (text !== null && text.trim() !== '' && Number.isFinite(v) && v !== value) onChange(v);
+  };
+  return (
+    <label className="pm-row">
+      <span>{label}</span>
+      <input data-field={field} value={text ?? shown} onChange={(e) => setText(e.target.value)} onBlur={give} onKeyDown={(e) => e.key === 'Enter' && give()} style={{ width: '6em' }} />
+    </label>
+  );
+}
+
+/** The pictures of the sketch being edited (ADR 0116): add, place, scale from two points of the picture, fade, delete. */
+function PicturesBox({ f }: { f: SketchFeature }) {
+  const scale = useStore((s) => s.pictureScale);
+  const doc = useStore((s) => s.doc);
+  const [distance, setDistance] = useState('');
+  const pictures = f.pictures ?? [];
+  return (
+    <section className="pm-group" data-field="pictures">
+      <h4>{t('pm.picture.title')}</h4>
+      <button type="button" data-field="addPicture" onClick={() => void store.addSketchPicture()}>
+        {t('pm.picture.add')}
+      </button>
+      {pictures.length === 0 && <p className="muted">{t('pm.picture.none')}</p>}
+      {pictures.map((p) => {
+        const mine = scale?.pictureId === p.id ? scale : null;
+        const name = doc.blobs.find((b) => b.id === p.blob)?.fileName ?? p.blob;
+        return (
+          <div key={p.id} data-picture={p.id} className="pm-picture">
+            <strong>{t('pm.picture.name', { name })}</strong>
+            <PlainNumber field="width" label={t('pm.picture.width')} value={p.width} onChange={(width) => store.setSketchPicture(p.id, { width, height: (width * p.height) / p.width })} />
+            <PlainNumber field="height" label={t('pm.picture.height')} value={p.height} onChange={(height) => store.setSketchPicture(p.id, { height })} />
+            <PlainNumber field="x" label={t('pm.picture.x')} value={p.x} onChange={(x) => store.setSketchPicture(p.id, { x })} />
+            <PlainNumber field="y" label={t('pm.picture.y')} value={p.y} onChange={(y) => store.setSketchPicture(p.id, { y })} />
+            <PlainNumber field="angle" label={t('pm.picture.angle')} value={p.angle} onChange={(angle) => store.setSketchPicture(p.id, { angle })} />
+            <PlainNumber field="opacity" label={t('pm.picture.opacity')} value={p.opacity * 100} onChange={(v) => store.setSketchPicture(p.id, { opacity: Math.min(1, Math.max(0, v / 100)) })} />
+            {mine ? (
+              <>
+                <p className="hint" data-field="scaleStatus">
+                  {mine.points.length === 0 ? t('pm.picture.scaleFirst') : mine.points.length === 1 ? t('pm.picture.scaleSecond') : ''}
+                </p>
+                {mine.points.length === 2 && (
+                  <label className="pm-row">
+                    <span>{t('pm.picture.distance')}</span>
+                    <input data-field="distance" value={distance} onChange={(e) => setDistance(e.target.value)} style={{ width: '6em' }} />
+                    <button type="button" data-field="applyScale" onClick={() => store.finishPictureScale(Number(distance))}>
+                      {t('pm.picture.apply')}
+                    </button>
+                  </label>
+                )}
+                <button type="button" onClick={() => store.cancelPictureScale()}>
+                  {t('pm.picture.cancel')}
+                </button>
+              </>
+            ) : (
+              <button type="button" data-field="scalePicture" onClick={() => store.startPictureScale(p.id)}>
+                {t('pm.picture.scale')}
+              </button>
+            )}
+            <button type="button" data-field="removePicture" onClick={() => store.removeSketchPicture(p.id)}>
+              {t('pm.picture.remove')}
+            </button>
+          </div>
+        );
+      })}
+      <p className="hint">{t('pm.picture.hint')}</p>
+    </section>
+  );
+}
+
 function SketchPanel({ f }: { f: SketchFeature }) {
   const solve = useStore((s) => s.sketchSolve);
   const view = useSketcherView();
@@ -324,6 +400,7 @@ function SketchPanel({ f }: { f: SketchFeature }) {
         {conflicting.length > 0 && <p className="error-text">{t('pm.conflict', { ids: conflicting.join(t('cmd.listSeparator')) })}</p>}
       </section>
 
+      <PicturesBox f={f} />
       {sketcher && solve && <DiagnosisBox f={f} solve={solve} sketcher={sketcher} />}
       {sketcher && solve && f.entities.length > 0 && <CheckBox f={f} view={view} sketcher={sketcher} />}
 

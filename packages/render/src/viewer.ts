@@ -3,6 +3,18 @@ import { acceleratedRaycast, computeBoundsTree, disposeBoundsTree } from 'three-
 import { ViewControls } from './controls';
 import { buildOverlayObjects, disposeGroup, toWorld, type P2, type PlaneFrame, type SketchOverlay } from './overlay';
 
+/** A picture of a sketch to be drawn (ADR 0116): its place in the plane (the centre, the size in mm, the turn in degrees), how see-through it is, and the decoded image. */
+export interface ViewPicture {
+  frame: PlaneFrame;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  angle: number;
+  opacity: number;
+  image: TexImageSource;
+}
+
 /** Mesh payload produced by the kernel worker (same layout as @3db/kernel MeshData). */
 export interface ViewMesh {
   positions: Float32Array;
@@ -269,6 +281,7 @@ export class Viewer {
   private datums: DatumDisplay = { axes: [], points: [], systems: [] };
   private datumGroup: THREE.Group | null = null;
   private overlayGroup: THREE.Group | null = null;
+  private picturesGroup: THREE.Group | null = null;
   private labels = new Map<string, { el: HTMLElement; world: THREE.Vector3 }>();
   private toolHandler: ((e: ToolPointerEvent) => void) | null = null;
   /** Part meshes that instances show, by key: built once, shared by every instance of the part. */
@@ -775,6 +788,47 @@ export class Viewer {
   // ---------------------------------------------------------------- 2D overlay (sketch editing)
 
   /** Replaces the overlay; labels keep their DOM nodes by key so edits in progress are not disturbed. */
+  /**
+   * The pictures of the sketch being edited (ADR 0116), drawn under its curves, in the plane of the sketch, whatever is in front of them: an image is something to trace, so the model
+   * does not hide it. Each is a plane of the picture's size turned by its angle about its centre; its top is `yDir`.
+   */
+  setPictures(pictures: ViewPicture[]): void {
+    if (this.picturesGroup) {
+      this.overlayScene.remove(this.picturesGroup);
+      this.picturesGroup.traverse((o) => {
+        if (o instanceof THREE.Mesh) {
+          o.geometry.dispose();
+          (o.material as THREE.MeshBasicMaterial).map?.dispose();
+          (o.material as THREE.Material).dispose();
+        }
+      });
+      this.picturesGroup = null;
+    }
+    if (pictures.length > 0) {
+      const group = new THREE.Group();
+      for (const p of pictures) {
+        const texture = new THREE.Texture(p.image);
+        texture.colorSpace = THREE.SRGBColorSpace;
+        texture.needsUpdate = true;
+        const material = new THREE.MeshBasicMaterial({ map: texture, transparent: true, opacity: p.opacity, depthTest: false, depthWrite: false, side: THREE.DoubleSide });
+        const mesh = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), material);
+        const a = (p.angle * Math.PI) / 180;
+        const [c, s] = [Math.cos(a), Math.sin(a)];
+        const [fx, fy] = [p.frame.xDir, p.frame.yDir];
+        const ex = new THREE.Vector3(fx[0] * c + fy[0] * s, fx[1] * c + fy[1] * s, fx[2] * c + fy[2] * s);
+        const ey = new THREE.Vector3(-fx[0] * s + fy[0] * c, -fx[1] * s + fy[1] * c, -fx[2] * s + fy[2] * c);
+        const ez = new THREE.Vector3().crossVectors(ex, ey);
+        mesh.matrixAutoUpdate = false;
+        mesh.matrix.makeBasis(ex.multiplyScalar(p.width), ey.multiplyScalar(p.height), ez).setPosition(toWorld(p.frame, [p.x, p.y]));
+        mesh.renderOrder = -10;
+        group.add(mesh);
+      }
+      this.picturesGroup = group;
+      this.overlayScene.add(group);
+    }
+    this.requestRender();
+  }
+
   setOverlay(overlay: SketchOverlay | null): void {
     if (this.overlayGroup) {
       this.overlayScene.remove(this.overlayGroup);
@@ -1522,6 +1576,7 @@ export class Viewer {
     this.pendingFit = false;
     const box = this.contentBox();
     if (this.overlayGroup) box.union(new THREE.Box3().setFromObject(this.overlayGroup));
+    if (this.picturesGroup) box.union(new THREE.Box3().setFromObject(this.picturesGroup));
     if (box.isEmpty()) box.set(new THREE.Vector3(-50, -50, -50), new THREE.Vector3(50, 50, 50));
     const center = box.getCenter(new THREE.Vector3());
     const radius = box.getBoundingSphere(new THREE.Sphere()).radius || 50;

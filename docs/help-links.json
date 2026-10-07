@@ -247,6 +247,7 @@
   ],
   "C26": [
     "concept.sketch-snaps",
+    "sketch-picture",
     "tool-line",
     "tool-point",
     "tool-circle"

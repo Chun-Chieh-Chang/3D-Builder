@@ -238,6 +238,7 @@ export const drawing = {
   'pdf.fontFile': 'PDF 字型 {num} 沒有字型檔',
   'pdf.fontChecksum': 'PDF 字型 {num} 的字型檔檢查碼不對',
   'picker.font': '字型檔（.ttf、.ttc）',
+  'picker.image': 'PNG 或 JPEG 圖片',
   'drawing.fontChosen': '已選用字型 {name}',
   'drawing.exportFailed': '輸出失敗：{why}',
   'drawingUi.exportDxf': '輸出 DXF',

@@ -152,6 +152,7 @@ export const ACTIONS: UiAction[] = [
       if (plane) store.newSketch(plane);
     },
   },
+  { id: 'sketch-picture', get label() { return t('act.sketchPicture'); }, group: 'sketch-tool', enabled: sketching, run: () => void store.addSketchPicture() },
   ...SKETCH_TOOLS.map(
     (tool): UiAction => ({
       id: `tool-${tool}`,

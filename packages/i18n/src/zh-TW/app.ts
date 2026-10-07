@@ -29,6 +29,7 @@ export const app = {
   'act.fixComponent': '固定',
   'act.floatComponent': '浮動',
   'act.sketch': '草圖',
+  'act.sketchPicture': '草圖圖片…',
   'act.construction': '幾何建構線',
   'act.exitSketch': '離開草圖',
   'act.undo': '復原',

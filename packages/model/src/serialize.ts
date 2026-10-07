@@ -170,6 +170,8 @@ const migrations: Record<number, (doc: Json) => Json> = {
   46: (doc) => doc,
   // v48: the mid bend of a plate (`midBend`). A new kind of feature; nothing to convert.
   47: (doc) => doc,
+  // v49: the pictures of a sketch (`pictures`, and blobs of kind png or jpg). Absent means none, as before; nothing to convert.
+  48: (doc) => doc,
 };
 
 export class FormatError extends Error {

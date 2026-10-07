@@ -6,7 +6,7 @@ import type { Id } from './ids';
  * DOF status, mass properties and error lists are derived data and never stored.
  */
 
-export const SCHEMA_VERSION = 48;
+export const SCHEMA_VERSION = 49;
 
 /** Value expression (B5.2, B5.3): "20", "25.4mm", "30deg", "wall_t*2", "D1@草圖1/2", "property('厚度')"; see `expr/`. */
 export type Expr = string;
@@ -113,6 +113,23 @@ export interface SketchFeature extends FeatureBase {
   plane: Ref;
   entities: SketchEntity[];
   constraints: SketchConstraint[];
+  /** Images laid in the plane to be traced from (v49, ADR 0116): only looked at while the sketch is edited. */
+  pictures?: SketchPicture[];
+}
+
+/**
+ * A picture of a sketch (草圖圖片, v49): an image (a blob of kind `png` or `jpg`) in the plane of the sketch, centred at (`x`, `y`), `width` × `height` mm, turned `angle` degrees about its centre,
+ * drawn with `opacity` (0 to 1). Plain numbers, not expressions: it is a reference to trace, not a dimension of the part, and takes no part in the profiles, relations or dimensions.
+ */
+export interface SketchPicture {
+  id: Id;
+  blob: Id;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  angle: number;
+  opacity: number;
 }
 
 /**
@@ -877,7 +894,7 @@ export interface AppearanceOverride {
 export interface BlobRef {
   id: Id;
   sha256: string;
-  kind: 'step';
+  kind: 'step' | 'png' | 'jpg';
   /** Name of the file it was read from; shown only. */
   fileName?: string;
 }

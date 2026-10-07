@@ -25,6 +25,10 @@ import {
   type Command,
   type DatumPlaneName,
   type BlobRef,
+  type SketchPicture,
+  calibratePicture,
+  imageSize,
+  newPicture,
   type Feature,
   type FilletKind,
   type EdgeFlangeFeature,
@@ -79,6 +83,7 @@ import {
   rememberedFolder,
   rememberFolder,
   writeFile,
+  pickImageFile,
   type OpenedFile,
   dropRecovery,
   keepRecovery,
@@ -271,6 +276,8 @@ export interface UiState {
   sketchSolve: SketchSolvePayload | null;
   /** Dimension whose Modify box is open (D6.1). */
   dimensionEdit: Id | null;
+  /** The picture of the sketch being edited whose scale is being set from two points of it (ADR 0116), and the points clicked so far (in the plane of the sketch). */
+  pictureScale: { pictureId: Id; points: [number, number][] } | null;
   /** Feature whose 「確認刪除」 dialog is open (B2.8). */
   confirmDelete: Id | null;
   /** 「錯誤為何？」 dialog (D7.1). */
@@ -496,6 +503,7 @@ class AppStore {
       result: null,
       sketchSolve: null,
       dimensionEdit: null,
+      pictureScale: null,
       confirmDelete: null,
       whatsWrong: false,
       dialog: null,
@@ -1237,6 +1245,11 @@ class AppStore {
   /** A default plane or a reference plane feature, by the id the FeatureManager uses. */
   isPlane(id: Id): boolean {
     return isDatumPlaneName(id) || findFeature(this.history.doc, id)?.type === 'refPlane';
+  }
+
+  /** The bytes of an image of a picture, by their hash (what was opened with the document or put into it). */
+  imageBytes(sha256: string): Uint8Array | undefined {
+    return this.blobs.get(sha256);
   }
 
   private allocator(): IdAllocator {
@@ -2033,6 +2046,77 @@ class AppStore {
   }
 
   // ------------------------------------------------------------ sketch sessions (C1)
+
+  /** 「草圖圖片」 (ADR 0116): a PNG or JPEG laid in the sketch being edited, 100 mm wide, its data kept in the document. */
+  async addSketchPicture(): Promise<void> {
+    const sketch = this.editedSketch();
+    if (!sketch) return;
+    try {
+      const picked = await pickImageFile();
+      if (!picked) return;
+      await this.addPictureData(picked.name, picked.bytes);
+    } catch (e) {
+      this.notify(t('sketch.pictureFailed', { why: e instanceof Error ? e.message : String(e) }), 'error');
+    }
+  }
+
+  /** The image data of a picture put into the sketch being edited; refused in words when the bytes are not a PNG or a JPEG. */
+  async addPictureData(fileName: string, bytes: Uint8Array): Promise<boolean> {
+    const sketch = this.editedSketch();
+    if (!sketch) return false;
+    const size = imageSize(bytes);
+    if (!size) {
+      this.notify(t('sketch.pictureNotImage', { name: fileName }), 'error');
+      return false;
+    }
+    const sha256 = await sha256Hex(bytes);
+    this.blobs.set(sha256, bytes);
+    const ids = this.allocator();
+    const doc = this.history.doc;
+    const known = doc.blobs.find((b) => b.sha256 === sha256 && b.kind === size.type);
+    const blob: BlobRef = known ?? { id: ids.take('blob'), sha256, kind: size.type, fileName };
+    const picture = newPicture(ids.take('picture'), blob.id, size, 100);
+    return this.execute({ type: 'addSketchPicture', featureId: sketch.id, blob, picture });
+  }
+
+  /** Moves, scales, turns or fades a picture of the sketch being edited. */
+  setSketchPicture(pictureId: Id, patch: Partial<Omit<SketchPicture, 'id' | 'blob'>>): void {
+    const sketch = this.editedSketch();
+    if (sketch) this.execute({ type: 'setSketchPicture', featureId: sketch.id, pictureId, picture: patch });
+  }
+
+  removeSketchPicture(pictureId: Id): void {
+    const sketch = this.editedSketch();
+    if (!sketch) return;
+    if (this.state.pictureScale?.pictureId === pictureId) this.set({ pictureScale: null });
+    this.execute({ type: 'removeSketchPicture', featureId: sketch.id, pictureId });
+  }
+
+  /** Starts setting the scale of a picture from two points of it: the next two clicks in the sketch's plane are the points. */
+  startPictureScale(pictureId: Id): void {
+    this.set({ pictureScale: { pictureId, points: [] } });
+  }
+
+  cancelPictureScale(): void {
+    if (this.state.pictureScale) this.set({ pictureScale: null });
+  }
+
+  /** A click in the plane while a picture's scale is being set: the first or the second point. */
+  pictureScaleClick(p: [number, number]): void {
+    const s = this.state.pictureScale;
+    if (s && s.points.length < 2) this.set({ pictureScale: { ...s, points: [...s.points, p] } });
+  }
+
+  /** The two points are `distance` mm apart: the picture grows about the first point to make them so. */
+  finishPictureScale(distance: number): void {
+    const s = this.state.pictureScale;
+    const picture = this.editedSketch()?.pictures?.find((p) => p.id === s?.pictureId);
+    if (!s || !picture || s.points.length < 2) return;
+    const next = calibratePicture(picture, s.points[0]!, s.points[1]!, distance);
+    if (!next) return void this.notify(t('sketch.pictureScaleBad'), 'error');
+    this.set({ pictureScale: null });
+    this.setSketchPicture(picture.id, { x: next.x, y: next.y, width: next.width, height: next.height });
+  }
 
   /** The sketch being edited, as it is in the document now. */
   editedSketch(): SketchFeature | null {

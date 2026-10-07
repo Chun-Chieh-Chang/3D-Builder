@@ -31,6 +31,7 @@ export const app: Translation = {
   'act.fixComponent': 'Fix',
   'act.floatComponent': 'Float',
   'act.sketch': 'Sketch',
+  'act.sketchPicture': 'Sketch Picture…',
   'act.construction': 'Construction Geometry',
   'act.exitSketch': 'Exit Sketch',
   'act.undo': 'Undo',
