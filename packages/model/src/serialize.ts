@@ -166,6 +166,10 @@ const migrations: Record<number, (doc: Json) => Json> = {
   44: (doc) => doc,
   // v46: the mutual trim of two surface bodies (`mutualTrim`). A new kind of feature; nothing to convert, the version keeps older programs from opening what they would skip.
   45: (doc) => doc,
+  // v47: the mitre of the edge flange (`miter`). Absent means an open corner, as before; nothing to convert.
+  46: (doc) => doc,
+  // v48: the mid bend of a plate (`midBend`). A new kind of feature; nothing to convert.
+  47: (doc) => doc,
 };
 
 export class FormatError extends Error {

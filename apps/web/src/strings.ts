@@ -42,6 +42,7 @@ export const FEATURE_LABEL: Record<FeatureType, string> = labelsOf({
   lipGroove: 'feature.lipGroove',
   screwBoss: 'feature.screwBoss',
   baseFlange: 'feature.baseFlange',
+  midBend: 'feature.midBend',
   edgeFlange: 'feature.edgeFlange',
   hem: 'feature.hem',
   snapHook: 'feature.snapHook',

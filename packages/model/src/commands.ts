@@ -1,7 +1,7 @@
 import { t } from '@3db/i18n';
 import { current, produce, type Draft } from 'immer';
 import { countersFor, type Id } from './ids';
-import type { SheetGauge, AppearanceTarget, DocSettings, MaterialRef, Variable, BlobRef, ChamferFeature, FilletKind, CombineFeature, HoleFeature, ScrewBossFeature, BaseFlangeFeature, EdgeFlangeFeature, HemFeature, SnapHookFeature, SnapCatchFeature, VentFeature, LoftFeature, RibFeature, SweepFeature, Draft as WallDraft, EndCondition, Thin, Expr, Feature, ImportedBodyFeature, AxisDefinition, CoordSysFeature, MirrorFeature, PartDoc, PatternDefinition, PatternFeature, PlaneDefinition, PointDefinition, Ref, RevolveCondition, SketchConstraint, SketchEntity, SketchFeature } from './schema';
+import type { SheetGauge, AppearanceTarget, DocSettings, MaterialRef, Variable, BlobRef, ChamferFeature, FilletKind, CombineFeature, HoleFeature, ScrewBossFeature, BaseFlangeFeature, MidBendFeature, EdgeFlangeFeature, HemFeature, SnapHookFeature, SnapCatchFeature, VentFeature, LoftFeature, RibFeature, SweepFeature, Draft as WallDraft, EndCondition, Thin, Expr, Feature, ImportedBodyFeature, AxisDefinition, CoordSysFeature, MirrorFeature, PartDoc, PatternDefinition, PatternFeature, PlaneDefinition, PointDefinition, Ref, RevolveCondition, SketchConstraint, SketchEntity, SketchFeature } from './schema';
 import { isDatumPlaneName } from './datums';
 import { canBeSeed } from './patterns';
 import { colorOk, materialOk, sameTarget } from './materials';
@@ -100,6 +100,8 @@ ull). */
   /** The screw boss's settings (C4.11): everything but which sketch it stands at. */
   | { type: 'setScrewBoss'; featureId: Id; boss: Omit<ScrewBossFeature, 'id' | 'type' | 'name' | 'suppressed' | 'sketch'> }
   /** The base flange's settings (C11.1): everything but which sketch it is made from. */
+  /** Changes a mid bend (S-3): the angle, the radius, which side stays and which way it folds. */
+  | { type: 'setMidBend'; featureId: Id; midBend: Omit<MidBendFeature, 'id' | 'type' | 'name' | 'suppressed' | 'sketch'> }
   | { type: 'setBaseFlange'; featureId: Id; flange: Omit<BaseFlangeFeature, 'id' | 'type' | 'name' | 'suppressed' | 'sketch'> }
   /** The edge flange's settings (C11.2): the edge and everything else. */
   | { type: 'setEdgeFlange'; featureId: Id; flange: Omit<EdgeFlangeFeature, 'id' | 'type' | 'name' | 'suppressed'> }
@@ -558,6 +560,9 @@ function validateNewFeature(doc: PartDoc, f: Feature, index: number): void {
     case 'baseFlange':
       sketchBefore(doc, f.sketch, index, t('feature.baseFlange'));
       return;
+    case 'midBend':
+      sketchBefore(doc, f.sketch, index, t('feature.midBend'));
+      return;
     case 'snapHook':
       sketchBefore(doc, f.sketch, index, t('feature.snapHook'));
       return;
@@ -911,6 +916,15 @@ export function mutate(draft: Draft<PartDoc>, cmd: Command): void {
       Object.assign(f, keep, cmd.flange);
       checkExprs(draft as PartDoc, f as Feature);
       if ((f as EdgeFlangeFeature).edge.kind !== 'edge') throw new CommandError(t('cmd.flangeOnlyEdge'));
+      return;
+    }
+    case 'setMidBend': {
+      const f = feature(draft, cmd.featureId);
+      if (f.type !== 'midBend') throw new CommandError(t('cmd.onlyThisHasParams', { what: t('feature.midBend') }));
+      const keep = { id: f.id, type: f.type, name: f.name, suppressed: f.suppressed, sketch: f.sketch } as const;
+      for (const k of Object.keys(f)) delete (f as unknown as Record<string, unknown>)[k];
+      Object.assign(f, keep, cmd.midBend);
+      checkExprs(draft as PartDoc, f as Feature);
       return;
     }
     case 'setBaseFlange': {

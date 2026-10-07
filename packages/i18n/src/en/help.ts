@@ -382,11 +382,20 @@ export const help: Translation = {
   'help.edgeFlange.summary': 'Folds a flange up from an edge of a sheet metal plate, with length, angle and bend radius.',
 
   'help.edgeFlange.body':
-    'Grows a bend and a flat flange on a straight edge of a sheet metal plate, as wide as the whole edge.\n\n- Click an edge of the plate in the view (clicking a face does nothing). The flange folds to the side of the face the edge you clicked belongs to; "Flip to the other side" changes it.\n- Flange length, measured from the outside virtual sharp at first (the outside size on a drawing); it can also be measured from the inside virtual sharp or after the bend.\n- Bend angle (blank = 90°) and bend radius (blank = that of the base).\n- Position: "Material inside" (the outside is flush with the edge and the plate is cut away near the edge) or "Bend outside" (the bend starts at the edge, the plate does not move).\n- The start and the end can be shortened, with a rectangular relief cut at the shortened end, so that flanges on neighboring edges do not touch at the corner.\n\nVerified example: a plate 100 × 50 × 1.5 (7500 mm³), bend radius 2, 90°, length 30 from the outside, material inside: the plate loses 262.5, the bend is 323.98 and the flat is 1987.5, in all 9548.98 mm³.',
+    'Grows a bend and a flat flange on a straight edge of a sheet metal plate, as wide as the whole edge.\n\n- Click an edge of the plate in the view (clicking a face does nothing). The flange folds to the side of the face the edge you clicked belongs to; "Flip to the other side" changes it.\n- Flange length, measured from the outside virtual sharp at first (the outside size on a drawing); it can also be measured from the inside virtual sharp or after the bend.\n- Bend angle (blank = 90°) and bend radius (blank = that of the base).\n- Position: "Material inside" (the outside is flush with the edge and the plate is cut away near the edge) or "Bend outside" (the bend starts at the edge, the plate does not move).\n- The start and the end can be shortened, with a rectangular relief cut at the shortened end, so that flanges on neighboring edges do not touch at the corner.\n- Mitre: this flange and the one made before it next to the corner meet on a vertical plane at 45°; "Mitre at the start / end" takes the gap between the two flanges (0 = touching). Only for two 90° flanges with the same radius, material inside, bent the same way, on edges at right angles; the neighbour has to be made first and has to reach the corner. In the flat pattern the end at the corner follows the bend as a curve.\n\nVerified example: a plate 100 × 50 × 1.5 (7500 mm³), bend radius 2, 90°, length 30 from the outside, material inside: the plate loses 262.5, the bend is 323.98 and the flat is 1987.5, in all 9548.98 mm³.',
 
   'help.edgeFlange.keywords': 'sheet metal edge flange bend length angle relief inset',
 
   'help.edgeFlange.see': 'base-flange hem flat-pattern concept.property-manager',
+
+  'help.midBend.summary': 'Bend a plate in the middle along a sketched line: one side stays, the other folds.',
+
+  'help.midBend.body':
+    'On a plate made by a base flange (closed profile), pick a sketch with one straight line, press "Mid Bend", and set the angle and the radius.\n\n- The left of the way the line is drawn stays, the right folds; "Keep the right of the line fixed" swaps the sides, "Fold against the sketch normal" the way it folds.\n- The zone of the bend is centred on the line and as wide as the bend allowance, so the flat pattern is the plate as drawn (the flat view has one more bend line).\n- There can be no hole or notch in the zone: the plate there has to be a plain strip; it says why when it is not.\n- No edge flange or hem before it, one mid bend to a part, and none after it either.\n- The sketch has to be parallel to the plate; when the side that folds runs into the other it says so.',
+
+  'help.midBend.keywords': 'sheet metal mid bend sketched bend bend line plate',
+
+  'help.midBend.see': 'base-flange edge-flange flat-pattern',
   'help.hem.summary': 'Folds the edge of a sheet metal plate back on itself (a 180° bend).',
 
   'help.hem.body':

@@ -6,7 +6,7 @@ import type { Id } from './ids';
  * DOF status, mass properties and error lists are derived data and never stored.
  */
 
-export const SCHEMA_VERSION = 46;
+export const SCHEMA_VERSION = 48;
 
 /** Value expression (B5.2, B5.3): "20", "25.4mm", "30deg", "wall_t*2", "D1@草圖1/2", "property('厚度')"; see `expr/`. */
 export type Expr = string;
@@ -626,6 +626,22 @@ export interface BaseFlangeFeature extends FeatureBase {
 }
 
 /**
+ * Mid bend (中間折彎, S-3, v48): the plate of a sheet metal part bent along the one line of a sketch, in the middle of the plate. The line divides the plate; the side to the left of the
+ * way the line is drawn stays (`flipSide`: the right), the other side turns by `angle` about an axis parallel to the line, `radius` from the face the plate folds toward (the
+ * sheet's when absent). It folds toward the sketch normal (`reverse`: against it). The bend is centred on the line: its zone is as wide as the bend allowance, so the flat pattern is
+ * the plate as it was drawn. Only for a plate with nothing but holes and notches outside the zone (a zone that is not a plain strip is refused), made by a base flange of a closed
+ * profile with no edge flange or hem before it, and one mid bend to a part.
+ */
+export interface MidBendFeature extends FeatureBase {
+  type: 'midBend';
+  sketch: Id;
+  angle: Expr;
+  radius?: Expr;
+  reverse?: boolean;
+  flipSide?: boolean;
+}
+
+/**
  * Edge flange (邊線凸緣, C11.2, v37): on a straight edge of the sheet (the edge between a face of the sheet and its end face), a bend and a flat flange along the whole edge. It bends
  * toward the side of the face the edge is on (`flip`: the other side) by `angle` (90° when absent), with the inside radius `radius` (the base flange's when absent). `length` is
  * measured from the outside virtual sharp of the bend (`outer`, the default), from the inside one (`inner`), or is the flat piece after the bend (`tangent`). With
@@ -647,6 +663,12 @@ export interface EdgeFlangeFeature extends FeatureBase {
    * with no flange to close against is said.
    */
   corner?: { start?: Expr; end?: Expr };
+  /**
+   * Mitre (斜接, C11.4, v47): at the start and/or the end of the flange (as for `corner`) the flange and the one next to it, made before it, meet on the vertical plane that halves the angle
+   * between their outer faces, instead of leaving the corner open. The value is the `gap` left between the two cut faces (0: they touch). Both flanges are 90°, with the same radius,
+   * on edges at right angles, bent the same way, with the material inside, and the neighbour reaches the corner (no inset at that end).
+   */
+  miter?: { start?: Expr; end?: Expr };
   /**
    * The flange stops short of the ends of the edge (v39, C11.4): `start` from the end where the edge begins when it is walked with the face it is on in front of you and the outside
    * on your right, `end` from the other. Where it stops short, `relief` cuts a rectangular notch into the sheet beside it, `width` along the edge and `depth` deeper than the bend starts,
@@ -793,6 +815,7 @@ export type Feature =
   | LipGrooveFeature
   | ScrewBossFeature
   | BaseFlangeFeature
+  | MidBendFeature
   | EdgeFlangeFeature
   | HemFeature
   | SnapHookFeature

@@ -42,6 +42,7 @@ import {
   type OffsetSurfaceFeature,
   type SplitLineFeature,
   type KnitFeature,
+  type MidBendFeature,
   type MutualTrimFeature,
   type FillSurfaceFeature,
   type FlatSurfaceFeature,
@@ -2098,6 +2099,40 @@ function BaseFlangePanel({ f }: { f: BaseFlangeFeature }) {
   );
 }
 
+/** Mid bend (S-3): the angle, the radius, which side of the line stays and which way the other folds, and what came of it. */
+function MidBendPanel({ f }: { f: MidBendFeature }) {
+  const status = useStore((s) => s.result?.features.find((r) => r.id === f.id));
+  const { id, type, name, suppressed, sketch, ...settings } = f;
+  void [id, type, name, suppressed, sketch];
+  const run = (patch: Record<string, unknown>): Command => {
+    const next = { ...settings, ...patch } as Record<string, unknown>;
+    for (const k of Object.keys(next)) if (next[k] === undefined || next[k] === '' || next[k] === false) delete next[k];
+    return { type: 'setMidBend', featureId: f.id, midBend: next as never };
+  };
+  return (
+    <section className="pm-group">
+      <label className="pm-row">
+        <span>{t('pm.midBend.angle')}</span>
+        <ValueInput value={f.angle} toCommand={(angle) => run({ angle })} suffix="°" />
+      </label>
+      <label className="pm-row">
+        <span>{t('pm.midBend.radius')}</span>
+        <ValueInput value={f.radius ?? ''} toCommand={(radius) => run({ radius })} />
+      </label>
+      <label className="pm-row checkbox">
+        <input type="checkbox" checked={!!f.flipSide} onChange={(e) => store.execute(run({ flipSide: e.target.checked }))} />
+        <span>{t('pm.midBend.flipSide')}</span>
+      </label>
+      <label className="pm-row checkbox">
+        <input type="checkbox" checked={!!f.reverse} onChange={(e) => store.execute(run({ reverse: e.target.checked }))} />
+        <span>{t('pm.midBend.reverse')}</span>
+      </label>
+      {status?.status === 'ok' && status.info && <p className="hint gap-info">{status.info}</p>}
+      <p className="hint">{t('pm.midBend.hint')}</p>
+    </section>
+  );
+}
+
 /** What an edge flange and a hem share beyond the edge (C11.4): how far they stop short of the two ends of it, and the relief notches beside them where they do. */
 function FlangeExtras({ f, run }: { f: EdgeFlangeFeature | HemFeature; run: (patch: Record<string, unknown>) => Command }) {
   const inset = f.inset ?? { start: '0', end: '0' };
@@ -2201,6 +2236,15 @@ function EdgeFlangePanel({ f }: { f: EdgeFlangeFeature }) {
         <ValueInput value={f.corner?.end ?? ''} toCommand={(end) => run({ corner: closed(f.corner?.start, end === '' ? undefined : end) })} />
       </label>
       <p className="hint">{t('pm.eflange.cornerHint')}</p>
+      <label className="pm-row">
+        <span>{t('pm.eflange.miterStart')}</span>
+        <ValueInput value={f.miter?.start ?? ''} toCommand={(start) => run({ miter: closed(start === '' ? undefined : start, f.miter?.end) })} />
+      </label>
+      <label className="pm-row">
+        <span>{t('pm.eflange.miterEnd')}</span>
+        <ValueInput value={f.miter?.end ?? ''} toCommand={(end) => run({ miter: closed(f.miter?.start, end === '' ? undefined : end) })} />
+      </label>
+      <p className="hint">{t('pm.eflange.miterHint')}</p>
       {status?.status === 'ok' && status.info && <p className="hint gap-info">{status.info}</p>}
       <p className="hint">{t('pm.eflange.hint')}</p>
     </section>
@@ -2608,6 +2652,7 @@ export function PropertyManager() {
       {f.type === 'lipGroove' && <LipGroovePanel f={f} />}
       {f.type === 'screwBoss' && <ScrewBossPanel f={f} />}
       {f.type === 'baseFlange' && <BaseFlangePanel f={f} />}
+      {f.type === 'midBend' && <MidBendPanel f={f} />}
       {f.type === 'edgeFlange' && <EdgeFlangePanel f={f} />}
       {f.type === 'hem' && <HemPanel f={f} />}
       {f.type === 'snapHook' && (

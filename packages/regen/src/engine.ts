@@ -42,6 +42,7 @@ import {
   type SplitLineFeature,
   type KnitFeature,
   type MutualTrimFeature,
+  type MidBendFeature,
   type FillSurfaceFeature,
   type FlatSurfaceFeature,
   type TrimSurfaceFeature,
@@ -160,6 +161,23 @@ export type SheetBase =
   | { kind: 'plate'; frame: PlaneFrame; regions: Region[]; dir: Vec3 }
   | { kind: 'bent'; frame: PlaneFrame; width: number; flatLength: number; pieces: ({ type: 'straight'; length: number } | { type: 'bend'; bend: number; toward: boolean })[] };
 
+/** The mid bend of a plate (S-3): where its line is (the ends of the zone, in the plane of the plate) and which way it folds, for the flat pattern. */
+export interface SheetMidBend {
+  feature: Id;
+  a: Vec3;
+  b: Vec3;
+  up: Vec3;
+  angle: number;
+  radius: number;
+  allowance: number;
+}
+
+/** One end of a flange that is mitred against its neighbour (斜接): the plane between them is `s` (half the gap, across the corner) off the halving plane, and the neighbour's outer face is at `xOuter` along the edge. */
+export interface SheetMiter {
+  s: number;
+  xOuter: number;
+}
+
 /** One edge flange (C11.2) as the flat pattern needs it: the edge it grew from, and how much it took from the sheet and added to the flat pattern. */
 export interface SheetFlange {
   feature: Id;
@@ -179,6 +197,8 @@ export interface SheetFlange {
   relief: { width: number; depth: number } | null;
   /** How far the flat piece goes on past the end of the bend at the start and at the end, to close the corner (0 where it does not). */
   corner: [number, number];
+  /** The mitre at the start and at the end (null where there is none): see `SheetMiter`. */
+  miter: [SheetMiter | null, SheetMiter | null];
   /** The flange (index in `SheetInfo.flanges`) whose flat piece the edge is on, or -1 for the base. */
   parent: number;
   fold: FoldGeometry;
@@ -191,6 +211,8 @@ export interface SheetInfo {
   kFactor: number;
   bends: SheetBend[];
   flanges: SheetFlange[];
+  /** The mid bends of a plate (at most one). */
+  midBends: SheetMidBend[];
   base: SheetBase | null;
   /** The length of the flat pattern of a bent base flange along its profile (the straight pieces and the allowances); null for a plate. */
   flatLength: number | null;
@@ -555,6 +577,10 @@ export class Regenerator {
           }
           case 'knit': {
             set = this.advance(set, this.knit(feature, set));
+            return done({ status: 'ok' });
+          }
+          case 'midBend': {
+            set = this.advance(set, this.midBend(feature, sketches, set));
             return done({ status: 'ok' });
           }
           case 'mutualTrim': {
@@ -2133,7 +2159,7 @@ export class Regenerator {
     if (found.problems.length > 0) throw new FeatureError(found.problems.join(t('cmd.listSeparator')));
     const open = found.chains.length > 0;
     if (open && (found.chains.length !== 1 || found.loops.length > 0)) throw new FeatureError(t('flange.oneOutline'));
-    const sheet: SheetInfo = { thickness: T, radius: r, kFactor: k, bends: [], flanges: [], base: null, flatLength: null };
+    const sheet: SheetInfo = { thickness: T, radius: r, kFactor: k, bends: [], flanges: [], midBends: [], base: null, flatLength: null };
     let tool: OpResult;
     if (!open) {
       if (s.profiles.problems.length > 0) throw new FeatureError(t('regen.sketchUnusable', { problems: s.profiles.problems.join('; ') }));
@@ -2173,6 +2199,111 @@ export class Regenerator {
     const out = this.apply(f.id, 'boss', tool, { featureId: f.id, sketchId: f.sketch }, set.list, true);
     this.sheet = sheet;
     return out;
+  }
+
+  /**
+   * 「中間折彎」 (S-3, ADR 0111): the plate bent along the line of a sketch. The plate is cut by two planes `BA` (the bend allowance) apart, the line between them: the side that stays,
+   * the zone, and the side that turns. The zone must be a plain strip (its section a rectangle the thickness thick and as wide as the plate along the line: the volume says so), and
+   * is made again as the section revolved about the axis of the bend, `radius` from the face the plate folds toward. The side that turns is slid up to the start of the zone and turned
+   * about the same axis (a rigid motion: its faces keep their order, so they keep their names); the three are fused. The result is checked against the volumes of the three pieces.
+   */
+  private midBend(f: MidBendFeature, sketches: RebuildResult['sketches'], set: Bodies): BodyState[] {
+    const sheet = this.sheet;
+    if (!sheet) throw new FeatureError(t('flange.needsSheet'));
+    if (sheet.base?.kind !== 'plate' || sheet.flanges.length > 0 || sheet.midBends.length > 0) throw new FeatureError(t('midBend.scope'));
+    const solids = set.list.filter((b) => !b.surface);
+    if (solids.length !== 1) throw new FeatureError(t('midBend.oneBody'));
+    const plate = solids[0]!;
+    const s = sketches.get(f.sketch);
+    if (!s) throw new FeatureError(t('feature.sketchGone'));
+    const found = findOutlines(s.sketch, s.solved);
+    if (found.problems.length > 0) throw new FeatureError(found.problems.join(t('cmd.listSeparator')));
+    const line = found.chains.length === 1 && found.loops.length === 0 && found.chains[0]!.length === 1 ? found.chains[0]![0]! : null;
+    if (line?.kind !== 'line') throw new FeatureError(t('midBend.oneLine', { n: String(found.chains.length + found.loops.length) }));
+    const T = sheet.thickness;
+    const rb = f.radius === undefined ? sheet.radius : evalLength(f.radius);
+    const theta = evalAngle(f.angle);
+    if (!(rb > 0) || !(theta > 1e-6 && theta < Math.PI - 0.01)) throw new FeatureError(t('flange.angleRange'));
+    const BA = theta * (rb + sheet.kFactor * T);
+    const k = this.kernel;
+    const neg = (v: Vec3): Vec3 => [-v[0], -v[1], -v[2]];
+    const at = (q: [number, number]): Vec3 => add(add(s.frame.origin, s.frame.xDir, q[0]), s.frame.yDir, q[1]);
+    const a = at(line.a);
+    const l = unit(sub(at(line.b), a));
+    const n = s.frame.normal;
+    // the plate square to the sketch normal, and as thick as the sheet
+    const heights = plate.topology.vertices.map((v) => dot(v.point, n));
+    const zBot = Math.min(...heights);
+    if (Math.abs(Math.max(...heights) - zBot - T) > 1e-6 * (1 + T)) throw new FeatureError(t('midBend.notFlat'));
+    const q = add(a, n, zBot - dot(a, n));
+    const up: Vec3 = f.reverse ? neg(n) : n;
+    const left = cross(n, l);
+    const p: Vec3 = f.flipSide ? left : neg(left); // from the side that stays to the side that turns
+    const reach = Math.max(...plate.topology.vertices.map((v) => Math.hypot(...sub(v.point, q)))) * 2 + BA + 10;
+    const ctx = { featureId: f.id, sketchId: f.sketch };
+    const owned: ShapeId[] = [];
+    const keep = <X extends { shape: ShapeId }>(x: X): X => {
+      owned.push(x.shape);
+      return x;
+    };
+    try {
+      const strip = (u0: number, u1: number, tag: string): OpResult => {
+        const fr: PlaneFrame = { origin: add(q, n, -1), xDir: l, yDir: p, normal: cross(l, p) };
+        const pts: [number, number][] = [[-reach, u0], [reach, u0], [reach, u1], [-reach, u1]];
+        const region: Region = { outer: pts.map((pt, i) => ({ kind: 'line' as const, a: pt, b: pts[(i + 1) % 4]!, source: `mid.${tag}.p${i}` })), holes: [] };
+        return this.capsNamed(k.extrude(fr, [region], add([0, 0, 0], n, T + 2), 0), `mid.${tag}`, 'start', 'end');
+      };
+      const piece = (u0: number, u1: number, tag: string) => {
+        const cutter = strip(u0, u1, tag);
+        const cutNames = nameElements(cutter.faceOrigins, k.topology(cutter.shape), ctx);
+        const r = k.boolean('common', plate.shape, cutter.shape);
+        k.release(cutter.shape);
+        const topology = k.topology(r.shape);
+        return keep({ shape: r.shape, topology, names: nameElements(r.faceOrigins, topology, { ...ctx, input: concatNames(plate.names, cutNames) }), volume: k.massProps(r.shape).volume });
+      };
+      const A = piece(-reach, -BA / 2, 'a');
+      const Z = piece(-BA / 2, BA / 2, 'z');
+      const B = piece(BA / 2, reach, 'b');
+      if (!(Z.volume > 1e-9)) throw new FeatureError(t('midBend.lineOutside'));
+      if (!(A.volume > 1e-9) || !(B.volume > 1e-9)) throw new FeatureError(t('midBend.noSide'));
+      const along = Z.topology.vertices.map((v) => dot(sub(v.point, q), l));
+      const [lo, hi] = [Math.min(...along), Math.max(...along)];
+      const w = hi - lo;
+      if (Math.abs(Z.volume - w * BA * T) > 1e-3 * Z.volume + 1e-6) throw new FeatureError(t('midBend.zoneNotRect'));
+      // the zone made again as the bend: the section revolved about the axis, which lies `radius` from the face the plate folds toward
+      const frameS: PlaneFrame = { origin: add(q, p, -BA / 2), xDir: l, yDir: n, normal: cross(l, n) };
+      const rect: [number, number][] = [[lo, 0], [hi, 0], [hi, T], [lo, T]];
+      const section: Region = { outer: rect.map((pt, i) => ({ kind: 'line' as const, a: pt, b: rect[(i + 1) % 4]!, source: `mid.bend.${['bot', 'e1', 'top', 'e0'][i]}` })), holes: [] };
+      const center = add(add(q, p, -BA / 2), n, f.reverse ? -rb : T + rb);
+      const axis = unit(cross(p, up));
+      const bendOp = this.capsNamed(k.revolve(frameS, [section], { origin: center, dir: axis }, theta), 'mid.bend', 'start', 'end');
+      const bendTopology = k.topology(bendOp.shape);
+      const bend = keep({ shape: bendOp.shape, topology: bendTopology, names: nameElements(bendOp.faceOrigins, bendTopology, ctx), volume: k.massProps(bendOp.shape).volume });
+      // the side that turns: slid up to the start of the zone, then turned about the axis of the bend (its faces keep their order, so they keep their names)
+      const slide = add([0, 0, 0], p, -BA);
+      const R = [[1, 0, 0], [0, 1, 0], [0, 0, 1]].map((e) => rotate(e as Vec3, axis, theta));
+      const shift = add(center, rotate(sub(slide, center), axis, theta));
+      const moved = k.transformed(B.shape, [R[0]![0], R[1]![0], R[2]![0], shift[0], R[0]![1], R[1]![1], R[2]![1], shift[1], R[0]![2], R[1]![2], R[2]![2], shift[2]]);
+      const B2 = keep({ shape: moved, topology: k.topology(moved), names: B.names, volume: B.volume });
+      if (B2.topology.faces.length !== B.names.faces.length) throw new FeatureError(t('midBend.collides'));
+      const join = (x: { shape: ShapeId; names: ElementNames }, y: { shape: ShapeId; names: ElementNames }) => {
+        const r = k.boolean('fuse', x.shape, y.shape);
+        const topology = k.topology(r.shape);
+        return keep({ shape: r.shape, topology, names: nameElements(r.faceOrigins, topology, { ...ctx, input: concatNames(x.names, y.names) }) });
+      };
+      const ab = join(A, bend);
+      const abb = join(ab, B2);
+      const volume = k.massProps(abb.shape).volume;
+      const expected = A.volume + B.volume + bend.volume;
+      if (k.solidCount(abb.shape) !== 1 || !k.isValid(abb.shape) || Math.abs(volume - expected) > 1e-3 * expected + 1e-6) throw new FeatureError(t('midBend.collides'));
+      owned.splice(owned.indexOf(abb.shape), 1);
+      sheet.bends.push({ feature: f.id, name: 'bend', angle: theta, radius: rb, thickness: T, width: w, kFactor: sheet.kFactor, allowance: BA });
+      sheet.midBends.push({ feature: f.id, a: add(q, l, lo), b: add(q, l, hi), up, angle: theta, radius: rb, allowance: BA });
+      this.info = t('midBend.info', { angle: ((theta * 180) / Math.PI).toFixed(1), allowance: BA.toFixed(3), width: w.toFixed(3), radius: String(rb) });
+      return set.list.map((x) => (x === plate ? { id: plate.id, shape: abb.shape, topology: abb.topology, names: abb.names, by: f.id } : x));
+    } finally {
+      for (const id of owned) k.release(id);
+    }
   }
 
   /**
@@ -2233,12 +2364,13 @@ export class Regenerator {
    * and how much of the sheet is cut back. The edge is between a face of the sheet and its end face; the piece bends toward the side of the face the edge is on (`flip`: the other).
    */
   private foldEdge(
-    f: { id: Id; edge: Ref; flip?: boolean; inset?: { start: string; end: string }; relief?: { width: string; depth: string }; corner?: { start?: string; end?: string } },
+    f: { id: Id; edge: Ref; flip?: boolean; inset?: { start: string; end: string }; relief?: { width: string; depth: string }; corner?: { start?: string; end?: string }; miter?: { start?: string; end?: string } },
     set: Bodies,
     plan: (sheet: SheetInfo) => { rb: number; theta: number; straight: number; trim: number; info: (allowance: number) => string },
   ): BodyState[] {
     const sheet = this.sheet;
     if (!sheet) throw new FeatureError(t('flange.needsSheet'));
+    if (sheet.midBends.length > 0) throw new FeatureError(t('flange.afterMidBend'));
     const view = set.view;
     if (!view) throw new FeatureError(t('feature.needsBody', { what: t('feature.edgeFlange') }));
     if (!f.edge.name) throw new FeatureError(t('edit.noEdgePicked'));
@@ -2281,7 +2413,6 @@ export class Regenerator {
       return { outer: [line([x0, lo], [x1, lo], 'out'), line([x1, lo], [x1, hi], 's1'), line([x1, hi], [x0, hi], 'in'), line([x0, hi], [x0, lo], 's0')], holes: [] };
     };
     const frame: PlaneFrame = { origin, xDir: e, yDir: m, normal: cross(e, m) };
-    const bendTool = this.capsNamed(this.kernel.revolve(frame, [strip('bend', ylo, yhi)], { origin: center, dir: axis }, theta), 'bend', 'start', 'end');
     const origin2 = add(center, rotate(sub(origin, center), axis, theta), 1);
     const m2 = rotate(m, axis, theta);
     const d = rotate(o, axis, theta);
@@ -2314,7 +2445,92 @@ export class Regenerator {
     };
     if (f.corner?.start !== undefined) extA = closeAt(xa, -1, evalLength(f.corner.start));
     if (f.corner?.end !== undefined) extB = closeAt(xb, 1, evalLength(f.corner.end));
-    const flangeTool = this.capsNamed(this.kernel.extrude(frame2, [strip('flange', ylo, yhi, xa - extA, xb + extB)], add([0, 0, 0], n2, s2 * straight), 0), 'flange', 'start', 'end');
+
+    // mitres (斜接): this flange and the one made before it, next to the end, meet on the vertical plane that halves the angle between their outer faces. In the plan view (α along the
+    // outward direction of the neighbour, β along the outward direction of this flange, both from the corner of the outer faces) that plane is α = β, moved `s` for the gap. The
+    // neighbour is cut back to it (`neighbour`), and the tools of this flange run on to the outer face of the neighbour and are cut back to it (`this`).
+    type Mitre = { g: SheetFlange; end: 0 | 1; s: number; R: number; pw: Vec3; o1: Vec3; zlo: number; zhi: number; xOuterG: number; removed: number };
+    const miterAt = (outward: 1 | -1, gap: number): Mitre => {
+      if (!(gap >= 0) || !Number.isFinite(gap)) throw new FeatureError(t('flange.miterGap'));
+      if (Math.abs(theta - Math.PI / 2) > 1e-6) throw new FeatureError(t('flange.miterAngle'));
+      const R = rb + T;
+      if (Math.abs(trim - R) > 1e-6) throw new FeatureError(t('flange.miterPosition'));
+      const corner = add(edge.mid, e, outward * (W / 2));
+      for (let j = sheet.flanges.length - 1; j >= 0; j--) {
+        const g = sheet.flanges[j]!;
+        const gf = g.fold;
+        // an edge at right angles, out at this end, and the plate ends where its bend starts
+        if (Math.abs(dot(e, gf.e)) > 1e-6 || dot(gf.o, e) * outward < 0.99) continue;
+        if (Math.abs(dot(sub(corner, gf.origin), gf.o)) > 1e-5) continue;
+        const u = dot(sub(corner, gf.mid), gf.e);
+        const end: 0 | 1 = u > 0 ? 1 : 0;
+        if (Math.abs(u - (end === 1 ? gf.xb : gf.xa)) > 1e-5 || g.corner[end] !== 0 || g.miter[end]) continue;
+        if (Math.abs(g.angle - Math.PI / 2) > 1e-6) throw new FeatureError(t('flange.miterAngle'));
+        if (Math.abs(g.radius - rb) > 1e-6) throw new FeatureError(t('flange.miterRadius'));
+        if (Math.abs(g.trim - (g.radius + T)) > 1e-6) throw new FeatureError(t('flange.miterPosition'));
+        if (dot(m, gf.m) < 0.99) throw new FeatureError(t('flange.miterSide'));
+        const s = gap / Math.SQRT2;
+        const o1 = gf.o;
+        // the corner of the two outer faces, at the height of the sheet (the vertical axis is `m`)
+        const pw = add(add(add([0, 0, 0], o1, dot(gf.origin, o1) + R), o, dot(origin, o) + R), m, dot(origin, m));
+        // what the cut takes from the neighbour, by hand: its bend (a quarter of an annulus R, rb, seen along the edge) and its flat piece, over the strip between the plane and the
+        // outer face of this flange, c = s + R from the inside of the bend: ∫ A(u)(c − u) du with A(u) = √(R² − u²) − √(rb² − u²), and the flat piece T × H wide
+        const c = s + R;
+        const bendRem = (c * Math.PI * R * R) / 4 - R ** 3 / 3 - ((c * Math.PI * rb * rb) / 4 - rb ** 3 / 3);
+        const removed = bendRem + g.straight * (c * T - (R * R - rb * rb) / 2);
+        return { g, end, s, R, pw, o1, zlo: ylo - 1, zhi: yhi + rb + Math.max(straight, g.straight) + 1, xOuterG: end === 1 ? gf.xb : gf.xa, removed };
+      }
+      throw new FeatureError(t('flange.miterNone'));
+    };
+    /** The prism that takes away the side of the mitre plane that is not the flange's: of the neighbour (`neighbour`), or of the tools of this flange (`this`). */
+    const miterCutter = (mt: Mitre, which: 'neighbour' | 'this'): OpResult => {
+      const { R, s } = mt;
+      const pts: [number, number][] = which === 'neighbour' ? [[-R, -R - s], [1, 1 - s], [1, 2], [-R, 2]] : [[-R - s - 3, -R - 10], [1, -R - 10], [1, 1 + s], [-R - s - 3, -R - 3]];
+      const region: Region = { outer: pts.map((p, i) => ({ kind: 'line' as const, a: p, b: pts[(i + 1) % pts.length]!, source: `miter.${which}.p${i}` })), holes: [] };
+      const fr: PlaneFrame = { origin: add(mt.pw, m, mt.zlo), xDir: mt.o1, yDir: o, normal: cross(mt.o1, o) };
+      return this.capsNamed(this.kernel.extrude(fr, [region], add([0, 0, 0], m, mt.zhi - mt.zlo), 0), `miter.${which}`, 'start', 'end');
+    };
+    const mitres: (Mitre | null)[] = [null, null];
+    if (f.miter?.start !== undefined) {
+      if (f.corner?.start !== undefined) throw new FeatureError(t('flange.miterCorner'));
+      mitres[0] = miterAt(-1, evalLength(f.miter.start));
+    }
+    if (f.miter?.end !== undefined) {
+      if (f.corner?.end !== undefined) throw new FeatureError(t('flange.miterCorner'));
+      mitres[1] = miterAt(1, evalLength(f.miter.end));
+    }
+    const toolA = xa - extA - (mitres[0] ? trim : 0);
+    const toolB = xb + extB + (mitres[1] ? trim : 0);
+    let bendTool = this.capsNamed(this.kernel.revolve(frame, [strip('bend', ylo, yhi, xa - (mitres[0] ? trim : 0), xb + (mitres[1] ? trim : 0))], { origin: center, dir: axis }, theta), 'bend', 'start', 'end');
+    let flangeTool = this.capsNamed(this.kernel.extrude(frame2, [strip('flange', ylo, yhi, toolA, toolB)], add([0, 0, 0], n2, s2 * straight), 0), 'flange', 'start', 'end');
+    let named: { bend: ElementNames; flange: ElementNames } | null = null;
+    let toolVolume = 0;
+    if (mitres[0] || mitres[1]) {
+      // the tools of this flange cut back to the mitre planes (the names of what is left come from the tool and the cutter)
+      const cutBack = (tool: OpResult): { tool: OpResult; names: ElementNames } => {
+        let cur = { tool, names: nameElements(tool.faceOrigins, this.kernel.topology(tool.shape), { featureId: f.id, sketchId: 'flange' }) };
+        for (const mt of mitres) {
+          if (!mt) continue;
+          const cutter = miterCutter(mt, 'this');
+          const cutNames = nameElements(cutter.faceOrigins, this.kernel.topology(cutter.shape), { featureId: f.id, sketchId: 'flange' });
+          const r = this.kernel.boolean('cut', cur.tool.shape, cutter.shape);
+          this.kernel.release(cur.tool.shape);
+          this.kernel.release(cutter.shape);
+          if (this.kernel.solidCount(r.shape) !== 1) {
+            this.kernel.release(r.shape);
+            throw new FeatureError(t('flange.miterBad'));
+          }
+          cur = { tool: r, names: nameElements(r.faceOrigins, this.kernel.topology(r.shape), { featureId: f.id, sketchId: 'flange', input: concatNames(cur.names, cutNames) }) };
+        }
+        return cur;
+      };
+      const b = cutBack(bendTool);
+      const g = cutBack(flangeTool);
+      bendTool = b.tool;
+      flangeTool = g.tool;
+      named = { bend: b.names, flange: g.names };
+      toolVolume = this.kernel.massProps(bendTool.shape).volume + this.kernel.massProps(flangeTool.shape).volume;
+    }
 
     const volume = (list: readonly BodyState[]) => list.reduce((a, b) => a + (b.surface ? 0 : this.kernel.massProps(b.shape).volume), 0);
     const near = (a: number, b: number, scale: number) => Math.abs(a - b) <= 1e-3 * scale + 1e-6;
@@ -2344,10 +2560,18 @@ export class Regenerator {
     // (the volume of a body is integrated over all its faces, which costs most on a plate with many holes: it is taken as few times as the checks need)
     const cut = expected > 0 ? volume(list) : before;
     if (expected > 0 && !near(before - cut, expected, expected)) throw new FeatureError(t('flange.trimBad'));
-    list = this.apply(f.id, 'boss', bendTool, { featureId: f.id, sketchId: 'flange' }, list, true);
-    list = this.apply(f.id, 'boss', flangeTool, { featureId: f.id, sketchId: 'flange' }, list, true);
-    const added = theta * T * Wf * (rb + T / 2) + T * (Wf + extA + extB) * straight;
-    if (!near(volume(list) - cut, added, added)) throw new FeatureError(t('flange.collides'));
+    let afterMitre = cut;
+    for (const mt of mitres) {
+      if (!mt) continue;
+      list = this.apply(f.id, 'cut', miterCutter(mt, 'neighbour'), { featureId: f.id, sketchId: 'flange' }, list, false);
+      const now = volume(list);
+      if (!near(afterMitre - now, mt.removed, mt.removed)) throw new FeatureError(t('flange.miterBad'));
+      afterMitre = now;
+    }
+    list = this.apply(f.id, 'boss', bendTool, { featureId: f.id, sketchId: 'flange' }, list, true, f.id, named?.bend);
+    list = this.apply(f.id, 'boss', flangeTool, { featureId: f.id, sketchId: 'flange' }, list, true, f.id, named?.flange);
+    const added = named ? toolVolume : theta * T * Wf * (rb + T / 2) + T * (Wf + extA + extB) * straight;
+    if (!near(volume(list) - afterMitre, added, added)) throw new FeatureError(t('flange.collides'));
     const allowance = theta * (rb + sheet.kFactor * T);
     sheet.bends.push({ feature: f.id, name: 'bend', angle: theta, radius: rb, thickness: T, width: Wf, kFactor: sheet.kFactor, allowance });
     // the flange whose flat piece the edge picked is on (the base when none): by where the middle of the edge is in each piece
@@ -2362,8 +2586,10 @@ export class Regenerator {
       return -1;
     })();
     const fold: FoldGeometry = { mid: edge.mid, origin, center, axis, e, o, m, xa, xb, pa: xa - extA, pb: xb + extB, ylo, yhi, trim, notches, origin2, d, m2 };
-    sheet.flanges.push({ feature: f.id, edge: f.edge.name, width: Wf, angle: theta, radius: rb, trim, straight, allowance, inset: [insetA, insetB], relief, corner: [extA, extB], parent, fold });
-    this.info = info(allowance) + (insetA > 0 || insetB > 0 ? t('flange.info.inset', { start: String(insetA), end: String(insetB) }) : '');
+    const miter: SheetFlange['miter'] = [mitres[0] ? { s: mitres[0].s, xOuter: xa - trim } : null, mitres[1] ? { s: mitres[1].s, xOuter: xb + trim } : null];
+    for (const mt of mitres) if (mt) mt.g.miter[mt.end] = { s: mt.s, xOuter: mt.xOuterG };
+    sheet.flanges.push({ feature: f.id, edge: f.edge.name, width: Wf, angle: theta, radius: rb, trim, straight, allowance, inset: [insetA, insetB], relief, corner: [extA, extB], miter, parent, fold });
+    this.info = info(allowance) + (insetA > 0 || insetB > 0 ? t('flange.info.inset', { start: String(insetA), end: String(insetB) }) : '') + (mitres[0] || mitres[1] ? t('flange.info.miter', { gap: String(((mitres[0]?.s ?? mitres[1]!.s) * Math.SQRT2).toFixed(3)) }) : '');
     return [...list];
   }
 

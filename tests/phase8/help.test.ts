@@ -192,7 +192,7 @@ describe('what the help opens on (F1)', () => {
   });
 
   it('has a topic in the real catalog for every thing a feature can be', () => {
-    const types = ['sketch', 'fillet', 'chamfer', 'refPlane', 'refAxis', 'refPoint', 'coordSys', 'importedBody', 'deleteFace', 'offsetSurface', 'splitLine', 'knit', 'fillSurface', 'flatSurface', 'trimSurface', 'mutualTrim', 'extendSurface', 'thicken', 'cutWithSurface', 'lipGroove', 'screwBoss', 'baseFlange', 'edgeFlange', 'hem', 'snapHook', 'snapCatch', 'vent', 'shell', 'rib', 'mirror', 'hole', 'draft', 'moveFace', 'combine', 'extrude', 'revolve', 'sweep', 'loft', 'pattern'];
+    const types = ['sketch', 'fillet', 'chamfer', 'refPlane', 'refAxis', 'refPoint', 'coordSys', 'importedBody', 'deleteFace', 'offsetSurface', 'splitLine', 'knit', 'fillSurface', 'flatSurface', 'trimSurface', 'mutualTrim', 'extendSurface', 'thicken', 'cutWithSurface', 'lipGroove', 'screwBoss', 'baseFlange', 'midBend', 'edgeFlange', 'hem', 'snapHook', 'snapCatch', 'vent', 'shell', 'rib', 'mirror', 'hole', 'draft', 'moveFace', 'combine', 'extrude', 'revolve', 'sweep', 'loft', 'pattern'];
     for (const type of types) {
       for (const op of ['boss', 'cut']) {
         const id = contextTopic({ feature: { type, op } });

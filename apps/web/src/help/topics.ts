@@ -152,6 +152,7 @@ const FEATURE_ACTION: Record<string, string> = {
   lipGroove: 'lip-groove',
   screwBoss: 'screw-boss',
   baseFlange: 'base-flange',
+  midBend: 'mid-bend',
   edgeFlange: 'edge-flange',
   hem: 'hem',
   snapHook: 'snap-hook',

@@ -1354,6 +1354,14 @@ class AppStore {
     this.openNew({ id: this.allocator().take('flange'), type: 'baseFlange', name: nextName(this.history.doc, name), suppressed: false, sketch: sketch.id, thickness: '1.5', radius: '1.5', kFactor: '0.5', depth: '50' }, name);
   }
 
+  /** 「中間折彎」 (S-3): the selected sketch (one straight line), 90° to start with. */
+  newMidBend(): void {
+    const sketch = this.selectedSketch();
+    if (!sketch) return;
+    const name = t('feature.midBend');
+    this.openNew({ id: this.allocator().take('midbend'), type: 'midBend', name: nextName(this.history.doc, name), suppressed: false, sketch: sketch.id, angle: '90' }, name);
+  }
+
   /** 「卡榫」 (C4.11): a beam 15 long, 2 thick and 6 wide with a hook 3 high standing out 1.2, at the free points of the selected sketch, to be set in the PropertyManager. */
   newSnapHook(): void {
     const sketch = this.selectedSketch();

@@ -109,6 +109,7 @@ export function mapRefs(feature: Feature, map: (ref: Ref) => Ref): { feature: Fe
     case 'hole':
     case 'screwBoss':
     case 'baseFlange':
+    case 'midBend':
     case 'snapHook':
     case 'snapCatch':
     case 'vent':

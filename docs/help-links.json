@@ -216,7 +216,8 @@
     "vent"
   ],
   "I1": [
-    "base-flange"
+    "base-flange",
+    "mid-bend"
   ],
   "I2": [
     "edge-flange"

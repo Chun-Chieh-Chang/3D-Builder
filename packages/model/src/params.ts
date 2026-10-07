@@ -176,6 +176,13 @@ export function mapExprs(feature: Feature, fn: (expr: Expr, kind: ExprKind, role
       if (same) return feature;
       return { ...f, diameter, holeDiameter, height, ...(holeDepth === undefined ? {} : { holeDepth }), ...(draft === undefined ? {} : { draft }), ...(holeDraft === undefined ? {} : { holeDraft }), ...(ribs ? { ribs } : {}) };
     }
+    case 'midBend': {
+      const f = feature;
+      const angle = fn(f.angle, 'angle', 'includedAngle');
+      const radius = f.radius === undefined ? undefined : fn(f.radius, 'length', 'positive');
+      if (angle === f.angle && radius === f.radius) return feature;
+      return { ...f, angle, ...(radius === undefined ? {} : { radius }) };
+    }
     case 'baseFlange': {
       const f = feature;
       const thickness = fn(f.thickness, 'length', 'positive');
@@ -194,8 +201,10 @@ export function mapExprs(feature: Feature, fn: (expr: Expr, kind: ExprKind, role
       const extras = flangeExtras(f, fn);
       const corner = f.corner && { ...(f.corner.start === undefined ? {} : { start: fn(f.corner.start, 'length', 'nonNegative') }), ...(f.corner.end === undefined ? {} : { end: fn(f.corner.end, 'length', 'nonNegative') }) };
       const cornerSame = !corner || (corner.start === f.corner!.start && corner.end === f.corner!.end);
-      if (length === f.length && angle === f.angle && radius === f.radius && extras === null && cornerSame) return feature;
-      return { ...f, length, ...(angle === undefined ? {} : { angle }), ...(radius === undefined ? {} : { radius }), ...(extras ?? {}), ...(corner ? { corner } : {}) };
+      const miter = f.miter && { ...(f.miter.start === undefined ? {} : { start: fn(f.miter.start, 'length', 'nonNegative') }), ...(f.miter.end === undefined ? {} : { end: fn(f.miter.end, 'length', 'nonNegative') }) };
+      const miterSame = !miter || (miter.start === f.miter!.start && miter.end === f.miter!.end);
+      if (length === f.length && angle === f.angle && radius === f.radius && extras === null && cornerSame && miterSame) return feature;
+      return { ...f, length, ...(angle === undefined ? {} : { angle }), ...(radius === undefined ? {} : { radius }), ...(extras ?? {}), ...(corner ? { corner } : {}), ...(miter ? { miter } : {}) };
     }
     case 'hem': {
       const length = fn(feature.length, 'length', 'positive');

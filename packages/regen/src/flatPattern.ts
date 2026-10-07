@@ -83,6 +83,32 @@ export class FlatError extends Error {}
 const line = (a: P2, b: P2, source: string) => ({ kind: 'line' as const, a, b, source });
 const rect = (x0: number, y0: number, x1: number, y1: number, id: string): Region => ({ outer: [line([x0, y0], [x1, y0], `${id}.a`), line([x1, y0], [x1, y1], `${id}.b`), line([x1, y1], [x0, y1], `${id}.c`), line([x0, y1], [x0, y0], `${id}.d`)], holes: [] });
 
+/**
+ * Where the mitre plane ends the unrolled flange (斜接) at the distance `v` from the cut, along the edge: the plane is the vertical one between the outer faces of the two flanges (moved
+ * `s` for the gap), and where it crosses the bend, which has turned `v` / (radius + K·T) of the way, is `(radius + K·T)·sin` of that from the start of the bend, then constant (the flat
+ * piece is the straight wall). At the start the same mirrored.
+ */
+function mitreX(fl: SheetInfo['flanges'][number], mt: NonNullable<SheetInfo['flanges'][number]['miter'][0]>, end: 0 | 1, v: number): number {
+  const Rn = fl.allowance / fl.angle; // radius + K·T
+  const wave = v <= fl.allowance ? Rn * Math.sin(v / Rn) : Rn * Math.sin(fl.angle);
+  return end === 1 ? mt.xOuter - fl.trim + wave - mt.s : mt.xOuter + fl.trim - wave + mt.s;
+}
+
+/** The region of the unrolled flange beyond the curve of a mitre (the part to cut away), in the coordinates along the edge (x) and away from the cut (v). */
+function mitreCutter(fl: SheetInfo['flanges'][number], mt: NonNullable<SheetInfo['flanges'][number]['miter'][0]>, end: 0 | 1, vmax: number): Region {
+  const N = 24;
+  const curve: P2[] = [];
+  for (let i = 0; i <= N; i++) {
+    const v = (fl.allowance * i) / N;
+    curve.push([mitreX(fl, mt, end, v), v]);
+  }
+  const wall: P2 = [mitreX(fl, mt, end, fl.allowance + 1), vmax];
+  const far = end === 1 ? Math.max(...curve.map((p) => p[0]), wall[0]) + 10 : Math.min(...curve.map((p) => p[0]), wall[0]) - 10;
+  // counter-clockwise: up the side that is away from the flange, along the top, down the curve, back along the cut (not below it: that is the sheet the flange grows from)
+  const pts: P2[] = end === 1 ? [[far, 0], [far, vmax], wall, ...curve.slice().reverse()] : [[far, 0], ...curve, wall, [far, vmax]];
+  return { outer: pts.map((p, i) => line(p, pts[(i + 1) % pts.length]!, `mitre${end}.p${i}`)), holes: [] };
+}
+
 /** The flat pattern of the sheet metal data `sheet`; throws `FlatError` (in words) for what it cannot do. */
 export function flatPattern(kernel: Kernel, sheet: SheetInfo): FlatPattern {
   const base = sheet.base;
@@ -131,23 +157,46 @@ export function flatPattern(kernel: Kernel, sheet: SheetInfo): FlatPattern {
         };
         if (g.trim > 0) cut(kernel.extrude(place(g.origin), [strip(g.ylo - 1, g.yhi + 1)], addv([0, 0, 0], n, s * (g.trim + 1)), 0).shape);
         for (const notch of g.notches) cut(kernel.extrude(place(addv(g.mid, g.o, -notch.deep)), [strip(g.ylo - 1, g.yhi + 1, notch.x0, notch.x1)], addv([0, 0, 0], n, s * (notch.deep + 1)), 0).shape);
-        // the bend (as wide as the flange), then the flat piece (wider at an end where the corner is closed)
-        const bendTool = keep(kernel.extrude(place(g.origin), [strip(g.ylo, g.yhi)], addv([0, 0, 0], n, s * fl.allowance), 0).shape);
+        // the bend (as wide as the flange), then the flat piece (wider at an end where the corner is closed); at a mitred end both run on to the outer face of the neighbour and are cut
+        // back to the curve the mitre plane makes on the unrolled sheet
+        const [mA, mB] = fl.miter;
+        const lo = mA ? Math.min(g.xa, mA.xOuter) : g.xa;
+        const hi = mB ? Math.max(g.xb, mB.xOuter) : g.xb;
+        // (each tool is cut on its own, before it is joined: what is beyond the curve is cut away from this flange only, never from the one next to it, which is cut to its own curve)
+        const cutTool = (tool: ShapeId): ShapeId => {
+          let cur = tool;
+          for (const [end, mt] of [[0, mA], [1, mB]] as const) {
+            if (!mt) continue;
+            const frameC: Frame = { origin: addv(move(F, g.origin), m, g.ylo - 1), xDir: e, yDir: o, normal: cross(e, o) };
+            const cutter = keep(kernel.extrude(frameC, [mitreCutter(fl, mt, end, fl.allowance + fl.straight + 1)], addv([0, 0, 0], m, g.yhi - g.ylo + 2), 0).shape);
+            cur = keep(kernel.boolean('cut', cur, cutter).shape);
+          }
+          return cur;
+        };
+        const bendTool = cutTool(keep(kernel.extrude(place(g.origin), [strip(g.ylo, g.yhi, lo, hi)], addv([0, 0, 0], n, s * fl.allowance), 0).shape));
         body = keep(kernel.boolean('fuse', body, bendTool).shape);
         const flatFrame = place(addv(g.origin, g.o, fl.allowance));
-        const pieceTool = keep(kernel.extrude(flatFrame, [strip(g.ylo, g.yhi, g.pa, g.pb)], addv([0, 0, 0], n, s * fl.straight), 0).shape);
+        const pieceTool = cutTool(keep(kernel.extrude(flatFrame, [strip(g.ylo, g.yhi, mA ? lo : g.pa, mB ? hi : g.pb)], addv([0, 0, 0], n, s * fl.straight), 0).shape));
         body = keep(kernel.boolean('fuse', body, pieceTool).shape);
-        // the bend line is the middle of the strip of allowance: half of it from the cut, along the inside face
+        // the bend line is the middle of the strip of allowance: half of it from the cut, along the inside face (it ends on the curve at a mitred end)
         const c = addv(move(F, g.origin), o, fl.allowance / 2);
         const inner = addv(c, m, g.yhi);
         const at = (p: Vec3): P2 => [dot(sub(p, frame.origin), frame.xDir), dot(sub(p, frame.origin), frame.yDir)];
         const bend = sheet.bends.find((b) => b.feature === fl.feature)!;
-        bends.push({ feature: fl.feature, name: bend.name, a: at(addv(inner, e, g.xa)), b: at(addv(inner, e, g.xb)), angle: fl.angle, radius: fl.radius, direction: dot(m, frame.normal) > 0 ? 'up' : 'down', kFactor: sheet.kFactor, allowance: fl.allowance });
+        const xs = mA ? mitreX(fl, mA, 0, fl.allowance / 2) : g.xa;
+        const xe = mB ? mitreX(fl, mB, 1, fl.allowance / 2) : g.xb;
+        bends.push({ feature: fl.feature, name: bend.name, a: at(addv(inner, e, xs)), b: at(addv(inner, e, xe)), angle: fl.angle, radius: fl.radius, direction: dot(m, frame.normal) > 0 ? 'up' : 'down', kFactor: sheet.kFactor, allowance: fl.allowance });
         // where this flange's own flat piece is, for the ones that grow from it: the bend undone and moved on by the allowance
         const undo: Rigid = { R: rotation(g.axis, -fl.angle), t: [0, 0, 0] };
         undo.t = addv(sub(g.center, turn(undo, g.center)), g.o, fl.allowance);
         maps[k] = compose(F, undo);
       });
+      // the mid bend of a plate: the plate is as it was drawn (the zone of the bend is as wide as the allowance), the bend line is the line of the zone
+      const planar = (p: Vec3): P2 => [dot(sub(p, frame.origin), frame.xDir), dot(sub(p, frame.origin), frame.yDir)];
+      for (const mb of sheet.midBends) {
+        const b = sheet.bends.find((x) => x.feature === mb.feature)!;
+        bends.push({ feature: mb.feature, name: b.name, a: planar(mb.a), b: planar(mb.b), angle: mb.angle, radius: mb.radius, direction: dot(mb.up, frame.normal) > 0 ? 'up' : 'down', kFactor: sheet.kFactor, allowance: mb.allowance });
+      }
     }
     const topology = kernel.topology(body);
     const mass = kernel.massProps(body);
