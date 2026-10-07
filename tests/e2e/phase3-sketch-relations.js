@@ -50,12 +50,16 @@ R.intersection = async () => {
   await H.key('Escape');
   await H.solved();
   const lines = [...H.geom()].filter(([, g]) => g.type === 'line').map(([id]) => id);
+  const ends = lines.flatMap((id) => { const l = H.geom().get(id); return [l.p1, l.p2]; });
+  const before = ends.map((id) => H.geom().get(id).p);
   const p = H.pointAt(20, 20);
   await H.rel([p, ...lines], '交錯');
   const g = H.geom().get(p).p;
   const [a, b] = lines.map((id) => H.geom().get(id));
   const onLine = (l) => Math.abs((l.b[0] - l.a[0]) * (g[1] - l.a[1]) - (l.b[1] - l.a[1]) * (g[0] - l.a[0])) < 1e-6 * Math.hypot(l.b[0] - l.a[0], l.b[1] - l.a[1]);
-  return { name: 'a point made an intersection lies on both lines', at: g, pass: onLine(a) && onLine(b) };
+  // the two lines as drawn cross at (1, 0.5): the point comes there and the sketch does not move to the point (C6.2)
+  const moved = Math.max(...ends.map((id, k) => { const q = H.geom().get(id).p; return Math.hypot(q[0] - before[k][0], q[1] - before[k][1]); }));
+  return { name: 'a point made an intersection lands on the crossing and leaves the two lines where they are', at: g, moved, pass: onLine(a) && onLine(b) && moved < 1e-6 && near(g[0], 1) && near(g[1], 0.5) };
 };
 
 R.merge = async () => {

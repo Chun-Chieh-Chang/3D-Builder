@@ -228,6 +228,40 @@ describe('sketch tools', () => {
     expect(await c.addRelation({ type: 'horizontal', a: 'l1' })).toBe(true);
     expect(point(h, 'p2')[1]).toBeCloseTo(0, 6);
   });
+
+  it('交錯 brings a far point to the crossing of two free lines and leaves the lines where they are (C6.2)', async () => {
+    const twoLines = (crossing: boolean) =>
+      applyCommand(applyCommand(createEmptyPart(), EMPTY_SKETCH), {
+        type: 'addSketchItems',
+        featureId: 'sketch1',
+        entities: [
+          { id: 'pa', type: 'point', x: -10, y: -5 }, { id: 'pb', type: 'point', x: 10, y: 5 }, { id: 'pc', type: 'point', x: crossing ? -10 : 5, y: 6 }, { id: 'pd', type: 'point', x: crossing ? 10 : 25, y: crossing ? -4 : 16 }, { id: 'px', type: 'point', x: 20, y: 20 },
+          { id: 'la', type: 'line', p1: 'pa', p2: 'pb' }, { id: 'lb', type: 'line', p1: 'pc', p2: 'pd' },
+        ],
+        constraints: [],
+      });
+    const h = new Host(twoLines(true));
+    const c = new SketchController(h);
+    expect(h.last!.status).toBe('under'); // nothing holds the sketch: the case the manual check found
+    expect(await c.addRelation({ type: 'intersection', point: 'px', a: 'la', b: 'lb' })).toBe(true);
+    // the lines L: y = x/2 and M: y = 1 - x/2 cross at (1, 0.5); the point comes to it, the sketch stays
+    expect(point(h, 'px')).toEqual([expect.closeTo(1, 6), expect.closeTo(0.5, 6)]);
+    for (const [id, [x, y]] of [
+      ['pa', [-10, -5]],
+      ['pb', [10, 5]],
+      ['pc', [-10, 6]],
+      ['pd', [10, -4]],
+    ] as const) {
+      expect(point(h, id)).toEqual([expect.closeTo(x, 6), expect.closeTo(y, 6)]);
+    }
+
+    // parallel lines have no crossing: the relation is refused and says so, instead of the solver's over-defined answer
+    const apart = new Host(twoLines(false));
+    const apartController = new SketchController(apart);
+    expect(await apartController.addRelation({ type: 'intersection', point: 'px', a: 'la', b: 'lb' })).toBe(false);
+    expect(apart.notices.join()).toContain('沒有交點');
+    expect(apart.sketch().constraints).toEqual([]);
+  });
 });
 
 describe('sketch operations (C1.8, C1.9, C1.15, C1.16, C1.17, C1.19)', () => {

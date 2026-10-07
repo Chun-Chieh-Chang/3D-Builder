@@ -493,6 +493,14 @@ export function drawn(g: Curve, p: P2): boolean {
   return true;
 }
 
+/**
+ * Where two curves meet for the 「交錯」 relation: a line and a circle count whole, as the solver takes them, and an
+ * arc only where it is drawn. Empty for two parallel lines and for circles that are apart, where the relation cannot hold.
+ */
+export function relationCrossings(a: Curve, b: Curve): P2[] {
+  return crossings(a, b).filter((p) => (a.type === 'arc' ? drawn(a, p) : true) && (b.type === 'arc' ? drawn(b, p) : true));
+}
+
 /** How far along the curve a place is: a line's length from its first end, an arc's angle from its first end, a circle's angle from the x axis. */
 function along(g: Curve, p: P2): number {
   if (g.type === 'line') return dot(sub(p, g.a), unit(sub(g.b, g.a)));

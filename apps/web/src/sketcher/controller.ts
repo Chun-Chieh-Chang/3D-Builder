@@ -41,7 +41,7 @@ import {
 import type { P2, SolvedGeometry } from '@3db/sketch';
 import { angleStep, DEFAULT_SNAPS, gridPoint, intersectionSnap, lengthStep, perpendicularSnap, quadrantSnap, quickSettings, tangentSnap, type SnapItem, type SnapSettings } from '@3db/sketch/snaps';
 import { checkSketch, repairSketch, type SketchIssue } from '@3db/sketch/check';
-import { anchorModel, chamfer, extend, fillet, mergePoints, mirror, offset, polygon, referenceEntities, slot, trim, type ModelItem, type OpResult } from '@3db/sketch/ops';
+import { anchorModel, chamfer, extend, fillet, isCurve, mergePoints, mirror, offset, polygon, referenceEntities, relationCrossings, slot, trim, type ModelItem, type OpResult } from '@3db/sketch/ops';
 import type { SketchSolvePayload } from '../worker/protocol';
 
 export type ToolId =
@@ -417,6 +417,15 @@ export class SketchController {
   async addRelation(body: RelationBody): Promise<boolean> {
     const relation = { id: this.allocator().take('c'), ...body } as SketchConstraint;
     const s = this.sketch();
+    // 「交錯」 names the point where two curves meet; say that they do not meet rather than let the solver call it over-defined (C6.2)
+    if (relation.type === 'intersection') {
+      const g = this.geometry();
+      const [a, b] = [g.get(relation.a), g.get(relation.b)];
+      if (isCurve(a) && isCurve(b) && relationCrossings(a, b).length === 0) {
+        this.host.notify(t('sketch.noCrossingRelation'), 'error');
+        return false;
+      }
+    }
     const r = await this.host.trial({ ...s, constraints: [...s.constraints, relation] });
     if (r.status === 'over' || r.status === 'failed') {
       this.host.notify(t('sketch.overDefinedRelation'), 'error');

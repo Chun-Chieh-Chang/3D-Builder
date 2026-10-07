@@ -76,6 +76,25 @@ describe('intersection (C1.26)', () => {
     expect(s.redundant).toEqual([]);
   });
 
+  it('brings the point to the crossing of two free lines and leaves the lines where they are (C6.2)', () => {
+    // the check found: L and M drawn crossing at (1, 0.5), a point drawn far away, nothing else defined.
+    // The solver starts the point at the crossing, so it does not have to pull the sketch onto the point.
+    const doc = start(
+      [point('a', -10, -5), point('b', 10, 5), point('c', -10, 6), point('d', 10, -4), { id: 'L', type: 'line', p1: 'a', p2: 'b' }, { id: 'M', type: 'line', p1: 'c', p2: 'd' }, point('x', 20, 20)],
+      [{ id: 'k', type: 'intersection', point: 'x', a: 'L', b: 'M' }],
+    );
+    const s = solve(doc);
+    expect(at(s, 'x')).toEqual([1, 0.5]);
+    for (const [id, where] of [
+      ['a', [-10, -5]],
+      ['b', [10, 5]],
+      ['c', [-10, 6]],
+      ['d', [10, -4]],
+    ] as const) {
+      expect(at(s, id)).toEqual([...where]);
+    }
+  });
+
   it('is offered for a point and two curves, and works with a circle', () => {
     const s = solve(crossing());
     expect(applicableRelations(s.geometry, ['x', 'L', 'M']).map((r) => r.type)).toEqual(['intersection']);

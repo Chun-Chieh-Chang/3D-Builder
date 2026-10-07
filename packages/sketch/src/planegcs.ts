@@ -1,5 +1,6 @@
 import { t } from '@3db/i18n';
 import { Algorithm, make_gcs_wrapper, SolveStatus, type GcsWrapper, type SketchPrimitive } from '@salusoft89/planegcs';
+import { relationCrossings } from './ops';
 import {
   constraintRefs,
   entityPoints,
@@ -32,6 +33,40 @@ function startValues(initial: SolveOptions['initial']): Start {
     points: new Map((initial?.points ?? []).map((p) => [p.id, [p.x, p.y]])),
     radii: new Map((initial?.radii ?? []).map((r) => [r.id, r.radius])),
   };
+}
+
+type CurveShape = Extract<SolvedGeometry, { type: 'line' | 'circle' | 'arc' }>;
+
+/**
+ * Where a 「交錯」 point starts: the crossing of the two curves that define it (C6.2). Seeded here, in the
+ * mapping, so every solve does it. Without it the point starts where it was drawn, and in an under-defined
+ * sketch the solver pulls the whole sketch onto that point instead of leaving the two curves where they are.
+ */
+function intersectionSeeds(sketch: SketchFeature, pointXY: (id: Id) => [number, number], radiusAt: (id: Id) => number): Map<Id, [number, number]> {
+  const byId = new Map<Id, SketchEntity>(sketch.entities.map((e) => [e.id, e]));
+  const curve = (id: Id): CurveShape | undefined => {
+    const e = byId.get(id);
+    if (e?.type === 'line') return { type: 'line', a: pointXY(e.p1), b: pointXY(e.p2), p1: e.p1, p2: e.p2, construction: false };
+    if (e?.type === 'circle') return { type: 'circle', c: pointXY(e.center), r: radiusAt(e.id), center: e.center, construction: false };
+    if (e?.type !== 'arc') return undefined;
+    const c = pointXY(e.center);
+    const [sx, sy] = pointXY(e.start);
+    const [ex, ey] = pointXY(e.end);
+    const r = radiusAt(e.id);
+    return { type: 'arc', c, r, a0: Math.atan2(sy - c[1], sx - c[0]), a1: Math.atan2(ey - c[1], ex - c[0]), center: e.center, start: e.start, end: e.end, construction: false };
+  };
+  const out = new Map<Id, [number, number]>();
+  for (const c of sketch.constraints) {
+    if (c.type !== 'intersection') continue;
+    const [ga, gb] = [curve(c.a), curve(c.b)];
+    if (!ga || !gb || byId.get(c.point)?.type !== 'point') continue;
+    const meets = relationCrossings(ga, gb);
+    if (meets.length === 0) continue;
+    const here = pointXY(c.point);
+    // two circles meet twice: the branch nearest where the point is keeps the seed on the side it was drawn
+    out.set(c.point, meets.reduce((u, v) => (Math.hypot(v[0] - here[0], v[1] - here[1]) < Math.hypot(u[0] - here[0], u[1] - here[1]) ? v : u)));
+  }
+  return out;
 }
 
 /**
@@ -68,12 +103,23 @@ function toPrimitives(sketch: SketchFeature, start: Start, pinned: ReadonlySet<I
     if (e?.type === 'circle' || e?.type === 'arc') return e;
     throw new MappingError(t('map.notCircleOrArc', { id }));
   };
+  const radiusAt = (id: Id): number => {
+    const e = byId.get(id);
+    if (e?.type === 'circle') return start.radii.get(id) ?? e.radius;
+    if (e?.type === 'arc') {
+      const [cx, cy] = pointXY(e.center);
+      const [sx, sy] = pointXY(e.start);
+      return Math.hypot(sx - cx, sy - cy);
+    }
+    return 0;
+  };
+  const seeds = intersectionSeeds(sketch, pointXY, radiusAt);
 
   const prims: Prim[] = [{ id: SKETCH_ORIGIN, type: 'point', x: 0, y: 0, fixed: true }];
   // Points first: PlaneGCS needs what a curve refers to defined before it, and an edit can make a line point at a later point.
   for (const e of sketch.entities) {
     if (e.type !== 'point') continue;
-    const [x, y] = pointXY(e.id);
+    const [x, y] = seeds.get(e.id) ?? pointXY(e.id);
     prims.push({ id: e.id, type: 'point', x, y, fixed: pinned.has(e.id) });
   }
   for (const e of sketch.entities) {

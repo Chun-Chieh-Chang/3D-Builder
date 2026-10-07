@@ -76,6 +76,7 @@ export const sketchtools = {
   'snap.name.lineRelations': '共線、平行、垂直',
   'snap.name.model': '模型的邊與頂點',
   'sketch.overDefinedRelation': '這個限制條件會使草圖過多定義，因此沒有加入',
+  'sketch.noCrossingRelation': '所選的兩條曲線沒有交點，因此沒有加入這個限制條件',
   'sketch.tangentFromEnd': '切線弧必須從直線或圓弧的端點開始',
   'sketch.collinearCircle': '三點共線，無法產生圓',
   'sketch.collinearArc': '三點共線，無法產生圓弧',
