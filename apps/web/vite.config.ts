@@ -1,8 +1,10 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
+import { autoClose, graceFromEnv } from './dev/autoClose';
 
-export default defineConfig({
-  plugins: [react()],
+// `npm run dev:auto` runs this with `--mode autoclose`: the dev server stops by itself 30 seconds (or `DEV_AUTO_CLOSE_SECONDS`) after the last page connected to it is gone.
+export default defineConfig(({ mode }) => ({
+  plugins: [react(), ...(mode === 'autoclose' ? [autoClose({ graceSeconds: graceFromEnv(process.env.DEV_AUTO_CLOSE_SECONDS) })] : [])],
   worker: { format: 'es' },
   // The WASM packages locate their binaries via import.meta.url; pre-bundling would break that.
   optimizeDeps: { exclude: ['libcascade', '@salusoft89/planegcs'] },
@@ -11,4 +13,4 @@ export default defineConfig({
   server: { host: '127.0.0.1', port: 5391, strictPort: true },
   preview: { host: '127.0.0.1', port: 5392, strictPort: true },
   build: { target: 'es2022', chunkSizeWarningLimit: 4000 },
-});
+}));

@@ -10,6 +10,7 @@
 npm install
 npm run doctor     # 換電腦時先跑：診斷這台電腦（Node、git、node_modules 的連結、磁碟、埠、Rust），每個問題附修法
 npm run dev        # 自動開啟 http://127.0.0.1:5391（用 Edge 或 Chrome）
+npm run dev:auto   # 同上，但最後一個瀏覽器分頁關掉 30 秒後伺服器自己結束（DEV_AUTO_CLOSE_SECONDS 可改秒數）
 npm run check      # 型別檢查 + 分層檢查 + i18n 檢查 + 全部測試
 npm run build      # 網頁版正式建置
 npm run build -w @3db/desktop   # 桌面版安裝檔（要 Rust 與 MSVC，見 apps/desktop/README.md）

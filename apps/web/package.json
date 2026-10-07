@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "dev:auto": "vite --mode autoclose",
     "build": "vite build",
     "preview": "vite preview"
   },
