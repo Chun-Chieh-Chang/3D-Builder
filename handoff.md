@@ -1,6 +1,6 @@
 # 交接文件
 
-- 最後更新：2026-10-06（手動驗證做到 C5，要換電腦繼續，見 §0.0 的「在另一台電腦繼續實機驗證」與「2026-10-06 的進度」）。**Phase 0 到 7 的開發都完成**：0、1、2 的閘門完全通過（2 的驗收範圍降低，使用者接受）；3a、3b、4a、4b、5、6、7 是**有條件通過**（只用手算的金樣與種子固定的隨機測試驗過，沒有真實檔案），未做的真實樣本與實機確認見 §8 與 [docs/manual-verification.html](docs/manual-verification.html)。零件 Schema 43、`npm run check` 2150 項通過。各階段的歷史在 §3，每個里程碑的決策在 [ADR](docs/adr)，最新狀態以 `git log` 為準。先讀 §0.0。
+- 最後更新：2026-10-07（手動驗證做到 C5，要換電腦繼續，見 §0.0 的「在另一台電腦繼續實機驗證」與「2026-10-06 的進度」；10-07 做了到 ADR 0117 的功能，並清掉個人路徑，見「2026-10-07 的清理」）。**Phase 0 到 7 的開發都完成**：0、1、2 的閘門完全通過（2 的驗收範圍降低，使用者接受）；3a、3b、4a、4b、5、6、7 是**有條件通過**（只用手算的金樣與種子固定的隨機測試驗過，沒有真實檔案），未做的真實樣本與實機確認見 §8 與 [docs/manual-verification.html](docs/manual-verification.html)。零件 Schema 49、`npm run check` 2356 項通過、21 項略過。各階段的歷史在 §3，每個里程碑的決策在 [ADR](docs/adr)，最新狀態以 `git log` 為準。先讀 §0.0。
 - 用途：讓下一個工作階段（人或 AI）不讀對話紀錄也能接手。
 - 本文件只記錄「目前狀態、待辦、下一步、工作約定」。範圍與設計以藍圖、ADR、程式碼為準；若有衝突，以它們為準並更新本文件。
 
@@ -8,25 +8,26 @@
 
 ### 0.0 快速接手（2026-10-04，H-11 之後，換電腦先看這段）
 
-**狀態（2026-10-07 更新）**：Phase 0 到 7 開發完成，之後的功能到 ADR 0115；`npm run check` **2340 項通過、21 項略過**；零件 Schema **48**、組合件 Schema 7、工程圖 Schema 6。已經沒有「進行中」的里程碑，**等使用者的實機驗證結果**。鞏固 H-1 到 H-11 已做完（[hardening-plan](docs/hardening-plan.md)）。2026-10-07 使用者用選擇題決定了後續的項目，做完的與還沒做的在下面「2026-10-07 的選擇」。每個里程碑的 ADR、驗收表與限制在對應的 ADR，§3 有一行摘要。
+**狀態（2026-10-07 更新）**：Phase 0 到 7 開發完成，之後的功能到 ADR 0117；`npm run check` **2356 項通過、21 項略過**；零件 Schema **49**、組合件 Schema 7、工程圖 Schema 6。已經沒有「進行中」的里程碑，**等使用者的實機驗證結果**。鞏固 H-1 到 H-11 已做完（[hardening-plan](docs/hardening-plan.md)）。2026-10-07 使用者用選擇題決定了後續的項目，做完的與還沒做的在下面「2026-10-07 的選擇」。每個里程碑的 ADR、驗收表與限制在對應的 ADR，§3 有一行摘要。
 
 **2026-10-07 的選擇（使用者在選擇題頁面選的；做完的都已提交並推送，ADR 在 §2 文件地圖）**
 - **已做**：折彎之後才切的孔進平板型式（ADR 0113）；厚面遇尖角拒絕並說明根因（ADR 0112）；曲面互相修剪補測自由曲面（ADR 0109 的補充，沒有發現問題）；折過的基材上的凸緣的平板型式（ADR 0114）；3D 視窗顯示展開的狀態（ADR 0115）；`make:kit` 加了新功能的範例檔（`曲面/`、`鈑金/` 的互相修剪、厚面兩側、斜接、中間折彎、折過基材加凸緣、折彎後的孔；**使用者要再跑一次 `npm run make:kit`**，手冊的步驟已寫「範例檔」）；刪除舊分支 `spike/occt-gaps`（已與 main 合併）。
 - **選了但前提已經過時**：「摺邊的最小半徑規則」——ADR 0093 已決定摺邊不參加最小半徑檢查，沒有摺邊專屬規則（沒有可靠的數值，等工廠的規定）；§8 Phase 7 C 的那句舊話已更正。**要做就要先有工廠的數值。**
 - **選「先不做」或「等回饋」**：圓角與導角的其餘功能（變數半徑、選特徵與迴路、不相鄰面的面圓角、兩側不平行的完整圓角）；工程圖號球與表格拖曳（等 F 章驗證）；以曲面除料的任意向量方向；下一個大功能（組態與設計表格、由上而下設計、IGES、腳本 API）——**驗證到 H 章再選**；桌面版圖示、自動更新、簽章——**驗證結束重建安裝檔時一起處理**。
-- **SW 原生檔（使用者沒有 SolidWorks，2026-10-07 再次強調：不要要求他使用 SW）**：決定在 blueprint §1；輸出原生檔放棄；輸入靠別人給的 STEP。我曾寫過在 SW 裡跑的批次轉 STEP 巨集，使用者說不需要，已刪除。找到兩個開源專案：openswx（MIT，只讀屬性與組合件零件參照，沒有幾何）與 open-sld-to-step（Apache-2.0，NIST 比對面只吻合約 52%）；要不要用它們評估，等使用者決定（他手上的 `.SLDASM` 樣本放在 `C:\Users\ws61\Downloads\SW樣本`）。
+- **SW 原生檔（使用者沒有 SolidWorks，2026-10-07 再次強調：不要要求他使用 SW）**：決定在 blueprint §1；輸出原生檔放棄；輸入靠別人給的 STEP。我曾寫過在 SW 裡跑的批次轉 STEP 巨集，使用者說不需要，已刪除。找到兩個開源專案：openswx（MIT，只讀屬性與組合件零件參照，沒有幾何）與 open-sld-to-step（Apache-2.0，NIST 比對面只吻合約 52%）；要不要用它們評估，等使用者決定（他手上的 `.SLDASM` 樣本放在 `<使用者資料夾>\Downloads\SW樣本`）。
+- **2026-10-07 的清理（使用者用選擇題決定）**：個人路徑換成 `<使用者資料夾>`、`<檢出路徑>`（git 歷史裡仍有舊的）；`sync.ffs_db` 進 `.gitignore`；`tests/e2e/phase2-assembly.js` 的 STEP 路徑改由檔案位置推出；死碼與無效資源只列清單（`docs/cleanup-candidates.md`），使用者勾選後才刪；文件只對齊現有的，不新建 DEV_LOG.md 與 wiki/；**重新打包等實機驗證做完才做，形式選安裝檔（NSIS）**（現有的 `desktop.exe` 是 10-04 的舊檔，早於 ADR 0108）；推送要使用者說「推」才推。
 
 **換電腦（本專案要能在不同電腦開發，下面都是每台電腦自己的事，程式與文件不依賴任何一台）**：`git pull`（私人專案）→ **`npm run doctor`**（唯讀診斷：Node、git、`node_modules` 的工作區連結是否指向這個資料夾、這個磁碟能不能做連結、埠 5391、Rust 與 C++ 工具；每個問題都附修法）→ 有問題照它說的做（多半是 `npm install`）→ `npm run check`（應全過）→ `npm run dev`。**只用網頁版不需要 Rust 與 MSVC**；要建桌面版才裝（`apps/desktop/README.md` 的「需要」）。
 
 **在另一台電腦繼續「實機驗證」（2026-10-05 起的任務，照這個順序做）**
-- **進度（2026-10-06，使用者在 `D:\Self-developed_Apps\G3\3D-Builder` 這台做完 C5）**：[docs/manual-verification.html](docs/manual-verification.html) 的 84 項，**P1 到 P3、B1、C1、C2、C3、C4、C5 通過**（共 9 項；B1 與 P 系列是 10-05 在 `C:\Users\3kids` 那台做的）；**下一個是 C6**，接著 C7 到 C22，再 D、E、F、G、H、I（標「必做」的優先，「需樣本」「需你決定」的先不做）。狀態存在使用者的瀏覽器 localStorage，**不會跟著 git 換電腦**：換電腦後手冊會全部顯示「未做」，請照這一行把上面已通過的項目在手冊裡選「通過」（或直接從 C6 開始，不必補），做完一個段落按「複製結果」貼給 Claude。
+- **進度（2026-10-06，使用者在 `D:\Self-developed_Apps\G3\3D-Builder` 這台做完 C5）**：[docs/manual-verification.html](docs/manual-verification.html) 的 84 項，**P1 到 P3、B1、C1、C2、C3、C4、C5 通過**（共 9 項；B1 與 P 系列是 10-05 在 先前使用的那台電腦做的）；**下一個是 C6**，接著 C7 到 C22，再 D、E、F、G、H、I（標「必做」的優先，「需樣本」「需你決定」的先不做）。狀態存在使用者的瀏覽器 localStorage，**不會跟著 git 換電腦**：換電腦後手冊會全部顯示「未做」，請照這一行把上面已通過的項目在手冊裡選「通過」（或直接從 C6 開始，不必補），做完一個段落按「複製結果」貼給 Claude。
 - **手冊改寫（2026-10-06，使用者說「怎麼做」很不清楚，要小白也看得懂）**：[manual-verification.html](docs/manual-verification.html) 的 C1 到 I10 已改寫成「先準備＋一步一個動作＋每步下面『→』接預期畫面」，最前面加了「先看這裡」（畫面怎麼認、滑鼠鍵盤、共用做法 A 到 H、名詞表）；A、B、J、K、L 與 0 章維持原樣。寫的時候每個按鈕與欄位名稱都對過動作清單與 `packages/i18n/src/zh-TW`，C1、C6、C8、G1、鈑金（基材凸緣、邊線凸緣、摺邊、平板型式）、薄殼盒與三個塑膠分析在內建瀏覽器實際走過，數字對得上。**走的時候發現而寫進手冊的事實**：編輯草圖時「方程式」「檔案屬性」是灰的；過多定義用手做不出來（尺寸工具會把多的尺寸變成從動尺寸）；間隙要調「間隙容差」才看得到；分割線的圓要整個落在面內；鈑金用上基準面做時預設值（板厚 1.5、半徑 1.5、K 0.5）直接可用。**沒有預跑、手冊標「選做，沒有預跑」的**：旋轉的薄件、掃出的空心管／弧形路徑／錯誤情境、疊層拉伸除料與方形對圓形、肋材階梯板、相切基準面、拔模（塑膠）、卡榫與窗、排氣口、曲面的延伸／修剪／縫織／填補、量規表以外的鈑金檢查（孔到折彎）；組合件與工程圖的步驟（D、E、F）依程式的面板與腳本寫成，沒有在真正的資料夾選擇視窗走過。這次也修了一個顯示問題：「成形至本體」把本體接起來之後，面板誤顯示「（遺失參考）」（`PropertyManager.tsx` 的 `EndRef`，改成看特徵自己的報告）。
 - **2026-10-06 的進度（C1 到 C5 的發現，都已處理並提交）**：
   - **手冊**：C1 的步驟做不下去（編輯草圖時「方程式」「檔案屬性」是灰的），改成離開草圖後用方程式視窗的「草圖尺寸」表改；C3 的「診斷報告」要**雙擊**「輸入1」才看得到（單擊只是選取）；C5 與 C6 的「先準備」改成逐步寫；手冊「先看這裡」補了：單擊與雙擊、沒有關閉檔案按鈕（用「新零件」）、復原按鈕在哪、草圖吸附現況。
   - **程式**：① **復原／重做變成每個分頁都看得到的按鈕**（原本只在特徵與組合件分頁，藏在 40 個按鈕的最尾端，`CommandBar.tsx`）；② **設計樹的本體列縮排**在「實體(N)」底下；③ 「成形至本體」把本體接起來後不再誤顯示「（遺失參考）」；④ **偏移圖元、鏡射圖元、幾何建構線沒選取就按**，左邊面板最上方會顯示提示（`ControllerView.message`），原本只在最下方狀態列閃一行。
   - **待決定的新功能**：草圖吸附與推斷（虛線對齊線、吸附到模型的邊與頂點、快速抓取）——[sketch-snapping-plan.md](docs/sketch-snapping-plan.md)，依 SW 2010 繁中說明寫成，使用者決定 C 章走完再排優先序。**後面的草圖項目（C6、C7）若因為沒有吸附而做不下去，請告訴使用者並評估提前做 S-2。**
   - **這台的開發伺服器**：Claude 桌面版的預覽會定時停掉它，所以後來改用獨立的背景程式（`Start-Process npm.cmd run dev -w @3db/web`）；換電腦後在新電腦開自己的終端機執行 `npm run dev` 即可。
-- **步驟**：① `git pull` → `npm run doctor` → 有問題照它說的做（多半是 `npm install`）→ `npm run check`（應 **2340 項通過、21 項略過**；`undercut-analysis` 的 4 秒門檻與 4a 驗收在機器忙時可能失敗，單獨跑會過）。② **產生驗證用的檔案**：它們在版本庫之外，每台電腦要自己產生。PowerShell：`$env:KIT_OUT = 'C:\3DB實機確認'; npm run make:kit`（沒設 `KIT_OUT` 時寫到 `D:\3DB實機確認`，這個磁碟不存在就會失敗；清單 P2 說的 4 個檔案就在這個資料夾的根目錄，另有夾具組、塑膠件、鈑金、`STEP替身/`、`輸出/`）。PDF 的中文要這台有 `C:\Windows\Fonts\msjh.ttc`，沒有時 PDF 的中文是 `?`。③ `npm run dev`，用 **Edge 或 Chrome** 開 http://127.0.0.1:5391（要用瀏覽器的檔案系統存取）；在**同一個瀏覽器**直接開 `docs/manual-verification.html`（檔案路徑）填寫。④ 做完（或做到一半要換電腦）按頁面上方的「複製結果」，**把文字貼進對話**：狀態與備註只存在那個瀏覽器的 localStorage，不跨電腦、不進 git。⑤ 對 Claude 說：「讀取 handoff.md，接手實機驗證」。
+- **步驟**：① `git pull` → `npm run doctor` → 有問題照它說的做（多半是 `npm install`）→ `npm run check`（應 **2356 項通過、21 項略過**；`undercut-analysis` 的 4 秒門檻與 4a 驗收在機器忙時可能失敗，單獨跑會過）。② **產生驗證用的檔案**：它們在版本庫之外，每台電腦要自己產生。PowerShell：`$env:KIT_OUT = 'C:\3DB實機確認'; npm run make:kit`（沒設 `KIT_OUT` 時寫到 `D:\3DB實機確認`，這個磁碟不存在就會失敗；清單 P2 說的 4 個檔案就在這個資料夾的根目錄，另有夾具組、塑膠件、鈑金、`STEP替身/`、`輸出/`）。PDF 的中文要這台有 `C:\Windows\Fonts\msjh.ttc`，沒有時 PDF 的中文是 `?`。③ `npm run dev`，用 **Edge 或 Chrome** 開 http://127.0.0.1:5391（要用瀏覽器的檔案系統存取）；在**同一個瀏覽器**直接開 `docs/manual-verification.html`（檔案路徑）填寫。④ 做完（或做到一半要換電腦）按頁面上方的「複製結果」，**把文字貼進對話**：狀態與備註只存在那個瀏覽器的 localStorage，不跨電腦、不進 git。⑤ 對 Claude 說：「讀取 handoff.md，接手實機驗證」。
 - **B1 的發現（2026-10-05，已處理）**：① 原點預設是顯示、三個基準面隱藏（程式照設計，與 SW 一致），清單原本寫錯，已改。② 「關掉再開」的做法清單沒寫，已補（儲存檔案 → 新零件 → 開啟舊檔）。③ 清單說「刪掉伸長」會讓圓角的邊遺失參考，實際只會得到「圓角之前沒有本體」，沒有「改用最接近的」；這個功能用 `tests/phase1/repair.test.ts` 與瀏覽器裡的腳本驗過（按下後體積 991.416 mm³），清單的這一步標為略過。④ 在設計樹按右鍵會出瀏覽器的原生選單：根因是程式選單本身、原點與基準面列、「實體」列、空白處都沒有攔右鍵，右鍵落在開著的程式選單上時原生選單蓋上來（擴充功能不是原因，InPrivate 視窗一樣）；修法是整個頁面統一攔下，只放過文字輸入（`apps/web/src/nativeMenu.ts`，`tests/phase8/native-menu.test.ts`），使用者確認連按右鍵不再出現。
 - **預跑（2026-10-05，使用者要求「驗證速度太慢」之後）**：39 項必做裡，有 `tests/e2e/` 瀏覽器腳本的項目（C2 到 I8）全部在內建瀏覽器（視窗 1280×720）跑過，都過；C1 方程式用頁面手動走過。每一項的結果與「腳本沒涵蓋」的步驟寫在清單的「預跑」一行；H9、I10 是真人走一遍，沒有預跑。預跑時修了 6 個過時的腳本（`phase3-shell`、`phase3-subassembly`、`phase3-step-import`、`phase3-component-pattern`、`phase5-dimensions`、`phase5-views`，加 `phase2-assembly.js` 的 `H.decodeStep`；原因：STEP 輸出回傳 `{text}`、名稱改成 `\X2\` 逃脫碼、孔標註帶「貫穿」、剖面避開被佔住的一側、薄殼多了提示列）；清單修了檔案名稱（D1 的次組合件要由 `金樣夾具_巢狀.step` 匯入得到 `工位.3dba`）、D4 的數量、C2 的體積、D2 的按鈕名稱、F1 的路徑。**預跑不能代替人**：腳本驗的是功能與數字，視覺、手感、原生對話框、外部軟體仍要使用者做。跑這些腳本的做法：每支在剛載入的頁面 `await import('/@fs/F:/…/tests/e2e/<檔>.js?'+Date.now())` 再呼叫它的 `run()`；上一支沒收尾會留下自動存檔副本，下一次載入會跳出「找到沒有儲存的零件」，要按「捨棄」。
 - **驗證檔案的位置**：這台放在版本庫根目錄的 `3DB實機確認/`（已加進 `.gitignore`，不會被提交）；`make:kit` 的 `KIT_OUT` 可以指到這裡。
@@ -50,7 +51,7 @@
 ### 0.1 藍圖（已完成）
 
 - 藍圖曾經只存在家裡電腦，從來沒進過 git，是單點故障（2026-09-30 在另一台電腦上找不到它，Phase 3 的規劃因此卡住）。
-- **2026-09-30 已放進版本庫**：[docs/blueprint.md](docs/blueprint.md)（提交 `80964b6`，與原檔 SHA-256 相同）。原檔 `C:\Users\3kids\.claude\plans\solidworks-3d-solidworks-solidworks-3d-serene-crayon.md` 是同一份的舊副本；**之後只改 `docs/blueprint.md`**，不要兩邊各改。
+- **2026-09-30 已放進版本庫**：[docs/blueprint.md](docs/blueprint.md)（提交 `80964b6`，與原檔 SHA-256 相同）。原檔 `<使用者資料夾>\.claude\plans\solidworks-3d-solidworks-solidworks-3d-serene-crayon.md` 是同一份的舊副本；**之後只改 `docs/blueprint.md`**，不要兩邊各改。
 - `.claude/plans/` 裡沒有這個專案的其他計畫檔。
 - 藍圖有幾處技術描述已過時，範圍不受影響：OCCT 7.9.x（實際是 libcascade 3.0.2 的 OCCT 8.0.1）、pnpm（實際是 npm workspaces）、「現況為空目錄」。
 - §11 是藍圖遺失時用的備援摘要；現在藍圖在版本庫，有衝突時以藍圖為準。
@@ -66,9 +67,9 @@
 |---|---|---|
 | ~~藍圖~~ | 已在版本庫 `docs/blueprint.md`（0.1） | 不用做什麼 |
 | 使用者的全域規則 `CLAUDE.md`（SkillsBuilder 開發標準、反向提問、智囊團審查、檔案刪除保護） | 每台電腦各自的 `C:\Users\<使用者>\.claude\CLAUDE.md` | 從舊電腦複製，或依那份檔案最後一行的說明執行 SkillsBuilder 的 `INSTALL.ps1 -Global`。沒有它，§7 的工作約定不會自動生效 |
-| 桌面版的建置環境（Rust 1.99、rustup、VS 2022 Build Tools 的 C++ 工作負載、`@tauri-apps/cli`） | **每台電腦各自裝**（`npm run doctor` 會說這台有沒有）：Rust（`winget install Rustlang.Rustup`，在 `%USERPROFILE%\.cargo\bin`，新終端機要把它加進 PATH）；C++ 編譯器 VS Build Tools（2022 或 2026 都行，MSVC 14.44 與 14.50 都有人用過，Tauri 認得；若 winget 對 2022 版說「已安裝」卻失敗，是有一個不完整的舊實例，改用 `setup.exe modify` 補 C++ 工作負載，或直接用已有的 2026 版）與 Windows SDK。2026-10-04 在 `C:\Users\3kids` 這台裝好並用 Phase 4a–7 的程式重建了安裝檔（安裝檔在 `target/`，不在版本庫，各電腦自己建）；`node_modules` 之外都不在版本庫 | 新電腦要建桌面版：照 `apps/desktop/README.md` 的「需要」裝；只用網頁版不需要 |
-| SolidWorks 樣本（專有檔案，不進版本庫） | `C:\Users\ws61\Downloads\SW樣本`：`T1405001.SLDASM`、兩個單一實體的 STEP | 看 §8 第 1 項；用到它的測試靠環境變數 `SW_SAMPLE_DIR`，沒設就略過 |
-| 實機測試用的專案資料夾 | `C:\Users\ws61\Downloads\3DB實機確認` | 只是金樣零件的複本，可從 `tests/golden/` 重建（三個檔案：`定位板.3dbx`、`V型塊.3dbx`、`零件\削邊銷.3dbx`） |
+| 桌面版的建置環境（Rust 1.99、rustup、VS 2022 Build Tools 的 C++ 工作負載、`@tauri-apps/cli`） | **每台電腦各自裝**（`npm run doctor` 會說這台有沒有）：Rust（`winget install Rustlang.Rustup`，在 `%USERPROFILE%\.cargo\bin`，新終端機要把它加進 PATH）；C++ 編譯器 VS Build Tools（2022 或 2026 都行，MSVC 14.44 與 14.50 都有人用過，Tauri 認得；若 winget 對 2022 版說「已安裝」卻失敗，是有一個不完整的舊實例，改用 `setup.exe modify` 補 C++ 工作負載，或直接用已有的 2026 版）與 Windows SDK。2026-10-04 在先前使用的那台電腦裝好並用 Phase 4a–7 的程式重建了安裝檔（安裝檔在 `target/`，不在版本庫，各電腦自己建）；`node_modules` 之外都不在版本庫 | 新電腦要建桌面版：照 `apps/desktop/README.md` 的「需要」裝；只用網頁版不需要 |
+| SolidWorks 樣本（專有檔案，不進版本庫） | `<使用者資料夾>\Downloads\SW樣本`：`T1405001.SLDASM`、兩個單一實體的 STEP | 看 §8 第 1 項；用到它的測試靠環境變數 `SW_SAMPLE_DIR`，沒設就略過 |
+| 實機測試用的專案資料夾 | `<使用者資料夾>\Downloads\3DB實機確認` | 只是金樣零件的複本，可從 `tests/golden/` 重建（三個檔案：`定位板.3dbx`、`V型塊.3dbx`、`零件\削邊銷.3dbx`） |
 | 對話紀錄與 Claude 的記憶 | 各電腦本機，不同步 | 沒有：**本文件是唯一的交接** |
 | `node_modules` | 各電腦自己 `npm install` | 見 0.4 |
 
@@ -385,7 +386,7 @@ npm run build -w @3db/desktop   # 桌面版安裝檔（要 Rust 與 MSVC，見 a
   - tsc：`extends` 專案的 `tsconfig.json`，加 `paths`、`typeRoots`（`node_modules/@types` 與 `node_modules`）與絕對路徑的 `include`；`baseUrl` 已被移除，不能用；
   - vitest：`root` 指向專案，`resolve.alias` 用正規表示式（`/` 要跳脫），執行 `vitest run --config … --maxWorkers=4`。並行 worker 太多（預設約 26 個）會耗盡 WASM 記憶體而崩潰；
   - vite：設定檔用 `file:///…/node_modules/vite/dist/node/index.js` 匯入 `defineConfig` 與 react 外掛，`root` 設成 `apps/web`，`build.outDir` 指向暫存區。開發伺服器用背景程序啟動（`npx vite --config …`），再以 `preview_start` 的 `url` 開分頁；用完停掉。
-- **e2e 腳本的路徑**：`tests/e2e/*.js` 的 `H.GOLDEN` 已改成由 `import.meta.url` 推出，不再寫死使用者路徑。載入腳本時用實際的檢出位置，例如 `await import('/@fs/F:/Self-developed_Apps/G3/3D-Builder/tests/e2e/phase2-assembly.js?' + Date.now())`。本文件其他處的 `C:/Users/3kids/Downloads/3D-Builder` 是舊機器上的路徑。Vite 會把 `new URL('字面值', import.meta.url)` 當成資源匯入而改寫，所以腳本裡用字串處理。
+- **e2e 腳本的路徑**：`tests/e2e/*.js` 的 `H.GOLDEN` 已改成由 `import.meta.url` 推出，不再寫死使用者路徑。載入腳本時用實際的檢出位置，例如 `await import('/@fs/F:/Self-developed_Apps/G3/3D-Builder/tests/e2e/phase2-assembly.js?' + Date.now())`。本文件其他處的 `<檢出路徑>` 是舊機器上的路徑。Vite 會把 `new URL('字面值', import.meta.url)` 當成資源匯入而改寫，所以腳本裡用字串處理。
 - **Vite 對別的磁碟的檔案**：開發伺服器在 `F:`，`/@fs/C:/…` 的請求會拿到首頁（HTML，內容 560 位元組），不是檔案，e2e 存進 OPFS 的就是那份 HTML，載入時會報「檔案不是有效的 JSON」。要在瀏覽器測放在別的磁碟的樣本，起一個只讀、只綁 127.0.0.1 的小型靜態伺服器（Node `http`，加 `Access-Control-Allow-Origin: *`，只提供該資料夾的 `.step`），`H.project` 用它的網址取檔；用完停掉。不要為了測試複製使用者的檔案。
 - **頁面沒有繪製時的 e2e**：瀏覽器窗格隱藏、Claude 視窗被擋住時截圖逾時，依游標拾取的流程（`H.pickOn`，例如 `__asm.fixture()` 的結合）會失敗（「could not get the cursor onto face …」）。這種情況改用指令加入結合；`__asm.exportStep()` 就是這樣做的。
 - **連接埠**：5173 是本機其他 Vite 專案在用的預設埠。本專案固定使用 `127.0.0.1:5391`，並開啟 strictPort；埠被占用時直接報錯，不會換埠。
@@ -412,7 +413,7 @@ npm run build -w @3db/desktop   # 桌面版安裝檔（要 Rust 與 MSVC，見 a
 - **在組合件中點選元素**：`tests/e2e/phase2-assembly.js` 的 `H.pickOn` 把游標移到元素上的點，確認圖面認得是那個元素才按下；看不到時轉視角、放大。被別的零件蓋住的面（例如坐在板上的底面）點不到，改選看得到的邊線，同 SW 的做法。
 - **看不到畫面時檢查繪圖**：視窗隱藏時截圖會逾時，WebGL 畫布的 `toDataURL`、`drawImage` 也只得到背景。在同一段 JS 裡先呼叫 `store.viewer.render()`，再用 `gl.readPixels` 讀回像素，就能確認畫了什麼。
 - **UI 驗收腳本**（`tests/e2e/phase1-demo-parts.js`）：
-  - 用法：在頁面中 `await import('/@fs/C:/Users/3kids/Downloads/3D-Builder/tests/e2e/phase1-demo-parts.js?' + Date.now())`，再 `await __demo.plate()`（或 `vblock()`、`pin()`）。
+  - 用法：在頁面中 `await import('/@fs/<檢出路徑>/tests/e2e/phase1-demo-parts.js?' + Date.now())`，再 `await __demo.plate()`（或 `vblock()`、`pin()`）。
   - 規則：點擊一律落在畫布可見範圍內；先用滾輪縮放、Ctrl+中鍵平移到合適比例（空草圖按「全部顯示」會放大到約 700 px/mm）。
   - 被擋住的邊線點不到，要先轉動視角或換標準視角。
   - 短線要點中段，因為 7 px 內有點時會選到點。
@@ -501,14 +502,14 @@ npm run build -w @3db/desktop   # 桌面版安裝檔（要 Rust 與 MSVC，見 a
 
 0. **桌面版的人工驗收（3b-6 第 3、7 項，2026-10-03）**：在沒裝過開發工具的 Windows 帳號（或另一台電腦）安裝 `3D-Builder_0.1.0_x64-setup.exe`，斷網啟動，用**原生對話框**存、開 `.3dbx` 與 `.3dba`，開一個真的專案資料夾，最後解除安裝；步驟在 [ADR 0052](docs/adr/0052-desktop-shell.md)「要使用者做的」。安裝檔不在版本庫，在這台 `npm run build -w @3db/desktop` 重做就有。
 1. **Phase 2 驗收樣本（已結案，範圍降低）**：藍圖要的是使用者的一個 SW 組合件（10–20 個零組件）。
-   - **使用者沒有 SW，只有 eDrawings（2026-09-30）**：所以藍圖驗收 ③「在 SW 開啟」與「用 SW 樣本重組」都無法照原文做。改為把金樣夾具（15 個零組件）輸出成 `C:\Users\ws61\Downloads\金樣夾具-15零組件.step`（`STEP_OUT_DIR=<資料夾>` 跑 `tests/phase2/golden-assembly.test.ts` 產生），用 eDrawings 開啟目測。**使用者已開啟，看到的與下述一致**（eDrawings 不是 OCCT，是獨立於我們的讀取器），並**明確接受這個較低的範圍作為 Phase 2 閘門（2026-09-30）**。該檔案有：3 塊定位板並排（x = 0、120、240）、每塊 2 支削邊銷插在孔中（x ± 40）、2 個疊起來的 V 型塊在板的正中央（底面在 y = 15 與 55）。
+   - **使用者沒有 SW，只有 eDrawings（2026-09-30）**：所以藍圖驗收 ③「在 SW 開啟」與「用 SW 樣本重組」都無法照原文做。改為把金樣夾具（15 個零組件）輸出成 `<使用者資料夾>\Downloads\金樣夾具-15零組件.step`（`STEP_OUT_DIR=<資料夾>` 跑 `tests/phase2/golden-assembly.test.ts` 產生），用 eDrawings 開啟目測。**使用者已開啟，看到的與下述一致**（eDrawings 不是 OCCT，是獨立於我們的讀取器），並**明確接受這個較低的範圍作為 Phase 2 閘門（2026-09-30）**。該檔案有：3 塊定位板並排（x = 0、120、240）、每塊 2 支削邊銷插在孔中（x ± 40）、2 個疊起來的 V 型塊在板的正中央（底面在 y = 15 與 55）。
    - **之後若有人有 SW**：可補做原本的驗收，需要一個保留結構的組合件 STEP（下面的說明）。不阻擋 Phase 3。
-   - **目前狀態（2026-09-30）**：`C:\Users\ws61\Downloads\SW樣本` 有 `CIV0000467治具_step.STEP`、`3D_MT17203_CIV0000467_Porduct.STEP` 與 `T1405001.SLDASM`，**都不能用來驗收**：兩個 STEP 各只有 1 個 `PRODUCT`、1 個實體、0 個 `NEXT_ASSEMBLY_USAGE_OCCURRENCE`（AP203，組合件被併成單一實體；治具 2004 個面、130×100×10 mm，產品件 340 個面）；`.SLDASM` 是 SW 的專有壓縮格式，讀不出零件參照，我們沒有讀取器，它的零件檔（`.SLDPRT`）也沒給。需要重新輸出：每個不同的零件各一個 STEP，外加一個保留組合件結構的組合件 STEP（檢查：搜尋 `NEXT_ASSEMBLY_USAGE_OCCURRENCE`，應有 10 次以上）。
+   - **目前狀態（2026-09-30）**：`<使用者資料夾>\Downloads\SW樣本` 有 `CIV0000467治具_step.STEP`、`3D_MT17203_CIV0000467_Porduct.STEP` 與 `T1405001.SLDASM`，**都不能用來驗收**：兩個 STEP 各只有 1 個 `PRODUCT`、1 個實體、0 個 `NEXT_ASSEMBLY_USAGE_OCCURRENCE`（AP203，組合件被併成單一實體；治具 2004 個面、130×100×10 mm，產品件 340 個面）；`.SLDASM` 是 SW 的專有壓縮格式，讀不出零件參照，我們沒有讀取器，它的零件檔（`.SLDPRT`）也沒給。需要重新輸出：每個不同的零件各一個 STEP，外加一個保留組合件結構的組合件 STEP（檢查：搜尋 `NEXT_ASSEMBLY_USAGE_OCCURRENCE`，應有 10 次以上）。
    - （2026-10-01）樣本資料夾多了 `組合件1.step`（16 MB）：檔頭是 Open CASCADE 8.0、2 個實體、2 個 `NEXT_ASSEMBLY_USAGE_OCCURRENCE`，是本工具自己輸出的（治具加產品件），不是 SW 的輸出，不能當 3b 的樣本。
    - 每個不同的零件各自輸出 STEP；重複使用的零件只要一份。這些檔案輸入後當零件用。
    - 整個組合件的 STEP，或各零組件位置的截圖，用來比對位置。組合件 STEP 輸入是 Phase 3b，所以只拿來對照。
    - 最晚在 2F 前提供；越早越好，2E 的 STEP 組合件輸出也能拿它對照。
-2. **2A–2E 實機確認（已完成，2026-09-30）**：使用者用自己的瀏覽器走完下面五組（建立與存檔、結合、移動與參考檔、輸出 STEP、載入進度），系統的資料夾與存檔對話框都確認過。過程中發現右鍵旋轉沒有任何提示，已補上圖面提示（`f14d266`）。測試用的專案資料夾是 `C:\Users\ws61\Downloads\3DB實機確認`（金樣零件的複本）。伺服器是用背景程序加暫存設定啟動的（`F:` 磁碟不能 `npm run dev`，見 §6「工作區連結」）。以下是當時的步驟，留作日後再測的清單：
+2. **2A–2E 實機確認（已完成，2026-09-30）**：使用者用自己的瀏覽器走完下面五組（建立與存檔、結合、移動與參考檔、輸出 STEP、載入進度），系統的資料夾與存檔對話框都確認過。過程中發現右鍵旋轉沒有任何提示，已補上圖面提示（`f14d266`）。測試用的專案資料夾是 `<使用者資料夾>\Downloads\3DB實機確認`（金樣零件的複本）。伺服器是用背景程序加暫存設定啟動的（`F:` 磁碟不能 `npm run dev`，見 §6「工作區連結」）。以下是當時的步驟，留作日後再測的清單：
    - 先建立一個專案資料夾（例如「文件\CIV0000467」），把 STEP 檔（或 .3dbx）放進去；不建議直接選「下載」。
    - 「檔案」→「新組合件」：直接進入「開始組合件」，先選這個專案資料夾（Windows 的選資料夾視窗只顯示資料夾，看不到檔案是正常的；瀏覽器會詢問是否允許讀取）；清單會列出資料夾裡的 .3dbx 與 STEP 檔；
    - 在清單點一個零件、按 ✓ 放在原點（固定）；再用「組合件」→「插入零組件」插入零件，其中一個插入兩次，在圖面點一下放置；
@@ -775,7 +776,7 @@ npm run build -w @3db/desktop   # 桌面版安裝檔（要 Rust 與 MSVC，見 a
 - 「移動面」：點一個平面，輸入距離（正值往外、負值往材料內）；斜壁維持斜度。點與圓角相切的面會被拒絕，訊息說明「請先移動連同的圓角，或先刪除圓角」。
 - 輸入本體（例如把只有曲面的 STEP 開起來）：屬性管理員有「診斷報告」與「縫合容差」；縫隙太寬時特徵顯示錯誤「仍有 n 條邊沒有接上」，把縫合容差加大就會接上。
 - 重算超過 60 秒（OCCT 卡住）會換掉 Worker 並說明；開發時可用 `store.rebuildLimitMs = 8000` 縮短，用產品件的 `import1:f254` 重現（見 ADR 0021 §9）。
-- 瀏覽器腳本：`await import('/@fs/<檢出路徑>/tests/e2e/phase3-direct-edit.js?' + Date.now())`，再 `await __d3.deleteFillet()`、`moveFace()`、`refuseNextToFillet()`；`importRepair()` 需要在 127.0.0.1:5393 提供 `faces-only.step` 與 `gapped.step` 的只讀靜態伺服器（由 `tests/support/stepSamples.ts` 製造）。真實 STEP：`$env:SW_SAMPLE_DIR='C:\Users\ws61\Downloads\SW樣本'; npx vitest run tests/phase3/real-sample-edit.test.ts`（約 10 分鐘，每次重算 3–6 秒）。
+- 瀏覽器腳本：`await import('/@fs/<檢出路徑>/tests/e2e/phase3-direct-edit.js?' + Date.now())`，再 `await __d3.deleteFillet()`、`moveFace()`、`refuseNextToFillet()`；`importRepair()` 需要在 127.0.0.1:5393 提供 `faces-only.step` 與 `gapped.step` 的只讀靜態伺服器（由 `tests/support/stepSamples.ts` 製造）。真實 STEP：`$env:SW_SAMPLE_DIR='<使用者資料夾>\Downloads\SW樣本'; npx vitest run tests/phase3/real-sample-edit.test.ts`（約 10 分鐘，每次重算 3–6 秒）。
 
 **3a-3 多本體已實作（2026-10-01，ADR 0022，已提交推送）。要驗收的（使用者尚未實機確認）：** 畫兩個分開的塊 → 設計樹出現「實體(2)」；第三個塊與第一個重疊，在伸長的屬性管理員取消「合併結果」→ 第三個本體；「特徵」分頁的「組合」選類型、主要本體與要組合的本體（也可以在圖面點選面）；本體列的眼睛隱藏後圖面看不到也點不到；雙擊本體列重新命名；右鍵「設為參考本體」後質量扣掉它；除料把一個本體切成兩塊會變成兩個本體（最大的保留原 id，另一個叫 `<除料>#2`）；存檔重開仍在。瀏覽器腳本：`await import('/@fs/<檢出路徑>/tests/e2e/phase3-bodies.js?' + Date.now())`，再 `await __b.all()`。
 

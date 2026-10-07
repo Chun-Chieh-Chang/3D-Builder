@@ -3,7 +3,7 @@
  * face moved. The files are not in the repository: point SW_SAMPLE_DIR at the folder that holds them and this runs;
  * without it, it is skipped.
  *
- *   $env:SW_SAMPLE_DIR = 'C:\Users\ws61\Downloads\SW樣本'; npx vitest run tests/phase3/real-sample-edit.test.ts
+ *   $env:SW_SAMPLE_DIR = '<使用者資料夾>\Downloads\SW樣本'; npx vitest run tests/phase3/real-sample-edit.test.ts
  *
  * What is promised is not that every face can be edited (a hole in a thin wall may have no way to close) but that
  * what is built is valid, that the volume is what the geometry says it should be where that can be worked out by

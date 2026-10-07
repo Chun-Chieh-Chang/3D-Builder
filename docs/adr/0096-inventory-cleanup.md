@@ -19,7 +19,7 @@
 ## 資安與數據隱私盤點（推送前）
 
 - 追蹤中的檔案沒有金鑰、權杖、密碼或私鑰（掃過 api key／secret／password／token／private key 的樣式）；沒有電子郵件地址（除了 `noreply@anthropic.com` 的提交署名）。
-- 出現使用者名稱的只有：`handoff.md`、`docs/blueprint.md` 與三個需要真實樣本的測試／腳本裡的本機路徑（`C:\Users\ws61\…`、`C:\Users\3kids\…`），是「樣本放在哪裡」的說明，不含憑證。
+- 出現使用者名稱的只有：`handoff.md`、`docs/blueprint.md` 與三個需要真實樣本的測試／腳本裡的本機路徑（`C:\Users\<名稱>\…`（2026-10-07 已全部換成 `<使用者資料夾>`、`<檢出路徑>` 這類通用寫法）），是「樣本放在哪裡」的說明，不含憑證。
 - 遠端是 GitHub 私人倉庫（`gh repo view` 確認 `PRIVATE`）；提交作者信箱是 git 設定的帳號信箱。
 - `.gitignore` 排除 `node_modules`、`dist`、`target`、輸出目錄；`SW_SAMPLE_DIR` 的專有樣本不進版本庫。
 

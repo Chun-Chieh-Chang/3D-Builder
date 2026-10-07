@@ -9,3 +9,5 @@ apps/desktop/src-tauri/target/
 apps/desktop/src-tauri/gen/
 apps/desktop/src-tauri/icons/android/
 apps/desktop/src-tauri/icons/ios/
+
+sync.ffs_db

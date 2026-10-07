@@ -2,7 +2,7 @@
  * Phase 2F, on the user's own SolidWorks files (handoff §8). The files are not in the repository:
  * point SW_SAMPLE_DIR at the folder that holds them and this runs; without it, it is skipped.
  *
- *   $env:SW_SAMPLE_DIR = 'C:\Users\ws61\Downloads\SW樣本'; npm test -- tests/phase2/real-sample.test.ts
+ *   $env:SW_SAMPLE_DIR = '<使用者資料夾>\Downloads\SW樣本'; npm test -- tests/phase2/real-sample.test.ts
  *
  * The sample given first was two single-body STEP files (a fixture of 2004 faces, a product of 340) with
  * no assembly structure, so this is the partial acceptance: the two taken as the parts of a small

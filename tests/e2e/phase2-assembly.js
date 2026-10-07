@@ -710,7 +710,7 @@ asm.mateExtras = async () => {
  */
 asm.step = async () => {
   H.ready();
-  const STEP = '/@fs/C:/Users/3kids/Downloads/3D-Builder/tests/fixtures/step/plate-with-hole.step';
+  const STEP = `${H.GOLDEN.replace(/golden\/$/, 'fixtures/step/')}plate-with-hole.step`;
   await H.project({ 'CIV0000467治具.STEP': STEP, '削邊銷.3dbx': `${H.GOLDEN}diamond-pin.3dbx`, 'node_modules/pkg/skip.step': STEP });
   await H.action('檔案', '新組合件');
   if (store.getState().folderRequest) await H.modalButton('選擇資料夾…');
