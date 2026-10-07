@@ -30,12 +30,22 @@ g.run = async () => {
   store.setPickFilter('edges', false);
   await H.settle();
   H.check(!v.edgesOn && v.facesOn && v.verticesOn, 'the edges box off: edges are not picked, faces and vertices are');
+  const edgeColor = () => v.edges.geometry.getAttribute('color').array.slice(0, 3).join();
+  const bodyOpacity = () => v.body.material.opacity;
+  const faintEdges = edgeColor();
+  H.check(bodyOpacity() === 1, 'the edges box off: the body is still solid');
+  store.setPickFilter('edges', true);
+  await H.settle();
+  H.check(edgeColor() !== faintEdges, 'the edges box ticked: the edges are drawn stronger than when it was off');
+  store.setPickFilter('edges', false);
   store.setPickFilter('vertices', false);
   store.setPickFilter('faces', false);
   await H.settle();
   H.check(!v.edgesOn && !v.facesOn && !v.verticesOn, 'all three off: nothing is picked');
+  H.check(Math.abs(bodyOpacity() - 0.45) < 1e-9 && v.body.material.transparent, 'the faces box off: the body is drawn see-through');
   for (const k of ['faces', 'edges', 'vertices']) store.setPickFilter(k, true);
   await H.settle();
+  H.check(bodyOpacity() === 1 && !v.body.material.transparent, 'all ticked again: the body is solid again');
 
   // an edge, then a second with Ctrl, then the first again with Ctrl (ticked out), then a click on nothing
   const names = st().result.edgeNames;
