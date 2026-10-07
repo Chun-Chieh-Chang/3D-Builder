@@ -14,7 +14,6 @@ export const patterns = {
   'pattern.nameEmpty': '名稱不可空白',
   'pattern.idInUse': 'ID 已被使用：{id}',
   'pattern.notFound': '找不到排列：{id}',
-  'pattern.seedLeftOut': '種子「{name}」已抑制，排列的實例也不存在',
   'pattern.mirrorSuffix': '（鏡射）',
   'pattern.stepInstanceName': '{seed} 〔{pattern}：{label}〕',
   'pattern.noComponent': '組合件裡沒有可以排列的零組件',
@@ -54,5 +53,4 @@ export const patterns = {
   'pattern.edit': '編輯排列',
   'pattern.delete': '刪除排列',
   'pattern.treeRow': '{name}（{seed}）',
-  'pattern.folder': '複製排列',
   'pattern.instances': '{n} 個實例',} as const;

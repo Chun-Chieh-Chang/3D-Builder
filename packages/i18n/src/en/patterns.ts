@@ -16,7 +16,6 @@ export const patterns: Translation = {
   'pattern.nameEmpty': 'The name cannot be empty',
   'pattern.idInUse': 'The ID is already in use: {id}',
   'pattern.notFound': 'The pattern is not there: {id}',
-  'pattern.seedLeftOut': 'The seed "{name}" is suppressed, so the instances of its pattern are not there',
   'pattern.mirrorSuffix': ' (mirrored)',
   'pattern.stepInstanceName': '{seed} [{pattern}: {label}]',
   'pattern.noComponent': 'The assembly has no component to pattern',
@@ -56,5 +55,4 @@ export const patterns: Translation = {
   'pattern.edit': 'Edit Pattern',
   'pattern.delete': 'Delete Pattern',
   'pattern.treeRow': '{name} ({seed})',
-  'pattern.folder': 'Component Patterns',
   'pattern.instances': '{n} instances',};

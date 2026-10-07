@@ -17,7 +17,6 @@ export const equations = {
   'eq.newExpr': '運算式，例如 20 或 w*2',
   'eq.none': '（還沒有全域變數）',
   'eq.noDimensions': '（草圖裡還沒有尺寸）',
-  'eq.dimensionName': '尺寸名稱：{name}',
   'eq.close': '關閉',
 
   'props.title': '檔案屬性',

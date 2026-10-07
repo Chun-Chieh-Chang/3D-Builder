@@ -46,7 +46,6 @@ export const pmpanels: Translation = {
   'pm.edges.heading': 'Edges for the {label}',
   'pm.edges.empty': '(pick edges in the graphics area)',
   'pm.edges.item': 'Edge {n}',
-  'pm.edges.hint': 'While editing, the model before the {label} is shown; pick an edge to add or remove it. References are kept as persistent names, not as indexes.',
   'pm.edges.hintFaces': 'While editing, the model before the {label} is shown; pick an edge or a face to add or remove it. A face stands for all its edges (except smooth ones and seams), and for the edges it gets later. References are kept as persistent names, not as indexes.',
   'pm.faces.heading': 'Faces for the {label} (all their edges)',
   'pm.faces.empty': '(pick faces in the graphics area)',

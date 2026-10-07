@@ -8,7 +8,6 @@ export const help: Translation = {
   'helpui.buttonTip': 'Help (F1): opens the help on what you are doing',
   'helpui.whatIsThis': 'What Is This?',
   'helpui.whatIsThisTip': 'Then click any button or panel to open its help (Esc to cancel)',
-  'helpui.pickHint': 'Click the button or panel you want help on; Esc cancels.',
   'helpui.search': 'Search help…',
   'helpui.contents': 'Contents',
   'helpui.noResult': 'Nothing found.',
@@ -18,7 +17,6 @@ export const help: Translation = {
   'helpui.pressF1': 'Press F1 for more',
   'helpui.noBody': 'This topic has no detailed text yet; its short description is above.',
   'helpui.shortcut': 'Shortcut: {key}',
-  'helpui.noTopic': 'There is no help for this.',
   'help.group.concept': 'Basics',
 
   // ---------------------------------------------------------------- concepts

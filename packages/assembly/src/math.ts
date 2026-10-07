@@ -16,8 +16,6 @@ export function qmul(a: Quat, b: Quat): Quat {
   return [aw * bx + ax * bw + ay * bz - az * by, aw * by - ax * bz + ay * bw + az * bx, aw * bz + ax * by - ay * bx + az * bw, aw * bw - ax * bx - ay * by - az * bz];
 }
 
-export const conjugate = ([x, y, z, w]: Quat): Quat => [-x, -y, -z, w];
-
 export function qnormalize(q: Quat): Quat {
   const n = Math.hypot(q[0], q[1], q[2], q[3]) || 1;
   // One sign for one rotation (w ≥ 0), so equal rotations compare equal.

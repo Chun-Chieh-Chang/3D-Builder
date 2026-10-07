@@ -18,7 +18,6 @@ export const mates: Translation = {
   'matePanel.advanced': 'Advanced Mates',
   'matePanel.widthHint': 'Pick in order in the graphics area: the width faces (two, on one component), then the tab faces (two, on another)',
   'matePanel.symmetricHint': 'Pick in order in the graphics area or the tree at the top left: the two elements to mirror, then the symmetry plane',
-  'matePanel.limits': 'Limits',
   'matePanel.min': 'Minimum',
   'matePanel.max': 'Maximum',
   'matePanel.slot.width1': 'Width face 1',
@@ -33,5 +32,4 @@ export const mates: Translation = {
   'mate.symmetricPlane': 'The symmetry plane has to be a plane',
   'mate.symmetricPair': 'Symmetric takes two elements of one kind: two planes, two points, or two lines/axes',
   'mate.widthPlanes': 'All four elements of a width mate have to be planes',
-  'mate.limitNeedsValue': 'A limit mate needs a starting value',
 };

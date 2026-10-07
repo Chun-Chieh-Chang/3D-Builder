@@ -16,7 +16,6 @@ export const help = {
   'helpui.buttonTip': '說明 (F1)：依目前在做的事開啟說明',
   'helpui.whatIsThis': '這是什麼？',
   'helpui.whatIsThisTip': '按下後，點任何按鈕或面板，會開啟它的說明（Esc 取消）',
-  'helpui.pickHint': '點選要看說明的按鈕或面板；Esc 取消。',
   'helpui.search': '搜尋說明…',
   'helpui.contents': '目錄',
   'helpui.noResult': '找不到符合的說明。',
@@ -26,7 +25,6 @@ export const help = {
   'helpui.pressF1': '按 F1 看更多',
   'helpui.noBody': '這個主題還沒有詳細說明；上面是它的簡述。',
   'helpui.shortcut': '快速鍵：{key}',
-  'helpui.noTopic': '沒有這個主題的說明。',
   'help.group.concept': '基本概念',
 
   // ---------------------------------------------------------------- concepts

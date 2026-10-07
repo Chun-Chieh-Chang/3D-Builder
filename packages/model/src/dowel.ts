@@ -14,8 +14,6 @@ export const DOWEL_FITS: readonly DowelFit[] = ['H6', 'H7', 'H8'];
 /** The pins that go in them (ISO 8734 type A is m6, type B h8; h6 slides). */
 export type PinClass = 'm6' | 'h6' | 'h8';
 
-export const DOWEL_STANDARD_SOURCE = 'ISO 286-1 / ISO 8734';
-
 /** Nominal diameters of dowel pins (ISO 8734), mm. */
 export const ISO_DOWEL_DIAMETERS: readonly number[] = [1, 1.5, 2, 2.5, 3, 4, 5, 6, 8, 10, 12, 16, 20, 25, 30, 40, 50];
 

@@ -38,6 +38,5 @@ export const explode: Translation = {
   'explode.edit': 'Edit',
   'explode.hint': 'Steps only record intent and no component position is changed: Explode is a display, Collapse returns to the assembled look; a STEP export is always the assembled positions. A sub-assembly moves as a whole and the instances of a pattern follow their seed.',
   'explode.stepSummary': '{components}: {distance}',
-  'explode.exploded': 'Exploded: components cannot be moved or mated',
   'explode.cannotWhileExploded': 'Components cannot be moved and mates cannot be edited while the view is exploded: press Collapse first',
 };

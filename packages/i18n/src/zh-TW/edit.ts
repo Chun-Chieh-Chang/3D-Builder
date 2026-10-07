@@ -1,6 +1,5 @@
 /** Messages of direct editing (C10.1 move face, C10.2 delete face) from the kernel and the rebuild. */
 export const edit = {
-  'edit.deleteFace': '刪除面',
   'edit.moveFace': '移動面',
   'edit.noFacesToDelete': '尚未選擇要刪除的面',
   'edit.faceOutOfRange': '面索引超出範圍：{index}',
@@ -297,7 +296,6 @@ export const edit = {
   'flat.size': '外包尺寸',
   'flat.area': '面積',
   'flat.thickness': '板厚',
-  'flat.volume': '體積',
   'flat.bends': '折彎',
   'flat.bendAngle': '角度',
   'flat.bendRadius': '內側半徑',

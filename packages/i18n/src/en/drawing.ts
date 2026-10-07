@@ -91,7 +91,6 @@ export const drawing: Translation = {
   'drawingUi.detail': 'Detail View',
   'drawingUi.sectionVertical': 'Vertical cutting line',
   'drawingUi.sectionHorizontal': 'Horizontal cutting line',
-  'drawingUi.sectionAt': 'Cutting line at',
   'drawingUi.sectionFlip': 'Flip (arrows to the other side)',
   'drawingUi.detailCentre': 'Centre',
   'drawingUi.detailRadius': 'Radius',

@@ -89,7 +89,6 @@ export const drawing = {
   'drawingUi.detail': '細部放大圖',
   'drawingUi.sectionVertical': '垂直剖面線',
   'drawingUi.sectionHorizontal': '水平剖面線',
-  'drawingUi.sectionAt': '剖面線位置',
   'drawingUi.sectionFlip': '反向（箭頭換邊）',
   'drawingUi.detailCentre': '圓心',
   'drawingUi.detailRadius': '半徑',

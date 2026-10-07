@@ -44,7 +44,6 @@ export const pmpanels = {
   'pm.edges.heading': '要產生{label}的邊線',
   'pm.edges.empty': '（在圖面中點選邊線）',
   'pm.edges.item': '邊線 {n}',
-  'pm.edges.hint': '編輯時顯示{label}之前的模型；點選邊線加入或移除。參考以持久名稱儲存，不使用索引。',
   'pm.edges.hintFaces': '編輯時顯示{label}之前的模型；點選邊線或面加入或移除。選面就是處理它所有的邊線（相切連續的邊與接縫除外），之後面多出的邊也會處理。參考以持久名稱儲存，不使用索引。',
   'pm.faces.heading': '要產生{label}的面（處理面的所有邊線）',
   'pm.faces.empty': '（在圖面中點選面）',

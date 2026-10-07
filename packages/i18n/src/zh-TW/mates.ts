@@ -16,7 +16,6 @@ export const mates = {
   'matePanel.advanced': '進階結合',
   'matePanel.widthHint': '依序在圖面選擇：寬度面（兩個，在同一個零組件上）、薄片面（兩個，在另一個零組件上）',
   'matePanel.symmetricHint': '依序在圖面或左上的樹選擇：兩個要對稱的元素，然後是對稱面',
-  'matePanel.limits': '限制',
   'matePanel.min': '最小值',
   'matePanel.max': '最大值',
   'matePanel.slot.width1': '寬度面 1',
@@ -31,5 +30,4 @@ export const mates = {
   'mate.symmetricPlane': '對稱面必須是平面',
   'mate.symmetricPair': '相互對稱用於兩個同類的元素：兩個平面、兩個點、或兩條線／軸',
   'mate.widthPlanes': '寬度結合的四個元素都必須是平面',
-  'mate.limitNeedsValue': '限制結合需要一個起始數值',
 } as const;

@@ -2,7 +2,6 @@ import type { Translation } from '../index';
 
 /** Messages of direct editing (C10.1 move face, C10.2 delete face) from the kernel and the rebuild. */
 export const edit: Translation = {
-  'edit.deleteFace': 'Delete Face',
   'edit.moveFace': 'Move Face',
   'edit.noFacesToDelete': 'No face to delete has been picked',
   'edit.faceOutOfRange': 'The face index is out of range: {index}',
@@ -299,7 +298,6 @@ export const edit: Translation = {
   'flat.size': 'Overall Size',
   'flat.area': 'Area',
   'flat.thickness': 'Thickness',
-  'flat.volume': 'Volume',
   'flat.bends': 'Bends',
   'flat.bendAngle': 'Angle',
   'flat.bendRadius': 'Inside Radius',

@@ -21,5 +21,4 @@ export const stepasm = {
   'stepasm.folderSubs': '組件',
   'stepasm.unnamed': '未命名{n}',
   'stepasm.emptyAssembly': '組合件「{name}」沒有任何零組件',
-  'stepasm.failedWhy': 'STEP 讀取失敗：{why}',
 } as const;

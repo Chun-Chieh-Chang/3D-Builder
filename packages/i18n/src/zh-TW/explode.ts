@@ -36,6 +36,5 @@ export const explode = {
   'explode.edit': '編輯',
   'explode.hint': '步驟只記錄意圖，零組件的位置不會被改：「爆炸」是顯示，「收合」回到組裝的樣子；輸出 STEP 永遠是組裝的位置。次組合件整個移動，複製排列的實例跟著種子。',
   'explode.stepSummary': '{components}：{distance}',
-  'explode.exploded': '爆炸中：不能移動零組件、不能結合',
   'explode.cannotWhileExploded': '爆炸視圖展開時不能移動零組件或編輯結合，請先按「收合」',
 } as const;

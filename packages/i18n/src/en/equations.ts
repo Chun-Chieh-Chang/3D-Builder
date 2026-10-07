@@ -19,7 +19,6 @@ export const equations: Translation = {
   'eq.newExpr': 'Expression, for example 20 or w*2',
   'eq.none': '(no global variables yet)',
   'eq.noDimensions': '(no dimensions in the sketches yet)',
-  'eq.dimensionName': 'Dimension name: {name}',
   'eq.close': 'Close',
 
   'props.title': 'File Properties',

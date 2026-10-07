@@ -23,5 +23,4 @@ export const stepasm: Translation = {
   'stepasm.folderSubs': 'Sub-assemblies',
   'stepasm.unnamed': 'Unnamed {n}',
   'stepasm.emptyAssembly': 'The assembly "{name}" has no components',
-  'stepasm.failedWhy': 'Reading the STEP file failed: {why}',
 };
