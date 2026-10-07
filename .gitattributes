@@ -10,4 +10,3 @@
 # STEP fixtures are compared by content hash: no line-ending conversion.
 *.step -text
 *.stp -text
-*.bas text eol=crlf
