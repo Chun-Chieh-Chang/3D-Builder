@@ -20,6 +20,23 @@ function arcPath(s: Extract<FlatSegment, { kind: 'arc' }>, y: (v: number) => num
  * The 「平板型式」 window in the graphics area (C11.3): the flat pattern of the sheet metal part as it is shown, drawn (the outline in full, the bend lines dashed), its overall size
  * and area, and the bends with their angle, inside radius, direction and allowance. It is worked out again when the model changes. Nothing of it is saved.
  */
+/** The cuts of features made after the sheet's own that the pattern could not put back, with the feature and the reason (ADR 0113). */
+function NotIncluded({ items }: { items: { feature: string; why: 'bend' | 'straddles' | 'bentBase' | 'unplaced' }[] }) {
+  const doc = useStore((s) => s.doc);
+  if (items.length === 0) return null;
+  const nameOf = (id: string) => doc.features.find((f) => f.id === id)?.name ?? id;
+  return (
+    <div data-field="notIncluded" className="error">
+      <strong>{t('flat.notIncluded')}</strong>
+      <ul>
+        {items.map((x, i) => (
+          <li key={i}>{t('flat.notIncludedItem', { name: nameOf(x.feature), why: t(`flat.why.${x.why}`) })}</li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
 /** The manufacturability checks (C11): the three limits, and every check that was made with whether it passed. */
 function Checks() {
   const flat = useStore((s) => s.flat);
@@ -143,6 +160,7 @@ export function FlatPanel() {
               </tbody>
             </table>
           )}
+          <NotIncluded items={report.notIncluded} />
           <p className="muted">{t('flat.hint')}</p>
         </>
       )}

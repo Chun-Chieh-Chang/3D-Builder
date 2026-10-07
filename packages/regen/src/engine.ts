@@ -170,6 +170,18 @@ export interface SheetMidBend {
   angle: number;
   radius: number;
   allowance: number;
+  /** A point of the line (on the plate's lower face), the direction from the side that stays to the side that turns, the axis of the bend and the slide of the side that turns, to put a cut made after the bend back. */
+  q: Vec3;
+  side: Vec3;
+  center: Vec3;
+  axis: Vec3;
+  slide: Vec3;
+}
+
+/** The material a feature made after the sheet took away (the volume of the sheet before it less the volume after it), in the folded part, for the flat pattern to put back (ADR 0113). The shape belongs to the rebuild. */
+export interface SheetCut {
+  feature: Id;
+  shape: ShapeId;
 }
 
 /** One end of a flange that is mitred against its neighbour (斜接): the plane between them is `s` (half the gap, across the corner) off the halving plane, and the neighbour's outer face is at `xOuter` along the edge. */
@@ -213,6 +225,8 @@ export interface SheetInfo {
   flanges: SheetFlange[];
   /** The mid bends of a plate (at most one). */
   midBends: SheetMidBend[];
+  /** What the features after the sheet's own took away (holes, notches), in the order they were made. */
+  cuts: SheetCut[];
   base: SheetBase | null;
   /** The length of the flat pattern of a bent base flange along its profile (the straight pieces and the allowances); null for a plate. */
   flatLength: number | null;
@@ -391,6 +405,9 @@ const importKey = (sha256: string, sewTolerance: string | undefined): string => 
   return `${sha256}|${tolerance}`;
 };
 
+/** The features that make the sheet itself: what they add and take away is in the data they record, not in `sheet.cuts`. */
+const SHEET_FEATURES = new Set<string>(['baseFlange', 'edgeFlange', 'hem', 'midBend']);
+
 const concatNames = (a: ElementNames, b: ElementNames): ElementNames => ({
   faces: [...a.faces, ...b.faces],
   edges: [...a.edges, ...b.edges],
@@ -418,6 +435,8 @@ export class Regenerator {
   private info: string | null = null;
   /** The sheet metal data recorded so far in this rebuild (C11). */
   private sheet: SheetInfo | null = null;
+  /** The feature being built (what `advance` is for): the sheet's cuts are what the features after its own take away. */
+  private current: Feature | null = null;
   /** Reference planes built so far in this rebuild (C3.2). */
   private planes = new Map<Id, PlaneFrame>();
   /** Reference axes, points and coordinate systems built so far in this rebuild (C3.3–C3.5). */
@@ -505,6 +524,7 @@ export class Regenerator {
     }
     this.usedImports = new Set();
     this.sheet = null;
+    this.current = null;
     resolved.features.forEach((feature, index) => {
       const started = performance.now();
       this.warnings = [];
@@ -529,6 +549,7 @@ export class Regenerator {
       if (feature.suppressed) return done({ status: 'suppressed' });
       const problem = problems.get(feature.id);
       if (problem) return done({ status: 'error', message: problem });
+      this.current = feature;
       try {
         switch (feature.type) {
           case 'sketch': {
@@ -740,10 +761,36 @@ export class Regenerator {
    * and says which it did away with by leaving them out), and so is the old view of them all.
    */
   private advance(old: Bodies, next: BodyState[]): Bodies {
+    if (this.sheet && this.current && !SHEET_FEATURES.has(this.current.type)) this.recordCut(old, next);
     const kept = new Set(next.map((b) => b.shape));
     for (const b of old.list) if (!kept.has(b.shape)) this.kernel.release(b.shape);
     old.release();
     return new Bodies(next, this.kernel);
+  }
+
+  /**
+   * The material a feature after the sheet's own took out of the sheet (a hole, a notch): the body before less the body after, kept in `sheet.cuts` for the flat pattern, which cannot
+   * know it from the data the sheet features recorded. Only when the part is one solid before and after and the volume went down; whatever the feature did not take away is not kept.
+   */
+  private recordCut(old: Bodies, next: BodyState[]): void {
+    const sheet = this.sheet;
+    const feature = this.current;
+    if (!sheet || !feature) return;
+    const before = old.list.filter((b) => !b.surface);
+    const after = next.filter((b) => !b.surface);
+    if (before.length !== 1 || after.length !== 1 || before[0]!.shape === after[0]!.shape) return;
+    const k = this.kernel;
+    const vBefore = k.massProps(before[0]!.shape).volume;
+    const vAfter = k.massProps(after[0]!.shape).volume;
+    if (!(vBefore - vAfter > 1e-6 * vBefore + 1e-9)) return;
+    try {
+      const r = k.boolean('cut', before[0]!.shape, after[0]!.shape);
+      if (k.massProps(r.shape).volume <= 1e-9) return void k.release(r.shape);
+      this.owned.push(r.shape);
+      sheet.cuts.push({ feature: feature.id, shape: r.shape });
+    } catch {
+      // the difference could not be made: the flat pattern will not have this cut, and does not say it does
+    }
   }
 
   private resolve(ref: Ref, body: BodyState, what: string): number {
@@ -2159,7 +2206,7 @@ export class Regenerator {
     if (found.problems.length > 0) throw new FeatureError(found.problems.join(t('cmd.listSeparator')));
     const open = found.chains.length > 0;
     if (open && (found.chains.length !== 1 || found.loops.length > 0)) throw new FeatureError(t('flange.oneOutline'));
-    const sheet: SheetInfo = { thickness: T, radius: r, kFactor: k, bends: [], flanges: [], midBends: [], base: null, flatLength: null };
+    const sheet: SheetInfo = { thickness: T, radius: r, kFactor: k, bends: [], flanges: [], midBends: [], cuts: [], base: null, flatLength: null };
     let tool: OpResult;
     if (!open) {
       if (s.profiles.problems.length > 0) throw new FeatureError(t('regen.sketchUnusable', { problems: s.profiles.problems.join('; ') }));
@@ -2298,7 +2345,7 @@ export class Regenerator {
       if (k.solidCount(abb.shape) !== 1 || !k.isValid(abb.shape) || Math.abs(volume - expected) > 1e-3 * expected + 1e-6) throw new FeatureError(t('midBend.collides'));
       owned.splice(owned.indexOf(abb.shape), 1);
       sheet.bends.push({ feature: f.id, name: 'bend', angle: theta, radius: rb, thickness: T, width: w, kFactor: sheet.kFactor, allowance: BA });
-      sheet.midBends.push({ feature: f.id, a: add(q, l, lo), b: add(q, l, hi), up, angle: theta, radius: rb, allowance: BA });
+      sheet.midBends.push({ feature: f.id, a: add(q, l, lo), b: add(q, l, hi), up, angle: theta, radius: rb, allowance: BA, q, side: p, center, axis, slide });
       this.info = t('midBend.info', { angle: ((theta * 180) / Math.PI).toFixed(1), allowance: BA.toFixed(3), width: w.toFixed(3), radius: String(rb) });
       return set.list.map((x) => (x === plate ? { id: plate.id, shape: abb.shape, topology: abb.topology, names: abb.names, by: f.id } : x));
     } finally {

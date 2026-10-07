@@ -58,7 +58,15 @@ export interface FlatBend {
   allowance: number;
 }
 
+/** What a feature after the sheet's own took away that the flat pattern could not put back, and why: `bend` (it is in a bend), `straddles` (across more than one part of the sheet), `bentBase` (the base is a bent sheet), `unplaced` (put back, it took nothing from the pattern). */
+export interface FlatNotIncluded {
+  feature: Id;
+  why: 'bend' | 'straddles' | 'bentBase' | 'unplaced';
+}
+
 export interface FlatPattern {
+  /** The cuts of the features after the sheet's own that are not in the pattern. */
+  notIncluded: FlatNotIncluded[];
   /** The pattern as a thin solid in the kernel (the caller releases it). */
   shape: ShapeId;
   /** The plane the pattern is in: its outline and bend lines are in the coordinates of this frame. */
@@ -123,7 +131,9 @@ export function flatPattern(kernel: Kernel, sheet: SheetInfo): FlatPattern {
     let frame: Frame;
     let body: ShapeId;
     const bends: FlatBend[] = [];
+    const notIncluded: FlatNotIncluded[] = [];
     if (base.kind === 'bent') {
+      for (const c of sheet.cuts) notIncluded.push({ feature: c.feature, why: 'bentBase' });
       if (sheet.flanges.length > 0) throw new FlatError(t('flat.bentBaseFlanges'));
       frame = base.frame;
       body = keep(kernel.extrude(frame, [rect(0, 0, base.flatLength, base.width, 'flat')], addv([0, 0, 0], frame.normal, T)).shape);
@@ -197,6 +207,70 @@ export function flatPattern(kernel: Kernel, sheet: SheetInfo): FlatPattern {
         const b = sheet.bends.find((x) => x.feature === mb.feature)!;
         bends.push({ feature: mb.feature, name: b.name, a: planar(mb.a), b: planar(mb.b), angle: mb.angle, radius: mb.radius, direction: dot(mb.up, frame.normal) > 0 ? 'up' : 'down', kFactor: sheet.kFactor, allowance: mb.allowance });
       }
+      // what the features after the sheet's own took away (holes, notches), put back where the sheet was before it was bent: each piece goes through the motion of the part of the sheet it is in
+      const tol = 1e-4;
+      const mid = sheet.midBends[0];
+      const back: Rigid | null = mid ? (() => {
+        const R = rotation(mid.axis, -mid.angle);
+        const probe: Rigid = { R, t: [0, 0, 0] };
+        return { R, t: sub(sub(mid.center, mid.slide), turn(probe, mid.center)) };
+      })() : null;
+      const placeOf = (p: Vec3): Rigid | 'bend' => {
+        for (let k = sheet.flanges.length - 1; k >= 0; k--) {
+          const fl = sheet.flanges[k]!;
+          const g = fl.fold;
+          const rel = sub(p, g.origin2);
+          const [u, v, w] = [dot(rel, g.e), dot(rel, g.d), dot(rel, g.m2)];
+          const lo = fl.miter[0] ? Math.min(g.xa, fl.miter[0].xOuter) : g.pa;
+          const hi = fl.miter[1] ? Math.max(g.xb, fl.miter[1].xOuter) : g.pb;
+          if (u >= lo - tol && u <= hi + tol && v >= -tol && v <= fl.straight + tol && w >= g.ylo - tol && w <= g.yhi + tol) return maps[k]!;
+          // the bend of this flange: between the inside and the outside radius, within the angle it turns, along the strip
+          const c = sub(p, g.center);
+          const along = dot(c, g.axis);
+          const radial = sub(c, [g.axis[0] * along, g.axis[1] * along, g.axis[2] * along]);
+          const r = Math.hypot(...radial);
+          const s0 = sub(g.origin, g.center);
+          const s0n = Math.hypot(...s0);
+          const phi = r > 0 && s0n > 0 ? Math.atan2(dot(cross(s0, radial), g.axis) / (s0n * r), dot(s0, radial) / (s0n * r)) : 0;
+          const ub = dot(sub(p, g.origin), g.e);
+          if (r >= fl.radius - tol && r <= fl.radius + T + tol && phi >= -1e-3 && phi <= fl.angle + 1e-3 && ub >= lo - tol && ub <= hi + tol) return 'bend';
+        }
+        if (mid) {
+          if (dot(sub(p, mid.q), mid.side) < -mid.allowance / 2 + tol) return IDENTITY;
+          if (dot(sub(move(back!, p), mid.q), mid.side) > mid.allowance / 2 - tol) return back!;
+          return 'bend';
+        }
+        return IDENTITY;
+      };
+      for (const cut of sheet.cuts) {
+        const whole = kernel.topology(cut.shape);
+        const pieces = kernel.splitSolids({ shape: cut.shape, faceOrigins: whole.faces.map(() => []) });
+        try {
+          for (const piece of pieces) {
+            const points = [...kernel.topology(piece.shape).vertices.map((v) => v.point), kernel.massProps(piece.shape).center];
+            const places = points.map(placeOf);
+            if (places.includes('bend')) {
+              notIncluded.push({ feature: cut.feature, why: 'bend' });
+              continue;
+            }
+            const rigid = places[0] as Rigid;
+            if (places.some((x) => x !== rigid)) {
+              notIncluded.push({ feature: cut.feature, why: 'straddles' });
+              continue;
+            }
+            const moved = keep(kernel.transformed(piece.shape, [rigid.R[0], rigid.R[1], rigid.R[2], rigid.t[0], rigid.R[3], rigid.R[4], rigid.R[5], rigid.t[1], rigid.R[6], rigid.R[7], rigid.R[8], rigid.t[2]]));
+            const before = kernel.massProps(body).volume;
+            const next = keep(kernel.boolean('cut', body, moved).shape);
+            if (Math.abs(before - kernel.massProps(next).volume - kernel.massProps(moved).volume) > 1e-3 * kernel.massProps(moved).volume + 1e-6) {
+              notIncluded.push({ feature: cut.feature, why: 'unplaced' });
+              continue;
+            }
+            body = next;
+          }
+        } finally {
+          for (const piece of pieces) kernel.release(piece.shape);
+        }
+      }
     }
     const topology = kernel.topology(body);
     const mass = kernel.massProps(body);
@@ -231,7 +305,7 @@ export function flatPattern(kernel: Kernel, sheet: SheetInfo): FlatPattern {
     const min: P2 = [Math.min(...pts.map((p) => p[0])), Math.min(...pts.map((p) => p[1]))];
     const max: P2 = [Math.max(...pts.map((p) => p[0])), Math.max(...pts.map((p) => p[1]))];
     owned.splice(owned.indexOf(body), 1);
-    return { shape: body, frame, thickness: T, outline, bends, min, max, width: max[0] - min[0], height: max[1] - min[1], area: top.f.area, volume: mass.volume };
+    return { shape: body, frame, thickness: T, outline, bends, notIncluded, min, max, width: max[0] - min[0], height: max[1] - min[1], area: top.f.area, volume: mass.volume };
   } finally {
     for (const id of owned) kernel.release(id);
   }
