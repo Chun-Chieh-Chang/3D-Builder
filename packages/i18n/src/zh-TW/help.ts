@@ -40,7 +40,7 @@ export const help = {
   'help.conceptSelection.title': '選取',
   'help.conceptSelection.summary': '在圖形區或設計樹點選面、邊、特徵；按住 Ctrl 加選。',
   'help.conceptSelection.body':
-    '- 單擊選取；在設計樹，單擊只是選取，雙擊才會進入編輯。\n- 按住 Ctrl 再點，加選或取消選取。\n- 在草圖中，在空白處拖曳可以方塊選取。\n- 面板在等你選面或邊時，直接在圖形區點即可，選到的會列在面板裡。',
+    '- 單擊選取；在設計樹，單擊只是選取，雙擊才會進入編輯。\n- 按住 Ctrl 再點，加選或取消選取。\n- 沒有在編輯任何東西時，也可以點邊線與頂點（左上角的「選擇濾器」勾選要選哪幾種）；先選好邊再按「圓角」「導角」「邊線凸緣」「摺邊」或曲面的邊線指令，已選的邊會直接帶進去；點空白處放掉。\n- 在草圖中，在空白處拖曳可以方塊選取。\n- 面板在等你選面或邊時，直接在圖形區點即可，選到的會列在面板裡。',
   'help.conceptSelection.keywords': '點選 加選 方塊選取 Ctrl',
 
   'help.conceptFeatureTree.title': '設計樹（FeatureManager）',

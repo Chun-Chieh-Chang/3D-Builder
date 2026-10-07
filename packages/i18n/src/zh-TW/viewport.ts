@@ -13,6 +13,7 @@ export const viewport = {
   'hover.name': '持久名稱：',
   'hover.face': '面：',
   'hover.selected': '已選取面',
+  'hover.selectedElements': '已選取 {n} 個邊線／頂點（Ctrl 或 Shift 加選；再按圓角、導角等指令會直接帶進去）：',
   'hover.canSketch': '：按「草圖」分頁的「草圖」即可在此面上繪製。',
   'hover.notPlanar': '（不是平面，不能放草圖）',
 } as const;

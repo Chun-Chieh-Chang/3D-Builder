@@ -32,7 +32,7 @@ export const help: Translation = {
   'help.conceptSelection.title': 'Selecting',
   'help.conceptSelection.summary': 'Click faces, edges and features in the graphics area or the tree; hold Ctrl to add to the selection.',
   'help.conceptSelection.body':
-    '- Click to select; in the tree a click only selects, a double-click edits.\n- Hold Ctrl and click to add to the selection or take from it.\n- In a sketch, drag on empty space to box-select.\n- When a panel waits for a face or an edge, click it in the graphics area; what you pick is listed in the panel.',
+    '- Click to select; in the tree a click only selects, a double-click edits.\n- Hold Ctrl and click to add to the selection or take from it.\n- With nothing being edited, edges and vertices can be clicked too (the "Selection Filter" at the top left says which kinds); select the edges first and then press Fillet, Chamfer, Edge Flange, Hem or a surface command that takes edges: the selected edges are taken in. Click on empty space to let go.\n- In a sketch, drag on empty space to box-select.\n- When a panel waits for a face or an edge, click it in the graphics area; what you pick is listed in the panel.',
   'help.conceptSelection.keywords': 'pick multiple box select Ctrl',
 
   'help.conceptFeatureTree.title': 'The Tree (FeatureManager)',

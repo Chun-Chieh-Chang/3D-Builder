@@ -15,6 +15,7 @@ export const viewport: Translation = {
   'hover.name': 'Persistent name:',
   'hover.face': 'Face:',
   'hover.selected': 'Face selected:',
+  'hover.selectedElements': '{n} edge(s) / vertex(es) selected (Ctrl or Shift adds; a fillet, chamfer or the like started now takes them):',
   'hover.canSketch': 'Press Sketch on the Sketch tab to draw on this face.',
   'hover.notPlanar': '(not planar; a sketch cannot go on it)',
 };

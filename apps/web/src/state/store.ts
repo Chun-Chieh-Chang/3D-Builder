@@ -264,6 +264,8 @@ export interface UiState {
   selected: Id | null;
   /** Face selected in the graphics area (by persistent name, resolved against the displayed model). */
   selectedFace: Ref | null;
+  /** The edges and vertices picked while nothing is being edited (ADR 0117): ticked in or out with Ctrl or Shift. A command that starts takes them as what it was waiting for. */
+  selectedElements: Ref[];
   /** The bodies there were when a knit, thicken or cut with surface was started: what it can pick from (a body it uses up, or turns into a solid, is not what the model it shows has). */
   bodyPool: { id: Id; name: string; surface: boolean }[];
   /** Which kinds of element the graphics area lets be picked (D5.4): a command asks for kinds, this narrows them. */
@@ -496,6 +498,7 @@ class AppStore {
       canRedo: false,
       selected: null,
       selectedFace: null,
+      selectedElements: [],
       bodyPool: [],
       pickFilter: { ...loadOptions().pickFilter },
       options: loadOptions(),
@@ -1103,11 +1106,28 @@ class AppStore {
 
   /** One selection at a time: a tree item or a face (a face selection clears the tree item and vice versa). */
   select(id: Id | null): void {
-    this.set({ selected: id, selectedFace: null });
+    this.set({ selected: id, selectedFace: null, selectedElements: [] });
   }
 
   selectFace(face: Ref | null): void {
-    this.set({ selectedFace: face, selected: null });
+    this.set({ selectedFace: face, selected: null, selectedElements: [] });
+  }
+
+  /**
+   * An edge or a vertex clicked while nothing is edited (ADR 0117): it is the selection (and the face and the tree item are not); with Ctrl or Shift it is ticked in or out of what is
+   * selected. A click on nothing (`null`) lets go of them. They are what the next fillet, chamfer, surface or flange command starts with.
+   */
+  selectElement(ref: Ref | null, additive: boolean): void {
+    if (!ref) return void this.set({ selectedElements: [] });
+    const same = (a: Ref, b: Ref) => a.kind === b.kind && a.name === b.name;
+    const cur = this.state.selectedElements;
+    const next = additive ? (cur.some((x) => same(x, ref)) ? cur.filter((x) => !same(x, ref)) : [...cur, ref]) : [ref];
+    this.set({ selectedElements: next, selectedFace: null, selected: null });
+  }
+
+  /** The edges selected before a command was started, for it to begin with. */
+  private preselectedEdges(): Ref[] {
+    return this.state.selectedElements.filter((r) => r.kind === 'edge');
   }
 
   setPickFilter(kind: keyof PickFilter, on: boolean): void {
@@ -1316,7 +1336,7 @@ class AppStore {
 
   private openNew(feature: Feature, label: string): void {
     if (!this.startNew(feature, label)) return;
-    this.set({ editing: { featureId: feature.id, kind: 'feature' }, selected: feature.id, selectedFace: null });
+    this.set({ editing: { featureId: feature.id, kind: 'feature' }, selected: feature.id, selectedFace: null, selectedElements: [] });
     this.requestRebuild();
   }
 
@@ -1348,13 +1368,15 @@ class AppStore {
   /** 「邊線凸緣」 (C11.2): a flange 20 long (from the outside virtual sharp), 90°, along the edge of the sheet to be picked in the graphics area. */
   newEdgeFlange(): void {
     const name = t('feature.edgeFlange');
-    this.openNew({ id: this.allocator().take('eflange'), type: 'edgeFlange', name: nextName(this.history.doc, name), suppressed: false, edge: { kind: 'edge', name: '' }, length: '20' }, name);
+    const edge = this.preselectedEdges()[0] ?? { kind: 'edge' as const, name: '' };
+    this.openNew({ id: this.allocator().take('eflange'), type: 'edgeFlange', name: nextName(this.history.doc, name), suppressed: false, edge, length: '20' }, name);
   }
 
   /** 「摺邊」 (C11.2): a hem with a gap of 0.5 and 10 folded back, on the edge of the sheet to be picked in the graphics area. */
   newHem(): void {
     const name = t('feature.hem');
-    this.openNew({ id: this.allocator().take('hem'), type: 'hem', name: nextName(this.history.doc, name), suppressed: false, edge: { kind: 'edge', name: '' }, length: '10', gap: '0.5' }, name);
+    const edge = this.preselectedEdges()[0] ?? { kind: 'edge' as const, name: '' };
+    this.openNew({ id: this.allocator().take('hem'), type: 'hem', name: nextName(this.history.doc, name), suppressed: false, edge, length: '10', gap: '0.5' }, name);
   }
 
   /** The edge an edge flange or a hem is on: the edge clicked in the graphics area. */
@@ -1457,7 +1479,7 @@ class AppStore {
   newFillet(): void {
     this.set({ filletPick: 'faces' });
     const id = this.allocator().take('fillet');
-    this.openNew({ id, type: 'fillet', name: nextName(this.history.doc, t('feature.fillet')), suppressed: false, edges: [], radius: '2' }, t('feature.fillet'));
+    this.openNew({ id, type: 'fillet', name: nextName(this.history.doc, t('feature.fillet')), suppressed: false, edges: this.preselectedEdges(), radius: '2' }, t('feature.fillet'));
   }
 
   /**
@@ -1531,7 +1553,7 @@ class AppStore {
   /** 「導角」 (C5.3), angle–distance by default like SolidWorks. */
   newChamfer(): void {
     const id = this.allocator().take('chamfer');
-    this.openNew({ id, type: 'chamfer', name: nextName(this.history.doc, t('feature.chamfer')), suppressed: false, edges: [], mode: 'angleDistance', distance: '1', second: '45' }, t('feature.chamfer'));
+    this.openNew({ id, type: 'chamfer', name: nextName(this.history.doc, t('feature.chamfer')), suppressed: false, edges: this.preselectedEdges(), mode: 'angleDistance', distance: '1', second: '45' }, t('feature.chamfer'));
   }
 
   /** 「刪除面」 (C10.2): starts with the face selected in the graphics area, if there is one. */
@@ -1763,7 +1785,7 @@ class AppStore {
   /** 「填補曲面」, 「平坦曲面」 and 「延伸曲面」 (C9.2, C9.3): all take the edges picked in the graphics area, none to begin with. */
   newSurfaceEdges(type: 'fillSurface' | 'flatSurface' | 'extendSurface'): void {
     const name = t(`feature.${type}`);
-    const base = { id: this.allocator().take(type === 'fillSurface' ? 'fill' : type === 'flatSurface' ? 'flat' : 'extend'), name: nextName(this.history.doc, name), suppressed: false, edges: [] as Ref[] };
+    const base = { id: this.allocator().take(type === 'fillSurface' ? 'fill' : type === 'flatSurface' ? 'flat' : 'extend'), name: nextName(this.history.doc, name), suppressed: false, edges: this.preselectedEdges() };
     this.openNew(type === 'extendSurface' ? { ...base, type, distance: '5' } : { ...base, type }, name);
   }
 
@@ -1856,7 +1878,7 @@ class AppStore {
       return this.notify(t('sketch.planeNotFound'), 'error');
     }
     this.sketcher = new SketchController(this.sketchHost(sketch.id));
-    this.set({ editing: { featureId: sketch.id, kind: 'sketch' }, selected: sketch.id, selectedFace: null, sketchSolve: null, dimensionEdit: null });
+    this.set({ editing: { featureId: sketch.id, kind: 'sketch' }, selected: sketch.id, selectedFace: null, selectedElements: [], sketchSolve: null, dimensionEdit: null });
     this.requestRebuild(); // the model up to the sketch
     this.requestSketchSolve();
     if (fresh) this.viewer?.lookAt(frame);
@@ -2547,7 +2569,7 @@ class AppStore {
     const blob: BlobRef = { id: ids.take('blob'), sha256, kind: 'step', fileName };
     const feature: ImportedBodyFeature = { id: ids.take('import'), type: 'importedBody', name: nextName(doc, t('feature.importName')), suppressed: false, blob: blob.id };
     if (this.execute({ type: 'importBody', blob, feature, index: doc.rollbackIndex ?? doc.features.length })) {
-      this.set({ selected: feature.id, selectedFace: null, fitRequest: this.state.fitRequest + 1 });
+      this.set({ selected: feature.id, selectedFace: null, selectedElements: [], fitRequest: this.state.fitRequest + 1 });
       this.notify(t('file.imported', { name: fileName }));
     }
   }
@@ -2612,7 +2634,7 @@ class AppStore {
     void this.api.setBlobs(blobs); // posted before the rebuild request, so the worker has them first
     this.savedText = serializePart(doc);
     if (!this.state.recovery) void this.autosave.clear();
-    this.set({ active: 'part', selected: null, selectedFace: null, result: null, fileName, untitled, fitRequest: this.state.fitRequest + 1, documentSerial: this.state.documentSerial + 1, measure: null, draft: null, undercut: null, thickness: null, flat: null, interference: null, clearance: null, check: null });
+    this.set({ active: 'part', selected: null, selectedFace: null, selectedElements: [], result: null, fileName, untitled, fitRequest: this.state.fitRequest + 1, documentSerial: this.state.documentSerial + 1, measure: null, draft: null, undercut: null, thickness: null, flat: null, interference: null, clearance: null, check: null });
     this.onDocChanged();
   }
 

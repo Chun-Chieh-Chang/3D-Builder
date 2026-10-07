@@ -70,9 +70,10 @@ function picking(feature: Feature | undefined, editing: boolean, modelTool: 'con
       ? t('pick.extrudeEnd')
       : (slots?.prompt ?? null);
   return {
-    edges: (!!edgeFeature && !byGroups) || !!slots?.edges || modelTool !== null || measuring,
+    // with nothing being edited, edges and vertices can be picked too (ADR 0117): they are what the next command starts with
+    edges: (!!edgeFeature && !byGroups) || !!slots?.edges || modelTool !== null || measuring || !editing,
     faces: !editing || modelTool === 'convert' || !!upTo || !!faceFeature || combine || !!slots?.faces || measuring || edgeFeature?.type === 'fillet' || edgeFeature?.type === 'chamfer',
-    vertices: !!slots?.vertices || endVertices.length > 0 || measuring,
+    vertices: !!slots?.vertices || endVertices.length > 0 || measuring || !editing,
     pickedEdges: byGroups ? [] : edgeFeature ? (edgeFeature.type === 'edgeFlange' || edgeFeature.type === 'hem' ? (edgeFeature.edge.name ? [edgeFeature.edge] : []) : edgeFeature.edges) : (slots?.edges ?? []),
     pickedFaces: edgeFeature?.type === 'fillet' ? [...(edgeFeature.faces ?? []), ...(edgeFeature.faces2 ?? []), ...(edgeFeature.center ?? [])] : edgeFeature?.type === 'chamfer' ? (edgeFeature.faces ?? []) : faceFeature ? (faceFeature.type === 'shell' ? [...faceFeature.faces, ...(faceFeature.faceThickness ?? []).map((x) => x.face)] : faceFeature.type === 'deleteFace' || faceFeature.type === 'offsetSurface' ? faceFeature.faces : faceFeature.type === 'draft' ? [faceFeature.neutral, ...faceFeature.faces] : faceFeature.type === 'mutualTrim' ? (faceFeature.discard ?? []) : [faceFeature.face]) : upTo ? endFaces : (slots?.faces ?? []),
     pickedVertices: slots ? slots.vertices : endVertices,
@@ -104,6 +105,7 @@ export function Viewport() {
   const editing = useStore((s) => s.editing);
   const doc = useStore((s) => s.doc);
   const selectedFace = useStore((s) => s.selectedFace);
+  const selectedElements = useStore((s) => s.selectedElements);
   const selected = useStore((s) => s.selected);
   const sketchSolve = useStore((s) => s.sketchSolve);
   const dimensionEdit = useStore((s) => s.dimensionEdit);
@@ -149,10 +151,12 @@ export function Viewport() {
     };
     const viewer = new Viewer(host.current!, {
       onEdgeHover: setHover,
-      onEdgeClick: (edge) => {
+      onEdgeClick: (edge, additive) => {
         if (store.getState().measure) return store.measurePick('edge', edge, null);
         const ref = edgeRef(edge);
-        if (ref) store.pick(ref);
+        if (store.getState().editing) {
+          if (ref) store.pick(ref);
+        } else store.selectElement(ref, additive);
       },
       onFaceHover: setHoverFace,
       onFaceClick: clickFace,
@@ -192,10 +196,12 @@ export function Viewport() {
         else setMenu(null);
       },
       onVertexHover: setHoverVertex,
-      onVertexClick: (vertex) => {
+      onVertexClick: (vertex, additive) => {
         if (store.getState().measure) return store.measurePick('vertex', vertex, null);
         const ref = vertexRef(vertex);
-        if (ref) store.pick(ref);
+        if (store.getState().editing) {
+          if (ref) store.pick(ref);
+        } else store.selectElement(ref, additive);
       },
       // Screen-sized parts of the sketch overlay (dimension offsets, arrows) follow the zoom.
       onViewChange: () => sketchingRef.current && setViewTick((t) => t + 1),
@@ -273,8 +279,9 @@ export function Viewport() {
       return;
     }
     const indices = (names: string[] | undefined, refs: Ref[]) => refs.map((x) => names?.indexOf(x.name) ?? -1).filter((i) => i >= 0);
-    v.setSelectedEdges(indices(r?.edgeNames, p.pickedEdges));
-    v.setSelectedVertices(indices(r?.vertexNames, p.pickedVertices));
+    // with nothing being edited, the edges and vertices that were clicked are what is selected
+    v.setSelectedEdges(indices(r?.edgeNames, editing ? p.pickedEdges : selectedElements.filter((x) => x.kind === 'edge')));
+    v.setSelectedVertices(indices(r?.vertexNames, editing ? p.pickedVertices : selectedElements.filter((x) => x.kind === 'vertex')));
     /** The faces of bodies, by the ranges the rebuild gave them (C7.1). */
     const ofBodies = (ids: string[]) => (r?.bodies ?? []).filter((b) => ids.includes(b.id)).flatMap((b) => Array.from({ length: b.faces }, (_, k) => b.face0 + k));
     if (editing && feature?.type === 'combine') v.setSelectedFaces(ofBodies([feature.main.name, ...feature.tools.map((x) => x.name)]));
@@ -283,7 +290,7 @@ export function Viewport() {
     else if (selectedFace?.kind === 'face') v.setSelectedFaces(indices(r?.faceNames, [selectedFace]));
     // D1.2: a feature selected in the FeatureManager shows the faces it made.
     else v.setSelectedFaces(selected ? (r?.faceNames ?? []).flatMap((n, i) => (ownerFeatures(n)[0] === selected ? [i] : [])) : []);
-  }, [feature, editing, selectedFace, selected, result, modelTool, pickFilter, measure, flatMesh]);
+  }, [feature, editing, selectedFace, selectedElements, selected, result, modelTool, pickFilter, measure, flatMesh]);
 
   // Reference planes show like new planes in SolidWorks; default planes only when selected or referenced (D4.6).
   useEffect(() => {
@@ -465,6 +472,16 @@ export function Viewport() {
           ) : (
             pick.prompt
           )}
+        </div>
+      )}
+      {!editing && !hoverFaceName && !selectedFace && selectedElements.length > 0 && (
+        <div className="pick-hint">
+          {t('hover.selectedElements', { n: selectedElements.length })} <code>{selectedElements.map((x) => x.name).join(' ')}</code>
+        </div>
+      )}
+      {!editing && !hoverFaceName && !selectedFace && selectedElements.length === 0 && hoverName && (
+        <div className="pick-hint">
+          {t('hover.name')} <code>{hoverName}</code>
         </div>
       )}
       {!editing && (hoverFaceName || selectedFace) && (
