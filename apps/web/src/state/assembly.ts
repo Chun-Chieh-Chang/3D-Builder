@@ -28,6 +28,8 @@ import {
   explodeLeaves,
   explosionOffsets,
   explosionSteps,
+  formSubAssembly,
+  formSubAssemblyProblem,
   leavesCentre,
   leafAt,
   leavesOf,
@@ -216,6 +218,13 @@ export interface AssemblyState {
   explodeT: number;
   /** The explode lines (the way each component goes) are drawn while the view is exploded. A display choice, not kept in the file. */
   explodeLines: boolean;
+  /** The PropertyManager that forms a sub-assembly (E-3): the components picked and the file name; null while it is closed. */
+  formSub: FormSubDraft | null;
+}
+
+export interface FormSubDraft {
+  ids: Id[];
+  name: string;
 }
 
 export interface AssemblyHost {
@@ -325,6 +334,7 @@ export class AssemblyStore {
       exploded: false,
       explodeT: 0,
       explodeLines: true,
+      formSub: null,
     };
     this.history.subscribe(() => this.onDocChanged());
     this.loadFiles();
@@ -1254,6 +1264,83 @@ export class AssemblyStore {
       lines.push([...centre, ...way.flatMap((o) => [centre[0] + o[0] * explodeT, centre[1] + o[1] * explodeT, centre[2] + o[2] * explodeT])]);
     }
     return lines;
+  }
+
+  // ------------------------------------------------------------ forming a sub-assembly (E-3)
+
+  /** 「形成次組合件…」: opens the PropertyManager, the selected component picked. */
+  startFormSub(): void {
+    const doc = this.history.doc;
+    if (doc.components.length < 2) return this.host.notify(t('subassembly.form.tooFew'), 'error');
+    if (this.state.insert) this.cancelInsert();
+    if (this.state.mate) this.cancelMate();
+    if (this.state.move) this.closeMove();
+    if (this.state.pattern) this.cancelPattern();
+    this.leaveExplode();
+    const picked = doc.components.find((c) => c.id === this.state.selected);
+    this.set({ formSub: { ids: picked ? [picked.id] : [], name: t('subassembly.form.defaultName', { n: this.freeSubName() }) } });
+  }
+
+  /** The number that makes 「次組合件N」 a name no file of the assembly has. */
+  private freeSubName(): number {
+    const used = new Set(this.history.doc.files.map((f) => f.path));
+    let n = 1;
+    while (used.has(assemblyFileName(t('subassembly.form.defaultName', { n })))) n++;
+    return n;
+  }
+
+  setFormSub(patch: Partial<FormSubDraft>): void {
+    const d = this.state.formSub;
+    if (d) this.set({ formSub: { ...d, ...patch } });
+  }
+
+  cancelFormSub(): void {
+    if (this.state.formSub) this.set({ formSub: null });
+  }
+
+  /** Why the sub-assembly cannot be formed from what is picked and named (empty: it can). */
+  formSubProblem(): string {
+    const d = this.state.formSub;
+    if (!d) return '';
+    const name = d.name.trim();
+    if (name === '') return t('subassembly.form.nameEmpty');
+    if (/[\\/:*?"<>|]/.test(name) || name.startsWith('.')) return t('subassembly.form.nameBad');
+    if (this.history.doc.files.some((f) => f.path === assemblyFileName(name))) return t('subassembly.form.exists', { name: assemblyFileName(name) });
+    return formSubAssemblyProblem(this.history.doc, d.ids) ?? '';
+  }
+
+  /**
+   * 「形成」: the new assembly file is written next to this one, then the assembly changes in one undo step (the components go, one stands for the file at the origin). The
+   * sub-assembly starts at the poses the mates have put the components at, so nothing moves. A name a file in the folder has already is refused; nothing is changed when the file cannot be written.
+   */
+  async applyFormSub(): Promise<void> {
+    const d = this.state.formSub;
+    if (!d) return;
+    const problem = this.formSubProblem();
+    if (problem) return this.host.notify(problem, 'error');
+    const doc = this.history.doc;
+    const fileName = assemblyFileName(d.name.trim());
+    try {
+      const project = (this.project ??= await this.host.projectFolder(t('subassembly.form.needProject')));
+      if (!project) return;
+      const path = joinPath(this.folder, fileName);
+      const taken = await fileIn(project, path).then(() => true, () => false);
+      if (taken) return this.host.notify(t('subassembly.form.exists', { name: fileName }), 'error');
+      const allocator = new IdAllocator(doc.idCounters, assemblyIdsInUse(doc));
+      const file = { id: allocator.take('file'), path: fileName };
+      const componentId = allocator.take('comp');
+      const placements = d.ids.flatMap((id) => {
+        const pose = this.poseOf(id);
+        return pose ? [{ componentId: id, placement: pose }] : [];
+      });
+      const { sub } = formSubAssembly(doc, d.ids, { file, componentId, placements: new Map(placements.map((p) => [p.componentId, p.placement])) });
+      await writeFilesInto(project, [{ path, bytes: await writeAssemblyFile(sub) }]);
+      if (!this.execute({ type: 'formSubAssembly', componentIds: d.ids, file, componentId, placements })) return;
+      this.set({ formSub: null, selected: componentId });
+      this.host.notify(t('subassembly.form.made', { name: fileName, n: sub.components.length, mates: sub.mates.length }));
+    } catch (e) {
+      this.host.notify(t('subassembly.form.failed', { why: e instanceof Error ? e.message : String(e) }), 'error');
+    }
   }
 
   /** 「新增一組」: another exploded view, empty, which becomes the one that is shown and made (one undo step). */

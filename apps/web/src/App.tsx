@@ -21,6 +21,7 @@ import { CheckDialog } from './components/CheckDialog';
 import { DrawingPanel } from './components/DrawingPanel';
 import { DrawingViewport } from './components/DrawingViewport';
 import { ExplodePanel } from './components/ExplodePanel';
+import { FormSubPanel } from './components/FormSubPanel';
 import { PropertyManager } from './components/PropertyManager';
 import { StatusBar } from './components/StatusBar';
 import { Viewport } from './components/Viewport';
@@ -38,8 +39,9 @@ export function App() {
   const moving = useStore((s) => !!s.asm?.move);
   const patterning = useStore((s) => !!s.asm?.pattern);
   const exploding = useStore((s) => !!s.asm?.explode);
+  const forming = useStore((s) => !!s.asm?.formSub);
   const partEditing = useStore((s) => s.editing);
-  const editing = assembly ? inserting || mating || moving || patterning || exploding : !!partEditing;
+  const editing = assembly ? inserting || mating || moving || patterning || exploding || forming : !!partEditing;
   const title = useDocumentTitle();
   useEffect(() => installShortcuts(), []);
   useEffect(() => installHelp({ currentTopic: currentTopicId, hasTopic: (id) => topicOf(id) !== null }), []);
@@ -55,7 +57,7 @@ export function App() {
             <span className={editing ? '' : 'active'}>FeatureManager</span>
             <span className={editing ? 'active' : ''}>PropertyManager</span>
           </div>
-          {drawing ? <DrawingPanel /> : assembly ? mating ? <MatePanel /> : inserting ? <InsertComponentPanel /> : moving ? <MovePanel /> : patterning ? <PatternPanel /> : exploding ? <ExplodePanel /> : <AssemblyTree /> : editing ? <PropertyManager /> : <FeatureTree />}
+          {drawing ? <DrawingPanel /> : assembly ? mating ? <MatePanel /> : inserting ? <InsertComponentPanel /> : moving ? <MovePanel /> : patterning ? <PatternPanel /> : exploding ? <ExplodePanel /> : forming ? <FormSubPanel /> : <AssemblyTree /> : editing ? <PropertyManager /> : <FeatureTree />}
         </aside>
         {drawing ? <DrawingViewport /> : assembly ? <AssemblyViewport /> : <Viewport />}
       </div>

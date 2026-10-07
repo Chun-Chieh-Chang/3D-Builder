@@ -631,6 +631,15 @@ export const help: Translation = {
   'help.rotateComponent.see': 'move-component mate fix-component',
   'help.explode.summary': 'Makes an exploded view: moves components apart along directions; it only changes the display, not where they are assembled.',
 
+  'help.formSubAssembly.summary': 'Makes the components you pick, and the mates among them, into a new sub-assembly file.',
+
+  'help.formSubAssembly.body':
+    'In the "Form sub-assembly" panel tick the components to put in (at least two), type the file name and press ✔.\n\n- The new .3dba file is written next to the assembly; it holds those components (at the poses the mates have put them at) and the mates only among them; when none of them is fixed, the first is fixed inside the sub-assembly.\n- In the assembly the components are replaced by one component that stands for the sub-assembly, at the origin, so no part moves; when one of them was fixed, it is fixed too.\n- A mate with an end outside now goes through the sub-assembly (by a path to the part inside), and the outside positioning stays. The steps of the exploded views name the sub-assembly in place of those components.\n- It cannot be formed when a pattern or mirror is made of these components (their copies are worked out in the assembly); it says which one; and when the file name is taken, pick another.\n- A sub-assembly is rigid: to change a part or a mate inside, open that sub-assembly. Forming is one undo step, but the file that was written is not deleted by undo.',
+
+  'help.formSubAssembly.keywords': 'form sub-assembly subassembly assembly components group',
+
+  'help.formSubAssembly.see': 'insert-component mate explode',
+
   'help.explode.body':
     'Makes an exploded view: the components are drawn apart along directions. It is only a display; the true positions of the components do not change.\n\n- Tick the "components to move", choose the "direction" (an axis of the assembly, or an element of a component) and the "distance", and press "Add step"; the displacements of the steps add up.\n- "Explode" opens it and "Collapse" returns to the assembled picture exactly; opening and collapsing are half a second of animation, reversible, and one undo step works.\n- Tick "Show explode lines": every component that is moved has a dashed line from the middle of its parts where they are assembled through where each step puts it (as many legs as steps); it is a display choice, not kept in the file.\n- Steps can be edited ("Edit", "Update step"), reordered with "Up" and "Down", and deleted.\n- Nothing can be moved and no mate edited while it is open; press "Collapse" first. STEP output is always the assembled positions.\n- "Exploded views": an assembly can have several explodes (one to show how it goes together, one to take it apart, for example); the list chooses the one to show and edit, "Add one" and "Delete this one" add and delete, and the name can be changed; the steps, the explode lines and the animation belong to the one shown only, and are kept in the file (Undo takes back adding, deleting, renaming and switching).\n- Limits: only top-level components can be moved.',
 

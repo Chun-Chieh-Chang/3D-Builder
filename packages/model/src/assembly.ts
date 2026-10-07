@@ -7,6 +7,7 @@ import { isFilePath, joinPath, relativePath } from './paths';
 import { isValidPose } from './pose';
 import { componentPatternProblem } from './componentPatterns';
 import { activeExplosion, explodeStepProblem } from './explosion';
+import { formSubAssembly } from './subAssembly';
 import { ASSEMBLY_SCHEMA_VERSION, type AssemblyDoc, type Component, type ComponentPattern, type ExplodeStep, type ExplodeView, type FileRef, type Mate, type MateRef, type MateType, type Pose } from './schema';
 
 /**
@@ -53,7 +54,12 @@ export type AssemblyCommand =
   | { type: 'insertExplosion'; explosion: ExplodeView }
   | { type: 'renameExplosion'; explosionId: Id; name: string }
   | { type: 'deleteExplosion'; explosionId: Id }
-  | { type: 'setActiveExplosion'; explosionId: Id };
+  | { type: 'setActiveExplosion'; explosionId: Id }
+  /**
+   * Forms a sub-assembly (E-3): the components go into a new assembly file (written by the caller), and the assembly keeps one component for it at the origin, with the
+   * mates that reach into it now going through it. `placements` is where each of the components is (the sub-assembly starts from it). See `formSubAssembly`.
+   */
+  | { type: 'formSubAssembly'; componentIds: Id[]; file: FileRef; componentId: Id; placements: { componentId: Id; placement: Pose }[] };
 
 /** The flags of a component (C15.5). */
 export type ComponentState = 'hidden' | 'suppressed' | 'transparent';
@@ -365,6 +371,12 @@ export function mutateAssembly(draft: Draft<AssemblyDoc>, cmd: AssemblyCommand):
         delete draft.explosions;
         delete draft.activeExplosion;
       } else if (draft.activeExplosion === gone.id || !draft.explosions.some((v) => v.id === draft.activeExplosion)) draft.activeExplosion = draft.explosions[Math.min(at, draft.explosions.length - 1)]!.id;
+      return;
+    }
+    case 'formSubAssembly': {
+      const { parent } = formSubAssembly(draft as AssemblyDoc, cmd.componentIds, { file: cmd.file, componentId: cmd.componentId, placements: new Map(cmd.placements.map((p) => [p.componentId, p.placement])) });
+      for (const key of Object.keys(draft)) delete (draft as Record<string, unknown>)[key];
+      Object.assign(draft, parent);
       return;
     }
     case 'setActiveExplosion': {

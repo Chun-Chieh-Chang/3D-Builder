@@ -1,7 +1,7 @@
 # 組合件：爆炸線與動畫、多組爆炸、形成新次組合件（計畫）
 
 - 日期：2026-10-07。來源：handoff §8 與手冊 K4（「組合件：爆炸線與動畫、爆炸視圖多組、形成新次組合件」）；使用者 2026-10-07 選了這一組。
-- 狀態：**E-1、E-2 已實作並驗證（2026-10-07，[ADR 0103](adr/0103-explode-lines-animation.md)、[ADR 0104](adr/0104-several-exploded-views.md)）**；E-3 待做。做完一項補一份 ADR（0105）。
+- 狀態：**E-1、E-2、E-3 都已實作並驗證（2026-10-07，[ADR 0103](adr/0103-explode-lines-animation.md)、[ADR 0104](adr/0104-several-exploded-views.md)、[ADR 0105](adr/0105-form-sub-assembly.md)）**。實作時的差異：E-3 裡面沒有固定零組件時，第一個在次組合件裡固定；選項在「組合件」選單的「形成次組合件…」。
 
 ## 1. 現況
 

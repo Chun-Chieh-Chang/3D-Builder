@@ -132,7 +132,8 @@
     "move-component",
     "rotate-component",
     "undo",
-    "redo"
+    "redo",
+    "form-sub-assembly"
   ],
   "D2": [
     "pattern-linear",

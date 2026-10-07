@@ -21,7 +21,7 @@ export interface UiAction {
 }
 
 /** Nothing going on in the open assembly: no PropertyManager, no drag. */
-const assemblyFree = (s: UiState) => !s.asm?.insert && !s.asm?.mate && !s.asm?.move && !s.asm?.drag && !s.asm?.pattern && !s.asm?.explode && !s.measure && !s.interference && !s.clearance;
+const assemblyFree = (s: UiState) => !s.asm?.insert && !s.asm?.mate && !s.asm?.move && !s.asm?.drag && !s.asm?.pattern && !s.asm?.explode && !s.asm?.formSub && !s.measure && !s.interference && !s.clearance;
 /** No PropertyManager session in the open document: file commands may replace or save it. */
 const idle = (s: UiState) => (s.active === 'assembly' ? assemblyFree(s) : s.editing === null && !s.measure);
 /** A part is open and nothing is being edited in it. */
@@ -124,6 +124,7 @@ export const ACTIONS: UiAction[] = [
   { id: 'mate', get label() { return t('act.mate'); }, group: 'assembly', enabled: (s) => assemblyIdle(s) && hasComponents(s), run: () => store.assembly?.startMate() },
   { id: 'move-component', get label() { return t('act.moveComponent'); }, group: 'assembly', enabled: (s) => assemblyIdle(s) && hasComponents(s), run: () => store.assembly?.startMove('move') },
   { id: 'rotate-component', get label() { return t('act.rotateComponent'); }, group: 'assembly', enabled: (s) => assemblyIdle(s) && hasComponents(s), run: () => store.assembly?.startMove('rotate') },
+  { id: 'form-sub-assembly', get label() { return t('subassembly.form.act'); }, group: 'assembly', enabled: (s) => assemblyIdle(s) && (s.asm?.doc.components.length ?? 0) >= 2, run: () => store.assembly?.startFormSub() },
   { id: 'explode', get label() { return t('explode.act'); }, group: 'assembly', enabled: (s) => assemblyIdle(s) && hasComponents(s), run: () => store.assembly?.startExplode() },
   { id: 'measure-assembly', get label() { return t('measure.act'); }, group: 'assembly', enabled: (s) => s.active === 'assembly' && canMeasure(s), run: toggleMeasure, active: () => store.getState().measure !== null },
   { id: 'clearance', get label() { return t('clearance.act'); }, group: 'assembly', enabled: (s) => s.bootMs !== null && assemblyIdle(s) && hasComponents(s), run: () => store.startClearance() },
@@ -247,6 +248,8 @@ export function installShortcuts(): () => void {
       }
       if (s.asm.move) {
         if (e.key === 'Escape' || e.key === 'Enter') return void a?.closeMove();
+      } else if (s.asm.formSub) {
+        if (e.key === 'Escape') return void a?.cancelFormSub();
       } else if (s.asm.explode) {
         // Esc first stops picking a direction in the view, then closes the PropertyManager
         if (e.key === 'Escape' || e.key === 'Enter') return void (s.asm.explode.picking && e.key === 'Escape' ? a?.pickExplodeAxis(false) : a?.closeExplode());
