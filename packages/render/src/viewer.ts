@@ -384,6 +384,7 @@ export class Viewer {
     this.selectedFaces.clear();
     this.paintFaces();
     this.applyDisplay();
+    this.paintFilterLook();
     if (this.planes.length > 0) this.paintPlanes(); // sized to the body
     if (this.datums.axes.length > 0) this.paintDatums();
     if (fit) this.fitAll();
@@ -923,12 +924,26 @@ export class Viewer {
 
   // ---------------------------------------------------------------- selection
 
+  /** What the selection filter takes out of what can be picked is drawn so: the faces see-through, the edges faint (ADR 0117). Vertices are not drawn, so there is nothing to show for them. */
+  private paintFilterLook(): void {
+    const dimFaces = this.pickFaces && !this.filter.faces;
+    if (this.body) {
+      const m = this.body.material as THREE.Material;
+      m.transparent = dimFaces;
+      m.opacity = dimFaces ? 0.45 : 1;
+      m.depthWrite = !dimFaces;
+      m.needsUpdate = true;
+    }
+    this.paintEdges();
+  }
+
   /**
    * Which kinds of element the user lets be picked (D5.4). It narrows what the command in progress asks for, it never adds to it: a kind both asks for
    * and allows is what is hovered and clicked.
    */
   setPickFilter(filter: PickFilter): void {
     this.filter = { ...filter };
+    this.paintFilterLook();
     if (!this.edgesOn) this.setHovered(-1);
     if (!this.facesOn) this.setHoveredFace(-1);
     if (!this.verticesOn) this.setHoveredVertex(-1);
@@ -975,12 +990,14 @@ export class Viewer {
   /** Enables edge hover/click picking (e.g. while a fillet's edge list is active). */
   setEdgePicking(enabled: boolean): void {
     this.pickEdges = enabled;
+    this.paintFilterLook();
     if (!enabled) this.setHovered(-1);
   }
 
   /** Enables face hover/click picking (selecting a face to sketch on, an end face …). */
   setFacePicking(enabled: boolean): void {
     this.pickFaces = enabled;
+    this.paintFilterLook();
     if (!enabled) this.setHoveredFace(-1);
   }
 
@@ -1339,6 +1356,8 @@ export class Viewer {
     const attr = this.edges.geometry.getAttribute('color') as THREE.BufferAttribute;
     // with no edges drawn ('shaded') the edges are the colour of the body: they are still there to hover and to pick
     const base = new THREE.Color(this.displayMode === 'shaded' ? COLORS.body : COLORS.edge);
+    // edges that the selection filter does not let be picked are drawn faint: what cannot be picked looks like it
+    if (this.pickEdges && !this.filter.edges) base.lerp(new THREE.Color(COLORS.background), 0.7);
     const hover = new THREE.Color(COLORS.edgeHover);
     const sel = new THREE.Color(COLORS.edgeSelected);
     for (let s = 0; s < this.segmentEdge.length; s++) {
