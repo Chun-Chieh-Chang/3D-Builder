@@ -183,6 +183,7 @@
     "flat-surface",
     "knit",
     "trim-surface",
+    "mutual-trim",
     "extend-surface"
   ],
   "G4": [

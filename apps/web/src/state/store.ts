@@ -1636,6 +1636,36 @@ class AppStore {
     this.openNew({ id: this.allocator().take('knit'), type: 'knit', name: nextName(this.history.doc, name), suppressed: false, bodies: first && pool.some((b) => b.id === first && b.surface) ? [{ kind: 'body', name: first }] : [] }, name);
   }
 
+  /** 「互相修剪曲面」 (P-3): the surface body of the selected face and the next surface body, both from the ones on screen. */
+  newMutualTrim(): void {
+    const pool = this.snapshotBodies(this.state.result);
+    const surfaces = pool.filter((b) => b.surface);
+    const face = this.state.selectedFace;
+    const picked = face?.kind === 'face' ? this.bodyOfFace(face.name) : undefined;
+    const a = surfaces.find((b) => b.id === picked) ?? surfaces[0];
+    const b = surfaces.find((x) => x !== a);
+    const name = t('feature.mutualTrim');
+    this.openNew({ id: this.allocator().take('mutualtrim'), type: 'mutualTrim', name: nextName(this.history.doc, name), suppressed: false, a: { kind: 'body', name: a?.id ?? '' }, b: { kind: 'body', name: b?.id ?? '' } }, name);
+  }
+
+  /** Changes the bodies or the pieces taken away of the mutual trim being edited. */
+  setMutualTrim(patch: { a?: Ref; b?: Ref; discard?: Ref[] }): void {
+    const f = this.editedFeature();
+    if (f?.type !== 'mutualTrim') return;
+    const next = { a: f.a, b: f.b, discard: f.discard, ...patch };
+    this.execute({ type: 'setMutualTrim', featureId: f.id, a: next.a, b: next.b, ...(next.discard && next.discard.length > 0 ? { discard: next.discard } : {}) });
+  }
+
+  /** A face picked while a mutual trim is edited: that piece is taken away, or taken back when it was. It has to be a piece of one of the two bodies. */
+  toggleTrimPiece(faceName: string): void {
+    const f = this.editedFeature();
+    if (f?.type !== 'mutualTrim') return;
+    const id = this.bodyOfFace(faceName);
+    if (!id || (id !== f.a.name && id !== f.b.name)) return void this.notify(t('surface.trimNotPiece'), 'error');
+    const discard = f.discard ?? [];
+    this.setMutualTrim({ discard: discard.some((r) => r.name === faceName) ? discard.filter((r) => r.name !== faceName) : [...discard, { kind: 'face', name: faceName }] });
+  }
+
   /** The bodies of the model on screen, kept for the session that is about to start (`bodyPool`). */
   private snapshotBodies(result: UiState['result']): UiState['bodyPool'] {
     const pool = (result?.bodies ?? []).map((b) => ({ id: b.id, name: b.name, surface: b.surface }));
@@ -1891,6 +1921,7 @@ class AppStore {
     else if (f?.type === 'offsetSurface') this.toggleOffsetFace(ref);
     else if (f?.type === 'splitLine') this.setSplitFace(ref);
     else if (f?.type === 'trimSurface') this.setTrimFace(ref);
+    else if (f?.type === 'mutualTrim' && ref.kind === 'face') this.toggleTrimPiece(ref.name);
     else if (f?.type === 'lipGroove') this.setLipFace(ref);
     else if (f?.type === 'edgeFlange' || f?.type === 'hem') this.setFlangeEdge(ref);
     else if (f?.type === 'fillSurface' || f?.type === 'flatSurface' || f?.type === 'extendSurface') this.toggleSurfaceEdge(ref);
@@ -1981,7 +2012,7 @@ class AppStore {
     if (!e) return undefined;
     const i = this.history.doc.features.findIndex((f) => f.id === e.featureId);
     const type = this.history.doc.features[i]?.type;
-    if (type === 'refPlane' || type === 'refAxis' || type === 'refPoint' || type === 'coordSys' || type === 'pattern' || type === 'mirror' || type === 'offsetSurface' || type === 'splitLine' || type === 'trimSurface' || type === 'knit' || type === 'fillSurface' || type === 'flatSurface' || type === 'extendSurface' || type === 'thicken' || type === 'cutWithSurface' || type === 'lipGroove') return i + 1;
+    if (type === 'refPlane' || type === 'refAxis' || type === 'refPoint' || type === 'coordSys' || type === 'pattern' || type === 'mirror' || type === 'offsetSurface' || type === 'splitLine' || type === 'trimSurface' || type === 'mutualTrim' || type === 'knit' || type === 'fillSurface' || type === 'flatSurface' || type === 'extendSurface' || type === 'thicken' || type === 'cutWithSurface' || type === 'lipGroove') return i + 1;
     return type === 'fillet' || type === 'chamfer' || type === 'edgeFlange' || type === 'hem' || type === 'deleteFace' || type === 'moveFace' || type === 'shell' || type === 'draft' || type === 'combine' || type === 'sketch' ? i : undefined;
   }
 

@@ -64,6 +64,10 @@ export function parentsOf(feature: Feature, doc: PartDoc): Id[] {
     case 'knit':
       parents = feature.bodies.filter((r) => r.name).map((r) => bodyFeature(r.name));
       break;
+    case 'mutualTrim':
+      // the pieces to take away are faces of the bodies as the feature makes them, named after the faces they came from: whoever made those is a parent, the feature itself is not
+      parents = [...[feature.a, feature.b].filter((r) => r.name).map((r) => bodyFeature(r.name)), ...fromRefs(feature.discard ?? []).filter((id) => id !== feature.id)];
+      break;
     case 'thicken':
       parents = feature.body.name ? [bodyFeature(feature.body.name)] : [];
       break;

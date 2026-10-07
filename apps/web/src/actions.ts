@@ -106,6 +106,7 @@ export const ACTIONS: UiAction[] = [
   { id: 'fill-surface', get label() { return t('feature.fillSurface'); }, group: 'feature', enabled: hasBody, run: () => store.newSurfaceEdges('fillSurface') },
   { id: 'flat-surface', get label() { return t('feature.flatSurface'); }, group: 'feature', enabled: hasBody, run: () => store.newSurfaceEdges('flatSurface') },
   { id: 'trim-surface', get label() { return t('feature.trimSurface'); }, group: 'feature', enabled: (s) => hasBody(s) && !!s.result?.bodies.some((b) => b.surface) && s.doc.features.some((f) => f.type === 'sketch'), run: () => store.newTrimSurface() },
+  { id: 'mutual-trim', get label() { return t('feature.mutualTrim'); }, group: 'feature', enabled: (s) => hasBody(s) && (s.result?.bodies.filter((b) => b.surface).length ?? 0) > 1, run: () => store.newMutualTrim() },
   { id: 'extend-surface', get label() { return t('feature.extendSurface'); }, group: 'feature', enabled: (s) => hasBody(s) && !!s.result?.bodies.some((b) => b.surface), run: () => store.newSurfaceEdges('extendSurface') },
   { id: 'thicken', get label() { return t('feature.thicken'); }, group: 'feature', enabled: (s) => hasBody(s) && !!s.result?.bodies.some((b) => b.surface), run: () => store.newThicken() },
   { id: 'cut-with-surface', get label() { return t('feature.cutWithSurface'); }, group: 'feature', enabled: (s) => hasBody(s) && !!s.result?.bodies.some((b) => b.surface) && !!s.result?.bodies.some((b) => !b.surface), run: () => store.newCutWithSurface() },

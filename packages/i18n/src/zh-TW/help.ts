@@ -498,6 +498,15 @@ export const help = {
   'help.trimSurface.keywords': '修剪曲面 修剪 保留 輪廓 曲面',
 
   'help.trimSurface.see': 'split-line extend-surface knit',
+
+  'help.mutualTrim.summary': '兩個曲面在交線處互相切開，再選要留下哪幾片。',
+
+  'help.mutualTrim.body':
+    '選兩個曲面本體：它們在交線處互相切開，每個本體變成它的幾片。\n\n- 片的名稱沿用原來的面；同一個面分成幾片時加 #1、#2…（按位置排序）。\n- 在圖面點一片就去掉，再點一次取回；也可以從面板的「去掉的曲面片」清單取回。\n- 每個本體至少要留一片。\n- 兩個曲面沒有交線（不相交或只是相切）、或有一部分疊在一起時會說明。\n- 用完的兩個本體可以接著「縫織曲面」、「厚面」。\n- 一片分成幾片的順序按位置排，改了尺寸、片數變了，原來點的片可能對不上，會提示。',
+
+  'help.mutualTrim.keywords': '互相修剪 修剪曲面 曲面 交線 切開 保留',
+
+  'help.mutualTrim.see': 'trim-surface knit thicken',
   'help.extendSurface.summary': '把曲面本體的邊延伸一段距離。',
 
   'help.extendSurface.body':

@@ -42,6 +42,7 @@ import {
   type OffsetSurfaceFeature,
   type SplitLineFeature,
   type KnitFeature,
+  type MutualTrimFeature,
   type FillSurfaceFeature,
   type FlatSurfaceFeature,
   type TrimSurfaceFeature,
@@ -1821,6 +1822,54 @@ function TrimSurfacePanel({ f }: { f: TrimSurfaceFeature }) {
   );
 }
 
+/** Mutual trim (P-3): the two surface bodies, the pieces taken away (a piece is taken away by a click on it, and taken back from the list), and what came of it. */
+function MutualTrimPanel({ f }: { f: MutualTrimFeature }) {
+  const pool = useStore((s) => s.bodyPool).filter((b) => b.surface);
+  const status = useStore((s) => s.result?.features.find((r) => r.id === f.id));
+  const choose = (which: 'a' | 'b', label: string) => (
+    <label className="pm-row">
+      <span>{label}</span>
+      <select value={f[which].name} onChange={(e) => store.setMutualTrim({ [which]: { kind: 'body', name: e.target.value } })}>
+        {!f[which].name && <option value="">{t('pm.cut.empty')}</option>}
+        {f[which].name && !pool.some((b) => b.id === f[which].name) && (
+          <option value={f[which].name}>
+            {f[which].name}
+            {t('pm.lost')}
+          </option>
+        )}
+        {pool.map((b) => (
+          <option key={b.id} value={b.id}>
+            {b.name}
+          </option>
+        ))}
+      </select>
+    </label>
+  );
+  const away = f.discard ?? [];
+  return (
+    <section className="pm-group">
+      <h4>{t('pm.mutualTrim.bodies')}</h4>
+      {pool.length < 2 ? <p className="muted">{t('pm.mutualTrim.empty')}</p> : null}
+      {choose('a', t('pm.mutualTrim.a'))}
+      {choose('b', t('pm.mutualTrim.b'))}
+      <h4>{t('pm.mutualTrim.away')}</h4>
+      {away.length === 0 && <p className="muted">{t('pm.mutualTrim.awayNone')}</p>}
+      <ul className="pm-list">
+        {away.map((r) => (
+          <li key={r.name}>
+            <span>{r.name}</span>
+            <button type="button" title={t('pm.mutualTrim.putBack')} onClick={() => store.setMutualTrim({ discard: away.filter((x) => x.name !== r.name) })}>
+              ✕
+            </button>
+          </li>
+        ))}
+      </ul>
+      {status?.status === 'ok' && status.info && <p className="hint gap-info">{status.info}</p>}
+      <p className="hint">{t('pm.mutualTrim.hint')}</p>
+    </section>
+  );
+}
+
 /** Fill surface (C9.2): the edges of the boundary, how the patch meets the faces beside them, and what was measured of it. */
 function FillSurfacePanel({ f }: { f: FillSurfaceFeature }) {
   const status = useStore((s) => s.result?.features.find((r) => r.id === f.id));
@@ -2550,6 +2599,7 @@ export function PropertyManager() {
       {f.type === 'offsetSurface' && <OffsetSurfacePanel f={f} />}
       {f.type === 'splitLine' && <SplitLinePanel f={f} />}
       {f.type === 'trimSurface' && <TrimSurfacePanel f={f} />}
+      {f.type === 'mutualTrim' && <MutualTrimPanel f={f} />}
       {f.type === 'knit' && <KnitPanel f={f} />}
       {f.type === 'fillSurface' && <FillSurfacePanel f={f} />}
       {f.type === 'flatSurface' && <FlatSurfacePanel f={f} />}

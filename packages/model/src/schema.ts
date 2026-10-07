@@ -6,7 +6,7 @@ import type { Id } from './ids';
  * DOF status, mass properties and error lists are derived data and never stored.
  */
 
-export const SCHEMA_VERSION = 45;
+export const SCHEMA_VERSION = 46;
 
 /** Value expression (B5.2, B5.3): "20", "25.4mm", "30deg", "wall_t*2", "D1@草圖1/2", "property('厚度')"; see `expr/`. */
 export type Expr = string;
@@ -522,6 +522,19 @@ export interface TrimSurfaceFeature extends FeatureBase {
 }
 
 /**
+ * Mutual trim (互相修剪曲面, P-3, v46): two surface bodies cut at the curves where they cross, each into the pieces it is made of, in the place of the bodies (their ids). The
+ * pieces keep the names of the faces they came from; a face that falls into several is told apart by `#k`. `discard` names the pieces taken away (faces of the result); a piece
+ * that is not named stays. It has to leave at least one piece of each body.
+ */
+export interface MutualTrimFeature extends FeatureBase {
+  type: 'mutualTrim';
+  /** The two surface bodies (kind `body`, the name is the body's id). */
+  a: Ref;
+  b: Ref;
+  discard?: Ref[];
+}
+
+/**
  * Extend surface (延伸曲面, C9.3, v30): a surface body of one face made `distance` longer past the picked edges (the face grows along its own parameters, so it
  * carries on the way it was going).
  */
@@ -774,6 +787,7 @@ export type Feature =
   | FillSurfaceFeature
   | FlatSurfaceFeature
   | TrimSurfaceFeature
+  | MutualTrimFeature
   | ExtendSurfaceFeature
   | ThickenFeature
   | LipGrooveFeature

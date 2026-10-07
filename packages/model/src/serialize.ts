@@ -164,6 +164,8 @@ const migrations: Record<number, (doc: Json) => Json> = {
   43: (doc) => doc,
   // v45: thicken on both sides, and keeping the surface (`both`, `keepSurface`). Absent means as before; nothing to convert.
   44: (doc) => doc,
+  // v46: the mutual trim of two surface bodies (`mutualTrim`). A new kind of feature; nothing to convert, the version keeps older programs from opening what they would skip.
+  45: (doc) => doc,
 };
 
 export class FormatError extends Error {

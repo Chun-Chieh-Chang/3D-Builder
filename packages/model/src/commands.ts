@@ -112,6 +112,8 @@ ull). */
   /** Changes a lip or groove (C4.11): the planar face, which of the two, how far in from the edge, how wide and how high (deep). */
   | { type: 'setLipGroove'; featureId: Id; face: Ref; kind: 'lip' | 'groove'; offset: Expr; width: Expr; height: Expr }
   /** Changes a thicken (C9.4): the surface body and the thickness (negative: the other way). */
+  /** Changes a mutual trim (P-3): the two surface bodies and the pieces taken away (absent: none). */
+  | { type: 'setMutualTrim'; featureId: Id; a: Ref; b: Ref; discard?: Ref[] }
   | { type: 'setThicken'; featureId: Id; body: Ref; thickness: Expr; both?: boolean; keepSurface?: boolean }
   /** Changes a cut with surface (C9.4): the solid, the surface, the plane whose normal is the way of the sweep, and whether it goes the other way. */
   | { type: 'setCutWithSurface'; featureId: Id; target: Ref; surface: Ref; direction: Ref; reverse?: boolean }
@@ -517,6 +519,10 @@ function validateNewFeature(doc: PartDoc, f: Feature, index: number): void {
       return;
     case 'knit':
       if (f.bodies.some((r) => r.kind !== 'body')) throw new CommandError(t('cmd.knitOnlyBodies'));
+      return;
+    case 'mutualTrim':
+      if (f.a.kind !== 'body' || f.b.kind !== 'body') throw new CommandError(t('cmd.mutualTrimOnlyBodies'));
+      if ((f.discard ?? []).some((r) => r.kind !== 'face')) throw new CommandError(t('cmd.mutualTrimOnlyFaces'));
       return;
     case 'lipGroove':
       if (f.face.kind !== 'face') throw new CommandError(t('cmd.lipOnlyFace'));
@@ -963,6 +969,17 @@ export function mutate(draft: Draft<PartDoc>, cmd: Command): void {
       f.direction = cmd.direction;
       if (cmd.reverse) f.reverse = true;
       else delete f.reverse;
+      return;
+    }
+    case 'setMutualTrim': {
+      const f = feature(draft, cmd.featureId);
+      if (f.type !== 'mutualTrim') throw new CommandError(t('cmd.onlyMutualTrimHasParams'));
+      if (cmd.a.kind !== 'body' || cmd.b.kind !== 'body') throw new CommandError(t('cmd.mutualTrimOnlyBodies'));
+      if ((cmd.discard ?? []).some((r) => r.kind !== 'face')) throw new CommandError(t('cmd.mutualTrimOnlyFaces'));
+      f.a = cmd.a;
+      f.b = cmd.b;
+      if (cmd.discard && cmd.discard.length > 0) f.discard = cmd.discard;
+      else delete f.discard;
       return;
     }
     case 'setKnit': {

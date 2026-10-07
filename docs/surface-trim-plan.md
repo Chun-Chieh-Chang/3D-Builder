@@ -1,6 +1,6 @@
 # 曲面互相修剪（P-3）：小驗證與計畫
 
-- 狀態：**小驗證完成（2026-10-07）**，還沒有實作功能。驗證在 `tests/phase4b/surface-trim-spike.test.ts`（7 項，全過）。
+- 狀態：**小驗證完成，功能已實作（2026-10-07，ADR 0109；特徵種類取名 `mutualTrim`）**。驗證在 `tests/phase4b/surface-trim-spike.test.ts`（7 項，全過）。
 - 要的功能：兩個曲面本體在交線處互相切開，使用者再選要留下哪幾片（SolidWorks 的「修剪曲面—互相」）。
 
 ## 小驗證回答的問題

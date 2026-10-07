@@ -310,6 +310,7 @@ export function mapExprs(feature: Feature, fn: (expr: Expr, kind: ExprKind, role
     case 'fillSurface':
     case 'flatSurface':
     case 'trimSurface':
+    case 'mutualTrim':
     case 'cutWithSurface':
       return feature;
   }

@@ -491,6 +491,15 @@ export const help: Translation = {
   'help.trimSurface.keywords': 'trim surface keep inside outside outline project',
 
   'help.trimSurface.see': 'split-line extend-surface knit',
+
+  'help.mutualTrim.summary': 'Cut two surfaces where they cross, then pick which pieces stay.',
+
+  'help.mutualTrim.body':
+    'Select two surface bodies: they are cut where they cross, and each body becomes its pieces.\n\n- A piece is named after the face it came from; when one face falls into several they get #1, #2… (in the order of their position).\n- Pick a piece in the graphics area to take it away, pick again to take it back; or take it back from the list "Pieces taken away" in the panel.\n- At least one piece of each body has to stay.\n- When the surfaces have no curve in common (they do not meet or only touch), or lie on each other in part, it says so.\n- The two bodies can go on into "Knit" and "Thicken".\n- The order of the pieces of one face is by position: when a dimension changes and the number of pieces with it, a piece picked before may not be found, and it says so.',
+
+  'help.mutualTrim.keywords': 'mutual trim trim surface crossing cut keep pieces',
+
+  'help.mutualTrim.see': 'trim-surface knit thicken',
   'help.extendSurface.summary': 'Extends the edges of a surface body by a distance.',
 
   'help.extendSurface.body':

@@ -90,6 +90,8 @@ export function mapRefs(feature: Feature, map: (ref: Ref) => Ref): { feature: Fe
       return { feature: { ...feature, edge: one(feature.edge) }, replaced };
     case 'knit':
       return { feature: { ...feature, bodies: feature.bodies.map(one) }, replaced };
+    case 'mutualTrim':
+      return { feature: { ...feature, a: one(feature.a), b: one(feature.b), ...(feature.discard ? { discard: feature.discard.map(one) } : {}) }, replaced };
     case 'thicken':
       return { feature: { ...feature, body: one(feature.body) }, replaced };
     case 'cutWithSurface':

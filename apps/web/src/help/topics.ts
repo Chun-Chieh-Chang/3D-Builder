@@ -145,6 +145,7 @@ const FEATURE_ACTION: Record<string, string> = {
   fillSurface: 'fill-surface',
   flatSurface: 'flat-surface',
   trimSurface: 'trim-surface',
+  mutualTrim: 'mutual-trim',
   extendSurface: 'extend-surface',
   thicken: 'thicken',
   cutWithSurface: 'cut-with-surface',

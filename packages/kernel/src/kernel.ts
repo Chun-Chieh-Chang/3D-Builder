@@ -2548,6 +2548,85 @@ export class Kernel {
   }
 
   /**
+   * 「互相修剪曲面」 (P-3, ADR 0109): two surface bodies cut at the curves where they cross, each into the pieces it is made of. One general fuse of the two (`BRepAlgoAPI_BuilderAlgo`,
+   * with its history), then the faces of the result that lie on the same surface are merged again (a hole across the seam of a cylinder is one patch, not two). Each result is a
+   * compound of the pieces of its own surface, and every piece says which face of its input it came from (`faceOrigins`, `modified`, or `same` when the face was not touched). Pieces of
+   * the two surfaces that lie on each other (the same plane twice) are refused: a piece cannot be in two bodies. What is left to the caller: that nothing was cut (the surfaces do not
+   * meet, or only touch), which shows as the same number of faces as went in.
+   */
+  trimSurfaces(a: ShapeId, b: ShapeId): { a: OpResult; b: OpResult } {
+    if (this.solidCount(a) > 0 || this.solidCount(b) > 0) throw new KernelError(t('surface.notSurface'));
+    const oc = this.oc;
+    const arena = new Arena();
+    const inputs = [ShapeIndex.of(oc, this.get(a), T.FACE, arena), ShapeIndex.of(oc, this.get(b), T.FACE, arena)];
+    try {
+      const args = arena.own(new oc.NCollection_List_TopoDS_Shape());
+      args.Append(this.get(a));
+      args.Append(this.get(b));
+      const mk = arena.own(new oc.BRepAlgoAPI_BuilderAlgo());
+      try {
+        mk.SetArguments(args);
+        mk.SetToFillHistory(true);
+        mk.Build(arena.own(new oc.Message_ProgressRange()));
+      } catch (e) {
+        throw new KernelError(t('surface.trimFailed', { why: this.errorText(e) }));
+      }
+      if (mk.HasErrors() || !mk.IsDone()) throw new KernelError(t('surface.trimFailed', { why: t('surface.notDone') }));
+      mk.SimplifyResult(true, true, 1e-9);
+      const raw = arena.own(mk.Shape());
+      if (!this.valid(raw)) throw new KernelError(t('surface.trimFailed', { why: t('surface.invalid') }));
+      const out = ShapeIndex.of(oc, raw, T.FACE, arena);
+      try {
+        // the pieces each input face became: where they are in the whole result, and whether the face was touched at all
+        const pieces = inputs.map((src) =>
+          src.keys.map((face) => {
+            const modified = this.list(mk.Modified(face));
+            try {
+              if (modified.length > 0) return { at: modified.map((m) => out.indexOf(m)).filter((j) => j >= 0), same: false };
+              return { at: mk.IsDeleted(face) ? [] : [out.indexOf(face)].filter((j) => j >= 0), same: true };
+            } finally {
+              for (const m of modified) m.delete();
+            }
+          }),
+        );
+        const mine = pieces.map((p) => new Set(p.flatMap((x) => x.at)));
+        if ([...mine[0]!].some((j) => mine[1]!.has(j))) throw new KernelError(t('surface.trimCoincident'));
+        const made: ShapeId[] = [];
+        try {
+          const result = pieces.map((p, which): OpResult => {
+            const at = [...mine[which]!].sort((x, y) => x - y);
+            if (at.length === 0) throw new KernelError(t('surface.trimFailed', { why: t('surface.invalid') }));
+            const id = this.put(this.compound(at.map((j) => out.keys[j]!), arena));
+            made.push(id);
+            const faces = ShapeIndex.of(oc, this.get(id), T.FACE, arena);
+            try {
+              const origins: FaceOrigin[][] = faces.keys.map(() => []);
+              p.forEach((x, i) => {
+                for (const j of x.at) {
+                  const k = faces.indexOf(out.keys[j]!);
+                  if (k >= 0) origins[k]!.push({ rel: x.same ? 'same' : 'modified', kind: 'face', index: i });
+                }
+              });
+              return { shape: id, faceOrigins: origins };
+            } finally {
+              faces.dispose();
+            }
+          });
+          return { a: result[0]!, b: result[1]! };
+        } catch (e) {
+          for (const id of made) this.release(id);
+          throw e;
+        }
+      } finally {
+        out.dispose();
+      }
+    } finally {
+      for (const i of inputs) i.dispose();
+      arena.dispose();
+    }
+  }
+
+  /**
    * A one-face surface made longer past the edges `edgeIndices` by `length` (C9.3 延伸): the face is grown along its own parameters (`BRepLib::ExtendFace`, tried in
    * ADR 0071 on a plane, a cylinder, a cone and a freeform side). Which side of the face each edge is one of is found by trying them: extending a side takes the edge
    * from the boundary of the face, so the side that does is the edge's. A periodic side (the way round a cylinder) has no end to extend and is refused. The result

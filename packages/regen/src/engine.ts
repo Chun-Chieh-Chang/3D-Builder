@@ -41,6 +41,7 @@ import {
   type OffsetSurfaceFeature,
   type SplitLineFeature,
   type KnitFeature,
+  type MutualTrimFeature,
   type FillSurfaceFeature,
   type FlatSurfaceFeature,
   type TrimSurfaceFeature,
@@ -554,6 +555,10 @@ export class Regenerator {
           }
           case 'knit': {
             set = this.advance(set, this.knit(feature, set));
+            return done({ status: 'ok' });
+          }
+          case 'mutualTrim': {
+            set = this.advance(set, this.mutualTrim(feature, set));
             return done({ status: 'ok' });
           }
           case 'fillSurface': {
@@ -2483,6 +2488,72 @@ export class Regenerator {
     const first = bodies[0]!;
     const state: BodyState = { id: first.id, shape: r.shape, topology, names: nameElements(r.faceOrigins, topology, { featureId: f.id, input }), by: f.id, ...(r.solid ? {} : { surface: true }) };
     return set.list.flatMap((b) => (b === first ? [state] : bodies.includes(b) ? [] : [b]));
+  }
+
+  /**
+   * 「互相修剪曲面」 (P-3, ADR 0109): two surface bodies cut where they cross, each into its pieces, in the place of the two (their ids). A piece has the name of the face it came
+   * from, `#k` when a face fell into several (as for a split line). The pieces in `discard` are then taken away; one that is not found is reported with the others.
+   */
+  private mutualTrim(f: MutualTrimFeature, set: Bodies): BodyState[] {
+    const a = this.bodyByRef(set, f.a, t('surface.trimBodyA'));
+    const b = this.bodyByRef(set, f.b, t('surface.trimBodyB'));
+    if (a === b) throw new FeatureError(t('surface.trimSameBody'));
+    for (const x of [a, b]) if (!x.surface) throw new FeatureError(t('surface.trimNeedsSurfaces', { name: x.id }));
+    const k = this.kernel;
+    const r = k.trimSurfaces(a.shape, b.shape);
+    const state = (body: BodyState, res: { shape: ShapeId; faceOrigins: FaceOrigin[][] }): BodyState => {
+      const topology = k.topology(res.shape);
+      return { id: body.id, shape: res.shape, topology, names: nameElements(res.faceOrigins, topology, { featureId: f.id, input: body.names }), by: f.id, surface: true };
+    };
+    let pieces: BodyState[] = [state(a, r.a), state(b, r.b)];
+    const drop = () => pieces.forEach((p) => k.release(p.shape));
+    try {
+      if (pieces[0]!.topology.faces.length === a.topology.faces.length && pieces[1]!.topology.faces.length === b.topology.faces.length) throw new FeatureError(t('surface.trimNoCurve'));
+      const wanted = f.discard ?? [];
+      let gone = 0;
+      if (wanted.length > 0) {
+        const view = new Bodies(pieces, k);
+        const away = new Map<BodyState, Set<number>>();
+        const unresolved: Unresolved[] = [];
+        try {
+          const v = view.view!;
+          for (const ref of wanted) {
+            const found = resolveRef(ref, v.names, v.topology);
+            if (!found.ok) {
+              unresolved.push({ ref, reason: found.reason, candidates: found.candidates });
+              continue;
+            }
+            this.noteFingerprint(found.via, t('surface.trimPieceNoun'), v.names.faces[found.index]!);
+            const { body, local } = view.locate('face', found.index);
+            away.set(body, (away.get(body) ?? new Set<number>()).add(local));
+          }
+        } finally {
+          view.release();
+        }
+        if (unresolved.length > 0) throw new FeatureError(t('surface.trimDiscardLost', { n: unresolved.length }), unresolved);
+        const next: BodyState[] = [];
+        for (const p of pieces) {
+          const out = away.get(p);
+          if (!out || out.size === 0) {
+            next.push(p);
+            continue;
+          }
+          const keep = p.topology.faces.flatMap((_, j) => (out.has(j) ? [] : [j]));
+          if (keep.length === 0) throw new FeatureError(t('surface.trimAllDiscarded', { name: p.id }));
+          const kept = k.keepFaces(p.shape, keep);
+          const topology = k.topology(kept.shape);
+          next.push({ ...p, shape: kept.shape, topology, names: nameFromFaces(kept.faceOrigins.map((o) => p.names.faces[(o[0] as { index: number }).index]!), topology) });
+          k.release(p.shape);
+          gone += out.size;
+        }
+        pieces = next;
+      }
+      this.info = t('surface.trimInfo', { a: String(pieces[0]!.topology.faces.length), b: String(pieces[1]!.topology.faces.length), gone: String(gone) });
+    } catch (e) {
+      drop();
+      throw e;
+    }
+    return set.list.map((x) => (x === a ? pieces[0]! : x === b ? pieces[1]! : x));
   }
 
   /** The edges picked, which have to be on one body: that body and the edges' numbers in it. Lost ones are reported together. */
