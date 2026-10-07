@@ -279,7 +279,7 @@ export interface KernelApi {
    * The flat pattern of the sheet metal part as it is shown (its outline, bend lines and sizes, C11.3) and its manufacturability checks against the limits given (ADR 0090); the
    * pattern is made once for both. `report` is null, and `error` says why, when the pattern cannot be made; the checks are still those that need no pattern.
    */
-  flatPattern(limits: SheetCheckLimits): Promise<{ report: FlatReport | null; error: string | null; checks: SheetCheck[] }>;
+  flatPattern(limits: SheetCheckLimits): Promise<{ report: FlatReport | null; mesh: MeshData | null; error: string | null; checks: SheetCheck[] }>;
   /** Lets go of every rebuilt part file except these. */
   retainParts(keys: string[]): Promise<void>;
   /**

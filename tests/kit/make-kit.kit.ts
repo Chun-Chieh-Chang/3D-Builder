@@ -433,6 +433,60 @@ describe('F. a sheet-metal bracket (checklist I, J6 stand-in)', () => {
   });
 });
 
+describe('H. the files of the features made after the first round of checks (curved surfaces, sheet metal)', () => {
+  const feat = (f: Record<string, unknown>) => f as unknown as Feature;
+  const offset = (id: string, face: string, distance: string): Feature => feat({ id, type: 'offsetSurface', name: id, suppressed: false, faces: [{ kind: 'face', name: face }], distance });
+  const edgeAtMid = (r: RebuildResult, mid: [number, number, number]): Ref => {
+    const i = r.body!.topology.edges.findIndex((e) => e.curve === 'line' && Math.hypot(e.mid[0] - mid[0], e.mid[1] - mid[1], e.mid[2] - mid[2]) < 1e-6);
+    expect(i, `an edge at ${mid}`).toBeGreaterThanOrEqual(0);
+    return { kind: 'edge', name: r.body!.names.edges[i]!, fingerprint: edgeFingerprint(r.body!.topology, i) };
+  };
+  const plate = (w: number, h: number): Feature[] => [sketch('sk', front, rectangle('r', 0, 0, w, h)) as Feature, feat({ id: 'bf', type: 'baseFlange', name: 'bf', suppressed: false, sketch: 'sk', thickness: '1.5', radius: '2', kFactor: '0.5' })];
+  const doc = (features: Feature[]): PartDoc => features.reduce((d, feature, index) => applyCommand(d, { type: 'insertFeature', feature, index }), createEmptyPart());
+
+  it('writes the mutual trim (two surfaces crossing: 750 + 450 and 360 + 240) and the thicken on both sides with the surface kept', async () => {
+    const block = [sketch('s1', front, rectangle('r', 0, 0, 40, 30)) as Feature, extrude('e1', 's1', 'boss', { type: 'blind', depth: '20' }) as Feature, offset('os1', 'e1:cap:end', '-8'), offset('os2', 'e1:side:s1.rl1', '-15')];
+    const trim = feat({ id: 'mt1', type: 'mutualTrim', name: 'mt1', suppressed: false, a: { kind: 'body', name: 'os1' }, b: { kind: 'body', name: 'os2' } });
+    const r = await putPart('曲面/互相修剪.3dbx', doc([...block, trim]), '互相修剪：方塊 40×30×20，頂面偏移 8 的平面與側面偏移 15 的平面互相切開：第一個 750 + 450、第二個 360 + 240（手冊 G3）；點一片去掉');
+    expect(r.bodies.map((b) => [b.id, b.surface])).toEqual([['e1', false], ['os1', true], ['os2', true]]);
+    const cyl = [sketch('s1', front, circle('c', 0, 0, 10)) as Feature, extrude('e1', 's1', 'boss', { type: 'blind', depth: '20' }) as Feature, offset('os1', 'e1:side:s1.c', '3')];
+    const thick = feat({ id: 'th1', type: 'thicken', name: 'th1', suppressed: false, body: { kind: 'body', name: 'os1' }, thickness: '4', both: true, keepSurface: true });
+    const t = await putPart('曲面/厚面兩側.3dbx', doc([...cyl, thick]), '厚面兩側並保留曲面：圓柱 R10×20 的側面偏移 3（R13 的曲面），總厚 4 兩側各 2：實體 π(15²−11²)·20 = 6534.512 mm³，曲面本體還在（手冊 G4）');
+    expect(t.bodies.map((b) => [b.id, b.surface])).toEqual([['e1', false], ['os1', true], ['th1', false]]);
+    expect(kernel.massProps(t.bodies.find((b) => b.id === 'th1')!.shape).volume).toBeCloseTo(Math.PI * (225 - 121) * 20, 3);
+  });
+
+  it('writes the mitred corner, the mid bend, the flange on a bent base, and the hole made after the bend', async () => {
+    const flangeA = feat({ id: 'fa', type: 'edgeFlange', name: 'fa', suppressed: false, edge: { kind: 'edge', name: '{bf:cap:end|bf:side:sk.rl1}' }, length: '40' });
+    const withA = rebuild(doc([...plate(100, 60), flangeA]));
+    const flangeB = feat({ id: 'fb', type: 'edgeFlange', name: 'fb', suppressed: false, edge: edgeAtMid(withA, [48.25, 60, 1.5]), length: '30', miter: { start: '0' } });
+    const m = await putPart('鈑金/斜接.3dbx', doc([...plate(100, 60), flangeA, flangeB]), '斜接：板 100×60×1.5，x = 100 邊的凸緣（長 40）與 y = 60 邊的凸緣（長 30）在角落以 45° 接合，間隙 0；體積約 16382 mm³（手冊 I2）');
+    expect(kernel.massProps(m.body!.shape).volume).toBeCloseTo(16382.12, 0);
+
+    const line = { ...sketch('sm', front), entities: [{ id: 'a', type: 'point', x: 50, y: -5 }, { id: 'b', type: 'point', x: 50, y: 55 }, { id: 'l', type: 'line', p1: 'a', p2: 'b' }] } as unknown as Feature;
+    const bend = await putPart('鈑金/中間折彎.3dbx', doc([...plate(100, 50), line, feat({ id: 'mb', type: 'midBend', name: 'mb', suppressed: false, sketch: 'sm', angle: '90' })]), '中間折彎：板 100×50×1.5 在 x = 50 折 90°（左邊不動）；體積 7500 mm³，展平圖還是 100×50 加一條折彎線（手冊 I1）');
+    expect(kernel.massProps(bend.body!.shape).volume).toBeCloseTo(7500, 3);
+
+    const pts: [number, number][] = [[0, 0], [60, 0], [60, 40]];
+    const path = { ...sketch('sk', front), entities: [...pts.map(([x, y], i) => ({ id: `p${i}`, type: 'point', x, y })), ...pts.slice(1).map((_, i) => ({ id: `l${i}`, type: 'line', p1: `p${i}`, p2: `p${i + 1}` }))] } as unknown as Feature;
+    const bentBase = feat({ id: 'bf', type: 'baseFlange', name: 'bf', suppressed: false, sketch: 'sk', thickness: '1.5', radius: '2', kFactor: '0.5', depth: '40' });
+    const bare = rebuild(doc([path, bentBase]));
+    const endEdge = bare.body!.topology.edges.findIndex((e) => e.curve === 'line' && e.dir && Math.abs(Math.abs(e.dir[2]) - 1) < 1e-9 && Math.abs(e.mid[1] - 40) < 1e-6);
+    expect(endEdge).toBeGreaterThanOrEqual(0);
+    const flange = feat({ id: 'fa', type: 'edgeFlange', name: 'fa', suppressed: false, edge: { kind: 'edge', name: bare.body!.names.edges[endEdge]!, fingerprint: edgeFingerprint(bare.body!.topology, endEdge) }, length: '20' });
+    const b = await putPart('鈑金/折過基材加凸緣.3dbx', doc([path, bentBase, flange]), '折過的基材（L 形路徑 (0,0)(60,0)(60,40)，板寬 40）加第二段末端的 90° 凸緣（長 20）；平板型式是 40 寬的長條、兩條折彎線（手冊 I6）');
+    expect(b.sheet!.flanges[0]!.host).toBeGreaterThanOrEqual(0);
+
+    const wall = [
+      feat({ id: 'pw', type: 'refPlane', name: 'pw', suppressed: false, def: { mode: 'offset', plane: { kind: 'datum', name: 'plane:right' }, distance: '98' } }),
+      sketch('sw', { kind: 'datum', name: 'pw' } as Ref, circle('cw', -20, 30, 3)) as Feature,
+      extrude('xw', 'sw', 'cut', { type: 'blind', depth: '5', reverse: true }) as Feature,
+    ];
+    const hole = await putPart('鈑金/折彎後的孔.3dbx', doc([...plate(100, 60), flangeA, ...wall]), '折彎之後才切的孔：板 100×60 加 x = 100 邊的凸緣，再在凸緣的牆上（高度 20、y = 30）切一個 Ø6 的孔；平板型式上孔在 x = 117.320、y = 30（手冊 I6）');
+    expect(hole.sheet!.cuts).toHaveLength(1);
+  });
+});
+
 describe('G. the manifest', () => {
   it('writes the list of what to look at in a viewer, and a README listing every file', () => {
     review.push(

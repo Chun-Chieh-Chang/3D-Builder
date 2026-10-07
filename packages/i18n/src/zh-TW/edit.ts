@@ -313,6 +313,7 @@ export const edit = {
   'flat.why.bentBase': '基材是折過的板，這種情形還沒有做',
   'flat.why.unplaced': '放回平板上之後沒有切到板，位置對不上',
   'flat.notIncludedItem': '{name}：{why}',
+  'flat.show3d': '在 3D 視窗顯示展開的狀態（顯示時不能點選；關掉回到折起來的零件）',
   'flat.hint': '平板型式是從特徵記下的折彎資料算出來的（不是把實體展開）。K 因子是輸入：K = 0.5 以外的長度與公式一致，不是與實體一致。往上＝朝向看圖的這一面折。',
   'pm.gauge.heading': '量規表',
   'pm.gauge.apply': '套用量規…',

@@ -576,7 +576,7 @@ const api: KernelApi = {
     return kernel.thicknessAnalysis(shape, limits);
   },
 
-  async flatPattern(limits: SheetCheckLimits): Promise<{ report: FlatReport | null; error: string | null; checks: SheetCheck[] }> {
+  async flatPattern(limits: SheetCheckLimits): Promise<{ report: FlatReport | null; mesh: MeshData | null; error: string | null; checks: SheetCheck[] }> {
     await api.init();
     const sheet = lastResult?.sheet;
     if (!sheet) throw new FlatError(t('flat.noSheet'));
@@ -590,10 +590,11 @@ const api: KernelApi = {
     }
     try {
       const checks = sheetChecks(kernel, sheet, limits, pattern);
-      if (!pattern) return { report: null, error, checks };
+      if (!pattern) return { report: null, mesh: null, error, checks };
       const { shape, ...report } = pattern;
-      void shape;
-      return { report, error: null, checks };
+      // the pattern as a solid, to be shown flat in the 3D view (ADR 0115)
+      const mesh = kernel.mesh(shape);
+      return Comlink.transfer({ report, mesh, error: null, checks }, [mesh.positions, mesh.normals, mesh.indices, mesh.faceRanges, mesh.edgePoints, mesh.edgeRanges].map((a) => a.buffer as ArrayBuffer));
     } finally {
       if (pattern) kernel.release(pattern.shape);
     }

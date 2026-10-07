@@ -160,6 +160,10 @@ export function FlatPanel() {
               </tbody>
             </table>
           )}
+          <label className="pm-row checkbox">
+            <input type="checkbox" data-field="show3d" checked={!!flat?.show3d} onChange={(e) => store.setFlat3d(e.target.checked)} />
+            <span>{t('flat.show3d')}</span>
+          </label>
           <NotIncluded items={report.notIncluded} />
           <p className="muted">{t('flat.hint')}</p>
         </>

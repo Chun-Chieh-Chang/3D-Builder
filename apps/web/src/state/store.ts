@@ -132,6 +132,9 @@ export interface FlatState {
   /** The limits of the manufacturability checks (in thicknesses), as typed, and what the checks found with them. */
   limits: { radius: string; flange: string; hole: string };
   checks: SheetCheck[];
+  /** The pattern as a solid, and whether the 3D view shows it instead of the folded part (ADR 0115). */
+  mesh: MeshData | null;
+  show3d: boolean;
 }
 
 export interface ThicknessState {
@@ -711,13 +714,18 @@ class AppStore {
 
   /** 「平板型式」 (C11.3) on: the pattern of the sheet metal part as it is shown, in a window; it is worked out again when the model changes. Nothing of it is saved. */
   startFlat(): void {
-    this.set({ flat: { status: 'running', report: null, error: null, limits: { radius: '1', flange: '4', hole: '2' }, checks: [] } });
+    this.set({ flat: { status: 'running', report: null, error: null, limits: { radius: '1', flange: '4', hole: '2' }, checks: [], mesh: null, show3d: false } });
     void this.runFlat();
   }
 
   stopFlat(): void {
     this.flatSeq++;
     if (this.state.flat) this.set({ flat: null });
+  }
+
+  /** Shows the flat pattern in the 3D view in the place of the folded part (nothing can be picked while it is shown), or the part again. */
+  setFlat3d(on: boolean): void {
+    if (this.state.flat) this.set({ flat: { ...this.state.flat, show3d: on && !!this.state.flat.mesh } });
   }
 
   /** The limits of the manufacturability checks typed in the flat pattern window. */
@@ -739,11 +747,11 @@ class AppStore {
     // limits that are not numbers keep the checks of the last ones
     const asked = limits.radius === null || limits.flange === null || limits.hole === null ? { radius: 1, flange: 4, hole: 2 } : { radius: limits.radius, flange: limits.flange, hole: limits.hole };
     try {
-      const { report, error, checks } = await this.api.flatPattern(asked);
+      const { report, mesh, error, checks } = await this.api.flatPattern(asked);
       const keep = asked.radius === limits.radius && asked.flange === limits.flange && asked.hole === limits.hole;
-      done(report ? { status: 'done', report, error: null, checks: keep ? checks : (this.state.flat?.checks ?? checks) } : { status: 'error', report: null, error: t('flat.failed', { why: error ?? '' }), checks: keep ? checks : (this.state.flat?.checks ?? checks) });
+      done(report ? { status: 'done', report, mesh, error: null, checks: keep ? checks : (this.state.flat?.checks ?? checks) } : { status: 'error', report: null, mesh: null, show3d: false, error: t('flat.failed', { why: error ?? '' }), checks: keep ? checks : (this.state.flat?.checks ?? checks) });
     } catch (e) {
-      done({ status: 'error', report: null, error: t('flat.failed', { why: e instanceof Error ? e.message : String(e) }), checks: [] });
+      done({ status: 'error', report: null, mesh: null, show3d: false, error: t('flat.failed', { why: e instanceof Error ? e.message : String(e) }), checks: [] });
     }
   }
 

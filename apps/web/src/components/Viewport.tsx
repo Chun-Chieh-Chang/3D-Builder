@@ -230,16 +230,18 @@ export function Viewport() {
           : null;
   const pick = picking(feature, !!editing, modelTool, measure !== null);
 
+  // the flat pattern shown in the place of the folded part (ADR 0115): nothing of the model's names fits its faces, so nothing is picked and no colors are painted
+  const flatMesh = useStore((s) => (s.flat?.show3d ? s.flat.mesh : null));
   useEffect(() => {
     const v = store.viewer;
     if (!v) return;
-    const fit = !!result?.mesh && fittedFor.current !== fitRequest;
-    v.setMesh(result?.mesh ?? null, fit);
-    v.setFaceColors(analysisColors ?? result?.faceColors ?? []);
-    v.setVertices(result?.vertexPoints ?? new Float32Array(0));
+    const fit = !!(flatMesh ?? result?.mesh) && (fittedFor.current !== fitRequest || flatMesh !== null);
+    v.setMesh(flatMesh ?? result?.mesh ?? null, fit);
+    v.setFaceColors(flatMesh ? [] : (analysisColors ?? result?.faceColors ?? []));
+    v.setVertices(flatMesh ? new Float32Array(0) : (result?.vertexPoints ?? new Float32Array(0)));
     displayed.current = result;
-    if (fit) fittedFor.current = fitRequest;
-  }, [result]);
+    if (fit && !flatMesh) fittedFor.current = fitRequest;
+  }, [result, flatMesh]);
 
   // what an analysis colors replaces the colors of the part while it is open, if it is of the model on show
   useEffect(() => {
@@ -253,7 +255,13 @@ export function Viewport() {
     v.setEdgePicking(p.edges);
     v.setFacePicking(p.faces);
     v.setVertexPicking(p.vertices);
-    v.setPickFilter(pickFilter); // the user's filter (what can be picked) holds for measuring too
+    v.setPickFilter(flatMesh ? { faces: false, edges: false, vertices: false } : pickFilter); // the user's filter (what can be picked) holds for measuring too
+    if (flatMesh) {
+      v.setSelectedEdges([]);
+      v.setSelectedFaces([]);
+      v.setSelectedVertices([]);
+      return;
+    }
     const r = displayed.current;
     if (measure) {
       // what is measured is shown as picked (by the numbers the mesh has), nothing else
@@ -274,7 +282,7 @@ export function Viewport() {
     else if (selectedFace?.kind === 'face') v.setSelectedFaces(indices(r?.faceNames, [selectedFace]));
     // D1.2: a feature selected in the FeatureManager shows the faces it made.
     else v.setSelectedFaces(selected ? (r?.faceNames ?? []).flatMap((n, i) => (ownerFeatures(n)[0] === selected ? [i] : [])) : []);
-  }, [feature, editing, selectedFace, selected, result, modelTool, pickFilter, measure]);
+  }, [feature, editing, selectedFace, selected, result, modelTool, pickFilter, measure, flatMesh]);
 
   // Reference planes show like new planes in SolidWorks; default planes only when selected or referenced (D4.6).
   useEffect(() => {

@@ -315,6 +315,7 @@ export const edit: Translation = {
   'flat.why.bentBase': 'the base is a bent sheet, which is not done yet',
   'flat.why.unplaced': 'put back on the pattern it did not cut the sheet: its place does not fit',
   'flat.notIncludedItem': '{name}: {why}',
+  'flat.show3d': 'Show the flat pattern in the 3D view (nothing can be picked while it is shown; untick to go back to the folded part)',
   'flat.hint': 'The flat pattern is worked out from the bend data the features recorded (the solid is not unfolded). The K-factor is an input: at any K but 0.5 the length agrees with the formula, not with the solid. Up = toward the side the pattern is seen from.',
   'pm.gauge.heading': 'Gauge Table',
   'pm.gauge.apply': 'Apply a Gauge…',
