@@ -63,6 +63,8 @@ export const drawing: Translation = {
   'drawing.view.left': 'Left',
   'drawing.view.right': 'Right',
   'drawing.view.isometric': 'Isometric',
+  'drawing.view.flat': 'Flat pattern',
+  'drawing.flatNoDerived': 'A flat pattern cannot be projected or cut again (the folded part is not seen in it); a detail can',
   'drawing.title.company': 'Company',
   'drawing.title.drawingName': 'Title',
   'drawing.title.drawingNo': 'Drawing No.',

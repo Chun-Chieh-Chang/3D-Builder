@@ -210,6 +210,8 @@ export interface DrawingViewRequest {
   cut?: { origin: [number, number, number]; normal: [number, number, number] };
   /** Also where each part is in the view (C16.6): what the balloons of an assembly drawing point at. */
   anchors?: boolean;
+  /** The flat pattern of the (first) part, not a projection of it (S-1): its outline and bend lines. */
+  flat?: boolean;
 }
 
 /** What a view of a drawing looks like: its lines at full size, or why they could not be made. */

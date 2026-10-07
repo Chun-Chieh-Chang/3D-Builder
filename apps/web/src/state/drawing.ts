@@ -290,7 +290,7 @@ export class DrawingStore {
    * What the worker is asked for a view: the part, where it looks from and for a section the plane that cuts it. A detail is asked for nothing (it is cut from its
    * parent's lines in the layout); a view whose part is not built or whose chain of parents is broken, nothing yet.
    */
-  private requestOf(view: DrawingView): { id: string; featureId?: string; key: string; parts: { part: string; mirrored: boolean; pose: typeof IDENTITY }[]; anchors: boolean; axes: ViewAxes; cut?: { origin: [number, number, number]; normal: [number, number, number] } } | null {
+  private requestOf(view: DrawingView): { id: string; featureId?: string; key: string; parts: { part: string; mirrored: boolean; pose: typeof IDENTITY }[]; anchors: boolean; flat?: boolean; axes: ViewAxes; cut?: { origin: [number, number, number]; normal: [number, number, number] } } | null {
     if (view.kind === 'detail') return null;
     const doc = this.history.doc;
     const key = this.keyOf(view);
@@ -311,6 +311,8 @@ export class DrawingStore {
       const parts = assembly.leaves.map((l) => ({ part: l.mirrored ? unmirror(l.key) : l.key, mirrored: !!l.mirrored, pose: l.pose }));
       return { id, key, parts, anchors: true, axes, ...(cut ? { cut } : {}) };
     }
+    // the flat pattern of a sheet metal part: not a projection, so nothing of the folded part can be dimensioned in it
+    if (view.kind === undefined || view.kind === 'model') if (view.direction === 'flat') return { id: `${key}|flat`, key, parts: [{ part: key, mirrored: false, pose: IDENTITY }], anchors: false, flat: true, axes };
     return { id, featureId: `${key}|${JSON.stringify(axes)}`, key, parts: [{ part: key, mirrored: false, pose: IDENTITY }], anchors: false, axes, ...(cut ? { cut } : {}) };
   }
 
@@ -387,7 +389,7 @@ export class DrawingStore {
         const unique = [...new Map(wanted.map((w) => [w.id, w])).values()];
         if (unique.length > 0) {
           this.set({ computing: true });
-          const results = await this.host.api.drawingViews(unique.map((w) => ({ parts: w.parts, axes: w.axes, ...(w.anchors ? { anchors: true } : {}), ...(w.cut ? { cut: w.cut } : {}) })));
+          const results = await this.host.api.drawingViews(unique.map((w) => ({ parts: w.parts, axes: w.axes, ...(w.anchors ? { anchors: true } : {}), ...(w.cut ? { cut: w.cut } : {}), ...(w.flat ? { flat: true } : {}) })));
           if (this.closed) return;
           unique.forEach((w, i) => {
             const r = results[i]!;
@@ -536,9 +538,16 @@ export class DrawingStore {
     if (this.execute({ type: 'insertViews', views })) this.set({ selected: views[0]?.id ?? null });
   }
 
+  /** Whether a view is the flat pattern of a part (S-1): the folded part is not seen in it, so views projected or cut from it would show nothing true. */
+  private isFlat(id: Id): boolean {
+    const v = viewById(this.history.doc.views, id);
+    return !!v && (v.kind === undefined || v.kind === 'model') && v.direction === 'flat';
+  }
+
   /** A view projected from `parent` onto one of its sides (C16.3). */
   addProjected(parent: Id, side: ViewSide): void {
     const doc = this.history.doc;
+    if (this.isFlat(parent)) return this.host.notify(t('drawing.flatNoDerived'), 'error');
     const ids = new IdAllocator(doc.idCounters, drawingIdsInUse(doc));
     const id = ids.take('view');
     if (this.execute({ type: 'insertViews', views: [{ id, name: t('drawing.view.projected'), kind: 'projected', parent, side }] })) this.set({ selected: id });
@@ -547,6 +556,7 @@ export class DrawingStore {
   /** A section of `parent` cut along a horizontal or vertical line in the parent's coordinates (C16.3); the letter is the next free one. */
   addSection(parent: Id, line: SectionDrawingView['line']): void {
     const doc = this.history.doc;
+    if (this.isFlat(parent)) return this.host.notify(t('drawing.flatNoDerived'), 'error');
     const ids = new IdAllocator(doc.idCounters, drawingIdsInUse(doc));
     const id = ids.take('view');
     const label = this.nextLabel();

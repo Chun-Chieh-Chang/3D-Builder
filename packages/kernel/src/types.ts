@@ -251,6 +251,8 @@ export interface ProjectedView {
   box: { min: [number, number]; max: [number, number] } | null;
   /** A section (C16.3): the outlines of the faces the cut made, as closed polylines in the same coordinates, for hatching. Absent for a view of the whole. */
   cut?: number[][];
+  /** Chain lines: the bend lines of a flat pattern (S-1). */
+  center?: number[][];
 }
 
 /**

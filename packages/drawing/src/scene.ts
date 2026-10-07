@@ -129,6 +129,7 @@ export function viewItems(view: DrawingView, lines: ViewLines | null | undefined
   const items: ScenePolyline[] = [];
   if (showsHidden(view)) for (const l of lines.hidden) items.push({ kind: 'polyline', points: move(l), style: 'hidden' });
   for (const l of lines.visible) items.push({ kind: 'polyline', points: move(l), style: 'visible' });
+  for (const l of lines.center ?? []) items.push({ kind: 'polyline', points: move(l), style: 'center' });
   if (view.kind === 'section' && lines.cut) for (const l of hatch(lines.cut, HATCH_SPACING / placed.scale)) items.push({ kind: 'polyline', points: move(l), style: 'thin' });
   return items;
 }

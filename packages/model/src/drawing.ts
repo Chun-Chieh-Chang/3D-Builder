@@ -12,14 +12,14 @@ import type { Ref } from './schema';
  * opened (exact hidden-line removal), so a drawing can never disagree with the model it shows.
  */
 
-export const DRAWING_SCHEMA_VERSION = 5;
+export const DRAWING_SCHEMA_VERSION = 6;
 
 export type SheetSize = 'A4' | 'A3' | 'A2' | 'A1' | 'A0';
 export const SHEET_SIZES: readonly SheetSize[] = ['A4', 'A3', 'A2', 'A1', 'A0'];
 
-/** The views a drawing takes of a model: the six of the orthographic projection and the isometric. */
-export type ViewName = 'front' | 'back' | 'top' | 'bottom' | 'left' | 'right' | 'isometric';
-export const VIEW_NAMES: readonly ViewName[] = ['front', 'back', 'top', 'bottom', 'left', 'right', 'isometric'];
+/** The views a drawing takes of a model: the six of the orthographic projection, the isometric, and (v6) the flat pattern of a sheet metal part (not a direction: the unfolded part, in the plane of the sheet). */
+export type ViewName = 'front' | 'back' | 'top' | 'bottom' | 'left' | 'right' | 'isometric' | 'flat';
+export const VIEW_NAMES: readonly ViewName[] = ['front', 'back', 'top', 'bottom', 'left', 'right', 'isometric', 'flat'];
 
 /** A scale as `[n, d]`: n : d on the sheet, so [1, 2] is 1:2 (half size) and [2, 1] is 2:1. */
 export type Scale = [number, number];
@@ -576,6 +576,8 @@ export function viewVectors(name: ViewName): { dir: [number, number, number]; up
       return { dir: [1, 0, 0], up: [0, 1, 0] };
     case 'isometric':
       return { dir: [-1, -1, -1], up: [0, 1, 0] };
+    case 'flat':
+      return { dir: [0, 0, -1], up: [0, 1, 0] }; // what the pattern's own coordinates are drawn as; nothing is projected
   }
 }
 

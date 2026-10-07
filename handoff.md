@@ -8,7 +8,7 @@
 
 ### 0.0 快速接手（2026-10-04，H-11 之後，換電腦先看這段）
 
-**狀態**：Phase 0 到 7 開發完成；`npm run check` 1996 項通過、21 項略過；零件 Schema 42、組合件 Schema 7、工程圖 Schema 5。已經沒有「進行中」的里程碑；使用者採納「先鞏固再加功能」，鞏固 H-1 到 H-11 已做完（[hardening-plan](docs/hardening-plan.md)）。每個里程碑的 ADR、驗收表與限制在對應的 ADR，§3 有一行摘要。
+**狀態**：Phase 0 到 7 開發完成；`npm run check` 1996 項通過、21 項略過；零件 Schema 42、組合件 Schema 7、工程圖 Schema 6。已經沒有「進行中」的里程碑；使用者採納「先鞏固再加功能」，鞏固 H-1 到 H-11 已做完（[hardening-plan](docs/hardening-plan.md)）。每個里程碑的 ADR、驗收表與限制在對應的 ADR，§3 有一行摘要。
 
 **換電腦（本專案要能在不同電腦開發，下面都是每台電腦自己的事，程式與文件不依賴任何一台）**：`git pull`（私人專案）→ **`npm run doctor`**（唯讀診斷：Node、git、`node_modules` 的工作區連結是否指向這個資料夾、這個磁碟能不能做連結、埠 5391、Rust 與 C++ 工具；每個問題都附修法）→ 有問題照它說的做（多半是 `npm install`）→ `npm run check`（應全過）→ `npm run dev`。**只用網頁版不需要 Rust 與 MSVC**；要建桌面版才裝（`apps/desktop/README.md` 的「需要」）。
 
@@ -131,6 +131,7 @@
 | [ADR 0078](docs/adr/0078-unequal-shell.md) | 不等殼厚（6-4，零件 **Schema 32**）：薄殼的 `faceThickness`（先均勻做殼，再把由指定面長出的內側平面移動 `指定 − 壁厚`，用名稱追蹤，每步檢查位置與外包）、PropertyManager 的「壁厚不同的面」模式與清單、`setShell` 的選用參數；地板 4 的盒子 19584、加一面壁 3 是 20520；發現：地板厚過頭時 `moveFace` 回有效的本體（板長到本體外）所以要檢查外包；限制：只限平面的壁、結果在 ✔ 之後才看得到 |
 | [ADR 0079](docs/adr/0079-lip-groove.md) | 唇與溝槽（6-5，零件 **Schema 33**）：`lipGroove`（平面、種類、離邊緣、寬度、高度）；核心的 `ringTool`（外輪廓向內偏移兩次的環，沿法向長出或切入，環要整個在面上否則拒絕）；面以輪廓的邊命名（外側 `side:ring.<邊>`、內側加 `~`）；環 192 mm²、唇 230.4、圓角矩形 185.13；限制：環只跟外輪廓、沒有自動的蓋子配合、`Intersection` 接合 |
 | [ADR 0095](docs/adr/0095-closed-corner.md) | 封閉角落（H-6，C11.4，零件 **Schema 42**）：邊線凸緣的 `corner: {start?, end?}`（與鄰接凸緣的間隙）：折彎不變（仍由縮短躲開），折彎之後的平直段繼續長到離鄰接凸緣的內側剩這個間隙；找面向這一端並蓋住平直段中間的凸緣；平板型式的折彎窄、平直段寬；只做垂直於邊的鄰接凸緣，斜接／重疊／斷開角落沒做 |
+| [ADR 0106](docs/adr/0106-flat-pattern-in-drawing.md) | 工程圖的展平圖（S-1，**工程圖 Schema 6**）：視圖方向 `flat`，worker 用 `sheet` 做 `flatPattern` 轉成視圖線（外形與孔實線、折彎線 `center` 鏈線），不能再投影或剖面（細部放大可以）、還不能標註尺寸；非鈑金件寫原因；手冊 I6；限制：沒有折彎表與註記 |
 | [ADR 0105](docs/adr/0105-form-sub-assembly.md) | 形成次組合件（E-3，Schema 不變）：選的零組件與兩端都在其中的結合進新的 `.3dba`（位置取解出來的、裡面沒有固定的就固定第一個），組合件留一個代表它的零組件在原點（零件都不動）；一端在外面的結合改成通過次組合件（`path`）、爆炸步驟改名；排列／鏡射用到的拒絕；指令 `formSubAssembly` 一步復原、`FormSubPanel`、檔寫在組合件旁邊；金樣夾具手算 < 1e-6；限制：不能選資料夾、沒有解散 |
 | [ADR 0104](docs/adr/0104-several-exploded-views.md) | 多組爆炸（E-2，**組合件 Schema 7**）：`explosions: ExplodeView[]`（id、名稱、步驟）與 `activeExplosion`；舊的 `explosion` 在 6 → 7 遷移成「爆炸視圖1」；既有的步驟指令作用在顯示中的那一組（沒有時建第一組）；新指令 `insertExplosion`／`renameExplosion`／`deleteExplosion`／`setActiveExplosion`；刪除零組件清掉各組的步驟；面板「爆炸視圖組」（下拉、新增、刪除、改名）；限制：只能移動頂層零組件 |
 | [ADR 0103](docs/adr/0103-explode-lines-animation.md) | 爆炸線與動畫（E-1，檔案格式不變）：每個被爆炸的零組件一條深藍虛線（從組裝位置的包圍盒中心經過每個步驟之後的位置，`explosionOffsets.paths`、`leavesCentre`、`Viewer.setGuides`）；爆炸與收合半秒緩入緩出（`explodeT`、`EXPLODE_MS`，`exploded` 仍是目標）；面板「顯示爆炸線」；限制：背景分頁時動畫暫停、每段是直線 |

@@ -126,7 +126,7 @@ describe('the derived views in the document', () => {
   it('is a version-1 drawing read as the current version: nothing to convert but the empty list of dimensions', async () => {
     const { parseDrawing, serializeDrawing } = await import('@3db/model');
     const v1 = JSON.stringify({ ...JSON.parse(serializeDrawing(base())), schemaVersion: 1 });
-    expect(parseDrawing(v1).schemaVersion).toBe(5);
+    expect(parseDrawing(v1).schemaVersion).toBe(6);
     expect(parseDrawing(v1).views).toEqual(base().views);
   });
 });

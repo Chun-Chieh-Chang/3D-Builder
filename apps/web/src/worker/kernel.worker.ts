@@ -6,6 +6,7 @@ import gcsWasm from '@salusoft89/planegcs/dist/planegcs_dist/planegcs.wasm?url';
 import { bodyKey, combineMass, isShown, mirrorKey, MESH_QUALITY, settingsOf, type AssemblyDoc, type Id, type MeasureReport, type PartDoc, type SourceTree } from '@3db/model';
 import { findProfiles, PlaneGcsSolver } from '@3db/sketch';
 import { COMPONENT_MESH, Kernel, type ThicknessReport, type UndercutReport, type DraftReport, type GeometryReport, type MassProps, type MeshData, type MeshOptions, type ShapeId } from '@3db/kernel';
+import { flatViewLines } from '@3db/drawing';
 import { drawingAnchors, holeFeatures, projectDrawingView, elementFacts, viewFeatures, findClearance, findInterference, flatPattern, FlatError, sheetChecks, sweepClearance, measureTargets, convertEdges, planarEdgeItems, edgeMateGeometry, exportFaces, faceColors, intoFrame, faceEdges, faceMateGeometry, followReferences, ReferenceProblem, Regenerator, solveAssemblyTree, type AssemblyResult, type AssemblySolveOptions, type BodyInfo, type FlatReport, type HoleFeatures, type RebuildResult, type SheetCheck, type SheetCheckLimits } from '@3db/regen';
 import { edgeFingerprint, faceFingerprint, vertexFingerprint } from '@3db/naming';
 import { binaryStl, exportAssemblyStep, exportPartStep, portableShape, readComponentFile, stepAssemblyPlan, type StepAssemblyPlan } from '@3db/io';
@@ -416,6 +417,19 @@ const api: KernelApi = {
       const began = performance.now();
       const made: ShapeId[] = [];
       try {
+        if (r.flat) {
+          // the unfolded sheet metal part (S-1): worked out from the bend data of the part as built, not projected
+          const built = await parts.get(r.parts[0]!.part)?.catch(() => null);
+          if (!built) throw new Error(t('drawing.noBody'));
+          if (!built.result.sheet) throw new Error(t('flat.noSheet'));
+          const pattern = flatPattern(kernel, built.result.sheet);
+          try {
+            out.push({ lines: flatViewLines(pattern), ms: performance.now() - began });
+          } finally {
+            kernel.release(pattern.shape);
+          }
+          continue;
+        }
         const viewParts = [];
         for (const p of r.parts) {
           const built = await parts.get(p.part)?.catch(() => null);

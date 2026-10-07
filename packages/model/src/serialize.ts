@@ -258,6 +258,8 @@ const drawingMigrations: Record<number, (doc: Json) => Json> = {
   3: (doc) => ({ ...doc, tables: doc.tables ?? [] }),
   // v5: the angle dimension (C16.4). A new kind of dimension; nothing to convert, the version keeps older programs from opening what they would not know how to draw.
   4: (doc) => doc,
+  // v6: the flat pattern of a sheet metal part as a view (`direction: 'flat'`).
+  5: (doc) => doc,
 };
 
 export function parseDrawing(text: string): DrawingDoc {

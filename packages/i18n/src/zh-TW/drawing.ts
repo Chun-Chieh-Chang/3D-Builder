@@ -61,6 +61,8 @@ export const drawing = {
   'drawing.view.left': '左視',
   'drawing.view.right': '右視',
   'drawing.view.isometric': '等角視',
+  'drawing.view.flat': '展平圖',
+  'drawing.flatNoDerived': '展平圖不能再投影或剖面（看不到折起來的零件）；細部放大可以',
   'drawing.title.company': '公司',
   'drawing.title.drawingName': '圖名',
   'drawing.title.drawingNo': '圖號',

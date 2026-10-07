@@ -6,6 +6,8 @@ import { sheetMetrics, type Rect } from './sheet';
 export interface ViewLines {
   visible: number[][];
   hidden: number[][];
+  /** Chain lines (the bend lines of a flat pattern). */
+  center?: number[][];
   box: { min: [number, number]; max: [number, number] } | null;
   cut?: number[][];
   /** A view of an assembly: where each part of it is (the middle of its mass), in the view's coordinates, in the order the parts were asked for (C16.6: the balloons point there). */
@@ -89,6 +91,7 @@ function cell(view: ViewName, projection: DrawingSheet['projection']): [number, 
     case 'back':
       return [first ? 2 : -2, 0];
     case 'isometric':
+    case 'flat':
       return [99, 0]; // beside everything: its column is the one after the last (see below)
   }
 }
