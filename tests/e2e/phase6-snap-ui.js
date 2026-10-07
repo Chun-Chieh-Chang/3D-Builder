@@ -63,6 +63,18 @@ g.hook = async () => {
   H.check(status().status === 'error' && /鉤高/.test(pm()), `a hook as high as the beam is long is said: ${pm().slice(0, 120)}`);
   await H.pmInput('鉤高', '3');
   H.check(status().status === 'ok', 'back to 3');
+  // the window under the hook (v44): 1.5 × 6.6 × 2 = 19.8 mm³ out of the floor; with no clearance 1.2 × 6 × 2 = 14.4; taken away again, the volume is back
+  const beam = SHELLED + 2 * 6 * 12 + 0.5 * 1.2 * 3 * 6;
+  document.querySelector('[data-field="hookWindow"]').click();
+  await H.settle();
+  H.check(feature('snapHook').windowDepth === '3' && feature('snapHook').windowClearance === '0.3', 'the window is in the feature');
+  near(volume(), beam - 19.8, 'a window under the hook');
+  await H.pmInput('窗的間隙（鉤的前方與兩側）', '0');
+  near(volume(), beam - 14.4, 'with no clearance');
+  document.querySelector('[data-field="hookWindow"]').click();
+  await H.settle();
+  H.check(feature('snapHook').windowDepth === undefined, 'the window is taken away');
+  near(volume(), beam, 'the hook as it was');
   store.commitEdit();
   await H.settle();
   near(volume(), SHELLED + 2 * 6 * 12 + 0.5 * 1.2 * 3 * 6, 'accepted');

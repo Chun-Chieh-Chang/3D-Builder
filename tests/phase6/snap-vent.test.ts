@@ -275,3 +275,73 @@ describe('the commands and the file', () => {
     expect(SCHEMA_VERSION).toBeGreaterThanOrEqual(35);
   });
 });
+
+describe('the window under the hook, as an option of the hook (v44)', () => {
+  let floor: string;
+  const doc = (...more: Feature[]) => build(...shell(), points('sk', face(floor), ['p1', 15, 10]), ...more);
+  beforeAll(() => {
+    floor = floorOf();
+  });
+
+  it('cuts a window in the floor in front of the beam, as far as the tip of the hook and 0.3 beyond, 0.3 beyond each side: 1.5 × 6.6 × 2 = 19.8 mm³ off 190.8 on', () => {
+    const r = rebuild(doc(hook({ windowClearance: '0.3', windowDepth: '3' })));
+    expect(failures(r)).toEqual([]);
+    expect(volume(r)).toBeCloseTo(SHELLED + 190.8 - 19.8, 5);
+    expect(kernel.solidCount(r.body!.shape)).toBe(1);
+    expect(kernel.isValid(r.body!.shape)).toBe(true);
+    const names = r.body!.names.faces;
+    expect(new Set(names).size).toBe(names.length);
+    // the wall of the window at the front of the beam is flush with the front of the beam, and is one face with it
+    for (const part of ['xhi', 'ylo', 'yhi']) expect(names).toContain(`h1:side:sk.p1.win.${part}`);
+    expect(names).not.toContain('h1:side:sk.p1.win.xlo');
+    expect(names.some((n) => n.endsWith('.win.floor'))).toBe(false); // through the floor: no bottom
+    const at = (part: string) => r.body!.topology.faces[names.indexOf(`h1:side:sk.p1.win.${part}`)]!;
+    expect(at('xhi').area).toBeCloseTo(6.6 * 2, 5);
+    expect(at('ylo').area).toBeCloseTo(1.5 * 2, 5);
+    expect(at('yhi').area).toBeCloseTo(1.5 * 2, 5);
+  });
+
+  it('with no clearance the window is exactly under the lip: 1.2 × 6 × 2 = 14.4 mm³', () => {
+    const r = rebuild(doc(hook({ windowClearance: '0', windowDepth: '3' })));
+    expect(failures(r)).toEqual([]);
+    expect(volume(r)).toBeCloseTo(SHELLED + 190.8 - 14.4, 5);
+  });
+
+  it('a blind window is a pocket with a bottom: depth 1 in the floor of 2 is 1.5 × 6.6 × 1 = 9.9 mm³ and a floor face', () => {
+    const r = rebuild(doc(hook({ windowClearance: '0.3', windowDepth: '1' })));
+    expect(failures(r)).toEqual([]);
+    expect(volume(r)).toBeCloseTo(SHELLED + 190.8 - 9.9, 5);
+    expect(r.body!.names.faces.some((n) => n.endsWith('.win.floor'))).toBe(true);
+  });
+
+  it('is not made without the depth, and a hook with no window is as it was', () => {
+    expect(volume(rebuild(doc(hook())))).toBeCloseTo(SHELLED + 190.8, 5);
+  });
+
+  it('says what is wrong: a negative clearance, a depth of 0 (refused when it is typed), a wedge too low for the tool', () => {
+    const why = (extra: Record<string, unknown>, base: Feature[] = []) => statuses(rebuild(doc(...base, hook(extra)))).find((s) => s.startsWith('h1='));
+    expect(why({ windowClearance: '-1', windowDepth: '3' })).toContain('間隙不可是負的');
+    expect(() => doc(hook({ windowClearance: '0.3', windowDepth: '0' }))).toThrow(/大於 0/);
+    expect(why({ windowClearance: '0.3', windowDepth: '3', length: '3.5', hookHeight: '3' })).toContain('鉤太貼近底面');
+  });
+
+  it('the catch face of the hook is an undercut to a mold that opens upward, and with the window under the hook it is not (the core passes from below)', () => {
+    const kindOf = (r: RebuildResult) => {
+      const names = r.body!.names.faces;
+      const i = names.indexOf('h1:side:sk.p1.catch');
+      return kernel.undercutAnalysis(r.body!.shape, [0, 0, 1]).faces.find((fc) => fc.face === i)?.kind;
+    };
+    expect(kindOf(rebuild(doc(hook())))).toBe('undercut');
+    expect(kindOf(rebuild(doc(hook({ windowClearance: '0.3', windowDepth: '3' }))))).not.toBe('undercut');
+  });
+
+  it('the settings go through the command and are kept: the window can be taken away again', () => {
+    let d = doc(hook());
+    d = applyCommand(d, { type: 'setSnapHook', featureId: 'h1', hook: { width: '6', thickness: '2', length: '15', hookHeight: '3', hookDepth: '1.2', windowClearance: '0.3', windowDepth: '3' } });
+    expect(d.features.find((f) => f.id === 'h1')).toMatchObject({ windowClearance: '0.3', windowDepth: '3' });
+    expect(volume(rebuild(d))).toBeCloseTo(SHELLED + 190.8 - 19.8, 5);
+    d = applyCommand(d, { type: 'setSnapHook', featureId: 'h1', hook: { width: '6', thickness: '2', length: '15', hookHeight: '3', hookDepth: '1.2' } });
+    expect(d.features.find((f) => f.id === 'h1')).not.toHaveProperty('windowDepth');
+    expect(volume(rebuild(d))).toBeCloseTo(SHELLED + 190.8, 5);
+  });
+});

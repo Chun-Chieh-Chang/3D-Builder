@@ -211,9 +211,11 @@ export function mapExprs(feature: Feature, fn: (expr: Expr, kind: ExprKind, role
       const hookHeight = fn(f.hookHeight, 'length', 'positive');
       const hookDepth = fn(f.hookDepth, 'length', 'positive');
       const angle = f.angle === undefined ? undefined : fn(f.angle, 'angle', 'any');
-      const same = width === f.width && thickness === f.thickness && length === f.length && hookHeight === f.hookHeight && hookDepth === f.hookDepth && angle === f.angle;
+      const windowClearance = f.windowClearance === undefined ? undefined : fn(f.windowClearance, 'length', 'any');
+      const windowDepth = f.windowDepth === undefined ? undefined : fn(f.windowDepth, 'length', 'positive');
+      const same = width === f.width && thickness === f.thickness && length === f.length && hookHeight === f.hookHeight && hookDepth === f.hookDepth && angle === f.angle && windowClearance === f.windowClearance && windowDepth === f.windowDepth;
       if (same) return feature;
-      return { ...f, width, thickness, length, hookHeight, hookDepth, ...(angle === undefined ? {} : { angle }) };
+      return { ...f, width, thickness, length, hookHeight, hookDepth, ...(angle === undefined ? {} : { angle }), ...(windowClearance === undefined ? {} : { windowClearance }), ...(windowDepth === undefined ? {} : { windowDepth }) };
     }
     case 'snapCatch': {
       const f = feature;

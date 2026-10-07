@@ -1993,6 +1993,17 @@ export class Regenerator {
     const sink = 0.5; // the beam starts this far below the plane, inside the body it stands on
     const profile: [number, number][] = [[0, -sink], [thickness, -sink], [thickness, length - hh], [thickness + depth, length - hh], [thickness, length], [0, length]];
     const edges = ['base', 'front', 'catch', 'ramp', 'tip', 'back'];
+    // the window under the hook (v44): a rectangle in the body from the front of the beam to the tip of the hook and a clearance beyond, a clearance beyond each side, cut from the plane
+    const windowed = f.windowDepth !== undefined;
+    const clearance = f.windowClearance === undefined ? 0 : evalLength(f.windowClearance);
+    const windowDepth = windowed ? evalLength(f.windowDepth!) : 0;
+    const lead = 1; // the cutting tool starts this far above the plane, as for every slot
+    if (windowed) {
+      if (!(clearance >= 0) || !Number.isFinite(clearance)) throw new FeatureError(t('hook.windowClearance'));
+      if (!(windowDepth > 0)) throw new FeatureError(t('hook.windowDepth'));
+      // the tool starts `lead` above the plane: the hook's wedge must be higher than that, or the tool would run into it
+      if (!(length - hh > lead + 1e-9)) throw new FeatureError(t('hook.windowLow', { lead: String(lead) }));
+    }
     // the wedge is turned the way the beam is drawn (counter-clockwise in (direction, up)); `cross(along, up)` is the way it is swept across
     let list: readonly BodyState[] = set.list;
     for (const pt of points) {
@@ -2003,6 +2014,30 @@ export class Regenerator {
       const before = list.length;
       list = this.apply(f.id, 'boss', tool, { featureId: f.id, sketchId: f.sketch }, list, true);
       if (list.length > before) throw new FeatureError(t('hook.floating'));
+      if (windowed) {
+        // looking along the way of the cut (against the sketch normal, or with it when the hook is reversed), `across` is cross(down, along) as for the slots
+        const down: Vec3 = f.reverse ? n : [-n[0], -n[1], -n[2]];
+        const across = cross(down, along);
+        const x0 = thickness;
+        const x1 = thickness + depth + clearance;
+        const y = width / 2 + clearance;
+        const id = `${pt.id}.win`;
+        const part = (what: string) => `${id}.${what}`;
+        const win = [
+          { kind: 'line' as const, a: [x0, -y] as [number, number], b: [x1, -y] as [number, number], source: part('ylo') },
+          { kind: 'line' as const, a: [x1, -y] as [number, number], b: [x1, y] as [number, number], source: part('xhi') },
+          { kind: 'line' as const, a: [x1, y] as [number, number], b: [x0, y] as [number, number], source: part('yhi') },
+          { kind: 'line' as const, a: [x0, y] as [number, number], b: [x0, -y] as [number, number], source: part('xlo') },
+        ];
+        const wframe: PlaneFrame = { origin: add(origin, down, -lead), xDir: along, yDir: across, normal: down };
+        const cutter = this.capsNamed(this.kernel.extrude(wframe, [{ outer: win, holes: [] }], add([0, 0, 0], down, windowDepth + lead), 0), id, 'lid', 'floor');
+        try {
+          list = this.apply(f.id, 'cut', cutter, { featureId: f.id, sketchId: f.sketch }, list, false);
+        } catch (e) {
+          if (e instanceof FeatureError) throw new FeatureError(t('hook.windowMissed', { id: pt.id }));
+          throw e;
+        }
+      }
     }
     return [...list];
   }

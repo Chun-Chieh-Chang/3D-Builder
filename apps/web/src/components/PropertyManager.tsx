@@ -1929,6 +1929,32 @@ function SketchPointsPanel({ f, fields, hint }: { f: SnapHookFeature | SnapCatch
         <span>{t('pm.slots.angle')}</span>
         <ValueInput value={value('angle')} toCommand={(v) => run({ angle: v })} suffix="°" />
       </label>
+      {f.type === 'snapHook' && (
+        <>
+          <label className="pm-row checkbox">
+            <input
+              type="checkbox"
+              data-field="hookWindow"
+              checked={f.windowDepth !== undefined}
+              onChange={(e) => store.execute(run(e.target.checked ? { windowClearance: '0.3', windowDepth: '3' } : { windowClearance: undefined, windowDepth: undefined }))}
+            />
+            <span>{t('pm.hook.window')}</span>
+          </label>
+          {f.windowDepth !== undefined && (
+            <>
+              <label className="pm-row">
+                <span>{t('pm.hook.windowClearance')}</span>
+                <ValueInput value={value('windowClearance')} toCommand={(v) => run({ windowClearance: v })} />
+              </label>
+              <label className="pm-row">
+                <span>{t('pm.hook.windowDepth')}</span>
+                <ValueInput value={value('windowDepth')} toCommand={(v) => run({ windowDepth: v })} />
+              </label>
+              <p className="hint">{t('pm.hook.windowHint')}</p>
+            </>
+          )}
+        </>
+      )}
       {f.type === 'vent' && (
         <label className="pm-row checkbox">
           <input type="checkbox" checked={!!f.rounded} onChange={(e) => store.execute(run({ rounded: e.target.checked }))} />

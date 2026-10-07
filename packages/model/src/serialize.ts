@@ -160,6 +160,8 @@ const migrations: Record<number, (doc: Json) => Json> = {
   41: (doc) => doc,
   // v43: faces of a fillet or a chamfer (fillet and chamfer by face). Absent until a face is picked; nothing to convert.
   42: (doc) => doc,
+  // v44: the window under a snap hook (`windowClearance`, `windowDepth`). Absent means no window, as before; nothing to convert.
+  43: (doc) => doc,
 };
 
 export class FormatError extends Error {

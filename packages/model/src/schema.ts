@@ -6,7 +6,7 @@ import type { Id } from './ids';
  * DOF status, mass properties and error lists are derived data and never stored.
  */
 
-export const SCHEMA_VERSION = 43;
+export const SCHEMA_VERSION = 44;
 
 /** Value expression (B5.2, B5.3): "20", "25.4mm", "30deg", "wall_t*2", "D1@草圖1/2", "property('厚度')"; see `expr/`. */
 export type Expr = string;
@@ -674,6 +674,12 @@ export interface SnapHookFeature extends FeatureBase {
   hookDepth: Expr;
   angle?: Expr;
   reverse?: boolean;
+  /**
+   * The window under the hook (v44), as an option of the hook: a rectangle in the body it stands on, from the front of the beam as far as the tip of the hook and `windowClearance`
+   * beyond it, `windowClearance` beyond each side of the hook, cut `windowDepth` into the body from the sketch plane. Both are present, or neither (no window).
+   */
+  windowClearance?: Expr;
+  windowDepth?: Expr;
 }
 
 /**
