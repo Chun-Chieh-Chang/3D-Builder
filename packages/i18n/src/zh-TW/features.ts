@@ -233,6 +233,7 @@ export const features = {
   'surface.loopNotConnected': '選的邊線沒有連成一圈',
   'surface.loopNotFlat': '選的邊線不在同一個平面上，不能做平坦曲面',
   'surface.thickenFailed': '厚面失敗：{why}',
+  'surface.thickenSharp': '厚面在曲面的尖角（兩個面不相切地相接的邊）做不出可靠的實體：用面算的體積 {faces} 與用網格算的 {mesh} 不一致。請在尖角做圓角，或把各個面分開加厚再結合',
   'surface.thickenWrong': '厚面的結果與要求的厚度 {thickness} mm 差太多：量到 {got} mm（容許 {tolerance} mm）',
   'surface.cutFailed': '以曲面除料失敗：{why}',
   'surface.notClosedSweep': '曲面掃出來不是實體（曲面要完整穿過本體）',

@@ -2358,6 +2358,20 @@ export class Kernel {
     }
   }
 
+  /** The volume of the mesh of a solid (the signed volumes of the tetrahedra the triangles make with the origin): what a viewer would see, which a solid that is not closed does not give. */
+  private meshVolume(id: ShapeId): number {
+    const m = this.mesh(id);
+    const P = m.positions;
+    let v = 0;
+    for (let i = 0; i < m.indices.length; i += 3) {
+      const a = m.indices[i]! * 3;
+      const b = m.indices[i + 1]! * 3;
+      const c = m.indices[i + 2]! * 3;
+      v += (P[a]! * (P[b + 1]! * P[c + 2]! - P[b + 2]! * P[c + 1]!) - P[a + 1]! * (P[b]! * P[c + 2]! - P[b + 2]! * P[c]!) + P[a + 2]! * (P[b]! * P[c + 1]! - P[b + 1]! * P[c]!)) / 6;
+    }
+    return v;
+  }
+
   /**
    * A surface made into a solid `thickness` thick (C9.4 厚面): positive toward the side its normals point to, negative the other way. OCCT can give the solid inside out
    * (a negative volume); it is turned the right way. Checked: valid, one solid, and its farthest point from the surface is the thickness.
@@ -2390,6 +2404,15 @@ export class Kernel {
       if (!check.valid || check.solids !== 1 || this.massProps(id).volume <= 0) {
         this.release(id);
         throw new KernelError(t('surface.thickenFailed', { why: t('surface.invalid') }));
+      }
+      // OCCT's simple thickening does not intersect the offsets at an edge where two faces meet at an angle: the result passes the checks above and its volume is a number, but the
+      // faces at that edge do not close the solid (measured: an L of two planes gives a volume that the mesh of the same solid does not agree with). The solid is measured twice,
+      // by its faces and by its mesh, and what disagrees is refused.
+      const byFaces = this.massProps(id).volume;
+      const byMesh = this.meshVolume(id);
+      if (Math.abs(byMesh - byFaces) > 0.005 * Math.abs(byFaces) + 1e-6) {
+        this.release(id);
+        throw new KernelError(t('surface.thickenSharp', { faces: round3(byFaces), mesh: round3(byMesh) }));
       }
       const gap = this.gapReport(id, surface, Math.abs(thickness));
       const tolerance = options.tolerance ?? SURFACE_TOLERANCE;

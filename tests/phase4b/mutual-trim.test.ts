@@ -161,19 +161,14 @@ describe('mutual trim in the kernel (P-3)', () => {
 });
 
 describe('mutual trim, and what comes after it (P-3)', () => {
-  it('thicken goes on from the knitted pieces: the bent surface of 750 + 360 is a solid body of one thickness', () => {
+  it('thicken of the knitted L (two planes at a right angle, a sharp edge) says it cannot make a reliable solid there, instead of a solid whose volume is not what its faces close (924, the mesh says 880)', () => {
     let doc = insert(blocks(), trim({ discard: [faceRef(`${NAME1}#2`), faceRef(`${NAME2}#2`)] }));
     doc = insert(doc, { id: 'k1', type: 'knit', name: 'k1', suppressed: false, bodies: [body('os1'), body('os2')] } as Feature);
     doc = insert(doc, { id: 'th1', type: 'thicken', name: 'th1', suppressed: false, body: body('os1'), thickness: '1' } as Feature);
     const r = rebuild(doc);
-    expect(statuses(r).filter((x) => !x.endsWith('=ok'))).toEqual([]);
-    const b = r.bodies.find((x) => x.id === 'os1')!;
-    expect(b.surface).toBe(false);
-    // a valid solid of one piece (thicken checks it); its volume is not asserted here: the corner of a sharp bend is the offset's (see ADR 0109, limits), and one piece alone is exact
-    expect(kernel.solidCount(b.shape)).toBe(1);
-    expect(kernel.isValid(b.shape)).toBe(true);
-    expect(kernel.massProps(b.shape).volume).toBeGreaterThan(750);
-    expect(kernel.massProps(b.shape).volume).toBeLessThan(1140 + 1e-6); // the mitred L: 38 across × 30
+    expect(status(r, 'k1').status).toBe('ok');
+    expect(status(r, 'th1')).toMatchObject({ status: 'error', message: expect.stringContaining('尖角') });
+    expect(r.bodies.find((x) => x.id === 'os1')!.surface).toBe(true); // the surface is left as it was
   });
 
   it('one piece alone thickens exactly: the 750 of os1 one thick is 750 mm³', () => {

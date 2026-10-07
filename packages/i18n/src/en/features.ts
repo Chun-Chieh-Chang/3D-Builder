@@ -235,6 +235,7 @@ export const features: Translation = {
   'surface.loopNotConnected': 'The edges picked do not make a closed loop',
   'surface.loopNotFlat': 'The edges picked are not in one plane, so there is no flat surface over them',
   'surface.thickenFailed': 'Thicken failed: {why}',
+  'surface.thickenSharp': 'A thickened surface cannot be made into a reliable solid at a sharp edge (where two faces meet at an angle): the volume by the faces {faces} and by the mesh {mesh} disagree. Round the sharp edge, or thicken the faces one by one and combine them',
   'surface.thickenWrong': 'The thickened solid is not the thickness asked for, {thickness} mm: measured {got} mm (allowed {tolerance} mm)',
   'surface.cutFailed': 'Cut with surface failed: {why}',
   'surface.notClosedSweep': 'The surface swept is not a solid (the surface has to reach right across the body)',
