@@ -296,7 +296,6 @@ export const features = {
   'flange.insets': '凸緣兩端縮短的總和要比邊短',
   'flange.info.inset': '；縮短 {start}／{end}',
   'flat.noBase': '這個零件沒有鈑金的基材凸緣，沒有平板型式',
-  'flat.bentBaseFlanges': '折過的基材凸緣上再長凸緣的平板型式還沒有做（只有平板為基材、或單獨一個折過的基材凸緣）',
   'flat.noParent': '平板型式找不到這個凸緣長在哪一片上',
   'flat.noFace': '平板型式做不出一個面',
   'cmd.gaugeName': '量規表的每一列都要有名字',

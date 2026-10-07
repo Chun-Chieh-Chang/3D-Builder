@@ -160,10 +160,10 @@ describe('the pattern of a bent base flange', () => {
     expect(pattern.bends.map((b) => b.direction)).toEqual(['down', 'down']);
   });
 
-  it('flanges on a bent base are said, not made wrong; a part with no base flange has no pattern', () => {
+  it('a flange that says it is on a piece of the bent base that is not there is said, not made wrong; a part with no base flange has no pattern', () => {
     const r = rebuild(build(U, channel));
     const sheet = r.sheet!;
-    expect(() => flatPattern(kernel, { ...sheet, flanges: [{ feature: 'x' } as never] })).toThrow(FlatError);
+    expect(() => flatPattern(kernel, { ...sheet, flanges: [{ feature: 'x', parent: -1, host: 9 } as never] })).toThrow(FlatError);
     expect(() => flatPattern(kernel, { ...sheet, base: null })).toThrow(FlatError);
   });
 });

@@ -298,7 +298,6 @@ export const features: Translation = {
   'flange.insets': 'The insets at the two ends have to add up to less than the edge',
   'flange.info.inset': '; inset {start}/{end}',
   'flat.noBase': 'This part has no base flange of a sheet metal part, so there is no flat pattern',
-  'flat.bentBaseFlanges': 'The flat pattern of flanges grown on a bent base flange is not done yet (only a plate as the base, or a bent base flange by itself)',
   'flat.noParent': 'The flat pattern cannot find the piece this flange grew from',
   'flat.noFace': 'The flat pattern could not be made into a face',
   'cmd.gaugeName': 'Every row of the gauge table needs a name',

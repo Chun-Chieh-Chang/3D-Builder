@@ -159,7 +159,17 @@ export interface FoldGeometry {
 /** How the base of a sheet metal part was made, for the flat pattern: a plate (the regions of a profile) or a bent sheet (the straight pieces and bends in the order of the path). */
 export type SheetBase =
   | { kind: 'plate'; frame: PlaneFrame; regions: Region[]; dir: Vec3 }
-  | { kind: 'bent'; frame: PlaneFrame; width: number; flatLength: number; pieces: ({ type: 'straight'; length: number } | { type: 'bend'; bend: number; toward: boolean })[] };
+  | {
+      kind: 'bent';
+      frame: PlaneFrame;
+      width: number;
+      flatLength: number;
+      pieces: ({ type: 'straight'; length: number } | { type: 'bend'; bend: number; toward: boolean })[];
+      /** Which side of the path the sheet is thick to, the way the sheet is wide (a unit vector), and each straight piece of the path (in the coordinates of the frame) with where it starts in the flat strip: for the flanges grown on it. */
+      side: 'left' | 'right';
+      dir: Vec3;
+      straights: { a: [number, number]; b: [number, number]; at: number }[];
+    };
 
 /** The mid bend of a plate (S-3): where its line is (the ends of the zone, in the plane of the plate) and which way it folds, for the flat pattern. */
 export interface SheetMidBend {
@@ -213,6 +223,8 @@ export interface SheetFlange {
   miter: [SheetMiter | null, SheetMiter | null];
   /** The flange (index in `SheetInfo.flanges`) whose flat piece the edge is on, or -1 for the base. */
   parent: number;
+  /** Of a flange on the base: the straight piece of a bent base it is on (-1 for a plate). */
+  host: number;
   fold: FoldGeometry;
 }
 
@@ -2236,7 +2248,16 @@ export class Regenerator {
           if (seg.kind === 'line') pieces.push({ type: 'straight', length: Math.hypot(seg.b[0] - seg.a[0], seg.b[1] - seg.a[1]) });
           else pieces.push({ type: 'bend', bend: bendIndex, toward: bent.bends[bendIndex++]!.left === (side === 'left') });
         }
-        sheet.base = { kind: 'bent', frame: s.frame, width, flatLength: sheet.flatLength, pieces };
+        const straights: Extract<SheetBase, { kind: 'bent' }>['straights'] = [];
+        let flatAt = 0;
+        let arcs = 0;
+        for (const seg of bent.path) {
+          if (seg.kind === 'line') {
+            straights.push({ a: seg.a, b: seg.b, at: flatAt });
+            flatAt += Math.hypot(seg.b[0] - seg.a[0], seg.b[1] - seg.a[1]);
+          } else flatAt += sheet.bends[arcs++]!.allowance;
+        }
+        sheet.base = { kind: 'bent', frame: s.frame, width, flatLength: sheet.flatLength, pieces, side, dir, straights };
         this.info = t('flange.infoOpen', { flat: sheet.flatLength.toFixed(3), straight: bent.straight.toFixed(3), n: String(sheet.bends.length), allowance: allowance.toFixed(3), t: String(T), r: String(r), k: String(k) });
       } catch (e) {
         if (e instanceof BendProblem || e instanceof ThinProblem) throw new FeatureError(e.message);
@@ -2632,10 +2653,28 @@ export class Regenerator {
       }
       return -1;
     })();
+    // the straight piece of a bent base the edge is on (a flange on the base only)
+    const host = (() => {
+      const base = sheet.base;
+      if (parent >= 0 || base?.kind !== 'bent') return -1;
+      const tol = 1e-4;
+      const at = (q: [number, number]): Vec3 => add(add(base.frame.origin, base.frame.xDir, q[0]), base.frame.yDir, q[1]);
+      for (let i = 0; i < base.straights.length; i++) {
+        const sg = base.straights[i]!;
+        const A = at(sg.a);
+        const d = unit(sub(at(sg.b), A));
+        const left = cross(base.frame.normal, d);
+        const ns: Vec3 = base.side === 'left' ? left : [-left[0], -left[1], -left[2]];
+        const rel = sub(edge.mid, A);
+        const [u, v, w] = [dot(rel, d), dot(rel, ns), dot(rel, base.dir)];
+        if (u >= -tol && u <= Math.hypot(sg.b[0] - sg.a[0], sg.b[1] - sg.a[1]) + tol && v >= -tol && v <= T + tol && w >= -tol && w <= base.width + tol) return i;
+      }
+      return -1;
+    })();
     const fold: FoldGeometry = { mid: edge.mid, origin, center, axis, e, o, m, xa, xb, pa: xa - extA, pb: xb + extB, ylo, yhi, trim, notches, origin2, d, m2 };
     const miter: SheetFlange['miter'] = [mitres[0] ? { s: mitres[0].s, xOuter: xa - trim } : null, mitres[1] ? { s: mitres[1].s, xOuter: xb + trim } : null];
     for (const mt of mitres) if (mt) mt.g.miter[mt.end] = { s: mt.s, xOuter: mt.xOuterG };
-    sheet.flanges.push({ feature: f.id, edge: f.edge.name, width: Wf, angle: theta, radius: rb, trim, straight, allowance, inset: [insetA, insetB], relief, corner: [extA, extB], miter, parent, fold });
+    sheet.flanges.push({ feature: f.id, edge: f.edge.name, width: Wf, angle: theta, radius: rb, trim, straight, allowance, inset: [insetA, insetB], relief, corner: [extA, extB], miter, parent, host, fold });
     this.info = info(allowance) + (insetA > 0 || insetB > 0 ? t('flange.info.inset', { start: String(insetA), end: String(insetB) }) : '') + (mitres[0] || mitres[1] ? t('flange.info.miter', { gap: String(((mitres[0]?.s ?? mitres[1]!.s) * Math.SQRT2).toFixed(3)) }) : '');
     return [...list];
   }

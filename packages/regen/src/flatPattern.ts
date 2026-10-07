@@ -132,27 +132,11 @@ export function flatPattern(kernel: Kernel, sheet: SheetInfo): FlatPattern {
     let body: ShapeId;
     const bends: FlatBend[] = [];
     const notIncluded: FlatNotIncluded[] = [];
-    if (base.kind === 'bent') {
-      for (const c of sheet.cuts) notIncluded.push({ feature: c.feature, why: 'bentBase' });
-      if (sheet.flanges.length > 0) throw new FlatError(t('flat.bentBaseFlanges'));
-      frame = base.frame;
-      body = keep(kernel.extrude(frame, [rect(0, 0, base.flatLength, base.width, 'flat')], addv([0, 0, 0], frame.normal, T)).shape);
-      let at = 0;
-      for (const piece of base.pieces) {
-        if (piece.type === 'straight') {
-          at += piece.length;
-          continue;
-        }
-        const b = sheet.bends[piece.bend]!;
-        bends.push({ feature: b.feature, name: b.name, a: [at + b.allowance / 2, 0], b: [at + b.allowance / 2, base.width], angle: b.angle, radius: b.radius, direction: piece.toward ? 'down' : 'up', kFactor: b.kFactor, allowance: b.allowance });
-        at += b.allowance;
-      }
-    } else {
-      frame = base.frame;
-      body = keep(kernel.extrude(frame, base.regions, addv([0, 0, 0], base.dir, T)).shape);
-      const maps: Rigid[] = [];
+    /** The flanges, in the order they were made, grown on the flat base: `hostMap` is the motion of the piece of the base a flange of the base is on. */
+    const maps: Rigid[] = [];
+    const grow = (hostMap: (host: number) => Rigid): void => {
       sheet.flanges.forEach((fl, k) => {
-        const F = fl.parent < 0 ? IDENTITY : maps[fl.parent]!;
+        const F = fl.parent < 0 ? hostMap(fl.host) : maps[fl.parent]!;
         if (fl.parent >= 0 && !maps[fl.parent]) throw new FlatError(t('flat.noParent'));
         const g = fl.fold;
         const e = turn(F, g.e);
@@ -201,6 +185,48 @@ export function flatPattern(kernel: Kernel, sheet: SheetInfo): FlatPattern {
         undo.t = addv(sub(g.center, turn(undo, g.center)), g.o, fl.allowance);
         maps[k] = compose(F, undo);
       });
+    };
+    if (base.kind === 'bent') {
+      for (const c of sheet.cuts) notIncluded.push({ feature: c.feature, why: 'bentBase' });
+      frame = base.frame;
+      body = keep(kernel.extrude(frame, [rect(0, 0, base.flatLength, base.width, 'flat')], addv([0, 0, 0], frame.normal, T)).shape);
+      let at = 0;
+      for (const piece of base.pieces) {
+        if (piece.type === 'straight') {
+          at += piece.length;
+          continue;
+        }
+        const b = sheet.bends[piece.bend]!;
+        bends.push({ feature: b.feature, name: b.name, a: [at + b.allowance / 2, 0], b: [at + b.allowance / 2, base.width], angle: b.angle, radius: b.radius, direction: piece.toward ? 'down' : 'up', kFactor: b.kFactor, allowance: b.allowance });
+        at += b.allowance;
+      }
+      // the flanges grown on the sheet: each straight piece of the path has its own motion into the flat strip (the path along the strip, the width across it, the thickness up from it)
+      const at3 = (q: P2): Vec3 => addv(addv(frame.origin, frame.xDir, q[0]), frame.yDir, q[1]);
+      const hostMaps: Rigid[] = base.straights.map((sg) => {
+        const A = at3(sg.a);
+        const D = sub(at3(sg.b), A);
+        const len = Math.hypot(...D);
+        const d: Vec3 = [D[0] / len, D[1] / len, D[2] / len];
+        const left = cross(frame.normal, d);
+        const ns: Vec3 = base.side === 'left' ? left : [-left[0], -left[1], -left[2]];
+        const w = base.dir;
+        // the thickness goes up from the flat strip when the three directions are right-handed; when they are not, the sheet is turned over (the path face is the upper one)
+        const sg3 = dot(cross(d, w), ns) > 0 ? 1 : -1;
+        const R = [0, 0, 0, 0, 0, 0, 0, 0, 0] as Rigid['R'];
+        for (let i = 0; i < 3; i++) for (let j = 0; j < 3; j++) R[3 * i + j] = frame.xDir[i]! * d[j]! + frame.yDir[i]! * w[j]! + sg3 * frame.normal[i]! * ns[j]!;
+        const probe: Rigid = { R, t: [0, 0, 0] };
+        const start = addv(addv(frame.origin, frame.xDir, sg.at), frame.normal, sg3 > 0 ? 0 : T);
+        return { R, t: sub(start, turn(probe, A)) };
+      });
+      grow((h) => {
+        const m = hostMaps[h];
+        if (!m) throw new FlatError(t('flat.noParent'));
+        return m;
+      });
+    } else {
+      frame = base.frame;
+      body = keep(kernel.extrude(frame, base.regions, addv([0, 0, 0], base.dir, T)).shape);
+      grow(() => IDENTITY);
       // the mid bend of a plate: the plate is as it was drawn (the zone of the bend is as wide as the allowance), the bend line is the line of the zone
       const planar = (p: Vec3): P2 => [dot(sub(p, frame.origin), frame.xDir), dot(sub(p, frame.origin), frame.yDir)];
       for (const mb of sheet.midBends) {
