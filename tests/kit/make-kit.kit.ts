@@ -454,6 +454,7 @@ describe('H. the files of the features made after the first round of checks (cur
     const t = await putPart('曲面/厚面兩側.3dbx', doc([...cyl, thick]), '厚面兩側並保留曲面：圓柱 R10×20 的側面偏移 3（R13 的曲面），總厚 4 兩側各 2：實體 π(15²−11²)·20 = 6534.512 mm³，曲面本體還在（手冊 G4）');
     expect(t.bodies.map((b) => [b.id, b.surface])).toEqual([['e1', false], ['os1', true], ['th1', false]]);
     expect(kernel.massProps(t.bodies.find((b) => b.id === 'th1')!.shape).volume).toBeCloseTo(Math.PI * (225 - 121) * 20, 3);
+    stepOut(t.bodies.find((b) => b.id === 'th1')!.shape, '厚面兩側', '厚面兩側：圓柱偏移 3 的曲面（R13）厚 4、兩側各 2', '一個圓筒壁：外半徑 15、內半徑 11、高 20，沒有蓋；內外都是光滑的圓柱面，兩端是環形的平面', Math.PI * (225 - 121) * 20);
   });
 
   it('writes the mitred corner, the mid bend, the flange on a bent base, and the hole made after the bend', async () => {
@@ -462,10 +463,12 @@ describe('H. the files of the features made after the first round of checks (cur
     const flangeB = feat({ id: 'fb', type: 'edgeFlange', name: 'fb', suppressed: false, edge: edgeAtMid(withA, [48.25, 60, 1.5]), length: '30', miter: { start: '0' } });
     const m = await putPart('鈑金/斜接.3dbx', doc([...plate(100, 60), flangeA, flangeB]), '斜接：板 100×60×1.5，x = 100 邊的凸緣（長 40）與 y = 60 邊的凸緣（長 30）在角落以 45° 接合，間隙 0；體積約 16382 mm³（手冊 I2）');
     expect(kernel.massProps(m.body!.shape).volume).toBeCloseTo(16382.12, 0);
+    stepOut(m.body!.shape, '斜接', '鈑金斜接：板 100×60×1.5，兩個凸緣（高 40 與 30）在角落以 45° 接合', '角落沒有縫也沒有重疊：兩個凸緣的牆在角落貼在一起，高的那一片（40）比低的那一片（30）多出來的 10 mm 留下一個斜的端面；折彎處是圓弧面、兩片的折彎在角落銜接', 16382.1188);
 
     const line = { ...sketch('sm', front), entities: [{ id: 'a', type: 'point', x: 50, y: -5 }, { id: 'b', type: 'point', x: 50, y: 55 }, { id: 'l', type: 'line', p1: 'a', p2: 'b' }] } as unknown as Feature;
     const bend = await putPart('鈑金/中間折彎.3dbx', doc([...plate(100, 50), line, feat({ id: 'mb', type: 'midBend', name: 'mb', suppressed: false, sketch: 'sm', angle: '90' })]), '中間折彎：板 100×50×1.5 在 x = 50 折 90°（左邊不動）；體積 7500 mm³，展平圖還是 100×50 加一條折彎線（手冊 I1）');
     expect(kernel.massProps(bend.body!.shape).volume).toBeCloseTo(7500, 3);
+    stepOut(bend.body!.shape, '中間折彎', '鈑金中間折彎：板 100×50×1.5 在 x = 50 折 90°', '左半（x 到 47.84）平放不動，中間是圓弧的折彎，右半（47.84 長）垂直向上；外框約 51.340 × 50 × 51.340（折彎外側最大 x 與右半頂端高度都是 51.340）；板厚處處 1.5', 7500);
 
     const pts: [number, number][] = [[0, 0], [60, 0], [60, 40]];
     const path = { ...sketch('sk', front), entities: [...pts.map(([x, y], i) => ({ id: `p${i}`, type: 'point', x, y })), ...pts.slice(1).map((_, i) => ({ id: `l${i}`, type: 'line', p1: `p${i}`, p2: `p${i + 1}` }))] } as unknown as Feature;
@@ -476,6 +479,7 @@ describe('H. the files of the features made after the first round of checks (cur
     const flange = feat({ id: 'fa', type: 'edgeFlange', name: 'fa', suppressed: false, edge: { kind: 'edge', name: bare.body!.names.edges[endEdge]!, fingerprint: edgeFingerprint(bare.body!.topology, endEdge) }, length: '20' });
     const b = await putPart('鈑金/折過基材加凸緣.3dbx', doc([path, bentBase, flange]), '折過的基材（L 形路徑 (0,0)(60,0)(60,40)，板寬 40）加第二段末端的 90° 凸緣（長 20）；平板型式是 40 寬的長條、兩條折彎線（手冊 I6）');
     expect(b.sheet!.flanges[0]!.host).toBeGreaterThanOrEqual(0);
+    stepOut(b.body!.shape, '折過基材加凸緣', '折過的基材（L 形，板寬 40）加第二段末端的 90° 凸緣', '一條 L 形的板（兩段，中間一個圓弧的折彎），第二段的末端又折出一片 90° 的凸緣；整條板寬都是 40，沒有破洞或多餘的面');
 
     const wall = [
       feat({ id: 'pw', type: 'refPlane', name: 'pw', suppressed: false, def: { mode: 'offset', plane: { kind: 'datum', name: 'plane:right' }, distance: '98' } }),
@@ -484,6 +488,7 @@ describe('H. the files of the features made after the first round of checks (cur
     ];
     const hole = await putPart('鈑金/折彎後的孔.3dbx', doc([...plate(100, 60), flangeA, ...wall]), '折彎之後才切的孔：板 100×60 加 x = 100 邊的凸緣，再在凸緣的牆上（高度 20、y = 30）切一個 Ø6 的孔；平板型式上孔在 x = 117.320、y = 30（手冊 I6）');
     expect(hole.sheet!.cuts).toHaveLength(1);
+    stepOut(hole.body!.shape, '折彎後的孔', '鈑金：凸緣的牆上折彎之後切的 Ø6 孔', '板 100×60 加一片 90° 凸緣（高 40），凸緣的牆上有一個 Ø6 的貫穿孔，圓心離牆的底部（折彎結束處）16.5 mm、y = 30');
   });
 });
 
