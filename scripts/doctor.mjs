@@ -91,7 +91,7 @@ if (platform() === 'win32') {
 
 // ---------------------------------------------------------------- optional data
 if (process.env.SW_SAMPLE_DIR) note(existsSync(process.env.SW_SAMPLE_DIR) ? 'OK' : 'WARN', `SW_SAMPLE_DIR = ${process.env.SW_SAMPLE_DIR}${existsSync(process.env.SW_SAMPLE_DIR) ? '' : ' (this folder does not exist on this computer)'}`);
-else note('INFO', 'SW_SAMPLE_DIR is not set: the tests that need real SolidWorks sample files are skipped (21 skipped is normal)');
+else note('INFO', 'SW_SAMPLE_DIR is not set: the tests that need real SolidWorks sample files are skipped. Two more skip by design and neither is a problem: the writer of the browser STEP samples (needs STEP_SAMPLES_OUT) and the real-Chinese-font placeholder (skipped when this computer has such a font). The skipped count therefore belongs to this computer - compare it with npm run check run here, not with the number written in handoff.md for another machine');
 
 // ---------------------------------------------------------------- report
 const mark = { OK: '  ok  ', INFO: ' info ', WARN: ' WARN ', FAIL: ' FAIL ' };
