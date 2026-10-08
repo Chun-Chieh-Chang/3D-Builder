@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { DEFAULT_GRACE_SECONDS, graceFromEnv, idleWatcher } from '../../apps/web/dev/autoClose';
+import { DEFAULT_GRACE_SECONDS, graceFromEnv, idleWatcher } from '../../apps/web/dev/autoClose.ts';
 
 // `npm run dev:auto` (apps/web/dev/autoClose.ts): the dev server stops when the last page is gone. The decision is a function of the clock and the number of connected pages.
 describe('the dev server stops when no page is connected', () => {

@@ -1,6 +1,6 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
-import { autoClose, graceFromEnv } from './dev/autoClose';
+import { autoClose, graceFromEnv } from './dev/autoClose.ts';
 
 // `npm run dev:auto` runs this with `--mode autoclose`: the dev server stops by itself 30 seconds (or `DEV_AUTO_CLOSE_SECONDS`) after the last page connected to it is gone.
 export default defineConfig(({ mode }) => ({
