@@ -67,6 +67,11 @@ o.run = async () => {
   const scene = store.drawingStore.scene().scene;
   const sceneTexts = scene.items.flatMap((i) => (i.kind === 'text' && i.text !== '' ? [i.text] : []));
   const sceneLines = scene.items.filter((i) => i.kind === 'polyline' && !i.filled && i.points.length >= 4);
+  // A DXF draws the items of a dimension inside the block of its DIMENSION (phase5-dxf-dimensions.js checks those); model space holds the others.
+  const dimensionIds = new Set((scene.dimensions ?? []).map((d) => d.id));
+  const loose = (i) => i.group === undefined || !dimensionIds.has(i.group);
+  const looseTexts = scene.items.flatMap((i) => (i.kind === 'text' && i.text !== '' && loose(i) ? [i.text] : []));
+  const looseLines = sceneLines.filter(loose);
 
   // DXF
   const dxf = await exported('exportDxf');
@@ -75,10 +80,14 @@ o.run = async () => {
   const dxfDoc = lib.readDxf(dxfText);
   H.check(lib.checkDxf(dxfDoc).length === 0, `the DXF checks out: ${lib.checkDxf(dxfDoc)}`);
   H.check(dxfDoc.version === 'AC1015', 'AC1015');
-  H.check(dxfDoc.entities.filter((e) => e.type === 'LWPOLYLINE').length === sceneLines.length, 'every line of the sheet is in the DXF');
+  const dxfLineCount = dxfDoc.entities.filter((e) => e.type === 'LWPOLYLINE').length;
+  H.check(dimensionIds.size === 12 && looseLines.length < sceneLines.length, `the dimensions have items of their own: ${dimensionIds.size} dimensions, ${sceneLines.length - looseLines.length} lines`);
+  H.check(dxfLineCount === looseLines.length, `every line of the sheet outside the dimensions is in the DXF (${dxfLineCount} in the DXF, ${looseLines.length} in the scene)`);
   const dxfTexts = dxfDoc.entities.filter((e) => e.type === 'TEXT').map((e) => e.text);
-  H.check(JSON.stringify(dxfTexts) === JSON.stringify(sceneTexts), 'the same text, Chinese and Ø included');
-  H.check(dxfTexts.includes('定位板') && dxfTexts.some((t) => /^4×Ø9 .*貫穿$/.test(t)), 'the title and a callout');
+  H.check(JSON.stringify(dxfTexts) === JSON.stringify(looseTexts), 'the same text, Chinese and Ø included');
+  // the callout is a dimension's text: in a block of its own, or the text of its DIMENSION
+  const allTexts = [...dxfTexts, ...[...dxfDoc.blockEntities.values()].flat().flatMap((e) => (e.type === 'TEXT' ? [e.text] : [])), ...dxfDoc.entities.flatMap((e) => (e.type === 'DIMENSION' ? [e.text] : []))];
+  H.check(dxfTexts.includes('定位板') && allTexts.some((t) => /^4×Ø9 .*貫穿$/.test(t)), `the title and a callout (${allTexts.filter((t) => /Ø9/.test(t)).join(' | ')})`);
 
   // PDF without a font: Helvetica cannot write the Chinese, and it says so
   const before = store.getState().notice?.text;
@@ -109,7 +118,7 @@ o.run = async () => {
 
   // and the two files draw the same lines
   const dxfLines = dxfDoc.entities.filter((e) => e.type === 'LWPOLYLINE');
-  const pdfLines = lib.pathsInMm(fontDoc.pages[0].paths).filter((p) => !p.filled);
+  const pdfLines = lib.pathsInMm(fontDoc.pages[0].paths).filter((p) => !p.filled).filter((_, k) => loose(sceneLines[k]));
   let worst = 0;
   dxfLines.forEach((e, k) => e.points.forEach((v, i) => (worst = Math.max(worst, Math.abs(v - pdfLines[k].points[i])))));
   H.check(dxfLines.length === pdfLines.length && worst < 0.01, `the DXF and the PDF draw the same lines to ${worst.toFixed(5)} mm`);

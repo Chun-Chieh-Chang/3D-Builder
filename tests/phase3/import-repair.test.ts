@@ -3,6 +3,8 @@
  * feature's result, a gap wider than the default is closed by a setting stored with the feature, and what is built on
  * the sewn solid keeps working (the faces are named by the order the file gives them, deterministic after sewing).
  */
+import { writeFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { beforeAll, describe, expect, it } from 'vitest';
 import { applyCommand, createEmptyPart, type BlobRef, type Feature, type PartDoc } from '@3db/model';
 import { readPartFile, sha256Hex, writePartFile } from '@3db/io';
@@ -32,6 +34,14 @@ async function partWith(data: Uint8Array, ...then: Feature[]): Promise<{ doc: Pa
 const rebuild = (doc: PartDoc, blobs: Map<string, Uint8Array>) => new Regenerator(kernel, solver, blobs).rebuild(doc);
 const volume = (r: RebuildResult) => kernel.massProps(r.body!.shape).volume;
 const imp = (r: RebuildResult) => r.features.find((f) => f.id === 'imp1')!;
+
+// The browser script tests/e2e/phase3-direct-edit.js imports two of these samples; `npm run verify:ui` serves them from tests/fixtures/step.
+// `STEP_SAMPLES_OUT=tests/fixtures/step npm test -- import-repair` writes them again (the files are kept as they are, like the other samples).
+it.runIf(process.env.STEP_SAMPLES_OUT)('writes the samples of the browser script', () => {
+  const out = process.env.STEP_SAMPLES_OUT!;
+  writeFileSync(join(out, 'faces-only.step'), samples.facesOnly());
+  writeFileSync(join(out, 'gapped.step'), samples.gapped(0.05));
+});
 
 describe('a file with surfaces and no solid', () => {
   it('becomes a solid, and the feature carries the report', async () => {

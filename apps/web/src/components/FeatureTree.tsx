@@ -253,6 +253,17 @@ export function FeatureTree() {
               className="tree-row folder-head"
               onClick={() => setClosed((c) => (c.has(f.folder!) ? new Set([...c].filter((x) => x !== f.folder)) : new Set([...c, f.folder!])))}
               onDoubleClick={() => !editing && setRenamingFolder(f.folder!)}
+              onDragOver={(e) => moving && e.preventDefault()}
+              onDrop={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                if (moving) {
+                  // dropped on the name of a folder: the feature joins it, at the end of what it holds (one that is already there only goes to the end)
+                  const last = doc.features.reduce((n, g, j) => (g.folder === f.folder ? j : n), -1);
+                  store.moveFeature(moving, doc.features.slice(last + 1).find((g) => g.id !== moving)?.id ?? null, f.folder);
+                }
+                endDrag();
+              }}
               onContextMenu={(e) => {
                 e.preventDefault();
                 if (!editing) setFolderMenu({ x: e.clientX, y: e.clientY, folder: f.folder! });

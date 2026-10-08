@@ -425,6 +425,25 @@ export function mergeGroups(sketch: Pick<SketchFeature, 'entities' | 'constraint
     if (new Set(refs).size < refs.length) remove.push(k.id); // it says something about one point now
     else constraints.push({ id: k.id, set: Object.fromEntries(fields.map((f) => [f, into.get((k as Record<string, Id>)[f]!)!])) });
   }
+  // A line's own horizontal or vertical and one between its two ends say the same once the gap between them is closed, and the
+  // solver would call the sketch over-defined: the later of the two goes.
+  const touched = new Set([...into.keys(), ...into.values()]);
+  const ends = new Map(sketch.entities.flatMap((e) => (e.type === 'line' && !removing.has(e.id) ? [[e.id, [e.p1, e.p2] as const] as const] : [])));
+  const gone = new Set(remove);
+  const seen = new Set<string>();
+  const duplicates = new Set<Id>();
+  for (const k of sketch.constraints) {
+    if ((k.type !== 'horizontal' && k.type !== 'vertical') || gone.has(k.id)) continue;
+    const pair = k.b === undefined ? ends.get(k.a) : ([k.a, k.b] as const);
+    if (!pair || !pair.some((p) => touched.has(p))) continue;
+    const key = `${k.type}|${pair.map((p) => into.get(p) ?? p).sort().join('|')}`;
+    if (seen.has(key)) duplicates.add(k.id);
+    else seen.add(key);
+  }
+  if (duplicates.size > 0) {
+    remove.push(...duplicates);
+    return { edit: { entities, constraints: constraints.filter((c) => !duplicates.has(c.id)), remove }, merged, skipped };
+  }
   return { edit: { entities, constraints, remove }, merged, skipped };
 }
 

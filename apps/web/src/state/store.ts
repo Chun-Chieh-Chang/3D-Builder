@@ -1149,7 +1149,8 @@ class AppStore {
     const at = beforeId === null ? rest.length : rest.indexOf(beforeId);
     if (at < 0 || !ids.includes(id)) return;
     const order = [...rest.slice(0, at), id, ...rest.slice(at)];
-    if (order.every((x, i) => x === ids[i])) return;
+    const unmoved = order.every((x, i) => x === ids[i]);
+    if (unmoved && folderChoice === undefined) return;
     const name = (x: Id) => doc.features.find((f) => f.id === x)?.name ?? x;
     const bar = doc.rollbackIndex ?? ids.length;
     if (order.slice(0, bar).some((x) => !ids.slice(0, bar).includes(x))) return void this.notify(t('tree.moveAcrossBar'), 'error');
@@ -1160,6 +1161,7 @@ class AppStore {
     const after = folderOf(order[at + 1]);
     // between two features of one folder it joins; where the user dropped it on a folder row or beside one it is the user who says
     const folder = folderChoice !== undefined ? folderChoice : before !== undefined && before === after ? before : null;
+    if (unmoved && (folder ?? undefined) === folderOf(id)) return; // dropped where it is, into the folder it is in
     this.execute({ type: 'arrange', order, folders: { [id]: folder } });
   }
 

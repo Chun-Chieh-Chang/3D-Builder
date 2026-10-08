@@ -44,6 +44,9 @@ const faceRangesOf = (mesh) => {
 B.twoBodies = async () => {
   H.ready();
   await H.action('檔案', '新零件');
+  // The third block starts on an edge of the first. With the model snap on (D5.3b) that edge is anchored in the sketch as a reference line and
+  // is an open end in the profile; this script is about bodies, so the snap to the model is off here.
+  store.setOptions({ snap: { ...state().options.snap, model: false } });
   await block('草圖1', [-20, -10], [20, 10], 10); // 40 × 20 × 10
   await block('草圖2', [60, -10], [80, 10], 10); // 20 × 20 × 10, apart from the first
   const b = bodies();
@@ -132,4 +135,11 @@ B.hideRenameReference = async () => {
   };
 };
 
-B.all = async () => [await B.twoBodies(), await B.mergeOff(), await B.combine(), await B.hideRenameReference()];
+B.all = async () => {
+  const snap = state().options.snap;
+  try {
+    return [await B.twoBodies(), await B.mergeOff(), await B.combine(), await B.hideRenameReference()];
+  } finally {
+    store.setOptions({ snap }); // the option is kept in the browser
+  }
+};

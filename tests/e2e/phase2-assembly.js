@@ -104,6 +104,8 @@ H.action = async (tab, label) => {
   await H.wait(80);
   H.btn(label);
   await H.wait(150);
+  // a drawing needs the project folder: without one remembered from an earlier run the app asks, and the stand-in answers
+  if (label === '新工程圖' && store.getState().folderRequest) await H.modalButton('選擇資料夾…');
 };
 H.modalButton = async (label) => {
   const b = await H.waitFor(() => [...document.querySelectorAll('.modal button')].find((x) => x.textContent === label), 5000, `dialog button ${label}`);
@@ -116,7 +118,9 @@ H.key = async (key) => {
 };
 H.tree = () => [...document.querySelectorAll('.feature-tree .tree-row')].map((r) => r.textContent);
 H.treeClick = async (name) => {
-  const r = [...document.querySelectorAll('.tree-row')].find((x) => x.textContent.replace(/^\([-+f?]\) /, '') === name);
+  // a part with one body lists the body under the name of its first feature: the feature's own row is the one that edits
+  const found = [...document.querySelectorAll('.tree-row')].filter((x) => x.textContent.replace(/^\([-+f?]\) /, '') === name);
+  const r = found.find((x) => !x.classList.contains('body')) ?? found[0];
   if (!r) throw new Error(`no tree row ${name}`);
   r.click();
   await H.wait(120);
@@ -188,6 +192,7 @@ H.open = async (path) => {
   document.querySelector('.status-bar .notice')?.click(); // dismiss the last notice, so the next one is this open's
   H.next.open = path;
   await H.action('檔案', '開啟舊檔');
+  if (store.getState().folderRequest) await H.modalButton('選擇資料夾…'); // an assembly asks for its project folder when none is remembered
   await H.waitFor(() => store.getState().notice?.text === `已開啟 ${path.split('/').pop()}`, 20000, `${path} to open`);
   if (H.asm()) await H.loaded();
   else await H.settle();

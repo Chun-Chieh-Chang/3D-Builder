@@ -527,6 +527,32 @@ describe('sketch operations (C1.8, C1.9, C1.15, C1.16, C1.17, C1.19)', () => {
     expect(c.issues()).toHaveLength(4);
   });
 
+  it.each([
+    ['vertical side', [[20, 10], [60, 10], [60, 30], [20, 30], [20, 14]]],
+    ['horizontal side', [[10, 20], [10, 60], [30, 60], [30, 20], [14, 20]]],
+  ] as const)('repairs the gap of a rectangle drawn with the line tool (%s): the relation between the ends and the line\'s own are one', async (_name, clicks) => {
+    const h = new Host();
+    const c = new SketchController(h);
+    c.setTool('line');
+    for (const [x, y] of clicks) click(c, x, y);
+    c.setTool('select');
+    const before = h.sketch().constraints.length;
+    c.setOption('gapTolerance', 5);
+    expect(c.issues().map((i) => i.kind)).toEqual(['gap']);
+    c.repair();
+    await c.settled();
+    expect(h.notices.join()).toContain('已修復 1 處；0 處沒有修');
+    expect(h.notices.join()).not.toContain('過多定義');
+    expect(c.issues()).toEqual([]);
+    expect(h.last!.status).toBe('under');
+    expect(h.last!.dof).toBe(4); // four corners, four relations: position, width and height
+    expect(h.sketch().constraints.filter((x) => x.type === 'horizontal' || x.type === 'vertical')).toHaveLength(4);
+    h.history.undo();
+    h.resolve();
+    expect(h.sketch().constraints).toHaveLength(before);
+    expect(c.issues().map((i) => i.kind)).toEqual(['gap']);
+  });
+
   it('asks for a selection first, and refuses an operation the solver finds over-defining', async () => {
     const { h, c } = rectangle();
     c.setTool('select');
