@@ -60,6 +60,7 @@ g.run = async () => {
   H.check(pm().includes('唇與溝槽') && feature().face.name === rimName, 'the PropertyManager opens on the rim');
   const status = () => result().features.find((f) => f.id === id);
   H.check(status().status === 'ok' && /唇：環的面積 192\.00/.test(pm()), `a lip, and what it came to: ${pm().slice(0, 140)}`);
+  await window.__shot?.('lip-on-rim');
   near(volume(), 15552 + 192, 'the lip on the body');
 
   // a groove

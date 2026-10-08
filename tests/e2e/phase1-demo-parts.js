@@ -120,7 +120,7 @@ H.clickXY = async ({ x, y }, extra = {}) => {
   H.ptr('pointermove', x, y, extra);
   H.ptr('pointerdown', x, y, extra);
   H.ptr('pointerup', x, y, extra);
-  H.canvas().dispatchEvent(new MouseEvent('click', { clientX: x, clientY: y, bubbles: true, ctrlKey: !!extra.ctrlKey }));
+  H.canvas().dispatchEvent(new MouseEvent('click', { clientX: x, clientY: y, bubbles: true, ctrlKey: !!extra.ctrlKey, shiftKey: !!extra.shiftKey }));
   await H.wait(60);
 };
 H.sk = (u, v, extra) => H.clickXY(H.toClient(u, v), extra); // in the sketch

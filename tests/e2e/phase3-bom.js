@@ -20,11 +20,13 @@ bom.run = async () => {
   await H.waitFor(() => document.querySelector('[data-bom]'), 5000, 'the parts list');
   const flat = table();
   H.check(JSON.stringify(flat.map((r) => [r[1], r[2]])) === JSON.stringify([['定位板', '2'], ['削邊銷', '4']]), `flat: ${JSON.stringify(flat)}`);
+  await window.__shot?.('bom-flat');
   // indented
   [...document.querySelectorAll('.modal button')].find((b) => b.textContent.startsWith('縮排')).click();
   await H.wait(200);
   const indented = table();
   H.check(JSON.stringify(indented.map((r) => [r[0], r[1], r[2]])) === JSON.stringify([['1', '定位組', '2'], ['1.1', '定位板', '1'], ['1.2', '削邊銷', '2']]), `indented: ${JSON.stringify(indented)}`);
+  await window.__shot?.('bom-indented');
   // suppressing a component takes its parts out; a pattern adds
   store.assembly.setComponentState(['s1'], 'suppressed', true);
   await H.wait(500);

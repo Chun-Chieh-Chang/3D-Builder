@@ -53,6 +53,7 @@ g.hook = async () => {
   const status = () => result().features.find((f) => f.id === id);
   H.check(pm().includes('榫寬') && pm().includes('鉤高'), 'the PropertyManager has the sizes');
   H.check(status().status === 'ok', `made: ${status().message ?? 'ok'}`);
+  await window.__shot?.('snap-hook');
   near(volume(), SHELLED + 190.8, 'a beam 2 × 6 × 15 with the wedge');
   await H.pmInput('樑長', '12');
   near(volume(), SHELLED + 2 * 6 * 12 + 0.5 * 1.2 * 3 * 6, 'the beam 12 long');
@@ -95,6 +96,7 @@ g.wall = async () => {
   let status = () => result().features.find((f) => f.id === id);
   H.check(pm().includes('切入深度'), 'the PropertyManager has the sizes');
   H.check(status().status === 'ok', `made: ${status().message ?? 'ok'}`);
+  await window.__shot?.('snap-window');
   near(volume(), SHELLED - 64, 'a window 8 × 4 through the wall');
   await H.pmInput('切入深度', '1');
   near(volume(), SHELLED - 32, 'only 1 deep');
@@ -115,6 +117,7 @@ g.wall = async () => {
   near(volume(), SHELLED - 64 - 168, 'the window and five slots (the middle slot is 8 of its 10 long inside the window: 4 · 40 + 8 more)');
   await H.pmInput('槽數', '3');
   H.check(status().status === 'ok' && result().faceNames.filter((n) => n.startsWith(`${id}:`)).length > 0, 'three slots');
+  await window.__shot?.('vent-slots');
   await H.pmInput('槽距（中心到中心）', '2');
   H.check(status().status === 'error' && /槽距/.test(pm()), `a pitch that is not above the slot width is said: ${pm().slice(0, 120)}`);
   await H.pmInput('槽距（中心到中心）', '4');

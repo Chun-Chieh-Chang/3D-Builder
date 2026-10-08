@@ -1,5 +1,5 @@
 // Manual checklist C11 (docs/manual-verification.html): 「掃出填料/基材」 and 「掃出除料」: a 6 × 4 rectangle along a line of 40 (960 mm³), a hollow tube, an arc path (line + tangent arc), a cut in
-// a block, and the three mistakes (the path misses the profile plane, a closed path, a turn too sharp for the profile); replayed the way a person does it in the app's page
+// a block, and the three mistakes (the path misses the profile plane, a closed path, a turn so sharp that the profile folds over itself); replayed the way a person does it in the app's page
 // (http://127.0.0.1:5391, 1280×720; `npm run verify:ui` does it). Not a Vitest test.
 //
 //   await import('/@fs/<checkout>/tests/e2e/manual-c11.js?' + Date.now());   // in a freshly loaded page
@@ -176,7 +176,7 @@ M.run = async () => {
     await shot('8-closed-path');
     return { status: r?.status, message: r?.message, pass: r?.status === 'error' && /封閉的路徑還不支援/.test(r.message ?? '') };
   });
-  await step('9 mistake 3: a turn too sharp for the profile says the result is not a valid solid', async () => {
+  await step('9 mistake 3: a turn so sharp that the profile folds over itself is refused in Chinese (a two-leg path that turns back 158°)', async () => {
     await S.fresh();
     await path([[0, 0], [20, 0], [10, 4]]);
     const prof = await rectangleProfile();
@@ -186,17 +186,8 @@ M.run = async () => {
     const f = feature('sweep');
     const r = f && resultOf(f.id);
     await shot('9-sharp-turn');
-    // A two-leg path whose second leg turns back (158°): 6 × 4 along 20 + 10.77 should be about 24 × 30.77 = 738 mm³ (one leg alone is 480). The app says "ok" and a volume of
-    // 240: a solid that overlaps itself is accepted, and the checklist's 「掃出的結果不是有效的實體…」 never comes. Written down as a known defect, not hidden.
-    const refused = r?.status === 'error' && /掃出的結果不是有效的實體/.test(r.message ?? '');
-    const plausible = r?.status === 'ok' && S.volume() > 0.9 * 24 * (20 + Math.hypot(10, 4));
-    return {
-      status: r?.status,
-      message: r?.message,
-      volume: S.volume(),
-      pass: refused || plausible || (r?.status === 'ok' && S.volume() < 24 * 20),
-      ...(refused || plausible ? {} : { knownIssue: 'C11: a sweep along a path that turns back on itself (158°) is accepted with a self-overlapping result (240 mm³ instead of about 738), not refused' }),
-    };
+    // 6 × 4 along 20 + 10.77 should hold about 738 mm³; OCCT calls the folded solid valid (240 mm³), so the kernel measures it: it is refused with the reason
+    return { status: r?.status, message: r?.message, pass: r?.status === 'error' && /路徑轉折太急，掃出的結果自己疊在一起/.test(r.message ?? '') };
   });
   return S.result('C11');
 };

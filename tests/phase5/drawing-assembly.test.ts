@@ -53,6 +53,12 @@ describe('the parts list as a table', () => {
     expect(bomColumns(buildBom({ doc: jig(), trees: trees(), propsOf: () => ({}) }).flat).map((c) => c.header)).toEqual(['項次', '名稱', '數量']);
   });
 
+  it('makes the name column wide enough for Chinese, which is drawn with a font 1.4 times the height of the text (it was not: the name ran over the line of the next column)', () => {
+    const size = bomTableSize(rows());
+    const name = bomColumns(rows()).findIndex((c) => c.header === '名稱');
+    expect(size.widths[name]).toBeGreaterThanOrEqual(3 * 1.4 * 3.5 + 4 - 1e-9); // 削邊銷 / 定位板: three characters
+  });
+
   it('is 7 high a row with a header, its upper left corner where the user put it or the lower right corner of the area (above the title block)', () => {
     const r = rows();
     const size = bomTableSize(r);

@@ -151,6 +151,27 @@ describe('limits: a V-block that may stand up to 10 mm above the plate (C15.9)',
     }
   });
 
+  it('dragged from a limit it goes back into the range, and stops at the limits (E4: on the upper limit it used to stay put whichever way it was pulled)', () => {
+    const limits = { min: '0', max: '10' };
+    const parts = (d: AssemblyDoc) => (id: string) => {
+      const c = d.components.find((x) => x.id === id);
+      const kind = (Object.keys(FILES) as Kind[]).find((k) => FILES[k] === d.files.find((f) => f.id === c!.file)!.path)!;
+      return rebuilt[kind].mate;
+    };
+    const pulled = (from: number, to: number) => {
+      const d = doc(from, limits);
+      const rest = solveAssembly(d, parts(d));
+      const r = solveAssembly(d, parts(d), { start: rest.poses, goal: { body: 'v', terms: [{ kind: 'pointAt', point: [0, 0, 0], target: [0, to, 0] }] } });
+      return { states: states(r), lift: lift(r) };
+    };
+    // the mate brings a block that starts high to the upper limit (lift 10); from there it is pulled down into the range, down past the lower limit, and up past the upper one
+    for (const [from, to, expected] of [[45, 20, 5], [45, 2, 0], [45, 60, 10], [10, 17, 2], [10, 40, 10], [10, 0, 0]] as const) {
+      const r = pulled(from, to);
+      expect(r.states, `${from} → ${to}`).toEqual(['ok']);
+      expect(r.lift, `${from} → ${to}`).toBeCloseTo(expected, 4);
+    }
+  });
+
   it('is refused when the value is outside its limits or the least is above the greatest', () => {
     expect(() => doc(19, { min: '6', max: '10' })).toThrow();
     expect(() => doc(19, { min: '8', max: '3', value: '5' })).toThrow();

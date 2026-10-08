@@ -188,6 +188,7 @@ export const features: Translation = {
   'feature.sweepPathAlongPlane': 'The path runs along the plane of the profile at its start, so the profile sweeps no volume: the path must cross the plane of the profile',
   'feature.sweepFailed': 'The sweep failed: {why}',
   'feature.sweepNoSolid': 'OCCT did not make a solid',
+  'feature.sweepOverlap': 'The path turns too sharply and the sweep folds over itself (volume {volume} mm³, where the profile area and the path length call for at least {floor} mm³): ease the turn of the path or make the profile smaller',
   'feature.sweepInvalid': 'The result of the sweep is not a valid solid (common when the path turns with a radius smaller than the profile, so the profile overlaps itself)',
   'feature.hole': 'Hole',
   'feature.holeNoPoints': 'The sketch of the hole has no point to put a hole at (it needs single points, not end points or centers of lines)',

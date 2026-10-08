@@ -45,6 +45,7 @@ g.run = async () => {
   near(flat[1], report.height, 'and as wide');
   near(flat[2], 1.5, 'and as thick as the sheet');
   H.check(Math.abs(flat[0] - folded[0]) > 1 || Math.abs(flat[2] - folded[2]) > 1, 'it is not the folded part');
+  await window.__shot?.('flat-pattern-in-3d');
   box.click();
   await H.settle();
   const back = extent(store.viewer.mesh);

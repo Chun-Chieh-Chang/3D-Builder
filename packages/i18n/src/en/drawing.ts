@@ -134,6 +134,7 @@ export const drawing: Translation = {
   'drawingUi.dimAutoButton': 'Dimension Automatically',
   'drawingUi.dimAdded': 'Added {n} dimensions',
   'drawingUi.dimNothingNew': 'There are no new dimensions to add',
+  'drawingUi.dimOverlap': '{n} dimensions have text that lies over another (it happens when holes are close and their notes long): use a hole table for those holes (Annotations and tables → Add hole table), or turn off the hole notes',
   'drawingUi.dimHorizontal': 'Horizontal',
   'drawingUi.dimVertical': 'Vertical',
   'drawingUi.dimAligned': 'Aligned',

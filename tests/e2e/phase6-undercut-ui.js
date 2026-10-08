@@ -55,6 +55,7 @@ g.run = async () => {
   H.check(/三角形/.test(document.querySelector('[data-undercut] [data-field="stats"]')?.textContent ?? ''), 'it says how many triangles and how long');
   const colors = painted();
   H.check([RED, BLUE, TEAL, LIGHT].every((k) => (colors[k] ?? 0) > 0), `red, blue, teal and light green are on the model: ${JSON.stringify(colors)}`);
+  await window.__shot?.('undercut-colours');
 
   // opened along the hole: no undercut
   const select = document.querySelector('[data-undercut] select');

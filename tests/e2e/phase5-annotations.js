@@ -52,6 +52,8 @@ a.run = async () => {
   await click(panel('[data-action="autoDimension"]'));
   await H.waitFor(() => drw().doc.dimensions.length === 3 && drw().elements.size === 3, 30000, 'three dimensions');
   H.check(JSON.stringify([...scene().dimensions.values()].map((o) => o.text).sort()) === JSON.stringify(['2×Ø8 貫穿', '4×R10', '4×Ø9 貫穿']), `callouts: ${[...scene().dimensions.values()].map((o) => o.text)}`);
+  // holes far enough apart: no warning of texts over each other
+  H.check(!document.querySelector('[data-field="overlap"]'), 'no warning of overlapping texts on the plate');
   // the callout can be switched off for one of them
   const nine = drw().doc.dimensions.find((d) => d.kind === 'diameter' && d.count === 4);
   await click(panel(`[data-dimension="${nine.id}"]`));

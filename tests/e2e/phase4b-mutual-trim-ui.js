@@ -45,6 +45,7 @@ g.run = async () => {
   H.check(feature().a.name === 'os1' && feature().b.name === 'os2', `it starts with the two surfaces: ${JSON.stringify([feature().a.name, feature().b.name])}`);
   H.check(status(id).status === 'ok', `trimmed: ${status(id).message ?? 'ok'}`);
   H.check(/各有 2 片、2 片（去掉了 0 片）/.test(pm()), `it says what it made: ${pm().slice(0, 200)}`);
+  await window.__shot?.('mutual-trim-pieces');
   H.check(faces('os1').join('|') === `${NAME1}#1|${NAME1}#2`, `the pieces of the first: ${faces('os1')}`);
   H.check(faces('os2').join('|') === `${NAME2}#1|${NAME2}#2`, `the pieces of the second: ${faces('os2')}`);
 
@@ -61,6 +62,7 @@ g.run = async () => {
   store.pick({ kind: 'face', name: `${NAME2}#2` });
   await H.settle();
   H.check(faces('os1').length === 1 && faces('os2').length === 1, `one piece of each is left: ${faces('os1')} ${faces('os2')}`);
+  await window.__shot?.('mutual-trim-one-each');
   // a face of the block is not a piece of either surface
   store.pick({ kind: 'face', name: 'e1:cap:end' });
   await H.settle();

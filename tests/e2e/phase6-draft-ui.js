@@ -51,6 +51,7 @@ g.run = async () => {
   void area;
   let colors = painted();
   H.check((colors[GREEN] ?? 0) > 0 && (colors[RED] ?? 0) > 0, `green and red are on the model: ${JSON.stringify(colors)}`);
+  await window.__shot?.('draft-colours-5pos-1neg');
   H.check(!(colors[YELLOW] > 0), 'no yellow yet');
 
   // 5° asked: the 3° walls are draft required (yellow)
@@ -61,6 +62,7 @@ g.run = async () => {
   await H.wait(150);
   colors = painted();
   H.check((colors[YELLOW] ?? 0) > 0, `yellow is on the model: ${JSON.stringify(colors)}`);
+  await window.__shot?.('draft-yellow-needs-draft');
   // an angle that is not a number is said, and the last answer stays
   Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(input, 'x');
   input.dispatchEvent(new Event('input', { bubbles: true }));

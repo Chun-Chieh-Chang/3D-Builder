@@ -80,8 +80,10 @@ g.run = async () => {
   H.check(feature().ribs?.count === '3' && pm().includes('肋厚'), 'the ribs are added with their sizes in the PropertyManager');
   const three = volume();
   H.check(three > SHELLED + column(12, 8) + 5, `three ribs add volume: ${three}`);
+  await window.__shot?.('boss-three-ribs');
   await H.pmInput('數量', '4');
   H.check(volume() > three + 1 && result().faceNames.filter((n) => n.includes('.rib3.')).length > 0, 'a fourth rib makes more');
+  await window.__shot?.('boss-four-ribs');
   [...document.querySelectorAll('.property-manager button')].find((b) => b.textContent === '去掉肋').click();
   await H.settle();
   H.check(!feature().ribs, 'the ribs are taken away');

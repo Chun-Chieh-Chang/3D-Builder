@@ -198,6 +198,8 @@ export interface ComponentDragEvent {
 export interface ViewerEvents {
   /** The right button was pressed and released on the graphics area (not while a tool owns it). */
   onContextMenu?: (clientX: number, clientY: number) => void;
+  /** The right button was pressed and released while a tool owns the left one (a sketch is being edited): the sketch's own menu (快速抓取), not the picking menu. */
+  onToolContextMenu?: (clientX: number, clientY: number) => void;
   /** Edge under the cursor changed (index into the mesh's edges, or -1). */
   onEdgeHover?: (edge: number) => void;
   /** Left click on an edge (or -1 on empty space / faces). */
@@ -337,7 +339,7 @@ export class Viewer {
     dom.addEventListener('pointerleave', this.onPointerLeave);
     dom.addEventListener('pointercancel', () => this.cancelComponentDrag()); // the system took the pointer
     dom.addEventListener('click', this.onClick);
-    dom.addEventListener('contextmenu', (e) => !this.toolHandler && this.events.onContextMenu?.(e.clientX, e.clientY));
+    dom.addEventListener('contextmenu', (e) => (this.toolHandler ? this.events.onToolContextMenu?.(e.clientX, e.clientY) : this.events.onContextMenu?.(e.clientX, e.clientY)));
     dom.addEventListener('dblclick', this.onDoubleClick);
     this.resizeObserver = new ResizeObserver(() => this.resize());
     this.resizeObserver.observe(container);
@@ -1517,7 +1519,8 @@ export class Viewer {
       m.emissive.set(mode === 'hiddenRemoved' ? 0xffffff : 0x000000);
       m.emissiveIntensity = mode === 'hiddenRemoved' ? 0.85 : 1;
       m.clippingPlanes = this.clip;
-      m.side = this.clip.length > 0 ? THREE.DoubleSide : THREE.FrontSide;
+      // both sides always: a surface body has no inside, and looking into its open end shows the wall from within (not only while a section is cut)
+      m.side = THREE.DoubleSide;
       m.needsUpdate = true;
       this.paintBodyColors();
     }

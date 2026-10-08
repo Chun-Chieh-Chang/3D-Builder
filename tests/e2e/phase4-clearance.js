@@ -70,6 +70,7 @@ c.run = async () => {
   field('pairs').querySelector('tbody tr').click();
   await H.wait(200);
   H.check(store.getState().clearance.selected === 0, 'the pair is chosen');
+  await window.__shot?.('clearance-pair-chosen');
 
   // ---------------------------------------------------------------- room to take the V-block out
   store.assembly.select('v');
@@ -82,6 +83,7 @@ c.run = async () => {
     return field('sweepResult').textContent;
   };
   H.check((await sweep('-y', 100)).includes('只能移動 5 mm'), 'down it can move 5 mm: it meets the plate');
+  await window.__shot?.('clearance-room-to-take-out');
   H.check((await sweep('+y', 100)).includes('沒有阻礙'), 'up there is nothing in the way');
   H.check((await sweep('+x', 100)).includes('沒有阻礙'), 'sideways, above the plate, nothing in the way');
   [...document.querySelectorAll('[data-clearance] button')].find((b) => b.textContent === '關閉').click();

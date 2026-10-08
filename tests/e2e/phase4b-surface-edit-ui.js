@@ -63,6 +63,7 @@ g.run = async () => {
   store.pick(top);
   await H.settle();
   H.check(status(store.getState().editing.featureId).status === 'ok', `extended: ${status(store.getState().editing.featureId).message ?? 'ok'}`);
+  await window.__shot?.('surface-extended');
   const extendId = store.getState().editing.featureId;
   const longer = (await (async () => result().mesh)()).positions;
   let zMax = -1e9;
@@ -83,6 +84,7 @@ g.run = async () => {
   [...document.querySelectorAll('.property-manager label.checkbox')].find((l) => l.textContent.includes('反轉')).querySelector('input').click();
   await H.settle();
   H.check(status(trimId).status === 'ok', `trimmed: ${status(trimId).message ?? 'ok'}`);
+  await window.__shot?.('surface-trimmed');
   H.check(result().faceNames.some((n) => /:side:s2\.rl0$/.test(n) && n.startsWith(trimId)), `the kept face is named after the sketch: ${result().faceNames}`);
   await accept();
 
@@ -92,6 +94,7 @@ g.run = async () => {
   await H.settle();
   const flatId = store.getState().editing.featureId;
   H.check(status(flatId).status === 'ok', `flat: ${status(flatId).message ?? 'ok'}`);
+  await window.__shot?.('flat-surface-disc');
   await accept();
   H.check(result().bodies.length === 3 && result().bodies[2].surface, 'the disc is a surface body of its own');
 
@@ -119,6 +122,7 @@ g.run = async () => {
   await H.settle();
   const knitId = store.getState().editing.featureId;
   H.check(status(knitId).status === 'ok' && /自由邊/.test(pm()), `knit says what is left open: ${pm().slice(0, 200)}`);
+  await window.__shot?.('surfaces-knitted');
   await accept();
   console.log('phase4b-surface-edit-ui: all checks passed');
   return true;

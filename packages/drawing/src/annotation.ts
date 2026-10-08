@@ -117,7 +117,8 @@ export function holeRows(features: readonly ViewFeature[], fits: Record<string, 
 
 const ROW = 6;
 const TEXT = DIM_TEXT;
-const charWidth = (text: string) => [...text].reduce((w, c) => w + (c.charCodeAt(0) > 0x2e80 ? 1 : 0.62) * TEXT, 0);
+/** A text is drawn with a font 1.4 times its height (svg.ts): a Chinese character is as wide as that font is tall, any other about 0.62 of the height. */
+const charWidth = (text: string) => [...text].reduce((w, c) => w + (c.charCodeAt(0) > 0x2e80 ? 1.4 : 0.62) * TEXT, 0);
 
 /** Where a table's upper left corner goes when it has no place of its own: the upper right corner of the drawing area. */
 export function defaultTableAt(area: Rect, width: number): [number, number] {

@@ -65,6 +65,7 @@ g.run = async () => {
   H.check(/三角形/.test(field('stats')?.textContent ?? ''), 'it says how many triangles and how long');
   let colors = painted();
   H.check((colors[GREEN] ?? 0) > 0 && (colors[BLUE] ?? 0) > 0 && !(colors[RED] > 0), `green and blue on the model, no red: ${JSON.stringify(colors)}`);
+  await window.__shot?.('thickness-ok-and-thick');
 
   // at least 3: every wall is thin
   await type('least', '3');
@@ -72,6 +73,7 @@ g.run = async () => {
   await H.wait(150);
   colors = painted();
   H.check((colors[RED] ?? 0) > 0 && cell('thin', 'faces') === 10, `ten faces too thin, red on the model: ${cell('thin', 'faces')}`);
+  await window.__shot?.('thickness-too-thin-red');
 
   // a limit that is not a number, and a least above the greatest, are said
   await type('least', 'x');

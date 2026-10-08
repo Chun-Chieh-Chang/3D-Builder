@@ -1,5 +1,5 @@
 import { t } from '@3db/i18n';
-import { formatNumber } from '@3db/drawing';
+import { formatNumber, overlappingDimensions } from '@3db/drawing';
 import type { Dimension, DimensionOrientation, DimensionTolerance, ViewFeature } from '@3db/model';
 import { useState } from 'react';
 import { store, useStore } from '../state/store';
@@ -84,6 +84,7 @@ export function DimensionPanel() {
   const [ang2, setAng2] = useState(1);
   const mine = view ? drw.doc.dimensions.filter((x) => x.view === view.id) : [];
   const outcomes = d.scene().dimensions;
+  const overlapping = overlappingDimensions(d.scene().scene.items, new Set(mine.map((x) => x.id)));
   const current = mine.find((x) => x.id === selected) ?? null;
   const textOf = (x: Dimension) => {
     const o = outcomes.get(x.id);
@@ -116,6 +117,11 @@ export function DimensionPanel() {
               {t('drawingUi.dimAutoButton')}
             </button>
           </div>
+          {overlapping > 0 && (
+            <p className="warning-text" data-field="overlap">
+              {t('drawingUi.dimOverlap', { n: overlapping })}
+            </p>
+          )}
           {linearPick.length >= 2 && (
             <div className="pm-row">
               <select data-field="dimA" value={Math.min(a, linearPick.length - 1)} onChange={(e) => setA(Number(e.target.value))}>

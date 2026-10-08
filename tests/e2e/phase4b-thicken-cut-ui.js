@@ -90,6 +90,7 @@ g.cylinder = async () => {
   H.check(/離曲面最遠/.test(pm()), `it says how far the solid reaches: ${pm().slice(0, 200)}`);
   near(volumeOf('os1'), Math.PI * (225 - 169) * 20, 1e-2, 'the wall of 2 outside the surface');
   H.check(result().bodies.find((b) => b.id === 'os1').surface === false, 'it is a solid body now');
+  await window.__shot?.('thickened-solid');
   await H.pmInput('厚度', '-2');
   near(volumeOf('os1'), Math.PI * (169 - 121) * 20, 1e-2, 'negative thickness, the wall inside');
   // both sides: 4 thick in total round the surface R13 is the wall between R11 and R15; kept, the surface is still there and the solid is a body of its own
@@ -103,6 +104,7 @@ g.cylinder = async () => {
   await H.settle();
   H.check(status(thickenId).status === 'ok', `kept: ${status(thickenId).message ?? 'ok'}`);
   H.check(result().bodies.length === 3 && result().bodies[1].id === 'os1' && result().bodies[1].surface && !result().bodies[2].surface, `the surface stays and the solid is another body: ${JSON.stringify(result().bodies.map((b) => [b.id, b.surface]))}`);
+  await window.__shot?.('thicken-keep-surface');
   near(volumeOf(thickenId), Math.PI * (225 - 121) * 20, 1e-2, 'the solid of the kept surface');
   box('保留曲面').click();
   box('兩側').click();

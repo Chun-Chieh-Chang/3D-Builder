@@ -220,8 +220,14 @@ code { font-family: Consolas, 'Cascadia Mono', monospace; font-size: 11px; }
 .file-list li.selected { background: var(--accent-soft); color: var(--accent); }
 .file-list li .name { flex: 1; }
 .file-list li .folder { font-size: 11px; }
+/* the steps of the exploded view: the name and the four buttons on one line, what the step moves under them (the panel is too narrow for it all in a row) */
+[data-explode-steps] li { flex-wrap: wrap; }
+[data-explode-steps] li .name { flex: 1 1 5em; min-width: 5em; }
+[data-explode-steps] li .folder { order: 5; flex: 1 1 100%; }
 .pm-button { border: 1px solid var(--line); background: #fff; border-radius: 3px; padding: 3px 10px; }
 .pm-button:hover { background: var(--accent-soft); border-color: #a5c8ec; }
+.pm-button { white-space: nowrap; flex: 0 0 auto; }
+.pm-row input { min-width: 0; }
 .pm-ok:disabled { color: #aab2bd; cursor: default; }
 
 /* Mates (2C) */

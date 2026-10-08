@@ -187,6 +187,25 @@ describe('the sweep (C4.4)', () => {
     expect(failures(r).find((s) => s.startsWith('sw1='))).toContain('不是有效的實體');
   });
 
+  it('refuses a solid that is valid yet folded over itself: a path that turns back 158° (the profile along 20, then back 10.77) holds 240, not about 738', () => {
+    const fold = parts(point('a', 0, 0), point('b', 20, 0), point('c', 10, 4), line('l1', 'a', 'b'), line('l2', 'b', 'c'));
+    const r = rebuild(make(rectangle('r', -2, -3, 4, 6), fold));
+    const message = failures(r).find((s) => s.startsWith('sw1=')) ?? '';
+    expect(message).toContain('路徑轉折太急');
+    expect(message).toContain('自己疊在一起');
+  });
+
+  it('keeps the tight bends that do not overlap: a 2 × 2 profile round a quarter arc of R5 (centred, and 1.5 off the path), where the area times the path is the volume', () => {
+    const tight = parts(point('a', 0, 0), point('b', 10, 0), point('c', 10, 5), point('d', 15, 5), point('e', 15, 15), line('l1', 'a', 'b'), arc('r1', 'c', 'b', 'd'), line('l2', 'd', 'e'));
+    const length = 10 + (Math.PI / 2) * 5 + 10;
+    const centred = rebuild(make(rectangle('r', -1, -1, 2, 2), tight));
+    expect(failures(centred)).toEqual([]);
+    expect(volume(centred)).toBeCloseTo(4 * length, 5);
+    const off = rebuild(make(rectangle('r', 0.5, -1, 2, 2), tight));
+    expect(failures(off)).toEqual([]);
+    expect(volume(off)).toBeGreaterThan(0.7 * 4 * (length - 1.5 * (Math.PI / 2)));
+  });
+
   it('commands: the profile and the path are two sketches before the feature', () => {
     const doc = make(rectangle('r', -2, -3, 4, 6), bend);
     expect(() => applyCommand(doc, { type: 'setSweepPath', featureId: 'sw1', path: 'sp' })).toThrow('不能是同一張草圖');

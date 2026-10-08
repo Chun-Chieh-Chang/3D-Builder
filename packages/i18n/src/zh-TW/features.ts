@@ -186,6 +186,7 @@ export const features = {
   'feature.sweepPathAlongPlane': '路徑在起點沿著輪廓所在的平面走，輪廓掃不出體積：路徑要穿過輪廓的平面',
   'feature.sweepFailed': '掃出失敗：{why}',
   'feature.sweepNoSolid': 'OCCT 沒有做出實體',
+  'feature.sweepOverlap': '路徑轉折太急，掃出的結果自己疊在一起（體積 {volume} mm³，照輪廓面積與路徑長不該少於 {floor} mm³）：改緩路徑的轉折，或縮小輪廓',
   'feature.sweepInvalid': '掃出的結果不是有效的實體（路徑轉彎的半徑比輪廓小，輪廓掃過去自己疊在一起時常見）',
   'feature.hole': '異型孔',
   'feature.holeNoPoints': '異型孔的草圖裡沒有可以放孔的點（要單獨的點，不是線的端點或圓心）',

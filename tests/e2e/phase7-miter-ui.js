@@ -63,6 +63,7 @@ g.run = async () => {
   const annulus = (c) => (c * Math.PI * (R * R - rb * rb)) / 4 - (R ** 3 - rb ** 3) / 3;
   const expected = 100 * 60 * T - R * 60 * T - R * 96.5 * T + bend(60) + T * 60 * H1 + bend(96.5) + T * 96.5 * H2 - (annulus(R) + H1 * (R * T - (R * R - rb * rb) / 2)) + ((R ** 3 - rb ** 3) / 3 + H2 * ((R * R - rb * rb) / 2));
   near(mitred, expected, 'the mitred corner is the hand volume');
+  await window.__shot?.('miter-corner');
 
   store.beginEdit(id);
   await H.waitFor(() => store.getState().editing?.featureId === id, 5000, 'editing again');

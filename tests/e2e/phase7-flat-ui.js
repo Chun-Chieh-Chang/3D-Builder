@@ -45,6 +45,7 @@ g.run = async () => {
   H.check(Math.abs(Number(text('area').match(/[\d.]+/)[0]) - 50 * (100 - 7 + 30 + BA)) < 1e-2, `the area: ${text('area')}`);
   H.check(panel().querySelectorAll('[data-bend]').length === 1 && /90°/.test(panel().querySelector('[data-bend]').textContent) && /往上/.test(panel().querySelector('[data-bend]').textContent), 'one bend of 90° bending up');
   H.check(panel().querySelectorAll('svg line').length >= 5, 'the outline and the bend line are drawn');
+  await window.__shot?.('flat-pattern-window');
 
   // the K-factor changes the length and the window follows
   const flange = store.getState().doc.features.find((f) => f.type === 'baseFlange');

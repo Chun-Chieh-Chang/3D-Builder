@@ -65,6 +65,7 @@ g.run = async () => {
   store.commitEdit();
   await H.settle();
   near(volume(), 7500 - Ro * 50 * T + bend(Math.PI / 2) + T * 50 * (20 - Ro), 'accepted: 20 long');
+  await window.__shot?.('edge-flange-20');
   H.check(document.querySelector('.feature-tree')?.textContent.includes('邊線凸緣'), 'the tree has the flange');
   const status = () => result().features.find((f) => f.id === id);
   H.check(/16.500/.test(status().info ?? ""), `the flange says its flat piece: ${status().info}`);

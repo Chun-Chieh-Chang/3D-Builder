@@ -132,6 +132,7 @@ export const drawing = {
   'drawingUi.dimAutoButton': '自動尺寸',
   'drawingUi.dimAdded': '已加入 {n} 個尺寸',
   'drawingUi.dimNothingNew': '沒有新的尺寸可以加入',
+  'drawingUi.dimOverlap': '有 {n} 個尺寸的文字互相蓋住（孔靠得近、標註又長時會這樣）：建議把這些孔改用孔表（「註記與表格」→「加入孔表」），或取消「孔標註」',
   'drawingUi.dimHorizontal': '水平',
   'drawingUi.dimVertical': '垂直',
   'drawingUi.dimAligned': '對齊',

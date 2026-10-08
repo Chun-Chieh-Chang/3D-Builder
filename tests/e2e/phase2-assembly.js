@@ -472,7 +472,18 @@ H.pickOn = async (component, kind, name) => {
   const names = kind === 'face' ? build.faceNames : kind === 'edge' ? build.edgeNames : build.vertexNames;
   const index = names.indexOf(name);
   if (index < 0) throw new Error(`${component} has no ${kind} ${name}`);
-  const views = [async () => H.hud('等角'), async () => (await H.hud('等角'), await H.orbit(0, -260)), async () => H.hud('前視'), async () => H.hud('右視'), async () => H.hud('上視'), async () => (await H.hud('前視'), await H.orbit(0, -200))];
+  // the views of the cube too, last: a face that looks away from every one of the above (the left side, the back) shows from its own side
+  const views = [
+    async () => H.hud('等角'),
+    async () => (await H.hud('等角'), await H.orbit(0, -260)),
+    async () => H.hud('前視'),
+    async () => H.hud('右視'),
+    async () => H.hud('上視'),
+    async () => (await H.hud('前視'), await H.orbit(0, -200)),
+    ...['left', 'back', 'bottom'].map((name) => async () => (store.viewer.setView(name), await H.wait(250))),
+    // a face that looks down at a gap (the underside of a part above another): from the side, a little below it
+    ...['前視', '右視'].flatMap((name) => [60, -60, 110, -110].map((dy) => async () => (await H.hud(name), await H.orbit(0, dy)))),
+  ];
   const r = H.rect();
   const points = H.pointsOn(build, kind, index);
   const middle = transformPoint(a.poseOf(component), [0, 1, 2].map((k) => points.reduce((s, q) => s + q[k], 0) / points.length));

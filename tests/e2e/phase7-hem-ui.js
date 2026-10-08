@@ -59,6 +59,7 @@ g.run = async () => {
   near(volume(), 7500 - 2 * 50 * T + bend180(0.5) + T * 50 * 10, 'accepted');
   H.check(document.querySelector('.feature-tree')?.textContent.includes('摺邊'), 'the tree has the hem');
   H.check(/3\.927/.test(result().features.find((f) => f.id === id).info ?? ''), `the hem says its bend allowance: ${result().features.find((f) => f.id === id).info}`);
+  await window.__shot?.('hem-folded-back');
 
   store.beginEdit(id);
   await H.waitFor(() => store.getState().editing?.featureId === id, 5000, 'editing again');

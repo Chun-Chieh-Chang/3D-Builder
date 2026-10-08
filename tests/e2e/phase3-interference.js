@@ -58,6 +58,7 @@ interference.run = async () => {
   await H.waitFor(() => store.viewer.highlights.length === p.overlaps.length && p.overlaps.length > 0, 3000, 'the overlap drawn red');
   H.check(store.viewer.highlights.every((m) => m.material.color.getHex() === 0xe53935), 'red');
   H.check(store.viewer.highlights.every((m) => m.geometry.getAttribute('position').count > 0), 'with triangles');
+  await window.__shot?.('interference-red');
   // choosing the pair selects its two components in the view
   field('pairs').querySelector('tbody tr').click();
   await H.wait(200);

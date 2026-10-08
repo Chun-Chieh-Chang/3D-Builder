@@ -70,6 +70,7 @@ g.run = async () => {
   await H.settle();
   near(volume(), 19584, 'accepted: the floor 4 thick');
   H.check(result().features.find((f) => f.id === id).status === 'ok', 'the shell is ok');
+  await window.__shot?.('shell-thicker-floor');
 
   // a wall that does not fit is an error, with the reason, on the feature
   store.beginEdit(id);

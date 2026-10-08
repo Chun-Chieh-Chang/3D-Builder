@@ -3,6 +3,7 @@ import type { BRepBuilderAPI_MakeShape, NCollection_List_TopoDS_Shape, TopoDS_Sh
 import { anyHit, buildBvh, nearestHitAt, triangleNormal } from './rays';
 import { forEachSample } from './sampling';
 import { escapeStepText } from './stepText';
+import { sweepVolumeFloor } from './sweepFloor';
 import { Arena, loadOcct, ShapeIndex, type LoadOptions, type OC } from './occt';
 import {
   KernelError,
@@ -671,6 +672,13 @@ export class Kernel {
       if (!(this.massProps(id).volume > 1e-9)) {
         this.release(id);
         throw new KernelError(t('feature.sweepInvalid'));
+      }
+      // a solid that is "valid" and yet folded over itself holds far less than the profile times the path
+      const { floor } = sweepVolumeFloor(frame, regions, pathFrame, path);
+      const volume = this.massProps(id).volume;
+      if (volume < floor) {
+        this.release(id);
+        throw new KernelError(t('feature.sweepOverlap', { volume: volume.toFixed(1), floor: floor.toFixed(1) }));
       }
       return { shape: id, faceOrigins: whole.origins };
     } finally {

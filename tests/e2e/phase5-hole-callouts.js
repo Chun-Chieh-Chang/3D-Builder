@@ -46,6 +46,11 @@ x.run = async () => {
   const want = ['Ø9 深 8', 'M6 貫穿（底孔 Ø5）', 'M8 深 12（底孔 Ø6.8）', 'Ø6 貫穿 錐孔 Ø12 90°', 'Ø6.6 貫穿 沉頭 Ø11 深 6.5', 'Ø6 貫穿'].sort();
   H.check(JSON.stringify(got) === JSON.stringify([...want, 'Ø11'].sort()), `callouts: ${got.join(' | ')}`);
 
+  // the holes are 20 to 30 mm apart and their notes longer: the panel says the texts lie over each other and what to do
+  await H.waitFor(() => panel('[data-field="overlap"]'), 5000, 'the warning of overlapping texts');
+  const warning = panel('[data-field="overlap"]').textContent;
+  H.check(/互相蓋住/.test(warning) && /孔表/.test(warning), `the panel warns: ${warning}`);
+
   // the hole table says the same
   await click(panel('[data-action="addHoleTable"]'));
   await H.waitFor(() => (drw().doc.tables ?? []).some((t) => t.kind === 'holes') && [...store.drawingStore.scene().tables.values()].some((rows) => rows.length === 6), 30000, 'the hole table');

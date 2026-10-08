@@ -67,6 +67,7 @@ exp.run = async () => {
   H.check(near(s1[1] - b1[1], -60) && near(s1[2] - b1[2], 100), `the steps add up: ${s1} from ${b1}`);
   const rows = [...document.querySelectorAll('[data-explode-steps] li')].length;
   H.check(rows === 2, `two steps listed: ${rows}`);
+  await window.__shot?.('exploded-two-steps-with-lines');
 
   // collapse: everything where it was, bit for bit
   const lines = (a2) => a2.explodeGuides();
@@ -75,11 +76,13 @@ exp.run = async () => {
   H.check(legs[2] && legs[1], 'the one that was moved twice has two legs, the other one');
   a.setExplodeLines(false);
   H.check(lines(a).length === 0, 'with the lines off there are none');
+  await window.__shot?.('exploded-lines-off');
   a.setExplodeLines(true);
   a.setExploded(false);
   await H.waitFor(() => H.asm().explodeT === 0, 3000, 'the view closed');
   H.check(lines(a).length === 0, 'collapsed: no explode lines');
   H.check(JSON.stringify(positions()) === JSON.stringify(before), 'collapsed: every part where it was before');
+  await window.__shot?.('collapsed');
   H.check(placements() === placed, 'and the document placements are the same bytes');
   a.setExploded(true);
   await H.waitFor(() => H.asm().explodeT === 1, 3000, 'the view opened');

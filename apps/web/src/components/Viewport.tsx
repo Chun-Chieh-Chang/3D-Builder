@@ -174,18 +174,6 @@ export function Viewport() {
           for (const f of topo.edgeFaces[el.edge] ?? []) items.push({ label: t('select.loopOf', { name: r.faceNames[f] ?? '' }), run: add(refs(topo.loop(f, el.edge), 'edge')) });
         }
         if (kind === 'face' && el.face >= 0) items.push({ label: t('select.tangentFaces'), run: add(refs(topo.tangentFaces(el.face), 'face')) });
-        const sketcher = store.sketcher;
-        const tool = sketcher?.getView().tool;
-        if (sketcher && tool && QUICK_SNAP_TOOLS.has(tool)) {
-          const chosen = sketcher.getView().quickSnap;
-          items.push({
-            label: t('snap.quickHeading'),
-            run: () => [
-              ...SNAP_ITEMS.map((k) => ({ label: `${chosen === k ? '✔ ' : ''}${t(`snap.name.${k}`)}`, run: () => sketcher.setQuickSnap(k) })),
-              ...(chosen ? [{ label: t('snap.quickOff'), run: () => sketcher.setQuickSnap(null) }] : []),
-            ],
-          });
-        }
         const stack = el.face >= 0 ? viewer.facesAt(x, y) : [];
         if (stack.length > 1) {
           const others: MenuItem[] = stack.map((f, i) => ({ label: t('select.otherFace', { n: i + 1, name: r.faceNames[f] ?? '' }), run: () => clickFace(f) }));
@@ -194,6 +182,28 @@ export function Viewport() {
         const rect = host.current?.getBoundingClientRect();
         if (items.length > 0 && rect) setMenu({ x: x - rect.left, y: y - rect.top, items });
         else setMenu(null);
+      },
+      // While a sketch is edited a tool owns the left button and the picking menu is not asked for; what a right click gives there is 快速抓取 (S-4), the same wherever the cursor is
+      // (a part with no solid yet included)
+      onToolContextMenu: (x, y) => {
+        const sketcher = store.sketcher;
+        const tool = sketcher?.getView().tool;
+        const rect = host.current?.getBoundingClientRect();
+        if (!sketcher || !tool || !QUICK_SNAP_TOOLS.has(tool) || !rect) return setMenu(null);
+        const chosen = sketcher.getView().quickSnap;
+        setMenu({
+          x: x - rect.left,
+          y: y - rect.top,
+          items: [
+            {
+              label: t('snap.quickHeading'),
+              run: () => [
+                ...SNAP_ITEMS.map((k) => ({ label: `${chosen === k ? '✔ ' : ''}${t(`snap.name.${k}`)}`, run: () => sketcher.setQuickSnap(k) })),
+                ...(chosen ? [{ label: t('snap.quickOff'), run: () => sketcher.setQuickSnap(null) }] : []),
+              ],
+            },
+          ],
+        });
       },
       onVertexHover: setHoverVertex,
       onVertexClick: (vertex, additive) => {

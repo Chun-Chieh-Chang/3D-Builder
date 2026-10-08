@@ -325,13 +325,19 @@ function levenbergMarquardt(bodies: Body[], mates: Live[], L: number, tol: { con
   return { holds: worst(r) <= tol.holds, progressed };
 }
 
-/** Each mate's derivatives by central differences: moving one body changes only the mates on it. */
-function blocks(mates: Live[], r: number[][], L: number): Block[] {
+/**
+ * Each mate's derivatives by central differences: moving one body changes only the mates on it. With `free` a row of a mate with limits that sits exactly on
+ * a limit (it is nil on one side and not on the other) is left out: the part may go into its range from there, and is brought back by the solve if the step
+ * goes out of it (E4: at the upper limit the half slope of the difference held the part there).
+ */
+function blocks(mates: Live[], r: number[][], L: number, free = false): Block[] {
   const h = 1e-6;
   const x = [0, 0, 0, 0, 0, 0];
   const derivative = (m: Live, b: Body) => {
     const d = new Float64Array(m.rows * 6);
     const home = { q: b.q, t: b.t };
+    const limited = free && (m.spec.min !== undefined || m.spec.max !== undefined);
+    const oneSided = new Array<boolean>(m.rows).fill(false);
     for (let j = 0; j < 6; j++) {
       const at = (step: number) => {
         x[j] = step;
@@ -342,8 +348,12 @@ function blocks(mates: Live[], r: number[][], L: number): Block[] {
       const plus = at(h);
       const minus = at(-h);
       Object.assign(b, home);
-      for (let row = 0; row < m.rows; row++) d[row * 6 + j] = (plus[row]! - minus[row]!) / (2 * h);
+      for (let row = 0; row < m.rows; row++) {
+        d[row * 6 + j] = (plus[row]! - minus[row]!) / (2 * h);
+        if ((plus[row] === 0) !== (minus[row] === 0)) oneSided[row] = true;
+      }
     }
+    if (limited) for (let row = 0; row < m.rows; row++) if (oneSided[row]) for (let j = 0; j < 6; j++) d[row * 6 + j] = 0;
     return d;
   };
   return mates.map((m, i) => ({ mate: m, r: r[i]!, parts: involved(m).filter((b) => !b.fixed).map((body) => ({ body, d: derivative(m, body) })) }));
@@ -483,7 +493,7 @@ function goalStep(bodies: Body[], mates: Live[], body: Body, terms: Term[], L: n
     for (let i = 0; i < n; i++) N[i * n + i] = 1;
     k = n;
   } else {
-    const { A } = normalEquations(blocks(mates, mates.map((m) => evaluate(m, L)), L), n);
+    const { A } = normalEquations(blocks(mates, mates.map((m) => evaluate(m, L)), L, true), n);
     ({ basis: N, count: k } = nullSpace(A, n));
   }
   if (k === 0) return null;

@@ -19,7 +19,8 @@ export interface ViewBom {
 
 const ROW = 7;
 const TEXT = DIM_TEXT;
-const charWidth = (text: string) => [...text].reduce((w, c) => w + (c.charCodeAt(0) > 0x2e80 ? 1 : 0.62) * TEXT, 0);
+/** A text is drawn with a font 1.4 times its height (svg.ts): a Chinese character is as wide as that font is tall, any other about 0.62 of the height. */
+const charWidth = (text: string) => [...text].reduce((w, c) => w + (c.charCodeAt(0) > 0x2e80 ? 1.4 : 0.62) * TEXT, 0);
 
 /** The columns of the table: the item and the quantity always, the part number and the vendor when any part has one. */
 export function bomColumns(rows: readonly BomRow[]): { header: string; cell: (r: BomRow) => string }[] {
