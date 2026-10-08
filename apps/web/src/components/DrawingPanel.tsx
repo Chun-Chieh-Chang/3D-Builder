@@ -1,6 +1,6 @@
 import { t } from '@3db/i18n';
 import { SHEET_SIZES, TITLE_FIELDS, VIEW_NAMES, isDerived, type DrawingView, type Scale, type SheetSize, type TitleField, type ViewName, type ViewSide } from '@3db/model';
-import { STANDARD_SCALES, scaleText, showsHidden } from '@3db/drawing';
+import { STANDARD_SCALES, arrangementBase, scaleText, showsHidden } from '@3db/drawing';
 import { useState } from 'react';
 import { store, useStore } from '../state/store';
 import { AnnotationPanel } from './AnnotationPanel';
@@ -161,6 +161,7 @@ export function DrawingPanel() {
                 <span>{t('drawingUi.viewScale')}</span>
                 <select data-field="viewScale" value={v.scale ? scaleText(v.scale) : ''} onChange={(e) => d.setView(v.id, { scale: e.target.value ? parseScale(e.target.value) : null })}>
                   <option value="">{t('drawingUi.inheritScale')}</option>
+                  {v.scale && !STANDARD_SCALES.some((s) => same(s, v.scale!)) && <option value={scaleText(v.scale)}>{scaleText(v.scale)}</option>}
                   {STANDARD_SCALES.map((s) => (
                     <option key={scaleText(s)} value={scaleText(s)}>
                       {scaleText(s)}
@@ -181,7 +182,13 @@ export function DrawingPanel() {
                 </label>
               )}
               <div className="pm-row">
-                <button className="pm-button" data-action="resetPosition" disabled={!v.at} onClick={() => d.setView(v.id, { at: null })}>
+                <button
+                  className="pm-button"
+                  data-action="resetPosition"
+                  disabled={arrangementBase(doc)?.id === v.id ? !doc.sheet.shift : !(v.at || v.slide)}
+                  title={t('drawingUi.autoLayoutTip')}
+                  onClick={() => (arrangementBase(doc)?.id === v.id ? d.setSheet({ shift: null }) : d.setView(v.id, { at: null, slide: null }))}
+                >
                   {t('drawingUi.autoLayout')}
                 </button>
               </div>

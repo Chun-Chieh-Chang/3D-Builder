@@ -43,16 +43,16 @@ describe('the angle dimension in the document', () => {
     expect(() => applyDrawingCommand(d, { type: 'setDimension', dimensionId: 'dim1', patch: { supplementary: true } })).toThrow(/不屬於/);
   });
 
-  it('is written and read back, and a version-4 drawing is read as version 6', () => {
+  it('is written and read back, and a version-4 drawing is read as version 7', () => {
     const d = applyDrawingCommand(base(), { type: 'insertDimensions', dimensions: [angle('dim1', { supplementary: true })] });
     const back = parseDrawing(serializeDrawing(d));
     expect(back.dimensions[0]).toMatchObject({ kind: 'angle', supplementary: true });
-    expect(back.schemaVersion).toBe(6);
+    expect(back.schemaVersion).toBe(7);
     const old = JSON.parse(serializeDrawing(base())) as { schemaVersion: number };
     old.schemaVersion = 4;
-    expect(parseDrawing(JSON.stringify(old)).schemaVersion).toBe(6);
+    expect(parseDrawing(JSON.stringify(old)).schemaVersion).toBe(7);
     const future = JSON.parse(serializeDrawing(base())) as { schemaVersion: number };
-    future.schemaVersion = 7;
+    future.schemaVersion = 8;
     expect(() => parseDrawing(JSON.stringify(future))).toThrow();
   });
 });

@@ -313,6 +313,7 @@ html[lang="en"] .view-cube .cube-face { font-size: 10px; }
 .drawing-paper { line-height: 0; box-shadow: 0 2px 10px rgba(0, 0, 0, 0.35); background: #fff; }
 .drawing-paper svg { display: block; }
 .drawing-selection { position: absolute; border: 1px dashed var(--accent, #1864ab); pointer-events: none; }
+.drawing-handle { position: absolute; box-sizing: border-box; background: var(--accent, #1864ab); border-style: solid; border-color: #fff; cursor: nwse-resize; pointer-events: auto; }
 .drawing-panel .drawing-views li { display: flex; gap: 6px; align-items: center; }
 .drawing-panel .drawing-views li .name { flex: 1; }
 .drawing-panel .drawing-views li.selected { background: var(--accent-soft); }

@@ -33,6 +33,31 @@ export const toSheet = (placed: PlacedView, x: number, y: number): [number, numb
 /** The scales a drawing is made at (ISO 5455), from the largest. */
 export const STANDARD_SCALES: readonly Scale[] = [[50, 1], [20, 1], [10, 1], [5, 1], [2, 1], [1, 1], [1, 2], [1, 5], [1, 10], [1, 20], [1, 50], [1, 100]];
 
+const gcd = (a: number, b: number): number => (b === 0 ? a : gcd(b, a % b));
+
+/**
+ * The scale for a size the user dragged a view to, as a ratio: a standard scale when it is within 3% of one (the pointer snaps to them), else the plain fraction with one
+ * decimal in it (a ratio of 0.7 is 5:7, of 1.5 is 3:2), kept to what a scale may be (1 to 1000 each side).
+ */
+export function scaleFromRatio(r: number): Scale {
+  const ratio01 = Math.min(50, Math.max(1 / 100, Number.isFinite(r) ? r : 1));
+  const near = STANDARD_SCALES.find((s) => Math.abs(s[0] / s[1] / ratio01 - 1) < 0.03);
+  if (near) return near;
+  const [n, d] = ratio01 >= 1 ? [Math.round(ratio01 * 10), 10] : [10, Math.round(10 / ratio01)];
+  const g = gcd(n, d);
+  return [n / g, d / g];
+}
+
+/** What a view's scale is made of: its own, else (a projected or section view) its parent's, else the sheet's. Changing the scale of a view changes the scale of what it names, and so of every view that takes it. */
+export function scaleTarget(doc: Pick<DrawingDoc, 'views'>, view: DrawingView, depth = 0): { view: Id } | { sheet: true } {
+  if (view.scale) return { view: view.id };
+  if (view.kind === 'projected' || view.kind === 'section') {
+    const parent = doc.views.find((v) => v.id === view.parent);
+    if (parent && depth < 64) return scaleTarget(doc, parent, depth + 1);
+  }
+  return { sheet: true };
+}
+
 /** The gap between views laid out together (mm), room for the dimensions between them. */
 export const VIEW_GAP = 25;
 
@@ -129,12 +154,45 @@ function sideOf(doc: Pick<DrawingDoc, 'sheet'>, v: Exclude<DrawingView, { kind?:
   return 'right'; // a detail: beside its parent
 }
 
+/** The view the others of the orthographic arrangement are laid out round: the front view, else the first of the model views that have no position of their own. */
+export function arrangementBase(doc: Pick<DrawingDoc, 'views'>): DrawingView | undefined {
+  const models = doc.views.filter((v) => !isDerived(v) && !v.at);
+  return models.find((v) => !isDerived(v) && v.direction === 'front') ?? models[0];
+}
+
+/**
+ * The line a view is in line with the rest on, as the axis it can be slid along: 0 sideways (the left, right and back views, and what is projected or cut to the left or
+ * right), 1 up and down (the top and bottom views, and what is projected or cut up or down). Null when it has none: the view the others are arranged round (it moves
+ * all of them), the isometric and flat views, a detail, a view with a position of its own.
+ */
+export function slideAxis(doc: Pick<DrawingDoc, 'views' | 'sheet'>, v: DrawingView): 0 | 1 | null {
+  if (v.at) return null;
+  if (isDerived(v)) {
+    if (v.kind === 'detail') return null;
+    const side = sideOf(doc, v);
+    return side === 'left' || side === 'right' ? 0 : 1;
+  }
+  if (v === arrangementBase(doc) || v.id === arrangementBase(doc)?.id) return null;
+  switch (v.direction) {
+    case 'top':
+    case 'bottom':
+      return 1;
+    case 'left':
+    case 'right':
+    case 'back':
+      return 0;
+    default:
+      return null;
+  }
+}
+
 /**
  * Lays the views of a drawing out (C16.2, C16.3). A view with a position of its own is where the user put it. The model views without one go in the arrangement
  * of the orthographic projection around the front view (the first of them when there is none), `VIEW_GAP` apart. A projected or section view goes on its side
  * of its parent, `VIEW_GAP` from it (and from what is already on that side), in line with it: what the two have in common — the origin of the model —
  * is where it is in the parent. A detail view goes beside its parent. The arrangement is centred in the area of the sheet, with what hangs on it; what hangs on
- * a view the user put somewhere keeps to it. Views are measured at their scale.
+ * a view the user put somewhere keeps to it. Views are measured at their scale. Then what the user moved is added: the shift of the sheet moves the whole arrangement, the
+ * slide of a view moves it along its line (and what hangs on it); a view with a position of its own is where it was put.
  */
 export function layoutViews(doc: DrawingDoc, rawLines: ReadonlyMap<Id, ViewLines | null>): Map<Id, PlacedView> {
   const sheet = sheetMetrics(doc.sheet);
@@ -146,7 +204,7 @@ export function layoutViews(doc: DrawingDoc, rawLines: ReadonlyMap<Id, ViewLines
     measured.set(v.id, { view: v, scale: s, w: m.w * s, h: m.h * s, centre: m.centre });
   }
   const models = doc.views.filter((v) => !isDerived(v) && !v.at);
-  const base = models.find((v) => !isDerived(v) && v.direction === 'front') ?? models[0];
+  const base = arrangementBase(doc);
   /** Positions in the arrangement (relative to its base view) and positions that are fixed (on the sheet). */
   const rel = new Map<Id, [number, number]>();
   const abs = new Map<Id, [number, number]>();
@@ -223,11 +281,30 @@ export function layoutViews(doc: DrawingDoc, rawLines: ReadonlyMap<Id, ViewLines
     const dy = sheet.area.y + sheet.area.h / 2 - (Math.min(...boxes.map((b) => b.y0)) + Math.max(...boxes.map((b) => b.y1))) / 2;
     for (const [id, [x, y]] of rel) abs.set(id, [x + dx, y + dy]);
   }
+  // what the user moved: the arrangement as a whole, and the views along their lines, each with what hangs on it
+  const shift = doc.sheet.shift ?? [0, 0];
+  const moved = new Map<Id, [number, number]>();
+  const movedBy = (v: DrawingView, depth = 0): [number, number] => {
+    const known = moved.get(v.id);
+    if (known) return known;
+    let by: [number, number] = [0, 0];
+    if (!v.at) {
+      const axis = slideAxis(doc, v);
+      const own: [number, number] = axis === null || !v.slide ? [0, 0] : axis === 0 ? [v.slide, 0] : [0, v.slide];
+      const parent = isDerived(v) && depth < 64 ? doc.views.find((x) => x.id === v.parent) : undefined;
+      // the top of a tree of views carries the shift of the arrangement, unless it was put somewhere (then nothing of it moves with the arrangement)
+      const up = parent ? movedBy(parent, depth + 1) : shift;
+      by = [up[0] + own[0], up[1] + own[1]];
+    }
+    moved.set(v.id, by);
+    return by;
+  };
   const out = new Map<Id, PlacedView>();
   for (const v of doc.views) {
     const m = measured.get(v.id)!;
     const at = abs.get(v.id) ?? ([sheet.area.x + sheet.area.w / 2, sheet.area.y + sheet.area.h / 2] as [number, number]);
-    out.set(v.id, { id: v.id, at: [at[0], at[1]], scale: m.scale, w: m.w, h: m.h, centre: m.centre });
+    const by = movedBy(v);
+    out.set(v.id, { id: v.id, at: [at[0] + by[0], at[1] + by[1]], scale: m.scale, w: m.w, h: m.h, centre: m.centre });
   }
   return out;
 }

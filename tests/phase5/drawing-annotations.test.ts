@@ -141,7 +141,7 @@ describe('the annotations in the document', () => {
     delete v3.tables;
     v3.schemaVersion = 3;
     const back = parseDrawing(JSON.stringify(v3));
-    expect(back.schemaVersion).toBe(6);
+    expect(back.schemaVersion).toBe(7);
     expect(back.tables).toEqual([]);
   });
 });

@@ -29,6 +29,8 @@ export const drawing = {
   'drawingUi.delete': '刪除視圖',
   'drawingUi.hiddenLines': '顯示隱藏線',
   'drawingUi.autoLayout': '自動排版',
+  'drawingUi.scaleHandle': '拖曳來改變比例（連動的視圖一起縮放）；接近標準比例時會吸附',
+  'drawingUi.autoLayoutTip': '把視圖放回自動排好的位置（前視圖：整組放回中央）；在視圖上拖曳可改位置，拖右下角的方塊可改比例，Shift＋拖曳可不對齊自由擺放',
   'drawingUi.addView': '加入視圖',
   'drawingUi.exportSvg': '輸出 SVG',
   'drawingUi.computing': '正在算視圖的線條…',

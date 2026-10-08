@@ -520,7 +520,7 @@ export class DrawingStore {
 
   // ------------------------------------------------------------ editing
 
-  setSheet(sheet: Partial<DrawingSheet>): void {
+  setSheet(sheet: Extract<DrawingCommand, { type: 'setSheet' }>['sheet']): void {
     this.execute({ type: 'setSheet', sheet });
   }
 

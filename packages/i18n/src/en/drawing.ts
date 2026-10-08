@@ -31,6 +31,8 @@ export const drawing: Translation = {
   'drawingUi.delete': 'Delete view',
   'drawingUi.hiddenLines': 'Show hidden lines',
   'drawingUi.autoLayout': 'Lay Out Automatically',
+  'drawingUi.scaleHandle': 'Drag to change the scale (the views that are linked scale with it); it snaps near a standard scale',
+  'drawingUi.autoLayoutTip': 'Put the view back where the layout has it (the front view: the whole arrangement back in the middle). Drag a view to move it, the square at its corner to scale it; Shift while dragging puts it anywhere, out of line',
   'drawingUi.addView': 'Add View',
   'drawingUi.exportSvg': 'Export SVG',
   'drawingUi.computing': 'Working out the lines of the views…',

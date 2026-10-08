@@ -12,7 +12,7 @@ import type { Ref } from './schema';
  * opened (exact hidden-line removal), so a drawing can never disagree with the model it shows.
  */
 
-export const DRAWING_SCHEMA_VERSION = 6;
+export const DRAWING_SCHEMA_VERSION = 7;
 
 export type SheetSize = 'A4' | 'A3' | 'A2' | 'A1' | 'A0';
 export const SHEET_SIZES: readonly SheetSize[] = ['A4', 'A3', 'A2', 'A1', 'A0'];
@@ -30,6 +30,11 @@ export interface DrawingSheet {
   /** First angle (ISO, CNS): the top view below the front view. Third angle (ANSI): above. */
   projection: 'first' | 'third';
   scale: Scale;
+  /**
+   * Where the user moved the views that are laid out together (v7): the whole arrangement is this far (mm) from where it would be centred in the area of the sheet. The
+   * views that are in line with each other move as one; a view with a position of its own (`at`) does not.
+   */
+  shift?: [number, number];
 }
 
 /** The side of a view another view is placed on, in the sheet. */
@@ -42,6 +47,11 @@ interface ViewCommon {
   at?: [number, number];
   /** Its own scale. Absent: the sheet's (a projected or section view: its parent's). */
   scale?: Scale;
+  /**
+   * How far (mm) the user slid the view along the line it is in line with the rest on (v7): the top and bottom views up and down, the left, right and back views sideways,
+   * a projected or section view along its side. What is projected or cut from it goes with it. Not for the view that the others are arranged round, nor with `at`.
+   */
+  slide?: number;
   /** Hidden lines are drawn (dashed). Absent: they are, except in a section view. */
   hidden?: boolean;
   /** The centre marks of the circles and the centre lines of the cylinders are drawn (C16.5). Absent: they are, except in a section view. */
@@ -261,8 +271,8 @@ export function createEmptyDrawing(): DrawingDoc {
 export const drawingIdsInUse = (doc: DrawingDoc): Id[] => [...doc.views.map((v) => v.id), ...doc.dimensions.map((d) => d.id), ...doc.tables.map((x) => x.id)];
 
 export type DrawingCommand =
-  /** Changes the sheet: its size, orientation, projection or scale (C16.1). */
-  | { type: 'setSheet'; sheet: Partial<DrawingSheet> }
+  /** Changes the sheet: its size, orientation, projection, scale or (`shift: null`: take it back) the shift of the arrangement (C16.1). */
+  | { type: 'setSheet'; sheet: Partial<Omit<DrawingSheet, 'shift'>> & { shift?: [number, number] | null } }
   /** Writes a field of the title block; an empty text takes it away (C16.1). */
   | { type: 'setTitle'; field: TitleField; value: string }
   /** Adds views at the end of the list (C16.2), each with its own new id. */
@@ -305,6 +315,8 @@ export type ViewPatch = {
   centreMarks?: boolean | null;
   at?: [number, number] | null;
   scale?: Scale | null;
+  /** `null` (or 0) takes the slide back. */
+  slide?: number | null;
   source?: string;
   direction?: ViewName;
   side?: ViewSide;
@@ -335,6 +347,7 @@ function checkView(v: DrawingView, views: readonly DrawingView[]): void {
   if (!v.name.trim()) throw new CommandError(t('drawing.nameEmpty'));
   if (v.scale && !scaleOk(v.scale)) throw new CommandError(t('drawing.badScale', { scale: v.scale.join(':') }));
   if (v.at && !(v.at.length === 2 && v.at.every(Number.isFinite))) throw new CommandError(t('drawing.badPosition'));
+  if (v.slide !== undefined && !Number.isFinite(v.slide)) throw new CommandError(t('drawing.badPosition'));
   if (!isDerived(v)) {
     if (!isFilePath(v.source)) throw new CommandError(t('drawing.badSource', { path: v.source }));
     if (!VIEW_NAMES.includes(v.direction)) throw new CommandError(t('drawing.badDirection', { direction: String(v.direction) }));
@@ -405,7 +418,11 @@ export function mutateDrawing(draft: Draft<DrawingDoc>, cmd: DrawingCommand): vo
       if (s.orientation !== undefined && s.orientation !== 'landscape' && s.orientation !== 'portrait') throw new CommandError(t('drawing.badOrientation'));
       if (s.projection !== undefined && s.projection !== 'first' && s.projection !== 'third') throw new CommandError(t('drawing.badProjection'));
       if (s.scale !== undefined && !scaleOk(s.scale)) throw new CommandError(t('drawing.badScale', { scale: s.scale.join(':') }));
-      Object.assign(draft.sheet, s);
+      if (s.shift && !(s.shift.length === 2 && s.shift.every(Number.isFinite))) throw new CommandError(t('drawing.badPosition'));
+      const { shift, ...rest } = s;
+      Object.assign(draft.sheet, rest);
+      if (shift === null || (shift && shift[0] === 0 && shift[1] === 0)) delete draft.sheet.shift;
+      else if (shift) draft.sheet.shift = [shift[0], shift[1]];
       return;
     }
     case 'setTitle': {
@@ -429,16 +446,18 @@ export function mutateDrawing(draft: Draft<DrawingDoc>, cmd: DrawingCommand): vo
     }
     case 'setView': {
       const v = viewOf(draft, cmd.viewId);
-      const { at, scale, flip, centreMarks, ...rest } = cmd.patch;
+      const { at, scale, slide, flip, centreMarks, ...rest } = cmd.patch;
       const kind = v.kind ?? 'model';
       const belongs: Record<string, string[]> = { model: ['source', 'direction'], projected: ['side'], section: ['line', 'label'], detail: ['centre', 'radius', 'label'] };
       for (const k of Object.keys(rest)) if (!['name', 'hidden'].includes(k) && !belongs[kind]!.includes(k)) throw new CommandError(t('drawing.notForKind', { field: k, kind }));
       if (flip !== undefined && kind !== 'section') throw new CommandError(t('drawing.notForKind', { field: 'flip', kind }));
-      const next = { ...(JSON.parse(JSON.stringify(v)) as DrawingView), ...rest } as DrawingView & { flip?: boolean; at?: [number, number]; scale?: Scale };
+      const next = { ...(JSON.parse(JSON.stringify(v)) as DrawingView), ...rest } as DrawingView & { flip?: boolean; at?: [number, number]; scale?: Scale; slide?: number };
       if (at === null) delete next.at;
       else if (at !== undefined) next.at = at;
       if (scale === null) delete next.scale;
       else if (scale !== undefined) next.scale = scale;
+      if (slide === null || slide === 0) delete next.slide;
+      else if (slide !== undefined) next.slide = slide;
       if (centreMarks === null) delete next.centreMarks;
       else if (centreMarks !== undefined) next.centreMarks = centreMarks;
       if (flip === null || flip === false) delete next.flip;
