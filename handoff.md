@@ -394,6 +394,7 @@ npm run build -w @3db/desktop   # 桌面版安裝檔（要 Rust 與 MSVC，見 a
 - **頁面沒有繪製時的 e2e**：瀏覽器窗格隱藏、Claude 視窗被擋住時截圖逾時，依游標拾取的流程（`H.pickOn`，例如 `__asm.fixture()` 的結合）會失敗（「could not get the cursor onto face …」）。這種情況改用指令加入結合；`__asm.exportStep()` 就是這樣做的。
 - **連接埠**：5173 是本機其他 Vite 專案在用的預設埠。本專案固定使用 `127.0.0.1:5391`，並開啟 strictPort；埠被占用時直接報錯，不會換埠。
 - **預覽伺服器**：app 可能在回合之間停掉它。請使用者開網址前，先用 `preview_list` 和 curl 確認。Phase 0 驗收 ② 第一次失敗就是因為沒有確認。
+- **Vite 設定檔的相對匯入要自帶副檔名**：`apps/web/vite.config.ts` 寫成 `./dev/autoClose.ts`（含 `.ts`），因為 Vite 下一大版本預設的 `configLoader: 'native'` 不解析無副檔名的路徑；啟動時那句 `(!) Your Vite config uses features that are unsupported by configLoader: 'native'` 就是在講這件事，加了副檔名之後 `npm run dev` 與 `npm run dev:auto` 都不再出現。TypeScript 端要跟著開 `tsconfig.json` 的 `allowImportingTsExtensions`（已有 `noEmit: true` 才合法，否則 `tsc` 報 TS5097）。其餘 763 處無副檔名的相對匯入（分布在 312 個檔案）使用者 2026-10-08 決定不跟著改，見 §8 第 7 項。
 - **別的工作階段的開發伺服器**：
   - 如果 5391 已被另一個工作階段的 Vite 佔用，用 `preview_start` 加 `url: http://127.0.0.1:5391` 開分頁，就能使用它。
   - 它的檔案監看可能漏掉修改，症狀是「does not provide an export named …」，或 curl 取回的模組是舊內容。這時對來源檔執行 `touch`，再重新載入頁面。
@@ -527,6 +528,9 @@ npm run build -w @3db/desktop   # 桌面版安裝檔（要 Rust 與 MSVC，見 a
 4. Phase 4 樣本：1–2 個夾治具案例、常用廠商標準件的 STEP。
 5. （可選）壓縮 Docker 虛擬磁碟；刪除 `spike/occt-gaps` 分支。
 6. **3a-1 到 3a-6 的實機確認（使用者 2026-10-01 決定先保留）**：各項要驗收的步驟寫在 §10 對應的段落（運算式、輸入修復與直接編輯、多本體、草圖工具、特徵 I、異型孔、掃出——尤其「直線加圓弧」的路徑、疊層拉伸、肋材）。自動化測試與瀏覽器腳本都已通過，但還沒有人用滑鼠走過一遍；3a-10 驗收前要補。
+7. **2026-10-08 已裁的兩項，不要重複提出**：
+   - ① **推送**：`main` 領先 `origin/main` 兩個提交（`9e9f617` 組合件 H9 的資料夾／剖面／右鍵選單、`f5e8377` 上面 §6 那條 Vite 設定檔副檔名）。使用者的決定是**先不推**，等 H9 的人工實機項目走完再推。下一個階段不要自行 `git push`。
+   - ② **「import 一律自帶副檔名」的全倉庫統一：不做。**帶副檔名的只有兩處——`apps/web/vite.config.ts`（Vite 的硬性要求）與 `tests/phase8/auto-close.test.ts`（跟著統一）；剩下 763 處／312 個檔案維持無副檔名。要重開這件事的時機：Vite 真的把 `configLoader` 改成 `native` 預設，或還有別的設定檔需要帶副檔名時；屆時單獨一版，不要混進功能提交。
 
 ## 9. Phase 1 零件 MVP（完成，閘門通過）
 
