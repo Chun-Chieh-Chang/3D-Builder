@@ -529,7 +529,7 @@ npm run build -w @3db/desktop   # 桌面版安裝檔（要 Rust 與 MSVC，見 a
 5. （可選）壓縮 Docker 虛擬磁碟；刪除 `spike/occt-gaps` 分支。
 6. **3a-1 到 3a-6 的實機確認（使用者 2026-10-01 決定先保留）**：各項要驗收的步驟寫在 §10 對應的段落（運算式、輸入修復與直接編輯、多本體、草圖工具、特徵 I、異型孔、掃出——尤其「直線加圓弧」的路徑、疊層拉伸、肋材）。自動化測試與瀏覽器腳本都已通過，但還沒有人用滑鼠走過一遍；3a-10 驗收前要補。
 7. **2026-10-08 已裁的兩項，不要重複提出**：
-   - ① **推送**：`main` 領先 `origin/main` 兩個提交（`9e9f617` 組合件 H9 的資料夾／剖面／右鍵選單、`f5e8377` 上面 §6 那條 Vite 設定檔副檔名）。使用者的決定是**先不推**，等 H9 的人工實機項目走完再推。下一個階段不要自行 `git push`。
+   - ① **推送**：2026-10-08 已推，`origin/main` 現在是 `92f3476`（這台電腦之前未推的四個提交都上去了：`9e9f617` 組合件的資料夾／剖面／眼睛／右鍵選單、`f5e8377` Vite 設定檔的 `.ts` 副檔名、`2270fd9` 與 `92f3476` 兩版本文件）。**要留意的**：推的時候 H9 的人工實機項目還沒走完（使用者要自己走一遍）。`9e9f617` 那版沒有動任何 `*.test.ts`，只加了三個瀏覽器重播腳本（`tests/e2e/manual-h9-folder.js`、`manual-asm-section.js`、`manual-asm-menu.js`），所以 `packages/render/src/viewer.ts` 的 124 行改動（新增 116、刪除 8）與 `AssemblyViewport.tsx`、`Viewport.tsx` 的渲染改動**不在 `npm run check` 的保護範圍內**——之後再碰這些地方，驗法要用 `npm run verify:ui`（它重播手冊並抓 Console 錯誤），只跑 `npm run check` 擋不住渲染回歸。
    - ② **「import 一律自帶副檔名」的全倉庫統一：不做。**帶副檔名的只有兩處——`apps/web/vite.config.ts`（Vite 的硬性要求）與 `tests/phase8/auto-close.test.ts`（跟著統一）；剩下 763 處／312 個檔案維持無副檔名。要重開這件事的時機：Vite 真的把 `configLoader` 改成 `native` 預設，或還有別的設定檔需要帶副檔名時；屆時單獨一版，不要混進功能提交。
 
 ## 9. Phase 1 零件 MVP（完成，閘門通過）
