@@ -1451,6 +1451,21 @@ export class AssemblyStore {
     if (this.state.insert) this.set({ insert: { ...this.state.insert, files: listed.files, ...(listed.truncated ? { truncated: true } : {}) } });
   }
 
+  /** A new assembly with nothing in it yet can still move to another project folder: no component path depends on the old one. */
+  canChangeProject(): boolean {
+    return this.handle === null && this.history.doc.components.length === 0;
+  }
+
+  /** Reads the part list again from `folder`, the new project folder of an empty, unsaved assembly. */
+  async setProject(folder: FileSystemDirectoryHandle): Promise<void> {
+    if (!this.canChangeProject()) return;
+    this.project = folder;
+    this.generation += 1;
+    this.stamps.clear();
+    this.set({ files: new Map(), insert: null });
+    await this.startInsert();
+  }
+
   /** The part to place; it is read and rebuilt at once so it can follow the cursor. */
   choosePart(path: string): void {
     const insert = this.state.insert;

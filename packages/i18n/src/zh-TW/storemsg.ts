@@ -32,4 +32,7 @@ export const storemsg = {
   'folder.notAllowed': '瀏覽器沒有允許讀取「{name}」',
   'folder.useFailed': '無法使用這個資料夾：{why}',
   'folder.chooseFailed': '無法選擇資料夾：{why}',
+  'folder.askChange': '選擇這個組合件的專案資料夾：零件檔從這裡讀取，組合件也要存在這個資料夾之內。',
+  'folder.change': '更換資料夾…',
+  'folder.changeHint': '組合件放進第一個零組件之後，專案資料夾就不能再換了。',
 } as const;

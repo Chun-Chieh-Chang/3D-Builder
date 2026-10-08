@@ -13,6 +13,8 @@ import { MateFlyout } from './MatePanel';
 import { InterferencePanel } from './InterferencePanel';
 import { ClearancePanel } from './ClearancePanel';
 import { MeasurePanel } from './MeasurePanel';
+import { ViewOptions } from './Viewport';
+import { ComponentMenu } from './AssemblyTree';
 
 const KIND_WORD = { face: '面', edge: '邊線', vertex: '頂點' } as const;
 
@@ -68,6 +70,14 @@ export function AssemblyViewport() {
   const measuring = measure !== null;
   const [hover, setHover] = useState<string | null>(null);
   const [hoverElement, setHoverElement] = useState<InstanceElement | null>(null);
+  /** The component's context menu (right click on it in the graphics area). */
+  const [menu, setMenu] = useState<{ x: number; y: number; id: string } | null>(null);
+  useEffect(() => {
+    if (!menu) return;
+    const close = () => setMenu(null);
+    window.addEventListener('pointerdown', close);
+    return () => window.removeEventListener('pointerdown', close);
+  }, [menu]);
 
   useEffect(() => {
     /** The element as a mate refers to it: the component (with the path inside it, for a part of a sub-assembly), and the persistent name in its part. */
@@ -87,6 +97,11 @@ export function AssemblyViewport() {
     const viewer = new Viewer(host.current!, {
       onComponentHover: setHover,
       onComponentClick: (key) => store.assembly?.select(key),
+      onComponentContextMenu: (key, x, y) => {
+        if (!key) return setMenu(null);
+        store.assembly?.select(key);
+        setMenu({ x, y, id: key });
+      },
       onElementHover: setHoverElement,
       onElementClick: (el) => {
         // measuring takes any element of any instance, a derived one (pattern, mirror) too: what is measured is what is seen
@@ -236,6 +251,8 @@ export function AssemblyViewport() {
   return (
     <main className="viewport">
       <div ref={host} className="viewport-canvas" />
+      <ViewOptions assembly />
+      {menu && asm.doc.components.some((c) => c.id === menu.id) && <ComponentMenu x={menu.x} y={menu.y} component={asm.doc.components.find((c) => c.id === menu.id)!} onClose={() => setMenu(null)} />}
       <div className="heads-up">
         {ACTIONS.filter((a) => a.group === 'view').map((a) => (
           <button key={a.id} onClick={a.run} disabled={!a.enabled(store.getState())} title={shortcutOf(a) ? `${a.label}（${shortcutOf(a)}）` : a.label}>

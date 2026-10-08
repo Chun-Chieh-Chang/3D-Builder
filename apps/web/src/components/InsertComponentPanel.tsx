@@ -95,6 +95,15 @@ export function InsertComponentPanel() {
       <div className="pm-group">
         <h4>要插入的零件</h4>
         <p className="hint">專案資料夾：{project ?? '（未選擇）'}</p>
+        {a?.canChangeProject() ? (
+          <div className="pm-row">
+            <button className="pm-button" data-change-folder onClick={() => void store.changeProjectFolder()}>
+              {t('folder.change')}
+            </button>
+          </div>
+        ) : (
+          <p className="hint">{t('folder.changeHint')}</p>
+        )}
         {insert.files === null ? (
           <p className="muted">正在讀取資料夾…</p>
         ) : insert.files.length === 0 ? (

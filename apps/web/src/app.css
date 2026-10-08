@@ -289,6 +289,9 @@ html[lang="en"] .view-cube .cube-face { font-size: 10px; }
 .view-options { position: absolute; top: 48px; left: 8px; display: flex; gap: 6px; align-items: center; z-index: 5; flex-wrap: wrap; max-width: 60%; }
 .view-options select, .view-options button { font-size: 12px; }
 .view-options button.active { background: #dbeafe; }
+/* in an assembly the flyout tree of 「結合」 opens at the same corner: below the display type and section controls */
+.view-options ~ .flyout-tree { top: 112px; max-height: calc(100% - 130px); }
+.section-value { width: 58px; font-size: 12px; text-align: right; }
 .section-panel { display: flex; gap: 6px; align-items: center; background: rgba(255, 255, 255, 0.92); border: 1px solid #c8d2de; border-radius: 4px; padding: 3px 6px; font-size: 12px; }
 
 .pick-filter { display: flex; gap: 6px; align-items: center; background: rgba(255, 255, 255, 0.92); border: 1px solid #c8d2de; border-radius: 4px; padding: 3px 6px; font-size: 12px; }

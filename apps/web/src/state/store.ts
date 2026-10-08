@@ -2856,6 +2856,16 @@ class AppStore {
     return folder;
   }
 
+  /** 「更換資料夾…」 in the insert panel: the project folder stays until the user picks another one, so a new assembly can leave the one remembered. */
+  async changeProjectFolder(): Promise<void> {
+    const a = this.assembly;
+    if (!a?.canChangeProject()) return;
+    const folder = await this.askForFolder(t('folder.askChange'));
+    if (!folder) return;
+    this.useProject(folder);
+    await a.setProject(folder);
+  }
+
   /** The remembered folder, when the browser allows it without asking (the user chose 「每次造訪都允許」). */
   private async rememberedWithAccess(): Promise<FileSystemDirectoryHandle | null> {
     const folder = this.remembered;

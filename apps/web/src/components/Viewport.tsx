@@ -626,14 +626,55 @@ function ViewCube() {
   );
 }
 
-const DISPLAY_MODES: DisplayMode[] = ['shadedEdges', 'shaded', 'hiddenRemoved', 'hiddenVisible', 'wireframe'];
+/**
+ * The position of the cut as a number the user can type (mm): the slider is hard to stop at a size. Enter or leaving the box sets it, Esc puts the old number back;
+ * something that is not a number is put back too. The value is not held to the slider's range: a cut beyond the model just leaves all of it or none.
+ */
+function SectionValue({ value, onCommit }: { value: number; onCommit: (at: number) => void }) {
+  const [draft, setDraft] = useState<string | null>(null);
+  /** Esc leaves the box, and leaving it would commit what was typed: this says it was given up. */
+  const cancelled = useRef(false);
+  const commit = () => {
+    const n = Number(draft?.trim().replace(/,/g, ''));
+    if (!cancelled.current && draft !== null && draft.trim() !== '' && Number.isFinite(n)) onCommit(n);
+    cancelled.current = false;
+    setDraft(null);
+  };
+  return (
+    <input
+      className="section-value"
+      type="text"
+      inputMode="decimal"
+      aria-label={t('view.sectionAt')}
+      title={t('view.sectionValueTip')}
+      value={draft ?? value.toFixed(2)}
+      onFocus={(e) => e.target.select()}
+      onChange={(e) => setDraft(e.target.value)}
+      onBlur={commit}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter') e.currentTarget.blur();
+        else if (e.key === 'Escape') {
+          cancelled.current = true;
+          e.currentTarget.blur();
+        }
+        e.stopPropagation(); // typing is not a shortcut (Delete, Esc, letters of the tools)
+      }}
+    />
+  );
+}
 
-/** 顯示類型 (A4.3) and 剖面視圖 (D4.4): how the model is drawn, and a cut through it. */
-function ViewOptions() {
+const DISPLAY_MODES: DisplayMode[] = ['shadedEdges', 'shaded', 'hiddenRemoved', 'hiddenVisible', 'wireframe'];
+/** The components of an assembly have no dashed hidden edges (yet): the other four. */
+const ASSEMBLY_DISPLAY_MODES = DISPLAY_MODES.filter((m) => m !== 'hiddenVisible');
+
+/** 顯示類型 (A4.3) and 剖面視圖 (D4.4): how the model is drawn, and a cut through it; in an assembly (no selection filter) the cut goes through every component. */
+export function ViewOptions({ assembly = false }: { assembly?: boolean }) {
   const filter = useStore((s) => s.pickFilter);
   const [mode, setMode] = useState<DisplayMode>('shadedEdges');
   const [cut, setCut] = useState<{ axis: 0 | 1 | 2; at: number; flip: boolean } | null>(null);
-  const result = useStore((s) => s.result);
+  // what the model is made of changes: the part's result, or the assembly's parts and placements
+  const result = useStore((s) => (assembly ? s.asm?.builds : s.result));
+  const placed = useStore((s) => (assembly ? s.asm?.solution : null));
   useEffect(() => store.viewer?.setDisplayMode(mode), [mode, result]);
   const bounds = store.viewer?.contentBounds() ?? null;
   const range = bounds && cut ? ([bounds.min[cut.axis], bounds.max[cut.axis]] as const) : null;
@@ -645,17 +686,18 @@ function ViewOptions() {
     normal[cut.axis] = cut.flip ? -1 : 1;
     const plane: SectionPlane = { normal, offset: cut.flip ? -cut.at : cut.at };
     v.setSection(plane);
-  }, [cut, result]);
+  }, [cut, result, placed]);
   const span = range ? Math.max(range[1] - range[0], 1e-6) : 1;
   return (
     <div className="view-options">
       <select value={mode} aria-label={t('view.mode')} title={t('view.mode')} onChange={(e) => setMode(e.target.value as DisplayMode)}>
-        {DISPLAY_MODES.map((m) => (
+        {(assembly ? ASSEMBLY_DISPLAY_MODES : DISPLAY_MODES).map((m) => (
           <option key={m} value={m}>
             {t(`view.mode.${m}`)}
           </option>
         ))}
       </select>
+      {!assembly && (
       <span className="pick-filter" title={t('select.filterTitle')}>
         {t('select.filter')}
         {(['faces', 'edges', 'vertices'] as const).map((k) => (
@@ -665,6 +707,7 @@ function ViewOptions() {
           </label>
         ))}
       </span>
+      )}
       <button className={cut ? 'active' : ''} onClick={() => setCut(cut ? null : { axis: 0, at: ((bounds?.min[0] ?? 0) + (bounds?.max[0] ?? 0)) / 2, flip: false })}>
         {t('view.section')}
       </button>
@@ -684,7 +727,7 @@ function ViewOptions() {
             <option value={2}>{t('view.sectionZ')}</option>
           </select>
           <input type="range" aria-label={t('view.sectionAt')} min={range[0]} max={range[1]} step={span / 200} value={cut.at} onChange={(e) => setCut({ ...cut, at: Number(e.target.value) })} />
-          <span className="muted">{cut.at.toFixed(2)}</span>
+          <SectionValue value={cut.at} onCommit={(at) => setCut({ ...cut, at })} />
           <label>
             <input type="checkbox" checked={cut.flip} onChange={(e) => setCut({ ...cut, flip: e.target.checked })} /> {t('view.sectionFlip')}
           </label>

@@ -121,6 +121,7 @@ export const output: Translation = {
   'view.sectionY': 'Normal to Y',
   'view.sectionZ': 'Normal to Z',
   'view.sectionAt': 'Position of the section',
+  'view.sectionValueTip': 'Type the position of the section (mm); Enter applies it, Esc cancels',
   'view.sectionFlip': 'Flip',
   'options.title': 'System Options',
   'options.language': 'Language',

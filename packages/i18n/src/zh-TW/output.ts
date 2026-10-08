@@ -119,6 +119,7 @@ export const output = {
   'view.sectionY': '垂直於 Y',
   'view.sectionZ': '垂直於 Z',
   'view.sectionAt': '剖面的位置',
+  'view.sectionValueTip': '直接輸入剖面的位置（mm），按 Enter 套用、Esc 取消',
   'view.sectionFlip': '反向',
   'options.title': '系統選項',
   'options.language': '介面語言',

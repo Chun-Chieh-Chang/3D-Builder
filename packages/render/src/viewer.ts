@@ -53,6 +53,9 @@ const VIEW_DIRS: Record<StandardView, [THREE.Vector3, THREE.Vector3]> = {
   iso: [new THREE.Vector3(1, 1, 1).normalize(), new THREE.Vector3(0, 1, 0)],
 };
 
+/** What fills the cut of a section. */
+const CAP_COLOR = 0xd9a45b;
+
 const COLORS = {
   body: 0xb8c4d0,
   edge: 0x1d232b,
@@ -200,6 +203,8 @@ export interface ViewerEvents {
   onContextMenu?: (clientX: number, clientY: number) => void;
   /** The right button was pressed and released while a tool owns the left one (a sketch is being edited): the sketch's own menu (快速抓取), not the picking menu. */
   onToolContextMenu?: (clientX: number, clientY: number) => void;
+  /** A right click (not a right drag, which turns a component) on the graphics area of an assembly: the component under the cursor, or null. */
+  onComponentContextMenu?: (key: string | null, clientX: number, clientY: number) => void;
   /** Edge under the cursor changed (index into the mesh's edges, or -1). */
   onEdgeHover?: (edge: number) => void;
   /** Left click on an edge (or -1 on empty space / faces). */
@@ -271,6 +276,8 @@ export class Viewer {
   private faceColors: readonly (string | null)[] = [];
   private displayMode: DisplayMode = 'shadedEdges';
   private clip: THREE.Plane[] = [];
+  /** What fills the cut of a section so that the solid does not look hollow (see updateCap), and what it was made for. */
+  private cap: { key: string; objects: THREE.Object3D[]; planes: THREE.Mesh[]; materials: THREE.Material[] } | null = null;
   /** The edges that lie behind the body, drawn dashed in 'hiddenVisible'. */
   private hiddenEdges: THREE.LineSegments | null = null;
   private readonly viewListeners = new Set<() => void>();
@@ -304,6 +311,8 @@ export class Viewer {
   private press: { key: string; point: THREE.Vector3; button: 'left' | 'right'; x: number; y: number; pointerId: number; dragging: boolean } | null = null;
   /** The click the browser sends after a left-button drag is not a click. */
   private swallowClick = false;
+  /** A right drag that turned a component ends with a contextmenu event too: it is not a request for the menu. */
+  private swallowContext = false;
   private pendingFit = false;
   private frame = 0;
   private readonly resizeObserver: ResizeObserver;
@@ -312,7 +321,7 @@ export class Viewer {
     private readonly container: HTMLElement,
     private readonly events: ViewerEvents = {},
   ) {
-    this.renderer = new THREE.WebGLRenderer({ antialias: true });
+    this.renderer = new THREE.WebGLRenderer({ antialias: true, stencil: true }); // the stencil buffer fills the cut of a section (updateCap)
     this.renderer.localClippingEnabled = true;
     this.renderer.setPixelRatio(window.devicePixelRatio);
     this.renderer.setClearColor(COLORS.background);
@@ -339,7 +348,16 @@ export class Viewer {
     dom.addEventListener('pointerleave', this.onPointerLeave);
     dom.addEventListener('pointercancel', () => this.cancelComponentDrag()); // the system took the pointer
     dom.addEventListener('click', this.onClick);
-    dom.addEventListener('contextmenu', (e) => (this.toolHandler ? this.events.onToolContextMenu?.(e.clientX, e.clientY) : this.events.onContextMenu?.(e.clientX, e.clientY)));
+    dom.addEventListener('contextmenu', (e) => {
+      if (this.swallowContext) {
+        this.swallowContext = false;
+        return;
+      }
+      if (this.toolHandler) return void this.events.onToolContextMenu?.(e.clientX, e.clientY);
+      // components, not the faces of one, while no mate is being defined
+      if (this.pickInstances && !this.pickElements && this.events.onComponentContextMenu) return void this.events.onComponentContextMenu(this.pickInstance(e.clientX, e.clientY), e.clientX, e.clientY);
+      this.events.onContextMenu?.(e.clientX, e.clientY);
+    });
     dom.addEventListener('dblclick', this.onDoubleClick);
     this.resizeObserver = new ResizeObserver(() => this.resize());
     this.resizeObserver.observe(container);
@@ -361,6 +379,7 @@ export class Viewer {
     this.setGhost(null);
     this.setHighlights([]);
     this.setParts(new Map());
+    this.setSection(null);
     this.instanceEdges.dispose();
     this.renderer.dispose();
     this.renderer.domElement.remove();
@@ -470,11 +489,30 @@ export class Viewer {
         material.depthWrite = !i.transparent;
         material.needsUpdate = true;
       }
+      this.styleInstance(inst);
       setMatrix(inst.group, i.matrix);
     }
     if (this.hoveredInstance !== null && ![...this.instances.values()].some((i) => i.owner === this.hoveredInstance)) this.setHoveredInstance(null);
+    this.updateCap();
     this.paintInstances();
     if (this.planes.length > 0) this.paintPlanes(); // sized to the content
+  }
+
+  /** An instance as the display mode and the section say (A4.3, D4.4), the way applyDisplay does for a part's body. */
+  private styleInstance(inst: Instance): void {
+    const mode = this.displayMode;
+    const m = inst.body.material as THREE.MeshStandardMaterial;
+    const cutBefore = m.clippingPlanes?.length ?? 0;
+    m.colorWrite = !(mode === 'wireframe' || mode === 'hiddenVisible');
+    m.depthWrite = !m.transparent && mode !== 'wireframe';
+    m.emissive.set(mode === 'hiddenRemoved' ? 0xffffff : 0x000000);
+    m.emissiveIntensity = mode === 'hiddenRemoved' ? 0.85 : 1;
+    m.clippingPlanes = this.clip;
+    // both sides: looking into the cut shows the walls from within
+    if (m.side !== THREE.DoubleSide || cutBefore !== this.clip.length) {
+      m.side = THREE.DoubleSide;
+      m.needsUpdate = true;
+    }
   }
 
   private makeInstance(part: string, ghost: boolean): Instance | null {
@@ -574,7 +612,7 @@ export class Viewer {
     const ray = this.rayAt(clientX, clientY);
     const caster = new THREE.Raycaster(ray.origin, ray.direction);
     const bodies = [...this.instances.values()].map((i) => i.body);
-    const bodyHit = caster.intersectObjects(bodies)[0];
+    const bodyHit = caster.intersectObjects(bodies).find((h) => this.kept(h.point));
     const depth = bodyHit?.distance ?? Infinity;
     const scale = (this.camera.right - this.camera.left) / this.camera.zoom;
     const slack = 1e-3 * scale;
@@ -600,14 +638,14 @@ export class Viewer {
       const toVertex = best.p.clone().sub(ray.origin);
       const along = toVertex.dot(ray.direction);
       const r = new THREE.Raycaster(best.p.clone().addScaledVector(ray.direction, -along), ray.direction);
-      const hit = r.intersectObjects(bodies)[0]?.distance ?? Infinity;
-      if (hit >= along - slack) return best.el;
+      const hit = r.intersectObjects(bodies).find((h) => this.kept(h.point))?.distance ?? Infinity;
+      if (hit >= along - slack && this.kept(best.p)) return best.el;
     }
 
     // Edges within 6 px, in front of the bodies.
     caster.params.Line = { threshold: (6 * scale) / rect.width };
     const edges = [...this.instances.values()].flatMap((i) => (i.edges ? [i.edges] : []));
-    const edgeHit = caster.intersectObjects(edges).find((x) => x.distance <= depth + slack);
+    const edgeHit = caster.intersectObjects(edges).find((x) => x.distance <= depth + slack && this.kept(x.point));
     if (edgeHit && edgeHit.index !== undefined) {
       const found = owner(edgeHit.object);
       const geo = found && this.partGeometry.get(found[1].part);
@@ -641,6 +679,7 @@ export class Viewer {
     this.press = null;
     if (p?.dragging) {
       this.swallowClick = p.button === 'left';
+      this.swallowContext = p.button === 'right';
       this.events.onComponentDragEnd?.(true);
     }
   }
@@ -649,7 +688,7 @@ export class Viewer {
   private hitInstance(clientX: number, clientY: number): { key: string; point: THREE.Vector3 } | null {
     if (this.instances.size === 0) return null;
     const r = this.rayAt(clientX, clientY);
-    const hit = new THREE.Raycaster(r.origin, r.direction).intersectObjects([...this.instances.values()].map((i) => i.body))[0];
+    const hit = new THREE.Raycaster(r.origin, r.direction).intersectObjects([...this.instances.values()].map((i) => i.body)).find((h) => this.kept(h.point));
     if (!hit) return null;
     for (const inst of this.instances.values()) if (inst.body === hit.object) return { key: inst.owner, point: hit.point.clone() };
     return null;
@@ -714,7 +753,7 @@ export class Viewer {
   private pickInstance(clientX: number, clientY: number): string | null {
     if (this.instances.size === 0) return null;
     const r = this.rayAt(clientX, clientY);
-    const hit = new THREE.Raycaster(r.origin, r.direction).intersectObjects([...this.instances.values()].map((i) => i.body))[0];
+    const hit = new THREE.Raycaster(r.origin, r.direction).intersectObjects([...this.instances.values()].map((i) => i.body)).find((h) => this.kept(h.point));
     if (!hit) return null;
     for (const inst of this.instances.values()) if (inst.body === hit.object) return inst.owner;
     return null;
@@ -1399,6 +1438,7 @@ export class Viewer {
 
   private onPointerDown = (e: PointerEvent) => {
     this.swallowClick = false; // a new press: whatever the last drag left no longer applies
+    this.swallowContext = false;
     if (this.dragInstances && !this.toolHandler && (e.button === 0 || e.button === 2) && !e.altKey && !e.ctrlKey && !e.shiftKey) {
       const hit = this.hitInstance(e.clientX, e.clientY);
       this.press = hit && { ...hit, button: e.button === 0 ? 'left' : 'right', x: e.clientX, y: e.clientY, pointerId: e.pointerId, dragging: false };
@@ -1441,6 +1481,7 @@ export class Viewer {
       this.press = null;
       if (p.dragging) {
         this.swallowClick = p.button === 'left';
+        this.swallowContext = p.button === 'right';
         this.events.onComponentDragEnd?.(false);
         return;
       }
@@ -1529,6 +1570,11 @@ export class Viewer {
       m.clippingPlanes = this.clip;
       m.needsUpdate = true;
     }
+    for (const inst of this.instances.values()) this.styleInstance(inst);
+    // with no edges drawn ('shaded') the components' edges are the colour of the body
+    this.instanceEdges.color.setHex(mode === 'shaded' ? COLORS.body : COLORS.edge);
+    if ((this.instanceEdges.clippingPlanes?.length ?? 0) !== this.clip.length) this.instanceEdges.needsUpdate = true;
+    this.instanceEdges.clippingPlanes = this.clip;
     if (mode === 'hiddenVisible' && this.edges && !this.hiddenEdges) {
       const g = this.edges.geometry.clone();
       const line = new THREE.LineSegments(g, new THREE.LineDashedMaterial({ color: 0x8b98a8, dashSize: 1, gapSize: 1, depthFunc: THREE.GreaterDepth, depthWrite: false }));
@@ -1546,7 +1592,69 @@ export class Viewer {
       m.clippingPlanes = this.clip;
       m.needsUpdate = true;
     }
+    this.updateCap();
     this.requestRender();
+  }
+
+  /**
+   * The cut of a section is filled (D4.4): without it a solid cut open looks like an empty shell, its inside walls showing. By the stencil method: for each solid the
+   * clipped back faces count up and the clipped front faces count down, so the stencil is non-zero exactly where the cut plane is inside the solid; a plane there, drawn
+   * after those two, is the cap. One group per solid (a body, or a component), cleared in between, so solids that overlap do not cancel each other out.
+   */
+  private updateCap(): void {
+    const plane = this.clip[0];
+    const mode = this.displayMode;
+    const solids: { mesh: THREE.Mesh; parent: THREE.Object3D; id: string }[] = [];
+    if (plane && mode !== 'wireframe' && mode !== 'hiddenVisible') {
+      if (this.body) solids.push({ mesh: this.body, parent: this.scene, id: this.body.uuid });
+      for (const inst of this.instances.values()) if (!(inst.body.material as THREE.Material).transparent) solids.push({ mesh: inst.body, parent: inst.group, id: inst.body.uuid });
+    }
+    const key = solids.map((x) => x.id).join(',');
+    if (this.cap && (!plane || this.cap.key !== key)) {
+      for (const o of this.cap.objects) o.removeFromParent();
+      for (const m of this.cap.materials) m.dispose();
+      for (const o of this.cap.planes) o.geometry.dispose();
+      this.cap = null;
+    }
+    if (!plane || solids.length === 0) return;
+    if (!this.cap) {
+      const wrap = (op: THREE.StencilOp) => ({ stencilFail: op, stencilZFail: op, stencilZPass: op });
+      const through = { depthWrite: false, depthTest: false, colorWrite: false, stencilWrite: true, stencilFunc: THREE.AlwaysStencilFunc, clippingPlanes: this.clip };
+      const back = new THREE.MeshBasicMaterial({ ...through, side: THREE.BackSide, ...wrap(THREE.IncrementWrapStencilOp) });
+      const front = new THREE.MeshBasicMaterial({ ...through, side: THREE.FrontSide, ...wrap(THREE.DecrementWrapStencilOp) });
+      const fill = new THREE.MeshStandardMaterial({ color: CAP_COLOR, metalness: 0.05, roughness: 0.85, side: THREE.DoubleSide, stencilWrite: true, stencilRef: 0, stencilFunc: THREE.NotEqualStencilFunc, ...wrap(THREE.ReplaceStencilOp) });
+      const objects: THREE.Object3D[] = [];
+      const planes: THREE.Mesh[] = [];
+      solids.forEach(({ mesh, parent }, i) => {
+        for (const [material, order] of [[back, 2 * i + 1], [front, 2 * i + 1]] as const) {
+          const m = new THREE.Mesh(mesh.geometry, material);
+          m.renderOrder = order;
+          m.raycast = () => {}; // never picked
+          parent.add(m);
+          objects.push(m);
+        }
+        const cap = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), fill);
+        cap.renderOrder = 2 * i + 2;
+        cap.raycast = () => {};
+        cap.onAfterRender = (r) => r.clearStencil(); // the next solid starts from zero
+        this.scene.add(cap);
+        objects.push(cap);
+        planes.push(cap);
+      });
+      this.cap = { key, objects, planes, materials: [back, front, fill] };
+    }
+    // where the cut is now: the cap follows the slider without being made again. setSection makes a new plane each time, so the stencil passes
+    // have to be given it too (they would count for the place the cut was made at)
+    for (const m of this.cap.materials) if (m instanceof THREE.MeshBasicMaterial) m.clippingPlanes = this.clip;
+    const box = this.contentBox();
+    const size = box.isEmpty() ? 1000 : box.getSize(new THREE.Vector3()).length() * 2;
+    const at = plane.coplanarPoint(new THREE.Vector3());
+    const turn = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 0, 1), plane.normal);
+    for (const c of this.cap.planes) {
+      c.position.copy(at);
+      c.quaternion.copy(turn);
+      c.scale.set(size, size, 1);
+    }
   }
 
   /**

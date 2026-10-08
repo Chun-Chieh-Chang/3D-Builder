@@ -34,4 +34,7 @@ export const storemsg: Translation = {
   'folder.notAllowed': 'The browser did not allow reading "{name}"',
   'folder.useFailed': 'This folder cannot be used: {why}',
   'folder.chooseFailed': 'The folder could not be chosen: {why}',
+  'folder.askChange': 'Choose the project folder of this assembly: its parts are read from there, and the assembly has to be saved inside it.',
+  'folder.change': 'Change Folder…',
+  'folder.changeHint': 'Once the first component is placed, the project folder cannot be changed any more.',
 };

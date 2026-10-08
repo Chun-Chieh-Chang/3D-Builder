@@ -40,6 +40,30 @@ export function mateProblem(asm: AssemblyState, m: Mate): string | undefined {
   return r.message;
 }
 
+/** A component's context menu (the tree's row, or the component in the graphics area): what to do with it, as SolidWorks offers it. */
+export function ComponentMenu({ x, y, component, onClose }: { x: number; y: number; component: Component; onClose: () => void }) {
+  const a = store.assembly;
+  if (!a) return null;
+  const act = (fn: () => void) => () => {
+    onClose();
+    fn();
+  };
+  return (
+    <ul className="context-menu" style={{ left: x, top: y }} onPointerDown={(e) => e.stopPropagation()} data-component-menu={component.id}>
+      <li onClick={act(() => store.openComponentPart(component.id))}>{a.isSubAssembly(component.id) ? t('subassembly.open') : '開啟零件'}</li>
+      <li onClick={act(() => void a.browseRelink(component.file))}>重新指定零件檔…</li>
+      <li className="separator" />
+      {component.fixed ? <li onClick={act(() => a.setFixed([component.id], false))}>浮動</li> : <li onClick={act(() => a.setFixed([component.id], true))}>固定</li>}
+      <li className="separator" />
+      <li onClick={act(() => a.setComponentState([component.id], 'hidden', !component.hidden))}>{component.hidden ? t('subassembly.show') : t('subassembly.hide')}</li>
+      <li onClick={act(() => a.setComponentState([component.id], 'transparent', !component.transparent))}>{component.transparent ? t('subassembly.opaque') : t('subassembly.transparent')}</li>
+      <li onClick={act(() => a.setComponentState([component.id], 'suppressed', !component.suppressed))}>{component.suppressed ? t('tree.unsuppress') : t('tree.suppress')}</li>
+      <li className="separator" />
+      <li onClick={act(() => a.requestDelete([component.id]))}>刪除…</li>
+    </ul>
+  );
+}
+
 /**
  * FeatureManager of an assembly (D1.1, C15.2, C15.12): default planes and origin, the components in
  * insertion order with their state from the solved mates, then the mates folder: each mate by name
@@ -130,6 +154,21 @@ export function AssemblyTree() {
                 </span>
                 {info.error && <Icon name="error" className="status-error" />}
                 {!info.error && info.warnings.length > 0 && <Icon name="warning" className="status-warning" />}
+                {!c.suppressed && (
+                  <button
+                    className={c.hidden ? 'vis-toggle' : 'vis-toggle shown'}
+                    data-eye={c.id}
+                    title={c.hidden ? t('tree.show') : t('tree.hide')}
+                    aria-label={c.hidden ? t('tree.show') : t('tree.hide')}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      a?.setComponentState([c.id], 'hidden', !c.hidden);
+                    }}
+                    onDoubleClick={(e) => e.stopPropagation()}
+                  >
+                    <Icon name={c.hidden ? 'eyeOff' : 'eye'} />
+                  </button>
+                )}
               </li>
               {sub &&
                 opened.has(c.id) &&
@@ -225,25 +264,13 @@ export function AssemblyTree() {
           })}
       </ol>
 
-      {menu && a && (
+      {menu && a && 'component' in menu && <ComponentMenu x={menu.x} y={menu.y} component={menu.component} onClose={() => setMenu(null)} />}
+      {menu && a && !('component' in menu) && (
         <ul className="context-menu" style={{ left: menu.x, top: menu.y }} onPointerDown={(e) => e.stopPropagation()}>
           {'pattern' in menu ? (
             <>
               <li onClick={act(() => a.editPattern(menu.pattern.id))}>{t('pattern.edit')}</li>
               <li onClick={act(() => a.deletePatterns([menu.pattern.id]))}>{t('pattern.delete')}</li>
-            </>
-          ) : 'component' in menu ? (
-            <>
-              <li onClick={act(() => store.openComponentPart(menu.component.id))}>{a.isSubAssembly(menu.component.id) ? t('subassembly.open') : '開啟零件'}</li>
-              <li onClick={act(() => void a.browseRelink(menu.component.file))}>重新指定零件檔…</li>
-              <li className="separator" />
-              {menu.component.fixed ? <li onClick={act(() => a.setFixed([menu.component.id], false))}>浮動</li> : <li onClick={act(() => a.setFixed([menu.component.id], true))}>固定</li>}
-              <li className="separator" />
-              <li onClick={act(() => a.setComponentState([menu.component.id], 'hidden', !menu.component.hidden))}>{menu.component.hidden ? t('subassembly.show') : t('subassembly.hide')}</li>
-              <li onClick={act(() => a.setComponentState([menu.component.id], 'transparent', !menu.component.transparent))}>{menu.component.transparent ? t('subassembly.opaque') : t('subassembly.transparent')}</li>
-              <li onClick={act(() => a.setComponentState([menu.component.id], 'suppressed', !menu.component.suppressed))}>{menu.component.suppressed ? t('tree.unsuppress') : t('tree.suppress')}</li>
-              <li className="separator" />
-              <li onClick={act(() => a.requestDelete([menu.component.id]))}>刪除…</li>
             </>
           ) : (
             <>
