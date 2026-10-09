@@ -12,7 +12,7 @@ import type { Ref } from './schema';
  * opened (exact hidden-line removal), so a drawing can never disagree with the model it shows.
  */
 
-export const DRAWING_SCHEMA_VERSION = 8;
+export const DRAWING_SCHEMA_VERSION = 9;
 
 export type SheetSize = 'A4' | 'A3' | 'A2' | 'A1' | 'A0';
 export const SHEET_SIZES: readonly SheetSize[] = ['A4', 'A3', 'A2', 'A1', 'A0'];
@@ -253,6 +253,8 @@ export interface BomTable {
   view: Id;
   at?: [number, number];
   balloons?: boolean;
+  /** Where the user put the circle of a balloon, by item number: its centre on the sheet (mm). A balloon that is not here is placed by the program. */
+  balloonAt?: Record<string, [number, number]>;
 }
 
 export type DrawingTable = HoleTable | BomTable;
@@ -304,7 +306,7 @@ export type DrawingCommand =
   /** Adds tables (C16.6), each with its own new id, on views that are there. */
   | { type: 'insertTables'; tables: DrawingTable[] }
   /** Changes a table: `at: null` puts it back in the corner; `fits` replaces the classes (an empty one takes them all away). */
-  | { type: 'setTable'; tableId: Id; patch: { at?: [number, number] | null; fits?: Record<string, string>; balloons?: boolean | null } }
+  | { type: 'setTable'; tableId: Id; patch: { at?: [number, number] | null; fits?: Record<string, string>; balloons?: boolean | null; balloonAt?: Record<string, [number, number]> | null } }
   | { type: 'deleteTables'; tableIds: Id[] };
 
 export type DimensionPatch = {
@@ -433,6 +435,8 @@ function checkTable(x: DrawingTable, views: readonly DrawingView[]): void {
   if (x.at && !(x.at.length === 2 && x.at.every(Number.isFinite))) throw new CommandError(t('drawing.badPosition'));
   if (x.kind === 'bom' && (x as { fits?: unknown }).fits) throw new CommandError(t('drawing.notForKind', { field: 'fits', kind: x.kind }));
   if (x.kind === 'holes' && (x as { balloons?: unknown }).balloons !== undefined) throw new CommandError(t('drawing.notForKind', { field: 'balloons', kind: x.kind }));
+  if (x.kind === 'holes' && (x as { balloonAt?: unknown }).balloonAt !== undefined) throw new CommandError(t('drawing.notForKind', { field: 'balloonAt', kind: x.kind }));
+  if (x.kind === 'bom') for (const c of Object.values(x.balloonAt ?? {})) if (!(Array.isArray(c) && c.length === 2 && c.every(Number.isFinite))) throw new CommandError(t('drawing.badPosition'));
   if (x.kind === 'holes') for (const [diameter, fit] of Object.entries(x.fits ?? {})) if (diameter.trim() === '' || !parseFit(fit)) throw new CommandError(t('drawing.dimBadFit', { fit: String(fit) }));
 }
 
@@ -573,7 +577,7 @@ export function mutateDrawing(draft: Draft<DrawingDoc>, cmd: DrawingCommand): vo
       const x = draft.tables.find((y) => y.id === cmd.tableId);
       if (!x) throw new CommandError(t('drawing.noTable', { id: cmd.tableId }));
       const next = JSON.parse(JSON.stringify(x)) as DrawingTable;
-      const { at, fits, balloons } = cmd.patch;
+      const { at, fits, balloons, balloonAt } = cmd.patch;
       if (at === null) delete next.at;
       else if (at !== undefined) next.at = at;
       if (fits !== undefined) {
@@ -585,6 +589,11 @@ export function mutateDrawing(draft: Draft<DrawingDoc>, cmd: DrawingCommand): vo
         if (next.kind !== 'bom') throw new CommandError(t('drawing.notForKind', { field: 'balloons', kind: next.kind }));
         if (balloons === null || balloons === false) delete next.balloons;
         else next.balloons = true;
+      }
+      if (balloonAt !== undefined) {
+        if (next.kind !== 'bom') throw new CommandError(t('drawing.notForKind', { field: 'balloonAt', kind: next.kind }));
+        if (balloonAt === null || Object.keys(balloonAt).length === 0) delete next.balloonAt;
+        else next.balloonAt = balloonAt;
       }
       checkTable(next, draft.views as DrawingView[]);
       for (const k of Object.keys(x)) delete (x as unknown as Record<string, unknown>)[k];

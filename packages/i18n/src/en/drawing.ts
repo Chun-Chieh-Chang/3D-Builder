@@ -212,6 +212,7 @@ export const drawing: Translation = {
   'drawing.dimAssembly': 'The views of an assembly cannot be dimensioned yet (a dimension points at the faces and circles of one part)',
   'drawingUi.addBomTable': 'Add parts list (with balloons)',
   'drawingUi.balloons': 'Balloons',
+  'drawingUi.balloonsAuto': 'Arrange balloons automatically',
   'drawingUi.bomAutoPosition': 'Back to the lower right corner',
   'pdf.replaced': 'The standard PDF font cannot write {n} characters ({chars}); they are written as ?. Give a font file (such as Microsoft JhengHei) to embed',
   'pdf.replacedWithFont': 'The font given does not have {n} characters ({chars}); they are written as ?',

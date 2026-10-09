@@ -260,7 +260,7 @@ export function parseAssembly(text: string): AssemblyDoc {
   return raw as unknown as AssemblyDoc;
 }
 
-/** Forward migrations of drawings (B9.2): drawingMigrations[n] upgrades version n to n+1. 1 → 2 added the projected, section and detail kinds of view (a version-1 view is a model view as it is); 2 → 3 added the dimensions; 3 → 4 the tables; 4 → 5 the angle dimension; 5 → 6 the flat pattern; 6 → 7 the shift and the slide of views; 7 → 8 the text and the place of a dimension. */
+/** Forward migrations of drawings (B9.2): drawingMigrations[n] upgrades version n to n+1. 1 → 2 added the projected, section and detail kinds of view (a version-1 view is a model view as it is); 2 → 3 added the dimensions; 3 → 4 the tables; 4 → 5 the angle dimension; 5 → 6 the flat pattern; 6 → 7 the shift and the slide of views; 7 → 8 the text and the place of a dimension; 8 → 9 the places the user gave the balloons. */
 const drawingMigrations: Record<number, (doc: Json) => Json> = {
   // v2: projected, section and detail views (C16.3), each with its own fields; a version-1 drawing has only the views of a model. Nothing to convert.
   1: (doc) => doc,
@@ -277,6 +277,8 @@ const drawingMigrations: Record<number, (doc: Json) => Json> = {
   6: (doc) => doc,
   // v8: how a dimension's text is written (`precision`, `prefix`, `suffix`, `text`) and where it is drawn (`slide`, `leader`): all optional, nothing to convert.
   7: (doc) => doc,
+  // v9: where the user put the circles of the balloons of a parts list (`balloonAt`): optional, nothing to convert.
+  8: (doc) => doc,
 };
 
 export function parseDrawing(text: string): DrawingDoc {

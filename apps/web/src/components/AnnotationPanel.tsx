@@ -68,6 +68,9 @@ export function AnnotationPanel() {
               <label className="pm-row checkbox">
                 <input type="checkbox" data-field="balloons" checked={!!table.balloons} onChange={(e) => d.setTable(table.id, { balloons: e.target.checked })} />
                 <span>{t('drawingUi.balloons')}</span>
+                <button className="pm-button" data-action="balloonsAuto" disabled={!table.balloonAt} onClick={(e) => { e.preventDefault(); d.setTable(table.id, { balloonAt: null }); }}>
+                  {t('drawingUi.balloonsAuto')}
+                </button>
               </label>
             </div>
           ))}

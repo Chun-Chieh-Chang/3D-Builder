@@ -127,6 +127,20 @@ export function defaultTableAt(area: Rect, width: number): [number, number] {
 }
 
 /** The hole table as lines and text, and the tags written beside the holes in the view. */
+function holeTableLayout(rows: readonly HoleRow[], unit: LengthUnit) {
+  const headers = [t('drawing.table.tag'), 'X', 'Y', t('drawing.table.size')];
+  const body = rows.map((r) => [r.tag, lengthNumber(r.x, 2, unit), lengthNumber(r.y, 2, unit), r.size]);
+  const widths = headers.map((h, c) => Math.max(c === 0 ? 12 : 18, ...[h, ...body.map((row) => row[c]!)].map((s) => charWidth(s) + 4)));
+  return { headers, body, widths, width: widths.reduce((a, b) => a + b, 0), height: ROW * (body.length + 1) };
+}
+
+/** Where the hole table is on the sheet: its lower left corner and its size (mm). */
+export function holeTableBox(table: HoleTable, rows: readonly HoleRow[], sheet: Parameters<typeof sheetMetrics>[0], unit: LengthUnit = 'mm'): Rect {
+  const { width, height } = holeTableLayout(rows, unit);
+  const [x0, top] = table.at ?? defaultTableAt(sheetMetrics(sheet).area, width);
+  return { x: x0, y: top - height, w: width, h: height };
+}
+
 export function holeTableItems(table: HoleTable, rows: readonly HoleRow[], placed: PlacedView, sheet: Parameters<typeof sheetMetrics>[0], unit: LengthUnit = 'mm'): SceneItem[] {
   const items: SceneItem[] = [];
   // the tags beside the holes: up and to the right of the circle
@@ -135,11 +149,7 @@ export function holeTableItems(table: HoleTable, rows: readonly HoleRow[], place
     const d = r.radius * placed.scale * Math.SQRT1_2 + 1;
     items.push({ kind: 'text', at: [sx + d, sy + d], text: r.tag, height: TEXT });
   }
-  const headers = [t('drawing.table.tag'), 'X', 'Y', t('drawing.table.size')];
-  const body = rows.map((r) => [r.tag, lengthNumber(r.x, 2, unit), lengthNumber(r.y, 2, unit), r.size]);
-  const widths = headers.map((h, c) => Math.max(c === 0 ? 12 : 18, ...[h, ...body.map((row) => row[c]!)].map((s) => charWidth(s) + 4)));
-  const width = widths.reduce((a, b) => a + b, 0);
-  const height = ROW * (body.length + 1);
+  const { headers, body, widths, width, height } = holeTableLayout(rows, unit);
   const [x0, top] = table.at ?? defaultTableAt(sheetMetrics(sheet).area, width);
   const y0 = top - height;
   const poly = (pts: number[], style: 'visible' | 'thin', closed = false): SceneItem => ({ kind: 'polyline', points: pts, style, ...(closed ? { closed: true } : {}) });

@@ -144,6 +144,7 @@
 | [ADR 0079](docs/adr/0079-lip-groove.md) | 唇與溝槽（6-5，零件 **Schema 33**）：`lipGroove`（平面、種類、離邊緣、寬度、高度）；核心的 `ringTool`（外輪廓向內偏移兩次的環，沿法向長出或切入，環要整個在面上否則拒絕）；面以輪廓的邊命名（外側 `side:ring.<邊>`、內側加 `~`）；環 192 mm²、唇 230.4、圓角矩形 185.13；限制：環只跟外輪廓、沒有自動的蓋子配合、`Intersection` 接合 |
 | [ADR 0095](docs/adr/0095-closed-corner.md) | 封閉角落（H-6，C11.4，零件 **Schema 42**）：邊線凸緣的 `corner: {start?, end?}`（與鄰接凸緣的間隙）：折彎不變（仍由縮短躲開），折彎之後的平直段繼續長到離鄰接凸緣的內側剩這個間隙；找面向這一端並蓋住平直段中間的凸緣；平板型式的折彎窄、平直段寬；只做垂直於邊的鄰接凸緣，斜接／重疊／斷開角落沒做 |
 | [ADR 0118](docs/adr/0118-dev-auto-close.md) | `npm run dev:auto`：最後一個連著的瀏覽器分頁關掉 30 秒後，開發伺服器自己結束（Schema 不變；`apps/web/dev/autoClose.ts`，`--mode autoclose`）；`npm run dev` 不變 |
+| [ADR 0119](docs/adr/0119-movable-balloons-and-tables.md) | 號球與表格可以用滑鼠拖（工程圖 Schema 9：`balloonAt`；`buildScene` 回傳 `tableBoxes` 與 `balloons`；面板「號球自動排列」） |
 | [ADR 0117](docs/adr/0117-select-edges-idle.md) | 沒有在編輯時也能選邊線與頂點（Schema 不變）：`UiState.selectedElements`，Ctrl 加選；選擇濾器三個勾選平常也生效；圓角、導角、邊線凸緣、摺邊與三個曲面邊線指令開始時帶入已選的邊（預先選取） |
 | [ADR 0116](docs/adr/0116-sketch-picture.md) | 草圖圖片（零件 **Schema 49**）：草圖上放 PNG／JPEG 當描圖底圖（`pictures`，資料是 `blobs/<sha>.png`／`.jpg`），不參加輪廓與關係，只在編輯那張草圖時顯示；以兩點校正比例；三個指令都能復原；eDrawings 存圖 → 描圖是沒有 SW 時的重建做法 |
 | [ADR 0115](docs/adr/0115-flat-in-3d-view.md) | 在 3D 視窗顯示展開的狀態（Schema 不變）：平板型式視窗的勾選，worker 一起傳平板型式的網格，3D 視窗換成它，顯示時不能點選；沒有動畫 |
@@ -496,7 +497,7 @@ npm run build -w @3db/desktop   # 桌面版安裝檔（要 Rust 與 MSVC，見 a
 - A. **用真實的程式開輸出**：用 Chrome 開一張夾具圖的 PDF、用你的 CAD（AutoCAD、DraftSight…）開同一張的 DXF：看線寬、虛線、箭頭、中文、尺寸文字的位置。PDF 要中文請先在工程圖面板的「PDF 字型…」選一個字型檔（例如 `C:\Windows\Fonts\msjh.ttc`）。這是 Phase 5 驗收②的 B 段。
 - B. 真人走一遍：開零件或組合件 →「新工程圖」→ 自動尺寸、孔表、剖面、零件表與號球 → 輸出，回報不順的地方（尺寸堆疊太擠、號球位置、孔表欄寬）。
 - C. 對照你的標準：公差表（ISO 286，`packages/model/src/tolerance.ts`，表值是手打的）、孔標註的用語（貫穿、深、沉頭）、標題圖塊的欄位與位置。
-- D. 還沒做：號球與表格的拖曳。（螺紋孔與錐孔的孔標註 2026-10-07 已做，ADR 0101；角度尺寸 ADR 0100；DXF 的 DIMENSION 圖元 ADR 0102，沒有真正的 CAD 開過。）
+- D. 號球與表格的拖曳（2026-10-09，ADR 0119，工程圖 Schema 9）已做。（螺紋孔與錐孔的孔標註 2026-10-07 已做，ADR 0101；角度尺寸 ADR 0100；DXF 的 DIMENSION 圖元 ADR 0102，沒有真正的 CAD 開過。）
 
 **Phase 4a 的待辦（2026-10-03，使用者決定先走完開發、對接時再修正；ADR 0059 的最後一節有完整版）**
 

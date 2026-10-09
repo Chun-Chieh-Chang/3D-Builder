@@ -210,6 +210,7 @@ export const drawing = {
   'drawing.dimAssembly': '組合件的視圖還不能標註尺寸（尺寸指到單一零件的面與圓）',
   'drawingUi.addBomTable': '加入零件表（含零件號球）',
   'drawingUi.balloons': '零件號球',
+  'drawingUi.balloonsAuto': '號球自動排列',
   'drawingUi.bomAutoPosition': '放回右下角',
   'pdf.replaced': 'PDF 的標準字型寫不出這 {n} 個字元（{chars}），已用 ? 代替；指定一個字型檔（例如微軟正黑體）就能內嵌',
   'pdf.replacedWithFont': '指定的字型沒有這 {n} 個字元（{chars}），已用 ? 代替',

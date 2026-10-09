@@ -1,7 +1,7 @@
 import { t } from '@3db/i18n';
 import { axesOf, sectionArrow, type DetailDrawingView, type DrawingDoc, type DrawingView, type Id, type Scale, type SectionDrawingView, type TitleField, type ViewFeature, type ViewSide } from '@3db/model';
-import { centreItems, holeRows, holeTableItems, type HoleRow } from './annotation';
-import { balloonItems, bomTableItems, type ViewBom } from './bomTable';
+import { centreItems, holeRows, holeTableBox, holeTableItems, type HoleRow } from './annotation';
+import { balloonSpots, bomTableBox, bomTableItems, spotItems, type BalloonSpot, type ViewBom } from './bomTable';
 import { evaluateDimension, type DimensionOutcome, type ElementsResult } from './dimension';
 import { circlePolyline, hatch } from './geometry';
 import { layoutViews, resolveLines, scaleOf, toSheet, type PlacedView, type ViewLines } from './layout';
@@ -183,7 +183,7 @@ export function buildScene(
   elements: ReadonlyMap<Id, ElementsResult> = new Map(),
   features: ReadonlyMap<Id, readonly ViewFeature[]> = new Map(),
   boms: ReadonlyMap<Id, ViewBom> = new Map(),
-): { scene: Scene; placed: Map<Id, PlacedView>; dimensions: Map<Id, DimensionOutcome>; tables: Map<Id, HoleRow[]> } {
+): { scene: Scene; placed: Map<Id, PlacedView>; dimensions: Map<Id, DimensionOutcome>; tables: Map<Id, HoleRow[]>; tableBoxes: Map<Id, Rect>; balloons: Map<Id, BalloonSpot[]> } {
   const m = sheetMetrics(doc.sheet);
   const placed = layoutViews(doc, lines);
   const resolved = resolveLines(doc, lines);
@@ -212,6 +212,8 @@ export function buildScene(
     }
   }
   const tables = new Map<Id, HoleRow[]>();
+  const tableBoxes = new Map<Id, Rect>();
+  const balloons = new Map<Id, BalloonSpot[]>();
   for (const table of doc.tables ?? []) {
     const own = resolved.get(table.view) ? placed.get(table.view) : undefined;
     if (!own) continue;
@@ -219,14 +221,20 @@ export function buildScene(
       const bom = boms.get(table.view);
       if (!bom) continue;
       items.push(...bomTableItems(table, bom.rows, doc.sheet));
-      if (table.balloons) items.push(...balloonItems(bom, resolved.get(table.view)?.anchors, own));
+      tableBoxes.set(table.id, bomTableBox(table, bom.rows, doc.sheet));
+      if (table.balloons) {
+        const spots = balloonSpots(bom, resolved.get(table.view)?.anchors, own, table.balloonAt);
+        balloons.set(table.id, spots);
+        items.push(...spotItems(spots));
+      }
       continue;
     }
     const rows = holeRows(features.get(table.view) ?? [], table.fits, doc.sheet.unit ?? 'mm');
     tables.set(table.id, rows);
     items.push(...holeTableItems(table, rows, own, doc.sheet, doc.sheet.unit ?? 'mm'));
+    tableBoxes.set(table.id, holeTableBox(table, rows, doc.sheet, doc.sheet.unit ?? 'mm'));
   }
-  return { scene: { width: m.width, height: m.height, items, ...(sceneDimensions.length > 0 ? { dimensions: sceneDimensions } : {}) }, placed, dimensions, tables };
+  return { scene: { width: m.width, height: m.height, items, ...(sceneDimensions.length > 0 ? { dimensions: sceneDimensions } : {}) }, placed, dimensions, tables, tableBoxes, balloons };
 }
 
 export type { TitleField };

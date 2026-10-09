@@ -68,22 +68,38 @@ export const BALLOON_RADIUS = 4;
 const BALLOON_MARGIN = 12;
 const BALLOON_APART = 2 * BALLOON_RADIUS + 1;
 
+/** Where the table is on the sheet: its lower left corner and its size (mm). */
+export function bomTableBox(table: BomTable, rows: readonly BomRow[], sheet: Parameters<typeof sheetMetrics>[0]): Rect {
+  const size = bomTableSize(rows);
+  const [x0, top] = table.at ?? defaultBomAt(sheetMetrics(sheet).area, size);
+  return { x: x0, y: top - size.height, w: size.width, h: size.height };
+}
+
+/** A balloon: its item, the dot on the part, and the centre of its circle (all on the sheet, mm). */
+export interface BalloonSpot {
+  item: string;
+  anchor: [number, number];
+  centre: [number, number];
+}
+
 /**
- * The balloons of a view of an assembly: for each item of the parts list that has a part in the view, a circle with the item number outside the view's box,
- * and a leader from it to a dot on the part (where its mass is). The circle is on the line from the middle of the view through the dot, and slid along the box
- * when another is in the way.
+ * Where the balloons of a view of an assembly are: for each item of the parts list that has a part in the view, a circle with the item number outside the view box,
+ * on the line from the middle of the view through the dot (where the mass of the part is), slid along the box when another is in the way. A balloon the user moved
+ * (`moved`, by item) is where they put it, and the others keep clear of it.
  */
-export function balloonItems(bom: ViewBom, anchors: readonly [number, number][] | undefined, placed: PlacedView): SceneItem[] {
+export function balloonSpots(bom: ViewBom, anchors: readonly [number, number][] | undefined, placed: PlacedView, moved: Readonly<Record<string, [number, number]>> = {}): BalloonSpot[] {
   if (!anchors) return [];
-  const items: SceneItem[] = [];
   const halfW = placed.w / 2 + BALLOON_MARGIN;
   const halfH = placed.h / 2 + BALLOON_MARGIN;
-  const taken: [number, number][] = [];
+  const rows: { item: string; anchor: [number, number] }[] = [];
   for (const row of bom.rows) {
     const index = bom.parts.findIndex((p) => p.file === row.path && p.mirrored === row.mirrored);
     const anchor = index < 0 ? undefined : anchors[index];
-    if (!anchor) continue;
-    const a = toSheet(placed, anchor[0], anchor[1]);
+    if (anchor) rows.push({ item: row.item, anchor: toSheet(placed, anchor[0], anchor[1]) });
+  }
+  const taken: [number, number][] = rows.flatMap((r) => (moved[r.item] ? [moved[r.item]!] : []));
+  return rows.map(({ item, anchor: a }) => {
+    if (moved[item]) return { item, anchor: a, centre: moved[item]! };
     let dx = a[0] - placed.at[0];
     let dy = a[1] - placed.at[1];
     if (Math.hypot(dx, dy) < 1e-9) dy = 1;
@@ -103,6 +119,14 @@ export function balloonItems(bom: ViewBom, anchors: readonly [number, number][] 
       if (taken.every((c) => Math.hypot(c[0] - centre[0], c[1] - centre[1]) >= BALLOON_APART)) break;
     }
     taken.push(centre);
+    return { item, anchor: a, centre };
+  });
+}
+
+/** The balloons as drawn: the circle with the item number, the leader and the dot on the part. */
+export function spotItems(spots: readonly BalloonSpot[]): SceneItem[] {
+  const items: SceneItem[] = [];
+  for (const { item, anchor: a, centre } of spots) {
     const ex = centre[0] - a[0];
     const ey = centre[1] - a[1];
     const el = Math.hypot(ex, ey) || 1;
@@ -110,7 +134,12 @@ export function balloonItems(bom: ViewBom, anchors: readonly [number, number][] 
     items.push({ kind: 'polyline', points: [...a, ...edge], style: 'thin' });
     items.push({ kind: 'polyline', points: circlePolyline(a, 0.6, 12), style: 'thin', closed: true, filled: true });
     items.push({ kind: 'polyline', points: circlePolyline(centre, BALLOON_RADIUS, 36), style: 'thin', closed: true });
-    items.push({ kind: 'text', at: [centre[0], centre[1] - TEXT * 0.35], text: row.item, height: TEXT, anchor: 'center' });
+    items.push({ kind: 'text', at: [centre[0], centre[1] - TEXT * 0.35], text: item, height: TEXT, anchor: 'center' });
   }
   return items;
+}
+
+/** The balloons of a view of an assembly (where they are: `balloonSpots`), drawn. */
+export function balloonItems(bom: ViewBom, anchors: readonly [number, number][] | undefined, placed: PlacedView, moved: Readonly<Record<string, [number, number]>> = {}): SceneItem[] {
+  return spotItems(balloonSpots(bom, anchors, placed, moved));
 }

@@ -1,6 +1,7 @@
 import { t } from '@3db/i18n';
 import {
   arrangementBase,
+  BALLOON_RADIUS,
   buildScene,
   dimensionAt,
   dragDimension,
@@ -32,13 +33,15 @@ type P = [number, number];
  * the rest, along that line only, which changes the distance to the others (`slide`); or free (`free`, with Shift held, or a view that has no line), which puts the view where
  * it is let go. A scale: the handle at the corner of the chosen view, which changes the scale the view takes and so that of every view that takes it. To a dimension: its line
  * (how far it is from the view) or its text (along the line) is taken, a circle's leader (the way it points, how long it is), an angle's arc. To the line of a section: it is
- * moved across. A `draw`: the line of a section or the circle of a detail is being drawn on a view, with the tool.
+ * moved across. A `table`: a table (the parts list, the hole table) is moved by its upper left corner; a `balloon`: the circle of a balloon is moved, its leader stays on the part. A `draw`: the line of a section or the circle of a detail is being drawn on a view, with the tool.
  */
 type Drag =
   | { kind: 'move'; id: string; mode: 'shift' | 'slide' | 'free'; axis: 0 | 1 | null; from: P; origin: P; delta: P }
   | { kind: 'scale'; id: string; target: ReturnType<typeof scaleTarget>; centre: P; r0: number; ratio0: number; scale: Scale }
   | { kind: 'dimension'; id: string; onText: boolean; handle: DimensionHandle; patch: ReturnType<typeof dragDimension> }
   | { kind: 'sectionLine'; id: string; line: [P, P]; vertical: boolean; scale: number; from: P; delta: number }
+  | { kind: 'table'; id: string; from: P; origin: P; delta: P }
+  | { kind: 'balloon'; id: string; item: string; from: P; origin: P; delta: P }
   | { kind: 'draw'; tool: 'section' | 'detail'; view: Id; from: P; to: P };
 
 const round2 = (n: number) => Math.round(n * 100) / 100;
@@ -105,6 +108,8 @@ export function DrawingViewport() {
     if (!drag) return doc;
     if (drag.kind === 'draw') return doc;
     if (drag.kind === 'dimension') return { ...doc, dimensions: doc.dimensions.map((x) => (x.id === drag.id ? ({ ...x, ...drag.patch } as Dimension) : x)) };
+    if (drag.kind === 'table') return { ...doc, tables: doc.tables.map((x) => (x.id === drag.id ? { ...x, at: [drag.origin[0] + drag.delta[0], drag.origin[1] + drag.delta[1]] as P } : x)) };
+    if (drag.kind === 'balloon') return { ...doc, tables: doc.tables.map((x) => (x.id === drag.id && x.kind === 'bom' ? { ...x, balloonAt: { ...x.balloonAt, [drag.item]: [drag.origin[0] + drag.delta[0], drag.origin[1] + drag.delta[1]] as P } } : x)) };
     if (drag.kind === 'sectionLine') return { ...doc, views: doc.views.map((v) => (v.id === drag.id && v.kind === 'section' ? { ...v, line: movedLine(drag.line, drag.vertical, drag.delta) } : v)) as DrawingView[] };
     if (drag.kind === 'scale') {
       const target = drag.target;
@@ -296,6 +301,24 @@ export function DrawingViewport() {
       setDrag({ kind: 'sectionLine', id: sec.id, line: sec.line, vertical: sec.vertical, scale: sec.scale, from: p, delta: 0 });
       return;
     }
+    // a balloon (its circle) or a table (its box): moved by the pointer; the tables are drawn over the views
+    for (const [tableId, spots] of built.balloons) {
+      const spot = spots.find((s) => Math.hypot(p[0] - s.centre[0], p[1] - s.centre[1]) <= BALLOON_RADIUS + reach);
+      if (spot) {
+        capture(e);
+        d.selectDimension(null);
+        setDrag({ kind: 'balloon', id: tableId, item: spot.item, from: p, origin: spot.centre, delta: [0, 0] });
+        return;
+      }
+    }
+    for (const [tableId, box] of [...built.tableBoxes].reverse()) {
+      if (p[0] >= box.x && p[0] <= box.x + box.w && p[1] >= box.y && p[1] <= box.y + box.h) {
+        capture(e);
+        d.selectDimension(null);
+        setDrag({ kind: 'table', id: tableId, from: p, origin: [box.x, box.y + box.h], delta: [0, 0] });
+        return;
+      }
+    }
     d.selectDimension(null);
     // the view under the pointer, the one drawn last when they overlap
     const hit = viewUnder(p);
@@ -348,6 +371,14 @@ export function DrawingViewport() {
       if (Object.keys(drag.patch).length > 0) d.setDimension(drag.id, drag.patch);
     } else if (drag?.kind === 'sectionLine') {
       if (Math.abs(drag.delta) > 0.005) d.setView(drag.id, { line: movedLine(drag.line, drag.vertical, round2(drag.delta)) });
+    } else if (drag?.kind === 'table') {
+      if (Math.hypot(drag.delta[0], drag.delta[1]) > 0.05) d.setTable(drag.id, { at: [round2(drag.origin[0] + drag.delta[0]), round2(drag.origin[1] + drag.delta[1])] });
+    } else if (drag?.kind === 'balloon') {
+      if (Math.hypot(drag.delta[0], drag.delta[1]) > 0.05) {
+        const table = drw.doc.tables.find((x) => x.id === drag.id);
+        const was = table?.kind === 'bom' ? table.balloonAt : undefined;
+        d.setTable(drag.id, { balloonAt: { ...was, [drag.item]: [round2(drag.origin[0] + drag.delta[0]), round2(drag.origin[1] + drag.delta[1])] } });
+      }
     } else if (drag?.kind === 'draw') {
       finishDraw(drag);
     } else if (drag && Math.hypot(drag.delta[0], drag.delta[1]) > 0.05) {

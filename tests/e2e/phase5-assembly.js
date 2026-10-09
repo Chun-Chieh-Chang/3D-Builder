@@ -80,6 +80,45 @@ x.run = async () => {
   await click(panel('[data-action="tableHome"]'));
   await H.waitFor(() => !drw().doc.tables[0].at, 3000, 'back in the corner');
 
+  // a balloon and the table are taken with the pointer and put where the user wants them (schema 9)
+  {
+    const canvas = document.querySelector('[data-drawing-canvas]');
+    const toClient = ([sx, sy]) => {
+      const r = document.querySelector('[data-svg] svg').getBoundingClientRect();
+      return [r.left + (sx / 420) * r.width, r.top + ((297 - sy) / 297) * r.height];
+    };
+    const send = (type, at) => {
+      const [cx, cy] = toClient(at);
+      canvas.dispatchEvent(new PointerEvent(type, { clientX: cx, clientY: cy, bubbles: true, cancelable: true, pointerId: 33, button: 0, buttons: type === 'pointerup' ? 0 : 1 }));
+    };
+    const drag = async (from, to) => {
+      send('pointerdown', from);
+      for (let i = 1; i <= 6; i++) {
+        send('pointermove', [from[0] + ((to[0] - from[0]) * i) / 6, from[1] + ((to[1] - from[1]) * i) / 6]);
+        await H.wait(25);
+      }
+      send('pointerup', to);
+      await H.wait(250);
+    };
+    const tableId = drw().doc.tables[0].id;
+    const one = scene().balloons.get(tableId).find((s) => s.item === '1');
+    const target = [one.centre[0] + 25, one.centre[1] - 30];
+    await drag(one.centre, target);
+    const kept = drw().doc.tables[0].balloonAt?.['1'];
+    H.check(kept && Math.abs(kept[0] - target[0]) < 0.1 && Math.abs(kept[1] - target[1]) < 0.1, `the balloon is where it was put: ${JSON.stringify(kept)} for ${JSON.stringify(target)}`);
+    const now = scene().balloons.get(tableId).find((s) => s.item === '1');
+    H.check(Math.abs(now.centre[0] - target[0]) < 0.1 && Math.abs(now.centre[1] - target[1]) < 0.1 && Math.abs(now.anchor[0] - one.anchor[0]) < 1e-9, 'drawn there, the leader still on the part');
+    H.check(!drw().doc.tables[0].at, 'the table did not move with it');
+    await click(panel('[data-action="balloonsAuto"]'));
+    await H.waitFor(() => !drw().doc.tables[0].balloonAt, 3000, 'balloons arranged again');
+    const box = scene().tableBoxes.get(tableId);
+    await drag([box.x + box.w / 2, box.y + box.h / 2], [box.x + box.w / 2 - 60, box.y + box.h / 2 + 40]);
+    const at = drw().doc.tables[0].at;
+    H.check(at && Math.abs(at[0] - (box.x - 60)) < 0.1 && Math.abs(at[1] - (box.y + box.h + 40)) < 0.1, `the table is where it was put: ${JSON.stringify(at)}`);
+    await click(panel('[data-action="tableHome"]'));
+    await H.waitFor(() => !drw().doc.tables[0].at, 3000, 'back in the corner');
+  }
+
   // a dimension on a view of an assembly says it cannot be made (yet) instead of drawing something
   store.drawingStore.addRound(drw().doc.views[0].id, 'diameter', { kind: 'face', name: 'x' });
   await H.waitFor(() => drw().doc.dimensions.length === 1 && drw().elements.size === 1, 10000, 'the dimension');
