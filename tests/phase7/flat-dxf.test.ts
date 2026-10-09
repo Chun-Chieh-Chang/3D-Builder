@@ -87,6 +87,20 @@ describe('the DXF of a flat pattern', () => {
     expect(down.doc.entities.filter((e): e is DxfText => e.type === 'TEXT').map((e) => e.text)).toContain('DOWN 90° R2');
   });
 
+  it('the note of a bend is never upside down: a bend line that runs to the left is read from the other end (the angle stays within -90 to 90 degrees), a vertical one reads upward', () => {
+    const outline = [{ kind: 'line' as const, a: [0, 0] as [number, number], b: [10, 0] as [number, number] }];
+    const angleOf = (a: [number, number], b: [number, number]) => {
+      const doc = readDxf(flatPatternDxf({ outline, bends: [{ a, b, angle: Math.PI / 2, radius: 2, direction: 'up', kFactor: 0.5 }], min: [0, 0], max: [10, 10], width: 10, height: 10, thickness: 1.5 }));
+      return doc.entities.filter((e): e is DxfText => e.type === 'TEXT').find((e) => e.text.startsWith('UP'))!.angle;
+    };
+    const upright = (v: number) => v <= 90 + 1e-6 || v >= 270 - 1e-6;
+    for (const [a, b] of [[[0, 0], [10, 0]], [[10, 0], [0, 0]], [[0, 0], [0, 10]], [[0, 10], [0, 0]], [[0, 0], [10, 10]], [[10, 10], [0, 0]], [[0, 0], [-10, 5]], [[0, 0], [-10, -5]]] as [[number, number], [number, number]][]) {
+      expect(upright(angleOf(a, b)), `${a} to ${b}`).toBe(true);
+    }
+    expect(angleOf([10, 0], [0, 0])).toBeCloseTo(0, 6);
+    expect(angleOf([0, 10], [0, 0])).toBeCloseTo(90, 6);
+  });
+
   it('a flange that stops short with its relief: every line of the outline is a LINE, with the same end points as the pattern, shifted to the origin', () => {
     const { doc, pattern } = dxfOf([...base, flange({ inset: { start: '10', end: '5' }, relief: { width: '1.5', depth: '1.5' } })]);
     expect(checkDxf(doc)).toEqual([]);

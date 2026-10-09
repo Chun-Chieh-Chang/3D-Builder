@@ -80,7 +80,10 @@ export function flatPatternDxf(p: FlatDxfInput): string {
         const len = Math.hypot(e[0] - a[0], e[1] - a[1]) || 1;
         const n: P2 = [-(e[1] - a[1]) / len, (e[0] - a[0]) / len];
         const mid: P2 = [(a[0] + e[0]) / 2 + n[0] * 1.5, (a[1] + e[1]) / 2 + n[1] * 1.5];
-        text(mid[0], mid[1], 2.5, `${b.direction === 'up' ? 'UP' : 'DOWN'} ${round(deg(b.angle), 1)}\u00B0 R${round(b.radius, 3)}`, norm(deg(Math.atan2(e[1] - a[1], e[0] - a[0]))), true);
+        // along the line, but never upside down: a line that runs to the left (over 90 degrees up to 270) is read from the other end
+        const along = norm(deg(Math.atan2(e[1] - a[1], e[0] - a[0])));
+        const upright = along > 90 + 1e-9 && along <= 270 + 1e-9 ? norm(along - 180) : along;
+        text(mid[0], mid[1], 2.5, `${b.direction === 'up' ? 'UP' : 'DOWN'} ${round(deg(b.angle), 1)}\u00B0 R${round(b.radius, 3)}`, upright, true);
       }
       text(0, -5, 2.5, `T=${round(p.thickness, 3)}  K=${round(p.bends[0]?.kFactor ?? 0.5, 3)}`);
     },
