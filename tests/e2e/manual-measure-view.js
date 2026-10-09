@@ -155,7 +155,126 @@ M.run = async () => {
     await H.wait(200);
     return { pass: !store.viewer.measureGroup && store.viewer.measureLabels.size === 0 };
   });
-  await step('10 a drawing in inches: the sheet\'s unit takes the dimensions, the tolerance and the hole table with it (120 mm is 4.724)', async () => {
+  // ------------------------------------------------------------ the second part: places, several measurements, labels moved
+  const nearly = (p, q, tol = 1e-3) => Math.hypot(p[0] - q[0], p[1] - q[1], p[2] - q[2]) <= tol;
+  /** A place of the plate of this kind, found where the pointer would take it (the first of the candidates that is not hidden and is not taken for a nearer kind). */
+  const place = (kind, candidates) => {
+    const v = store.viewer;
+    for (const c of candidates) {
+      const at = H.worldToClient(c);
+      if (at.x < 0 || at.y < 0) continue;
+      const snap = v.snapAt(at.x, at.y);
+      if (snap && snap.kind === kind && nearly(snap.world, c, 0.05)) return { at, snap, world: c };
+    }
+    return null;
+  };
+  const clickAt = async (at) => {
+    H.ptr('pointermove', at.x, at.y);
+    await H.wait(60);
+    H.canvas().dispatchEvent(new MouseEvent('click', { clientX: at.x, clientY: at.y, bubbles: true }));
+    await H.wait(120);
+  };
+  const topFirst = (list) => list.slice().sort((a, b) => b[1] - a[1] || b[0] + b[2] - (a[0] + a[2]));
+  let found;
+  await step('10 the way of picking places: the pointer takes an end, a centre, a middle, a place of an edge, a point of a face, each as itself (the models own numbers)', async () => {
+    store.stopMeasure();
+    await H.action('工具', '測量');
+    await H.waitFor(() => panel(), 5000, 'the measure window');
+    panel().querySelector('[data-field="pickPoint"]').click();
+    await H.wait(200);
+    await H.hud('等角');
+    await H.hud('全部顯示');
+    const v = store.viewer;
+    const data = v.snapData(v.snapSolids()[0]);
+    const edgeCandidates = [...data.lines.values()]
+      .filter((pts) => pts.length >= 2)
+      .map((pts) => [0.3, 0.37, 0.63].map((k) => [pts[0][0] + (pts[pts.length - 1][0] - pts[0][0]) * k, pts[0][1] + (pts[pts.length - 1][1] - pts[0][1]) * k, pts[0][2] + (pts[pts.length - 1][2] - pts[0][2]) * k]))
+      .flat();
+    found = {
+      vertex: place('vertex', topFirst(data.ends)),
+      centre: place('centre', topFirst(data.centres)),
+      midpoint: place('midpoint', topFirst(data.middles)),
+      edge: place('edge', topFirst(edgeCandidates.filter((c) => data.ends.every((e) => Math.hypot(e[0] - c[0], e[1] - c[1], e[2] - c[2]) > 8))).slice(0, 40)),
+      face: place('face', [[10, 15, 5], [-10, 15, 5], [10, 15, -5], [0, 15, 12], [20, 15, 15]]),
+    };
+    return { pass: Object.values(found).every(Boolean), missing: Object.entries(found).filter(([, x]) => !x).map(([k]) => k) };
+  });
+  await step('11 the pointer over a place marks it and says what it is', async () => {
+    const out = {};
+    for (const [kind, name] of [['centre', '圓心'], ['vertex', '端點'], ['midpoint', '中點']]) {
+      H.ptr('pointermove', found[kind].at.x, found[kind].at.y);
+      await H.wait(80);
+      out[kind] = store.viewer.measureLabels.get('__snap')?.el.textContent;
+      if (out[kind] !== name) return { pass: false, out };
+    }
+    H.ptr('pointermove', 5, 5);
+    await H.wait(80);
+    return { pass: true, out };
+  });
+  await step('12 two places clicked are two points measured: the exact distance, the differences, the line and the labels on the model', async () => {
+    await clickAt(found.vertex.at);
+    await clickAt(found.centre.at);
+    await settled(2);
+    const d = store.getState().measure.report.distance;
+    const want = Math.hypot(found.vertex.world[0] - found.centre.world[0], found.vertex.world[1] - found.centre.world[1], found.vertex.world[2] - found.centre.world[2]);
+    return { pass: near(d.value, want, 1e-3) && store.getState().measure.picks.every((p) => p.point) && labels().some((n) => n.startsWith('距離:')) && result().includes('Delta X'), d: d.value, want };
+  });
+  await step('13 a place and a face: the exact distance from the point to the face (the plate is 15 thick: a point of its top face is 15 from the bottom face)', async () => {
+    store.clearMeasure();
+    await H.wait(100);
+    await clickAt(found.face.at);
+    const bottom = store.getState().result.faceFingerprints.map((f, i) => ({ f, i })).find((x) => x.f.type === 'plane' && x.f.dir && Math.abs(x.f.dir[1] + 1) < 1e-6);
+    store.measurePick('face', bottom.i, null);
+    await settled(2);
+    return { pass: near(store.getState().measure.report.distance.value, 15, 1e-3), d: store.getState().measure.report.distance.value };
+  });
+  await step('14 keep it: it stays on the model and in the list, and a new measurement starts; the next one is drawn with it', async () => {
+    panel().querySelector('[data-action="keep"]').click();
+    await H.wait(200);
+    const kept = store.getState().measure.saved.length === 1 && store.getState().measure.picks.length === 0;
+    const m1 = [...store.viewer.measureLabels.keys()].filter((k) => k.startsWith('m1:'));
+    await clickAt(found.vertex.at);
+    await clickAt(found.centre.at);
+    await settled(2);
+    const keys = [...store.viewer.measureLabels.keys()];
+    return { pass: kept && m1.length >= 1 && keys.some((k) => k.startsWith('m1:')) && keys.includes('distance') && !!panel().querySelector('[data-field="saved"]'), keys };
+  });
+  await step('15 a label is taken with the pointer and moved: 20 pixels right and 10 down is what is kept, and it is where it is drawn next time', async () => {
+    const entry = store.viewer.measureLabels.get('distance');
+    const r = entry.el.getBoundingClientRect();
+    const [x, y] = [r.left + r.width / 2, r.top + r.height / 2];
+    entry.el.dispatchEvent(new PointerEvent('pointerdown', { clientX: x, clientY: y, bubbles: true, button: 0, pointerId: 41 }));
+    for (let i = 1; i <= 4; i++) {
+      window.dispatchEvent(new PointerEvent('pointermove', { clientX: x + 5 * i, clientY: y + 2.5 * i, bubbles: true, pointerId: 41 }));
+      await H.wait(30);
+    }
+    window.dispatchEvent(new PointerEvent('pointerup', { clientX: x + 20, clientY: y + 10, bubbles: true, pointerId: 41 }));
+    await H.wait(200);
+    const off = store.getState().measure.offsets.distance;
+    const drawn = store.viewer.measureLabels.get('distance').offset;
+    return { pass: !!off && near(off[0], 20, 0.5) && near(off[1], 10, 0.5) && near(drawn[0], 20, 0.5) && near(drawn[1], 16 + 10, 0.5), off, drawn };
+  });
+  await step('16 copy all: every kept measurement in words; delete one: it is off the list and off the model', async () => {
+    let copied = null;
+    const real = navigator.clipboard;
+    Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText: async (t) => (copied = t) } });
+    panel().querySelector('[data-action="copyAll"]').click();
+    await H.wait(150);
+    Object.defineProperty(navigator, 'clipboard', { configurable: true, value: real });
+    panel().querySelector('[data-field="saved"] li button').click();
+    await H.wait(200);
+    return { pass: typeof copied === 'string' && copied.startsWith('1.') && copied.includes('距離:') && store.getState().measure.saved.length === 0 && ![...store.viewer.measureLabels.keys()].some((k) => k.startsWith('m1:')), copied };
+  });
+  await step('17 back to elements: a click takes a face again, and the places are not taken any more', async () => {
+    panel().querySelector('[data-field="pickElement"]').click();
+    await H.wait(200);
+    store.clearMeasure();
+    store.measurePick('face', 0, null);
+    await settled(1);
+    return { pass: store.getState().measure.mode === 'element' && store.getState().measure.picks.length === 1 && store.viewer.snapPicking === false };
+  });
+  await step('18 a drawing in inches: the sheet\'s unit takes the dimensions, the tolerance and the hole table with it (120 mm is 4.724)', async () => {
+    store.stopMeasure();
     await H.action('檔案', '新工程圖');
     await H.waitFor(() => store.getState().drw && store.getState().drw.doc.views.length === 3 && [...store.getState().drw.lines.values()].filter(Boolean).length === 3 && store.getState().drw.features.size === 3, 30000, 'the drawing');
     await H.wait(300);

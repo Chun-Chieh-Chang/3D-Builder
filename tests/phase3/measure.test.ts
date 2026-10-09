@@ -3,7 +3,7 @@
  * between two elements, and the same when the parts are placed (and mirrored) as an assembly has them.
  */
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { angleBetween, axisAngle, measureReport, placementRows, type MeasureTarget, type Pose } from '@3db/model';
+import { angleBetween, axisAngle, measureReport, placePoint, placementRows, type MeasureTarget, type Pose, type Vec3 } from '@3db/model';
 import { PlaneGcsSolver } from '@3db/sketch';
 import { Kernel, type ShapeId } from '@3db/kernel';
 import { Regenerator, measureTargets } from '@3db/regen';
@@ -182,5 +182,56 @@ describe('the pieces (3b-5c)', () => {
     const mm = placementRows(pose, true);
     expect([mm[0], mm[4], mm[8]].map((v) => Math.round(v!) + 0)).toEqual([0, -1, 0]);
     expect([mm[3], mm[7], mm[11]]).toEqual([1, 2, 3]);
+  });
+});
+
+describe('a place instead of an element (a point anywhere: the second part of measuring)', () => {
+  const place = (point: Vec3, pose: Pose | null = null, mirrored = false): MeasureTarget => ({ part: null, mirrored, pose, kind: 'vertex', index: 0, point });
+
+  it('a point is as good as a vertex: where it is, no area, no length, no direction', () => {
+    const r = measure(place([1, 2, 3]));
+    expect(r.elements[0]).toMatchObject({ kind: 'vertex', type: 'point', point: [1, 2, 3], area: null, length: null, radius: null, direction: null });
+  });
+
+  it('two points: 13 apart for (0, 0, 0) and (3, 4, 12), the differences along the axes', () => {
+    const r = measure(place([0, 0, 0]), place([3, 4, 12]));
+    expect(r.distance?.value).toBeCloseTo(13, 9);
+    expect(r.distance?.delta).toEqual([3, 4, 12]);
+    expect(r.total).toBe(19);
+  });
+
+  it('a point and a face: the exact distance, the foot of the perpendicular on the face (every face of the block, a point 7 mm out from its middle)', () => {
+    for (const [i, f] of topo('box').faces.entries()) {
+      const n = f.normal!;
+      const p: Vec3 = [f.center[0] + 7 * n[0], f.center[1] + 7 * n[1], f.center[2] + 7 * n[2]];
+      const r = measure({ part: 'box', mirrored: false, pose: null, kind: 'vertex', index: 0, point: p }, at('box', 'face', i));
+      expect(r.distance?.value).toBeCloseTo(7, 9);
+      expect(r.distance?.b[0]).toBeCloseTo(f.center[0], 9);
+      expect(r.distance?.b[1]).toBeCloseTo(f.center[1], 9);
+      expect(r.distance?.b[2]).toBeCloseTo(f.center[2], 9);
+    }
+  });
+
+  it('a point and an edge: the nearest place of the edge, not an end of it', () => {
+    const t = topo('box');
+    const e = t.edges.findIndex((x) => x.curve === 'line' && x.length === 30);
+    const mid = t.edges[e]!.mid;
+    const dir = t.edges[e]!.dir!;
+    // a point beside the middle of the edge, 4 mm across it (any direction across)
+    const across: Vec3 = Math.abs(dir[0]) < 0.9 ? [1, 0, 0] : [0, 1, 0];
+    const p: Vec3 = [mid[0] + 4 * across[0], mid[1] + 4 * across[1], mid[2] + 4 * across[2]];
+    const r = measure({ part: 'box', mirrored: false, pose: null, kind: 'vertex', index: 0, point: p }, at('box', 'edge', e));
+    expect(r.distance?.value).toBeCloseTo(4, 9);
+  });
+
+  it('the part is placed and mirrored first: the point of the own frame of the part is where the assembly has it', () => {
+    const pose = translate([10, 0, 0]);
+    expect(placePoint(pose, false, [1, 2, 3])).toEqual([11, 2, 3]);
+    expect(placePoint(pose, true, [1, 2, 3])).toEqual([9, 2, 3]); // x → −x first
+    expect(placePoint(null, false, [1, 2, 3])).toEqual([1, 2, 3]);
+    const r = measure(place([1, 0, 0], pose), place([11, 5, 0]));
+    expect(r.distance?.value).toBeCloseTo(5, 9);
+    const m = measure(place([1, 0, 0], pose, true), place([9, 5, 0]));
+    expect(m.distance?.value).toBeCloseTo(5, 9);
   });
 });

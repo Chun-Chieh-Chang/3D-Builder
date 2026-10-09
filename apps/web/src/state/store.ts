@@ -62,7 +62,7 @@ import type { FlatReport, SheetCheck } from '@3db/regen';
 import { orderProblem, suppressionTargets, type SuppressAction } from '@3db/regen/dag';
 import { contourChoices, findProfiles, type ContourChoice } from '@3db/sketch/profiles';
 import type { ModelItem } from '@3db/sketch/ops';
-import type { PickFilter, Viewer } from '@3db/render';
+import type { PickFilter, Snap, Viewer } from '@3db/render';
 import type { KernelApi, PartExportOptions, RebuildPayload, SketchSolvePayload, SketchSolveRequest, SourceFileData } from '../worker/protocol';
 import { SketchController, type ControllerView, type SketchHost } from '../sketcher/controller';
 import { axisDefinitionFor, emptyRef, put, treeRef } from './datumSlots';
@@ -106,6 +106,15 @@ export interface MeasurePick {
   kind: MeasureKind;
   index: number;
   label: string;
+  /** A place instead of an element (kind `vertex`, `index` not used): where, in the part's own frame. */
+  point?: Vec3;
+}
+/** A measurement that was kept, to be seen with the others: what was picked, what it came to, and how far its labels were moved (pixels, by key). */
+export interface SavedMeasure {
+  id: string;
+  picks: MeasurePick[];
+  report: MeasureReport | null;
+  offsets: Record<string, [number, number]>;
 }
 
 /** The 「拔模分析」 window (E3.2): its settings, and what the worker last said for them. None of it is saved with the part. */
@@ -164,7 +173,15 @@ export interface MeasureState {
   picks: MeasurePick[];
   report: MeasureReport | null;
   error: string | null;
+  /** What a click takes: an element (a face, an edge, a vertex) or a place (an end, a middle, a centre, a place of an edge or a face). */
+  mode: 'element' | 'point';
+  saved: SavedMeasure[];
+  /** How far the labels of the measurement in hand were moved (pixels, by key). */
+  offsets: Record<string, [number, number]>;
 }
+
+/** A measurement with nothing picked: the way of picking and what was kept stay. */
+const emptyMeasure = (from?: MeasureState | null): MeasureState => ({ picks: [], report: null, error: null, mode: from?.mode ?? 'element', saved: from?.saved ?? [], offsets: {} });
 
 /** Two components that share volume, and what they share (one overlap for each pair of their parts that meet). */
 export interface InterferencePair {
@@ -454,6 +471,7 @@ function readMeasureOptions(): MeasureOptions {
       nearest: !!o.nearest,
       angle: o.angle === 'rad' ? 'rad' : 'deg',
       round: o.round === 'min' || o.round === 'max' ? o.round : 'centre',
+      frame: typeof o.frame === 'string' && o.frame !== '' ? o.frame : 'world',
     };
   } catch {
     return DEFAULT_MEASURE_OPTIONS;
@@ -616,7 +634,7 @@ class AppStore {
     this.state = { ...this.state, ...patch };
     for (const fn of this.listeners) fn();
     // what is measured follows the model: a part rebuilt, or components placed anew, are measured again
-    if (this.state.measure?.picks.length && ('result' in patch || 'asm' in patch)) void this.runMeasure();
+    if ((this.state.measure?.picks.length || this.state.measure?.saved.length) && ('result' in patch || 'asm' in patch)) void this.runMeasure();
     // the draft analysis follows the model too
     if (this.state.draft && 'result' in patch) void this.runDraft();
     if (this.state.undercut && 'result' in patch) void this.runUndercut();
@@ -807,7 +825,7 @@ class AppStore {
 
   /** 「測量」 on: the elements of the part or assembly are picked in the view (E1.1). */
   startMeasure(): void {
-    this.set({ measure: { picks: [], report: null, error: null } });
+    this.set({ measure: emptyMeasure() });
   }
 
   stopMeasure(): void {
@@ -817,7 +835,43 @@ class AppStore {
 
   clearMeasure(): void {
     this.measureSeq++;
-    if (this.state.measure) this.set({ measure: { picks: [], report: null, error: null } });
+    if (this.state.measure) this.set({ measure: emptyMeasure(this.state.measure) });
+  }
+
+  /** Takes away what was kept as well. */
+  clearAllMeasures(): void {
+    this.measureSeq++;
+    if (this.state.measure) this.set({ measure: { ...emptyMeasure(this.state.measure), saved: [] } });
+  }
+
+  /** What a click takes: an element, or a place. */
+  setMeasureMode(mode: MeasureState['mode']): void {
+    if (this.state.measure) this.set({ measure: { ...this.state.measure, mode } });
+  }
+
+  private savedSeq = 0;
+
+  /** Keeps the measurement in hand with the others (and starts a new one). */
+  saveMeasure(): void {
+    const m = this.state.measure;
+    if (!m?.report?.distance) return;
+    this.measureSeq++;
+    const kept: SavedMeasure = { id: `m${++this.savedSeq}`, picks: m.picks, report: m.report, offsets: m.offsets };
+    this.set({ measure: { ...emptyMeasure(m), saved: [...m.saved, kept] } });
+  }
+
+  removeSavedMeasure(id: string): void {
+    const m = this.state.measure;
+    if (m) this.set({ measure: { ...m, saved: m.saved.filter((x) => x.id !== id) } });
+  }
+
+  /** A label of a measurement was moved by the pointer, by `by` pixels more: the measurement it belongs to (a kept one by the id before the colon of its key) remembers. */
+  moveMeasureLabel(key: string, by: [number, number]): void {
+    const m = this.state.measure;
+    if (!m) return;
+    const add = (o: Record<string, [number, number]>) => ({ ...o, [key]: [(o[key]?.[0] ?? 0) + by[0], (o[key]?.[1] ?? 0) + by[1]] as [number, number] });
+    const owner = m.saved.find((x) => key.startsWith(`${x.id}:`));
+    this.set({ measure: owner ? { ...m, saved: m.saved.map((x) => (x === owner ? { ...x, offsets: add(x.offsets) } : x)) } : { ...m, offsets: add(m.offsets) } });
   }
 
   /** An element was clicked while measuring: a second one is measured to the first, a third starts again, the same one again takes it off. */
@@ -831,7 +885,21 @@ class AppStore {
     const same = (p: MeasurePick) => p.leaf === leaf && p.kind === kind && p.index === index;
     const picks = m.picks.some(same) ? m.picks.filter((p) => !same(p)) : m.picks.length >= 2 ? [pick] : [...m.picks, pick];
     this.measureSeq++;
-    this.set({ measure: { picks, report: null, error: null } });
+    this.set({ measure: { ...m, picks, report: null, error: null, offsets: {} } });
+    void this.runMeasure();
+  }
+
+  /** A place was clicked while measuring in the way of places (an end, a middle, a centre, a place of an edge or a face): measured like an element. */
+  measurePickPlace(snap: Snap): void {
+    const m = this.state.measure;
+    if (!m) return;
+    const found = snap.instance === null ? undefined : this.assembly?.leaves().find((l) => l.id === snap.instance);
+    if (snap.instance !== null && !found) return;
+    const word = t(`measure.snap.${snap.kind}`);
+    const pick: MeasurePick = { leaf: snap.instance, kind: 'vertex', index: -1, point: snap.local, label: found ? `${this.assembly!.ownerLabel(found.top, found.path)}: ${word}` : word };
+    const picks = m.picks.length >= 2 ? [pick] : [...m.picks, pick];
+    this.measureSeq++;
+    this.set({ measure: { ...m, picks, report: null, error: null, offsets: {} } });
     void this.runMeasure();
   }
 
@@ -1007,18 +1075,35 @@ class AppStore {
 
   /** The picks as the kernel is asked about them: a part by its file and the pose it is at now. Null when the component is gone. */
   private measureTarget(p: MeasurePick): MeasureTarget | null {
-    if (p.leaf === null) return { part: null, mirrored: false, pose: null, kind: p.kind, index: p.index };
+    const place = p.point ? { point: p.point } : {};
+    if (p.leaf === null) return { part: null, mirrored: false, pose: null, kind: p.kind, index: p.index, ...place };
     const leaf = this.assembly?.leaves().find((l) => l.id === p.leaf);
     if (!leaf) return null;
-    return { part: leaf.mirrored ? leaf.key.slice(0, -mirrorKey('').length) : leaf.key, mirrored: !!leaf.mirrored, pose: leaf.pose, kind: p.kind, index: p.index };
+    return { part: leaf.mirrored ? leaf.key.slice(0, -mirrorKey('').length) : leaf.key, mirrored: !!leaf.mirrored, pose: leaf.pose, kind: p.kind, index: p.index, ...place };
   }
 
   private async runMeasure(): Promise<void> {
     const m = this.state.measure;
-    if (!m || m.picks.length === 0) return;
+    if (!m) return;
     const seq = ++this.measureSeq;
+    // the ones that were kept follow the model too: measured again where the parts are now (one that cannot be, its part gone, keeps what it said)
+    if (m.saved.length > 0) {
+      const again = await Promise.all(
+        m.saved.map(async (x) => {
+          const targets = x.picks.map((p) => this.measureTarget(p));
+          if (targets.some((y) => y === null)) return x;
+          try {
+            return { ...x, report: await this.api.measure(targets as MeasureTarget[]) };
+          } catch {
+            return x;
+          }
+        }),
+      );
+      if (seq === this.measureSeq && this.state.measure) this.set({ measure: { ...this.state.measure, saved: this.state.measure.saved.map((x) => again.find((y) => y.id === x.id) ?? x) } });
+    }
+    if (m.picks.length === 0) return;
     const targets = m.picks.map((p) => this.measureTarget(p));
-    if (targets.some((x) => x === null)) return void this.set({ measure: { picks: [], report: null, error: null } });
+    if (targets.some((x) => x === null)) return void this.set({ measure: emptyMeasure(this.state.measure) });
     try {
       const report = await this.api.measure(targets as MeasureTarget[]);
       if (seq === this.measureSeq && this.state.measure) this.set({ measure: { ...this.state.measure, report, error: null } });

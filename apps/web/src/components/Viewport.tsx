@@ -282,7 +282,7 @@ export function Viewport() {
     const r = displayed.current;
     if (measure) {
       // what is measured is shown as picked (by the numbers the mesh has), nothing else
-      const of = (kind: 'face' | 'edge' | 'vertex') => measure.picks.filter((x) => x.kind === kind).map((x) => x.index);
+      const of = (kind: 'face' | 'edge' | 'vertex') => measure.picks.filter((x) => x.kind === kind && !x.point).map((x) => x.index);
       v.setSelectedFaces(of('face'));
       v.setSelectedEdges(of('edge'));
       v.setSelectedVertices(of('vertex'));

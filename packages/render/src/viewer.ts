@@ -4,6 +4,7 @@ import { LineSegments2 } from 'three/examples/jsm/lines/LineSegments2.js';
 import { LineSegmentsGeometry } from 'three/examples/jsm/lines/LineSegmentsGeometry.js';
 import { acceleratedRaycast, computeBoundsTree, disposeBoundsTree } from 'three-mesh-bvh';
 import { ViewControls } from './controls';
+import { circleCentre, middleOf, polylinesOf, type V3 } from './snap';
 import { buildOverlayObjects, disposeGroup, toWorld, type P2, type PlaneFrame, type SketchOverlay } from './overlay';
 
 /** A picture of a sketch to be drawn (ADR 0116): its place in the plane (the centre, the size in mm, the turn in degrees), how see-through it is, and the decoded image. */
@@ -79,6 +80,17 @@ export interface MeasureGraphics {
   points: [number, number, number][];
   /** `offset`: pixels on the screen from the point, so that labels on the same spot (a leg that is the whole distance) do not lie on each other. */
   labels: { key: string; at: [number, number, number]; name: string; value: string; color: string; offset?: [number, number] }[];
+}
+
+/**
+ * A place that can be pointed at while measuring (a point anywhere): its kind, where it is in the scene (`world`) and in the part's own frame (`local`: the same for the open part),
+ * and the instance of the assembly it is on (null for the open part).
+ */
+export interface Snap {
+  kind: 'vertex' | 'midpoint' | 'centre' | 'edge' | 'face';
+  world: [number, number, number];
+  local: [number, number, number];
+  instance: string | null;
 }
 
 /**
@@ -314,6 +326,15 @@ export class Viewer {
   /** What measuring has drawn (see setMeasureGraphics): its own, so that the sketch overlay does not clear it. */
   private measureGroup: THREE.Group | null = null;
   private measureMaterials: LineMaterial[] = [];
+  /** While on, a click is a place on the model (setSnapPicking) and the pointer shows the one it would take. */
+  /** Told how far a measurement's label was moved by the pointer (pixels since the last move), by its key; null: the labels stay where they are put. */
+  private measureLabelDrag: ((key: string, by: [number, number]) => void) | null = null;
+  private snapPicking = false;
+  private snapEvents: { hover?: (s: Snap | null) => void; pick?: (s: Snap) => void } = {};
+  /** The mark of the place the pointer would take (setSnapMarker). */
+  private snapMarker: THREE.Points | null = null;
+  /** The ends, middles and centres of the edges of a geometry, by the array of its positions (they only change when the geometry does). */
+  private snapCache = new WeakMap<object, { lines: Map<number, V3[]>; ends: V3[]; middles: V3[]; centres: V3[] }>();
   private measureLabels = new Map<string, { el: HTMLElement; world: THREE.Vector3; offset: [number, number] }>();
   private toolHandler: ((e: ToolPointerEvent) => void) | null = null;
   /** Part meshes that instances show, by key: built once, shared by every instance of the part. */
@@ -405,6 +426,8 @@ export class Viewer {
     this.setParts(new Map());
     this.setSection(null);
     this.setMeasureGraphics(null);
+    this.setMeasureLabelDrag(null);
+    this.setSnapMarker(null);
     this.endSectionDrag();
     this.instanceEdges.dispose();
     this.renderer.dispose();
@@ -933,6 +956,158 @@ export class Viewer {
     this.requestRender();
   }
 
+  /** Lets the labels of a measurement be taken with the pointer and moved: `moved` says which one and by how much (since its last report). */
+  setMeasureLabelDrag(moved: ((key: string, by: [number, number]) => void) | null): void {
+    this.measureLabelDrag = moved;
+  }
+
+  /** Turns on picking of places (the ends, middles and centres of edges, the nearest place of an edge, a point of a face): `hover` is told what the pointer is at, `pick` what is clicked. */
+  setSnapPicking(on: boolean, events: { hover?: (s: Snap | null) => void; pick?: (s: Snap) => void } = {}): void {
+    this.snapPicking = on;
+    this.snapEvents = on ? events : {};
+    if (!on) this.setSnapMarker(null);
+  }
+
+  /** The solids that places are taken from: the open part, or every component of an assembly, with where each is. */
+  private snapSolids(): { positions: ArrayLike<number>; owner: ArrayLike<number>; matrix: THREE.Matrix4; body: THREE.Mesh; edges: THREE.LineSegments | null; instance: string | null; key: object }[] {
+    const out = [];
+    if (this.body && this.edges) {
+      const position = this.edges.geometry.getAttribute('position') as THREE.BufferAttribute;
+      out.push({ positions: position.array, owner: this.segmentEdge, matrix: new THREE.Matrix4(), body: this.body, edges: this.edges, instance: null, key: position.array });
+    }
+    for (const [key, inst] of this.instances) {
+      const geo = this.partGeometry.get(inst.part);
+      if (!geo) continue;
+      inst.group.updateMatrixWorld(true);
+      const position = geo.edges.getAttribute('position') as THREE.BufferAttribute;
+      out.push({ positions: position.array, owner: geo.segmentEdge, matrix: inst.group.matrixWorld.clone(), body: inst.body, edges: inst.edges, instance: key, key: position.array });
+    }
+    return out;
+  }
+
+  private snapData(solid: { positions: ArrayLike<number>; owner: ArrayLike<number>; key: object }) {
+    let d = this.snapCache.get(solid.key);
+    if (!d) {
+      const lines = polylinesOf(solid.positions, solid.owner);
+      const ends: V3[] = [];
+      const middles: V3[] = [];
+      const centres: V3[] = [];
+      for (const pts of lines.values()) {
+        if (pts.length < 2) continue;
+        ends.push(pts[0]!, pts[pts.length - 1]!);
+        middles.push(middleOf(pts));
+        const c = circleCentre(pts);
+        if (c) centres.push(c.centre);
+      }
+      d = { lines, ends, middles, centres };
+      this.snapCache.set(solid.key, d);
+    }
+    return d;
+  }
+
+  /**
+   * The place under the pointer, nearest first by what it is worth: an end of an edge, the centre of a circle or an arc, the middle of an edge (each within ten pixels), the
+   * place of an edge nearest the pointer (six pixels), a point of a face. Ends and middles hidden by the model are not taken; a section's cut-away part is not there.
+   */
+  snapAt(clientX: number, clientY: number): Snap | null {
+    const solids = this.snapSolids();
+    if (solids.length === 0) return null;
+    this.syncCamera();
+    const rect = this.renderer.domElement.getBoundingClientRect();
+    const { w, h } = this.canvasSize();
+    const px = (p: THREE.Vector3): [number, number] => {
+      const q = p.clone().project(this.camera);
+      return [rect.left + ((q.x + 1) / 2) * w, rect.top + ((1 - q.y) / 2) * h];
+    };
+    const ray = this.rayAt(clientX, clientY);
+    const caster = new THREE.Raycaster(ray.origin, ray.direction);
+    const bodies = solids.map((x) => x.body);
+    const scale = (this.camera.right - this.camera.left) / this.camera.zoom;
+    const first = caster.intersectObjects(bodies, false).find((hit) => this.kept(hit.point));
+    const visible = (p: THREE.Vector3) => !first || p.clone().sub(ray.origin).dot(ray.direction) <= first.distance + 1e-3 * scale;
+    const make = (kind: Snap['kind'], world: THREE.Vector3, solid: (typeof solids)[number]): Snap => {
+      const local = world.clone().applyMatrix4(solid.matrix.clone().invert());
+      return { kind, world: [world.x, world.y, world.z], local: [local.x, local.y, local.z], instance: solid.instance };
+    };
+    // the places of the edges, by worth
+    const near = (list: V3[], solid: (typeof solids)[number], kind: Snap['kind'], hiddenOk: boolean): Snap | null => {
+      let best: { d: number; p: THREE.Vector3 } | null = null;
+      for (const q of list) {
+        const p = new THREE.Vector3(...q).applyMatrix4(solid.matrix);
+        if (!this.kept(p)) continue;
+        const [sx, sy] = px(p);
+        const d = Math.hypot(sx - clientX, sy - clientY);
+        if (d <= 10 && (!best || d < best.d) && (hiddenOk || visible(p))) best = { d, p };
+      }
+      return best && make(kind, best.p, solid);
+    };
+    const pick = (kind: Snap['kind']): Snap | null => {
+      let best: { s: Snap; d: number } | null = null;
+      for (const solid of solids) {
+        const data = this.snapData(solid);
+        const found = kind === 'vertex' ? near(data.ends, solid, 'vertex', false) : kind === 'centre' ? near(data.centres, solid, 'centre', true) : near(data.middles, solid, 'midpoint', false);
+        if (!found) continue;
+        const [sx, sy] = px(new THREE.Vector3(...found.world));
+        const d = Math.hypot(sx - clientX, sy - clientY);
+        if (!best || d < best.d) best = { s: found, d };
+      }
+      return best?.s ?? null;
+    };
+    const special = pick('vertex') ?? pick('centre') ?? pick('midpoint');
+    if (special) return special;
+    // the place of an edge nearest the pointer
+    const tolerance = (6 * scale) / rect.width;
+    let edgeBest: { d: number; world: THREE.Vector3; solid: (typeof solids)[number] } | null = null;
+    for (const solid of solids) {
+      if (!solid.edges) continue;
+      caster.params.Line = { threshold: tolerance };
+      for (const hit of caster.intersectObject(solid.edges, false)) {
+        if (!visible(hit.point) || !this.kept(hit.point)) continue;
+        const d = (hit as unknown as { distanceToRay?: number }).distanceToRay ?? 0;
+        if (!edgeBest || d < edgeBest.d) edgeBest = { d, world: hit.point.clone(), solid };
+      }
+    }
+    if (edgeBest) return make('edge', edgeBest.world, edgeBest.solid);
+    if (first) {
+      const solid = solids.find((x) => x.body === first.object);
+      if (solid) return make('face', first.point.clone(), solid);
+    }
+    return null;
+  }
+
+  /** Marks the place the pointer would take (null: none): a dot and the word for what it is. */
+  setSnapMarker(marker: { at: [number, number, number]; text: string } | null): void {
+    if (this.snapMarker) {
+      this.overlayScene.remove(this.snapMarker);
+      this.snapMarker.geometry.dispose();
+      (this.snapMarker.material as THREE.Material).dispose();
+      this.snapMarker = null;
+    }
+    if (marker) {
+      this.snapMarker = new THREE.Points(new THREE.BufferGeometry().setAttribute('position', new THREE.Float32BufferAttribute(marker.at, 3)), new THREE.PointsMaterial({ color: 0xf08c00, size: 11, sizeAttenuation: false, depthTest: false }));
+      this.snapMarker.renderOrder = 7;
+      this.overlayScene.add(this.snapMarker);
+      let entry = this.measureLabels.get('__snap');
+      if (!entry) {
+        const el = document.createElement('div');
+        this.labelLayer.appendChild(el);
+        entry = { el, world: new THREE.Vector3(), offset: [0, 0] };
+        this.measureLabels.set('__snap', entry);
+      }
+      entry.world.set(...marker.at);
+      entry.offset = [14, -14];
+      entry.el.className = 'overlay-label snap-label';
+      entry.el.textContent = marker.text;
+    } else {
+      const entry = this.measureLabels.get('__snap');
+      if (entry) {
+        entry.el.remove();
+        this.measureLabels.delete('__snap');
+      }
+    }
+    this.requestRender();
+  }
+
   /** Draws the result of a measurement over the model (null takes it away). The lines are two and a half pixels wide whatever the zoom, and are drawn over what hides them. */
   setMeasureGraphics(g: MeasureGraphics | null): void {
     if (this.measureGroup) {
@@ -969,7 +1144,23 @@ export class Viewer {
         let entry = this.measureLabels.get(l.key);
         if (!entry) {
           const el = document.createElement('div');
-          el.addEventListener('pointerdown', (e) => e.stopPropagation());
+          const key = l.key;
+          el.addEventListener('pointerdown', (e) => {
+            e.stopPropagation();
+            if (e.button !== 0 || !this.measureLabelDrag) return;
+            e.preventDefault();
+            let last: [number, number] = [e.clientX, e.clientY];
+            const move = (m: PointerEvent) => {
+              this.measureLabelDrag?.(key, [m.clientX - last[0], m.clientY - last[1]]);
+              last = [m.clientX, m.clientY];
+            };
+            const up = () => {
+              window.removeEventListener('pointermove', move);
+              window.removeEventListener('pointerup', up);
+            };
+            window.addEventListener('pointermove', move);
+            window.addEventListener('pointerup', up);
+          });
           this.labelLayer.appendChild(el);
           entry = { el, world: new THREE.Vector3(), offset: [0, 0] };
           this.measureLabels.set(l.key, entry);
@@ -989,7 +1180,7 @@ export class Viewer {
       }
     }
     for (const [key, entry] of this.measureLabels) {
-      if (keep.has(key)) continue;
+      if (keep.has(key) || key === '__snap') continue;
       entry.el.remove();
       this.measureLabels.delete(key);
     }
@@ -1542,6 +1733,10 @@ export class Viewer {
   };
 
   private onPointerMove = (e: PointerEvent) => {
+    if (this.snapPicking && e.buttons === 0) {
+      this.snapEvents.hover?.(this.snapAt(e.clientX, e.clientY));
+      return;
+    }
     if (this.clip.length > 0 && !this.sectionDrag && e.buttons === 0) this.setSectionCursor(!!this.sectionHit(e.clientX, e.clientY));
     else if (this.clip.length === 0 && this.sectionCursor) this.setSectionCursor(false);
     if (this.press) {
@@ -1597,6 +1792,11 @@ export class Viewer {
       return;
     }
     if (this.toolHandler || e.altKey) return;
+    if (this.snapPicking) {
+      const snap = this.snapAt(e.clientX, e.clientY);
+      if (snap) this.snapEvents.pick?.(snap);
+      return;
+    }
     const additive = e.ctrlKey || e.shiftKey;
     if (this.pickElements) return void this.events.onElementClick?.(this.pickElement(e.clientX, e.clientY), additive);
     if (this.pickInstances) return void this.events.onComponentClick?.(this.pickInstance(e.clientX, e.clientY), additive);

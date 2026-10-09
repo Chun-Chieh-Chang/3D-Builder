@@ -1,6 +1,6 @@
 import { t } from '@3db/i18n';
 import { useEffect, useMemo } from 'react';
-import { DENOMINATORS, MM_PER_INCH, formatAngle, lengthText, viewMeasure, type MeasureElement, type MeasureOptions, type RoundMode, type Vec3 } from '@3db/model';
+import { DENOMINATORS, MM_PER_INCH, formatAngle, lengthText, viewMeasure, type MeasureDrawing, type MeasureElement, type MeasureFrame, type MeasureOptions, type RoundMode, type Vec3 } from '@3db/model';
 import { store, useStore } from '../state/store';
 
 /** mm (or degrees) to ten thousandths, without trailing zeros; "+ 0" turns −0 into 0. */
@@ -33,19 +33,53 @@ function typeName(e: MeasureElement): string {
 export function MeasurePanel() {
   const measure = useStore((s) => s.measure);
   const options = useStore((s) => s.measureOptions);
+  const doc = useStore((s) => s.doc);
+  const result = useStore((s) => s.result);
+  const inAssembly = useStore((s) => s.asm !== null);
   const report = measure?.report ?? null;
-  const view = useMemo(() => viewMeasure(report, options), [report, options]);
-  // what is measured is drawn on the model, as eDrawings does: the lines, the distances along the axes, the labels
-  const drawing = measure ? view.drawing : null;
+  // the coordinate systems of the open part to take the differences in (an assembly has only its own axes)
+  const systems = useMemo(
+    () => (inAssembly ? [] : doc.features.flatMap((f) => (f.type === 'coordSys' && result?.systems.get(f.id) ? [{ id: f.id, name: f.name, system: result.systems.get(f.id)! }] : []))),
+    [doc, result, inAssembly],
+  );
+  const chosen = systems.find((x) => x.id === options.frame);
+  const frame: MeasureFrame | null = useMemo(() => (chosen ? { origin: chosen.system.origin, axes: [chosen.system.x, chosen.system.y, chosen.system.z] } : null), [chosen]);
+  const view = useMemo(() => viewMeasure(report, options, { frame, offsets: measure?.offsets }), [report, options, frame, measure?.offsets]);
+  // what is measured is drawn on the model, as eDrawings does: the lines, the distances along the axes, the labels; what was kept with it
+  const drawing = useMemo((): MeasureDrawing | null => {
+    if (!measure) return null;
+    const all = [...measure.saved.map((x) => viewMeasure(x.report, options, { frame, prefix: `${x.id}:`, offsets: x.offsets }).drawing), view.drawing].filter((d): d is MeasureDrawing => d !== null);
+    return all.length === 0 ? null : { lines: all.flatMap((d) => d.lines), points: all.flatMap((d) => d.points), labels: all.flatMap((d) => d.labels) };
+  }, [measure, options, frame, view]);
   useEffect(() => {
     store.viewer?.setMeasureGraphics(drawing);
     return () => store.viewer?.setMeasureGraphics(null);
   }, [drawing]);
+  // the labels can be moved with the pointer
+  const measuring = measure !== null;
+  useEffect(() => {
+    const v = store.viewer;
+    if (!v || !measuring) return;
+    v.setMeasureLabelDrag((key, by) => store.moveMeasureLabel(key, by));
+    return () => v.setMeasureLabelDrag(null);
+  }, [measuring]);
+  // in the way of places the pointer snaps to what is there and a click takes it
+  const places = measure?.mode === 'point';
+  useEffect(() => {
+    const v = store.viewer;
+    if (!v || !places) return;
+    v.setSnapPicking(true, {
+      hover: (snap) => v.setSnapMarker(snap ? { at: snap.world, text: t(`measure.snap.${snap.kind}`) } : null),
+      pick: (snap) => store.measurePickPlace(snap),
+    });
+    return () => v.setSnapPicking(false);
+  }, [places]);
   if (!measure) return null;
   const { picks, error } = measure;
   const w = writer(options);
   const set = (patch: Partial<MeasureOptions>) => store.setMeasureOptions(patch);
   const rounds = report?.round ? view.modes : [];
+  const savedText = (x: (typeof measure.saved)[number]) => viewMeasure(x.report, options, { frame }).text;
   return (
     <div className="measure-panel" role="region" aria-label={t('measure.title')} data-measure>
       <div className="measure-head">
@@ -58,7 +92,18 @@ export function MeasurePanel() {
           {t('measure.done')}
         </button>
       </div>
-      {picks.length === 0 && <p className="muted">{t('measure.prompt')}</p>}
+      <div className="measure-options" data-measure-pick>
+        <span>{t('measure.pick')}</span>
+        <label className="check">
+          <input type="radio" name="measure-pick" data-field="pickElement" checked={measure.mode === 'element'} onChange={() => store.setMeasureMode('element')} />
+          <span>{t('measure.pick.element')}</span>
+        </label>
+        <label className="check">
+          <input type="radio" name="measure-pick" data-field="pickPoint" checked={measure.mode === 'point'} onChange={() => store.setMeasureMode('point')} />
+          <span>{t('measure.pick.point')}</span>
+        </label>
+      </div>
+      {picks.length === 0 && <p className="muted">{measure.mode === 'point' ? t('measure.promptPoint') : t('measure.prompt')}</p>}
       {error && <p className="error" data-field="error">{error}</p>}
       <div className="measure-options" data-measure-options>
         <label>
@@ -101,6 +146,19 @@ export function MeasurePanel() {
             <option value="rad">{t('measure.angleUnit.rad')}</option>
           </select>
         </label>
+        {systems.length > 0 && (
+          <label>
+            <span>{t('measure.frame')}</span>
+            <select data-field="frame" value={chosen ? chosen.id : 'world'} onChange={(e) => set({ frame: e.target.value })}>
+              <option value="world">{t('measure.frame.world')}</option>
+              {systems.map((x) => (
+                <option key={x.id} value={x.id}>
+                  {x.name}
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
         <label className={rounds.length === 0 ? 'off' : ''} title={report?.round && !report.round.max ? t('measure.roundMaxNone') : undefined}>
           <span>{t('measure.roundTitle')}</span>
           <select data-field="roundMode" disabled={rounds.length === 0} value={view.mode} onChange={(e) => set({ round: e.target.value as RoundMode })}>
@@ -122,6 +180,37 @@ export function MeasurePanel() {
             }}
           >
             {t('measure.copy')}
+          </button>
+          <button data-action="keep" disabled={!report?.distance} onClick={() => store.saveMeasure()}>
+            {t('measure.keep')}
+          </button>
+          <p className="hint">{t('measure.labelHint')}</p>
+        </div>
+      )}
+      {measure.saved.length > 0 && (
+        <div className="measure-saved" data-field="saved">
+          <strong>{t('measure.kept')}</strong>
+          <ul>
+            {measure.saved.map((x, i) => (
+              <li key={x.id} data-saved={x.id}>
+                <span>{t('measure.keptRow', { n: i + 1, distance: savedText(x)[1]?.replace(/^[^:]*:\s*/, '') ?? '', what: x.picks.map((p) => p.label).join(' — ') })}</span>
+                <button title={t('measure.remove')} onClick={() => store.removeSavedMeasure(x.id)}>
+                  ✕
+                </button>
+              </li>
+            ))}
+          </ul>
+          <button
+            data-action="copyAll"
+            onClick={() => {
+              const text = measure.saved.map((x, i) => `${i + 1}. ${x.picks.map((p) => p.label).join(' — ')}\n${savedText(x).join('\n')}`).join('\n\n');
+              void navigator.clipboard?.writeText(text).then(() => store.notify(t('measure.copied')), () => undefined);
+            }}
+          >
+            {t('measure.copyAll')}
+          </button>
+          <button data-action="clearAll" onClick={() => store.clearAllMeasures()}>
+            {t('measure.clearAll')}
           </button>
         </div>
       )}

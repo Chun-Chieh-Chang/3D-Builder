@@ -153,7 +153,7 @@ export function AssemblyViewport() {
     const refs = asm.mate ? [asm.mate.a, asm.mate.b] : selectedMate ? [selectedMate.a, selectedMate.b] : [];
     const shown = refs.flatMap((r) => (r ? [shownElement(r)] : []));
     // while measuring, what is picked is what is shown as chosen
-    v.setSelectedElements(measure ? measure.picks.flatMap((p) => (p.leaf ? [{ key: p.leaf, kind: p.kind, index: p.index }] : [])) : shown.flatMap((s) => (s.element ? [s.element] : [])));
+    v.setSelectedElements(measure ? measure.picks.flatMap((p) => (p.leaf && !p.point ? [{ key: p.leaf, kind: p.kind, index: p.index }] : [])) : shown.flatMap((s) => (s.element ? [s.element] : [])));
     const planes = shown.flatMap((s) => (s.plane ? [s.plane] : []));
     if (!asm.mate && asm.selected && isDatumPlaneName(asm.selected)) planes.push({ key: asm.selected, frame: DATUM_PLANES[asm.selected], highlighted: true });
     v.setPlanes(planes);

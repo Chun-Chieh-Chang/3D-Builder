@@ -191,6 +191,18 @@ export class Kernel {
     return s;
   }
 
+  /** A point as a shape (a vertex), so that the exact distance can be measured from it to anything (E1.1); the caller releases it. */
+  makeVertex(p: Vec3): ShapeId {
+    const arena = new Arena();
+    try {
+      const made = arena.own(new this.oc.BRepBuilderAPI_MakeVertex(this.pnt(arena, p)));
+      const vertex = arena.own(made.Vertex());
+      return this.put(vertex.Oriented(vertex.Orientation())); // a handle of its own: the arena lets go of the ones above
+    } finally {
+      arena.dispose();
+    }
+  }
+
   /** A second handle to the same shape: releasing either leaves the other intact. */
   copy(id: ShapeId): ShapeId {
     const s = this.get(id);

@@ -1,6 +1,6 @@
 import { t } from '@3db/i18n';
 import { KernelError, type Kernel, type ShapeId } from '@3db/kernel';
-import { edgeElement, faceElement, measureReport, placementRows, vertexElement, type MeasureElement, type MeasureReport, type MeasureTarget } from '@3db/model';
+import { edgeElement, faceElement, measureReport, placePoint, placementRows, vertexElement, type MeasureElement, type MeasureReport, type MeasureTarget } from '@3db/model';
 
 /**
  * Measures one or two elements (E1.1): each part is put where the assembly has it (before anything is read from it, so every number is in the
@@ -12,6 +12,13 @@ export function measureTargets(kernel: Kernel, shapeOf: (target: MeasureTarget) 
   const made: ShapeId[] = [];
   try {
     const subs = targets.map((target) => {
+      // a place, not an element: a point is as good as a vertex, wherever the part is
+      if (target.point) {
+        const at = placePoint(target.pose, target.mirrored, target.point);
+        const vertex = kernel.makeVertex(at);
+        made.push(vertex);
+        return { element: vertexElement({ point: at }), placed: vertex, sub: vertex };
+      }
       const base = shapeOf(target);
       if (base === null) throw new KernelError(t('measure.noElement'));
       let placed = base;
@@ -23,11 +30,12 @@ export function measureTargets(kernel: Kernel, shapeOf: (target: MeasureTarget) 
       const element: MeasureElement | null =
         target.kind === 'face' ? (topology.faces[target.index] ? faceElement(topology.faces[target.index]!) : null) : target.kind === 'edge' ? (topology.edges[target.index] ? edgeElement(topology.edges[target.index]!) : null) : topology.vertices[target.index] ? vertexElement(topology.vertices[target.index]!) : null;
       if (!element) throw new KernelError(t('measure.noElement'));
-      return { element, placed };
+      return { element, placed, sub: null as ShapeId | null };
     });
     let distance = null;
     if (subs.length === 2) {
       const [a, b] = subs.map((s, i) => {
+        if (s.sub !== null) return s.sub; // a point is its own shape
         const sub = kernel.subShape(s.placed, targets[i]!.kind, targets[i]!.index);
         made.push(sub);
         return sub;

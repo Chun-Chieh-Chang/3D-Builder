@@ -692,7 +692,7 @@ code{background:var(--chip);padding:0 4px;border-radius:4px}
 <summary><span class="iid">D9</span><span class="ttl">測量像 eDrawings：圖上畫出距離與 dX／dY／dZ、英制、弧圓量法</span><span class="tag t-core">必做</span>
 <select class="st" aria-label="D9 狀態"><option value="">未做</option><option value="ok">通過</option><option value="bad">有問題</option><option value="skip">略過</option></select></summary>
 <div class="inner">
-<p class="auto part"><b>已自動重播驗過（2026-10-09）。</b>腳本 <code>manual-measure-view.js</code>（10 步，零件、組合件的算法與工程圖英制）與單元測試 <code>measure-units.test.ts</code>、<code>drawing-units.test.ts</code> 驗了數字與文字；這一項留給你「用真的滑鼠點，看圖面標示順不順眼」：標籤會不會互相蓋住、線粗細、顏色。</p>
+<p class="auto part"><b>已自動重播驗過（2026-10-09）。</b>腳本 <code>manual-measure-view.js</code>（18 步，零件、組合件的算法、點選位置、保留多筆、拖標籤與工程圖英制）與單元測試 <code>measure-units.test.ts</code>、<code>drawing-units.test.ts</code> 驗了數字與文字；這一項留給你「用真的滑鼠點，看圖面標示順不順眼」：標籤會不會互相蓋住、線粗細、顏色。</p>
 <p class="why"><b>為什麼要做：</b>量測要像 eDrawings：兩個元素選好後，直接在 3D 裡看到距離與沿三個軸的分量，並且能用英制。</p>
 <h4>先準備</h4><p>開一個零件（例如 <code>金樣\定位板.3dbx</code>）或一個組合件，「工具」→「測量」。</p>
 <h4>怎麼做</h4>
@@ -702,9 +702,13 @@ code{background:var(--chip);padding:0 4px;border-radius:4px}
 <li>「複製結果」。<span class="see">貼到別處是結果那幾行文字。</span></li>
 <li><b>弧／圓測量：</b>點兩個孔的圓周邊線（或孔壁面）。<span class="see">「弧／圓測量」變成可選：中心到中心（預設）、最小距離、最大距離；圖上的線與數字跟著換。最大距離 = 中心距離 + 兩個半徑；最小 = 中心距離 − 兩個半徑。</span>兩個圓的軸不平行時沒有「最大距離」（面板會提示）。</li>
 <li>在組合件裡跨零件量測，同樣畫在組合件座標上。</li>
+<li><b>量任意位置的點：</b>測量面板的「選取」改選「點」。<span class="see">游標移到模型上會吸附並出現橘色圓點與名稱：端點、圓心（圓或圓弧）、邊的中點、邊上的點、面上的點；優先順序是端點、圓心、中點，其次邊上，最後是面上。</span>點兩個位置。<span class="see">畫出兩點的最短距離與 dX／dY／dZ，結果文字與一般量測相同。點的位置在模型被剖開時只吸附留下的部分。</span>也可以先點一個位置，再選「元素」改點一個面：<span class="see">是點到面的最短距離。</span></li>
+<li><b>保留多筆：</b>量好一筆按「保留這筆」。<span class="see">這一筆留在模型上與清單裡（「已保留的量測」），並開始新的一筆；改模型後保留的也會重新量。</span>清單的 ✕ 刪一筆；「複製全部」貼出每一筆的文字；「全部清除」都拿掉。</li>
+<li><b>搬標籤：</b>用滑鼠左鍵按住圖上的標籤拖到不擋事的地方。<span class="see">放開後留在那裡，改單位或重畫時位置不變。</span></li>
+<li><b>座標系：</b>零件裡先建一個座標系，測量面板出現「座標系」選單，選它。<span class="see">dX／dY／dZ 與階梯線改沿該座標系的軸（位移用該座標系的方向算）；選「世界座標」回原來的。組合件只有世界座標。</span></li>
 <li><b>英制的工程圖：</b>開一張工程圖，左邊面板「圖頁」區的「尺寸單位」選「英寸」。<span class="see">所有尺寸、公差、孔的深度與孔表都換成英寸（120 mm 寫 4.724）；圖頁尺寸、比例與檔案裡的數字仍是毫米。</span>公差的「上限／下限」欄這時用英寸輸入。</li>
 </ol>
-<h4>應該看到</h4><ul><li>線與標籤清楚、不被模型擋住（線畫在最上面）；同一位置的標籤上下錯開；放大縮小時線的粗細與標籤大小不變。</li><li>不順的地方請逐項寫在備註：標籤蓋住了什麼、顏色看不清、選的元素跟圖上標示對不起來。</li></ul>
+<h4>應該看到</h4><ul><li>線與標籤清楚、不被模型擋住（線畫在最上面）；同一位置的標籤上下錯開；放大縮小時線的粗細與標籤大小不變。</li><li>不順的地方請逐項寫在備註：標籤蓋住了什麼、顏色看不清、選的元素跟圖上標示對不起來、吸附到的位置不是你要的。</li><li>已知：保留的量測在離開測量工具後會消失；點存的是零件自己座標裡的位置，重建後不會跟著拓樸走。</li></ul>
 <p class="report"><b>有問題時請回報：</b>選了哪兩個元素、哪個單位與選項、截圖。</p>
 <label class="note">備註<textarea rows="2" placeholder="做到哪一步、畫面訊息原文、和預期的差別…"></textarea></label>
 </div></details>

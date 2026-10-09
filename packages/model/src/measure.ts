@@ -17,6 +17,11 @@ export interface MeasureTarget {
   kind: MeasureKind;
   /** The element's number in the order of the kernel's topology (what the mesh's face, edge and vertex numbers are). */
   index: number;
+  /**
+   * A place instead of an element (a point on a face or an edge, a middle, a centre; kind `vertex`, `index` is not used): where it is in the part's own frame, so that it goes with
+   * the part when the part is moved in an assembly. It is measured like a vertex.
+   */
+  point?: Vec3;
 }
 
 /** What one element is, in the frame it was measured in. A number that does not apply is null. */
@@ -214,6 +219,13 @@ export function roundReport(a: MeasureRound, b: MeasureRound): RoundReport {
   let w = unit(lateral);
   if (norm(w) === 0) w = unit(cross(axisA, Math.abs(axisA[0]) < 0.9 ? [1, 0, 0] : [0, 1, 0]));
   return { centre, max: between(add(pa, w, -a.radius), add(pb, w, b.radius)) };
+}
+
+/** A point of a part's own frame, put where the assembly has the part (the same motion as `placementRows`). */
+export function placePoint(pose: Pose | null, mirrored: boolean, p: Vec3): Vec3 {
+  if (!pose && !mirrored) return p;
+  const m = placementRows(pose ?? { position: [0, 0, 0], rotation: [0, 0, 0, 1] }, mirrored);
+  return [m[0]! * p[0] + m[1]! * p[1] + m[2]! * p[2] + m[3]!, m[4]! * p[0] + m[5]! * p[1] + m[6]! * p[2] + m[7]!, m[8]! * p[0] + m[9]! * p[1] + m[10]! * p[2] + m[11]!];
 }
 
 /**

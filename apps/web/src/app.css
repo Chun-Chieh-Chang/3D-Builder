@@ -184,9 +184,13 @@ code { font-family: Consolas, 'Cascadia Mono', monospace; font-size: 11px; }
 .measure-options { display: flex; flex-wrap: wrap; gap: 4px 10px; align-items: center; padding: 4px 0; font-size: 12px; }
 .measure-options label { display: inline-flex; gap: 4px; align-items: center; }
 .measure-options label.off { opacity: 0.55; }
+.measure-saved { border-top: 1px solid var(--line); padding-top: 4px; font-size: 12px; }
+.measure-saved ul { list-style: none; margin: 2px 0; padding: 0; }
+.measure-saved li { display: flex; gap: 6px; align-items: center; justify-content: space-between; padding: 1px 0; }
 .measure-result { border-top: 1px solid var(--line); padding-top: 4px; }
 .measure-result pre { margin: 2px 0 4px; font: 12px/1.45 inherit; white-space: pre-wrap; background: rgba(0, 0, 0, 0.04); padding: 4px 6px; border-radius: 3px; }
-.overlay-label.measure-label { display: flex; align-items: stretch; font-size: 13px; border: 1px solid #222; background: #fff; color: #111; box-shadow: 0 1px 3px rgba(0, 0, 0, 0.35); }
+.overlay-label.snap-label { font-size: 12px; padding: 2px 5px; background: #fff4e6; border: 1px solid #f08c00; color: #7a4100; border-radius: 3px; }
+.overlay-label.measure-label { pointer-events: auto; cursor: grab; display: flex; align-items: stretch; font-size: 13px; border: 1px solid #222; background: #fff; color: #111; box-shadow: 0 1px 3px rgba(0, 0, 0, 0.35); }
 .overlay-label.measure-label .name { padding: 2px 4px; color: #fff; font-weight: 600; }
 .overlay-label.measure-label .value { padding: 2px 5px; }
 .overlay-label.dimension { padding: 2px 3px; background: rgba(255, 255, 255, 0.85); border-radius: 2px; color: #3d4650; }

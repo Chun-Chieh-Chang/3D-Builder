@@ -3,7 +3,7 @@
  * (parallel, square, at an angle; the total length along the axes); and for round elements the distance from centre to centre and the farthest. Worked out by hand.
  */
 import { describe, expect, it } from 'vitest';
-import { DEFAULT_MEASURE_OPTIONS, between, edgeElement, faceElement, formatAngle, formatLength, measureReport, roundReport, toInches, valueIn, viewMeasure, type MeasureElement, type MeasureRound } from '@3db/model';
+import { DEFAULT_MEASURE_OPTIONS, between, components, edgeElement, faceElement, formatAngle, formatLength, measureReport, roundReport, toInches, valueIn, viewMeasure, type MeasureElement, type MeasureRound } from '@3db/model';
 
 describe('lengths', () => {
   it('millimetres: as many decimals as asked, none that are zero', () => {
@@ -196,5 +196,36 @@ describe('what is drawn and written (the numbers of the eDrawings picture: dX 43
     const d = viewMeasure(measureReport([line(0), line(0)], { distance: 0, pointA: [1, 2, 3], pointB: [1, 2, 3] }), DEFAULT_MEASURE_OPTIONS);
     expect(d.drawing?.lines).toEqual([]);
     expect(d.text).toEqual(['所選的兩個項次相互平行。', '距離: 0mm']);
+  });
+});
+
+describe('a coordinate system, several measurements, labels moved by the user', () => {
+  const line = (x: number): MeasureElement => ({ kind: 'edge', type: 'line', point: [x, 0, 0], area: null, length: 10, radius: null, direction: [0, 1, 0], round: null });
+  const report = measureReport([line(0), line(43)], { distance: 43.104, pointA: [0, 0, 0], pointB: [43, 0, 3] });
+  // a system turned a quarter round about z: its x is the world's y, its y is the world's −x
+  const turned = { origin: [0, 0, 0] as [number, number, number], axes: [[0, 1, 0], [-1, 0, 0], [0, 0, 1]] as [[number, number, number], [number, number, number], [number, number, number]] };
+
+  it('the differences are along its axes: 43 along the world\'s x is 43 along its (negative) y, nothing along its x', () => {
+    expect(components([43, 0, 3], turned)).toEqual([0, -43, 3]);
+    expect(components([43, 0, 3], null)).toEqual([43, 0, 3]);
+    const v = viewMeasure(report, DEFAULT_MEASURE_OPTIONS, { frame: turned });
+    expect(v.text.slice(2, 5)).toEqual(['  Delta X: 0mm', '  Delta Y: 43mm', '  Delta Z: 3mm']);
+    expect(v.text[5]).toBe('總長度: 46mm');
+  });
+
+  it('and the legs are drawn along them: green along the system\'s y (the world\'s x, from 0 to 43), blue up 3; none along its x', () => {
+    const d = viewMeasure(report, DEFAULT_MEASURE_OPTIONS, { frame: turned }).drawing!;
+    expect(d.lines.slice(1)).toEqual([
+      { a: [0, 0, 0], b: [43, 0, 0], color: 0x2f9e44 },
+      { a: [43, 0, 0], b: [43, 0, 3], color: 0x1c4eca },
+    ]);
+    expect(d.labels.map((l) => l.name)).toEqual(['距離:', 'dY:', 'dZ:']);
+  });
+
+  it('a prefix makes the keys of the labels of one measurement its own; what the user moved a label by is added to where it is put', () => {
+    const v = viewMeasure(report, DEFAULT_MEASURE_OPTIONS, { prefix: 'm2:', offsets: { 'm2:dx': [5, 7], 'dx': [100, 100] } }).drawing!;
+    expect(v.labels.map((l) => l.key)).toEqual(['m2:distance', 'm2:dx', 'm2:dz']);
+    expect(v.labels[1]!.offset).toEqual([5, -3]); // the usual [0, -10] and the move
+    expect(v.labels[0]!.offset).toEqual([0, 16]);
   });
 });
