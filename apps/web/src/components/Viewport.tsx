@@ -687,6 +687,14 @@ export function ViewOptions({ assembly = false }: { assembly?: boolean }) {
     const plane: SectionPlane = { normal, offset: cut.flip ? -cut.at : cut.at };
     v.setSection(plane);
   }, [cut, result, placed]);
+  // the cut can be taken hold of in the graphics area (left button on the orange fill) and dragged: the viewer says where it is now
+  const cutting = cut !== null;
+  useEffect(() => {
+    const v = store.viewer;
+    if (!v) return;
+    v.setSectionDrag(cutting ? (at) => setCut((c) => (c ? { ...c, at } : c)) : null);
+    return () => v.setSectionDrag(null);
+  }, [cutting]);
   const span = range ? Math.max(range[1] - range[0], 1e-6) : 1;
   return (
     <div className="view-options">
@@ -708,7 +716,7 @@ export function ViewOptions({ assembly = false }: { assembly?: boolean }) {
         ))}
       </span>
       )}
-      <button className={cut ? 'active' : ''} onClick={() => setCut(cut ? null : { axis: 0, at: ((bounds?.min[0] ?? 0) + (bounds?.max[0] ?? 0)) / 2, flip: false })}>
+      <button className={cut ? 'active' : ''} title={t('view.sectionDragTip')} onClick={() => setCut(cut ? null : { axis: 0, at: ((bounds?.min[0] ?? 0) + (bounds?.max[0] ?? 0)) / 2, flip: false })}>
         {t('view.section')}
       </button>
       {cut && range && (

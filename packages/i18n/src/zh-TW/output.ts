@@ -120,6 +120,7 @@ export const output = {
   'view.sectionZ': '垂直於 Z',
   'view.sectionAt': '剖面的位置',
   'view.sectionValueTip': '直接輸入剖面的位置（mm），按 Enter 套用、Esc 取消',
+  'view.sectionDragTip': '剖面開著時，用滑鼠左鍵按住橘色的切面上下拖動，可以直接移動剖面的位置（也可以用右邊的滑桿或直接輸入數字）',
   'view.sectionFlip': '反向',
   'options.title': '系統選項',
   'options.language': '介面語言',

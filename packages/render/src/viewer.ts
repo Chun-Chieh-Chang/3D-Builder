@@ -276,6 +276,11 @@ export class Viewer {
   private faceColors: readonly (string | null)[] = [];
   private displayMode: DisplayMode = 'shadedEdges';
   private clip: THREE.Plane[] = [];
+  /** The section as it was asked for (setSection), and who is told when the user drags it with the left button (setSectionDrag). */
+  private section: SectionPlane | null = null;
+  private sectionDragHandler: ((at: number) => void) | null = null;
+  private sectionDrag: { move: (e: PointerEvent) => void; up: () => void } | null = null;
+  private sectionCursor = false;
   /** What fills the cut of a section so that the solid does not look hollow (see updateCap), and what it was made for. */
   private cap: { key: string; objects: THREE.Object3D[]; planes: THREE.Mesh[]; materials: THREE.Material[] } | null = null;
   /** The edges that lie behind the body, drawn dashed in 'hiddenVisible'. */
@@ -342,6 +347,7 @@ export class Viewer {
 
     this.controls = new ViewControls(this.camera, this.renderer.domElement, () => this.viewChanged());
     const dom = this.renderer.domElement;
+    dom.addEventListener('pointerdown', this.onSectionDown, true); // before the controls and the component drags: a press on the cut is the cut's
     dom.addEventListener('pointerdown', this.onPointerDown);
     dom.addEventListener('pointermove', this.onPointerMove);
     dom.addEventListener('pointerup', this.onPointerUp);
@@ -380,6 +386,7 @@ export class Viewer {
     this.setHighlights([]);
     this.setParts(new Map());
     this.setSection(null);
+    this.endSectionDrag();
     this.instanceEdges.dispose();
     this.renderer.dispose();
     this.renderer.domElement.remove();
@@ -1453,6 +1460,8 @@ export class Viewer {
   };
 
   private onPointerMove = (e: PointerEvent) => {
+    if (this.clip.length > 0 && !this.sectionDrag && e.buttons === 0) this.setSectionCursor(!!this.sectionHit(e.clientX, e.clientY));
+    else if (this.clip.length === 0 && this.sectionCursor) this.setSectionCursor(false);
     if (this.press) {
       if (e.buttons & (this.press.button === 'left' ? 1 : 2)) return this.dragMove(e);
       // Released where the canvas could not see it: a drag ends there, as if released.
@@ -1491,6 +1500,7 @@ export class Viewer {
   };
 
   private onPointerLeave = (e: PointerEvent) => {
+    if (!this.sectionDrag) this.setSectionCursor(false);
     if (this.toolHandler) this.tool('leave', e, false);
     this.setHoveredVertex(-1);
     this.setHovered(-1);
@@ -1529,6 +1539,7 @@ export class Viewer {
 
   /** Cuts the model open at a plane, or (null) puts it back. */
   setSection(section: SectionPlane | null): void {
+    this.section = section;
     this.clip = section ? [new THREE.Plane(new THREE.Vector3(...section.normal).normalize().negate(), section.offset)] : [];
     this.applyDisplay();
   }
@@ -1537,6 +1548,97 @@ export class Viewer {
   contentBounds(): { min: [number, number, number]; max: [number, number, number] } | null {
     const box = this.contentBox();
     return box.isEmpty() ? null : { min: [box.min.x, box.min.y, box.min.z], max: [box.max.x, box.max.y, box.max.z] };
+  }
+
+  /** Who is told the new position (along the axis of the cut, as `at` in the SectionPlane's own terms) while the cut is dragged with the left button; null: it cannot be dragged. */
+  setSectionDrag(handler: ((at: number) => void) | null): void {
+    this.sectionDragHandler = handler;
+    if (!handler) this.endSectionDrag();
+  }
+
+  /**
+   * Where the cut is under the cursor, or null: the point of the cut plane the cursor is on when that is inside a solid (an odd number of its surfaces ahead along a direction
+   * that is no axis) and no kept surface is in front of it. That is where the orange fill is, the part of the cut that can be taken hold of.
+   */
+  private sectionHit(clientX: number, clientY: number): THREE.Vector3 | null {
+    const plane = this.clip[0];
+    if (!plane || !this.sectionDragHandler || this.toolHandler || this.pickElements) return null;
+    const solids = [...(this.body ? [this.body] : []), ...[...this.instances.values()].map((i) => i.body)];
+    if (solids.length === 0) return null;
+    const ray = this.rayAt(clientX, clientY);
+    const at = ray.intersectPlane(plane, new THREE.Vector3());
+    if (!at) return null;
+    const along = at.clone().sub(ray.origin).dot(ray.direction);
+    const first = new THREE.Raycaster(ray.origin, ray.direction).intersectObjects(solids, false).find((h) => this.kept(h.point));
+    const size = this.contentBox().getSize(new THREE.Vector3()).length() || 1;
+    if (first && first.distance < along - 1e-6 * size) return null; // something kept hides the cut here
+    const probe = new THREE.Raycaster(at, new THREE.Vector3(0.267, 0.534, 0.802).normalize());
+    return solids.some((m) => probe.intersectObject(m, false).length % 2 === 1) ? at : null;
+  }
+
+  private setSectionCursor(on: boolean): void {
+    if (on === this.sectionCursor) return;
+    this.sectionCursor = on;
+    this.renderer.domElement.style.cursor = on ? 'grab' : '';
+  }
+
+  /** A left press on the cut: it follows the pointer along its axis until the button is let go. The mapping is the screen's: how far the axis moves a point on the screen. */
+  private onSectionDown = (e: PointerEvent) => {
+    const section = this.section;
+    const handler = this.sectionDragHandler;
+    if (e.button !== 0 || e.altKey || e.ctrlKey || e.shiftKey || !section || !handler || this.sectionDrag) return;
+    const grab = this.sectionHit(e.clientX, e.clientY);
+    if (!grab) return;
+    e.stopImmediatePropagation();
+    e.preventDefault();
+    // the axis the cut is across, as a positive unit vector, and where the cut is on it
+    const n = new THREE.Vector3(...section.normal);
+    const sign = Math.sign(n.x + n.y + n.z) || 1;
+    const axis = n.clone().multiplyScalar(sign);
+    const index = Math.abs(axis.x) > 0.5 ? 0 : Math.abs(axis.y) > 0.5 ? 1 : 2;
+    const startAt = sign * section.offset;
+    const bounds = this.contentBounds();
+    const [lo, hi] = bounds ? [bounds.min[index], bounds.max[index]] : [-Infinity, Infinity];
+    // screen pixels for one unit along the axis at the grab (the camera looks straight, so it is the same everywhere); where the axis points at the viewer that is nothing, and then up and down is what moves it
+    this.syncCamera();
+    const rect = this.renderer.domElement.getBoundingClientRect();
+    const toPx = (p: THREE.Vector3): [number, number] => {
+      const q = p.clone().project(this.camera);
+      return [((q.x + 1) / 2) * rect.width, ((1 - q.y) / 2) * rect.height];
+    };
+    const a = toPx(grab);
+    const b = toPx(grab.clone().add(axis));
+    const s: [number, number] = [b[0] - a[0], b[1] - a[1]];
+    const perUnit = rect.height / ((this.camera.top - this.camera.bottom) / this.camera.zoom);
+    const straightOn = Math.hypot(s[0], s[1]) < 0.3 * perUnit;
+    const from: [number, number] = [e.clientX, e.clientY];
+    const dom = this.renderer.domElement;
+    dom.style.cursor = 'grabbing';
+    const move = (m: PointerEvent) => {
+      const dx = m.clientX - from[0];
+      const dy = m.clientY - from[1];
+      const delta = straightOn ? -dy / perUnit : (dx * s[0] + dy * s[1]) / (s[0] * s[0] + s[1] * s[1]);
+      handler(Math.min(hi, Math.max(lo, startAt + delta)));
+    };
+    const up = () => {
+      this.endSectionDrag();
+      this.swallowClick = true; // the click that ends the press is not a pick
+      setTimeout(() => (this.swallowClick = false), 0);
+    };
+    this.sectionDrag = { move, up };
+    window.addEventListener('pointermove', move);
+    window.addEventListener('pointerup', up);
+    window.addEventListener('pointercancel', up);
+  };
+
+  private endSectionDrag(): void {
+    const d = this.sectionDrag;
+    if (!d) return;
+    window.removeEventListener('pointermove', d.move);
+    window.removeEventListener('pointerup', d.up);
+    window.removeEventListener('pointercancel', d.up);
+    this.sectionDrag = null;
+    this.renderer.domElement.style.cursor = this.sectionCursor ? 'grab' : '';
   }
 
   /** Is the point on the side of the section that is kept? */

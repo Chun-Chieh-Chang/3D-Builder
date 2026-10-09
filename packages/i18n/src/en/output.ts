@@ -122,6 +122,7 @@ export const output: Translation = {
   'view.sectionZ': 'Normal to Z',
   'view.sectionAt': 'Position of the section',
   'view.sectionValueTip': 'Type the position of the section (mm); Enter applies it, Esc cancels',
+  'view.sectionDragTip': 'With a section on, drag the orange cut with the left mouse button to move the section (or use the slider, or type the position)',
   'view.sectionFlip': 'Flip',
   'options.title': 'System Options',
   'options.language': 'Language',
