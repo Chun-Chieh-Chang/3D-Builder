@@ -165,5 +165,35 @@ M.run = async () => {
     await H.wait(300);
     return { pass: near(at('front')[0], f[0]) && near(at('front')[1], f[1]) && near(at('top')[1], t[1]) && near(at('right')[0], r[0]) && drw().doc.sheet.shift?.[0] === 12 && viewOf('top').slide === -18, f, t, r };
   });
+  await step('11 with the dimensions drawn on the views and a scale that is too big, 最適比例 picks the scale at which the lines and the dimensions are all inside the area of the sheet', async () => {
+    const panel = (sel) => document.querySelector(`[data-drawing-panel] ${sel}`);
+    for (const dir of ['front', 'top']) {
+      panel(`[data-view="${viewOf(dir).id}"]`).click();
+      await H.waitFor(() => drw().features.get(viewOf(dir).id), 30000, `the features of the ${dir} view`);
+      await H.wait(150);
+      panel('[data-action="autoDimension"]').click();
+      await H.waitFor(() => drw().doc.dimensions.some((x) => x.view === viewOf(dir).id) && drw().elements.size >= drw().doc.dimensions.length, 30000, `the dimensions of the ${dir} view`);
+    }
+    store.drawingStore.setSheet({ scale: [2, 1], shift: null });
+    await H.wait(250);
+    const tooBig = (() => {
+      const items = store.drawingStore.scene().scene.items.filter((i) => i.group);
+      return items.length > 0;
+    })();
+    panel('[data-action="autoScale"]').click();
+    await H.wait(500);
+    const sheet = drw().doc.sheet;
+    const { scene } = store.drawingStore.scene();
+    // the lines of the views and the dimensions (not the frame and the title block)
+    const pts = [];
+    for (const i of scene.items) {
+      if (i.kind === 'polyline' && (i.style === 'visible' || i.style === 'hidden' || i.style === 'dimension' || i.style === 'center')) for (let k = 0; k + 1 < i.points.length; k += 2) pts.push([i.points[k], i.points[k + 1]]);
+    }
+    const [x0, x1] = [Math.min(...pts.map((p) => p[0])), Math.max(...pts.map((p) => p[0]))];
+    const [y0, y1] = [Math.min(...pts.map((p) => p[1])), Math.max(...pts.map((p) => p[1]))];
+    // the area of an A3: x 28 to 402, y 66 to 279
+    const inside = x0 >= 28 - 0.01 && x1 <= 402 + 0.01 && y0 >= 66 - 0.01 && y1 <= 279 + 0.01;
+    return { pass: tooBig && inside && !(sheet.scale[0] === 2 && sheet.scale[1] === 1) && pts.length > 0, scale: sheet.scale, shift: sheet.shift, box: [x0, y0, x1, y1] };
+  });
   return { name: 'drawing-linked', steps, pass: steps.every((s) => s.pass) };
 };

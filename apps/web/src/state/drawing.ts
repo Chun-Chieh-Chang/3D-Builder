@@ -38,7 +38,7 @@ import {
 } from '@3db/model';
 import { drawingFileName, writeDrawingFile } from '@3db/io';
 import { FontError, readTrueType, toDxf, toPdf, type TrueTypeFont } from '@3db/drawing';
-import { autoDimensions, buildScene, FIRST_OFFSET, OFFSET_STEP, ratio, scaleOf, STANDARD_SCALES, suggestScale, toSvg, type AutoDimensionOptions, type DimensionOutcome, type ElementsResult, type HoleRow, type PlacedView, type ViewBom, type Scene, type ViewLines } from '@3db/drawing';
+import { autoDimensions, buildScene, FIRST_OFFSET, OFFSET_STEP, ratio, scaleOf, STANDARD_SCALES, fitViews, toSvg, type AutoDimensionOptions, type DimensionOutcome, type ElementsResult, type HoleRow, type PlacedView, type ViewBom, type Scene, type ViewLines } from '@3db/drawing';
 import type { Remote } from 'comlink';
 import { download, fileIn, pathIn, pickDrawingSaveTarget, pickFontFile, writeFile } from '../files';
 import type { KernelApi } from '../worker/protocol';
@@ -687,16 +687,16 @@ export class DrawingStore {
     this.execute({ type: 'setView', viewId: id, patch });
   }
 
-  /** The largest standard scale at which the views fit the sheet. */
+  /** 「最適比例」: the largest standard scale at which the views, with their dimensions and marks, fit the sheet, and the arrangement moved to the middle of the area with them. */
   autoScale(): void {
-    const doc = this.history.doc;
-    const sizes = new Map<Id, { w: number; h: number }>();
-    for (const v of doc.views) {
-      const box = this.state.lines.get(v.id)?.box;
-      sizes.set(v.id, box ? { w: box.max[0] - box.min[0], h: box.max[1] - box.min[1] } : { w: 0, h: 0 });
-    }
-    const scale = suggestScale(doc.views.filter((v) => !v.at && !v.scale), sizes, doc.sheet);
-    if (scale[0] !== doc.sheet.scale[0] || scale[1] !== doc.sheet.scale[1]) this.execute({ type: 'setSheet', sheet: { scale } });
+    const { doc, lines, elements, features, boms } = this.state;
+    const fit = fitViews(doc, lines, elements, features, boms);
+    if (!fit) return;
+    const sheet: Extract<DrawingCommand, { type: 'setSheet' }>['sheet'] = {};
+    if (fit.scale[0] !== doc.sheet.scale[0] || fit.scale[1] !== doc.sheet.scale[1]) sheet.scale = fit.scale;
+    const was = doc.sheet.shift;
+    if ((fit.shift?.[0] ?? 0) !== (was?.[0] ?? 0) || (fit.shift?.[1] ?? 0) !== (was?.[1] ?? 0)) sheet.shift = fit.shift;
+    if (Object.keys(sheet).length > 0) this.execute({ type: 'setSheet', sheet });
   }
 
   // ------------------------------------------------------------ output and saving
