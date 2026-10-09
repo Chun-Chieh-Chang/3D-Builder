@@ -180,23 +180,23 @@ describe('a chamfer given a face', () => {
 
 describe('the document with faces in a fillet', () => {
   it('is a new schema, written and read back as it was, and an older file is read as it was', () => {
-    expect(SCHEMA_VERSION).toBe(49);
+    expect(SCHEMA_VERSION).toBe(50);
     const doc = add(build(...block()), filletOf('f1', [TOP, BOTTOM]), chamferOf('c1', [TOP], '1', '1'));
     const back = parsePart(serializePart(doc));
-    expect(back.schemaVersion).toBe(49);
+    expect(back.schemaVersion).toBe(50);
     expect(back.features.find((f) => f.id === 'f1')).toMatchObject({ type: 'fillet', faces: [{ name: 'e1:cap:end' }, { name: 'e1:cap:start' }] });
     expect(back.features.find((f) => f.id === 'c1')).toMatchObject({ type: 'chamfer', faces: [{ name: 'e1:cap:end' }] });
     // a file of version 42 has no faces and reads as it did
     const old = JSON.parse(serializePart(add(build(...block()), filletOf('f1', [], '2', [edgeRef('x')])))) as { schemaVersion: number };
     old.schemaVersion = 42;
     const read = parsePart(JSON.stringify(old));
-    expect(read.schemaVersion).toBe(49);
+    expect(read.schemaVersion).toBe(50);
     expect(read.features.find((f) => f.id === 'f1')).not.toHaveProperty('faces');
   });
 
   it('is refused with the reason by a program that is older: the version says so', () => {
     const future = JSON.parse(serializePart(build(...block()))) as { schemaVersion: number };
-    future.schemaVersion = 50;
+    future.schemaVersion = 51;
     expect(() => parsePart(JSON.stringify(future))).toThrow();
   });
 

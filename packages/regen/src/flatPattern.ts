@@ -2,6 +2,7 @@ import { t } from '@3db/i18n';
 import type { Frame, Kernel, Region, ShapeId } from '@3db/kernel';
 import type { Id } from '@3db/model';
 import type { SheetInfo } from './engine';
+import { obroundRegion } from './relief';
 
 /**
  * The flat pattern of a sheet metal part (C11.3, ADR 0088): worked out from the data the features recorded when they were made (`SheetInfo`), not from the folded solid. The base is
@@ -150,7 +151,14 @@ export function flatPattern(kernel: Kernel, sheet: SheetInfo): FlatPattern {
           body = keep(kernel.boolean('cut', body, keep(tool)).shape);
         };
         if (g.trim > 0) cut(kernel.extrude(place(g.origin), [strip(g.ylo - 1, g.yhi + 1)], addv([0, 0, 0], n, s * (g.trim + 1)), 0).shape);
-        for (const notch of g.notches) cut(kernel.extrude(place(addv(g.mid, g.o, -notch.deep)), [strip(g.ylo - 1, g.yhi + 1, notch.x0, notch.x1)], addv([0, 0, 0], n, s * (notch.deep + 1)), 0).shape);
+        for (const notch of g.notches) {
+          if (notch.shape === 'obround') {
+            // its profile lies in the plane of the sheet (along the edge, into the sheet) and is cut through the thickness
+            const into: Vec3 = [-o[0], -o[1], -o[2]];
+            const frameO: Frame = { origin: move(F, addv(g.mid, m, g.ylo - 1)), xDir: e, yDir: into, normal: cross(e, into) };
+            cut(kernel.extrude(frameO, [obroundRegion(notch, 'flat')], addv([0, 0, 0], m, g.yhi - g.ylo + 2), 0).shape);
+          } else cut(kernel.extrude(place(addv(g.mid, g.o, -notch.deep)), [strip(g.ylo - 1, g.yhi + 1, notch.x0, notch.x1)], addv([0, 0, 0], n, s * (notch.deep + 1)), 0).shape);
+        }
         // the bend (as wide as the flange), then the flat piece (wider at an end where the corner is closed); at a mitred end both run on to the outer face of the neighbour and are cut
         // back to the curve the mitre plane makes on the unrolled sheet
         const [mA, mB] = fl.miter;

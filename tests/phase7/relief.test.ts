@@ -8,7 +8,7 @@ import { applyCommand, type Feature, type PartDoc, type Ref } from '@3db/model';
 import { edgeFingerprint } from '@3db/naming';
 import { PlaneGcsSolver } from '@3db/sketch';
 import { Kernel } from '@3db/kernel';
-import { Regenerator, type RebuildResult } from '@3db/regen';
+import { flatPattern, Regenerator, type RebuildResult } from '@3db/regen';
 import { build, front, rectangle, sketch, statuses } from '../phase1/builders';
 
 let kernel: Kernel;
@@ -74,7 +74,7 @@ describe('a flange that stops short', () => {
     expect(volume(plain) - volume(r)).toBeCloseTo(2 * 1.5 * (Ro + 1.5) * T, 4);
     expect(kernel.solidCount(r.body!.shape)).toBe(1);
     expect(kernel.isValid(r.body!.shape)).toBe(true);
-    expect(r.sheet!.flanges[0]!.relief).toEqual({ width: 1.5, depth: 1.5 });
+    expect(r.sheet!.flanges[0]!.relief).toEqual({ width: 1.5, depth: 1.5, shape: 'rect' });
   });
 
   it('a notch is cut only where the flange stops short, and no wider than the inset: inset 1 at the start only, relief 1.5 wide → one notch 1 wide, 7.5 mm³', () => {
@@ -99,6 +99,47 @@ describe('a flange that stops short', () => {
     const r = hem({ inset: { start: '2', end: '2' }, relief: { width: '1.5', depth: '1.5' } });
     expect(failures(r)).toEqual([]);
     expect(volume(plain) - volume(r)).toBeCloseTo(2 * 1.5 * (2 + 1.5) * T, 4);
+  });
+});
+
+describe('the shape of the relief: obround and tear (schema 50)', () => {
+  const inset = { start: '10', end: '0' };
+  it('an obround 4 wide and 4 deeper than the bend starts: the notch is 4 × (7.5 − 2) plus a half circle of radius 2, cut through the 1.5 thickness', () => {
+    const plain = make({ inset });
+    const r = make({ inset, relief: { width: '4', depth: '4', shape: 'obround' } });
+    expect(failures(r)).toEqual([]);
+    const area = 4 * (Ro + 4 - 2) + (Math.PI * 2 ** 2) / 2;
+    expect(volume(plain) - volume(r)).toBeCloseTo(area * T, 4);
+    expect(kernel.solidCount(r.body!.shape)).toBe(1);
+    expect(kernel.isValid(r.body!.shape)).toBe(true);
+    expect(r.sheet!.flanges[0]!.relief).toEqual({ width: 4, depth: 4, shape: 'obround' });
+    // the flat pattern has the same notch: its area is smaller by the area of the notch (and its outline has the half circle)
+    const flatPlain = flatPattern(kernel, plain.sheet!);
+    const flat = flatPattern(kernel, r.sheet!);
+    try {
+      expect(flatPlain.area - flat.area).toBeCloseTo(area, 3);
+      expect(flat.outline.some((seg) => seg.kind === 'arc' && Math.abs(seg.r - 2) < 1e-6)).toBe(true);
+    } finally {
+      kernel.release(flatPlain.shape);
+      kernel.release(flat.shape);
+    }
+  });
+
+  it('a tear is a slit 0.05 wide and as deep: 0.05 × (3.5 + 1.5) × 1.5; the width asked for is not used', () => {
+    const plain = make({ inset: { start: '1', end: '0' } });
+    const r = make({ inset: { start: '1', end: '0' }, relief: { width: '9', depth: '1.5', shape: 'tear' } });
+    expect(failures(r)).toEqual([]);
+    expect(volume(plain) - volume(r)).toBeCloseTo(0.05 * (Ro + 1.5) * T, 4);
+    expect(kernel.isValid(r.body!.shape)).toBe(true);
+    expect(r.sheet!.flanges[0]!.relief).toMatchObject({ shape: 'tear' });
+  });
+
+  it('an obround whose depth is less than half its width does not fit and is said; a rectangle by name is the rectangle of before', () => {
+    const bad = make({ inset, relief: { width: '20', depth: '1', shape: 'obround' } });
+    expect(bad.features.find((f) => f.id === 'ef')).toMatchObject({ status: 'error', message: expect.stringContaining('長圓') });
+    const rect = make({ inset, relief: { width: '4', depth: '4', shape: 'rect' } });
+    const none = make({ inset, relief: { width: '4', depth: '4' } });
+    expect(volume(rect)).toBeCloseTo(volume(none), 9);
   });
 });
 

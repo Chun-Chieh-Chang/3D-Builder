@@ -287,6 +287,7 @@ export const features: Translation = {
   'flange.notSheetEdge': 'Pick a straight edge on the end of the sheet (the edge between a face of the sheet and its end face)',
   'flange.angleRange': 'The angle of a flange has to be above 0 and under 180°, and the bend radius above 0',
   'flange.tooShort': 'The flange is too short to hold the bend: from this position it has to be longer than {need}',
+  'flange.reliefObround': 'The obround relief does not fit: its depth must be at least half of its width (the closed end is a half circle)',
   'flange.trimBad': 'The sheet by this edge cannot hold the bend (it is too short, or there is a bend next to the edge): the volume cut from the sheet is not what was expected',
   'flange.collides': 'The flange runs into the rest of the sheet (a flange on the next edge overlapping it at the corner, say): the volume added is not what was expected',
   'flange.fromOuter': 'the outside virtual sharp',

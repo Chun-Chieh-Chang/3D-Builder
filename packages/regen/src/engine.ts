@@ -38,6 +38,7 @@ import {
   type RefPointFeature,
   type RevolveFeature,
   type RibFeature,
+  type ReliefShape,
   type OffsetSurfaceFeature,
   type SplitLineFeature,
   type KnitFeature,
@@ -68,6 +69,7 @@ import { KernelError, SURFACE_TOLERANCE, type Region, type SweepSpec, type FaceO
 import { nameElements, nameFromFaces, resolveRef, type Candidate, type ElementNames } from '@3db/naming';
 import { Bodies, type BodyState, type BodyView } from './bodies';
 import { followReferences, ReferenceProblem } from './references';
+import { notchOf, obroundFits, obroundRegion, type Notch } from './relief';
 import { angleStep, mirror, slide, turn, type Motion } from './placements';
 
 export type FeatureStatus = 'ok' | 'error' | 'suppressed' | 'rolledBack';
@@ -146,7 +148,7 @@ export interface FoldGeometry {
   yhi: number;
   trim: number;
   /** The notches of the relief: along the edge from `x0` to `x1`, `deep` in from the edge. */
-  notches: { x0: number; x1: number; deep: number }[];
+  notches: Notch[];
   /** The flat piece after the bend, along the edge: from `pa` to `pb` (the bend's own range, widened at an end where the corner is closed). */
   pa: number;
   pb: number;
@@ -216,7 +218,7 @@ export interface SheetFlange {
   allowance: number;
   /** How far it stops short of the ends of the edge (the start, the end), and the relief notches beside it ({width, depth} or null). */
   inset: [number, number];
-  relief: { width: number; depth: number } | null;
+  relief: { width: number; depth: number; shape: ReliefShape } | null;
   /** How far the flat piece goes on past the end of the bend at the start and at the end, to close the corner (0 where it does not). */
   corner: [number, number];
   /** The mitre at the start and at the end (null where there is none): see `SheetMiter`. */
@@ -2432,7 +2434,7 @@ export class Regenerator {
    * and how much of the sheet is cut back. The edge is between a face of the sheet and its end face; the piece bends toward the side of the face the edge is on (`flip`: the other).
    */
   private foldEdge(
-    f: { id: Id; edge: Ref; flip?: boolean; inset?: { start: string; end: string }; relief?: { width: string; depth: string }; corner?: { start?: string; end?: string }; miter?: { start?: string; end?: string } },
+    f: { id: Id; edge: Ref; flip?: boolean; inset?: { start: string; end: string }; relief?: { width: string; depth: string; shape?: ReliefShape }; corner?: { start?: string; end?: string }; miter?: { start?: string; end?: string } },
     set: Bodies,
     plan: (sheet: SheetInfo) => { rb: number; theta: number; straight: number; trim: number; info: (allowance: number) => string },
   ): BodyState[] {
@@ -2467,7 +2469,7 @@ export class Regenerator {
     if (insetA < 0 || insetB < 0 || !(Wf > 1e-6)) throw new FeatureError(t('flange.insets'));
     const xa = -W / 2 + insetA;
     const xb = W / 2 - insetB;
-    const relief = f.relief ? { width: evalLength(f.relief.width), depth: evalLength(f.relief.depth) } : null;
+    const relief = f.relief ? { width: evalLength(f.relief.width), depth: evalLength(f.relief.depth), shape: f.relief.shape ?? ('rect' as ReliefShape) } : null;
     const neg = (v: Vec3): Vec3 => [-v[0], -v[1], -v[2]];
     const m: Vec3 = f.flip ? neg(nF) : nF;
     // along m the sheet is from y = -T to 0 when it bends toward the face the edge is on, from 0 to T when the other way; the inside of the bend is the face on the side of m
@@ -2617,12 +2619,23 @@ export class Regenerator {
     if (relief) {
       const deep = trim + relief.depth;
       const frameN: PlaneFrame = { origin: add(edge.mid, o, -deep), xDir: e, yDir: m, normal: cross(e, m) };
-      for (const [name, inset, x0, x1] of [['reliefA', insetA, xa - Math.min(relief.width, insetA), xa], ['reliefB', insetB, xb, xb + Math.min(relief.width, insetB)]] as const) {
+      for (const [name, inset, atStart] of [['reliefA', insetA, true], ['reliefB', insetB, false]] as const) {
         if (!(inset > 1e-9)) continue;
-        const notch = this.capsNamed(this.kernel.extrude(frameN, [strip(name, ylo - 1, yhi + 1, x0, x1)], add([0, 0, 0], n3, s3 * (deep + 1)), 0), name, 'start', 'end');
-        list = this.apply(f.id, 'cut', notch, { featureId: f.id, sketchId: 'flange' }, list, false);
-        expected += (x1 - x0) * deep * T;
-        notches.push({ x0, x1, deep });
+        const shape = notchOf(relief.shape, relief.width, relief.depth, trim, inset, atStart ? xa : xb, atStart);
+        const { x0, x1 } = shape;
+        let tool: OpResult;
+        if (shape.shape === 'obround') {
+          if (!obroundFits(shape)) throw new FeatureError(t('flange.reliefObround'));
+          // the profile lies in the plane of the sheet (along the edge, into the sheet) and is cut through the thickness
+          const frameO: PlaneFrame = { origin: add(edge.mid, m, ylo - 1), xDir: e, yDir: neg(o), normal: cross(e, neg(o)) };
+          tool = this.kernel.extrude(frameO, [obroundRegion(shape, name)], add([0, 0, 0], m, yhi - ylo + 2), 0);
+          expected += ((x1 - x0) * (deep - (x1 - x0) / 2) + (Math.PI * ((x1 - x0) / 2) ** 2) / 2) * T;
+        } else {
+          tool = this.kernel.extrude(frameN, [strip(name, ylo - 1, yhi + 1, x0, x1)], add([0, 0, 0], n3, s3 * (deep + 1)), 0);
+          expected += (x1 - x0) * deep * T;
+        }
+        list = this.apply(f.id, 'cut', this.capsNamed(tool, name, 'start', 'end'), { featureId: f.id, sketchId: 'flange' }, list, false);
+        notches.push(shape);
       }
     }
     // (the volume of a body is integrated over all its faces, which costs most on a plate with many holes: it is taken as few times as the checks need)

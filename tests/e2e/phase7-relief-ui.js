@@ -67,6 +67,32 @@ g.run = async () => {
   await H.settle();
   near(volume(), sized(35) - 2 * 1.5 * (Ro + 1.5) * T, 'with the relief');
 
+  // the shape of the notch: an obround (a half circle at the closed end), and a tear (a slit; it has no width of its own)
+  const pickShape = async (shape) => {
+    store.beginEdit(id);
+    await H.waitFor(() => store.getState().editing?.featureId === id, 5000, 'editing again');
+    await H.settle();
+    const select = document.querySelector('.property-manager [data-field="reliefShape"]');
+    Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value').set.call(select, shape);
+    select.dispatchEvent(new Event('change', { bubbles: true }));
+    await H.settle();
+  };
+  await pickShape('obround');
+  H.check(feature().relief.shape === 'obround' && pm().includes('離隙寬度'), 'the obround is chosen and still has its width');
+  store.commitEdit();
+  await H.settle();
+  near(volume(), sized(35) - 2 * (1.5 * (Ro + 1.5 - 0.75) + (Math.PI * 0.75 ** 2) / 2) * T, 'with obround reliefs');
+  await pickShape('tear');
+  H.check(feature().relief.shape === 'tear' && !pm().includes('離隙寬度'), 'the tear is chosen and has no width');
+  store.commitEdit();
+  await H.settle();
+  near(volume(), sized(35) - 2 * 0.05 * (Ro + 1.5) * T, 'with tear reliefs');
+  await pickShape('rect');
+  H.check(feature().relief.shape === undefined, 'a rectangle is what no shape says');
+  store.commitEdit();
+  await H.settle();
+  near(volume(), sized(35) - 2 * 1.5 * (Ro + 1.5) * T, 'a rectangle again');
+
   store.beginEdit(id);
   await H.waitFor(() => store.getState().editing?.featureId === id, 5000, 'editing again');
   await H.settle();

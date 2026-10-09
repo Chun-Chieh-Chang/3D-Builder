@@ -172,6 +172,8 @@ const migrations: Record<number, (doc: Json) => Json> = {
   47: (doc) => doc,
   // v49: the pictures of a sketch (`pictures`, and blobs of kind png or jpg). Absent means none, as before; nothing to convert.
   48: (doc) => doc,
+  // v50: the shape of the notch of a relief of an edge flange or a hem (`relief.shape`: rect, obround, tear). Absent means a rectangle, as before; nothing to convert.
+  49: (doc) => doc,
 };
 
 export class FormatError extends Error {

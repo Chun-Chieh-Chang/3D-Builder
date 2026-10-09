@@ -285,6 +285,7 @@ export const features = {
   'flange.notSheetEdge': '要選板的端面上的一條直邊（板的面與它的端面之間的那條邊）',
   'flange.angleRange': '凸緣的角度要大於 0 且小於 180°，折彎半徑要大於 0',
   'flange.tooShort': '凸緣太短，連折彎都放不下：從這個位置量至少要比 {need} 長',
+  'flange.reliefObround': '長圓離隙放不下：深度要不小於寬度的一半（底端是半圓）',
   'flange.trimBad': '這條邊附近的板放不下折彎（板太短、或邊旁邊已經有折彎）：板切掉的體積和預期不同',
   'flange.collides': '凸緣撞到板的其他部分（例如相鄰邊上的凸緣在角落重疊）：加上去的體積和預期不同',
   'flange.fromOuter': '外側虛擬交點',

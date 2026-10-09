@@ -6,7 +6,7 @@ import type { Id } from './ids';
  * DOF status, mass properties and error lists are derived data and never stored.
  */
 
-export const SCHEMA_VERSION = 49;
+export const SCHEMA_VERSION = 50;
 
 /** Value expression (B5.2, B5.3): "20", "25.4mm", "30deg", "wall_t*2", "D1@草圖1/2", "property('厚度')"; see `expr/`. */
 export type Expr = string;
@@ -689,11 +689,18 @@ export interface EdgeFlangeFeature extends FeatureBase {
   /**
    * The flange stops short of the ends of the edge (v39, C11.4): `start` from the end where the edge begins when it is walked with the face it is on in front of you and the outside
    * on your right, `end` from the other. Where it stops short, `relief` cuts a rectangular notch into the sheet beside it, `width` along the edge and `depth` deeper than the bend starts,
-   * so that the bend can form without tearing the sheet next to it.
+   * so that the bend can form without tearing the sheet next to it. The notch is a rectangle (`shape` absent or `rect`), an obround (`obround`: the closed end is a half circle,
+   * `depth` is to the bottom of it, so it must be at least half the `width`), or a tear (`tear`: a slit as wide as `TEAR_RELIEF_WIDTH`, `width` is not used).
    */
   inset?: { start: Expr; end: Expr };
-  relief?: { width: Expr; depth: Expr };
+  relief?: { width: Expr; depth: Expr; shape?: ReliefShape };
 }
+
+/** The shape of the notch of a relief (v50). */
+export type ReliefShape = 'rect' | 'obround' | 'tear';
+export const RELIEF_SHAPES: readonly ReliefShape[] = ['rect', 'obround', 'tear'];
+/** The width of the slit of a tear relief (mm): a tear has no width of its own, a solid cannot have none. */
+export const TEAR_RELIEF_WIDTH = 0.05;
 
 /**
  * Hem (摺邊, C11.2, v38): on a straight edge of the sheet (as for the edge flange) a bend of 180° and a flat piece folded back over the sheet, `length` long after the bend, with
@@ -709,10 +716,10 @@ export interface HemFeature extends FeatureBase {
   /**
    * The flange stops short of the ends of the edge (v39, C11.4): `start` from the end where the edge begins when it is walked with the face it is on in front of you and the outside
    * on your right, `end` from the other. Where it stops short, `relief` cuts a rectangular notch into the sheet beside it, `width` along the edge and `depth` deeper than the bend starts,
-   * so that the bend can form without tearing the sheet next to it.
+   * so that the bend can form without tearing the sheet next to it (`shape` as for the edge flange).
    */
   inset?: { start: Expr; end: Expr };
-  relief?: { width: Expr; depth: Expr };
+  relief?: { width: Expr; depth: Expr; shape?: ReliefShape };
 }
 
 /**

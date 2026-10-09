@@ -1,7 +1,7 @@
 import { t } from '@3db/i18n';
 import type { Id } from './ids';
 import { evalAngle, evalLength, evalQuantity, ExprError, parseExpr, referencesOf, rewriteRefs, type Env, type NameRef, type Quantity } from './expr';
-import type { Draft, Expr, Feature, PartDoc, PatternDirection, SketchConstraint, SketchFeature, Thin, Variable } from './schema';
+import type { Draft, Expr, Feature, PartDoc, PatternDirection, ReliefShape, SketchConstraint, SketchFeature, Thin, Variable } from './schema';
 import { isDimension } from './schema';
 
 /**
@@ -66,9 +66,9 @@ export function dimensionName(c: SketchConstraint): string {
 }
 
 /** The insets and the relief of an edge flange or a hem with their expressions rewritten, or null when there are none or they are as they were. */
-function flangeExtras(f: { inset?: { start: Expr; end: Expr }; relief?: { width: Expr; depth: Expr } }, fn: (expr: Expr, kind: ExprKind, role: ExprRole) => Expr): { inset?: { start: Expr; end: Expr }; relief?: { width: Expr; depth: Expr } } | null {
+function flangeExtras(f: { inset?: { start: Expr; end: Expr }; relief?: { width: Expr; depth: Expr; shape?: ReliefShape } }, fn: (expr: Expr, kind: ExprKind, role: ExprRole) => Expr): { inset?: { start: Expr; end: Expr }; relief?: { width: Expr; depth: Expr; shape?: ReliefShape } } | null {
   const inset = f.inset && { start: fn(f.inset.start, 'length', 'nonNegative'), end: fn(f.inset.end, 'length', 'nonNegative') };
-  const relief = f.relief && { width: fn(f.relief.width, 'length', 'positive'), depth: fn(f.relief.depth, 'length', 'positive') };
+  const relief = f.relief && { width: fn(f.relief.width, 'length', 'positive'), depth: fn(f.relief.depth, 'length', 'positive'), ...(f.relief.shape ? { shape: f.relief.shape } : {}) };
   const same = (!inset || (inset.start === f.inset!.start && inset.end === f.inset!.end)) && (!relief || (relief.width === f.relief!.width && relief.depth === f.relief!.depth));
   return same ? null : { ...(inset ? { inset } : {}), ...(relief ? { relief } : {}) };
 }

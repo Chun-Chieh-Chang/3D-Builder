@@ -20,6 +20,7 @@ import {
   type DraftFeature,
   type HoleFeature,
   holeSize,
+  RELIEF_SHAPES,
   HOLE_STANDARD_SOURCE,
   ISO_HOLE_SIZES,
   DOWEL_FITS,
@@ -2230,12 +2231,24 @@ function FlangeExtras({ f, run }: { f: EdgeFlangeFeature | HemFeature; run: (pat
       {f.relief && (
         <>
           <label className="pm-row">
-            <span>{t('pm.flange.reliefWidth')}</span>
-            <ValueInput value={f.relief.width} toCommand={(width) => run({ relief: { width, depth: f.relief!.depth } })} />
+            <span>{t('pm.flange.reliefShape')}</span>
+            <select data-field="reliefShape" value={f.relief.shape ?? 'rect'} onChange={(e) => store.execute(run({ relief: { width: f.relief!.width, depth: f.relief!.depth, ...(e.target.value === 'rect' ? {} : { shape: e.target.value }) } }))}>
+              {RELIEF_SHAPES.map((s) => (
+                <option key={s} value={s}>
+                  {t(`pm.flange.reliefShape.${s}`)}
+                </option>
+              ))}
+            </select>
           </label>
+          {f.relief.shape !== 'tear' && (
+            <label className="pm-row">
+              <span>{t('pm.flange.reliefWidth')}</span>
+              <ValueInput value={f.relief.width} toCommand={(width) => run({ relief: { ...f.relief!, width } })} />
+            </label>
+          )}
           <label className="pm-row">
             <span>{t('pm.flange.reliefDepth')}</span>
-            <ValueInput value={f.relief.depth} toCommand={(depth) => run({ relief: { width: f.relief!.width, depth } })} />
+            <ValueInput value={f.relief.depth} toCommand={(depth) => run({ relief: { ...f.relief!, depth } })} />
           </label>
         </>
       )}
