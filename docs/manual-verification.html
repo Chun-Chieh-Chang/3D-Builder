@@ -4,6 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>3D-Builder 實機驗證清單</title>
+<script>try { document.documentElement.dataset.theme = localStorage.getItem('3db-manual-theme') === 'dark' ? 'dark' : 'light'; } catch (e) { document.documentElement.dataset.theme = 'light'; }</script>
 <style>
 :root{--bg:#f6f7f9;--panel:#fff;--ink:#1c2430;--mute:#5d6b7d;--line:#d9dee6;--accent:#1f6feb;--ok:#1a7f37;--bad:#cf222e;--skip:#8a6d00;--chip:#eef2f7}
 @media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#12161c;--panel:#1a2029;--ink:#e6ebf2;--mute:#9aa7b8;--line:#2d3744;--accent:#58a6ff;--ok:#3fb950;--bad:#f85149;--skip:#d29922;--chip:#242c38}}
@@ -57,7 +58,7 @@ details[open]>summary::before{content:"▾"}
 .see{display:block;color:var(--mute);font-size:14px;margin-top:1px}.see::before{content:"→ "}
 .guide{background:var(--panel);border:1px solid var(--line);border-radius:10px;margin-bottom:16px}.guide>summary{padding:12px 16px;font-size:16px}.guide .gbody{padding:0 16px 14px;border-top:1px dashed var(--line)}.guide h3{font-size:15px;margin:14px 0 4px}.guide h4{margin:10px 0 2px;font-size:14px;color:var(--accent)}.guide ul,.guide ol{margin:4px 0;padding-left:1.4em}.guide li{margin:3px 0}.guide table{border-collapse:collapse;width:100%;font-size:14px}.guide td,.guide th{border:1px solid var(--line);padding:4px 8px;text-align:left;vertical-align:top}.guide th{background:var(--chip)}
 .inner p b{color:var(--ink)}
-.auto{margin:10px 0 0;padding:8px 10px;border-left:4px solid var(--ok);background:var(--chip);border-radius:6px;font-size:14px}.auto.part{border-left-color:var(--skip)}
+.auto{margin:10px 0 0;padding:8px 10px;border-left:4px solid var(--ok);background:var(--chip);border-radius:6px;font-size:14px}.auto.part{border-left-color:var(--skip)}.auto.user{border-left-color:#1c7ed6}
 .hide{display:none!important}
 code{background:var(--chip);padding:0 4px;border-radius:4px}
 @media (max-width:820px){nav{display:none}.wrap{padding:12px}.inner{padding-left:16px}}
@@ -70,7 +71,7 @@ code{background:var(--chip);padding:0 4px;border-radius:4px}
 <div class="bar">
 <div class="prog" aria-label="完成進度"><i id="pbar"></i></div>
 <span class="stat" id="pstat"></span>
-<button id="expand">全部展開</button><button id="collapse">全部收合</button>
+<button id="theme" title="淺色或深色背景（記在這個瀏覽器）"></button> <button id="expand">全部展開</button><button id="collapse">全部收合</button>
 <button id="copy">複製結果</button><button id="reset">清除記錄</button>
 </div>
 <div class="filters" id="filters">
@@ -82,10 +83,10 @@ code{background:var(--chip);padding:0 4px;border-radius:4px}
 <nav><ol><li><a href="#prep">0. 開始之前（只做一次）<span class="cnt" data-sec="prep"></span></a></li><li><a href="#desktop">A. 桌面版安裝<span class="cnt" data-sec="desktop"></span></a></li><li><a href="#basic">B. 基礎功能殘留<span class="cnt" data-sec="basic"></span></a></li><li><a href="#p3a">C. 零件建模（Phase 3a）<span class="cnt" data-sec="p3a"></span></a></li><li><a href="#p3b">D. 組合件（Phase 3b）<span class="cnt" data-sec="p3b"></span></a></li><li><a href="#p4a">E. 夾治具（Phase 4a）<span class="cnt" data-sec="p4a"></span></a></li><li><a href="#p5">F. 工程圖（Phase 5）<span class="cnt" data-sec="p5"></span></a></li><li><a href="#p4b">G. 檢具型面塊（Phase 4b）<span class="cnt" data-sec="p4b"></span></a></li><li><a href="#p6">H. 塑膠件（Phase 6）<span class="cnt" data-sec="p6"></span></a></li><li><a href="#p7">I. 鈑金（Phase 7）<span class="cnt" data-sec="p7"></span></a></li><li><a href="#samples">J. 需要真實樣本的驗證<span class="cnt" data-sec="samples"></span></a></li><li><a href="#standards">K. 對照你的標準<span class="cnt" data-sec="standards"></span></a></li><li><a href="#cleanup">L. 清理與收尾<span class="cnt" data-sec="cleanup"></span></a></li></ol></nav>
 <main>
 <div class="lead">
-<p><b>這份清單是什麼：</b>自動化測試（共 2370 項）都通過了。2026-10-08 起，我又用腳本在真實瀏覽器裡把下面 <b>56 項</b>逐步重播過（<code>npm run verify:ui</code>，每個步驟的數字都是手算的答案，畫面截圖我也看過，並順手修掉了找到的缺陷），這些項目<b>預設隱藏，不用你做</b>；逐項紀錄在 <code>docs/verification-coverage.md</code>。留下來的是<b>還沒有人用滑鼠、鍵盤、別的軟體實際走過、或需要你下決定</b>的項目：每一項最上面的綠／黃框說明「已驗了什麼、還剩什麼」。每一項都寫了「為什麼要做、先準備什麼、怎麼做、應該看到什麼、有問題時回報什麼」。第一次用請先讀下面的「先看這裡」（畫面怎麼認、共用做法、名詞）；步驟裡每個動作下面以「→」開頭的小字，是做完那個動作你應該看到的畫面。C 章到 I 章（C1 到 I10）都已改寫成逐步做法；A、B、J、K、L 與 0 章維持原樣（要另一台電腦、你的樣本或你的決定）。</p>
+<p><b>這份清單是什麼：</b>自動化測試（共 2395 項）都通過了。2026-10-08 起，我又用腳本在真實瀏覽器裡把下面 <b>56 項</b>逐步重播過（<code>npm run verify:ui</code>，每個步驟的數字都是手算的答案，畫面截圖我也看過，並順手修掉了找到的缺陷），這些項目<b>預設隱藏，不用你做</b>；另外有 <b>11 項是你自己確認過的</b>（P1–P3、B1、C1–C5、C17、H9，寫在各項最上面的藍框），也預設隱藏、算已處理，換電腦或換瀏覽器不會再顯示成「未做」；逐項紀錄在 <code>docs/verification-coverage.md</code>。留下來的是<b>還沒有人用滑鼠、鍵盤、別的軟體實際走過、或需要你下決定</b>的項目：每一項最上面的綠／黃框說明「已驗了什麼、還剩什麼」。每一項都寫了「為什麼要做、先準備什麼、怎麼做、應該看到什麼、有問題時回報什麼」。第一次用請先讀下面的「先看這裡」（畫面怎麼認、共用做法、名詞）；步驟裡每個動作下面以「→」開頭的小字，是做完那個動作你應該看到的畫面。<b>現在還剩（2026-10-09）：</b>① <b>I10</b> 真人走一遍鈑金支架（今天就能做）；② <b>F6</b> 用 Chrome 開 PDF（2 分鐘）；③ <b>F4</b> 孔標註用語合不合公司習慣；④ <b>D8、G5、I9</b> 你 10-05 在 eDrawings 開過，認可就選「通過」，沒有別的 CAD 的部分選「略過」；⑤ <b>D3、J 章</b>要真實樣本；⑥ <b>K 章</b>要你決定；⑦ <b>A1</b> 放最後：驗證都結束後重建安裝檔，再拿到另一個帳號或電腦裝（舊的安裝檔不含最近的改動）。C 章到 I 章（C1 到 I10）都已改寫成逐步做法；A、B、J、K、L 與 0 章維持原樣（要另一台電腦、你的樣本或你的決定）。</p>
 <p><b>怎麼用：</b>點項目標題展開；做完在右邊的下拉選單選「通過」「有問題」「略過」，並在備註寫下觀察。進度會自動存在這個瀏覽器裡。全部做完（或做到一個段落）按上方的「複製結果」把整份貼給我。</p>
 <p><b>建議順序：</b>先做 0（準備）→ C（零件，每項十分鐘內）→ D、E（組合件與夾具）→ F（工程圖）→ H、I（塑膠與鈑金），標「必做」的優先；標「需樣本」「需你決定」的是等你提供資料或下決定，不用現在做。</p>
-<p class="stat">產生日期 2026-10-04，2026-10-06、2026-10-08 更新；對應的程式版本：提交 a950822 之後，檔案格式 Schema 42。下文的「驗證資料夾」指 P2 用 KIT_OUT 做出來的那個資料夾（本文的例子寫 D:\3DB實機確認，你的在哪裡就用哪裡）。</p>
+<p class="stat">產生日期 2026-10-04，2026-10-06、2026-10-08、2026-10-09 更新；對應的程式版本：提交 9f272d8 之後，零件格式 Schema 49、工程圖格式 Schema 7（2026-10-09 起工程圖的視圖可以用滑鼠拖曳改位置、拖右下角的方塊改比例，「最適比例」連標註一起算）。下文的「驗證資料夾」指 P2 用 KIT_OUT 做出來的那個資料夾（本文的例子寫 D:\3DB實機確認，你的在哪裡就用哪裡）。</p>
 </div>
 <!--guide-start-->
 <details class="guide" id="recipes" open>
@@ -197,27 +198,30 @@ code{background:var(--chip);padding:0 4px;border-radius:4px}
 </div>
 </details>
 <!--guide-end-->
-<section id="prep" class="sec"><h2>0. 開始之前（只做一次）</h2><p class="intro">這一節不是驗證項目，是把環境與測試用的檔案準備好。後面的項目都假設你做完了這一節。</p><details class="item" id="item-P1" data-id="P1" data-sec="prep" data-tag="prep">
+<section id="prep" class="sec"><h2>0. 開始之前（只做一次）</h2><p class="intro">這一節不是驗證項目，是把環境與測試用的檔案準備好。後面的項目都假設你做完了這一節。</p><details class="item" id="item-P1" data-id="P1" data-auto="user" data-sec="prep" data-tag="prep">
 <summary><span class="iid">P1</span><span class="ttl">啟動程式、選對瀏覽器</span><span class="tag t-prep">準備</span>
 <select class="st" aria-label="P1 狀態"><option value="">未做</option><option value="ok">通過</option><option value="bad">有問題</option><option value="skip">略過</option></select></summary>
+<p class="auto user"><b>你已確認通過（2026-10-05）。</b>啟動程式、選對瀏覽器。</p>
 <div class="inner">
 <p class="why"><b>為什麼要做：</b>程式用到瀏覽器的「檔案系統存取」功能，只有 Edge 與 Chrome 有，Firefox、Safari 不行。</p>
 <h4>怎麼做</h4><ol><li>在專案資料夾（放 3D-Builder 程式碼的那個資料夾）開終端機，輸入 npm run dev。</li><li>用 Edge 或 Chrome 開 http://127.0.0.1:5391 。第一次會下載約 43 MB 的幾何核心，畫面上會有載入進度。</li><li>看到上方有「特徵｜鈑金｜草圖｜工具｜檔案｜檢視」分頁就是好了。</li></ol>
 <h4>應該看到</h4><ul><li>畫面左邊有設計樹、中間是 3D 視窗、上方是分頁。</li><li>按一下「檔案」分頁裡的「新示範件」，3D 視窗出現一個方塊（有圓角）。</li></ul>
 <p class="report"><b>有問題時請回報：</b>若打不開：請貼終端機最後 20 行字。</p>
 <label class="note">備註<textarea rows="2" placeholder="做到哪一步、畫面訊息原文、和預期的差別…"></textarea></label>
-</div></details><details class="item" id="item-P2" data-id="P2" data-sec="prep" data-tag="prep">
+</div></details><details class="item" id="item-P2" data-id="P2" data-auto="user" data-sec="prep" data-tag="prep">
 <summary><span class="iid">P2</span><span class="ttl">建立測試用的專案資料夾與樣本檔</span><span class="tag t-prep">準備</span>
 <select class="st" aria-label="P2 狀態"><option value="">未做</option><option value="ok">通過</option><option value="bad">有問題</option><option value="skip">略過</option></select></summary>
+<p class="auto user"><b>你已確認通過（2026-10-05）。</b>驗證資料夾與樣本檔已建立。</p>
 <div class="inner">
 <p class="why"><b>為什麼要做：</b>之後要存檔、開檔、插入零件，都要有一個你可以隨便弄髒的資料夾。</p>
 <h4>怎麼做</h4><ol><li>在專案資料夾開終端機（PowerShell），輸入：<code>$env:KIT_OUT = 'D:\3DB實機確認'; npm run make:kit</code>（資料夾位置可自己換，這台電腦沒有 D: 就改成 C:\3DB實機確認；不要用「下載」資料夾；沒設 KIT_OUT 時寫到 D:\3DB實機確認，這個磁碟不存在就會失敗。這個資料夾就是下文的「驗證資料夾」）。這個指令會產生驗證用的所有檔案，檔案不在版本庫裡，每台電腦要自己產生一次。</li><li>資料夾的根目錄會有 4 個檔案：locating-plate.3dbx（定位板）、diamond-pin.3dbx（削邊銷）、v-block.3dbx（V 型塊）、plate-with-hole.step（40 × 30 × 10 的板、中間一個半徑 4 的孔）。</li><li>另有子資料夾：夾具組、組合件金樣、塑膠件、鈑金、STEP替身、輸出（含 看圖清單.md）。這些是程式自己做的替身，不是真實的 SolidWorks 檔案。弄壞了再執行一次 make:kit 就會覆蓋回來。</li></ol>
 <h4>應該看到</h4><ul><li>資料夾根目錄有 4 個檔案，另有 6 個子資料夾（夾具組、組合件金樣、塑膠件、鈑金、STEP替身、輸出）。</li></ul>
 
 <label class="note">備註<textarea rows="2" placeholder="做到哪一步、畫面訊息原文、和預期的差別…"></textarea></label>
-</div></details><details class="item" id="item-P3" data-id="P3" data-sec="prep" data-tag="prep">
+</div></details><details class="item" id="item-P3" data-id="P3" data-auto="user" data-sec="prep" data-tag="prep">
 <summary><span class="iid">P3</span><span class="ttl">怎麼回報問題</span><span class="tag t-prep">準備</span>
 <select class="st" aria-label="P3 狀態"><option value="">未做</option><option value="ok">通過</option><option value="bad">有問題</option><option value="skip">略過</option></select></summary>
+<p class="auto user"><b>你已確認通過（2026-10-05）。</b>回報問題的方式已用過。</p>
 <div class="inner">
 <p class="why"><b>為什麼要做：</b>回報得越具體，我越容易重現。</p>
 <h4>怎麼做</h4><ol><li>每個項目下面都有一欄「備註」，邊做邊寫：做到哪一步、畫面上跳出的訊息原文、你預期看到什麼。</li><li>做完按頁面上方的「複製結果」，整份貼給我即可。</li><li>遇到畫面卡住或全白：按 F12 開開發者工具的 Console 分頁，把紅字複製下來。</li></ol>
@@ -233,9 +237,10 @@ code{background:var(--chip);padding:0 4px;border-radius:4px}
 <h4>應該看到</h4><ul><li>每一步都沒有錯誤訊息；原生視窗可用；斷網也能完整操作；解除安裝後沒有殘留的程式資料夾與捷徑。</li><li>已知的限制（不算問題）：沒有自動更新、圖示是暫用的、解除安裝不會清掉自動存檔的還原副本。</li></ul>
 <p class="report"><b>有問題時請回報：</b>請回報：哪一步失敗、Windows 版本、有沒有跳出任何錯誤視窗。</p>
 <label class="note">備註<textarea rows="2" placeholder="做到哪一步、畫面訊息原文、和預期的差別…"></textarea></label>
-</div></details></section><section id="basic" class="sec"><h2>B. 基礎功能殘留</h2><p class="intro">Phase 1、2 補做的小功能，還沒有人用滑鼠走過。</p><details class="item" id="item-B1" data-id="B1" data-sec="basic" data-tag="look">
+</div></details></section><section id="basic" class="sec"><h2>B. 基礎功能殘留</h2><p class="intro">Phase 1、2 補做的小功能，還沒有人用滑鼠走過。</p><details class="item" id="item-B1" data-id="B1" data-auto="user" data-sec="basic" data-tag="look">
 <summary><span class="iid">B1</span><span class="ttl">設計樹的「眼睛」與遺失參考的修復</span><span class="tag t-look">看畫面</span>
 <select class="st" aria-label="B1 狀態"><option value="">未做</option><option value="ok">通過</option><option value="bad">有問題</option><option value="skip">略過</option></select></summary>
+<p class="auto user"><b>你已確認通過（2026-10-05）。</b>設計樹的眼睛與遺失參考的修復。走的時候發現的四件事都已處理：原點預設顯示、三個基準面預設隱藏（照 SolidWorks）；「關掉再開」的做法已補進清單；刪掉伸長後圓角只會得到「之前沒有本體」，沒有「改用最接近的」（這一步略過，由 <code>tests/phase1/repair.test.ts</code> 驗過）；設計樹的右鍵不再出現瀏覽器的原生選單。</p>
 <div class="inner">
 <p class="why"><b>為什麼要做：</b>眼睛控制原點、基準面、草圖要不要顯示；預設值要和 SolidWorks 一樣；壞掉的參考要能一鍵修。</p>
 <p class="why helpref"><b>程式內的說明（按 F1，或功能列最右的「說明」搜尋）：</b>圓角、設計樹（FeatureManager）。這一項驗出問題、修好時，這些說明也要一起改。</p>
@@ -243,9 +248,10 @@ code{background:var(--chip);padding:0 4px;border-radius:4px}
 <h4>應該看到</h4><ul><li>預設：三個基準面隱藏、原點顯示；每個眼睛都能切換 3D 視窗裡對應的東西。</li><li>存檔、開新零件、再開啟舊檔之後，眼睛的狀態和存檔前相同。</li></ul>
 <p class="report"><b>有問題時請回報：</b>預設值與上面不同，或存檔重開後眼睛的狀態跑掉時，請寫出是哪一個項目（原點、哪個基準面、哪個草圖）以及存檔前後的狀態。</p>
 <label class="note">備註<textarea rows="2" placeholder="做到哪一步、畫面訊息原文、和預期的差別…"></textarea></label>
-</div></details></section><section id="p3a" class="sec"><h2>C. 零件建模（Phase 3a）</h2><p class="intro">以下每一項，自動化測試都用程式驅動過，但沒有人用滑鼠與鍵盤實際走一遍。重點是「順不順」：按鈕找得到嗎、提示看得懂嗎、結果對不對。建議每個項目都用示範件或金樣零件做，不需要自己的檔案。</p><details class="item" id="item-C1" data-id="C1" data-sec="p3a" data-tag="core">
+</div></details></section><section id="p3a" class="sec"><h2>C. 零件建模（Phase 3a）</h2><p class="intro">以下每一項，自動化測試都用程式驅動過，但沒有人用滑鼠與鍵盤實際走一遍。重點是「順不順」：按鈕找得到嗎、提示看得懂嗎、結果對不對。建議每個項目都用示範件或金樣零件做，不需要自己的檔案。</p><details class="item" id="item-C1" data-id="C1" data-auto="user" data-sec="p3a" data-tag="core">
 <summary><span class="iid">C1</span><span class="ttl">方程式、全域變數與檔案屬性（3a-1）</span><span class="tag t-core">必做</span>
 <select class="st" aria-label="C1 狀態"><option value="">未做</option><option value="ok">通過</option><option value="bad">有問題</option><option value="skip">略過</option></select></summary>
+<p class="auto user"><b>你已確認通過（2026-10-06）。</b>方程式、全域變數與檔案屬性。</p>
 <div class="inner">
 <p class="why"><b>為什麼要做：</b>尺寸可以寫成運算式，並且跟著變數走。</p>
 <p class="why helpref"><b>程式內的說明（按 F1，或功能列最右的「說明」搜尋）：</b>方程式、檔案屬性、新示範件。這一項驗出問題、修好時，這些說明也要一起改。</p>
@@ -254,9 +260,10 @@ code{background:var(--chip);padding:0 4px;border-radius:4px}
 <h4>應該看到</h4><ul><li>每個改動都立即反映在模型上；設計樹沒有變紅，最下方沒有出現錯誤。</li></ul>
 <p class="report"><b>有問題時請回報：</b>請記下哪個運算式寫法不被接受、錯誤訊息是什麼。</p>
 <label class="note">備註<textarea rows="2" placeholder="做到哪一步、畫面訊息原文、和預期的差別…"></textarea></label>
-</div></details><details class="item" id="item-C2" data-id="C2" data-sec="p3a" data-tag="core">
+</div></details><details class="item" id="item-C2" data-id="C2" data-auto="user" data-sec="p3a" data-tag="core">
 <summary><span class="iid">C2</span><span class="ttl">刪除面與移動面（3a-2）</span><span class="tag t-core">必做</span>
 <select class="st" aria-label="C2 狀態"><option value="">未做</option><option value="ok">通過</option><option value="bad">有問題</option><option value="skip">略過</option></select></summary>
+<p class="auto user"><b>你已確認通過（2026-10-06）。</b>刪除面與移動面。</p>
 <div class="inner">
 <p class="why"><b>為什麼要做：</b>直接編輯輸入進來的、或已建好的模型：不用回到草圖就能拿掉圓角或推拉一個面。</p>
 <p class="why helpref"><b>程式內的說明（按 F1，或功能列最右的「說明」搜尋）：</b>刪除面、移動面、圓角。這一項驗出問題、修好時，這些說明也要一起改。</p>
@@ -266,9 +273,10 @@ code{background:var(--chip);padding:0 4px;border-radius:4px}
 <h4>應該看到</h4><ul><li>每一步的結果都和每步下面「→」後面的說明一致；錯誤訊息是中文且看得懂。</li></ul>
 
 <label class="note">備註<textarea rows="2" placeholder="做到哪一步、畫面訊息原文、和預期的差別…"></textarea></label>
-</div></details><details class="item" id="item-C3" data-id="C3" data-sec="p3a" data-tag="look">
+</div></details><details class="item" id="item-C3" data-id="C3" data-auto="user" data-sec="p3a" data-tag="look">
 <summary><span class="iid">C3</span><span class="ttl">輸入 STEP 為本體與診斷報告（3a-2）</span><span class="tag t-look">看畫面</span>
 <select class="st" aria-label="C3 狀態"><option value="">未做</option><option value="ok">通過</option><option value="bad">有問題</option><option value="skip">略過</option></select></summary>
+<p class="auto user"><b>你已確認通過（2026-10-06）。</b>輸入 STEP 為本體與診斷報告。</p>
 <div class="inner">
 <p class="why"><b>為什麼要做：</b>真實檔案進來後的第一關。這裡用小的樣本先看流程，真實檔案放在 J 節。</p>
 <p class="why helpref"><b>程式內的說明（按 F1，或功能列最右的「說明」搜尋）：</b>輸入 STEP。這一項驗出問題、修好時，這些說明也要一起改。</p>
@@ -276,9 +284,10 @@ code{background:var(--chip);padding:0 4px;border-radius:4px}
 <h4>應該看到</h4><ul><li>板的體積 = 40 × 30 × 10 − π×4²×10 ≈ 11497 mm³。診斷報告不會報錯。你加上去的特徵能正常長在它上面。</li></ul>
 <p class="report"><b>有問題時請回報：</b>若診斷報告有警告字樣，整段貼給我。</p>
 <label class="note">備註<textarea rows="2" placeholder="做到哪一步、畫面訊息原文、和預期的差別…"></textarea></label>
-</div></details><details class="item" id="item-C4" data-id="C4" data-sec="p3a" data-tag="core">
+</div></details><details class="item" id="item-C4" data-id="C4" data-auto="user" data-sec="p3a" data-tag="core">
 <summary><span class="iid">C4</span><span class="ttl">多本體（3a-3）</span><span class="tag t-core">必做</span>
 <select class="st" aria-label="C4 狀態"><option value="">未做</option><option value="ok">通過</option><option value="bad">有問題</option><option value="skip">略過</option></select></summary>
+<p class="auto user"><b>你已確認通過（2026-10-06）。</b>多本體。</p>
 <div class="inner">
 <p class="why"><b>為什麼要做：</b>一個零件裡可以有好幾個分開的實體，這是做夾具主模型的基礎。</p>
 <p class="why helpref"><b>程式內的說明（按 F1，或功能列最右的「說明」搜尋）：</b>組合。這一項驗出問題、修好時，這些說明也要一起改。</p>
@@ -287,9 +296,10 @@ code{background:var(--chip);padding:0 4px;border-radius:4px}
 <h4>應該看到</h4><ul><li>每一種操作的結果都和每步下面「→」後面的說明一致；設計樹沒有變紅，最下方沒有出現錯誤。</li></ul>
 
 <label class="note">備註<textarea rows="2" placeholder="做到哪一步、畫面訊息原文、和預期的差別…"></textarea></label>
-</div></details><details class="item" id="item-C5" data-id="C5" data-sec="p3a" data-tag="core">
+</div></details><details class="item" id="item-C5" data-id="C5" data-auto="user" data-sec="p3a" data-tag="core">
 <summary><span class="iid">C5</span><span class="ttl">草圖工具：狹槽、多邊形、圓角／導角、修剪、延伸、偏移、鏡射（3a-4a）</span><span class="tag t-core">必做</span>
 <select class="st" aria-label="C5 狀態"><option value="">未做</option><option value="ok">通過</option><option value="bad">有問題</option><option value="skip">略過</option></select></summary>
+<p class="auto user"><b>你已確認通過（2026-10-06）。</b>草圖工具：狹槽、多邊形、圓角／導角、修剪、延伸、偏移、鏡射。</p>
 <div class="inner">
 <p class="why"><b>為什麼要做：</b>日常畫草圖最常用的一批工具。</p>
 <p class="why helpref"><b>程式內的說明（按 F1，或功能列最右的「說明」搜尋）：</b>直線、邊角矩形、中心矩形、圓、周邊圓、中心點圓弧、切線弧、三點定弧、點、狹槽、多邊形、草圖圓角、草圖導角、修剪、延伸、偏移圖元、鏡射圖元、幾何建構線、中心線。這一項驗出問題、修好時，這些說明也要一起改。</p>
@@ -426,11 +436,11 @@ code{background:var(--chip);padding:0 4px;border-radius:4px}
 <h4>應該看到</h4><ul><li>鏡像左右對稱；合併時成為一塊，不合併時是另一個本體。</li></ul>
 
 <label class="note">備註<textarea rows="2" placeholder="做到哪一步、畫面訊息原文、和預期的差別…"></textarea></label>
-</div></details><details class="item" id="item-C17" data-id="C17" data-auto="part" data-sec="p3a" data-tag="ext">
+</div></details><details class="item" id="item-C17" data-id="C17" data-auto="user" data-sec="p3a" data-tag="ext">
 <summary><span class="iid">C17</span><span class="ttl">材質、外觀、輸出 STEP／STL／影像（3a-8）</span><span class="tag t-ext">需 eDrawings</span>
 <select class="st" aria-label="C17 狀態"><option value="">未做</option><option value="ok">通過</option><option value="bad">有問題</option><option value="skip">略過</option></select></summary>
+<p class="auto user"><b>你已確認通過（2026-10-08）。</b>材質、品質、外觀、STEP／STL／影像輸出由腳本 <code>manual-c17.js</code> 重播驗過（2026-10-08）；用 eDrawings 打開輸出的 STEP，看顏色與形狀，你也確認一致。</p>
 <div class="inner">
-<p class="auto part"><b>已自動重播大部分（2026-10-08）。</b>腳本 <code>manual-c17.js</code> 已走過下面的步驟。<b>只剩：</b>用 eDrawings 打開輸出的 STEP，看顏色與形狀是否一致。其餘（材質、品質、外觀、STEP／STL／PNG 輸出的內容）都不用做。 逐項細節見 <code>docs/verification-coverage.md</code>。</p>
 <p class="why"><b>為什麼要做：</b>質量、顏色、與別的軟體交換資料。</p>
 <p class="why helpref"><b>程式內的說明（按 F1，或功能列最右的「說明」搜尋）：</b>外觀、物質特性…、輸出 STEP、輸出 STL、輸出影像。這一項驗出問題、修好時，這些說明也要一起改。</p>
 <h4>先準備</h4><p>一個有幾何的零件，例如 <a href="#recipe-a">做法 A</a> 的長方體。這一項最後要用 eDrawings 或別的看圖軟體開輸出的檔案。</p><h4>怎麼做</h4><ol><li>「工具」→「檔案屬性」。在「材質」下拉選「碳鋼（7.85）」。<span class="see">視窗裡出現「質量：… g（7.85 g/cm³）」，最下方狀態列也多一個「質量」（質量 = 體積 × 密度，例如 8000 mm³ 的方塊是 62.80 g）。再把「顯示與輸出品質」改「細」「粗」各看一次（圓柱最明顯：粗的看得到多邊形的稜）。按「關閉」。</span></li><li>點 3D 視窗中的一個面，按「工具」→「外觀」。在「上色的對象」可選「整個零件」「本體」「特徵」或「面」，按「顏色」旁的色塊挑一個顏色，按「套用」。<span class="see">被選的東西變成那個顏色；「已上色的」清單多一列。按「移除顏色」可取消。按「關閉」。</span></li><li>「檔案」→「輸出 STEP」。跳出視窗：「格式」選 AP242，勾「帶著顏色」，「座標系統」維持「零件原點」，按「輸出」。<span class="see">瀏覽器下載一個 .step 檔；最下方出現「已輸出 …」。</span></li><li>再做一個座標系統（C14 的做法），重新「輸出 STEP」，「座標系統」選它，按「輸出」。<span class="see">檔案的原點和軸向取自那個座標系統。</span></li><li>「檔案」→「輸出 STL」，再「檔案」→「輸出影像」。<span class="see">各下載一個檔案（.stl、.png）。</span></li><li>用 eDrawings（或別的看圖軟體）開剛才的 STEP、STL，圖片用看圖程式開。<span class="see">形狀對、顏色在；有選座標系統的那個檔，原點和軸向與你預期一致。若不一致，描述看到什麼。</span></li></ol>
@@ -604,9 +614,10 @@ code{background:var(--chip);padding:0 4px;border-radius:4px}
 <h4>應該看到</h4><ul><li>實例的數量與位置正確（例如第 3 支在種子旁邊 80 mm 處）；鏡射件是剛體的鏡像。</li></ul>
 
 <label class="note">備註<textarea rows="2" placeholder="做到哪一步、畫面訊息原文、和預期的差別…"></textarea></label>
-</div></details><details class="item" id="item-D3" data-id="D3" data-sec="p3b" data-tag="ext">
+</div></details><details class="item" id="item-D3" data-id="D3" data-auto="part" data-sec="p3b" data-tag="ext">
 <summary><span class="iid">D3</span><span class="ttl">輸入 STEP 組合件（3b-3）</span><span class="tag t-ext">需 eDrawings／別家軟體</span>
 <select class="st" aria-label="D3 狀態"><option value="">未做</option><option value="ok">通過</option><option value="bad">有問題</option><option value="skip">略過</option></select></summary>
+<p class="auto part"><b>流程已自動重播（2026-10-09）。</b>用程式自己做的 STEP 替身（<code>STEP替身\金樣夾具_平.step</code>）走完「輸入 STEP 組合件…」：資料夾、零件與次組合件檔案、結構與位置，腳本 <code>phase3-step-import.js</code> 通過。<b>只剩：</b>別家軟體做出來、<b>保留組合件結構</b>的 STEP（你之前的兩個 CIV 檔案是 AP203 併成單一實體，驗不了）。沒有這種檔案就先放著，併入 J2。</p>
 <div class="inner">
 <p class="why"><b>為什麼要做：</b>把別的軟體做好的組合件讀進來並保留結構。</p>
 <p class="why helpref"><b>程式內的說明（按 F1，或功能列最右的「說明」搜尋）：</b>輸入 STEP 組合件…。這一項驗出問題、修好時，這些說明也要一起改。</p>
@@ -664,9 +675,10 @@ code{background:var(--chip);padding:0 4px;border-radius:4px}
 <h4>應該看到</h4><ul><li>找到的組數與重疊體積合理；貼面（重合結合）的零件沒有誤報。</li></ul>
 
 <label class="note">備註<textarea rows="2" placeholder="做到哪一步、畫面訊息原文、和預期的差別…"></textarea></label>
-</div></details><details class="item" id="item-D8" data-id="D8" data-sec="p3b" data-tag="ext">
+</div></details><details class="item" id="item-D8" data-id="D8" data-auto="part" data-sec="p3b" data-tag="ext">
 <summary><span class="iid">D8</span><span class="ttl">輸出 STEP 組合件，用別的軟體看（2E、3b-7）</span><span class="tag t-ext">需 eDrawings</span>
 <select class="st" aria-label="D8 狀態"><option value="">未做</option><option value="ok">通過</option><option value="bad">有問題</option><option value="skip">略過</option></select></summary>
+<p class="auto part"><b>已在 eDrawings 開過（handoff 0b，2026-10-05）。</b>你用 eDrawings 2026 逐一開過 <code>輸出\</code> 與 <code>STEP替身\</code> 的檔案，形狀、孔、圓角、凸緣、組合件位置都對，當時結論是「eDrawings 檢查不必重做」。若你認可那次的結果，這一項直接選「通過」；要重做，條目在 <code>輸出\看圖清單.md</code>。含次組合件的那一份（<code>STEP替身\金樣夾具_巢狀.step</code>）子組合件名稱在 eDrawings 仍是亂碼，你已決定不處理。</p>
 <div class="inner">
 <p class="why"><b>為什麼要做：</b>最重要的互通測試。</p>
 <p class="why helpref"><b>程式內的說明（按 F1，或功能列最右的「說明」搜尋）：</b>輸出 STEP。這一項驗出問題、修好時，這些說明也要一起改。</p>
@@ -807,9 +819,10 @@ code{background:var(--chip);padding:0 4px;border-radius:4px}
 <h4>應該看到</h4><ul><li>零件表與號球一致；改組合件後圖會跟著變。</li></ul>
 <p class="report"><b>有問題時請回報：</b>號球位置不好的地方請截圖。</p>
 <label class="note">備註<textarea rows="2" placeholder="做到哪一步、畫面訊息原文、和預期的差別…"></textarea></label>
-</div></details><details class="item" id="item-F6" data-id="F6" data-sec="p5" data-tag="ext">
+</div></details><details class="item" id="item-F6" data-id="F6" data-auto="part" data-sec="p5" data-tag="ext">
 <summary><span class="iid">F6</span><span class="ttl">輸出 PDF、DXF、SVG，用真正的程式開</span><span class="tag t-ext">需外部程式</span>
 <select class="st" aria-label="F6 狀態"><option value="">未做</option><option value="ok">通過</option><option value="bad">有問題</option><option value="skip">略過</option></select></summary>
+<p class="auto part"><b>DXF 已在 eDrawings 開過（handoff 0b，2026-10-05）。</b>圖層、線與文字位置可看；「×」與中文顯示成「?」你已決定先不處理。<b>還沒做的：</b>① 用 Chrome 開 <code>輸出\基板加工圖.pdf</code>，看線寬、虛線、箭頭、中文與尺寸文字位置和螢幕上一致、文字可搜尋與複製（現在就能做，約 2 分鐘）；② 用真正的 CAD 點選、移動、測量 DXF 的尺寸（DIMENSION 圖元）——沒有 CAD 就略過這一小項。</p>
 <div class="inner">
 <p class="why"><b>為什麼要做：</b>輸出格式是我依規格寫成並用自己的讀取器驗證的，沒有用真實程式開過。這是工程圖最大的風險。</p>
 <h4>先準備</h4><p>一張開著的工程圖（例如 <code>夾具組\基板加工圖.3dbd</code>）。這一項要用 Chrome 開 PDF，用你的 CAD（AutoCAD、DraftSight…）開 DXF。</p><h4>怎麼做</h4><ol><li>在左邊面板最下面的「輸出」區，按「PDF 字型…」，選 <code>C:\Windows\Fonts\msjh.ttc</code>（微軟正黑體）。<span class="see">旁邊顯示字型名稱；沒選的話，中文字會以 ? 代替（PDF 只支援 TrueType 的字型，每次開圖都要重選）。</span></li><li>按「輸出 SVG」「輸出 DXF」「輸出 PDF」各一次。<span class="see">瀏覽器下載三個檔案，最下方「已輸出 …」。</span></li><li>用 Chrome 開 PDF。<span class="see">看線寬、虛線（隱藏線）、箭頭、中文、尺寸文字位置：和螢幕上的圖一致。</span></li><li>用你的 CAD 開 DXF。<span class="see">看圖層、線寬、虛線、箭頭。中文要把文字樣式換成有中文的字型才會顯示（已知：樣式是 STANDARD）。尺寸現在是 DIMENSION 圖元（2026-10-07 起）：用游標點一個尺寸線，整個尺寸（線、箭頭、字）一起被選到；用 CAD 的「測量」量尺寸線，數字應該和圖上的字一樣（程式寫進去的是定義點，字是程式寫好的，蓋在 CAD 自己算的數字上）；移動尺寸時，延伸線與箭頭跟著。請試：選取、移動、量；有問題請附截圖，註明程式與版本。因為沒有真正的 CAD 開過，直徑、半徑與角度尺寸（種類 3、4、2）特別要看。</span></li><li>字型授權：微軟正黑體能不能內嵌在你的文件裡，請看字型授權。</li></ol>
@@ -866,9 +879,10 @@ code{background:var(--chip);padding:0 4px;border-radius:4px}
 <h4>應該看到</h4><ul><li>型面塊與工件型面的間隙為你設的值（例如 3.000 mm）。已知沒做：除料用任意向量當方向。</li></ul>
 
 <label class="note">備註<textarea rows="2" placeholder="做到哪一步、畫面訊息原文、和預期的差別…"></textarea></label>
-</div></details><details class="item" id="item-G5" data-id="G5" data-sec="p4b" data-tag="ext">
+</div></details><details class="item" id="item-G5" data-id="G5" data-auto="part" data-sec="p4b" data-tag="ext">
 <summary><span class="iid">G5</span><span class="ttl">輸出 STEP，用別的 CAD 開</span><span class="tag t-ext">需別的 CAD</span>
 <select class="st" aria-label="G5 狀態"><option value="">未做</option><option value="ok">通過</option><option value="bad">有問題</option><option value="skip">略過</option></select></summary>
+<p class="auto part"><b>已在 eDrawings 開過（handoff 0b，2026-10-05）。</b>型面件（<code>輸出\厚面兩側.step</code>）與其他輸出檔一起開過，形狀一致。<b>沒有試過的：</b>偏移曲面轉成 B 樣條再輸出的檔案在「別的 CAD」（SolidWorks 等）能不能讀進去；你沒有別的 CAD，就把這一項選「略過」並在備註寫「只用 eDrawings 驗過」。</p>
 <div class="inner">
 <p class="why"><b>為什麼要做：</b>偏移曲面會被轉成 B 樣條再輸出，別的軟體讀不讀得進沒有試過。</p>
 <h4>先準備</h4><p>G4 做出來的型面塊。這一項要用 eDrawings 或你的 CAD 開輸出的檔案。</p><h4>怎麼做</h4><ol><li>「檔案」→「輸出 STEP」，在視窗按「輸出」。<span class="see">瀏覽器下載一個 .step 檔。注意最下方有沒有警告（轉換器中止時會警告「…轉成 B 樣條失敗，照原樣輸出」）。</span></li><li>用 eDrawings 或你的 CAD 開它。<span class="see">能開、形狀與 3D-Builder 一致。偏移曲面是轉成 B 樣條再輸出的，別的 CAD 讀不讀得進沒有試過。</span></li></ol>
@@ -971,11 +985,11 @@ code{background:var(--chip);padding:0 4px;border-radius:4px}
 <h4>應該看到</h4><ul><li>排以點為中心，槽的長邊方向符合說明。</li></ul>
 
 <label class="note">備註<textarea rows="2" placeholder="做到哪一步、畫面訊息原文、和預期的差別…"></textarea></label>
-</div></details><details class="item" id="item-H9" data-id="H9" data-sec="p6" data-tag="core">
+</div></details><details class="item" id="item-H9" data-id="H9" data-auto="user" data-sec="p6" data-tag="core">
 <summary><span class="iid">H9</span><span class="ttl">外殼加蓋子：實際走一遍</span><span class="tag t-core">必做</span>
 <select class="st" aria-label="H9 狀態"><option value="">未做</option><option value="ok">通過</option><option value="bad">有問題</option><option value="skip">略過</option></select></summary>
+<p class="auto user"><b>你已確認通過（2026-10-08）。</b>外殼加蓋子，真人走一遍。走的時候發現並已修好的：新組合件的專案資料夾選過就換不掉（插入面板多了「更換資料夾…」）；外殼與蓋的「直立角落邊」不能同時重合（外殼有 1° 拔模，求解器是對的；建議做法寫在下面的步驟裡）；組合件沒有剖面、設計樹沒有眼睛、3D 視窗右鍵沒有選單（都已補上，剖面的切口填滿、位置可輸入）。</p>
 <div class="inner">
-<p class="auto part"><b>已驗過機械步驟（2026-10-08）。</b>機械步驟（外殼的分析、唇與溝槽、螺柱、卡榫、排氣口、干涉檢查）已分別驗過（H1–H8、D7）；這一項留給你「走一遍看順不順」。</p>
 <p class="why"><b>為什麼要做：</b>看整個塑膠件工作流是否順。</p>
 <p class="why"><b>用這個檔案：</b>塑膠件/外殼.3dbx 與 塑膠件/蓋.3dbx</p>
 <h4>先準備</h4><p>用驗證資料夾的 <code>塑膠件\外殼.3dbx</code> 與 <code>塑膠件\蓋.3dbx</code>（外殼 60 × 40 × 30，壁 2，底 3，有唇、螺柱、卡榫與底窗；蓋 60 × 40 × 3，溝槽配外殼的唇）。</p><h4>怎麼做</h4><ol><li>用 <a href="#recipe-e">做法 E</a> 新做一個組合件，資料夾選 <code>塑膠件</code>：清單點「外殼」，✔ 放原點；再「插入零組件」點「蓋」，在 3D 視窗外殼上方空白處放置。<span class="see">設計樹有「外殼<1>」（固定）和「蓋<1>」（浮動）。</span></li><li>用「組合件」→「移動零組件」或「結合」把蓋子放到外殼的開口上，唇進溝槽。<br><b>建議的結合（已用這兩個零件驗過，三個都「結合成立」）：</b>①「重合」外殼的開口邊緣面（上緣那圈平面）與蓋的底面；②「重合」外殼開口外緣的一條水平邊與蓋底面外緣對應的那條水平邊；③「重合」同一個角落另一個方向的兩條水平邊。<b>不要選側面直立的角落邊</b>：外殼有 1° 拔模，四條直立邊都往內傾斜、彼此不平行，蓋的直立邊卻是垂直的，兩組邊不可能同時共線，面板會正確地說「與之前的結合矛盾」。邊線與邊線的「重合」就是共線。<br><b>看唇有沒有進溝槽：</b>3D 視窗左上角按「剖面」（組合件裡也有），方向選「垂直於 Y」，拖滑桿到蓋的中間；「顯示類型」也能換。組合件的顯示類型沒有「顯示隱藏線」（虛線）。滑桿右邊的數字可以直接輸入（mm，Enter 套用、Esc 取消）；切口會填滿（橘色）；殼本來就是空心的，切開看到的是一圈壁的截面。要暫時拿掉蓋子，按設計樹那一列右邊的「眼睛」，或在 3D 視窗對零件按右鍵選「隱藏」。<span class="see">蓋子手動對位（沒有用唇與溝槽的面做結合，是已知限制）。</span></li><li>「組合件」→「干涉檢查」。<span class="see">蓋子的唇進溝槽，不應有干涉（視窗顯示「沒有干涉」）。</span></li><li>用「移動零組件」把蓋子往下壓 1 mm 再檢查一次。<span class="see">應找到干涉（唇碰到溝槽底）。</span></li><li>打開外殼零件（「檔案」→「開啟舊檔」<code>外殼.3dbx</code>），依序做 H1、H2、H3 的三種分析。<span class="see">看有沒有被你忽略的問題。</span></li></ol>
@@ -1076,9 +1090,10 @@ code{background:var(--chip);padding:0 4px;border-radius:4px}
 <h4>應該看到</h4><ul><li>不通過的項目與位置合理。</li></ul>
 <p class="report"><b>有問題時請回報：</b>請把預設比例改成你們工廠的規定後，看結果是否符合經驗。</p>
 <label class="note">備註<textarea rows="2" placeholder="做到哪一步、畫面訊息原文、和預期的差別…"></textarea></label>
-</div></details><details class="item" id="item-I9" data-id="I9" data-sec="p7" data-tag="ext">
+</div></details><details class="item" id="item-I9" data-id="I9" data-auto="part" data-sec="p7" data-tag="ext">
 <summary><span class="iid">I9</span><span class="ttl">輸出平板型式 DXF</span><span class="tag t-ext">需 CAD／雷射軟體</span>
 <select class="st" aria-label="I9 狀態"><option value="">未做</option><option value="ok">通過</option><option value="bad">有問題</option><option value="skip">略過</option></select></summary>
+<p class="auto part"><b>已在 eDrawings 開過（handoff 0b，2026-10-05）。</b><code>輸出\支架_平板型式.dxf</code> 能開、輪廓與孔對。你當時看到並已決定的：DXF 裡的「×」與中文在 eDrawings 顯示成「?」（Ø 正常，不知是字型還是寫法）、折彎註記「UP 135° R2」上下顛倒，都先不處理；eDrawings 沒有量到數值，尺寸只用像素比例目視。<b>沒有試過的：</b>雷射切割軟體或 CAD 開它。沒有就把這一項選「略過」。</p>
 <div class="inner">
 <p class="why"><b>為什麼要做：</b>送去雷射切割的檔案。</p>
 <h4>先準備</h4><p>一個鈑金零件的平板型式視窗已開著（例如 <code>鈑金\支架.3dbx</code> →「鈑金」→「平板型式」）。這一項要用你的 CAD 或雷射切割軟體開輸出的 DXF。</p><h4>怎麼做</h4><ol><li>在「平板型式」視窗按「輸出 DXF」。<span class="see">瀏覽器下載一個 .dxf 檔。內容：外形輪廓與孔在 OUTLINE 圖層（LINE、ARC、CIRCLE），折彎線在 BEND 圖層（虛線，附折彎註記），整個圖形已移到原點。</span></li><li>用你的 CAD 或雷射切割軟體開它。<span class="see">看輪廓、孔、BEND 層的虛線與註記；量外形尺寸，與平板型式視窗的「外包尺寸」是否一致。圖層分得對。</span></li></ol>
@@ -1231,14 +1246,17 @@ function paint(el) {
   el.querySelector('.st').value = s.st || '';
   el.querySelector('textarea').value = s.note || '';
 }
+/** Handled without a mark of yours: replayed by a script (full), or confirmed by you and written into this file (user). */
+const closed = el => el.dataset.auto === 'full' || el.dataset.auto === 'user';
 function progress() {
   const auto = items.filter(el => el.dataset.auto === 'full').length;
-  const done = items.filter(el => el.dataset.auto === 'full' || (state[el.dataset.id] || {}).st).length;
+  const user = items.filter(el => el.dataset.auto === 'user').length;
+  const done = items.filter(el => closed(el) || (state[el.dataset.id] || {}).st).length;
   const bad = items.filter(el => (state[el.dataset.id] || {}).st === 'bad').length;
   document.getElementById('pbar').style.width = (100 * done / items.length) + '%';
-  document.getElementById('pstat').textContent = done + ' / ' + items.length + ' 已處理（' + auto + ' 項由自動重播驗過），其中 ' + bad + ' 項有問題';
+  document.getElementById('pstat').textContent = done + ' / ' + items.length + ' 已處理（' + auto + ' 項由自動重播驗過、' + user + ' 項你已確認），其中 ' + bad + ' 項有問題';
   const bySec = {};
-  items.forEach(el => { const k = el.dataset.sec; bySec[k] = bySec[k] || [0, 0]; bySec[k][1]++; if (el.dataset.auto === 'full' || (state[el.dataset.id] || {}).st) bySec[k][0]++; });
+  items.forEach(el => { const k = el.dataset.sec; bySec[k] = bySec[k] || [0, 0]; bySec[k][1]++; if (closed(el) || (state[el.dataset.id] || {}).st) bySec[k][0]++; });
   document.querySelectorAll('.cnt').forEach(c => { const v = bySec[c.dataset.sec]; c.textContent = v ? v[0] + '/' + v[1] : ''; });
 }
 items.forEach(el => {
@@ -1256,8 +1274,8 @@ function applyFilter() {
   items.forEach(el => {
     const st = (state[el.dataset.id] || {}).st || '';
     let show = true;
-    if (filter === 'human') show = el.dataset.auto !== 'full';
-    else if (filter === 'open') show = !st && el.dataset.auto !== 'full';
+    if (filter === 'human') show = !closed(el);
+    else if (filter === 'open') show = !st && !closed(el);
     else if (filter === 'bad') show = st === 'bad';
     else if (filter !== 'all') show = el.dataset.tag === filter;
     el.classList.toggle('hide', !show);
@@ -1276,13 +1294,24 @@ document.getElementById('copy').onclick = async () => {
   const lines = ['3D-Builder 實機驗證結果（' + new Date().toLocaleString() + '）', ''];
   META.forEach(m => { const s = state[m.id] || {}; if (s.st || s.note) lines.push('[' + LABEL[s.st || ''] + '] ' + m.id + ' ' + m.title + (s.note ? '\n    備註：' + s.note.replace(/\n/g, '\n    ') : '')); });
   const autoIds = items.filter(el => el.dataset.auto === 'full').map(el => el.dataset.id);
-  const untouched = META.filter(m => !(state[m.id] || {}).st && !autoIds.includes(m.id)).map(m => m.id);
+  const userIds = items.filter(el => el.dataset.auto === 'user').map(el => el.dataset.id);
+  const untouched = META.filter(m => !(state[m.id] || {}).st && !autoIds.includes(m.id) && !userIds.includes(m.id)).map(m => m.id);
   lines.push('已由自動重播驗過（不用做）：' + autoIds.join('、'), '');
+  lines.push('你已確認、寫在手冊裡（不用做）：' + userIds.join('、'), '');
   lines.push('', '還沒做：' + (untouched.length ? untouched.join('、') : '（無）'));
   const text = lines.join('\n');
   try { await navigator.clipboard.writeText(text); alert('已複製，可以貼給我了。'); }
   catch (e) { const w = window.open('', '_blank'); if (w) { w.document.write('<pre style="white-space:pre-wrap">' + text.replace(/[&<>]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[c])) + '</pre>'); } else { prompt('請手動複製：', text); } }
 };
+const themeBtn = document.getElementById('theme');
+function paintTheme() { themeBtn.textContent = document.documentElement.dataset.theme === 'dark' ? '深色背景（點一下換淺色）' : '淺色背景（點一下換深色）'; }
+themeBtn.onclick = () => {
+  const next = document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark';
+  document.documentElement.dataset.theme = next;
+  try { localStorage.setItem('3db-manual-theme', next); } catch (e) {}
+  paintTheme();
+};
+paintTheme();
 window.addEventListener('beforeprint', () => items.forEach(el => el.open = true));
 progress();
 applyFilter();
