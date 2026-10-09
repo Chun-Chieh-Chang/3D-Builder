@@ -18,14 +18,14 @@
 
 ### 0.0 快速接手（2026-10-04，H-11 之後，換電腦先看這段）
 
-**狀態（2026-10-07 更新）**：Phase 0 到 7 開發完成，之後的功能到 ADR 0118；`npm run check` **2370 項通過、22 項略過**；零件 Schema **50**、組合件 Schema 7、工程圖 Schema 6。已經沒有「進行中」的里程碑，**等使用者的實機驗證結果**。鞏固 H-1 到 H-11 已做完（[hardening-plan](docs/hardening-plan.md)）。2026-10-07 使用者用選擇題決定了後續的項目，做完的與還沒做的在下面「2026-10-07 的選擇」。每個里程碑的 ADR、驗收表與限制在對應的 ADR，§3 有一行摘要。
+**狀態（2026-10-09 更新）**：Phase 0 到 7 開發完成，之後的功能到 ADR 0122；`npm run check` **2482 項通過、22 項略過**；零件 Schema **52**、組合件 Schema 7、工程圖 Schema **9**。已經沒有「進行中」的里程碑，**等使用者的實機驗證結果**。鞏固 H-1 到 H-11 已做完（[hardening-plan](docs/hardening-plan.md)）。2026-10-07 使用者用選擇題決定了後續的項目，做完的與還沒做的在下面「2026-10-07 的選擇」。每個里程碑的 ADR、驗收表與限制在對應的 ADR，§3 有一行摘要。
 
 **2026-10-07 的選擇（使用者在選擇題頁面選的；做完的都已提交並推送，ADR 在 §2 文件地圖）**
 - **已做**：折彎之後才切的孔進平板型式（ADR 0113）；厚面遇尖角拒絕並說明根因（ADR 0112）；曲面互相修剪補測自由曲面（ADR 0109 的補充，沒有發現問題）；折過的基材上的凸緣的平板型式（ADR 0114）；3D 視窗顯示展開的狀態（ADR 0115）；`make:kit` 加了新功能的範例檔（`曲面/`、`鈑金/` 的互相修剪、厚面兩側、斜接、中間折彎、折過基材加凸緣、折彎後的孔；**使用者要再跑一次 `npm run make:kit`**，手冊的步驟已寫「範例檔」）；刪除舊分支 `spike/occt-gaps`（已與 main 合併）。
 - **選了但前提已經過時**：「摺邊的最小半徑規則」——ADR 0093 已決定摺邊不參加最小半徑檢查，沒有摺邊專屬規則（沒有可靠的數值，等工廠的規定）；§8 Phase 7 C 的那句舊話已更正。**要做就要先有工廠的數值。**
 - **選「先不做」或「等回饋」**：圓角與導角的其餘功能（變數半徑、選特徵與迴路、不相鄰面的面圓角、兩側不平行的完整圓角）；工程圖號球與表格拖曳（等 F 章驗證）；以曲面除料的任意向量方向；下一個大功能（組態與設計表格、由上而下設計、IGES、腳本 API）——**驗證到 H 章再選**；桌面版圖示、自動更新、簽章——**驗證結束重建安裝檔時一起處理**。
 - **SW 原生檔（使用者沒有 SolidWorks，2026-10-07 再次強調：不要要求他使用 SW）**：決定在 blueprint §1；輸出原生檔放棄；輸入靠別人給的 STEP。我曾寫過在 SW 裡跑的批次轉 STEP 巨集，使用者說不需要，已刪除。找到兩個開源專案：openswx（MIT，只讀屬性與組合件零件參照，沒有幾何）與 open-sld-to-step（Apache-2.0，NIST 比對面只吻合約 52%）；要不要用它們評估，等使用者決定（他手上的 `.SLDASM` 樣本放在 `<使用者資料夾>\Downloads\SW樣本`）。
-- **2026-10-07 的清理（使用者用選擇題決定）**：個人路徑換成 `<使用者資料夾>`、`<檢出路徑>`（git 歷史裡仍有舊的）；`sync.ffs_db` 進 `.gitignore`；`tests/e2e/phase2-assembly.js` 的 STEP 路徑改由檔案位置推出；死碼與無效資源只列清單（`docs/cleanup-candidates.md`），使用者勾選後才刪（已刪 `conjugate`、`DOWEL_STANDARD_SOURCE` 與 17 個沒被引用的文字鍵；其餘保留）；文件只對齊現有的，不新建 DEV_LOG.md 與 wiki/；**重新打包等實機驗證做完才做，形式選安裝檔（NSIS）**（現有的 `desktop.exe` 是 10-04 的舊檔，早於 ADR 0108）；推送要使用者說「推」才推。
+- **2026-10-07 的清理（使用者用選擇題決定）**：個人路徑換成 `<使用者資料夾>`、`<檢出路徑>`（git 歷史裡仍有舊的）；`sync.ffs_db` 進 `.gitignore`；`tests/e2e/phase2-assembly.js` 的 STEP 路徑改由檔案位置推出；死碼與無效資源只列清單（`docs/cleanup-candidates.md`），使用者勾選後才刪（已刪 `conjugate`、`DOWEL_STANDARD_SOURCE` 與 17 個沒被引用的文字鍵；其餘保留）；文件只對齊現有的，不新建 DEV_LOG.md 與 wiki/；**重新打包等實機驗證做完才做，形式選安裝檔（NSIS）**（已於 2026-10-09 重打：桌面版 0.2.0；舊的 0.1.0 安裝檔已刪）；推送要使用者說「推」才推。
 
 **換電腦（本專案要能在不同電腦開發，下面都是每台電腦自己的事，程式與文件不依賴任何一台）**：`git pull`（私人專案）→ **`npm run doctor`**（唯讀診斷：Node、git、`node_modules` 的工作區連結是否指向這個資料夾、這個磁碟能不能做連結、埠 5391、Rust 與 C++ 工具；每個問題都附修法）→ 有問題照它說的做（多半是 `npm install`）→ `npm run check`（應全過）→ `npm run dev`。**只用網頁版不需要 Rust 與 MSVC**；要建桌面版才裝（`apps/desktop/README.md` 的「需要」）。
 
@@ -151,6 +151,8 @@
 | [ADR 0118](docs/adr/0118-dev-auto-close.md) | `npm run dev:auto`：最後一個連著的瀏覽器分頁關掉 30 秒後，開發伺服器自己結束（Schema 不變；`apps/web/dev/autoClose.ts`，`--mode autoclose`）；`npm run dev` 不變 |
 | [ADR 0119](docs/adr/0119-movable-balloons-and-tables.md) | 號球與表格可以用滑鼠拖（工程圖 Schema 9：`balloonAt`；`buildScene` 回傳 `tableBoxes` 與 `balloons`；面板「號球自動排列」） |
 | [ADR 0120](docs/adr/0120-relief-shapes.md) | 離隙的形狀：長圓（底端半圓）與撕裂（0.05 mm 細縫）（零件 Schema 50：`relief.shape`；平板型式共用 `relief.ts`） |
+| [ADR 0121](docs/adr/0121-sheet-break-corner.md) | 鈑金斷開角落（零件 Schema 51）：獨立 `breakCorner` 特徵，凸緣自由端外角倒角或倒圓，折疊與平板型式同步 |
+| [ADR 0122](docs/adr/0122-surface-cut-vector.md) | 以曲面除料的方向向量與保留側（零件 Schema 52）：任意 XYZ 向量、保留前側或後側，舊的平面方向相容 |
 | [ADR 0117](docs/adr/0117-select-edges-idle.md) | 沒有在編輯時也能選邊線與頂點（Schema 不變）：`UiState.selectedElements`，Ctrl 加選；選擇濾器三個勾選平常也生效；圓角、導角、邊線凸緣、摺邊與三個曲面邊線指令開始時帶入已選的邊（預先選取） |
 | [ADR 0116](docs/adr/0116-sketch-picture.md) | 草圖圖片（零件 **Schema 49**）：草圖上放 PNG／JPEG 當描圖底圖（`pictures`，資料是 `blobs/<sha>.png`／`.jpg`），不參加輪廓與關係，只在編輯那張草圖時顯示；以兩點校正比例；三個指令都能復原；eDrawings 存圖 → 描圖是沒有 SW 時的重建做法 |
 | [ADR 0115](docs/adr/0115-flat-in-3d-view.md) | 在 3D 視窗顯示展開的狀態（Schema 不變）：平板型式視窗的勾選，worker 一起傳平板型式的網格，3D 視窗換成它，顯示時不能點選；沒有動畫 |

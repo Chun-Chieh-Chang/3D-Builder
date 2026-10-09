@@ -367,11 +367,6 @@ export function offsetAt(h: Extract<DimensionHandle, { kind: 'linear' }>, p: P):
   return side * Math.max(least, n[0] * p[0] + n[1] * p[1] - c0);
 }
 
-/** How far along its line the text of a linear dimension is when it is put at the point `p`: the part of the way from the middle of the line that lies along it. */
-export function slideAt(h: Extract<DimensionHandle, { kind: 'linear' }>, p: P): number {
-  return h.u[0] * (p[0] - h.mid[0]) + h.u[1] * (p[1] - h.mid[1]);
-}
-
 /** The direction (degrees counter-clockwise from the x axis) and the leader a diameter or a radius takes when its text is put at the point `p`. */
 export function leaderAt(h: Extract<DimensionHandle, { kind: 'round' }>, p: P): { angle: number; leader: number } {
   const dx = p[0] - h.centre[0];
@@ -382,12 +377,4 @@ export function leaderAt(h: Extract<DimensionHandle, { kind: 'round' }>, p: P): 
 /** The radius of the arc of an angle dimension when it is put through the point `p` (at least 3 mm). */
 export function arcAt(h: Extract<DimensionHandle, { kind: 'angle' }>, p: P): number {
   return Math.max(3, Math.hypot(p[0] - h.centre[0], p[1] - h.centre[1]));
-}
-
-/** How far along the arc (mm) the text of an angle dimension is when it is put at the point `p`. */
-export function arcSlideAt(h: Extract<DimensionHandle, { kind: 'angle' }>, p: P): number {
-  let turn = Math.atan2(p[1] - h.centre[1], p[0] - h.centre[0]) - h.mid;
-  while (turn > Math.PI) turn -= 2 * Math.PI;
-  while (turn <= -Math.PI) turn += 2 * Math.PI;
-  return turn * h.radius;
 }

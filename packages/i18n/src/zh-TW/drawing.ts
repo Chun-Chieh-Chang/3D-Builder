@@ -49,7 +49,6 @@ export const drawing = {
   'drawingUi.unit': '尺寸單位',
   'drawingUi.unit.mm': '毫米',
   'drawingUi.unit.in': '英寸',
-  'drawingUi.dimTolUnit': '公差的數字用圖頁的單位（{unit}）輸入',
   'drawingUi.autoLayoutTip': '把視圖放回自動排好的位置（前視圖：整組放回中央）；在視圖上拖曳可改位置，拖右下角的方塊可改比例，Shift＋拖曳可不對齊自由擺放',
   'drawingUi.addView': '加入視圖',
   'drawingUi.exportSvg': '輸出 SVG',

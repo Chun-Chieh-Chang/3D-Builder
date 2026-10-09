@@ -58,7 +58,6 @@ export const evaluate = {
   'measure.relation.angle': '所選的兩個項次夾角：{angle}',
   'measure.distanceName': '距離',
   'measure.total': '總長度',
-  'measure.units': '單位',
   'measure.lengthUnit': '長度',
   'measure.unit.mm': '毫米',
   'measure.unit.in': '英寸',

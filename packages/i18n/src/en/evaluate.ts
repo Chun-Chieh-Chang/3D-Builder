@@ -60,7 +60,6 @@ export const evaluate: Translation = {
   'measure.relation.angle': 'The angle between the two selected items: {angle}',
   'measure.distanceName': 'Distance',
   'measure.total': 'Total length',
-  'measure.units': 'Units',
   'measure.lengthUnit': 'Length',
   'measure.unit.mm': 'millimetres',
   'measure.unit.in': 'inches',

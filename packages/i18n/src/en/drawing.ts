@@ -51,7 +51,6 @@ export const drawing: Translation = {
   'drawingUi.unit': 'Dimension unit',
   'drawingUi.unit.mm': 'millimetres',
   'drawingUi.unit.in': 'inches',
-  'drawingUi.dimTolUnit': 'The numbers of a tolerance are typed in the unit of the sheet ({unit})',
   'drawingUi.autoLayoutTip': 'Put the view back where the layout has it (the front view: the whole arrangement back in the middle). Drag a view to move it, the square at its corner to scale it; Shift while dragging puts it anywhere, out of line',
   'drawingUi.addView': 'Add View',
   'drawingUi.exportSvg': 'Export SVG',
