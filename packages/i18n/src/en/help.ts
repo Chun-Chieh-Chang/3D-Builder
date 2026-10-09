@@ -395,6 +395,11 @@ export const help: Translation = {
 
   'help.edgeFlange.see': 'base-flange hem flat-pattern concept.property-manager',
 
+  'help.breakCorner.summary': 'Chamfer or fillet external corners at sheet metal flange free ends, including the flat pattern.',
+  'help.breakCorner.body': 'Select the external corner edge at an edge-flange free end, then set chamfer or fillet and its size. Supports open, non-mitred corners only. The cut is mapped to the flat pattern through the existing sheet-metal unfold flow.',
+  'help.breakCorner.keywords': 'sheet metal break corner flange chamfer fillet flat pattern',
+  'help.breakCorner.see': 'edge-flange hem flat-pattern',
+
   'help.midBend.summary': 'Bend a plate in the middle along a sketched line: one side stays, the other folds.',
 
   'help.midBend.body':
@@ -535,7 +540,7 @@ export const help: Translation = {
   'help.cutWithSurface.summary': 'Uses a surface as a knife to cut one side away from a solid.',
 
   'help.cutWithSurface.body':
-    'Cuts one side off a solid with a surface body: choose the "solid to cut" and the "surface body to cut with", and set the "cut direction" (the normal of a plane).\n\n- The part the surface sweeps along the direction is removed from the solid, and the surface body stays.\n- The surface has to go right through the solid; when it is too small use "Extend surface" first.\n- "Reverse direction" removes the other side of the surface.\n- Clicking faces of the solid or the surface in the view picks them too.',
+    'Divides a solid with a surface body: choose the solid and surface body, then set a plane normal or fixed XYZ vector as the direction.\n\n- Choose whether to keep the side behind or ahead of the direction; the surface body stays as it is.\n- The surface has to go right through the solid; when it is too small use "Extend surface" first.\n- "Reverse direction" reverses the direction vector.\n- Vector components must be finite and the vector cannot be zero. Clicking faces of either body also picks them.',
 
   'help.cutWithSurface.keywords': 'cut with surface split solid remove side',
 

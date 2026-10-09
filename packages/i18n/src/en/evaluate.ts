@@ -54,6 +54,7 @@ export const evaluate: Translation = {
   'measure.unit': 'Length in mm, area in mm², angle in degrees; positions are in the assembly coordinate system (the part coordinate system for a part).',
   'measure.angleNote': 'The angle is the acute one between two directions (0 to 90 degrees); a direction is a plane normal, the axis of a cylinder or cone, or a line direction.',
   'measure.failed': 'The measurement failed: {why}',
+  'measure.anchorMissing': 'The picked vertex no longer exists. Pick the point again.',
   'measure.relation.parallel': 'The two selected items are parallel.',
   'measure.relation.perpendicular': 'The two selected items are perpendicular.',
   'measure.relation.angle': 'The angle between the two selected items: {angle}',

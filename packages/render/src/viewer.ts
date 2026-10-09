@@ -969,23 +969,23 @@ export class Viewer {
   }
 
   /** The solids that places are taken from: the open part, or every component of an assembly, with where each is. */
-  private snapSolids(): { positions: ArrayLike<number>; owner: ArrayLike<number>; matrix: THREE.Matrix4; body: THREE.Mesh; edges: THREE.LineSegments | null; instance: string | null; key: object }[] {
+  private snapSolids(): { positions: ArrayLike<number>; owner: ArrayLike<number>; vertices: ArrayLike<number>; matrix: THREE.Matrix4; body: THREE.Mesh; edges: THREE.LineSegments | null; instance: string | null; key: object }[] {
     const out = [];
     if (this.body && this.edges) {
       const position = this.edges.geometry.getAttribute('position') as THREE.BufferAttribute;
-      out.push({ positions: position.array, owner: this.segmentEdge, matrix: new THREE.Matrix4(), body: this.body, edges: this.edges, instance: null, key: position.array });
+      out.push({ positions: position.array, owner: this.segmentEdge, vertices: this.vertices, matrix: new THREE.Matrix4(), body: this.body, edges: this.edges, instance: null, key: position.array });
     }
     for (const [key, inst] of this.instances) {
       const geo = this.partGeometry.get(inst.part);
       if (!geo) continue;
       inst.group.updateMatrixWorld(true);
       const position = geo.edges.getAttribute('position') as THREE.BufferAttribute;
-      out.push({ positions: position.array, owner: geo.segmentEdge, matrix: inst.group.matrixWorld.clone(), body: inst.body, edges: inst.edges, instance: key, key: position.array });
+      out.push({ positions: position.array, owner: geo.segmentEdge, vertices: geo.vertices, matrix: inst.group.matrixWorld.clone(), body: inst.body, edges: inst.edges, instance: key, key: position.array });
     }
     return out;
   }
 
-  private snapData(solid: { positions: ArrayLike<number>; owner: ArrayLike<number>; key: object }) {
+  private snapData(solid: { positions: ArrayLike<number>; owner: ArrayLike<number>; vertices: ArrayLike<number>; key: object }) {
     let d = this.snapCache.get(solid.key);
     if (!d) {
       const lines = polylinesOf(solid.positions, solid.owner);
@@ -994,11 +994,13 @@ export class Viewer {
       const centres: V3[] = [];
       for (const pts of lines.values()) {
         if (pts.length < 2) continue;
-        ends.push(pts[0]!, pts[pts.length - 1]!);
+        // A derived mirror mesh may intentionally have no topology names/vertices; keep its previous edge-end snapping.
+        if (solid.vertices.length === 0) ends.push(pts[0]!, pts[pts.length - 1]!);
         middles.push(middleOf(pts));
         const c = circleCentre(pts);
         if (c) centres.push(c.centre);
       }
+      for (let i = 0; i + 2 < solid.vertices.length; i += 3) ends.push([solid.vertices[i]!, solid.vertices[i + 1]!, solid.vertices[i + 2]!]);
       d = { lines, ends, middles, centres };
       this.snapCache.set(solid.key, d);
     }

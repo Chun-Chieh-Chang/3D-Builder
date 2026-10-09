@@ -35,6 +35,7 @@ import {
   type FilletKind,
   type EdgeFlangeFeature,
   type HemFeature,
+  type BreakCornerFeature,
   type Fingerprint,
   type Id,
   type ImportedBodyFeature,
@@ -63,6 +64,7 @@ import { orderProblem, suppressionTargets, type SuppressAction } from '@3db/rege
 import { contourChoices, findProfiles, type ContourChoice } from '@3db/sketch/profiles';
 import type { ModelItem } from '@3db/sketch/ops';
 import type { PickFilter, Snap, Viewer } from '@3db/render';
+import { captureVertexAnchor, resolveVertexAnchor } from './measureAnchors';
 import type { KernelApi, PartExportOptions, RebuildPayload, SketchSolvePayload, SketchSolveRequest, SourceFileData } from '../worker/protocol';
 import { SketchController, type ControllerView, type SketchHost } from '../sketcher/controller';
 import { axisDefinitionFor, emptyRef, put, treeRef } from './datumSlots';
@@ -108,6 +110,8 @@ export interface MeasurePick {
   label: string;
   /** A place instead of an element (kind `vertex`, `index` not used): where, in the part's own frame. */
   point?: Vec3;
+  /** A picked mesh vertex, followed by persistent name through rebuilds. */
+  anchor?: { kind: 'vertex'; name: string };
 }
 /** A measurement that was kept, to be seen with the others: what was picked, what it came to, and how far its labels were moved (pixels, by key). */
 export interface SavedMeasure {
@@ -115,6 +119,7 @@ export interface SavedMeasure {
   picks: MeasurePick[];
   report: MeasureReport | null;
   offsets: Record<string, [number, number]>;
+  anchorLost?: boolean;
 }
 
 /** The 「拔模分析」 window (E3.2): its settings, and what the worker last said for them. None of it is saved with the part. */
@@ -825,12 +830,15 @@ class AppStore {
 
   /** 「測量」 on: the elements of the part or assembly are picked in the view (E1.1). */
   startMeasure(): void {
-    this.set({ measure: emptyMeasure() });
+    this.set({ measure: { ...emptyMeasure(), saved: this.retainedMeasures } });
   }
 
   stopMeasure(): void {
     this.measureSeq++;
-    if (this.state.measure) this.set({ measure: null });
+    if (this.state.measure) {
+      this.retainedMeasures = this.state.measure.saved;
+      this.set({ measure: null });
+    }
   }
 
   clearMeasure(): void {
@@ -841,6 +849,7 @@ class AppStore {
   /** Takes away what was kept as well. */
   clearAllMeasures(): void {
     this.measureSeq++;
+    this.retainedMeasures = [];
     if (this.state.measure) this.set({ measure: { ...emptyMeasure(this.state.measure), saved: [] } });
   }
 
@@ -850,6 +859,8 @@ class AppStore {
   }
 
   private savedSeq = 0;
+  /** Kept while the measurement tool is closed, for this open document only. */
+  private retainedMeasures: SavedMeasure[] = [];
 
   /** Keeps the measurement in hand with the others (and starts a new one). */
   saveMeasure(): void {
@@ -857,12 +868,16 @@ class AppStore {
     if (!m?.report?.distance) return;
     this.measureSeq++;
     const kept: SavedMeasure = { id: `m${++this.savedSeq}`, picks: m.picks, report: m.report, offsets: m.offsets };
-    this.set({ measure: { ...emptyMeasure(m), saved: [...m.saved, kept] } });
+    this.retainedMeasures = [...m.saved, kept];
+    this.set({ measure: { ...emptyMeasure(m), saved: this.retainedMeasures } });
   }
 
   removeSavedMeasure(id: string): void {
     const m = this.state.measure;
-    if (m) this.set({ measure: { ...m, saved: m.saved.filter((x) => x.id !== id) } });
+    if (m) {
+      this.retainedMeasures = m.saved.filter((x) => x.id !== id);
+      this.set({ measure: { ...m, saved: this.retainedMeasures } });
+    }
   }
 
   /** A label of a measurement was moved by the pointer, by `by` pixels more: the measurement it belongs to (a kept one by the id before the colon of its key) remembers. */
@@ -871,7 +886,10 @@ class AppStore {
     if (!m) return;
     const add = (o: Record<string, [number, number]>) => ({ ...o, [key]: [(o[key]?.[0] ?? 0) + by[0], (o[key]?.[1] ?? 0) + by[1]] as [number, number] });
     const owner = m.saved.find((x) => key.startsWith(`${x.id}:`));
-    this.set({ measure: owner ? { ...m, saved: m.saved.map((x) => (x === owner ? { ...x, offsets: add(x.offsets) } : x)) } : { ...m, offsets: add(m.offsets) } });
+    if (owner) {
+      this.retainedMeasures = m.saved.map((x) => (x === owner ? { ...x, offsets: add(x.offsets) } : x));
+      this.set({ measure: { ...m, saved: this.retainedMeasures } });
+    } else this.set({ measure: { ...m, offsets: add(m.offsets) } });
   }
 
   /** An element was clicked while measuring: a second one is measured to the first, a third starts again, the same one again takes it off. */
@@ -896,7 +914,9 @@ class AppStore {
     const found = snap.instance === null ? undefined : this.assembly?.leaves().find((l) => l.id === snap.instance);
     if (snap.instance !== null && !found) return;
     const word = t(`measure.snap.${snap.kind}`);
-    const pick: MeasurePick = { leaf: snap.instance, kind: 'vertex', index: -1, point: snap.local, label: found ? `${this.assembly!.ownerLabel(found.top, found.path)}: ${word}` : word };
+    const geometry = snap.instance === null ? this.state.result : found && !found.mirrored ? this.assembly?.buildOfLeaf(found) : null;
+    const anchor = snap.kind === 'vertex' && geometry ? captureVertexAnchor(geometry.vertexNames, geometry.vertexPoints, snap.local) : null;
+    const pick: MeasurePick = { leaf: snap.instance, kind: 'vertex', index: -1, point: snap.local, ...(anchor ? { anchor: { kind: 'vertex' as const, name: anchor.name } } : {}), label: found ? `${this.assembly!.ownerLabel(found.top, found.path)}: ${word}` : word };
     const picks = m.picks.length >= 2 ? [pick] : [...m.picks, pick];
     this.measureSeq++;
     this.set({ measure: { ...m, picks, report: null, error: null, offsets: {} } });
@@ -1075,6 +1095,16 @@ class AppStore {
 
   /** The picks as the kernel is asked about them: a part by its file and the pose it is at now. Null when the component is gone. */
   private measureTarget(p: MeasurePick): MeasureTarget | null {
+    if (p.anchor) {
+      const leaf = p.leaf === null ? null : this.assembly?.leaves().find((l) => l.id === p.leaf);
+      if (p.leaf !== null && !leaf) return null;
+      if (leaf?.mirrored) return null;
+      const geometry = leaf ? this.assembly?.buildOfLeaf(leaf) : this.state.result;
+      const point = geometry && resolveVertexAnchor(geometry.vertexNames, geometry.vertexPoints, p.anchor.name);
+      if (!geometry || !point) return null;
+      const index = geometry.vertexNames.indexOf(p.anchor.name);
+      return { part: leaf ? leaf.key : null, mirrored: false, pose: leaf?.pose ?? null, kind: 'vertex', index };
+    }
     const place = p.point ? { point: p.point } : {};
     if (p.leaf === null) return { part: null, mirrored: false, pose: null, kind: p.kind, index: p.index, ...place };
     const leaf = this.assembly?.leaves().find((l) => l.id === p.leaf);
@@ -1091,19 +1121,28 @@ class AppStore {
       const again = await Promise.all(
         m.saved.map(async (x) => {
           const targets = x.picks.map((p) => this.measureTarget(p));
-          if (targets.some((y) => y === null)) return x;
+          if (targets.some((y) => y === null)) return { ...x, report: x.picks.some((p) => p.anchor) ? null : x.report, anchorLost: x.picks.some((p) => p.anchor) };
           try {
-            return { ...x, report: await this.api.measure(targets as MeasureTarget[]) };
+            return { ...x, report: await this.api.measure(targets as MeasureTarget[]), anchorLost: false };
           } catch {
             return x;
           }
         }),
       );
-      if (seq === this.measureSeq && this.state.measure) this.set({ measure: { ...this.state.measure, saved: this.state.measure.saved.map((x) => again.find((y) => y.id === x.id) ?? x) } });
+      if (seq === this.measureSeq && this.state.measure) {
+        this.retainedMeasures = this.state.measure.saved.map((x) => again.find((y) => y.id === x.id) ?? x);
+        this.set({ measure: { ...this.state.measure, saved: this.retainedMeasures } });
+      }
     }
     if (m.picks.length === 0) return;
     const targets = m.picks.map((p) => this.measureTarget(p));
-    if (targets.some((x) => x === null)) return void this.set({ measure: emptyMeasure(this.state.measure) });
+    if (targets.some((x) => x === null)) {
+      if (m.picks.some((p) => p.anchor)) {
+        if (seq === this.measureSeq && this.state.measure) this.set({ measure: { ...this.state.measure, report: null, error: t('measure.anchorMissing') } });
+        return;
+      }
+      return void this.set({ measure: emptyMeasure(this.state.measure) });
+    }
     try {
       const report = await this.api.measure(targets as MeasureTarget[]);
       if (seq === this.measureSeq && this.state.measure) this.set({ measure: { ...this.state.measure, report, error: null } });
@@ -1503,6 +1542,12 @@ class AppStore {
     this.openNew({ id: this.allocator().take('hem'), type: 'hem', name: nextName(this.history.doc, name), suppressed: false, edge, length: '10', gap: '0.5' }, name);
   }
 
+  /** 「斷開角落」 (C11.4): chamfer or fillet selected flange free-end corners. */
+  newBreakCorner(): void {
+    const name = t('feature.breakCorner');
+    this.openNew({ id: this.allocator().take('breakcorner'), type: 'breakCorner', name: nextName(this.history.doc, name), suppressed: false, corners: this.preselectedEdges(), kind: 'chamfer', size: '2' }, name);
+  }
+
   /** The edge an edge flange or a hem is on: the edge clicked in the graphics area. */
   setFlangeEdge(ref: Ref): void {
     const f = this.editedFeature();
@@ -1884,11 +1929,11 @@ class AppStore {
   }
 
   /** Changes what a cut with surface is made of, the rest as it was. */
-  setCut(patch: Partial<{ target: Ref; surface: Ref; direction: Ref; reverse: boolean }>): void {
+  setCut(patch: Partial<{ target: Ref; surface: Ref; direction: NonNullable<Extract<Feature, { type: 'cutWithSurface' }>['direction']>; reverse: boolean; keep: 'behind' | 'ahead' }>): void {
     const f = this.editedFeature();
     if (f?.type !== 'cutWithSurface') return;
-    const next = { target: f.target, surface: f.surface, direction: f.direction, reverse: f.reverse, ...patch };
-    this.execute({ type: 'setCutWithSurface', featureId: f.id, target: next.target, surface: next.surface, direction: next.direction, ...(next.reverse ? { reverse: true } : {}) });
+    const next = { target: f.target, surface: f.surface, direction: f.direction, reverse: f.reverse, keep: f.keep, ...patch };
+    this.execute({ type: 'setCutWithSurface', featureId: f.id, target: next.target, surface: next.surface, direction: next.direction, ...(next.reverse ? { reverse: true } : {}), ...(next.keep === 'ahead' ? { keep: 'ahead' } : {}) });
   }
 
   /** A face picked while a knit is edited: its body is added to the bodies, or taken out of them. */
@@ -2036,6 +2081,11 @@ class AppStore {
     const e = this.state.editing;
     if (!e || ref.kind !== 'edge') return;
     const f = this.history.doc.features.find((x) => x.id === e.featureId);
+    if (f?.type === 'breakCorner') {
+      const corners = f.corners.some((x) => x.name === ref.name) ? f.corners.filter((x) => x.name !== ref.name) : [...f.corners, ref];
+      this.execute({ type: 'setBreakCorner', featureId: f.id, corners, kind: f.kind, size: f.size });
+      return;
+    }
     if (f?.type !== 'fillet' && f?.type !== 'chamfer') return;
     const exists = f.edges.some((x) => x.name === ref.name);
     const edges = exists ? f.edges.filter((x) => x.name !== ref.name) : [...f.edges, ref];
@@ -2087,6 +2137,7 @@ class AppStore {
     const f = this.editedFeature();
     if (f?.type === 'fillet' && f.kind && f.kind !== 'constant') this.toggleFilletGroupFace(ref);
     else if (f?.type === 'fillet' || f?.type === 'chamfer') (ref.kind === 'face' ? this.toggleEdgeFeatureFace(ref) : this.toggleEdge(ref));
+    else if (f?.type === 'breakCorner' && ref.kind === 'edge') this.toggleEdge(ref);
     else if (f?.type === 'extrude') this.setUpToFace(ref);
     else if (f?.type === 'refPlane' || f?.type === 'refAxis' || f?.type === 'refPoint' || f?.type === 'coordSys' || f?.type === 'pattern' || f?.type === 'mirror') this.putDatumRef(ref);
     else if (f?.type === 'deleteFace') this.toggleFace(ref);
@@ -2109,7 +2160,7 @@ class AppStore {
   multiPickKind(): 'edge' | 'face' | null {
     const f = this.editedFeature();
     if (f?.type === 'fillet' && f.kind && f.kind !== 'constant') return 'face';
-    if (f?.type === 'fillet' || f?.type === 'chamfer' || f?.type === 'fillSurface' || f?.type === 'flatSurface' || f?.type === 'extendSurface') return 'edge';
+    if (f?.type === 'fillet' || f?.type === 'chamfer' || f?.type === 'breakCorner' || f?.type === 'fillSurface' || f?.type === 'flatSurface' || f?.type === 'extendSurface') return 'edge';
     if (f?.type === 'deleteFace' || f?.type === 'shell' || f?.type === 'draft' || f?.type === 'offsetSurface') return 'face';
     return null;
   }
@@ -2125,6 +2176,7 @@ class AppStore {
       const group = this.state.filletPick;
       this.execute({ type: 'setFilletSets', featureId: f.id, kind: f.kind, faces: f.faces, faces2: f.faces2, center: f.center, ...{ [group]: more(f[group] ?? [], 'face') } });
     } else if (f?.type === 'fillet' || f?.type === 'chamfer') this.execute({ type: 'setEdges', featureId: f.id, edges: more(f.edges, 'edge') });
+    else if (f?.type === 'breakCorner') this.execute({ type: 'setBreakCorner', featureId: f.id, corners: more(f.corners, 'edge'), kind: f.kind, size: f.size });
     else if (f?.type === 'deleteFace') this.execute({ type: 'setFaces', featureId: f.id, faces: more(f.faces, 'face'), ...(f.hole ? { hole: true } : {}) });
     else if (f?.type === 'shell') this.execute({ type: 'setShell', featureId: f.id, faces: more(f.faces, 'face'), thickness: f.thickness, ...(f.outward ? { outward: true } : {}) });
     else if (f?.type === 'fillSurface' || f?.type === 'flatSurface' || f?.type === 'extendSurface') this.setSurfaceEdges(more(f.edges, 'edge').filter((r) => !r.name.includes(`${f.id}:`)));
@@ -2757,6 +2809,7 @@ class AppStore {
     this.blobs = blobs;
     void this.api.setBlobs(blobs); // posted before the rebuild request, so the worker has them first
     this.savedText = serializePart(doc);
+    this.retainedMeasures = [];
     if (!this.state.recovery) void this.autosave.clear();
     this.set({ active: 'part', selected: null, selectedFace: null, selectedElements: [], result: null, fileName, untitled, fitRequest: this.state.fitRequest + 1, documentSerial: this.state.documentSerial + 1, measure: null, draft: null, undercut: null, thickness: null, flat: null, interference: null, clearance: null, check: null });
     this.onDocChanged();

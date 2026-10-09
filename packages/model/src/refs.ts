@@ -88,6 +88,8 @@ export function mapRefs(feature: Feature, map: (ref: Ref) => Ref): { feature: Fe
     case 'edgeFlange':
     case 'hem':
       return { feature: { ...feature, edge: one(feature.edge) }, replaced };
+    case 'breakCorner':
+      return { feature: { ...feature, corners: feature.corners.map(one) }, replaced };
     case 'knit':
       return { feature: { ...feature, bodies: feature.bodies.map(one) }, replaced };
     case 'mutualTrim':
@@ -95,7 +97,7 @@ export function mapRefs(feature: Feature, map: (ref: Ref) => Ref): { feature: Fe
     case 'thicken':
       return { feature: { ...feature, body: one(feature.body) }, replaced };
     case 'cutWithSurface':
-      return { feature: { ...feature, target: one(feature.target), surface: one(feature.surface), direction: one(feature.direction) }, replaced };
+      return { feature: { ...feature, target: one(feature.target), surface: one(feature.surface), direction: feature.direction.kind === 'vector' ? feature.direction : one(feature.direction) }, replaced };
     case 'fillSurface':
     case 'flatSurface':
     case 'extendSurface':

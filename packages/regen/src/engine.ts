@@ -53,6 +53,7 @@ import {
   type ScrewBossFeature,
   type BaseFlangeFeature,
   type EdgeFlangeFeature,
+  type BreakCornerFeature,
   type HemFeature,
   type SnapHookFeature,
   type SnapCatchFeature,
@@ -652,6 +653,10 @@ export class Regenerator {
           }
           case 'edgeFlange': {
             set = this.advance(set, this.edgeFlange(feature, set));
+            return done({ status: 'ok' });
+          }
+          case 'breakCorner': {
+            set = this.advance(set, this.breakCorner(feature, set));
             return done({ status: 'ok' });
           }
           case 'hem': {
@@ -2407,6 +2412,48 @@ export class Regenerator {
     });
   }
 
+  /** A break corner (C11.4): trim one or more outside corners at the free end of a sheet-metal edge flange. */
+  private breakCorner(f: BreakCornerFeature, set: Bodies): BodyState[] {
+    const sheet = this.sheet;
+    if (!sheet) throw new FeatureError(t('breakCorner.needsSheet'));
+    return this.perBody(set, f.corners, 'edge', t('edit.noBodyForChamfer'), lostRefs, (body, mine) => {
+      const { edges } = this.edgesOfRefs(mine, body);
+      for (const edgeIndex of edges) {
+        const edge = body.topology.edges[edgeIndex]!;
+        const matches: { flange: SheetFlange; end: 0 | 1 }[] = [];
+        if (edge.curve === 'line' && edge.dir && Math.abs(edge.length - sheet.thickness) <= 1e-5 * (1 + sheet.thickness)) {
+          for (const flange of sheet.flanges) {
+            const fold = flange.fold;
+            if (Math.abs(dot(unit(edge.dir), fold.m2)) < 1 - 1e-6) continue;
+            const along = dot(sub(edge.mid, fold.origin2), fold.d);
+            const across = dot(sub(edge.mid, fold.origin2), fold.e);
+            if (Math.abs(along - flange.straight) > 1e-5 * (1 + flange.straight)) continue;
+            for (const end of [0, 1] as const) {
+              if (flange.miter[end] || flange.corner[end] > 1e-8) continue;
+              const at = end === 0 ? fold.pa : fold.pb;
+              if (Math.abs(across - at) <= 1e-5 * (1 + flange.width)) matches.push({ flange, end });
+            }
+          }
+        }
+        if (matches.length !== 1) throw new FeatureError(t('breakCorner.unsupported'));
+      }
+      const size = evalLength(f.size);
+      const topology = body.topology;
+      let r: OpResult;
+      if (f.kind === 'fillet') r = this.kernel.fillet(body.shape, edges, size);
+      else {
+        const specs = edges.map((edge) => {
+          const faces = [...new Set(topology.edges[edge]!.faces)].sort((a, b) => (body.names.faces[a]! < body.names.faces[b]! ? -1 : 1));
+          if (faces.length !== 2) throw new FeatureError(t('breakCorner.unsupported'));
+          return { edge, face: faces[0]! };
+        });
+        r = this.kernel.chamfer(body.shape, specs, 'distanceDistance', size, size);
+      }
+      const result = this.edited(f, r, body);
+      return result;
+    });
+  }
+
   /**
    * 「摺邊」 (C11.2, ADR 0086): a bend of 180° on an edge of the sheet and a flat piece folded back over it, `length` long after the bend, with `gap` between the two layers
    * (the inside diameter of the bend, so the inside radius is half of it). With `materialInside` the fold is flush with the edge: the sheet is cut back by the outside radius
@@ -3014,14 +3061,16 @@ export class Regenerator {
     const surface = this.bodyByRef(set, f.surface, t('surface.cutSurface'));
     if (target.surface) throw new FeatureError(t('surface.cutNeedsSolid', { name: target.id }));
     if (!surface.surface) throw new FeatureError(t('surface.cutNeedsSurface', { name: surface.id }));
-    const normal = this.planeOf(f.direction, set, { what: t('surface.cutDirection'), notPlanar: t('surface.cutDirectionNotPlanar') }).normal;
+    const normal = f.direction.kind === 'vector'
+      ? f.direction.value
+      : this.planeOf(f.direction, set, { what: t('surface.cutDirection'), notPlanar: t('surface.cutDirectionNotPlanar') }).normal;
     const sign = f.reverse ? -1 : 1;
     const k = this.kernel;
     const tool = k.surfaceTool(target.shape, surface.shape, [normal[0] * sign, normal[1] * sign, normal[2] * sign]);
     const made: ShapeId[] = [];
     try {
       const toolNames = nameElements(tool.faceOrigins, k.topology(tool.shape), { featureId: f.id, role: 'cut', input: surface.names });
-      const r = this.boolBodies(f.id, 'cut', [target], tool.shape, toolNames, made);
+      const r = this.boolBodies(f.id, f.keep === 'ahead' ? 'common' : 'cut', [target], tool.shape, toolNames, made);
       k.release(tool.shape);
       if (!r.changed) throw new FeatureError(t('feature.cutRemovedNothing'));
       if (r.out.length === 0) throw new FeatureError(t('regen.cutRemovedAll'));

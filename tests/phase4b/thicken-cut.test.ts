@@ -117,6 +117,34 @@ describe('cut with surface (C9.4)', () => {
     expect(volume(r, 'e1')).toBeCloseTo(40 * 30 * 8, 4);
   });
 
+  it('takes a fixed vector and keeps either side; an oblique vector is normalized by the kernel', () => {
+    const behind = rebuild(insert(wide(block()), cut({ direction: { kind: 'vector', value: [0, 0, 2] } })));
+    expect(failures(behind)).toEqual([]);
+    expect(volume(behind, 'e1')).toBeCloseTo(40 * 30 * 12, 4);
+    const ahead = rebuild(insert(wide(block()), cut({ direction: { kind: 'vector', value: [0, 0, 2] }, keep: 'ahead' })));
+    expect(failures(ahead)).toEqual([]);
+    expect(volume(ahead, 'e1')).toBeCloseTo(40 * 30 * 8, 4);
+    const reversed = rebuild(insert(wide(block()), cut({ direction: { kind: 'vector', value: [0, 0, -1] }, keep: 'ahead' })));
+    expect(failures(reversed)).toEqual([]);
+    expect(volume(reversed, 'e1')).toBeCloseTo(volume(behind, 'e1'), 4);
+    const oblique = rebuild(insert(wide(block()), cut({ direction: { kind: 'vector', value: [1, 2, 2] } })));
+    expect(failures(oblique)).toEqual([]);
+    expect(kernel.isValid(oblique.bodies.find((b) => b.id === 'e1')!.shape)).toBe(true);
+    expect(volume(oblique, 'e1')).toBeGreaterThan(0);
+    expect(volume(oblique, 'e1')).toBeLessThan(40 * 30 * 20);
+  });
+
+  it('rejects zero or non-finite vectors and migrates old plane-direction files unchanged', () => {
+    expect(() => insert(wide(block()), cut({ direction: { kind: 'vector', value: [0, 0, 0] } }))).toThrow();
+    expect(() => insert(wide(block()), cut({ direction: { kind: 'vector', value: [0, Number.NaN, 1] } }))).toThrow();
+    expect(() => insert(wide(block()), cut({ keep: 'sideways' as never }))).toThrow();
+    let doc = insert(wide(block()), cut());
+    doc = applyCommand(doc, { type: 'setCutWithSurface', featureId: 'cs1', target: body('e1'), surface: body('os1'), direction: { kind: 'vector', value: [1, 2, 3] }, keep: 'ahead' });
+    expect(doc.features.find((f) => f.id === 'cs1')).toMatchObject({ keep: 'ahead', direction: { kind: 'vector', value: [1, 2, 3] } });
+    doc = applyCommand(doc, { type: 'setCutWithSurface', featureId: 'cs1', target: body('e1'), surface: body('os1'), direction: { kind: 'datum', name: 'plane:front' } });
+    expect(doc.features.find((f) => f.id === 'cs1')).not.toHaveProperty('keep');
+  });
+
   it('follows the model: the surface 5 down instead of 8, the block is 40 × 30 × 15', () => {
     let doc = insert(wide(block()), cut());
     doc = applyCommand(doc, { type: 'setOffsetSurface', featureId: 'os1', faces: [{ kind: 'face', name: 'e1:cap:end' }], distance: '-5' });

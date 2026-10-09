@@ -13,6 +13,7 @@ await import(`${root}tests/e2e/phase3-subassembly.js?` + Date.now());
 const H = window.__ui2;
 const { store } = H;
 const model = await import(`${root}packages/model/src/index.ts`);
+const measureFrames = await import(`${root}apps/web/src/state/measureFrames.ts`);
 const measure = (window.__measure = {});
 
 const field = (name) => document.querySelector(`[data-measure] [data-field="${name}"]`);
@@ -58,6 +59,22 @@ measure.assembly = async () => {
   H.check(want < 1e-6 || (delta && delta.every((v, i) => near(v, pb[i] - pa[i], 1e-3))), `delta ${delta}`);
   H.check(field('angle') === null, 'no angle between two vertices');
   H.check(JSON.stringify(m.picks.map((p) => p.leaf)) === JSON.stringify([a.id, b.id]), 'the picks name their components');
+  const framedLeaf = store.assembly.leaves().find((leaf) => store.assembly.buildOfLeaf(leaf)?.systems.some((x) => x.id === 'measureFixtureCoordSys'));
+  const frameSelect = field('frame');
+  const frameOption = framedLeaf && [...frameSelect.options].find((o) => o.value === `${framedLeaf.id}::measureFixtureCoordSys`);
+  H.check(!!frameOption, 'the assembly lists a coordinate system from a component');
+  if (frameOption && framedLeaf) {
+    frameSelect.value = frameOption.value;
+    frameSelect.dispatchEvent(new Event('change', { bubbles: true }));
+    await H.wait(100);
+    const system = store.assembly.buildOfLeaf(framedLeaf).systems.find((x) => x.id === 'measureFixtureCoordSys').system;
+    const frame = measureFrames.placeMeasureFrame(system, framedLeaf.pose, !!framedLeaf.mirrored);
+    const delta = m.report.distance.delta;
+    const expected = frame.axes.map((axis) => Math.abs(delta[0] * axis[0] + delta[1] * axis[1] + delta[2] * axis[2]));
+    const shownDelta = field('delta').textContent.split(/\s+/).map(Number);
+    H.check(shownDelta.every((v, i) => near(v, expected[i], 1e-3)), `component frame deltas ${shownDelta} against ${expected}`);
+    store.setMeasureOptions({ frame: 'world' });
+  }
   // a face of a part: it is a plane or a cylinder, with an area
   const faceBuild = store.assembly.buildOfLeaf(a);
   const planar = faceBuild.faceGeometry.findIndex((g) => g?.kind === 'plane');

@@ -83,10 +83,10 @@ code{background:var(--chip);padding:0 4px;border-radius:4px}
 <nav><ol><li><a href="#prep">0. 開始之前（只做一次）<span class="cnt" data-sec="prep"></span></a></li><li><a href="#desktop">A. 桌面版安裝<span class="cnt" data-sec="desktop"></span></a></li><li><a href="#basic">B. 基礎功能殘留<span class="cnt" data-sec="basic"></span></a></li><li><a href="#p3a">C. 零件建模（Phase 3a）<span class="cnt" data-sec="p3a"></span></a></li><li><a href="#p3b">D. 組合件（Phase 3b）<span class="cnt" data-sec="p3b"></span></a></li><li><a href="#p4a">E. 夾治具（Phase 4a）<span class="cnt" data-sec="p4a"></span></a></li><li><a href="#p5">F. 工程圖（Phase 5）<span class="cnt" data-sec="p5"></span></a></li><li><a href="#p4b">G. 檢具型面塊（Phase 4b）<span class="cnt" data-sec="p4b"></span></a></li><li><a href="#p6">H. 塑膠件（Phase 6）<span class="cnt" data-sec="p6"></span></a></li><li><a href="#p7">I. 鈑金（Phase 7）<span class="cnt" data-sec="p7"></span></a></li><li><a href="#samples">J. 需要真實樣本的驗證<span class="cnt" data-sec="samples"></span></a></li><li><a href="#standards">K. 對照你的標準<span class="cnt" data-sec="standards"></span></a></li><li><a href="#cleanup">L. 清理與收尾<span class="cnt" data-sec="cleanup"></span></a></li></ol></nav>
 <main>
 <div class="lead">
-<p><b>這份清單是什麼：</b>自動化測試（共 2395 項）都通過了。2026-10-08 起，我又用腳本在真實瀏覽器裡把下面 <b>56 項</b>逐步重播過（<code>npm run verify:ui</code>，每個步驟的數字都是手算的答案，畫面截圖我也看過，並順手修掉了找到的缺陷），這些項目<b>預設隱藏，不用你做</b>；另外有 <b>14 項是你自己確認過的</b>（P1–P3、A1、B1、C1–C5、C17、D3、D8、H9，寫在各項最上面的藍框），也預設隱藏、算已處理，換電腦或換瀏覽器不會再顯示成「未做」；逐項紀錄在 <code>docs/verification-coverage.md</code>。留下來的是<b>還沒有人用滑鼠、鍵盤、別的軟體實際走過、或需要你下決定</b>的項目：每一項最上面的綠／黃框說明「已驗了什麼、還剩什麼」。每一項都寫了「為什麼要做、先準備什麼、怎麼做、應該看到什麼、有問題時回報什麼」。第一次用請先讀下面的「先看這裡」（畫面怎麼認、共用做法、名詞）；步驟裡每個動作下面以「→」開頭的小字，是做完那個動作你應該看到的畫面。<b>現在還剩（2026-10-09，A1、D3、D8 已通過）：</b>① <b>I10</b> 真人走一遍鈑金支架（今天就能做）；② <b>F7</b> 在工程圖上用滑鼠標註、搬標註、畫剖面線、<b>D9</b> 測量像 eDrawings 並可用英制（兩項都是新做的，請用真的滑鼠試）；③ <b>F6</b> 用 Chrome 開 PDF（2 分鐘）；④ <b>F4</b> 孔標註用語合不合公司習慣；⑤ <b>G5、I9</b> 你 10-05 在 eDrawings 開過，認可就選「通過」，沒有別的 CAD 的部分選「略過」；⑥ <b>J 章</b>要真實樣本；⑦ <b>K 章</b>要你決定。C 章到 I 章（C1 到 I10）都已改寫成逐步做法；A、B、J、K、L 與 0 章維持原樣（要另一台電腦、你的樣本或你的決定）。</p>
+<p><b>這份清單是什麼：</b><code>npm run check</code> 通過 183 個測試檔、2481 個測試（另有 3 檔／22 項略過）。截至 2026-10-09，無頭 Chromium 的 <code>npm run verify:ui</code> 有 <b>125/125 個 UI 重播通過</b>，並在指定資料夾保留逐步截圖；自動腳本使用合成指標事件，因此不等同實體滑鼠或其他裝置驗證。部分截圖已檢視，逐項覆蓋見 <code>docs/verification-coverage.md</code>。另外 <b>14 項是你自己確認過的</b>（P1–P3、A1、B1、C1–C5、C17、D3、D8、H9，寫在各項最上面的藍框），也預設隱藏、算已處理，換電腦或換瀏覽器不會再顯示成「未做」。留下來的是<b>尚需實體操作、外部軟體、真實參考數據或你決定</b>的項目：每一項最上面的綠／黃框說明已驗與待驗範圍。每一項都寫了「為什麼要做、先準備什麼、怎麼做、應該看到什麼、有問題時回報什麼」。第一次用請先讀下面的「先看這裡」（畫面怎麼認、共用做法、名詞）；步驟裡每個動作下面以「→」開頭的小字，是做完那個動作你應該看到的畫面。<b>現在還剩（2026-10-09，A1、D3、D8 已通過）：</b>① <b>I10</b> 真人走一遍鈑金支架；② <b>F7、D9</b> 用實體滑鼠試標註、剖面線、量測標籤及抓點；③ <b>F6</b> 用 Chrome 開 PDF；④ <b>F4</b> 孔標註用語合不合公司習慣；⑤ <b>G5、I9</b> 在外部 CAD／雷射軟體驗證（I9 已在 eDrawings 開過，沒有其他 CAD 可選「略過」）；⑥ <b>J 章</b>公開 CAD 樣本已取得並通過匯入測試，仍待用外部 CAD 及 SolidWorks 對照；⑦ <b>K 章</b>要你決定。另 D9 的 375／390／768 viewport 尚未驗（本機頁面的瀏覽器權限設定阻擋直接開啟）；L 章尚有需許可的資料夾清理與選做收尾。</p>
 <p><b>怎麼用：</b>點項目標題展開；做完在右邊的下拉選單選「通過」「有問題」「略過」，並在備註寫下觀察。進度會自動存在這個瀏覽器裡。全部做完（或做到一個段落）按上方的「複製結果」把整份貼給我。</p>
 <p><b>建議順序：</b>先做 0（準備）→ C（零件，每項十分鐘內）→ D、E（組合件與夾具）→ F（工程圖）→ H、I（塑膠與鈑金），標「必做」的優先；標「需樣本」「需你決定」的是等你提供資料或下決定，不用現在做。</p>
-<p class="stat">產生日期 2026-10-04，2026-10-06、2026-10-08、2026-10-09 更新；對應的程式版本：提交 9f272d8 之後，零件格式 Schema 49、工程圖格式 Schema 7（2026-10-09 起工程圖的視圖可以用滑鼠拖曳改位置、拖右下角的方塊改比例，「最適比例」連標註一起算）。下文的「驗證資料夾」指 P2 用 KIT_OUT 做出來的那個資料夾（本文的例子寫 D:\3DB實機確認，你的在哪裡就用哪裡）。</p>
+<p class="stat">產生日期 2026-10-04，2026-10-06、2026-10-08、2026-10-09 更新（本次 UI 125/125、測試 2481 通過／22 略過、正式建置通過）；對應的程式版本：提交 9f272d8 之後，零件格式 Schema 49、工程圖格式 Schema 7（2026-10-09 起工程圖的視圖可以用滑鼠拖曳改位置、拖右下角的方塊改比例，「最適比例」連標註一起算）。下文的「驗證資料夾」指 P2 用 KIT_OUT 做出來的那個資料夾（本文的例子寫 D:\3DB實機確認，你的在哪裡就用哪裡）。</p>
 </div>
 <!--guide-start-->
 <details class="guide" id="recipes" open>
@@ -692,7 +692,7 @@ code{background:var(--chip);padding:0 4px;border-radius:4px}
 <summary><span class="iid">D9</span><span class="ttl">測量像 eDrawings：圖上畫出距離與 dX／dY／dZ、英制、弧圓量法</span><span class="tag t-core">必做</span>
 <select class="st" aria-label="D9 狀態"><option value="">未做</option><option value="ok">通過</option><option value="bad">有問題</option><option value="skip">略過</option></select></summary>
 <div class="inner">
-<p class="auto part"><b>已自動重播驗過（2026-10-09）。</b>腳本 <code>manual-measure-view.js</code>（19 步，零件、組合件的算法、點選位置、保留多筆、拖標籤與工程圖英制）與單元測試 <code>measure-units.test.ts</code>、<code>drawing-units.test.ts</code> 驗了數字與文字；這一項留給你「用真的滑鼠點，看圖面標示順不順眼」：標籤會不會互相蓋住、線粗細、顏色。</p>
+<p class="auto part"><b>已自動重播驗過（2026-10-09）。</b>腳本 <code>manual-measure-view.js</code> 與測試 <code>measure-units.test.ts</code>、<code>drawing-units.test.ts</code>、<code>measure-anchors.test.ts</code>、<code>measure-frames.test.ts</code> 驗算值、英制、多筆量測離開再開工具後保留、頂點用 persistent name 跟隨重建，以及組合件零件座標系；指定資料夾中有 20 張本項截圖。留下來的是實體滑鼠操作與視覺檢查：標籤遮擋、線條／顏色、抓點是否合用；375／390／768 viewport 未驗（本機頁面的瀏覽器權限設定阻擋直接開啟）。</p>
 <p class="why"><b>為什麼要做：</b>量測要像 eDrawings：兩個元素選好後，直接在 3D 裡看到距離與沿三個軸的分量，並且能用英制。</p>
 <h4>先準備</h4><p>開一個零件（例如 <code>金樣\定位板.3dbx</code>）或一個組合件，「工具」→「測量」。</p>
 <h4>怎麼做</h4>
@@ -705,10 +705,10 @@ code{background:var(--chip);padding:0 4px;border-radius:4px}
 <li><b>量任意位置的點：</b>測量面板的「選取」改選「點」。<span class="see">游標移到模型上會吸附並出現橘色圓點與名稱：端點、圓心（圓或圓弧）、邊的中點、邊上的點、面上的點；優先順序是端點、圓心、中點，其次邊上，最後是面上。</span>點兩個位置。<span class="see">畫出兩點的最短距離與 dX／dY／dZ，結果文字與一般量測相同。點的位置在模型被剖開時只吸附留下的部分。</span>也可以先點一個位置，再選「元素」改點一個面：<span class="see">是點到面的最短距離。</span></li>
 <li><b>保留多筆：</b>量好一筆按「保留這筆」。<span class="see">這一筆留在模型上與清單裡（「已保留的量測」），並開始新的一筆；改模型後保留的也會重新量。</span>清單的 ✕ 刪一筆；「複製全部」貼出每一筆的文字；「全部清除」都拿掉。</li>
 <li><b>搬標籤：</b>用滑鼠左鍵按住圖上的標籤拖到不擋事的地方。<span class="see">放開後留在那裡，改單位或重畫時位置不變。</span></li>
-<li><b>座標系：</b>零件裡先建一個座標系，測量面板出現「座標系」選單，選它。<span class="see">dX／dY／dZ 與階梯線改沿該座標系的軸（位移用該座標系的方向算）；選「世界座標」回原來的。組合件只有世界座標。</span></li>
+<li><b>座標系：</b>零件或組合件裡先建一個座標系，測量面板出現「座標系」選單；組合件會列出元件／座標系名稱，選一個。<span class="see">dX／dY／dZ 與階梯線改沿所選座標系的軸（包含元件位置與方向）；選「世界座標」回原來的。</span></li>
 <li><b>英制的工程圖：</b>開一張工程圖，左邊面板「圖頁」區的「尺寸單位」選「英寸」。<span class="see">所有尺寸、公差、孔的深度與孔表都換成英寸（120 mm 寫 4.724）；圖頁尺寸、比例與檔案裡的數字仍是毫米。</span>公差的「上限／下限」欄這時用英寸輸入。</li>
 </ol>
-<h4>應該看到</h4><ul><li>線與標籤清楚、不被模型擋住（線畫在最上面）；同一位置的標籤上下錯開；放大縮小時線的粗細與標籤大小不變。</li><li>不順的地方請逐項寫在備註：標籤蓋住了什麼、顏色看不清、選的元素跟圖上標示對不起來、吸附到的位置不是你要的。</li><li>已知：保留的量測在離開測量工具後會消失；點存的是零件自己座標裡的位置，重建後不會跟著拓樸走。</li></ul>
+<h4>應該看到</h4><ul><li>線與標籤清楚、不被模型擋住（線畫在最上面）；同一位置的標籤上下錯開；放大縮小時線的粗細與標籤大小不變。</li><li>不順的地方請逐項寫在備註：標籤蓋住了什麼、顏色看不清、選的元素跟圖上標示對不起來、吸附到的位置不是你要的。</li><li>範圍說明：離開測量工具後，未保留的即時標註會消失；「保留這筆」的量測在目前文件開啟期間可關閉再開工具並恢復，切換／載入文件時清除。頂點抓點以 persistent name 重建追蹤；名稱失效會顯示錯誤，不會靜默綁到其他頂點。中點、圓心、邊上與面上抓點目前仍存固定座標，重建後不保證跟隨拓樸。</li></ul>
 <p class="report"><b>有問題時請回報：</b>選了哪兩個元素、哪個單位與選項、截圖。</p>
 <label class="note">備註<textarea rows="2" placeholder="做到哪一步、畫面訊息原文、和預期的差別…"></textarea></label>
 </div></details>
@@ -927,8 +927,8 @@ code{background:var(--chip);padding:0 4px;border-radius:4px}
 <p class="why helpref"><b>程式內的說明（按 F1，或功能列最右的「說明」搜尋）：</b>厚面、以曲面除料。這一項驗出問題、修好時，這些說明也要一起改。</p>
 <p class="why"><b>用這個檔案：</b>G2 做出來的零件</p>
 <p class="why"><b>預跑（2026-10-05，瀏覽器腳本照 UI 操作）：</b>厚面與以曲面除料過。</p>
-<h4>先準備</h4><p>接著 G2：有一個偏移曲面本體。</p><h4>怎麼做</h4><ol><li>「特徵」→「厚面」。<span class="see">左邊出現面板，「要加厚的曲面本體」是一個下拉。</span></li><li>下拉選 G2 的偏移曲面，「厚度」輸入 <code>2</code>。<span class="see">面板顯示「厚面：離曲面最遠 … mm（要求 2 mm）；體積 … mm³」。</span></li><li>按 ✔。<span class="see">曲面本體不見，變成一個實體的型面塊（設計樹的本體不再標「曲面」）。「工具」→「物質特性…」的體積約等於「面積 × 厚度」。厚度改負值（例如 -2）是長到曲面的另一側。</span></li><li>厚面的兩個選項：（範例檔 <code>曲面/厚面兩側.3dbx</code> 已經做好：圓柱偏移 3 的曲面，兩側總厚 4 並保留曲面）在面板勾「兩側」。<span class="see">厚度是總厚、曲面兩邊各一半：例如厚度 4，實體是曲面往兩側各 2；體積與只做一側的相同（面積 × 4），只是位置不同。</span>再勾「保留曲面」。<span class="see">設計樹裡曲面本體還在（仍標「曲面」），另外多一個實體本體；實體的面名字前面多「複製」，兩個本體沒有同名的面。取消勾選就回到原來。</span></li><li>「以曲面除料」（選做，沒有預跑以外的情況）：做一個方塊，對它的頂面「偏移曲面」距離 <code>-8</code>，用「延伸曲面」把曲面延伸得比方塊大；「特徵」→「以曲面除料」，「要除料的實體」選方塊，「除料用的曲面本體」選曲面，按 ✔。<span class="see">方塊被曲面切掉一側（預設切掉曲面上方）；勾「反轉方向」切另一側；曲面本身不變。</span></li></ol>
-<h4>應該看到</h4><ul><li>型面塊與工件型面的間隙為你設的值（例如 3.000 mm）。已知沒做：除料用任意向量當方向。</li></ul>
+<h4>先準備</h4><p>接著 G2：有一個偏移曲面本體。</p><h4>怎麼做</h4><ol><li>「特徵」→「厚面」。<span class="see">左邊出現面板，「要加厚的曲面本體」是一個下拉。</span></li><li>下拉選 G2 的偏移曲面，「厚度」輸入 <code>2</code>。<span class="see">面板顯示「厚面：離曲面最遠 … mm（要求 2 mm）；體積 … mm³」。</span></li><li>按 ✔。<span class="see">曲面本體不見，變成一個實體的型面塊（設計樹的本體不再標「曲面」）。「工具」→「物質特性…」的體積約等於「面積 × 厚度」。厚度改負值（例如 -2）是長到曲面的另一側。</span></li><li>厚面的兩個選項：（範例檔 <code>曲面/厚面兩側.3dbx</code> 已經做好：圓柱偏移 3 的曲面，兩側總厚 4 並保留曲面）在面板勾「兩側」。<span class="see">厚度是總厚、曲面兩邊各一半：例如厚度 4，實體是曲面往兩側各 2；體積與只做一側的相同（面積 × 4），只是位置不同。</span>再勾「保留曲面」。<span class="see">設計樹裡曲面本體還在（仍標「曲面」），另外多一個實體本體；實體的面名字前面多「複製」，兩個本體沒有同名的面。取消勾選就回到原來。</span></li><li>「以曲面除料」（選做，沒有預跑以外的情況）：做一個方塊，對它的頂面「偏移曲面」距離 <code>-8</code>，用「延伸曲面」把曲面延伸得比方塊大；「特徵」→「以曲面除料」，「要除料的實體」選方塊，「除料用的曲面本體」選曲面，按 ✔。<span class="see">方塊被曲面切掉一側（預設切掉曲面上方）；勾「反轉方向」切另一側；曲面本身不變。再改選「固定 XYZ 向量」，填 <code>[0,0,2]</code> 並切換「保留方向前側／後側」；改填 <code>[1,2,2]</code> 並反轉方向，確認切分隨向量傾斜；全零向量應被拒絕。</span></li></ol>
+<h4>應該看到</h4><ul><li>型面塊與工件型面的間隙為你設的值（例如 3.000 mm）。曲面除料也可用任意非零 XYZ 向量作方向，並選保留前側或後側；自動驗證會核對傾斜除料與零向量拒絕。</li></ul>
 
 <label class="note">備註<textarea rows="2" placeholder="做到哪一步、畫面訊息原文、和預期的差別…"></textarea></label>
 </div></details><details class="item" id="item-G5" data-id="G5" data-auto="part" data-sec="p4b" data-tag="ext">
@@ -1096,15 +1096,17 @@ code{background:var(--chip);padding:0 4px;border-radius:4px}
 
 <label class="note">備註<textarea rows="2" placeholder="做到哪一步、畫面訊息原文、和預期的差別…"></textarea></label>
 </div></details><details class="item" id="item-I5" data-id="I5" data-auto="full" data-sec="p7" data-tag="core">
-<summary><span class="iid">I5</span><span class="ttl">閉合角落（H-6 剛做完）</span><span class="tag t-core">必做</span>
+<summary><span class="iid">I5</span><span class="ttl">鈑金角落閉合與斷開</span><span class="tag t-core">必做</span>
 <select class="st" aria-label="I5 狀態"><option value="">未做</option><option value="ok">通過</option><option value="bad">有問題</option><option value="skip">略過</option></select></summary>
 <div class="inner">
-<p class="auto"><b>已自動重播驗過（2026-10-08）。</b>腳本 <code>phase7-corner-ui.js</code> 在真實瀏覽器裡照下面的步驟操作，數字都是手算的答案，畫面截圖也看過，全部通過；<b>這一項你不用做</b>（預設已隱藏，按上方「全部」才會出現）。 逐項細節見 <code>docs/verification-coverage.md</code>。</p>
-<p class="why"><b>為什麼要做：</b>兩片凸緣在相鄰兩邊，把角落關起來。</p>
+<p class="auto"><b>已自動重播驗過（2026-10-09）。</b>腳本 <code>phase7-corner-ui.js</code> 與 <code>phase7-break-corner-ui.js</code> 及幾何測試驗了閉合角落、自由端倒角／倒圓、平板型式同步與拒絕不支援的角落邊；數字有解析幾何手算核對。自動檢查不代替你看真實滑鼠下的線條外觀。逐項細節見 <code>docs/verification-coverage.md</code>。</p>
+<p class="why"><b>為什麼要做：</b>確認鈑金凸緣角落可閉合，也可在自由端切出倒角或倒圓，且平板型式會同步更新。</p>
+<p class="why helpref"><b>程式內的說明（按 F1，或功能列最右的「說明」搜尋）：</b>斷開角落。這一項驗出問題、修好時，這些說明也要一起改。</p>
 <p class="why"><b>用這個檔案：</b>鈑金/平板.3dbx</p>
 <p class="why"><b>預跑（2026-10-05，瀏覽器腳本照 UI 操作）：</b>閉合角落過（縮短躲開、間隙 0.5 增加 79.5 mm³、間隙太大與旁邊沒有凸緣的提示）。</p>
 <h4>先準備</h4><p><a href="#recipe-h">做法 H</a>，但是改畫 100 × 60 的矩形（用邊角矩形，第一下點原點，標 100 與 60）。按「檢視」→「等角」。</p><h4>怎麼做</h4><ol><li>先做第一片凸緣：「鈑金」→「邊線凸緣」，點板頂面<b>短邊</b>（60 的那一條，在 x = 100 的那端），「凸緣長度」填 <code>40</code>，按 ✔。<span class="see">板的一端折起一片 90° 的凸緣。</span></li><li>再做第二片：「邊線凸緣」，點與第一片<b>相鄰的長邊</b>，「凸緣長度」填 <code>30</code>。<span class="see">預覽是第二片凸緣，與第一片在角落相鄰。</span></li><li>「起端縮短」填 <code>0.5</code>；「起端閉合角落：與鄰接凸緣的間隙」填 <code>0.5</code>，按 ✔。<span class="see">折彎自己縮短去躲開鄰接凸緣的折彎，平直段在折彎之後多延伸一段，停在離第一片凸緣的內側 0.5 的地方，兩片的角落閉合。<b>若出現「閉合角落：旁邊沒有可以接上的凸緣」或「沒有蓋住…中間」</b>，是起端和末端選反了：改成「末端縮短」與「末端閉合角落」那兩格。</span></li><li>「鈑金」→「平板型式」看展開圖。<span class="see">折彎與較寬的平直段接在一起，角落成階梯狀。按「關閉」。</span></li><li>故意做錯：把「…閉合角落」的間隙改成 <code>3</code>；再把第一片凸緣抑制掉。<span class="see">各有一則看得懂的錯誤：「離鄰接凸緣的內側只有…比要留的間隙小」；「這一端旁邊沒有可以接上的凸緣」。</span></li></ol>
-<h4>應該看到</h4><ul><li>角落閉合、間隙正確；錯誤訊息清楚。已知：還沒有「斷開角落」「斜接」。</li></ul>
+<h4>斷開角落</h4><p>另開一個 100 × 60 × 1.5 的平板，新建一條高 30 的邊線凸緣；雙擊凸緣確認兩端沒有縮短、閉合角落或斜接。選取凸緣自由端的一個外角邊，按「鈑金」→「斷開角落」。</p><ol><li>確認清單顯示角落邊，型式選「倒角」、尺寸 <code>2</code>，按 ✔。<span class="see">自由端外角被切去直角三角形；面板狀態正常。</span></li><li>打開平板型式。<span class="see">同一角落的輪廓被直線修剪，面積比未斷開時少 2 mm²。</span></li><li>回到折疊視圖，編輯斷開角落，切換「倒圓」、尺寸 <code>2</code>，確認折疊角落與展開輪廓都成圓弧；選取折彎端、底板邊或已斜接的角落時，應顯示清楚錯誤。</li></ol>
+<h4>應該看到</h4><ul><li>閉合角落間隙正確；斷開角落的倒角／倒圓在折疊模型與平板型式一致，錯誤訊息清楚。</li></ul>
 
 <label class="note">備註<textarea rows="2" placeholder="做到哪一步、畫面訊息原文、和預期的差別…"></textarea></label>
 </div></details><details class="item" id="item-I6" data-id="I6" data-auto="full" data-sec="p7" data-tag="core">
@@ -1163,28 +1165,31 @@ code{background:var(--chip);padding:0 4px;border-radius:4px}
 <h4>應該看到</h4><ul><li>整個流程不順的地方請逐項寫在備註，例如：點邊時選到錯的邊、方向反了不知道怎麼辦、訊息看不懂。</li></ul>
 <p class="report"><b>有問題時請回報：</b>例如：點邊時選到錯的邊、方向反了不知道怎麼辦、訊息看不懂。</p>
 <label class="note">備註<textarea rows="2" placeholder="做到哪一步、畫面訊息原文、和預期的差別…"></textarea></label>
-</div></details></section><section id="samples" class="sec"><h2>J. 需要真實樣本的驗證</h2><p class="intro">這一節卡在「沒有真實檔案」。你說短期內沒有 STEP 樣本，所以我先把需要什麼寫清楚，等有了就能做。每一項的重點是「與 SolidWorks 或別家軟體的結果對照」，這是自動化測試永遠無法替代的。</p><details class="item" id="item-J1" data-id="J1" data-sec="samples" data-tag="sample">
+</div></details></section><section id="samples" class="sec"><h2>J. 需要真實樣本的驗證</h2><p class="intro">已從 OSF 取得 6 個論文列明 GPL-3.0 的真實 STEP 樣本，含鈑金件、相符的平板型式 STEP、塑膠模具與完整組合件；來源、SHA-256 與授權記在 <code>tests/fixtures/public-cad/osf-sheet-press/README.md</code>，匯入測試已通過。這只能驗別家 CAD 匯出的幾何與組合件結構；SolidWorks 特徵樹、分析結果與製造結果對照仍需要對應軟體或參考數值。</p><details class="item" id="item-J1" data-id="J1" data-sec="samples" data-tag="sample">
 <summary><span class="iid">J1</span><span class="ttl">3 個真實的 SW 零件（3a-10 驗收）</span><span class="tag t-sample">需樣本</span>
 <select class="st" aria-label="J1 狀態"><option value="">未做</option><option value="ok">通過</option><option value="bad">有問題</option><option value="skip">略過</option></select></summary>
 <div class="inner">
+<p class="auto part"><b>樣本已取得，STEP 匯入自動測試通過。</b>可用的原生 SolidWorks 與 STEP 對照件：Mounting Bracket、Upper Sheet Metal Enclosure、ASTM D695 Mold；檔案與雜湊見 fixture README。尚未在 SolidWorks 查看特徵樹、重建特徵或改尺寸比對，因本機沒有可用 SolidWorks 參考環境。</p>
 <p class="why"><b>為什麼要做：</b>3a 階段要「用本工具重建、特徵數量相當、改關鍵尺寸後模型不壞」。</p>
-<h4>怎麼做</h4><ol><li>請提供：3 個代表性的 SW 零件的 STEP、特徵清單截圖、關鍵尺寸。（給同事的說明在 docs\sw-export-request.md，尚未追蹤進版本庫）</li><li>我會用它們跑輸入、加特徵、改尺寸，比對體積與形狀。</li></ol>
-<h4>應該看到</h4><ul><li>（等你提供）</li></ul>
+<h4>怎麼做</h4><ol><li>如有 SolidWorks，開啟三個配對的 <code>.sldprt</code>，記錄特徵樹與關鍵尺寸；對應 STEP 已在 <code>tests/fixtures/public-cad/osf-sheet-press/</code>，免再找樣本。</li><li>用 STEP 匯入本工具，增加特徵與修改關鍵尺寸，和 SolidWorks 的特徵數量、體積與形狀比對。</li></ol>
+<h4>應該看到</h4><ul><li>目前只驗 STEP 幾何匯入；特徵重建與 SolidWorks 數值對照待能開啟 SolidWorks 後完成。</li></ul>
 
 <label class="note">備註<textarea rows="2" placeholder="做到哪一步、畫面訊息原文、和預期的差別…"></textarea></label>
 </div></details><details class="item" id="item-J2" data-id="J2" data-sec="samples" data-tag="sample">
 <summary><span class="iid">J2</span><span class="ttl">保留結構的組合件 STEP（3b）</span><span class="tag t-sample">需樣本</span>
 <select class="st" aria-label="J2 狀態"><option value="">未做</option><option value="ok">通過</option><option value="bad">有問題</option><option value="skip">略過</option></select></summary>
 <div class="inner">
+<p class="auto part"><b>外部組合件樣本匯入已自動測試通過。</b><code>sheet-press-assembly.step</code> 的產品階層與多個零件都被 XCAF 讀出；詳見 public-cad-samples.test.ts。尚未在第二套 CAD 裡目視比對位置與顏色。</p>
 <p class="why"><b>為什麼要做：</b>驗證「輸入 STEP 組合件」讀得對別家軟體的檔案。</p>
-<h4>怎麼做</h4><ol><li>請提供：每個不同的零件各一個 STEP，加一個保留組合件結構的組合件 STEP（可用文字編輯器搜尋 NEXT_ASSEMBLY_USAGE_OCCURRENCE，應有多筆）。</li><li>先前給的 CIV0000467 治具與產品件兩個 STEP 各只有 1 個產品與 1 個實體（AP203 併成單一實體），不能用；.SLDASM 是 SolidWorks 專有格式，讀不出來。</li></ol>
-<h4>應該看到</h4><ul><li>（等你提供）</li></ul>
+<h4>怎麼做</h4><ol><li>測試檔已備妥：<code>sheet-press-assembly.step</code> 與各零件 STEP 在 public-cad-samples 資料夾。</li><li>若能開啟 eDrawings 或其他 CAD，再核對組合件樹、位置與顏色；SolidWorks 的 <code>.SLDASM</code> 仍不能直接讀入。</li></ol>
+<h4>應該看到</h4><ul><li>自動測試已確認根產品與多個組件；外部 CAD 畫面對照仍待做。</li></ul>
 
 <label class="note">備註<textarea rows="2" placeholder="做到哪一步、畫面訊息原文、和預期的差別…"></textarea></label>
 </div></details><details class="item" id="item-J3" data-id="J3" data-sec="samples" data-tag="sample">
 <summary><span class="iid">J3</span><span class="ttl">真實夾具案例（4a）</span><span class="tag t-sample">需樣本</span>
 <select class="st" aria-label="J3 狀態"><option value="">未做</option><option value="ok">通過</option><option value="bad">有問題</option><option value="skip">略過</option></select></summary>
 <div class="inner">
+<p class="auto part"><b>已取得真實組合件 STEP 樣本並驗過組件結構。</b>Sheet Press Assembly 可作大型組合件匯入樣本；它不是公司治具，廠商定位銷／螺絲案例仍缺。</p>
 <p class="why"><b>為什麼要做：</b>4a 驗收①：用真實工件建主模型→產生組合件→插入廠商定位銷與螺絲並結合。</p>
 <h4>怎麼做</h4><ol><li>請提供：工件 STEP（含曲面更好）、你在 SW 做的夾具截圖、常用的廠商定位銷與螺絲的 STEP。</li><li>第一步：真實工件放進主模型（輸入本體、標為參考本體），走 E 節同一條流程，看輸入修復、衍生零件、結合、干涉與餘隙的實況。</li></ol>
 <h4>應該看到</h4><ul><li>（等你提供）</li></ul>
@@ -1194,6 +1199,7 @@ code{background:var(--chip);padding:0 4px;border-radius:4px}
 <summary><span class="iid">J4</span><span class="ttl">真實沖壓件或塑膠件 STEP（4b）</span><span class="tag t-sample">需樣本</span>
 <select class="st" aria-label="J4 狀態"><option value="">未做</option><option value="ok">通過</option><option value="bad">有問題</option><option value="skip">略過</option></select></summary>
 <div class="inner">
+<p class="auto part"><b>ASTM D695 與 D638 Mold STEP 已取得，實體匯入與拓樸測試通過。</b>試片模具不等同塑膠成品或修剪 B 樣條外殼，曲面編修工作流仍待真實樣本。</p>
 <p class="why"><b>為什麼要做：</b>偏移曲面、縫織、分割線在「修剪過的 B 樣條、面多又小」的真實曲面上穩不穩，只有真實檔案知道。</p>
 <h4>怎麼做</h4><ol><li>把工件 STEP 當輸入本體放進主模型（輸入修復會先處理）。畫一張草圖投影到要做型面的面，偏移 3 mm，看屬性管理員說的間隙，再厚面。</li><li>回報哪裡失敗、量到的誤差。</li></ol>
 <h4>應該看到</h4><ul><li>（等你提供）　目標：型面與工件的間隙量測誤差 &lt; 0.05 mm。</li></ul>
@@ -1203,6 +1209,7 @@ code{background:var(--chip);padding:0 4px;border-radius:4px}
 <summary><span class="iid">J5</span><span class="ttl">真實塑膠件與 SW 的分析對照（6）</span><span class="tag t-sample">需樣本</span>
 <select class="st" aria-label="J5 狀態"><option value="">未做</option><option value="ok">通過</option><option value="bad">有問題</option><option value="skip">略過</option></select></summary>
 <div class="inner">
+<p class="auto part"><b>原生 SolidWorks 與 STEP 模具樣本已備妥，STEP 幾何匯入測試通過。</b>拔模、底切與厚度分析尚未取得 SolidWorks 對照值；需在可開啟 SolidWorks 的環境比較顏色與數字。</p>
 <p class="why"><b>為什麼要做：</b>拔模角、底切、厚度的定義我都是手算對過，沒有和 SW 比。</p>
 <h4>怎麼做</h4><ol><li>開一個真實的塑膠件，各跑拔模、底切、厚度分析，與 SW 的同一種分析對顏色與數字。</li><li>真實件的曲面壁、肋、圓角、厚薄過渡處，射線取樣（每面至少 400 點、取中位數）的行為沒有試過。</li></ol>
 <h4>應該看到</h4><ul><li>（等你提供）</li></ul>
@@ -1212,6 +1219,7 @@ code{background:var(--chip);padding:0 4px;border-radius:4px}
 <summary><span class="iid">J6</span><span class="ttl">真實鈑金支架與 SW 的平板型式對照（7）</span><span class="tag t-sample">需樣本</span>
 <select class="st" aria-label="J6 狀態"><option value="">未做</option><option value="ok">通過</option><option value="bad">有問題</option><option value="skip">略過</option></select></summary>
 <div class="inner">
+<p class="auto part"><b>已取得上鈑金外殼原生檔、折疊 STEP 與相符的平板型式 STEP，三個 STEP 匯入測試通過。</b>仍需以 SolidWorks 原生檔確認板厚、半徑、K 因子與平板尺寸對照；本工具目前不會從 STEP 自動還原鈑金特徵。</p>
 <p class="why"><b>為什麼要做：</b>驗收標準：同一 K 因子下，平板型式尺寸與 SW 的差距 &lt; 0.1 mm。</p>
 <h4>怎麼做</h4><ol><li>用你的真實支架，在 SW 裡設同一個板厚、半徑、K 因子（或同一個量規），看平板型式的外包尺寸與折彎線位置，與本工具的平板型式視窗對。</li><li>差距多半來自定義：凸緣長度量到外側／內側虛擬交點、K 因子。請記下是哪一項。</li></ol>
 <h4>應該看到</h4><ul><li>（等你提供）</li></ul>

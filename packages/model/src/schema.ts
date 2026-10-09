@@ -6,7 +6,7 @@ import type { Id } from './ids';
  * DOF status, mass properties and error lists are derived data and never stored.
  */
 
-export const SCHEMA_VERSION = 50;
+export const SCHEMA_VERSION = 52;
 
 /** Value expression (B5.2, B5.3): "20", "25.4mm", "30deg", "wall_t*2", "D1@草圖1/2", "property('厚度')"; see `expr/`. */
 export type Expr = string;
@@ -577,15 +577,16 @@ export interface ThickenFeature extends FeatureBase {
 }
 
 /**
- * Cut with surface (以曲面除料, C9.4, v31): the surface body `surface` is swept along the normal of `direction` (a plane, or a planar face) and what it sweeps through is
- * taken from the solid body `target`; `reverse` sweeps the other way, so the other side of the surface goes. The surface body is left as it is.
+ * Cut with surface (以曲面除料, C9.4, v31; fixed vectors and kept side v52): the surface body `surface` is swept along a plane normal or fixed XYZ direction
+ * and what it sweeps through is removed from the solid body `target`; `keep` chooses the side that remains. The surface body is left as it is.
  */
 export interface CutWithSurfaceFeature extends FeatureBase {
   type: 'cutWithSurface';
   target: Ref;
   surface: Ref;
-  direction: Ref;
+  direction: Ref | { kind: 'vector'; value: Vec3 };
   reverse?: boolean;
+  keep?: 'behind' | 'ahead';
 }
 
 /**
@@ -694,6 +695,14 @@ export interface EdgeFlangeFeature extends FeatureBase {
    */
   inset?: { start: Expr; end: Expr };
   relief?: { width: Expr; depth: Expr; shape?: ReliefShape };
+}
+
+/** Break corner (斷開角落, C11.4, v51): chamfer or fillet selected external free-end corners of sheet-metal flanges. */
+export interface BreakCornerFeature extends FeatureBase {
+  type: 'breakCorner';
+  corners: Ref[];
+  kind: 'chamfer' | 'fillet';
+  size: Expr;
 }
 
 /** The shape of the notch of a relief (v50). */
@@ -841,6 +850,7 @@ export type Feature =
   | BaseFlangeFeature
   | MidBendFeature
   | EdgeFlangeFeature
+  | BreakCornerFeature
   | HemFeature
   | SnapHookFeature
   | SnapCatchFeature

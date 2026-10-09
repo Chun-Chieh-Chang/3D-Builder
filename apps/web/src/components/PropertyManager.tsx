@@ -56,6 +56,7 @@ import {
   type SheetGauge,
   type EdgeFlangeFeature,
   type HemFeature,
+  type BreakCornerFeature,
   type SnapHookFeature,
   type SnapCatchFeature,
   type VentFeature,
@@ -2390,6 +2391,36 @@ function HemPanel({ f }: { f: HemFeature }) {
   );
 }
 
+/** Break corner (C11.4): treatment and size for selected flange free-end corners. */
+function BreakCornerPanel({ f }: { f: BreakCornerFeature }) {
+  const result = useStore((s) => s.result);
+  const run = (kind: BreakCornerFeature['kind'], size: string): Command => ({ type: 'setBreakCorner', featureId: f.id, corners: f.corners, kind, size });
+  return (
+    <section className="pm-group">
+      <h4>{t('pm.breakCorner.edge')}</h4>
+      <ul className="selection-box">
+        {f.corners.length === 0 && <li className="muted">{t('pm.breakCorner.edgeEmpty')}</li>}
+        {f.corners.map((corner) => {
+          const found = result?.edgeNames.includes(corner.name) ?? false;
+          return <li key={corner.name} className={found ? '' : 'missing'} title={corner.name}>{t('pm.breakCorner.edgeItem')}{!found && t('pm.lost')}<code>{corner.name}</code>{!found && <UseNearest featureId={f.id} refr={corner} />}</li>;
+        })}
+      </ul>
+      <label className="pm-row">
+        <span>{t('pm.breakCorner.kind')}</span>
+        <select data-field="breakCornerKind" value={f.kind} onChange={(e) => store.execute(run(e.target.value as BreakCornerFeature['kind'], f.size))}>
+          <option value="chamfer">{t('pm.breakCorner.chamfer')}</option>
+          <option value="fillet">{t('pm.breakCorner.fillet')}</option>
+        </select>
+      </label>
+      <label className="pm-row">
+        <span>{t('pm.breakCorner.size')}</span>
+        <ValueInput value={f.size} toCommand={(size) => run(f.kind, size)} />
+      </label>
+      <p className="hint">{t('pm.breakCorner.hint')}</p>
+    </section>
+  );
+}
+
 /** Screw boss (C4.11): the outside and the pilot hole, the height and how deep the hole goes, the draft of the wall, and the gussets round the foot. */
 function ScrewBossPanel({ f }: { f: ScrewBossFeature }) {
   const { id, type, name, suppressed, sketch, ...settings } = f;
@@ -2532,6 +2563,8 @@ function ThickenPanel({ f }: { f: ThickenFeature }) {
 function CutWithSurfacePanel({ f }: { f: CutWithSurfaceFeature }) {
   const pool = useStore((s) => s.bodyPool);
   const doc = useStore((s) => s.doc);
+  const vector = f.direction.kind === 'vector' ? f.direction.value : null;
+  const axisLabels = [t('pm.cut.vectorX'), t('pm.cut.vectorY'), t('pm.cut.vectorZ')];
   const planes = [
     ...DATUM_ITEMS.filter((d) => d.icon === 'plane').map((d) => ({ id: d.id as string, label: d.label })),
     ...doc.features.slice(0, Math.max(0, doc.features.findIndex((x) => x.id === f.id))).filter((x) => x.type === 'refPlane').map((x) => ({ id: x.id, label: x.name })),
@@ -2558,17 +2591,36 @@ function CutWithSurfacePanel({ f }: { f: CutWithSurfaceFeature }) {
       {pick(t('pm.cut.target'), f.target, false, (target) => store.setCut({ target }))}
       {pick(t('pm.cut.surface'), f.surface, true, (surface) => store.setCut({ surface }))}
       <h4 className="sub">{t('pm.cut.direction')}</h4>
-      <select value={f.direction.name} onChange={(e) => store.setCut({ direction: { kind: 'datum', name: e.target.value } })}>
-        {f.direction.kind === 'face' && <option value={f.direction.name}>{f.direction.name}</option>}
-        {planes.map((p) => (
-          <option key={p.id} value={p.id}>
-            {p.label}
-          </option>
-        ))}
-      </select>
+      <label className="pm-row"><span>{t('pm.cut.directionKind')}</span>
+        <select data-field="cutDirectionKind" value={f.direction.kind === 'vector' ? 'vector' : 'reference'} onChange={(e) => store.setCut({ direction: e.target.value === 'vector' ? { kind: 'vector', value: [0, 0, 1] } : { kind: 'datum', name: 'plane:front' } })}>
+          <option value="reference">{t('pm.cut.reference')}</option>
+          <option value="vector">{t('pm.cut.vector')}</option>
+        </select>
+      </label>
+      {vector ? (
+        (['x', 'y', 'z'] as const).map((axis, i) => <label className="pm-row" key={axis}>
+          <span>{axisLabels[i]}</span>
+          <input className="cut-vector-component" data-field={`cutDirection${axis.toUpperCase()}`} aria-label={axisLabels[i]} type="number" step="any" value={vector[i]} onChange={(e) => {
+            const value: [number, number, number] = [...vector];
+            value[i] = Number(e.target.value);
+            store.setCut({ direction: { kind: 'vector', value } });
+          }} />
+        </label>)
+      ) : f.direction.kind !== 'vector' ? (
+        <select data-field="cutDirectionRef" value={f.direction.name} onChange={(e) => store.setCut({ direction: { kind: 'datum', name: e.target.value } })}>
+          {f.direction.kind === 'face' && <option value={f.direction.name}>{f.direction.name}</option>}
+          {planes.map((p) => <option key={p.id} value={p.id}>{p.label}</option>)}
+        </select>
+      ) : null}
       <label className="pm-row checkbox">
         <input type="checkbox" checked={!!f.reverse} onChange={(e) => store.setCut({ reverse: e.target.checked })} />
         <span>{t('pm.cut.reverse')}</span>
+      </label>
+      <label className="pm-row"><span>{t('pm.cut.keep')}</span>
+        <select data-field="cutKeep" value={f.keep ?? 'behind'} onChange={(e) => store.setCut({ keep: e.target.value as 'behind' | 'ahead' })}>
+          <option value="behind">{t('pm.cut.keepBehind')}</option>
+          <option value="ahead">{t('pm.cut.keepAhead')}</option>
+        </select>
       </label>
       <p className="hint">{t('pm.cut.hint')}</p>
     </section>
@@ -2745,6 +2797,7 @@ export function PropertyManager() {
       {f.type === 'midBend' && <MidBendPanel f={f} />}
       {f.type === 'edgeFlange' && <EdgeFlangePanel f={f} />}
       {f.type === 'hem' && <HemPanel f={f} />}
+      {f.type === 'breakCorner' && <BreakCornerPanel f={f} />}
       {f.type === 'snapHook' && (
         <SketchPointsPanel f={f} hint={t('pm.hook.hint')} fields={[['width', t('pm.hook.width')], ['thickness', t('pm.hook.thickness')], ['length', t('pm.hook.length')], ['hookHeight', t('pm.hook.hookHeight')], ['hookDepth', t('pm.hook.hookDepth')]]} />
       )}

@@ -243,6 +243,7 @@ code { font-family: Consolas, 'Cascadia Mono', monospace; font-size: 11px; }
 .pm-button:hover { background: var(--accent-soft); border-color: #a5c8ec; }
 .pm-button { white-space: nowrap; flex: 0 0 auto; }
 .pm-row input { min-width: 0; }
+.pm-row input.cut-vector-component { width: 88px; max-width: 48%; min-height: 44px; font: inherit; }
 .pm-ok:disabled { color: #aab2bd; cursor: default; }
 
 /* Mates (2C) */

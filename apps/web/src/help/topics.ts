@@ -155,6 +155,7 @@ const FEATURE_ACTION: Record<string, string> = {
   midBend: 'mid-bend',
   edgeFlange: 'edge-flange',
   hem: 'hem',
+  breakCorner: 'break-corner',
   snapHook: 'snap-hook',
   snapCatch: 'snap-catch',
   vent: 'vent',

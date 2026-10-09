@@ -52,6 +52,7 @@ export const evaluate = {
   'measure.unit': '長度 mm、面積 mm²、角度 度；座標在組合件的座標系（零件則在零件的座標系）。',
   'measure.angleNote': '夾角是兩個方向之間的銳角（0 到 90 度）；方向指平面的法線、圓柱圓錐的軸線、直線的方向。',
   'measure.failed': '測量失敗：{why}',
+  'measure.anchorMissing': '原先選取的頂點已不存在，請重新選點。',
   'measure.relation.parallel': '所選的兩個項次相互平行。',
   'measure.relation.perpendicular': '所選的兩個項次相互垂直。',
   'measure.relation.angle': '所選的兩個項次夾角：{angle}',

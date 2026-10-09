@@ -402,6 +402,11 @@ export const help = {
 
   'help.edgeFlange.see': 'base-flange hem flat-pattern concept.property-manager',
 
+  'help.breakCorner.summary': '在鈑金凸緣自由端的外角倒角或倒圓，並同步修剪平板型式。',
+  'help.breakCorner.body': '選取邊線凸緣自由端的外角邊，設定倒角或倒圓及尺寸。僅支援未封閉、未斜接的外角；切除會沿既有鈑金展開流程映射到平板型式。',
+  'help.breakCorner.keywords': '鈑金 斷開角落 凸緣 倒角 倒圓 展開',
+  'help.breakCorner.see': 'edge-flange hem flat-pattern',
+
   'help.midBend.summary': '在板中間沿一條草圖線折彎，一邊不動、另一邊折過去。',
 
   'help.midBend.body':
@@ -542,7 +547,7 @@ export const help = {
   'help.cutWithSurface.summary': '用曲面當刀具，從實體切除一側。',
 
   'help.cutWithSurface.body':
-    '用曲面本體把實體切掉一側：選「要除料的實體」與「除料用的曲面本體」，設定「除料的方向」（平面的法向）。\n\n- 曲面沿方向掃過的部分從實體除去，曲面本體不變。\n- 曲面要整個穿過實體；太小就先用「延伸曲面」。\n- 「反轉方向」除去曲面的另一側。\n- 在圖面點實體或曲面的面也可以選。',
+    '用曲面本體把實體分成兩側：選「要除料的實體」與「除料用的曲面本體」，方向可選平面的法向或固定 XYZ 向量。\n\n- 選擇保留方向後側或前側；曲面本體不變。\n- 曲面要整個穿過實體；太小就先用「延伸曲面」。\n- 「反轉方向」會反轉方向向量。\n- 向量必須是有限數值且不可為零；在圖面點實體或曲面的面也可以選。',
 
   'help.cutWithSurface.keywords': '以曲面除料 曲面切割 分模 除料',
 

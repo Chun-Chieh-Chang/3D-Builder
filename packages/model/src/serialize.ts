@@ -174,6 +174,10 @@ const migrations: Record<number, (doc: Json) => Json> = {
   48: (doc) => doc,
   // v50: the shape of the notch of a relief of an edge flange or a hem (`relief.shape`: rect, obround, tear). Absent means a rectangle, as before; nothing to convert.
   49: (doc) => doc,
+  // v51: the break-corner feature (C11.4). A new feature kind; nothing to convert.
+  50: (doc) => doc,
+  // v52: cut-with-surface fixed vector direction and kept side; old plane refs keep their behavior.
+  51: (doc) => doc,
 };
 
 export class FormatError extends Error {

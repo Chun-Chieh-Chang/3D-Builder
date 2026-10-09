@@ -1,7 +1,7 @@
 import { t } from '@3db/i18n';
 import { current, produce, type Draft } from 'immer';
 import { countersFor, type Id } from './ids';
-import type { SheetGauge, AppearanceTarget, DocSettings, MaterialRef, Variable, BlobRef, ChamferFeature, FilletKind, CombineFeature, HoleFeature, ScrewBossFeature, BaseFlangeFeature, MidBendFeature, EdgeFlangeFeature, HemFeature, SnapHookFeature, SnapCatchFeature, VentFeature, LoftFeature, RibFeature, SweepFeature, Draft as WallDraft, EndCondition, Thin, Expr, Feature, ImportedBodyFeature, AxisDefinition, CoordSysFeature, MirrorFeature, PartDoc, PatternDefinition, PatternFeature, PlaneDefinition, PointDefinition, Ref, RevolveCondition, SketchConstraint, SketchEntity, SketchFeature, SketchPicture } from './schema';
+import type { SheetGauge, AppearanceTarget, DocSettings, MaterialRef, Variable, BlobRef, ChamferFeature, FilletKind, CombineFeature, HoleFeature, ScrewBossFeature, BaseFlangeFeature, MidBendFeature, EdgeFlangeFeature, HemFeature, BreakCornerFeature, SnapHookFeature, SnapCatchFeature, VentFeature, LoftFeature, RibFeature, SweepFeature, Draft as WallDraft, EndCondition, Thin, Expr, Feature, ImportedBodyFeature, AxisDefinition, CoordSysFeature, MirrorFeature, PartDoc, PatternDefinition, PatternFeature, PlaneDefinition, PointDefinition, Ref, RevolveCondition, SketchConstraint, SketchEntity, SketchFeature, SketchPicture, CutWithSurfaceFeature } from './schema';
 import { isDatumPlaneName } from './datums';
 import { canBeSeed } from './patterns';
 import { colorOk, materialOk, sameTarget } from './materials';
@@ -106,6 +106,7 @@ ull). */
   | { type: 'setBaseFlange'; featureId: Id; flange: Omit<BaseFlangeFeature, 'id' | 'type' | 'name' | 'suppressed' | 'sketch'> }
   /** The edge flange's settings (C11.2): the edge and everything else. */
   | { type: 'setEdgeFlange'; featureId: Id; flange: Omit<EdgeFlangeFeature, 'id' | 'type' | 'name' | 'suppressed'> }
+  | { type: 'setBreakCorner'; featureId: Id; corners: Ref[]; kind: BreakCornerFeature['kind']; size: Expr }
   /** The hem's settings (C11.2): the edge and everything else. */
   | { type: 'setHem'; featureId: Id; hem: Omit<HemFeature, 'id' | 'type' | 'name' | 'suppressed'> }
   /** The snap hook's, the catch window's and the vent's settings (C4.11): everything but which sketch they stand at. */
@@ -119,7 +120,7 @@ ull). */
   | { type: 'setMutualTrim'; featureId: Id; a: Ref; b: Ref; discard?: Ref[] }
   | { type: 'setThicken'; featureId: Id; body: Ref; thickness: Expr; both?: boolean; keepSurface?: boolean }
   /** Changes a cut with surface (C9.4): the solid, the surface, the plane whose normal is the way of the sweep, and whether it goes the other way. */
-  | { type: 'setCutWithSurface'; featureId: Id; target: Ref; surface: Ref; direction: Ref; reverse?: boolean }
+  | { type: 'setCutWithSurface'; featureId: Id; target: Ref; surface: Ref; direction: CutWithSurfaceFeature['direction']; reverse?: boolean; keep?: 'behind' | 'ahead' }
   /** Faces of a Delete Face feature (C10.2), and whether the rest of a hole goes with them. */
   | { type: 'setFaces'; featureId: Id; faces: Ref[]; hole?: boolean }
   /** How an imported body's surfaces are sewn (F2.2); without `sewTolerance` the default is used again. */
@@ -548,7 +549,11 @@ function validateNewFeature(doc: PartDoc, f: Feature, index: number): void {
       return;
     case 'cutWithSurface':
       if (f.target.kind !== 'body' || f.surface.kind !== 'body') throw new CommandError(t('cmd.surfaceOnlyBodies'));
-      if (f.direction.kind !== 'datum' && f.direction.kind !== 'face') throw new CommandError(t('cmd.cutDirectionKind'));
+      if (f.keep !== undefined && f.keep !== 'behind' && f.keep !== 'ahead') throw new CommandError(t('cmd.cutKeepInvalid'));
+      if (f.direction.kind === 'vector') {
+        const [x, y, z] = f.direction.value;
+        if (![x, y, z].every(Number.isFinite) || Math.hypot(x, y, z) === 0) throw new CommandError(t('cmd.cutDirectionVector'));
+      } else if (f.direction.kind !== 'datum' && f.direction.kind !== 'face') throw new CommandError(t('cmd.cutDirectionKind'));
       return;
     case 'fillSurface':
     case 'flatSurface':
@@ -570,6 +575,10 @@ function validateNewFeature(doc: PartDoc, f: Feature, index: number): void {
     case 'hem':
     case 'edgeFlange':
       if (f.edge.kind !== 'edge') throw new CommandError(t('cmd.flangeOnlyEdge'));
+      return;
+    case 'breakCorner':
+      if (f.corners.length === 0 || f.corners.some((r) => r.kind !== 'edge')) throw new CommandError(t('cmd.flangeOnlyEdge'));
+      if (f.kind !== 'chamfer' && f.kind !== 'fillet') throw new CommandError(t('cmd.featureTypeInvalid'));
       return;
     case 'baseFlange':
       sketchBefore(doc, f.sketch, index, t('feature.baseFlange'));
@@ -972,6 +981,17 @@ export function mutate(draft: Draft<PartDoc>, cmd: Command): void {
       if ((f as EdgeFlangeFeature).edge.kind !== 'edge') throw new CommandError(t('cmd.flangeOnlyEdge'));
       return;
     }
+    case 'setBreakCorner': {
+      const f = feature(draft, cmd.featureId);
+      if (f.type !== 'breakCorner') throw new CommandError(t('cmd.onlyThisHasParams', { what: t('feature.breakCorner') }));
+      if (cmd.corners.length === 0 || cmd.corners.some((r) => r.kind !== 'edge')) throw new CommandError(t('cmd.flangeOnlyEdge'));
+      if (cmd.kind !== 'chamfer' && cmd.kind !== 'fillet') throw new CommandError(t('cmd.featureTypeInvalid'));
+      f.corners = cmd.corners;
+      f.kind = cmd.kind;
+      f.size = cmd.size;
+      checkExprs(draft as PartDoc, f);
+      return;
+    }
     case 'setMidBend': {
       const f = feature(draft, cmd.featureId);
       if (f.type !== 'midBend') throw new CommandError(t('cmd.onlyThisHasParams', { what: t('feature.midBend') }));
@@ -1031,12 +1051,18 @@ export function mutate(draft: Draft<PartDoc>, cmd: Command): void {
       const f = feature(draft, cmd.featureId);
       if (f.type !== 'cutWithSurface') throw new CommandError(t('cmd.onlyCutHasParams'));
       if (cmd.target.kind !== 'body' || cmd.surface.kind !== 'body') throw new CommandError(t('cmd.surfaceOnlyBodies'));
-      if (cmd.direction.kind !== 'datum' && cmd.direction.kind !== 'face') throw new CommandError(t('cmd.cutDirectionKind'));
+      if (cmd.keep !== undefined && cmd.keep !== 'behind' && cmd.keep !== 'ahead') throw new CommandError(t('cmd.cutKeepInvalid'));
+      if (cmd.direction.kind === 'vector') {
+        const [x, y, z] = cmd.direction.value;
+        if (![x, y, z].every(Number.isFinite) || Math.hypot(x, y, z) === 0) throw new CommandError(t('cmd.cutDirectionVector'));
+      } else if (cmd.direction.kind !== 'datum' && cmd.direction.kind !== 'face') throw new CommandError(t('cmd.cutDirectionKind'));
       f.target = cmd.target;
       f.surface = cmd.surface;
       f.direction = cmd.direction;
       if (cmd.reverse) f.reverse = true;
       else delete f.reverse;
+      if (cmd.keep === 'ahead') f.keep = 'ahead';
+      else delete f.keep;
       return;
     }
     case 'setMutualTrim': {

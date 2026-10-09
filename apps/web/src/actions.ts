@@ -94,6 +94,7 @@ export const ACTIONS: UiAction[] = [
   { id: 'mid-bend', get label() { return t('feature.midBend'); }, group: 'sheet', enabled: (s) => hasBody(s) && sketchSelected(s), run: () => store.newMidBend() },
   { id: 'edge-flange', get label() { return t('feature.edgeFlange'); }, group: 'sheet', enabled: hasBody, run: () => store.newEdgeFlange() },
   { id: 'hem', get label() { return t('feature.hem'); }, group: 'sheet', enabled: hasBody, run: () => store.newHem() },
+  { id: 'break-corner', get label() { return t('feature.breakCorner'); }, group: 'sheet', enabled: (s) => hasBody(s) && s.doc.features.some((f) => f.type === 'baseFlange'), run: () => store.newBreakCorner() },
   { id: 'flat-pattern', get label() { return t('flat.act'); }, group: 'sheet', enabled: (s) => s.active === 'part' && hasBody(s) && s.bootMs !== null, run: () => (store.getState().flat ? store.stopFlat() : store.startFlat()), active: () => store.getState().flat !== null },
   { id: 'snap-hook', get label() { return t('feature.snapHook'); }, group: 'feature', enabled: (s) => sketchSelected(s) && !!s.result?.mesh, run: () => store.newSnapHook() },
   { id: 'snap-catch', get label() { return t('feature.snapCatch'); }, group: 'feature', enabled: (s) => sketchSelected(s) && !!s.result?.mesh, run: () => store.newSnapCatch() },

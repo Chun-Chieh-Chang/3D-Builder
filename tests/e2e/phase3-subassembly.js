@@ -105,6 +105,12 @@ async function plateSides() {
 async function project() {
   const g = H.GOLDEN;
   await H.project({ '定位板.3dbx': `${g}locating-plate.3dbx`, '零件/削邊銷.3dbx': `${g}diamond-pin.3dbx` });
+  const plateFile = await io.readPartFile(await H.readAt('定位板.3dbx'));
+  const plate = {
+    ...plateFile.doc,
+    features: [...plateFile.doc.features, { id: 'measureFixtureCoordSys', type: 'coordSys', name: '量測座標系', suppressed: false, x: { kind: 'datum', name: 'plane:right' }, y: { kind: 'datum', name: 'plane:top' } }],
+  };
+  await H.writeAt('定位板.3dbx', await io.writePartFile(plate, plateFile.blobs));
   const d = docs(await plateSides());
   await H.writeAt('組件/定位組.3dba', await io.writeAssemblyFile(d.sub));
   await H.writeAt('夾具.3dba', await io.writeAssemblyFile(d.top));

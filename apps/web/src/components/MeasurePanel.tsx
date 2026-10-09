@@ -2,6 +2,7 @@ import { t } from '@3db/i18n';
 import { useEffect, useMemo } from 'react';
 import { DENOMINATORS, MM_PER_INCH, formatAngle, lengthText, viewMeasure, type MeasureDrawing, type MeasureElement, type MeasureFrame, type MeasureOptions, type RoundMode, type Vec3 } from '@3db/model';
 import { store, useStore } from '../state/store';
+import { placeMeasureFrame } from '../state/measureFrames';
 
 /** mm (or degrees) to ten thousandths, without trailing zeros; "+ 0" turns −0 into 0. */
 const num = (v: number) => String(Math.round(v * 1e4) / 1e4 + 0);
@@ -35,15 +36,27 @@ export function MeasurePanel() {
   const options = useStore((s) => s.measureOptions);
   const doc = useStore((s) => s.doc);
   const result = useStore((s) => s.result);
-  const inAssembly = useStore((s) => s.asm !== null);
+  const asm = useStore((s) => s.asm);
+  const inAssembly = asm !== null;
   const report = measure?.report ?? null;
   // the coordinate systems of the open part to take the differences in (an assembly has only its own axes)
   const systems = useMemo(
-    () => (inAssembly ? [] : doc.features.flatMap((f) => (f.type === 'coordSys' && result?.systems.get(f.id) ? [{ id: f.id, name: f.name, system: result.systems.get(f.id)! }] : []))),
-    [doc, result, inAssembly],
+    () => {
+      if (!inAssembly) return doc.features.flatMap((f) => {
+        const system = f.type === 'coordSys' ? result?.systems.get(f.id) : undefined;
+        return system ? [{ id: f.id, name: f.name, frame: { origin: system.origin, axes: [system.x, system.y, system.z] as [Vec3, Vec3, Vec3] } }] : [];
+      });
+      return (store.assembly?.leaves() ?? []).flatMap((leaf) => {
+        const build = store.assembly?.buildOfLeaf(leaf);
+        if (!build) return [];
+        const owner = store.assembly?.ownerLabel(leaf.top, leaf.path) ?? leaf.id;
+        return build.systems.map(({ id, name, system }) => ({ id: `${leaf.id}::${id}`, name: `${owner} / ${name}`, frame: placeMeasureFrame(system, leaf.pose, !!leaf.mirrored) }));
+      });
+    },
+    [doc, result, asm, inAssembly],
   );
   const chosen = systems.find((x) => x.id === options.frame);
-  const frame: MeasureFrame | null = useMemo(() => (chosen ? { origin: chosen.system.origin, axes: [chosen.system.x, chosen.system.y, chosen.system.z] } : null), [chosen]);
+  const frame: MeasureFrame | null = chosen?.frame ?? null;
   const view = useMemo(() => viewMeasure(report, options, { frame, offsets: measure?.offsets }), [report, options, frame, measure?.offsets]);
   // what is measured is drawn on the model, as eDrawings does: the lines, the distances along the axes, the labels; what was kept with it
   const drawing = useMemo((): MeasureDrawing | null => {
@@ -79,7 +92,7 @@ export function MeasurePanel() {
   const w = writer(options);
   const set = (patch: Partial<MeasureOptions>) => store.setMeasureOptions(patch);
   const rounds = report?.round ? view.modes : [];
-  const savedText = (x: (typeof measure.saved)[number]) => viewMeasure(x.report, options, { frame }).text;
+  const savedText = (x: (typeof measure.saved)[number]) => x.anchorLost ? [t('measure.anchorMissing')] : viewMeasure(x.report, options, { frame }).text;
   return (
     <div className="measure-panel" role="region" aria-label={t('measure.title')} data-measure>
       <div className="measure-head">
@@ -170,6 +183,7 @@ export function MeasurePanel() {
           </select>
         </label>
       </div>
+      {error && <p className="hint" data-field="error">{error}</p>}
       {view.text.length > 0 && (
         <div className="measure-result" data-field="result">
           <strong>{t('measure.result')}</strong>

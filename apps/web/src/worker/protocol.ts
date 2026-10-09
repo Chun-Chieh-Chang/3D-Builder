@@ -127,6 +127,8 @@ export interface PartBuildPayload {
   vertexFingerprints: Fingerprint[];
   /** The part's reference planes (its default planes are the same in every part). */
   planes: { id: Id; name: string; frame: PlaneFrame }[];
+  /** Built coordinate systems exposed to measurement in the assembly. */
+  systems: { id: Id; name: string; system: CoordSystem }[];
   /** Every body it has is a reference body (C7.1): a design aid, not a part to count (C15.16). */
   referenceOnly: boolean;
   /** The part file's properties (B8.3): the parts list reads the vendor and the part number from them (C15.16). */

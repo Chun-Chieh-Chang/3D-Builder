@@ -32,6 +32,7 @@ interface BuiltPart {
   result: RebuildResult;
   problems: string[];
   planes: PartBuildPayload['planes'];
+  systems: PartBuildPayload['systems'];
   /** The color of each face of the part's body (C14.2), for the STEP of an assembly that uses it. */
   colors: (string | null)[];
   properties: Record<string, string>;
@@ -66,7 +67,11 @@ async function build(bytes: Uint8Array, sources?: SourceFileData[]): Promise<Bui
     const frame = f.type === 'refPlane' ? result.frames.get(f.id) : undefined;
     return frame ? [{ id: f.id, name: f.name, frame }] : [];
   });
-  return { regen, result, problems: [...file.warnings, ...failed], planes, colors: faceColors(file.doc, result), properties: { ...file.doc.properties }, density: file.doc.material?.density ?? null, holes: holeFeatures(file.doc, provider) };
+  const systems = file.doc.features.flatMap((f) => {
+    const system = f.type === 'coordSys' ? result.systems.get(f.id) : undefined;
+    return system ? [{ id: f.id, name: f.name, system }] : [];
+  });
+  return { regen, result, problems: [...file.warnings, ...failed], planes, systems, colors: faceColors(file.doc, result), properties: { ...file.doc.properties }, density: file.doc.material?.density ?? null, holes: holeFeatures(file.doc, provider) };
 }
 
 /**
@@ -306,6 +311,7 @@ const api: KernelApi = {
       vertexPoints: Float32Array.from(topo?.vertices.flatMap((v) => v.point) ?? []),
       vertexFingerprints: topo ? topo.vertices.map((_, i) => vertexFingerprint(topo, i)) : [],
       planes: part.planes,
+      systems: part.systems,
       referenceOnly: part.result.bodies.length > 0 && part.result.bodies.every((b) => b.reference || b.surface),
       properties: part.properties,
       mass: (() => {
@@ -388,6 +394,7 @@ const api: KernelApi = {
         vertexPoints: new Float32Array(0),
         vertexFingerprints: [],
         planes: [],
+        systems: original.systems,
         referenceOnly: original!.result.bodies.every((b) => b.reference || b.surface),
         properties: {},
         mass: null,

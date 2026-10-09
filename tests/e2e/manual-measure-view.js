@@ -239,6 +239,21 @@ M.run = async () => {
     const keys = [...store.viewer.measureLabels.keys()];
     return { pass: kept && m1.length >= 1 && keys.some((k) => k.startsWith('m1:')) && keys.includes('distance') && !!panel().querySelector('[data-field="saved"]'), keys };
   });
+  await step('14b leaving and re-entering the measurement tool keeps saved measurements for this open document', async () => {
+    store.stopMeasure();
+    await H.wait(150);
+    await H.action('工具', '測量');
+    await H.waitFor(() => panel(), 5000, 'the reopened measure window');
+    const savedAndLabel = store.getState().measure.saved.length === 1 && [...store.viewer.measureLabels.keys()].some((k) => k.startsWith('m1:'));
+    // The in-hand measurement intentionally resets on leaving the tool; recreate it for the following label-drag check.
+    store.setMeasureMode('point');
+    await H.wait(150);
+    await clickAt(found.vertex.at);
+    const pointFollowsVertex = store.getState().measure.picks[0]?.anchor?.kind === 'vertex';
+    await clickAt(found.centre.at);
+    await settled(2);
+    return { pass: savedAndLabel && pointFollowsVertex && store.getState().measure.picks.length === 2, savedAndLabel, pointFollowsVertex, vertexSnap: found.vertex.snap, firstPick: store.getState().measure.picks[0] };
+  });
   await step('15 a label is taken with the pointer and moved: 20 pixels right and 10 down is what is kept, and it is where it is drawn next time', async () => {
     const entry = store.viewer.measureLabels.get('distance');
     const r = entry.el.getBoundingClientRect();

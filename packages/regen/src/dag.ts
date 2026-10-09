@@ -41,6 +41,9 @@ export function parentsOf(feature: Feature, doc: PartDoc): Id[] {
     case 'hem':
       parents = fromRefs([feature.edge]);
       break;
+    case 'breakCorner':
+      parents = fromRefs(feature.corners);
+      break;
     case 'chamfer':
       parents = fromRefs([...feature.edges, ...(feature.faces ?? [])]);
       break;
@@ -73,7 +76,7 @@ export function parentsOf(feature: Feature, doc: PartDoc): Id[] {
       parents = feature.body.name ? [bodyFeature(feature.body.name)] : [];
       break;
     case 'cutWithSurface':
-      parents = [...[feature.target, feature.surface].filter((r) => r.name).map((r) => bodyFeature(r.name)), ...fromRefs([feature.direction])];
+      parents = [...[feature.target, feature.surface].filter((r) => r.name).map((r) => bodyFeature(r.name)), ...(feature.direction.kind === 'vector' ? [] : fromRefs([feature.direction]))];
       break;
     case 'fillSurface':
     case 'flatSurface':

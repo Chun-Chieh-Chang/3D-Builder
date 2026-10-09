@@ -206,6 +206,10 @@ export function mapExprs(feature: Feature, fn: (expr: Expr, kind: ExprKind, role
       if (length === f.length && angle === f.angle && radius === f.radius && extras === null && cornerSame && miterSame) return feature;
       return { ...f, length, ...(angle === undefined ? {} : { angle }), ...(radius === undefined ? {} : { radius }), ...(extras ?? {}), ...(corner ? { corner } : {}), ...(miter ? { miter } : {}) };
     }
+    case 'breakCorner': {
+      const size = fn(feature.size, 'length', 'positive');
+      return size === feature.size ? feature : { ...feature, size };
+    }
     case 'hem': {
       const length = fn(feature.length, 'length', 'positive');
       const gap = fn(feature.gap, 'length', 'positive');
@@ -321,6 +325,8 @@ export function mapExprs(feature: Feature, fn: (expr: Expr, kind: ExprKind, role
     case 'trimSurface':
     case 'mutualTrim':
     case 'cutWithSurface':
+      return feature;
+    case 'breakCorner':
       return feature;
   }
 }

@@ -16,7 +16,7 @@ import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
-const ORIGIN = 'http://127.0.0.1:5391';
+const ORIGIN = process.env.VERIFY_UI_ORIGIN ?? 'http://127.0.0.1:5391';
 const DEBUG_PORT = 9333;
 /** Helper files of the scripts, not scripts of their own. */
 const NOT_SCRIPTS = new Set(['phase1-demo-parts.js', 'phase3-subassembly.js', 'desktop-probe.mjs', 'manual-support.js']);

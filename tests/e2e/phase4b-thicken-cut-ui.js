@@ -3,6 +3,7 @@
 //   await import('/@fs/<checkout>/tests/e2e/phase4b-thicken-cut-ui.js?' + Date.now());
 //   await __thickenCutUi.block();   (then reload the page)
 //   await __thickenCutUi.cylinder();
+//   await __thickenCutUi.vector();
 //
 // First a block 40 × 30 × 20 with the surface of its top offset 8 down: 延伸曲面 makes the surface larger than the block (past its four edges), then 以曲面除料 cuts the
 // block along it (the volume is read from what the worker sent), reversed it cuts the other side. Then a cylinder R10 × 20 with its side offset 3 (a surface of R13):
@@ -35,6 +36,13 @@ const accept = async () => {
   await H.settle();
 };
 const near = (a, b, tol, what) => H.check(Math.abs(a - b) < tol, `${what}: ${a} (expected ${b})`);
+const setSelect = async (field, value) => {
+  const select = document.querySelector(`.property-manager [data-field="${field}"]`);
+  if (!select) throw new Error(`no PM field ${field}`);
+  Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value').set.call(select, value);
+  select.dispatchEvent(new Event('change', { bubbles: true }));
+  await H.settle();
+};
 
 /** Run each part in a freshly loaded page: opening a file asks first when the one open has changed. */
 g.block = async () => {
@@ -114,6 +122,59 @@ g.cylinder = async () => {
   await accept();
   H.check(document.querySelector('.feature-tree')?.textContent.includes('厚面'), 'the tree has the thicken');
   console.log('phase4b-thicken-cut-ui (cylinder): all checks passed');
+  return true;
+};
+
+g.vector = async () => {
+  H.ready();
+  await H.project({});
+  await H.writeAt('向量除料.3dbx', await io.writePartFile(block()));
+  await H.open('向量除料.3dbx');
+  await H.waitFor(() => result()?.features?.length === 3 && result().features.every((f) => f.status === 'ok'), 20000, 'the block');
+  await open('延伸曲面');
+  for (const name of result().edgeNames.filter((n) => n.startsWith('{os1:'))) store.pick({ kind: 'edge', name });
+  await H.settle();
+  await H.pmInput('延伸距離', '10');
+  await accept();
+
+  await open('以曲面除料');
+  const cutId = store.getState().editing.featureId;
+  const feature = () => store.getState().doc.features.find((f) => f.id === cutId);
+  await setSelect('cutDirectionKind', 'vector');
+  H.check(feature().direction.kind === 'vector', 'the direction mode switches to vector');
+  for (const [axis, value] of [['X', '0'], ['Y', '0'], ['Z', '2']]) {
+    const input = document.querySelector(`.property-manager [data-field="cutDirection${axis}"]`);
+    if (!input) throw new Error(`no vector component ${axis}`);
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(input, value);
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    input.dispatchEvent(new Event('change', { bubbles: true }));
+    await H.settle();
+  }
+  H.check(feature().direction.value.join(',') === '0,0,2', `the vector is saved: ${feature().direction.value}`);
+  H.check(status(cutId).status === 'ok', `vector cut: ${status(cutId).message ?? 'ok'}`);
+  near(volumeOf('e1'), 40 * 30 * 12, 1e-3, 'the vector keeps the behind side');
+  await setSelect('cutKeep', 'ahead');
+  near(volumeOf('e1'), 40 * 30 * 8, 1e-3, 'ahead keeps the opposite side');
+  const reverse = [...document.querySelectorAll('.property-manager label.checkbox')].find((l) => l.textContent.includes('反轉')).querySelector('input');
+  reverse.click();
+  await H.settle();
+  near(volumeOf('e1'), 40 * 30 * 12, 1e-3, 'reverse flips the ahead side');
+  reverse.click();
+  await H.settle();
+  await setSelect('cutKeep', 'behind');
+  for (const [axis, value] of [['X', '1'], ['Y', '2'], ['Z', '2']]) {
+    const input = document.querySelector(`.property-manager [data-field="cutDirection${axis}"]`);
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(input, value);
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    input.dispatchEvent(new Event('change', { bubbles: true }));
+    await H.settle();
+  }
+  H.check(feature().direction.value.join(',') === '1,2,2', 'an oblique vector can be entered');
+  H.check(status(cutId).status === 'ok' && volumeOf('e1') > 0 && volumeOf('e1') < 24000, 'the oblique vector produces a valid partial cut');
+  store.commitEdit();
+  await H.settle();
+  H.check(result().features.every((f) => f.status === 'ok'), 'the feature tree remains valid after accepting');
+  console.log('phase4b-thicken-cut-ui (vector): direction, keep side, reverse, and oblique vector passed');
   return true;
 };
 
