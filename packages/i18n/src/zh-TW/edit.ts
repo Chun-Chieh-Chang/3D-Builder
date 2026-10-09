@@ -43,6 +43,7 @@ export const edit = {
   'body.subtractAll': '減除「{name}」之後，主要本體什麼都沒有剩下',
   'body.noCommon': '「{name}」與主要本體沒有共同的部分',
   'edit.faceFilletTwoGroups': '面圓角要在兩組面各選至少一個面',
+  'edit.filletTooBig': '圓角失敗：半徑 {radius} 對選到的邊太大。常見原因是相鄰的圓角互相重疊（例如孔離邊太近，兩者之間剩下的寬度要大於兩倍半徑），或比旁邊的面還寬。同樣的邊，半徑 {max} 以下可以；請把半徑改小，或少選幾條邊。',
   'edit.faceFilletApart': '兩組面沒有共同的邊：不相鄰的面之間的面圓角還沒做',
   'edit.faceFilletSmooth': '兩組面相接的邊都是相切連續的，沒有可以倒的邊',
   'edit.fullRoundGroups': '完整圓角要選兩個側面組與一個中央面',

@@ -3214,11 +3214,41 @@ export class Regenerator {
     return edges;
   }
 
+  /**
+   * `Kernel.fillet`, and when it cannot, the reason a person can act on: the largest radius that does work for the same edges (found by halving, so the answer is a few percent
+   * short of the true limit, never over). Rounding is refused mostly because the rounds of neighbouring edges meet each other (a hole near an edge: the strip left between
+   * them has to be wider than two radii), or one is wider than the face beside it.
+   */
+  private roundEdges(shape: ShapeId, edges: number[], radius: number): OpResult {
+    try {
+      return this.kernel.fillet(shape, edges, radius);
+    } catch (e) {
+      if (!(e instanceof KernelError)) throw e;
+      const works = (r: number): boolean => {
+        try {
+          this.kernel.release(this.kernel.fillet(shape, edges, r).shape);
+          return true;
+        } catch {
+          return false;
+        }
+      };
+      if (!(radius > 0) || !works(radius / 64)) throw e;
+      let [lo, hi] = [radius / 64, radius];
+      for (let k = 0; k < 7; k++) {
+        const mid = (lo + hi) / 2;
+        if (works(mid)) lo = mid;
+        else hi = mid;
+      }
+      const round2 = (v: number) => String(Math.floor(v * 100) / 100);
+      throw new FeatureError(t('edit.filletTooBig', { radius: round2(radius), max: round2(lo) }));
+    }
+  }
+
   private fillet(f: FilletFeature, set: Bodies): BodyState[] {
     if (f.kind === 'face') return this.faceFillet(f, set);
     if (f.kind === 'full') return this.fullRound(f, set);
     return this.perBody(set, [...f.edges, ...(f.faces ?? [])], 'edge', t('edit.noBodyForFillet'), lostRefs, (body, mine) => {
-      const r = this.kernel.fillet(body.shape, this.edgesOfRefs(mine, body).edges, evalLength(f.radius));
+      const r = this.roundEdges(body.shape, this.edgesOfRefs(mine, body).edges, evalLength(f.radius));
       const topology = this.kernel.topology(r.shape);
       return { id: body.id, shape: r.shape, topology, names: nameElements(r.faceOrigins, topology, { featureId: f.id, role: 'fillet', input: body.names }), by: f.id };
     });
@@ -3249,7 +3279,7 @@ export class Regenerator {
       // a name in both groups is in the second only: a face does not meet itself
       const second = mine.filter((r) => names.has(r.name));
       const first = mine.filter((r) => !names.has(r.name) && (f.faces ?? []).some((x) => x.name === r.name));
-      const r = this.kernel.fillet(body.shape, this.edgesBetween(first, second, body), evalLength(f.radius));
+      const r = this.roundEdges(body.shape, this.edgesBetween(first, second, body), evalLength(f.radius));
       const topology = this.kernel.topology(r.shape);
       return { id: body.id, shape: r.shape, topology, names: nameElements(r.faceOrigins, topology, { featureId: f.id, role: 'fillet', input: body.names }), by: f.id };
     });

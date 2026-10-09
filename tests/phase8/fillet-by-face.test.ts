@@ -178,6 +178,22 @@ describe('a chamfer given a face', () => {
   });
 });
 
+describe('a fillet that cannot be made says why and how big it can be', () => {
+  // 40 × 30 × 12 with a Ø8 hole in the middle: the strip between the hole and the long edge is 11 wide, so two rounds meet at a radius a little over 5.5
+  const holed = (radius: string): Feature[] => [...block(), sketch('s2', face('e1:cap:end'), circle('c', 20, 15, 4)), extrude('c1', 's2', 'cut', { type: 'throughAll' }), filletOf('f1', [TOP], radius)];
+  it('a radius of 8 is refused with the radius that works for the same edges, and that radius works', () => {
+    const r = rebuild(build(...holed('8')));
+    const f1 = r.features.find((f) => f.id === 'f1')!;
+    expect(f1.status).toBe('error');
+    expect(f1.message).toContain('半徑 8');
+    const max = Number(/半徑 ([\d.]+) 以下可以/.exec(f1.message ?? '')?.[1]);
+    expect(max).toBeGreaterThan(4.5);
+    expect(max).toBeLessThan(6);
+    expect(statuses(rebuild(build(...holed(String(max))))).at(-1)).toBe('f1=ok');
+    expect(statuses(rebuild(build(...holed('5')))).at(-1)).toBe('f1=ok');
+  });
+});
+
 describe('the document with faces in a fillet', () => {
   it('is a new schema, written and read back as it was, and an older file is read as it was', () => {
     expect(SCHEMA_VERSION).toBe(52);

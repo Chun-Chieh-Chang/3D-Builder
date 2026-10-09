@@ -45,6 +45,7 @@ export const edit: Translation = {
   'body.subtractAll': 'Nothing is left of the main body after subtracting "{name}"',
   'body.noCommon': '"{name}" has nothing in common with the main body',
   'edit.faceFilletTwoGroups': 'A face fillet needs at least one face in each of the two groups',
+  'edit.filletTooBig': 'The fillet failed: a radius of {radius} is too big for the edges chosen. The usual reason is that the rounds of neighbouring edges meet (a hole too near an edge: the strip left between them has to be wider than two radii), or one is wider than the face beside it. For the same edges a radius of {max} or less works; make the radius smaller or choose fewer edges.',
   'edit.faceFilletApart': 'The two groups of faces share no edge: a fillet between faces that do not meet is not made yet',
   'edit.faceFilletSmooth': 'The edges where the two groups meet are all smooth ones, so there is nothing to round',
   'edit.fullRoundGroups': 'A full round fillet needs the two side groups and a center face',
