@@ -273,6 +273,37 @@ M.run = async () => {
     await settled(1);
     return { pass: store.getState().measure.mode === 'element' && store.getState().measure.picks.length === 1 && store.viewer.snapPicking === false };
   });
+  await step('17b a coordinate system of the part (X along the top plane, Y along the right one): the window lists it, the differences are taken along its axes (the numbers worked out from its own axes), the legs are drawn along them; the world again when asked', async () => {
+    store.stopMeasure();
+    await H.action('特徵', '座標系統');
+    document.querySelector('.property-manager .pm-ok').click();
+    await H.settle();
+    const id = [...store.getState().result.systems.keys()][0];
+    store.execute({ type: 'setCoordSys', featureId: id, value: { x: { kind: 'datum', name: 'plane:top' }, y: { kind: 'datum', name: 'plane:right' } } });
+    await H.settle();
+    const sys = store.getState().result.systems.get(id);
+    await H.action('工具', '測量');
+    await H.waitFor(() => panel(), 5000, 'the measure window');
+    store.measurePick('vertex', 0, null);
+    store.measurePick('vertex', 3, null);
+    await settled(2);
+    const delta = store.getState().measure.report.distance.delta;
+    const along = [sys.x, sys.y, sys.z].map((a) => Math.abs(delta[0] * a[0] + delta[1] * a[1] + delta[2] * a[2]));
+    const listed = !!panel().querySelector('[data-field="frame"]');
+    await choose('frame', id);
+    const text = result();
+    const inFrame = ['X', 'Y', 'Z'].every((n, k) => text.includes(`Delta ${n}: ${trim(along[k], 3)}mm`)) && [0, 1, 2].some((k) => !near(along[k], Math.abs(delta[k]), 1e-6));
+    const drawn = [...store.viewer.measureLabels.keys()].filter((k) => /^d[xyz]$/.test(k));
+    const legs = [0, 1, 2].filter((k) => along[k] > 1e-9).map((k) => 'dx dy dz'.split(' ')[k]);
+    await choose('frame', 'world');
+    const back = result().includes(`Delta X: ${trim(Math.abs(delta[0]), 3)}mm`);
+    // the part is as it was (the drawing that follows needs a part with nothing unsaved)
+    store.stopMeasure();
+    store.undo();
+    store.undo();
+    await H.settle();
+    return { pass: listed && inFrame && JSON.stringify(drawn) === JSON.stringify(legs) && back, listed, along, text, drawn, legs, back };
+  });
   await step('18 a drawing in inches: the sheet\'s unit takes the dimensions, the tolerance and the hole table with it (120 mm is 4.724)', async () => {
     store.stopMeasure();
     await H.action('檔案', '新工程圖');
