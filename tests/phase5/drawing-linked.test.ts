@@ -144,13 +144,13 @@ describe('the document', () => {
     const d = applyDrawingCommand(applyDrawingCommand(doc(views), { type: 'setSheet', sheet: { shift: [3, 4] } }), { type: 'setView', viewId: 'r', patch: { slide: -8 } });
     const back = parseDrawing(serializeDrawing(d));
     expect(back.schemaVersion).toBe(DRAWING_SCHEMA_VERSION);
-    expect(DRAWING_SCHEMA_VERSION).toBe(7);
+    expect(DRAWING_SCHEMA_VERSION).toBe(8);
     expect(back.sheet.shift).toEqual([3, 4]);
     expect(back.views.find((v) => v.id === 'r')!.slide).toBe(-8);
     const old = JSON.parse(serializeDrawing(doc(views))) as Record<string, unknown>;
     old.schemaVersion = 6;
     const read = parseDrawing(JSON.stringify(old));
-    expect(read.schemaVersion).toBe(7);
+    expect(read.schemaVersion).toBe(8);
     expect(layoutViews(read, lines).get('t')!.at).toEqual(layoutViews(doc(views), lines).get('t')!.at);
   });
 });

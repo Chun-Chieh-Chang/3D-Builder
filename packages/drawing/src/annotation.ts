@@ -1,7 +1,8 @@
 import { t } from '@3db/i18n';
 import type { DrawingView, HoleInfo, HoleTable, ViewFeature } from '@3db/model';
 import { datumPlanes } from './autoDimension';
-import { DIM_TEXT, formatNumber, holeNote, holeSignature, threadedHoleText, toleranceText } from './dimension';
+import type { LengthUnit } from '@3db/model';
+import { DIM_TEXT, formatNumber, holeNote, holeSignature, lengthNumber, threadedHoleText, toleranceText } from './dimension';
 import { clipToCircle } from './geometry';
 import { toSheet, type PlacedView } from './layout';
 import type { SceneItem } from './scene';
@@ -82,7 +83,7 @@ const letters = (i: number): string => (i < 26 ? String.fromCharCode(65 + i) : `
  * how deep, counterbore) from the biggest, each group a letter; the holes of a group numbered from the top left. Where each is is measured from the left and
  * bottom planes of the view, the way the automatic dimensions do.
  */
-export function holeRows(features: readonly ViewFeature[], fits: Record<string, string> = {}): HoleRow[] {
+export function holeRows(features: readonly ViewFeature[], fits: Record<string, string> = {}, unit: LengthUnit = 'mm'): HoleRow[] {
   const holes = features.flatMap((f) => (f.type === 'circle' && f.full && !f.convex && f.hole ? [{ f, hole: f.hole }] : []));
   const datum = datumPlanes(features);
   const ox = datum.minX?.coord ?? 0;
@@ -100,8 +101,8 @@ export function holeRows(features: readonly ViewFeature[], fits: Record<string, 
     const first = g[0]!;
     const radius = first.f.type === 'circle' ? first.f.radius : 0;
     const d = 2 * radius;
-    const fit = fits[formatNumber(d)];
-    const size = threadedHoleText(first.hole, d) ?? [`Ø${formatNumber(d)}`, ...(fit ? [toleranceText({ type: 'fit', fit }, d)] : []), holeNote(first.hole)].join(' ');
+    const fit = fits[formatNumber(d)]; // the fits are told by the diameter in millimetres, whatever the unit written
+    const size = threadedHoleText(first.hole, d, unit) ?? [`Ø${lengthNumber(d, 3, unit)}`, ...(fit ? [toleranceText({ type: 'fit', fit }, d, unit)] : []), holeNote(first.hole, unit)].join(' ');
     const sorted = [...g].sort((a, b) => {
       const ca = a.f.type === 'circle' ? a.f.centre : [0, 0];
       const cb = b.f.type === 'circle' ? b.f.centre : [0, 0];
@@ -126,7 +127,7 @@ export function defaultTableAt(area: Rect, width: number): [number, number] {
 }
 
 /** The hole table as lines and text, and the tags written beside the holes in the view. */
-export function holeTableItems(table: HoleTable, rows: readonly HoleRow[], placed: PlacedView, sheet: Parameters<typeof sheetMetrics>[0]): SceneItem[] {
+export function holeTableItems(table: HoleTable, rows: readonly HoleRow[], placed: PlacedView, sheet: Parameters<typeof sheetMetrics>[0], unit: LengthUnit = 'mm'): SceneItem[] {
   const items: SceneItem[] = [];
   // the tags beside the holes: up and to the right of the circle
   for (const r of rows) {
@@ -135,7 +136,7 @@ export function holeTableItems(table: HoleTable, rows: readonly HoleRow[], place
     items.push({ kind: 'text', at: [sx + d, sy + d], text: r.tag, height: TEXT });
   }
   const headers = [t('drawing.table.tag'), 'X', 'Y', t('drawing.table.size')];
-  const body = rows.map((r) => [r.tag, formatNumber(r.x, 2), formatNumber(r.y, 2), r.size]);
+  const body = rows.map((r) => [r.tag, lengthNumber(r.x, 2, unit), lengthNumber(r.y, 2, unit), r.size]);
   const widths = headers.map((h, c) => Math.max(c === 0 ? 12 : 18, ...[h, ...body.map((row) => row[c]!)].map((s) => charWidth(s) + 4)));
   const width = widths.reduce((a, b) => a + b, 0);
   const height = ROW * (body.length + 1);

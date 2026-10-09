@@ -4,6 +4,7 @@ import { mateProblem } from './AssemblyTree';
 import { loadingText, useLoadingParts } from './LoadProgress';
 import { useStore, store } from '../state/store';
 import { SKETCH_STATUS_LABEL } from '../strings';
+import { AUTHOR_CREDIT } from '../credit';
 
 /** Status bar: notices, 「錯誤為何？」 (D7.1), sketch status (C1.31), rebuild time, volume, unit system. */
 export function StatusBar() {
@@ -52,6 +53,9 @@ export function StatusBar() {
         {definition && <span className={`sketch-status ${definition.cls}`}>{definition.text}</span>}
         {bootMs && <span className="muted">{t('status.coreLoaded', { ms: Math.round(bootMs.occtMs) })}</span>}
         <span className="units">MMGS</span>
+        <span className="credit" data-credit title={AUTHOR_CREDIT}>
+          {AUTHOR_CREDIT}
+        </span>
       </footer>
     );
   }
@@ -86,6 +90,9 @@ export function StatusBar() {
       <span>{rebuilding ? t('status.rebuilding') : result ? t('status.rebuilt', { ms: result.totalMs.toFixed(1) }) : ''}</span>
       {bootMs && <span className="muted">{t('status.coreLoaded', { ms: Math.round(bootMs.occtMs) })}</span>}
       <span className="units">MMGS</span>
+        <span className="credit" data-credit title={AUTHOR_CREDIT}>
+          {AUTHOR_CREDIT}
+        </span>
     </footer>
   );
 }

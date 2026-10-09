@@ -172,7 +172,7 @@ describe('the dimensions in the document', () => {
     delete v2.dimensions;
     v2.schemaVersion = 2;
     const back = parseDrawing(JSON.stringify(v2));
-    expect(back.schemaVersion).toBe(7);
+    expect(back.schemaVersion).toBe(8);
     expect(back.dimensions).toEqual([]);
   });
 });

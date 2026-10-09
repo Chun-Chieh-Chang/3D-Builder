@@ -1,4 +1,7 @@
 import * as THREE from 'three';
+import { LineMaterial } from 'three/examples/jsm/lines/LineMaterial.js';
+import { LineSegments2 } from 'three/examples/jsm/lines/LineSegments2.js';
+import { LineSegmentsGeometry } from 'three/examples/jsm/lines/LineSegmentsGeometry.js';
 import { acceleratedRaycast, computeBoundsTree, disposeBoundsTree } from 'three-mesh-bvh';
 import { ViewControls } from './controls';
 import { buildOverlayObjects, disposeGroup, toWorld, type P2, type PlaneFrame, type SketchOverlay } from './overlay';
@@ -66,6 +69,17 @@ const COLORS = {
   componentSelected: 0x8fb8e8,
   componentCollided: 0xe5484d,
 };
+
+/**
+ * What measuring draws in the graphics area (as eDrawings does): the lines (the shortest way, and the distances along the axes, each in a colour), a dot at the ends, and
+ * a label on each (a name in the colour, the number beside it). Points in the scene's own coordinates.
+ */
+export interface MeasureGraphics {
+  lines: { a: [number, number, number]; b: [number, number, number]; color: number }[];
+  points: [number, number, number][];
+  /** `offset`: pixels on the screen from the point, so that labels on the same spot (a leg that is the whole distance) do not lie on each other. */
+  labels: { key: string; at: [number, number, number]; name: string; value: string; color: string; offset?: [number, number] }[];
+}
 
 /**
  * A placed copy of a part mesh (an assembly component): `part` names a mesh given to setParts, and
@@ -296,7 +310,11 @@ export class Viewer {
   private datumGroup: THREE.Group | null = null;
   private overlayGroup: THREE.Group | null = null;
   private picturesGroup: THREE.Group | null = null;
-  private labels = new Map<string, { el: HTMLElement; world: THREE.Vector3 }>();
+  private labels = new Map<string, { el: HTMLElement; world: THREE.Vector3; offset?: [number, number] }>();
+  /** What measuring has drawn (see setMeasureGraphics): its own, so that the sketch overlay does not clear it. */
+  private measureGroup: THREE.Group | null = null;
+  private measureMaterials: LineMaterial[] = [];
+  private measureLabels = new Map<string, { el: HTMLElement; world: THREE.Vector3; offset: [number, number] }>();
   private toolHandler: ((e: ToolPointerEvent) => void) | null = null;
   /** Part meshes that instances show, by key: built once, shared by every instance of the part. */
   private partGeometry = new Map<string, PartGeometry>();
@@ -386,6 +404,7 @@ export class Viewer {
     this.setHighlights([]);
     this.setParts(new Map());
     this.setSection(null);
+    this.setMeasureGraphics(null);
     this.endSectionDrag();
     this.instanceEdges.dispose();
     this.renderer.dispose();
@@ -910,6 +929,69 @@ export class Viewer {
       if (keep.has(key)) continue;
       entry.el.remove();
       this.labels.delete(key);
+    }
+    this.requestRender();
+  }
+
+  /** Draws the result of a measurement over the model (null takes it away). The lines are two and a half pixels wide whatever the zoom, and are drawn over what hides them. */
+  setMeasureGraphics(g: MeasureGraphics | null): void {
+    if (this.measureGroup) {
+      this.overlayScene.remove(this.measureGroup);
+      disposeGroup(this.measureGroup);
+      for (const m of this.measureMaterials) m.dispose();
+      this.measureGroup = null;
+      this.measureMaterials = [];
+    }
+    const keep = new Set<string>();
+    if (g) {
+      const group = new THREE.Group();
+      const byColour = new Map<number, number[]>();
+      for (const l of g.lines) byColour.set(l.color, [...(byColour.get(l.color) ?? []), ...l.a, ...l.b]);
+      const { w, h } = this.canvasSize();
+      for (const [color, positions] of byColour) {
+        const geometry = new LineSegmentsGeometry().setPositions(positions);
+        const material = new LineMaterial({ color, linewidth: 2.5, depthTest: false, transparent: true });
+        material.resolution.set(w, h);
+        const lines = new LineSegments2(geometry, material);
+        lines.renderOrder = 5;
+        group.add(lines);
+        this.measureMaterials.push(material);
+      }
+      if (g.points.length > 0) {
+        const dots = new THREE.Points(new THREE.BufferGeometry().setAttribute('position', new THREE.Float32BufferAttribute(g.points.flat(), 3)), new THREE.PointsMaterial({ color: 0x111111, size: 7, sizeAttenuation: false, depthTest: false }));
+        dots.renderOrder = 6;
+        group.add(dots);
+      }
+      this.measureGroup = group;
+      this.overlayScene.add(group);
+      for (const l of g.labels) {
+        keep.add(l.key);
+        let entry = this.measureLabels.get(l.key);
+        if (!entry) {
+          const el = document.createElement('div');
+          el.addEventListener('pointerdown', (e) => e.stopPropagation());
+          this.labelLayer.appendChild(el);
+          entry = { el, world: new THREE.Vector3(), offset: [0, 0] };
+          this.measureLabels.set(l.key, entry);
+        }
+        entry.world.set(...l.at);
+        entry.offset = l.offset ?? [0, 0];
+        entry.el.className = 'overlay-label measure-label';
+        entry.el.replaceChildren();
+        const tag = document.createElement('span');
+        tag.className = 'name';
+        tag.style.background = l.color;
+        tag.textContent = l.name;
+        const value = document.createElement('span');
+        value.className = 'value';
+        value.textContent = l.value;
+        entry.el.append(tag, value);
+      }
+    }
+    for (const [key, entry] of this.measureLabels) {
+      if (keep.has(key)) continue;
+      entry.el.remove();
+      this.measureLabels.delete(key);
     }
     this.requestRender();
   }
@@ -1832,6 +1914,7 @@ export class Viewer {
     const h = this.container.clientHeight;
     if (w === 0 || h === 0) return; // keep the last good frustum; a zero size would distort the aspect ratio
     this.renderer.setSize(w, h);
+    for (const m of this.measureMaterials) m.resolution.set(w, h);
     if (this.pendingFit) {
       this.fitAll();
       return;
@@ -1895,9 +1978,10 @@ export class Viewer {
       r.render(this.overlayScene, this.camera);
     }
     const canvas = this.canvasSize();
-    for (const { el, world } of this.labels.values()) {
+    for (const { el, world, offset } of [...this.labels.values(), ...[...this.measureLabels.values()]]) {
       const v = world.clone().project(this.camera);
-      el.style.transform = `translate(${((v.x + 1) / 2) * canvas.w}px, ${((1 - v.y) / 2) * canvas.h}px) translate(-50%, -50%)`;
+      const [ox, oy] = offset ?? [0, 0];
+      el.style.transform = `translate(${((v.x + 1) / 2) * canvas.w + ox}px, ${((1 - v.y) / 2) * canvas.h + oy}px) translate(-50%, -50%)`;
     }
     const size = 90;
     const offset = this.camera.position.clone().sub(this.controls.target).normalize().multiplyScalar(5);

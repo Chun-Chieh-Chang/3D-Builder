@@ -1,6 +1,7 @@
 export * from './sheet';
 export * from './layout';
 export * from './fit';
+export * from './pick';
 export * from './scene';
 export * from './svg';
 export * from './geometry';

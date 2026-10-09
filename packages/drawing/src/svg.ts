@@ -19,9 +19,10 @@ export function toSvg(scene: Scene, options: { font?: string } = {}): string {
       const attrs = `fill="${item.filled ? '#000000' : 'none'}" stroke="#000000" stroke-width="${s.width}" stroke-linecap="round" stroke-linejoin="round"${s.dash ? ` stroke-dasharray="${s.dash.join(' ')}"` : ''}`;
       out.push(item.closed ? `<polygon points="${pts.join(' ')}" ${attrs}/>` : `<polyline points="${pts.join(' ')}" ${attrs}/>`);
     } else {
+      // the text of a dimension has a white edge: what is drawn under it does not strike through it
       const anchor = item.anchor === 'center' ? 'middle' : item.anchor === 'right' ? 'end' : 'start';
       const rotate = item.angle ? ` transform="rotate(${num(-item.angle)} ${num(item.at[0])} ${y(item.at[1])})"` : '';
-      out.push(`<text x="${num(item.at[0])}" y="${y(item.at[1])}" font-size="${num(item.height * 1.4)}" font-family="${esc(options.font ?? 'sans-serif')}" text-anchor="${anchor}" fill="#000000"${rotate}>${esc(item.text)}</text>`);
+      out.push(`<text x="${num(item.at[0])}" y="${y(item.at[1])}" font-size="${num(item.height * 1.4)}" font-family="${esc(options.font ?? 'sans-serif')}" text-anchor="${anchor}" fill="#000000"${item.group ? ` stroke="#ffffff" stroke-width="${num(item.height * 0.3)}" stroke-linejoin="round" paint-order="stroke"` : ''}${rotate}>${esc(item.text)}</text>`);
     }
   }
   out.push('</svg>');

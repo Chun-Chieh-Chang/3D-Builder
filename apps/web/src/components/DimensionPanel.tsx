@@ -1,5 +1,6 @@
 import { t } from '@3db/i18n';
 import { formatNumber, overlappingDimensions } from '@3db/drawing';
+import { MM_PER_INCH } from '@3db/model';
 import type { Dimension, DimensionOrientation, DimensionTolerance, ViewFeature } from '@3db/model';
 import { useState } from 'react';
 import { store, useStore } from '../state/store';
@@ -72,7 +73,9 @@ export function DimensionPanel() {
   const [b, setB] = useState(1);
   const [orientation, setOrientation] = useState<DimensionOrientation>('horizontal');
   const [round, setRound] = useState(0);
-  const [selected, setSelected] = useState<string | null>(null);
+  // the dimension chosen is the document's state: it is chosen on the sheet as well
+  const selected = drw.dimension;
+  const setSelected = (id: string | null) => d.selectDimension(id);
   const features = view ? (drw.features.get(view.id) ?? null) : null;
   const planes = (features ?? []).filter((f): f is Extract<Pickable, { type: 'plane' }> => f.type === 'plane');
   const slants = (features ?? []).filter((f): f is Extract<Pickable, { type: 'slant' }> => f.type === 'slant');
@@ -86,6 +89,9 @@ export function DimensionPanel() {
   const outcomes = d.scene().dimensions;
   const overlapping = overlappingDimensions(d.scene().scene.items, new Set(mine.map((x) => x.id)));
   const current = mine.find((x) => x.id === selected) ?? null;
+  // the numbers of a tolerance are typed and shown in the unit of the sheet; the document holds millimetres
+  const perUnit = drw.doc.sheet.unit === 'in' ? MM_PER_INCH : 1;
+  const shownTol = (mm: number) => Math.round((mm / perUnit) * 1e6) / 1e6;
   const textOf = (x: Dimension) => {
     const o = outcomes.get(x.id);
     return o ? ('error' in o ? '⚠ ' + o.error : o.text) : '…';
@@ -93,6 +99,16 @@ export function DimensionPanel() {
   return (
     <div className="pm-group" data-group="dimensions">
       <h4>{t('drawingUi.dimensions')}</h4>
+      <div className="pm-row">
+        <button
+          className={`pm-button${drw.tool?.kind === 'dimension' ? ' active' : ''}`}
+          data-action="toolDimension"
+          title={t('drawingUi.hint.dimension0')}
+          onClick={() => d.setTool(drw.tool?.kind === 'dimension' ? null : { kind: 'dimension', picks: [] })}
+        >
+          {t('drawingUi.toolDimension')}
+        </button>
+      </div>
       {!view && <p className="muted">{t('drawingUi.dimSelectView')}</p>}
       {view && (
         <>
@@ -245,6 +261,41 @@ export function DimensionPanel() {
                 </>
               )}
               <label className="pm-row">
+                <span>{t('drawingUi.dimPrecision')}</span>
+                <select data-field="dimPrecision" value={current.precision === undefined ? '' : String(current.precision)} onChange={(e) => d.setDimension(current.id, { precision: e.target.value === '' ? null : Number(e.target.value) })}>
+                  <option value="">{t('drawingUi.dimPrecisionAuto')}</option>
+                  {[0, 1, 2, 3, 4].map((n) => (
+                    <option key={n} value={n}>
+                      {n}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="pm-row">
+                <span>{t('drawingUi.dimPrefix')}</span>
+                <TextField field="dimPrefix" value={current.prefix ?? ''} onCommit={(v) => d.setDimension(current.id, { prefix: v })} />
+              </label>
+              <label className="pm-row">
+                <span>{t('drawingUi.dimSuffix')}</span>
+                <TextField field="dimSuffix" value={current.suffix ?? ''} onCommit={(v) => d.setDimension(current.id, { suffix: v })} />
+              </label>
+              <label className="pm-row" title={t('drawingUi.dimTextTip')}>
+                <span>{t('drawingUi.dimText')}</span>
+                <TextField field="dimText" value={current.text ?? ''} onCommit={(v) => d.setDimension(current.id, { text: v })} />
+              </label>
+              {(current.kind === 'linear' || current.kind === 'angle') && (
+                <label className="pm-row">
+                  <span>{t('drawingUi.dimSlide')}</span>
+                  <NumberBox field="dimSlide" value={current.slide ?? 0} onCommit={(v) => d.setDimension(current.id, { slide: v })} />
+                </label>
+              )}
+              {(current.kind === 'diameter' || current.kind === 'radius') && (
+                <label className="pm-row">
+                  <span>{t('drawingUi.dimLeader')}</span>
+                  <NumberBox field="dimLeader" value={current.leader ?? 8} onCommit={(v) => v > 0 && d.setDimension(current.id, { leader: v })} />
+                </label>
+              )}
+              <label className="pm-row">
                 <span>{t('drawingUi.dimTolerance')}</span>
                 <select
                   data-field="dimToleranceType"
@@ -264,11 +315,11 @@ export function DimensionPanel() {
                 <>
                   <label className="pm-row">
                     <span>{t('drawingUi.dimUpper')}</span>
-                    <NumberBox field="dimUpper" value={current.tolerance.upper} onCommit={(v) => d.setDimension(current.id, { tolerance: { type: 'bilateral', upper: v, lower: (current.tolerance as { lower: number }).lower } })} />
+                    <NumberBox field="dimUpper" value={shownTol(current.tolerance.upper)} onCommit={(v) => d.setDimension(current.id, { tolerance: { type: 'bilateral', upper: v * perUnit, lower: (current.tolerance as { lower: number }).lower } })} />
                   </label>
                   <label className="pm-row">
                     <span>{t('drawingUi.dimLower')}</span>
-                    <NumberBox field="dimLower" value={current.tolerance.lower} onCommit={(v) => d.setDimension(current.id, { tolerance: { type: 'bilateral', upper: (current.tolerance as { upper: number }).upper, lower: v } })} />
+                    <NumberBox field="dimLower" value={shownTol(current.tolerance.lower)} onCommit={(v) => d.setDimension(current.id, { tolerance: { type: 'bilateral', upper: (current.tolerance as { upper: number }).upper, lower: v * perUnit } })} />
                   </label>
                 </>
               )}
@@ -283,6 +334,33 @@ export function DimensionPanel() {
         </>
       )}
     </div>
+  );
+}
+
+/** A text box committed on Enter or on leaving (an empty text takes what was written away). */
+function TextField({ value, onCommit, field }: { value: string; onCommit: (v: string) => void; field: string }) {
+  const [text, setText] = useState(value);
+  const [shown, setShown] = useState(value);
+  if (value !== shown) {
+    setShown(value);
+    setText(value);
+  }
+  const commit = () => (text !== value ? onCommit(text) : undefined);
+  return (
+    <input
+      data-field={field}
+      value={text}
+      onChange={(e) => setText(e.target.value)}
+      onBlur={commit}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          commit();
+          e.currentTarget.blur();
+        }
+        e.stopPropagation();
+      }}
+    />
   );
 }
 

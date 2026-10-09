@@ -38,7 +38,7 @@ import {
 } from '@3db/model';
 import { drawingFileName, writeDrawingFile } from '@3db/io';
 import { FontError, readTrueType, toDxf, toPdf, type TrueTypeFont } from '@3db/drawing';
-import { autoDimensions, buildScene, FIRST_OFFSET, OFFSET_STEP, ratio, scaleOf, STANDARD_SCALES, fitViews, toSvg, type AutoDimensionOptions, type DimensionOutcome, type ElementsResult, type HoleRow, type PlacedView, type ViewBom, type Scene, type ViewLines } from '@3db/drawing';
+import { autoDimensions, buildScene, type DimensionDraft, type Pickable, FIRST_OFFSET, OFFSET_STEP, ratio, scaleOf, STANDARD_SCALES, fitViews, toSvg, type AutoDimensionOptions, type DimensionOutcome, type ElementsResult, type HoleRow, type PlacedView, type ViewBom, type Scene, type ViewLines } from '@3db/drawing';
 import type { Remote } from 'comlink';
 import { download, fileIn, pathIn, pickDrawingSaveTarget, pickFontFile, writeFile } from '../files';
 import type { KernelApi } from '../worker/protocol';
@@ -70,6 +70,13 @@ export interface DrawingSource {
   autoScale?: boolean;
 }
 
+/**
+ * What the pointer is being used for on the sheet, when it is not choosing and moving what is there. `dimension`: the elements pointed at so far (none, one or two), each with
+ * the view it is of (the second is of the same view as the first); the next point on the sheet puts the dimension. `section`, `detail`: the pointer is pressed where the cut
+ * is to be (and dragged along it) or where the middle of the circle is (and dragged out to its edge), on the view it is over.
+ */
+export type DrawingTool = { kind: 'dimension'; picks: { view: Id; feature: Pickable }[] } | { kind: 'section' } | { kind: 'detail' };
+
 export interface DrawingState {
   doc: DrawingDoc;
   canUndo: boolean;
@@ -93,6 +100,9 @@ export interface DrawingState {
   /** The name of the font file the PDF embeds for the characters the standard font does not have; null: none. */
   pdfFont: string | null;
   selected: Id | null;
+  /** The dimension chosen on the sheet (or in the panel): it can be moved, edited and deleted. */
+  dimension: Id | null;
+  tool: DrawingTool | null;
   /** The lines are being worked out. */
   computing: boolean;
   fitRequest: number;
@@ -157,6 +167,8 @@ export class DrawingStore {
       boms: new Map(),
       pdfFont: null,
       selected: null,
+      dimension: null,
+      tool: null,
       computing: false,
       fitRequest: 1,
     };
@@ -217,6 +229,27 @@ export class DrawingStore {
 
   select(id: Id | null): void {
     this.set({ selected: id });
+  }
+
+  /** Chooses a dimension (and the view it is on, which the dimensions panel is about); null lets go of it. */
+  selectDimension(id: Id | null): void {
+    const dim = id ? this.history.doc.dimensions.find((x) => x.id === id) : undefined;
+    this.set({ dimension: dim ? dim.id : null, ...(dim ? { selected: dim.view } : {}) });
+  }
+
+  /** Starts or ends a tool of the pointer (Esc, or the tool done). */
+  setTool(tool: DrawingTool | null): void {
+    // a new kind of tool lets go of the dimension chosen; the same one asking again (the picks start over) keeps the one it has just made
+    this.set({ tool, ...(tool && this.state.tool?.kind !== tool.kind ? { dimension: null } : {}) });
+  }
+
+  /** A dimension made on the sheet from elements pointed at and a place pointed at (`planDimension`), as one step: it is chosen when it is there. */
+  addDimension(viewId: Id, draft: DimensionDraft): Id | null {
+    const doc = this.history.doc;
+    const id = new IdAllocator(doc.idCounters, drawingIdsInUse(doc)).take('dim');
+    if (!this.execute({ type: 'insertDimensions', dimensions: [{ id, view: viewId, ...draft } as Dimension] })) return null;
+    this.set({ dimension: id, selected: viewId });
+    return id;
   }
 
   // ------------------------------------------------------------ the parts the views show

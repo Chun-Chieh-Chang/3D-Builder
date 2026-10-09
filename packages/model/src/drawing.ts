@@ -12,7 +12,7 @@ import type { Ref } from './schema';
  * opened (exact hidden-line removal), so a drawing can never disagree with the model it shows.
  */
 
-export const DRAWING_SCHEMA_VERSION = 7;
+export const DRAWING_SCHEMA_VERSION = 8;
 
 export type SheetSize = 'A4' | 'A3' | 'A2' | 'A1' | 'A0';
 export const SHEET_SIZES: readonly SheetSize[] = ['A4', 'A3', 'A2', 'A1', 'A0'];
@@ -35,6 +35,8 @@ export interface DrawingSheet {
    * views that are in line with each other move as one; a view with a position of its own (`at`) does not.
    */
   shift?: [number, number];
+  /** The unit the lengths of the dimensions are written in (v8): absent is millimetres; `in` is inches. The model and the sheet stay in millimetres; only the numbers written change. */
+  unit?: 'mm' | 'in';
 }
 
 /** The side of a view another view is placed on, in the sheet. */
@@ -120,6 +122,15 @@ interface DimensionCommon {
   /** A reference dimension, written in parentheses: it is for information and is not what the part is made to. */
   reference?: boolean;
   tolerance?: DimensionTolerance;
+  /** How the text is written (v8). Decimals of the number (0 to 4; absent: three for a size, two for an angle). */
+  precision?: number;
+  /** Written before and after what the dimension says (「最大」, 「2×」, 「(兩處)」), outside the parentheses of a reference dimension. */
+  prefix?: string;
+  suffix?: string;
+  /** Written instead of all of it; `<DIM>` in it stands for what the dimension would have said (「約 <DIM>」). */
+  text?: string;
+  /** A linear or an angle dimension: how far (mm) its text was slid along the dimension line (along the arc, for an angle) from the middle (v8). */
+  slide?: number;
 }
 
 export type DimensionOrientation = 'horizontal' | 'vertical' | 'aligned';
@@ -143,6 +154,8 @@ export interface DiameterDimension extends DimensionCommon {
   kind: 'diameter';
   ref: Ref;
   angle: number;
+  /** How long the leader is outside the circle (mm, v8). Absent: 8. */
+  leader?: number;
   count?: number;
   /** A hole callout (C16.5): what the model says of the hole is written after the diameter — through, or how deep, and its counterbore. */
   callout?: boolean;
@@ -153,6 +166,8 @@ export interface RadiusDimension extends DimensionCommon {
   kind: 'radius';
   ref: Ref;
   angle: number;
+  /** How long the leader is outside the circle (mm, v8). Absent: 8. */
+  leader?: number;
   count?: number;
 }
 
@@ -302,6 +317,14 @@ export type DimensionPatch = {
   callout?: boolean | null;
   /** An angle dimension: the radius of its arc (mm), and the other angle of the two lines. */
   arc?: number;
+  precision?: number | null;
+  prefix?: string | null;
+  suffix?: string | null;
+  text?: string | null;
+  /** `null` (or 0) puts the text back in the middle. */
+  slide?: number | null;
+  /** A diameter or a radius: the length of the leader; `null` puts it back to 8. */
+  leader?: number | null;
   supplementary?: boolean | null;
   a?: Ref;
   b?: Ref;
@@ -388,6 +411,10 @@ function checkDimension(d: Dimension, views: readonly DrawingView[]): void {
     if (d.count !== undefined && !(Number.isInteger(d.count) && d.count >= 2)) throw new CommandError(t('drawing.dimBadCount'));
     if (d.kind === 'radius' && (d as { callout?: boolean }).callout) throw new CommandError(t('drawing.notForKind', { field: 'callout', kind: d.kind }));
   } else throw new CommandError(t('drawing.dimBadKind', { kind: String((d as { kind?: unknown }).kind) }));
+  if (d.precision !== undefined && !(Number.isInteger(d.precision) && d.precision >= 0 && d.precision <= 4)) throw new CommandError(t('drawing.dimBadPrecision'));
+  for (const k of ['prefix', 'suffix', 'text'] as const) if (d[k] !== undefined && (typeof d[k] !== 'string' || d[k]!.length > 80)) throw new CommandError(t('drawing.dimBadText'));
+  if (d.slide !== undefined && (!Number.isFinite(d.slide) || (d.kind !== 'linear' && d.kind !== 'angle'))) throw new CommandError(t('drawing.dimBadSlide'));
+  if ((d.kind === 'diameter' || d.kind === 'radius') && d.leader !== undefined && !(Number.isFinite(d.leader) && d.leader > 0)) throw new CommandError(t('drawing.dimBadLeader'));
   const tol = d.tolerance;
   if (tol) {
     if (tol.type === 'bilateral') {
@@ -419,8 +446,10 @@ export function mutateDrawing(draft: Draft<DrawingDoc>, cmd: DrawingCommand): vo
       if (s.projection !== undefined && s.projection !== 'first' && s.projection !== 'third') throw new CommandError(t('drawing.badProjection'));
       if (s.scale !== undefined && !scaleOk(s.scale)) throw new CommandError(t('drawing.badScale', { scale: s.scale.join(':') }));
       if (s.shift && !(s.shift.length === 2 && s.shift.every(Number.isFinite))) throw new CommandError(t('drawing.badPosition'));
+      if (s.unit !== undefined && s.unit !== 'mm' && s.unit !== 'in') throw new CommandError(t('drawing.badUnit'));
       const { shift, ...rest } = s;
       Object.assign(draft.sheet, rest);
+      if (s.unit === 'mm') delete draft.sheet.unit;
       if (shift === null || (shift && shift[0] === 0 && shift[1] === 0)) delete draft.sheet.shift;
       else if (shift) draft.sheet.shift = [shift[0], shift[1]];
       return;
@@ -498,8 +527,10 @@ export function mutateDrawing(draft: Draft<DrawingDoc>, cmd: DrawingCommand): vo
     case 'setDimension': {
       const d = draft.dimensions.find((x) => x.id === cmd.dimensionId);
       if (!d) throw new CommandError(t('drawing.noDimension', { id: cmd.dimensionId }));
-      const { reference, tolerance, count, callout, supplementary, ...rest } = cmd.patch;
+      const { reference, tolerance, count, callout, supplementary, precision, prefix, suffix, text, slide, leader, ...rest } = cmd.patch;
       const belongs: Record<Dimension['kind'], string[]> = { linear: ['offset', 'orientation', 'a', 'b'], diameter: ['angle', 'ref'], radius: ['angle', 'ref'], angle: ['arc', 'a', 'b'] };
+      if (slide !== undefined && d.kind !== 'linear' && d.kind !== 'angle') throw new CommandError(t('drawing.notForKind', { field: 'slide', kind: d.kind }));
+      if (leader !== undefined && d.kind !== 'diameter' && d.kind !== 'radius') throw new CommandError(t('drawing.notForKind', { field: 'leader', kind: d.kind }));
       if (callout !== undefined && d.kind !== 'diameter') throw new CommandError(t('drawing.notForKind', { field: 'callout', kind: d.kind }));
       if (supplementary !== undefined && d.kind !== 'angle') throw new CommandError(t('drawing.notForKind', { field: 'supplementary', kind: d.kind }));
       for (const k of Object.keys(rest)) if (!belongs[d.kind].includes(k)) throw new CommandError(t('drawing.notForKind', { field: k, kind: d.kind }));
@@ -511,6 +542,13 @@ export function mutateDrawing(draft: Draft<DrawingDoc>, cmd: DrawingCommand): vo
       else if (callout === true) next.callout = true;
       if (reference === null || reference === false) delete next.reference;
       else if (reference === true) next.reference = true;
+      const loose = next as unknown as Record<string, unknown>;
+      for (const [k, v] of [['precision', precision], ['prefix', prefix], ['suffix', suffix], ['text', text], ['leader', leader]] as const) {
+        if (v === null || v === '') delete loose[k];
+        else if (v !== undefined) loose[k] = v;
+      }
+      if (slide === null || slide === 0) delete loose.slide;
+      else if (slide !== undefined) loose.slide = slide;
       if (count === null) delete next.count;
       else if (count !== undefined) next.count = count;
       if (tolerance === null) delete next.tolerance;

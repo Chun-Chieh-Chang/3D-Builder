@@ -34,6 +34,16 @@ export interface MeasureElement {
   radius: number | null;
   /** The way the element points: a plane's normal, an axis, a line's direction (what an angle is measured between). */
   direction: Vec3 | null;
+  /** A circle, an arc, a cylinder or a sphere: where its middle is, the way its axis runs and how big it is (what measuring from centre to centre and the farthest distance need). */
+  round: MeasureRound | null;
+}
+
+/** The middle of a round element: for a circle or an arc its centre, for a sphere its centre, for a cylinder a point of its axis (and `axis` is the direction of the line). */
+export interface MeasureRound {
+  type: 'circle' | 'cylinder' | 'sphere';
+  centre: Vec3;
+  axis: Vec3 | null;
+  radius: number;
 }
 
 /** The shortest way from one element to the other: the length, and the two points that make it. */
@@ -45,10 +55,25 @@ export interface MeasureDistance {
   delta: Vec3;
 }
 
+/** What two round elements are from centre to centre, and the farthest two points of them are (null where it is not defined: the axes of a farthest distance have to run alike). */
+export interface RoundReport {
+  centre: MeasureDistance;
+  max: MeasureDistance | null;
+}
+
+/** How two elements that point somewhere lie to each other: alike, square, or at an angle. */
+export type Relation = 'parallel' | 'perpendicular' | 'angle';
+
 export interface MeasureReport {
   elements: MeasureElement[];
-  /** Only for two elements. */
+  /** Only for two elements: the shortest distance. */
   distance: MeasureDistance | null;
+  /** Only for two elements that point somewhere. */
+  relation: Relation | null;
+  /** The distance along the axes one after the other: |dx| + |dy| + |dz| (what eDrawings calls the total length); only for two elements. */
+  total: number | null;
+  /** Only for two round elements. */
+  round: RoundReport | null;
   /** Degrees between the two elements' directions, the acute one (0 to 90): null when one of them has no direction or there are not two. */
   angle: number | null;
 }
@@ -59,14 +84,14 @@ export interface FaceFacts {
   area: number;
   center: Vec3;
   normal: Vec3 | null;
-  geometry?: { type: string; axis?: Vec3; normal?: Vec3; radius?: number };
+  geometry?: { type: string; axis?: Vec3; normal?: Vec3; radius?: number; origin?: Vec3; center?: Vec3 };
 }
 export interface EdgeFacts {
   curve: string;
   length: number;
   mid: Vec3;
   dir: Vec3 | null;
-  geometry?: { type: string; normal?: Vec3; radius?: number };
+  geometry?: { type: string; normal?: Vec3; radius?: number; center?: Vec3 };
 }
 export interface VertexFacts {
   point: Vec3;
@@ -76,17 +101,21 @@ export function faceElement(f: FaceFacts): MeasureElement {
   const g = f.geometry;
   const direction = f.normal ?? (g && (g.axis ?? g.normal)) ?? null;
   const radius = g && (g.type === 'cylinder' || g.type === 'sphere') ? (g.radius ?? null) : null;
-  return { kind: 'face', type: f.surface, point: f.center, area: f.area, length: null, radius, direction };
+  const round: MeasureRound | null =
+    g?.type === 'cylinder' && g.origin && g.axis && radius !== null ? { type: 'cylinder', centre: g.origin, axis: g.axis, radius } : g?.type === 'sphere' && g.center && radius !== null ? { type: 'sphere', centre: g.center, axis: null, radius } : null;
+  return { kind: 'face', type: f.surface, point: f.center, area: f.area, length: null, radius, direction, round };
 }
 
 export function edgeElement(e: EdgeFacts): MeasureElement {
   const g = e.geometry;
   const direction = e.dir ?? (g?.type === 'circle' ? (g.normal ?? null) : null);
-  return { kind: 'edge', type: e.curve, point: e.mid, area: null, length: e.length, radius: g?.type === 'circle' ? (g.radius ?? null) : null, direction };
+  const radius = g?.type === 'circle' ? (g.radius ?? null) : null;
+  const round: MeasureRound | null = g?.type === 'circle' && g.center && radius !== null ? { type: 'circle', centre: g.center, axis: g.normal ?? null, radius } : null;
+  return { kind: 'edge', type: e.curve, point: e.mid, area: null, length: e.length, radius, direction, round };
 }
 
 export function vertexElement(v: VertexFacts): MeasureElement {
-  return { kind: 'vertex', type: 'point', point: v.point, area: null, length: null, radius: null, direction: null };
+  return { kind: 'vertex', type: 'point', point: v.point, area: null, length: null, radius: null, direction: null, round: null };
 }
 
 /** Degrees between two directions, whichever way each of them points (so 0 to 90). */
@@ -101,11 +130,90 @@ export function angleBetween(a: Vec3, b: Vec3): number {
 export function measureReport(elements: MeasureElement[], distance: { distance: number; pointA: Vec3; pointB: Vec3 } | null): MeasureReport {
   const [a, b] = elements;
   const angle = a?.direction && b?.direction ? angleBetween(a.direction, b.direction) : null;
+  const known = angle !== null && Number.isFinite(angle) ? angle : null;
+  // the length is the kernel's own, not worked out again from the two points
+  const found = distance ? { ...between(distance.pointA, distance.pointB), value: distance.distance } : null;
   return {
     elements,
-    distance: distance ? { value: distance.distance, a: distance.pointA, b: distance.pointB, delta: [distance.pointB[0] - distance.pointA[0], distance.pointB[1] - distance.pointA[1], distance.pointB[2] - distance.pointA[2]] } : null,
-    angle: angle !== null && Number.isFinite(angle) ? angle : null,
+    distance: found,
+    angle: known,
+    relation: known === null ? null : known < PARALLEL_DEGREES ? 'parallel' : Math.abs(known - 90) < PARALLEL_DEGREES ? 'perpendicular' : 'angle',
+    total: found ? Math.abs(found.delta[0]) + Math.abs(found.delta[1]) + Math.abs(found.delta[2]) : null,
+    round: a?.round && b?.round ? roundReport(a.round, b.round) : null,
   };
+}
+
+/** How near to 0 or to 90° two directions are for the two elements to be called parallel or square (degrees). */
+export const PARALLEL_DEGREES = 1e-4;
+
+type V = Vec3;
+const sub = (a: V, b: V): V => [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
+const add = (a: V, b: V, k = 1): V => [a[0] + b[0] * k, a[1] + b[1] * k, a[2] + b[2] * k];
+const dot = (a: V, b: V) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+const cross = (a: V, b: V): V => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
+const norm = (a: V) => Math.hypot(a[0], a[1], a[2]);
+const unit = (a: V): V => {
+  const l = norm(a);
+  return l > 0 ? [a[0] / l, a[1] / l, a[2] / l] : [0, 0, 0];
+};
+
+/** The distance between two points, with the points and the differences along the axes. */
+export function between(a: Vec3, b: Vec3): MeasureDistance {
+  const delta = sub(b, a);
+  return { value: norm(delta), a, b, delta };
+}
+
+/**
+ * The closest points of two lines (each a point and a direction): where they cross or pass nearest; for parallel lines the first line's point and where the second line is
+ * nearest to it.
+ */
+function nearestOnLines(p1: V, d1: V, p2: V, d2: V): { a: V; b: V } {
+  const u = unit(d1);
+  const v = unit(d2);
+  const w = sub(p1, p2);
+  const b = dot(u, v);
+  const d = dot(u, w);
+  const e = dot(v, w);
+  const den = 1 - b * b;
+  if (den < 1e-12) return { a: p1, b: add(p2, v, dot(sub(p1, p2), v)) };
+  const s = (b * e - d) / den;
+  const t = (e - b * d) / den;
+  return { a: add(p1, u, s), b: add(p2, v, t) };
+}
+
+/** The point of a line (a point and a direction) nearest to a point. */
+const onLine = (p: V, point: V, dir: V): V => add(point, unit(dir), dot(sub(p, point), unit(dir)));
+
+/**
+ * What two round elements are from centre to centre (a circle, an arc or a sphere by its centre, a cylinder by its axis) and, where the axes run alike (or neither has
+ * one), the farthest two points of them. For two circles the points are on the circles (the lateral distance of the centres, plus both radii, with the distance along the axis
+ * as it is); for cylinders and a cylinder with a circle, across the axes only (their length is not known here); for two spheres along the line of their centres.
+ */
+export function roundReport(a: MeasureRound, b: MeasureRound): RoundReport {
+  const lineA = a.type === 'cylinder';
+  const lineB = b.type === 'cylinder';
+  let pa = a.centre;
+  let pb = b.centre;
+  if (lineA && lineB) ({ a: pa, b: pb } = nearestOnLines(a.centre, a.axis!, b.centre, b.axis!));
+  else if (lineA) pa = onLine(b.centre, a.centre, a.axis!);
+  else if (lineB) pb = onLine(a.centre, b.centre, b.axis!);
+  const centre = between(pa, pb);
+  // the farthest: the two centres' lateral offset pushed apart by both radii
+  const axisA = a.axis ? unit(a.axis) : null;
+  const axisB = b.axis ? unit(b.axis) : null;
+  const alike = axisA && axisB ? norm(cross(axisA, axisB)) < 1e-9 : !axisA && !axisB;
+  if (!alike) return { centre, max: null };
+  if (!axisA) {
+    // two spheres
+    const w = unit(sub(b.centre, a.centre));
+    return { centre, max: between(add(a.centre, w, -a.radius), add(b.centre, w, b.radius)) };
+  }
+  // along the line across the axes from the one middle to the other: out by one radius at each end (circles keep the distance along the axis as it is)
+  const v = sub(pb, pa);
+  const lateral = sub(v, [axisA[0] * dot(v, axisA), axisA[1] * dot(v, axisA), axisA[2] * dot(v, axisA)]);
+  let w = unit(lateral);
+  if (norm(w) === 0) w = unit(cross(axisA, Math.abs(axisA[0]) < 0.9 ? [1, 0, 0] : [0, 1, 0]));
+  return { centre, max: between(add(pa, w, -a.radius), add(pb, w, b.radius)) };
 }
 
 /**

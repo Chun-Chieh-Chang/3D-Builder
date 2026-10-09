@@ -169,7 +169,7 @@ describe('the pieces (3b-5c)', () => {
   });
 
   it('no angle when one element has no direction (a vertex, a freeform face)', () => {
-    const a = { kind: 'vertex' as const, type: 'point', point: [0, 0, 0] as [number, number, number], area: null, length: null, radius: null, direction: null };
+    const a = { kind: 'vertex' as const, type: 'point', point: [0, 0, 0] as [number, number, number], area: null, length: null, radius: null, direction: null, round: null };
     expect(measureReport([a, { ...a, direction: [0, 0, 1] }], { distance: 1, pointA: [0, 0, 0], pointB: [0, 0, 1] }).angle).toBeNull();
   });
 

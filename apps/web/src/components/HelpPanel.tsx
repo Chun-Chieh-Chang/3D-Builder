@@ -4,6 +4,7 @@ import { ACTIONS, shortcutOf } from '../actions';
 import { topicOf, topics } from '../help/context';
 import { closeHelp, goBack, setQuery, showContents, showTopic, useHelp } from '../help/state';
 import { contents, searchTopics, type HelpTopic } from '../help/topics';
+import { AUTHOR_CREDIT } from '../credit';
 
 /** A paragraph of a topic's text: lines starting with 「- 」 are a list, the rest run together. */
 function paragraph(text: string, key: number): ReactNode {
@@ -118,6 +119,9 @@ export function HelpPanel() {
           ))
         )}
       </div>
+      <footer className="help-credit" data-credit>
+        {AUTHOR_CREDIT}
+      </footer>
     </aside>
   );
 }

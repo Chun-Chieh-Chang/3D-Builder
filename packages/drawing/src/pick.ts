@@ -1,0 +1,196 @@
+import { rightOf, type ElementFacts, type ViewAxes, type ViewFeature } from '@3db/model';
+import { t } from '@3db/i18n';
+import type { DimensionDraft } from './autoDimension';
+import { arcAt, leaderAt, offsetAt, type DimensionHandle } from './dimension';
+import { itemsBounds } from './fit';
+import { toSheet, type PlacedView, type ViewLines } from './layout';
+import type { SceneItem } from './scene';
+
+/**
+ * Pointing at a drawing (the mouse, in sheet mm): which element of a view is under the pointer, which dimension, and what a dimension that the user makes from elements
+ * they pointed at, and puts where they pointed, is. All of it pure: the views and the dimensions are drawn by the other files, this reads what they drew.
+ */
+
+export type P2 = [number, number];
+
+/** What a dimension can be attached to: everything the worker found except the sides of cylinders. */
+export type Pickable = Exclude<ViewFeature, { type: 'axis' }>;
+
+const hyp = Math.hypot;
+
+/** A point of the sheet in a view's own coordinates (full size): the other way round from `toSheet`. */
+export const toView = (placed: PlacedView, p: P2): P2 => [(p[0] - placed.at[0]) / placed.scale + placed.centre[0], (p[1] - placed.at[1]) / placed.scale + placed.centre[1]];
+
+/** The distance from `p` to the segment from `a` to `b`. */
+export function segmentDistance(p: P2, a: P2, b: P2): number {
+  const dx = b[0] - a[0];
+  const dy = b[1] - a[1];
+  const l2 = dx * dx + dy * dy;
+  const k = l2 === 0 ? 0 : Math.max(0, Math.min(1, ((p[0] - a[0]) * dx + (p[1] - a[1]) * dy) / l2));
+  return hyp(p[0] - (a[0] + k * dx), p[1] - (a[1] + k * dy));
+}
+
+const areaOf = (f: Pickable) => (f.type === 'circle' ? Math.PI * f.radius * f.radius : f.area);
+
+/**
+ * The element of a view under the pointer, or null: a straight line of the view that is where a plane seen edge-on is (a vertical one for a plane across x, a horizontal one
+ * for y, a slanted one for a slanted face) or a circle or an arc of the view that is where a cylinder seen along its axis is. Only what is drawn counts: a plane at an
+ * x that has no line there is not picked by pointing at the empty place. `p` and `tol` are in the view's coordinates.
+ */
+export function featureAt(lines: ViewLines | null | undefined, features: readonly ViewFeature[], p: P2, tol: number): Pickable | null {
+  if (!lines) return null;
+  const pickable = features.filter((f): f is Pickable => f.type !== 'axis');
+  let best: { f: Pickable; d: number } | null = null;
+  const offer = (f: Pickable, d: number) => {
+    if (d > tol) return;
+    if (!best || d < best.d - 1e-9 || (Math.abs(d - best.d) <= 1e-9 && areaOf(f) > areaOf(best.f))) best = { f, d };
+  };
+  let nearest = Infinity; // the nearest line of the view of any kind: a circle has to be drawn where it is pointed at
+  for (const poly of lines.visible) {
+    for (let i = 0; i + 3 < poly.length; i += 2) {
+      const a: P2 = [poly[i]!, poly[i + 1]!];
+      const b: P2 = [poly[i + 2]!, poly[i + 3]!];
+      const d = segmentDistance(p, a, b);
+      nearest = Math.min(nearest, d);
+      if (d > tol) continue;
+      const l = hyp(b[0] - a[0], b[1] - a[1]);
+      if (l < 1e-9) continue;
+      const u: P2 = [(b[0] - a[0]) / l, (b[1] - a[1]) / l];
+      for (const f of pickable) {
+        if (f.type === 'plane') {
+          if (f.axis === 'x' && Math.abs(u[0]) < 1e-6 && Math.abs(f.coord - a[0]) < 1e-3) offer(f, d);
+          if (f.axis === 'y' && Math.abs(u[1]) < 1e-6 && Math.abs(f.coord - a[1]) < 1e-3) offer(f, d);
+        } else if (f.type === 'slant') {
+          const across = Math.abs(u[0] * f.dir[1] - u[1] * f.dir[0]);
+          const off = Math.abs((f.at[0] - a[0]) * u[1] - (f.at[1] - a[1]) * u[0]);
+          if (across < 1e-3 && off < 1e-2) offer(f, d);
+        }
+      }
+    }
+  }
+  if (nearest <= tol) {
+    for (const f of pickable) if (f.type === 'circle') offer(f, Math.abs(hyp(p[0] - f.centre[0], p[1] - f.centre[1]) - f.radius));
+  }
+  return (best as { f: Pickable } | null)?.f ?? null;
+}
+
+/** What the model would say of an element, made from what a view knows of it: enough for a dimension to be drawn before the worker has been asked (the part's frame is the view's: x right, y up, the rest along the view). */
+export function factsOf(f: Pickable, axes: ViewAxes): ElementFacts {
+  const r = rightOf(axes);
+  const at = (x: number, y: number): [number, number, number] => [r[0] * x + axes.up[0] * y, r[1] * x + axes.up[1] * y, r[2] * x + axes.up[2] * y];
+  if (f.type === 'plane') return f.axis === 'x' ? { kind: 'face', type: 'plane', point: at(f.coord, 0), dir: at(1, 0) } : { kind: 'face', type: 'plane', point: at(0, f.coord), dir: at(0, 1) };
+  if (f.type === 'slant') return { kind: 'face', type: 'plane', point: at(f.at[0], f.at[1]), dir: at(-f.dir[1], f.dir[0]) };
+  return { kind: 'face', type: 'cylinder', point: at(f.centre[0], f.centre[1]), dir: [axes.dir[0], axes.dir[1], axes.dir[2]], radius: f.radius };
+}
+
+// ---------------------------------------------------------------- dimensions
+
+/** The distance from `p` to a dimension (the nearest of the lines and texts it is drawn with), and whether it is the text that is nearest. Null for none within `tol`. */
+export function dimensionAt(items: readonly SceneItem[], p: P2, tol: number): { id: string; text: boolean } | null {
+  let best: { id: string; text: boolean; d: number } | null = null;
+  const offer = (id: string, text: boolean, d: number) => {
+    if (d > tol) return;
+    // a text under the pointer wins over a line of the same dimension (that is how it is told apart: the text slides, the line moves away)
+    if (!best || d < best.d - 1e-9 || (text && best.id === id && !best.text && d <= tol)) best = { id, text, d };
+  };
+  for (const it of items) {
+    if (!it.group) continue;
+    if (it.kind === 'polyline') {
+      for (let i = 0; i + 3 < it.points.length; i += 2) offer(it.group, false, segmentDistance(p, [it.points[i]!, it.points[i + 1]!], [it.points[i + 2]!, it.points[i + 3]!]));
+      if (it.closed && it.points.length >= 4) offer(it.group, false, segmentDistance(p, [it.points[it.points.length - 2]!, it.points[it.points.length - 1]!], [it.points[0]!, it.points[1]!]));
+    } else {
+      const b = itemsBounds([it]);
+      if (!b) continue;
+      const inside = p[0] >= b.x0 - 0.5 && p[0] <= b.x1 + 0.5 && p[1] >= b.y0 - 0.5 && p[1] <= b.y1 + 0.5;
+      if (inside) offer(it.group, true, 0);
+    }
+  }
+  const found = best as { id: string; text: boolean } | null;
+  return found && { id: found.id, text: found.text };
+}
+
+/** What the pointer does to a dimension that is dragged: the changes to make, from where the pointer is (sheet mm). */
+export function dragDimension(handle: DimensionHandle, onText: boolean, p: P2): { offset?: number; slide?: number; angle?: number; leader?: number; arc?: number } {
+  if (handle.kind === 'linear') {
+    if (onText) return { slide: Math.round((handle.u[0] * (p[0] - handle.mid[0]) + handle.u[1] * (p[1] - handle.mid[1])) * 100) / 100 };
+    return { offset: Math.round(offsetAt(handle, p) * 100) / 100 };
+  }
+  if (handle.kind === 'round') {
+    const g = leaderAt(handle, p);
+    return { angle: Math.round(g.angle * 10) / 10, leader: Math.round(g.leader * 100) / 100 };
+  }
+  if (onText) {
+    let turn = Math.atan2(p[1] - handle.centre[1], p[0] - handle.centre[0]) - handle.mid;
+    while (turn > Math.PI) turn -= 2 * Math.PI;
+    while (turn <= -Math.PI) turn += 2 * Math.PI;
+    return { slide: Math.round(turn * handle.radius * 100) / 100 };
+  }
+  return { arc: Math.round(arcAt(handle, p) * 100) / 100 };
+}
+
+/**
+ * The dimension that is made from the elements the user pointed at (one or two, in the order they were pointed at) and the place they pointed at to put it (sheet mm): its
+ * kind from the elements (a circle alone is a diameter, an arc a radius; two planes or a plane and a circle are a distance; two lines that are not parallel are an angle),
+ * and where it goes from the pointer: which way a distance runs and how far its line is from the view, the direction of a leader, the radius of an arc. The elements are
+ * given as facts as well, so that it can be drawn at once. `need` says what is missing; `error` why this cannot be.
+ */
+export type Plan = { draft: DimensionDraft; refs: Pickable[]; facts: ElementFacts[] } | { need: 'second' } | { error: string };
+
+export function planDimension(picks: readonly Pickable[], p: P2, placed: PlacedView, axes: ViewAxes): Plan {
+  const facts = picks.map((f) => factsOf(f, axes));
+  const box = { left: placed.at[0] - placed.w / 2, right: placed.at[0] + placed.w / 2, bottom: placed.at[1] - placed.h / 2, top: placed.at[1] + placed.h / 2 };
+  const sheetOf = (x: number, y: number): P2 => toSheet(placed, x, y);
+  if (picks.length === 0) return { need: 'second' };
+  if (picks.length === 1) {
+    const f = picks[0]!;
+    if (f.type !== 'circle') return { need: 'second' };
+    const c = sheetOf(f.centre[0], f.centre[1]);
+    const g = leaderAt({ kind: 'round', centre: c, radius: f.radius * placed.scale }, p);
+    const angle = Math.round(g.angle * 10) / 10;
+    const leader = Math.round(g.leader * 100) / 100;
+    return { draft: f.full ? { kind: 'diameter', ref: f.ref, angle, leader } : { kind: 'radius', ref: f.ref, angle, leader }, refs: [f], facts };
+  }
+  const [a, b] = picks as [Pickable, Pickable];
+  const isLine = (f: Pickable) => f.type === 'plane' || f.type === 'slant';
+  const planesOnly = a.type === 'plane' && b.type === 'plane';
+  const sameAxis = planesOnly && a.axis === b.axis;
+  // an angle: two lines that are not parallel (a slanted one, or a plane across x and one across y)
+  if (isLine(a) && isLine(b) && !sameAxis) {
+    const line = (f: Pickable): { at: P2; dir: P2 } => (f.type === 'plane' ? (f.axis === 'x' ? { at: [f.coord, 0], dir: [0, 1] } : { at: [0, f.coord], dir: [1, 0] }) : f.type === 'slant' ? { at: f.at, dir: f.dir } : { at: [0, 0], dir: [1, 0] });
+    const la = line(a);
+    const lb = line(b);
+    const den = la.dir[0] * lb.dir[1] - la.dir[1] * lb.dir[0];
+    if (Math.abs(den) < 1e-9) return { error: t('drawing.dimParallel') };
+    const w: P2 = [lb.at[0] - la.at[0], lb.at[1] - la.at[1]];
+    const s = (w[0] * lb.dir[1] - w[1] * lb.dir[0]) / den;
+    const meet = sheetOf(la.at[0] + la.dir[0] * s, la.at[1] + la.dir[1] * s);
+    return { draft: { kind: 'angle', a: a.ref, b: b.ref, arc: Math.round(Math.max(3, hyp(p[0] - meet[0], p[1] - meet[1])) * 100) / 100 }, refs: [a, b], facts };
+  }
+  if (isLine(a) && isLine(b) && sameAxis) {
+    // two planes square to the same axis: the distance across
+  } else if (a.type === 'slant' || b.type === 'slant') {
+    return { error: t('drawing.dimSlantCircle') };
+  }
+  // a distance: along x between things across x, along y between things across y; between two circles, the way the pointer is out of the view
+  let orientation: 'horizontal' | 'vertical';
+  const planeAxis = (f: Pickable) => (f.type === 'plane' ? f.axis : null);
+  const axisA = planeAxis(a);
+  const axisB = planeAxis(b);
+  if (axisA && axisB && axisA !== axisB) return { error: t('drawing.dimNotAcross') };
+  if (axisA ?? axisB) orientation = (axisA ?? axisB) === 'x' ? 'horizontal' : 'vertical';
+  else {
+    const above = p[1] > box.top || p[1] < box.bottom;
+    const beside = p[0] > box.right || p[0] < box.left;
+    orientation = above && !beside ? 'horizontal' : beside && !above ? 'vertical' : Math.abs(coordOf(a, 0) - coordOf(b, 0)) >= Math.abs(coordOf(a, 1) - coordOf(b, 1)) ? 'horizontal' : 'vertical';
+  }
+  const k = orientation === 'horizontal' ? 0 : 1;
+  if (Math.abs(coordOf(a, k) - coordOf(b, k)) < 1e-6) return { error: t('drawing.dimZero') };
+  const pa = orientation === 'horizontal' ? sheetOf(coordOf(a, 0), 0) : sheetOf(0, coordOf(a, 1));
+  const pb = orientation === 'horizontal' ? sheetOf(coordOf(b, 0), 0) : sheetOf(0, coordOf(b, 1));
+  const handle: Extract<DimensionHandle, { kind: 'linear' }> = { kind: 'linear', orientation, mid: [(pa[0] + pb[0]) / 2, (pa[1] + pb[1]) / 2], u: orientation === 'horizontal' ? [1, 0] : [0, 1], box, a: pa, b: pb };
+  const offset = Math.round(offsetAt(handle, p) * 100) / 100;
+  return { draft: { kind: 'linear', a: a.ref, b: b.ref, orientation, offset }, refs: [a, b], facts };
+}
+
+/** Where an element is along x (k = 0) or y (k = 1) of its view: a plane at its coordinate, a circle at its middle, a slanted face at its middle. */
+const coordOf = (f: Pickable, k: 0 | 1): number => (f.type === 'plane' ? (f.axis === (k === 0 ? 'x' : 'y') ? f.coord : 0) : f.type === 'circle' ? f.centre[k] : f.at[k]);

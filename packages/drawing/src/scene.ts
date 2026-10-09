@@ -204,7 +204,7 @@ export function buildScene(
     const own = view && resolved.get(view.id) ? placed.get(view.id) : undefined;
     const axes = view ? axesOf(doc.views, doc.sheet.projection, view) : null;
     if (!view || !own || !axes) continue; // nothing to draw it on yet
-    const outcome = evaluateDimension(d, elements.get(d.id), axes, own);
+    const outcome = evaluateDimension(d, elements.get(d.id), axes, own, doc.sheet.unit ?? 'mm');
     dimensions.set(d.id, outcome);
     if (!('error' in outcome)) {
       items.push(...outcome.items.map((i) => ({ ...i, group: d.id })));
@@ -222,9 +222,9 @@ export function buildScene(
       if (table.balloons) items.push(...balloonItems(bom, resolved.get(table.view)?.anchors, own));
       continue;
     }
-    const rows = holeRows(features.get(table.view) ?? [], table.fits);
+    const rows = holeRows(features.get(table.view) ?? [], table.fits, doc.sheet.unit ?? 'mm');
     tables.set(table.id, rows);
-    items.push(...holeTableItems(table, rows, own, doc.sheet));
+    items.push(...holeTableItems(table, rows, own, doc.sheet, doc.sheet.unit ?? 'mm'));
   }
   return { scene: { width: m.width, height: m.height, items, ...(sceneDimensions.length > 0 ? { dimensions: sceneDimensions } : {}) }, placed, dimensions, tables };
 }

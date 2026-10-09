@@ -82,6 +82,13 @@ export function DrawingPanel() {
           </select>
         </label>
         <label className="pm-row">
+            <span>{t('drawingUi.unit')}</span>
+            <select data-field="unit" value={doc.sheet.unit ?? 'mm'} onChange={(e) => d.setSheet({ unit: e.target.value === 'in' ? 'in' : 'mm' })}>
+              <option value="mm">{t('drawingUi.unit.mm')}</option>
+              <option value="in">{t('drawingUi.unit.in')}</option>
+            </select>
+          </label>
+          <label className="pm-row">
           <span>{t('drawing.title.scale')}</span>
           <select data-field="scale" value={scale} onChange={(e) => d.setSheet({ scale: parseScale(e.target.value) })}>
             {!standard && <option value={scale}>{scale}</option>}
@@ -230,6 +237,24 @@ export function DrawingPanel() {
               </select>
               <button className="pm-button" data-action="addProjected" disabled={!parent} onClick={() => parent && d.addProjected(parent.id, side)}>
                 {t('drawingUi.projected')}
+              </button>
+            </div>
+            <div className="pm-row">
+              <button
+                className={`pm-button${drw.tool?.kind === 'section' ? ' active' : ''}`}
+                data-action="toolSection"
+                title={t('drawingUi.hint.section')}
+                onClick={() => d.setTool(drw.tool?.kind === 'section' ? null : { kind: 'section' })}
+              >
+                {t('drawingUi.toolSection')}
+              </button>
+              <button
+                className={`pm-button${drw.tool?.kind === 'detail' ? ' active' : ''}`}
+                data-action="toolDetail"
+                title={t('drawingUi.hint.detail')}
+                onClick={() => d.setTool(drw.tool?.kind === 'detail' ? null : { kind: 'detail' })}
+              >
+                {t('drawingUi.toolDetail')}
               </button>
             </div>
             <div className="pm-row">

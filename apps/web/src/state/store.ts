@@ -2,6 +2,8 @@ import * as Comlink from 'comlink';
 import { DEFAULT_LOCALE, getLocale, LOCALES, setLocale, t, type Locale } from '@3db/i18n';
 import { useSyncExternalStore } from 'react';
 import {
+  DEFAULT_MEASURE_OPTIONS,
+  type MeasureOptions,
   canBeSeed,
   CommandError,
   createDemoPart,
@@ -320,6 +322,8 @@ export interface UiState {
   documentSerial: number;
   /** The measure tool (E1.1) while it is on: the elements picked and what is known of them. Null when it is off. */
   measure: MeasureState | null;
+  /** How measuring is written (units, fractions, how round elements are measured); kept in this browser. */
+  measureOptions: MeasureOptions;
   draft: DraftState | null;
   undercut: UndercutState | null;
   thickness: ThicknessState | null;
@@ -435,6 +439,27 @@ const REBUILD_SUSPECT_MS = 15_000;
 
 class StalledError extends Error {}
 
+const MEASURE_OPTIONS_KEY = '3db-measure-options';
+
+/** The way of writing measurements the user chose before, or the plain millimetres. */
+function readMeasureOptions(): MeasureOptions {
+  try {
+    const raw = JSON.parse(localStorage.getItem(MEASURE_OPTIONS_KEY) ?? 'null') as Partial<MeasureOptions> | null;
+    if (!raw) return DEFAULT_MEASURE_OPTIONS;
+    const o = { ...DEFAULT_MEASURE_OPTIONS, ...raw };
+    return {
+      unit: o.unit === 'in' ? 'in' : 'mm',
+      fraction: !!o.fraction,
+      denominator: [2, 4, 8, 16, 32, 64, 128].includes(o.denominator) ? o.denominator : 16,
+      nearest: !!o.nearest,
+      angle: o.angle === 'rad' ? 'rad' : 'deg',
+      round: o.round === 'min' || o.round === 'max' ? o.round : 'centre',
+    };
+  } catch {
+    return DEFAULT_MEASURE_OPTIONS;
+  }
+}
+
 class AppStore {
   // Like SolidWorks the program starts on an empty part; the demo part is 「新示範件」 in the file menu.
   private history = new DocHistory(createEmptyPart());
@@ -530,6 +555,7 @@ class AppStore {
       returnTo: null,
       documentSerial: 0,
       measure: null,
+      measureOptions: readMeasureOptions(),
       interference: null,
       clearance: null,
       shellPick: 'open',
@@ -767,6 +793,17 @@ class AppStore {
   }
 
   private measureSeq = 0;
+
+  /** Changes how measuring is written (units, fractions, the way round elements are measured); the choice is kept in this browser. */
+  setMeasureOptions(patch: Partial<MeasureOptions>): void {
+    const measureOptions = { ...this.state.measureOptions, ...patch };
+    try {
+      localStorage.setItem(MEASURE_OPTIONS_KEY, JSON.stringify(measureOptions));
+    } catch {
+      // storage is not there (a private window): the choice holds until the page is closed
+    }
+    this.set({ measureOptions });
+  }
 
   /** 「測量」 on: the elements of the part or assembly are picked in the view (E1.1). */
   startMeasure(): void {

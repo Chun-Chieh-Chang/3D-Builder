@@ -10,6 +10,8 @@ export * from './visibility';
 export * from './paths';
 export * from './pose';
 export * from './assembly';
+export * from './units';
+export * from './measureView';
 export * from './assemblyTree';
 export * from './componentPatterns';
 export * from './bom';
