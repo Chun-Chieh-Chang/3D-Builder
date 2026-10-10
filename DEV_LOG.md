@@ -104,3 +104,54 @@
   - `npm run lint:deps`：Layering OK。
   - `npm run lint:i18n`：i18n OK。
 
+---
+
+## 2026-10-10: 螺牙 T-4 階段（ISO 80369-7 魯爾參考件幾何與工程圖剖面標註確效）
+
+### 1. 需求內容 (Requirements)
+1. **參考件 1（公魯爾接頭錐體零件）**：
+   - 旋轉特徵中空錐體：內中心孔 Ø2.0 mm、外錐體底徑 Ø4.315 mm 至頂徑 Ø4.021 mm（標準 6% 錐度）、長度 7.5 mm、頂端圓角特徵。
+   - 實體有效性（單一 Manifold 實體）、STEP 匯出與重新匯入往返體積相對誤差 < 1e-5、STL 三角網格封閉且體積誤差 ≤ 1%（供 3D 列印用途）。
+2. **參考件 2（公魯爾鎖緊環內螺紋零件）**：
+   - 旋轉主體、入口倒角、退刀槽階梯面（y=1.0 mm）、雙線內螺紋特徵（底孔小徑 Ø7.2 mm、牙槽大徑 Ø8.0 mm、螺距 2.5 mm、線數 2、導程 5.0 mm、右旋、30° 承載牙側角）。
+   - 幾何探針確效：半徑（小徑 3.6 mm、大徑 4.0 mm）、螺距（2.5 mm 軸向間隔）、導程（5.0 mm）、180° 起始相位差、30° 斜牙側角。
+   - STEP 往返與 STL 網格封閉性驗證。
+3. **組合件與工程圖確效**：
+   - 同軸裝配剖面視圖（`projectDrawingView` 軸向中心剖切），清楚呈現齒形鋸齒截面階梯線。
+   - 尺寸標註與獨立極限公差：對稱雙向公差（Ø8.0 ±0.025）、單向雙向公差（Ø7.2 0/-0.005）、不對稱雙向公差（Ø4.021 +0.001/-0.004）、長度標註（7.5 mm）。
+   - DXF 匯出（`toDxf`）與 PDF 匯出（`toPdf`）驗證，確認公差與向量文字正確生成。
+
+---
+
+### 2. 遇到的問題與根因分析 (RCA)
+
+#### 問題 1: DXF 匯出之特殊符號 Unicode 跳脫序列
+- **現象**：測試斷言 `dxfContent.toContain('±0.025')` 失敗。
+- **原因分析 (RCA)**：AutoCAD DXF 規格中非 ASCII 符號會被自動編碼轉換為 Unicode 逃脫字串（例如 `±` 轉換為 `\U+00B1`，`Ø` 轉換為 `\U+00D8`）。
+- **矯正措施 (CAPA)**：更新測試斷言以正規式相容 DXF 逃脫序列 `toMatch(/(\\U\+00B1|±)0\.025/)`，確保符合 DXF 工業標準輸出。
+
+#### 問題 2: `toPdf` 回傳物件格式
+- **現象**：`expect(pdfBytes.length).toBeGreaterThan(100)` 報錯 `received undefined`。
+- **原因分析 (RCA)**：`packages/drawing/src/pdf.ts` 之 `toPdf` 介面回傳 `PdfResult` 物件 `{ bytes: Uint8Array, warnings: string[] }`，而非純 `Uint8Array`。
+- **矯正措施 (CAPA)**：正確解構 `pdfResult.bytes.byteLength` 進行二進位長度與 `%PDF-` 標頭驗證。
+
+#### 問題 3: `PartDoc` 結構與靜態型別檢查約束
+- **現象**：測試代碼中直接宣告物件字面量遺漏 `kind`、`displayUnits` 等屬性，且 `ViewLines` 遺漏 `box` 邊界定義。
+- **原因分析 (RCA)**：未使用模型套件原生工廠函式 `createEmptyPart()`。
+- **矯正措施 (CAPA)**：全面採用 `createEmptyPart()` 作為基準文件樣板，並補齊 `ViewLines` 必要的 `box` 視圖邊界資訊，使 `npm run typecheck` 達到 0 警告 0 錯誤標準。
+
+---
+
+### 3. 確效與驗收成果 (Validation Results)
+- **T-4 專屬確效測試**：
+  - `tests/phase3/iso-80369-7-thread.test.ts`：**7/7 通過 (2.89s)**。
+- **Phase 3 全套測試**：
+  - `npx vitest run tests/phase3/`：**47 個測試檔案全數通過，1 個跳過（共 483 個測試通過，0 失敗）**。
+- **UI E2E 確效**：
+  - `node scripts/verify-ui.mjs --only "manual-thread"`：**1/1 PASS (11s)**。
+- **全套品質門禁**：
+  - `npm run typecheck`：0 錯誤。
+  - `npm run lint:deps`：Layering OK。
+  - `npm run lint:i18n`：i18n OK。
+
+
