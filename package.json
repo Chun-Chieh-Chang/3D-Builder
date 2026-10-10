@@ -19,6 +19,7 @@
     "lint:deps": "node scripts/check-deps.mjs",
     "lint:i18n": "node scripts/check-i18n.mjs",
     "verify:ui": "node scripts/verify-ui.mjs",
+    "check:perf": "node -e \"const { spawnSync } = require('node:child_process'); process.exit(spawnSync(process.platform === 'win32' ? 'npm.cmd' : 'npm', ['run', 'check'], { stdio: 'inherit', env: { ...process.env, PERF_CHECK: '1' } }).status || 0);\"",
     "check": "npm run typecheck && npm run lint:deps && npm run lint:i18n && npm test"
   },
   "devDependencies": {

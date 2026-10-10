@@ -104,6 +104,8 @@ export function mapRefs(feature: Feature, map: (ref: Ref) => Ref): { feature: Fe
       return { feature: { ...feature, edges: feature.edges.map(one) }, replaced };
     case 'combine':
       return { feature: { ...feature, main: one(feature.main), tools: feature.tools.map(one) }, replaced };
+    case 'thread':
+      return { feature: { ...feature, axis: one(feature.axis) }, replaced };
     case 'revolve':
     case 'sweep':
     case 'loft':

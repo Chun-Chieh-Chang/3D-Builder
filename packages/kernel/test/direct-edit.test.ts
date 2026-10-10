@@ -199,4 +199,18 @@ describe('move face (C10.1)', () => {
     k.release(r.shape);
     expect(k.liveShapes).toBe(before);
   });
+
+  it('repeated moveFace does not accumulate live shapes or unbounded memory (A4 check)', () => {
+    const before = k.liveShapes;
+    const base = k.extrude(front, [rect(0, 0, 40, 30)], [0, 0, 20]).shape;
+    let curr = base;
+    for (let i = 0; i < 50; i++) {
+      const r = k.moveFace(curr, top(curr, 20 + i * 0.1), 0.1);
+      if (curr !== base) k.release(curr);
+      curr = r.shape;
+    }
+    k.release(curr);
+    k.release(base);
+    expect(k.liveShapes).toBe(before);
+  });
 });

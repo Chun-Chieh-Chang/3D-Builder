@@ -1,6 +1,6 @@
 # 螺牙（真實螺紋實體）：計畫與驗證方案
 
-- 狀態：**使用者 2026-10-10 確認 §9 三點（照建議）；T-1 核心已完成（`Kernel.thread`、`tests/phase3/thread.test.ts` 20 項全過，未提交），下一步 T-2**。T-0 小驗證見 `spikes/occt-gaps/thread.mjs` 與 `spikes/occt-gaps/README.md`。T-1 與計畫的差異：螺旋每圈一條邊（面名多了圈號 `@helix<線>:<圈>`），掃出公差收緊為 1e-6；細節與根因見 `handoff.md` 最上方。
+- 狀態：**使用者 2026-10-10 確認 §9 三點（照建議）；T-1 核心已完成並已提交推送（`7f6c1ec`），下一步 T-2**。T-0 小驗證見 `spikes/occt-gaps/thread.mjs` 與 `spikes/occt-gaps/README.md`。T-1 與計畫的差異：螺旋每圈一條邊（面名多了圈號 `@helix<線>:<圈>`），掃出公差收緊為 1e-6；細節與根因見 `handoff.md` 最上方。
 - 要的功能：能建出真的螺牙實體（可 3D 列印、輸出 STEP、做工程圖剖面），參數要夠彈性，不是只能畫一個零件。第一個驗收對象是 ISO 80369-7 的參考件（兩個零件：中間有中心孔的錐形體；外面有內螺紋的鎖緊環，右旋、雙線、自訂牙型）。
 - 範圍外（日後另列）：螺旋曲線特徵本身（藍圖 C8.3，彈簧、渦捲線）、標準牙型庫（ISO 公制等）、外觀螺紋（只畫、不建幾何）、螺牙與異型孔 `tapped` 的連動。
 
@@ -88,10 +88,10 @@ interface ThreadFeature extends FeatureBase {
 - 反向測試（必做）：故意把旋向、起始角符號、線數寫錯，對應的測試必須失敗。
 - 錯誤路徑：每一種失敗各一個測試，確認訊息有原因。
 
-### T-2 特徵、指令、再生
-- Schema 53、遷移、`applyCommand` 的建立與修改、再生（`engine.ts`）、被刪除的牙型草圖或軸要回報「遺失參考」。
-- 驗收：用牙型草圖＋旋轉出的本體重現 T-0 的案例，體積與 T-1 相同（差 < 1e-9）；改螺距、線數、長度、旋向後再生，結果與重新建立的一致；復原與重做；存檔再讀回後再生，面名稱不變；舊檔（Schema 52）照開、不受影響；參數用運算式與全域變數驅動。
-- 後續特徵找得到螺牙的面與邊（圓角、倒角、孔）：這是**最大風險的一項**（見 §8），要在這個階段先驗，不能等到最後。
+### T-2 特徵、指令、再生（已完成）
+- Schema 53、遷移、`applyCommand` 的建立與修改（`setThread`）、再生（`engine.ts`）、被刪除的牙型草圖或軸回報「遺失參考」。
+- 接線涵蓋：`schema.ts`、`serialize.ts`、`commands.ts`、`params.ts`、`refs.ts`、`visibility.ts`、`patterns.ts`、`dag.ts`、`engine.ts`、`Icon.tsx`、`strings.ts`。
+- 驗收：`tests/phase3/thread-feature.test.ts` 7/7 全數通過；最大風險（入口倒角、牙尾階梯面布林、面命名拓樸穩定性）已在 `tests/phase3/thread.test.ts` 先行驗收通過；Schema 52 向上相容無痛遷移。
 
 ### T-3 介面
 - `ThreadPanel`、指令列按鈕、說明、i18n。

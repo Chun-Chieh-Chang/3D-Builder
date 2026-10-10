@@ -5,7 +5,7 @@ import type { Feature } from './schema';
  * the bodies, not the feature, so the ones that change the whole body (a shell, a draft, a moved or deleted face, a combine, an imported body) have no
  * single place to repeat.
  */
-export const SEED_TYPES = ['extrude', 'revolve', 'sweep', 'loft', 'rib', 'hole', 'fillet', 'chamfer'] as const;
+export const SEED_TYPES = ['extrude', 'revolve', 'sweep', 'loft', 'rib', 'hole', 'fillet', 'chamfer', 'thread'] as const;
 export const canBeSeed = (f: Feature): boolean => (SEED_TYPES as readonly string[]).includes(f.type);
 
 /** An instance of a pattern: its name (what `skip` holds and what the face names carry) and its place in the grid, the seed being (0, 0). */

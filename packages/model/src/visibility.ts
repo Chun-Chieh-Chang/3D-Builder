@@ -30,7 +30,7 @@ export function isHideable(doc: PartDoc, key: string): boolean {
 export function shownByDefault(doc: PartDoc, key: string): boolean {
   if (isDatumPlaneName(key)) return false;
   const f = doc.features.find((x) => x.id === key);
-  if (f?.type === 'sketch') return !doc.features.some((g) => ((g.type === 'extrude' || g.type === 'revolve') && g.sketch === key) || (g.type === 'sweep' && (g.sketch === key || g.path === key)) || (g.type === 'loft' && g.sections.includes(key)) || (g.type === 'rib' && g.sketch === key));
+  if (f?.type === 'sketch') return !doc.features.some((g) => ((g.type === 'extrude' || g.type === 'revolve') && g.sketch === key) || (g.type === 'sweep' && (g.sketch === key || g.path === key)) || (g.type === 'loft' && g.sections.includes(key)) || (g.type === 'rib' && g.sketch === key) || (g.type === 'thread' && g.sketch === key));
   return true;
 }
 

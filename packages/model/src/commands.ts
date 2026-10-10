@@ -1,7 +1,7 @@
 import { t } from '@3db/i18n';
 import { current, produce, type Draft } from 'immer';
 import { countersFor, type Id } from './ids';
-import type { SheetGauge, AppearanceTarget, DocSettings, MaterialRef, Variable, BlobRef, ChamferFeature, FilletKind, CombineFeature, HoleFeature, ScrewBossFeature, BaseFlangeFeature, MidBendFeature, EdgeFlangeFeature, HemFeature, BreakCornerFeature, SnapHookFeature, SnapCatchFeature, VentFeature, LoftFeature, RibFeature, SweepFeature, Draft as WallDraft, EndCondition, Thin, Expr, Feature, ImportedBodyFeature, AxisDefinition, CoordSysFeature, MirrorFeature, PartDoc, PatternDefinition, PatternFeature, PlaneDefinition, PointDefinition, Ref, RevolveCondition, SketchConstraint, SketchEntity, SketchFeature, SketchPicture, CutWithSurfaceFeature } from './schema';
+import type { SheetGauge, AppearanceTarget, DocSettings, MaterialRef, Variable, BlobRef, ChamferFeature, FilletKind, CombineFeature, HoleFeature, ScrewBossFeature, BaseFlangeFeature, MidBendFeature, EdgeFlangeFeature, HemFeature, BreakCornerFeature, SnapHookFeature, SnapCatchFeature, VentFeature, LoftFeature, RibFeature, SweepFeature, Draft as WallDraft, EndCondition, Thin, Expr, Feature, ImportedBodyFeature, AxisDefinition, CoordSysFeature, MirrorFeature, PartDoc, PatternDefinition, PatternFeature, PlaneDefinition, PointDefinition, Ref, RevolveCondition, SketchConstraint, SketchEntity, SketchFeature, SketchPicture, CutWithSurfaceFeature, ThreadFeature } from './schema';
 import { isDatumPlaneName } from './datums';
 import { canBeSeed } from './patterns';
 import { colorOk, materialOk, sameTarget } from './materials';
@@ -79,6 +79,8 @@ ull). */
   | { type: 'setHole'; featureId: Id; hole: Omit<HoleFeature, 'id' | 'type' | 'name' | 'suppressed' | 'sketch'> }
   /** A rib's thickness, where it goes, and which way it grows (C4.7). */
   | { type: 'setRib'; featureId: Id; rib: Omit<RibFeature, 'id' | 'type' | 'name' | 'suppressed' | 'sketch'> }
+  /** A thread's parameters (C4.8). */
+  | { type: 'setThread'; featureId: Id; params: Partial<Omit<ThreadFeature, 'id' | 'type' | 'name' | 'suppressed'>> }
   /** What a draft leans and about which plane (C5.5). */
   | { type: 'setDraftFeature'; featureId: Id; neutral: Ref; faces: Ref[]; angle: Expr; reverse?: boolean }
   /** What a shell takes away and how thick the wall is (C5.4). */
@@ -595,6 +597,10 @@ function validateNewFeature(doc: PartDoc, f: Feature, index: number): void {
     case 'vent':
       sketchBefore(doc, f.sketch, index, t('feature.vent'));
       return;
+    case 'thread':
+      sketchBefore(doc, f.sketch, index, t('feature.thread'));
+      if (f.axis.kind !== 'datum' && f.axis.kind !== 'face' && f.axis.kind !== 'edge') throw new CommandError(t('cmd.threadOnlyAxis'));
+      return;
     case 'derivedBody':
       if (!isFilePath(f.source)) throw new CommandError(t('cmd.derivedSourceInvalid', { path: f.source }));
       if (f.body.trim() === '') throw new CommandError(t('cmd.derivedBodyEmpty'));
@@ -912,6 +918,15 @@ export function mutate(draft: Draft<PartDoc>, cmd: Command): void {
       for (const k of Object.keys(f)) delete (f as unknown as Record<string, unknown>)[k];
       Object.assign(f, keep, cmd.rib);
       if (f.flip === undefined) delete f.flip;
+      checkExprs(draft as PartDoc, f as Feature);
+      return;
+    }
+    case 'setThread': {
+      const f = feature(draft, cmd.featureId);
+      if (f.type !== 'thread') throw new CommandError(t('cmd.onlyThreadHasParams'));
+      const next = { ...f, ...cmd.params };
+      validateNewFeature(draft as PartDoc, next as Feature, draft.features.findIndex((x) => x.id === f.id));
+      Object.assign(f, cmd.params);
       checkExprs(draft as PartDoc, f as Feature);
       return;
     }

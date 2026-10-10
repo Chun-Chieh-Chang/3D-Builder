@@ -21,6 +21,8 @@ export const model: Translation = {
   'cmd.onlySweepHasPath': 'Only a Sweep feature has a path',
   'cmd.onlyLoftHasSections': 'Only a Loft feature has sections',
   'cmd.onlyRibHasParams': 'Only a Rib feature has these parameters',
+  'cmd.onlyThreadHasParams': 'Only a Thread feature has these parameters',
+  'cmd.threadOnlyAxis': 'The axis of a thread must be a cylindrical face, linear edge, or datum axis',
   'cmd.loftSectionTwice': 'The same sketch cannot be two sections',
   'cmd.sweepPathIsProfile': 'The path and the profile of a sweep cannot be the same sketch',
   'cmd.onlyDraftHasParams': 'Only a Draft feature has these parameters',

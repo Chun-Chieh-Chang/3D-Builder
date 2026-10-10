@@ -6,7 +6,7 @@ import type { Id } from './ids';
  * DOF status, mass properties and error lists are derived data and never stored.
  */
 
-export const SCHEMA_VERSION = 52;
+export const SCHEMA_VERSION = 53;
 
 /** Value expression (B5.2, B5.3): "20", "25.4mm", "30deg", "wall_t*2", "D1@草圖1/2", "property('厚度')"; see `expr/`. */
 export type Expr = string;
@@ -243,6 +243,29 @@ export interface LoftFeature extends FeatureBase {
   op: 'boss' | 'cut';
   /** As for `ExtrudeFeature.merge`. */
   merge?: boolean;
+}
+
+/**
+ * Real Thread feature (真實螺牙, C4.8, v53): helical sweep of a profile sketch along an axis.
+ * Profile sketch lies on a plane containing the axis. The tool cuts from or fuses onto the body.
+ */
+export interface ThreadFeature extends FeatureBase {
+  type: 'thread';
+  /** The sketch of the tooth profile (closed wire on a plane containing the axis). */
+  sketch: Id;
+  /** Axis: cylindrical face, circular edge, datum axis, or linear edge. */
+  axis: Ref;
+  /** 'cut' removes thread material from body; 'boss' adds thread material. */
+  op: 'boss' | 'cut';
+  /** Compatibility alias for op */
+  operation?: 'boss' | 'cut';
+  pitch: Expr;
+  starts: Expr;
+  hand: 'right' | 'left';
+  length: Expr;
+  taper?: Expr;
+  phase?: Expr;
+  reverse?: boolean;
 }
 
 /**
@@ -869,7 +892,8 @@ export type Feature =
   | ShellFeature
   | DraftFeature
   | HoleFeature
-  | CombineFeature;
+  | CombineFeature
+  | ThreadFeature;
 export type FeatureType = Feature['type'];
 
 // ---------------------------------------------------------------- document

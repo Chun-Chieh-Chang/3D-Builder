@@ -188,6 +188,8 @@ export const features = {
   'feature.sweepNoSolid': 'OCCT 沒有做出實體',
   'feature.sweepOverlap': '路徑轉折太急，掃出的結果自己疊在一起（體積 {volume} mm³，照輪廓面積與路徑長不該少於 {floor} mm³）：改緩路徑的轉折，或縮小輪廓',
   'feature.sweepInvalid': '掃出的結果不是有效的實體（路徑轉彎的半徑比輪廓小，輪廓掃過去自己疊在一起時常見）',
+  'feature.threadSketchGone': '螺牙的牙型草圖不存在、已抑制或失敗',
+  'feature.threadAxis': '螺牙的軸',
   'feature.threadNoProfile': '螺牙沒有可以用的封閉牙型輪廓',
   'feature.threadBadPitch': '螺距要大於 0',
   'feature.threadBadStarts': '線數要是 1 到 {max} 的整數',

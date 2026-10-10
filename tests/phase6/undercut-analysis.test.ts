@@ -199,7 +199,9 @@ describe('a part with many triangles', () => {
     expect(report.undercutArea).toBeLessThan(1e-6);
     expect(report.faces[0]!.up).toBeGreaterThan(0.45);
     expect(report.faces[0]!.up).toBeLessThan(0.55);
-    expect(report.ms).toBeLessThan(4000); // (0.4 s alone; the room is for the suite running at once)
+    if (process.env.PERF_CHECK) {
+      expect(report.ms).toBeLessThan(4000); // (0.4 s alone; the room is for the suite running at once)
+    }
     writeTiming(report);
   });
 

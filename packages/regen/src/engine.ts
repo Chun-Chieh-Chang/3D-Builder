@@ -64,9 +64,10 @@ import {
   type SweepFeature,
   type Thin,
   type Vec3,
+  type ThreadFeature,
 } from '@3db/model';
 import { bentPath, BendProblem, findOutlines, findProfiles, reversePath, ribbonOf, selectContours, ThinProblem, thinRegions, type ProfileResult, type SketchSolver, type SketchStatus, type SolvedSketch } from '@3db/sketch';
-import { KernelError, SURFACE_TOLERANCE, type Region, type SweepSpec, type FaceOrigin, type ImportDiagnostics, type Kernel, type OpResult, type ShapeId, type Topology } from '@3db/kernel';
+import { KernelError, SURFACE_TOLERANCE, type Region, type SweepSpec, type ThreadSpec, type FaceOrigin, type ImportDiagnostics, type Kernel, type OpResult, type ShapeId, type Topology } from '@3db/kernel';
 import { nameElements, nameFromFaces, resolveRef, type Candidate, type ElementNames } from '@3db/naming';
 import { Bodies, type BodyState, type BodyView } from './bodies';
 import { followReferences, ReferenceProblem } from './references';
@@ -682,6 +683,7 @@ export class Regenerator {
           case 'extrude':
           case 'revolve':
           case 'sweep':
+          case 'thread':
           case 'loft':
           case 'rib':
           case 'fillet':
@@ -702,6 +704,8 @@ export class Regenerator {
                   ? this.revolve(feature, sketches, set)
                   : feature.type === 'sweep'
                   ? this.sweep(feature, sketches, set)
+                  : feature.type === 'thread'
+                  ? this.thread(feature, sketches, set)
                   : feature.type === 'loft'
                   ? this.loft(feature, sketches, set)
                   : feature.type === 'rib'
@@ -1325,6 +1329,73 @@ export class Regenerator {
       throw e;
     }
     return this.apply(f.id, 'boss', tool, { featureId: f.id, sketchId: f.sketch }, set.list, true);
+  }
+
+  /**
+   * Real thread (C4.8, T-2): the tooth profile from a sketch containing the axis swept along a helix.
+   * `op` is 'cut' or 'boss'; axis is resolved from Ref (cylinder/cone/torus face, straight edge, datum axis).
+   */
+  private thread(f: ThreadFeature, sketches: RebuildResult['sketches'], set: Bodies): BodyState[] {
+    const s = sketches.get(f.sketch);
+    if (!s) throw new FeatureError(t('feature.threadSketchGone'));
+    const op = f.op ?? f.operation ?? 'cut';
+    if (op === 'cut' && !set.view) throw new FeatureError(t('feature.cutNeedsBody'));
+
+    const axis = this.axisOfRef(f.axis, set, t('feature.threadAxis'));
+    const len = Math.hypot(...axis.dir);
+    if (len < 1e-9) throw new FeatureError(t('feature.threadNoAxis'));
+    const Z: Vec3 = [axis.dir[0] / len, axis.dir[1] / len, axis.dir[2] / len];
+    const O = axis.origin;
+
+    const pitch = evalLength(f.pitch);
+    const starts = f.starts ? Math.round(evalNumber(f.starts)) : 1;
+    const length = evalLength(f.length);
+    const taper = f.taper ? evalAngle(f.taper) : 0;
+    const phase = f.phase ? evalAngle(f.phase) : 0;
+
+    const regions = s.profiles.regions;
+    if (regions.length === 0) throw new FeatureError(t('feature.threadNoProfile'));
+
+    const at = (p: [number, number]): Vec3 => add(add(s.frame.origin, s.frame.xDir, p[0]), s.frame.yDir, p[1]);
+    const dotv = (a: Vec3, b: Vec3) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+    const subVec = (a: Vec3, b: Vec3): Vec3 => [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
+
+    const samples: Vec3[] = [];
+    for (const r of regions) {
+      for (const seg of r.outer) {
+        if (seg.kind === 'line') samples.push(at(seg.a), at(seg.b));
+        else if (seg.kind === 'arc') samples.push(at(seg.from), at(seg.to), at(seg.c));
+        else if (seg.kind === 'circle') samples.push(at(seg.c));
+      }
+    }
+    const zs = samples.map((p) => dotv(subVec(p, O), Z));
+    const zMin = Math.min(...zs);
+    const zMax = Math.max(...zs);
+    const zc = (zMin + zMax) / 2;
+
+    const from = f.reverse ? zc - length : zc;
+    const to = f.reverse ? zc : zc + length;
+
+    const spec: ThreadSpec = {
+      axis: { origin: O, dir: Z },
+      pitch,
+      starts,
+      hand: f.hand,
+      from,
+      to,
+      ...(taper !== 0 ? { taper } : {}),
+      ...(phase !== 0 ? { phase } : {}),
+    };
+
+    let tool: OpResult;
+    try {
+      tool = this.kernel.thread(s.frame, regions, spec);
+    } catch (e) {
+      if (e instanceof KernelError) throw new FeatureError(e.message);
+      throw e;
+    }
+
+    return this.apply(f.id, op, tool, { featureId: f.id, sketchId: f.sketch }, set.list, true);
   }
 
   // ------------------------------------------------------------------ patterns (C6)

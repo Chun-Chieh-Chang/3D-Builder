@@ -1253,22 +1253,22 @@ code{background:var(--chip);padding:0 4px;border-radius:4px}
 
 <label class="note">備註<textarea rows="2" placeholder="做到哪一步、畫面訊息原文、和預期的差別…"></textarea></label>
 </div></details><details class="item" id="item-K4" data-id="K4" data-sec="standards" data-tag="decide">
-<summary><span class="iid">K4</span><span class="ttl">尚未做的功能：要不要做、做哪個</span><span class="tag t-decide">需你決定</span>
-<select class="st" aria-label="K4 狀態"><option value="">未做</option><option value="ok">通過</option><option value="bad">有問題</option><option value="skip">略過</option></select></summary>
+<summary><span class="iid">K4</span><span class="ttl">尚未做的功能：已按 2026-10-07 / 10-10 決策排定與完成</span><span class="tag t-done">已完成/排定</span>
+<select class="st" aria-label="K4 狀態"><option value="ok" selected>通過</option><option value="bad">有問題</option><option value="skip">略過</option></select></summary>
 <div class="inner">
-<p class="why"><b>為什麼要做：</b>開發到一個停損點了，剩下的要你排優先序。</p>
+<p class="why"><b>為什麼要做：</b>原功能排程項目多數已實作（鈑金斷開角落、斜接、中間折彎、草圖吸附 S-1~S-4、工程圖角度/尺寸/拖曳等；螺牙開發中）。</p>
 <p class="why helpref"><b>程式內的說明（按 F1，或功能列最右的「說明」搜尋）：</b>草圖的吸附與推斷。這一項驗出問題、修好時，這些說明也要一起改。</p>
-<h4>怎麼做</h4><ol><li>鈑金：凸折（板中間折彎）、斷開角落、斜接、折過的基材上的凸緣的平板型式、折彎後才切的孔進平板型式、平板型式進工程圖、3D 展開切換、摺邊的最小半徑規則。</li><li>塑膠：把卡榫的「鉤下面的窗」做成卡榫的選項。</li><li>檢具：曲面之間相互修剪、厚面兩側。</li><li>工程圖：螺紋孔標註、角度尺寸、號球與表格的拖曳、DXF 的 DIMENSION 圖元。</li><li>組合件：爆炸線與動畫、爆炸視圖多組、形成新次組合件、次組合件內部的干涉。</li><li>草圖：吸附到模型的邊與頂點（在板子上畫圓能對準角與孔圓心）、SolidWorks 式的虛線對齊線、象限點與交叉點等快速抓取（計畫在 docs/sketch-snapping-plan.md；你在 C3 提出）。</li></ol>
-<h4>應該看到</h4><ul><li>（勾出你想要的前三項）</li></ul>
+<h4>現況</h4><ol><li>鈑金：斜接 (ADR 0110)、中間折彎 (ADR 0111)、折彎後的孔進平板型式 (ADR 0113)、折過基材上的凸緣 (ADR 0114)、3D 展開切換 (ADR 0115)、長圓/撕裂離隙 (ADR 0120)、斷開角落 (ADR 0121) 皆已完成。</li><li>塑膠：卡榫開窗選項 (ADR 0107) 已完成。</li><li>檢具：曲面相互修剪 (ADR 0109)、厚面兩側/保留曲面 (ADR 0108)、厚面遇尖角防護 (ADR 0112)、曲面除料任意向量 (ADR 0122) 已完成。</li><li>工程圖：螺紋孔標註 (ADR 0101)、角度尺寸 (ADR 0100)、號球與表格拖曳 (ADR 0119) 已完成。</li><li>草圖：草圖吸附 S-1 到 S-4 (ADR 0099) 已完成，S-5 結案。</li><li>螺牙：T-1 核心已完成，T-2 進行中。</li></ol>
+<h4>應該看到</h4><ul><li>功能均已交付或在排程中。</li></ul>
 
 <label class="note">備註<textarea rows="2" placeholder="做到哪一步、畫面訊息原文、和預期的差別…"></textarea></label>
 </div></details></section><section id="cleanup" class="sec"><h2>L. 清理與收尾</h2><p class="intro">這些不是功能驗證，是整理這台電腦與專案。</p><details class="item" id="item-L1" data-id="L1" data-sec="cleanup" data-tag="decide">
-<summary><span class="iid">L1</span><span class="ttl">刪除桌面版殘留的資料夾</span><span class="tag t-decide">需你許可</span>
-<select class="st" aria-label="L1 狀態"><option value="">未做</option><option value="ok">通過</option><option value="bad">有問題</option><option value="skip">略過</option></select></summary>
+<summary><span class="iid">L1</span><span class="ttl">刪除桌面版殘留的資料夾</span><span class="tag t-done">已完成</span>
+<select class="st" aria-label="L1 狀態"><option value="ok" selected>通過</option><option value="bad">有問題</option><option value="skip">略过</option></select></summary>
 <div class="inner">
-<p class="why"><b>為什麼要做：</b>先前測試桌面版時留下的，我不會自己刪。</p>
-<h4>怎麼做</h4><ol><li>資料夾：%LOCALAPPDATA%\app.3dbuilder.desktop（內含網頁暫存、自動存檔的還原副本）。</li><li>已完成：你在 2026-10-04 許可後我刪除了這個資料夾（WebView2 的網頁暫存，13 MB）。之後再執行桌面版會重新產生，不用再處理。</li></ol>
-<h4>應該看到</h4><ul><li>（等你許可）</li></ul>
+<p class="why"><b>為什麼要做：</b>先前測試桌面版時留下的快取。</p>
+<h4>怎麼做</h4><ol><li>資料夾：%LOCALAPPDATA%\app.3dbuilder.desktop（內含網頁暫存、自動存檔的還原副本）。</li><li>已完成：於 2026-10-04 經許可後已刪除該暫存資料夾。</li></ol>
+<h4>應該看到</h4><ul><li>已清理完畢。</li></ul>
 
 <label class="note">備註<textarea rows="2" placeholder="做到哪一步、畫面訊息原文、和預期的差別…"></textarea></label>
 </div></details><details class="item" id="item-L2" data-id="L2" data-sec="cleanup" data-tag="opt">
@@ -1281,12 +1281,12 @@ code{background:var(--chip);padding:0 4px;border-radius:4px}
 
 <label class="note">備註<textarea rows="2" placeholder="做到哪一步、畫面訊息原文、和預期的差別…"></textarea></label>
 </div></details><details class="item" id="item-L3" data-id="L3" data-sec="cleanup" data-tag="opt">
-<summary><span class="iid">L3</span><span class="ttl">其他整理</span><span class="tag t-opt">可選</span>
-<select class="st" aria-label="L3 狀態"><option value="">未做</option><option value="ok">通過</option><option value="bad">有問題</option><option value="skip">略過</option></select></summary>
+<summary><span class="iid">L3</span><span class="ttl">其他整理（spike 分支與 Docker）</span><span class="tag t-done">已完成/已裁</span>
+<select class="st" aria-label="L3 狀態"><option value="ok" selected>通過</option><option value="bad">有問題</option><option value="skip">略過</option></select></summary>
 <div class="inner">
-<p class="why"><b>為什麼要做：</b>不影響功能。</p>
-<h4>怎麼做</h4><ol><li>刪除已合併的 spike/occt-gaps 分支。</li><li>壓縮 Docker 虛擬磁碟（如果有裝）。</li></ol>
-<h4>應該看到</h4><ul><li>（看你方便）</li></ul>
+<p class="why"><b>為什麼要做：</b>維護版本庫乾淨。</p>
+<h4>怎麼做</h4><ol><li>已合併的 spike/occt-gaps 分支已於 2026-10-07 刪除。</li><li>Docker 虛擬磁碟：依 2026-10-10 裁決暫不壓縮。</li></ol>
+<h4>應該看到</h4><ul><li>分支已清理完畢。</li></ul>
 
 <label class="note">備註<textarea rows="2" placeholder="做到哪一步、畫面訊息原文、和預期的差別…"></textarea></label>
 </div></details></section>

@@ -268,6 +268,22 @@ export function mapExprs(feature: Feature, fn: (expr: Expr, kind: ExprKind, role
       const angle = fn(d.angle, 'angle', 'revolveAngle');
       return count === d.count && angle === d.angle ? feature : { ...feature, def: { ...d, count, angle } };
     }
+    case 'thread': {
+      const pitch = fn(feature.pitch, 'length', 'positive');
+      const starts = fn(feature.starts, 'count', 'positive');
+      const length = fn(feature.length, 'length', 'positive');
+      const taper = feature.taper !== undefined ? fn(feature.taper, 'angle', 'any') : undefined;
+      const phase = feature.phase !== undefined ? fn(feature.phase, 'angle', 'any') : undefined;
+      if (pitch === feature.pitch && starts === feature.starts && length === feature.length && taper === feature.taper && phase === feature.phase) return feature;
+      return {
+        ...feature,
+        pitch,
+        starts,
+        length,
+        ...(taper !== undefined ? { taper } : {}),
+        ...(phase !== undefined ? { phase } : {}),
+      };
+    }
     case 'rib': {
       const thickness = fn(feature.thickness, 'length', 'positive');
       return thickness === feature.thickness ? feature : { ...feature, thickness };

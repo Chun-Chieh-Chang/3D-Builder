@@ -178,6 +178,8 @@ const migrations: Record<number, (doc: Json) => Json> = {
   50: (doc) => doc,
   // v52: cut-with-surface fixed vector direction and kept side; old plane refs keep their behavior.
   51: (doc) => doc,
+  // v53: real thread feature (`thread`). A new feature kind; nothing to convert.
+  52: (doc) => doc,
 };
 
 export class FormatError extends Error {

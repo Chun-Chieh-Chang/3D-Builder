@@ -19,6 +19,8 @@ export const model = {
   'cmd.onlySweepHasPath': '只有掃出特徵有路徑',
   'cmd.onlyLoftHasSections': '只有疊層拉伸特徵有截面',
   'cmd.onlyRibHasParams': '只有肋材特徵有這些參數',
+  'cmd.onlyThreadHasParams': '只有螺牙特徵有這些參數',
+  'cmd.threadOnlyAxis': '螺牙的軸只能選旋轉面、直線邊或基準軸',
   'cmd.loftSectionTwice': '同一張草圖不能當兩個截面',
   'cmd.sweepPathIsProfile': '掃出的路徑和輪廓不能是同一張草圖',
   'cmd.onlyDraftHasParams': '只有拔模特徵有這些參數',
