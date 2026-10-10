@@ -95,6 +95,29 @@ export interface Region {
 /** What a sweep ends on besides its depth: a face of a shape (up to a face), or the surface of a whole body (up to a body). */
 export type Until = { target: ShapeId; face: number } | { body: ShapeId };
 
+/** A screw thread (螺牙): see `Kernel.thread`. */
+export interface ThreadSpec {
+  /** A point on the axis and the way it runs (any length). */
+  axis: { origin: Vec3; dir: Vec3 };
+  /** From one thread to the next along the axis; the lead (one turn) is pitch × starts. */
+  pitch: number;
+  /** How many threads run side by side (a whole number from 1). */
+  starts: number;
+  hand: 'right' | 'left';
+  /** The stretch of the axis the thread covers, from `axis.origin` along `axis.dir`; from < to. */
+  from: number;
+  to: number;
+  /** A tapered thread: the half angle of its cone (radians), the profile moving away from the axis along `axis.dir` (towards it when negative). */
+  taper?: number;
+  /** The whole thread turned about the axis (radians, counter-clockwise about `axis.dir`). */
+  phase?: number;
+}
+
+/** Limits of a thread: more starts, a steeper taper or more turns than these is refused, not tried. */
+export const THREAD_MAX_STARTS = 16;
+export const THREAD_MAX_TAPER = (30 * Math.PI) / 180;
+export const THREAD_MAX_TURNS = 400;
+
 /** One direction of an extrusion: where it goes, its draft (radians, positive narrows along it) and what it ends on. */
 export interface SweepSpec {
   vector: Vec3;
@@ -769,6 +792,231 @@ export class Kernel {
     }
     faces.dispose();
     return origins;
+  }
+
+  /**
+   * The tool of a screw thread (螺牙): the regions of a sketch whose plane holds the axis, carried round the axis in a screw motion (`pitch` × `starts`
+   * along the axis per turn), one copy per start turned 360°/`starts` from the next, the whole turned by `phase` (counter-clockwise about `axis.dir`),
+   * and cut off square to the axis at `from` and `to` (measured from `axis.origin` along `axis.dir`). The profile is where the sketch has it: the thread
+   * runs through it. With `taper` (the half angle of a cone, radians) the profile moves away from the axis by tan(taper) per unit along the axis.
+   *
+   * How: the profile, moved back whole turns until it lies before `from`, is swept along a helix on a cylinder or cone about the axis with the binormal
+   * held along the axis (the profile stays in a plane through the axis), for whole turns until it lies past `to`; a common with a cylinder from `from` to
+   * `to` cuts it to length. The helix has one edge per turn, so a side face is one turn of one profile edge, named `<profile source>@helix<start>:<turn>`
+   * (turn 0 is the one the profile is drawn in, counting on along the axis); the faces on the planes at `from` and `to` are the start and end caps.
+   */
+  thread(frame: Frame, regions: Region[], spec: ThreadSpec): OpResult {
+    if (regions.length === 0) throw new KernelError(t('feature.threadNoProfile'));
+    const { pitch, starts, from, to } = spec;
+    const taper = spec.taper ?? 0;
+    const phase = spec.phase ?? 0;
+    if (!(Number.isFinite(pitch) && pitch > 0)) throw new KernelError(t('feature.threadBadPitch'));
+    if (!(Number.isInteger(starts) && starts >= 1 && starts <= THREAD_MAX_STARTS)) throw new KernelError(t('feature.threadBadStarts', { max: String(THREAD_MAX_STARTS) }));
+    if (!(Number.isFinite(from) && Number.isFinite(to) && to > from)) throw new KernelError(t('feature.threadBadLength'));
+    if (!(Number.isFinite(taper) && Math.abs(taper) <= THREAD_MAX_TAPER)) throw new KernelError(t('feature.threadBadTaper', { max: String(Math.round((THREAD_MAX_TAPER * 180) / Math.PI)) }));
+    if (!Number.isFinite(phase)) throw new KernelError(t('feature.threadBadPhase'));
+    const len = Math.hypot(...spec.axis.dir);
+    if (!(len > 0)) throw new KernelError(t('feature.threadNoAxis'));
+    const Z: Vec3 = [spec.axis.dir[0] / len, spec.axis.dir[1] / len, spec.axis.dir[2] / len];
+    const O = spec.axis.origin;
+    const dotv = (a: Vec3, b: Vec3) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+    const sub = (a: Vec3, b: Vec3): Vec3 => [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
+
+    // where the profile is: its points (arcs and circles sampled) as (along the axis, away from it)
+    const at = (p: P2): Vec3 => add(add(frame.origin, frame.xDir, p[0]), frame.yDir, p[1]);
+    const samples: Vec3[] = [];
+    for (const r of regions)
+      for (const s of r.outer) {
+        if (s.kind === 'line') samples.push(at(s.a), at(s.b));
+        else {
+          const a0 = s.kind === 'circle' ? 0 : Math.atan2(s.from[1] - s.c[1], s.from[0] - s.c[0]);
+          let sweep = s.kind === 'circle' ? 2 * Math.PI : Math.atan2(s.to[1] - s.c[1], s.to[0] - s.c[0]) - a0;
+          if (s.kind === 'arc') {
+            if (s.ccw && sweep <= 0) sweep += 2 * Math.PI;
+            if (!s.ccw && sweep >= 0) sweep -= 2 * Math.PI;
+          }
+          for (let i = 0; i <= 64; i++) samples.push(at([s.c[0] + s.r * Math.cos(a0 + (sweep * i) / 64), s.c[1] + s.r * Math.sin(a0 + (sweep * i) / 64)]));
+        }
+      }
+    const scale = Math.max(1, ...samples.map((p) => Math.hypot(...sub(p, O))));
+    if (Math.abs(dotv(frame.normal, Z)) > 1e-7 || Math.abs(dotv(sub(O, frame.origin), frame.normal)) > 1e-7 * scale) throw new KernelError(t('feature.threadAxisOffPlane'));
+    const radial = samples.map((p) => {
+      const d = sub(p, O);
+      return add(d, Z, -dotv(d, Z));
+    });
+    const mean = radial.reduce((m, w) => add(m, w, 1 / radial.length), [0, 0, 0] as Vec3);
+    const mlen = Math.hypot(...mean);
+    if (!(mlen > 1e-9 * scale)) throw new KernelError(t('feature.threadCrossesAxis'));
+    const X: Vec3 = [mean[0] / mlen, mean[1] / mlen, mean[2] / mlen];
+    const rs = radial.map((w) => dotv(w, X));
+    const zs = samples.map((p) => dotv(sub(p, O), Z));
+    const rMin = Math.min(...rs);
+    const rMax = Math.max(...rs);
+    const zMin = Math.min(...zs);
+    const zMax = Math.max(...zs);
+    if (!(rMin > 1e-6 * scale)) throw new KernelError(t('feature.threadCrossesAxis'));
+    const lead = pitch * starts;
+    if (zMax - zMin >= lead - 1e-9 * scale) throw new KernelError(t('feature.threadProfileTooWide', { width: (zMax - zMin).toFixed(3), lead: lead.toFixed(3) }));
+
+    // whole turns back to before `from`, whole turns on to past `to`
+    const back = Math.ceil((zMax - from) / lead) + 1;
+    const turns = back + Math.ceil((to - zMin) / lead) + 1;
+    if (turns > THREAD_MAX_TURNS) throw new KernelError(t('feature.threadTooManyTurns', { turns: String(turns), max: String(THREAD_MAX_TURNS) }));
+    const tan = Math.tan(taper);
+    const shift0 = -back * lead; // along the axis, where the sweep starts
+    const shift1 = shift0 + turns * lead;
+    if (!(rMin + tan * shift0 > 1e-6 * scale && rMin + tan * shift1 > 1e-6 * scale)) throw new KernelError(t('feature.threadCrossesAxis'));
+
+    const oc = this.oc;
+    const arena = new Arena();
+    try {
+      // the helix: a line in the (angle, along the generatrix) parameters of a cylinder or cone through the middle of the profile
+      const rRef = (rMin + rMax) / 2 + tan * shift0;
+      const zRef = (zMin + zMax) / 2 + shift0;
+      const ax3 = arena.own(new oc.gp_Ax3(this.pnt(arena, add(O, Z, zRef)), this.dir(arena, Z), this.dir(arena, X)));
+      const surface = arena.own(taper === 0 ? new oc.Geom_CylindricalSurface(ax3, rRef) : new oc.Geom_ConicalSurface(ax3, taper, rRef));
+      const dv = lead / Math.cos(taper);
+      const hand = spec.hand === 'left' ? -1 : 1;
+      const line = arena.own(new oc.Geom2d_Line(arena.own(new oc.gp_Pnt2d(0, 0)), arena.own(new oc.gp_Dir2d(hand * 2 * Math.PI, dv))));
+      // one edge per turn: a boolean then meets each face along one turn of a helix, not along all of them, which keeps its intersection curves
+      // tight (over 30 turns as one face the edges came out 5e-4 mm loose, enough to move the volume 1e-6 through a STEP file)
+      const perTurn = Math.hypot(2 * Math.PI, dv);
+      const mw = arena.own(new oc.BRepBuilderAPI_MakeWire());
+      const pathSources = new Map<TopoDS_Shape, string>();
+      for (let i = 0; i < turns; i++) {
+        const edge = arena.own(arena.own(new oc.BRepBuilderAPI_MakeEdge(line, surface, i * perTurn, (i + 1) * perTurn)).Edge());
+        if (!oc.BRepLib.BuildCurves3d(edge, 1e-7, oc.GeomAbs_Shape.GeomAbs_C1, 14, 30)) throw new KernelError(t('feature.threadFailed', { why: 'BuildCurves3d' }));
+        mw.Add(edge);
+        if (!mw.IsDone()) throw new KernelError(t('feature.threadFailed', { why: 'helix' }));
+        pathSources.set(arena.own(mw.Edge()), `helix:${i - back}`); // the turn the profile is drawn in is 0
+      }
+      const spine = arena.own(mw.Wire());
+
+      // one start: the profile moved back along the screw (a whole number of turns: straight back, and in for a taper), swept, less its holes
+      const moved: Frame = { ...frame, origin: add(add(frame.origin, Z, shift0), X, tan * shift0) };
+      const binormal = this.dir(arena, Z);
+      const pipe = (loop: Segment[], hole: boolean) => {
+        const sources = new Map<TopoDS_Shape, string>();
+        const wire = this.wire(arena, moved, loop, hole, sources);
+        const mk = arena.own(new oc.BRepOffsetAPI_MakePipeShell(spine));
+        mk.SetMode(binormal);
+        mk.SetTolerance(1e-6, 1e-6, 1e-4); // the default 1e-4 mm left a cut thread's volume 1.5e-5 off; this is 1e-7 for a quarter more time
+        mk.Add(wire, false, false);
+        try {
+          mk.Build(arena.own(new oc.Message_ProgressRange()));
+          if (!mk.IsReady() || !mk.MakeSolid()) throw new KernelError(t('feature.threadFailed', { why: t('feature.sweepNoSolid') }));
+        } catch (e) {
+          if (e instanceof KernelError) throw e;
+          throw new KernelError(t('feature.threadFailed', { why: this.errorText(e) }));
+        }
+        let shape = arena.own(mk.Shape());
+        const props = arena.own(new oc.GProp_GProps());
+        oc.BRepGProp.VolumeProperties(shape, props, false, false, false);
+        if (props.Mass() < 0) shape = arena.own(shape.Reversed());
+        return { shape, origins: this.pipeOrigins(mk, shape, sources, pathSources, arena) };
+      };
+      const oneStart = (region: Region) => {
+        let acc = pipe(region.outer, false);
+        for (const hole of region.holes) {
+          const tool = pipe(hole, true);
+          const fa = ShapeIndex.of(oc, acc.shape, T.FACE, arena);
+          const fb = ShapeIndex.of(oc, tool.shape, T.FACE, arena);
+          const mk = this.boolOp('cut', acc.shape, tool.shape, t('feature.thread'), arena);
+          const raw = arena.own(mk.Shape());
+          const all = [...acc.origins, ...tool.origins];
+          acc = { shape: raw, origins: this.faceSources(mk, [...fa.keys, ...fb.keys], raw, arena).map((s) => s.flatMap((i) => all[i]!)) };
+          fa.dispose();
+          fb.dispose();
+        }
+        return acc;
+      };
+      const base = regions.map(oneStart);
+
+      // every start: the first one turned, its faces renamed for the helix they follow
+      const axis1 = arena.own(new oc.gp_Ax1(this.pnt(arena, O), this.dir(arena, Z)));
+      const pieces: { shape: TopoDS_Shape; origins: FaceOrigin[][] }[] = [];
+      for (let k = 0; k < starts; k++) {
+        const trsf = arena.own(new oc.gp_Trsf());
+        trsf.SetRotation(axis1, phase + (2 * Math.PI * k) / starts);
+        const rename = (o: FaceOrigin): FaceOrigin => (o.rel === 'generated' && o.kind === 'profileEdge' ? { ...o, source: o.source.replace(/@helix:(-?\d+)$/, `@helix${k + 1}:$1`) } : o);
+        for (const b of base) {
+          const mk = arena.own(new oc.BRepBuilderAPI_Transform(b.shape, trsf, true, false));
+          const shape = arena.own(mk.Shape());
+          const before = ShapeIndex.of(oc, b.shape, T.FACE, arena);
+          const after = ShapeIndex.of(oc, shape, T.FACE, arena);
+          const origins: FaceOrigin[][] = after.keys.map(() => []);
+          before.keys.forEach((f, i) => {
+            const image = arena.own(mk.ModifiedShape(f));
+            const j = after.indexOf(image);
+            if (j >= 0) origins[j]!.push(...b.origins[i]!.map(rename));
+          });
+          before.dispose();
+          after.dispose();
+          pieces.push({ shape, origins });
+        }
+      }
+
+      // all starts as one shape: side by side when they cannot touch, else joined
+      let whole = pieces[0]!;
+      const apart = zMax - zMin < pitch - 1e-9 * scale && regions.length === 1;
+      for (const p of pieces.slice(1)) {
+        if (apart) {
+          const compound = arena.own(new oc.TopoDS_Compound());
+          const builder = arena.own(new oc.TopoDS_Builder());
+          builder.MakeCompound(compound);
+          builder.Add(compound, whole.shape);
+          builder.Add(compound, p.shape);
+          const index = ShapeIndex.of(oc, compound, T.FACE, arena);
+          const origins: FaceOrigin[][] = index.keys.map(() => []);
+          for (const part of [whole, p]) {
+            const own = ShapeIndex.of(oc, part.shape, T.FACE, arena);
+            own.keys.forEach((f, i) => {
+              const j = index.indexOf(f);
+              if (j >= 0) origins[j]!.push(...part.origins[i]!);
+            });
+            own.dispose();
+          }
+          index.dispose();
+          whole = { shape: compound, origins };
+        } else {
+          const fa = ShapeIndex.of(oc, whole.shape, T.FACE, arena);
+          const fb = ShapeIndex.of(oc, p.shape, T.FACE, arena);
+          const mk = this.boolOp('fuse', whole.shape, p.shape, t('feature.thread'), arena);
+          const raw = arena.own(mk.Shape());
+          const all = [...whole.origins, ...p.origins];
+          whole = { shape: raw, origins: this.faceSources(mk, [...fa.keys, ...fb.keys], raw, arena).map((s) => s.flatMap((i) => all[i]!)) };
+          fa.dispose();
+          fb.dispose();
+        }
+      }
+
+      // cut to length: a common with a cylinder from `from` to `to`, wider than the thread ever gets
+      const rOuter = Math.max(rMax + tan * shift0, rMax + tan * shift1) + Math.abs(zMax - zMin) + 1;
+      const box = arena.own(arena.own(new oc.BRepPrimAPI_MakeCylinder(arena.own(new oc.gp_Ax2(this.pnt(arena, add(O, Z, from)), this.dir(arena, Z), this.dir(arena, X))), rOuter, to - from)).Shape());
+      const fa = ShapeIndex.of(oc, whole.shape, T.FACE, arena);
+      const fb = ShapeIndex.of(oc, box, T.FACE, arena);
+      const boxOrigins: FaceOrigin[][] = fb.keys.map((f) => {
+        const props = arena.own(new oc.GProp_GProps());
+        oc.BRepGProp.SurfaceProperties(f, props, false, false);
+        const along = dotv(sub(this.xyz(arena.own(props.CentreOfMass())), O), Z);
+        return Math.abs(along - from) < 1e-9 * scale ? [{ rel: 'cap', which: 'start' }] : Math.abs(along - to) < 1e-9 * scale ? [{ rel: 'cap', which: 'end' }] : [];
+      });
+      const mk = this.boolOp('common', whole.shape, box, t('feature.thread'), arena);
+      const out = arena.own(mk.Shape());
+      const all = [...whole.origins, ...boxOrigins];
+      const origins = this.faceSources(mk, [...fa.keys, ...fb.keys], out, arena).map((s) => s.flatMap((i) => all[i]!));
+      fa.dispose();
+      fb.dispose();
+      if (!this.valid(out)) throw new KernelError(t('feature.threadInvalid'));
+      const id = this.put(out.Oriented(out.Orientation()));
+      if (!(this.massProps(id).volume > 1e-9)) {
+        this.release(id);
+        throw new KernelError(t('feature.threadInvalid'));
+      }
+      return { shape: id, faceOrigins: origins };
+    } finally {
+      arena.dispose();
+    }
   }
 
   /**
@@ -1730,13 +1978,19 @@ export class Kernel {
     return { curve: type, length: props.Mass(), mid: this.xyz(arena.own(ad.EvalD0((t0 + t1) / 2))), dir, ...(geometry ? { geometry } : {}) };
   }
 
-  massProps(id: ShapeId): MassProps {
+  /**
+   * Volume, area, centre and inertia. By default OCCT integrates with a fixed number of points per face, which is exact on planes and quadrics but
+   * not on long B-spline faces: a thread's faces come out about 1e-4 of the volume off. With `eps` the volume integrates adaptively until its
+   * relative error is below `eps`.
+   */
+  massProps(id: ShapeId, options: { eps?: number } = {}): MassProps {
     const oc = this.oc;
     const arena = new Arena();
     try {
       const shape = this.get(id);
       const v = arena.own(new oc.GProp_GProps());
-      oc.BRepGProp.VolumeProperties(shape, v, false, false, false);
+      if (options.eps !== undefined) oc.BRepGProp.VolumeProperties(shape, v, options.eps, false, false);
+      else oc.BRepGProp.VolumeProperties(shape, v, false, false, false);
       const s = arena.own(new oc.GProp_GProps());
       oc.BRepGProp.SurfaceProperties(shape, s, false, false);
       const m = arena.own(v.MatrixOfInertia());
@@ -1839,6 +2093,30 @@ export class Kernel {
 
   isValid(id: ShapeId): boolean {
     return this.valid(this.get(id));
+  }
+
+  /**
+   * Whether each point is inside a solid, outside it, or on its surface (within `tolerance`). One classifier serves all the points: building it is
+   * what costs (on a thread's faces, megabytes of WASM memory each time, which the heap does not get back), so ask for many points at once.
+   */
+  classify(id: ShapeId, points: readonly Vec3[], tolerance = 1e-7): ('in' | 'out' | 'on')[] {
+    const oc = this.oc;
+    const arena = new Arena();
+    try {
+      const c = arena.own(new oc.BRepClass3d_SolidClassifier(this.get(id)));
+      return points.map((p) => {
+        const q = new oc.gp_Pnt(p[0], p[1], p[2]);
+        try {
+          c.Perform(q, tolerance);
+        } finally {
+          q.delete();
+        }
+        const s = c.State();
+        return s === oc.TopAbs_State.TopAbs_IN ? 'in' : s === oc.TopAbs_State.TopAbs_ON ? 'on' : 'out';
+      });
+    } finally {
+      arena.dispose();
+    }
   }
 
   private valid(shape: TopoDS_Shape): boolean {

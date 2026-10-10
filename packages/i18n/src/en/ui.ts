@@ -10,6 +10,7 @@ export const ui: Translation = {
   'feature.extrude': 'Extrude',
   'feature.revolve': 'Revolve',
   'feature.sweep': 'Sweep',
+  'feature.thread': 'Thread',
   'feature.loft': 'Loft',
   'feature.rib': 'Rib',
   'action.sweep': 'Swept Boss/Base',
