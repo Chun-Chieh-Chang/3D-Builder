@@ -1632,6 +1632,46 @@ class AppStore {
     this.openNew({ id, type: 'sweep', name: nextName(this.history.doc, base), suppressed: false, sketch: profile.id, path: path.id, op }, base);
   }
 
+  /** 「螺牙」 (ADR 0123): sweeps a tooth profile sketch along a helix around an axis. */
+  newThread(op: 'cut' | 'boss' = 'cut'): void {
+    const s = this.state;
+    const sketch = this.selectedSketch() ?? [...this.history.doc.features].reverse().find((f): f is SketchFeature => f.type === 'sketch');
+    if (!sketch) return this.notify(t('feature.threadNeedsSketch'), 'error');
+    const planeName = sketch.plane.kind === 'datum' ? sketch.plane.name : '';
+    let axis: Ref = planeName === 'plane:front' ? { kind: 'datum', name: 'axis:y' } : { kind: 'datum', name: 'axis:z' };
+    if (s.selectedFace) {
+      axis = s.selectedFace;
+    } else if (s.selected && (s.selected.startsWith('axis:') || this.history.doc.features.some((f) => f.id === s.selected && f.type === 'refAxis'))) {
+      axis = { kind: 'datum', name: s.selected };
+    } else {
+      const lines = sketch.entities.filter((e) => e.type === 'line');
+      const center = lines.find((e) => e.construction);
+      if (center) axis = { kind: 'edge', name: center.id };
+    }
+    const base = t('feature.thread');
+    const id = this.allocator().take('thread');
+    this.openNew(
+      {
+        id,
+        type: 'thread',
+        name: nextName(this.history.doc, base),
+        suppressed: false,
+        sketch: sketch.id,
+        axis,
+        op,
+        operation: op,
+        pitch: '2',
+        starts: '1',
+        hand: 'right',
+        length: '10',
+        taper: '0',
+        phase: '0',
+        reverse: false,
+      },
+      base,
+    );
+  }
+
   /** 「旋轉填料/基材」 or 「旋轉除料」 (C4.3) about the sketch's centerline (or its only line). */
   newRevolve(op: 'boss' | 'cut'): void {
     const sketch = this.selectedSketch();

@@ -3,7 +3,8 @@
   "_untied": {
     "concept.overview": "general, not one item",
     "return-assembly": "no item of the manual opens a part from an assembly and goes back yet",
-    "rebuild": "no item of the manual forces a rebuild yet"
+    "rebuild": "no item of the manual forces a rebuild yet",
+    "thread": "real 3D thread feature (ADR 0123, thread-plan.md)"
   },
   "C1": [
     "equations",

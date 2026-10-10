@@ -271,9 +271,9 @@ export function mapExprs(feature: Feature, fn: (expr: Expr, kind: ExprKind, role
     case 'thread': {
       const pitch = fn(feature.pitch, 'length', 'positive');
       const starts = fn(feature.starts, 'count', 'positive');
-      const length = fn(feature.length, 'length', 'positive');
-      const taper = feature.taper !== undefined ? fn(feature.taper, 'angle', 'any') : undefined;
-      const phase = feature.phase !== undefined ? fn(feature.phase, 'angle', 'any') : undefined;
+      const length = feature.length && feature.length.trim() !== '' ? fn(feature.length, 'length', 'positive') : feature.length;
+      const taper = feature.taper !== undefined && feature.taper.trim() !== '' ? fn(feature.taper, 'angle', 'any') : feature.taper;
+      const phase = feature.phase !== undefined && feature.phase.trim() !== '' ? fn(feature.phase, 'angle', 'any') : feature.phase;
       if (pitch === feature.pitch && starts === feature.starts && length === feature.length && taper === feature.taper && phase === feature.phase) return feature;
       return {
         ...feature,

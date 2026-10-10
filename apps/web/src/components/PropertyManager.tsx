@@ -76,6 +76,7 @@ import {
   type RibFeature,
   type ShellFeature,
   type SweepFeature,
+  type ThreadFeature,
   type Thin,
   type SketchConstraint,
   type SketchFeature,
@@ -848,6 +849,159 @@ function SweepPanel({ f }: { f: SweepFeature }) {
       {f.op === 'boss' && <MergeBox f={f} />}
       <p className="hint">{t('pm.sweep.hint')}</p>
     </section>
+  );
+}
+
+/** Thread (ADR 0123): tooth profile sketch swept along a helix around an axis. */
+function ThreadPanel({ f }: { f: ThreadFeature }) {
+  const doc = useStore((s) => s.doc);
+  const selectedFace = useStore((s) => s.selectedFace);
+  const selected = useStore((s) => s.selected);
+  const index = doc.features.findIndex((x) => x.id === f.id);
+  const sketches = doc.features.filter((x, i): x is SketchFeature => x.type === 'sketch' && (index < 0 || i < index));
+  const currentSketch = findFeature(doc, f.sketch);
+  const lines = currentSketch?.type === 'sketch' ? currentSketch.entities.filter((e) => e.type === 'line') : [];
+  const refAxes = doc.features.filter((x, i): x is RefAxisFeature => x.type === 'refAxis' && (index < 0 || i < index));
+
+  const update = (patch: Partial<Omit<ThreadFeature, 'id' | 'type' | 'name' | 'suppressed'>>) => {
+    store.execute({ type: 'setThread', featureId: f.id, params: patch });
+  };
+
+  const axisText = () => {
+    if (!f.axis) return t('pm.thread.axisEmpty');
+    if (f.axis.kind === 'edge') {
+      const l = lines.find((e) => e.id === f.axis.name);
+      if (l) return `${l.construction ? t('tool.centerline') : t('entity.line')} ${l.id}`;
+      return f.axis.name;
+    }
+    if (f.axis.kind === 'datum') {
+      const ra = refAxes.find((a) => a.id === f.axis.name);
+      if (ra) return ra.name;
+      return f.axis.name;
+    }
+    return f.axis.name;
+  };
+
+  const canUseSelection = !!selectedFace || (!!selected && (selected.startsWith('axis:') || refAxes.some((a) => a.id === selected)));
+
+  const applySelection = () => {
+    if (selectedFace) {
+      update({ axis: selectedFace });
+    } else if (selected) {
+      update({ axis: { kind: 'datum', name: selected } });
+    }
+  };
+
+  return (
+    <>
+      <section className="pm-group">
+        <h4>{t('pm.thread.sketch')}</h4>
+        <select value={f.sketch} onChange={(e) => update({ sketch: e.target.value })}>
+          {!sketches.some((s) => s.id === f.sketch) && <option value={f.sketch}>{currentSketch?.name ?? f.sketch}</option>}
+          {sketches.map((s) => (
+            <option key={s.id} value={s.id}>
+              {s.name}
+            </option>
+          ))}
+        </select>
+        <h4>{t('pm.thread.axis')}</h4>
+        <div className="pm-row">
+          <select
+            value={f.axis?.name ?? ''}
+            onChange={(e) => {
+              const val = e.target.value;
+              if (lines.some((l) => l.id === val)) {
+                update({ axis: { kind: 'edge', name: val } });
+              } else if (refAxes.some((a) => a.id === val) || val.startsWith('axis:')) {
+                update({ axis: { kind: 'datum', name: val } });
+              }
+            }}
+          >
+            {f.axis && f.axis.kind === 'face' && <option value={f.axis.name}>{axisText()}</option>}
+            {!f.axis && <option value="">{t('pm.thread.axisEmpty')}</option>}
+            {lines.map((l) => (
+              <option key={l.id} value={l.id}>
+                {l.construction ? t('tool.centerline') : t('entity.line')} {l.id}
+              </option>
+            ))}
+            {refAxes.map((a) => (
+              <option key={a.id} value={a.id}>
+                {a.name}
+              </option>
+            ))}
+          </select>
+          <button type="button" disabled={!canUseSelection} title={t('pm.thread.useSelected')} onClick={applySelection}>
+            {t('pm.thread.useSelected')}
+          </button>
+        </div>
+      </section>
+
+      <section className="pm-group">
+        <h4>{t('pm.thread.op')}</h4>
+        <select
+          value={f.op ?? f.operation ?? 'cut'}
+          onChange={(e) => update({ op: e.target.value as 'cut' | 'boss', operation: e.target.value as 'cut' | 'boss' })}
+        >
+          <option value="cut">{t('pm.thread.opCut')}</option>
+          <option value="boss">{t('pm.thread.opBoss')}</option>
+        </select>
+
+        <label className="pm-row">
+          <span>{t('pm.thread.pitch')}</span>
+          <ValueInput value={f.pitch} toCommand={(pitch) => ({ type: 'setThread', featureId: f.id, params: { pitch } })} />
+        </label>
+
+        <label className="pm-row">
+          <span>{t('pm.thread.starts')}</span>
+          <ValueInput
+            value={f.starts ?? '1'}
+            suffix=""
+            toCommand={(starts) => ({ type: 'setThread', featureId: f.id, params: { starts } })}
+          />
+        </label>
+
+        <label className="pm-row">
+          <span>{t('pm.thread.hand')}</span>
+          <select value={f.hand ?? 'right'} onChange={(e) => update({ hand: e.target.value as 'right' | 'left' })}>
+            <option value="right">{t('pm.thread.handRh')}</option>
+            <option value="left">{t('pm.thread.handLh')}</option>
+          </select>
+        </label>
+
+        <label className="pm-row">
+          <span>{t('pm.thread.length')}</span>
+          <ValueInput
+            value={f.length ?? ''}
+            toCommand={(length) => ({ type: 'setThread', featureId: f.id, params: { length } })}
+          />
+        </label>
+
+        <label className="pm-row">
+          <span>{t('pm.thread.taper')}</span>
+          <ValueInput
+            value={f.taper ?? '0'}
+            suffix="°"
+            toCommand={(taper) => ({ type: 'setThread', featureId: f.id, params: { taper } })}
+          />
+        </label>
+
+        <label className="pm-row">
+          <span>{t('pm.thread.phase')}</span>
+          <ValueInput
+            value={f.phase ?? '0'}
+            suffix="°"
+            toCommand={(phase) => ({ type: 'setThread', featureId: f.id, params: { phase } })}
+          />
+        </label>
+
+        <label className="pm-row checkbox">
+          <input type="checkbox" checked={f.reverse ?? false} onChange={(e) => update({ reverse: e.target.checked })} />
+          <span>{t('pm.thread.reverse')}</span>
+        </label>
+
+        <p className="hint">{t('pm.thread.hint')}</p>
+      </section>
+    </>
   );
 }
 
@@ -2807,6 +2961,7 @@ export function PropertyManager() {
       )}
       {f.type === 'cutWithSurface' && <CutWithSurfacePanel f={f} />}
       {f.type === 'combine' && <CombinePanel f={f} />}
+      {f.type === 'thread' && <ThreadPanel f={f} />}
     </div>
   );
 }

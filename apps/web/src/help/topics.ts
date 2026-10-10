@@ -166,6 +166,7 @@ const FEATURE_ACTION: Record<string, string> = {
   draft: 'draft',
   moveFace: 'move-face',
   combine: 'combine',
+  thread: 'thread',
 };
 
 /** The topic for what is going on now: the tool in use, else the feature open, else the sketch, else the start. */

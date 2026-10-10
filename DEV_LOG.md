@@ -49,3 +49,58 @@
   - 全套 Vitest 測試套件：**185 個測試檔全數通過，3 個跳過（共 2,513 個測試通過，0 失敗）**。
 - **標準庫規格審查 (C3)**：
   - ISO 4762（內六角螺栓）、ISO 7089（平墊圈）、ISO 8734（定位銷）、ISO 286-1（m6/IT6/IT7/IT8 公差表）逐筆審查確認無誤。
+
+---
+
+## 2026-10-10: 螺牙 T-3 階段（介面與說明、PropertyManager、動作列、E2E 確效）
+
+### 1. 需求內容 (Requirements)
+1. **螺牙 UI 面板與互動**：
+   - 在 `apps/web/src/components/PropertyManager.tsx` 實作 `ThreadPanel`，提供牙型草圖、旋轉軸、操作（除料/填料）、螺距、線數、旋向、長度、錐度、起始相位與反向等完整控制項。
+   - 在 `apps/web/src/actions.ts` 註冊 `id: 'thread'` 動作，並在動作列「特徵」群組掛載螺牙按鈕。
+   - 在 `apps/web/src/state/store.ts` 實作 `newThread(op)` 與草圖軸向智慧推導。
+2. **多國語系與線上說明文件**：
+   - 在 `packages/i18n/src/zh-TW` 與 `en` 補齊 `feature.threadNeedsSketch`、`pm.thread.*`、`help.thread.*`。
+   - 在 `docs/help-links.json` 關聯 `thread` 主題至 ADR 0123 與 thread-plan.md。
+   - 在 `apps/web/src/help/topics.ts` 中將 `thread` 納入情境式說明映射 (`FEATURE_ACTION`)。
+3. **確效防線建立**：
+   - 編寫 `tests/phase3/thread-ui.test.ts` 單元測試（動作啟用、群組註冊、說明索引、Store 生命週期）。
+   - 編寫 `tests/e2e/manual-thread.js` 並以無頭瀏覽器 (`scripts/verify-ui.mjs`) 執行真實渲染與互動驗收。
+
+---
+
+### 2. 遇到的問題與根因分析 (RCA)
+
+#### 問題 1: `store.newThread` 預設長度留空導致 `checkExprs` 報出「運算式不完整」
+- **現象**：`store.newThread()` 執行時拋出 `CommandError('運算式不完整：「」')`，導致事務回滾，`state.editing` 變成 `null`。
+- **原因分析 (RCA)**：`packages/model/src/params.ts` 在 `case 'thread'` 中直接將 `feature.length` 送入 `fn(..., 'length', 'positive')` 解析。若預設值給空字串 `''`，解析器無法識別空運算式而拋錯。
+- **矯正措施 (CAPA)**：
+  1. 將 `store.newThread` 預設長度設為合法的 `'10'`（比照拉伸深度預設值）。
+  2. 在 `packages/model/src/params.ts` 增強防禦邏輯：對 `length`、`taper`、`phase` 若為空字串則安全略過運算式解析，允許使用者留空以供牙型跨度自動推導。
+
+#### 問題 2: 旋轉軸未選取時 fallback 至世界座標軸報出基準軸不存在
+- **現象**：新草圖未指定建構線或旋轉面時，螺牙再生拋出 `t('datum.axisMissing')`（「螺牙的軸：參考的基準軸不存在、已抑制或失敗」）。
+- **原因分析 (RCA)**：`packages/regen/src/engine.ts` 的 `axisOfRef` 原先未原生支援世界座標軸（`axis:x`、`axis:y`、`axis:z`），且牙型草圖平面必須嚴格包含旋轉軸（法線與軸點積為 0）。
+- **矯正措施 (CAPA)**：
+  1. 在 `engine.ts` 的 `axisOfRef` 增加對原生座標軸 `axis:x`、`axis:y`、`axis:z` 之解析。
+  2. 在 `store.newThread` 中依草圖所在基準面智慧指派落於該草圖平面上的軸（如 Front 平面預設指派 `axis:y`）。
+
+#### 問題 3: E2E 幾何牙型沿軸寬度大於螺距導致自相交
+- **現象**：E2E 驗證中螺牙再生失敗：`牙型沿軸的寬度 2.000 mm 不小於導程 2.000 mm，每一圈會疊在自己的前一圈上`。
+- **原因分析 (RCA)**：牙型三角形頂點在軸向跨度為 2.0 mm，與導程 2.0 mm 相同，物理幾何上產生螺旋自疊。
+- **矯正措施 (CAPA)**：調整 E2E 牙型跨度為 1.0 mm，確保牙型寬度小於導程，順利通過幾何再生與布林切除。
+
+---
+
+### 3. 確效與驗收成果 (Validation Results)
+- **UI 確效 (`verify:ui`)**：
+  - `node scripts/verify-ui.mjs --only "manual-thread"`：**PASS (11.4s)**，開零件、建基底方塊、畫牙型、開 PM 面板、驗證欄位、確認送出並在設計樹生成「螺牙1」完全跑通。
+- **單元與規格測試**：
+  - `tests/phase3/thread-ui.test.ts`：4/4 通過。
+  - `tests/phase8/help.test.ts` & `tests/phase8/help-manual.test.ts`：42/42 通過。
+  - `tests/phase3/` 全套測試：46 個檔案全過（476 個測試全綠，0 失敗）。
+- **靜態型別與代碼風格**：
+  - `tsc -p tsconfig.json`：0 錯誤。
+  - `npm run lint:deps`：Layering OK。
+  - `npm run lint:i18n`：i18n OK。
+

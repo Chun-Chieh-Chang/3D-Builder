@@ -866,6 +866,9 @@ export class Regenerator {
   /** A straight model edge or a reference axis (C3.3) as a point on it and a direction. */
   private axisOfRef(ref: Ref, set: Bodies, what: string): Axis3 {
     if (ref.kind === 'datum') {
+      if (ref.name === 'axis:x') return { origin: [0, 0, 0], dir: [1, 0, 0] };
+      if (ref.name === 'axis:y') return { origin: [0, 0, 0], dir: [0, 1, 0] };
+      if (ref.name === 'axis:z') return { origin: [0, 0, 0], dir: [0, 0, 1] };
       const axis = this.axes.get(ref.name);
       if (!axis) throw new FeatureError(t('datum.axisMissing', { what }));
       return axis;
