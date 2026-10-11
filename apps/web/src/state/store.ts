@@ -1673,6 +1673,41 @@ class AppStore {
     );
   }
 
+  /**
+   * 「壓花」 (ADR 0124): the grooves of a straight, helical or diamond pattern cut into a cylinder about an axis. The axis is whatever is picked (a
+   * cylindrical face, a straight edge or a reference axis), else the z axis; the blank diameter, the groove count and the rest are for the
+   * PropertyManager to set.
+   */
+  newKnurl(): void {
+    const s = this.state;
+    if (!s.result?.mesh) return this.notify(t('feature.knurlNeedsBody'), 'error');
+    let axis: Ref = { kind: 'datum', name: 'axis:z' };
+    if (s.selectedFace) axis = s.selectedFace;
+    else if (s.selected && (s.selected.startsWith('axis:') || this.history.doc.features.some((f) => f.id === s.selected && f.type === 'refAxis'))) axis = { kind: 'datum', name: s.selected };
+    const base = t('feature.knurl');
+    const id = this.allocator().take('knurl');
+    this.openNew(
+      {
+        id,
+        type: 'knurl',
+        name: nextName(this.history.doc, base),
+        suppressed: false,
+        axis,
+        diameter: '20',
+        length: '10',
+        count: '20',
+        depth: '0.5',
+        pattern: 'diamond',
+        angle: '30',
+        included: '90',
+        hand: 'right',
+        phase: '0',
+        reverse: false,
+      },
+      base,
+    );
+  }
+
   /** 「旋轉填料/基材」 or 「旋轉除料」 (C4.3) about the sketch's centerline (or its only line). */
   newRevolve(op: 'boss' | 'cut'): void {
     const sketch = this.selectedSketch();

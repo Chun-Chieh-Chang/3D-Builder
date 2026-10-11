@@ -167,6 +167,7 @@ const FEATURE_ACTION: Record<string, string> = {
   moveFace: 'move-face',
   combine: 'combine',
   thread: 'thread',
+  knurl: 'knurl',
 };
 
 /** The topic for what is going on now: the tool in use, else the feature open, else the sketch, else the start. */

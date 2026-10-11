@@ -180,6 +180,8 @@ const migrations: Record<number, (doc: Json) => Json> = {
   51: (doc) => doc,
   // v53: real thread feature (`thread`). A new feature kind; nothing to convert.
   52: (doc) => doc,
+  // v54: the knurl feature (ADR 0124). A new feature kind; nothing to convert.
+  53: (doc) => doc,
 };
 
 export class FormatError extends Error {

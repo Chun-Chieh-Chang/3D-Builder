@@ -16,7 +16,7 @@ import { isDimension } from './schema';
 export type ExprKind = 'length' | 'angle' | 'count';
 
 /** What a value must be for the feature to make sense: a size above zero, or an angle in the range its feature allows. */
-export type ExprRole = 'positive' | 'unitInterval' | 'nonNegative' | 'nonZero' | 'revolveAngle' | 'chamferAngle' | 'draftAngle' | 'includedAngle' | 'planeAngle' | 'count' | 'any';
+export type ExprRole = 'positive' | 'unitInterval' | 'nonNegative' | 'nonZero' | 'revolveAngle' | 'chamferAngle' | 'draftAngle' | 'includedAngle' | 'planeAngle' | 'count' | 'knurlCount' | 'any';
 
 /** Why a value is not acceptable for its role (in words), or null. `expr` is what the user wrote. */
 export function roleProblem(v: number, role: ExprRole, expr: Expr): string | null {
@@ -42,6 +42,8 @@ export function roleProblem(v: number, role: ExprRole, expr: Expr): string | nul
       return angle(-1e-12, 2 * Math.PI, t('cmd.planeAngleRange'));
     case 'count':
       return Number.isInteger(Math.round(v)) && Math.abs(v - Math.round(v)) < 1e-9 && v >= 2 && v <= MAX_INSTANCES ? null : t('cmd.countRange', { max: MAX_INSTANCES, value: expr });
+    case 'knurlCount':
+      return Number.isInteger(Math.round(v)) && Math.abs(v - Math.round(v)) < 1e-9 && v >= MIN_GROOVES && v <= MAX_GROOVES ? null : t('cmd.knurlCountRange', { min: MIN_GROOVES, max: MAX_GROOVES, value: expr });
     case 'any':
       return null;
   }
@@ -49,6 +51,10 @@ export function roleProblem(v: number, role: ExprRole, expr: Expr): string | nul
 
 /** The most instances one direction of a pattern may have: a mistyped 1000 should say so rather than take minutes. */
 export const MAX_INSTANCES = 200;
+
+/** How many grooves one knurl may have round its circumference: fewer than three is not a pattern, and the kernel refuses more (ADR 0124). */
+export const MIN_GROOVES = 3;
+export const MAX_GROOVES = 200;
 
 /** The kind of value a dimension holds. */
 const dimensionKind = (c: SketchConstraint): ExprKind => (c.type === 'angle' ? 'angle' : 'length');
@@ -294,6 +300,29 @@ export function mapExprs(feature: Feature, fn: (expr: Expr, kind: ExprKind, role
         ...(phase !== undefined ? { phase } : {}),
         ...(fadeTurnsIn !== undefined ? { fadeTurnsIn } : {}),
         ...(fadeTurnsOut !== undefined ? { fadeTurnsOut } : {}),
+      };
+    }
+
+    case 'knurl': {
+      const diameter = fn(feature.diameter, 'length', 'positive');
+      const length = fn(feature.length, 'length', 'positive');
+      const count = fn(feature.count, 'count', 'knurlCount');
+      const depth = fn(feature.depth, 'length', 'positive');
+      const angle = feature.angle !== undefined && feature.angle.trim() !== '' ? fn(feature.angle, 'angle', 'any') : feature.angle;
+      const included = feature.included !== undefined && feature.included.trim() !== '' ? fn(feature.included, 'angle', 'any') : feature.included;
+      const phase = feature.phase !== undefined && feature.phase.trim() !== '' ? fn(feature.phase, 'angle', 'any') : feature.phase;
+      if (diameter === feature.diameter && length === feature.length && count === feature.count && depth === feature.depth && angle === feature.angle && included === feature.included && phase === feature.phase) {
+        return feature;
+      }
+      return {
+        ...feature,
+        diameter,
+        length,
+        count,
+        depth,
+        ...(angle !== undefined ? { angle } : {}),
+        ...(included !== undefined ? { included } : {}),
+        ...(phase !== undefined ? { phase } : {}),
       };
     }
 

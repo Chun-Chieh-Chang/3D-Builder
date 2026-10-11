@@ -9,6 +9,7 @@ export const ui = {
   'feature.revolve': '旋轉',
   'feature.sweep': '掃出',
   'feature.thread': '螺牙',
+  'feature.knurl': '壓花',
   'feature.loft': '疊層拉伸',
   'feature.rib': '肋材',
   'action.sweep': '掃出填料/基材',

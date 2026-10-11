@@ -1,5 +1,5 @@
 import { beforeAll, describe, expect, it } from 'vitest';
-import { applyCommand, parsePart, serializePart, shownByDefault, type Command, type Feature, type PartDoc, type Ref, type SketchEntity, type ThreadFeature } from '@3db/model';
+import { applyCommand, parsePart, serializePart, shownByDefault, SCHEMA_VERSION, type Command, type Feature, type PartDoc, type Ref, type SketchEntity, type ThreadFeature } from '@3db/model';
 import { PlaneGcsSolver } from '@3db/sketch';
 import { Kernel } from '@3db/kernel';
 import { Regenerator, type RebuildResult } from '@3db/regen';
@@ -293,20 +293,20 @@ describe('Thread Feature (T-2, Schema 53)', () => {
     expect(kernel.solidCount(r.body!.shape)).toBe(1);
   });
 
-  it('serializes to JSON and round-trips with Schema 53, migrating Schema 52 cleanly', () => {
+  it('serializes to JSON and round-trips with Schema 53+, migrating Schema 52 cleanly', () => {
     const boreSketch = sketch('sk_bore', front, parts(point('p1', 0, 0)));
     const doc = build(boreSketch);
-    expect(doc.schemaVersion).toBe(53);
+    expect(doc.schemaVersion).toBe(SCHEMA_VERSION);
 
     // Round-trip
     const serialized = serializePart(doc);
     const parsed = parsePart(serialized);
-    expect(parsed.schemaVersion).toBe(53);
+    expect(parsed.schemaVersion).toBe(SCHEMA_VERSION);
 
     // Schema 52 migration test
     const v52Json = JSON.stringify({ ...doc, schemaVersion: 52 });
     const migrated = parsePart(v52Json);
-    expect(migrated.schemaVersion).toBe(53);
+    expect(migrated.schemaVersion).toBe(SCHEMA_VERSION);
   });
 
   it('saving to JSON and reading back yields identical rebuild volume (< 1e-9 error) and identical face names', () => {

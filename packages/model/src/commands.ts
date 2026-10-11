@@ -1,7 +1,7 @@
 import { t } from '@3db/i18n';
 import { current, produce, type Draft } from 'immer';
 import { countersFor, type Id } from './ids';
-import type { SheetGauge, AppearanceTarget, DocSettings, MaterialRef, Variable, BlobRef, ChamferFeature, FilletKind, CombineFeature, HoleFeature, ScrewBossFeature, BaseFlangeFeature, MidBendFeature, EdgeFlangeFeature, HemFeature, BreakCornerFeature, SnapHookFeature, SnapCatchFeature, VentFeature, LoftFeature, RibFeature, SweepFeature, Draft as WallDraft, EndCondition, Thin, Expr, Feature, ImportedBodyFeature, AxisDefinition, CoordSysFeature, MirrorFeature, PartDoc, PatternDefinition, PatternFeature, PlaneDefinition, PointDefinition, Ref, RevolveCondition, SketchConstraint, SketchEntity, SketchFeature, SketchPicture, CutWithSurfaceFeature, ThreadFeature } from './schema';
+import type { SheetGauge, AppearanceTarget, DocSettings, MaterialRef, Variable, BlobRef, ChamferFeature, FilletKind, CombineFeature, HoleFeature, ScrewBossFeature, BaseFlangeFeature, MidBendFeature, EdgeFlangeFeature, HemFeature, BreakCornerFeature, SnapHookFeature, SnapCatchFeature, VentFeature, LoftFeature, RibFeature, SweepFeature, Draft as WallDraft, EndCondition, Thin, Expr, Feature, ImportedBodyFeature, AxisDefinition, CoordSysFeature, MirrorFeature, PartDoc, PatternDefinition, PatternFeature, PlaneDefinition, PointDefinition, Ref, RevolveCondition, SketchConstraint, SketchEntity, SketchFeature, SketchPicture, CutWithSurfaceFeature, ThreadFeature, KnurlFeature } from './schema';
 import { isDatumPlaneName } from './datums';
 import { canBeSeed } from './patterns';
 import { colorOk, materialOk, sameTarget } from './materials';
@@ -81,6 +81,8 @@ ull). */
   | { type: 'setRib'; featureId: Id; rib: Omit<RibFeature, 'id' | 'type' | 'name' | 'suppressed' | 'sketch'> }
   /** A thread's parameters (C4.8). */
   | { type: 'setThread'; featureId: Id; params: Partial<Omit<ThreadFeature, 'id' | 'type' | 'name' | 'suppressed'>> }
+  /** A knurl's parameters (ADR 0124): everything but which axis it is on. */
+  | { type: 'setKnurl'; featureId: Id; knurl: Partial<Omit<KnurlFeature, 'id' | 'type' | 'name' | 'suppressed' | 'axis'>> & { axis?: Ref } }
   /** What a draft leans and about which plane (C5.5). */
   | { type: 'setDraftFeature'; featureId: Id; neutral: Ref; faces: Ref[]; angle: Expr; reverse?: boolean }
   /** What a shell takes away and how thick the wall is (C5.4). */
@@ -611,6 +613,11 @@ function validateNewFeature(doc: PartDoc, f: Feature, index: number): void {
       }
       return;
 
+    case 'knurl':
+      // the grooves are cut into the surface the axis names: no sketch is involved, and a line of one cannot be the axis
+      if (f.axis.kind !== 'datum' && f.axis.kind !== 'face' && f.axis.kind !== 'edge') throw new CommandError(t('cmd.knurlOnlyAxis'));
+      return;
+
     case 'derivedBody':
       if (!isFilePath(f.source)) throw new CommandError(t('cmd.derivedSourceInvalid', { path: f.source }));
       if (f.body.trim() === '') throw new CommandError(t('cmd.derivedBodyEmpty'));
@@ -937,6 +944,16 @@ export function mutate(draft: Draft<PartDoc>, cmd: Command): void {
       const next = { ...f, ...cmd.params };
       validateNewFeature(draft as PartDoc, next as Feature, draft.features.findIndex((x) => x.id === f.id));
       Object.assign(f, cmd.params);
+      checkExprs(draft as PartDoc, f as Feature);
+      return;
+    }
+    case 'setKnurl': {
+      const f = feature(draft, cmd.featureId);
+      if (f.type !== 'knurl') throw new CommandError(t('cmd.onlyKnurlHasParams'));
+      const next = { ...f, ...cmd.knurl };
+      if (next.axis.kind !== 'datum' && next.axis.kind !== 'face' && next.axis.kind !== 'edge') throw new CommandError(t('cmd.knurlOnlyAxis'));
+      validateNewFeature(draft as PartDoc, next as Feature, draft.features.findIndex((x) => x.id === f.id));
+      Object.assign(f, cmd.knurl);
       checkExprs(draft as PartDoc, f as Feature);
       return;
     }

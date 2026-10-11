@@ -106,6 +106,8 @@ export function mapRefs(feature: Feature, map: (ref: Ref) => Ref): { feature: Fe
       return { feature: { ...feature, main: one(feature.main), tools: feature.tools.map(one) }, replaced };
     case 'thread':
       return typeof feature.axis === 'string' ? { feature, replaced } : { feature: { ...feature, axis: one(feature.axis) }, replaced };
+    case 'knurl':
+      return { feature: { ...feature, axis: one(feature.axis) }, replaced };
     case 'revolve':
     case 'sweep':
     case 'loft':

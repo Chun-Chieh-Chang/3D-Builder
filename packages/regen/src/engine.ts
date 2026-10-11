@@ -65,11 +65,12 @@ import {
   type Thin,
   type Vec3,
   type ThreadFeature,
+  type KnurlFeature,
   lookupThread,
   generateStandardThreadProfile,
 } from '@3db/model';
 import { bentPath, BendProblem, findOutlines, findProfiles, reversePath, ribbonOf, selectContours, ThinProblem, thinRegions, type ProfileResult, type SketchSolver, type SketchStatus, type SolvedSketch } from '@3db/sketch';
-import { KernelError, SURFACE_TOLERANCE, type Region, type Segment, type SweepSpec, type ThreadSpec, type FaceOrigin, type ImportDiagnostics, type Kernel, type OpResult, type ShapeId, type Topology } from '@3db/kernel';
+import { KernelError, SURFACE_TOLERANCE, type KnurlSpec, type Region, type Segment, type SweepSpec, type ThreadSpec, type FaceOrigin, type ImportDiagnostics, type Kernel, type OpResult, type ShapeId, type Topology } from '@3db/kernel';
 import { nameElements, nameFromFaces, resolveRef, type Candidate, type ElementNames } from '@3db/naming';
 import { Bodies, type BodyState, type BodyView } from './bodies';
 import { followReferences, ReferenceProblem } from './references';
@@ -332,6 +333,13 @@ class FeatureError extends Error {
     super(message);
   }
 }
+
+/**
+ * The most grooves a hand of a diamond knurl may have (ADR 0124). A diamond is two cuts and its cost grows about as the square of the groove count — the
+ * second hand's flanks intersect every groove of the first — so a dozen a hand is seconds and forty is minutes. This is the point past which the
+ * rebuild is refused with the reason rather than left to run for hours.
+ */
+const KNURL_MAX_DIAMOND_GROOVES = 40;
 
 const add = (a: Vec3, b: Vec3, s = 1): Vec3 => [a[0] + b[0] * s, a[1] + b[1] * s, a[2] + b[2] * s];
 const sub = (a: Vec3, b: Vec3): Vec3 => [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
@@ -686,6 +694,7 @@ export class Regenerator {
           case 'revolve':
           case 'sweep':
           case 'thread':
+          case 'knurl':
           case 'loft':
           case 'rib':
           case 'fillet':
@@ -708,6 +717,8 @@ export class Regenerator {
                   ? this.sweep(feature, sketches, set)
                   : feature.type === 'thread'
                   ? this.thread(feature, sketches, set)
+                  : feature.type === 'knurl'
+                    ? this.knurl(feature, set)
                   : feature.type === 'loft'
                   ? this.loft(feature, sketches, set)
                   : feature.type === 'rib'
@@ -1403,21 +1414,8 @@ export class Regenerator {
           const body = this.modelFor(set, t('feature.threadAxis'));
           const faceIdx = this.resolve(f.axis, body, t('feature.threadAxis'));
           if (faceIdx >= 0 && faceIdx < body.topology.faces.length) {
-            const facePts: Vec3[] = [];
-            for (const v of body.topology.vertices) {
-              if (v.faces.includes(faceIdx)) facePts.push(v.point);
-            }
-            for (const e of body.topology.edges) {
-              if (e.faces.includes(faceIdx)) facePts.push(e.mid);
-            }
-            if (facePts.length > 0) {
-              const dotv = (a: Vec3, b: Vec3) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
-              const subVec = (a: Vec3, b: Vec3): Vec3 => [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
-              const zsOnFace = facePts.map((p) => dotv(subVec(p, O), Z));
-              const faceZMin = Math.min(...zsOnFace);
-              const faceZMax = Math.max(...zsOnFace);
-              zc = f.reverse ? faceZMax : faceZMin;
-            }
+            const [lo, hi] = this.spanAlong(body, O, Z, faceIdx);
+            zc = f.reverse ? hi : lo;
           }
         } catch {
           // fallback to 0
@@ -1500,6 +1498,97 @@ export class Regenerator {
     }
 
     return this.apply(f.id, op, tool, { featureId: f.id, ...(f.sketch ? { sketchId: f.sketch } : {}) }, set.list, true);
+  }
+
+  /**
+   * Where a face of the model lies along `axis`, measured from `O`: the least and the greatest of its vertices and the midpoints of its edges.
+   * `[0, 0]` when the face has neither (there is nothing to measure it by).
+   */
+  private spanAlong(body: BodyState, O: Vec3, Z: Vec3, face: number | null): [number, number] {
+    const points: Vec3[] = [];
+    if (face === null) {
+      for (const v of body.topology.vertices) points.push(v.point);
+    } else {
+      for (const v of body.topology.vertices) if (v.faces.includes(face)) points.push(v.point);
+      for (const e of body.topology.edges) if (e.faces.includes(face)) points.push(e.mid);
+    }
+    if (points.length === 0) return [0, 0];
+    const along = points.map((p) => dot(sub(p, O), Z));
+    return [Math.min(...along), Math.max(...along)];
+  }
+
+  /**
+   * Knurl (壓花, ADR 0124): the grooves of a straight, helical or diamond pattern cut into a cylinder about an axis. The blank is the cylinder of
+   * `diameter`, so the body must already be that size there — a knurl that cuts nothing says so rather than doing nothing.
+   *
+   * A diamond is cut once per hand (see below). That makes it cost about the square of the groove count, because the second hand's flanks have to
+   * intersect every groove the first one left: a dozen grooves a hand is a few seconds, forty is minutes. Past `KNURL_MAX_DIAMOND_GROOVES` the
+   * rebuild is refused with the reason, rather than left to run for hours (AGENTS.md §2.1: refuse up front, do not hand a catastrophic operation
+   * to the solver).
+   */
+  private knurl(f: KnurlFeature, set: Bodies): BodyState[] {
+    if (!set.view) throw new FeatureError(t('feature.knurlNeedsBody'));
+    const axis = this.axisOfRef(f.axis, set, t('feature.knurlAxis'));
+    const len = Math.hypot(...axis.dir);
+    if (!(len > 1e-9)) throw new FeatureError(t('feature.knurlNoAxis'));
+    const Z: Vec3 = [axis.dir[0] / len, axis.dir[1] / len, axis.dir[2] / len];
+    const O = axis.origin;
+
+    // the end of the surface it starts from: the face the axis names, or the near end of the body when the axis is a datum
+    const body = this.modelFor(set, t('feature.knurlAxis'));
+    const faceIdx = f.axis.kind === 'face' ? this.resolve(f.axis, body, t('feature.knurlAxis')) : null;
+    const [lo, hi] = this.spanAlong(body, O, Z, faceIdx);
+    const zc = f.reverse ? hi : lo;
+    const length = evalLength(f.length);
+    const from = f.reverse ? zc - length : zc;
+    const to = f.reverse ? zc : zc + length;
+
+    const radius = evalLength(f.diameter) / 2;
+    const count = evalNumber(f.count);
+    if (f.pattern === 'diamond' && count > KNURL_MAX_DIAMOND_GROOVES)
+      throw new FeatureError(t('feature.knurlDiamondTooFine', { count: String(count), max: String(KNURL_MAX_DIAMOND_GROOVES) }));
+    const base = {
+      axis: { origin: O, dir: Z },
+      radius,
+      count,
+      from,
+      to,
+      depth: evalLength(f.depth),
+      included: f.included ? evalAngle(f.included) : Math.PI / 2,
+      ...(f.phase ? { phase: evalAngle(f.phase) } : {}),
+    };
+    const angle = f.angle ? evalAngle(f.angle) : Math.PI / 6;
+    // One tool holds one hand of grooves: a tool holding both would have its solids crossing one another, and OCCT leaves
+    // the faces inside the crossing in the result instead of resolving them. A diamond is therefore the two hands cut in
+    // turn — which is the same material either way, since body \ (A ∪ B) = (body \ A) \ B.
+    const specs: KnurlSpec[] =
+      f.pattern === 'straight'
+        ? [{ ...base, pattern: 'straight' }]
+        : f.pattern === 'helical'
+          ? [{ ...base, pattern: 'helical', angle, ...(f.hand ? { hand: f.hand } : {}) }]
+          : [
+              { ...base, pattern: 'helical', angle, hand: 'right' },
+              { ...base, pattern: 'helical', angle, hand: 'left' },
+            ];
+
+    try {
+      let list: BodyState[] = [...set.list];
+      for (const spec of specs) {
+        let tool: OpResult;
+        try {
+          tool = this.kernel.knurl(spec);
+        } catch (e) {
+          if (e instanceof KernelError) throw new FeatureError(e.message);
+          throw e;
+        }
+        list = this.apply(f.id, 'cut', tool, { featureId: f.id }, list, true);
+      }
+      return list;
+    } catch (e) {
+      // the grooves cut nothing away: the blank is not the size the feature asks for, which is worth saying in its own words
+      if (e instanceof FeatureError && e.message === t('feature.cutRemovedNothing')) throw new FeatureError(t('feature.knurlRemovedNothing', { diameter: (radius * 2).toFixed(3) }));
+      throw e;
+    }
   }
 
 

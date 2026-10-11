@@ -1,6 +1,6 @@
 import type { ReactElement } from 'react';
 
-type IconName = 'part' | 'assembly' | 'mates' | 'origin' | 'plane' | 'refPlane' | 'refAxis' | 'refPoint' | 'coordSys' | 'sketch' | 'extrude' | 'revolve' | 'sweep' | 'thread' | 'loft' | 'rib' | 'pattern' | 'mirror' | 'fillet' | 'chamfer' | 'importedBody' | 'derivedBody' | 'deleteFace' | 'moveFace' | 'shell' | 'draft' | 'hole' | 'combine' | 'offsetSurface' | 'splitLine' | 'knit' | 'fillSurface' | 'flatSurface' | 'trimSurface' | 'mutualTrim' | 'extendSurface' | 'thicken' | 'cutWithSurface' | 'lipGroove' | 'screwBoss' | 'baseFlange' | 'midBend' | 'edgeFlange' | 'breakCorner' | 'hem' | 'snapHook' | 'snapCatch' | 'vent' | 'body' | 'error' | 'warning' | 'ok' | 'cancel' | 'eye' | 'eyeOff';
+type IconName = 'part' | 'assembly' | 'mates' | 'origin' | 'plane' | 'refPlane' | 'refAxis' | 'refPoint' | 'coordSys' | 'sketch' | 'extrude' | 'revolve' | 'sweep' | 'thread' | 'knurl' | 'loft' | 'rib' | 'pattern' | 'mirror' | 'fillet' | 'chamfer' | 'importedBody' | 'derivedBody' | 'deleteFace' | 'moveFace' | 'shell' | 'draft' | 'hole' | 'combine' | 'offsetSurface' | 'splitLine' | 'knit' | 'fillSurface' | 'flatSurface' | 'trimSurface' | 'mutualTrim' | 'extendSurface' | 'thicken' | 'cutWithSurface' | 'lipGroove' | 'screwBoss' | 'baseFlange' | 'midBend' | 'edgeFlange' | 'breakCorner' | 'hem' | 'snapHook' | 'snapCatch' | 'vent' | 'body' | 'error' | 'warning' | 'ok' | 'cancel' | 'eye' | 'eyeOff';
 
 /** Default planes and reference planes share one icon, as in SolidWorks. */
 const PLANE = <path d="M4 4h10l-2 8H2z" />;
@@ -19,6 +19,7 @@ const PATHS: Record<IconName, ReactElement> = {
   extrude: <path d="M3 6h7v7H3z M3 6l3-3h7L10 6 M13 3v7l-3 3" />,
   revolve: <path d="M8 1.5v13 M3 6a5 2.5 0 1 0 10 0 M11.5 3.2l1.5 2.8-3 0.4" />,
   thread: <path d="M4 2v12 M12 2v12 M4 4l8 2 M4 7l8 2 M4 10l8 2" />,
+  knurl: <path d="M3 3v10 M13 3v10 M3 4.5l10 7 M13 4.5l-10 7 M3 11.5l10-7 M13 11.5l-10-7" />,
   fillet: <path d="M3 13V3 M3 13h10 M3 7a6 6 0 0 0 6 6" />,
   chamfer: <path d="M3 13V7l4-4h6 M3 13h10V3" />,
   derivedBody: <path d="M3 5l5-3 5 3v6l-5 3-5-3z M8 5.5v5 M10.2 8.3L8 10.5 5.8 8.3" />,

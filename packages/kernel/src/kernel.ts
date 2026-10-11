@@ -122,6 +122,75 @@ export const THREAD_MAX_STARTS = 16;
 export const THREAD_MAX_TAPER = (30 * Math.PI) / 180;
 export const THREAD_MAX_TURNS = 400;
 
+/** A knurl (壓花): see `Kernel.knurl`. */
+export interface KnurlSpec {
+  /** A point on the axis and the way it runs (any length). */
+  axis: { origin: Vec3; dir: Vec3 };
+  /** The blank's outer radius: the surface the grooves are cut into (half the knurled diameter the drawing gives). */
+  radius: number;
+  /** How many grooves go round the circumference (a whole number). */
+  count: number;
+  /** The stretch of the axis the knurl covers, from `axis.origin` along `axis.dir`; from < to. */
+  from: number;
+  to: number;
+  /** How deep a groove cuts in from `radius`. */
+  depth: number;
+  /** The full angle between a groove's two flanks (radians). */
+  included: number;
+  /**
+   * 'straight' grooves run along the axis; 'helical' runs at `angle` to it, one hand. One call is one hand of grooves: a
+   * diamond is both hands, and is cut as two of these in turn — a single tool holding both would have its solids crossing
+   * each other, which OCCT does not resolve (see `Kernel.knurl`).
+   */
+  pattern: 'straight' | 'helical';
+  /** The angle of a groove to the axis (radians) for 'helical'; ignored for 'straight'. */
+  angle?: number;
+  /** Which way a 'helical' groove winds. Default: 'right'. */
+  hand?: 'right' | 'left';
+  /** The whole pattern turned about the axis (radians, counter-clockwise about `axis.dir`). */
+  phase?: number;
+}
+
+/** Limits of a knurl: more grooves, a steeper helix, a shallower V or a deeper cut than these is refused, not tried. */
+export const KNURL_MIN_GROOVES = 3;
+export const KNURL_MAX_GROOVES = 200;
+export const KNURL_MAX_ANGLE = (45 * Math.PI) / 180;
+export const KNURL_MIN_INCLUDED = (10 * Math.PI) / 180;
+export const KNURL_MAX_INCLUDED = (170 * Math.PI) / 180;
+/** The most whole turns one groove may be swept over: a knurl needing more is a screw, not a knurl. */
+export const KNURL_MAX_TURNS = 40;
+/** The most turn-pieces a knurl may be made of (grooves × hands × turns): a finer one is a file, not a knurl. */
+export const KNURL_MAX_PIECES = 4000;
+/**
+ * How far a groove's cutter is carried past the blank, as a share of its depth: the cut has to break the surface, and a
+ * cutter that stops exactly on it leaves a face of the tool and a face of the body on the same surface.
+ */
+export const KNURL_OVERSHOOT = 0.25;
+
+/** One hand of a knurl's grooves, as `Kernel.knurlSet` needs it (everything `Kernel.knurl` has worked out once for both hands). */
+interface KnurlSet {
+  radius: number;
+  count: number;
+  from: number;
+  to: number;
+  depth: number;
+  /** Half a groove's width where it leaves the blank (the cutter reaches `KNURL_OVERSHOOT · depth` past it). */
+  half: number;
+  /** How far out the cutter reaches: `radius` plus the overshoot. */
+  reach: number;
+  /** The angle of the groove to the axis: 0 for a straight one. */
+  angle: number;
+  /** +1 for a right hand groove, −1 for a left one. */
+  hand: number;
+  phase: number;
+  /** '' for a single set, 'R' or 'L' for the two hands of a diamond: what tells their faces apart in their names. */
+  tag: string;
+  /** Whole turns the sweep starts before `from`. */
+  back: number;
+  /** Whole turns it runs for. */
+  turns: number;
+}
+
 /** One direction of an extrusion: where it goes, its draft (radians, positive narrows along it) and what it ends on. */
 export interface SweepSpec {
   vector: Vec3;
@@ -971,26 +1040,7 @@ export class Kernel {
       }
 
       // all starts as one shape, side by side: narrower than the pitch, no two of them touch
-      let whole = pieces[0]!;
-      for (const p of pieces.slice(1)) {
-        const compound = arena.own(new oc.TopoDS_Compound());
-        const builder = arena.own(new oc.TopoDS_Builder());
-        builder.MakeCompound(compound);
-        builder.Add(compound, whole.shape);
-        builder.Add(compound, p.shape);
-        const index = ShapeIndex.of(oc, compound, T.FACE, arena);
-        const origins: FaceOrigin[][] = index.keys.map(() => []);
-        for (const part of [whole, p]) {
-          const own = ShapeIndex.of(oc, part.shape, T.FACE, arena);
-          own.keys.forEach((f, i) => {
-            const j = index.indexOf(f);
-            if (j >= 0) origins[j]!.push(...part.origins[i]!);
-          });
-          own.dispose();
-        }
-        index.dispose();
-        whole = { shape: compound, origins };
-      }
+      const whole = this.compoundPieces(pieces, arena);
 
       // cut to length: a common with a cylinder or tapered envelope from `from` to `to`, wider than the thread ever gets
       const rOuter = Math.max(rMax + tan * shift0, rMax + tan * shift1) + Math.abs(zMax - zMin) + 1;
@@ -1048,6 +1098,237 @@ export class Kernel {
     } finally {
       arena.dispose();
     }
+  }
+
+  /**
+   * The tool of a knurl (壓花): one hand of straight or helical grooves on a cylinder, as one solid to cut from the body. The blank is a cylinder of
+   * `radius` about the axis; a groove is a V cut in from it, `depth` deep with `included` between its flanks; `count` of them go round the
+   * circumference, so the pattern closes on itself (the pitch along the circumference is 2π·radius/count). Straight grooves run along the axis;
+   * helical ones wind about it at `angle`, one hand.
+   *
+   * How: one groove is built and the rest are copies of it turned 360°/count about the axis, so the expensive sweep happens once. A straight groove is
+   * the V (in the plane square to the axis, so its flanks meet the surface at `included`) grown along it; a helical groove is the V (in a plane through
+   * the axis, so that is where `included` is read) swept along a helix with the binormal held along the axis and then cut to length by a common with a
+   * cylinder — the screw motion `thread` uses, over whole turns only. A side face is one turn of one flank of one groove, named
+   * `<flank>@knurl<hand><groove>:<turn>` (turn 0 the turn the profile is drawn in, counting on along the axis; straight grooves have no turn and are
+   * named `<flank>@groove<n>`); the faces square to the axis at `from` and `to` are the caps.
+   *
+   * A diamond is the two hands, so it is two of these cut in turn (see `KnurlFeature`): one tool holding both hands has its solids crossing one another,
+   * and OCCT leaves the faces inside the crossing in the result, which then comes back as a body plus a solid per groove rather than one body.
+   */
+  knurl(spec: KnurlSpec): OpResult {
+    const { radius, from, to, depth, included, pattern } = spec;
+    const count = spec.count;
+    const angle = pattern === 'straight' ? 0 : (spec.angle ?? 0);
+    const phase = spec.phase ?? 0;
+    const hand = spec.hand === 'left' ? -1 : 1;
+    if (!(Number.isFinite(radius) && radius > 0)) throw new KernelError(t('feature.knurlBadRadius'));
+    if (!(Number.isInteger(count) && count >= KNURL_MIN_GROOVES && count <= KNURL_MAX_GROOVES))
+      throw new KernelError(t('feature.knurlBadCount', { min: String(KNURL_MIN_GROOVES), max: String(KNURL_MAX_GROOVES) }));
+    if (!(Number.isFinite(from) && Number.isFinite(to) && to > from)) throw new KernelError(t('feature.knurlBadLength'));
+    if (!(Number.isFinite(depth) && depth > 0 && depth < radius)) throw new KernelError(t('feature.knurlBadDepth', { radius: radius.toFixed(3) }));
+    if (!(Number.isFinite(included) && included >= KNURL_MIN_INCLUDED && included <= KNURL_MAX_INCLUDED))
+      throw new KernelError(
+        t('feature.knurlBadIncluded', { min: String(Math.round((KNURL_MIN_INCLUDED * 180) / Math.PI)), max: String(Math.round((KNURL_MAX_INCLUDED * 180) / Math.PI)) }),
+      );
+    if (pattern !== 'straight' && !(Number.isFinite(angle) && angle > 0 && angle <= KNURL_MAX_ANGLE))
+      throw new KernelError(t('feature.knurlBadAngle', { max: String(Math.round((KNURL_MAX_ANGLE * 180) / Math.PI)) }));
+    if (!Number.isFinite(phase)) throw new KernelError(t('feature.knurlBadPhase'));
+    const len = Math.hypot(...spec.axis.dir);
+    if (!(len > 0)) throw new KernelError(t('feature.knurlNoAxis'));
+    const Z: Vec3 = [spec.axis.dir[0] / len, spec.axis.dir[1] / len, spec.axis.dir[2] / len];
+    const O = spec.axis.origin;
+
+    // the grooves of one hand lie `spacing` apart: round the circumference for a straight one, along the axis for a helical one
+    const circumference = 2 * Math.PI * radius;
+    const spacing = pattern === 'straight' ? circumference / count : (circumference / count) * Math.tan(angle);
+    const reach = radius + KNURL_OVERSHOOT * depth;
+    const half = (depth + KNURL_OVERSHOOT * depth) * Math.tan(included / 2); // half a groove's width where it leaves the blank
+    if (!(2 * half < spacing)) {
+      const deepest = spacing / (2 * (1 + KNURL_OVERSHOOT) * Math.tan(included / 2));
+      throw new KernelError(t('feature.knurlTooDeep', { depth: deepest.toFixed(3), spacing: spacing.toFixed(3) }));
+    }
+    const lead = circumference * Math.tan(angle);
+    const back = pattern === 'straight' ? 0 : Math.ceil((half - from) / lead) + 1;
+    const turns = pattern === 'straight' ? 0 : back + Math.ceil((to + half) / lead) + 1;
+    if (turns > KNURL_MAX_TURNS)
+      throw new KernelError(t('feature.knurlTooManyTurns', { turns: String(turns), max: String(KNURL_MAX_TURNS), angle: String(Math.round((angle * 180) / Math.PI)) }));
+    const pieces = count * Math.max(1, turns);
+    if (pieces > KNURL_MAX_PIECES) throw new KernelError(t('feature.knurlTooFine', { pieces: String(pieces), max: String(KNURL_MAX_PIECES) }));
+
+    // a direction square to the axis, to measure the pattern round from
+    let X: Vec3 = Math.abs(Z[0]) < 0.9 ? [1, 0, 0] : [0, 1, 0];
+    const along = dot3(X, Z);
+    X = [X[0] - along * Z[0], X[1] - along * Z[1], X[2] - along * Z[2]];
+    const xLen = Math.hypot(...X);
+    X = [X[0] / xLen, X[1] / xLen, X[2] / xLen];
+
+    const oc = this.oc;
+    const arena = new Arena();
+    try {
+      const sets: { shape: TopoDS_Shape; origins: FaceOrigin[][] }[] = [];
+      for (const h of pattern === 'helical' ? [hand] : [0]) {
+        sets.push(this.knurlSet(O, Z, X, { radius, count, from, to, depth, half, reach, angle, hand: h, phase, tag: angle === 0 ? '' : h < 0 ? 'L' : 'R', back, turns }, arena));
+      }
+      const whole = this.compoundPieces(sets, arena);
+      if (!this.valid(whole.shape)) throw new KernelError(t('feature.knurlInvalid'));
+      const id = this.put(whole.shape.Oriented(whole.shape.Orientation()));
+      if (!(this.massProps(id).volume > 1e-9)) {
+        this.release(id);
+        throw new KernelError(t('feature.knurlInvalid'));
+      }
+      return { shape: id, faceOrigins: whole.origins };
+    } finally {
+      arena.dispose();
+    }
+  }
+
+  /** One hand of a knurl's grooves: `count` copies of a single groove turned 360°/count about the axis. */
+  private knurlSet(O: Vec3, Z: Vec3, X: Vec3, p: KnurlSet, arena: Arena): { shape: TopoDS_Shape; origins: FaceOrigin[][] } {
+    const oc = this.oc;
+    // the V: its point `depth` in from the blank, its flanks out past the surface, so the cut leaves only the two flanks
+    const loop: Segment[] = [
+      { kind: 'line', a: [p.radius - p.depth, 0], b: [p.reach, p.half], source: 'knurlFlankA' },
+      { kind: 'line', a: [p.reach, p.half], b: [p.reach, -p.half], source: 'knurlRoot' },
+      { kind: 'line', a: [p.reach, -p.half], b: [p.radius - p.depth, 0], source: 'knurlFlankB' },
+    ];
+    const straight = p.angle === 0;
+    let base: { shape: TopoDS_Shape; origins: FaceOrigin[][] };
+    if (straight) {
+      // the V in the plane square to the axis: its x is the distance from the axis and its y the way round, and it grows along the axis
+      const frame: Frame = { origin: add(O, Z, p.from), xDir: X, yDir: cross3(Z, X), normal: Z };
+      const sources = new Map<TopoDS_Shape, string>();
+      const wire = this.wire(arena, frame, loop, false, sources);
+      const mkFace = arena.own(new oc.BRepBuilderAPI_MakeFace(wire, true));
+      if (!mkFace.IsDone()) throw new KernelError(t('feature.knurlFailed', { why: 'face' }));
+      const face = arena.own(mkFace.Face());
+      const span = p.to - p.from;
+      const mk = arena.own(new oc.BRepPrimAPI_MakePrism(face, arena.own(new oc.gp_Vec(Z[0] * span, Z[1] * span, Z[2] * span)), false, true));
+      const shape = this.build(mk, t('feature.knurl'), arena);
+      base = { shape, origins: this.sweepOrigins(mk, shape, sources, arena) };
+    } else {
+      base = this.knurlHelix(O, Z, X, loop, p, arena);
+    }
+
+    const axis = arena.own(new oc.gp_Ax1(this.pnt(arena, O), this.dir(arena, Z)));
+    const copies: { shape: TopoDS_Shape; origins: FaceOrigin[][] }[] = [];
+    for (let k = 0; k < p.count; k++) {
+      const turn = arena.own(new oc.gp_Trsf());
+      turn.SetRotation(axis, p.phase + (2 * Math.PI * k) / p.count);
+      const rename = (o: FaceOrigin): FaceOrigin =>
+        o.rel === 'generated' && o.kind === 'profileEdge'
+          ? { ...o, source: straight ? `${o.source}@groove${k}` : o.source.replace(/@helix:(-?\d+)$/, `@knurl${p.tag}${k}:$1`) }
+          : o;
+      const mk = arena.own(new oc.BRepBuilderAPI_Transform(base.shape, turn, true, false));
+      const shape = arena.own(mk.Shape());
+      const before = ShapeIndex.of(oc, base.shape, T.FACE, arena);
+      const after = ShapeIndex.of(oc, shape, T.FACE, arena);
+      const origins: FaceOrigin[][] = after.keys.map(() => []);
+      before.keys.forEach((f, i) => {
+        const image = arena.own(mk.ModifiedShape(f));
+        const j = after.indexOf(image);
+        if (j >= 0) origins[j]!.push(...base.origins[i]!.map(rename));
+      });
+      before.dispose();
+      after.dispose();
+      copies.push({ shape, origins });
+    }
+    return this.compoundPieces(copies, arena);
+  }
+
+  /** One groove swept along a helix about the axis, cut square to the axis at `from` and `to`, with the origins of its faces. */
+  private knurlHelix(O: Vec3, Z: Vec3, X: Vec3, loop: Segment[], p: KnurlSet, arena: Arena): { shape: TopoDS_Shape; origins: FaceOrigin[][] } {
+    const oc = this.oc;
+    const lead = 2 * Math.PI * p.radius * Math.tan(p.angle);
+    const shift = -p.back * lead; // along the axis, where the sweep starts
+    const rRef = (p.radius - p.depth + p.reach) / 2;
+
+    // the helix: a line in the (angle, along the generatrix) parameters of the cylinder through the middle of the profile, one edge per turn
+    const ax3 = arena.own(new oc.gp_Ax3(this.pnt(arena, add(O, Z, shift)), this.dir(arena, Z), this.dir(arena, X)));
+    const surface = arena.own(new oc.Geom_CylindricalSurface(ax3, rRef));
+    const line = arena.own(new oc.Geom2d_Line(arena.own(new oc.gp_Pnt2d(0, 0)), arena.own(new oc.gp_Dir2d(p.hand * 2 * Math.PI, lead))));
+    const perTurn = Math.hypot(2 * Math.PI, lead);
+    const mw = arena.own(new oc.BRepBuilderAPI_MakeWire());
+    const pathSources = new Map<TopoDS_Shape, string>();
+    for (let i = 0; i < p.turns; i++) {
+      const edge = arena.own(arena.own(new oc.BRepBuilderAPI_MakeEdge(line, surface, i * perTurn, (i + 1) * perTurn)).Edge());
+      if (!oc.BRepLib.BuildCurves3d(edge, 1e-7, oc.GeomAbs_Shape.GeomAbs_C1, 14, 30)) throw new KernelError(t('feature.knurlFailed', { why: 'BuildCurves3d' }));
+      mw.Add(edge);
+      if (!mw.IsDone()) throw new KernelError(t('feature.knurlFailed', { why: 'helix' }));
+      pathSources.set(arena.own(mw.Edge()), `helix:${i - p.back}`); // the turn the profile is drawn in is 0
+    }
+    const spine = arena.own(mw.Wire());
+
+    // the profile, moved back whole turns until it lies before `from`, swept with the binormal held along the axis (so it stays in a plane through it)
+    const frame: Frame = { origin: add(O, Z, shift), xDir: X, yDir: Z, normal: cross3(X, Z) };
+    const sources = new Map<TopoDS_Shape, string>();
+    const wire = this.wire(arena, frame, loop, false, sources);
+    const mk = arena.own(new oc.BRepOffsetAPI_MakePipeShell(spine));
+    mk.SetMode(this.dir(arena, Z));
+    mk.SetTolerance(1e-6, 1e-6, 1e-4);
+    mk.Add(wire, false, false);
+    try {
+      mk.Build(arena.own(new oc.Message_ProgressRange()));
+      if (!mk.IsReady() || !mk.MakeSolid()) throw new KernelError(t('feature.knurlFailed', { why: t('feature.sweepNoSolid') }));
+    } catch (e) {
+      if (e instanceof KernelError) throw e;
+      throw new KernelError(t('feature.knurlFailed', { why: this.errorText(e) }));
+    }
+    let shape = arena.own(mk.Shape());
+    const props = arena.own(new oc.GProp_GProps());
+    oc.BRepGProp.VolumeProperties(shape, props, false, false, false);
+    if (props.Mass() < 0) shape = arena.own(shape.Reversed());
+    const origins = this.pipeOrigins(mk, shape, sources, pathSources, arena);
+
+    // cut to length: a common with a cylinder from `from` to `to`, wider than the groove ever reaches
+    const box = arena.own(
+      arena.own(new oc.BRepPrimAPI_MakeCylinder(arena.own(new oc.gp_Ax2(this.pnt(arena, add(O, Z, p.from)), this.dir(arena, Z), this.dir(arena, X))), p.reach + 1, p.to - p.from)).Shape(),
+    );
+    const fa = ShapeIndex.of(oc, shape, T.FACE, arena);
+    const fb = ShapeIndex.of(oc, box, T.FACE, arena);
+    const boxOrigins: FaceOrigin[][] = fb.keys.map((f) => {
+      const at = arena.own(new oc.GProp_GProps());
+      oc.BRepGProp.SurfaceProperties(f, at, false, false);
+      const along = dot3(sub3(this.xyz(arena.own(at.CentreOfMass())), O), Z);
+      return Math.abs(along - p.from) < 1e-9 * p.radius
+        ? [{ rel: 'cap' as const, which: 'start' as const }]
+        : Math.abs(along - p.to) < 1e-9 * p.radius
+          ? [{ rel: 'cap' as const, which: 'end' as const }]
+          : [];
+    });
+    const common = this.boolOp('common', shape, box, t('feature.knurl'), arena);
+    const out = arena.own(common.Shape());
+    const all = [...origins, ...boxOrigins];
+    const clipped = this.faceSources(common, [...fa.keys, ...fb.keys], out, arena).map((s) => s.flatMap((i) => all[i]!));
+    fa.dispose();
+    fb.dispose();
+    return { shape: out, origins: clipped };
+  }
+
+  /** Several shapes as one compound, keeping for each of its faces the origins of the face it came from. */
+  private compoundPieces(pieces: { shape: TopoDS_Shape; origins: FaceOrigin[][] }[], arena: Arena): { shape: TopoDS_Shape; origins: FaceOrigin[][] } {
+    const oc = this.oc;
+    let whole = pieces[0]!;
+    for (const p of pieces.slice(1)) {
+      const compound = arena.own(new oc.TopoDS_Compound());
+      const builder = arena.own(new oc.TopoDS_Builder());
+      builder.MakeCompound(compound);
+      builder.Add(compound, whole.shape);
+      builder.Add(compound, p.shape);
+      const index = ShapeIndex.of(oc, compound, T.FACE, arena);
+      const origins: FaceOrigin[][] = index.keys.map(() => []);
+      for (const part of [whole, p]) {
+        const own = ShapeIndex.of(oc, part.shape, T.FACE, arena);
+        own.keys.forEach((f, i) => {
+          const j = index.indexOf(f);
+          if (j >= 0) origins[j]!.push(...part.origins[i]!);
+        });
+        own.dispose();
+      }
+      index.dispose();
+      whole = { shape: compound, origins };
+    }
+    return whole;
   }
 
   /**

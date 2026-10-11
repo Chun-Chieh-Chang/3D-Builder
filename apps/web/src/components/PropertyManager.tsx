@@ -3,6 +3,8 @@ import { labelsOf, t } from '@3db/i18n';
 import { currentTopicId } from '../help/context';
 import {
   canBeSeed,
+  evalLength,
+  evalNumber,
   evalQuantity,
   findFeature,
   formatQuantity,
@@ -78,6 +80,7 @@ import {
   type ShellFeature,
   type SweepFeature,
   type ThreadFeature,
+  type KnurlFeature,
   type Thin,
   type SketchConstraint,
   type SketchFeature,
@@ -1085,6 +1088,139 @@ function ThreadPanel({ f }: { f: ThreadFeature }) {
   );
 }
 
+/**
+ * Knurl (ADR 0124): the grooves of a straight, helical or diamond pattern cut into a cylinder about an axis. The axis is a face, an edge or a reference
+ * axis of the model — never a line of a sketch, since no sketch is involved.
+ */
+function KnurlPanel({ f }: { f: KnurlFeature }) {
+  const doc = useStore((s) => s.doc);
+  const selectedFace = useStore((s) => s.selectedFace);
+  const selected = useStore((s) => s.selected);
+  const index = doc.features.findIndex((x) => x.id === f.id);
+  const refAxes = doc.features.filter((x, i): x is RefAxisFeature => x.type === 'refAxis' && (index < 0 || i < index));
+
+  const update = (patch: Partial<Omit<KnurlFeature, 'id' | 'type' | 'name' | 'suppressed'>>) => {
+    store.execute({ type: 'setKnurl', featureId: f.id, knurl: patch });
+  };
+
+  const datumLabel = (name: string) => refAxes.find((a) => a.id === name)?.name ?? (ORIGIN_AXES.includes(name) ? t('pm.thread.originAxis', { a: name.slice(5).toUpperCase() }) : name);
+  const current = f.axis.kind === 'datum' ? `datum:${f.axis.name}` : `ref:${f.axis.kind}:${f.axis.name}`;
+  const canUseSelection = !!selectedFace || (!!selected && (selected.startsWith('axis:') || refAxes.some((a) => a.id === selected)));
+  const applySelection = () => {
+    if (selectedFace) update({ axis: selectedFace });
+    else if (selected) update({ axis: { kind: 'datum', name: selected } });
+  };
+
+  // the circular pitch the count works out to: only when both are plain enough to read without the document's variables
+  const pitch = (() => {
+    try {
+      const d = evalLength(f.diameter);
+      const n = evalNumber(f.count);
+      return d > 0 && n > 0 ? (Math.PI * d) / n : null;
+    } catch {
+      return null;
+    }
+  })();
+
+  return (
+    <>
+      <section className="pm-group">
+        <h4>{t('pm.knurl.axis')}</h4>
+        <div className="pm-row">
+          <select
+            value={current}
+            onChange={(e) => {
+              const val = e.target.value;
+              if (val.startsWith('datum:')) update({ axis: { kind: 'datum', name: val.slice(6) } });
+            }}
+          >
+            {current.startsWith('ref:') && <option value={current}>{f.axis.name}</option>}
+            {ORIGIN_AXES.map((name) => (
+              <option key={name} value={`datum:${name}`}>
+                {datumLabel(name)}
+              </option>
+            ))}
+            {refAxes.map((a) => (
+              <option key={a.id} value={`datum:${a.id}`}>
+                {a.name}
+              </option>
+            ))}
+            {current.startsWith('datum:') && !ORIGIN_AXES.includes(f.axis.name) && !refAxes.some((a) => a.id === f.axis.name) && <option value={current}>{datumLabel(f.axis.name)}</option>}
+          </select>
+          <button type="button" disabled={!canUseSelection} title={t('pm.knurl.useSelected')} onClick={applySelection}>
+            {t('pm.knurl.useSelected')}
+          </button>
+        </div>
+      </section>
+
+      <section className="pm-group">
+        <h4>{t('pm.knurl.pattern')}</h4>
+        <select value={f.pattern} onChange={(e) => update({ pattern: e.target.value as KnurlFeature['pattern'] })}>
+          <option value="straight">{t('pm.knurl.straight')}</option>
+          <option value="helical">{t('pm.knurl.helical')}</option>
+          <option value="diamond">{t('pm.knurl.diamond')}</option>
+        </select>
+
+        <label className="pm-row">
+          <span>{t('pm.knurl.diameter')}</span>
+          <ValueInput value={f.diameter} toCommand={(diameter) => ({ type: 'setKnurl', featureId: f.id, knurl: { diameter } })} />
+        </label>
+
+        <label className="pm-row">
+          <span>{t('pm.knurl.count')}</span>
+          <ValueInput value={f.count} suffix="" toCommand={(count) => ({ type: 'setKnurl', featureId: f.id, knurl: { count } })} />
+        </label>
+
+        {pitch !== null && <p className="hint">{t('pm.knurl.pitch')}: {pitch.toFixed(3)} mm</p>}
+        <p className="hint">{t('pm.knurl.pitchHint')}</p>
+
+        <label className="pm-row">
+          <span>{t('pm.knurl.length')}</span>
+          <ValueInput value={f.length} toCommand={(length) => ({ type: 'setKnurl', featureId: f.id, knurl: { length } })} />
+        </label>
+
+        <label className="pm-row">
+          <span>{t('pm.knurl.depth')}</span>
+          <ValueInput value={f.depth} toCommand={(depth) => ({ type: 'setKnurl', featureId: f.id, knurl: { depth } })} />
+        </label>
+
+        <label className="pm-row">
+          <span>{t('pm.knurl.included')}</span>
+          <ValueInput value={f.included ?? '90'} suffix="°" toCommand={(included) => ({ type: 'setKnurl', featureId: f.id, knurl: { included } })} />
+        </label>
+
+        {f.pattern !== 'straight' && (
+          <label className="pm-row">
+            <span>{t('pm.knurl.angle')}</span>
+            <ValueInput value={f.angle ?? '30'} suffix="°" toCommand={(angle) => ({ type: 'setKnurl', featureId: f.id, knurl: { angle } })} />
+          </label>
+        )}
+
+        {f.pattern === 'helical' && (
+          <label className="pm-row">
+            <span>{t('pm.knurl.hand')}</span>
+            <select value={f.hand ?? 'right'} onChange={(e) => update({ hand: e.target.value as 'right' | 'left' })}>
+              <option value="right">{t('pm.knurl.handRh')}</option>
+              <option value="left">{t('pm.knurl.handLh')}</option>
+            </select>
+          </label>
+        )}
+
+        <label className="pm-row">
+          <span>{t('pm.knurl.phase')}</span>
+          <ValueInput value={f.phase ?? '0'} suffix="°" toCommand={(phase) => ({ type: 'setKnurl', featureId: f.id, knurl: { phase } })} />
+        </label>
+
+        <label className="pm-row checkbox">
+          <input type="checkbox" checked={f.reverse ?? false} onChange={(e) => update({ reverse: e.target.checked })} />
+          <span>{t('pm.knurl.reverse')}</span>
+        </label>
+
+        <p className="hint">{t('pm.knurl.hint')}</p>
+      </section>
+    </>
+  );
+}
 
 /** Loft (C4.5): the sketches of the sections as an ordered list (move up, move down, remove), and a list to add one from. */
 function LoftPanel({ f }: { f: LoftFeature }) {
@@ -3043,6 +3179,7 @@ export function PropertyManager() {
       {f.type === 'cutWithSurface' && <CutWithSurfacePanel f={f} />}
       {f.type === 'combine' && <CombinePanel f={f} />}
       {f.type === 'thread' && <ThreadPanel f={f} />}
+      {f.type === 'knurl' && <KnurlPanel f={f} />}
     </div>
   );
 }

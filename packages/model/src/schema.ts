@@ -6,7 +6,7 @@ import type { Id } from './ids';
  * DOF status, mass properties and error lists are derived data and never stored.
  */
 
-export const SCHEMA_VERSION = 53;
+export const SCHEMA_VERSION = 54;
 
 /** Value expression (B5.2, B5.3): "20", "25.4mm", "30deg", "wall_t*2", "D1@草圖1/2", "property('厚度')"; see `expr/`. */
 export type Expr = string;
@@ -278,6 +278,40 @@ export interface ThreadFeature extends FeatureBase {
   /** Optional fade transitions at start and end */
   fadeTurnsIn?: Expr;
   fadeTurnsOut?: Expr;
+}
+
+/**
+ * Knurl (壓花, ADR 0124): the grooves of a straight, helical or diamond pattern cut into a cylinder about an axis. The blank is the cylinder of
+ * `diameter`; a groove is a V `depth` deep with `included` between its flanks, and `count` of them go round the circumference, so the pattern closes
+ * on itself. `pattern` says which way they run: along the axis, at `angle` to it (one `hand`), or both hands at once, crossing.
+ *
+ * The grooves are cut from the body, which must already be at `diameter` on that axis: this is how a drawing gives a knurl (its diameter is the
+ * knurled outside diameter, the ridges reach it and the grooves cut in from it).
+ */
+export interface KnurlFeature extends FeatureBase {
+  type: 'knurl';
+  /** The axis of the surface to knurl: a cylindrical or conical face of the body (its axis), a straight model edge, or a reference axis. */
+  axis: Ref;
+  /** The blank's outside diameter: the surface the grooves are cut into. */
+  diameter: Expr;
+  /** How far along the axis the knurl runs, from the end `axis` names (the far end when `reverse`). */
+  length: Expr;
+  /** How many grooves go round the circumference: a whole number from 3, so that the pattern closes on itself. */
+  count: Expr;
+  /** How deep a groove cuts in from `diameter`. */
+  depth: Expr;
+  /** 'straight' grooves run along the axis; 'helical' runs at `angle` to it, one hand; 'diamond' runs both hands, crossing. */
+  pattern: 'straight' | 'helical' | 'diamond';
+  /** The angle of a groove to the axis, for 'helical' and 'diamond'. Default 30°. */
+  angle?: Expr;
+  /** The full angle between a groove's two flanks. Default 90°. */
+  included?: Expr;
+  /** Which way a 'helical' groove winds. Default 'right'. */
+  hand?: 'right' | 'left';
+  /** The whole pattern turned about the axis. */
+  phase?: Expr;
+  /** The knurl runs the other way along the axis from where `axis` puts it. */
+  reverse?: boolean;
 }
 
 
@@ -906,7 +940,8 @@ export type Feature =
   | DraftFeature
   | HoleFeature
   | CombineFeature
-  | ThreadFeature;
+  | ThreadFeature
+  | KnurlFeature;
 export type FeatureType = Feature['type'];
 
 // ---------------------------------------------------------------- document

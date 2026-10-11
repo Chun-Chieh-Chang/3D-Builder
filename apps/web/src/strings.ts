@@ -61,12 +61,14 @@ export const FEATURE_LABEL: Record<FeatureType, string> = labelsOf({
   moveFace: 'feature.moveFace',
   combine: 'feature.combine',
   thread: 'feature.thread',
+  knurl: 'feature.knurl',
 });
 
 /** SolidWorks names cuts after what they cut with: 「除料-伸長」, 「除料-旋轉」. */
 export function featureLabel(f: Feature): string {
   if (f.type === 'pattern') return t(f.def.mode === 'linear' ? 'feature.linearPattern' : 'feature.circularPattern');
   if (f.type === 'thread') return (f.op === 'cut' || f.operation === 'cut') ? t('feature.cut', { name: FEATURE_LABEL.thread }) : FEATURE_LABEL.thread;
+  if (f.type === 'knurl') return t('feature.cut', { name: FEATURE_LABEL.knurl });
   return (f.type === 'extrude' || f.type === 'revolve' || f.type === 'sweep' || f.type === 'loft') && f.op === 'cut' ? t('feature.cut', { name: FEATURE_LABEL[f.type] }) : FEATURE_LABEL[f.type];
 }
 
