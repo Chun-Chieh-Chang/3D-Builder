@@ -91,6 +91,12 @@ describe('Standard Thread Library & ISO 68-1 Profile (T-6)', () => {
     const flankAngle = Math.atan2(dz, dr) * (180 / Math.PI);
     expect(flankAngle).toBeCloseTo(30, 2);
 
+    // Exact ISO 68-1 crest opening and root groove width verification
+    const wCrest = profile[4]![1] - profile[1]![1];
+    expect(wCrest).toBeCloseTo((7 / 8) * m6.pitch, 3); // 0.875 * P
+    const wRoot = profile[3]![1] - profile[2]![1];
+    expect(wRoot).toBeCloseTo((1 / 6) * m6.pitch, 3); // P / 6 ≈ 0.1667 * P
+
     // Total tooth axial span zMax - zMin must be strictly smaller than pitch (defense against WASM fuse overlap)
     const zSpan = Math.max(...zs) - Math.min(...zs);
     expect(zSpan).toBeLessThan(m6.pitch);

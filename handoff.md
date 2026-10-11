@@ -1,10 +1,10 @@
 # 交接文件
 
-- 最後更新：2026-10-11（**螺牙特徵第二階段 D1 完成：內建 42 種 ISO Metric / UNC 標準牙庫、兩端漸縮收尾 Revolved Tapered Envelope、PropertyManager 前端面板整合，全套 52/52 測試全綠；桌面版已同步升級至 0.2.2 並重新完成打包**；其他狀態見「最新存檔點」）。
-- **【2026-10-11：螺牙特徵第二階段（D1: T-6 至 T-8）全套落實與確效，桌面版升級至 0.2.2】**
+- 最後更新：2026-10-11（**螺牙特徵第二階段 D1 完成：內建 42 種 ISO Metric / UNC 標準牙庫、兩端漸縮收尾 Revolved Tapered Envelope、PropertyManager 前端面板整合；經 Workbuddy 審查深度校正 A1 自適應接線、A2 WASM Heap 守門防呆與 threadStandards 註解，全套 7 套件 61/61 測試全綠；桌面版 0.2.2 打包完成**；其他狀態見「最新存檔點」）。
+- **【2026-10-11：螺牙特徵第二階段（D1: T-6 至 T-8）全套落實、審查校正與桌面版 0.2.2】**
   - **T-6 標準螺牙庫與 60° 基本牙型幾何推導器 (`@3db/model`)**：
     - 內建 42 種標準規格（公制粗牙 M2~M30、公制細牙 M8x1.0~M24x2.0、美制粗牙 UNC #4-40~3/4-10、美制細牙 UNF #10-32~1/2-20）。
-    - 嚴格依 ISO 68-1 幾何解析推導 60° 牙型（牙側角 30.000°），支援外螺紋切除、外螺紋長出、內螺紋切除；平行外延區間 Margin 在數學上保證軸向跨度 $zMax - zMin < P$（`threadStandards.test.ts` 10/10 PASS）。
+    - 嚴格依 ISO 68-1 幾何解析推導 60° 牙型（牙側角 30.000°），支援外螺紋切除、外螺紋長出、內螺紋切除；平行外延區間 Margin 在數學上保證軸向跨度 $zMax - zMin < P$；校正註解與測試（牙頂槽寬 0.875P、牙根寬度 P/6）（`threadStandards.test.ts` 10/10 PASS）。
   - **T-7 核心兩端漸縮收尾演算法 (`@3db/kernel`)**：
     - `Kernel.thread` 實作旋轉包絡實體（Revolved Tapered Envelope Solid）裁剪，使牙高在端點平滑收攏歸零淡入淡出，消除 90° 刃口階梯（`thread-fade.test.ts` 4/4 PASS）。
   - **T-8 特徵與前端整合 (`@3db/regen`, `PropertyManager.tsx`)**：
@@ -12,8 +12,12 @@
     - `engine.ts` 支援圓柱面端點邊界自適應對齊切入；`commands.ts` 補齊 `setThread` 分支。
     - `PropertyManager.tsx` 完整提供規格模式切換、標準下拉選單與漸縮圈數輸入。
     - 端到端整合與自我紅隊測試全過（`thread-standard-feature.test.ts` 7/7 PASS；STEP 往返體積偏差 $< 10^{-4}$）。
-  - **全套螺牙測試狀態**：52/52 PASS（標準庫 10、漸縮核心 4、第一階段草圖 7、第二階段標準特徵 7、螺牙原有特徵 24，含 200 組 Fuzz 壓力測試）。
-  - **桌面版升級 0.2.2**：已重新建置產出最新可執行檔 `apps/desktop/src-tauri/target/release/desktop.exe`（13.15 MB）與 NSIS 安裝包 `apps/desktop/src-tauri/target/release/bundle/nsis/3D-Builder_0.2.2_x64-setup.exe`（11.32 MB，2026/10/11 12:01:10），完整內嵌最新 42 種規格庫與漸縮淡入淡出核心。
+  - **全套螺牙測試狀態**：7 套件 61/61 PASS（`threadStandards` 10、`thread-fade` 4、`thread-ui` 4、`thread-feature` 7、`thread-standard-feature` 7、`thread` 24、`thread-fuzz` 5，含 200 組 Fuzz 壓力測試 0 崩潰）。
+  - **審查深度校正（Workbuddy Audit CAPA）**：
+    1. A1 自適應高精度 `massProps` 預設開啟（`adaptive ?? true`），`kernel.test.ts` 補齊螺牙真實曲面自適應高精度對照測試。
+    2. A2 `direct-edit.test.ts` 改用真實 Emscripten WASM Heap `wasmMemory.buffer.byteLength` 並強制基準值 `> 0` 防呆，消除恆真式假綠。
+    3. `AGENTS.md` 寫入「真值存在性防呆」與「禁止防禦性空轉閘控」自我演化準則。
+  - **桌面版升級 0.2.2**：已重新建置產出最新可執行檔 `apps/desktop/src-tauri/target/release/desktop.exe`（13.15 MB）與 NSIS 安裝包 `apps/desktop/src-tauri/target/release/bundle/nsis/3D-Builder_0.2.2_x64-setup.exe`（11.32 MB，2026/10/11 12:01:10），完整內嵌最新 42 種規格庫、漸縮淡入淡出核心與自適應質量特性。
 - **【2026-10-11：落實選擇題決策 A1~A3、B1~B2，說明系統更新與桌面版 0.2.1 打包】**
   - **使用者裁決結果落實（全部採用架構師建議）**：
     1. **A1 質量特性自適應高精度**：`hasComplexSurfaces` 偵測 B-spline/螺牙/自由曲面自動切換至 `eps: 1e-6`，初等幾何維持快速積分與手算基準吻合（`kernel.test.ts` 10/10 PASS）。

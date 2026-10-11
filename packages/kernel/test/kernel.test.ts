@@ -115,12 +115,40 @@ describe('mesh and exchange', () => {
     expect(k.liveShapes).toBe(before);
   });
 
-  it('adaptively uses high-precision integration without breaking elementary geometries', () => {
+  it('adaptively uses high-precision integration on complex surfaces without breaking elementary geometries', () => {
+    // Elementary geometries (boxes) stay fast with exact fixed integration
     const box = keep(k.extrude(front, [rect(10, 10)], [0, 0, 10]).shape);
     const p1 = k.massProps(box);
     const p2 = k.massProps(box, { eps: 1e-6 });
     expect(p1.volume).toBeCloseTo(1000, 9);
     expect(p2.volume).toBeCloseTo(1000, 9);
     expect(Math.abs(p1.volume - p2.volume)).toBeLessThan(1e-9);
+
+    // Complex freeform/thread B-spline surfaces automatically switch to high-precision (eps: 1e-6)
+    const threadRegion: Region = {
+      outer: [
+        { kind: 'line', a: [4.5, -0.4], b: [4.5, 0.4], source: 'l1' },
+        { kind: 'line', a: [4.5, 0.4], b: [5.0, 0.1], source: 'l2' },
+        { kind: 'line', a: [5.0, 0.1], b: [5.0, -0.1], source: 'l3' },
+        { kind: 'line', a: [5.0, -0.1], b: [4.5, -0.4], source: 'l4' },
+      ],
+      holes: [],
+    };
+    const threadShape = keep(
+      k.thread(
+        { origin: [0, 0, 0], xDir: [1, 0, 0], yDir: [0, 0, 1], normal: [0, -1, 0] },
+        [threadRegion],
+        { axis: { origin: [0, 0, 0], dir: [0, 0, 1] }, pitch: 1.5, starts: 1, hand: 'right', from: 0, to: 6 }
+      ).shape
+    );
+
+    const threadAuto = k.massProps(threadShape);
+    const threadExact = k.massProps(threadShape, { eps: 1e-6 });
+    const threadFixed = k.massProps(threadShape, { adaptive: false });
+
+    // Automatic default call matches explicit eps: 1e-6 precision
+    expect(threadAuto.volume).toBeCloseTo(threadExact.volume, 8);
+    // Non-adaptive fixed integration deviates by ~1e-4 on long B-spline helicoidal faces
+    expect(Math.abs(threadAuto.volume - threadFixed.volume)).toBeGreaterThan(1e-5);
   });
 });

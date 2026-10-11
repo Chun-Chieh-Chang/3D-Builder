@@ -151,7 +151,7 @@ export interface StandardProfileOptions {
   op: 'cut' | 'boss';
   /** 'external': on an outer shaft (e.g. bolt); 'internal': in an inner bore (e.g. nut) */
   target: 'external' | 'internal';
-  /** Margin extending into clearance space to guarantee clean boolean intersection (default: 0.1 * P) */
+  /** Margin extending into clearance space to guarantee clean boolean intersection (default: 0.15 * P) */
   extensionMargin?: number;
 }
 
@@ -163,17 +163,17 @@ export interface StandardProfileOptions {
  * - Symmetrical about z = 0.
  * - Pitch diameter d2 is at theoretical balance where tooth width = groove width = P / 2.
  * - External Cut:
- *   - At major diameter d: groove width = P - P/8 = 7/8 * P = 0.875 * P.
- *   - At minor diameter d3: groove root width = P / 4 = 0.25 * P.
+ *   - At major diameter d: groove width = P - P/8 = 7/8 * P = 0.875 * P (crest truncation H/8).
+ *   - At minor diameter d3: groove root width = P / 6 ≈ 0.1667 * P (root truncation H/6).
  *   - Beyond major diameter (extension margin): side flanks extend straight outwards at width 7/8 * P
  *     so that the tool cleanly pierces the cylindrical boundary without ever exceeding pitch P.
  * - External Boss:
- *   - At minor diameter d3: tooth root width = P - P/4 = 0.75 * P.
- *   - At major diameter d: crest width = P / 8 = 0.125 * P.
- *   - Inside minor diameter (extension margin into core): extends straight inwards at width 0.75 * P.
+ *   - At minor diameter d3: tooth root width = P - P/6 = 5/6 * P ≈ 0.8333 * P (root truncation H/6).
+ *   - At major diameter d: crest width = P / 8 = 0.125 * P (crest truncation H/8).
+ *   - Inside minor diameter (extension margin into core): extends straight inwards at width 5/6 * P.
  * - Internal Cut:
- *   - At minor bore diameter D1: groove entry width = P / 4 = 0.25 * P.
- *   - At major diameter D: groove root width = 7/8 * P = 0.875 * P.
+ *   - At minor bore diameter D1: groove entry width = P / 4 = 0.25 * P (bore crest truncation H/4).
+ *   - At major diameter D: groove root width = 7/8 * P = 0.875 * P (root truncation H/8).
  *   - Inside bore (extension margin into clearance): extends straight inwards at width P / 4.
  */
 export const generateStandardThreadProfile = (

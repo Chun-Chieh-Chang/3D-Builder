@@ -1,5 +1,34 @@
 # 3D-Builder 開發日誌 (DEV_LOG.md)
 
+## 2026-10-11（下午）：Workbuddy 獨立審查缺陷修復（A1 自適應接線、A2 WASM Heap 守門防呆、threadStandards 註解修正與 61/61 測試核驗）
+
+### 1. 審查背景與需求 (Requirements)
+依據 Workbuddy 審查報告（`scratch/review-2026-10-11-antigravity-audit.md`），對今日交付進行第一性原理深度檢核與矯正：
+1. **A2 WASM Heap 斷言修復 (P1)**：將 `direct-edit.test.ts` 中未定義退化為 0 的 `HEAPU8` 改為 `(kernel.oc as any).wasmMemory.buffer.byteLength`，並強制加入基準值 `> 0` 防呆，消除 `expect(0).toBe(0)` 恆真式假綠。
+2. **A1 自適應高精度接線 (P2)**：將 `massProps` 的 `adaptive` 參數預設為 `true`（`options.adaptive ?? true`），使複雜曲面在呼叫時自動觸發 `eps = 1e-6`，並在 `kernel.test.ts` 補齊螺牙真實曲面的實質精度差異對照測試。
+3. **threadStandards 註解常數修正 (P3)**：更正 `threadStandards.ts` 註解常數（`0.15*P`、`P/6`、`5P/6`），並於 `threadStandards.test.ts` 增加 ISO 68-1 牙頂開口與牙根寬度斷言。
+4. **測試統計口徑精確化 (P4)**：校正螺牙測試統計為「7 支套件 61 tests 全過」（含 200 組 Fuzz 隨機壓力測試）。
+
+---
+
+### 2. 根因分析 (RCA)
+- **問題 1（A2 守門假綠）**：編寫測試時未先驗證 Emscripten WASM Heap 在 OpenCascade.js 封裝中的具體屬性路徑，且使用 `?? 0` 靜默容錯，導致斷言退化為 `expect(0).toBe(0)`，違反「零代理指標原則」。
+- **問題 2（A1 空轉閘控）**：引入 `options.adaptive` 旗標以期防禦，卻未給予預設值且全庫無呼叫端傳入，測試又僅用初等方塊驗證，導致自適應高精度邏輯成為無人能觸發的死碼。
+- **問題 3（註解常數錯誤）**：推導註解草稿與最終幾何代碼未嚴格同步，產生外螺紋溝根寬度常數筆誤。
+
+---
+
+### 3. 矯正與預防措施 (CAPA)
+- **代碼與測試修復**：
+  - `tests/phase3/direct-edit.test.ts`：以真實 Emscripten WASM Heap `wasmMemory.buffer.byteLength` 守門，並以 `expect(initialHeapBytes).toBeGreaterThan(0)` 嚴防假綠（20 次重建 0 增長實證）。
+  - `packages/kernel/src/kernel.ts`：`massProps` 預設 `adaptive ?? true`，遇自由曲面/螺牙自動切換至 `eps: 1e-6`。
+  - `packages/kernel/test/kernel.test.ts`：加入真實螺牙形狀測試，斷言預設呼叫與 `eps: 1e-6` 一致（誤差 $< 10^{-8}$），且與非自適應粗略積分存在 $> 10^{-5}$ 顯著改善。
+  - `packages/model/src/threadStandards.ts`：註解常數校正為 `0.15*P`、`P/6`、`5P/6`；`threadStandards.test.ts` 加入 M6 牙頂槽開口（`0.875*P`）與牙根寬度（`P/6`）驗證。
+- **規則自我演化 (Self-Evolution)**：
+  - 萃取「真值存在性防呆（Ground Truth Existence Defense）」與「禁止防禦性空轉閘控（No Unwired Defensive Gating）」兩大硬準則寫入 `AGENTS.md`。
+
+---
+
 ## 2026-10-11（中午）：螺牙特徵第二階段（42 種標準牙庫、淡入淡出漸縮收尾）與桌面版 0.2.2 建置
 
 ### 1. 需求內容 (Requirements)

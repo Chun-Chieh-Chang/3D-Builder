@@ -2044,7 +2044,8 @@ export class Kernel {
       const shape = this.get(id);
       const v = arena.own(new oc.GProp_GProps());
       let eps = options.eps;
-      if (eps === undefined && options.adaptive && this.hasComplexSurfaces(shape, arena)) {
+      const adaptive = options.adaptive ?? true;
+      if (eps === undefined && adaptive && this.hasComplexSurfaces(shape, arena)) {
         eps = 1e-6;
       }
       if (eps !== undefined) oc.BRepGProp.VolumeProperties(shape, v, eps, false, false);

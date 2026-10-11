@@ -42,18 +42,27 @@
 
 ## 3. 測試質量與記憶體防禦硬準則
 
-### 3.1 零代理指標原則 (No Surrogate Metrics)
-- 測試記憶體洩漏時，禁止僅以物件計數（如 `liveHandles`、`meshCount`）宣告無洩漏。涉及 WASM/C++ 底層運算者，必須監控 Emscripten Heap（`HEAPU8.length`）或提供數學封閉性證明。
+### 3.1 零代理指標原則 (No Surrogate Metrics) 與真值存在性防呆 (Ground Truth Existence Defense)
+- 測試記憶體洩漏時，禁止僅以物件計數（如 `liveHandles`、`meshCount`）宣告無洩漏。涉及 WASM/C++ 底層運算者，必須監控 Emscripten Heap，且**唯一真實指標路徑為 `(oc as any).wasmMemory?.buffer?.byteLength`**。
+- **真值存在性防呆**：任何監控底層指標的測試，必須強制先斷言「基準指標存在且大於 0（`expect(initial).toBeGreaterThan(0)`）」，**嚴禁使用 `?? 0` 等靜默退化語意將未定義屬性退化為 0 造成 `expect(0).toBe(0)` 恆真式假綠**。
 
-### 3.2 測試門檻零妥協原則 (Zero Threshold Degradation)
+### 3.2 禁止防禦性空轉閘控 (No Unwired Defensive Gating)
+- 核心演算法或精確度升級（如 `massProps` 自適應積分），若引入條件參數（如 `options.adaptive`），必須明確預設值語意（`options.adaptive ?? true`），或在全 repo 呼叫端（Worker、Engine、UI）完整接線。
+- 驗收測試必須使用**能實質觸發該分支的邊界對象**（如螺牙 B-spline 自由曲面），並對照「開啟 vs 關閉」的實質數值差異，嚴禁僅以初等退化幾何冒充覆蓋。
+
+### 3.3 測試門檻零妥協原則 (Zero Threshold Degradation)
 - 嚴禁為了解決 CI 或本機多工平行測試偶發超時而私自放寬 `setTimeout`、數值誤差容差或將測試設為 `skip`。
 - 遇效能瓶頸，必須進行 Profiling 並透過架構隔離或多工解耦解決。
 
-### 3.3 隨機參數壓力測試 (Mandatory Fuzzing Stress Test)
+### 3.4 隨機參數壓力測試 (Mandatory Fuzzing Stress Test)
 - 任何參數化核心特徵，必須包含 Fuzzing 隨機測試（至少 100~200 組隨機維度組態），確保極端與退化幾何下 0 崩潰、0 記憶體暴增。
 
 ---
 
 ## 4. 歷史演化紀錄與修訂日誌
 
-- **2026-10-11**：初始化本文件。萃取 Claude Code 審查事件之根因，建立「自我紅隊對抗 SOP」與三大防禦硬準則。
+- **2026-10-11（上午）**：初始化本文件。萃取螺牙特徵審查之根因，建立「自我紅隊對抗 SOP」與三大防禦硬準則。
+- **2026-10-11（下午）**：萃取 Workbuddy 審查事件（`review-2026-10-11-antigravity-audit.md`）之根因：
+  1. 根治 `(kernel.oc as any).HEAPU8?.byteLength ?? 0` 恆真式假綠，確立 Emscripten WASM Heap 真實路徑為 `wasmMemory.buffer.byteLength` 並強制「真值存在性防呆（`> 0`）」。
+  2. 根治 `massProps` 防禦性空轉閘控，確立核心精度自適應預設啟用（`adaptive ?? true`），並補齊螺牙實體自適應覆蓋測試。
+  3. 更正 `threadStandards.ts` 註解常數，落實 ISO 68-1 牙頂牙根寬度斷言。

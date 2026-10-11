@@ -265,12 +265,13 @@ describe('the two features in the document', () => {
     const regen = new Regenerator(kernel, solver);
     regen.rebuild(doc);
     const live = kernel.liveShapes;
-    const initialHeapBytes = (kernel.oc as any).HEAPU8?.byteLength ?? 0;
+    const initialHeapBytes = (kernel.oc as any).wasmMemory?.buffer?.byteLength ?? 0;
+    expect(initialHeapBytes, 'WASM heap buffer must exist and be greater than 0').toBeGreaterThan(0);
     for (let n = 0; n < 20; n++) {
       regen.rebuild(doc);
     }
     expect(kernel.liveShapes).toBe(live);
-    const finalHeapBytes = (kernel.oc as any).HEAPU8?.byteLength ?? 0;
+    const finalHeapBytes = (kernel.oc as any).wasmMemory?.buffer?.byteLength ?? 0;
     expect(finalHeapBytes, 'WASM heap should not grow across repeated moveFace operations').toBe(initialHeapBytes);
     regen.dispose();
   });
