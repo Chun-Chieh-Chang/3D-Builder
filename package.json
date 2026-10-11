@@ -16,6 +16,7 @@
     "setup:git": "git config diff.3dbx.textconv \"node scripts/3dbx.mjs cat\"",
     "doctor": "node scripts/doctor.mjs",
     "make:kit": "vitest run --config tests/kit/vitest.kit.config.ts",
+    "make:drawing": "vitest run --config tests/kit/vitest.kit.config.ts drawing-parts",
     "lint:deps": "node scripts/check-deps.mjs",
     "lint:rules": "node scripts/check-anti-patterns.mjs",
     "lint:i18n": "node scripts/check-i18n.mjs",
