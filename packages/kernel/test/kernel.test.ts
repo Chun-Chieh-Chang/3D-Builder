@@ -114,4 +114,13 @@ describe('mesh and exchange', () => {
     k.release(id);
     expect(k.liveShapes).toBe(before);
   });
+
+  it('adaptively uses high-precision integration without breaking elementary geometries', () => {
+    const box = keep(k.extrude(front, [rect(10, 10)], [0, 0, 10]).shape);
+    const p1 = k.massProps(box);
+    const p2 = k.massProps(box, { eps: 1e-6 });
+    expect(p1.volume).toBeCloseTo(1000, 9);
+    expect(p2.volume).toBeCloseTo(1000, 9);
+    expect(Math.abs(p1.volume - p2.volume)).toBeLessThan(1e-9);
+  });
 });

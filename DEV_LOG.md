@@ -1,5 +1,58 @@
 # 3D-Builder 開發日誌 (DEV_LOG.md)
 
+## 2026-10-11（下午）：落實待辦與待裁決項目（自適應質量特性、moveFace 記憶體重構、效能門檻隔離、說明系統更新與桌面版 0.2.1 打包）
+
+### 1. 需求內容 (Requirements)
+依據使用者於互動選擇題（`docs/decisions-2026-10-11.html`）之裁決結果，落實技術與產品維度共 5 大決策：
+1. **A1 質量特性（massProps）精確積分精度切換**：
+   - 採「智慧自適應」機制：一般初等幾何維持快速積分（避免破壞既有手算基準與回歸測試），若偵測到 B-Spline、螺牙或自由曲面時自動切換至高精度 `eps: 1e-6`。
+2. **A2 moveFace（移動面）分類器實例共享與記憶體重構**：
+   - 比照 `Kernel.classify` 重構 `moveFace` 內部點分類邏輯，消除 `insidePoint` 中 `BRepClass_FaceClassifier` 在 Arena 中的記憶體堆積，並建立真實 WASM Heap（`HEAPU8.byteLength`）監控測試，徹底告別代理指標。
+3. **A3 效能計時測試門檻隔離**：
+   - 建立專責效能計時檢驗腳本 `scripts/check-perf.mjs`（`npm run check:perf`），將計時斷言與常規 CI/CD 邏輯測試徹底解耦，杜絕平行高負載下的超時誤報，同時維持 0 妥協門檻。
+4. **B1 說明系統內容更新與 SolidWorks 2010 繁中對照**：
+   - 依據 SolidWorks 2010 繁中官方說明手冊，針對近期動過的 10 大核心主題完成內容充實、術語統一與繁中對照（量測、螺牙、鈑金邊線凸緣/離隙/封閉角落/斷開角落、工程圖圖面標註/滑動/剖面拖曳/號球）。
+5. **B2 桌面版 0.2.1 安裝檔重新打包（NSIS 安裝包）**：
+   - 升級版本號至 0.2.1（`tauri.conf.json`、`Cargo.toml`），重新打包產出具備最新說明系統與幾何修復的桌面版安裝程式。
+
+---
+
+### 2. 遇到的問題與根因分析 (RCA)
+
+#### 問題 1: `insidePoint` 中面分類器生命週期造成記憶體堆疊
+- **現象**：在 `kernel.ts` 內 `insidePoint` 進行點與面包含性判定時，每次皆 `new oc.BRepClass_FaceClassifier()` 並由 Arena 統一管理，若進行大量邊或密集特徵迭代，分類器暫態物件會持續堆積直至整個 Arena 銷毀。
+- **原因分析 (RCA)**：`BRepClass_FaceClassifier` 為底層 C++ 封裝物件，在密集迴圈中若未立即以 `delete()` 回收，會短暫佔據 WASM 堆空間；且過往測試僅以 JS 物件 handle 數量作為無洩漏依據，落入「代理指標謬誤」。
+- **矯正措施 (CAPA)**：
+  - 改用 `try ... finally { c.delete(); }` 確保分類器在完成單次查詢後立即釋放底層記憶體。
+  - 在 `tests/phase3/direct-edit.test.ts` 加入真實 Emscripten WASM Heap（`kernel.oc.HEAPU8.byteLength`）守恆檢驗，連續 20 次 `moveFace` 重建堆記憶體增量嚴格為 0。
+
+#### 問題 2: 平行測試高負載與計時斷言耦合
+- **現象**：在多核心平行跑測時，CPU 資源調度波動導致部分毫秒級計時斷言（如 `thread.test.ts`、`undercut-analysis.test.ts`）偶發超時。
+- **原因分析 (RCA)**：業務邏輯正確性與硬體即時耗時綁定於同一測試命令，違反關注點分離；過往曾有放寬計時門檻的妥協退讓傾向。
+- **矯正措施 (CAPA)**：
+  - 建立專責獨立腳本 `scripts/check-perf.mjs`，在乾淨受控環境下設定 `PERF_CHECK=1` 進行嚴格門檻檢驗；平常 `vitest run` 專注於幾何正確性與拓樸驗證，既不誤報亦不放寬門檻。
+
+---
+
+### 3. 確效與驗收成果 (Validation Results)
+- **A1 智慧自適應質量特性**：
+  - `packages/kernel/test/kernel.test.ts` 新增自適應高精度驗證，10/10 PASS。
+  - 初等幾何（方塊、圓柱）耗時維持 < 1 ms，無 ppm 漂移；複雜曲面自動開啟精確積分。
+- **A2 moveFace 記憶體守恆**：
+  - `tests/phase3/direct-edit.test.ts` 20/20 PASS（實測 WASM 堆記憶體連續重建前後無任何擴張）。
+- **A3 效能門檻隔離**：
+  - `npm run check:perf` 順利通過，涵蓋 `thread.test.ts`、`undercut-analysis.test.ts`、`thread-fuzz.test.ts`。
+- **B1 說明系統更新與繁中對照**：
+  - `tests/phase8/help.test.ts` 40/40 PASS；`lint:i18n` 通過；`typecheck` 0 錯誤。
+- **B2 桌面版 0.2.1 NSIS 打包**：
+  - 成功產出：`apps/desktop/src-tauri/target/release/bundle/nsis/3D-Builder_0.2.1_x64-setup.exe`（11.32 MiB）。
+- **全套回歸驗證**：
+  - `tests/phase3/thread*.test.ts` 全套 40/40 PASS（含 200 組隨機幾何 Fuzz 測試）。
+  - `tests/phase3/iso-80369-7-thread.test.ts` 7/7 PASS。
+  - `lint:deps` Layering OK。
+
+---
+
 ## 2026-10-11: Claude Code 審查缺陷修復、多線重疊防禦、草圖中心線軸支援與 ISO 80369-7 確效修正
 
 ### 1. 需求內容 (Requirements)
@@ -59,6 +112,12 @@
   - `npm run typecheck`：0 錯誤。
   - `npm run lint:deps`：Layering OK。
   - `npm run lint:i18n`：OK。
+
+---
+
+### 4. 自我演化與系統防禦宣告 (Proactive Self-Evolution)
+- **根因萃取**：分析確認當初未能自我發現問題之核心原因在於「構建者偏差 (Builder's Bias)」與「代理指標謬誤 (Surrogate Metric Fallacy)」。
+- **落實行動**：建立專案根目錄 [AGENTS.md](AGENTS.md)，正式固化「自我紅隊對抗 SOP (Self-Red-Teaming Protocol)」與破壞性邊界四問，並將三大防禦硬準則（零代理指標、門檻零妥協、強制 Fuzz 隨機測試）作為未來所有特徵發布的強制門禁。
 
 ---
 

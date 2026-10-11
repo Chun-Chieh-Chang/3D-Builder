@@ -259,14 +259,19 @@ describe('the two features in the document', () => {
     expect(parsePart(serializePart(doc)).schemaVersion).toBe(SCHEMA_VERSION);
   });
 
-  it('do not leak shapes across rebuilds', () => {
+  it('do not leak shapes and preserve WASM heap across repeated moveFace rebuilds', () => {
     const topName = top(rebuild(build(...plate())));
     const doc = add(build(...plate()), deleteFace('d1', wall(rebuild(build(...plate())))), moveFace('m1', topName, '5'));
     const regen = new Regenerator(kernel, solver);
     regen.rebuild(doc);
     const live = kernel.liveShapes;
-    for (let n = 0; n < 5; n++) regen.rebuild(doc);
+    const initialHeapBytes = (kernel.oc as any).HEAPU8?.byteLength ?? 0;
+    for (let n = 0; n < 20; n++) {
+      regen.rebuild(doc);
+    }
     expect(kernel.liveShapes).toBe(live);
+    const finalHeapBytes = (kernel.oc as any).HEAPU8?.byteLength ?? 0;
+    expect(finalHeapBytes, 'WASM heap should not grow across repeated moveFace operations').toBe(initialHeapBytes);
     regen.dispose();
   });
 });

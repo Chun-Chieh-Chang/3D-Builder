@@ -1,0 +1,416 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>3D-Builder 待辦與待裁決選擇題（2026-10-11）</title>
+<meta name="description" content="3D-Builder 目前未做、待辦與待裁決項目的互動選擇題，附白話說明、架構取捨與建議。">
+<style>
+:root{
+  --bg:#F9FAFB;--surface:#FFFFFF;--text:#111827;--text2:#6B7280;--accent:#3B82F6;
+  --ok:#10B981;--warn:#EF4444;--border:#E5E7EB;--accent-soft:rgba(59,130,246,.08);
+  --ok-soft:rgba(16,185,129,.10);--shadow:0 1px 2px rgba(17,24,39,.04),0 4px 16px rgba(17,24,39,.06);
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme=light]){
+  --bg:#0F172A;--surface:#1E293B;--text:#F1F5F9;--text2:#94A3B8;--accent:#60A5FA;
+  --ok:#34D399;--warn:#F87171;--border:#334155;--accent-soft:rgba(96,165,250,.10);
+  --ok-soft:rgba(52,211,153,.10);--shadow:0 1px 2px rgba(0,0,0,.3),0 4px 16px rgba(0,0,0,.35);
+}}
+:root[data-theme=dark]{
+  --bg:#0F172A;--surface:#1E293B;--text:#F1F5F9;--text2:#94A3B8;--accent:#60A5FA;
+  --ok:#34D399;--warn:#F87171;--border:#334155;--accent-soft:rgba(96,165,250,.10);
+  --ok-soft:rgba(52,211,153,.10);--shadow:0 1px 2px rgba(0,0,0,.3),0 4px 16px rgba(0,0,0,.35);
+}
+*{box-sizing:border-box}
+html{font-size:16px}
+body{margin:0;background:var(--bg);color:var(--text);
+  font-family:"Inter","Segoe UI","Microsoft JhengHei UI","Microsoft JhengHei","Noto Sans TC",sans-serif;
+  line-height:1.5;transition:background .2s,color .2s}
+header{position:sticky;top:0;z-index:5;background:color-mix(in srgb,var(--surface) 88%,transparent);
+  backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);border-bottom:1px solid var(--border)}
+.bar{max-width:980px;margin:0 auto;padding:12px 16px;display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+h1{font-size:19px;font-weight:700;margin:0;flex:1 1 240px;letter-spacing:-0.01em}
+.progress{font-size:14px;color:var(--text2)}
+.progress b{color:var(--accent)}
+button{font:inherit;font-size:14px;min-height:44px;padding:8px 16px;border-radius:8px;cursor:pointer;
+  border:1px solid var(--border);background:var(--surface);color:var(--text);transition:transform .12s,background .15s,border-color .15s}
+button:hover{border-color:var(--accent)}
+button:active{transform:scale(.97)}
+button.primary{background:var(--accent);border-color:var(--accent);color:#fff;font-weight:600}
+button.primary:hover{filter:brightness(1.08)}
+main{max-width:980px;margin:0 auto;padding:24px 16px 96px}
+.lead{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:16px 24px;box-shadow:var(--shadow);margin-bottom:24px}
+.lead p{margin:8px 0;font-size:15px}
+.lead .muted{color:var(--text2);font-size:14px}
+.lead .badge{display:inline-block;padding:2px 8px;border-radius:4px;font-size:12px;font-weight:600;background:var(--accent-soft);color:var(--accent);margin-right:6px}
+h2{font-size:17px;font-weight:700;margin:32px 0 16px;display:flex;align-items:center;gap:8px}
+h2 .chip{font-size:13px;font-weight:600;color:var(--accent);background:var(--accent-soft);border-radius:999px;padding:2px 12px}
+.q{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:20px 24px;margin-bottom:16px;
+  box-shadow:var(--shadow);transition:border-color .2s,box-shadow .2s}
+.q.done{border-color:color-mix(in srgb,var(--ok) 55%,var(--border))}
+.q h3{font-size:16px;font-weight:700;margin:4px 0 10px;display:flex;gap:8px;align-items:baseline}
+.q h3 .id{color:var(--accent);font-variant-numeric:tabular-nums;flex:none}
+.q h3 .state{margin-left:auto;font-size:13px;font-weight:600;color:var(--ok);opacity:0;transition:opacity .2s;flex:none}
+.q.done h3 .state{opacity:1}
+.plain-desc{background:var(--accent-soft);border-left:3px solid var(--accent);padding:10px 14px;border-radius:0 8px 8px 0;margin:10px 0 14px;font-size:14.5px;color:var(--text)}
+.plain-desc b{color:var(--accent)}
+details.more{margin:10px 0 16px;font-size:14px;color:var(--text2)}
+details.more summary{cursor:pointer;color:var(--accent);min-height:30px;display:flex;align-items:center;font-weight:500}
+details.more ul{margin:8px 0 0;padding-left:24px}
+details.more li{margin:4px 0}
+.opts{display:grid;gap:8px}
+.opt{display:flex;gap:12px;align-items:flex-start;padding:12px 16px;min-height:44px;border:1px solid var(--border);border-radius:8px;cursor:pointer;
+  transition:background .15s,border-color .15s,transform .12s}
+.opt:hover{border-color:var(--accent);background:var(--accent-soft)}
+.opt:active{transform:scale(.995)}
+.opt input{margin:4px 0 0;width:20px;height:20px;accent-color:var(--accent);flex:none}
+.opt.sel{border-color:var(--accent);background:var(--accent-soft)}
+.opt .t{font-size:15px;font-weight:600}
+.opt .d{display:block;font-size:14px;color:var(--text2);margin-top:4px;font-weight:400}
+.rec{display:inline-block;font-size:12px;font-weight:600;color:var(--ok);background:var(--ok-soft);border-radius:4px;padding:1px 6px;margin-right:6px}
+.note{display:block;margin-top:14px;font-size:13.5px;color:var(--text2)}
+.note textarea{display:block;width:100%;margin-top:4px;font:inherit;font-size:14px;padding:8px 12px;border-radius:8px;
+  border:1px solid var(--border);background:var(--bg);color:var(--text);resize:vertical;min-height:40px}
+.note textarea:focus,.opt input:focus-visible,button:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.info{background:var(--surface);border:1px dashed var(--border);border-radius:12px;padding:16px 24px;font-size:14px;color:var(--text2)}
+.info li{margin:6px 0}
+code{font-family:Consolas,"Cascadia Code",monospace;font-size:max(13px,.92em);background:var(--accent-soft);padding:0 4px;border-radius:4px}
+#toast{position:fixed;left:50%;bottom:24px;transform:translate(-50%,16px);opacity:0;background:var(--text);color:var(--bg);
+  padding:12px 24px;border-radius:8px;font-size:14px;transition:opacity .2s,transform .2s;pointer-events:none;z-index:9}
+#toast.on{opacity:1;transform:translate(-50%,0)}
+@media (max-width:600px){
+  .q,.lead,.info{padding:16px}
+  .bar button{flex:1 1 auto}
+}
+</style>
+</head>
+<body>
+<header>
+  <div class="bar">
+    <h1>3D-Builder 待辦與待裁決選擇題</h1>
+    <span class="progress" id="progress"></span>
+    <button id="btn-rec" type="button">全部採用建議</button>
+    <button id="btn-clear" type="button">清除</button>
+    <button id="btn-theme" type="button" aria-label="切換深淺色">◐</button>
+    <button id="btn-copy" class="primary" type="button">複製結果</button>
+  </div>
+</header>
+
+<main>
+  <section class="lead">
+    <p><span class="badge">狀態說明</span>螺牙特徵（T-1 至 T-5）經 Claude Code 審查揪出的問題已完成根因修復與確效，並已推送到 GitHub <code>main</code>（Commit: <code>d1dc276</code>）。全域開發環境規則 <code>AGENTS.md</code> 亦已完成固化。</p>
+    <p><b>使用方式：</b>請檢視以下 8 項待辦與決策，每題點選一個選項（標示 <span class="rec">建議</span> 為架構師推薦）。如有補充想法請寫在備註欄。選好後點擊右上角<b>「複製結果」</b>按鈕，貼回對話即可！選項會自動保存在您的瀏覽器中。</p>
+  </section>
+
+  <div id="root"></div>
+
+  <h2>已完成與已決定項目（參考用，無需選擇）</h2>
+  <div class="info">
+    <ul>
+      <li><b>螺牙特徵（真實 3D 螺紋實體）</b>：T-1 至 T-5 已完成並確效（47/47 PASS、200 組 Fuzz PASS、UI 腳本 PASS）；支援草圖中心線作為軸；多線牙型重疊改為 Compound 防禦記憶體崩潰；線數整數校驗；ISO 80369-7 真實 6% 錐度、圓角與 30° 實體探針驗收全數通過。</li>
+      <li><b>全域環境防禦注入</b>：<code>C:\Users\3kids\.gemini\config\AGENTS.md</code> 已正式注入《自我紅隊對抗與盲點破除 SOP》，永久跨專案生效。</li>
+      <li><b>桌面版 0.2.0</b>：版本號已更新並建置安裝檔（<code>3D-Builder_0.2.0_x64-setup.exe</code>）。</li>
+      <li><b>鈑金平板型式 DXF 折彎註記</b>：上下顛倒問題已修復（<code>flatDxf.ts</code>）。</li>
+    </ul>
+  </div>
+</main>
+<div id="toast" role="status" aria-live="polite"></div>
+
+<script>
+const STORAGE_KEY = '3db-decisions-2026-10-11';
+const QUESTIONS = [
+  {
+    sec: 'A. 幾何核心與效能技術決策（即時架構權衡）',
+    items: [
+      {
+        id: 'A1',
+        title: '質量特性（massProps）精確積分精度切換',
+        plain: '<b>白話說明：</b>計算零件的重量/體積時，對於長螺牙這種又長又扭曲的曲面，目前預設演算法大概有萬分之一的微小數值誤差。若開啟「自適應高精度積分（eps: 1e-6）」，精度會大幅提升至一億分之三。但代價是一般方方正正的平面零件計算時間會從 0.6 毫秒升到 2.5 毫秒（人體感覺不出來），且可能微幅影響幾個既有手算基準測試的小數點最後幾位。',
+        why: '全域共有 22 處呼叫 massProps。目前螺牙專屬驗收已單獨開啟高精度，問題在於產品全域面板要不要也預設升級。',
+        more: [
+          '方案一（推薦）：自動識別。一般平面零件維持極速（0.6 ms）；遇到螺牙或複雜 B-spline 零件自動切換高精度，兼顧效能與精確度。',
+          '方案二：全域一刀切改為 eps: 1e-6。最乾脆、架構單純，但需微調既有 3~4 個手算基準測試的小數點後幾位。',
+          '方案三：維持現狀。只有顯式傳入參數才開啟，介面顯示螺牙零件質量時容忍萬分之一誤差。'
+        ],
+        opts: [
+          { t: '智慧自適應：含螺牙或複雜曲面零件自動開啟高精度，一般零件維持極速', d: '兼顧計算速度與螺牙極致精度，完全不破壞既有手算基準測試。', rec: true },
+          { t: '全域全面強制升級為 eps: 1e-6 高精度積分', d: '架構最單純，但需微調幾項既有基準測試的微小浮點數。' },
+          { t: '維持現狀（僅由呼叫端明確指定時開啟）', d: '最保守，產品介面顯示長螺牙零件時保持約 1e-4 誤差。' }
+        ]
+      },
+      {
+        id: 'A2',
+        title: 'moveFace（移動面）分類器實例共享重構',
+        plain: '<b>白話說明：</b>在移動面特徵（例如做不等厚度薄殼）中，底層程式碼目前在判斷點是否在實體內時，是「每一個取樣點都重新 new 一個新的分類器」，而不是像 Kernel.classify 那樣共用同一個。一般零件點不多看不出影響，但如果在極端上萬個三角網格的複雜曲面上，可能存在記憶體累積風險。',
+        why: 'Claude Code 審查時曾指出此處有潛在記憶體開銷。先前已驗證一般情況下形狀 handles 守恆，但架構上仍有重構為共用分類器的空間。',
+        more: [
+          '比照 Kernel.classify 重構為「單一實體批次分類器」共享機制。',
+          '需要專門的複雜曲面壓力測試與 Emscripten WASM Heap 監控驗證。'
+        ],
+        opts: [
+          { t: '比照 Kernel.classify 重構為共用分類器實例，並以真實 WASM Heap 測試驗證', d: '徹底杜絕複雜曲面下的記憶體隱憂，符合防禦硬準則。', rec: true },
+          { t: '維持現狀，等日後實際遇到超大曲面零件效能瓶頸再重構', d: '遵從 YAGNI 原則，目前一般零件運行完全穩定正常。' }
+        ]
+      },
+      {
+        id: 'A3',
+        title: '效能計時測試門檻隔離（避免平行多工負載下偶發超時）',
+        plain: '<b>白話說明：</b>在終端機跑全套 2,500 多項測試時，多個工作線程同時全速平行跑，CPU 非常繁忙。這時少數要求「幾秒內跑完」的計時測試（如 thread.test.ts、undercut-analysis、acceptance-4a），偶爾會因為電腦塞車而誤報超時（如果單獨跑它們，一瞬間就通過了）。',
+        why: '全域測試需要 100% 穩定，但我們在 AGENTS.md 剛規定「嚴禁私自放寬門檻以求綠燈」。因此需要透過架構隔離來解決。',
+        more: [
+          '方案一（推薦）：把「純速度/壓力計時」抽離為獨立單元。平常 npm test 只測幾何邏輯對不對；專門的 npm run check:perf 才在乾淨環境下嚴格量測秒數。',
+          '方案二：設定環境變數或放寬平行跑時的秒數上限（例如放寬到 12 秒）。'
+        ],
+        opts: [
+          { t: '計時門檻與邏輯測試徹底解耦（邏輯常態跑，計時由 check:perf 專責嚴格檢驗）', d: '日常測試絕不誤報，且速度門檻絕不妥協退讓。', rec: true },
+          { t: '放寬平行測試時的容許時間（例如調整為 12 秒）', d: '改動最少，但門檻較寬。' },
+          { t: '維持現狀（接受全套平行跑時偶發超時，手動重跑）', d: '不改動任何腳本，遇超時手動確認。' }
+        ]
+      }
+    ]
+  },
+  {
+    sec: 'B. 說明系統、文件同步與桌面版打包（近期發布）',
+    items: [
+      {
+        id: 'B1',
+        title: 'A2 & A2b 說明視窗內容更新與 SolidWorks 2010 繁中對照',
+        plain: '<b>白話說明：</b>軟體介面點「說明（F1）」會跳出功能說明視窗。近期我們加入了 10 個核心新特徵（3D 量測工具、工程圖圖面標註與剖面、零件號球拖曳、鈑金長圓/撕裂離隙、斷開角落、曲面除料等），需要補齊說明文字。並可參考 SW 2010 繁中線上手冊的用語與概念，用我們自己的話寫清楚。',
+        why: '先前於 2026-10-09 決定將此項安排在 10/12 後執行。現在螺牙特徵已提早完工，可評估是否立即啟動。',
+        more: [
+          '範圍限於近期新增且在 SW 2010 有對照的約 10 個主題。',
+          '只比對概念與行為，以我們自己的話寫，不照抄。'
+        ],
+        opts: [
+          { t: '立即啟動 A2 & A2b 說明系統更新與繁中對照', d: '完善近期新增 10 個核心主題的繁中說明與名詞對齊。', rec: true },
+          { t: '維持原計畫，等到 10/12 用量重置後再做', d: '節省當前對話用量，按部就班推進。' },
+          { t: '暫不更新詳細說明，僅維持簡短提示即可', d: '功能優先，說明系統後續再完整整理。' }
+        ]
+      },
+      {
+        id: 'B2',
+        title: '桌面版 0.2.1 安裝檔重新打包（NSIS 安裝包）',
+        plain: '<b>白話說明：</b>目前已建置的桌面版安裝檔為 0.2.0。近期加入的螺牙特徵以及即將更新的說明系統，需要重新打包成 0.2.1 安裝檔（3D-Builder_0.2.1_x64-setup.exe），方便您在其他電腦安裝體驗。',
+        why: '打包需要本機 Rust 與 MSVC 環境，耗時約 2~3 分鐘。',
+        more: [
+          '方案一（推薦）：等 B1 說明視窗內容更新完畢後，一次打包產出最完整的 0.2.1。',
+          '方案二：現在立刻先打包一份（先包含螺牙特徵）。'
+        ],
+        opts: [
+          { t: '等 B1 說明視窗更新完畢後，一併打包產出 0.2.1 安裝檔', d: '發布節奏最完整，安裝包同時具備最新螺牙功能與最新說明文件。', rec: true },
+          { t: '現在立刻先打包 0.2.1 安裝檔', d: '立刻獲得包含螺牙實體特徵的最新桌面版可執行安裝檔。' },
+          { t: '暫不重新打包，先以現有的 0.2.0 版安裝檔進行實機測試', d: '等全部實機確認完成後再一次性打包。' }
+        ]
+      }
+    ]
+  },
+  {
+    sec: 'C. 使用者實機與外部軟體驗證（安排您的操作）',
+    items: [
+      {
+        id: 'C1',
+        title: '工程圖孔標註用語規範確認（手冊 F4 / K2）',
+        plain: '<b>白話說明：</b>在工程圖標註孔特徵時，目前程式介面預設輸出的是台灣常用機械名詞：「貫穿」、「柱孔」、「錐孔」、「深 10」等。想確認這是否符合您平日或公司內部的慣用習慣？',
+        why: '手冊 F4 標註為待使用者確認用語。',
+        opts: [
+          { t: '維持目前用語（貫穿、柱孔、錐孔、深）', d: '符合台灣機械製造業主流習慣，不需額外改動。', rec: true },
+          { t: '需要客製用語（請在備註欄填寫您偏好的詞彙，如英文 THRU / C\'BORE）', d: '為您客製化調整標註文字產生規則。' }
+        ]
+      },
+      {
+        id: 'C2',
+        title: '外部程式開檔檢視（手冊 F6 PDF、G5/I9 DXF）',
+        plain: '<b>白話說明：</b>工程圖輸出的 PDF（中文字型嵌入）以及 DXF（雷射切割排版軟體、AutoCAD 讀取），程式自動化測試已經證實圖元線段 100% 正確。但實際在 Adobe Acrobat 或外部 CAD 軟體開啟時的視覺手感，需要真人用真實軟體看一眼。',
+        why: '手冊目前標註為待使用者實機檢視。',
+        opts: [
+          { t: '等我有空時再開軟體看一眼即可，不阻礙目前開發推進', d: '不佔用當前工作時程，有空時再進行目視確認。', rec: true },
+          { t: '以過往 eDrawings 開啟結果為準，免除人工開啟', d: '視為已經足夠穩定，手冊直接標註為通過。' }
+        ]
+      }
+    ]
+  },
+  {
+    sec: 'D. 下一階段重大架構方向（藍圖次階段候選）',
+    items: [
+      {
+        id: 'D1',
+        title: '下一個主要功能模組方向',
+        plain: '<b>白話說明：</b>螺牙特徵已經徹底搞定。接下來 3D-Builder 要往哪一個重要大特徵推進？',
+        why: '先前決定「待實機走完再選」，現在核心特徵已成熟，可先預選後續主軸。',
+        more: [
+          '螺牙第二階段：標準規格牙庫（Metric M3/M4/M8、美制 UNC/UNF）與兩端漸縮收尾（不用手動畫草圖，直接選規格生成）。',
+          '組態與設計表格（Configurations）：一個零件可切換多種尺寸變體。',
+          '由上而下設計（Top-Down Assembly）：在組合件裡直接編輯零件、彼此參考。'
+        ],
+        opts: [
+          { t: '螺牙特徵第二階段（內建 Metric / UNC 標準規格牙庫、直徑規格下拉選單與兩端漸縮收尾）', d: '螺牙功能最實用的一塊：使用者選 M6 就自動長出標準外牙/內牙，不需手動繪製牙側角草圖。', rec: true },
+          { t: '組態與設計表格（Configurations & Design Tables）', d: '支援單一零件檔內建立多組尺寸組態。' },
+          { t: '由上而下組合件設計（Top-Down In-Context Modeling）', d: '在組合件環境中即時參考相鄰零件編輯草圖與特徵。' },
+          { t: '暫不開新大功能，專注於手冊實機體驗打磨與細微改善', d: '穩固既有功能，提升整體手感與穩定度。' }
+        ]
+      }
+    ]
+  }
+];
+
+function loadState(){
+  try{ return JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}'); }catch{ return {}; }
+}
+function saveState(s){
+  try{ localStorage.setItem(STORAGE_KEY, JSON.stringify(s)); }catch{}
+}
+
+function render(){
+  const s = loadState();
+  const root = document.getElementById('root');
+  root.innerHTML = '';
+  let total = 0, done = 0;
+
+  QUESTIONS.forEach(sec => {
+    const h2 = document.createElement('h2');
+    h2.innerHTML = `${sec.sec} <span class="chip">${sec.items.length} 題</span>`;
+    root.appendChild(h2);
+
+    sec.items.forEach(q => {
+      total++;
+      const cur = s[q.id] || {};
+      const isDone = typeof cur.sel === 'number';
+      if(isDone) done++;
+
+      const div = document.createElement('article');
+      div.className = 'q' + (isDone ? ' done' : '');
+      div.id = 'card-' + q.id;
+
+      let html = `<h3><span class="id">${q.id}</span> <span>${q.title}</span><span class="state">✓ 已選</span></h3>`;
+      if(q.plain) html += `<div class="plain-desc">${q.plain}</div>`;
+      if(q.why) html += `<div class="why">${q.why}</div>`;
+      if(q.more && q.more.length){
+        html += `<details class="more"><summary>查看技術細節與取捨分析 ▸</summary><ul>${q.more.map(m=>`<li>${m}</li>`).join('')}</ul></details>`;
+      }
+
+      html += `<div class="opts">`;
+      q.opts.forEach((o, idx) => {
+        const checked = cur.sel === idx ? 'checked' : '';
+        const selClass = cur.sel === idx ? ' sel' : '';
+        const recBadge = o.rec ? `<span class="rec">建議</span>` : '';
+        html += `<label class="opt${selClass}" data-qid="${q.id}" data-idx="${idx}">
+          <input type="radio" name="r-${q.id}" value="${idx}" ${checked}>
+          <div>
+            <span class="t">${recBadge}${o.t}</span>
+            ${o.d ? `<span class="d">${o.d}</span>` : ''}
+          </div>
+        </label>`;
+      });
+      html += `</div>`;
+
+      html += `<label class="note">補充備註（選填）：
+        <textarea data-qid="${q.id}" placeholder="若有特殊想法或指定細節可寫在此處...">${cur.note || ''}</textarea>
+      </label>`;
+
+      div.innerHTML = html;
+      root.appendChild(div);
+    });
+  });
+
+  const progEl = document.getElementById('progress');
+  progEl.innerHTML = `進度：<b>${done}</b> / ${total}`;
+
+  // bind events
+  root.querySelectorAll('.opt').forEach(el => {
+    el.addEventListener('click', (e) => {
+      const qid = el.dataset.qid;
+      const idx = parseInt(el.dataset.idx, 10);
+      const st = loadState();
+      st[qid] = st[qid] || {};
+      st[qid].sel = idx;
+      saveState(st);
+      render();
+    });
+  });
+
+  root.querySelectorAll('.note textarea').forEach(ta => {
+    ta.addEventListener('input', () => {
+      const qid = ta.dataset.qid;
+      const st = loadState();
+      st[qid] = st[qid] || {};
+      st[qid].note = ta.value;
+      saveState(st);
+    });
+  });
+}
+
+document.getElementById('btn-rec').addEventListener('click', () => {
+  const st = loadState();
+  QUESTIONS.forEach(sec => {
+    sec.items.forEach(q => {
+      const recIdx = q.opts.findIndex(o => o.rec);
+      st[q.id] = st[q.id] || {};
+      st[q.id].sel = recIdx >= 0 ? recIdx : 0;
+    });
+  });
+  saveState(st);
+  render();
+  toast('已全部選取建議選項！');
+});
+
+document.getElementById('btn-clear').addEventListener('click', () => {
+  if(confirm('確定要清除所有已選選項嗎？')){
+    localStorage.removeItem(STORAGE_KEY);
+    render();
+    toast('已清除所有選擇。');
+  }
+});
+
+document.getElementById('btn-theme').addEventListener('click', () => {
+  const cur = document.documentElement.getAttribute('data-theme');
+  const next = cur === 'dark' ? 'light' : 'dark';
+  document.documentElement.setAttribute('data-theme', next);
+  try{ localStorage.setItem('3db-theme', next); }catch{}
+});
+
+document.getElementById('btn-copy').addEventListener('click', () => {
+  const st = loadState();
+  let text = `### 3D-Builder 待辦與待裁決選擇題結果（2026-10-11）\n\n`;
+  let cnt = 0;
+
+  QUESTIONS.forEach(sec => {
+    text += `#### ${sec.sec}\n`;
+    sec.items.forEach(q => {
+      const cur = st[q.id];
+      if(cur && typeof cur.sel === 'number'){
+        cnt++;
+        const opt = q.opts[cur.sel];
+        text += `- **${q.id} ${q.title}**：選「${opt.t}」`;
+        if(cur.note && cur.note.trim()) text += `（備註：${cur.note.trim()}）`;
+        text += `\n`;
+      } else {
+        text += `- **${q.id} ${q.title}**：（未選）\n`;
+      }
+    });
+    text += `\n`;
+  });
+
+  navigator.clipboard.writeText(text).then(() => {
+    toast(`已複製 ${cnt} 項選擇結果至剪貼簿！請貼回對話中。`);
+  }).catch(() => {
+    toast('複製失敗，請手動選取文字。');
+  });
+});
+
+function toast(msg){
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.classList.add('on');
+  setTimeout(() => t.classList.remove('on'), 2500);
+}
+
+// init theme
+try{
+  const savedTheme = localStorage.getItem('3db-theme');
+  if(savedTheme) document.documentElement.setAttribute('data-theme', savedTheme);
+}catch{}
+
+render();
+</script>
+</body>
+</html>

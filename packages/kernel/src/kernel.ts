@@ -1613,8 +1613,13 @@ export class Kernel {
         const eps = Math.max(1e-5, Math.min(1e-3 * topo.edges[ei]!.length, 1e-2));
         for (const s of [1, -1]) {
           const p = add(m, w, (s * eps) / wl);
-          const c = arena.own(new oc.BRepClass_FaceClassifier(face, this.pnt(arena, p), 1e-7, true, 0.1));
-          if (c.State() === oc.TopAbs_State.TopAbs_IN) return p;
+          const pnt = this.pnt(arena, p);
+          const c = new oc.BRepClass_FaceClassifier(face, pnt, 1e-7, true, 0.1);
+          try {
+            if (c.State() === oc.TopAbs_State.TopAbs_IN) return p;
+          } finally {
+            c.delete();
+          }
         }
         throw new KernelError(t('edit.noPointNearEdge'));
       };
@@ -1970,9 +1975,27 @@ export class Kernel {
   }
 
   /**
+   * Whether a shape contains non-elementary freeform surfaces (B-spline, Bezier, Offset, Other)
+   * that require adaptive integration for volume accuracy.
+   */
+  private hasComplexSurfaces(shape: TopoDS_Shape, arena: Arena): boolean {
+    const oc = this.oc;
+    const ex = arena.own(new oc.TopExp_Explorer(shape, oc.TopAbs_ShapeEnum.TopAbs_FACE, oc.TopAbs_ShapeEnum.TopAbs_SHAPE));
+    for (; ex.More(); ex.Next()) {
+      const face = arena.own(oc.TopoDS.Face(ex.Current()));
+      const ad = arena.own(new oc.BRepAdaptor_Surface(face, true));
+      const type = String(ad.GetType()).replace('GeomAbs_', '').toLowerCase();
+      if (type === 'bsplinesurface' || type === 'beziersurface' || type === 'offsetsurface' || type === 'othersurface') {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  /**
    * Volume, area, centre and inertia. By default OCCT integrates with a fixed number of points per face, which is exact on planes and quadrics but
-   * not on long B-spline faces: a thread's faces come out about 1e-4 of the volume off. With `eps` the volume integrates adaptively until its
-   * relative error is below `eps`.
+   * not on long B-spline faces: a thread's faces come out about 1e-4 of the volume off. With `eps` (or automatically when complex B-spline surfaces
+   * are detected), the volume integrates adaptively until its relative error is below `eps`.
    */
   massProps(id: ShapeId, options: { eps?: number } = {}): MassProps {
     const oc = this.oc;
@@ -1980,7 +2003,11 @@ export class Kernel {
     try {
       const shape = this.get(id);
       const v = arena.own(new oc.GProp_GProps());
-      if (options.eps !== undefined) oc.BRepGProp.VolumeProperties(shape, v, options.eps, false, false);
+      let eps = options.eps;
+      if (eps === undefined && this.hasComplexSurfaces(shape, arena)) {
+        eps = 1e-6;
+      }
+      if (eps !== undefined) oc.BRepGProp.VolumeProperties(shape, v, eps, false, false);
       else oc.BRepGProp.VolumeProperties(shape, v, false, false, false);
       const s = arena.own(new oc.GProp_GProps());
       oc.BRepGProp.SurfaceProperties(shape, s, false, false);
