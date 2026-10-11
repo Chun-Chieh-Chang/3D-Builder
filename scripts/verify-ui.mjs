@@ -8,6 +8,10 @@
 //
 // Each script gets a fresh page and an empty browser storage (no recovery copy, no remembered project folder). The dev server is started
 // when nothing answers on its port, and stopped again at the end. Exit code 1 when a script fails or the page logs an error.
+//
+// Every call to the browser has a deadline (CALL_TIMEOUT_MS below): a renderer that is stuck answers nothing at all — not even the timeout
+// of `Runtime.evaluate` — and with no deadline of our own the whole batch waits for ever. A panel the page puts up (an `alert`, or the
+// `beforeunload` of an unsaved part) is dismissed so the run goes on, and reported on the row it happened in.
 import { spawn, spawnSync } from 'node:child_process';
 import { createServer } from 'node:http';
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
@@ -22,6 +26,14 @@ const DEBUG_PORT = 9333;
 const NOT_SCRIPTS = new Set(['phase1-demo-parts.js', 'phase3-subassembly.js', 'desktop-probe.mjs', 'manual-support.js']);
 /** Errors the page logs that mean nothing (the browser asks for a favicon the dev server has none of). */
 const IGNORED_ERRORS = [/favicon/i];
+/** How long any one call may go unanswered before the run is called off. This is the backstop for a renderer that cannot answer at all.
+ *  `VERIFY_UI_CALL_TIMEOUT` (milliseconds) overrides it — a very small one is how the deadline itself is checked. */
+const CALL_TIMEOUT_MS = (() => {
+  const set = Number(process.env.VERIFY_UI_CALL_TIMEOUT);
+  return Number.isFinite(set) && set > 0 ? set : 120_000;
+})();
+/** What `Runtime.evaluate` is given as its own deadline — so also the longest a script may legitimately take. The call is set a margin past it. */
+const EVAL_TIMEOUT_MS = 600_000;
 
 const args = process.argv.slice(2);
 const option = (name) => {
@@ -134,15 +146,25 @@ async function main() {
     let nextId = 0;
     const pending = new Map();
     let errors = [];
+    let dialogs = [];
     ws.onmessage = (m) => {
       const d = JSON.parse(m.data);
       if (d.id && pending.has(d.id)) {
-        pending.get(d.id)(d);
+        pending.get(d.id).done(d);
         pending.delete(d.id);
+      } else if (d.method === 'Page.javascriptDialogOpening') {
+        // a panel the page put up (an `alert`, or the `beforeunload` of an unsaved part) stops it dead, and calls into a stopped page never come back
+        dialogs.push(d.params.message);
+        send('Page.handleJavaScriptDialog', { accept: true }).catch(() => {});
       } else if (d.method === 'Runtime.consoleAPICalled' && d.params.type === 'error') errors.push(d.params.args.map((a) => a.value ?? a.description ?? '').join(' '));
       else if (d.method === 'Runtime.exceptionThrown') errors.push(d.params.exceptionDetails.exception?.description ?? d.params.exceptionDetails.text);
       else if (d.method === 'Log.entryAdded' && d.params.entry.level === 'error') errors.push(`${d.params.entry.text} ${d.params.entry.url ?? ''}`);
-      else if (d.method === 'Runtime.bindingCalled' && d.params.name === '__capture') void takeShot(JSON.parse(d.params.payload));
+      else if (d.method === 'Runtime.bindingCalled' && d.params.name === '__capture') takeShot(JSON.parse(d.params.payload)).catch((e) => errors.push(`screenshot: ${e.message}`));
+    };
+    // a socket that drops takes every unanswered call with it: say so at once instead of waiting out each deadline
+    ws.onclose = () => {
+      for (const p of pending.values()) p.fail(new Error('the browser connection closed before it answered'));
+      pending.clear();
     };
     /** The folder the screenshots of the script that runs go to (`--shots`), and what a script asked for with `await window.__shot('label')`. */
     let jobShots = null;
@@ -154,10 +176,23 @@ async function main() {
       }
       await send('Runtime.evaluate', { expression: `window.__shotDone = ${n}` });
     };
-    const send = (method, params = {}) =>
-      new Promise((res) => {
+    const send = (method, params = {}, timeoutMs = CALL_TIMEOUT_MS) =>
+      new Promise((res, rej) => {
         const id = ++nextId;
-        pending.set(id, res);
+        const timer = setTimeout(() => {
+          pending.delete(id);
+          rej(new Error(`no answer to ${method} in ${Math.round(timeoutMs / 1000)}s — the browser or the page is stuck`));
+        }, timeoutMs);
+        pending.set(id, {
+          done: (d) => {
+            clearTimeout(timer);
+            res(d);
+          },
+          fail: (e) => {
+            clearTimeout(timer);
+            rej(e);
+          },
+        });
         ws.send(JSON.stringify({ id, method, params }));
       });
     await send('Page.enable');
@@ -172,7 +207,9 @@ window.__shot = async (label) => { const n = ++window.__shotN; window.__capture(
     await send('Emulation.setDeviceMetricsOverride', { width: 1280, height: 720, deviceScaleFactor: 1, mobile: false });
     await send('Emulation.setFocusEmulationEnabled', { enabled: true }); // a headless page is not the focused window: without this a field never gets or loses focus (blur, autofocus)
     const evaluate = async (expression) => {
-      const r = await send('Runtime.evaluate', { expression, awaitPromise: true, returnByValue: true, timeout: 600000 });
+      // the browser itself ends a script that runs past EVAL_TIMEOUT_MS and says so; our call is given a margin past that, so only a renderer
+      // that cannot answer at all ever reaches the deadline
+      const r = await send('Runtime.evaluate', { expression, awaitPromise: true, returnByValue: true, timeout: EVAL_TIMEOUT_MS }, EVAL_TIMEOUT_MS + 60_000);
       return r.result?.exceptionDetails ? { error: r.result.exceptionDetails.exception?.description ?? r.result.exceptionDetails.text } : { value: r.result?.result?.value };
     };
     /** A fresh load of the page; the browser storage is emptied only when `clear` (a script that runs in two loads, like the recovery one, needs what the first left). */
@@ -209,6 +246,8 @@ window.__shot = async (label) => { const n = ++window.__shotN; window.__capture(
         continue;
       }
       for (const [k, call] of calls.entries()) {
+        // read before the fresh page: a panel dismissed while loading this one belongs to the row being started, not to the one before it
+        const dialogsBefore = dialogs.length;
         await freshPage(k === 0);
         errors = [];
         jobShots = shotsDir ? join(shotsDir, file.replace(/\.js$/, ''), call.replace(/\W+/g, '_')) : null;
@@ -239,6 +278,12 @@ window.__shot = async (label) => { const n = ++window.__shotN; window.__capture(
           if (row.status === 'PASS') Object.assign(row, { status: 'CONSOLE', detail: `${logged.length} console error(s): ${logged[0].slice(0, 120)}` });
         }
         row.seconds = Math.round((Date.now() - started) / 100) / 10;
+        const jobDialogs = dialogs.slice(dialogsBefore);
+        if (jobDialogs.length > 0) {
+          // the page put a panel up and it was dismissed: the run went on, but say so — it means something left the app mid-something
+          row.dialogs = jobDialogs.slice(0, 3);
+          row.detail = `${row.detail}${row.detail ? ' ' : ''}(${jobDialogs.length} dialog(s) dismissed: ${jobDialogs[0].slice(0, 80)})`;
+        }
         if (jobShots) {
           const shot = await send('Page.captureScreenshot', { format: 'png' });
           mkdirSync(jobShots, { recursive: true });
