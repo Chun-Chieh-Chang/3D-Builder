@@ -3,6 +3,7 @@
  * The positions are worked out by hand.
  */
 import { describe, expect, it } from 'vitest';
+import { getLocale, type Locale } from '@3db/i18n';
 import { applyDrawingCommand, createEmptyDrawing, type DrawingDoc, type DrawingView, type ModelDrawingView } from '@3db/model';
 import { buildScene, layoutViews, sheetMetrics, STANDARD_SCALES, suggestScale, titleCells, toSvg, VIEW_GAP, type SceneText, type ViewLines } from '@3db/drawing';
 
@@ -124,6 +125,22 @@ describe('the scene and the SVG written from it', () => {
     expect(names.map((i) => i.text)).toEqual(['f', 't']);
     const f = placed.get('f')!;
     expect(names[0]).toMatchObject({ at: [f.at[0], f.at[1] - f.h / 2 - 8], height: 5, anchor: 'center' });
+  });
+
+  it('writes the sheet in the sheet\'s own language, not the reader\'s, and leaves the interface alone (ADR 0128)', () => {
+    const texts = (language: Locale | null) => {
+      const doc = applyDrawingCommand(d, { type: 'setSheet', sheet: { language } });
+      return buildScene(doc, lines).scene.items.flatMap((i) => (i.kind === 'text' ? [i.text] : []));
+    };
+    // the title block's own labels are texts of the sheet, so they show it without needing a dimension to read
+    expect(texts('zh-TW')).toContain('比例');
+    expect(texts('en')).toContain('Scale');
+    // `null` is 「follow the interface」, which is what a drawing that says nothing does
+    const before = getLocale();
+    expect(texts(null)).toContain(before === 'en' ? 'Scale' : '比例');
+    // building a sheet in another language must not change what the reader sees
+    texts('en');
+    expect(getLocale()).toBe(before);
   });
 
   it('draws no hidden lines for a view that has them off', () => {

@@ -1,4 +1,4 @@
-import { t } from '@3db/i18n';
+import { getLocale, t, withLocale } from '@3db/i18n';
 import { axesOf, sectionArrow, type DetailDrawingView, type DrawingDoc, type DrawingView, type Id, type Scale, type SectionDrawingView, type TitleField, type ViewFeature, type ViewSide } from '@3db/model';
 import { centreItems, holeRows, holeTableBox, holeTableItems, type HoleRow } from './annotation';
 import { balloonSpots, bomTableBox, bomTableItems, spotItems, type BalloonSpot, type ViewBom } from './bomTable';
@@ -184,6 +184,18 @@ export function buildScene(
   elements: ReadonlyMap<Id, ElementsResult> = new Map(),
   features: ReadonlyMap<Id, readonly ViewFeature[]> = new Map(),
   boms: ReadonlyMap<Id, ViewBom> = new Map(),
+): { scene: Scene; placed: Map<Id, PlacedView>; dimensions: Map<Id, DimensionOutcome>; tables: Map<Id, HoleRow[]>; tableBoxes: Map<Id, Rect>; balloons: Map<Id, BalloonSpot[]> } {
+  // Every text on the sheet is the sheet's own language, not the reader's (ADR 0128): a drawing leaves the program and goes to whoever machines the part.
+  // The build is synchronous from here down, so scoping the language over it is safe.
+  return withLocale(doc.sheet.language ?? getLocale(), () => buildSceneIn(doc, lines, elements, features, boms));
+}
+
+function buildSceneIn(
+  doc: DrawingDoc,
+  lines: ReadonlyMap<Id, ViewLines | null>,
+  elements: ReadonlyMap<Id, ElementsResult>,
+  features: ReadonlyMap<Id, readonly ViewFeature[]>,
+  boms: ReadonlyMap<Id, ViewBom>,
 ): { scene: Scene; placed: Map<Id, PlacedView>; dimensions: Map<Id, DimensionOutcome>; tables: Map<Id, HoleRow[]>; tableBoxes: Map<Id, Rect>; balloons: Map<Id, BalloonSpot[]> } {
   const m = sheetMetrics(doc.sheet);
   const placed = layoutViews(doc, lines);

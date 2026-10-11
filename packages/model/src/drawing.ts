@@ -1,5 +1,5 @@
 import { produce, type Draft } from 'immer';
-import { t } from '@3db/i18n';
+import { LOCALES, t, type Locale } from '@3db/i18n';
 import { countersFor, type Id } from './ids';
 import { CommandError } from './commands';
 import { isFilePath, joinPath, relativePath } from './paths';
@@ -12,7 +12,7 @@ import type { Ref } from './schema';
  * opened (exact hidden-line removal), so a drawing can never disagree with the model it shows.
  */
 
-export const DRAWING_SCHEMA_VERSION = 10;
+export const DRAWING_SCHEMA_VERSION = 11;
 
 export type SheetSize = 'A4' | 'A3' | 'A2' | 'A1' | 'A0';
 export const SHEET_SIZES: readonly SheetSize[] = ['A4', 'A3', 'A2', 'A1', 'A0'];
@@ -37,6 +37,12 @@ export interface DrawingSheet {
   shift?: [number, number];
   /** The unit the lengths of the dimensions are written in (v8): absent is millimetres; `in` is inches. The model and the sheet stay in millimetres; only the numbers written change. */
   unit?: 'mm' | 'in';
+  /**
+   * The language the texts on the sheet are written in (v11): absent is the interface's, which is what every drawing did before this. A sheet is not read
+   * the way the program is: it leaves the program and goes to whoever machines the part, so 「最大」 or 「MAX」 has to be the drawing's choice and not the
+   * reader's — the same drawing opened by two people must not come out with two different texts.
+   */
+  language?: Locale;
 }
 
 /** The side of a view another view is placed on, in the sheet. */
@@ -337,7 +343,7 @@ export const drawingIdsInUse = (doc: DrawingDoc): Id[] => [...doc.views.map((v) 
 
 export type DrawingCommand =
   /** Changes the sheet: its size, orientation, projection, scale or (`shift: null`: take it back) the shift of the arrangement (C16.1). */
-  | { type: 'setSheet'; sheet: Partial<Omit<DrawingSheet, 'shift'>> & { shift?: [number, number] | null } }
+  | { type: 'setSheet'; sheet: Partial<Omit<DrawingSheet, 'shift' | 'language'>> & { shift?: [number, number] | null; language?: Locale | null } }
   /** Writes a field of the title block; an empty text takes it away (C16.1). */
   | { type: 'setTitle'; field: TitleField; value: string }
   /** Adds views at the end of the list (C16.2), each with its own new id. */
@@ -529,9 +535,13 @@ export function mutateDrawing(draft: Draft<DrawingDoc>, cmd: DrawingCommand): vo
       if (s.scale !== undefined && !scaleOk(s.scale)) throw new CommandError(t('drawing.badScale', { scale: s.scale.join(':') }));
       if (s.shift && !(s.shift.length === 2 && s.shift.every(Number.isFinite))) throw new CommandError(t('drawing.badPosition'));
       if (s.unit !== undefined && s.unit !== 'mm' && s.unit !== 'in') throw new CommandError(t('drawing.badUnit'));
-      const { shift, ...rest } = s;
+      if (s.language !== undefined && s.language !== null && !LOCALES.includes(s.language)) throw new CommandError(t('drawing.badLanguage'));
+      const { shift, language, ...rest } = s;
       Object.assign(draft.sheet, rest);
       if (s.unit === 'mm') delete draft.sheet.unit;
+      // `null` puts the sheet back to writing in whatever language the interface is in
+      if (language === null) delete draft.sheet.language;
+      else if (language !== undefined) draft.sheet.language = language;
       if (shift === null || (shift && shift[0] === 0 && shift[1] === 0)) delete draft.sheet.shift;
       else if (shift) draft.sheet.shift = [shift[0], shift[1]];
       return;

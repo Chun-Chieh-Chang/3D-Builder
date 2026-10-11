@@ -1,4 +1,4 @@
-import { t } from '@3db/i18n';
+import { t, type Locale } from '@3db/i18n';
 import { SHEET_SIZES, TITLE_FIELDS, VIEW_NAMES, isDerived, type DrawingView, type Scale, type SheetSize, type TitleField, type ViewName, type ViewSide } from '@3db/model';
 import { STANDARD_SCALES, arrangementBase, scaleText, showsHidden } from '@3db/drawing';
 import { useState } from 'react';
@@ -88,6 +88,14 @@ export function DrawingPanel() {
               <option value="in">{t('drawingUi.unit.in')}</option>
             </select>
           </label>
+        <label className="pm-row">
+          <span>{t('drawingUi.language')}</span>
+          <select data-field="language" value={doc.sheet.language ?? ''} onChange={(e) => d.setSheet({ language: e.target.value === '' ? null : (e.target.value as Locale) })}>
+            <option value="">{t('drawingUi.language.auto')}</option>
+            <option value="zh-TW">{t('options.languageZh')}</option>
+            <option value="en">{t('options.languageEn')}</option>
+          </select>
+        </label>
           <label className="pm-row">
           <span>{t('drawing.title.scale')}</span>
           <select data-field="scale" value={scale} onChange={(e) => d.setSheet({ scale: parseScale(e.target.value) })}>

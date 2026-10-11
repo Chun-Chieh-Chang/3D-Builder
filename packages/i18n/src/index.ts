@@ -52,6 +52,24 @@ export function t<K extends MessageKey>(key: K, ...args: Params<K>): string {
   return template.replace(/\{(\w+)\}/g, (whole, name: string) => (name in params ? String(params[name]) : whole));
 }
 
+/**
+ * Runs `fn` with every text it produces in `language`, whatever the interface is set to, and puts the interface's back afterwards.
+ *
+ * A drawing is not the reader's: the sheet goes to whoever machines the part, so its texts are the document's (ADR 0128). Rather than
+ * thread a language through the ninety-odd `t` calls that build a sheet, the build is run inside this. `fn` must be synchronous —
+ * the language is module state, so two runs must not interleave — and this does not tell the listeners, since it is a way of writing
+ * one document and not a change of what the reader wants to see.
+ */
+export function withLocale<T>(language: Locale, fn: () => T): T {
+  const outer = current;
+  current = language;
+  try {
+    return fn();
+  } finally {
+    current = outer;
+  }
+}
+
 /** Whether the catalog has this key (a key made up at run time, like a help topic's, may not). */
 export function hasText(key: string): key is MessageKey {
   return key in zhTW;
