@@ -11,3 +11,5 @@ apps/desktop/src-tauri/icons/android/
 apps/desktop/src-tauri/icons/ios/
 
 sync.ffs_db
+scratch/
+.workbuddy-ai/
