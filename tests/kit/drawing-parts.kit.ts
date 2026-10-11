@@ -26,7 +26,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { applyCommand, applyDrawingCommand, axesOf, createEmptyDrawing, createEmptyPart, sectionPlane, type Command, type Dimension, type DrawingDoc, type DrawingView, type ElementFacts, type Feature, type PartDoc, type Pose, type Ref, type SketchConstraint, type SketchEntity, type SurfaceFinish, type ViewAxes } from '@3db/model';
 import { readAnyDocumentFile, writeDrawingFile, writePartFile } from '@3db/io';
-import { buildScene, checkDxf, readDxf, readTrueType, toDxf, toPdf, type DimensionOutcome, type ElementsResult, type Scene, type ViewLines } from '@3db/drawing';
+import { autoDimensions, buildScene, checkDxf, evaluateDimension, factsOf, featureAt, planDimension, readDxf, readTrueType, toDxf, toPdf, type DimensionOutcome, type ElementsResult, type PlacedView, type Scene, type ViewLines } from '@3db/drawing';
 import { PlaneGcsSolver } from '@3db/sketch';
 import { Kernel, type ShapeId } from '@3db/kernel';
 import { elementFacts, holeFeatures, projectDrawingView, Regenerator, viewFeatures, type RebuildResult } from '@3db/regen';
@@ -329,7 +329,18 @@ async function sheet(o: {
   dims: (v: typeof VIEWS) => Dimension[];
   finishes?: (v: typeof VIEWS) => SurfaceFinish[];
   notes: readonly string[];
-}): Promise<{ scene: Scene; texts: string[]; sceneTexts: string[]; errors: string[]; dimensions: Map<string, DimensionOutcome>; axisSheetY: number }> {
+}): Promise<{
+  scene: Scene;
+  texts: string[];
+  sceneTexts: string[];
+  errors: string[];
+  dimensions: Map<string, DimensionOutcome>;
+  axisSheetY: number;
+  features: Map<string, ReturnType<typeof viewFeatures>>;
+  axes: Map<string, ViewAxes>;
+  lines: Map<string, ViewLines>;
+  placed: Map<string, PlacedView>;
+}> {
   const shape = o.r.body!.shape;
   const shapes = [{ shape, pose: IDENTITY, mirrored: false }];
   const views = (): DrawingView[] => [
@@ -367,7 +378,13 @@ async function sheet(o: {
 
   const holes = holeFeatures(o.doc);
   const features = new Map<string, ReturnType<typeof viewFeatures>>();
-  for (const v of drawing.views) if (v.kind !== 'section') features.set(v.id, viewFeatures(o.r.body!.topology, o.r.body!.names, axesOf(drawing.views, drawing.sheet.projection, v)!, undefined, holes));
+  const axesById = new Map<string, ViewAxes>();
+  for (const v of drawing.views)
+    if (v.kind !== 'section') {
+      const ax = axesOf(drawing.views, drawing.sheet.projection, v)!;
+      axesById.set(v.id, ax);
+      features.set(v.id, viewFeatures(o.r.body!.topology, o.r.body!.names, ax, undefined, holes));
+    }
   drawing = applyDrawingCommand(drawing, { type: 'insertDimensions', dimensions: o.dims(VIEWS) });
   if (o.finishes) drawing = applyDrawingCommand(drawing, { type: 'insertSurfaceFinishes', finishes: o.finishes(VIEWS) });
 
@@ -395,7 +412,7 @@ async function sheet(o: {
   const pdf = toPdf(built.scene, { ...(font ? { font } : {}), title: o.drawingName });
   put(join('輸出', `${o.file}.pdf`), pdf.bytes, `${o.drawingName} PDF${font ? '（內嵌微軟正黑體）' : '（無字型）'}`);
   console.log(`  ${o.file}: 圖面文字 ${texts.join('、')}`);
-  return { scene: built.scene, texts, sceneTexts, errors, dimensions: built.dimensions, axisSheetY };
+  return { scene: built.scene, texts, sceneTexts, errors, dimensions: built.dimensions, axisSheetY, features, axes: axesById, lines, placed: built.placed };
 }
 
 describe('工程圖：兩件各一張（B3a）', () => {
@@ -432,7 +449,7 @@ describe('工程圖：兩件各一張（B3a）', () => {
     const { doc, r } = buildPart2();
     stepOut('凸緣襯套', 'Part 2 凸緣襯套（Ø6.25 本體、Ø7.73 凸緣、25° 錐面、階梯內孔、30° 端面導角）', r.body!.shape, '一個旋轉體；凸緣比本體大一圈，之間是 25° 錐面；內孔兩段（Ø3.97 短、Ø4.247 長）中間有段差；兩處孔口有小圓角');
 
-    const { texts, errors, dimensions, axisSheetY } = await sheet({
+    const { texts, errors, dimensions, axisSheetY, features, axes, lines, placed } = await sheet({
       file: '凸緣襯套加工圖',
       drawingName: '凸緣襯套',
       source: '凸緣襯套.3dbx',
@@ -469,6 +486,48 @@ describe('工程圖：兩件各一張（B3a）', () => {
       expect(g.near[1]! - axisSheetY, `${id} 箭頭觸點到軸的距離`).toBeCloseTo(sign * (facts.major! + facts.radius!), 6);
       console.log(`  ${id}: R${facts.radius}，弧心距軸 ${facts.major!.toFixed(4)}、箭頭觸點 ${(facts.major! + facts.radius!).toFixed(4)} mm`);
     }
+
+    // E1a: the same two fillets are reachable from the sheet itself — pointed at, not named. Each is offered as **two** arcs, because the view cuts its tube once
+    // either side of the axis, and the two cuts are two features of one face.
+    const side = features.get(VIEWS.side)!;
+    const fillets = side.filter((f) => f.type === 'torus');
+    expect(fillets).toHaveLength(4);
+    expect([...new Set(fillets.map((f) => f.radius))].sort((a, b) => a - b)).toEqual([PART2_LEAD.small, PART2_LEAD.big]);
+    for (const name of new Set(fillets.map((f) => f.ref.name))) {
+      const pair = fillets.filter((f) => f.ref.name === name);
+      expect(pair, `${name} 的兩個切口`).toHaveLength(2);
+      // the two arcs are the tube cut either side of the axis: their middles are `2 × major` apart, about the axis
+      expect(Math.abs(pair[0]!.at[1] - pair[1]!.at[1]), `${name} 兩弧的距離`).toBeCloseTo(2 * pair[0]!.major, 6);
+      expect(pair[0]!.radius).toBe(pair[1]!.radius);
+    }
+    // pointing at a drawn arc picks the fillet, and the pick says of the face exactly what the face's own name says of it: same R, same major. Which part of the
+    // tube the projection draws is the projection's business (the arc is a quarter of the tube, and hidden-line removal decides the rest), so the claim is that
+    // the arc is reachable at all, and that wherever it is reachable it is the right face.
+    const sideLines = lines.get(VIEWS.side)!;
+    const sideAxes = axes.get(VIEWS.side)!;
+    const sidePlaced = placed.get(VIEWS.side)!;
+    for (const f of fillets) {
+      const hits = Array.from({ length: 48 }, (_, i) => {
+        const a = (i / 48) * 2 * Math.PI;
+        return featureAt(sideLines, side, [f.at[0] + f.radius * Math.cos(a), f.at[1] + f.radius * Math.sin(a)], 0.05);
+      }).filter((p) => p?.type === 'torus' && p.ref.name === f.ref.name);
+      expect(hits.length, `${f.ref.name}（R${f.radius}）的弧在圖上點得到`).toBeGreaterThan(0);
+      const named = elementFacts(r.body!.topology, r.body!.names, face(f.ref.name)) as ElementFacts;
+      for (const picked of hits) {
+        expect(factsOf(picked!, sideAxes)).toMatchObject({ kind: 'face', type: 'torus', radius: named.radius, major: named.major });
+        const plan = planDimension([picked!], [sidePlaced.at[0] + 40, sidePlaced.at[1] + 40], sidePlaced, sideAxes);
+        if (!('draft' in plan)) throw new Error(`沒有草稿：${JSON.stringify(plan)}`);
+        expect(plan.draft).toMatchObject({ kind: 'radius', ref: picked!.ref });
+        const out = evaluateDimension({ id: 'p', view: VIEWS.side, ...plan.draft } as Dimension, { elements: plan.facts }, sideAxes, sidePlaced);
+        expect('error' in out ? out.error : out.text).toBe(`R${named.radius}`);
+      }
+    }
+    // the step E1a kept out: pointing at a fillet is one thing, and drafting every fillet's R into the automatic dimensions is another. That button is unchanged.
+    const drafted = autoDimensions(side, { overall: true, holes: true, positions: true });
+    const filletNames = new Set(fillets.map((f) => f.ref.name));
+    const names = (d: (typeof drafted)[number]) => (d.kind === 'linear' || d.kind === 'angle' ? [d.a.name, d.b.name] : [d.ref.name]);
+    expect(drafted.flatMap(names).filter((n) => filletNames.has(n)), '自動尺寸不應冒出圓角半徑').toEqual([]);
+    console.log(`  E1a：側視圖 ${fillets.length} 條圓角弧，點選可得 R${PART2_LEAD.small}／R${PART2_LEAD.big}；自動尺寸 ${drafted.length} 項，其中 0 項是圓角`);
   });
 });
 

@@ -30,12 +30,13 @@ export function segmentDistance(p: P2, a: P2, b: P2): number {
   return hyp(p[0] - (a[0] + k * dx), p[1] - (a[1] + k * dy));
 }
 
-const areaOf = (f: Pickable) => (f.type === 'circle' ? Math.PI * f.radius * f.radius : f.area);
+/** How big what a feature is drawn as is, for telling two apart that are the same distance from the pointer: the area of the circle an arc or a fillet is part of. */
+const areaOf = (f: Pickable) => (f.type === 'circle' || f.type === 'torus' ? Math.PI * f.radius * f.radius : f.area);
 
 /**
  * The element of a view under the pointer, or null: a straight line of the view that is where a plane seen edge-on is (a vertical one for a plane across x, a horizontal one
- * for y, a slanted one for a slanted face) or a circle or an arc of the view that is where a cylinder seen along its axis is. Only what is drawn counts: a plane at an
- * x that has no line there is not picked by pointing at the empty place. `p` and `tol` are in the view's coordinates.
+ * for y, a slanted one for a slanted face) or a circle or an arc of the view that is where a cylinder seen along its axis is, or where a fillet's tube is cut through. Only
+ * what is drawn counts: a plane at an x that has no line there is not picked by pointing at the empty place. `p` and `tol` are in the view's coordinates.
  */
 export function featureAt(lines: ViewLines | null | undefined, features: readonly ViewFeature[], p: P2, tol: number): Pickable | null {
   if (!lines) return null;
@@ -69,7 +70,11 @@ export function featureAt(lines: ViewLines | null | undefined, features: readonl
     }
   }
   if (nearest <= tol) {
-    for (const f of pickable) if (f.type === 'circle') offer(f, Math.abs(hyp(p[0] - f.centre[0], p[1] - f.centre[1]) - f.radius));
+    // a circle is drawn about its own middle; a fillet's arc about `at`, which is `major` off the torus's centre, and of the tube's radius and not the torus's
+    for (const f of pickable) {
+      if (f.type === 'circle') offer(f, Math.abs(hyp(p[0] - f.centre[0], p[1] - f.centre[1]) - f.radius));
+      else if (f.type === 'torus') offer(f, Math.abs(hyp(p[0] - f.at[0], p[1] - f.at[1]) - f.radius));
+    }
   }
   return (best as { f: Pickable } | null)?.f ?? null;
 }
@@ -80,6 +85,9 @@ export function factsOf(f: Pickable, axes: ViewAxes): ElementFacts {
   const at = (x: number, y: number): [number, number, number] => [r[0] * x + axes.up[0] * y, r[1] * x + axes.up[1] * y, r[2] * x + axes.up[2] * y];
   if (f.type === 'plane') return f.axis === 'x' ? { kind: 'face', type: 'plane', point: at(f.coord, 0), dir: at(1, 0) } : { kind: 'face', type: 'plane', point: at(0, f.coord), dir: at(0, 1) };
   if (f.type === 'slant') return { kind: 'face', type: 'plane', point: at(f.at[0], f.at[1]), dir: at(-f.dir[1], f.dir[0]) };
+  // a fillet: the point is the torus's own centre and the direction its axis, both in the part's frame; `major` is what lets the dimension find the arc (its own axis
+  // lies in the sheet, which is the case this is offered in)
+  if (f.type === 'torus') return { kind: 'face', type: 'torus', point: at(f.centre[0], f.centre[1]), dir: at(f.axis[0], f.axis[1]), radius: f.radius, major: f.major };
   return { kind: 'face', type: 'cylinder', point: at(f.centre[0], f.centre[1]), dir: [axes.dir[0], axes.dir[1], axes.dir[2]], radius: f.radius };
 }
 
@@ -143,6 +151,12 @@ export function planDimension(picks: readonly Pickable[], p: P2, placed: PlacedV
   if (picks.length === 0) return { need: 'second' };
   if (picks.length === 1) {
     const f = picks[0]!;
+    // a fillet is measured from its arc and always as a radius: the R of a torus is the tube's, and there is no diameter to write for it
+    if (f.type === 'torus') {
+      const c = sheetOf(f.at[0], f.at[1]);
+      const g = leaderAt({ kind: 'round', centre: c, radius: f.radius * placed.scale }, p);
+      return { draft: { kind: 'radius', ref: f.ref, angle: Math.round(g.angle * 10) / 10, leader: Math.round(g.leader * 100) / 100 }, refs: [f], facts };
+    }
     if (f.type !== 'circle') return { need: 'second' };
     const c = sheetOf(f.centre[0], f.centre[1]);
     const g = leaderAt({ kind: 'round', centre: c, radius: f.radius * placed.scale }, p);
@@ -151,6 +165,9 @@ export function planDimension(picks: readonly Pickable[], p: P2, placed: PlacedV
     return { draft: f.full ? { kind: 'diameter', ref: f.ref, angle, leader } : { kind: 'radius', ref: f.ref, angle, leader }, refs: [f], facts };
   }
   const [a, b] = picks as [Pickable, Pickable];
+  // a fillet is only ever measured on its own. An arc has no place to measure a distance from or an angle to — its own `at` is a drawing position, not a feature of
+  // the model — and inventing one would put a number on the sheet that nothing in the part stands behind
+  if (a.type === 'torus' || b.type === 'torus') return { error: t('drawing.dimTorusAlone') };
   const isLine = (f: Pickable) => f.type === 'plane' || f.type === 'slant';
   const planesOnly = a.type === 'plane' && b.type === 'plane';
   const sameAxis = planesOnly && a.axis === b.axis;

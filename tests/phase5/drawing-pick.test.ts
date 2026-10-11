@@ -4,7 +4,7 @@
  * are. The numbers are worked out by hand; the view is 100 x 60 at the sheet point (200, 150), scale 1, its own origin (0, 0) at the lower left corner of its box.
  */
 import { describe, expect, it } from 'vitest';
-import { viewVectors, type Dimension } from '@3db/model';
+import { rightOf, viewVectors, type Dimension } from '@3db/model';
 import { dimensionAt, dimensionText, dragDimension, evaluateDimension, factsOf, featureAt, planDimension, toSheet, toView, type Pickable, type PlacedView, type SceneItem, type ViewLines } from '@3db/drawing';
 
 const placed: PlacedView = { id: 'v', at: [200, 150], scale: 1, w: 100, h: 60, centre: [50, 30] };
@@ -185,5 +185,80 @@ describe('where a dimension is drawn, and what the pointer does to it', () => {
     const c = evaluateDimension({ id: 'd', view: 'v', kind: 'radius', ref: ref('c'), angle: 0 } as Dimension, { elements: [factsOf(circle(50, 30, 10), axes)] }, axes, placed);
     if (!('handle' in c) || !c.handle) throw new Error('no handle');
     expect(dragDimension(c.handle, false, [200, 180])).toEqual({ angle: 90, leader: 20 });
+  });
+});
+
+/**
+ * A fillet or a round on the sheet (E1a). The view is the side of a turned part: the axis runs across the sheet at y = 30, so the fillet at the mouth of the bore has
+ * its own axis lying in the sheet — which is the only way its tube is cut through and the arc seen. The two cuts, one either side of the axis, are what is drawn.
+ */
+describe('a fillet on the sheet', () => {
+  const R = 0.5;
+  const MAJOR = 4;
+  const AXIS_Y = 30;
+  const dot3 = (a: readonly number[], b: readonly number[]) => a[0]! * b[0]! + a[1]! * b[1]! + a[2]! * b[2]!;
+  /** A fillet seen true: the tube's radius is `radius`, and the arc drawn about `at`, which is `major` off the torus's own centre. */
+  const fillet = (at: [number, number]): Pickable => ({
+    type: 'torus',
+    // one face of the part, however many cuts of its tube are drawn: the two features share the name, which is the whole point
+    ref: ref('t-mouth'),
+    centre: [50, AXIS_Y],
+    at,
+    radius: R,
+    major: MAJOR,
+    axis: [1, 0],
+    convex: true,
+    outward: (Math.atan2(at[1] - AXIS_Y, at[0] - 50) * 180) / Math.PI,
+  });
+  /** Half a circle, the way a cut through a tube is drawn. */
+  const half = (cy: number, up: boolean): number[] =>
+    Array.from({ length: 17 }, (_, i) => {
+      const a = (i / 16) * Math.PI;
+      return [50 + R * Math.cos(a), cy + (up ? 1 : -1) * R * Math.sin(a)];
+    }).flat();
+  const above = fillet([50, AXIS_Y + MAJOR]);
+  const below = fillet([50, AXIS_Y - MAJOR]);
+  // the axis itself is drawn too (it is where the A–A cut runs), and it is not a feature to pick
+  const cut: ViewLines = { visible: [[0, AXIS_Y, 100, AXIS_Y], half(AXIS_Y + MAJOR, true), half(AXIS_Y - MAJOR, false)], hidden: [], box: { min: [0, 0], max: [100, 60] } };
+
+  it('both cuts are drawn, and pointing at either picks the same face: one R, not two', () => {
+    const up = featureAt(cut, [above, below], [50, AXIS_Y + MAJOR + R], 0.4);
+    const down = featureAt(cut, [above, below], [50, AXIS_Y - MAJOR - R], 0.4);
+    expect(up?.type).toBe('torus');
+    expect(down?.type).toBe('torus');
+    // the two arcs are told apart by where they are drawn, but they are one face of the part
+    expect(up).not.toEqual(down);
+    expect((up as { ref: { name: string } }).ref.name).toBe((down as { ref: { name: string } }).ref.name);
+    // nothing is picked where no arc is drawn: on the axis line, and past the end of the tube
+    expect(featureAt(cut, [above, below], [50, AXIS_Y], 0.4)).toBeNull();
+    expect(featureAt(cut, [above, below], [50, AXIS_Y + MAJOR + 2 * R], 0.4)).toBeNull();
+  });
+
+  it('gives facts the dimension can be drawn from without asking the model', () => {
+    const f = factsOf(above, axes);
+    expect(f).toMatchObject({ kind: 'face', type: 'torus', radius: R, major: MAJOR });
+    // the point is the torus's own centre, on the axis; the direction its axis, which lies across the sheet — that is the whole reason it is seen as an arc
+    expect(dot3(f.point, rightOf(axes))).toBeCloseTo(50, 9);
+    expect(dot3(f.point, axes.up)).toBeCloseTo(AXIS_Y, 9);
+    expect(dot3(f.dir!, rightOf(axes))).toBeCloseTo(1, 9);
+    expect(dot3(f.dir!, axes.up)).toBeCloseTo(0, 9);
+  });
+
+  it('pointed at alone it makes an R of the tube, and the real dimension code draws it on the arc', () => {
+    const plan = planDimension([above], [230, 170], placed, axes);
+    if (!('draft' in plan)) throw new Error(`no draft: ${JSON.stringify(plan)}`);
+    expect(plan.draft).toMatchObject({ kind: 'radius', ref: above.ref });
+    const out = evaluateDimension({ id: 'p', view: 'v', ...plan.draft } as Dimension, { elements: plan.facts }, axes, placed);
+    expect('error' in out ? out.error : out.text).toBe('R0.5');
+    // the arrow lands on the arc, not on the torus's centre: the arc's middle is `major` off the axis, and the arrow touches the arc itself
+    const g = (out as { dxf: { geometry: { centre: number[]; near: number[] } } }).dxf.geometry;
+    const axisSheetY = placed.at[1] + (AXIS_Y - placed.centre[1]) * placed.scale;
+    expect(g.centre[1]! - axisSheetY).toBeCloseTo(MAJOR, 6);
+    expect(Math.hypot(g.near[0]! - g.centre[0]!, g.near[1]! - g.centre[1]!)).toBeCloseTo(R, 6);
+  });
+
+  it('is refused with a second element, either way round: an arc has no place to measure a distance from', () => {
+    expect('error' in planDimension([above, plane('x', 0)], [230, 170], placed, axes)).toBe(true);
+    expect('error' in planDimension([plane('x', 0), above], [230, 170], placed, axes)).toBe(true);
   });
 });

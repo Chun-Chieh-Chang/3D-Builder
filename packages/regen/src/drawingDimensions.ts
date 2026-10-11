@@ -222,6 +222,32 @@ export function viewFeatures(topology: Topology, names: ElementNames, axes: View
         const at = (e: (typeof ends)[number]): [number, number] => [dot(e.center, right), dot(e.center, up)];
         out.push({ type: 'axis', ref: ref(), from: at(ends[0]!), to: at(ends[1]!), radius: g.radius });
       }
+    } else if (g.type === 'torus' && Math.abs(dot(g.axis, axes.dir)) < 1e-6 && g.major > 1e-9) {
+      // a fillet or a round seen in its true shape (E1a): its axis lies in the sheet, so the view cuts its tube and the cut is the arc. The same condition
+      // `circleCentre` uses to accept one — the two have to agree or a feature would be offered and then refused.
+      const centre: [number, number] = [dot(g.center, right), dot(g.center, up)];
+      const ax: [number, number] = [dot(g.axis, right), dot(g.axis, up)];
+      const l = Math.hypot(ax[0], ax[1]);
+      if (l > 1e-9) {
+        const across: [number, number] = [ax[1] / l, -ax[0] / l];
+        // the tube is cut twice, once either side of the axis; a fillet at a hole mouth is a whole ring, so the view really does see two arcs. Both are of the
+        // same face, so they are given the one reference rather than two that happen to agree.
+        const face = ref();
+        for (const side of [1, -1] as const) {
+          out.push({
+            type: 'torus',
+            ref: face,
+            centre,
+            at: [centre[0] + side * across[0] * g.major, centre[1] + side * across[1] * g.major],
+            radius: g.minor,
+            major: g.major,
+            axis: [ax[0] / l, ax[1] / l],
+            convex: g.convex,
+            // the leader leans away from the axis, which is the outside of the fillet — the way the kit's two `R… MAX` callouts ask for it
+            outward: (Math.atan2(side * across[1], side * across[0]) * 180) / Math.PI,
+          });
+        }
+      }
     }
   });
   return out;

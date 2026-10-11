@@ -239,6 +239,18 @@ export type ViewFeature =
   | { type: 'circle'; ref: Ref; centre: [number, number]; radius: number; convex: boolean; full: boolean; outward: number; hole?: HoleInfo }
   /** A whole cylinder seen from the side: its axis from one end to the other, in the view's coordinates. */
   | { type: 'axis'; ref: Ref; from: [number, number]; to: [number, number]; radius: number }
+  /**
+   * A fillet or a round — a torus — seen in its true shape: its axis lies *in* the sheet, so the view cuts its tube and what is drawn is the arc of the cut. This is
+   * the other way round from a cylinder, which shows a circle only when its axis runs *along* the view.
+   *
+   * `centre` is the torus's own centre (a point on its axis) and `at` the middle of the arc drawn, which is `major` from `centre` on the side `outward` points to;
+   * `radius` is the tube's, which is the R the drawing writes. `axis` is the torus's axis as the view sees it, so the facts can be built without asking the model.
+   *
+   * A fillet at a hole mouth is a whole ring, and the view cuts it **twice** — once either side of the axis — so one face gives two of these, both naming the same
+   * face and the same R. They are their own kind and not a `circle` so that the automatic dimensions leave them alone (E1a): drafting a fillet's radius changes
+   * what that button does, and that is a decision of its own.
+   */
+  | { type: 'torus'; ref: Ref; centre: [number, number]; at: [number, number]; radius: number; major: number; axis: [number, number]; convex: boolean; outward: number }
   /** A plane seen edge-on that is neither square to the view's x nor to its y (a slanted face): the middle of the face and the direction of the line it is seen as (a unit vector), in the view's coordinates. */
   | { type: 'slant'; ref: Ref; at: [number, number]; dir: [number, number]; area: number };
 

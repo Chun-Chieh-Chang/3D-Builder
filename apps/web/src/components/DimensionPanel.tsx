@@ -21,6 +21,9 @@ const featureLabel = (f: Pickable): string =>
     ? t('drawingUi.featureSlant', { angle: formatNumber(slantAngle(f), 1), x: formatNumber(f.at[0], 1), y: formatNumber(f.at[1], 1) })
     : f.type === 'plane'
     ? t(f.axis === 'x' ? 'drawingUi.featurePlaneX' : 'drawingUi.featurePlaneY', { value: formatNumber(f.coord, 2) })
+    : f.type === 'torus'
+    ? // a fillet is always an R of the tube, wherever on the arc it was pointed at
+      t('drawingUi.featureFillet', { size: formatNumber(f.radius, 2), x: formatNumber(f.at[0], 2), y: formatNumber(f.at[1], 2) })
     : t(f.full ? (f.convex ? 'drawingUi.featureCylinder' : 'drawingUi.featureHole') : 'drawingUi.featureArc', {
         size: formatNumber(f.full ? 2 * f.radius : f.radius, 2),
         x: formatNumber(f.centre[0], 2),

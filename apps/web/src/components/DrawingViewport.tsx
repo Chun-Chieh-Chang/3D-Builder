@@ -515,8 +515,10 @@ export function DrawingViewport() {
               if (!placed) return null;
               const colour = k < tool.picks.length ? '#1c7ed6' : '#f08c00';
               const box = drw.lines.get(view)?.box;
-              if (f.type === 'circle') {
-                const c = toSheet(placed, f.centre[0], f.centre[1]);
+              if (f.type === 'circle' || f.type === 'torus') {
+                // a circle is drawn about its own middle, a fillet's arc about `at` (which is `major` off the torus's centre), both of the radius written
+                const [fx, fy] = f.type === 'circle' ? f.centre : f.at;
+                const c = toSheet(placed, fx, fy);
                 return <circle key={k} cx={c[0]} cy={sheet.height - c[1]} r={f.radius * placed.scale} fill="none" stroke={colour} strokeWidth={0.8} />;
               }
               const [a, b] = f.type === 'plane' ? (f.axis === 'x' ? [[f.coord, box?.min[1] ?? 0], [f.coord, box?.max[1] ?? 0]] : [[box?.min[0] ?? 0, f.coord], [box?.max[0] ?? 0, f.coord]]) : [[f.at[0] - f.dir[0] * 15, f.at[1] - f.dir[1] * 15], [f.at[0] + f.dir[0] * 15, f.at[1] + f.dir[1] * 15]];
