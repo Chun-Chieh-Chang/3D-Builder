@@ -17,10 +17,11 @@
     "doctor": "node scripts/doctor.mjs",
     "make:kit": "vitest run --config tests/kit/vitest.kit.config.ts",
     "lint:deps": "node scripts/check-deps.mjs",
+    "lint:rules": "node scripts/check-anti-patterns.mjs",
     "lint:i18n": "node scripts/check-i18n.mjs",
     "verify:ui": "node scripts/verify-ui.mjs",
     "check:perf": "node scripts/check-perf.mjs",
-    "check": "npm run typecheck && npm run lint:deps && npm run lint:i18n && npm test"
+    "check": "npm run typecheck && npm run lint:rules && npm run lint:deps && npm run lint:i18n && npm test"
   },
   "devDependencies": {
     "@types/node": "^26.6.3",

@@ -265,13 +265,17 @@ describe('the two features in the document', () => {
     const regen = new Regenerator(kernel, solver);
     regen.rebuild(doc);
     const live = kernel.liveShapes;
-    const initialHeapBytes = (kernel.oc as any).wasmMemory?.buffer?.byteLength ?? 0;
-    expect(initialHeapBytes, 'WASM heap buffer must exist and be greater than 0').toBeGreaterThan(0);
+    const initialMem = (kernel.oc as any).wasmMemory?.buffer;
+    expect(initialMem, 'WASM heap buffer must exist on kernel.oc').toBeDefined();
+    const initialHeapBytes = initialMem.byteLength;
+    expect(initialHeapBytes, 'Initial WASM heap buffer must be greater than 0').toBeGreaterThan(0);
     for (let n = 0; n < 20; n++) {
       regen.rebuild(doc);
     }
     expect(kernel.liveShapes).toBe(live);
-    const finalHeapBytes = (kernel.oc as any).wasmMemory?.buffer?.byteLength ?? 0;
+    const finalMem = (kernel.oc as any).wasmMemory?.buffer;
+    expect(finalMem, 'WASM heap buffer must persist').toBeDefined();
+    const finalHeapBytes = finalMem.byteLength;
     expect(finalHeapBytes, 'WASM heap should not grow across repeated moveFace operations').toBe(initialHeapBytes);
     regen.dispose();
   });

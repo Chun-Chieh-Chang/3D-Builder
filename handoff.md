@@ -17,6 +17,7 @@
     1. A1 自適應高精度 `massProps` 預設開啟（`adaptive ?? true`），`kernel.test.ts` 補齊螺牙真實曲面自適應高精度對照測試。
     2. A2 `direct-edit.test.ts` 改用真實 Emscripten WASM Heap `wasmMemory.buffer.byteLength` 並強制基準值 `> 0` 防呆，消除恆真式假綠。
     3. `AGENTS.md` 寫入「真值存在性防呆」與「禁止防禦性空轉閘控」自我演化準則。
+  - **全域 RSI 自回歸進化系統落成**：於 `C:/Users/3kids/.gemini/config/rsi` 建立跨專案的四大元模組（活躍卡片庫、結晶退休庫、睡眠壓縮器、動態反饋器），並在本專案接入 `scripts/check-anti-patterns.mjs`（`npm run lint:rules`），實現 100% 物理剛性防禦。
   - **桌面版升級 0.2.2**：已重新建置產出最新可執行檔 `apps/desktop/src-tauri/target/release/desktop.exe`（13.15 MB）與 NSIS 安裝包 `apps/desktop/src-tauri/target/release/bundle/nsis/3D-Builder_0.2.2_x64-setup.exe`（11.32 MB，2026/10/11 12:01:10），完整內嵌最新 42 種規格庫、漸縮淡入淡出核心與自適應質量特性。
 - **【2026-10-11：落實選擇題決策 A1~A3、B1~B2，說明系統更新與桌面版 0.2.1 打包】**
   - **使用者裁決結果落實（全部採用架構師建議）**：

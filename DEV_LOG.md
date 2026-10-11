@@ -1,5 +1,26 @@
 # 3D-Builder 開發日誌 (DEV_LOG.md)
 
+## 2026-10-11（下午）：全域 RSI 自回歸進化系統落成（高於任意專案層級之元架構建立與實證）
+
+### 1. 系統定位與架構 (System Architecture)
+依據使用者要求「建立高於任意專案層級之上、具備自動提取/保存/反饋與防臃腫壓縮的自回歸進化 (RSI) 體系」，於全域配置目錄（`C:/Users/3kids/.gemini/config/`）完成四大元構件建置：
+1. **全域元規則升級 (`config/AGENTS.md`)**：
+   - 增加 `<RULE[autoregressive_self_improvement_protocol]>`，確立「三向分流沉澱定理」與「物理剛性硬化優先原則」，嚴禁未結晶規則無限污染 Prompt。
+2. **全域 RSI 執行引擎 (`config/rsi/`)**：
+   - `memory/active/`：活躍事件卡片池（容量硬約束上限 20 張，防止知識庫臃腫）。
+   - `memory/crystallized/`：結晶退休池（一旦轉化為 Lint/測試攔截，Prompt 規則即刻退休，0 Token 開銷）。
+   - `memory/archive/`：冷存檔池（超過 30 天未復發卡片自動沉降歸檔）。
+   - `bin/rsi-distill.mjs`：自動經驗抽取器（標準化 JSONL 卡片）。
+   - `bin/rsi-compact.mjs`：睡眠壓縮與修剪守護行程（語意去重、半衰期衰減、容量修剪）。
+   - `bin/rsi-inject.mjs`：動態反饋注入器（按場景動態輸出 Top-5 活性約束，< 300 tokens）。
+3. **全域自進化技能 (`config/skills/autoregressive-self-improvement/`)**：
+   - 提供 Agent 跨專案調用的 SOP 指南與分流決策矩陣。
+4. **專案物理層無縫聯動**：
+   - 由全域範本繼承至專案 `scripts/check-anti-patterns.mjs`，掛載至 `package.json` 的 `npm run lint:rules` 與 `npm run check`。
+   - 成功在物理層實證精確攔截 `tests/phase3/direct-edit.test.ts` 中殘留的 `?? 0` 潛在假綠反模式並完成徹底根治。
+
+---
+
 ## 2026-10-11（下午）：Workbuddy 獨立審查缺陷修復（A1 自適應接線、A2 WASM Heap 守門防呆、threadStandards 註解修正與 61/61 測試核驗）
 
 ### 1. 審查背景與需求 (Requirements)
