@@ -98,6 +98,16 @@ describe('what a dimension is written as (ISO 129-1)', () => {
     expect(toleranceText({ type: 'fit', fit: 'H7' }, 900)).toBe('H7'); // not in the table: the class alone
   });
 
+  it('a one-sided limit is a word, not a deviation: 「10 最大」 bounds the part above only', () => {
+    expect(toleranceText({ type: 'max' }, 10)).toBe('最大');
+    expect(toleranceText({ type: 'min' }, 10)).toBe('最小');
+    // it is a word, so the unit of the sheet does not change it
+    expect(toleranceText({ type: 'max' }, 10, 'in')).toBe('最大');
+    const dia: Dimension = { id: 'd', view: 'v', kind: 'diameter', ref: { kind: 'face', name: 'x' }, angle: 45, tolerance: { type: 'max' } };
+    expect(dimensionText(dia, 10)).toBe('Ø10 最大');
+    expect(dimensionText({ ...dia, reference: true, tolerance: { type: 'min' } }, 10)).toBe('(Ø10 最小)');
+  });
+
   const ref: Ref = { kind: 'face', name: 'x' };
   it('Ø and R, the count, the tolerance, parentheses for a reference dimension', () => {
     const dia: Dimension = { id: 'd', view: 'v', kind: 'diameter', ref, angle: 45 };
@@ -136,6 +146,8 @@ describe('the dimensions in the document', () => {
     expect(() => insert(lin('dim1', 'view1', { tolerance: { type: 'bilateral', upper: -0.1, lower: 0.1 } }))).toThrow(/上下限/);
     expect(() => insert(lin('dim1', 'view1', { tolerance: { type: 'fit', fit: 'X9' } }))).toThrow(/不支援的配合等級/);
     expect(insert(lin('dim1', 'view1', { tolerance: { type: 'fit', fit: 'H7' } })).dimensions).toHaveLength(1);
+    expect(insert(lin('dim1', 'view1', { tolerance: { type: 'max' } })).dimensions).toHaveLength(1);
+    expect(insert(lin('dim1', 'view1', { tolerance: { type: 'min' } })).dimensions).toHaveLength(1);
   });
 
   it('changes a dimension: the tolerance in and out, a reference dimension, the count, the offset; what is not its kind\'s is refused', () => {
@@ -149,6 +161,10 @@ describe('the dimensions in the document', () => {
     expect(d.dimensions[1]).toMatchObject({ count: 4, angle: 120 });
     d = applyDrawingCommand(d, { type: 'setDimension', dimensionId: 'dim2', patch: { count: null } });
     expect(d.dimensions[1]).not.toHaveProperty('count');
+    d = applyDrawingCommand(d, { type: 'setDimension', dimensionId: 'dim2', patch: { tolerance: { type: 'max' } } });
+    expect(d.dimensions[1]).toMatchObject({ tolerance: { type: 'max' } });
+    d = applyDrawingCommand(d, { type: 'setDimension', dimensionId: 'dim2', patch: { tolerance: null } });
+    expect(d.dimensions[1]).not.toHaveProperty('tolerance');
     expect(() => applyDrawingCommand(d, { type: 'setDimension', dimensionId: 'dim1', patch: { angle: 10 } })).toThrow(/不屬於/);
     expect(() => applyDrawingCommand(d, { type: 'setDimension', dimensionId: 'dim1', patch: { count: 4 } })).toThrow(/不屬於/);
     expect(() => applyDrawingCommand(d, { type: 'setDimension', dimensionId: 'dim2', patch: { offset: 4 } })).toThrow(/不屬於/);
@@ -172,7 +188,7 @@ describe('the dimensions in the document', () => {
     delete v2.dimensions;
     v2.schemaVersion = 2;
     const back = parseDrawing(JSON.stringify(v2));
-    expect(back.schemaVersion).toBe(9);
+    expect(back.schemaVersion).toBe(10);
     expect(back.dimensions).toEqual([]);
   });
 });

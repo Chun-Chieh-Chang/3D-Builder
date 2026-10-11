@@ -50,9 +50,14 @@ export function lengthNumber(mm: number, places: number, unit: LengthUnit = 'mm'
 
 const signed = (v: number, unit: LengthUnit = 'mm') => (v === 0 ? '0' : `${v > 0 ? '+' : '-'}${lengthNumber(Math.abs(v), 4, unit)}`);
 
-/** The tolerance as written after a number: 「±0.05」, 「+0.1/-0.05」, or the class and its limits 「H7 (+0.012/0)」 (the class alone when the table does not reach this size). */
+/**
+ * The tolerance as written after a number: 「±0.05」, 「+0.1/-0.05」, the class and its limits 「H7 (+0.012/0)」 (the class alone when the table does not reach this
+ * size), or the word of a one-sided limit 「MAX」/「MIN」 (「10 MAX」: 10 is the largest the part may be).
+ */
 export function toleranceText(tol: DimensionTolerance, nominal: number, unit: LengthUnit = 'mm'): string {
   if (tol.type === 'bilateral') return tol.upper === -tol.lower && tol.upper > 0 ? `±${lengthNumber(tol.upper, 4, unit)}` : `${signed(tol.upper, unit)}/${signed(tol.lower, unit)}`;
+  if (tol.type === 'max') return t('drawing.tolMax');
+  if (tol.type === 'min') return t('drawing.tolMin');
   const d = fitDeviations(nominal, tol.fit);
   return d ? `${tol.fit} (${signed(d.upper, unit)}/${signed(d.lower, unit)})` : tol.fit;
 }
@@ -100,7 +105,9 @@ function finish(d: Dimension, said: string): string {
 
 function base(d: Dimension, value: number, facts: ElementFacts | undefined, unit: LengthUnit): string {
   if (d.kind === 'angle') {
-    const tolerance = d.tolerance ? ` ${toleranceText(d.tolerance, value)}°` : '';
+    // a one-sided limit is a word, so no degree sign follows it (「45° MAX」, not 「45° MAX°」)
+    const oneSided = d.tolerance?.type === 'max' || d.tolerance?.type === 'min';
+    const tolerance = d.tolerance ? ` ${toleranceText(d.tolerance, value)}${oneSided ? '' : '°'}` : '';
     const angle = `${formatNumber(value, d.precision ?? 2)}°${tolerance}`;
     return d.reference ? `(${angle})` : angle;
   }

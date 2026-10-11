@@ -12,7 +12,7 @@ const withViews = (): DrawingDoc => applyDrawingCommand(createEmptyDrawing(), { 
 describe('the drawing document', () => {
   it('starts as an A3 landscape sheet at 1:1 in first angle, with no views and an empty title block', () => {
     const d = createEmptyDrawing();
-    expect(d).toMatchObject({ kind: 'drawing', schemaVersion: 9, sheet: { size: 'A3', orientation: 'landscape', projection: 'first', scale: [1, 1] }, views: [], title: {} });
+    expect(d).toMatchObject({ kind: 'drawing', schemaVersion: 10, sheet: { size: 'A3', orientation: 'landscape', projection: 'first', scale: [1, 1] }, views: [], title: {} });
   });
 
   it('inserts views with their ids kept apart, and refuses what is not a view', () => {
@@ -94,5 +94,13 @@ describe('the drawing file (.3dbd)', () => {
     expect(() => parseDrawing('{"kind":"part"}')).toThrow(/工程圖/);
     expect(() => parseDrawing(JSON.stringify({ ...createEmptyDrawing(), schemaVersion: 99 }))).toThrow(/99/);
     expect(() => parseDrawing(JSON.stringify({ kind: 'drawing', schemaVersion: 1 }))).toThrow();
+  });
+
+  it('reads a drawing from before the surface finishes: it has none', () => {
+    // v9 had views, dimensions and tables but no surface finishes
+    const v9 = { ...createEmptyDrawing(), schemaVersion: 9, surfaceFinishes: undefined };
+    const read = parseDrawing(JSON.stringify(v9));
+    expect(read.schemaVersion).toBe(10);
+    expect(read.surfaceFinishes).toEqual([]);
   });
 });

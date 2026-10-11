@@ -12,7 +12,7 @@ import type { Ref } from './schema';
  * opened (exact hidden-line removal), so a drawing can never disagree with the model it shows.
  */
 
-export const DRAWING_SCHEMA_VERSION = 9;
+export const DRAWING_SCHEMA_VERSION = 10;
 
 export type SheetSize = 'A4' | 'A3' | 'A2' | 'A1' | 'A0';
 export const SHEET_SIZES: readonly SheetSize[] = ['A4', 'A3', 'A2', 'A1', 'A0'];
@@ -110,10 +110,12 @@ export type TitleField = (typeof TITLE_FIELDS)[number];
 // ---------------------------------------------------------------- dimensions (C16.4)
 
 /**
- * The tolerance of a dimension: limits in mm (`upper` and `lower`, signed: 「+0.1/-0.05」, or 「±0.05」 when they are opposite), or a class of ISO 286 (「H7」,
- * 「m6」) whose limits come from the table for the size the dimension has.
+ * The tolerance of a dimension: limits in mm (`upper` and `lower`, signed: 「+0.1/-0.05」, or 「±0.05」 when they are opposite), a class of ISO 286 (「H7」,
+ * 「m6」) whose limits come from the table for the size the dimension has, or a one-sided limit written as a word: `max` (the number is the largest the
+ * part may be, 「10 MAX」) or `min` (the smallest, 「10 MIN」). A one-sided limit bounds only one way and says nothing of the other — which is not the same
+ * as limits with a zero deviation (「+0.1/0」 bounds both).
  */
-export type DimensionTolerance = { type: 'bilateral'; upper: number; lower: number } | { type: 'fit'; fit: string };
+export type DimensionTolerance = { type: 'bilateral'; upper: number; lower: number } | { type: 'fit'; fit: string } | { type: 'max' } | { type: 'min' };
 
 interface DimensionCommon {
   id: Id;
@@ -259,6 +261,44 @@ export interface BomTable {
 
 export type DrawingTable = HoleTable | BomTable;
 
+// ---------------------------------------------------------------- surface finishes (C16.5)
+
+/**
+ * How a surface is to be made (ISO 1302): `basic` any method (the symbol alone), `machined` material is removed (a bar across the top of the V), `unmachined`
+ * material is not removed (a circle in the V).
+ */
+export type SurfaceFinishKind = 'basic' | 'machined' | 'unmachined';
+export const SURFACE_FINISH_KINDS: readonly SurfaceFinishKind[] = ['basic', 'machined', 'unmachined'];
+
+/** The Ra values of ISO 1302 (µm) from 0.008 to 400; a drawing normally writes one of these. */
+export const RA_MIN = 0.008;
+export const RA_MAX = 400;
+
+/**
+ * A surface texture requirement (C16.5, ISO 1302): the symbol of a surface, with the mean roughness Ra (µm) and the method the surface is to be made by. The
+ * point of the symbol is at `at` in the view's coordinates at full size and it leans away from the surface along `angle`. Unlike a dimension, which measures
+ * an element of the model and so is tied to it by name, this is a note of how the part is made: it is placed on the sheet and stays where it was put.
+ */
+export interface SurfaceFinish {
+  id: Id;
+  /** The view it is drawn on; the numbers are that view's, as a dimension's are. */
+  view: Id;
+  /** The point of the symbol (the bottom of the V), in the view's coordinates at full size (mm). */
+  at: [number, number];
+  /** The direction the symbol leans away from the surface, degrees counter-clockwise from the view's x axis. Absent: 90 (up the sheet). */
+  angle?: number;
+  /** How the surface is made (ISO 1302). Absent: `machined` (the material is removed). */
+  kind?: SurfaceFinishKind;
+  /** The mean roughness Ra in micrometres (0.008 to 400); absent: the symbol alone, saying only how the surface is made. */
+  ra?: number;
+  /** The method the surface is made by, written over the bar after the Ra (「銑削」, 「磨削」). */
+  method?: string;
+  /** Written under the bar: a range of Ra, a treatment. */
+  note?: string;
+  /** How long the leader is from the point of the symbol to the surface it marks (mm on the sheet). Absent: 0 (the point is on the surface). */
+  leader?: number;
+}
+
 export interface DrawingDoc {
   kind: 'drawing';
   schemaVersion: number;
@@ -267,6 +307,7 @@ export interface DrawingDoc {
   views: DrawingView[];
   dimensions: Dimension[];
   tables: DrawingTable[];
+  surfaceFinishes: SurfaceFinish[];
   properties: Record<string, string>;
   idCounters: Record<string, number>;
 }
@@ -280,12 +321,13 @@ export function createEmptyDrawing(): DrawingDoc {
     views: [],
     dimensions: [],
     tables: [],
+    surfaceFinishes: [],
     properties: {},
     idCounters: {},
   };
 }
 
-export const drawingIdsInUse = (doc: DrawingDoc): Id[] => [...doc.views.map((v) => v.id), ...doc.dimensions.map((d) => d.id), ...doc.tables.map((x) => x.id)];
+export const drawingIdsInUse = (doc: DrawingDoc): Id[] => [...doc.views.map((v) => v.id), ...doc.dimensions.map((d) => d.id), ...doc.tables.map((x) => x.id), ...doc.surfaceFinishes.map((f) => f.id)];
 
 export type DrawingCommand =
   /** Changes the sheet: its size, orientation, projection, scale or (`shift: null`: take it back) the shift of the arrangement (C16.1). */
@@ -307,7 +349,23 @@ export type DrawingCommand =
   | { type: 'insertTables'; tables: DrawingTable[] }
   /** Changes a table: `at: null` puts it back in the corner; `fits` replaces the classes (an empty one takes them all away). */
   | { type: 'setTable'; tableId: Id; patch: { at?: [number, number] | null; fits?: Record<string, string>; balloons?: boolean | null; balloonAt?: Record<string, [number, number]> | null } }
-  | { type: 'deleteTables'; tableIds: Id[] };
+  | { type: 'deleteTables'; tableIds: Id[] }
+  /** Adds surface finishes (C16.5), each with its own new id, on views that are there. */
+  | { type: 'insertSurfaceFinishes'; finishes: SurfaceFinish[] }
+  /** Changes a surface finish: what is given replaces what is there; `null` takes a field away. */
+  | { type: 'setSurfaceFinish'; finishId: Id; patch: SurfaceFinishPatch }
+  | { type: 'deleteSurfaceFinishes'; finishIds: Id[] };
+
+/** What `setSurfaceFinish` may change; `null` takes the field away (the symbol back to its default). */
+export type SurfaceFinishPatch = {
+  at?: [number, number];
+  angle?: number | null;
+  kind?: SurfaceFinishKind | null;
+  ra?: number | null;
+  method?: string | null;
+  note?: string | null;
+  leader?: number | null;
+};
 
 export type DimensionPatch = {
   reference?: boolean | null;
@@ -406,7 +464,8 @@ function checkDimension(d: Dimension, views: readonly DrawingView[]): void {
   } else if (d.kind === 'angle') {
     if (!isRefValue(d.a) || !isRefValue(d.b) || d.a.kind === 'vertex' || d.b.kind === 'vertex') throw new CommandError(t('drawing.dimBadRef'));
     if (!Number.isFinite(d.arc) || !(d.arc > 0)) throw new CommandError(t('drawing.dimBadArc'));
-    if (d.tolerance && d.tolerance.type !== 'bilateral') throw new CommandError(t('drawing.dimAngleFit'));
+    // an angle has no size for an ISO 286 fit to come from, so it takes limits or a one-sided limit, never a fit
+    if (d.tolerance && d.tolerance.type === 'fit') throw new CommandError(t('drawing.dimAngleFit'));
   } else if (d.kind === 'diameter' || d.kind === 'radius') {
     if (!isRefValue(d.ref) || d.ref.kind === 'vertex') throw new CommandError(t('drawing.dimBadRef'));
     if (!Number.isFinite(d.angle)) throw new CommandError(t('drawing.dimBadAngle'));
@@ -423,7 +482,7 @@ function checkDimension(d: Dimension, views: readonly DrawingView[]): void {
       if (!Number.isFinite(tol.upper) || !Number.isFinite(tol.lower) || tol.upper < tol.lower) throw new CommandError(t('drawing.dimBadLimits'));
     } else if (tol.type === 'fit') {
       if (!parseFit(tol.fit)) throw new CommandError(t('drawing.dimBadFit', { fit: String(tol.fit) }));
-    } else throw new CommandError(t('drawing.dimBadLimits'));
+    } else if (tol.type !== 'max' && tol.type !== 'min') throw new CommandError(t('drawing.dimBadLimits'));
   }
 }
 
@@ -438,6 +497,19 @@ function checkTable(x: DrawingTable, views: readonly DrawingView[]): void {
   if (x.kind === 'holes' && (x as { balloonAt?: unknown }).balloonAt !== undefined) throw new CommandError(t('drawing.notForKind', { field: 'balloonAt', kind: x.kind }));
   if (x.kind === 'bom') for (const c of Object.values(x.balloonAt ?? {})) if (!(Array.isArray(c) && c.length === 2 && c.every(Number.isFinite))) throw new CommandError(t('drawing.badPosition'));
   if (x.kind === 'holes') for (const [diameter, fit] of Object.entries(x.fits ?? {})) if (diameter.trim() === '' || !parseFit(fit)) throw new CommandError(t('drawing.dimBadFit', { fit: String(fit) }));
+}
+
+/** Checks a surface finish against the views it may be drawn on and what ISO 1302 allows. */
+function checkSurfaceFinish(f: SurfaceFinish, views: readonly DrawingView[]): void {
+  if (!f.id) throw new CommandError(t('drawing.idMissing'));
+  if (!viewById(views, f.view)) throw new CommandError(t('drawing.dimNoView', { id: String(f.view) }));
+  if (!(Array.isArray(f.at) && f.at.length === 2 && f.at.every(Number.isFinite))) throw new CommandError(t('drawing.badPosition'));
+  if (f.angle !== undefined && !Number.isFinite(f.angle)) throw new CommandError(t('drawing.badFinishAngle'));
+  if (f.kind !== undefined && !SURFACE_FINISH_KINDS.includes(f.kind)) throw new CommandError(t('drawing.badFinishKind', { kind: String(f.kind) }));
+  if (f.ra !== undefined && !(Number.isFinite(f.ra) && f.ra >= RA_MIN && f.ra <= RA_MAX)) throw new CommandError(t('drawing.badRa', { min: String(RA_MIN), max: String(RA_MAX) }));
+  if (f.method !== undefined && (typeof f.method !== 'string' || f.method.length > 40)) throw new CommandError(t('drawing.badFinishText'));
+  if (f.note !== undefined && (typeof f.note !== 'string' || f.note.length > 40)) throw new CommandError(t('drawing.badFinishText'));
+  if (f.leader !== undefined && !(Number.isFinite(f.leader) && f.leader >= 0)) throw new CommandError(t('drawing.badFinishLeader'));
 }
 
 /** Immer recipe: mutates the draft or throws CommandError, leaving the document untouched. */
@@ -515,6 +587,9 @@ export function mutateDrawing(draft: Draft<DrawingDoc>, cmd: DrawingCommand): vo
       draft.dimensions = draft.dimensions.filter((d) => !ids.has(d.view));
       countersFor(draft.tables.filter((x) => ids.has(x.view)).map((x) => x.id), draft.idCounters);
       draft.tables = draft.tables.filter((x) => !ids.has(x.view));
+      // and the surface finishes drawn on them
+      countersFor(draft.surfaceFinishes.filter((f) => ids.has(f.view)).map((f) => f.id), draft.idCounters);
+      draft.surfaceFinishes = draft.surfaceFinishes.filter((f) => !ids.has(f.view));
       return;
     }
     case 'insertDimensions': {
@@ -612,6 +687,39 @@ export function mutateDrawing(draft: Draft<DrawingDoc>, cmd: DrawingCommand): vo
       for (const id of ids) if (!draft.dimensions.some((d) => d.id === id)) throw new CommandError(t('drawing.noDimension', { id }));
       countersFor(ids, draft.idCounters);
       draft.dimensions = draft.dimensions.filter((d) => !ids.has(d.id));
+      return;
+    }
+    case 'insertSurfaceFinishes': {
+      const inUse = new Set(drawingIdsInUse(draft as DrawingDoc));
+      for (const f of cmd.finishes) {
+        checkSurfaceFinish(f, draft.views as DrawingView[]);
+        if (inUse.has(f.id)) throw new CommandError(t('drawing.idInUse', { id: f.id }));
+        inUse.add(f.id);
+      }
+      for (const f of cmd.finishes) draft.surfaceFinishes.push(f as Draft<SurfaceFinish>);
+      countersFor(cmd.finishes.map((f) => f.id), draft.idCounters);
+      return;
+    }
+    case 'setSurfaceFinish': {
+      const f = draft.surfaceFinishes.find((x) => x.id === cmd.finishId);
+      if (!f) throw new CommandError(t('drawing.noSurfaceFinish', { id: cmd.finishId }));
+      const { at, angle, kind, ra, method, note, leader } = cmd.patch;
+      const next = { ...(JSON.parse(JSON.stringify(f)) as SurfaceFinish), ...(at !== undefined ? { at } : {}) } as SurfaceFinish;
+      const loose = next as unknown as Record<string, unknown>;
+      for (const [k, v] of [['angle', angle], ['kind', kind], ['ra', ra], ['method', method], ['note', note], ['leader', leader]] as const) {
+        if (v === null) delete loose[k];
+        else if (v !== undefined) loose[k] = v;
+      }
+      checkSurfaceFinish(next, draft.views as DrawingView[]);
+      for (const k of Object.keys(f)) delete (f as unknown as Record<string, unknown>)[k];
+      Object.assign(f, next);
+      return;
+    }
+    case 'deleteSurfaceFinishes': {
+      const ids = new Set(cmd.finishIds);
+      for (const id of ids) if (!draft.surfaceFinishes.some((f) => f.id === id)) throw new CommandError(t('drawing.noSurfaceFinish', { id }));
+      countersFor(ids, draft.idCounters);
+      draft.surfaceFinishes = draft.surfaceFinishes.filter((f) => !ids.has(f.id));
       return;
     }
   }

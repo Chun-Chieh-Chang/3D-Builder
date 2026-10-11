@@ -6,6 +6,7 @@ import {
   dimensionAt,
   dragDimension,
   featureAt,
+  fromSheet,
   layoutViews,
   planDimension,
   scaleFromRatio,
@@ -13,6 +14,8 @@ import {
   segmentDistance,
   sheetMetrics,
   slideAxis,
+  surfaceFinishBox,
+  surfaceFinishItems,
   toSheet,
   toSvg,
   toView,
@@ -20,7 +23,7 @@ import {
   type Pickable,
   type SceneItem,
 } from '@3db/drawing';
-import { axesOf, type Dimension, type DrawingView, type Id, type Scale } from '@3db/model';
+import { axesOf, type Dimension, type DrawingView, type Id, type Scale, type SurfaceFinish } from '@3db/model';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { store, useStore } from '../state/store';
 
@@ -42,6 +45,7 @@ type Drag =
   | { kind: 'sectionLine'; id: string; line: [P, P]; vertical: boolean; scale: number; from: P; delta: number }
   | { kind: 'table'; id: string; from: P; origin: P; delta: P }
   | { kind: 'balloon'; id: string; item: string; from: P; origin: P; delta: P }
+  | { kind: 'surface'; id: string; from: P; origin: P; delta: P }
   | { kind: 'draw'; tool: 'section' | 'detail'; view: Id; from: P; to: P };
 
 const round2 = (n: number) => Math.round(n * 100) / 100;
@@ -111,6 +115,7 @@ export function DrawingViewport() {
     if (drag.kind === 'table') return { ...doc, tables: doc.tables.map((x) => (x.id === drag.id ? { ...x, at: [drag.origin[0] + drag.delta[0], drag.origin[1] + drag.delta[1]] as P } : x)) };
     if (drag.kind === 'balloon') return { ...doc, tables: doc.tables.map((x) => (x.id === drag.id && x.kind === 'bom' ? { ...x, balloonAt: { ...x.balloonAt, [drag.item]: [drag.origin[0] + drag.delta[0], drag.origin[1] + drag.delta[1]] as P } } : x)) };
     if (drag.kind === 'sectionLine') return { ...doc, views: doc.views.map((v) => (v.id === drag.id && v.kind === 'section' ? { ...v, line: movedLine(drag.line, drag.vertical, drag.delta) } : v)) as DrawingView[] };
+    if (drag.kind === 'surface') return { ...doc, surfaceFinishes: doc.surfaceFinishes.map((f) => (f.id === drag.id ? { ...f, at: [drag.origin[0] + drag.delta[0], drag.origin[1] + drag.delta[1]] as P } : f)) };
     if (drag.kind === 'scale') {
       const target = drag.target;
       return 'sheet' in target ? { ...doc, sheet: { ...doc.sheet, scale: drag.scale } } : { ...doc, views: doc.views.map((v) => (v.id === target.view ? { ...v, scale: drag.scale } : v)) };
@@ -177,16 +182,23 @@ export function DrawingViewport() {
           if (tool.kind === 'dimension' && tool.picks.length > 0) d.setTool({ kind: 'dimension', picks: [] });
           else d.setTool(null);
         } else if (drw.dimension) d.selectDimension(null);
-      } else if ((e.key === 'Delete' || e.key === 'Backspace') && drw.dimension && !tool) {
+        else if (drw.finish) d.selectSurfaceFinish(null);
+      } else if ((e.key === 'Delete' || e.key === 'Backspace') && !tool && (drw.dimension || drw.finish)) {
         e.preventDefault();
-        const id = drw.dimension;
-        d.selectDimension(null);
-        d.deleteDimensions([id]);
+        if (drw.dimension) {
+          const id = drw.dimension;
+          d.selectDimension(null);
+          d.deleteDimensions([id]);
+        } else if (drw.finish) {
+          const id = drw.finish;
+          d.selectSurfaceFinish(null);
+          d.deleteSurfaceFinishes([id]);
+        }
       }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [drag, tool, drw.dimension, d]);
+  }, [drag, tool, drw.dimension, drw.finish, d]);
   // a dimension that is gone (deleted, undone) is not the one chosen
   useEffect(() => {
     if (drw.dimension && !drw.doc.dimensions.some((x) => x.id === drw.dimension)) d.selectDimension(null);
@@ -217,6 +229,22 @@ export function DrawingViewport() {
       const placed = built.placed.get(v.id);
       return placed && placed.w > 0 && Math.abs(p[0] - placed.at[0]) <= placed.w / 2 && Math.abs(p[1] - placed.at[1]) <= placed.h / 2;
     });
+
+  /** The surface finish whose symbol is under the point (sheet mm), the last in the document on top. */
+  const finishUnder = (p: P): SurfaceFinish | null => {
+    const all = shown.surfaceFinishes;
+    for (let i = all.length - 1; i >= 0; i--) {
+      const f = all[i]!;
+      const placed = built.placed.get(f.view);
+      if (!placed) continue;
+      const [sx, sy] = toSheet(placed, f.at[0], f.at[1]);
+      const box = surfaceFinishBox(f);
+      // the symbol leans one way or another, so what is taken hold of is the square about its point that holds it
+      const r = Math.max(box.w, box.h) * 0.75 + reach;
+      if (Math.abs(p[0] - sx) <= r && Math.abs(p[1] - sy) <= r) return f;
+    }
+    return null;
+  };
 
   /** Keeps the pointer while it is dragged outside the sheet (nothing to keep when the event is not from a real pointer). */
   const capture = (e: React.PointerEvent) => {
@@ -273,6 +301,14 @@ export function DrawingViewport() {
     }
     // the tools
     if (tool?.kind === 'dimension') return dimensionDown(p);
+    if (tool?.kind === 'surface') {
+      const view = viewUnder(p);
+      const placed = view && built.placed.get(view.id);
+      if (!view || !placed) return d.notifyInfo(t('drawingUi.toolSurfaceFinish'));
+      const at = fromSheet(placed, p[0], p[1]);
+      d.addSurfaceFinish(view.id, [round2(at[0]), round2(at[1])]);
+      return;
+    }
     if (tool) {
       const view = viewUnder(p);
       if (!view) return d.notifyInfo(t(tool.kind === 'section' ? 'drawingUi.hint.section' : 'drawingUi.hint.detail'));
@@ -292,12 +328,22 @@ export function DrawingViewport() {
       }
       return;
     }
+    // a surface finish: its symbol is taken and put where it is let go
+    const finish = finishUnder(p);
+    if (finish) {
+      capture(e);
+      d.selectDimension(null);
+      d.selectSurfaceFinish(finish.id);
+      setDrag({ kind: 'surface', id: finish.id, from: p, origin: [finish.at[0], finish.at[1]], delta: [0, 0] });
+      return;
+    }
     // the line of a section on its parent: it is moved across
     const sec = sectionLines.find((s) => segmentDistance(p, s.p0, s.p1) <= reach);
     if (sec) {
       capture(e);
       d.select(sec.id);
       d.selectDimension(null);
+      d.selectSurfaceFinish(null);
       setDrag({ kind: 'sectionLine', id: sec.id, line: sec.line, vertical: sec.vertical, scale: sec.scale, from: p, delta: 0 });
       return;
     }
@@ -307,6 +353,7 @@ export function DrawingViewport() {
       if (spot) {
         capture(e);
         d.selectDimension(null);
+        d.selectSurfaceFinish(null);
         setDrag({ kind: 'balloon', id: tableId, item: spot.item, from: p, origin: spot.centre, delta: [0, 0] });
         return;
       }
@@ -315,11 +362,13 @@ export function DrawingViewport() {
       if (p[0] >= box.x && p[0] <= box.x + box.w && p[1] >= box.y && p[1] <= box.y + box.h) {
         capture(e);
         d.selectDimension(null);
+        d.selectSurfaceFinish(null);
         setDrag({ kind: 'table', id: tableId, from: p, origin: [box.x, box.y + box.h], delta: [0, 0] });
         return;
       }
     }
     d.selectDimension(null);
+    d.selectSurfaceFinish(null);
     // the view under the pointer, the one drawn last when they overlap
     const hit = viewUnder(p);
     capture(e);
@@ -381,6 +430,8 @@ export function DrawingViewport() {
       }
     } else if (drag?.kind === 'draw') {
       finishDraw(drag);
+    } else if (drag?.kind === 'surface') {
+      if (Math.hypot(drag.delta[0], drag.delta[1]) > 0.05) d.setSurfaceFinish(drag.id, { at: [round2(drag.origin[0] + drag.delta[0]), round2(drag.origin[1] + drag.delta[1])] });
     } else if (drag && Math.hypot(drag.delta[0], drag.delta[1]) > 0.05) {
       const view = drw.doc.views.find((v) => v.id === drag.id);
       if (drag.mode === 'shift') {
@@ -418,8 +469,19 @@ export function DrawingViewport() {
   const selected = drw.selected ? built.placed.get(drw.selected) : undefined;
   const chosen = drw.dimension ? dimensionItems.filter((i) => i.group === drw.dimension) : [];
   const dimensionHints = ['drawingUi.hint.dimension0', 'drawingUi.hint.dimension1', 'drawingUi.hint.dimension2'] as const;
-  const hint = tool?.kind === 'dimension' ? t(dimensionHints[Math.min(2, tool.picks.length)]!) : tool ? t(tool.kind === 'section' ? 'drawingUi.hint.section' : 'drawingUi.hint.detail') : null;
-  const cursor = tool ? 'crosshair' : hover?.dimension || drag?.kind === 'dimension' ? 'move' : undefined;
+  const hint =
+    tool?.kind === 'dimension'
+      ? t(dimensionHints[Math.min(2, tool.picks.length)]!)
+      : tool?.kind === 'surface'
+      ? t('drawingUi.toolSurfaceFinish')
+      : tool
+      ? t(tool.kind === 'section' ? 'drawingUi.hint.section' : 'drawingUi.hint.detail')
+      : null;
+  const cursor = tool ? 'crosshair' : hover?.dimension || drag?.kind === 'dimension' || drag?.kind === 'surface' ? 'move' : undefined;
+  // the symbol of the surface finish chosen, drawn over in its own colour so that it can be seen which one it is
+  const chosenFinish = drw.finish ? shown.surfaceFinishes.find((f) => f.id === drw.finish) : undefined;
+  const chosenFinishPlaced = chosenFinish ? built.placed.get(chosenFinish.view) : undefined;
+  const chosenFinishItems = chosenFinish && chosenFinishPlaced ? surfaceFinishItems([chosenFinish], chosenFinishPlaced) : [];
   // the geometry of the tool's preview on the sheet
   const drawn = drag?.kind === 'draw' ? drag : null;
   const drawnPlaced = drawn ? basePlaced.get(drawn.view) : undefined;
@@ -445,6 +507,7 @@ export function DrawingViewport() {
         <div className="drawing-paper" data-svg dangerouslySetInnerHTML={{ __html: svg }} />
         <svg className="drawing-overlay" data-overlay width={sheet.width * PX} height={sheet.height * PX} viewBox={`0 0 ${sheet.width} ${sheet.height}`}>
           {chosen.length > 0 && <Highlight items={chosen} height={sheet.height} color="#1c7ed6" />}
+          {chosenFinishItems.length > 0 && <Highlight items={chosenFinishItems} height={sheet.height} color="#1c7ed6" />}
           {tool?.kind === 'dimension' &&
             [...tool.picks.map((x) => x.feature), ...(hover?.feature && tool.picks.length < 2 ? [hover.feature.feature] : [])].map((f, k) => {
               const view = (tool.picks[0]?.view ?? hover?.feature?.view)!;

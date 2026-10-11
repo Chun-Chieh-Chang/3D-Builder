@@ -270,7 +270,7 @@ export function parseAssembly(text: string): AssemblyDoc {
   return raw as unknown as AssemblyDoc;
 }
 
-/** Forward migrations of drawings (B9.2): drawingMigrations[n] upgrades version n to n+1. 1 → 2 added the projected, section and detail kinds of view (a version-1 view is a model view as it is); 2 → 3 added the dimensions; 3 → 4 the tables; 4 → 5 the angle dimension; 5 → 6 the flat pattern; 6 → 7 the shift and the slide of views; 7 → 8 the text and the place of a dimension; 8 → 9 the places the user gave the balloons. */
+/** Forward migrations of drawings (B9.2): drawingMigrations[n] upgrades version n to n+1. 1 → 2 added the projected, section and detail kinds of view (a version-1 view is a model view as it is); 2 → 3 added the dimensions; 3 → 4 the tables; 4 → 5 the angle dimension; 5 → 6 the flat pattern; 6 → 7 the shift and the slide of views; 7 → 8 the text and the place of a dimension; 8 → 9 the places the user gave the balloons; 9 → 10 the surface finishes. */
 const drawingMigrations: Record<number, (doc: Json) => Json> = {
   // v2: projected, section and detail views (C16.3), each with its own fields; a version-1 drawing has only the views of a model. Nothing to convert.
   1: (doc) => doc,
@@ -289,6 +289,8 @@ const drawingMigrations: Record<number, (doc: Json) => Json> = {
   7: (doc) => doc,
   // v9: where the user put the circles of the balloons of a parts list (`balloonAt`): optional, nothing to convert.
   8: (doc) => doc,
+  // v10: surface finishes (C16.5): a list, empty in an older file.
+  9: (doc) => ({ ...doc, surfaceFinishes: doc.surfaceFinishes ?? [] }),
 };
 
 export function parseDrawing(text: string): DrawingDoc {
@@ -298,7 +300,8 @@ export function parseDrawing(text: string): DrawingDoc {
   if (!Array.isArray(raw.views) || !raw.sheet || typeof raw.sheet !== 'object') throw new FormatError(t('format.noViews'));
   raw.dimensions ??= [];
   raw.tables ??= [];
-  const ids = [...(raw.views as Json[]), ...(raw.dimensions as Json[]), ...(raw.tables as Json[])].map((v) => v.id as string);
+  raw.surfaceFinishes ??= [];
+  const ids = [...(raw.views as Json[]), ...(raw.dimensions as Json[]), ...(raw.tables as Json[]), ...(raw.surfaceFinishes as Json[])].map((v) => v.id as string);
   // As for parts: counters cover every id in the file, even one edited by hand or by a script.
   raw.idCounters = countersFor(ids, { ...((raw.idCounters as Record<string, number> | undefined) ?? {}) });
   raw.properties ??= {};

@@ -30,6 +30,8 @@ import {
   type ElementFacts,
   type Ref,
   type SectionDrawingView,
+  type SurfaceFinish,
+  type SurfaceFinishPatch,
   type TitleField,
   type ViewAxes,
   type ViewFeature,
@@ -73,9 +75,10 @@ export interface DrawingSource {
 /**
  * What the pointer is being used for on the sheet, when it is not choosing and moving what is there. `dimension`: the elements pointed at so far (none, one or two), each with
  * the view it is of (the second is of the same view as the first); the next point on the sheet puts the dimension. `section`, `detail`: the pointer is pressed where the cut
- * is to be (and dragged along it) or where the middle of the circle is (and dragged out to its edge), on the view it is over.
+ * is to be (and dragged along it) or where the middle of the circle is (and dragged out to its edge), on the view it is over. `surface`: the next point on the sheet puts a
+ * surface finish symbol on the view under it (C16.5).
  */
-export type DrawingTool = { kind: 'dimension'; picks: { view: Id; feature: Pickable }[] } | { kind: 'section' } | { kind: 'detail' };
+export type DrawingTool = { kind: 'dimension'; picks: { view: Id; feature: Pickable }[] } | { kind: 'section' } | { kind: 'detail' } | { kind: 'surface' };
 
 export interface DrawingState {
   doc: DrawingDoc;
@@ -102,6 +105,8 @@ export interface DrawingState {
   selected: Id | null;
   /** The dimension chosen on the sheet (or in the panel): it can be moved, edited and deleted. */
   dimension: Id | null;
+  /** The surface finish chosen on the sheet (or in the panel), as a dimension is (C16.5). */
+  finish: Id | null;
   tool: DrawingTool | null;
   /** The lines are being worked out. */
   computing: boolean;
@@ -168,6 +173,7 @@ export class DrawingStore {
       pdfFont: null,
       selected: null,
       dimension: null,
+      finish: null,
       tool: null,
       computing: false,
       fitRequest: 1,
@@ -195,6 +201,8 @@ export class DrawingStore {
   private onDocChanged(): void {
     const doc = this.history.doc;
     const selected = this.state.selected;
+    const dimension = this.state.dimension;
+    const finish = this.state.finish;
     this.set({
       doc,
       folder: this.folder,
@@ -202,6 +210,8 @@ export class DrawingStore {
       canRedo: this.history.canRedo,
       dirty: !this.handle || serializeDrawing(doc) !== this.savedText,
       selected: selected && doc.views.some((v) => v.id === selected) ? selected : null,
+      dimension: dimension && doc.dimensions.some((d) => d.id === dimension) ? dimension : null,
+      finish: finish && doc.surfaceFinishes.some((f) => f.id === finish) ? finish : null,
     });
     this.loadSources();
     this.refreshBoms();
@@ -237,10 +247,17 @@ export class DrawingStore {
     this.set({ dimension: dim ? dim.id : null, ...(dim ? { selected: dim.view } : {}) });
   }
 
+  /** Chooses a surface finish (and the view it is on, which the annotations panel is about); null lets go of it. */
+  selectSurfaceFinish(id: Id | null): void {
+    const f = id ? this.history.doc.surfaceFinishes.find((x) => x.id === id) : undefined;
+    this.set({ finish: f ? f.id : null, ...(f ? { selected: f.view } : {}) });
+  }
+
   /** Starts or ends a tool of the pointer (Esc, or the tool done). */
   setTool(tool: DrawingTool | null): void {
-    // a new kind of tool lets go of the dimension chosen; the same one asking again (the picks start over) keeps the one it has just made
-    this.set({ tool, ...(tool && this.state.tool?.kind !== tool.kind ? { dimension: null } : {}) });
+    // a new kind of tool lets go of what was chosen; the same one asking again (the picks start over) keeps what it has just made
+    const changed = tool && this.state.tool?.kind !== tool.kind;
+    this.set({ tool, ...(changed ? { dimension: null, finish: null } : {}) });
   }
 
   /** A dimension made on the sheet from elements pointed at and a place pointed at (`planDimension`), as one step: it is chosen when it is there. */
@@ -681,6 +698,30 @@ export class DrawingStore {
 
   deleteDimensions(ids: Id[]): void {
     if (ids.length > 0) this.execute({ type: 'deleteDimensions', dimensionIds: ids });
+  }
+
+  // ------------------------------------------------------------ surface finishes (C16.5)
+
+  /** The surface finishes of the view, in the order they are in the document. */
+  surfaceFinishesOf(viewId: Id): SurfaceFinish[] {
+    return this.state.doc.surfaceFinishes.filter((f) => f.view === viewId);
+  }
+
+  /** A surface finish (C16.5, ISO 1302) whose symbol's point is at a point of the view's coordinates (full size); it is chosen when it is there. */
+  addSurfaceFinish(viewId: Id, at: [number, number]): Id | null {
+    const doc = this.history.doc;
+    const id = new IdAllocator(doc.idCounters, drawingIdsInUse(doc)).take('fin');
+    if (!this.execute({ type: 'insertSurfaceFinishes', finishes: [{ id, view: viewId, at }] })) return null;
+    this.set({ finish: id, selected: viewId });
+    return id;
+  }
+
+  setSurfaceFinish(id: Id, patch: SurfaceFinishPatch): void {
+    this.execute({ type: 'setSurfaceFinish', finishId: id, patch });
+  }
+
+  deleteSurfaceFinishes(ids: Id[]): void {
+    if (ids.length > 0) this.execute({ type: 'deleteSurfaceFinishes', finishIds: ids });
   }
 
   // ------------------------------------------------------------ tables (C16.6)

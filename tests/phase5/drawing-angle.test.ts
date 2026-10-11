@@ -25,6 +25,9 @@ describe('the angle dimension in the document', () => {
     expect(() => insert(angle('dim1', { a: { kind: 'vertex', name: 'v' } }))).toThrow(/面、邊或頂點/);
     expect(() => insert(angle('dim1', { tolerance: { type: 'fit', fit: 'H7' } }))).toThrow(/上下限/);
     expect(insert(angle('dim1', { tolerance: { type: 'bilateral', upper: 0.5, lower: -0.5 } })).dimensions).toHaveLength(1);
+    // a one-sided limit needs no size, so an angle takes one (only a fit has none to come from)
+    expect(insert(angle('dim1', { tolerance: { type: 'max' } })).dimensions).toHaveLength(1);
+    expect(insert(angle('dim1', { tolerance: { type: 'min' } })).dimensions).toHaveLength(1);
     expect(() => applyDrawingCommand(d, { type: 'setDimension', dimensionId: 'dim1', patch: { count: 3 } })).toThrow(/不屬於/);
     expect(() => applyDrawingCommand(d, { type: 'setDimension', dimensionId: 'dim1', patch: { offset: 3 } })).toThrow(/不屬於/);
     expect(() => applyDrawingCommand(d, { type: 'setDimension', dimensionId: 'dim1', patch: { arc: -4 } })).toThrow(/弧半徑/);
@@ -43,16 +46,16 @@ describe('the angle dimension in the document', () => {
     expect(() => applyDrawingCommand(d, { type: 'setDimension', dimensionId: 'dim1', patch: { supplementary: true } })).toThrow(/不屬於/);
   });
 
-  it('is written and read back, and a version-4 drawing is read as version 7', () => {
+  it('is written and read back, and a version-4 drawing is read as the current one', () => {
     const d = applyDrawingCommand(base(), { type: 'insertDimensions', dimensions: [angle('dim1', { supplementary: true })] });
     const back = parseDrawing(serializeDrawing(d));
     expect(back.dimensions[0]).toMatchObject({ kind: 'angle', supplementary: true });
-    expect(back.schemaVersion).toBe(9);
+    expect(back.schemaVersion).toBe(10);
     const old = JSON.parse(serializeDrawing(base())) as { schemaVersion: number };
     old.schemaVersion = 4;
-    expect(parseDrawing(JSON.stringify(old)).schemaVersion).toBe(9);
+    expect(parseDrawing(JSON.stringify(old)).schemaVersion).toBe(10);
     const future = JSON.parse(serializeDrawing(base())) as { schemaVersion: number };
-    future.schemaVersion = 10;
+    future.schemaVersion = 11;
     expect(() => parseDrawing(JSON.stringify(future))).toThrow();
   });
 });
@@ -115,6 +118,9 @@ describe('what an angle between two lines of the view comes to', () => {
     expect(dimensionText(d, 90)).toBe('90° ±0.5°');
     expect(dimensionText(angle('d', { reference: true }), 45.25)).toBe('(45.25°)');
     expect(dimensionText(angle('d', { tolerance: { type: 'bilateral', upper: 0.2, lower: -0.1 } }), 45)).toBe('45° +0.2/-0.1°');
+    // a one-sided limit is a word, so no degree sign follows it (the degree sign is already on the number)
+    expect(dimensionText(angle('d', { tolerance: { type: 'max' } }), 45)).toBe('45° 最大');
+    expect(dimensionText(angle('d', { tolerance: { type: 'min' }, reference: true }), 45)).toBe('(45° 最小)');
   });
 
   it('says why when it cannot: parallel lines, a plane that is not edge-on, an edge not seen true, a circle', () => {

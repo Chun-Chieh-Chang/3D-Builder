@@ -8,6 +8,7 @@ export * from './geometry';
 export * from './dimension';
 export * from './autoDimension';
 export * from './annotation';
+export * from './surfaceFinish';
 export * from './overlap';
 export * from './bomTable';
 export * from './helvetica';

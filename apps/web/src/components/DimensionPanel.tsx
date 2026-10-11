@@ -300,15 +300,28 @@ export function DimensionPanel() {
                 <select
                   data-field="dimToleranceType"
                   value={toleranceKind(current.tolerance)}
-                  onChange={(e) =>
+                  onChange={(e) => {
+                    const kind = e.target.value;
                     d.setDimension(current.id, {
-                      tolerance: e.target.value === 'bilateral' ? { type: 'bilateral', upper: 0.05, lower: -0.05 } : e.target.value === 'fit' ? { type: 'fit', fit: current.kind === 'linear' ? 'h7' : 'H7' } : null,
-                    })
-                  }
+                      tolerance:
+                        kind === 'bilateral'
+                          ? { type: 'bilateral', upper: 0.05, lower: -0.05 }
+                          : kind === 'fit'
+                          ? { type: 'fit', fit: current.kind === 'linear' ? 'h7' : 'H7' }
+                          : kind === 'max'
+                          ? { type: 'max' }
+                          : kind === 'min'
+                          ? { type: 'min' }
+                          : null,
+                    });
+                  }}
                 >
                   <option value="none">{t('drawingUi.dimTolNone')}</option>
                   <option value="bilateral">{t('drawingUi.dimTolBilateral')}</option>
-                  <option value="fit">{t('drawingUi.dimTolFit')}</option>
+                  <option value="max">{t('drawingUi.dimTolMax')}</option>
+                  <option value="min">{t('drawingUi.dimTolMin')}</option>
+                  {/* an angle has no size for an ISO 286 fit to come from */}
+                  {current.kind !== 'angle' && <option value="fit">{t('drawingUi.dimTolFit')}</option>}
                 </select>
               </label>
               {current.tolerance?.type === 'bilateral' && (

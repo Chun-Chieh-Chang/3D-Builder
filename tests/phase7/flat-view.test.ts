@@ -103,7 +103,7 @@ describe('the view in a drawing', () => {
 
   it('is a view of direction flat, which the document takes (schema 6)', () => {
     expect(doc().views[0]).toMatchObject({ direction: 'flat' });
-    expect(doc().schemaVersion).toBe(9);
+    expect(doc().schemaVersion).toBe(10);
   });
 
   it('draws the sides as visible lines and the bend line as a chain line on the sheet', () => {

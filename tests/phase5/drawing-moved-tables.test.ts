@@ -28,7 +28,7 @@ describe('the balloons the user moved', () => {
     d = applyDrawingCommand(d, { type: 'setTable', tableId: 'tbl1', patch: { balloonAt: { '1': [250, 120] } } });
     expect(d.tables[0]).toEqual({ id: 'tbl1', kind: 'bom', view: 'view1', balloons: true, balloonAt: { '1': [250, 120] } });
     expect(parseDrawing(serializeDrawing(d))).toEqual(d);
-    expect(d.schemaVersion).toBe(9);
+    expect(d.schemaVersion).toBe(10);
     d = applyDrawingCommand(d, { type: 'setTable', tableId: 'tbl1', patch: { balloonAt: null } });
     expect(d.tables[0]).toEqual({ id: 'tbl1', kind: 'bom', view: 'view1', balloons: true });
     expect(() => applyDrawingCommand(d, { type: 'setTable', tableId: 'tbl1', patch: { balloonAt: { '1': [Number.NaN, 1] } } })).toThrow();
@@ -39,7 +39,7 @@ describe('the balloons the user moved', () => {
   it('an older drawing (schema 8) opens as it is', () => {
     const old = JSON.parse(serializeDrawing(base())) as Record<string, unknown>;
     old.schemaVersion = 8;
-    expect(parseDrawing(JSON.stringify(old)).schemaVersion).toBe(9);
+    expect(parseDrawing(JSON.stringify(old)).schemaVersion).toBe(10);
   });
 });
 

@@ -6,6 +6,7 @@ import { evaluateDimension, type DimensionOutcome, type ElementsResult } from '.
 import { circlePolyline, hatch } from './geometry';
 import { layoutViews, resolveLines, scaleOf, toSheet, type PlacedView, type ViewLines } from './layout';
 import { sheetMetrics, titleCells, type Rect } from './sheet';
+import { surfaceFinishItems } from './surfaceFinish';
 
 /**
  * What a drawing is as lines and text on the sheet (C16, F3.1, F3.2): one list of polylines and texts in sheet millimetres (origin at the lower left corner,
@@ -193,6 +194,7 @@ export function buildScene(
     items.push(...viewItems(v, resolved.get(v.id), own));
     if (!resolved.get(v.id)) continue;
     items.push(...centreItems(v, features.get(v.id) ?? [], own));
+    items.push(...surfaceFinishItems(doc.surfaceFinishes.filter((f) => f.view === v.id), own));
     const parent = v.kind === 'section' || v.kind === 'detail' ? placed.get(v.parent) : undefined;
     if (v.kind === 'section' && parent) items.push(...sectionItems(v, parent, own));
     if (v.kind === 'detail' && parent) items.push(...detailItems(v, parent, own, scaleOf(doc, v)));
