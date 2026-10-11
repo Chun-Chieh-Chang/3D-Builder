@@ -869,15 +869,58 @@ describe('snapping to the model while drawing (D5.3b)', () => {
     expect(c.getView().snap).toMatchObject({ kind: 'free' });
   });
 
-  it('does not snap to the model with the select tool, or for the radius click of a circle', () => {
-    const { c } = withPlate();
+  it('snaps to and selects the model with the select tool (Plan B)', () => {
+    const { h, c } = withPlate();
     c.setTool('select');
     c.pointerMove(at(40, 0.1), false);
-    expect(c.getView().snap).toBeNull();
+    expect(c.getView().snap).toMatchObject({ kind: 'model' });
+
+    // Clicking the model edge in select mode anchors it as a construction line and selects it
+    c.pointerDown(at(20, 0.1));
+    c.pointerUp(at(20, 0.1));
+    const refLine = h.sketch().entities.find((e) => e.type === 'line' && e.ref?.name === 'bottom');
+    expect(refLine).toBeDefined();
+    expect((refLine as any).construction).toBe(true);
+    expect(c.getView().selection).toContain(refLine!.id);
+  });
+
+  it('does not snap to the model for the radius click of a circle', () => {
+    const { c } = withPlate();
     c.setTool('circle');
     click(c, 10, 10);
     c.pointerMove(at(40, 0.1), false);
     expect(c.getView().snap).toMatchObject({ kind: 'free' });
+  });
+
+  it('allows multi-selecting a sketch line and model edge to add a collinear relation (Plan B)', async () => {
+    const { h, c } = withPlate();
+    // 1. Draw a sketch line slightly above the bottom model edge
+    c.setTool('line');
+    click(c, 5, 2);
+    click(c, 35, 2);
+    c.escape();
+    const sketchLine = h.sketch().entities.find((e) => e.type === 'line' && !e.ref)!;
+    expect(sketchLine).toBeDefined();
+
+    // 2. Select the sketch line
+    c.setTool('select');
+    c.pointerDown(at(20, 2));
+    c.pointerUp(at(20, 2));
+    expect(c.getView().selection).toEqual([sketchLine.id]);
+
+    // 3. Ctrl-click the bottom model edge to select it too
+    c.pointerDown({ ...at(20, 0.1), ctrl: true });
+    c.pointerUp({ ...at(20, 0.1), ctrl: true });
+    const refLine = h.sketch().entities.find((e) => e.type === 'line' && e.ref?.name === 'bottom')!;
+    expect(refLine).toBeDefined();
+    expect(c.getView().selection).toContain(sketchLine.id);
+    expect(c.getView().selection).toContain(refLine.id);
+
+    // 4. Add collinear relation
+    const ok = await c.addRelation({ type: 'collinear', a: sketchLine.id, b: refLine.id });
+    expect(ok).toBe(true);
+    const collinear = h.sketch().constraints.find((x) => x.type === 'collinear');
+    expect(collinear).toBeDefined();
   });
 
   it('draws nothing from the model when the host has none', () => {

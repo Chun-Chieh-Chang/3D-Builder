@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { IdAllocator, type Ref, type SketchEntity } from '@3db/model';
 import { snapModel } from '../src/interact';
-import { anchorModel, type Maker, type ModelEdge } from '../src/ops';
+import { anchorModel, anchorModelForSelection, type Maker, type ModelEdge } from '../src/ops';
 import type { P2, SolvedGeometry } from '../src/types';
 
 const edge = (name: string, projected: ModelEdge['projected']): ModelEdge => ({ ref: { kind: 'edge', name }, projected });
@@ -150,5 +150,41 @@ describe('the entities a click on the model makes (D5.3b)', () => {
     for (const [name, part, at] of [['bottom', 'start', [0, 0]], ['hole', 'center', [20, 15]], ['round', 'end', [40, 3]], ['top', 'mid', [20, 30]]] as [string, 'start' | 'end' | 'center' | 'mid' | 'curve', P2][]) anchorModel(none, nothing, m, item(name), part, at);
     const ids = [...m.entities, ...m.constraints].map((x) => x.id);
     expect(new Set(ids).size).toBe(ids.length);
+  });
+
+  describe('direct selection referencing (Plan B: anchorModelForSelection)', () => {
+    it('creates construction geometry and returns curve id when clicking curve', () => {
+      const m = maker();
+      const lineId = anchorModelForSelection(none, nothing, m, item('bottom'), 'curve', [20, 0]);
+      expect(lineId).toBeDefined();
+      const line = m.entities.find((e) => e.id === lineId && e.type === 'line') as Extract<SketchEntity, { type: 'line' }>;
+      expect(line).toBeDefined();
+      expect(line.construction).toBe(true);
+      expect(line.ref).toMatchObject({ name: 'bottom' });
+      // Endpoints are points without extra point-on-curve constraints
+      expect(m.entities.filter((e) => e.type === 'point')).toHaveLength(2);
+      expect(m.constraints).toHaveLength(0);
+    });
+
+    it('returns corner point id when clicking start or end of edge', () => {
+      const m = maker();
+      const pStart = anchorModelForSelection(none, nothing, m, item('bottom'), 'start', [0, 0]);
+      const line = m.entities.find((e) => e.type === 'line') as Extract<SketchEntity, { type: 'line' }>;
+      expect(pStart).toBe(line.p1);
+
+      // Calling on the same edge end reuses the existing line
+      const pEnd = anchorModelForSelection({ entities: m.entities }, nothing, m, item('bottom'), 'end', [40, 0]);
+      expect(pEnd).toBe(line.p2);
+    });
+
+    it('reuses existing entity when sketch already has it', () => {
+      const m = maker();
+      const firstId = anchorModelForSelection(none, nothing, m, item('bottom'), 'curve', [20, 0]);
+      const count = m.entities.length;
+      const m2 = maker();
+      const secondId = anchorModelForSelection({ entities: m.entities }, nothing, m2, item('bottom'), 'curve', [25, 0]);
+      expect(secondId).toBe(firstId);
+      expect(m2.entities).toHaveLength(0);
+    });
   });
 });

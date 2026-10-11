@@ -3,7 +3,7 @@
  * inference, smart dimensions, applicable relations and dimension layout. Pure TypeScript with no
  * solver, so the UI thread can use it; everything works on solved (derived) geometry.
  */
-import { SKETCH_ORIGIN, constraintRefs, type DimensionConstraint, type Id, type SketchConstraint } from '@3db/model';
+import { SKETCH_ORIGIN, constraintRefs, type DimensionConstraint, type Id, type SketchConstraint, type SketchFeature } from '@3db/model';
 import type { ModelEdge, ModelItem } from './ops';
 import type { P2, SolvedGeometry } from './types';
 
@@ -346,7 +346,13 @@ export interface DimensionProposal {
   unit: 'mm' | 'deg';
 }
 
-const kindOf = (geometry: Geometry, id: Id): HitKind | undefined => (id === SKETCH_ORIGIN ? 'origin' : geometry.get(id)?.type);
+const kindOf = (geometry: Geometry, id: Id, sketch?: Pick<SketchFeature, 'entities'>): HitKind | undefined => {
+  if (id === SKETCH_ORIGIN) return 'origin';
+  const t = geometry.get(id)?.type;
+  if (t) return t;
+  const ent = sketch?.entities.find((e) => e.id === id);
+  return ent?.type;
+};
 
 /** Point used to measure an entity: the point itself, or the center of a circle/arc. */
 function anchorOf(geometry: Geometry, id: Id): P2 | undefined {
@@ -458,8 +464,8 @@ export function smartDimension(geometry: Geometry, picks: Id[], place: P2): Dime
 // ---------------------------------------------------------------- relations (C1.26, C1.27)
 
 /** Relations SolidWorks offers in 「加入限制條件」 for the current selection. */
-export function applicableRelations(geometry: Geometry, selection: Id[]): RelationBody[] {
-  const items = selection.map((id) => ({ id, kind: kindOf(geometry, id) }));
+export function applicableRelations(geometry: Geometry, selection: Id[], sketch?: Pick<SketchFeature, 'entities'>): RelationBody[] {
+  const items = selection.map((id) => ({ id, kind: kindOf(geometry, id, sketch) }));
   if (items.some((i) => !i.kind)) return [];
   const isPoint = (k: HitKind | undefined) => k === 'point' || k === 'origin';
   const isRadial = (k: HitKind | undefined) => k === 'circle' || k === 'arc';

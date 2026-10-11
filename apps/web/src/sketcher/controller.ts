@@ -41,7 +41,7 @@ import {
 import type { P2, SolvedGeometry } from '@3db/sketch';
 import { angleStep, DEFAULT_SNAPS, gridPoint, intersectionSnap, lengthStep, perpendicularSnap, quadrantSnap, quickSettings, tangentSnap, type SnapItem, type SnapSettings } from '@3db/sketch/snaps';
 import { checkSketch, repairSketch, type SketchIssue } from '@3db/sketch/check';
-import { anchorModel, chamfer, extend, fillet, isCurve, mergePoints, mirror, offset, polygon, referenceEntities, relationCrossings, slot, trim, type ModelItem, type OpResult } from '@3db/sketch/ops';
+import { anchorModel, anchorModelForSelection, chamfer, extend, fillet, isCurve, mergePoints, mirror, offset, polygon, referenceEntities, relationCrossings, slot, trim, type Maker, type ModelItem, type OpResult } from '@3db/sketch/ops';
 import type { SketchSolvePayload } from '../worker/protocol';
 
 export type ToolId =
@@ -208,7 +208,7 @@ export class SketchController {
   /** Center-point arc: accumulated sweep of the cursor around the center (sign = direction). */
   private sweep = { total: 0, last: 0 };
   private picks: Id[] = [];
-  private press: { p: P2; hit: Hit | null; moved: boolean } | null = null;
+  private press: { p: P2; hit: Hit | null; modelSnap?: Extract<Snap, { kind: 'model' }> | null; moved: boolean } | null = null;
   private drag: { kind: 'points'; ids: Id[]; origin: P2; from: P2[] } | { kind: 'radius'; id: Id } | null = null;
   private box: { a: P2; b: P2 } | null = null;
   private options: ToolOptions = { ...DEFAULT_OPTIONS };
@@ -453,7 +453,8 @@ export class SketchController {
   pointerDown(e: PointerInput): void {
     this.cursor = e.p;
     const hit = hitTest(this.geometry(), e.p, PICK_PX * e.px);
-    this.press = { p: e.p, hit, moved: false };
+    const modelSnap = !hit && this.tool === 'select' && this.host.modelItems ? snapModel(this.host.modelItems(), e.p, PICK_PX * e.px) : null;
+    this.press = { p: e.p, hit, modelSnap, moved: false };
     if (this.tool !== 'select') this.updateSnap(e);
     this.changed();
   }
@@ -499,6 +500,14 @@ export class SketchController {
     const press = this.press;
     if (!pressed || !press) {
       this.hover = hitTest(this.geometry(), e.p, PICK_PX * e.px);
+      if (!this.hover && this.host.modelItems) {
+        const snap = snapModel(this.host.modelItems(), e.p, PICK_PX * e.px);
+        this.snapTarget = snap;
+        this.inference = snap ? (snap.part === 'curve' ? 'modelEdge' : snap.part === 'mid' ? 'modelMid' : snap.part === 'center' ? 'modelCenter' : 'modelPoint') : null;
+      } else {
+        this.snapTarget = null;
+        this.inference = null;
+      }
       return;
     }
     if (!press.moved && dist(press.p, e.p) > DRAG_PX * e.px) {
@@ -538,7 +547,7 @@ export class SketchController {
     }
   }
 
-  private selectUp(e: PointerInput, press: { p: P2; hit: Hit | null; moved: boolean } | null): void {
+  private selectUp(e: PointerInput, press: { p: P2; hit: Hit | null; modelSnap?: Extract<Snap, { kind: 'model' }> | null; moved: boolean } | null): void {
     if (this.drag) {
       this.drag = null;
       // Keep what the user saw: store the last solved frame as the new placement intent.
@@ -562,8 +571,22 @@ export class SketchController {
       return;
     }
     const hit = press?.hit;
-    if (hit) this.select([hit.id], e.ctrl || e.shift); // the origin can be selected for relations, not dragged
-    else if (!e.ctrl && !e.shift) this.select([]);
+    if (hit) {
+      this.select([hit.id], e.ctrl || e.shift); // the origin can be selected for relations, not dragged
+    } else if (press?.modelSnap) {
+      const snap = press.modelSnap;
+      // In select mode: clicking along the edge (even near its midpoint) selects the edge curve itself.
+      // Endpoints (start/end) and circle centers remain points.
+      const part = snap.part === 'mid' ? 'curve' : snap.part;
+      const made: Maker = { ids: this.allocator(), entities: [], constraints: [] };
+      const targetId = anchorModelForSelection(this.sketch(), this.geometry(), made, snap.item, part, snap.p);
+      if (made.entities.length > 0 || made.constraints.length > 0) {
+        this.host.execute({ type: 'addSketchItems', featureId: this.host.featureId, entities: made.entities, constraints: made.constraints });
+      }
+      this.select([targetId], e.ctrl || e.shift);
+    } else if (!e.ctrl && !e.shift) {
+      this.select([]);
+    }
   }
 
   // ------------------------------------------------------------------ drawing

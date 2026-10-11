@@ -380,7 +380,7 @@ function SketchPanel({ f }: { f: SketchFeature }) {
   const entityIds = selection.filter((id) => id === SKETCH_ORIGIN || f.entities.some((e) => e.id === id));
   const curves = f.entities.filter((e) => e.type !== 'point' && entityIds.includes(e.id));
   const existing = constraintsOf(f.constraints, entityIds);
-  const offered = solve ? applicableRelations(solve.geometry, entityIds).filter((r) => !existing.some((c) => sameRelation(c, r))) : [];
+  const offered = solve ? applicableRelations(solve.geometry, entityIds, f).filter((r) => !existing.some((c) => sameRelation(c, r))) : [];
   const dims = f.constraints.filter(isDimension);
   const conflicting = solve?.conflicting.map((id) => describe(f, id)) ?? [];
   const isPointId = (id: Id) => f.entities.some((e) => e.id === id && e.type === 'point');
