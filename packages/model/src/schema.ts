@@ -253,8 +253,11 @@ export interface ThreadFeature extends FeatureBase {
   type: 'thread';
   /** The sketch of the tooth profile (closed wire on a plane containing the axis). */
   sketch: Id;
-  /** Axis: cylindrical face, circular edge, datum axis, or linear edge. */
-  axis: Ref;
+  /**
+   * The axis: a line of the profile sketch, by its id (as a revolve's axis; a centerline is the usual one), or a reference: a cylindrical or conical
+   * face (its axis), a straight model edge, or a reference axis (`axis:x`, `axis:y`, `axis:z` are the axes of the origin).
+   */
+  axis: Ref | Id;
   /** 'cut' removes thread material from body; 'boss' adds thread material. */
   op: 'boss' | 'cut';
   /** Compatibility alias for op */

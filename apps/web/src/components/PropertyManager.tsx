@@ -852,6 +852,9 @@ function SweepPanel({ f }: { f: SweepFeature }) {
   );
 }
 
+/** The axes of the origin, as a thread's axis can name them. */
+const ORIGIN_AXES = ['axis:x', 'axis:y', 'axis:z'];
+
 /** Thread (ADR 0123): tooth profile sketch swept along a helix around an axis. */
 function ThreadPanel({ f }: { f: ThreadFeature }) {
   const doc = useStore((s) => s.doc);
@@ -867,20 +870,16 @@ function ThreadPanel({ f }: { f: ThreadFeature }) {
     store.execute({ type: 'setThread', featureId: f.id, params: patch });
   };
 
-  const axisText = () => {
-    if (!f.axis) return t('pm.thread.axisEmpty');
-    if (f.axis.kind === 'edge') {
-      const l = lines.find((e) => e.id === f.axis.name);
-      if (l) return `${l.construction ? t('tool.centerline') : t('entity.line')} ${l.id}`;
-      return f.axis.name;
-    }
-    if (f.axis.kind === 'datum') {
-      const ra = refAxes.find((a) => a.id === f.axis.name);
-      if (ra) return ra.name;
-      return f.axis.name;
-    }
-    return f.axis.name;
+  // the axis as the value of the list: a line of the profile sketch, an axis of the origin or a reference axis, or the face or edge picked in the view
+  const lineLabel = (id: string) => {
+    const l = lines.find((e) => e.id === id);
+    return `${l?.construction ? t('tool.centerline') : t('entity.line')} ${id}`;
   };
+  const datumLabel = (name: string) => refAxes.find((a) => a.id === name)?.name ?? (ORIGIN_AXES.includes(name) ? t('pm.thread.originAxis', { a: name.slice(5).toUpperCase() }) : name);
+  const encode = (axis: ThreadFeature['axis']): string => (typeof axis === 'string' ? `line:${axis}` : axis.kind === 'datum' ? `datum:${axis.name}` : `ref:${axis.kind}:${axis.name}`);
+  const current = encode(f.axis);
+  // a centerline first: it is what an axis usually is; the edges of the profile itself cannot be its axis
+  const axisLines = [...lines].sort((x, y) => Number(!!y.construction) - Number(!!x.construction));
 
   const canUseSelection = !!selectedFace || (!!selected && (selected.startsWith('axis:') || refAxes.some((a) => a.id === selected)));
 
@@ -907,28 +906,31 @@ function ThreadPanel({ f }: { f: ThreadFeature }) {
         <h4>{t('pm.thread.axis')}</h4>
         <div className="pm-row">
           <select
-            value={f.axis?.name ?? ''}
+            value={current}
             onChange={(e) => {
               const val = e.target.value;
-              if (lines.some((l) => l.id === val)) {
-                update({ axis: { kind: 'edge', name: val } });
-              } else if (refAxes.some((a) => a.id === val) || val.startsWith('axis:')) {
-                update({ axis: { kind: 'datum', name: val } });
-              }
+              if (val.startsWith('line:')) update({ axis: val.slice(5) });
+              else if (val.startsWith('datum:')) update({ axis: { kind: 'datum', name: val.slice(6) } });
             }}
           >
-            {f.axis && f.axis.kind === 'face' && <option value={f.axis.name}>{axisText()}</option>}
-            {!f.axis && <option value="">{t('pm.thread.axisEmpty')}</option>}
-            {lines.map((l) => (
-              <option key={l.id} value={l.id}>
-                {l.construction ? t('tool.centerline') : t('entity.line')} {l.id}
+            {current.startsWith('ref:') && typeof f.axis !== 'string' && <option value={current}>{f.axis.name}</option>}
+            {current.startsWith('line:') && typeof f.axis === 'string' && !lines.some((l) => l.id === f.axis) && <option value={current}>{t('pm.thread.axisEmpty')}</option>}
+            {axisLines.map((l) => (
+              <option key={l.id} value={`line:${l.id}`}>
+                {lineLabel(l.id)}
+              </option>
+            ))}
+            {ORIGIN_AXES.map((name) => (
+              <option key={name} value={`datum:${name}`}>
+                {datumLabel(name)}
               </option>
             ))}
             {refAxes.map((a) => (
-              <option key={a.id} value={a.id}>
+              <option key={a.id} value={`datum:${a.id}`}>
                 {a.name}
               </option>
             ))}
+            {current.startsWith('datum:') && typeof f.axis !== 'string' && !ORIGIN_AXES.includes(f.axis.name) && !refAxes.some((a) => a.id === (f.axis as { name: string }).name) && <option value={current}>{datumLabel(f.axis.name)}</option>}
           </select>
           <button type="button" disabled={!canUseSelection} title={t('pm.thread.useSelected')} onClick={applySelection}>
             {t('pm.thread.useSelected')}

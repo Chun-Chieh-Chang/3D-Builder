@@ -856,7 +856,10 @@ export class Kernel {
     const zMax = Math.max(...zs);
     if (!(rMin > 1e-6 * scale)) throw new KernelError(t('feature.threadCrossesAxis'));
     const lead = pitch * starts;
-    if (zMax - zMin >= lead - 1e-9 * scale) throw new KernelError(t('feature.threadProfileTooWide', { width: (zMax - zMin).toFixed(3), lead: lead.toFixed(3) }));
+    // a profile as wide as the pitch along the axis overlaps the next thread (of its own start one lead on, or of the next start one pitch on): nothing is
+    // left between them, which is no thread; and joining such overlapping helical solids took 100–250 MB of WASM memory and 10 s each, which the heap never
+    // gives back, so a run of them crashed the kernel
+    if (zMax - zMin >= pitch - 1e-9 * scale) throw new KernelError(t('feature.threadProfileTooWide', { width: (zMax - zMin).toFixed(3), pitch: pitch.toFixed(3) }));
 
     // whole turns back to before `from`, whole turns on to past `to`
     const back = Math.ceil((zMax - from) / lead) + 1;
@@ -956,38 +959,26 @@ export class Kernel {
         }
       }
 
-      // all starts as one shape: side by side when they cannot touch, else joined
+      // all starts as one shape, side by side: narrower than the pitch, no two of them touch
       let whole = pieces[0]!;
-      const apart = zMax - zMin < pitch - 1e-9 * scale && regions.length === 1;
       for (const p of pieces.slice(1)) {
-        if (apart) {
-          const compound = arena.own(new oc.TopoDS_Compound());
-          const builder = arena.own(new oc.TopoDS_Builder());
-          builder.MakeCompound(compound);
-          builder.Add(compound, whole.shape);
-          builder.Add(compound, p.shape);
-          const index = ShapeIndex.of(oc, compound, T.FACE, arena);
-          const origins: FaceOrigin[][] = index.keys.map(() => []);
-          for (const part of [whole, p]) {
-            const own = ShapeIndex.of(oc, part.shape, T.FACE, arena);
-            own.keys.forEach((f, i) => {
-              const j = index.indexOf(f);
-              if (j >= 0) origins[j]!.push(...part.origins[i]!);
-            });
-            own.dispose();
-          }
-          index.dispose();
-          whole = { shape: compound, origins };
-        } else {
-          const fa = ShapeIndex.of(oc, whole.shape, T.FACE, arena);
-          const fb = ShapeIndex.of(oc, p.shape, T.FACE, arena);
-          const mk = this.boolOp('fuse', whole.shape, p.shape, t('feature.thread'), arena);
-          const raw = arena.own(mk.Shape());
-          const all = [...whole.origins, ...p.origins];
-          whole = { shape: raw, origins: this.faceSources(mk, [...fa.keys, ...fb.keys], raw, arena).map((s) => s.flatMap((i) => all[i]!)) };
-          fa.dispose();
-          fb.dispose();
+        const compound = arena.own(new oc.TopoDS_Compound());
+        const builder = arena.own(new oc.TopoDS_Builder());
+        builder.MakeCompound(compound);
+        builder.Add(compound, whole.shape);
+        builder.Add(compound, p.shape);
+        const index = ShapeIndex.of(oc, compound, T.FACE, arena);
+        const origins: FaceOrigin[][] = index.keys.map(() => []);
+        for (const part of [whole, p]) {
+          const own = ShapeIndex.of(oc, part.shape, T.FACE, arena);
+          own.keys.forEach((f, i) => {
+            const j = index.indexOf(f);
+            if (j >= 0) origins[j]!.push(...part.origins[i]!);
+          });
+          own.dispose();
         }
+        index.dispose();
+        whole = { shape: compound, origins };
       }
 
       // cut to length: a common with a cylinder from `from` to `to`, wider than the thread ever gets

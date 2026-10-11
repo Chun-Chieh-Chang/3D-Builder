@@ -35,6 +35,7 @@ import {
   type FilletKind,
   type EdgeFlangeFeature,
   type HemFeature,
+  type ThreadFeature,
   type BreakCornerFeature,
   type Fingerprint,
   type Id,
@@ -1638,7 +1639,7 @@ class AppStore {
     const sketch = this.selectedSketch() ?? [...this.history.doc.features].reverse().find((f): f is SketchFeature => f.type === 'sketch');
     if (!sketch) return this.notify(t('feature.threadNeedsSketch'), 'error');
     const planeName = sketch.plane.kind === 'datum' ? sketch.plane.name : '';
-    let axis: Ref = planeName === 'plane:front' ? { kind: 'datum', name: 'axis:y' } : { kind: 'datum', name: 'axis:z' };
+    let axis: ThreadFeature['axis'] = planeName === 'plane:front' ? { kind: 'datum', name: 'axis:y' } : { kind: 'datum', name: 'axis:z' };
     if (s.selectedFace) {
       axis = s.selectedFace;
     } else if (s.selected && (s.selected.startsWith('axis:') || this.history.doc.features.some((f) => f.id === s.selected && f.type === 'refAxis'))) {
@@ -1646,7 +1647,7 @@ class AppStore {
     } else {
       const lines = sketch.entities.filter((e) => e.type === 'line');
       const center = lines.find((e) => e.construction);
-      if (center) axis = { kind: 'edge', name: center.id };
+      if (center) axis = center.id; // a line of the sketch, by its id, as a revolve's axis
     }
     const base = t('feature.thread');
     const id = this.allocator().take('thread');

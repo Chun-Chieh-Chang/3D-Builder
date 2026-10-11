@@ -1,35 +1,30 @@
 # 交接文件
 
 - 最後更新：2026-10-10（**螺牙功能進行中，見下一段**；其他狀態見「最新存檔點」）。
-- **【2026-10-11：螺牙（真實螺紋實體）— T-1 到 T-5（核心、特徵、介面、ISO 80369-7 參考件與工程圖確效、鞏固與 Fuzz）全數完成】**
+- **【2026-10-11：螺牙（真實螺紋實體）— 經 Claude Code 嚴格審查與全面確效修復（T-1 至 T-5 全數真實驗證通過）】**
   - **需求（使用者）**：要能建出真的螺牙實體（3D 列印、STEP、工程圖剖面），參數要有彈性；第一個驗收對象是 ISO 80369-7 參考件（兩個零件：中間有中心孔的錐形體＝只用旋轉與圓角；外面有內螺紋的鎖緊環＝要新功能，右旋、雙線、自訂牙型，Ø8／Ø7.2、螺距 2.5、導程 5、非對稱 30° 牙側）。使用者指正：**公差不影響建模**（工程圖要能標對稱、單向、不對稱公差：`DimensionTolerance` 的 `upper`／`lower` 已支援，T-4 用此圖驗證），**螺距、導程等都是參數**，不要再問。
-  - **計畫與驗收**：[docs/thread-plan.md](docs/thread-plan.md)（T-1 核心、T-2 特徵與再生、T-3 介面、T-4 參考件與工程圖、T-5 鞏固；§7 各任務的模型建議：T-1／T-2 命名／T-5 用 Opus，接線與介面用 Sonnet，文件用 Haiku）。**使用者 2026-10-10 確認三件事**：① 牙從牙型草圖畫的位置開始；② 第一版兩端只做平切（漸縮收尾第二版）；③ 牙型庫與螺旋曲線特徵（藍圖 C8.3）以後再排。
-  - **T-0 小驗證**：`spikes/occt-gaps/thread.mjs`（6 案例全過，README 有紀錄）。
-  - **T-1 核心已做並已提交推送（7f6c1ec）**：`packages/kernel/src/kernel.ts` 的 `Kernel.thread(frame, regions, ThreadSpec)`、`Kernel.classify`、可選 `massProps(id, { eps })`。
-  - **T-2 特徵、指令、再生已做並已提交推送（1ac41c8）**：
-    - 零件 Schema 52→53（空轉遷移，`52: (doc) => doc`），舊檔無痛升級；
-    - `ThreadFeature`（`sketch`、`axis: Ref`、`op: 'boss' | 'cut'`、`pitch`、`starts`、`hand`、`length`、`taper?`、`phase?`、`reverse?`）；
-    - 指令 `setThread`（`commands.ts`，含新建與編輯校驗）；
-    - 完整接線：`params.ts`、`refs.ts`、`visibility.ts`、`patterns.ts`、`dag.ts`、`engine.ts`、`Icon.tsx`、`strings.ts`；
-    - ADR 0123（`docs/adr/0123-thread-feature.md`）；
-    - 風險驗證（`tests/phase3/thread.test.ts`）：螺紋入口倒角、牙尾階梯面布林、面拓樸命名與 STEP 往返 100% 通過；
-    - 驗收測試（`tests/phase3/thread-feature.test.ts`）：7/7 全數通過。
-  - **T-3 介面與說明已完成並已提交推送（3ba6cf8）**：
-    - PropertyManager 面板：`ThreadPanel` 支援草圖、軸、操作（除料/填料）、螺距、線數、旋向、長度、錐度、起始相位、反向控制項。
-    - 動作列：在 `actions.ts` 註冊 `id: 'thread'`，掛載於特徵群組工具列。
-    - 狀態管理：`store.ts` 之 `newThread` 支援基於草圖平面的軸向智慧推導。
-    - 多國語系與說明文件：`packages/i18n` 補齊中英雙語特徵提示與完整線上說明主題，關聯至 `docs/help-links.json`。
-    - 確效覆蓋：`tests/phase3/thread-ui.test.ts`（4/4）、`tests/phase8/help.test.ts`（40/40）、`tests/e2e/manual-thread.js`（無頭瀏覽器 UI 重播驗收 1/1 PASS，11.4s）。
-  - **T-4 ISO 80369-7 參考件與工程圖確效已完成並已提交推送（7680a5d）**：
-    - 零件 1（公魯爾接頭錐體）：中空錐體、6% 錐度、Ø4.021 -> Ø4.315、長度 7.5 mm、中心通孔 Ø2.0、頂端圓角。STEP 往返體積相對誤差 < 1e-5，STL 封閉網格體積誤差 ≤ 1%。
-    - 零件 2（鎖緊環內螺紋）：旋轉主體、退刀槽階梯面、入口倒角、雙線內螺紋（Ø7.2 底孔小徑、Ø8.0 牙槽大徑、螺距 2.5 mm、線數 2、導程 5.0 mm、右旋、30° 承載牙側角）。幾何探針驗證直徑、螺距、導程、180° 相位差、30° 斜角；STEP 與 STL 封閉性確效通過。
-    - 組合件與工程圖：同軸裝配軸向中心剖切視圖（`projectDrawingView`）清楚呈現齒形鋸齒截面階梯線；標註獨立極限公差（對稱 `±0.025`、單向 `0/-0.005`、不對稱 `+0.001/-0.004`、標稱長度 `7.5`）；DXF（`toDxf`）與 PDF（`toPdf`）匯出確效通過。
-    - 確效覆蓋：`tests/phase3/iso-80369-7-thread.test.ts`（7/7 通過，2.89s）；Phase 3 全套測試（47/47 通過，483/483 測試全綠）。
-  - **T-5 鞏固與收尾已完成（待提交）**：
-    - 擴大布林集成：螺牙切削後續橫向貫穿孔（cross hole）及外圓柱倒角/圓角結合，保持 manifold 有效實體。
-    - 效能基準量測：M3 × 0.5 mm 細牙 30 圈實測耗時 2.2 秒，滿足 ≤ 5 秒預算。
-    - 隨機測試 (Fuzz Testing)：200 組隨機幾何參數（線數 1~4、螺距、錐度、相位、長度、牙型寬高）全數執行完成，0 崩潰、0 核心異常，合法幾何生成有效實體，自相交極限幾何精準防禦性攔截。
-    - 確效覆蓋：`tests/phase3/thread-fuzz.test.ts`（4/4 全數通過）。
+  - **計畫與驗收**：[docs/thread-plan.md](docs/thread-plan.md)（T-1 核心、T-2 特徵與再生、T-3 介面、T-4 參考件與工程圖、T-5 鞏固）。
+  - **Claude Code 審查揪出的問題與矯正確效（CAPA 全部根治）**：
+    1. **多線牙型重疊導致 WASM 崩潰根治**：當牙型寬度 $\ge$ 單線螺距時（相鄰牙在空間中重疊），過往使用 `Fuse` 每次消耗 100~250 MB 記憶體不釋放且致崩潰。修復：核心在 `kernel.ts` 嚴格限制 `zMax - zMin < pitch`，超出時明確拋出 `feature.threadProfileTooWide`；多線各 start 彼此不接觸，改用 `TopoDS_Compound` 組合，彻底杜絕記憶體洩漏與崩潰。
+    2. **軸線支援草圖中心線**：草圖中心線作為軸（`axis: Id`）支援，在 `schema.ts`、`commands.ts`、`refs.ts`、`dag.ts`、`engine.ts` 與 `PropertyManager.tsx` 完整打通，整合測試不再報「遺失參考」。
+    3. **線數整數校驗**：輸入 1.5 條線保留原值傳入核心，直接拒絕並說明原因（`feature.threadBadStarts`），不再默默取整為 2。
+    4. **ISO 80369-7 參考件真實 6.00% 錐度與實體量測**：
+       - 公錐體：修正為真正 6.00% 錐度（$(4.315 - 4.021) / (5.65 - 0.75) = 0.060$），頂端 $y=7.5$（$r=1.9880$）、底端 $y=0$（$r=2.2130$），頂端外緣實作真實 0.2 mm 圓角特徵（`fl_tip`）。
+       - 鎖緊環：內螺紋從入口 $y=8.0$ 切入至 $y=1.0$ 退刀槽，切入入口倒角；探針容差收緊至 $\le 0.005$ mm（實測 $\pm 0.003$ mm 通過）；以實體探針直接量測 3D 實體齒形牙側角（30.000°）。
+       - 工程圖：剖面視圖呈現鋸齒齒形；標註元素 100% 透過 `elementFacts` 從實際實體動態解析（無 mock 假資料）；對稱（±0.025）、單向（0/-0.005）、不對稱（+0.001/-0.004）極限公差 DXF/PDF 輸出驗證全過。
+    5. **Fuzz 隨機測試改寫與全過**：200 組隨機幾何參數測試（`thread-fuzz.test.ts`）0 崩潰，100+ 組生成有效實體，極限自相交幾何精準防禦性攔截。
+  - **三項待使用者決定事項（由 T-1 繼承恢復）**：
+    1. **質量特性積分精度**：產品的質量特性要不要全面改用精確自適應積分（`massProps` 預設 `eps: 1e-6`；22 個呼叫處；平面零件 0.6 → 2.5 ms，螺牙零件 49 → 52 ms）。目前只有顯式傳入 `eps` 才使用，一般顯示的質量特性對長 B-spline 螺牙零件約有 1e-4 數值誤差。
+    2. **`moveFace` 記憶體洩漏疑點**：`kernel.ts` 約 1390 行（`moveFace` 附近）亦存在每點新建 `BRepClass3d_SolidClassifier` 的情況，是否比照 `Kernel.classify` 批次分類器重構，待在複雜曲面情境下專門驗證。
+    3. **效能計時測試門檻與環境變數處理**：`check:perf` 與計時門檻在全套平行跑時因 CPU 負載可能出現波動，是否將計時測試抽離為獨立單元跑測檔，或以環境變數專用門檻控管，待使用者定奪。
+  - **全套確效狀態**：
+    - `tests/phase3/thread.test.ts`（24/24 PASS）
+    - `tests/phase3/thread-feature.test.ts`（7/7 PASS）
+    - `tests/phase3/thread-ui.test.ts`（4/4 PASS）
+    - `tests/phase3/iso-80369-7-thread.test.ts`（7/7 PASS）
+    - `tests/phase3/thread-fuzz.test.ts`（5/5 PASS，含 200 組 Fuzz）
+    - `manual-thread.js`（無頭瀏覽器 UI 重播 1/1 PASS，11.1s）
+    - `npm run typecheck`（0 錯誤）、`npm run lint:deps`（OK）、`npm run lint:i18n`（OK）。
 - **【2026-10-09 深夜：圓角失敗的說明】** 使用者回報選一個面做圓角失敗（只顯示「圓角失敗」）。重現：孔離邊太近時，外緣與孔緣的圓角在中間的窄條互相重疊（窄條寬度要大於兩倍半徑，例如板 80×50、Ø24 孔、窄條 13，半徑 7 起失敗），核心拒絕。已改：`engine.ts` 的 `roundEdges` 在失敗時用折半法找出同樣的邊可用的最大半徑，訊息改成「半徑 X 對選到的邊太大…半徑 Y 以下可以」（`edit.filletTooBig`）；`fillet-by-face.test.ts` 加測試。**使用者那個零件（未存檔的「零件1」）的實際半徑與錯誤我沒看到，是依重現推論；若訊息不是這個原因，請貼「錯誤為何？」的內文。**
 - **【2026-10-09 晚：使用者在選擇題頁面的決定（全部採用建議）與桌面版 0.2.0】** 桌面版版本升到 **0.2.0**（`tauri.conf.json`、`Cargo.toml`、`Cargo.lock`），安裝檔 `apps/desktop/src-tauri/target/release/bundle/nsis/3D-Builder_0.2.0_x64-setup.exe`（11.31 MiB，不在版本庫；含到 `291c0c7` 的程式；**說明視窗還是舊內容**；只看了建置輸出，沒有安裝或啟動過，**另一台電腦的安裝測試（ADR 0052 驗收第 3、7 項）由使用者找機會做並回報**）。決定：A1 版本號提交並推送（已做）；**A2 說明視窗內容更新、A2b 用 SW 2010 繁中線上說明對照：10/12 重置後做，範圍只有這輪動過、SW 有對應的約 10 個主題**（測量、工程圖標註與剖面、零件號球、鈑金離隙、凸緣、斷開角落、以曲面除料等；`https://help.solidworks.com/2010/chinese/SolidWorks/help_list.htm?id=0` 讀得到，內容頁在 `/2010/chinese/SolidWorks/sldworks/LegacyHelp/...`，頁面有 Cookie 橫幅，不必點；比較行為與名詞後用我們自己的話寫，不照抄；SW 2010 沒有的功能對照不到），改完再重建安裝檔（0.2.1）；A4 簽章與自動更新不做；A5 圖示維持暫用圖；B1 圓角導角其餘功能、B2 號球引線彎折不做，等回饋；B3 草圖吸附 S-5 結案（SW 說明沒寫那四件事，也沒有 SW）；B4 先不開新功能；**B5 平板型式 DXF 折彎註記上下顛倒：已修**（`flatDxf.ts`：沿折彎線的角度超過 90 度到 270 度時改從另一端讀，測試在 `flat-dxf.test.ts`）；B6 可製造性檢查先用預設比例；C1 繼續用公開樣本；C2 不評估 openswx 等工具；C3 死碼清理清單全部保留。手冊實機驗證仍擱置（先用目前結果，遇問題再回報）。
 - **【最新存檔點 2026-10-09：目前主線 commit `1a2dd3b`】** 本輪工作已提交、推送並快轉合併到 GitHub `main`；本機 `main` 與 `origin/main` 指向同一 commit。完成項目：① 鈑金「斷開角落」獨立特徵，支援凸緣自由端外角倒角／倒圓，折疊與平板型式一致（零件 Schema 51，ADR 0121）；② 曲面除料方向支援任意有限非零 XYZ 向量及保留方向前側／後側，舊平面參考相容（零件 Schema 52，ADR 0122）；③ 量測已保留項目可在同一文件工作階段中關閉／重開工具後保留，切換／載入文件時清除；頂點以 persistent name 跨再生追蹤，失效會提示；組合件可選各元件座標系並套用位姿／鏡射；④ 取得 OSF 公開樣本 6 個 GPL-3.0 STEP 與 3 個對應 SLDPRT，來源、雜湊、授權與測試資料記於 fixture README。拓樸追蹤目前僅支援具名頂點；圓心、中點、邊上及面上抓點仍存固定座標。

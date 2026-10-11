@@ -1344,14 +1344,22 @@ export class Regenerator {
     const op = f.op ?? f.operation ?? 'cut';
     if (op === 'cut' && !set.view) throw new FeatureError(t('feature.cutNeedsBody'));
 
-    const axis = this.axisOfRef(f.axis, set, t('feature.threadAxis'));
+    // a line of the profile sketch (as a revolve's axis), else a reference
+    let axis: Axis3;
+    if (typeof f.axis === 'string') {
+      const line = s.solved.geometry.get(f.axis);
+      if (line?.type !== 'line') throw new FeatureError(t('regen.axisGone'));
+      const at2 = (p: [number, number]): Vec3 => add(add(s.frame.origin, s.frame.xDir, p[0]), s.frame.yDir, p[1]);
+      axis = { origin: at2(line.a), dir: sub(at2(line.b), at2(line.a)) };
+    } else axis = this.axisOfRef(f.axis, set, t('feature.threadAxis'));
     const len = Math.hypot(...axis.dir);
     if (len < 1e-9) throw new FeatureError(t('feature.threadNoAxis'));
     const Z: Vec3 = [axis.dir[0] / len, axis.dir[1] / len, axis.dir[2] / len];
     const O = axis.origin;
 
     const pitch = evalLength(f.pitch);
-    const starts = f.starts ? Math.round(evalNumber(f.starts)) : 1;
+    const n = f.starts ? evalNumber(f.starts) : 1;
+    const starts = Math.abs(n - Math.round(n)) < 1e-9 ? Math.round(n) : n; // 1.5 stays 1.5 and is refused with the reason, not made 2
     const length = evalLength(f.length);
     const taper = f.taper ? evalAngle(f.taper) : 0;
     const phase = f.phase ? evalAngle(f.phase) : 0;

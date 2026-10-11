@@ -598,8 +598,11 @@ function validateNewFeature(doc: PartDoc, f: Feature, index: number): void {
       sketchBefore(doc, f.sketch, index, t('feature.vent'));
       return;
     case 'thread':
-      sketchBefore(doc, f.sketch, index, t('feature.thread'));
-      if (f.axis.kind !== 'datum' && f.axis.kind !== 'face' && f.axis.kind !== 'edge') throw new CommandError(t('cmd.threadOnlyAxis'));
+      if (typeof f.axis === 'string') revolveAxis(sketchBefore(doc, f.sketch, index, t('feature.thread')), f.axis);
+      else {
+        sketchBefore(doc, f.sketch, index, t('feature.thread'));
+        if (f.axis.kind !== 'datum' && f.axis.kind !== 'face' && f.axis.kind !== 'edge') throw new CommandError(t('cmd.threadOnlyAxis'));
+      }
       return;
     case 'derivedBody':
       if (!isFilePath(f.source)) throw new CommandError(t('cmd.derivedSourceInvalid', { path: f.source }));

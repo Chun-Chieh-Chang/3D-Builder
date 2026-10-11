@@ -272,7 +272,9 @@ describe('a thread that cannot be made says why', () => {
     ['axis off the plane', () => kernel.thread(XZ, [tooth], { ...ok(), axis: { origin: [0, 1, 0], dir: [0, 0, 1] } }), /平面沒有通過/],
     ['axis across the plane', () => kernel.thread(XZ, [tooth], { ...ok(), axis: { origin: [0, 0, 0], dir: [0, 1, 0] } }), /平面沒有通過/],
     ['profile across the axis', () => kernel.thread(XZ, [region([[-1, 0], [1, 0], [1, 1], [-1, 1]])], ok()), /軸的一側/],
-    ['profile as wide as the lead', () => kernel.thread(XZ, [region(toothAt(3.6, 0, { ...symmetric, wb: 5.2 }))], ok()), /導程/],
+    ['profile as wide as the lead', () => kernel.thread(XZ, [region(toothAt(3.6, 0, { ...symmetric, wb: 5.2 }))], ok()), /螺距/],
+    ['profile wider than the pitch but not the lead: two starts would overlap', () => kernel.thread(XZ, [region(toothAt(3.6, 0, { ...symmetric, wb: 2.6 }))], ok()), /螺距 2\.500/],
+    ['one start: the pitch is the lead', () => kernel.thread(XZ, [region(toothAt(3.6, 0, { ...symmetric, wb: 2.6 }))], { ...ok(), starts: 1 }), /螺距/],
     ['too many turns', () => kernel.thread(XZ, [region(toothAt(3.6, 0, { wb: 0.01, h: 0.005, a1: 0, a2: 0, e: 0 }))], { ...ok(), pitch: 0.02, starts: 1 }), /上限/],
     ['a taper that shrinks onto the axis', () => kernel.thread(XZ, [tooth], { ...ok(), to: 40, taper: -20 * deg }), /軸/],
   ];
