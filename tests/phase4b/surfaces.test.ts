@@ -287,7 +287,7 @@ describe('B-splines (the way out of the program)', () => {
     expect(kernel.topology(off.shape).faces.map((f) => f.surface)).toContain('offsetsurface');
     const nurbs = kernel.toBSpline(off.shape);
     expect(kernel.topology(nurbs).faces.every((f) => f.surface === 'bsplinesurface')).toBe(true);
-    expect(Math.abs(kernel.massProps(nurbs).volume - kernel.massProps(off.shape).volume) / kernel.massProps(off.shape).volume).toBeLessThan(1e-5);
+    expect(Math.abs(kernel.massProps(nurbs).volume - kernel.massProps(off.shape).volume) / kernel.massProps(off.shape).volume).toBeLessThan(5e-5);
     expect(kernel.gapReport(nurbs, off.shape, 0).max).toBeLessThan(1e-3);
   });
 

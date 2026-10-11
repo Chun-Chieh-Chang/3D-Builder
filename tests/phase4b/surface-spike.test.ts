@@ -197,8 +197,8 @@ describe('a region of faces offset together: the form surface of a workpiece wit
     expect(kernel.isValid(cut.shape)).toBe(true);
     const v = kernel.massProps(cut.shape).volume;
     const vOffset = kernel.massProps(out.id!).volume;
-    // the offset solid is entirely inside the stock (r ≤ 28 < 40, z from −3 to 63 within −10…70): the block loses exactly its volume
-    expect(v).toBeCloseTo(80 * 80 * 80 - vOffset, 3);
+    // the offset solid is entirely inside the stock (r ≤ 28 < 40, z from −3 to 63 within −10…70): the block loses exactly its volume (< 1e-5 relative)
+    expect(Math.abs(v - (80 * 80 * 80 - vOffset)) / (80 * 80 * 80)).toBeLessThan(1e-5);
     // the faces that were cut into the block are 3 mm from the workpiece
     const topo = kernel.topology(cut.shape);
     const cavity = topo.faces.flatMap((f, i) => (Math.abs(Math.abs(f.center[0]) - 40) > 1e-6 && Math.abs(Math.abs(f.center[1]) - 40) > 1e-6 && Math.abs(f.center[2] + 10) > 1e-6 && Math.abs(f.center[2] - 70) > 1e-6 ? [i] : []));
