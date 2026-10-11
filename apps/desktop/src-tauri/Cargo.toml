@@ -1,6 +1,6 @@
 [package]
 name = "desktop"
-version = "0.2.1"
+version = "0.2.2"
 description = "3D-Builder desktop shell: the web app in a native window"
 edition = "2021"
 
