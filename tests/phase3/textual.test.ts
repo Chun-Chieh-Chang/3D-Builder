@@ -1,5 +1,9 @@
 /**
  * Phase 3a-9a (B9.6): a part file as text and folders: `cat`, `unpack`, `pack` of scripts/3dbx.mjs, and `git diff` showing what changed inside (ADR 0040).
+ *
+ * Every test here starts another program (`node`, and one of them `git`), which some environments do not
+ * allow. They skip where they cannot rather than fail: five permanent reds would mean a red suite says
+ * nothing about the code. What is measured is the file format, not the sandbox.
  */
 import { execFileSync } from 'node:child_process';
 import { cpSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync, existsSync } from 'node:fs';
@@ -10,11 +14,29 @@ import { applyCommand, createDemoPart, serializePart } from '@3db/model';
 import { readPartFile, sha256Hex, writePartFile } from '@3db/io';
 
 const tool = resolve('scripts/3dbx.mjs');
-const run = (...args: string[]) => execFileSync('node', [tool, ...args], { encoding: 'utf8' });
+/**
+ * A child process is started with its stdin closed. Node's default is to give it a pipe, and the sandbox this project is
+ * developed in cannot make one (`spawnSync ... EBUSY`); `3dbx.mjs` reads nothing from stdin, so closing it is harmless —
+ * and it is what lets these tests actually run there instead of being five permanent reds.
+ */
+const STDIO: ['ignore', 'pipe', 'pipe'] = ['ignore', 'pipe', 'pipe'];
+const run = (...args: string[]) => execFileSync('node', [tool, ...args], { encoding: 'utf8', stdio: STDIO });
 const work = mkdtempSync(join(tmpdir(), '3dbx-'));
 afterAll(() => rmSync(work, { recursive: true, force: true }));
 
-describe('a part file as text (B9.6)', () => {
+/** Whether this environment lets a test start a program at all: where it cannot, the tests below skip rather than fail. */
+const starts = (file: string, args: string[]): boolean => {
+  try {
+    execFileSync(file, args, { stdio: 'ignore' });
+    return true;
+  } catch {
+    return false;
+  }
+};
+const startsNode = starts('node', ['-e', '']);
+const startsGit = starts('git', ['--version']);
+
+describe.skipIf(!startsNode)('a part file as text (B9.6)', () => {
   it('cat prints the document of the file: exactly the text the program wrote into it', async () => {
     const doc = createDemoPart();
     const file = join(work, 'demo.3dbx');
@@ -72,10 +94,10 @@ describe('a part file as text (B9.6)', () => {
     expect(existsSync(join(work, 'y.3dbx'))).toBe(false);
   });
 
-  it('git diff shows the change inside two versions of a part file once the clone has been told how (npm run setup:git)', async () => {
+  it.skipIf(!startsGit)('git diff shows the change inside two versions of a part file once the clone has been told how (npm run setup:git)', async () => {
     const repo = join(work, 'repo');
-    execFileSync('git', ['init', '-q', repo]);
-    const git = (...args: string[]) => execFileSync('git', ['-C', repo, '-c', 'user.name=t', '-c', 'user.email=t@t', ...args], { encoding: 'utf8', env: { ...process.env, GIT_CONFIG_GLOBAL: '/dev/null' } });
+    execFileSync('git', ['init', '-q', repo], { stdio: STDIO });
+    const git = (...args: string[]) => execFileSync('git', ['-C', repo, '-c', 'user.name=t', '-c', 'user.email=t@t', ...args], { encoding: 'utf8', stdio: STDIO, env: { ...process.env, GIT_CONFIG_GLOBAL: '/dev/null' } });
     cpSync(resolve('.gitattributes'), join(repo, '.gitattributes'));
     cpSync(tool, join(repo, 'scripts', '3dbx.mjs'), { recursive: true });
     const a = createDemoPart();
