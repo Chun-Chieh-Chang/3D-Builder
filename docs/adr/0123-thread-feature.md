@@ -17,9 +17,31 @@
 
 ## 待使用者決定事項（由 T-1 繼承恢復）
 
-1. **質量特性積分精度**：產品的質量特性要不要全面改用精確自適應積分（`massProps` 預設 `eps: 1e-6`；22 個呼叫處；平面零件 0.6 → 2.5 ms，螺牙零件 49 → 52 ms）。目前只有顯式傳入 `eps` 才使用，一般顯示的質量特性對長 B-spline 螺牙零件約有 1e-4 數值誤差。
-2. **`moveFace` 記憶體洩漏疑點**：`kernel.ts` 約 1390 行（`moveFace` 附近）亦存在每點新建 `BRepClass3d_SolidClassifier` 的情況，是否比照 `Kernel.classify` 批次分類器重構，待在複雜曲面情境下專門驗證。
-3. **效能計時測試門檻與環境變數處理**：`check:perf` 與計時門檻在全套平行跑時因 CPU 負載可能出現波動，是否將計時測試抽離為獨立單元跑測檔，或以環境變數專用門檻控管，待使用者定奪。
+**2026-10-11 結案：以下三項皆已由第一波次（commit `dc84eeb` 的 A1／A2／A3）處理完畢，逐項查證如下。**
+
+1. **質量特性積分精度** → **已解決（A1）**。
+   `Kernel.massProps` 已改為 `const adaptive = options.adaptive ?? true`（`packages/kernel/src/kernel.ts:2328`），
+   並於 `eps` 未指定時對含複雜曲面（自由曲面／螺牙 B-spline）的形狀自動以 `eps = 1e-6` 自適應積分
+   （`kernel.ts:2329` 之 `this.hasComplexSurfaces(shape, arena)`）。
+   `packages/kernel/test/kernel.test.ts` 以**真實螺牙形狀**斷言預設呼叫與顯式 `eps: 1e-6` 一致（誤差 < 1e-8），
+   且與非自適應粗略積分存在 > 1e-5 的實質改善——滿足 AGENTS.md §3.2「驗收測試必須使用能實質觸發該分支的邊界對象」。
+2. **`moveFace` 記憶體疑點** → **已解決（A2）**。
+   原疑點的描述（「每點新建 `BRepClass3d_SolidClassifier`」）與程式碼實況不符：`moveFace` 用的是**面的**二維分類器
+   `BRepClass_FaceClassifier`（`kernel.ts:1938`，位於 `insidePoint` 內），不是三維實體分類器；全檔唯一的
+   `BRepClass3d_SolidClassifier` 只在 `Kernel.classify`（`kernel.ts:2446`），而它本來就是**一個分類器服務所有點**的批次形態。
+   真正的缺陷是 `insidePoint` 的分類器**沒有被刪除**，現已改為 `try { … } finally { c.delete() }`（`kernel.ts:1938–1944`）。
+   驗收以真實 Emscripten heap 為指標：`tests/phase3/direct-edit.test.ts` 的
+   「do not leak shapes and preserve WASM heap across repeated moveFace rebuilds」跑 20 次 moveFace 重建，
+   先以 `expect(initialHeapBytes).toBeGreaterThan(0)` 做真值存在性防呆，再斷言 `finalHeapBytes === initialHeapBytes`（零增長）。
+3. **效能計時測試門檻與環境變數處理** → **已解決（A3）**。
+   計時斷言已抽離為獨立單元：`scripts/check-perf.mjs`（`npm run check:perf`）以 `PERF_CHECK=1` 閘控
+   `tests/phase3/thread.test.ts`、`tests/phase6/undercut-analysis.test.ts`、`tests/phase3/thread-fuzz.test.ts` 三檔，
+   與一般 `npm test` 的全套平行執行脫鉤，消除 CPU 負載造成的門檻波動。門檻本身未放寬（AGENTS.md §3.3）。
+
+## 結案後的既有核心限制（非本 ADR 範圍，另行記載）
+
+螺牙的布林運算遇 B-spline 運算元必洩漏 Emscripten Heap（每次 2.5~8.3 MiB，永不歸還；`Kernel.thread` 約 10.0 MiB／次再生）。
+此限制非本 ADR 所引入，已量測並記載於 `AGENTS.md` §3.5；其產品側緩解（Worker 記憶體高水位自動重啟）見 ADR 0126。
 
 ## 審查發現與矯正確效（CAPA）
 
