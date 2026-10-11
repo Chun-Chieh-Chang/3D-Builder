@@ -29,3 +29,37 @@
 - `tests/phase5/drawing-surface-finish.test.ts`：**10/10 PASS**——符號與 Ra 的指令往返、`ra` 與 `kind` 的範圍拒絕、刪除視圖時連帶清除、`drawingIdsInUse` 一致性、版面配置與場景產生。
 - `tests/phase5/drawing-dimensions.test.ts`／`drawing-document.test.ts`：MAX／MIN 公差文字輸出與既有雙向／配合公差之迴歸維持全綠。
 
+## 補記：B3a 端到端驗證發現的圓角半徑缺口（2026-10-11）
+
+決策頁 **B3a「兩件各出一張圖」** 的建議理由之一，是「順手把 Ra 標註與 MAX／MIN 公差這兩個缺口做掉端到端驗證」。實際把工件 2（凸緣襯套）出圖時，端到端路徑暴露了一個**兩個缺口都沒預期到的真缺陷**：
+
+### 症狀
+
+工件 2 的兩處孔口圓角（`R0.2`、`R0.5`）以 `kind: 'radius'` + `tolerance: { type: 'max' }` 標註時，`buildScene` 回傳：
+
+```
+ERROR 這個元素沒有半徑，不能標直徑或半徑
+ERROR 這個元素沒有半徑，不能標直徑或半徑
+```
+
+### 根因（實測，非推測）
+
+1. `packages/regen/src/drawingDimensions.ts` 的 `elementFacts` 只認 `plane`、`cylinder`、`sphere` 三種面；圓角面在 OCCT 是 **torus**，落到最後的 `return { error: t('drawing.refKind', …) }`。
+2. 但核心層**早就有**這份資料：`packages/kernel/src/kernel.ts` 對 torus 面建出 `{ type: 'torus', center, axis, major, minor, convex }`，型別亦已在 `packages/kernel/src/types.ts` 宣告。也就是說這是**消費端漏接**，不是核心缺料。
+3. 補上之後還有第二層問題：`circle()` 的「真形」判準是為圓柱寫的——**軸沿視線方向**才是真圓。圓角恰恰相反：**軸躺在圖面內**（管被剖開，剖面才是那段圓弧）；順著軸看只是一個環，沒有弧可量。此外半徑引線的箭頭必須落在弧心（距軸 `major`）而非圓環中心，否則箭頭會指進孔裡。
+
+### 修正
+
+1. `packages/model/src/drawing.ts`：`ElementFacts` 新增選用欄位 `major?`（管中心圓半徑），並把 `type` 的註解補上 `"torus"`。
+2. `packages/regen/src/drawingDimensions.ts`：`elementFacts` 新增 `torus` 分支 → `{ kind: 'face', type: 'torus', point: g.center, dir: g.axis, radius: g.minor, major: g.major }`。
+3. `packages/drawing/src/dimension.ts`：新增 `circleCentre()`，把「圓心在視圖座標何處」抽出來：
+   - 圓柱／球／邊：維持原判準（軸沿視線）與原圓心。
+   - torus：判準反轉（`|dir·axes.dir| ≤ PERPENDICULAR`，軸躺在圖面內）；弧心取 `at ± major × across`，方向由引線傾斜方向 `u` 對「軸的橫向」投影之正負決定。
+   - **退化情形明確拒絕**：引線若正好沿軸（`|lean| < 1e-9`），兩個弧一樣近，不猜——回 `drawing.dimNotTrueShape`。
+4. `tests/phase5/drawing-dimensions.test.ts` 新增 3 個測試（`R0.2 最大` 文字與弧心／箭頭座標逐點驗算、順軸視圖拒絕、引線沿軸拒絕、另一橫軸視圖的弧心落點）。
+
+### 一併確認（非新缺口）
+
+- 工件 2 出圖實測圖面文字：`0.75、8、R0.2 最大、R0.5 最大、Ø3.97、Ø4.247、Ø6.25、Ø7.73`，`errors` 為空。MAX 單向極限確實端到端成立。
+- 工件 1 的 `Ra 0.8` 與壓花註記 `壓花 20±0.1` 都在**場景**（`Scene.items` 的 text）中，不在尺寸文字集合裡——原本的驗收斷言取錯了集合，已更正。
+- **觀察（未變更設計）**：`toleranceText` 走 i18n，因此 zh-TW 介面出圖會寫「最大」，英文介面寫「MAX」。原圖寫的是 `MAX`。若將來要出給英語系現場，需要「圖面語言」獨立於介面的機制，目前**沒有**這個欄位。

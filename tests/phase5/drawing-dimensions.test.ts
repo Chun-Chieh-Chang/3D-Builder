@@ -16,8 +16,10 @@ import {
   viewVectors,
   type Dimension,
   type DrawingDoc,
+  type ElementFacts,
   type PartDoc,
   type Ref,
+  type ViewAxes,
 } from '@3db/model';
 import { readPartFile } from '@3db/io';
 import { PlaneGcsSolver } from '@3db/sketch';
@@ -403,5 +405,47 @@ describe('the locating plate dimensioned in its top view', () => {
     const waiting = buildScene(d, new Map([['view1', lines]]));
     expect([...waiting.dimensions.values()].every((o) => 'error' in o)).toBe(true);
     expect(waiting.scene.items.filter((i) => i.kind === 'polyline' && i.style === 'dimension')).toHaveLength(0);
+  });
+});
+
+/**
+ * A fillet is a torus, and its radius is not read the way a cylinder's is: down the axis it is only a ring (no arc to measure), and across the axis its tube is cut
+ * through, the cut being the arc that R names. The arc's middle is a quarter turn off the axis, on the side the leader leans — measured on the mouth of a Ø3.97
+ * bore, whose tube's middle runs at Ø4.37 about the part's axis and whose tube is Ø0.4.
+ */
+describe('a fillet (a torus face) is dimensioned where its tube is cut through', () => {
+  const placed: PlacedView = { id: 'view1', at: [0, 0], scale: 1, w: 100, h: 100, centre: [0, 0] };
+  const fillet: ElementFacts = { kind: 'face', type: 'torus', point: [0, 0, 10], dir: [0, 0, 1], radius: 0.2, major: 2.185 };
+  const dim = (extra: Partial<Dimension> = {}): Dimension => ({ id: 'd1', view: 'view1', kind: 'radius', ref: { kind: 'face', name: 'rv1:f1:fillet' }, angle: 90, ...extra }) as Dimension;
+  const at = (axes: ViewAxes, d: Dimension) => evaluateDimension(d, { elements: [fillet] }, axes, placed);
+  /** The two points a radius dimension is drawn between, in sheet mm: the middle of the arc and where its arrow touches. */
+  const round = (o: unknown) => (o as { dxf: { geometry: { centre: number[]; near: number[] } } }).dxf.geometry;
+
+  it('is seen true in a view that looks across its axis, and its middle is a quarter turn off the axis the way the leader leans', () => {
+    // the right view looks along −x, so the part's axis (z) lies across the sheet: its x is the model's −z and its y the model's +y
+    const side = viewVectors('right');
+    const up = at(side, dim({ tolerance: { type: 'max' } }));
+    expect(up).toMatchObject({ value: 0.2, text: 'R0.2 最大' });
+    // the axis is the sheet's y = 0; the tube's middle is 2.185 above it, and the arrow touches where the tube is farthest from the axis: 2.185 + 0.2
+    expect(round(up).centre).toEqual([expect.closeTo(-10, 9), expect.closeTo(2.185, 9)]);
+    expect(round(up).near).toEqual([expect.closeTo(-10, 9), expect.closeTo(2.385, 9)]);
+    // leaning the other way takes the arc below the axis
+    const down = round(at(side, dim({ angle: 270 })));
+    expect(down.centre).toEqual([expect.closeTo(-10, 9), expect.closeTo(-2.185, 9)]);
+    expect(down.near).toEqual([expect.closeTo(-10, 9), expect.closeTo(-2.385, 9)]);
+  });
+
+  it('is refused down its own axis, where it is only a ring and no arc can be measured', () => {
+    expect(at(viewVectors('front'), dim())).toMatchObject({ error: expect.stringContaining('看不到圓的真形') });
+    expect(at(viewVectors('back'), dim())).toMatchObject({ error: expect.stringContaining('看不到圓的真形') });
+    // and a leader that runs along the axis leans toward neither of the two arcs, so it names none
+    expect(at(viewVectors('right'), dim({ angle: 0 }))).toMatchObject({ error: expect.stringContaining('看不到圓的真形') });
+  });
+
+  it('the same fillet in another view that looks across the axis: the top view puts the arc to the side of the axis, not above it', () => {
+    // the top view looks along −y, so its x is the model's +x and its y the model's −z: the axis is the sheet's x = 0
+    const across = round(at(viewVectors('top'), dim({ angle: 0 })));
+    expect(across.centre).toEqual([expect.closeTo(2.185, 9), expect.closeTo(-10, 9)]);
+    expect(across.near).toEqual([expect.closeTo(2.385, 9), expect.closeTo(-10, 9)]);
   });
 });

@@ -32,6 +32,8 @@ const LEADER = 8;
 
 const dot = (a: readonly number[], b: readonly number[]) => a[0]! * b[0]! + a[1]! * b[1]! + a[2]! * b[2]!;
 const PARALLEL = 1 - 1e-6;
+/** How square two directions have to be to count as across one another. */
+const PERPENDICULAR = 1e-6;
 
 /** A number as written on a drawing: up to `places` decimals (three for a size, four for a deviation), none that are zero. */
 export function formatNumber(v: number, places = 3): string {
@@ -315,17 +317,41 @@ function linear(d: Extract<Dimension, { kind: 'linear' }>, ea: ElementFacts, eb:
   return { value, text, items, handle, dxf: { textAt, geometry: { kind: 'linear', a: sA, b: sB, line: a, ...(d.orientation === 'horizontal' ? { rotation: 0 } : d.orientation === 'vertical' ? { rotation: 90 } : {}) } } };
 }
 
+/**
+ * Where the middle of the circle a round dimension measures is in the view (x to the right, y up): the element's own point for a cylinder, a sphere or an edge, but the
+ * middle of the arc a fillet is seen as — `major` from the part's axis, on the side the leader leans. Null when the element is not seen as a circle at all: a cylinder
+ * shows a circle when its axis runs along the view, but a fillet's axis must lie across it instead (its tube is then cut through, and the cut is the arc).
+ */
+function circleCentre(e: ElementFacts, axes: ViewAxes, u: P): P | null {
+  const at = inView(e, axes);
+  if (e.type !== 'torus') {
+    if (e.type !== 'sphere' && !(e.dir && Math.abs(dot(e.dir, axes.dir)) >= PARALLEL)) return null;
+    return at;
+  }
+  if (!e.dir || e.major === undefined || Math.abs(dot(e.dir, axes.dir)) > PERPENDICULAR) return null;
+  // the axis as the view sees it; across it lies the arc, and a quarter turn off it is where the arc's middle is
+  const ax: P = [dot(e.dir, rightOf(axes)), dot(e.dir, axes.up)];
+  const l = Math.hypot(ax[0], ax[1]);
+  if (l < 1e-9) return null;
+  const across: P = [ax[1] / l, -ax[0] / l];
+  // which of the two arcs the leader names: a leader that runs along the axis leans toward neither, and there is no arc that way to point at
+  const lean = u[0] * across[0] + u[1] * across[1];
+  if (Math.abs(lean) < 1e-9) return null;
+  const side = lean > 0 ? 1 : -1;
+  return [at[0] + side * across[0] * e.major, at[1] + side * across[1] * e.major];
+}
+
 function circle(d: Extract<Dimension, { kind: 'diameter' | 'radius' }>, e: ElementFacts, axes: ViewAxes, placed: PlacedView, unit: LengthUnit): DimensionOutcome {
   if (e.radius === undefined) return { error: t('drawing.dimNotRound') };
-  // the circle has to be seen as a circle: its axis along the direction the view looks
-  if (e.type !== 'sphere' && !(e.dir && Math.abs(dot(e.dir, axes.dir)) >= PARALLEL)) return { error: t('drawing.dimNotTrueShape') };
-  const value = d.kind === 'diameter' ? 2 * e.radius : e.radius;
-  const text = dimensionText(d, value, e, unit);
-  const [cx, cy] = inView(e, axes);
-  const centre = toSheet(placed, cx, cy);
-  const r = e.radius * placed.scale;
   const th = (d.angle * Math.PI) / 180;
   const u: P = [Math.cos(th), Math.sin(th)];
+  // the circle has to be seen as a circle
+  const at = circleCentre(e, axes, u);
+  if (!at) return { error: t('drawing.dimNotTrueShape') };
+  const value = d.kind === 'diameter' ? 2 * e.radius : e.radius;
+  const text = dimensionText(d, value, e, unit);
+  const centre = toSheet(placed, at[0], at[1]);
+  const r = e.radius * placed.scale;
   const near = add(centre, u, r);
   const leader = d.leader ?? LEADER;
   const outer = add(centre, u, r + leader);

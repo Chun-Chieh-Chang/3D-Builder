@@ -168,6 +168,8 @@ export function elementFacts(topology: Topology, names: ElementNames, ref: Ref, 
       return { kind: 'face', type: 'cylinder', point: g.origin, dir: g.axis, radius: g.radius, ...(hole ? { hole: withFeature(hole, names.faces[r.index]!, features) } : {}) };
     }
     if (g?.type === 'sphere') return { kind: 'face', type: 'sphere', point: g.center, radius: g.radius };
+    // a fillet or a round: its radius is the tube's, and its axis and the circle the tube's middle runs on are what say where the arc is
+    if (g?.type === 'torus') return { kind: 'face', type: 'torus', point: g.center, dir: g.axis, radius: g.minor, major: g.major };
     return { error: t('drawing.refKind', { name: ref.name }) };
   }
   return { error: t('drawing.refKind', { name: ref.name }) };

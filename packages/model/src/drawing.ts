@@ -191,13 +191,19 @@ export type Dimension = LinearDimension | DiameterDimension | RadiusDimension | 
 /** What the model says an element is, worked out in the worker from the part as built: the point and direction a dimension measures from, in the part's frame. */
 export interface ElementFacts {
   kind: 'face' | 'edge' | 'vertex';
-  /** "plane", "cylinder", "sphere", "line", "circle", "point". */
+  /** "plane", "cylinder", "sphere", "torus", "line", "circle", "point". */
   type: string;
-  /** A vertex's place, a plane's origin, a cylinder's or circle's axis point (its middle), a line's middle. */
+  /** A vertex's place, a plane's origin, a cylinder's or circle's axis point (its middle), a line's middle, a torus's centre. */
   point: [number, number, number];
   /** A plane's normal, an axis, a line's direction. */
   dir?: [number, number, number];
   radius?: number;
+  /**
+   * A torus (a fillet or a round): the radius of the circle its tube's middle runs on, about `dir` through `point`. The `radius` of a torus is the tube's own, so a
+   * fillet is dimensioned R<radius> — where it is seen in true shape (the axis across the view, not along it) the leader points at the arc whose middle is `major`
+   * from `point` on the side it leans.
+   */
+  major?: number;
   /** A cylinder that is a hole: how deep it is. */
   hole?: HoleInfo;
   /** A face's middle (the centroid of its area): where on the plane the face is, which a plane's own `point` does not say. */
