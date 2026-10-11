@@ -9,7 +9,7 @@ export interface AutoDimensionOptions {
   callouts?: boolean;
   /** The overall width and height of the view. */
   overall: boolean;
-  /** The diameter of every hole and the radius of every arc (those that are equal are one dimension, 「4×Ø9」). */
+  /** The diameter of every hole and the radius of every arc — a fillet's included, and one dimension per fillet however many times the view cuts its tube. */
   holes: boolean;
   /** Where each hole is, from the left side and from the bottom of the view. */
   positions: boolean;
@@ -22,6 +22,7 @@ export const OFFSET_STEP = 7;
 const TOL = 1e-6;
 type Plane = Extract<ViewFeature, { type: 'plane' }>;
 type Circle = Extract<ViewFeature, { type: 'circle' }>;
+type Torus = Extract<ViewFeature, { type: 'torus' }>;
 
 /** The planes that bound a view: the lowest and highest square to its x and to its y (null where there is none). */
 export function datumPlanes(features: readonly ViewFeature[]): { minX: Plane | null; maxX: Plane | null; minY: Plane | null; maxY: Plane | null } {
@@ -40,8 +41,9 @@ function extreme(planes: Plane[], axis: 'x' | 'y', high: boolean): Plane | null 
 
 /**
  * The dimensions a view is given when asked for them all (C16.4): its overall width and height between the planes that bound it, the diameter of each
- * hole and the radius of each arc, and where each hole is from the left and the bottom planes. Horizontal dimensions go below the view and vertical ones to its right,
- * the ones that stand for a hole nearest it and the overall ones outermost. A dimension that cannot be made (no plane bounds the view that way) is left out.
+ * hole and the radius of each arc — a fillet's too, one per fillet — and where each hole is from the left and the bottom planes. Horizontal dimensions go
+ * below the view and vertical ones to its right, the ones that stand for a hole nearest it and the overall ones outermost. A dimension that cannot be made
+ * (no plane bounds the view that way) is left out.
  */
 export function autoDimensions(features: readonly ViewFeature[], options: AutoDimensionOptions): DimensionDraft[] {
   const circles = features.filter((f): f is Circle => f.type === 'circle');
@@ -60,6 +62,21 @@ export function autoDimensions(features: readonly ViewFeature[], options: AutoDi
       const count = g.length > 1 ? { count: g.length } : {};
       const callout = options.callouts && first.hole ? { callout: true } : {};
       out.push(first.full ? { kind: 'diameter', ref: first.ref, angle: first.outward, ...count, ...callout } : { kind: 'radius', ref: first.ref, angle: first.outward, ...count });
+    }
+    // A fillet is one radius per *face*, and a face gives the view two features — the tube is cut once either side of its axis — so the faces are collected first
+    // and counted, not the features. Counting features would write 「2×R0.2」 for a single fillet, which is the opposite of what is true.
+    const faces = new Map<string, Torus>();
+    for (const f of features) if (f.type === 'torus') faces.set(f.ref.name, faces.get(f.ref.name) ?? f);
+    // a concave fillet and a convex round of the same R are different callouts, and neither is grouped with a cylinder's arc: the same number written for a
+    // different kind of edge is not the same dimension
+    const filletGroups = new Map<string, Torus[]>();
+    for (const f of faces.values()) {
+      const key = `${f.convex}|${Math.round(f.radius * 1e4)}`;
+      filletGroups.set(key, [...(filletGroups.get(key) ?? []), f]);
+    }
+    for (const g of filletGroups.values()) {
+      const first = g[0]!;
+      out.push({ kind: 'radius', ref: first.ref, angle: first.outward, ...(g.length > 1 ? { count: g.length } : {}) });
     }
   }
 

@@ -21,6 +21,7 @@ import {
   type PartDoc,
   type Ref,
   type ViewAxes,
+  type ViewFeature,
 } from '@3db/model';
 import { readPartFile } from '@3db/io';
 import { PlaneGcsSolver } from '@3db/sketch';
@@ -448,5 +449,62 @@ describe('a fillet (a torus face) is dimensioned where its tube is cut through',
     const across = round(at(viewVectors('top'), dim({ angle: 0 })));
     expect(across.centre).toEqual([expect.closeTo(2.185, 9), expect.closeTo(-10, 9)]);
     expect(across.near).toEqual([expect.closeTo(2.385, 9), expect.closeTo(-10, 9)]);
+  });
+});
+
+/**
+ * E1a step 2: a fillet reaches the automatic dimensions. The thing that can go wrong is counting the features instead of the faces — the view cuts a fillet's
+ * tube twice, so one fillet is two features, and counting them would write 「2×R0.2」 for a single fillet. A fillet is also not lumped in with a cylinder's arc:
+ * the same number written on a different kind of edge is a different callout.
+ */
+describe('a fillet in the automatic dimensions (E1a)', () => {
+  const all = { overall: false, holes: true, positions: false };
+  const torus = (name: string, radius: number, convex: boolean, at: [number, number]): ViewFeature => ({
+    type: 'torus',
+    ref: { kind: 'face', name },
+    centre: [50, 30],
+    at,
+    radius,
+    major: 4,
+    axis: [1, 0],
+    convex,
+    outward: at[1] > 30 ? 90 : -90,
+  });
+  /** One fillet face, cut twice: two features of the one face. */
+  const fillet = (name: string, radius: number, convex = true): ViewFeature[] => [torus(name, radius, convex, [50, 34]), torus(name, radius, convex, [50, 26])];
+  /** A cylinder seen as an arc: one feature is one arc. */
+  const arc = (name: string, cx: number, cy: number, radius: number): ViewFeature => ({ type: 'circle', ref: { kind: 'face', name }, centre: [cx, cy], radius, convex: true, full: false, outward: 45 });
+  const radii = (d: DimensionDraft[]) => d.flatMap((x) => (x.kind === 'radius' ? [{ name: x.ref.name, count: x.count ?? 1 }] : []));
+
+  it('gives one fillet one R, not one per cut of its tube', () => {
+    const d = autoDimensions(fillet('f1', 0.2), all);
+    expect(d).toHaveLength(1);
+    expect(d[0]).toMatchObject({ kind: 'radius', ref: { name: 'f1' } });
+    expect(d[0]).not.toHaveProperty('count');
+  });
+
+  it('counts two fillets of the same R as two, and keeps a concave fillet apart from a convex round of the same R', () => {
+    expect(radii(autoDimensions([...fillet('f1', 0.2), ...fillet('f2', 0.2)], all))).toEqual([{ name: 'f1', count: 2 }]);
+    expect(radii(autoDimensions([...fillet('f1', 0.2), ...fillet('f2', 0.2, false)], all))).toEqual([
+      { name: 'f1', count: 1 },
+      { name: 'f2', count: 1 },
+    ]);
+  });
+
+  it("is not counted with a cylinder's arc of the same R: the same number on a different kind of edge is a different callout", () => {
+    expect(radii(autoDimensions([...fillet('f1', 10), arc('a1', 10, 10, 10)], all))).toEqual([
+      { name: 'a1', count: 1 },
+      { name: 'f1', count: 1 },
+    ]);
+  });
+
+  it('is left out when the holes are not asked for, while the overall size is still made', () => {
+    const planes: ViewFeature[] = [
+      { type: 'plane', ref: { kind: 'face', name: 'px0' }, axis: 'x', coord: 0, area: 10 },
+      { type: 'plane', ref: { kind: 'face', name: 'px100' }, axis: 'x', coord: 100, area: 10 },
+    ];
+    const d = autoDimensions([...planes, ...fillet('f1', 0.2)], { overall: true, holes: false, positions: false });
+    expect(d).toHaveLength(1);
+    expect(d[0]).toMatchObject({ kind: 'linear', a: { name: 'px0' }, b: { name: 'px100' } });
   });
 });

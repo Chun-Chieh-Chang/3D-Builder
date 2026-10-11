@@ -522,12 +522,25 @@ describe('工程圖：兩件各一張（B3a）', () => {
         expect('error' in out ? out.error : out.text).toBe(`R${named.radius}`);
       }
     }
-    // the step E1a kept out: pointing at a fillet is one thing, and drafting every fillet's R into the automatic dimensions is another. That button is unchanged.
+    // E1a step 2: the automatic dimensions include the fillets now, and count each fillet **once** — a face gives the view two arcs, and writing 「2×R0.2」 for
+    // one fillet would be the opposite of what is true.
     const drafted = autoDimensions(side, { overall: true, holes: true, positions: true });
     const filletNames = new Set(fillets.map((f) => f.ref.name));
-    const names = (d: (typeof drafted)[number]) => (d.kind === 'linear' || d.kind === 'angle' ? [d.a.name, d.b.name] : [d.ref.name]);
-    expect(drafted.flatMap(names).filter((n) => filletNames.has(n)), '自動尺寸不應冒出圓角半徑').toEqual([]);
-    console.log(`  E1a：側視圖 ${fillets.length} 條圓角弧，點選可得 R${PART2_LEAD.small}／R${PART2_LEAD.big}；自動尺寸 ${drafted.length} 項，其中 0 項是圓角`);
+    const draftedFillets = drafted.flatMap((d) => (d.kind === 'radius' && filletNames.has(d.ref.name) ? [d] : []));
+    expect(draftedFillets, '一個圓角一個半徑尺寸').toHaveLength(2);
+    const rows = draftedFillets
+      .map((d) => {
+        const facts = elementFacts(r.body!.topology, r.body!.names, d.ref) as ElementFacts;
+        const out = evaluateDimension({ id: 'ad', view: VIEWS.side, ...d } as Dimension, { elements: [facts] as never }, sideAxes, sidePlaced);
+        return { name: d.ref.name, r: facts.radius!, count: d.count ?? 1, text: 'error' in out ? out.error : out.text };
+      })
+      .sort((a, b) => a.r - b.r);
+    // the radius of the dimension is the element's, not the draft's, and the real dimension code writes it
+    expect(rows).toEqual([
+      { name: P2.smallLead, r: PART2_LEAD.small, count: 1, text: `R${PART2_LEAD.small}` },
+      { name: P2.bigLead, r: PART2_LEAD.big, count: 1, text: `R${PART2_LEAD.big}` },
+    ]);
+    console.log(`  E1a 第二步：自動尺寸 ${drafted.length} 項，其中圓角 ${draftedFillets.length} 項（${rows.map((x) => x.text).join('、')}），每個圓角只算一次`);
   });
 });
 
