@@ -442,7 +442,9 @@ describe('工程圖：兩件各一張（B3a）', () => {
         { id: 'd1', kind: 'linear', view: v.side, a: face(P2.leftFace), b: face(P2.endFace), orientation: 'horizontal', offset: 10 },
         { id: 'd2', kind: 'linear', view: v.side, a: face(P2.leftFace), b: face(P2.step), orientation: 'horizontal', offset: 20 },
         { id: 'd3', kind: 'diameter', view: v.end, ref: face(P2.land), angle: 20, leader: 10 },
-        { id: 'd4', kind: 'diameter', view: v.end, ref: face(P2.body), angle: 200, leader: 8 },
+        // Ø6.25 carries two tolerance sets on the source drawing that cannot be read off it. They are parked, not guessed (C2a): a wrong tolerance is
+        // made to, a blank one is asked about. The dimension says so on the sheet rather than leaving a bare number the reader would take as exact.
+        { id: 'd4', kind: 'diameter', view: v.end, ref: face(P2.body), angle: 200, leader: 8, suffix: '（原圖未載明）' },
         { id: 'd5', kind: 'diameter', view: v.end, ref: face(P2.bigBore), angle: 300, leader: 6 },
         { id: 'd6', kind: 'diameter', view: v.end, ref: face(P2.smallBore), angle: 120, leader: 6 },
         // the two fillets are dimensioned in the side view, where the axis lies across the sheet and each is seen as the quarter arc it is — down the axis it is only a ring
@@ -456,7 +458,7 @@ describe('工程圖：兩件各一張（B3a）', () => {
     // the one-sided limit is a word, and the word is the drawing's language's (zh-TW 「最大」, en 「MAX」) — ADR 0125
     expect(texts).toContain('R0.2 最大');
     expect(texts).toContain('R0.5 最大');
-    expect(texts).toContain('Ø6.25');
+    expect(texts).toContain('Ø6.25（原圖未載明）');
     // the text being right is not enough: each leader has to land on the fillet's arc, not in the middle of the bore. The arc's middle is `major` off the part's
     // axis, its arrow touches at major + minor, and it is above the axis for d7 and below it for d8 — which is what the two leader angles asked for.
     for (const [id, ref, sign] of [['d7', P2.smallLead, 1], ['d8', P2.bigLead, -1]] as const) {
