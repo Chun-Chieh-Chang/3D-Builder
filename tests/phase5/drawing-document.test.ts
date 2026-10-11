@@ -3,7 +3,7 @@
  * document in the same container as parts and assemblies.
  */
 import { describe, expect, it } from 'vitest';
-import { applyDrawingCommand, createEmptyAssembly, createEmptyDrawing, DrawingHistory, parseDrawing, serializeDrawing, type DrawingDoc, type DrawingView, type ModelDrawingView } from '@3db/model';
+import { applyDrawingCommand, createEmptyAssembly, createEmptyDrawing, DRAWING_SCHEMA_VERSION, DrawingHistory, parseDrawing, serializeDrawing, type DrawingDoc, type DrawingView, type ModelDrawingView } from '@3db/model';
 import { drawingFileName, readAnyDocumentFile, writeAssemblyFile, writeDrawingFile } from '@3db/io';
 
 const view = (id: string, direction: ModelDrawingView['direction'] = 'front', extra: Partial<ModelDrawingView> = {}): DrawingView => ({ id, name: id, source: '零件/基板.3dbx', direction, ...extra });
@@ -12,7 +12,7 @@ const withViews = (): DrawingDoc => applyDrawingCommand(createEmptyDrawing(), { 
 describe('the drawing document', () => {
   it('starts as an A3 landscape sheet at 1:1 in first angle, with no views and an empty title block', () => {
     const d = createEmptyDrawing();
-    expect(d).toMatchObject({ kind: 'drawing', schemaVersion: 10, sheet: { size: 'A3', orientation: 'landscape', projection: 'first', scale: [1, 1] }, views: [], title: {} });
+    expect(d).toMatchObject({ kind: 'drawing', schemaVersion: DRAWING_SCHEMA_VERSION, sheet: { size: 'A3', orientation: 'landscape', projection: 'first', scale: [1, 1] }, views: [], title: {} });
   });
 
   it('inserts views with their ids kept apart, and refuses what is not a view', () => {
@@ -100,7 +100,7 @@ describe('the drawing file (.3dbd)', () => {
     // v9 had views, dimensions and tables but no surface finishes
     const v9 = { ...createEmptyDrawing(), schemaVersion: 9, surfaceFinishes: undefined };
     const read = parseDrawing(JSON.stringify(v9));
-    expect(read.schemaVersion).toBe(10);
+    expect(read.schemaVersion).toBe(DRAWING_SCHEMA_VERSION);
     expect(read.surfaceFinishes).toEqual([]);
   });
 });

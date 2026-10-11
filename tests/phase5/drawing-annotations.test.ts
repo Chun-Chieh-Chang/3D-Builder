@@ -8,6 +8,7 @@ import {
   applyCommand,
   applyDrawingCommand,
   createEmptyDrawing,
+  DRAWING_SCHEMA_VERSION,
   parseDrawing,
   serializeDrawing,
   viewVectors,
@@ -141,7 +142,7 @@ describe('the annotations in the document', () => {
     delete v3.tables;
     v3.schemaVersion = 3;
     const back = parseDrawing(JSON.stringify(v3));
-    expect(back.schemaVersion).toBe(10);
+    expect(back.schemaVersion).toBe(DRAWING_SCHEMA_VERSION);
     expect(back.tables).toEqual([]);
   });
 });

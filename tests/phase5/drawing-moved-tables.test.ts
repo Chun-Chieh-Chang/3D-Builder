@@ -3,7 +3,7 @@
  * others keep clear of it; the scene says where every table and balloon is, so the sheet can be pointed at.
  */
 import { describe, expect, it } from 'vitest';
-import { applyDrawingCommand, createEmptyDrawing, parseDrawing, serializeDrawing, type BomRow, type DrawingDoc } from '@3db/model';
+import { applyDrawingCommand, createEmptyDrawing, DRAWING_SCHEMA_VERSION, parseDrawing, serializeDrawing, type BomRow, type DrawingDoc } from '@3db/model';
 import { balloonSpots, buildScene, bomTableBox, type PlacedView, type ViewBom, type ViewLines } from '@3db/drawing';
 
 const row = (item: string, name: string, path: string): BomRow => ({ item, name, path, mirrored: false, qty: 1, partNo: '', vendor: '' }) as BomRow;
@@ -28,7 +28,7 @@ describe('the balloons the user moved', () => {
     d = applyDrawingCommand(d, { type: 'setTable', tableId: 'tbl1', patch: { balloonAt: { '1': [250, 120] } } });
     expect(d.tables[0]).toEqual({ id: 'tbl1', kind: 'bom', view: 'view1', balloons: true, balloonAt: { '1': [250, 120] } });
     expect(parseDrawing(serializeDrawing(d))).toEqual(d);
-    expect(d.schemaVersion).toBe(10);
+    expect(d.schemaVersion).toBe(DRAWING_SCHEMA_VERSION);
     d = applyDrawingCommand(d, { type: 'setTable', tableId: 'tbl1', patch: { balloonAt: null } });
     expect(d.tables[0]).toEqual({ id: 'tbl1', kind: 'bom', view: 'view1', balloons: true });
     expect(() => applyDrawingCommand(d, { type: 'setTable', tableId: 'tbl1', patch: { balloonAt: { '1': [Number.NaN, 1] } } })).toThrow();
@@ -39,7 +39,7 @@ describe('the balloons the user moved', () => {
   it('an older drawing (schema 8) opens as it is', () => {
     const old = JSON.parse(serializeDrawing(base())) as Record<string, unknown>;
     old.schemaVersion = 8;
-    expect(parseDrawing(JSON.stringify(old)).schemaVersion).toBe(10);
+    expect(parseDrawing(JSON.stringify(old)).schemaVersion).toBe(DRAWING_SCHEMA_VERSION);
   });
 });
 

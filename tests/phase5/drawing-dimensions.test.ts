@@ -8,6 +8,7 @@ import {
   applyCommand,
   applyDrawingCommand,
   createEmptyDrawing,
+  DRAWING_SCHEMA_VERSION,
   fitDeviations,
   parseDrawing,
   parseFit,
@@ -190,7 +191,7 @@ describe('the dimensions in the document', () => {
     delete v2.dimensions;
     v2.schemaVersion = 2;
     const back = parseDrawing(JSON.stringify(v2));
-    expect(back.schemaVersion).toBe(10);
+    expect(back.schemaVersion).toBe(DRAWING_SCHEMA_VERSION);
     expect(back.dimensions).toEqual([]);
   });
 });

@@ -150,7 +150,7 @@ describe('the document', () => {
     const old = JSON.parse(serializeDrawing(doc(views))) as Record<string, unknown>;
     old.schemaVersion = 6;
     const read = parseDrawing(JSON.stringify(old));
-    expect(read.schemaVersion).toBe(10);
+    expect(read.schemaVersion).toBe(DRAWING_SCHEMA_VERSION);
     expect(layoutViews(read, lines).get('t')!.at).toEqual(layoutViews(doc(views), lines).get('t')!.at);
   });
 });

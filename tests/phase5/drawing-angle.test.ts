@@ -4,7 +4,7 @@
  * chamfered block, which the view now offers beside the planes square to its x and y.
  */
 import { beforeAll, afterAll, describe, expect, it } from 'vitest';
-import { applyCommand, applyDrawingCommand, createEmptyDrawing, parseDrawing, rightOf, serializeDrawing, viewVectors, type Dimension, type DrawingDoc, type ElementFacts, type Feature, type Ref } from '@3db/model';
+import { applyCommand, applyDrawingCommand, createEmptyDrawing, DRAWING_SCHEMA_VERSION, parseDrawing, rightOf, serializeDrawing, viewVectors, type Dimension, type DrawingDoc, type ElementFacts, type Feature, type Ref } from '@3db/model';
 import { PlaneGcsSolver } from '@3db/sketch';
 import { Kernel } from '@3db/kernel';
 import { Regenerator, elementFacts, viewFeatures } from '@3db/regen';
@@ -50,12 +50,13 @@ describe('the angle dimension in the document', () => {
     const d = applyDrawingCommand(base(), { type: 'insertDimensions', dimensions: [angle('dim1', { supplementary: true })] });
     const back = parseDrawing(serializeDrawing(d));
     expect(back.dimensions[0]).toMatchObject({ kind: 'angle', supplementary: true });
-    expect(back.schemaVersion).toBe(10);
+    expect(back.schemaVersion).toBe(DRAWING_SCHEMA_VERSION);
     const old = JSON.parse(serializeDrawing(base())) as { schemaVersion: number };
     old.schemaVersion = 4;
-    expect(parseDrawing(JSON.stringify(old)).schemaVersion).toBe(10);
+    expect(parseDrawing(JSON.stringify(old)).schemaVersion).toBe(DRAWING_SCHEMA_VERSION);
+    // one past what this build writes: a file from a newer build is refused rather than read as if it were this one
     const future = JSON.parse(serializeDrawing(base())) as { schemaVersion: number };
-    future.schemaVersion = 11;
+    future.schemaVersion = DRAWING_SCHEMA_VERSION + 1;
     expect(() => parseDrawing(JSON.stringify(future))).toThrow();
   });
 });
