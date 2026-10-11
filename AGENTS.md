@@ -57,6 +57,27 @@
 ### 3.4 隨機參數壓力測試 (Mandatory Fuzzing Stress Test)
 - 任何參數化核心特徵，必須包含 Fuzzing 隨機測試（至少 100~200 組隨機維度組態），確保極端與退化幾何下 0 崩潰、0 記憶體暴增。
 
+### 3.5 底層布林運算之 B-spline 記憶體洩漏（已知限制，以量測為證）
+- **量測事實（2026-10-11，壓花 C4.9 開發期間隔離量測）**：`BRepAlgoAPI_Common` / `BRepAlgoAPI_Cut` 只要**任一個運算元帶有 B-spline 面**（例如螺旋掃出實體），每次呼叫即永久佔用 Emscripten Heap：
+
+  | 隔離實驗（各 100 次，每次獨立 Arena 並 `dispose`） | 每次洩漏 |
+  |---|---|
+  | 圓柱面 + `Geom2d_Line` + `MakeEdge(line, surface)` + `BuildCurves3d` | 0.000 MiB |
+  | 6 圈螺旋 spine wire | 0.000 MiB |
+  | `BRepOffsetAPI_MakePipeShell`（含 `MakeSolid`） | 0.000 MiB |
+  | **掃出實體 ∩ 圓柱（`Common`）** | **8.156 MiB** |
+  | **掃出實體自圓柱切除（`Cut`）** | **8.324 MiB** |
+  | **掃出實體 ∩ 方塊（`Common`）** | **2.561 MiB** |
+  | 兩顆純解析圓柱互 `Common`（對照組） | **0.000 MiB** |
+
+- **結論**：洩漏位於 OCCT 布林運算對 B-spline 運算元的內部處理，**不在本專案的資源所有權**——所有暫存物件皆經 `arena.own()` 且 `finally { arena.dispose() }` 釋放；對照組（純解析幾何）為 0 即為此結論的直接證據。
+- **影響範圍**：`Kernel.thread` 每次再生洩漏約 10.0 MiB、`Kernel.knurl`（螺旋）約 11.6 MiB；`Kernel.knurl`（直紋，走 `BRepPrimAPI_MakePrism` 且不與掃出體布林）為 0.00 MiB。此為 T-1 起既有之限制（`kernel.ts` 螺牙 `threadProfileTooWide` 註解已記載「融合重疊螺旋體每次消耗 100~250 MB 且永不歸還」）。
+- **現行緩解**：
+  1. **產品側**：Worker 記憶體高水位自動重啟（ADR 0126）。`apps/web/src/worker/heap.ts` 以唯一真實路徑讀取堆大小，啟動時取基準；成長超過 `HEAP_GROWTH_LIMIT = 512 MiB` 即由頁面替換 Worker 並重新計算，並通知使用者。決策函式 `shouldRestartHeap` 的門檻以參數提供，使其能在真實量測值上被實質觸發（AGENTS.md §3.2）。
+  2. **測試側**：建立數百個螺旋工具的 Fuzz 測試必須獨立成檔（`tests/phase3/thread-fuzz.test.ts`、`tests/phase3/knurl-fuzz.test.ts`），使其取得全新 Emscripten Heap，避免與同套件其他已配置記憶體疊加而越界。
+- **量測陷阱（必須遵守）**：洩漏不是從第一次呼叫就線性可見。小螺牙（單線、10 mm）的前十次重建成長為 **+0.0 MiB**，因為洩漏先被堆的既有餘裕吸收；必須以夠大的螺牙（例如 4 線 6 圈）量測，才能看到 +283 MiB／5 次這種真實成長。任何以此為據的門檻或測試都必須先確認「量到的成長不是 0」。
+- **禁止事項**：不得以放寬門檻的方式把此洩漏「測成綠燈」（§3.3）；不得以 JS handle 計數宣稱「無洩漏」（§3.1）。任何未來的架構性解法（例如 Worker Heap 高水位回收）必須以 `(oc as any).wasmMemory?.buffer?.byteLength` 為唯一驗收指標，並附 `expect(initial).toBeGreaterThan(0)` 防呆。
+
 ---
 
 ## 4. 歷史演化紀錄與修訂日誌
@@ -66,3 +87,5 @@
   1. 根治 `(kernel.oc as any).HEAPU8?.byteLength ?? 0` 恆真式假綠，確立 Emscripten WASM Heap 真實路徑為 `wasmMemory.buffer.byteLength` 並強制「真值存在性防呆（`> 0`）」。
   2. 根治 `massProps` 防禦性空轉閘控，確立核心精度自適應預設啟用（`adaptive ?? true`），並補齊螺牙實體自適應覆蓋測試。
   3. 更正 `threadStandards.ts` 註解常數，落實 ISO 68-1 牙頂牙根寬度斷言。
+- **2026-10-11（壓花 C4.9 開發）**：新增 §3.5。以隔離實驗量測並確立「OCCT 布林運算遇 B-spline 運算元必洩漏 Emscripten Heap」為已知限制，載明量測數據、影響範圍、現行緩解（Fuzz 獨立成檔）與禁止事項，避免後續以代理指標或放寬門檻掩蓋。
+- **2026-10-11（壓花 C4.9 開發）**：更正需求追溯錯誤。`docs/blueprint.md` 之 `C4.9` 實為「裝飾螺紋線」（僅顯示用之虛擬牙線，P2），與真實幾何的壓花特徵無關。本專案對「藍圖外之新增特徵」之既有慣例為**撰寫 ADR**（如螺牙特徵之 ADR 0123，未佔用任何藍圖編號），壓花特徵比照辦理並改以 ADR 0124 追溯。

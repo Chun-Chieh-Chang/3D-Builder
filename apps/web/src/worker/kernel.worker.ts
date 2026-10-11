@@ -12,6 +12,7 @@ import { edgeFingerprint, faceFingerprint, vertexFingerprint } from '@3db/naming
 import { binaryStl, exportAssemblyStep, exportPartStep, portableShape, readComponentFile, stepAssemblyPlan, type StepAssemblyPlan } from '@3db/io';
 import type { SourcePart, SourceProvider } from '@3db/regen';
 import { mergeMeshes } from './mergeMesh';
+import { heapOf } from './heap';
 import type { AssemblyStepRequest, DrawingElementsResult, DrawingFeaturesResult, DrawingViewResult, ClearanceResult, CollisionResult, SweepOutcome, ConvertPayload, InterferenceResult, PartExportOptions, ConvertRequest, KernelApi, PartBuildPayload, PartStage, RebuildPayload, RebuildRequest, SketchSolvePayload, SketchSolveRequest, SourceFileData, StepOutput } from './protocol';
 
 let kernel: Kernel;
@@ -25,6 +26,8 @@ const blobs = new Map<string, Uint8Array>();
 let solverReady: Promise<PlaneGcsSolver> | null = null;
 /** What the last rebuild of the open part gave: the shape that measuring reads (E1.1). */
 let lastResult: RebuildResult | null = null;
+/** The kernel's Emscripten heap when it was loaded, before any geometry was built: what `HEAP_GROWTH_LIMIT` is measured from. */
+let heapBase: number | null = null;
 
 /** A part file of the open assembly, rebuilt once: its own regenerator keeps the model alive. */
 interface BuiltPart {
@@ -125,6 +128,7 @@ async function boot() {
   const gcsMs = performance.now() - t;
   t = performance.now();
   kernel = await Kernel.load({ wasmUrl: occtWasm });
+  heapBase = heapOf(kernel.oc); // before any geometry: the size the leak is measured from
   const occtMs = performance.now() - t;
   regen = new Regenerator(kernel, solver, blobs);
   return { occtMs, gcsMs };
@@ -204,6 +208,8 @@ const api: KernelApi = {
       sketchGeometry: new Map([...r.sketches].map(([id, s]) => [id, s.solved.geometry])),
       mass: massOf(r),
       totalMs: r.totalMs,
+      heapBytes: heapOf(kernel.oc),
+      heapBase,
     };
     const arrays = mesh ? [mesh.positions, mesh.normals, mesh.indices, mesh.faceRanges, mesh.edgePoints, mesh.edgeRanges] : [];
     const buffers = [...arrays, payload.vertexPoints].map((a) => a.buffer as ArrayBuffer);

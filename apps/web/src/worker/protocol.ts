@@ -101,6 +101,12 @@ export interface RebuildPayload {
   sketchGeometry: Map<Id, Map<Id, SolvedGeometry>>;
   mass: MassProps | null;
   totalMs: number;
+  /**
+   * The kernel's Emscripten heap now, and its size when this worker booted (bytes). The heap only grows, and a boolean on a B-spline operand leaks 2.5–8.3
+   * MiB of it per call (AGENTS.md §3.5), so the page replaces a worker whose heap has grown past `HEAP_GROWTH_LIMIT`. `null` when it cannot be read.
+   */
+  heapBytes: number | null;
+  heapBase: number | null;
 }
 
 /**

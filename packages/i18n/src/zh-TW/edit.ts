@@ -81,6 +81,7 @@ export const edit = {
   'pick.combine': '點選本體的面：第一個是主要本體，其餘是要組合的本體',
   'worker.stalled': '重新計算超過 {seconds} 秒仍未完成，已停止並重新載入幾何核心。這次的內容讓 OCCT 卡住了；可以復原最後一個動作，再試別的做法',
   'worker.abandoned': '上一次重新計算太久，已停止並重新載入幾何核心',
+  'worker.heapRecycled': '幾何核心的記憶體已累積 {mb} MB（螺牙與壓花的布林運算會留下記憶體，底層不會歸還），已重建核心並重新計算，避免之後當掉',
 
   'pm.import.report': '診斷報告',
   'pm.import.contents': '檔案內容：{solids} 個實體、{faces} 個面',

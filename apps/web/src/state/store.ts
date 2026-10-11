@@ -67,6 +67,7 @@ import type { ModelItem } from '@3db/sketch/ops';
 import type { PickFilter, Snap, Viewer } from '@3db/render';
 import { captureVertexAnchor, resolveVertexAnchor } from './measureAnchors';
 import type { KernelApi, PartExportOptions, RebuildPayload, SketchSolvePayload, SketchSolveRequest, SourceFileData } from '../worker/protocol';
+import { shouldRestartHeap } from '../worker/heap';
 import { SketchController, type ControllerView, type SketchHost } from '../sketcher/controller';
 import { axisDefinitionFor, emptyRef, put, treeRef } from './datumSlots';
 import { Autosaver, type Recovery } from '../autosave';
@@ -2508,6 +2509,20 @@ class AppStore {
     this.boot(getLocale());
   }
 
+  /**
+   * Hands the work to a fresh worker once this one's heap has grown past `HEAP_GROWTH_LIMIT` (A1b). The Emscripten heap never gives a byte back, and a
+   * boolean on a B-spline operand leaks 2.5–8.3 MiB of it per call (AGENTS.md §3.5), so a threaded or knurled part edited a few dozen times would run the
+   * kernel out of room mid-rebuild. The document is here, so replacing the worker costs only the time: the part is rebuilt in the new one, which is why
+   * this is called after a result is shown rather than instead of one.
+   */
+  private recycleIfHeapHigh(result: RebuildPayload): void {
+    if (!shouldRestartHeap(result.heapBytes, result.heapBase)) return;
+    const mb = Math.round(((result.heapBytes ?? 0) - (result.heapBase ?? 0)) / 1048576);
+    this.restartWorker();
+    this.notify(t('worker.heapRecycled', { mb: String(mb) }), 'info');
+    void this.run();
+  }
+
   // ------------------------------------------------------------ rebuild (B3.5: off the UI thread)
 
   /** 「重新計算」; in an assembly it reads the part files again, so changed parts show as they are now. */
@@ -2583,6 +2598,7 @@ class AppStore {
       if (result.seq === this.seq && !this.pending) {
         this.set({ result });
         void this.refreshModelSnap();
+        this.recycleIfHeapHigh(result);
       }
     } catch (e) {
       if (worker !== this.workerGeneration) return;

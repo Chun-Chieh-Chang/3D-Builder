@@ -83,6 +83,7 @@ export const edit: Translation = {
   'pick.combine': 'Pick faces of bodies: the first is the main body, the rest are the bodies to combine',
   'worker.stalled': 'The rebuild did not finish in {seconds} s and was stopped; the geometry kernel was reloaded. This content made OCCT stall; undo the last action and try another way',
   'worker.abandoned': 'The last rebuild took too long and was stopped; the geometry kernel was reloaded',
+  'worker.heapRecycled': 'The geometry kernel had accumulated {mb} MB of memory (the booleans of threads and knurls leave memory behind that the library never returns), so the kernel was rebuilt and the part recalculated before it could run out',
 
   'pm.import.report': 'Diagnostic Report',
   'pm.import.contents': 'File contents: {solids} solid(s), {faces} face(s)',
