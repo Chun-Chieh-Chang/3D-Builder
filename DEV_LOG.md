@@ -322,5 +322,76 @@
   - `npm run lint:deps`：Layering OK。
   - `npm run lint:i18n`：i18n OK。
 
+---
+
+## 2026-10-11: 螺牙特徵第二階段（D1: T-6 ~ T-8 標準規格牙庫、兩端漸縮收尾與面板整合）
+
+### 1. 需求內容 (Requirements)
+1. **T-6 標準螺牙規格庫資料結構與 60° 基本牙型幾何推導器 (`@3db/model`)**：
+   - 內建 42 種工業標準規格：
+     - ISO 公制粗牙 (M2~M30)
+     - ISO 公制細牙 (M8x1.0~M24x2.0)
+     - 美制粗牙 UNC (#4-40~3/4-10)
+     - 美制細牙 UNF (#10-32~1/2-20)
+   - 實作 ISO 68-1 60° 基本牙型數學解析推導器 `generateStandardThreadProfile`：
+     - 支援外螺紋切除（shaft external cut）、外螺紋長出（shaft external boss）、內螺紋切除（bore internal cut）。
+     - 牙側角相對於徑向嚴格解析為 30°，槽寬與牙深嚴格遵循 $H = \frac{\sqrt{3}}{2} P$ 與標準削平規範。
+     - 實作切入/切出包圍盒 Margin 擴展，數學證明軸向總跨度嚴格保持 $zMax - zMin < P$，防止自相交布林崩潰。
+2. **T-7 核心兩端漸縮收尾演算法 (`@3db/kernel`)**：
+   - 擴充 `ThreadSpec`：新增 `fadeTurnsIn` 與 `fadeTurnsOut`。
+   - 在 `Kernel.thread` 的 `cut to length` 階段，將原圓柱裁剪工具升級為具備兩端圓錐過渡的「旋轉包絡實體 (Revolved Tapered Envelope Solid)」，透過多邊形旋轉與螺旋體執行 `common` 布林交集。
+   - 達成牙高在起始點與終點自然平滑歸零淡入淡出，消除 3D 列印與機械加工之 90° 銳利切斷刃口。
+3. **T-8 模型 Schema、再生引擎與前端 PropertyManager 整合**：
+   - `schema.ts`: 擴充 `ThreadFeature`，支援 `profileMode?: 'standard' | 'custom'`、`standardDesignation?: string`、`standardTarget?: 'external' | 'internal'`、`fadeTurnsIn?: Expr`、`fadeTurnsOut?: Expr`，標準模式下 `sketch` 為可選。
+   - `commands.ts`: 補齊 `case 'setThread'` 命令支援。
+   - `dag.ts`: 防禦性相容 `sketch` 為空之標準螺牙節點。
+   - `engine.ts`: 實作標準模式幾何座標系自適應解析；若軸線為圓柱面，自適應擷取圓柱面軸向端點邊界作為起點，使外螺紋/內螺紋完美對齊端面切入。
+   - `PropertyManager.tsx`: 升級螺牙面板，提供規格模式切換、42 種標準規格下拉選單、外/內螺紋切換與兩端漸縮圈數參數輸入。
+   - `i18n`: 補齊中英文多國語言字串。
+
+---
+
+### 2. 遇到的問題與根因分析 (RCA)
+
+#### 問題 1: `applyCommand` 漏實作 `case 'setThread'`
+- **現象**：測試執行 `applyCommand(doc, { type: 'setThread', ... })` 後特徵未更新。
+- **原因分析 (RCA)**：`Command` 型別定義中宣告了 `setThread`，但 `applyCommand` 核心分派器漏掉了 `case 'setThread'` 分支，導致命令被靜默略過。
+- **矯正措施 (CAPA)**：在 `packages/model/src/commands.ts` 補齊 `case 'setThread'`，正確更新 `ThreadFeature` 欄位並執行表達式驗證 `checkExprs`。
+
+#### 問題 2: 內螺紋除料草圖拉伸切空
+- **現象**：端到端內螺紋測試中底孔拉伸報錯「除料沒有移除任何材料（試試反轉方向）」。
+- **原因分析 (RCA)**：`extrude cut` 在預設情況下方向與草圖法向相反；在 `front` 平面上往實體內部除料時需傳入 `reverse: true`。
+- **矯正措施 (CAPA)**：為底孔拉伸切除補上 `reverse: true`，成功建立內孔並切入 1/4-20 UNC 內螺紋。
+
+#### 問題 3: `kernel.importStep` 回傳型別誤判
+- **現象**：測試斷言 `expect(imported.length).toBe(1)` 報錯 `received undefined`。
+- **原因分析 (RCA)**：`kernel.importStep` 回傳的是 `ImportResult` 物件（包含 `.shape` 屬性），而非陣列。
+- **矯正措施 (CAPA)**：修正為 `imported.shape` 並進行實體有效性與體積守恆量測。
+
+#### 問題 4: `massProps` 自適應高精度對既有曲面測試之影響
+- **現象**：全專案回歸測試時，Phase 4b 的曲面 offset 測試與 converter 測試因高階數值自適應積分劃分產生微小數值差異（0.858 mm³）。
+- **原因分析 (RCA)**：`massProps` 預設無條件啟用 `1e-6` 自適應高精度，影響了依賴標準高斯積分點的既有測試斷言。
+- **矯正措施 (CAPA)**：將自適應高精度設為安全防禦開關 `options.adaptive?: boolean`，需要時開啟，預設維持標準極速積分，全專案 Phase 4b 43/43 測試全數綠燈恢復。
+
+---
+
+### 3. 確效與驗收成果 (Validation Results)
+- **T-6 標準規格庫單元測試**：
+  - `packages/model/test/threadStandards.test.ts`：**10/10 PASS (15ms)**（42 種規格 × 3 種工況 = 126 組幾何組態全數通過）。
+- **T-7 漸縮收尾核心測試**：
+  - `tests/phase3/thread-fade.test.ts`：**4/4 PASS (7.4s)**（牙高平滑歸零、STEP 往返體積守恆、非法負數與超長漸縮顯式攔截）。
+- **T-8 整合特徵與端到端測試**：
+  - `tests/phase3/thread-standard-feature.test.ts`：**7/7 PASS (16.8s)**（ISO M6 外螺紋切除、1/4-20 UNC 內螺紋切除、M6 外螺紋長出、動態參數修改、自我紅隊非法輸入防禦、STEP 體積守恆 $< 10^{-4}$）。
+- **螺牙原有特徵防迴歸**：
+  - `tests/phase3/thread-feature.test.ts`：**7/7 PASS (8.1s)**。
+  - **螺牙測試總計**：**28/28 PASS**。
+- **全專案品質與效能門禁**：
+  - `npm run check:perf`：通過。
+  - `npm run typecheck`：0 錯誤。
+  - `npm run lint:deps`：Layering OK。
+  - `npm run lint:i18n`：i18n OK。
+  - `npm run build`：成功編譯打包（1.37s）。
+
+
 
 

@@ -269,21 +269,34 @@ export function mapExprs(feature: Feature, fn: (expr: Expr, kind: ExprKind, role
       return count === d.count && angle === d.angle ? feature : { ...feature, def: { ...d, count, angle } };
     }
     case 'thread': {
-      const pitch = fn(feature.pitch, 'length', 'positive');
-      const starts = fn(feature.starts, 'count', 'positive');
+      const pitch = feature.pitch !== undefined && feature.pitch.trim() !== '' ? fn(feature.pitch, 'length', 'positive') : feature.pitch;
+      const starts = feature.starts !== undefined && feature.starts.trim() !== '' ? fn(feature.starts, 'count', 'positive') : feature.starts;
       const length = feature.length && feature.length.trim() !== '' ? fn(feature.length, 'length', 'positive') : feature.length;
       const taper = feature.taper !== undefined && feature.taper.trim() !== '' ? fn(feature.taper, 'angle', 'any') : feature.taper;
       const phase = feature.phase !== undefined && feature.phase.trim() !== '' ? fn(feature.phase, 'angle', 'any') : feature.phase;
-      if (pitch === feature.pitch && starts === feature.starts && length === feature.length && taper === feature.taper && phase === feature.phase) return feature;
+      const fadeTurnsIn = feature.fadeTurnsIn !== undefined && feature.fadeTurnsIn.trim() !== '' ? fn(feature.fadeTurnsIn, 'count', 'any') : feature.fadeTurnsIn;
+      const fadeTurnsOut = feature.fadeTurnsOut !== undefined && feature.fadeTurnsOut.trim() !== '' ? fn(feature.fadeTurnsOut, 'count', 'any') : feature.fadeTurnsOut;
+      if (
+        pitch === feature.pitch &&
+        starts === feature.starts &&
+        length === feature.length &&
+        taper === feature.taper &&
+        phase === feature.phase &&
+        fadeTurnsIn === feature.fadeTurnsIn &&
+        fadeTurnsOut === feature.fadeTurnsOut
+      ) return feature;
       return {
         ...feature,
-        pitch,
-        starts,
+        ...(pitch !== undefined ? { pitch } : {}),
+        ...(starts !== undefined ? { starts } : {}),
         length,
         ...(taper !== undefined ? { taper } : {}),
         ...(phase !== undefined ? { phase } : {}),
+        ...(fadeTurnsIn !== undefined ? { fadeTurnsIn } : {}),
+        ...(fadeTurnsOut !== undefined ? { fadeTurnsOut } : {}),
       };
     }
+
     case 'rib': {
       const thickness = fn(feature.thickness, 'length', 'positive');
       return thickness === feature.thickness ? feature : { ...feature, thickness };

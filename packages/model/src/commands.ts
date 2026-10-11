@@ -598,12 +598,19 @@ function validateNewFeature(doc: PartDoc, f: Feature, index: number): void {
       sketchBefore(doc, f.sketch, index, t('feature.vent'));
       return;
     case 'thread':
-      if (typeof f.axis === 'string') revolveAxis(sketchBefore(doc, f.sketch, index, t('feature.thread')), f.axis);
-      else {
-        sketchBefore(doc, f.sketch, index, t('feature.thread'));
-        if (f.axis.kind !== 'datum' && f.axis.kind !== 'face' && f.axis.kind !== 'edge') throw new CommandError(t('cmd.threadOnlyAxis'));
+      if (f.profileMode === 'standard' && !f.sketch) {
+        if (typeof f.axis !== 'string' && f.axis.kind !== 'datum' && f.axis.kind !== 'face' && f.axis.kind !== 'edge') {
+          throw new CommandError(t('cmd.threadOnlyAxis'));
+        }
+      } else {
+        if (typeof f.axis === 'string') revolveAxis(sketchBefore(doc, f.sketch!, index, t('feature.thread')), f.axis);
+        else {
+          sketchBefore(doc, f.sketch!, index, t('feature.thread'));
+          if (f.axis.kind !== 'datum' && f.axis.kind !== 'face' && f.axis.kind !== 'edge') throw new CommandError(t('cmd.threadOnlyAxis'));
+        }
       }
       return;
+
     case 'derivedBody':
       if (!isFilePath(f.source)) throw new CommandError(t('cmd.derivedSourceInvalid', { path: f.source }));
       if (f.body.trim() === '') throw new CommandError(t('cmd.derivedBodyEmpty'));
@@ -1037,6 +1044,13 @@ export function mutate(draft: Draft<PartDoc>, cmd: Command): void {
       const keep = { id: f.id, type: f.type, name: f.name, suppressed: f.suppressed, sketch: f.sketch } as const;
       for (const k of Object.keys(f)) delete (f as unknown as Record<string, unknown>)[k];
       Object.assign(f, keep, params);
+      checkExprs(draft as PartDoc, f as Feature);
+      return;
+    }
+    case 'setThread': {
+      const f = feature(draft, cmd.featureId);
+      if (f.type !== 'thread') throw new CommandError(t('cmd.onlyThisHasParams', { what: t('feature.thread') }));
+      Object.assign(f, cmd.params);
       checkExprs(draft as PartDoc, f as Feature);
       return;
     }

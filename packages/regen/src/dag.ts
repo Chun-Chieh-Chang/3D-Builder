@@ -35,7 +35,7 @@ export function parentsOf(feature: Feature, doc: PartDoc): Id[] {
       parents = [feature.sketch, feature.path];
       break;
     case 'thread':
-      parents = [feature.sketch, ...(typeof feature.axis === 'string' ? [] : fromRefs([feature.axis]))];
+      parents = [...(feature.sketch ? [feature.sketch] : []), ...(typeof feature.axis === 'string' ? [] : fromRefs([feature.axis]))];
       break;
     case 'loft':
       parents = [...feature.sections];

@@ -23,6 +23,7 @@ import {
   RELIEF_SHAPES,
   HOLE_STANDARD_SOURCE,
   ISO_HOLE_SIZES,
+  ALL_STANDARD_THREADS,
   DOWEL_FITS,
   fitClearance,
   holeLimits,
@@ -862,9 +863,12 @@ function ThreadPanel({ f }: { f: ThreadFeature }) {
   const selected = useStore((s) => s.selected);
   const index = doc.features.findIndex((x) => x.id === f.id);
   const sketches = doc.features.filter((x, i): x is SketchFeature => x.type === 'sketch' && (index < 0 || i < index));
-  const currentSketch = findFeature(doc, f.sketch);
+  const currentSketch = f.sketch ? findFeature(doc, f.sketch) : undefined;
   const lines = currentSketch?.type === 'sketch' ? currentSketch.entities.filter((e) => e.type === 'line') : [];
   const refAxes = doc.features.filter((x, i): x is RefAxisFeature => x.type === 'refAxis' && (index < 0 || i < index));
+
+  const profileMode = f.profileMode ?? 'custom';
+  const isStandard = profileMode === 'standard';
 
   const update = (patch: Partial<Omit<ThreadFeature, 'id' | 'type' | 'name' | 'suppressed'>>) => {
     store.execute({ type: 'setThread', featureId: f.id, params: patch });
@@ -878,7 +882,6 @@ function ThreadPanel({ f }: { f: ThreadFeature }) {
   const datumLabel = (name: string) => refAxes.find((a) => a.id === name)?.name ?? (ORIGIN_AXES.includes(name) ? t('pm.thread.originAxis', { a: name.slice(5).toUpperCase() }) : name);
   const encode = (axis: ThreadFeature['axis']): string => (typeof axis === 'string' ? `line:${axis}` : axis.kind === 'datum' ? `datum:${axis.name}` : `ref:${axis.kind}:${axis.name}`);
   const current = encode(f.axis);
-  // a centerline first: it is what an axis usually is; the edges of the profile itself cannot be its axis
   const axisLines = [...lines].sort((x, y) => Number(!!y.construction) - Number(!!x.construction));
 
   const canUseSelection = !!selectedFace || (!!selected && (selected.startsWith('axis:') || refAxes.some((a) => a.id === selected)));
@@ -894,15 +897,70 @@ function ThreadPanel({ f }: { f: ThreadFeature }) {
   return (
     <>
       <section className="pm-group">
-        <h4>{t('pm.thread.sketch')}</h4>
-        <select value={f.sketch} onChange={(e) => update({ sketch: e.target.value })}>
-          {!sketches.some((s) => s.id === f.sketch) && <option value={f.sketch}>{currentSketch?.name ?? f.sketch}</option>}
-          {sketches.map((s) => (
-            <option key={s.id} value={s.id}>
-              {s.name}
-            </option>
-          ))}
-        </select>
+        <h4>{t('pm.thread.mode')}</h4>
+        <div className="pm-row">
+          <select
+            value={profileMode}
+            onChange={(e) => {
+              const nextMode = e.target.value as 'standard' | 'custom';
+              if (nextMode === 'standard') {
+                const defaultStd = f.standardDesignation ?? 'M6';
+                update({
+                  profileMode: 'standard',
+                  standardDesignation: defaultStd,
+                  standardTarget: f.standardTarget ?? 'external',
+                });
+              } else {
+                update({ profileMode: 'custom' });
+              }
+            }}
+          >
+            <option value="custom">{t('pm.thread.modeCustom')}</option>
+            <option value="standard">{t('pm.thread.modeStandard')}</option>
+          </select>
+        </div>
+
+        {isStandard ? (
+          <>
+            <h4>{t('pm.thread.standard')}</h4>
+            <div className="pm-row">
+              <select
+                value={f.standardDesignation ?? 'M6'}
+                onChange={(e) => update({ standardDesignation: e.target.value })}
+              >
+                {ALL_STANDARD_THREADS.map((std) => (
+                  <option key={std.designation} value={std.designation}>
+                    {std.designation} ({std.pitch.toFixed(2)} mm)
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <h4>{t('pm.thread.target')}</h4>
+            <div className="pm-row">
+              <select
+                value={f.standardTarget ?? 'external'}
+                onChange={(e) => update({ standardTarget: e.target.value as 'external' | 'internal' })}
+              >
+                <option value="external">{t('pm.thread.targetExt')}</option>
+                <option value="internal">{t('pm.thread.targetInt')}</option>
+              </select>
+            </div>
+          </>
+        ) : (
+          <>
+            <h4>{t('pm.thread.sketch')}</h4>
+            <select value={f.sketch ?? ''} onChange={(e) => update({ sketch: e.target.value })}>
+              {f.sketch && !sketches.some((s) => s.id === f.sketch) && <option value={f.sketch}>{currentSketch?.name ?? f.sketch}</option>}
+              {sketches.map((s) => (
+                <option key={s.id} value={s.id}>
+                  {s.name}
+                </option>
+              ))}
+            </select>
+          </>
+        )}
+
         <h4>{t('pm.thread.axis')}</h4>
         <div className="pm-row">
           <select
@@ -948,10 +1006,12 @@ function ThreadPanel({ f }: { f: ThreadFeature }) {
           <option value="boss">{t('pm.thread.opBoss')}</option>
         </select>
 
-        <label className="pm-row">
-          <span>{t('pm.thread.pitch')}</span>
-          <ValueInput value={f.pitch} toCommand={(pitch) => ({ type: 'setThread', featureId: f.id, params: { pitch } })} />
-        </label>
+        {!isStandard && (
+          <label className="pm-row">
+            <span>{t('pm.thread.pitch')}</span>
+            <ValueInput value={f.pitch ?? '1'} toCommand={(pitch) => ({ type: 'setThread', featureId: f.id, params: { pitch } })} />
+          </label>
+        )}
 
         <label className="pm-row">
           <span>{t('pm.thread.starts')}</span>
@@ -996,6 +1056,24 @@ function ThreadPanel({ f }: { f: ThreadFeature }) {
           />
         </label>
 
+        <label className="pm-row">
+          <span>{t('pm.thread.fadeTurnsIn')}</span>
+          <ValueInput
+            value={f.fadeTurnsIn ?? '0'}
+            suffix=""
+            toCommand={(fadeTurnsIn) => ({ type: 'setThread', featureId: f.id, params: { fadeTurnsIn } })}
+          />
+        </label>
+
+        <label className="pm-row">
+          <span>{t('pm.thread.fadeTurnsOut')}</span>
+          <ValueInput
+            value={f.fadeTurnsOut ?? '0'}
+            suffix=""
+            toCommand={(fadeTurnsOut) => ({ type: 'setThread', featureId: f.id, params: { fadeTurnsOut } })}
+          />
+        </label>
+
         <label className="pm-row checkbox">
           <input type="checkbox" checked={f.reverse ?? false} onChange={(e) => update({ reverse: e.target.checked })} />
           <span>{t('pm.thread.reverse')}</span>
@@ -1006,6 +1084,7 @@ function ThreadPanel({ f }: { f: ThreadFeature }) {
     </>
   );
 }
+
 
 /** Loft (C4.5): the sketches of the sections as an ordered list (move up, move down, remove), and a list to add one from. */
 function LoftPanel({ f }: { f: LoftFeature }) {

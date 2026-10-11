@@ -65,9 +65,11 @@ import {
   type Thin,
   type Vec3,
   type ThreadFeature,
+  lookupThread,
+  generateStandardThreadProfile,
 } from '@3db/model';
 import { bentPath, BendProblem, findOutlines, findProfiles, reversePath, ribbonOf, selectContours, ThinProblem, thinRegions, type ProfileResult, type SketchSolver, type SketchStatus, type SolvedSketch } from '@3db/sketch';
-import { KernelError, SURFACE_TOLERANCE, type Region, type SweepSpec, type ThreadSpec, type FaceOrigin, type ImportDiagnostics, type Kernel, type OpResult, type ShapeId, type Topology } from '@3db/kernel';
+import { KernelError, SURFACE_TOLERANCE, type Region, type Segment, type SweepSpec, type ThreadSpec, type FaceOrigin, type ImportDiagnostics, type Kernel, type OpResult, type ShapeId, type Topology } from '@3db/kernel';
 import { nameElements, nameFromFaces, resolveRef, type Candidate, type ElementNames } from '@3db/naming';
 import { Bodies, type BodyState, type BodyView } from './bodies';
 import { followReferences, ReferenceProblem } from './references';
@@ -1339,50 +1341,139 @@ export class Regenerator {
    * `op` is 'cut' or 'boss'; axis is resolved from Ref (cylinder/cone/torus face, straight edge, datum axis).
    */
   private thread(f: ThreadFeature, sketches: RebuildResult['sketches'], set: Bodies): BodyState[] {
-    const s = sketches.get(f.sketch);
-    if (!s) throw new FeatureError(t('feature.threadSketchGone'));
+    const isStandard = f.profileMode === 'standard';
     const op = f.op ?? f.operation ?? 'cut';
     if (op === 'cut' && !set.view) throw new FeatureError(t('feature.cutNeedsBody'));
 
-    // a line of the profile sketch (as a revolve's axis), else a reference
     let axis: Axis3;
-    if (typeof f.axis === 'string') {
-      const line = s.solved.geometry.get(f.axis);
-      if (line?.type !== 'line') throw new FeatureError(t('regen.axisGone'));
-      const at2 = (p: [number, number]): Vec3 => add(add(s.frame.origin, s.frame.xDir, p[0]), s.frame.yDir, p[1]);
-      axis = { origin: at2(line.a), dir: sub(at2(line.b), at2(line.a)) };
-    } else axis = this.axisOfRef(f.axis, set, t('feature.threadAxis'));
+    let frame: PlaneFrame;
+    let regions: Region[];
+    let pitch: number;
+    let zc = 0;
+
+    if (isStandard) {
+      if (!f.standardDesignation) throw new FeatureError(t('feature.threadNoStandard'));
+      const entry = lookupThread(f.standardDesignation);
+      if (!entry) throw new FeatureError(t('feature.threadUnknownStandard', { name: f.standardDesignation }));
+
+      if (typeof f.axis === 'string') {
+        if (f.axis === 'axis:x' || f.axis === 'axis:y' || f.axis === 'axis:z') {
+          axis = this.axisOfRef({ kind: 'datum', name: f.axis }, set, t('feature.threadAxis'));
+        } else if (f.sketch) {
+          const s = sketches.get(f.sketch);
+          if (!s) throw new FeatureError(t('feature.threadSketchGone'));
+          const line = s.solved.geometry.get(f.axis);
+          if (line?.type !== 'line') throw new FeatureError(t('regen.axisGone'));
+          const at2 = (p: [number, number]): Vec3 => add(add(s.frame.origin, s.frame.xDir, p[0]), s.frame.yDir, p[1]);
+          axis = { origin: at2(line.a), dir: sub(at2(line.b), at2(line.a)) };
+        } else {
+          throw new FeatureError(t('feature.threadAxis'));
+        }
+      } else {
+        axis = this.axisOfRef(f.axis, set, t('feature.threadAxis'));
+      }
+      const len = Math.hypot(...axis.dir);
+      if (len < 1e-9) throw new FeatureError(t('feature.threadNoAxis'));
+      const Z: Vec3 = [axis.dir[0] / len, axis.dir[1] / len, axis.dir[2] / len];
+      const O = axis.origin;
+
+      let X: Vec3 = Math.abs(Z[0]) < 0.9 ? [1, 0, 0] : [0, 1, 0];
+      const dotZX = Z[0] * X[0] + Z[1] * X[1] + Z[2] * X[2];
+      X = [X[0] - dotZX * Z[0], X[1] - dotZX * Z[1], X[2] - dotZX * Z[2]];
+      const xLen = Math.hypot(...X);
+      X = [X[0] / xLen, X[1] / xLen, X[2] / xLen];
+      const Y: Vec3 = [Z[1] * X[2] - Z[2] * X[1], Z[2] * X[0] - Z[0] * X[2], Z[0] * X[1] - Z[1] * X[0]];
+
+      frame = { origin: O, xDir: X, yDir: Z, normal: Y };
+
+      const target = f.standardTarget ?? 'external';
+      const pts = generateStandardThreadProfile(entry, { op, target });
+
+      const outer: Segment[] = pts.map((p, i) => ({
+        kind: 'line',
+        a: [p[0], p[1]],
+        b: [pts[(i + 1) % pts.length]![0], pts[(i + 1) % pts.length]![1]],
+        source: `stdProfile${i + 1}`,
+      }));
+      regions = [{ outer, holes: [] }];
+      pitch = f.pitch ? evalLength(f.pitch) : entry.pitch;
+      zc = 0;
+      if (typeof f.axis !== 'string' && f.axis.kind === 'face') {
+        try {
+          const body = this.modelFor(set, t('feature.threadAxis'));
+          const faceIdx = this.resolve(f.axis, body, t('feature.threadAxis'));
+          if (faceIdx >= 0 && faceIdx < body.topology.faces.length) {
+            const facePts: Vec3[] = [];
+            for (const v of body.topology.vertices) {
+              if (v.faces.includes(faceIdx)) facePts.push(v.point);
+            }
+            for (const e of body.topology.edges) {
+              if (e.faces.includes(faceIdx)) facePts.push(e.mid);
+            }
+            if (facePts.length > 0) {
+              const dotv = (a: Vec3, b: Vec3) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+              const subVec = (a: Vec3, b: Vec3): Vec3 => [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
+              const zsOnFace = facePts.map((p) => dotv(subVec(p, O), Z));
+              const faceZMin = Math.min(...zsOnFace);
+              const faceZMax = Math.max(...zsOnFace);
+              zc = f.reverse ? faceZMax : faceZMin;
+            }
+          }
+        } catch {
+          // fallback to 0
+        }
+      }
+    } else {
+      if (!f.sketch) throw new FeatureError(t('feature.threadSketchGone'));
+      const s = sketches.get(f.sketch);
+      if (!s) throw new FeatureError(t('feature.threadSketchGone'));
+
+      // a line of the profile sketch (as a revolve's axis), else a reference
+      if (typeof f.axis === 'string') {
+        const line = s.solved.geometry.get(f.axis);
+        if (line?.type !== 'line') throw new FeatureError(t('regen.axisGone'));
+        const at2 = (p: [number, number]): Vec3 => add(add(s.frame.origin, s.frame.xDir, p[0]), s.frame.yDir, p[1]);
+        axis = { origin: at2(line.a), dir: sub(at2(line.b), at2(line.a)) };
+      } else axis = this.axisOfRef(f.axis, set, t('feature.threadAxis'));
+      const len = Math.hypot(...axis.dir);
+      if (len < 1e-9) throw new FeatureError(t('feature.threadNoAxis'));
+      const Z: Vec3 = [axis.dir[0] / len, axis.dir[1] / len, axis.dir[2] / len];
+      const O = axis.origin;
+
+      pitch = evalLength(f.pitch!);
+      frame = s.frame;
+      regions = s.profiles.regions;
+      if (regions.length === 0) throw new FeatureError(t('feature.threadNoProfile'));
+
+      const at = (p: [number, number]): Vec3 => add(add(s.frame.origin, s.frame.xDir, p[0]), s.frame.yDir, p[1]);
+      const dotv = (a: Vec3, b: Vec3) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+      const subVec = (a: Vec3, b: Vec3): Vec3 => [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
+
+      const samples: Vec3[] = [];
+      for (const r of regions) {
+        for (const seg of r.outer) {
+          if (seg.kind === 'line') samples.push(at(seg.a), at(seg.b));
+          else if (seg.kind === 'arc') samples.push(at(seg.from), at(seg.to), at(seg.c));
+          else if (seg.kind === 'circle') samples.push(at(seg.c));
+        }
+      }
+      const zs = samples.map((p) => dotv(subVec(p, O), Z));
+      const zMin = Math.min(...zs);
+      const zMax = Math.max(...zs);
+      zc = (zMin + zMax) / 2;
+    }
+
     const len = Math.hypot(...axis.dir);
-    if (len < 1e-9) throw new FeatureError(t('feature.threadNoAxis'));
     const Z: Vec3 = [axis.dir[0] / len, axis.dir[1] / len, axis.dir[2] / len];
     const O = axis.origin;
 
-    const pitch = evalLength(f.pitch);
     const n = f.starts ? evalNumber(f.starts) : 1;
-    const starts = Math.abs(n - Math.round(n)) < 1e-9 ? Math.round(n) : n; // 1.5 stays 1.5 and is refused with the reason, not made 2
+    const starts = Math.abs(n - Math.round(n)) < 1e-9 ? Math.round(n) : n;
     const length = evalLength(f.length);
     const taper = f.taper ? evalAngle(f.taper) : 0;
     const phase = f.phase ? evalAngle(f.phase) : 0;
-
-    const regions = s.profiles.regions;
-    if (regions.length === 0) throw new FeatureError(t('feature.threadNoProfile'));
-
-    const at = (p: [number, number]): Vec3 => add(add(s.frame.origin, s.frame.xDir, p[0]), s.frame.yDir, p[1]);
-    const dotv = (a: Vec3, b: Vec3) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
-    const subVec = (a: Vec3, b: Vec3): Vec3 => [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
-
-    const samples: Vec3[] = [];
-    for (const r of regions) {
-      for (const seg of r.outer) {
-        if (seg.kind === 'line') samples.push(at(seg.a), at(seg.b));
-        else if (seg.kind === 'arc') samples.push(at(seg.from), at(seg.to), at(seg.c));
-        else if (seg.kind === 'circle') samples.push(at(seg.c));
-      }
-    }
-    const zs = samples.map((p) => dotv(subVec(p, O), Z));
-    const zMin = Math.min(...zs);
-    const zMax = Math.max(...zs);
-    const zc = (zMin + zMax) / 2;
+    const fadeTurnsIn = f.fadeTurnsIn ? evalNumber(f.fadeTurnsIn) : 0;
+    const fadeTurnsOut = f.fadeTurnsOut ? evalNumber(f.fadeTurnsOut) : 0;
 
     const from = f.reverse ? zc - length : zc;
     const to = f.reverse ? zc : zc + length;
@@ -1396,18 +1487,21 @@ export class Regenerator {
       to,
       ...(taper !== 0 ? { taper } : {}),
       ...(phase !== 0 ? { phase } : {}),
+      ...(fadeTurnsIn !== 0 ? { fadeTurnsIn } : {}),
+      ...(fadeTurnsOut !== 0 ? { fadeTurnsOut } : {}),
     };
 
     let tool: OpResult;
     try {
-      tool = this.kernel.thread(s.frame, regions, spec);
+      tool = this.kernel.thread(frame, regions, spec);
     } catch (e) {
       if (e instanceof KernelError) throw new FeatureError(e.message);
       throw e;
     }
 
-    return this.apply(f.id, op, tool, { featureId: f.id, sketchId: f.sketch }, set.list, true);
+    return this.apply(f.id, op, tool, { featureId: f.id, ...(f.sketch ? { sketchId: f.sketch } : {}) }, set.list, true);
   }
+
 
   // ------------------------------------------------------------------ patterns (C6)
 

@@ -111,6 +111,10 @@ export interface ThreadSpec {
   taper?: number;
   /** The whole thread turned about the axis (radians, counter-clockwise about `axis.dir`). */
   phase?: number;
+  /** Fade-in turns at the start (tooth height transitions from 0 to full height). */
+  fadeTurnsIn?: number;
+  /** Fade-out turns at the end (tooth height transitions from full height to 0). */
+  fadeTurnsOut?: number;
 }
 
 /** Limits of a thread: more starts, a steeper taper or more turns than these is refused, not tried. */
@@ -810,11 +814,19 @@ export class Kernel {
     const { pitch, starts, from, to } = spec;
     const taper = spec.taper ?? 0;
     const phase = spec.phase ?? 0;
+    const fadeTurnsIn = spec.fadeTurnsIn ?? 0;
+    const fadeTurnsOut = spec.fadeTurnsOut ?? 0;
     if (!(Number.isFinite(pitch) && pitch > 0)) throw new KernelError(t('feature.threadBadPitch'));
     if (!(Number.isInteger(starts) && starts >= 1 && starts <= THREAD_MAX_STARTS)) throw new KernelError(t('feature.threadBadStarts', { max: String(THREAD_MAX_STARTS) }));
     if (!(Number.isFinite(from) && Number.isFinite(to) && to > from)) throw new KernelError(t('feature.threadBadLength'));
     if (!(Number.isFinite(taper) && Math.abs(taper) <= THREAD_MAX_TAPER)) throw new KernelError(t('feature.threadBadTaper', { max: String(Math.round((THREAD_MAX_TAPER * 180) / Math.PI)) }));
     if (!Number.isFinite(phase)) throw new KernelError(t('feature.threadBadPhase'));
+    if (!(Number.isFinite(fadeTurnsIn) && fadeTurnsIn >= 0)) throw new KernelError(t('feature.threadBadFade'));
+    if (!(Number.isFinite(fadeTurnsOut) && fadeTurnsOut >= 0)) throw new KernelError(t('feature.threadBadFade'));
+    const lead = pitch * starts;
+    const lIn = fadeTurnsIn * lead;
+    const lOut = fadeTurnsOut * lead;
+    if (lIn + lOut >= to - from) throw new KernelError(t('feature.threadFadeTooLong'));
     const len = Math.hypot(...spec.axis.dir);
     if (!(len > 0)) throw new KernelError(t('feature.threadNoAxis'));
     const Z: Vec3 = [spec.axis.dir[0] / len, spec.axis.dir[1] / len, spec.axis.dir[2] / len];
@@ -855,7 +867,6 @@ export class Kernel {
     const zMin = Math.min(...zs);
     const zMax = Math.max(...zs);
     if (!(rMin > 1e-6 * scale)) throw new KernelError(t('feature.threadCrossesAxis'));
-    const lead = pitch * starts;
     // a profile as wide as the pitch along the axis overlaps the next thread (of its own start one lead on, or of the next start one pitch on): nothing is
     // left between them, which is no thread; and joining such overlapping helical solids took 100–250 MB of WASM memory and 10 s each, which the heap never
     // gives back, so a run of them crashed the kernel
@@ -981,9 +992,38 @@ export class Kernel {
         whole = { shape: compound, origins };
       }
 
-      // cut to length: a common with a cylinder from `from` to `to`, wider than the thread ever gets
+      // cut to length: a common with a cylinder or tapered envelope from `from` to `to`, wider than the thread ever gets
       const rOuter = Math.max(rMax + tan * shift0, rMax + tan * shift1) + Math.abs(zMax - zMin) + 1;
-      const box = arena.own(arena.own(new oc.BRepPrimAPI_MakeCylinder(arena.own(new oc.gp_Ax2(this.pnt(arena, add(O, Z, from)), this.dir(arena, Z), this.dir(arena, X))), rOuter, to - from)).Shape());
+      let box: TopoDS_Shape;
+      if (lIn > 0 || lOut > 0) {
+        const z0 = from;
+        const z1 = from + lIn;
+        const z2 = to - lOut;
+        const z3 = to;
+        const rIn = Math.max(1e-5, rMin + tan * z0);
+        const rOut = Math.max(1e-5, rMin + tan * z3);
+
+        const poly = arena.own(new oc.BRepBuilderAPI_MakePolygon());
+        poly.Add(this.pnt(arena, add(add(O, Z, z0), X, 0)));
+        poly.Add(this.pnt(arena, add(add(O, Z, z0), X, rIn)));
+        poly.Add(this.pnt(arena, add(add(O, Z, z1), X, rOuter)));
+        poly.Add(this.pnt(arena, add(add(O, Z, z2), X, rOuter)));
+        poly.Add(this.pnt(arena, add(add(O, Z, z3), X, rOut)));
+        poly.Add(this.pnt(arena, add(add(O, Z, z3), X, 0)));
+        poly.Close();
+
+        const wire = arena.own(poly.Wire());
+        const mkFace = arena.own(new oc.BRepBuilderAPI_MakeFace(wire, true));
+        if (!mkFace.IsDone()) throw new KernelError(t('feature.threadFailed', { why: 'fadeFace' }));
+        const face = arena.own(mkFace.Face());
+
+        const ax1 = arena.own(new oc.gp_Ax1(this.pnt(arena, O), this.dir(arena, Z)));
+        const revol = arena.own(new oc.BRepPrimAPI_MakeRevol(face, ax1, 2 * Math.PI, false));
+        if (!revol.IsDone()) throw new KernelError(t('feature.threadFailed', { why: 'fadeRevol' }));
+        box = arena.own(revol.Shape());
+      } else {
+        box = arena.own(arena.own(new oc.BRepPrimAPI_MakeCylinder(arena.own(new oc.gp_Ax2(this.pnt(arena, add(O, Z, from)), this.dir(arena, Z), this.dir(arena, X))), rOuter, to - from)).Shape());
+      }
       const fa = ShapeIndex.of(oc, whole.shape, T.FACE, arena);
       const fb = ShapeIndex.of(oc, box, T.FACE, arena);
       const boxOrigins: FaceOrigin[][] = fb.keys.map((f) => {
@@ -1997,14 +2037,14 @@ export class Kernel {
    * not on long B-spline faces: a thread's faces come out about 1e-4 of the volume off. With `eps` (or automatically when complex B-spline surfaces
    * are detected), the volume integrates adaptively until its relative error is below `eps`.
    */
-  massProps(id: ShapeId, options: { eps?: number } = {}): MassProps {
+  massProps(id: ShapeId, options: { eps?: number; adaptive?: boolean } = {}): MassProps {
     const oc = this.oc;
     const arena = new Arena();
     try {
       const shape = this.get(id);
       const v = arena.own(new oc.GProp_GProps());
       let eps = options.eps;
-      if (eps === undefined && this.hasComplexSurfaces(shape, arena)) {
+      if (eps === undefined && options.adaptive && this.hasComplexSurfaces(shape, arena)) {
         eps = 1e-6;
       }
       if (eps !== undefined) oc.BRepGProp.VolumeProperties(shape, v, eps, false, false);

@@ -251,8 +251,14 @@ export interface LoftFeature extends FeatureBase {
  */
 export interface ThreadFeature extends FeatureBase {
   type: 'thread';
-  /** The sketch of the tooth profile (closed wire on a plane containing the axis). */
-  sketch: Id;
+  /** 'standard' uses built-in library (Metric/UNC); 'custom' uses sketch wire profile. Default: 'custom'. */
+  profileMode?: 'standard' | 'custom';
+  /** Designation for standard thread, e.g. 'M6', '1/4-20 UNC'. Required if profileMode === 'standard'. */
+  standardDesignation?: string;
+  /** Standard thread target: 'external' (shaft/bolt) or 'internal' (bore/nut). Default: 'external'. */
+  standardTarget?: 'external' | 'internal';
+  /** The sketch of the tooth profile (closed wire on a plane containing the axis). Required if profileMode === 'custom'. */
+  sketch?: Id;
   /**
    * The axis: a line of the profile sketch, by its id (as a revolve's axis; a centerline is the usual one), or a reference: a cylindrical or conical
    * face (its axis), a straight model edge, or a reference axis (`axis:x`, `axis:y`, `axis:z` are the axes of the origin).
@@ -262,14 +268,18 @@ export interface ThreadFeature extends FeatureBase {
   op: 'boss' | 'cut';
   /** Compatibility alias for op */
   operation?: 'boss' | 'cut';
-  pitch: Expr;
-  starts: Expr;
+  pitch?: Expr;
+  starts?: Expr;
   hand: 'right' | 'left';
   length: Expr;
   taper?: Expr;
   phase?: Expr;
   reverse?: boolean;
+  /** Optional fade transitions at start and end */
+  fadeTurnsIn?: Expr;
+  fadeTurnsOut?: Expr;
 }
+
 
 /**
  * Rib (肋材, C4.7, v20): one straight line of a sketch thickened into a wall and grown from the line, in the plane of the sketch and square to the line,

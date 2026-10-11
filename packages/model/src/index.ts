@@ -30,3 +30,4 @@ export * from './dowel';
 export * from './drawing';
 export * from './tolerance';
 export * from './picture';
+export * from './threadStandards';
