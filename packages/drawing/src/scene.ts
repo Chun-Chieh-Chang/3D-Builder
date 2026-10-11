@@ -193,6 +193,9 @@ export function buildScene(
     const own = placed.get(v.id)!;
     items.push(...viewItems(v, resolved.get(v.id), own));
     if (!resolved.get(v.id)) continue;
+    // The view's name under it. A section and a detail are named by the letter they carry (ISO 128-30: 「A–A」, 「L」), which their own items already write,
+    // so only the rest are named here; without it a reader has the lines and no way to tell which view is which.
+    if (v.kind !== 'section' && v.kind !== 'detail') items.push({ kind: 'text', at: [own.at[0], own.at[1] - own.h / 2 - 8], text: v.name, height: 5, anchor: 'center' });
     items.push(...centreItems(v, features.get(v.id) ?? [], own));
     items.push(...surfaceFinishItems(doc.surfaceFinishes.filter((f) => f.view === v.id), own));
     const parent = v.kind === 'section' || v.kind === 'detail' ? placed.get(v.parent) : undefined;

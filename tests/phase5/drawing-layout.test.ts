@@ -4,7 +4,7 @@
  */
 import { describe, expect, it } from 'vitest';
 import { applyDrawingCommand, createEmptyDrawing, type DrawingDoc, type DrawingView, type ModelDrawingView } from '@3db/model';
-import { buildScene, layoutViews, sheetMetrics, STANDARD_SCALES, suggestScale, titleCells, toSvg, VIEW_GAP, type ViewLines } from '@3db/drawing';
+import { buildScene, layoutViews, sheetMetrics, STANDARD_SCALES, suggestScale, titleCells, toSvg, VIEW_GAP, type SceneText, type ViewLines } from '@3db/drawing';
 
 const view = (id: string, direction: ModelDrawingView['direction'], extra: Partial<ModelDrawingView> = {}): DrawingView => ({ id, name: id, source: 'x.3dbx', direction, ...extra });
 const doc = (views: DrawingView[], sheet: Partial<DrawingDoc['sheet']> = {}): DrawingDoc => applyDrawingCommand(applyDrawingCommand(createEmptyDrawing(), { type: 'setSheet', sheet }), { type: 'insertViews', views });
@@ -116,6 +116,14 @@ describe('the scene and the SVG written from it', () => {
     const visible = scene.items.find((i) => i.kind === 'polyline' && i.style === 'visible')!;
     expect(visible).toMatchObject({ kind: 'polyline', points: [expect.closeTo(f.at[0] - 5, 9), expect.closeTo(f.at[1] - 2.5, 9), expect.closeTo(f.at[0] + 5, 9), expect.closeTo(f.at[1] - 2.5, 9), expect.closeTo(f.at[0] + 5, 9), expect.closeTo(f.at[1] + 2.5, 9)] });
     expect(scene.items.filter((i) => i.kind === 'polyline' && i.style === 'hidden')).toHaveLength(1);
+  });
+
+  it('names each view under it, so a reader can tell which is which; the scale is in the title block', () => {
+    const { scene, placed } = buildScene(d, lines);
+    const names = scene.items.filter((i): i is SceneText => i.kind === 'text' && (i.text === 'f' || i.text === 't'));
+    expect(names.map((i) => i.text)).toEqual(['f', 't']);
+    const f = placed.get('f')!;
+    expect(names[0]).toMatchObject({ at: [f.at[0], f.at[1] - f.h / 2 - 8], height: 5, anchor: 'center' });
   });
 
   it('draws no hidden lines for a view that has them off', () => {

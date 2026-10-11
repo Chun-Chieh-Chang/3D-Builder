@@ -34,13 +34,15 @@ describe('the box round what is drawn', () => {
 });
 
 describe('the best scale', () => {
-  it('with nothing but views it is the scale of their boxes, as suggestScale says, and the arrangement stays where the layout has it', () => {
+  it('with nothing but views it is the scale of their boxes, as suggestScale says; the name under the lowest view is drawn content, so the arrangement moves up 4 mm to centre it', () => {
     const doc = make([view('f', 'front'), view('t', 'top'), view('r', 'right')]);
     const fit = fitViews(doc, lines)!;
     const sizes = new Map([['f', { w: 100, h: 60 }], ['t', { w: 100, h: 40 }], ['r', { w: 40, h: 60 }]]);
     expect(fit.scale).toEqual(suggestScale(doc.views, sizes, doc.sheet));
     expect(fit.scale).toEqual([1, 1]);
-    expect(fit.shift).toBeNull();
+    // each view is named 8 mm under it (ISO 128-30); the lowest is the top view's, 8 below its box, so the drawn content's
+    // middle sits 4 mm below the area's and the whole arrangement is shifted 4 mm up (8 / 2).
+    expect(fit.shift).toEqual([0, 4]);
   });
 
   it('a dimension that stands out far from the front view takes room: its line 170 mm below the view (past the top view, which ends 65 below), 1:1 no longer fits (60 + 170 > 213), 1:2 does (30 + 170)', () => {
