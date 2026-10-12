@@ -5,6 +5,7 @@ export const storemsg = {
   'sketch.solveFailed': '草圖求解失敗：{why}',
   'ref.replaced': '已改用 {name}',
   'history.edit': '編輯 {name}',
+  'history.redefineSketchPlane': '編輯草圖基準面 {name}',
   'sketch.planeOnly': '草圖只能放在平面上',
   'sketch.newSketch': '新草圖',
   'sketch.pickInTree': '請先在設計樹中選擇一個草圖',

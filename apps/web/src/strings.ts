@@ -148,6 +148,9 @@ export const TOOL_LABEL: Record<ToolId, string> = labelsOf({
   pierce: 'tool.pierce',
 });
 
+/** What the selection filter of the graphics area offers (D5.4): the kinds of element a click can take. */
+export const PICK_FILTER_LABEL = labelsOf({ faces: 'select.filterFaces', edges: 'select.filterEdges', vertices: 'select.filterVertices', planes: 'select.filterPlanes' });
+
 /** How a reference plane is defined (C3.2). */
 export const PLANE_MODE_LABEL = labelsOf({
   offset: 'planeMode.offset',

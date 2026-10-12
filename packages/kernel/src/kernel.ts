@@ -1561,14 +1561,26 @@ export class Kernel {
     const edges = ShapeIndex.of(oc, shape, T.EDGE, arena);
     const verts = ShapeIndex.of(oc, shape, T.VERTEX, arena);
     try {
-      const mk = arena.own(new oc.BRepFilletAPI_MakeFillet(shape, oc.ChFi3d_FilletShape.ChFi3d_Rational));
-      for (const i of edgeIndices) {
-        const e = edges.keys[i];
-        if (!e) throw new KernelError(t('kernel.edgeOutOfRange', { index: i }));
-        mk.Add(radius, arena.own(oc.TopoDS.Edge(e)));
+      let out: TopoDS_Shape | null = null;
+      let lastErr: any = null;
+      let usedMk: any = null;
+      for (const filletShape of [oc.ChFi3d_FilletShape.ChFi3d_Rational, oc.ChFi3d_FilletShape.ChFi3d_QuasiAngular, oc.ChFi3d_FilletShape.ChFi3d_Polynomial]) {
+        try {
+          const mk = arena.own(new oc.BRepFilletAPI_MakeFillet(shape, filletShape));
+          for (const i of edgeIndices) {
+            const e = edges.keys[i];
+            if (!e) throw new KernelError(t('kernel.edgeOutOfRange', { index: i }));
+            mk.Add(radius, arena.own(oc.TopoDS.Edge(e)));
+          }
+          out = this.build(mk, t('feature.fillet'), arena);
+          usedMk = mk;
+          break;
+        } catch (err) {
+          lastErr = err;
+        }
       }
-      const out = this.build(mk, t('feature.fillet'), arena);
-      return { shape: this.put(out), faceOrigins: this.history(mk, { faces: faces.keys, edges: edges.keys, verts: verts.keys }, out, arena) };
+      if (!out || !usedMk) throw lastErr;
+      return { shape: this.put(out), faceOrigins: this.history(usedMk, { faces: faces.keys, edges: edges.keys, verts: verts.keys }, out, arena) };
     } finally {
       faces.dispose();
       edges.dispose();

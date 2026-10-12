@@ -1,0 +1,690 @@
+{
+  "appearances": [],
+  "blobs": [],
+  "bodies": {},
+  "displayUnits": {
+    "angle": "deg",
+    "length": "mm"
+  },
+  "features": [
+    {
+      "constraints": [
+        {
+          "a": "p6",
+          "b": "@origin",
+          "id": "c5",
+          "type": "coincident"
+        },
+        {
+          "a": "l4",
+          "id": "c6",
+          "type": "vertical"
+        },
+        {
+          "a": "l5",
+          "id": "c7",
+          "type": "horizontal"
+        },
+        {
+          "a": "l6",
+          "id": "c8",
+          "type": "vertical"
+        },
+        {
+          "a": "p12",
+          "b": "p6",
+          "id": "c9",
+          "type": "horizontal"
+        },
+        {
+          "a": "p12",
+          "b": "p8",
+          "id": "c10",
+          "type": "vertical"
+        },
+        {
+          "a": "l10",
+          "b": "l9",
+          "flip": "both",
+          "id": "d4",
+          "type": "angle",
+          "value": "25.25"
+        },
+        {
+          "a": "l8",
+          "id": "c11",
+          "type": "vertical"
+        },
+        {
+          "a": "l6",
+          "b": "l7",
+          "id": "d5",
+          "type": "angle",
+          "value": "61"
+        },
+        {
+          "a": "l5",
+          "id": "d6",
+          "type": "distance",
+          "value": "3.125"
+        },
+        {
+          "a": "l8",
+          "b": "l4",
+          "id": "d7",
+          "type": "distance",
+          "value": "3.865"
+        },
+        {
+          "a": "p9",
+          "b": "p12",
+          "id": "d8",
+          "type": "distanceY",
+          "value": "1.2"
+        },
+        {
+          "a": "l4",
+          "id": "d9",
+          "type": "distance",
+          "value": "8"
+        },
+        {
+          "a": "p13",
+          "b": "p6",
+          "id": "c12",
+          "type": "vertical"
+        },
+        {
+          "a": "l11",
+          "id": "c13",
+          "type": "vertical"
+        }
+      ],
+      "entities": [
+        {
+          "id": "p6",
+          "type": "point",
+          "x": 0,
+          "y": 0
+        },
+        {
+          "id": "p7",
+          "type": "point",
+          "x": 0,
+          "y": 38.19513474396959
+        },
+        {
+          "id": "l4",
+          "p1": "p6",
+          "p2": "p7",
+          "type": "line"
+        },
+        {
+          "id": "p8",
+          "type": "point",
+          "x": 21.179856649303996,
+          "y": 38.19513474396959
+        },
+        {
+          "id": "l5",
+          "p1": "p7",
+          "p2": "p8",
+          "type": "line"
+        },
+        {
+          "id": "p9",
+          "type": "point",
+          "x": 21.179856649303996,
+          "y": 4.878506306862159
+        },
+        {
+          "id": "l6",
+          "p1": "p8",
+          "p2": "p9",
+          "type": "line"
+        },
+        {
+          "id": "p10",
+          "type": "point",
+          "x": 25.463423162646393,
+          "y": 3.688626719822614
+        },
+        {
+          "id": "l7",
+          "p1": "p9",
+          "p2": "p10",
+          "type": "line"
+        },
+        {
+          "id": "p11",
+          "type": "point",
+          "x": 25.225447245238474,
+          "y": 1.7848193805593215
+        },
+        {
+          "id": "l8",
+          "p1": "p10",
+          "p2": "p11",
+          "type": "line"
+        },
+        {
+          "id": "p12",
+          "type": "point",
+          "x": 21.179856649303996,
+          "y": 0
+        },
+        {
+          "id": "l9",
+          "p1": "p11",
+          "p2": "p12",
+          "type": "line"
+        },
+        {
+          "id": "l10",
+          "p1": "p12",
+          "p2": "p6",
+          "type": "line"
+        },
+        {
+          "id": "p13",
+          "type": "point",
+          "x": 0,
+          "y": 12.493530537510937
+        },
+        {
+          "id": "p14",
+          "type": "point",
+          "x": 0,
+          "y": -2.5595474047632614
+        },
+        {
+          "construction": true,
+          "id": "l11",
+          "p1": "p13",
+          "p2": "p14",
+          "type": "line"
+        }
+      ],
+      "id": "sketch4",
+      "name": "草圖1",
+      "plane": {
+        "kind": "datum",
+        "name": "plane:right"
+      },
+      "suppressed": false,
+      "type": "sketch"
+    },
+    {
+      "axis": "l11",
+      "dir1": {
+        "angle": "360",
+        "type": "blind"
+      },
+      "id": "revolve1",
+      "name": "旋轉1",
+      "op": "boss",
+      "sketch": "sketch4",
+      "suppressed": false,
+      "type": "revolve"
+    },
+    {
+      "constraints": [
+        {
+          "a": "p15",
+          "b": "@origin",
+          "id": "c14",
+          "type": "coincident"
+        },
+        {
+          "circle": "ci3",
+          "id": "d10",
+          "type": "diameter",
+          "value": "3.97"
+        }
+      ],
+      "entities": [
+        {
+          "id": "p15",
+          "type": "point",
+          "x": 0,
+          "y": 0
+        },
+        {
+          "center": "p15",
+          "id": "ci3",
+          "radius": 1.9283744489558796,
+          "type": "circle"
+        }
+      ],
+      "id": "sketch5",
+      "name": "草圖2",
+      "plane": {
+        "fingerprint": {
+          "center": [
+            -4.440892098500626e-16,
+            8,
+            -1.8260948309034573e-16
+          ],
+          "dir": [
+            0,
+            1,
+            0
+          ],
+          "size": 30.679615757712824,
+          "type": "plane"
+        },
+        "kind": "face",
+        "name": "revolve1:side:sketch4.l5"
+      },
+      "suppressed": false,
+      "type": "sketch"
+    },
+    {
+      "dir1": {
+        "type": "throughAll"
+      },
+      "id": "cut1",
+      "name": "除料-伸長1",
+      "op": "cut",
+      "sketch": "sketch5",
+      "suppressed": false,
+      "type": "extrude"
+    },
+    {
+      "constraints": [
+        {
+          "a": "p16",
+          "b": "@origin",
+          "id": "c15",
+          "type": "coincident"
+        },
+        {
+          "circle": "a1",
+          "id": "d11",
+          "type": "diameter",
+          "value": "7.73"
+        },
+        {
+          "circle": "a2",
+          "id": "d12",
+          "type": "diameter",
+          "value": "6.25"
+        },
+        {
+          "curve": "a2",
+          "id": "c16",
+          "point": "p17",
+          "type": "pointOnCurve"
+        },
+        {
+          "a": "l12",
+          "id": "c17",
+          "type": "vertical"
+        },
+        {
+          "a": "p20",
+          "b": "p17",
+          "id": "c19",
+          "type": "horizontal"
+        },
+        {
+          "a": "l13",
+          "id": "c20",
+          "type": "vertical"
+        },
+        {
+          "a": "l12",
+          "b": "l13",
+          "id": "d13",
+          "type": "distance",
+          "value": "2.71"
+        },
+        {
+          "a": "p16",
+          "b": "p17",
+          "id": "d16",
+          "type": "distanceX",
+          "value": "1.355"
+        },
+        {
+          "curve": "a1",
+          "id": "c21",
+          "point": "p21",
+          "type": "pointOnCurve"
+        },
+        {
+          "curve": "a1",
+          "id": "c22",
+          "point": "p22",
+          "type": "pointOnCurve"
+        },
+        {
+          "curve": "l12",
+          "id": "c23",
+          "point": "p23",
+          "type": "pointOnCurve"
+        },
+        {
+          "curve": "l13",
+          "id": "c24",
+          "point": "p24",
+          "type": "pointOnCurve"
+        },
+        {
+          "curve": "l12",
+          "id": "c25",
+          "point": "p25",
+          "type": "pointOnCurve"
+        },
+        {
+          "curve": "l13",
+          "id": "c26",
+          "point": "p26",
+          "type": "pointOnCurve"
+        },
+        {
+          "a": "p27",
+          "b": "p16",
+          "id": "c27",
+          "type": "horizontal"
+        },
+        {
+          "a": "l14",
+          "id": "c28",
+          "type": "horizontal"
+        },
+        {
+          "a": "p17",
+          "axis": "l14",
+          "b": "p29",
+          "id": "c29",
+          "type": "symmetric"
+        },
+        {
+          "a": "p21",
+          "axis": "l14",
+          "b": "p30",
+          "id": "c30",
+          "type": "symmetric"
+        },
+        {
+          "a": "p22",
+          "axis": "l14",
+          "b": "p31",
+          "id": "c31",
+          "type": "symmetric"
+        },
+        {
+          "a": "p20",
+          "axis": "l14",
+          "b": "p32",
+          "id": "c32",
+          "type": "symmetric"
+        },
+        {
+          "curve": "l15",
+          "id": "c33",
+          "point": "p33",
+          "type": "pointOnCurve"
+        },
+        {
+          "curve": "l16",
+          "id": "c34",
+          "point": "p34",
+          "type": "pointOnCurve"
+        },
+        {
+          "a": "a2",
+          "b": "a3",
+          "id": "c35",
+          "type": "equal"
+        },
+        {
+          "curve": "l15",
+          "id": "c36",
+          "point": "p35",
+          "type": "pointOnCurve"
+        },
+        {
+          "curve": "l16",
+          "id": "c37",
+          "point": "p36",
+          "type": "pointOnCurve"
+        },
+        {
+          "a": "a1",
+          "b": "a4",
+          "id": "c38",
+          "type": "equal"
+        }
+      ],
+      "entities": [
+        {
+          "id": "p16",
+          "type": "point",
+          "x": 0,
+          "y": 0
+        },
+        {
+          "id": "p17",
+          "type": "point",
+          "x": -1.0456728355769467,
+          "y": 2.9448587947364246
+        },
+        {
+          "id": "l12",
+          "p1": "p17",
+          "p2": "p21",
+          "type": "line"
+        },
+        {
+          "id": "p20",
+          "type": "point",
+          "x": 0.6009451535399383,
+          "y": 2.944858794736425
+        },
+        {
+          "id": "l13",
+          "p1": "p22",
+          "p2": "p20",
+          "type": "line"
+        },
+        {
+          "id": "p21",
+          "type": "point",
+          "x": -1.355,
+          "y": 3.6196961198421067
+        },
+        {
+          "id": "p22",
+          "type": "point",
+          "x": 1.3550000000000004,
+          "y": 3.6196961198421067
+        },
+        {
+          "id": "p23",
+          "type": "point",
+          "x": -1.355,
+          "y": 3.6196961198421063
+        },
+        {
+          "id": "p24",
+          "type": "point",
+          "x": 1.355,
+          "y": 3.6196961198421067
+        },
+        {
+          "center": "p16",
+          "end": "p35",
+          "id": "a1",
+          "start": "p23",
+          "type": "arc"
+        },
+        {
+          "id": "p25",
+          "type": "point",
+          "x": -1.355,
+          "y": 2.8159545450876866
+        },
+        {
+          "id": "p26",
+          "type": "point",
+          "x": 1.3550000000000004,
+          "y": 2.8159545450876866
+        },
+        {
+          "center": "p16",
+          "end": "p33",
+          "id": "a2",
+          "start": "p25",
+          "type": "arc"
+        },
+        {
+          "id": "p27",
+          "type": "point",
+          "x": 4.952726658350853,
+          "y": 0
+        },
+        {
+          "id": "p28",
+          "type": "point",
+          "x": -5.437952589484661,
+          "y": 0
+        },
+        {
+          "construction": true,
+          "id": "l14",
+          "p1": "p27",
+          "p2": "p28",
+          "type": "line"
+        },
+        {
+          "id": "p29",
+          "type": "point",
+          "x": -1.355,
+          "y": -2.81595454512619
+        },
+        {
+          "id": "p30",
+          "type": "point",
+          "x": -1.355,
+          "y": -3.61969611984211
+        },
+        {
+          "id": "l15",
+          "p1": "p29",
+          "p2": "p30",
+          "type": "line"
+        },
+        {
+          "id": "p31",
+          "type": "point",
+          "x": 1.3549999999999993,
+          "y": -3.6196961198421227
+        },
+        {
+          "id": "p32",
+          "type": "point",
+          "x": 1.3549999999999993,
+          "y": -2.81595454512619
+        },
+        {
+          "id": "l16",
+          "p1": "p31",
+          "p2": "p32",
+          "type": "line"
+        },
+        {
+          "id": "p33",
+          "type": "point",
+          "x": -1.355,
+          "y": -2.8159545450876866
+        },
+        {
+          "id": "p34",
+          "type": "point",
+          "x": 1.355,
+          "y": -2.8159545450876866
+        },
+        {
+          "center": "p16",
+          "end": "p26",
+          "id": "a3",
+          "start": "p34",
+          "type": "arc"
+        },
+        {
+          "id": "p35",
+          "type": "point",
+          "x": -1.355,
+          "y": -3.6196961198421063
+        },
+        {
+          "id": "p36",
+          "type": "point",
+          "x": 1.3550000000000002,
+          "y": -3.6196961198421063
+        },
+        {
+          "center": "p16",
+          "end": "p24",
+          "id": "a4",
+          "start": "p36",
+          "type": "arc"
+        }
+      ],
+      "id": "sketch6",
+      "name": "草圖3",
+      "plane": {
+        "fingerprint": {
+          "center": [
+            -4.440892098500626e-16,
+            0,
+            -3.4304965226856205e-16
+          ],
+          "dir": [
+            0,
+            -1,
+            0
+          ],
+          "size": 18.301033844221983,
+          "type": "plane"
+        },
+        "kind": "face",
+        "name": "revolve1:side:sketch4.l10"
+      },
+      "suppressed": false,
+      "type": "sketch"
+    },
+    {
+      "dir1": {
+        "type": "throughAll"
+      },
+      "id": "cut2",
+      "name": "除料-伸長2",
+      "op": "cut",
+      "sketch": "sketch6",
+      "suppressed": false,
+      "type": "extrude"
+    }
+  ],
+  "idCounters": {
+    "a": 4,
+    "c": 55,
+    "ci": 6,
+    "cut": 2,
+    "d": 30,
+    "extrude": 2,
+    "fillet": 17,
+    "l": 27,
+    "p": 55,
+    "revolve": 3,
+    "sketch": 9
+  },
+  "kind": "part",
+  "properties": {},
+  "rollbackIndex": null,
+  "schemaVersion": 54,
+  "variables": [],
+  "visibility": {}
+}

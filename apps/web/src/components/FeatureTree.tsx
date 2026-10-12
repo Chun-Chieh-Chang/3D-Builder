@@ -373,6 +373,9 @@ export function FeatureTree() {
           {doc.features.indexOf(menu.feature) < rollback && (
             <li onClick={act(() => store.beginEdit(menu.feature.id))}>{menu.feature.type === 'sketch' ? t('tree.editSketch') : t('tree.editFeature')}</li>
           )}
+          {menu.feature.type === 'sketch' && doc.features.indexOf(menu.feature) < rollback && (
+            <li onClick={act(() => store.beginEditSketchPlane(menu.feature.id))}>{t('tree.editSketchPlane')}</li>
+          )}
           {menu.feature.suppressed ? (
             <>
               <li onClick={act(() => store.suppress(menu.feature.id, 'unsuppress'))}>{t('tree.unsuppress')}</li>

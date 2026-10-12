@@ -1,6 +1,7 @@
 import { ANGLE_STEP, GRID_SPACING, SNAP_ITEMS } from '@3db/sketch/snaps';
 import { useEffect, useMemo, useState } from 'react';
 import { getLocale, LOCALES, t, type Locale } from '@3db/i18n';
+import { PICK_FILTER_LABEL } from '../strings';
 import { dimensionName, formatMass, formatQuantity, isDimension, massGrams, MATERIALS, materialById, Parameters, PART_TEMPLATES, settingsOf, type AppearanceTarget, type Command, type DocSettings, type SketchFeature } from '@3db/model';
 import { ACTIONS, shortcutOf } from '../actions';
 import { conflictWith, formatEvent, overrides, resetOverrides, setOverride, subscribeShortcuts } from '../shortcuts';
@@ -624,10 +625,10 @@ export function OptionsDialog() {
           </span>
           <label>{t('options.pickFilter')}</label>
           <span className="pick-filter-options">
-            {(['faces', 'edges', 'vertices'] as const).map((k) => (
+            {(['faces', 'edges', 'vertices', 'planes'] as const).map((k) => (
               <label key={k}>
                 <input type="checkbox" checked={options.pickFilter[k]} onChange={(e) => store.setOptions({ pickFilter: { ...options.pickFilter, [k]: e.target.checked } })} />
-                {t(k === 'faces' ? 'select.filterFaces' : k === 'edges' ? 'select.filterEdges' : 'select.filterVertices')}
+                {PICK_FILTER_LABEL[k]}
               </label>
             ))}
           </span>

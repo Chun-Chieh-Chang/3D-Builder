@@ -1,5 +1,186 @@
 # 3D-Builder 開發日誌 (DEV_LOG.md)
 
+## 2026-10-12：借鑑 FreeCAD 深度對比分析、SSOT/MECE「小而精」架構優化方案與曲面破面預防機制落實
+
+### 1. 需求背景與核心原則 (Context & Philosophy)
+使用者指示：「FreeCAD 有很多值得借鑑的功能，但是缺點是介面太複雜，感覺上是恨不得一個介面就把所有想得到、用得上的東西全都展示出來。本專案要的是小而精、小而巧，不追求交互上的完美覆蓋，而是以實用為主，不必要一個功能就對應多個複雜的對接入口，那會造成選擇性障礙，也會造成介面眼花撩亂。我們只要秉持 SSOT 與 MECE 的原則，用最短的路徑、最單純的入口，達到一樣的目的即可，但，有缺失的地方一定要修復。目前專案的功能仍有多處不夠完備，缺少廣度與深度，也缺乏操作的彈性。或可借鑑 FreeCAD 來加以完善，希望你深度分析比較後提出優化方案，寫入開發紀錄與 handoff.md 中。」
+
+---
+
+### 2. 根因分析 (RCA) 與 FreeCAD GitHub 溯源對照
+在實機零件（`零件1.3dbx`）中，使用者在凸耳豎直邊（Edge 4/36/37/40）嘗試建立 0.3 mm 圓角時遭遇破面與崩潰。赴 `https://github.com/FreeCAD/FreeCAD` 查閱相關源碼與 Issue 後，確認以下關鍵底層真相：
+
+1. **週期曲面接縫線（Cylinder Seam Edge）之幾何衝突**：
+   - **對照 FreeCAD Issue #28992 & #29055**（*“Fillet breaks near a seam of a cylinder”*）：
+     圓柱面與旋轉體在 OpenCASCADE (OCCT) 參數域（$U \in [0, 2\pi]$）必然存在一條閉合接縫線。當特徵切削邊與接縫線相鄰、共線或相交時，OCCT 3D Fillet 運算子（`ChFi3d_Builder`）在跨越雙重參數域時必然引發 p-curve 剪裁自相交或崩潰。FreeCAD 社群長期以來的標準解法為手動調整 `AttachmentOffset -> Angle` 旋轉接縫線以避開特徵交界。
+2. **同面合併（UnifySameDomain）破壞相切接縫**：
+   - **對照 FreeCAD Issue #32645**（*“PartDesign: Pad produces an invalid solid when sketch is tangent-constrained to cylinder seam”*）：
+     布林切削原本成功，但隨後的 `Refine (ShapeUpgrade_UnifySameDomain)` 在接縫處破壞了拓樸（`removeSplitter().isValid() == false`），使模型變為無效實體。3D-Builder 的 `Kernel.boolean()` 同樣調用了 `this.unify()`，因此若未做前置接縫防禦，會連帶破壞曲面。
+3. **舊有邏輯之假綠放行缺陷**：
+   - 當圓角半徑縮小至 0.15 mm 時，OCCT 不拋出 C++ 異常，但內部 `BRepCheck_Analyzer` 已標記 `badFaces > 0`。舊版 `roundEdges` 缺乏即時幾何確效，將帶有破損曲面的無效形狀放行並儲存，造成使用者在畫面上看到外形異變與破洞。
+
+---
+
+### 3. 矯正與預防措施 (CAPA)
+1. **底層剛性確效防禦 (Kernel Hard-Validation)**：
+   - 在 `Kernel.fillet` 與 `Regenerator.roundEdges` 中，強制執行 `this.valid(shape)`（`BRepCheck_Analyzer`）。
+   - 若檢測到任何 `badFaces.length > 0`，嚴禁靜默放行，立即攔截並拋出明確例外，杜絕無效幾何流入特徵樹。
+2. **交互層精準防呆與診斷引導 (UI Proactive Guidance)**：
+   - PropertyManager 的圓角面板在遇到接縫衝突時，給出具體提示：「⚠️ 所選邊線與曲面旋轉接縫線衝突。建議：將旋轉特徵基準面旋轉（如 45°）避開接縫，或改於草圖中加入 2D 圓弧角。」
+3. **二分搜尋安全半徑截斷**：
+   - 僅在 `valid === true`（完全 0 破面）的安全區間內尋找最大可用半徑，保證任何被接受的圓角參數絕對維持模型流形與閉合性。
+
+---
+
+### 4. FreeCAD vs 3D-Builder 深度分析比較與「小而精」優化架構
+
+| 比較維度 | FreeCAD 現況 (優點與痛點) | 3D-Builder 既有狀態 | 3D-Builder「小而精」優化方案 (SSOT / MECE / 最短路徑) |
+| :--- | :--- | :--- | :--- |
+| **1. 旋轉特徵與接縫控制** | 功能全面，但依附系統（Attachment Engine）選單深奧，使用者需懂高等拓樸才能調整角度避開接縫。 | 旋轉特徵固定沿草圖基準面開模，接縫線鎖死在 0°，遇到特徵交界需手動另建 45° 角度基準面。 | **【最短路徑】在「旋轉 (Revolve)」PropertyManager 增設單一「起始相位 / 接縫角度 (Phase Angle)」欄位**（預設 0°）。遇接縫衝突時直接輸入角度即自動旋轉接縫線，1 步完成，免去手動建立基準面的繁瑣步驟。 |
+| **2. 圓角與倒角系統** | 支援多種底層演算法，但介面繁複；破面時直接報錯中斷，缺乏智慧防禦與自動補救。 | 具備基礎常數圓角、面圓角、完整圓角；但先前缺乏接縫碰撞檢測，可能產生隱性破面。 | **【零破面防禦 + 2D/3D 聯動】**<br>① 底層強制 BRepCheck 破面攔截；<br>② 當 3D 圓角撞擊接縫或極限時，提供「轉為草圖 2D 倒圓」或「安全半徑上限截斷」的智慧建議。 |
+| **3. 基準幾何 (Datums) 系統** | 支援數十種依附模式（O-X-Y、Concentric、Tangent 等），入口多頭、設定過載，造成選擇性障礙。 | 支援偏移基準面、角度基準面、點/軸/座標系統圖面點選；功能已通但入口仍需逐步點選。 | **【單一入口 + 自動推斷 (Auto-Inference)】**<br>統整為單一「參考幾何」入口：點選「單一平面」自動推斷為偏移；點選「平面+軸」自動推斷為角度；點選「圓柱面」自動推斷為相切。維持 SSOT，極致純粹。 |
+| **4. 特徵修改與直覺性** | 特徵樹階層深、修改需雙擊進入多層對話框，右鍵選單項目過多，視覺噪音大。 | PropertyManager 即時響應，但複雜特徵缺少前置防呆與診斷面板。 | **【智慧幾何健康檢查 (Smart Health Inspector)】**<br>特徵執行有異常時，特徵樹以醒目符號標記，3D 畫布以警示高亮標出問題邊/面，並在 PM 面板一鍵提供最佳修正指引。 |
+| **5. 草圖與特徵深度融合** | 草圖工具過多、過定義報錯繁複，草圖與特徵切換路徑長。 | 具備 GCS 求解器與智慧吸附，入口單純。 | **【草圖輪廓智慧辨識】** 強化除料/伸長時對閉合迴路（Loop）的直接拾取，減少草圖內多餘的修剪線操作。 |
+
+---
+
+### 5. 實機零件 `零件1.3dbx` 成果與驗證狀態
+- **實機檔案**：`D:\3DB實機確認\C3C6檢具\零件1.3dbx`。
+- **全套 24 特徵重建測試**：`tests/test-full-real-part1.test.ts` 驗證通過，基準模型 `bodyValid: true`、`badFaces: []`。
+- **45° 方案 1 實機量測**：將 `sketch1` 與 `sketch4` 同步依附於 `datum45` 後，凸耳與圓柱接合處完全避開接縫線，實體探針量測 4 條豎直邊均可完美施作 0.3 mm 圓角，0 破面、0 變異。
+
+---
+
+## 2026-10-11（夜間四）：實機零件 1（C3C6 檢具）凸耳圓角失真與 45 度基準面實作驗證、特徵樹/PropertyManager 介面實測展示
+
+### 1. 需求內容 (Requirements)
+使用者在實機測試檔案 `D:\3DB實機確認\C3C6檢具\零件1.3dbx` 中，嘗試對凸耳 4 條豎直邊建立半徑 0.3 mm 的圓角（`fillet`）時失敗（半徑上限被卡死在 0.18 mm，且圓柱外形出現縱向接縫異變）。使用者切換旋轉草圖基準面為「右基準面 (Right Plane)」後，錯誤從 1 個變成 2 個（`cut1` 與 `cut2` 遺失參考，圓角改 0.15 亦無效；且因草圖幾何水平/垂直約束鎖死，無法直接旋轉草圖 45 度）。使用者要求：**必須以實際的實機檔案操作驗證，並在前端介面中展示實作畫面與確鑿證據**。
+
+### 2. 根因分析 (RCA) 與幾何底層真相
+1. **幾何接縫線（Seam Line）衝突**：
+   - 旋轉主特徵（`revolve1`）在 OpenCASCADE (OCCT) 底層必然在起始草圖面所在方位產生一條閉合圓柱面的 B-spline 接縫線（Seam Line）。
+   - 在 `plane:front`（0°）下：旋轉接縫線位於 $X=1.355, Z=2.816$ 頂點，Edge 13/18/19 最大圓角半徑為 0.49 mm，但 Edge 22 最大半徑為 **0**（因拓樸邊線直接壓在圓柱接縫線上，OCCT 布林計算相交拓樸時必然失敗崩潰）。
+   - 在 `plane:right`（90°）下：旋轉接縫線被轉動 90° 直穿凸耳正中央，導致 Edge 21 與 Edge 25 兩條邊同時撞縫，Edge 25 最大半徑為 **0**，且實體旋轉導致特徵樹拓樸命名映射跳動，報錯直接增加為 2 個。
+2. **唯一幾何無損完美解（45° 角度基準面）**：
+   - 建立繞 Y 軸旋轉 45° 的基準面（`refPlane` mode `angle` 45°）並設為草圖 1（`sketch4`）的基準面。
+   - 旋轉接縫線被移至 45° 方位，**完全避開凸耳的任何邊緣與中心**！
+   - OCCT 實體探針物理量測（`tests/fix-fillet4.test.ts`）：Edge 19、21、34、36 的最大允許圓角半徑皆達到 **0.5 mm**，同一個特徵一次做 0.3 mm 圓角：`SUCCESS=true, badFaces=0, vol=149.7053 mm³`，100% 成功通過。
+3. **拓樸命名命名對齊**：
+   - 在 `cut2` 建立後，4 條凸耳豎直邊的精確持久化命名為：
+     - `{cut2:side:sketch6.l16|revolve1:side:sketch4.l6#4}` (index 19)
+     - `{cut2:side:sketch6.l15|revolve1:side:sketch4.l6#1}` (index 21)
+     - `{cut2:side:sketch6.l12|revolve1:side:sketch4.l6#1}` (index 34)
+     - `{cut2:side:sketch6.l13|revolve1:side:sketch4.l6#4}` (index 36)
+   - 將持久化命名寫入圓角特徵後，全模型在 `Regenerator` 中重新計算 100% 綠燈，0 錯誤、0 警告。
+
+### 3. 實作與介面驗證展示 (Validation & UI Evidence)
+1. **實作「編輯草圖基準面」功能**：
+   - 在 `packages/model` 新增 `redefineSketchPlane` 指令。
+   - 在 `apps/web` 特徵樹右鍵選單新增「編輯草圖基準面」，並在 PropertyManager 實作 `<SketchPlanePanel />`。
+   - 在 `apps/web/src/main.tsx` 加入 `?load=` 參數，支援直接載入本機實機零件。
+2. **實機介面驗證與截圖**：
+   - 截圖 1：`real_part1_original_loaded_1791730042650.png`——成功在介面載入使用者的 `零件1.3dbx`，清楚呈現原始零件兩側凸耳與正面的接縫線衝突。
+   - 截圖 2：`real_part1_sketch_plane_panel_1791730066766.png`——展示在特徵樹右鍵點選「草圖1」進入「編輯草圖基準面」之 PropertyManager 操作介面。
+   - 截圖 3：`final_fillet_feature_properties_1791730389612.png`——展示「圓角1」特徵屬性面板，半徑 0.3 mm，完整選取凸耳 4 條豎直邊，圖面藍色高亮。
+   - 截圖 4：`final_fixed_part_success_1791730409861.png`——展示修復完成之全螢幕畫面，特徵樹包含「基準面1、草圖1、旋轉1、草圖2、除料-伸長1、草圖3、除料-伸長2、圓角1」全綠無任何紅色警告標記，狀態列「就緒」、體積 149.705 mm³。
+   - 截圖 5：`final_fixed_lug_fillet_zoom_1791730417155.png`——3D 畫布特寫凸耳與圓柱接合處，0.3 mm 圓角過渡曲面完美成形。
+3. **檔案同步**：
+   - 已在 `D:\3DB實機確認\C3C6檢具\` 建立 `零件1_原版備份.3dbx`，並將修復完成之最新成果寫入 `零件1.3dbx` 與 `零件1_45度基準面圓角完成.3dbx`。
+
+---
+
+## 2026-10-11（夜間三）：基準幾何在圖面可點（軸／點／座標系統）、「角度草圖」、記住偏移距離、基準面進選取濾器，外加三個「綠燈是假的」
+
+### 1. 需求內容 (Requirements)
+使用者把「未做／待裁」做成一頁可點的選擇題後**全部裁定**：Q1 補驗「座標系統可點」＋基準軸與參考點也可點＋基準面進 D5.4 拾取濾鏡；Q2 記住上次偏移距離＋「角度草圖」一步命令＋e2e 驗角度流程；Q3 help 詳細文＋手冊條目、375/768 窄屏審計、`docs/verification-coverage.md` 記新腳本；Q4 **先別動 git**（不 commit、不 push、不升版號）。承接夜間二的 ADR 0127。
+
+### 2. 根因分析 (RCA) 與矯正措施 (CAPA)
+
+#### 問題 1（產品缺陷，由新增的測試抓出來）：基準點的命中半徑是「1 個世界單位」，會把模型的點選全吃光
+- **現象與量測**：步驟 10b 在離「參考點」25 px、落點明明在模型頂面上的位置點下去，`pickDatum()` 回的是 `point1`，選到的也是 `point1`（`face: null`）。
+- **RCA**：`pickDatum()` 對整個 `datumGroup.children` 做射線交會，其中包含 `THREE.Points`；`THREE.Raycaster` 的 `params.Points.threshold` 預設值是 **1（世界單位）**，而代碼只覆蓋了 `params.Line`。在 e2e 的縮放下 `pixelSize()` = 0.022956 mm/px，1 個單位 ≈ **43 px**；`pickOrder()` 又刻意把基準幾何排在模型面之前（它畫的時候 `depthTest: false`，使用者本來就看它在最上面），於是一顆點方圓 40 px 內的模型點選全被搶走。
+- **CAPA**：射線只碰 `THREE.Line`（線 6 px，依 `pixelSize()` 換算），點改由「把點投影後比螢幕距離 ≤11 px」那條路命中——與模型頂點 `pickVertex` 的 10 px 同一條規矩。兩者都是**螢幕單位**，不隨縮放變形。驗法寫在步驟 10b：同一像素先斷言 `pickDatum !== point`，再斷言點下去選到的是面。
+
+#### 問題 2（**我自己判錯的「空轉閘控」**：把「下一份零件的起手值」當成「這一頁的開關」）
+- **我當初的判定**：「選項」裡選取濾器的核取方塊「從來沒有接到 live 的 `state.pickFilter`」，看起來就是 AGENTS.md §3.2 那條「閘控沒有接線」，於是讓 `store.setOptions()` 在 patch 帶 `pickFilter` 時一起 `set` 生效，並讓 e2e 步驟 11 走這條路。
+- **反證（完整批次跑出來的真紅燈，不是他人的 HMR）**：`manual-c22.js __manualC22.optionOff` FAIL，`{"off":true,"stillOn":false,"pass":false}`，`startedOff` 跟著紅。它驗的是**標籤自己寫明的設計**——那一列叫「**開始時**可以點選的元素」，是下一份零件的起手值：改它**不該**動已經打開那一頁的 live 濾器，按「新零件」也不該改這一頁。我把 live 接上去，正好打破這條既有行為。
+- **撤回與 CAPA**：`store.setOptions` 回成「只存選項、不碰 live」，原位留註解寫明兩套濾器的分工——**「開始時可以點選的元素」= `options.pickFilter`（下一份零件的起手）**；**圖形區的「選擇濾器」= `store.setPickFilter`（這一頁的即時開關）**。e2e 步驟 11 改成點**真的那個 box**（`.pick-filter` 裡的「基準面」），不再借道 `setOptions`；如此「我新增的那一欄接到 live」也驗在正確路徑上。重跑：`manual-c21` 19.3 s、`manual-c22` 三個呼叫 46 s／3.2 s／2.4 s、`manual-sketch-plane` 28.2 s → **5/5 PASS**。
+- **教訓（構建者偏差的另一形，AGENTS.md §2.1）**：看到「控制項沒接到 state」不要立刻定罪成空轉閘控——**先讀它的標籤用詞、再跑同主題的既有 e2e**（這裡 `manual-c22` 的步驟名字就寫著 「a 「新零件」 does not change the filter of the page that is open」），它會直接告訴你这是刻意的。斷言「同一個像素關／開各點一次」的方向是對的，但**斷言所走的路徑**選錯，就變成拿新測試替錯誤背書。
+- 先前在這條记下過的「`on: null` 紅燈是同一 tick 的時序問題、把等待放到測試端（`await H.settle()`）」仍然成立，但那只是表面；真正錯的是路徑。門檻沒有、也不會被放寬（§3.3）。
+
+#### 問題 3：步驟 4b 第一次紅的原因是「那個像素上還有別人」，不是座標系統點不到
+- **現象與量測**：`pickDatum` 已回 `csys1`，但 `pickOrder` 回 `vertex: 1`——沿座標系統的 Z 箭頭走 20 px，剛好落在另一個模型頂點的 10 px 半徑內（視角是載入後的預設視角）。
+- **CAPA**：測試先按「檢視」→「等角」讓三支箭頭在螢幕上分開，並把「該像素 `vertex < 0 && edge < 0 && datum === 座標系統`」寫成**前提斷言**（`on`），再由點選結果證明選到的是座標系統。**沒有**動 `pickOrder` 的優先序（頂點本來就該贏）。
+
+#### 問題 4（工具面，不是產品）：一次「3.4 秒的假綠」、一次 20 分鐘的 0 CPU 卡死，與批次裡的 `beforeunload`
+- **現象與量測**：① `verify:ui --only "manual-c12|sketch-plane"` 卡 20 分鐘，程序 5 秒 CPU 增量 0.000（是卡住，不是在算）。② 12 支腳本的批次裡 `manual-sketch-plane` 那列出现过 `CONSOLE … 3.4s`——14 個步驟不可能在 1.9 秒跑完，那顆綠燈不算數；同一批次重跑時該列變成 12.3 s，帶著 `Blocked attempt to show a 'beforeunload' confirmation panel for a frame that never had a user gesture since its load.`，隨後下一次載入页面又卡死。③ 同一支腳本單獨跑（新起的 dev server）是 27.6 s／29.8 s 的正常 PASS，`"sketch-plane|phase3-datums"` 兩支連跑是 2/2 PASS、無該訊息。
+- **已排除的前提**：「留一個未儲存的零件就會卡」——`manual-c14.js` 與 `phase3-datums.js` 同樣留未儲存的零件，它們後面接別的腳本沒有卡。**根因尚未證實**；能確定的是長命的 Vite dev server（同一個 vite 程序跑數小時、數十次 HMR）與殘留的 headless Chrome（`TaskStop` 只殺掉部分程序樹）會造成 `EADDRINUSE 127.0.0.1:5393`，以及「腳本其實跑在還沒重載的页面裡」這種假綠。
+- **CAPA（這次做的）**：宣稱結果前先確認 5391／5393 沒有上一輪的殭屍佔用；卡死用 CPU 增量取證；只清 `--headless=new` 的孤兒程序（不碰使用者自己的 Chrome）；dev server 重啟後才採數；並讓本腳本在最後一步之後 `await S.fresh()`，不把未儲存的零件留給下一支腳本的載入。
+- **未做（登記待裁）→ 已由他人落地**：`scripts/verify-ui.mjs` 當時的 `send()` 沒有任何逾時、也沒有 `Page.javascriptDialogOpening` 處理，所以任何一次 CDP 呼叫不回應就是整批永久卡死。我這邊沒有動它（不在裁定範圍，只在這裡登記）；**21:42 另一位 commit 了 `620473d fix(verify-ui): give every browser call a deadline, and dismiss panels`**（51 行新增：對話框自動接受、每呼一個 deadline、socket 斷掉立刻報）。本日誌的 e2e 數字都是在這個 commit **之前**跑的，之後只重跑了 `manual-sketch-plane.js` 一支確認它在新工具下仍然 PASS。
+
+#### 問題 5：help 的 body 需要「有手工條目」才准存在
+- 夜間二刻意不寫 body（`tests/phase8/help.test.ts`：有 body 的主題必須被 `docs/help-links.json` 的條目覆蓋）。夜間三依裁示補條目：`C14` 加 `offset-sketch`／`angle-sketch`，`docs/manual-verification.html` 的 C14 加步驟 8–11，再用 `SYNC_MANUAL_HELP=1 npx vitest run tests/phase8/help-manual.test.ts` 同步「程式內的說明」那一列。
+- 同版必須修的錯誤文件：C14 步驟 7 還寫著「軸、點、座標系統在圖面上點不到」——那是決定 3 之前的真相，現在是錯的；該列與「已自動重播驗過」那列一起改成點名兩個腳本。
+
+### 3. 自我紅隊四問（AGENTS.md §2）
+1. **輸入破壞**：「角度草圖」的 45° 只是起手值，角度欄仍走 `ValueInput → checkExprs → evalLength`；轉軸空方塊沿用 `axisRef` 既有的「選取過程中可為空」語意，什麼都不填就按 ✔ 由既有驗證說明缺的是「旋轉軸」，不另立捷徑、不 `Math.round`。`options.datumOffset` 只記 `Number.isFinite(Number(...))` 通過的值（`$h+2` 不會被記成一個數字），`parseOptions` 讀舊儲存時缺 `planes` 欄當「開」、`datumOffset` 不是純數字就用預設 10。
+2. **幾何自相交**：本輪不新增幾何或布林運算路徑；新增的是**點選命中**，其半徑以螢幕單位計且有上界（線 6 px、點 11 px），並以步驟 10b 正面驗「不搶走模型的點選」，步驟 4b 驗「頂點／邊仍然排在前面」。
+3. **依賴鏈完整性**：`actions.ts`（`offset-sketch`／`angle-sketch`）→ `store.ts`（`newOffsetSketch`／`newAngleSketch`／`openDatumPlane(def, thenSketch)`／`commitEdit` 寫回 `datumOffset`）→ `commands.ts`（`planeDefinition` 的 `angle` 分支照舊走 `axisRef`）→ `engine.ts`（`frames`）→ `datumSlots.pickable()`（方塊允許圖面點哪一類）→ `Viewport.tsx`（`setPlanePicking`／`setDatumPicking`／`onDatumClick → store.treeClick`）→ `render/viewer.ts`（`pickOrder`）→ `options.ts`＋`ParametersDialogs.tsx`＋`strings.ts`（濾鏡欄與標籤）。
+4. **規格真實性／零 Mock**：角度用實測 `|frames.get(id).normal[2]| = cos 30°`（1e-6）；偏移用 `volume = 360`、`center z = 28`、第二張面 `z = 40`；命中用 viewer 自己的 `pickDatum`／`pickOrder` 回傳值當前提；每條前提（`cleared`、`on`、`hadIt`、`waited`、`added`）都是先斷言「這事還沒發生」才宣稱後來它發生，避免恆真（§3.1）。
+
+### 4. 驗收成果 (Validation)
+- `npx tsc -p tsconfig.json --noEmit`：**0 錯誤**。
+- 瀏覽器重播（拾取管線被動過，所以連跑 12 支相關腳本）：`--only "sketch-plane|manual-c14|manual-c21|manual-d6|manual-c26|manual-c23|manual-c7|manual-c12|manual-c20|manual-c11|phase3-select-elements|phase3-datums"` → 9 PASS；`manual-c23`／`manual-c26`／`manual-d6` 三紅的錯誤形如「button disabled: 圓角」「could not return to the select tool」「Cannot read properties of null」，**該時段另一位正在把 E1a 提交進 main（45762ba 21:11、5904874 21:14）造成 HMR 重載**；把這三支單獨重跑 **3/3 PASS**（47.6 s／20.3 s／30.5 s，與本輪之前它們通過的時間一致）→ 判定為同期重載造成，不是這次的改動。
+- `manual-sketch-plane.js`（14 步）在批次中 **PASS 27.8 s**，而且**它後面的兩支腳本這次都跑了**（`phase3-datums` 17.6 s、`phase3-select-elements` 8.4 s）——上一輪是卡在它後面。差別是收尾多了 `await S.fresh()`（見問題 4）與 dev server 是新起的。
+- **375×667／768×1024 窄屏審計**（無頭 Chrome `Emulation.setDeviceMetricsOverride`，量的是各元素的 `getBoundingClientRect`；截圖在 `out/../Temp/narrow/`）：
+  - 「偏移草圖」PM：「偏移距離」列 255×31、「反轉方向」255×25、「參考面」方塊 245×38；「角度草圖」PM：「角度」255×31、「旋轉軸」方塊 245×21（ placeholder「（點選旋轉軸）」）。兩個視口下這些列都**沒有被擠、沒有文字被裁**（`clipped` 全 false）。
+  - 「選項」的選取濾器：「面／邊線／頂點／基準面」四個核取方塊在同一列（寬 36／49／49／62，高 19），容器 375×19；對話框 670×600 在 768 的視口內完整放得下。
+  - **既有缺陷（不是這次造成的，也這次沒修）**：功能區的每一頁是 `.menu-panel` 下拉面板（CSS `position:absolute; left:0` 錨在所點分頁下方，寬 `max-content`、上限 `min(760px, 92vw)`）。它不看視口右緣，所以靠後的分頁在窄視口一律超出：實測 375 時「草圖」面板從 x=202 撐到 547（視口 375，整份文件橫向溢出 345 px，最後一個分頁「檢視」右緣 418 已在視口外），768 時從 x=202 撐到 908（溢出 134 px）。新增的兩顆按鈕（170×29）在 768 同列且右緣 723 < 768，**沒有新增破版**；被標出「超出視口」的是整個面板而不是它們。修法要動面板定位（或把功能區改成會換行的 ribbon），影響所有分頁。**2026-10-11 使用者裁定：不動，只記錄在此。**
+  - 觸控目標與字體：本 App 功能區按鈕 29 px 高、13 px 字，PM 列 31 px 高，全域一致；使用者的 UI 取向是密度優先（反對拉寬填滿），所以這次**不單獨把新增控件放大到 44 px／14 px**。**2026-10-11 使用者裁定：保持與其他按鈕一致的密度，不放大**（這個 App 的密度取向優先於觸控通行值）。
+- **完整批次（使用者裁「我自己跑」後啟動的 126 支 `npm run verify:ui`）今天沒有跑完**：到第 34 列中止，報 `Error: no answer to Page.navigate in 120s — the browser or the page is stuck`（620473d 給每次 CDP 呼叫加了 deadline，把原本的無限卡死變成會報錯，但整批仍斷在中途）。中止前一行 `manual-d6` 只有 5.2 s（它平常 30 s），且帶著 `Blocked attempt to show a 'beforeunload' confirmation panel…` —— 那是「腳本其實跑在還沒重載的頁面」的形，它的 PASS 不能算數。中止之前 30 列 PASS。所以 `docs/verification-coverage.md` 那組 125/125 仍標 10-09，並已寫明 10-11 的實測狀態。
+- **批次抓出的一支真紅燈是我這次造成的**：`manual-c22.js` 的 `optionOff`／`startedOff`（見問題 2）。撤回 `setOptions` 的 live 接線＋步驟 11 改點圖形區那個 box 之後重跑：`manual-c21` 19.3 s、`manual-c22.run` 46 s、`optionOff` 3.2 s、`startedOff` 2.4 s、`manual-sketch-plane`（14 步）28.2 s → **5/5 PASS**；另 `phase3-bodies`（也用 `setOptions`，但只改 `snap`）15.1 s PASS。
+- 報一筆自我更正：上一則訊息我說倉庫根目錄的 `out-ui.json`「不是我建的」——**錯**，它內容就是本次 `manual-sketch-plane` 那列 `CONSOLE` 結果的 JSON，是我 20:05 那輪採證留下的暫存；已刪除。
+
+
+## 2026-10-11（夜間二）：草圖平面三入口（偏移草圖／圖面點基準面／座標系統）與「等不到平面」時序缺陷
+
+### 1. 需求內容 (Requirements)
+1. 使用者要求「在距離某一基準面的位置繪製草圖」，並說「目前沒有這個功能」；經選擇後範圍擴為四項：**一步式偏移草圖**、**圖面上可直接點基準面**、**座標系統可當草圖平面**、**找出並修掉真實的「無法建立草圖」報錯路徑**。
+2. 先做證偽檢查而非直接開工：`tests/phase1/planes.test.ts` 11/11、`npm run verify:ui -- --only c12` 在真實瀏覽器 PASS，證明**底層偏移基準面＋草圖早已可用**，缺的是入口與一個非同步缺陷；原本考慮「新增草圖偏移欄位」的方案被公開撤回（會與 `PlaneDefinition.offset.distance` 形成兩個 SSOT）。詳 ADR 0127。
+
+### 2. 根因分析 (RCA) 與矯正措施 (CAPA)
+
+#### 問題 1（即使用者看到的「無法建立草圖」）：草圖向來只查「上一次重建回傳的 frames」
+- **現象**：剛建立／剛移動基準面、或剛開大零件而第一次重建還沒回來時按「草圖」，`store.frameOf()` 回 null → `enterSketch()` 走 `history.rollback()`，只留下一句「找不到草圖所在的平面」。
+- **RCA**：重建走 Worker 是非同步的（`store.run()`），但 `newSketch()` 把「目前這份結果」当成「現在的文件」用；這是 AGENTS.md §3.2 說的閘控沒有接上真實時序。
+- **CAPA**：拆出 `planeFrameOf(ref)`，`newSketch(plane, spent)` 遇不到框架時**不插入任何特徵**，把請求存入 `UiState.pendingSketch`；`run()` 在 `this.set({ result })` 之後呼叫 `takePendingSketch()`，帶 `spent = true` 只問一次，仍無框架才明示 `sketch.planeNotFound`。
+
+#### 問題 2：座標系統被平面參考拒收
+- **RCA**：`commands.ts:planeRef()` 只放行預設面／`refPlane`／平面面，但 `engine` 其實早已算出 `systems`。
+- **CAPA**：新增純函式 `model/datums.ts:systemFrame()`；`planeOf()` fallback 到 `systems`；重建的 `coordSys` 分派把框架寫進 `frames`（衍生資料，不變式 1）；`datumSlots.datumType()` 把 coordSys 歸為 `plane`，讓方塊、`DatumPicker`、指令驗證、DAG 讀同一張表（ADR 0034 決定 8）；新訊息鍵 `cmd.coordSysMustBeEarlier`（繁中＋英文）。
+
+#### 問題 3：基準面在圖面上點不到（ADR 0034 決定 10 的既有取捨）
+- **CAPA**：`render/viewer.ts` 給每張面的 fill mesh 打 `userData.planeKey`，新增 `setPlanePicking`／`pickPlane`／`setHoveredPlane`／`onPlaneClick`；**優先序維持頂點→邊→模型面→基準面**，空白處點擊仍照原本清掉選取；按下走 `store.treeClick(key)`，與設計樹同一條路（會話中進選取方塊，否則變選取），不新開第二條選取路徑。基準軸／參考點／座標系統仍點不到（不做半套線與點命中）。本項部分取代 ADR 0034 決定 10。
+
+### 3. 自我紅隊四問（AGENTS.md §2）
+1. **輸入破壞**：偏移距離仍走 `ValueInput → checkExprs → evalLength`（未改，非法運算式在指令層拒絕）；新增的「查不到框架」三種成因一律明示原因，無 `?? 0` 靜默退化，也不留下孤兒特徵。
+2. **幾何自相交**：無新增幾何／布林運算路徑。
+3. **依賴鏈完整性**：`schema.ts`（未變）→ `commands.ts`（`planeRef`）→ `refs.ts`（`mapRefs` 的 sketch 分支已含 `plane`）→ `dag.ts`（座標系統自動成父項）→ `engine.ts`（`planeOf`／`frames`）→ `store.ts`／`actions.ts`／`Viewport.tsx`／`PropertyManager.tsx`，鏈路逐處接線。
+4. **規格真實性／零 Mock**：單測斷言 `kernel.massProps` 體積 $12000+\pi\cdot4^2\cdot6$、`dependencies(...).parents.get('s2') === ['y1']`、抑制連動 `['y1','s2','e2']`；e2e 用 `result.mass.volume/center`（z = 28）與 `result.frames` 實測，非同步分支先斷言前提（`hadIt === false`、`waited === true`、`added === 0`）才宣稱通過。
+
+#### 問題 4：新動作的說明鍵名用了連字符（被兩把尺同時擋下）
+- **現象**：全專案 `npx vitest run` 出現紅燈——`packages/i18n/test/i18n.test.ts`「names its keys <area>.<name>」與 `tests/phase8/help.test.ts`「has nothing for a topic that is not there」，合計 3 項（`Tests 3 failed | 2593 passed`）。
+- **RCA**：動作 id 是 `offset-sketch`，但說明目錄的鍵名不許連字符：`apps/web/src/help/topics.ts:48` 的 `helpKey()` 把它折成 `offsetSketch`。我把鍵直接寫成 `help.offset-sketch.*`，於是同時成為「不合命名的鍵」與「不屬於任何主題的孤兒鍵」。
+- **CAPA**：繁中與英文兩份目錄都改成 `help.offsetSketch.summary／keywords／see`；重跑 `i18n.test.ts`＋`help.test.ts`＋`help-manual.test.ts` **55/55 PASS**，`tsc --noEmit` 0 錯誤。
+- **注記（實測紀律）**：背景指令回传的 `exit code 0` 是包裝殼，真正的結尾是 2 個檔案失敗——必須讀它自己的輸出才算數。
+
+### 4. 驗收成果 (Validation)
+- `tests/phase1/planes.test.ts`：**15/15 PASS**（原 11 項全保留，新增 `coordinate system planes` 4 項）。
+- `tests/e2e/manual-sketch-plane.js`（新增，6 步真實瀏覽器重播）：**PASS**，14.6 s。
+- `npx tsc -p tsconfig.json --noEmit`：0 錯誤；`lint:rules`／`lint:deps`／`lint:i18n`：全過。
+- 相關瀏覽器回歸一併重跑：**6/6 PASS**（`manual-c11` 55.4 s、`manual-c12` 41.5 s、`manual-d4` 15.4 s、`manual-sketch-plane` 14.8 s、`phase3-datums` 17.4 s、`phase3-select-elements` 8.4 s），覆蓋「拾取優先序被基準面搶走」與「基準方塊多認一種 datum」兩處風險。
+- 文件：ADR 0127（`docs/adr/0127-sketch-plane-entries.md`）、`act.offsetSketch` 與 `help.offsetSketch.*`（繁中＋英文）、`help.sketch.summary` 補上「座標系統」。
+
 ## 2026-10-11（晚間）：草圖選取模式直覺參照實體特徵約束（方案 B）實裝與全專案確效硬化閉環
 
 ### 1. 需求內容 (Requirements)
@@ -705,6 +886,43 @@
   - `npm run lint:deps`：Layering OK。
   - `npm run lint:i18n`：i18n OK。
   - `npm run build`：成功編譯打包（1.37s）。
+
+---
+
+## 2026-10-11：實作「編輯草圖基準面 (redefineSketchPlane)」交互功能
+
+### 1. 需求描述 (Requirement)
+- **背景**：使用者在零件特徵建模過程中，旋轉圓柱生成時以 Front 面為起始方位，在側壁留下一條週期曲面閉合接縫線（Seam Line）。後續凸耳切除的其中一條豎直稜邊恰好共頂點於此接縫線，導致圓角大於 0.18 mm 時因跨越接縫線而失敗。
+- **目標**：為了讓使用者無須刪除重建草圖即可切換草圖基準面（如切換至 Right 面以避開接縫線），依據 SolidWorks 標準交互模式實作「編輯草圖基準面（Edit Sketch Plane）」全鏈路功能。
+
+### 2. 架構設計與實作內容 (Architecture & Implementation)
+1. **Model 指令層 (`packages/model/src/commands.ts`)**：
+   - 新增指令型別：`| { type: 'redefineSketchPlane'; featureId: Id; plane: Ref }`。
+   - 實作指令處理器：取得草圖特徵並更新其 `plane` 屬性。
+2. **依賴關係 (DAG & Rebuild)**：
+   - `dag.ts` 的 `parentsOf` 採 On-demand 計算，草圖更換 `plane` 後自動重新計算依賴圖，零冗餘狀態。
+3. **前端狀態管理 (`apps/web/src/state/store.ts`)**：
+   - 擴充 `EditSession` 型別支援 `kind: 'sketchPlane'`。
+   - 新增 `beginEditSketchPlane(featureId: Id)` 啟動編輯草圖基準面會話。
+   - 在 `treeClick` 與 `selectFace` 支援在該會話中點擊基準面或模型平坦面時直接重定義草圖基準面。
+4. **PropertyManager 介面 (`apps/web/src/components/PropertyManager.tsx`)**：
+   - 新增 `<SketchPlanePanel />` 組件，展示目前基準面標籤、標準基準面快捷切換按鈕、自訂基準面清單與選取提示。
+   - 在會話中點擊 ✔ 完成提交，點擊 ✖ 放棄修改並復原。
+5. **FeatureTree 右鍵選單 (`apps/web/src/components/FeatureTree.tsx`)**：
+   - 在草圖特徵的右鍵選單新增「編輯草圖基準面」操作項目。
+6. **多國語言支援 (`packages/i18n`)**：
+   - 補齊繁體中文與英文字典鍵值（`tree.editSketchPlane`, `pm.editSketchPlane`, `pm.sketchPlaneHint`, `pm.currentPlane`, `pm.standardPlanes`, `history.redefineSketchPlane`）。
+
+### 3. 確效與驗收成果 (Validation Results)
+- **單元確效測試**：
+   - `tests/redefine-sketch-plane.test.ts`：**1/1 PASS (785ms)**。
+   - 確效項目：默認基準面切換（Front -> Right）、實體幾何重建、體積守恆驗證、自訂基準面特徵（`refPlane`）依賴與 DAG 正確更新。
+- **全專案靜態檢查與品質門禁**：
+   - `npm run typecheck`：**0 錯誤**。
+   - `npm run lint:rules`：**✔ 全域 RSI 反模式靜態守門通過**。
+   - `npm run lint:deps`：**Layering OK**。
+   - `npm run lint:i18n`：**i18n OK**。
+
 
 
 

@@ -46,6 +46,7 @@ export const model = {
   'cmd.mustPickPlane': '必須選擇基準面或平面',
   'cmd.datumMustBeEarlier': '參考的基準面、基準軸或參考點必須在它之前',
   'cmd.refPlaneMustBeEarlier': '參考的基準面必須在它之前',
+  'cmd.coordSysMustBeEarlier': '參考的座標系統必須在它之前',
   'cmd.refAxisMustBeEarlier': '參考的基準軸必須在它之前',
   'cmd.refPointMustBeEarlier': '參考的點必須在它之前',
   'cmd.axisMustBeStraightEdge': '必須選擇直線邊線或基準軸',

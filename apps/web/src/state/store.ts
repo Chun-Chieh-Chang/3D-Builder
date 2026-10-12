@@ -42,6 +42,7 @@ import {
   type ImportedBodyFeature,
   type PartDoc,
   type PatternDefinition,
+  type PlaneDefinition,
   type PlaneFrame,
   type MeasureKind,
   type MeasureReport,
@@ -100,8 +101,10 @@ import { AssemblyStore, type AssemblySource, type AssemblyState } from './assemb
 
 export interface EditSession {
   featureId: Id;
-  /** A sketch session edits geometry in the graphics area; a feature session edits PropertyManager values. */
-  kind: 'feature' | 'sketch';
+  /** A sketch session edits geometry in the graphics area; a feature session edits PropertyManager values; sketchPlane edits the plane of a sketch. */
+  kind: 'feature' | 'sketch' | 'sketchPlane';
+  /** 「偏移草圖」 (ADR 0127): when the session is confirmed, a sketch starts on the plane it made. */
+  thenSketch?: boolean;
 }
 
 /** An element picked to measure: in the open part (leaf null), or in the part of a component of the assembly (leaf: the id of its instance in the view, see `leavesOf`). */
@@ -299,6 +302,8 @@ export interface UiState {
   /** What belongs to this browser and its user (D8.1). */
   options: SystemOptions;
   editing: EditSession | null;
+  /** A sketch asked for on a plane the last rebuild has no frame for yet (a plane that was just made or moved): it starts when the frame comes (ADR 0127). */
+  pendingSketch: Ref | null;
   result: RebuildPayload | null;
   /** Solve of the sketch being edited (or of the current drag frame). */
   sketchSolve: SketchSolvePayload | null;
@@ -553,6 +558,7 @@ class AppStore {
       pickFilter: { ...loadOptions().pickFilter },
       options: loadOptions(),
       editing: null,
+      pendingSketch: null,
       result: null,
       sketchSolve: null,
       dimensionEdit: null,
@@ -1160,6 +1166,8 @@ class AppStore {
   setOptions(patch: Partial<SystemOptions>): void {
     const options = parseOptions({ ...this.state.options, ...patch });
     saveOptions(options);
+    // 「選項」的「開始時可以點選的元素」是下一份零件的起手，不是這一頁的開關：改它不動 live 的 `pickFilter`（眼下的開關是 `setPickFilter`，
+    // 圖形區那個「選擇濾器」）。把這裡接到 live 會讓「按「新零件」不該改已開頁面的濾器」失真 —— 驗它的是 manual-c22。
     this.set({ options });
     this.applyOptions(options);
   }
@@ -1273,6 +1281,12 @@ class AppStore {
   }
 
   selectFace(face: Ref | null): void {
+    const e = this.state.editing;
+    if (e && e.kind === 'sketchPlane' && face) {
+      this.execute({ type: 'redefineSketchPlane', featureId: e.featureId, plane: face });
+      this.set({ selectedFace: face, selected: null, selectedElements: [] });
+      return;
+    }
     this.set({ selectedFace: face, selected: null, selectedElements: [] });
   }
 
@@ -1417,19 +1431,25 @@ class AppStore {
   }
 
   /**
-   * The plane a sketch lies on: a default plane, or the plane the last rebuild found for it. A new
-   * sketch has not been rebuilt yet: it takes its reference plane's frame, or its face's fingerprint.
+   * Where a plane is: a default plane, the plane the last rebuild found for a reference plane or a
+   * coordinate system, or the planar face a sketch was put on. Null when no rebuild has found it yet:
+   * a plane that was just made or moved, or one that could not be built.
    */
-  frameOf(sketch: SketchFeature): PlaneFrame | null {
-    const plane = sketch.plane;
+  planeFrameOf(plane: Ref): PlaneFrame | null {
     if (plane.kind === 'datum' && isDatumPlaneName(plane.name)) return DATUM_PLANES[plane.name];
     const frames = this.state.result?.frames;
-    return frames?.get(sketch.id) ?? (plane.kind === 'datum' ? (frames?.get(plane.name) ?? null) : faceFrame(plane));
+    if (plane.kind === 'datum') return frames?.get(plane.name) ?? null;
+    return faceFrame(plane);
   }
 
-  /** A default plane or a reference plane feature, by the id the FeatureManager uses. */
+  /** The plane a sketch lies on: the frame the last rebuild found for the sketch, or else for its plane. */
+  frameOf(sketch: SketchFeature): PlaneFrame | null {
+    return this.state.result?.frames.get(sketch.id) ?? this.planeFrameOf(sketch.plane);
+  }
+
+  /** A default plane, a reference plane feature or a coordinate system, by the id the FeatureManager uses. */
   isPlane(id: Id): boolean {
-    return isDatumPlaneName(id) || findFeature(this.history.doc, id)?.type === 'refPlane';
+    return isDatumPlaneName(id) || ['refPlane', 'coordSys'].includes(findFeature(this.history.doc, id)?.type ?? '');
   }
 
   /** The bytes of an image of a picture, by their hash (what was opened with the document or put into it). */
@@ -1454,6 +1474,16 @@ class AppStore {
     this.requestRebuild();
   }
 
+  /** Starts a PropertyManager session to change the plane of a sketch (SolidWorks 「編輯草圖基準面」). */
+  beginEditSketchPlane(featureId: Id): void {
+    if (this.state.editing) this.commitEdit();
+    const f = findFeature(this.history.doc, featureId);
+    if (!f || f.type !== 'sketch') return;
+    this.history.begin(t('history.redefineSketchPlane', { name: f.name }));
+    this.set({ editing: { featureId, kind: 'sketchPlane' }, selected: featureId, selectedFace: null, selectedElements: [] });
+    this.requestRebuild();
+  }
+
   /**
    * Starts a session that creates a feature (SolidWorks: the PropertyManager of a new feature).
    * Cancel removes the feature again; undo inside the session never does.
@@ -1474,10 +1504,20 @@ class AppStore {
     return true;
   }
 
-  /** 「草圖」 on a selected default plane, reference plane or planar face (C1.1): a new sketch, viewed normal to its plane. */
-  newSketch(plane: DatumPlaneName | Ref): void {
+  /**
+   * 「草圖」 on a selected default plane, reference plane, coordinate system or planar face (C1.1): a new sketch, viewed normal to its
+   * plane. A plane that was just made or moved gets its frame only with the next rebuild: the sketch then waits for it instead of
+   * failing (ADR 0127). `spent` says this request already waited for one rebuild.
+   */
+  newSketch(plane: DatumPlaneName | Ref, spent = false): void {
     const ref: Ref = typeof plane === 'string' ? { kind: 'datum', name: plane } : plane;
     if (ref.kind === 'face' && !faceFrame(ref)) return this.notify(t('sketch.planeOnly'), 'error');
+    if (!this.planeFrameOf(ref)) {
+      if (spent) return this.notify(t('sketch.planeNotFound'), 'error');
+      this.set({ pendingSketch: ref });
+      if (!this.inFlight) this.requestRebuild();
+      return;
+    }
     const doc = this.history.doc;
     const feature: SketchFeature = {
       id: this.allocator().take('sketch'),
@@ -1489,6 +1529,15 @@ class AppStore {
       constraints: [],
     };
     if (this.startNew(feature, t('sketch.newSketch'))) this.enterSketch(feature, true);
+  }
+
+  /** The sketch that waited for a plane the rebuild has now found (ADR 0127): asked again, and this time it does not wait again. */
+  private takePendingSketch(): void {
+    const plane = this.state.pendingSketch;
+    if (!plane) return;
+    this.set({ pendingSketch: null });
+    if (this.state.editing || this.assembly) return; // something else took the graphics area meanwhile
+    this.newSketch(plane, true);
   }
 
   /** The sketch selected in the FeatureManager, for the features built from one. */
@@ -1729,19 +1778,39 @@ class AppStore {
   }
 
   /**
-   * 「基準面」 (C3.2): 10 mm off the plane or planar face that is selected (the front plane when
-   * nothing is); the PropertyManager changes the type and the references.
+   * 「基準面」 (C3.2): as far off the plane or planar face that is selected as the last distance that was
+   * confirmed (10 mm the first time); the PropertyManager changes the type and the references.
    */
   newRefPlane(): void {
+    this.openDatumPlane({ mode: 'offset', plane: this.basePlane(), distance: this.state.options.datumOffset });
+  }
+
+  /** The plane new reference geometry starts from: the one picked in the tree, the planar face picked in the graphics area, else the front plane. */
+  private basePlane(): Ref {
     const s = this.state;
-    const plane: Ref =
-      s.selected !== null && this.isPlane(s.selected)
-        ? { kind: 'datum', name: s.selected }
-        : s.selectedFace?.fingerprint?.type === 'plane'
-          ? s.selectedFace
-          : { kind: 'datum', name: 'plane:front' };
+    if (s.selected !== null && this.isPlane(s.selected)) return { kind: 'datum', name: s.selected };
+    return s.selectedFace?.fingerprint?.type === 'plane' ? s.selectedFace : { kind: 'datum', name: 'plane:front' };
+  }
+
+  /** A 「基準面」 session; `thenSketch` starts a sketch on the plane it made as soon as it is confirmed (ADR 0127). */
+  private openDatumPlane(def: PlaneDefinition, thenSketch = false): void {
     const id = this.allocator().take('plane');
-    this.openNew({ id, type: 'refPlane', name: nextName(this.history.doc, t('feature.refPlane')), suppressed: false, def: { mode: 'offset', plane, distance: '10' } }, t('feature.refPlane'));
+    this.openNew({ id, type: 'refPlane', name: nextName(this.history.doc, t('feature.refPlane')), suppressed: false, def }, t(thenSketch ? (def.mode === 'angle' ? 'act.angleSketch' : 'act.offsetSketch') : 'feature.refPlane'));
+    const e = this.state.editing;
+    if (thenSketch && e?.featureId === id && e.kind === 'feature') this.set({ editing: { ...e, thenSketch: true } });
+  }
+
+  /** 「偏移草圖」 (C1.1, ADR 0127): the plane of 「基準面」 and a sketch on it in one command. Cancelling the plane starts nothing. */
+  newOffsetSketch(): void {
+    this.openDatumPlane({ mode: 'offset', plane: this.basePlane(), distance: this.state.options.datumOffset }, true);
+  }
+
+  /**
+   * 「角度草圖」 (C1.1, C3.2, ADR 0127): a plane turned 45° from the selected one about an axis, and a sketch on it. The axis is still
+   * to be picked — in the graphics area (ADR 0127) or with the PropertyManager's buttons — and the angle changed.
+   */
+  newAngleSketch(): void {
+    this.openDatumPlane({ mode: 'angle', plane: this.basePlane(), axis: emptyRef('axis'), angle: '45' }, true);
   }
 
   /**
@@ -2131,9 +2200,15 @@ class AppStore {
   }
 
   commitEdit(): void {
-    if (!this.state.editing) return;
+    const e = this.state.editing;
+    if (!e) return;
     this.history.commit();
     this.leaveSession();
+    // the last plain distance a person confirmed is what the next 「基準面」 and 「偏移草圖」 start from (ADR 0127)
+    const f = findFeature(this.history.doc, e.featureId);
+    if (f?.type === 'refPlane' && f.def.mode === 'offset' && f.def.distance.trim() !== '' && Number.isFinite(Number(f.def.distance))) this.setOptions({ datumOffset: f.def.distance.trim() });
+    // 「偏移草圖」: the plane the session made is in the document now, so the sketch it promised follows it
+    if (e.thenSketch) this.newSketch({ kind: 'datum', name: e.featureId });
   }
 
   cancelEdit(): void {
@@ -2263,6 +2338,14 @@ class AppStore {
 
   /** A click in the FeatureManager selects; while a plane is being defined it picks a plane like SolidWorks' flyout tree. */
   treeClick(id: Id): void {
+    const e = this.state.editing;
+    if (e && e.kind === 'sketchPlane') {
+      const ref = treeRef(this.history.doc, id);
+      if (ref && (ref.kind === 'datum' || ref.kind === 'face')) {
+        this.execute({ type: 'redefineSketchPlane', featureId: e.featureId, plane: ref });
+        return;
+      }
+    }
     const f = this.editedFeature();
     const datum = f && id !== f.id && (f.type === 'refPlane' || f.type === 'refAxis' || f.type === 'refPoint' || f.type === 'coordSys' || f.type === 'pattern' || f.type === 'mirror') ? treeRef(this.history.doc, id) : null;
     if (datum && this.putDatumRef(datum)) return;
@@ -2597,6 +2680,7 @@ class AppStore {
       // A queued request supersedes this result: showing it would briefly contradict the current document.
       if (result.seq === this.seq && !this.pending) {
         this.set({ result });
+        this.takePendingSketch();
         void this.refreshModelSnap();
         this.recycleIfHeapHigh(result);
       }
@@ -2903,7 +2987,7 @@ class AppStore {
     this.savedText = serializePart(doc);
     this.retainedMeasures = [];
     if (!this.state.recovery) void this.autosave.clear();
-    this.set({ active: 'part', selected: null, selectedFace: null, selectedElements: [], result: null, fileName, untitled, fitRequest: this.state.fitRequest + 1, documentSerial: this.state.documentSerial + 1, measure: null, draft: null, undercut: null, thickness: null, flat: null, interference: null, clearance: null, check: null });
+    this.set({ active: 'part', selected: null, selectedFace: null, selectedElements: [], result: null, pendingSketch: null, fileName, untitled, fitRequest: this.state.fitRequest + 1, documentSerial: this.state.documentSerial + 1, measure: null, draft: null, undercut: null, thickness: null, flat: null, interference: null, clearance: null, check: null });
     this.onDocChanged();
   }
 

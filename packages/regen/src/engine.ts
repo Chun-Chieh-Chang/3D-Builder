@@ -8,6 +8,7 @@ import {
   patternInstances,
   planeFrame,
   resolveDoc,
+  systemFrame,
   bodyFeature,
   type Axis3,
   type ChamferFeature,
@@ -603,7 +604,9 @@ export class Regenerator {
             return done({ status: 'ok' });
           }
           case 'coordSys': {
-            this.systems.set(feature.id, this.coordSys(feature, set));
+            const system = this.coordSys(feature, set);
+            this.systems.set(feature.id, system);
+            frames.set(feature.id, systemFrame(system)); // a sketch can lie on a coordinate system (ADR 0127)
             return done({ status: 'ok' });
           }
           case 'derivedBody': {
@@ -846,13 +849,14 @@ export class Regenerator {
   // ------------------------------------------------------------------ sketches (C1.1)
 
   /**
-   * A plane reference: a default plane, a reference plane built earlier in this rebuild, or a planar
-   * face of the model so far.
+   * A plane reference: a default plane, a reference plane or a coordinate system built earlier in this
+   * rebuild, or a planar face of the model so far.
    */
   private planeOf(ref: Ref, set: Bodies, labels: { what: string; notPlanar: string }): PlaneFrame {
     if (ref.kind === 'datum') {
       if (isDatumPlaneName(ref.name)) return DATUM_PLANES[ref.name];
-      const plane = this.planes.get(ref.name);
+      const system = this.systems.get(ref.name);
+      const plane = this.planes.get(ref.name) ?? (system ? systemFrame(system) : undefined);
       if (!plane) throw new FeatureError(t('regen.planeMissing', { what: labels.what }));
       return plane;
     }

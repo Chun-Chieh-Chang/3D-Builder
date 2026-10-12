@@ -6,6 +6,7 @@ export const tree = {
   'tree.sketchOnPlane': '選取後按「草圖」即可在此基準面上繪製草圖',
   'tree.notFound': '找不到：{name}',
   'tree.editSketch': '編輯草圖',
+  'tree.editSketchPlane': '編輯草圖基準面',
   'tree.editFeature': '編輯特徵',
   'tree.unsuppress': '恢復抑制',
   'tree.unsuppressDeps': '恢復抑制（含相依特徵）',

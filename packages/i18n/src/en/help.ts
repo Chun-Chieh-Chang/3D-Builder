@@ -263,11 +263,23 @@ export const help: Translation = {
   'help.properties.see': 'equations physical-part bom',
 
   // ---------------------------------------------------------------- features
-  'help.sketch.summary': 'Makes a sketch on the selected plane or face and enters it.',
+  'help.sketch.summary': 'Makes a sketch on the selected plane, coordinate system or face and enters it.',
   'help.sketch.body':
     'Click a plane in the tree (or a flat face in the graphics area), then press Sketch. In the sketch:\n\n- The left panel shows the sketch state: fully defined, under defined (N degrees of freedom left) or over defined. Blue entities are under defined, black ones fully defined, red ones in conflict.\n- Draw with the tools of the Sketch tab, dimension with Smart Dimension, and add relations to the selected entities in the panel.\n- While a sketch is edited, Equations and File Properties are gray; after leaving it, change a dimension in the "Sketch dimensions" table of the Equations window.\n- To make a feature from the sketch its outline has to be closed; "Check sketch for feature" in the panel lists open end points, and a larger gap tolerance repairs them in one click.',
   'help.sketch.keywords': 'sketch enter fully defined under defined over defined open end point gap tolerance',
   'help.sketch.see': 'exit-sketch tool-dimension concept.sketch-snaps extrude',
+
+  'help.offsetSketch.summary': 'Sketches on a plane offset from the selected one: confirm the reference plane and the sketch opens.',
+  'help.offsetSketch.body':
+    'Pick a datum plane or coordinate system in the tree, or a planar face in the graphics area, and press "Offset Sketch" on the Sketch tab: set the distance and confirm, and the offset plane is made and its sketch opens on it. With nothing picked the front plane is the one offset from.\n\n- The distance starts at the value confirmed last time (10 mm the first time).\n- The command makes a real reference-plane feature that sits before the sketch in the tree: change its distance later and the sketch, and the features built on it, move with it.\n- When the plane lies beyond the rollback bar and the last rebuild never found it, the command waits for the rebuild that does; if none comes it says why and puts nothing in the tree.\n- Cancelling makes neither the plane nor the sketch.',
+  'help.offsetSketch.keywords': 'offset datum plane distance sketch plane',
+  'help.offsetSketch.see': 'sketch ref-plane exit-sketch',
+
+  'help.angleSketch.summary': 'Sketches on a plane at an angle to the selected one: pick an edge or axis to turn about, then confirm.',
+  'help.angleSketch.body':
+    'Pick a datum plane or coordinate system in the tree, or a planar face in the graphics area, and press "Angle Sketch" on the Sketch tab: a plane turned to an angle (45° by default) is made and its sketch opens.\n\n- "Rotation axis" has to be filled: click a straight edge or a datum axis in the graphics area, or use the axis buttons of the panel; confirming without it says what is missing.\n- The angle is measured from the plane that was picked: 0° is parallel to it, 90° perpendicular.\n- As with "Offset Sketch" the reference-plane feature stays in the tree, so the angle and its references can be changed later.\n- A sketch on a slanted face no longer needs the plane made first and then found in the tree.',
+  'help.angleSketch.keywords': 'angle tilted datum plane rotation axis sketch plane',
+  'help.angleSketch.see': 'sketch offset-sketch ref-axis ref-plane',
 
   'help.sketchPicture.summary': 'Lay a PNG or JPEG image in the plane of a sketch to trace over.',
 

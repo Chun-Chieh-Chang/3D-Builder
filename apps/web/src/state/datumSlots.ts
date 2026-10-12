@@ -22,11 +22,11 @@ export interface Slot {
   optional?: boolean;
 }
 
-/** The kinds of datum feature a datum reference can name. */
+/** What kind of datum a name is: a plane (a default plane, a reference plane or a coordinate system), an axis or a point. */
 const datumType = (doc: PartDoc, name: string): 'plane' | 'axis' | 'point' | null => {
   if (isDatumPlaneName(name)) return 'plane';
   const type = findFeature(doc, name)?.type;
-  return type === 'refPlane' ? 'plane' : type === 'refAxis' ? 'axis' : type === 'refPoint' ? 'point' : null;
+  return type === 'refPlane' || type === 'coordSys' ? 'plane' : type === 'refAxis' ? 'axis' : type === 'refPoint' ? 'point' : null;
 };
 
 /** Does a box of this type take this element? Faces and edges are told apart by the fingerprint they were picked with. */
@@ -193,12 +193,13 @@ export function treeRef(doc: PartDoc, id: Id): Ref | null {
 }
 
 /** What the graphics area picks while this feature is being defined: the kinds of element the empty boxes take. */
-export function pickable(f: Feature | undefined): { edges: boolean; faces: boolean; vertices: boolean } {
-  const out = { edges: false, faces: false, vertices: false };
+export function pickable(f: Feature | undefined): { edges: boolean; faces: boolean; vertices: boolean; planes: boolean } {
+  const out = { edges: false, faces: false, vertices: false, planes: false };
   for (const s of slotsOf(f)) {
     if (s.type === 'axis' || s.type === 'direction' || s.type === 'element' || s.type === 'rotationAxis') out.edges = true;
     if (s.type === 'plane' || s.type === 'cylinder' || s.type === 'revolved' || s.type === 'direction' || s.type === 'element' || s.type === 'rotationAxis') out.faces = true;
     if (s.type === 'point') out.vertices = true;
+    if (s.type === 'plane' || s.type === 'direction') out.planes = true;
   }
   return out;
 }

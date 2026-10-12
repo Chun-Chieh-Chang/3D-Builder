@@ -7,6 +7,7 @@ export const storemsg: Translation = {
   'sketch.solveFailed': 'The sketch could not be solved: {why}',
   'ref.replaced': 'Now using {name}',
   'history.edit': 'Edit {name}',
+  'history.redefineSketchPlane': 'Edit Sketch Plane {name}',
   'sketch.planeOnly': 'A sketch can only be placed on a plane',
   'sketch.newSketch': 'New sketch',
   'sketch.pickInTree': 'Select a sketch in the tree first',

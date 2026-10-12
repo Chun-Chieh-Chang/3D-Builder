@@ -48,6 +48,7 @@ export const model: Translation = {
   'cmd.mustPickPlane': 'Pick a plane or a planar face',
   'cmd.datumMustBeEarlier': 'The plane, axis or point it refers to must come before it',
   'cmd.refPlaneMustBeEarlier': 'The plane it refers to must come before it',
+  'cmd.coordSysMustBeEarlier': 'The coordinate system it refers to must come before it',
   'cmd.refAxisMustBeEarlier': 'The axis it refers to must come before it',
   'cmd.refPointMustBeEarlier': 'The point it refers to must come before it',
   'cmd.axisMustBeStraightEdge': 'Pick a straight edge or a reference axis',

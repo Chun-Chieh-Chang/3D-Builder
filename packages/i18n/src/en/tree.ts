@@ -8,6 +8,7 @@ export const tree: Translation = {
   'tree.sketchOnPlane': 'Select it, then press Sketch to draw a sketch on this plane',
   'tree.notFound': 'Not found: {name}',
   'tree.editSketch': 'Edit Sketch',
+  'tree.editSketchPlane': 'Edit Sketch Plane',
   'tree.editFeature': 'Edit Feature',
   'tree.unsuppress': 'Unsuppress',
   'tree.unsuppressDeps': 'Unsuppress with Dependents',

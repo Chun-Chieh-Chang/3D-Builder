@@ -43,6 +43,8 @@ export interface PickFilter {
   faces: boolean;
   edges: boolean;
   vertices: boolean;
+  /** The reference planes that are shown (ADR 0127). */
+  planes: boolean;
 }
 
 export type StandardView = 'front' | 'back' | 'top' | 'bottom' | 'left' | 'right' | 'iso';
@@ -239,6 +241,16 @@ export interface ViewerEvents {
   onFaceHover?: (face: number) => void;
   /** Left click on a face (or -1 on empty space). */
   onFaceClick?: (face: number, additive: boolean) => void;
+  /**
+   * Left click on a reference plane that is shown (D4.6): its key, which is a default plane name
+   * ("plane:front") or the id of the reference plane feature (ADR 0127).
+   */
+  onPlaneClick?: (key: string, additive: boolean) => void;
+  /**
+   * Left click on a shown reference axis, reference point or coordinate system (its key: the id of the
+   * feature, which is what a datum reference names). Only where the model is not in the way (ADR 0127).
+   */
+  onDatumClick?: (key: string, additive: boolean) => void;
   /** Vertex under the cursor changed (index into the vertices given to setVertices, or -1). */
   onVertexHover?: (vertex: number) => void;
   onVertexClick?: (vertex: number, additive: boolean) => void;
@@ -284,7 +296,7 @@ export class Viewer {
   private hovered = -1;
   private selected = new Set<number>();
   private pickEdges = false;
-  private filter: PickFilter = { faces: true, edges: true, vertices: true };
+  private filter: PickFilter = { faces: true, edges: true, vertices: true, planes: true };
   private pickFaces = false;
   private mesh: ViewMesh | null = null;
   /** triangleFace[t] = face index owning triangle t. */
@@ -314,6 +326,11 @@ export class Viewer {
   private readonly viewListeners = new Set<() => void>();
   private planes: PlaneDisplay[] = [];
   private planeGroup: THREE.Group | null = null;
+  /** Whether the shown planes take clicks (a plane to sketch on, or to put in a reference geometry box). */
+  private pickPlanes = false;
+  private hoveredPlane: string | null = null;
+  private pickDatums = false;
+  private hoveredDatum: string | null = null;
   private sketchGroup: THREE.Group | null = null;
   private originShown = false;
   private originGroup: THREE.Group | null = null;
@@ -1270,6 +1287,13 @@ export class Viewer {
     if (!this.edgesOn) this.setHovered(-1);
     if (!this.facesOn) this.setHoveredFace(-1);
     if (!this.verticesOn) this.setHoveredVertex(-1);
+    if (!this.planesOn) this.setHoveredPlane(null);
+    if (!this.pickDatums) this.setHoveredDatum(null);
+  }
+
+  /** The shown planes the user lets be picked. */
+  private get planesOn(): boolean {
+    return this.pickPlanes && this.filter.planes;
   }
 
   private get edgesOn(): boolean {
@@ -1308,6 +1332,22 @@ export class Viewer {
     const edge = vertex < 0 && this.edgesOn ? this.pick(clientX, clientY) : -1;
     const face = this.facesOn ? this.pickFace(clientX, clientY) : -1;
     return { vertex, edge, face };
+  }
+
+  /**
+   * What the cursor is on, in the order a click takes it (ADR 0127): a model vertex, then a model edge, then a reference axis, point or
+   * coordinate system — those are drawn over everything, so they are what the person sees — and then whichever of the model face and a
+   * shown plane is nearer, the plane square obeying depth exactly as it is drawn.
+   */
+  private pickOrder(clientX: number, clientY: number): { vertex: number; edge: number; face: number; datum: string | null; plane: string | null } {
+    const vertex = this.verticesOn ? this.pickVertex(clientX, clientY) : -1;
+    const edge = vertex < 0 && this.edgesOn ? this.pick(clientX, clientY) : -1;
+    const datum = vertex < 0 && edge < 0 && this.pickDatums ? this.pickDatum(clientX, clientY) : null;
+    if (vertex >= 0 || edge >= 0 || datum) return { vertex, edge, face: -1, datum, plane: null };
+    const model = this.facesOn ? this.pickFaceHit(clientX, clientY) : { face: -1, distance: Infinity };
+    const sheet = this.planesOn ? this.pickPlaneHit(clientX, clientY) : null;
+    const planeInFront = sheet !== null && (model.face < 0 || sheet.distance < model.distance);
+    return { vertex, edge, face: planeInFront ? -1 : model.face, datum, plane: planeInFront ? sheet.key : null };
   }
 
   /** Enables edge hover/click picking (e.g. while a fillet's edge list is active). */
@@ -1581,8 +1621,18 @@ export class Viewer {
       const px = this.pixelSize();
       const box = this.contentBox();
       const reach = box.isEmpty() ? 50 : box.getSize(new THREE.Vector3()).length();
-      const line = (a: THREE.Vector3, b: THREE.Vector3, color: number) =>
-        group.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints([a, b]), new THREE.LineBasicMaterial({ color, depthTest: false })));
+      /** Lit: what the PropertyManager says is used, or what the cursor is on (its own click would take it). */
+      const lit = (key: string, highlighted?: boolean) => highlighted === true || this.hoveredDatum === key;
+      const line = (a: THREE.Vector3, b: THREE.Vector3, color: number, key: string) => {
+        const seg = new THREE.Line(new THREE.BufferGeometry().setFromPoints([a, b]), new THREE.LineBasicMaterial({ color, depthTest: false }));
+        seg.userData.datumKey = key; // what a click on this line stands for
+        group.add(seg);
+      };
+      const dot = (p: THREE.Vector3, key: string, isLit: boolean) => {
+        const made = new THREE.Points(new THREE.BufferGeometry().setFromPoints([p]), new THREE.PointsMaterial({ color: isLit ? COLORS.edgeHover : 0x7048a8, size: isLit ? 11 : 8, sizeAttenuation: false, depthTest: false }));
+        made.userData.datumKey = key;
+        group.add(made);
+      };
       for (const axis of axes) {
         // through the extent of the model, and a little beyond it, whatever the axis starts at
         const o = new THREE.Vector3(...axis.origin);
@@ -1593,22 +1643,17 @@ export class Viewer {
           const margin = 0.1 * (Math.max(...along) - Math.min(...along)) + 5;
           [t0, t1] = [Math.min(...along) - margin, Math.max(...along) + margin];
         }
-        line(o.clone().addScaledVector(d, t0), o.clone().addScaledVector(d, t1), axis.highlighted ? COLORS.edgeHover : 0x7048a8);
+        line(o.clone().addScaledVector(d, t0), o.clone().addScaledVector(d, t1), lit(axis.key, axis.highlighted) ? COLORS.edgeHover : 0x7048a8, axis.key);
       }
-      if (points.length > 0) {
-        const geometry = new THREE.BufferGeometry().setFromPoints(points.map((p) => new THREE.Vector3(...p.p)));
-        group.add(new THREE.Points(geometry, new THREE.PointsMaterial({ color: 0x7048a8, size: 8, sizeAttenuation: false, depthTest: false })));
-        const lit = points.filter((p) => p.highlighted);
-        if (lit.length > 0) group.add(new THREE.Points(new THREE.BufferGeometry().setFromPoints(lit.map((p) => new THREE.Vector3(...p.p))), new THREE.PointsMaterial({ color: COLORS.edgeHover, size: 11, sizeAttenuation: false, depthTest: false })));
-      }
+      for (const p of points) dot(new THREE.Vector3(...p.p), p.key, lit(p.key, p.highlighted));
       const len = 40 * px;
       for (const c of systems) {
         const o = new THREE.Vector3(...c.origin);
-        const arm = (v: [number, number, number], color: number) => line(o, o.clone().addScaledVector(new THREE.Vector3(...v), len), color);
+        const arm = (v: [number, number, number], color: number) => line(o, o.clone().addScaledVector(new THREE.Vector3(...v), len), lit(c.key, c.highlighted) ? COLORS.edgeHover : color, c.key);
         arm(c.x, 0xe03131);
         arm(c.y, 0x2f9e44);
         arm(c.z, 0x1c7ed6);
-        group.add(new THREE.Points(new THREE.BufferGeometry().setFromPoints([o]), new THREE.PointsMaterial({ color: c.highlighted ? COLORS.edgeHover : 0x7048a8, size: 7, sizeAttenuation: false, depthTest: false })));
+        dot(o, c.key, lit(c.key, c.highlighted));
       }
       this.datumGroup = group;
       this.overlayScene.add(group);
@@ -1616,11 +1661,83 @@ export class Viewer {
     this.requestRender();
   }
 
+  /** Whether the shown axes, points and coordinate systems take the cursor and clicks (ADR 0127). */
+  setDatumPicking(enabled: boolean): void {
+    this.pickDatums = enabled;
+    if (!enabled) this.setHoveredDatum(null);
+  }
+
+  /** The axis, point or coordinate system the cursor is on: a line within a few pixels, or a dot within ten. */
+  private pickDatum(clientX: number, clientY: number): string | null {
+    if (!this.datumGroup) return null;
+    const r = this.rayAt(clientX, clientY);
+    const ray = new THREE.Raycaster(r.origin, r.direction);
+    ray.params.Line = { threshold: (6 * (this.camera.right - this.camera.left)) / this.camera.zoom / this.canvasSize().w };
+    // Only the lines are raycast: THREE leaves Points' threshold at one *world* unit, which at a typical zoom is 40 px and would let a
+    // dot take clicks the model needs. A dot is instead hit by the screen-sized reach below, the same one a model vertex gets.
+    const lines = this.datumGroup.children.filter((o) => o instanceof THREE.Line);
+    for (const hit of ray.intersectObjects(lines, false)) {
+      const key = hit.object.userData.datumKey;
+      if (typeof key === 'string') return key;
+    }
+    this.syncCamera();
+    const rect = this.renderer.domElement.getBoundingClientRect();
+    const { w, h } = this.canvasSize();
+    const v = new THREE.Vector3();
+    let bestKey: string | null = null;
+    let best = 11; // px, the same reach a model vertex gets
+    const near = (key: string, p: [number, number, number]) => {
+      v.set(p[0], p[1], p[2]).project(this.camera);
+      const d = Math.hypot(rect.left + ((v.x + 1) / 2) * w - clientX, rect.top + ((1 - v.y) / 2) * h - clientY);
+      if (d < best) {
+        best = d;
+        bestKey = key;
+      }
+    };
+    for (const p of this.datums.points) near(p.key, p.p);
+    for (const c of this.datums.systems) near(c.key, c.origin);
+    return bestKey;
+  }
+
+  private setHoveredDatum(key: string | null): void {
+    if (this.hoveredDatum === key) return;
+    this.hoveredDatum = key;
+    this.paintDatums();
+  }
+
   // ---------------------------------------------------------------- reference planes (D4.6)
 
   /** Reference planes to show; each is a translucent square centered on the model's projection. */
   setPlanes(planes: PlaneDisplay[]): void {
     this.planes = planes;
+    this.paintPlanes();
+  }
+
+  /** Whether the shown planes take the cursor and clicks (a plane to sketch on, or one to put in a reference geometry box). */
+  setPlanePicking(enabled: boolean): void {
+    this.pickPlanes = enabled;
+    if (!enabled) this.setHoveredPlane(null);
+  }
+
+  /** The shown plane the cursor is on, nearest first, by its key; null when it is on none. */
+  private pickPlane(clientX: number, clientY: number): string | null {
+    return this.pickPlaneHit(clientX, clientY)?.key ?? null;
+  }
+
+  /** ... and how far that plane is, so a plane the body hides does not take the click meant for the body. */
+  private pickPlaneHit(clientX: number, clientY: number): { key: string; distance: number } | null {
+    if (!this.planeGroup) return null;
+    const r = this.rayAt(clientX, clientY);
+    for (const hit of new THREE.Raycaster(r.origin, r.direction).intersectObjects(this.planeGroup.children, false)) {
+      const key = hit.object.userData.planeKey;
+      if (typeof key === 'string') return { key, distance: hit.distance };
+    }
+    return null;
+  }
+
+  private setHoveredPlane(key: string | null): void {
+    if (this.hoveredPlane === key) return;
+    this.hoveredPlane = key;
     this.paintPlanes();
   }
 
@@ -1651,8 +1768,11 @@ export class Viewer {
       const at = (u: number, v: number) => o.clone().addScaledVector(x, u).addScaledVector(y, v);
       const corners = [at(u0, v0), at(u1, v0), at(u1, v1), at(u0, v1)];
       const fill = new THREE.BufferGeometry().setFromPoints([corners[0]!, corners[1]!, corners[2]!, corners[0]!, corners[2]!, corners[3]!]);
-      const color = plane.highlighted ? COLORS.edgeHover : 0x6f9fd6;
-      group.add(new THREE.Mesh(fill, new THREE.MeshBasicMaterial({ color, transparent: true, opacity: plane.highlighted ? 0.22 : 0.12, side: THREE.DoubleSide, depthWrite: false })));
+      const lit = plane.highlighted || this.hoveredPlane === plane.key;
+      const color = lit ? COLORS.edgeHover : 0x6f9fd6;
+      const sheet = new THREE.Mesh(fill, new THREE.MeshBasicMaterial({ color, transparent: true, opacity: lit ? 0.22 : 0.12, side: THREE.DoubleSide, depthWrite: false }));
+      sheet.userData.planeKey = plane.key; // what a click on this square stands for
+      group.add(sheet);
       group.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints([...corners, corners[0]!]), new THREE.LineBasicMaterial({ color })));
     }
     this.planeGroup = group;
@@ -1661,12 +1781,17 @@ export class Viewer {
   }
 
   private pickFace(clientX: number, clientY: number): number {
-    if (!this.body) return -1;
+    return this.pickFaceHit(clientX, clientY).face;
+  }
+
+  /** The face the cursor is on and how far the body is there: -1 and Infinity when the ray misses it. */
+  private pickFaceHit(clientX: number, clientY: number): { face: number; distance: number } {
+    if (!this.body) return { face: -1, distance: Infinity };
     const ray = new THREE.Raycaster();
     const r = this.rayAt(clientX, clientY);
     ray.set(r.origin, r.direction);
     const hit = ray.intersectObject(this.body).find((h) => this.kept(h.point));
-    return hit?.faceIndex !== undefined && hit.faceIndex !== null ? (this.triangleFace[hit.faceIndex] ?? -1) : -1;
+    return { face: hit?.faceIndex !== undefined && hit.faceIndex !== null ? (this.triangleFace[hit.faceIndex] ?? -1) : -1, distance: hit?.distance ?? Infinity };
   }
 
   setSelectedEdges(edges: Iterable<number>): void {
@@ -1755,12 +1880,13 @@ export class Viewer {
     if (e.buttons !== 0) return;
     if (this.pickInstances) this.setHoveredInstance(this.pickInstance(e.clientX, e.clientY));
     if (this.pickElements) this.setHoveredElement(this.pickElement(e.clientX, e.clientY));
-    // One element at a time, in SolidWorks priority: vertex, then edge, then face.
-    const vertex = this.verticesOn ? this.pickVertex(e.clientX, e.clientY) : -1;
-    const edge = vertex < 0 && this.edgesOn ? this.pick(e.clientX, e.clientY) : -1;
-    this.setHoveredVertex(vertex);
-    this.setHovered(edge);
-    this.setHoveredFace(vertex < 0 && edge < 0 && this.facesOn ? this.pickFace(e.clientX, e.clientY) : -1);
+    // One element at a time, in the order a click takes it (pickOrder).
+    const p = this.pickOrder(e.clientX, e.clientY);
+    this.setHoveredVertex(p.vertex);
+    this.setHovered(p.edge);
+    this.setHoveredFace(p.face);
+    this.setHoveredDatum(p.datum);
+    this.setHoveredPlane(p.plane);
   };
 
   private onPointerUp = (e: PointerEvent) => {
@@ -1802,11 +1928,13 @@ export class Viewer {
     const additive = e.ctrlKey || e.shiftKey;
     if (this.pickElements) return void this.events.onElementClick?.(this.pickElement(e.clientX, e.clientY), additive);
     if (this.pickInstances) return void this.events.onComponentClick?.(this.pickInstance(e.clientX, e.clientY), additive);
-    const vertex = this.verticesOn ? this.pickVertex(e.clientX, e.clientY) : -1;
-    if (vertex >= 0) return void this.events.onVertexClick?.(vertex, additive);
-    const edge = this.edgesOn ? this.pick(e.clientX, e.clientY) : -1;
-    if (edge >= 0 || (this.edgesOn && !this.facesOn)) return void this.events.onEdgeClick?.(edge, additive);
-    if (this.facesOn) this.events.onFaceClick?.(this.pickFace(e.clientX, e.clientY), additive);
+    const p = this.pickOrder(e.clientX, e.clientY);
+    if (p.vertex >= 0) return void this.events.onVertexClick?.(p.vertex, additive);
+    if (p.edge >= 0 || (this.edgesOn && !this.facesOn)) return void this.events.onEdgeClick?.(p.edge, additive);
+    if (p.datum) return void this.events.onDatumClick?.(p.datum, additive);
+    if (p.face >= 0) return void this.events.onFaceClick?.(p.face, additive);
+    if (p.plane) return void this.events.onPlaneClick?.(p.plane, additive);
+    if (this.facesOn) this.events.onFaceClick?.(-1, additive);
   };
 
   private onDoubleClick = (e: MouseEvent) => {

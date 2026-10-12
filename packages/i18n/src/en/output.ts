@@ -138,6 +138,7 @@ export const output: Translation = {
   'select.filterFaces': 'Faces',
   'select.filterEdges': 'Edges',
   'select.filterVertices': 'Vertices',
+  'select.filterPlanes': 'Planes',
   'select.filterTitle': 'Only the kinds that are on can be picked (and only what the current command needs)',
   'select.other': 'Select Other… ({count} faces)',
   'select.otherFace': '{n}. {name}',
