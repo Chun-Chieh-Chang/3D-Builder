@@ -252,7 +252,7 @@ export function DrawingPanel() {
                 className={`pm-button${drw.tool?.kind === 'section' ? ' active' : ''}`}
                 data-action="toolSection"
                 title={t('drawingUi.hint.section')}
-                onClick={() => d.setTool(drw.tool?.kind === 'section' ? null : { kind: 'section' })}
+                onClick={() => d.setTool(drw.tool?.kind === 'section' ? null : { kind: 'section', vertical })}
               >
                 {t('drawingUi.toolSection')}
               </button>
@@ -266,7 +266,11 @@ export function DrawingPanel() {
               </button>
             </div>
             <div className="pm-row">
-              <select data-field="sectionAxis" value={vertical ? 'v' : 'h'} onChange={(e) => setVertical(e.target.value === 'v')}>
+              <select data-field="sectionAxis" value={vertical ? 'v' : 'h'} onChange={(e) => {
+                const next = e.target.value === 'v';
+                setVertical(next);
+                if (drw.tool?.kind === 'section') d.setTool({ ...drw.tool, vertical: next });
+              }}>
                 <option value="v">{t('drawingUi.sectionVertical')}</option>
                 <option value="h">{t('drawingUi.sectionHorizontal')}</option>
               </select>

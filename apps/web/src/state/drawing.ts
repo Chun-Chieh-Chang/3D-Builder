@@ -78,7 +78,7 @@ export interface DrawingSource {
  * is to be (and dragged along it) or where the middle of the circle is (and dragged out to its edge), on the view it is over. `surface`: the next point on the sheet puts a
  * surface finish symbol on the view under it (C16.5).
  */
-export type DrawingTool = { kind: 'dimension'; picks: { view: Id; feature: Pickable }[] } | { kind: 'section' } | { kind: 'detail' } | { kind: 'surface' };
+export type DrawingTool = { kind: 'dimension'; picks: { view: Id; feature: Pickable }[] } | { kind: 'section'; vertical?: boolean } | { kind: 'detail' } | { kind: 'surface' };
 
 export interface DrawingState {
   doc: DrawingDoc;
@@ -604,17 +604,17 @@ export class DrawingStore {
   }
 
   /** A section of `parent` cut along a horizontal or vertical line in the parent's coordinates (C16.3); the letter is the next free one. */
-  addSection(parent: Id, line: SectionDrawingView['line']): void {
+  addSection(parent: Id, line: SectionDrawingView['line'], at?: [number, number]): void {
     const doc = this.history.doc;
     if (this.isFlat(parent)) return this.host.notify(t('drawing.flatNoDerived'), 'error');
     const ids = new IdAllocator(doc.idCounters, drawingIdsInUse(doc));
     const id = ids.take('view');
     const label = this.nextLabel();
-    if (this.execute({ type: 'insertViews', views: [{ id, name: t('drawing.view.section', { label }), kind: 'section', parent, line, label }] })) this.set({ selected: id });
+    if (this.execute({ type: 'insertViews', views: [{ id, name: t('drawing.view.section', { label }), kind: 'section', parent, line, label, ...(at ? { at } : {}) }] })) this.set({ selected: id });
   }
 
   /** A detail of `parent` in a circle (C16.3), at twice the scale the parent is drawn at, rounded up to a standard scale. */
-  addDetail(parent: Id, centre: [number, number], radius: number): void {
+  addDetail(parent: Id, centre: [number, number], radius: number, at?: [number, number]): void {
     const doc = this.history.doc;
     const ids = new IdAllocator(doc.idCounters, drawingIdsInUse(doc));
     const id = ids.take('view');
@@ -622,7 +622,7 @@ export class DrawingStore {
     const p = viewById(doc.views, parent);
     const base = p ? scaleOf(doc, p) : doc.sheet.scale;
     const scale = STANDARD_SCALES.slice().reverse().find((s) => ratio(s) >= 2 * ratio(base)) ?? STANDARD_SCALES[0]!;
-    if (this.execute({ type: 'insertViews', views: [{ id, name: t('drawing.view.detail', { label }), kind: 'detail', parent, centre, radius, label, scale }] })) this.set({ selected: id });
+    if (this.execute({ type: 'insertViews', views: [{ id, name: t('drawing.view.detail', { label }), kind: 'detail', parent, centre, radius, label, scale, ...(at ? { at } : {}) }] })) this.set({ selected: id });
   }
 
   /** The first capital letter no section or detail has yet. */

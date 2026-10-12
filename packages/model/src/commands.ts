@@ -52,6 +52,8 @@ export type Command =
   /** Inserts a feature at `index` (at or above the rollback bar), like SolidWorks inserting at the bar. */
   | { type: 'insertFeature'; feature: Feature; index: number }
   | { type: 'setDimension'; featureId: Id; constraintId: Id; value: Expr }
+  /** Moves only the displayed dimension text; it never changes the measured geometry or value. */
+  | { type: 'setDimensionPosition'; featureId: Id; constraintId: Id; position: [number, number] | null }
   /** Makes a dimension driven (a reference that shows what is measured) or driving again; `value` is the new value when it drives again (C1.29). */
   | { type: 'setDimensionDriving'; featureId: Id; constraintId: Id; driving: boolean; value?: Expr }
   /** 
@@ -730,6 +732,19 @@ export function mutate(draft: Draft<PartDoc>, cmd: Command): void {
       checkExprs(draft as PartDoc, f as Feature, new Set([c.id])); // after the change, so a cycle through it is seen
       return;
     }
+    case 'setDimensionPosition': {
+      const f = sketchOf(draft, cmd.featureId);
+      const c = f.constraints.find((x) => x.id === cmd.constraintId);
+      if (!c || !isDimension(c)) throw new CommandError(t('cmd.dimensionNotFound', { id: cmd.constraintId }));
+      if (cmd.position === null) {
+        delete c.labelPosition;
+        return;
+      }
+      const [x, y] = cmd.position;
+      if (!Number.isFinite(x) || !Number.isFinite(y)) throw new CommandError(t('cmd.dimensionPositionNotFinite'));
+      c.labelPosition = [x, y];
+      return;
+    }
     case 'setDimensionDriving': {
       const f = sketchOf(draft, cmd.featureId);
       const c = f.constraints.find((x) => x.id === cmd.constraintId);
@@ -1388,6 +1403,8 @@ export function mutate(draft: Draft<PartDoc>, cmd: Command): void {
     }
     case 'redefineSketchPlane': {
       const f = sketchOf(draft, cmd.featureId);
+      // the same rule as placing a sketch: a plane that exists, earlier in the history than the sketch (a later one would be a cycle in the DAG)
+      planeRef(draft as PartDoc, cmd.plane, draft.features.findIndex((x) => x.id === f.id));
       f.plane = cmd.plane;
       return;
     }

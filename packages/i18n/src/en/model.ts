@@ -83,6 +83,7 @@ export const model: Translation = {
   'cmd.pictureOpacity': 'The opacity of a picture has to be between 0 and 1',
   'cmd.importBodyMustUseData': 'An Imported Body must use this imported data',
   'cmd.dimensionNotFound': 'Dimension not found: {id}',
+  'cmd.dimensionPositionNotFinite': 'The position of a dimension label must be finite numbers',
   'cmd.onlyExtrudeHasEnd': 'Only an Extrude feature has an end condition',
   'cmd.onlyRevolveHasAngle': 'Only a Revolve feature has an angle',
   'cmd.onlyRevolveHasAxis': 'Only a Revolve feature has an axis',

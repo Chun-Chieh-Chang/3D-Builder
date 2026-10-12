@@ -6,6 +6,8 @@
 
 const here = import.meta.url.slice(0, import.meta.url.lastIndexOf('/') + 1);
 await import(here + 'phase1-demo-parts.js?' + Date.now());
+/** A tree row's name: the text of its name, not what the tree shows beside it (▲ 父 / ▼ 子 badges, ↳ the parent, └── lines). */
+const rowName_ = (x) => (x.querySelector('.name')?.textContent ?? x.textContent).replace(/^\([-+?]\) /, '');
 const H = window.__ui;
 const { store } = H;
 const S = (window.__man = { H, store });
@@ -96,7 +98,7 @@ S.view = async (name) => {
 };
 /** Clicks a row of the tree with the right button and the item of the menu that comes up. */
 S.treeMenu = async (rowName, item) => {
-  const row = [...document.querySelectorAll('.tree-row')].filter((x) => x.textContent.replace(/^\([-+?]\) /, '') === rowName).at(-1);
+  const row = [...document.querySelectorAll('.tree-row')].filter((x) => rowName_(x) === rowName).at(-1);
   if (!row) throw new Error(`no tree row ${rowName}`);
   const r = row.getBoundingClientRect();
   row.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: r.left + 20, clientY: r.top + 8, button: 2 }));
@@ -109,7 +111,7 @@ S.treeMenu = async (rowName, item) => {
 S.treeRows = () => [...document.querySelectorAll('.feature-tree .tree-row, .tree-row')].map((x) => x.textContent);
 /** Double-click: opens the feature or sketch of a row for editing. */
 S.treeEdit = async (rowName) => {
-  const row = [...document.querySelectorAll('.tree-row')].filter((x) => x.textContent.replace(/^\([-+?]\) /, '') === rowName && !x.classList.contains('body')).at(-1);
+  const row = [...document.querySelectorAll('.tree-row')].filter((x) => rowName_(x) === rowName && !x.classList.contains('body')).at(-1);
   if (!row) throw new Error(`no tree row ${rowName}`);
   row.click();
   await H.wait(120);

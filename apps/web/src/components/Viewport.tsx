@@ -230,6 +230,13 @@ export function Viewport() {
       onLabelDoubleClick: (key) => {
         if (key.startsWith('dim:')) store.editDimension(idOf(key));
       },
+      onLabelDrag: (key, x, y) => {
+        if (!key.startsWith('dim:')) return;
+        const sketch = store.editedSketch();
+        const frame = sketch && store.frameOf(sketch);
+        const p = frame ? viewer.planePoint(x, y, frame) : null;
+        if (p) store.sketcher?.moveDimensionLabel(idOf(key), p);
+      },
     });
     store.viewer = viewer;
     return () => {

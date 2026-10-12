@@ -3113,7 +3113,13 @@ function SketchPlanePanel({ f }: { f: SketchFeature }) {
   const at = doc.features.findIndex((x) => x.id === f.id);
   const availablePlanes = [
     ...DATUM_ITEMS.filter((d) => d.icon === 'plane').map((d) => ({ id: d.id as string, label: d.label, ref: { kind: 'datum' as const, name: d.id as string } })),
-    ...doc.features.slice(0, Math.max(at, 0)).flatMap((x) => (x.type === 'refPlane' ? [{ id: x.id, label: x.name, ref: { kind: 'datum' as const, name: x.id } }] : [])),
+    ...doc.features
+      .slice(0, Math.max(at, 0))
+      .flatMap((x) =>
+        x.type === 'refPlane' || x.type === 'coordSys'
+          ? [{ id: x.id, label: x.name, ref: { kind: 'datum' as const, name: x.id } }]
+          : [],
+      ),
   ];
 
   const currentLabel = () => {

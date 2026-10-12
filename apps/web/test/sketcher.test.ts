@@ -119,6 +119,22 @@ describe('sketch tools', () => {
     expect([...h.last!.entityStatus!.values()].every((s) => s === 'fully')).toBe(true);
   });
 
+  it('stores a moved dimension label without changing its driving value', async () => {
+    const h = new Host();
+    const c = new SketchController(h);
+    c.setTool('line');
+    click(c, 0, 0);
+    click(c, 20, 0);
+    c.escape();
+    c.setTool('dimension');
+    click(c, 10, 0);
+    click(c, 10, -3);
+    await flush();
+    const dimension = h.sketch().constraints.find((x) => x.type === 'distance')!;
+    c.moveDimensionLabel(dimension.id, [30, 15]);
+    expect(h.sketch().constraints.find((x) => x.id === dimension.id)).toMatchObject({ value: '20', labelPosition: [30, 15] });
+  });
+
   it('refuses a dimension that would over-define the sketch', async () => {
     const h = new Host();
     const c = new SketchController(h);

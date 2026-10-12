@@ -8,6 +8,8 @@
 //
 //   const r = await __demo.all();   // { plate, vblock, pin }: volume, features, file (base64)
 
+/** A tree row's name: the text of its name, not what the tree shows beside it (▲ 父 / ▼ 子 badges, ↳ the parent, └── lines). */
+const rowName_ = (x) => (x.querySelector('.name')?.textContent ?? x.textContent).replace(/^\([-+?]\) /, '');
 const storeUrl = performance.getEntriesByType('resource').map((e) => e.name).find((n) => n.includes('/src/state/store.ts'));
 const { store } = await import(storeUrl);
 const H = (window.__ui = { store });
@@ -56,7 +58,7 @@ H.hud = async (label) => {
   await H.wait(200);
 };
 H.treeClick = async (name) => {
-  const r = [...document.querySelectorAll('.tree-row')].find((x) => x.textContent.replace(/^\([-+?]\) /, '') === name);
+  const r = [...document.querySelectorAll('.tree-row')].find((x) => rowName_(x) === name);
   if (!r) throw new Error(`no tree row ${name}`);
   r.click();
   await H.wait(120);

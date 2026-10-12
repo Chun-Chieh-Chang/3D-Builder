@@ -1,5 +1,92 @@
 # 3D-Builder 開發日誌 (DEV_LOG.md)
 
+## 2026-10-12：曲面動態側影輪廓線 (Dynamic Silhouette Edges / SolidWorks Benchmark)
+
+### 1. 需求內容 (Requirements)
+- **問題現象**：在「線架構 (Wireframe)」視圖下，圓柱面、錐面、球體與圓角等平滑曲面在側面無任何邊線，模型外壁在視覺上穿透空白（僅剩兩端圓弧與接縫線），無法呈現三維幾何外形與邊界。
+- **目標**：比照 SolidWorks 標準行為，隨相機視角動態計算曲面側影輪廓線（Silhouette Edges / Apparent Contours），使平滑曲面在線架構、顯示隱藏線與移除隱藏線下始終具備清晰的立體外框線。
+
+### 2. 根因分析 (RCA) 與矯正措施 (CAPA)
+- **RCA**：
+  1. OpenCASCADE CAD 核心重建時僅輸出 B-Rep 幾何拓撲邊線（`TopoDS_Edge`），平滑解析曲面外緣在 B-Rep 結構中本質上不存在靜態邊界邊。
+  2. 傳統塗彩模式依賴片段著色光影顯示外形；線架構下著色關閉，若未隨視角即時提取幾何側影線，圓柱外壁便毫無圖元可供繪製。
+- **CAPA**：
+  1. **拓撲幾何預索引用於即時判定 (`buildSilhouetteIndex`)**：
+     - 建構網格之半邊鄰接表與面法向量，空間量化映射消除 UV 貼圖紋理接縫之重複頂點。
+     - 幾何篩選過濾：排除共面內部三角面（`dot > 0.9999`）與已知銳利折邊（`dot < 0.25`，銳角由靜態 B-Rep 邊繪製），僅鎖定曲率過渡面（$1^\circ \sim 75^\circ$），大幅精簡每幀邊界檢查規模。
+  2. **視角即時提取演算法 (`extractSilhouettes`)**：
+     - 當相機朝向向量為 $\mathbf{v}$ 時，以符號交叉乘積 $(\mathbf{n}_1 \cdot \mathbf{v}) \cdot (\mathbf{n}_2 \cdot \mathbf{v}) \le 0$ 秒級提取視角前/後面分界線段。
+     - 支援零件與裝配體之實例空間矩陣變換 (`matrixWorld`)，每幀提取運算小於 0.05ms。
+  3. **檢視器渲染迴圈接軌 (`updateSilhouettes`)**：
+     - 於 `render()` 迴圈偵測相機四元數旋轉，旋轉時即時更新 `silhouetteEdges`，支援動態剖面裁切面 (`clippingPlanes`)。
+     - 於 `wireframe`、`hiddenVisible`、`hiddenRemoved` 啟用，於 `shaded`、`shadedEdges` 自動休眠節省 GPU 頻寬。
+
+### 3. 確效與品質驗收 (Validation Results)
+- **TypeScript 型別檢查 (`npm run typecheck`)**：**0 錯誤**。
+- **反模式與分層檢查 (`npm run lint:rules && npm run lint:deps && npm run lint:i18n`)**：**全數通過**。
+- **單元測試 (`tests/phase3/silhouettes.test.ts`)**：**4/4 項測試全數綠燈通過**（驗證圓柱側向雙母線、球體正圓環、裝配矩陣偏移、8,000+ 面微秒級提取）。
+- **交線測試 (`tests/phase3/section-edges.test.ts`)**：**5/5 項測試全數綠燈通過**。
+
+
+## 2026-10-12：動態剖面交線即時幾何提取 (ADR 0042 / A4.3 / D4.4 Section Cut Outlines)
+
+### 1. 需求內容 (Requirements)
+- **問題現象**：在「剖面」視圖下切換至「線架構 (Wireframe)」時，模型輪廓幾近消失，僅剩幾段斷續的圓弧邊線（兩端開放懸空）。在帶邊塗彩模式下，剖面處的橘黃色截面補蓋邊界亦缺少清晰的黑色邊界線。
+- **目標**：實現 CAD 行業標準之動態剖面交線（Section Cut Outlines），在線架構、帶邊線塗彩、顯示隱藏線與移除隱藏線下，皆能即時在模型與剖切平面的交界處繪出封閉截面輪廓線。
+
+### 2. 根因分析 (RCA) 與矯正措施 (CAPA)
+- **RCA**：
+  1. 檢視器動態剖面（ADR 0042）基於 WebGL GPU `clippingPlanes`（片段著色器硬體裁切），裁切並不會產生幾何邊線。
+  2. 原實作中「線架構」直接關閉了 Stencil Buffer 實心補蓋 (`updateCap`)，且模型在平滑曲面處無 B-Rep 拓撲邊線，導致剖開處完全開放空白。
+- **CAPA**：
+  1. **高效幾何剖切演算法 (`sliceMeshByPlane`)**：實作強健且無堆配置的 Triangle-Plane Slicing 演算法，以符號距離分類交點，每組穿透三角面產出一段空間線段，直接以 TypedArray 批次收集，小於 1ms 即可切完萬級三角面。支援一般零件與裝配體實例矩陣變換 (`matrixWorld`)。
+  2. **檢視器全生命週期串接**：於 `Viewer` 整合 `sectionEdges`，於 `applyDisplay()`、`setSection()`、`clear()`、`paintEdges()` 自動同步，並於所有線框顯示模式開啟可見性；設定 `renderOrder: 999` 與補蓋材質 `polygonOffset` 消除深度衝突 (Z-fighting)。
+  3. **防選取干擾**：設定 `sectionEdges.raycast = () => {}`，避免視圖輔助交線干擾幾何拾取。
+
+### 3. 確效與品質驗收 (Validation Results)
+- **TypeScript 型別檢查 (`npm run typecheck`)**：**0 錯誤**。
+- **反模式與依賴檢查 (`npm run lint:rules && npm run lint:deps && npm run lint:i18n`)**：**全數通過**。
+- **單元測試 (`tests/phase3/section-edges.test.ts`)**：**5/5 項測試全數綠燈通過**（驗證封閉方框輪廓、幾何外邊界、矩陣偏移、非索引網格與高精度效能）。
+- **既有測試回歸**：驗證 Phase 3 測試與 `acceptance.test.ts` 均通過，無任何 Regression。
+
+
+## 2026-10-12：側邊欄特徵建構從屬關係視覺化 (D1.8) 與滑鼠右鍵選單視口邊界溢出修復 (Horizontal-First)
+
+### 1. 需求內容 (Requirements)
+1. **側邊欄看不出特徵建構的從屬關係**：
+   - 原始側邊欄（FeatureTree）採完全平鋪的時間軸列表，草圖與特徵為平級同層，無法直觀辨識「哪一個草圖由哪一個特徵吸收建構」、亦無法得知修飾特徵（圓角、導角、薄殼等）所依賴的父特徵與衍生子特徵。
+   - 需實作特徵從屬階層樹（被吸收草圖階層折疊/展開）、動態參考視覺化（Dynamic Reference Visualization D1.8，游標停留或選取時即時高亮父子特徵標籤）及即時從屬導覽列。
+2. **滑鼠右鍵彈窗超出螢幕外，部分選項無從選取**：
+   - 右鍵點選位於螢幕下半部或底部的特徵時，彈窗固定向下展開導致超出螢幕底端，下半部選項（如詳細資訊、父子關係、刪除等）被裁切無法點擊。
+   - 需依據全域防禦原則（Horizontal-First）修復全專案所有右鍵選單，加入邊界偵測與智慧向上翻轉/視口錨定。
+
+### 2. 根因分析 (RCA) 與矯正措施 (CAPA)
+
+#### 問題 1：側邊欄特徵列表完全平鋪無從屬階層
+- **RCA**：`FeatureTree.tsx` 原始實作直接遍歷 `doc.features` 以單層平鋪方式繪製所有特徵與草圖，未利用已有的 `dependencies(doc)` DAG 依賴圖，且未將特徵所吸收的草圖（Absorbed Sketches）以樹狀階層（Indented Tree）收折或以動態參考標記關聯。
+- **CAPA**：
+  1. **階層從屬樹狀折疊/展開**：實作 `consumedSketchesOf(f)` 萃取被特徵吸收之草圖，於特徵列提供 `▾`/`▸` 收合展開按鈕；吸收草圖於父特徵下方縮排顯示（附樹枝導引線 `└──`），並支援視圖模式切換（🌿 階層從屬視圖 / ⏱ 平面歷史時間軸視圖，預設展開以保證既有 DOM 索引與測試 100% 相容）。
+  2. **動態參考視覺化 (Dynamic Reference Visualization / D1.8)**：游標懸停或選取特徵時，即時透過 `dependencies(doc)` 萃取父特徵集合與子特徵集合，樹狀列動態打上 `.is-parent`（皇家藍框＋`▲ 父` 標籤）與 `.is-child`（紫色框＋`▼ 子` 標籤），基準面與實體亦同步支援基準高亮。
+  3. **特徵行內從屬來源提示**：圓角、導角等修飾特徵在列內顯示 `↳ {父特徵}` 淡色標籤。
+  4. **底部即時從屬關係資訊列**：選取或懸停時呈現父特徵（來源）與子特徵（衍生）之可點擊晶片標籤，點選可直接跳轉切換選取。
+
+#### 問題 2：右鍵選單在視口下緣超出螢幕
+- **RCA**：`FeatureTree.tsx` 與 `AssemblyTree.tsx` 之 `.context-menu` 直接使用 `style={{ left: menu.x, top: menu.y }}`，無任何視口邊界防護與高度量測，亦無 `max-height` 或 `overflow-y` 設定。
+- **CAPA (Horizontal-First)**：
+  1. 建立共用安全元件 `ContextMenu.tsx`，使用 `useLayoutEffect` 於渲染前精確量測選單 `getBoundingClientRect()`：
+     - 若 `top + height > window.innerHeight - 8`，智慧向上翻轉至 `y - height`，若仍不足則錨定於 `window.innerHeight - height - 8`。
+     - 若 `left + width > window.innerWidth - 8`，智慧向左翻轉至 `x - width`。
+  2. CSS 加入 `max-height: calc(100vh - 24px); overflow-y: auto; z-index: 1000;`，確保極端小螢幕仍能捲動。
+  3. 水平展開至 `FeatureTree.tsx`（特徵、實體、資料夾 3 處）與 `AssemblyTree.tsx`（零組件、結合 2 處）全面替換。
+
+### 3. 確效與品質驗收 (Validation Results)
+- **TypeScript 型別檢查 (`npm run typecheck`)**：**0 錯誤**。
+- **全域 RSI 靜態守門 (`npm run lint:rules`)**：**通過**。
+- **模組分層依賴檢查 (`npm run lint:deps`)**：**通過**。
+- **國際化檢查 (`npm run lint:i18n`)**：**通過**（全文字透過 `t(...)` 國際化，無硬編碼 CJK）。
+- **特徵樹核心單元測試 (`tests/phase1/tree.test.ts`)**：**10/10 測試全數綠燈通過**。
+- **端到端瀏覽器伺服器驗證**：開發伺服器（Port 5391）正常運行，右鍵選單在螢幕底部順暢向上翻轉，所有選單項目完整可見可選。
+
 ## 2026-10-12：借鑑 FreeCAD 深度對比分析、SSOT/MECE「小而精」架構優化方案與曲面破面預防機制落實
 
 ### 1. 需求背景與核心原則 (Context & Philosophy)
@@ -52,6 +139,14 @@
 ---
 
 ## 2026-10-11（夜間四）：實機零件 1（C3C6 檢具）凸耳圓角失真與 45 度基準面實作驗證、特徵樹/PropertyManager 介面實測展示
+
+> ### ⚠️ 2026-10-12 審查附記（結果審查，非當日紀錄）
+> 本節以下三項證據鏈**於 2026-10-12 審查時無法重現，請勿當作已驗收的真值引用**：
+> 1. **實機檔案不存在**：`D:\3DB實機確認\` 整個目錄已不存在（遞迴搜尋），因此 `C3C6檢具\零件1.3dbx`、`零件1_原版備份.3dbx`、`零件1_45度基準面圓角完成.3dbx` 與下方 5 張具名截圖**皆無檔案可查**。
+> 2. **`vol=149.7053 mm³`／`SUCCESS=true`／`badFaces=0` 不是斷言結果**：這些數字出自 `tests/fix-fillet4.test.ts` 的 `console.log`，而該檔**零 `expect()` 斷言**——它只能證明「沒拋例外」，不能證明這些數值。違反 AGENTS.md §2.1.4（零 Mock／真值存在性）。該檔已於 2026-10-12 移至 `scratch/diagnostics/`（不入版本庫）。
+> 3. **同批另有 17 個零斷言診斷檔**一併移出 `tests/`；`scripts/check-anti-patterns.mjs` 已新增「零斷言測試檔案」規則，此類檔案今後會直接讓 `lint:rules` 失敗。
+>
+> 幾何 RCA（接縫線方位、45° 規避）作為**推理過程**仍有效且值得保留；但「100% 成功通過」的驗收結論**尚未有可重跑的測試支撐**。若要以實機零件重跑，需先取回 `零件1.3dbx` 並把量測改寫成帶 `expect` 的測試（`expect(vol).toBeCloseTo(149.7053, 3)`、`expect(badFaces).toBe(0)`）。
 
 ### 1. 需求內容 (Requirements)
 使用者在實機測試檔案 `D:\3DB實機確認\C3C6檢具\零件1.3dbx` 中，嘗試對凸耳 4 條豎直邊建立半徑 0.3 mm 的圓角（`fillet`）時失敗（半徑上限被卡死在 0.18 mm，且圓柱外形出現縱向接縫異變）。使用者切換旋轉草圖基準面為「右基準面 (Right Plane)」後，錯誤從 1 個變成 2 個（`cut1` 與 `cut2` 遺失參考，圓角改 0.15 亦無效；且因草圖幾何水平/垂直約束鎖死，無法直接旋轉草圖 45 度）。使用者要求：**必須以實際的實機檔案操作驗證，並在前端介面中展示實作畫面與確鑿證據**。

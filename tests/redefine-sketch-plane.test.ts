@@ -116,4 +116,61 @@ describe('redefineSketchPlane (編輯草圖基準面)', () => {
     expect(sk1_v3.plane.name).toBe('datum1');
     expect(parentsOf(sk1_v3, doc3)).toEqual(['datum1']);
   });
+
+  it('refuses a plane that was never made', () => {
+    // Before, the reference was stored as given, so the DAG grew a parent that resolves to nothing: every
+    // rebuild that touched the sketch failed later, far from the command that caused it.
+    const doc: PartDoc = {
+      schemaVersion: 54,
+      kind: 'part',
+      features: [
+        { id: 'sk1', name: '草圖1', type: 'sketch', suppressed: false, plane: { kind: 'datum', name: 'plane:front' }, entities: [], constraints: [] },
+        { id: 'ext1', name: '伸長1', type: 'extrude', op: 'boss', sketch: 'sk1', dir1: { type: 'blind', depth: '5' }, suppressed: false },
+      ],
+      bodies: {},
+      variables: [],
+      properties: {},
+      visibility: {},
+      appearances: [],
+      idCounters: { point: 10, line: 10, constraint: 10, dimension: 10 },
+      displayUnits: { length: 'mm', angle: 'deg' },
+      rollbackIndex: null,
+      blobs: [],
+    };
+
+    expect(() => applyCommand(doc, { type: 'redefineSketchPlane', featureId: 'sk1', plane: { kind: 'datum', name: 'ghost' } })).toThrow();
+
+    // The original document is untouched: the command layer rejects before anything is written.
+    expect((doc.features[0] as SketchFeature).plane.name).toBe('plane:front');
+  });
+
+  it('refuses a datum plane later in the history than the sketch', () => {
+    // A sketch may only sit on geometry that already exists. insertFeature enforces this when the sketch is
+    // first placed; redefining the plane must not be the way around it.
+    const doc: PartDoc = {
+      schemaVersion: 54,
+      kind: 'part',
+      features: [
+        { id: 'sk1', name: '草圖1', type: 'sketch', suppressed: false, plane: { kind: 'datum', name: 'plane:front' }, entities: [], constraints: [] },
+        { id: 'later1', name: '較晚基準面', type: 'refPlane', suppressed: false, def: { mode: 'offset', plane: { kind: 'datum', name: 'plane:top' }, distance: '5' } },
+      ],
+      bodies: {},
+      variables: [],
+      properties: {},
+      visibility: {},
+      appearances: [],
+      idCounters: { point: 10, line: 10, constraint: 10, dimension: 10 },
+      displayUnits: { length: 'mm', angle: 'deg' },
+      rollbackIndex: null,
+      blobs: [],
+    };
+
+    expect(() => applyCommand(doc, { type: 'redefineSketchPlane', featureId: 'sk1', plane: { kind: 'datum', name: 'later1' } })).toThrow();
+    expect((doc.features[0] as SketchFeature).plane.name).toBe('plane:front');
+
+    // Moved earlier, the same plane is fine — the rule is about position in the history, not about the plane.
+    const moved = applyCommand(doc, { type: 'arrange', order: ['later1', 'sk1'] });
+    const ok = applyCommand(moved, { type: 'redefineSketchPlane', featureId: 'sk1', plane: { kind: 'datum', name: 'later1' } });
+    expect((ok.features.find((f) => f.id === 'sk1') as SketchFeature).plane.name).toBe('later1');
+  });
 });

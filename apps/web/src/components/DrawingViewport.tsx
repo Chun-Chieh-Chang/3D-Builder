@@ -46,7 +46,11 @@ type Drag =
   | { kind: 'table'; id: string; from: P; origin: P; delta: P }
   | { kind: 'balloon'; id: string; item: string; from: P; origin: P; delta: P }
   | { kind: 'surface'; id: string; from: P; origin: P; delta: P }
-  | { kind: 'draw'; tool: 'section' | 'detail'; view: Id; from: P; to: P };
+  | { kind: 'draw'; tool: 'section' | 'detail'; vertical?: boolean; view: Id; from: P; to: P }
+  | { kind: 'placeDraw'; placement: DrawPlacement; from: P; to: P };
+type DrawPlacement =
+  | { tool: 'section'; view: Id; line: [P, P] }
+  | { tool: 'detail'; view: Id; centre: P; radius: number };
 
 const round2 = (n: number) => Math.round(n * 100) / 100;
 
@@ -82,6 +86,9 @@ export function DrawingViewport() {
   const host = useRef<HTMLElement>(null);
   const [pan, setPan] = useState({ x: 0, y: 0, zoom: 1 });
   const [drag, setDrag] = useState<Drag | null>(null);
+  const [pendingDraw, setPendingDraw] = useState<Extract<Drag, { kind: 'draw' }> | null>(null);
+  const [pendingPlacement, setPendingPlacement] = useState<DrawPlacement | null>(null);
+  const [drawCursor, setDrawCursor] = useState<P | null>(null);
   const [panning, setPanning] = useState<{ x: number; y: number } | null>(null);
   /** Where the pointer is on the sheet, and what is under it: for the preview of a tool and the cursor. */
   const [hover, setHover] = useState<{ p: P; feature: { view: Id; feature: Pickable } | null; dimension: string | null } | null>(null);
@@ -111,6 +118,7 @@ export function DrawingViewport() {
     if (plan) doc = { ...doc, dimensions: [...doc.dimensions, { id: 'preview', view: plan.view, ...plan.draft } as Dimension] };
     if (!drag) return doc;
     if (drag.kind === 'draw') return doc;
+    if (drag.kind === 'placeDraw') return doc;
     if (drag.kind === 'dimension') return { ...doc, dimensions: doc.dimensions.map((x) => (x.id === drag.id ? ({ ...x, ...drag.patch } as Dimension) : x)) };
     if (drag.kind === 'table') return { ...doc, tables: doc.tables.map((x) => (x.id === drag.id ? { ...x, at: [drag.origin[0] + drag.delta[0], drag.origin[1] + drag.delta[1]] as P } : x)) };
     if (drag.kind === 'balloon') return { ...doc, tables: doc.tables.map((x) => (x.id === drag.id && x.kind === 'bom' ? { ...x, balloonAt: { ...x.balloonAt, [drag.item]: [drag.origin[0] + drag.delta[0], drag.origin[1] + drag.delta[1]] as P } } : x)) };
@@ -178,6 +186,14 @@ export function DrawingViewport() {
       if (el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.tagName === 'SELECT' || el.isContentEditable)) return;
       if (e.key === 'Escape') {
         if (drag) setDrag(null);
+        else if (pendingDraw) {
+          setPendingDraw(null);
+          setDrawCursor(null);
+        }
+        else if (pendingPlacement) {
+          setPendingPlacement(null);
+          setDrawCursor(null);
+        }
         else if (tool) {
           if (tool.kind === 'dimension' && tool.picks.length > 0) d.setTool({ kind: 'dimension', picks: [] });
           else d.setTool(null);
@@ -198,7 +214,12 @@ export function DrawingViewport() {
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [drag, tool, drw.dimension, drw.finish, d]);
+  }, [drag, pendingDraw, pendingPlacement, tool, drw.dimension, drw.finish, d]);
+  useEffect(() => {
+    setPendingDraw(null);
+    setPendingPlacement(null);
+    setDrawCursor(null);
+  }, [tool?.kind]);
   // a dimension that is gone (deleted, undone) is not the one chosen
   useEffect(() => {
     if (drw.dimension && !drw.doc.dimensions.some((x) => x.id === drw.dimension)) d.selectDimension(null);
@@ -284,7 +305,7 @@ export function DrawingViewport() {
     if ((e.target as HTMLElement).closest('.heads-up')) return;
     const p = onSheet(e);
     // the handle at the corner of the chosen view: the scale
-    if ((e.target as HTMLElement).closest('[data-scale-handle]') && drw.selected) {
+    if (!tool && (e.target as HTMLElement).closest('[data-scale-handle]') && drw.selected) {
       const view = drw.doc.views.find((v) => v.id === drw.selected);
       const placed = view && built.placed.get(view.id);
       if (view && placed) {
@@ -310,11 +331,26 @@ export function DrawingViewport() {
       return;
     }
     if (tool) {
+      if (pendingPlacement) {
+        capture(e);
+        setDrag({ kind: 'placeDraw', placement: pendingPlacement, from: p, to: p });
+        return;
+      }
       const view = viewUnder(p);
       if (!view) return d.notifyInfo(t(tool.kind === 'section' ? 'drawingUi.hint.section' : 'drawingUi.hint.detail'));
+      if (pendingDraw?.tool === tool.kind) {
+        if (view.id !== pendingDraw.view) return;
+        const placement = makeDrawPlacement({ ...pendingDraw, to: p });
+        setPendingDraw(null);
+        if (placement) {
+          setPendingPlacement(placement);
+          setDrawCursor(p);
+        } else setDrawCursor(null);
+        return;
+      }
       capture(e);
       d.select(view.id);
-      setDrag({ kind: 'draw', tool: tool.kind, view: view.id, from: p, to: p });
+      setDrag({ kind: 'draw', tool: tool.kind, ...(tool.kind === 'section' ? { vertical: tool.vertical ?? true } : {}), view: view.id, from: p, to: p });
       return;
     }
     // a dimension: its text slides, the rest of it moves away from or round what it measures
@@ -396,6 +432,10 @@ export function DrawingViewport() {
       setDrag({ ...drag, delta: by / drag.scale });
     } else if (drag?.kind === 'draw') {
       setDrag({ ...drag, to: p });
+    } else if (drag?.kind === 'placeDraw') {
+      setDrag({ ...drag, to: p });
+    } else if (pendingDraw || pendingPlacement) {
+      setDrawCursor(p);
     } else if (drag) {
       setDrag({ ...drag, delta: [p[0] - drag.from[0], p[1] - drag.from[1]] } as Drag);
     } else if (panning) {
@@ -410,7 +450,11 @@ export function DrawingViewport() {
   /** The scale the dragged view had before: the one of what the drag changes. */
   const shownBefore = (drag: Extract<Drag, { kind: 'scale' }>): Scale | null => ('sheet' in drag.target ? drw.doc.sheet.scale : (drw.doc.views.find((v) => v.id === (drag.target as { view: string }).view)?.scale ?? null));
   const up = () => {
-    if (drag?.kind === 'scale') {
+    if (drag?.kind === 'placeDraw') {
+      placeDraw(drag.placement, drag.to);
+      setPendingPlacement(null);
+      setDrawCursor(null);
+    } else if (drag?.kind === 'scale') {
       const was = shownBefore(drag);
       if (was === null || was[0] !== drag.scale[0] || was[1] !== drag.scale[1]) {
         if ('sheet' in drag.target) d.setSheet({ scale: drag.scale });
@@ -429,7 +473,24 @@ export function DrawingViewport() {
         d.setTable(drag.id, { balloonAt: { ...was, [drag.item]: [round2(drag.origin[0] + drag.delta[0]), round2(drag.origin[1] + drag.delta[1])] } });
       }
     } else if (drag?.kind === 'draw') {
-      finishDraw(drag);
+      if (Math.hypot(drag.to[0] - drag.from[0], drag.to[1] - drag.from[1]) < 3) {
+        if (drag.tool === 'section') {
+          const placement = makeDrawPlacement({ ...drag, to: drag.from });
+          if (placement) {
+            setPendingPlacement(placement);
+            setDrawCursor(drag.from);
+          }
+        } else {
+          setPendingDraw({ ...drag, to: drag.from });
+          setDrawCursor(drag.from);
+        }
+      } else {
+        const placement = makeDrawPlacement(drag);
+        if (placement) {
+          setPendingPlacement(placement);
+          setDrawCursor(drag.to);
+        }
+      }
     } else if (drag?.kind === 'surface') {
       if (Math.hypot(drag.delta[0], drag.delta[1]) > 0.05) d.setSurfaceFinish(drag.id, { at: [round2(drag.origin[0] + drag.delta[0]), round2(drag.origin[1] + drag.delta[1])] });
     } else if (drag && Math.hypot(drag.delta[0], drag.delta[1]) > 0.05) {
@@ -444,25 +505,33 @@ export function DrawingViewport() {
     setPanning(null);
   };
 
-  /** What is drawn with the tool is made: a section through where the pointer was pressed, along the direction it was dragged; a detail round the middle it was pressed on. */
-  const finishDraw = (g: Extract<Drag, { kind: 'draw' }>) => {
+  /** Turn the cut line or detail circle gesture into geometry, then wait for the view placement click. */
+  const makeDrawPlacement = (g: Extract<Drag, { kind: 'draw' }>): DrawPlacement | null => {
     const placed = basePlaced.get(g.view);
     const box = drw.lines.get(g.view)?.box;
-    if (!placed || !box) return;
+    if (!placed || !box) return null;
     const at = toView(placed, g.from);
     if (g.tool === 'detail') {
       const radius = Math.hypot(g.to[0] - g.from[0], g.to[1] - g.from[1]) / placed.scale;
-      if (radius < 1) return d.notifyInfo(t('drawingUi.hint.detail'));
-      d.addDetail(g.view, [round2(at[0]), round2(at[1])], round2(radius));
-      return d.setTool(null);
+      if (radius < 1) {
+        d.notifyInfo(t('drawingUi.hint.detail'));
+        return null;
+      }
+      return { tool: 'detail', view: g.view, centre: [round2(at[0]), round2(at[1])], radius: round2(radius) };
     }
     const dx = Math.abs(g.to[0] - g.from[0]);
     const dy = Math.abs(g.to[1] - g.from[1]);
     // a press with no drag is a vertical cut; a drag is along the line it draws
-    const horizontal = Math.max(dx, dy) >= 3 && dx > dy;
+    const horizontal = Math.hypot(g.to[0] - g.from[0], g.to[1] - g.from[1]) >= 3 ? dx > dy : g.vertical === false;
     const pad = 5;
     const line: [P, P] = horizontal ? [[box.min[0] - pad, round2(at[1])], [box.max[0] + pad, round2(at[1])]] : [[round2(at[0]), box.min[1] - pad], [round2(at[0]), box.max[1] + pad]];
-    d.addSection(g.view, line);
+    return { tool: 'section', view: g.view, line };
+  };
+
+  /** Place the derived view at the chosen sheet point, as the final click in the SolidWorks workflow. */
+  const placeDraw = (placement: DrawPlacement, at: P) => {
+    if (placement.tool === 'detail') d.addDetail(placement.view, placement.centre, placement.radius, [round2(at[0]), round2(at[1])]);
+    else d.addSection(placement.view, placement.line, [round2(at[0]), round2(at[1])]);
     d.setTool(null);
   };
 
@@ -470,7 +539,9 @@ export function DrawingViewport() {
   const chosen = drw.dimension ? dimensionItems.filter((i) => i.group === drw.dimension) : [];
   const dimensionHints = ['drawingUi.hint.dimension0', 'drawingUi.hint.dimension1', 'drawingUi.hint.dimension2'] as const;
   const hint =
-    tool?.kind === 'dimension'
+    pendingPlacement
+      ? t('drawingUi.hint.placeDerived')
+      : tool?.kind === 'dimension'
       ? t(dimensionHints[Math.min(2, tool.picks.length)]!)
       : tool?.kind === 'surface'
       ? t('drawingUi.toolSurfaceFinish')
@@ -483,7 +554,8 @@ export function DrawingViewport() {
   const chosenFinishPlaced = chosenFinish ? built.placed.get(chosenFinish.view) : undefined;
   const chosenFinishItems = chosenFinish && chosenFinishPlaced ? surfaceFinishItems([chosenFinish], chosenFinishPlaced) : [];
   // the geometry of the tool's preview on the sheet
-  const drawn = drag?.kind === 'draw' ? drag : null;
+  const drawn = drag?.kind === 'draw' ? drag : pendingDraw ? { ...pendingDraw, to: drawCursor ?? pendingDraw.from } : null;
+  const placementCursor = drag?.kind === 'placeDraw' ? drag.to : pendingPlacement ? drawCursor : null;
   const drawnPlaced = drawn ? basePlaced.get(drawn.view) : undefined;
   return (
     <main
@@ -537,6 +609,7 @@ export function DrawingViewport() {
               <line y1={sheet.height - (drawnPlaced.at[1] - half)} y2={sheet.height - (drawnPlaced.at[1] + half)} x1={drawn.from[0]} x2={drawn.from[0]} stroke="#1c7ed6" strokeWidth={0.6} strokeDasharray="6 2 1 2" />
             );
           })()}
+          {placementCursor && <path d={`M ${placementCursor[0] - 2} ${sheet.height - placementCursor[1]} h 4 M ${placementCursor[0]} ${sheet.height - placementCursor[1] - 2} v 4`} fill="none" stroke="#1c7ed6" strokeWidth={0.7} />}
         </svg>
         {selected && selected.w > 0 && (
           <div

@@ -73,20 +73,20 @@ export type SketchConstraint =
   /** A point where two curves cross (SolidWorks 「交錯」, v11). */
   | { id: Id; type: 'intersection'; point: Id; a: Id; b: Id }
   | { id: Id; type: 'fix'; point: Id }
-  | { id: Id; type: 'distance'; a: Id; b?: Id; value: Expr; label?: string; driving?: boolean }
-  | { id: Id; type: 'distanceX'; a: Id; b: Id; value: Expr; label?: string; driving?: boolean }
-  | { id: Id; type: 'distanceY'; a: Id; b: Id; value: Expr; label?: string; driving?: boolean }
-  | { id: Id; type: 'radius'; circle: Id; value: Expr; label?: string; driving?: boolean }
-  | { id: Id; type: 'diameter'; circle: Id; value: Expr; label?: string; driving?: boolean }
+  | { id: Id; type: 'distance'; a: Id; b?: Id; value: Expr; label?: string; /** Position of the dimension text in sketch coordinates; absent uses automatic layout. */ labelPosition?: [number, number]; driving?: boolean }
+  | { id: Id; type: 'distanceX'; a: Id; b: Id; value: Expr; label?: string; /** Position of the dimension text in sketch coordinates; absent uses automatic layout. */ labelPosition?: [number, number]; driving?: boolean }
+  | { id: Id; type: 'distanceY'; a: Id; b: Id; value: Expr; label?: string; /** Position of the dimension text in sketch coordinates; absent uses automatic layout. */ labelPosition?: [number, number]; driving?: boolean }
+  | { id: Id; type: 'radius'; circle: Id; value: Expr; label?: string; /** Position of the dimension text in sketch coordinates; absent uses automatic layout. */ labelPosition?: [number, number]; driving?: boolean }
+  | { id: Id; type: 'diameter'; circle: Id; value: Expr; label?: string; /** Position of the dimension text in sketch coordinates; absent uses automatic layout. */ labelPosition?: [number, number]; driving?: boolean }
   /** The length of an arc (v11); `circle` is the arc. */
-  | { id: Id; type: 'arcLength'; circle: Id; value: Expr; label?: string; driving?: boolean }
+  | { id: Id; type: 'arcLength'; circle: Id; value: Expr; label?: string; /** Position of the dimension text in sketch coordinates; absent uses automatic layout. */ labelPosition?: [number, number]; driving?: boolean }
   /**
    * The angle of the sector between two lines where the dimension was placed (SolidWorks). The sector
    * lies between the rays along the lines as drawn, each reversed where `flip` says so; seen from the
    * intersection, `b`'s ray is `value` counter-clockwise from `a`'s. Without `flip` (and in documents
    * before v6) the rays are the lines as drawn.
    */
-  | { id: Id; type: 'angle'; a: Id; b: Id; value: Expr; label?: string; driving?: boolean; flip?: 'a' | 'b' | 'both' };
+  | { id: Id; type: 'angle'; a: Id; b: Id; value: Expr; label?: string; /** Position of the dimension text in sketch coordinates; absent uses automatic layout. */ labelPosition?: [number, number]; driving?: boolean; flip?: 'a' | 'b' | 'both' };
 
 export type DimensionConstraint = Extract<SketchConstraint, { value: Expr }>;
 

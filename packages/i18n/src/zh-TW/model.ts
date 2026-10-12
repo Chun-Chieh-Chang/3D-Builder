@@ -81,6 +81,7 @@ export const model = {
   'cmd.pictureOpacity': '圖片的不透明度要在 0 到 1 之間',
   'cmd.importBodyMustUseData': '輸入本體必須使用這份輸入資料',
   'cmd.dimensionNotFound': '找不到尺寸：{id}',
+  'cmd.dimensionPositionNotFinite': '尺寸標註的位置必須是有限的數值',
   'cmd.onlyExtrudeHasEnd': '只有伸長特徵有終止型態',
   'cmd.onlyRevolveHasAngle': '只有旋轉特徵有旋轉角度',
   'cmd.onlyRevolveHasAxis': '只有旋轉特徵有旋轉軸',
