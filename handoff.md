@@ -8,11 +8,14 @@
   - **沒合進來的**：`tests/` 根目錄 18 個零斷言診斷測試（副本在 `scratch/diagnostics/`，不進版本庫）；客戶零件 `apps/web/public/*part1*.json`（已取消追蹤，檔案仍在磁碟，筆電的 `.gitignore` 擋著）。
   - **補上筆電提交漏掉的**：`viewer.ts` 的 `ViewerEvents.onLabelDrag`（筆電的 `Viewport.tsx` 已呼叫，原本編譯不過）；`redefineSketchPlane` 用 `planeRef()` 校驗（筆電 DEV_LOG 說有、提交裡沒有）；`cmd.dimensionPositionNotFinite` 進 i18n；e2e 輔助（`manual-support.js`、`phase1-demo-parts.js`）改讀設計樹列的 `.name`（列裡多了 ▲/▼、↳、└── 裝飾）。
   - **之後的修改（`a96321f`）**：① **C19**：階層模式下，草圖只有和使用它的特徵在同一個資料夾（或都不在）時才顯示在特徵底下，否則留在自己的資料夾、跟著折疊（`FeatureTree.tsx` 的 `sketchesUnder`）。② **零件 Schema 54→55**（使用者決定）：`labelPosition` 是檔案的新欄位，升版讓舊程式拒絕而不是默默丟掉；遷移空轉；測試 `tests/phase8/dimension-label-position.test.ts`。③ **尺寸標籤拖曳即時跟隨**（使用者決定）：拖曳中只在畫面上移動標籤（`viewer.ts` 標籤的 `offset`／`held`），放開時寫入一次（一次拖曳＝一個復原步驟）；寫入被拒絕時約 0.4 秒後退回。
-  - **驗證（`a96321f`）**：`tsc`、lint:deps、lint:i18n 通過；vitest **2623 過、22 略過、0 失敗**；`verify:ui` 相關 32 支（C10–C26、草圖平面、尺寸標籤、螺牙、phase3-sketch-*、phase5-dimensions）**32/32**。**全部 126 支沒有跑完**（使用者中止），下次有空時跑一次全量 `npm run verify:ui`。
+  - **驗證（`a96321f`）**：`tsc`、lint:deps、lint:i18n 通過；vitest **2623 過、22 略過、0 失敗**；`verify:ui` 相關 32 支（C10–C26、草圖平面、尺寸標籤、螺牙、phase3-sketch-*、phase5-dimensions）**32/32**。全量見下一點。
+  - **全量 `npm run verify:ui`（2026-10-12 深夜，`47e743a`，開發伺服器剛重啟）：122/128 通過，6 項失敗，都還沒修：**
+    - `manual-drawing-annotate.js` 步驟 10、11：`choose is not defined`。**確定是筆電 10-12 改腳本時寫錯**（`1ce9501` 加了兩處 `choose(panel('[data-field="sectionAxis"]'), …)`，`choose` 從未定義）；要補上這個輔助函式或改用既有的下拉選取方式。
+    - `manual-drawing-linked.js` 步驟 2、7（整組平移與置中的座標不對）、`manual-e1.js` 步驟 3、4（點不到元素）、`phase2-assembly.js`（`no PM field 深度`）、`phase5-angle.js`（等 `支架.3dbx` 開啟逾時）、`phase6-snap-ui.js`（`no tree row sk`）：這 5 支腳本自 10-07～10-09 後沒改過，**10-09 的全量是 125/125**，所以是 10-09 之後的產品改動造成（嫌疑：筆電的設計樹階層模式、PropertyManager、工程圖改動，或 10-10～10-12 的其他工作），**未逐一查明**。
   - **驗證前要注意（這次踩到兩次）**：① 5391 埠上若有長時間開著的 `vite`，可能送出舊模組（合併或大量改檔後監看漏掉），結果不可信；驗證前先重啟開發伺服器，可用 `curl http://127.0.0.1:5391/@fs/<檢出路徑>/packages/render/src/viewer.ts` 找剛改的識別字確認（註解會被轉譯拿掉，要找程式碼本身）。② 被中止的 `verify:ui` 可能留下 `node scripts/verify-ui.mjs` 程序佔住 5393 埠，下一次會 `EADDRINUSE`，先結束那個程序。③ 單元測試與 `verify:ui` 同時跑時，無頭 Chrome 可能 12 秒內起不來（9333 `ECONNREFUSED`），要依序跑。
   - **螺牙**：審查發現的問題已由 10-11 的 `d1dc276` 修掉，其後有標準螺紋規格庫（`c4de3ba`）與 `f832934`；這次沒有再動螺牙。
   - **待使用者決定**：客戶零件 `real-part1.json`、`real-part1-fixed.json`、`part1-demo.json` 仍在已推送的 `c7f46be` 歷史裡（私有倉庫）；要徹底清除需改寫歷史並強制推送，無法復原。
-  - **下一步建議**：① 筆電 `git pull`；② 跑一次全量 `npm run verify:ui`；③ 決定客戶零件歷史的處理。
+  - **下一步建議**：① 筆電 `git pull`；② 修上面 6 項 `verify:ui` 失敗（先修 `choose`，其餘先用 `--only <腳本>` 單獨重現、二分到是哪個提交造成）；③ 決定客戶零件歷史的處理。
 ---
 
 ## ⚡ 今日任務總結 (2026-10-12)
