@@ -1,7 +1,7 @@
 // Dimensions and sections are made and moved on the sheet itself, as in SolidWorks, not from lists and numbers in a panel: the Smart Dimension tool (point at an element of a
 // view, at a second one, then where the dimension goes; a circle alone is a diameter), a dimension is chosen by clicking it, its line is dragged (how far it is from the view),
 // its text is dragged along the line, a double click goes to its text, the panel edits what is written (decimals, prefix, suffix, a text of its own), Delete takes it away;
-// the section tool draws the cut on a view, the line of a section is dragged across, the detail tool draws a circle. Asked for by the user. Replayed in the app's page
+// the section tool selects a vertical or horizontal cut position (or drags a custom cut), then places the view with a click; the detail tool draws a circle with two clicks (or a drag), then places the view with a click. Asked for by the user. Replayed in the app's page
 // (http://127.0.0.1:5391, 1280×720; `npm run verify:ui` does it). Not a Vitest test.
 //
 //   await import('/@fs/<checkout>/tests/e2e/manual-drawing-annotate.js?' + Date.now());   // in a freshly loaded page
@@ -210,24 +210,39 @@ M.run = async () => {
     return { pass: after === before - 1 && drw().doc.dimensions.length === before, before, after };
   });
   let section;
-  await step('10 the section tool: pressing on the front view (no drag) draws a vertical cut there; the section view is made, the tool is done', async () => {
+  await step('10 the section tool: two clicks draw a vertical cut, then a click places the section view', async () => {
     panel('[data-action="toolSection"]').click();
     await H.wait(150);
+    await choose(panel('[data-field="sectionAxis"]'), 'v');
     const p = placed(front);
     const on = [p.at[0] + 15, p.at[1]];
     const before = drw().doc.views.length;
     await click(on);
+    const geometryWaitsForPlacement = drw().doc.views.length === before && drw().tool?.kind === 'section' && document.querySelector('[data-hint]')?.textContent.includes('放置');
+    const placeAt = [on[0] + 50, on[1] + 20];
+    await hoverAt(placeAt);
+    const previewedPlacement = !!document.querySelector('[data-overlay] path');
+    await click(placeAt);
     const v = drw().doc.views.at(-1);
     section = v?.id;
     const x = (on[0] - p.at[0]) / p.scale + p.centre[0];
-    return { pass: drw().doc.views.length === before + 1 && v.kind === 'section' && v.parent === front && near(v.line[0][0], x, 0.02) && v.line[0][0] === v.line[1][0] && drw().tool === null, line: v.line, x };
+    const placedAtPointer = near(v.at[0], placeAt[0], 0.2) && near(v.at[1], placeAt[1], 0.2);
+    return { pass: geometryWaitsForPlacement && previewedPlacement && placedAtPointer && drw().doc.views.length === before + 1 && v.kind === 'section' && v.parent === front && near(v.line[0][0], x, 0.02) && v.line[0][0] === v.line[1][0] && drw().tool === null, geometryWaitsForPlacement, previewedPlacement, placedAtPointer, at: v.at, line: v.line, x };
   });
-  await step('11 dragging along the line draws a horizontal one; the line of a section on its parent is dragged across: 8 mm to the side moves the cut by 8', async () => {
+  await step('11 selecting horizontal and clicking sets a horizontal cut; a section line can still be dragged across its parent', async () => {
     panel('[data-action="toolSection"]').click();
     await H.wait(150);
+    await choose(panel('[data-field="sectionAxis"]'), 'h');
+    const selectedHorizontal = drw().tool?.kind === 'section' && drw().tool.vertical === false;
     const p = placed(top);
     const from = [p.at[0] - 20, p.at[1] + 5];
-    await drag(from, [from[0] + 30, from[1]]);
+    const before = drw().doc.views.length;
+    await click(from);
+    const geometryWaitsForPlacement = drw().doc.views.length === before && drw().tool?.kind === 'section';
+    const placeAt = [p.at[0] + 60, p.at[1] + 35];
+    await hoverAt(placeAt);
+    const previewedPlacement = !!document.querySelector('[data-overlay] path');
+    await click(placeAt);
     const v = drw().doc.views.at(-1);
     const horizontal = v.kind === 'section' && v.parent === top && v.line[0][1] === v.line[1][1];
     // the first section's line is on the front view: take hold of it and move it
@@ -236,17 +251,24 @@ M.run = async () => {
     const lineAt = [fp.at[0] + (sec.line[0][0] - fp.centre[0]) * fp.scale, fp.at[1]];
     const x0 = sec.line[0][0];
     await drag(lineAt, [lineAt[0] + 8, lineAt[1]]);
-    return { pass: horizontal && near(drw().doc.views.find((x) => x.id === section).line[0][0], x0 + 8 / fp.scale, 0.06), horizontal, x0, now: drw().doc.views.find((x) => x.id === section).line[0][0] };
+    return { pass: selectedHorizontal && geometryWaitsForPlacement && previewedPlacement && near(v.at[0], placeAt[0], 0.2) && near(v.at[1], placeAt[1], 0.2) && horizontal && near(drw().doc.views.find((x) => x.id === section).line[0][0], x0 + 8 / fp.scale, 0.06), selectedHorizontal, geometryWaitsForPlacement, previewedPlacement, horizontal, at: v.at, x0, now: drw().doc.views.find((x) => x.id === section).line[0][0] };
   });
-  await step('12 the detail tool: pressing at a hole and dragging out 10 mm makes a detail view of that circle, radius 10', async () => {
+  await step('12 the detail tool: click the circle centre and radius, then click to place the detail view', async () => {
     panel('[data-action="toolDetail"]').click();
     await H.wait(150);
     const c = drw().features.get(top).find((f) => f.type === 'circle' && f.full);
     const centre = sheetOf(top, c.centre[0], c.centre[1]);
     const before = drw().doc.views.length;
-    await drag(centre, [centre[0] + 10, centre[1]]);
+    await click(centre);
+    await click([centre[0] + 10, centre[1]]);
+    const geometryWaitsForPlacement = drw().doc.views.length === before && drw().tool?.kind === 'detail' && document.querySelector('[data-hint]')?.textContent.includes('放置');
+    const placeAt = [centre[0] - 50, centre[1] + 20];
+    await hoverAt(placeAt);
+    const previewedPlacement = !!document.querySelector('[data-overlay] path');
+    await click(placeAt);
     const v = drw().doc.views.at(-1);
-    return { pass: drw().doc.views.length === before + 1 && v.kind === 'detail' && near(v.radius, 10 / placed(top).scale, 0.05) && near(v.centre[0], c.centre[0], 0.05) && drw().tool === null, v };
+    const placedAtPointer = near(v.at[0], placeAt[0], 0.2) && near(v.at[1], placeAt[1], 0.2);
+    return { pass: geometryWaitsForPlacement && previewedPlacement && placedAtPointer && drw().doc.views.length === before + 1 && v.kind === 'detail' && near(v.radius, 10 / placed(top).scale, 0.05) && near(v.centre[0], c.centre[0], 0.05) && drw().tool === null, geometryWaitsForPlacement, previewedPlacement, placedAtPointer, v };
   });
   await step('13 the file keeps all of it: saved and opened again, the dimensions with their offset and slide, the text, and the section are as they were', async () => {
     const dims = stable(drw().doc.dimensions);

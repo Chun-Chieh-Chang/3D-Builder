@@ -11,11 +11,20 @@ describe('system options (D8.1)', () => {
   });
 
   it('each value that is not what it should be is the default, the others are kept', () => {
-    const o = parseOptions({ autosave: 'yes', autosaveSeconds: 30, defaultTemplate: 'no-such-template', pickFilter: { faces: false, edges: 'x' } });
+    const o = parseOptions({ autosave: 'yes', autosaveSeconds: 30, defaultTemplate: 'no-such-template', pickFilter: { faces: false, edges: 'x', planes: false }, datumOffset: 't' });
     expect(o.autosave).toBe(true);
     expect(o.autosaveSeconds).toBe(30);
     expect(o.defaultTemplate).toBe('blank');
-    expect(o.pickFilter).toEqual({ faces: false, edges: true, vertices: true });
+    expect(o.pickFilter).toEqual({ faces: false, edges: true, vertices: true, planes: false }); // the remembered choice stays off; a missing one is on (ADR 0127)
+    expect(o.datumOffset).toBe(DEFAULT_OPTIONS.datumOffset); // an expression that is not a plain number is not carried to the next part
+    expect(parseOptions({ datumOffset: ' 25 ' }).datumOffset).toBe('25');
+  });
+
+  it('what an older build stored still gives the new choices their default', () => {
+    const older = JSON.stringify({ autosave: true, autosaveSeconds: 5, defaultTemplate: 'blank', pickFilter: { faces: true, edges: true, vertices: true }, snap: DEFAULT_OPTIONS.snap });
+    const o = loadOptions({ getItem: () => older });
+    expect(o.pickFilter.planes).toBe(true); // planes could not be picked when this was stored
+    expect(o.datumOffset).toBe('10');
   });
 
   it('the autosave wait is a whole number of seconds within the limits', () => {
@@ -27,7 +36,7 @@ describe('system options (D8.1)', () => {
 
   it('what is saved is what is loaded', () => {
     let kept = '';
-    const options = { autosave: false, autosaveSeconds: 60, defaultTemplate: 'aluminium' as const, pickFilter: { faces: true, edges: false, vertices: false }, snap: { ...DEFAULT_OPTIONS.snap, enabled: false, grid: true, gridSpacing: 2.5 } };
+    const options = { autosave: false, autosaveSeconds: 60, defaultTemplate: 'aluminium' as const, pickFilter: { faces: true, edges: false, vertices: false, planes: false }, datumOffset: '25', snap: { ...DEFAULT_OPTIONS.snap, enabled: false, grid: true, gridSpacing: 2.5 } };
     saveOptions(options, { setItem: (_k, v) => void (kept = v) });
     expect(loadOptions({ getItem: () => kept })).toEqual(options);
   });

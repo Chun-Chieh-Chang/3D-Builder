@@ -1,5 +1,158 @@
 # 交接文件
 
+- 最後更新：2026-10-12（**【線架構剖面交線與 SolidWorks 級動態側影輪廓線 (Silhouette Edges) 全套落實驗收完畢】**；**【Codex 任務接棒指南：裝飾用公螺牙與母螺孔 (Cosmetic Threads, C4.9 / ADR 0129) 架構與落地 SOP】**；全套 TypeCheck 0 錯誤、Lint 規則全綠、`acceptance.test.ts` 通過；其他狀態見「最新存檔點」）。
+
+---
+
+## ⚡ 今日任務總結 (2026-10-12)
+
+### 1. 線架構 (Wireframe) 剖面交線即時動態提取 (ADR 0042 / A4.3 / D4.4)
+- **問題根因 (RCA)**：在開啟剖面 (Section Cut) 時，線架構模式僅渲染實體原始網格之特徵邊界 (B-Rep feature edges)；而剖面切過實體內部處並無原始特徵邊線，導致截面兩端懸空斷開，幾何輪廓完全失真。
+- **解決方案**：
+  - 在 [`packages/render/src/viewer.ts`](file:///e:/Self-developed_Apps/G3/3D-Builder/packages/render/src/viewer.ts) 實作 `sliceMeshByPlane(geometry, plane, matrixWorld?)`。
+  - 對三角形各邊與剖切平面進行空間線段截交運算，萃取閉合截面線段。
+  - 建立專屬 `sectionEdges: THREE.LineSegments`，賦予高對比實線材質，設定 `polygonOffset` 與 `renderOrder: 999` 根治切面 Stencil Cap 與交線的 Z-fighting。
+  - 整合進 `Viewer` 生命週期（`setSection`, `applyDisplay`, `clear`, `paintEdges`）。
+- **驗證成果**：[`tests/phase3/section-edges.test.ts`](file:///e:/Self-developed_Apps/G3/3D-Builder/tests/phase3/section-edges.test.ts) **5/5 PASS**（立方體截面 4 線段、傾斜 45° 截面、平移模型矩陣、空交集與生命週期更新皆精確驗證）。
+
+### 2. 比照 SolidWorks 標準之曲面動態側影輪廓線 (View-Dependent Silhouette Edges)
+- **問題根因 (RCA)**：圓柱面、圓錐面、球體等平滑解析曲面缺乏內部幾何銳邊，在線架構模式下只看得到頂底封閉圓環，缺乏外側母線（側影線），導致在 3D 視角下形體不可辨識。
+- **解決方案**：
+  - 在 [`packages/render/src/viewer.ts`](file:///e:/Self-developed_Apps/G3/3D-Builder/packages/render/src/viewer.ts) 實作 `buildSilhouetteIndex(geometry)` 與 `extractSilhouettes(index, pos, viewDir, matrixWorld?)`。
+  - **空間量化 (Spatial Quantization)**：以 `Math.round(val * 1000)` 克服旋轉體在 UV 接縫處 ($u=0$ 與 $u=2\pi$) 頂點索引不同但座標重合導致被誤判為開放邊的缺陷。
+  - **智慧特徵過濾**：排除內部共面三角形（`dot > 0.9999`）與銳角邊（`dot < 0.25`，銳角已由靜態 B-Rep 邊處理），專注於 $1^\circ \sim 75^\circ$ 平滑過渡面。
+  - **視角動態判定**：依相機視線向量 $\mathbf{v}$ 與兩側三角面法向量判定跨零邊界 $(\mathbf{n}_A \cdot \mathbf{v}) \cdot (\mathbf{n}_B \cdot \mathbf{v}) \le 0$。
+  - 於 `render()` 迴圈與相機旋轉聯動，並套用 `clippingPlanes`，使側影線在線架構與剖面開啟時皆可正確被裁切。
+- **驗證成果**：[`tests/phase3/silhouettes.test.ts`](file:///e:/Self-developed_Apps/G3/3D-Builder/tests/phase3/silhouettes.test.ts) **4/4 PASS**（圓柱前後視角萃取側邊母線、俯視角排除母線、透視模型矩陣支援、與靜態邊互補）。
+
+### 3. 全局質量守門驗收
+- `npm run typecheck`：**0 錯誤**。
+- `npm run lint:rules && npm run lint:deps && npm run lint:i18n`：**全數通過**。
+- `acceptance.test.ts`：**8/8 PASS**，無任何 Regression。
+- 開發日誌更新：[`DEV_LOG.md`](file:///e:/Self-developed_Apps/G3/3D-Builder/DEV_LOG.md)。
+
+---
+
+## 🚀 接棒指引：裝飾用公螺牙與母螺孔 (Cosmetic Threads, Blueprint C4.9 / ADR 0129)
+
+> **致接手 Agent（Codex 或後續架構師）：**
+> 本章節為延續未竟任務之完整技術規格、架構設計藍圖與防禦約束。請直接依此 SOP 推進落地。
+
+### 1. 任務核心定位與價值
+- **需求追溯**：`docs/blueprint.md` 之 `| C4.9 | 裝飾螺紋線 | | P2 |`。
+- **與真實螺牙 (ADR 0123) 的關鍵差別**：
+  - **真實螺牙 (ADR 0123)**：建立真實 3D 螺旋實體並與圓柱做布林運算（Fuse/Cut）。優點是 3D 列印與真實干涉檢驗需要；但計算極度沉重，且因 OCCT 內部處理 B-spline 面的已知限制，每次布林運算必定洩漏 ~10MB Emscripten WASM Heap（見 `AGENTS.md §3.5`）。
+  - **裝飾螺紋線 (Cosmetic Threads, C4.9)**：**絕不做 3D 布林螺旋幾何**！它是機械 CAD（SolidWorks / Inventor）中 95% 場合使用的標準做法：僅在特徵樹登記裝飾資訊，於 3D 視圖渲染輕量化虛擬牙線/貼圖，並在 2D 工程圖中依照 ISO 標準繪製 3/4 圈細實線圓弧與孔標註。
+
+### 2. 行業標準幾何規格 (SolidWorks Benchmark & ISO 6410)
+接手 Agent 實作時必須符合以下規範，不可隨意創造非標樣式：
+1. **公螺紋 (External Cosmetic Thread，在凸圓柱面上)**：
+   - 圓柱外表面為「大徑 (Major Diameter)」，顯示為模型實體邊界。
+   - 螺紋區間在 3D 視圖中呈現虛擬螺紋面（或半透明牙紋）；端面或剖面處呈現「小徑 (Minor Diameter)」之 **3/4 圈細線圓弧**。
+   - 側視圖投影為兩條細實線（牙底線）。
+2. **母螺孔 (Internal Cosmetic Thread，在圓柱孔內壁上)**：
+   - 孔壁為「小徑 (Minor Diameter，即鑽孔底徑)」，顯示為實體邊界。
+   - 孔口端面呈現「大徑 (Major Diameter)」之 **3/4 圈細實線圓弧**（開口朝向通常約在右上或第 1/4 象限開口）。
+   - 側視圖投影為兩條虛線（牙頂線）。
+3. **尺寸標準庫對齊**：
+   - 直接引用現成之 [`packages/model/src/threadStandards.ts`](file:///e:/Self-developed_Apps/G3/3D-Builder/packages/model/src/threadStandards.ts)（42 種 ISO Metric / UNC 標準規格）。
+   - 支援 `standardDesignation`（如 `"M8x1.25"`、`"1/4-20 UNC"`）與 `custom`（自訂大徑、小徑、螺距）。
+4. **終止條件 (End Condition)**：
+   - `blind`（給定深度）：深度 $L$，附帶可選的退刀槽或不完全牙長度。
+   - `through`（完全貫穿）：螺紋長度自動匹配圓柱面或孔全長。
+
+### 3. 全鏈路代碼架構接線清單 (Implementation Checklist)
+
+#### Step 1: 建立 ADR 規格文件
+- 建立 [`docs/adr/0129-cosmetic-threads.md`](file:///e:/Self-developed_Apps/G3/3D-Builder/docs/adr/0129-cosmetic-threads.md)。
+- 明確聲明：需求追溯為藍圖 C4.9，與 ADR 0123（真實螺牙）互斥，不觸發布林求解器，0 WASM 記憶體負擔。
+
+#### Step 2: 模型與命令層 (`@3db/model`)
+- 檔案：[`packages/model/src/schema.ts`](file:///e:/Self-developed_Apps/G3/3D-Builder/packages/model/src/schema.ts)
+  - 新增特徵定義 `CosmeticThreadFeature`：
+    ```typescript
+    export interface CosmeticThreadFeature {
+      kind: 'cosmeticThread';
+      id: Id;
+      name: string;
+      suppressed?: boolean;
+      targetFace: Id;          // 圓柱外表面 (公) 或孔內表面 (母)
+      startRef: Id;           // 起始端面或環狀邊
+      threadType: 'external' | 'internal';
+      standardMode: 'standard' | 'custom';
+      standardDesignation?: string; // e.g. "M8x1.25"
+      majorDiameter: number;   // 大徑 (mm)
+      minorDiameter: number;   // 小徑 (mm)
+      pitch: number;           // 螺距 (mm)
+      endCondition: 'blind' | 'through';
+      depth: number;           // 螺紋深度
+    }
+    ```
+- 檔案：[`packages/model/src/commands.ts`](file:///e:/Self-developed_Apps/G3/3D-Builder/packages/model/src/commands.ts)
+  - 新增 `addCosmeticThread` 與 `setCosmeticThread` 命令。
+  - 補齊 DAG 依賴收集（`targetFace`、`startRef` 遺失時標記黃色警告）。
+
+#### Step 3: 再生引擎層 (`@3db/regen`)
+- 檔案：[`packages/regen/src/engine.ts`](file:///e:/Self-developed_Apps/G3/3D-Builder/packages/regen/src/engine.ts)
+  - 遇到 `cosmeticThread` 特徵時：
+    - **禁止**調用 `Kernel.thread` 或布林運算！
+    - 透過幾何探針萃取 `targetFace` 的圓柱半徑 $R$、軸心直線 $\mathbf{L} = \mathbf{P} + t \mathbf{D}$、起始參考位置。
+    - 驗證半徑是否與標準規格吻合（若外圓柱面半徑與規格大徑誤差過大，回報溫和警示但允許強制覆蓋）。
+    - 產生純幾何中繼資料 `CosmeticThreadAnnotation`，掛載於 `ViewMesh.annotations` 或模型裝飾清單：
+      ```typescript
+      export interface CosmeticThreadAnnotation {
+        featureId: Id;
+        type: 'external' | 'internal';
+        axisPoint: [number, number, number];
+        axisDir: [number, number, number];
+        majorRadius: number;
+        minorRadius: number;
+        startOffset: number;
+        length: number;
+      }
+      ```
+
+#### Step 4: 3D 檢視器渲染 (`@3db/render`)
+- 檔案：[`packages/render/src/viewer.ts`](file:///e:/Self-developed_Apps/G3/3D-Builder/packages/render/src/viewer.ts)
+  - 實作 `setCosmeticThreads(threads: CosmeticThreadAnnotation[])`：
+  - 在圓柱面上繪製端部 3/4 圈細線圓弧（Dash/Thin line），線寬 1px，顏色依主題（淺色模式 `#4B5563`，深色模式 `#9CA3AF`）。
+  - （選配）圓柱面貼上輕量化半透明螺紋程序紋理（Procedural Normal/Alpha Map Shader）。
+
+#### Step 5: 2D 工程圖整合 (`@3db/drawing`)
+- 檔案：[`packages/drawing/src/views.ts`](file:///e:/Self-developed_Apps/G3/3D-Builder/packages/drawing/src/views.ts) / [`packages/drawing/src/dimension.ts`](file:///e:/Self-developed_Apps/G3/3D-Builder/packages/drawing/src/dimension.ts)
+  - 在生成正投影視圖時，偵測實體上的裝飾螺紋：
+    - 端視圖（投影方向平行於螺紋軸線）：投影為同心圓，外圈或內圈繪製 3/4 圈細實線（ISO 6410 標準）。
+    - 側視圖（投影方向垂直於螺紋軸線）：在牙頂或牙底位置繪製兩條平行細實線。
+  - 智慧型尺寸標註（Hole Callout）：選取帶有裝飾母螺紋的孔時，自動帶出螺紋規格呼出（如 `M8x1.25 ↧ 15`，對齊 ADR 0101）。
+
+#### Step 6: 前端 PropertyManager 面板 (`apps/web`)
+- 檔案：[`apps/web/src/components/PropertyManager.tsx`](file:///e:/Self-developed_Apps/G3/3D-Builder/apps/web/src/components/PropertyManager.tsx)
+  - 面板佈局：
+    1. **圓柱面選取槽**（支援點選凸圓柱面或孔內壁，自動判定公/母螺牙）。
+    2. **起始邊/面選取槽**。
+    3. **標準牙型下拉選單**（列出 42 種 Metric/UNC 規格，引用 `threadStandards.ts`）。
+    4. **終止條件與深度**（成形至完全貫穿 / 給定深度）。
+
+---
+
+## 🛡️ 紅隊防禦與硬約束審查 (AGENTS.md Compliance Checklist)
+
+接手 Agent 在聲明完成前，必須強制逐項通過以下自檢：
+1. **輸入破壞防呆 (AGENTS.md §2.1)**：
+   - 選取平面、錐面、自由曲面時，必須直接拋出錯誤並拒絕建立，不可默默退化。
+   - 深度傳入 $\le 0$、`NaN`、極端數值時，立即攔截。
+   - 深度大於圓柱長度時，明確提示但不崩潰。
+2. **零代理指標原則 (AGENTS.md §3.1)**：
+   - 測試記憶體指標時，若有調用底層，強制使用 `(oc as any).wasmMemory?.buffer?.byteLength` 且斷言 `initial > 0`。
+   - 裝飾螺紋因為不調用 OCCT 實體布林，其記憶體成長應為 **0.00 MiB**，此點亦應在單元測試中被證實！
+3. **禁止防禦性空轉閘控 (AGENTS.md §3.2)**：
+   - 新增的裝飾線參數不可只留在 Schema 或未接線的 UI 中，全鏈路（Schema -> DAG -> Regen -> Render -> Drawing -> UI）必須 100% 打通。
+4. **驗收測試門檻**：
+   - 撰寫單元測試覆蓋公/母螺牙幾何推導、標準規格對齊、工程圖 3/4 圓弧投影產出。
+   - `npm run check` 與 `npm run typecheck` 保持 0 報錯。
+
+---
+
 - 最後更新：2026-10-11（**螺牙特徵第二階段 D1 完成：內建 42 種 ISO Metric / UNC 標準牙庫、兩端漸縮收尾 Revolved Tapered Envelope、PropertyManager 前端面板整合；經 Workbuddy 審查深度校正 A1 自適應接線、A2 WASM Heap 守門防呆與 threadStandards 註解，全套 7 套件 61/61 測試全綠；桌面版 0.2.2 打包完成**；其他狀態見「最新存檔點」）。
 - **【2026-10-11：螺牙特徵第二階段（D1: T-6 至 T-8）全套落實、審查校正與桌面版 0.2.2】**
   - **T-6 標準螺牙庫與 60° 基本牙型幾何推導器 (`@3db/model`)**：

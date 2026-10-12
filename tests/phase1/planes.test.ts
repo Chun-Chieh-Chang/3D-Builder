@@ -127,3 +127,48 @@ describe('plane references in the model', () => {
     expect(() => applyCommand(doc, { type: 'insertFeature', index: 0, feature: sketch('s9', onPlane('p1'), circle('m', 0, 0, 1)) })).toThrow('基準面必須在它之前');
   });
 });
+
+/**
+ * A coordinate system as a sketch plane (ADR 0127): the sketch takes the system's own x and y at its
+ * own origin, so a system built on a reference point follows it and can be the base of a plane too.
+ */
+describe('coordinate system planes', () => {
+  const point = (id: string, z: string): Feature => ({ id, type: 'refPoint', name: id, suppressed: false, def: { mode: 'coords', x: '0', y: '0', z } });
+  /** X along the right plane's normal, Y along the top plane's: Z is up, so the plane lies flat at the origin. */
+  const flat = (id: string, at: Ref): Feature => ({ id, type: 'coordSys', name: id, suppressed: false, origin: at, x: { kind: 'datum', name: 'plane:right' }, y: { kind: 'datum', name: 'plane:top' } });
+  const at = (id: string): Ref => ({ kind: 'datum', name: id });
+  const doc25 = () => build(...plate(), point('q1', '25'), flat('y1', at('q1')), sketch('s2', at('y1'), circle('k', 20, 15, 4)), extrude('e2', 's2', 'boss', { type: 'blind', depth: '6' }));
+
+  it('sketches flat on a coordinate system 25 above the front plane', () => {
+    const doc = doc25();
+    const r = regen.rebuild(doc);
+    expect(statuses(r)).toEqual(['s1=ok', 'e1=ok', 'q1=ok', 'y1=ok', 's2=ok', 'e2=ok']);
+    expect(r.frames.get('y1')).toMatchObject({ origin: [0, 0, 25], xDir: [1, 0, 0], yDir: [0, 1, 0], normal: [0, 0, 1] });
+    expect(volume(r)).toBeCloseTo(12000 + Math.PI * 16 * 6, 5);
+    expect(dependencies(doc).parents.get('s2')).toEqual(['y1']);
+  });
+
+  it('follows the point its system stands on', () => {
+    const moved = applyCommand(doc25(), { type: 'setRefPoint', featureId: 'q1', def: { mode: 'coords', x: '0', y: '0', z: '30' } });
+    const r = regen.rebuild(moved);
+    expect(statuses(r).at(-1)).toBe('e2=ok');
+    expect(r.frames.get('y1')!.origin).toEqual([0, 0, 30]);
+    expect(volume(r)).toBeCloseTo(12000 + Math.PI * 16 * 6, 5);
+  });
+
+  it('is a plane a reference plane can offset from', () => {
+    const doc = build(...plate(), point('q1', '25'), flat('y1', at('q1')), plane('p1', { mode: 'offset', plane: at('y1'), distance: '5' }), sketch('s2', at('p1'), circle('k', 20, 15, 4)));
+    const r = regen.rebuild(doc);
+    expect(statuses(r).at(-1)).toBe('s2=ok');
+    expect(r.frames.get('p1')).toMatchObject({ origin: [0, 0, 30], normal: [0, 0, 1] });
+    expect(dependencies(doc).parents.get('p1')).toEqual(['y1']);
+  });
+
+  it('refuses a sketch on a system defined later, and goes with the system when it is suppressed', () => {
+    const doc = doc25();
+    expect(() => applyCommand(doc, { type: 'insertFeature', index: 3, feature: sketch('s9', at('y1'), circle('m', 0, 0, 1)) })).toThrow('座標系統必須在它之前');
+    expect(suppressionTargets(doc, 'y1', 'suppress')).toEqual(['y1', 's2', 'e2']);
+    const lone = applyCommand(doc, { type: 'setSuppressed', featureIds: ['y1'], value: true });
+    expect(regen.rebuild(lone).features.find((f) => f.id === 's2')).toMatchObject({ status: 'error', message: expect.stringContaining('基準面不存在') });
+  });
+});

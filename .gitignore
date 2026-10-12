@@ -13,3 +13,7 @@ apps/desktop/src-tauri/icons/ios/
 sync.ffs_db
 scratch/
 .workbuddy-ai/
+
+# Real customer parts and the fixes derived from them. They stay on disk for the real-machine checks but
+# must never enter the repository.
+apps/web/public/*part1*.json

@@ -52,6 +52,8 @@ export type Command =
   /** Inserts a feature at `index` (at or above the rollback bar), like SolidWorks inserting at the bar. */
   | { type: 'insertFeature'; feature: Feature; index: number }
   | { type: 'setDimension'; featureId: Id; constraintId: Id; value: Expr }
+  /** Moves only the displayed dimension text; it never changes the measured geometry or value. */
+  | { type: 'setDimensionPosition'; featureId: Id; constraintId: Id; position: [number, number] | null }
   /** Makes a dimension driven (a reference that shows what is measured) or driving again; `value` is the new value when it drives again (C1.29). */
   | { type: 'setDimensionDriving'; featureId: Id; constraintId: Id; driving: boolean; value?: Expr }
   /** 
@@ -170,6 +172,8 @@ ull). */
   /** A note and a label on a feature (D1.7); an empty text takes it away. */
   | { type: 'setFeatureNote'; featureId: Id; comment?: string; tag?: string }
   | { type: 'setRollback'; index: number | null }
+  /** Changes the plane or planar face a sketch lies in (SolidWorks 「編輯草圖基準面」). */
+  | { type: 'redefineSketchPlane'; featureId: Id; plane: Ref }
   /** Sketch editing (C1): add geometry together with its relations and dimensions. */
   | { type: 'addSketchItems'; featureId: Id; entities: SketchEntity[]; constraints: SketchConstraint[] }
   /**
@@ -279,16 +283,18 @@ function sketchBefore(doc: PartDoc, sketchId: Id, index: number, label: string):
 }
 
 /** A reference to a feature of the history that makes `type` of datum (a plane, an axis, a point), made before the one at `index`. */
-function datumFeature(doc: PartDoc, ref: Ref, index: number, type: 'refPlane' | 'refAxis' | 'refPoint'): void {
+function datumFeature(doc: PartDoc, ref: Ref, index: number, type: 'refPlane' | 'refAxis' | 'refPoint' | 'coordSys'): void {
   const at = doc.features.findIndex((f) => f.id === ref.name);
   if (at < 0 || at >= index || doc.features[at]!.type !== type) throw new CommandError(t(`cmd.${type}MustBeEarlier`));
 }
 
-/** A plane reference names a default plane, a reference plane earlier in the history, or a model face. */
+/** A plane reference names a default plane, a reference plane or a coordinate system earlier in the history, or a model face. */
 function planeRef(doc: PartDoc, ref: Ref, index: number): void {
   if (ref.kind === 'face') return;
   if (ref.kind !== 'datum') throw new CommandError(t('cmd.mustPickPlane'));
   if (isDatumPlaneName(ref.name)) return;
+  const at = doc.features.findIndex((f) => f.id === ref.name);
+  if (at >= 0 && doc.features[at]!.type === 'coordSys') return datumFeature(doc, ref, index, 'coordSys');
   datumFeature(doc, ref, index, 'refPlane');
 }
 
@@ -724,6 +730,19 @@ export function mutate(draft: Draft<PartDoc>, cmd: Command): void {
       if (!c || !isDimension(c)) throw new CommandError(t('cmd.dimensionNotFound', { id: cmd.constraintId }));
       c.value = cmd.value;
       checkExprs(draft as PartDoc, f as Feature, new Set([c.id])); // after the change, so a cycle through it is seen
+      return;
+    }
+    case 'setDimensionPosition': {
+      const f = sketchOf(draft, cmd.featureId);
+      const c = f.constraints.find((x) => x.id === cmd.constraintId);
+      if (!c || !isDimension(c)) throw new CommandError(t('cmd.dimensionNotFound', { id: cmd.constraintId }));
+      if (cmd.position === null) {
+        delete c.labelPosition;
+        return;
+      }
+      const [x, y] = cmd.position;
+      if (!Number.isFinite(x) || !Number.isFinite(y)) throw new CommandError('尺寸標註位置必須是有限數值');
+      c.labelPosition = [x, y];
       return;
     }
     case 'setDimensionDriving': {
@@ -1380,6 +1399,11 @@ export function mutate(draft: Draft<PartDoc>, cmd: Command): void {
       if (err) throw new CommandError(err);
       checkExprs(draft as PartDoc, f as Feature);
       countersFor(ids, draft.idCounters);
+      return;
+    }
+    case 'redefineSketchPlane': {
+      const f = sketchOf(draft, cmd.featureId);
+      f.plane = cmd.plane;
       return;
     }
     case 'removeSketchItems': {

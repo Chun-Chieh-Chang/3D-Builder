@@ -82,7 +82,9 @@
     "ref-plane",
     "ref-axis",
     "ref-point",
-    "coord-sys"
+    "coord-sys",
+    "offset-sketch",
+    "angle-sketch"
   ],
   "C15": [
     "linear-pattern",

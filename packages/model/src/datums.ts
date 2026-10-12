@@ -65,3 +65,8 @@ export interface CoordSystem {
   y: Vec3;
   z: Vec3;
 }
+
+/** The sketch plane a coordinate system gives (ADR 0127): its own x and y, normal along z, at its own origin. */
+export function systemFrame(c: CoordSystem): PlaneFrame {
+  return { origin: c.origin, xDir: c.x, yDir: c.y, normal: c.z };
+}

@@ -10,7 +10,7 @@ import { chosen, pickable, prompt } from '../state/datumSlots';
 import { sample } from '@3db/sketch/interact';
 import { buildOverlay, SKETCH_COLORS } from '../sketcher/overlay';
 import { store, useSketcherView, useStore } from '../state/store';
-import { FEATURE_LABEL } from '../strings';
+import { FEATURE_LABEL, PICK_FILTER_LABEL } from '../strings';
 import type { RebuildPayload } from '../worker/protocol';
 import { Topology } from '../state/selectionSets';
 import { Icon } from './Icon';
@@ -46,7 +46,9 @@ interface MenuItem {
 function picking(feature: Feature | undefined, editing: boolean, modelTool: 'convert' | 'pierce' | null = null, measuring = false) {
   // reference geometry (C3.2–C3.5): what its empty selection boxes take, and what they hold
   const datum = feature?.type === 'refPlane' || feature?.type === 'refAxis' || feature?.type === 'refPoint' || feature?.type === 'coordSys' || feature?.type === 'pattern' || feature?.type === 'mirror' ? feature : undefined;
-  const slots = datum ? { ...pickable(datum), ...chosen(datum), prompt: prompt(datum) } : null;
+  // what the empty boxes take (kinds) and what they already hold (the elements) — the two are different shapes, so they are kept apart
+  const want = datum ? pickable(datum) : null;
+  const slots = datum ? { ...want, ...chosen(datum), prompt: prompt(datum) } : null;
   // the end of an extrusion that is a face, a vertex or a body: what is clicked on the model goes to the direction that is waiting for it
   const ends = feature?.type === 'extrude' ? [feature.dir1, feature.dir2].flatMap((d) => (d ? [d] : [])) : [];
   const endFaces = ends.flatMap((d) => (d.type === 'upToFace' || d.type === 'offsetFromFace' ? [d.face] : []));
@@ -79,6 +81,10 @@ function picking(feature: Feature | undefined, editing: boolean, modelTool: 'con
     pickedVertices: slots ? slots.vertices : endVertices,
     /** Default and reference planes, axes and points the geometry being defined is based on: they are drawn while they are used. */
     referenceDatums: slots?.datums ?? [],
+    /** A shown plane takes the click when nothing is being edited or measured (it becomes the selection), or when a box of a reference geometry wants one (ADR 0127). */
+    planes: (!editing && !measuring) || (want?.planes ?? false),
+    /** The same for an axis, a point or a coordinate system: their boxes, or nothing going on at all (ADR 0127). */
+    datums: (!editing && !measuring) || (want?.edges ?? false) || (want?.vertices ?? false),
     prompt: measuring ? t('measure.prompt') : prompt_,
   };
 }
@@ -160,6 +166,9 @@ export function Viewport() {
       },
       onFaceHover: setHoverFace,
       onFaceClick: clickFace,
+      // A plane clicked in the graphics area is the selection, or goes into the box of the plane being defined (ADR 0127)
+      onPlaneClick: (key) => store.treeClick(key),
+      onDatumClick: (key) => store.treeClick(key),
       onContextMenu: (x, y) => {
         const r = displayed.current;
         const topo = r && topologyOf(r);
@@ -221,6 +230,13 @@ export function Viewport() {
       onLabelDoubleClick: (key) => {
         if (key.startsWith('dim:')) store.editDimension(idOf(key));
       },
+      onLabelDrag: (key, x, y) => {
+        if (!key.startsWith('dim:')) return;
+        const sketch = store.editedSketch();
+        const frame = sketch && store.frameOf(sketch);
+        const p = frame ? viewer.planePoint(x, y, frame) : null;
+        if (p) store.sketcher?.moveDimensionLabel(idOf(key), p);
+      },
     });
     store.viewer = viewer;
     return () => {
@@ -272,7 +288,9 @@ export function Viewport() {
     v.setEdgePicking(p.edges);
     v.setFacePicking(p.faces);
     v.setVertexPicking(p.vertices);
-    v.setPickFilter(flatMesh ? { faces: false, edges: false, vertices: false } : pickFilter); // the user's filter (what can be picked) holds for measuring too
+    v.setPlanePicking(p.planes);
+    v.setDatumPicking(p.datums);
+    v.setPickFilter(flatMesh ? { faces: false, edges: false, vertices: false, planes: false } : pickFilter); // the user's filter (what can be picked) holds for measuring too
     if (flatMesh) {
       v.setSelectedEdges([]);
       v.setSelectedFaces([]);
@@ -314,6 +332,8 @@ export function Viewport() {
     }
     for (const f of doc.features) {
       if (f.type === 'refPlane' && (isShown(doc, f.id) || selected === f.id || editing?.featureId === f.id)) show(f.id, result?.frames.get(f.id), selected === f.id || editing?.featureId === f.id);
+      // A coordinate system that is picked for a sketch shows the plane the sketch will lie in (ADR 0127).
+      else if (f.type === 'coordSys' && (selected === f.id || editing?.featureId === f.id || reference.includes(f.id))) show(f.id, result?.frames.get(f.id), selected === f.id || editing?.featureId === f.id);
     }
     v.setPlanes(planes);
   }, [feature, editing, selected, doc, result]);
@@ -708,10 +728,10 @@ export function ViewOptions({ assembly = false }: { assembly?: boolean }) {
       {!assembly && (
       <span className="pick-filter" title={t('select.filterTitle')}>
         {t('select.filter')}
-        {(['faces', 'edges', 'vertices'] as const).map((k) => (
+        {(['faces', 'edges', 'vertices', 'planes'] as const).map((k) => (
           <label key={k}>
             <input type="checkbox" checked={filter[k]} onChange={(e) => store.setPickFilter(k, e.target.checked)} />
-            {t(k === 'faces' ? 'select.filterFaces' : k === 'edges' ? 'select.filterEdges' : 'select.filterVertices')}
+            {PICK_FILTER_LABEL[k]}
           </label>
         ))}
       </span>

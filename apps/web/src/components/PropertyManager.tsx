@@ -1533,7 +1533,7 @@ function DatumPicker({ f }: { f: Feature }) {
   const slots = slotsOf(f);
   const choices = [
     ...DATUM_ITEMS.filter((d) => d.icon === 'plane').map((d) => ({ id: d.id as string, label: d.label, icon: 'plane' as const })),
-    ...doc.features.slice(0, Math.max(at, 0)).flatMap((x) => (x.type === 'refPlane' || x.type === 'refAxis' || x.type === 'refPoint' ? [{ id: x.id, label: x.name, icon: x.type }] : [])),
+    ...doc.features.slice(0, Math.max(at, 0)).flatMap((x) => (x.type === 'refPlane' || x.type === 'refAxis' || x.type === 'refPoint' || x.type === 'coordSys' ? [{ id: x.id, label: x.name, icon: x.type }] : [])),
   ].filter((c) => slots.some((s) => accepts(s.type, { kind: 'datum', name: c.id }, doc)));
   if (choices.length === 0) return null;
   return (
@@ -3107,6 +3107,82 @@ function ImportedBodyPanel({ f }: { f: ImportedBodyFeature }) {
   );
 }
 
+/** Panel for editing the plane of a sketch (SolidWorks 「編輯草圖基準面」). */
+function SketchPlanePanel({ f }: { f: SketchFeature }) {
+  const doc = useStore((s) => s.doc);
+  const at = doc.features.findIndex((x) => x.id === f.id);
+  const availablePlanes = [
+    ...DATUM_ITEMS.filter((d) => d.icon === 'plane').map((d) => ({ id: d.id as string, label: d.label, ref: { kind: 'datum' as const, name: d.id as string } })),
+    ...doc.features
+      .slice(0, Math.max(at, 0))
+      .flatMap((x) =>
+        x.type === 'refPlane' || x.type === 'coordSys'
+          ? [{ id: x.id, label: x.name, ref: { kind: 'datum' as const, name: x.id } }]
+          : [],
+      ),
+  ];
+
+  const currentLabel = () => {
+    if (f.plane.kind === 'datum') {
+      const standard = DATUM_ITEMS.find((d) => d.id === f.plane.name);
+      if (standard) return standard.label;
+      const custom = doc.features.find((x) => x.id === f.plane.name);
+      if (custom) return custom.name;
+      return f.plane.name;
+    }
+    return f.plane.name;
+  };
+
+  const setPlane = (ref: Ref) => {
+    store.execute({ type: 'redefineSketchPlane', featureId: f.id, plane: ref });
+  };
+
+  return (
+    <>
+      <section className="pm-group">
+        <h4>{t('pm.currentPlane')}</h4>
+        <div className="selection-box" style={{ padding: '8px 12px', background: 'var(--surface-color, #fff)', borderRadius: '6px', border: '1px solid var(--border-color, #e2e8f0)', fontWeight: 500, display: 'flex', alignItems: 'center' }}>
+          <Icon name="plane" />
+          <span style={{ marginLeft: '8px' }}>{currentLabel()}</span>
+        </div>
+        <p className="hint" style={{ marginTop: '8px' }}>{t('pm.sketchPlaneHint')}</p>
+      </section>
+
+      <section className="pm-group">
+        <h4>{t('pm.standardPlanes')}</h4>
+        <div className="datum-picker" style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+          {availablePlanes.map((p) => {
+            const isSelected = f.plane.kind === 'datum' && f.plane.name === p.id;
+            return (
+              <button
+                key={p.id}
+                title={p.label}
+                className={isSelected ? 'active' : ''}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px',
+                  padding: '6px 12px',
+                  textAlign: 'left',
+                  borderRadius: '4px',
+                  border: isSelected ? '1px solid var(--brand-color, #3b82f6)' : '1px solid var(--border-color, #e2e8f0)',
+                  background: isSelected ? 'rgba(59, 130, 246, 0.1)' : undefined,
+                  fontWeight: isSelected ? 600 : 400,
+                  cursor: 'pointer',
+                }}
+                onClick={() => setPlane(p.ref)}
+              >
+                <Icon name="plane" />
+                <span>{p.label}</span>
+              </button>
+            );
+          })}
+        </div>
+      </section>
+    </>
+  );
+}
+
 /** PropertyManager (D2): parameters of the feature being edited; ✔ commits one undo step, ✖ restores (B7.3). */
 export function PropertyManager() {
   const editing = useStore((s) => s.editing);
@@ -3115,15 +3191,16 @@ export function PropertyManager() {
   if (!editing) return null;
   const f = findFeature(doc, editing.featureId);
   if (!f) return null;
+  const isSketchPlane = editing.kind === 'sketchPlane';
   const sketching = editing.kind === 'sketch';
   // Like the message box at the top of a SolidWorks PropertyManager: why the feature cannot be built yet.
-  const status = sketching ? undefined : result?.features.find((r) => r.id === f.id);
+  const status = sketching || isSketchPlane ? undefined : result?.features.find((r) => r.id === f.id);
   return (
     <div className="property-manager" data-help={currentTopicId()}>
       <div className="pm-header">
         <Icon name={f.type} />
         <span className="pm-title">
-          {sketching ? t('pm.editSketch') : featureLabel(f)}: {f.name}
+          {isSketchPlane ? `${t('pm.editSketchPlane')}: ${f.name}` : sketching ? `${t('pm.editSketch')}: ${f.name}` : `${featureLabel(f)}: ${f.name}`}
         </span>
         <button className="pm-ok" title={sketching ? t('pm.exitSketch') : t('pm.ok')} onClick={() => store.commitEdit()}>
           <Icon name="ok" />
@@ -3133,7 +3210,7 @@ export function PropertyManager() {
         </button>
       </div>
       {status?.status === 'error' && <p className="pm-message error-text">{status.message}</p>}
-      {f.type === 'sketch' && <SketchPanel f={f} />}
+      {f.type === 'sketch' && (isSketchPlane ? <SketchPlanePanel f={f} /> : <SketchPanel f={f} />)}
       {f.type === 'extrude' && <ExtrudePanel f={f} />}
       {f.type === 'revolve' && <RevolvePanel f={f} />}
       {f.type === 'sweep' && <SweepPanel f={f} />}

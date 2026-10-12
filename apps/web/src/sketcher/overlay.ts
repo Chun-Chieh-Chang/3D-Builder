@@ -170,8 +170,11 @@ export function buildOverlay(frame: PlaneFrame, sketch: SketchFeature, solve: Sk
     if (!layout) continue;
     const state = selected.has(c.id) ? 'selected' : over.has(c.id) ? 'over' : '';
     const color = state === 'selected' ? SKETCH_COLORS.selected : state === 'over' ? SKETCH_COLORS.over : SKETCH_COLORS.dimension;
+    const text = c.labelPosition ?? layout.text;
     for (const [a, b] of layout.segments) curves.push({ points: [a, b], color });
-    labels.push({ key: `dim:${c.id}`, p: layout.text, text: dimensionLabel(c, options.values?.get(c.id), measuredText(c, geometry), options.precision), className: `dimension ${state}${c.driving === false ? ' driven' : ''}`, interactive: true, title: c.label ?? t('overlay.editDimension') });
+    // A relocated text keeps the automatic dimension line attached to its geometry and gains a leader to its chosen position.
+    if (c.labelPosition) curves.push({ points: [layout.text, text], color });
+    labels.push({ key: `dim:${c.id}`, p: text, text: dimensionLabel(c, options.values?.get(c.id), measuredText(c, geometry), options.precision), className: `dimension ${state}${c.driving === false ? ' driven' : ''}`, interactive: true, title: c.label ?? t('overlay.editDimension') });
   }
 
   // relation symbols (C1.27), stacked when several sit at the same place

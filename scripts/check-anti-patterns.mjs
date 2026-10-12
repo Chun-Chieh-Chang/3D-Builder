@@ -27,13 +27,19 @@ const CHECKS = [
   }
 ];
 
-function scan(dir) {
+// A file that the test runner will pick up but that asserts nothing is worse than no test: it reports
+// "passed" while checking only that the code did not throw, and it drags a green tick onto real claims.
+const testFile = /(^|\/)(tests?|__tests__)\/.*\.test\.(ts|tsx|js|jsx|mjs)$/;
+const ASSERTION = /(^|[^\w.])(expect|assert)\s*[.(]/;
+const zeroAssertionNote = '測試檔案內沒有任何 expect()/assert() 斷言，僅以 console.log 輸出卻會被計為通過';
+
+function scanFile(dir) {
   let errors = 0;
   for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
     if (entry.name === 'node_modules' || entry.name === 'dist' || entry.name.startsWith('.')) continue;
     const full = path.join(dir, entry.name);
     const rel = full.replace(/\\/g, '/');
-    if (entry.isDirectory()) errors += scan(full);
+    if (entry.isDirectory()) errors += scanFile(full);
     else if (entry.isFile() && (rel.endsWith('.ts') || rel.endsWith('.js') || rel.endsWith('.tsx'))) {
       const code = fs.readFileSync(full, 'utf-8');
       const lines = code.split('\n');
@@ -41,6 +47,7 @@ function scan(dir) {
         if (!check.include.some(p => p.test(rel))) continue;
         lines.forEach((line, idx) => {
           if (line.includes('// anti-pattern-ignore')) return;
+          check.pattern.lastIndex = 0;
           if (check.pattern.test(line)) {
             console.error(`\x1b[31m[ANTI-PATTERN]\x1b[0m ${rel}:${idx + 1}`);
             console.error(`  \x1b[33m${check.name}\x1b[0m: ${check.description}`);
@@ -49,12 +56,18 @@ function scan(dir) {
           }
         });
       }
+      if (testFile.test(rel) && !code.includes('// no-assertions-ok') && !ASSERTION.test(code)) {
+        console.error(`\x1b[31m[ANTI-PATTERN]\x1b[0m ${rel}`);
+        console.error(`  \x1b[33m零斷言測試檔案 (Zero-Assertion Test File)\x1b[0m: ${zeroAssertionNote}`);
+        console.error(`  \x1b[32mFix: 補上 expect()/assert() 斷言；若只是診斷腳本，請移出測試目錄 (如 scratch/)\x1b[0m\n`);
+        errors++;
+      }
     }
   }
   return errors;
 }
 
-if (scan('.') > 0) {
+if (scanFile('.') > 0) {
   console.error('\x1b[31m💥 反模式檢查失敗，拒絕推進！\x1b[0m');
   process.exit(1);
 } else {

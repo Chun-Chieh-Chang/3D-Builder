@@ -6,6 +6,7 @@ import { store, useDocumentName, useStore } from '../state/store';
 import type { AssemblyState } from '../state/assembly';
 import { DATUM_ITEMS, PART_STAGE_LABEL } from '../strings';
 import { Icon } from './Icon';
+import { ContextMenu } from './ContextMenu';
 
 type Menu = { x: number; y: number } & ({ component: Component } | { mate: Mate } | { pattern: ComponentPattern });
 
@@ -49,7 +50,7 @@ export function ComponentMenu({ x, y, component, onClose }: { x: number; y: numb
     fn();
   };
   return (
-    <ul className="context-menu" style={{ left: x, top: y }} onPointerDown={(e) => e.stopPropagation()} data-component-menu={component.id}>
+    <ContextMenu x={x} y={y} onPointerDown={(e) => e.stopPropagation()} data-component-menu={component.id}>
       <li onClick={act(() => store.openComponentPart(component.id))}>{a.isSubAssembly(component.id) ? t('subassembly.open') : '開啟零件'}</li>
       <li onClick={act(() => void a.browseRelink(component.file))}>重新指定零件檔…</li>
       <li className="separator" />
@@ -60,7 +61,7 @@ export function ComponentMenu({ x, y, component, onClose }: { x: number; y: numb
       <li onClick={act(() => a.setComponentState([component.id], 'suppressed', !component.suppressed))}>{component.suppressed ? t('tree.unsuppress') : t('tree.suppress')}</li>
       <li className="separator" />
       <li onClick={act(() => a.requestDelete([component.id]))}>刪除…</li>
-    </ul>
+    </ContextMenu>
   );
 }
 
@@ -266,7 +267,7 @@ export function AssemblyTree() {
 
       {menu && a && 'component' in menu && <ComponentMenu x={menu.x} y={menu.y} component={menu.component} onClose={() => setMenu(null)} />}
       {menu && a && !('component' in menu) && (
-        <ul className="context-menu" style={{ left: menu.x, top: menu.y }} onPointerDown={(e) => e.stopPropagation()}>
+        <ContextMenu x={menu.x} y={menu.y} onPointerDown={(e) => e.stopPropagation()}>
           {'pattern' in menu ? (
             <>
               <li onClick={act(() => a.editPattern(menu.pattern.id))}>{t('pattern.edit')}</li>
@@ -285,7 +286,7 @@ export function AssemblyTree() {
               )}
             </>
           )}
-        </ul>
+        </ContextMenu>
       )}
     </div>
   );

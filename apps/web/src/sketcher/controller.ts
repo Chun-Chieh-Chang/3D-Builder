@@ -406,6 +406,14 @@ export class SketchController {
     this.changed();
   }
 
+  /** Stores the displayed dimension text location without changing the constraint's value or references. */
+  moveDimensionLabel(constraintId: Id, position: P2): void {
+    const c = this.sketch().constraints.find((x) => x.id === constraintId);
+    if (!c || !isDimension(c)) return;
+    this.host.execute({ type: 'setDimensionPosition', featureId: this.host.featureId, constraintId, position: [position[0], position[1]] });
+    this.changed();
+  }
+
   setConstruction(value: boolean): void {
     const s = this.sketch();
     const ids = [...this.selection].filter((id) => s.entities.some((e) => e.id === id && e.type !== 'point'));

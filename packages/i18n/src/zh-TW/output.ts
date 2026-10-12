@@ -136,6 +136,7 @@ export const output = {
   'select.filterFaces': '面',
   'select.filterEdges': '邊線',
   'select.filterVertices': '頂點',
+  'select.filterPlanes': '基準面',
   'select.filterTitle': '只有打開的種類才點得到（還要看目前的指令需要什麼）',
   'select.other': '選取其他…（共 {count} 個面）',
   'select.otherFace': '{n}. {name}',

@@ -39,10 +39,11 @@ const canSweep = (s: UiState) => sketchSelected(s) && s.doc.features.filter((f) 
 const hasBody = (s: UiState) => partIdle(s) && !!s.result?.mesh;
 /** A pattern repeats a feature that adds to or takes from the bodies: there has to be one. */
 const canPattern = (s: UiState) => partIdle(s) && s.doc.features.some(canBeSeed);
-/** A plane to sketch on: a default or reference plane in the tree, or a planar face in the graphics area. */
+/** A plane to sketch on: a default or reference plane or a coordinate system in the tree, or a planar face in the graphics area. */
 const sketchPlane = (s: UiState): DatumPlaneName | Ref | null => {
   if (s.selected !== null && isDatumPlaneName(s.selected)) return s.selected;
-  if (selectedFeature(s)?.type === 'refPlane') return { kind: 'datum', name: s.selected! };
+  const type = selectedFeature(s)?.type;
+  if (s.selected !== null && (type === 'refPlane' || type === 'coordSys')) return { kind: 'datum', name: s.selected };
   return s.selectedFace?.fingerprint?.type === 'plane' ? s.selectedFace : null;
 };
 
@@ -155,6 +156,8 @@ export const ACTIONS: UiAction[] = [
       if (plane) store.newSketch(plane);
     },
   },
+  { id: 'offset-sketch', get label() { return t('act.offsetSketch'); }, group: 'sketch', enabled: (s) => partIdle(s) && sketchPlane(s) !== null, run: () => store.newOffsetSketch() },
+  { id: 'angle-sketch', get label() { return t('act.angleSketch'); }, group: 'sketch', enabled: (s) => partIdle(s) && sketchPlane(s) !== null, run: () => store.newAngleSketch() },
   { id: 'sketch-picture', get label() { return t('act.sketchPicture'); }, group: 'sketch-tool', enabled: sketching, run: () => void store.addSketchPicture() },
   ...SKETCH_TOOLS.map(
     (tool): UiAction => ({
