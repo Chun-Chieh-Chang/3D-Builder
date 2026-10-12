@@ -653,7 +653,8 @@ export class Viewer {
   private datumGroup: THREE.Group | null = null;
   private overlayGroup: THREE.Group | null = null;
   private picturesGroup: THREE.Group | null = null;
-  private labels = new Map<string, { el: HTMLElement; world: THREE.Vector3; offset?: [number, number] }>();
+  /** `held`: being dragged, so the overlay redrawn meanwhile leaves its screen offset where the pointer put it. */
+  private labels = new Map<string, { el: HTMLElement; world: THREE.Vector3; offset?: [number, number]; held?: boolean }>();
   /** What measuring has drawn (see setMeasureGraphics): its own, so that the sketch overlay does not clear it. */
   private measureGroup: THREE.Group | null = null;
   private measureMaterials: LineMaterial[] = [];
@@ -1291,16 +1292,32 @@ export class Viewer {
           if (e.button !== 0 || !this.events.onLabelDrag) return;
           const [x0, y0] = [e.clientX, e.clientY];
           let moving = false;
+          // while dragging the label follows the pointer on screen only; the document changes once, on release (one drag, one step to undo)
           const move = (m: PointerEvent) => {
             if (!moving && Math.hypot(m.clientX - x0, m.clientY - y0) < 3) return; // a click is not a drag
             moving = true;
+            const entry = this.labels.get(key);
+            if (!entry) return;
+            entry.held = true;
+            entry.offset = [m.clientX - x0, m.clientY - y0];
+            this.requestRender();
           };
           const up = (u: PointerEvent) => {
             window.removeEventListener('pointermove', move);
             window.removeEventListener('pointerup', up);
             if (!moving) return;
             dragged = true;
+            const entry = this.labels.get(key);
+            if (entry) entry.held = false;
             this.events.onLabelDrag?.(key, u.clientX, u.clientY);
+            // the overlay redrawn with the stored place drops the offset; should nothing be stored (refused), the label goes back
+            setTimeout(() => {
+              const left = this.labels.get(key);
+              if (left && !left.held && left.offset) {
+                left.offset = undefined;
+                this.requestRender();
+              }
+            }, 400);
           };
           window.addEventListener('pointermove', move);
           window.addEventListener('pointerup', up);
@@ -1318,6 +1335,7 @@ export class Viewer {
         this.labels.set(l.key, entry);
       }
       entry.world.copy(toWorld(overlay!.frame, l.p));
+      if (!entry.held) entry.offset = undefined; // the place is now the one stored
       entry.el.className = `overlay-label ${l.className ?? ''} ${l.interactive ? 'interactive' : ''}`;
       if (entry.el.textContent !== l.text) entry.el.textContent = l.text;
       entry.el.title = l.title ?? '';

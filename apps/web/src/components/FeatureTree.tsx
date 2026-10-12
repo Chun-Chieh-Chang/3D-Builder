@@ -113,9 +113,13 @@ export function FeatureTree() {
     return id;
   };
 
+  // In hierarchy mode a sketch is shown under the feature that uses it, but only when both are in the same folder (or neither is in one): a folder
+  // keeps what it holds, so a sketch in a folder whose feature is outside it stays in the folder, and folding the folder hides it.
+  const byId = new Map(doc.features.map((x) => [x.id, x] as const));
+  const sketchesUnder = (f: Feature): Id[] => consumedSketchesOf(f).filter((sid) => byId.get(sid)?.folder === f.folder);
   const absorbedSketchSet = new Set<Id>();
   for (const f of doc.features) {
-    for (const sid of consumedSketchesOf(f)) absorbedSketchSet.add(sid);
+    for (const sid of sketchesUnder(f)) absorbedSketchSet.add(sid);
   }
 
   const statusOf = (id: Id): FeatureResult | undefined => result?.features.find((f) => f.id === id);
@@ -219,7 +223,7 @@ export function FeatureTree() {
     const pIds = deps.parents.get(f.id) ?? [];
     const parentHint = !isAbsorbed && f.type !== 'sketch' && pIds[0] ? featureNameOf(pIds[0]) : null;
     const parentHintTitle = parentHint ? t('tree.builtFrom', { parents: pIds.map(featureNameOf).join(', ') }) : '';
-    const childSketches = consumedSketchesOf(f);
+    const childSketches = sketchesUnder(f);
     const hasChildren = treeMode === 'hierarchy' && !needle && childSketches.length > 0;
     const isCollapsed = collapsedFeatures.has(f.id);
 
@@ -510,7 +514,7 @@ export function FeatureTree() {
           const mainRow = renderRow(f, i);
           const childSketches =
             treeMode === 'hierarchy' && !needle && !collapsedFeatures.has(f.id)
-              ? doc.features.filter((x) => consumedSketchesOf(f).includes(x.id))
+              ? doc.features.filter((x) => sketchesUnder(f).includes(x.id))
               : [];
           const childRows = childSketches.map((sk) => renderRow(sk, doc.features.indexOf(sk), true, f));
 

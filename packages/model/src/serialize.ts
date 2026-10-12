@@ -182,6 +182,8 @@ const migrations: Record<number, (doc: Json) => Json> = {
   52: (doc) => doc,
   // v54: the knurl feature (ADR 0124). A new feature kind; nothing to convert.
   53: (doc) => doc,
+  // v55: a sketch dimension may keep where its text was dragged (`labelPosition`, optional). Nothing to convert; an older program refuses the file.
+  54: (doc) => doc,
 };
 
 export class FormatError extends Error {
