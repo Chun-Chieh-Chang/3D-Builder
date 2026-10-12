@@ -1,19 +1,18 @@
 # 交接文件
 
-- 最後更新：2026-10-12 晚（**筆電工作整合進 main、C19 設計樹修正，見下一段**；**【線架構剖面交線與 SolidWorks 級動態側影輪廓線 (Silhouette Edges) 全套落實驗收完畢】**；**【Codex 任務接棒指南：裝飾用公螺牙與母螺孔 (Cosmetic Threads, C4.9 / ADR 0129) 架構與落地 SOP】**；全套 TypeCheck 0 錯誤、Lint 規則全綠、`acceptance.test.ts` 通過；其他狀態見「最新存檔點」）。
+- 最後更新：2026-10-12 晚（**筆電工作整合、C19、Schema 55、尺寸標籤即時拖曳，已推送 `a96321f`，見下一段**；**【線架構剖面交線與 SolidWorks 級動態側影輪廓線 (Silhouette Edges) 全套落實驗收完畢】**；**【Codex 任務接棒指南：裝飾用公螺牙與母螺孔 (Cosmetic Threads, C4.9 / ADR 0129) 架構與落地 SOP】**；全套 TypeCheck 0 錯誤、Lint 規則全綠、`acceptance.test.ts` 通過；其他狀態見「最新存檔點」）。
 
 
-- **【2026-10-12 晚：筆電工作已整合進 `main`（Claude）】**
-  - **整合**：F: 筆電的 `laptop-work`（`1ce9501`「work from laptop」）合併進這台的 `main`（`c7f46be`），合併提交 `d1b793c`，**已推送**。筆電那台要 `git pull`，之後 `laptop-work` 分支可刪（本機遠端名 `laptop` 指向 `F:\Self-developed_Apps\G3\3D-Builder`）。筆電提交裡 42 個檔案中 26 個與 `c7f46be` 相同（同步帶過去的草圖平面工作）；筆電真正新增的是設計樹階層模式與從屬標記、右鍵選單、工程圖與草圖改動、拖曳草圖尺寸標籤（`setDimensionPosition`、`labelPosition`）。
-  - **沒合進來的**：`tests/` 根目錄 18 個零斷言診斷測試（副本在 `scratch/diagnostics/`，不進版本庫）；客戶零件 `apps/web/public/*part1*.json`（已取消追蹤、檔案仍在磁碟，筆電的 `.gitignore` 擋著）。**`c7f46be` 的歷史裡仍有這 3 個客戶零件檔**（私有倉庫）；要徹底清除需改寫歷史並強制推送，**待使用者決定**。
-  - **補上筆電提交漏掉的**：`viewer.ts` 的 `ViewerEvents.onLabelDrag`（筆電的 `Viewport.tsx` 已呼叫，原本編譯不過；放開滑鼠時寫入一次＝一個復原步驟，拖曳中標籤不即時跟隨）；`redefineSketchPlane` 用 `planeRef()` 校驗（筆電 DEV_LOG 說有、提交裡沒有）；`cmd.dimensionPositionNotFinite` 進 i18n；e2e 輔助（`manual-support.js`、`phase1-demo-parts.js`）改讀設計樹列的 `.name`（列裡多了 ▲/▼、↳、└── 裝飾）。
-  - **C19 修正（設計樹）**：階層模式下，草圖只有和使用它的特徵在同一個資料夾（或都不在）時才顯示在特徵底下，否則留在自己的資料夾、跟著折疊（`FeatureTree.tsx` 的 `sketchesUnder`）。原本資料夾裡的草圖會跑到資料夾外、折疊後仍看得到。
-  - **驗證**：`npm run check` 2620 過、22 略過、0 失敗；`verify:ui`：C19、C12、草圖平面、尺寸標籤拖曳、螺牙通過（全量結果見提交訊息）。注意：5391 埠上若有從前一天一直開著的 `vite`，可能送出舊模組（這次就遇到），驗證前先重啟開發伺服器。
-  - **尺寸標籤拖曳即時跟隨**（使用者 10-12 決定）：拖曳中只在畫面上移動標籤（`viewer.ts` 標籤的 `offset`／`held`），放開時寫入一次（一次拖曳＝一個復原步驟）；寫入被拒絕時約 0.4 秒後退回。
-  - **10-12 晚的驗證**：`tsc`、lint:deps、lint:i18n 通過；vitest 2623 過、22 略過、0 失敗；`verify:ui` 相關 32 支（C10–C26、草圖平面、尺寸標籤、螺牙、phase3-sketch-*、phase5-dimensions）全過；全部 126 支這次沒有跑完（使用者中止）。開發伺服器又出現送舊模組的情況，重啟後才跑。
-  - **零件 Schema 54→55**（使用者 10-12 決定）：`labelPosition` 是檔案的新欄位，升版讓舊程式拒絕而不是默默丟掉；遷移 54→55 空轉；測試 `tests/phase8/dimension-label-position.test.ts`。
-  - **螺牙**：審查發現的問題已由 10-11 的 `d1dc276` 修掉，其後有標準螺紋規格庫（`c4de3ba`）與 `f832934`；本次沒有再動螺牙。
-  - **待使用者決定**：① 客戶零件是否從歷史清除；（尺寸標籤拖曳已改成即時跟隨，見上）。
+- **【2026-10-12 晚：筆電工作整合、C19、Schema 55、尺寸標籤即時拖曳 — 全部已提交並推送（Claude）】** 目前 `main` = `origin/main` = `a96321f`，工作區乾淨（`docs/plans/` 等未追蹤檔不是這次的）。
+  - **整合（`d1b793c`）**：F: 筆電的 `laptop-work`（`1ce9501`「work from laptop」）合併進這台的 `main`（`c7f46be`）。筆電提交 42 個檔案中 26 個與 `c7f46be` 相同（檔案同步帶過去的草圖平面工作）；筆電真正新增的：設計樹階層模式與從屬標記、右鍵選單、工程圖與草圖改動、拖曳草圖尺寸標籤（`setDimensionPosition`）。本機遠端 `laptop` 指向 `F:\Self-developed_Apps\G3\3D-Builder`。**筆電那台要 `git pull`，之後 `laptop-work` 分支可刪。**
+  - **沒合進來的**：`tests/` 根目錄 18 個零斷言診斷測試（副本在 `scratch/diagnostics/`，不進版本庫）；客戶零件 `apps/web/public/*part1*.json`（已取消追蹤，檔案仍在磁碟，筆電的 `.gitignore` 擋著）。
+  - **補上筆電提交漏掉的**：`viewer.ts` 的 `ViewerEvents.onLabelDrag`（筆電的 `Viewport.tsx` 已呼叫，原本編譯不過）；`redefineSketchPlane` 用 `planeRef()` 校驗（筆電 DEV_LOG 說有、提交裡沒有）；`cmd.dimensionPositionNotFinite` 進 i18n；e2e 輔助（`manual-support.js`、`phase1-demo-parts.js`）改讀設計樹列的 `.name`（列裡多了 ▲/▼、↳、└── 裝飾）。
+  - **之後的修改（`a96321f`）**：① **C19**：階層模式下，草圖只有和使用它的特徵在同一個資料夾（或都不在）時才顯示在特徵底下，否則留在自己的資料夾、跟著折疊（`FeatureTree.tsx` 的 `sketchesUnder`）。② **零件 Schema 54→55**（使用者決定）：`labelPosition` 是檔案的新欄位，升版讓舊程式拒絕而不是默默丟掉；遷移空轉；測試 `tests/phase8/dimension-label-position.test.ts`。③ **尺寸標籤拖曳即時跟隨**（使用者決定）：拖曳中只在畫面上移動標籤（`viewer.ts` 標籤的 `offset`／`held`），放開時寫入一次（一次拖曳＝一個復原步驟）；寫入被拒絕時約 0.4 秒後退回。
+  - **驗證（`a96321f`）**：`tsc`、lint:deps、lint:i18n 通過；vitest **2623 過、22 略過、0 失敗**；`verify:ui` 相關 32 支（C10–C26、草圖平面、尺寸標籤、螺牙、phase3-sketch-*、phase5-dimensions）**32/32**。**全部 126 支沒有跑完**（使用者中止），下次有空時跑一次全量 `npm run verify:ui`。
+  - **驗證前要注意（這次踩到兩次）**：① 5391 埠上若有長時間開著的 `vite`，可能送出舊模組（合併或大量改檔後監看漏掉），結果不可信；驗證前先重啟開發伺服器，可用 `curl http://127.0.0.1:5391/@fs/<檢出路徑>/packages/render/src/viewer.ts` 找剛改的識別字確認（註解會被轉譯拿掉，要找程式碼本身）。② 被中止的 `verify:ui` 可能留下 `node scripts/verify-ui.mjs` 程序佔住 5393 埠，下一次會 `EADDRINUSE`，先結束那個程序。③ 單元測試與 `verify:ui` 同時跑時，無頭 Chrome 可能 12 秒內起不來（9333 `ECONNREFUSED`），要依序跑。
+  - **螺牙**：審查發現的問題已由 10-11 的 `d1dc276` 修掉，其後有標準螺紋規格庫（`c4de3ba`）與 `f832934`；這次沒有再動螺牙。
+  - **待使用者決定**：客戶零件 `real-part1.json`、`real-part1-fixed.json`、`part1-demo.json` 仍在已推送的 `c7f46be` 歷史裡（私有倉庫）；要徹底清除需改寫歷史並強制推送，無法復原。
+  - **下一步建議**：① 筆電 `git pull`；② 跑一次全量 `npm run verify:ui`；③ 決定客戶零件歷史的處理。
 ---
 
 ## ⚡ 今日任務總結 (2026-10-12)
