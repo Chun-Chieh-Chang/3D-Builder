@@ -213,7 +213,7 @@ M.run = async () => {
   await step('10 the section tool: two clicks draw a vertical cut, then a click places the section view', async () => {
     panel('[data-action="toolSection"]').click();
     await H.wait(150);
-    await choose(panel('[data-field="sectionAxis"]'), 'v');
+    await setField('sectionAxis', 'v');
     const p = placed(front);
     const on = [p.at[0] + 15, p.at[1]];
     const before = drw().doc.views.length;
@@ -232,7 +232,7 @@ M.run = async () => {
   await step('11 selecting horizontal and clicking sets a horizontal cut; a section line can still be dragged across its parent', async () => {
     panel('[data-action="toolSection"]').click();
     await H.wait(150);
-    await choose(panel('[data-field="sectionAxis"]'), 'h');
+    await setField('sectionAxis', 'h');
     const selectedHorizontal = drw().tool?.kind === 'section' && drw().tool.vertical === false;
     const p = placed(top);
     const from = [p.at[0] - 20, p.at[1] + 5];
