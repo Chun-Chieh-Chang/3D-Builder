@@ -156,6 +156,8 @@ export type Snap =
   | { kind: 'intersection'; p: P2; a: Id; b: Id }
   /** A quarter point of a circle or arc (四分之一點): on the curve, and level or plumb with its center. */
   | { kind: 'quadrant'; p: P2; curve: Id; center: Id; axis: 'horizontal' | 'vertical' }
+  /** On the extension of a line past `from`, one of its ends (延長線): the new point is on the line (a line is infinite to the solver). */
+  | { kind: 'extension'; p: P2; line: Id; from: P2 }
   /** A place on the model (D5.3b): the sketch gets the edge as a reference entity that follows it, and the new point goes with it. */
   | { kind: 'model'; p: P2; item: ModelEdge; part: ModelPart }
   /** Nowhere in particular, or (`align`) in line with other points: the new point gets a horizontal / vertical relation to each. */

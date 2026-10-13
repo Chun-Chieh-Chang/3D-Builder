@@ -146,6 +146,8 @@ export function buildOverlay(frame: PlaneFrame, sketch: SketchFeature, solve: Sk
       points.push({ p: target.p, color: SKETCH_COLORS.guide, size: 7 });
     }
   }
+  // on the extension of a line: the dotted extension from its end to the point
+  if (view.snap?.kind === 'extension') curves.push({ points: [view.snap.from, view.snap.p], color: SKETCH_COLORS.guide, dashed: true });
   // a collinear line is shown as the dotted extension of the line it continues
   if (view.snap && view.inferLine?.kind === 'collinear') {
     const ref = geometry.get(view.inferLine.line);

@@ -1151,6 +1151,76 @@ describe('the snaps beyond points and curves, and the settings (D5.3c)', () => {
   });
 });
 
+describe('the extension of a line (FreeCAD line extension; SolidWorks inference line)', () => {
+  // a slanted line, so being on its extension is not also being level or plumb with its ends
+  const slanted = (patch: Partial<SnapSettings> = {}) => {
+    const h = new Host();
+    h.snapSettings = () => ({ ...DEFAULT_SNAPS, ...patch });
+    const c = new SketchController(h);
+    c.setTool('line');
+    click(c, 1, 1);
+    click(c, 11, 6); // direction (2, 1)
+    c.escape();
+    const line = h.sketch().entities.find((e) => e.type === 'line')!;
+    return { h, c, line };
+  };
+
+  it('a point past the end, close to where the line would go on, snaps onto it with a dotted guide from that end, and is put on the line', () => {
+    const { h, c, line } = slanted();
+    c.setTool('point');
+    c.pointerMove(at(21.05, 10.95), false); // (21, 11) is on the extension; the cursor is 0.07 mm off it (5 px = 0.25 mm)
+    const v = c.getView();
+    expect(v.snap).toMatchObject({ kind: 'extension', line: line.id, from: [11, 6] });
+    const s = v.snap as Extract<NonNullable<typeof v.snap>, { kind: 'extension' }>;
+    expect(s.p[0]).toBeCloseTo(21.02, 9); // the foot of (21.05, 10.95) on the line
+    expect(s.p[1]).toBeCloseTo(11.01, 9);
+    expect(v.inference).toBe('在延長線上');
+    click(c, 21.05, 10.95);
+    const p = h.sketch().entities.filter((e) => e.type === 'point').at(-1)!;
+    expect(h.sketch().constraints.at(-1)).toMatchObject({ type: 'pointOnCurve', point: p.id, curve: line.id });
+    expect(h.last!.status).not.toBe('over');
+    const q = point(h, p.id);
+    expect(Math.abs((q[0] - 1) * 1 - (q[1] - 1) * 2) / Math.sqrt(5)).toBeLessThan(1e-9); // on the line through (1, 1) along (2, 1)
+  });
+
+  it('works past either end, and not on the line itself or at an end: those are the curve and the point', () => {
+    const { c } = slanted();
+    c.setTool('point');
+    c.pointerMove(at(-8.95, -4.05), false); // before the start: (-9, -4)
+    expect(c.getView().snap).toMatchObject({ kind: 'extension', from: [1, 1] });
+    c.pointerMove(at(3.05, 1.95), false); // on the drawn line at (3, 2), away from its middle
+    expect(c.getView().snap).toMatchObject({ kind: 'curve' });
+    c.pointerMove(at(11.1, 6.05), false); // at its end
+    expect(c.getView().snap).toMatchObject({ kind: 'point' });
+  });
+
+  it('a line ending on the extension of another gets its end put on that line, and the sketch is not over-defined', () => {
+    const { h, c, line } = slanted();
+    c.setTool('line');
+    click(c, 31, 1); // from there toward (21, 11): 135°, not horizontal, vertical or along the first line
+    click(c, 21.05, 10.95);
+    c.escape();
+    const second = h.sketch().entities.filter((e) => e.type === 'line').at(-1) as Extract<SketchFeature['entities'][number], { type: 'line' }>;
+    expect(h.sketch().constraints).toContainEqual(expect.objectContaining({ type: 'pointOnCurve', point: second.p2, curve: line.id }));
+    expect(h.last!.status).not.toBe('over');
+    expect(h.last!.redundant).toEqual([]);
+  });
+
+  it('a line\'s own horizontal or vertical comes first, and the setting turns it off', () => {
+    const { c } = slanted();
+    c.setTool('line');
+    click(c, -9, 30);
+    c.pointerMove(at(-9.05, -4.05), false); // plumb under the start (vertical wins), and also near the extension at (-9, -4)
+    expect(c.getView().snap).toMatchObject({ kind: 'free' });
+    expect(c.getView().inference).toBe('垂直');
+    c.escape();
+    const off = slanted({ extension: false });
+    off.c.setTool('point');
+    off.c.pointerMove(at(21.05, 10.95), false);
+    expect(off.c.getView().snap).toMatchObject({ kind: 'free' });
+  });
+});
+
 describe('Ctrl while sketching (SolidWorks: hold Ctrl to keep relations from being added)', () => {
   it('a point clicked with Ctrl on an end, a middle and in line with a point goes where the cursor is, with no relation', () => {
     const h = new Host();

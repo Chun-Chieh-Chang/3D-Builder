@@ -31,6 +31,8 @@ export interface SnapSettings {
   horizontalVertical: boolean;
   /** A line within a few degrees of the direction of another: collinear, parallel, perpendicular. */
   lineRelations: boolean;
+  /** On the extension of a line, past its end (a dotted guide shows it): the new point is on that line. */
+  extension: boolean;
   /** The edges and vertices of the model in the sketch plane. */
   model: boolean;
   /** 網格 (off unless asked for): free points go to the grid. */
@@ -42,8 +44,8 @@ export interface SnapSettings {
 }
 
 /** One of the snaps a 快速抓取 can pick: the others are off while it is. */
-export type SnapItem = 'point' | 'midpoint' | 'curve' | 'quadrant' | 'intersection' | 'tangent' | 'perpendicular' | 'alignment' | 'horizontalVertical' | 'lineRelations' | 'model';
-export const SNAP_ITEMS: readonly SnapItem[] = ['point', 'midpoint', 'curve', 'quadrant', 'intersection', 'tangent', 'perpendicular', 'alignment', 'horizontalVertical', 'lineRelations', 'model'];
+export type SnapItem = 'point' | 'midpoint' | 'curve' | 'quadrant' | 'intersection' | 'tangent' | 'perpendicular' | 'alignment' | 'horizontalVertical' | 'lineRelations' | 'extension' | 'model';
+export const SNAP_ITEMS: readonly SnapItem[] = ['point', 'midpoint', 'curve', 'quadrant', 'intersection', 'tangent', 'perpendicular', 'alignment', 'horizontalVertical', 'lineRelations', 'extension', 'model'];
 
 export const DEFAULT_SNAPS: SnapSettings = {
   enabled: true,
@@ -57,6 +59,7 @@ export const DEFAULT_SNAPS: SnapSettings = {
   alignment: true,
   horizontalVertical: true,
   lineRelations: true,
+  extension: true,
   model: true,
   grid: false,
   gridSpacing: 5,
@@ -90,6 +93,7 @@ export function parseSnapSettings(raw: unknown): SnapSettings {
     alignment: flag('alignment'),
     horizontalVertical: flag('horizontalVertical'),
     lineRelations: flag('lineRelations'),
+    extension: flag('extension'),
     model: flag('model'),
     grid: flag('grid'),
     gridSpacing: num('gridSpacing', GRID_SPACING.min, GRID_SPACING.max),
@@ -170,6 +174,30 @@ export function perpendicularSnap(geometry: Geometry, from: P2, p: P2, tol: numb
     if (d <= tol && (!best || d < best.d)) best = { p: foot, line: id, d };
   }
   return best && { p: best.p, line: best.line };
+}
+
+// ---------------------------------------------------------------- the extension of a line
+
+/**
+ * A place on the extension of a line, past one of its ends (FreeCAD's line extension auto-constraint; SolidWorks draws the same dotted inference line):
+ * the foot of the cursor on the line through it, when that is within `tol` of the cursor and more than `tol` past the nearer end (nearer than that,
+ * the end itself is the snap). The nearest such place, with the line and that end (where the dotted guide starts).
+ */
+export function extensionSnap(geometry: Geometry, p: P2, tol: number, exclude: ReadonlySet<Id> = new Set()): { p: P2; line: Id; from: P2 } | null {
+  let best: { p: P2; line: Id; from: P2; d: number } | null = null;
+  for (const [id, g] of geometry) {
+    if (exclude.has(id) || g.type !== 'line') continue;
+    const length = dist(g.a, g.b);
+    if (length === 0) continue;
+    const u = unit(sub(g.b, g.a));
+    const t = dot(sub(p, g.a), u);
+    const past = t < 0 ? -t : t > length ? t - length : 0;
+    if (past <= tol) continue; // on the line itself, or at an end: the curve and point snaps have those
+    const foot = add(g.a, scale(u, t));
+    const d = dist(p, foot);
+    if (d <= tol && (!best || d < best.d)) best = { p: foot, line: id, from: t < 0 ? g.a : g.b, d };
+  }
+  return best && { p: best.p, line: best.line, from: best.from };
 }
 
 // ---------------------------------------------------------------- grid, angle, length

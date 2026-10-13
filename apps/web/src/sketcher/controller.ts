@@ -39,7 +39,7 @@ import {
   type Snap,
 } from '@3db/sketch/interact';
 import type { P2, SolvedGeometry } from '@3db/sketch';
-import { angleStep, DEFAULT_SNAPS, gridPoint, intersectionSnap, lengthStep, perpendicularSnap, quadrantSnap, quickSettings, tangentSnap, type SnapItem, type SnapSettings } from '@3db/sketch/snaps';
+import { angleStep, DEFAULT_SNAPS, extensionSnap, gridPoint, intersectionSnap, lengthStep, perpendicularSnap, quadrantSnap, quickSettings, tangentSnap, type SnapItem, type SnapSettings } from '@3db/sketch/snaps';
 import { checkSketch, repairSketch, type SketchIssue } from '@3db/sketch/check';
 import { anchorModel, anchorModelForSelection, chamfer, extend, fillet, isCurve, mergePoints, mirror, offset, polygon, referenceEntities, relationCrossings, slot, trim, type Maker, type ModelItem, type OpResult } from '@3db/sketch/ops';
 import type { SketchSolvePayload } from '../worker/protocol';
@@ -193,7 +193,7 @@ export class SketchController {
   private hover: Hit | null = null;
   private snapTarget: Snap | null = null;
   /** Inferred relation shown next to the cursor while drawing. */
-  private inference: 'coincident' | 'midpoint' | 'onCurve' | 'tangent' | 'horizontal' | 'vertical' | 'horizontalPoint' | 'verticalPoint' | 'alignedPoints' | 'collinear' | 'parallel' | 'perpendicular' | 'modelPoint' | 'modelMid' | 'modelCenter' | 'modelEdge' | 'intersection' | 'quadrant' | null = null;
+  private inference: 'coincident' | 'midpoint' | 'onCurve' | 'tangent' | 'horizontal' | 'vertical' | 'horizontalPoint' | 'verticalPoint' | 'alignedPoints' | 'collinear' | 'parallel' | 'perpendicular' | 'modelPoint' | 'modelMid' | 'modelCenter' | 'modelEdge' | 'intersection' | 'quadrant' | 'onExtension' | null = null;
   /** Arc the line being drawn is inferred to be tangent to. */
   private tangentTo: Id | null = null;
   /** Line the one being drawn is inferred collinear / parallel / perpendicular to (D5.3a). */
@@ -752,6 +752,15 @@ export class SketchController {
         if (!lineHv) this.inference = both ? 'alignedPoints' : found.align.h ? 'horizontalPoint' : 'verticalPoint';
       }
     }
+    // On the extension of a line (FreeCAD's line extension auto-constraint): last of the snaps, only for a place nothing else has taken, so a line's own
+    // horizontal, vertical or collinear and the points it lines up with come first and are never added with it
+    if (s.kind === 'free' && !s.align && !inferred && this.inference === null && makes && cfg.extension) {
+      const x = extensionSnap(geometry, e.p, tol, excluded);
+      if (x) {
+        s = { kind: 'extension', p: x.p, line: x.line, from: x.from };
+        this.inference = 'onExtension';
+      }
+    }
     // The steps that ask for nothing of the sketch: the length (Shift), the angle, the grid; only for a place nothing else has taken
     if (s.kind === 'free' && !s.align && !inferred && this.inference === null) {
       if (drawingLine && from && e.shift) s = { kind: 'free', p: lengthStep(from, s.p, cfg.gridSpacing) };
@@ -759,7 +768,15 @@ export class SketchController {
       else if (cfg.grid && makes) s = { kind: 'free', p: gridPoint(s.p, cfg.gridSpacing) };
     }
     this.snapTarget = s;
-    this.hover = this.lineTo ? { id: this.lineTo.line, kind: 'line', q: s.p, d: 0 } : s.kind === 'point' ? { id: s.id, kind: 'point', q: s.p, d: 0 } : s.kind === 'curve' ? { id: s.id, kind: 'line', q: s.p, d: 0 } : null;
+    this.hover = this.lineTo
+      ? { id: this.lineTo.line, kind: 'line', q: s.p, d: 0 }
+      : s.kind === 'point'
+        ? { id: s.id, kind: 'point', q: s.p, d: 0 }
+        : s.kind === 'curve'
+          ? { id: s.id, kind: 'line', q: s.p, d: 0 }
+          : s.kind === 'extension'
+            ? { id: s.line, kind: 'line', q: s.p, d: 0 }
+            : null;
   }
 
   /** Whether the click about to be made puts a new point where the cursor is (so it may line up with other points). */
@@ -1358,6 +1375,7 @@ class Builder {
     } else if (s.kind === 'point') this.relation({ type: 'coincident', a: id, b: SKETCH_ORIGIN });
     else if (s.kind === 'midpoint') this.relation({ type: 'midpoint', point: id, line: s.line });
     else if (s.kind === 'curve') this.relation({ type: 'pointOnCurve', point: id, curve: s.id });
+    else if (s.kind === 'extension') this.relation({ type: 'pointOnCurve', point: id, curve: s.line });
     return id;
   }
 
