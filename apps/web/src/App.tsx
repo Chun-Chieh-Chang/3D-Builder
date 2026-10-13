@@ -25,6 +25,7 @@ import { FormSubPanel } from './components/FormSubPanel';
 import { PropertyManager } from './components/PropertyManager';
 import { StatusBar } from './components/StatusBar';
 import { Viewport } from './components/Viewport';
+import { ViewOrientationDialog } from './components/ViewOrientationDialog';
 
 export function App() {
   // The whole tree is drawn again when the language changes: texts are read when drawn (see strings.ts).
@@ -80,6 +81,7 @@ export function App() {
       <TemplateDialog />
       <ShortcutsDialog />
       <OptionsDialog />
+      <ViewOrientationDialog />
       <UnsavedDialog />
       <RecoveryDialog />
       <FolderDialog />

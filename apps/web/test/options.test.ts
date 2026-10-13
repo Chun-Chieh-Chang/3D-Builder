@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { AUTOSAVE_SECONDS, DEFAULT_OPTIONS, loadOptions, parseOptions, saveOptions } from '../src/options';
+import { AUTOSAVE_SECONDS, DEFAULT_OPTIONS, loadOptions, parseOptions, saveOptions, VIEW_ARROW_STEP } from '../src/options';
 
 describe('system options (D8.1)', () => {
   it('nothing stored, or something that is not an object, gives the defaults', () => {
@@ -34,9 +34,19 @@ describe('system options (D8.1)', () => {
     expect(parseOptions({ autosaveSeconds: NaN }).autosaveSeconds).toBe(DEFAULT_OPTIONS.autosaveSeconds);
   });
 
+  it('the arrow keys\' angle is 15° at first (SolidWorks), kept within 1° to 90°; one that is not a number is the default; an older store has none', () => {
+    expect(DEFAULT_OPTIONS.viewArrowStep).toBe(15);
+    expect(parseOptions({ viewArrowStep: 0 }).viewArrowStep).toBe(VIEW_ARROW_STEP.min);
+    expect(parseOptions({ viewArrowStep: 400 }).viewArrowStep).toBe(VIEW_ARROW_STEP.max);
+    expect(parseOptions({ viewArrowStep: 7.5 }).viewArrowStep).toBe(7.5);
+    expect(parseOptions({ viewArrowStep: NaN }).viewArrowStep).toBe(15);
+    expect(parseOptions({ viewArrowStep: '30' }).viewArrowStep).toBe(15);
+    expect(loadOptions({ getItem: () => JSON.stringify({ autosave: true }) }).viewArrowStep).toBe(15);
+  });
+
   it('what is saved is what is loaded', () => {
     let kept = '';
-    const options = { autosave: false, autosaveSeconds: 60, defaultTemplate: 'aluminium' as const, pickFilter: { faces: true, edges: false, vertices: false, planes: false }, datumOffset: '25', snap: { ...DEFAULT_OPTIONS.snap, enabled: false, grid: true, gridSpacing: 2.5 } };
+    const options = { autosave: false, autosaveSeconds: 60, defaultTemplate: 'aluminium' as const, pickFilter: { faces: true, edges: false, vertices: false, planes: false }, datumOffset: '25', snap: { ...DEFAULT_OPTIONS.snap, enabled: false, grid: true, gridSpacing: 2.5 }, viewArrowStep: 7.5 };
     saveOptions(options, { setItem: (_k, v) => void (kept = v) });
     expect(loadOptions({ getItem: () => kept })).toEqual(options);
   });

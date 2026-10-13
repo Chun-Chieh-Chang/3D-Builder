@@ -130,6 +130,8 @@ export const output: Translation = {
   'options.languageEn': 'English',
   'options.autosave': 'Autosave (an unsaved part can be recovered after a crash)',
   'options.autosaveSeconds': 'Seconds after the last change to save',
+  'options.viewArrowStep': 'Arrow keys turn the view by (degrees; Alt+Left/Right roll by it too)',
+  'viewOrientation.title': 'View Orientation',
   'options.template': 'Template for "New Part"',
   'options.pickFilter': 'Elements that can be picked at the start',
   'options.hint': 'These options are kept in this browser and are not part of the part file.',

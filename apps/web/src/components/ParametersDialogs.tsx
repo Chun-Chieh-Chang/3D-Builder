@@ -5,7 +5,7 @@ import { PICK_FILTER_LABEL } from '../strings';
 import { dimensionName, formatMass, formatQuantity, isDimension, massGrams, MATERIALS, materialById, Parameters, PART_TEMPLATES, settingsOf, type AppearanceTarget, type Command, type DocSettings, type SketchFeature } from '@3db/model';
 import { ACTIONS, shortcutOf } from '../actions';
 import { conflictWith, formatEvent, overrides, resetOverrides, setOverride, subscribeShortcuts } from '../shortcuts';
-import { AUTOSAVE_SECONDS } from '../options';
+import { AUTOSAVE_SECONDS, VIEW_ARROW_STEP } from '../options';
 import { store, useStore } from '../state/store';
 
 /** Runs a command; the reason it was refused (as the store worded it), or null when it went through. */
@@ -597,6 +597,15 @@ export function OptionsDialog() {
             disabled={!options.autosave}
             value={options.autosaveSeconds}
             onChange={(e) => e.target.value !== '' && store.setOptions({ autosaveSeconds: Number(e.target.value) })}
+          />
+          <label>{t('options.viewArrowStep')}</label>
+          <input
+            type="number"
+            min={VIEW_ARROW_STEP.min}
+            max={VIEW_ARROW_STEP.max}
+            step="1"
+            value={options.viewArrowStep}
+            onChange={(e) => e.target.value !== '' && store.setOptions({ viewArrowStep: Number(e.target.value) })}
           />
           <label>{t('options.template')}</label>
           <select value={options.defaultTemplate} onChange={(e) => store.setOptions({ defaultTemplate: e.target.value as (typeof PART_TEMPLATES)[number]['id'] })}>

@@ -128,6 +128,8 @@ export const output = {
   'options.languageEn': 'English',
   'options.autosave': '自動存檔（當機後可以救回未存檔的零件）',
   'options.autosaveSeconds': '最後一次變更後幾秒存檔',
+  'options.viewArrowStep': '方向鍵旋轉視角的角度（度；Alt＋左右滾轉也用它）',
+  'viewOrientation.title': '視角方位',
   'options.template': '「新零件」使用的範本',
   'options.pickFilter': '開始時可以點選的元素',
   'options.hint': '這些選項存在這個瀏覽器裡，不屬於零件檔。',

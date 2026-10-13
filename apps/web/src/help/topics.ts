@@ -28,7 +28,7 @@ export interface HelpTopic {
 }
 
 /** The topics that are not an action. */
-export const CONCEPTS = ['concept.overview', 'concept.selection', 'concept.feature-tree', 'concept.property-manager', 'concept.sketch-snaps', 'concept.drawing-dimensions'] as const;
+export const CONCEPTS = ['concept.overview', 'concept.selection', 'concept.feature-tree', 'concept.property-manager', 'concept.sketch-snaps', 'concept.drawing-dimensions', 'concept.view'] as const;
 
 /** The tab (a group of actions) a topic is listed under in the contents, as the command bar names it. */
 export const GROUP_TITLE: Record<HelpGroup, () => string> = {

@@ -4,6 +4,7 @@ import { t } from '@3db/i18n';
 import { TOOL_LABEL } from './strings';
 import { effective, matchesShortcut, overrides } from './shortcuts';
 import type { ToolId } from './sketcher/controller';
+import { viewKeyCommand, type ViewKeyCommand } from './viewKeys';
 
 /**
  * UI action registry (D3.1): the single definition of every command's label, shortcut and
@@ -180,8 +181,11 @@ export const ACTIONS: UiAction[] = [
 
   { id: 'fit', get label() { return t('act.fit'); }, shortcut: 'F', group: 'view', enabled: () => true, run: () => store.viewer?.fitAll() },
   { id: 'view-front', get label() { return t('act.front'); }, shortcut: 'Ctrl+1', group: 'view', enabled: () => true, run: () => store.viewer?.setView('front') },
+  { id: 'view-back', get label() { return t('act.back'); }, shortcut: 'Ctrl+2', group: 'view', enabled: () => true, run: () => store.viewer?.setView('back') },
   { id: 'view-top', get label() { return t('act.top'); }, shortcut: 'Ctrl+5', group: 'view', enabled: () => true, run: () => store.viewer?.setView('top') },
+  { id: 'view-bottom', get label() { return t('act.bottom'); }, shortcut: 'Ctrl+6', group: 'view', enabled: () => true, run: () => store.viewer?.setView('bottom') },
   { id: 'view-right', get label() { return t('act.right'); }, shortcut: 'Ctrl+4', group: 'view', enabled: () => true, run: () => store.viewer?.setView('right') },
+  { id: 'view-left', get label() { return t('act.left'); }, shortcut: 'Ctrl+3', group: 'view', enabled: () => true, run: () => store.viewer?.setView('left') },
   { id: 'view-iso', get label() { return t('act.iso'); }, shortcut: 'Ctrl+7', group: 'view', enabled: () => true, run: () => store.viewer?.setView('iso') },
   { id: 'view-normal', get label() { return t('act.normal'); }, shortcut: 'Ctrl+8', group: 'view', enabled: sketching, run: () => lookAtSketch() },
 ];
@@ -225,6 +229,26 @@ function toggleConstruction(): void {
 export const shortcutOf = (a: UiAction): string | undefined => effective(a.id, a.shortcut, overrides());
 
 /** Global shortcuts; ignored while typing into inputs. */
+/** Does what a view key asks (viewKeys.ts) to the 3D view. */
+function runViewKey(c: ViewKeyCommand): void {
+  const v = store.viewer;
+  if (!v) return;
+  switch (c.kind) {
+    case 'orbit':
+      return v.orbit(c.direction, c.degrees);
+    case 'roll':
+      return v.roll(c.degrees);
+    case 'pan':
+      return v.pan(c.fx, c.fy);
+    case 'zoom':
+      return v.zoom(c.factor);
+    case 'previous':
+      return void v.previousView();
+    case 'orientation':
+      return store.openDialog('viewOrientation');
+  }
+}
+
 export function installShortcuts(): () => void {
   const onKey = (e: KeyboardEvent) => {
     const target = e.target as HTMLElement | null;
@@ -288,6 +312,14 @@ export function installShortcuts(): () => void {
       if (e.key === 'Escape') return void store.cancelEdit();
     } else if (e.key === 'Delete' && s.doc.features.some((f) => f.id === s.selected)) {
       return void store.requestDelete(s.selected); // 「確認刪除」 for the feature selected in the tree
+    }
+    // The view from the keyboard (SolidWorks: arrows, Shift/Alt/Ctrl+arrows, Z, Shift+Z, Ctrl+Shift+Z, space): fixed keys, before the shortcuts, so
+    // Ctrl+Shift+Z is not taken for undo (a shortcut without Shift also matches with it). Not on a drawing sheet: it has no model to turn.
+    // Nor while a dialog is open: its buttons take the space bar and the arrows.
+    const view = !s.drw && !s.dialog && store.viewer ? viewKeyCommand(e, s.options.viewArrowStep) : null;
+    if (view) {
+      e.preventDefault(); // Alt+Left would go back a page, the space would scroll it
+      return void runViewKey(view);
     }
     for (const a of ACTIONS) {
       const shortcut = shortcutOf(a);

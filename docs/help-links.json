@@ -118,7 +118,11 @@
     "view-top",
     "view-right",
     "view-iso",
-    "view-normal"
+    "view-normal",
+    "view-back",
+    "view-left",
+    "view-bottom",
+    "concept.view"
   ],
   "C21": [
     "concept.selection"

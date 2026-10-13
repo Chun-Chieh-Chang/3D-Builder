@@ -18,9 +18,12 @@ export interface SystemOptions {
   datumOffset: string;
   /** The sketch snaps (D5.3c): 「啟用抓取」 and the choices under it. */
   snap: SnapSettings;
+  /** How far an arrow key (and Alt+Left/Right) turns the view, in degrees (SolidWorks: System Options > View > Arrow keys, 15 at first). */
+  viewArrowStep: number;
 }
 
 export const AUTOSAVE_SECONDS = { min: 2, max: 600 } as const;
+export const VIEW_ARROW_STEP = { min: 1, max: 90 } as const;
 
 export const DEFAULT_OPTIONS: SystemOptions = {
   autosave: true,
@@ -29,6 +32,7 @@ export const DEFAULT_OPTIONS: SystemOptions = {
   pickFilter: { faces: true, edges: true, vertices: true, planes: true },
   datumOffset: '10',
   snap: DEFAULT_SNAPS,
+  viewArrowStep: 15,
 };
 
 const KEY = '3db.options';
@@ -46,6 +50,7 @@ export function parseOptions(raw: unknown): SystemOptions {
     pickFilter: { faces: on(filter.faces), edges: on(filter.edges), vertices: on(filter.vertices), planes: on(filter.planes) },
     datumOffset: typeof o.datumOffset === 'string' && Number.isFinite(Number(o.datumOffset)) && o.datumOffset.trim() !== '' ? o.datumOffset.trim() : DEFAULT_OPTIONS.datumOffset,
     snap: parseSnapSettings(o.snap),
+    viewArrowStep: typeof o.viewArrowStep === 'number' && Number.isFinite(o.viewArrowStep) ? Math.min(VIEW_ARROW_STEP.max, Math.max(VIEW_ARROW_STEP.min, o.viewArrowStep)) : DEFAULT_OPTIONS.viewArrowStep,
   };
 }
 

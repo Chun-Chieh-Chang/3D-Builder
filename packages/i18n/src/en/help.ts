@@ -51,6 +51,12 @@ export const help: Translation = {
     'When the cursor is near something, it lights up, its name appears next to the cursor, and clicking makes the matching relation:\n\n- Coincident: on an existing sketch point or the origin; the two become one point.\n- Midpoint, On entity: the middle of a line or of an arc (the middle of its sweep; when the arc changes the point stays in the middle), or anywhere on a line, circle or arc.\n- Horizontal to point, Vertical to point: when the cursor is level or plumb (within 5 pixels) with another sketch point (an end, a center, the origin), a gray dotted line joins them and a horizontal or vertical relation is added; lined up with two points, it snaps to where the lines cross.\n- Horizontal, Vertical: a line you draw is within 3° of horizontal or vertical from its start.\n- Collinear, Parallel, Perpendicular: a line you draw is within 3° of the direction of another line: starting on that line it is collinear (a gray dotted extension is drawn), otherwise parallel; a quarter turn away it is perpendicular; that line lights up.\n- Tangent: a line drawn from the end of an arc along its tangent; or, with the cursor near the point where a line from its start would touch a circle or arc, it snaps there and the tangent relation is added.\n- Perpendicular (foot): with the cursor near the foot of the perpendicular from the start of the line onto another line, it snaps there; the new line is perpendicular to that line and ends on it.\n- Intersection: with the cursor near where two entities cross, the new point becomes the intersection of both.\n- Quadrant point: the 0°, 90°, 180° and 270° places of a circle or arc; the new point is on the entity and level or plumb with its center.\n- On extension: past the end of a line, near where it would go on, the cursor snaps onto its extension (a gray dotted line from that end) and the new point is put on that line. Only when no other snap or inference applies.\n- Grid and angle (off by default): with the grid turned on in System Options light gray grid lines are drawn (every fifth a little darker) and a free point goes to where they cross; zoomed out so far that they would be closer than 8 pixels, the lines and the snap both step up to 2, 5, 10 … times the spacing, so a snapped point is always on a drawn line; with the angle turned on the direction of a line goes to a multiple of the angle step (within 3°); holding Shift while drawing a line makes its length a multiple of the grid spacing.\n- Model end point, Model midpoint, Model center, On model edge: when you sketch on a face, the edges of that face are snapped to; clicking makes that edge an entity that follows the model (purple) and the new point coincident with it, so the sketch moves when the model changes.\n\nOrder of preference: the sketch\'s own points and midpoints first, then the model\'s ends, centers and midpoints, intersections, quadrant points, tangent places and feet of perpendiculars, then places on sketch entities, then places on model edges, and only then horizontal, vertical, collinear and the like.\n\n"Sketch snaps" in System Options turns the whole thing off (nothing snaps and no relation is added by itself), or just some of the snaps. Hold Ctrl while sketching and the click lands where the cursor is, with no snap and no relation added; letting go of Ctrl brings them back (as in SolidWorks). While a drawing tool is active, right-click > Quick snaps keeps only one snap on and the others off until the tool changes or you end it.\n\nRelations added this way may make a relation you add by hand redundant; delete the automatic one from the relation list in the sketch panel.',
   'help.conceptSketchSnaps.keywords': 'snap inference dotted line horizontal to point vertical to point collinear parallel model edge magnet',
   'help.conceptSketchSnaps.see': 'sketch tool-line tool-convert',
+  'help.conceptView.title': 'Viewing the Model: Mouse and Keyboard',
+  'help.conceptView.summary': 'Turn, pan and zoom the view with the middle mouse button or the keyboard, as in SolidWorks; Ctrl+Shift+Z goes back a view.',
+  'help.conceptView.body':
+    'Mouse:\n\n- Drag with the middle button (the wheel) held: turn; Ctrl + middle drag: pan; Shift + middle drag: zoom; turn the wheel: zoom about the cursor.\n- On a touchpad, Alt + left drag turns.\n\nKeyboard (as in SolidWorks; not while typing in a field, nor on a drawing):\n\n- Left, Right: turn about the screen\'s vertical axis through the model\'s middle, by the angle set in System Options (15° at first); Up, Down: about the horizontal axis. With Right, the side that faced you goes to the right.\n- Shift + arrow: a quarter turn (90°).\n- Alt + Left/Right: roll in the plane of the screen (Alt+Right is clockwise), by the same angle.\n- Ctrl + arrow: pan by a tenth of the view.\n- Shift+Z: zoom in; Z: zoom out (1.25 times each).\n- Ctrl+Shift+Z: back to the previous view (ten are kept; turning, panning and zooming with the mouse and the standard views count too).\n- Space bar: View Orientation; click a standard view to go to it.\n- Ctrl+1 to 7: front, back, left, right, top, bottom, isometric; Ctrl+8: normal to (in a sketch); F: zoom to fit.',
+  'help.conceptView.keywords': 'rotate pan zoom arrow keys keyboard mouse middle button wheel view previous view space bar roll',
+  'help.conceptView.see': 'fit view-front view-iso options',
 
   'help.conceptDrawingDimensions.title': 'Dimensions on a drawing',
   'help.conceptDrawingDimensions.summary': 'Linear, diameter, radius and angle dimensions on the views of a drawing; the numbers always come from the model.',
@@ -1001,6 +1007,27 @@ export const help: Translation = {
   'help.viewTop.keywords': 'top view orthographic',
 
   'help.viewTop.see': 'view-front view-right view-iso',
+  'help.viewBack.summary': 'Shows the back view.',
+
+  'help.viewBack.body': 'Switches to the back view: seen from behind (the other way from the front), orthographic (no perspective).\n\n- Shortcut Ctrl+2, as in SolidWorks.',
+
+  'help.viewBack.keywords': 'back view rear orthographic',
+
+  'help.viewBack.see': 'view-front concept.view',
+  'help.viewBottom.summary': 'Shows the bottom view.',
+
+  'help.viewBottom.body': 'Switches to the bottom view: seen from below (the other way from the top), orthographic (no perspective).\n\n- Shortcut Ctrl+6, as in SolidWorks.',
+
+  'help.viewBottom.keywords': 'bottom view underside orthographic',
+
+  'help.viewBottom.see': 'view-top concept.view',
+  'help.viewLeft.summary': 'Shows the left view.',
+
+  'help.viewLeft.body': 'Switches to the left view: seen from the left (the other way from the right), orthographic (no perspective).\n\n- Shortcut Ctrl+3, as in SolidWorks.',
+
+  'help.viewLeft.keywords': 'left view side orthographic',
+
+  'help.viewLeft.see': 'view-right concept.view',
   'help.viewRight.summary': 'Shows the right view.',
 
   'help.viewRight.body':
