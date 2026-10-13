@@ -205,6 +205,20 @@ export function extensionSnap(geometry: Geometry, p: P2, tol: number, exclude: R
 /** The grid point nearest to `p`. */
 export const gridPoint = (p: P2, spacing: number): P2 => [Math.round(p[0] / spacing) * spacing, Math.round(p[1] / spacing) * spacing];
 
+/** Grid lines closer than this on the screen are too dense to see or to aim at: the grid steps up instead. */
+export const GRID_MIN_PX = 8;
+
+/**
+ * The grid as it is drawn and snapped to at this zoom (FreeCAD's grid auto spacing): the set spacing, or the first of 2, 5, 10, 20, 50, … times it
+ * whose lines are at least GRID_MIN_PX apart. Always a whole multiple of the set spacing, so what it snaps to is on the set grid too. `px` is one
+ * screen pixel in sketch units.
+ */
+export function visibleGridSpacing(spacing: number, px: number): number {
+  if (!(spacing > 0) || !(px > 0) || !Number.isFinite(px)) return spacing;
+  for (let decade = 1; decade < 1e15; decade *= 10) for (const k of [1, 2, 5]) if ((spacing * k * decade) / px >= GRID_MIN_PX) return spacing * k * decade;
+  return spacing * 1e15;
+}
+
 /** `p` turned about `from` onto the nearest multiple of `stepDegrees`, when it is within `toleranceDegrees` of it; otherwise as it was. */
 export function angleStep(from: P2, p: P2, stepDegrees: number, toleranceDegrees = 3): P2 {
   const d = sub(p, from);

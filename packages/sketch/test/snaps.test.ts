@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { Id } from '@3db/model';
-import { angleStep, DEFAULT_SNAPS, gridPoint, intersectionSnap, lengthStep, parseSnapSettings, perpendicularSnap, quadrantSnap, quickSettings, SNAP_ITEMS, tangentSnap } from '../src/snaps';
+import { angleStep, DEFAULT_SNAPS, extensionSnap, GRID_MIN_PX, gridPoint, intersectionSnap, lengthStep, parseSnapSettings, perpendicularSnap, quadrantSnap, quickSettings, SNAP_ITEMS, tangentSnap, visibleGridSpacing } from '../src/snaps';
 import type { P2, SolvedGeometry } from '../src/types';
 
 const line = (a: P2, b: P2): SolvedGeometry => ({ type: 'line', a, b, p1: 'x', p2: 'y', construction: false });
@@ -181,5 +181,46 @@ describe('the settings', () => {
     expect(SNAP_ITEMS.filter((k) => q[k])).toEqual(['quadrant']);
     expect(q.grid).toBe(false);
     expect(q.angle).toBe(false);
+  });
+});
+
+describe('the grid as drawn and snapped to (FreeCAD grid auto spacing)', () => {
+  it('is the set spacing while its lines are far enough apart, then 2, 5, 10, 20 … times it, always a whole multiple', () => {
+    expect(visibleGridSpacing(5, 0.05)).toBe(5); // 100 px apart
+    expect(visibleGridSpacing(5, 5 / GRID_MIN_PX)).toBe(5); // exactly GRID_MIN_PX apart
+    expect(visibleGridSpacing(5, 1)).toBe(10); // 5 px apart: twice is 10 px
+    expect(visibleGridSpacing(5, 3)).toBe(25); // 10 is 3.3 px, 25 is 8.3 px
+    expect(visibleGridSpacing(5, 10)).toBe(100);
+    expect(visibleGridSpacing(0.5, 7)).toBe(100);
+    for (const px of [0.001, 0.37, 2.2, 61, 4000]) {
+      const s = visibleGridSpacing(5, px);
+      expect(s / px).toBeGreaterThanOrEqual(GRID_MIN_PX);
+      expect(Number.isInteger(Math.round((s / 5) * 1e9) / 1e9)).toBe(true);
+    }
+  });
+
+  it('leaves a spacing it cannot step as it is: zero, negative, NaN, or no pixel size', () => {
+    expect(visibleGridSpacing(0, 1)).toBe(0);
+    expect(visibleGridSpacing(-5, 1)).toBe(-5);
+    expect(visibleGridSpacing(5, 0)).toBe(5);
+    expect(visibleGridSpacing(5, Infinity)).toBe(5);
+    expect(visibleGridSpacing(5, NaN)).toBe(5);
+  });
+});
+
+describe('the extension of a line (FreeCAD line extension)', () => {
+  const g = geometry([['l', line([0, 0], [10, 0])], ['s', line([3, 3], [3, 3])]]);
+
+  it('the foot past either end within the tolerance, with the end the guide starts from', () => {
+    expect(extensionSnap(g, [15, 0.1], 0.25)).toEqual({ p: [15, 0], line: 'l', from: [10, 0] });
+    expect(extensionSnap(g, [-4, -0.2], 0.25)).toEqual({ p: [-4, 0], line: 'l', from: [0, 0] });
+  });
+
+  it('nothing on the line, at an end, too far from it, on a line of no length, or on an excluded line', () => {
+    expect(extensionSnap(g, [5, 0.1], 0.25)).toBeNull(); // on the line
+    expect(extensionSnap(g, [10.2, 0.1], 0.25)).toBeNull(); // at its end (within the tolerance of it)
+    expect(extensionSnap(g, [15, 0.3], 0.25)).toBeNull(); // too far from the extension
+    expect(extensionSnap(geometry([['s', line([3, 3], [3, 3])]]), [3, 8], 0.25)).toBeNull();
+    expect(extensionSnap(g, [15, 0.1], 0.25, new Set(['l']))).toBeNull();
   });
 });

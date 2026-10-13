@@ -39,7 +39,7 @@ import {
   type Snap,
 } from '@3db/sketch/interact';
 import type { P2, SolvedGeometry } from '@3db/sketch';
-import { angleStep, DEFAULT_SNAPS, extensionSnap, gridPoint, intersectionSnap, lengthStep, perpendicularSnap, quadrantSnap, quickSettings, tangentSnap, type SnapItem, type SnapSettings } from '@3db/sketch/snaps';
+import { angleStep, DEFAULT_SNAPS, extensionSnap, gridPoint, intersectionSnap, lengthStep, perpendicularSnap, quadrantSnap, quickSettings, tangentSnap, visibleGridSpacing, type SnapItem, type SnapSettings } from '@3db/sketch/snaps';
 import { checkSketch, repairSketch, type SketchIssue } from '@3db/sketch/check';
 import { anchorModel, anchorModelForSelection, chamfer, extend, fillet, isCurve, mergePoints, mirror, offset, polygon, referenceEntities, relationCrossings, slot, trim, type Maker, type ModelItem, type OpResult } from '@3db/sketch/ops';
 import type { SketchSolvePayload } from '../worker/protocol';
@@ -144,6 +144,8 @@ export interface ControllerView {
   inferLine: { kind: 'collinear' | 'parallel' | 'perpendicular' | 'tangent'; line: Id } | null;
   /** The snap a 快速抓取 chose: only that one is on, until another is chosen or it is cleared. */
   quickSnap: SnapItem | null;
+  /** The set grid spacing while the grid snap is on (it is drawn then, stepped up when zoomed out); null when it is off. */
+  grid: number | null;
   preview: PreviewShape[];
   /** Entities picked so far by the dimension tool. */
   picks: Id[];
@@ -256,6 +258,7 @@ export class SketchController {
       inference: this.inference && t(`infer.${this.inference}`),
       inferLine: this.lineTo,
       quickSnap: this.quick,
+      grid: this.gridShown(),
       preview: this.previewShapes(),
       picks: [...this.picks],
       cursor: this.cursor,
@@ -612,6 +615,12 @@ export class SketchController {
     return this.quick ? quickSettings(this.quick) : (this.host.snapSettings?.() ?? DEFAULT_SNAPS);
   }
 
+  /** The grid spacing to draw: the grid snap's, while it is on (and snapping is). */
+  private gridShown(): number | null {
+    const cfg = this.settings();
+    return cfg.enabled && cfg.grid ? cfg.gridSpacing : null;
+  }
+
   /** Chooses a 快速抓取 (only that snap is on), or ends it (null). It ends with the tool. */
   setQuickSnap(item: SnapItem | null): void {
     this.quick = item;
@@ -765,7 +774,7 @@ export class SketchController {
     if (s.kind === 'free' && !s.align && !inferred && this.inference === null) {
       if (drawingLine && from && e.shift) s = { kind: 'free', p: lengthStep(from, s.p, cfg.gridSpacing) };
       else if (drawingLine && from && cfg.angle) s = { kind: 'free', p: angleStep(from, s.p, cfg.angleStep) };
-      else if (cfg.grid && makes) s = { kind: 'free', p: gridPoint(s.p, cfg.gridSpacing) };
+      else if (cfg.grid && makes) s = { kind: 'free', p: gridPoint(s.p, visibleGridSpacing(cfg.gridSpacing, e.px)) }; // the grid that is drawn
     }
     this.snapTarget = s;
     this.hover = this.lineTo

@@ -1,6 +1,7 @@
 import { t } from '@3db/i18n';
 import { constraintRefs, isDimension, isPlain, SKETCH_ORIGIN, type DimensionConstraint, type Id, type PlaneFrame, type SketchConstraint, type SketchFeature } from '@3db/model';
 import { add, dimensionText, layoutDimension, measuredText, mid, polar, sample, type Geometry } from '@3db/sketch/interact';
+import { visibleGridSpacing } from '@3db/sketch/snaps';
 import type { EntityStatus, P2, SolvedGeometry } from '@3db/sketch';
 import type { OverlayCurve, OverlayLabel, OverlayPoint, SketchOverlay } from '@3db/render';
 import { RELATION_LABEL } from '../strings';
@@ -16,6 +17,8 @@ export const SKETCH_COLORS = {
   hover: 0xf08c00,
   preview: 0x74b0e8,
   guide: 0x868e96,
+  grid: 0xe9ecef,
+  gridMajor: 0xced4da,
   dimension: 0x3d4650,
   origin: 0xe03131,
   reference: 0x7048e8,
@@ -47,6 +50,28 @@ export interface OverlayOptions {
   dimensionPreview: { text: string; at: P2 } | null;
   /** Decimals a dimension worked out from an expression shows (B8.4). */
   precision?: number;
+  /** The part of the sketch plane on the screen, for the grid (drawn only there). */
+  visible?: { min: P2; max: P2 };
+}
+
+/** More lines than this across the screen and the grid is not drawn (it would be a gray wash; the stepping keeps it far below this). */
+const GRID_MAX_LINES = 600;
+
+/**
+ * The sketch grid over `visible` (SolidWorks and FreeCAD draw it under the sketch): lines at the spacing the grid snap uses at this zoom, every fifth
+ * a little darker. Empty when it would be more lines than can be seen.
+ */
+export function gridCurves(visible: { min: P2; max: P2 }, spacing: number, px: number): OverlayCurve[] {
+  const step = visibleGridSpacing(spacing, px);
+  if (!(step > 0)) return [];
+  const [i0, i1] = [Math.ceil(visible.min[0] / step), Math.floor(visible.max[0] / step)];
+  const [j0, j1] = [Math.ceil(visible.min[1] / step), Math.floor(visible.max[1] / step)];
+  if (!(Number.isFinite(i0) && Number.isFinite(i1) && Number.isFinite(j0) && Number.isFinite(j1)) || i1 - i0 + (j1 - j0) > GRID_MAX_LINES) return [];
+  const curves: OverlayCurve[] = [];
+  const color = (k: number) => (k % 5 === 0 ? SKETCH_COLORS.gridMajor : SKETCH_COLORS.grid);
+  for (let i = i0; i <= i1; i++) curves.push({ points: [[i * step, visible.min[1]], [i * step, visible.max[1]]], color: color(i) });
+  for (let j = j0; j <= j1; j++) curves.push({ points: [[visible.min[0], j * step], [visible.max[0], j * step]], color: color(j) });
+  return curves;
 }
 
 const shown = (v: number, decimals = 4) => String(Math.round(v * 10 ** decimals) / 10 ** decimals);
@@ -116,6 +141,8 @@ export function buildOverlay(frame: PlaneFrame, sketch: SketchFeature, solve: Sk
   const points: OverlayPoint[] = [];
   const labels: OverlayLabel[] = [];
 
+  // the grid first, under everything else
+  if (view.grid !== null && options.visible) curves.push(...gridCurves(options.visible, view.grid, px));
   // origin (C3.1): short red axes
   curves.push({ points: [[0, 0], [14 * px, 0]], color: SKETCH_COLORS.origin }, { points: [[0, 0], [0, 14 * px]], color: SKETCH_COLORS.origin });
   points.push({ p: [0, 0], color: highlighted.has(SKETCH_ORIGIN) ? SKETCH_COLORS.hover : SKETCH_COLORS.origin, size: 6 });

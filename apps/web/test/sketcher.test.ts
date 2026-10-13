@@ -4,6 +4,7 @@ import { findProfiles, PlaneGcsSolver, type SolvedGeometry } from '@3db/sketch';
 import type { ModelItem } from '@3db/sketch/ops';
 import { DEFAULT_SNAPS, type SnapSettings } from '@3db/sketch/snaps';
 import { SketchController, type PointerInput, type SketchHost } from '../src/sketcher/controller';
+import { gridCurves } from '../src/sketcher/overlay';
 import type { SketchSolvePayload } from '../src/worker/protocol';
 
 let solver: PlaneGcsSolver;
@@ -1089,6 +1090,25 @@ describe('the snaps beyond points and curves, and the settings (D5.3c)', () => {
     off.c.setTool('point');
     click(off.c, 12.4, 7.6);
     expect(point(off.h, off.h.sketch().entities.at(-1)!.id)).toEqual([12.4, 7.6]);
+  });
+
+  it('shows the grid while its snap is on, and zoomed out snaps to the stepped-up grid it draws (lines on the screen at least 8 px apart)', () => {
+    const on = withSnaps({ grid: true, gridSpacing: 5 });
+    expect(on.c.getView().grid).toBe(5);
+    on.c.setTool('point');
+    // zoomed out: one pixel is 1 mm, so 5 mm is 5 px; the grid drawn is every 10 mm, and that is where the point goes
+    click(on.c, 12.4, 7.6, { px: 1 });
+    expect(point(on.h, on.h.sketch().entities.at(-1)!.id)).toEqual([10, 10]);
+    click(on.c, 26.4, 23.6, { px: 1 }); // more than 5 px (5 mm here) from lining up with (10, 10) or the origin
+    expect(point(on.h, on.h.sketch().entities.at(-1)!.id)).toEqual([30, 20]); // not (25, 25): 25 is not on the drawn grid
+    const curves = gridCurves({ min: [-30, -30], max: [30, 30] }, on.c.getView().grid!, 1);
+    const xs = curves.filter((k) => k.points[0]![0] === k.points[1]![0]).map((k) => k.points[0]![0]);
+    expect(xs).toEqual([-30, -20, -10, 0, 10, 20, 30]); // the 30 and the 20 the point went to are among them
+    // off, or a quick snap: no grid
+    expect(withSnaps().c.getView().grid).toBeNull();
+    on.c.setQuickSnap('point');
+    expect(on.c.getView().grid).toBeNull();
+    expect(withSnaps({ grid: true, enabled: false }).c.getView().grid).toBeNull();
   });
 
   it('turns a line onto a multiple of the angle step, and makes its length a multiple of the spacing with Shift', () => {

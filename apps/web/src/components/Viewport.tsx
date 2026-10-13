@@ -455,7 +455,12 @@ export function Viewport() {
       const r = isDimension(c) ? params.dimensionValue(sketch, c) : null;
       if (r && 'value' in r) values.set(c.id, r.value);
     }
-    overlay.current = buildOverlay(frame, sketch, sketchSolve, view, v.pixelSize(), { showRelations: true, values, dimensionPreview: sketcher.dimensionPreview(), precision: settingsOf(doc).dimensionPrecision });
+    // the part of the sketch plane on the screen (its four corners on the plane), for the grid
+    const box = host.current?.getBoundingClientRect();
+    const corners = box ? [v.planePoint(box.left, box.top, frame), v.planePoint(box.right, box.top, frame), v.planePoint(box.left, box.bottom, frame), v.planePoint(box.right, box.bottom, frame)] : [];
+    const onPlane = corners.filter((c): c is [number, number] => c !== null);
+    const visible = onPlane.length === 4 ? { min: [Math.min(...onPlane.map((c) => c[0])), Math.min(...onPlane.map((c) => c[1]))] as [number, number], max: [Math.max(...onPlane.map((c) => c[0])), Math.max(...onPlane.map((c) => c[1]))] as [number, number] } : undefined;
+    overlay.current = buildOverlay(frame, sketch, sketchSolve, view, v.pixelSize(), { showRelations: true, values, dimensionPreview: sketcher.dimensionPreview(), precision: settingsOf(doc).dimensionPrecision, visible });
     v.setOverlay(overlay.current);
   }, [sketching, doc, sketchSolve, view, viewTick]);
 
