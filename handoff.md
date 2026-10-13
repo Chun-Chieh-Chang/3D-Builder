@@ -1,8 +1,61 @@
 # 交接文件
 
-- 最後更新：2026-10-12 晚（**筆電工作整合、C19、Schema 55、尺寸標籤即時拖曳，已推送 `a96321f`，見下一段**；**【線架構剖面交線與 SolidWorks 級動態側影輪廓線 (Silhouette Edges) 全套落實驗收完畢】**；**【Codex 任務接棒指南：裝飾用公螺牙與母螺孔 (Cosmetic Threads, C4.9 / ADR 0129) 架構與落地 SOP】**；全套 TypeCheck 0 錯誤、Lint 規則全綠、`acceptance.test.ts` 通過；其他狀態見「最新存檔點」）。
+- 最後更新：2026-10-13（**工程圖交互比照 SolidWorks：差距分析與使用者決定、D-I1a 多重選取、D-V 在圖紙上產生視圖和剖面、D-I3 註記（Schema 12）、側邊欄，分支 `drawing-interaction` 已推送，見下一段**）；2026-10-12 晚（**筆電工作整合、C19、Schema 55、尺寸標籤即時拖曳，已推送 `a96321f`，見下一段**；**【線架構剖面交線與 SolidWorks 級動態側影輪廓線 (Silhouette Edges) 全套落實驗收完畢】**；**【Codex 任務接棒指南：裝飾用公螺牙與母螺孔 (Cosmetic Threads, C4.9 / ADR 0129) 架構與落地 SOP】**；全套 TypeCheck 0 錯誤、Lint 規則全綠、`acceptance.test.ts` 通過；其他狀態見「最新存檔點」）。
 
 
+- **【2026-10-13：工程圖交互比照 SolidWorks — 差距分析、使用者決定、D-I1a、D-V、D-I3、側邊欄，已提交並推送於分支 `drawing-interaction`（Claude）】** 這個分支還沒合併回 `main`。
+  - **分析與決定**：
+    - [docs/drawing-interaction-gap-plan.md](docs/drawing-interaction-gap-plan.md)：與 SW、FreeCAD TechDraw 逐層比較，歸納出 4 個根因，規劃 D-I1～D-I8。
+    - §9 是使用者在選擇題頁回答的 14 個決定（幾何公差採 ISO 1101，藍圖的 P2 全部提前，不做驅動尺寸，多圖頁排最後）。
+    - §10 是 D-I2 的技術驗證結果，§11 記錄後來插入的 D-V。
+    - 決策紀錄 [ADR 0129](docs/adr/0129-drawing-interaction-roadmap.md)；藍圖 C16.1、C16.3～C16.6 已改寫。
+    - 選擇題頁：https://claude.ai/artifact/Ns9jkdh2xdi4vcCpkatyUt
+  - **D-I2 技術驗證**（`tests/phase5/hlr-trace-spike.test.ts`）：
+    - `replicad-opencascadejs` 沒有開放 `CompoundOfEdges(…, In3d)` 和 `HLRBRep_Data`，無法直接追溯每條線來自哪條邊。
+    - 改用幾何回推可行：正視圖裡幾乎都能唯一對應，或對到在圖上重合的幾條邊（取哪條數值都一樣）；真正分不清的線很少，要用射線測試排除；沒有對應的線是曲面的輪廓線，要對應到面。
+    - 不需要重新編譯 WASM。
+  - **已完成**（每項都有 ADR、單元測試，並在瀏覽器用真實 pointer 事件驗證）：
+    - `5460810` **D-I1a 多重選取**（[ADR 0130](docs/adr/0130-drawing-multi-selection.md)）：
+      - Ctrl＋點選；窗選與交叉選；Delete 刪除全部所選。
+      - `batch` 指令讓一次修改成為一個復原步驟，而且全做或全不做。
+      - 選多個尺寸時可一次修改。
+      - **行為變更**：左鍵拖曳空白處改為框選，平移改用中鍵或右鍵拖曳。
+    - `e596772` **D-V 在圖紙上產生視圖和剖面**（[ADR 0131](docs/adr/0131-drawing-views-by-pointer.md)）：
+      - 視圖調色盤：拖曳或點選放到圖紙上。
+      - 投影視圖的預覽跟著游標；斜角放等角視圖。
+      - 剖面：切割線會貼齊；放在哪一側就決定箭頭方向；Ctrl 可以放在任意位置。
+      - 放新視圖時其他視圖不動，靠補償的 shift 達成。
+    - `5a206e2` **D-I3 註記**（[ADR 0132](docs/adr/0132-drawing-annotations-gdt.md)，**工程圖 Schema 11 → 12**）：
+      - 註解（可帶引線、`$PRP:`）、基準（ISO 5459）、ISO 1101 公差框（14 個符號，畫成向量線條）、手動中心線與中心符號線、3/4 圈螺紋線。
+      - 不合 ISO 規則的組合，由命令層明確拒絕。
+      - 基準與公差框的引用一致性：改名會連動；被引用的基準不能刪。
+    - `5a206e2` **側邊欄比照 SW**（[ADR 0133](docs/adr/0133-drawing-sidebar-like-solidworks.md)）：
+      - 工程圖樹與屬性兩個分頁；屬性依選取內容切換標題和可收合的群組框。
+      - 常駐指令列；視圖調色盤移到右側工作窗格。
+      - 所有欄位只用 `hidden` 隱藏，留在 DOM 裡，所以既有 e2e 腳本都還找得到。
+    - 這次的最後一個提交：補上 `manual-drawing-annotate.js` 缺的 `choose`（10-12 筆電漏掉的），並把步驟 10、11 改成 D-V 的放置規則（剖面對齊母視圖、沿線滑到游標處）。**這支腳本現在通過。**
+  - **驗證**：
+    - typecheck 0 錯誤；`lint:rules`、`lint:deps`、`lint:i18n` 通過。
+    - 全部 vitest **2654 項通過**；`drawing-linked.test.ts` 釘住的 schema 版本號因刻意升版，從 11 改成 12。
+    - `verify:ui` 工程圖相關 15 支：**13 支通過**。沒過的是 `manual-drawing-linked`（步驟 2、7）和 `phase5-angle`（等 `支架.3dbx` 開啟逾時），兩支都是 10-12 就記載的既有失敗。
+    - `manual-drawing-linked` 第 2 步的數字在兩次執行之間差 1 mm，**原因還沒查明**。
+  - **已知限制**（細節在各 ADR）：
+    - 註記記在視圖座標，沒有綁定模型邊，要等 D-I2。
+    - 剖面預覽用的是沒切開的零件外形；剖面外框比較小時，其他視圖可能小幅移動（外框不同的零件還沒量測）。
+    - 切割線只有垂直和水平。
+    - 零件與組合件的側邊欄還是舊樣式。
+  - **編號衝突（要注意）**：下方「接棒指引：裝飾用公螺牙與母螺孔」原本預定用 ADR 0129，但 0129～0133 已被這次的工作用掉。裝飾螺紋要寫 ADR 時，請用 **0134 之後**的編號。另外 D-I3 已經在工程圖上畫 3/4 圈螺紋線（從孔特徵的規格讀大徑），那份指引的 Step 5 可以直接沿用 `threadItems`。
+  - **下一步（定案順序，見規劃 §9）**：
+    1. 合併 `drawing-interaction` 到 `main`（使用者決定時機）。
+    2. D-I2 有名字的視圖邊（約 2～2.5 週）：做完才能標頂點、邊、等角視圖、組合件視圖的尺寸，註記也才能綁定模型。
+    3. D-I4 座標尺寸與自動排列。
+    4. D-I7(a) 在視圖上右鍵開啟零件。
+    5. D-I1b 剩下的部分：右鍵選單；把指令列移到頂端的 CommandBar。
+    6. D-I5 任意角度、階梯、對正剖面，以及輔助、斷裂、裁剪、局部剖視圖。
+    7. D-I8 小功能。
+    8. D-I6 多圖頁。
+
+    零件與組合件的側邊欄要不要比照工程圖重做，待使用者確認。
 - **【2026-10-12 晚：筆電工作整合、C19、Schema 55、尺寸標籤即時拖曳 — 全部已提交並推送（Claude）】** 目前 `main` = `origin/main` = `a96321f`，工作區乾淨（`docs/plans/` 等未追蹤檔不是這次的）。
   - **整合（`d1b793c`）**：F: 筆電的 `laptop-work`（`1ce9501`「work from laptop」）合併進這台的 `main`（`c7f46be`）。筆電提交 42 個檔案中 26 個與 `c7f46be` 相同（檔案同步帶過去的草圖平面工作）；筆電真正新增的：設計樹階層模式與從屬標記、右鍵選單、工程圖與草圖改動、拖曳草圖尺寸標籤（`setDimensionPosition`）。本機遠端 `laptop` 指向 `F:\Self-developed_Apps\G3\3D-Builder`。**筆電那台要 `git pull`，之後 `laptop-work` 分支可刪。**
   - **沒合進來的**：`tests/` 根目錄 18 個零斷言診斷測試（副本在 `scratch/diagnostics/`，不進版本庫）；客戶零件 `apps/web/public/*part1*.json`（已取消追蹤，檔案仍在磁碟，筆電的 `.gitignore` 擋著）。
@@ -10,7 +63,7 @@
   - **之後的修改（`a96321f`）**：① **C19**：階層模式下，草圖只有和使用它的特徵在同一個資料夾（或都不在）時才顯示在特徵底下，否則留在自己的資料夾、跟著折疊（`FeatureTree.tsx` 的 `sketchesUnder`）。② **零件 Schema 54→55**（使用者決定）：`labelPosition` 是檔案的新欄位，升版讓舊程式拒絕而不是默默丟掉；遷移空轉；測試 `tests/phase8/dimension-label-position.test.ts`。③ **尺寸標籤拖曳即時跟隨**（使用者決定）：拖曳中只在畫面上移動標籤（`viewer.ts` 標籤的 `offset`／`held`），放開時寫入一次（一次拖曳＝一個復原步驟）；寫入被拒絕時約 0.4 秒後退回。
   - **驗證（`a96321f`）**：`tsc`、lint:deps、lint:i18n 通過；vitest **2623 過、22 略過、0 失敗**；`verify:ui` 相關 32 支（C10–C26、草圖平面、尺寸標籤、螺牙、phase3-sketch-*、phase5-dimensions）**32/32**。全量見下一點。
   - **全量 `npm run verify:ui`（2026-10-12 深夜，`47e743a`，開發伺服器剛重啟）：122/128 通過，6 項失敗，都還沒修：**
-    - `manual-drawing-annotate.js` 步驟 10、11：`choose is not defined`。**確定是筆電 10-12 改腳本時寫錯**（`1ce9501` 加了兩處 `choose(panel('[data-field="sectionAxis"]'), …)`，`choose` 從未定義）；要補上這個輔助函式或改用既有的下拉選取方式。
+    - ~~`manual-drawing-annotate.js` 步驟 10、11：`choose is not defined`~~ **已在 2026-10-13 修好（分支 `drawing-interaction`）。** 原記載：**確定是筆電 10-12 改腳本時寫錯**（`1ce9501` 加了兩處 `choose(panel('[data-field="sectionAxis"]'), …)`，`choose` 從未定義）；要補上這個輔助函式或改用既有的下拉選取方式。
     - `manual-drawing-linked.js` 步驟 2、7（整組平移與置中的座標不對）、`manual-e1.js` 步驟 3、4（點不到元素）、`phase2-assembly.js`（`no PM field 深度`）、`phase5-angle.js`（等 `支架.3dbx` 開啟逾時）、`phase6-snap-ui.js`（`no tree row sk`）：這 5 支腳本自 10-07～10-09 後沒改過，**10-09 的全量是 125/125**，所以是 10-09 之後的產品改動造成（嫌疑：筆電的設計樹階層模式、PropertyManager、工程圖改動，或 10-10～10-12 的其他工作），**未逐一查明**。
   - **驗證前要注意（這次踩到兩次）**：① 5391 埠上若有長時間開著的 `vite`，可能送出舊模組（合併或大量改檔後監看漏掉），結果不可信；驗證前先重啟開發伺服器，可用 `curl http://127.0.0.1:5391/@fs/<檢出路徑>/packages/render/src/viewer.ts` 找剛改的識別字確認（註解會被轉譯拿掉，要找程式碼本身）。② 被中止的 `verify:ui` 可能留下 `node scripts/verify-ui.mjs` 程序佔住 5393 埠，下一次會 `EADDRINUSE`，先結束那個程序。③ 單元測試與 `verify:ui` 同時跑時，無頭 Chrome 可能 12 秒內起不來（9333 `ECONNREFUSED`），要依序跑。
   - **螺牙**：審查發現的問題已由 10-11 的 `d1dc276` 修掉，其後有標準螺紋規格庫（`c4de3ba`）與 `f832934`；這次沒有再動螺牙。
