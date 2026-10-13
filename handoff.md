@@ -9,6 +9,7 @@
   - **驗證（`335b46c`）**：全量 `verify:ui` **129/129**（多了 `manual-asm-silhouettes.js`），vitest **2629 過、22 略過、0 失敗**，`typecheck`、三項 lint 全過。
   - **已知、未修（要不要處理待決定）**：①（已修）`phase5-angle` 改讀進版本庫的固定檔。②（已修）新工程圖的最適比例改為等線條**和**各視圖的 features（孔的中心線由此畫出）都到齊才執行（`autoScaleWhenReady`），不再差 1 mm。③ 側影線：大半徑淺曲面配小零件、且網格品質「精細」時，相鄰面夾角低於 0.81° 會被當共面而沒有側影線。④ `sliceMeshByPlane` 遇到 NaN 頂點會輸出非有限值線段（OCCT 網格正常不會有）。
   - **仍待使用者決定（沿用 10-12）**：客戶零件 `real-part1*.json`、`part1-demo.json` 在已推送的 `c7f46be` 歷史裡；筆電要 `git pull`，之後 `laptop-work` 分支可刪。
+  - **未確認：全部單元測試在 `bf35d98` 時沒有全綠**：10-13 下午這台機器跑全量 vitest 變成 385～414 秒（早上 189～211 秒），`tests/phase3/knurl.test.ts`「takes the same for either hand…」與 `tests/phase4/acceptance-4a.test.ts`「4a-6 ②」兩個測試超過 60 秒逾時。**對照組**：把 `bf35d98` 的 `drawing.ts` 修改暫存後重跑，同樣這兩個逾時，所以和該修改無關；`knurl.test.ts` 單獨跑 15/15 通過（該測試 25 秒）。CPU 閒置、沒有殘留的 headless Chrome、電源計畫正常，變慢原因不明。**不得調高逾時門檻（AGENTS.md §3.3）**；下一步：機器恢復正常速度（如重開機）後重跑 `npx vitest run`，確認 2651 個全綠。
   - **PowerShell 5.1 提交訊息陷阱**：`git commit -m @'…'@` 的內容若有雙引號會被拆成多個參數而提交失敗（已暫存的檔案會混進下一個提交）；含引號的訊息改寫成檔案用 `git commit -F <檔案>`。
 - **【2026-10-12 晚：筆電工作整合、C19、Schema 55、尺寸標籤即時拖曳 — 全部已提交並推送（Claude）】** 目前 `main` = `origin/main` = `a96321f`，工作區乾淨（`docs/plans/` 等未追蹤檔不是這次的）。
   - **整合（`d1b793c`）**：F: 筆電的 `laptop-work`（`1ce9501`「work from laptop」）合併進這台的 `main`（`c7f46be`）。筆電提交 42 個檔案中 26 個與 `c7f46be` 相同（檔案同步帶過去的草圖平面工作）；筆電真正新增的：設計樹階層模式與從屬標記、右鍵選單、工程圖與草圖改動、拖曳草圖尺寸標籤（`setDimensionPosition`）。本機遠端 `laptop` 指向 `F:\Self-developed_Apps\G3\3D-Builder`。**筆電那台要 `git pull`，之後 `laptop-work` 分支可刪。**
