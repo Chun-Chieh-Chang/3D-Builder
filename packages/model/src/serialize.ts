@@ -295,6 +295,8 @@ const drawingMigrations: Record<number, (doc: Json) => Json> = {
   9: (doc) => ({ ...doc, surfaceFinishes: doc.surfaceFinishes ?? [] }),
   // v11: the language of the sheet (`sheet.language`, ADR 0128): optional, and absent means the interface's, which is what an older drawing was written in. Nothing to convert.
   10: (doc) => doc,
+  // v12: the annotations (D-I3, ADR 0132): notes, datum symbols, feature control frames, centre lines and marks put by hand. A list, empty in an older file.
+  11: (doc) => ({ ...doc, annotations: doc.annotations ?? [] }),
 };
 
 export function parseDrawing(text: string): DrawingDoc {
@@ -305,7 +307,8 @@ export function parseDrawing(text: string): DrawingDoc {
   raw.dimensions ??= [];
   raw.tables ??= [];
   raw.surfaceFinishes ??= [];
-  const ids = [...(raw.views as Json[]), ...(raw.dimensions as Json[]), ...(raw.tables as Json[]), ...(raw.surfaceFinishes as Json[])].map((v) => v.id as string);
+  raw.annotations ??= [];
+  const ids = [...(raw.views as Json[]), ...(raw.dimensions as Json[]), ...(raw.tables as Json[]), ...(raw.surfaceFinishes as Json[]), ...(raw.annotations as Json[])].map((v) => v.id as string);
   // As for parts: counters cover every id in the file, even one edited by hand or by a script.
   raw.idCounters = countersFor(ids, { ...((raw.idCounters as Record<string, number> | undefined) ?? {}) });
   raw.properties ??= {};

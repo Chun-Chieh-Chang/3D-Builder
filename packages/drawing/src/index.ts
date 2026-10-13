@@ -19,3 +19,4 @@ export * from './dxf';
 export * from './dxfRead';
 export * from './flatDxf';
 export * from './flatView';
+export * from './gdt';

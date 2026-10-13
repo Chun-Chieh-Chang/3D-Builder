@@ -1,7 +1,10 @@
 import { t } from '@3db/i18n';
 import {
+  annotationItems,
   arrangementBase,
   BALLOON_RADIUS,
+  DATUM_TRIANGLE,
+  FRAME_HEIGHT,
   buildScene,
   dimensionAt,
   dimensionsInBox,
@@ -33,7 +36,7 @@ import {
   type SceneItem,
   type ViewLines,
 } from '@3db/drawing';
-import { axesOf, oppositeSide, projectedAxes, sectionArrow, sectionAxes, type Dimension, type DrawingView, type Id, type Scale, type SectionDrawingView, type SurfaceFinish, type ViewSide } from '@3db/model';
+import { axesOf, oppositeSide, projectedAxes, type Annotation, sectionArrow, sectionAxes, type Dimension, type DrawingView, type Id, type Scale, type SectionDrawingView, type SurfaceFinish, type ViewSide } from '@3db/model';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { store, useStore } from '../state/store';
 
@@ -56,6 +59,8 @@ type Drag =
   | { kind: 'table'; id: string; from: P; origin: P; delta: P }
   | { kind: 'balloon'; id: string; item: string; from: P; origin: P; delta: P }
   | { kind: 'surface'; id: string; from: P; origin: P; delta: P }
+  /** An annotation (D-I3) moved as a whole; its leader's point stays on the feature. `delta` is in sheet mm. */
+  | { kind: 'annotation'; id: string; from: P; delta: P }
   | { kind: 'draw'; tool: 'section' | 'detail'; vertical?: boolean; view: Id; from: P; to: P }
   /** The last click of a section or a detail: where its view goes. `free` (Ctrl held): put where the pointer is, not in line with the parent. */
   | { kind: 'placeDraw'; placement: DrawPlacement; from: P; to: P; free: boolean }
@@ -66,6 +71,13 @@ type DrawPlacement =
   | { tool: 'detail'; view: Id; centre: P; radius: number };
 
 const round2 = (n: number) => Math.round(n * 100) / 100;
+
+/** An annotation moved by `dv` (view units): where it stands moves, the point its leader touches does not (it is on the feature). */
+function movedAnnotation(a: Annotation, dv: P): Annotation {
+  const by = (q: P): P => [round2(q[0] + dv[0]), round2(q[1] + dv[1])];
+  if (a.kind === 'centreLine') return { ...a, from: by(a.from), to: by(a.to) };
+  return { ...a, at: by(a.at) } as Annotation;
+}
 
 /** The line of a section as it is when it has been moved by `by` (view units) across itself. */
 const movedLine = (line: [P, P], vertical: boolean, by: number): [P, P] => (vertical ? [[line[0][0] + by, line[0][1]], [line[1][0] + by, line[1][1]]] : [[line[0][0], line[0][1] + by], [line[1][0], line[1][1] + by]]);
@@ -137,6 +149,15 @@ export function DrawingViewport() {
     if (drag.kind === 'table') return { ...doc, tables: doc.tables.map((x) => (x.id === drag.id ? { ...x, at: [drag.origin[0] + drag.delta[0], drag.origin[1] + drag.delta[1]] as P } : x)) };
     if (drag.kind === 'balloon') return { ...doc, tables: doc.tables.map((x) => (x.id === drag.id && x.kind === 'bom' ? { ...x, balloonAt: { ...x.balloonAt, [drag.item]: [drag.origin[0] + drag.delta[0], drag.origin[1] + drag.delta[1]] as P } } : x)) };
     if (drag.kind === 'sectionLine') return { ...doc, views: doc.views.map((v) => (v.id === drag.id && v.kind === 'section' ? { ...v, line: movedLine(drag.line, drag.vertical, drag.delta) } : v)) as DrawingView[] };
+    if (drag.kind === 'annotation') {
+      return {
+        ...doc,
+        annotations: (doc.annotations ?? []).map((a) => {
+          const pl = basePlaced.get(a.view);
+          return a.id === drag.id && pl ? movedAnnotation(a, [drag.delta[0] / pl.scale, drag.delta[1] / pl.scale]) : a;
+        }),
+      };
+    }
     if (drag.kind === 'surface') return { ...doc, surfaceFinishes: doc.surfaceFinishes.map((f) => (f.id === drag.id ? { ...f, at: [drag.origin[0] + drag.delta[0], drag.origin[1] + drag.delta[1]] as P } : f)) };
     if (drag.kind === 'scale') {
       const target = drag.target;
@@ -154,6 +175,14 @@ export function DrawingViewport() {
   const svg = useMemo(() => toSvg(built.scene), [built]);
   /** The items of the dimensions that are there (not the one being made): what the pointer can take hold of. */
   const dimensionItems = useMemo(() => built.scene.items.filter((i) => i.group && i.group !== 'preview'), [built]);
+  /** What each annotation draws, marked with its id: what the pointer takes hold of, and what a choice is shown with (D-I3). */
+  const annotationHit = useMemo(() => {
+    const lookup = (key: string) => (shown.title as Record<string, string | undefined>)[key] ?? shown.properties?.[key];
+    return (shown.annotations ?? []).flatMap((a) => {
+      const pl = built.placed.get(a.view);
+      return pl ? annotationItems([a], pl, lookup, shown.sheet.unit ?? 'mm').map((i) => ({ ...i, group: a.id })) : [];
+    });
+  }, [shown, built]);
   /** The lines of the sections on the sheet, where they are drawn on their parents (sheet mm). */
   const sectionLines = useMemo(
     () =>
@@ -210,6 +239,7 @@ export function DrawingViewport() {
         }
         else if (tool) {
           if (tool.kind === 'dimension' && tool.picks.length > 0) d.setTool({ kind: 'dimension', picks: [] });
+          else if (tool.kind === 'annotate' && tool.first) d.setTool({ kind: 'annotate', what: tool.what });
           else d.setTool(null);
         } else if (drw.selection.length > 0) d.clearSelection();
       } else if ((e.key === 'Delete' || e.key === 'Backspace') && !tool && drw.selection.length > 0) {
@@ -347,6 +377,7 @@ export function DrawingViewport() {
       return;
     }
     if (tool?.kind === 'dimension') return dimensionDown(p);
+    if (tool?.kind === 'annotate') return annotateDown(p);
     if (tool?.kind === 'surface') {
       const view = viewUnder(p);
       const placed = view && built.placed.get(view.id);
@@ -397,6 +428,14 @@ export function DrawingViewport() {
         capture(e);
         setDrag({ kind: 'dimension', id: dim.id, onText: dim.text, handle: outcome.handle, patch: {} });
       }
+      return;
+    }
+    // an annotation: chosen, and moved as a whole where it is let go
+    const ann = dimensionAt(annotationHit, p, reach);
+    if (ann) {
+      capture(e);
+      d.pick([{ kind: 'annotation', id: ann.id }], 'replace');
+      setDrag({ kind: 'annotation', id: ann.id, from: p, delta: [0, 0] });
       return;
     }
     // a surface finish: its symbol is taken and put where it is let go
@@ -454,9 +493,11 @@ export function DrawingViewport() {
   };
 
   /** What a click with Ctrl adds to or takes from the choice: a dimension, a surface finish, a table, a view — in the order they are drawn over each other. */
-  const pickUnder = (p: P): { kind: 'view' | 'dimension' | 'finish' | 'table'; id: Id } | null => {
+  const pickUnder = (p: P): { kind: 'view' | 'dimension' | 'finish' | 'table' | 'annotation'; id: Id } | null => {
     const dim = dimensionAt(dimensionItems, p, reach);
     if (dim) return { kind: 'dimension', id: dim.id };
+    const ann = dimensionAt(annotationHit, p, reach);
+    if (ann) return { kind: 'annotation', id: ann.id };
     const finish = finishUnder(p);
     if (finish) return { kind: 'finish', id: finish.id };
     for (const [tableId, box] of [...built.tableBoxes].reverse()) if (p[0] >= box.x && p[0] <= box.x + box.w && p[1] >= box.y && p[1] <= box.y + box.h) return { kind: 'table', id: tableId };
@@ -470,7 +511,8 @@ export function DrawingViewport() {
    */
   const boxPicks = (from: P, to: P) => {
     const { rect, crossing } = selectionBox(from, to);
-    const picks: { kind: 'dimension' | 'finish' | 'table'; id: Id }[] = dimensionsInBox(dimensionItems, rect, crossing).map((id) => ({ kind: 'dimension', id }));
+    const picks: { kind: 'dimension' | 'finish' | 'table' | 'annotation'; id: Id }[] = dimensionsInBox(dimensionItems, rect, crossing).map((id) => ({ kind: 'dimension', id }));
+    for (const id of dimensionsInBox(annotationHit, rect, crossing)) picks.push({ kind: 'annotation', id });
     for (const f of shown.surfaceFinishes) {
       const placed = built.placed.get(f.view);
       if (placed && itemsInBox(surfaceFinishItems([f], placed), rect, crossing)) picks.push({ kind: 'finish', id: f.id });
@@ -560,6 +602,13 @@ export function DrawingViewport() {
           setDrawCursor(drag.to);
         }
       }
+    } else if (drag?.kind === 'annotation') {
+      const a = (drw.doc.annotations ?? []).find((x) => x.id === drag.id);
+      const pl = a && basePlaced.get(a.view);
+      if (a && pl && Math.hypot(drag.delta[0], drag.delta[1]) > 0.05) {
+        const m = movedAnnotation(a, [drag.delta[0] / pl.scale, drag.delta[1] / pl.scale]);
+        d.setAnnotation(a.id, m.kind === 'centreLine' ? { from: m.from, to: m.to } : { at: (m as { at: P }).at });
+      }
     } else if (drag?.kind === 'surface') {
       if (Math.hypot(drag.delta[0], drag.delta[1]) > 0.05) d.setSurfaceFinish(drag.id, { at: [round2(drag.origin[0] + drag.delta[0]), round2(drag.origin[1] + drag.delta[1])] });
     } else if (drag && Math.hypot(drag.delta[0], drag.delta[1]) > 0.05) {
@@ -572,6 +621,87 @@ export function DrawingViewport() {
     }
     setDrag(null);
     setPanning(null);
+  };
+
+  /** The middle of the circle or arc of a view nearest the point (its middle or its line within reach), for a centre line or mark (view units). */
+  const circleNear = (viewId: Id, pv: P): { centre: P; radius: number } | null => {
+    const pl = basePlaced.get(viewId);
+    if (!pl) return null;
+    const tol = reach / pl.scale;
+    let best: { centre: P; radius: number; d: number } | null = null;
+    for (const f of drw.features.get(viewId) ?? []) {
+      if (f.type !== 'circle') continue;
+      const toCentre = Math.hypot(pv[0] - f.centre[0], pv[1] - f.centre[1]);
+      const dist = Math.min(toCentre, Math.abs(toCentre - f.radius));
+      if (dist <= tol && (!best || dist < best.d)) best = { centre: f.centre, radius: f.radius, d: dist };
+    }
+    return best && { centre: best.centre, radius: best.radius };
+  };
+
+  /** A press with an annotation tool (D-I3): the first click (the feature), or the second (where it goes), or a circle for a centre mark. */
+  const annotateDown = (p: P) => {
+    if (tool?.kind !== 'annotate') return;
+    const hintKey = { note: 'drawingUi.hint.note', datum: 'drawingUi.hint.datum', fcf: 'drawingUi.hint.fcf', centreLine: 'drawingUi.hint.centreLine', centreMark: 'drawingUi.hint.centreMark' } as const;
+    const first = tool.first;
+    // a feature is most often pointed at on the view's outline, which is the edge of its box: a point just outside it, within reach, is on that view
+    const near = (q: P) =>
+      viewUnder(q) ??
+      [...drw.doc.views].reverse().find((v) => {
+        const pl = built.placed.get(v.id);
+        return pl && pl.w > 0 && Math.abs(q[0] - pl.at[0]) <= pl.w / 2 + reach && Math.abs(q[1] - pl.at[1]) <= pl.h / 2 + reach;
+      });
+    // a note may stand on the paper away from every view (a technical requirement): it belongs to the nearest view, and moves with it
+    const nearest = (q: P) =>
+      [...drw.doc.views]
+        .map((v) => ({ v, pl: built.placed.get(v.id) }))
+        .filter((x) => x.pl && x.pl.w > 0)
+        .map(({ v, pl }) => ({ v, gap: Math.hypot(Math.max(0, Math.abs(q[0] - pl!.at[0]) - pl!.w / 2), Math.max(0, Math.abs(q[1] - pl!.at[1]) - pl!.h / 2)) }))
+        .sort((x, y) => x.gap - y.gap)[0]?.v;
+    const view = first ? drw.doc.views.find((v) => v.id === first.view) : (near(p) ?? (tool.what === 'note' ? nearest(p) : undefined));
+    const pl = view && basePlaced.get(view.id);
+    if (!view || !pl) return d.notifyInfo(t(hintKey[tool.what]));
+    const raw = fromSheet(pl, p[0], p[1]);
+    const pv: P = [round2(raw[0]), round2(raw[1])];
+    if (tool.what === 'centreMark') {
+      const c = circleNear(view.id, pv);
+      if (!c) return d.notifyInfo(t('drawingUi.hint.centreMark'));
+      d.addAnnotation({ kind: 'centreMark', view: view.id, at: [round2(c.centre[0]), round2(c.centre[1])], radius: round2(c.radius) });
+      return;
+    }
+    const snapped = (q: P): P => {
+      const c = tool.what === 'centreLine' ? circleNear(view.id, q) : null;
+      return c ? [round2(c.centre[0]), round2(c.centre[1])] : q;
+    };
+    if (!first) return d.setTool({ kind: 'annotate', what: tool.what, first: { view: view.id, at: snapped(pv) } });
+    const firstSheet = toSheet(pl, first.at[0], first.at[1]);
+    const same = Math.hypot(p[0] - firstSheet[0], p[1] - firstSheet[1]) < 1.5 * reach;
+    switch (tool.what) {
+      case 'centreLine':
+        if (same) return;
+        d.addAnnotation({ kind: 'centreLine', view: view.id, from: first.at, to: snapped(pv) });
+        d.setTool({ kind: 'annotate', what: 'centreLine' });
+        return;
+      case 'note':
+        d.addAnnotation({ kind: 'note', view: view.id, text: t('drawingUi.newNote'), ...(same ? { at: first.at } : { at: pv, leader: first.at }) });
+        d.setTool(null);
+        // the text is written in the panel
+        setTimeout(() => document.querySelector<HTMLTextAreaElement>('[data-field="noteText"]')?.select(), 0);
+        return;
+      case 'fcf':
+        d.addAnnotation({ kind: 'fcf', view: view.id, characteristic: 'position', tolerance: 0.05, datums: [], ...(same ? { at: first.at } : { at: pv, leader: first.at }) });
+        d.setTool(null);
+        return;
+      case 'datum': {
+        // the square goes where the second click is: its direction and distance from the triangle
+        const dx = p[0] - firstSheet[0];
+        const dy = p[1] - firstSheet[1];
+        const angle = same ? 90 : Math.round(((Math.atan2(dy, dx) * 180) / Math.PI) * 10) / 10;
+        const length = same ? 6 : round2(Math.max(0, Math.hypot(dx, dy) - DATUM_TRIANGLE - FRAME_HEIGHT / 2));
+        d.addAnnotation({ kind: 'datum', view: view.id, at: first.at, label: d.nextDatumLabel(), angle, length });
+        d.setTool(null);
+        return;
+      }
+    }
   };
 
   /** Turn the cut line or detail circle gesture into geometry, then wait for the view placement click. */
@@ -678,6 +808,8 @@ export function DrawingViewport() {
       ? t('drawingUi.hint.placeView')
       : tool?.kind === 'project'
       ? t('drawingUi.hint.project')
+      : tool?.kind === 'annotate'
+      ? t(({ note: 'drawingUi.hint.note', datum: 'drawingUi.hint.datum', fcf: 'drawingUi.hint.fcf', centreLine: 'drawingUi.hint.centreLine', centreMark: 'drawingUi.hint.centreMark' } as const)[tool.what])
       : tool?.kind === 'dimension'
       ? t(dimensionHints[Math.min(2, tool.picks.length)]!)
       : tool?.kind === 'surface'
@@ -685,8 +817,15 @@ export function DrawingViewport() {
       : tool
       ? t(tool.kind === 'section' ? 'drawingUi.hint.section' : 'drawingUi.hint.detail')
       : null;
-  const cursor = tool ? 'crosshair' : hover?.dimension || drag?.kind === 'dimension' || drag?.kind === 'surface' ? 'move' : undefined;
+  const cursor = tool ? 'crosshair' : hover?.dimension || drag?.kind === 'dimension' || drag?.kind === 'surface' || drag?.kind === 'annotation' ? 'move' : undefined;
   // the symbol of the surface finish chosen, drawn over in its own colour so that it can be seen which one it is
+  const chosenAnnotations = new Set(drw.selection.filter((x) => x.kind === 'annotation').map((x) => x.id));
+  const chosenAnnotationItems = chosenAnnotations.size > 0 ? annotationHit.filter((i) => chosenAnnotations.has(i.group)) : [];
+  const annotateFrom = (() => {
+    if (tool?.kind !== 'annotate' || !tool.first) return null;
+    const pl = basePlaced.get(tool.first.view);
+    return pl ? toSheet(pl, tool.first.at[0], tool.first.at[1]) : null;
+  })();
   const chosenFinishIds = new Set(drw.selection.filter((x) => x.kind === 'finish').map((x) => x.id));
   const chosenFinishItems = shown.surfaceFinishes.flatMap((f) => {
     const placed = chosenFinishIds.has(f.id) ? built.placed.get(f.view) : undefined;
@@ -762,6 +901,13 @@ export function DrawingViewport() {
         <svg className="drawing-overlay" data-overlay width={sheet.width * PX} height={sheet.height * PX} viewBox={`0 0 ${sheet.width} ${sheet.height}`}>
           {chosen.length > 0 && <Highlight items={chosen} height={sheet.height} color="#1c7ed6" />}
           {chosenFinishItems.length > 0 && <Highlight items={chosenFinishItems} height={sheet.height} color="#1c7ed6" />}
+          {chosenAnnotationItems.length > 0 && <Highlight items={chosenAnnotationItems} height={sheet.height} color="#1c7ed6" />}
+          {annotateFrom && (
+            <g data-annotate-preview>
+              <circle cx={annotateFrom[0]} cy={sheet.height - annotateFrom[1]} r={1} fill="#f08c00" />
+              {hover && <line x1={annotateFrom[0]} y1={sheet.height - annotateFrom[1]} x2={hover.p[0]} y2={sheet.height - hover.p[1]} stroke="#f08c00" strokeWidth={0.35} strokeDasharray="2 1" />}
+            </g>
+          )}
           {otherViews.map((v, k) => (
             <rect key={`v${k}`} data-chosen-view x={v.at[0] - v.w / 2 - 1} y={sheet.height - v.at[1] - v.h / 2 - 1} width={v.w + 2} height={v.h + 2} fill="none" stroke="#1c7ed6" strokeWidth={0.4} strokeDasharray="3 1.5" />
           ))}

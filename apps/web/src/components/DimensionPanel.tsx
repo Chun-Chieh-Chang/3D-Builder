@@ -104,8 +104,7 @@ export function DimensionPanel() {
     return o ? ('error' in o ? '⚠ ' + o.error : o.text) : '…';
   };
   return (
-    <div className="pm-group" data-group="dimensions">
-      <h4>{t('drawingUi.dimensions')}</h4>
+    <>
       <div className="pm-row">
         <button
           className={`pm-button${drw.tool?.kind === 'dimension' ? ' active' : ''}`}
@@ -354,7 +353,7 @@ export function DimensionPanel() {
           )}
         </>
       )}
-    </div>
+    </>
   );
 }
 

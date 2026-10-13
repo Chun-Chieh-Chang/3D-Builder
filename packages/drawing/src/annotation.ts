@@ -61,6 +61,38 @@ export function centreItems(view: DrawingView, features: readonly ViewFeature[],
   return out;
 }
 
+/** The major diameter of a metric thread from its label (「M6」 → 6, 「M10x1.25」 → 10); null for a label that does not say it. */
+export function threadMajor(size: string | undefined): number | null {
+  const m = size ? /^M\s*(\d+(?:\.\d+)?)/i.exec(size.trim()) : null;
+  return m ? Number(m[1]) : null;
+}
+
+/**
+ * The thread of a tapped hole seen end on (ISO 6410-1, D-I3): a thin arc of about three quarters of a circle at the major diameter, outside the tap drill the
+ * model has, open at the upper right. Only where the thread's label says its major diameter: a thread of a typed size has none to draw, and none is made up.
+ */
+export function threadItems(view: DrawingView, features: readonly ViewFeature[], placed: PlacedView): SceneItem[] {
+  const out: SceneItem[] = [];
+  for (const f of features) {
+    if (f.type !== 'circle' || !f.full || !f.hole?.thread) continue;
+    const major = threadMajor(f.hole.thread.size);
+    if (major === null || major / 2 <= f.radius) continue;
+    const r = major / 2;
+    const arc: number[] = [];
+    for (let i = 0; i <= 54; i++) {
+      const a = Math.PI / 2 + ((3 * Math.PI) / 2) * (i / 54);
+      arc.push(f.centre[0] + r * Math.cos(a), f.centre[1] + r * Math.sin(a));
+    }
+    const pieces = view.kind === 'detail' ? clipToCircle(arc, view.centre, view.radius) : [arc];
+    for (const piece of pieces) {
+      const pts: number[] = [];
+      for (let i = 0; i < piece.length; i += 2) pts.push(...toSheet(placed, piece[i]!, piece[i + 1]!));
+      out.push({ kind: 'polyline', points: pts, style: 'thin' });
+    }
+  }
+  return out;
+}
+
 // ---------------------------------------------------------------- the hole table
 
 export interface HoleRow {

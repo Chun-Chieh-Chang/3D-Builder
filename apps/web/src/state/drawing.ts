@@ -38,6 +38,9 @@ import {
   type ViewName,
   type ViewSide,
   viewVectors,
+  DATUM_LABEL,
+  type Annotation,
+  type AnnotationPatch,
 } from '@3db/model';
 import { drawingFileName, writeDrawingFile } from '@3db/io';
 import { FontError, readTrueType, toDxf, toPdf, turnLines, type TrueTypeFont } from '@3db/drawing';
@@ -83,14 +86,28 @@ export interface DrawingSource {
  * One thing chosen on the sheet (D-I1a, ADR 0130). Several can be chosen at once (Ctrl and a click, or a box dragged over the paper); what is done to the
  * choice — a tolerance, deleting it — is one step of the history.
  */
-export type DrawingPick = { kind: 'view' | 'dimension' | 'finish' | 'table'; id: Id };
+export type DrawingPick = { kind: 'view' | 'dimension' | 'finish' | 'table' | 'annotation'; id: Id };
 export type PickMode = 'replace' | 'toggle' | 'add';
 
 const samePick = (a: DrawingPick, b: DrawingPick) => a.kind === b.kind && a.id === b.id;
 
 /** Whether what a pick names is in the document. */
 const pickExists = (doc: DrawingDoc, p: DrawingPick): boolean =>
-  p.kind === 'view' ? doc.views.some((v) => v.id === p.id) : p.kind === 'dimension' ? doc.dimensions.some((d) => d.id === p.id) : p.kind === 'finish' ? doc.surfaceFinishes.some((f) => f.id === p.id) : doc.tables.some((x) => x.id === p.id);
+  p.kind === 'view'
+    ? doc.views.some((v) => v.id === p.id)
+    : p.kind === 'dimension'
+      ? doc.dimensions.some((d) => d.id === p.id)
+      : p.kind === 'finish'
+        ? doc.surfaceFinishes.some((f) => f.id === p.id)
+        : p.kind === 'annotation'
+          ? (doc.annotations ?? []).some((a) => a.id === p.id)
+          : doc.tables.some((x) => x.id === p.id);
+
+/** What an annotation tool makes (D-I3). */
+export type AnnotateWhat = Annotation['kind'];
+
+/** Omit over each member of a union (the plain Omit merges them). */
+type DistributiveOmit<T, K extends keyof never> = T extends unknown ? Omit<T, K> : never;
 
 export type DrawingTool =
   | { kind: 'dimension'; picks: { view: Id; feature: Pickable }[] }
@@ -106,7 +123,12 @@ export type DrawingTool =
    * Projected views of `parent`, as SolidWorks makes them: the view the pointer is beside is shown where it would go, in line with the parent, and a click puts it
    * there; the pointer off a corner shows the isometric view. The tool stays until Esc, for the next one.
    */
-  | { kind: 'project'; parent: Id };
+  | { kind: 'project'; parent: Id }
+  /**
+   * An annotation (D-I3): a note, a frame or a datum takes two clicks (the feature it is about, then where it goes; for a note or a frame the same place twice
+   * means no leader); a centre line two points; a centre mark one circle. `first` is the first click, in the view it was made on.
+   */
+  | { kind: 'annotate'; what: AnnotateWhat; first?: { view: Id; at: [number, number] } };
 
 /** The view directions the palette offers (the flat pattern is not one: only a sheet metal part has it, and it is added from the list). */
 export const PALETTE_DIRECTIONS: readonly ViewName[] = ['front', 'top', 'right', 'back', 'bottom', 'left', 'isometric'];
@@ -143,6 +165,8 @@ export interface DrawingState {
    * is on): the one the panel shows and the one a drag moves, as SolidWorks's PropertyManager shows the last thing picked.
    */
   selection: DrawingPick[];
+  /** The annotation chosen last (D-I3): the one the annotations panel edits. */
+  annotation: Id | null;
   /** The lines of the palette's views (D-V): the part the drawing's first model view shows, from each direction; null while there is no part. */
   palette: { source: string; lines: Partial<Record<ViewName, ViewLines | null>> } | null;
   tool: DrawingTool | null;
@@ -213,6 +237,7 @@ export class DrawingStore {
       dimension: null,
       finish: null,
       selection: [],
+      annotation: null,
       palette: null,
       tool: null,
       computing: false,
@@ -243,6 +268,7 @@ export class DrawingStore {
     const selected = this.state.selected;
     const dimension = this.state.dimension;
     const finish = this.state.finish;
+    const annotation = this.state.annotation;
     const selection = this.state.selection.filter((p) => pickExists(doc, p));
     this.set({
       ...(selection.length !== this.state.selection.length ? { selection } : {}),
@@ -254,6 +280,7 @@ export class DrawingStore {
       selected: selected && doc.views.some((v) => v.id === selected) ? selected : null,
       dimension: dimension && doc.dimensions.some((d) => d.id === dimension) ? dimension : null,
       finish: finish && doc.surfaceFinishes.some((f) => f.id === finish) ? finish : null,
+      annotation: annotation && (doc.annotations ?? []).some((a) => a.id === annotation) ? annotation : null,
     });
     this.loadSources();
     this.refreshBoms();
@@ -319,18 +346,18 @@ export class DrawingStore {
 
   /** Lets go of everything chosen. */
   clearSelection(): void {
-    this.set({ selection: [], selected: null, dimension: null, finish: null });
+    this.set({ selection: [], selected: null, dimension: null, finish: null, annotation: null });
   }
 
   /** The choice and, from it, the last view, dimension and symbol chosen; a dimension, symbol or table makes the view it is on the panel's. */
-  private primaryOf(selection: DrawingPick[]): Pick<DrawingState, 'selection' | 'selected' | 'dimension' | 'finish'> {
+  private primaryOf(selection: DrawingPick[]): Pick<DrawingState, 'selection' | 'selected' | 'dimension' | 'finish' | 'annotation'> {
     const doc = this.history.doc;
     const last = (kind: DrawingPick['kind']) => [...selection].reverse().find((p) => p.kind === kind)?.id ?? null;
     const tail = selection[selection.length - 1];
     const viewOfTail =
-      tail?.kind === 'dimension' ? doc.dimensions.find((d) => d.id === tail.id)?.view : tail?.kind === 'finish' ? doc.surfaceFinishes.find((f) => f.id === tail.id)?.view : tail?.kind === 'table' ? doc.tables.find((x) => x.id === tail.id)?.view : undefined;
+      tail?.kind === 'dimension' ? doc.dimensions.find((d) => d.id === tail.id)?.view : tail?.kind === 'finish' ? doc.surfaceFinishes.find((f) => f.id === tail.id)?.view : tail?.kind === 'table' ? doc.tables.find((x) => x.id === tail.id)?.view : tail?.kind === 'annotation' ? (doc.annotations ?? []).find((a) => a.id === tail.id)?.view : undefined;
     const selected = tail?.kind === 'view' ? tail.id : (viewOfTail ?? last('view') ?? (selection.length === 0 ? null : this.state.selected));
-    return { selection, selected, dimension: last('dimension'), finish: last('finish') };
+    return { selection, selected, dimension: last('dimension'), finish: last('finish'), annotation: last('annotation') };
   }
 
   /** The ids of what is chosen, of one kind. */
@@ -353,8 +380,11 @@ export class DrawingStore {
     const dims = onKept(this.chosen('dimension'), doc.dimensions);
     const finishes = onKept(this.chosen('finish'), doc.surfaceFinishes);
     const tables = onKept(this.chosen('table'), doc.tables);
+    const annotations = onKept(this.chosen('annotation'), doc.annotations ?? []);
     const views = this.chosen('view');
     const commands: DrawingCommand[] = [];
+    // the annotations before the views: a datum deleted with the frames that refer to it goes, which deleting its view first would refuse
+    if (annotations.length) commands.push({ type: 'deleteAnnotations', annotationIds: annotations });
     if (dims.length) commands.push({ type: 'deleteDimensions', dimensionIds: dims });
     if (finishes.length) commands.push({ type: 'deleteSurfaceFinishes', finishIds: finishes });
     if (tables.length) commands.push({ type: 'deleteTables', tableIds: tables });
@@ -391,7 +421,7 @@ export class DrawingStore {
   setTool(tool: DrawingTool | null): void {
     // a new kind of tool lets go of what was chosen; the same one asking again (the picks start over) keeps what it has just made
     const changed = tool && this.state.tool?.kind !== tool.kind;
-    this.set({ tool, ...(changed ? { dimension: null, finish: null, selection: this.state.selection.filter((p) => p.kind === 'view') } : {}) });
+    this.set({ tool, ...(changed ? { dimension: null, finish: null, annotation: null, selection: this.state.selection.filter((p) => p.kind === 'view') } : {}) });
   }
 
   /** A dimension made on the sheet from elements pointed at and a place pointed at (`planDimension`), as one step: it is chosen when it is there. */
@@ -950,6 +980,44 @@ export class DrawingStore {
 
   deleteSurfaceFinishes(ids: Id[]): void {
     if (ids.length > 0) this.execute({ type: 'deleteSurfaceFinishes', finishIds: ids });
+  }
+
+  // ------------------------------------------------------------ annotations (D-I3, ADR 0132)
+
+  /** The annotations of the view, in the order they are in the document. */
+  annotationsOf(viewId: Id): Annotation[] {
+    return (this.state.doc.annotations ?? []).filter((a) => a.view === viewId);
+  }
+
+  /** The first letter no datum of the drawing has (ISO 5459: not I, O or Q). */
+  nextDatumLabel(): string {
+    const used = new Set((this.history.doc.annotations ?? []).flatMap((a) => (a.kind === 'datum' ? [a.label] : [])));
+    for (let i = 0; i < 26; i++) {
+      const c = String.fromCharCode(65 + i);
+      if (!'IOQ'.includes(c) && !used.has(c)) return c;
+    }
+    for (let i = 0; i < 26; i++) for (let j = 0; j < 26; j++) {
+      const c = String.fromCharCode(65 + i) + String.fromCharCode(65 + j);
+      if (DATUM_LABEL.test(c) && !used.has(c)) return c;
+    }
+    return 'A';
+  }
+
+  /** An annotation made with a tool (the id is the next free one); it is chosen when it is there. */
+  addAnnotation(a: DistributiveOmit<Annotation, 'id'>): Id | null {
+    const doc = this.history.doc;
+    const id = new IdAllocator(doc.idCounters, drawingIdsInUse(doc)).take('ann');
+    if (!this.execute({ type: 'insertAnnotations', annotations: [{ ...a, id } as Annotation] })) return null;
+    this.pick([{ kind: 'annotation', id }], 'replace');
+    return id;
+  }
+
+  setAnnotation(id: Id, patch: AnnotationPatch): boolean {
+    return this.execute({ type: 'setAnnotation', annotationId: id, patch });
+  }
+
+  deleteAnnotations(ids: Id[]): void {
+    if (ids.length > 0) this.execute({ type: 'deleteAnnotations', annotationIds: ids });
   }
 
   // ------------------------------------------------------------ tables (C16.6)
