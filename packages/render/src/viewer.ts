@@ -292,6 +292,13 @@ export function sliceMeshByPlane(geometry: THREE.BufferGeometry, plane: THREE.Pl
   return segs;
 }
 
+/**
+ * Two triangles whose normals are closer than this lie in one plane, give or take float noise (under 1e-7 in 1 - dot on OCCT meshes): the edge between
+ * them is no silhouette. About 0.026 degrees. Taking a noisy flat pair for curved is harmless: it can only be a silhouette with the plane edge-on, where
+ * it is drawn over the plane's own outline.
+ */
+const COPLANAR_DOT = 1 - 1e-7;
+
 /** Precomputed adjacency and normal data for real-time dynamic silhouette extraction (SW style). */
 export interface SilhouetteIndex {
   normals: Float32Array;
@@ -411,10 +418,12 @@ export function buildSilhouetteIndex(geometry: THREE.BufferGeometry): Silhouette
     const nx1 = normals[t1 * 3]!, ny1 = normals[t1 * 3 + 1]!, nz1 = normals[t1 * 3 + 2]!;
 
     const dot = nx0 * nx1 + ny0 * ny1 + nz0 * nz1;
-    // Keep only smooth curved surface interior edges (angle between ~1 deg and ~75 deg)
+    // Keep only smooth curved surface interior edges (angle between ~0.026 deg and ~75 deg)
     // Sharp crease edges (angle >= 75 deg, dot < 0.25) are already B-Rep topological edges in this.edges.
-    // Virtually coplanar triangles on flat faces (angle < ~0.8 deg, dot > 0.9999) are excluded.
-    if (dot < 0.25 || dot > 0.9999) continue;
+    // Coplanar triangles (a flat face, or the two halves of one strip of a curved face) differ only by float noise, measured on OCCT meshes at
+    // under 1e-7 in 1 - dot. Neighbouring strips of a shallow curve are further apart than that: R1000 on a 63 mm part meshed fine is 0.26 deg
+    // (1e-5), R10000 0.087 deg (1.2e-6). The old cut (dot > 0.9999, 0.81 deg) took those for flat, and they had no silhouette.
+    if (dot < 0.25 || dot > COPLANAR_DOT) continue;
 
     v0List.push(edge.v0);
     v1List.push(edge.v1);
