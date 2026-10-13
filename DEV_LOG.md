@@ -1022,3 +1022,13 @@
 
 
 
+
+## 2026-10-13　D-I1a 工程圖多重選取與一次修改（ADR 0130）
+
+紅隊四問：
+1. **輸入破壞**：框選的點只要是 NaN 或 ∞，`selectionBox` 就明確拋出錯誤，不會靜默選到「全部」或「都沒選」；空的 batch、巢狀的 batch 都由命令層拒絕並說明原因；所選尺寸裡有角度時，不提供配合等級（不是送出去之後才失敗）。
+2. **相交破壞**：同一批同時刪除視圖和它上面的尺寸時，先扣除會被視圖帶走的項目，避免同一個項目被要求刪兩次、整批被拒；batch 全做或全不做。
+3. **依賴鏈**：model（`batch` 命令）→ drawing（框選幾何）→ store（`selection`、`pick`、`deleteSelection`、`setDimensions`、`setDimensionsEach`）→ Viewport（Ctrl、框選、Delete、高亮）→ 面板（選取列、批次區、清單的 Ctrl）→ i18n（中英對齊，`lint:i18n` OK）。
+4. **零 Mock**：框選幾何用獨立的取樣判定法比對；隨機測試斷言兩種結果都有出現。瀏覽器以真實零件和真實的 pointer 事件驗證。
+
+檢查：typecheck 0 錯誤；`lint:rules`、`lint:deps`、`lint:i18n` 通過；`tests/phase5` 282 項通過、1 項略過；`verify:ui` 工程圖 14 支有 11 支通過，3 支是既有失敗。

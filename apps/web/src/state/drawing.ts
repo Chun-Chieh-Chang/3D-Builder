@@ -78,6 +78,19 @@ export interface DrawingSource {
  * is to be (and dragged along it) or where the middle of the circle is (and dragged out to its edge), on the view it is over. `surface`: the next point on the sheet puts a
  * surface finish symbol on the view under it (C16.5).
  */
+/**
+ * One thing chosen on the sheet (D-I1a, ADR 0130). Several can be chosen at once (Ctrl and a click, or a box dragged over the paper); what is done to the
+ * choice — a tolerance, deleting it — is one step of the history.
+ */
+export type DrawingPick = { kind: 'view' | 'dimension' | 'finish' | 'table'; id: Id };
+export type PickMode = 'replace' | 'toggle' | 'add';
+
+const samePick = (a: DrawingPick, b: DrawingPick) => a.kind === b.kind && a.id === b.id;
+
+/** Whether what a pick names is in the document. */
+const pickExists = (doc: DrawingDoc, p: DrawingPick): boolean =>
+  p.kind === 'view' ? doc.views.some((v) => v.id === p.id) : p.kind === 'dimension' ? doc.dimensions.some((d) => d.id === p.id) : p.kind === 'finish' ? doc.surfaceFinishes.some((f) => f.id === p.id) : doc.tables.some((x) => x.id === p.id);
+
 export type DrawingTool = { kind: 'dimension'; picks: { view: Id; feature: Pickable }[] } | { kind: 'section'; vertical?: boolean } | { kind: 'detail' } | { kind: 'surface' };
 
 export interface DrawingState {
@@ -107,6 +120,11 @@ export interface DrawingState {
   dimension: Id | null;
   /** The surface finish chosen on the sheet (or in the panel), as a dimension is (C16.5). */
   finish: Id | null;
+  /**
+   * Everything chosen, in the order it was chosen. `selected`, `dimension` and `finish` are the last view, dimension and symbol chosen (or the view a dimension
+   * is on): the one the panel shows and the one a drag moves, as SolidWorks's PropertyManager shows the last thing picked.
+   */
+  selection: DrawingPick[];
   tool: DrawingTool | null;
   /** The lines are being worked out. */
   computing: boolean;
@@ -174,6 +192,7 @@ export class DrawingStore {
       selected: null,
       dimension: null,
       finish: null,
+      selection: [],
       tool: null,
       computing: false,
       fitRequest: 1,
@@ -203,7 +222,9 @@ export class DrawingStore {
     const selected = this.state.selected;
     const dimension = this.state.dimension;
     const finish = this.state.finish;
+    const selection = this.state.selection.filter((p) => pickExists(doc, p));
     this.set({
+      ...(selection.length !== this.state.selection.length ? { selection } : {}),
       doc,
       folder: this.folder,
       canUndo: this.history.canUndo,
@@ -237,27 +258,119 @@ export class DrawingStore {
     this.history.redo();
   }
 
+  /** Chooses a view (and only it); null lets go of every view chosen. The panel is about the view chosen. */
   select(id: Id | null): void {
-    this.set({ selected: id });
+    if (id === null) return this.set({ selected: null, selection: this.state.selection.filter((p) => p.kind !== 'view') });
+    this.pick([{ kind: 'view', id }], 'replace');
   }
 
-  /** Chooses a dimension (and the view it is on, which the dimensions panel is about); null lets go of it. */
+  /** Chooses a dimension (and the view it is on, which the dimensions panel is about); null lets go of every dimension chosen. */
   selectDimension(id: Id | null): void {
-    const dim = id ? this.history.doc.dimensions.find((x) => x.id === id) : undefined;
-    this.set({ dimension: dim ? dim.id : null, ...(dim ? { selected: dim.view } : {}) });
+    if (id === null) return this.set({ dimension: null, selection: this.state.selection.filter((p) => p.kind !== 'dimension') });
+    this.pick([{ kind: 'dimension', id }], 'replace');
   }
 
-  /** Chooses a surface finish (and the view it is on, which the annotations panel is about); null lets go of it. */
+  /** Chooses a surface finish (and the view it is on, which the annotations panel is about); null lets go of every one chosen. */
   selectSurfaceFinish(id: Id | null): void {
-    const f = id ? this.history.doc.surfaceFinishes.find((x) => x.id === id) : undefined;
-    this.set({ finish: f ? f.id : null, ...(f ? { selected: f.view } : {}) });
+    if (id === null) return this.set({ finish: null, selection: this.state.selection.filter((p) => p.kind !== 'finish') });
+    this.pick([{ kind: 'finish', id }], 'replace');
+  }
+
+  /**
+   * Chooses things (D-I1a): `replace` makes them the whole choice, `add` adds them, `toggle` adds each that was not chosen and takes away each that was (Ctrl and a
+   * click). Ids that are not in the document are left out. The last one chosen that is still chosen becomes the one the panel shows.
+   */
+  pick(items: readonly DrawingPick[], mode: PickMode): void {
+    const doc = this.history.doc;
+    const real = items.filter((p) => pickExists(doc, p));
+    let next: DrawingPick[];
+    if (mode === 'replace') next = real.filter((p, i) => real.findIndex((q) => samePick(p, q)) === i);
+    else {
+      next = [...this.state.selection];
+      for (const p of real) {
+        const at = next.findIndex((q) => samePick(p, q));
+        if (at < 0) next.push(p);
+        else if (mode === 'toggle') next.splice(at, 1);
+      }
+    }
+    this.set(this.primaryOf(next));
+  }
+
+  /** Lets go of everything chosen. */
+  clearSelection(): void {
+    this.set({ selection: [], selected: null, dimension: null, finish: null });
+  }
+
+  /** The choice and, from it, the last view, dimension and symbol chosen; a dimension, symbol or table makes the view it is on the panel's. */
+  private primaryOf(selection: DrawingPick[]): Pick<DrawingState, 'selection' | 'selected' | 'dimension' | 'finish'> {
+    const doc = this.history.doc;
+    const last = (kind: DrawingPick['kind']) => [...selection].reverse().find((p) => p.kind === kind)?.id ?? null;
+    const tail = selection[selection.length - 1];
+    const viewOfTail =
+      tail?.kind === 'dimension' ? doc.dimensions.find((d) => d.id === tail.id)?.view : tail?.kind === 'finish' ? doc.surfaceFinishes.find((f) => f.id === tail.id)?.view : tail?.kind === 'table' ? doc.tables.find((x) => x.id === tail.id)?.view : undefined;
+    const selected = tail?.kind === 'view' ? tail.id : (viewOfTail ?? last('view') ?? (selection.length === 0 ? null : this.state.selected));
+    return { selection, selected, dimension: last('dimension'), finish: last('finish') };
+  }
+
+  /** The ids of what is chosen, of one kind. */
+  chosen(kind: DrawingPick['kind']): Id[] {
+    return this.state.selection.filter((p) => p.kind === kind).map((p) => p.id);
+  }
+
+  /**
+   * Deletes everything chosen, as one step. The dimensions, symbols and tables go first and the views last: a view takes its derived views and what is drawn on
+   * them with it, so what is chosen on a view that goes anyway is not asked for twice.
+   */
+  deleteSelection(): boolean {
+    const doc = this.history.doc;
+    const gone = new Set(this.chosen('view'));
+    for (let grew = true; grew; ) {
+      grew = false;
+      for (const v of doc.views) if (isDerived(v) && gone.has(v.parent) && !gone.has(v.id)) grew = !!gone.add(v.id);
+    }
+    const onKept = <T extends { id: Id; view: Id }>(ids: Id[], all: readonly T[]) => ids.filter((id) => !gone.has(all.find((x) => x.id === id)?.view ?? ''));
+    const dims = onKept(this.chosen('dimension'), doc.dimensions);
+    const finishes = onKept(this.chosen('finish'), doc.surfaceFinishes);
+    const tables = onKept(this.chosen('table'), doc.tables);
+    const views = this.chosen('view');
+    const commands: DrawingCommand[] = [];
+    if (dims.length) commands.push({ type: 'deleteDimensions', dimensionIds: dims });
+    if (finishes.length) commands.push({ type: 'deleteSurfaceFinishes', finishIds: finishes });
+    if (tables.length) commands.push({ type: 'deleteTables', tableIds: tables });
+    if (views.length) commands.push({ type: 'deleteViews', viewIds: views });
+    if (commands.length === 0) return false;
+    const ok = this.execute(commands.length === 1 ? commands[0]! : { type: 'batch', commands });
+    if (ok) this.clearSelection();
+    return ok;
+  }
+
+  /**
+   * A change worked out for each dimension in `ids` from what it is (null: leave that one alone), as one step. For the limits: the upper limit typed for five
+   * dimensions keeps each one's own lower limit.
+   */
+  setDimensionsEach(ids: readonly Id[], patchOf: (d: Dimension) => DimensionPatch | null): boolean {
+    const doc = this.history.doc;
+    const commands = ids.flatMap((id): DrawingCommand[] => {
+      const dim = doc.dimensions.find((x) => x.id === id);
+      const patch = dim ? patchOf(dim) : null;
+      return patch ? [{ type: 'setDimension', dimensionId: id, patch }] : [];
+    });
+    if (commands.length === 0) return false;
+    return this.execute(commands.length === 1 ? commands[0]! : { type: 'batch', commands });
+  }
+
+  /** The same change to every dimension in `ids`, as one step: wholly or, if one of them refuses it, not at all. */
+  setDimensions(ids: readonly Id[], patch: DimensionPatch): boolean {
+    if (ids.length === 0) return false;
+    if (ids.length === 1) return this.execute({ type: 'setDimension', dimensionId: ids[0]!, patch });
+    return this.execute({ type: 'batch', commands: ids.map((id) => ({ type: 'setDimension', dimensionId: id, patch })) });
   }
 
   /** Starts or ends a tool of the pointer (Esc, or the tool done). */
   setTool(tool: DrawingTool | null): void {
     // a new kind of tool lets go of what was chosen; the same one asking again (the picks start over) keeps what it has just made
     const changed = tool && this.state.tool?.kind !== tool.kind;
-    this.set({ tool, ...(changed ? { dimension: null, finish: null } : {}) });
+    this.set({ tool, ...(changed ? { dimension: null, finish: null, selection: this.state.selection.filter((p) => p.kind === 'view') } : {}) });
   }
 
   /** A dimension made on the sheet from elements pointed at and a place pointed at (`planDimension`), as one step: it is chosen when it is there. */
@@ -265,7 +378,7 @@ export class DrawingStore {
     const doc = this.history.doc;
     const id = new IdAllocator(doc.idCounters, drawingIdsInUse(doc)).take('dim');
     if (!this.execute({ type: 'insertDimensions', dimensions: [{ id, view: viewId, ...draft } as Dimension] })) return null;
-    this.set({ dimension: id, selected: viewId });
+    this.set({ dimension: id, selected: viewId, selection: [{ kind: 'dimension', id }] });
     return id;
   }
 
@@ -585,7 +698,7 @@ export class DrawingStore {
     if (!from) return this.host.notify(t('drawing.noSource'), 'error');
     const ids = new IdAllocator(doc.idCounters, drawingIdsInUse(doc));
     const views = directions.map((direction): DrawingView => ({ id: ids.take('view'), name: t(`drawing.view.${direction}`), source: from, direction }));
-    if (this.execute({ type: 'insertViews', views })) this.set({ selected: views[0]?.id ?? null });
+    if (this.execute({ type: 'insertViews', views })) this.select(views[0]?.id ?? null);
   }
 
   /** Whether a view is the flat pattern of a part (S-1): the folded part is not seen in it, so views projected or cut from it would show nothing true. */
@@ -600,7 +713,7 @@ export class DrawingStore {
     if (this.isFlat(parent)) return this.host.notify(t('drawing.flatNoDerived'), 'error');
     const ids = new IdAllocator(doc.idCounters, drawingIdsInUse(doc));
     const id = ids.take('view');
-    if (this.execute({ type: 'insertViews', views: [{ id, name: t('drawing.view.projected'), kind: 'projected', parent, side }] })) this.set({ selected: id });
+    if (this.execute({ type: 'insertViews', views: [{ id, name: t('drawing.view.projected'), kind: 'projected', parent, side }] })) this.select(id);
   }
 
   /** A section of `parent` cut along a horizontal or vertical line in the parent's coordinates (C16.3); the letter is the next free one. */
@@ -610,7 +723,7 @@ export class DrawingStore {
     const ids = new IdAllocator(doc.idCounters, drawingIdsInUse(doc));
     const id = ids.take('view');
     const label = this.nextLabel();
-    if (this.execute({ type: 'insertViews', views: [{ id, name: t('drawing.view.section', { label }), kind: 'section', parent, line, label, ...(at ? { at } : {}) }] })) this.set({ selected: id });
+    if (this.execute({ type: 'insertViews', views: [{ id, name: t('drawing.view.section', { label }), kind: 'section', parent, line, label, ...(at ? { at } : {}) }] })) this.select(id);
   }
 
   /** A detail of `parent` in a circle (C16.3), at twice the scale the parent is drawn at, rounded up to a standard scale. */
@@ -622,7 +735,7 @@ export class DrawingStore {
     const p = viewById(doc.views, parent);
     const base = p ? scaleOf(doc, p) : doc.sheet.scale;
     const scale = STANDARD_SCALES.slice().reverse().find((s) => ratio(s) >= 2 * ratio(base)) ?? STANDARD_SCALES[0]!;
-    if (this.execute({ type: 'insertViews', views: [{ id, name: t('drawing.view.detail', { label }), kind: 'detail', parent, centre, radius, label, scale, ...(at ? { at } : {}) }] })) this.set({ selected: id });
+    if (this.execute({ type: 'insertViews', views: [{ id, name: t('drawing.view.detail', { label }), kind: 'detail', parent, centre, radius, label, scale, ...(at ? { at } : {}) }] })) this.select(id);
   }
 
   /** The first capital letter no section or detail has yet. */
@@ -712,7 +825,7 @@ export class DrawingStore {
     const doc = this.history.doc;
     const id = new IdAllocator(doc.idCounters, drawingIdsInUse(doc)).take('fin');
     if (!this.execute({ type: 'insertSurfaceFinishes', finishes: [{ id, view: viewId, at }] })) return null;
-    this.set({ finish: id, selected: viewId });
+    this.set({ finish: id, selected: viewId, selection: [{ kind: 'finish', id }] });
     return id;
   }
 

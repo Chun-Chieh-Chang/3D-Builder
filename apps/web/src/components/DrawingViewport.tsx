@@ -4,6 +4,10 @@ import {
   BALLOON_RADIUS,
   buildScene,
   dimensionAt,
+  dimensionsInBox,
+  itemsInBox,
+  rectInBox,
+  selectionBox,
   dragDimension,
   featureAt,
   fromSheet,
@@ -47,7 +51,9 @@ type Drag =
   | { kind: 'balloon'; id: string; item: string; from: P; origin: P; delta: P }
   | { kind: 'surface'; id: string; from: P; origin: P; delta: P }
   | { kind: 'draw'; tool: 'section' | 'detail'; vertical?: boolean; view: Id; from: P; to: P }
-  | { kind: 'placeDraw'; placement: DrawPlacement; from: P; to: P };
+  | { kind: 'placeDraw'; placement: DrawPlacement; from: P; to: P }
+  /** A box dragged over the paper from where nothing was (D-I1a): what it holds is chosen; with Ctrl it is added to what was. */
+  | { kind: 'box'; from: P; to: P; add: boolean };
 type DrawPlacement =
   | { tool: 'section'; view: Id; line: [P, P] }
   | { tool: 'detail'; view: Id; centre: P; radius: number };
@@ -119,6 +125,7 @@ export function DrawingViewport() {
     if (!drag) return doc;
     if (drag.kind === 'draw') return doc;
     if (drag.kind === 'placeDraw') return doc;
+    if (drag.kind === 'box') return doc;
     if (drag.kind === 'dimension') return { ...doc, dimensions: doc.dimensions.map((x) => (x.id === drag.id ? ({ ...x, ...drag.patch } as Dimension) : x)) };
     if (drag.kind === 'table') return { ...doc, tables: doc.tables.map((x) => (x.id === drag.id ? { ...x, at: [drag.origin[0] + drag.delta[0], drag.origin[1] + drag.delta[1]] as P } : x)) };
     if (drag.kind === 'balloon') return { ...doc, tables: doc.tables.map((x) => (x.id === drag.id && x.kind === 'bom' ? { ...x, balloonAt: { ...x.balloonAt, [drag.item]: [drag.origin[0] + drag.delta[0], drag.origin[1] + drag.delta[1]] as P } } : x)) };
@@ -197,24 +204,16 @@ export function DrawingViewport() {
         else if (tool) {
           if (tool.kind === 'dimension' && tool.picks.length > 0) d.setTool({ kind: 'dimension', picks: [] });
           else d.setTool(null);
-        } else if (drw.dimension) d.selectDimension(null);
-        else if (drw.finish) d.selectSurfaceFinish(null);
-      } else if ((e.key === 'Delete' || e.key === 'Backspace') && !tool && (drw.dimension || drw.finish)) {
+        } else if (drw.selection.length > 0) d.clearSelection();
+      } else if ((e.key === 'Delete' || e.key === 'Backspace') && !tool && drw.selection.length > 0) {
+        // everything chosen goes, as one step (views too: they were chosen by a click on them)
         e.preventDefault();
-        if (drw.dimension) {
-          const id = drw.dimension;
-          d.selectDimension(null);
-          d.deleteDimensions([id]);
-        } else if (drw.finish) {
-          const id = drw.finish;
-          d.selectSurfaceFinish(null);
-          d.deleteSurfaceFinishes([id]);
-        }
+        d.deleteSelection();
       }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [drag, pendingDraw, pendingPlacement, tool, drw.dimension, drw.finish, d]);
+  }, [drag, pendingDraw, pendingPlacement, tool, drw.selection, d]);
   useEffect(() => {
     setPendingDraw(null);
     setPendingPlacement(null);
@@ -353,6 +352,16 @@ export function DrawingViewport() {
       setDrag({ kind: 'draw', tool: tool.kind, ...(tool.kind === 'section' ? { vertical: tool.vertical ?? true } : {}), view: view.id, from: p, to: p });
       return;
     }
+    // Ctrl (⌘ on a Mac) and a click: what is under the pointer is added to what is chosen, or taken out of it; nothing is dragged
+    if (e.ctrlKey || e.metaKey) {
+      const under = pickUnder(p);
+      if (under) d.pick([under], 'toggle');
+      else {
+        capture(e);
+        setDrag({ kind: 'box', from: p, to: p, add: true });
+      }
+      return;
+    }
     // a dimension: its text slides, the rest of it moves away from or round what it measures
     const dim = dimensionAt(dimensionItems, p, reach);
     const outcome = dim && built.dimensions.get(dim.id);
@@ -397,14 +406,11 @@ export function DrawingViewport() {
     for (const [tableId, box] of [...built.tableBoxes].reverse()) {
       if (p[0] >= box.x && p[0] <= box.x + box.w && p[1] >= box.y && p[1] <= box.y + box.h) {
         capture(e);
-        d.selectDimension(null);
-        d.selectSurfaceFinish(null);
+        d.pick([{ kind: 'table', id: tableId }], 'replace');
         setDrag({ kind: 'table', id: tableId, from: p, origin: [box.x, box.y + box.h], delta: [0, 0] });
         return;
       }
     }
-    d.selectDimension(null);
-    d.selectSurfaceFinish(null);
     // the view under the pointer, the one drawn last when they overlap
     const hit = viewUnder(p);
     capture(e);
@@ -416,9 +422,35 @@ export function DrawingViewport() {
       const mode = !hit.at && base?.id === hit.id ? 'shift' : axis !== null && !e.shiftKey ? 'slide' : 'free';
       setDrag({ kind: 'move', id: hit.id, mode, axis, from: p, origin: [at[0], at[1]], delta: [0, 0] });
     } else {
-      d.select(null);
-      setPanning({ x: e.clientX - pan.x, y: e.clientY - pan.y });
+      // the paper where nothing is: a box is dragged to choose with (the other buttons pan); a click lets go of everything
+      setDrag({ kind: 'box', from: p, to: p, add: false });
     }
+  };
+
+  /** What a click with Ctrl adds to or takes from the choice: a dimension, a surface finish, a table, a view — in the order they are drawn over each other. */
+  const pickUnder = (p: P): { kind: 'view' | 'dimension' | 'finish' | 'table'; id: Id } | null => {
+    const dim = dimensionAt(dimensionItems, p, reach);
+    if (dim) return { kind: 'dimension', id: dim.id };
+    const finish = finishUnder(p);
+    if (finish) return { kind: 'finish', id: finish.id };
+    for (const [tableId, box] of [...built.tableBoxes].reverse()) if (p[0] >= box.x && p[0] <= box.x + box.w && p[1] >= box.y && p[1] <= box.y + box.h) return { kind: 'table', id: tableId };
+    const view = viewUnder(p);
+    return view ? { kind: 'view', id: view.id } : null;
+  };
+
+  /**
+   * What a box chooses: the dimensions, the surface finishes and the tables (a window: those wholly inside it; a crossing, dragged to the left: those it touches).
+   * Views are not chosen by a box — a box is dragged over a view to reach what is drawn on it, and a view chosen by accident would be deleted with Delete.
+   */
+  const boxPicks = (from: P, to: P) => {
+    const { rect, crossing } = selectionBox(from, to);
+    const picks: { kind: 'dimension' | 'finish' | 'table'; id: Id }[] = dimensionsInBox(dimensionItems, rect, crossing).map((id) => ({ kind: 'dimension', id }));
+    for (const f of shown.surfaceFinishes) {
+      const placed = built.placed.get(f.view);
+      if (placed && itemsInBox(surfaceFinishItems([f], placed), rect, crossing)) picks.push({ kind: 'finish', id: f.id });
+    }
+    for (const [tableId, box] of built.tableBoxes) if (rectInBox(box, rect, crossing)) picks.push({ kind: 'table', id: tableId });
+    return picks;
   };
   const move = (e: React.PointerEvent) => {
     const p = onSheet(e);
@@ -432,7 +464,7 @@ export function DrawingViewport() {
       setDrag({ ...drag, delta: by / drag.scale });
     } else if (drag?.kind === 'draw') {
       setDrag({ ...drag, to: p });
-    } else if (drag?.kind === 'placeDraw') {
+    } else if (drag?.kind === 'placeDraw' || drag?.kind === 'box') {
       setDrag({ ...drag, to: p });
     } else if (pendingDraw || pendingPlacement) {
       setDrawCursor(p);
@@ -450,7 +482,12 @@ export function DrawingViewport() {
   /** The scale the dragged view had before: the one of what the drag changes. */
   const shownBefore = (drag: Extract<Drag, { kind: 'scale' }>): Scale | null => ('sheet' in drag.target ? drw.doc.sheet.scale : (drw.doc.views.find((v) => v.id === (drag.target as { view: string }).view)?.scale ?? null));
   const up = () => {
-    if (drag?.kind === 'placeDraw') {
+    if (drag?.kind === 'box') {
+      // a press and let go without a drag (a few pixels) is a click on the paper: everything is let go of, unless Ctrl was held
+      if (Math.hypot(drag.to[0] - drag.from[0], drag.to[1] - drag.from[1]) < reach) {
+        if (!drag.add) d.clearSelection();
+      } else d.pick(boxPicks(drag.from, drag.to), drag.add ? 'add' : 'replace');
+    } else if (drag?.kind === 'placeDraw') {
       placeDraw(drag.placement, drag.to);
       setPendingPlacement(null);
       setDrawCursor(null);
@@ -535,8 +572,14 @@ export function DrawingViewport() {
     d.setTool(null);
   };
 
-  const selected = drw.selected ? built.placed.get(drw.selected) : undefined;
-  const chosen = drw.dimension ? dimensionItems.filter((i) => i.group === drw.dimension) : [];
+  // the frame and the scale handle are on the view chosen last, when a view is what was chosen (a dimension chosen makes its view the panel's, not a chosen view)
+  const selected = drw.selected && drw.selection.some((x) => x.kind === 'view' && x.id === drw.selected) ? built.placed.get(drw.selected) : undefined;
+  const chosenDims = new Set(drw.selection.filter((x) => x.kind === 'dimension').map((x) => x.id));
+  const chosen = chosenDims.size > 0 ? dimensionItems.filter((i) => i.group && chosenDims.has(i.group)) : [];
+  // the other views chosen (not the one with the scale handle), and the tables chosen
+  const otherViews = drw.selection.flatMap((x) => (x.kind === 'view' && x.id !== drw.selected ? [built.placed.get(x.id)].filter((v) => v && v.w > 0) : [])) as NonNullable<ReturnType<typeof built.placed.get>>[];
+  const chosenTables = drw.selection.flatMap((x) => (x.kind === 'table' ? [built.tableBoxes.get(x.id)].filter(Boolean) : [])) as { x: number; y: number; w: number; h: number }[];
+  const boxing = drag?.kind === 'box' && Math.hypot(drag.to[0] - drag.from[0], drag.to[1] - drag.from[1]) >= reach ? selectionBox(drag.from, drag.to) : null;
   const dimensionHints = ['drawingUi.hint.dimension0', 'drawingUi.hint.dimension1', 'drawingUi.hint.dimension2'] as const;
   const hint =
     pendingPlacement
@@ -550,9 +593,11 @@ export function DrawingViewport() {
       : null;
   const cursor = tool ? 'crosshair' : hover?.dimension || drag?.kind === 'dimension' || drag?.kind === 'surface' ? 'move' : undefined;
   // the symbol of the surface finish chosen, drawn over in its own colour so that it can be seen which one it is
-  const chosenFinish = drw.finish ? shown.surfaceFinishes.find((f) => f.id === drw.finish) : undefined;
-  const chosenFinishPlaced = chosenFinish ? built.placed.get(chosenFinish.view) : undefined;
-  const chosenFinishItems = chosenFinish && chosenFinishPlaced ? surfaceFinishItems([chosenFinish], chosenFinishPlaced) : [];
+  const chosenFinishIds = new Set(drw.selection.filter((x) => x.kind === 'finish').map((x) => x.id));
+  const chosenFinishItems = shown.surfaceFinishes.flatMap((f) => {
+    const placed = chosenFinishIds.has(f.id) ? built.placed.get(f.view) : undefined;
+    return placed ? surfaceFinishItems([f], placed) : [];
+  });
   // the geometry of the tool's preview on the sheet
   const drawn = drag?.kind === 'draw' ? drag : pendingDraw ? { ...pendingDraw, to: drawCursor ?? pendingDraw.from } : null;
   const placementCursor = drag?.kind === 'placeDraw' ? drag.to : pendingPlacement ? drawCursor : null;
@@ -580,6 +625,25 @@ export function DrawingViewport() {
         <svg className="drawing-overlay" data-overlay width={sheet.width * PX} height={sheet.height * PX} viewBox={`0 0 ${sheet.width} ${sheet.height}`}>
           {chosen.length > 0 && <Highlight items={chosen} height={sheet.height} color="#1c7ed6" />}
           {chosenFinishItems.length > 0 && <Highlight items={chosenFinishItems} height={sheet.height} color="#1c7ed6" />}
+          {otherViews.map((v, k) => (
+            <rect key={`v${k}`} data-chosen-view x={v.at[0] - v.w / 2 - 1} y={sheet.height - v.at[1] - v.h / 2 - 1} width={v.w + 2} height={v.h + 2} fill="none" stroke="#1c7ed6" strokeWidth={0.4} strokeDasharray="3 1.5" />
+          ))}
+          {chosenTables.map((b, k) => (
+            <rect key={`t${k}`} data-chosen-table x={b.x - 0.8} y={sheet.height - b.y - b.h - 0.8} width={b.w + 1.6} height={b.h + 1.6} fill="none" stroke="#1c7ed6" strokeWidth={0.6} />
+          ))}
+          {boxing && (
+            <rect
+              data-selection-box={boxing.crossing ? 'crossing' : 'window'}
+              x={boxing.rect.x0}
+              y={sheet.height - boxing.rect.y1}
+              width={boxing.rect.x1 - boxing.rect.x0}
+              height={boxing.rect.y1 - boxing.rect.y0}
+              fill={boxing.crossing ? 'rgba(47,158,68,0.08)' : 'rgba(28,126,214,0.08)'}
+              stroke={boxing.crossing ? '#2f9e44' : '#1c7ed6'}
+              strokeWidth={0.4}
+              strokeDasharray={boxing.crossing ? '2 1' : undefined}
+            />
+          )}
           {tool?.kind === 'dimension' &&
             [...tool.picks.map((x) => x.feature), ...(hover?.feature && tool.picks.length < 2 ? [hover.feature.feature] : [])].map((f, k) => {
               const view = (tool.picks[0]?.view ?? hover?.feature?.view)!;

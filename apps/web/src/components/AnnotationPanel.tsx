@@ -193,7 +193,12 @@ export function AnnotationPanel() {
       {finishes.length === 0 && <p className="muted">{t('drawingUi.finishNone')}</p>}
       <ul className="selection-box" data-field="surfaceFinishes">
         {finishes.map((f) => (
-          <li key={f.id} className={f.id === drw.finish ? 'selected' : ''} onClick={() => d.selectSurfaceFinish(f.id)} data-finish={f.id}>
+          <li
+            key={f.id}
+            className={drw.selection.some((x) => x.kind === 'finish' && x.id === f.id) ? 'selected' : ''}
+            onClick={(e) => (e.ctrlKey || e.metaKey ? d.pick([{ kind: 'finish', id: f.id }], 'toggle') : d.selectSurfaceFinish(f.id))}
+            data-finish={f.id}
+          >
             <span className="name">{finishLabel(f)}</span>
             <button title={t('drawingUi.finishDelete')} onClick={(e) => (e.stopPropagation(), d.deleteSurfaceFinishes([f.id]))}>
               ✕

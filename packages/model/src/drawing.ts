@@ -378,7 +378,12 @@ export type DrawingCommand =
   | { type: 'insertSurfaceFinishes'; finishes: SurfaceFinish[] }
   /** Changes a surface finish: what is given replaces what is there; `null` takes a field away. */
   | { type: 'setSurfaceFinish'; finishId: Id; patch: SurfaceFinishPatch }
-  | { type: 'deleteSurfaceFinishes'; finishIds: Id[] };
+  | { type: 'deleteSurfaceFinishes'; finishIds: Id[] }
+  /**
+   * Several commands as one step (D-I1a, ADR 0130): what is done to everything chosen at once — the same tolerance on five dimensions, deleting what is chosen —
+   * is undone at once, and is done wholly or not at all (the first that is refused refuses them all and leaves the document as it was). Not nested.
+   */
+  | { type: 'batch'; commands: DrawingCommand[] };
 
 /** What `setSurfaceFinish` may change; `null` takes the field away (the symbol back to its default). */
 export type SurfaceFinishPatch = {
@@ -741,6 +746,15 @@ export function mutateDrawing(draft: Draft<DrawingDoc>, cmd: DrawingCommand): vo
       checkSurfaceFinish(next, draft.views as DrawingView[]);
       for (const k of Object.keys(f)) delete (f as unknown as Record<string, unknown>)[k];
       Object.assign(f, next);
+      return;
+    }
+    case 'batch': {
+      if (!Array.isArray(cmd.commands) || cmd.commands.length === 0) throw new CommandError(t('drawing.batchEmpty'));
+      // every command sees what the ones before it did; a refusal throws out of the recipe, so immer keeps the document as it was
+      for (const c of cmd.commands) {
+        if (c.type === 'batch') throw new CommandError(t('drawing.batchNested'));
+        mutateDrawing(draft, c);
+      }
       return;
     }
     case 'deleteSurfaceFinishes': {

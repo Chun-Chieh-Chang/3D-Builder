@@ -55,6 +55,18 @@ export function DrawingPanel() {
   const standard = STANDARD_SCALES.some((s) => same(s, doc.sheet.scale));
   return (
     <div className="property-manager drawing-panel" data-drawing-panel>
+      <div className="pm-group" data-group="selection">
+        <div className="pm-row">
+          <span data-field="selCount">{t('drawingUi.selCount', { n: drw.selection.length })}</span>
+          <button className="pm-button" data-action="deleteSelection" disabled={drw.selection.length === 0} onClick={() => d.deleteSelection()}>
+            {t('drawingUi.selDelete')}
+          </button>
+          <button className="pm-button" data-action="clearSelection" disabled={drw.selection.length === 0} onClick={() => d.clearSelection()}>
+            {t('drawingUi.selClear')}
+          </button>
+        </div>
+        <p className="muted">{t('drawingUi.selHint')}</p>
+      </div>
       <div className="pm-group">
         <h4>{t('drawingUi.sheet')}</h4>
         <label className="pm-row">
@@ -127,7 +139,12 @@ export function DrawingPanel() {
         {doc.views.length === 0 && <p className="muted">{t('drawingUi.noViews')}</p>}
         <ul className="selection-box drawing-views" data-field="views">
           {doc.views.map((v: DrawingView) => (
-            <li key={v.id} className={v.id === drw.selected ? 'selected' : ''} onClick={() => d.select(v.id)} data-view={v.id}>
+            <li
+              key={v.id}
+              className={drw.selection.some((x) => x.kind === 'view' && x.id === v.id) || (v.id === drw.selected && drw.selection.length === 0) ? 'selected' : ''}
+              onClick={(e) => (e.ctrlKey || e.metaKey ? d.pick([{ kind: 'view', id: v.id }], 'toggle') : d.select(v.id))}
+              data-view={v.id}
+            >
               <span className="name">{v.name}</span>
               {!isDerived(v) && (
                 <select
