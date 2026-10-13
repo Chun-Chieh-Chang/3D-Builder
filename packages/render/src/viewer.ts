@@ -181,6 +181,22 @@ function edgeSegments(mesh: ViewMesh): { segs: number[]; owner: number[] } {
 const IDENTITY_M4 = new THREE.Matrix4();
 
 /**
+ * The segments of several solids end to end, as one array for a line geometry. Not `push(...s)`: a spread passes every number as an argument,
+ * and V8 throws a RangeError between 120 000 and 150 000 of them (about 20 000 segments of one solid).
+ */
+export function joinSegments(parts: readonly ArrayLike<number>[]): Float32Array {
+  let n = 0;
+  for (const p of parts) n += p.length;
+  const out = new Float32Array(n);
+  let at = 0;
+  for (const p of parts) {
+    out.set(p, at);
+    at += p.length;
+  }
+  return out;
+}
+
+/**
  * Slices a triangle mesh by a plane, returning line segments in world coordinates (two points per segment: x0, y0, z0, x1, y1, z1, ...).
  * Robustly classifies vertices so that every intersecting triangle produces exactly one segment on the cut plane.
  */
@@ -892,6 +908,7 @@ export class Viewer {
     if (this.hoveredInstance !== null && ![...this.instances.values()].some((i) => i.owner === this.hoveredInstance)) this.setHoveredInstance(null);
     this.updateCap();
     this.updateSectionEdges();
+    this.lastSilViewDir = null; // the silhouettes are kept while the camera stays; a component that moved, came, went or turned transparent changes them too
     this.paintInstances();
     if (this.planes.length > 0) this.paintPlanes(); // sized to the content
   }
@@ -2579,11 +2596,7 @@ export class Viewer {
       }
     }
 
-    const segs: number[] = [];
-    for (const { mesh, matrixWorld } of solids) {
-      const s = sliceMeshByPlane(mesh.geometry, plane, matrixWorld);
-      segs.push(...s);
-    }
+    const segs = joinSegments(solids.map(({ mesh, matrixWorld }) => sliceMeshByPlane(mesh.geometry, plane, matrixWorld)));
 
     if (segs.length === 0) {
       if (this.sectionEdges) this.sectionEdges.visible = false;
@@ -2646,11 +2659,7 @@ export class Viewer {
       }
     }
 
-    const segs: number[] = [];
-    for (const { silIndex, pos, matrixWorld } of solids) {
-      const s = extractSilhouettes(silIndex, pos, viewDir, matrixWorld);
-      segs.push(...s);
-    }
+    const segs = joinSegments(solids.map(({ silIndex, pos, matrixWorld }) => extractSilhouettes(silIndex, pos, viewDir, matrixWorld)));
 
     if (segs.length === 0) {
       if (this.silhouetteEdges) this.silhouetteEdges.visible = false;
