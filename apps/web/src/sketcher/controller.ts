@@ -640,8 +640,9 @@ export class SketchController {
     this.tangentTo = null;
     this.lineTo = null;
     this.inference = null;
-    if (!cfg.enabled) {
-      // nothing snaps, and nothing is added by itself
+    if (!cfg.enabled || e.ctrl) {
+      // nothing snaps, and nothing is added by itself; Ctrl does it for as long as it is held (SolidWorks: hold Ctrl while sketching to keep
+      // automatic relations from being added)
       this.snapTarget = { kind: 'free', p: e.p };
       this.hover = null;
       return;

@@ -1150,3 +1150,53 @@ describe('the snaps beyond points and curves, and the settings (D5.3c)', () => {
     expect(c.getView().snap).toMatchObject({ kind: 'curve' });
   });
 });
+
+describe('Ctrl while sketching (SolidWorks: hold Ctrl to keep relations from being added)', () => {
+  it('a point clicked with Ctrl on an end, a middle and in line with a point goes where the cursor is, with no relation', () => {
+    const h = new Host();
+    const c = new SketchController(h);
+    c.setTool('line');
+    click(c, 0, 0);
+    click(c, 20, 0);
+    c.escape();
+    const before = h.sketch().constraints.length;
+    c.setTool('point');
+    for (const [x, y] of [[20.1, 0.1], [10.05, 0.05], [30, 0.1]] as const) {
+      c.pointerMove(at(x, y, { ctrl: true }), false);
+      expect(c.getView().snap, `${x}, ${y}`).toMatchObject({ kind: 'free', p: [x, y] });
+      const s = c.getView().snap;
+      expect(s && s.kind === 'free' ? s.align : undefined, `${x}, ${y}`).toBeUndefined();
+      expect(c.getView().inference, `${x}, ${y}`).toBeNull();
+      click(c, x, y, { ctrl: true });
+    }
+    expect(h.sketch().constraints.length).toBe(before);
+    expect(h.sketch().entities.filter((e) => e.type === 'point')).toHaveLength(5); // 2 ends + 3 new, none merged
+  });
+
+  it('a line drawn with Ctrl nearly horizontal stays as drawn; without Ctrl the same line is made horizontal', () => {
+    const h = new Host();
+    const c = new SketchController(h);
+    c.setTool('line');
+    click(c, 0, 0, { ctrl: true });
+    click(c, 20, 0.3, { ctrl: true });
+    c.escape();
+    expect(types(h)).not.toContain('horizontal');
+    const line = h.sketch().entities.find((e) => e.type === 'line') as Extract<SketchFeature['entities'][number], { type: 'line' }>;
+    expect(point(h, line.p2)[1]).toBeCloseTo(0.3, 9);
+    expect(types(h)).not.toContain('coincident'); // the first click was on the origin: not merged with it either
+    click(c, 0, 10);
+    click(c, 20, 10.3);
+    expect(types(h)).toContain('horizontal');
+  });
+
+  it('only while it is held: the next move without Ctrl snaps again', () => {
+    const h = new Host();
+    const c = new SketchController(h);
+    c.setTool('point');
+    click(c, 10, 5);
+    c.pointerMove(at(10.05, 5.05, { ctrl: true }), false);
+    expect(c.getView().snap).toMatchObject({ kind: 'free' });
+    c.pointerMove(at(10.05, 5.05), false);
+    expect(c.getView().snap).toMatchObject({ kind: 'point' });
+  });
+});
