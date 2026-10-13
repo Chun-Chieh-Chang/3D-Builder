@@ -1,9 +1,9 @@
 # 交接文件
 
-- 最後更新：2026-10-13 下午（**草圖磁吸對照 SW／FreeCAD 補齊 4 項、零件 Schema 56，見下一段；尚未推送**；早上：**10-12 成果審查與修正：`verify:ui` 129/129、vitest 2629 過，已推送 `335b46c`**；以下為 10-12 晚的狀態：**筆電工作整合、C19、Schema 55、尺寸標籤即時拖曳，已推送 `a96321f`**；**【線架構剖面交線與 SolidWorks 級動態側影輪廓線 (Silhouette Edges) 全套落實驗收完畢】**；**【Codex 任務接棒指南：裝飾用公螺牙與母螺孔 (Cosmetic Threads, C4.9 / ADR 0129) 架構與落地 SOP】**；全套 TypeCheck 0 錯誤、Lint 規則全綠、`acceptance.test.ts` 通過；其他狀態見「最新存檔點」）。
+- 最後更新：2026-10-13 下午（**草圖磁吸對照 SW／FreeCAD 補齊 4 項、零件 Schema 56，見下一段；已推送 `df5e7de`**；早上：**10-12 成果審查與修正：`verify:ui` 129/129、vitest 2629 過，已推送 `335b46c`**；以下為 10-12 晚的狀態：**筆電工作整合、C19、Schema 55、尺寸標籤即時拖曳，已推送 `a96321f`**；**【線架構剖面交線與 SolidWorks 級動態側影輪廓線 (Silhouette Edges) 全套落實驗收完畢】**；**【Codex 任務接棒指南：裝飾用公螺牙與母螺孔 (Cosmetic Threads, C4.9 / ADR 0129) 架構與落地 SOP】**；全套 TypeCheck 0 錯誤、Lint 規則全綠、`acceptance.test.ts` 通過；其他狀態見「最新存檔點」）。
 
 
-- **【2026-10-13 下午：草圖磁吸對照 SolidWorks／FreeCAD，補齊 4 項（Claude）— 已提交，尚未推送】** 本機 `main` 比 `origin/main`（`c32ecfd` 之後）多：`c129ec3`（剖面交線略過 NaN 頂點）、`54f838c`、`d7838d8`、`8c2c2c6`、`73669b7`，以及本檔／DEV_LOG 的提交。
+- **【2026-10-13 下午：草圖磁吸對照 SolidWorks／FreeCAD，補齊 4 項（Claude）— 全部已提交並推送】** `main` = `origin/main` = `df5e7de`（之後只有本檔的更正）。這次推送的：`c129ec3`（剖面交線略過 NaN 頂點）、`54f838c`、`d7838d8`、`8c2c2c6`、`73669b7`、`df5e7de`（本檔／DEV_LOG）。**筆電要先 `git pull`，才能開這台以 Schema 56 存的零件檔。**
   - **對照依據**：SolidWorks 說明（草圖抓取、自動關係、Ctrl）、FreeCAD 原始碼 `SnapManager.cpp`、`DrawSketchHandler.cpp`。對照表與「不是缺失」的項目（例如 FreeCAD 的多餘自動限制過濾：探針隨機畫 300 次，0 次過度定義）見 `DEV_LOG.md` 最上面一段。
   - **① Ctrl 暫停磁吸與自動關係（`54f838c`，SW）**：按住 Ctrl 點下去就在游標處，不吸附、不加關係，放開恢復。
   - **② 直線延長線磁吸（`d7838d8`，FreeCAD）**：端點之外接近延長方向時吸上去、畫虛線導引、加「在圖元上」；排在所有磁吸與推斷之後，不和水平／垂直／對齊同時加。新設定 `extension`（預設開）。
