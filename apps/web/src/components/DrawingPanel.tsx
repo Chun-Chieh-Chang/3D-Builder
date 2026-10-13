@@ -200,9 +200,9 @@ export function DrawingPanel() {
                 <button
                   className="pm-button"
                   data-action="resetPosition"
-                  disabled={arrangementBase(doc)?.id === v.id ? !doc.sheet.shift : !(v.at || v.slide)}
+                  disabled={arrangementBase(doc)?.id === v.id ? d.arrangementCentred() : !(v.at || v.slide)}
                   title={t('drawingUi.autoLayoutTip')}
-                  onClick={() => (arrangementBase(doc)?.id === v.id ? d.setSheet({ shift: null }) : d.setView(v.id, { at: null, slide: null }))}
+                  onClick={() => (arrangementBase(doc)?.id === v.id ? d.centreArrangement() : d.setView(v.id, { at: null, slide: null }))}
                 >
                   {t('drawingUi.autoLayout')}
                 </button>

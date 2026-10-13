@@ -40,7 +40,7 @@ import {
 } from '@3db/model';
 import { drawingFileName, writeDrawingFile } from '@3db/io';
 import { FontError, readTrueType, toDxf, toPdf, type TrueTypeFont } from '@3db/drawing';
-import { autoDimensions, buildScene, type DimensionDraft, type Pickable, FIRST_OFFSET, OFFSET_STEP, ratio, scaleOf, STANDARD_SCALES, fitViews, toSvg, type AutoDimensionOptions, type DimensionOutcome, type ElementsResult, type HoleRow, type PlacedView, type ViewBom, type Scene, type ViewLines } from '@3db/drawing';
+import { autoDimensions, buildScene, type DimensionDraft, type Pickable, FIRST_OFFSET, OFFSET_STEP, ratio, scaleOf, STANDARD_SCALES, centreViews, fitViews, toSvg, type AutoDimensionOptions, type DimensionOutcome, type ElementsResult, type HoleRow, type PlacedView, type ViewBom, type Scene, type ViewLines } from '@3db/drawing';
 import type { Remote } from 'comlink';
 import { download, fileIn, pathIn, pickDrawingSaveTarget, pickFontFile, writeFile } from '../files';
 import type { KernelApi } from '../worker/protocol';
@@ -771,6 +771,24 @@ export class DrawingStore {
     const was = doc.sheet.shift;
     if ((fit.shift?.[0] ?? 0) !== (was?.[0] ?? 0) || (fit.shift?.[1] ?? 0) !== (was?.[1] ?? 0)) sheet.shift = fit.shift;
     if (Object.keys(sheet).length > 0) this.execute({ type: 'setSheet', sheet });
+  }
+
+  /** The shift that puts the arrangement in the middle at the scale it has, the way a new drawing is put there (with the names under the views, the dimensions, the marks). */
+  private centredShift(): [number, number] | null {
+    const { doc, lines, elements, features, boms } = this.state;
+    return centreViews(doc, lines, elements, features, boms);
+  }
+
+  /** Whether the arrangement is in the middle already: 「自動排版」 of the front view has nothing to do then. */
+  arrangementCentred(): boolean {
+    const want = this.centredShift();
+    const was = this.state.doc.sheet.shift;
+    return (want?.[0] ?? 0) === (was?.[0] ?? 0) && (want?.[1] ?? 0) === (was?.[1] ?? 0);
+  }
+
+  /** 「自動排版」 of the front view: the whole arrangement back in the middle — where a new drawing puts it, not only where the boxes of the views would be. */
+  centreArrangement(): void {
+    if (!this.arrangementCentred()) this.execute({ type: 'setSheet', sheet: { shift: this.centredShift() } });
   }
 
   // ------------------------------------------------------------ output and saving

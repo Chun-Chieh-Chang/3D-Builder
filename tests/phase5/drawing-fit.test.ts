@@ -4,7 +4,7 @@
  */
 import { describe, expect, it } from 'vitest';
 import { applyDrawingCommand, createEmptyDrawing, type Dimension, type DrawingDoc, type DrawingView, type Ref } from '@3db/model';
-import { fitViews, itemsBounds, suggestScale, type ElementsResult, type ViewLines } from '@3db/drawing';
+import { centreViews, fitViews, itemsBounds, suggestScale, type ElementsResult, type ViewLines } from '@3db/drawing';
 
 const view = (id: string, direction: 'front' | 'top' | 'right', extra: Partial<DrawingView> = {}): DrawingView => ({ id, name: id, source: 'x.3dbx', direction, ...extra }) as DrawingView;
 const box = (w: number, h: number): ViewLines => ({ visible: [[0, 0, w, h]], hidden: [], box: { min: [0, 0], max: [w, h] } });
@@ -84,5 +84,32 @@ describe('the best scale', () => {
   it('when nothing fits it says 1:100', () => {
     const huge = new Map<string, ViewLines>([['f', box(100000, 60000)]]);
     expect(fitViews(make([view('f', 'front')]), huge)!.scale).toEqual([1, 100]);
+  });
+});
+
+describe('「自動排版」 of the arrangement: back to the middle a new drawing has', () => {
+  it('at the scale 最適比例 picks it is the shift 最適比例 gives ([0, 4]: the name under the top view), wherever the arrangement is now', () => {
+    const doc = make([view('f', 'front'), view('t', 'top'), view('r', 'right')]);
+    expect(centreViews(doc, lines)).toEqual(fitViews(doc, lines)!.shift);
+    expect(centreViews(doc, lines)).toEqual([0, 4]);
+    const moved = applyDrawingCommand(doc, { type: 'setSheet', sheet: { shift: [30, 24] } });
+    expect(centreViews(moved, lines)).toEqual([0, 4]);
+  });
+
+  it('at the scale the sheet has, not a better one: at 1:2 the views are half as big and the name stays 5 mm high 8 mm under, so the shift is the same 4 mm', () => {
+    const doc = applyDrawingCommand(make([view('f', 'front'), view('t', 'top'), view('r', 'right')]), { type: 'setSheet', sheet: { scale: [1, 2] } });
+    expect(fitViews(doc, lines)!.scale).toEqual([1, 1]); // 最適比例 would change the scale; 自動排版 does not
+    expect(centreViews(doc, lines)).toEqual([0, 4]);
+  });
+
+  it('with a dimension hanging 100 mm under the front view, the same shift as 最適比例 (both centre what is drawn)', () => {
+    const doc = make([view('f', 'front'), view('t', 'top'), view('r', 'right')], [width(-100)]);
+    const shift = centreViews(doc, lines, elements)!;
+    expect(shift).toEqual(fitViews(doc, lines, elements)!.shift);
+    expect(shift[1]).toBeGreaterThan(15);
+  });
+
+  it('nothing to do when no view takes the sheet\'s scale', () => {
+    expect(centreViews(make([view('f', 'front', { scale: [1, 1] })]), lines)).toBeNull();
   });
 });

@@ -59,6 +59,49 @@ export function fitViews(
   features: ReadonlyMap<Id, readonly ViewFeature[]> = new Map(),
   boms: ReadonlyMap<Id, ViewBom> = new Map(),
 ): Fit | null {
+  const boxAt = arrangedBox(doc, lines, elements, features, boms);
+  if (!boxAt) return null;
+  const area = sheetMetrics(doc.sheet).area;
+  for (const scale of [...STANDARD_SCALES, [1, 100] as Scale]) {
+    const box = boxAt(scale);
+    if (box && box.x1 - box.x0 <= area.w + 1e-9 && box.y1 - box.y0 <= area.h + 1e-9) return { scale, shift: shiftToCentre(doc, box) };
+  }
+  return { scale: [1, 100], shift: null };
+}
+
+/**
+ * 「自動排版」 of the arrangement (C16.1): the shift that puts what the views that take the sheet's scale draw, with what is drawn on them, in the middle of the area at
+ * the scale the sheet has now: the middle a new drawing is given by 「最適比例」, so putting the arrangement back puts it there too. Null when that is where the layout
+ * puts it already, or no view takes the sheet's scale.
+ */
+export function centreViews(
+  doc: DrawingDoc,
+  lines: ReadonlyMap<Id, ViewLines | null>,
+  elements: ReadonlyMap<Id, ElementsResult> = new Map(),
+  features: ReadonlyMap<Id, readonly ViewFeature[]> = new Map(),
+  boms: ReadonlyMap<Id, ViewBom> = new Map(),
+): [number, number] | null {
+  const box = arrangedBox(doc, lines, elements, features, boms)?.(doc.sheet.scale);
+  return box ? shiftToCentre(doc, box) : null;
+}
+
+/** Where the arrangement has to move for `box` to be in the middle of the area; null under 0.05 mm. */
+function shiftToCentre(doc: DrawingDoc, box: { x0: number; y0: number; x1: number; y1: number }): [number, number] | null {
+  const area = sheetMetrics(doc.sheet).area;
+  const dx = area.x + area.w / 2 - (box.x0 + box.x1) / 2;
+  const dy = area.y + area.h / 2 - (box.y0 + box.y1) / 2;
+  const r = (n: number) => Math.round(n * 100) / 100;
+  return Math.abs(dx) < 0.05 && Math.abs(dy) < 0.05 ? null : [r(dx), r(dy)];
+}
+
+/** The box round what the views that take the sheet's scale draw, laid out with no shift, at a given scale; null when no view takes the sheet's scale. */
+function arrangedBox(
+  doc: DrawingDoc,
+  lines: ReadonlyMap<Id, ViewLines | null>,
+  elements: ReadonlyMap<Id, ElementsResult>,
+  features: ReadonlyMap<Id, readonly ViewFeature[]>,
+  boms: ReadonlyMap<Id, ViewBom>,
+): ((scale: Scale) => { x0: number; y0: number; x1: number; y1: number } | null) | null {
   const byId = new Map(doc.views.map((v) => [v.id, v]));
   /** A view that is laid out with the others and takes the sheet's scale, and so is every view it hangs on. */
   const auto = (v: DrawingView, depth = 0): boolean => {
@@ -73,19 +116,5 @@ export function fitViews(
   // only these views, their dimensions and no tables (they sit at the corner of the sheet, not among the views), where the arrangement is centred
   const own: DrawingDoc = { ...doc, views, dimensions: (doc.dimensions ?? []).filter((d) => ids.has(d.view)), tables: [], sheet: { ...doc.sheet, shift: undefined } };
   const skip = sheetItems(own).length;
-  const area = sheetMetrics(doc.sheet).area;
-  const fits = (scale: Scale) => {
-    const { scene } = buildScene({ ...own, sheet: { ...own.sheet, scale } }, lines, elements, features, boms);
-    const box = itemsBounds(scene.items.slice(skip));
-    return box && box.x1 - box.x0 <= area.w + 1e-9 && box.y1 - box.y0 <= area.h + 1e-9 ? box : null;
-  };
-  for (const scale of [...STANDARD_SCALES, [1, 100] as Scale]) {
-    const box = fits(scale);
-    if (!box) continue;
-    const dx = area.x + area.w / 2 - (box.x0 + box.x1) / 2;
-    const dy = area.y + area.h / 2 - (box.y0 + box.y1) / 2;
-    const r = (n: number) => Math.round(n * 100) / 100;
-    return { scale, shift: Math.abs(dx) < 0.05 && Math.abs(dy) < 0.05 ? null : [r(dx), r(dy)] };
-  }
-  return { scale: [1, 100], shift: null };
+  return (scale) => itemsBounds(buildScene({ ...own, sheet: { ...own.sheet, scale } }, lines, elements, features, boms).scene.items.slice(skip));
 }

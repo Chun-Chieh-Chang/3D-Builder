@@ -9,6 +9,7 @@
 const here = new URL(import.meta.url).pathname;
 const root = here.replace(/tests\/e2e\/[^/]*$/, '');
 await import(`${root}tests/e2e/phase2-assembly.js?` + Date.now());
+const { itemsBounds, sheetItems } = await import(`${root}packages/drawing/src/index.ts`);
 const H = window.__ui2;
 const { store } = H;
 const M = (window.__manualDrawingLinked = {});
@@ -58,6 +59,7 @@ M.run = async () => {
   let f0;
   let t0;
   let r0;
+  let s0; // the shift a new drawing is given: 最適比例 centres what is drawn (the names under the views too), so it need not be none
   await step('1 a new drawing of the plate: front, top and right in line, the first angle', async () => {
     H.ready();
     await H.project({ '定位板.3dbx': `${H.GOLDEN}locating-plate.3dbx` });
@@ -67,14 +69,15 @@ M.run = async () => {
     await H.waitFor(() => drw() && drw().doc.views.length === 3 && [...drw().lines.values()].filter(Boolean).length === 3, 30000, 'the three views');
     await H.wait(300);
     [f0, t0, r0] = [at('front'), at('top'), at('right')];
-    return { pass: near(t0[0], f0[0]) && near(r0[1], f0[1]) && t0[1] < f0[1] && r0[0] < f0[0], f0, t0, r0 };
+    s0 = drw().doc.sheet.shift ?? [0, 0];
+    return { pass: near(t0[0], f0[0]) && near(r0[1], f0[1]) && t0[1] < f0[1] && r0[0] < f0[0], f0, t0, r0, s0 };
   });
   await step('2 dragging the front view takes the top and the right view with it, by the same amount; no view gets a position of its own', async () => {
     await drag(f0, [30, 20]);
     const [f, t, r] = [at('front'), at('top'), at('right')];
     const same = near(f[0] - f0[0], 30) && near(f[1] - f0[1], 20) && near(t[0] - t0[0], 30) && near(t[1] - t0[1], 20) && near(r[0] - r0[0], 30) && near(r[1] - r0[1], 20);
     const doc = drw().doc;
-    return { pass: same && near(doc.sheet.shift?.[0], 30) && near(doc.sheet.shift?.[1], 20) && doc.views.every((v) => !v.at && !v.slide), shift: doc.sheet.shift, f, t, r };
+    return { pass: same && near(doc.sheet.shift?.[0], s0[0] + 30) && near(doc.sheet.shift?.[1], s0[1] + 20) && doc.views.every((v) => !v.at && !v.slide), shift: doc.sheet.shift, s0, f, t, r };
   });
   await step('3 dragging the top view down changes the distance to the front view only: it stays in line (same x), the others stay', async () => {
     const [f1, r1] = [at('front'), at('right')];
@@ -105,7 +108,7 @@ M.run = async () => {
     await drag(f1, [5, 5]);
     return { pass: near(t[0], t1[0] + 25) && near(t[1], t1[1] - 12) && !!own.at && own.slide === undefined && near(at('top')[0], t[0]) && near(at('top')[1], t[1]), t, own: own.at };
   });
-  await step('7 自動排版 puts the top view back in line under the front view; for the front view it puts the whole arrangement back in the middle', async () => {
+  await step('7 自動排版 puts the top view back in line under the front view; for the front view it puts the whole arrangement back in the middle: what is drawn (names under the views and marks too) is centred on the area', async () => {
     select('top');
     await H.wait(150);
     panelButton().click();
@@ -115,8 +118,11 @@ M.run = async () => {
     await H.wait(150);
     panelButton().click();
     await H.wait(250);
-    const centred = near(at('front')[0], f0[0]) && near(at('front')[1], f0[1]) && !drw().doc.sheet.shift;
-    return { pass: backInLine && centred && !panelButton().disabled === false, backInLine, centred, front: at('front'), f0 };
+    // measured on the sheet as drawn, not with the function the button calls: the box of everything after the frame and the title block, against the area of an A3 (x 28 to 402, y 66 to 279)
+    const { scene } = store.drawingStore.scene();
+    const box = itemsBounds(scene.items.slice(sheetItems(drw().doc).length));
+    const centred = Math.abs((box.x0 + box.x1) / 2 - 215) < 0.06 && Math.abs((box.y0 + box.y1) / 2 - 172.5) < 0.06;
+    return { pass: backInLine && centred && panelButton().disabled === true, backInLine, centred, disabled: panelButton().disabled, box, shift: drw().doc.sheet.shift, s0 };
   });
   let before;
   await step('8 the handle at the corner of the chosen front view: dragging it outward makes the scale bigger, and the top and right views scale with it (the sheet takes the scale)', async () => {
