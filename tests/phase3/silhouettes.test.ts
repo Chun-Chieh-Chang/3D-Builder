@@ -1,6 +1,7 @@
 import { beforeAll, describe, expect, it } from 'vitest';
 import * as THREE from 'three';
 import { buildSilhouetteIndex, extractSilhouettes } from '@3db/render';
+import { cpuMsPerCall } from '../support/cpuTime';
 import { MESH_QUALITY } from '@3db/model';
 import { PlaneGcsSolver } from '@3db/sketch';
 import { Kernel } from '@3db/kernel';
@@ -100,20 +101,16 @@ describe('buildSilhouetteIndex & extractSilhouettes (Dynamic Silhouette Edges / 
 
   it('performance: builds index and extracts silhouettes for 10,000+ triangles in < 10ms', () => {
     const sphere = new THREE.SphereGeometry(50, 64, 64); // ~8,000 triangles
-    const startBuild = performance.now();
     const silIndex = buildSilhouetteIndex(sphere);
-    const buildDuration = performance.now() - startBuild;
     expect(silIndex).not.toBeNull();
-    expect(buildDuration).toBeLessThan(25);
+    // the CPU each call takes, not the wall clock (cpuTime.ts): the whole suite at once stretched the wall clock of the build to 61 ms, 126 ms under load
+    expect(cpuMsPerCall(() => buildSilhouetteIndex(sphere))).toBeLessThan(25);
 
     const pos = sphere.getAttribute('position').array;
     const viewDir = new THREE.Vector3(1, 1, 1).normalize();
-    const startExtract = performance.now();
     const segs = extractSilhouettes(silIndex!, pos, viewDir);
-    const extractDuration = performance.now() - startExtract;
-
     expect(segs.length).toBeGreaterThan(0);
-    expect(extractDuration).toBeLessThan(5); // Per-frame extraction is sub-millisecond
+    expect(cpuMsPerCall(() => extractSilhouettes(silIndex!, pos, viewDir))).toBeLessThan(5); // Per-frame extraction is sub-millisecond
   });
 });
 

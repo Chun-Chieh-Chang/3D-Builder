@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import * as THREE from 'three';
 import { sliceMeshByPlane } from '@3db/render';
+import { cpuMsPerCall } from '../support/cpuTime';
 
 describe('sliceMeshByPlane (ADR 0042 / Section Cut Edges)', () => {
   it('slices a box geometry at Z = 0 and returns closed outline segments', () => {
@@ -107,11 +108,8 @@ describe('sliceMeshByPlane (ADR 0042 / Section Cut Edges)', () => {
     // Sphere with high segment count has thousands of triangles
     const sphere = new THREE.SphereGeometry(50, 64, 64);
     const plane = new THREE.Plane(new THREE.Vector3(0, 0, 1), 0);
-    const start = performance.now();
     const segs = sliceMeshByPlane(sphere, plane);
-    const duration = performance.now() - start;
-
     expect(segs.length).toBeGreaterThan(0);
-    expect(duration).toBeLessThan(15);
+    expect(cpuMsPerCall(() => sliceMeshByPlane(sphere, plane))).toBeLessThan(15); // the CPU each call takes, not the wall clock (cpuTime.ts)
   });
 });
