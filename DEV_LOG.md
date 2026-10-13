@@ -11,6 +11,7 @@
 | 4 | `phase2-assembly`（no PM field 深度）、`manual-e1`、`phase6-snap-ui`（no tree row sk） | 設計樹階層模式（`1ce9501`）在特徵列加了 ▾ 等裝飾，輔助函式比對整列文字而對不上，`H.treeClick` 退回到同名的本體列 | `H.rowName` 讀 `.name`，與 `d1b793c` 修 `manual-support.js` 的作法一致（`58267d9`） |
 | 5 | `phase5-angle` 開檔逾時 | 環境：腳本讀 repo 內 `3DB實機確認/鈑金/支架.3dbx`，該資料夾由 `make:kit` 產生且被 `.gitignore` 排除，這台電腦沒有 | 改讀進版本庫的 `tests/fixtures/parts/bracket.3dbx`（解壓比對：與套件的 `支架.3dbx` 內容相同，只差 `schemaVersion` 43／55，開檔時遷移；`phase5-flat-view` 本來就用它）；把 `3DB實機確認/` 暫時移開後 `phase5-angle`、`phase5-flat-view` 皆通過。e2e 已無腳本讀版本庫外的檔案 |
 | 6 | `manual-drawing-linked` 步驟 2、7 差 4 mm | `a7d5c50`（10-11）在視圖下寫名稱後，新工程圖的「最適比例」置中帶出 `shift [0, 4]`；前視圖「自動排版」卻是清掉位移，回不到新圖的位置 | 使用者裁定：`centreViews`（`fit.ts`）以目前比例、與「最適比例」相同方式置中，「自動排版」改用它，已置中時按鈕停用；4 個單元測試；步驟 7 改為直接量圖面內容外框是否在圖框中央（`335b46c`） |
+| 7 | 新工程圖自動置中後，內容中心比圖框中央高 1 mm（y 173.5 對 172.5），前視圖「自動排版」一開圖就可按 | 新圖的最適比例掛在 `computeLines` 結尾，只等線條；孔的中心線來自 `computeDimensionData` 的 features，通常較晚才到，置中時沒算進去 | `autoScaleWhenReady`：線條與各視圖的 features 都到齊（含取得失敗）才執行，兩條流程結束時都呼叫；features 請求整個丟例外時不等它。`manual-drawing-linked` 第 1 步改為等中心線到齊後直接量內容外框；**拿掉修正時該步失敗（mid y 173.5、按鈕可按），加回後通過** |
 
 ### 2. 自我紅隊四問補登（AGENTS.md §2.1）：剖面交線 `sliceMeshByPlane`、側影線 `buildSilhouetteIndex`／`extractSilhouettes`
 10-12 兩項功能上線時未做四問，以下為 10-13 補做，每項皆以實際探針量得（`scratch/diagnostics/redteam-section-silhouette.test.ts`，以 `npx vitest run --config scratch/diagnostics/redteam.config.ts redteam-section` 執行，結果存 `redteam-out.json`；不進版本庫）。

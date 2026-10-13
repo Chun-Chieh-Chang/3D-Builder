@@ -133,6 +133,8 @@ export class DrawingStore {
   private state: DrawingState;
   private closed = false;
   private autoScalePending: boolean;
+  /** The worker could not say what the views are dimensioned from: a new drawing's 最適比例 does not wait for it. */
+  private featuresFailed = false;
   /** The lines of a view of a part as built, by the part's key, where it looks from and the cutting plane: asked for once. */
   private cache = new Map<string, ViewLines | { error: string }>();
   private computing = false;
@@ -458,10 +460,7 @@ export class DrawingStore {
           lines.set(v.id, found && !('error' in found) ? found : null);
         }
         this.set({ lines, problems, computing: false });
-        if (this.autoScalePending && this.history.doc.views.length > 0 && this.history.doc.views.every((v) => v.kind === 'detail' || lines.get(v.id) || problems.has(v.id))) {
-          this.autoScalePending = false;
-          this.autoScale();
-        }
+        this.autoScaleWhenReady();
       } while (this.computeAgain && !this.closed);
     } catch (e) {
       this.set({ computing: false });
@@ -544,12 +543,35 @@ export class DrawingStore {
           elements.set(d.id, bad ? { error: bad.error } : { elements: got as ElementFacts[] });
         }
         this.set({ features, elements });
+        this.autoScaleWhenReady();
       } while (this.featureAgain && !this.closed);
     } catch (e) {
+      this.featuresFailed = true; // a new drawing is still scaled and centred, on what is known
       this.host.notify(t('drawing.computeFailed', { why: e instanceof Error ? e.message : String(e) }), 'error');
+      this.autoScaleWhenReady();
     } finally {
       this.featuring = false;
     }
+  }
+
+  /**
+   * A new drawing's 最適比例, once what it measures is all there: the lines of every view, and what each view is dimensioned from (the centre marks of its holes are
+   * drawn from that, and they take room). Waiting for the lines only centred it on views without their marks, a millimetre or so off once they came.
+   */
+  private autoScaleWhenReady(): void {
+    if (!this.autoScalePending || this.closed) return;
+    const { views } = this.history.doc;
+    const { lines, problems } = this.state;
+    if (views.length === 0) return;
+    const drawn = views.every((v) => v.kind === 'detail' || lines.get(v.id) || problems.has(v.id));
+    const known = this.featuresFailed || views.every((v) => {
+      if (v.kind === 'detail' || problems.has(v.id)) return true;
+      const id = this.requestOf(v)?.featureId;
+      return !id || this.featureCache.has(id);
+    });
+    if (!drawn || !known) return;
+    this.autoScalePending = false;
+    this.autoScale();
   }
 
   /** The nearest view up the parents that is not a detail (a detail is measured in its parent's coordinates). */

@@ -54,13 +54,20 @@ const drag = async (from, [dx, dy], init = {}, target = canvas()) => {
 };
 const panelButton = () => document.querySelector('[data-drawing-panel] [data-action="resetPosition"]');
 const select = (dir) => store.drawingStore.select(viewOf(dir).id);
+/** Measured on the sheet as drawn, not with the function the button calls: the box of everything after the frame and the title block, against the area of an A3 (x 28 to 402, y 66 to 279). */
+const centredBox = () => {
+  const { scene } = store.drawingStore.scene();
+  const b = itemsBounds(scene.items.slice(sheetItems(drw().doc).length));
+  const mid = [(b.x0 + b.x1) / 2, (b.y0 + b.y1) / 2];
+  return { centred: Math.abs(mid[0] - 215) < 0.06 && Math.abs(mid[1] - 172.5) < 0.06, mid };
+};
 
 M.run = async () => {
   let f0;
   let t0;
   let r0;
   let s0; // the shift a new drawing is given: 最適比例 centres what is drawn (the names under the views too), so it need not be none
-  await step('1 a new drawing of the plate: front, top and right in line, the first angle', async () => {
+  await step('1 a new drawing of the plate: front, top and right in line, the first angle; once the centre marks of its holes are there, what is drawn is in the middle (自動排版 of the front view has nothing to do)', async () => {
     H.ready();
     await H.project({ '定位板.3dbx': `${H.GOLDEN}locating-plate.3dbx` });
     await H.open('定位板.3dbx');
@@ -68,9 +75,17 @@ M.run = async () => {
     await H.action('檔案', '新工程圖');
     await H.waitFor(() => drw() && drw().doc.views.length === 3 && [...drw().lines.values()].filter(Boolean).length === 3, 30000, 'the three views');
     await H.wait(300);
+    await H.waitFor(() => drw().features.size === 3, 30000, 'the features of the three views (the centre marks)');
+    await H.wait(300);
     [f0, t0, r0] = [at('front'), at('top'), at('right')];
     s0 = drw().doc.sheet.shift ?? [0, 0];
-    return { pass: near(t0[0], f0[0]) && near(r0[1], f0[1]) && t0[1] < f0[1] && r0[0] < f0[0], f0, t0, r0, s0 };
+    const box = centredBox();
+    select('front');
+    await H.wait(150);
+    const nothingToDo = panelButton().disabled === true;
+    store.drawingStore.select(null);
+    await H.wait(100);
+    return { pass: near(t0[0], f0[0]) && near(r0[1], f0[1]) && t0[1] < f0[1] && r0[0] < f0[0] && box.centred && nothingToDo, f0, t0, r0, s0, box, nothingToDo };
   });
   await step('2 dragging the front view takes the top and the right view with it, by the same amount; no view gets a position of its own', async () => {
     await drag(f0, [30, 20]);
@@ -118,11 +133,8 @@ M.run = async () => {
     await H.wait(150);
     panelButton().click();
     await H.wait(250);
-    // measured on the sheet as drawn, not with the function the button calls: the box of everything after the frame and the title block, against the area of an A3 (x 28 to 402, y 66 to 279)
-    const { scene } = store.drawingStore.scene();
-    const box = itemsBounds(scene.items.slice(sheetItems(drw().doc).length));
-    const centred = Math.abs((box.x0 + box.x1) / 2 - 215) < 0.06 && Math.abs((box.y0 + box.y1) / 2 - 172.5) < 0.06;
-    return { pass: backInLine && centred && panelButton().disabled === true, backInLine, centred, disabled: panelButton().disabled, box, shift: drw().doc.sheet.shift, s0 };
+    const box = centredBox();
+    return { pass: backInLine && box.centred && panelButton().disabled === true, backInLine, box, disabled: panelButton().disabled, shift: drw().doc.sheet.shift, s0 };
   });
   let before;
   await step('8 the handle at the corner of the chosen front view: dragging it outward makes the scale bigger, and the top and right views scale with it (the sheet takes the scale)', async () => {
