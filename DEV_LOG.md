@@ -1,5 +1,37 @@
 # 3D-Builder 開發日誌 (DEV_LOG.md)
 
+## 2026-10-13：10-12 成果審查與修正（`verify:ui` 122/128 → 129/129）
+
+### 1. 審查發現與處置
+| # | 發現 | 根因 | 處置（提交） |
+|---|---|---|---|
+| 1 | `manual-drawing-annotate` 步驟 10、11 失敗 | 筆電改腳本時呼叫未定義的 `choose()` | 改用腳本既有的 `setField('sectionAxis', …)`（`4ee52a1`） |
+| 2 | 組合件移動元件後，側影線停在舊位置 | `updateSilhouettes` 依相機方向快取；`setMesh` 會清快取、`setInstances` 不會 | `setInstances` 清掉 `lastSilViewDir`；新增 `tests/e2e/manual-asm-silhouettes.js`，**拿掉修正時第 3 步失敗（changed=false、right=false），加回後通過**（`96b853d`） |
+| 3 | 剖面交線／側影線以 `segs.push(...s)` 合併 | 展開運算把每個數字當參數；V8 實測 12 萬～15 萬個數字之間拋 `RangeError`（約單一實體 2 萬段） | `joinSegments` 預先配置 `Float32Array`；`tests/phase3/join-segments.test.ts` 以 6 萬段真實剖切結果先證明舊寫法會拋錯（`96b853d`） |
+| 4 | `phase2-assembly`（no PM field 深度）、`manual-e1`、`phase6-snap-ui`（no tree row sk） | 設計樹階層模式（`1ce9501`）在特徵列加了 ▾ 等裝飾，輔助函式比對整列文字而對不上，`H.treeClick` 退回到同名的本體列 | `H.rowName` 讀 `.name`，與 `d1b793c` 修 `manual-support.js` 的作法一致（`58267d9`） |
+| 5 | `phase5-angle` 開檔逾時 | 環境：腳本讀 repo 內 `3DB實機確認/鈑金/支架.3dbx`，該資料夾由 `make:kit` 產生且被 `.gitignore` 排除，這台電腦沒有 | `KIT_OUT=<repo>\3DB實機確認 npm run make:kit` 重新產生（16/16）；**未修**：腳本仍依賴未追蹤的資料夾 |
+| 6 | `manual-drawing-linked` 步驟 2、7 差 4 mm | `a7d5c50`（10-11）在視圖下寫名稱後，新工程圖的「最適比例」置中帶出 `shift [0, 4]`；前視圖「自動排版」卻是清掉位移，回不到新圖的位置 | 使用者裁定：`centreViews`（`fit.ts`）以目前比例、與「最適比例」相同方式置中，「自動排版」改用它，已置中時按鈕停用；4 個單元測試；步驟 7 改為直接量圖面內容外框是否在圖框中央（`335b46c`） |
+
+### 2. 自我紅隊四問補登（AGENTS.md §2.1）：剖面交線 `sliceMeshByPlane`、側影線 `buildSilhouetteIndex`／`extractSilhouettes`
+10-12 兩項功能上線時未做四問，以下為 10-13 補做，每項皆以實際探針量得（`scratch/diagnostics/redteam-section-silhouette.test.ts`，以 `npx vitest run --config scratch/diagnostics/redteam.config.ts redteam-section` 執行，結果存 `redteam-out.json`；不進版本庫）。
+1. **輸入破壞**
+   - 空幾何、平面法向量為零、平面常數 NaN、退化矩陣（縮放 0）、零向量或 NaN 的視線方向：**皆回傳 0 段，不拋錯**。
+   - **頂點含 NaN／Infinity、索引超出頂點數**：`sliceMeshByPlane` **會輸出 1 段含非有限值的線段**（未過濾）。OCCT 網格正常不會出現，判定低風險；若出現，three.js 計算包圍球時會在 Console 報 NaN。**未修，列為已知限制。**
+   - 側影索引遇到 NaN 頂點：仍回傳有限值線段（該頂點所在三角形被略過）。
+2. **拓樸與幾何退化**
+   - 剖切平面恰好落在面上（方塊頂面）：8 段（側面三角形的邊落在平面上，有重疊／零長度線段），只是視覺重複，不影響正確性。
+   - 平面過頂點、零面積三角形、未交到實體：結果正確，不拋錯。
+   - 只有平面（方塊）：0 條候選邊、0 段，正確。開放曲面（無端蓋圓柱）、三面共用一邊（非流形）：不拋錯。
+   - **細分過密時側影線消失**：`dot > 0.9999`（約 0.81°）的相鄰面被當作共面排除。以球 512×256（相鄰面約 0.7°）實測得 **0 段**。依 `kernel.mesh` 的參數換算（θ ≈ √(8d/R)），預設與「精細」品質下，半徑不超過零件對角線一半的曲面 θ ≥ 約 2.3°，不受影響；**大半徑淺曲面配小零件**（例：R1000 的面在對角線 100 mm 的零件上，「精細」時約 0.5°）會失去側影線。**未修，列為已知限制。**
+   - 頂點量化 1e-3：1 µm 等級的微小特徵會被合併（實測 1 µm 球 0 段），實務尺寸不受影響。
+3. **依賴鏈完整性**：`setMesh`、`applyDisplay`／`setSection` 會清快取，`setInstances` 原本漏掉（即上表 #2，已修）。透明元件不參與（與剖面補蓋規則一致）。快取只看視線方向；相機為正交（`OrthographicCamera`），側影線只取決於方向，不受位置影響，此快取在正交相機下成立。
+4. **規格真實性與零 Mock**：單元測試使用 three.js 真實幾何（圓柱、球、方塊、細分平面），無假資料；10-12 時沒有任何 `Viewer` 層級的驗證，10-13 補上瀏覽器腳本 `manual-asm-silhouettes.js`，並以「拿掉修正會失敗」確認它真的抓得到錯誤。效能：262k 三角形建索引 237 ms（只在網格更新時做）、每幀提取 0.1 ms。
+
+### 3. 確效
+- `npm run verify:ui`：**129/129**（自行啟動的全新開發伺服器）。
+- vitest：**2629 過、22 略過、0 失敗**；`typecheck`、`lint:rules`、`lint:deps`、`lint:i18n` 全過。
+- 已推送：`origin/main` = `335b46c`。
+
 ## 2026-10-12：曲面動態側影輪廓線 (Dynamic Silhouette Edges / SolidWorks Benchmark)
 
 ### 1. 需求內容 (Requirements)
