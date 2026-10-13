@@ -37,9 +37,10 @@ import {
   type ViewFeature,
   type ViewName,
   type ViewSide,
+  viewVectors,
 } from '@3db/model';
 import { drawingFileName, writeDrawingFile } from '@3db/io';
-import { FontError, readTrueType, toDxf, toPdf, type TrueTypeFont } from '@3db/drawing';
+import { FontError, readTrueType, toDxf, toPdf, turnLines, type TrueTypeFont } from '@3db/drawing';
 import { autoDimensions, buildScene, type DimensionDraft, type Pickable, FIRST_OFFSET, OFFSET_STEP, ratio, scaleOf, STANDARD_SCALES, fitViews, toSvg, type AutoDimensionOptions, type DimensionOutcome, type ElementsResult, type HoleRow, type PlacedView, type ViewBom, type Scene, type ViewLines } from '@3db/drawing';
 import type { Remote } from 'comlink';
 import { download, fileIn, pathIn, pickDrawingSaveTarget, pickFontFile, writeFile } from '../files';
@@ -91,7 +92,24 @@ const samePick = (a: DrawingPick, b: DrawingPick) => a.kind === b.kind && a.id =
 const pickExists = (doc: DrawingDoc, p: DrawingPick): boolean =>
   p.kind === 'view' ? doc.views.some((v) => v.id === p.id) : p.kind === 'dimension' ? doc.dimensions.some((d) => d.id === p.id) : p.kind === 'finish' ? doc.surfaceFinishes.some((f) => f.id === p.id) : doc.tables.some((x) => x.id === p.id);
 
-export type DrawingTool = { kind: 'dimension'; picks: { view: Id; feature: Pickable }[] } | { kind: 'section'; vertical?: boolean } | { kind: 'detail' } | { kind: 'surface' };
+export type DrawingTool =
+  | { kind: 'dimension'; picks: { view: Id; feature: Pickable }[] }
+  | { kind: 'section'; vertical?: boolean }
+  | { kind: 'detail' }
+  | { kind: 'surface' }
+  /**
+   * A view from the palette (D-V, ADR 0131) on its way to the sheet: it follows the pointer and the next click puts it there. `dragged`: it was pressed on in the
+   * palette and is being dragged, so letting go over the sheet puts it there too.
+   */
+  | { kind: 'placeView'; direction: ViewName; source: string; dragged?: boolean }
+  /**
+   * Projected views of `parent`, as SolidWorks makes them: the view the pointer is beside is shown where it would go, in line with the parent, and a click puts it
+   * there; the pointer off a corner shows the isometric view. The tool stays until Esc, for the next one.
+   */
+  | { kind: 'project'; parent: Id };
+
+/** The view directions the palette offers (the flat pattern is not one: only a sheet metal part has it, and it is added from the list). */
+export const PALETTE_DIRECTIONS: readonly ViewName[] = ['front', 'top', 'right', 'back', 'bottom', 'left', 'isometric'];
 
 export interface DrawingState {
   doc: DrawingDoc;
@@ -125,6 +143,8 @@ export interface DrawingState {
    * is on): the one the panel shows and the one a drag moves, as SolidWorks's PropertyManager shows the last thing picked.
    */
   selection: DrawingPick[];
+  /** The lines of the palette's views (D-V): the part the drawing's first model view shows, from each direction; null while there is no part. */
+  palette: { source: string; lines: Partial<Record<ViewName, ViewLines | null>> } | null;
   tool: DrawingTool | null;
   /** The lines are being worked out. */
   computing: boolean;
@@ -193,6 +213,7 @@ export class DrawingStore {
       dimension: null,
       finish: null,
       selection: [],
+      palette: null,
       tool: null,
       computing: false,
       fitRequest: 1,
@@ -479,6 +500,91 @@ export class DrawingStore {
     return { id, featureId: `${key}|${JSON.stringify(axes)}`, key, parts: [{ part: key, mirrored: false, pose: IDENTITY }], anchors: false, axes, ...(cut ? { cut } : {}) };
   }
 
+  // ------------------------------------------------------------ the view palette (D-V, ADR 0131)
+
+  /** The source the palette shows: that of the first model view (relative to the drawing). */
+  private paletteSource(): string | null {
+    const v = this.history.doc.views.find((x) => !isDerived(x));
+    return v && !isDerived(v) ? v.source : null;
+  }
+
+  /** A model view of `source` from `direction` that is not in the document: what the worker is asked for the palette and the previews. */
+  private probe(source: string, direction: ViewName): DrawingView {
+    return { id: `palette:${direction}`, name: '', source, direction };
+  }
+
+  /**
+   * The palette's lines (and so the previews of the views placed from it), worked out once per part: the same requests the views make, kept in the same cache, so a
+   * view placed from the palette is drawn at once.
+   */
+  private async ensurePalette(): Promise<void> {
+    // with every view deleted the palette keeps the part it showed: that is what the drawing is of, and what the next view is placed from
+    const source = this.paletteSource() ?? this.state.palette?.source ?? null;
+    if (!source) return;
+    const wanted = PALETTE_DIRECTIONS.flatMap((direction) => {
+      const r = this.requestOf(this.probe(source, direction));
+      return r && !this.cache.has(r.id) ? [r] : [];
+    });
+    if (wanted.length > 0) {
+      const results = await this.host.api.drawingViews(wanted.map((w) => ({ parts: w.parts, axes: w.axes, ...(w.anchors ? { anchors: true } : {}) })));
+      if (this.closed) return;
+      wanted.forEach((w, i) => {
+        const r = results[i]!;
+        this.cache.set(w.id, 'error' in r ? { error: r.error } : r.anchors ? { ...r.lines, anchors: r.anchors } : r.lines);
+      });
+    }
+    const lines: Partial<Record<ViewName, ViewLines | null>> = {};
+    for (const direction of PALETTE_DIRECTIONS) {
+      const r = this.requestOf(this.probe(source, direction));
+      const found = r ? this.cache.get(r.id) : undefined;
+      lines[direction] = found && !('error' in found) ? found : null;
+    }
+    const was = this.state.palette;
+    if (!was || was.source !== source || PALETTE_DIRECTIONS.some((k) => was.lines[k] !== lines[k])) this.set({ palette: { source, lines } });
+  }
+
+  /**
+   * The lines of the part seen from these axes, for a preview: those of the palette's view that looks the same way, turned in the sheet to the axes' up (a view
+   * projected or cut from the top view looks along a standard direction with the top view's up, which no palette view has). Null when no palette view looks
+   * that way.
+   */
+  linesForAxes(axes: ViewAxes): ViewLines | null {
+    const pal = this.state.palette;
+    if (!pal) return null;
+    for (const direction of PALETTE_DIRECTIONS) {
+      const lines = pal.lines[direction];
+      const turned = lines ? turnLines(lines, viewVectors(direction), axes) : null;
+      if (turned) return turned;
+    }
+    return null;
+  }
+
+  /** A view from the palette put where the pointer let it go (sheet mm); then projected views of it are offered, as SolidWorks does. */
+  placeModelView(source: string, direction: ViewName, at: [number, number]): Id | null {
+    const doc = this.history.doc;
+    const id = new IdAllocator(doc.idCounters, drawingIdsInUse(doc)).take('view');
+    if (!this.execute({ type: 'insertViews', views: [{ id, name: t(`drawing.view.${direction}`), source, direction, at }] })) return null;
+    this.select(id);
+    this.setTool(direction === 'isometric' ? null : { kind: 'project', parent: id });
+    return id;
+  }
+
+  /** A projected view of `parent` on `side`, slid `slide` mm along its line from where it would be laid out (C16.3). */
+  placeProjected(parent: Id, side: ViewSide, slide: number, shift: [number, number] | null = null): Id | null {
+    const doc = this.history.doc;
+    if (this.isFlat(parent)) {
+      this.host.notify(t('drawing.flatNoDerived'), 'error');
+      return null;
+    }
+    const id = new IdAllocator(doc.idCounters, drawingIdsInUse(doc)).take('view');
+    const view: DrawingView = { id, name: t('drawing.view.projected'), kind: 'projected', parent, side, ...(Math.abs(slide) > 0.005 ? { slide: Math.round(slide * 100) / 100 } : {}) };
+    // with the shift that keeps the other views where they are (the arrangement is centred again when a view is added), as one step
+    const insert: DrawingCommand = { type: 'insertViews', views: [view] };
+    if (!this.execute(shift ? { type: 'batch', commands: [insert, { type: 'setSheet', sheet: { shift } }] } : insert)) return null;
+    this.select(id);
+    return id;
+  }
+
   // ------------------------------------------------------------ assemblies as the source of a view (C16.6)
 
   private assemblyViews = new WeakMap<AssemblyData, AssemblyView>();
@@ -571,6 +677,7 @@ export class DrawingStore {
           lines.set(v.id, found && !('error' in found) ? found : null);
         }
         this.set({ lines, problems, computing: false });
+        await this.ensurePalette();
         if (this.autoScalePending && this.history.doc.views.length > 0 && this.history.doc.views.every((v) => v.kind === 'detail' || lines.get(v.id) || problems.has(v.id))) {
           this.autoScalePending = false;
           this.autoScale();
@@ -717,13 +824,21 @@ export class DrawingStore {
   }
 
   /** A section of `parent` cut along a horizontal or vertical line in the parent's coordinates (C16.3); the letter is the next free one. */
-  addSection(parent: Id, line: SectionDrawingView['line'], at?: [number, number]): void {
+  addSection(parent: Id, line: SectionDrawingView['line'], at?: [number, number], options: { flip?: boolean; slide?: number; shift?: [number, number] | null } = {}): void {
     const doc = this.history.doc;
     if (this.isFlat(parent)) return this.host.notify(t('drawing.flatNoDerived'), 'error');
     const ids = new IdAllocator(doc.idCounters, drawingIdsInUse(doc));
     const id = ids.take('view');
     const label = this.nextLabel();
-    if (this.execute({ type: 'insertViews', views: [{ id, name: t('drawing.view.section', { label }), kind: 'section', parent, line, label, ...(at ? { at } : {}) }] })) this.select(id);
+    const slide = !at && options.slide !== undefined && Math.abs(options.slide) > 0.005 ? { slide: Math.round(options.slide * 100) / 100 } : {};
+    const insert: DrawingCommand = { type: 'insertViews', views: [{ id, name: t('drawing.view.section', { label }), kind: 'section', parent, line, label, ...(options.flip ? { flip: true } : {}), ...slide, ...(at ? { at } : {}) }] };
+    const shift = !at && options.shift ? options.shift : null;
+    if (this.execute(shift ? { type: 'batch', commands: [insert, { type: 'setSheet', sheet: { shift } }] } : insert)) this.select(id);
+  }
+
+  /** The letter the next section or detail will have. */
+  peekLabel(): string {
+    return this.nextLabel();
   }
 
   /** A detail of `parent` in a circle (C16.3), at twice the scale the parent is drawn at, rounded up to a standard scale. */

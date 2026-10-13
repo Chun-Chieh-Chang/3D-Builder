@@ -1032,3 +1032,13 @@
 4. **零 Mock**：框選幾何用獨立的取樣判定法比對；隨機測試斷言兩種結果都有出現。瀏覽器以真實零件和真實的 pointer 事件驗證。
 
 檢查：typecheck 0 錯誤；`lint:rules`、`lint:deps`、`lint:i18n` 通過；`tests/phase5` 282 項通過、1 項略過；`verify:ui` 工程圖 14 支有 11 支通過，3 支是既有失敗。
+
+## 2026-10-13　D-V 比照 SolidWorks 在圖紙上產生視圖與剖面（ADR 0131）
+
+紅隊四問：
+1. **輸入破壞**：游標座標是 NaN 時，`previewDerived`、`sideAt` 都不放置任何東西，`snapCut` 明確拋錯；放置的位置最近只能離母視圖 5 mm，不會壓在母視圖上。
+2. **相交破壞**：新視圖被擋在最小間距；加入視圖時，其他視圖因重新置中而移動的問題，用補償的 shift 解決，和插入包成同一個 batch。
+3. **依賴鏈**：drawing（`sideAt`、`previewDerived`、`turnLines`、`snapCut`）→ store（調色盤快取與視圖共用、`placeModelView`、`placeProjected`、`addSection` 的 flip、slide、shift）→ Viewport（調色盤拖放、投影模式、剖面預覽、Ctrl 自由放置）→ 面板（調色盤、工具按鈕、「以數值建立」）→ i18n（中英對齊）→ CSS。
+4. **零 Mock**：預覽線條與 3D 核心從同一視角直接投影的結果比對；放置規則用「實際插入後重新排版」驗證，不是用預覽函式驗證它自己。
+
+檢查：typecheck 0 錯誤；三項 lint 通過；`tests/phase5` 289 項通過、1 項略過；`verify:ui` 工程圖 14 支有 11 支通過，3 支是既有失敗。

@@ -1,8 +1,9 @@
 import { t, type Locale } from '@3db/i18n';
 import { SHEET_SIZES, TITLE_FIELDS, VIEW_NAMES, isDerived, type DrawingView, type Scale, type SheetSize, type TitleField, type ViewName, type ViewSide } from '@3db/model';
-import { STANDARD_SCALES, arrangementBase, scaleText, showsHidden } from '@3db/drawing';
+import { STANDARD_SCALES, arrangementBase, scaleText, showsHidden, type ViewLines } from '@3db/drawing';
 import { useState } from 'react';
 import { store, useStore } from '../state/store';
+import { PALETTE_DIRECTIONS } from '../state/drawing';
 import { AnnotationPanel } from './AnnotationPanel';
 import { DimensionPanel } from './DimensionPanel';
 
@@ -35,6 +36,67 @@ function TextBox({ value, onCommit }: { value: string; onCommit: (v: string) => 
         e.stopPropagation();
       }}
     />
+  );
+}
+
+/** A view's lines drawn small, for a tile of the palette: the visible lines in a box that keeps their proportions. */
+function Thumbnail({ lines }: { lines: ViewLines | null | undefined }) {
+  if (!lines?.box) return <svg className="palette-thumb" viewBox="0 0 10 10" />;
+  const { min, max } = lines.box;
+  const w = Math.max(1e-6, max[0] - min[0]);
+  const h = Math.max(1e-6, max[1] - min[1]);
+  const pad = 0.08 * Math.max(w, h);
+  return (
+    <svg className="palette-thumb" viewBox={`${min[0] - pad} ${-max[1] - pad} ${w + 2 * pad} ${h + 2 * pad}`} preserveAspectRatio="xMidYMid meet">
+      {lines.visible.map((l, k) => (
+        <polyline key={k} points={Array.from({ length: l.length / 2 }, (_, j) => `${l[2 * j]},${-l[2 * j + 1]!}`).join(' ')} fill="none" stroke="currentColor" strokeWidth={Math.max(w, h) / 90} />
+      ))}
+    </svg>
+  );
+}
+
+/**
+ * The view palette (D-V, ADR 0131), as SolidWorks has it: the part the drawing shows, from each direction, drawn from its own lines. A view is pressed on and
+ * dragged onto the sheet (or clicked, then the sheet clicked); once there, the projection tool offers the views projected from it.
+ */
+function ViewPalette() {
+  const drw = useStore((s) => s.drw)!;
+  const d = store.drawingStore!;
+  const pal = drw.palette;
+  if (!pal) return <p className="muted">{t('drawingUi.paletteEmpty')}</p>;
+  const armed = drw.tool?.kind === 'placeView' ? drw.tool.direction : null;
+  return (
+    <>
+      <div className="view-palette" data-field="palette">
+        {PALETTE_DIRECTIONS.map((direction) => (
+          <button
+            key={direction}
+            type="button"
+            className={`palette-tile${armed === direction ? ' active' : ''}`}
+            data-palette={direction}
+            title={t('drawingUi.paletteHint')}
+            onPointerDown={(e) => {
+              if (e.button !== 0) return;
+              e.preventDefault();
+              d.setTool({ kind: 'placeView', direction, source: pal.source, dragged: true });
+              // let go anywhere but over the sheet (a click on the tile, or a drag given up): the view stays in hand, for a click on the sheet
+              const release = () => {
+                window.removeEventListener('pointerup', release);
+                setTimeout(() => {
+                  const tool = store.drawingStore?.getState().tool;
+                  if (tool?.kind === 'placeView' && tool.dragged) d.setTool({ ...tool, dragged: false });
+                }, 0);
+              };
+              window.addEventListener('pointerup', release);
+            }}
+          >
+            <Thumbnail lines={pal.lines[direction]} />
+            <span>{t(`drawing.view.${direction}`)}</span>
+          </button>
+        ))}
+      </div>
+      <p className="muted">{t('drawingUi.paletteHint')}</p>
+    </>
   );
 }
 
@@ -134,6 +196,10 @@ export function DrawingPanel() {
           </label>
         ))}
       </div>
+      <div className="pm-group" data-group="palette">
+        <h4>{t('drawingUi.palette')}</h4>
+        <ViewPalette />
+      </div>
       <div className="pm-group">
         <h4>{t('drawingUi.views')}</h4>
         {doc.views.length === 0 && <p className="muted">{t('drawingUi.noViews')}</p>}
@@ -227,6 +293,8 @@ export function DrawingPanel() {
             </>
           );
         })()}
+        <details className="pm-details">
+        <summary>{t('drawingUi.byNumbers')}</summary>
         <div className="pm-row">
           <select data-field="newDirection" value={direction} onChange={(e) => setDirection(e.target.value as ViewName)}>
             {VIEW_NAMES.map((n) => (
@@ -239,6 +307,7 @@ export function DrawingPanel() {
             {t('drawingUi.addView')}
           </button>
         </div>
+        </details>
       </div>
       <DimensionPanel />
       <AnnotationPanel />
@@ -251,17 +320,15 @@ export function DrawingPanel() {
         return (
           <div className="pm-group" data-group="derived">
             <h4>{t('drawingUi.derived')}</h4>
-            {!parent && <p className="muted">{t('drawingUi.selectParent')}</p>}
             <div className="pm-row">
-              <select data-field="newSide" value={side} onChange={(e) => setSide(e.target.value as ViewSide)}>
-                {SIDES.map((s) => (
-                  <option key={s} value={s}>
-                    {t(`drawing.side.${s}`)}
-                  </option>
-                ))}
-              </select>
-              <button className="pm-button" data-action="addProjected" disabled={!parent} onClick={() => parent && d.addProjected(parent.id, side)}>
-                {t('drawingUi.projected')}
+              <button
+                className={`pm-button${drw.tool?.kind === 'project' ? ' active' : ''}`}
+                data-action="toolProjected"
+                title={t('drawingUi.hint.project')}
+                disabled={!parent && drw.tool?.kind !== 'project'}
+                onClick={() => d.setTool(drw.tool?.kind === 'project' ? null : parent ? { kind: 'project', parent: parent.id } : null)}
+              >
+                {t('drawingUi.toolProjected')}
               </button>
             </div>
             <div className="pm-row">
@@ -280,6 +347,21 @@ export function DrawingPanel() {
                 onClick={() => d.setTool(drw.tool?.kind === 'detail' ? null : { kind: 'detail' })}
               >
                 {t('drawingUi.toolDetail')}
+              </button>
+            </div>
+            {!parent && <p className="muted">{t('drawingUi.selectParent')}</p>}
+            <details className="pm-details" data-group="derivedNumbers">
+            <summary>{t('drawingUi.byNumbers')}</summary>
+            <div className="pm-row">
+              <select data-field="newSide" value={side} onChange={(e) => setSide(e.target.value as ViewSide)}>
+                {SIDES.map((s) => (
+                  <option key={s} value={s}>
+                    {t(`drawing.side.${s}`)}
+                  </option>
+                ))}
+              </select>
+              <button className="pm-button" data-action="addProjected" disabled={!parent} onClick={() => parent && d.addProjected(parent.id, side)}>
+                {t('drawingUi.projected')}
               </button>
             </div>
             <div className="pm-row">
@@ -323,6 +405,7 @@ export function DrawingPanel() {
                 {t('drawingUi.detail')}
               </button>
             </div>
+            </details>
           </div>
         );
       })()}

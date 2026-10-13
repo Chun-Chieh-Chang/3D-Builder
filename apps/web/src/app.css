@@ -395,3 +395,12 @@ html[lang="en"] .view-cube .cube-face { font-size: 10px; }
 .snap-options label { display: flex; align-items: center; gap: 6px; }
 .snap-options .snap-master { font-weight: 600; margin-bottom: 4px; }
 .snap-options input[type='number'] { width: 80px; }
+
+/* the view palette of a drawing (D-V): tiles of the part from each direction, dragged onto the sheet */
+.view-palette { display: grid; grid-template-columns: repeat(auto-fill, minmax(68px, 1fr)); gap: 4px; }
+.palette-tile { display: grid; justify-items: center; gap: 2px; padding: 4px 2px; border: 1px solid var(--line); border-radius: 4px; background: #fff; cursor: grab; user-select: none; touch-action: none; font-size: 12px; color: #343a40; }
+.palette-tile:hover { border-color: #1c7ed6; }
+.palette-tile.active { border-color: #1c7ed6; background: var(--accent-soft); }
+.palette-thumb { width: 60px; height: 44px; color: #343a40; }
+.pm-details > summary { cursor: pointer; color: #5c6670; font-size: 12px; margin: 4px 0; }
+.drawing-toolopts button.active { background: var(--accent-soft); }

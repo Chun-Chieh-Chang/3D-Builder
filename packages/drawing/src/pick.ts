@@ -287,3 +287,21 @@ export function dimensionsInBox(items: readonly SceneItem[], r: SheetRect, cross
 export function rectInBox(b: { x: number; y: number; w: number; h: number }, r: SheetRect, crossing: boolean): boolean {
   return crossing ? b.x <= r.x1 && b.x + b.w >= r.x0 && b.y <= r.y1 && b.y + b.h >= r.y0 : inside(r, b.x, b.y) && inside(r, b.x + b.w, b.y + b.h);
 }
+
+/**
+ * Where a cutting line drawn at `coord` (along the view's x for a vertical line, its y for a horizontal one, in view coordinates at full size) snaps to (D-V), as
+ * SolidWorks infers it: the middle of a circle, an edge-on plane, or the middle of the view's box, whichever is nearest within `tol`; else `coord` itself.
+ */
+export function snapCut(features: readonly ViewFeature[], box: { min: [number, number]; max: [number, number] } | null, coord: number, vertical: boolean, tol: number): { coord: number; snapped: boolean } {
+  if (!Number.isFinite(coord)) throw new Error(t('drawing.badPosition'));
+  const k = vertical ? 0 : 1;
+  const candidates: number[] = [];
+  for (const f of features) {
+    if (f.type === 'circle') candidates.push(f.centre[k]);
+    else if (f.type === 'plane' && f.axis === (vertical ? 'x' : 'y')) candidates.push(f.coord);
+  }
+  if (box) candidates.push((box.min[k] + box.max[k]) / 2);
+  let best: number | null = null;
+  for (const c of candidates) if (Math.abs(c - coord) <= tol && (best === null || Math.abs(c - coord) < Math.abs(best - coord))) best = c;
+  return best === null ? { coord, snapped: false } : { coord: best, snapped: true };
+}
