@@ -70,7 +70,7 @@ M.run = async () => {
     await H.open('夾具.3dbx');
     await H.waitFor(() => store.getState().result?.bodies.length === 3, 10000, 'three bodies');
     const before = store.getState().result.bodies.find((b) => b.name === '基板').volume;
-    const row = [...document.querySelectorAll('.tree-row')].filter((r) => r.textContent === 'eb').at(-1);
+    const row = [...document.querySelectorAll('.tree-row')].filter((r) => H.rowName(r) === 'eb').at(-1);
     row.click();
     await H.wait(150);
     row.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }));

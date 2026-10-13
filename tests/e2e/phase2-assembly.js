@@ -117,9 +117,11 @@ H.key = async (key) => {
   await H.wait(80);
 };
 H.tree = () => [...document.querySelectorAll('.feature-tree .tree-row')].map((r) => r.textContent);
+/** A tree row's name: the text of its name, not what the tree shows beside it (▾ of the sketches under it, ▲ 父 / ▼ 子 badges, ↳ the parent, └── lines). */
+H.rowName = (x) => (x.querySelector('.name')?.textContent ?? x.textContent).replace(/^\([-+f?]\) /, '');
 H.treeClick = async (name) => {
   // a part with one body lists the body under the name of its first feature: the feature's own row is the one that edits
-  const found = [...document.querySelectorAll('.tree-row')].filter((x) => x.textContent.replace(/^\([-+f?]\) /, '') === name);
+  const found = [...document.querySelectorAll('.tree-row')].filter((x) => H.rowName(x) === name);
   const r = found.find((x) => !x.classList.contains('body')) ?? found[0];
   if (!r) throw new Error(`no tree row ${name}`);
   r.click();
@@ -301,7 +303,7 @@ asm.all = async () => {
   return { ok: true, steps };
 };
 
-H.row = (name) => [...document.querySelectorAll('.feature-tree .tree-row')].find((r) => r.textContent.replace(/^\([-+f?]\) /, '') === name);
+H.row = (name) => [...document.querySelectorAll('.feature-tree .tree-row')].find((r) => H.rowName(r) === name);
 H.menu = async (name, item) => {
   H.row(name).dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, clientX: 120, clientY: 200 }));
   await H.wait(80);
