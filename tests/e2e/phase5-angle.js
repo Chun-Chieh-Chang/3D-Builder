@@ -3,7 +3,8 @@
 //   await import('/@fs/<checkout>/tests/e2e/phase5-angle.js?' + Date.now());
 //   await __angle.run();
 //
-// The part is the sheet metal bracket of the verification kit (3DB實機確認/鈑金/支架.3dbx: two 45° faces and a 90° corner seen from the right). In a new drawing the
+// The part is tests/fixtures/parts/bracket.3dbx, the sheet metal bracket of the verification kit (the same document as 3DB實機確認/鈑金/支架.3dbx, which `make:kit`
+// writes outside the repository and so is not on every computer: two 45° faces and a 90° corner seen from the right). In a new drawing the
 // right view offers the slanted faces beside the planes square to x and y; an angle between two of them is made, written 45° and then 135° with the other angle, its arc
 // radius changed, and one that is 90°.
 
@@ -25,7 +26,7 @@ const texts = () => [...store.drawingStore.scene().dimensions.values()].map((o) 
 
 a.run = async () => {
   H.ready();
-  await H.project({ '支架.3dbx': `${root}3DB實機確認/鈑金/支架.3dbx` });
+  await H.project({ '支架.3dbx': `${root}tests/fixtures/parts/bracket.3dbx` });
   await H.open('支架.3dbx');
   await H.waitFor(() => store.getState().result?.mesh, 20000, 'the part');
   await H.action('檔案', '新工程圖');

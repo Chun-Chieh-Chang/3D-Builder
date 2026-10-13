@@ -9,7 +9,7 @@
 | 2 | 組合件移動元件後，側影線停在舊位置 | `updateSilhouettes` 依相機方向快取；`setMesh` 會清快取、`setInstances` 不會 | `setInstances` 清掉 `lastSilViewDir`；新增 `tests/e2e/manual-asm-silhouettes.js`，**拿掉修正時第 3 步失敗（changed=false、right=false），加回後通過**（`96b853d`） |
 | 3 | 剖面交線／側影線以 `segs.push(...s)` 合併 | 展開運算把每個數字當參數；V8 實測 12 萬～15 萬個數字之間拋 `RangeError`（約單一實體 2 萬段） | `joinSegments` 預先配置 `Float32Array`；`tests/phase3/join-segments.test.ts` 以 6 萬段真實剖切結果先證明舊寫法會拋錯（`96b853d`） |
 | 4 | `phase2-assembly`（no PM field 深度）、`manual-e1`、`phase6-snap-ui`（no tree row sk） | 設計樹階層模式（`1ce9501`）在特徵列加了 ▾ 等裝飾，輔助函式比對整列文字而對不上，`H.treeClick` 退回到同名的本體列 | `H.rowName` 讀 `.name`，與 `d1b793c` 修 `manual-support.js` 的作法一致（`58267d9`） |
-| 5 | `phase5-angle` 開檔逾時 | 環境：腳本讀 repo 內 `3DB實機確認/鈑金/支架.3dbx`，該資料夾由 `make:kit` 產生且被 `.gitignore` 排除，這台電腦沒有 | `KIT_OUT=<repo>\3DB實機確認 npm run make:kit` 重新產生（16/16）；**未修**：腳本仍依賴未追蹤的資料夾 |
+| 5 | `phase5-angle` 開檔逾時 | 環境：腳本讀 repo 內 `3DB實機確認/鈑金/支架.3dbx`，該資料夾由 `make:kit` 產生且被 `.gitignore` 排除，這台電腦沒有 | 改讀進版本庫的 `tests/fixtures/parts/bracket.3dbx`（解壓比對：與套件的 `支架.3dbx` 內容相同，只差 `schemaVersion` 43／55，開檔時遷移；`phase5-flat-view` 本來就用它）；把 `3DB實機確認/` 暫時移開後 `phase5-angle`、`phase5-flat-view` 皆通過。e2e 已無腳本讀版本庫外的檔案 |
 | 6 | `manual-drawing-linked` 步驟 2、7 差 4 mm | `a7d5c50`（10-11）在視圖下寫名稱後，新工程圖的「最適比例」置中帶出 `shift [0, 4]`；前視圖「自動排版」卻是清掉位移，回不到新圖的位置 | 使用者裁定：`centreViews`（`fit.ts`）以目前比例、與「最適比例」相同方式置中，「自動排版」改用它，已置中時按鈕停用；4 個單元測試；步驟 7 改為直接量圖面內容外框是否在圖框中央（`335b46c`） |
 
 ### 2. 自我紅隊四問補登（AGENTS.md §2.1）：剖面交線 `sliceMeshByPlane`、側影線 `buildSilhouetteIndex`／`extractSilhouettes`
