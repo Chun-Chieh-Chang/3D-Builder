@@ -279,6 +279,9 @@ export function sliceMeshByPlane(geometry: THREE.BufferGeometry, plane: THREE.Pl
       by = y2 + t1 * (y1 - y2);
       bz = z2 + t1 * (z1 - z2);
     }
+    // a triangle with a vertex that is not a number (NaN, ±Infinity, or an index past the vertices) has no place on the cut: leave it out rather than
+    // hand the line geometry a NaN (three.js then cannot bound it, and says so on the console); the other triangles still give the outline
+    if (!(Number.isFinite(ax) && Number.isFinite(ay) && Number.isFinite(az) && Number.isFinite(bx) && Number.isFinite(by) && Number.isFinite(bz))) continue;
 
     if (hasMatrix) {
       pA.set(ax, ay, az).applyMatrix4(matrixWorld);

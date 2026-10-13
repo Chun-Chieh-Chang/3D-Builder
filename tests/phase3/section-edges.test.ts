@@ -73,6 +73,36 @@ describe('sliceMeshByPlane (ADR 0042 / Section Cut Edges)', () => {
     }
   });
 
+  it('a triangle with a vertex that is not a number (NaN, Infinity, an index past the vertices) is left out; the other triangles still give the outline', () => {
+    const plane = new THREE.Plane(new THREE.Vector3(0, 0, 1), 0); // Z = 0: 8 of the box's triangles cross it, one segment each
+    const crossing = (g: THREE.BufferGeometry) => {
+      const p = g.getAttribute('position');
+      for (let t = 0; t < p.count / 3; t++) {
+        const zs = [p.getZ(t * 3), p.getZ(t * 3 + 1), p.getZ(t * 3 + 2)];
+        if (Math.min(...zs) < 0 && Math.max(...zs) > 0) return t;
+      }
+      throw new Error('no triangle crosses');
+    };
+    const allFinite = (s: number[]) => s.every(Number.isFinite);
+    for (const bad of [NaN, Infinity, -Infinity]) {
+      const g = new THREE.BoxGeometry(20, 20, 20).toNonIndexed(); // each triangle its own vertices: spoiling one spoils one triangle
+      expect(sliceMeshByPlane(g, plane).length).toBe(48);
+      (g.getAttribute('position').array as Float32Array)[crossing(g) * 9] = bad; // x of its first vertex
+      const segs = sliceMeshByPlane(g, plane);
+      expect(segs.length, String(bad)).toBe(42); // 7 segments
+      expect(allFinite(segs), String(bad)).toBe(true);
+    }
+    // an index past the vertices reads undefined
+    const g = new THREE.BoxGeometry(20, 20, 20).toNonIndexed();
+    const t = crossing(g);
+    const index = Array.from({ length: g.getAttribute('position').count }, (_, i) => i);
+    index[t * 3] = 10_000;
+    g.setIndex(index);
+    const segs = sliceMeshByPlane(g, plane);
+    expect(segs.length).toBe(42);
+    expect(allFinite(segs)).toBe(true);
+  });
+
   it('performance: slices 10,000+ triangles in less than 15ms', () => {
     // Sphere with high segment count has thousands of triangles
     const sphere = new THREE.SphereGeometry(50, 64, 64);
