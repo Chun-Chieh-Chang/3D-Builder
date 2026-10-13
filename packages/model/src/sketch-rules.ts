@@ -37,7 +37,7 @@ const RULES: { [T in SketchConstraint['type']]: Partial<Record<RefField, RefKind
   coradial: { a: RADIAL, b: RADIAL },
   intersection: { point: POINT, a: CURVE, b: CURVE },
   equal: { a: CURVE, b: CURVE },
-  midpoint: { point: POINT, line: LINE },
+  midpoint: { point: POINT, line: ['line', 'arc'] },
   pointOnCurve: { point: POINT, curve: CURVE },
   symmetric: { a: POINT, b: POINT, axis: LINE },
   fix: { point: ['point'] },
@@ -103,6 +103,7 @@ export function sketchError(sketch: Pick<SketchFeature, 'entities' | 'constraint
     kinds.set(e.id, e.type);
   }
   const kindOf = (id: Id): RefKind | undefined => (id === SKETCH_ORIGIN ? 'origin' : kinds.get(id));
+  const byId = new Map(sketch.entities.map((e) => [e.id, e]));
 
   for (const e of sketch.entities) {
     const pts = entityPoints(e);
@@ -137,6 +138,12 @@ export function sketchError(sketch: Pick<SketchFeature, 'entities' | 'constraint
     if (c.type === 'tangent' && ks[0] === 'line' && ks[1] === 'line') return t('rules.tangentNeedsCurve');
     if (c.type === 'equal' && (ks[0] === 'line') !== (ks[1] === 'line')) return t('rules.equalKinds');
     if (c.type === 'distance' && c.b === undefined && ks[0] !== 'line') return t('rules.distanceLine');
+    // the middle of an arc cannot be one of its own points (an end, or its center): no arc would satisfy it. Only arcs (schema 56): a line's own end was
+    // never refused, and every edit checks the whole sketch, so refusing it now could leave an old sketch that cannot be changed
+    if (c.type === 'midpoint') {
+      const host = byId.get(c.line);
+      if (host?.type === 'arc' && entityPoints(host).includes(c.point)) return t('rules.midpointOwnPoint', { id: c.id });
+    }
     if ((c.type === 'horizontal' || c.type === 'vertical') && (c.b === undefined) !== (ks[0] === 'line')) {
       return t('rules.horizontalVertical');
     }

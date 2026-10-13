@@ -1,6 +1,6 @@
 import { t } from '@3db/i18n';
 import { constraintRefs, isDimension, isPlain, SKETCH_ORIGIN, type DimensionConstraint, type Id, type PlaneFrame, type SketchConstraint, type SketchFeature } from '@3db/model';
-import { add, dimensionText, layoutDimension, measuredText, mid, polar, sample, type Geometry } from '@3db/sketch/interact';
+import { add, arcMidpoint, dimensionText, layoutDimension, measuredText, mid, polar, sample, type Geometry } from '@3db/sketch/interact';
 import { visibleGridSpacing } from '@3db/sketch/snaps';
 import type { EntityStatus, P2, SolvedGeometry } from '@3db/sketch';
 import type { OverlayCurve, OverlayLabel, OverlayPoint, SketchOverlay } from '@3db/render';
@@ -99,11 +99,8 @@ function anchorOf(geometry: Geometry, id: Id): P2 | null {
       return mid(g.a, g.b);
     case 'circle':
       return polar(g.c, g.r, -Math.PI / 4);
-    case 'arc': {
-      const tau = 2 * Math.PI;
-      const sweep = (((g.a1 - g.a0) % tau) + tau) % tau;
-      return polar(g.c, g.r, g.a0 + sweep / 2);
-    }
+    case 'arc':
+      return arcMidpoint(g);
   }
 }
 

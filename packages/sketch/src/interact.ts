@@ -207,6 +207,13 @@ export interface SnapAllow {
   curve?: boolean;
 }
 
+/** The middle of an arc's sweep (it runs counterclockwise from a0 to a1). */
+export function arcMidpoint(g: Extract<SolvedGeometry, { type: 'arc' }>): P2 {
+  const tau = 2 * Math.PI;
+  const sweep = (((g.a1 - g.a0) % tau) + tau) % tau;
+  return polar(g.c, g.r, g.a0 + sweep / 2);
+}
+
 /** SolidWorks snap priority: end/center points, then midpoints, then anywhere on a curve. */
 export function snap(geometry: Geometry, p: P2, tol: number, exclude: ReadonlySet<Id> = new Set(), allow: SnapAllow = {}): Snap {
   const [byPoint, byMidpoint, byCurve] = [allow.point !== false, allow.midpoint !== false, allow.curve !== false];
@@ -215,8 +222,8 @@ export function snap(geometry: Geometry, p: P2, tol: number, exclude: ReadonlySe
   if (byPoint && hit && (hit.kind === 'point' || hit.kind === 'origin')) return { kind: 'point', id: hit.id, p: hit.q };
   let best: { line: Id; p: P2; d: number } | null = null;
   for (const [id, g] of byMidpoint ? geometry : []) {
-    if (g.type !== 'line' || exclude.has(id)) continue;
-    const m = mid(g.a, g.b);
+    if ((g.type !== 'line' && g.type !== 'arc') || exclude.has(id)) continue;
+    const m = g.type === 'line' ? mid(g.a, g.b) : arcMidpoint(g); // SolidWorks and FreeCAD snap to the middle of an arc too
     const d = dist(p, m);
     if (d <= tol && (!best || d < best.d)) best = { line: id, p: m, d };
   }
@@ -509,7 +516,12 @@ export function applicableRelations(geometry: Geometry, selection: Id[], sketch?
       { type: 'midpoint', point: points[0]!, line: lines[0]! },
     ];
   }
-  if (points.length === 1 && radials.length === 1) return [{ type: 'pointOnCurve', point: points[0]!, curve: radials[0]! }];
+  if (points.length === 1 && radials.length === 1) {
+    const arc = geometry.get(radials[0]!);
+    // the middle of an arc as well, unless the point is one of the arc's own (no arc could have it in the middle)
+    const middle = arc?.type === 'arc' && ![arc.center, arc.start, arc.end].includes(points[0]!);
+    return [{ type: 'pointOnCurve', point: points[0]!, curve: radials[0]! }, ...(middle ? [{ type: 'midpoint' as const, point: points[0]!, line: radials[0]! }] : [])];
+  }
   if (lines.length === 1 && radials.length === 1) return [{ type: 'tangent', a: lines[0]!, b: radials[0]! }];
   if (radials.length === 2) {
     return [

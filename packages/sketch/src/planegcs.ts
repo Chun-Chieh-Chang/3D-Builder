@@ -258,6 +258,15 @@ function toPrimitives(sketch: SketchFeature, start: Start, pinned: ReadonlySet<I
         break;
       }
       case 'midpoint': {
+        const host = byId.get(c.line);
+        if (host?.type === 'arc') {
+          // the middle of the sweep: on the arc's circle, where the arc runs (counterclockwise) the way of its chord, start to end: the direction from the
+          // center to the point, turned a quarter counterclockwise, is the chord's. As far from both ends is not enough: that place has a twin across the
+          // circle (the middle of the rest of it), and a fuzz of large changes to the arc took the point there 3 times in 200; the signed angle has none
+          const p = point(c.point);
+          add(id, [onCurve(p, c.line, id), { id, type: 'l2l_angle_pppp', l1p1_id: host.center, l1p2_id: p, l2p1_id: host.start, l2p2_id: host.end, angle: Math.PI / 2 }]);
+          break;
+        }
         const l = line(c.line);
         add(id, [{ id, type: 'p2p_symmetric_ppp', p1_id: l.p1, p2_id: l.p2, p_id: point(c.point) }]);
         break;

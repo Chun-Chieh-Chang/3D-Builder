@@ -1,6 +1,7 @@
 import { beforeAll, describe, expect, it } from 'vitest';
 import { applyCommand, createEmptyPart, DocHistory, resolveSketch, type Command, type PartDoc, type SketchFeature } from '@3db/model';
 import { findProfiles, PlaneGcsSolver, type SolvedGeometry } from '@3db/sketch';
+import { arcMidpoint } from '@3db/sketch/interact';
 import type { ModelItem } from '@3db/sketch/ops';
 import { DEFAULT_SNAPS, type SnapSettings } from '@3db/sketch/snaps';
 import { SketchController, type PointerInput, type SketchHost } from '../src/sketcher/controller';
@@ -1168,6 +1169,41 @@ describe('the snaps beyond points and curves, and the settings (D5.3c)', () => {
     expect(c.getView().snap).toMatchObject({ kind: 'point' }); // the end of the first line
     c.pointerMove(at(5, 2.52), false);
     expect(c.getView().snap).toMatchObject({ kind: 'curve' });
+  });
+});
+
+describe('the middle of an arc (SolidWorks and FreeCAD snap to it; schema 56)', () => {
+  it('a point near the middle of an arc snaps to it, is held there by a midpoint relation, and stays at the middle when the arc is made bigger', () => {
+    const h = new Host();
+    const c = new SketchController(h);
+    c.setTool('arc');
+    click(c, 0, 0); // center
+    click(c, 10, 0); // start
+    c.pointerMove(at(5, 5), false); // sweep counterclockwise …
+    click(c, 0, 10); // … to the end: a quarter turn, its middle at 45°
+    c.escape();
+    const arc = h.sketch().entities.find((e) => e.type === 'arc')!;
+    const m = 10 / Math.SQRT2;
+    c.setTool('point');
+    c.pointerMove(at(m + 0.1, m - 0.05), false);
+    const v = c.getView();
+    expect(v.snap).toMatchObject({ kind: 'midpoint', line: arc.id });
+    const s = v.snap as Extract<NonNullable<typeof v.snap>, { kind: 'midpoint' }>;
+    expect(s.p[0]).toBeCloseTo(m, 9);
+    expect(s.p[1]).toBeCloseTo(m, 9);
+    expect(v.inference).toBe('中點');
+    click(c, m + 0.1, m - 0.05);
+    const p = h.sketch().entities.filter((e) => e.type === 'point').at(-1)!;
+    expect(h.sketch().constraints.at(-1)).toMatchObject({ type: 'midpoint', point: p.id, line: arc.id });
+    expect(h.last!.status).not.toBe('over');
+    expect(h.last!.redundant).toEqual([]);
+    // the arc made R20: the point goes with the middle
+    expect(h.execute({ type: 'addSketchItems', featureId: 'sketch1', entities: [], constraints: [{ id: 'R', type: 'radius', circle: arc.id, value: '20' } as SketchFeature['constraints'][number]] })).toBe(true);
+    const g = h.last!.geometry.get(arc.id) as Extract<SolvedGeometry, { type: 'arc' }>;
+    expect(g.r).toBeCloseTo(20, 6);
+    const want = arcMidpoint(g);
+    expect(point(h, p.id)[0]).toBeCloseTo(want[0], 6);
+    expect(point(h, p.id)[1]).toBeCloseTo(want[1], 6);
   });
 });
 

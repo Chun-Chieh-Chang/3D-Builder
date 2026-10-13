@@ -6,7 +6,7 @@ import type { Id } from './ids';
  * DOF status, mass properties and error lists are derived data and never stored.
  */
 
-export const SCHEMA_VERSION = 55;
+export const SCHEMA_VERSION = 56;
 
 /** Value expression (B5.2, B5.3): "20", "25.4mm", "30deg", "wall_t*2", "D1@草圖1/2", "property('厚度')"; see `expr/`. */
 export type Expr = string;
@@ -66,6 +66,7 @@ export type SketchConstraint =
   /** Two circles or arcs with the same center and the same radius (SolidWorks 「同心同徑」, v11). */
   | { id: Id; type: 'coradial'; a: Id; b: Id }
   | { id: Id; type: 'equal'; a: Id; b: Id }
+  /** `point` at the middle of `line`, a line or (schema 56) an arc: the middle of its sweep. */
   | { id: Id; type: 'midpoint'; point: Id; line: Id }
   /** SolidWorks "coincident" between a point and a line, circle or arc (point–point is `coincident`). */
   | { id: Id; type: 'pointOnCurve'; point: Id; curve: Id }

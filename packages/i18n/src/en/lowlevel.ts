@@ -32,6 +32,7 @@ export const lowlevel: Translation = {
   'rules.extraRef': 'Relation {id} has an extra reference',
   'rules.badRef': 'Relation {id} cannot be applied to "{ref}"',
   'rules.sameTwice': 'Relation {id} refers to the same entity twice',
+  'rules.midpointOwnPoint': 'Midpoint {id}: the middle of an arc cannot be one of its own ends or its center',
   'rules.tangentNeedsCurve': 'Tangent needs at least one circle or arc',
   'rules.equalKinds': 'Equal only applies to two lines or two circles/arcs',
   'rules.distanceLine': 'The distance of a single entity only applies to a line',

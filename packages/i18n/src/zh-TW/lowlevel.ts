@@ -30,6 +30,7 @@ export const lowlevel = {
   'rules.extraRef': '限制條件 {id} 有多餘的參考',
   'rules.badRef': '限制條件 {id} 不能套用在「{ref}」上',
   'rules.sameTwice': '限制條件 {id} 參考了同一個圖元兩次',
+  'rules.midpointOwnPoint': '中點 {id}：圓弧的中點不能是它自己的端點或圓心',
   'rules.tangentNeedsCurve': '相切需要至少一個圓或圓弧',
   'rules.equalKinds': '相等只適用於兩條直線或兩個圓/圓弧',
   'rules.distanceLine': '單一圖元的距離只適用於直線',

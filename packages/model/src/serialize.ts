@@ -184,6 +184,8 @@ const migrations: Record<number, (doc: Json) => Json> = {
   53: (doc) => doc,
   // v55: a sketch dimension may keep where its text was dragged (`labelPosition`, optional). Nothing to convert; an older program refuses the file.
   54: (doc) => doc,
+  // v56: a midpoint relation may be on an arc (the middle of its sweep). Nothing to convert; an older program refuses the file rather than fail to solve it.
+  55: (doc) => doc,
 };
 
 export class FormatError extends Error {

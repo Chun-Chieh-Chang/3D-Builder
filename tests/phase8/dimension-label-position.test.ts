@@ -21,10 +21,10 @@ const dimension = (d: ReturnType<typeof doc>) => (d.features[0] as SketchFeature
 
 describe('the place of a dimension text in the file (schema 55)', () => {
   it('is written and read back as it was', () => {
-    expect(SCHEMA_VERSION).toBe(55);
+    expect(SCHEMA_VERSION).toBeGreaterThanOrEqual(55); // the version the field came with, or a later one
     const moved = applyCommand(doc(), { type: 'setDimensionPosition', featureId: 'sk1', constraintId: 'd1', position: [18, 16] });
     const back = parsePart(serializePart(moved));
-    expect(back.schemaVersion).toBe(55);
+    expect(back.schemaVersion).toBe(SCHEMA_VERSION);
     expect(dimension(back).labelPosition).toEqual([18, 16]);
     // taken away again: the automatic place
     const reset = applyCommand(back, { type: 'setDimensionPosition', featureId: 'sk1', constraintId: 'd1', position: null });
@@ -35,7 +35,7 @@ describe('the place of a dimension text in the file (schema 55)', () => {
     const old = JSON.parse(serializePart(doc())) as { schemaVersion: number };
     old.schemaVersion = 54;
     const read = parsePart(JSON.stringify(old));
-    expect(read.schemaVersion).toBe(55);
+    expect(read.schemaVersion).toBe(SCHEMA_VERSION); // brought up to this program's version
     expect(dimension(read).labelPosition).toBeUndefined();
     const future = JSON.parse(serializePart(doc())) as { schemaVersion: number };
     future.schemaVersion = SCHEMA_VERSION + 1;
