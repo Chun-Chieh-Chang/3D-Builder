@@ -4,6 +4,7 @@ import { LineSegments2 } from 'three/examples/jsm/lines/LineSegments2.js';
 import { LineSegmentsGeometry } from 'three/examples/jsm/lines/LineSegmentsGeometry.js';
 import { acceleratedRaycast, computeBoundsTree, disposeBoundsTree } from 'three-mesh-bvh';
 import { ViewControls } from './controls';
+import { orbitView, panView, restoreView, rollView, viewState, ViewHistory, zoomView } from './viewNav';
 import { circleCentre, middleOf, polylinesOf, type V3 } from './snap';
 import { buildOverlayObjects, disposeGroup, toWorld, type P2, type PlaneFrame, type SketchOverlay } from './overlay';
 
@@ -718,6 +719,8 @@ export class Viewer {
   /** A right drag that turned a component ends with a contextmenu event too: it is not a request for the menu. */
   private swallowContext = false;
   private pendingFit = false;
+  /** The views gone through, for 「上一個視角」. */
+  private readonly viewHistory = new ViewHistory();
   private frame = 0;
   private readonly resizeObserver: ResizeObserver;
 
@@ -744,7 +747,7 @@ export class Viewer {
     this.scene.add(this.camera);
     this.buildTriad();
 
-    this.controls = new ViewControls(this.camera, this.renderer.domElement, () => this.viewChanged());
+    this.controls = new ViewControls(this.camera, this.renderer.domElement, () => this.viewChanged(), () => this.rememberView());
     const dom = this.renderer.domElement;
     dom.addEventListener('pointerdown', this.onSectionDown, true); // before the controls and the component drags: a press on the cut is the cut's
     dom.addEventListener('pointerdown', this.onPointerDown);
@@ -818,7 +821,7 @@ export class Viewer {
     this.paintFilterLook();
     if (this.planes.length > 0) this.paintPlanes(); // sized to the body
     if (this.datums.axes.length > 0) this.paintDatums();
-    if (fit) this.fitAll();
+    if (fit) this.fitView();
     this.requestRender();
   }
 
@@ -2724,13 +2727,65 @@ export class Viewer {
   // ---------------------------------------------------------------- views
 
   setView(view: StandardView): void {
+    this.rememberView();
     const [dir, up] = VIEW_DIRS[view];
     this.orient(dir, up);
-    this.fitAll();
+    this.fitView();
+  }
+
+  // ---------------------------------------------------------------- the view from the keyboard (SolidWorks), and 「上一個視角」
+
+  /** Turns the model about the screen's vertical (`'horizontal'`, positive right) or horizontal axis (`'vertical'`, positive up) through its middle. */
+  orbit(direction: 'horizontal' | 'vertical', degrees: number): void {
+    this.rememberView();
+    orbitView(this.camera, this.controls.target, direction, degrees);
+    this.viewChanged();
+  }
+
+  /** Turns the model in the plane of the screen: positive is clockwise. */
+  roll(degrees: number): void {
+    this.rememberView();
+    rollView(this.camera, this.controls.target, degrees);
+    this.viewChanged();
+  }
+
+  /** Moves the model on the screen by fractions of the view (positive right and up). */
+  pan(fx: number, fy: number): void {
+    this.rememberView();
+    panView(this.camera, this.controls.target, fx, fy);
+    this.viewChanged();
+  }
+
+  /** Makes the model `factor` times bigger on the screen. */
+  zoom(factor: number): void {
+    this.rememberView();
+    zoomView(this.camera, factor);
+    this.viewChanged();
+  }
+
+  /** 「上一個視角」 (Ctrl+Shift+Z): the view before the last change of it, at the window's present shape. False when there is none. */
+  previousView(): boolean {
+    const s = this.viewHistory.pop();
+    if (!s) return false;
+    restoreView(this.camera, this.controls.target, s);
+    // the window may have changed shape since: keep the height of the view and fit its width to the window, as a resize does
+    const { w, h } = this.canvasSize();
+    const halfH = (this.camera.top - this.camera.bottom) / 2 || 1;
+    this.camera.left = -halfH * (w / h);
+    this.camera.right = halfH * (w / h);
+    this.camera.updateProjectionMatrix();
+    this.viewChanged();
+    return true;
+  }
+
+  /** Keeps the view as it is now, to come back to with previousView. */
+  private rememberView(): void {
+    this.viewHistory.push(viewState(this.camera, this.controls.target));
   }
 
   /** Looks straight at a plane (「正視於」, C1.2): view direction −normal, screen up = the plane's y. */
   lookAt(frame: PlaneFrame): void {
+    this.rememberView();
     this.orient(new THREE.Vector3(...frame.normal), new THREE.Vector3(...frame.yDir));
     this.viewChanged();
   }
@@ -2742,8 +2797,14 @@ export class Viewer {
     this.camera.lookAt(this.controls.target);
   }
 
-  /** Zoom to fit (「全部顯示」). Deferred while the viewport has no size (hidden tab, minimized window). */
+  /** Zoom to fit (「全部顯示」), kept for 「上一個視角」. Deferred while the viewport has no size (hidden tab, minimized window). */
   fitAll(): void {
+    this.rememberView();
+    this.fitView();
+  }
+
+  /** Zoom to fit, as the view's own step (a new part, a standard view): not a view of its own to come back to. */
+  private fitView(): void {
     if (this.container.clientWidth === 0 || this.container.clientHeight === 0) {
       this.pendingFit = true;
       return;
@@ -2777,7 +2838,7 @@ export class Viewer {
     this.renderer.setSize(w, h);
     for (const m of this.measureMaterials) m.resolution.set(w, h);
     if (this.pendingFit) {
-      this.fitAll();
+      this.fitView();
       return;
     }
     const halfH = (this.camera.top - this.camera.bottom) / 2 || 1;

@@ -1,5 +1,8 @@
 import * as THREE from 'three';
 
+/** Turns of the wheel closer together than this are one zoom. */
+const WHEEL_PAUSE_MS = 500;
+
 /**
  * SolidWorks-style view manipulation (D4.1): middle-drag rotates (trackball, free),
  * Ctrl+middle-drag pans, Shift+middle-drag zooms, wheel zooms toward the cursor.
@@ -10,13 +13,19 @@ export class ViewControls {
   private mode: 'rotate' | 'pan' | 'zoom' | null = null;
   private last = new THREE.Vector2();
   private readonly onChange: () => void;
+  /** Told before the view starts to move (a drag, or a turn of the wheel after a pause), so the view it leaves can be kept (「上一個視角」). */
+  private readonly onStart: () => void;
+  /** When the wheel last turned: the turns of one movement of the hand are one change of the view. */
+  private lastWheel = -Infinity;
 
   constructor(
     private readonly camera: THREE.OrthographicCamera,
     private readonly dom: HTMLElement,
     onChange: () => void,
+    onStart: () => void = () => {},
   ) {
     this.onChange = onChange;
+    this.onStart = onStart;
     dom.addEventListener('pointerdown', this.down);
     dom.addEventListener('wheel', this.wheel, { passive: false });
     dom.addEventListener('contextmenu', (e) => e.preventDefault());
@@ -34,6 +43,7 @@ export class ViewControls {
     const altLeft = e.button === 0 && e.altKey;
     if (!middle && !altLeft) return;
     e.preventDefault();
+    this.onStart();
     this.mode = e.ctrlKey ? 'pan' : e.shiftKey ? 'zoom' : 'rotate';
     this.last.set(e.clientX, e.clientY);
     window.addEventListener('pointermove', this.move);
@@ -58,6 +68,8 @@ export class ViewControls {
 
   private wheel = (e: WheelEvent) => {
     e.preventDefault();
+    if (e.timeStamp - this.lastWheel > WHEEL_PAUSE_MS) this.onStart();
+    this.lastWheel = e.timeStamp;
     const rect = this.dom.getBoundingClientRect();
     const ndc = new THREE.Vector2(((e.clientX - rect.left) / rect.width) * 2 - 1, -((e.clientY - rect.top) / rect.height) * 2 + 1);
     const before = new THREE.Vector3(ndc.x, ndc.y, 0).unproject(this.camera);
