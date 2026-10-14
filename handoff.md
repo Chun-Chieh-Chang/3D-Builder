@@ -3,7 +3,7 @@
 - 最後更新：2026-10-14（**分支 `drawing-interaction` 合併進 `main`，見下一段**）；2026-10-13（**工程圖交互比照 SolidWorks：差距分析與使用者決定、D-I1a 多重選取、D-V 在圖紙上產生視圖和剖面、D-I3 註記（Schema 12）、側邊欄，分支 `drawing-interaction` 已推送，見下一段**）；2026-10-12 晚（**筆電工作整合、C19、Schema 55、尺寸標籤即時拖曳，已推送 `a96321f`，見下一段**；**【線架構剖面交線與 SolidWorks 級動態側影輪廓線 (Silhouette Edges) 全套落實驗收完畢】**；**【Codex 任務接棒指南：裝飾用公螺牙與母螺孔 (Cosmetic Threads, C4.9 / ADR 0129) 架構與落地 SOP】**；全套 TypeCheck 0 錯誤、Lint 規則全綠、`acceptance.test.ts` 通過；其他狀態見「最新存檔點」）。；2026-10-13 下午（**草圖磁吸對照 SW／FreeCAD 補齊 4 項、零件 Schema 56；全量測試平行負載失敗修正（CPU 計時、`maxWorkers: 4`）；見下一段；已推送 `8a9d2a1`**；早上：**10-12 成果審查與修正：`verify:ui` 129/129、vitest 2629 過，已推送 `335b46c`**；以下為 10-12 晚的狀態：**筆電工作整合、C19、Schema 55、尺寸標籤即時拖曳，已推送 `a96321f`**；**【線架構剖面交線與 SolidWorks 級動態側影輪廓線 (Silhouette Edges) 全套落實驗收完畢】**；**【Codex 任務接棒指南：裝飾用公螺牙與母螺孔 (Cosmetic Threads, C4.9 / ADR 0129) 架構與落地 SOP】**；全套 TypeCheck 0 錯誤、Lint 規則全綠、`acceptance.test.ts` 通過；其他狀態見「最新存檔點」）。
 
 
-- **【2026-10-13：工程圖交互比照 SolidWorks — 差距分析、使用者決定、D-I1a、D-V、D-I3、側邊欄，已提交並推送於分支 `drawing-interaction`（Claude）】** 這個分支還沒合併回 `main`。
+- **【2026-10-13：工程圖交互比照 SolidWorks — 差距分析、使用者決定、D-I1a、D-V、D-I3、側邊欄，2026-10-14 已合併進 `main`（`3fb1520`）（Claude）】**
   - **分析與決定**：
     - [docs/drawing-interaction-gap-plan.md](docs/drawing-interaction-gap-plan.md)：與 SW、FreeCAD TechDraw 逐層比較，歸納出 4 個根因，規劃 D-I1～D-I8。
     - §9 是使用者在選擇題頁回答的 14 個決定（幾何公差採 ISO 1101，藍圖的 P2 全部提前，不做驅動尺寸，多圖頁排最後）。
@@ -34,11 +34,14 @@
       - 常駐指令列；視圖調色盤移到右側工作窗格。
       - 所有欄位只用 `hidden` 隱藏，留在 DOM 裡，所以既有 e2e 腳本都還找得到。
     - 這次的最後一個提交：補上 `manual-drawing-annotate.js` 缺的 `choose`（10-12 筆電漏掉的），並把步驟 10、11 改成 D-V 的放置規則（剖面對齊母視圖、沿線滑到游標處）。**這支腳本現在通過。**
-  - **驗證**：
-    - typecheck 0 錯誤；`lint:rules`、`lint:deps`、`lint:i18n` 通過。
-    - 全部 vitest **2654 項通過**；`drawing-linked.test.ts` 釘住的 schema 版本號因刻意升版，從 11 改成 12。
-    - `verify:ui` 工程圖相關 15 支：**13 支通過**。沒過的是 `manual-drawing-linked`（步驟 2、7）和 `phase5-angle`（等 `支架.3dbx` 開啟逾時），兩支都是 10-12 就記載的既有失敗。
-    - `manual-drawing-linked` 第 2 步的數字在兩次執行之間差 1 mm，**原因還沒查明**。
+  - **驗證（合併進 `main` 之後，2026-10-14）**：typecheck 0 錯誤，三項 lint 通過；全量 vitest **2681 過、22 略過、0 失敗**；全量 `verify:ui` **129/129**。分支上記錄過的 `manual-drawing-linked`、`phase5-angle` 失敗，已由 `main` 在 10-13 的提交修好（`335b46c`、`536b57c`）。`drawing-linked.test.ts` 釘住的 schema 版本號因刻意升版，從 11 改成 12。
+  - **合併（`3fb1520`）**：`main` 在 10-13 另有 19 個提交，合併時有 3 處衝突：
+    - `state/drawing.ts`：import 取聯集；`ensurePalette()` 之後接 `main` 的 `autoScaleWhenReady()`。
+    - `DrawingPanel.tsx`：沿用 `main` 的 `centreArrangement()`，換成新的變數名稱 `view`。
+    - 本檔：兩邊的條目都保留。
+    - `manual-drawing-annotate.js` 由 git 自動合併：用 `main` 的 `setField` 和這邊的 D-V 放置規則；這邊多餘的 `choose` 已刪除。
+    - 已刪除其他分支：本機的 `drawing-interaction`、`integrate-laptop`、`laptop-work`、`codex/sheet-metal-break-corner`（連同它的 Codex worktree），以及 `origin` 上的 `drawing-interaction`、`codex/sheet-metal-break-corner`。它們的提交都已經在 `main` 裡。`laptop` 遠端（F: 磁碟）沒有連上，那邊的分支沒有動。
+    - 之後一律直接在 `main` 上工作（使用者 10-14 的指示）。
   - **已知限制**（細節在各 ADR）：
     - 註記記在視圖座標，沒有綁定模型邊，要等 D-I2。
     - 剖面預覽用的是沒切開的零件外形；剖面外框比較小時，其他視圖可能小幅移動（外框不同的零件還沒量測）。
