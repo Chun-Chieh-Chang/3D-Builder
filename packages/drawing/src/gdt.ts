@@ -1,9 +1,10 @@
-import { noteText, type Annotation, type DatumAnnotation, type GeometricCharacteristic, type LengthUnit, type NoteAnnotation, type ToleranceFrameAnnotation } from '@3db/model';
+import { noteText, type Annotation, type Attachment, type DrawingRef, type ViewFeature, type DatumAnnotation, type GeometricCharacteristic, type LengthUnit, type NoteAnnotation, type ToleranceFrameAnnotation } from '@3db/model';
 import { CENTRE_OVERSHOOT } from './annotation';
 import { ARROW, DIM_TEXT, lengthNumber } from './dimension';
 import { circlePolyline } from './geometry';
 import { toSheet, type PlacedView } from './layout';
 import type { SceneItem } from './scene';
+import type { VisibleElements } from './viewEdges';
 
 /**
  * How the annotations of D-I3 are drawn (ADR 0132): notes and their leaders, datum feature symbols (ISO 5459), feature control frames (ISO 1101) and the centre
@@ -226,4 +227,46 @@ export function annotationItems(annotations: readonly Annotation[], placed: Plac
       }
     }
   });
+}
+
+/** Where an attachment is in its view now (view coordinates, full size), or null when the element is not there (gone, or not seen in the view). */
+export function attachmentPoint(attach: Attachment, seen: VisibleElements | undefined, features: readonly ViewFeature[] = []): [number, number] | null {
+  const same = (r: DrawingRef) => r.kind === attach.ref.kind && r.name === attach.ref.name && (r.in ?? '') === (attach.ref.in ?? '');
+  if (!seen && features.length === 0) return null;
+  if (attach.ref.kind === 'vertex') {
+    const v = seen?.vertices.find((x) => same(x.ref));
+    return v ? [v.at[0], v.at[1]] : null;
+  }
+  if (attach.ref.kind === 'edge') {
+    const e = seen?.edges.find((x) => same(x.ref));
+    if (e) return [e.a[0] + (e.b[0] - e.a[0]) * attach.u, e.a[1] + (e.b[1] - e.a[1]) * attach.u];
+    const c = seen?.circles.find((x) => same(x.ref));
+    return c ? [c.centre[0], c.centre[1]] : null;
+  }
+  // a face: a cylinder seen as a circle (its middle)
+  const f = features.find((x) => x.type === 'circle' && same(x.ref));
+  return f && f.type === 'circle' ? [f.centre[0], f.centre[1]] : null;
+}
+
+/**
+ * The annotations with their fastened points worked out from the model as the views see it now (D-I2): a datum's triangle, a note's or a frame's leader, a
+ * centre mark's middle. Those whose element is gone keep the point they had and are named in `lost`, so that the drawing can say so rather than show them
+ * somewhere they are not.
+ */
+export function attachedAnnotations(annotations: readonly Annotation[], views: ReadonlyMap<string, { seen?: VisibleElements; features?: readonly ViewFeature[] }>): { annotations: Annotation[]; lost: Set<string> } {
+  const lost = new Set<string>();
+  const out = annotations.map((a): Annotation => {
+    const attach = (a as { attach?: Attachment }).attach;
+    if (!attach) return a;
+    const v = views.get(a.view);
+    const p = attachmentPoint(attach, v?.seen, v?.features ?? []);
+    if (!p) {
+      lost.add(a.id);
+      return a;
+    }
+    if (a.kind === 'datum' || a.kind === 'centreMark') return { ...a, at: p };
+    if ((a.kind === 'note' || a.kind === 'fcf') && a.leader) return { ...a, leader: p };
+    return a;
+  });
+  return { annotations: out, lost };
 }

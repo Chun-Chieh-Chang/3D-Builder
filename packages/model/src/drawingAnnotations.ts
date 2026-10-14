@@ -1,6 +1,17 @@
 import { t } from '@3db/i18n';
 import { CommandError } from './commands';
 import type { Id } from './ids';
+import type { DrawingRef } from './drawing';
+
+/**
+ * What a point of an annotation is fastened to (v15, D-I2, ADR 0138): a vertex of the model, a straight edge at `u` of the way from one of its ends to the
+ * other (0 to 1), or a circle (its middle). The point is then worked out from the model each time the drawing is drawn, so the annotation stays on the feature
+ * when the part changes; the point stored beside it is where it was last, and is what is drawn when the element is gone.
+ */
+export interface Attachment {
+  ref: DrawingRef;
+  u: number;
+}
 
 /**
  * The general annotations of a drawing (D-I3, ADR 0132, C16.5): notes with or without a leader, datum feature symbols (ISO 5459), geometric tolerances in
@@ -71,6 +82,8 @@ export interface NoteAnnotation extends AnnotationCommon {
   /** The height of the capitals (mm on the sheet). Absent: 3.5. */
   height?: number;
   leader?: P;
+  /** What the leader's point is fastened to. */
+  attach?: Attachment;
 }
 
 /**
@@ -85,6 +98,8 @@ export interface DatumAnnotation extends AnnotationCommon {
   angle?: number;
   /** Absent: 6. */
   length?: number;
+  /** What the triangle is fastened to. */
+  attach?: Attachment;
 }
 
 /** A datum a frame refers to: its letter and, where the characteristic allows it, Ⓜ or Ⓛ. */
@@ -106,6 +121,8 @@ export interface ToleranceFrameAnnotation extends AnnotationCommon {
   material?: MaterialCondition;
   datums: DatumReference[];
   leader?: P;
+  /** What the leader's point is fastened to. */
+  attach?: Attachment;
 }
 
 /** A centre line put by hand: a chain line from `from` to `to`, a little past both. */
@@ -120,6 +137,8 @@ export interface CentreMarkAnnotation extends AnnotationCommon {
   kind: 'centreMark';
   at: P;
   radius: number;
+  /** The circle it is the centre mark of. */
+  attach?: Attachment;
 }
 
 export type Annotation = NoteAnnotation | DatumAnnotation | ToleranceFrameAnnotation | CentreLineAnnotation | CentreMarkAnnotation;
@@ -141,6 +160,14 @@ export function checkAnnotation(a: Annotation, viewExists: (id: Id) => boolean, 
   if (!a.id) throw new CommandError(t('drawing.idMissing'));
   if (!ANNOTATION_KINDS.includes(a.kind)) throw new CommandError(t('drawing.annBadKind', { kind: String((a as { kind?: unknown }).kind) }));
   if (!viewExists(a.view)) throw new CommandError(t('drawing.dimNoView', { id: String(a.view) }));
+  const attach = (a as { attach?: Attachment }).attach;
+  if (attach !== undefined) {
+    const r = attach?.ref;
+    const refOk = typeof r === 'object' && r !== null && typeof r.name === 'string' && r.name !== '' && ['face', 'edge', 'vertex'].includes(r.kind) && (r.in === undefined || (typeof r.in === 'string' && r.in !== ''));
+    if (!refOk || !(Number.isFinite(attach.u) && attach.u >= 0 && attach.u <= 1)) throw new CommandError(t('drawing.badAttach'));
+    // a note or a frame is fastened by its leader: without one there is nothing to fasten
+    if ((a.kind === 'note' || a.kind === 'fcf') && !a.leader) throw new CommandError(t('drawing.attachNoLeader'));
+  }
   switch (a.kind) {
     case 'note': {
       if (!finite(a.at) || (a.leader !== undefined && !finite(a.leader))) throw new CommandError(t('drawing.badPosition'));
@@ -203,11 +230,11 @@ export type AnnotationPatch = { [K in string]?: unknown };
 
 /** The fields each kind may have changed, and which of them may be taken away. */
 export const ANNOTATION_FIELDS: Record<AnnotationKind, { set: string[]; optional: string[] }> = {
-  note: { set: ['at', 'text', 'height', 'leader'], optional: ['height', 'leader'] },
-  datum: { set: ['at', 'label', 'angle', 'length'], optional: ['angle', 'length'] },
-  fcf: { set: ['at', 'characteristic', 'tolerance', 'diameter', 'material', 'datums', 'leader'], optional: ['diameter', 'material', 'leader'] },
+  note: { set: ['at', 'text', 'height', 'leader', 'attach'], optional: ['height', 'leader', 'attach'] },
+  datum: { set: ['at', 'label', 'angle', 'length', 'attach'], optional: ['angle', 'length', 'attach'] },
+  fcf: { set: ['at', 'characteristic', 'tolerance', 'diameter', 'material', 'datums', 'leader', 'attach'], optional: ['diameter', 'material', 'leader', 'attach'] },
   centreLine: { set: ['from', 'to'], optional: [] },
-  centreMark: { set: ['at', 'radius'], optional: [] },
+  centreMark: { set: ['at', 'radius', 'attach'], optional: ['attach'] },
 };
 
 /** The text of a note with `$PRP:key` replaced by what `lookup` says of the key; a key it does not know is left as written, so that it is seen to be wrong. */

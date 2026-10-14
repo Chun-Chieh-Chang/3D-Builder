@@ -305,6 +305,9 @@ const drawingMigrations: Record<number, (doc: Json) => Json> = {
   // v14: a dimension of a view of an assembly points at a part of it (`in`, the leaf's id, D-I2, ADR 0138): optional, nothing to convert; the version keeps an
   // older program from opening a drawing whose dimensions it would look for in the wrong part.
   13: (doc) => doc,
+  // v15: an annotation's point may be fastened to an element of the model (`attach`, D-I2, ADR 0138): optional, nothing to convert; the version keeps an older
+  // program from opening a drawing whose annotations it would leave behind when the part changes.
+  14: (doc) => doc,
 };
 
 export function parseDrawing(text: string): DrawingDoc {

@@ -142,6 +142,32 @@ function annotationLabel(a: Annotation): string {
  * tolerance, Ø and Ⓜ only where they apply, and the datums the drawing has. A change the commands refuse is said and not made.
  */
 function AnnotationEditor({ a }: { a: Annotation }) {
+  return (
+    <>
+      <Fastened a={a} />
+      <AnnotationFields a={a} />
+    </>
+  );
+}
+
+/** What an annotation is fastened to in the model (D-I2), and a button to let it go; said when the element is gone from the model. */
+function Fastened({ a }: { a: Annotation }) {
+  const d = store.drawingStore!;
+  useStore((s) => s.drw);
+  const attach = (a as { attach?: { ref: { kind: string; name: string; in?: string } } }).attach;
+  if (!attach) return null;
+  const lost = d.attachmentsLost().has(a.id);
+  return (
+    <div className={`pm-row${lost ? ' warning-text' : ''}`} data-field="attached">
+      <span>{lost ? t('drawingUi.attachLost') : t('drawingUi.attachedTo', { kind: t(`drawingUi.elementKind.${attach.ref.kind}` as 'drawingUi.elementKind.edge') })}</span>
+      <button className="pm-button" data-action="detach" onClick={() => d.setAnnotation(a.id, { attach: null })}>
+        {t('drawingUi.detach')}
+      </button>
+    </div>
+  );
+}
+
+function AnnotationFields({ a }: { a: Annotation }) {
   const drw = useStore((s) => s.drw)!;
   const d = store.drawingStore!;
   const datums = (drw.doc.annotations ?? []).flatMap((x) => (x.kind === 'datum' ? [x.label] : []));
@@ -158,7 +184,7 @@ function AnnotationEditor({ a }: { a: Annotation }) {
         </label>
         {a.leader && (
           <div className="pm-row">
-            <button className="pm-button" data-action="removeLeader" onClick={() => d.setAnnotation(a.id, { leader: null })}>
+            <button className="pm-button" data-action="removeLeader" onClick={() => d.setAnnotation(a.id, { leader: null, attach: null })}>
               {t('drawingUi.removeLeader')}
             </button>
           </div>

@@ -47,7 +47,7 @@ import {
   type AnnotationPatch,
 } from '@3db/model';
 import { drawingFileName, writeDrawingFile } from '@3db/io';
-import { FontError, readTrueType, toDxf, toPdf, turnLines, type TrueTypeFont } from '@3db/drawing';
+import { attachedAnnotations, FontError, readTrueType, resolveLines, toDxf, toPdf, turnLines, visibleElements, type TrueTypeFont, type VisibleElements } from '@3db/drawing';
 import { autoDimensions, buildScene, type DimensionDraft, type Pickable, FIRST_OFFSET, OFFSET_STEP, ratio, scaleOf, STANDARD_SCALES, centreViews, fitViews, toSvg, type AutoDimensionOptions, type DimensionOutcome, type ElementsResult, type HoleRow, type PlacedView, type ViewBom, type Scene, type ViewLines } from '@3db/drawing';
 import type { Remote } from 'comlink';
 import { download, fileIn, pathIn, pickDrawingSaveTarget, pickFontFile, writeFile } from '../files';
@@ -214,7 +214,7 @@ export class DrawingStore {
   private cache = new Map<string, ViewLines | { error: string }>();
   private computing = false;
   private computeAgain = false;
-  private sceneCache: { doc: DrawingDoc; lines: DrawingState['lines']; elements: DrawingState['elements']; features: DrawingState['features']; boms: DrawingState['boms']; value: { scene: Scene; placed: Map<Id, PlacedView>; dimensions: Map<Id, DimensionOutcome>; tables: Map<Id, HoleRow[]> } } | null = null;
+  private sceneCache: { doc: DrawingDoc; lines: DrawingState['lines']; elements: DrawingState['elements']; features: DrawingState['features']; boms: DrawingState['boms']; edges: DrawingState['edges']; value: { scene: Scene; placed: Map<Id, PlacedView>; dimensions: Map<Id, DimensionOutcome>; tables: Map<Id, HoleRow[]> } } | null = null;
   /** What a view can be dimensioned from, by the part's key and where it looks from; and what an element is, by the part's key and the reference. */
   private featureCache = new Map<string, { features: ViewFeature[]; edges?: ViewEdgeSet } | { error: string }>();
   private elementCache = new Map<string, ElementFacts | { error: string }>();
@@ -913,10 +913,27 @@ export class DrawingStore {
   /** The drawing as a scene (the sheet and every view's lines where they are), kept while the document and what it is drawn from are the same. */
   scene(): { scene: Scene; placed: Map<Id, PlacedView>; dimensions: Map<Id, DimensionOutcome>; tables: Map<Id, HoleRow[]> } {
     const c = this.sceneCache;
-    if (c && c.doc === this.state.doc && c.lines === this.state.lines && c.elements === this.state.elements && c.features === this.state.features && c.boms === this.state.boms) return c.value;
-    const value = buildScene(this.state.doc, this.state.lines, this.state.elements, this.state.features, this.state.boms);
-    this.sceneCache = { doc: this.state.doc, lines: this.state.lines, elements: this.state.elements, features: this.state.features, boms: this.state.boms, value };
+    if (c && c.doc === this.state.doc && c.lines === this.state.lines && c.elements === this.state.elements && c.features === this.state.features && c.boms === this.state.boms && c.edges === this.state.edges) return c.value;
+    // the annotations fastened to the model are drawn where the model has their elements now (D-I2)
+    const { annotations, lost } = attachedAnnotations(this.state.doc.annotations ?? [], this.viewsSeen());
+    const value = buildScene({ ...this.state.doc, annotations }, this.state.lines, this.state.elements, this.state.features, this.state.boms);
+    this.lostCache = lost;
+    this.sceneCache = { doc: this.state.doc, lines: this.state.lines, elements: this.state.elements, features: this.state.features, boms: this.state.boms, edges: this.state.edges, value };
     return value;
+  }
+
+  private lostCache = new Set<Id>();
+
+  /** The annotations whose fastened element is not in the model any more (they are drawn where they were last). */
+  attachmentsLost(): ReadonlySet<Id> {
+    this.scene();
+    return this.lostCache;
+  }
+
+  /** What each view shows of the model's edges and vertices, and its features (D-I2): what the attachments are worked out from. */
+  viewsSeen(): Map<Id, { seen: VisibleElements; features: ViewFeature[] }> {
+    const lines = resolveLines(this.state.doc, this.state.lines);
+    return new Map(this.state.doc.views.map((v) => [v.id, { seen: visibleElements(lines.get(v.id), this.state.edges.get(v.id), this.state.features.get(v.id) ?? []), features: this.state.features.get(v.id) ?? [] }]));
   }
 
   // ------------------------------------------------------------ editing

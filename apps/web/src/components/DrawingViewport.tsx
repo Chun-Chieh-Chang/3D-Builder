@@ -18,6 +18,7 @@ import {
   planDimension,
   previewDerived,
   resolveLines,
+  attachedAnnotations,
   ratio,
   sideAt,
   snapCut,
@@ -38,7 +39,7 @@ import {
   type SceneItem,
   type ViewLines,
 } from '@3db/drawing';
-import { axesOf, oppositeSide, projectedAxes, type Annotation, sectionArrow, sectionAxes, type Dimension, type DrawingView, type Id, type Scale, type SectionDrawingView, type SurfaceFinish, type ViewSide } from '@3db/model';
+import { axesOf, oppositeSide, projectedAxes, type Annotation, type Attachment, sectionArrow, sectionAxes, type Dimension, type DrawingView, type Id, type Scale, type SectionDrawingView, type SurfaceFinish, type ViewSide } from '@3db/model';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { store, useStore } from '../state/store';
 
@@ -124,6 +125,9 @@ export function DrawingViewport() {
   /** Where the views are before anything is dragged: what the tools read their geometry from. */
   const basePlaced = useMemo(() => layoutViews(drw.doc, drw.lines), [drw.doc, drw.lines]);
 
+  // a detail view's lines are its parent's, cut by its circle: what can be pointed at in it is what is drawn in it (its features and edges are its parent's)
+  const viewLines = useMemo(() => resolveLines(drw.doc, drw.lines), [drw.doc, drw.lines]);
+  const seenByView = useMemo(() => new Map(drw.doc.views.map((v) => [v.id, visibleElements(viewLines.get(v.id), drw.edges.get(v.id), drw.features.get(v.id) ?? [])])), [drw.doc.views, viewLines, drw.edges, drw.features]);
   /** The dimension the tool would make from what is pointed at and where the pointer is (it is drawn while the pointer moves). */
   const plan = useMemo(() => {
     if (tool?.kind !== 'dimension' || !hover || tool.picks.length === 0) return null;
@@ -173,18 +177,21 @@ export function DrawingViewport() {
     return { ...doc, views: doc.views.map((v) => (v.id === drag.id ? { ...v, at: [drag.origin[0] + drag.delta[0], drag.origin[1] + drag.delta[1]] as P, slide: undefined } : v)) };
   }, [drw.doc, drag, plan]);
   const elements = useMemo(() => (plan ? new Map(drw.elements).set('preview', { elements: plan.facts }) : drw.elements), [drw.elements, plan]);
-  const built = useMemo(() => buildScene(shown, drw.lines, elements, drw.features, drw.boms), [shown, drw.lines, elements, drw.features, drw.boms]);
+  // the annotations fastened to the model, where the model has their elements now (D-I2)
+  const attached = useMemo(() => attachedAnnotations(shown.annotations ?? [], new Map(drw.doc.views.map((v) => [v.id, { seen: seenByView.get(v.id), features: drw.features.get(v.id) ?? [] }]))), [shown, seenByView, drw.doc.views, drw.features]);
+  const shownDoc = useMemo(() => ({ ...shown, annotations: attached.annotations }), [shown, attached]);
+  const built = useMemo(() => buildScene(shownDoc, drw.lines, elements, drw.features, drw.boms), [shownDoc, drw.lines, elements, drw.features, drw.boms]);
   const svg = useMemo(() => toSvg(built.scene), [built]);
   /** The items of the dimensions that are there (not the one being made): what the pointer can take hold of. */
   const dimensionItems = useMemo(() => built.scene.items.filter((i) => i.group && i.group !== 'preview'), [built]);
   /** What each annotation draws, marked with its id: what the pointer takes hold of, and what a choice is shown with (D-I3). */
   const annotationHit = useMemo(() => {
     const lookup = (key: string) => (shown.title as Record<string, string | undefined>)[key] ?? shown.properties?.[key];
-    return (shown.annotations ?? []).flatMap((a) => {
+    return (shownDoc.annotations ?? []).flatMap((a) => {
       const pl = built.placed.get(a.view);
       return pl ? annotationItems([a], pl, lookup, shown.sheet.unit ?? 'mm').map((i) => ({ ...i, group: a.id })) : [];
     });
-  }, [shown, built]);
+  }, [shown, shownDoc, built]);
   /** The lines of the sections on the sheet, where they are drawn on their parents (sheet mm). */
   const sectionLines = useMemo(
     () =>
@@ -272,9 +279,6 @@ export function DrawingViewport() {
   const reach = 6 / (pan.zoom * PX);
 
   /** The edges and vertices each view shows, by name (D-I2): worked out once per view from its lines and the worker's projected edges. */
-  // a detail view's lines are its parent's, cut by its circle: what can be pointed at in it is what is drawn in it (its features and edges are its parent's)
-  const viewLines = useMemo(() => resolveLines(drw.doc, drw.lines), [drw.doc, drw.lines]);
-  const seenByView = useMemo(() => new Map(drw.doc.views.map((v) => [v.id, visibleElements(viewLines.get(v.id), drw.edges.get(v.id), drw.features.get(v.id) ?? [])])), [drw.doc.views, viewLines, drw.edges, drw.features]);
   /** The element of a view under the point (the views in the order they are drawn, the last on top); when `only` is given, in that view only. */
   const featureUnder = (p: P, only?: Id): { view: Id; feature: Pickable } | null => {
     for (const v of [...drw.doc.views].reverse()) {
@@ -611,7 +615,17 @@ export function DrawingViewport() {
     } else if (drag?.kind === 'annotation') {
       const a = (drw.doc.annotations ?? []).find((x) => x.id === drag.id);
       const pl = a && basePlaced.get(a.view);
-      if (a && pl && Math.hypot(drag.delta[0], drag.delta[1]) > 0.05) {
+      if (a && pl && Math.hypot(drag.delta[0], drag.delta[1]) > 0.05 && a.kind === 'datum' && a.attach) {
+        // fastened to the model, the triangle stays where the edge is: the square goes where it is let go (its direction and its distance)
+        const shownA = attached.annotations.find((x) => x.id === a.id) as typeof a;
+        const foot = toSheet(pl, shownA.at[0], shownA.at[1]);
+        const th = ((a.angle ?? 90) * Math.PI) / 180;
+        const reachNow = DATUM_TRIANGLE + (a.length ?? 6) + FRAME_HEIGHT / 2;
+        const box: P = [foot[0] + Math.cos(th) * reachNow + drag.delta[0], foot[1] + Math.sin(th) * reachNow + drag.delta[1]];
+        const dx = box[0] - foot[0];
+        const dy = box[1] - foot[1];
+        d.setAnnotation(a.id, { angle: Math.round(((Math.atan2(dy, dx) * 180) / Math.PI) * 10) / 10, length: round2(Math.max(0, Math.hypot(dx, dy) - DATUM_TRIANGLE - FRAME_HEIGHT / 2)) });
+      } else if (a && pl && Math.hypot(drag.delta[0], drag.delta[1]) > 0.05) {
         const m = movedAnnotation(a, [drag.delta[0] / pl.scale, drag.delta[1] / pl.scale]);
         d.setAnnotation(a.id, m.kind === 'centreLine' ? { from: m.from, to: m.to } : { at: (m as { at: P }).at });
       }
@@ -671,7 +685,8 @@ export function DrawingViewport() {
     if (tool.what === 'centreMark') {
       const c = circleNear(view.id, pv);
       if (!c) return d.notifyInfo(t('drawingUi.hint.centreMark'));
-      d.addAnnotation({ kind: 'centreMark', view: view.id, at: [round2(c.centre[0]), round2(c.centre[1])], radius: round2(c.radius) });
+      const ring = (drw.features.get(view.id) ?? []).find((x) => x.type === 'circle' && Math.hypot(x.centre[0] - c.centre[0], x.centre[1] - c.centre[1]) < 1e-6 && Math.abs(x.radius - c.radius) < 1e-6);
+      d.addAnnotation({ kind: 'centreMark', view: view.id, at: [round2(c.centre[0]), round2(c.centre[1])], radius: round2(c.radius), ...(ring ? { attach: { ref: ring.ref, u: 0 } } : {}) });
       return;
     }
     const snapped = (q: P): P => {
@@ -679,6 +694,27 @@ export function DrawingViewport() {
       return c ? [round2(c.centre[0]), round2(c.centre[1])] : q;
     };
     if (!first) return d.setTool({ kind: 'annotate', what: tool.what, first: { view: view.id, at: snapped(pv) } });
+    // what the first click is on, fastened to (D-I2): a vertex, else a straight edge at its place along it, else a circle — so the annotation follows the model
+    const attachAt = (q: P): Attachment | undefined => {
+      const seen = seenByView.get(view.id);
+      const tol = reach / pl.scale;
+      const v = seen?.vertices.filter((x) => Math.hypot(x.at[0] - q[0], x.at[1] - q[1]) <= tol).sort((x, y) => Math.hypot(x.at[0] - q[0], x.at[1] - q[1]) - Math.hypot(y.at[0] - q[0], y.at[1] - q[1]))[0];
+      if (v) return { ref: v.ref, u: 0 };
+      let best: { e: NonNullable<typeof seen>['edges'][number]; d: number; u: number } | null = null;
+      for (const e of seen?.edges ?? []) {
+        const dx = e.b[0] - e.a[0];
+        const dy = e.b[1] - e.a[1];
+        const l2 = dx * dx + dy * dy;
+        const u = l2 === 0 ? 0 : Math.max(0, Math.min(1, ((q[0] - e.a[0]) * dx + (q[1] - e.a[1]) * dy) / l2));
+        const dd = Math.hypot(q[0] - e.a[0] - u * dx, q[1] - e.a[1] - u * dy);
+        if (dd <= tol && (!best || dd < best.d)) best = { e, d: dd, u };
+      }
+      if (best) return { ref: best.e.ref, u: Math.round(best.u * 1e4) / 1e4 };
+      const c = circleNear(view.id, q);
+      const f = c && (drw.features.get(view.id) ?? []).find((x) => x.type === 'circle' && Math.hypot(x.centre[0] - c.centre[0], x.centre[1] - c.centre[1]) < 1e-6 && Math.abs(x.radius - c.radius) < 1e-6);
+      return f ? { ref: f.ref, u: 0 } : undefined;
+    };
+    const firstAttach = attachAt(first.at);
     const firstSheet = toSheet(pl, first.at[0], first.at[1]);
     const same = Math.hypot(p[0] - firstSheet[0], p[1] - firstSheet[1]) < 1.5 * reach;
     switch (tool.what) {
@@ -688,13 +724,13 @@ export function DrawingViewport() {
         d.setTool({ kind: 'annotate', what: 'centreLine' });
         return;
       case 'note':
-        d.addAnnotation({ kind: 'note', view: view.id, text: t('drawingUi.newNote'), ...(same ? { at: first.at } : { at: pv, leader: first.at }) });
+        d.addAnnotation({ kind: 'note', view: view.id, text: t('drawingUi.newNote'), ...(same ? { at: first.at } : { at: pv, leader: first.at, ...(firstAttach ? { attach: firstAttach } : {}) }) });
         d.setTool(null);
         // the text is written in the panel
         setTimeout(() => document.querySelector<HTMLTextAreaElement>('[data-field="noteText"]')?.select(), 0);
         return;
       case 'fcf':
-        d.addAnnotation({ kind: 'fcf', view: view.id, characteristic: 'position', tolerance: 0.05, datums: [], ...(same ? { at: first.at } : { at: pv, leader: first.at }) });
+        d.addAnnotation({ kind: 'fcf', view: view.id, characteristic: 'position', tolerance: 0.05, datums: [], ...(same ? { at: first.at } : { at: pv, leader: first.at, ...(firstAttach ? { attach: firstAttach } : {}) }) });
         d.setTool(null);
         return;
       case 'datum': {
@@ -703,7 +739,7 @@ export function DrawingViewport() {
         const dy = p[1] - firstSheet[1];
         const angle = same ? 90 : Math.round(((Math.atan2(dy, dx) * 180) / Math.PI) * 10) / 10;
         const length = same ? 6 : round2(Math.max(0, Math.hypot(dx, dy) - DATUM_TRIANGLE - FRAME_HEIGHT / 2));
-        d.addAnnotation({ kind: 'datum', view: view.id, at: first.at, label: d.nextDatumLabel(), angle, length });
+        d.addAnnotation({ kind: 'datum', view: view.id, at: first.at, label: d.nextDatumLabel(), angle, length, ...(firstAttach ? { attach: firstAttach } : {}) });
         d.setTool(null);
         return;
       }
