@@ -63,6 +63,7 @@ async function build(bytes: Uint8Array, sources?: SourceFileData[]): Promise<Bui
   const file = await readComponentFile(bytes, '');
   const provider = await sourcesOf(sources);
   const regen = new Regenerator(kernel, solver, file.blobs, provider);
+  await solver.fresh();
   const result = regen.rebuild(file.doc);
   const name = (id: string) => file.doc.features.find((f) => f.id === id)?.name ?? id;
   const failed = result.features.filter((f) => f.status === 'error').map((f) => `${name(f.id)}: ${f.message ?? t('worker.failedShort')}`);
@@ -182,6 +183,7 @@ const api: KernelApi = {
   async rebuild({ seq, doc, until, sources }: RebuildRequest): Promise<RebuildPayload> {
     await api.init();
     regen.useSources(await sourcesOf(sources));
+    await solver.fresh(); // the same numbers for the same document every time: see PlaneGcsSolver.fresh
     const r = regen.rebuild(doc, until === undefined ? {} : { until });
     const body = r.body;
     lastResult = r;
@@ -256,6 +258,7 @@ const api: KernelApi = {
 
   async exportStep(doc: PartDoc, name: string, options: PartExportOptions = {}): Promise<StepOutput> {
     await api.init();
+    await solver.fresh(); // the same numbers for the same document: see PlaneGcsSolver.fresh
     const r = regen.rebuild(doc);
     lastResult = r; // the regenerator lets go of what it made before (the shapes measuring reads)
     const { shapes, colors } = ownBodies(doc, r);
@@ -271,6 +274,7 @@ const api: KernelApi = {
 
   async exportStl(doc: PartDoc, name: string, options: PartExportOptions = {}): Promise<Uint8Array> {
     await api.init();
+    await solver.fresh();
     const r = regen.rebuild(doc);
     lastResult = r; // the regenerator lets go of what it made before (the shapes measuring reads)
     const { shapes } = ownBodies(doc, r);

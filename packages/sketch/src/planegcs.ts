@@ -362,11 +362,21 @@ const baseId = (gcsId: string) => gcsId.split('#')[0]!;
 const unique = (ids: (string | undefined)[]) =>
   [...new Set(ids.filter((id): id is string => typeof id === 'string').map(baseId))].filter((id) => id !== SKETCH_ORIGIN && !id.startsWith('@'));
 
+/**
+ * The solver's numbers put on a fine binary grid (B3.1): planegcs orders its parameters by where they are in memory, so the same sketch comes out
+ * differing in the last digits from one solve to the next — enough to change whether OCCT takes two faces for one, and so their names (B1 of
+ * 2026-10-14); a rebuild also starts from a fresh solver (`PlaneGcsSolver.fresh`). On the grid what is equal is equal: lengths to 1e-10 mm (a thousandth of the kernel's tolerance), angles to 1e-12 rad; a decimal grid,
+ * so what was typed (12.4) comes back as typed, and −0 is 0. A value near a grid line can still fall either side.
+ */
+const LENGTH_GRID = 1e10;
+const ANGLE_GRID = 1e12;
+const canon = (v: number, grid: number) => Math.round(v * grid) / grid + 0;
+
 function readGeometry(w: GcsWrapper, sketch: SketchFeature): Map<Id, SolvedGeometry> {
   const out = new Map<Id, SolvedGeometry>();
   const pt = (id: Id): [number, number] => {
     const p = w.sketch_index.get_sketch_point(id);
-    return [p.x, p.y];
+    return [canon(p.x, LENGTH_GRID), canon(p.y, LENGTH_GRID)];
   };
   for (const e of sketch.entities) {
     const construction = e.construction ?? false;
@@ -379,12 +389,12 @@ function readGeometry(w: GcsWrapper, sketch: SketchFeature): Map<Id, SolvedGeome
         break;
       case 'circle': {
         const c = w.sketch_index.get_sketch_circle(e.id);
-        out.set(e.id, { type: 'circle', c: pt(e.center), r: c.radius, center: e.center, construction });
+        out.set(e.id, { type: 'circle', c: pt(e.center), r: canon(c.radius, LENGTH_GRID), center: e.center, construction });
         break;
       }
       case 'arc': {
         const a = w.sketch_index.get_sketch_arc(e.id);
-        out.set(e.id, { type: 'arc', c: pt(e.center), r: a.radius, a0: a.start_angle, a1: a.end_angle, center: e.center, start: e.start, end: e.end, construction });
+        out.set(e.id, { type: 'arc', c: pt(e.center), r: canon(a.radius, LENGTH_GRID), a0: canon(a.start_angle, ANGLE_GRID), a1: canon(a.end_angle, ANGLE_GRID), center: e.center, start: e.start, end: e.end, construction });
         break;
       }
     }
@@ -394,10 +404,25 @@ function readGeometry(w: GcsWrapper, sketch: SketchFeature): Map<Id, SolvedGeome
 
 /** Sketch solver backed by FreeCAD's PlaneGCS (LGPL) compiled to WASM. */
 export class PlaneGcsSolver implements SketchSolver {
-  private constructor(private readonly w: GcsWrapper) {}
+  private constructor(
+    private w: GcsWrapper,
+    private readonly wasmUrl?: string,
+  ) {}
 
   static async create(wasmUrl?: string): Promise<PlaneGcsSolver> {
-    return new PlaneGcsSolver(await make_gcs_wrapper(wasmUrl));
+    return new PlaneGcsSolver(await make_gcs_wrapper(wasmUrl), wasmUrl);
+  }
+
+  /**
+   * Starts again from a solver just loaded (B3.1). planegcs orders its parameters by where they are in its memory, so what it has solved before
+   * moves the last digits of the next answer by up to its convergence threshold (1e-10) — more than the grid of `canon` can hide. A rebuild that
+   * begins with this solves every sketch from the same memory, and so gets the same numbers for the same document every time. About 4 ms.
+   */
+  async fresh(): Promise<void> {
+    const next = await make_gcs_wrapper(this.wasmUrl);
+    const old = this.w;
+    this.w = next;
+    old.destroy_gcs_module();
   }
 
   /** Loads a system and solves it; true when it converged (the solution is then applied). */
