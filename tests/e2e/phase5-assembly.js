@@ -42,8 +42,10 @@ x.run = async () => {
   H.check(store.getState().active === 'assembly', 'the assembly is open');
 
   // 「新工程圖」 from the assembly
-  await H.action('檔案', '新工程圖');
-  await H.waitFor(() => drw() && drw().doc.views.length === 2, 10000, 'the drawing');
+  // an empty sheet since D-V2 (ADR 0134): the front and isometric views placed, then the parts list with its balloons added, as a person adds them
+  await H.newDrawing(['front', 'isometric']);
+  await H.waitFor(() => drw() && drw().doc.views.length === 2 && drw().boms.size === 2, 60000, 'the drawing');
+  store.drawingStore.addBomTable(drw().doc.views[0].id);
   await H.waitFor(() => drw().boms.size === 2 && [...drw().lines.values()].filter(Boolean).length === 2, 60000, 'the lines of both views');
   H.check(JSON.stringify(drw().doc.views.map((v) => [v.direction, v.source])) === JSON.stringify([['front', '夾具.3dba'], ['isometric', '夾具.3dba']]), 'front and isometric views of the assembly');
   H.check(drw().doc.tables.length === 1 && drw().doc.tables[0].kind === 'bom' && drw().doc.tables[0].balloons === true, 'a parts list with balloons');

@@ -74,6 +74,11 @@ export interface DrawingSource {
   project: FileSystemDirectoryHandle | null;
   /** The scale is chosen from the views once their lines are known (a new drawing). */
   autoScale?: boolean;
+  /**
+   * The part (or assembly) a new, empty drawing is of, relative to the drawing (D-V2): what the palette shows before any view is placed. Not kept in the file —
+   * once a view is placed, its source is what the palette shows.
+   */
+  paletteSource?: string;
 }
 
 /**
@@ -195,6 +200,8 @@ export class DrawingStore {
   private state: DrawingState;
   private closed = false;
   private autoScalePending: boolean;
+  /** The part a drawing was made of, before any view shows it (D-V2). */
+  private initialSource: string | null;
   /** The worker could not say what the views are dimensioned from: a new drawing's 最適比例 does not wait for it. */
   private featuresFailed = false;
   /** The lines of a view of a part as built, by the part's key, where it looks from and the cutting plane: asked for once. */
@@ -220,6 +227,7 @@ export class DrawingStore {
     this.folder = source.folder;
     this.savedText = source.handle ? serializeDrawing(source.doc) : '';
     this.autoScalePending = !!source.autoScale;
+    this.initialSource = source.paletteSource ?? null;
     this.state = {
       doc: source.doc,
       canUndo: false,
@@ -450,6 +458,8 @@ export class DrawingStore {
       return;
     }
     const wanted = new Set(this.history.doc.views.flatMap((v) => this.pathOf(v) ?? []));
+    // the part of an empty drawing, for its palette
+    if (this.initialSource && this.history.doc.views.length === 0) wanted.add(joinPath(this.folder, this.initialSource));
     for (const path of wanted) {
       if (this.state.sources.has(path)) continue;
       this.set({ sources: new Map(this.state.sources).set(path, { status: 'loading' }) });
@@ -537,7 +547,26 @@ export class DrawingStore {
   /** The source the palette shows: that of the first model view (relative to the drawing). */
   private paletteSource(): string | null {
     const v = this.history.doc.views.find((x) => !isDerived(x));
-    return v && !isDerived(v) ? v.source : null;
+    return v && !isDerived(v) ? v.source : this.initialSource;
+  }
+
+  /** The part the next view is of: the first model view's, else the one the drawing was made of. */
+  sourceForViews(): string | null {
+    return this.paletteSource() ?? this.state.palette?.source ?? null;
+  }
+
+  /**
+   * 「標準三視圖」 (SolidWorks's Standard 3 View, C16.2): the front, top and right views at once, laid out in the projection of the sheet. On an empty sheet the
+   * scale is then chosen to fit, as a new drawing's used to be.
+   */
+  addStandardViews(): void {
+    const source = this.sourceForViews();
+    if (!source) return this.host.notify(t('drawing.noSource'), 'error');
+    if (this.history.doc.views.length === 0) this.autoScalePending = true;
+    const doc = this.history.doc;
+    const ids = new IdAllocator(doc.idCounters, drawingIdsInUse(doc));
+    const views = (['front', 'top', 'right'] as const).map((direction): DrawingView => ({ id: ids.take('view'), name: t(`drawing.view.${direction}`), source, direction }));
+    this.execute({ type: 'insertViews', views });
   }
 
   /** A model view of `source` from `direction` that is not in the document: what the worker is asked for the palette and the previews. */
@@ -853,7 +882,7 @@ export class DrawingStore {
   /** Views of the part the first view shows (or `source`, relative to the drawing), from these directions. */
   addViews(directions: readonly ViewName[], source?: string): void {
     const doc = this.history.doc;
-    const from = source ?? doc.views.flatMap((v) => (isDerived(v) ? [] : [v.source]))[0];
+    const from = source ?? doc.views.flatMap((v) => (isDerived(v) ? [] : [v.source]))[0] ?? this.initialSource ?? undefined;
     if (!from) return this.host.notify(t('drawing.noSource'), 'error');
     const ids = new IdAllocator(doc.idCounters, drawingIdsInUse(doc));
     const views = directions.map((direction): DrawingView => ({ id: ids.take('view'), name: t(`drawing.view.${direction}`), source: from, direction }));

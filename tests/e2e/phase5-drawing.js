@@ -26,7 +26,7 @@ d.run = async () => {
   await H.waitFor(() => store.getState().result?.mesh, 20000, 'the part');
 
   // 「新工程圖」
-  await H.action('檔案', '新工程圖');
+  await H.newDrawing();
   await H.waitFor(() => drw() && drw().doc.views.length === 3, 10000, 'the drawing');
   await H.waitFor(() => [...drw().lines.values()].filter(Boolean).length === 3, 30000, 'the lines of the three views');
   H.check(drw().doc.title.drawingName === '定位板', `the title is the part's name: ${JSON.stringify(drw().doc.title)}`);

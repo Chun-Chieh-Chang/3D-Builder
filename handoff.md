@@ -1,8 +1,23 @@
 # 交接文件
 
-- 最後更新：2026-10-14（**分支 `drawing-interaction` 合併進 `main`，見下一段**）；2026-10-13（**工程圖交互比照 SolidWorks：差距分析與使用者決定、D-I1a 多重選取、D-V 在圖紙上產生視圖和剖面、D-I3 註記（Schema 12）、側邊欄，分支 `drawing-interaction` 已推送，見下一段**）；2026-10-12 晚（**筆電工作整合、C19、Schema 55、尺寸標籤即時拖曳，已推送 `a96321f`，見下一段**；**【線架構剖面交線與 SolidWorks 級動態側影輪廓線 (Silhouette Edges) 全套落實驗收完畢】**；**【Codex 任務接棒指南：裝飾用公螺牙與母螺孔 (Cosmetic Threads, C4.9 / ADR 0129) 架構與落地 SOP】**；全套 TypeCheck 0 錯誤、Lint 規則全綠、`acceptance.test.ts` 通過；其他狀態見「最新存檔點」）。；2026-10-13 下午（**草圖磁吸對照 SW／FreeCAD 補齊 4 項、零件 Schema 56；全量測試平行負載失敗修正（CPU 計時、`maxWorkers: 4`）；見下一段；已推送 `8a9d2a1`**；早上：**10-12 成果審查與修正：`verify:ui` 129/129、vitest 2629 過，已推送 `335b46c`**；以下為 10-12 晚的狀態：**筆電工作整合、C19、Schema 55、尺寸標籤即時拖曳，已推送 `a96321f`**；**【線架構剖面交線與 SolidWorks 級動態側影輪廓線 (Silhouette Edges) 全套落實驗收完畢】**；**【Codex 任務接棒指南：裝飾用公螺牙與母螺孔 (Cosmetic Threads, C4.9 / ADR 0129) 架構與落地 SOP】**；全套 TypeCheck 0 錯誤、Lint 規則全綠、`acceptance.test.ts` 通過；其他狀態見「最新存檔點」）。
+- 最後更新：2026-10-14（**新工程圖改為先選主視圖、尺寸按需標註（ADR 0134）；`drawing-interaction` 已合併進 `main`、其他分支已刪除，見下兩段**）；2026-10-13（**工程圖交互比照 SolidWorks：差距分析與使用者決定、D-I1a 多重選取、D-V 在圖紙上產生視圖和剖面、D-I3 註記（Schema 12）、側邊欄，分支 `drawing-interaction` 已推送，見下一段**）；2026-10-12 晚（**筆電工作整合、C19、Schema 55、尺寸標籤即時拖曳，已推送 `a96321f`，見下一段**；**【線架構剖面交線與 SolidWorks 級動態側影輪廓線 (Silhouette Edges) 全套落實驗收完畢】**；**【Codex 任務接棒指南：裝飾用公螺牙與母螺孔 (Cosmetic Threads, C4.9 / ADR 0129) 架構與落地 SOP】**；全套 TypeCheck 0 錯誤、Lint 規則全綠、`acceptance.test.ts` 通過；其他狀態見「最新存檔點」）。；2026-10-13 下午（**草圖磁吸對照 SW／FreeCAD 補齊 4 項、零件 Schema 56；全量測試平行負載失敗修正（CPU 計時、`maxWorkers: 4`）；見下一段；已推送 `8a9d2a1`**；早上：**10-12 成果審查與修正：`verify:ui` 129/129、vitest 2629 過，已推送 `335b46c`**；以下為 10-12 晚的狀態：**筆電工作整合、C19、Schema 55、尺寸標籤即時拖曳，已推送 `a96321f`**；**【線架構剖面交線與 SolidWorks 級動態側影輪廓線 (Silhouette Edges) 全套落實驗收完畢】**；**【Codex 任務接棒指南：裝飾用公螺牙與母螺孔 (Cosmetic Threads, C4.9 / ADR 0129) 架構與落地 SOP】**；全套 TypeCheck 0 錯誤、Lint 規則全綠、`acceptance.test.ts` 通過；其他狀態見「最新存檔點」）。
 
 
+- **【2026-10-14：新工程圖從空白圖頁開始，先選主視圖，尺寸按需標註（Claude）— 已提交並推送到 `main`】**（[ADR 0134](docs/adr/0134-drawing-main-view-first.md)）
+  - **使用者要求**：尺寸按需標註；工程圖保留更多自由度；比照 SW，先選定主視圖，再從主視圖按需拉出其他視圖。
+  - **事實核對**：新工程圖本來就不會自動產生尺寸，但會自動放三視圖。
+  - **現在的行為**：
+    - 新工程圖是空白圖頁（零件和組合件都一樣），視埠和屬性面板都提示「先選主視圖」。
+    - 從右側調色盤拖出主視圖 → 自動進入投影模式，按需求拉出其他視圖。
+    - 「標準三視圖」改成調色盤下方的按需指令。
+    - 組合件的零件表改成放好視圖後，從註記群組加入。
+    - 尺寸群組以「智慧型尺寸」為主；自動標註收進「依模型自動標註（模型項次）」。
+  - **e2e**：共用工具新增 `H.newDrawing(directions?)`，不帶參數時按下真正的「標準三視圖」按鈕；13 支腳本已改用它。
+  - **驗證**：
+    - 全量 vitest 2681 過、0 失敗；受影響的 17 支瀏覽器腳本 17/17；typecheck 與三項 lint 通過。
+    - 瀏覽器實測：空白圖頁 → 拖出前視 → 往下拉出上視；主視圖不動，尺寸 0 個。
+  - **已知限制**：空白圖頁的零件來源不存進檔案；空白圖頁存檔再打開時，調色盤是空的，要重新從零件建立。
+  - **工作方式**：使用者 10-14 指示一律直接在 `main` 上提交與推送，不再建立旁支。合併與分支清理見下一段；被刪除的 Codex worktree 裡未追蹤的 4 個檔案，備份在 `scratch/codex-worktree-sheet-metal-break-corner-2026-10-14/`（scratch 不進版本庫）。
 - **【2026-10-13：工程圖交互比照 SolidWorks — 差距分析、使用者決定、D-I1a、D-V、D-I3、側邊欄，2026-10-14 已合併進 `main`（`3fb1520`）（Claude）】**
   - **分析與決定**：
     - [docs/drawing-interaction-gap-plan.md](docs/drawing-interaction-gap-plan.md)：與 SW、FreeCAD TechDraw 逐層比較，歸納出 4 個根因，規劃 D-I1～D-I8。

@@ -816,6 +816,8 @@ export function DrawingViewport() {
       ? t('drawingUi.toolSurfaceFinish')
       : tool
       ? t(tool.kind === 'section' ? 'drawingUi.hint.section' : 'drawingUi.hint.detail')
+      : drw.doc.views.length === 0
+      ? t('drawingUi.mainViewFirst')
       : null;
   const cursor = tool ? 'crosshair' : hover?.dimension || drag?.kind === 'dimension' || drag?.kind === 'surface' || drag?.kind === 'annotation' ? 'move' : undefined;
   // the symbol of the surface finish chosen, drawn over in its own colour so that it can be seen which one it is

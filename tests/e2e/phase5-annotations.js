@@ -31,7 +31,7 @@ a.run = async () => {
   await H.project({ '定位板.3dbx': `${H.GOLDEN}locating-plate.3dbx` });
   await H.open('定位板.3dbx');
   await H.waitFor(() => store.getState().result?.mesh, 20000, 'the part');
-  await H.action('檔案', '新工程圖');
+  await H.newDrawing();
   await H.waitFor(() => drw() && drw().doc.views.length === 3 && [...drw().lines.values()].filter(Boolean).length === 3, 30000, 'the three views');
   const view = (dir) => drw().doc.views.find((v) => v.direction === dir);
   await H.waitFor(() => drw().features.get(view('top').id) && drw().features.get(view('front').id), 30000, 'the features');

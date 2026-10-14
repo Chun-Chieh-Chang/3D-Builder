@@ -321,7 +321,7 @@ M.run = async () => {
   });
   await step('18 a drawing in inches: the sheet\'s unit takes the dimensions, the tolerance and the hole table with it (120 mm is 4.724)', async () => {
     store.stopMeasure();
-    await H.action('檔案', '新工程圖');
+    await H.newDrawing();
     await H.waitFor(() => store.getState().drw && store.getState().drw.doc.views.length === 3 && [...store.getState().drw.lines.values()].filter(Boolean).length === 3 && store.getState().drw.features.size === 3, 30000, 'the drawing');
     await H.wait(300);
     const front = store.getState().drw.doc.views.find((v) => v.direction === 'front').id;

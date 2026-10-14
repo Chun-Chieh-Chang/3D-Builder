@@ -115,10 +115,14 @@ export function DimensionPanel() {
           {t('drawingUi.toolDimension')}
         </button>
       </div>
+      {/* dimensions are put where they are wanted, one at a time, as SolidWorks's Smart Dimension does; nothing is dimensioned unless asked */}
+      <p className="muted">{t('drawingUi.dimOnDemand')}</p>
       {!view && <p className="muted">{t('drawingUi.dimSelectView')}</p>}
       {view && (
         <>
           {features && features.length === 0 && <p className="muted">{t('drawingUi.dimNoFeatures')}</p>}
+          <details className="pm-details" data-group="autoDims">
+          <summary>{t('drawingUi.dimFromModel')}</summary>
           {(['overall', 'holes', 'callouts', 'positions'] as const).map((k) => (
             <label key={k} className="pm-row checkbox">
               <input type="checkbox" data-field={`auto-${k}`} checked={opts[k]} onChange={(e) => setOpts({ ...opts, [k]: e.target.checked })} />
@@ -139,11 +143,14 @@ export function DimensionPanel() {
               {t('drawingUi.dimAutoButton')}
             </button>
           </div>
+          </details>
           {overlapping > 0 && (
             <p className="warning-text" data-field="overlap">
               {t('drawingUi.dimOverlap', { n: overlapping })}
             </p>
           )}
+          <details className="pm-details" data-group="dimByList">
+          <summary>{t('drawingUi.dimByList')}</summary>
           {linearPick.length >= 2 && (
             <div className="pm-row">
               <select data-field="dimA" value={Math.min(a, linearPick.length - 1)} onChange={(e) => setA(Number(e.target.value))}>
@@ -216,6 +223,7 @@ export function DimensionPanel() {
               </button>
             </div>
           )}
+          </details>
           <ul className="selection-box drawing-views" data-field="dimensions">
             {mine.map((x) => (
               <li key={x.id} className={chosenIds.includes(x.id) ? 'selected' : ''} onClick={(e) => (e.ctrlKey || e.metaKey ? d.pick([{ kind: 'dimension', id: x.id }], 'toggle') : setSelected(x.id))} data-dimension={x.id}>

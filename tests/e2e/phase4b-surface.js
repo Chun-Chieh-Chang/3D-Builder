@@ -38,7 +38,7 @@ s.run = async () => {
   H.check(Math.abs(mass.volume - Math.PI * 100 * 20) < 1e-3, `the mass is the cylinder's: ${mass.volume}`);
 
   // a drawing of the part draws the cylinder only
-  await H.action('檔案', '新工程圖');
+  await H.newDrawing();
   await H.waitFor(() => store.getState().drw && [...store.getState().drw.lines.values()].filter(Boolean).length === 3, 30000, 'the lines');
   const drw = store.getState().drw;
   const front = drw.lines.get(drw.doc.views.find((v) => v.direction === 'front').id);

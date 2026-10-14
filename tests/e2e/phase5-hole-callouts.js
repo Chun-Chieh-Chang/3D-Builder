@@ -30,7 +30,7 @@ x.run = async () => {
   await H.project({ '孔標註.3dbx': `${root}tests/fixtures/parts/hole-callouts.3dbx` });
   await H.open('孔標註.3dbx');
   await H.waitFor(() => store.getState().result?.mesh, 20000, 'the part');
-  await H.action('檔案', '新工程圖');
+  await H.newDrawing();
   await H.waitFor(() => drw() && drw().doc.views.length === 3 && [...drw().lines.values()].filter(Boolean).length === 3, 30000, 'the three views');
   const front = drw().doc.views.find((v) => v.direction === 'front');
   await click(panel(`[data-view="${front.id}"]`));

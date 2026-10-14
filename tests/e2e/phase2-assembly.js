@@ -107,6 +107,25 @@ H.action = async (tab, label) => {
   // a drawing needs the project folder: without one remembered from an earlier run the app asks, and the stand-in answers
   if (label === '新工程圖' && store.getState().folderRequest) await H.modalButton('選擇資料夾…');
 };
+/**
+ * 「新工程圖」 and then the views (D-V2, ADR 0134): a new drawing is an empty sheet whose main view the user places, so a script that wants the three views
+ * asks for them as a person would — the 「標準三視圖」 button of the task pane — and one that wants others names them.
+ */
+H.newDrawing = async (directions) => {
+  await H.action('檔案', '新工程圖');
+  await H.waitFor(() => store.getState().drw, 20000, 'the new drawing');
+  if (directions) {
+    await H.waitFor(() => store.getState().drw.palette, 30000, 'the part of the drawing');
+    store.drawingStore.addViews(directions);
+    return;
+  }
+  const button = await H.waitFor(() => {
+    const b = document.querySelector('[data-action="standardViews"]');
+    return b && !b.disabled ? b : null;
+  }, 30000, 'the standard 3 views button');
+  button.click();
+  await H.wait(150);
+};
 H.modalButton = async (label) => {
   const b = await H.waitFor(() => [...document.querySelectorAll('.modal button')].find((x) => x.textContent === label), 5000, `dialog button ${label}`);
   b.click();

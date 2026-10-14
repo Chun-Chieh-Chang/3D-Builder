@@ -513,3 +513,6 @@ html[lang="en"] .view-cube .cube-face { font-size: 10px; }
 @media (prefers-reduced-motion: reduce) { .sw-chevron, .sw-twisty .icon { transition: none; } }
 /* what the panel hides (a closed group, the other tab) stays in the page for the scripts, but is not shown: [hidden] has to win over the display set above */
 .sw-panel [hidden], .task-pane [hidden] { display: none !important; }
+.task-pane-body .standard-views { margin-top: 10px; justify-content: stretch; }
+.task-pane-body .standard-views .pm-button { width: 100%; height: 28px; border: 1px solid #c3ccd6; border-radius: 4px; background: linear-gradient(#fff, #f3f6f9); cursor: pointer; }
+.task-pane-body .standard-views .pm-button:hover:not(:disabled) { border-color: #8fb8e3; }

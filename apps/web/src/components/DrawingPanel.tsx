@@ -145,8 +145,22 @@ export function DrawingTaskPane() {
       </div>
       <div className="task-pane-body">
         <ViewPalette />
+        <StandardViews />
       </div>
     </aside>
+  );
+}
+
+/** 「標準三視圖」 (SolidWorks's Standard 3 View): the front, top and right views at once, for who wants them all; the palette is for choosing them one by one. */
+function StandardViews() {
+  const drw = useStore((s) => s.drw)!;
+  const d = store.drawingStore!;
+  return (
+    <div className="pm-row standard-views">
+      <button type="button" className="pm-button" data-action="standardViews" disabled={!drw.palette} title={t('drawingUi.standardViewsTip')} onClick={() => d.addStandardViews()}>
+        {t('drawingUi.standardViews')}
+      </button>
+    </div>
   );
 }
 
@@ -404,6 +418,11 @@ export function DrawingPanel() {
           </button>
         </div>
         {hint && <div className="sw-message">{hint}</div>}
+        {doc.views.length === 0 && (
+          <div className="sw-message" data-field="mainViewHint">
+            {t('drawingUi.mainViewFirst')}
+          </div>
+        )}
         {drw.computing && <div className="sw-message busy">{t('drawingUi.computing')}</div>}
 
         <PMGroup title={t('drawingUi.sheet')} icon="sheet" open={isOpen('sheet')} onToggle={() => toggle('sheet')} hidden={!onSheetGroups}>
