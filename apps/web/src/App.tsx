@@ -23,6 +23,7 @@ import { DrawingViewport } from './components/DrawingViewport';
 import { ExplodePanel } from './components/ExplodePanel';
 import { FormSubPanel } from './components/FormSubPanel';
 import { PropertyManager } from './components/PropertyManager';
+import { ShutdownOverlay } from './components/ShutdownOverlay';
 import { StatusBar } from './components/StatusBar';
 import { Viewport } from './components/Viewport';
 import { ViewOrientationDialog } from './components/ViewOrientationDialog';
@@ -86,6 +87,7 @@ export function App() {
       <RecoveryDialog />
       <FolderDialog />
       <MissingFilesDialog />
+      <ShutdownOverlay />
     </div>
   );
 }

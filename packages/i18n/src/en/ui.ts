@@ -76,4 +76,9 @@ export const ui: Translation = {
   'datum.front': 'Front Plane',
   'datum.top': 'Top Plane',
   'datum.right': 'Right Plane',
+
+  'shutdown.button': 'Shut Down Server',
+  'shutdown.tip': 'End the dev server, its process, and every connection to the geometry kernel (development only)',
+  'shutdown.closedTitle': 'The system has been shut down',
+  'shutdown.closedBody': 'The dev server and the geometry kernel have stopped; this tab can no longer do anything, so close it. To start again, run npm run dev.',
 };

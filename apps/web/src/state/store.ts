@@ -333,6 +333,8 @@ export interface UiState {
   bootMs: { occtMs: number; gcsMs: number } | null;
   bootError: string | null;
   notice: Notice | null;
+  /** 「關閉伺服器」 pressed (dev only, ADR 0135): the dev server, its process and the kernel worker are being ended; the page shows the shutdown screen and does nothing else. */
+  shuttingDown: boolean;
   /** The open document: the part above, or the assembly in `asm`. */
   active: DocumentKind;
   /** The open assembly (null while a part is open). */
@@ -576,6 +578,7 @@ class AppStore {
       bootMs: null,
       bootError: null,
       notice: null,
+      shuttingDown: false,
       active: 'part',
       asm: null,
       drw: null,
@@ -2604,6 +2607,24 @@ class AppStore {
     this.restartWorker();
     this.notify(t('worker.heapRecycled', { mb: String(mb) }), 'info');
     void this.run();
+  }
+
+  /**
+   * 「關閉伺服器」 (dev only, ADR 0135): end the whole running system. The geometry kernel worker is terminated here (its
+   * connection to this page is dropped), then the page asks the dev server to stop by POSTing to the shutdown path — a
+   * request only `dev/shutdown.ts` answers, which closes the server and ends its process. Once that runs there is nothing
+   * left to answer with, so the shutdown screen is shown here first; a fetch that fails is fine, it means the server is
+   * already gone. In a production build the button is not rendered, so this is never called there.
+   */
+  async shutdown(): Promise<void> {
+    if (this.state.shuttingDown) return;
+    this.set({ shuttingDown: true });
+    this.worker?.terminate();
+    try {
+      await fetch('/__3db/shutdown', { method: 'POST' });
+    } catch {
+      // The server closes the connection as it goes; a rejected fetch is the expected end of it, not a failure.
+    }
   }
 
   // ------------------------------------------------------------ rebuild (B3.5: off the UI thread)

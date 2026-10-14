@@ -4,6 +4,7 @@ import { ACTIONS, type UiAction } from '../actions';
 import { actionTooltip, currentTopicId } from '../help/context';
 import { closeHelp, openHelp, setPicking, useHelp } from '../help/state';
 import { useDocumentTitle, useSketcherView, useStore } from '../state/store';
+import { ShutdownButton } from './ShutdownButton';
 
 type Tab = { id: string; label: string; groups: UiAction['group'][] };
 
@@ -132,6 +133,7 @@ export function CommandBar() {
         <button className={help.picking ? 'tool active' : 'tool'} title={t('helpui.whatIsThisTip')} onClick={() => setPicking(!help.picking)}>
           {t('helpui.whatIsThis')}
         </button>
+        <ShutdownButton />
       </div>
       <div className="doc-title" title={state.dirty ? t('doc.unsaved') : undefined}>
         {title}

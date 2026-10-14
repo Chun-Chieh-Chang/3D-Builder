@@ -75,4 +75,9 @@ export const ui = {
   'datum.front': '前基準面',
   'datum.top': '上基準面',
   'datum.right': '右基準面',
+
+  'shutdown.button': '關閉伺服器',
+  'shutdown.tip': '結束開發伺服器、其程序與幾何核心的所有連線（僅開發用）',
+  'shutdown.closedTitle': '本系統已關閉',
+  'shutdown.closedBody': '開發伺服器與幾何核心已停止，此分頁已無作用，請直接關閉；要重新啟動請再執行 npm run dev。',
 } as const;

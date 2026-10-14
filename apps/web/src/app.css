@@ -113,6 +113,8 @@ code { font-family: Consolas, 'Cascadia Mono', monospace; font-size: 11px; }
 .whats-wrong-button.warning { color: #a35200; border-color: #ffd8a8; }
 
 .modal-backdrop { position: fixed; inset: 0; background: rgba(20, 30, 40, 0.25); display: grid; place-items: center; z-index: 30; }
+/* 「關閉伺服器」 (ADR 0135): above every dialog and panel — the system is gone, so this is the only thing left, and nothing under it may be reached. */
+.shutdown-overlay { z-index: 1000; background: rgba(20, 30, 40, 0.6); }
 .modal { background: #fff; border-radius: 6px; padding: 14px 18px; min-width: 320px; box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2); }
 .modal h3 { margin: 0 0 10px; font-size: 14px; }
 /* 「視角方位」 (the space bar): the standard views, two to a row, each with its shortcut */
