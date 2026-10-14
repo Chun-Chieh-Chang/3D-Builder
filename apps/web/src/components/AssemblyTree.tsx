@@ -102,9 +102,9 @@ export function AssemblyTree() {
   return (
     <div className="feature-tree">
       {returnTo && (
-        <button className="return-bar" onClick={() => store.returnToAssembly()} title={t('tree.returnTip')}>
+        <button className="return-bar" data-action="returnBack" onClick={() => store.returnToAssembly()} title={t(returnTo.kind === 'drawing' ? 'tree.returnDrawingTip' : 'tree.returnTip')}>
           <Icon name="assembly" />
-          {t('tree.returnTo', { name: returnTo })}
+          {t(returnTo.kind === 'drawing' ? 'tree.returnToDrawing' : 'tree.returnTo', { name: returnTo.name })}
         </button>
       )}
       <div className="tree-part">

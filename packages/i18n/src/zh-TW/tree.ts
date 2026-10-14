@@ -3,6 +3,8 @@ export const tree = {
   'tree.rollbackBar': '回溯控制棒：拖曳以回到歷史中的某一點',
   'tree.returnTip': '回到組合件：存檔過的零件變更會顯示出來',
   'tree.returnTo': '返回組合件「{name}」',
+  'tree.returnToDrawing': '返回工程圖「{name}」',
+  'tree.returnDrawingTip': '回到工程圖：存檔過的零件變更會顯示在視圖上',
   'tree.sketchOnPlane': '選取後按「草圖」即可在此基準面上繪製草圖',
   'tree.notFound': '找不到：{name}',
   'tree.editSketch': '編輯草圖',

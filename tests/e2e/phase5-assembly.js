@@ -134,6 +134,23 @@ x.run = async () => {
   await H.open('夾具.3dbd');
   await H.waitFor(() => drw() && drw().fileName === '夾具.3dbd' && drw().boms.size === 2 && [...drw().lines.values()].filter(Boolean).length === 2, 60000, 'the drawing to open');
   H.check(texts().includes('削邊銷') && balloons() === 2, 'the same drawing');
+  // D-I7(a): a view of an assembly opens the assembly from its right-click menu, and each of its parts is found by the leaf id a picked element carries
+  {
+    const v = drw().doc.views[0];
+    const pl = scene().placed.get(v.id);
+    const r = document.querySelector('[data-svg] svg').getBoundingClientRect();
+    const [cx, cy] = [r.left + (pl.at[0] / 420) * r.width, r.top + ((297 - pl.at[1]) / 297) * r.height];
+    const send = (type, buttons) => document.querySelector('[data-drawing-canvas]').dispatchEvent(new PointerEvent(type, { clientX: cx, clientY: cy, bubbles: true, pointerId: 13, button: 2, buttons }));
+    send('pointerdown', 2);
+    send('pointerup', 0);
+    await H.wait(200);
+    const item = document.querySelector('[data-view-menu] [data-action="openViewPart"]');
+    H.check(item && /開啟組合件/.test(item.textContent) && /夾具\.3dba/.test(item.textContent), `the view's menu opens the assembly: ${item?.textContent}`);
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    await H.wait(100);
+    const paths = ['p1', 'pa', 'pb'].map((leaf) => store.drawingStore.leafPath(v.id, leaf));
+    H.check(JSON.stringify(paths) === JSON.stringify(['定位板.3dbx', '削邊銷.3dbx', '削邊銷.3dbx']), `the parts by leaf: ${JSON.stringify(paths)}`);
+  }
   console.log('phase5-assembly: all checks passed');
   return true;
 };

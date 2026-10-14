@@ -3,6 +3,7 @@ import { SHEET_SIZES, TITLE_FIELDS, VIEW_NAMES, isDerived, type DrawingView, typ
 import { STANDARD_SCALES, arrangementBase, scaleText, showsHidden, type ViewLines } from '@3db/drawing';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { store, useStore } from '../state/store';
+import { DrawingViewMenu, type ViewMenuAt } from './DrawingViewMenu';
 import { PALETTE_DIRECTIONS, type DrawingTool } from '../state/drawing';
 import { AnnotationPanel } from './AnnotationPanel';
 import { DimensionPanel } from './DimensionPanel';
@@ -197,6 +198,7 @@ function DrawingTree({ onFormat, onPick }: { onFormat: () => void; onPick: () =>
   const d = store.drawingStore!;
   const doc = drw.doc;
   const [closed, setClosed] = useState<Set<string>>(new Set());
+  const [menu, setMenu] = useState<ViewMenuAt | null>(null);
   const toggle = (id: string) => setClosed((c) => (c.has(id) ? new Set([...c].filter((x) => x !== id)) : new Set([...c, id])));
   const children = (id: string | null) => doc.views.filter((v) => (id === null ? !isDerived(v) || !doc.views.some((p) => p.id === v.parent) : isDerived(v) && v.parent === id));
   const chosen = (id: string) => drw.selection.some((x) => x.kind === 'view' && x.id === id) || (id === drw.selected && drw.selection.length === 0);
@@ -214,6 +216,11 @@ function DrawingTree({ onFormat, onPick }: { onFormat: () => void; onPick: () =>
             onPick();
             if (e.ctrlKey || e.metaKey) d.pick([{ kind: 'view', id: v.id }], 'toggle');
             else d.select(v.id);
+          }}
+          onContextMenu={(e) => {
+            e.preventDefault();
+            d.select(v.id);
+            setMenu({ x: e.clientX, y: e.clientY, view: v.id, leaf: null });
           }}
         >
           {kids.length > 0 ? (
@@ -267,6 +274,7 @@ function DrawingTree({ onFormat, onPick }: { onFormat: () => void; onPick: () =>
         </ul>
       </li>
       {doc.views.length === 0 && <li className="muted sw-tree-empty">{t('drawingUi.noViews')}</li>}
+      {menu && <DrawingViewMenu at={menu} onClose={() => setMenu(null)} />}
     </ul>
   );
 }

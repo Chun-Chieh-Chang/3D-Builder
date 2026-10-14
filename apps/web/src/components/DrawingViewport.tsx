@@ -1,4 +1,5 @@
 import { t } from '@3db/i18n';
+import { DrawingViewMenu, type ViewMenuAt } from './DrawingViewMenu';
 import {
   annotationItems,
   arrangementBase,
@@ -119,6 +120,9 @@ export function DrawingViewport() {
   const [pendingPlacement, setPendingPlacement] = useState<DrawPlacement | null>(null);
   const [drawCursor, setDrawCursor] = useState<P | null>(null);
   const [panning, setPanning] = useState<{ x: number; y: number } | null>(null);
+  /** The right-click menu of a view (D-I7): opened when the right button is let go where it was pressed (a drag with it pans). */
+  const [menu, setMenu] = useState<ViewMenuAt | null>(null);
+  const rightFrom = useRef<{ x: number; y: number } | null>(null);
   /** Where the pointer is on the sheet, and what is under it: for the preview of a tool and the cursor. */
   const [hover, setHover] = useState<{ p: P; feature: { view: Id; feature: Pickable } | null; dimension: string | null; ctrl?: boolean } | null>(null);
   const sheet = sheetMetrics(drw.doc.sheet);
@@ -382,7 +386,8 @@ export function DrawingViewport() {
       }
     }
     if (e.button !== 0) {
-      // the other buttons pan the sheet, as they always did
+      // the other buttons pan the sheet, as they always did; the right button let go where it was pressed opens the menu of the view under it
+      rightFrom.current = e.button === 2 ? { x: e.clientX, y: e.clientY } : null;
       capture(e);
       setPanning({ x: e.clientX - pan.x, y: e.clientY - pan.y });
       return;
@@ -583,6 +588,18 @@ export function DrawingViewport() {
   /** The scale the dragged view had before: the one of what the drag changes. */
   const shownBefore = (drag: Extract<Drag, { kind: 'scale' }>): Scale | null => ('sheet' in drag.target ? drw.doc.sheet.scale : (drw.doc.views.find((v) => v.id === (drag.target as { view: string }).view)?.scale ?? null));
   const up = (e: React.PointerEvent) => {
+    const right = rightFrom.current;
+    rightFrom.current = null;
+    if (right && e.button === 2 && Math.hypot(e.clientX - right.x, e.clientY - right.y) < 4) {
+      const p = onSheet(e);
+      const view = viewUnder(p);
+      if (view) {
+        d.select(view.id);
+        const hit = featureUnder(p, view.id);
+        const leaf = (hit?.feature.ref as { in?: string } | undefined)?.in ?? null;
+        setMenu({ x: e.clientX, y: e.clientY, view: view.id, leaf });
+      }
+    }
     if (!drag && tool?.kind === 'placeView' && tool.dragged) {
       // a view dragged from the palette and let go over the sheet: it is put there
       const p = onSheet(e);
@@ -954,6 +971,7 @@ export function DrawingViewport() {
       onPointerDown={down}
       onPointerMove={move}
       onPointerUp={up}
+      onContextMenu={(e) => e.preventDefault()}
       onDoubleClick={(e) => {
         if (tool) return;
         const dim = dimensionAt(dimensionItems, onSheet(e), reach);
@@ -1098,6 +1116,7 @@ export function DrawingViewport() {
         </div>
       )}
       {!bootMs && <div className="boot-overlay">{t('drawingUi.loadingKernel')}</div>}
+      {menu && <DrawingViewMenu at={menu} onClose={() => setMenu(null)} />}
     </main>
   );
 }

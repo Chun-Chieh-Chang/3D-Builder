@@ -27,6 +27,8 @@ export const storemsg = {
   'file.notPart': '「{name}」不是零件檔',
   'file.openedStep': '已開啟 {name}：STEP 零組件開成新零件；存成零件檔後，可在組合件中以「重新指定零件檔…」改用它',
   'file.openedBack': '已開啟 {name}：改好存檔後，按「返回組合件」回到組合件',
+  'file.openedBackDrawing': '已開啟 {name}：改好存檔後，按「返回工程圖」回到工程圖，視圖會顯示存檔後的樣子',
+  'file.noDrawingToReturn': '（工程圖沒有存檔，所以沒有「返回工程圖」）',
   'file.notAssembly': '「{name}」不是組合件',
   'folder.askRefs': '「{name}」引用其他檔案。請選擇包含它和它的零件的專案資料夾。',
   'folder.askNotIn': '資料夾「{folder}」不包含「{name}」。請選擇包含它的資料夾（可以是更上層的資料夾）。',

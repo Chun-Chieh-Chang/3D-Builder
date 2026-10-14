@@ -29,6 +29,8 @@ export const storemsg: Translation = {
   'file.notPart': '"{name}" is not a part file',
   'file.openedStep': 'Opened {name}: the STEP component is opened as a new part; after you save it as a part file you can use it in the assembly with "Replace part file…"',
   'file.openedBack': 'Opened {name}: after you save your changes, press "Return to Assembly" to go back',
+  'file.openedBackDrawing': 'Opened {name}: after you save your changes, press "Return to Drawing" to go back; the views will show the part as saved',
+  'file.noDrawingToReturn': ' (the drawing was never saved, so there is no "Return to Drawing")',
   'file.notAssembly': '"{name}" is not an assembly',
   'folder.askRefs': '"{name}" refers to other files. Choose the project folder that holds it and its parts.',
   'folder.askNotIn': 'The folder "{folder}" does not contain "{name}". Choose a folder that does (it can be a higher one).',

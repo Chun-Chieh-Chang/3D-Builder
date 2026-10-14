@@ -5,6 +5,8 @@ export const tree: Translation = {
   'tree.rollbackBar': 'Rollback bar: drag to go back to a point in the history',
   'tree.returnTip': 'Return to the assembly: changes saved in the part will show',
   'tree.returnTo': 'Return to assembly "{name}"',
+  'tree.returnToDrawing': 'Return to drawing "{name}"',
+  'tree.returnDrawingTip': 'Return to the drawing: changes saved in the part will show in its views',
   'tree.sketchOnPlane': 'Select it, then press Sketch to draw a sketch on this plane',
   'tree.notFound': 'Not found: {name}',
   'tree.editSketch': 'Edit Sketch',

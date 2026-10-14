@@ -347,8 +347,8 @@ export interface UiState {
   folderWrite: boolean;
   /** The project folder of an earlier session, offered in that dialog (B9.4). */
   rememberedProject: string | null;
-  /** The assembly a part was opened from with 「開啟零件」: 「返回組合件」 reopens it. */
-  returnTo: string | null;
+  /** The assembly (or drawing, D-I7) a part was opened from with 「開啟零件」: 「返回組合件」／「返回工程圖」 reopens it, with the parts as they are then. */
+  returnTo: { name: string; kind: 'assembly' | 'drawing' } | null;
   /** Bumped whenever another document is opened or created (the CommandManager then shows its main tab). */
   documentSerial: number;
   /** The measure tool (E1.1) while it is on: the elements picked and what is known of them. Null when it is off. */
@@ -3034,7 +3034,7 @@ class AppStore {
       },
       source,
     );
-    this.set({ active: 'drawing', drw: this.drawing.getState(), documentSerial: this.state.documentSerial + 1, measure: null, draft: null, undercut: null, thickness: null, flat: null, interference: null, clearance: null, check: null });
+    this.set({ active: 'drawing', drw: this.drawing.getState(), returnTo: null, documentSerial: this.state.documentSerial + 1, measure: null, draft: null, undercut: null, thickness: null, flat: null, interference: null, clearance: null, check: null });
   }
 
   private closeDrawing(): void {
@@ -3114,13 +3114,28 @@ class AppStore {
     this.guard('open-part');
   }
 
+  /**
+   * 「開啟零件」 on a view of the drawing (D-I7(a), ADR 0140), as SolidWorks's right-click 「開啟零件」: the part (or assembly) at the project path becomes the
+   * open document; 「返回工程圖」 reopens the drawing, whose views then show the part as it was saved. A drawing with changes is asked about first; one never
+   * saved has no file to come back to, which is said.
+   */
+  openPartOfDrawing(path: string): void {
+    const drw = this.drawing;
+    if (!drw) return;
+    if (drw.getState().sources.get(path)?.status === 'missing') return this.notify(t('file.partMissing'), 'error');
+    this.partToOpen = path;
+    this.guard('open-part');
+  }
+
   private async openPartFile(): Promise<void> {
     const path = this.partToOpen;
     this.partToOpen = null;
     const project = this.project;
-    if (!path || !project || !this.assembly) return;
-    const back = this.assembly.file();
-    const assembly = this.assembly.name();
+    const from = this.assembly ?? this.drawing;
+    if (!path || !project || !from) return;
+    const kind = this.assembly ? ('assembly' as const) : ('drawing' as const);
+    const back = from.file();
+    const backTo = back ? { name: from.name(), kind } : null;
     try {
       const handle = await fileIn(project, path);
       const bytes = await readBytes(handle);
@@ -3137,7 +3152,7 @@ class AppStore {
           await this.openAssembly({ name: fileName, bytes, handle }, file.doc);
           if (this.assembly?.file() === handle) {
             this.returnFile = back;
-            this.set({ returnTo: back ? assembly : null });
+            this.set({ returnTo: backTo });
           }
           return;
         }
@@ -3145,14 +3160,16 @@ class AppStore {
         this.load(file.doc, file.format === '3dbx' ? handle : null, fileName, file.blobs);
       }
       this.returnFile = back;
-      this.set({ returnTo: back ? assembly : null });
-      this.notify(step ? t('file.openedStep', { name: fileName }) : back ? t('file.openedBack', { name: fileName }) : t('file.opened', { name: fileName }));
+      this.set({ returnTo: backTo });
+      const opened = step ? t('file.openedStep', { name: fileName }) : !back ? t('file.opened', { name: fileName }) : kind === 'drawing' ? t('file.openedBackDrawing', { name: fileName }) : t('file.openedBack', { name: fileName });
+      // a drawing never saved has no file to come back to
+      this.notify(kind === 'drawing' && !back ? `${opened}${t('file.noDrawingToReturn')}` : opened);
     } catch (e) {
       this.notify(t('file.openFailed', { why: e instanceof Error ? e.message : String(e) }), 'error');
     }
   }
 
-  /** 「返回組合件」: the assembly a part was opened from, read again with its parts as they are now. */
+  /** 「返回組合件」 (or 「返回工程圖」, D-I7): the assembly or drawing a part was opened from, read again with its parts as they are now. */
   returnToAssembly(): void {
     if (this.returnFile) this.guard('return-assembly');
   }
@@ -3163,7 +3180,8 @@ class AppStore {
     try {
       const file = await handle.getFile();
       const bytes = new Uint8Array(await file.arrayBuffer());
-      const doc = await readDocumentFile(bytes);
+      const doc = await readAnyDocumentFile(bytes);
+      if (doc.kind === 'drawing' && this.state.returnTo?.kind === 'drawing') return await this.openDrawing({ name: handle.name, bytes, handle }, doc.doc);
       if (doc.kind !== 'assembly') throw new Error(t('file.notAssembly', { name: handle.name }));
       await this.openAssembly({ name: handle.name, bytes, handle }, doc.doc);
     } catch (e) {

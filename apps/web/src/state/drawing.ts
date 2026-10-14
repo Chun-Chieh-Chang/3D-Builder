@@ -271,6 +271,26 @@ export class DrawingStore {
     this.closed = true;
   }
 
+  /** The file the drawing is saved in; null while it has never been saved. */
+  file(): FileSystemFileHandle | null {
+    return this.handle;
+  }
+
+  /** The project path of the part (or assembly) a view shows (D-I7): what 「開啟零件」 opens. */
+  viewSourcePath(viewId: Id): string | null {
+    const view = this.history.doc.views.find((v) => v.id === viewId);
+    return view ? this.pathOf(view) : null;
+  }
+
+  /** The project path of a part of the assembly a view shows, by its leaf id (as a picked element's `in` names it); null when not known. */
+  leafPath(viewId: Id, leafId: string): string | null {
+    const doc = this.history.doc;
+    const view = doc.views.find((v) => v.id === viewId);
+    const asm = view ? this.assemblyOf(this.ancestor(doc.views, view) ?? view) : null;
+    const file = asm?.leaves.find((l) => l.id === leafId)?.file;
+    return file ?? null;
+  }
+
   name(): string {
     return this.state.doc.title.drawingName ?? this.state.fileName?.replace(/\.3dbd$/i, '') ?? this.state.untitled;
   }
