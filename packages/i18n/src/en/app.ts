@@ -8,6 +8,8 @@ export const app: Translation = {
   'tab.file': 'File',
   'tab.view': 'View',
   'tab.assembly': 'Assembly',
+  'tab.viewLayout': 'View Layout',
+  'tab.annotation': 'Annotation',
   'doc.unsaved': 'Unsaved changes',
   'act.newPart': 'New Part',
   'act.newAssembly': 'New Assembly',

@@ -1,5 +1,5 @@
 import { t } from '@3db/i18n';
-import { DrawingViewMenu, type ViewMenuAt } from './DrawingViewMenu';
+import { DrawingMenu, type DrawingMenuAt } from './DrawingViewMenu';
 import {
   annotationItems,
   arrangementBase,
@@ -44,6 +44,7 @@ import {
 import { axesOf, oppositeSide, projectedAxes, type Annotation, type Attachment, sectionArrow, sectionAxes, type Dimension, type DrawingView, type Id, type Scale, type SectionDrawingView, type SurfaceFinish, type ViewSide } from '@3db/model';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { store, useStore } from '../state/store';
+import type { DrawingPick } from '../state/drawing';
 
 /** Pixels in a millimetre of an SVG drawn at its size (CSS: 96 pixels to the inch). */
 const PX = 96 / 25.4;
@@ -121,7 +122,7 @@ export function DrawingViewport() {
   const [drawCursor, setDrawCursor] = useState<P | null>(null);
   const [panning, setPanning] = useState<{ x: number; y: number } | null>(null);
   /** The right-click menu of a view (D-I7): opened when the right button is let go where it was pressed (a drag with it pans). */
-  const [menu, setMenu] = useState<ViewMenuAt | null>(null);
+  const [menu, setMenu] = useState<DrawingMenuAt | null>(null);
   const rightFrom = useRef<{ x: number; y: number } | null>(null);
   /** Where the pointer is on the sheet, and what is under it: for the preview of a tool and the cursor. */
   const [hover, setHover] = useState<{ p: P; feature: { view: Id; feature: Pickable } | null; dimension: string | null; ctrl?: boolean } | null>(null);
@@ -591,14 +592,32 @@ export function DrawingViewport() {
     const right = rightFrom.current;
     rightFrom.current = null;
     if (right && e.button === 2 && Math.hypot(e.clientX - right.x, e.clientY - right.y) < 4) {
+      // what is under the pointer, as a left click would take it: a dimension, an annotation, a surface finish, a view, else the sheet. It is chosen, unless it
+      // already is (then the choice stays, and the menu works on all that is chosen)
       const p = onSheet(e);
-      const view = viewUnder(p);
-      if (view) {
-        d.select(view.id);
+      const take = (pick: DrawingPick) => {
+        if (!drw.selection.some((x) => x.kind === pick.kind && x.id === pick.id)) d.pick([pick], 'replace');
+      };
+      const dim = dimensionAt(dimensionItems, p, reach);
+      const ann = dim ? null : dimensionAt(annotationHit, p, reach);
+      const finish = dim || ann ? null : finishUnder(p);
+      const view = dim || ann || finish ? undefined : viewUnder(p);
+      const at = { x: e.clientX, y: e.clientY };
+      if (dim) {
+        take({ kind: 'dimension', id: dim.id });
+        setMenu({ ...at, kind: 'dimension', id: dim.id });
+      } else if (ann) {
+        take({ kind: 'annotation', id: ann.id });
+        setMenu({ ...at, kind: 'annotation', id: ann.id });
+      } else if (finish) {
+        take({ kind: 'finish', id: finish.id });
+        setMenu({ ...at, kind: 'finish', id: finish.id });
+      } else if (view) {
+        take({ kind: 'view', id: view.id });
         const hit = featureUnder(p, view.id);
         const leaf = (hit?.feature.ref as { in?: string } | undefined)?.in ?? null;
-        setMenu({ x: e.clientX, y: e.clientY, view: view.id, leaf });
-      }
+        setMenu({ ...at, kind: 'view', view: view.id, leaf });
+      } else setMenu({ ...at, kind: 'sheet' });
     }
     if (!drag && tool?.kind === 'placeView' && tool.dragged) {
       // a view dragged from the palette and let go over the sheet: it is put there
@@ -1116,7 +1135,7 @@ export function DrawingViewport() {
         </div>
       )}
       {!bootMs && <div className="boot-overlay">{t('drawingUi.loadingKernel')}</div>}
-      {menu && <DrawingViewMenu at={menu} onClose={() => setMenu(null)} />}
+      {menu && <DrawingMenu at={menu} onClose={() => setMenu(null)} />}
     </main>
   );
 }

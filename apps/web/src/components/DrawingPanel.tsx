@@ -3,8 +3,9 @@ import { SHEET_SIZES, TITLE_FIELDS, VIEW_NAMES, isDerived, type DrawingView, typ
 import { STANDARD_SCALES, arrangementBase, scaleText, showsHidden, type ViewLines } from '@3db/drawing';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { store, useStore } from '../state/store';
-import { DrawingViewMenu, type ViewMenuAt } from './DrawingViewMenu';
-import { PALETTE_DIRECTIONS, type DrawingTool } from '../state/drawing';
+import { DrawingMenu, type DrawingMenuAt } from './DrawingViewMenu';
+import { annotationLabel } from './AnnotationPanel';
+import { PALETTE_DIRECTIONS, type DrawingPick, type DrawingTool } from '../state/drawing';
 import { AnnotationPanel } from './AnnotationPanel';
 import { DimensionPanel } from './DimensionPanel';
 import { Icon, type IconName } from './Icon';
@@ -198,7 +199,59 @@ function DrawingTree({ onFormat, onPick }: { onFormat: () => void; onPick: () =>
   const d = store.drawingStore!;
   const doc = drw.doc;
   const [closed, setClosed] = useState<Set<string>>(new Set());
-  const [menu, setMenu] = useState<ViewMenuAt | null>(null);
+  const [menu, setMenu] = useState<DrawingMenuAt | null>(null);
+  /** The folders of dimensions and annotations under a view that are open (D-I1b): closed at first, as SolidWorks keeps its Annotations folder. */
+  const [folders, setFolders] = useState<Set<string>>(new Set());
+  const flip = (key: string) => setFolders((c) => (c.has(key) ? new Set([...c].filter((x) => x !== key)) : new Set([...c, key])));
+  const picked = (kind: DrawingPick['kind'], id: string) => drw.selection.some((x) => x.kind === kind && x.id === id);
+  /** A row of a dimension or an annotation: chosen by a click (Ctrl adds it), its menu by the right button. */
+  const leafRow = (kind: 'dimension' | 'annotation', id: string, label: string, depth: number) => (
+    <li key={`${kind}:${id}`}>
+      <div
+        className={`sw-tree-row${picked(kind, id) ? ' selected' : ''}`}
+        style={{ paddingLeft: 8 + depth * 16 }}
+        {...(kind === 'dimension' ? { 'data-tree-dim': id } : { 'data-tree-annotation': id })}
+        onClick={(e) => {
+          onPick();
+          d.pick([{ kind, id }], e.ctrlKey || e.metaKey ? 'toggle' : 'replace');
+        }}
+        onContextMenu={(e) => {
+          e.preventDefault();
+          if (!picked(kind, id)) d.pick([{ kind, id }], 'replace');
+          setMenu({ x: e.clientX, y: e.clientY, kind, id });
+        }}
+      >
+        <span className="sw-twisty" />
+        <Icon name={kind === 'dimension' ? 'dimension' : 'note'} />
+        <span className="sw-tree-name">{label}</span>
+      </div>
+    </li>
+  );
+  /** A folder under a view: its dimensions, or its annotations. */
+  const folder = (viewId: string, kind: 'dimension' | 'annotation', rows: { id: string; label: string }[], depth: number) => {
+    if (rows.length === 0) return null;
+    const key = `${viewId}:${kind}`;
+    const open = folders.has(key);
+    return (
+      <li key={key}>
+        <div className="sw-tree-row" style={{ paddingLeft: 8 + depth * 16 }} data-tree-folder={key} onClick={() => flip(key)}>
+          <button type="button" className={`sw-twisty${open ? ' open' : ''}`} onClick={(e) => (e.stopPropagation(), flip(key))}>
+            <Icon name="chevron" />
+          </button>
+          <Icon name={kind === 'dimension' ? 'dimension' : 'note'} />
+          <span className="sw-tree-name">{t(kind === 'dimension' ? 'drawingUi.tree.dims' : 'drawingUi.tree.anns', { n: rows.length })}</span>
+        </div>
+        {open && <ul>{rows.map((r) => leafRow(kind, r.id, r.label, depth + 1))}</ul>}
+      </li>
+    );
+  };
+  const outcomes = d.scene().dimensions;
+  const dimLabel = (id: string) => {
+    const o = outcomes.get(id);
+    const dim = doc.dimensions.find((x) => x.id === id)!;
+    const kind = t(`drawingUi.tree.dimKind.${dim.kind}` as 'drawingUi.tree.dimKind.linear');
+    return o && !('error' in o) ? `${kind} ${o.text}` : kind;
+  };
   const toggle = (id: string) => setClosed((c) => (c.has(id) ? new Set([...c].filter((x) => x !== id)) : new Set([...c, id])));
   const children = (id: string | null) => doc.views.filter((v) => (id === null ? !isDerived(v) || !doc.views.some((p) => p.id === v.parent) : isDerived(v) && v.parent === id));
   const chosen = (id: string) => drw.selection.some((x) => x.kind === 'view' && x.id === id) || (id === drw.selected && drw.selection.length === 0);
@@ -206,6 +259,7 @@ function DrawingTree({ onFormat, onPick }: { onFormat: () => void; onPick: () =>
     const kids = children(v.id);
     const dims = doc.dimensions.filter((x) => x.view === v.id).length;
     const anns = (doc.annotations ?? []).filter((x) => x.view === v.id).length + doc.surfaceFinishes.filter((x) => x.view === v.id).length;
+    const annList = (doc.annotations ?? []).filter((x) => x.view === v.id);
     return (
       <li key={v.id}>
         <div
@@ -219,11 +273,11 @@ function DrawingTree({ onFormat, onPick }: { onFormat: () => void; onPick: () =>
           }}
           onContextMenu={(e) => {
             e.preventDefault();
-            d.select(v.id);
-            setMenu({ x: e.clientX, y: e.clientY, view: v.id, leaf: null });
+            if (!chosen(v.id)) d.select(v.id);
+            setMenu({ x: e.clientX, y: e.clientY, kind: 'view', view: v.id, leaf: null });
           }}
         >
-          {kids.length > 0 ? (
+          {kids.length > 0 || dims > 0 || annList.length > 0 ? (
             <button type="button" className={`sw-twisty${closed.has(v.id) ? '' : ' open'}`} onClick={(e) => (e.stopPropagation(), toggle(v.id))}>
               <Icon name="chevron" />
             </button>
@@ -243,7 +297,13 @@ function DrawingTree({ onFormat, onPick }: { onFormat: () => void; onPick: () =>
             <Icon name="cancel" />
           </button>
         </div>
-        {kids.length > 0 && !closed.has(v.id) && <ul>{kids.map((k) => row(k, depth + 1))}</ul>}
+        {!closed.has(v.id) && (kids.length > 0 || dims > 0 || annList.length > 0) && (
+          <ul>
+            {folder(v.id, 'dimension', doc.dimensions.filter((x) => x.view === v.id).map((x) => ({ id: x.id, label: dimLabel(x.id) })), depth + 1)}
+            {folder(v.id, 'annotation', annList.map((a) => ({ id: a.id, label: annotationLabel(a) })), depth + 1)}
+            {kids.map((k) => row(k, depth + 1))}
+          </ul>
+        )}
       </li>
     );
   };
@@ -274,42 +334,11 @@ function DrawingTree({ onFormat, onPick }: { onFormat: () => void; onPick: () =>
         </ul>
       </li>
       {doc.views.length === 0 && <li className="muted sw-tree-empty">{t('drawingUi.noViews')}</li>}
-      {menu && <DrawingViewMenu at={menu} onClose={() => setMenu(null)} />}
+      {menu && <DrawingMenu at={menu} onClose={() => setMenu(null)} />}
     </ul>
   );
 }
 
-/** The commands of a drawing always at hand, as the CommandManager of SolidWorks has them: the tools that make views and annotations. */
-function CommandStrip() {
-  const drw = useStore((s) => s.drw)!;
-  const d = store.drawingStore!;
-  const tool = drw.tool;
-  const view = drw.doc.views.find((v) => v.id === drw.selected);
-  const commands: { id: string; icon: IconName; label: string; active: boolean; disabled?: boolean; run: () => void }[] = [
-    { id: 'projected', icon: 'projectedView', label: t('drawingUi.toolProjected'), active: tool?.kind === 'project', disabled: !view && tool?.kind !== 'project', run: () => d.setTool(tool?.kind === 'project' ? null : view ? { kind: 'project', parent: view.id } : null) },
-    { id: 'section', icon: 'sectionView', label: t('drawingUi.toolSection'), active: tool?.kind === 'section', run: () => d.setTool(tool?.kind === 'section' ? null : { kind: 'section', vertical: true }) },
-    { id: 'detail', icon: 'detailView', label: t('drawingUi.toolDetail'), active: tool?.kind === 'detail', run: () => d.setTool(tool?.kind === 'detail' ? null : { kind: 'detail' }) },
-    { id: 'dimension', icon: 'dimension', label: t('drawingUi.toolDimension'), active: tool?.kind === 'dimension', run: () => d.setTool(tool?.kind === 'dimension' ? null : { kind: 'dimension', picks: [] }) },
-    ...(['note', 'datum', 'fcf', 'centreMark', 'centreLine'] as const).map((what) => ({
-      id: what,
-      icon: ({ note: 'note', datum: 'datum', fcf: 'gdt', centreMark: 'centreMark', centreLine: 'refAxis' } as const)[what],
-      label: t(({ note: 'drawingUi.toolNote', datum: 'drawingUi.toolDatum', fcf: 'drawingUi.toolFcf', centreMark: 'drawingUi.toolCentreMark', centreLine: 'drawingUi.toolCentreLine' } as const)[what]),
-      active: tool?.kind === 'annotate' && tool.what === what,
-      run: () => d.setTool(tool?.kind === 'annotate' && tool.what === what ? null : ({ kind: 'annotate', what } as DrawingTool)),
-    })),
-    { id: 'surface', icon: 'surfaceFinish', label: t('drawingUi.addSurfaceFinish'), active: tool?.kind === 'surface', run: () => d.setTool(tool?.kind === 'surface' ? null : { kind: 'surface' }) },
-  ];
-  return (
-    <div className="sw-commands" role="toolbar">
-      {commands.map((c) => (
-        <button key={c.id} type="button" className={`sw-command${c.active ? ' active' : ''}`} data-command={c.id} title={c.label} disabled={c.disabled} onClick={c.run}>
-          <Icon name={c.icon} />
-          <span>{t(`drawingUi.cmd.${c.id}` as 'drawingUi.cmd.note')}</span>
-        </button>
-      ))}
-    </div>
-  );
-}
 
 /**
  * The left panel of a drawing (B1.1, C16), laid out as SolidWorks lays it out: a tab for the drawing's tree (FeatureManager) and one for the properties of what
@@ -388,7 +417,6 @@ export function DrawingPanel() {
           <span>{t('drawingUi.tabProps')}</span>
         </button>
       </div>
-      <CommandStrip />
       <div className="sw-pane" hidden={tab !== 'tree'}>
         <DrawingTree
           onPick={() => {

@@ -17,6 +17,12 @@ const PART_TABS: Tab[] = [
   { id: 'file', get label() { return t('tab.file'); }, groups: ['file'] },
   { id: 'view', get label() { return t('tab.view'); }, groups: ['view'] },
 ];
+/** A drawing's tabs (D-I1b), as SolidWorks's CommandManager has them for a drawing: the views, the annotations, the file. */
+const DRAWING_TABS: Tab[] = [
+  { id: 'layout', get label() { return t('tab.viewLayout'); }, groups: ['drawing'] },
+  { id: 'annotation', get label() { return t('tab.annotation'); }, groups: ['annotation'] },
+  { id: 'file', get label() { return t('tab.file'); }, groups: ['file'] },
+];
 const ASSEMBLY_TABS: Tab[] = [
   { id: 'assembly', get label() { return t('tab.assembly'); }, groups: ['assembly', 'edit'] },
   { id: 'file', get label() { return t('tab.file'); }, groups: ['file'] },
@@ -38,15 +44,16 @@ export function CommandBar() {
   useSketcherView(); // re-render when the active sketch tool changes
   const sketching = state.editing?.kind === 'sketch';
   const assembly = state.active === 'assembly';
-  const tabs = assembly ? ASSEMBLY_TABS : PART_TABS;
+  const drawing = state.active === 'drawing';
+  const tabs = drawing ? DRAWING_TABS : assembly ? ASSEMBLY_TABS : PART_TABS;
   useEffect(() => {
     if (sketching) setTab('sketch');
   }, [sketching]);
   // Every document opened or created shows its main tab (組合件 or 特徵), as in SolidWorks.
   useEffect(() => {
-    setTab(assembly ? 'assembly' : 'features');
+    setTab(drawing ? 'layout' : assembly ? 'assembly' : 'features');
     setOpen(false);
-  }, [assembly, state.documentSerial]);
+  }, [assembly, drawing, state.documentSerial]);
   // folds up on Esc, and on a press anywhere that is not the menu
   useEffect(() => {
     if (!open) return;

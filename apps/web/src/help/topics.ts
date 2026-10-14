@@ -6,7 +6,7 @@ import { t, textOf } from '@3db/i18n';
  * 「這是什麼？」 all show the same words. Nothing here knows the store: the actions are handed in.
  */
 
-export type HelpGroup = 'concept' | 'file' | 'edit' | 'feature' | 'sheet' | 'sketch' | 'sketch-tool' | 'assembly' | 'view' | 'tools';
+export type HelpGroup = 'concept' | 'file' | 'edit' | 'feature' | 'sheet' | 'sketch' | 'sketch-tool' | 'assembly' | 'view' | 'tools' | 'drawing' | 'annotation';
 
 /** The part of an action a topic needs. */
 export interface ActionLike {
@@ -42,6 +42,8 @@ export const GROUP_TITLE: Record<HelpGroup, () => string> = {
   assembly: () => t('tab.assembly'),
   view: () => t('tab.view'),
   tools: () => t('tab.tools'),
+  drawing: () => t('tab.viewLayout'),
+  annotation: () => t('tab.annotation'),
 };
 
 /** The catalog key of a topic's text: `extrude-cut` and `summary` make `help.extrudeCut.summary` (a key is words joined without a dash, see the i18n test). */
@@ -105,7 +107,7 @@ export function searchTopics(topics: readonly HelpTopic[], query: string): HelpT
 
 /** The topics grouped as the contents shows them, in the order of the groups. */
 export function contents(topics: readonly HelpTopic[]): { group: HelpGroup; title: string; topics: HelpTopic[] }[] {
-  const order: HelpGroup[] = ['concept', 'file', 'feature', 'sheet', 'sketch', 'tools', 'assembly', 'view'];
+  const order: HelpGroup[] = ['concept', 'file', 'feature', 'sheet', 'sketch', 'tools', 'assembly', 'drawing', 'annotation', 'view'];
   const merged = (g: HelpGroup): HelpGroup => (g === 'sketch-tool' ? 'sketch' : g === 'edit' ? 'feature' : g);
   return order.flatMap((group) => {
     const list = topics.filter((x) => merged(x.group) === group);

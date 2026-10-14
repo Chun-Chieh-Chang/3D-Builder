@@ -6,6 +6,8 @@ export const app = {
   'tab.file': '檔案',
   'tab.view': '檢視',
   'tab.assembly': '組合件',
+  'tab.viewLayout': '視圖配置',
+  'tab.annotation': '註記',
   'doc.unsaved': '有尚未儲存的變更',
   'act.newPart': '新零件',
   'act.newAssembly': '新組合件',

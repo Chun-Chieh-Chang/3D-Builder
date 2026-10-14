@@ -129,8 +129,8 @@ const TOOLS: { what: AnnotateWhat; label: string }[] = [
   { what: 'centreMark', label: 'drawingUi.toolCentreMark' },
 ];
 
-/** What an annotation is called in the list. */
-function annotationLabel(a: Annotation): string {
+/** What an annotation is called in the list (and in the drawing's tree). */
+export function annotationLabel(a: Annotation): string {
   if (a.kind === 'note') return t('drawingUi.annNoteLabel', { text: a.text.split('\n')[0]!.slice(0, 24) });
   if (a.kind === 'datum') return `${t('drawingUi.annKind.datum')} ${a.label}`;
   if (a.kind === 'fcf') return `${t(`drawing.gdt.${a.characteristic}`)} ${a.diameter ? 'Ø' : ''}${formatNumber(a.tolerance, 4)}${a.datums.length ? ' | ' + a.datums.map((d) => d.label).join(' | ') : ''}`;

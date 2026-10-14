@@ -14,7 +14,7 @@ export interface UiAction {
   id: string;
   label: string;
   shortcut?: string;
-  group: 'file' | 'edit' | 'feature' | 'sheet' | 'sketch' | 'sketch-tool' | 'assembly' | 'view' | 'tools';
+  group: 'file' | 'edit' | 'feature' | 'sheet' | 'sketch' | 'sketch-tool' | 'assembly' | 'view' | 'tools' | 'drawing' | 'annotation';
   enabled(s: UiState): boolean;
   run(): void;
   /** Toggle state for tool buttons (the active sketch tool). */
@@ -46,6 +46,22 @@ const sketchPlane = (s: UiState): DatumPlaneName | Ref | null => {
   const type = selectedFeature(s)?.type;
   if (s.selected !== null && (type === 'refPlane' || type === 'coordSys')) return { kind: 'datum', name: s.selected };
   return s.selectedFace?.fingerprint?.type === 'plane' ? s.selectedFace : null;
+};
+
+/** A drawing is open (D-I1b): its tools are on the CommandManager's 視圖配置 and 註記 tabs, as SolidWorks has them. */
+const drawingOn = (s: UiState) => s.active === 'drawing' && !!s.drw;
+const drawingTool = (s: UiState) => s.drw?.tool ?? null;
+/** The view chosen in the drawing (or the only one), for the commands that work on a view. */
+const chosenView = (s: UiState) => s.drw?.doc.views.find((v) => v.id === s.drw?.selected) ?? (s.drw?.doc.views.length === 1 ? s.drw.doc.views[0] : undefined);
+/** Turns a drawing tool on, or off when it is the one on. */
+const toggleTool = (same: (t: NonNullable<ReturnType<typeof drawingTool>>) => boolean, make: () => Parameters<NonNullable<typeof store.drawingStore>['setTool']>[0]) => () => {
+  const d = store.drawingStore;
+  const on = drawingTool(store.getState());
+  if (d) d.setTool(on && same(on) ? null : make());
+};
+const toolIs = (same: (t: NonNullable<ReturnType<typeof drawingTool>>) => boolean) => () => {
+  const on = drawingTool(store.getState());
+  return !!on && same(on);
 };
 
 const SKETCH_TOOLS: ToolId[] = ['dimension', 'line', 'centerline', 'rect', 'centerRect', 'circle', 'perimeterCircle', 'arc', 'tangentArc', 'threePointArc', 'slot', 'polygon', 'point', 'sketchFillet', 'sketchChamfer', 'trim', 'extend', 'offset', 'mirror', 'convert', 'pierce'];
@@ -174,6 +190,29 @@ export const ACTIONS: UiAction[] = [
   ),
   { id: 'construction', get label() { return t('act.construction'); }, group: 'sketch-tool', enabled: sketching, run: () => toggleConstruction() },
   { id: 'exit-sketch', get label() { return t('act.exitSketch'); }, group: 'sketch-tool', enabled: sketching, run: () => store.commitEdit() },
+
+  // the drawing (D-I1b): 視圖配置
+  { id: 'drw-standard', get label() { return t('drawingUi.standardViews'); }, group: 'drawing', enabled: (s) => drawingOn(s) && !!store.drawingStore?.sourceForViews(), run: () => store.drawingStore?.addStandardViews() },
+  { id: 'drw-projected', get label() { return t('drawingUi.toolProjected'); }, group: 'drawing', enabled: (s) => drawingOn(s) && (!!chosenView(s) || drawingTool(s)?.kind === 'project'), active: toolIs((x) => x.kind === 'project'), run: () => { const v = chosenView(store.getState()); toggleTool((x) => x.kind === 'project', () => (v ? { kind: 'project', parent: v.id } : null))(); } },
+  { id: 'drw-section', get label() { return t('drawingUi.cmd.section'); }, group: 'drawing', enabled: (s) => drawingOn(s) && (s.drw?.doc.views.length ?? 0) > 0, active: toolIs((x) => x.kind === 'section'), run: toggleTool((x) => x.kind === 'section', () => ({ kind: 'section', vertical: true })) },
+  { id: 'drw-detail', get label() { return t('drawingUi.cmd.detail'); }, group: 'drawing', enabled: (s) => drawingOn(s) && (s.drw?.doc.views.length ?? 0) > 0, active: toolIs((x) => x.kind === 'detail'), run: toggleTool((x) => x.kind === 'detail', () => ({ kind: 'detail' })) },
+  { id: 'drw-autoscale', get label() { return t('drawingUi.autoScale'); }, group: 'drawing', enabled: (s) => drawingOn(s) && (s.drw?.doc.views.length ?? 0) > 0, run: () => store.drawingStore?.autoScale() },
+  // 註記
+  { id: 'drw-dimension', get label() { return t('drawingUi.toolDimension'); }, group: 'annotation', enabled: (s) => drawingOn(s) && (s.drw?.doc.views.length ?? 0) > 0, active: toolIs((x) => x.kind === 'dimension'), run: toggleTool((x) => x.kind === 'dimension', () => ({ kind: 'dimension', picks: [] })) },
+  { id: 'drw-ordinate', get label() { return t('drawingUi.toolOrdinate'); }, group: 'annotation', enabled: (s) => drawingOn(s) && (s.drw?.doc.views.length ?? 0) > 0, active: toolIs((x) => x.kind === 'ordinate'), run: toggleTool((x) => x.kind === 'ordinate', () => ({ kind: 'ordinate', picks: [] })) },
+  { id: 'drw-arrange', get label() { return t('drawingUi.arrange'); }, group: 'annotation', enabled: (s) => drawingOn(s) && (s.drw?.doc.dimensions.length ?? 0) > 0, run: () => { const d = store.drawingStore; if (!d) return; const n = d.arrangeDimensions(d.getState().doc.dimensions.map((x) => x.id)); d.notifyInfo(n > 0 ? t('drawingUi.arranged', { n }) : t('drawingUi.arrangedNothing')); } },
+  { id: 'drw-note', get label() { return t('drawingUi.toolNote'); }, group: 'annotation', enabled: (s) => drawingOn(s) && (s.drw?.doc.views.length ?? 0) > 0, active: toolIs((x) => x.kind === 'annotate' && x.what === 'note'), run: toggleTool((x) => x.kind === 'annotate' && x.what === 'note', () => ({ kind: 'annotate', what: 'note' })) },
+  { id: 'drw-datum', get label() { return t('drawingUi.toolDatum'); }, group: 'annotation', enabled: (s) => drawingOn(s) && (s.drw?.doc.views.length ?? 0) > 0, active: toolIs((x) => x.kind === 'annotate' && x.what === 'datum'), run: toggleTool((x) => x.kind === 'annotate' && x.what === 'datum', () => ({ kind: 'annotate', what: 'datum' })) },
+  { id: 'drw-fcf', get label() { return t('drawingUi.toolFcf'); }, group: 'annotation', enabled: (s) => drawingOn(s) && (s.drw?.doc.views.length ?? 0) > 0, active: toolIs((x) => x.kind === 'annotate' && x.what === 'fcf'), run: toggleTool((x) => x.kind === 'annotate' && x.what === 'fcf', () => ({ kind: 'annotate', what: 'fcf' })) },
+  { id: 'drw-centre-mark', get label() { return t('drawingUi.toolCentreMark'); }, group: 'annotation', enabled: (s) => drawingOn(s) && (s.drw?.doc.views.length ?? 0) > 0, active: toolIs((x) => x.kind === 'annotate' && x.what === 'centreMark'), run: toggleTool((x) => x.kind === 'annotate' && x.what === 'centreMark', () => ({ kind: 'annotate', what: 'centreMark' })) },
+  { id: 'drw-centre-line', get label() { return t('drawingUi.toolCentreLine'); }, group: 'annotation', enabled: (s) => drawingOn(s) && (s.drw?.doc.views.length ?? 0) > 0, active: toolIs((x) => x.kind === 'annotate' && x.what === 'centreLine'), run: toggleTool((x) => x.kind === 'annotate' && x.what === 'centreLine', () => ({ kind: 'annotate', what: 'centreLine' })) },
+  { id: 'drw-surface', get label() { return t('drawingUi.addSurfaceFinish'); }, group: 'annotation', enabled: (s) => drawingOn(s) && (s.drw?.doc.views.length ?? 0) > 0, active: toolIs((x) => x.kind === 'surface'), run: toggleTool((x) => x.kind === 'surface', () => ({ kind: 'surface' })) },
+  { id: 'drw-hole-table', get label() { return t('drawingUi.addHoleTable'); }, group: 'annotation', enabled: (s) => drawingOn(s) && !!chosenView(s) && !store.drawingStore?.isAssemblyView(chosenView(s)!.id), run: () => { const v = chosenView(store.getState()); if (v) store.drawingStore?.addHoleTable(v.id); } },
+  { id: 'drw-bom', get label() { return t('drawingUi.addBomTable'); }, group: 'annotation', enabled: (s) => drawingOn(s) && !!chosenView(s) && !!store.drawingStore?.isAssemblyView(chosenView(s)!.id) && !(s.drw?.doc.tables ?? []).some((x) => x.kind === 'bom'), run: () => { const v = chosenView(store.getState()); if (v) store.drawingStore?.addBomTable(v.id); } },
+  // 檔案: what a drawing is written out as
+  { id: 'drw-pdf', get label() { return t('drawingUi.exportPdf'); }, group: 'file', enabled: drawingOn, run: () => store.drawingStore?.exportPdf() },
+  { id: 'drw-dxf', get label() { return t('drawingUi.exportDxf'); }, group: 'file', enabled: drawingOn, run: () => store.drawingStore?.exportDxf() },
+  { id: 'drw-svg', get label() { return t('drawingUi.exportSvg'); }, group: 'file', enabled: drawingOn, run: () => store.drawingStore?.exportSvg() },
 
   { id: 'undo', get label() { return t('act.undo'); }, shortcut: 'Ctrl+Z', group: 'edit', enabled: (s) => (s.drw ? s.drw.canUndo : s.asm ? s.asm.canUndo && idle(s) : s.canUndo), run: () => store.undo() },
   { id: 'redo', get label() { return t('act.redo'); }, shortcut: 'Ctrl+Y', group: 'edit', enabled: (s) => (s.drw ? s.drw.canRedo : s.asm ? s.asm.canRedo && idle(s) : s.canRedo), run: () => store.redo() },
