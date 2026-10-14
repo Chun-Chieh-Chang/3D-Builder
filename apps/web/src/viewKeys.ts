@@ -21,6 +21,15 @@ export const QUARTER = 90;
 
 type Keys = Pick<KeyboardEvent, 'key' | 'ctrlKey' | 'metaKey' | 'shiftKey' | 'altKey'>;
 
+/** Elements the space bar presses (a button, anything acting as one such as a face of the view cube, a link, a summary): there it is theirs, not 視角方位. */
+const PRESSED_BY_SPACE = new Set(['BUTTON', 'A', 'SUMMARY']);
+
+/** Whether the element the key went to takes the space bar itself. Anything else (the page, the 3D view) leaves it to the view. */
+export function takesSpace(target: { tagName?: string; getAttribute?: (name: string) => string | null } | null): boolean {
+  if (!target?.tagName) return false;
+  return PRESSED_BY_SPACE.has(target.tagName.toUpperCase()) || target.getAttribute?.('role') === 'button';
+}
+
 /** What a key does to the view, or null when it is not one of these (and goes on to the shortcuts). `step` is the arrow keys' angle in degrees. */
 export function viewKeyCommand(e: Keys, step: number): ViewKeyCommand | null {
   const ctrl = e.ctrlKey || e.metaKey;

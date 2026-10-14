@@ -4,7 +4,7 @@ import { t } from '@3db/i18n';
 import { TOOL_LABEL } from './strings';
 import { effective, matchesShortcut, overrides } from './shortcuts';
 import type { ToolId } from './sketcher/controller';
-import { viewKeyCommand, type ViewKeyCommand } from './viewKeys';
+import { takesSpace, viewKeyCommand, type ViewKeyCommand } from './viewKeys';
 
 /**
  * UI action registry (D3.1): the single definition of every command's label, shortcut and
@@ -317,6 +317,8 @@ export function installShortcuts(): () => void {
     // Ctrl+Shift+Z is not taken for undo (a shortcut without Shift also matches with it). Not on a drawing sheet: it has no model to turn.
     // Nor while a dialog is open: its buttons take the space bar and the arrows.
     const view = !s.drw && !s.dialog && store.viewer ? viewKeyCommand(e, s.options.viewArrowStep) : null;
+    // The space bar on a focused button (or a face of the view cube) presses it; taking it here would also stop the browser from doing so.
+    if (view?.kind === 'orientation' && takesSpace(target)) return;
     if (view) {
       e.preventDefault(); // Alt+Left would go back a page, the space would scroll it
       return void runViewKey(view);

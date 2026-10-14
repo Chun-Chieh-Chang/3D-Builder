@@ -699,7 +699,12 @@ function ViewCube() {
               tabIndex={0}
               aria-label={look(f.dir)}
               onClick={() => go(f.dir)}
-              onKeyDown={(e) => e.key === 'Enter' && go(f.dir)}
+              onKeyDown={(e) => {
+                // pressed like a button: Enter or the space bar (which must not also scroll the page)
+                if (e.key !== 'Enter' && e.key !== ' ') return;
+                e.preventDefault();
+                go(f.dir);
+              }}
             >
               <title>{look(f.dir)}</title>
             </polygon>

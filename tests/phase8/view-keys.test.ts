@@ -5,7 +5,7 @@
 import { describe, expect, it } from 'vitest';
 import * as THREE from 'three';
 import { CUBE_CHAMFER, cubeDirection, cubeFacets, orbitView, panView, restoreView, rollView, viewState, ViewHistory, zoomView, ZOOM_RANGE } from '@3db/render';
-import { PAN_STEP, viewKeyCommand, ZOOM_STEP } from '../../apps/web/src/viewKeys';
+import { PAN_STEP, takesSpace, viewKeyCommand, ZOOM_STEP } from '../../apps/web/src/viewKeys';
 
 const front = () => {
   const camera = new THREE.OrthographicCamera(-100, 100, 60, -60, -1e5, 1e5);
@@ -313,5 +313,23 @@ describe('the faces of the view cube: a cube with its edges and corners cut off,
   it('refuses a chamfer that is not a cut of a cube: 0 or less, half the side or more, not a number', () => {
     for (const bad of [0, -0.1, 0.5, 0.7, NaN, Infinity]) expect(() => cubeFacets(bad), String(bad)).toThrow(/chamfer/);
     expect(cubeFacets(0.1).map((f) => f.points.length)).toEqual(facets.map((f) => f.points.length));
+  });
+});
+
+describe('the space bar on something that takes it (a button, a face of the view cube)', () => {
+  const el = (tagName: string, role: string | null = null) => ({ tagName, getAttribute: (k: string) => (k === 'role' ? role : null) });
+  it('a button, a role="button" (the cube\'s faces), a link and a summary press themselves with the space bar: it is not 視角方位 there', () => {
+    expect(takesSpace(el('BUTTON'))).toBe(true);
+    expect(takesSpace(el('polygon', 'button'))).toBe(true); // an SVG face of the cube
+    expect(takesSpace(el('DIV', 'button'))).toBe(true);
+    expect(takesSpace(el('A'))).toBe(true);
+    expect(takesSpace(el('SUMMARY'))).toBe(true);
+  });
+  it('the page, the canvas and plain elements leave it to the view', () => {
+    expect(takesSpace(null)).toBe(false);
+    expect(takesSpace(el('BODY'))).toBe(false);
+    expect(takesSpace(el('CANVAS'))).toBe(false);
+    expect(takesSpace(el('DIV'))).toBe(false);
+    expect(takesSpace({})).toBe(false); // the window: no tag at all
   });
 });
