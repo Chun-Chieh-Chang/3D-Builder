@@ -158,46 +158,63 @@ export type Snap =
   | { kind: 'quadrant'; p: P2; curve: Id; center: Id; axis: 'horizontal' | 'vertical' }
   /** On the extension of a line past `from`, one of its ends (延長線): the new point is on the line (a line is infinite to the solver). */
   | { kind: 'extension'; p: P2; line: Id; from: P2 }
-  /** A place on the model (D5.3b): the sketch gets the edge as a reference entity that follows it, and the new point goes with it. */
-  | { kind: 'model'; p: P2; item: ModelEdge; part: ModelPart }
+  /** A place on the model (D5.3b): the sketch gets the edge as a reference entity that follows it (or, `part` 'pierce', a point where it passes through the plane), and the new point goes with it. */
+  | { kind: 'model'; p: P2; item: ModelItem; part: ModelPart }
   /** Nowhere in particular, or (`align`) in line with other points: the new point gets a horizontal / vertical relation to each. */
   | { kind: 'free'; p: P2; align?: Alignment };
 
-/** Which place of a model edge: an end, the center of a circle or arc, the middle of a line, or anywhere along it. */
-export type ModelPart = 'start' | 'end' | 'center' | 'mid' | 'curve';
+/** Which place of a model edge: an end, the center of a circle or arc, the middle of a line, anywhere along it, or where it passes through the plane. */
+export type ModelPart = 'start' | 'end' | 'center' | 'mid' | 'curve' | 'pierce';
 
-/** The places of the model's edges (in the sketch plane) the cursor is near, nearest first among the ends, centers and middles, then along an edge. */
+/**
+ * The place on the model the cursor is near, the nearest within each step, in this order: the ends, centers and middles of the edges in the sketch plane;
+ * those of the edges projected onto it from outside, and where edges pass through it (C1 2026-10-14); anywhere along an edge in the plane; anywhere along
+ * a projected one. What is in the plane comes first because it is what the sketch is drawn on.
+ */
 export function snapModel(items: readonly ModelItem[], p: P2, tol: number, pointsOnly = false): Extract<Snap, { kind: 'model' }> | null {
-  let best: { s: Extract<Snap, { kind: 'model' }>; d: number } | null = null;
-  const consider = (item: ModelEdge, part: ModelPart, at: P2) => {
-    const d = dist(p, at);
-    if (d <= tol && (!best || d < best.d)) best = { s: { kind: 'model', p: at, item, part }, d };
-  };
-  for (const item of items) {
-    if (!('projected' in item)) continue;
-    const q = item.projected;
-    if (q.kind === 'line') {
-      consider(item, 'start', q.a);
-      consider(item, 'end', q.b);
-      consider(item, 'mid', mid(q.a, q.b));
-    } else if (q.kind === 'circle') consider(item, 'center', q.c);
-    else {
-      consider(item, 'center', q.c);
-      consider(item, 'start', q.start);
-      consider(item, 'end', q.end);
+  const inPlane = (item: ModelItem) => 'projected' in item && item.off === undefined;
+  const points = (pick: (item: ModelItem) => boolean) => {
+    let best: { s: Extract<Snap, { kind: 'model' }>; d: number } | null = null;
+    const consider = (item: ModelItem, part: ModelPart, at: P2) => {
+      const d = dist(p, at);
+      if (d <= tol && (!best || d < best.d)) best = { s: { kind: 'model', p: at, item, part }, d };
+    };
+    for (const item of items) {
+      if (!pick(item)) continue;
+      if ('pierce' in item) {
+        consider(item, 'pierce', item.pierce);
+        continue;
+      }
+      const q = item.projected;
+      if (q.kind === 'line') {
+        consider(item, 'start', q.a);
+        consider(item, 'end', q.b);
+        consider(item, 'mid', mid(q.a, q.b));
+      } else if (q.kind === 'circle') consider(item, 'center', q.c);
+      else {
+        consider(item, 'center', q.c);
+        consider(item, 'start', q.start);
+        consider(item, 'end', q.end);
+      }
     }
-  }
-  if (best || pointsOnly) return best && (best as { s: Extract<Snap, { kind: 'model' }> }).s;
-  for (const item of items) {
-    if (!('projected' in item)) continue;
-    const q = item.projected;
-    const at =
-      q.kind === 'line'
-        ? closestOnSegment(p, q.a, q.b)
-        : closestOn(q.kind === 'circle' ? { type: 'circle', c: q.c, r: q.r, center: '', construction: false } : { type: 'arc', c: q.c, r: q.r, a0: Math.atan2(q.start[1] - q.c[1], q.start[0] - q.c[0]), a1: Math.atan2(q.end[1] - q.c[1], q.end[0] - q.c[0]), center: '', start: '', end: '', construction: false }, p);
-    if (at) consider(item, 'curve', at);
-  }
-  return best && (best as { s: Extract<Snap, { kind: 'model' }> }).s;
+    return best && (best as { s: Extract<Snap, { kind: 'model' }> }).s;
+  };
+  const along = (pick: (item: ModelItem) => boolean) => {
+    let best: { s: Extract<Snap, { kind: 'model' }>; d: number } | null = null;
+    for (const item of items) {
+      if (!pick(item) || !('projected' in item)) continue;
+      const q = item.projected;
+      const at =
+        q.kind === 'line'
+          ? closestOnSegment(p, q.a, q.b)
+          : closestOn(q.kind === 'circle' ? { type: 'circle', c: q.c, r: q.r, center: '', construction: false } : { type: 'arc', c: q.c, r: q.r, a0: Math.atan2(q.start[1] - q.c[1], q.start[0] - q.c[0]), a1: Math.atan2(q.end[1] - q.c[1], q.end[0] - q.c[0]), center: '', start: '', end: '', construction: false }, p);
+      const d = at ? dist(p, at) : Infinity;
+      if (at && d <= tol && (!best || d < best.d)) best = { s: { kind: 'model', p: at, item, part: 'curve' }, d };
+    }
+    return best && (best as { s: Extract<Snap, { kind: 'model' }> }).s;
+  };
+  const outside = (item: ModelItem) => !inPlane(item);
+  return points(inPlane) ?? points(outside) ?? (pointsOnly ? null : (along(inPlane) ?? along(outside)));
 }
 
 /** Which of the three plain snaps `snap` may make (all, unless the settings leave some out). */

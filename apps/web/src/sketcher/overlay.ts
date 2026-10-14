@@ -151,8 +151,9 @@ export function buildOverlay(frame: PlaneFrame, sketch: SketchFeature, solve: Sk
 
   curves.push(...previewCurves(view.preview, px));
   if (view.snap && view.snap.kind !== 'free') points.push({ p: view.snap.p, color: SKETCH_COLORS.hover, size: 9 });
-  // the model edge the cursor is on (D5.3b), lit like a sketch element under the cursor
-  if (view.snap?.kind === 'model') {
+  // the model edge the cursor is on (D5.3b), lit like a sketch element under the cursor; dashed when it is projected from outside the plane (C1 2026-10-14).
+  // A pierce point is only the point drawn above.
+  if (view.snap?.kind === 'model' && 'projected' in view.snap.item) {
     const q = view.snap.item.projected;
     const shape: SolvedGeometry =
       q.kind === 'line'
@@ -160,7 +161,7 @@ export function buildOverlay(frame: PlaneFrame, sketch: SketchFeature, solve: Sk
         : q.kind === 'circle'
           ? { type: 'circle', c: q.c, r: q.r, center: '', construction: false }
           : { type: 'arc', c: q.c, r: q.r, a0: Math.atan2(q.start[1] - q.c[1], q.start[0] - q.c[0]), a1: Math.atan2(q.end[1] - q.c[1], q.end[0] - q.c[0]), center: '', start: '', end: '', construction: false };
-    curves.push({ points: sample(shape, px), color: SKETCH_COLORS.hover });
+    curves.push({ points: sample(shape, px), color: SKETCH_COLORS.hover, dashed: view.snap.item.off !== undefined });
   }
   // the dotted lines to the points the cursor lines up with (D5.3a)
   if (view.snap?.kind === 'free' && view.snap.align) {

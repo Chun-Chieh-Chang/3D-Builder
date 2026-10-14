@@ -194,3 +194,59 @@ export function planarEdgeItems(scope: ReferenceScope, fingerprintOf: (edge: num
   });
   return items;
 }
+
+/**
+ * What a sketch can snap to on the model: an edge as it looks on the plane, with `off` when it was projected onto it from outside (how near it comes to
+ * the plane, 0 when it passes through it), none when it lies in the plane; or where an edge passes through the plane.
+ */
+export type SnapItem = { ref: Ref; projected: Projected; off?: number } | { ref: Ref; pierce: P2 };
+
+/**
+ * Everything a sketch can snap to on the model (D5.3b; C1 of the decisions of 2026-10-14, as SolidWorks offers the model around the sketch): the edges in
+ * its plane (planarEdgeItems), the other edges projected onto it along its normal (a straight edge not square to the plane, a circle or arc in a plane
+ * parallel to it), and the points where straight edges pass through it. `off` of a projected edge is how near it comes to the plane: 0 when it passes
+ * through it, else the distance of its nearer end (the distance of a circle). Edges that look the same on the plane are one item, the one nearest it, and
+ * one that looks like an edge in the plane is left out; so is a pierce point where an item already has a corner or a center, and a seam (an edge between a
+ * face and itself, which is not an edge anyone sees). In the plane first, then the rest from the nearest, then the pierce points.
+ */
+export function modelSnapItems(scope: ReferenceScope, fingerprintOf: (edge: number) => Ref['fingerprint']): SnapItem[] {
+  const { topology, names, frame } = scope;
+  const TOL = 1e-6;
+  const side = (p: Vec3) => dot(sub(p, frame.origin), frame.normal);
+  const inPlane = planarEdgeItems(scope, fingerprintOf).flatMap((i) => ('projected' in i ? [i] : []));
+  const taken = new Set(inPlane.map((i) => i.ref.name));  // what an item looks like on the plane, to know two edges that look the same; the ends of a line either way round
+  const r6 = (x: number) => (Math.round(x * 1e6) / 1e6 + 0).toFixed(6);
+  const pt = (p: P2) => `${r6(p[0])},${r6(p[1])}`;
+  const look = (q: Projected) =>
+    q.kind === 'line' ? `l:${[pt(q.a), pt(q.b)].sort().join(';')}` : q.kind === 'circle' ? `c:${pt(q.c)};${r6(q.r)}` : `a:${pt(q.c)};${r6(q.r)};${pt(q.start)};${pt(q.end)}`;
+  const seen = new Map<string, Extract<SnapItem, { projected: Projected }>>();
+  for (const i of inPlane) seen.set(look(i.projected), i);
+  const pierces: Extract<SnapItem, { pierce: P2 }>[] = [];
+  topology.edges.forEach((e, i) => {
+    const name = names.edges[i];
+    if (!name || taken.has(name) || new Set(e.faces).size < 2) return;
+    const ref = (): Ref => ({ kind: 'edge', name, fingerprint: fingerprintOf(i) });
+    let off: number;
+    if (e.curve === 'line' && e.geometry?.type === 'line') {
+      const ends = e.vertices.map((v) => side(topology.vertices[v]!.point));
+      if (ends.length < 2) return;
+      const [sa, sb] = ends as [number, number];
+      const through = (sa < -TOL && sb > TOL) || (sa > TOL && sb < -TOL);
+      if (through) pierces.push({ ref: ref(), pierce: pierceEdge(topology, i, frame) });
+      if (Math.abs(dot(e.geometry.dir, frame.normal)) > 1 - SAME) return; // square to the plane: it looks like a point
+      off = through ? 0 : Math.min(Math.abs(sa), Math.abs(sb));
+    } else if (e.curve === 'circle' && e.geometry?.type === 'circle') {
+      if (Math.abs(Math.abs(dot(e.geometry.normal, frame.normal)) - 1) >= 1e-6) return; // tilted: it would look like an ellipse
+      off = Math.abs(side(e.geometry.center));
+    } else return;
+    const projected = projectEdge(topology, i, frame);
+    const key = look(projected);
+    const there = seen.get(key);
+    if (!there || (there.off !== undefined && there.off > off)) seen.set(key, { ref: ref(), projected, off });
+  });
+  const items = [...seen.values()].sort((a, b) => (a.off ?? -1) - (b.off ?? -1));
+  // a pierce point where an item already has a corner or a center adds nothing to snap to
+  const corners = items.flatMap((i) => (i.projected.kind === 'line' ? [i.projected.a, i.projected.b] : i.projected.kind === 'circle' ? [i.projected.c] : [i.projected.c, i.projected.start, i.projected.end]));
+  const fresh = pierces.filter((p, k) => !corners.some((c) => Math.hypot(c[0] - p.pierce[0], c[1] - p.pierce[1]) < TOL) && pierces.findIndex((q) => Math.hypot(q.pierce[0] - p.pierce[0], q.pierce[1] - p.pierce[1]) < TOL) === k);
+  return [...items, ...fresh];
+}

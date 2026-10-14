@@ -7,7 +7,7 @@ import { bodyKey, combineMass, isShown, mirrorKey, MESH_QUALITY, settingsOf, typ
 import { findProfiles, PlaneGcsSolver } from '@3db/sketch';
 import { COMPONENT_MESH, Kernel, type ThicknessReport, type UndercutReport, type DraftReport, type GeometryReport, type MassProps, type MeshData, type MeshOptions, type ShapeId } from '@3db/kernel';
 import { flatViewLines } from '@3db/drawing';
-import { drawingAnchors, holeFeatures, projectDrawingView, elementFacts, viewFeatures, findClearance, findInterference, flatPattern, FlatError, sheetChecks, sweepClearance, measureTargets, convertEdges, planarEdgeItems, edgeMateGeometry, exportFaces, faceColors, intoFrame, faceEdges, faceMateGeometry, followReferences, ReferenceProblem, Regenerator, solveAssemblyTree, type AssemblyResult, type AssemblySolveOptions, type BodyInfo, type FlatReport, type HoleFeatures, type RebuildResult, type SheetCheck, type SheetCheckLimits } from '@3db/regen';
+import { drawingAnchors, holeFeatures, projectDrawingView, elementFacts, viewFeatures, findClearance, findInterference, flatPattern, FlatError, sheetChecks, sweepClearance, measureTargets, convertEdges, modelSnapItems, edgeMateGeometry, exportFaces, faceColors, intoFrame, faceEdges, faceMateGeometry, followReferences, ReferenceProblem, Regenerator, solveAssemblyTree, type AssemblyResult, type AssemblySolveOptions, type BodyInfo, type FlatReport, type HoleFeatures, type RebuildResult, type SheetCheck, type SheetCheckLimits } from '@3db/regen';
 import { edgeFingerprint, faceFingerprint, vertexFingerprint } from '@3db/naming';
 import { binaryStl, exportAssemblyStep, exportPartStep, portableShape, readComponentFile, stepAssemblyPlan, type StepAssemblyPlan } from '@3db/io';
 import type { SourcePart, SourceProvider } from '@3db/regen';
@@ -251,7 +251,7 @@ const api: KernelApi = {
     const frame = lastModel?.frames.get(sketchId);
     if (!lastModel || !frame) return [];
     const scope = { names: lastModel.names, topology: lastModel.topology, frame };
-    return planarEdgeItems(scope, (i) => edgeFingerprint(scope.topology, i));
+    return modelSnapItems(scope, (i) => edgeFingerprint(scope.topology, i));
   },
 
   async exportStep(doc: PartDoc, name: string, options: PartExportOptions = {}): Promise<StepOutput> {

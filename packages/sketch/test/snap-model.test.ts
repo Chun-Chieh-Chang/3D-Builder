@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { IdAllocator, type Ref, type SketchEntity } from '@3db/model';
 import { snapModel } from '../src/interact';
-import { anchorModel, anchorModelForSelection, type Maker, type ModelEdge } from '../src/ops';
+import { anchorModel, anchorModelForSelection, type Maker, type ModelEdge, type ModelItem } from '../src/ops';
 import type { P2, SolvedGeometry } from '../src/types';
 
 const edge = (name: string, projected: ModelEdge['projected']): ModelEdge => ({ ref: { kind: 'edge', name }, projected });
@@ -61,13 +61,47 @@ describe('snapping to the model (D5.3b)', () => {
     expect(snapModel(two, [0.25, 0], 0.5)!.item.ref.name).toBe('b');
   });
 
-  it('leaves out pierce points, which are not edges in the plane', () => {
-    expect(snapModel([{ ref: { kind: 'edge', name: 'p' }, pierce: [5, 5] }], [5, 5], 0.5)).toBeNull();
+  it('takes a pierce point (where a model edge passes through the plane, C1 2026-10-14) as a point, before any place along an edge', () => {
+    const pierce: ModelItem = { ref: { kind: 'edge', name: 'p' }, pierce: [5, 5] };
+    expect(snapModel([pierce], [5.2, 4.9], 0.5)).toMatchObject({ kind: 'model', part: 'pierce', p: [5, 5], item: { ref: { name: 'p' } } });
+    expect(snapModel([pierce], [5.2, 4.9], 0.5, true)).toMatchObject({ part: 'pierce' }); // a point: offered when only points are asked for
+    // 0.3 from the pierce point, 0.1 from an edge in the plane running past it (its ends and middle far away): the point wins
+    expect(snapModel([edge('past', { kind: 'line', a: [0, 5.1], b: [30, 5.1] }), pierce], [5.3, 5], 0.5)).toMatchObject({ part: 'pierce' });
+    // but a point of an edge in the plane comes first: its middle 0.32 away beats the pierce point 0.3 away
+    expect(snapModel([edge('short', { kind: 'line', a: [0, 5.1], b: [10, 5.1] }), pierce], [5.3, 5], 0.5)).toMatchObject({ part: 'mid', item: { ref: { name: 'short' } } });
   });
 
   it('has a tolerance in sketch units: the same pixels reach less when zoomed in', () => {
     expect(snapModel(items, [40.4, 0.4], 0.5)).not.toBeNull();
     expect(snapModel(items, [40.4, 0.4], 0.2)).toBeNull();
+  });
+});
+
+describe('edges projected from outside the plane (C1 2026-10-14): after the edges in it, points before places along an edge', () => {
+  const off = (name: string, projected: ModelEdge['projected'], distance: number): ModelEdge => ({ ref: { kind: 'edge', name }, projected, off: distance });
+
+  it('takes the end of an edge in the plane before the end of a projected one, even when the projected one is nearer', () => {
+    const items = [off('far', { kind: 'line', a: [10, 0], b: [10, 20] }, 15), edge('near', { kind: 'line', a: [10.3, 0], b: [30, 0] })];
+    expect(snapModel(items, [10.05, 0.05], 0.5)!.item.ref.name).toBe('near');
+  });
+
+  it('takes a projected edge where nothing in the plane is near: its corner, its middle, the center of a projected hole, a place along it', () => {
+    const items = [off('above', { kind: 'line', a: [0, 0], b: [40, 0] }, 15), off('hole', { kind: 'circle', c: [20, 15], r: 5 }, 15)];
+    expect(snapModel(items, [39.9, 0.1], 0.5)).toMatchObject({ part: 'end', p: [40, 0], item: { ref: { name: 'above' }, off: 15 } });
+    expect(snapModel(items, [20.1, 0.1], 0.5)).toMatchObject({ part: 'mid', p: [20, 0] });
+    expect(snapModel(items, [20.1, 15.1], 0.5)).toMatchObject({ part: 'center', p: [20, 15] });
+    expect(snapModel(items, [10, 0.3], 0.5)).toMatchObject({ part: 'curve', item: { ref: { name: 'above' } } });
+  });
+
+  it('a point of a projected edge comes before a place along an edge in the plane (points first, as before)', () => {
+    const items = [edge('in', { kind: 'line', a: [0, 0.1], b: [30, 0.1] }), off('above', { kind: 'line', a: [20, 0], b: [20, 30] }, 15)];
+    expect(snapModel(items, [20.3, 0], 0.5)).toMatchObject({ part: 'start', item: { ref: { name: 'above' } } });
+  });
+
+  it('along edges: one in the plane before a projected one', () => {
+    const items = [off('above', { kind: 'line', a: [0, 0], b: [40, 0] }, 15), edge('in', { kind: 'line', a: [0, 0.4], b: [40, 0.4] })];
+    expect(snapModel(items, [10, 0.1], 0.5)).toMatchObject({ part: 'curve', item: { ref: { name: 'in' } } });
+    expect(snapModel([items[0]!], [10, 0.1], 0.5)).toMatchObject({ part: 'curve', item: { ref: { name: 'above' } } });
   });
 });
 
@@ -150,6 +184,35 @@ describe('the entities a click on the model makes (D5.3b)', () => {
     for (const [name, part, at] of [['bottom', 'start', [0, 0]], ['hole', 'center', [20, 15]], ['round', 'end', [40, 3]], ['top', 'mid', [20, 30]]] as [string, 'start' | 'end' | 'center' | 'mid' | 'curve', P2][]) anchorModel(none, nothing, m, item(name), part, at);
     const ids = [...m.entities, ...m.constraints].map((x) => x.id);
     expect(new Set(ids).size).toBe(ids.length);
+  });
+
+  it('makes an edge projected from outside the plane construction (C1): it holds the point, it never joins a profile; an edge in the plane stays as before', () => {
+    const m = maker();
+    const above: ModelEdge = { ref: { kind: 'edge', name: 'above' }, projected: { kind: 'line', a: [0, 0], b: [40, 0] }, off: 15 };
+    const end = anchorModel(none, nothing, m, above, 'end', [40, 0]);
+    expect(m.entities.find((e) => e.type === 'line')).toMatchObject({ type: 'line', p2: end, ref: { name: 'above' }, construction: true });
+    const hole: ModelEdge = { ref: { kind: 'edge', name: 'hole' }, projected: { kind: 'circle', c: [20, 15], r: 5 }, off: 15 };
+    anchorModel(none, nothing, m, hole, 'center', [20, 15]);
+    expect(m.entities.find((e) => e.type === 'circle')).toMatchObject({ construction: true });
+    const inPlane = maker();
+    anchorModel(none, nothing, inPlane, item('bottom'), 'end', [40, 0]);
+    expect(inPlane.entities.find((e) => e.type === 'line')).not.toHaveProperty('construction');
+  });
+
+  it('makes a pierce point a sketch point that follows the edge (as 「貫穿」 does), and uses it again for the next click on it', () => {
+    const pierce: ModelItem = { ref: { kind: 'edge', name: 'upright' }, pierce: [7, 3] };
+    const m = maker();
+    const id = anchorModel(none, nothing, m, pierce, 'pierce', [7, 3]);
+    expect(m.entities).toEqual([{ id, type: 'point', x: 7, y: 3, pierce: { kind: 'edge', name: 'upright' } }]);
+    expect(m.constraints).toEqual([]);
+    expect(anchorModel(none, nothing, m, pierce, 'pierce', [7, 3])).toBe(id); // the same action
+    const later = maker();
+    expect(anchorModel({ entities: m.entities }, nothing, later, pierce, 'pierce', [7, 3])).toBe(id); // the sketch has it
+    expect(later.entities).toEqual([]);
+    expect(anchorModelForSelection({ entities: m.entities }, nothing, later, pierce, 'pierce', [7, 3])).toBe(id);
+    const fresh = maker();
+    const selected = anchorModelForSelection(none, nothing, fresh, pierce, 'pierce', [7, 3]);
+    expect(fresh.entities).toEqual([{ id: selected, type: 'point', x: 7, y: 3, pierce: { kind: 'edge', name: 'upright' } }]);
   });
 
   describe('direct selection referencing (Plan B: anchorModelForSelection)', () => {

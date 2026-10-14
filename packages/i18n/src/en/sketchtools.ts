@@ -44,6 +44,7 @@ export const sketchtools: Translation = {
   'infer.modelMid': 'Model midpoint',
   'infer.modelCenter': 'Model center',
   'infer.modelEdge': 'On model edge',
+  'infer.modelPierce': 'Pierce point',
   'infer.onExtension': 'On extension',
   'infer.intersection': 'Intersection',
   'infer.quadrant': 'Quadrant point',

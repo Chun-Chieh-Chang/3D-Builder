@@ -876,6 +876,29 @@ describe('snapping to the model while drawing (D5.3b)', () => {
     expect(types(h)).toContain('midpoint');
   });
 
+  it('starts a line where a model edge passes through the plane and ends it on the corner of an edge projected from above (C1 2026-10-14)', () => {
+    const h = new Host();
+    h.modelItems = () => [...plate, { ref: { kind: 'edge', name: 'upright' }, pierce: [10, 20] }, { ref: { kind: 'edge', name: 'above' }, projected: { kind: 'line', a: [50, 0], b: [50, 30] }, off: 15 }];
+    const c = new SketchController(h);
+    c.setTool('line');
+    c.pointerMove(at(10.1, 20.1), false);
+    expect(c.getView().snap).toMatchObject({ kind: 'model', part: 'pierce', p: [10, 20] });
+    expect(c.getView().inference).toBe('貫穿點');
+    click(c, 10.1, 20.1);
+    c.pointerMove(at(49.9, 0.1), false);
+    expect(c.getView().snap).toMatchObject({ kind: 'model', part: 'start', p: [50, 0], item: { ref: { name: 'above' } } });
+    click(c, 49.9, 0.1);
+    const s = h.sketch();
+    const pierce = s.entities.find((e) => e.type === 'point' && e.pierce)!;
+    expect(pierce).toMatchObject({ x: 10, y: 20, pierce: { kind: 'edge', name: 'upright' } });
+    const above = lines(h).find((l) => l.ref?.name === 'above')!;
+    const mine = lines(h).find((l) => !l.ref)!;
+    expect([mine.p1, mine.p2]).toEqual([pierce.id, above.p1]);
+    expect(above.construction).toBe(true); // projected from outside the plane: it holds the end, it is no part of a profile
+    h.history.undo();
+    expect(h.sketch().entities).toEqual([]); // one step: the pierce point and the followed edge went with the line
+  });
+
   it('lets a sketch point win over the model, and the model win over a free place', () => {
     const { c } = withPlate();
     c.setTool('point');

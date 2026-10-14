@@ -286,13 +286,25 @@ export function chamfer(sketch: Pick<SketchFeature, 'constraints'>, geometry: Ge
 
 // ---------------------------------------------------------------- entities that follow the model (C1.18, C1.26)
 
-/** What a model edge looks like on the sketch plane, or where it pierces it: the shape `@3db/regen` hands over (sketch coordinates). */
+/**
+ * What a model edge looks like on the sketch plane, or where it pierces it: the shape `@3db/regen` hands over (sketch coordinates). `off` is there when
+ * the edge was projected onto the plane from outside (C1 2026-10-14): how near it comes to the plane, 0 when it passes through it; absent: it lies in it.
+ */
 export type ModelItem =
-  | { ref: Ref; projected: { kind: 'line'; a: P2; b: P2 } | { kind: 'circle'; c: P2; r: number } | { kind: 'arc'; c: P2; r: number; start: P2; end: P2 } }
+  | { ref: Ref; projected: { kind: 'line'; a: P2; b: P2 } | { kind: 'circle'; c: P2; r: number } | { kind: 'arc'; c: P2; r: number; start: P2; end: P2 }; off?: number }
   | { ref: Ref; pierce: P2 };
 
-/** A model edge as it lies in the sketch plane. */
+/** A model edge as it lies in the sketch plane (or projected onto it). */
 export type ModelEdge = Extract<ModelItem, { projected: unknown }>;
+
+/** The sketch point that follows where `item` pierces the plane: the one the sketch or this action already has, else a new one. */
+function piercePoint(sketch: Pick<SketchFeature, 'entities'>, made: Maker, item: Extract<ModelItem, { pierce: P2 }>): Id {
+  const have = [...sketch.entities, ...made.entities].find((e) => e.type === 'point' && e.pierce?.name === item.ref.name);
+  if (have) return have.id;
+  const id = made.ids.take('p');
+  made.entities.push({ id, type: 'point', x: item.pierce[0], y: item.pierce[1], pierce: item.ref });
+  return id;
+}
 
 /** What `anchorModel` works on: the entities and relations an action has made so far, and where it takes new ids from. */
 export interface Maker {
@@ -305,9 +317,10 @@ export interface Maker {
  * The point of a model edge a click stands for (D5.3b): the edge becomes an entity that follows it (unless the sketch, or this action,
  * already has one) and the point is one of its ends or its center; the middle or any other place along it is a new point with a
  * midpoint / on-curve relation to the entity. Ends that lie where an earlier entity of that kind already has a point are shared
- * with it, so two edges meeting at a corner meet at one point.
+ * with it, so two edges meeting at a corner meet at one point. A pierce point is a sketch point that follows the edge (as 「貫穿」 makes).
  */
-export function anchorModel(sketch: Pick<SketchFeature, 'entities'>, geometry: Geometry, made: Maker, item: ModelEdge, part: 'start' | 'end' | 'center' | 'mid' | 'curve', at: P2): Id {
+export function anchorModel(sketch: Pick<SketchFeature, 'entities'>, geometry: Geometry, made: Maker, item: ModelItem, part: 'start' | 'end' | 'center' | 'mid' | 'curve' | 'pierce', at: P2): Id {
+  if ('pierce' in item) return piercePoint(sketch, made, item);
   const all = [...sketch.entities, ...made.entities];
   let entity = all.find((e): e is Exclude<SketchEntity, { type: 'point' }> => e.type !== 'point' && e.ref?.name === item.ref.name);
   if (!entity) {
@@ -331,9 +344,11 @@ export function anchorModel(sketch: Pick<SketchFeature, 'entities'>, geometry: G
       return id;
     };
     const q = item.projected;
-    if (q.kind === 'line') entity = { id: made.ids.take('l'), type: 'line', p1: corner(q.a), p2: corner(q.b), ref: item.ref };
-    else if (q.kind === 'circle') entity = { id: made.ids.take('ci'), type: 'circle', center: corner(q.c), radius: q.r, ref: item.ref };
-    else entity = { id: made.ids.take('a'), type: 'arc', center: corner(q.c), start: corner(q.start), end: corner(q.end), ref: item.ref };
+    // an edge projected from outside the plane (C1 2026-10-14) is only something to hold the point to: construction, so it never joins a profile
+    const held = item.off !== undefined ? { construction: true } : {};
+    if (q.kind === 'line') entity = { id: made.ids.take('l'), type: 'line', p1: corner(q.a), p2: corner(q.b), ref: item.ref, ...held };
+    else if (q.kind === 'circle') entity = { id: made.ids.take('ci'), type: 'circle', center: corner(q.c), radius: q.r, ref: item.ref, ...held };
+    else entity = { id: made.ids.take('a'), type: 'arc', center: corner(q.c), start: corner(q.start), end: corner(q.end), ref: item.ref, ...held };
     made.entities.push(entity);
   }
   if (part === 'center' && entity.type !== 'line') return entity.center;
@@ -358,10 +373,11 @@ export function anchorModelForSelection(
   sketch: Pick<SketchFeature, 'entities'>,
   geometry: Geometry,
   made: Maker,
-  item: ModelEdge,
-  part: 'start' | 'end' | 'center' | 'mid' | 'curve',
+  item: ModelItem,
+  part: 'start' | 'end' | 'center' | 'mid' | 'curve' | 'pierce',
   at: P2,
 ): Id {
+  if ('pierce' in item) return piercePoint(sketch, made, item);
   const all = [...sketch.entities, ...made.entities];
   let entity = all.find((e): e is Exclude<SketchEntity, { type: 'point' }> => e.type !== 'point' && e.ref?.name === item.ref.name);
   if (!entity) {

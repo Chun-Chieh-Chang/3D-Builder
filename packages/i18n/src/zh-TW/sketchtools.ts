@@ -42,6 +42,7 @@ export const sketchtools = {
   'infer.modelMid': '模型中點',
   'infer.modelCenter': '模型圓心',
   'infer.modelEdge': '在模型邊上',
+  'infer.modelPierce': '貫穿點',
   'infer.onExtension': '在延長線上',
   'infer.intersection': '交點',
   'infer.quadrant': '四分之一點',

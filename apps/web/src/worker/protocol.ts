@@ -2,7 +2,7 @@ import type { Locale } from '@3db/i18n';
 import type { InterferenceComponent, MeasureReport, MeasureTarget, PartMass, ElementFacts, ViewAxes, ViewFeature } from '@3db/model';
 import type { AssemblyDoc, Axis3, CoordSystem, Fingerprint, Id, PartDoc, PlaneFrame, Pose, Ref, SketchFeature, SourceTree, Vec3 } from '@3db/model';
 import type { DraftReport, ThicknessReport, UndercutReport, GeometryReport, MassProps, MeshData, ProjectedView } from '@3db/kernel';
-import type { AssemblyResult, AssemblySolveOptions, ClearanceRow, Converted, FeatureResult, FlatReport, SheetCheck, SheetCheckLimits, SweepResult } from '@3db/regen';
+import type { AssemblyResult, AssemblySolveOptions, ClearanceRow, Converted, FeatureResult, FlatReport, SheetCheck, SheetCheckLimits, SnapItem, SweepResult } from '@3db/regen';
 import type { MateGeometry } from '@3db/assembly';
 import type { StepAssemblyPlan, StepInstance, StepSub } from '@3db/io';
 import type { EntityStatus, SketchStatus, SolvedGeometry, SolveOptions } from '@3db/sketch';
@@ -242,8 +242,8 @@ export interface KernelApi {
   solveSketch(req: SketchSolveRequest): Promise<SketchSolvePayload>;
   /** What these model edges and face outlines look like on the plane of the sketch being edited. */
   convertReferences(req: ConvertRequest): Promise<ConvertPayload>;
-  /** The model's edges lying in a sketch's plane, projected (what the sketch can snap to); the model before the sketch, as the last rebuild left it. */
-  sketchSnapItems(sketchId: Id): Promise<Converted[]>;
+  /** What the sketch can snap to on the model (modelSnapItems): its edges in the plane, the others projected onto it, where edges pass through it; the model before the sketch, as the last rebuild left it. */
+  sketchSnapItems(sketchId: Id): Promise<SnapItem[]>;
   /** STEP of the rebuilt part, its product named `name`. */
   exportStep(doc: PartDoc, name: string, options?: PartExportOptions): Promise<StepOutput>;
   /** Binary STL of the bodies that count, meshed as finely as the document's quality says (F4.1). */

@@ -510,7 +510,7 @@ class AppStore {
   private inFlight = false;
   private pending = false;
   private sketchSeq = 0;
-  /** The model's edges in the plane of the sketch being edited, projected (what the cursor can snap to, D5.3b); empty outside a sketch. */
+  /** What the cursor can snap to on the model while a sketch is edited (D5.3b, C1 2026-10-14): edges in its plane, the others projected onto it, pierce points; empty outside a sketch. */
   private modelSnap: ModelItem[] = [];
   private sketchRunner: LatestRunner<SketchSolveRequest, SketchSolvePayload>;
   private state: UiState;
@@ -2525,7 +2525,7 @@ class AppStore {
     if (r.errors.length > 0) this.notify(r.errors[0]!, r.items.length > 0 ? 'info' : 'error');
   }
 
-  /** While a sketch is edited: asks the worker (which has the model before the sketch) for the edges in its plane, to snap to. */
+  /** While a sketch is edited: asks the worker (which has the model before the sketch) for what the sketch can snap to on it. */
   private async refreshModelSnap(): Promise<void> {
     const e = this.state.editing;
     if (e?.kind !== 'sketch') {
@@ -2534,7 +2534,7 @@ class AppStore {
     }
     try {
       const items = await this.api.sketchSnapItems(e.featureId);
-      if (this.state.editing?.featureId === e.featureId) this.modelSnap = items.filter((i): i is ModelItem => 'projected' in i);
+      if (this.state.editing?.featureId === e.featureId) this.modelSnap = items;
     } catch {
       this.modelSnap = []; // snapping to the model is a convenience: a failure only takes it away
     }
