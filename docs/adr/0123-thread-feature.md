@@ -9,7 +9,8 @@
 3. 軸線支援：
    - 引用草圖中心線 ID（`typeof axis === 'string'`），由草圖解算二維幾何投影至三維空間座標軸，如同旋轉特徵做法。
    - 引用圓柱面／錐面／圓環面（取其旋轉軸）、直線邊、或基準軸（`typeof axis === 'object'`），由再生引擎之 `axisOfRef` 自動解析並於模型變更時自動追蹤。
-4. 牙型草圖必須畫在通過螺牙軸的平面上。螺牙軸向起始位置由草圖牙型輪廓之中心位置決定，並由 `length` 與 `reverse` 決定終止截面。兩端平切（第一版約定）。
+4. 牙型草圖必須畫在通過螺牙軸的平面上。螺牙軸向起始位置為草圖牙型輪廓沿軸向的**前緣**（正向取 `zMin`，`reverse` 取 `zMax`；圓弧／圓以取樣求真實範圍，不以圓心代表），再由 `length` 與 `reverse` 決定終止截面。兩端平切（第一版約定）。
+   - **2026-10-14 修正**：原約定以輪廓「中心」為起點，起始截面因而切在牙型正中，畫在起始端的牙型後半部不被切除，模型起始處出現殘缺的半牙，整條螺牙看似沿軸向偏移半個牙寬。改以前緣起算後，草圖所畫的牙型完整切出；`length` 自前緣量起。迴歸測試：`tests/phase3/thread-feature.test.ts`「the thread starts at the leading edge of the profile」（舊碼 3/3 失敗、新碼 3/3 通過）。
 5. 線數校驗：線數必須為正整數（1 至 16）。非整數（如 1.5）直接拒絕並說明原因（`feature.threadBadStarts`），禁止默默取整四捨五入。
 6. 多線重疊防禦與消除崩潰：牙型沿軸向寬度若大於等於單線螺距（`zMax - zMin >= pitch`），相鄰牙在空間中會互相重疊。此類幾何物理上自相交，且過往透過 `BRepAlgoAPI_Fuse` 融合重疊螺旋體每次消耗 100~250 MB 堆記憶體且不釋放，易造成 WASM 記憶體越界崩潰。核心嚴格限制 `zMax - zMin < pitch`，超出時明確拒絕（`feature.threadProfileTooWide`）；多線各 start 彼此不接觸，直接組裝為 `TopoDS_Compound`，彻底杜絕記憶體外溢與崩潰。
 7. 面命名遵循 `@3db/naming` 的 `profileEdge` 螺旋面名（`side:<sketchId>.<edge>@helix<start>:<turn>`）與兩端 `cap`。

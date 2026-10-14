@@ -1451,18 +1451,26 @@ export class Regenerator {
       const dotv = (a: Vec3, b: Vec3) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
       const subVec = (a: Vec3, b: Vec3): Vec3 => [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
 
+      // the profile's extent along the axis (arcs and circles sampled, as the kernel does: an arc's centre and ends do not bound it)
       const samples: Vec3[] = [];
       for (const r of regions) {
         for (const seg of r.outer) {
           if (seg.kind === 'line') samples.push(at(seg.a), at(seg.b));
-          else if (seg.kind === 'arc') samples.push(at(seg.from), at(seg.to), at(seg.c));
-          else if (seg.kind === 'circle') samples.push(at(seg.c));
+          else {
+            const a0 = seg.kind === 'circle' ? 0 : Math.atan2(seg.from[1] - seg.c[1], seg.from[0] - seg.c[0]);
+            let sweep = seg.kind === 'circle' ? 2 * Math.PI : Math.atan2(seg.to[1] - seg.c[1], seg.to[0] - seg.c[0]) - a0;
+            if (seg.kind === 'arc') {
+              if (seg.ccw && sweep <= 0) sweep += 2 * Math.PI;
+              if (!seg.ccw && sweep >= 0) sweep -= 2 * Math.PI;
+            }
+            for (let i = 0; i <= 64; i++) samples.push(at([seg.c[0] + seg.r * Math.cos(a0 + (sweep * i) / 64), seg.c[1] + seg.r * Math.sin(a0 + (sweep * i) / 64)]));
+          }
         }
       }
       const zs = samples.map((p) => dotv(subVec(p, O), Z));
-      const zMin = Math.min(...zs);
-      const zMax = Math.max(...zs);
-      zc = (zMin + zMax) / 2;
+      // the thread starts at the profile's leading edge, so the tooth as drawn is cut whole: starting at its middle (as before) cut off the half
+      // of the profile behind it, which showed as a short, broken first tooth and the thread shifted along the axis
+      zc = f.reverse ? Math.max(...zs) : Math.min(...zs);
     }
 
     const len = Math.hypot(...axis.dir);

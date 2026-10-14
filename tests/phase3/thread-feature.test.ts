@@ -293,6 +293,70 @@ describe('Thread Feature (T-2, Schema 53)', () => {
     expect(kernel.solidCount(r.body!.shape)).toBe(1);
   });
 
+  describe('the thread starts at the leading edge of the profile, so the tooth as drawn is cut whole', () => {
+    // a solid rod r = 4 along Y from 0 to 12, cut with a tooth drawn across its surface (r 3.4 → 4.4), 1.5 wide < pitch 2
+    const rod = () => {
+      const s = sketch(
+        'sk_rod',
+        front,
+        parts(
+          point('cp1', 0, 0), point('cp2', 4.0, 0), point('cp3', 4.0, 12), point('cp4', 0, 12),
+          line('cl1', 'cp1', 'cp2'), line('cl2', 'cp2', 'cp3'), line('cl3', 'cp3', 'cp4'), line('cl4', 'cp4', 'cp1'),
+          point('ax1', 0, 0), point('ax2', 0, 12),
+          line('axis', 'ax1', 'ax2', true),
+        ),
+      );
+      const rv: Feature = { id: 'rv', type: 'revolve', name: 'rv', suppressed: false, sketch: 'sk_rod', axis: 'axis', op: 'boss', dir1: { type: 'blind', angle: '360deg' } };
+      return [s, rv] as const;
+    };
+    const tooth = (y0: number): SketchParts => {
+      const ps = [point('tp1', 3.4, y0), point('tp2', 4.4, y0 + 0.4), point('tp3', 4.4, y0 + 1.1), point('tp4', 3.4, y0 + 1.5)];
+      return parts(...ps, line('tl1', 'tp1', 'tp2'), line('tl2', 'tp2', 'tp3'), line('tl3', 'tp3', 'tp4'), line('tl4', 'tp4', 'tp1'));
+    };
+    const thread = (reverse: boolean, length = '8'): ThreadFeature => ({
+      id: 'th1', type: 'thread', name: 'th1', suppressed: false, sketch: 'sk_tooth', axis: { kind: 'datum', name: 'axis:y' },
+      op: 'cut', pitch: '2', starts: '1', hand: 'right', length, ...(reverse ? { reverse: true } : {}),
+    });
+    const probe = (r: RebuildResult, p: [number, number, number]) => kernel.classify(r.body!.shape, [p])[0];
+
+    it('a tooth drawn at the start face: its trailing half is cut too (it was left standing, the thread shifted half a tooth on)', () => {
+      const r = rebuild(build(...rod(), sketch('sk_tooth', front, tooth(0)), thread(false)));
+      expect(failures(r)).toEqual([]);
+      expect(kernel.isValid(r.body!.shape)).toBe(true);
+      // inside the drawn tooth, behind its middle (y 0.75): metal before the fix
+      expect(probe(r, [3.6, 0.3, 0])).toBe('out');
+      expect(probe(r, [3.9, 0.5, 0])).toBe('out');
+      // and ahead of its middle, as before
+      expect(probe(r, [3.9, 1.0, 0])).toBe('out');
+      // just outside the drawn tooth, before its leading flank: metal
+      expect(probe(r, [3.9, 0.05, 0])).toBe('in');
+      // the thread is `length` long from the leading edge: one pitch on, the groove is there; past y = 8 it is not
+      expect(probe(r, [3.9, 2.75, 0])).toBe('out');
+      expect(probe(r, [3.9, 10.75, 0])).toBe('in');
+    });
+
+    it('reversed, from a tooth drawn at the far face: its half towards the far face is cut too', () => {
+      const r = rebuild(build(...rod(), sketch('sk_tooth', front, tooth(10.5)), thread(true)));
+      expect(failures(r)).toEqual([]);
+      expect(kernel.isValid(r.body!.shape)).toBe(true);
+      expect(probe(r, [3.6, 11.7, 0])).toBe('out');
+      expect(probe(r, [3.9, 11.5, 0])).toBe('out');
+      expect(probe(r, [3.9, 11.0, 0])).toBe('out');
+      expect(probe(r, [3.9, 9.25, 0])).toBe('out');
+      expect(probe(r, [3.9, 0.75, 0])).toBe('in');
+    });
+
+    it('a round tooth (a circle): bounded by the circle, not by its centre', () => {
+      const circle = parts(point('kc', 4.0, 0.5), { id: 'k', type: 'circle', center: 'kc', radius: 0.5 });
+      const r = rebuild(build(...rod(), sketch('sk_tooth', front, circle), thread(false, '6')));
+      expect(failures(r)).toEqual([]);
+      expect(kernel.isValid(r.body!.shape)).toBe(true);
+      // the half of the circle behind its centre (y < 0.5): metal before the fix
+      expect(probe(r, [3.8, 0.2, 0])).toBe('out');
+      expect(probe(r, [3.8, 0.8, 0])).toBe('out');
+    });
+  });
+
   it('serializes to JSON and round-trips with Schema 53+, migrating Schema 52 cleanly', () => {
     const boreSketch = sketch('sk_bore', front, parts(point('p1', 0, 0)));
     const doc = build(boreSketch);
