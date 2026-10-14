@@ -263,9 +263,62 @@ function angle(d: Extract<Dimension, { kind: 'angle' }>, ea: ElementFacts, eb: E
   return { value, text, items, handle: { kind: 'angle', centre, radius: R, mid }, dxf: { textAt: [textAt[0], textAt[1] + DIM_TEXT / 2], geometry: { kind: 'angular', first: [centre, far(r1)], second: [centre, far(r2)], arc: at(mid) } } };
 }
 
-function linear(d: Extract<Dimension, { kind: 'linear' }>, ea: ElementFacts, eb: ElementFacts, axes: ViewAxes, placed: PlacedView, unit: LengthUnit): DimensionOutcome {
-  const A = inView(ea, axes);
+/** The foot of the perpendicular from `q` to the line through `p` along the unit `d`. */
+const footOn = (q: P, p: P, d: P): P => {
+  const t = (q[0] - p[0]) * d[0] + (q[1] - p[1]) * d[1];
+  return [p[0] + d[0] * t, p[1] + d[1] * t];
+};
+
+/**
+ * The two points an aligned dimension runs between (D-I2): two points as they are; a point and a line (a straight edge, a plane seen edge-on), the point and the
+ * foot of the perpendicular from it to the line — the distance from a point to a line is the shortest one; two lines, which have to be parallel, a point of the
+ * first and the foot of the perpendicular from it to the second.
+ */
+function alignedEnds(ea: ElementFacts, eb: ElementFacts, axes: ViewAxes): [P, P] | { error: string } {
+  const lineA = isBound(ea) ? seenAsLine(ea, axes) : null;
+  const lineB = isBound(eb) ? seenAsLine(eb, axes) : null;
+  if (lineA && 'error' in lineA) return lineA;
+  if (lineB && 'error' in lineB) return lineB;
+  const A = lineA ? lineA.p : inView(ea, axes);
+  if (lineA && lineB) {
+    if (Math.abs(lineA.d[0] * lineB.d[1] - lineA.d[1] * lineB.d[0]) > 1e-6) return { error: t('drawing.dimNotParallel') };
+    return [A, footOn(A, lineB.p, lineB.d)];
+  }
+  if (lineB) return [A, footOn(A, lineB.p, lineB.d)];
   const B = inView(eb, axes);
+  if (lineA) return [footOn(B, lineA.p, lineA.d), B];
+  return [A, B];
+}
+
+/**
+ * Where a cylinder's outline is, seen from the side (D-I2): its axis's point moved `radius` square to the axis as the view sees it, to the left (side 1) or the
+ * right (-1). Null when the cylinder is not seen from the side (its axis along the view): it has no outline then, only a circle.
+ */
+function outlinePoint(e: ElementFacts, side: 1 | -1, axes: ViewAxes): P | null {
+  if (e.type !== 'cylinder' || !e.dir || e.radius === undefined) return null;
+  const a: P = [dot(e.dir, rightOf(axes)), dot(e.dir, sheetUp(axes))];
+  const l = len(a);
+  if (l < 1e-6) return null;
+  const n: P = [-a[1] / l, a[0] / l];
+  const p = inView(e, axes);
+  return [p[0] + side * e.radius * n[0], p[1] + side * e.radius * n[1]];
+}
+
+function linear(d: Extract<Dimension, { kind: 'linear' }>, ea: ElementFacts, eb: ElementFacts, axes: ViewAxes, placed: PlacedView, unit: LengthUnit): DimensionOutcome {
+  let A = inView(ea, axes);
+  let B = inView(eb, axes);
+  for (const [which, side, e] of [[0, d.aSide, ea], [1, d.bSide, eb]] as const) {
+    if (side === undefined) continue;
+    const at = outlinePoint(e, side, axes);
+    if (!at) return { error: t('drawing.dimNoOutline') };
+    if (which === 0) A = at;
+    else B = at;
+  }
+  if (d.orientation === 'aligned' && d.aSide === undefined && d.bSide === undefined) {
+    const ends = alignedEnds(ea, eb, axes);
+    if ('error' in ends) return ends;
+    [A, B] = ends;
+  }
   if (d.orientation !== 'aligned') {
     const along = d.orientation === 'horizontal' ? 'x' : 'y';
     for (const e of [ea, eb]) if (isBound(e) && !squareTo(e, axes, along)) return { error: t('drawing.dimNotAcross') };

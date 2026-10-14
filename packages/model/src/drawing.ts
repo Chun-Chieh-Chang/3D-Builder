@@ -13,7 +13,7 @@ import { ANNOTATION_FIELDS, checkAnnotation, framesUsing, type Annotation, type 
  * opened (exact hidden-line removal), so a drawing can never disagree with the model it shows.
  */
 
-export const DRAWING_SCHEMA_VERSION = 12;
+export const DRAWING_SCHEMA_VERSION = 13;
 
 export type SheetSize = 'A4' | 'A3' | 'A2' | 'A1' | 'A0';
 export const SHEET_SIZES: readonly SheetSize[] = ['A4', 'A3', 'A2', 'A1', 'A0'];
@@ -156,6 +156,13 @@ export interface LinearDimension extends DimensionCommon {
   b: Ref;
   orientation: DimensionOrientation;
   offset: number;
+  /**
+   * Where `a` (or `b`) is a cylinder seen from the side (v13, D-I2, ADR 0138): the outline it is measured from, on the left (1) or the right (-1) of its axis as
+   * the view sees it (left: the axis's direction turned a quarter counter-clockwise). Absent: the axis. A pin's diameter seen from the side is the distance
+   * between its two outlines — one face, both sides.
+   */
+  aSide?: 1 | -1;
+  bSide?: 1 | -1;
 }
 
 /** The diameter (Ø) of a cylinder or a circle seen as a circle in the view; `angle` is the direction of its leader on the sheet (degrees counter-clockwise from the x axis) and `count` how many equal ones it stands for (「4×Ø9」). */
@@ -541,6 +548,14 @@ function checkDimension(d: Dimension, views: readonly DrawingView[]): void {
     if (!isRefValue(d.a) || !isRefValue(d.b)) throw new CommandError(t('drawing.dimBadRef'));
     if (!ORIENTATIONS.includes(d.orientation)) throw new CommandError(t('drawing.dimBadOrientation', { orientation: String(d.orientation) }));
     if (!Number.isFinite(d.offset) || d.offset === 0) throw new CommandError(t('drawing.dimBadOffset'));
+    for (const [side, r] of [[d.aSide, d.a], [d.bSide, d.b]] as const) {
+      if (side === undefined) continue;
+      if (side !== 1 && side !== -1) throw new CommandError(t('drawing.dimBadSide'));
+      // an outline is a cylinder's, which is a face
+      if (r.kind !== 'face') throw new CommandError(t('drawing.dimBadSide'));
+    }
+    // one face measured to itself is a distance only between its two outlines
+    if (d.a.kind === d.b.kind && d.a.name === d.b.name && !(d.aSide !== undefined && d.bSide !== undefined && d.aSide !== d.bSide)) throw new CommandError(t('drawing.dimSameElement'));
   } else if (d.kind === 'angle') {
     if (!isRefValue(d.a) || !isRefValue(d.b) || d.a.kind === 'vertex' || d.b.kind === 'vertex') throw new CommandError(t('drawing.dimBadRef'));
     if (!Number.isFinite(d.arc) || !(d.arc > 0)) throw new CommandError(t('drawing.dimBadArc'));

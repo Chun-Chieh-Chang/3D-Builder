@@ -299,6 +299,9 @@ const drawingMigrations: Record<number, (doc: Json) => Json> = {
   10: (doc) => doc,
   // v12: the annotations (D-I3, ADR 0132): notes, datum symbols, feature control frames, centre lines and marks put by hand. A list, empty in an older file.
   11: (doc) => ({ ...doc, annotations: doc.annotations ?? [] }),
+  // v13: a linear dimension may measure from a cylinder's outline seen from the side (`aSide`, `bSide`, D-I2, ADR 0138): optional, nothing to convert; the
+  // version keeps an older program from opening a drawing whose dimensions it would measure to the axis and so get wrong.
+  12: (doc) => doc,
 };
 
 export function parseDrawing(text: string): DrawingDoc {

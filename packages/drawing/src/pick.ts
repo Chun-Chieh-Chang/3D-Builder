@@ -1,4 +1,4 @@
-import { rightOf, sheetUp, type ElementFacts, type ViewAxes, type ViewFeature } from '@3db/model';
+import { rightOf, sheetUp, type ElementFacts, type Ref, type ViewAxes, type ViewFeature } from '@3db/model';
 import { t } from '@3db/i18n';
 import type { DimensionDraft } from './autoDimension';
 import { arcAt, leaderAt, offsetAt, type DimensionHandle } from './dimension';
@@ -18,7 +18,31 @@ export type P2 = [number, number];
  * What a dimension can be attached to: everything the worker found except the sides of cylinders, and (D-I2) the straight edges and the vertices of the model the
  * view shows, by name.
  */
-export type Pickable = Exclude<ViewFeature, { type: 'axis' }> | EdgePick | VertexPick;
+export type Pickable = Exclude<ViewFeature, { type: 'axis' }> | EdgePick | VertexPick | OutlinePick;
+
+/**
+ * One of the two outlines of a whole cylinder seen from the side (D-I2, ADR 0138): the line drawn `radius` off its axis, left (1) or right (-1) of it. It is the
+ * cylinder's face, measured from that side; the axis's point and direction are kept so that the facts can be made without asking the model.
+ */
+export type OutlinePick = { type: 'outline'; ref: Ref; from: P2; to: P2; side: 1 | -1; axisAt: P2; axisDir: P2; radius: number };
+
+/** The two outlines of the whole cylinders of a view seen from the side. */
+export function outlinesOf(features: readonly ViewFeature[]): OutlinePick[] {
+  const out: OutlinePick[] = [];
+  for (const f of features) {
+    if (f.type !== 'axis') continue;
+    const d: P2 = [f.to[0] - f.from[0], f.to[1] - f.from[1]];
+    const l = hyp(d[0], d[1]);
+    if (l < 1e-9) continue;
+    const u: P2 = [d[0] / l, d[1] / l];
+    const n: P2 = [-u[1], u[0]];
+    for (const side of [1, -1] as const) {
+      const off: P2 = [n[0] * side * f.radius, n[1] * side * f.radius];
+      out.push({ type: 'outline', ref: f.ref, from: [f.from[0] + off[0], f.from[1] + off[1]], to: [f.to[0] + off[0], f.to[1] + off[1]], side, axisAt: [(f.from[0] + f.to[0]) / 2, (f.from[1] + f.to[1]) / 2], axisDir: u, radius: f.radius });
+    }
+  }
+  return out;
+}
 
 const hyp = Math.hypot;
 
@@ -35,7 +59,7 @@ export function segmentDistance(p: P2, a: P2, b: P2): number {
 }
 
 /** How big what a feature is drawn as is, for telling two apart that are the same distance from the pointer: the area of the circle an arc or a fillet is part of. */
-const areaOf = (f: Pickable) => (f.type === 'circle' || f.type === 'torus' ? Math.PI * f.radius * f.radius : f.type === 'edge' || f.type === 'vertex' ? 0 : f.area);
+const areaOf = (f: Pickable) => (f.type === 'circle' || f.type === 'torus' ? Math.PI * f.radius * f.radius : f.type === 'edge' || f.type === 'vertex' || f.type === 'outline' ? 0 : f.area);
 
 /**
  * The element of a view under the pointer, or null: a straight line of the view that is where a plane seen edge-on is (a vertical one for a plane across x, a horizontal one
@@ -84,6 +108,8 @@ export function featureAt(lines: ViewLines | null | undefined, features: readonl
   }
   // a straight edge of the model: a plane seen edge-on along the same line is there too and wins (its area), so an edge is what is picked where no plane is
   for (const e of seen?.edges ?? []) offer(e, segmentDistance(p, e.a, e.b));
+  // the outline of a cylinder seen from the side: where a line of the view is drawn there
+  if (nearest <= tol) for (const o of outlinesOf(features)) offer(o, segmentDistance(p, o.from, o.to));
   if (nearest <= tol) {
     // a circle is drawn about its own middle; a fillet's arc about `at`, which is `major` off the torus's centre, and of the tube's radius and not the torus's
     for (const f of pickable) {
@@ -100,6 +126,10 @@ export function factsOf(f: Pickable, axes: ViewAxes): ElementFacts {
   const u = sheetUp(axes);
   const at = (x: number, y: number): [number, number, number] => [r[0] * x + u[0] * y, r[1] * x + u[1] * y, r[2] * x + u[2] * y];
   if (f.type === 'vertex') return { kind: 'vertex', type: 'point', point: at(f.at[0], f.at[1]) };
+  if (f.type === 'outline') {
+    const d = at(f.axisDir[0], f.axisDir[1]);
+    return { kind: 'face', type: 'cylinder', point: at(f.axisAt[0], f.axisAt[1]), dir: d, radius: f.radius };
+  }
   if (f.type === 'edge') {
     const l = hyp(f.b[0] - f.a[0], f.b[1] - f.a[1]);
     return { kind: 'edge', type: 'line', point: at((f.a[0] + f.b[0]) / 2, (f.a[1] + f.b[1]) / 2), dir: at((f.b[0] - f.a[0]) / l, (f.b[1] - f.a[1]) / l) };
@@ -166,6 +196,43 @@ export function dragDimension(handle: DimensionHandle, onText: boolean, p: P2): 
 export type Plan = { draft: DimensionDraft; refs: Pickable[]; facts: ElementFacts[] } | { need: 'second' } | { error: string };
 
 export function planDimension(picks: readonly Pickable[], p: P2, placed: PlacedView, axes: ViewAxes): Plan {
+  if (!picks.some((f) => f.type === 'outline')) return planPlain(picks, p, placed, axes);
+  // an outline (D-I2): the cylinder's face, measured from its side
+  const box = { left: placed.at[0] - placed.w / 2, right: placed.at[0] + placed.w / 2, bottom: placed.at[1] - placed.h / 2, top: placed.at[1] + placed.h / 2 };
+  const sheetOf = (x: number, y: number): P2 => toSheet(placed, x, y);
+  const facts = picks.map((f) => factsOf(f, axes));
+  if (picks.length === 1) {
+    // one outline: the cylinder's diameter seen from the side, between its two outlines, with the Ø it is written with (ISO 129-1)
+    const o = picks[0] as OutlinePick;
+    const other: OutlinePick = { ...o, side: o.side === 1 ? -1 : 1, from: [o.from[0] - 2 * o.side * o.radius * -o.axisDir[1], o.from[1] - 2 * o.side * o.radius * o.axisDir[0]], to: [o.to[0] - 2 * o.side * o.radius * -o.axisDir[1], o.to[1] - 2 * o.side * o.radius * o.axisDir[0]] };
+    const orientation = Math.abs(o.axisDir[1]) < 1e-6 ? 'vertical' : Math.abs(o.axisDir[0]) < 1e-6 ? 'horizontal' : 'aligned';
+    const ends: Pickable[] = [{ type: 'vertex', ref: o.ref, at: mid(o.from, o.to), depth: 0 }, { type: 'vertex', ref: o.ref, at: mid(other.from, other.to), depth: 0 }];
+    const plan = linearDraft(ends[0]!, ends[1]!, orientation, p, placed, box, sheetOf);
+    if ('error' in plan) return plan;
+    return { draft: { ...(plan.draft as Extract<DimensionDraft, { kind: 'linear' }>), aSide: o.side, bSide: other.side, prefix: 'Ø' }, refs: [o, other], facts: [facts[0]!, facts[0]!] };
+  }
+  const [a, b] = picks as [Pickable, Pickable];
+  if (a.type === 'outline' && b.type === 'outline' && a.ref.name === b.ref.name && a.side === b.side) return { error: t('drawing.dimZero') };
+  // measured with something else, an outline is the line it is drawn as: square to x or y like a plane seen edge-on, else a slanted line
+  const asLine = (f: Pickable): Pickable => {
+    if (f.type !== 'outline') return f;
+    if (Math.abs(f.axisDir[0]) < 1e-6) return { type: 'plane', ref: f.ref, axis: 'x', coord: f.from[0], area: 0 };
+    if (Math.abs(f.axisDir[1]) < 1e-6) return { type: 'plane', ref: f.ref, axis: 'y', coord: f.from[1], area: 0 };
+    return { type: 'slant', ref: f.ref, at: mid(f.from, f.to), dir: f.axisDir, area: 0 };
+  };
+  const plan = planPlain([asLine(a), asLine(b)], p, placed, axes);
+  if (!('draft' in plan)) return plan;
+  if (plan.draft.kind !== 'linear') return { error: t('drawing.dimNoOutline') };
+  return {
+    draft: { ...plan.draft, ...(a.type === 'outline' ? { aSide: a.side } : {}), ...(b.type === 'outline' ? { bSide: b.side } : {}) },
+    refs: [a, b],
+    facts,
+  };
+}
+
+const mid = (a: P2, b: P2): P2 => [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2];
+
+function planPlain(picks: readonly Pickable[], p: P2, placed: PlacedView, axes: ViewAxes): Plan {
   const facts = picks.map((f) => factsOf(f, axes));
   const box = { left: placed.at[0] - placed.w / 2, right: placed.at[0] + placed.w / 2, bottom: placed.at[1] - placed.h / 2, top: placed.at[1] + placed.h / 2 };
   const sheetOf = (x: number, y: number): P2 => toSheet(placed, x, y);
@@ -226,7 +293,11 @@ export function planDimension(picks: readonly Pickable[], p: P2, placed: PlacedV
     const la = line(a);
     const lb = line(b);
     const den = la.dir[0] * lb.dir[1] - la.dir[1] * lb.dir[0];
-    if (Math.abs(den) < 1e-9) return { error: t('drawing.dimParallel') };
+    if (Math.abs(den) < 1e-9) {
+      // parallel slanted lines (D-I2): the distance between them, square to both
+      const plan = linearDraft(a, b, 'aligned', p, placed, box, sheetOf);
+      return 'error' in plan ? plan : { draft: plan.draft, refs: original, facts: original.map((f) => factsOf(f, axes)) };
+    }
     const w: P2 = [lb.at[0] - la.at[0], lb.at[1] - la.at[1]];
     const s = (w[0] * lb.dir[1] - w[1] * lb.dir[0]) / den;
     const meet = sheetOf(la.at[0] + la.dir[0] * s, la.at[1] + la.dir[1] * s);
@@ -235,7 +306,11 @@ export function planDimension(picks: readonly Pickable[], p: P2, placed: PlacedV
   if (isLine(a) && isLine(b) && sameAxis) {
     // two planes square to the same axis: the distance across
   } else if (a.type === 'slant' || b.type === 'slant') {
-    return { error: t('drawing.dimSlantCircle') };
+    // a point (a vertex, a circle's middle) and a slanted line: the distance from the point to the line, square to it (D-I2)
+    const other = a.type === 'slant' ? b : a;
+    if (other.type !== 'vertex' && other.type !== 'circle') return { error: t('drawing.dimSlantCircle') };
+    const plan = linearDraft(a, b, 'aligned', p, placed, box, sheetOf);
+    return 'error' in plan ? plan : { draft: plan.draft, refs: original, facts: original.map((f) => factsOf(f, axes)) };
   }
   // two points (a vertex and a vertex, or a vertex and a circle's middle): along x, along y, or the true distance between them, by where the pointer is
   if (a.type === 'vertex' || b.type === 'vertex') {
@@ -273,13 +348,23 @@ export function planDimension(picks: readonly Pickable[], p: P2, placed: PlacedV
 }
 
 /** The point an element stands for in a distance measured to it: a vertex itself, a circle's middle, a plane's coordinate on its axis (the other one 0). */
-const pointOf = (f: Pickable): P2 => (f.type === 'vertex' ? f.at : f.type === 'circle' ? f.centre : f.type === 'plane' ? (f.axis === 'x' ? [f.coord, 0] : [0, f.coord]) : f.type === 'slant' ? f.at : f.type === 'torus' ? f.at : [(f.a[0] + f.b[0]) / 2, (f.a[1] + f.b[1]) / 2]);
+const pointOf = (f: Pickable): P2 =>
+  f.type === 'vertex' ? f.at : f.type === 'circle' ? f.centre : f.type === 'plane' ? (f.axis === 'x' ? [f.coord, 0] : [0, f.coord]) : f.type === 'slant' ? f.at : f.type === 'torus' ? f.at : f.type === 'outline' ? mid(f.from, f.to) : [(f.a[0] + f.b[0]) / 2, (f.a[1] + f.b[1]) / 2];
 
 /** A linear dimension between two elements along x, y or (two points) the line between them, its line where the pointer is. */
 function linearDraft(a: Pickable, b: Pickable, orientation: 'horizontal' | 'vertical' | 'aligned', p: P2, placed: PlacedView, box: { left: number; right: number; bottom: number; top: number }, sheetOf: (x: number, y: number) => P2): { draft: DimensionDraft } | { error: string } {
-  const A = pointOf(a);
-  const B = pointOf(b);
+  let A = pointOf(a);
+  let B = pointOf(b);
   if (orientation === 'aligned' && (a.type === 'plane' || b.type === 'plane')) return { error: t('drawing.dimNotAcross') };
+  if (orientation === 'aligned') {
+    // to a slanted line the distance runs square to it: from the point (or from the first line) to the foot of the perpendicular on the line
+    const foot = (q: P2, s: Extract<Pickable, { type: 'slant' }>): P2 => {
+      const t = (q[0] - s.at[0]) * s.dir[0] + (q[1] - s.at[1]) * s.dir[1];
+      return [s.at[0] + s.dir[0] * t, s.at[1] + s.dir[1] * t];
+    };
+    if (b.type === 'slant') B = foot(A, b);
+    else if (a.type === 'slant') A = foot(B, a);
+  }
   const k = orientation === 'horizontal' ? 0 : 1;
   if (orientation === 'aligned' ? hyp(B[0] - A[0], B[1] - A[1]) < 1e-6 : Math.abs(A[k] - B[k]) < 1e-6) return { error: t('drawing.dimZero') };
   const pa = orientation === 'horizontal' ? sheetOf(A[0], a.type === 'plane' ? 0 : A[1]) : orientation === 'vertical' ? sheetOf(a.type === 'plane' ? 0 : A[0], A[1]) : sheetOf(A[0], A[1]);
@@ -293,7 +378,7 @@ function linearDraft(a: Pickable, b: Pickable, orientation: 'horizontal' | 'vert
 }
 
 /** Where an element is along x (k = 0) or y (k = 1) of its view: a plane at its coordinate, a circle at its middle, a slanted face at its middle. */
-const coordOf = (f: Pickable, k: 0 | 1): number => (f.type === 'plane' ? (f.axis === (k === 0 ? 'x' : 'y') ? f.coord : 0) : f.type === 'circle' ? f.centre[k] : f.type === 'edge' ? (f.a[k] + f.b[k]) / 2 : f.at[k]);
+const coordOf = (f: Pickable, k: 0 | 1): number => (f.type === 'plane' ? (f.axis === (k === 0 ? 'x' : 'y') ? f.coord : 0) : f.type === 'circle' ? f.centre[k] : f.type === 'edge' ? (f.a[k] + f.b[k]) / 2 : f.type === 'outline' ? (f.from[k] + f.to[k]) / 2 : f.at[k]);
 
 // ---------------------------------------------------------------- choosing several at once (D-I1a, ADR 0130)
 

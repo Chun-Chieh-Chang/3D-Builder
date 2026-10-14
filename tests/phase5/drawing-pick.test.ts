@@ -108,12 +108,27 @@ describe('the dimension made from what is pointed at', () => {
     expect(draftOf(r)).toMatchObject({ kind: 'angle', arc: expect.closeTo(Math.hypot(20, 20), 2) });
   });
 
-  it('what cannot be: a plane alone (it asks for the second), the same place twice, a plane across x with one across... another axis as a distance is an angle, a slanted face and a circle, two parallel slanted faces', () => {
+  it('what cannot be: a plane alone (it asks for the second), the same place twice', () => {
     expect(planDimension(pick(plane('x', 0)), [200, 195], placed, axes)).toEqual({ need: 'second' });
     expect('error' in planDimension(pick(plane('x', 10), plane('x', 10)), [200, 195], placed, axes)).toBe(true);
+  });
+
+  // D-I2 (ADR 0138): what was refused until then is the distance square to a slanted line — from a point to it, or between two parallel ones (SolidWorks)
+  it('a slanted face and a circle: the distance from the middle to the line, 8 by hand; two parallel slanted faces: the distance between them, 12', () => {
     const slant = (at: [number, number]): Pickable => ({ type: 'slant', ref: ref(`s${at}`), at, dir: [0.8, 0.6], area: 5 });
-    expect('error' in planDimension(pick(slant([10, 10]), circle(50, 30, 10)), [200, 195], placed, axes)).toBe(true);
-    expect('error' in planDimension(pick(slant([10, 10]), slant([30, 10])), [200, 195], placed, axes)).toBe(true);
+    // |(50 - 10, 30 - 10) × (0.8, 0.6)| = |40·0.6 − 20·0.8| = 8
+    const toPoint = planDimension(pick(slant([10, 10]), circle(50, 30, 10)), [200, 195], placed, axes);
+    if (!('draft' in toPoint)) throw new Error('no draft');
+    expect(toPoint.draft.kind === 'linear' && toPoint.draft.orientation).toBe('aligned');
+    expect((evaluateDimension({ id: 'p', view: 'v', ...toPoint.draft } as Dimension, { elements: toPoint.facts }, axes, placed) as { value: number }).value).toBeCloseTo(8, 9);
+    // |(30 - 10, 0) × (0.8, 0.6)| = 20·0.6 = 12
+    const between = planDimension(pick(slant([10, 10]), slant([30, 10])), [200, 195], placed, axes);
+    if (!('draft' in between)) throw new Error('no draft');
+    expect((evaluateDimension({ id: 'p', view: 'v', ...between.draft } as Dimension, { elements: between.facts }, axes, placed) as { value: number }).value).toBeCloseTo(12, 9);
+    // two slanted faces that are not parallel are an angle, not a distance
+    const across: Pickable = { type: 'slant', ref: ref('t'), at: [30, 10], dir: [0.6, 0.8], area: 5 };
+    const ang = planDimension(pick(slant([10, 10]), across), [200, 195], placed, axes);
+    expect('draft' in ang && ang.draft.kind).toBe('angle');
   });
 
   it('the facts it gives are enough to draw it: the real dimension code says 100 for the two planes, Ø20 for the circle, 90° for the two planes across', () => {

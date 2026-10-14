@@ -207,6 +207,17 @@ describe('dimensions on vertices and edges', () => {
     expect((evaluateDimension({ ...above.draft, id: 'd', view: 'v' } as Dimension, facts([above.draft.a, above.draft.b]), axes, placed) as { value: number }).value).toBeCloseTo(40, 9);
   });
 
+  it('aligned from a corner to a plane seen edge-on is the distance square to the plane, from the model: 40 from x = 0 to the side at x = 40', () => {
+    const { axes, lines, features, seen } = view('front');
+    const placed = placedAt(lines);
+    const side = features.find((f) => f.type === 'plane' && f.axis === 'x' && Math.abs(f.coord - 40) < 1e-6)!;
+    const origin = seen.vertices.find((v) => Math.hypot(v.at[0], v.at[1]) < 1e-6)!;
+    expect(side && origin).toBeTruthy();
+    const d = { id: 'd', view: 'v', kind: 'linear', a: origin.ref, b: side.ref, orientation: 'aligned', offset: 10 } as Dimension;
+    const out = evaluateDimension(d, facts([origin.ref, side.ref]), axes, placed) as { value: number };
+    expect(out.value).toBeCloseTo(40, 9);
+  });
+
   it('an angle between edges that do not lie in the sheet (the isometric) is refused: the view does not show it truly', () => {
     const { axes, lines, seen } = view('isometric');
     const placed = placedAt(lines);
