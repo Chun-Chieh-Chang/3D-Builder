@@ -27,6 +27,7 @@ import {
   type SketchEntity,
   type ThreadFeature,
   type ViewAxes,
+  dimensionRefs,
 } from '@3db/model';
 import { PlaneGcsSolver } from '@3db/sketch';
 import { Kernel, type ShapeId } from '@3db/kernel';
@@ -480,7 +481,7 @@ describe('ISO 80369-7 Luer Reference Parts & Drawing Verification (T-4)', () => 
       // Real elements dynamically resolved via elementFacts on the real part bodies:
       const elements = new Map<string, ElementsResult>(
         doc.dimensions.map((d) => {
-          const refs: Ref[] = d.kind === 'linear' || d.kind === 'angle' ? [d.a, d.b] : [d.ref];
+          const refs: Ref[] = dimensionRefs(d);
           const facts = refs.map((r) => {
             const inCollar = elementFacts(collarBody.topology, collarBody.names, r);
             if (!('error' in inCollar)) return inCollar;

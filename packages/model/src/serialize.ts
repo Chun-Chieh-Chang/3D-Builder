@@ -308,6 +308,8 @@ const drawingMigrations: Record<number, (doc: Json) => Json> = {
   // v15: an annotation's point may be fastened to an element of the model (`attach`, D-I2, ADR 0138): optional, nothing to convert; the version keeps an older
   // program from opening a drawing whose annotations it would leave behind when the part changes.
   14: (doc) => doc,
+  // v16: ordinate dimensions (D-I4, ADR 0139): a new kind of dimension; nothing to convert, the version keeps older programs from opening what they cannot draw.
+  15: (doc) => doc,
 };
 
 export function parseDrawing(text: string): DrawingDoc {

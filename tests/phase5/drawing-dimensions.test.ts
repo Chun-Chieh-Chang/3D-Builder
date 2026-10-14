@@ -22,6 +22,7 @@ import {
   type Ref,
   type ViewAxes,
   type ViewFeature,
+  dimensionRefs,
 } from '@3db/model';
 import { readPartFile } from '@3db/io';
 import { PlaneGcsSolver } from '@3db/sketch';
@@ -220,7 +221,7 @@ describe('the locating plate dimensioned in its top view', () => {
   function evaluate(body: ReturnType<typeof built>, drafts: DimensionDraft[]) {
     return drafts.map((draft, i) => {
       const d = { ...draft, id: `dim${i + 1}`, view: 'view1' } as Dimension;
-      const refs = d.kind === 'linear' || d.kind === 'angle' ? [d.a, d.b] : [d.ref];
+      const refs = dimensionRefs(d);
       const facts = refs.map((r) => elementFacts(body.topology, body.names, r));
       const bad = facts.find((f) => 'error' in f) as { error: string } | undefined;
       const resolved: ElementsResult = bad ? { error: bad.error } : { elements: facts as never };
@@ -392,7 +393,7 @@ describe('the locating plate dimensioned in its top view', () => {
     const lines: ViewLines = { visible: [[-60, -40, 60, -40, 60, 40, -60, 40, -60, -40]], hidden: [], box: { min: [-60, -40], max: [60, 40] } };
     const elements = new Map<string, ElementsResult>(
       d.dimensions.map((x) => {
-        const refs = x.kind === 'linear' || x.kind === 'angle' ? [x.a, x.b] : [x.ref];
+        const refs = dimensionRefs(x);
         return [x.id, { elements: refs.map((r) => elementFacts(body.topology, body.names, r)) as never }];
       }),
     );

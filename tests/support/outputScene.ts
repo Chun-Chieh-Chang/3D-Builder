@@ -8,6 +8,7 @@ import {
   type Dimension,
   type DrawingDoc,
   type Ref,
+  dimensionRefs,
 } from '@3db/model';
 import { readPartFile } from '@3db/io';
 import { PlaneGcsSolver } from '@3db/sketch';
@@ -54,7 +55,7 @@ export async function plateScene(): Promise<{ scene: Scene; doc: DrawingDoc; val
     doc = applyDrawingCommand(doc, { type: 'insertTables', tables: [{ id: 'tbl1', kind: 'holes', view: 'view1', fits: { '8': 'H7' } }] });
     const elements = new Map<string, ElementsResult>(
       doc.dimensions.map((d) => {
-        const refs: Ref[] = d.kind === 'linear' || d.kind === 'angle' ? [d.a, d.b] : [d.ref];
+        const refs: Ref[] = dimensionRefs(d);
         return [d.id, { elements: refs.map((r) => elementFacts(body.topology, body.names, r)) as never }];
       }),
     );

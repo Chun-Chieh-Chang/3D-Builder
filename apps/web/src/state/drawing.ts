@@ -44,10 +44,9 @@ import {
   viewVectors,
   DATUM_LABEL,
   type Annotation,
-  type AnnotationPatch,
-} from '@3db/model';
+  type AnnotationPatch, dimensionRefs } from '@3db/model';
 import { drawingFileName, writeDrawingFile } from '@3db/io';
-import { attachedAnnotations, FontError, readTrueType, resolveLines, toDxf, toPdf, turnLines, visibleElements, type TrueTypeFont, type VisibleElements } from '@3db/drawing';
+import { alignCollinear, arrangeDimensions, attachedAnnotations, FontError, readTrueType, resolveLines, toDxf, toPdf, turnLines, visibleElements, type TrueTypeFont, type VisibleElements } from '@3db/drawing';
 import { autoDimensions, buildScene, type DimensionDraft, type Pickable, FIRST_OFFSET, OFFSET_STEP, ratio, scaleOf, STANDARD_SCALES, centreViews, fitViews, toSvg, type AutoDimensionOptions, type DimensionOutcome, type ElementsResult, type HoleRow, type PlacedView, type ViewBom, type Scene, type ViewLines } from '@3db/drawing';
 import type { Remote } from 'comlink';
 import { download, fileIn, pathIn, pickDrawingSaveTarget, pickFontFile, writeFile } from '../files';
@@ -133,6 +132,8 @@ export type DrawingTool =
    * there; the pointer off a corner shows the isometric view. The tool stays until Esc, for the next one.
    */
   | { kind: 'project'; parent: Id }
+  /** An ordinate dimension (D-I4): the origin first, then the elements; a click on the paper puts the row there. */
+  | { kind: 'ordinate'; picks: { view: Id; feature: Pickable }[] }
   /**
    * An annotation (D-I3): a note, a frame or a datum takes two clicks (the feature it is about, then where it goes; for a note or a frame the same place twice
    * means no leader); a centre line two points; a centre mark one circle. `first` is the first click, in the view it was made on.
@@ -425,6 +426,27 @@ export class DrawingStore {
     });
     if (commands.length === 0) return false;
     return this.execute(commands.length === 1 ? commands[0]! : { type: 'batch', commands });
+  }
+
+  /**
+   * 「自動排列尺寸」 (D-I4): the linear dimensions in `ids` stacked outward from their views, the shortest nearest, as one step; no number changes. Returns how
+   * many moved.
+   */
+  arrangeDimensions(ids: readonly Id[]): number {
+    const changes = arrangeDimensions(this.history.doc.dimensions, this.scene().dimensions, new Set(ids));
+    if (changes.length === 0) return 0;
+    const commands: DrawingCommand[] = changes.map((c) => ({ type: 'setDimension', dimensionId: c.id, patch: c.patch }));
+    return this.execute(commands.length === 1 ? commands[0]! : { type: 'batch', commands }) ? changes.length : 0;
+  }
+
+  /** 「共線對正」 (D-I4): the dimensions in `ids` on the first one's line, as one step; those that cannot be (another view, way or side) are said. */
+  alignCollinear(ids: readonly Id[]): void {
+    const { changes, skipped } = alignCollinear(this.history.doc.dimensions, ids);
+    if (changes.length > 0) {
+      const commands: DrawingCommand[] = changes.map((c) => ({ type: 'setDimension', dimensionId: c.id, patch: c.patch }));
+      this.execute(commands.length === 1 ? commands[0]! : { type: 'batch', commands });
+    }
+    if (skipped.length > 0) this.host.notify(t('drawingUi.alignSkipped', { n: skipped.length }));
   }
 
   /** The same change to every dimension in `ids`, as one step: wholly or, if one of them refuses it, not at all. */
@@ -787,7 +809,7 @@ export class DrawingStore {
         }
         // what the elements are
         const need = new Map<string, Map<string, Ref>>();
-        const refsOf = (d: Dimension): DrawingRef[] => (d.kind === 'linear' || d.kind === 'angle' ? [d.a, d.b] : [d.ref]);
+        const refsOf = (d: Dimension): DrawingRef[] => dimensionRefs(d);
         const keyOfDim = (d: Dimension): string | null => {
           const view = doc.views.find((v) => v.id === d.view);
           return view && !this.assemblyData(view) ? this.keyOf(view) : null;
@@ -1029,7 +1051,15 @@ export class DrawingStore {
     const same = (a: Ref, b: Ref) => a.kind === b.kind && a.name === b.name;
     const have = doc.dimensions.filter((d) => d.view === viewId);
     const isNew = (d: ReturnType<typeof autoDimensions>[number]) =>
-      !have.some((h) => h.kind === d.kind && (h.kind === 'linear' && d.kind === 'linear' ? h.orientation === d.orientation && same(h.a, d.a) && same(h.b, d.b) : (h.kind === 'diameter' || h.kind === 'radius') && (d.kind === 'diameter' || d.kind === 'radius') && same(h.ref, d.ref)));
+      !have.some(
+        (h) =>
+          h.kind === d.kind &&
+          (h.kind === 'linear' && d.kind === 'linear'
+            ? h.orientation === d.orientation && same(h.a, d.a) && same(h.b, d.b)
+            : h.kind === 'ordinate' && d.kind === 'ordinate'
+              ? h.axis === d.axis && same(h.origin, d.origin)
+              : (h.kind === 'diameter' || h.kind === 'radius') && (d.kind === 'diameter' || d.kind === 'radius') && same(h.ref, d.ref)),
+      );
     const drafts = autoDimensions(features, options).filter(isNew);
     if (drafts.length === 0) return 0;
     // the offsets continue outside the dimension lines the view has already

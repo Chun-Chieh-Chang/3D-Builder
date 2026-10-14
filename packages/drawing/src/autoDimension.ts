@@ -13,6 +13,11 @@ export interface AutoDimensionOptions {
   holes: boolean;
   /** Where each hole is, from the left side and from the bottom of the view. */
   positions: boolean;
+  /**
+   * The places of the holes as ordinate dimensions (D-I4): one along x and one along y from the left and the bottom planes, the far planes with them (so they
+   * give the overall size too) — in place of a linear dimension for each.
+   */
+  ordinate?: boolean;
 }
 
 /** The distance from the view to the first dimension line, and between dimension lines (mm on the sheet). */
@@ -90,10 +95,19 @@ export function autoDimensions(features: readonly ViewFeature[], options: AutoDi
       if (datum) for (const c of whole) if (Math.abs(c.centre[axis] - datum.coord) > TOL && !seen.some((s) => Math.abs(s.at - c.centre[axis]) < TOL)) seen.push({ at: c.centre[axis], c });
       return seen.sort((a, b) => a.at - b.at);
     };
-    if (minX) for (const s of distinct(0, minX)) horizontal.push({ kind: 'linear', a: minX.ref, b: s.c.ref, orientation: 'horizontal', offset: 0 });
-    if (minY) for (const s of distinct(1, minY)) vertical.push({ kind: 'linear', a: minY.ref, b: s.c.ref, orientation: 'vertical', offset: 0 });
+    if (options.ordinate) {
+      // one ordinate dimension each way: the holes in order, the far plane last
+      const xs = minX ? distinct(0, minX).filter((s) => !maxX || Math.abs(s.at - maxX.coord) > TOL) : [];
+      const ys = minY ? distinct(1, minY).filter((s) => !maxY || Math.abs(s.at - maxY.coord) > TOL) : [];
+      if (minX && (xs.length > 0 || maxX)) out.push({ kind: 'ordinate', axis: 'x', origin: minX.ref, refs: [...xs.map((s) => s.c.ref), ...(maxX && Math.abs(maxX.coord - minX.coord) > TOL ? [maxX.ref] : [])], offset: -FIRST_OFFSET });
+      if (minY && (ys.length > 0 || maxY)) out.push({ kind: 'ordinate', axis: 'y', origin: minY.ref, refs: [...ys.map((s) => s.c.ref), ...(maxY && Math.abs(maxY.coord - minY.coord) > TOL ? [maxY.ref] : [])], offset: FIRST_OFFSET });
+    } else {
+      if (minX) for (const s of distinct(0, minX)) horizontal.push({ kind: 'linear', a: minX.ref, b: s.c.ref, orientation: 'horizontal', offset: 0 });
+      if (minY) for (const s of distinct(1, minY)) vertical.push({ kind: 'linear', a: minY.ref, b: s.c.ref, orientation: 'vertical', offset: 0 });
+    }
   }
-  if (options.overall) {
+  // with the ordinates the overall size is written already (their far planes), and an overall dimension would only repeat it
+  if (options.overall && !(options.positions && options.ordinate)) {
     if (minX && maxX && Math.abs(maxX.coord - minX.coord) > TOL) horizontal.push({ kind: 'linear', a: minX.ref, b: maxX.ref, orientation: 'horizontal', offset: 0 });
     if (minY && maxY && Math.abs(maxY.coord - minY.coord) > TOL) vertical.push({ kind: 'linear', a: minY.ref, b: maxY.ref, orientation: 'vertical', offset: 0 });
   }

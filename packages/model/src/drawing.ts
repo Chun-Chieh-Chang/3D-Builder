@@ -13,7 +13,7 @@ import { ANNOTATION_FIELDS, checkAnnotation, framesUsing, type Annotation, type 
  * opened (exact hidden-line removal), so a drawing can never disagree with the model it shows.
  */
 
-export const DRAWING_SCHEMA_VERSION = 15;
+export const DRAWING_SCHEMA_VERSION = 16;
 
 export type SheetSize = 'A4' | 'A3' | 'A2' | 'A1' | 'A0';
 export const SHEET_SIZES: readonly SheetSize[] = ['A4', 'A3', 'A2', 'A1', 'A0'];
@@ -206,7 +206,26 @@ export interface AngleDimension extends DimensionCommon {
   supplementary?: boolean;
 }
 
-export type Dimension = LinearDimension | DiameterDimension | RadiusDimension | AngleDimension;
+/**
+ * Ordinate dimensions (v16, D-I4, ADR 0139): the distances of several elements from one origin along the view's x (`axis: 'x'`, their values written in a row
+ * above or below the view) or its y (a column beside it), each on its own extension line, the origin written 0 — as SolidWorks and ISO 129-1 write the places of
+ * holes. `offset` is how far the row is from the view's box, as a linear dimension's line is.
+ */
+export interface OrdinateDimension extends DimensionCommon {
+  kind: 'ordinate';
+  axis: 'x' | 'y';
+  origin: DrawingRef;
+  refs: DrawingRef[];
+  offset: number;
+}
+
+/** The most elements one ordinate dimension measures. */
+export const ORDINATE_MAX = 64;
+
+export type Dimension = LinearDimension | DiameterDimension | RadiusDimension | AngleDimension | OrdinateDimension;
+
+/** The elements a dimension points at, in the order its facts are asked for (an ordinate's origin first). */
+export const dimensionRefs = (d: Dimension): DrawingRef[] => (d.kind === 'linear' || d.kind === 'angle' ? [d.a, d.b] : d.kind === 'ordinate' ? [d.origin, ...d.refs] : [d.ref]);
 
 /** What the model says an element is, worked out in the worker from the part as built: the point and direction a dimension measures from, in the part's frame. */
 export interface ElementFacts {
@@ -494,6 +513,10 @@ export type DimensionPatch = {
   a?: Ref;
   b?: Ref;
   ref?: Ref;
+  /** An ordinate dimension (v16): the way it measures, its origin and what it measures. */
+  axis?: 'x' | 'y';
+  origin?: DrawingRef;
+  refs?: DrawingRef[];
 };
 
 /** What `setView` may change: the fields every view has, and those of its kind; a field that does not belong to the view's kind is refused. */
@@ -591,6 +614,16 @@ function checkDimension(d: Dimension, views: readonly DrawingView[]): void {
     if (!Number.isFinite(d.angle)) throw new CommandError(t('drawing.dimBadAngle'));
     if (d.count !== undefined && !(Number.isInteger(d.count) && d.count >= 2)) throw new CommandError(t('drawing.dimBadCount'));
     if (d.kind === 'radius' && (d as { callout?: boolean }).callout) throw new CommandError(t('drawing.notForKind', { field: 'callout', kind: d.kind }));
+  } else if (d.kind === 'ordinate') {
+    if (d.axis !== 'x' && d.axis !== 'y') throw new CommandError(t('drawing.dimBadOrientation', { orientation: String(d.axis) }));
+    if (!isRefValue(d.origin) || !Array.isArray(d.refs) || d.refs.length === 0 || !d.refs.every(isRefValue)) throw new CommandError(t('drawing.dimBadRef'));
+    if (d.refs.length > ORDINATE_MAX) throw new CommandError(t('drawing.ordinateTooMany', { max: String(ORDINATE_MAX) }));
+    if (!Number.isFinite(d.offset) || d.offset === 0) throw new CommandError(t('drawing.dimBadOffset'));
+    // the same element twice, or the origin measured from itself, says nothing
+    const key = (r: DrawingRef) => `${r.kind}|${r.name}|${r.in ?? ''}`;
+    const all = [d.origin, ...d.refs].map(key);
+    if (new Set(all).size !== all.length) throw new CommandError(t('drawing.ordinateTwice'));
+    if (d.tolerance?.type === 'fit') throw new CommandError(t('drawing.ordinateFit'));
   } else throw new CommandError(t('drawing.dimBadKind', { kind: String((d as { kind?: unknown }).kind) }));
   if (d.precision !== undefined && !(Number.isInteger(d.precision) && d.precision >= 0 && d.precision <= 4)) throw new CommandError(t('drawing.dimBadPrecision'));
   for (const k of ['prefix', 'suffix', 'text'] as const) if (d[k] !== undefined && (typeof d[k] !== 'string' || d[k]!.length > 80)) throw new CommandError(t('drawing.dimBadText'));
@@ -737,7 +770,7 @@ export function mutateDrawing(draft: Draft<DrawingDoc>, cmd: DrawingCommand): vo
       const d = draft.dimensions.find((x) => x.id === cmd.dimensionId);
       if (!d) throw new CommandError(t('drawing.noDimension', { id: cmd.dimensionId }));
       const { reference, tolerance, count, callout, supplementary, precision, prefix, suffix, text, slide, leader, ...rest } = cmd.patch;
-      const belongs: Record<Dimension['kind'], string[]> = { linear: ['offset', 'orientation', 'a', 'b'], diameter: ['angle', 'ref'], radius: ['angle', 'ref'], angle: ['arc', 'a', 'b'] };
+      const belongs: Record<Dimension['kind'], string[]> = { linear: ['offset', 'orientation', 'a', 'b'], diameter: ['angle', 'ref'], radius: ['angle', 'ref'], angle: ['arc', 'a', 'b'], ordinate: ['offset', 'axis', 'origin', 'refs'] };
       if (slide !== undefined && d.kind !== 'linear' && d.kind !== 'angle') throw new CommandError(t('drawing.notForKind', { field: 'slide', kind: d.kind }));
       if (leader !== undefined && d.kind !== 'diameter' && d.kind !== 'radius') throw new CommandError(t('drawing.notForKind', { field: 'leader', kind: d.kind }));
       if (callout !== undefined && d.kind !== 'diameter') throw new CommandError(t('drawing.notForKind', { field: 'callout', kind: d.kind }));

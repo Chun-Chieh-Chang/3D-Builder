@@ -473,3 +473,40 @@ export function snapCut(features: readonly ViewFeature[], box: { min: [number, n
   for (const c of candidates) if (Math.abs(c - coord) <= tol && (best === null || Math.abs(c - coord) < Math.abs(best - coord))) best = c;
   return best === null ? { coord, snapped: false } : { coord: best, snapped: true };
 }
+
+/**
+ * The ordinate dimension made from the elements pointed at, the first being the origin, and the place pointed at for its row (D-I4, ADR 0139): along x when
+ * the pointer is above or below the view, along y beside it, else along the way the elements spread most. A plane (or a straight edge) has to be seen as a line
+ * across the way it measures; a cylinder's outline is refused (its side cannot be carried by an ordinate dimension, which would measure to its axis).
+ */
+export function planOrdinate(picks: readonly Pickable[], p: P2, placed: PlacedView): { draft: DimensionDraft } | { need: 'more' } | { error: string } {
+  if (picks.length < 2) return { need: 'more' };
+  if (![p[0], p[1]].every(Number.isFinite)) return { error: t('drawing.badPosition') };
+  if (picks.some((f) => f.type === 'outline')) return { error: t('drawing.dimNoOutline') };
+  const box = { left: placed.at[0] - placed.w / 2, right: placed.at[0] + placed.w / 2, bottom: placed.at[1] - placed.h / 2, top: placed.at[1] + placed.h / 2 };
+  /** A line-like element as the coordinate it stands at, with the axis it is square to; null for a slanted one. */
+  const lineAxis = (f: Pickable): 'x' | 'y' | 'slant' | null => {
+    if (f.type === 'plane') return f.axis;
+    if (f.type === 'slant') return 'slant';
+    if (f.type === 'edge') return Math.abs(f.a[0] - f.b[0]) < 1e-6 ? 'x' : Math.abs(f.a[1] - f.b[1]) < 1e-6 ? 'y' : 'slant';
+    return null;
+  };
+  const above = p[1] > box.top || p[1] < box.bottom;
+  const beside = p[0] > box.right || p[0] < box.left;
+  const spread = (k: 0 | 1) => {
+    const cs = picks.map((f) => coordOf(f, k));
+    return Math.max(...cs) - Math.min(...cs);
+  };
+  const axis: 'x' | 'y' = above && !beside ? 'x' : beside && !above ? 'y' : spread(0) >= spread(1) ? 'x' : 'y';
+  for (const f of picks) {
+    const la = lineAxis(f);
+    if (la !== null && la !== axis) return { error: t('drawing.ordinateNotAcross') };
+  }
+  const k = axis === 'x' ? 0 : 1;
+  const sheetPoint = (f: Pickable): P2 => toSheet(placed, ...(k === 0 ? ([coordOf(f, 0), placed.centre[1]] as const) : ([placed.centre[0], coordOf(f, 1)] as const)));
+  const a = sheetPoint(picks[0]!);
+  const b = sheetPoint(picks[picks.length - 1]!);
+  const handle: Extract<DimensionHandle, { kind: 'linear' }> = { kind: 'linear', orientation: axis === 'x' ? 'horizontal' : 'vertical', mid: [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2], u: axis === 'x' ? [1, 0] : [0, 1], box, a, b };
+  const offset = Math.round(offsetAt(handle, p) * 100) / 100;
+  return { draft: { kind: 'ordinate', axis, origin: picks[0]!.ref, refs: picks.slice(1).map((f) => f.ref), offset } };
+}

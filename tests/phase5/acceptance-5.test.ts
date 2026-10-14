@@ -21,6 +21,7 @@ import {
   type Ref,
   type SourceTree,
   type ViewFeature,
+  dimensionRefs,
 } from '@3db/model';
 import { readAnyDocumentFile, writeDrawingFile } from '@3db/io';
 import { PlaneGcsSolver } from '@3db/sketch';
@@ -115,7 +116,7 @@ function plateDrawing(part: OpenedPart): PlateDrawing {
   doc = applyDrawingCommand(doc, { type: 'insertTables', tables: [{ id: 'tbl1', kind: 'holes', view: 'view1', fits: { '6': 'H7' } }] });
   const elements = new Map<string, ElementsResult>(
     doc.dimensions.map((d) => {
-      const refs: Ref[] = d.kind === 'linear' || d.kind === 'angle' ? [d.a, d.b] : [d.ref];
+      const refs: Ref[] = dimensionRefs(d);
       return [d.id, { elements: refs.map((r) => elementFacts(part.mate.topology, part.mate.names, r, part.holes)) as never }];
     }),
   );

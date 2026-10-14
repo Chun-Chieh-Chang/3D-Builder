@@ -21,3 +21,4 @@ export * from './flatDxf';
 export * from './flatView';
 export * from './gdt';
 export * from './viewEdges';
+export * from './arrange';

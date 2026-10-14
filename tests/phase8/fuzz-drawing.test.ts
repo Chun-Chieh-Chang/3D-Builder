@@ -4,7 +4,7 @@
  * file saved and read again is the same drawing.
  */
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { applyCommand, applyDrawingCommand, axesOf, createEmptyDrawing, createEmptyPart, parseDrawing, sectionPlane, serializeDrawing, type Dimension, type DrawingView, type Feature, type PartDoc, type Pose, type Ref } from '@3db/model';
+import { applyCommand, applyDrawingCommand, axesOf, createEmptyDrawing, createEmptyPart, parseDrawing, sectionPlane, serializeDrawing, type Dimension, type DrawingView, type Feature, type PartDoc, type Pose, type Ref, dimensionRefs } from '@3db/model';
 import { PlaneGcsSolver } from '@3db/sketch';
 import { Kernel } from '@3db/kernel';
 import { elementFacts, projectDrawingView, Regenerator, viewFeatures } from '@3db/regen';
@@ -121,7 +121,7 @@ describe('drawings of parts made at random', () => {
     doc = applyDrawingCommand(doc, { type: 'insertTables', tables: [{ id: 'tbl1', kind: 'holes', view: 'view1' }] });
     const elements = new Map<string, ElementsResult>(
       doc.dimensions.map((d) => {
-        const refs: Ref[] = d.kind === 'linear' || d.kind === 'angle' ? [d.a, d.b] : [d.ref];
+        const refs: Ref[] = dimensionRefs(d);
         return [d.id, { elements: refs.map((x) => elementFacts(body.topology, body.names, x)) as never }];
       }),
     );

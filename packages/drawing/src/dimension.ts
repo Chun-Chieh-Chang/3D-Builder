@@ -113,7 +113,7 @@ function base(d: Dimension, value: number, facts: ElementFacts | undefined, unit
     const angle = `${formatNumber(value, d.precision ?? 2)}°${tolerance}`;
     return d.reference ? `(${angle})` : angle;
   }
-  const count = d.kind !== 'linear' && d.count ? `${d.count}×` : '';
+  const count = (d.kind === 'diameter' || d.kind === 'radius') && d.count ? `${d.count}×` : '';
   // a tapped hole's callout names the thread in place of the diameter
   const threaded = d.kind === 'diameter' && d.callout && facts?.hole ? threadedHoleText(facts.hole, value, unit) : null;
   if (threaded) return d.reference ? `(${count}${threaded})` : `${count}${threaded}`;
@@ -189,7 +189,71 @@ export function evaluateDimension(d: Dimension, resolved: ElementsResult | undef
   const els = resolved.elements;
   if (d.kind === 'linear') return linear(d, els[0]!, els[1]!, axes, placed, unit);
   if (d.kind === 'angle') return angle(d, els[0]!, els[1]!, axes, placed);
+  if (d.kind === 'ordinate') return ordinate(d, els, axes, placed, unit);
   return circle(d, els[0]!, axes, placed, unit);
+}
+
+/**
+ * An ordinate dimension (D-I4): each element's distance from the origin along the view's x (or y), written on its own extension line beyond a row outside the
+ * view, the origin's 0 among them. Where the values come closer than a text's height, the extension lines jog sideways so that the texts stand apart (ISO 129-1),
+ * keeping their order. The first value is the dimension's `value`; `text` lists them all.
+ */
+function ordinate(d: Extract<Dimension, { kind: 'ordinate' }>, els: readonly ElementFacts[], axes: ViewAxes, placed: PlacedView, unit: LengthUnit): DimensionOutcome {
+  const k = d.axis === 'x' ? 0 : 1;
+  const along = d.axis === 'x' ? 'x' : 'y';
+  for (const e of els) if (isBound(e) && !squareTo(e, axes, along)) return { error: t('drawing.ordinateNotAcross') };
+  const at = els.map((e) => inView(e, axes));
+  const origin = at[0]![k];
+  const box = { left: placed.at[0] - placed.w / 2, right: placed.at[0] + placed.w / 2, bottom: placed.at[1] - placed.h / 2, top: placed.at[1] + placed.h / 2 };
+  const outward = d.offset > 0 ? 1 : -1;
+  // where the row is: beyond the box on its side, `offset` from it
+  const edge = d.axis === 'x' ? (outward > 0 ? box.top : box.bottom) : outward > 0 ? box.right : box.left;
+  const row = edge + d.offset;
+  const entries = at.map((p, i) => {
+    const s = toSheet(placed, p[0], p[1]);
+    const value = Math.abs(p[k] - origin);
+    return { s, value, text: i === 0 ? '0' : dimensionText(d, value, undefined, unit), bound: isBound(els[i]!) };
+  });
+  // the texts along the row, in the order of their elements, at least a text's height and a gap apart
+  const gap = DIM_TEXT * 1.5;
+  const order = entries.map((_, i) => i).sort((a, b) => entries[a]!.s[k] - entries[b]!.s[k]);
+  const place = new Map<number, number>();
+  let last = -Infinity;
+  for (const i of order) {
+    const want = Math.max(entries[i]!.s[k], last + gap);
+    place.set(i, want);
+    last = want;
+  }
+  // centred again on where the elements are, so that a crowd spreads both ways
+  const shift = (order.reduce((sum, i) => sum + place.get(i)! - entries[i]!.s[k], 0) / Math.max(1, order.length)) * 0.5;
+  for (const i of order) place.set(i, place.get(i)! - shift);
+  const items: SceneItem[] = [];
+  const jog = 3;
+  for (const [i, e] of entries.entries()) {
+    const across = place.get(i)!;
+    // from the element (a plane: from the box's edge, a gap off it) to the row, jogging to where its text is
+    const from = e.bound ? edge + outward * GAP : (d.axis === 'x' ? e.s[1] : e.s[0]) + outward * GAP;
+    const knee = row - outward * jog;
+    const pts: P[] =
+      d.axis === 'x'
+        ? [[e.s[0], from], [e.s[0], knee], [across, row], [across, row + outward * 1]]
+        : [[from, e.s[1]], [knee, e.s[1]], [row, across], [row + outward * 1, across]];
+    items.push(line(...pts));
+    // the text along the extension line beyond the row, read from the bottom or the right of the sheet
+    if (d.axis === 'x') items.push({ kind: 'text', at: [across + DIM_TEXT / 2, row + outward * 1.5], text: e.text, height: DIM_TEXT, angle: 90, anchor: outward > 0 ? 'left' : 'right' });
+    else items.push({ kind: 'text', at: [row + outward * 1.5, across - DIM_TEXT / 2], text: e.text, height: DIM_TEXT, anchor: outward > 0 ? 'left' : 'right' });
+  }
+  const values = entries.slice(1).map((e) => e.value);
+  const handle: DimensionHandle = {
+    kind: 'linear',
+    orientation: d.axis === 'x' ? 'horizontal' : 'vertical',
+    mid: d.axis === 'x' ? [(box.left + box.right) / 2, row] : [row, (box.bottom + box.top) / 2],
+    u: d.axis === 'x' ? [1, 0] : [0, 1],
+    box,
+    a: entries[0]!.s,
+    b: entries[entries.length - 1]!.s,
+  };
+  return { value: values[0] ?? 0, text: entries.map((e) => e.text).join(' / '), items, handle };
 }
 
 /** What an element is seen as in a view when it is a line: a point on it, its direction (unit), and the point of the element the angle is measured toward. */

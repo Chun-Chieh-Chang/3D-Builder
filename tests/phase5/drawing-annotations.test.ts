@@ -18,6 +18,7 @@ import {
   type PartDoc,
   type Ref,
   type ViewFeature,
+  dimensionRefs,
 } from '@3db/model';
 import { readPartFile } from '@3db/io';
 import { PlaneGcsSolver } from '@3db/sketch';
@@ -172,7 +173,7 @@ describe('the locating plate: centre marks, callouts and the hole table', () => 
     const drafts = autoDimensions(features(), { overall: false, holes: true, positions: false, callouts: true });
     const texts = drafts.map((draft) => {
       const d = { ...draft, id: 'd', view: 'view1' } as Dimension;
-      const refs: Ref[] = d.kind === 'linear' || d.kind === 'angle' ? [d.a, d.b] : [d.ref];
+      const refs: Ref[] = dimensionRefs(d);
       const resolved: ElementsResult = { elements: refs.map((r) => elementFacts(body.topology, body.names, r)) as never };
       const o = evaluateDimension(d, resolved, top, placed);
       return 'text' in o ? o.text : o.error;

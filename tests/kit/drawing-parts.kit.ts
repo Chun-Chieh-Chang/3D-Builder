@@ -24,7 +24,7 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
-import { applyCommand, applyDrawingCommand, axesOf, createEmptyDrawing, createEmptyPart, sectionPlane, type Command, type Dimension, type DrawingDoc, type DrawingView, type ElementFacts, type Feature, type PartDoc, type Pose, type Ref, type SketchConstraint, type SketchEntity, type SurfaceFinish, type ViewAxes } from '@3db/model';
+import { applyCommand, applyDrawingCommand, axesOf, createEmptyDrawing, createEmptyPart, sectionPlane, type Command, type Dimension, type DrawingDoc, type DrawingView, type ElementFacts, type Feature, type PartDoc, type Pose, type Ref, type SketchConstraint, type SketchEntity, type SurfaceFinish, type ViewAxes, dimensionRefs } from '@3db/model';
 import { readAnyDocumentFile, writeDrawingFile, writePartFile } from '@3db/io';
 import { autoDimensions, buildScene, checkDxf, evaluateDimension, factsOf, featureAt, planDimension, readDxf, readTrueType, toDxf, toPdf, type DimensionOutcome, type ElementsResult, type PlacedView, type Scene, type ViewLines } from '@3db/drawing';
 import { PlaneGcsSolver } from '@3db/sketch';
@@ -390,7 +390,7 @@ async function sheet(o: {
 
   const elements = new Map<string, ElementsResult>(
     drawing.dimensions.map((d) => {
-      const refs: Ref[] = d.kind === 'linear' || d.kind === 'angle' ? [d.a, d.b] : [d.ref];
+      const refs: Ref[] = dimensionRefs(d);
       return [d.id, { elements: refs.map((r) => elementFacts(o.r.body!.topology, o.r.body!.names, r, holes)) as never }];
     }),
   );

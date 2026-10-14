@@ -71,7 +71,7 @@ export function DimensionPanel() {
   const drw = useStore((s) => s.drw)!;
   const d = store.drawingStore!;
   const view = drw.doc.views.find((v) => v.id === drw.selected);
-  const [opts, setOpts] = useState({ overall: true, holes: true, positions: false, callouts: true });
+  const [opts, setOpts] = useState({ overall: true, holes: true, positions: false, callouts: true, ordinate: false });
   const [a, setA] = useState(0);
   const [b, setB] = useState(1);
   const [orientation, setOrientation] = useState<DimensionOrientation>('horizontal');
@@ -114,6 +114,14 @@ export function DimensionPanel() {
         >
           {t('drawingUi.toolDimension')}
         </button>
+        <button
+          className={`pm-button${drw.tool?.kind === 'ordinate' ? ' active' : ''}`}
+          data-action="toolOrdinate"
+          title={t('drawingUi.hint.ordinate0')}
+          onClick={() => d.setTool(drw.tool?.kind === 'ordinate' ? null : { kind: 'ordinate', picks: [] })}
+        >
+          {t('drawingUi.toolOrdinate')}
+        </button>
       </div>
       {/* dimensions are put where they are wanted, one at a time, as SolidWorks's Smart Dimension does; nothing is dimensioned unless asked */}
       <p className="muted">{t('drawingUi.dimOnDemand')}</p>
@@ -123,7 +131,7 @@ export function DimensionPanel() {
           {features && features.length === 0 && <p className="muted">{t('drawingUi.dimNoFeatures')}</p>}
           <details className="pm-details" data-group="autoDims">
           <summary>{t('drawingUi.dimFromModel')}</summary>
-          {(['overall', 'holes', 'callouts', 'positions'] as const).map((k) => (
+          {(['overall', 'holes', 'callouts', 'positions', 'ordinate'] as const).map((k) => (
             <label key={k} className="pm-row checkbox">
               <input type="checkbox" data-field={`auto-${k}`} checked={opts[k]} onChange={(e) => setOpts({ ...opts, [k]: e.target.checked })} />
               <span>{t(`drawingUi.dimAuto.${k}`)}</span>
@@ -144,6 +152,14 @@ export function DimensionPanel() {
             </button>
           </div>
           </details>
+          <div className="pm-row">
+            <button className="pm-button" data-action="arrangeDimensions" disabled={mine.length === 0} title={t('drawingUi.arrangeTip')} onClick={() => {
+              const n = d.arrangeDimensions(mine.map((x) => x.id));
+              d.notifyInfo(n > 0 ? t('drawingUi.arranged', { n }) : t('drawingUi.arrangedNothing'));
+            }}>
+              {t('drawingUi.arrange')}
+            </button>
+          </div>
           {overlapping > 0 && (
             <p className="warning-text" data-field="overlap">
               {t('drawingUi.dimOverlap', { n: overlapping })}
@@ -263,6 +279,11 @@ export function DimensionPanel() {
                     <span>{t('drawingUi.dimSupplementary')}</span>
                   </label>
                 </>
+              ) : current.kind === 'ordinate' ? (
+                <label className="pm-row">
+                  <span>{t('drawingUi.dimOffset')}</span>
+                  <NumberBox field="dimOffset" value={current.offset} onCommit={(v) => v !== 0 && d.setDimension(current.id, { offset: v })} />
+                </label>
               ) : (
                 <>
                   <label className="pm-row">
@@ -491,6 +512,14 @@ function BatchDimensions({ dims, perUnit }: { dims: readonly Dimension[]; perUni
           <FitBox value={fit ?? ''} onCommit={(f) => f && set({ tolerance: { type: 'fit', fit: f } })} />
         </label>
       )}
+      <div className="pm-row wrap">
+        <button className="pm-button" data-action="alignCollinear" title={t('drawingUi.alignCollinearTip')} onClick={() => d.alignCollinear(ids)}>
+          {t('drawingUi.alignCollinear')}
+        </button>
+        <button className="pm-button" data-action="alignParallel" title={t('drawingUi.alignParallelTip')} onClick={() => d.arrangeDimensions(ids)}>
+          {t('drawingUi.alignParallel')}
+        </button>
+      </div>
       <div className="pm-row">
         <button className="pm-button" data-action="batchDelete" onClick={() => d.deleteSelection()}>
           {t('drawingUi.selDelete')}

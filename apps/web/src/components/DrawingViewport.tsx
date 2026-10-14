@@ -16,6 +16,7 @@ import {
   fromSheet,
   layoutViews,
   planDimension,
+  planOrdinate,
   previewDerived,
   resolveLines,
   attachedAnnotations,
@@ -248,6 +249,7 @@ export function DrawingViewport() {
         }
         else if (tool) {
           if (tool.kind === 'dimension' && tool.picks.length > 0) d.setTool({ kind: 'dimension', picks: [] });
+          else if (tool.kind === 'ordinate' && tool.picks.length > 0) d.setTool({ kind: 'ordinate', picks: [] });
           else if (tool.kind === 'annotate' && tool.first) d.setTool({ kind: 'annotate', what: tool.what });
           else d.setTool(null);
         } else if (drw.selection.length > 0) d.clearSelection();
@@ -347,6 +349,25 @@ export function DrawingViewport() {
     if (d.addDimension(first.view, result.draft)) d.setTool({ kind: 'dimension', picks: [] });
   };
 
+  /** A press with the ordinate tool (D-I4): the origin, an element, or (on the paper) where the row goes. */
+  const ordinateDown = (p: P) => {
+    if (tool?.kind !== 'ordinate') return;
+    const first = tool.picks[0];
+    const hit = featureUnder(p, first?.view);
+    if (hit) {
+      if (tool.picks.some((x) => x.feature.ref.name === hit.feature.ref.name && x.view === hit.view)) return;
+      d.setTool({ kind: 'ordinate', picks: [...tool.picks, hit] });
+      return;
+    }
+    if (!first) return d.notifyInfo(t('drawingUi.hint.ordinate0'));
+    const placed = basePlaced.get(first.view);
+    if (!placed) return;
+    const plan = planOrdinate(tool.picks.map((x) => x.feature), p, placed);
+    if ('error' in plan) return d.notifyInfo(plan.error);
+    if ('need' in plan) return d.notifyInfo(t('drawingUi.hint.ordinate1'));
+    if (d.addDimension(first.view, plan.draft)) d.setTool({ kind: 'ordinate', picks: [] });
+  };
+
   const down = (e: React.PointerEvent) => {
     if ((e.target as HTMLElement).closest('.heads-up')) return;
     const p = onSheet(e);
@@ -387,6 +408,7 @@ export function DrawingViewport() {
       return;
     }
     if (tool?.kind === 'dimension') return dimensionDown(p);
+    if (tool?.kind === 'ordinate') return ordinateDown(p);
     if (tool?.kind === 'annotate') return annotateDown(p);
     if (tool?.kind === 'surface') {
       const view = viewUnder(p);
@@ -436,7 +458,7 @@ export function DrawingViewport() {
       d.selectDimension(dim.id);
       if (outcome.handle) {
         capture(e);
-        setDrag({ kind: 'dimension', id: dim.id, onText: dim.text, handle: outcome.handle, patch: {} });
+        setDrag({ kind: 'dimension', id: dim.id, onText: dim.text && drw.doc.dimensions.find((x) => x.id === dim.id)?.kind !== 'ordinate', handle: outcome.handle, patch: {} });
       }
       return;
     }
@@ -553,7 +575,7 @@ export function DrawingViewport() {
       setPan({ ...pan, x: e.clientX - panning.x, y: e.clientY - panning.y });
     } else if (tool || dimensionItems.length > 0) {
       // what is under the pointer: for the tool's preview, and for the cursor
-      const feature = tool?.kind === 'dimension' ? featureUnder(p, tool.picks[0]?.view) : null;
+      const feature = tool?.kind === 'dimension' || tool?.kind === 'ordinate' ? featureUnder(p, tool.picks[0]?.view) : null;
       const dimension = tool ? null : (dimensionAt(dimensionItems, p, reach)?.id ?? null);
       setHover((h) => (tool || h?.dimension !== dimension || h?.feature ? { p, feature, dimension, ctrl: e.ctrlKey || e.metaKey } : h));
     }
@@ -850,6 +872,8 @@ export function DrawingViewport() {
       ? t('drawingUi.hint.placeView')
       : tool?.kind === 'project'
       ? t('drawingUi.hint.project')
+      : tool?.kind === 'ordinate'
+      ? t(tool.picks.length === 0 ? 'drawingUi.hint.ordinate0' : 'drawingUi.hint.ordinate1')
       : tool?.kind === 'annotate'
       ? t(({ note: 'drawingUi.hint.note', datum: 'drawingUi.hint.datum', fcf: 'drawingUi.hint.fcf', centreLine: 'drawingUi.hint.centreLine', centreMark: 'drawingUi.hint.centreMark' } as const)[tool.what])
       : tool?.kind === 'dimension'
@@ -971,8 +995,8 @@ export function DrawingViewport() {
               strokeDasharray={boxing.crossing ? '2 1' : undefined}
             />
           )}
-          {tool?.kind === 'dimension' &&
-            [...tool.picks.map((x) => x.feature), ...(hover?.feature && tool.picks.length < 2 ? [hover.feature.feature] : [])].map((f, k) => {
+          {(tool?.kind === 'dimension' || tool?.kind === 'ordinate') &&
+            [...tool.picks.map((x) => x.feature), ...(hover?.feature && (tool.kind === 'ordinate' || tool.picks.length < 2) ? [hover.feature.feature] : [])].map((f, k) => {
               const view = (tool.picks[0]?.view ?? hover?.feature?.view)!;
               const placed = basePlaced.get(view);
               if (!placed) return null;
