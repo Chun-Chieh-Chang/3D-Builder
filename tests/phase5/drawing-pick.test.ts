@@ -4,7 +4,7 @@
  * are. The numbers are worked out by hand; the view is 100 x 60 at the sheet point (200, 150), scale 1, its own origin (0, 0) at the lower left corner of its box.
  */
 import { describe, expect, it } from 'vitest';
-import { rightOf, viewVectors, type Dimension } from '@3db/model';
+import { rightOf, viewVectors, type Dimension, type ViewFeature } from '@3db/model';
 import { dimensionAt, dimensionText, dragDimension, evaluateDimension, factsOf, featureAt, planDimension, toSheet, toView, type Pickable, type PlacedView, type SceneItem, type ViewLines } from '@3db/drawing';
 
 const placed: PlacedView = { id: 'v', at: [200, 150], scale: 1, w: 100, h: 60, centre: [50, 30] };
@@ -14,8 +14,8 @@ const axes = (() => {
   return { dir: v.dir, up: v.up };
 })();
 const ref = (name: string) => ({ kind: 'face' as const, name });
-const plane = (axis: 'x' | 'y', coord: number, area = 10): Pickable => ({ type: 'plane', ref: ref(`p-${axis}${coord}`), axis, coord, area });
-const circle = (cx: number, cy: number, radius: number, full = true): Pickable => ({ type: 'circle', ref: ref(`c-${cx}-${cy}`), centre: [cx, cy], radius, convex: false, full, outward: 0 });
+const plane = (axis: 'x' | 'y', coord: number, area = 10): Extract<ViewFeature, { type: 'plane' }> => ({ type: 'plane', ref: ref(`p-${axis}${coord}`), axis, coord, area });
+const circle = (cx: number, cy: number, radius: number, full = true): Extract<ViewFeature, { type: 'circle' }> => ({ type: 'circle', ref: ref(`c-${cx}-${cy}`), centre: [cx, cy], radius, convex: false, full, outward: 0 });
 const ring = (cx: number, cy: number, r: number): number[] => Array.from({ length: 65 }, (_, i) => [cx + r * Math.cos((i * Math.PI) / 32), cy + r * Math.sin((i * Math.PI) / 32)]).flat();
 const lines: ViewLines = { visible: [[0, 0, 100, 0, 100, 60, 0, 60, 0, 0], ring(50, 30, 10)], hidden: [], box: { min: [0, 0], max: [100, 60] } };
 const features = [plane('x', 0), plane('x', 100), plane('y', 0), plane('y', 60), circle(50, 30, 10)];
@@ -198,7 +198,7 @@ describe('a fillet on the sheet', () => {
   const AXIS_Y = 30;
   const dot3 = (a: readonly number[], b: readonly number[]) => a[0]! * b[0]! + a[1]! * b[1]! + a[2]! * b[2]!;
   /** A fillet seen true: the tube's radius is `radius`, and the arc drawn about `at`, which is `major` off the torus's own centre. */
-  const fillet = (at: [number, number]): Pickable => ({
+  const fillet = (at: [number, number]): Extract<ViewFeature, { type: 'torus' }> => ({
     type: 'torus',
     // one face of the part, however many cuts of its tube are drawn: the two features share the name, which is the whole point
     ref: ref('t-mouth'),

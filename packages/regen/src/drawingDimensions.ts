@@ -2,7 +2,7 @@ import { t } from '@3db/i18n';
 import { edgeFingerprint, faceFingerprint, resolveRef, vertexFingerprint, type ElementNames } from '@3db/naming';
 import type { Topology } from '@3db/kernel';
 import type { SourceProvider } from './engine';
-import { rightOf, type ElementFacts, type HoleInfo, type PartDoc, type Ref, type ViewAxes, type ViewFeature } from '@3db/model';
+import { rightOf, sheetUp, type ElementFacts, type HoleInfo, type PartDoc, type Ref, type ViewAxes, type ViewFeature } from '@3db/model';
 
 /**
  * What a drawing's dimensions need to know of the part a view shows (C16.4): the elements a dimension points at, by persistent name, as numbers; and the
@@ -181,7 +181,7 @@ export function elementFacts(topology: Topology, names: ElementNames, ref: Ref, 
  */
 export function viewFeatures(topology: Topology, names: ElementNames, axes: ViewAxes, faceAllowed: (face: number) => boolean = () => true, features?: HoleFeatures): ViewFeature[] {
   const right = rightOf(axes);
-  const up = axes.up;
+  const up = sheetUp(axes);
   const out: ViewFeature[] = [];
   // the longest circular edge of each face tells whether a cylinder is whole or an arc
   const longest = new Map<number, number>();

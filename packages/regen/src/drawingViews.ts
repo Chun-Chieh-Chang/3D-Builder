@@ -1,5 +1,5 @@
 import type { Kernel, ProjectedView, ShapeId } from '@3db/kernel';
-import { placementRows, rightOf, type Pose, type ViewAxes } from '@3db/model';
+import { placementRows, rightOf, sheetUp, type Pose, type ViewAxes } from '@3db/model';
 
 /** A part of what a view shows: its shape as built, where it is (identity for a part drawn alone) and whether it is the mirror of the file's part. */
 export interface ViewPart {
@@ -34,12 +34,13 @@ export function projectDrawingView(kernel: Kernel, parts: readonly ViewPart[], a
  */
 export function drawingAnchors(kernel: Kernel, parts: readonly ViewPart[], axes: ViewAxes): [number, number][] {
   const right = rightOf(axes);
+  const up = sheetUp(axes);
   return parts.map((p) => {
     const shape = kernel.transformed(p.shape, placementRows(p.pose, p.mirrored));
     try {
       const c = kernel.massProps(shape).center;
       const x = c[0] * right[0] + c[1] * right[1] + c[2] * right[2];
-      const y = c[0] * axes.up[0] + c[1] * axes.up[1] + c[2] * axes.up[2];
+      const y = c[0] * up[0] + c[1] * up[1] + c[2] * up[2];
       return Number.isFinite(x) && Number.isFinite(y) ? ([x, y] as [number, number]) : ([0, 0] as [number, number]);
     } finally {
       kernel.release(shape);

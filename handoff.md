@@ -1,5 +1,26 @@
 # 交接文件
 
+- 最後更新：2026-10-14 晚三（**D-I2 第一部分：頂點、邊、等角視圖可標尺寸（[ADR 0138](docs/adr/0138-drawing-named-view-edges.md)），rebase 到遠端 26 個提交之後推送，見下一段**）；2026-10-14 晚二（**10-14b 決策頁執行：B1 方塊首頁鈕、B2「正視於」全套比照 SW（正對／再按翻面／無選取回等角視）、C2① 爆炸後「全部顯示」、C3 c13 階梯板＋肋邊圓角（發現「角落點到模型邊會整條轉成草圖」待裁）、C1 手冊 11 處、D2 刪 vui.txt；vitest 2744 過；已推送 `fa807bb`；A 組歸 Claude Code 工作階段；見最上方**）；2026-10-14 晚（**B1 根因＝「重建不是文件的純函式」，違反藍圖 B3.1（P0）：求解器參數排序依記憶體位址、OCCT 對重合面的合併不決定；修法＝求解輸出十進位網格＋每次重建全新求解器＋布林結果面來源繼承（[ADR 0137](docs/adr/0137-deterministic-rebuilds.md)）；vitest 2743 過、B1 實檔測試 2/2、全量 verify:ui **131/131**；已推送 `acfc99e`**）；2026-10-14（**螺牙改從牙型前緣起算 `5872480`；「關閉伺服器」按鈕（ADR 0135）`817fdf2`；皆已推送，見下兩段**）；2026-10-14（**鍵盤視角比照 SolidWorks（方向鍵、Shift／Alt／Ctrl、Z、Ctrl+Shift+Z、空白鍵「視角方位」）與後／左／下視，已 rebase 到遠端工程圖工作之後並推送，見下一段**）；2026-10-14（**新工程圖改為先選主視圖、尺寸按需標註（ADR 0134）；`drawing-interaction` 已合併進 `main`、其他分支已刪除，見下兩段**）；2026-10-13（**工程圖交互比照 SolidWorks：差距分析與使用者決定、D-I1a 多重選取、D-V 在圖紙上產生視圖和剖面、D-I3 註記（Schema 12）、側邊欄，分支 `drawing-interaction` 已推送，見下一段**）；2026-10-12 晚（**筆電工作整合、C19、Schema 55、尺寸標籤即時拖曳，已推送 `a96321f`，見下一段**；**【線架構剖面交線與 SolidWorks 級動態側影輪廓線 (Silhouette Edges) 全套落實驗收完畢】**；**【Codex 任務接棒指南：裝飾用公螺牙與母螺孔 (Cosmetic Threads, C4.9 / ADR 0129) 架構與落地 SOP】**；全套 TypeCheck 0 錯誤、Lint 規則全綠、`acceptance.test.ts` 通過；其他狀態見「最新存檔點」）。；2026-10-13 下午（**草圖磁吸對照 SW／FreeCAD 補齊 4 項、零件 Schema 56；全量測試平行負載失敗修正（CPU 計時、`maxWorkers: 4`）；見下一段；已推送 `8a9d2a1`**；早上：**10-12 成果審查與修正：`verify:ui` 129/129、vitest 2629 過，已推送 `335b46c`**；以下為 10-12 晚的狀態：**筆電工作整合、C19、Schema 55、尺寸標籤即時拖曳，已推送 `a96321f`**；**【線架構剖面交線與 SolidWorks 級動態側影輪廓線 (Silhouette Edges) 全套落實驗收完畢】**；**【Codex 任務接棒指南：裝飾用公螺牙與母螺孔 (Cosmetic Threads, C4.9 / ADR 0129) 架構與落地 SOP】**；全套 TypeCheck 0 錯誤、Lint 規則全綠、`acceptance.test.ts` 通過；其他狀態見「最新存檔點」）。
+
+- **【2026-10-14：D-I2 第一部分 — 視圖的邊與頂點有名字，尺寸可標在頂點與邊上，等角視圖也行（Claude）— 已提交並推送到 `main`；ADR 原編 0135，因遠端已用 0135～0137，改為 0138】**（[ADR 0138](docs/adr/0138-drawing-named-view-edges.md)）
+  - **做法**（依 spike 的結論，不重新編譯 WASM）：
+    - worker 的 `viewEdges`（`@3db/regen`）依持久名稱投影每條邊與頂點，附上深度和端點名稱。網格每個零件只算一次。
+    - `visibleElements`（`@3db/drawing`）用視圖自己的 HLR 可見線決定哪些看得見；重合的只留離觀看者最近的那條。
+  - **點選**：頂點優先；直線邊和平面平手時平面勝，所以舊行為不變。整圓的接縫頂點和曲面的接縫邊不提供點選。
+  - **標註**：單選一條邊就是它的長度；兩個點依游標位置標水平、垂直或對齊；水平或垂直的邊視同側看成線的平面；**等角視圖可以標（投影長度）**；不在圖紙平面的邊之間的角度會被拒絕。
+  - **順手修正的既有錯誤**：`sheetUp` 是 HLR 畫的 y。等角視圖的 `up` 不和視線垂直，以前多處把 `up` 當 y；組合件等角視圖的號球引線起點也因此偏掉，現在一併修正。
+  - **驗證**：
+    - `tests/phase5/drawing-edges.test.ts` 10 項，真實核心：重合點取近的、等角視圖藏住最遠的角、名稱解析、與逐一比對法一致、200 個隨機點 0 誤選、長度手算、接縫回歸。
+    - 全量 vitest 2690 過。
+    - 全量 `verify:ui` 第一次 128/129，抓到接縫頂點問題；修正後工程圖相關腳本 17/17。
+    - **rebase 到遠端 26 個提交（視角方塊、正視於、B3.1 決定性重建、草圖投影磁吸等）之後重驗**：全量 vitest **2754 過、0 失敗**；工程圖相關瀏覽器腳本 **17/17**。衝突兩處：worker 的 import（遠端把 `planarEdgeItems` 換成 `modelSnapItems`，這邊加上 `viewEdges`）和本檔。
+    - 瀏覽器實測：等角視圖點兩個頂點，標出 127.279，與手算相同。
+  - **D-I2 剩下的（第二部分）**：
+    - 組合件視圖的尺寸（`Ref` 要加零組件路徑）。
+    - 註記綁定模型邊（ADR 0132 的限制）。
+    - 曲面輪廓線對應到面。
+    - 斜線之間或點到斜線的垂直距離。
+    - 細部放大圖上的點選。
 - **【2026-10-14 晚：10-14b 決策頁執行——B1 視角方塊首頁鈕、B2「正視於」全套比照 SolidWorks、C1 手冊 11 處、C2① 爆炸後「全部顯示」、C3 c13 階梯板＋肋邊圓角、D2 刪 vui.txt（Claude）— 已提交並推送 `fa807bb`；A1／A2／A3 歸 Claude Code 工作階段】** 決策原文與選擇見 `docs/decisions-2026-10-14b.html`（本段記 B、C、D 組）。
   - **B1 首頁鈕**（方塊後續四項只做這項；翻面 180°、右鍵選單、拖曳旋轉不排）：`Viewport.tsx` 的 ViewCube 左下加 ⌂ 小鈕，點了 `setView('iso')`；i18n 新增 `cube.home`（「回等角視」／"Home (isometric view)"）。
   - **B2「正視於」全套比照 SolidWorks**（選「①＋無選取時回等角視」）：`actions.ts` 的 `lookAtNormal()` 重寫——編輯草圖時正對草圖面（`store.frameOf`），建模時對所選平面／基準面正對（`normalFrame()`）；**再按一次翻面**＝只有當相機正看向近平面側（`viewDirection()` 與面法向點積 < −0.999）才取反法向，從遠側再按是用面自己的法向轉回來；**無選取**（或選到曲面）＝回等角視。`viewer.ts` 新增 `viewDirection()`（`camera.getWorldDirection()`）；啟用條件改為 `sketching || partIdle`。法向取反把 0 映成 0（避免 −0 讓測試的 Object.is 失敗）。說明主題 `help.viewNormal` 三種行為寫齊（zh-TW＋en，see-id 用 kebab）。
@@ -30,7 +51,6 @@
   - **D2（筆電收尾）**：使用者稍後自行到筆電 `git pull` 並刪 `laptop-work` 分支。
   - **7 項處置（承接 10-11 審查）**：18 個零斷言診斷檔移至 `scratch/diagnostics/`；`redefineSketchPlane` 補 `planeRef()` 校驗＋3 斷言；`.gitignore` 加 `*part1*.json`；`SketchPlanePanel` 補 `coordSys`；`main.tsx` 閘控補回；DEV_LOG／覆蓋表標註證據鏈；`check-anti-patterns.mjs` 新增「零斷言測試檔案」規則（已實測會 fail）。
 
-- 最後更新：2026-10-14 晚二（**10-14b 決策頁執行：B1 方塊首頁鈕、B2「正視於」全套比照 SW（正對／再按翻面／無選取回等角視）、C2① 爆炸後「全部顯示」、C3 c13 階梯板＋肋邊圓角（發現「角落點到模型邊會整條轉成草圖」待裁）、C1 手冊 11 處、D2 刪 vui.txt；vitest 2744 過；已推送 `fa807bb`；A 組歸 Claude Code 工作階段；見最上方**）；2026-10-14 晚（**B1 根因＝「重建不是文件的純函式」，違反藍圖 B3.1（P0）：求解器參數排序依記憶體位址、OCCT 對重合面的合併不決定；修法＝求解輸出十進位網格＋每次重建全新求解器＋布林結果面來源繼承（[ADR 0137](docs/adr/0137-deterministic-rebuilds.md)）；vitest 2743 過、B1 實檔測試 2/2、全量 verify:ui **131/131**；已推送 `acfc99e`**）；2026-10-14（**螺牙改從牙型前緣起算 `5872480`；「關閉伺服器」按鈕（ADR 0135）`817fdf2`；皆已推送，見下兩段**）；2026-10-14（**鍵盤視角比照 SolidWorks（方向鍵、Shift／Alt／Ctrl、Z、Ctrl+Shift+Z、空白鍵「視角方位」）與後／左／下視，已 rebase 到遠端工程圖工作之後並推送，見下一段**）；2026-10-14（**新工程圖改為先選主視圖、尺寸按需標註（ADR 0134）；`drawing-interaction` 已合併進 `main`、其他分支已刪除，見下兩段**）；2026-10-13（**工程圖交互比照 SolidWorks：差距分析與使用者決定、D-I1a 多重選取、D-V 在圖紙上產生視圖和剖面、D-I3 註記（Schema 12）、側邊欄，分支 `drawing-interaction` 已推送，見下一段**）；2026-10-12 晚（**筆電工作整合、C19、Schema 55、尺寸標籤即時拖曳，已推送 `a96321f`，見下一段**；**【線架構剖面交線與 SolidWorks 級動態側影輪廓線 (Silhouette Edges) 全套落實驗收完畢】**；**【Codex 任務接棒指南：裝飾用公螺牙與母螺孔 (Cosmetic Threads, C4.9 / ADR 0129) 架構與落地 SOP】**；全套 TypeCheck 0 錯誤、Lint 規則全綠、`acceptance.test.ts` 通過；其他狀態見「最新存檔點」）。；2026-10-13 下午（**草圖磁吸對照 SW／FreeCAD 補齊 4 項、零件 Schema 56；全量測試平行負載失敗修正（CPU 計時、`maxWorkers: 4`）；見下一段；已推送 `8a9d2a1`**；早上：**10-12 成果審查與修正：`verify:ui` 129/129、vitest 2629 過，已推送 `335b46c`**；以下為 10-12 晚的狀態：**筆電工作整合、C19、Schema 55、尺寸標籤即時拖曳，已推送 `a96321f`**；**【線架構剖面交線與 SolidWorks 級動態側影輪廓線 (Silhouette Edges) 全套落實驗收完畢】**；**【Codex 任務接棒指南：裝飾用公螺牙與母螺孔 (Cosmetic Threads, C4.9 / ADR 0129) 架構與落地 SOP】**；全套 TypeCheck 0 錯誤、Lint 規則全綠、`acceptance.test.ts` 通過；其他狀態見「最新存檔點」）。
 
 
 - **【2026-10-14：視角方塊比照 FreeCAD 導覽方塊（Claude）— 已提交並推送】**

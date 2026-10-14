@@ -35,6 +35,7 @@ import {
   type TitleField,
   type ViewAxes,
   type ViewFeature,
+  type ViewEdgeSet,
   type ViewName,
   type ViewSide,
   viewVectors,
@@ -154,6 +155,8 @@ export interface DrawingState {
   problems: Map<Id, string>;
   /** What each view can be dimensioned from (C16.4), by view id; a detail has its parent's. Absent while not known. */
   features: Map<Id, ViewFeature[]>;
+  /** The edges and vertices of the part each view shows, by name (D-I2); absent while not known, and for a view of an assembly. */
+  edges: Map<Id, ViewEdgeSet>;
   /** What the elements each dimension points at are, by dimension id; absent while not known. */
   elements: Map<Id, ElementsResult>;
   /** For each view of an assembly: its parts list and the parts it was made of (C16.6). */
@@ -210,7 +213,7 @@ export class DrawingStore {
   private computeAgain = false;
   private sceneCache: { doc: DrawingDoc; lines: DrawingState['lines']; elements: DrawingState['elements']; features: DrawingState['features']; boms: DrawingState['boms']; value: { scene: Scene; placed: Map<Id, PlacedView>; dimensions: Map<Id, DimensionOutcome>; tables: Map<Id, HoleRow[]> } } | null = null;
   /** What a view can be dimensioned from, by the part's key and where it looks from; and what an element is, by the part's key and the reference. */
-  private featureCache = new Map<string, ViewFeature[] | { error: string }>();
+  private featureCache = new Map<string, { features: ViewFeature[]; edges?: ViewEdgeSet } | { error: string }>();
   private elementCache = new Map<string, ElementFacts | { error: string }>();
   /** The font the PDF embeds (read from the file the user chose; not part of the drawing). */
   private font: TrueTypeFont | null = null;
@@ -240,6 +243,7 @@ export class DrawingStore {
       lines: new Map(),
       problems: new Map(),
       features: new Map(),
+      edges: new Map(),
       elements: new Map(),
       boms: new Map(),
       pdfFont: null,
@@ -773,7 +777,10 @@ export class DrawingStore {
         if (uniqueFeatures.length > 0) {
           const results = await this.host.api.drawingFeatures(uniqueFeatures.map((w) => ({ part: w.part, axes: w.axes })));
           if (this.closed) return;
-          uniqueFeatures.forEach((w, i) => this.featureCache.set(w.id, 'error' in results[i]! ? { error: (results[i] as { error: string }).error } : (results[i] as { features: ViewFeature[] }).features));
+          uniqueFeatures.forEach((w, i) => {
+            const r = results[i]!;
+            this.featureCache.set(w.id, 'error' in r ? { error: r.error } : { features: r.features, ...(r.edges ? { edges: r.edges } : {}) });
+          });
         }
         // what the elements are
         const need = new Map<string, Map<string, Ref>>();
@@ -801,11 +808,15 @@ export class DrawingStore {
         }
         // the answers, by view and by dimension
         const features = new Map<Id, ViewFeature[]>();
+        const edges = new Map<Id, ViewEdgeSet>();
         for (const v of doc.views) {
           const own = v.kind === 'detail' ? this.ancestor(doc.views, v) : v;
           const r = own ? this.requestOf(own) : null;
           const found = r?.featureId ? this.featureCache.get(r.featureId) : undefined;
-          if (found && !('error' in found)) features.set(v.id, found);
+          if (found && !('error' in found)) {
+            features.set(v.id, found.features);
+            if (found.edges) edges.set(v.id, found.edges);
+          }
         }
         const elements = new Map<Id, ElementsResult>();
         for (const d of doc.dimensions) {
@@ -821,7 +832,7 @@ export class DrawingStore {
           const bad = got.find((g) => g && 'error' in g) as { error: string } | undefined;
           elements.set(d.id, bad ? { error: bad.error } : { elements: got as ElementFacts[] });
         }
-        this.set({ features, elements });
+        this.set({ features, edges, elements });
         this.autoScaleWhenReady();
       } while (this.featureAgain && !this.closed);
     } catch (e) {

@@ -30,6 +30,7 @@ import {
   toSheet,
   toSvg,
   toView,
+  visibleElements,
   type DimensionHandle,
   type PlacedView,
   type Pickable,
@@ -269,13 +270,15 @@ export function DrawingViewport() {
   /** How close the pointer has to be to take hold of something (mm on the sheet): the same few pixels whatever the zoom. */
   const reach = 6 / (pan.zoom * PX);
 
+  /** The edges and vertices each view shows, by name (D-I2): worked out once per view from its lines and the worker's projected edges. */
+  const seenByView = useMemo(() => new Map(drw.doc.views.map((v) => [v.id, visibleElements(drw.lines.get(v.id), drw.edges.get(v.id), drw.features.get(v.id) ?? [])])), [drw.doc.views, drw.lines, drw.edges, drw.features]);
   /** The element of a view under the point (the views in the order they are drawn, the last on top); when `only` is given, in that view only. */
   const featureUnder = (p: P, only?: Id): { view: Id; feature: Pickable } | null => {
     for (const v of [...drw.doc.views].reverse()) {
       if (only && v.id !== only) continue;
       const placed = basePlaced.get(v.id);
       if (!placed || placed.w <= 0) continue;
-      const f = featureAt(drw.lines.get(v.id), drw.features.get(v.id) ?? [], toView(placed, p), reach / placed.scale);
+      const f = featureAt(drw.lines.get(v.id), drw.features.get(v.id) ?? [], toView(placed, p), reach / placed.scale, seenByView.get(v.id));
       if (f) return { view: v.id, feature: f };
     }
     return null;
@@ -941,6 +944,15 @@ export function DrawingViewport() {
                 const [fx, fy] = f.type === 'circle' ? f.centre : f.at;
                 const c = toSheet(placed, fx, fy);
                 return <circle key={k} cx={c[0]} cy={sheet.height - c[1]} r={f.radius * placed.scale} fill="none" stroke={colour} strokeWidth={0.8} />;
+              }
+              if (f.type === 'vertex') {
+                const c = toSheet(placed, f.at[0], f.at[1]);
+                return <circle key={k} data-pick="vertex" cx={c[0]} cy={sheet.height - c[1]} r={1.1} fill={colour} stroke="#fff" strokeWidth={0.3} />;
+              }
+              if (f.type === 'edge') {
+                const sa = toSheet(placed, f.a[0], f.a[1]);
+                const sb = toSheet(placed, f.b[0], f.b[1]);
+                return <line key={k} data-pick="edge" x1={sa[0]} y1={sheet.height - sa[1]} x2={sb[0]} y2={sheet.height - sb[1]} stroke={colour} strokeWidth={1} />;
               }
               const [a, b] = f.type === 'plane' ? (f.axis === 'x' ? [[f.coord, box?.min[1] ?? 0], [f.coord, box?.max[1] ?? 0]] : [[box?.min[0] ?? 0, f.coord], [box?.max[0] ?? 0, f.coord]]) : [[f.at[0] - f.dir[0] * 15, f.at[1] - f.dir[1] * 15], [f.at[0] + f.dir[0] * 15, f.at[1] + f.dir[1] * 15]];
               const sa = toSheet(placed, a![0]!, a![1]!);

@@ -1,5 +1,5 @@
 import type { Locale } from '@3db/i18n';
-import type { InterferenceComponent, MeasureReport, MeasureTarget, PartMass, ElementFacts, ViewAxes, ViewFeature } from '@3db/model';
+import type { InterferenceComponent, MeasureReport, MeasureTarget, PartMass, ElementFacts, ViewAxes, ViewEdgeSet, ViewFeature } from '@3db/model';
 import type { AssemblyDoc, Axis3, CoordSystem, Fingerprint, Id, PartDoc, PlaneFrame, Pose, Ref, SketchFeature, SourceTree, Vec3 } from '@3db/model';
 import type { DraftReport, ThicknessReport, UndercutReport, GeometryReport, MassProps, MeshData, ProjectedView } from '@3db/kernel';
 import type { AssemblyResult, AssemblySolveOptions, ClearanceRow, Converted, FeatureResult, FlatReport, SheetCheck, SheetCheckLimits, SnapItem, SweepResult } from '@3db/regen';
@@ -226,7 +226,8 @@ export interface DrawingViewRequest {
 export type DrawingViewResult = { lines: ProjectedView; /** Where each part is, in the order asked, when asked for. */ anchors?: [number, number][]; ms: number } | { error: string };
 
 /** What a view of a drawing can be dimensioned from, or why not (C16.4). */
-export type DrawingFeaturesResult = { features: ViewFeature[] } | { error: string };
+/** What a view can be dimensioned from: its features, and (D-I2) the edges and vertices of the part by name, projected, for the drawing to see which are drawn. */
+export type DrawingFeaturesResult = { features: ViewFeature[]; edges?: ViewEdgeSet } | { error: string };
 
 /** What the elements a drawing's dimensions point at are, one for each reference asked, or why one could not be told (it is gone, or not something to dimension). */
 export type DrawingElementsResult = { elements: (ElementFacts | { error: string })[] } | { error: string };

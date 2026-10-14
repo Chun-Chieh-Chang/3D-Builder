@@ -255,6 +255,38 @@ export type ViewFeature =
   /** A plane seen edge-on that is neither square to the view's x nor to its y (a slanted face): the middle of the face and the direction of the line it is seen as (a unit vector), in the view's coordinates. */
   | { type: 'slant'; ref: Ref; at: [number, number]; dir: [number, number]; area: number };
 
+// ---------------------------------------------------------------- the edges and vertices of a view, by name (D-I2, ADR 0138)
+
+/**
+ * An edge of the model as a view sees it: its persistent name, its polyline in the view's coordinates (x to the right, y up, full size) with how near the viewer
+ * each point is (`depth`, larger is nearer), and the names of its end vertices. A straight edge (`line`) or a circle seen in its true shape (`circle`, with its
+ * middle and radius in the view) can be dimensioned; any other is there for its vertices. Whether it is seen at all is worked out against the view's lines.
+ */
+export interface ViewEdge {
+  ref: Ref;
+  kind: 'line' | 'circle' | 'curve';
+  points: number[];
+  depth: number[];
+  ends: [Ref | null, Ref | null];
+  /** A circle seen as a circle: its middle and radius in the view's coordinates. */
+  circle?: { centre: [number, number]; radius: number };
+  /** A straight edge that lies in the plane of the sheet (seen in its true length and direction): only such an edge has an angle the view shows truly. */
+  inPlane?: boolean;
+}
+
+/** A vertex of the model as a view sees it. */
+export interface ViewVertex {
+  ref: Ref;
+  at: [number, number];
+  depth: number;
+}
+
+/** The edges and vertices of a part seen from a view, by name: what a dimension can be put on besides the planes and cylinders of `ViewFeature`. */
+export interface ViewEdgeSet {
+  edges: ViewEdge[];
+  vertices: ViewVertex[];
+}
+
 // ---------------------------------------------------------------- tables (C16.6)
 
 /**
@@ -908,6 +940,13 @@ export interface ViewAxes {
 
 /** The sheet's x of a view: to the right of a viewer who looks along `dir` with `up` above. */
 export const rightOf = (a: ViewAxes): V3 => unit(cross(a.dir, a.up));
+
+/**
+ * The sheet's y of a view: up the sheet, square to both the direction looked along and the sheet's x — what the hidden-line removal draws as y (the projector's
+ * (−dir) × x). It is `up` itself whenever `up` is square to `dir` (the six orthographic views); in the isometric, whose `up` is the model's y and not square to
+ * the direction, it is `up` tilted into the sheet (D-I2, ADR 0138). Every point put into a view's coordinates goes through this, so that it lands on the lines.
+ */
+export const sheetUp = (a: ViewAxes): V3 => unit(cross(neg(unit(a.dir)), rightOf(a)));
 
 const OPPOSITE: Record<ViewSide, ViewSide> = { left: 'right', right: 'left', up: 'down', down: 'up' };
 export const oppositeSide = (s: ViewSide): ViewSide => OPPOSITE[s];

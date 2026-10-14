@@ -7,7 +7,7 @@ import { bodyKey, combineMass, isShown, mirrorKey, MESH_QUALITY, settingsOf, typ
 import { findProfiles, PlaneGcsSolver } from '@3db/sketch';
 import { COMPONENT_MESH, Kernel, type ThicknessReport, type UndercutReport, type DraftReport, type GeometryReport, type MassProps, type MeshData, type MeshOptions, type ShapeId } from '@3db/kernel';
 import { flatViewLines } from '@3db/drawing';
-import { drawingAnchors, holeFeatures, projectDrawingView, elementFacts, viewFeatures, findClearance, findInterference, flatPattern, FlatError, sheetChecks, sweepClearance, measureTargets, convertEdges, modelSnapItems, edgeMateGeometry, exportFaces, faceColors, intoFrame, faceEdges, faceMateGeometry, followReferences, ReferenceProblem, Regenerator, solveAssemblyTree, type AssemblyResult, type AssemblySolveOptions, type BodyInfo, type FlatReport, type HoleFeatures, type RebuildResult, type SheetCheck, type SheetCheckLimits } from '@3db/regen';
+import { drawingAnchors, holeFeatures, projectDrawingView, elementFacts, viewFeatures, viewEdges, findClearance, findInterference, flatPattern, FlatError, sheetChecks, sweepClearance, measureTargets, convertEdges, modelSnapItems, edgeMateGeometry, exportFaces, faceColors, intoFrame, faceEdges, faceMateGeometry, followReferences, ReferenceProblem, Regenerator, solveAssemblyTree, type AssemblyResult, type AssemblySolveOptions, type BodyInfo, type FlatReport, type HoleFeatures, type RebuildResult, type SheetCheck, type SheetCheckLimits } from '@3db/regen';
 import { edgeFingerprint, faceFingerprint, vertexFingerprint } from '@3db/naming';
 import { binaryStl, exportAssemblyStep, exportPartStep, portableShape, readComponentFile, stepAssemblyPlan, type StepAssemblyPlan } from '@3db/io';
 import type { SourcePart, SourceProvider } from '@3db/regen';
@@ -160,6 +160,9 @@ async function shapesOf(components: readonly { parts: readonly { part: string }[
   }
   return shapes;
 }
+
+/** The mesh of each part as built, for the edges of its drawing views (D-I2): made once per part, gone with it. */
+const edgeMeshes = new WeakMap<object, MeshData>();
 
 const api: KernelApi = {
   async setLocale(locale) {
@@ -483,7 +486,14 @@ const api: KernelApi = {
         // the faces of a workpiece that is only there for reference are not the part's (as in the lines of its views)
         const own = built.result.bodies.filter((b) => !b.reference && !b.surface);
         const only = own.length > 0 && own.length < built.result.bodies.length;
-        out.push({ features: viewFeatures(body.topology, body.names, r.axes, only ? (i) => own.some((b) => i >= b.face0 && i < b.face0 + b.faces) : undefined, built.holes) });
+        const allowed = only ? (i: number) => own.some((b) => i >= b.face0 && i < b.face0 + b.faces) : undefined;
+        // the edges and vertices by name (D-I2): the part's mesh is made once and kept with the part as built, for every view of it
+        let mesh = edgeMeshes.get(built);
+        if (!mesh) {
+          mesh = kernel.mesh(body.shape, { tolerance: 0.01, angular: 0.1 });
+          edgeMeshes.set(built, mesh);
+        }
+        out.push({ features: viewFeatures(body.topology, body.names, r.axes, allowed, built.holes), edges: viewEdges(kernel, body.shape, body.topology, body.names, r.axes, allowed, mesh) });
       } catch (e) {
         out.push({ error: e instanceof Error ? e.message : String(e) });
       }

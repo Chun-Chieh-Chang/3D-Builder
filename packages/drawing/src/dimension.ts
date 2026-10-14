@@ -1,5 +1,5 @@
 import { t } from '@3db/i18n';
-import { fitDeviations, inUnit, rightOf, type LengthUnit, type Dimension, type DimensionTolerance, type ElementFacts, type HoleInfo, type ViewAxes } from '@3db/model';
+import { fitDeviations, inUnit, rightOf, sheetUp, type LengthUnit, type Dimension, type DimensionTolerance, type ElementFacts, type HoleInfo, type ViewAxes } from '@3db/model';
 import { toSheet, type PlacedView } from './layout';
 import type { SceneDimensionGeometry, SceneItem } from './scene';
 
@@ -166,13 +166,13 @@ function textOn(mid: P, angle: number, text: string): SceneItem {
 /** Where an element is in the view (x to the right, y up). */
 const inView = (e: ElementFacts, axes: ViewAxes): P => {
   const r = rightOf(axes);
-  return [dot(e.point, r), dot(e.point, axes.up)];
+  return [dot(e.point, r), dot(e.point, sheetUp(axes))];
 };
 
 /** Whether an element (a plane or a line) is square to the direction measured in the view: `dir` is its normal or direction in the part. */
 const squareTo = (e: ElementFacts, axes: ViewAxes, along: 'x' | 'y'): boolean => {
   if (!e.dir) return true;
-  const along3 = along === 'x' ? rightOf(axes) : axes.up;
+  const along3 = along === 'x' ? rightOf(axes) : sheetUp(axes);
   // a plane's normal and a line's direction: a plane counts when its normal is along the measure; a line when it is across it (it is seen as a line square to the measure)
   return e.type === 'line' ? Math.abs(dot(e.dir, along3)) <= 1e-6 : Math.abs(dot(e.dir, along3)) >= PARALLEL;
 };
@@ -195,7 +195,8 @@ export function evaluateDimension(d: Dimension, resolved: ElementsResult | undef
 /** What an element is seen as in a view when it is a line: a point on it, its direction (unit), and the point of the element the angle is measured toward. */
 function seenAsLine(e: ElementFacts, axes: ViewAxes): { p: P; d: P; c: P } | { error: string } {
   const right = rightOf(axes);
-  const to = (v: readonly number[]): P => [dot(v, right), dot(v, axes.up)];
+  const up = sheetUp(axes);
+  const to = (v: readonly number[]): P => [dot(v, right), dot(v, up)];
   if (!e.dir || (e.type !== 'plane' && e.type !== 'line')) return { error: t('drawing.dimNotAngle') };
   // a plane has to be edge-on (its normal across the view's direction), a line true (its direction across it too)
   if (Math.abs(dot(e.dir, axes.dir)) > 1e-6 && e.type === 'plane') return { error: t('drawing.dimNotEdgeOn') };
@@ -330,7 +331,7 @@ function circleCentre(e: ElementFacts, axes: ViewAxes, u: P): P | null {
   }
   if (!e.dir || e.major === undefined || Math.abs(dot(e.dir, axes.dir)) > PERPENDICULAR) return null;
   // the axis as the view sees it; across it lies the arc, and a quarter turn off it is where the arc's middle is
-  const ax: P = [dot(e.dir, rightOf(axes)), dot(e.dir, axes.up)];
+  const ax: P = [dot(e.dir, rightOf(axes)), dot(e.dir, sheetUp(axes))];
   const l = Math.hypot(ax[0], ax[1]);
   if (l < 1e-9) return null;
   const across: P = [ax[1] / l, -ax[0] / l];

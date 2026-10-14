@@ -1183,3 +1183,13 @@
 4. **零 Mock**：e2e 按下真正的「標準三視圖」按鈕；瀏覽器以真實 pointer 拖出主視圖並拉出投影視圖。
 
 檢查：typecheck 0 錯誤；三項 lint 通過；vitest 2681 過、0 失敗；受影響的 17 支瀏覽器腳本 17/17。
+
+## 2026-10-14　D-I2 第一部分：視圖的邊與頂點有名字（ADR 0138；原編 0135，因遠端已用 0135～0137 而改號）
+
+紅隊四問：
+1. **輸入破壞**：`visibleElements` 的容差非正數或非有限值時，明確拋錯；沒有線條或沒有邊資料時，回傳空結果。
+2. **相交破壞**：重合的邊和頂點只留離觀看者最近的；整圓的接縫頂點、曲面的接縫邊不提供點選（全量 `verify:ui` 抓到的回歸，已補測試）；等角視圖裡不真實的角度會被拒絕。
+3. **依賴鏈**：model（`ViewEdge`、`ViewEdgeSet`、`sheetUp`）→ regen（`viewEdges`，以及 `viewFeatures`／`drawingAnchors` 改用 `sheetUp`）→ worker（`drawingFeatures` 回傳 `edges`，網格快取）→ protocol → store（`edges` 狀態）→ drawing（`visibleElements`、`featureAt`、`factsOf`、`planDimension`，以及 `inView` 等改用 `sheetUp`）→ Viewport（點選、高亮）。
+4. **零 Mock**：真實核心建出零件；尺寸的值和兩端角點手算的結果比對；空間格點和逐一比對的判定法比對；200 個隨機點做點選測試。
+
+檢查：typecheck 0 錯誤；三項 lint 通過；vitest 2690 過、0 失敗；`verify:ui` 128/129，修正後工程圖相關腳本 17/17。
