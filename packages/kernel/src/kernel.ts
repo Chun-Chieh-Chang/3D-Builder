@@ -3,6 +3,7 @@ import type { BRepBuilderAPI_MakeShape, NCollection_List_TopoDS_Shape, TopoDS_Sh
 import { anyHit, buildBvh, nearestHitAt, triangleNormal } from './rays';
 import { forEachSample } from './sampling';
 import { escapeStepText } from './stepText';
+import { inheritBodySurface } from './sameSurface';
 import { sweepVolumeFloor } from './sweepFloor';
 import { Arena, loadOcct, ShapeIndex, type LoadOptions, type OC } from './occt';
 import {
@@ -1421,7 +1422,11 @@ export class Kernel {
           arena,
         );
         const unified = this.unify(raw, origins, arena);
-        return { shape: this.put(unified.shape), faceOrigins: unified.origins };
+        const shape = this.put(unified.shape);
+        // a piece the tool made on the surface of a body face it touches is named after the body face, whether or not the merge joined them (B3.1)
+        const nBody = ia.faces.keys.length;
+        const isBody = (o: FaceOrigin) => o.rel !== 'cap' && o.rel !== 'imported' && o.kind === 'face' && o.index < nBody;
+        return { shape, faceOrigins: inheritBodySurface(unified.origins, this.topology(shape), isBody) };
       } finally {
         raw.delete();
       }
