@@ -4,7 +4,7 @@ import { LineSegments2 } from 'three/examples/jsm/lines/LineSegments2.js';
 import { LineSegmentsGeometry } from 'three/examples/jsm/lines/LineSegmentsGeometry.js';
 import { acceleratedRaycast, computeBoundsTree, disposeBoundsTree } from 'three-mesh-bvh';
 import { ViewControls } from './controls';
-import { orbitView, panView, restoreView, rollView, viewState, ViewHistory, zoomView } from './viewNav';
+import { cubeDirection, orbitView, panView, restoreView, rollView, viewState, ViewHistory, zoomView } from './viewNav';
 import { circleCentre, middleOf, polylinesOf, type V3 } from './snap';
 import { buildOverlayObjects, disposeGroup, toWorld, type P2, type PlaneFrame, type SketchOverlay } from './overlay';
 
@@ -2734,6 +2734,14 @@ export class Viewer {
   }
 
   // ---------------------------------------------------------------- the view from the keyboard (SolidWorks), and 「上一個視角」
+
+  /** Looks at the model from one of the view cube's 26 directions (a face, an edge or a corner: see cubeDirection), all of it in view. */
+  lookFrom(x: number, y: number, z: number): void {
+    const { dir, up } = cubeDirection(x, y, z);
+    this.rememberView();
+    this.orient(dir, up);
+    this.fitView();
+  }
 
   /** Turns the model about the screen's vertical (`'horizontal'`, positive right) or horizontal axis (`'vertical'`, positive up) through its middle. */
   orbit(direction: 'horizontal' | 'vertical', degrees: number): void {

@@ -61,17 +61,38 @@ M.run = async () => {
     await H.wait(300);
     return { seen, flipped, gone: !sectionPanel(), pass: flipped && !sectionPanel() && Object.values(seen).every((s) => s.moved !== s.mid) };
   });
-  await step('4 the six faces of the view cube: each turns the model to that direction', async () => {
-    const faces = [...document.querySelectorAll('.cube-face')];
-    const want = { 前: [0, 0, 1], 後: [0, 0, -1], 右: [1, 0, 0], 左: [-1, 0, 0], 上: [0, 1, 0], 下: [0, -1, 0] };
+  // a face of the view cube (only those toward the viewer are drawn), and a click where a hand puts it: the middle of its corners on the screen, on
+  // whatever the page finds there; `hit` is whether that is the face itself
+  const cubeFace = (dir) => document.querySelector(`.view-cube [data-cube-dir="${dir}"]`);
+  const faceMiddle = (f) => {
+    const m = f.ownerSVGElement.getScreenCTM();
+    const pts = Array.from({ length: f.points.numberOfItems }, (_, i) => f.points.getItem(i));
+    const [x, y] = [pts.reduce((s, p) => s + p.x, 0) / pts.length, pts.reduce((s, p) => s + p.y, 0) / pts.length];
+    return { x: m.a * x + m.c * y + m.e, y: m.b * x + m.d * y + m.f };
+  };
+  const clickFace = async (dir) => {
+    const f = cubeFace(dir);
+    if (!f) return { drawn: false, hit: false };
+    const { x, y } = faceMiddle(f);
+    const at = document.elementFromPoint(x, y);
+    at?.dispatchEvent(new MouseEvent('click', { bubbles: true, clientX: x, clientY: y }));
+    await H.wait(350);
+    return { drawn: true, hit: at === f };
+  };
+  await step('4 the six sides of the view cube: a click on each turns the model to that direction', async () => {
+    const want = { '0,0,1': [0, 0, 1], '0,0,-1': [0, 0, -1], '1,0,0': [1, 0, 0], '-1,0,0': [-1, 0, 0], '0,1,0': [0, 1, 0], '0,-1,0': [0, -1, 0] };
     const got = {};
-    for (const f of faces) {
-      f.click();
-      await H.wait(350);
-      got[f.textContent] = direction();
+    for (const [dir, v] of Object.entries(want)) {
+      // from a corner where the side shows: front, top and right from the isometric one, the others from the opposite corner
+      if (v.some((x) => x > 0)) await S.iso();
+      else viewer().lookFrom(-1, -1, -1);
+      await H.wait(200);
+      const label = [...document.querySelectorAll('.view-cube .cube-label')].map((l) => l.textContent);
+      const click = await clickFace(dir);
+      got[dir] = { ...click, labels: label.join(''), direction: direction() };
     }
-    const ok = Object.entries(want).every(([k, v]) => got[k] && v.every((x, i) => Math.abs(got[k][i] - x) < 0.01));
-    return { got, pass: faces.length === 6 && ok };
+    const ok = Object.entries(want).every(([k, v]) => got[k].hit && v.every((x, i) => Math.abs(got[k].direction[i] - x) < 0.01));
+    return { got, pass: ok && got['0,0,1'].labels.length === 3 && got['0,0,-1'].labels.length === 3 };
   });
   await step('5 a drag with the middle button turns the model and the cube follows', async () => {
     await S.iso();
@@ -91,6 +112,7 @@ M.run = async () => {
   const up = () => viewer().camera.up.clone();
   const deg = (a, b) => (a.angleTo(b) * 180) / Math.PI;
   const right = () => up().cross(toViewer()).normalize();
+  const right_ = right; // the screen's right, by another name where 'right' is a result
   await step('6 from the front (Ctrl+1): → turns the model 15° to the right, ↑ 15° up; Shift+← a quarter turn, once', async () => {
     await press('1', { ctrlKey: true });
     const front = toViewer();
@@ -170,6 +192,88 @@ M.run = async () => {
     await press(' ', {}, field);
     field.blur();
     return { field: !!field, moved: deg(front, toViewer()), dialog: !!document.querySelector('.view-orientation'), pass: !!field && deg(front, toViewer()) < 1e-6 && !document.querySelector('.view-orientation') };
+  });
+  await step('12 the view cube as FreeCAD\'s: from the isometric view 3 octagon sides, 3 edge rectangles at 45° and 4 corner hexagons; each of the 26 faces, clicked at its middle, looks from its direction', async () => {
+    await S.iso();
+    await H.wait(200);
+    const drawn = [...document.querySelectorAll('.view-cube [data-cube-dir]')];
+    const shapes = drawn.map((f) => `${f.dataset.cubeKind}:${f.points.numberOfItems}`).sort();
+    // every face drawn is the one found at its own middle: none is covered or covers another
+    const covered = drawn.filter((f) => {
+      const { x, y } = faceMiddle(f);
+      return document.elementFromPoint(x, y) !== f;
+    }).map((f) => f.dataset.cubeDir);
+    await shot('12-the-cube-from-the-isometric-view');
+    const unit = (x, y, z) => new (toViewer().constructor)(x, y, z).normalize();
+    const seen = {};
+    for (const x of [-1, 0, 1])
+      for (const y of [-1, 0, 1])
+        for (const z of [-1, 0, 1]) {
+          if (!x && !y && !z) continue;
+          // from a view near the face's own but not it (turned 20° and 10°), so the click has to move the camera
+          viewer().lookFrom(x, y, z);
+          viewer().orbit('horizontal', 20);
+          viewer().orbit('vertical', 10);
+          await H.wait(120);
+          const before = deg(toViewer(), unit(x, y, z));
+          const click = await clickFace(`${x},${y},${z}`);
+          seen[`${x},${y},${z}`] = { ...click, before: Math.round(before), after: deg(toViewer(), unit(x, y, z)) };
+        }
+    const all = Object.values(seen);
+    return {
+      shapes,
+      covered,
+      seen,
+      pass:
+        shapes.join() === ['corner:6', 'corner:6', 'corner:6', 'corner:6', 'edge:4', 'edge:4', 'edge:4', 'face:8', 'face:8', 'face:8'].join() &&
+        covered.length === 0 &&
+        all.length === 26 &&
+        all.every((s) => s.drawn && s.hit && s.before > 10 && s.after < 1e-6),
+    };
+  });
+  await step('13 the arrows around the cube turn the model 45° (▶ right, ▲ up) and roll it 45° (↻ clockwise); with the option at 30, 30°', async () => {
+    const click = async (k) => {
+      document.querySelector(`.view-cube [data-cube-arrow="${k}"]`).click();
+      await H.wait(150);
+    };
+    await press('1', { ctrlKey: true });
+    const front = toViewer();
+    await click('right');
+    const right = { angle: deg(front, toViewer()), toRight: right_().dot(front) > 0 };
+    await click('left');
+    await click('up');
+    const upTurn = { angle: deg(front, toViewer()), up: up().dot(front) > 0 };
+    await click('down');
+    const up0 = up();
+    await click('rollRight');
+    const roll = { angle: deg(up0, up()), clockwise: right_().dot(up0) > 0, same: deg(front, toViewer()) };
+    await click('rollLeft');
+    store.setOptions({ viewCubeStep: 30 });
+    await H.wait(100);
+    await press('1', { ctrlKey: true });
+    await click('right');
+    const thirty = deg(front, toViewer());
+    store.setOptions({ viewCubeStep: 45 });
+    await shot('13-turned-by-the-arrows');
+    return { right, upTurn, roll, thirty, pass: near(right.angle, 45, 1e-6) && right.toRight && near(upTurn.angle, 45, 1e-6) && upTurn.up && near(roll.angle, 45, 1e-6) && roll.clockwise && roll.same < 1e-6 && near(thirty, 30, 1e-6) };
+  });
+  await step('14 a narrow 3D view: the cube goes below the heads-up bar instead of under it; wide, it stays at the top', async () => {
+    const vp = document.querySelector('.viewport');
+    const parts = () => [...document.querySelectorAll('.view-cube .cube-arrow, .view-cube .cube')].map((e) => e.getBoundingClientRect());
+    const covered = () => {
+      const bar = document.querySelector('.heads-up').getBoundingClientRect();
+      return parts().filter((p) => p.left < bar.right && p.right > bar.left && p.top < bar.bottom && p.bottom > bar.top).length;
+    };
+    const top = () => Math.round(document.querySelector('.view-cube').getBoundingClientRect().top - vp.getBoundingClientRect().top);
+    const wide = { width: Math.round(vp.getBoundingClientRect().width), top: top(), covered: covered() };
+    const before = vp.style.width;
+    vp.style.width = '500px';
+    await H.wait(300);
+    const narrow = { width: Math.round(vp.getBoundingClientRect().width), top: top(), covered: covered() };
+    await shot('14-a-narrow-view');
+    vp.style.width = before;
+    await H.wait(300);
+    return { wide, narrow, pass: wide.width > 620 && wide.top === 44 && wide.covered === 0 && narrow.width === 500 && narrow.top === 100 && narrow.covered === 0 };
   });
   return S.result('C20');
 };

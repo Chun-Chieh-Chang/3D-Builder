@@ -4,7 +4,7 @@ import { imageBitmapOf } from '../state/pictures';
 import { t } from '@3db/i18n';
 import { DATUM_PLANES, findFeature, isDimension, isShown, ORIGIN_KEY, Parameters, settingsOf, type DatumPlaneName, type Id, type Feature, type PlaneFrame, type Ref } from '@3db/model';
 import { ownerFeatures } from '@3db/naming';
-import { Viewer, type DatumDisplay, type DisplayMode, type PlaneDisplay, type SectionPlane, type SketchOverlay, type StandardView } from '@3db/render';
+import { cubeFacets, Viewer, type DatumDisplay, type DisplayMode, type PlaneDisplay, type SectionPlane, type SketchOverlay, type StandardView } from '@3db/render';
 import { ACTIONS, shortcutOf } from '../actions';
 import { chosen, pickable, prompt } from '../state/datumSlots';
 import { sample } from '@3db/sketch/interact';
@@ -609,18 +609,40 @@ function DimensionEditor({ id, overlay }: { id: string; overlay: SketchOverlay |
   );
 }
 
-/** The faces of the view cube (D4.3): the view each shows, and where it is on the cube. */
-const CUBE_FACES: { view: StandardView; label: string; transform: string }[] = [
-  { view: 'front', label: 'cube.front', transform: 'translateZ(22px)' },
-  { view: 'back', label: 'cube.back', transform: 'rotateY(180deg) translateZ(22px)' },
-  { view: 'right', label: 'cube.right', transform: 'rotateY(90deg) translateZ(22px)' },
-  { view: 'left', label: 'cube.left', transform: 'rotateY(-90deg) translateZ(22px)' },
-  { view: 'top', label: 'cube.top', transform: 'rotateX(90deg) translateZ(22px)' },
-  { view: 'bottom', label: 'cube.bottom', transform: 'rotateX(-90deg) translateZ(22px)' },
+type V3 = [number, number, number];
+/**
+ * The sides of the view cube (D4.3): the standard view each shows, and in the world its direction and the directions of its own right (`u`) and down (`v`),
+ * the way its name is written on it.
+ */
+const CUBE_SIDES: { view: StandardView; label: string; n: V3; u: V3; v: V3 }[] = [
+  { view: 'front', label: 'cube.front', n: [0, 0, 1], u: [1, 0, 0], v: [0, -1, 0] },
+  { view: 'back', label: 'cube.back', n: [0, 0, -1], u: [-1, 0, 0], v: [0, -1, 0] },
+  { view: 'right', label: 'cube.right', n: [1, 0, 0], u: [0, 0, -1], v: [0, -1, 0] },
+  { view: 'left', label: 'cube.left', n: [-1, 0, 0], u: [0, 0, 1], v: [0, -1, 0] },
+  { view: 'top', label: 'cube.top', n: [0, 1, 0], u: [1, 0, 0], v: [0, 0, 1] },
+  { view: 'bottom', label: 'cube.bottom', n: [0, -1, 0], u: [1, 0, 0], v: [0, 0, -1] },
 ];
+/** The 26 faces of the cube, worked out once. */
+const CUBE_FACETS = cubeFacets();
+/** Pixels to half the cube's side; the cube is drawn in a square of CUBE_BOX pixels about its middle. */
+const CUBE_PX = 33;
+const CUBE_BOX = 92;
+/** The colour of a side and of an edge or corner face looked at straight; one turned away is darker, as if lit from the viewer. */
+const CUBE_FILL = { face: [240, 244, 250], edge: [205, 217, 233], corner: [205, 217, 233] } as const;
+/** The cube's words for the sides a direction is toward, front/back first, then top/bottom, then right/left (「前、上、右」). */
+const sidesOf = ([x, y, z]: V3): string[] =>
+  [z === 1 ? 'cube.front' : z === -1 ? 'cube.back' : null, y === 1 ? 'cube.top' : y === -1 ? 'cube.bottom' : null, x === 1 ? 'cube.right' : x === -1 ? 'cube.left' : null]
+    .filter((k): k is string => k !== null)
+    .map((k) => t(k as 'cube.front'));
 
-/** 視角選擇方塊 (D4.3): a cube that turns with the model; a click on a face looks at the model from that side. */
+/**
+ * 視角選擇方塊 (D4.3), as FreeCAD's NaviCube has it: a cube that turns with the model, its edges and corners cut off (cubeFacets): a click on a side looks
+ * from that side, on an edge face from halfway between two sides (45°), on a corner face along the cube's diagonal: 26 directions. It is drawn flat (SVG)
+ * from the camera's turn, and only the faces toward the viewer, so a face is a single shape to point at. Arrows around it turn the model about the
+ * screen's axes and roll it, by the step of the options (45° at first), the way the arrow keys do.
+ */
 function ViewCube() {
+  const step = useStore((s) => s.options.viewCubeStep);
   const [matrix, setMatrix] = useState<number[] | null>(null);
   useEffect(() => {
     let stop = () => {};
@@ -638,18 +660,67 @@ function ViewCube() {
     };
   }, []);
   if (!matrix) return null;
+  const m = matrix;
+  // cubeMatrix turns a point given in CSS's frame (the world's y turned over) to the screen's: x right, y down, z toward the viewer
+  const screen = ([x, y, z]: readonly number[]): V3 => [m[0]! * x! - m[4]! * y! + m[8]! * z!, m[1]! * x! - m[5]! * y! + m[9]! * z!, m[2]! * x! - m[6]! * y! + m[10]! * z!];
+  const facing = (d: readonly number[]) => screen(d)[2] / Math.hypot(d[0]!, d[1]!, d[2]!);
+  const look = (d: V3) => t('cube.look', { face: sidesOf(d).join(t('cube.and')) });
+  const go = (d: V3) => {
+    const side = CUBE_SIDES.find((s) => s.n.join() === d.join());
+    if (side) store.viewer?.setView(side.view);
+    else store.viewer?.lookFrom(...d);
+  };
+  const arrow =(key: string, label: string, run: (v: NonNullable<typeof store.viewer>) => void) => (
+    <button key={key} className={`cube-arrow cube-arrow-${key}`} data-cube-arrow={key} title={label} aria-label={label} onClick={() => store.viewer && run(store.viewer)}>
+      {CUBE_ARROW_GLYPH[key]}
+    </button>
+  );
   return (
     <div className="view-cube" aria-label={t('cube.title')}>
-      <div className="cube" style={{ transform: `matrix3d(${matrix.join(',')})` }}>
-        {CUBE_FACES.map((f) => (
-          <button key={f.view} className="cube-face" style={{ transform: f.transform }} title={t('cube.look', { face: t(f.label as 'cube.front') })} onClick={() => store.viewer?.setView(f.view)}>
-            {t(f.label as 'cube.front')}
-          </button>
-        ))}
-      </div>
+      {arrow('up', t('cube.turnUp', { step }), (v) => v.orbit('vertical', step))}
+      {arrow('down', t('cube.turnDown', { step }), (v) => v.orbit('vertical', -step))}
+      {arrow('left', t('cube.turnLeft', { step }), (v) => v.orbit('horizontal', -step))}
+      {arrow('right', t('cube.turnRight', { step }), (v) => v.orbit('horizontal', step))}
+      {arrow('rollLeft', t('cube.rollLeft', { step }), (v) => v.roll(-step))}
+      {arrow('rollRight', t('cube.rollRight', { step }), (v) => v.roll(step))}
+      <svg className="cube" width={CUBE_BOX} height={CUBE_BOX} viewBox={`${-CUBE_BOX / 2} ${-CUBE_BOX / 2} ${CUBE_BOX} ${CUBE_BOX}`}>
+        {/* a convex solid: the faces toward the viewer never cover each other, so they need no order */}
+        {CUBE_FACETS.filter((f) => facing(f.dir) > 1e-6).map((f) => {
+          const shade = 0.78 + 0.22 * facing(f.dir);
+          return (
+            <polygon
+              key={f.dir.join()}
+              className={`cube-facet cube-${f.kind}${f.kind === 'face' ? ' cube-face' : ''}`}
+              data-cube-dir={f.dir.join()}
+              data-cube-kind={f.kind}
+              points={f.points.map((p) => screen(p.toArray()).slice(0, 2).map((c) => (c * CUBE_PX).toFixed(2)).join(',')).join(' ')}
+              fill={`rgb(${CUBE_FILL[f.kind].map((c) => Math.round(c * shade)).join(',')})`}
+              role="button"
+              tabIndex={0}
+              aria-label={look(f.dir)}
+              onClick={() => go(f.dir)}
+              onKeyDown={(e) => e.key === 'Enter' && go(f.dir)}
+            >
+              <title>{look(f.dir)}</title>
+            </polygon>
+          );
+        })}
+        {CUBE_SIDES.filter((s) => facing(s.n) > 1e-6).map((s) => {
+          // the name lies on the side: its right and down on the screen (an orthographic view keeps a plane's shape up to this linear map)
+          const [o, u, v] = [screen(s.n), screen(s.u), screen(s.v)];
+          return (
+            <text key={s.view} className="cube-label" transform={`matrix(${[u[0], u[1], v[0], v[1], o[0] * CUBE_PX, o[1] * CUBE_PX].map((c) => c.toFixed(4)).join(' ')})`}>
+              {t(s.label as 'cube.front')}
+            </text>
+          );
+        })}
+      </svg>
     </div>
   );
 }
+
+/** What each arrow around the cube shows. */
+const CUBE_ARROW_GLYPH: Record<string, string> = { up: '▲', down: '▼', left: '◀', right: '▶', rollLeft: '↺', rollRight: '↻' };
 
 /**
  * The position of the cut as a number the user can type (mm): the slider is hard to stop at a size. Enter or leaving the box sets it, Esc puts the old number back;

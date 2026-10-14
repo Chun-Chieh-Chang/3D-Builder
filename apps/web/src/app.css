@@ -164,7 +164,7 @@ code { font-family: Consolas, 'Cascadia Mono', monospace; font-size: 11px; }
 .sketch-status.over, .sketch-status.failed { color: var(--error); font-weight: 600; }
 
 /* Graphics area */
-.viewport { position: relative; min-width: 0; min-height: 0; }
+.viewport { position: relative; min-width: 0; min-height: 0; container-type: inline-size; }
 .viewport-canvas { position: absolute; inset: 0; }
 .heads-up { position: absolute; top: 8px; left: 50%; transform: translateX(-50%); display: flex; gap: 2px; background: rgba(255, 255, 255, 0.92); border: 1px solid var(--line); border-radius: 5px; padding: 2px; }
 .heads-up button { border: 0; background: none; padding: 4px 9px; border-radius: 3px; }
@@ -336,11 +336,24 @@ code { font-family: Consolas, 'Cascadia Mono', monospace; font-size: 11px; }
 .template-list button { width: 100%; display: flex; flex-direction: column; align-items: flex-start; gap: 2px; padding: 6px 10px; text-align: left; }
 .shortcut-list { max-height: 50vh; overflow: auto; }
 
-.view-cube { position: absolute; top: 52px; right: 14px; width: 70px; height: 70px; z-index: 5; }
-.view-cube .cube { position: absolute; left: 0; top: 0; width: 70px; height: 70px; transform-style: preserve-3d; }
-.view-cube .cube-face { position: absolute; left: 13px; top: 13px; width: 44px; height: 44px; padding: 0; display: grid; place-items: center; background: rgba(240, 244, 250, 0.92); border: 1px solid #8aa0b8; color: #234; font-size: 13px; cursor: pointer; backface-visibility: hidden; }
-html[lang="en"] .view-cube .cube-face { font-size: 10px; }
-.view-cube .cube-face:hover { background: #ffe8b3; }
+/* 視角選擇方塊 (D4.3), as FreeCAD's NaviCube: a cube with its edges and corners cut off (26 faces, 26 directions), arrows around it to turn and roll */
+.view-cube { position: absolute; top: 44px; right: 8px; width: 132px; height: 132px; z-index: 5; }
+.view-cube .cube { position: absolute; left: 20px; top: 20px; overflow: visible; }
+.view-cube .cube-facet { stroke: #8aa0b8; stroke-width: 0.75; stroke-linejoin: round; cursor: pointer; outline: none; }
+.view-cube .cube-facet:hover { fill: #ffe8b3; }
+.view-cube .cube-facet:focus-visible { stroke: #1d4ed8; stroke-width: 1.5; }
+.view-cube .cube-label { fill: #234; font-size: 16px; text-anchor: middle; dominant-baseline: central; pointer-events: none; user-select: none; }
+html[lang="en"] .view-cube .cube-label { font-size: 13px; }
+.view-cube .cube-arrow { position: absolute; width: 20px; height: 20px; padding: 0; border: none; background: transparent; color: #5b708a; font-size: 13px; line-height: 20px; cursor: pointer; }
+.view-cube .cube-arrow:hover { color: #1d4ed8; }
+.view-cube .cube-arrow-up { left: 56px; top: 0; }
+.view-cube .cube-arrow-down { left: 56px; bottom: 0; }
+.view-cube .cube-arrow-left { left: 0; top: 56px; }
+.view-cube .cube-arrow-right { right: 0; top: 56px; }
+.view-cube .cube-arrow-rollLeft { left: 2px; top: 2px; }
+.view-cube .cube-arrow-rollRight { right: 2px; top: 2px; }
+/* a narrow 3D view: the heads-up bar (centred at the top) would run under the cube, so the cube goes below it */
+@container (max-width: 620px) { .view-cube { top: 100px; } }
 .view-options { position: absolute; top: 48px; left: 8px; display: flex; gap: 6px; align-items: center; z-index: 5; flex-wrap: wrap; max-width: 60%; }
 .view-options select, .view-options button { font-size: 12px; }
 .view-options button.active { background: #dbeafe; }

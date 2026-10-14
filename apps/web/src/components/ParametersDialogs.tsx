@@ -607,6 +607,15 @@ export function OptionsDialog() {
             value={options.viewArrowStep}
             onChange={(e) => e.target.value !== '' && store.setOptions({ viewArrowStep: Number(e.target.value) })}
           />
+          <label>{t('options.viewCubeStep')}</label>
+          <input
+            type="number"
+            min={VIEW_ARROW_STEP.min}
+            max={VIEW_ARROW_STEP.max}
+            step="1"
+            value={options.viewCubeStep}
+            onChange={(e) => e.target.value !== '' && store.setOptions({ viewCubeStep: Number(e.target.value) })}
+          />
           <label>{t('options.template')}</label>
           <select value={options.defaultTemplate} onChange={(e) => store.setOptions({ defaultTemplate: e.target.value as (typeof PART_TEMPLATES)[number]['id'] })}>
             {PART_TEMPLATES.map((x) => (

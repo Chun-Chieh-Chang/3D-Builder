@@ -20,6 +20,8 @@ export interface SystemOptions {
   snap: SnapSettings;
   /** How far an arrow key (and Alt+Left/Right) turns the view, in degrees (SolidWorks: System Options > View > Arrow keys, 15 at first). */
   viewArrowStep: number;
+  /** How far an arrow of the view cube turns or rolls the view, in degrees (FreeCAD's NaviCube: 8 steps a turn, 45 at first). */
+  viewCubeStep: number;
 }
 
 export const AUTOSAVE_SECONDS = { min: 2, max: 600 } as const;
@@ -33,9 +35,13 @@ export const DEFAULT_OPTIONS: SystemOptions = {
   datumOffset: '10',
   snap: DEFAULT_SNAPS,
   viewArrowStep: 15,
+  viewCubeStep: 45,
 };
 
 const KEY = '3db.options';
+
+/** A step of the view in degrees, within VIEW_ARROW_STEP; one that is not a number is the default. */
+const angle = (v: unknown, fallback: number): number => (typeof v === 'number' && Number.isFinite(v) ? Math.min(VIEW_ARROW_STEP.max, Math.max(VIEW_ARROW_STEP.min, v)) : fallback);
 
 /** What was stored, taken as far as it can be trusted: a value that is missing or not what it should be is the default. */
 export function parseOptions(raw: unknown): SystemOptions {
@@ -50,7 +56,8 @@ export function parseOptions(raw: unknown): SystemOptions {
     pickFilter: { faces: on(filter.faces), edges: on(filter.edges), vertices: on(filter.vertices), planes: on(filter.planes) },
     datumOffset: typeof o.datumOffset === 'string' && Number.isFinite(Number(o.datumOffset)) && o.datumOffset.trim() !== '' ? o.datumOffset.trim() : DEFAULT_OPTIONS.datumOffset,
     snap: parseSnapSettings(o.snap),
-    viewArrowStep: typeof o.viewArrowStep === 'number' && Number.isFinite(o.viewArrowStep) ? Math.min(VIEW_ARROW_STEP.max, Math.max(VIEW_ARROW_STEP.min, o.viewArrowStep)) : DEFAULT_OPTIONS.viewArrowStep,
+    viewArrowStep: angle(o.viewArrowStep, DEFAULT_OPTIONS.viewArrowStep),
+    viewCubeStep: angle(o.viewCubeStep, DEFAULT_OPTIONS.viewCubeStep),
   };
 }
 

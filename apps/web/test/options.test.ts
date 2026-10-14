@@ -44,9 +44,18 @@ describe('system options (D8.1)', () => {
     expect(loadOptions({ getItem: () => JSON.stringify({ autosave: true }) }).viewArrowStep).toBe(15);
   });
 
+  it('the view cube\'s arrows turn 45° at first (FreeCAD), within the same 1° to 90°, apart from the arrow keys', () => {
+    expect(DEFAULT_OPTIONS.viewCubeStep).toBe(45);
+    expect(parseOptions({ viewCubeStep: 0 }).viewCubeStep).toBe(VIEW_ARROW_STEP.min);
+    expect(parseOptions({ viewCubeStep: 180 }).viewCubeStep).toBe(VIEW_ARROW_STEP.max);
+    expect(parseOptions({ viewCubeStep: Infinity }).viewCubeStep).toBe(45);
+    const o = parseOptions({ viewArrowStep: 10, viewCubeStep: 60 });
+    expect([o.viewArrowStep, o.viewCubeStep]).toEqual([10, 60]);
+  });
+
   it('what is saved is what is loaded', () => {
     let kept = '';
-    const options = { autosave: false, autosaveSeconds: 60, defaultTemplate: 'aluminium' as const, pickFilter: { faces: true, edges: false, vertices: false, planes: false }, datumOffset: '25', snap: { ...DEFAULT_OPTIONS.snap, enabled: false, grid: true, gridSpacing: 2.5 }, viewArrowStep: 7.5 };
+    const options = { autosave: false, autosaveSeconds: 60, defaultTemplate: 'aluminium' as const, pickFilter: { faces: true, edges: false, vertices: false, planes: false }, datumOffset: '25', snap: { ...DEFAULT_OPTIONS.snap, enabled: false, grid: true, gridSpacing: 2.5 }, viewArrowStep: 7.5, viewCubeStep: 30 };
     saveOptions(options, { setItem: (_k, v) => void (kept = v) });
     expect(loadOptions({ getItem: () => kept })).toEqual(options);
   });

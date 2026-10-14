@@ -71,6 +71,68 @@ export function zoomView(camera: THREE.OrthographicCamera, factor: number): void
   camera.updateProjectionMatrix();
 }
 
+/**
+ * The 26 directions of the view cube (FreeCAD's NaviCube): a face (one of x, y, z is ±1), an edge (two are) or a corner (all three), as the direction from
+ * the model toward the viewer, and the screen's up for it: the world's +Y, except straight down or up the Y axis (the top view has −Z up, the bottom +Z, as
+ * the standard views have them). Each of x, y, z is −1, 0 or 1, not all 0.
+ */
+export function cubeDirection(x: number, y: number, z: number): { dir: THREE.Vector3; up: THREE.Vector3 } {
+  const ok = (v: number) => v === -1 || v === 0 || v === 1;
+  if (!ok(x) || !ok(y) || !ok(z) || (x === 0 && y === 0 && z === 0)) throw new Error(`a view cube direction is three of -1, 0 and 1, not all 0: not ${x}, ${y}, ${z}`);
+  const dir = new THREE.Vector3(x, y, z).normalize();
+  const up = x === 0 && z === 0 ? new THREE.Vector3(0, 0, -y) : new THREE.Vector3(0, 1, 0);
+  return { dir, up };
+}
+
+/** How deep the view cube's edges are cut, as a part of half its side: FreeCAD's NaviCube (its chamfer 0.12 on a side of 1). */
+export const CUBE_CHAMFER = 0.24;
+
+/** A face of the view cube: the direction it looks from (as cubeDirection takes it), what it is, and its corners counterclockwise seen from outside. */
+export interface CubeFacet {
+  dir: [number, number, number];
+  kind: 'face' | 'edge' | 'corner';
+  points: THREE.Vector3[];
+}
+
+/**
+ * The view cube as FreeCAD's NaviCube is: a cube of side 2 about the origin with its 12 edges cut at 45° and its 8 corners cut square to the diagonal,
+ * which leaves 26 faces, one for each direction of cubeDirection: 6 octagons (the sides), 12 rectangles (the edges, `chamfer`·√2 wide) and 8 regular
+ * hexagons (the corners). Each is where the plane square to its direction, `d·p = h` (h: 1 for a side, 2 − chamfer for an edge, 3 − 3·chamfer for a
+ * corner, d not made of length 1), meets all the others' sides.
+ */
+export function cubeFacets(chamfer: number = CUBE_CHAMFER): CubeFacet[] {
+  if (!(chamfer > 0 && chamfer < 0.5)) throw new Error(`the view cube's chamfer is between 0 and 0.5 of half its side, not ${chamfer}`);
+  const dirs: [number, number, number][] = [];
+  for (const x of [-1, 0, 1]) for (const y of [-1, 0, 1]) for (const z of [-1, 0, 1]) if (x || y || z) dirs.push([x, y, z]);
+  const count = (d: [number, number, number]) => Math.abs(d[0]) + Math.abs(d[1]) + Math.abs(d[2]);
+  const height = (d: [number, number, number]) => [0, 1, 2 - chamfer, 3 - 3 * chamfer][count(d)]!;
+  const planes = dirs.map((d) => ({ n: new THREE.Vector3(...d), h: height(d) }));
+  return dirs.map((d, i) => {
+    const { n, h } = planes[i]!;
+    const unit = n.clone().normalize();
+    const a = new THREE.Vector3().crossVectors(Math.abs(unit.x) < 0.9 ? new THREE.Vector3(1, 0, 0) : new THREE.Vector3(0, 1, 0), unit).normalize();
+    const b = new THREE.Vector3().crossVectors(unit, a); // a × b is the direction: corners go round counterclockwise seen from outside
+    const middle = unit.clone().multiplyScalar(h / n.length());
+    let poly = [[1, 1], [-1, 1], [-1, -1], [1, -1]].map(([s, t]) => middle.clone().addScaledVector(a, 4 * s!).addScaledVector(b, 4 * t!));
+    // cut by every other face's plane (Sutherland–Hodgman): what is outside of it goes
+    for (const [j, other] of planes.entries()) {
+      if (j === i) continue;
+      const out = (p: THREE.Vector3) => other.n.dot(p) - other.h;
+      const kept: THREE.Vector3[] = [];
+      for (const [k, p] of poly.entries()) {
+        const q = poly[(k + 1) % poly.length]!;
+        const [fp, fq] = [out(p), out(q)];
+        if (fp <= 1e-12) kept.push(p);
+        if ((fp < -1e-12 && fq > 1e-12) || (fp > 1e-12 && fq < -1e-12)) kept.push(p.clone().lerp(q, fp / (fp - fq)));
+      }
+      poly = kept;
+    }
+    // where three planes meet, a corner comes out twice
+    const points = poly.filter((p, k) => p.distanceTo(poly[(k + 1) % poly.length]!) > 1e-9);
+    return { dir: d, kind: (['face', 'edge', 'corner'] as const)[count(d) - 1]!, points };
+  });
+}
+
 /** Where the camera is: enough to come back to it. */
 export interface ViewState {
   position: THREE.Vector3;
