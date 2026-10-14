@@ -1,4 +1,4 @@
-import { canBeSeed, explosionSteps, isDatumPlaneName, type DatumPlaneName, type Ref } from '@3db/model';
+import { canBeSeed, explosionSteps, isDatumPlaneName, type DatumPlaneName, type PlaneFrame, type Ref } from '@3db/model';
 import { store, type UiState } from './state/store';
 import { t } from '@3db/i18n';
 import { TOOL_LABEL } from './strings';
@@ -187,7 +187,7 @@ export const ACTIONS: UiAction[] = [
   { id: 'view-right', get label() { return t('act.right'); }, shortcut: 'Ctrl+4', group: 'view', enabled: () => true, run: () => store.viewer?.setView('right') },
   { id: 'view-left', get label() { return t('act.left'); }, shortcut: 'Ctrl+3', group: 'view', enabled: () => true, run: () => store.viewer?.setView('left') },
   { id: 'view-iso', get label() { return t('act.iso'); }, shortcut: 'Ctrl+7', group: 'view', enabled: () => true, run: () => store.viewer?.setView('iso') },
-  { id: 'view-normal', get label() { return t('act.normal'); }, shortcut: 'Ctrl+8', group: 'view', enabled: sketching, run: () => lookAtSketch() },
+  { id: 'view-normal', get label() { return t('act.normal'); }, shortcut: 'Ctrl+8', group: 'view', enabled: (s) => sketching(s) || (partIdle(s) && sketchPlane(s) !== null), run: () => lookAtNormal() },
 ];
 
 export const action = (id: string): UiAction => {
@@ -206,10 +206,29 @@ function setFixed(value: boolean): void {
   if (c) store.assembly?.setFixed([c.id], value);
 }
 
-function lookAtSketch(): void {
+/**
+ * 「正視於」 (Normal To, C1.2). Inside a sketch it is that sketch's plane, as before. Outside one it
+ * looks straight at whatever plane is selected: a default plane, a reference plane or a coordinate
+ * system (DatumPicker / the tree), or the planar face the pointer picked. `sketchPlane` already
+ * resolves all four to a Ref and `planeFrameOf` turns each into a frame, so this is one path rather
+ * than a second copy of the datum/face rule. Flipping to the far side on a second press is left for
+ * the user to settle (handoff 2026-10-14 lists it as an open sub-choice).
+ */
+function lookAtNormal(): void {
   const sketch = store.editedSketch();
-  const frame = sketch && store.frameOf(sketch);
+  const frame = sketch ? store.frameOf(sketch) : normalFrame();
   if (frame) store.viewer?.lookAt(frame);
+}
+
+/** 「正視於」 outside a sketch: the frame of the selected plane, reference plane, coordinate system or face.
+ *  Exported because this selection → frame rule is what needs checking; the camera arithmetic it feeds
+ *  is `viewer.lookAt`'s own business. */
+export function normalFrame(): PlaneFrame | null {
+  const plane = sketchPlane(store.getState());
+  if (plane === null) return null;
+  // A default plane comes back as its bare name; the other three are already Refs.
+  const ref: Ref = typeof plane === 'string' ? { kind: 'datum', name: plane } : plane;
+  return store.planeFrameOf(ref);
 }
 
 /** Construction geometry (C1.14): toggles the selected curves; all become construction unless all already are. */

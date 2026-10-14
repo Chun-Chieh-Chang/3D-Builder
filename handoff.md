@@ -1,5 +1,12 @@
 # 交接文件
 
+- **【2026-10-14：10-11 進度審查的 7 項處置完成、A1/A2 執行結果（Claude）— 已提交並推送 `52bcb47`】** 使用者以選擇題裁決 8 項（`docs/decisions-2026-10-14.html`）。本段記 A、B、D；C1／C2 的實作另起段落。
+  - **A1（推送）**：`52bcb47`（`main.tsx` 的兩道 `import.meta.env.DEV` 閘控）已推送。**推送前 fetch 時發現 `origin/main` 已含它**——並行開發者已先推送，且遠端最上方是 `b0df5d2`（視角方塊）。本機與遠端已一致，`git push` 回報 `Everything up-to-date`，無需動作。
+  - **A2（驗證視角方塊那批改動）**：對象從「15 個未提交檔」變成**已提交的 `b0df5d2`**。結果：`typecheck` 0 錯誤、`lint:rules`／`lint:deps`／`lint:i18n` 全過。全量 vitest 第一次 **2714 過 1 失敗**（`tests/phase3/thread.test.ts`），**單獨跑 1 passed、第二次全量 2715 過 0 失敗**——未重現，判定為全量平行負載下的間歇逾時（`testTimeout: 60_000`、`maxWorkers: 4`），非功能破壞，**未調門檻（AGENTS.md §3.3）**。注意：`thread.test.ts` 的 `it` 多半已自行宣告 `timeout: 120_000`。
+  - **B2（客戶零件歷史）**：維持現狀。已複查 `apps/web/public/*part1*.json` 確實不被 git 追蹤（`ls-files` 報 not known to git）、`.gitignore:19` 擋著；歷史副本留在 `c7f46be` 不處理。
+  - **D2（筆電收尾）**：使用者稍後自行到筆電 `git pull` 並刪 `laptop-work` 分支。
+  - **7 項處置（承接 10-11 審查）**：18 個零斷言診斷檔移至 `scratch/diagnostics/`；`redefineSketchPlane` 補 `planeRef()` 校驗＋3 斷言；`.gitignore` 加 `*part1*.json`；`SketchPlanePanel` 補 `coordSys`；`main.tsx` 閘控補回；DEV_LOG／覆蓋表標註證據鏈；`check-anti-patterns.mjs` 新增「零斷言測試檔案」規則（已實測會 fail）。
+
 - 最後更新：2026-10-14（**螺牙改從牙型前緣起算 `5872480`；「關閉伺服器」按鈕（ADR 0135）`817fdf2`；皆已推送，見下兩段**）；2026-10-14（**鍵盤視角比照 SolidWorks（方向鍵、Shift／Alt／Ctrl、Z、Ctrl+Shift+Z、空白鍵「視角方位」）與後／左／下視，已 rebase 到遠端工程圖工作之後並推送，見下一段**）；2026-10-14（**新工程圖改為先選主視圖、尺寸按需標註（ADR 0134）；`drawing-interaction` 已合併進 `main`、其他分支已刪除，見下兩段**）；2026-10-13（**工程圖交互比照 SolidWorks：差距分析與使用者決定、D-I1a 多重選取、D-V 在圖紙上產生視圖和剖面、D-I3 註記（Schema 12）、側邊欄，分支 `drawing-interaction` 已推送，見下一段**）；2026-10-12 晚（**筆電工作整合、C19、Schema 55、尺寸標籤即時拖曳，已推送 `a96321f`，見下一段**；**【線架構剖面交線與 SolidWorks 級動態側影輪廓線 (Silhouette Edges) 全套落實驗收完畢】**；**【Codex 任務接棒指南：裝飾用公螺牙與母螺孔 (Cosmetic Threads, C4.9 / ADR 0129) 架構與落地 SOP】**；全套 TypeCheck 0 錯誤、Lint 規則全綠、`acceptance.test.ts` 通過；其他狀態見「最新存檔點」）。；2026-10-13 下午（**草圖磁吸對照 SW／FreeCAD 補齊 4 項、零件 Schema 56；全量測試平行負載失敗修正（CPU 計時、`maxWorkers: 4`）；見下一段；已推送 `8a9d2a1`**；早上：**10-12 成果審查與修正：`verify:ui` 129/129、vitest 2629 過，已推送 `335b46c`**；以下為 10-12 晚的狀態：**筆電工作整合、C19、Schema 55、尺寸標籤即時拖曳，已推送 `a96321f`**；**【線架構剖面交線與 SolidWorks 級動態側影輪廓線 (Silhouette Edges) 全套落實驗收完畢】**；**【Codex 任務接棒指南：裝飾用公螺牙與母螺孔 (Cosmetic Threads, C4.9 / ADR 0129) 架構與落地 SOP】**；全套 TypeCheck 0 錯誤、Lint 規則全綠、`acceptance.test.ts` 通過；其他狀態見「最新存檔點」）。
 
 

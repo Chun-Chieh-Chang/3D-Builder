@@ -1,0 +1,421 @@
+﻿<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>3D-Builder 未做／待裁選擇題（2026-10-14）</title>
+<meta name="description" content="3D-Builder 目前未做與待裁決項目的互動選擇題，附白話說明、影響面與建議。">
+<style>
+:root{
+  --bg:#F9FAFB;--surface:#FFFFFF;--text:#111827;--text2:#6B7280;--accent:#3B82F6;
+  --ok:#10B981;--warn:#EF4444;--border:#E5E7EB;--accent-soft:rgba(59,130,246,.08);
+  --ok-soft:rgba(16,185,129,.10);--shadow:0 1px 2px rgba(17,24,39,.04),0 4px 16px rgba(17,24,39,.06);
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme=light]){
+  --bg:#0F172A;--surface:#1E293B;--text:#F1F5F9;--text2:#94A3B8;--accent:#60A5FA;
+  --ok:#34D399;--warn:#F87171;--border:#334155;--accent-soft:rgba(96,165,250,.10);
+  --ok-soft:rgba(52,211,153,.10);--shadow:0 1px 2px rgba(0,0,0,.3),0 4px 16px rgba(0,0,0,.35);
+}}
+:root[data-theme=dark]{
+  --bg:#0F172A;--surface:#1E293B;--text:#F1F5F9;--text2:#94A3B8;--accent:#60A5FA;
+  --ok:#34D399;--warn:#F87171;--border:#334155;--accent-soft:rgba(96,165,250,.10);
+  --ok-soft:rgba(52,211,153,.10);--shadow:0 1px 2px rgba(0,0,0,.3),0 4px 16px rgba(0,0,0,.35);
+}
+*{box-sizing:border-box}
+html{font-size:16px}
+body{margin:0;background:var(--bg);color:var(--text);
+  font-family:"Inter","Segoe UI","Microsoft JhengHei UI","Microsoft JhengHei","Noto Sans TC",sans-serif;
+  line-height:1.5;transition:background .2s,color .2s}
+header{position:sticky;top:0;z-index:5;background:color-mix(in srgb,var(--surface) 88%,transparent);
+  backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);border-bottom:1px solid var(--border)}
+.bar{max-width:980px;margin:0 auto;padding:12px 16px;display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+h1{font-size:19px;font-weight:700;margin:0;flex:1 1 240px;letter-spacing:-0.01em}
+.progress{font-size:14px;color:var(--text2)}
+.progress b{color:var(--accent)}
+button{font:inherit;font-size:14px;min-height:44px;padding:8px 16px;border-radius:8px;cursor:pointer;
+  border:1px solid var(--border);background:var(--surface);color:var(--text);transition:transform .12s,background .15s,border-color .15s}
+button:hover{border-color:var(--accent)}
+button:active{transform:scale(.97)}
+button.primary{background:var(--accent);border-color:var(--accent);color:#fff;font-weight:600}
+button.primary:hover{filter:brightness(1.08)}
+main{max-width:980px;margin:0 auto;padding:24px 16px 96px}
+.lead{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:16px 24px;box-shadow:var(--shadow);margin-bottom:24px}
+.lead p{margin:8px 0;font-size:15px}
+.lead .muted{color:var(--text2);font-size:14px}
+.lead .badge{display:inline-block;padding:2px 8px;border-radius:4px;font-size:12px;font-weight:600;background:var(--accent-soft);color:var(--accent);margin-right:6px}
+h2{font-size:17px;font-weight:700;margin:32px 0 16px;display:flex;align-items:center;gap:8px}
+h2 .chip{font-size:13px;font-weight:600;color:var(--accent);background:var(--accent-soft);border-radius:999px;padding:2px 12px}
+.q{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:20px 24px;margin-bottom:16px;
+  box-shadow:var(--shadow);transition:border-color .2s,box-shadow .2s}
+.q.done{border-color:color-mix(in srgb,var(--ok) 55%,var(--border))}
+.q h3{font-size:16px;font-weight:700;margin:4px 0 10px;display:flex;gap:8px;align-items:baseline}
+.q h3 .id{color:var(--accent);font-variant-numeric:tabular-nums;flex:none}
+.q h3 .state{margin-left:auto;font-size:13px;font-weight:600;color:var(--ok);opacity:0;transition:opacity .2s;flex:none}
+.q.done h3 .state{opacity:1}
+.plain-desc{background:var(--accent-soft);border-left:3px solid var(--accent);border-radius:0 8px 8px 0;
+  padding:12px 16px;margin:10px 0 16px;font-size:14px;color:var(--text)}
+.why{margin:10px 0 16px;font-size:14px;color:var(--text2)}
+details.more summary{cursor:pointer;color:var(--accent);min-height:30px;display:flex;align-items:center;font-weight:500}
+details.more ul{margin:8px 0 0;padding-left:24px}
+details.more li{margin:4px 0}
+.opts{display:grid;gap:8px}
+.opt{display:flex;gap:12px;align-items:flex-start;padding:12px 16px;min-height:44px;border:1px solid var(--border);border-radius:8px;cursor:pointer;
+  transition:background .15s,border-color .15s,transform .12s}
+.opt:hover{border-color:var(--accent);background:var(--accent-soft)}
+.opt:active{transform:scale(.995)}
+.opt input{margin:4px 0 0;width:20px;height:20px;accent-color:var(--accent);flex:none}
+.opt.sel{border-color:var(--accent);background:var(--accent-soft)}
+.opt .t{font-size:15px;font-weight:600}
+.opt .d{display:block;font-size:14px;color:var(--text2);margin-top:4px;font-weight:400}
+.rec{display:inline-block;font-size:12px;font-weight:600;color:var(--ok);background:var(--ok-soft);border-radius:4px;padding:1px 6px;margin-right:6px}
+.note{display:block;margin-top:14px;font-size:13.5px;color:var(--text2)}
+.note textarea{display:block;width:100%;margin-top:4px;font:inherit;font-size:14px;padding:8px 12px;border-radius:8px;
+  border:1px solid var(--border);background:var(--bg);color:var(--text);resize:vertical;min-height:40px}
+.note textarea:focus,.opt input:focus-visible,button:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.info{background:var(--surface);border:1px dashed var(--border);border-radius:12px;padding:16px 24px;font-size:14px;color:var(--text2)}
+.info li{margin:6px 0}
+code{font-family:Consolas,"Cascadia Code",monospace;font-size:max(13px,.92em);background:var(--accent-soft);padding:0 4px;border-radius:4px}
+#toast{position:fixed;left:50%;bottom:24px;transform:translate(-50%,16px);opacity:0;background:var(--text);color:var(--bg);
+  padding:12px 24px;border-radius:8px;font-size:14px;transition:opacity .2s,transform .2s;pointer-events:none;z-index:9}
+#toast.on{opacity:1;transform:translate(-50%,0)}
+@media (max-width:600px){
+  .q,.lead,.info{padding:16px}
+  .bar button{flex:1 1 auto}
+}
+</style>
+</head>
+<body>
+<header>
+  <div class="bar">
+    <h1>3D-Builder 未做／待裁選擇題</h1>
+    <span class="progress" id="progress"></span>
+    <button id="btn-rec" type="button">全部採用建議</button>
+    <button id="btn-clear" type="button">清除</button>
+    <button id="btn-theme" type="button" aria-label="切換深淺色">◐</button>
+    <button id="btn-copy" class="primary" type="button">複製結果</button>
+  </div>
+</header>
+
+<main>
+  <section class="lead">
+    <p><span class="badge">目前狀態</span>昨日（10-11）開發進度已審查完畢，7 項處置全部完成並驗證：18 個零斷言診斷檔已移出 <code>tests/</code>、<code>redefineSketchPlane</code> 補上 <code>planeRef()</code> 校驗與 3 個斷言、客戶零件 <code>*part1*.json</code> 已加入 <code>.gitignore</code>、<code>SketchPlanePanel</code> 補上座標系統、反模式守門新增「零斷言測試檔案」規則並實測會攔截、DEV_LOG 與覆蓋表已標註證據鏈缺口。</p>
+    <p class="muted"><b>閘門：</b><code>typecheck</code> 0 錯誤、vitest 2703 過／0 失敗／22 略過、<code>lint:rules</code>／<code>lint:deps</code>／<code>lint:i18n</code> 全過。開發伺服器執行中於 <code>http://127.0.0.1:5391/</code>。</p>
+    <p><b>使用方式：</b>請檢視以下 8 項未做與待裁決，每題點選一個選項（標示 <span class="rec">建議</span> 為推薦）。補充想法寫在備註欄。選好後點右上角<b>「複製結果」</b>貼回對話。選項自動存在你的瀏覽器裡。</p>
+  </section>
+
+  <div id="root"></div>
+
+  <h2>本次已修掉、無需再選（供對照）</h2>
+  <div class="info">
+    <ul>
+      <li><b>18 個零斷言診斷測試</b>：已移至 <code>scratch/diagnostics/</code>（不入版本庫）。原先混在 <code>tests/</code> 讓 vitest 與 tsc 雙雙變紅，其中 <code>fix-fillet4.test.ts</code> 還會寫入正式服務的資產目錄。</li>
+      <li><b><code>redefineSketchPlane</code> 零校驗</b>：全檔其他 11 處平面引用都走 <code>planeRef()</code>，只有這個指令直接指派。已補上，「拒絕不存在的平面」與「拒絕歷史較晚的平面」都有斷言。</li>
+      <li><b><code>main.tsx</code> 的 DEV 閘控被 merge 抹掉</b>：<code>d1b793c</code> 解析 <code>main.tsx</code> 時採用了本機側，蓋掉 laptop 側的兩道 <code>import.meta.env.DEV</code> 閘控。已補回並在 vite 實際送出的模組上實測確認，提交為 <code>52bcb47</code>。</li>
+      <li><b><code>SketchPlanePanel</code> 漏了座標系統</b>：同一個 diff 在其他 6 處都加了 <code>coordSys</code> 支援，新面板卻只列 <code>refPlane</code>。已補上。</li>
+    </ul>
+  </div>
+</main>
+<div id="toast" role="status" aria-live="polite"></div>
+<script>
+const STORAGE_KEY = '3db-decisions-2026-10-14';
+const QUESTIONS = [
+  {
+    sec: 'A. 立刻要決定的版本庫與交接（阻塞其他人）',
+    items: [
+      {
+        id: 'A1',
+        title: '本地領先的 1 個提交要推送到 origin 嗎？',
+        plain: '<b>白話說明：</b>昨天審查補回的 DEV 閘控已經提交成本機的 <code>52bcb47</code>，但<b>還沒有推送</b>。現在這台比 GitHub 上的 <code>origin/main</code> 多這一個提交，對方那台還停在舊狀態。',
+        why: '這個回退是 merge 造成的：laptop 的 <code>main.tsx</code> 有閘控，合併後的結果曾經是「無閘控」。若不推送，下次再從 laptop 拉東西、同樣的合併解析可能再發生一次，問題會一直回來。',
+        more: [
+          '推送前建議先 git fetch，確認遠端沒有新提交再決定直接 push 還是先 rebase。',
+          '目前 git log origin/main..HEAD 只有 52bcb47 一個提交，HEAD..origin/main 是空的，所以現在推送是快轉（fast-forward），不會有衝突。',
+          '推送後筆電那台要 git pull，否則兩邊會 diverged。'
+        ],
+        opts: [
+          { t: '現在就推送，並通知筆電那台 git pull', d: '最快終結這個回退循環。快轉推送、無衝突風險；筆電 pull 後兩邊一致，laptop-work 分支也可刪。', rec: true },
+          { t: '先不推，等筆電手動處理', d: '維持現狀。風險是下次合併可能再把閘控蓋掉，問題重演。' },
+          { t: '先 fetch 看遠端有沒有新東西再決定', d: '最保守。若遠端已有人推送，先 rebase 再推，避免強制推送。' }
+        ]
+      },
+      {
+        id: 'A2',
+        title: '工作區裡 15 個未提交檔案是並行開發的 view cube 功能，怎麼處理？',
+        plain: '<b>白話說明：</b>目前有 15 個檔案被改過但<b>不是我做的</b> — 是一個 view cube（類似 FreeCAD NaviCube）功能，包含 <code>viewNav.ts</code> 的 <code>cubeDirection</code>、<code>options.ts</code> 的 <code>viewCubeStep</code>、<code>Viewport.tsx</code> 等，對應 handoff 裡「尚待裁決的兩個需求（FreeCAD-like view cube、Normal To）」。看起來是另一個開發中的工作。',
+        why: '我全程沒有碰這些檔案，提交 DEV 閘控時也只單獨 add 了 main.tsx。但它們和我的提交在同一個工作區，接下來任何全量驗證都會把它們一起算進去。',
+        more: [
+          '改動清單：app.css、ParametersDialogs.tsx、Viewport.tsx、options.ts、options.test.ts、manual-verification.html、verification-coverage.md、i18n（help/output 各中英）、viewNav.ts、viewer.ts、manual-c20.js、view-keys.test.ts。',
+          '選項 1 與 2 的差別只在「誰來驗證」：現在驗證可以立刻確認它們有沒有破壞東西；稍後驗證則是讓開發者自己收尾。',
+          '不論選哪個，我都不會把這些檔案混進我的提交。'
+        ],
+        opts: [
+          { t: '我現在跑全量閘門，驗證這些改動沒有破壞任何東西，然後回報結果', d: '立刻知道 view cube 這批改動是安全的還是紅燈，你可以在知情下決定是否提交。', rec: true },
+          { t: '先別動，保持未提交，等開發者自己收尾', d: '最小干預。但這批改動會一直掛在工作區裡，遮蔽真實的 git 狀態。' },
+          { t: '幫我把它們整理成一個獨立提交（訊息我來審）', d: '讓工作區乾淨。前提是你確認這批改動已達可提交狀態。' }
+        ]
+      }
+    ]
+  },
+  {
+    sec: 'B. 昨天審查發現的證據缺口（涉及「宣稱 vs 事實」）',
+    items: [
+      {
+        id: 'B1',
+        title: '夜間四「45° 基準面圓角 100% 成功」的驗收結論，要怎麼補齊？',
+        plain: '<b>白話說明：</b>DEV_LOG 裡寫「同一個特徵一次做 0.3 mm 圓角：SUCCESS=true、badFaces=0、vol=149.7053 mm³，100% 成功通過」。但這些數字出自一個<b>零斷言的 console.log</b>，而且它引用的實機檔案 <code>D:\\3DB實機確認\\</code> 整個目錄已經不存在了，5 張具名截圖也都不在。',
+        why: '幾何推理（接縫線方位、45° 規避凸耳邊緣）作為<b>分析過程</b>仍然有效且值得保留；但「100% 成功通過」是<b>驗收結論</b>，目前沒有任何可重跑的測試支撐。這正是 AGENTS.md §2.1.4 要防的：把 log 輸出當驗收證據。',
+        more: [
+          '我已在 DEV_LOG 加上「2026-10-12 審查附記」，明確標註這三項證據鏈無法重現，並寫出應有的斷言寫法。',
+          '選項 1 需要你取回 零件1.3dbx（備份、郵件、或從別台機器）。若檔案真的遺失，這條結論只能標為「推理有效、驗收未完成」。',
+          '選項 3 是折衷：把量測改寫成帶斷言的測試放在 scratch（不入庫），日後拿到檔案就能直接跑。'
+        ],
+        opts: [
+          { t: '我去取回零件1.3dbx，你把量測改寫成帶 expect 的真實測試', d: '唯一能讓這條結論真正閉環的方式。需要你提供檔案來源。', rec: true },
+          { t: '檔案已遺失，把結論降級為「推理有效、驗收未完成」並留紀錄', d: '誠實標註現況，不假裝驗過。日後若拿到檔案仍可補做。' },
+          { t: '先在 scratch/ 寫好帶斷言的測試，等檔案到手直接跑', d: '先把功課做完，只差檔案。測試不會進版本庫，不會假裝通過。' }
+        ]
+      },
+      {
+        id: 'B2',
+        title: '客戶零件 JSON 仍在已推送的歷史裡，要改寫歷史嗎？',
+        plain: '<b>白話說明：</b>客戶的真實零件資料 <code>real-part1.json</code>、<code>-part1-fixed.json</code>、<code>part1-demo.json</code> 曾經被提交進 <code>c7f46be</code> 並推送。雖然現在 <code>.gitignore</code> 已擋掉、檔案仍在磁碟上供實機檢查用，但<b>歷史裡還留著副本</b>。',
+        why: '這是私有倉庫，風險相對低，但客戶幾何資料一旦進過版本庫就很難宣稱「從未外流」。要徹底清除必須改寫歷史並強制推送。',
+        more: [
+          '改寫歷史（git filter-repo 或 filter-branch + force push）是<b>不可復原</b>的，會改掉所有提交雜湊值，筆電那台必須重新 clone 或 reset。',
+          '不清除的話，現狀是：新檔案進不來（已 gitignore），但舊副本留在 c7f46be 及其後的每個提交裡。',
+          'handoff 從 10-12 起就一直把這一項列為「仍待使用者決定」，從未處理。'
+        ],
+        opts: [
+          { t: '不清除，只維持 gitignore 現狀（私有倉庫可接受）', d: '零風險、零動干戈。承認歷史留有副本，但不為此改寫雜湊值。', rec: true },
+          { t: '改寫歷史徹底清除（我知道不可復原、筆電要重新同步）', d: '最乾淨但要 force push，兩台機器都要處理，且過程中不能有其他提交。' },
+          { t: '暫緩，等專案要對外散佈或開放前再一次處理', d: '現在私有、日後才可能公開，屆時再決定。' }
+        ]
+      }
+    ]
+  },
+  {
+    sec: 'C. 尚未開始的功能（handoff 記載的待辦）',
+    items: [
+      {
+        id: 'C1',
+        title: '草圖磁吸要不要做「平面外模型幾何的自動投影」？',
+        plain: '<b>白話說明：</b>目前草圖磁吸只會吸「剛好落在草圖平面上」的模型邊線。如果模型幾何在草圖平面的<b>外面</b>（例如在傾斜基準面上畫圖，參考到前方實體的邊），現在沒有捷徑 — 只能手動用「轉換參考圖元／穿透點」把它引進來。',
+        why: 'handoff 從 10-13 就記著這條「待處理」，並明說「要不要做自動投影待使用者決定」。這是功能範圍問題，不是缺陷。',
+        more: [
+          '做法是畫草圖時自動把平面外的模型邊投影到草圖平面上，讓它可以直接被吸附。',
+          '代價：投影會產生額外的參考圖元，可能讓草圖的約束變複雜，也可能改變現有「轉換參考圖元」的行為定位。',
+          '不做也不影響現有功能，只是少一個便利性。'
+        ],
+        opts: [
+          { t: '先不做，維持手動轉換參考圖元', d: '最小改動。現有流程已可用，自動投影可能帶來約束複雜度。', rec: true },
+          { t: '做自動投影（吸不到的模型邊自動投影到草圖平面）', d: '便利性提升，但需處理投影圖元的生命週期與既有功能的銜接。' },
+          { t: '做一個開關（預設關，需要時開啟）', d: '兩全，但多一個選項要維護與驗證。' }
+        ]
+      },
+      {
+        id: 'C2',
+        title: '視角選擇方塊（view cube）與「正視於」（Normal To）要不要做？',
+        plain: '<b>白話說明：</b>這是 handoff 裡「尚待裁決的兩個需求」。視角方塊是畫面角落那個可點的正立方體，點某一面就切到該方向的視角（SolidWorks、FreeCAD 都有）；「正視於」是選一個面後把視角轉到正對它。',
+        why: '工作區裡已經有 view cube 的未提交改動（A2 那批），代表開發已經起了頭。這個決定會影響那批改動的走向與驗收標準。',
+        more: [
+          '現況：viewNav.ts 已有 cubeDirection() 涵蓋 26 個方向（面 6、邊 12、角 8），options.ts 已有 viewCubeStep: 45，viewer.ts 有軸向轉視。',
+          '視覺介面（真正的 3D 立方體 + 六面標籤 + 拖曳旋轉）尚未確認是否已完成，這需要看畫面而非只讀程式碼。',
+          '「正視於」通常是另一個獨立功能（選面 → 轉視角），可與 view cube 分開決定。'
+        ],
+        opts: [
+          { t: '先確認那批未提交改動做到哪，再決定要不要收尾', d: '避免在不知道現況的情況下做範圍決定。可以先跑起來看畫面。', rec: true },
+          { t: 'view cube 做、Normal To 暫緩', d: '先收尾已經起頭的部分。' },
+          { t: '兩個都做', d: '完整對齊 SolidWorks 的操作習慣。' },
+          { t: '兩個都先不做，專注手冊實機驗證', d: '功能已很多，優先打磨既有體驗。' }
+        ]
+      }
+    ]
+  },
+  {
+    sec: 'D. 驗證與品質（耗時，需排時間）',
+    items: [
+      {
+        id: 'D1',
+        title: '全量 verify:ui（129 支）要現在重跑嗎？',
+        plain: '<b>白話說明：</b>這是用無頭 Chrome 逐一重播 129 支操作腳本的驗證，每支都要真的開頁面、點擊、比對。跑一輪約需 30 分鐘以上。',
+        why: '昨天修完 6 項失敗後 handoff 記的是 129/129，但那是在合併 laptop 工作<b>之前</b>。這個 merge（d1b793c）帶進 42 個檔案的改動，之後我沒有重跑過全量 — 只有全量 vitest（2703 過）。',
+        more: [
+          '已知注意事項（handoff 記著踩過兩次）：① 5391 埠上若有長時間開著的 vite 可能送出舊模組，驗證前先重啟；② 被中止的 verify:ui 可能佔住 5393 埠；③ 單元測試與 verify:ui 同時跑時無頭 Chrome 可能起不來，要依序跑。',
+          '驗證前我會先重啟開發伺服器，並用 curl 確認送出的模組是新版，避免驗到舊碼。'
+        ],
+        opts: [
+          { t: '現在跑，我給你一份 129 支的完整結果', d: '唯一能確認 merge 沒有破壞 UI 的方式。需 30 分鐘以上，期間請勿關閉頁面。', rec: true },
+          { t: '先只跑與昨天改動相關的批次（草圖平面、設計樹、工程圖）', d: '約 10 分鐘，針對性確認高風險區域。' },
+          { t: '暫不跑，下次有需要再說', d: '維持 129/129 的舊紀錄，但那是 merge 前的數字。' }
+        ]
+      },
+      {
+        id: 'D2',
+        title: '筆電那台要 git pull、laptop-work 分支可刪 — 要現在處理嗎？',
+        plain: '<b>白話說明：</b>整合筆電工作時（d1b793c）留下的收尾事項：筆電要 pull 才能拿到後來所有提交（包括我剛推的 DEV 閘控修正），pull 完 <code>laptop-work</code> 分支就可以刪了。',
+        why: '這件事只能在那台實體機器上做，我在這台無法代勞。列出來是為了讓你在切換機器時記得處理，避免兩邊 diverged。',
+        more: [
+          '若不 pull 就繼續在筆電上開發，之後合併會再次遇到同樣的解析衝突（就像這次抹掉 DEV 閘控）。',
+          'laptop 遠端指向 F:\\Self-developed_Apps\\G3\\3D-Builder。'
+        ],
+        opts: [
+          { t: '我稍後到筆電那台處理（pull 後刪分支）', d: '標準收尾。記得 pull 完確認 vitest 也綠燈（筆電核心數不同）。', rec: true },
+          { t: '先不動筆電，這台繼續開發', d: '可接受短期 diverged，但下次合併要小心衝突。' },
+          { t: '不確定怎麼操作，請給我命令', d: '我會提供逐步指令與驗證方式。' }
+        ]
+      }
+    ]
+  }
+];
+
+function loadState(){
+  try{ return JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}'); }catch{ return {}; }
+}
+function saveState(s){
+  try{ localStorage.setItem(STORAGE_KEY, JSON.stringify(s)); }catch{}
+}
+
+function render(){
+  const s = loadState();
+  const root = document.getElementById('root');
+  root.innerHTML = '';
+  let total = 0, done = 0;
+
+  QUESTIONS.forEach(sec => {
+    const h2 = document.createElement('h2');
+    h2.innerHTML = `${sec.sec} <span class="chip">${sec.items.length} 題</span>`;
+    root.appendChild(h2);
+
+    sec.items.forEach(q => {
+      total++;
+      const cur = s[q.id] || {};
+      const isDone = typeof cur.sel === 'number';
+      if(isDone) done++;
+
+      const div = document.createElement('article');
+      div.className = 'q' + (isDone ? ' done' : '');
+      div.id = 'card-' + q.id;
+
+      let html = `<h3><span class="id">${q.id}</span> <span>${q.title}</span><span class="state">✓ 已選</span></h3>`;
+      if(q.plain) html += `<div class="plain-desc">${q.plain}</div>`;
+      if(q.why) html += `<div class="why">${q.why}</div>`;
+      if(q.more && q.more.length){
+        html += `<details class="more"><summary>查看技術細節與取捨分析 ▸</summary><ul>${q.more.map(m=>`<li>${m}</li>`).join('')}</ul></details>`;
+      }
+
+      html += `<div class="opts">`;
+      q.opts.forEach((o, idx) => {
+        const checked = cur.sel === idx ? 'checked' : '';
+        const selClass = cur.sel === idx ? ' sel' : '';
+        const recBadge = o.rec ? `<span class="rec">建議</span>` : '';
+        html += `<label class="opt${selClass}" data-qid="${q.id}" data-idx="${idx}">
+          <input type="radio" name="r-${q.id}" value="${idx}" ${checked}>
+          <div>
+            <span class="t">${recBadge}${o.t}</span>
+            ${o.d ? `<span class="d">${o.d}</span>` : ''}
+          </div>
+        </label>`;
+      });
+      html += `</div>`;
+
+      html += `<label class="note">補充備註（選填）：
+        <textarea data-qid="${q.id}" placeholder="若有特殊想法或指定細節可寫在此處...">${cur.note || ''}</textarea>
+      </label>`;
+
+      div.innerHTML = html;
+      root.appendChild(div);
+    });
+  });
+
+  document.getElementById('progress').innerHTML = `進度：<b>${done}</b> / ${total}`;
+
+  root.querySelectorAll('.opt').forEach(el => {
+    el.addEventListener('click', () => {
+      const st = loadState();
+      st[el.dataset.qid] = st[el.dataset.qid] || {};
+      st[el.dataset.qid].sel = parseInt(el.dataset.idx, 10);
+      saveState(st);
+      render();
+    });
+  });
+
+  root.querySelectorAll('.note textarea').forEach(ta => {
+    ta.addEventListener('input', () => {
+      const st = loadState();
+      st[ta.dataset.qid] = st[ta.dataset.qid] || {};
+      st[ta.dataset.qid].note = ta.value;
+      saveState(st);
+    });
+  });
+}
+
+document.getElementById('btn-rec').addEventListener('click', () => {
+  const st = loadState();
+  QUESTIONS.forEach(sec => sec.items.forEach(q => {
+    const recIdx = q.opts.findIndex(o => o.rec);
+    st[q.id] = st[q.id] || {};
+    st[q.id].sel = recIdx >= 0 ? recIdx : 0;
+  }));
+  saveState(st);
+  render();
+  toast('已全部選取建議選項！');
+});
+
+document.getElementById('btn-clear').addEventListener('click', () => {
+  if(confirm('確定要清除所有已選選項嗎？')){
+    localStorage.removeItem(STORAGE_KEY);
+    render();
+    toast('已清除所有選擇。');
+  }
+});
+
+document.getElementById('btn-theme').addEventListener('click', () => {
+  const cur = document.documentElement.getAttribute('data-theme');
+  const next = cur === 'dark' ? 'light' : 'dark';
+  document.documentElement.setAttribute('data-theme', next);
+  try{ localStorage.setItem('3db-theme', next); }catch{}
+});
+
+document.getElementById('btn-copy').addEventListener('click', () => {
+  const st = loadState();
+  let text = `### 3D-Builder 未做／待裁選擇題結果（2026-10-14）\n\n`;
+  let cnt = 0;
+
+  QUESTIONS.forEach(sec => {
+    text += `#### ${sec.sec}\n`;
+    sec.items.forEach(q => {
+      const cur = st[q.id];
+      if(cur && typeof cur.sel === 'number'){
+        cnt++;
+        const opt = q.opts[cur.sel];
+        text += `- **${q.id} ${q.title}**：選「${opt.t}」`;
+        if(cur.note && cur.note.trim()) text += `（備註：${cur.note.trim()}）`;
+        text += `\n`;
+      } else {
+        text += `- **${q.id} ${q.title}**：（未選）\n`;
+      }
+    });
+    text += `\n`;
+  });
+
+  navigator.clipboard.writeText(text)
+    .then(() => toast(`已複製 ${cnt} 項選擇結果至剪貼簿！請貼回對話中。`))
+    .catch(() => toast('複製失敗，請手動選取文字。'));
+});
+
+function toast(msg){
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.classList.add('on');
+  setTimeout(() => t.classList.remove('on'), 2500);
+}
+
+try{
+  const savedTheme = localStorage.getItem('3db-theme');
+  if(savedTheme) document.documentElement.setAttribute('data-theme', savedTheme);
+}catch{}
+
+render();
+</script>
+</body>
+</html>
