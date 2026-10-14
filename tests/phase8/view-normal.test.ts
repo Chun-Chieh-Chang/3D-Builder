@@ -3,10 +3,14 @@
  * The camera arithmetic fed by this frame is viewNav's own (checked in view-keys.test.ts); what is new
  * here is the selection → frame rule, so the assertions are on the frame itself — the normal, the screen's
  * up and, for a face, the origin it puts on the plane — not on whether a button happens to light up.
+ * Since the 2026-10-14 decision (B2, the full SolidWorks set) the action also flips to the far side when
+ * pressed again while already looking straight at the plane, and answers a press with no plane to look at
+ * by returning to the isometric view; both go through a stub viewer here, the real camera being replayed
+ * in manual-c20.js.
  */
-import { beforeAll, describe, expect, it } from 'vitest';
+import { beforeAll, afterEach, describe, expect, it } from 'vitest';
 import type { UiState } from '../../apps/web/src/state/store';
-import type { Ref } from '@3db/model';
+import type { PlaneFrame, Ref } from '@3db/model';
 
 // Browser APIs the store and its imports expect in Node (same shims as thread-ui.test.ts).
 class MockWorker {
@@ -50,6 +54,24 @@ describe('正視於 outside a sketch (C2)', () => {
   const planarFace = (dir: [number, number, number]): Ref =>
     ({ kind: 'face', name: 'f1', fingerprint: { type: 'plane', size: 100, center: [1, 2, 3], dir } }) as Ref;
 
+  // A stand-in camera: lookAtNormal only needs to read the view direction and to be told where to go.
+  let lookAts: PlaneFrame[] = [];
+  let views: string[] = [];
+  let viewDir: [number, number, number] = [0.577, 0.577, 0.577];
+  const stubViewer = (): void => {
+    lookAts = [];
+    views = [];
+    viewDir = [0.577, 0.577, 0.577];
+    (store as unknown as { viewer: unknown }).viewer = {
+      lookAt: (f: PlaneFrame) => lookAts.push(f),
+      viewDirection: () => viewDir,
+      setView: (v: string) => views.push(v),
+    };
+  };
+  afterEach(() => {
+    (store as unknown as { viewer: unknown }).viewer = null;
+  });
+
   it('a default plane gives that plane’s own frame, not the front one by default', () => {
     store.select('plane:front');
     expect(normalFrame()).toMatchObject({ normal: [0, 0, 1], yDir: [0, 1, 0] });
@@ -77,28 +99,54 @@ describe('正視於 outside a sketch (C2)', () => {
     store.selectFace(null);
   });
 
-  it('nothing selected means no frame — and no command to press', () => {
+  it('nothing selected means no frame — the press answers with the isometric view', () => {
     store.select(null);
     store.selectFace(null);
     expect(normalFrame()).toBeNull();
-    expect(viewNormal().enabled(store.getState())).toBe(false);
+    stubViewer();
+    viewNormal().run();
+    expect(views).toEqual(['iso']);
+    expect(lookAts).toHaveLength(0);
   });
 
-  it('the command is reachable exactly where there is a plane to look at', () => {
+  it('pressed while already looking straight at the plane it flips to the far side, and back', () => {
+    stubViewer();
+    store.select('plane:front');
+    // Looking at the front plane: the camera sits on +Z and looks along −normal → this press flips.
+    viewDir = [0, 0, -1];
+    viewNormal().run();
+    expect(lookAts[0]).toMatchObject({ normal: [0, 0, -1], yDir: [0, 1, 0] });
+    // Now on the far side the camera looks along +normal → the next press flips back. The screen's
+    // up is kept, so the model does not roll — it only turns about the plane's own axis.
+    viewDir = [0, 0, 1];
+    viewNormal().run();
+    expect(lookAts[1]).toMatchObject({ normal: [0, 0, 1], yDir: [0, 1, 0] });
+    store.select(null);
+
+    // An oblique view is not a normal one: the press looks straight at the plane instead of flipping.
+    stubViewer();
+    store.select('plane:front');
+    viewDir = [0.577, 0.577, 0.577];
+    viewNormal().run();
+    expect(lookAts[0]).toMatchObject({ normal: [0, 0, 1], yDir: [0, 1, 0] });
+    store.select(null);
+  });
+
+  it('a plane or a planar face keeps the command on; a curved face falls back to the isometric view', () => {
     store.select('plane:front');
     expect(viewNormal().enabled(store.getState())).toBe(true);
 
     store.selectFace(planarFace([0, 1, 0]));
     expect(viewNormal().enabled(store.getState())).toBe(true);
 
-    store.selectFace(null);
-    store.select(null);
-
-    // A curved face has no plane to look straight at, so the command stays off rather than doing nothing.
+    // A curved face has no plane to look straight at: the command stays on and answers with iso.
     store.selectFace(({ kind: 'face', name: 'f2', fingerprint: { type: 'cylinder', size: 1, center: [0, 0, 0], dir: [0, 0, 1] } }) as Ref);
     expect(normalFrame()).toBeNull();
-    expect(viewNormal().enabled(store.getState())).toBe(false);
+    stubViewer();
+    viewNormal().run();
+    expect(views).toEqual(['iso']);
     store.selectFace(null);
+    store.select(null);
   });
 
   it('still reachable while drawing a sketch, and held back while another session is on', () => {

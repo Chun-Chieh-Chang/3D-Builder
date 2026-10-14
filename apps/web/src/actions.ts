@@ -187,7 +187,7 @@ export const ACTIONS: UiAction[] = [
   { id: 'view-right', get label() { return t('act.right'); }, shortcut: 'Ctrl+4', group: 'view', enabled: () => true, run: () => store.viewer?.setView('right') },
   { id: 'view-left', get label() { return t('act.left'); }, shortcut: 'Ctrl+3', group: 'view', enabled: () => true, run: () => store.viewer?.setView('left') },
   { id: 'view-iso', get label() { return t('act.iso'); }, shortcut: 'Ctrl+7', group: 'view', enabled: () => true, run: () => store.viewer?.setView('iso') },
-  { id: 'view-normal', get label() { return t('act.normal'); }, shortcut: 'Ctrl+8', group: 'view', enabled: (s) => sketching(s) || (partIdle(s) && sketchPlane(s) !== null), run: () => lookAtNormal() },
+  { id: 'view-normal', get label() { return t('act.normal'); }, shortcut: 'Ctrl+8', group: 'view', enabled: (s) => sketching(s) || partIdle(s), run: () => lookAtNormal() },
 ];
 
 export const action = (id: string): UiAction => {
@@ -207,17 +207,31 @@ function setFixed(value: boolean): void {
 }
 
 /**
- * 「正視於」 (Normal To, C1.2). Inside a sketch it is that sketch's plane, as before. Outside one it
- * looks straight at whatever plane is selected: a default plane, a reference plane or a coordinate
- * system (DatumPicker / the tree), or the planar face the pointer picked. `sketchPlane` already
- * resolves all four to a Ref and `planeFrameOf` turns each into a frame, so this is one path rather
- * than a second copy of the datum/face rule. Flipping to the far side on a second press is left for
- * the user to settle (handoff 2026-10-14 lists it as an open sub-choice).
+ * 「正視於」 (Normal To, C1.2; the full SolidWorks set, 2026-10-14 decision). Inside a sketch it is
+ * that sketch's plane, as before. Outside one it looks straight at whatever plane is selected: a
+ * default plane, a reference plane or a coordinate system (DatumPicker / the tree), or the planar
+ * face the pointer picked. `sketchPlane` already resolves all four to a Ref and `planeFrameOf` turns
+ * each into a frame, so this is one path rather than a second copy of the datum/face rule. Pressed
+ * again while already looking straight along the plane's normal it flips to the far side — detected
+ * from the camera's current direction against the frame, so it needs no per-action state. With no
+ * plane to look at (nothing selected, or a curved face) it returns to the isometric view.
  */
 function lookAtNormal(): void {
   const sketch = store.editedSketch();
   const frame = sketch ? store.frameOf(sketch) : normalFrame();
-  if (frame) store.viewer?.lookAt(frame);
+  const viewer = store.viewer;
+  if (!frame) {
+    viewer?.setView('iso');
+    return;
+  }
+  const dir = viewer?.viewDirection();
+  const dot = dir ? dir[0] * frame.normal[0] + dir[1] * frame.normal[1] + dir[2] * frame.normal[2] : 0;
+  // Pressed again while already looking straight along ±normal: cross to the far side. Looking at the
+  // near side (dot −1) takes the negated normal (0 stays 0: −0 ≠ 0 by Object.is, which the tests use);
+  // from the far side (dot +1) the frame's own normal turns the view back.
+  const normal: [number, number, number] =
+    dot < -0.999 ? (frame.normal.map((x) => (x === 0 ? 0 : -x)) as [number, number, number]) : frame.normal;
+  viewer?.lookAt({ ...frame, normal });
 }
 
 /** 「正視於」 outside a sketch: the frame of the selected plane, reference plane, coordinate system or face.

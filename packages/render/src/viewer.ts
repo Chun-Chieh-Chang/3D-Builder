@@ -2798,6 +2798,13 @@ export class Viewer {
     this.viewChanged();
   }
 
+  /** The direction the camera looks along, normalized (from the camera toward its target). */
+  viewDirection(): [number, number, number] {
+    const d = new THREE.Vector3();
+    this.camera.getWorldDirection(d);
+    return [d.x, d.y, d.z];
+  }
+
   private orient(dir: THREE.Vector3, up: THREE.Vector3): void {
     const dist = 1000;
     this.camera.position.copy(this.controls.target).addScaledVector(dir, dist);

@@ -683,6 +683,7 @@ export function ViewCube() {
       {arrow('right', t('cube.turnRight', { step }), (v) => v.orbit('horizontal', step))}
       {arrow('rollLeft', t('cube.rollLeft', { step }), (v) => v.roll(-step))}
       {arrow('rollRight', t('cube.rollRight', { step }), (v) => v.roll(step))}
+      <button className="cube-arrow" data-cube-arrow="home" style={{ left: 2, bottom: 2 }} title={t('cube.home')} aria-label={t('cube.home')} onClick={() => store.viewer?.setView('iso')}>⌂</button>
       <svg className="cube" width={CUBE_BOX} height={CUBE_BOX} viewBox={`${-CUBE_BOX / 2} ${-CUBE_BOX / 2} ${CUBE_BOX} ${CUBE_BOX}`}>
         {/* a convex solid: the faces toward the viewer never cover each other, so they need no order */}
         {CUBE_FACETS.filter((f) => facing(f.dir) > 1e-6).map((f) => {

@@ -1052,12 +1052,12 @@ export const help = {
   'help.viewIso.keywords': '等角 視角 立體',
 
   'help.viewIso.see': 'view-front view-top fit',
-  'help.viewNormal.summary': '正視於：轉到垂直看編輯中的草圖面。',
+  'help.viewNormal.summary': '正視於：正對草圖面或選取的平面看；再按一次翻到背面；沒有選取時回等角視。',
 
   'help.viewNormal.body':
-    '正視於：把視角轉到垂直看編輯中的草圖面。\n\n- 畫草圖時用它，圖元就不會因為斜視而變形。',
+    '正視於：把視角轉到垂直看編輯中的草圖面。\n\n- 畫草圖時用它，圖元就不會因為斜視而變形。\n- 沒有在畫草圖時，先選一個基準面或平坦的面，再按「正視於」（Ctrl+8），就正對那個面看。\n- 已經正對時再按一次，翻到背面 180°（再按又翻回來）。\n- 什麼都沒選取時按，回到等角視。',
 
-  'help.viewNormal.keywords': '正視於 草圖面 垂直 視角',
+  'help.viewNormal.keywords': '正視於 草圖面 垂直 視角 翻面 背面 等角',
 
-  'help.viewNormal.see': 'sketch view-front fit',
+  'help.viewNormal.see': 'sketch view-front fit view-iso',
 } as const;

@@ -114,6 +114,7 @@ export const output = {
   'cube.turnRight': '往右轉 {step}°',
   'cube.rollLeft': '逆時針滾轉 {step}°',
   'cube.rollRight': '順時針滾轉 {step}°',
+  'cube.home': '回等角視',
   'view.mode': '顯示類型',
   'view.mode.shadedEdges': '帶邊線塗彩',
   'view.mode.shaded': '塗彩',

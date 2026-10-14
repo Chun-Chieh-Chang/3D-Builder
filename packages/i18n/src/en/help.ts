@@ -1044,12 +1044,12 @@ export const help: Translation = {
   'help.viewIso.keywords': 'isometric view 3d',
 
   'help.viewIso.see': 'view-front view-top fit',
-  'help.viewNormal.summary': 'Normal To: turns to look straight at the sketch plane being edited.',
+  'help.viewNormal.summary': 'Normal To: looks squarely at the sketch plane or a selected plane; pressed again it flips to the far side; with nothing selected it returns to the isometric view.',
 
   'help.viewNormal.body':
-    'Normal to: turns the view to look squarely at the sketch plane being edited.\n\n- Use it while sketching, so that the elements are not distorted by an oblique view.',
+    'Normal To: turns the view to look squarely at the sketch plane being edited.\n\n- Use it while sketching, so that the elements are not distorted by an oblique view.\n- Outside a sketch, select a reference plane or a flat face first, then press Normal To (Ctrl+8) to look straight at it.\n- While already looking straight at the plane, pressing again flips to the far side (and back).\n- With nothing selected, it returns to the isometric view.',
 
-  'help.viewNormal.keywords': 'normal to view sketch plane square',
+  'help.viewNormal.keywords': 'normal to view sketch plane square flip far side isometric',
 
-  'help.viewNormal.see': 'sketch view-front fit',
+  'help.viewNormal.see': 'sketch view-front fit view-iso',
 };

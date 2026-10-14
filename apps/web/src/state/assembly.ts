@@ -1209,7 +1209,8 @@ export class AssemblyStore {
     if (from === to) return;
     const request = this.frameRequest;
     if (!request) {
-      this.set({ explodeT: to });
+      // No frames (a test, a worker): the view jumps straight there — and the fit comes after the move.
+      this.set({ explodeT: to, fitRequest: this.state.fitRequest + 1 });
       return;
     }
     const duration = EXPLODE_MS * Math.abs(to - from);
@@ -1218,7 +1219,8 @@ export class AssemblyStore {
       start ??= now;
       const k = Math.min(1, (now - start) / duration);
       const eased = k < 0.5 ? 2 * k * k : 1 - (-2 * k + 2) ** 2 / 2;
-      this.set({ explodeT: k >= 1 ? to : from + (to - from) * eased });
+      // When the move is done the parts stand at their other extent: 「全部顯示」 again so the assembly fills the view (2026-10-14 decision C2).
+      this.set({ explodeT: k >= 1 ? to : from + (to - from) * eased, ...(k >= 1 ? { fitRequest: this.state.fitRequest + 1 } : {}) });
       this.explodeFrame = k >= 1 ? null : request(tick);
     };
     this.explodeFrame = request(tick);

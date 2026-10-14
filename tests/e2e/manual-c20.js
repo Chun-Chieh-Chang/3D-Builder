@@ -174,6 +174,29 @@ M.run = async () => {
     const is = (d, w) => w.every((x, i) => Math.abs(d[i] - x) < 0.01);
     return { labels, back, left, bottom, closed, pass: labels.join() === '前視,後視,左視,右視,上視,下視,等角,正視於' && closed && is(back, [0, 0, -1]) && is(left, [-1, 0, 0]) && is(bottom, [0, -1, 0]) };
   });
+  await step('9b 正視於: a selected plane is looked at straight, pressed again flips to the far side, and with nothing selected it returns to the isometric view', async () => {
+    await S.iso();
+    store.select('plane:front');
+    const press = async () => {
+      const b = [...document.querySelectorAll('.heads-up button')].find((x) => x.textContent === '正視於');
+      if (!b) throw new Error('no 正視於 button');
+      if (b.disabled) throw new Error('正視於 disabled');
+      b.click();
+      await H.wait(350);
+    };
+    await press();
+    const near = direction();
+    await press();
+    const far = direction();
+    await press();
+    const back = direction();
+    store.select(null);
+    await press();
+    const iso = direction();
+    await shot('9b-normal-to');
+    const is = (d, w) => w.every((x, i) => Math.abs(d[i] - x) < 0.01);
+    return { near, far, back, iso, pass: is(near, [0, 0, 1]) && is(far, [0, 0, -1]) && is(back, [0, 0, 1]) && is(iso, [0.577, 0.577, 0.577]) };
+  });
   await step('10 the angle of the arrow keys is an option: 30° turns 30°', async () => {
     store.setOptions({ viewArrowStep: 30 });
     await press('1', { ctrlKey: true });
@@ -256,6 +279,22 @@ M.run = async () => {
     store.setOptions({ viewCubeStep: 45 });
     await shot('13-turned-by-the-arrows');
     return { right, upTurn, roll, thirty, pass: near(right.angle, 45, 1e-6) && right.toRight && near(upTurn.angle, 45, 1e-6) && upTurn.up && near(roll.angle, 45, 1e-6) && roll.clockwise && roll.same < 1e-6 && near(thirty, 30, 1e-6) };
+  });
+  await step("13b the home button in the cube's corner returns to the isometric view in one click", async () => {
+    await S.iso();
+    const click = async (k) => {
+      document.querySelector(`.view-cube [data-cube-arrow="${k}"]`).click();
+      await H.wait(150);
+    };
+    await click('right');
+    await click('up');
+    const away = direction();
+    document.querySelector('.view-cube [data-cube-arrow="home"]').click();
+    await H.wait(200);
+    const home = direction();
+    await shot('13b-home-button');
+    const iso = [0.577, 0.577, 0.577];
+    return { away, home, pass: Math.abs(away[0] - iso[0]) > 0.01 && home.every((x, i) => Math.abs(x - iso[i]) < 0.01) };
   });
   await step('14 a narrow 3D view: the cube goes below the heads-up bar instead of under it; wide, it stays at the top', async () => {
     const vp = document.querySelector('.viewport');

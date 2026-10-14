@@ -1,5 +1,33 @@
 # 3D-Builder 開發日誌 (DEV_LOG.md)
 
+## 2026-10-14（晚二）：10-14b 決策頁執行——B1 方塊首頁鈕、B2「正視於」全套比照 SolidWorks、C2① 爆炸後「全部顯示」、C3 c13 階梯板＋肋邊圓角、C1 手冊 11 處、D2
+
+### 1. 範圍
+`docs/decisions-2026-10-14b.html` 10 題的裁決執行。本段記 B、C、D 組（B1 只做首頁鈕；B2 全套比照 SW；C1 手冊 11 處全改；C2 只修①；C3 只做 c13 階梯板＋肋邊圓角；D1 等 sketch6 修補；D2 刪 vui.txt）。A 組（組合件主樹、座標系統結合、動工時機）歸 Claude Code 工作階段。
+
+### 2. 做法
+| 項目 | 檔案 | 內容 |
+|---|---|---|
+| B1 | `apps/web/src/components/Viewport.tsx`、`packages/i18n/src/{zh-TW,en}/output.ts` | ViewCube 左下 ⌂ 鈕（`data-cube-arrow="home"`）→ `setView('iso')`；i18n `cube.home`。 |
+| B2 | `apps/web/src/actions.ts`、`packages/render/src/viewer.ts`、`packages/i18n/src/{zh-TW,en}/help.ts` | `lookAtNormal()`：草圖內用 `store.frameOf`、建模時用所選平面／基準面的 `normalFrame()`；翻面只在相機看向近側（`viewDirection()`·normal < −0.999）時取反法向，遠側再按由面自身法向轉回；無選取／曲面→`setView('iso')`。`viewer.viewDirection()`＝`camera.getWorldDirection()`。啟用 `sketching || partIdle`。`help.viewNormal` 重寫。 |
+| C2① | `apps/web/src/state/assembly.ts`、`tests/e2e/phase3-explode.js` | `animateExplode` 完成路徑（無影格直跳、動畫 k≥1）`fitRequest + 1` → `AssemblyViewport` effect `fitAll()`；e2e 斷言爆炸後視野高度 > 收合後 ×1.05。 |
+| C3 | `tests/e2e/manual-c13.js` | 步驟 6：40×30×10 板＋上基準面 20×30 矩形（兩角皆 Ctrl）伸長 20＝18000；右基準面 v=25 的 16 長線→肋材＝18640（18000＋2·16·5＋2·16·15）。步驟 7：肋頂邊圓角 R2＝18626.2655、`edges`=1。 |
+| C1、手冊 | `docs/manual-verification.html`、`docs/verification-coverage.md` | 11 處修訂全改（C10、C12、C15、C16、C21、C22※寫錯、C26、D1「定位組」、D6、E4※寫錯、E6）；C20 新步驟 10b、D5 標已驗、C13 步驟 6 配方。 |
+| D2 | 根目錄 | 刪 `vui.txt`（git 未追蹤）。 |
+
+### 3. 自我紅隊四問（AGENTS.md §2.1）
+1. **輸入破壞**：翻面法向取反把 0 映成 0——第一版 `[-x, ...]` 產出 −0，單元測試以 Object.is 抓到（`toMatchObject([0,0,-1])` 收到 `[−0,−0,−1]`）。第一版翻面規則「|dot|>0.999 就反」在遠側按第二次不會回來（停在遠側），單元測試抓到後改為只在近側（dot < −0.999）取反。
+2. **幾何退化**：C3 的體積全程手算（18000→18640→18626.2655，1e-4 斷言）；第一版肋體積公式錯（18160），以 detail 輸出暴露後改正——肋的牆在階梯處停在第一個面，每片 2 mm 半厚乘各自高度。
+3. **依賴鏈完整性**：B2 動 `actions.ts`／`viewer.ts`／i18n help 三層＋單元＋e2e＋手冊；C2① 的 e2e 做了反向對照（拿掉 bump 以「309.5 vs 309.5」失敗，還原後過）。
+4. **零 Mock**：c20 步驟 9b 走真實 `.heads-up` 按鈕與 `store.viewer` 真相機；c13 走真實草圖／特徵指令。**發現一件待裁**：邊角矩形的第一個角若不按 Ctrl 且落在模型邊上，該邊會被整條轉成草圖參考線（`ref:{kind:'edge'}`），與矩形自己的邊重疊，伸長填料以「分支點」拒絕——測試與手冊以「兩角皆 Ctrl」繞過，行為本身未改、待使用者裁決。
+
+### 4. 確效與品質驗收
+- `npm run typecheck`：0 錯誤；`lint:deps`／`lint:rules`／`lint:i18n`：全過。
+- 全量 vitest：**2744 過、24 略過、0 失敗**（210 檔過、4 檔略過；輸出存 `scratch/vitest-full-2026-10-14-late2.txt`）。
+- `tests/phase8/view-normal.test.ts` 6/6；`verify:ui --only` 重跑：manual-c20、phase3-explode、manual-c13 全過（c13 37.8s）。
+- 全量 `verify:ui`：**未跑**——本批不動共用腳本，僅三支改動腳本各自重跑；上一輪全量 131/131（15:52，見上一段）。
+- 工作區另有主題重構工作階段的未提交改動（`app.css`、`DrawingViewport.tsx`、`theme.ts`、`main.tsx`、`FlatPanel.tsx`、`PropertyManager.tsx`、`sketcher/overlay.ts`、`viewer.ts` 的 COLORS/`setPalette`、兩張決策頁配色），本批不碰；`viewer.ts` 兩邊皆有改動，提交時分開。
+
 ## 2026-10-14（晚）：重建的決定性（藍圖 B3.1）——求解輸出上網格、每次重建全新求解器、布林結果面命名繼承
 
 ### 1. 需求與根因（RCA）

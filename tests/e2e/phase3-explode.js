@@ -80,13 +80,20 @@ exp.run = async () => {
   a.setExplodeLines(true);
   a.setExploded(false);
   await H.waitFor(() => H.asm().explodeT === 0, 3000, 'the view closed');
+  // the collapse ends with 「全部顯示」 (2026-10-14 decision C2): the fit comes a moment after the animation ends
+  await H.wait(400);
+  const viewHeight = () => store.viewer.camera.top - store.viewer.camera.bottom;
+  const collapsedH = viewHeight();
   H.check(lines(a).length === 0, 'collapsed: no explode lines');
   H.check(JSON.stringify(positions()) === JSON.stringify(before), 'collapsed: every part where it was before');
   await window.__shot?.('collapsed');
   H.check(placements() === placed, 'and the document placements are the same bytes');
   a.setExploded(true);
   await H.waitFor(() => H.asm().explodeT === 1, 3000, 'the view opened');
+  await H.wait(400);
+  const explodedH = viewHeight();
   H.check(JSON.stringify(positions()) === JSON.stringify(two), 'exploded again: as it was');
+  H.check(explodedH > collapsedH * 1.05, `「全部顯示」 after both ends of the move: the exploded view needs ${explodedH.toFixed(1)} of world height, the assembled one ${collapsedH.toFixed(1)}`);
 
   // while it is exploded nothing can be dragged
   const notices = [];
