@@ -54,7 +54,9 @@ S.rectSketch = async (plane, w, d, { center = false } = {}) => {
   await H.frameSketch(center ? 0 : w / 2, center ? 0 : d / 2, pxmm);
   await H.tool(center ? '中心矩形' : '邊角矩形');
   await H.sk(u0, v0);
-  await H.sk(u1, v1);
+  // the far corner with Ctrl held, which suspends the snaps (as in SolidWorks): over a model of the same size it would be drawn to the corner below
+  // (ADR 0136) and held there, and the two dimensions after would over-define the sketch
+  await H.sk(u1, v1, { ctrlKey: true });
   await H.solved();
   const top = H.lineWhere((g, id) => !H.construction(id) && Math.abs(g.a[1] - v1) < 0.5 && Math.abs(g.b[1] - v1) < 0.5);
   const right = H.lineWhere((g, id) => !H.construction(id) && Math.abs(g.a[0] - u1) < 0.5 && Math.abs(g.b[0] - u1) < 0.5);
