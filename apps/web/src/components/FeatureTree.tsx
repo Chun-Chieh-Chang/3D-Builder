@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
+import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactElement } from 'react';
 import { t } from '@3db/i18n';
 import { bodyKey, isHideable, isShown, type Feature, type Id } from '@3db/model';
 import { ownerFeatures } from '@3db/naming';
@@ -127,12 +127,16 @@ export function FeatureTree() {
   const barIndex = dragIndex ?? rollback;
   const owner = selectedFace ? ownerFeatures(selectedFace.name)[0] : undefined;
 
-  // Rollback bar drag (B2.4 / D1.4): the bar snaps between feature rows.
+  // Rollback bar drag (B2.4 / D1.4): the bar snaps between top-level rows. In hierarchy mode a sketch is shown under the feature that uses it, so the
+  // order on screen is not the history order: the bar lands at the history index of the first top-level row below it (the end when there is none).
   const onBarDown = (e: ReactPointerEvent) => {
     if (editing) return;
     e.preventDefault();
-    const rows = [...(listRef.current?.querySelectorAll<HTMLElement>('[data-feature-row]') ?? [])];
-    const indexAt = (y: number) => rows.filter((r) => r.getBoundingClientRect().top + r.offsetHeight / 2 < y).length;
+    const rows = [...(listRef.current?.querySelectorAll<HTMLElement>('[data-bar-slot]') ?? [])];
+    const indexAt = (y: number) => {
+      const below = rows.find((r) => r.getBoundingClientRect().top + r.offsetHeight / 2 >= y);
+      return below ? Number(below.dataset.barSlot) : doc.features.length;
+    };
     const move = (ev: PointerEvent) => setDragIndex(indexAt(ev.clientY));
     const up = (ev: PointerEvent) => {
       window.removeEventListener('pointermove', move);
@@ -144,6 +148,8 @@ export function FeatureTree() {
     window.addEventListener('pointerup', up);
   };
 
+  /** Set while the history rows are built, once the bar has been placed among them. */
+  let barPlaced = false;
   const bar = (
     <li key="rollback" className={dragIndex !== null ? 'rollback-bar dragging' : 'rollback-bar'} onPointerDown={onBarDown} title={t('tree.rollbackBar')}>
       <span />
@@ -226,11 +232,16 @@ export function FeatureTree() {
     const childSketches = sketchesUnder(f);
     const hasChildren = treeMode === 'hierarchy' && !needle && childSketches.length > 0;
     const isCollapsed = collapsedFeatures.has(f.id);
+    // The bar dropped above a feature also rolls back the sketches shown under it that come right before it in the history (the usual 草圖1, 伸長1),
+    // so nothing drawn below the bar is still built. A sketch further back stays: rolling back to it would take the features between with it.
+    let slot = i;
+    while (hasChildren && slot > 0 && childSketches.includes(doc.features[slot - 1]!.id)) slot--;
 
     return (
       <li
         key={isAbsorbed ? `${parentFeature?.id}:${f.id}` : f.id}
         data-feature-row
+        data-bar-slot={isAbsorbed ? undefined : slot}
         className={cls}
         draggable={canDrag && !rolledBack}
         title={[tip || `${featureLabel(f)}: ${f.name}`, parentHintTitle, f.comment].filter(Boolean).join('\n')}
@@ -462,6 +473,7 @@ export function FeatureTree() {
           const head = startsFolder ? (
             <li
               key={`folder:${f.folder}`}
+              data-bar-slot={i}
               className="tree-row folder-head"
               onClick={() => setClosed((c) => (c.has(f.folder!) ? new Set([...c].filter((x) => x !== f.folder)) : new Set([...c, f.folder!])))}
               onDoubleClick={() => !editing && setRenamingFolder(f.folder!)}
@@ -504,11 +516,19 @@ export function FeatureTree() {
             </li>
           ) : null;
 
-          if (hidden) return head ? [head] : [];
+          // The bar goes before the first row shown at or after its index. The feature at the index itself may not be shown on its own (a sketch
+          // drawn under the feature that uses it, or a feature in a closed folder); placing the bar only there would make it vanish.
+          const withBar = (rows: ReactElement[]) => {
+            if (barPlaced || needle || i < barIndex || rows.length === 0) return rows;
+            barPlaced = true;
+            return [bar, ...rows];
+          };
+
+          if (hidden) return withBar(head ? [head] : []);
 
           // In hierarchy mode, absorbed sketches are rendered under their consuming features
           if (treeMode === 'hierarchy' && !needle && f.type === 'sketch' && absorbedSketchSet.has(f.id)) {
-            return head ? [head] : [];
+            return withBar(head ? [head] : []);
           }
 
           const mainRow = renderRow(f, i);
@@ -518,10 +538,9 @@ export function FeatureTree() {
               : [];
           const childRows = childSketches.map((sk) => renderRow(sk, doc.features.indexOf(sk), true, f));
 
-          const rows = [...(head ? [head] : []), mainRow, ...childRows];
-          return i === barIndex && !needle ? [bar, ...rows] : rows;
+          return withBar([...(head ? [head] : []), mainRow, ...childRows]);
         })}
-        {barIndex >= doc.features.length && !needle && bar}
+        {!barPlaced && !needle && bar}
       </ol>
 
       {/* Dynamic Reference Visualization (D1.8) Status Bar */}
