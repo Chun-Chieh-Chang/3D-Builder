@@ -163,5 +163,41 @@ M.run = async () => {
     await H.loaded();
     return { pass: instances().length === 3 && clipCounts().every((n) => n === 1) && store.viewer.cap?.planes.length === 3, clips: clipCounts() };
   });
+  await step('8 the assembly has the view cube too (FreeCAD\'s, as the part): 10 faces from the isometric view; a corner, an edge and a side clicked at their middle turn the view there; ▶ turns 45°', async () => {
+    const toViewer = () => store.viewer.camera.position.clone().sub(store.viewer.controls.target).normalize();
+    const deg = (v, x, y, z) => (v.angleTo(new (v.constructor)(x, y, z).normalize()) * 180) / Math.PI;
+    const click = async (dir) => {
+      const f = document.querySelector(`.view-cube [data-cube-dir="${dir}"]`);
+      if (!f) return 'not drawn';
+      const m = f.ownerSVGElement.getScreenCTM();
+      const pts = Array.from({ length: f.points.numberOfItems }, (_, i) => f.points.getItem(i));
+      const [x, y] = [pts.reduce((s, p) => s + p.x, 0) / pts.length, pts.reduce((s, p) => s + p.y, 0) / pts.length];
+      const [cx, cy] = [m.a * x + m.c * y + m.e, m.b * x + m.d * y + m.f];
+      const at = document.elementFromPoint(cx, cy);
+      at?.dispatchEvent(new MouseEvent('click', { bubbles: true, clientX: cx, clientY: cy }));
+      await H.wait(350);
+      // what was clicked when it is not the face: whatever covers the cube there
+      return at === f || `${at?.tagName} ${at?.className?.baseVal ?? at?.className}`;
+    };
+    await H.hud('等角');
+    const drawn = document.querySelectorAll('.view-cube [data-cube-dir]').length;
+    store.viewer.orbit('horizontal', 20);
+    const corner = { hit: await click('1,1,1'), off: deg(toViewer(), 1, 1, 1) };
+    store.viewer.orbit('vertical', 15);
+    const edge = { hit: await click('0,1,1'), off: deg(toViewer(), 0, 1, 1) };
+    const side = { hit: await click('0,0,1'), off: deg(toViewer(), 0, 0, 1) };
+    const front = toViewer();
+    document.querySelector('.view-cube [data-cube-arrow="right"]').click();
+    await H.wait(200);
+    const turned = (toViewer().angleTo(front) * 180) / Math.PI;
+    return {
+      drawn,
+      corner,
+      edge,
+      side,
+      turned,
+      pass: drawn === 10 && [corner, edge, side].every((r) => r.hit === true && r.off < 1e-6) && Math.abs(turned - 45) < 1e-6,
+    };
+  });
   return { name: 'asm-section', steps, pass: steps.every((s) => s.pass) };
 };

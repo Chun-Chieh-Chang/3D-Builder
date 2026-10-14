@@ -13,7 +13,7 @@ import { MateFlyout } from './MatePanel';
 import { InterferencePanel } from './InterferencePanel';
 import { ClearancePanel } from './ClearancePanel';
 import { MeasurePanel } from './MeasurePanel';
-import { ViewOptions } from './Viewport';
+import { ViewCube, ViewOptions } from './Viewport';
 import { ComponentMenu } from './AssemblyTree';
 
 const KIND_WORD = { face: '面', edge: '邊線', vertex: '頂點' } as const;
@@ -251,6 +251,7 @@ export function AssemblyViewport() {
   return (
     <main className="viewport">
       <div ref={host} className="viewport-canvas" />
+      <ViewCube />
       <ViewOptions assembly />
       {menu && asm.doc.components.some((c) => c.id === menu.id) && <ComponentMenu x={menu.x} y={menu.y} component={asm.doc.components.find((c) => c.id === menu.id)!} onClose={() => setMenu(null)} />}
       <div className="heads-up">

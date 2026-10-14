@@ -639,9 +639,9 @@ const sidesOf = ([x, y, z]: V3): string[] =>
  * 視角選擇方塊 (D4.3), as FreeCAD's NaviCube has it: a cube that turns with the model, its edges and corners cut off (cubeFacets): a click on a side looks
  * from that side, on an edge face from halfway between two sides (45°), on a corner face along the cube's diagonal: 26 directions. It is drawn flat (SVG)
  * from the camera's turn, and only the faces toward the viewer, so a face is a single shape to point at. Arrows around it turn the model about the
- * screen's axes and roll it, by the step of the options (45° at first), the way the arrow keys do.
+ * screen's axes and roll it, by the step of the options (45° at first), the way the arrow keys do. The part's and the assembly's graphics areas both have it.
  */
-function ViewCube() {
+export function ViewCube() {
   const step = useStore((s) => s.options.viewCubeStep);
   const [matrix, setMatrix] = useState<number[] | null>(null);
   useEffect(() => {
@@ -690,7 +690,7 @@ function ViewCube() {
           return (
             <polygon
               key={f.dir.join()}
-              className={`cube-facet cube-${f.kind}${f.kind === 'face' ? ' cube-face' : ''}`}
+              className={`cube-facet cube-${f.kind}`}
               data-cube-dir={f.dir.join()}
               data-cube-kind={f.kind}
               points={f.points.map((p) => screen(p.toArray()).slice(0, 2).map((c) => (c * CUBE_PX).toFixed(2)).join(',')).join(' ')}
