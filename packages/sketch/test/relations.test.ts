@@ -205,8 +205,34 @@ describe('merge (C1.26)', () => {
     expect(sk.entities.some((e) => e.id === 'c')).toBe(false);
     expect(sk.entities.find((e) => e.id === 'M')).toMatchObject({ p1: 'b', p2: 'd' });
     expect(sk.constraints.some((k) => k.id === 'k2')).toBe(false); // coincident b–c
-    expect(sk.constraints.find((k) => k.id === 'k4')).toMatchObject({ point: 'b', curve: 'L' }); // b on its own line: kept, harmless for the solver
-    expect(solve(doc).conflicting).toEqual([]);
+    expect(sk.constraints.some((k) => k.id === 'k4')).toBe(false); // b on its own line says nothing: gone, else the solver calls it redundant
+    const s = solve(doc);
+    expect([s.conflicting, s.redundant]).toEqual([[], []]);
+  });
+
+  it('a line ending on an arc and the arc starting on the line, made one corner: neither "on" stays, and the sketch is not over-defined (零件1, B1)', () => {
+    const arcCorner = () =>
+      start(
+        [
+          point('o', 0, 0), point('s', 3, 0), point('e', 0, 3), point('top', 3, 5), point('end', 3.0000000001, 0.0000000001),
+          { id: 'A', type: 'arc', center: 'o', start: 's', end: 'e' },
+          { id: 'L', type: 'line', p1: 'end', p2: 'top' },
+        ],
+        [
+          { id: 'c', type: 'coincident', a: 'o', b: SKETCH_ORIGIN },
+          { id: 'r', type: 'radius', circle: 'A', value: '3' },
+          { id: 'v', type: 'vertical', a: 'L' },
+          { id: 'h', type: 'horizontal', a: 'o', b: 's' },
+          { id: 'onArc', type: 'pointOnCurve', point: 'end', curve: 'A' },
+          { id: 'onLine', type: 'pointOnCurve', point: 's', curve: 'L' },
+        ],
+      );
+    const doc = run(arcCorner(), mergePoints(sketchOf(arcCorner()), 'end', 's'));
+    const sk = sketchOf(doc);
+    expect(sk.entities.find((e) => e.id === 'A')).toMatchObject({ start: 'end' });
+    expect(sk.constraints.map((k) => k.id).sort()).toEqual(['c', 'h', 'r', 'v']); // the corner is the start of the arc and the end of the line
+    const s = solve(doc);
+    expect([s.conflicting, s.redundant]).toEqual([[], []]);
   });
 
   it('says no to the origin, a point with itself, a line collapsed to a point and a dimension between the two', () => {

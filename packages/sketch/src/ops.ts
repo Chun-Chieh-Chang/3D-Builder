@@ -511,6 +511,18 @@ export function mergeGroups(sketch: Pick<SketchFeature, 'entities' | 'constraint
     if (seen.has(key)) duplicates.add(k.id);
     else seen.add(key);
   }
+  // A point on a line or arc that is now one of its own ends says nothing more (a lug line ending on an arc, the arc starting on the line: made
+  // one point, each "on" the other is the corner itself), and the solver would call the sketch over-defined: it goes.
+  const endsOf = (id: Id): Id[] => {
+    const e = sketch.entities.find((x) => x.id === id);
+    return e?.type === 'line' ? [e.p1, e.p2] : e?.type === 'arc' ? [e.start, e.end] : [];
+  };
+  for (const k of sketch.constraints) {
+    if (k.type !== 'pointOnCurve' || gone.has(k.id)) continue;
+    const ends = endsOf(k.curve);
+    if (!touched.has(k.point) && !ends.some((x) => touched.has(x))) continue;
+    if (ends.map((x) => into.get(x) ?? x).includes(into.get(k.point) ?? k.point)) duplicates.add(k.id);
+  }
   if (duplicates.size > 0) {
     remove.push(...duplicates);
     return { edit: { entities, constraints: constraints.filter((c) => !duplicates.has(c.id)), remove }, merged, skipped };
