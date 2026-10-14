@@ -1,5 +1,40 @@
 # 3D-Builder 開發日誌 (DEV_LOG.md)
 
+## 2026-10-14（晚）：重建的決定性（藍圖 B3.1）——求解輸出上網格、每次重建全新求解器、布林結果面命名繼承
+
+### 1. 需求與根因（RCA）
+**需求**：B3.1（P0）「同輸入 → 同輸出」。B1 驗收（`tests/phase3/real-part1-fillet.test.ts`，以 `REAL_PART1_DIR=D:\3DB實機確認\C3C6檢具` 執行）在 零件1_45度基準面圓角完成.3dbx 發現同一份文件兩次重建的結果不同：核心剛載入的**第一次重建**把凸耳所在圓柱面命名為 `cut2:side:sketch6.a3`，圓角因此「遺失參考：4 條邊線找不到」；之後的重建命名為 `revolve1:side:sketch4.l6`，圓角成立（149.705286 mm³）。曾在瀏覽器重現「開檔即報錯、同一工作階段再開一次就好」。
+
+**RCA（兩層，疊加）**：
+1. **planegcs 求解不決定**：FreeCAD planegcs 以參數**在記憶體中的位址順序**建立內部 `std::map`，浮點運算順序隨堆積佈局變動。以合成草圖實測：同一張草圖連續 8 次求解得到 4 種位元級答案；與草圖內容無關（縮放副本、無模型參考的 sketch4 同樣重現）。漂移量可達其收斂門檻 1e-10 mm。
+2. **OCCT 對重合面的合併不決定**：cut2 的圓弧落在 revolve1 的 R 3.125 圓柱面上，`ShapeUpgrade_UnifySameDomain` 合併與否取決於 OCCT 內部相遇順序（記憶體狀態）——第一次重建留 7 片（來源只報工具面），之後併成 4 片（其中一片帶本體面來源）。1e-10 級的草圖差正好決定走哪條路。
+
+**排除的假設（皆以探針量測否定，記錄以免重走）**：`SetNonDestructive(true)`（輸入未被就地改寫）；`SetFuzzyValue`（多種尺寸無效）；放寬 `UnifySameDomain` 公差；調緊 planegcs 收斂門檻（`set_covergence_threshold`，`clear_data()` 每次重置）；kernel/engine 在重建間保留狀態（經查無快取，每次皆從頭重解）；每個 solve 用全新 `GcsSystem`（仍不決定——排序在模組內）。
+
+### 2. 修正（使用者 2026-10-14 裁決：先決定性重建、再修草圖）
+| 檔案 | 內容 |
+|---|---|
+| `packages/sketch/src/planegcs.ts` | `canon`：`readGeometry` 輸出上**十進位**網格（長度 1e-10 mm、角度 1e-12 rad；約核心公差 1e-7 的千分之一）。十進位是刻意的：打 12.4 回 12.4、−0 歸 +0（二進位網格實測 12.4 會變 12.400000000023283）。新增 `PlaneGcsSolver.fresh()`：重新載入求解器模組（約 4 ms）。 |
+| `apps/web/src/worker/kernel.worker.ts` | `build`／`rebuild`／`exportStep`／`exportStl` 重建前 `await solver.fresh()`；編輯中的互動求解沿用現有模組。 |
+| `packages/kernel/src/sameSurface.ts`（新） | `sameSurface`：平面／圓柱／球是否同一張解析曲面（軸向反向算同一；圓錐／環面／自由曲面不比較）。`inheritBodySurface`：布林後，工具做出、貼在本體面同曲面且相接的面，繼承本體面來源（沿同曲面可達鏈遞移、去重、依 index 排序；已有本體來源與不相接者不動）。 |
+| `packages/kernel/src/kernel.ts` | `boolean` 的結果接上 `inheritBodySurface`（`isBody` 以本體面數界定：`rel !== 'cap' && rel !== 'imported' && kind === 'face' && index < 本體面數`）。 |
+| `packages/sketch/src/ops.ts` | `mergeGroups`：「點在線上／弧上」而該點已是該曲線**自己的端點**時移除——合併點把角落合成一點後，這條「在…上」說的就是角落本身，留著求解器判冗餘（過度定義）。 |
+
+### 3. 自我紅隊四問（AGENTS.md §2.1）
+1. **輸入破壞**：`canon` 對 NaN／±∞ 原樣傳回（`Math.round(NaN)=NaN`），不製造新值；極小值（<5e-11 mm）歸 0——較核心公差小 4 個數量級，且只作用於求解輸出；−0 明確歸 +0（有測試）。`fresh()` 載入失敗會拋出——重建顯性失敗，不靜默退化。`inheritBodySurface` 以 6 項手工拓樸測試覆蓋：空來源、無鄰居、接縫（面對自己）、不同半徑、偏軸、平行面、多個本體面各一次且有序。
+2. **拓樸與幾何退化**：命名繼承只在同一張解析曲面（半徑差 ≤1e-7、軸平行 1−|cos| ≤1e-12、離軸 ≤1e-7）且**相接**時生效；反例測試確保不會把同半徑但別處的圓柱（真正的凹槽壁）改名；圓錐／環面保守不比。網格線附近的值仍可能落兩側，但殘餘差已遠低於核心任何判定門檻，且 `fresh()` 已消除主要來源（兩者缺一不可，見下）。
+3. **依賴鏈完整性**：schema／serialize 不變；求解輸出 → regen → kernel 布林 → `names.ts`（`faceBaseName` 讀來源）→ `refs.ts`（`resolveRef` 依名稱）；worker 四個重建入口全接 `fresh`；經查重建間無草圖解快取；互動求解路徑不受影響。合併點規則僅動 `ops.ts` 的 `mergeGroups`（`mergePoints` 與 UI「合併」共用）。
+4. **規格真實性與零 Mock**：以客戶真檔驗（未設 `REAL_PART1_DIR` 時整檔明確略過）；反向對照兩項——拿掉 `canon` 或 `fresh()`，對應的決定性測試即失敗；合成測試草圖為完全定義、起始位置刻意遠離解（觸發迭代漂移），並含與零件1 同形狀語言的旋轉輪廓。**現狀鎖定**：零件1 儲存檔的確定性結果是「圓角失敗」（11 條 `pointOnCurve` 成對角落），測試以 `unresolved` 空＋錯誤字串＋`doubled=11` 鎖定；修補草圖（合併點＋刪冗餘關係）是回復圓角的前置，留給使用者手動完成（步驟見 handoff.md）。
+
+### 4. 確效與品質驗收
+- `npm run typecheck`：0 錯誤；`lint:rules`／`lint:deps`／`lint:i18n`：全過。
+- 全量 `vitest`：**2743 過、24 略過、0 失敗**（210 檔過、4 檔略過）。
+- `tests/phase3/real-part1-fillet.test.ts`（`REAL_PART1_DIR=D:\3DB實機確認\C3C6檢具`）：**2/2**——四次重建＋穿插其他草圖求解後，問題清單、面名稱、體積、所有草圖解逐位元一致；存檔狀態＝確定性「圓角失敗」。
+- 新測試：`packages/sketch/test/solve-determinism.test.ts`（8 次連續＋新求解器一致；穿插其他草圖一致；十進位網格保持打字值、無 −0）、`packages/kernel/test/same-surface.test.ts`（6 項）、`relations.test.ts` 線接弧角落的合併新例。
+- 受 C1（ADR 0136）影響的 `manual-c8.js`：`manual-support.js` 的 `rectSketch` 第二個角改為按住 Ctrl 點（暫停吸附，真人操作語意）——修在全量 `verify:ui` 的 130/131 之後。
+- 全量 `npm run verify:ui`：**131/131 通過**（131 列、0 失敗；含修好的 `manual-c8`；修在全量 130/131 之後，重跑見 handoff.md 最上方）。
+- 架構決定另見 [ADR 0137](docs/adr/0137-deterministic-rebuilds.md)。
+
 ## 2026-10-13（下午）：草圖磁吸對照 SolidWorks／FreeCAD 補齊 4 項
 
 ### 1. 對照（依據：SolidWorks 說明「草圖抓取」「自動關係」；FreeCAD `SnapManager.cpp`、`DrawSketchHandler.cpp` 原始碼）
