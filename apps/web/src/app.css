@@ -289,9 +289,14 @@ code { font-family: Consolas, 'Cascadia Mono', monospace; font-size: 11px; }
 .relink-actions { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin: 6px 0 0 22px; }
 .swatch { display: inline-block; width: 12px; height: 12px; border: 1px solid #888; border-radius: 2px; vertical-align: -1px; }
 
-.tree-filter { padding: 4px 6px; display: flex; gap: 4px; align-items: center; }
-.tree-filter input { flex: 1; box-sizing: border-box; }
-.tree-mode-toggle { display: inline-flex; align-items: center; gap: 4px; padding: 3px 7px; border: 1px solid var(--line); background: #ffffff; border-radius: 4px; font-size: 11px; color: #475569; cursor: pointer; white-space: nowrap; transition: all 0.15s ease; }
+.tree-filter { padding: 4px 6px 8px; display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+/* the filter of the tree: a rounded field with a magnifier, the accent ring when it has the focus */
+.search-field { flex: 1; min-width: 0; display: flex; align-items: center; gap: 6px; height: 30px; padding: 0 10px; background: #fff; border: 1px solid #e5e7eb; border-radius: 8px; color: #9ca3af; box-shadow: 0 1px 2px rgba(17, 24, 39, 0.04); transition: border-color 0.15s ease, box-shadow 0.15s ease; cursor: text; }
+.search-field:hover { border-color: #d1d5db; }
+.search-field:focus-within { border-color: #3b82f6; box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.15); color: #3b82f6; }
+.search-field input { flex: 1; min-width: 0; height: 100%; border: 0; outline: none; background: transparent; font: inherit; font-size: 13px; color: #111827; padding: 0; }
+.search-field input::placeholder { color: #9ca3af; }
+.tree-mode-toggle { display: inline-flex; align-items: center; gap: 4px; height: 30px; padding: 0 10px; border: 1px solid #e5e7eb; background: #ffffff; border-radius: 8px; font-size: 13px; color: #475569; cursor: pointer; white-space: nowrap; transition: all 0.15s ease; }
 .tree-mode-toggle:hover { background: #f1f5f9; border-color: #94a3b8; }
 .tree-mode-toggle.active { background: #eff6ff; border-color: #93c5fd; color: #1d4ed8; font-weight: 600; }
 
@@ -355,15 +360,29 @@ html[lang="en"] .view-cube .cube-label { font-size: 13px; }
 /* a narrow 3D view: the heads-up bar (centred at the top) would run under the cube, so the cube goes below it */
 @container (max-width: 620px) { .view-cube { top: 100px; } }
 .view-options { position: absolute; top: 48px; left: 8px; display: flex; gap: 6px; align-items: center; z-index: 5; flex-wrap: wrap; max-width: 60%; }
-.view-options select, .view-options button { font-size: 12px; }
-.view-options button.active { background: #dbeafe; }
+/* the display type, the selection filter and the section button read as one floating toolbar: frosted white, 8px corners, 32px tall */
+.view-options > select, .view-options > .view-chip, .pick-filter, .section-panel { height: 32px; background: rgba(255, 255, 255, 0.86); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); border: 1px solid rgba(229, 231, 235, 0.95); border-radius: 8px; box-shadow: 0 1px 2px rgba(17, 24, 39, 0.05), 0 4px 12px rgba(17, 24, 39, 0.06); font: inherit; font-size: 13px; color: #111827; }
+.view-options > select { appearance: none; -webkit-appearance: none; padding: 0 30px 0 12px; cursor: pointer; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='%236B7280' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M4 6l4 4 4-4'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 10px center; background-size: 14px; }
+.view-options > select:hover, .view-options > .view-chip:hover { border-color: #d1d5db; background-color: #fff; }
+.view-options > select:focus-visible, .view-options > .view-chip:focus-visible { outline: none; border-color: #3b82f6; box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.18); }
+.view-chip { display: inline-flex; align-items: center; gap: 6px; padding: 0 12px; cursor: pointer; transition: all 0.15s ease; }
+.view-options > .view-chip.active { background: #eff6ff; border-color: #93c5fd; color: #1d4ed8; font-weight: 600; }
 /* in an assembly the flyout tree of 「結合」 opens at the same corner: below the display type and section controls */
 .view-options ~ .flyout-tree { top: 112px; max-height: calc(100% - 130px); }
 .section-value { width: 58px; font-size: 12px; text-align: right; }
-.section-panel { display: flex; gap: 6px; align-items: center; background: rgba(255, 255, 255, 0.92); border: 1px solid #c8d2de; border-radius: 4px; padding: 3px 6px; font-size: 12px; }
+.section-panel { display: flex; gap: 8px; align-items: center; padding: 0 10px; }
+.section-panel select, .section-value { height: 24px; border: 1px solid #e5e7eb; border-radius: 6px; background: #fff; font: inherit; font-size: 13px; padding: 0 6px; }
+.section-panel input[type='range'] { accent-color: #3b82f6; }
+.section-panel input[type='checkbox'] { accent-color: #3b82f6; }
 
-.pick-filter { display: flex; gap: 6px; align-items: center; background: rgba(255, 255, 255, 0.92); border: 1px solid #c8d2de; border-radius: 4px; padding: 3px 6px; font-size: 12px; }
-.pick-filter label { display: flex; gap: 2px; align-items: center; }
+/* 選擇濾器: a segmented control; the checkbox stays a real, focusable input laid over its chip */
+.pick-filter { display: flex; gap: 2px; align-items: center; padding: 3px; }
+.pick-filter-title { padding: 0 8px 0 7px; color: #6b7280; white-space: nowrap; border-right: 1px solid #e5e7eb; margin-right: 2px; }
+.pick-filter label { position: relative; display: flex; align-items: center; height: 24px; padding: 0 10px; border-radius: 6px; color: #6b7280; cursor: pointer; white-space: nowrap; user-select: none; transition: background 0.15s ease, color 0.15s ease; }
+.pick-filter label:hover { background: #f3f4f6; color: #111827; }
+.pick-filter label.on { background: #eff6ff; color: #1d4ed8; font-weight: 600; box-shadow: inset 0 0 0 1px #bfdbfe; }
+.pick-filter label input { position: absolute; inset: 0; width: 100%; height: 100%; margin: 0; opacity: 0; cursor: pointer; }
+.pick-filter label:has(input:focus-visible) { box-shadow: 0 0 0 2px #3b82f6; }
 .ctx-menu { position: absolute; z-index: 20; display: flex; flex-direction: column; min-width: 160px; background: #fff; border: 1px solid var(--line); border-radius: 4px; box-shadow: 0 4px 14px rgba(29, 35, 43, 0.2); padding: 3px 0; }
 .ctx-menu button { border: 0; background: none; text-align: left; padding: 5px 12px; font-size: 13px; white-space: nowrap; }
 .ctx-menu button:hover { background: var(--accent-soft); }

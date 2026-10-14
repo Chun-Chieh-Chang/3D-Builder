@@ -365,7 +365,10 @@ export function FeatureTree() {
         <span>{name}</span>
       </div>
       <div className="tree-filter">
-        <input value={filter} placeholder={t('tree.filter')} onChange={(e) => setFilter(e.target.value)} onKeyDown={(e) => e.stopPropagation()} aria-label={t('tree.filter')} />
+        <label className="search-field">
+          <Icon name="search" />
+          <input type="search" value={filter} placeholder={t('tree.filter')} onChange={(e) => setFilter(e.target.value)} onKeyDown={(e) => e.stopPropagation()} aria-label={t('tree.filter')} />
+        </label>
         <button
           type="button"
           className={`tree-mode-toggle ${treeMode === 'hierarchy' ? 'active' : ''}`}

@@ -808,16 +808,17 @@ export function ViewOptions({ assembly = false }: { assembly?: boolean }) {
       </select>
       {!assembly && (
       <span className="pick-filter" title={t('select.filterTitle')}>
-        {t('select.filter')}
+        <span className="pick-filter-title">{t('select.filter')}</span>
         {(['faces', 'edges', 'vertices', 'planes'] as const).map((k) => (
-          <label key={k}>
+          <label key={k} className={filter[k] ? 'on' : ''}>
             <input type="checkbox" checked={filter[k]} onChange={(e) => store.setPickFilter(k, e.target.checked)} />
             {PICK_FILTER_LABEL[k]}
           </label>
         ))}
       </span>
       )}
-      <button className={cut ? 'active' : ''} title={t('view.sectionDragTip')} onClick={() => setCut(cut ? null : { axis: 0, at: ((bounds?.min[0] ?? 0) + (bounds?.max[0] ?? 0)) / 2, flip: false })}>
+      <button className={`view-chip ${cut ? 'active' : ''}`} aria-pressed={cut !== null} title={t('view.sectionDragTip')} onClick={() => setCut(cut ? null : { axis: 0, at: ((bounds?.min[0] ?? 0) + (bounds?.max[0] ?? 0)) / 2, flip: false })}>
+        <Icon name="sectionView" />
         {t('view.section')}
       </button>
       {cut && range && (
