@@ -1,8 +1,61 @@
 # 交接文件
 
-- 最後更新：2026-10-13 下午（**草圖磁吸對照 SW／FreeCAD 補齊 4 項、零件 Schema 56；全量測試平行負載失敗修正（CPU 計時、`maxWorkers: 4`）；見下一段；已推送 `8a9d2a1`**；早上：**10-12 成果審查與修正：`verify:ui` 129/129、vitest 2629 過，已推送 `335b46c`**；以下為 10-12 晚的狀態：**筆電工作整合、C19、Schema 55、尺寸標籤即時拖曳，已推送 `a96321f`**；**【線架構剖面交線與 SolidWorks 級動態側影輪廓線 (Silhouette Edges) 全套落實驗收完畢】**；**【Codex 任務接棒指南：裝飾用公螺牙與母螺孔 (Cosmetic Threads, C4.9 / ADR 0129) 架構與落地 SOP】**；全套 TypeCheck 0 錯誤、Lint 規則全綠、`acceptance.test.ts` 通過；其他狀態見「最新存檔點」）。
+- 最後更新：2026-10-14（**分支 `drawing-interaction` 合併進 `main`，見下一段**）；2026-10-13（**工程圖交互比照 SolidWorks：差距分析與使用者決定、D-I1a 多重選取、D-V 在圖紙上產生視圖和剖面、D-I3 註記（Schema 12）、側邊欄，分支 `drawing-interaction` 已推送，見下一段**）；2026-10-12 晚（**筆電工作整合、C19、Schema 55、尺寸標籤即時拖曳，已推送 `a96321f`，見下一段**；**【線架構剖面交線與 SolidWorks 級動態側影輪廓線 (Silhouette Edges) 全套落實驗收完畢】**；**【Codex 任務接棒指南：裝飾用公螺牙與母螺孔 (Cosmetic Threads, C4.9 / ADR 0129) 架構與落地 SOP】**；全套 TypeCheck 0 錯誤、Lint 規則全綠、`acceptance.test.ts` 通過；其他狀態見「最新存檔點」）。；2026-10-13 下午（**草圖磁吸對照 SW／FreeCAD 補齊 4 項、零件 Schema 56；全量測試平行負載失敗修正（CPU 計時、`maxWorkers: 4`）；見下一段；已推送 `8a9d2a1`**；早上：**10-12 成果審查與修正：`verify:ui` 129/129、vitest 2629 過，已推送 `335b46c`**；以下為 10-12 晚的狀態：**筆電工作整合、C19、Schema 55、尺寸標籤即時拖曳，已推送 `a96321f`**；**【線架構剖面交線與 SolidWorks 級動態側影輪廓線 (Silhouette Edges) 全套落實驗收完畢】**；**【Codex 任務接棒指南：裝飾用公螺牙與母螺孔 (Cosmetic Threads, C4.9 / ADR 0129) 架構與落地 SOP】**；全套 TypeCheck 0 錯誤、Lint 規則全綠、`acceptance.test.ts` 通過；其他狀態見「最新存檔點」）。
 
 
+- **【2026-10-13：工程圖交互比照 SolidWorks — 差距分析、使用者決定、D-I1a、D-V、D-I3、側邊欄，已提交並推送於分支 `drawing-interaction`（Claude）】** 這個分支還沒合併回 `main`。
+  - **分析與決定**：
+    - [docs/drawing-interaction-gap-plan.md](docs/drawing-interaction-gap-plan.md)：與 SW、FreeCAD TechDraw 逐層比較，歸納出 4 個根因，規劃 D-I1～D-I8。
+    - §9 是使用者在選擇題頁回答的 14 個決定（幾何公差採 ISO 1101，藍圖的 P2 全部提前，不做驅動尺寸，多圖頁排最後）。
+    - §10 是 D-I2 的技術驗證結果，§11 記錄後來插入的 D-V。
+    - 決策紀錄 [ADR 0129](docs/adr/0129-drawing-interaction-roadmap.md)；藍圖 C16.1、C16.3～C16.6 已改寫。
+    - 選擇題頁：https://claude.ai/artifact/Ns9jkdh2xdi4vcCpkatyUt
+  - **D-I2 技術驗證**（`tests/phase5/hlr-trace-spike.test.ts`）：
+    - `replicad-opencascadejs` 沒有開放 `CompoundOfEdges(…, In3d)` 和 `HLRBRep_Data`，無法直接追溯每條線來自哪條邊。
+    - 改用幾何回推可行：正視圖裡幾乎都能唯一對應，或對到在圖上重合的幾條邊（取哪條數值都一樣）；真正分不清的線很少，要用射線測試排除；沒有對應的線是曲面的輪廓線，要對應到面。
+    - 不需要重新編譯 WASM。
+  - **已完成**（每項都有 ADR、單元測試，並在瀏覽器用真實 pointer 事件驗證）：
+    - `5460810` **D-I1a 多重選取**（[ADR 0130](docs/adr/0130-drawing-multi-selection.md)）：
+      - Ctrl＋點選；窗選與交叉選；Delete 刪除全部所選。
+      - `batch` 指令讓一次修改成為一個復原步驟，而且全做或全不做。
+      - 選多個尺寸時可一次修改。
+      - **行為變更**：左鍵拖曳空白處改為框選，平移改用中鍵或右鍵拖曳。
+    - `e596772` **D-V 在圖紙上產生視圖和剖面**（[ADR 0131](docs/adr/0131-drawing-views-by-pointer.md)）：
+      - 視圖調色盤：拖曳或點選放到圖紙上。
+      - 投影視圖的預覽跟著游標；斜角放等角視圖。
+      - 剖面：切割線會貼齊；放在哪一側就決定箭頭方向；Ctrl 可以放在任意位置。
+      - 放新視圖時其他視圖不動，靠補償的 shift 達成。
+    - `5a206e2` **D-I3 註記**（[ADR 0132](docs/adr/0132-drawing-annotations-gdt.md)，**工程圖 Schema 11 → 12**）：
+      - 註解（可帶引線、`$PRP:`）、基準（ISO 5459）、ISO 1101 公差框（14 個符號，畫成向量線條）、手動中心線與中心符號線、3/4 圈螺紋線。
+      - 不合 ISO 規則的組合，由命令層明確拒絕。
+      - 基準與公差框的引用一致性：改名會連動；被引用的基準不能刪。
+    - `5a206e2` **側邊欄比照 SW**（[ADR 0133](docs/adr/0133-drawing-sidebar-like-solidworks.md)）：
+      - 工程圖樹與屬性兩個分頁；屬性依選取內容切換標題和可收合的群組框。
+      - 常駐指令列；視圖調色盤移到右側工作窗格。
+      - 所有欄位只用 `hidden` 隱藏，留在 DOM 裡，所以既有 e2e 腳本都還找得到。
+    - 這次的最後一個提交：補上 `manual-drawing-annotate.js` 缺的 `choose`（10-12 筆電漏掉的），並把步驟 10、11 改成 D-V 的放置規則（剖面對齊母視圖、沿線滑到游標處）。**這支腳本現在通過。**
+  - **驗證**：
+    - typecheck 0 錯誤；`lint:rules`、`lint:deps`、`lint:i18n` 通過。
+    - 全部 vitest **2654 項通過**；`drawing-linked.test.ts` 釘住的 schema 版本號因刻意升版，從 11 改成 12。
+    - `verify:ui` 工程圖相關 15 支：**13 支通過**。沒過的是 `manual-drawing-linked`（步驟 2、7）和 `phase5-angle`（等 `支架.3dbx` 開啟逾時），兩支都是 10-12 就記載的既有失敗。
+    - `manual-drawing-linked` 第 2 步的數字在兩次執行之間差 1 mm，**原因還沒查明**。
+  - **已知限制**（細節在各 ADR）：
+    - 註記記在視圖座標，沒有綁定模型邊，要等 D-I2。
+    - 剖面預覽用的是沒切開的零件外形；剖面外框比較小時，其他視圖可能小幅移動（外框不同的零件還沒量測）。
+    - 切割線只有垂直和水平。
+    - 零件與組合件的側邊欄還是舊樣式。
+  - **編號衝突（要注意）**：下方「接棒指引：裝飾用公螺牙與母螺孔」原本預定用 ADR 0129，但 0129～0133 已被這次的工作用掉。裝飾螺紋要寫 ADR 時，請用 **0134 之後**的編號。另外 D-I3 已經在工程圖上畫 3/4 圈螺紋線（從孔特徵的規格讀大徑），那份指引的 Step 5 可以直接沿用 `threadItems`。
+  - **下一步（定案順序，見規劃 §9）**：
+    1. 合併 `drawing-interaction` 到 `main`（使用者決定時機）。
+    2. D-I2 有名字的視圖邊（約 2～2.5 週）：做完才能標頂點、邊、等角視圖、組合件視圖的尺寸，註記也才能綁定模型。
+    3. D-I4 座標尺寸與自動排列。
+    4. D-I7(a) 在視圖上右鍵開啟零件。
+    5. D-I1b 剩下的部分：右鍵選單；把指令列移到頂端的 CommandBar。
+    6. D-I5 任意角度、階梯、對正剖面，以及輔助、斷裂、裁剪、局部剖視圖。
+    7. D-I8 小功能。
+    8. D-I6 多圖頁。
+
+    零件與組合件的側邊欄要不要比照工程圖重做，待使用者確認。
 - **【2026-10-13 下午：草圖磁吸對照 SolidWorks／FreeCAD，補齊 4 項（Claude）— 全部已提交並推送】** `main` = `origin/main` = `8a9d2a1`（`df5e7de` 之後還有：`1651857` 本檔更正、`bf06b6d` CPU 計時、`8a9d2a1` `maxWorkers: 4`）。這次推送的：`c129ec3`（剖面交線略過 NaN 頂點）、`54f838c`、`d7838d8`、`8c2c2c6`、`73669b7`、`df5e7de`（本檔／DEV_LOG）。**筆電要先 `git pull`，才能開這台以 Schema 56 存的零件檔。**
   - **對照依據**：SolidWorks 說明（草圖抓取、自動關係、Ctrl）、FreeCAD 原始碼 `SnapManager.cpp`、`DrawSketchHandler.cpp`。對照表與「不是缺失」的項目（例如 FreeCAD 的多餘自動限制過濾：探針隨機畫 300 次，0 次過度定義）見 `DEV_LOG.md` 最上面一段。
   - **① Ctrl 暫停磁吸與自動關係（`54f838c`，SW）**：按住 Ctrl 點下去就在游標處，不吸附、不加關係，放開恢復。

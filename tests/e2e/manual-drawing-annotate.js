@@ -210,7 +210,9 @@ M.run = async () => {
     return { pass: after === before - 1 && drw().doc.dimensions.length === before, before, after };
   });
   let section;
-  await step('10 the section tool: two clicks draw a vertical cut, then a click places the section view', async () => {
+  // Since ADR 0131 (D-V) a section is placed as SolidWorks places it: in line with its parent on the side the pointer is, slid along that line to the
+  // pointer (no position of its own); only with Ctrl does it go anywhere. The points are clear of the views the first angle puts round the front view.
+  await step('10 the section tool: two clicks draw a vertical cut, then a click places the section view in line with its parent, at the pointer along the line', async () => {
     panel('[data-action="toolSection"]').click();
     await H.wait(150);
     await setField('sectionAxis', 'v');
@@ -219,14 +221,17 @@ M.run = async () => {
     const before = drw().doc.views.length;
     await click(on);
     const geometryWaitsForPlacement = drw().doc.views.length === before && drw().tool?.kind === 'section' && document.querySelector('[data-hint]')?.textContent.includes('放置');
-    const placeAt = [on[0] + 50, on[1] + 20];
+    const placeAt = [p.at[0] + p.w / 2 + 60, on[1] + 20];
     await hoverAt(placeAt);
-    const previewedPlacement = !!document.querySelector('[data-overlay] path');
+    const previewedPlacement = !!document.querySelector('[data-overlay] path') && !!document.querySelector('[data-ghost]');
     await click(placeAt);
+    await H.waitFor(() => drw().lines.get(drw().doc.views.at(-1).id), 20000, 'the section lines');
+    await H.wait(200);
     const v = drw().doc.views.at(-1);
     section = v?.id;
     const x = (on[0] - p.at[0]) / p.scale + p.centre[0];
-    const placedAtPointer = near(v.at[0], placeAt[0], 0.2) && near(v.at[1], placeAt[1], 0.2);
+    // in line (no position of its own), its middle where the pointer was along the line
+    const placedAtPointer = !v.at && near(placed(v.id).at[0], placeAt[0], 0.3);
     return { pass: geometryWaitsForPlacement && previewedPlacement && placedAtPointer && drw().doc.views.length === before + 1 && v.kind === 'section' && v.parent === front && near(v.line[0][0], x, 0.02) && v.line[0][0] === v.line[1][0] && drw().tool === null, geometryWaitsForPlacement, previewedPlacement, placedAtPointer, at: v.at, line: v.line, x };
   });
   await step('11 selecting horizontal and clicking sets a horizontal cut; a section line can still be dragged across its parent', async () => {
@@ -239,10 +244,13 @@ M.run = async () => {
     const before = drw().doc.views.length;
     await click(from);
     const geometryWaitsForPlacement = drw().doc.views.length === before && drw().tool?.kind === 'section';
-    const placeAt = [p.at[0] + 60, p.at[1] + 35];
+    // below the top view: above it is the front view (first angle)
+    const placeAt = [p.at[0] + 10, p.at[1] - p.h / 2 - 60];
     await hoverAt(placeAt);
     const previewedPlacement = !!document.querySelector('[data-overlay] path');
     await click(placeAt);
+    await H.waitFor(() => drw().lines.get(drw().doc.views.at(-1).id), 20000, 'the section lines');
+    await H.wait(200);
     const v = drw().doc.views.at(-1);
     const horizontal = v.kind === 'section' && v.parent === top && v.line[0][1] === v.line[1][1];
     // the first section's line is on the front view: take hold of it and move it
@@ -251,7 +259,7 @@ M.run = async () => {
     const lineAt = [fp.at[0] + (sec.line[0][0] - fp.centre[0]) * fp.scale, fp.at[1]];
     const x0 = sec.line[0][0];
     await drag(lineAt, [lineAt[0] + 8, lineAt[1]]);
-    return { pass: selectedHorizontal && geometryWaitsForPlacement && previewedPlacement && near(v.at[0], placeAt[0], 0.2) && near(v.at[1], placeAt[1], 0.2) && horizontal && near(drw().doc.views.find((x) => x.id === section).line[0][0], x0 + 8 / fp.scale, 0.06), selectedHorizontal, geometryWaitsForPlacement, previewedPlacement, horizontal, at: v.at, x0, now: drw().doc.views.find((x) => x.id === section).line[0][0] };
+    return { pass: selectedHorizontal && geometryWaitsForPlacement && previewedPlacement && !v.at && near(placed(v.id).at[1], placeAt[1], 0.3) && horizontal && near(drw().doc.views.find((x) => x.id === section).line[0][0], x0 + 8 / fp.scale, 0.06), selectedHorizontal, geometryWaitsForPlacement, previewedPlacement, horizontal, at: v.at, x0, now: drw().doc.views.find((x) => x.id === section).line[0][0] };
   });
   await step('12 the detail tool: click the circle centre and radius, then click to place the detail view', async () => {
     panel('[data-action="toolDetail"]').click();

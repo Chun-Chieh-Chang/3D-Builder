@@ -18,7 +18,7 @@ import { PatternPanel } from './components/PatternPanel';
 import { BomDialog } from './components/BomDialog';
 import { PhysicalDialog } from './components/PhysicalDialog';
 import { CheckDialog } from './components/CheckDialog';
-import { DrawingPanel } from './components/DrawingPanel';
+import { DrawingPanel, DrawingTaskPane } from './components/DrawingPanel';
 import { DrawingViewport } from './components/DrawingViewport';
 import { ExplodePanel } from './components/ExplodePanel';
 import { FormSubPanel } from './components/FormSubPanel';
@@ -51,15 +51,19 @@ export function App() {
   return (
     <div className="app">
       <CommandBar />
-      <div className="workspace">
+      <div className={`workspace${drawing ? ' with-task-pane' : ''}`}>
         <aside className="left-panel" data-help={editing ? 'concept.property-manager' : 'concept.feature-tree'}>
-          <div className="panel-tabs">
-            <span className={editing ? '' : 'active'}>FeatureManager</span>
-            <span className={editing ? 'active' : ''}>PropertyManager</span>
-          </div>
+          {/* a drawing has tabs of its own, which work (D-I1b, ADR 0133) */}
+          {!drawing && (
+            <div className="panel-tabs">
+              <span className={editing ? '' : 'active'}>FeatureManager</span>
+              <span className={editing ? 'active' : ''}>PropertyManager</span>
+            </div>
+          )}
           {drawing ? <DrawingPanel /> : assembly ? mating ? <MatePanel /> : inserting ? <InsertComponentPanel /> : moving ? <MovePanel /> : patterning ? <PatternPanel /> : exploding ? <ExplodePanel /> : forming ? <FormSubPanel /> : <AssemblyTree /> : editing ? <PropertyManager /> : <FeatureTree />}
         </aside>
         {drawing ? <DrawingViewport /> : assembly ? <AssemblyViewport /> : <Viewport />}
+        {drawing && <DrawingTaskPane />}
       </div>
       <StatusBar />
       <HelpPanel />

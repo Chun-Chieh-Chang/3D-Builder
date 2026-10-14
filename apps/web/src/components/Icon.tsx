@@ -1,6 +1,6 @@
 import type { ReactElement } from 'react';
 
-type IconName = 'part' | 'assembly' | 'mates' | 'origin' | 'plane' | 'refPlane' | 'refAxis' | 'refPoint' | 'coordSys' | 'sketch' | 'extrude' | 'revolve' | 'sweep' | 'thread' | 'knurl' | 'loft' | 'rib' | 'pattern' | 'mirror' | 'fillet' | 'chamfer' | 'importedBody' | 'derivedBody' | 'deleteFace' | 'moveFace' | 'shell' | 'draft' | 'hole' | 'combine' | 'offsetSurface' | 'splitLine' | 'knit' | 'fillSurface' | 'flatSurface' | 'trimSurface' | 'mutualTrim' | 'extendSurface' | 'thicken' | 'cutWithSurface' | 'lipGroove' | 'screwBoss' | 'baseFlange' | 'midBend' | 'edgeFlange' | 'breakCorner' | 'hem' | 'snapHook' | 'snapCatch' | 'vent' | 'body' | 'error' | 'warning' | 'ok' | 'cancel' | 'eye' | 'eyeOff';
+export type IconName = 'part' | 'assembly' | 'mates' | 'origin' | 'plane' | 'refPlane' | 'refAxis' | 'refPoint' | 'coordSys' | 'sketch' | 'extrude' | 'revolve' | 'sweep' | 'thread' | 'knurl' | 'loft' | 'rib' | 'pattern' | 'mirror' | 'fillet' | 'chamfer' | 'importedBody' | 'derivedBody' | 'deleteFace' | 'moveFace' | 'shell' | 'draft' | 'hole' | 'combine' | 'offsetSurface' | 'splitLine' | 'knit' | 'fillSurface' | 'flatSurface' | 'trimSurface' | 'mutualTrim' | 'extendSurface' | 'thicken' | 'cutWithSurface' | 'lipGroove' | 'screwBoss' | 'baseFlange' | 'midBend' | 'edgeFlange' | 'breakCorner' | 'hem' | 'snapHook' | 'snapCatch' | 'vent' | 'body' | 'error' | 'warning' | 'ok' | 'cancel' | 'eye' | 'eyeOff' | 'drawingDoc' | 'sheet' | 'titleBlock' | 'view' | 'projectedView' | 'sectionView' | 'detailView' | 'dimension' | 'note' | 'datum' | 'gdt' | 'centreMark' | 'table' | 'surfaceFinish' | 'exportFile' | 'palette' | 'tree' | 'properties' | 'chevron' | 'pin';
 
 /** Default planes and reference planes share one icon, as in SolidWorks. */
 const PLANE = <path d="M4 4h10l-2 8H2z" />;
@@ -61,6 +61,26 @@ const PATHS: Record<IconName, ReactElement> = {
   ok: <path d="M3 8.5l3 3 7-7" />,
   cancel: <path d="M4 4l8 8 M12 4l-8 8" />,
   eye: <path d="M1.5 8s2.5-4.5 6.5-4.5S14.5 8 14.5 8 12 12.5 8 12.5 1.5 8 1.5 8z M8 8m-1.8 0a1.8 1.8 0 1 0 3.6 0a1.8 1.8 0 1 0-3.6 0" />,
+  drawingDoc: <path d="M3 1.5h7l3 3v10H3z M10 1.5v3h3 M5 8h6 M5 10.5h6 M5 13h3" />,
+  sheet: <path d="M2 3h12v10H2z M9 9h5 M9 9v4 M11.5 9v4" />,
+  titleBlock: <path d="M2 3h12v10H2z M2 9.5h12 M7 9.5V13 M10.5 9.5V13" />,
+  view: <path d="M2 2.5h12v11H2z M5 6h6v4H5z" />,
+  projectedView: <path d="M1.5 4.5h5v5h-5z M9.5 4.5h5v5h-5z M6.5 7h3 M8 5.5L9.5 7 8 8.5" />,
+  sectionView: <path d="M3 3h10v10H3z M3 7l4-4 M3 11l8-8 M5 13l8-8 M9 13l4-4 M1.5 8h13" />,
+  detailView: <path d="M6.5 6.5m-4.5 0a4.5 4.5 0 1 0 9 0a4.5 4.5 0 1 0-9 0 M10 10l4.5 4.5" />,
+  dimension: <path d="M2 4v8 M14 4v8 M2 8h12 M2 8l2.5-1.8 M2 8l2.5 1.8 M14 8l-2.5-1.8 M14 8l-2.5 1.8" />,
+  note: <path d="M2.5 2.5h11v8h-6l-3 3v-3h-2z M5 5.5h6 M5 8h4" />,
+  datum: <path d="M5 2.5h6v5H5z M8 7.5v3 M5.5 13.5L8 10.5l2.5 3z" />,
+  gdt: <path d="M1.5 5h13v6h-13z M6 5v6 M10.5 5v6 M3.75 6.5v3 M2.25 8h3" />,
+  centreMark: <path d="M8 1.5v4 M8 7v2 M8 10.5v4 M1.5 8h4 M7 8h2 M10.5 8h4" />,
+  table: <path d="M2 3h12v10H2z M2 6.5h12 M2 10h12 M6.5 3v10" />,
+  surfaceFinish: <path d="M2 13.5h12 M5 13.5L3 9 M5 13.5l5-10h4" />,
+  exportFile: <path d="M3 1.5h6l3 3v4 M3 1.5v13h5 M11 10v4.5 M9 12.5l2 2 2-2" />,
+  palette: <path d="M2 2h5v5H2z M9 2h5v5H9z M2 9h5v5H2z M9 9h5v5H9z" />,
+  tree: <path d="M3 2.5h4 M5 4.5v8.5h3 M5 8.5h3 M9.5 8.5h4 M9.5 13h4 M9 2.5h4" />,
+  properties: <path d="M2.5 2.5h11v11h-11z M5 5.5h6 M5 8h6 M5 10.5h3.5" />,
+  chevron: <path d="M6 4l4 4-4 4" />,
+  pin: <path d="M9.5 2l4.5 4.5-2 1-2.5 2.5-.5 3L3 7.5l3-.5L8.5 4.5z M5.5 10.5L2 14" />,
   eyeOff: <path d="M1.5 8s2.5-4.5 6.5-4.5S14.5 8 14.5 8 12 12.5 8 12.5 1.5 8 1.5 8z M2.5 13.5l11-11" />,
 };
 

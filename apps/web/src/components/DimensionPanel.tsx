@@ -91,7 +91,11 @@ export function DimensionPanel() {
   const mine = view ? drw.doc.dimensions.filter((x) => x.view === view.id) : [];
   const outcomes = d.scene().dimensions;
   const overlapping = overlappingDimensions(d.scene().scene.items, new Set(mine.map((x) => x.id)));
-  const current = mine.find((x) => x.id === selected) ?? null;
+  // the dimensions chosen (on any view): with more than one, the panel changes them all at once instead of showing one
+  const chosenIds = drw.selection.filter((x) => x.kind === 'dimension').map((x) => x.id);
+  const chosenDims = drw.doc.dimensions.filter((x) => chosenIds.includes(x.id));
+  const batch = chosenDims.length > 1;
+  const current = batch ? null : (mine.find((x) => x.id === selected) ?? null);
   // the numbers of a tolerance are typed and shown in the unit of the sheet; the document holds millimetres
   const perUnit = drw.doc.sheet.unit === 'in' ? MM_PER_INCH : 1;
   const shownTol = (mm: number) => Math.round((mm / perUnit) * 1e6) / 1e6;
@@ -100,8 +104,7 @@ export function DimensionPanel() {
     return o ? ('error' in o ? '⚠ ' + o.error : o.text) : '…';
   };
   return (
-    <div className="pm-group" data-group="dimensions">
-      <h4>{t('drawingUi.dimensions')}</h4>
+    <>
       <div className="pm-row">
         <button
           className={`pm-button${drw.tool?.kind === 'dimension' ? ' active' : ''}`}
@@ -215,7 +218,7 @@ export function DimensionPanel() {
           )}
           <ul className="selection-box drawing-views" data-field="dimensions">
             {mine.map((x) => (
-              <li key={x.id} className={x.id === selected ? 'selected' : ''} onClick={() => setSelected(x.id)} data-dimension={x.id}>
+              <li key={x.id} className={chosenIds.includes(x.id) ? 'selected' : ''} onClick={(e) => (e.ctrlKey || e.metaKey ? d.pick([{ kind: 'dimension', id: x.id }], 'toggle') : setSelected(x.id))} data-dimension={x.id}>
                 <span className="name">{textOf(x)}</span>
                 <button title={t('drawingUi.dimDelete')} onClick={(e) => (e.stopPropagation(), d.deleteDimensions([x.id]))}>
                   ✕
@@ -223,6 +226,7 @@ export function DimensionPanel() {
               </li>
             ))}
           </ul>
+          {batch && <BatchDimensions dims={chosenDims} perUnit={perUnit} />}
           {current && (
             <>
               <label className="pm-row checkbox">
@@ -349,6 +353,141 @@ export function DimensionPanel() {
           )}
         </>
       )}
+    </>
+  );
+}
+
+/** What several values are when they are all the same, or undefined when they differ. */
+function common<T>(values: readonly T[]): T | undefined {
+  const first = JSON.stringify(values[0]);
+  return values.every((v) => JSON.stringify(v) === first) ? values[0] : undefined;
+}
+
+/** A number box for several values: empty when they differ (and left alone until something is typed), committed on Enter or on leaving. */
+function MixedNumber({ value, onCommit, field }: { value: number | undefined; onCommit: (v: number) => void; field: string }) {
+  const shownText = value === undefined ? '' : String(value);
+  const [text, setText] = useState(shownText);
+  const [shown, setShown] = useState(shownText);
+  if (shownText !== shown) {
+    setShown(shownText);
+    setText(shownText);
+  }
+  const commit = () => {
+    const v = Number(text);
+    if (text.trim() !== '' && Number.isFinite(v) && text !== shownText) onCommit(v);
+    else setText(shownText);
+  };
+  return (
+    <input
+      data-field={field}
+      inputMode="decimal"
+      value={text}
+      placeholder={value === undefined ? t('drawingUi.mixed') : undefined}
+      onChange={(e) => setText(e.target.value)}
+      onBlur={commit}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          commit();
+        }
+        e.stopPropagation();
+      }}
+    />
+  );
+}
+
+/**
+ * Several dimensions chosen (D-I1a, ADR 0130): what they have in common is shown, and a change is made to all of them as one step. What differs between them is
+ * shown as differing and is left as it is until it is changed. A change one of them refuses (a fit class on an angle) is refused for all, and said.
+ */
+function BatchDimensions({ dims, perUnit }: { dims: readonly Dimension[]; perUnit: number }) {
+  const d = store.drawingStore!;
+  const ids = dims.map((x) => x.id);
+  const set = (patch: Parameters<typeof d.setDimensions>[1]) => d.setDimensions(ids, patch);
+  const reference = common(dims.map((x) => !!x.reference));
+  const precision = common(dims.map((x) => x.precision));
+  const tolerance = common(dims.map((x) => x.tolerance ?? null));
+  const kind = tolerance === undefined ? 'mixed' : toleranceKind(tolerance ?? undefined);
+  const hasAngle = dims.some((x) => x.kind === 'angle');
+  const shown = (mm: number) => Math.round((mm / perUnit) * 1e6) / 1e6;
+  const upper = common(dims.map((x) => (x.tolerance?.type === 'bilateral' ? x.tolerance.upper : NaN)));
+  const lower = common(dims.map((x) => (x.tolerance?.type === 'bilateral' ? x.tolerance.lower : NaN)));
+  const fit = common(dims.map((x) => (x.tolerance?.type === 'fit' ? x.tolerance.fit : '')));
+  return (
+    <div data-group="dimBatch">
+      <p className="muted" data-field="dimBatch">
+        {t('drawingUi.dimBatch', { n: dims.length })}
+      </p>
+      <label className="pm-row checkbox">
+        <input
+          type="checkbox"
+          data-field="batchReference"
+          checked={reference === true}
+          ref={(el) => {
+            if (el) el.indeterminate = reference === undefined;
+          }}
+          onChange={(e) => set({ reference: e.target.checked })}
+        />
+        <span>{t('drawingUi.dimReference')}</span>
+      </label>
+      <label className="pm-row">
+        <span>{t('drawingUi.dimPrecision')}</span>
+        <select data-field="batchPrecision" value={precision === undefined && dims.some((x) => x.precision !== undefined) ? 'mixed' : precision === undefined ? '' : String(precision)} onChange={(e) => e.target.value !== 'mixed' && set({ precision: e.target.value === '' ? null : Number(e.target.value) })}>
+          {common(dims.map((x) => x.precision)) === undefined && dims.some((x) => x.precision !== undefined) && <option value="mixed">{t('drawingUi.mixed')}</option>}
+          <option value="">{t('drawingUi.dimPrecisionAuto')}</option>
+          {[0, 1, 2, 3, 4].map((n) => (
+            <option key={n} value={n}>
+              {n}
+            </option>
+          ))}
+        </select>
+      </label>
+      <label className="pm-row">
+        <span>{t('drawingUi.dimTolerance')}</span>
+        <select
+          data-field="batchToleranceType"
+          value={kind}
+          onChange={(e) => {
+            const k = e.target.value;
+            if (k === 'mixed') return;
+            set({
+              tolerance: k === 'bilateral' ? { type: 'bilateral', upper: 0.05, lower: -0.05 } : k === 'fit' ? { type: 'fit', fit: 'H7' } : k === 'max' ? { type: 'max' } : k === 'min' ? { type: 'min' } : null,
+            });
+          }}
+        >
+          {kind === 'mixed' && <option value="mixed">{t('drawingUi.mixed')}</option>}
+          <option value="none">{t('drawingUi.dimTolNone')}</option>
+          <option value="bilateral">{t('drawingUi.dimTolBilateral')}</option>
+          <option value="max">{t('drawingUi.dimTolMax')}</option>
+          <option value="min">{t('drawingUi.dimTolMin')}</option>
+          {/* an angle has no size for an ISO 286 fit to come from: with one among them the class is not offered at all, rather than refused afterwards */}
+          {!hasAngle && <option value="fit">{t('drawingUi.dimTolFit')}</option>}
+        </select>
+      </label>
+      {hasAngle && <p className="muted">{t('drawingUi.dimBatchNoFit')}</p>}
+      {kind === 'bilateral' && (
+        <>
+          <label className="pm-row">
+            <span>{t('drawingUi.dimUpper')}</span>
+            <MixedNumber field="batchUpper" value={upper === undefined || Number.isNaN(upper) ? undefined : shown(upper)} onCommit={(v) => d.setDimensionsEach(ids, (x) => (x.tolerance?.type === 'bilateral' ? { tolerance: { ...x.tolerance, upper: v * perUnit } } : null))} />
+          </label>
+          <label className="pm-row">
+            <span>{t('drawingUi.dimLower')}</span>
+            <MixedNumber field="batchLower" value={lower === undefined || Number.isNaN(lower) ? undefined : shown(lower)} onCommit={(v) => d.setDimensionsEach(ids, (x) => (x.tolerance?.type === 'bilateral' ? { tolerance: { ...x.tolerance, lower: v * perUnit } } : null))} />
+          </label>
+        </>
+      )}
+      {kind === 'fit' && (
+        <label className="pm-row">
+          <span>{t('drawingUi.dimFit')}</span>
+          <FitBox value={fit ?? ''} onCommit={(f) => f && set({ tolerance: { type: 'fit', fit: f } })} />
+        </label>
+      )}
+      <div className="pm-row">
+        <button className="pm-button" data-action="batchDelete" onClick={() => d.deleteSelection()}>
+          {t('drawingUi.selDelete')}
+        </button>
+      </div>
     </div>
   );
 }

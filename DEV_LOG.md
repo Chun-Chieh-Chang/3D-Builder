@@ -1076,3 +1076,35 @@
 
 
 
+
+## 2026-10-13　D-I1a 工程圖多重選取與一次修改（ADR 0130）
+
+紅隊四問：
+1. **輸入破壞**：框選的點只要是 NaN 或 ∞，`selectionBox` 就明確拋出錯誤，不會靜默選到「全部」或「都沒選」；空的 batch、巢狀的 batch 都由命令層拒絕並說明原因；所選尺寸裡有角度時，不提供配合等級（不是送出去之後才失敗）。
+2. **相交破壞**：同一批同時刪除視圖和它上面的尺寸時，先扣除會被視圖帶走的項目，避免同一個項目被要求刪兩次、整批被拒；batch 全做或全不做。
+3. **依賴鏈**：model（`batch` 命令）→ drawing（框選幾何）→ store（`selection`、`pick`、`deleteSelection`、`setDimensions`、`setDimensionsEach`）→ Viewport（Ctrl、框選、Delete、高亮）→ 面板（選取列、批次區、清單的 Ctrl）→ i18n（中英對齊，`lint:i18n` OK）。
+4. **零 Mock**：框選幾何用獨立的取樣判定法比對；隨機測試斷言兩種結果都有出現。瀏覽器以真實零件和真實的 pointer 事件驗證。
+
+檢查：typecheck 0 錯誤；`lint:rules`、`lint:deps`、`lint:i18n` 通過；`tests/phase5` 282 項通過、1 項略過；`verify:ui` 工程圖 14 支有 11 支通過，3 支是既有失敗。
+
+## 2026-10-13　D-V 比照 SolidWorks 在圖紙上產生視圖與剖面（ADR 0131）
+
+紅隊四問：
+1. **輸入破壞**：游標座標是 NaN 時，`previewDerived`、`sideAt` 都不放置任何東西，`snapCut` 明確拋錯；放置的位置最近只能離母視圖 5 mm，不會壓在母視圖上。
+2. **相交破壞**：新視圖被擋在最小間距；加入視圖時，其他視圖因重新置中而移動的問題，用補償的 shift 解決，和插入包成同一個 batch。
+3. **依賴鏈**：drawing（`sideAt`、`previewDerived`、`turnLines`、`snapCut`）→ store（調色盤快取與視圖共用、`placeModelView`、`placeProjected`、`addSection` 的 flip、slide、shift）→ Viewport（調色盤拖放、投影模式、剖面預覽、Ctrl 自由放置）→ 面板（調色盤、工具按鈕、「以數值建立」）→ i18n（中英對齊）→ CSS。
+4. **零 Mock**：預覽線條與 3D 核心從同一視角直接投影的結果比對；放置規則用「實際插入後重新排版」驗證，不是用預覽函式驗證它自己。
+
+檢查：typecheck 0 錯誤；三項 lint 通過；`tests/phase5` 289 項通過、1 項略過；`verify:ui` 工程圖 14 支有 11 支通過，3 支是既有失敗。
+
+## 2026-10-13　D-I3 註解、基準、幾何公差、手動中心線（ADR 0132）＋ 側邊欄比照 SolidWorks（ADR 0133）
+
+紅隊四問（D-I3）：
+1. **輸入破壞**：公差值 ≤ 0、NaN、∞ 都拒絕；基準字母 I、O、Q、小寫、三個字母都拒絕；註解空白、超過 500 字、字高超出 1.8～20 mm 都拒絕；座標非有限值都拒絕；全部由命令層明確拋出並說明原因。
+2. **相交破壞**：基準被保留下來的公差框引用時不能刪（單獨刪或隨視圖刪都一樣）；改名時連動；形狀公差不可有基準，方向公差與跳動必須有基準，Ø 和 Ⓜ 只能用在允許的種類（ISO 1101、ISO 2692）。
+3. **依賴鏈**：model（schema 12、遷移、命令）→ drawing（`annotationItems`、向量符號、`threadItems`）→ scene → store（選取種類 `annotation`、工具、批次刪除的順序）→ Viewport（點兩下的流程、貼齊、拖曳、框選、高亮）→ 面板（工具、清單、編輯器）→ i18n（中英對齊）。
+4. **零 Mock**：14 種公差規則逐一斷言；繪製結果檢查實際線段與文字；瀏覽器以真實零件與真實 pointer 事件驗證。
+
+側邊欄（ADR 0133）：結構改成 SW 的 FeatureManager／PropertyManager 分頁、依內容切換的標題與群組框、常駐指令列、右側調色盤；所有欄位留在 DOM 裡，避免既有腳本失效。
+
+檢查：typecheck 0 錯誤；三項 lint 通過；全部測試 2654 項通過（schema 版本號的釘選斷言從 11 改成 12）；`verify:ui` 工程圖 15 支有 12 支通過，3 支是既有失敗。

@@ -5,6 +5,7 @@ import { CommandError } from './commands';
 import { isFilePath, joinPath, relativePath } from './paths';
 import { parseFit } from './tolerance';
 import type { Ref } from './schema';
+import { ANNOTATION_FIELDS, checkAnnotation, framesUsing, type Annotation, type AnnotationPatch } from './drawingAnnotations';
 
 /**
  * The drawing document (B1.1, C16, Phase 5): the sheet, the title block, and the views of a part or an assembly. Only the design intent is stored — which file a
@@ -12,7 +13,7 @@ import type { Ref } from './schema';
  * opened (exact hidden-line removal), so a drawing can never disagree with the model it shows.
  */
 
-export const DRAWING_SCHEMA_VERSION = 11;
+export const DRAWING_SCHEMA_VERSION = 12;
 
 export type SheetSize = 'A4' | 'A3' | 'A2' | 'A1' | 'A0';
 export const SHEET_SIZES: readonly SheetSize[] = ['A4', 'A3', 'A2', 'A1', 'A0'];
@@ -332,6 +333,8 @@ export interface DrawingDoc {
   dimensions: Dimension[];
   tables: DrawingTable[];
   surfaceFinishes: SurfaceFinish[];
+  /** Notes, datum symbols, feature control frames and the centre lines put by hand (v12, D-I3, ADR 0132). */
+  annotations: Annotation[];
   properties: Record<string, string>;
   idCounters: Record<string, number>;
 }
@@ -346,12 +349,19 @@ export function createEmptyDrawing(): DrawingDoc {
     dimensions: [],
     tables: [],
     surfaceFinishes: [],
+    annotations: [],
     properties: {},
     idCounters: {},
   };
 }
 
-export const drawingIdsInUse = (doc: DrawingDoc): Id[] => [...doc.views.map((v) => v.id), ...doc.dimensions.map((d) => d.id), ...doc.tables.map((x) => x.id), ...doc.surfaceFinishes.map((f) => f.id)];
+export const drawingIdsInUse = (doc: DrawingDoc): Id[] => [
+  ...doc.views.map((v) => v.id),
+  ...doc.dimensions.map((d) => d.id),
+  ...doc.tables.map((x) => x.id),
+  ...doc.surfaceFinishes.map((f) => f.id),
+  ...(doc.annotations ?? []).map((a) => a.id),
+];
 
 export type DrawingCommand =
   /** Changes the sheet: its size, orientation, projection, scale or (`shift: null`: take it back) the shift of the arrangement (C16.1). */
@@ -378,7 +388,21 @@ export type DrawingCommand =
   | { type: 'insertSurfaceFinishes'; finishes: SurfaceFinish[] }
   /** Changes a surface finish: what is given replaces what is there; `null` takes a field away. */
   | { type: 'setSurfaceFinish'; finishId: Id; patch: SurfaceFinishPatch }
-  | { type: 'deleteSurfaceFinishes'; finishIds: Id[] };
+  | { type: 'deleteSurfaceFinishes'; finishIds: Id[] }
+  /** Adds annotations (D-I3): notes, datum symbols, feature control frames, centre lines and marks, each with its own new id, on views that are there. */
+  | { type: 'insertAnnotations'; annotations: Annotation[] }
+  /**
+   * Changes an annotation: what is given replaces what is there; `null` takes an optional field away. A datum's new letter goes into every frame that refers
+   * to it, so that renaming a datum never leaves a frame pointing at nothing.
+   */
+  | { type: 'setAnnotation'; annotationId: Id; patch: AnnotationPatch }
+  /** Deletes annotations; a datum that a frame which stays refers to is not deleted (the frame would point at nothing), and that is said. */
+  | { type: 'deleteAnnotations'; annotationIds: Id[] }
+  /**
+   * Several commands as one step (D-I1a, ADR 0130): what is done to everything chosen at once — the same tolerance on five dimensions, deleting what is chosen —
+   * is undone at once, and is done wholly or not at all (the first that is refused refuses them all and leaves the document as it was). Not nested.
+   */
+  | { type: 'batch'; commands: DrawingCommand[] };
 
 /** What `setSurfaceFinish` may change; `null` takes the field away (the symbol back to its default). */
 export type SurfaceFinishPatch = {
@@ -618,6 +642,12 @@ export function mutateDrawing(draft: Draft<DrawingDoc>, cmd: DrawingCommand): vo
       // and the surface finishes drawn on them
       countersFor(draft.surfaceFinishes.filter((f) => ids.has(f.view)).map((f) => f.id), draft.idCounters);
       draft.surfaceFinishes = draft.surfaceFinishes.filter((f) => !ids.has(f.view));
+      // and the annotations, unless a datum among them is what a frame on a view that stays refers to
+      const annotations = (draft.annotations ?? []) as Annotation[];
+      const going = annotations.filter((a) => ids.has(a.view));
+      refuseOrphanedFrames(annotations, new Set(going.map((a) => a.id)));
+      countersFor(going.map((a) => a.id), draft.idCounters);
+      draft.annotations = annotations.filter((a) => !ids.has(a.view)) as Draft<Annotation>[];
       return;
     }
     case 'insertDimensions': {
@@ -743,6 +773,64 @@ export function mutateDrawing(draft: Draft<DrawingDoc>, cmd: DrawingCommand): vo
       Object.assign(f, next);
       return;
     }
+    case 'insertAnnotations': {
+      const inUse = new Set(drawingIdsInUse(draft as DrawingDoc));
+      const all = [...((draft.annotations ?? []) as Annotation[])];
+      // in the order given, so that a frame may refer to a datum added with it
+      for (const a of cmd.annotations) {
+        checkAnnotation(a, (id) => draft.views.some((v) => v.id === id), all);
+        if (inUse.has(a.id)) throw new CommandError(t('drawing.idInUse', { id: a.id }));
+        inUse.add(a.id);
+        all.push(a);
+      }
+      draft.annotations ??= [];
+      for (const a of cmd.annotations) draft.annotations.push(JSON.parse(JSON.stringify(a)) as Draft<Annotation>);
+      countersFor(cmd.annotations.map((a) => a.id), draft.idCounters);
+      return;
+    }
+    case 'setAnnotation': {
+      const list = (draft.annotations ?? []) as Annotation[];
+      const a = list.find((x) => x.id === cmd.annotationId);
+      if (!a) throw new CommandError(t('drawing.noAnnotation', { id: cmd.annotationId }));
+      const fields = ANNOTATION_FIELDS[a.kind];
+      const next = JSON.parse(JSON.stringify(a)) as Record<string, unknown>;
+      for (const [k, v] of Object.entries(cmd.patch)) {
+        if (!fields.set.includes(k)) throw new CommandError(t('drawing.notForKind', { field: k, kind: a.kind }));
+        if (v === null || v === undefined) {
+          if (!fields.optional.includes(k)) throw new CommandError(t('drawing.annRequired', { field: k }));
+          delete next[k];
+        } else next[k] = JSON.parse(JSON.stringify(v));
+      }
+      // a frame without Ø or without Ⓜ simply has no such field
+      if (next.diameter === false) delete next.diameter;
+      const others = list.filter((x) => x.id !== a.id);
+      // a datum renamed: the frames that refer to it are renamed with it (checked as they will be)
+      const renamed = a.kind === 'datum' && typeof next.label === 'string' && next.label !== a.label ? { from: a.label, to: next.label as string } : null;
+      const after = renamed ? others.map((o) => (o.kind === 'fcf' ? { ...o, datums: o.datums.map((d) => (d.label === renamed.from ? { ...d, label: renamed.to } : d)) } : o)) : others;
+      checkAnnotation(next as unknown as Annotation, (id) => draft.views.some((v) => v.id === id), after);
+      for (const k of Object.keys(a)) delete (a as unknown as Record<string, unknown>)[k];
+      Object.assign(a, next);
+      if (renamed) for (const o of list) if (o.kind === 'fcf') for (const d of o.datums) if (d.label === renamed.from) d.label = renamed.to;
+      return;
+    }
+    case 'deleteAnnotations': {
+      const ids = new Set(cmd.annotationIds);
+      const list = (draft.annotations ?? []) as Annotation[];
+      for (const id of ids) if (!list.some((a) => a.id === id)) throw new CommandError(t('drawing.noAnnotation', { id }));
+      refuseOrphanedFrames(list, ids);
+      countersFor(ids, draft.idCounters);
+      draft.annotations = list.filter((a) => !ids.has(a.id)) as Draft<Annotation>[];
+      return;
+    }
+    case 'batch': {
+      if (!Array.isArray(cmd.commands) || cmd.commands.length === 0) throw new CommandError(t('drawing.batchEmpty'));
+      // every command sees what the ones before it did; a refusal throws out of the recipe, so immer keeps the document as it was
+      for (const c of cmd.commands) {
+        if (c.type === 'batch') throw new CommandError(t('drawing.batchNested'));
+        mutateDrawing(draft, c);
+      }
+      return;
+    }
     case 'deleteSurfaceFinishes': {
       const ids = new Set(cmd.finishIds);
       for (const id of ids) if (!draft.surfaceFinishes.some((f) => f.id === id)) throw new CommandError(t('drawing.noSurfaceFinish', { id }));
@@ -750,6 +838,15 @@ export function mutateDrawing(draft: Draft<DrawingDoc>, cmd: DrawingCommand): vo
       draft.surfaceFinishes = draft.surfaceFinishes.filter((f) => !ids.has(f.id));
       return;
     }
+  }
+}
+
+/** Throws when deleting `going` would take a datum away that a frame which stays refers to. */
+function refuseOrphanedFrames(annotations: readonly Annotation[], going: ReadonlySet<Id>): void {
+  for (const a of annotations) {
+    if (a.kind !== 'datum' || !going.has(a.id)) continue;
+    const staying = framesUsing(annotations, a.label).filter((f) => !going.has(f.id));
+    if (staying.length > 0) throw new CommandError(t('drawing.datumInUse', { label: a.label, n: String(staying.length) }));
   }
 }
 

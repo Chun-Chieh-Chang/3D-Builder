@@ -211,3 +211,97 @@ export function planDimension(picks: readonly Pickable[], p: P2, placed: PlacedV
 
 /** Where an element is along x (k = 0) or y (k = 1) of its view: a plane at its coordinate, a circle at its middle, a slanted face at its middle. */
 const coordOf = (f: Pickable, k: 0 | 1): number => (f.type === 'plane' ? (f.axis === (k === 0 ? 'x' : 'y') ? f.coord : 0) : f.type === 'circle' ? f.centre[k] : f.at[k]);
+
+// ---------------------------------------------------------------- choosing several at once (D-I1a, ADR 0130)
+
+/** A rectangle of the sheet (mm), its corners in any order. */
+export interface SheetRect {
+  x0: number;
+  y0: number;
+  x1: number;
+  y1: number;
+}
+
+/**
+ * The box dragged from `from` to `to` on the sheet, and how it chooses, as SolidWorks does: dragged to the right it is a window (what lies wholly inside is
+ * chosen), dragged to the left a crossing (what it touches is chosen too). A point that is not a finite number is refused: a box made of it would choose
+ * nothing or everything, and neither is what the pointer did.
+ */
+export function selectionBox(from: P2, to: P2): { rect: SheetRect; crossing: boolean } {
+  if (![...from, ...to].every(Number.isFinite)) throw new Error(t('drawing.badPosition'));
+  return { rect: { x0: Math.min(from[0], to[0]), y0: Math.min(from[1], to[1]), x1: Math.max(from[0], to[0]), y1: Math.max(from[1], to[1]) }, crossing: to[0] < from[0] };
+}
+
+const inside = (r: SheetRect, x: number, y: number) => x >= r.x0 && x <= r.x1 && y >= r.y0 && y <= r.y1;
+
+/** Whether the segment from a to b has a point in the rectangle (Liang–Barsky clipping). */
+export function segmentTouches(r: SheetRect, a: P2, b: P2): boolean {
+  if (inside(r, a[0], a[1]) || inside(r, b[0], b[1])) return true;
+  const dx = b[0] - a[0];
+  const dy = b[1] - a[1];
+  let t0 = 0;
+  let t1 = 1;
+  for (const [p, q] of [[-dx, a[0] - r.x0], [dx, r.x1 - a[0]], [-dy, a[1] - r.y0], [dy, r.y1 - a[1]]] as const) {
+    if (p === 0) {
+      if (q < 0) return false;
+      continue;
+    }
+    const k = q / p;
+    if (p < 0) t0 = Math.max(t0, k);
+    else t1 = Math.min(t1, k);
+    if (t0 > t1) return false;
+  }
+  return true;
+}
+
+/** Whether what a set of scene items draws lies wholly in the rectangle (`crossing` false) or touches it (`crossing` true). Texts count by their boxes. */
+export function itemsInBox(items: readonly SceneItem[], r: SheetRect, crossing: boolean): boolean {
+  if (items.length === 0) return false;
+  for (const it of items) {
+    if (it.kind === 'polyline') {
+      const n = it.points.length / 2;
+      const pt = (i: number): P2 => [it.points[2 * (i % n)]!, it.points[2 * (i % n) + 1]!];
+      if (crossing) {
+        if (n === 1 && inside(r, ...pt(0))) return true;
+        for (let i = 0; i + 1 < n + (it.closed ? 1 : 0); i++) if (segmentTouches(r, pt(i), pt(i + 1))) return true;
+      } else for (let i = 0; i < n; i++) if (!inside(r, ...pt(i))) return false;
+    } else {
+      const b = itemsBounds([it]);
+      if (!b) continue;
+      if (crossing) {
+        if (b.x0 <= r.x1 && b.x1 >= r.x0 && b.y0 <= r.y1 && b.y1 >= r.y0) return true;
+      } else if (!(inside(r, b.x0, b.y0) && inside(r, b.x1, b.y1))) return false;
+    }
+  }
+  return !crossing;
+}
+
+/** The ids of the dimensions (scene items grouped by `group`) a box chooses, in the order they are first drawn. */
+export function dimensionsInBox(items: readonly SceneItem[], r: SheetRect, crossing: boolean): string[] {
+  const groups = new Map<string, SceneItem[]>();
+  for (const it of items) if (it.group) groups.set(it.group, [...(groups.get(it.group) ?? []), it]);
+  return [...groups].filter(([, g]) => itemsInBox(g, r, crossing)).map(([id]) => id);
+}
+
+/** Whether a box of the sheet (a table's, a symbol's) is chosen by the rectangle: wholly inside it, or (crossing) overlapping it. */
+export function rectInBox(b: { x: number; y: number; w: number; h: number }, r: SheetRect, crossing: boolean): boolean {
+  return crossing ? b.x <= r.x1 && b.x + b.w >= r.x0 && b.y <= r.y1 && b.y + b.h >= r.y0 : inside(r, b.x, b.y) && inside(r, b.x + b.w, b.y + b.h);
+}
+
+/**
+ * Where a cutting line drawn at `coord` (along the view's x for a vertical line, its y for a horizontal one, in view coordinates at full size) snaps to (D-V), as
+ * SolidWorks infers it: the middle of a circle, an edge-on plane, or the middle of the view's box, whichever is nearest within `tol`; else `coord` itself.
+ */
+export function snapCut(features: readonly ViewFeature[], box: { min: [number, number]; max: [number, number] } | null, coord: number, vertical: boolean, tol: number): { coord: number; snapped: boolean } {
+  if (!Number.isFinite(coord)) throw new Error(t('drawing.badPosition'));
+  const k = vertical ? 0 : 1;
+  const candidates: number[] = [];
+  for (const f of features) {
+    if (f.type === 'circle') candidates.push(f.centre[k]);
+    else if (f.type === 'plane' && f.axis === (vertical ? 'x' : 'y')) candidates.push(f.coord);
+  }
+  if (box) candidates.push((box.min[k] + box.max[k]) / 2);
+  let best: number | null = null;
+  for (const c of candidates) if (Math.abs(c - coord) <= tol && (best === null || Math.abs(c - coord) < Math.abs(best - coord))) best = c;
+  return best === null ? { coord, snapped: false } : { coord: best, snapped: true };
+}

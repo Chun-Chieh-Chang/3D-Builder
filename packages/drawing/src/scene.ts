@@ -1,6 +1,7 @@
 import { getLocale, t, withLocale } from '@3db/i18n';
 import { axesOf, sectionArrow, type DetailDrawingView, type DrawingDoc, type DrawingView, type Id, type Scale, type SectionDrawingView, type TitleField, type ViewFeature, type ViewSide } from '@3db/model';
-import { centreItems, holeRows, holeTableBox, holeTableItems, type HoleRow } from './annotation';
+import { centreItems, holeRows, holeTableBox, holeTableItems, threadItems, type HoleRow } from './annotation';
+import { annotationItems } from './gdt';
 import { balloonSpots, bomTableBox, bomTableItems, spotItems, type BalloonSpot, type ViewBom } from './bomTable';
 import { evaluateDimension, type DimensionOutcome, type ElementsResult } from './dimension';
 import { circlePolyline, hatch } from './geometry';
@@ -201,6 +202,8 @@ function buildSceneIn(
   const placed = layoutViews(doc, lines);
   const resolved = resolveLines(doc, lines);
   const items: SceneItem[] = [...sheetItems(doc)];
+  // what a note's $PRP:key stands for: a field of the title block, else a property of the drawing
+  const lookup = (key: string): string | undefined => (doc.title as Record<string, string | undefined>)[key] ?? doc.properties?.[key];
   for (const v of doc.views) {
     const own = placed.get(v.id)!;
     items.push(...viewItems(v, resolved.get(v.id), own));
@@ -210,6 +213,8 @@ function buildSceneIn(
     if (v.kind !== 'section' && v.kind !== 'detail') items.push({ kind: 'text', at: [own.at[0], own.at[1] - own.h / 2 - 8], text: v.name, height: 5, anchor: 'center' });
     items.push(...centreItems(v, features.get(v.id) ?? [], own));
     items.push(...surfaceFinishItems(doc.surfaceFinishes.filter((f) => f.view === v.id), own));
+    items.push(...threadItems(v, features.get(v.id) ?? [], own));
+    items.push(...annotationItems((doc.annotations ?? []).filter((a) => a.view === v.id), own, lookup, doc.sheet.unit ?? 'mm'));
     const parent = v.kind === 'section' || v.kind === 'detail' ? placed.get(v.parent) : undefined;
     if (v.kind === 'section' && parent) items.push(...sectionItems(v, parent, own));
     if (v.kind === 'detail' && parent) items.push(...detailItems(v, parent, own, scaleOf(doc, v)));

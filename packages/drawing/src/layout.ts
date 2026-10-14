@@ -1,4 +1,4 @@
-import { isDerived, sectionArrow, sectionSide, type DrawingDoc, type DrawingSheet, type DrawingView, type Id, type Scale, type ViewName, type ViewSide } from '@3db/model';
+import { isDerived, rightOf, sectionArrow, sectionSide, type ViewAxes, type DrawingDoc, type DrawingSheet, type DrawingView, type Id, type Scale, type ViewName, type ViewSide } from '@3db/model';
 import { clipToCircle } from './geometry';
 import { sheetMetrics, type Rect } from './sheet';
 
@@ -326,4 +326,98 @@ export function suggestScale(views: readonly DrawingView[], sizes: ReadonlyMap<I
     if (x1 - x0 <= area.w + 1e-9 && y1 - y0 <= area.h + 1e-9) return scale;
   }
   return [1, 100];
+}
+
+// ---------------------------------------------------------------- placing views with the pointer (D-V, ADR 0131)
+
+/**
+ * Where the pointer is about a placed view, for the projected view it asks for (as SolidWorks reads it): beside the box (left or right of it, within its height
+ * band or nearer that way) a view to that side, above or below it one up or down, off a corner (outside both bands) the isometric view. Null inside the box: no
+ * view is asked for there.
+ */
+export function sideAt(parent: Pick<PlacedView, 'at' | 'w' | 'h'>, p: readonly [number, number]): ViewSide | 'corner' | null {
+  const dx = p[0] - parent.at[0];
+  const dy = p[1] - parent.at[1];
+  const outX = Math.abs(dx) > parent.w / 2;
+  const outY = Math.abs(dy) > parent.h / 2;
+  if (!outX && !outY) return null;
+  if (outX && outY) {
+    // off a corner, but only clearly so: within a quarter of the gap of a band it is still the side it is nearer
+    const byX = Math.abs(dx) - parent.w / 2;
+    const byY = Math.abs(dy) - parent.h / 2;
+    if (byY < VIEW_GAP / 4 && byX > byY) return dx > 0 ? 'right' : 'left';
+    if (byX < VIEW_GAP / 4 && byY > byX) return dy > 0 ? 'up' : 'down';
+    return 'corner';
+  }
+  return outX ? (dx > 0 ? 'right' : 'left') : dy > 0 ? 'up' : 'down';
+}
+
+/** The least gap (mm) a view placed with the pointer keeps from its parent: it may come closer than the layout's, but not onto the parent. */
+export const MIN_PLACE_GAP = 5;
+
+/**
+ * Where a derived view would go if it were added now and slid along its line to the pointer (D-V): it is laid out with the rest (in line with its parent, on its
+ * side), then moved along that line so its middle is level with the pointer, but never nearer its parent than `MIN_PLACE_GAP`. `view` is the view as it would be
+ * added (with no slide and no position), `lines` its lines at full size.
+ *
+ * Adding a view to the views laid out together centres them again on the sheet, which would move every one of them — and the new view off the point clicked.
+ * So `shift` is the sheet's shift that keeps them where they are now (null when nothing would move), and the slide is worked out with it. Returns where the view
+ * is drawn, its slide and that shift; null when it cannot be laid out (its parent has no place yet).
+ */
+export function previewDerived(
+  doc: DrawingDoc,
+  rawLines: ReadonlyMap<Id, ViewLines | null>,
+  view: Exclude<DrawingView, { kind?: 'model' }>,
+  lines: ViewLines | null,
+  pointer: readonly [number, number],
+): { placed: PlacedView; slide: number; shift: [number, number] | null } | null {
+  if (![pointer[0], pointer[1]].every(Number.isFinite)) return null;
+  const probe = { ...view, slide: undefined, at: undefined } as DrawingView;
+  const all = new Map(rawLines).set(probe.id, lines);
+  const now = layoutViews(doc, rawLines).get(view.parent);
+  const first = layoutViews({ ...doc, views: [...doc.views, probe] }, all).get(view.parent);
+  if (!now || !first) return null;
+  // the shift that puts the parent (and so everything laid out with it) back where it is now
+  const by: [number, number] = [now.at[0] - first.at[0], now.at[1] - first.at[1]];
+  const moves = Math.hypot(by[0], by[1]) > 1e-6;
+  const was = doc.sheet.shift ?? [0, 0];
+  const shift: [number, number] | null = moves ? [Math.round((was[0] + by[0]) * 100) / 100, Math.round((was[1] + by[1]) * 100) / 100] : null;
+  const withIt: DrawingDoc = { ...doc, sheet: { ...doc.sheet, ...(shift ? { shift } : {}) }, views: [...doc.views, probe] };
+  const layout = layoutViews(withIt, all);
+  const placed = layout.get(probe.id);
+  const parent = layout.get(view.parent);
+  const axis = slideAxis(withIt, probe);
+  if (!placed || !parent) return null;
+  if (axis === null || placed.w <= 0) return { placed, slide: 0, shift };
+  const half = (axis === 0 ? placed.w : placed.h) / 2;
+  const parentHalf = (axis === 0 ? parent.w : parent.h) / 2;
+  const sign = Math.sign(placed.at[axis] - parent.at[axis]) || 1;
+  // the nearest the middle may be to the parent's middle, on its side
+  const nearest = parent.at[axis] + sign * (parentHalf + MIN_PLACE_GAP + half);
+  const want = sign > 0 ? Math.max(pointer[axis], nearest) : Math.min(pointer[axis], nearest);
+  const slide = Math.round((want - placed.at[axis]) * 100) / 100;
+  const at: [number, number] = axis === 0 ? [placed.at[0] + slide, placed.at[1]] : [placed.at[0], placed.at[1] + slide];
+  return { placed: { ...placed, at }, slide, shift };
+}
+
+/**
+ * The lines of a view seen from `from`, as they are seen from `to` when both look the same way (D-V): only which way is up on the sheet differs, so each point is
+ * turned in the plane of the sheet. Null when the two do not look the same way (then the lines are not the same lines). Exact: no new projection is made.
+ */
+export function turnLines(lines: ViewLines, from: ViewAxes, to: ViewAxes): ViewLines | null {
+  const dot = (a: readonly number[], b: readonly number[]) => a[0]! * b[0]! + a[1]! * b[1]! + a[2]! * b[2]!;
+  if (dot(from.dir, to.dir) / Math.hypot(...from.dir) / Math.hypot(...to.dir) < 1 - 1e-9) return null;
+  const r1 = rightOf(from);
+  const r2 = rightOf(to);
+  const u1 = from.up;
+  const u2 = to.up;
+  // the new coordinates of a point from the old ones: both pairs of axes lie in the same plane, square to the direction looked along
+  const [a, b, c, e] = [dot(r2, r1), dot(r2, u1), dot(u2, r1), dot(u2, u1)];
+  if (Math.abs(a - 1) < 1e-9 && Math.abs(e - 1) < 1e-9) return lines;
+  const turn = (l: readonly number[]) => l.map((_, i) => (i % 2 === 0 ? a * l[i]! + b * l[i + 1]! : c * l[i - 1]! + e * l[i]!));
+  const visible = lines.visible.map(turn);
+  const hidden = lines.hidden.map(turn);
+  const xs = visible.flatMap((l) => l.filter((_, i) => i % 2 === 0));
+  const ys = visible.flatMap((l) => l.filter((_, i) => i % 2 === 1));
+  return { visible, hidden, box: xs.length ? { min: [Math.min(...xs), Math.min(...ys)], max: [Math.max(...xs), Math.max(...ys)] } : null };
 }

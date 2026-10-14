@@ -37,9 +37,13 @@ import {
   type ViewFeature,
   type ViewName,
   type ViewSide,
+  viewVectors,
+  DATUM_LABEL,
+  type Annotation,
+  type AnnotationPatch,
 } from '@3db/model';
 import { drawingFileName, writeDrawingFile } from '@3db/io';
-import { FontError, readTrueType, toDxf, toPdf, type TrueTypeFont } from '@3db/drawing';
+import { FontError, readTrueType, toDxf, toPdf, turnLines, type TrueTypeFont } from '@3db/drawing';
 import { autoDimensions, buildScene, type DimensionDraft, type Pickable, FIRST_OFFSET, OFFSET_STEP, ratio, scaleOf, STANDARD_SCALES, centreViews, fitViews, toSvg, type AutoDimensionOptions, type DimensionOutcome, type ElementsResult, type HoleRow, type PlacedView, type ViewBom, type Scene, type ViewLines } from '@3db/drawing';
 import type { Remote } from 'comlink';
 import { download, fileIn, pathIn, pickDrawingSaveTarget, pickFontFile, writeFile } from '../files';
@@ -78,7 +82,56 @@ export interface DrawingSource {
  * is to be (and dragged along it) or where the middle of the circle is (and dragged out to its edge), on the view it is over. `surface`: the next point on the sheet puts a
  * surface finish symbol on the view under it (C16.5).
  */
-export type DrawingTool = { kind: 'dimension'; picks: { view: Id; feature: Pickable }[] } | { kind: 'section'; vertical?: boolean } | { kind: 'detail' } | { kind: 'surface' };
+/**
+ * One thing chosen on the sheet (D-I1a, ADR 0130). Several can be chosen at once (Ctrl and a click, or a box dragged over the paper); what is done to the
+ * choice — a tolerance, deleting it — is one step of the history.
+ */
+export type DrawingPick = { kind: 'view' | 'dimension' | 'finish' | 'table' | 'annotation'; id: Id };
+export type PickMode = 'replace' | 'toggle' | 'add';
+
+const samePick = (a: DrawingPick, b: DrawingPick) => a.kind === b.kind && a.id === b.id;
+
+/** Whether what a pick names is in the document. */
+const pickExists = (doc: DrawingDoc, p: DrawingPick): boolean =>
+  p.kind === 'view'
+    ? doc.views.some((v) => v.id === p.id)
+    : p.kind === 'dimension'
+      ? doc.dimensions.some((d) => d.id === p.id)
+      : p.kind === 'finish'
+        ? doc.surfaceFinishes.some((f) => f.id === p.id)
+        : p.kind === 'annotation'
+          ? (doc.annotations ?? []).some((a) => a.id === p.id)
+          : doc.tables.some((x) => x.id === p.id);
+
+/** What an annotation tool makes (D-I3). */
+export type AnnotateWhat = Annotation['kind'];
+
+/** Omit over each member of a union (the plain Omit merges them). */
+type DistributiveOmit<T, K extends keyof never> = T extends unknown ? Omit<T, K> : never;
+
+export type DrawingTool =
+  | { kind: 'dimension'; picks: { view: Id; feature: Pickable }[] }
+  | { kind: 'section'; vertical?: boolean }
+  | { kind: 'detail' }
+  | { kind: 'surface' }
+  /**
+   * A view from the palette (D-V, ADR 0131) on its way to the sheet: it follows the pointer and the next click puts it there. `dragged`: it was pressed on in the
+   * palette and is being dragged, so letting go over the sheet puts it there too.
+   */
+  | { kind: 'placeView'; direction: ViewName; source: string; dragged?: boolean }
+  /**
+   * Projected views of `parent`, as SolidWorks makes them: the view the pointer is beside is shown where it would go, in line with the parent, and a click puts it
+   * there; the pointer off a corner shows the isometric view. The tool stays until Esc, for the next one.
+   */
+  | { kind: 'project'; parent: Id }
+  /**
+   * An annotation (D-I3): a note, a frame or a datum takes two clicks (the feature it is about, then where it goes; for a note or a frame the same place twice
+   * means no leader); a centre line two points; a centre mark one circle. `first` is the first click, in the view it was made on.
+   */
+  | { kind: 'annotate'; what: AnnotateWhat; first?: { view: Id; at: [number, number] } };
+
+/** The view directions the palette offers (the flat pattern is not one: only a sheet metal part has it, and it is added from the list). */
+export const PALETTE_DIRECTIONS: readonly ViewName[] = ['front', 'top', 'right', 'back', 'bottom', 'left', 'isometric'];
 
 export interface DrawingState {
   doc: DrawingDoc;
@@ -107,6 +160,15 @@ export interface DrawingState {
   dimension: Id | null;
   /** The surface finish chosen on the sheet (or in the panel), as a dimension is (C16.5). */
   finish: Id | null;
+  /**
+   * Everything chosen, in the order it was chosen. `selected`, `dimension` and `finish` are the last view, dimension and symbol chosen (or the view a dimension
+   * is on): the one the panel shows and the one a drag moves, as SolidWorks's PropertyManager shows the last thing picked.
+   */
+  selection: DrawingPick[];
+  /** The annotation chosen last (D-I3): the one the annotations panel edits. */
+  annotation: Id | null;
+  /** The lines of the palette's views (D-V): the part the drawing's first model view shows, from each direction; null while there is no part. */
+  palette: { source: string; lines: Partial<Record<ViewName, ViewLines | null>> } | null;
   tool: DrawingTool | null;
   /** The lines are being worked out. */
   computing: boolean;
@@ -176,6 +238,9 @@ export class DrawingStore {
       selected: null,
       dimension: null,
       finish: null,
+      selection: [],
+      annotation: null,
+      palette: null,
       tool: null,
       computing: false,
       fitRequest: 1,
@@ -205,7 +270,10 @@ export class DrawingStore {
     const selected = this.state.selected;
     const dimension = this.state.dimension;
     const finish = this.state.finish;
+    const annotation = this.state.annotation;
+    const selection = this.state.selection.filter((p) => pickExists(doc, p));
     this.set({
+      ...(selection.length !== this.state.selection.length ? { selection } : {}),
       doc,
       folder: this.folder,
       canUndo: this.history.canUndo,
@@ -214,6 +282,7 @@ export class DrawingStore {
       selected: selected && doc.views.some((v) => v.id === selected) ? selected : null,
       dimension: dimension && doc.dimensions.some((d) => d.id === dimension) ? dimension : null,
       finish: finish && doc.surfaceFinishes.some((f) => f.id === finish) ? finish : null,
+      annotation: annotation && (doc.annotations ?? []).some((a) => a.id === annotation) ? annotation : null,
     });
     this.loadSources();
     this.refreshBoms();
@@ -239,27 +308,122 @@ export class DrawingStore {
     this.history.redo();
   }
 
+  /** Chooses a view (and only it); null lets go of every view chosen. The panel is about the view chosen. */
   select(id: Id | null): void {
-    this.set({ selected: id });
+    if (id === null) return this.set({ selected: null, selection: this.state.selection.filter((p) => p.kind !== 'view') });
+    this.pick([{ kind: 'view', id }], 'replace');
   }
 
-  /** Chooses a dimension (and the view it is on, which the dimensions panel is about); null lets go of it. */
+  /** Chooses a dimension (and the view it is on, which the dimensions panel is about); null lets go of every dimension chosen. */
   selectDimension(id: Id | null): void {
-    const dim = id ? this.history.doc.dimensions.find((x) => x.id === id) : undefined;
-    this.set({ dimension: dim ? dim.id : null, ...(dim ? { selected: dim.view } : {}) });
+    if (id === null) return this.set({ dimension: null, selection: this.state.selection.filter((p) => p.kind !== 'dimension') });
+    this.pick([{ kind: 'dimension', id }], 'replace');
   }
 
-  /** Chooses a surface finish (and the view it is on, which the annotations panel is about); null lets go of it. */
+  /** Chooses a surface finish (and the view it is on, which the annotations panel is about); null lets go of every one chosen. */
   selectSurfaceFinish(id: Id | null): void {
-    const f = id ? this.history.doc.surfaceFinishes.find((x) => x.id === id) : undefined;
-    this.set({ finish: f ? f.id : null, ...(f ? { selected: f.view } : {}) });
+    if (id === null) return this.set({ finish: null, selection: this.state.selection.filter((p) => p.kind !== 'finish') });
+    this.pick([{ kind: 'finish', id }], 'replace');
+  }
+
+  /**
+   * Chooses things (D-I1a): `replace` makes them the whole choice, `add` adds them, `toggle` adds each that was not chosen and takes away each that was (Ctrl and a
+   * click). Ids that are not in the document are left out. The last one chosen that is still chosen becomes the one the panel shows.
+   */
+  pick(items: readonly DrawingPick[], mode: PickMode): void {
+    const doc = this.history.doc;
+    const real = items.filter((p) => pickExists(doc, p));
+    let next: DrawingPick[];
+    if (mode === 'replace') next = real.filter((p, i) => real.findIndex((q) => samePick(p, q)) === i);
+    else {
+      next = [...this.state.selection];
+      for (const p of real) {
+        const at = next.findIndex((q) => samePick(p, q));
+        if (at < 0) next.push(p);
+        else if (mode === 'toggle') next.splice(at, 1);
+      }
+    }
+    this.set(this.primaryOf(next));
+  }
+
+  /** Lets go of everything chosen. */
+  clearSelection(): void {
+    this.set({ selection: [], selected: null, dimension: null, finish: null, annotation: null });
+  }
+
+  /** The choice and, from it, the last view, dimension and symbol chosen; a dimension, symbol or table makes the view it is on the panel's. */
+  private primaryOf(selection: DrawingPick[]): Pick<DrawingState, 'selection' | 'selected' | 'dimension' | 'finish' | 'annotation'> {
+    const doc = this.history.doc;
+    const last = (kind: DrawingPick['kind']) => [...selection].reverse().find((p) => p.kind === kind)?.id ?? null;
+    const tail = selection[selection.length - 1];
+    const viewOfTail =
+      tail?.kind === 'dimension' ? doc.dimensions.find((d) => d.id === tail.id)?.view : tail?.kind === 'finish' ? doc.surfaceFinishes.find((f) => f.id === tail.id)?.view : tail?.kind === 'table' ? doc.tables.find((x) => x.id === tail.id)?.view : tail?.kind === 'annotation' ? (doc.annotations ?? []).find((a) => a.id === tail.id)?.view : undefined;
+    const selected = tail?.kind === 'view' ? tail.id : (viewOfTail ?? last('view') ?? (selection.length === 0 ? null : this.state.selected));
+    return { selection, selected, dimension: last('dimension'), finish: last('finish'), annotation: last('annotation') };
+  }
+
+  /** The ids of what is chosen, of one kind. */
+  chosen(kind: DrawingPick['kind']): Id[] {
+    return this.state.selection.filter((p) => p.kind === kind).map((p) => p.id);
+  }
+
+  /**
+   * Deletes everything chosen, as one step. The dimensions, symbols and tables go first and the views last: a view takes its derived views and what is drawn on
+   * them with it, so what is chosen on a view that goes anyway is not asked for twice.
+   */
+  deleteSelection(): boolean {
+    const doc = this.history.doc;
+    const gone = new Set(this.chosen('view'));
+    for (let grew = true; grew; ) {
+      grew = false;
+      for (const v of doc.views) if (isDerived(v) && gone.has(v.parent) && !gone.has(v.id)) grew = !!gone.add(v.id);
+    }
+    const onKept = <T extends { id: Id; view: Id }>(ids: Id[], all: readonly T[]) => ids.filter((id) => !gone.has(all.find((x) => x.id === id)?.view ?? ''));
+    const dims = onKept(this.chosen('dimension'), doc.dimensions);
+    const finishes = onKept(this.chosen('finish'), doc.surfaceFinishes);
+    const tables = onKept(this.chosen('table'), doc.tables);
+    const annotations = onKept(this.chosen('annotation'), doc.annotations ?? []);
+    const views = this.chosen('view');
+    const commands: DrawingCommand[] = [];
+    // the annotations before the views: a datum deleted with the frames that refer to it goes, which deleting its view first would refuse
+    if (annotations.length) commands.push({ type: 'deleteAnnotations', annotationIds: annotations });
+    if (dims.length) commands.push({ type: 'deleteDimensions', dimensionIds: dims });
+    if (finishes.length) commands.push({ type: 'deleteSurfaceFinishes', finishIds: finishes });
+    if (tables.length) commands.push({ type: 'deleteTables', tableIds: tables });
+    if (views.length) commands.push({ type: 'deleteViews', viewIds: views });
+    if (commands.length === 0) return false;
+    const ok = this.execute(commands.length === 1 ? commands[0]! : { type: 'batch', commands });
+    if (ok) this.clearSelection();
+    return ok;
+  }
+
+  /**
+   * A change worked out for each dimension in `ids` from what it is (null: leave that one alone), as one step. For the limits: the upper limit typed for five
+   * dimensions keeps each one's own lower limit.
+   */
+  setDimensionsEach(ids: readonly Id[], patchOf: (d: Dimension) => DimensionPatch | null): boolean {
+    const doc = this.history.doc;
+    const commands = ids.flatMap((id): DrawingCommand[] => {
+      const dim = doc.dimensions.find((x) => x.id === id);
+      const patch = dim ? patchOf(dim) : null;
+      return patch ? [{ type: 'setDimension', dimensionId: id, patch }] : [];
+    });
+    if (commands.length === 0) return false;
+    return this.execute(commands.length === 1 ? commands[0]! : { type: 'batch', commands });
+  }
+
+  /** The same change to every dimension in `ids`, as one step: wholly or, if one of them refuses it, not at all. */
+  setDimensions(ids: readonly Id[], patch: DimensionPatch): boolean {
+    if (ids.length === 0) return false;
+    if (ids.length === 1) return this.execute({ type: 'setDimension', dimensionId: ids[0]!, patch });
+    return this.execute({ type: 'batch', commands: ids.map((id) => ({ type: 'setDimension', dimensionId: id, patch })) });
   }
 
   /** Starts or ends a tool of the pointer (Esc, or the tool done). */
   setTool(tool: DrawingTool | null): void {
     // a new kind of tool lets go of what was chosen; the same one asking again (the picks start over) keeps what it has just made
     const changed = tool && this.state.tool?.kind !== tool.kind;
-    this.set({ tool, ...(changed ? { dimension: null, finish: null } : {}) });
+    this.set({ tool, ...(changed ? { dimension: null, finish: null, annotation: null, selection: this.state.selection.filter((p) => p.kind === 'view') } : {}) });
   }
 
   /** A dimension made on the sheet from elements pointed at and a place pointed at (`planDimension`), as one step: it is chosen when it is there. */
@@ -267,7 +431,7 @@ export class DrawingStore {
     const doc = this.history.doc;
     const id = new IdAllocator(doc.idCounters, drawingIdsInUse(doc)).take('dim');
     if (!this.execute({ type: 'insertDimensions', dimensions: [{ id, view: viewId, ...draft } as Dimension] })) return null;
-    this.set({ dimension: id, selected: viewId });
+    this.set({ dimension: id, selected: viewId, selection: [{ kind: 'dimension', id }] });
     return id;
   }
 
@@ -368,6 +532,91 @@ export class DrawingStore {
     return { id, featureId: `${key}|${JSON.stringify(axes)}`, key, parts: [{ part: key, mirrored: false, pose: IDENTITY }], anchors: false, axes, ...(cut ? { cut } : {}) };
   }
 
+  // ------------------------------------------------------------ the view palette (D-V, ADR 0131)
+
+  /** The source the palette shows: that of the first model view (relative to the drawing). */
+  private paletteSource(): string | null {
+    const v = this.history.doc.views.find((x) => !isDerived(x));
+    return v && !isDerived(v) ? v.source : null;
+  }
+
+  /** A model view of `source` from `direction` that is not in the document: what the worker is asked for the palette and the previews. */
+  private probe(source: string, direction: ViewName): DrawingView {
+    return { id: `palette:${direction}`, name: '', source, direction };
+  }
+
+  /**
+   * The palette's lines (and so the previews of the views placed from it), worked out once per part: the same requests the views make, kept in the same cache, so a
+   * view placed from the palette is drawn at once.
+   */
+  private async ensurePalette(): Promise<void> {
+    // with every view deleted the palette keeps the part it showed: that is what the drawing is of, and what the next view is placed from
+    const source = this.paletteSource() ?? this.state.palette?.source ?? null;
+    if (!source) return;
+    const wanted = PALETTE_DIRECTIONS.flatMap((direction) => {
+      const r = this.requestOf(this.probe(source, direction));
+      return r && !this.cache.has(r.id) ? [r] : [];
+    });
+    if (wanted.length > 0) {
+      const results = await this.host.api.drawingViews(wanted.map((w) => ({ parts: w.parts, axes: w.axes, ...(w.anchors ? { anchors: true } : {}) })));
+      if (this.closed) return;
+      wanted.forEach((w, i) => {
+        const r = results[i]!;
+        this.cache.set(w.id, 'error' in r ? { error: r.error } : r.anchors ? { ...r.lines, anchors: r.anchors } : r.lines);
+      });
+    }
+    const lines: Partial<Record<ViewName, ViewLines | null>> = {};
+    for (const direction of PALETTE_DIRECTIONS) {
+      const r = this.requestOf(this.probe(source, direction));
+      const found = r ? this.cache.get(r.id) : undefined;
+      lines[direction] = found && !('error' in found) ? found : null;
+    }
+    const was = this.state.palette;
+    if (!was || was.source !== source || PALETTE_DIRECTIONS.some((k) => was.lines[k] !== lines[k])) this.set({ palette: { source, lines } });
+  }
+
+  /**
+   * The lines of the part seen from these axes, for a preview: those of the palette's view that looks the same way, turned in the sheet to the axes' up (a view
+   * projected or cut from the top view looks along a standard direction with the top view's up, which no palette view has). Null when no palette view looks
+   * that way.
+   */
+  linesForAxes(axes: ViewAxes): ViewLines | null {
+    const pal = this.state.palette;
+    if (!pal) return null;
+    for (const direction of PALETTE_DIRECTIONS) {
+      const lines = pal.lines[direction];
+      const turned = lines ? turnLines(lines, viewVectors(direction), axes) : null;
+      if (turned) return turned;
+    }
+    return null;
+  }
+
+  /** A view from the palette put where the pointer let it go (sheet mm); then projected views of it are offered, as SolidWorks does. */
+  placeModelView(source: string, direction: ViewName, at: [number, number]): Id | null {
+    const doc = this.history.doc;
+    const id = new IdAllocator(doc.idCounters, drawingIdsInUse(doc)).take('view');
+    if (!this.execute({ type: 'insertViews', views: [{ id, name: t(`drawing.view.${direction}`), source, direction, at }] })) return null;
+    this.select(id);
+    this.setTool(direction === 'isometric' ? null : { kind: 'project', parent: id });
+    return id;
+  }
+
+  /** A projected view of `parent` on `side`, slid `slide` mm along its line from where it would be laid out (C16.3). */
+  placeProjected(parent: Id, side: ViewSide, slide: number, shift: [number, number] | null = null): Id | null {
+    const doc = this.history.doc;
+    if (this.isFlat(parent)) {
+      this.host.notify(t('drawing.flatNoDerived'), 'error');
+      return null;
+    }
+    const id = new IdAllocator(doc.idCounters, drawingIdsInUse(doc)).take('view');
+    const view: DrawingView = { id, name: t('drawing.view.projected'), kind: 'projected', parent, side, ...(Math.abs(slide) > 0.005 ? { slide: Math.round(slide * 100) / 100 } : {}) };
+    // with the shift that keeps the other views where they are (the arrangement is centred again when a view is added), as one step
+    const insert: DrawingCommand = { type: 'insertViews', views: [view] };
+    if (!this.execute(shift ? { type: 'batch', commands: [insert, { type: 'setSheet', sheet: { shift } }] } : insert)) return null;
+    this.select(id);
+    return id;
+  }
+
   // ------------------------------------------------------------ assemblies as the source of a view (C16.6)
 
   private assemblyViews = new WeakMap<AssemblyData, AssemblyView>();
@@ -460,6 +709,7 @@ export class DrawingStore {
           lines.set(v.id, found && !('error' in found) ? found : null);
         }
         this.set({ lines, problems, computing: false });
+        await this.ensurePalette();
         this.autoScaleWhenReady();
       } while (this.computeAgain && !this.closed);
     } catch (e) {
@@ -607,7 +857,7 @@ export class DrawingStore {
     if (!from) return this.host.notify(t('drawing.noSource'), 'error');
     const ids = new IdAllocator(doc.idCounters, drawingIdsInUse(doc));
     const views = directions.map((direction): DrawingView => ({ id: ids.take('view'), name: t(`drawing.view.${direction}`), source: from, direction }));
-    if (this.execute({ type: 'insertViews', views })) this.set({ selected: views[0]?.id ?? null });
+    if (this.execute({ type: 'insertViews', views })) this.select(views[0]?.id ?? null);
   }
 
   /** Whether a view is the flat pattern of a part (S-1): the folded part is not seen in it, so views projected or cut from it would show nothing true. */
@@ -622,17 +872,25 @@ export class DrawingStore {
     if (this.isFlat(parent)) return this.host.notify(t('drawing.flatNoDerived'), 'error');
     const ids = new IdAllocator(doc.idCounters, drawingIdsInUse(doc));
     const id = ids.take('view');
-    if (this.execute({ type: 'insertViews', views: [{ id, name: t('drawing.view.projected'), kind: 'projected', parent, side }] })) this.set({ selected: id });
+    if (this.execute({ type: 'insertViews', views: [{ id, name: t('drawing.view.projected'), kind: 'projected', parent, side }] })) this.select(id);
   }
 
   /** A section of `parent` cut along a horizontal or vertical line in the parent's coordinates (C16.3); the letter is the next free one. */
-  addSection(parent: Id, line: SectionDrawingView['line'], at?: [number, number]): void {
+  addSection(parent: Id, line: SectionDrawingView['line'], at?: [number, number], options: { flip?: boolean; slide?: number; shift?: [number, number] | null } = {}): void {
     const doc = this.history.doc;
     if (this.isFlat(parent)) return this.host.notify(t('drawing.flatNoDerived'), 'error');
     const ids = new IdAllocator(doc.idCounters, drawingIdsInUse(doc));
     const id = ids.take('view');
     const label = this.nextLabel();
-    if (this.execute({ type: 'insertViews', views: [{ id, name: t('drawing.view.section', { label }), kind: 'section', parent, line, label, ...(at ? { at } : {}) }] })) this.set({ selected: id });
+    const slide = !at && options.slide !== undefined && Math.abs(options.slide) > 0.005 ? { slide: Math.round(options.slide * 100) / 100 } : {};
+    const insert: DrawingCommand = { type: 'insertViews', views: [{ id, name: t('drawing.view.section', { label }), kind: 'section', parent, line, label, ...(options.flip ? { flip: true } : {}), ...slide, ...(at ? { at } : {}) }] };
+    const shift = !at && options.shift ? options.shift : null;
+    if (this.execute(shift ? { type: 'batch', commands: [insert, { type: 'setSheet', sheet: { shift } }] } : insert)) this.select(id);
+  }
+
+  /** The letter the next section or detail will have. */
+  peekLabel(): string {
+    return this.nextLabel();
   }
 
   /** A detail of `parent` in a circle (C16.3), at twice the scale the parent is drawn at, rounded up to a standard scale. */
@@ -644,7 +902,7 @@ export class DrawingStore {
     const p = viewById(doc.views, parent);
     const base = p ? scaleOf(doc, p) : doc.sheet.scale;
     const scale = STANDARD_SCALES.slice().reverse().find((s) => ratio(s) >= 2 * ratio(base)) ?? STANDARD_SCALES[0]!;
-    if (this.execute({ type: 'insertViews', views: [{ id, name: t('drawing.view.detail', { label }), kind: 'detail', parent, centre, radius, label, scale, ...(at ? { at } : {}) }] })) this.set({ selected: id });
+    if (this.execute({ type: 'insertViews', views: [{ id, name: t('drawing.view.detail', { label }), kind: 'detail', parent, centre, radius, label, scale, ...(at ? { at } : {}) }] })) this.select(id);
   }
 
   /** The first capital letter no section or detail has yet. */
@@ -734,7 +992,7 @@ export class DrawingStore {
     const doc = this.history.doc;
     const id = new IdAllocator(doc.idCounters, drawingIdsInUse(doc)).take('fin');
     if (!this.execute({ type: 'insertSurfaceFinishes', finishes: [{ id, view: viewId, at }] })) return null;
-    this.set({ finish: id, selected: viewId });
+    this.set({ finish: id, selected: viewId, selection: [{ kind: 'finish', id }] });
     return id;
   }
 
@@ -744,6 +1002,44 @@ export class DrawingStore {
 
   deleteSurfaceFinishes(ids: Id[]): void {
     if (ids.length > 0) this.execute({ type: 'deleteSurfaceFinishes', finishIds: ids });
+  }
+
+  // ------------------------------------------------------------ annotations (D-I3, ADR 0132)
+
+  /** The annotations of the view, in the order they are in the document. */
+  annotationsOf(viewId: Id): Annotation[] {
+    return (this.state.doc.annotations ?? []).filter((a) => a.view === viewId);
+  }
+
+  /** The first letter no datum of the drawing has (ISO 5459: not I, O or Q). */
+  nextDatumLabel(): string {
+    const used = new Set((this.history.doc.annotations ?? []).flatMap((a) => (a.kind === 'datum' ? [a.label] : [])));
+    for (let i = 0; i < 26; i++) {
+      const c = String.fromCharCode(65 + i);
+      if (!'IOQ'.includes(c) && !used.has(c)) return c;
+    }
+    for (let i = 0; i < 26; i++) for (let j = 0; j < 26; j++) {
+      const c = String.fromCharCode(65 + i) + String.fromCharCode(65 + j);
+      if (DATUM_LABEL.test(c) && !used.has(c)) return c;
+    }
+    return 'A';
+  }
+
+  /** An annotation made with a tool (the id is the next free one); it is chosen when it is there. */
+  addAnnotation(a: DistributiveOmit<Annotation, 'id'>): Id | null {
+    const doc = this.history.doc;
+    const id = new IdAllocator(doc.idCounters, drawingIdsInUse(doc)).take('ann');
+    if (!this.execute({ type: 'insertAnnotations', annotations: [{ ...a, id } as Annotation] })) return null;
+    this.pick([{ kind: 'annotation', id }], 'replace');
+    return id;
+  }
+
+  setAnnotation(id: Id, patch: AnnotationPatch): boolean {
+    return this.execute({ type: 'setAnnotation', annotationId: id, patch });
+  }
+
+  deleteAnnotations(ids: Id[]): void {
+    if (ids.length > 0) this.execute({ type: 'deleteAnnotations', annotationIds: ids });
   }
 
   // ------------------------------------------------------------ tables (C16.6)
