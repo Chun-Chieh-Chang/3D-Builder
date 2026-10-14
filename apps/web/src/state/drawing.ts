@@ -36,6 +36,9 @@ import {
   type ViewAxes,
   type ViewFeature,
   type ViewEdgeSet,
+  type DrawingRef,
+  placementRows,
+  placeElementFacts,
   type ViewName,
   type ViewSide,
   viewVectors,
@@ -784,18 +787,44 @@ export class DrawingStore {
         }
         // what the elements are
         const need = new Map<string, Map<string, Ref>>();
-        const refsOf = (d: Dimension): Ref[] => (d.kind === 'linear' || d.kind === 'angle' ? [d.a, d.b] : [d.ref]);
+        const refsOf = (d: Dimension): DrawingRef[] => (d.kind === 'linear' || d.kind === 'angle' ? [d.a, d.b] : [d.ref]);
         const keyOfDim = (d: Dimension): string | null => {
           const view = doc.views.find((v) => v.id === d.view);
           return view && !this.assemblyData(view) ? this.keyOf(view) : null;
         };
+        /** The part an element of a view of an assembly is in (D-I2): its leaf, by the reference's `in`, and the part's key as built. */
+        const leafOf = (d: Dimension, ref: DrawingRef): { leaf: Leaf; key: string } | null => {
+          const view = doc.views.find((v) => v.id === d.view);
+          const asm = view ? this.assemblyOf(this.ancestor(doc.views, view) ?? view) : null;
+          const leaf = asm?.leaves.find((l) => l.id === ref.in);
+          if (!leaf) return null;
+          return { leaf, key: leaf.mirrored ? leaf.key.slice(0, -mirrorKey('').length) : leaf.key };
+        };
         for (const d of doc.dimensions) {
           const key = keyOfDim(d);
-          if (!key) continue;
           for (const ref of refsOf(d)) {
-            const id = `${key}|${ref.kind}|${ref.name}`;
-            if (!this.elementCache.has(id)) need.set(key, (need.get(key) ?? new Map()).set(id, ref));
+            // in a view of an assembly the element is its part's, asked of that part
+            const part = key ?? (ref.in ? leafOf(d, ref)?.key : null);
+            if (!part) continue;
+            const id = `${part}|${ref.kind}|${ref.name}`;
+            if (!this.elementCache.has(id)) need.set(part, (need.get(part) ?? new Map()).set(id, { kind: ref.kind, name: ref.name, ...(ref.fingerprint ? { fingerprint: ref.fingerprint } : {}) }));
           }
+        }
+        // the edges and vertices of the parts of each view of an assembly (D-I2)
+        const wantedAsm = doc.views.flatMap((v) => {
+          const asm = this.assemblyOf(v);
+          const r = asm && v.kind !== 'detail' ? this.requestOf(v) : null;
+          if (!asm || !r || this.featureCache.has(`asm|${r.id}`)) return [];
+          const unmirror = (k: string) => k.slice(0, -mirrorKey('').length);
+          return [{ id: `asm|${r.id}`, axes: r.axes, parts: asm.leaves.map((l) => ({ part: l.mirrored ? unmirror(l.key) : l.key, mirrored: !!l.mirrored, pose: l.pose, leaf: l.id })) }];
+        });
+        if (wantedAsm.length > 0) {
+          const results = await this.host.api.drawingAssemblyEdges(wantedAsm.map((w) => ({ parts: w.parts, axes: w.axes })));
+          if (this.closed) return;
+          wantedAsm.forEach((w, i) => {
+            const r = results[i]!;
+            this.featureCache.set(w.id, 'error' in r ? { error: r.error } : { features: [], edges: r.edges });
+          });
         }
         if (need.size > 0) {
           const parts = [...need];
@@ -812,7 +841,8 @@ export class DrawingStore {
         for (const v of doc.views) {
           const own = v.kind === 'detail' ? this.ancestor(doc.views, v) : v;
           const r = own ? this.requestOf(own) : null;
-          const found = r?.featureId ? this.featureCache.get(r.featureId) : undefined;
+          const asmFound = own && this.assemblyOf(own) && r ? this.featureCache.get(`asm|${r.id}`) : undefined;
+          const found = asmFound ?? (r?.featureId ? this.featureCache.get(r.featureId) : undefined);
           if (found && !('error' in found)) {
             features.set(v.id, found.features);
             if (found.edges) edges.set(v.id, found.edges);
@@ -821,8 +851,17 @@ export class DrawingStore {
         const elements = new Map<Id, ElementsResult>();
         for (const d of doc.dimensions) {
           const view = doc.views.find((v) => v.id === d.view);
-          if (view && this.assemblyData(view)) {
-            elements.set(d.id, { error: t('drawing.dimAssembly') }); // the elements of an assembly's parts are not what a drawing's dimensions point at (yet)
+          if (view && this.assemblyData(this.ancestor(doc.views, view) ?? view)) {
+            // a view of an assembly (D-I2): each element is its part's, put where the assembly has the part
+            const got = refsOf(d).map((ref): ElementFacts | { error: string } | undefined => {
+              const at = ref.in ? leafOf(d, ref) : null;
+              if (!at) return { error: t('drawing.dimNoPart', { name: ref.name }) };
+              const facts = this.elementCache.get(`${at.key}|${ref.kind}|${ref.name}`);
+              return facts && !('error' in facts) ? placeElementFacts(facts, placementRows(at.leaf.pose, !!at.leaf.mirrored)) : facts;
+            });
+            if (got.some((g) => !g)) continue;
+            const bad = got.find((g) => g && 'error' in g) as { error: string } | undefined;
+            elements.set(d.id, bad ? { error: bad.error } : { elements: got as ElementFacts[] });
             continue;
           }
           const key = keyOfDim(d);

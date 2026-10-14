@@ -3,7 +3,7 @@ import * as Comlink from 'comlink';
 import { setLocale as setWorkerLocale, t } from '@3db/i18n';
 import occtWasm from 'libcascade/single/wasm?url';
 import gcsWasm from '@salusoft89/planegcs/dist/planegcs_dist/planegcs.wasm?url';
-import { bodyKey, combineMass, isShown, mirrorKey, MESH_QUALITY, settingsOf, type AssemblyDoc, type Id, type MeasureReport, type PartDoc, type SourceTree } from '@3db/model';
+import { bodyKey, combineMass, isShown, mirrorKey, MESH_QUALITY, placementRows, settingsOf, type ViewEdgeSet, type AssemblyDoc, type Id, type MeasureReport, type PartDoc, type SourceTree } from '@3db/model';
 import { findProfiles, PlaneGcsSolver } from '@3db/sketch';
 import { COMPONENT_MESH, Kernel, type ThicknessReport, type UndercutReport, type DraftReport, type GeometryReport, type MassProps, type MeshData, type MeshOptions, type ShapeId } from '@3db/kernel';
 import { flatViewLines } from '@3db/drawing';
@@ -494,6 +494,37 @@ const api: KernelApi = {
           edgeMeshes.set(built, mesh);
         }
         out.push({ features: viewFeatures(body.topology, body.names, r.axes, allowed, built.holes), edges: viewEdges(kernel, body.shape, body.topology, body.names, r.axes, allowed, mesh) });
+      } catch (e) {
+        out.push({ error: e instanceof Error ? e.message : String(e) });
+      }
+    }
+    return out;
+  },
+
+  async drawingAssemblyEdges(requests) {
+    await api.init();
+    const out: ({ edges: ViewEdgeSet } | { error: string })[] = [];
+    for (const r of requests) {
+      try {
+        const edges: ViewEdgeSet = { edges: [], vertices: [] };
+        for (const p of r.parts) {
+          const built = await parts.get(p.part)?.catch(() => null);
+          const body = built?.result.body;
+          if (!built || !body) throw new Error(t('drawing.noBody'));
+          // the reference bodies of a part (a workpiece) are not drawn, nor offered (as in its lines)
+          const own = built.result.bodies.filter((b) => !b.reference && !b.surface);
+          const only = own.length > 0 && own.length < built.result.bodies.length;
+          const allowed = only ? (i: number) => own.some((b) => i >= b.face0 && i < b.face0 + b.faces) : undefined;
+          let mesh = edgeMeshes.get(built);
+          if (!mesh) {
+            mesh = kernel.mesh(body.shape, { tolerance: 0.01, angular: 0.1 });
+            edgeMeshes.set(built, mesh);
+          }
+          const one = viewEdges(kernel, body.shape, body.topology, body.names, r.axes, allowed, mesh, { rows: placementRows(p.pose, p.mirrored), in: p.leaf });
+          edges.edges.push(...one.edges);
+          edges.vertices.push(...one.vertices);
+        }
+        out.push({ edges });
       } catch (e) {
         out.push({ error: e instanceof Error ? e.message : String(e) });
       }

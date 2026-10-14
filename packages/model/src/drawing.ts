@@ -13,7 +13,7 @@ import { ANNOTATION_FIELDS, checkAnnotation, framesUsing, type Annotation, type 
  * opened (exact hidden-line removal), so a drawing can never disagree with the model it shows.
  */
 
-export const DRAWING_SCHEMA_VERSION = 13;
+export const DRAWING_SCHEMA_VERSION = 14;
 
 export type SheetSize = 'A4' | 'A3' | 'A2' | 'A1' | 'A0';
 export const SHEET_SIZES: readonly SheetSize[] = ['A4', 'A3', 'A2', 'A1', 'A0'];
@@ -117,6 +117,12 @@ export type TitleField = (typeof TITLE_FIELDS)[number];
 // ---------------------------------------------------------------- dimensions (C16.4)
 
 /**
+ * An element a dimension points at. In a view of a part it is the part's (`Ref`); in a view of an assembly (v14, D-I2, ADR 0138) `in` says which part of it,
+ * by the leaf's id ("comp2", "comp2/pa": the components gone through from the assembly down), and the element is that part's, put where the assembly has it.
+ */
+export type DrawingRef = Ref & { in?: string };
+
+/**
  * The tolerance of a dimension: limits in mm (`upper` and `lower`, signed: 「+0.1/-0.05」, or 「±0.05」 when they are opposite), a class of ISO 286 (「H7」,
  * 「m6」) whose limits come from the table for the size the dimension has, or a one-sided limit written as a word: `max` (the number is the largest the
  * part may be, 「10 MAX」) or `min` (the smallest, 「10 MIN」). A one-sided limit bounds only one way and says nothing of the other — which is not the same
@@ -152,8 +158,8 @@ export type DimensionOrientation = 'horizontal' | 'vertical' | 'aligned';
  */
 export interface LinearDimension extends DimensionCommon {
   kind: 'linear';
-  a: Ref;
-  b: Ref;
+  a: DrawingRef;
+  b: DrawingRef;
   orientation: DimensionOrientation;
   offset: number;
   /**
@@ -168,7 +174,7 @@ export interface LinearDimension extends DimensionCommon {
 /** The diameter (Ø) of a cylinder or a circle seen as a circle in the view; `angle` is the direction of its leader on the sheet (degrees counter-clockwise from the x axis) and `count` how many equal ones it stands for (「4×Ø9」). */
 export interface DiameterDimension extends DimensionCommon {
   kind: 'diameter';
-  ref: Ref;
+  ref: DrawingRef;
   angle: number;
   /** How long the leader is outside the circle (mm, v8). Absent: 8. */
   leader?: number;
@@ -180,7 +186,7 @@ export interface DiameterDimension extends DimensionCommon {
 /** The radius (R) of a cylinder or circle seen as an arc or a circle in the view. */
 export interface RadiusDimension extends DimensionCommon {
   kind: 'radius';
-  ref: Ref;
+  ref: DrawingRef;
   angle: number;
   /** How long the leader is outside the circle (mm, v8). Absent: 8. */
   leader?: number;
@@ -194,8 +200,8 @@ export interface RadiusDimension extends DimensionCommon {
  */
 export interface AngleDimension extends DimensionCommon {
   kind: 'angle';
-  a: Ref;
-  b: Ref;
+  a: DrawingRef;
+  b: DrawingRef;
   arc: number;
   supplementary?: boolean;
 }
@@ -239,6 +245,18 @@ export interface HoleInfo {
   thread?: { size?: string };
 }
 
+/**
+ * What the model says of an element of a part, put where an assembly has the part (D-I2): `rows` is the placement, row-major 3 × 4 (`placementRows`, a mirror
+ * included). Its points are moved and its directions turned; its sizes (radius, major, the hole) stay as they are.
+ */
+export function placeElementFacts(f: ElementFacts, rows: readonly number[]): ElementFacts {
+  if (rows.length !== 12 || !rows.every(Number.isFinite)) throw new Error('placeElementFacts: a placement is 12 finite numbers');
+  const R = rows;
+  const put = (p: readonly number[]): [number, number, number] => [R[0]! * p[0]! + R[1]! * p[1]! + R[2]! * p[2]! + R[3]!, R[4]! * p[0]! + R[5]! * p[1]! + R[6]! * p[2]! + R[7]!, R[8]! * p[0]! + R[9]! * p[1]! + R[10]! * p[2]! + R[11]!];
+  const turn = (v: readonly number[]): [number, number, number] => [R[0]! * v[0]! + R[1]! * v[1]! + R[2]! * v[2]!, R[4]! * v[0]! + R[5]! * v[1]! + R[6]! * v[2]!, R[8]! * v[0]! + R[9]! * v[1]! + R[10]! * v[2]!];
+  return { ...f, point: put(f.point), ...(f.dir ? { dir: turn(f.dir) } : {}), ...(f.center ? { center: put(f.center) } : {}) };
+}
+
 /** What a dimension can be attached to in a view (the elements the view sees edge-on or as circles), found in the worker; the material of the automatic dimensions and of the choice in the panel. */
 export type ViewFeature =
   /** A plane seen edge-on: a line across the view's x (`axis: 'x'`, at x = `coord`) or its y. */
@@ -270,7 +288,7 @@ export type ViewFeature =
  * middle and radius in the view) can be dimensioned; any other is there for its vertices. Whether it is seen at all is worked out against the view's lines.
  */
 export interface ViewEdge {
-  ref: Ref;
+  ref: DrawingRef;
   kind: 'line' | 'circle' | 'curve';
   points: number[];
   depth: number[];
@@ -283,7 +301,7 @@ export interface ViewEdge {
 
 /** A vertex of the model as a view sees it. */
 export interface ViewVertex {
-  ref: Ref;
+  ref: DrawingRef;
   at: [number, number];
   depth: number;
 }
@@ -538,7 +556,14 @@ function checkView(v: DrawingView, views: readonly DrawingView[]): void {
 }
 
 const ORIENTATIONS: readonly DimensionOrientation[] = ['horizontal', 'vertical', 'aligned'];
-const isRefValue = (r: unknown): r is Ref => typeof r === 'object' && r !== null && typeof (r as Ref).name === 'string' && (r as Ref).name !== '' && ['face', 'edge', 'vertex'].includes((r as Ref).kind);
+const isRefValue = (r: unknown): r is DrawingRef =>
+  typeof r === 'object' &&
+  r !== null &&
+  typeof (r as Ref).name === 'string' &&
+  (r as Ref).name !== '' &&
+  ['face', 'edge', 'vertex'].includes((r as Ref).kind) &&
+  // the part of an assembly it is in: a leaf's id, never empty
+  ((r as DrawingRef).in === undefined || (typeof (r as DrawingRef).in === 'string' && (r as DrawingRef).in !== ''));
 
 /** Checks a dimension against the views it may be drawn on and what its kind needs. */
 function checkDimension(d: Dimension, views: readonly DrawingView[]): void {

@@ -302,6 +302,9 @@ const drawingMigrations: Record<number, (doc: Json) => Json> = {
   // v13: a linear dimension may measure from a cylinder's outline seen from the side (`aSide`, `bSide`, D-I2, ADR 0138): optional, nothing to convert; the
   // version keeps an older program from opening a drawing whose dimensions it would measure to the axis and so get wrong.
   12: (doc) => doc,
+  // v14: a dimension of a view of an assembly points at a part of it (`in`, the leaf's id, D-I2, ADR 0138): optional, nothing to convert; the version keeps an
+  // older program from opening a drawing whose dimensions it would look for in the wrong part.
+  13: (doc) => doc,
 };
 
 export function parseDrawing(text: string): DrawingDoc {

@@ -161,6 +161,7 @@ export const drawing: Translation = {
   'drawing.dimNotAngle': 'An angle dimension takes two planes (seen edge-on) or two straight edges',
   'drawing.dimNotEdgeOn': 'This element is not seen as a line in this view (a plane has to be parallel to the view direction, an edge square to it)',
   'drawing.dimParallel': 'The two elements are parallel: there is no angle between them',
+  'drawing.dimNoPart': 'The part {name} is in is not found: the component is no longer in the assembly, or it is hidden',
   'drawing.dimNoOutline': 'The cylinder is seen end on here (as a circle): it has no outline to measure from',
   'drawing.dimBadSide': 'The side of an outline is 1 or -1, and only of a cylinder',
   'drawing.dimSameElement': 'An element has no distance to itself (a cylinder only between its two outlines)',

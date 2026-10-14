@@ -159,6 +159,7 @@ export const drawing = {
   'drawing.dimNotAngle': '角度尺寸只能量兩個平面（側視成一條線）或兩條直線之間的夾角',
   'drawing.dimNotEdgeOn': '這個圖元在這個視圖裡不是一條線（平面要與視線平行，直線要垂直於視線）',
   'drawing.dimParallel': '這兩個圖元互相平行，沒有夾角',
+  'drawing.dimNoPart': '找不到「{name}」所在的零件：組合件裡已經沒有這個零組件，或它被隱藏了',
   'drawing.dimNoOutline': '這個圓柱在這個視圖裡是端面（看成圓），沒有側面輪廓線可以量',
   'drawing.dimBadSide': '輪廓線的一側只能是 1 或 -1，而且只用在圓柱面上',
   'drawing.dimSameElement': '同一個元素不能和自己量距離（同一個圓柱只能量它兩側的輪廓線之間）',

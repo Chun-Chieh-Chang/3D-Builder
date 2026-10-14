@@ -1203,3 +1203,13 @@
 4. **零 Mock**：值來自模型的事實（elementFacts），並和手算比對（12、30、40、8、12）。
 
 檢查：typecheck 0 錯誤；三項 lint 通過；vitest 2761 過、0 失敗；工程圖相關瀏覽器腳本 17/17。
+
+## 2026-10-15　D-I2 第二部分（二）：組合件視圖的尺寸（ADR 0138，Schema 14）
+
+紅隊四問：
+1. **輸入破壞**：空字串的 `in` 由命令層拒絕；放置矩陣不是 12 個有限數字時拋錯；找不到葉節點時說明原因（`drawing.dimNoPart`）。
+2. **相交破壞**：鏡射的零件，點和方向都正確轉換（有測試）；參考用工件仍然排除。
+3. **依賴鏈**：model（`DrawingRef`、`placeElementFacts`、schema 14）→ regen（`viewEdges` 的 `place` 參數）→ worker（`drawingAssemblyEdges`）→ protocol → store（組合件的邊快取、元素依葉節點解析）→ 點選與規劃不變。
+4. **零 Mock**：真實核心，移動、旋轉、鏡射都和手算比對；瀏覽器以實際治具驗證。
+
+檢查：typecheck 0 錯誤；三項 lint 通過；vitest 2763 過（版本號的釘選斷言改成 14）；工程圖相關瀏覽器腳本 17/17。

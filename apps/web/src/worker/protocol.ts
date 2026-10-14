@@ -268,6 +268,11 @@ export interface KernelApi {
   drawingViews(requests: DrawingViewRequest[]): Promise<DrawingViewResult[]>;
   /** What each view can be dimensioned from (C16.4): the planes it sees edge-on and the cylinders it sees as circles, of the part built for the app. */
   drawingFeatures(requests: { part: string; axes: ViewAxes }[]): Promise<DrawingFeaturesResult[]>;
+  /**
+   * The edges and vertices of the parts of a view of an assembly, by name (D-I2): each part put where the assembly has it (`pose`, `mirrored`), its references
+   * carrying the leaf's id (`leaf`).
+   */
+  drawingAssemblyEdges(requests: { parts: { part: string; mirrored: boolean; pose: Pose; leaf: string }[]; axes: ViewAxes }[]): Promise<({ edges: ViewEdgeSet } | { error: string })[]>;
   /** What the elements of a part that dimensions point at are (C16.4), by persistent name. */
   drawingElements(requests: { part: string; refs: Ref[] }[]): Promise<DrawingElementsResult[]>;
   /** The clearance between components (E2.2): the pairs closer than `least` mm, the closest first; with `only`, just those with one of these components. */
