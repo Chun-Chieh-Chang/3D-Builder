@@ -1,5 +1,29 @@
 # 3D-Builder 開發日誌 (DEV_LOG.md)
 
+## 2026-10-15（下午）：D-I5 第一部分之二——階梯剖面與對正剖面（[ADR 0143](docs/adr/0143-drawing-stepped-aligned-section.md)，工程圖 Schema 18）
+
+### 1. 範圍
+使用者指示接續 D-I5：剖面線改為折線（階梯）與三點對正，沿用第一部分的驗收標準，在同一個 worktree 開發。
+
+### 2. 做法
+| 層 | 檔案 | 內容 |
+|---|---|---|
+| 模型 | `packages/model/src/drawing.ts`、`serialize.ts` | `line` 可多於兩點、`aligned`；`checkSectionLine`（階梯：剖切段同向平行、轉折段垂直、首尾為剖切；對正：三點、不共線）；`sectionCut`、`sectionEndDirections`；Schema 17→18。 |
+| 核心 | `packages/kernel/src/sectionPath.ts`（新）、`kernel.ts` | `rightOfPolyline`、`planSectionPath`、`turnRows`（純數學）；`Kernel.sectionViewPath`（區域稜柱切割、對正的角平分切開與旋轉、只填剖切面、剔除轉折線）；`halfSpace` 抽成共用（`sectionView` 改用，行為不變）。 |
+| 流程 | `packages/regen/src/drawingViews.ts`、`apps/web/src/worker/protocol.ts`、`state/drawing.ts` | `cut` 型別改 `SectionCut`；有 `path` 走 `sectionViewPath`；`addSection` 帶 `aligned`。 |
+| 圖面與介面 | `packages/drawing/src/{sectionLine,scene}.ts`、`DrawingViewport.tsx`、i18n | `firstCutTo`／`stepTo`／`alignedTo`／`finishSectionLine`；剖面工具「階梯剖面」「對正剖面」；折線預覽；兩端箭頭各自垂直；拖曳整條平移。 |
+
+### 3. 自我紅隊四問（AGENTS.md §2.1）
+1. **輸入破壞**：非數字點、相鄰重合點、偶數段、轉折不垂直、剖切段折返或不平行、對正非三點、對正共線（±1°）皆由命令層拒絕並指出第幾段（單元測試逐項）。介面的點不在前進方向或沒有轉折量時不加點並提示。斜向階梯線不四捨五入（四捨五入會破壞 1e-9 的垂直）。
+2. **幾何相交**：區域多邊形以「折線＋兩端延伸＋右側大圓弧」構成，對直線、階梯、右轉、左轉四種情形以點在多邊形內測試驗證側向；剖切段同向保證階梯折線不自交。
+3. **依賴鏈**：命令層 → `sectionCut` → worker 請求 → `projectDrawingView` → `sectionViewPath` → 圖面（折線、兩端箭頭）→ 介面（點選、預覽、放置、拖曳）→ 存檔（Schema 18）全鏈；e2e 存檔再開原樣。
+4. **零 Mock**：面積以 OCCT 實切面輪廓的偶奇掃描線精確積分，對照手算（336、(14＋20√2−6)×12）與 200 組隨機解析值；方塊體積先驗證確有兩個通孔。三個突變（只切第一段、對正不旋轉、不剔除轉折線）各自讓測試失敗。**記憶體**：第一版測試量到 Heap 成長，以全新 Heap、1000 次隔離實驗查明是 OCCT 布林本身（既有直線剖面亦然，前 100 次被餘裕吸收），**未**寫假綠燈的 Heap 測試，改驗 `liveShapes` 並記入 AGENTS.md §3.5。另修正自己測試的一處錯誤（三點非對正線本來就應被拒）。
+
+### 4. 確效與品質驗收
+- `typecheck` 0 錯誤；`lint:deps`／`lint:rules`／`lint:i18n` 全過。
+- 全量 vitest：**2800 過、24 略過、0 失敗**（218 檔過、4 檔略過）。
+- `verify:ui --only "drawing|section"`：**9/9**（新 `manual-drawing-stepped-section.js` 6/6）。全量 `verify:ui` 未跑。
+
 ## 2026-10-15：D-I5 第一部分——任意角度的剖面線（[ADR 0142](docs/adr/0142-drawing-slanted-section.md)，工程圖 Schema 17）
 
 ### 1. 範圍

@@ -1,5 +1,5 @@
 import { getLocale, t, withLocale } from '@3db/i18n';
-import { axesOf, sectionDirection, type DetailDrawingView, type DrawingDoc, type DrawingView, type Id, type Scale, type SectionDrawingView, type TitleField, type ViewFeature } from '@3db/model';
+import { axesOf, sectionEndDirections, type DetailDrawingView, type DrawingDoc, type DrawingView, type Id, type Scale, type SectionDrawingView, type TitleField, type ViewFeature } from '@3db/model';
 import { centreItems, holeRows, holeTableBox, holeTableItems, threadItems, type HoleRow } from './annotation';
 import { annotationItems } from './gdt';
 import { balloonSpots, bomTableBox, bomTableItems, spotItems, type BalloonSpot, type ViewBom } from './bomTable';
@@ -138,14 +138,15 @@ export function viewItems(view: DrawingView, lines: ViewLines | null | undefined
 
 /** The cutting plane line of a section on its parent view, with the arrows at its ends and the letter beside each; and the section's own title. */
 function sectionItems(v: SectionDrawingView, parent: PlacedView, own: PlacedView): SceneItem[] {
-  const [[x0, y0], [x1, y1]] = v.line;
-  const a = toSheet(parent, x0, y0);
-  const b = toSheet(parent, x1, y1);
-  const dir = sectionDirection(v);
+  // the whole line (a stepped or aligned one bends, D-I5), an arrow at each end square to its own segment
+  const pts = v.line.map(([x, y]) => toSheet(parent, x, y));
+  const a = pts[0]!;
+  const b = pts[pts.length - 1]!;
+  const ends = sectionEndDirections(v);
   const shaft = 8;
   const head = 3;
-  const items: SceneItem[] = [{ kind: 'polyline', points: [...a, ...b], style: 'center' }];
-  for (const end of [a, b]) {
+  const items: SceneItem[] = [{ kind: 'polyline', points: pts.flat(), style: 'center' }];
+  for (const [end, dir] of [[a, ends[0]], [b, ends[1]]] as const) {
     const tip: [number, number] = [end[0] + dir[0] * shaft, end[1] + dir[1] * shaft];
     // the arrow: a shaft from the end of the line, and a V head turned 20 degrees either way
     const back = (turn: number): [number, number] => [tip[0] - head * (dir[0] * Math.cos(turn) - dir[1] * Math.sin(turn)), tip[1] - head * (dir[0] * Math.sin(turn) + dir[1] * Math.cos(turn))];

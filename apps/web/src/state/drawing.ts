@@ -14,7 +14,8 @@ import {
   leavesOf,
   mirrorKey,
   patternLeavesOf,
-  sectionPlane,
+  sectionCut,
+  type SectionCut,
   sourceOf,
   viewById,
   serializeDrawing,
@@ -119,7 +120,7 @@ type DistributiveOmit<T, K extends keyof never> = T extends unknown ? Omit<T, K>
 
 export type DrawingTool =
   | { kind: 'dimension'; picks: { view: Id; feature: Pickable }[] }
-  | { kind: 'section'; vertical?: boolean; slant?: boolean }
+  | { kind: 'section'; vertical?: boolean; slant?: boolean; path?: 'stepped' | 'aligned' }
   | { kind: 'detail' }
   | { kind: 'surface' }
   /**
@@ -565,18 +566,18 @@ export class DrawingStore {
    * What the worker is asked for a view: the part, where it looks from and for a section the plane that cuts it. A detail is asked for nothing (it is cut from its
    * parent's lines in the layout); a view whose part is not built or whose chain of parents is broken, nothing yet.
    */
-  private requestOf(view: DrawingView): { id: string; featureId?: string; key: string; parts: { part: string; mirrored: boolean; pose: typeof IDENTITY }[]; anchors: boolean; flat?: boolean; axes: ViewAxes; cut?: { origin: [number, number, number]; normal: [number, number, number] } } | null {
+  private requestOf(view: DrawingView): { id: string; featureId?: string; key: string; parts: { part: string; mirrored: boolean; pose: typeof IDENTITY }[]; anchors: boolean; flat?: boolean; axes: ViewAxes; cut?: SectionCut } | null {
     if (view.kind === 'detail') return null;
     const doc = this.history.doc;
     const key = this.keyOf(view);
     const axes = axesOf(doc.views, doc.sheet.projection, view);
     if (!key || !axes) return null;
-    let cut: { origin: [number, number, number]; normal: [number, number, number] } | undefined;
+    let cut: SectionCut | undefined;
     if (view.kind === 'section') {
       const parent = viewById(doc.views, view.parent);
       const parentAxes = parent ? axesOf(doc.views, doc.sheet.projection, parent) : null;
       if (!parentAxes) return null;
-      cut = sectionPlane(parentAxes, view);
+      cut = sectionCut(parentAxes, view);
     }
     const id = `${key}|${JSON.stringify(axes)}|${cut ? JSON.stringify(cut) : ''}`;
     const assembly = this.assemblyOf(view);
@@ -1033,15 +1034,15 @@ export class DrawingStore {
     if (this.execute({ type: 'insertViews', views: [{ id, name: t('drawing.view.projected'), kind: 'projected', parent, side }] })) this.select(id);
   }
 
-  /** A section of `parent` cut along a horizontal or vertical line in the parent's coordinates (C16.3); the letter is the next free one. */
-  addSection(parent: Id, line: SectionDrawingView['line'], at?: [number, number], options: { flip?: boolean; slide?: number; shift?: [number, number] | null } = {}): void {
+  /** A section of `parent` cut along a line in the parent's coordinates (C16.3; slanted, stepped or `aligned`, D-I5); the letter is the next free one. */
+  addSection(parent: Id, line: SectionDrawingView['line'], at?: [number, number], options: { flip?: boolean; slide?: number; shift?: [number, number] | null; aligned?: boolean } = {}): void {
     const doc = this.history.doc;
     if (this.isFlat(parent)) return this.host.notify(t('drawing.flatNoDerived'), 'error');
     const ids = new IdAllocator(doc.idCounters, drawingIdsInUse(doc));
     const id = ids.take('view');
     const label = this.nextLabel();
     const slide = !at && options.slide !== undefined && Math.abs(options.slide) > 0.005 ? { slide: Math.round(options.slide * 100) / 100 } : {};
-    const insert: DrawingCommand = { type: 'insertViews', views: [{ id, name: t('drawing.view.section', { label }), kind: 'section', parent, line, label, ...(options.flip ? { flip: true } : {}), ...slide, ...(at ? { at } : {}) }] };
+    const insert: DrawingCommand = { type: 'insertViews', views: [{ id, name: t('drawing.view.section', { label }), kind: 'section', parent, line, label, ...(options.flip ? { flip: true } : {}), ...(options.aligned ? { aligned: true } : {}), ...slide, ...(at ? { at } : {}) }] };
     const shift = !at && options.shift ? options.shift : null;
     if (this.execute(shift ? { type: 'batch', commands: [insert, { type: 'setSheet', sheet: { shift } }] } : insert)) this.select(id);
   }

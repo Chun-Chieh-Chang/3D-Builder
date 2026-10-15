@@ -175,7 +175,7 @@ M.run = async () => {
     await H.waitFor(() => drw() && drw().fileName === '定位板-斜剖.3dbd' && [...drw().lines.values()].filter(Boolean).length >= 5, 30000, 'the drawing to open');
     await H.wait(300);
     const same = stable(drw().doc.views.filter((v) => v.kind === 'section')) === sections;
-    return { pass: same && drw().doc.schemaVersion === 17, same, schema: drw().doc.schemaVersion };
+    return { pass: same && drw().doc.schemaVersion >= 17, same, schema: drw().doc.schemaVersion };
   });
   return { name: 'drawing-slanted-section', steps, pass: steps.every((s) => s.pass) };
 };

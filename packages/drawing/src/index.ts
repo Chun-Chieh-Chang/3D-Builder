@@ -1,5 +1,6 @@
 export * from './sheet';
 export * from './layout';
+export * from './sectionLine';
 export * from './fit';
 export * from './pick';
 export * from './scene';

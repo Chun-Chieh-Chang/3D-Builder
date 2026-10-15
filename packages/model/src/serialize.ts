@@ -313,6 +313,9 @@ const drawingMigrations: Record<number, (doc: Json) => Json> = {
   // v17: a section line may be slanted (D-I5): nothing to convert; the version keeps an older program, which would look along the nearer axis, from
   // opening a drawing whose sections it would draw from the wrong direction.
   16: (doc) => doc,
+  // v18: a section line may have more than two points (stepped) or be `aligned` (D-I5, ADR 0143): nothing to convert; the version keeps an older program,
+  // which would cut along the first segment only, from opening such a drawing.
+  17: (doc) => doc,
 };
 
 export function parseDrawing(text: string): DrawingDoc {

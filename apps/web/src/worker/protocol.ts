@@ -1,5 +1,5 @@
 import type { Locale } from '@3db/i18n';
-import type { InterferenceComponent, MeasureReport, MeasureTarget, PartMass, ElementFacts, ViewAxes, ViewEdgeSet, ViewFeature } from '@3db/model';
+import type { InterferenceComponent, MeasureReport, MeasureTarget, PartMass, ElementFacts, SectionCut, ViewAxes, ViewEdgeSet, ViewFeature } from '@3db/model';
 import type { AssemblyDoc, Axis3, CoordSystem, Fingerprint, Id, PartDoc, PlaneFrame, Pose, Ref, SketchFeature, SourceTree, Vec3 } from '@3db/model';
 import type { DraftReport, ThicknessReport, UndercutReport, GeometryReport, MassProps, MeshData, ProjectedView } from '@3db/kernel';
 import type { AssemblyResult, AssemblySolveOptions, ClearanceRow, Converted, FeatureResult, FlatReport, SheetCheck, SheetCheckLimits, SnapItem, SweepResult } from '@3db/regen';
@@ -214,8 +214,8 @@ export interface DrawingViewRequest {
   parts: { part: string; mirrored: boolean; pose: Pose }[];
   /** Where it is seen from: the direction it looks along and the sheet's up. */
   axes: ViewAxes;
-  /** A section (C16.3): the plane that cuts it, its normal toward the viewer (the side taken away). */
-  cut?: { origin: [number, number, number]; normal: [number, number, number] };
+  /** A section (C16.3): the plane that cuts it, its normal toward the viewer (the side taken away); a stepped or aligned one's whole line too (D-I5). */
+  cut?: SectionCut;
   /** Also where each part is in the view (C16.6): what the balloons of an assembly drawing point at. */
   anchors?: boolean;
   /** The flat pattern of the (first) part, not a projection of it (S-1): its outline and bend lines. */

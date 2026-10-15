@@ -1,5 +1,5 @@
 import type { Kernel, ProjectedView, ShapeId } from '@3db/kernel';
-import { placementRows, rightOf, sheetUp, type Pose, type ViewAxes } from '@3db/model';
+import { placementRows, rightOf, sheetUp, type Pose, type SectionCut, type ViewAxes } from '@3db/model';
 
 /** A part of what a view shows: its shape as built, where it is (identity for a part drawn alone) and whether it is the mirror of the file's part. */
 export interface ViewPart {
@@ -12,7 +12,7 @@ export interface ViewPart {
  * What a drawing's view looks like (C16.2, C16.3): the parts put where they are, seen from the view's direction as lines (exact hidden-line removal), or cut
  * by a plane first and the outlines of the faces it cut given with them. Nothing made here outlives the call.
  */
-export function projectDrawingView(kernel: Kernel, parts: readonly ViewPart[], axes: ViewAxes, cut?: { origin: [number, number, number]; normal: [number, number, number] }): ProjectedView {
+export function projectDrawingView(kernel: Kernel, parts: readonly ViewPart[], axes: ViewAxes, cut?: SectionCut): ProjectedView {
   const made: ShapeId[] = [];
   try {
     const placed = parts.map((p) => {
@@ -22,6 +22,8 @@ export function projectDrawingView(kernel: Kernel, parts: readonly ViewPart[], a
     });
     const whole = placed.length === 1 ? placed[0]! : kernel.join(placed);
     if (placed.length !== 1) made.push(whole);
+    // a stepped or aligned section (D-I5) is cut along its whole line; a straight one by the plane of its line
+    if (cut?.path) return kernel.sectionViewPath(whole, { normal: cut.normal, path: cut.path, ...(cut.aligned ? { aligned: true } : {}) }, axes.up);
     return cut ? kernel.sectionView(whole, cut, axes.up) : kernel.projectView(whole, axes);
   } finally {
     for (const id of made) kernel.release(id);

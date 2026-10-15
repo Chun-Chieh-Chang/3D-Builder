@@ -10,6 +10,8 @@ export const features = {
   'kernel.badMotion': '變換矩陣無效',
   'kernel.badViewDirection': '視角的方向不能是零向量',
   'kernel.projectFailed': '投影成線條失敗：{why}',
+  'kernel.badSectionPath': '剖面線至少要兩個點，每個點的座標都要是數字',
+  'kernel.sectionRegion': '剖切範圍',
   'kernel.motionNotRigid': '變換矩陣無效：只能平移、旋轉與鏡射',
   'kernel.badMotionWhy': '變換矩陣無效：{why}',
   'feature.cutRemovedNothing': '除料沒有移除任何材料（試試反轉方向）',

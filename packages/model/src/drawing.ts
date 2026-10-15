@@ -13,7 +13,7 @@ import { ANNOTATION_FIELDS, checkAnnotation, framesUsing, type Annotation, type 
  * opened (exact hidden-line removal), so a drawing can never disagree with the model it shows.
  */
 
-export const DRAWING_SCHEMA_VERSION = 17;
+export const DRAWING_SCHEMA_VERSION = 18;
 
 export type SheetSize = 'A4' | 'A3' | 'A2' | 'A1' | 'A0';
 export const SHEET_SIZES: readonly SheetSize[] = ['A4', 'A3', 'A2', 'A1', 'A0'];
@@ -90,8 +90,17 @@ export interface ProjectedDrawingView extends ViewCommon {
 export interface SectionDrawingView extends ViewCommon {
   kind: 'section';
   parent: Id;
-  line: [[number, number], [number, number]];
+  /**
+   * The cutting line: two points for a straight section (any angle, D-I5). More points make a stepped section: its segments are in turn cuts along the first
+   * segment's way and jogs square to it, the first and the last a cut. With `aligned`, three points: an aligned section (D-I5, ADR 0143).
+   */
+  line: [[number, number], [number, number], ...[number, number][]];
   flip?: boolean;
+  /**
+   * An aligned section (D-I5, ADR 0143): the first segment is cut where it is; what is behind the second is turned about the bend, square to the parent, into
+   * the first segment's plane, so that the section shows both cuts in one plane (as through two holes of a flange).
+   */
+  aligned?: boolean;
   /** The letter on the line and over the view: 「A」 for A–A. */
   label: string;
 }
@@ -532,6 +541,7 @@ export type ViewPatch = {
   direction?: ViewName;
   side?: ViewSide;
   flip?: boolean | null;
+  aligned?: boolean | null;
   label?: string;
   line?: SectionDrawingView['line'];
   centre?: [number, number];
@@ -567,14 +577,49 @@ function checkView(v: DrawingView, views: readonly DrawingView[]): void {
   if (!viewById(views, v.parent) || v.parent === v.id) throw new CommandError(t('drawing.noParent', { id: v.parent }));
   if (v.kind === 'projected' && !SIDES.includes(v.side)) throw new CommandError(t('drawing.badSide', { side: String(v.side) }));
   if (v.kind === 'section') {
-    const [[x0, y0], [x1, y1]] = v.line;
-    if (![x0, y0, x1, y1].every(Number.isFinite) || Math.hypot(x1 - x0, y1 - y0) < 1e-9) throw new CommandError(t('drawing.badSectionLine'));
+    checkSectionLine(v);
     if (!v.label.trim()) throw new CommandError(t('drawing.labelEmpty'));
   }
   if (v.kind === 'detail') {
     if (!v.centre.every(Number.isFinite) || !(v.radius > 0) || !Number.isFinite(v.radius)) throw new CommandError(t('drawing.badDetail'));
     if (!v.label.trim()) throw new CommandError(t('drawing.labelEmpty'));
   }
+}
+
+/** How far from square or from parallel the segments of a stepped line may be (unit vectors' dot products): the cuts must be parallel to the view to be hatched. */
+const SQUARE = 1e-9;
+
+/**
+ * Checks a section's line (D-I5): points that are numbers, no segment of no length; a stepped line's segments in turn along the first and square to it, its
+ * first and last a cut; an aligned line three points whose two segments are not in line.
+ */
+function checkSectionLine(v: Pick<SectionDrawingView, 'line' | 'aligned'>): void {
+  const pts = v.line as unknown;
+  if (!Array.isArray(pts) || pts.length < 2 || !pts.every((p) => Array.isArray(p) && p.length === 2 && p.every((x) => typeof x === 'number' && Number.isFinite(x)))) {
+    throw new CommandError(t('drawing.badSectionLine'));
+  }
+  const line = pts as [number, number][];
+  const dirs = line.slice(1).map((q, i) => {
+    const p = line[i]!;
+    const len = Math.hypot(q[0] - p[0], q[1] - p[1]);
+    if (len < 1e-9) throw new CommandError(t('drawing.badSectionLine'));
+    return [(q[0] - p[0]) / len, (q[1] - p[1]) / len] as const;
+  });
+  const t0 = dirs[0]!;
+  if (v.aligned) {
+    if (line.length !== 3) throw new CommandError(t('drawing.sectionAlignedThree'));
+    const t1 = dirs[1]!;
+    // in line (either way) is no bend to turn about: one degree at least
+    if (Math.abs(t0[0] * t1[1] - t0[1] * t1[0]) < Math.sin(Math.PI / 180)) throw new CommandError(t('drawing.sectionAlignedStraight'));
+    return;
+  }
+  if (line.length === 2) return;
+  if (dirs.length % 2 === 0) throw new CommandError(t('drawing.sectionStepEnds'));
+  dirs.forEach((d, i) => {
+    const dot = d[0] * t0[0] + d[1] * t0[1];
+    const ok = i % 2 === 0 ? dot > 1 - SQUARE : Math.abs(dot) < SQUARE;
+    if (!ok) throw new CommandError(t('drawing.sectionStepSquare', { n: i + 1 }));
+  });
 }
 
 const ORIENTATIONS: readonly DimensionOrientation[] = ['horizontal', 'vertical', 'aligned'];
@@ -707,12 +752,15 @@ export function mutateDrawing(draft: Draft<DrawingDoc>, cmd: DrawingCommand): vo
     }
     case 'setView': {
       const v = viewOf(draft, cmd.viewId);
-      const { at, scale, slide, flip, centreMarks, ...rest } = cmd.patch;
+      const { at, scale, slide, flip, aligned, centreMarks, ...rest } = cmd.patch;
       const kind = v.kind ?? 'model';
       const belongs: Record<string, string[]> = { model: ['source', 'direction'], projected: ['side'], section: ['line', 'label'], detail: ['centre', 'radius', 'label'] };
       for (const k of Object.keys(rest)) if (!['name', 'hidden'].includes(k) && !belongs[kind]!.includes(k)) throw new CommandError(t('drawing.notForKind', { field: k, kind }));
       if (flip !== undefined && kind !== 'section') throw new CommandError(t('drawing.notForKind', { field: 'flip', kind }));
-      const next = { ...(JSON.parse(JSON.stringify(v)) as DrawingView), ...rest } as DrawingView & { flip?: boolean; at?: [number, number]; scale?: Scale; slide?: number };
+      if (aligned !== undefined && kind !== 'section') throw new CommandError(t('drawing.notForKind', { field: 'aligned', kind }));
+      const next = { ...(JSON.parse(JSON.stringify(v)) as DrawingView), ...rest } as DrawingView & { flip?: boolean; aligned?: boolean; at?: [number, number]; scale?: Scale; slide?: number };
+      if (aligned === null || aligned === false) delete next.aligned;
+      else if (aligned === true) next.aligned = true;
       if (at === null) delete next.at;
       else if (at !== undefined) next.at = at;
       if (scale === null) delete next.scale;
@@ -1077,6 +1125,16 @@ export function sectionAxes(parent: ViewAxes, arrow: ViewSide): ViewAxes {
 }
 
 /**
+ * The way the arrows at the two ends of a section line point (unit, on the parent's sheet): each square to its own end segment, to its right (the left with
+ * `flip`). The same for a straight or stepped line; at the ends of an aligned one (D-I5), each says which way its own cut is seen.
+ */
+export function sectionEndDirections(v: Pick<SectionDrawingView, 'line' | 'flip'>): [[number, number], [number, number]] {
+  const n = v.line.length;
+  const last = sectionDirection({ line: [v.line[n - 2]!, v.line[n - 1]!], ...(v.flip ? { flip: true } : {}) });
+  return [sectionDirection(v), last];
+}
+
+/**
  * The direction of a section view on any section line (C-D-I5). A line along an axis of the sheet looks as `sectionAxes` does. A slanted
  * line looks along its arrows' direction on the sheet, in the parent's plane; its up is the parent's direction (the depth) when the
  * arrows are nearer up or down, and the sheet's up turned to stay square to it when they are nearer right or left (the same frames as
@@ -1105,6 +1163,26 @@ export function sectionPlane(parent: ViewAxes, v: SectionDrawingView): { origin:
   const [[x0, y0]] = v.line;
   const a = sectionLookAxes(parent, v);
   return { origin: [x0 * r[0] + y0 * u[0], x0 * r[1] + y0 * u[1], x0 * r[2] + y0 * u[2]], normal: neg(a.dir) };
+}
+
+/**
+ * What a section cuts the model with (D-I5): the plane of its first segment (`sectionPlane`), and for a stepped or aligned line the whole line in the model's axes
+ * (`path`) with `aligned` for an aligned one. The kernel takes away what is on the viewer's side of the path; the plane's normal says which side that is.
+ */
+export interface SectionCut {
+  origin: V3;
+  normal: V3;
+  path?: V3[];
+  aligned?: true;
+}
+
+export function sectionCut(parent: ViewAxes, v: SectionDrawingView): SectionCut {
+  const plane = sectionPlane(parent, v);
+  if (v.line.length === 2) return plane;
+  const r = rightOf(parent);
+  const u = unit(parent.up);
+  const path = v.line.map(([x, y]): V3 => [x * r[0] + y * u[0], x * r[1] + y * u[1], x * r[2] + y * u[2]]);
+  return { ...plane, path, ...(v.aligned ? { aligned: true as const } : {}) };
 }
 
 /** The file a view shows: that of the model view at the root of the views it is derived from; null when the chain is broken. */

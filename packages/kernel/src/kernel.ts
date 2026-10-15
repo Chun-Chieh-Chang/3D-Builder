@@ -4,6 +4,7 @@ import { anyHit, buildBvh, nearestHitAt, triangleNormal } from './rays';
 import { forEachSample } from './sampling';
 import { escapeStepText } from './stepText';
 import { inheritBodySurface } from './sameSurface';
+import { planSectionPath } from './sectionPath';
 import { sweepVolumeFloor } from './sweepFloor';
 import { Arena, loadOcct, ShapeIndex, type LoadOptions, type OC } from './occt';
 import {
@@ -2654,16 +2655,7 @@ export class Kernel {
       const size = Math.hypot(b[0] - a[0], b[1] - a[1], b[2] - a[2]);
       // the tool: a block on the viewer's side of the plane, far bigger than the shape, put where the plane is
       const R = 2 * size + 10;
-      const helper: Vec3 = Math.abs(n[0]) < 0.9 ? [1, 0, 0] : [0, 1, 0];
-      const d = helper[0] * n[0] + helper[1] * n[1] + helper[2] * n[2];
-      const xr = [helper[0] - n[0] * d, helper[1] - n[1] * d, helper[2] - n[2] * d];
-      const xl = Math.hypot(xr[0]!, xr[1]!, xr[2]!);
-      const X: Vec3 = [xr[0]! / xl, xr[1]! / xl, xr[2]! / xl];
-      const Y: Vec3 = [n[1] * X[2] - n[2] * X[1], n[2] * X[0] - n[0] * X[2], n[0] * X[1] - n[1] * X[0]];
-      const block = this.put(arena.own(new oc.BRepPrimAPI_MakeBox(arena.own(new oc.gp_Pnt(-R, -R, 0)), 2 * R, 2 * R, R)).Shape());
-      made.push(block);
-      const tool = this.transformed(block, [X[0], Y[0], n[0], plane.origin[0], X[1], Y[1], n[1], plane.origin[1], X[2], Y[2], n[2], plane.origin[2]]);
-      made.push(tool);
+      const tool = this.halfSpace({ origin: plane.origin, normal: n }, R, made, arena);
       const cut = this.boolean('cut', id, tool);
       made.push(cut.shape);
       // the whole shape is on the viewer's side, so the cut takes all of it (a line put off the part, D-I5): nothing to see and nothing cut, said by the
@@ -2703,6 +2695,139 @@ export class Kernel {
         if (flat.length >= 4) outlines.push(flat);
       });
       return { ...seen, cut: outlines };
+    } catch (e) {
+      if (e instanceof KernelError) throw e;
+      throw new KernelError(t('kernel.projectFailed', { why: this.errorText(e) }));
+    } finally {
+      for (const m of made) this.release(m);
+      arena.dispose();
+    }
+  }
+
+  /** A block of side 2R × 2R × R on the side of `plane` its normal (of length one) points to, its face on the plane: what takes away all on that side. */
+  private halfSpace(plane: { origin: Vec3; normal: Vec3 }, R: number, made: ShapeId[], arena: Arena): ShapeId {
+    const oc = this.oc;
+    const n = plane.normal;
+    const helper: Vec3 = Math.abs(n[0]) < 0.9 ? [1, 0, 0] : [0, 1, 0];
+    const d = helper[0] * n[0] + helper[1] * n[1] + helper[2] * n[2];
+    const xr = [helper[0] - n[0] * d, helper[1] - n[1] * d, helper[2] - n[2] * d];
+    const xl = Math.hypot(xr[0]!, xr[1]!, xr[2]!);
+    const X: Vec3 = [xr[0]! / xl, xr[1]! / xl, xr[2]! / xl];
+    const Y: Vec3 = [n[1] * X[2] - n[2] * X[1], n[2] * X[0] - n[0] * X[2], n[0] * X[1] - n[1] * X[0]];
+    const block = this.put(arena.own(new oc.BRepPrimAPI_MakeBox(arena.own(new oc.gp_Pnt(-R, -R, 0)), 2 * R, 2 * R, R)).Shape());
+    made.push(block);
+    const tool = this.transformed(block, [X[0], Y[0], n[0], plane.origin[0], X[1], Y[1], n[1], plane.origin[1], X[2], Y[2], n[2], plane.origin[2]]);
+    made.push(tool);
+    return tool;
+  }
+
+  /**
+   * A stepped or aligned section (D-I5, ADR 0143): what is on the viewer's side of the polyline `path` (the side `normal` points to from its first segment)
+   * is taken away; an aligned section's material behind its second segment is then turned about the bend into the first segment's plane. Seen looking
+   * against `normal` with `up` up, as `sectionView`; the outlines of the cut faces (those on the cutting planes) are given for hatching, and the lines where
+   * the path changes way (a jog, the bend) are not drawn, as ISO 128-44 has it. An empty `cut` when the path misses the shape.
+   */
+  sectionViewPath(id: ShapeId, cut: { normal: Vec3; path: Vec3[]; aligned?: boolean }, up: Vec3, options: { tolerance?: number; angular?: number } = {}): ProjectedView {
+    const oc = this.oc;
+    const n0 = cut.normal;
+    const nl = Math.hypot(n0[0], n0[1], n0[2]);
+    if (!(nl > 0)) throw new KernelError(t('kernel.badViewDirection'));
+    if (cut.path.length < 2 || !cut.path.every((p) => p.length === 3 && p.every(Number.isFinite))) throw new KernelError(t('kernel.badSectionPath'));
+    const n: Vec3 = [n0[0] / nl, n0[1] / nl, n0[2] / nl];
+    const made: ShapeId[] = [];
+    const arena = new Arena();
+    try {
+      const box = arena.own(new oc.Bnd_Box());
+      oc.BRepBndLib.Add(this.get(id), box, false);
+      const a = this.xyz(arena.own(box.CornerMin()));
+      const b = this.xyz(arena.own(box.CornerMax()));
+      const size = Math.hypot(b[0] - a[0], b[1] - a[1], b[2] - a[2]);
+      const centre: Vec3 = [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2, (a[2] + b[2]) / 2];
+      const p0 = cut.path[0]!;
+      const span = cut.path.reduce((m, p) => Math.max(m, Math.hypot(p[0] - p0[0], p[1] - p0[1], p[2] - p0[2])), 0);
+      const away = Math.hypot(centre[0] - p0[0], centre[1] - p0[1], centre[2] - p0[2]);
+      // far enough past the path, and through the whole shape along the depth, that nothing on the viewer's side is left
+      const reach = 2 * (away + size + span) + 10;
+      const plan = planSectionPath(cut.path, n, !!cut.aligned, reach);
+      const deep = Math.abs((centre[0] - p0[0]) * plan.depth[0] + (centre[1] - p0[1]) * plan.depth[1] + (centre[2] - p0[2]) * plan.depth[2]) + size + 10;
+      const at = (u: number, v: number, w: number): Vec3 => [
+        plan.origin[0] + u * plan.x[0] + v * plan.y[0] + w * plan.depth[0],
+        plan.origin[1] + u * plan.x[1] + v * plan.y[1] + w * plan.depth[1],
+        plan.origin[2] + u * plan.x[2] + v * plan.y[2] + w * plan.depth[2],
+      ];
+      const poly = arena.own(new oc.BRepBuilderAPI_MakePolygon());
+      for (const [u, v] of plan.region) poly.Add(this.pnt(arena, at(u, v, -deep)));
+      poly.Close();
+      const mkFace = arena.own(new oc.BRepBuilderAPI_MakeFace(arena.own(poly.Wire()), true));
+      if (!mkFace.IsDone()) throw new KernelError(t('kernel.opFailed', { label: t('kernel.sectionRegion') }));
+      const prism = arena.own(new oc.BRepPrimAPI_MakePrism(arena.own(mkFace.Face()), arena.own(new oc.gp_Vec(plan.depth[0] * 2 * deep, plan.depth[1] * 2 * deep, plan.depth[2] * 2 * deep)), false, true));
+      const tool = this.put(this.build(prism, t('kernel.sectionRegion'), arena));
+      made.push(tool);
+      const kept = this.boolean('cut', id, tool);
+      made.push(kept.shape);
+      if (this.topology(kept.shape).faces.length === 0) return { visible: [], hidden: [], box: null, cut: [] };
+      let shown = kept.shape;
+      if (plan.turn) {
+        // what is behind the second segment, apart from the rest, turned into the first segment's plane
+        const side = this.halfSpace(plan.turn.split, reach, made, arena);
+        const behind = this.boolean('common', kept.shape, side);
+        made.push(behind.shape);
+        const rest = this.boolean('cut', kept.shape, side);
+        made.push(rest.shape);
+        const turned = this.transformed(behind.shape, plan.turn.rows);
+        made.push(turned);
+        shown = this.join([rest.shape, turned]);
+        made.push(shown);
+      }
+      const view: ViewDirection = { dir: [-n[0], -n[1], -n[2]], up };
+      const seen = this.projectView(shown, view, options);
+      const ul = Math.hypot(up[0], up[1], up[2]);
+      const U: Vec3 = [up[0] / ul, up[1] / ul, up[2] / ul];
+      const rx: Vec3 = [view.dir[1] * U[2] - view.dir[2] * U[1], view.dir[2] * U[0] - view.dir[0] * U[2], view.dir[0] * U[1] - view.dir[1] * U[0]];
+      const rl = Math.hypot(rx[0], rx[1], rx[2]);
+      const R3: Vec3 = [rx[0] / rl, rx[1] / rl, rx[2] / rl];
+      const along = (p: Vec3, q: Vec3) => p[0] * q[0] + p[1] * q[1] + p[2] * q[2];
+      const tol = 1e-6 * Math.max(1, size);
+      // the cut faces: planar, square to the view, on one of the cutting planes
+      const topo = this.topology(shown);
+      const onCut = new Set(
+        topo.faces.flatMap((f, i) => {
+          if (f.surface !== 'plane' || !f.normal) return [];
+          if (Math.abs(along(f.normal, n)) <= 1 - 1e-9) return [];
+          return plan.cuts.some((c) => Math.abs(along([f.center[0] - c.origin[0], f.center[1] - c.origin[1], f.center[2] - c.origin[2]], c.normal)) < tol) ? [i] : [];
+        }),
+      );
+      const tolerance = options.tolerance ?? Math.min(0.05, Math.max(1e-3, size * 1e-3));
+      const angular = options.angular ?? 0.1;
+      const outlines: number[][] = [];
+      topo.edges.forEach((e, ei) => {
+        if (!e.faces.some((f) => onCut.has(f))) return;
+        const edge = this.subShape(shown, 'edge', ei);
+        made.push(edge);
+        const curve = arena.own(new oc.BRepAdaptor_Curve(arena.own(oc.TopoDS.Edge(this.get(edge)))));
+        const pts = arena.own(new oc.GCPnts_TangentialDeflection(curve, angular, tolerance));
+        const flat: number[] = [];
+        for (let i = 1; i <= pts.NbPoints(); i++) {
+          const p = arena.own(pts.Value(i));
+          flat.push(p.X() * R3[0] + p.Y() * R3[1] + p.Z() * R3[2], p.X() * U[0] + p.Y() * U[1] + p.Z() * U[2]);
+        }
+        if (flat.length >= 4) outlines.push(flat);
+      });
+      // a jog or the bend is seen edge on: the line where the cut faces either side of it meet (both its ends corners of the cut) is not drawn
+      const corners = outlines.flatMap((l) => [[l[0]!, l[1]!], [l[l.length - 2]!, l[l.length - 1]!]] as [number, number][]);
+      const isCorner = (x: number, y: number) => corners.some((c) => Math.abs(c[0] - x) < tol && Math.abs(c[1] - y) < tol);
+      const onBend = (l: number[]) =>
+        l.length >= 4 &&
+        isCorner(l[0]!, l[1]!) &&
+        isCorner(l[l.length - 2]!, l[l.length - 1]!) &&
+        plan.bends.some((bd) => {
+          const kx = along(bd.normal, R3);
+          const ky = along(bd.normal, U);
+          const k0 = along(bd.normal, bd.origin);
+          for (let i = 0; i + 1 < l.length; i += 2) if (Math.abs(l[i]! * kx + l[i + 1]! * ky - k0) > tol) return false;
+          return true;
+        });
+      return { ...seen, visible: seen.visible.filter((l) => !onBend(l)), hidden: seen.hidden.filter((l) => !onBend(l)), cut: outlines };
     } catch (e) {
       if (e instanceof KernelError) throw e;
       throw new KernelError(t('kernel.projectFailed', { why: this.errorText(e) }));

@@ -3,3 +3,4 @@ export { SURFACE_TOLERANCE, THREAD_MAX_STARTS, THREAD_MAX_TAPER, THREAD_MAX_TURN
 export type { LoadOptions } from './occt';
 export { anyHit, buildBvh, nearestHit, nearestHitAt, triangleNormal, type Bvh } from './rays';
 export { forEachSample, type SampleMesh } from './sampling';
+export { planSectionPath, rightOfPolyline, turnRows, type PathPlane, type SectionPathPlan } from './sectionPath';

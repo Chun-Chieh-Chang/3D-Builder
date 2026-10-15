@@ -12,6 +12,8 @@ export const features: Translation = {
   'kernel.badMotion': 'The transformation matrix is not valid',
   'kernel.badViewDirection': 'The direction of the view cannot be a zero vector',
   'kernel.projectFailed': 'Could not project the shape into lines: {why}',
+  'kernel.badSectionPath': 'A section line needs at least two points, each given as numbers',
+  'kernel.sectionRegion': 'the region a section takes away',
   'kernel.motionNotRigid': 'The transformation matrix is not valid: only translation, rotation and mirroring are allowed',
   'kernel.badMotionWhy': 'The transformation matrix is not valid: {why}',
   'feature.cutRemovedNothing': 'The cut did not remove any material (try reversing the direction)',

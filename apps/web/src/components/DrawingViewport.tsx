@@ -25,6 +25,10 @@ import {
   sideAt,
   snapCut,
   lineAcrossBox,
+  alignedTo,
+  finishSectionLine,
+  firstCutTo,
+  stepTo,
   scaleFromRatio,
   scaleTarget,
   segmentDistance,
@@ -62,7 +66,7 @@ type Drag =
   | { kind: 'move'; id: string; mode: 'shift' | 'slide' | 'free'; axis: 0 | 1 | null; from: P; origin: P; delta: P }
   | { kind: 'scale'; id: string; target: ReturnType<typeof scaleTarget>; centre: P; r0: number; ratio0: number; scale: Scale }
   | { kind: 'dimension'; id: string; onText: boolean; handle: DimensionHandle; patch: ReturnType<typeof dragDimension> }
-  | { kind: 'sectionLine'; id: string; line: [P, P]; vertical: boolean; scale: number; from: P; delta: number }
+  | { kind: 'sectionLine'; id: string; line: SectionDrawingView['line']; vertical: boolean; scale: number; from: P; delta: number }
   | { kind: 'table'; id: string; from: P; origin: P; delta: P }
   | { kind: 'balloon'; id: string; item: string; from: P; origin: P; delta: P }
   | { kind: 'surface'; id: string; from: P; origin: P; delta: P }
@@ -74,7 +78,7 @@ type Drag =
   /** A box dragged over the paper from where nothing was (D-I1a): what it holds is chosen; with Ctrl it is added to what was. */
   | { kind: 'box'; from: P; to: P; add: boolean };
 type DrawPlacement =
-  | { tool: 'section'; view: Id; line: [P, P] }
+  | { tool: 'section'; view: Id; line: SectionDrawingView['line']; aligned?: boolean }
   | { tool: 'detail'; view: Id; centre: P; radius: number };
 
 const round2 = (n: number) => Math.round(n * 100) / 100;
@@ -86,8 +90,9 @@ function movedAnnotation(a: Annotation, dv: P): Annotation {
   return { ...a, at: by(a.at) } as Annotation;
 }
 
-/** The line of a section as it is when it has been moved by `by` (view units) across itself. */
-const movedLine = (line: [P, P], vertical: boolean, by: number): [P, P] => (vertical ? [[line[0][0] + by, line[0][1]], [line[1][0] + by, line[1][1]]] : [[line[0][0], line[0][1] + by], [line[1][0], line[1][1] + by]]);
+/** The line of a section as it is when it has been moved by `by` (view units) across itself: all its points (a stepped or aligned line bends, D-I5). */
+const movedLine = (line: SectionDrawingView['line'], vertical: boolean, by: number): SectionDrawingView['line'] =>
+  line.map(([x, y]) => (vertical ? [x + by, y] : [x, y + by])) as SectionDrawingView['line'];
 
 /** The shape a dimension chosen on the sheet is drawn over in, so that it can be seen which one it is. */
 function Highlight({ items, height, color }: { items: readonly SceneItem[]; height: number; color: string }) {
@@ -120,6 +125,8 @@ export function DrawingViewport() {
   const [drag, setDrag] = useState<Drag | null>(null);
   const [pendingDraw, setPendingDraw] = useState<Extract<Drag, { kind: 'draw' }> | null>(null);
   const [pendingPlacement, setPendingPlacement] = useState<DrawPlacement | null>(null);
+  /** A stepped or aligned section's line being clicked out (D-I5): the parent view and the points so far, in its view coordinates. */
+  const [pathDraw, setPathDraw] = useState<{ view: Id; mode: 'stepped' | 'aligned'; points: P[] } | null>(null);
   const [drawCursor, setDrawCursor] = useState<P | null>(null);
   const [panning, setPanning] = useState<{ x: number; y: number } | null>(null);
   /** The right-click menu of a view (D-I7): opened when the right button is let go where it was pressed (a drag with it pans). */
@@ -206,8 +213,9 @@ export function DrawingViewport() {
         if (v.kind !== 'section') return [];
         const parent = built.placed.get(v.parent);
         if (!parent) return [];
-        const vertical = v.line[0][0] === v.line[1][0];
-        return [{ id: v.id, line: v.line as [P, P], vertical, scale: parent.scale, p0: toSheet(parent, v.line[0][0], v.line[0][1]) as P, p1: toSheet(parent, v.line[1][0], v.line[1][1]) as P }];
+        // each segment can be taken hold of (a stepped or aligned line has several, D-I5); the whole line is moved across the first's way
+        const vertical = Math.abs(v.line[1][0] - v.line[0][0]) <= Math.abs(v.line[1][1] - v.line[0][1]);
+        return v.line.slice(1).map((q, i) => ({ id: v.id, line: v.line, vertical, scale: parent.scale, p0: toSheet(parent, v.line[i]![0], v.line[i]![1]) as P, p1: toSheet(parent, q[0], q[1]) as P }));
       }),
     [shown, built],
   );
@@ -243,9 +251,18 @@ export function DrawingViewport() {
     const onKey = (e: KeyboardEvent) => {
       const el = e.target as HTMLElement | null;
       if (el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.tagName === 'SELECT' || el.isContentEditable)) return;
+      if (e.key === 'Enter' && pathDraw && !drag) {
+        // a stepped line is finished when the user says so (an aligned one by its third point)
+        e.preventDefault();
+        finishPath(pathDraw);
+        return;
+      }
       if (e.key === 'Escape') {
         if (drag) setDrag(null);
-        else if (pendingDraw) {
+        else if (pathDraw) {
+          setPathDraw(null);
+          setDrawCursor(null);
+        } else if (pendingDraw) {
           setPendingDraw(null);
           setDrawCursor(null);
         }
@@ -267,12 +284,13 @@ export function DrawingViewport() {
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [drag, pendingDraw, pendingPlacement, tool, drw.selection, d]);
+  }, [drag, pendingDraw, pendingPlacement, pathDraw, tool, drw.selection, d]);
   useEffect(() => {
     setPendingDraw(null);
     setPendingPlacement(null);
+    setPathDraw(null);
     setDrawCursor(null);
-  }, [tool?.kind]);
+  }, [tool?.kind, tool?.kind === 'section' ? tool.path : undefined]);
   // a dimension that is gone (deleted, undone) is not the one chosen
   useEffect(() => {
     if (drw.dimension && !drw.doc.dimensions.some((x) => x.id === drw.dimension)) d.selectDimension(null);
@@ -431,6 +449,30 @@ export function DrawingViewport() {
         setDrag({ kind: 'placeDraw', placement: pendingPlacement, from: p, to: p, free: e.ctrlKey || e.metaKey });
         return;
       }
+      // a stepped or aligned line, a click a point (D-I5): the first on a view, the rest anywhere (a step may reach past the view's edge)
+      if (tool.kind === 'section' && tool.path) {
+        const hint = t(tool.path === 'aligned' ? 'drawingUi.hint.sectionAligned' : 'drawingUi.hint.sectionStepped');
+        const id = pathDraw?.view ?? viewUnder(p)?.id;
+        const placed = id ? basePlaced.get(id) : undefined;
+        if (!id || !placed) return d.notifyInfo(hint);
+        const q = toView(placed, p);
+        if (!pathDraw) {
+          d.select(id);
+          setPathDraw({ view: id, mode: tool.path, points: [q] });
+          setDrawCursor(p);
+          return;
+        }
+        // a click on the last point again (a double click) finishes a stepped line
+        const last = pathDraw.points[pathDraw.points.length - 1]!;
+        const lastOnSheet = toSheet(placed, last[0], last[1]);
+        if (pathDraw.points.length >= 2 && Math.hypot(lastOnSheet[0] - p[0], lastOnSheet[1] - p[1]) <= reach) return finishPath(pathDraw);
+        const next = nextPathPoints(pathDraw, q);
+        if (!next) return d.notifyInfo(hint);
+        const grown = { ...pathDraw, points: next };
+        if (grown.mode === 'aligned' && next.length === 3) return finishPath(grown);
+        setPathDraw(grown);
+        return;
+      }
       const view = viewUnder(p);
       if (!view) return d.notifyInfo(t(tool.kind === 'section' ? 'drawingUi.hint.section' : 'drawingUi.hint.detail'));
       if (pendingDraw?.tool === tool.kind) {
@@ -573,7 +615,7 @@ export function DrawingViewport() {
       setDrag({ ...drag, to: p });
     } else if (drag?.kind === 'placeDraw' || drag?.kind === 'box') {
       setDrag({ ...drag, to: p });
-    } else if (pendingDraw || pendingPlacement) {
+    } else if (pendingDraw || pendingPlacement || pathDraw) {
       setDrawCursor(p);
       setHover((h) => ({ p, feature: null, dimension: null, ctrl: e.ctrlKey || e.metaKey, ...(h && h.p === p ? {} : {}) }));
     } else if (drag) {
@@ -806,6 +848,25 @@ export function DrawingViewport() {
     }
   };
 
+  /** The points of a stepped or aligned line with one more click at `q` (view coordinates): null when that click makes no line (D-I5). */
+  const nextPathPoints = (pd: { mode: 'stepped' | 'aligned'; points: P[] }, q: P): P[] | null => {
+    if (pd.points.length === 1) {
+      const end = firstCutTo(pd.points[0]!, q);
+      return end ? [pd.points[0]!, end] : null;
+    }
+    return pd.mode === 'aligned' ? alignedTo(pd.points, q) : stepTo(pd.points, q);
+  };
+
+  /** A stepped or aligned line clicked out (D-I5): carried across its view, then the section waits to be placed, as a straight one does. */
+  const finishPath = (pd: { view: Id; mode: 'stepped' | 'aligned'; points: P[] }) => {
+    const box = drw.lines.get(pd.view)?.box;
+    const enough = pd.mode === 'aligned' ? pd.points.length === 3 : pd.points.length >= 2;
+    if (!box || !enough) return d.notifyInfo(t(pd.mode === 'aligned' ? 'drawingUi.hint.sectionAligned' : 'drawingUi.hint.sectionStepped'));
+    const line = finishSectionLine(pd.points, box, 5) as SectionDrawingView['line'];
+    setPathDraw(null);
+    setPendingPlacement({ tool: 'section', view: pd.view, line, ...(pd.mode === 'aligned' ? { aligned: true } : {}) });
+  };
+
   /** Turn the cut line or detail circle gesture into geometry, then wait for the view placement click. */
   const makeDrawPlacement = (g: Extract<Drag, { kind: 'draw' }>): DrawPlacement | null => {
     const placed = basePlaced.get(g.view);
@@ -848,8 +909,9 @@ export function DrawingViewport() {
     if (placement.tool === 'detail') d.addDetail(placement.view, placement.centre, placement.radius, [round2(at[0]), round2(at[1])]);
     else {
       const g = free ? null : sectionGhost(placement, at);
-      if (g) d.addSection(placement.view, placement.line, undefined, { flip: g.flip, slide: g.slide, shift: g.shift });
-      else d.addSection(placement.view, placement.line, [round2(at[0]), round2(at[1])]);
+      const aligned = placement.aligned ? { aligned: true } : {};
+      if (g) d.addSection(placement.view, placement.line, undefined, { flip: g.flip, slide: g.slide, shift: g.shift, ...aligned });
+      else d.addSection(placement.view, placement.line, [round2(at[0]), round2(at[1])], aligned);
     }
     d.setTool(null);
   };
@@ -930,7 +992,7 @@ export function DrawingViewport() {
       : tool?.kind === 'surface'
       ? t('drawingUi.toolSurfaceFinish')
       : tool
-      ? t(tool.kind === 'section' ? (tool.slant ? 'drawingUi.hint.sectionSlant' : 'drawingUi.hint.section') : 'drawingUi.hint.detail')
+      ? t(tool.kind === 'section' ? (tool.path === 'stepped' ? 'drawingUi.hint.sectionStepped' : tool.path === 'aligned' ? 'drawingUi.hint.sectionAligned' : tool.slant ? 'drawingUi.hint.sectionSlant' : 'drawingUi.hint.section') : 'drawingUi.hint.detail')
       : drw.doc.views.length === 0
       ? t('drawingUi.mainViewFirst')
       : null;
@@ -980,7 +1042,7 @@ export function DrawingViewport() {
   // before the press of the section tool: the cutting line where it would go over the view under the pointer, snapped
   const cutPreview = (() => {
     // a slanted line has no direction before the press: nothing to preview yet
-    if (tool?.kind !== 'section' || tool.slant || drag || pendingDraw || pendingPlacement || !hover) return null;
+    if (tool?.kind !== 'section' || tool.slant || tool.path || drag || pendingDraw || pendingPlacement || !hover) return null;
     const view = viewUnder(hover.p);
     const placed = view && basePlaced.get(view.id);
     const box = view && drw.lines.get(view.id)?.box;
@@ -1077,6 +1139,21 @@ export function DrawingViewport() {
             })}
           {plan && <Highlight items={built.scene.items.filter((i) => i.group === 'preview')} height={sheet.height} color="#1c7ed6" />}
           {drawn && drawnPlaced && drawn.tool === 'detail' && <circle cx={drawn.from[0]} cy={sheet.height - drawn.from[1]} r={Math.hypot(drawn.to[0] - drawn.from[0], drawn.to[1] - drawn.from[1])} fill="none" stroke="#1c7ed6" strokeWidth={0.5} strokeDasharray="2 1" />}
+          {pathDraw && (() => {
+            // the stepped or aligned line so far, and what the next click would add (D-I5)
+            const pl = basePlaced.get(pathDraw.view);
+            if (!pl) return null;
+            const next = drawCursor ? nextPathPoints(pathDraw, toView(pl, drawCursor)) : null;
+            const pts = (next ?? pathDraw.points).map(([x, y]) => toSheet(pl, x, y));
+            return (
+              <g data-path-preview={pathDraw.mode}>
+                <polyline points={pts.map(([x, y]) => `${x},${sheet.height - y}`).join(' ')} fill="none" stroke="#1c7ed6" strokeWidth={0.6} strokeDasharray="6 2 1 2" />
+                {pts.map(([x, y], i) => (
+                  <circle key={i} cx={x} cy={sheet.height - y} r={0.8} fill="#1c7ed6" />
+                ))}
+              </g>
+            );
+          })()}
           {drawn && drawnPlaced && drawn.tool === 'section' && (() => {
             if (drawn.slant) {
               const box = { min: [drawnPlaced.at[0] - drawnPlaced.w / 2, drawnPlaced.at[1] - drawnPlaced.h / 2] as const, max: [drawnPlaced.at[0] + drawnPlaced.w / 2, drawnPlaced.at[1] + drawnPlaced.h / 2] as const };
@@ -1137,14 +1214,20 @@ export function DrawingViewport() {
       </div>
       {tool?.kind === 'section' && !pendingPlacement && (
         <div className="heads-up drawing-toolopts" data-section-type style={{ top: 44 }}>
-          <button className={!tool.slant && tool.vertical !== false ? 'active' : ''} data-action="sectionVertical" onClick={() => d.setTool({ kind: 'section', vertical: true })}>
+          <button className={!tool.slant && !tool.path && tool.vertical !== false ? 'active' : ''} data-action="sectionVertical" onClick={() => d.setTool({ kind: 'section', vertical: true })}>
             {t('drawingUi.sectionVertical')}
           </button>
-          <button className={!tool.slant && tool.vertical === false ? 'active' : ''} data-action="sectionHorizontal" onClick={() => d.setTool({ kind: 'section', vertical: false })}>
+          <button className={!tool.slant && !tool.path && tool.vertical === false ? 'active' : ''} data-action="sectionHorizontal" onClick={() => d.setTool({ kind: 'section', vertical: false })}>
             {t('drawingUi.sectionHorizontal')}
           </button>
           <button className={tool.slant ? 'active' : ''} data-action="sectionSlant" title={t('drawingUi.hint.sectionSlant')} onClick={() => d.setTool({ kind: 'section', slant: true })}>
             {t('drawingUi.sectionSlant')}
+          </button>
+          <button className={tool.path === 'stepped' ? 'active' : ''} data-action="sectionStepped" title={t('drawingUi.hint.sectionStepped')} onClick={() => d.setTool({ kind: 'section', path: 'stepped' })}>
+            {t('drawingUi.sectionStepped')}
+          </button>
+          <button className={tool.path === 'aligned' ? 'active' : ''} data-action="sectionAligned" title={t('drawingUi.hint.sectionAligned')} onClick={() => d.setTool({ kind: 'section', path: 'aligned' })}>
+            {t('drawingUi.sectionAligned')}
           </button>
         </div>
       )}
