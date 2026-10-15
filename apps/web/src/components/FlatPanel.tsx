@@ -97,7 +97,7 @@ export function FlatPanel() {
       {error && <p className="error" data-field="error">{error}</p>}
       {report && (
         <>
-          <svg data-field="drawing" viewBox={`${report.min[0] - pad} ${report.min[1] - pad} ${report.width + 2 * pad} ${report.height + 2 * pad}`} width="100%" style={{ maxHeight: 220, background: 'var(--panel-bg, transparent)' }} preserveAspectRatio="xMidYMid meet">
+          <svg data-field="drawing" viewBox={`${report.min[0] - pad} ${report.min[1] - pad} ${report.width + 2 * pad} ${report.height + 2 * pad}`} width="100%" style={{ maxHeight: 220, background: 'var(--card)' }} preserveAspectRatio="xMidYMid meet">
             {report.outline.map((s, i) =>
               s.kind === 'line' ? (
                 <line key={i} x1={s.a[0]} y1={y(s.a[1])} x2={s.b[0]} y2={y(s.b[1])} stroke="currentColor" strokeWidth={report.width / 400} />

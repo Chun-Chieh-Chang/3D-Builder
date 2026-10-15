@@ -3141,7 +3141,7 @@ function SketchPlanePanel({ f }: { f: SketchFeature }) {
     <>
       <section className="pm-group">
         <h4>{t('pm.currentPlane')}</h4>
-        <div className="selection-box" style={{ padding: '8px 12px', background: 'var(--surface-color, #fff)', borderRadius: '6px', border: '1px solid var(--border-color, #e2e8f0)', fontWeight: 500, display: 'flex', alignItems: 'center' }}>
+        <div className="selection-box" style={{ padding: '8px 12px', background: 'var(--card)', borderRadius: '6px', border: '1px solid var(--line)', fontWeight: 500, display: 'flex', alignItems: 'center' }}>
           <Icon name="plane" />
           <span style={{ marginLeft: '8px' }}>{currentLabel()}</span>
         </div>
@@ -3165,8 +3165,8 @@ function SketchPlanePanel({ f }: { f: SketchFeature }) {
                   padding: '6px 12px',
                   textAlign: 'left',
                   borderRadius: '4px',
-                  border: isSelected ? '1px solid var(--brand-color, #3b82f6)' : '1px solid var(--border-color, #e2e8f0)',
-                  background: isSelected ? 'rgba(59, 130, 246, 0.1)' : undefined,
+                  border: isSelected ? '1px solid var(--accent)' : '1px solid var(--line)',
+                  background: isSelected ? 'color-mix(in oklab, var(--accent) 10%, transparent)' : undefined,
                   fontWeight: isSelected ? 600 : 400,
                   cursor: 'pointer',
                 }}

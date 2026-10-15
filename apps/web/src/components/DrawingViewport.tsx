@@ -1077,20 +1077,20 @@ export function DrawingViewport() {
       <div className="drawing-stage" style={{ transform: `translate(${pan.x}px, ${pan.y}px) scale(${pan.zoom})` }}>
         <div className="drawing-paper" data-svg dangerouslySetInnerHTML={{ __html: svg }} />
         <svg className="drawing-overlay" data-overlay width={sheet.width * PX} height={sheet.height * PX} viewBox={`0 0 ${sheet.width} ${sheet.height}`}>
-          {chosen.length > 0 && <Highlight items={chosen} height={sheet.height} color="#1c7ed6" />}
-          {chosenFinishItems.length > 0 && <Highlight items={chosenFinishItems} height={sheet.height} color="#1c7ed6" />}
-          {chosenAnnotationItems.length > 0 && <Highlight items={chosenAnnotationItems} height={sheet.height} color="#1c7ed6" />}
+          {chosen.length > 0 && <Highlight items={chosen} height={sheet.height} color="var(--accent)" />}
+          {chosenFinishItems.length > 0 && <Highlight items={chosenFinishItems} height={sheet.height} color="var(--accent)" />}
+          {chosenAnnotationItems.length > 0 && <Highlight items={chosenAnnotationItems} height={sheet.height} color="var(--accent)" />}
           {annotateFrom && (
             <g data-annotate-preview>
-              <circle cx={annotateFrom[0]} cy={sheet.height - annotateFrom[1]} r={1} fill="#f08c00" />
-              {hover && <line x1={annotateFrom[0]} y1={sheet.height - annotateFrom[1]} x2={hover.p[0]} y2={sheet.height - hover.p[1]} stroke="#f08c00" strokeWidth={0.35} strokeDasharray="2 1" />}
+              <circle cx={annotateFrom[0]} cy={sheet.height - annotateFrom[1]} r={1} fill="var(--warn)" />
+              {hover && <line x1={annotateFrom[0]} y1={sheet.height - annotateFrom[1]} x2={hover.p[0]} y2={sheet.height - hover.p[1]} stroke="var(--warn)" strokeWidth={0.35} strokeDasharray="2 1" />}
             </g>
           )}
           {otherViews.map((v, k) => (
-            <rect key={`v${k}`} data-chosen-view x={v.at[0] - v.w / 2 - 1} y={sheet.height - v.at[1] - v.h / 2 - 1} width={v.w + 2} height={v.h + 2} fill="none" stroke="#1c7ed6" strokeWidth={0.4} strokeDasharray="3 1.5" />
+            <rect key={`v${k}`} data-chosen-view x={v.at[0] - v.w / 2 - 1} y={sheet.height - v.at[1] - v.h / 2 - 1} width={v.w + 2} height={v.h + 2} fill="none" stroke="var(--accent)" strokeWidth={0.4} strokeDasharray="3 1.5" />
           ))}
           {chosenTables.map((b, k) => (
-            <rect key={`t${k}`} data-chosen-table x={b.x - 0.8} y={sheet.height - b.y - b.h - 0.8} width={b.w + 1.6} height={b.h + 1.6} fill="none" stroke="#1c7ed6" strokeWidth={0.6} />
+            <rect key={`t${k}`} data-chosen-table x={b.x - 0.8} y={sheet.height - b.y - b.h - 0.8} width={b.w + 1.6} height={b.h + 1.6} fill="none" stroke="var(--accent)" strokeWidth={0.6} />
           ))}
           {boxing && (
             <rect
@@ -1099,8 +1099,8 @@ export function DrawingViewport() {
               y={sheet.height - boxing.rect.y1}
               width={boxing.rect.x1 - boxing.rect.x0}
               height={boxing.rect.y1 - boxing.rect.y0}
-              fill={boxing.crossing ? 'rgba(47,158,68,0.08)' : 'rgba(28,126,214,0.08)'}
-              stroke={boxing.crossing ? '#2f9e44' : '#1c7ed6'}
+              fill={boxing.crossing ? 'color-mix(in oklab, var(--ok) 8%, transparent)' : 'color-mix(in oklab, var(--accent) 8%, transparent)'}
+              stroke={boxing.crossing ? 'var(--ok)' : 'var(--accent)'}
               strokeWidth={0.4}
               strokeDasharray={boxing.crossing ? '2 1' : undefined}
             />
@@ -1110,7 +1110,7 @@ export function DrawingViewport() {
               const view = (tool.picks[0]?.view ?? hover?.feature?.view)!;
               const placed = basePlaced.get(view);
               if (!placed) return null;
-              const colour = k < tool.picks.length ? '#1c7ed6' : '#f08c00';
+              const colour = k < tool.picks.length ? 'var(--accent)' : 'var(--warn)';
               const box = viewLines.get(view)?.box;
               if (f.type === 'circle' || f.type === 'torus') {
                 // a circle is drawn about its own middle, a fillet's arc about `at` (which is `major` off the torus's centre), both of the radius written
@@ -1120,7 +1120,7 @@ export function DrawingViewport() {
               }
               if (f.type === 'vertex') {
                 const c = toSheet(placed, f.at[0], f.at[1]);
-                return <circle key={k} data-pick="vertex" cx={c[0]} cy={sheet.height - c[1]} r={1.1} fill={colour} stroke="#fff" strokeWidth={0.3} />;
+                return <circle key={k} data-pick="vertex" cx={c[0]} cy={sheet.height - c[1]} r={1.1} fill={colour} stroke="var(--card)" strokeWidth={0.3} />;
               }
               if (f.type === 'outline') {
                 const sa = toSheet(placed, f.from[0], f.from[1]);
@@ -1137,8 +1137,8 @@ export function DrawingViewport() {
               const sb = toSheet(placed, b![0]!, b![1]!);
               return <line key={k} x1={sa[0]} y1={sheet.height - sa[1]} x2={sb[0]} y2={sheet.height - sb[1]} stroke={colour} strokeWidth={0.8} />;
             })}
-          {plan && <Highlight items={built.scene.items.filter((i) => i.group === 'preview')} height={sheet.height} color="#1c7ed6" />}
-          {drawn && drawnPlaced && drawn.tool === 'detail' && <circle cx={drawn.from[0]} cy={sheet.height - drawn.from[1]} r={Math.hypot(drawn.to[0] - drawn.from[0], drawn.to[1] - drawn.from[1])} fill="none" stroke="#1c7ed6" strokeWidth={0.5} strokeDasharray="2 1" />}
+          {plan && <Highlight items={built.scene.items.filter((i) => i.group === 'preview')} height={sheet.height} color="var(--accent)" />}
+          {drawn && drawnPlaced && drawn.tool === 'detail' && <circle cx={drawn.from[0]} cy={sheet.height - drawn.from[1]} r={Math.hypot(drawn.to[0] - drawn.from[0], drawn.to[1] - drawn.from[1])} fill="none" stroke="var(--accent)" strokeWidth={0.5} strokeDasharray="2 1" />}
           {pathDraw && (() => {
             // the stepped or aligned line so far, and what the next click would add (D-I5)
             const pl = basePlaced.get(pathDraw.view);
@@ -1147,9 +1147,9 @@ export function DrawingViewport() {
             const pts = (next ?? pathDraw.points).map(([x, y]) => toSheet(pl, x, y));
             return (
               <g data-path-preview={pathDraw.mode}>
-                <polyline points={pts.map(([x, y]) => `${x},${sheet.height - y}`).join(' ')} fill="none" stroke="#1c7ed6" strokeWidth={0.6} strokeDasharray="6 2 1 2" />
+                <polyline points={pts.map(([x, y]) => `${x},${sheet.height - y}`).join(' ')} fill="none" stroke="var(--accent)" strokeWidth={0.6} strokeDasharray="6 2 1 2" />
                 {pts.map(([x, y], i) => (
-                  <circle key={i} cx={x} cy={sheet.height - y} r={0.8} fill="#1c7ed6" />
+                  <circle key={i} cx={x} cy={sheet.height - y} r={0.8} fill="var(--accent)" />
                 ))}
               </g>
             );
@@ -1158,24 +1158,24 @@ export function DrawingViewport() {
             if (drawn.slant) {
               const box = { min: [drawnPlaced.at[0] - drawnPlaced.w / 2, drawnPlaced.at[1] - drawnPlaced.h / 2] as const, max: [drawnPlaced.at[0] + drawnPlaced.w / 2, drawnPlaced.at[1] + drawnPlaced.h / 2] as const };
               const across = Math.hypot(drawn.to[0] - drawn.from[0], drawn.to[1] - drawn.from[1]) >= 3 ? lineAcrossBox(drawn.from, drawn.to, box, 5) : null;
-              return across ? <line data-slant-preview x1={across[0][0]} y1={sheet.height - across[0][1]} x2={across[1][0]} y2={sheet.height - across[1][1]} stroke="#1c7ed6" strokeWidth={0.6} strokeDasharray="6 2 1 2" /> : null;
+              return across ? <line data-slant-preview x1={across[0][0]} y1={sheet.height - across[0][1]} x2={across[1][0]} y2={sheet.height - across[1][1]} stroke="var(--accent)" strokeWidth={0.6} strokeDasharray="6 2 1 2" /> : null;
             }
             const horizontal = Math.max(Math.abs(drawn.to[0] - drawn.from[0]), Math.abs(drawn.to[1] - drawn.from[1])) >= 3 && Math.abs(drawn.to[0] - drawn.from[0]) > Math.abs(drawn.to[1] - drawn.from[1]);
             const half = (horizontal ? drawnPlaced.w : drawnPlaced.h) / 2 + 5;
             return horizontal ? (
-              <line x1={drawnPlaced.at[0] - half} x2={drawnPlaced.at[0] + half} y1={sheet.height - drawn.from[1]} y2={sheet.height - drawn.from[1]} stroke="#1c7ed6" strokeWidth={0.6} strokeDasharray="6 2 1 2" />
+              <line x1={drawnPlaced.at[0] - half} x2={drawnPlaced.at[0] + half} y1={sheet.height - drawn.from[1]} y2={sheet.height - drawn.from[1]} stroke="var(--accent)" strokeWidth={0.6} strokeDasharray="6 2 1 2" />
             ) : (
-              <line y1={sheet.height - (drawnPlaced.at[1] - half)} y2={sheet.height - (drawnPlaced.at[1] + half)} x1={drawn.from[0]} x2={drawn.from[0]} stroke="#1c7ed6" strokeWidth={0.6} strokeDasharray="6 2 1 2" />
+              <line y1={sheet.height - (drawnPlaced.at[1] - half)} y2={sheet.height - (drawnPlaced.at[1] + half)} x1={drawn.from[0]} x2={drawn.from[0]} stroke="var(--accent)" strokeWidth={0.6} strokeDasharray="6 2 1 2" />
             );
           })()}
           {ghost && (
             <g data-ghost opacity={0.75}>
               {ghost.lines.visible.map((l, k) => (
-                <polyline key={k} points={Array.from({ length: l.length / 2 }, (_, j) => toSheet(ghost.placed, l[2 * j]!, l[2 * j + 1]!)).map(([x, y]) => `${x},${sheet.height - y}`).join(' ')} fill="none" stroke="#5c7cfa" strokeWidth={0.3} />
+                <polyline key={k} points={Array.from({ length: l.length / 2 }, (_, j) => toSheet(ghost.placed, l[2 * j]!, l[2 * j + 1]!)).map(([x, y]) => `${x},${sheet.height - y}`).join(' ')} fill="none" stroke="var(--accent)" strokeWidth={0.3} />
               ))}
-              <rect x={ghost.placed.at[0] - ghost.placed.w / 2 - 2} y={sheet.height - ghost.placed.at[1] - ghost.placed.h / 2 - 2} width={ghost.placed.w + 4} height={ghost.placed.h + 4} fill="none" stroke="#5c7cfa" strokeWidth={0.3} strokeDasharray="2 1.5" />
+              <rect x={ghost.placed.at[0] - ghost.placed.w / 2 - 2} y={sheet.height - ghost.placed.at[1] - ghost.placed.h / 2 - 2} width={ghost.placed.w + 4} height={ghost.placed.h + 4} fill="none" stroke="var(--accent)" strokeWidth={0.3} strokeDasharray="2 1.5" />
               {ghost.label && (
-                <text x={ghost.placed.at[0]} y={sheet.height - ghost.placed.at[1] + ghost.placed.h / 2 + 7} fontSize={4} textAnchor="middle" fill="#5c7cfa">
+                <text x={ghost.placed.at[0]} y={sheet.height - ghost.placed.at[1] + ghost.placed.h / 2 + 7} fontSize={4} textAnchor="middle" fill="var(--accent)">
                   {`${ghost.label}–${ghost.label}`}
                 </text>
               )}
@@ -1183,10 +1183,10 @@ export function DrawingViewport() {
           )}
           {cutPreview && (
             <g data-cut-preview>
-              <line x1={cutPreview.a[0]} y1={sheet.height - cutPreview.a[1]} x2={cutPreview.b[0]} y2={sheet.height - cutPreview.b[1]} stroke={cutPreview.snapped ? '#f08c00' : '#1c7ed6'} strokeWidth={0.6} strokeDasharray="6 2 1 2" />
+              <line x1={cutPreview.a[0]} y1={sheet.height - cutPreview.a[1]} x2={cutPreview.b[0]} y2={sheet.height - cutPreview.b[1]} stroke={cutPreview.snapped ? 'var(--warn)' : 'var(--accent)'} strokeWidth={0.6} strokeDasharray="6 2 1 2" />
             </g>
           )}
-          {placementCursor && <path d={`M ${placementCursor[0] - 2} ${sheet.height - placementCursor[1]} h 4 M ${placementCursor[0]} ${sheet.height - placementCursor[1] - 2} v 4`} fill="none" stroke="#1c7ed6" strokeWidth={0.7} />}
+          {placementCursor && <path d={`M ${placementCursor[0] - 2} ${sheet.height - placementCursor[1]} h 4 M ${placementCursor[0]} ${sheet.height - placementCursor[1] - 2} v 4`} fill="none" stroke="var(--accent)" strokeWidth={0.7} />}
         </svg>
         {selected && selected.w > 0 && (
           <div

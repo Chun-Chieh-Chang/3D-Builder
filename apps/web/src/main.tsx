@@ -3,9 +3,13 @@ import { createRoot } from 'react-dom/client';
 import { App } from './App';
 import { suppressNativeMenu } from './nativeMenu';
 import { store } from './state/store';
+import { applyTheme } from './theme';
 import './app.css';
 
 suppressNativeMenu();
+// Before any viewer is built: the graphics areas take their colours from the stylesheet, and a
+// viewer reads them when it is constructed.
+applyTheme();
 
 // A dev-only window handle, so the e2e scripts and the console can reach the store while debugging. Never
 // shipped: it would expose the whole document model to any script running on the page.

@@ -60,18 +60,39 @@ const VIEW_DIRS: Record<StandardView, [THREE.Vector3, THREE.Vector3]> = {
   iso: [new THREE.Vector3(1, 1, 1).normalize(), new THREE.Vector3(0, 1, 0)],
 };
 
-/** What fills the cut of a section. */
-const CAP_COLOR = 0xd9a45b;
-
-const COLORS = {
+/**
+ * What the graphics area is drawn with. These are the renderer's own copy of colours the
+ * application declares in its stylesheet: WebGL takes numbers, not `var(...)`, so
+ * `apps/web/src/theme.ts` resolves the stylesheet and calls `setPalette` before a viewer is built.
+ * The values here are the fallback for a renderer used outside the application (a test, a spike).
+ */
+export const COLORS = {
+  /** the shaded body */
   body: 0xb8c4d0,
+  /** a visible edge, and what a part is drawn with in wireframe */
   edge: 0x1d232b,
+  /** an edge behind the material, where hidden lines are shown */
+  ghost: 0x8b98a8,
   edgeHover: 0xf08c00,
   edgeSelected: 0x1864ab,
+  /** what the area behind the model is cleared to */
   background: 0xf3f5f8,
+  /** what fills the cut of a section */
+  cap: 0xd9a45b,
+  /** the line along that cut */
+  section: 0x1c4e9a,
+  /** the mark left where the pointer found something to snap to */
+  snap: 0xf08c00,
   componentHover: 0xf2c48d,
   componentSelected: 0x8fb8e8,
   componentCollided: 0xe5484d,
+};
+
+export type Palette = typeof COLORS;
+
+/** Hand the renderer the colours the application's stylesheet resolved to. */
+export const setPalette = (next: Partial<Palette>): void => {
+  Object.assign(COLORS, next);
 };
 
 /**
@@ -1510,7 +1531,7 @@ export class Viewer {
       this.snapMarker = null;
     }
     if (marker) {
-      this.snapMarker = new THREE.Points(new THREE.BufferGeometry().setAttribute('position', new THREE.Float32BufferAttribute(marker.at, 3)), new THREE.PointsMaterial({ color: 0xf08c00, size: 11, sizeAttenuation: false, depthTest: false }));
+      this.snapMarker = new THREE.Points(new THREE.BufferGeometry().setAttribute('position', new THREE.Float32BufferAttribute(marker.at, 3)), new THREE.PointsMaterial({ color: COLORS.snap, size: 11, sizeAttenuation: false, depthTest: false }));
       this.snapMarker.renderOrder = 7;
       this.overlayScene.add(this.snapMarker);
       let entry = this.measureLabels.get('__snap');
@@ -1968,7 +1989,7 @@ export class Viewer {
       const group = new THREE.Group();
       const size = 4 * this.pixelSize();
       for (const l of drawn) {
-        const line = new THREE.Line(new THREE.BufferGeometry().setAttribute('position', new THREE.Float32BufferAttribute(l, 3)), new THREE.LineDashedMaterial({ color: 0x1c4e9a, dashSize: size, gapSize: size * 0.6, depthTest: false }));
+        const line = new THREE.Line(new THREE.BufferGeometry().setAttribute('position', new THREE.Float32BufferAttribute(l, 3)), new THREE.LineDashedMaterial({ color: COLORS.section, dashSize: size, gapSize: size * 0.6, depthTest: false }));
         line.computeLineDistances();
         line.renderOrder = 2;
         group.add(line);
@@ -2504,7 +2525,7 @@ export class Viewer {
     this.instanceEdges.clippingPlanes = this.clip;
     if (mode === 'hiddenVisible' && this.edges && !this.hiddenEdges) {
       const g = this.edges.geometry.clone();
-      const line = new THREE.LineSegments(g, new THREE.LineDashedMaterial({ color: 0x8b98a8, dashSize: 1, gapSize: 1, depthFunc: THREE.GreaterDepth, depthWrite: false }));
+      const line = new THREE.LineSegments(g, new THREE.LineDashedMaterial({ color: COLORS.ghost, dashSize: 1, gapSize: 1, depthFunc: THREE.GreaterDepth, depthWrite: false }));
       line.computeLineDistances();
       this.hiddenEdges = line;
       this.scene.add(line);
@@ -2552,7 +2573,7 @@ export class Viewer {
       const through = { depthWrite: false, depthTest: false, colorWrite: false, stencilWrite: true, stencilFunc: THREE.AlwaysStencilFunc, clippingPlanes: this.clip };
       const back = new THREE.MeshBasicMaterial({ ...through, side: THREE.BackSide, ...wrap(THREE.IncrementWrapStencilOp) });
       const front = new THREE.MeshBasicMaterial({ ...through, side: THREE.FrontSide, ...wrap(THREE.DecrementWrapStencilOp) });
-      const fill = new THREE.MeshStandardMaterial({ color: CAP_COLOR, metalness: 0.05, roughness: 0.85, side: THREE.DoubleSide, stencilWrite: true, stencilRef: 0, stencilFunc: THREE.NotEqualStencilFunc, polygonOffset: true, polygonOffsetFactor: 1, polygonOffsetUnits: 1, ...wrap(THREE.ReplaceStencilOp) });
+      const fill = new THREE.MeshStandardMaterial({ color: COLORS.cap, metalness: 0.05, roughness: 0.85, side: THREE.DoubleSide, stencilWrite: true, stencilRef: 0, stencilFunc: THREE.NotEqualStencilFunc, polygonOffset: true, polygonOffsetFactor: 1, polygonOffsetUnits: 1, ...wrap(THREE.ReplaceStencilOp) });
       const objects: THREE.Object3D[] = [];
       const planes: THREE.Mesh[] = [];
       solids.forEach(({ mesh, parent }, i) => {

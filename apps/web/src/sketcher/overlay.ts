@@ -9,8 +9,15 @@ import type { SketchSolvePayload } from '../worker/protocol';
 import type { ControllerView, PreviewShape } from './controller';
 
 /** SolidWorks sketch colours: black = fully defined, blue = under-defined, red = over-defined. */
+/**
+ * What the sketcher draws with. The application's stylesheet is the one that says what these are
+ * (the `--sketch-*` custom properties); `theme.ts` resolves them and calls `setSketchColors` before
+ * the first overlay is built. The numbers here are what an overlay gets if nobody asks.
+ */
 export const SKETCH_COLORS = {
+  /** a fully defined entity: the sketch's own ink */
   fully: 0x1d232b,
+  /** under-defined: blue, the way SolidWorks colours what still has degrees of freedom */
   under: 0x1c7ed6,
   over: 0xe03131,
   selected: 0x0ca678,
@@ -22,7 +29,13 @@ export const SKETCH_COLORS = {
   dimension: 0x3d4650,
   origin: 0xe03131,
   reference: 0x7048e8,
-} as const;
+} as Record<'fully' | 'under' | 'over' | 'selected' | 'hover' | 'preview' | 'guide' | 'grid' | 'gridMajor' | 'dimension' | 'origin' | 'reference', number>;
+
+export type SketchColors = typeof SKETCH_COLORS;
+
+export const setSketchColors = (next: Partial<SketchColors>): void => {
+  Object.assign(SKETCH_COLORS, next);
+};
 
 const RELATION_SYMBOL: Record<Exclude<SketchConstraint['type'], 'distance' | 'distanceX' | 'distanceY' | 'radius' | 'diameter' | 'arcLength' | 'angle'>, string> = {
   coincident: '⊙',

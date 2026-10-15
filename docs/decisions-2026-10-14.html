@@ -6,20 +6,27 @@
 <title>3D-Builder 未做／待裁選擇題（2026-10-14）</title>
 <meta name="description" content="3D-Builder 目前未做與待裁決項目的互動選擇題，附白話說明、影響面與建議。">
 <style>
+/* One hue, everything else derived from it (the same logic as apps/web/src/app.css): the greys are the
+   accent washed almost out, and only ok/warn step off-hue because they carry meaning. Change --hue and the
+   whole page changes with the app. */
 :root{
-  --bg:#F9FAFB;--surface:#FFFFFF;--text:#111827;--text2:#6B7280;--accent:#3B82F6;
-  --ok:#10B981;--warn:#EF4444;--border:#E5E7EB;--accent-soft:rgba(59,130,246,.08);
-  --ok-soft:rgba(16,185,129,.10);--shadow:0 1px 2px rgba(17,24,39,.04),0 4px 16px rgba(17,24,39,.06);
+  --hue:172;
+  --bg:oklch(98.6% .006 var(--hue));--surface:oklch(100% 0 0);--text:oklch(26% .02 var(--hue));--text2:oklch(45% .025 var(--hue));--accent:oklch(48% .11 var(--hue));
+  --on-accent:oklch(99.5% .004 var(--hue));
+  --ok:oklch(50% .13 145);--warn:oklch(50% .16 27);--border:oklch(92.6% .013 var(--hue));--accent-soft:color-mix(in oklab,var(--accent) 8%,transparent);
+  --ok-soft:color-mix(in oklab,var(--ok) 10%,transparent);--shadow:0 1px 2px rgba(17,24,39,.04),0 4px 16px rgba(17,24,39,.06);
 }
 @media (prefers-color-scheme:dark){:root:not([data-theme=light]){
-  --bg:#0F172A;--surface:#1E293B;--text:#F1F5F9;--text2:#94A3B8;--accent:#60A5FA;
-  --ok:#34D399;--warn:#F87171;--border:#334155;--accent-soft:rgba(96,165,250,.10);
-  --ok-soft:rgba(52,211,153,.10);--shadow:0 1px 2px rgba(0,0,0,.3),0 4px 16px rgba(0,0,0,.35);
+  --bg:oklch(20% .02 var(--hue));--surface:oklch(24.5% .02 var(--hue));--text:oklch(96% .006 var(--hue));--text2:oklch(74% .014 var(--hue));--accent:oklch(78% .1 var(--hue));
+  --on-accent:oklch(22% .03 var(--hue));
+  --ok:oklch(76% .13 145);--warn:oklch(71% .14 27);--border:oklch(31% .022 var(--hue));--accent-soft:color-mix(in oklab,var(--accent) 12%,transparent);
+  --ok-soft:color-mix(in oklab,var(--ok) 12%,transparent);--shadow:0 1px 2px rgba(0,0,0,.3),0 4px 16px rgba(0,0,0,.35);
 }}
 :root[data-theme=dark]{
-  --bg:#0F172A;--surface:#1E293B;--text:#F1F5F9;--text2:#94A3B8;--accent:#60A5FA;
-  --ok:#34D399;--warn:#F87171;--border:#334155;--accent-soft:rgba(96,165,250,.10);
-  --ok-soft:rgba(52,211,153,.10);--shadow:0 1px 2px rgba(0,0,0,.3),0 4px 16px rgba(0,0,0,.35);
+  --bg:oklch(20% .02 var(--hue));--surface:oklch(24.5% .02 var(--hue));--text:oklch(96% .006 var(--hue));--text2:oklch(74% .014 var(--hue));--accent:oklch(78% .1 var(--hue));
+  --on-accent:oklch(22% .03 var(--hue));
+  --ok:oklch(76% .13 145);--warn:oklch(71% .14 27);--border:oklch(31% .022 var(--hue));--accent-soft:color-mix(in oklab,var(--accent) 12%,transparent);
+  --ok-soft:color-mix(in oklab,var(--ok) 12%,transparent);--shadow:0 1px 2px rgba(0,0,0,.3),0 4px 16px rgba(0,0,0,.35);
 }
 *{box-sizing:border-box}
 html{font-size:16px}
@@ -36,7 +43,7 @@ button{font:inherit;font-size:14px;min-height:44px;padding:8px 16px;border-radiu
   border:1px solid var(--border);background:var(--surface);color:var(--text);transition:transform .12s,background .15s,border-color .15s}
 button:hover{border-color:var(--accent)}
 button:active{transform:scale(.97)}
-button.primary{background:var(--accent);border-color:var(--accent);color:#fff;font-weight:600}
+button.primary{background:var(--accent);border-color:var(--accent);color:var(--on-accent);font-weight:600}
 button.primary:hover{filter:brightness(1.08)}
 main{max-width:980px;margin:0 auto;padding:24px 16px 96px}
 .lead{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:16px 24px;box-shadow:var(--shadow);margin-bottom:24px}
