@@ -84,8 +84,8 @@ M.run = async () => {
     const pxmm = Math.max(1.5, Math.min(800 / (20 * 1.8), 520 / (30 * 1.8), 12));
     await H.frameSketch(-10, 0, pxmm);
     await H.tool('邊角矩形');
-    // both corners with Ctrl: the first corner sits on the plate's own edge, and without it the edge is converted into the sketch (a second left side, 「分支點」)
-    await H.sk(-20, -15, { ctrlKey: true });
+    // the first corner sits on the plate's own edge: a click there only holds the point to it (construction, C3 2026-10-15), no Ctrl needed
+    await H.sk(-20, -15);
     await H.sk(0, 15, { ctrlKey: true });
     await H.solved();
     const topEdge = H.lineWhere((g, id) => !H.construction(id) && Math.abs(g.a[1] - 15) < 0.5 && Math.abs(g.b[1] - 15) < 0.5);

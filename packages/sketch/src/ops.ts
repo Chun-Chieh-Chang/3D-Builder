@@ -344,8 +344,9 @@ export function anchorModel(sketch: Pick<SketchFeature, 'entities'>, geometry: G
       return id;
     };
     const q = item.projected;
-    // an edge projected from outside the plane (C1 2026-10-14) is only something to hold the point to: construction, so it never joins a profile
-    const held = item.off !== undefined ? { construction: true } : {};
+    // every edge a click takes is only something to hold the point to: construction, so it never joins a profile (C3 2026-10-15: an in-plane
+    // edge taken as a profile line overlapped the rectangle drawn on it and made the extrude fail)
+    const held = { construction: true };
     if (q.kind === 'line') entity = { id: made.ids.take('l'), type: 'line', p1: corner(q.a), p2: corner(q.b), ref: item.ref, ...held };
     else if (q.kind === 'circle') entity = { id: made.ids.take('ci'), type: 'circle', center: corner(q.c), radius: q.r, ref: item.ref, ...held };
     else entity = { id: made.ids.take('a'), type: 'arc', center: corner(q.c), start: corner(q.start), end: corner(q.end), ref: item.ref, ...held };

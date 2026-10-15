@@ -186,7 +186,7 @@ describe('the entities a click on the model makes (D5.3b)', () => {
     expect(new Set(ids).size).toBe(ids.length);
   });
 
-  it('makes an edge projected from outside the plane construction (C1): it holds the point, it never joins a profile; an edge in the plane stays as before', () => {
+  it('makes an edge projected from outside the plane construction (C1): it holds the point, it never joins a profile; an edge in the plane too (C3 2026-10-15: a click no longer turns it into a profile line)', () => {
     const m = maker();
     const above: ModelEdge = { ref: { kind: 'edge', name: 'above' }, projected: { kind: 'line', a: [0, 0], b: [40, 0] }, off: 15 };
     const end = anchorModel(none, nothing, m, above, 'end', [40, 0]);
@@ -196,7 +196,7 @@ describe('the entities a click on the model makes (D5.3b)', () => {
     expect(m.entities.find((e) => e.type === 'circle')).toMatchObject({ construction: true });
     const inPlane = maker();
     anchorModel(none, nothing, inPlane, item('bottom'), 'end', [40, 0]);
-    expect(inPlane.entities.find((e) => e.type === 'line')).not.toHaveProperty('construction');
+    expect(inPlane.entities.find((e) => e.type === 'line')).toMatchObject({ construction: true, ref: { name: 'bottom' } });
   });
 
   it('makes a pierce point a sketch point that follows the edge (as 「貫穿」 does), and uses it again for the next click on it', () => {
