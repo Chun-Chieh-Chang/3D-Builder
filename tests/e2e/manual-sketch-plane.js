@@ -165,23 +165,30 @@ M.run = async () => {
     await H.settle();
     return { pass: datum !== point && state().selected !== point && !!state().selectedFace, datum, selected: state().selected, face: state().selectedFace?.fingerprint?.type ?? null };
   });
-  await step('11 the 「基準面」 box of 選擇濾器 really gates: off, the same click picks nothing; on, it picks a plane', async () => {
-    const box = () => [...document.querySelectorAll('.pick-filter label')].find((l) => l.textContent.trim() === '基準面')?.querySelector('input');
+  await step('11 the 「基準面」 of 選擇濾器 really gates (the bar is hidden until F5, radio since ADR 0145): 基準面 only on, the click picks the plane; 面 only on, it picks nothing; F6 restores', async () => {
+    const box = (label) => [...document.querySelectorAll('.pick-filter label')].find((l) => l.textContent.trim() === label)?.querySelector('input');
     await H.key('f');
     await H.wait(150);
-    box().click(); // the live filter of the graphics area, the box a person clears (「選項」裡那一列是下一份零件的起手，刻意不等於這一頁)
+    store.togglePickFilterBar(); // the bar is hidden until asked, as in SW (ADR 0145); the F5 key path is exercised in manual-c21
+    await H.wait(150);
+    box('基準面').click(); // the live filter of the graphics area, the kind a person picks (「選項」裡那一列是下一份零件的起手，刻意不等於這一頁)
     await H.settle();
     await H.wait(150); // the filter reaches the viewer through a render, like it does for a person moving the mouse after clicking the box
     await store.select(null);
     await H.at([9, 7, 25]);
-    const off = state().selected;
-    box().click();
-    await H.settle();
-    await H.wait(150);
-    await H.at([9, 7, 25]);
     const on = state().selected;
     const isPlane = state().doc.features.find((f) => f.id === on)?.type === 'refPlane';
-    return { pass: off === null && on !== null && isPlane, off, on, isPlane, pf: state().pickFilter };
+    box('面').click();
+    await H.settle();
+    await H.wait(150);
+    await store.select(null);
+    await H.at([9, 7, 25]);
+    const off = state().selected;
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'F6', bubbles: true })); // 清除所有濾器：全部種類恢復可點
+    await H.settle();
+    await H.wait(150);
+    store.togglePickFilterBar(); // hide the bar again, back as it was
+    return { pass: on !== null && isPlane && off === null && state().pickFilter.planes === true, off, on, isPlane, pf: state().pickFilter };
   });
   await step('12 nothing in the tree is left broken', async () => ({ pass: S.failed().length === 0, failed: S.failed(), volume: state().result.mass?.volume }));
   // 收尾把文件清乾淨：這支腳本會留下一個未儲存的零件，12 支腳本的批次實測在這裡出現「Blocked attempt to show a 'beforeunload'

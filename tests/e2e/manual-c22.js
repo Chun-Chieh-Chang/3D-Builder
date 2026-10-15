@@ -1,5 +1,5 @@
 // Manual checklist C22 (docs/manual-verification.html): 「系統選項…」: the language (English and back), 自動存檔 and its seconds, the template of 「新零件」 (鋁件 gives 鋁合金 6061),
-// the pick filter a new part starts with (頂點 off), and, in English, a walk through the screens of part editing looking for Chinese text that is still there; replayed the way
+// the pick filter a new part starts with (radio since ADR 0145: seeded to 邊線 only), and, in English, a walk through the screens of part editing looking for Chinese text that is still there; replayed the way
 // a person does it in the app's page (http://127.0.0.1:5391, 1280×720; `npm run verify:ui` does it). Not a Vitest test.
 //
 //   await import('/@fs/<checkout>/tests/e2e/manual-c22.js?' + Date.now());   // in a freshly loaded page
@@ -159,29 +159,37 @@ M.run = async () => {
   return S.result('C22');
 };
 
-// 開始時可以點選的元素 is what the filter is when the program STARTS (it is read once, when the page loads); the checklist (before 2026-10-08) said a 「新零件」 does it. Two loads:
-// the option is changed (頂點 unticked), and the page loaded again starts with 頂點 off in 選擇濾器; then the option is put back.
+// 開始時可以點選的元素 is what the filter is when the program STARTS (it is read once, when the page loads); the checklist (before 2026-10-08) said a 「新零件」 does it. Radio since
+// ADR 0145: the seed is a single kind (or 全部), so 邊線 stands for it — the point is unchanged: the option must not move the live filter of the page that is open. Two loads:
+// the option is changed (邊線 chosen), and the page loaded again starts with only 邊線 on; then the option is put back to 全部.
 M.optionOff = async () => {
   H.ready();
   await openOptions();
   const row = optionsRow('開始時可以點選的元素');
-  const vertex = [...row.querySelectorAll('label')].find((l) => l.textContent.trim() === '頂點').querySelector('input');
-  vertex.click();
+  [...row.querySelectorAll('label')].find((l) => l.textContent.trim() === '邊線').querySelector('input').click();
   await H.wait(150);
-  const off = store.getState().options.pickFilter.vertices === false;
+  const seeded = { ...store.getState().options.pickFilter };
   await closeDialog();
   await newPart();
-  return { name: '頂點 unticked in 開始時可以點選的元素; a 「新零件」 does not change the filter of the page that is open', off, stillOn: store.getState().pickFilter.vertices === true, pass: off && store.getState().pickFilter.vertices === true };
+  const live = { ...store.getState().pickFilter };
+  return {
+    name: '「開始時…」seeded to 邊線 only; a 「新零件」 does not change the filter of the page that is open',
+    seeded, live,
+    pass: seeded.edges === true && seeded.faces === false && seeded.vertices === false && seeded.planes === false && live.faces === true && live.edges === true && live.vertices === true && live.planes === true,
+  };
 };
 M.startedOff = async () => {
   H.ready();
-  const started = store.getState().pickFilter.vertices;
-  const box = [...document.querySelectorAll('.pick-filter label')].find((l) => l.textContent.trim() === '頂點').querySelector('input');
-  await shot('6-vertex-off-at-the-start');
+  const started = { ...store.getState().pickFilter };
   await openOptions();
   const row = optionsRow('開始時可以點選的元素');
-  [...row.querySelectorAll('label')].find((l) => l.textContent.trim() === '頂點').querySelector('input').click();
+  [...row.querySelectorAll('label')].find((l) => l.textContent.trim() === '全部').querySelector('input').click();
   await H.wait(150);
+  const restored = { ...store.getState().options.pickFilter };
   await closeDialog();
-  return { name: 'loaded again: 頂點 is off in 選擇濾器 from the start; the option is put back', started, ticked: box.checked, pass: started === false && box.checked === false && store.getState().options.pickFilter.vertices === true };
+  return {
+    name: 'loaded again: the filter starts as the option said (邊線 only); the option is put back to 全部',
+    started, restored,
+    pass: started.edges === true && started.faces === false && started.vertices === false && started.planes === false && restored.faces === true && restored.edges === true,
+  };
 };

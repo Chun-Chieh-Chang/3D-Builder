@@ -30,7 +30,7 @@ export const help: Translation = {
   'help.conceptSelection.title': 'Selecting',
   'help.conceptSelection.summary': 'Click faces, edges and features in the graphics area or the tree; hold Ctrl to add to the selection.',
   'help.conceptSelection.body':
-    '- Click to select; in the tree a click only selects, a double-click edits.\n- Hold Ctrl and click to add to the selection or take from it.\n- With nothing being edited, edges and vertices can be clicked too (the "Selection Filter" at the top left says which kinds); select the edges first and then press Fillet, Chamfer, Edge Flange, Hem or a surface command that takes edges: the selected edges are taken in. Click on empty space to let go.\n- In a sketch, drag on empty space to box-select.\n- When a panel waits for a face or an edge, click it in the graphics area; what you pick is listed in the panel.',
+    '- Click to select; in the tree a click only selects, a double-click edits.\n- Hold Ctrl and click to add to the selection or take from it.\n- With nothing being edited, edges and vertices can be clicked too (the "Selection Filter" at the top left, shown with F5, chooses one kind, as in SolidWorks; F6 makes every kind pickable again); select the edges first and then press Fillet, Chamfer, Edge Flange, Hem or a surface command that takes edges: the selected edges are taken in. Click on empty space to let go.\n- In a sketch, drag on empty space to box-select.\n- When a panel waits for a face or an edge, click it in the graphics area; what you pick is listed in the panel.',
   'help.conceptSelection.keywords': 'pick multiple box select Ctrl',
 
   'help.conceptFeatureTree.title': 'The Tree (FeatureManager)',
@@ -195,10 +195,10 @@ export const help: Translation = {
   'help.appearance.keywords': 'appearance color paint face feature body',
 
   'help.appearance.see': 'export-step properties',
-  'help.options.summary': 'System options: interface language, autosave, the template of New Part, what can be picked at the start; kept in this browser, not in the part file.',
+  'help.options.summary': 'System options: interface language, autosave, the template of New Part, what can be picked at the start, the filter bar; kept in this browser, not in the part file.',
 
   'help.options.body':
-    'System options: the interface language, autosave, the template for new parts, the elements that can be picked at the start, and sketch snaps. They are kept in this browser, not in the part file.\n\n- Interface language: Traditional Chinese or English; it takes effect at once (some of the assembly screens and the content of the demo part are still in Chinese).\n- Autosave: on or off, and "seconds after the last change" (5 at first).\n- "Template used by New part": blank, carbon steel, aluminium, plastic, CNS drawing.\n- Elements that can be picked at the start: faces, edges, vertices (one that is unticked starts unticked in the "Selection filter").\n- Sketch snaps: the master switch and each kind (end points, midpoints, nearest point on a curve, quadrants, intersections, tangent, perpendicular foot, horizontal and vertical points, the extension of a line, edges and vertices of the model, grid, angle), the grid spacing and the angle step; grid and angle are off at first. See "Sketch snaps and inference".',
+    'System options: the interface language, autosave, the template for new parts, the elements that can be picked at the start, the filter bar, and sketch snaps. They are kept in this browser, not in the part file.\n\n- Interface language: Traditional Chinese or English; it takes effect at once (some of the assembly screens and the content of the demo part are still in Chinese).\n- Autosave: on or off, and "seconds after the last change" (5 at first).\n- "Template used by New part": blank, carbon steel, aluminium, plastic, CNS drawing.\n- Elements that can be picked at the start: "All" or one kind (faces, edges, vertices, planes); with one kind chosen, the "Selection filter" starts with only that kind pickable.\n- Selection filter bar: whether it shows at the start (F5 toggles it in the graphics area at any time, like the SolidWorks toolbar).\n- Sketch snaps: the master switch and each kind (end points, midpoints, nearest point on a curve, quadrants, intersections, tangent, perpendicular foot, horizontal and vertical points, the extension of a line, edges and vertices of the model, grid, angle), the grid spacing and the angle step; grid and angle are off at first. See "Sketch snaps and inference".',
 
   'help.options.keywords': 'system options language autosave template selection sketch snap settings',
 
@@ -991,6 +991,24 @@ export const help: Translation = {
   'help.fit.keywords': 'fit zoom view show all',
 
   'help.fit.see': 'view-iso view-front concept.overview',
+
+  'help.filterBar.summary': 'Shows or hides the Selection Filter bar (a single choice, as in SolidWorks). F5.',
+
+  'help.filterBar.body':
+    'The Selection Filter bar lists faces / edges / vertices / planes as a single choice: click one kind and only that kind can be picked; clicking it again changes nothing.\n\n- The bar is hidden at first; press F5 to show it, F5 again or the ✕ on the bar to hide it.\n- Only a part window has the bar; an assembly does not.\n- The filter narrows what a command in progress asks for; it never widens it.',
+
+  'help.filterBar.keywords': 'selection filter bar F5 single choice',
+
+  'help.filterBar.see': 'clear-filters concept.selection',
+
+  'help.clearFilters.summary': 'Clears the selection filters: every kind is pickable again. F6.',
+
+  'help.clearFilters.body':
+    'Press F6 or the Clear button on the filter bar to make faces, edges, vertices and planes all pickable again.\n\n- As SolidWorks\' Clear Selection Filters.\n- The bar stays; press F5 to hide it too.',
+
+  'help.clearFilters.keywords': 'clear selection filters F6 all',
+
+  'help.clearFilters.see': 'filter-bar concept.selection',
   'help.viewFront.summary': 'Shows the front view.',
 
   'help.viewFront.body':

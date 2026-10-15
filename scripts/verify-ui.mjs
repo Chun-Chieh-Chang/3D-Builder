@@ -6,6 +6,10 @@
 //   npm run verify:ui -- --shots out/shots  also a screenshot of the page after each script (png)
 //   npm run verify:ui -- --json out/ui.json the result as JSON as well
 //
+// VERIFY_UI_ORIGIN (dev server), VERIFY_UI_DEBUG_PORT (Chrome DevTools, default 9333) and VERIFY_UI_SAMPLES_PORT
+// (the read-only STEP folder, default 5393) are overridable, so two sessions can run verify:ui at once; the harness
+// tells the scripts the samples URL as window.__samplesOrigin.
+//
 // Each script gets a fresh page and an empty browser storage (no recovery copy, no remembered project folder). The dev server is started
 // when nothing answers on its port, and stopped again at the end. Exit code 1 when a script fails or the page logs an error.
 //
@@ -21,7 +25,9 @@ import { fileURLToPath } from 'node:url';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const ORIGIN = process.env.VERIFY_UI_ORIGIN ?? 'http://127.0.0.1:5391';
-const DEBUG_PORT = 9333;
+// Both ports are overridable so two sessions can run verify:ui at once (the defaults stay as they were).
+const DEBUG_PORT = Number(process.env.VERIFY_UI_DEBUG_PORT) || 9333;
+const SAMPLES_PORT = Number(process.env.VERIFY_UI_SAMPLES_PORT) || 5393;
 /** Helper files of the scripts, not scripts of their own. */
 const NOT_SCRIPTS = new Set(['phase1-demo-parts.js', 'phase3-subassembly.js', 'desktop-probe.mjs', 'manual-support.js']);
 /** Errors the page logs that mean nothing (the browser asks for a favicon the dev server has none of). */
@@ -91,7 +97,7 @@ function serveSamples() {
     }
     res.writeHead(200, { 'content-type': 'application/octet-stream', 'access-control-allow-origin': '*' }).end(readFileSync(file));
   });
-  samples.listen(5393, '127.0.0.1');
+  samples.listen(SAMPLES_PORT, '127.0.0.1');
   return samples;
 }
 
@@ -202,6 +208,7 @@ async function main() {
     await send('Runtime.addBinding', { name: '__capture' });
     await send('Page.addScriptToEvaluateOnNewDocument', {
       source: `window.__shotN = 0; window.__shotDone = 0;
+window.__samplesOrigin = 'http://127.0.0.1:${SAMPLES_PORT}/';
 window.__shot = async (label) => { const n = ++window.__shotN; window.__capture(JSON.stringify({ n, label })); for (let i = 0; i < 600 && window.__shotDone < n; i++) await new Promise((r) => setTimeout(r, 25)); };`,
     });
     await send('Emulation.setDeviceMetricsOverride', { width: 1280, height: 720, deviceScaleFactor: 1, mobile: false });

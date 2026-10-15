@@ -1269,7 +1269,7 @@ asm.exportStep = async () => {
  *
  *   await __asm.progress('http://127.0.0.1:5393/')
  */
-asm.progress = async (base) => {
+asm.progress = async (base = globalThis.__samplesOrigin) => {
   const out = {};
   const name = 'CIV0000467治具_step.STEP';
   H.ready();

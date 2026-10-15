@@ -1376,3 +1376,31 @@
    - 把預期故意改錯時，腳本確實判定失敗。
 
 檢查：typecheck 0 錯誤；三項 lint 通過；vitest 2775 過、0 失敗；全量 `verify:ui` 133/133。
+
+## 2026-10-15　選擇濾器比照 SolidWorks 工具列（ADR 0145）
+
+紅隊四問：
+1. **輸入破壞**：
+   - F5/F6 在輸入欄位中不攔截（D3.3 全域 handler 排除 INPUT/SELECT/TEXTAREA 的既有行為）；欄位裡 F5 仍是瀏覽器重新整理——已知差異，可在快捷鍵對話盒重綁（ADR 0145 決定 5）。
+   - 舊版複選存的混合四布林（如 faces+edges 同 true）讀入不「修正」：列上沒有按下的種類，第一次點任一種收斂為單選，F6／選項「全部」立即歸位（決定 4）。
+   - 組合件中 filter-bar／clear-filters 反灰（enabled 限定 part）：組合件沒有濾器列。
+2. **相交破壞**：
+   - radio 切換種類時，被關掉的種類其 hover 立即清除（viewer 既有清理路徑不變）。
+   - 「只縮小不放大」不變：濾器只把指令要求的面／邊／頂點／基準點範圍再縮小；radio 只是 store 產生的布林組合（修訂 ADR 0043 決定 2 的呈現，語意核心不動）。
+   - 開始時選項（種子）只在頁面載入種入 live 濾器：manual-c22 斷言改選項後「新零件」的 live 濾器仍全部 true。
+3. **依賴鏈**：
+   - options：`pickFilterBar`（預設 false；parseOptions 只收真布林，'yes' 退預設）→ store：`pickFilterBarVisible`、`togglePickFilterBar`（同步 setOptions 持久化）、`setPickFilterKind`（已單選該種即 no-op）、`clearPickFilter`。
+   - actions：D3.3 註冊 filter-bar（F5）／clear-filters（F6），view 群、part 限定、可重綁、有衝突檢查。
+   - Viewport：列依 `pickFilterBarVisible` 渲染；radio 由 `aloneOn` 計算；列首 ✕（＝F5）與「清除」（＝F6）比照 SW 工具列。
+   - ParametersDialogs：「開始時可以點選的元素」改 radio（全部＋四種），新增「顯示選擇濾器列」勾選。
+   - 說明：helpKey 自動 camelCase 不用動；目錄中、英各加 filterBar／clearFilters 主題（summary 一行 ≤80 字）；help-links.json C21 掛兩個新主題；manual-verification.html 以 SYNC_MANUAL_HELP=1 同步 helpref 列。
+   - viewer 協議（setPickFilter 四布林）與 picking() 交集完全未動。
+4. **零 Mock**：
+   - e2e 用真實 dev server＋真實核心＋真實 DOM 事件：c21 步 2 驗 F5 列顯示 → radio「邊線」state 只剩 edges → 點頂面無反應、點邊線選到 → F6 四種全開 → F5 列消失。
+   - sketch-plane：基準面-only 點得到基準面、面-only 同一點點不到（雙向閘門，ADR 0127 同一件事改用新交互證）。
+   - c22：選項種「邊線」→ 已開頁面與新零件的 live 濾器不動；重載後起手 edges-only。
+   - 本功能無 WASM 新路徑（viewer 協議不變），無記憶體宣稱；§3.5 不適用。
+
+工具：`verify-ui.mjs` 的 9333／5393 改為 `VERIFY_UI_DEBUG_PORT`／`VERIFY_UI_SAMPLES_PORT` 環境可覆蓋（預設不變），樣本 URL 以 `window.__samplesOrigin` 注入頁面——兩個工作階段現在可同時跑 verify:ui。
+
+檢查：typecheck 0 錯誤；三項 lint 通過；vitest 2814 過、25 略過、0 失敗；`verify:ui`（manual-c21、manual-c22×3、manual-sketch-plane）5/5。

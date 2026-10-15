@@ -643,13 +643,29 @@ export function OptionsDialog() {
           </span>
           <label>{t('options.pickFilter')}</label>
           <span className="pick-filter-options">
+            <label>
+              <input
+                type="radio"
+                name="options-pick-filter"
+                checked={Object.values(options.pickFilter).every(Boolean)}
+                onChange={() => store.setOptions({ pickFilter: { faces: true, edges: true, vertices: true, planes: true } })}
+              />
+              {t('select.filterAll')}
+            </label>
             {(['faces', 'edges', 'vertices', 'planes'] as const).map((k) => (
               <label key={k}>
-                <input type="checkbox" checked={options.pickFilter[k]} onChange={(e) => store.setOptions({ pickFilter: { ...options.pickFilter, [k]: e.target.checked } })} />
+                <input
+                  type="radio"
+                  name="options-pick-filter"
+                  checked={Object.entries(options.pickFilter).every(([o, v]) => (o === k ? v : !v))}
+                  onChange={() => store.setOptions({ pickFilter: { faces: false, edges: false, vertices: false, planes: false, [k]: true } })}
+                />
                 {PICK_FILTER_LABEL[k]}
               </label>
             ))}
           </span>
+          <label>{t('options.pickFilterBar')}</label>
+          <input type="checkbox" checked={options.pickFilterBar} onChange={(e) => store.setOptions({ pickFilterBar: e.target.checked })} />
         </div>
         <div className="modal-actions">
           <button className="primary" onClick={close}>

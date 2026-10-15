@@ -125,7 +125,9 @@
     "concept.view"
   ],
   "C21": [
-    "concept.selection"
+    "concept.selection",
+    "filter-bar",
+    "clear-filters"
   ],
   "C22": [
     "options",

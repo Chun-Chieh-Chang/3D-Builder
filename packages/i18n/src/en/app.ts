@@ -50,6 +50,8 @@ export const app: Translation = {
   'act.left': 'Left',
   'act.iso': 'Isometric',
   'act.normal': 'Normal To',
+  'act.filterBar': 'Selection Filter Bar',
+  'act.clearFilters': 'Clear Selection Filters',
   'sketch.selectCurves': 'Select a line, circle or arc first',
   'status.ready': 'Ready',
   'status.whatsWrong': 'What\'s Wrong? ({what})',

@@ -44,6 +44,13 @@ describe('system options (D8.1)', () => {
     expect(loadOptions({ getItem: () => JSON.stringify({ autosave: true }) }).viewArrowStep).toBe(15);
   });
 
+  it('the selection filter bar is hidden at first, as the SW toolbar (ADR 0145); only a real boolean is kept', () => {
+    expect(DEFAULT_OPTIONS.pickFilterBar).toBe(false);
+    expect(parseOptions({ pickFilterBar: true }).pickFilterBar).toBe(true);
+    expect(parseOptions({ pickFilterBar: 'yes' }).pickFilterBar).toBe(false);
+    expect(loadOptions({ getItem: () => JSON.stringify({ autosave: true }) }).pickFilterBar).toBe(false);
+  });
+
   it('the view cube\'s arrows turn 45° at first (FreeCAD), within the same 1° to 90°, apart from the arrow keys', () => {
     expect(DEFAULT_OPTIONS.viewCubeStep).toBe(45);
     expect(parseOptions({ viewCubeStep: 0 }).viewCubeStep).toBe(VIEW_ARROW_STEP.min);
@@ -55,7 +62,7 @@ describe('system options (D8.1)', () => {
 
   it('what is saved is what is loaded', () => {
     let kept = '';
-    const options = { autosave: false, autosaveSeconds: 60, defaultTemplate: 'aluminium' as const, pickFilter: { faces: true, edges: false, vertices: false, planes: false }, datumOffset: '25', snap: { ...DEFAULT_OPTIONS.snap, enabled: false, grid: true, gridSpacing: 2.5 }, viewArrowStep: 7.5, viewCubeStep: 30 };
+    const options = { autosave: false, autosaveSeconds: 60, defaultTemplate: 'aluminium' as const, pickFilter: { faces: true, edges: false, vertices: false, planes: false }, pickFilterBar: true, datumOffset: '25', snap: { ...DEFAULT_OPTIONS.snap, enabled: false, grid: true, gridSpacing: 2.5 }, viewArrowStep: 7.5, viewCubeStep: 30 };
     saveOptions(options, { setItem: (_k, v) => void (kept = v) });
     expect(loadOptions({ getItem: () => kept })).toEqual(options);
   });

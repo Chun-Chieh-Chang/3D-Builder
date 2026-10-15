@@ -1,4 +1,5 @@
-// Manual checklist C21 (docs/manual-verification.html): the selection filter (面 off: a face cannot be picked; only 邊線 on), the right-hand menu on a fillet edge (「選取相切的邊線」,
+// Manual checklist C21 (docs/manual-verification.html): the selection filter (hidden until F5, radio since ADR 0145: only 邊線 on → a face cannot be picked; F6 clears every kind back;
+// F5 hides the bar), the right-hand menu on a fillet edge (「選取相切的邊線」,
 // 「選取迴圈」), 「選取相切的面」 while 「刪除面」 is open, and 「選取其他…」 on the wall of a shelled box, replayed the way a person does it in the app's page (http://127.0.0.1:5391,
 // 1280×720; `npm run verify:ui` does it). Not a Vitest test. The clicks are pointer events at the screen position of a point of the edge or the face, so the viewer has to find what is
 // there itself (phase3-select-elements.js calls the viewer's handlers instead).
@@ -39,9 +40,10 @@ const menuClick = async (re) => {
   b.click();
   await H.settle();
 };
-const filter = async (label, on) => {
+/** A kind picked on the filter bar (radio since ADR 0145): click its label. */
+const filter = async (label) => {
   const box = [...document.querySelectorAll('.pick-filter label')].find((l) => l.textContent.trim() === label).querySelector('input');
-  if (box.checked !== on) box.click();
+  box.click();
   await H.wait(150);
 };
 const picked = () => state().selectedElements.map((e) => `${e.kind}:${e.name}`);
@@ -56,18 +58,33 @@ M.run = async () => {
     arcEdge = r.edgeFingerprints.findIndex((fp) => fp.type === 'circle' || fp.type === 'arc');
     return { arcEdge, kinds: [...new Set(r.edgeFingerprints.map((f) => f.type))], pass: arcEdge >= 0 };
   });
-  await step('2 選擇濾器: 面 off, a click on the top face picks nothing; with only 邊線 on, a click on an edge picks the edge', async () => {
+  await step('2 選擇濾器 (hidden until F5, radio since ADR 0145): with only 邊線 on, a face cannot be picked and an edge can; F6 puts every kind back; F5 hides the bar', async () => {
     const top = S.planeFace(1, 5);
-    await filter('面', false);
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'F5', bubbles: true }));
+    await H.wait(150);
+    const shown = !!document.querySelector('.pick-filter');
+    await filter('邊線');
+    const radio = { ...state().pickFilter };
     await H.at(top.center);
-    const withoutFaces = { face: state().selectedFace?.name ?? null, elements: picked() };
-    await filter('面', true);
-    await filter('頂點', false);
+    const withEdgesOnly = { face: state().selectedFace?.name ?? null, elements: picked() };
     await H.at(edgeMid(0));
-    const onlyEdges = picked();
+    const edge = picked();
     await shot('2-an-edge-picked');
-    await filter('頂點', true);
-    return { withoutFaces, onlyEdges, pass: withoutFaces.face === null && withoutFaces.elements.length === 0 && onlyEdges.length === 1 && onlyEdges[0].startsWith('edge:') };
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'F6', bubbles: true }));
+    await H.wait(150);
+    const cleared = { ...state().pickFilter };
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'F5', bubbles: true }));
+    await H.wait(150);
+    return {
+      shown, radio, withEdgesOnly, edge, cleared,
+      pass:
+        shown &&
+        radio.edges === true && radio.faces === false && radio.vertices === false && radio.planes === false &&
+        withEdgesOnly.face === null && withEdgesOnly.elements.length === 0 &&
+        edge.length === 1 && edge[0].startsWith('edge:') &&
+        cleared.faces === true && cleared.edges === true && cleared.vertices === true && cleared.planes === true &&
+        !document.querySelector('.pick-filter'),
+    };
   });
   // The checklist (before 2026-10-08) said to right-click an edge of the fillet with nothing open. The menu has 選取相切的邊線 and 選取迴圈 only while a feature that picks edges is
   // open (「圓角」, 「導角」): the multi-select of D5.6 is a help for filling that list. Without one the menu has nothing of the kind.

@@ -48,6 +48,8 @@ export const app = {
   'act.left': '左視',
   'act.iso': '等角',
   'act.normal': '正視於',
+  'act.filterBar': '選擇濾器列',
+  'act.clearFilters': '清除選擇濾器',
   'sketch.selectCurves': '請先選擇直線、圓或圓弧',
   'status.ready': '就緒',
   'status.whatsWrong': '錯誤為何？（{what}）',

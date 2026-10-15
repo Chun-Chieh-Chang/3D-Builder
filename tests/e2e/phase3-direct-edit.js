@@ -89,7 +89,7 @@ D3.refuseNextToFillet = async () => {
   return { name: 'refuse a face with a fillet beside it', status: f?.status, message: f?.message, pass: f?.status === 'error' && /相切/.test(f.message) };
 };
 
-D3.importRepair = async (base = 'http://127.0.0.1:5393/') => {
+D3.importRepair = async (base = globalThis.__samplesOrigin ?? 'http://127.0.0.1:5393/') => {
   let facesOnly;
   let gapped;
   try {

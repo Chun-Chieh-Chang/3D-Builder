@@ -479,6 +479,10 @@ html[lang="en"] .view-cube .cube-label { font-size: 13px; }
 .pick-filter label.on { background: var(--accent-faint); color: var(--accent-strong); font-weight: 600; box-shadow: inset 0 0 0 1px var(--accent-line); }
 .pick-filter label input { position: absolute; inset: 0; width: 100%; height: 100%; margin: 0; opacity: 0; cursor: pointer; }
 .pick-filter label:has(input:focus-visible) { box-shadow: 0 0 0 2px var(--accent-bright); }
+/* the bar's own buttons, as the first two of SW's toolbar: hide (F5) and clear (F6) */
+.pick-filter > .view-chip { height: 24px; padding: 0 8px; border: 0; background: none; color: var(--muted); font: inherit; border-radius: 6px; }
+.pick-filter > .view-chip:hover { background: var(--surface); color: var(--text); }
+.pick-filter-hide { width: 24px; justify-content: center; padding: 0; }
 .ctx-menu { position: absolute; z-index: 20; display: flex; flex-direction: column; min-width: 160px; background: var(--card); border: 1px solid var(--line); border-radius: 4px; box-shadow: 0 4px 14px color-mix(in oklab, var(--text) 20%, transparent); padding: 3px 0; }
 .ctx-menu button { border: 0; background: none; text-align: left; padding: 5px 12px; font-size: 13px; white-space: nowrap; }
 .ctx-menu button:hover { background: var(--accent-soft); }

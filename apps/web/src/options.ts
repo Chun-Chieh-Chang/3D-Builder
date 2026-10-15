@@ -14,6 +14,8 @@ export interface SystemOptions {
   defaultTemplate: PartTemplateId;
   /** Which kinds of element the graphics area lets be picked (D5.4): model faces, edges and vertices, and the reference planes (ADR 0127). What 「選項」 sets takes effect at once and is kept for the next page. */
   pickFilter: { faces: boolean; edges: boolean; vertices: boolean; planes: boolean };
+  /** Whether the graphics area shows the selection filter bar (ADR 0145; SolidWorks hides its Selection Filter toolbar until asked). */
+  pickFilterBar: boolean;
   /** What 「基準面」 and 「偏移草圖」 put in 偏移距離 next time: the last plain number that was confirmed (ADR 0127). */
   datumOffset: string;
   /** The sketch snaps (D5.3c): 「啟用抓取」 and the choices under it. */
@@ -32,6 +34,7 @@ export const DEFAULT_OPTIONS: SystemOptions = {
   autosaveSeconds: 5,
   defaultTemplate: 'blank',
   pickFilter: { faces: true, edges: true, vertices: true, planes: true },
+  pickFilterBar: false,
   datumOffset: '10',
   snap: DEFAULT_SNAPS,
   viewArrowStep: 15,
@@ -54,6 +57,7 @@ export function parseOptions(raw: unknown): SystemOptions {
     autosaveSeconds: Math.min(AUTOSAVE_SECONDS.max, Math.max(AUTOSAVE_SECONDS.min, Math.round(seconds))),
     defaultTemplate: PART_TEMPLATES.some((x) => x.id === o.defaultTemplate) ? (o.defaultTemplate as PartTemplateId) : DEFAULT_OPTIONS.defaultTemplate,
     pickFilter: { faces: on(filter.faces), edges: on(filter.edges), vertices: on(filter.vertices), planes: on(filter.planes) },
+    pickFilterBar: typeof o.pickFilterBar === 'boolean' ? o.pickFilterBar : DEFAULT_OPTIONS.pickFilterBar,
     datumOffset: typeof o.datumOffset === 'string' && Number.isFinite(Number(o.datumOffset)) && o.datumOffset.trim() !== '' ? o.datumOffset.trim() : DEFAULT_OPTIONS.datumOffset,
     snap: parseSnapSettings(o.snap),
     viewArrowStep: angle(o.viewArrowStep, DEFAULT_OPTIONS.viewArrowStep),

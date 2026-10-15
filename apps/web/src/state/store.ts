@@ -297,8 +297,10 @@ export interface UiState {
   selectedElements: Ref[];
   /** The bodies there were when a knit, thicken or cut with surface was started: what it can pick from (a body it uses up, or turns into a solid, is not what the model it shows has). */
   bodyPool: { id: Id; name: string; surface: boolean }[];
-  /** Which kinds of element the graphics area lets be picked (D5.4): a command asks for kinds, this narrows them. */
+  /** Which kinds of element the graphics area lets be picked (D5.4): a command asks for kinds, this narrows them. Radio in the UI, as the SW filter toolbar (ADR 0145): at most one kind off the full set, or all of them. */
   pickFilter: PickFilter;
+  /** Whether the graphics area shows the selection filter bar (ADR 0145); F5 toggles, the choice is kept in the options. */
+  pickFilterBarVisible: boolean;
   /** What belongs to this browser and its user (D8.1). */
   options: SystemOptions;
   editing: EditSession | null;
@@ -558,6 +560,7 @@ class AppStore {
       selectedElements: [],
       bodyPool: [],
       pickFilter: { ...loadOptions().pickFilter },
+      pickFilterBarVisible: loadOptions().pickFilterBar,
       options: loadOptions(),
       editing: null,
       pendingSketch: null,
@@ -1310,8 +1313,27 @@ class AppStore {
     return this.state.selectedElements.filter((r) => r.kind === 'edge');
   }
 
-  setPickFilter(kind: keyof PickFilter, on: boolean): void {
-    this.set({ pickFilter: { ...this.state.pickFilter, [kind]: on } });
+  /**
+   * A kind chosen on the selection filter bar (ADR 0145): radio, as the SW toolbar — it becomes the only kind on. Choosing the kind that is already the only
+   * one on is a no-op (the SW button stays pressed). 「全部」/F6 goes through clearPickFilter.
+   */
+  setPickFilterKind(kind: keyof PickFilter): void {
+    const cur = this.state.pickFilter;
+    const alone = Object.entries(cur).every(([k, v]) => (k === kind ? v : !v));
+    if (alone) return;
+    this.set({ pickFilter: { faces: false, edges: false, vertices: false, planes: false, [kind]: true } });
+  }
+
+  /** F6, as the SW「清除所有濾器」(ADR 0145): every kind is pickable again. */
+  clearPickFilter(): void {
+    this.set({ pickFilter: { faces: true, edges: true, vertices: true, planes: true } });
+  }
+
+  /** F5, as the SW toggle of the Selection Filter toolbar (ADR 0145): shows or hides the bar; kept in the options like a toolbar state. */
+  togglePickFilterBar(): void {
+    const next = !this.state.pickFilterBarVisible;
+    this.set({ pickFilterBarVisible: next });
+    this.setOptions({ pickFilterBar: next });
   }
 
   // ------------------------------------------------------------ FeatureManager operations (B2.4, B2.6, B2.8, D7.1)
