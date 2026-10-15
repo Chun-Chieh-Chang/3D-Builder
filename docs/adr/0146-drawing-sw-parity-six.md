@@ -39,10 +39,13 @@
 | A4／A5：字高、箭頭長與五種樣式、線寬皆由實際繪出的幾何量測等於設定；非法值拒絕 | `drawing-dim-style.test.ts`：五種箭頭各自量長度與形狀；200 組隨機樣式全數相符；0、負數、NaN、∞、超過上限、字串、未知欄位與樣式皆拋錯；SVG、PDF、DXF 的數值 |
 | A6：四個角各自的等角方向（第一、第三角法分開），母視圖為六個標準視圖時皆正確，誤差 ≤ 1e-9 | `drawing-corner-align.test.ts`：六個母視圖 × 四角 × 兩種投影法，方向符號與 1/√3 皆驗證，四角四個不同方向 |
 | Schema 19＋遷移 | `drawing-shade.test.ts`：v18 的 true／false／未設定轉換結果 |
+| 反向對照 | 斜角一律回傳右上角的方向：單元 1 項、e2e 步驟 6b 失敗；尺寸文字高度寫死 3.5：單元 7 項、e2e 步驟 4/5a、4/5c 失敗；還原後全過 |
+| typecheck 0、lint 全過、全量 vitest 0 失敗 | 2844 過、25 略過、0 失敗 |
+| e2e | `manual-drawing-sw-parity.js` 14 步 PASS；工程圖／剖面／phase5 共 19 支一起跑全過（`manual-drawing-menus.js` 第 6 步改用顯示樣式；`manual-drawing-open-part.js` 存檔前等視圖特徵，見 DEV_LOG） |
 
 ## 記憶體（AGENTS.md §3.1、§3.5）
 
-塗彩只多做一次 `BRepMesh`（不做布林）。以 `wasmMemory.buffer.byteLength` 在全新 Heap 量 600 次（`drawing-shade-memory.test.ts`，先斷言基準 > 0）：數字見 DEV_LOG；新路徑建立的形狀以 `liveShapes` 驗證全數釋放。剖面塗彩沿用既有的剖面布林（§3.5 已記載的 OCCT 布林成長），產品側由 worker 高水位重啟（ADR 0126）限制。
+塗彩只多做一次 `BRepMesh`（不做布林）。以 `wasmMemory.buffer.byteLength`、每種情境各自一個全新 Heap、各 2000 次等角視圖（40×30×20 板）量測，先斷言基準 > 0：只做隱藏線 **+25.6 MiB**（零件事先網格化與否相同）、只做網格 **+0.0**、兩者一起 **+56.4 MiB**，即塗彩一張視圖比不塗彩多約 **0.015 MiB**；對照組 1000 次剖面（OCCT 布林）+366 MiB，證明量測看得到成長。**沒有**宣稱 0 洩漏。塗彩每次視圖變更只算一次並快取；新路徑建立的形狀以 `liveShapes` 驗證全數釋放（`drawing-shade-memory.test.ts`）。剖面塗彩沿用既有的剖面布林（§3.5 已記載的 OCCT 布林成長），產品側由 worker 高水位重啟（ADR 0126）限制。
 
 ## 已知限制
 

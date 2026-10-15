@@ -61,6 +61,10 @@ M.run = async () => {
     await H.waitFor(() => store.getState().result?.mesh, 20000, 'the part');
     await H.newDrawing();
     await H.waitFor(allLines, 30000, 'the three views');
+    // a new drawing fits its scale once what its views can be dimensioned from is known: saved before that, the fit came after the save and left the drawing
+    // changed — with a slow kernel (a batch of scripts) step 5 then found it dirty (ADR 0146, found running the drawing scripts together)
+    await H.waitFor(() => drw().features.size === 3, 30000, 'the features of the three views');
+    await H.wait(300);
     H.next.save = '定位板.3dbd';
     await H.action('檔案', '儲存檔案');
     await H.waitFor(() => !drw().dirty && drw().fileName === '定位板.3dbd', 10000, 'the save');

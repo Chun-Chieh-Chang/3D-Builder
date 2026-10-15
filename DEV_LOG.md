@@ -1,5 +1,38 @@
 # 3D-Builder 開發日誌 (DEV_LOG.md)
 
+## 2026-10-15（晚二）：工程圖六項與 SolidWorks 對齊（[ADR 0146](docs/adr/0146-drawing-sw-parity-six.md)，工程圖 Schema 19）
+
+### 1. 範圍
+使用者在「零件1」工程圖（A3、第三角、13:10）回報六項：回不到零件、等角視圖不能塗彩、剖面不能拖到任意位置、尺寸字高不能改、尺寸線寬與箭頭不能改、斜角投影方位不對。逐項查明（見 ADR 背景表），驗收標準與四個設計選擇經使用者確認（全部採建議選項）。另一工作階段同時建了未提交的 `0145-selection-filter-sw-toolbar.md`，本項改用 0146 避免撞號。
+
+### 2. 做法
+| 層 | 檔案 | 內容 |
+|---|---|---|
+| 模型 | `packages/model/src/drawing.ts`、`serialize.ts` | `display`（取代 `hidden`，v18→v19 遷移）、`DimStyle`（圖面＋單一尺寸，`resolveDimStyle`、範圍檢查）、`ViewCorner` 與 `cornerAxes`（斜角等角，須有 `at`） |
+| 核心 | `packages/kernel/src/kernel.ts`、`types.ts`、`regen/drawingViews.ts` | `projectView(..., { mesh })` 回傳視圖座標網格；剖面兩個方法把選項傳下去 |
+| 圖面 | `packages/drawing/src/shade.ts`（新）、`scene.ts`、`dimension.ts`、`svg.ts`、`pdf.ts`、`dxf.ts`、`layout.ts` | 深度緩衝光柵化、PNG／PDF 串流編碼；`scene.images`；顯示樣式畫法；尺寸樣式畫法（`pen`）；PDF 影像＋遮罩、SVG `<image>`、DXF 尺寸型式與線寬；`cornerAt` |
+| 流程與介面 | `worker`、`state/drawing.ts`、`actions.ts`、`DrawingPanel.tsx`、`DrawingViewMenu.tsx`、`DrawingViewport.tsx`、`DimensionPanel.tsx`、`DimStyleFields.tsx`（新）、i18n | 塗彩請求與快取、`placeCorner`、`breakAlignment`、`partToOpen`；樹上常駐「開啟零件」、檔案／視圖配置選單；顯示樣式下拉與右鍵；解除／預設對齊；尺寸樣式欄位 |
+
+### 3. 自我紅隊四問（AGENTS.md §2.1）
+1. **輸入破壞**：尺寸樣式的 0、負數、NaN、∞、超過上限、字串、陣列、未知欄位、未知箭頭樣式，圖面與單一尺寸兩條路都拋 `CommandError` 並說出欄位與範圍，**不夾到範圍內、不四捨五入**；介面輸入 0 時狀態列顯示「文字高度要介於 1 到 20 mm 之間」、樣式不變（e2e 4/5b）。未知顯示樣式、未知側邊／角落、斜角視圖沒有位置、視圖帶舊的 `hidden` 欄位都拒絕。光柵化的像素密度 0／負／NaN／∞、網格點非數字、索引不是三的倍數都明確拋錯；過大的影像降密度而不是放大（上限 400 萬像素）。
+2. **幾何相交**：塗彩的遮蔽以深度緩衝逐像素判斷，**不用三角形排序**（大面旁的小近面會排錯）；以「近的小方塊先、遠的大方塊後」與反序兩種順序驗證都取近面，並以 OCCT 實體（板＋凸台的等角視圖）驗證凸台頂面中心的深度與幾何推算相差 < 0.2 mm、後方板面深 10 mm 以上。網格不做布林；剖面塗彩用的是既有剖面切出的形狀。
+3. **依賴鏈**：`schema`（`display`、`DimStyle`、`ViewCorner`）→ 命令檢查 → 遷移 → `axesOf`／`projectedAxes` → worker 請求（`shade.px`）→ `projectDrawingView` → `Kernel.projectView/sectionView/sectionViewPath` → 光柵化與編碼 → 快取 → `resolveLines`（細部放大圖帶父視圖影像與圓形裁切）→ `buildScene` → SVG／PDF／DXF → 介面（面板、右鍵、工具、樹）→ 存檔（Schema 19）全鏈。
+4. **零 Mock**：塗彩以手做網格（已知像素數 1600）與 OCCT 實體量測覆蓋率、範圍外像素、深度；PNG 逐 chunk 驗 CRC 並解壓比對像素。尺寸樣式全部從繪出的幾何量（箭頭頂點到底邊中點的距離、半寬、斜線 45°、圓點半徑、文字高度、線寬），200 組隨機樣式。斜角方向對六個母視圖 × 四角 × 兩種投影法驗證視點符號與 1/√3。兩個突變（斜角固定、字高寫死）各自讓單元與 e2e 失敗。
+
+### 4. 記憶體（AGENTS.md §3.1、§3.5）
+第一版量測（同一 Heap 依序 2000 平常、2000 塗彩）量到「塗彩 +165 MiB」，但同一 Heap 的依序量測受前一段影響。改以每種情境各自全新 Heap、各 2000 次隔離：隱藏線 +25.6、網格 +0.0、兩者 +56.4 MiB；再以「零件事先網格化」重測隱藏線仍 +25.6，否定「網格化的形狀讓隱藏線多佔」的假設。結論：塗彩一張約多 0.015 MiB，**不宣稱 0**；對照組（剖面布林）有成長，證明量測有感度。已寫入 AGENTS.md §3.5。
+
+### 5. 過程紀錄（RCA／CAPA）
+- **誤寫主資料夾**：以 `[IO.File]::ReadAllText/WriteAllText` 改檔時用了相對路徑，.NET 以行程目錄（主資料夾）解析而不是 PowerShell 的 `Set-Location`，5 個小改動寫進了主資料夾。發現後於 14:09 在 worktree 重做並以 `git checkout --` 還原主資料夾那 5 檔；但主資料夾的另一工作階段在那之間把其中 4 檔提交並推送（`4309412`），14:21 又撤回測試部分（`c2d7cd0`）。kernel 兩行與本分支相同，rebase 無衝突。**CAPA**：.NET 檔案 API 一律用絕對路徑；已寫入 AGENTS.md §4。
+- **與其他工作階段撞埠**：`verify-ui.mjs` 的 9333／5393 寫死，另一工作階段同時跑 `manual-c21|c22|sketch-plane`，那一批結果作廢重跑。
+- **既有的 e2e 不穩**：`manual-drawing-open-part.js` 單獨跑會過、與別的腳本一起跑就失敗——**在 origin/main（不含本變更）的乾淨 worktree 上同樣失敗**，所以不是本變更造成。根因：新工程圖在視圖特徵算好之後才「最適比例」；核心載入慢時（批次中 5.4 s 對單獨 1.4 s）這一步發生在存檔之後，工程圖又變成未存檔，下一步開零件就被「要儲存變更嗎？」擋住。測試改為存檔前等視圖特徵；產品行為（剛建好就存檔，之後又被自動改比例）列為後續。
+- `manual-drawing-menus.js` 第 6 步原本點「顯示隱藏線」，該項已改為五種顯示樣式，改點「移除隱藏線」並以隱藏線數量的變化驗證。
+
+### 6. 確效與品質驗收
+- `typecheck` 0 錯誤；`lint:deps`／`lint:rules`／`lint:i18n` 全過。
+- 全量 vitest：**2844 過、25 略過、0 失敗**（223 檔過、4 檔略過）。新測試：`drawing-shade.test.ts` 13、`drawing-dim-style.test.ts` 12、`drawing-corner-align.test.ts` 5、`drawing-shade-memory.test.ts` 1。
+- `verify:ui --only "drawing|section|phase5"`：**19/19**（新 `manual-drawing-sw-parity.js` 14 步）。全量 `verify:ui` 未跑（零件模式未改動；跑全量會長時間佔用與其他工作階段共用的埠）。
+
 ## 2026-10-15（晚）：組合件設計樹展開零件——零件自己的原點、基準面與特徵，拿來做結合（[ADR 0144](docs/adr/0144-assembly-component-datums-in-tree.md)）
 
 ### 1. 範圍

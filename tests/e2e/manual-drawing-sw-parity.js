@@ -93,8 +93,13 @@ M.run = async () => {
     await H.waitFor(() => store.getState().result?.mesh, 20000, 'the part');
     await H.newDrawing();
     await H.waitFor(() => drw() && drw().doc.views.length === 3 && allLines(), 30000, 'the three views');
+    // a new drawing fits its scale once what its views can be dimensioned from is known; saved before that, the fit comes after the save and leaves the
+    // drawing changed (a slow kernel in a batch of scripts shows it)
+    await H.waitFor(() => drw().features.size === 3, 30000, 'the features of the three views');
+    await H.wait(300);
     d().setSheet({ projection: 'third' });
     await H.waitFor(allLines, 30000, 'the views in third angle');
+    await H.waitFor(() => drw().features.size === 3, 30000, 'the features in third angle');
     H.next.save = '定位板.3dbd';
     await H.action('檔案', '儲存檔案');
     await H.waitFor(() => !drw().dirty && drw().fileName === '定位板.3dbd', 10000, 'the save');

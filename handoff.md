@@ -5,6 +5,15 @@
   - **驗收**：options.test 9/9；help 40/40；help-manual 同步；typecheck 0、三項 lint 過；全量 vitest **2814 過、25 略、0 失敗**；`verify:ui` **5/5**（manual-c21 步 2 重寫、manual-c22 optionOff／startedOff 改種「邊線」、manual-sketch-plane 步 11 用 radio 證雙向閘門）。全量 `verify:ui` 未跑（組合件、工程圖未改動）。
   - **工具**：`verify-ui.mjs` 的 9333／5393 改為 `VERIFY_UI_DEBUG_PORT`／`VERIFY_UI_SAMPLES_PORT` 環境可覆蓋（預設不變），樣本 URL 以 `window.__samplesOrigin` 注入——**兩個工作階段現在可以同時跑 verify:ui**（取代前一段「寫死不能同時跑」的警告）。
   - **已知差異**：輸入框聚焦時 F5＝瀏覽器重新整理；舊混合種子值過渡顯示（列上無按下的種類，第一次點選收斂）。
+- **【2026-10-15 晚二：工程圖六項與 SolidWorks 對齊（Claude，[ADR 0146](docs/adr/0146-drawing-sw-parity-six.md)，工程圖 Schema 19）— 已提交並推送（見 `git log`）】** 使用者在「零件1」工程圖回報六項，驗收標準與四個設計選擇經使用者確認（全採建議）。在 worktree `D:\Self-developed_Apps\G3\3DB-drawing-fixes`（分支 `drawing-fixes`，rebase 到 `origin/main` `482a816`）完成。
+  - **完成**：①設計樹最上方常駐「開啟零件：<檔名>」，檔案與視圖配置選單也有；②視圖顯示樣式五種（線架構／隱藏線可見／移除隱藏線／帶邊線塗彩／塗彩），塗彩以深度緩衝光柵化，螢幕、SVG、PDF 都有，DXF 只有線；新等角視圖預設帶邊線塗彩；③投影與剖面視圖右鍵「解除對齊」「預設對齊」；④⑤圖面尺寸樣式與單一尺寸覆寫（字高、箭頭長、實心／空心／斜線／圓點／無、線寬），超出範圍拒絕；⑥往斜角拖出的是該角的等角投影（第一／第三角法分開），跟著母視圖轉。Schema 18→19（`hidden` 遷移為 `display`）。
+  - **驗收**：typecheck 0、三項 lint 過；全量 vitest **2844 過、25 略過、0 失敗**；`verify:ui --only "drawing|section|phase5"` **19/19**（新 `manual-drawing-sw-parity.js` 14 步）；兩個突變各自讓單元與 e2e 失敗。全量 `verify:ui` 未跑。
+  - **記憶體**：塗彩一張視圖比不塗彩多約 0.015 MiB Heap（全新 Heap 各 2000 次隔離量測）；不宣稱 0。並更正 AGENTS.md §3.5「`projectView` 單獨 0」為被餘裕吸收（實測 2000 次 +25.6 MiB）。
+  - **事故（已處理，請知悉）**：本工作階段曾以相對路徑誤寫主資料夾 5 檔（14:0x），已還原；但主資料夾的另一工作階段在那之間提交推送了其中 4 檔（`4309412`，kernel `mesh?` 參數＋三個測試），又以 `c2d7cd0` 撤回測試部分。本提交包含完整版本，無衝突。AGENTS.md §4 已加「worktree 中 .NET 檔案 API 一律絕對路徑」。
+  - **ADR 編號**：主資料夾另有未提交的 `0145-selection-filter-sw-toolbar.md`（別的工作階段），本項用 0146。
+  - **測試修正**：`manual-drawing-menus.js` 第 6 步改用顯示樣式；`manual-drawing-open-part.js` 存檔前等視圖特徵——它在 origin/main 上與其他腳本同批跑就會失敗（新工程圖的「最適比例」在存檔後才發生，工程圖又變成未存檔）。
+  - **後續**：新工程圖剛建好就存檔，之後被自動「最適比例」改成未存檔（產品行為，未改）；塗彩顏色固定不讀零件外觀；尺寸樣式不含註解／公差框／表格；`D:\Self-developed_Apps\G3\3DB-baseline`（origin/main 的對照 worktree）與 `3DB-drawing-fixes` 兩個 worktree 待使用者同意後清理。
+
 - **【2026-10-15 晚：組合件設計樹展開零件——零件自己的原點、基準面與特徵，拿來做結合（Claude，[ADR 0144](docs/adr/0144-assembly-component-datums-in-tree.md)，檔案格式不變）— 已提交並推送（見 `git log`）】** 使用者截圖回報「零件下沒有可展開的基準面」。Qoder 在 `docs/decisions-2026-10-14b.html` 列為 A1／A2，**之前沒有任何實作**；本次照兩題的建議選項做（頂層零件；座標系統只列出不結合）。在乾淨的 worktree（`origin/main` `718a57a`）完成。
   - **完成**：零件列有 ▸，展開＝原點、前／上／右基準面、零件特徵（參考基準面可選，其餘唯讀；失敗標紅、抑制變淡）；樹上點選（Ctrl 加選）的基準面與原點畫在圖面；按「結合」時帶入前兩個並建議類型；組合件自己的原點也可選；Esc 清空；展開狀態在結合面板關掉後仍在。命令層拒絕不合法的結合參考（`body`、未知種類、`plane:back`）。Worker 的零件資料多了特徵清單。
   - **原本就有、這次沒動**：求解器與模型參考本來就支援零件基準面；結合時圖面左上的浮出樹仍可用（次組合件內部零件的基準面請從那裡選）。
