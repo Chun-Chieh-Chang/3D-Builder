@@ -344,7 +344,7 @@ describe('where the derived views go and what is drawn on the parent', () => {
     expect(texts).toContain('A-A');
     // a section does not draw its hidden lines unless asked
     expect(scene.items.filter((i) => i.kind === 'polyline' && i.style === 'hidden')).toHaveLength(0);
-    const asked = buildScene(applyDrawingCommand(d, { type: 'setView', viewId: 's', patch: { hidden: true } }), new Map([['f', lines(100, 60)], ['s', { visible: [], hidden: [[5, 5, 20, 5]], box: { min: [0, 0], max: [40, 60] }, cut }]])).scene;
+    const asked = buildScene(applyDrawingCommand(d, { type: 'setView', viewId: 's', patch: { display: 'hiddenVisible' } }), new Map([['f', lines(100, 60)], ['s', { visible: [], hidden: [[5, 5, 20, 5]], box: { min: [0, 0], max: [40, 60] }, cut }]])).scene;
     expect(asked.items.filter((i) => i.kind === 'polyline' && i.style === 'hidden')).toHaveLength(1);
     // the cutting line is where the line is on the parent: x = 50 in the parent's view, at the parent's place on the sheet
     const f = placed.get('f')!;

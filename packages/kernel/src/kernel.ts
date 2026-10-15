@@ -2639,7 +2639,7 @@ export class Kernel {
    * A section view of the shape (C16.3): the material on the viewer's side of the plane (`normal` points to the viewer) is taken away, and what is left is seen
    * from there as lines, with the outlines of the faces the cut made (to be hatched). The viewer looks along `-normal`; `up` is the sheet's up, square to it.
    */
-  sectionView(id: ShapeId, plane: { origin: Vec3; normal: Vec3 }, up: Vec3, options: { tolerance?: number; angular?: number } = {}): ProjectedView {
+  sectionView(id: ShapeId, plane: { origin: Vec3; normal: Vec3 }, up: Vec3, options: { tolerance?: number; angular?: number; mesh?: boolean } = {}): ProjectedView {
     const oc = this.oc;
     const n0 = plane.normal;
     const nl = Math.hypot(n0[0], n0[1], n0[2]);
@@ -2727,7 +2727,7 @@ export class Kernel {
    * against `normal` with `up` up, as `sectionView`; the outlines of the cut faces (those on the cutting planes) are given for hatching, and the lines where
    * the path changes way (a jog, the bend) are not drawn, as ISO 128-44 has it. An empty `cut` when the path misses the shape.
    */
-  sectionViewPath(id: ShapeId, cut: { normal: Vec3; path: Vec3[]; aligned?: boolean }, up: Vec3, options: { tolerance?: number; angular?: number } = {}): ProjectedView {
+  sectionViewPath(id: ShapeId, cut: { normal: Vec3; path: Vec3[]; aligned?: boolean }, up: Vec3, options: { tolerance?: number; angular?: number; mesh?: boolean } = {}): ProjectedView {
     const oc = this.oc;
     const n0 = cut.normal;
     const nl = Math.hypot(n0[0], n0[1], n0[2]);

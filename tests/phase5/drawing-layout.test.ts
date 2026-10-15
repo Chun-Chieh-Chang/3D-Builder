@@ -144,7 +144,7 @@ describe('the scene and the SVG written from it', () => {
   });
 
   it('draws no hidden lines for a view that has them off', () => {
-    const off = applyDrawingCommand(d, { type: 'setView', viewId: 'f', patch: { hidden: false } });
+    const off = applyDrawingCommand(d, { type: 'setView', viewId: 'f', patch: { display: 'hiddenRemoved' } });
     expect(buildScene(off, lines).scene.items.filter((i) => i.kind === 'polyline' && i.style === 'hidden')).toHaveLength(0);
   });
 
