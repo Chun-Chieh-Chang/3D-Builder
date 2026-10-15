@@ -1,5 +1,37 @@
 # 3D-Builder 開發日誌 (DEV_LOG.md)
 
+## 2026-10-15（晚三）：新工程圖在「最適比例」前存檔——存檔等它、它併入放視圖那一步（[ADR 0147](docs/adr/0147-drawing-fit-before-save.md)）
+
+### 1. 範圍
+ADR 0146 確效時記下的後續（下一節 §5 第三點）：新工程圖的最適比例等視圖特徵到齊才執行，核心慢時在存檔之後才發生，工程圖又變成未存檔，「開啟零件」被「要儲存變更嗎？」擋住。先以瀏覽器重現（攔住 worker 的 `drawingFeatures` 回覆、放三視圖、立刻存檔、再放行）：檔案存的是 `shift: null`，之後文件變成 `[0, 3]`、標題 `定位板.3dbd *`、開零件被詢問。修法經使用者選擇題裁定「等候＋併入同一步」（建議選項）。
+
+### 2. 做法
+| 層 | 檔案 | 內容 |
+|---|---|---|
+| 模型 | `packages/model/src/history.ts` | `History.amend(cmd)`：併入最後一步（工作階段中為工作階段的最後一步）；無步驟時成為起始狀態；非法命令拋錯不變；清掉重做 |
+| 流程 | `apps/web/src/state/drawing.ts` | 自動最適比例改 `amend`（`fitSheet()` 與按鈕共用）；`fitSettled()`／`wakeFitWaiters()`；`loadingSources` 計數；`write()` 先開對話框、寫入前等候 |
+| 測試 | `tests/phase5/drawing-fit-save.test.ts`（新）、`tests/e2e/manual-drawing-save-before-fit.js`（新）、`manual-drawing-open-part.js`、`manual-drawing-sw-parity.js` | 新測試見下；兩支舊 e2e 移除「存檔前等 features」的繞過 |
+
+### 3. 自我紅隊四問（AGENTS.md §2.1）
+1. **輸入破壞**：`amend` 走與 `execute` 相同的命令檢查——1.5:1、0:1、NaN 位移都拋 `CommandError` 且文件不變（單元）；沒有任何數值被四捨五入或夾住。存檔等候的「輸入」是時序：特徵先到、線條先到、核心失敗（線條請求拋錯）、空白圖頁、等候中關閉工程圖，五種順序都有單元覆蓋，沒有一種會永遠等下去；**不以逾時判斷**（逾時是猜，慢機器會在最適比例之前寫入，正是原本的錯）。
+2. **拓樸與幾何相交**：不涉及幾何運算；最適比例的計算（`fitViews`）不變，只改它進入文件的方式與時機。
+3. **依賴鏈完整性**：`History.amend`（model）→ `DrawingStore.autoScaleWhenReady`（`fitSheet`）→ `fitSettled`（`loadSources`／`computeLines`／`computeDimensionData`／`close` 皆喚醒）→ `write()`（`save`、`saveAs`、`answerUnsaved('save')` 都經過它）→ store 的 `activeDirty`／`guard`（開零件不再詢問）→ 標題列 `*`。另存到別的資料夾時 `moveTo` 的 `rebase` 會重新讀零件，`loadingSources` 計數涵蓋這段（`state.sources` 在那之間會被清空，不能拿它判斷是否還在讀）。
+4. **零 Mock 與真值**：e2e 在真的 app 頁面、真的核心與真的 OPFS 檔案上跑，只把 worker 的特徵回覆**延後**（Proxy 攔住後放行，答案是核心自己的），讀回寫入的 `.3dbd` 比對 `scale`／`shift`；單元測試的 worker 是替身（答案固定的大板，讓最適比例一定有事做），但寫入的位元組以 `readAnyDocumentFile` 真的解開比對。**反向對照**：把 `state/drawing.ts` 還原為修正前，單元 4 項失敗、e2e 步驟 2～5 失敗；放回後全過。
+
+### 4. 記憶體（AGENTS.md §3.1、§3.5）
+不碰核心與 WASM，沒有新增 OCCT 呼叫；不做 Heap 量測，也不宣稱任何 Heap 數字。
+
+### 5. 過程紀錄（RCA／CAPA）
+- **根因**：最適比例是「放視圖」的收尾，卻以獨立的 `execute` 進入文件，且發生時機取決於核心速度；存檔不知道它還沒來。**CAPA**：程式自己為完成某一步而做的變更用 `amend`，存檔等它。
+- **e2e 量測陷阱**：新 e2e 第一版以「檔案存不存在」判斷是否已寫入，但存檔對話框（替身與真的都一樣）選好就建立空檔，誤判為已寫入；改為檢查位元組數為 0。
+- **verify-ui 的回報只列前三個失敗步驟**（`bad.slice(0, 3)`）：反向對照時第 5 步看似通過，於瀏覽器窗格以修正前的程式重跑確認它確實失敗（詢問「要儲存變更嗎？」）。
+- `verify-ui` 在自訂 `VERIFY_UI_ORIGIN` 時不會在該埠啟動開發伺服器（它跑 `npm run dev`，固定 5391）；本次以 `.claude/launch.json` 臨時加一個 `--port 5471` 的設定由預覽工具啟動（未提交）。
+
+### 6. 確效與品質驗收
+- `typecheck` 0 錯誤；`lint:deps`／`lint:rules`／`lint:i18n` 全過。
+- 全量 vitest：**2856 過、25 略過、0 失敗**（224 檔過、4 檔略過）。新測試：`drawing-fit-save.test.ts` 11 項。
+- `verify:ui`（埠 5471／9471／5473）：`--only "drawing|section|phase5"` **20/20**（含新 `manual-drawing-save-before-fit.js` 5 步，以及移除繞過後的 `manual-drawing-open-part.js`、`manual-drawing-sw-parity.js`——這一批正是 0146 時核心變慢而失敗的組合）；其餘用到工程圖的 `manual-measure-view.js`、`phase4b-surface*.js` 3/3。全量 `verify:ui` 未跑（零件與組合件模式未改動）。
+
 ## 2026-10-15（晚二）：工程圖六項與 SolidWorks 對齊（[ADR 0146](docs/adr/0146-drawing-sw-parity-six.md)，工程圖 Schema 19）
 
 ### 1. 範圍

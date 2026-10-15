@@ -95,6 +95,24 @@ export class History<D, C extends { type: string }> {
     this.emit();
   }
 
+  /**
+   * Applies a command as part of the last step rather than as a step of its own: undoing that step undoes both. With no step to undo, it becomes part of the
+   * document as it started. For what the program does by itself to finish a step the user took — a new drawing's 最適比例 once its views are drawn (ADR 0147).
+   * Throws CommandError without changing anything if the command is invalid.
+   */
+  amend(cmd: C): void {
+    const [next, patches, inverse] = produceWithPatches(this.current, (d: Draft<D>) => this.recipe(d, cmd));
+    if (patches.length === 0) return;
+    this.current = next as D;
+    const steps = this.tx ? this.tx.steps : this.undoStack;
+    const last = steps.at(-1);
+    if (last) steps[steps.length - 1] = merge(last.label, [last, { label: last.label, patches, inverse }]);
+    // what redo would bring back was recorded on the document without this change
+    if (this.tx) this.tx.redo = [];
+    else this.redoStack = [];
+    this.emit();
+  }
+
   begin(label: string): void {
     if (this.tx) throw new Error(t('history.busy'));
     this.tx = { label, steps: [], redo: [], base: 0 };

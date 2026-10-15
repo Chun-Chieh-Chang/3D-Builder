@@ -210,7 +210,12 @@ export class DrawingStore {
   private folder: string;
   private state: DrawingState;
   private closed = false;
+  /** A new drawing's 最適比例 is still to come (`autoScaleWhenReady`): a save waits for it, so the file holds the drawing as it is meant to start (ADR 0147). */
   private autoScalePending: boolean;
+  /** The parts being read and built now: the lines, and so the 最適比例, may still come from them. */
+  private loadingSources = 0;
+  /** Those waiting for the 最適比例 to have come, or for nothing more to be on its way (`fitSettled`). */
+  private fitWaiters: (() => void)[] = [];
   /** The part a drawing was made of, before any view shows it (D-V2). */
   private initialSource: string | null;
   /** The worker could not say what the views are dimensioned from: a new drawing's 最適比例 does not wait for it. */
@@ -273,6 +278,7 @@ export class DrawingStore {
 
   close(): void {
     this.closed = true;
+    this.wakeFitWaiters();
   }
 
   /** The file the drawing is saved in; null while it has never been saved. */
@@ -526,13 +532,19 @@ export class DrawingStore {
     for (const path of wanted) {
       if (this.state.sources.has(path)) continue;
       this.set({ sources: new Map(this.state.sources).set(path, { status: 'loading' }) });
-      void buildSource(this.host.api, project, path, { missing: (p) => t('drawing.sourceMissing', { path: p }), assembly: (p) => t('drawing.sourceAssembly', { path: p }), cycle: (p) => t('drawing.sourceCycle', { path: p }), notAssembly: (p) => t('drawing.sourceNotAssembly', { path: p }) }).then((status) => {
-        if (this.closed) return;
-        this.set({ sources: new Map(this.state.sources).set(path, status) });
-        this.refreshBoms();
-        void this.computeLines();
-        void this.computeDimensionData();
-      });
+      this.loadingSources++;
+      void buildSource(this.host.api, project, path, { missing: (p) => t('drawing.sourceMissing', { path: p }), assembly: (p) => t('drawing.sourceAssembly', { path: p }), cycle: (p) => t('drawing.sourceCycle', { path: p }), notAssembly: (p) => t('drawing.sourceNotAssembly', { path: p }) })
+        .then((status) => {
+          if (this.closed) return;
+          this.set({ sources: new Map(this.state.sources).set(path, status) });
+          this.refreshBoms();
+          void this.computeLines();
+          void this.computeDimensionData();
+        })
+        .finally(() => {
+          this.loadingSources--;
+          this.wakeFitWaiters();
+        });
     }
   }
 
@@ -880,6 +892,7 @@ export class DrawingStore {
       this.host.notify(t('drawing.computeFailed', { why: e instanceof Error ? e.message : String(e) }), 'error');
     } finally {
       this.computing = false;
+      this.wakeFitWaiters();
     }
   }
 
@@ -1007,6 +1020,7 @@ export class DrawingStore {
       this.autoScaleWhenReady();
     } finally {
       this.featuring = false;
+      this.wakeFitWaiters();
     }
   }
 
@@ -1027,7 +1041,37 @@ export class DrawingStore {
     });
     if (!drawn || !known) return;
     this.autoScalePending = false;
-    this.autoScale();
+    // part of the step that made the views (or of the new drawing), not a step of its own: SolidWorks chooses the scale as the first view is placed (ADR 0147)
+    const sheet = this.fitSheet();
+    if (sheet) {
+      try {
+        this.history.amend({ type: 'setSheet', sheet });
+      } catch (e) {
+        this.host.notify(e instanceof CommandError ? e.message : String(e), 'error');
+      }
+    }
+    this.wakeFitWaiters();
+  }
+
+  /**
+   * Resolves once a new drawing's 最適比例 has come, or once nothing that could bring it is on its way any more (no part being read, no lines or features being
+   * asked for: a kernel that failed, or a sheet with no views) — never a wait for something that will not come. A save waits for this, so what it writes is the
+   * drawing as it is meant to start, and the 最適比例 does not come after it and leave the drawing changed (ADR 0147).
+   */
+  fitSettled(): Promise<void> {
+    if (this.fitDone()) return Promise.resolve();
+    return new Promise((resolve) => this.fitWaiters.push(resolve));
+  }
+
+  private fitDone(): boolean {
+    return this.closed || !this.autoScalePending || this.history.doc.views.length === 0 || (!this.computing && !this.featuring && this.loadingSources === 0);
+  }
+
+  private wakeFitWaiters(): void {
+    if (this.fitWaiters.length === 0 || !this.fitDone()) return;
+    const waiting = this.fitWaiters;
+    this.fitWaiters = [];
+    for (const resolve of waiting) resolve();
   }
 
   /** The nearest view up the parents that is not a detail (a detail is measured in its parent's coordinates). */
@@ -1312,14 +1356,20 @@ export class DrawingStore {
 
   /** 「最適比例」: the largest standard scale at which the views, with their dimensions and marks, fit the sheet, and the arrangement moved to the middle of the area with them. */
   autoScale(): void {
+    const sheet = this.fitSheet();
+    if (sheet) this.execute({ type: 'setSheet', sheet });
+  }
+
+  /** What 「最適比例」 changes of the sheet; null when nothing (it fits already, or nothing is drawn to fit). */
+  private fitSheet(): Extract<DrawingCommand, { type: 'setSheet' }>['sheet'] | null {
     const { doc, lines, elements, features, boms } = this.state;
     const fit = fitViews(doc, lines, elements, features, boms);
-    if (!fit) return;
+    if (!fit) return null;
     const sheet: Extract<DrawingCommand, { type: 'setSheet' }>['sheet'] = {};
     if (fit.scale[0] !== doc.sheet.scale[0] || fit.scale[1] !== doc.sheet.scale[1]) sheet.scale = fit.scale;
     const was = doc.sheet.shift;
     if ((fit.shift?.[0] ?? 0) !== (was?.[0] ?? 0) || (fit.shift?.[1] ?? 0) !== (was?.[1] ?? 0)) sheet.shift = fit.shift;
-    if (Object.keys(sheet).length > 0) this.execute({ type: 'setSheet', sheet });
+    return Object.keys(sheet).length > 0 ? sheet : null;
   }
 
   /** The shift that puts the arrangement in the middle at the scale it has, the way a new drawing is put there (with the names under the views, the dimensions, the marks). */
@@ -1425,6 +1475,8 @@ export class DrawingStore {
   }
 
   private async write(handle: FileSystemFileHandle): Promise<boolean> {
+    // the file is chosen first (the dialog needs the click that asked for it); what is written waits for a new drawing's 最適比例 (ADR 0147)
+    await this.fitSettled();
     const doc = this.history.doc;
     try {
       await writeFile(handle, await writeDrawingFile(doc));
