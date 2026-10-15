@@ -117,6 +117,7 @@ export const output: Translation = {
   'cube.rollLeft': 'Roll counterclockwise {step}°',
   'cube.rollRight': 'Roll clockwise {step}°',
   'cube.home': 'Home (isometric view)',
+  'cube.flip': 'Turn to the back (180°)',
   'view.mode': 'Display Style',
   'view.mode.shadedEdges': 'Shaded With Edges',
   'view.mode.shaded': 'Shaded',

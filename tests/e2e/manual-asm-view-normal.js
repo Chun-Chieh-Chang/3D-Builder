@@ -33,7 +33,7 @@ const viewHud = (label) => [...document.querySelectorAll('.heads-up button')].fi
 
 M.run = async () => {
   let plate;
-  await step('1 a new assembly (plate and V-block): the 正視於 button is on, with nothing picked it answers with the isometric view', async () => {
+  await step('1 a new assembly (plate and V-block): the 正視於 button is on; with nothing picked, from the top view, it goes to the bottom view (the other side of the standard view it is already straight along)', async () => {
     H.ready();
     await H.project({ '定位板.3dbx': `${H.GOLDEN}locating-plate.3dbx`, 'V型塊.3dbx': `${H.GOLDEN}v-block.3dbx` });
     await H.action('檔案', '新組合件');
@@ -48,8 +48,8 @@ M.run = async () => {
     button.click();
     await H.wait(200);
     const d = store.viewer.viewDirection();
-    // the isometric view looks along a diagonal, (±1, ±1, ±1)/√3: all three components well away from 0
-    return { pass: Math.abs(top[1]) > 0.99 && d.every((x) => Math.abs(x) > 0.3), top, d };
+    // from the top the camera looks along -y; straight along a standard view already, the press goes to the other side: looking along +y
+    return { pass: top[1] < -0.99 && d[1] > 0.99, top, d };
   });
   await step('2 a plane of the assembly picked in the FeatureManager: Ctrl+8 looks straight at it', async () => {
     asm().pickDatum({ component: null, ref: { kind: 'datum', name: 'plane:right' } }, false);

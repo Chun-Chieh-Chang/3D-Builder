@@ -453,8 +453,9 @@ html[lang="en"] .view-cube .cube-label { font-size: 13px; }
 .view-cube .cube-arrow-right { right: 0; top: 56px; }
 .view-cube .cube-arrow-rollLeft { left: 2px; top: 2px; }
 .view-cube .cube-arrow-rollRight { right: 2px; top: 2px; }
+.view-cube .cube-arrow-flip { right: 2px; bottom: 2px; }
 /* a narrow 3D view: the heads-up bar (centred at the top) would run under the cube, so the cube goes below it */
-@container (max-width: 620px) { .view-cube { top: 100px; } }
+@container (max-width: 620px) { .view-cube { top: var(--heads-up-bottom, 100px); } }
 .view-options { position: absolute; top: 48px; left: 8px; display: flex; gap: 6px; align-items: center; z-index: 5; flex-wrap: wrap; max-width: 60%; }
 /* the display type, the selection filter and the section button read as one floating toolbar: frosted white, 8px corners, 32px tall */
 .view-options > select, .view-options > .view-chip, .pick-filter, .section-panel { height: 32px; background: color-mix(in oklab, var(--card) 86%, transparent); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); border: 1px solid color-mix(in oklab, var(--line) 95%, transparent); border-radius: 8px; box-shadow: 0 1px 2px color-mix(in oklab, var(--text) 5%, transparent), 0 4px 12px color-mix(in oklab, var(--text) 6%, transparent); font: inherit; font-size: 13px; color: var(--text); }

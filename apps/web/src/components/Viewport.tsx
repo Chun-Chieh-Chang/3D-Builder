@@ -479,12 +479,28 @@ export function Viewport() {
   const hoverFaceName = pick.faces && hoverFace >= 0 ? shown?.faceNames[hoverFace] : undefined;
   const planar = selectedFace?.fingerprint?.type === 'plane';
 
+  // the heads-up bar wraps as the view narrows and has grown with the commands it carries: the cube, when it has to go below the bar, goes below it as it is
+  // now (the bar's own height, not a number written in the stylesheet)
+  const mainRef = useRef<HTMLElement>(null);
+  const barRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const main = mainRef.current;
+    const bar = barRef.current;
+    if (!main || !bar || typeof ResizeObserver === 'undefined') return;
+    const measure = () => main.style.setProperty('--heads-up-bottom', `${Math.ceil(bar.getBoundingClientRect().bottom - main.getBoundingClientRect().top + 8)}px`);
+    measure();
+    const watch = new ResizeObserver(measure);
+    watch.observe(bar);
+    watch.observe(main);
+    return () => watch.disconnect();
+  }, []);
+
   return (
-    <main className="viewport">
+    <main ref={mainRef} className="viewport">
       <div ref={host} className="viewport-canvas" data-help={sketching ? 'concept.sketch-snaps' : 'concept.selection'} />
       <ViewCube />
       <ViewOptions />
-      <div className="heads-up">
+      <div ref={barRef} className="heads-up">
         {ACTIONS.filter((a) => a.group === 'view').map((a) => (
           <button key={a.id} onClick={a.run} disabled={!a.enabled(store.getState())} title={shortcutOf(a) ? `${a.label} (${shortcutOf(a)})` : a.label}>
             {a.label}
@@ -690,6 +706,7 @@ export function ViewCube() {
       {arrow('right', t('cube.turnRight', { step }), (v) => v.orbit('horizontal', step))}
       {arrow('rollLeft', t('cube.rollLeft', { step }), (v) => v.roll(-step))}
       {arrow('rollRight', t('cube.rollRight', { step }), (v) => v.roll(step))}
+      {arrow('flip', t('cube.flip'), (v) => v.orbit('horizontal', 180))}
       <button className="cube-arrow" data-cube-arrow="home" style={{ left: 2, bottom: 2 }} title={t('cube.home')} aria-label={t('cube.home')} onClick={() => store.viewer?.setView('iso')}>⌂</button>
       <svg className="cube" width={CUBE_BOX} height={CUBE_BOX} viewBox={`${-CUBE_BOX / 2} ${-CUBE_BOX / 2} ${CUBE_BOX} ${CUBE_BOX}`}>
         {/* a convex solid: the faces toward the viewer never cover each other, so they need no order */}
@@ -733,7 +750,7 @@ export function ViewCube() {
 }
 
 /** What each arrow around the cube shows. */
-const CUBE_ARROW_GLYPH: Record<string, string> = { up: '▲', down: '▼', left: '◀', right: '▶', rollLeft: '↺', rollRight: '↻' };
+const CUBE_ARROW_GLYPH: Record<string, string> = { up: '▲', down: '▼', left: '◀', right: '▶', rollLeft: '↺', rollRight: '↻', flip: '⇄' };
 
 /**
  * The position of the cut as a number the user can type (mm): the slider is hard to stop at a size. Enter or leaving the box sets it, Esc puts the old number back;

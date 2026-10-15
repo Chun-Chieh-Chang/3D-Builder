@@ -174,7 +174,7 @@ M.run = async () => {
     const is = (d, w) => w.every((x, i) => Math.abs(d[i] - x) < 0.01);
     return { labels, back, left, bottom, closed, pass: labels.join() === '前視,後視,左視,右視,上視,下視,等角,正視於' && closed && is(back, [0, 0, -1]) && is(left, [-1, 0, 0]) && is(bottom, [0, -1, 0]) };
   });
-  await step('9b 正視於: a selected plane is looked at straight, pressed again flips to the far side, and with nothing selected it returns to the isometric view', async () => {
+  await step('9b 正視於: a selected plane is looked at straight, pressed again flips to the far side, and with nothing selected it goes to the nearest standard view (the front from the isometric one), pressed there to the back', async () => {
     await S.iso();
     store.select('plane:front');
     const press = async () => {
@@ -191,11 +191,21 @@ M.run = async () => {
     await press();
     const back = direction();
     store.select(null);
+    await S.iso();
     await press();
-    const iso = direction();
+    const nearestFront = direction(); // from the isometric view three axes are equally near: the front is the first
+    await press();
+    const nearestBack = direction(); // looking straight along it already: the other side
+    store.viewer.setView('top');
+    store.viewer.orbit('vertical', 20); // from above, tilted 20 degrees: the top is still nearest
+    await H.wait(200);
+    await press();
+    const aboveTop = direction();
+    await press();
+    const aboveBottom = direction();
     await shot('9b-normal-to');
     const is = (d, w) => w.every((x, i) => Math.abs(d[i] - x) < 0.01);
-    return { near, far, back, iso, pass: is(near, [0, 0, 1]) && is(far, [0, 0, -1]) && is(back, [0, 0, 1]) && is(iso, [0.577, 0.577, 0.577]) };
+    return { near, far, back, nearestFront, nearestBack, aboveTop, aboveBottom, pass: is(near, [0, 0, 1]) && is(far, [0, 0, -1]) && is(back, [0, 0, 1]) && is(nearestFront, [0, 0, 1]) && is(nearestBack, [0, 0, -1]) && is(aboveTop, [0, 1, 0]) && is(aboveBottom, [0, -1, 0]) };
   });
   await step('10 the angle of the arrow keys is an option: 30° turns 30°', async () => {
     store.setOptions({ viewArrowStep: 30 });
@@ -296,6 +306,28 @@ M.run = async () => {
     const iso = [0.577, 0.577, 0.577];
     return { away, home, pass: Math.abs(away[0] - iso[0]) > 0.01 && home.every((x, i) => Math.abs(x - iso[i]) < 0.01) };
   });
+  await step("13c the flip button in the cube's other corner turns the model to the exactly opposite side in one click; twice is the start", async () => {
+    const press = async () => {
+      document.querySelector('.view-cube [data-cube-arrow="flip"]').click();
+      await H.wait(200);
+    };
+    const is = (d, w) => w.every((x, i) => Math.abs(d[i] - x) < 0.01);
+    store.viewer.setView('front');
+    await H.wait(200);
+    const front = direction();
+    await press();
+    const back = direction();
+    await press();
+    const again = direction();
+    store.viewer.setView('front');
+    store.viewer.orbit('vertical', 30);
+    await H.wait(150);
+    const tilted = direction();
+    await press();
+    const tiltedBack = direction();
+    await shot('13c-flip-button');
+    return { front, back, again, tilted, tiltedBack, pass: is(front, [0, 0, 1]) && is(back, [0, 0, -1]) && is(again, [0, 0, 1]) && is(tiltedBack, tilted.map((x) => -x)) };
+  });
   await step('14 a narrow 3D view: the cube goes below the heads-up bar instead of under it; wide, it stays at the top', async () => {
     const vp = document.querySelector('.viewport');
     const parts = () => [...document.querySelectorAll('.view-cube .cube-arrow, .view-cube .cube')].map((e) => e.getBoundingClientRect());
@@ -308,11 +340,11 @@ M.run = async () => {
     const before = vp.style.width;
     vp.style.width = '500px';
     await H.wait(300);
-    const narrow = { width: Math.round(vp.getBoundingClientRect().width), top: top(), covered: covered() };
+    const narrow = { width: Math.round(vp.getBoundingClientRect().width), top: top(), covered: covered(), barBottom: Math.round(document.querySelector('.heads-up').getBoundingClientRect().bottom - vp.getBoundingClientRect().top) };
     await shot('14-a-narrow-view');
     vp.style.width = before;
     await H.wait(300);
-    return { wide, narrow, pass: wide.width > 620 && wide.top === 44 && wide.covered === 0 && narrow.width === 500 && narrow.top === 100 && narrow.covered === 0 };
+    return { wide, narrow, pass: wide.width > 620 && wide.top === 44 && wide.covered === 0 && narrow.width === 500 && narrow.top > wide.top && narrow.top >= narrow.barBottom && narrow.covered === 0 };
   });
   return S.result('C20');
 };

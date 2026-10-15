@@ -42,7 +42,7 @@ describe('「正視於」 and the selection filter in an assembly (ADR 0148)', (
     return new AssemblyStore(host, { doc: createEmptyAssembly(), handle: null, fileName: null, folder: '', untitled: '組合件', project: null });
   };
 
-  it('nothing picked: no plane — the press answers with the isometric view', () => {
+  it('nothing picked: no plane — the press answers with the nearest standard view', () => {
     expect(open().normalFrame()).toBeNull();
   });
 

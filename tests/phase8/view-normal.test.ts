@@ -5,7 +5,7 @@
  * up and, for a face, the origin it puts on the plane — not on whether a button happens to light up.
  * Since the 2026-10-14 decision (B2, the full SolidWorks set) the action also flips to the far side when
  * pressed again while already looking straight at the plane, and answers a press with no plane to look at
- * by returning to the isometric view; both go through a stub viewer here, the real camera being replayed
+ * by going to the nearest standard view (and, pressed there, to the other side: the 2026-10-15 decision, which replaced the isometric view); both go through a stub viewer here, the real camera being replayed
  * in manual-c20.js.
  */
 import { beforeAll, afterEach, describe, expect, it } from 'vitest';
@@ -58,14 +58,18 @@ describe('正視於 outside a sketch (C2)', () => {
   let lookAts: PlaneFrame[] = [];
   let views: string[] = [];
   let viewDir: [number, number, number] = [0.577, 0.577, 0.577];
+  // what the real viewer answers is checked on the pure arithmetic (view-keys.test.ts) and on the real camera (manual-c20.js); here only what the command does with it
+  let nearest: { view: string; straight: boolean } = { view: 'front', straight: false };
   const stubViewer = (): void => {
     lookAts = [];
     views = [];
     viewDir = [0.577, 0.577, 0.577];
+    nearest = { view: 'front', straight: false };
     (store as unknown as { viewer: unknown }).viewer = {
       lookAt: (f: PlaneFrame) => lookAts.push(f),
       viewDirection: () => viewDir,
       setView: (v: string) => views.push(v),
+      nearestPrincipalView: () => nearest,
     };
   };
   afterEach(() => {
@@ -99,14 +103,22 @@ describe('正視於 outside a sketch (C2)', () => {
     store.selectFace(null);
   });
 
-  it('nothing selected means no frame — the press answers with the isometric view', () => {
+  it('nothing selected means no frame — the press goes to the standard view nearest to the camera, and pressed there, to the one from the other side', () => {
     store.select(null);
     store.selectFace(null);
     expect(normalFrame()).toBeNull();
     stubViewer();
+    nearest = { view: 'right', straight: false };
     viewNormal().run();
-    expect(views).toEqual(['iso']);
+    expect(views).toEqual(['right']);
     expect(lookAts).toHaveLength(0);
+    // already looking straight along it: the other side, for each of the three axes
+    for (const [view, other] of [['right', 'left'], ['top', 'bottom'], ['front', 'back'], ['back', 'front']] as const) {
+      stubViewer();
+      nearest = { view, straight: true };
+      viewNormal().run();
+      expect(views, view).toEqual([other]);
+    }
   });
 
   it('pressed while already looking straight at the plane it flips to the far side, and back', () => {
@@ -132,19 +144,19 @@ describe('正視於 outside a sketch (C2)', () => {
     store.select(null);
   });
 
-  it('a plane or a planar face keeps the command on; a curved face falls back to the isometric view', () => {
+  it('a plane or a planar face keeps the command on; a curved face falls back to the nearest standard view', () => {
     store.select('plane:front');
     expect(viewNormal().enabled(store.getState())).toBe(true);
 
     store.selectFace(planarFace([0, 1, 0]));
     expect(viewNormal().enabled(store.getState())).toBe(true);
 
-    // A curved face has no plane to look straight at: the command stays on and answers with iso.
+    // A curved face has no plane to look straight at: the command stays on and answers with the nearest standard view.
     store.selectFace(({ kind: 'face', name: 'f2', fingerprint: { type: 'cylinder', size: 1, center: [0, 0, 0], dir: [0, 0, 1] } }) as Ref);
     expect(normalFrame()).toBeNull();
     stubViewer();
     viewNormal().run();
-    expect(views).toEqual(['iso']);
+    expect(views).toEqual(['front']);
     store.selectFace(null);
     store.select(null);
   });

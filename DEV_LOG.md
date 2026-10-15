@@ -1501,3 +1501,15 @@ ADR 0146 確效時記下的後續（下一節 §5 第三點）：新工程圖的
 工具：`verify-ui.mjs` 的 9333／5393 改為 `VERIFY_UI_DEBUG_PORT`／`VERIFY_UI_SAMPLES_PORT` 環境可覆蓋（預設不變），樣本 URL 以 `window.__samplesOrigin` 注入頁面——兩個工作階段現在可同時跑 verify:ui。
 
 檢查：typecheck 0 錯誤；三項 lint 通過；vitest 2814 過、25 略過、0 失敗；`verify:ui`（manual-c21、manual-c22×3、manual-sketch-plane）5/5。
+
+## 2026-10-15　「正視於」轉到最近的標準視角、視角方塊翻面鈕（ADR 0149）
+
+紅隊四問：
+1. **輸入破壞**：`nearestView` 的方向不是有限數字或是零向量、沒有候選時明確拋錯（有測試）；長度不影響結果。
+2. **相交破壞**：等角視角三軸同樣近時，依固定順序取前視，並用 1e-9 的容差避免浮點誤差改變答案；200 組隨機方向與暴力法逐一比對。翻面鈕的 180° 經兩次回到原位（容差 1e-12）。
+3. **依賴鏈**：`viewNav.nearestView` → `Viewer.nearestPrincipalView` → `actions.lookAtNormal`（草圖、零件、組合件共用）→ 視角方塊（Viewport、CSS、i18n）→ 說明文字（中、英）→ 測試（單元、`manual-c20.js`、`manual-asm-view-normal.js`）。
+4. **零 Mock**：真實攝影機在瀏覽器裡量方向；單元測試的 stub 只替換 Viewer，並由純函數與真實攝影機兩邊各自證明；把預期改錯時腳本確實失敗。
+
+另：查出 `manual-c20.js` 的窄視窗步驟在 `main` 上就是紅的（還原所有修改後同樣失敗），原因是 heads-up 工具列變高而方塊位置寫死；已改為量測，斷言沒有放寬。
+
+檢查：typecheck 0 錯誤；三項 lint 通過；vitest **2870 過、25 略過、0 失敗**；`verify:ui` c20／c21／c22／asm-view-normal 6/6。

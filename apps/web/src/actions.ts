@@ -1,4 +1,5 @@
 import { canBeSeed, explosionSteps, isDatumPlaneName, type DatumPlaneName, type PlaneFrame, type Ref } from '@3db/model';
+import { OPPOSITE_VIEW } from '@3db/render';
 import { store, type UiState } from './state/store';
 import { t } from '@3db/i18n';
 import { TOOL_LABEL } from './strings';
@@ -265,14 +266,18 @@ function setFixed(value: boolean): void {
  * each into a frame, so this is one path rather than a second copy of the datum/face rule. Pressed
  * again while already looking straight along the plane's normal it flips to the far side — detected
  * from the camera's current direction against the frame, so it needs no per-action state. With no
- * plane to look at (nothing selected, or a curved face) it returns to the isometric view.
+ * plane to look at (nothing selected, or a curved face) it goes to the standard view the camera is
+ * nearest to, and pressed again there to the one from the other side (2026-10-15 decision).
  */
 function lookAtNormal(): void {
   const sketch = store.editedSketch();
   const frame = sketch ? store.frameOf(sketch) : store.getState().active === 'assembly' ? (store.assembly?.normalFrame() ?? null) : normalFrame();
   const viewer = store.viewer;
   if (!frame) {
-    viewer?.setView('iso');
+    // nothing to look at straight (D-I-view decision, 2026-10-15): the standard view the camera is nearest to; pressed again there, the one from the other side
+    if (!viewer) return;
+    const { view, straight } = viewer.nearestPrincipalView();
+    viewer.setView(straight ? OPPOSITE_VIEW[view] : view);
     return;
   }
   const dir = viewer?.viewDirection();

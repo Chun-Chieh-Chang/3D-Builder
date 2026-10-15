@@ -4,7 +4,7 @@ import { LineSegments2 } from 'three/examples/jsm/lines/LineSegments2.js';
 import { LineSegmentsGeometry } from 'three/examples/jsm/lines/LineSegmentsGeometry.js';
 import { acceleratedRaycast, computeBoundsTree, disposeBoundsTree } from 'three-mesh-bvh';
 import { ViewControls } from './controls';
-import { cubeDirection, orbitView, panView, restoreView, rollView, viewState, ViewHistory, zoomView } from './viewNav';
+import { cubeDirection, nearestView, orbitView, panView, restoreView, rollView, viewState, ViewHistory, zoomView } from './viewNav';
 import { circleCentre, middleOf, polylinesOf, type V3 } from './snap';
 import { buildOverlayObjects, disposeGroup, toWorld, type P2, type PlaneFrame, type SketchOverlay } from './overlay';
 
@@ -49,6 +49,12 @@ export interface PickFilter {
 }
 
 export type StandardView = 'front' | 'back' | 'top' | 'bottom' | 'left' | 'right' | 'iso';
+/** The six views straight along an axis (all the standard views but the isometric one). */
+export type PrincipalView = Exclude<StandardView, 'iso'>;
+/** The view from the other side. */
+export const OPPOSITE_VIEW: Readonly<Record<PrincipalView, PrincipalView>> = { front: 'back', back: 'front', top: 'bottom', bottom: 'top', left: 'right', right: 'left' };
+/** The order a tie between principal views is settled in: a camera on a diagonal (the isometric view) goes to the front. */
+const PRINCIPAL_ORDER: readonly PrincipalView[] = ['front', 'right', 'top', 'back', 'left', 'bottom'];
 
 const VIEW_DIRS: Record<StandardView, [THREE.Vector3, THREE.Vector3]> = {
   front: [new THREE.Vector3(0, 0, 1), new THREE.Vector3(0, 1, 0)],
@@ -59,6 +65,9 @@ const VIEW_DIRS: Record<StandardView, [THREE.Vector3, THREE.Vector3]> = {
   right: [new THREE.Vector3(1, 0, 0), new THREE.Vector3(0, 1, 0)],
   iso: [new THREE.Vector3(1, 1, 1).normalize(), new THREE.Vector3(0, 1, 0)],
 };
+
+/** The directions the camera sits on for the principal views, for `nearestView`. */
+const VIEW_DIRS_OF: Readonly<Record<PrincipalView, readonly number[]>> = Object.fromEntries((Object.keys(OPPOSITE_VIEW) as PrincipalView[]).map((v) => [v, VIEW_DIRS[v][0].toArray()])) as unknown as Record<PrincipalView, number[]>;
 
 /**
  * What the graphics area is drawn with. These are the renderer's own copy of colours the
@@ -2823,6 +2832,15 @@ export class Viewer {
     this.rememberView();
     this.orient(new THREE.Vector3(...frame.normal), new THREE.Vector3(...frame.yDir));
     this.viewChanged();
+  }
+
+  /**
+   * The principal view (front, back, top, bottom, left, right) the camera sits nearest to, and whether it is already looking straight along it (「正視於」 with nothing
+   * to look at: a first press goes to the nearest, one made there goes to the other side).
+   */
+  nearestPrincipalView(): { view: PrincipalView; straight: boolean } {
+    const { key, dot } = nearestView(this.viewDirection(), VIEW_DIRS_OF, PRINCIPAL_ORDER);
+    return { view: key, straight: dot > 0.999 };
   }
 
   /** The direction the camera looks along, normalized (from the camera toward its target). */

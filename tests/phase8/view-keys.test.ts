@@ -4,7 +4,7 @@
  */
 import { describe, expect, it } from 'vitest';
 import * as THREE from 'three';
-import { CUBE_CHAMFER, cubeDirection, cubeFacets, orbitView, panView, restoreView, rollView, viewState, ViewHistory, zoomView, ZOOM_RANGE } from '@3db/render';
+import { CUBE_CHAMFER, cubeDirection, cubeFacets, nearestView, orbitView, panView, restoreView, rollView, viewState, ViewHistory, zoomView, ZOOM_RANGE } from '@3db/render';
 import { PAN_STEP, takesSpace, viewKeyCommand, ZOOM_STEP } from '../../apps/web/src/viewKeys';
 
 const front = () => {
@@ -19,6 +19,66 @@ const front = () => {
 const toViewer = (c: THREE.Camera, t: THREE.Vector3) => c.position.clone().sub(t).normalize();
 const screenRight = (c: THREE.Camera, t: THREE.Vector3) => c.up.clone().cross(toViewer(c, t)).normalize();
 const deg = (a: THREE.Vector3, b: THREE.Vector3) => THREE.MathUtils.radToDeg(a.angleTo(b));
+
+/** Where the camera sits for the six principal views (the viewer's own table, restated by hand here: the camera looks along the negative). */
+const PRINCIPAL = { front: [0, 0, 1], right: [1, 0, 0], top: [0, 1, 0], back: [0, 0, -1], left: [-1, 0, 0], bottom: [0, -1, 0] } as const;
+const ORDER = ['front', 'right', 'top', 'back', 'left', 'bottom'] as const;
+
+describe('the standard view nearest to the camera (正視於 with nothing to look at)', () => {
+  it('a camera on an axis is nearest that axis, exactly; looking along −Z is the front, along +Z the back, along −Y the top', () => {
+    expect(nearestView([0, 0, -1], PRINCIPAL, ORDER)).toEqual({ key: 'front', dot: 1 });
+    expect(nearestView([0, 0, 1], PRINCIPAL, ORDER).key).toBe('back');
+    expect(nearestView([0, -1, 0], PRINCIPAL, ORDER).key).toBe('top');
+    expect(nearestView([0, 5, 0], PRINCIPAL, ORDER).key).toBe('bottom'); // the length of the direction does not matter
+  });
+
+  it('a tilted camera goes to the axis it is closest to; the isometric view, equally near three, goes to the front (the first of the order)', () => {
+    expect(nearestView([-0.1, -1, -0.05], PRINCIPAL, ORDER).key).toBe('top');
+    expect(nearestView([-1, -0.2, -0.3], PRINCIPAL, ORDER).key).toBe('right');
+    const iso = nearestView([-1, -1, -1], PRINCIPAL, ORDER);
+    expect(iso.key).toBe('front');
+    expect(iso.dot).toBeCloseTo(1 / Math.sqrt(3), 12);
+    // a different order settles the tie differently, and nothing else
+    expect(nearestView([-1, -1, -1], PRINCIPAL, ['top', 'front', 'right']).key).toBe('top');
+  });
+
+  it('200 random directions: the answer is the brute-force nearest, a tie broken by the order', () => {
+    let seed = 11;
+    const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+    for (let k = 0; k < 200; k++) {
+      const look = [rnd() * 2 - 1, rnd() * 2 - 1, rnd() * 2 - 1];
+      const n = Math.hypot(...look);
+      const dots = ORDER.map((key) => ({ key, dot: -(look[0]! * PRINCIPAL[key][0] + look[1]! * PRINCIPAL[key][1] + look[2]! * PRINCIPAL[key][2]) / n }));
+      const best = dots.reduce((a, b) => (b.dot > a.dot + 1e-9 ? b : a));
+      expect(nearestView(look, PRINCIPAL, ORDER).key, JSON.stringify(look)).toBe(best.key);
+    }
+  });
+
+  it('refuses a direction that is not finite or is zero, and no candidates', () => {
+    expect(() => nearestView([NaN, 0, 1], PRINCIPAL, ORDER)).toThrow(/finite/);
+    expect(() => nearestView([0, 0, 0], PRINCIPAL, ORDER)).toThrow(/zero/);
+    expect(() => nearestView([0, 0, -1], PRINCIPAL, [])).toThrow(/candidate/);
+  });
+});
+
+describe('the cube\'s flip: a half turn about the screen\'s vertical axis', () => {
+  it('from the front it is the back, seen the right way up; from any other side it is the exactly opposite side, with the up of the screen kept', () => {
+    const { camera, target } = front();
+    orbitView(camera, target, 'horizontal', 180);
+    expect(toViewer(camera, target).distanceTo(new THREE.Vector3(0, 0, -1))).toBeLessThan(1e-12);
+    expect(camera.up.distanceTo(new THREE.Vector3(0, 1, 0))).toBeLessThan(1e-12);
+    const tilted = front();
+    orbitView(tilted.camera, tilted.target, 'vertical', 30);
+    const before = toViewer(tilted.camera, tilted.target);
+    const up = tilted.camera.up.clone();
+    orbitView(tilted.camera, tilted.target, 'horizontal', 180);
+    // the camera is always square to the screen's up, so a half turn about it is the opposite side of the model, from below when it was above
+    expect(toViewer(tilted.camera, tilted.target).distanceTo(before.clone().negate())).toBeLessThan(1e-12);
+    expect(tilted.camera.up.distanceTo(up)).toBeLessThan(1e-12);
+    orbitView(tilted.camera, tilted.target, 'horizontal', 180); // twice is the start
+    expect(toViewer(tilted.camera, tilted.target).distanceTo(before)).toBeLessThan(1e-12);
+  });
+});
 
 describe('turning the view with the arrow keys', () => {
   it('right: the side that faced you goes right, by exactly the step, about the model\'s middle', () => {

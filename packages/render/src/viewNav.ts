@@ -40,6 +40,26 @@ export function orbitView(camera: THREE.OrthographicCamera, target: THREE.Vector
   else turnAbout(camera, target, right, a);
 }
 
+/**
+ * The candidate direction a camera sits nearest to. `look` is the direction the camera looks along; a candidate is the direction the camera sits on, seen from the
+ * target (so the camera looks along its negative). Ties (a camera exactly on a diagonal) go to the first of `order`, so the answer never depends on rounding.
+ * Not finite or zero, `look` throws: there is no direction to be nearest to.
+ */
+export function nearestView<K extends string>(look: readonly number[], candidates: Readonly<Record<K, readonly number[]>>, order: readonly K[]): { key: K; dot: number } {
+  finite('direction', ...look);
+  const length = Math.hypot(look[0]!, look[1]!, look[2]!);
+  if (length === 0) throw new Error('a view needs a direction to look along, not a zero vector');
+  let best: { key: K; dot: number } | null = null;
+  for (const key of order) {
+    const c = candidates[key];
+    const dot = -(look[0]! * c[0]! + look[1]! * c[1]! + look[2]! * c[2]!) / (length * Math.hypot(c[0]!, c[1]!, c[2]!));
+    // a later candidate must be better by more than rounding to take the place
+    if (best === null || dot > best.dot + 1e-9) best = { key, dot };
+  }
+  if (best === null) throw new Error('nearestView needs at least one candidate');
+  return best;
+}
+
 /** Turns the model `degrees` in the plane of the screen: positive is clockwise. The direction it is seen from stays. */
 export function rollView(camera: THREE.OrthographicCamera, target: THREE.Vector3, degrees: number): void {
   finite('angle', degrees);
