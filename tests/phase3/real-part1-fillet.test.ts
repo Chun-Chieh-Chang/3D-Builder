@@ -15,6 +15,10 @@
  *   surface keeps the body face's name (inheritBodySurface): the same document rebuilds the same way every time. For this file that way loses the
  *   fillet (「圓角失敗」), every time: the sketch has to be mended — each lug corner one point (「合併點」 or 修剪), then the relations the panel lists as
  *   redundant deleted — before the fillet can hold.
+ *
+ * D1 (decisions 2026-10-14b): a third test locks the mended end. After the user mends sketch6 by hand and saves the part into the same folder as
+ * 零件1_45度基準面圓角完成_sketch6修好.3dbx, the fillet must hold (the opposite of the second test) and the volume must come back to
+ * 149.705286 mm³. Until that file exists the third test reports itself as skipped — it turns green the moment the mended part is saved there.
  */
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -67,5 +71,24 @@ describe.skipIf(!dir)('零件1: the 45° plane and the 0.3 fillet on the four lu
     const sketch6 = saved.features.find((f) => f.id === 'sketch6');
     const doubled = sketch6?.type === 'sketch' ? sketch6.constraints.filter((k) => k.type === 'pointOnCurve').length : 0;
     expect(doubled).toBe(11); // the lug lines' ends "on" the arcs and the arcs' ends "on" the lines (and two more), where one point each would do
+  });
+
+  it('mended by hand and saved as 零件1_45度基準面圓角完成_sketch6修好.3dbx: the fillet holds again and the volume comes back to 149.705286 mm³', async (ctx) => {
+    let mended: PartDoc;
+    try {
+      const file = await readPartFile(new Uint8Array(readFileSync(join(dir!, '零件1_45度基準面圓角完成_sketch6修好.3dbx'))));
+      expect(file.warnings).toEqual([]);
+      mended = file.doc;
+    } catch (e) {
+      if ((e as NodeJS.ErrnoException).code === 'ENOENT') return ctx.skip('the mended save is not in the kit folder yet — the user mends sketch6 and saves it there');
+      throw e;
+    }
+    const r = await rebuild(mended);
+    expect(problems(r)).toEqual([]); // the opposite of the test above: fillet_lugs rebuilds ok
+    expect(r.features.find((f) => f.id === 'fillet_lugs')?.unresolved ?? []).toEqual([]);
+    const volume = r.body ? kernel.massProps(r.body.shape).volume : null;
+    expect(volume).toBeCloseTo(149.705286, 6);
+    // and the mended file rebuilds deterministically too: same volume to the bit on a second pass
+    expect(facts(await rebuild(mended)).volume).toBe(volume);
   });
 });
