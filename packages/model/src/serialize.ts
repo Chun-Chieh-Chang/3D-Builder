@@ -316,6 +316,19 @@ const drawingMigrations: Record<number, (doc: Json) => Json> = {
   // v18: a section line may have more than two points (stepped) or be `aligned` (D-I5, ADR 0143): nothing to convert; the version keeps an older program,
   // which would cut along the first segment only, from opening such a drawing.
   17: (doc) => doc,
+  // v19 (ADR 0146): a view's `hidden: boolean` becomes its display style (`display`): hidden lines shown is 「隱藏線可見」, not shown 「移除隱藏線」; absent stays
+  // absent (the kind's default, which is what it was). New and optional: the drawing's dimension style (`sheet.dimStyle`), a dimension's own (`style`), and a
+  // projected view off a corner of its parent (`side: 'upRight'` …, with `at`), which an older program would place on a side it does not know.
+  18: (doc) => ({
+    ...doc,
+    views: Array.isArray(doc.views)
+      ? (doc.views as Json[]).map((v) => {
+          if (typeof v !== 'object' || v === null || !('hidden' in v)) return v;
+          const { hidden, ...rest } = v;
+          return typeof hidden === 'boolean' ? { ...rest, display: hidden ? 'hiddenVisible' : 'hiddenRemoved' } : rest;
+        })
+      : doc.views,
+  }),
 };
 
 export function parseDrawing(text: string): DrawingDoc {

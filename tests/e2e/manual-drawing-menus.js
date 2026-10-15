@@ -131,18 +131,22 @@ M.run = async () => {
     const back = dims.slice(0, 2).every((id) => drw().doc.dimensions.some((x) => x.id === id));
     return { pass: kept && gone && back, kept, gone, back };
   });
-  await step('6 the right button on the front view (away from its lines): its menu; 隱藏線 switches the hidden lines of the view', async () => {
+  await step('6 the right button on the front view (away from its lines): its menu; 「移除隱藏線」 (one of the display styles, ADR 0146) takes its hidden lines away', async () => {
     const front = viewOf('front');
     const pl = d().scene().placed.get(front.id);
-    const was = front.hidden;
+    const hiddenOf = () => d().scene().scene.items.filter((i) => i.kind === 'polyline' && i.style === 'hidden').length;
+    const was = hiddenOf();
     await rightClick([pl.at[0] + pl.w * 0.3, pl.at[1]]);
     const kind = menu()?.getAttribute('data-drawing-menu');
-    menuItem('menuHidden').click();
+    menuItem('menuDisplay-hiddenRemoved').click();
     await H.wait(200);
-    const now = viewOf('front').hidden;
+    const now = hiddenOf();
+    const display = viewOf('front').display;
     store.undo();
     await H.wait(150);
-    return { pass: kind === 'view' && now !== was && now !== undefined, kind, was, now };
+    // the front view's own hidden lines go; those of the other views stay
+    const own = drw().lines.get(front.id).hidden.length;
+    return { pass: kind === 'view' && display === 'hiddenRemoved' && own > 0 && was - now === own, kind, was, now, own, display };
   });
   await step('7 the right button on the empty sheet: the sheet\'s menu (標準三視圖, 最適比例, 自動排列尺寸, 輸出 PDF), nothing chosen', async () => {
     d().clearSelection();

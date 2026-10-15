@@ -13,7 +13,7 @@ import { ANNOTATION_FIELDS, checkAnnotation, framesUsing, type Annotation, type 
  * opened (exact hidden-line removal), so a drawing can never disagree with the model it shows.
  */
 
-export const DRAWING_SCHEMA_VERSION = 18;
+export const DRAWING_SCHEMA_VERSION = 19;
 
 export type SheetSize = 'A4' | 'A3' | 'A2' | 'A1' | 'A0';
 export const SHEET_SIZES: readonly SheetSize[] = ['A4', 'A3', 'A2', 'A1', 'A0'];
@@ -44,10 +44,72 @@ export interface DrawingSheet {
    * reader's — the same drawing opened by two people must not come out with two different texts.
    */
   language?: Locale;
+  /** How the dimensions are drawn (v19, ADR 0146): the drawing's own style, as SolidWorks's document properties have it. Absent: ISO's sizes (`DIM_STYLE_DEFAULT`). */
+  dimStyle?: DimStyle;
+}
+
+/**
+ * The end of a dimension line (v19, ADR 0146): a filled arrowhead (ISO 129-1's usual), an open one (two strokes), an oblique stroke (architectural), a dot, or
+ * nothing.
+ */
+export type ArrowStyle = 'filled' | 'open' | 'tick' | 'dot' | 'none';
+export const ARROW_STYLES: readonly ArrowStyle[] = ['filled', 'open', 'tick', 'dot', 'none'];
+
+/**
+ * How a dimension is drawn (v19, ADR 0146), in sheet millimetres: the height of its text, the length of its arrowheads, their kind, and the width of its lines.
+ * The drawing has one (`sheet.dimStyle`); a dimension may have its own for any of them (`style`), the rest are the drawing's.
+ */
+export interface DimStyle {
+  text?: number;
+  arrow?: number;
+  arrowStyle?: ArrowStyle;
+  line?: number;
+}
+
+/** ISO 129-1 and 128-20 as this program has always drawn them: 3.5 mm text, 3 mm filled arrows, 0.25 mm thin lines. */
+export const DIM_STYLE_DEFAULT: Required<DimStyle> = { text: 3.5, arrow: 3, arrowStyle: 'filled', line: 0.25 };
+
+/** What each size of a dimension style may be (mm): ISO 3098's text heights run 1.8 to 20, ISO 128-20's line widths 0.13 to 2. */
+export const DIM_STYLE_LIMITS = { text: [1, 20], arrow: [0.5, 20], line: [0.13, 2] } as const;
+
+/** The style a dimension is drawn in: its own sizes over the drawing's, over ISO's. */
+export const resolveDimStyle = (sheet: DimStyle | undefined, own?: DimStyle): Required<DimStyle> => ({ ...DIM_STYLE_DEFAULT, ...sheet, ...own });
+
+/** Checks a dimension style: each size a finite number within its limits, the arrow one of the styles. Nothing is rounded or put in range: what is wrong is refused. */
+function checkDimStyle(s: unknown): void {
+  if (typeof s !== 'object' || s === null || Array.isArray(s)) throw new CommandError(t('drawing.badDimStyle'));
+  for (const k of Object.keys(s)) if (!['text', 'arrow', 'arrowStyle', 'line'].includes(k)) throw new CommandError(t('drawing.badDimStyle'));
+  const st = s as DimStyle;
+  for (const k of ['text', 'arrow', 'line'] as const) {
+    const v = st[k];
+    if (v === undefined) continue;
+    const [lo, hi] = DIM_STYLE_LIMITS[k];
+    if (typeof v !== 'number' || !Number.isFinite(v) || v < lo || v > hi) throw new CommandError(t('drawing.dimStyleRange', { field: t(`drawing.dimStyleField.${k}`), min: String(lo), max: String(hi) }));
+  }
+  if (st.arrowStyle !== undefined && !ARROW_STYLES.includes(st.arrowStyle)) throw new CommandError(t('drawing.badArrowStyle', { style: String(st.arrowStyle) }));
 }
 
 /** The side of a view another view is placed on, in the sheet. */
 export type ViewSide = 'left' | 'right' | 'up' | 'down';
+
+/**
+ * A corner of a view (v19, ADR 0146): a view projected off it at 45° is the isometric seen from that corner of the parent, as SolidWorks makes it when the
+ * pointer is moved off a view on a slant. It is in line with nothing, so it has a place of its own (`at`).
+ */
+export type ViewCorner = 'upLeft' | 'upRight' | 'downLeft' | 'downRight';
+export const VIEW_CORNERS: readonly ViewCorner[] = ['upLeft', 'upRight', 'downLeft', 'downRight'];
+export const isCorner = (s: string): s is ViewCorner => (VIEW_CORNERS as readonly string[]).includes(s);
+
+/**
+ * How a view is drawn (v19, ADR 0146), SolidWorks's display styles: every edge as a visible line (`wireframe`), the hidden ones dashed (`hiddenVisible`), the
+ * hidden ones left out (`hiddenRemoved`), the faces shaded under the visible lines (`shadedEdges`), the faces shaded alone (`shaded`).
+ */
+export type ViewDisplay = 'wireframe' | 'hiddenVisible' | 'hiddenRemoved' | 'shadedEdges' | 'shaded';
+export const VIEW_DISPLAYS: readonly ViewDisplay[] = ['wireframe', 'hiddenVisible', 'hiddenRemoved', 'shadedEdges', 'shaded'];
+
+/** How a view is drawn: as it says, else with its hidden lines dashed, except a section (where the cut shows what is inside). */
+export const displayOf = (v: Pick<DrawingView, 'display' | 'kind'>): ViewDisplay => v.display ?? (v.kind === 'section' ? 'hiddenRemoved' : 'hiddenVisible');
+export const isShaded = (d: ViewDisplay): boolean => d === 'shadedEdges' || d === 'shaded';
 
 interface ViewCommon {
   id: Id;
@@ -61,8 +123,8 @@ interface ViewCommon {
    * a projected or section view along its side. What is projected or cut from it goes with it. Not for the view that the others are arranged round, nor with `at`.
    */
   slide?: number;
-  /** Hidden lines are drawn (dashed). Absent: they are, except in a section view. */
-  hidden?: boolean;
+  /** How it is drawn (v19, ADR 0146; before, `hidden: boolean`). Absent: `displayOf`'s default — hidden lines dashed, except in a section view. */
+  display?: ViewDisplay;
   /** The centre marks of the circles and the centre lines of the cylinders are drawn (C16.5). Absent: they are, except in a section view. */
   centreMarks?: boolean;
 }
@@ -75,11 +137,14 @@ export interface ModelDrawingView extends ViewCommon {
   direction: ViewName;
 }
 
-/** A view projected from another (C16.3): looking at the same model from the direction the side asks for, placed on that side and in line with the parent. */
+/**
+ * A view projected from another (C16.3): looking at the same model from the direction the side asks for, placed on that side and in line with the parent; or,
+ * off a corner (v19), the isometric from that corner, placed where it was put.
+ */
 export interface ProjectedDrawingView extends ViewCommon {
   kind: 'projected';
   parent: Id;
-  side: ViewSide;
+  side: ViewSide | ViewCorner;
 }
 
 /**
@@ -155,6 +220,8 @@ interface DimensionCommon {
   text?: string;
   /** A linear or an angle dimension: how far (mm) its text was slid along the dimension line (along the arc, for an angle) from the middle (v8). */
   slide?: number;
+  /** Its own text height, arrows or line width (v19, ADR 0146), over the drawing's `sheet.dimStyle`. */
+  style?: DimStyle;
 }
 
 export type DimensionOrientation = 'horizontal' | 'vertical' | 'aligned';
@@ -450,7 +517,7 @@ export const drawingIdsInUse = (doc: DrawingDoc): Id[] => [
 
 export type DrawingCommand =
   /** Changes the sheet: its size, orientation, projection, scale or (`shift: null`: take it back) the shift of the arrangement (C16.1). */
-  | { type: 'setSheet'; sheet: Partial<Omit<DrawingSheet, 'shift' | 'language'>> & { shift?: [number, number] | null; language?: Locale | null } }
+  | { type: 'setSheet'; sheet: Partial<Omit<DrawingSheet, 'shift' | 'language' | 'dimStyle'>> & { shift?: [number, number] | null; language?: Locale | null; dimStyle?: DimStyle | null } }
   /** Writes a field of the title block; an empty text takes it away (C16.1). */
   | { type: 'setTitle'; field: TitleField; value: string }
   /** Adds views at the end of the list (C16.2), each with its own new id. */
@@ -526,12 +593,15 @@ export type DimensionPatch = {
   axis?: 'x' | 'y';
   origin?: DrawingRef;
   refs?: DrawingRef[];
+  /** Its own style (v19), replacing the one it had; `null` (or an empty one) and it is drawn in the drawing's. */
+  style?: DimStyle | null;
 };
 
 /** What `setView` may change: the fields every view has, and those of its kind; a field that does not belong to the view's kind is refused. */
 export type ViewPatch = {
   name?: string;
-  hidden?: boolean;
+  /** `null` puts the view back to its kind's default. */
+  display?: ViewDisplay | null;
   centreMarks?: boolean | null;
   at?: [number, number] | null;
   scale?: Scale | null;
@@ -539,7 +609,7 @@ export type ViewPatch = {
   slide?: number | null;
   source?: string;
   direction?: ViewName;
-  side?: ViewSide;
+  side?: ViewSide | ViewCorner;
   flip?: boolean | null;
   aligned?: boolean | null;
   label?: string;
@@ -569,13 +639,19 @@ function checkView(v: DrawingView, views: readonly DrawingView[]): void {
   if (v.scale && !scaleOk(v.scale)) throw new CommandError(t('drawing.badScale', { scale: v.scale.join(':') }));
   if (v.at && !(v.at.length === 2 && v.at.every(Number.isFinite))) throw new CommandError(t('drawing.badPosition'));
   if (v.slide !== undefined && !Number.isFinite(v.slide)) throw new CommandError(t('drawing.badPosition'));
+  if (v.display !== undefined && !VIEW_DISPLAYS.includes(v.display)) throw new CommandError(t('drawing.badDisplay', { display: String(v.display) }));
+  if ('hidden' in v) throw new CommandError(t('drawing.notForKind', { field: 'hidden', kind: v.kind ?? 'model' }));
   if (!isDerived(v)) {
     if (!isFilePath(v.source)) throw new CommandError(t('drawing.badSource', { path: v.source }));
     if (!VIEW_NAMES.includes(v.direction)) throw new CommandError(t('drawing.badDirection', { direction: String(v.direction) }));
     return;
   }
   if (!viewById(views, v.parent) || v.parent === v.id) throw new CommandError(t('drawing.noParent', { id: v.parent }));
-  if (v.kind === 'projected' && !SIDES.includes(v.side)) throw new CommandError(t('drawing.badSide', { side: String(v.side) }));
+  if (v.kind === 'projected') {
+    if (!SIDES.includes(v.side as ViewSide) && !isCorner(v.side)) throw new CommandError(t('drawing.badSide', { side: String(v.side) }));
+    // in line with nothing, a view off a corner is where it was put
+    if (isCorner(v.side) && !v.at) throw new CommandError(t('drawing.cornerNeedsPlace'));
+  }
   if (v.kind === 'section') {
     checkSectionLine(v);
     if (!v.label.trim()) throw new CommandError(t('drawing.labelEmpty'));
@@ -673,6 +749,7 @@ function checkDimension(d: Dimension, views: readonly DrawingView[]): void {
   for (const k of ['prefix', 'suffix', 'text'] as const) if (d[k] !== undefined && (typeof d[k] !== 'string' || d[k]!.length > 80)) throw new CommandError(t('drawing.dimBadText'));
   if (d.slide !== undefined && (!Number.isFinite(d.slide) || (d.kind !== 'linear' && d.kind !== 'angle'))) throw new CommandError(t('drawing.dimBadSlide'));
   if ((d.kind === 'diameter' || d.kind === 'radius') && d.leader !== undefined && !(Number.isFinite(d.leader) && d.leader > 0)) throw new CommandError(t('drawing.dimBadLeader'));
+  if (d.style !== undefined) checkDimStyle(d.style);
   const tol = d.tolerance;
   if (tol) {
     if (tol.type === 'bilateral') {
@@ -721,7 +798,11 @@ export function mutateDrawing(draft: Draft<DrawingDoc>, cmd: DrawingCommand): vo
       if (s.shift && !(s.shift.length === 2 && s.shift.every(Number.isFinite))) throw new CommandError(t('drawing.badPosition'));
       if (s.unit !== undefined && s.unit !== 'mm' && s.unit !== 'in') throw new CommandError(t('drawing.badUnit'));
       if (s.language !== undefined && s.language !== null && !LOCALES.includes(s.language)) throw new CommandError(t('drawing.badLanguage'));
-      const { shift, language, ...rest } = s;
+      if (s.dimStyle !== undefined && s.dimStyle !== null) checkDimStyle(s.dimStyle);
+      const { shift, language, dimStyle, ...rest } = s;
+      // an empty style is the default's, written as none
+      if (dimStyle === null || (dimStyle && Object.keys(dimStyle).length === 0)) delete draft.sheet.dimStyle;
+      else if (dimStyle) draft.sheet.dimStyle = { ...dimStyle };
       Object.assign(draft.sheet, rest);
       if (s.unit === 'mm') delete draft.sheet.unit;
       // `null` puts the sheet back to writing in whatever language the interface is in
@@ -752,10 +833,10 @@ export function mutateDrawing(draft: Draft<DrawingDoc>, cmd: DrawingCommand): vo
     }
     case 'setView': {
       const v = viewOf(draft, cmd.viewId);
-      const { at, scale, slide, flip, aligned, centreMarks, ...rest } = cmd.patch;
+      const { at, scale, slide, flip, aligned, centreMarks, display, ...rest } = cmd.patch;
       const kind = v.kind ?? 'model';
       const belongs: Record<string, string[]> = { model: ['source', 'direction'], projected: ['side'], section: ['line', 'label'], detail: ['centre', 'radius', 'label'] };
-      for (const k of Object.keys(rest)) if (!['name', 'hidden'].includes(k) && !belongs[kind]!.includes(k)) throw new CommandError(t('drawing.notForKind', { field: k, kind }));
+      for (const k of Object.keys(rest)) if (k !== 'name' && !belongs[kind]!.includes(k)) throw new CommandError(t('drawing.notForKind', { field: k, kind }));
       if (flip !== undefined && kind !== 'section') throw new CommandError(t('drawing.notForKind', { field: 'flip', kind }));
       if (aligned !== undefined && kind !== 'section') throw new CommandError(t('drawing.notForKind', { field: 'aligned', kind }));
       const next = { ...(JSON.parse(JSON.stringify(v)) as DrawingView), ...rest } as DrawingView & { flip?: boolean; aligned?: boolean; at?: [number, number]; scale?: Scale; slide?: number };
@@ -769,6 +850,8 @@ export function mutateDrawing(draft: Draft<DrawingDoc>, cmd: DrawingCommand): vo
       else if (slide !== undefined) next.slide = slide;
       if (centreMarks === null) delete next.centreMarks;
       else if (centreMarks !== undefined) next.centreMarks = centreMarks;
+      if (display === null) delete next.display;
+      else if (display !== undefined) next.display = display;
       if (flip === null || flip === false) delete next.flip;
       else if (flip === true) next.flip = true;
       checkView(next, draft.views.filter((x) => x.id !== v.id) as DrawingView[]);
@@ -816,7 +899,7 @@ export function mutateDrawing(draft: Draft<DrawingDoc>, cmd: DrawingCommand): vo
     case 'setDimension': {
       const d = draft.dimensions.find((x) => x.id === cmd.dimensionId);
       if (!d) throw new CommandError(t('drawing.noDimension', { id: cmd.dimensionId }));
-      const { reference, tolerance, count, callout, supplementary, precision, prefix, suffix, text, slide, leader, ...rest } = cmd.patch;
+      const { reference, tolerance, count, callout, supplementary, precision, prefix, suffix, text, slide, leader, style, ...rest } = cmd.patch;
       const belongs: Record<Dimension['kind'], string[]> = { linear: ['offset', 'orientation', 'a', 'b'], diameter: ['angle', 'ref'], radius: ['angle', 'ref'], angle: ['arc', 'a', 'b'], ordinate: ['offset', 'axis', 'origin', 'refs'] };
       if (slide !== undefined && d.kind !== 'linear' && d.kind !== 'angle') throw new CommandError(t('drawing.notForKind', { field: 'slide', kind: d.kind }));
       if (leader !== undefined && d.kind !== 'diameter' && d.kind !== 'radius') throw new CommandError(t('drawing.notForKind', { field: 'leader', kind: d.kind }));
@@ -842,6 +925,9 @@ export function mutateDrawing(draft: Draft<DrawingDoc>, cmd: DrawingCommand): vo
       else if (count !== undefined) next.count = count;
       if (tolerance === null) delete next.tolerance;
       else if (tolerance !== undefined) next.tolerance = tolerance;
+      // a style with nothing in it is the drawing's, written as none
+      if (style === null || (style && typeof style === 'object' && Object.keys(style).length === 0)) delete next.style;
+      else if (style !== undefined) next.style = { ...style };
       checkDimension(next, draft.views as DrawingView[]);
       for (const k of Object.keys(d)) delete (d as unknown as Record<string, unknown>)[k];
       Object.assign(d, next);
@@ -1075,7 +1161,8 @@ export const oppositeSide = (s: ViewSide): ViewSide => OPPOSITE[s];
  * The direction of a view projected from `parent` and placed on `side` of it (C16.3). Third angle: the viewer is on the side the view is placed on, so a view on the
  * right is the parent seen from its right; first angle: it is the other way round (the view on the right is the left view).
  */
-export function projectedAxes(parent: ViewAxes, side: ViewSide, projection: DrawingSheet['projection']): ViewAxes {
+export function projectedAxes(parent: ViewAxes, side: ViewSide | ViewCorner, projection: DrawingSheet['projection']): ViewAxes {
+  if (isCorner(side)) return cornerAxes(parent, side, projection);
   const s = projection === 'first' ? oppositeSide(side) : side;
   const r = rightOf(parent);
   switch (s) {
@@ -1088,6 +1175,25 @@ export function projectedAxes(parent: ViewAxes, side: ViewSide, projection: Draw
     case 'down':
       return { dir: parent.up, up: neg(parent.dir) };
   }
+}
+
+/**
+ * The isometric off a corner of the parent (v19, ADR 0146): the viewer is in front of the parent, and to the side and above or below as the corner says — third
+ * angle, the corner the view is placed at; first angle, the opposite one (as for the sides). Each of the three ways counts the same, so it is a true isometric:
+ * off the upper right of a front view in third angle it is the part seen from front, right and top, which is the model's own isometric. Up stays the parent's,
+ * tilted into the sheet by `sheetUp` as the isometric's is.
+ */
+export function cornerAxes(parent: ViewAxes, corner: ViewCorner, projection: DrawingSheet['projection']): ViewAxes {
+  const r = rightOf(parent);
+  const u = unit(parent.up);
+  const d = unit(parent.dir);
+  // where the viewer is: +1 to the right (up), -1 to the left (down) of the parent; the opposite in first angle
+  const flip = projection === 'first' ? -1 : 1;
+  const sx = (corner === 'upRight' || corner === 'downRight' ? 1 : -1) * flip;
+  const sy = (corner === 'upLeft' || corner === 'upRight' ? 1 : -1) * flip;
+  // the viewer at r·sx + u·sy − d (in front of the parent) looks back toward the model
+  const dir = unit([d[0] - sx * r[0] - sy * u[0], d[1] - sx * r[1] - sy * u[1], d[2] - sx * r[2] - sy * u[2]]);
+  return { dir, up: u };
 }
 
 /** The way the arrows of a section line point in the parent's sheet: to the right of the line from its first point to its second (the left with `flip`), by the nearer axis. */

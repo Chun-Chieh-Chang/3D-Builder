@@ -9,10 +9,14 @@ import { LINE_STYLES, type LineStyle, type Scene, type SceneDimension, type Scen
  *
  * A dimension of the scene (`scene.dimensions`) is written as a DIMENSION entity (D-2, ADR 0102): the definition points a CAD program measures from, the text of the
  * model's number written over what it would measure, and the anonymous block `*D<n>` with the lines and text the drawing draws it with (the items of the same `group`),
- * which is what a viewer shows. The style it names, STANDARD, carries the sizes of the arrows, gaps and text.
+ * which is what a viewer shows. The style it names, STANDARD, carries the sizes of the arrows, gaps and text (the drawing's dimension style, ADR 0146).
+ *
+ * A shaded view's image (`scene.images`) is not written: a DXF of a drawing is its lines, as SolidWorks's is.
  */
 
 export const DXF_VERSION = 'AC1015';
+/** The lineweights a DXF may give an entity (group 370), in 1/100 mm. */
+const LINEWEIGHTS = [0, 5, 9, 13, 15, 18, 20, 25, 30, 35, 40, 50, 53, 60, 70, 80, 90, 100, 106, 120, 140, 158, 200, 211];
 export const TEXT_LAYER = 'TEXT';
 
 /** The linetypes the layers use: name, description and the pattern (mm, positive on, negative off). */
@@ -183,7 +187,7 @@ export function toDxf(scene: Scene, extras?: DxfExtras): string {
   // the style the dimensions name: the sizes the drawing draws them with (arrows, extension lines, text above the line, read horizontally or along the line)
   o.g(0, 'TABLE').g(2, 'DIMSTYLE').g(5, H.dimstyleTable).g(330, '0').g(100, 'AcDbSymbolTable').int(70, 1).g(100, 'AcDbDimStyleTable').int(71, 1);
   o.g(0, 'DIMSTYLE').g(105, handle()).g(330, H.dimstyleTable).g(100, 'AcDbSymbolTableRecord').g(100, 'AcDbDimStyleTableRecord').g(2, 'STANDARD').int(70, 0);
-  o.g(40, 1).g(41, ARROW).g(42, GAP).g(43, 3.75).g(44, OVERSHOOT).g(140, DIM_TEXT).g(141, 2.5).g(147, 1).int(73, 0).int(74, 0).int(77, 1).int(78, 8).int(171, 3).int(172, 1).int(271, 2).int(272, 2).int(275, 0).g(340, H.standardStyle);
+  o.g(40, 1).g(41, scene.dimStyle?.arrow ?? ARROW).g(42, GAP).g(43, 3.75).g(44, OVERSHOOT).g(140, scene.dimStyle?.text ?? DIM_TEXT).g(141, 2.5).g(147, 1).int(73, 0).int(74, 0).int(77, 1).int(78, 8).int(171, 3).int(172, 1).int(271, 2).int(272, 2).int(275, 0).g(340, H.standardStyle);
   o.g(0, 'ENDTAB');
   table('BLOCK_RECORD', H.blockRecordTable, 2 + dims.length, () => {
     o.g(0, 'BLOCK_RECORD').g(5, H.modelRecord).g(330, H.blockRecordTable).g(100, 'AcDbSymbolTableRecord').g(100, 'AcDbBlockTableRecord').g(2, '*Model_Space');
@@ -194,7 +198,12 @@ export function toDxf(scene: Scene, extras?: DxfExtras): string {
 
   // ---- what is drawn: an entity of an owner (model space, or the block of a dimension), written from the scene's items
   let owner = H.modelRecord;
-  const entity = (type: string, layer: string, sub: string) => o.g(0, type).g(5, handle()).g(330, owner).g(100, 'AcDbEntity').g(8, layer).g(100, sub);
+  const entity = (type: string, layer: string, sub: string, width?: number) => {
+    o.g(0, type).g(5, handle()).g(330, owner).g(100, 'AcDbEntity').g(8, layer);
+    // a line of its own width (a dimension's style, ADR 0146): DXF knows only its standard lineweights (1/100 mm), so the nearest of them
+    if (width !== undefined) o.int(370, LINEWEIGHTS.reduce((best, w) => (Math.abs(w - width * 100) < Math.abs(best - width * 100) ? w : best)));
+    return o.g(100, sub);
+  };
   const writeItem = (item: SceneItem): void => {
     if (item.kind === 'polyline') {
       const n = item.points.length / 2;
@@ -208,13 +217,13 @@ export function toDxf(scene: Scene, extras?: DxfExtras): string {
       if (item.filled) {
         // a filled polygon: a fan of triangles from its first corner (a SOLID of three corners repeats the third)
         for (let k = 1; k + 1 < n; k++) {
-          entity('SOLID', LINE_STYLES[item.style].layer, 'AcDbTrace');
+          entity('SOLID', LINE_STYLES[item.style].layer, 'AcDbTrace', item.width);
           const p = [0, k, k + 1].map((j) => [item.points[2 * j]!, item.points[2 * j + 1]!] as const);
           o.g(10, p[0]![0]).g(20, p[0]![1]).g(30, 0).g(11, p[1]![0]).g(21, p[1]![1]).g(31, 0).g(12, p[2]![0]).g(22, p[2]![1]).g(32, 0).g(13, p[2]![0]).g(23, p[2]![1]).g(33, 0);
         }
         return;
       }
-      entity('LWPOLYLINE', LINE_STYLES[item.style].layer, 'AcDbPolyline');
+      entity('LWPOLYLINE', LINE_STYLES[item.style].layer, 'AcDbPolyline', item.width);
       o.int(90, n).int(70, item.closed ? 1 : 0);
       for (let i = 0; i < item.points.length; i += 2) o.g(10, item.points[i]!).g(20, item.points[i + 1]!);
     } else if (item.text !== '') {

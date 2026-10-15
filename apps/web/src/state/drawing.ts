@@ -45,9 +45,12 @@ import {
   viewVectors,
   DATUM_LABEL,
   type Annotation,
-  type AnnotationPatch, dimensionRefs } from '@3db/model';
+  type AnnotationPatch, dimensionRefs,
+  displayOf,
+  isShaded,
+  type ViewCorner } from '@3db/model';
 import { drawingFileName, writeDrawingFile } from '@3db/io';
-import { alignCollinear, arrangeDimensions, attachedAnnotations, FontError, readTrueType, resolveLines, sectionMissed, toDxf, toPdf, turnLines, visibleElements, type TrueTypeFont, type VisibleElements } from '@3db/drawing';
+import { alignCollinear, arrangeDimensions, attachedAnnotations, FontError, SHADE_SHEET_PX, readTrueType, resolveLines, sectionMissed, toDxf, toPdf, turnLines, visibleElements, type TrueTypeFont, type VisibleElements } from '@3db/drawing';
 import { autoDimensions, buildScene, type DimensionDraft, type Pickable, FIRST_OFFSET, OFFSET_STEP, ratio, scaleOf, STANDARD_SCALES, centreViews, fitViews, toSvg, type AutoDimensionOptions, type DimensionOutcome, type ElementsResult, type HoleRow, type PlacedView, type ViewBom, type Scene, type ViewLines } from '@3db/drawing';
 import type { Remote } from 'comlink';
 import { download, fileIn, pathIn, pickDrawingSaveTarget, pickFontFile, writeFile } from '../files';
@@ -281,6 +284,16 @@ export class DrawingStore {
   viewSourcePath(viewId: Id): string | null {
     const view = this.history.doc.views.find((v) => v.id === viewId);
     return view ? this.pathOf(view) : null;
+  }
+
+  /**
+   * What 「開啟零件」 of the drawing opens (ADR 0146): the part (or assembly) of the view chosen, else of the drawing's first view — a drawing is most often of one
+   * part. Null when there is no view.
+   */
+  partToOpen(): string | null {
+    const views = this.history.doc.views;
+    const chosen = this.chosen('view').map((id) => this.viewSourcePath(id)).find((p) => p !== null);
+    return chosen ?? views.map((v) => this.pathOf(v)).find((p) => p !== null) ?? null;
   }
 
   /** The project path of a part of the assembly a view shows, by its leaf id (as a picked element's `in` names it); null when not known. */
@@ -566,7 +579,7 @@ export class DrawingStore {
    * What the worker is asked for a view: the part, where it looks from and for a section the plane that cuts it. A detail is asked for nothing (it is cut from its
    * parent's lines in the layout); a view whose part is not built or whose chain of parents is broken, nothing yet.
    */
-  private requestOf(view: DrawingView): { id: string; featureId?: string; key: string; parts: { part: string; mirrored: boolean; pose: typeof IDENTITY }[]; anchors: boolean; flat?: boolean; axes: ViewAxes; cut?: SectionCut } | null {
+  private requestOf(view: DrawingView): { id: string; featureId?: string; key: string; parts: { part: string; mirrored: boolean; pose: typeof IDENTITY }[]; anchors: boolean; flat?: boolean; axes: ViewAxes; cut?: SectionCut; shade?: { px: number } } | null {
     if (view.kind === 'detail') return null;
     const doc = this.history.doc;
     const key = this.keyOf(view);
@@ -579,17 +592,32 @@ export class DrawingStore {
       if (!parentAxes) return null;
       cut = sectionCut(parentAxes, view);
     }
-    const id = `${key}|${JSON.stringify(axes)}|${cut ? JSON.stringify(cut) : ''}`;
+    // a shaded view (or one whose details are shaded) asks for its faces' image too, as finely as the largest of them is drawn (ADR 0146)
+    const px = this.shadePx(view);
+    const shade = px === null ? {} : { shade: { px } };
+    const id = `${key}|${JSON.stringify(axes)}|${cut ? JSON.stringify(cut) : ''}${px === null ? '' : `|shade:${px}`}`;
     const assembly = this.assemblyOf(view);
     if (assembly) {
       // the parts of the assembly where they are (a mirror is the file's part reflected); the balloons need to know where each is
       const unmirror = (k: string) => k.slice(0, -mirrorKey('').length);
       const parts = assembly.leaves.map((l) => ({ part: l.mirrored ? unmirror(l.key) : l.key, mirrored: !!l.mirrored, pose: l.pose }));
-      return { id, key, parts, anchors: true, axes, ...(cut ? { cut } : {}) };
+      return { id, key, parts, anchors: true, axes, ...(cut ? { cut } : {}), ...shade };
     }
-    // the flat pattern of a sheet metal part: not a projection, so nothing of the folded part can be dimensioned in it
+    // the flat pattern of a sheet metal part: not a projection, so nothing of the folded part can be dimensioned in it (nor shaded: it has no faces to light)
     if (view.kind === undefined || view.kind === 'model') if (view.direction === 'flat') return { id: `${key}|flat`, key, parts: [{ part: key, mirrored: false, pose: IDENTITY }], anchors: false, flat: true, axes };
-    return { id, featureId: `${key}|${JSON.stringify(axes)}`, key, parts: [{ part: key, mirrored: false, pose: IDENTITY }], anchors: false, axes, ...(cut ? { cut } : {}) };
+    return { id, featureId: `${key}|${JSON.stringify(axes)}`, key, parts: [{ part: key, mirrored: false, pose: IDENTITY }], anchors: false, axes, ...(cut ? { cut } : {}), ...shade };
+  }
+
+  /**
+   * How finely a view's faces are shaded (ADR 0146): `SHADE_SHEET_PX` pixels a millimetre of paper at the largest scale it or a detail of it is drawn at and shaded,
+   * so that neither is coarser than the other; null when neither is shaded.
+   */
+  private shadePx(view: DrawingView): number | null {
+    const doc = this.history.doc;
+    const shaded = [view, ...doc.views.filter((v) => v.kind === 'detail' && v.parent === view.id)].filter((v) => isShaded(displayOf(v)));
+    if (shaded.length === 0) return null;
+    const most = Math.max(...shaded.map((v) => ratio(scaleOf(doc, v))));
+    return Math.round(SHADE_SHEET_PX * most * 100) / 100;
   }
 
   // ------------------------------------------------------------ the view palette (D-V, ADR 0131)
@@ -692,10 +720,42 @@ export class DrawingStore {
   placeModelView(source: string, direction: ViewName, at: [number, number]): Id | null {
     const doc = this.history.doc;
     const id = new IdAllocator(doc.idCounters, drawingIdsInUse(doc)).take('view');
-    if (!this.execute({ type: 'insertViews', views: [{ id, name: t(`drawing.view.${direction}`), source, direction, at }] })) return null;
+    // an isometric is shaded with its edges, as SolidWorks's drawing templates have it (ADR 0146); the others show their hidden lines
+    const display = direction === 'isometric' ? { display: 'shadedEdges' as const } : {};
+    if (!this.execute({ type: 'insertViews', views: [{ id, name: t(`drawing.view.${direction}`), source, direction, at, ...display }] })) return null;
     this.select(id);
     this.setTool(direction === 'isometric' ? null : { kind: 'project', parent: id });
     return id;
+  }
+
+  /**
+   * The isometric projected off a corner of `parent` (ADR 0146), placed at `at` (sheet mm): SolidWorks's view dragged off a view on a slant. It stays the parent's,
+   * so it turns when the parent does; it is shaded with its edges, as a new isometric is.
+   */
+  placeCorner(parent: Id, corner: ViewCorner, at: [number, number]): Id | null {
+    const doc = this.history.doc;
+    if (this.isFlat(parent)) {
+      this.host.notify(t('drawing.flatNoDerived'), 'error');
+      return null;
+    }
+    const id = new IdAllocator(doc.idCounters, drawingIdsInUse(doc)).take('view');
+    const view: DrawingView = { id, name: t('drawing.view.isoProjected'), kind: 'projected', parent, side: corner, at, display: 'shadedEdges' };
+    if (!this.execute({ type: 'insertViews', views: [view] })) return null;
+    this.select(id);
+    return id;
+  }
+
+  /**
+   * 「解除對齊」 (ADR 0146): a projected or section view is given the place it is drawn at now, so that it no longer follows its parent's line and can be dragged
+   * anywhere; 「預設對齊」 (`setView` with `at: null`) puts it back in line.
+   */
+  breakAlignment(id: Id): boolean {
+    const view = viewById(this.history.doc.views, id);
+    const placed = this.scene().placed.get(id);
+    if (!view || !placed || view.at || (view.kind !== 'projected' && view.kind !== 'section')) return false;
+    const done = this.execute({ type: 'setView', viewId: id, patch: { at: [Math.round(placed.at[0] * 100) / 100, Math.round(placed.at[1] * 100) / 100], slide: null } });
+    if (done) this.notifyInfo(t('drawingUi.breakAlignmentDone'));
+    return done;
   }
 
   /** A projected view of `parent` on `side`, slid `slide` mm along its line from where it would be laid out (C16.3). */
@@ -787,11 +847,15 @@ export class DrawingStore {
         const unique = [...new Map(wanted.map((w) => [w.id, w])).values()];
         if (unique.length > 0) {
           this.set({ computing: true });
-          const results = await this.host.api.drawingViews(unique.map((w) => ({ parts: w.parts, axes: w.axes, ...(w.anchors ? { anchors: true } : {}), ...(w.cut ? { cut: w.cut } : {}), ...(w.flat ? { flat: true } : {}) })));
+          const results = await this.host.api.drawingViews(unique.map((w) => ({ parts: w.parts, axes: w.axes, ...(w.anchors ? { anchors: true } : {}), ...(w.cut ? { cut: w.cut } : {}), ...(w.flat ? { flat: true } : {}), ...(w.shade ? { shade: w.shade } : {}) })));
           if (this.closed) return;
           unique.forEach((w, i) => {
             const r = results[i]!;
-            this.cache.set(w.id, 'error' in r ? { error: r.error } : r.anchors ? { ...r.lines, anchors: r.anchors } : r.lines);
+            if ('error' in r) return this.cache.set(w.id, { error: r.error });
+            // a view whose shading could not be made is drawn with its lines, and that is said
+            if (r.shade && 'error' in r.shade) this.host.notify(t('drawing.shadeFailed', { why: r.shade.error }), 'error');
+            const shade = r.shade && !('error' in r.shade) ? { shade: r.shade } : {};
+            this.cache.set(w.id, { ...r.lines, ...(r.anchors ? { anchors: r.anchors } : {}), ...shade });
           });
         }
         const lines = new Map<Id, ViewLines | null>();

@@ -1,5 +1,6 @@
 import { getLocale, t, withLocale } from '@3db/i18n';
-import { axesOf, sectionEndDirections, type DetailDrawingView, type DrawingDoc, type DrawingView, type Id, type Scale, type SectionDrawingView, type TitleField, type ViewFeature } from '@3db/model';
+import { axesOf, displayOf, isShaded, resolveDimStyle, sectionEndDirections, type DetailDrawingView, type DimStyle, type DrawingDoc, type DrawingView, type Id, type Scale, type SectionDrawingView, type TitleField, type ViewFeature } from '@3db/model';
+import type { ShadeImage } from './shade';
 import { centreItems, holeRows, holeTableBox, holeTableItems, threadItems, type HoleRow } from './annotation';
 import { annotationItems } from './gdt';
 import { balloonSpots, bomTableBox, bomTableItems, spotItems, type BalloonSpot, type ViewBom } from './bomTable';
@@ -36,6 +37,21 @@ export interface ScenePolyline {
   closed?: boolean;
   /** A closed polyline filled in (an arrowhead). */
   filled?: boolean;
+  /** Its own line width (mm) instead of its style's (a dimension drawn in a style of its own, ADR 0146). */
+  width?: number;
+}
+
+/**
+ * The shading of a view (ADR 0146): its image put on the sheet, `at` its lower left corner and `w` × `h` its size (mm), under every line; a detail's is cut to
+ * its circle (`clip`, on the sheet).
+ */
+export interface SceneImage {
+  view: string;
+  at: [number, number];
+  w: number;
+  h: number;
+  image: ShadeImage;
+  clip?: { centre: [number, number]; radius: number };
 }
 
 export interface SceneText {
@@ -84,6 +100,10 @@ export interface Scene {
   items: SceneItem[];
   /** The dimensions of the drawing as dimensions, for a DXF (the items of each are marked with its id as `group`). */
   dimensions?: SceneDimension[];
+  /** The shaded views' images, drawn first, under the items (ADR 0146). A DXF has no images and leaves them out. */
+  images?: SceneImage[];
+  /** The drawing's dimension style, which a DXF writes as its dimension style. */
+  dimStyle?: Required<DimStyle>;
 }
 
 const rect = (r: Rect, style: LineStyle): ScenePolyline => ({ kind: 'polyline', points: [r.x, r.y, r.x + r.w, r.y, r.x + r.w, r.y + r.h, r.x, r.y + r.h], style, closed: true });
@@ -114,8 +134,11 @@ export function sheetItems(doc: DrawingDoc): SceneItem[] {
 }
 
 
-/** Whether a view draws its hidden lines: when it says so, and otherwise except in a section (where the cut shows what is inside). */
-export const showsHidden = (v: DrawingView): boolean => v.hidden ?? v.kind !== 'section';
+/** Whether a view draws its hidden lines: in its display style 「隱藏線可見」 (dashed) or 「線架構」 (as visible lines). */
+export const showsHidden = (v: DrawingView): boolean => {
+  const d = displayOf(v);
+  return d === 'hiddenVisible' || d === 'wireframe';
+};
 
 /** The spacing of hatch lines on the sheet (ISO 128-50: 1.5 to 3 mm for small areas, up to 10 for large). */
 export const HATCH_SPACING = 3;
@@ -129,11 +152,23 @@ export function viewItems(view: DrawingView, lines: ViewLines | null | undefined
     return out;
   };
   const items: ScenePolyline[] = [];
-  if (showsHidden(view)) for (const l of lines.hidden) items.push({ kind: 'polyline', points: move(l), style: 'hidden' });
-  for (const l of lines.visible) items.push({ kind: 'polyline', points: move(l), style: 'visible' });
+  const display = displayOf(view);
+  // the display style (ADR 0146): a wireframe draws the hidden edges as the visible ones; a shaded view without edges, neither
+  if (showsHidden(view)) for (const l of lines.hidden) items.push({ kind: 'polyline', points: move(l), style: display === 'wireframe' ? 'visible' : 'hidden' });
+  if (display !== 'shaded') for (const l of lines.visible) items.push({ kind: 'polyline', points: move(l), style: 'visible' });
   for (const l of lines.center ?? []) items.push({ kind: 'polyline', points: move(l), style: 'center' });
   if (view.kind === 'section' && lines.cut) for (const l of hatch(lines.cut, HATCH_SPACING / placed.scale)) items.push({ kind: 'polyline', points: move(l), style: 'thin' });
   return items;
+}
+
+/** A shaded view's image where the view is on the sheet (ADR 0146); none when the view is not shaded or its image has not come. */
+export function viewImage(view: DrawingView, lines: ViewLines | null | undefined, placed: PlacedView): SceneImage | null {
+  const img = lines?.shade;
+  if (!img || !isShaded(displayOf(view))) return null;
+  const at = toSheet(placed, img.box.min[0], img.box.min[1]);
+  const top = toSheet(placed, img.box.max[0], img.box.max[1]);
+  const clip = lines.shadeClip ? { centre: toSheet(placed, lines.shadeClip.centre[0], lines.shadeClip.centre[1]), radius: lines.shadeClip.radius * placed.scale } : undefined;
+  return { view: view.id, at, w: top[0] - at[0], h: top[1] - at[1], image: img, ...(clip ? { clip } : {}) };
 }
 
 /** The cutting plane line of a section on its parent view, with the arrows at its ends and the letter beside each; and the section's own title. */
@@ -201,10 +236,13 @@ function buildSceneIn(
   const placed = layoutViews(doc, lines);
   const resolved = resolveLines(doc, lines);
   const items: SceneItem[] = [...sheetItems(doc)];
+  const images: SceneImage[] = [];
   // what a note's $PRP:key stands for: a field of the title block, else a property of the drawing
   const lookup = (key: string): string | undefined => (doc.title as Record<string, string | undefined>)[key] ?? doc.properties?.[key];
   for (const v of doc.views) {
     const own = placed.get(v.id)!;
+    const image = viewImage(v, resolved.get(v.id), own);
+    if (image) images.push(image);
     items.push(...viewItems(v, resolved.get(v.id), own));
     if (!resolved.get(v.id)) continue;
     // The view's name under it. A section and a detail are named by the letter they carry (ISO 128-30: 「A–A」, 「L」), which their own items already write,
@@ -225,7 +263,7 @@ function buildSceneIn(
     const own = view && resolved.get(view.id) ? placed.get(view.id) : undefined;
     const axes = view ? axesOf(doc.views, doc.sheet.projection, view) : null;
     if (!view || !own || !axes) continue; // nothing to draw it on yet
-    const outcome = evaluateDimension(d, elements.get(d.id), axes, own, doc.sheet.unit ?? 'mm');
+    const outcome = evaluateDimension(d, elements.get(d.id), axes, own, doc.sheet.unit ?? 'mm', resolveDimStyle(doc.sheet.dimStyle, d.style));
     dimensions.set(d.id, outcome);
     if (!('error' in outcome)) {
       items.push(...outcome.items.map((i) => ({ ...i, group: d.id })));
@@ -255,7 +293,8 @@ function buildSceneIn(
     items.push(...holeTableItems(table, rows, own, doc.sheet, doc.sheet.unit ?? 'mm'));
     tableBoxes.set(table.id, holeTableBox(table, rows, doc.sheet, doc.sheet.unit ?? 'mm'));
   }
-  return { scene: { width: m.width, height: m.height, items, ...(sceneDimensions.length > 0 ? { dimensions: sceneDimensions } : {}) }, placed, dimensions, tables, tableBoxes, balloons };
+  const scene: Scene = { width: m.width, height: m.height, items, ...(sceneDimensions.length > 0 ? { dimensions: sceneDimensions } : {}), ...(images.length > 0 ? { images } : {}), ...(doc.sheet.dimStyle ? { dimStyle: resolveDimStyle(doc.sheet.dimStyle) } : {}) };
+  return { scene, placed, dimensions, tables, tableBoxes, balloons };
 }
 
 export type { TitleField };

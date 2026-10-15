@@ -5,6 +5,7 @@ import type { DraftReport, ThicknessReport, UndercutReport, GeometryReport, Mass
 import type { AssemblyResult, AssemblySolveOptions, ClearanceRow, Converted, FeatureResult, FlatReport, SheetCheck, SheetCheckLimits, SnapItem, SweepResult } from '@3db/regen';
 import type { MateGeometry } from '@3db/assembly';
 import type { StepAssemblyPlan, StepInstance, StepSub } from '@3db/io';
+import type { ShadeImage } from '@3db/drawing';
 import type { EntityStatus, SketchStatus, SolvedGeometry, SolveOptions } from '@3db/sketch';
 
 /**
@@ -222,10 +223,12 @@ export interface DrawingViewRequest {
   anchors?: boolean;
   /** The flat pattern of the (first) part, not a projection of it (S-1): its outline and bend lines. */
   flat?: boolean;
+  /** Also the image of its faces (ADR 0146), `px` pixels a millimetre of the view at full size: a shaded view's. */
+  shade?: { px: number };
 }
 
-/** What a view of a drawing looks like: its lines at full size, or why they could not be made. */
-export type DrawingViewResult = { lines: ProjectedView; /** Where each part is, in the order asked, when asked for. */ anchors?: [number, number][]; ms: number } | { error: string };
+/** What a view of a drawing looks like: its lines at full size (and, when asked, its shading), or why they could not be made. */
+export type DrawingViewResult = { lines: ProjectedView; /** Where each part is, in the order asked, when asked for. */ anchors?: [number, number][]; shade?: ShadeImage | { error: string }; ms: number } | { error: string };
 
 /** What a view of a drawing can be dimensioned from, or why not (C16.4). */
 /** What a view can be dimensioned from: its features, and (D-I2) the edges and vertices of the part by name, projected, for the drawing to see which are drawn. */

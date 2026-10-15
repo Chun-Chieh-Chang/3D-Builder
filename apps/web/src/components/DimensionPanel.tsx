@@ -1,7 +1,8 @@
 import { t } from '@3db/i18n';
 import { formatNumber, overlappingDimensions } from '@3db/drawing';
-import { MM_PER_INCH } from '@3db/model';
-import type { Dimension, DimensionOrientation, DimensionTolerance, ViewFeature } from '@3db/model';
+import { MM_PER_INCH, resolveDimStyle } from '@3db/model';
+import type { DimStyle, Dimension, DimensionOrientation, DimensionTolerance, ViewFeature } from '@3db/model';
+import { DimStyleFields } from './DimStyleFields';
 import { useState } from 'react';
 import { store, useStore } from '../state/store';
 
@@ -31,7 +32,7 @@ const featureLabel = (f: Pickable): string =>
       });
 
 /** A number box that commits on Enter or when it loses focus. */
-function NumberBox({ value, onCommit, field }: { value: number; onCommit: (v: number) => void; field: string }) {
+export function NumberBox({ value, onCommit, field }: { value: number; onCommit: (v: number) => void; field: string }) {
   const [text, setText] = useState(String(value));
   const [shown, setShown] = useState(value);
   if (value !== shown) {
@@ -378,10 +379,28 @@ export function DimensionPanel() {
                   <FitBox value={current.tolerance.fit} onCommit={(fit) => d.setDimension(current.id, { tolerance: { type: 'fit', fit } })} />
                 </label>
               )}
+              <OwnStyle style={current.style} sheet={drw.doc.sheet.dimStyle} onChange={(style) => d.setDimension(current.id, { style })} />
             </>
           )}
         </>
       )}
+    </>
+  );
+}
+
+/**
+ * A dimension's own style (ADR 0146), as SolidWorks lets a dimension's font and arrows differ from the document's: off, it is drawn in the drawing's style; on, it
+ * starts as the drawing's and is changed field by field. Several dimensions chosen show their style when they all have the same one.
+ */
+function OwnStyle({ style, sheet, onChange }: { style: DimStyle | undefined; sheet: DimStyle | undefined; onChange: (style: DimStyle | null) => void }) {
+  const base = resolveDimStyle(sheet);
+  return (
+    <>
+      <label className="pm-row checkbox" title={t('drawingUi.dimStyleOwnTip')}>
+        <input type="checkbox" data-field="dimStyleOwn" checked={style !== undefined} onChange={(e) => onChange(e.target.checked ? { ...base } : null)} />
+        <span>{t('drawingUi.dimStyleOwn')}</span>
+      </label>
+      {style !== undefined && <DimStyleFields scope="dimension" value={style} base={base} onChange={onChange} />}
     </>
   );
 }
@@ -512,6 +531,8 @@ function BatchDimensions({ dims, perUnit }: { dims: readonly Dimension[]; perUni
           <FitBox value={fit ?? ''} onCommit={(f) => f && set({ tolerance: { type: 'fit', fit: f } })} />
         </label>
       )}
+      {/* their own style: shown when they all have the same one (or none); set, it is set on all of them as one step */}
+      <OwnStyle style={common(dims.map((x) => x.style)) ?? undefined} sheet={d.getState().doc.sheet.dimStyle} onChange={(style) => set({ style })} />
       <div className="pm-row wrap">
         <button className="pm-button" data-action="alignCollinear" title={t('drawingUi.alignCollinearTip')} onClick={() => d.alignCollinear(ids)}>
           {t('drawingUi.alignCollinear')}

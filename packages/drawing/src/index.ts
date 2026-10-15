@@ -23,3 +23,4 @@ export * from './flatView';
 export * from './gdt';
 export * from './viewEdges';
 export * from './arrange';
+export * from './shade';

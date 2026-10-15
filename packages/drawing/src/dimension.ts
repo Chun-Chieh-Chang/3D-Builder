@@ -1,5 +1,6 @@
 import { t } from '@3db/i18n';
-import { fitDeviations, inUnit, rightOf, sheetUp, type LengthUnit, type Dimension, type DimensionTolerance, type ElementFacts, type HoleInfo, type ViewAxes } from '@3db/model';
+import { DIM_STYLE_DEFAULT, fitDeviations, inUnit, rightOf, sheetUp, type DimStyle, type LengthUnit, type Dimension, type DimensionTolerance, type ElementFacts, type HoleInfo, type ViewAxes } from '@3db/model';
+import { circlePolyline } from './geometry';
 import { toSheet, type PlacedView } from './layout';
 import type { SceneDimensionGeometry, SceneItem } from './scene';
 
@@ -22,10 +23,16 @@ export type DimensionHandle =
 
 export type DimensionOutcome = { value: number; text: string; items: SceneItem[]; handle?: DimensionHandle; dxf?: { textAt: [number, number]; geometry: SceneDimensionGeometry } } | { error: string };
 
-/** Height of the text of a dimension (mm), the length and half-width of an arrowhead, the gap between a feature and its extension line, and how far an extension line passes the dimension line. */
-export const DIM_TEXT = 3.5;
-export const ARROW = 3;
-const ARROW_HALF = 0.5;
+/**
+ * Height of the text of a dimension (mm) and the length of an arrowhead, as ISO's style has them (a drawing's own are in `sheet.dimStyle`, ADR 0146), the gap between a
+ * feature and its extension line, and how far an extension line passes the dimension line.
+ */
+export const DIM_TEXT = DIM_STYLE_DEFAULT.text;
+export const ARROW = DIM_STYLE_DEFAULT.arrow;
+/** A filled or open arrowhead is a sixth as wide each side as it is long (3 mm long, 0.5 mm each side). */
+const ARROW_SPREAD = 1 / 6;
+/** A dot's radius, and an oblique stroke's half-length, as parts of the arrow's length. */
+const DOT_RADIUS = 1 / 5;
 export const GAP = 1;
 export const OVERSHOOT = 2;
 const LEADER = 8;
@@ -134,33 +141,55 @@ const add = (a: P, b: P, k = 1): P => [a[0] + b[0] * k, a[1] + b[1] * k];
 const sub = (a: P, b: P): P => [a[0] - b[0], a[1] - b[1]];
 const len = (a: P) => Math.hypot(a[0], a[1]);
 
-const line = (...pts: P[]): SceneItem => ({ kind: 'polyline', points: pts.flat(), style: 'dimension' });
+/** The style a dimension is drawn in, every size known (`resolveDimStyle`). */
+type Style = Required<DimStyle>;
 
-/** An arrowhead (closed, filled) with its tip at `tip`, pointing along `toward` (a unit vector). */
-function arrowhead(tip: P, toward: P): SceneItem {
-  const back: P = [tip[0] - toward[0] * ARROW, tip[1] - toward[1] * ARROW];
-  const side: P = [-toward[1] * ARROW_HALF, toward[0] * ARROW_HALF];
-  return { kind: 'polyline', points: [...tip, ...add(back, side), ...add(back, side, -1)], style: 'dimension', closed: true, filled: true };
-}
-
-/** A dimension line between `a` and `b` (on the line itself) with an arrow at each end, outside when they are too close for the arrows and the text between them. */
-function dimensionLine(a: P, b: P): SceneItem[] {
-  const d = sub(b, a);
-  const l = len(d);
-  const u: P = l > 0 ? [d[0] / l, d[1] / l] : [1, 0];
-  if (l >= 2 * ARROW + 1) return [line(a, b), arrowhead(a, [-u[0], -u[1]]), arrowhead(b, u)];
-  // too close: the arrows are outside, pointing in, on stubs of the line
-  const stub = ARROW + 2;
-  return [line(add(a, u, -stub), add(b, u, stub)), arrowhead(a, u), arrowhead(b, [-u[0], -u[1]])];
-}
-
-/** Text of a dimension on a line with direction angle `a` (degrees), kept readable (never upside down), above the line at `mid`. */
-function textOn(mid: P, angle: number, text: string): SceneItem {
-  let a = angle;
-  while (a > 90 + 1e-9) a -= 180;
-  while (a <= -90 + 1e-9) a += 180;
-  const r = (a * Math.PI) / 180;
-  return { kind: 'text', at: add(mid, [-Math.sin(r), Math.cos(r)], 1), text, height: DIM_TEXT, anchor: 'center', ...(a !== 0 ? { angle: a } : {}) };
+/**
+ * What a dimension is drawn with in a style (ADR 0146): its lines in the style's width (written on a line only when it is not the dimension style's own width,
+ * so a drawing in ISO's style is drawn as it always was), its arrowheads of the style's kind and length, its text of the style's height.
+ */
+function pen(st: Style) {
+  const width = st.line !== DIM_STYLE_DEFAULT.line ? { width: st.line } : {};
+  const line = (...pts: P[]): SceneItem => ({ kind: 'polyline', points: pts.flat(), style: 'dimension', ...width });
+  /** An arrowhead with its tip at `tip`, pointing along `toward` (a unit vector): filled, open (two strokes), an oblique stroke, a dot, or nothing. */
+  const arrowhead = (tip: P, toward: P): SceneItem[] => {
+    const back: P = [tip[0] - toward[0] * st.arrow, tip[1] - toward[1] * st.arrow];
+    const side: P = [-toward[1] * st.arrow * ARROW_SPREAD, toward[0] * st.arrow * ARROW_SPREAD];
+    switch (st.arrowStyle) {
+      case 'filled':
+        return [{ kind: 'polyline', points: [...tip, ...add(back, side), ...add(back, side, -1)], style: 'dimension', closed: true, filled: true, ...width }];
+      case 'open':
+        return [line(add(back, side), tip, add(back, side, -1))];
+      case 'tick': {
+        // the stroke leans 45° across the line, its middle on the tip, as long as an arrow
+        const v: P = [(toward[0] - toward[1]) / Math.SQRT2, (toward[1] + toward[0]) / Math.SQRT2];
+        return [line(add(tip, v, -st.arrow / 2), add(tip, v, st.arrow / 2))];
+      }
+      case 'dot':
+        return [{ kind: 'polyline', points: circlePolyline(tip, st.arrow * DOT_RADIUS, 16), style: 'dimension', closed: true, filled: true, ...width }];
+      case 'none':
+        return [];
+    }
+  };
+  /** A dimension line between `a` and `b` (on the line itself) with an arrow at each end, outside when they are too close for the arrows and the text between them. */
+  const dimensionLine = (a: P, b: P): SceneItem[] => {
+    const d = sub(b, a);
+    const l = len(d);
+    const u: P = l > 0 ? [d[0] / l, d[1] / l] : [1, 0];
+    if (l >= 2 * st.arrow + 1) return [line(a, b), ...arrowhead(a, [-u[0], -u[1]]), ...arrowhead(b, u)];
+    // too close: the arrows are outside, pointing in, on stubs of the line
+    const stub = st.arrow + 2;
+    return [line(add(a, u, -stub), add(b, u, stub)), ...arrowhead(a, u), ...arrowhead(b, [-u[0], -u[1]])];
+  };
+  /** Text of a dimension on a line with direction angle `a` (degrees), kept readable (never upside down), above the line at `mid`. */
+  const textOn = (mid: P, angle: number, text: string): SceneItem => {
+    let a = angle;
+    while (a > 90 + 1e-9) a -= 180;
+    while (a <= -90 + 1e-9) a += 180;
+    const r = (a * Math.PI) / 180;
+    return { kind: 'text', at: add(mid, [-Math.sin(r), Math.cos(r)], 1), text, height: st.text, anchor: 'center', ...(a !== 0 ? { angle: a } : {}) };
+  };
+  return { line, arrowhead, dimensionLine, textOn };
 }
 
 /** Where an element is in the view (x to the right, y up). */
@@ -183,14 +212,14 @@ const isBound = (e: ElementFacts) => e.type === 'plane' || e.type === 'line';
  * Evaluates a dimension of a view placed at `placed`: its value and text and the lines it is drawn with. `resolved` says what its elements are; without it (or with
  * an error) there is nothing to draw and the answer says why.
  */
-export function evaluateDimension(d: Dimension, resolved: ElementsResult | undefined, axes: ViewAxes, placed: PlacedView, unit: LengthUnit = 'mm'): DimensionOutcome {
+export function evaluateDimension(d: Dimension, resolved: ElementsResult | undefined, axes: ViewAxes, placed: PlacedView, unit: LengthUnit = 'mm', style: Style = DIM_STYLE_DEFAULT): DimensionOutcome {
   if (!resolved) return { error: t('drawing.dimPending') };
   if ('error' in resolved) return resolved;
   const els = resolved.elements;
-  if (d.kind === 'linear') return linear(d, els[0]!, els[1]!, axes, placed, unit);
-  if (d.kind === 'angle') return angle(d, els[0]!, els[1]!, axes, placed);
-  if (d.kind === 'ordinate') return ordinate(d, els, axes, placed, unit);
-  return circle(d, els[0]!, axes, placed, unit);
+  if (d.kind === 'linear') return linear(d, els[0]!, els[1]!, axes, placed, unit, style);
+  if (d.kind === 'angle') return angle(d, els[0]!, els[1]!, axes, placed, style);
+  if (d.kind === 'ordinate') return ordinate(d, els, axes, placed, unit, style);
+  return circle(d, els[0]!, axes, placed, unit, style);
 }
 
 /**
@@ -198,7 +227,9 @@ export function evaluateDimension(d: Dimension, resolved: ElementsResult | undef
  * view, the origin's 0 among them. Where the values come closer than a text's height, the extension lines jog sideways so that the texts stand apart (ISO 129-1),
  * keeping their order. The first value is the dimension's `value`; `text` lists them all.
  */
-function ordinate(d: Extract<Dimension, { kind: 'ordinate' }>, els: readonly ElementFacts[], axes: ViewAxes, placed: PlacedView, unit: LengthUnit): DimensionOutcome {
+function ordinate(d: Extract<Dimension, { kind: 'ordinate' }>, els: readonly ElementFacts[], axes: ViewAxes, placed: PlacedView, unit: LengthUnit, st: Style): DimensionOutcome {
+  const { line } = pen(st);
+  const DIM_TEXT = st.text;
   const k = d.axis === 'x' ? 0 : 1;
   const along = d.axis === 'x' ? 'x' : 'y';
   for (const e of els) if (isBound(e) && !squareTo(e, axes, along)) return { error: t('drawing.ordinateNotAcross') };
@@ -278,7 +309,10 @@ function seenAsLine(e: ElementFacts, axes: ViewAxes): { p: P; d: P; c: P } | { e
  * the second, with an arrow at each end, extension lines along the rays and the value over the middle of the arc. The angle is the one the two rays enclose
  * (0 to 180°); `supplementary` turns the second ray round.
  */
-function angle(d: Extract<Dimension, { kind: 'angle' }>, ea: ElementFacts, eb: ElementFacts, axes: ViewAxes, placed: PlacedView): DimensionOutcome {
+function angle(d: Extract<Dimension, { kind: 'angle' }>, ea: ElementFacts, eb: ElementFacts, axes: ViewAxes, placed: PlacedView, st: Style): DimensionOutcome {
+  const { line, arrowhead } = pen(st);
+  const DIM_TEXT = st.text;
+  const ARROW = st.arrow;
   const la = seenAsLine(ea, axes);
   if ('error' in la) return la;
   const lb = seenAsLine(eb, axes);
@@ -318,7 +352,7 @@ function angle(d: Extract<Dimension, { kind: 'angle' }>, ea: ElementFacts, eb: E
   const end = a1 + sweep;
   const forward = (ang: number): P => tangent(ang);
   const backward = (ang: number): P => [-tangent(ang)[0], -tangent(ang)[1]];
-  items.push(arrowhead(at(a1), inside ? backward(a1) : forward(a1)), arrowhead(at(end), inside ? forward(end) : backward(end)));
+  items.push(...arrowhead(at(a1), inside ? backward(a1) : forward(a1)), ...arrowhead(at(end), inside ? forward(end) : backward(end)));
   const mid = a1 + sweep / 2;
   const slid = mid + (d.slide ?? 0) / R; // the text goes along the arc, by what was slid (mm)
   const textAt: P = [centre[0] + (R + DIM_TEXT) * Math.cos(slid), centre[1] + (R + DIM_TEXT) * Math.sin(slid) - DIM_TEXT / 2];
@@ -368,7 +402,9 @@ function outlinePoint(e: ElementFacts, side: 1 | -1, axes: ViewAxes): P | null {
   return [p[0] + side * e.radius * n[0], p[1] + side * e.radius * n[1]];
 }
 
-function linear(d: Extract<Dimension, { kind: 'linear' }>, ea: ElementFacts, eb: ElementFacts, axes: ViewAxes, placed: PlacedView, unit: LengthUnit): DimensionOutcome {
+function linear(d: Extract<Dimension, { kind: 'linear' }>, ea: ElementFacts, eb: ElementFacts, axes: ViewAxes, placed: PlacedView, unit: LengthUnit, st: Style): DimensionOutcome {
+  const { line, dimensionLine, textOn } = pen(st);
+  const DIM_TEXT = st.text;
   let A = inView(ea, axes);
   let B = inView(eb, axes);
   for (const [which, side, e] of [[0, d.aSide, ea], [1, d.bSide, eb]] as const) {
@@ -459,7 +495,10 @@ function circleCentre(e: ElementFacts, axes: ViewAxes, u: P): P | null {
   return [at[0] + side * across[0] * e.major, at[1] + side * across[1] * e.major];
 }
 
-function circle(d: Extract<Dimension, { kind: 'diameter' | 'radius' }>, e: ElementFacts, axes: ViewAxes, placed: PlacedView, unit: LengthUnit): DimensionOutcome {
+function circle(d: Extract<Dimension, { kind: 'diameter' | 'radius' }>, e: ElementFacts, axes: ViewAxes, placed: PlacedView, unit: LengthUnit, st: Style): DimensionOutcome {
+  const { line, arrowhead } = pen(st);
+  const DIM_TEXT = st.text;
+  const ARROW = st.arrow;
   if (e.radius === undefined) return { error: t('drawing.dimNotRound') };
   const th = (d.angle * Math.PI) / 180;
   const u: P = [Math.cos(th), Math.sin(th)];
@@ -479,10 +518,10 @@ function circle(d: Extract<Dimension, { kind: 'diameter' | 'radius' }>, e: Eleme
   if (d.kind === 'diameter' && 2 * r >= 2 * ARROW + 2) {
     // room inside: the line crosses the circle through its middle, an arrow at each end touching the circle from inside
     const far = add(centre, u, -r);
-    items.push(line(far, outer, shelfEnd), arrowhead(far, [-u[0], -u[1]]), arrowhead(near, u));
+    items.push(line(far, outer, shelfEnd), ...arrowhead(far, [-u[0], -u[1]]), ...arrowhead(near, u));
   } else {
     // a small circle, or a radius: the leader comes from outside and its arrow touches the circle pointing in
-    items.push(line(shelfEnd, outer, near), arrowhead(near, [-u[0], -u[1]]));
+    items.push(line(shelfEnd, outer, near), ...arrowhead(near, [-u[0], -u[1]]));
   }
   const textAt: P = [outer[0] + dir * 1, outer[1] + 1];
   items.push({ kind: 'text', at: textAt, text, height: DIM_TEXT, anchor: dir > 0 ? 'left' : 'right' });

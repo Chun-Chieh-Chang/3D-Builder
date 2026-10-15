@@ -1,7 +1,7 @@
 import { useEffect } from 'react';
 import { t } from '@3db/i18n';
-import { baseName, type Id } from '@3db/model';
-import { arrangementBase, showsHidden } from '@3db/drawing';
+import { VIEW_DISPLAYS, baseName, displayOf, isCorner, isShaded, type Id } from '@3db/model';
+import { arrangementBase } from '@3db/drawing';
 import { store } from '../state/store';
 import { ContextMenu } from './ContextMenu';
 
@@ -55,13 +55,21 @@ export function DrawingMenu({ at, onClose }: { at: DrawingMenuAt; onClose: () =>
     const leaf = at.leaf ? d.leafPath(at.view, at.leaf) : null;
     const assembly = !!source && /\.3dba$/i.test(source);
     const base = arrangementBase(doc)?.id === view.id;
+    const corner = view.kind === 'projected' && isCorner(view.side);
+    const aligns = (view.kind === 'projected' || view.kind === 'section') && !corner;
     items = [
       ...(leaf ? [item('openLeafPart', t('drawingUi.menu.openLeaf', { name: baseName(leaf) }), () => store.openPartOfDrawing(leaf))] : []),
       source ? item('openViewPart', t(assembly ? 'drawingUi.menu.openAssembly' : 'drawingUi.menu.openPart', { name: baseName(source) }), () => store.openPartOfDrawing(source)) : item('noSource', t('drawingUi.menu.noSource'), () => {}, true),
       sep('s1'),
       item('menuProjected', t('drawingUi.toolProjected'), () => d.setTool({ kind: 'project', parent: view.id }), 'direction' in view && view.direction === 'flat'),
-      item('menuHidden', `${showsHidden(view) ? '✓ ' : ''}${t('drawingUi.hiddenLines')}`, () => d.setView(view.id, { hidden: !showsHidden(view) })),
-      item('menuAutoLayout', t('drawingUi.autoLayout'), () => (base ? d.centreArrangement() : d.setView(view.id, { at: null, slide: null })), base ? d.arrangementCentred() : !(view.at || view.slide)),
+      // in line with its parent, a projected or section view can be let go of it and put back (SolidWorks's 「解除對齊」 / 「預設對齊」, ADR 0146); one off a corner is in line with nothing
+      ...(aligns
+        ? [view.at ? item('menuDefaultAlignment', t('drawingUi.menu.defaultAlignment'), () => d.setView(view.id, { at: null, slide: null })) : item('menuBreakAlignment', t('drawingUi.menu.breakAlignment'), () => d.breakAlignment(view.id))]
+        : []),
+      item('menuAutoLayout', t('drawingUi.autoLayout'), () => (base ? d.centreArrangement() : d.setView(view.id, { at: null, slide: null })), corner || (base ? d.arrangementCentred() : !(view.at || view.slide))),
+      sep('sDisplay'),
+      // the display style (ADR 0146), as SolidWorks's 顯示樣式; a flat pattern has no faces to shade
+      ...VIEW_DISPLAYS.map((s) => item(`menuDisplay-${s}`, `${displayOf(view) === s ? '✓ ' : ''}${t(`drawingUi.display.${s}`)}`, () => d.setView(view.id, { display: s }), isShaded(s) && 'direction' in view && view.direction === 'flat')),
       item('menuArrange', t('drawingUi.arrange'), () => arrange(doc.dimensions.filter((x) => x.view === view.id).map((x) => x.id)), !doc.dimensions.some((x) => x.view === view.id)),
       sep('s2'),
       item('menuDelete', t('drawingUi.menu.delete'), () => d.deleteSelection()),

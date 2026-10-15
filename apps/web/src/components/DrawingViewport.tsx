@@ -23,6 +23,7 @@ import {
   attachedAnnotations,
   ratio,
   sideAt,
+  cornerAt,
   snapCut,
   lineAcrossBox,
   alignedTo,
@@ -46,7 +47,7 @@ import {
   type SceneItem,
   type ViewLines,
 } from '@3db/drawing';
-import { axesOf, oppositeSide, projectedAxes, type Annotation, type Attachment, sectionArrow, sectionLookAxes, type Dimension, type DrawingView, type Id, type Scale, type SectionDrawingView, type SurfaceFinish, type ViewSide } from '@3db/model';
+import { axesOf, oppositeSide, projectedAxes, type Annotation, type Attachment, sectionArrow, sectionLookAxes, type Dimension, type DrawingView, type Id, type Scale, type SectionDrawingView, type SurfaceFinish, type ViewCorner, type ViewSide } from '@3db/model';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { store, useStore } from '../state/store';
 import type { DrawingPick } from '../state/drawing';
@@ -421,13 +422,8 @@ export function DrawingViewport() {
     if (tool?.kind === 'project') {
       const g = projectGhost(p);
       if (!g) return d.notifyInfo(t('drawingUi.hint.project'));
-      if (g.side === 'corner') {
-        const source = drw.palette?.source;
-        if (source) {
-          d.placeModelView(source, 'isometric', [round2(g.placed.at[0]), round2(g.placed.at[1])]);
-          d.setTool({ kind: 'project', parent: tool.parent });
-        }
-      } else d.placeProjected(tool.parent, g.side, g.slide, g.shift);
+      if (g.side === 'corner') d.placeCorner(tool.parent, g.corner, [round2(g.placed.at[0]), round2(g.placed.at[1])]);
+      else d.placeProjected(tool.parent, g.side, g.slide, g.shift);
       // the parent stays the one projected from, for the next view
       d.select(tool.parent);
       return;
@@ -925,7 +921,7 @@ export function DrawingViewport() {
   };
 
   /** What the projection tool would make with the pointer at `p`: a view on a side of the parent, in line and slid to the pointer, or the isometric off a corner. */
-  const projectGhost = (p: P): { side: ViewSide; slide: number; shift: [number, number] | null; placed: PlacedView; lines: ViewLines } | { side: 'corner'; placed: PlacedView; lines: ViewLines } | null => {
+  const projectGhost = (p: P): { side: ViewSide; slide: number; shift: [number, number] | null; placed: PlacedView; lines: ViewLines } | { side: 'corner'; corner: ViewCorner; placed: PlacedView; lines: ViewLines } | null => {
     if (tool?.kind !== 'project') return null;
     const parent = drw.doc.views.find((v) => v.id === tool.parent);
     const parentPlaced = basePlaced.get(tool.parent);
@@ -934,9 +930,11 @@ export function DrawingViewport() {
     const side = sideAt(parentPlaced, p);
     if (side === null) return null;
     if (side === 'corner') {
-      const lines = drw.palette?.lines.isometric;
-      const placed = ghostAt(lines, p);
-      return placed && lines ? { side, placed, lines } : null;
+      // the isometric from the corner the pointer is off, as the parent sees the part (ADR 0146): not one fixed isometric whatever the corner and the parent
+      const corner = cornerAt(parentPlaced, p);
+      const lines = d.linesForAxes(projectedAxes(parentAxes, corner, drw.doc.sheet.projection));
+      const placed = ghostAt(lines, p, parentPlaced.scale);
+      return placed && lines ? { side, corner, placed, lines } : null;
     }
     const lines = d.linesForAxes(projectedAxes(parentAxes, side, drw.doc.sheet.projection));
     if (!lines) return null;

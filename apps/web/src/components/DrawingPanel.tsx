@@ -1,6 +1,8 @@
 import { t, type Locale } from '@3db/i18n';
-import { SHEET_SIZES, TITLE_FIELDS, VIEW_NAMES, isDerived, type DrawingView, type Scale, type SheetSize, type TitleField, type ViewName, type ViewSide } from '@3db/model';
-import { STANDARD_SCALES, arrangementBase, scaleText, showsHidden, type ViewLines } from '@3db/drawing';
+import { DIM_STYLE_DEFAULT, SHEET_SIZES, TITLE_FIELDS, VIEW_CORNERS, VIEW_DISPLAYS, VIEW_NAMES, baseName, displayOf, isCorner, isDerived, isShaded, type DrawingView, type Scale, type SheetSize, type TitleField, type ViewCorner, type ViewDisplay, type ViewName, type ViewSide } from '@3db/model';
+import { STANDARD_SCALES, arrangementBase, scaleText, type ViewLines } from '@3db/drawing';
+import { openDrawingPart } from '../actions';
+import { DimStyleFields } from './DimStyleFields';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { store, useStore } from '../state/store';
 import { DrawingMenu, type DrawingMenuAt } from './DrawingViewMenu';
@@ -307,8 +309,18 @@ function DrawingTree({ onFormat, onPick }: { onFormat: () => void; onPick: () =>
       </li>
     );
   };
+  const toOpen = d.partToOpen();
   return (
     <ul className="sw-tree" data-field="views">
+      {/* the way to the part the drawing shows, always in sight (ADR 0146); Return to Drawing in the part comes back */}
+      {toOpen && (
+        <li>
+          <button type="button" className="return-bar" data-action="openDrawingPart" title={t('drawingUi.openPartButtonTip', { name: baseName(toOpen) })} onClick={() => openDrawingPart()}>
+            <Icon name="part" />
+            <span>{t('drawingUi.openPartBar', { name: baseName(toOpen) })}</span>
+          </button>
+        </li>
+      )}
       <li>
         <div className="sw-tree-row root">
           <span className="sw-twisty" />
@@ -374,7 +386,7 @@ export function DrawingPanel() {
   const [manual, setManual] = useState<Record<string, boolean>>({});
   useEffect(() => setManual({}), [context]);
   const opens: Record<Context, string[]> = {
-    sheet: ['sheet', 'export'],
+    sheet: ['sheet', 'dimStyle', 'export'],
     format: ['format'],
     view: ['view', 'derived'],
     dimension: ['dimensions'],
@@ -519,6 +531,11 @@ export function DrawingPanel() {
           </div>
         </PMGroup>
 
+        <PMGroup title={t('drawingUi.dimStyle')} icon="dimension" group="dimStyle" open={isOpen('dimStyle')} onToggle={() => toggle('dimStyle')} hidden={!onSheetGroups}>
+          <div className="sw-message">{t('drawingUi.dimStyleSheetTip')}</div>
+          <DimStyleFields scope="sheet" value={doc.sheet.dimStyle ?? {}} base={DIM_STYLE_DEFAULT} onChange={(s) => d.setSheet({ dimStyle: s })} />
+        </PMGroup>
+
         <PMGroup title={t('drawingUi.tree.format')} icon="titleBlock" open={isOpen('format')} onToggle={() => toggle('format')} hidden={!onSheetGroups}>
           {TITLE_FIELDS.map((field: TitleField) => (
             <label key={field} className="pm-row">
@@ -546,8 +563,9 @@ export function DrawingPanel() {
               {view.kind === 'projected' && (
                 <label className="pm-row">
                   <span>{t('drawingUi.side')}</span>
-                  <select data-field="viewSide" value={view.side} onChange={(e) => d.setView(view.id, { side: e.target.value as ViewSide })}>
-                    {SIDES.map((s) => (
+                  <select data-field="viewSide" value={view.side} onChange={(e) => d.setView(view.id, { side: e.target.value as ViewSide | ViewCorner })}>
+                    {/* a view off a corner turns to another corner; one on a side, to another side */}
+                    {(isCorner(view.side) ? VIEW_CORNERS : SIDES).map((s) => (
                       <option key={s} value={s}>
                         {t(`drawing.side.${s}`)}
                       </option>
@@ -567,9 +585,16 @@ export function DrawingPanel() {
                   ))}
                 </select>
               </label>
-              <label className="pm-row checkbox">
-                <input type="checkbox" data-field="hidden" checked={showsHidden(view)} onChange={(e) => d.setView(view.id, { hidden: e.target.checked ? true : false })} />
-                <span>{t('drawingUi.hiddenLines')}</span>
+              <label className="pm-row">
+                <span>{t('drawingUi.display')}</span>
+                <select data-field="display" value={displayOf(view)} onChange={(e) => d.setView(view.id, { display: e.target.value as ViewDisplay })}>
+                  {VIEW_DISPLAYS.map((s) => (
+                    // a flat pattern has no faces to shade
+                    <option key={s} value={s} disabled={isShaded(s) && 'direction' in view && view.direction === 'flat'}>
+                      {t(`drawingUi.display.${s}`)}
+                    </option>
+                  ))}
+                </select>
               </label>
               {(view.kind === 'section' || view.kind === 'detail') && (
                 <label className="pm-row">

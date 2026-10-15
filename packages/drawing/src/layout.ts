@@ -1,5 +1,6 @@
-import { isDerived, rightOf, sectionArrow, sectionSide, type ViewAxes, type DrawingDoc, type DrawingSheet, type DrawingView, type Id, type Scale, type ViewName, type ViewSide } from '@3db/model';
+import { isCorner, isDerived, rightOf, sectionArrow, sectionSide, type ViewAxes, type DrawingDoc, type DrawingSheet, type DrawingView, type Id, type Scale, type ViewCorner, type ViewName, type ViewSide } from '@3db/model';
 import { clipToCircle } from './geometry';
+import type { ShadeImage } from './shade';
 import { sheetMetrics, type Rect } from './sheet';
 
 /** What a view needs to be laid out and drawn: its lines at full size, and for a section the outlines of the faces the cut made (to be hatched). */
@@ -12,6 +13,10 @@ export interface ViewLines {
   cut?: number[][];
   /** A view of an assembly: where each part of it is (the middle of its mass), in the view's coordinates, in the order the parts were asked for (C16.6: the balloons point there). */
   anchors?: [number, number][];
+  /** Asked for when the view is shaded (ADR 0146): the image of its faces, which lies under its lines. */
+  shade?: ShadeImage;
+  /** A detail's: the circle of its parent's image it shows (view coordinates, full size). */
+  shadeClip?: { centre: [number, number]; radius: number };
 }
 
 /**
@@ -134,6 +139,7 @@ export function resolveLines(doc: Pick<DrawingDoc, 'views'>, lines: ReadonlyMap<
       visible: clip(parent.visible),
       hidden: clip(parent.hidden),
       box: { min: [v.centre[0] - v.radius, v.centre[1] - v.radius], max: [v.centre[0] + v.radius, v.centre[1] + v.radius] },
+      ...(parent.shade ? { shade: parent.shade, shadeClip: { centre: [v.centre[0], v.centre[1]], radius: v.radius } } : {}),
     });
   }
   return out;
@@ -189,7 +195,8 @@ interface Measured {
 
 /** The side of its parent a derived view goes on. */
 function sideOf(doc: Pick<DrawingDoc, 'sheet'>, v: Exclude<DrawingView, { kind?: 'model' }>): ViewSide {
-  if (v.kind === 'projected') return v.side;
+  // a view off a corner has a place of its own and is never laid out by its side; asked anyway (a probe without its place), it is beside the parent
+  if (v.kind === 'projected') return isCorner(v.side) ? (v.side === 'upRight' || v.side === 'downRight' ? 'right' : 'left') : v.side;
   if (v.kind === 'section') return sectionSide(sectionArrow(v), doc.sheet.projection);
   return 'right'; // a detail: beside its parent
 }
@@ -387,6 +394,12 @@ export function sideAt(parent: Pick<PlacedView, 'at' | 'w' | 'h'>, p: readonly [
     return 'corner';
   }
   return outX ? (dx > 0 ? 'right' : 'left') : dy > 0 ? 'up' : 'down';
+}
+
+/** Which corner of a placed view the pointer is off (ADR 0146): the quadrant it is in about the view's middle — what `sideAt` calls a corner. */
+export function cornerAt(parent: Pick<PlacedView, 'at'>, p: readonly [number, number]): ViewCorner {
+  const right = p[0] >= parent.at[0];
+  return p[1] >= parent.at[1] ? (right ? 'upRight' : 'upLeft') : right ? 'downRight' : 'downLeft';
 }
 
 /** The least gap (mm) a view placed with the pointer keeps from its parent: it may come closer than the layout's, but not onto the parent. */

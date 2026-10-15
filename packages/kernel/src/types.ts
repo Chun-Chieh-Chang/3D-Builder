@@ -253,6 +253,18 @@ export interface ProjectedView {
   cut?: number[][];
   /** Chain lines: the bend lines of a flat pattern (S-1). */
   center?: number[][];
+  /** Asked for (`mesh: true`, ADR 0146): the faces of what is seen, as triangles in the same coordinates, for shading. */
+  mesh?: ViewMesh;
+}
+
+/**
+ * The faces of a shape seen from a view (ADR 0146): its mesh turned into the view's coordinates — x to the right and y up on the sheet as the lines are, z toward
+ * the viewer (larger is nearer) — with the normals turned the same way. Shared vertices per face, as `MeshData` has them.
+ */
+export interface ViewMesh {
+  positions: Float32Array;
+  normals: Float32Array;
+  indices: Uint32Array;
 }
 
 /**

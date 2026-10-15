@@ -2570,7 +2570,7 @@ export class Kernel {
    * (the seam of a tangent fillet) and the outlines of curved faces; hidden are the same behind the material. Each edge is cut into a polyline as finely as the
    * tolerance (mm, default 1e-3 of the size, at most 0.05) and the angular step (radians, default 0.1) ask.
    */
-  projectView(id: ShapeId, view: ViewDirection, options: { tolerance?: number; angular?: number } = {}): ProjectedView {
+  projectView(id: ShapeId, view: ViewDirection, options: { tolerance?: number; angular?: number; mesh?: boolean } = {}): ProjectedView {
     const oc = this.oc;
     const arena = new Arena();
     const unit = (v: Vec3): Vec3 => {
@@ -2626,7 +2626,27 @@ export class Kernel {
           max = [Math.max(max?.[0] ?? -Infinity, line[i]!), Math.max(max?.[1] ?? -Infinity, line[i + 1]!)];
         }
       }
-      return { visible, hidden, box: min && max ? { min, max } : null };
+      const seen: ProjectedView = { visible, hidden, box: min && max ? { min, max } : null };
+      if (options.mesh) {
+        // the faces, for shading (ADR 0146): the view's x and y as the lines have them (the projector's X is rx, its Y (−d) × rx), and z toward the viewer
+        const zx: Vec3 = [-d[0], -d[1], -d[2]];
+        const yx: Vec3 = [zx[1] * rx[2] - zx[2] * rx[1], zx[2] * rx[0] - zx[0] * rx[2], zx[0] * rx[1] - zx[1] * rx[0]];
+        const m = this.mesh(id);
+        const turn = (src: Float32Array): Float32Array => {
+          const out = new Float32Array(src.length);
+          for (let i = 0; i < src.length; i += 3) {
+            const x = src[i]!;
+            const y = src[i + 1]!;
+            const z = src[i + 2]!;
+            out[i] = x * rx[0] + y * rx[1] + z * rx[2];
+            out[i + 1] = x * yx[0] + y * yx[1] + z * yx[2];
+            out[i + 2] = x * zx[0] + y * zx[1] + z * zx[2];
+          }
+          return out;
+        };
+        seen.mesh = { positions: turn(m.positions), normals: turn(m.normals), indices: m.indices };
+      }
+      return seen;
     } catch (e) {
       if (e instanceof KernelError) throw e;
       throw new KernelError(t('kernel.projectFailed', { why: this.errorText(e) }));

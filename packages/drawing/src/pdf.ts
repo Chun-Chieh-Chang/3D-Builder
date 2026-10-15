@@ -1,5 +1,6 @@
 import { t } from '@3db/i18n';
 import { HELVETICA_CAP_HEIGHT, helveticaCode, helveticaWidth } from './helvetica';
+import { circlePolyline } from './geometry';
 import { LINE_STYLES, type Scene, type SceneText } from './scene';
 import { FontError, subsetTrueType, type TrueTypeFont } from './ttf';
 
@@ -114,6 +115,12 @@ export function toPdf(scene: Scene, options: PdfOptions = {}): PdfResult {
   const used = new Map<number, number>();
   const replacedChars = new Set<string>();
   const ops: string[] = ['q', '1 J 1 j'];
+  // the shaded views' images first, under every line (ADR 0146): each an image XObject with its alpha as a soft mask, a detail's clipped to its circle
+  const images = scene.images ?? [];
+  images.forEach((img, i) => {
+    const clip = img.clip ? `${circlePolyline(img.clip.centre, img.clip.radius, 64).reduce<string[]>((acc, v, k, all) => (k % 2 === 0 ? [...acc, `${num(v * PT)} ${num(all[k + 1]! * PT)} ${k === 0 ? 'm' : 'l'}`] : acc), []).join(' ')} h W n ` : '';
+    ops.push(`q ${clip}${num(img.w * PT)} 0 0 ${num(img.h * PT)} ${num(img.at[0] * PT)} ${num(img.at[1] * PT)} cm /Im${i + 1} Do Q`);
+  });
   for (const item of scene.items) {
     if (item.kind === 'polyline') {
       const s = LINE_STYLES[item.style];
@@ -121,7 +128,7 @@ export function toPdf(scene: Scene, options: PdfOptions = {}): PdfResult {
       for (let i = 0; i + 1 < item.points.length; i += 2) pts.push(`${num(item.points[i]! * PT)} ${num(item.points[i + 1]! * PT)} ${i === 0 ? 'm' : 'l'}`);
       if (pts.length < 2) continue;
       if (item.filled) ops.push(`${pts.join(' ')} h f`);
-      else ops.push(`${num(s.width * PT)} w ${s.dash ? `[${s.dash.map((d) => num(d * PT)).join(' ')}] 0 d` : '[] 0 d'} ${pts.join(' ')}${item.closed ? ' h' : ''} S`);
+      else ops.push(`${num((item.width ?? s.width) * PT)} w ${s.dash ? `[${s.dash.map((d) => num(d * PT)).join(' ')}] 0 d` : '[] 0 d'} ${pts.join(' ')}${item.closed ? ' h' : ''} S`);
     } else if (item.text !== '') {
       const run = plan(item.text, font, used);
       for (const c of run.replaced) replacedChars.add(c);
@@ -143,9 +150,12 @@ export function toPdf(scene: Scene, options: PdfOptions = {}): PdfResult {
   const pageW = scene.width * PT;
   const pageH = scene.height * PT;
   const embedded = font !== null && used.size > 0;
+  // the images come after the fonts: an image and its mask, two objects each
+  const firstImage = embedded ? 11 : 6;
+  const xobjects = images.length > 0 ? ` /XObject << ${images.map((_, i) => `/Im${i + 1} ${firstImage + 2 * i} 0 R`).join(' ')} >>` : '';
   add('<< /Type /Catalog /Pages 2 0 R >>');
   add('<< /Type /Pages /Kids [3 0 R] /Count 1 >>');
-  add(`<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${num(pageW)} ${num(pageH)}] /Resources << /ProcSet [/PDF /Text] /Font << /F1 5 0 R${embedded ? ' /F2 6 0 R' : ''} >> >> /Contents 4 0 R >>`);
+  add(`<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${num(pageW)} ${num(pageH)}] /Resources << /ProcSet [/PDF /Text${images.length > 0 ? ' /ImageC' : ''}] /Font << /F1 5 0 R${embedded ? ' /F2 6 0 R' : ''} >>${xobjects} >> /Contents 4 0 R >>`);
   const body = latin1(content);
   add(`<< /Length ${body.length} >>\nstream\n`, body, '\nendstream');
   add('<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>');
@@ -161,6 +171,13 @@ export function toPdf(scene: Scene, options: PdfOptions = {}): PdfResult {
     const cmap = latin1(toUnicode(used));
     add(`<< /Length ${cmap.length} >>\nstream\n`, cmap, '\nendstream');
   }
+  images.forEach((img, i) => {
+    // rows that begin with PNG's filter byte, deflated: what /Predictor 15 reads
+    const decode = (colors: number) => `/Filter /FlateDecode /DecodeParms << /Predictor 15 /Colors ${colors} /BitsPerComponent 8 /Columns ${img.image.width} >>`;
+    const at = add(`<< /Type /XObject /Subtype /Image /Width ${img.image.width} /Height ${img.image.height} /ColorSpace /DeviceRGB /BitsPerComponent 8 ${decode(3)} /SMask ${firstImage + 2 * i + 1} 0 R /Length ${img.image.rgb.length} >>\nstream\n`, img.image.rgb, '\nendstream');
+    if (at !== firstImage + 2 * i) throw new Error('toPdf: the objects of the images are not where the page says');
+    add(`<< /Type /XObject /Subtype /Image /Width ${img.image.width} /Height ${img.image.height} /ColorSpace /DeviceGray /BitsPerComponent 8 ${decode(1)} /Length ${img.image.alpha.length} >>\nstream\n`, img.image.alpha, '\nendstream');
+  });
   const info = add(`<< /Title ${textString(options.title ?? '')} /Producer ${textString('3D-Builder')} >>`);
 
   const chunks: Uint8Array[] = [];

@@ -59,6 +59,12 @@ const toggleTool = (same: (t: NonNullable<ReturnType<typeof drawingTool>>) => bo
   const on = drawingTool(store.getState());
   if (d) d.setTool(on && same(on) ? null : make());
 };
+/** 「開啟零件」 of the drawing (ADR 0146): the part of the view chosen, else of the first view; 「返回工程圖」 in the part comes back. */
+export function openDrawingPart(): void {
+  const path = store.drawingStore?.partToOpen();
+  if (path) store.openPartOfDrawing(path);
+  else store.drawingStore?.notifyInfo(t('drawingUi.openPartNone'));
+}
 const toolIs = (same: (t: NonNullable<ReturnType<typeof drawingTool>>) => boolean) => () => {
   const on = drawingTool(store.getState());
   return !!on && same(on);
@@ -81,6 +87,8 @@ export const ACTIONS: UiAction[] = [
   { id: 'generate-assembly', get label() { return t('derived.act'); }, group: 'file', enabled: (s) => partIdle(s) && !!s.result?.mesh && s.bootMs !== null, run: () => void store.generateAssembly() },
   { id: 'import-step-assembly', get label() { return t('stepasm.act'); }, group: 'file', enabled: (s) => idle(s) && s.bootMs !== null, run: () => store.importStepAssembly() },
   { id: 'return-assembly', get label() { return t('act.returnAssembly'); }, group: 'file', enabled: (s) => (partIdle(s) || assemblyIdle(s)) && s.returnTo !== null, run: () => store.returnToAssembly() },
+  // the way from a drawing to its part (ADR 0146): in the 檔案 menu as well as on the drawing's tree and its 視圖配置 menu
+  { id: 'open-drawing-part', get label() { return t('drawingUi.openPartButton'); }, group: 'file', enabled: (s) => drawingOn(s) && !!store.drawingStore?.partToOpen(), run: () => openDrawingPart() },
 
   { id: 'equations', get label() { return t('action.equations'); }, group: 'tools', enabled: partIdle, run: () => store.openDialog('equations') },
   { id: 'appearance', get label() { return t('action.appearance'); }, group: 'tools', enabled: partIdle, run: () => store.openDialog('appearance') },
@@ -192,6 +200,7 @@ export const ACTIONS: UiAction[] = [
   { id: 'exit-sketch', get label() { return t('act.exitSketch'); }, group: 'sketch-tool', enabled: sketching, run: () => store.commitEdit() },
 
   // the drawing (D-I1b): 視圖配置
+  { id: 'drw-open-part', get label() { return t('drawingUi.openPartButton'); }, group: 'drawing', enabled: (s) => drawingOn(s) && !!store.drawingStore?.partToOpen(), run: () => openDrawingPart() },
   { id: 'drw-standard', get label() { return t('drawingUi.standardViews'); }, group: 'drawing', enabled: (s) => drawingOn(s) && !!store.drawingStore?.sourceForViews(), run: () => store.drawingStore?.addStandardViews() },
   { id: 'drw-projected', get label() { return t('drawingUi.toolProjected'); }, group: 'drawing', enabled: (s) => drawingOn(s) && (!!chosenView(s) || drawingTool(s)?.kind === 'project'), active: toolIs((x) => x.kind === 'project'), run: () => { const v = chosenView(store.getState()); toggleTool((x) => x.kind === 'project', () => (v ? { kind: 'project', parent: v.id } : null))(); } },
   { id: 'drw-section', get label() { return t('drawingUi.cmd.section'); }, group: 'drawing', enabled: (s) => drawingOn(s) && (s.drw?.doc.views.length ?? 0) > 0, active: toolIs((x) => x.kind === 'section'), run: toggleTool((x) => x.kind === 'section', () => ({ kind: 'section', vertical: true })) },

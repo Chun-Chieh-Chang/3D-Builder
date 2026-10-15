@@ -6,7 +6,7 @@ import gcsWasm from '@salusoft89/planegcs/dist/planegcs_dist/planegcs.wasm?url';
 import { bodyKey, combineMass, isShown, mirrorKey, MESH_QUALITY, placementRows, settingsOf, type ViewEdgeSet, type AssemblyDoc, type Id, type MeasureReport, type PartDoc, type SourceTree } from '@3db/model';
 import { findProfiles, PlaneGcsSolver } from '@3db/sketch';
 import { COMPONENT_MESH, Kernel, type ThicknessReport, type UndercutReport, type DraftReport, type GeometryReport, type MassProps, type MeshData, type MeshOptions, type ShapeId } from '@3db/kernel';
-import { flatViewLines } from '@3db/drawing';
+import { encodeShade, flatViewLines, rasterizeShade, type ShadeImage } from '@3db/drawing';
 import { drawingAnchors, holeFeatures, projectDrawingView, elementFacts, viewFeatures, viewEdges, findClearance, findInterference, flatPattern, FlatError, sheetChecks, sweepClearance, measureTargets, convertEdges, modelSnapItems, edgeMateGeometry, exportFaces, faceColors, intoFrame, faceEdges, faceMateGeometry, followReferences, ReferenceProblem, Regenerator, solveAssemblyTree, type AssemblyResult, type AssemblySolveOptions, type BodyInfo, type FlatReport, type HoleFeatures, type RebuildResult, type SheetCheck, type SheetCheckLimits } from '@3db/regen';
 import { edgeFingerprint, faceFingerprint, vertexFingerprint } from '@3db/naming';
 import { binaryStl, exportAssemblyStep, exportPartStep, portableShape, readComponentFile, stepAssemblyPlan, type StepAssemblyPlan } from '@3db/io';
@@ -468,8 +468,18 @@ const api: KernelApi = {
           }
           viewParts.push({ shape, pose: p.pose, mirrored: p.mirrored });
         }
-        const lines = projectDrawingView(kernel, viewParts, r.axes, r.cut);
-        out.push({ lines, ...(r.anchors ? { anchors: drawingAnchors(kernel, viewParts, r.axes) } : {}), ms: performance.now() - began });
+        const { mesh, ...lines } = projectDrawingView(kernel, viewParts, r.axes, r.cut, !!r.shade);
+        // the faces drawn into an image (ADR 0146): a view whose shading fails keeps its lines, and says why it has no shading
+        let shade: ShadeImage | { error: string } | undefined;
+        if (r.shade) {
+          try {
+            const raster = mesh ? rasterizeShade(mesh, r.shade.px) : null;
+            shade = raster ? await encodeShade(raster) : { error: t('drawing.noBody') };
+          } catch (e) {
+            shade = { error: e instanceof Error ? e.message : String(e) };
+          }
+        }
+        out.push({ lines, ...(r.anchors ? { anchors: drawingAnchors(kernel, viewParts, r.axes) } : {}), ...(shade ? { shade } : {}), ms: performance.now() - began });
       } catch (e) {
         out.push({ error: e instanceof Error ? e.message : String(e) });
       } finally {
