@@ -1,5 +1,37 @@
 # 3D-Builder 開發日誌 (DEV_LOG.md)
 
+## 2026-10-15（晚四）：組合件的「正視於」與選擇濾器（[ADR 0148](docs/adr/0148-assembly-view-normal-and-filter.md)）
+
+### 1. 範圍
+使用者回報組合件頁面無法使用「正視於」，並要求選擇濾器「比照處理」。查明兩者都被明確限制在零件：`view-normal` 的啟用條件含 `partIdle`（要求 `active === 'part'`）；濾器列與 F5／F6 只在零件啟用；更深一層，組合件挑元素走 `Viewer.pickElement`（`pickElements` 路徑），**完全不讀濾器**，`AssemblyViewport` 也從沒把濾器交給 viewer——只把列顯示出來是沒用的。
+
+### 2. 做法
+| 層 | 檔案 | 內容 |
+|---|---|---|
+| 渲染 | `packages/render/src/viewer.ts` | `pickElement` 依 `filter.vertices／edges／faces` 略過濾掉的種類（不改回傳底下的種類）；`setPickFilter` 清掉懸停的元素 |
+| 流程 | `state/assembly.ts`（`normalFrame()`）、`actions.ts`、`Viewport.tsx`（列不再因組合件隱藏）、`AssemblyViewport.tsx`（把 `pickFilter` 交給 viewer） | 見 ADR |
+| 說明 | `packages/i18n/src/zh-TW/help.ts` | 說明文字更正（原寫「組合件沒有」） |
+| 測試 | `tests/phase8/asm-view-normal-filter.test.ts`（新，6 項）、`tests/e2e/manual-asm-view-normal.js`（新，9 步） | 見下 |
+
+### 3. 自我紅隊四問（AGENTS.md §2.1）
+1. **輸入破壞**：沒有數值輸入。破壞的是「選取狀態」：沒挑東西、挑邊線、頂點、原點、組合件自己的基準面、兩個都是組合件基準面的結合（第二個被既有規則拒絕，`mate.b` 為 null，仍看第一個）、挑清單被 `startMate` 清空後都得到明確結果（平面→框、否則→等角視圖），沒有任何一條默默改用別的東西。
+2. **幾何相交**：不涉及運算。唯一的幾何是平面框：以 `elementGeometry`（已套用元件姿態的世界平面）呼叫與零件相同的 `planeFrame`，單元測試驗證三個基準面的框是單位正交（法向長度、xDir·n、yDir·n、xDir·yDir 皆 < 1e-12）。
+3. **依賴鏈完整性**：`actions.ts` 啟用條件 → `lookAtNormal` → `AssemblyStore.normalFrame` → `elementGeometry`（`elementPart`、`poseOf`、`faceGeometry`）→ `planeFrame` → `viewer.lookAt`；濾器：`store.pickFilter` → `AssemblyViewport` effect → `viewer.setPickFilter` → `pickElement`（頂點／邊線／面三處）；`ViewOptions` 的列、F5／F6、系統選項。工程圖仍不可用（單元驗證）。
+4. **零 Mock 與真值**：e2e 在真的 app、真的核心與真的零件檔上跑。「正視於」比對視線與 `elementGeometry` 的法向內積（|·| > 0.999）；濾器步驟取板子在上視圖最高的**真實頂點**投影到螢幕座標，同一點在「全開／單選邊線／面／頂點／基準面」下由 `viewer.pickElement` 分別得到 vertex／edge／face／vertex／null。**反向對照**：還原五個原始檔，e2e 步驟 1～3 失敗（鈕停用，視線不動）；放回後全過。
+
+### 4. 記憶體（AGENTS.md §3.1、§3.5）
+不碰核心與 WASM，沒有新增 OCCT 呼叫，不做 Heap 量測，也不宣稱任何 Heap 數字。
+
+### 5. 過程紀錄（RCA／CAPA）
+- **根因**：ADR 0043／0145 把「組合件無濾器列」當設計決定，但其實連行為（`pickElement`）也沒接，使用者按 F5 或點列都不會有東西；「正視於」的限制是 `partIdle` 的副作用而非有意排除組合件。**CAPA**：功能限定零件時，啟用條件與說明文字要寫明，並在 ADR 列為已知限制，不只在 UI 隱藏。
+- **e2e 第一版**以 `viewer.edgesOn／facesOn` 驗濾器，但組合件的 `pickFaces／pickEdges` 一直是 false（另一條路徑），三個全 false——這個「失敗」正是找到 `pickElement` 沒讀濾器的線索；改為直接問 `pickElement` 在真實頂點上找到什麼。
+- 本次直接在主資料夾工作（先前的 worktree 已依使用者核准清理），改動前主資料夾乾淨、其他兩個工作階段閒置；只提交自己的檔案。
+
+### 6. 確效與品質驗收
+- `typecheck` 0 錯誤；`lint:deps`／`lint:rules`／`lint:i18n` 全過。
+- 全量 vitest：**2865 過、25 略過、0 失敗**（226 檔過、4 檔略過；說明文字更動後另重跑 tests/phase8 共 646 項全過）。新測試 6 項。
+- `verify:ui --only "asm|assembly|manual-c21|manual-c22|sketch-plane|mate|measure"`：**16/16**（含新 `manual-asm-view-normal.js`；`manual-asm-section.js` 步驟 1 的說明改為「濾器列預設隱藏」）。
+
 ## 2026-10-15（晚三）：新工程圖在「最適比例」前存檔——存檔等它、它併入放視圖那一步（[ADR 0147](docs/adr/0147-drawing-fit-before-save.md)）
 
 ### 1. 範圍

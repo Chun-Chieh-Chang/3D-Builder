@@ -40,7 +40,7 @@ const setRange = async (el, value) => {
 };
 
 M.run = async () => {
-  await step('1 a new assembly (plate and V-block): 顯示類型 and 剖面 are at the top left; no selection filter, no dashed hidden-line mode', async () => {
+  await step('1 a new assembly (plate and V-block): 顯示類型 and 剖面 are at the top left; the selection filter bar is hidden until F5 (ADR 0145, 0148), no dashed hidden-line mode', async () => {
     H.ready();
     await H.project({ '定位板.3dbx': `${H.GOLDEN}locating-plate.3dbx`, 'V型塊.3dbx': `${H.GOLDEN}v-block.3dbx` });
     await H.action('檔案', '新組合件');

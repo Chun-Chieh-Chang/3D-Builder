@@ -235,10 +235,10 @@ export const ACTIONS: UiAction[] = [
   { id: 'view-right', get label() { return t('act.right'); }, shortcut: 'Ctrl+4', group: 'view', enabled: () => true, run: () => store.viewer?.setView('right') },
   { id: 'view-left', get label() { return t('act.left'); }, shortcut: 'Ctrl+3', group: 'view', enabled: () => true, run: () => store.viewer?.setView('left') },
   { id: 'view-iso', get label() { return t('act.iso'); }, shortcut: 'Ctrl+7', group: 'view', enabled: () => true, run: () => store.viewer?.setView('iso') },
-  { id: 'view-normal', get label() { return t('act.normal'); }, shortcut: 'Ctrl+8', group: 'view', enabled: (s) => sketching(s) || partIdle(s), run: () => lookAtNormal() },
-  // The filter narrows what a command in progress asks for, so F5/F6 stay on in a PropertyManager session, as in SW (ADR 0145); an assembly has no filter bar.
-  { id: 'filter-bar', get label() { return t('act.filterBar'); }, shortcut: 'F5', group: 'view', enabled: (s) => s.active === 'part', run: () => store.togglePickFilterBar() },
-  { id: 'clear-filters', get label() { return t('act.clearFilters'); }, shortcut: 'F6', group: 'view', enabled: (s) => s.active === 'part', run: () => store.clearPickFilter() },
+  { id: 'view-normal', get label() { return t('act.normal'); }, shortcut: 'Ctrl+8', group: 'view', enabled: (s) => sketching(s) || partIdle(s) || s.active === 'assembly', run: () => lookAtNormal() },
+  // The filter narrows what a command in progress asks for, so F5/F6 stay on in a PropertyManager session, as in SW (ADR 0145); an assembly has the same bar (ADR 0148).
+  { id: 'filter-bar', get label() { return t('act.filterBar'); }, shortcut: 'F5', group: 'view', enabled: (s) => s.active === 'part' || s.active === 'assembly', run: () => store.togglePickFilterBar() },
+  { id: 'clear-filters', get label() { return t('act.clearFilters'); }, shortcut: 'F6', group: 'view', enabled: (s) => s.active === 'part' || s.active === 'assembly', run: () => store.clearPickFilter() },
 ];
 
 export const action = (id: string): UiAction => {
@@ -269,7 +269,7 @@ function setFixed(value: boolean): void {
  */
 function lookAtNormal(): void {
   const sketch = store.editedSketch();
-  const frame = sketch ? store.frameOf(sketch) : normalFrame();
+  const frame = sketch ? store.frameOf(sketch) : store.getState().active === 'assembly' ? (store.assembly?.normalFrame() ?? null) : normalFrame();
   const viewer = store.viewer;
   if (!frame) {
     viewer?.setView('iso');

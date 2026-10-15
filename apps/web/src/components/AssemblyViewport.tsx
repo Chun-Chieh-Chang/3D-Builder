@@ -74,6 +74,7 @@ export function AssemblyViewport() {
   const interference = useStore((s) => s.interference);
   const clearance = useStore((s) => s.clearance);
   const measuring = measure !== null;
+  const pickFilter = useStore((s) => s.pickFilter);
   const [hover, setHover] = useState<string | null>(null);
   const [hoverElement, setHoverElement] = useState<InstanceElement | null>(null);
   /** The component's context menu (right click on it in the graphics area). */
@@ -223,6 +224,11 @@ export function AssemblyViewport() {
     v.setComponentDragging(!mating && !placing && !patterning && !measuring);
     v.setElementPicking(mating || pickingAxis || measuring);
   }, [mating, pickingAxis, patterning, measuring, ghost, placing, subChosen]);
+
+  // The selection filter (ADR 0145, 0148) narrows the elements picked for a mate, a pattern direction or a measurement; whole components are not elements and stay pickable.
+  useEffect(() => {
+    store.viewer?.setPickFilter(pickFilter);
+  }, [pickFilter, mating, pickingAxis, measuring]);
 
   const hovered = hover ? asm.doc.components.find((c) => c.id === hover) : undefined;
   const elementName = (() => {

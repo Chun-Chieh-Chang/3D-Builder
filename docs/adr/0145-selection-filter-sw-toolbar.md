@@ -14,7 +14,7 @@ ADR 0043 把選擇濾器做成圖形區選項列上**常駐的四個獨立勾選
 
 | # | 決定 | 理由 |
 |---|---|---|
-| 1 | **列預設隱藏**。`SystemOptions.pickFilterBar`（預設 `false`）記住狀態；F5（action `filter-bar`）切換，也從「系統選項→顯示選擇濾器列」開。組合件無此列（維持 ADR 0043）。 | 比照 SW 工具列預設隱藏；SW 會記住工具列狀態。 |
+| 1 | **列預設隱藏**。`SystemOptions.pickFilterBar`（預設 `false`）記住狀態；F5（action `filter-bar`）切換，也從「系統選項→顯示選擇濾器列」開。組合件無此列（維持 ADR 0043；**已由 [ADR 0148](0148-assembly-view-normal-and-filter.md) 修訂：組合件同樣有此列與 F5／F6**）。 | 比照 SW 工具列預設隱藏；SW 會記住工具列狀態。 |
 | 2 | **radio**。`store.setPickFilterKind(kind)`：選一種 ⇒ 只剩該種類可點；**再點已選者為無操作**（SW 按鈕保持按下，不取消）。**F6**（action `clear-filters`）＝四種類全開＝全部可點。 | SW 的濾器按鈕即單選；「只留一種」是濾器最典型的用法（圓角只對邊線）。 |
 | 3 | **傳輸結構不變**：`pickFilter` 仍是 `{faces, edges, vertices, planes}` 四布林，viewer 協議與 `picking()` 交集邏輯（只縮小、不放大）完全不動；radio 只是 store 產生的布林組合（`{faces:false,…,[kind]:true}` 或全 true）。關掉的種類立即清 hover（viewer 維持）。 | 最小衝擊面；語意核心（ADR 0043 決定 2）不變。 |
 | 4 | **舊資料相容**：localStorage 裡舊勾選 UI 存的**混合**四布林（如 faces+edges 同 true）保留原樣；列上無按下的種類（等同無濾器視覺），第一次點選即收斂到 radio，F6／「全部」立即歸位。`parseOptions` 不「修正」混合值——種子語意（下一份零件的起手）以選項為準。 | 不悄悄改使用者存的值；顯示層不發明新狀態。 |

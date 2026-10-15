@@ -1,5 +1,11 @@
 # 交接文件
 
+- **【2026-10-15 晚四：組合件的「正視於」與選擇濾器（Claude，[ADR 0148](docs/adr/0148-assembly-view-normal-and-filter.md)）— 見 `git log`】** 使用者回報組合件無法用「正視於」，濾器亦同。原因：兩者都限定零件（`partIdle`、濾器列與 F5／F6 限零件），且組合件挑元素的 `Viewer.pickElement` 根本沒讀濾器。
+  - **完成**：`AssemblyStore.normalFrame()`（結合中取第二個、否則第一個元素；否則樹上最後挑的基準；平面→正對，其餘→等角視圖；元件平面已套姿態）；組合件顯示濾器列、F5／F6 可用；`pickElement` 依濾器略過頂點／邊線／面，改變時清懸停；說明文字更正；ADR 0145 的「組合件無此列」加註修訂。
+  - **驗收**：單元 6 項、新 e2e `manual-asm-view-normal.js` 9 步（還原原始碼時步驟 1～3 失敗）；typecheck 0、三項 lint 過；全量 vitest **2865 過、25 略過、0 失敗**；相關 e2e（asm／assembly／c21／c22／sketch-plane／mate／measure）**16/16**。
+  - **已知限制**：組合件沒有「濾掉的面變半透明、邊線變淡」的視覺提示（行為已生效）；選整個零組件按「正視於」回等角視圖（SW 會看向其前基準面）。
+  - **環境**：直接在主資料夾工作（worktree 已清理），只提交自己的檔案。
+
 - **【2026-10-15 晚三：新工程圖在「最適比例」前存檔（Claude，[ADR 0147](docs/adr/0147-drawing-fit-before-save.md)）— 已提交並推送 `b966d26`（origin/main）】** ADR 0146 確效時發現的既有行為：存檔後最適比例才發生，工程圖變成未存檔、開零件被「要儲存變更嗎？」擋住。使用者以選擇題裁定「等候＋併入同一步」（建議選項）。
   - **完成**：`History.amend`（併入最後一步；無步驟時成為起始狀態）；自動最適比例改用它，使用者按的「最適比例」仍是一步；存檔對話框照常立即開，寫入前 `fitSettled()`——等到最適比例發生，或沒有任何零件讀取、線條、特徵請求在進行（不用逾時，核心失敗不會卡住）。移除 ADR 0146 在 `manual-drawing-open-part.js`、`manual-drawing-sw-parity.js` 加的「存檔前等 features」。
   - **驗收**：新 `drawing-fit-save.test.ts` 11 項、新 e2e `manual-drawing-save-before-fit.js` 5 步（攔住核心的特徵回覆，確定重現慢核心）；還原修正時單元 4 項、e2e 4 步失敗。typecheck 0、三項 lint 過；全量 vitest **2856 過、25 略過、0 失敗**；`verify:ui --only "drawing|section|phase5"` **20/20**。

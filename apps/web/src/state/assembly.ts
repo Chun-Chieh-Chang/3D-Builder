@@ -36,6 +36,7 @@ import {
   mirrorKey,
   patternLeavesOf,
   nextInstance,
+  planeFrame,
   relativePath,
   relativePose,
   relocateAssembly,
@@ -56,6 +57,7 @@ import {
   type Mate,
   type MateRef,
   type MateType,
+  type PlaneFrame,
   type PatternAxis,
   type PatternLine,
   type Physical,
@@ -810,6 +812,18 @@ export class AssemblyStore {
     const build = leaf ? this.buildOfLeaf(leaf) : ref.path?.length ? null : this.buildOf(ref.component);
     const pose = leaf ? leaf.pose : ref.path?.length ? null : this.poseOf(ref.component);
     return build && pose ? { build, pose } : null;
+  }
+
+  /**
+   * What 「正視於」 looks straight at in an assembly (ADR 0148): the plane — a planar face, a plane of a component or of the assembly — picked last: the mate's
+   * second element, else its first, else the last datum picked in the FeatureManager. Placed where the component is now (assembly coordinates). Null when there is
+   * nothing picked, or what is picked is not flat (an edge, a vertex, an origin, a curved face): the action then returns to the isometric view, as in a part.
+   */
+  normalFrame(): PlaneFrame | null {
+    const { mate, picks } = this.state;
+    const ref = mate ? (mate.b ?? mate.a) : (picks.at(-1) ?? null);
+    const geometry = ref ? this.elementGeometry(ref) : null;
+    return geometry?.kind === 'plane' ? planeFrame(geometry.origin, geometry.normal) : null;
   }
 
   /** An element's geometry where it is now, in assembly coordinates (for what the PropertyManager offers). */

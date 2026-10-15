@@ -1057,7 +1057,11 @@ export class Viewer {
     this.requestRender();
   }
 
-  /** The element under the cursor, in SolidWorks priority: vertex, then edge, then face; hidden ones excluded. */
+  /**
+   * The element under the cursor, in SolidWorks priority: vertex, then edge, then face; hidden ones excluded. The selection filter (D5.4, ADR 0148) takes kinds out of
+   * what can be found: what it leaves out is not hovered, picked, or found *instead of* what is wanted (an edge-only filter never answers with the face behind it).
+   * Bodies still hide what is behind them, whatever the filter.
+   */
   private pickElement(clientX: number, clientY: number): InstanceElement | null {
     if (this.instances.size === 0) return null;
     const ray = this.rayAt(clientX, clientY);
@@ -1076,7 +1080,7 @@ export class Viewer {
     let best: { d: number; el: InstanceElement; p: THREE.Vector3 } | null = null;
     const p = new THREE.Vector3();
     for (const [key, inst] of this.instances) {
-      const v = this.partGeometry.get(inst.part)?.vertices;
+      const v = this.filter.vertices ? this.partGeometry.get(inst.part)?.vertices : undefined;
       if (!v) continue;
       for (let i = 0; i < v.length / 3; i++) {
         p.set(v[3 * i]!, v[3 * i + 1]!, v[3 * i + 2]!).applyMatrix4(inst.group.matrixWorld);
@@ -1095,7 +1099,7 @@ export class Viewer {
 
     // Edges within 6 px, in front of the bodies.
     caster.params.Line = { threshold: (6 * scale) / rect.width };
-    const edges = [...this.instances.values()].flatMap((i) => (i.edges ? [i.edges] : []));
+    const edges = this.filter.edges ? [...this.instances.values()].flatMap((i) => (i.edges ? [i.edges] : [])) : [];
     const edgeHit = caster.intersectObjects(edges).find((x) => x.distance <= depth + slack && this.kept(x.point));
     if (edgeHit && edgeHit.index !== undefined) {
       const found = owner(edgeHit.object);
@@ -1104,7 +1108,7 @@ export class Viewer {
       if (found && edge !== undefined) return { key: found[0], kind: 'edge', index: edge };
     }
 
-    if (bodyHit && bodyHit.faceIndex !== undefined && bodyHit.faceIndex !== null) {
+    if (this.filter.faces && bodyHit && bodyHit.faceIndex !== undefined && bodyHit.faceIndex !== null) {
       const found = owner(bodyHit.object);
       const face = found && this.partGeometry.get(found[1].part)?.triangleFace[bodyHit.faceIndex];
       if (found && face !== undefined) return { key: found[0], kind: 'face', index: face };
@@ -1717,6 +1721,8 @@ export class Viewer {
     if (!this.verticesOn) this.setHoveredVertex(-1);
     if (!this.planesOn) this.setHoveredPlane(null);
     if (!this.pickDatums) this.setHoveredDatum(null);
+    // an assembly's element under the cursor may be of a kind now left out; the next move finds the one that is allowed
+    if (this.pickElements) this.setHoveredElement(null);
   }
 
   /** The shown planes the user lets be picked. */
