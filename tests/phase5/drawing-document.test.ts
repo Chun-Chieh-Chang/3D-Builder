@@ -28,8 +28,8 @@ describe('the drawing document', () => {
 
   it('changes a view: a position of its own and back to the layout, a scale of its own and back to the sheet scale, hidden lines off', () => {
     let d = withViews();
-    d = applyDrawingCommand(d, { type: 'setView', viewId: 'view2', patch: { at: [100, 120], scale: [2, 1], display: 'hiddenRemoved' } });
-    expect(d.views[1]).toMatchObject({ at: [100, 120], scale: [2, 1], display: 'hiddenRemoved' });
+    d = applyDrawingCommand(d, { type: 'setView', viewId: 'view2', patch: { at: [100, 120], scale: [2, 1], hidden: false } });
+    expect(d.views[1]).toMatchObject({ at: [100, 120], scale: [2, 1], hidden: false });
     d = applyDrawingCommand(d, { type: 'setView', viewId: 'view2', patch: { at: null, scale: null } });
     expect(d.views[1]).not.toHaveProperty('at');
     expect(d.views[1]).not.toHaveProperty('scale');
