@@ -1,5 +1,9 @@
 # 交接文件
 
+- **【2026-10-15 夜：桌面版安裝檔重建、整合 F: 的檔案（Claude）】**
+  - **重建**：以 `main` 的 `10249a5`（含 F: 全部提交）執行 `npm run build -w @3db/desktop`，更新 `apps/desktop/src-tauri/target/release/desktop.exe`（13,885,952 位元組）與 `bundle/nsis/3D-Builder_0.2.2_x64-setup.exe`（11,965,187 位元組）；版本號維持 0.2.2，舊的 0.2.0、0.2.1 安裝檔未動。新版網頁打包的雜湊檔名（`index-C2ELDDv0.js` 等七個）都確實嵌在 exe 裡；啟動後 10 秒仍存活、視窗標題 `3D-Builder`。這兩個檔案被 git 忽略（`target/`），不在版本庫裡。
+  - **整合 F:**：F: 的 git 內容早已全部在這邊的 `main`（`laptop/main` 是它的祖先，F: 的所有分支都沒有這邊沒有的提交，F: 工作樹乾淨）。F: 獨有、被 git 忽略的檔案已複製過來，沒有覆蓋任何既有檔案：`3DB實機確認/`（53 個）、`scratch/`（116 個，其中 `drawing-parts/凸緣襯套.3dbx` 以 F: 較新的版本為準）、`.workbuddy-ai/memory/`、`dev.log`。F: 本身沒有動，仍停在 `d19b9af`，落後 3 個提交，且它的 `desktop.exe` 與安裝檔仍是 10-11 的舊版；要同步請在 F: 執行 `git pull origin main`，並重建或複製這邊的安裝檔。
+
 - **【2026-10-15 晚六：使用者以第二份選擇題裁定八項工程圖細節（Claude）— 只記錄決定，程式尚未動】** 選擇題頁：https://claude.ai/artifact/LSQnMc5vqjga3xgNo6dUMt。每週額度已用 98%（2026-10-19 重置），所以只寫下決定，沒有開始實作。全部採我的建議。
   - **局部剖視（D-I5，先做）**：
     1. 範圍形狀：**矩形、圓、多邊形**（不做自由曲線）。
