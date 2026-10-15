@@ -46,7 +46,7 @@ import {
   type Annotation,
   type AnnotationPatch, dimensionRefs } from '@3db/model';
 import { drawingFileName, writeDrawingFile } from '@3db/io';
-import { alignCollinear, arrangeDimensions, attachedAnnotations, FontError, readTrueType, resolveLines, toDxf, toPdf, turnLines, visibleElements, type TrueTypeFont, type VisibleElements } from '@3db/drawing';
+import { alignCollinear, arrangeDimensions, attachedAnnotations, FontError, readTrueType, resolveLines, sectionMissed, toDxf, toPdf, turnLines, visibleElements, type TrueTypeFont, type VisibleElements } from '@3db/drawing';
 import { autoDimensions, buildScene, type DimensionDraft, type Pickable, FIRST_OFFSET, OFFSET_STEP, ratio, scaleOf, STANDARD_SCALES, centreViews, fitViews, toSvg, type AutoDimensionOptions, type DimensionOutcome, type ElementsResult, type HoleRow, type PlacedView, type ViewBom, type Scene, type ViewLines } from '@3db/drawing';
 import type { Remote } from 'comlink';
 import { download, fileIn, pathIn, pickDrawingSaveTarget, pickFontFile, writeFile } from '../files';
@@ -119,7 +119,7 @@ type DistributiveOmit<T, K extends keyof never> = T extends unknown ? Omit<T, K>
 
 export type DrawingTool =
   | { kind: 'dimension'; picks: { view: Id; feature: Pickable }[] }
-  | { kind: 'section'; vertical?: boolean }
+  | { kind: 'section'; vertical?: boolean; slant?: boolean }
   | { kind: 'detail' }
   | { kind: 'surface' }
   /**
@@ -666,8 +666,26 @@ export class DrawingStore {
       const turned = lines ? turnLines(lines, viewVectors(direction), axes) : null;
       if (turned) return turned;
     }
+    // a direction no palette view looks along (a slanted section, D-I5): the part projected that way, asked of the worker once and kept with the views' lines;
+    // null until it comes, and then the preview is drawn again
+    const base = this.requestOf(this.probe(pal.source, 'front'));
+    if (!base) return null;
+    const id = `${base.key}|${JSON.stringify(axes)}|`;
+    const found = this.cache.get(id);
+    if (found) return 'error' in found ? null : found;
+    if (!this.asked.has(id)) {
+      this.asked.add(id);
+      void this.host.api.drawingViews([{ parts: base.parts, axes }]).then(([r]) => {
+        if (this.closed || !r) return;
+        this.cache.set(id, 'error' in r ? { error: r.error } : r.lines);
+        if (this.state.palette) this.set({ palette: { ...this.state.palette } });
+      });
+    }
     return null;
   }
+
+  /** The previews of a direction asked of the worker and not yet come (`linesForAxes`). */
+  private readonly asked = new Set<string>();
 
   /** A view from the palette put where the pointer let it go (sheet mm); then projected views of it are offered, as SolidWorks does. */
   placeModelView(source: string, direction: ViewName, at: [number, number]): Id | null {
@@ -784,6 +802,8 @@ export class DrawingStore {
           const source = path === null ? undefined : this.state.sources.get(path);
           if (found && 'error' in found) problems.set(v.id, found.error);
           else if (source && (source.status === 'missing' || source.status === 'error')) problems.set(v.id, source.message);
+          // a section whose line misses the part cuts nothing: said, not drawn as if it were a section (D-I5)
+          else if (v.kind === 'section' && found && sectionMissed(found)) problems.set(v.id, t('drawing.sectionMisses', { label: v.label }));
           lines.set(v.id, found && !('error' in found) ? found : null);
         }
         this.set({ lines, problems, computing: false });

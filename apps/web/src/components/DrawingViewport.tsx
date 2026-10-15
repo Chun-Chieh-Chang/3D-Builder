@@ -24,6 +24,7 @@ import {
   ratio,
   sideAt,
   snapCut,
+  lineAcrossBox,
   scaleFromRatio,
   scaleTarget,
   segmentDistance,
@@ -41,7 +42,7 @@ import {
   type SceneItem,
   type ViewLines,
 } from '@3db/drawing';
-import { axesOf, oppositeSide, projectedAxes, type Annotation, type Attachment, sectionArrow, sectionAxes, type Dimension, type DrawingView, type Id, type Scale, type SectionDrawingView, type SurfaceFinish, type ViewSide } from '@3db/model';
+import { axesOf, oppositeSide, projectedAxes, type Annotation, type Attachment, sectionArrow, sectionLookAxes, type Dimension, type DrawingView, type Id, type Scale, type SectionDrawingView, type SurfaceFinish, type ViewSide } from '@3db/model';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { store, useStore } from '../state/store';
 import type { DrawingPick } from '../state/drawing';
@@ -67,7 +68,7 @@ type Drag =
   | { kind: 'surface'; id: string; from: P; origin: P; delta: P }
   /** An annotation (D-I3) moved as a whole; its leader's point stays on the feature. `delta` is in sheet mm. */
   | { kind: 'annotation'; id: string; from: P; delta: P }
-  | { kind: 'draw'; tool: 'section' | 'detail'; vertical?: boolean; view: Id; from: P; to: P }
+  | { kind: 'draw'; tool: 'section' | 'detail'; vertical?: boolean; slant?: boolean; view: Id; from: P; to: P }
   /** The last click of a section or a detail: where its view goes. `free` (Ctrl held): put where the pointer is, not in line with the parent. */
   | { kind: 'placeDraw'; placement: DrawPlacement; from: P; to: P; free: boolean }
   /** A box dragged over the paper from where nothing was (D-I1a): what it holds is chosen; with Ctrl it is added to what was. */
@@ -444,7 +445,7 @@ export function DrawingViewport() {
       }
       capture(e);
       d.select(view.id);
-      setDrag({ kind: 'draw', tool: tool.kind, ...(tool.kind === 'section' ? { vertical: tool.vertical ?? true } : {}), view: view.id, from: p, to: p });
+      setDrag({ kind: 'draw', tool: tool.kind, ...(tool.kind === 'section' ? { vertical: tool.vertical ?? true, ...(tool.slant ? { slant: true } : {}) } : {}), view: view.id, from: p, to: p });
       return;
     }
     // Ctrl (⌘ on a Mac) and a click: what is under the pointer is added to what is chosen, or taken out of it; nothing is dragged
@@ -653,7 +654,8 @@ export function DrawingViewport() {
       }
     } else if (drag?.kind === 'draw') {
       if (Math.hypot(drag.to[0] - drag.from[0], drag.to[1] - drag.from[1]) < 3) {
-        if (drag.tool === 'section') {
+        // a press with no drag: a vertical or horizontal cut is made there; a slanted one (like a detail's circle) waits for the second click, its direction
+        if (drag.tool === 'section' && !drag.slant) {
           const placement = makeDrawPlacement({ ...drag, to: drag.from });
           if (placement) {
             setPendingPlacement(placement);
@@ -818,6 +820,15 @@ export function DrawingViewport() {
       }
       return { tool: 'detail', view: g.view, centre: [round2(at[0]), round2(at[1])], radius: round2(radius) };
     }
+    if (g.slant) {
+      // a slanted cut (D-I5): through the first point, along the drag (or toward the second click), across the whole view
+      const line = lineAcrossBox(at, toView(placed, g.to), box, 5);
+      if (!line) {
+        d.notifyInfo(t('drawingUi.hint.sectionSlant'));
+        return null;
+      }
+      return { tool: 'section', view: g.view, line: [[round2(line[0][0]), round2(line[0][1])], [round2(line[1][0]), round2(line[1][1])]] };
+    }
     const dx = Math.abs(g.to[0] - g.from[0]);
     const dy = Math.abs(g.to[1] - g.from[1]);
     // a press with no drag is a cut of the kind chosen (vertical unless horizontal was); a drag is along the line it draws
@@ -880,11 +891,13 @@ export function DrawingViewport() {
     const parentPlaced = basePlaced.get(placement.view);
     const parentAxes = parent && axesOf(drw.doc.views, drw.doc.sheet.projection, parent);
     if (!parent || !parentPlaced || !parentAxes) return null;
-    const vertical = placement.line[0][0] === placement.line[1][0];
+    // a line nearer vertical has its arrows nearer horizontal, so the section goes left or right of the parent (a slanted line too, D-I5)
+    const [[x0, y0], [x1, y1]] = placement.line;
+    const vertical = Math.abs(x1 - x0) <= Math.abs(y1 - y0);
     const side: ViewSide = vertical ? (p[0] >= parentPlaced.at[0] ? 'right' : 'left') : p[1] >= parentPlaced.at[1] ? 'up' : 'down';
     const arrow = drw.doc.sheet.projection === 'first' ? side : oppositeSide(side);
     const flip = sectionArrow({ line: placement.line }) !== arrow;
-    const lines = d.linesForAxes(sectionAxes(parentAxes, arrow));
+    const lines = d.linesForAxes(sectionLookAxes(parentAxes, { line: placement.line, ...(flip ? { flip } : {}) }));
     if (!lines) return null;
     const label = d.peekLabel();
     const view: SectionDrawingView = { id: 'ghost', name: '', kind: 'section', parent: placement.view, line: placement.line, label, ...(flip ? { flip: true } : {}) };
@@ -917,7 +930,7 @@ export function DrawingViewport() {
       : tool?.kind === 'surface'
       ? t('drawingUi.toolSurfaceFinish')
       : tool
-      ? t(tool.kind === 'section' ? 'drawingUi.hint.section' : 'drawingUi.hint.detail')
+      ? t(tool.kind === 'section' ? (tool.slant ? 'drawingUi.hint.sectionSlant' : 'drawingUi.hint.section') : 'drawingUi.hint.detail')
       : drw.doc.views.length === 0
       ? t('drawingUi.mainViewFirst')
       : null;
@@ -955,11 +968,8 @@ export function DrawingViewport() {
       if (hover?.ctrl || (drag?.kind === 'placeDraw' && drag.free)) {
         const parent = drw.doc.views.find((v) => v.id === placement.view);
         const parentAxes = parent && axesOf(drw.doc.views, drw.doc.sheet.projection, parent);
-        const vertical = placement.line[0][0] === placement.line[1][0];
-        const arrow = sectionArrow({ line: placement.line });
-        const lines = parentAxes ? d.linesForAxes(sectionAxes(parentAxes, arrow)) : null;
+        const lines = parentAxes ? d.linesForAxes(sectionLookAxes(parentAxes, { line: placement.line })) : null;
         const placed = ghostAt(lines, p, basePlaced.get(placement.view)?.scale);
-        void vertical;
         return placed && lines ? { placed, lines, label: d.peekLabel() } : null;
       }
       const g = sectionGhost(placement, p);
@@ -969,7 +979,8 @@ export function DrawingViewport() {
   })();
   // before the press of the section tool: the cutting line where it would go over the view under the pointer, snapped
   const cutPreview = (() => {
-    if (tool?.kind !== 'section' || drag || pendingDraw || pendingPlacement || !hover) return null;
+    // a slanted line has no direction before the press: nothing to preview yet
+    if (tool?.kind !== 'section' || tool.slant || drag || pendingDraw || pendingPlacement || !hover) return null;
     const view = viewUnder(hover.p);
     const placed = view && basePlaced.get(view.id);
     const box = view && drw.lines.get(view.id)?.box;
@@ -1067,6 +1078,11 @@ export function DrawingViewport() {
           {plan && <Highlight items={built.scene.items.filter((i) => i.group === 'preview')} height={sheet.height} color="#1c7ed6" />}
           {drawn && drawnPlaced && drawn.tool === 'detail' && <circle cx={drawn.from[0]} cy={sheet.height - drawn.from[1]} r={Math.hypot(drawn.to[0] - drawn.from[0], drawn.to[1] - drawn.from[1])} fill="none" stroke="#1c7ed6" strokeWidth={0.5} strokeDasharray="2 1" />}
           {drawn && drawnPlaced && drawn.tool === 'section' && (() => {
+            if (drawn.slant) {
+              const box = { min: [drawnPlaced.at[0] - drawnPlaced.w / 2, drawnPlaced.at[1] - drawnPlaced.h / 2] as const, max: [drawnPlaced.at[0] + drawnPlaced.w / 2, drawnPlaced.at[1] + drawnPlaced.h / 2] as const };
+              const across = Math.hypot(drawn.to[0] - drawn.from[0], drawn.to[1] - drawn.from[1]) >= 3 ? lineAcrossBox(drawn.from, drawn.to, box, 5) : null;
+              return across ? <line data-slant-preview x1={across[0][0]} y1={sheet.height - across[0][1]} x2={across[1][0]} y2={sheet.height - across[1][1]} stroke="#1c7ed6" strokeWidth={0.6} strokeDasharray="6 2 1 2" /> : null;
+            }
             const horizontal = Math.max(Math.abs(drawn.to[0] - drawn.from[0]), Math.abs(drawn.to[1] - drawn.from[1])) >= 3 && Math.abs(drawn.to[0] - drawn.from[0]) > Math.abs(drawn.to[1] - drawn.from[1]);
             const half = (horizontal ? drawnPlaced.w : drawnPlaced.h) / 2 + 5;
             return horizontal ? (
@@ -1121,11 +1137,14 @@ export function DrawingViewport() {
       </div>
       {tool?.kind === 'section' && !pendingPlacement && (
         <div className="heads-up drawing-toolopts" data-section-type style={{ top: 44 }}>
-          <button className={tool.vertical !== false ? 'active' : ''} data-action="sectionVertical" onClick={() => d.setTool({ kind: 'section', vertical: true })}>
+          <button className={!tool.slant && tool.vertical !== false ? 'active' : ''} data-action="sectionVertical" onClick={() => d.setTool({ kind: 'section', vertical: true })}>
             {t('drawingUi.sectionVertical')}
           </button>
-          <button className={tool.vertical === false ? 'active' : ''} data-action="sectionHorizontal" onClick={() => d.setTool({ kind: 'section', vertical: false })}>
+          <button className={!tool.slant && tool.vertical === false ? 'active' : ''} data-action="sectionHorizontal" onClick={() => d.setTool({ kind: 'section', vertical: false })}>
             {t('drawingUi.sectionHorizontal')}
+          </button>
+          <button className={tool.slant ? 'active' : ''} data-action="sectionSlant" title={t('drawingUi.hint.sectionSlant')} onClick={() => d.setTool({ kind: 'section', slant: true })}>
+            {t('drawingUi.sectionSlant')}
           </button>
         </div>
       )}

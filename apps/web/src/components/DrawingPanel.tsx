@@ -654,7 +654,8 @@ export function DrawingPanel() {
                 onChange={(e) => {
                   const next = e.target.value === 'v';
                   setVertical(next);
-                  if (drw.tool?.kind === 'section') d.setTool({ ...drw.tool, vertical: next });
+                  // choosing vertical or horizontal here leaves the slanted line of the viewport's choices (D-I5)
+                  if (drw.tool?.kind === 'section') d.setTool({ kind: 'section', vertical: next });
                 }}
               >
                 <option value="v">{t('drawingUi.sectionVertical')}</option>

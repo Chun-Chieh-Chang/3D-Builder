@@ -13,7 +13,7 @@ import { ANNOTATION_FIELDS, checkAnnotation, framesUsing, type Annotation, type 
  * opened (exact hidden-line removal), so a drawing can never disagree with the model it shows.
  */
 
-export const DRAWING_SCHEMA_VERSION = 16;
+export const DRAWING_SCHEMA_VERSION = 17;
 
 export type SheetSize = 'A4' | 'A3' | 'A2' | 'A1' | 'A0';
 export const SHEET_SIZES: readonly SheetSize[] = ['A4', 'A3', 'A2', 'A1', 'A0'];
@@ -569,7 +569,6 @@ function checkView(v: DrawingView, views: readonly DrawingView[]): void {
   if (v.kind === 'section') {
     const [[x0, y0], [x1, y1]] = v.line;
     if (![x0, y0, x1, y1].every(Number.isFinite) || Math.hypot(x1 - x0, y1 - y0) < 1e-9) throw new CommandError(t('drawing.badSectionLine'));
-    if (Math.abs(x1 - x0) > 1e-9 && Math.abs(y1 - y0) > 1e-9) throw new CommandError(t('drawing.sectionAxisOnly'));
     if (!v.label.trim()) throw new CommandError(t('drawing.labelEmpty'));
   }
   if (v.kind === 'detail') {
@@ -1045,13 +1044,21 @@ export function projectedAxes(parent: ViewAxes, side: ViewSide, projection: Draw
 
 /** The way the arrows of a section line point in the parent's sheet: to the right of the line from its first point to its second (the left with `flip`), by the nearer axis. */
 export function sectionArrow(v: Pick<SectionDrawingView, 'line' | 'flip'>): ViewSide {
-  const [[x0, y0], [x1, y1]] = v.line;
-  const dx = x1 - x0;
-  const dy = y1 - y0;
-  // a vertical line (dx = 0) has the arrows horizontal; a horizontal line has them vertical; the right of (dx, dy) is (dy, -dx)
-  const [ax, ay] = [dy, -dx];
+  const [ax, ay] = sectionDirection(v);
   const side: ViewSide = Math.abs(ax) >= Math.abs(ay) ? (ax >= 0 ? 'right' : 'left') : ay >= 0 ? 'up' : 'down';
-  return v.flip ? oppositeSide(side) : side;
+  return side;
+}
+
+/**
+ * The direction the arrows of a section line point in, on the parent's sheet (unit): to the right of the line from its first point to its
+ * second, the left with `flip`. Any angle (C-D-I5): a vertical line has them horizontal, a horizontal one vertical, a slanted one between.
+ */
+export function sectionDirection(v: Pick<SectionDrawingView, 'line' | 'flip'>): [number, number] {
+  const [[x0, y0], [x1, y1]] = v.line;
+  const len = Math.hypot(x1 - x0, y1 - y0);
+  // the right of (dx, dy) is (dy, -dx)
+  const s = v.flip ? -1 : 1;
+  return [(s * (y1 - y0)) / len, (-s * (x1 - x0)) / len];
 }
 
 /** The direction of a section view: it looks along the arrows. */
@@ -1069,6 +1076,25 @@ export function sectionAxes(parent: ViewAxes, arrow: ViewSide): ViewAxes {
   }
 }
 
+/**
+ * The direction of a section view on any section line (C-D-I5). A line along an axis of the sheet looks as `sectionAxes` does. A slanted
+ * line looks along its arrows' direction on the sheet, in the parent's plane; its up is the parent's direction (the depth) when the
+ * arrows are nearer up or down, and the sheet's up turned to stay square to it when they are nearer right or left (the same frames as
+ * the four axis cases, so it changes continuously with the angle at the cases' sides).
+ */
+export function sectionLookAxes(parent: ViewAxes, v: Pick<SectionDrawingView, 'line' | 'flip'>): ViewAxes {
+  const [ax, ay] = sectionDirection(v);
+  if (ax === 0 || ay === 0) return sectionAxes(parent, sectionArrow(v));
+  const r = rightOf(parent);
+  const u = unit(parent.up);
+  const d = unit(parent.dir);
+  const along: V3 = [ax * r[0] + ay * u[0], ax * r[1] + ay * u[1], ax * r[2] + ay * u[2]];
+  if (Math.abs(ay) > Math.abs(ax)) return { dir: along, up: ay > 0 ? neg(d) : d };
+  // the sheet's up, turned by the same angle as the arrows: square to them, on the side the arrows' x points
+  const turned: V3 = [-ay * r[0] + ax * u[0], -ay * r[1] + ax * u[1], -ay * r[2] + ax * u[2]];
+  return { dir: along, up: ax > 0 ? turned : neg(turned) };
+}
+
 /** The side of the parent a section view is placed on: third angle, the side the viewer is on (opposite the arrows); first angle, the arrows' side. */
 export const sectionSide = (arrow: ViewSide, projection: DrawingSheet['projection']): ViewSide => (projection === 'first' ? arrow : oppositeSide(arrow));
 
@@ -1077,7 +1103,7 @@ export function sectionPlane(parent: ViewAxes, v: SectionDrawingView): { origin:
   const r = rightOf(parent);
   const u = unit(parent.up);
   const [[x0, y0]] = v.line;
-  const a = sectionAxes(parent, sectionArrow(v));
+  const a = sectionLookAxes(parent, v);
   return { origin: [x0 * r[0] + y0 * u[0], x0 * r[1] + y0 * u[1], x0 * r[2] + y0 * u[2]], normal: neg(a.dir) };
 }
 
@@ -1098,7 +1124,7 @@ export function axesOf(views: readonly DrawingView[], projection: DrawingSheet['
     case 'projected':
       return projectedAxes(base, view.side, projection);
     case 'section':
-      return sectionAxes(base, sectionArrow(view));
+      return sectionLookAxes(base, view);
     case 'detail':
       return base;
   }

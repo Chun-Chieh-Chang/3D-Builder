@@ -310,6 +310,9 @@ const drawingMigrations: Record<number, (doc: Json) => Json> = {
   14: (doc) => doc,
   // v16: ordinate dimensions (D-I4, ADR 0139): a new kind of dimension; nothing to convert, the version keeps older programs from opening what they cannot draw.
   15: (doc) => doc,
+  // v17: a section line may be slanted (D-I5): nothing to convert; the version keeps an older program, which would look along the nearer axis, from
+  // opening a drawing whose sections it would draw from the wrong direction.
+  16: (doc) => doc,
 };
 
 export function parseDrawing(text: string): DrawingDoc {

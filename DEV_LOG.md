@@ -1,5 +1,30 @@
 # 3D-Builder 開發日誌 (DEV_LOG.md)
 
+## 2026-10-15：D-I5 第一部分——任意角度的剖面線（[ADR 0142](docs/adr/0142-drawing-slanted-section.md)，工程圖 Schema 17）
+
+### 1. 範圍
+使用者確認的 D-I5 第一部分（任意角度＋階梯剖面）。**本批只完成任意角度；階梯與對正剖面未做**（需把 `line` 改成折線並在核心做多平面切割，另起 ADR）。
+
+### 2. 做法
+| 層 | 檔案 | 內容 |
+|---|---|---|
+| 模型 | `packages/model/src/drawing.ts`、`serialize.ts` | 移除 `sectionAxisOnly`；新增 `sectionDirection`、`sectionLookAxes`（軸向線沿用 `sectionAxes`）；`sectionPlane`、`axesOf` 改用之；Schema 16→17（遷移空轉）。 |
+| 核心 | `packages/kernel/src/kernel.ts` | `sectionView` 切光時回傳空視圖與空 `cut`，不再讓 HLR 丟 `Bnd_Box is void`。 |
+| 圖面 | `packages/drawing/src/{layout,scene}.ts` | `sectionMissed`、`lineAcrossBox`；剖面箭頭改畫真實方向。 |
+| 介面 | `DrawingViewport.tsx`、`DrawingPanel.tsx`、`state/drawing.ts`、i18n | 「斜向剖面線」選項（拖曳或點兩下）、虛線預覽、放置預覽（新方向向 worker 要投影並快取）、沒切到零件的問題訊息。 |
+
+### 3. 自我紅隊四問（AGENTS.md §2.1）
+1. **輸入破壞**：端點重合仍以 `badSectionLine` 拒絕；`lineAcrossBox` 對同點、NaN、無限大 pad、線在框外皆回 null（單元測試）；介面拖曳 < 3 px 時等第二下，不會產生零長線。
+2. **幾何退化**：剖面線落在零件外（整個零件被切光）原本讓核心丟出看不懂的 `Bnd_Box is void`——以測試發現並修正為空 `cut`＋明確訊息。斜方向的視圖座標系以 1°～179° 每 7° 驗正交、單位長、與母視圖視向垂直。
+3. **依賴鏈完整性**：`checkView` → `sectionLookAxes` → `sectionPlane`／`axesOf` → `layout`（放置側仍取最接近的軸）→ `scene`（箭頭）→ 核心切割 → 介面預覽與放置 → 存檔（Schema 17）全鏈修改；e2e 存檔再開，斜線原樣保留、`schemaVersion` 17。
+4. **零 Mock**：面積以 OCCT 實際切出的面外框鏈成迴圈後鞋帶公式計算，對照手算解析值（對角線 600、30°、100 條隨機線，< 1e-3）。**第一版測試寫錯**：把每條邊的折線各自算鞋帶面積，誤差 27%；查明核心回傳的是「每條邊一段」而非封閉迴圈，改為先鏈接再計算（不是放寬門檻）。反向對照：`sectionPlane` 改回舊的軸向平面，3 項幾何測試失敗，還原後通過。
+
+### 4. 確效與品質驗收
+- `npm run typecheck`：0 錯誤；`lint:deps`／`lint:rules`／`lint:i18n`：全過。
+- 全量 vitest：**2782 過、24 略過、0 失敗**（217 檔過、4 檔略過）。之後只改了介面預覽（`linesForAxes`）、側邊欄選單與 e2e 腳本，typecheck 重跑 0 錯誤。
+- `verify:ui --only "slanted-section|drawing|section"`：**8/8**（新腳本 `manual-drawing-slanted-section.js` 5/5；`manual-asm-section`、`manual-drawing-annotate`、`manual-drawing-linked`、`manual-drawing-menus`、`manual-drawing-open-part`、`manual-section-drag`、`phase5-drawing`）。全量 `verify:ui` 未跑。
+- 在乾淨的 worktree（`origin/main` = `ff4f8ae`，`npm ci`）上開發與驗證；主檢出的另一工作階段未提交檔未碰。
+
 ## 2026-10-14（晚二）：10-14b 決策頁執行——B1 方塊首頁鈕、B2「正視於」全套比照 SolidWorks、C2① 爆炸後「全部顯示」、C3 c13 階梯板＋肋邊圓角、C1 手冊 11 處、D2
 
 ### 1. 範圍

@@ -2666,6 +2666,9 @@ export class Kernel {
       made.push(tool);
       const cut = this.boolean('cut', id, tool);
       made.push(cut.shape);
+      // the whole shape is on the viewer's side, so the cut takes all of it (a line put off the part, D-I5): nothing to see and nothing cut, said by the
+      // empty `cut` rather than by the hidden-line removal failing on an empty shape
+      if (this.topology(cut.shape).faces.length === 0) return { visible: [], hidden: [], box: null, cut: [] };
       const view: ViewDirection = { dir: [-n[0], -n[1], -n[2]], up };
       const seen = this.projectView(cut.shape, view, options);
       // the faces the cut made lie on the plane and face the viewer; their edges, in the view's coordinates

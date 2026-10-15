@@ -1,5 +1,5 @@
 import { getLocale, t, withLocale } from '@3db/i18n';
-import { axesOf, sectionArrow, type DetailDrawingView, type DrawingDoc, type DrawingView, type Id, type Scale, type SectionDrawingView, type TitleField, type ViewFeature, type ViewSide } from '@3db/model';
+import { axesOf, sectionDirection, type DetailDrawingView, type DrawingDoc, type DrawingView, type Id, type Scale, type SectionDrawingView, type TitleField, type ViewFeature } from '@3db/model';
 import { centreItems, holeRows, holeTableBox, holeTableItems, threadItems, type HoleRow } from './annotation';
 import { annotationItems } from './gdt';
 import { balloonSpots, bomTableBox, bomTableItems, spotItems, type BalloonSpot, type ViewBom } from './bomTable';
@@ -136,14 +136,12 @@ export function viewItems(view: DrawingView, lines: ViewLines | null | undefined
   return items;
 }
 
-const ARROW: Record<ViewSide, [number, number]> = { right: [1, 0], left: [-1, 0], up: [0, 1], down: [0, -1] };
-
 /** The cutting plane line of a section on its parent view, with the arrows at its ends and the letter beside each; and the section's own title. */
 function sectionItems(v: SectionDrawingView, parent: PlacedView, own: PlacedView): SceneItem[] {
   const [[x0, y0], [x1, y1]] = v.line;
   const a = toSheet(parent, x0, y0);
   const b = toSheet(parent, x1, y1);
-  const dir = ARROW[sectionArrow(v)];
+  const dir = sectionDirection(v);
   const shaft = 8;
   const head = 3;
   const items: SceneItem[] = [{ kind: 'polyline', points: [...a, ...b], style: 'center' }];

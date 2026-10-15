@@ -12,6 +12,7 @@ import {
   projectedAxes,
   sectionArrow,
   sectionAxes,
+  sectionLookAxes,
   sectionPlane,
   sectionSide,
   sourceOf,
@@ -69,6 +70,35 @@ describe('where a derived view looks from', () => {
     close(plane.normal, [-1, 0, 0]); // the viewer looks along +x, so the side to take away is toward -x
   });
 
+  it('a slanted section (C-D-I5): looks along its arrows in the parent\'s plane, square to the parent\'s direction, and the plane holds the line', () => {
+    const v = (line: SectionDrawingView['line']): SectionDrawingView => ({ id: 's', kind: 'section', name: 'A', parent: 'p', line, label: 'A' });
+    const s = Math.SQRT1_2;
+    // 45° up to the right: the arrows point to the right and down, so it looks along (1, -1, 0)/√2 in front's frame
+    const diag = v([[0, 0], [10, 10]]);
+    const look = sectionLookAxes(front, diag);
+    close(look.dir, [s, -s, 0]);
+    close(look.up, [s, s, 0]);
+    const plane = sectionPlane(front, diag);
+    close(plane.normal, [-s, s, 0]);
+    close(plane.origin, [0, 0, 0]);
+    // the plane holds the line: its normal is square to (1, 1, 0)
+    expect(plane.normal[0] * 1 + plane.normal[1] * 1).toBeCloseTo(0, 9);
+    // nearer up or down: the depth is the up, and the look stays in the plane
+    const steep = sectionLookAxes(front, v([[0, 0], [40, 10]]));
+    close(steep.up, viewVectors('front').dir);
+    expect(steep.dir[2]).toBeCloseTo(0, 9);
+    // every slanted line gives an orthonormal frame, the direction square to the parent's, for any angle 1°..179°
+    for (let deg = 1; deg < 180; deg += 7) {
+      const t = (deg * Math.PI) / 180;
+      const a = sectionLookAxes(front, v([[0, 0], [Math.cos(t), Math.sin(t)]]));
+      const len = (x: readonly number[]) => Math.hypot(...x);
+      expect(len(a.dir)).toBeCloseTo(1, 9);
+      expect(len(a.up)).toBeCloseTo(1, 9);
+      expect(a.dir[0] * a.up[0] + a.dir[1] * a.up[1] + a.dir[2] * a.up[2]).toBeCloseTo(0, 9);
+      expect(a.dir[2] * viewVectors('front').dir[2]).toBeCloseTo(0, 9);
+    }
+  });
+
   it('is found through the parents, and the source of a derived view is its root\'s', () => {
     const doc: DrawingDoc = applyDrawingCommand(createEmptyDrawing(), {
       type: 'insertViews',
@@ -88,12 +118,13 @@ describe('where a derived view looks from', () => {
 describe('the derived views in the document', () => {
   const base = (): DrawingDoc => applyDrawingCommand(createEmptyDrawing(), { type: 'insertViews', views: [{ id: 'view1', name: '前視', source: 'a.3dbx', direction: 'front' }] });
 
-  it('checks each kind: a parent that is there, a section line that is horizontal or vertical, a letter, a radius', () => {
+  it('checks each kind: a parent that is there, a section line that is not a point, a letter, a radius', () => {
     const d = base();
     const insert = (v: DrawingView) => applyDrawingCommand(d, { type: 'insertViews', views: [v] });
     expect(() => insert({ id: 'view2', name: 'x', kind: 'projected', parent: 'zzz', side: 'right' })).toThrow(/母視圖/);
     expect(() => insert({ id: 'view2', name: 'x', kind: 'projected', parent: 'view1', side: 'sideways' as never })).toThrow(/側邊/);
-    expect(() => insert({ id: 'view2', name: 'A', kind: 'section', parent: 'view1', line: [[0, 0], [5, 5]], label: 'A' })).toThrow(/水平或垂直/);
+    // a slanted section line is allowed (C-D-I5): it is placed by its nearer axis
+    expect(insert({ id: 'view2', name: 'A', kind: 'section', parent: 'view1', line: [[0, 0], [5, 5]], label: 'A' }).views).toHaveLength(2);
     expect(() => insert({ id: 'view2', name: 'A', kind: 'section', parent: 'view1', line: [[0, 0], [0, 0]], label: 'A' })).toThrow(/重合/);
     expect(() => insert({ id: 'view2', name: 'A', kind: 'section', parent: 'view1', line: [[0, 0], [0, 5]], label: ' ' })).toThrow(/字母/);
     expect(() => insert({ id: 'view2', name: 'B', kind: 'detail', parent: 'view1', centre: [0, 0], radius: 0, label: 'B' })).toThrow(/半徑/);
@@ -121,7 +152,9 @@ describe('the derived views in the document', () => {
     expect(d.views[1]).not.toHaveProperty('flip');
     expect(() => applyDrawingCommand(d, { type: 'setView', viewId: 'view2', patch: { direction: 'top' } })).toThrow(/不屬於/);
     expect(() => applyDrawingCommand(d, { type: 'setView', viewId: 'view1', patch: { flip: true } })).toThrow(/不屬於/);
-    expect(() => applyDrawingCommand(d, { type: 'setView', viewId: 'view2', patch: { line: [[0, 0], [3, 3]] } })).toThrow(/水平或垂直/);
+    // a slanted line is allowed (C-D-I5); one that is a point is not
+    expect(applyDrawingCommand(d, { type: 'setView', viewId: 'view2', patch: { line: [[0, 0], [3, 3]] } }).views[1]).toMatchObject({ line: [[0, 0], [3, 3]] });
+    expect(() => applyDrawingCommand(d, { type: 'setView', viewId: 'view2', patch: { line: [[3, 3], [3, 3]] } })).toThrow(/重合/);
   });
 
   it('is a version-1 drawing read as the current version: nothing to convert but the empty list of dimensions', async () => {

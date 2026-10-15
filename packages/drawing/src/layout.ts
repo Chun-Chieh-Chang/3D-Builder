@@ -14,6 +14,43 @@ export interface ViewLines {
   anchors?: [number, number][];
 }
 
+/**
+ * Whether the lines of a section cut nothing (D-I5): its plane misses the part, so there is no face to hatch. A slanted line is easily put
+ * off the part; that is an error to show, not a section to draw. Lines that are not a section's (no `cut` at all) are not this.
+ */
+export const sectionMissed = (lines: Pick<ViewLines, 'cut'>): boolean => Array.isArray(lines.cut) && lines.cut.length === 0;
+
+/**
+ * A slanted cutting line (D-I5): the line through `at` along `toward − at`, run across the view's box grown by `pad` on every side, so that it
+ * crosses the whole view as a horizontal or vertical one does. Null when the two points are the same, or the line passes outside the grown box.
+ */
+export function lineAcrossBox(at: readonly [number, number], toward: readonly [number, number], box: { min: readonly [number, number]; max: readonly [number, number] }, pad: number): [[number, number], [number, number]] | null {
+  const dx = toward[0] - at[0];
+  const dy = toward[1] - at[1];
+  const len = Math.hypot(dx, dy);
+  if (!(len > 1e-9) || ![...at, ...toward, pad].every(Number.isFinite)) return null;
+  const d = [dx / len, dy / len] as const;
+  let lo = -Infinity;
+  let hi = Infinity;
+  for (const k of [0, 1] as const) {
+    const min = box.min[k] - pad;
+    const max = box.max[k] + pad;
+    if (Math.abs(d[k]) < 1e-12) {
+      if (at[k] < min || at[k] > max) return null;
+      continue;
+    }
+    const a = (min - at[k]) / d[k];
+    const b = (max - at[k]) / d[k];
+    lo = Math.max(lo, Math.min(a, b));
+    hi = Math.min(hi, Math.max(a, b));
+  }
+  if (!(hi - lo > 1e-9)) return null;
+  return [
+    [at[0] + lo * d[0], at[1] + lo * d[1]],
+    [at[0] + hi * d[0], at[1] + hi * d[1]],
+  ];
+}
+
 /** A view placed on the sheet: the middle of its box (mm), the scale as a number, and the size it takes (mm). */
 export interface PlacedView {
   id: Id;
