@@ -1,8 +1,12 @@
 # 交接文件
 
-- **【2026-10-15 晚三：新工程圖在「最適比例」前存檔（Claude，[ADR 0147](docs/adr/0147-drawing-fit-before-save.md)）— 見 `git log`】** ADR 0146 確效時發現的既有行為：存檔後最適比例才發生，工程圖變成未存檔、開零件被「要儲存變更嗎？」擋住。使用者以選擇題裁定「等候＋併入同一步」（建議選項）。
+- **【2026-10-15 晚三：新工程圖在「最適比例」前存檔（Claude，[ADR 0147](docs/adr/0147-drawing-fit-before-save.md)）— 已提交並推送 `b966d26`（origin/main）】** ADR 0146 確效時發現的既有行為：存檔後最適比例才發生，工程圖變成未存檔、開零件被「要儲存變更嗎？」擋住。使用者以選擇題裁定「等候＋併入同一步」（建議選項）。
   - **完成**：`History.amend`（併入最後一步；無步驟時成為起始狀態）；自動最適比例改用它，使用者按的「最適比例」仍是一步；存檔對話框照常立即開，寫入前 `fitSettled()`——等到最適比例發生，或沒有任何零件讀取、線條、特徵請求在進行（不用逾時，核心失敗不會卡住）。移除 ADR 0146 在 `manual-drawing-open-part.js`、`manual-drawing-sw-parity.js` 加的「存檔前等 features」。
   - **驗收**：新 `drawing-fit-save.test.ts` 11 項、新 e2e `manual-drawing-save-before-fit.js` 5 步（攔住核心的特徵回覆，確定重現慢核心）；還原修正時單元 4 項、e2e 4 步失敗。typecheck 0、三項 lint 過；全量 vitest **2856 過、25 略過、0 失敗**；`verify:ui --only "drawing|section|phase5"` **20/20**。
+  - **工作環境**：在 worktree `.claude/worktrees/drawing-autoscale-save`（分支 `worktree-drawing-autoscale-save`，自 `origin/main` `ebb3e3a`）完成，推送為 `HEAD:main`。主資料夾的本地 `main` 仍在 `482a816`，落後 origin/main 3 個提交（`159b1bd`、`ebb3e3a`、`b966d26`），本工作階段未動它（別的工作階段可能在用）。
+  - **工具注意**：`VERIFY_UI_ORIGIN` 指到別的埠時，`verify-ui.mjs` **不會**在該埠啟動開發伺服器（它跑 `npm run dev`，固定 5391），要先自己以 `vite --port <埠>` 開好；回報只列前三個失敗步驟（`bad.slice(0, 3)`），反向對照時要看完整結果。
+  - **已知限制**：最適比例到來前使用者若又做了別的改動（例如拖動視圖），最適比例併入**那一步**而非放視圖那一步；核心失敗時存檔寫入未置中的版面，之後重算成功仍會最適比例並變成未存檔（版面確實變了，提示正確）；等候期間無額外進度提示。
+  - **待裁事項**：①是否清理本 worktree（已推送，內容全在 main；依全域規則 §8 須先同意）。②主資料夾本地 `main` 是否 `git pull --ff-only` 跟上 origin（會影響正在主資料夾工作的其他工作階段）。③上述「最適比例併入使用者下一個改動」是否可接受，或要改成記住放視圖那一步、只併入它（需改 `History` 以步驟識別）。④`verify-ui.mjs` 是否在自訂 `VERIFY_UI_ORIGIN` 時自動以該埠啟動開發伺服器（小工具改善）。
 - **【2026-10-15 晚二：選擇濾器比照 SolidWorks 工具列（Claude，[ADR 0145](docs/adr/0145-selection-filter-sw-toolbar.md)）— 見 `git log`】** 使用者要求「把專案的工具列交互設計比照 SW」，批准方案後動工；修訂 ADR 0043 決定 2 的**呈現**，語意核心（只縮小不放大）不變。
   - **完成**：濾器列預設隱藏（`SystemOptions.pickFilterBar` 記住），F5 顯示／隱藏、F6 清除（皆走 D3.3 registry，view 群、part 限定、可重綁）；面／邊線／頂點／基準面改**單選**（再點已選者不取消，比照 SW 按鈕保持按下）；列首 ✕（＝F5）與「清除」（＝F6）比照 SW 工具列；「開始時可以點選的元素」改 radio（全部＋四種），新增「顯示選擇濾器列」勾選。傳輸結構不變：`pickFilter` 四布林，viewer 協議與 picking() 交集未動；舊混合種子值保留，第一次點選收斂單選。
   - **驗收**：options.test 9/9；help 40/40；help-manual 同步；typecheck 0、三項 lint 過；全量 vitest **2814 過、25 略、0 失敗**；`verify:ui` **5/5**（manual-c21 步 2 重寫、manual-c22 optionOff／startedOff 改種「邊線」、manual-sketch-plane 步 11 用 radio 證雙向閘門）。全量 `verify:ui` 未跑（組合件、工程圖未改動）。
@@ -15,7 +19,7 @@
   - **事故（已處理，請知悉）**：本工作階段曾以相對路徑誤寫主資料夾 5 檔（14:0x），已還原；但主資料夾的另一工作階段在那之間提交推送了其中 4 檔（`4309412`，kernel `mesh?` 參數＋三個測試），又以 `c2d7cd0` 撤回測試部分。本提交包含完整版本，無衝突。AGENTS.md §4 已加「worktree 中 .NET 檔案 API 一律絕對路徑」。
   - **ADR 編號**：主資料夾另有未提交的 `0145-selection-filter-sw-toolbar.md`（別的工作階段），本項用 0146。
   - **測試修正**：`manual-drawing-menus.js` 第 6 步改用顯示樣式；`manual-drawing-open-part.js` 存檔前等視圖特徵——它在 origin/main 上與其他腳本同批跑就會失敗（新工程圖的「最適比例」在存檔後才發生，工程圖又變成未存檔）。
-  - **後續**：~~新工程圖剛建好就存檔，之後被自動「最適比例」改成未存檔~~（已由 [ADR 0147](docs/adr/0147-drawing-fit-before-save.md) 修正）；塗彩顏色固定不讀零件外觀；尺寸樣式不含註解／公差框／表格；`D:\Self-developed_Apps\G3\3DB-baseline`（origin/main 的對照 worktree）與 `3DB-drawing-fixes` 兩個 worktree 待使用者同意後清理。
+  - **後續**：~~新工程圖剛建好就存檔，之後被自動「最適比例」改成未存檔~~（已由 [ADR 0147](docs/adr/0147-drawing-fit-before-save.md) 修正）；塗彩顏色固定不讀零件外觀；尺寸樣式不含註解／公差框／表格；`D:\Self-developed_Apps\G3\3DB-baseline`、`3DB-drawing-fixes` 兩個 worktree（10-15 晚三確認：兩個路徑都已不存在，`git worktree list` 也沒有，已清理）。
 
 - **【2026-10-15 晚：組合件設計樹展開零件——零件自己的原點、基準面與特徵，拿來做結合（Claude，[ADR 0144](docs/adr/0144-assembly-component-datums-in-tree.md)，檔案格式不變）— 已提交並推送（見 `git log`）】** 使用者截圖回報「零件下沒有可展開的基準面」。Qoder 在 `docs/decisions-2026-10-14b.html` 列為 A1／A2，**之前沒有任何實作**；本次照兩題的建議選項做（頂層零件；座標系統只列出不結合）。在乾淨的 worktree（`origin/main` `718a57a`）完成。
   - **完成**：零件列有 ▸，展開＝原點、前／上／右基準面、零件特徵（參考基準面可選，其餘唯讀；失敗標紅、抑制變淡）；樹上點選（Ctrl 加選）的基準面與原點畫在圖面；按「結合」時帶入前兩個並建議類型；組合件自己的原點也可選；Esc 清空；展開狀態在結合面板關掉後仍在。命令層拒絕不合法的結合參考（`body`、未知種類、`plane:back`）。Worker 的零件資料多了特徵清單。
