@@ -7,7 +7,7 @@
   - **已知差異**：輸入框聚焦時 F5＝瀏覽器重新整理；舊混合種子值過渡顯示（列上無按下的種類，第一次點選收斂）。
 - **【2026-10-15 晚二：工程圖六項與 SolidWorks 對齊（Claude，[ADR 0146](docs/adr/0146-drawing-sw-parity-six.md)，工程圖 Schema 19）— 已提交並推送（見 `git log`）】** 使用者在「零件1」工程圖回報六項，驗收標準與四個設計選擇經使用者確認（全採建議）。在 worktree `D:\Self-developed_Apps\G3\3DB-drawing-fixes`（分支 `drawing-fixes`，rebase 到 `origin/main` `482a816`）完成。
   - **完成**：①設計樹最上方常駐「開啟零件：<檔名>」，檔案與視圖配置選單也有；②視圖顯示樣式五種（線架構／隱藏線可見／移除隱藏線／帶邊線塗彩／塗彩），塗彩以深度緩衝光柵化，螢幕、SVG、PDF 都有，DXF 只有線；新等角視圖預設帶邊線塗彩；③投影與剖面視圖右鍵「解除對齊」「預設對齊」；④⑤圖面尺寸樣式與單一尺寸覆寫（字高、箭頭長、實心／空心／斜線／圓點／無、線寬），超出範圍拒絕；⑥往斜角拖出的是該角的等角投影（第一／第三角法分開），跟著母視圖轉。Schema 18→19（`hidden` 遷移為 `display`）。
-  - **驗收**：typecheck 0、三項 lint 過；全量 vitest **2844 過、25 略過、0 失敗**；`verify:ui --only "drawing|section|phase5"` **19/19**（新 `manual-drawing-sw-parity.js` 14 步）；兩個突變各自讓單元與 e2e 失敗。全量 `verify:ui` 未跑。
+  - **驗收**：typecheck 0、三項 lint 過；全量 vitest **2845 過、25 略過、0 失敗**；`verify:ui --only "drawing|section|phase5"` **19/19**（新 `manual-drawing-sw-parity.js` 14 步）；兩個突變各自讓單元與 e2e 失敗。全量 `verify:ui` 未跑。
   - **記憶體**：塗彩一張視圖比不塗彩多約 0.015 MiB Heap（全新 Heap 各 2000 次隔離量測）；不宣稱 0。並更正 AGENTS.md §3.5「`projectView` 單獨 0」為被餘裕吸收（實測 2000 次 +25.6 MiB）。
   - **事故（已處理，請知悉）**：本工作階段曾以相對路徑誤寫主資料夾 5 檔（14:0x），已還原；但主資料夾的另一工作階段在那之間提交推送了其中 4 檔（`4309412`，kernel `mesh?` 參數＋三個測試），又以 `c2d7cd0` 撤回測試部分。本提交包含完整版本，無衝突。AGENTS.md §4 已加「worktree 中 .NET 檔案 API 一律絕對路徑」。
   - **ADR 編號**：主資料夾另有未提交的 `0145-selection-filter-sw-toolbar.md`（別的工作階段），本項用 0146。

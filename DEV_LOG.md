@@ -30,7 +30,7 @@
 
 ### 6. 確效與品質驗收
 - `typecheck` 0 錯誤；`lint:deps`／`lint:rules`／`lint:i18n` 全過。
-- 全量 vitest：**2844 過、25 略過、0 失敗**（223 檔過、4 檔略過）。新測試：`drawing-shade.test.ts` 13、`drawing-dim-style.test.ts` 12、`drawing-corner-align.test.ts` 5、`drawing-shade-memory.test.ts` 1。
+- 全量 vitest：**2845 過、25 略過、0 失敗**（223 檔過、4 檔略過）。新測試：`drawing-shade.test.ts` 13、`drawing-dim-style.test.ts` 12、`drawing-corner-align.test.ts` 5、`drawing-shade-memory.test.ts` 1。
 - `verify:ui --only "drawing|section|phase5"`：**19/19**（新 `manual-drawing-sw-parity.js` 14 步）。全量 `verify:ui` 未跑（零件模式未改動；跑全量會長時間佔用與其他工作階段共用的埠）。
 
 ## 2026-10-15（晚）：組合件設計樹展開零件——零件自己的原點、基準面與特徵，拿來做結合（[ADR 0144](docs/adr/0144-assembly-component-datums-in-tree.md)）

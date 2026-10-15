@@ -40,7 +40,7 @@
 | A6：四個角各自的等角方向（第一、第三角法分開），母視圖為六個標準視圖時皆正確，誤差 ≤ 1e-9 | `drawing-corner-align.test.ts`：六個母視圖 × 四角 × 兩種投影法，方向符號與 1/√3 皆驗證，四角四個不同方向 |
 | Schema 19＋遷移 | `drawing-shade.test.ts`：v18 的 true／false／未設定轉換結果 |
 | 反向對照 | 斜角一律回傳右上角的方向：單元 1 項、e2e 步驟 6b 失敗；尺寸文字高度寫死 3.5：單元 7 項、e2e 步驟 4/5a、4/5c 失敗；還原後全過 |
-| typecheck 0、lint 全過、全量 vitest 0 失敗 | 2844 過、25 略過、0 失敗 |
+| typecheck 0、lint 全過、全量 vitest 0 失敗 | 2845 過、25 略過、0 失敗 |
 | e2e | `manual-drawing-sw-parity.js` 14 步 PASS；工程圖／剖面／phase5 共 19 支一起跑全過（`manual-drawing-menus.js` 第 6 步改用顯示樣式；`manual-drawing-open-part.js` 存檔前等視圖特徵，見 DEV_LOG） |
 
 ## 記憶體（AGENTS.md §3.1、§3.5）
