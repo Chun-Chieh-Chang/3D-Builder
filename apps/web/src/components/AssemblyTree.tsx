@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useState } from 'react';
+import { Fragment, useEffect, useState, type MouseEvent } from 'react';
 import { t } from '@3db/i18n';
 import { activeExplosion, componentPatternLabels, explosionSteps, joinPath, type Component, type ComponentPattern, type Id, type Mate } from '@3db/model';
 import { componentName } from '@3db/io';
@@ -76,8 +76,7 @@ export function AssemblyTree() {
   const [menu, setMenu] = useState<Menu | null>(null);
   const [matesOpen, setMatesOpen] = useState(true);
   const returnTo = useStore((s) => s.returnTo);
-  /** Sub-assemblies shown opened, by component id. */
-  const [opened, setOpened] = useState<Set<Id>>(new Set());
+  const opened = asm.opened;
 
   useEffect(() => {
     if (!menu) return;
@@ -98,6 +97,52 @@ export function AssemblyTree() {
     return c ? componentInfo(asm, c).name : id;
   };
   const errors = asm.doc.mates.filter((m) => mateProblem(asm, m)).length;
+  const additive = (e: MouseEvent) => e.ctrlKey || e.shiftKey || e.metaKey;
+  const picked = (component: Id | null, name: string) => asm.picks.some((p) => p.component === component && !p.path?.length && p.ref.kind === 'datum' && p.ref.name === name);
+  /** A datum row (the assembly's, or a component's own): a click picks it, Ctrl adds it (see `picks`). */
+  const datumRow = (component: Id | null, id: string, label: string, icon: 'plane' | 'origin', indent?: number) => (
+    <li
+      key={`${component ?? ''}:${id}`}
+      {...(component ? { 'data-component-datum': `${component}:${id}` } : { 'data-asm-datum': id })}
+      className={`tree-row datum ${component ? 'component-datum' : ''} ${picked(component, id) ? 'selected' : ''}`}
+      style={indent ? { paddingLeft: indent } : undefined}
+      title={component ? t('tree.componentDatumTip') : undefined}
+      onClick={(e) => a?.pickDatum({ component, ref: { kind: 'datum', name: id } }, additive(e))}
+    >
+      <Icon name={icon} />
+      <span className="name">{label}</span>
+    </li>
+  );
+  /**
+   * What a part shows under its component when it is opened (as SolidWorks lists a part in an assembly): its origin and default planes, then its features in
+   * history order — read only, except its reference planes, which are datums to pick like the default ones.
+   */
+  const partRows = (c: Component) => {
+    const build = a?.buildOf(c.id);
+    if (!build) return null;
+    return (
+      <>
+        {DATUM_ITEMS.map((d) => datumRow(c.id, d.id, d.label, d.icon, 30))}
+        {build.features.map((f) =>
+          f.type === 'refPlane' && build.planes.some((p) => p.id === f.id) ? (
+            datumRow(c.id, f.id, f.name, 'plane', 30)
+          ) : (
+            <li
+              key={`${c.id}:${f.id}`}
+              data-component-feature={`${c.id}:${f.id}`}
+              className={`tree-row component-feature ${f.status === 'error' ? 'error' : ''} ${f.status === 'suppressed' ? 'suppressed' : ''}`}
+              style={{ paddingLeft: 30 }}
+              title={f.status === 'error' ? t('tree.componentFeatureFailed') : t('tree.componentFeatureTip')}
+            >
+              <Icon name={f.type} />
+              <span className="name">{f.name}</span>
+              {f.status === 'error' && <Icon name="error" className="status-error" />}
+            </li>
+          ),
+        )}
+      </>
+    );
+  };
 
   return (
     <div className="feature-tree">
@@ -112,18 +157,15 @@ export function AssemblyTree() {
         <span>{name}</span>
       </div>
       <ol className="tree-list">
-        {DATUM_ITEMS.map((d) => (
-          <li key={d.id} className={`tree-row datum ${asm.selected === d.id ? 'selected' : ''}`} onClick={() => d.icon === 'plane' && select(d.id)}>
-            <Icon name={d.icon} />
-            <span>{d.label}</span>
-          </li>
-        ))}
+        {DATUM_ITEMS.map((d) => datumRow(null, d.id, d.label, d.icon))}
         {asm.doc.components.map((c) => {
           const info = componentInfo(asm, c);
           const result = asm.solution?.components.get(c.id);
           const freedom = result && result.status === 'under' ? `可移動的自由度：${result.dof}` : undefined;
           const tip = [info.path && `檔案：${info.path}`, freedom, info.loading && `載入中：${info.loading}`, info.error, ...info.warnings].filter(Boolean).join('\n');
           const sub = !!a?.isSubAssembly(c.id);
+          // a part opens to show its own origin, planes and features; a sub-assembly its components (a suppressed one is not built: nothing to show)
+          const expandable = sub || (!c.suppressed && !!a?.buildOf(c.id));
           return (
             <Fragment key={c.id}>
               <li
@@ -137,15 +179,21 @@ export function AssemblyTree() {
                   setMenu({ x: e.clientX, y: e.clientY, component: c });
                 }}
               >
-                {sub && (
+                {expandable && (
                   <span
                     className="twisty"
+                    data-twisty={c.id}
+                    data-open={opened.has(c.id) || undefined}
+                    title={sub ? undefined : t('tree.componentExpand')}
                     onClick={(e) => {
                       e.stopPropagation();
-                      setOpened((s) => new Set(s.has(c.id) ? [...s].filter((x) => x !== c.id) : [...s, c.id]));
+                      a?.toggleOpened(c.id);
                     }}
                   >
-                    {opened.has(c.id) ? '▾' : '▸'}
+                    {/* drawn, not a character: the row's text stays the component's name */}
+                    <svg viewBox="0 0 10 10" width="9" height="9" aria-hidden="true">
+                      <path d={opened.has(c.id) ? 'M1 3 L9 3 L5 8 Z' : 'M3 1 L8 5 L3 9 Z'} fill="currentColor" />
+                    </svg>
                   </span>
                 )}
                 <Icon name={sub ? 'assembly' : 'part'} />
@@ -180,6 +228,7 @@ export function AssemblyTree() {
                     {s.missing && <Icon name="error" className="status-error" />}
                   </li>
                 ))}
+              {!sub && expandable && opened.has(c.id) && partRows(c)}
             </Fragment>
           );
         })}

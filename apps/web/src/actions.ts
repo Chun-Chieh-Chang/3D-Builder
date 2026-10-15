@@ -367,6 +367,8 @@ export function installShortcuts(): () => void {
       } else if (s.asm.insert) {
         if (e.key === 'Escape') return void a?.cancelInsert();
         if (e.key === 'Enter') return void a?.place(null);
+      } else if (e.key === 'Escape' && (selected || s.asm.picks.length > 0)) {
+        return void a?.select(null); // nothing chosen any more, as SolidWorks clears the selection
       } else if (e.key === 'Delete' && selected && explosionSteps(s.asm.doc).some((x) => x.id === selected)) {
         return void a?.deleteExplodeSteps([selected]);
       } else if (e.key === 'Delete' && selected && s.asm.doc.patterns?.some((p) => p.id === selected)) {

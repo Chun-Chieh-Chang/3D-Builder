@@ -6,6 +6,8 @@ export const mates: Translation = {
   'mate.widthSameComponent': 'The two width faces have to be on one component, and the two tab faces on one component',
   'mate.symmetricNeedsPlane': 'A symmetric mate needs a symmetry plane',
   'mate.noMore': 'Only width and symmetric mates have further elements',
+  'mate.badRefKind': 'A mate element must be a face, an edge, a vertex or a datum, not "{kind}"',
+  'mate.badDatum': 'No such default plane: "{name}" (there are the front, top and right planes)',
   'mate.limitOnlyDistanceAngle': 'Only distance and angle mates can have limits',
   'mate.limitNegative': 'A limit cannot be negative: "{value}"',
   'mate.limitAngleRange': 'An angle limit cannot be above 180°: "{value}"',

@@ -192,6 +192,13 @@ export interface AssemblyState {
   builds: ReadonlyMap<string, PartBuildPayload>;
   /** A component, a mate, or a default plane ("plane:front" …). */
   selected: Id | null;
+  /**
+   * Datums picked in the FeatureManager (the assembly's, or a component's own origin and planes, as SolidWorks lists them under a
+   * component): shown in the graphics area, and the elements 「結合」 starts with, in the order they were picked.
+   */
+  picks: MateRef[];
+  /** The components shown opened in the FeatureManager (a part's datums and features, a sub-assembly's components): kept while a PropertyManager takes the panel. */
+  opened: ReadonlySet<Id>;
   insert: InsertState | null;
   /** The mate PropertyManager (C15.8); null while it is closed. */
   mate: MateDraft | null;
@@ -320,6 +327,8 @@ export class AssemblyStore {
       files: new Map(),
       builds: new Map(),
       selected: null,
+      picks: [],
+      opened: new Set(),
       insert: null,
       mate: null,
       solution: null,
@@ -373,8 +382,9 @@ export class AssemblyStore {
       canUndo: this.history.canUndo,
       canRedo: this.history.canRedo,
       dirty: serializeAssembly(doc) !== this.savedText,
-      // What undo took away is no longer selected.
+      // What undo took away is no longer selected; nor is a datum of a component deleted or suppressed.
       selected: selected && !exists(selected) ? null : selected,
+      picks: this.state.picks.filter((r) => r.component === null || doc.components.some((c) => c.id === r.component && !c.suppressed)),
     });
     this.loadFiles();
     this.requestSolve();
@@ -840,7 +850,10 @@ export class AssemblyStore {
     if (this.state.move) this.closeMove();
     if (this.state.pattern) this.cancelPattern();
     this.leaveExplode();
-    this.set({ mate: { editing: null, a: null, b: null, type: null }, selected: null });
+    const picks = this.state.picks;
+    this.set({ mate: { editing: null, a: null, b: null, type: null }, selected: null, picks: [] });
+    // what was picked in the FeatureManager comes first, as if picked now (SolidWorks: two planes chosen in the tree, then 結合)
+    for (const ref of picks.slice(0, 2)) this.pickElement(ref);
   }
 
   /** 「編輯結合」: the PropertyManager with the mate's definition; ✓ replaces it. */
@@ -1071,7 +1084,24 @@ export class AssemblyStore {
   // ------------------------------------------------------------ FeatureManager (C15.2, C15.12)
 
   select(id: Id | null): void {
-    this.set({ selected: id });
+    this.set({ selected: id, picks: [] });
+  }
+
+  /**
+   * A datum clicked in the FeatureManager (the assembly's origin or a plane, or a component's own): it alone is picked, or with Ctrl
+   * it is added to what is picked (or taken from it, when it already is). See `picks`.
+   */
+  pickDatum(ref: MateRef, additive: boolean): void {
+    const picks = this.state.picks;
+    const next = !additive ? [ref] : picks.some((p) => sameRef(p, ref)) ? picks.filter((p) => !sameRef(p, ref)) : [...picks, ref];
+    this.set({ picks: next, selected: null });
+  }
+
+  /** ▸/▾ of a component's row in the FeatureManager. */
+  toggleOpened(componentId: Id): void {
+    const opened = new Set(this.state.opened);
+    if (!opened.delete(componentId)) opened.add(componentId);
+    this.set({ opened });
   }
 
   /** 「固定」/「浮動」 (C15.2). */

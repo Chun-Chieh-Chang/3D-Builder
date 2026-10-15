@@ -2,6 +2,7 @@ import { produce, type Draft } from 'immer';
 import { t } from '@3db/i18n';
 import { countersFor, IdAllocator, type Id } from './ids';
 import { CommandError } from './commands';
+import { isDatumPlaneName } from './datums';
 import { evalAngle, evalLength, ExprError } from './expr';
 import { isFilePath, joinPath, relativePath } from './paths';
 import { isValidPose } from './pose';
@@ -73,6 +74,8 @@ export function assemblyIdsInUse(doc: AssemblyDoc): Id[] {
 }
 
 const MATE_TYPES: MateType[] = ['coincident', 'parallel', 'perpendicular', 'tangent', 'concentric', 'lock', 'distance', 'angle', 'width', 'symmetric'];
+/** What a mate's element can be (a body is never one). */
+const MATE_REF_KINDS: readonly string[] = ['face', 'edge', 'vertex', 'datum'];
 
 /** Every element a mate joins: the two, and the further ones of a width or symmetric mate (C15.9). */
 export const mateEnds = (m: Mate): MateRef[] => [m.a, m.b, ...(m.more ?? [])];
@@ -87,6 +90,10 @@ function checkMate(doc: AssemblyDoc, m: Mate): void {
       throw new CommandError('組合件本身只能選基準面或原點');
     }
     if (!end.ref.name) throw new CommandError('請選擇兩個要結合的元素');
+    // a component's element is a face, an edge, a vertex, or one of its datums: its origin, a default plane, or a reference plane by its feature id
+    // (whether that feature is there is for the solver: the part file is not read here). A body, or "plane:back", is never one.
+    if (!MATE_REF_KINDS.includes(end.ref.kind)) throw new CommandError(t('mate.badRefKind', { kind: String(end.ref.kind) }));
+    if (end.ref.kind === 'datum' && end.ref.name.startsWith('plane:') && !isDatumPlaneName(end.ref.name)) throw new CommandError(t('mate.badDatum', { name: end.ref.name }));
     // Whether the component is a sub-assembly, and the path leads to a part in it, is for the solver: the file is not read here.
     if (end.path !== undefined) {
       if (end.component === null) throw new CommandError(t('subassembly.pathNeedsComponent'));

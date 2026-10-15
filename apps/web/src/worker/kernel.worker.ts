@@ -13,6 +13,7 @@ import { binaryStl, exportAssemblyStep, exportPartStep, portableShape, readCompo
 import type { SourcePart, SourceProvider } from '@3db/regen';
 import { mergeMeshes } from './mergeMesh';
 import { heapOf } from './heap';
+import { partFeatures } from './partOutline';
 import type { AssemblyStepRequest, DrawingElementsResult, DrawingFeaturesResult, DrawingViewResult, ClearanceResult, CollisionResult, SweepOutcome, ConvertPayload, InterferenceResult, PartExportOptions, ConvertRequest, KernelApi, PartBuildPayload, PartStage, RebuildPayload, RebuildRequest, SketchSolvePayload, SketchSolveRequest, SourceFileData, StepOutput } from './protocol';
 
 let kernel: Kernel;
@@ -36,6 +37,7 @@ interface BuiltPart {
   problems: string[];
   planes: PartBuildPayload['planes'];
   systems: PartBuildPayload['systems'];
+  features: PartBuildPayload['features'];
   /** The color of each face of the part's body (C14.2), for the STEP of an assembly that uses it. */
   colors: (string | null)[];
   properties: Record<string, string>;
@@ -75,7 +77,7 @@ async function build(bytes: Uint8Array, sources?: SourceFileData[]): Promise<Bui
     const system = f.type === 'coordSys' ? result.systems.get(f.id) : undefined;
     return system ? [{ id: f.id, name: f.name, system }] : [];
   });
-  return { regen, result, problems: [...file.warnings, ...failed], planes, systems, colors: faceColors(file.doc, result), properties: { ...file.doc.properties }, density: file.doc.material?.density ?? null, holes: holeFeatures(file.doc, provider) };
+  return { regen, result, problems: [...file.warnings, ...failed], planes, systems, features: partFeatures(file.doc, result), colors: faceColors(file.doc, result), properties: { ...file.doc.properties }, density: file.doc.material?.density ?? null, holes: holeFeatures(file.doc, provider) };
 }
 
 /**
@@ -325,6 +327,7 @@ const api: KernelApi = {
       vertexFingerprints: topo ? topo.vertices.map((_, i) => vertexFingerprint(topo, i)) : [],
       planes: part.planes,
       systems: part.systems,
+      features: part.features,
       referenceOnly: part.result.bodies.length > 0 && part.result.bodies.every((b) => b.reference || b.surface),
       properties: part.properties,
       mass: (() => {
@@ -408,6 +411,7 @@ const api: KernelApi = {
         vertexFingerprints: [],
         planes: [],
         systems: original.systems,
+        features: [],
         referenceOnly: original!.result.bodies.every((b) => b.reference || b.surface),
         properties: {},
         mass: null,

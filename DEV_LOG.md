@@ -1,5 +1,33 @@
 # 3D-Builder 開發日誌 (DEV_LOG.md)
 
+## 2026-10-15（晚）：組合件設計樹展開零件——零件自己的原點、基準面與特徵，拿來做結合（[ADR 0144](docs/adr/0144-assembly-component-datums-in-tree.md)）
+
+### 1. 範圍
+使用者截圖：組合件3 的零件下沒有可展開的基準面，無法用零件的基準面做結合。查到 Qoder 在 `docs/decisions-2026-10-14b.html` 列為 A1／A2（建議：頂層零件加 ▸，原點、三基準面、參考基準面、唯讀特徵清單；座標系統列出但不結合），**git log 無任何實作**。逐層檢查後：求解與模型參考本來就支援零件的基準面（ADR 0013 的浮出樹可用），缺的是設計樹、先選再結合、原點的圖面標示，以及命令層的參考驗證。
+
+### 2. 做法
+| 層 | 檔案 | 內容 |
+|---|---|---|
+| 模型 | `packages/model/src/assembly.ts`、i18n `mates.ts` | `checkMate`：元素種類只能是面／邊線／頂點／基準面；`plane:` 開頭但不是前上右的名稱拒絕（`mate.badRefKind`、`mate.badDatum`）。 |
+| Worker | `apps/web/src/worker/partOutline.ts`（新）、`kernel.worker.ts`、`protocol.ts` | `PartBuildPayload.features`：零件特徵依歷史順序的 id、名稱、種類與狀態（取自重建結果）。 |
+| 狀態 | `apps/web/src/state/assembly.ts`、`actions.ts` | `picks`（樹上選的基準面，Ctrl 加選）、`pickDatum`、`opened`（展開狀態，結合面板關掉後仍在）、`toggleOpened`；`startMate` 把前兩個選取帶進結合面板；`select` 與 Esc 清空；刪除／抑制零組件時去掉它的選取。 |
+| 介面 | `AssemblyTree.tsx`、`AssemblyViewport.tsx`、i18n `tree.ts` | 零件列 ▸；展開：原點、三基準面、特徵（參考基準面可選，其餘唯讀，失敗標紅、抑制變淡）；組合件自己的原點也可選；選取的平面畫在零組件的位置，原點畫成亮點。 |
+
+### 3. 自我紅隊四問（AGENTS.md §2.1）
+1. **輸入破壞**：結合元素種類 `body`、未知字串、`plane:back`（零組件與組合件）、空名稱、不存在的零組件，命令層 `insertMate`／`setMate` 都拋 `CommandError` 並說明，文件不變（單元測試逐項；反向對照拿掉檢查即失敗）。同一零組件選兩個基準面再按「結合」，沿用 `pickElement` 的規則擋下並說明，不默默丟掉。參考基準面的 id 是否存在不在命令層猜（不讀零件檔），由求解器回報「找不到基準面」——與既有分工一致。
+2. **幾何相交**：本功能不產生幾何、不做布林，不觸及 OCCT（§3.5 的記憶體問題不適用）；求解的是既有的結合求解器。被抑制、還沒重建好的零件不給 ▸（沒有可展開的資料，避免點了是空的或指到舊資料）；鏡射件沒有自己的特徵，清單為空。
+3. **依賴鏈**：Worker（特徵清單）→ `PartBuildPayload` → 設計樹（展開、選取）→ `picks` → 圖面（平面、原點）→ `startMate` → 結合面板（預填、建議類型）→ `insertMate`（命令驗證）→ 求解（`mateGeometry` 的零件 `frames`）→ 存檔再開。單元與 e2e 各自覆蓋到存檔再開。
+4. **零 Mock**：單元測試用真 OCCT 重建黃金零件、真求解器；定位板固定在偏離原點且轉過的位置、銷從傾斜位置開始，並**先斷言開始時沒有一個結合是成立的**，所有結果都是把零件的平面以求解後的姿態轉出來量（重合、平行、垂直、距離 25 與反轉、原點、參考基準面偏移 3、三面完全定義），不寫死任何姿態。`partFeatures` 的狀態與重建結果逐項比對，失敗案例是真的把基準面建在不存在的面上。e2e 以 OPFS 裡的零件檔名對照樹上的列、以求解姿態量位置，並以突變（拿掉預選帶入）確認腳本會失敗。
+
+### 4. 驗證
+- `tests/phase2/component-datums.test.ts` 13/13；`manual-asm-component-datums.js` PASS（8.5 s）；兩個反向對照都如預期失敗。
+- 全量數字見 handoff 最上方。
+
+### 5. 過程紀錄
+- 第一版單元測試用 `axisAngle([0.3, 0.4, 0.866])`，不是單位向量（差 4e-5），命令層以「零組件的位置或方向無效」拒絕——是測試寫錯，改成 (0.36, 0.48, 0.8)。
+- 設計樹在結合面板開著時整個換成面板（卸載），原本放在元件 state 的展開狀態因此每結合一次就收合；改放 `AssemblyState.opened`。
+- 本機 5391 被別的工作階段的 dev server 佔用；本 worktree 另開 5491，以 `VERIFY_UI_ORIGIN` 指定，避免驗證到別的檢出。
+
 ## 2026-10-15（下午）：D-I5 第一部分之二——階梯剖面與對正剖面（[ADR 0143](docs/adr/0143-drawing-stepped-aligned-section.md)，工程圖 Schema 18）
 
 ### 1. 範圍

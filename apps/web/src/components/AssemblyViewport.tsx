@@ -2,7 +2,7 @@ import { t } from '@3db/i18n';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { DATUM_PLANES, IDENTITY_ROTATION, isDatumPlaneName, poseMatrix, transformPoint, type MateRef, type PlaneFrame, type Pose, type Vec3 } from '@3db/model';
 import { partNameOf } from '@3db/io';
-import { Viewer, type InstanceElement, type PlaneDisplay, type ViewInstance, type ViewPart } from '@3db/render';
+import { Viewer, type DatumDisplay, type InstanceElement, type PlaneDisplay, type ViewInstance, type ViewPart } from '@3db/render';
 import { ACTIONS, shortcutOf } from '../actions';
 import { store, useStore } from '../state/store';
 import type { AssemblyStore } from '../state/assembly';
@@ -31,9 +31,15 @@ function placedFrame(frame: PlaneFrame, pose: Pose): PlaneFrame {
 /** The instance a mate element is on: the component's id, and for a part inside a sub-assembly the ids on the way (a leaf's id, see `leavesOf`). */
 const leafKey = (ref: MateRef): string => [ref.component, ...(ref.path ?? [])].join('/');
 
-/** Where a mate's element is drawn: a face, edge or vertex of a component, or a plane. */
-function shownElement(ref: MateRef): { element?: InstanceElement; plane?: PlaneDisplay } {
+/** Where a mate's element (or a datum picked in the FeatureManager) is drawn: a face, edge or vertex of a component, a plane, or an origin. */
+function shownElement(ref: MateRef): { element?: InstanceElement; plane?: PlaneDisplay; point?: DatumDisplay['points'][number] } {
   const a = store.assembly;
+  if (ref.ref.kind === 'datum' && ref.ref.name === 'origin') {
+    // the assembly's origin, or the part's (where its component, or the part inside a sub-assembly, is placed)
+    const pose = ref.component ? (a?.elementPart(ref)?.pose ?? (ref.path?.length ? null : a?.poseOf(ref.component))) : null;
+    if (ref.component && !pose) return {};
+    return { point: { key: `${ref.component ? leafKey(ref) : 'asm'}:origin`, p: pose ? pose.position : [0, 0, 0], highlighted: true } };
+  }
   if (ref.ref.kind === 'datum') {
     if (!isDatumPlaneName(ref.ref.name) && ref.component === null) return {};
     const part = a?.elementPart(ref);
@@ -145,22 +151,21 @@ export function AssemblyViewport() {
     v.setGuides(store.assembly?.explodeGuides() ?? []);
   }, [asm.doc, asm.files, asm.folder, asm.fitRequest, asm.solution, asm.drag, asm.pattern, asm.explodeT, asm.explodeLines, parts]);
 
-  // What is shown as chosen: the mate being defined, else the mate or component selected in the tree.
+  // What is shown as chosen: the mate being defined, else the mate or component selected in the tree, or the datums picked there.
   const selectedMate = asm.selected ? asm.doc.mates.find((m) => m.id === asm.selected) : undefined;
   useEffect(() => {
     const v = store.viewer;
     if (!v) return;
-    const refs = asm.mate ? [asm.mate.a, asm.mate.b] : selectedMate ? [selectedMate.a, selectedMate.b] : [];
+    const refs = asm.mate ? [asm.mate.a, asm.mate.b] : selectedMate ? [selectedMate.a, selectedMate.b] : asm.picks;
     const shown = refs.flatMap((r) => (r ? [shownElement(r)] : []));
     // while measuring, what is picked is what is shown as chosen
     v.setSelectedElements(measure ? measure.picks.flatMap((p) => (p.leaf && !p.point ? [{ key: p.leaf, kind: p.kind, index: p.index }] : [])) : shown.flatMap((s) => (s.element ? [s.element] : [])));
-    const planes = shown.flatMap((s) => (s.plane ? [s.plane] : []));
-    if (!asm.mate && asm.selected && isDatumPlaneName(asm.selected)) planes.push({ key: asm.selected, frame: DATUM_PLANES[asm.selected], highlighted: true });
-    v.setPlanes(planes);
+    v.setPlanes(shown.flatMap((s) => (s.plane ? [s.plane] : [])));
+    v.setDatums({ axes: [], points: measure ? [] : shown.flatMap((s) => (s.point ? [s.point] : [])), systems: [] });
     const pair = interference && interference.selected !== null ? interference.pairs[interference.selected] : undefined;
     const close = clearance && clearance.selected !== null ? clearance.pairs[clearance.selected] : undefined;
     v.setSelectedComponents(pair ? [pair.aTop, pair.bTop] : close ? [close.aTop, close.bTop] : !asm.mate && asm.selected && asm.doc.components.some((c) => c.id === asm.selected) ? [asm.selected] : []);
-  }, [asm.mate, asm.selected, asm.doc, asm.solution, asm.drag, asm.builds, measure, interference, clearance]);
+  }, [asm.mate, asm.selected, asm.picks, asm.doc, asm.solution, asm.drag, asm.builds, measure, interference, clearance]);
 
   // What a dragged component has run into (A3.6): those components are red
   useEffect(() => {

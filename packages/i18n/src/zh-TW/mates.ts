@@ -4,6 +4,8 @@ export const mates = {
   'mate.widthSameComponent': '寬度結合的兩個寬度面要在同一個零組件上，兩個薄片面也要在同一個零組件上',
   'mate.symmetricNeedsPlane': '相互對稱結合需要一個對稱面',
   'mate.noMore': '只有寬度與相互對稱結合有額外的元素',
+  'mate.badRefKind': '結合的元素必須是面、邊線、頂點或基準面，不能是「{kind}」',
+  'mate.badDatum': '沒有這個預設基準面：「{name}」（只有前、上、右基準面）',
   'mate.limitOnlyDistanceAngle': '只有距離與角度結合可以設限制',
   'mate.limitNegative': '限制不可為負：「{value}」',
   'mate.limitAngleRange': '角度限制不可大於 180°：「{value}」',

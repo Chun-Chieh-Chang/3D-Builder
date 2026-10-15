@@ -1,6 +1,6 @@
 import type { Locale } from '@3db/i18n';
 import type { InterferenceComponent, MeasureReport, MeasureTarget, PartMass, ElementFacts, SectionCut, ViewAxes, ViewEdgeSet, ViewFeature } from '@3db/model';
-import type { AssemblyDoc, Axis3, CoordSystem, Fingerprint, Id, PartDoc, PlaneFrame, Pose, Ref, SketchFeature, SourceTree, Vec3 } from '@3db/model';
+import type { AssemblyDoc, Axis3, CoordSystem, Feature, Fingerprint, Id, PartDoc, PlaneFrame, Pose, Ref, SketchFeature, SourceTree, Vec3 } from '@3db/model';
 import type { DraftReport, ThicknessReport, UndercutReport, GeometryReport, MassProps, MeshData, ProjectedView } from '@3db/kernel';
 import type { AssemblyResult, AssemblySolveOptions, ClearanceRow, Converted, FeatureResult, FlatReport, SheetCheck, SheetCheckLimits, SnapItem, SweepResult } from '@3db/regen';
 import type { MateGeometry } from '@3db/assembly';
@@ -135,6 +135,8 @@ export interface PartBuildPayload {
   planes: { id: Id; name: string; frame: PlaneFrame }[];
   /** Built coordinate systems exposed to measurement in the assembly. */
   systems: { id: Id; name: string; system: CoordSystem }[];
+  /** The part's features in history order, listed read-only under its component in the assembly's FeatureManager (see `partFeatures`). */
+  features: { id: Id; name: string; type: Feature['type']; status: 'ok' | 'error' | 'suppressed' }[];
   /** Every body it has is a reference body (C7.1): a design aid, not a part to count (C15.16). */
   referenceOnly: boolean;
   /** The part file's properties (B8.3): the parts list reads the vendor and the part number from them (C15.16). */
