@@ -22,6 +22,7 @@ import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, 
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { devServerArgs } from './verify-ui-args.mjs';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const ORIGIN = process.env.VERIFY_UI_ORIGIN ?? 'http://127.0.0.1:5391';
@@ -111,7 +112,7 @@ async function ensureServer() {
     }
   };
   if (await up()) return;
-  server = spawn(process.platform === 'win32' ? 'npm.cmd' : 'npm', ['run', 'dev', '-w', '@3db/web'], { cwd: ROOT, stdio: 'ignore', shell: process.platform === 'win32' });
+  server = spawn(process.platform === 'win32' ? 'npm.cmd' : 'npm', devServerArgs(ORIGIN), { cwd: ROOT, stdio: 'ignore', shell: process.platform === 'win32' });
   for (let i = 0; i < 150 && !(await up()); i++) await sleep(200);
   if (!(await up())) throw new Error('the dev server did not start');
 }

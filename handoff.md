@@ -4,9 +4,9 @@
   - **完成**：`History.amend`（併入最後一步；無步驟時成為起始狀態）；自動最適比例改用它，使用者按的「最適比例」仍是一步；存檔對話框照常立即開，寫入前 `fitSettled()`——等到最適比例發生，或沒有任何零件讀取、線條、特徵請求在進行（不用逾時，核心失敗不會卡住）。移除 ADR 0146 在 `manual-drawing-open-part.js`、`manual-drawing-sw-parity.js` 加的「存檔前等 features」。
   - **驗收**：新 `drawing-fit-save.test.ts` 11 項、新 e2e `manual-drawing-save-before-fit.js` 5 步（攔住核心的特徵回覆，確定重現慢核心）；還原修正時單元 4 項、e2e 4 步失敗。typecheck 0、三項 lint 過；全量 vitest **2856 過、25 略過、0 失敗**；`verify:ui --only "drawing|section|phase5"` **20/20**。
   - **工作環境**：在 worktree `.claude/worktrees/drawing-autoscale-save`（分支 `worktree-drawing-autoscale-save`，自 `origin/main` `ebb3e3a`）完成，推送為 `HEAD:main`。主資料夾的本地 `main` 仍在 `482a816`，落後 origin/main 3 個提交（`159b1bd`、`ebb3e3a`、`b966d26`），本工作階段未動它（別的工作階段可能在用）。
-  - **工具注意**：`VERIFY_UI_ORIGIN` 指到別的埠時，`verify-ui.mjs` **不會**在該埠啟動開發伺服器（它跑 `npm run dev`，固定 5391），要先自己以 `vite --port <埠>` 開好；回報只列前三個失敗步驟（`bad.slice(0, 3)`），反向對照時要看完整結果。
-  - **已知限制**：最適比例到來前使用者若又做了別的改動（例如拖動視圖），最適比例併入**那一步**而非放視圖那一步；核心失敗時存檔寫入未置中的版面，之後重算成功仍會最適比例並變成未存檔（版面確實變了，提示正確）；等候期間無額外進度提示。
-  - **待裁事項**：①是否清理本 worktree（已推送，內容全在 main；依全域規則 §8 須先同意）。②主資料夾本地 `main` 是否 `git pull --ff-only` 跟上 origin（會影響正在主資料夾工作的其他工作階段）。③上述「最適比例併入使用者下一個改動」是否可接受，或要改成記住放視圖那一步、只併入它（需改 `History` 以步驟識別）。④`verify-ui.mjs` 是否在自訂 `VERIFY_UI_ORIGIN` 時自動以該埠啟動開發伺服器（小工具改善）。
+  - **工具**：`verify-ui.mjs` 現在依 `VERIFY_UI_ORIGIN` 的埠啟動開發伺服器（`scripts/verify-ui-args.mjs` 的 `devServerArgs`，預設 5391 不變；沒有埠或非 http(s) 的 origin 直接報錯；`tests/phase5/verify-ui-args.test.ts` 3 項；實跑：5481 沒有預先開伺服器，腳本自己啟動並在結束後關掉）。注意回報只列前三個失敗步驟（`bad.slice(0, 3)`），反向對照時要看完整結果。
+  - **已知限制（使用者 10-15 裁定維持現況）**：最適比例到來前使用者若又做了別的改動（例如拖動視圖），最適比例併入**那一步**而非放視圖那一步；核心失敗時存檔寫入未置中的版面，之後重算成功仍會最適比例並變成未存檔（版面確實變了，提示正確）；等候期間無額外進度提示。
+  - **待裁事項**：無（四項皆已由使用者裁定：清理 worktree、主資料夾快轉、併入維持現況、verify-ui 自動啟動——後三者已執行）。
 - **【2026-10-15 晚二：選擇濾器比照 SolidWorks 工具列（Claude，[ADR 0145](docs/adr/0145-selection-filter-sw-toolbar.md)）— 見 `git log`】** 使用者要求「把專案的工具列交互設計比照 SW」，批准方案後動工；修訂 ADR 0043 決定 2 的**呈現**，語意核心（只縮小不放大）不變。
   - **完成**：濾器列預設隱藏（`SystemOptions.pickFilterBar` 記住），F5 顯示／隱藏、F6 清除（皆走 D3.3 registry，view 群、part 限定、可重綁）；面／邊線／頂點／基準面改**單選**（再點已選者不取消，比照 SW 按鈕保持按下）；列首 ✕（＝F5）與「清除」（＝F6）比照 SW 工具列；「開始時可以點選的元素」改 radio（全部＋四種），新增「顯示選擇濾器列」勾選。傳輸結構不變：`pickFilter` 四布林，viewer 協議與 picking() 交集未動；舊混合種子值保留，第一次點選收斂單選。
   - **驗收**：options.test 9/9；help 40/40；help-manual 同步；typecheck 0、三項 lint 過；全量 vitest **2814 過、25 略、0 失敗**；`verify:ui` **5/5**（manual-c21 步 2 重寫、manual-c22 optionOff／startedOff 改種「邊線」、manual-sketch-plane 步 11 用 radio 證雙向閘門）。全量 `verify:ui` 未跑（組合件、工程圖未改動）。
