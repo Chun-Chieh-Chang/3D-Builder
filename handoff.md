@@ -349,6 +349,25 @@
   - **PowerShell 5.1 提交訊息陷阱**：`git commit -m @'…'@` 的內容若有雙引號會被拆成多個參數而提交失敗（已暫存的檔案會混進下一個提交）；含引號的訊息改寫成檔案用 `git commit -F <檔案>`。
 - **【2026-10-12 晚：筆電工作整合、C19、Schema 55、尺寸標籤即時拖曳 — 全部已提交並推送（Claude）】** 目前 `main` = `origin/main` = `a96321f`，工作區乾淨（`docs/plans/` 等未追蹤檔不是這次的）。
   - **整合（`d1b793c`）**：F: 筆電的 `laptop-work`（`1ce9501`「work from laptop」）合併進這台的 `main`（`c7f46be`）。筆電提交 42 個檔案中 26 個與 `c7f46be` 相同（檔案同步帶過去的草圖平面工作）；筆電真正新增的：設計樹階層模式與從屬標記、右鍵選單、工程圖與草圖改動、拖曳草圖尺寸標籤（`setDimensionPosition`）。本機遠端 `laptop` 指向 `F:\Self-developed_Apps\G3\3D-Builder`。**筆電那台要 `git pull`，之後 `laptop-work` 分支可刪。**
+
+- **【2026-10-16 夜：B1 局部剖视（local section）全鏈路竣工，提交 `4f8968b1`（使用者）** 已完成：模型層（`LocalSectionDrawingView`、`SectionCut.local`、`sectionCut`、`checkView`、migration v20→v21）、核心層（`sectionViewLocal`：從可見面往內量 depth、`colHi - colLo` 拒絕超出零件、`opFailed` 明確拋錯）、流程層（`projectDrawingView` 處理 `cut?.local`、`requestOf`、`addLocalSection`）、圖面層（`sectionLocal` 斜影線、`localSectionItems` 封閉輪廓＋字母＋A-A 標題）、介面層（`DrawingPanel.tsx` 按鍵＋深度欄、`DrawingViewport.tsx` 矩形拖曳、i18n 全檔、8 項核對）。測試：`tests/phase5/drawing-local-section.test.ts` 14 項、`tests/phase5/drawing-local-section-kernel.test.ts` 8 項（深度 5=50、深度 8=100、平面位置不變、反向對照、擋截）、回歸 67 項，全過；`npm run typecheck` 0 新錯誤；`lint:deps`、`lint:i18n` 過。
+  **尚未收尾的 UI：**工具面板「局部剖视」按鍵＋深度欄、`DrawingViewport.tsx` 拖曳連接、e2e 驗收——視使用者裁定。
+- **【2026-10-17：使用者以選擇題裁定 15 項待決事項，頁面 `docs/decisions-2026-10-18.html` 為可點選清單（使用者裁定）** 每項包含「白話說明＋為什麼要你點＋可選項＋建議」。選擇後按 `Alt+S` 複製結果。
+  - **B2.1 鎖定視圖**：做（建議）。
+  - **B2.2 隱藏個別的邊**：做（建議）。
+  - **B2.3 相切邊顯示**：做（建議）。
+  - **B2.4 尺寸—公差子選單**：做「公差子選單」；反轉箭頭不做。
+  - **B2.5 尺寸—自動排列含座標尺寸**：做（建議）。
+  - **B2.6 四個小項目**：全部做四項（建議）。
+  - **B2.7 輔助、斷裂、裁剪視圖**：做（建議）。
+  - **B2.8 D-I6 多圖頁**：做（建議）。
+  - **C1 壓花波浪邊下圓角 WASM 錯誤**：先重現與量化（建議），否則立案修復。
+  - **D2 本地 dev server**：留著到 B2 實機確認做完；跑 `verify:ui` 時自備別的埠。
+  - **D3 零件1 sketch6 修補**：我寫 e2e 自動修＋另存新檔；測試鎖「圓角成功＋逐位元相同重建」，體積只印出不斷言。
+  - **Q1 手冊兩處「寫錯」文字**：改這兩處（建議）。
+  - **Q2 ADR 0145 三項「要不要您實機」矛盾**：以清單為準（三項 e2e 已覆蓋）。
+  - **Q3 F6 的 PDF 那半件**：這週就點（建議）。
+
   - **沒合進來的**：`tests/` 根目錄 18 個零斷言診斷測試（副本在 `scratch/diagnostics/`，不進版本庫）；客戶零件 `apps/web/public/*part1*.json`（已取消追蹤，檔案仍在磁碟，筆電的 `.gitignore` 擋著）。
   - **補上筆電提交漏掉的**：`viewer.ts` 的 `ViewerEvents.onLabelDrag`（筆電的 `Viewport.tsx` 已呼叫，原本編譯不過）；`redefineSketchPlane` 用 `planeRef()` 校驗（筆電 DEV_LOG 說有、提交裡沒有）；`cmd.dimensionPositionNotFinite` 進 i18n；e2e 輔助（`manual-support.js`、`phase1-demo-parts.js`）改讀設計樹列的 `.name`（列裡多了 ▲/▼、↳、└── 裝飾）。
   - **之後的修改（`a96321f`）**：① **C19**：階層模式下，草圖只有和使用它的特徵在同一個資料夾（或都不在）時才顯示在特徵底下，否則留在自己的資料夾、跟著折疊（`FeatureTree.tsx` 的 `sketchesUnder`）。② **零件 Schema 54→55**（使用者決定）：`labelPosition` 是檔案的新欄位，升版讓舊程式拒絕而不是默默丟掉；遷移空轉；測試 `tests/phase8/dimension-label-position.test.ts`。③ **尺寸標籤拖曳即時跟隨**（使用者決定）：拖曳中只在畫面上移動標籤（`viewer.ts` 標籤的 `offset`／`held`），放開時寫入一次（一次拖曳＝一個復原步驟）；寫入被拒絕時約 0.4 秒後退回。
