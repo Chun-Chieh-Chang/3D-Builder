@@ -648,8 +648,8 @@ export function DrawingPanel() {
             <button className={`pm-button${drw.tool?.kind === 'detail' ? ' active' : ''}`} data-action="toolDetail" title={t('drawingUi.hint.detail')} onClick={() => d.setTool(drw.tool?.kind === 'detail' ? null : { kind: 'detail' })}>
               {t('drawingUi.toolDetail')}
             </button>
-            <button className={`pm-button${drw.tool?.kind === 'sectionLocal' ? ' active' : ''}`} data-action="toolLocalSection" title="Local section: drag a rectangle on the view" onClick={() => d.setTool(drw.tool?.kind === 'sectionLocal' ? null : { kind: 'sectionLocal', outlineKind: 'rectangle', depth: Number(localDepth) || 5 })}>Local section</button>
-            <input data-field="localSectionDepth" inputMode="decimal" placeholder="depth mm" value={localDepth} onChange={(e) => setLocalDepth(e.target.value)} onKeyDown={(e) => e.stopPropagation()} />
+            <button className={`pm-button${drw.tool?.kind === 'sectionLocal' ? ' active' : ''}`} data-action="toolLocalSection" title={t('drawingUi.hint.localSection')} onClick={() => d.setTool(drw.tool?.kind === 'sectionLocal' ? null : { kind: 'sectionLocal', outlineKind: 'rectangle', depth: Number(localDepth) || 5 })}>{t('drawingUi.toolLocalSection')}</button>
+            <input data-field="localSectionDepth" inputMode="decimal" placeholder={t('drawingUi.localSectionDepth')} value={localDepth} onChange={(e) => { setLocalDepth(e.target.value); if (drw.tool?.kind === 'sectionLocal') d.setTool({ ...drw.tool, depth: Number(e.target.value) || 5 }); }} onKeyDown={(e) => e.stopPropagation()} />
           </div>
           <details className="pm-details" data-group="derivedNumbers">
             <summary>{t('drawingUi.byNumbers')}</summary>

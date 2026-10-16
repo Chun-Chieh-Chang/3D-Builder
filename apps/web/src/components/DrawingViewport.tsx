@@ -471,7 +471,7 @@ export function DrawingViewport() {
         return;
       }
       const view = viewUnder(p);
-      if (!view) return d.notifyInfo(t(tool.kind === 'section' ? 'drawingUi.hint.section' : 'drawingUi.hint.detail'));
+      if (!view) return d.notifyInfo(t(tool.kind === 'section' ? 'drawingUi.hint.section' : tool.kind === 'sectionLocal' ? 'drawingUi.hint.localSection' : 'drawingUi.hint.detail'));
       if (pendingDraw?.tool === tool.kind) {
         if (view.id !== pendingDraw.view) return;
         const placement = makeDrawPlacement({ ...pendingDraw, to: p });
@@ -889,7 +889,7 @@ export function DrawingViewport() {
       const p1: [number, number] = toViewPt(g.to as [number, number]);
       const [x0, y0] = [Math.min(p0[0] ?? 0, p1[0] ?? 0), Math.min(p0[1] ?? 0, p1[1] ?? 0)];
       const [x1, y1] = [Math.max(p0[0] ?? 0, p1[0] ?? 0), Math.max(p0[1] ?? 0, p1[1] ?? 0)];
-      const msg = 'Local section: drag on the view to draw the cut outline, set depth, release; then click to place. Esc cancels';
+      const msg = t('drawingUi.hint.localSectionDrag');
       const w = x1 - x0; const h = y1 - y0;
       if ((w < 0 ? -w : w) < 2 || (h < 0 ? -h : h) < 2) {
         d.notifyInfo(msg);
@@ -1004,7 +1004,7 @@ export function DrawingViewport() {
   const dimensionHints = ['drawingUi.hint.dimension0', 'drawingUi.hint.dimension1', 'drawingUi.hint.dimension2'] as const;
   const hint =
     pendingPlacement
-      ? t(pendingPlacement.tool === 'section' ? 'drawingUi.hint.placeSection' : 'drawingUi.hint.placeDerived')
+      ? t(pendingPlacement.tool === 'section' ? 'drawingUi.hint.placeSection' : pendingPlacement.tool === 'sectionLocal' ? 'drawingUi.hint.placeLocalSection' : 'drawingUi.hint.placeDerived')
       : tool?.kind === 'placeView'
       ? t('drawingUi.hint.placeView')
       : tool?.kind === 'project'
@@ -1018,7 +1018,7 @@ export function DrawingViewport() {
       : tool?.kind === 'surface'
       ? t('drawingUi.toolSurfaceFinish')
       : tool
-      ? t(tool.kind === 'section' ? (tool.path === 'stepped' ? 'drawingUi.hint.sectionStepped' : tool.path === 'aligned' ? 'drawingUi.hint.sectionAligned' : tool.slant ? 'drawingUi.hint.sectionSlant' : 'drawingUi.hint.section') : 'drawingUi.hint.detail')
+      ? t(tool.kind === 'section' ? (tool.path === 'stepped' ? 'drawingUi.hint.sectionStepped' : tool.path === 'aligned' ? 'drawingUi.hint.sectionAligned' : tool.slant ? 'drawingUi.hint.sectionSlant' : 'drawingUi.hint.section') : tool.kind === 'sectionLocal' ? 'drawingUi.hint.localSection' : 'drawingUi.hint.detail')
       : drw.doc.views.length === 0
       ? t('drawingUi.mainViewFirst')
       : null;
