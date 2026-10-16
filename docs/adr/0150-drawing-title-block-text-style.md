@@ -36,7 +36,10 @@
 | A6：SVG `font-size`、DXF TEXT 40、PDF `Tf` 都帶著畫出的字高 | 「the outputs draw it」 |
 | A7：存檔往返保留 `titleStyle`；v19 檔讀入沒有它且升到 v20 | 「the file keeps it」 |
 | 反向對照 | 把 `fit` 的封底拿掉（`Math.max` 改回原式）A3 第三項失敗；把名稱基線改回 `y + h − 3`（不減字高）A2 失敗；還原後全過 |
-| typecheck、lint、phase5、全量 | 本改動檔案 typecheck 0 錯誤（全repo `npm run typecheck` EXIT=1，2 個 TS2345 都在另一階段未追蹤的 `tests/phase3/step-frag-probe.test.ts`，非本改動）；lint:rules／deps／i18n 各 EXIT=0；phase5 單獨跑 419 過、1 略過（既有 D1）、0 失敗；全量 vitest 2887 過、27 略過、1 失敗，那 1 項即上述別人的探針檔（`Kernel.deleteFaces` 拒絕），本 ADR 的 `drawing-title-style.test.ts` 11 項在同一次全量跑全綠；三處「目前版本 19」錨定斷言隨版本更新為 20 |
+| typecheck、lint、phase5、全量 | 本改動檔案 typecheck 0 錯誤（當時全repo `npm run typecheck` EXIT=1，2 個 TS2345 都在另一階段未追蹤的 `tests/phase3/step-frag-probe.test.ts`，非本改動；該檔其後由另一階段自行修好，同日 e2e 完成後再跑為 **EXIT=0**，`npm run check` 不再卡在 typecheck）；lint:rules／deps／i18n 各 EXIT=0；phase5 單獨跑 419 過、1 略過（既有 D1）、0 失敗；全量 vitest 2887 過、27 略過、1 失敗，那 1 項即上述別人的探針檔（`Kernel.deleteFaces` 拒絕），本 ADR 的 `drawing-title-style.test.ts` 11 項在同一次全量跑全綠；三處「目前版本 19」錨定斷言隨版本更新為 20 |
+| e2e 實機：`tests/e2e/manual-drawing-title-style.js`（9 步） | 走真實的「檔案→新工程圖」（harness 以 OPFS 專案資料夾取代選檔對話框）與圖頁屬性「格式」面板的輸入框；斷言讀自畫面——字高取自場景、SVG `font-size` 等於字高的 1.4 倍、縮放與否以**瀏覽器自己量的排版寬**（`getBBox().width`，圖面 viewBox 即公釐）對照格子預算 `w − 3`；日期縮到 3.79077 mm 後排版寬 27.03 mm 對 27 mm（+0.1%）、關掉 `fit` 變 34.22 mm 確實溢出、19 個全形字標題縮到 3.6656 mm 後 97.48 mm 對 97 mm（+0.49%，在格子自留的 1 mm 餘量內）。`npm run verify:ui -- --only manual-drawing-title-style` → **KNOWN、6.9s、VUI_EXIT=0**，9 步全過並記載下方已知缺陷 |
+
+**已知缺陷（記載，未修）**：提交被拒絕後，`NumberBox` 留住使用者打的數字（輸入框顯示 4 mm 而實畫仍是 2.2 mm）——文件與圖面不受影響。這是 ADR 0146 起每一欄共有的元件行為（`DimensionPanel` 的 `NumberBox`，`DimStyleFields` 亦然），e2e 以 runner 的 `knownIssue` 機制在每次執行列出來；要否把框改回實值，待使用者裁定，另案。
 
 ## 紅隊四問（AGENTS.md §2）
 
