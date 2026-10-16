@@ -197,8 +197,7 @@ describe('the display styles on the sheet', () => {
       { id: 'c', name: 'C', source: 'p.3dbx', direction: 'right' },
     ];
     const doc = parseDrawing(JSON.stringify(old));
-    expect(DRAWING_SCHEMA_VERSION).toBe(20);
-    expect(doc.schemaVersion).toBe(20);
+    expect(doc.schemaVersion).toBe(DRAWING_SCHEMA_VERSION);
     expect(doc.views.map((v) => v.display)).toEqual(['hiddenVisible', 'hiddenRemoved', undefined]);
     expect(doc.views.every((v) => !('hidden' in v))).toBe(true);
   });

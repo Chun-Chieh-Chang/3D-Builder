@@ -4,7 +4,7 @@
  * from the style it was given; the fit is checked against the same width the PDF writer lays out with.
  */
 import { describe, expect, it } from 'vitest';
-import { applyDrawingCommand, createEmptyDrawing, parseDrawing, serializeDrawing, TITLE_STYLE_DEFAULT, TITLE_STYLE_LIMITS, TITLE_STYLE_SUM_LIMITS, type DrawingDoc, type TitleField, type TitleStyle } from '@3db/model';
+import { applyDrawingCommand, createEmptyDrawing, DRAWING_SCHEMA_VERSION, parseDrawing, serializeDrawing, TITLE_STYLE_DEFAULT, TITLE_STYLE_LIMITS, TITLE_STYLE_SUM_LIMITS, type DrawingDoc, type TitleField, type TitleStyle } from '@3db/model';
 import { fittedTitleHeight, sheetItems, sheetMetrics, textWidthMm, titleCells, toDxf, toPdf, toSvg, TITLE_FIT_MIN, type Scene, type SceneItem } from '@3db/drawing';
 
 type TextItem = Extract<SceneItem, { kind: 'text' }>;
@@ -186,6 +186,6 @@ describe('the file keeps it', () => {
     old.schemaVersion = 19;
     const back = parseDrawing(JSON.stringify(old));
     expect(back.sheet).not.toHaveProperty('titleStyle');
-    expect(back.schemaVersion).toBe(20); // upgraded, with nothing to convert
+    expect(back.schemaVersion).toBe(DRAWING_SCHEMA_VERSION); // upgraded, with nothing to convert
   });
 });
