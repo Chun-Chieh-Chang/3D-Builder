@@ -332,6 +332,9 @@ const drawingMigrations: Record<number, (doc: Json) => Json> = {
   // v20 (ADR 0150): the title block's text style (`sheet.titleStyle`) is new and optional, so there is nothing to convert; the version keeps an older program
   // from opening a drawing whose title block it would write at ISO's sizes and never shrink.
   19: (doc) => doc,
+  // v21 (B1): a local (partial) section view kind (`sectionLocal`) is new; nothing to convert, the version keeps an older program
+  // from opening a drawing whose views it would not know how to draw.
+  20: (doc) => doc,
 };
 
 export function parseDrawing(text: string): DrawingDoc {

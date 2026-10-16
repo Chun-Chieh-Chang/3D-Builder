@@ -13,7 +13,7 @@ import { ANNOTATION_FIELDS, checkAnnotation, framesUsing, type Annotation, type 
  * opened (exact hidden-line removal), so a drawing can never disagree with the model it shows.
  */
 
-export const DRAWING_SCHEMA_VERSION = 20;
+export const DRAWING_SCHEMA_VERSION = 21;
 
 export type SheetSize = 'A4' | 'A3' | 'A2' | 'A1' | 'A0';
 export const SHEET_SIZES: readonly SheetSize[] = ['A4', 'A3', 'A2', 'A1', 'A0'];
@@ -237,7 +237,27 @@ export interface DetailDrawingView extends ViewCommon {
   label: string;
 }
 
-export type DrawingView = ModelDrawingView | ProjectedDrawingView | SectionDrawingView | DetailDrawingView;
+/**
+ * A local (partial) section (B1, D-I): only what lies inside a closed outline (rectangle, circle, polygon) drawn on the parent
+ * view is cut; everything outside the outline is shown as an ordinary view. `depth` is how far the cut goes (mm); zero, negative,
+ * or beyond the part is refused. The outline must be closed and non-self-intersecting. A local section may not serve as the parent
+ * of any other view.
+ */
+export interface LocalSectionDrawingView extends ViewCommon {
+  kind: 'sectionLocal';
+  parent: Id;
+  /** The closed cutting outline in the parent's view coordinates at full size. */
+  outline:
+    | { kind: 'rectangle'; p0: [number, number]; p1: [number, number] }
+    | { kind: 'circle'; centre: [number, number]; radius: number }
+    | { kind: 'polygon'; points: [number, number][] };
+  /** How deep the cut goes, mm. Must be positive and must actually reach the part. */
+  depth: number;
+  /** The letter on the outline and over the view: 「A」 for A–A. */
+  label: string;
+}
+
+export type DrawingView = ModelDrawingView | ProjectedDrawingView | SectionDrawingView | DetailDrawingView | LocalSectionDrawingView;
 export type DerivedDrawingView = Exclude<DrawingView, ModelDrawingView>;
 
 export const isDerived = (v: DrawingView): v is DerivedDrawingView => v.kind !== undefined && v.kind !== 'model';
@@ -674,6 +694,10 @@ export type ViewPatch = {
   line?: SectionDrawingView['line'];
   centre?: [number, number];
   radius?: number;
+  /** A local section's closed cutting outline. */
+  outline?: LocalSectionDrawingView['outline'];
+  /** A local section's cut depth (mm). */
+  depth?: number;
 };
 
 /** Whether a scale is two whole numbers of 1 to 1000. */
@@ -717,6 +741,36 @@ function checkView(v: DrawingView, views: readonly DrawingView[]): void {
   if (v.kind === 'detail') {
     if (!v.centre.every(Number.isFinite) || !(v.radius > 0) || !Number.isFinite(v.radius)) throw new CommandError(t('drawing.badDetail'));
     if (!v.label.trim()) throw new CommandError(t('drawing.labelEmpty'));
+  }
+  if (v.kind === 'sectionLocal') {
+    if (!v.label.trim()) throw new CommandError(t('drawing.labelEmpty'));
+    if (!(v.depth > 0) || !Number.isFinite(v.depth)) throw new CommandError(t('drawing.badLocalSectionDepth'));
+    const p = views.find((x) => x.id === v.parent);
+    if (!p) throw new CommandError(t('drawing.noParent', { id: v.parent }));
+    if (p.kind === 'sectionLocal') throw new CommandError(t('drawing.localSectionNotFromLocal'));
+    // outline must be closed and non-self-intersecting
+    const outline = v.outline;
+    if (!outline) throw new CommandError(t('drawing.badLocalSectionOutline'));
+    if (outline.kind === 'polygon') {
+      const pts = outline.points;
+      if (!pts || pts.length < 3) throw new CommandError(t('drawing.badLocalSectionOutline'));
+      for (const q of pts) if (!q || q.length !== 2 || !q.every((x) => typeof x === 'number' && Number.isFinite(x))) throw new CommandError(t('drawing.badLocalSectionOutline'));
+      // closed: first and last must coincide
+      const first = pts[0]!; const last = pts[pts.length - 1]!;
+      if (Math.abs(first[0] - last[0]) > 1e-9 || Math.abs(first[1] - last[1]) > 1e-9) throw new CommandError(t('drawing.badLocalSectionOutline'));
+      // no segment of zero length
+      for (let i = 0; i < pts.length - 1; i++) {
+        const a = pts[i]!; const b = pts[i + 1]!;
+        if (Math.abs(a[0] - b[0]) < 1e-9 && Math.abs(a[1] - b[1]) < 1e-9) throw new CommandError(t('drawing.badLocalSectionOutline'));
+      }
+    }
+    if (outline.kind === 'circle') {
+      if (!(outline.radius > 0) || !Number.isFinite(outline.radius)) throw new CommandError(t('drawing.badLocalSectionOutline'));
+    }
+    if (outline.kind === 'rectangle') {
+      const [p0, p1] = [outline.p0, outline.p1];
+      if (!p0 || !p1 || p0.length !== 2 || p1.length !== 2 || !p0.every((x) => typeof x === 'number' && Number.isFinite(x)) || !p1.every((x) => typeof x === 'number' && Number.isFinite(x))) throw new CommandError(t('drawing.badLocalSectionOutline'));
+    }
   }
 }
 
@@ -896,7 +950,7 @@ export function mutateDrawing(draft: Draft<DrawingDoc>, cmd: DrawingCommand): vo
       const v = viewOf(draft, cmd.viewId);
       const { at, scale, slide, flip, aligned, centreMarks, display, ...rest } = cmd.patch;
       const kind = v.kind ?? 'model';
-      const belongs: Record<string, string[]> = { model: ['source', 'direction'], projected: ['side'], section: ['line', 'label'], detail: ['centre', 'radius', 'label'] };
+      const belongs: Record<string, string[]> = { model: ['source', 'direction'], projected: ['side'], section: ['line', 'label'], detail: ['centre', 'radius', 'label'], sectionLocal: ['outline', 'depth', 'label'] };
       for (const k of Object.keys(rest)) if (k !== 'name' && !belongs[kind]!.includes(k)) throw new CommandError(t('drawing.notForKind', { field: k, kind }));
       if (flip !== undefined && kind !== 'section') throw new CommandError(t('drawing.notForKind', { field: 'flip', kind }));
       if (aligned !== undefined && kind !== 'section') throw new CommandError(t('drawing.notForKind', { field: 'aligned', kind }));
@@ -1335,21 +1389,53 @@ export function sectionPlane(parent: ViewAxes, v: SectionDrawingView): { origin:
 /**
  * What a section cuts the model with (D-I5): the plane of its first segment (`sectionPlane`), and for a stepped or aligned line the whole line in the model's axes
  * (`path`) with `aligned` for an aligned one. The kernel takes away what is on the viewer's side of the path; the plane's normal says which side that is.
+ * For a local (partial) section, `local` gives the closed cutting outline in the parent's view plane and how deep the cut goes.
  */
 export interface SectionCut {
   origin: V3;
   normal: V3;
   path?: V3[];
   aligned?: true;
+  /** A local (partial) section: the closed cutting outline in model axes, and how deep the cut goes (mm, positive). */
+  local?: { outline: V3[]; depth: number };
 }
 
-export function sectionCut(parent: ViewAxes, v: SectionDrawingView): SectionCut {
-  const plane = sectionPlane(parent, v);
-  if (v.line.length === 2) return plane;
-  const r = rightOf(parent);
-  const u = unit(parent.up);
-  const path = v.line.map(([x, y]): V3 => [x * r[0] + y * u[0], x * r[1] + y * u[1], x * r[2] + y * u[2]]);
-  return { ...plane, path, ...(v.aligned ? { aligned: true as const } : {}) };
+export function sectionCut(parent: ViewAxes, v: DrawingView): SectionCut {
+  switch (v.kind) {
+    case 'sectionLocal': {
+      const r = rightOf(parent);
+      const u = unit(parent.up);
+      const outline = v.outline;
+      let pts: [number, number][];
+      if (outline.kind === 'rectangle') {
+        const [x0, y0] = outline.p0; const [x1, y1] = outline.p1;
+        pts = [[x0, y0], [x1, y0], [x1, y1], [x0, y1], [x0, y0]];
+      } else if (outline.kind === 'circle') {
+        // approximate the circle by a 32-gon
+        const { centre, radius } = outline;
+        const n = 32;
+        pts = [];
+        for (let i = 0; i <= n; i++) {
+          const a = (i / n) * 2 * Math.PI;
+          pts.push([centre[0] + radius * Math.cos(a), centre[1] + radius * Math.sin(a)]);
+        }
+      } else {
+        pts = outline.points;
+      }
+      const path = pts.map(([x, y]): V3 => [x * r[0] + y * u[0], x * r[1] + y * u[1], x * r[2] + y * u[2]]);
+      return { origin: path[0]!, normal: neg(parent.dir), local: { outline: path, depth: v.depth } };
+    }
+    case 'section': {
+      const plane = sectionPlane(parent, v);
+      if (v.line.length === 2) return plane;
+      const r = rightOf(parent);
+      const u = unit(parent.up);
+      const path = v.line.map(([x, y]): V3 => [x * r[0] + y * u[0], x * r[1] + y * u[1], x * r[2] + y * u[2]]);
+      return { ...plane, path, ...(v.aligned ? { aligned: true as const } : {}) };
+    }
+    default:
+      throw new CommandError(t('drawing.notForKind', { field: 'section', kind: v.kind ?? 'model' }));
+  }
 }
 
 /** The file a view shows: that of the model view at the root of the views it is derived from; null when the chain is broken. */
@@ -1371,6 +1457,8 @@ export function axesOf(views: readonly DrawingView[], projection: DrawingSheet['
     case 'section':
       return sectionLookAxes(base, view);
     case 'detail':
+      return base;
+    case 'sectionLocal':
       return base;
   }
 }

@@ -11,6 +11,8 @@ export const features = {
   'kernel.badViewDirection': '視角的方向不能是零向量',
   'kernel.projectFailed': '投影成線條失敗：{why}',
   'kernel.badSectionPath': '剖面線至少要兩個點，每個點的座標都要是數字',
+  'kernel.badLocalSectionDepth': '局部剖視的深度要是正數，而且要切到零件：零、負數、或超過零件都不行',
+  'kernel.badLocalSectionOutline': '局部剖視的輪廓要封閉、不能自相交：至少三個點，首尾相接',
   'kernel.sectionRegion': '剖切範圍',
   'kernel.motionNotRigid': '變換矩陣無效：只能平移、旋轉與鏡射',
   'kernel.badMotionWhy': '變換矩陣無效：{why}',

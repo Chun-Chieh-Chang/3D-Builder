@@ -47,7 +47,7 @@ import {
   type SceneItem,
   type ViewLines,
 } from '@3db/drawing';
-import { axesOf, oppositeSide, projectedAxes, type Annotation, type Attachment, sectionArrow, sectionLookAxes, type Dimension, type DrawingView, type Id, type Scale, type SectionDrawingView, type SurfaceFinish, type ViewCorner, type ViewSide } from '@3db/model';
+import { axesOf, oppositeSide, projectedAxes, type Annotation, type Attachment, sectionArrow, sectionLookAxes, type Dimension, type DrawingView, type Id, type Scale, type LocalSectionDrawingView, type SectionDrawingView, type SurfaceFinish, type ViewCorner, type ViewSide } from '@3db/model';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { store, useStore } from '../state/store';
 import type { DrawingPick } from '../state/drawing';
@@ -73,14 +73,15 @@ type Drag =
   | { kind: 'surface'; id: string; from: P; origin: P; delta: P }
   /** An annotation (D-I3) moved as a whole; its leader's point stays on the feature. `delta` is in sheet mm. */
   | { kind: 'annotation'; id: string; from: P; delta: P }
-  | { kind: 'draw'; tool: 'section' | 'detail'; vertical?: boolean; slant?: boolean; view: Id; from: P; to: P }
+  | { kind: 'draw'; tool: 'section' | 'sectionLocal' | 'detail'; vertical?: boolean; slant?: boolean; view: Id; from: P; to: P }
   /** The last click of a section or a detail: where its view goes. `free` (Ctrl held): put where the pointer is, not in line with the parent. */
   | { kind: 'placeDraw'; placement: DrawPlacement; from: P; to: P; free: boolean }
   /** A box dragged over the paper from where nothing was (D-I1a): what it holds is chosen; with Ctrl it is added to what was. */
   | { kind: 'box'; from: P; to: P; add: boolean };
 type DrawPlacement =
   | { tool: 'section'; view: Id; line: SectionDrawingView['line']; aligned?: boolean }
-  | { tool: 'detail'; view: Id; centre: P; radius: number };
+  | { tool: 'detail'; view: Id; centre: P; radius: number }
+  | { tool: 'sectionLocal'; view: Id; outline: LocalSectionDrawingView['outline']; depth: number };
 
 const round2 = (n: number) => Math.round(n * 100) / 100;
 
@@ -483,7 +484,7 @@ export function DrawingViewport() {
       }
       capture(e);
       d.select(view.id);
-      setDrag({ kind: 'draw', tool: tool.kind, ...(tool.kind === 'section' ? { vertical: tool.vertical ?? true, ...(tool.slant ? { slant: true } : {}) } : {}), view: view.id, from: p, to: p });
+      setDrag({ kind: 'draw', tool: tool.kind, ...(tool.kind === 'sectionLocal' ? { depth: tool.depth } : {}), ...(tool.kind === 'section' ? { vertical: tool.vertical ?? true, ...(tool.slant ? { slant: true } : {}) } : {}), view: view.id, from: p, to: p });
       return;
     }
     // Ctrl (⌘ on a Mac) and a click: what is under the pointer is added to what is chosen, or taken out of it; nothing is dragged
@@ -877,6 +878,25 @@ export function DrawingViewport() {
       }
       return { tool: 'detail', view: g.view, centre: [round2(at[0]), round2(at[1])], radius: round2(radius) };
     }
+    if (g.tool === 'sectionLocal') {
+      const depth = drw.tool?.kind === 'sectionLocal' ? drw.tool.depth : 5;
+      const toViewPt = (p: P): [number, number] => {
+        const x = p[0] ?? 0;
+        const y = p[1] ?? 0;
+        return [(x - placed.at[0]) / placed.scale + placed.centre[0], (y - placed.at[1]) / placed.scale + placed.centre[1]];
+      };
+      const p0: [number, number] = toViewPt(g.from as [number, number]);
+      const p1: [number, number] = toViewPt(g.to as [number, number]);
+      const [x0, y0] = [Math.min(p0[0] ?? 0, p1[0] ?? 0), Math.min(p0[1] ?? 0, p1[1] ?? 0)];
+      const [x1, y1] = [Math.max(p0[0] ?? 0, p1[0] ?? 0), Math.max(p0[1] ?? 0, p1[1] ?? 0)];
+      const msg = 'Local section: drag on the view to draw the cut outline, set depth, release; then click to place. Esc cancels';
+      const w = x1 - x0; const h = y1 - y0;
+      if ((w < 0 ? -w : w) < 2 || (h < 0 ? -h : h) < 2) {
+        d.notifyInfo(msg);
+        return null;
+      }
+      return { tool: 'sectionLocal', view: g.view, outline: { kind: 'rectangle', p0: [round2(x0), round2(y0)], p1: [round2(x1), round2(y1)] }, depth };
+    }
     if (g.slant) {
       // a slanted cut (D-I5): through the first point, along the drag (or toward the second click), across the whole view
       const line = lineAcrossBox(at, toView(placed, g.to), box, 5);
@@ -902,12 +922,20 @@ export function DrawingViewport() {
    * pointer is (which sets the way its arrows look), slid along that line to the pointer; with Ctrl it goes where the pointer is. A detail goes where the pointer is.
    */
   const placeDraw = (placement: DrawPlacement, at: P, free: boolean) => {
-    if (placement.tool === 'detail') d.addDetail(placement.view, placement.centre, placement.radius, [round2(at[0]), round2(at[1])]);
-    else {
-      const g = free ? null : sectionGhost(placement, at);
-      const aligned = placement.aligned ? { aligned: true } : {};
-      if (g) d.addSection(placement.view, placement.line, undefined, { flip: g.flip, slide: g.slide, shift: g.shift, ...aligned });
-      else d.addSection(placement.view, placement.line, [round2(at[0]), round2(at[1])], aligned);
+    switch (placement.tool) {
+      case 'detail':
+        d.addDetail(placement.view, placement.centre, placement.radius, [round2(at[0]), round2(at[1])]);
+        break;
+      case 'sectionLocal':
+        d.addLocalSection(placement.view, placement.outline, placement.depth, [round2(at[0]), round2(at[1])]);
+        break;
+      case 'section': {
+        const g = free ? null : sectionGhost(placement, at);
+        const aligned = placement.aligned ? { aligned: true } : {};
+        if (g) d.addSection(placement.view, placement.line, undefined, { flip: g.flip, slide: g.slide, shift: g.shift, ...aligned });
+        else d.addSection(placement.view, placement.line, [round2(at[0]), round2(at[1])], aligned);
+        break;
+      }
     }
     d.setTool(null);
   };

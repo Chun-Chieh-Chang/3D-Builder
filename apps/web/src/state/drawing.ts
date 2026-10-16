@@ -31,6 +31,7 @@ import {
   type ElementFacts,
   type Ref,
   type SectionDrawingView,
+  type LocalSectionDrawingView,
   type SurfaceFinish,
   type SurfaceFinishPatch,
   type TitleField,
@@ -124,6 +125,8 @@ type DistributiveOmit<T, K extends keyof never> = T extends unknown ? Omit<T, K>
 export type DrawingTool =
   | { kind: 'dimension'; picks: { view: Id; feature: Pickable }[] }
   | { kind: 'section'; vertical?: boolean; slant?: boolean; path?: 'stepped' | 'aligned' }
+  /** A local (partial) section of `parent` inside a closed outline (B1); the depth is how far the cut goes. */
+  | { kind: 'sectionLocal'; outlineKind: 'rectangle' | 'circle' | 'polygon'; depth: number }
   | { kind: 'detail' }
   | { kind: 'surface' }
   /**
@@ -598,7 +601,7 @@ export class DrawingStore {
     const axes = axesOf(doc.views, doc.sheet.projection, view);
     if (!key || !axes) return null;
     let cut: SectionCut | undefined;
-    if (view.kind === 'section') {
+    if (view.kind === 'section' || view.kind === 'sectionLocal') {
       const parent = viewById(doc.views, view.parent);
       const parentAxes = parent ? axesOf(doc.views, doc.sheet.projection, parent) : null;
       if (!parentAxes) return null;
@@ -1153,6 +1156,32 @@ export class DrawingStore {
     const insert: DrawingCommand = { type: 'insertViews', views: [{ id, name: t('drawing.view.section', { label }), kind: 'section', parent, line, label, ...(options.flip ? { flip: true } : {}), ...(options.aligned ? { aligned: true } : {}), ...slide, ...(at ? { at } : {}) }] };
     const shift = !at && options.shift ? options.shift : null;
     if (this.execute(shift ? { type: 'batch', commands: [insert, { type: 'setSheet', sheet: { shift } }] } : insert)) this.select(id);
+  }
+
+  /** A local (partial) section of `parent` inside `outline` (closed polyline in the parent's view coordinates) cut to `depth` mm. */
+  addLocalSection(parent: Id, outline: LocalSectionDrawingView['outline'], depth: number, at?: [number, number]): void {
+    const doc = this.history.doc;
+    if (this.isFlat(parent)) return this.host.notify(t('drawing.flatNoDerived'), 'error');
+    const p = viewById(doc.views, parent);
+    const parentAxes = p ? axesOf(doc.views, doc.sheet.projection, p) : null;
+    if (!parentAxes) return;
+    const cut = sectionCut(parentAxes, {
+      id: '',
+      kind: 'sectionLocal',
+      name: '',
+      parent,
+      outline,
+      depth,
+      label: '',
+    } as unknown as LocalSectionDrawingView);
+    const ids = new IdAllocator(doc.idCounters, drawingIdsInUse(doc));
+    const id = ids.take('view');
+    const label = this.nextLabel();
+    const insert: DrawingCommand = {
+      type: 'insertViews',
+      views: [{ id, name: t('drawing.view.section', { label }), kind: 'sectionLocal', parent, outline, depth, label, ...(at ? { at } : {}) }],
+    };
+    if (this.execute(insert)) this.select(id);
   }
 
   /** The letter the next section or detail will have. */

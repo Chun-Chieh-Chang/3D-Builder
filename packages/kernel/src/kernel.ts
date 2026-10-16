@@ -2857,6 +2857,131 @@ export class Kernel {
     }
   }
 
+  /**
+   * A local (partial) section (B1): only what lies inside the closed `outline` (given in the parent's view plane,
+   * as 3D points on that plane) is cut, `depth` mm inwards from the side of the part the viewer sees; everything
+   * outside the outline is shown as-is. Seen looking against `normal` with `up` up. The outlines of the faces the
+   * cut made (on the depth plane) are given for hatching. The whole part uncut, with an empty `cut`, when the
+   * outline misses the part; `badLocalSectionDepth` when the depth would reach past the material.
+   */
+  sectionViewLocal(id: ShapeId, outline: Vec3[], depth: number, plane: { origin: Vec3; normal: Vec3 }, up: Vec3, options: { tolerance?: number; angular?: number; mesh?: boolean } = {}): ProjectedView {
+    const oc = this.oc;
+    const n0 = plane.normal;
+    const nl = Math.hypot(n0[0], n0[1], n0[2]);
+    if (!(nl > 0)) throw new KernelError(t('kernel.badViewDirection'));
+    if (!(depth > 0) || !Number.isFinite(depth)) throw new KernelError(t('kernel.badLocalSectionDepth'));
+    if (!outline || outline.length < 3 || !outline.every((p) => p.length === 3 && p.every(Number.isFinite))) throw new KernelError(t('kernel.badLocalSectionOutline'));
+    const n: Vec3 = [n0[0] / nl, n0[1] / nl, n0[2] / nl];
+    const made: ShapeId[] = [];
+    const arena = new Arena();
+    try {
+      const box = arena.own(new oc.Bnd_Box());
+      oc.BRepBndLib.Add(this.get(id), box, false);
+      const a = this.xyz(arena.own(box.CornerMin()));
+      const b = this.xyz(arena.own(box.CornerMax()));
+      const size = Math.hypot(b[0] - a[0], b[1] - a[1], b[2] - a[2]);
+      // where the part lies along the normal (its box corners projected on it): the cut starts at the side
+      // the viewer sees and goes `depth` inwards — SolidWorks measures a local section's depth from the visible surface
+      const along = (p: Vec3) => p[0] * n[0] + p[1] * n[1] + p[2] * n[2];
+      const extent = (lo3: Vec3, hi3: Vec3): [number, number] => {
+        let lo = 0, hi = 0;
+        for (let i = 0; i < 3; i++) {
+          const x0 = lo3[i]! * n[i]!; const x1 = hi3[i]! * n[i]!;
+          lo += Math.min(x0, x1); hi += Math.max(x0, x1);
+        }
+        return [lo, hi];
+      };
+      const [partLo, partHi] = extent(a, b);
+      /** The outline slid along the normal so that its plane sits at `target`. */
+      const shiftOutline = (target: number): Vec3[] => {
+        const d = target - along(plane.origin);
+        return outline.map((p): Vec3 => [p[0] + n[0] * d, p[1] + n[1] * d, p[2] + n[2] * d]);
+      };
+      /** The outline's plane at `target`, extruded along -normal for `len` — the solid every cut tool is made of. */
+      const prismOf = (target: number, len: number): ShapeId => {
+        const pts = shiftOutline(target);
+        // a closed outline repeats its first point; MakePolygon would make the closing segment degenerate
+        const first = pts[0]!;
+        const last = pts[pts.length - 1]!;
+        const dup = Math.abs(last[0] - first[0]) < 1e-9 && Math.abs(last[1] - first[1]) < 1e-9 && Math.abs(last[2] - first[2]) < 1e-9;
+        const poly = arena.own(new oc.BRepBuilderAPI_MakePolygon());
+        for (const p of dup ? pts.slice(0, -1) : pts) poly.Add(this.pnt(arena, p));
+        poly.Close();
+        const mkFace = arena.own(new oc.BRepBuilderAPI_MakeFace(arena.own(poly.Wire()), true));
+        if (!mkFace.IsDone()) throw new KernelError(t('kernel.opFailed', { label: t('kernel.sectionRegion') }));
+        const vec = arena.own(new oc.gp_Vec(-n[0] * len, -n[1] * len, -n[2] * len));
+        const prism = arena.own(new oc.BRepPrimAPI_MakePrism(arena.own(mkFace.Face()), vec, false, true));
+        const shape = this.put(this.build(prism, t('kernel.sectionRegion'), arena));
+        made.push(shape);
+        return shape;
+      };
+      // the column of the part's material inside the outline: from in front of the part all the way through it
+      const start = Math.max(along(plane.origin), partHi) + 1;
+      const column = this.boolean('common', id, prismOf(start, start - partLo + depth + 10));
+      made.push(column.shape);
+      // the outline misses the part: nothing is cut, the whole part is seen (the drawing says 「沒有切到零件」)
+      if (this.topology(column.shape).faces.length === 0) return { ...this.projectView(id, { dir: [-n[0], -n[1], -n[2]], up }, options), cut: [] };
+      const cbBox = arena.own(new oc.Bnd_Box());
+      oc.BRepBndLib.Add(this.get(column.shape), cbBox, false);
+      const [colLo, colHi] = extent(this.xyz(arena.own(cbBox.CornerMin())), this.xyz(arena.own(cbBox.CornerMax())));
+      // depth past the material: refused outright, never silently shortened (B1)
+      if (colHi - colLo < depth) throw new KernelError(t('kernel.badLocalSectionDepth'));
+      // the cut tool: the outline at the surface the viewer sees, `depth` inwards
+      const tool = prismOf(colHi, depth);
+
+      // cut the tool out of the part: only inside the outline and within depth is removed
+      const kept = this.boolean('cut', id, tool);
+      made.push(kept.shape);
+      if (this.topology(kept.shape).faces.length === 0) return { visible: [], hidden: [], box: null, cut: [] };
+
+      const view: ViewDirection = { dir: [-n[0], -n[1], -n[2]], up };
+      const seen = this.projectView(kept.shape, view, options);
+
+      // cut faces: planar, square to the view, `depth` below the surface the cut starts at
+      const dOff = colHi - depth - along(plane.origin);
+      const depthPlane: Vec3 = [plane.origin[0] + n[0] * dOff, plane.origin[1] + n[1] * dOff, plane.origin[2] + n[2] * dOff];
+      const tol = 1e-6 * Math.max(1, size);
+      const topo = this.topology(kept.shape);
+      const onCut = new Set(
+        topo.faces.flatMap((f, i) => {
+          if (f.surface !== 'plane' || !f.normal) return [];
+          const parallel = Math.abs(f.normal[0] * n[0] + f.normal[1] * n[1] + f.normal[2] * n[2]) > 1 - 1e-9;
+          const off = Math.abs((f.center[0] - depthPlane[0]) * n[0] + (f.center[1] - depthPlane[1]) * n[1] + (f.center[2] - depthPlane[2]) * n[2]);
+          return parallel && off < tol ? [i] : [];
+        }),
+      );
+
+      const tolerance = options.tolerance ?? Math.min(0.05, Math.max(1e-3, size * 1e-3));
+      const angular = options.angular ?? 0.1;
+      const ul = Math.hypot(up[0], up[1], up[2]);
+      const U: Vec3 = [up[0] / ul, up[1] / ul, up[2] / ul];
+      const rx: Vec3 = [view.dir[1] * U[2] - view.dir[2] * U[1], view.dir[2] * U[0] - view.dir[0] * U[2], view.dir[0] * U[1] - view.dir[1] * U[0]];
+      const rl = Math.hypot(rx[0], rx[1], rx[2]);
+      const R3: Vec3 = [rx[0] / rl, rx[1] / rl, rx[2] / rl];
+      const outlines: number[][] = [];
+      topo.edges.forEach((e, ei) => {
+        if (!e.faces.some((f) => onCut.has(f))) return;
+        const edge = this.subShape(kept.shape, 'edge', ei);
+        made.push(edge);
+        const curve = arena.own(new oc.BRepAdaptor_Curve(arena.own(oc.TopoDS.Edge(this.get(edge)))));
+        const pts = arena.own(new oc.GCPnts_TangentialDeflection(curve, angular, tolerance));
+        const flat: number[] = [];
+        for (let i = 1; i <= pts.NbPoints(); i++) {
+          const p = arena.own(pts.Value(i));
+          flat.push(p.X() * R3[0] + p.Y() * R3[1] + p.Z() * R3[2], p.X() * U[0] + p.Y() * U[1] + p.Z() * U[2]);
+        }
+        if (flat.length >= 4) outlines.push(flat);
+      });
+      return { ...seen, cut: outlines };
+    } catch (e) {
+      if (e instanceof KernelError) throw e;
+      throw new KernelError(t('kernel.projectFailed', { why: this.errorText(e) }));
+    } finally {
+      for (const m of made) this.release(m);
+      arena.dispose();
+    }
+  }
+
   // ------------------------------------------------------------------ surfaces (C8.1, C9.2–C9.4, Phase 4b)
 
   /**

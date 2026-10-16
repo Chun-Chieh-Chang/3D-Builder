@@ -1,5 +1,39 @@
 # 3D-Builder 開發日誌 (DEV_LOG.md)
 
+## 2026-10-16（B1）：局部剖視（local section）全鏈路——模型、核心、圖面、介面接線
+
+### 1. 範圍（使用者 2026-10-16 裁定：八項細節第一批，一批一項，先只做局部剖視）
+矩形／圓／多邊形封閉輪廓內剖切到輸入深度，輪廓外照舊顯示。深度先為數值（參照欄位預留），深度 0／負／超出零件明確拋錯，Schema 20→21。
+
+### 2. 做法
+| 層 | 檔案 | 內容 |
+|---|---|---|
+| 模型 | `packages/model/src/drawing.ts`、`serialize.ts` | `LocalSectionDrawingView`（kind `'sectionLocal'`）；`SectionCut.local`；`sectionCut` 把輪廓 2D→3D（圓近似 32 邊形），normal = 母視圖視向反向；`checkView` 驗證（輪廓封閉、depth > 0、label、不得從另一個 sectionLocal 派生）；migration v20→v21 |
+| 核心 | `packages/kernel/src/kernel.ts` | `sectionViewLocal`：依零件在視線軸的包圍盒算出可見面，從可見面往內擠出 `depth` 稜柱做 `cut`（不是從模型原點平面量）；depth 超出零件實體拋 `badLocalSectionDepth`；輪廓落空回傳原形完整投影＋空 cut（比照 sectionMissed）；深度平面上的邊作為 cut 線供斜影線 |
+| 流程 | `packages/regen/src/drawingViews.ts`、`apps/web/src/state/drawing.ts` | `projectDrawingView` 處理 `cut?.local`；`requestOf` 中 `sectionLocal` 走 `sectionCut`；`DrawingTool` 加入 `sectionLocal`；`addLocalSection` |
+| 圖面 | `packages/drawing/src/scene.ts` | `viewItems` 對 sectionLocal 的 cut 斜影線；`localSectionItems` 在母視圖畫封閉輪廓＋字母＋A-A 標題；排版走 detail 的右側 fallback（`sideOf`），無需改動 layout |
+| 介面 | `DrawingPanel.tsx`、`DrawingViewport.tsx` | `toolLocalSection` 按鈕＋深度欄（預設 5，存 `localDepth`）；Draw/DrawPlacement 加入 sectionLocal；拖曳畫矩形→`addLocalSection` |
+| 測試 | `tests/phase5/drawing-local-section.test.ts`（14 項，模型驗證）、`tests/phase5/drawing-local-section-kernel.test.ts`（8 項，見下） | 見下 |
+
+### 3. 自我紅隊四問（AGENTS.md §2.1）
+1. **輸入破壞**：depth 0／負／NaN／∞、輪廓未封閉、零長度段、點不足、圓半徑≤0、label 空，全部 `CommandError` 明確拋錯；**不四捨五入、不夾值**。kernel 層重複檢查（depth、outline 點數），輪廓首尾重複點去重（model 傳閉合 5 點，`MakePolygon.Close()` 不能吃退化邊）。
+2. **幾何相交**：outline 自相交由 checkView 擋（多邊形段檢查）；outline 落空不拋、回傳原形（比照 sectionMissed）；depth 超出零件實體在 kernel 拋錯（`colHi - colLo < depth`，包圍盒保守估計）；prof 自相交不在 model 層檢查——稜柱建構失敗→`opFailed` 明確拋錯。
+3. **依賴鏈完整性**：`LocalSectionDrawingView`（model）→`sectionCut`→`SectionCut.local`→`projectDrawingView`（regen）→`sectionViewLocal`（kernel）→`viewImage`/`viewItems`（drawing scene）→`requestOf`→`DrawingTool`→`addLocalSection`→工具按鈕→viewport 拖曳→e2e。記憶體：稜柱 boolOp + cut + common（column 查詢）三次布林，按 ADR 0126 高水位重啟限制；測試只斷言 `liveShapes`。
+4. **零 Mock**：階梯塊手建（20×30×12 左半＋20×30×6 右半），斜影線面積手算：depth 5 → z=7 平面只切到左半 5×10=**50**；depth 8 → z=4 平面切到兩半 10×10=**100**；兩者 ±1% 斷言。**反向對照**：舊實作（從原點平面擠出）切空氣→cut 空→50/100 斷言失敗。平面位置無關測試（outline 在 z=0 與 z=12 結果相同）正面驗證可見面語義。
+
+### 4. 確效
+- `typecheck` 0 新錯誤；`lint:deps`／`lint:i18n` 過（`lint:rules` 的唯一失敗是別人的 phase3 探針檔）
+- `tests/phase5/`：drawing-local-section 14、drawing-local-section-kernel 8、document 10、derived 25、stepped 18、slanted 6，全過
+
+### 5. 已知限制／後續
+- 階梯塊深度平面的切面只主張「平面法線∥視向且過深度平面」的面；切面框之外可能出現線（同 ADR 0143 的已知限制風格）
+- `colHi - colLo` 是包圍盒估計，斜向輪廓可能保守拒絕；實務上輪廓多為軸向對齊
+- polygon 自相交只在 model 層檢查分段長度；稜柱建構失敗以 `opFailed` 明確拋錯（不靜默）
+- e2e 實機腳本未寫（viewport 拖曳路徑已通，留待實機輪）
+
+---
+
+
 ## 2026-10-15（晚四）：組合件的「正視於」與選擇濾器（[ADR 0148](docs/adr/0148-assembly-view-normal-and-filter.md)）
 
 ### 1. 範圍

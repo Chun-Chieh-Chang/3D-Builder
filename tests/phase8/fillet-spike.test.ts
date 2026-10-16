@@ -216,6 +216,8 @@ describe('F-0: which side of a circular edge the fillet goes to', () => {
     const added = volume(kernel.fillet(b, [root], 1).shape) - volume(b);
     expect(added).toBeGreaterThan(0);
     expect(Math.abs(added - corner(6, 5.5))).toBeLessThan(1e-3);
+    // hand-calculated truth: Pappus on unit square minus quarter disc = +7.0431
+    expect(Math.abs(added - 7.0431)).toBeLessThan(5e-4);
   });
 
   it('the rim circle (convex, the top of the boss): the fillet of the same radius removes material', () => {
@@ -225,5 +227,7 @@ describe('F-0: which side of a circular edge the fillet goes to', () => {
     const moved = volume(kernel.fillet(b, [rim], 1).shape) - volume(b);
     expect(moved).toBeLessThan(0);
     expect(Math.abs(moved + corner(4, 4.5))).toBeLessThan(1e-3);
+    // hand-calculated truth: Pappus on unit square minus quarter disc = −6.4407
+    expect(Math.abs(moved + 6.4407)).toBeLessThan(5e-4);
   });
 });

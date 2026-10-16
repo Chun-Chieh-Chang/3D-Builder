@@ -13,6 +13,8 @@ export const features: Translation = {
   'kernel.badViewDirection': 'The direction of the view cannot be a zero vector',
   'kernel.projectFailed': 'Could not project the shape into lines: {why}',
   'kernel.badSectionPath': 'A section line needs at least two points, each given as numbers',
+  'kernel.badLocalSectionDepth': "A local section's depth must be positive and must reach the part: zero, negative, or beyond the part is refused",
+  'kernel.badLocalSectionOutline': "A local section's outline must be closed and non-self-intersecting: at least three points, first and last coincide",
   'kernel.sectionRegion': 'the region a section takes away',
   'kernel.motionNotRigid': 'The transformation matrix is not valid: only translation, rotation and mirroring are allowed',
   'kernel.badMotionWhy': 'The transformation matrix is not valid: {why}',

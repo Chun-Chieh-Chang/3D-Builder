@@ -26,6 +26,7 @@ export function projectDrawingView(kernel: Kernel, parts: readonly ViewPart[], a
     // a stepped or aligned section (D-I5) is cut along its whole line; a straight one by the plane of its line
     const options = mesh ? { mesh: true } : {};
     if (cut?.path) return kernel.sectionViewPath(whole, { normal: cut.normal, path: cut.path, ...(cut.aligned ? { aligned: true } : {}) }, axes.up, options);
+    if (cut?.local) return kernel.sectionViewLocal(whole, cut.local.outline, cut.local.depth, { origin: cut.origin, normal: cut.normal }, axes.up, options);
     return cut ? kernel.sectionView(whole, cut, axes.up, options) : kernel.projectView(whole, axes, options);
   } finally {
     for (const id of made) kernel.release(id);

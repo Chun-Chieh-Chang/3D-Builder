@@ -1,5 +1,5 @@
 import { getLocale, t, withLocale } from '@3db/i18n';
-import { axesOf, displayOf, isShaded, resolveDimStyle, resolveTitleStyle, sectionEndDirections, type DetailDrawingView, type DimStyle, type DrawingDoc, type DrawingView, type Id, type Scale, type SectionDrawingView, type TitleField, type ViewFeature } from '@3db/model';
+import { axesOf, displayOf, isShaded, resolveDimStyle, resolveTitleStyle, sectionEndDirections, type DetailDrawingView, type DimStyle, type DrawingDoc, type DrawingView, type Id, type Scale, type LocalSectionDrawingView, type SectionDrawingView, type TitleField, type ViewFeature } from '@3db/model';
 import type { ShadeImage } from './shade';
 import { centreItems, holeRows, holeTableBox, holeTableItems, threadItems, type HoleRow } from './annotation';
 import { annotationItems } from './gdt';
@@ -164,7 +164,7 @@ export function viewItems(view: DrawingView, lines: ViewLines | null | undefined
   if (showsHidden(view)) for (const l of lines.hidden) items.push({ kind: 'polyline', points: move(l), style: display === 'wireframe' ? 'visible' : 'hidden' });
   if (display !== 'shaded') for (const l of lines.visible) items.push({ kind: 'polyline', points: move(l), style: 'visible' });
   for (const l of lines.center ?? []) items.push({ kind: 'polyline', points: move(l), style: 'center' });
-  if (view.kind === 'section' && lines.cut) for (const l of hatch(lines.cut, HATCH_SPACING / placed.scale)) items.push({ kind: 'polyline', points: move(l), style: 'thin' });
+  if ((view.kind === 'section' || view.kind === 'sectionLocal') && lines.cut) for (const l of hatch(lines.cut, HATCH_SPACING / placed.scale)) items.push({ kind: 'polyline', points: move(l), style: 'thin' });
   return items;
 }
 
@@ -195,6 +195,43 @@ function sectionItems(v: SectionDrawingView, parent: PlacedView, own: PlacedView
     items.push({ kind: 'polyline', points: [...end, ...tip], style: 'visible' });
     items.push({ kind: 'polyline', points: [...back(0.35), ...tip, ...back(-0.35)], style: 'visible' });
     items.push({ kind: 'text', at: [tip[0] + dir[0] * 2 - (dir[0] < 0 ? 3 : 0), tip[1] + dir[1] * 2 - (dir[1] < 0 ? 5 : 0)], text: v.label, height: 5 });
+  }
+  items.push({ kind: 'text', at: [own.at[0], own.at[1] - own.h / 2 - 8], text: `${v.label}-${v.label}`, height: 5, anchor: 'center' });
+  return items;
+}
+
+/** The cutting outline of a local section on its parent view with its letter beside it, and the section's own title. */
+function localSectionItems(v: LocalSectionDrawingView, parent: PlacedView, own: PlacedView): SceneItem[] {
+  const outline = v.outline;
+  let pts: [number, number][];
+  if (outline.kind === 'rectangle') {
+    const [x0, y0] = outline.p0; const [x1, y1] = outline.p1;
+    pts = [[x0, y0], [x1, y0], [x1, y1], [x0, y1]];
+  } else if (outline.kind === 'circle') {
+    const { centre, radius } = outline;
+    const n = 32;
+    pts = [];
+    for (let i = 0; i < n; i++) {
+      const a = (i / n) * 2 * Math.PI;
+      pts.push([centre[0] + radius * Math.cos(a), centre[1] + radius * Math.sin(a)]);
+    }
+  } else {
+    pts = outline.points.slice();
+    // the polyline is drawn closed: a point repeating the first would give a degenerate last segment
+    const first = pts[0]; const last = pts[pts.length - 1];
+    if (first && last && Math.abs(first[0] - last[0]) < 1e-9 && Math.abs(first[1] - last[1]) < 1e-9) pts.pop();
+  }
+  const sheetPts = pts.map(([x, y]) => toSheet(parent, x, y));
+  const items: SceneItem[] = [{ kind: 'polyline', points: sheetPts.flat(), style: 'center', closed: true }];
+  // the letter beside the outline: off its first corner, away from the middle of it
+  const corner = sheetPts[0];
+  if (corner) {
+    let cx = 0; let cy = 0;
+    for (const p of sheetPts) { cx += p[0]; cy += p[1]; }
+    cx /= sheetPts.length; cy /= sheetPts.length;
+    const dx = corner[0] - cx; const dy = corner[1] - cy;
+    const len = Math.hypot(dx, dy) || 1;
+    items.push({ kind: 'text', at: [corner[0] + (dx / len) * 3, corner[1] + (dy / len) * 3], text: v.label, height: 5 });
   }
   items.push({ kind: 'text', at: [own.at[0], own.at[1] - own.h / 2 - 8], text: `${v.label}-${v.label}`, height: 5, anchor: 'center' });
   return items;
@@ -254,13 +291,14 @@ function buildSceneIn(
     if (!resolved.get(v.id)) continue;
     // The view's name under it. A section and a detail are named by the letter they carry (ISO 128-30: 「A–A」, 「L」), which their own items already write,
     // so only the rest are named here; without it a reader has the lines and no way to tell which view is which.
-    if (v.kind !== 'section' && v.kind !== 'detail') items.push({ kind: 'text', at: [own.at[0], own.at[1] - own.h / 2 - 8], text: v.name, height: 5, anchor: 'center' });
+    if (v.kind !== 'section' && v.kind !== 'sectionLocal' && v.kind !== 'detail') items.push({ kind: 'text', at: [own.at[0], own.at[1] - own.h / 2 - 8], text: v.name, height: 5, anchor: 'center' });
     items.push(...centreItems(v, features.get(v.id) ?? [], own));
     items.push(...surfaceFinishItems(doc.surfaceFinishes.filter((f) => f.view === v.id), own));
     items.push(...threadItems(v, features.get(v.id) ?? [], own));
     items.push(...annotationItems((doc.annotations ?? []).filter((a) => a.view === v.id), own, lookup, doc.sheet.unit ?? 'mm'));
-    const parent = v.kind === 'section' || v.kind === 'detail' ? placed.get(v.parent) : undefined;
+    const parent = v.kind === 'section' || v.kind === 'sectionLocal' || v.kind === 'detail' ? placed.get(v.parent) : undefined;
     if (v.kind === 'section' && parent) items.push(...sectionItems(v, parent, own));
+    if (v.kind === 'sectionLocal' && parent) items.push(...localSectionItems(v, parent, own));
     if (v.kind === 'detail' && parent) items.push(...detailItems(v, parent, own, scaleOf(doc, v)));
   }
   const dimensions = new Map<Id, DimensionOutcome>();
