@@ -773,6 +773,28 @@ export class DrawingStore {
     return done;
   }
 
+  /**
+   * 「鎖定」 (B2.1): the view is given the place and the scale it is drawn at now, so that it keeps them. Locked, it no longer follows the arrangement's
+   * centring, the sheet's shift or the sheet's (or its parent's) scale, and moving or rescaling it is refused; the dimensions and annotations on it stay
+   * editable. 「解鎖」 keeps the place and the scale it had: the lock only stops them from changing.
+   */
+  lockView(id: Id): boolean {
+    const view = viewById(this.history.doc.views, id);
+    const placed = this.scene().placed.get(id);
+    if (!view || !placed || view.locked) return false;
+    const done = this.execute({ type: 'setView', viewId: id, patch: { at: [Math.round(placed.at[0] * 100) / 100, Math.round(placed.at[1] * 100) / 100], slide: null, scale: scaleOf(this.history.doc, view), locked: true } });
+    if (done) this.notifyInfo(t('drawingUi.viewLockedDone'));
+    return done;
+  }
+
+  unlockView(id: Id): boolean {
+    const view = viewById(this.history.doc.views, id);
+    if (!view || !view.locked) return false;
+    const done = this.execute({ type: 'setView', viewId: id, patch: { locked: null } });
+    if (done) this.notifyInfo(t('drawingUi.viewUnlockedDone'));
+    return done;
+  }
+
   /** A projected view of `parent` on `side`, slid `slide` mm along its line from where it would be laid out (C16.3). */
   placeProjected(parent: Id, side: ViewSide, slide: number, shift: [number, number] | null = null): Id | null {
     const doc = this.history.doc;

@@ -588,6 +588,10 @@ export function DrawingPanel() {
                   ))}
                 </select>
               </label>
+              <label className="pm-row checkbox">
+                <input type="checkbox" data-field="viewLock" checked={!!view.locked} title={t('drawingUi.viewLockTip')} onChange={(e) => (e.target.checked ? d.lockView(view.id) : d.unlockView(view.id))} />
+                <span>{t('drawingUi.viewLock')}</span>
+              </label>
               <label className="pm-row">
                 <span>{t('drawingUi.display')}</span>
                 <select data-field="display" value={displayOf(view)} onChange={(e) => d.setView(view.id, { display: e.target.value as ViewDisplay })}>
@@ -615,8 +619,8 @@ export function DrawingPanel() {
                 <button
                   className="pm-button"
                   data-action="resetPosition"
-                  disabled={arrangementBase(doc)?.id === view.id ? d.arrangementCentred() : !(view.at || view.slide)}
-                  title={t('drawingUi.autoLayoutTip')}
+                  disabled={view.locked || (arrangementBase(doc)?.id === view.id ? d.arrangementCentred() : !(view.at || view.slide))}
+                  title={view.locked ? t('drawingUi.viewLockTip') : t('drawingUi.autoLayoutTip')}
                   onClick={() => (arrangementBase(doc)?.id === view.id ? d.centreArrangement() : d.setView(view.id, { at: null, slide: null }))}
                 >
                   {t('drawingUi.autoLayout')}

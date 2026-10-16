@@ -401,6 +401,11 @@ export function DrawingViewport() {
     if (!tool && (e.target as HTMLElement).closest('[data-scale-handle]') && drw.selected) {
       const view = drw.doc.views.find((v) => v.id === drw.selected);
       const placed = view && built.placed.get(view.id);
+      // a locked view keeps its scale (B2.1): the handle does nothing, and that is said
+      if (view?.locked) {
+        d.notifyInfo(t('drawing.viewLocked'));
+        return;
+      }
       if (view && placed) {
         capture(e);
         setDrag({ kind: 'scale', id: view.id, target: scaleTarget(drw.doc, view), centre: [placed.at[0], placed.at[1]], r0: Math.max(1e-6, Math.hypot(p[0] - placed.at[0], p[1] - placed.at[1])), ratio0: placed.scale, scale: scaleFromRatio(placed.scale) });
@@ -559,6 +564,11 @@ export function DrawingViewport() {
     capture(e);
     if (hit) {
       d.select(hit.id);
+      // a locked view (B2.1) keeps its place: it is chosen, but not dragged, and that is said
+      if (hit.locked) {
+        d.notifyInfo(t('drawing.viewLocked'));
+        return;
+      }
       const at = built.placed.get(hit.id)!.at;
       const axis = slideAxis(drw.doc, hit);
       const base = arrangementBase(drw.doc);
@@ -1220,12 +1230,15 @@ export function DrawingViewport() {
             data-selection
             style={{ left: (selected.at[0] - selected.w / 2) * PX - 4, top: (sheet.height - selected.at[1] - selected.h / 2) * PX - 4, width: selected.w * PX + 8, height: selected.h * PX + 8 }}
           >
-            <span
-              className="drawing-handle"
-              data-scale-handle
-              title={t('drawingUi.scaleHandle')}
-              style={{ width: 12 / pan.zoom, height: 12 / pan.zoom, right: -6 / pan.zoom, bottom: -6 / pan.zoom, borderWidth: 1 / pan.zoom }}
-            />
+            {/* the scale handle is not shown on a locked view (B2.1): there is no scale to drag there */}
+            {!drw.doc.views.find((v) => v.id === selected.id)?.locked && (
+              <span
+                className="drawing-handle"
+                data-scale-handle
+                title={t('drawingUi.scaleHandle')}
+                style={{ width: 12 / pan.zoom, height: 12 / pan.zoom, right: -6 / pan.zoom, bottom: -6 / pan.zoom, borderWidth: 1 / pan.zoom }}
+              />
+            )}
           </div>
         )}
       </div>

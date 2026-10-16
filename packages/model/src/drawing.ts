@@ -185,6 +185,12 @@ interface ViewCommon {
   display?: ViewDisplay;
   /** The centre marks of the circles and the centre lines of the cylinders are drawn (C16.5). Absent: they are, except in a section view. */
   centreMarks?: boolean;
+  /**
+   * The view is locked (B2.1): it keeps the place and the scale it had when it was locked, and moving or rescaling it is refused (the dimensions and
+   * annotations on it stay editable). Absent: not locked. Locking gives the view the place it is drawn at now (its `at`), so it no longer follows the
+   * arrangement's centring, the sheet's shift or the sheet's (or its parent's) scale.
+   */
+  locked?: boolean;
 }
 
 /** A view of a model from one of the named directions (C16.2). */
@@ -698,6 +704,8 @@ export type ViewPatch = {
   outline?: LocalSectionDrawingView['outline'];
   /** A local section's cut depth (mm). */
   depth?: number;
+  /** `true` locks the view (giving it the place and scale it is drawn at now), `null` unlocks it. */
+  locked?: boolean | null;
 };
 
 /** Whether a scale is two whole numbers of 1 to 1000. */
@@ -948,7 +956,9 @@ export function mutateDrawing(draft: Draft<DrawingDoc>, cmd: DrawingCommand): vo
     }
     case 'setView': {
       const v = viewOf(draft, cmd.viewId);
-      const { at, scale, slide, flip, aligned, centreMarks, display, ...rest } = cmd.patch;
+      // a locked view (B2.1) keeps its place and its scale: moving or rescaling it is refused, however it is asked for
+      if (v.locked && (cmd.patch.at !== undefined || cmd.patch.scale !== undefined || cmd.patch.slide !== undefined)) throw new CommandError(t('drawing.viewLocked'));
+      const { at, scale, slide, flip, aligned, centreMarks, display, locked, ...rest } = cmd.patch;
       const kind = v.kind ?? 'model';
       const belongs: Record<string, string[]> = { model: ['source', 'direction'], projected: ['side'], section: ['line', 'label'], detail: ['centre', 'radius', 'label'], sectionLocal: ['outline', 'depth', 'label'] };
       for (const k of Object.keys(rest)) if (k !== 'name' && !belongs[kind]!.includes(k)) throw new CommandError(t('drawing.notForKind', { field: k, kind }));
@@ -967,6 +977,8 @@ export function mutateDrawing(draft: Draft<DrawingDoc>, cmd: DrawingCommand): vo
       else if (centreMarks !== undefined) next.centreMarks = centreMarks;
       if (display === null) delete next.display;
       else if (display !== undefined) next.display = display;
+      if (locked === null || locked === false) delete next.locked;
+      else if (locked !== undefined) next.locked = true;
       if (flip === null || flip === false) delete next.flip;
       else if (flip === true) next.flip = true;
       checkView(next, draft.views.filter((x) => x.id !== v.id) as DrawingView[]);
