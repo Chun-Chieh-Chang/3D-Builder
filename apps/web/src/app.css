@@ -241,6 +241,9 @@ code { font-family: Consolas, 'Cascadia Mono', monospace; font-size: 11px; }
 .value-input .suffix { color: var(--muted); font-size: 11px; width: 22px; }
 .hint { color: var(--muted); font-size: 11px; margin: 6px 0 0; line-height: 1.5; }
 .error-text { color: var(--error); font-size: 12px; margin: 4px 0 0; }
+.pm-row input.invalid, .sw-panel .pm-row input.invalid { border-color: var(--error); background: var(--error-soft); }
+.pm-row:has(.error-text) { flex-wrap: wrap; }
+.pm-row .error-text { flex: 1 0 100%; text-align: right; margin: 2px 0 0; }
 .selection-box { list-style: none; margin: 0; padding: 4px; border: 1px solid var(--accent-line); background: var(--accent-faint); border-radius: 3px; min-height: 40px; }
 .selection-box li { padding: 2px 4px; display: flex; flex-direction: column; }
 .selection-box li code { color: var(--muted); word-break: break-all; }

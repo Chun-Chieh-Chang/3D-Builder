@@ -3,7 +3,7 @@ import { formatNumber, overlappingDimensions } from '@3db/drawing';
 import { MM_PER_INCH, resolveDimStyle } from '@3db/model';
 import type { DimStyle, Dimension, DimensionOrientation, DimensionTolerance, ViewFeature } from '@3db/model';
 import { DimStyleFields } from './DimStyleFields';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { store, useStore } from '../state/store';
 
 /** The label of a thing a dimension can point at, as the list shows it. */
@@ -31,34 +31,66 @@ const featureLabel = (f: Pickable): string =>
         y: formatNumber(f.centre[1], 2),
       });
 
-/** A number box that commits on Enter or when it loses focus. */
-export function NumberBox({ value, onCommit, field }: { value: number; onCommit: (v: number) => void; field: string }) {
+/**
+ * A number box that commits on Enter or when it loses focus. `validate` (ADR 0150) is asked first: when it answers with a reason, nothing is sent, the box is
+ * marked and the reason shown. Whatever the reason — a guard here or a command that refused — the box then says what the document says, so a frame never holds
+ * a number that is not drawn.
+ */
+export function NumberBox({ value, onCommit, field, validate }: { value: number; onCommit: (v: number) => void; field: string; validate?: (v: number) => string | null }) {
   const [text, setText] = useState(String(value));
   const [shown, setShown] = useState(value);
+  const [reason, setReason] = useState<string | null>(null);
+  const [sent, setSent] = useState<number | null>(null);
   if (value !== shown) {
     setShown(value);
     setText(String(value));
+    setReason(null);
   }
   const commit = () => {
     const v = Number(text);
-    if (text.trim() !== '' && Number.isFinite(v) && v !== value) onCommit(v);
-    else setText(String(value));
+    if (text.trim() === '' || !Number.isFinite(v)) {
+      setText(String(value));
+      return;
+    }
+    const problem = validate?.(v);
+    if (problem) {
+      setReason(problem);
+      return;
+    }
+    setReason(null);
+    if (v === value) return;
+    setSent(value);
+    onCommit(v);
   };
+  useEffect(() => {
+    if (sent === null) return;
+    if (value === sent) setText(String(value));
+    setSent(null);
+  }, [sent, value]);
   return (
-    <input
-      data-field={field}
-      inputMode="decimal"
-      value={text}
-      onChange={(e) => setText(e.target.value)}
-      onBlur={commit}
-      onKeyDown={(e) => {
-        if (e.key === 'Enter') {
-          e.preventDefault();
-          commit();
-        }
-        e.stopPropagation();
-      }}
-    />
+    <>
+      <input
+        data-field={field}
+        inputMode="decimal"
+        className={reason ? 'invalid' : undefined}
+        aria-invalid={reason ? 'true' : undefined}
+        value={text}
+        onChange={(e) => setText(e.target.value)}
+        onBlur={commit}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') {
+            e.preventDefault();
+            commit();
+          }
+          e.stopPropagation();
+        }}
+      />
+      {reason && (
+        <span className="error-text" data-field-reason={field} role="alert">
+          {reason}
+        </span>
+      )}
+    </>
   );
 }
 

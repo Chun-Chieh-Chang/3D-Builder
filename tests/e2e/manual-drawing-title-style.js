@@ -51,7 +51,6 @@ const writtenAs = (x, h) => Math.abs(x - h * 1.4) < 1e-9;
 const budget = (field) => titleCells().find((c) => c.field === field).w - 3;
 const TITLE_TEXT = 'C.3 檢具';
 const LONG_TITLE = '組合件底盤與支撐架之檢具（第三角投影）';
-let staleBox = null;
 
 M.run = async () => {
   await step('0 a drawing of 定位板, with the title block filled in as the user fills his', async () => {
@@ -93,20 +92,44 @@ M.run = async () => {
     };
   });
 
-  await step('3 a name that would meet the text under it is refused and said; nothing is stored and nothing is redrawn', async () => {
+  await step('3 「欄位名稱字高」 4 mm: the box is asked of the same rules the command uses, marked with the reason, and nothing is sent', async () => {
     store.set({ notice: null });
     await setNumber(panel('[data-field="titleStyleLabel"]'), 4);
-    const notice = store.getState().notice;
-    const box = panel('[data-field="titleStyleLabel"]').value;
+    const box = panel('[data-field="titleStyleLabel"]');
+    const clean = panel('[data-field="titleStyleValue"]');
+    const reason = panel('[data-field-reason="titleStyleLabel"]');
     const label = drawn('公司');
-    if (box === '4' && label.h === 2.2) staleBox = { typed: box, drawn: label.h };
+    // what the browser actually resolves, not just the class: a marked frame reads different from its clean neighbour. Geometry is not asserted here — the runner's
+    // page does not lay the panel's subtree out at all (its offsetParent is null), so rects read zero; the reason taking a line of its own is checked by eye on screen.
+    const painted = { border: getComputedStyle(box).borderTopColor, cleanBorder: getComputedStyle(clean).borderTopColor, background: getComputedStyle(box).backgroundColor, cleanBackground: getComputedStyle(clean).backgroundColor };
+    const marked = box.classList.contains('invalid') && painted.border !== painted.cleanBorder && painted.background !== painted.cleanBackground;
     return {
-      pass: JSON.stringify(drw().doc.sheet.titleStyle) === JSON.stringify({ title: 9.5 }) && label.h === 2.2 && notice?.kind === 'error' && /欄位名稱字高/.test(notice.text) && /合計/.test(notice.text),
-      notice,
+      pass:
+        marked &&
+        box.getAttribute('aria-invalid') === 'true' &&
+        !!reason &&
+        /欄位名稱字高/.test(reason.textContent) &&
+        /合計/.test(reason.textContent) &&
+        store.getState().notice === null &&
+        label.h === 2.2 &&
+        JSON.stringify(drw().doc.sheet.titleStyle) === JSON.stringify({ title: 9.5 }),
+      marked,
+      painted,
+      reason: reason?.textContent,
+      notice: store.getState().notice,
+      box: box.value,
+      labelHeight: label.h,
       style: drw().doc.sheet.titleStyle,
-      // what the box is left showing: recorded here and written up as a known issue at the end, not asserted away
-      box,
     };
+  });
+
+  await step('3b 2.3 mm is refused too — with the 9.5 mm title it is 0.1 over the 11.7 the cell leaves — and 2.2 clears the mark', async () => {
+    await setNumber(panel('[data-field="titleStyleLabel"]'), 2.3);
+    const over = { box: panel('[data-field="titleStyleLabel"]').value, invalid: panel('[data-field="titleStyleLabel"]').classList.contains('invalid'), reason: !!panel('[data-field-reason="titleStyleLabel"]'), drawn: drawn('公司').h };
+    await setNumber(panel('[data-field="titleStyleLabel"]'), 2.2);
+    const box = panel('[data-field="titleStyleLabel"]');
+    const back = { box: box.value, invalid: box.classList.contains('invalid'), reason: !!panel('[data-field-reason="titleStyleLabel"]'), drawn: drawn('公司').h };
+    return { pass: over.invalid && over.reason && over.drawn === 2.2 && back.box === '2.2' && !back.invalid && !back.reason && back.drawn === 2.2, over, back };
   });
 
   await step('4 「數值字高」 4.8 (its sum with the name is exactly the 7 allowed): a date too wide for its cell is drawn shrunk, and the browser fits it', async () => {
@@ -155,21 +178,37 @@ M.run = async () => {
     const label = drawn('公司');
     const value = drawn('Mouldex');
     const title = drawn(TITLE_TEXT);
+    const boxes = { label: panel('[data-field="titleStyleLabel"]').value, value: panel('[data-field="titleStyleValue"]').value, title: panel('[data-field="titleStyleTitle"]').value };
     return {
-      pass: !('titleStyle' in drw().doc.sheet) && label.h === 2.2 && value.h === 3.5 && title.h === 6 && writtenAs(title.fontSize, 6) && panel('[data-action="titleStyleReset"]').disabled,
+      pass:
+        !('titleStyle' in drw().doc.sheet) &&
+        label.h === 2.2 &&
+        value.h === 3.5 &&
+        title.h === 6 &&
+        writtenAs(title.fontSize, 6) &&
+        panel('[data-action="titleStyleReset"]').disabled &&
+        boxes.label === '2.2' &&
+        boxes.value === '3.5' &&
+        boxes.title === '6',
       label,
       value,
       title,
-      // the box of a height that was refused (step 3) still shows what was typed: NumberBox has kept it since ADR 0146, recorded so a change is seen
-      boxes: { label: panel('[data-field="titleStyleLabel"]').value, value: panel('[data-field="titleStyleValue"]').value, title: panel('[data-field="titleStyleTitle"]').value },
+      // every box says what is drawn, including the one that was refused in step 3 — the box no longer keeps a number the sheet does not show
+      boxes,
     };
   });
 
+  await step('8 a field with no guard of its own: when the command refuses, the box goes back to what is drawn (the shared NumberBox, so every panel field)', async () => {
+    const box = document.querySelector('[data-drawing-panel] [data-group="dimStyle-sheet"] [data-field="dimStyleText"]');
+    if (!box) throw new Error('the sheet\'s dimension style group is not on the panel');
+    const before = box.value;
+    store.set({ notice: null });
+    await setNumber(box, 0);
+    const notice = store.getState().notice;
+    const style = drw().doc.sheet.dimStyle;
+    return { pass: box.value === before && notice?.kind === 'error' && /文字高度/.test(notice.text) && !(style && 'text' in (style ?? {})), before, after: box.value, notice, style };
+  });
+
   const pass = steps.every((s) => s.pass);
-  return {
-    name: 'manual-drawing-title-style',
-    steps,
-    pass,
-    knownIssue: staleBox ? `被拒絕的字高留在框裡：打了 ${staleBox.typed} mm、畫出的仍是 ${staleBox.drawn} mm（NumberBox 自 ADR 0146 起對每一欄都這樣；文件與圖面沒被改，只有框與實畫不一致）` : undefined,
-  };
+  return { name: 'manual-drawing-title-style', steps, pass };
 };

@@ -1535,3 +1535,32 @@ ADR 0146 確效時記下的後續（下一節 §5 第三點）：新工程圖的
 **兩處是第一版的腳本自己寫錯（誠實記載）**：① `2.2 × 1.4` 在浮點是 3.0799…，而 SVG 屬性是 `3.08`，嚴格相等錯紅——改成 1e-9 容差；② 我要求「按了恢復預設後框裡顯示 2.2」，但 `NumberBox` 在提交被拒絕後會留住使用者打的數字（自 ADR 0146 起每一欄都這樣，`DimStyleFields` 共用同一元件）。第二項**沒有**用放寬斷言混過去（§3.3）：改為把文件與圖面的真實行為（未被改動）當斷言，並用 runner 的 `knownIssue` 機制把「打了 4 mm、畫出的仍是 2.2 mm」寫成每次執行都列出來的已知缺陷，修 `NumberBox` 另案待使用者裁定。
 
 **頁面實測的數值（其後由上述腳本以同類斷言固化）**：無樣式時名稱 2.2／數值 3.5／圖名 6，SVG `font-size` 各 3.08／4.9／8.4；標題字高 9.5 → 圖名實畫 9.5（與名稱合計正好 11.7，邊界放行）；名稱改 4 → 拒絕並顯示「欄位名稱字高（4 mm）與數值字高（3.5 mm）合計 7.5 mm 會超出儲存格（最多 7 mm）：把其中一個調小」，文件仍是 `{title:9.5}`；數值 4.8（與名稱合計正好 7）→ 日期 30 mm 格子放不下，實畫 **3.79077 mm**（比例 0.789744），瀏覽器量其排版寬 **27.0318 mm** 對預算 27 mm（+0.1%），同一時「通則公差」等放得下的仍是整整 4.8；關掉自動縮小 → 日期回到 4.8 mm、排版寬 **34.2248 mm** 確實溢出；19 個全形中文的圖名 → 縮到 **3.6656 mm**，排版寬 **97.479 mm** 對預算 97 mm（**+0.49%**，仍在格子自留的 1 mm 餘量內，不會壓到格線）。
+
+## 2026-10-16（收尾）　ADR 0150 決定 8／9：不合法的框先擋並寫原因，被拒絕的框填回實畫值（使用者以第四份選擇頁裁定「兩件都做」）
+
+**範圍**：使用者選了 A1 的最寬案（先本地擋＋把共用元件也修好），並在 B1 裁「今天只做 A1」。兩件都落在同一個共用元件上：
+| 層 | 檔案 | 內容 |
+|---|---|---|
+| 模型 | `packages/model/src/drawing.ts` | 把 `checkTitleStyle` 的判斷拆成不丟擲的 **`titleStyleProblem(s): string \| null`**（回「為什麼不行」），`checkTitleStyle` 用它包成 `CommandError`——**訊息逐字不變**，命令仍是唯一的裁判 |
+| UI | `apps/web/src/components/DimensionPanel.tsx`（`NumberBox`） | 選填 `validate`：不合法就**不送出**、框上 `invalid`／`aria-invalid`、在該列下方以 `.error-text` 寫出原因；另加「送出時記下送前的值，下一個渲染若文件的值仍是它（代表命令拒絕）就把框填回去」 |
+| UI | `apps/web/src/components/TitleStyleFields.tsx` | 三個字高欄把 `titleStyleProblem` 接成 `validate`（用生效中的樣式合成後再問一次，所以合計規則也擋得住）；範圍與合計都取自模型層的 `TITLE_STYLE_LIMITS`／`TITLE_STYLE_SUM_LIMITS`，**面板沒有第二份寫死的數字** |
+| 樣式 | `apps/web/src/app.css` | 三條：`.pm-row input.invalid, .sw-panel .pm-row input.invalid`、`.pm-row:has(.error-text){flex-wrap:wrap}`、`.pm-row .error-text{flex:1 0 100%;text-align:right}` |
+| e2e | `tests/e2e/manual-drawing-title-style.js` | 9 步 → **11 步**；`knownIssue` 與 `staleBox` 移除，改寫成步 3／3b／8 與步 7 的真斷言 |
+
+**影響半徑（量過的，不是猜的）**：`NumberBox` 有 **23 處呼叫**（`DimensionPanel`、`AnnotationPanel`、`DimStyleFields`、`TitleStyleFields`），**呼叫端一行沒改**——拒絕後回填是在元件內以「文件的值有沒有變」判斷，不需要把 `onCommit` 改成可回報。全 repo diff：5 檔、+130／−50。
+
+### 紅隊四問（AGENTS.md §2.1）
+1. **輸入破壞**：本地 `validate` 只做「攔截＋說明」，**不夾範圍、不四捨五入、不偷偷改數**；放不過的就擋、寫原因，命令層的拒絶邏輯與訊息完全不動（`drawing-title-style.test.ts` 11 項包含「範圍外、NaN、∞、字串、`fit` 非布林、合計超標」全過即證）。
+2. **幾何相交**：不碰核心，無布林運算。
+3. **依賴鏈**：模型 `titleStyleProblem` → `checkTitleStyle`（`setSheet` reducer 用的同一個）→ `TitleStyleFields` 的 `validate` → `NumberBox`（紅框＋原因＋回填）→ `app.css` → e2e。面板問的是命令層那條規則，不是另立一套。
+4. **零 Mock**：斷言讀自畫面——框的 `classList`、`aria-invalid`、**computed 邊框色與底色**、原因文字與文件／場景的實際狀態；沒有 hardcode 期待值冒充通過。
+
+### 檢查（數字一律取自執行輸出）
+- 全 repo `npm run typecheck`：**EXIT=0**。`lint:i18n`（181 行文字仍在碼裡、14 檔）／`lint:deps`（Layering OK）／`lint:rules`（✔）：各 **EXIT=0**。
+- `npx vitest run tests/phase5`：**39 檔、419 過、1 略過（既有 D1）、0 失敗**，P5_EXIT=0（含 `drawing-title-style.test.ts` 11 過）。
+- `verify:ui -- --only "manual-drawing-title-style|manual-drawing-sw-parity"`（自備埠 9411／5413）：**2 of 2 pass、0 pass with a known defect、VUI_EXIT=0**——title-style **7.2s（11 步）**、sw-parity **14.7s**（它的 4/5b「送 0 被拒」與 4/5a「每一條尺寸都照樣式畫」全過，即共用元件沒有把既有欄位弄壞）。
+- **反向對照（實際跑過，非宣稱）**：把 CSS 選擇器從 `.sw-panel .pm-row input.invalid` 退回只寫 `.pm-row input.invalid`（同特異性、位置在 `.sw-panel input:not([type=checkbox])` 的 `border` 速寫之前，會被蓋掉）→ 步 3 **FAIL**，量到被標記的框與旁邊乾淨的框讀到**同一個** `borderTopColor`（`oklch(0.84 0.021 172)`）與同一個底色；還原後紅框是 `oklch(0.5 0.16 27)`／底色 `oklch(0.97 0.022 27)`，2 支 e2e 全過。**這一輪真的踩到過**：第一版只斷言 `classList.contains('invalid')` 會假綠——class 掛上了但紅框看不見。斷言改成 computed 色之後才發現。
+- **誠實記載（斷言做不到的事）**：runner 的頁面把圖頁屬性的群組以 `hidden` 留在 DOM（`DrawingPanel.tsx:174` 的既有設計，就是為了讓腳本永遠 reach 得到），所以 `getBoundingClientRect()` 全 0、`offsetParent` null——**「原因另外佔一列、不超出 284 寬的面板」這類幾何無法在 e2e 断言**。改為在看得見的頁面把該群組的 `hidden` 解掉實量：輸入框 148×26 原位不動，原因 x 19／寬 246／高 48（兩行）排在框的下一列、在列內、未超出面板。
+- **記憶體（§3.1、§3.5）**：純 JS／CSS，不碰核心與 WASM，無新增 OCCT 呼叫；不做 Heap 量測，也不宣稱任何 Heap 數字。
+
+**使用者裁定的其餘項（本日未做，寫下來待排）**：A2「縮到 1.8 mm 封底仍放不下時加一行提示」、A3 字型家族與 A4 標題欄版面都**維持現狀**；B1 今天只做 A1，故 A2 排到 10-19 額度重置後；B2 標題欄的實機確認**排進另一階段那份「一頁點擊清單」**，不另造 checklist 項目；C1 `thread.test.ts` 的 120 秒牆鐘**拆成數個小 `it`**（不放寬門檻，§3.3）；D1 推送**先問另一階段**再推（本地領先 origin 三筆：`605460da`、`2785da35`、`d3421664`，同一條 main 推了就一起帶上）——已用聊天工具問過，未收到回覆前不推；D2 dev server（5391）留著；D3 sketch6 改由 e2e 在真實 UI 裡自動修、測試只鎖「圓角成功＋逐位元相同重建」、**體積只印出不斷言**（避免自我確認，§2.1.4）。

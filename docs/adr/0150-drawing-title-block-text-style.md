@@ -1,6 +1,6 @@
 # ADR 0150：標題欄的文字樣式——欄位名稱、數值與標題的字高，以及超出儲存格時自動縮小
 
-- 狀態：**已完成（2026-10-16）**。**工程圖 Schema 19 → 20**（新增選填的 `sheet.titleStyle`，無需轉換）。
+- 狀態：**已完成（2026-10-16）**，同日收尾（決定 8／9：不合法先擋並寫原因、被拒絕的框填回實畫值）。**工程圖 Schema 19 → 20**（新增選填的 `sheet.titleStyle`，無需轉換）。
 - 需求追溯：使用者在 [ADR 0146](0146-drawing-sw-parity-six.md) 的尺寸樣式之後，以一張 A4「C.3 檢具」工程圖追問「工程圖中這些預設的字體、大小或箭頭參數能否編輯」。調查（2026-10-16）：箭頭與尺寸字高已可由 ADR 0146 調整；標題欄的三個字高寫死在 `sheetItems`；字體家族不可選。使用者核准新增標題欄文字樣式，並指定**連「欄位名稱字高」與「水平自動縮放」一起做**。藍圖外功能，比照慣例以 ADR 追溯（工程圖路線圖見 [ADR 0129](0129-drawing-interaction-roadmap.md)）。
 - 範圍裁定：本 ADR 只做**字高與縮放**；**字體家族仍固定**（畫面與 SVG 為 sans-serif，PDF 為 Helvetica＋選配的「PDF 字型」補字，DXF 為 STANDARD 文字型式），要可選字型另案。
 
@@ -23,6 +23,8 @@
 5. **輸出零改動**：字高寫進 `SceneText.height` 後，SVG 的 `font-size`、DXF 的群組碼 40、PDF 的 `Tf` 大小自動跟隨；三份輸出一致（同一個 scene）。
 6. **Schema 19 → 20**：新欄位選填、無須轉換（遷移表 `19: doc => doc`）；版本的作用仍是讓舊程式不開它看不懂的文件（舊版會把會溢出的標題欄照舊畫出去）。
 7. **介面**：圖頁屬性「格式」群組（標題欄內容之下）加「欄位名稱字高／數值字高／標題字高」三個數字框、「超出儲存格時自動縮小」勾選（提示寫明各欄範圍）與「恢復預設」（`TitleStyleFields`，比照 `DimStyleFields`）。
+8. **面板先問同一條規則**（同日的收尾，使用者裁定「兩件都做」的第一件）：`TitleStyleFields` 把要送的值交给 `titleStyleProblem`——命令層用的同一個檢查，拆成不丟擲、回「為什麼不行」或 null——不合法就**不送出**，框標紅（`invalid`／`aria-invalid`）並在該列下方寫出原因（與命令拒絕時同一句訊息，不是另編一套）。範圍與合計都從模型層的 `TITLE_STYLE_LIMITS`／`TITLE_STYLE_SUM_LIMITS` 推導，面板沒有第二份寫死的數字。
+9. **送出去但被拒絕時，框填回實畫的值**（第二件）：`NumberBox` 在送出時記住送前的值，下一個渲染若文件的值仍是那個值（代表命令拒絕），就把框填回去。這是共用元件，自 ADR 0146 起 23 處呼叫端（尺寸、引線標注、公差、樣式群組…）一起受益，**呼叫端一行沒改**；`onCommit` 的「火后不問」語意不需要改成可回報。命令層照舊是唯一的裁判：該拒仍拒、不四捨五入、不夾範圍（§2.1）。
 
 ## 驗收
 
@@ -37,9 +39,21 @@
 | A7：存檔往返保留 `titleStyle`；v19 檔讀入沒有它且升到 v20 | 「the file keeps it」 |
 | 反向對照 | 把 `fit` 的封底拿掉（`Math.max` 改回原式）A3 第三項失敗；把名稱基線改回 `y + h − 3`（不減字高）A2 失敗；還原後全過 |
 | typecheck、lint、phase5、全量 | 本改動檔案 typecheck 0 錯誤（當時全repo `npm run typecheck` EXIT=1，2 個 TS2345 都在另一階段未追蹤的 `tests/phase3/step-frag-probe.test.ts`，非本改動；該檔其後由另一階段自行修好，同日 e2e 完成後再跑為 **EXIT=0**，`npm run check` 不再卡在 typecheck）；lint:rules／deps／i18n 各 EXIT=0；phase5 單獨跑 419 過、1 略過（既有 D1）、0 失敗；全量 vitest 2887 過、27 略過、1 失敗，那 1 項即上述別人的探針檔（`Kernel.deleteFaces` 拒絕），本 ADR 的 `drawing-title-style.test.ts` 11 項在同一次全量跑全綠；三處「目前版本 19」錨定斷言隨版本更新為 20 |
-| e2e 實機：`tests/e2e/manual-drawing-title-style.js`（9 步） | 走真實的「檔案→新工程圖」（harness 以 OPFS 專案資料夾取代選檔對話框）與圖頁屬性「格式」面板的輸入框；斷言讀自畫面——字高取自場景、SVG `font-size` 等於字高的 1.4 倍、縮放與否以**瀏覽器自己量的排版寬**（`getBBox().width`，圖面 viewBox 即公釐）對照格子預算 `w − 3`；日期縮到 3.79077 mm 後排版寬 27.03 mm 對 27 mm（+0.1%）、關掉 `fit` 變 34.22 mm 確實溢出、19 個全形字標題縮到 3.6656 mm 後 97.48 mm 對 97 mm（+0.49%，在格子自留的 1 mm 餘量內）。`npm run verify:ui -- --only manual-drawing-title-style` → **KNOWN、6.9s、VUI_EXIT=0**，9 步全過並記載下方已知缺陷 |
+| e2e 實機：`tests/e2e/manual-drawing-title-style.js`（9 步） | 走真實的「檔案→新工程圖」（harness 以 OPFS 專案資料夾取代選檔對話框）與圖頁屬性「格式」面板的輸入框；斷言讀自畫面——字高取自場景、SVG `font-size` 等於字高的 1.4 倍、縮放與否以**瀏覽器自己量的排版寬**（`getBBox().width`，圖面 viewBox 即公釐）對照格子預算 `w − 3`；日期縮到 3.79077 mm 後排版寬 27.03 mm 對 27 mm（+0.1%）、關掉 `fit` 變 34.22 mm 確實溢出、19 個全形字標題縮到 3.6656 mm 後 97.48 mm 對 97 mm（+0.49%，在格子自留的 1 mm 餘量內）。`npm run verify:ui -- --only manual-drawing-title-style` → **KNOWN、6.9s、VUI_EXIT=0**，9 步全過並記載下方已知缺陷（該缺陷同日修好，腳本長到 11 步、分級轉為 PASS，見下一節） |
 
-**已知缺陷（記載，未修）**：提交被拒絕後，`NumberBox` 留住使用者打的數字（輸入框顯示 4 mm 而實畫仍是 2.2 mm）——文件與圖面不受影響。這是 ADR 0146 起每一欄共有的元件行為（`DimensionPanel` 的 `NumberBox`，`DimStyleFields` 亦然），e2e 以 runner 的 `knownIssue` 機制在每次執行列出來；要否把框改回實值，待使用者裁定，另案。
+**已知缺陷（同日已修，見決定 8／9）**：原先提交被拒絕後，`NumberBox` 留住使用者打的數字（輸入框顯示 4 mm 而實畫仍是 2.2 mm）——文件與圖面不受影響，但框與實畫不一致；這是 ADR 0146 起每一欄共有的元件行為，当时的 e2e 以 runner 的 `knownIssue` 機制每次執行都列出來。使用者裁定「兩件都做」後：標題欄三欄由面板先問同一條規則（不合法不送出、標紅、寫原因），其餘每一欄由共用元件在命令拒絕後把框填回實畫值。
+
+## 驗收（收尾）
+
+| 標準 | 結果 |
+|---|---|
+| 面板先問同一條規則：打 4 mm 的名稱被擋住、框標紅、原因列寫在同一格下方的獨立一列，文件與圖面不動，且**不產生 toast**（命令根本沒被呼叫） | e2e 步 3：`invalid`＋`aria-invalid`＋computed 邊框／底色與旁邊乾淨的框不同（`oklch(0.5 0.16 27)`／`oklch(0.97 0.022 27)` 對 `oklch(0.84 0.021 172)`／`oklch(1 0 0)`）、原因文字含「欄位名稱字高」與「合計」、`notice === null`、名稱仍畫 2.2、文件仍是 `{title:9.5}` |
+| 邊界照樣放行：與 9.5 mm 標題合計正好 11.7 的名稱 2.2 合法；2.3（合計 11.8，只超 0.1）擋下；改回 2.2 後紅框與原因一起消失 | e2e 步 3b |
+| 沒有本地守門的欄位被命令拒絕時，框填回實畫值 | e2e 步 8：圖頁「尺寸樣式」文字高度送 0 → 拒絕並 `notice.kind === 'error'`，框回到送之前的數字，文件的 `dimStyle` 未多出 `text` |
+| 「恢復預設」後三个框分别说 2.2／3.5／6（不再只是記錄，而是斷言） | e2e 步 7 |
+| 反向對照（實際跑過，非宣稱） | 把 CSS 規則的特異性從 `.sw-panel .pm-row input.invalid` 退回 `.pm-row input.invalid`（會被後面 `.sw-panel input:not([type=checkbox])` 的 `border` 速寫蓋掉，紅框實際上看不見）→ 步 3 紅：髒框與乾淨框讀到同一個邊框色；還原後 2 支 e2e 全過。這是這一輪真實踩到的 bug：只量 `classList` 會假綠，量 computed 色才抓得住 |
+| 排版（面板只有 284 mm 寬的畫面） | runner 的頁面把群組以 `hidden` 存在 DOM 裡（`DrawingPanel.tsx:174` 的既有設計，讓腳本永遠 reach 得到），所以 rect 全 0、幾何不放在 e2e 断言裡；改為在看得見的頁面把該群組的 `hidden` 解掉後量：原因列另佔一列（x 19、寬 246、高 48＝兩行）、stay 在該列內、不超出面板，框 148×26 仍在原位 |
+| typecheck、lint、phase5、相鄰 e2e | 全repo `npm run typecheck` **EXIT=0**；`lint:i18n`（181 行文字、14 檔）／`lint:deps`／`lint:rules` 各 **EXIT=0**；`tests/phase5` 全目錄 **39 檔 419 過、1 略過（既有 D1）、0 失敗**；`verify:ui --only "manual-drawing-title-style\|manual-drawing-sw-parity"` → **2 of 2 pass、0 KNOWN、VUI_EXIT=0**（7.2s／14.7s）；`drawing-title-style.test.ts` 11 項全過，證明命令層的拒絕訊息逐字没變 |
 
 ## 紅隊四問（AGENTS.md §2）
 

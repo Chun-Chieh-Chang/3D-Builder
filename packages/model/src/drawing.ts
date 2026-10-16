@@ -117,23 +117,34 @@ export const TITLE_STYLE_SUM_LIMITS = { labelPlusValue: 7, labelPlusTitle: 11.7 
 /** The height each text of the title block is written at: the drawing's style over ISO 7200's. */
 export const resolveTitleStyle = (sheet: TitleStyle | undefined): Required<TitleStyle> => ({ ...TITLE_STYLE_DEFAULT, ...sheet });
 
-/** Checks a title style: each height a finite number within its limits, `fit` a boolean, nothing known outside them — and the name and the text under it summed small enough not to touch. Nothing is rounded or put in range: what is wrong is refused. */
-function checkTitleStyle(s: unknown): void {
-  if (typeof s !== 'object' || s === null || Array.isArray(s)) throw new CommandError(t('drawing.badTitleStyle'));
-  for (const k of Object.keys(s)) if (!['label', 'value', 'title', 'fit'].includes(k)) throw new CommandError(t('drawing.badTitleStyle'));
+/**
+ * Why a title style would be refused, in the user's language, or null when it is good: each height a finite number within its limits, `fit` a boolean, nothing
+ * known outside them — and the name and the text under it summed small enough not to touch. Nothing is rounded or put in range. The panel asks this before sending
+ * (ADR 0150) so a number that cannot be drawn never sits in the box looking as if it were.
+ */
+export function titleStyleProblem(s: unknown): string | null {
+  if (typeof s !== 'object' || s === null || Array.isArray(s)) return t('drawing.badTitleStyle');
+  for (const k of Object.keys(s)) if (!['label', 'value', 'title', 'fit'].includes(k)) return t('drawing.badTitleStyle');
   const st = s as TitleStyle;
   for (const k of ['label', 'value', 'title'] as const) {
     const v = st[k];
     if (v === undefined) continue;
     const [lo, hi] = TITLE_STYLE_LIMITS[k];
-    if (typeof v !== 'number' || !Number.isFinite(v) || v < lo || v > hi) throw new CommandError(t('drawing.titleStyleRange', { field: t(`drawing.titleStyleField.${k}`), min: String(lo), max: String(hi) }));
+    if (typeof v !== 'number' || !Number.isFinite(v) || v < lo || v > hi) return t('drawing.titleStyleRange', { field: t(`drawing.titleStyleField.${k}`), min: String(lo), max: String(hi) });
   }
-  if (st.fit !== undefined && typeof st.fit !== 'boolean') throw new CommandError(t('drawing.badTitleFit'));
+  if (st.fit !== undefined && typeof st.fit !== 'boolean') return t('drawing.badTitleFit');
   const eff = resolveTitleStyle(st);
   const sum = eff.label + eff.value;
-  if (sum > TITLE_STYLE_SUM_LIMITS.labelPlusValue) throw new CommandError(t('drawing.titleStyleOverlap', { first: t('drawing.titleStyleField.label'), fh: String(eff.label), second: t('drawing.titleStyleField.value'), sh: String(eff.value), sum: String(sum), max: String(TITLE_STYLE_SUM_LIMITS.labelPlusValue) }));
+  if (sum > TITLE_STYLE_SUM_LIMITS.labelPlusValue) return t('drawing.titleStyleOverlap', { first: t('drawing.titleStyleField.label'), fh: String(eff.label), second: t('drawing.titleStyleField.value'), sh: String(eff.value), sum: String(sum), max: String(TITLE_STYLE_SUM_LIMITS.labelPlusValue) });
   const tsum = eff.label + eff.title;
-  if (tsum > TITLE_STYLE_SUM_LIMITS.labelPlusTitle) throw new CommandError(t('drawing.titleStyleOverlap', { first: t('drawing.titleStyleField.label'), fh: String(eff.label), second: t('drawing.titleStyleField.title'), sh: String(eff.title), sum: String(tsum), max: String(TITLE_STYLE_SUM_LIMITS.labelPlusTitle) }));
+  if (tsum > TITLE_STYLE_SUM_LIMITS.labelPlusTitle) return t('drawing.titleStyleOverlap', { first: t('drawing.titleStyleField.label'), fh: String(eff.label), second: t('drawing.titleStyleField.title'), sh: String(eff.title), sum: String(tsum), max: String(TITLE_STYLE_SUM_LIMITS.labelPlusTitle) });
+  return null;
+}
+
+/** Checks a title style the way a command must: what is wrong is refused, with the reason the panel would have shown. */
+function checkTitleStyle(s: unknown): void {
+  const problem = titleStyleProblem(s);
+  if (problem) throw new CommandError(problem);
 }
 
 /** The side of a view another view is placed on, in the sheet. */
