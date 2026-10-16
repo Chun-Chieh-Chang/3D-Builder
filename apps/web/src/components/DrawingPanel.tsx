@@ -1,8 +1,9 @@
 import { t, type Locale } from '@3db/i18n';
-import { DIM_STYLE_DEFAULT, SHEET_SIZES, TITLE_FIELDS, VIEW_CORNERS, VIEW_DISPLAYS, VIEW_NAMES, baseName, displayOf, isCorner, isDerived, isShaded, type DrawingView, type Scale, type SheetSize, type TitleField, type ViewCorner, type ViewDisplay, type ViewName, type ViewSide } from '@3db/model';
+import { DIM_STYLE_DEFAULT, SHEET_SIZES, TITLE_FIELDS, TITLE_STYLE_DEFAULT, VIEW_CORNERS, VIEW_DISPLAYS, VIEW_NAMES, baseName, displayOf, isCorner, isDerived, isShaded, type DrawingView, type Scale, type SheetSize, type TitleField, type ViewCorner, type ViewDisplay, type ViewName, type ViewSide } from '@3db/model';
 import { STANDARD_SCALES, arrangementBase, scaleText, type ViewLines } from '@3db/drawing';
 import { openDrawingPart } from '../actions';
 import { DimStyleFields } from './DimStyleFields';
+import { TitleStyleFields } from './TitleStyleFields';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { store, useStore } from '../state/store';
 import { DrawingMenu, type DrawingMenuAt } from './DrawingViewMenu';
@@ -543,6 +544,7 @@ export function DrawingPanel() {
               <TextBox value={doc.title[field] ?? ''} onCommit={(v) => d.setTitle(field, v)} />
             </label>
           ))}
+          <TitleStyleFields value={doc.sheet.titleStyle ?? {}} base={TITLE_STYLE_DEFAULT} onChange={(s) => d.setSheet({ titleStyle: s })} />
         </PMGroup>
 
         <PMGroup title={t('drawingUi.group.viewProps')} icon={view ? VIEW_ICON(view) : 'view'} open={isOpen('view')} onToggle={() => toggle('view')} hidden={!view}>

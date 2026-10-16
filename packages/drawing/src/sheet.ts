@@ -1,3 +1,4 @@
+import { HELVETICA_CAP_HEIGHT, helveticaCode, helveticaWidth } from './helvetica';
 import type { DrawingSheet, SheetSize, TitleField } from '@3db/model';
 
 /**
@@ -65,4 +66,30 @@ export function titleCells(): TitleCell[] {
     ...row(2, [['material', 50], ['generalTolerance', 60], ['drafter', 40], ['date', 30]]),
     ...row(3, [['scale', 45], ['sheet', 45], ['projection', 90]]),
   ];
+}
+
+/** Below what a shrunk title block text is not taken (mm): smaller than ISO 3098's smallest series step is not worth reading. */
+export const TITLE_FIT_MIN = 1.8;
+
+/**
+ * The width a text takes when written at a cap height (mm): Helvetica's own advances for what the standard PDF font has, one full em for what it has not
+ * (CJK and the rest, which the sheet's fonts draw as a full-width box). The same measure the PDF writer lays out with, so what fits on the sheet fits in the PDF.
+ */
+export function textWidthMm(text: string, height: number): number {
+  const em = height / (HELVETICA_CAP_HEIGHT / 1000);
+  let thousandths = 0;
+  for (const ch of text) {
+    const c = ch.codePointAt(0)!;
+    thousandths += helveticaCode(c) === null ? 1000 : helveticaWidth(c);
+  }
+  return (thousandths / 1000) * em;
+}
+
+/** The height a title block text is written at (ADR 0150): the style's, shrunk to the cell when it is wider than the cell and the style fits — never grown, never below `TITLE_FIT_MIN`. */
+export function fittedTitleHeight(text: string, height: number, cellWidth: number, fit: boolean): number {
+  if (!fit) return height;
+  const avail = cellWidth - 3; // the text starts 2 mm inside the cell and leaves 1 mm at its far edge
+  const w = textWidthMm(text, height);
+  if (w <= avail) return height;
+  return Math.max(TITLE_FIT_MIN, (height * avail) / w);
 }

@@ -1,5 +1,5 @@
 import { getLocale, t, withLocale } from '@3db/i18n';
-import { axesOf, displayOf, isShaded, resolveDimStyle, sectionEndDirections, type DetailDrawingView, type DimStyle, type DrawingDoc, type DrawingView, type Id, type Scale, type SectionDrawingView, type TitleField, type ViewFeature } from '@3db/model';
+import { axesOf, displayOf, isShaded, resolveDimStyle, resolveTitleStyle, sectionEndDirections, type DetailDrawingView, type DimStyle, type DrawingDoc, type DrawingView, type Id, type Scale, type SectionDrawingView, type TitleField, type ViewFeature } from '@3db/model';
 import type { ShadeImage } from './shade';
 import { centreItems, holeRows, holeTableBox, holeTableItems, threadItems, type HoleRow } from './annotation';
 import { annotationItems } from './gdt';
@@ -7,7 +7,7 @@ import { balloonSpots, bomTableBox, bomTableItems, spotItems, type BalloonSpot, 
 import { evaluateDimension, type DimensionOutcome, type ElementsResult } from './dimension';
 import { circlePolyline, hatch } from './geometry';
 import { layoutViews, resolveLines, scaleOf, toSheet, type PlacedView, type ViewLines } from './layout';
-import { sheetMetrics, titleCells, type Rect } from './sheet';
+import { fittedTitleHeight, sheetMetrics, titleCells, type Rect } from './sheet';
 import { surfaceFinishItems } from './surfaceFinish';
 
 /**
@@ -111,9 +111,10 @@ const rect = (r: Rect, style: LineStyle): ScenePolyline => ({ kind: 'polyline', 
 /** The text of a scale: 「1:2」, 「5:1」. */
 export const scaleText = (s: readonly [number, number]) => `${s[0]}:${s[1]}`;
 
-/** The frame and the title block with what the document says in it. */
+/** The frame and the title block with what the document says in it, written at the heights the drawing's title style gives (ADR 0150). */
 export function sheetItems(doc: DrawingDoc): SceneItem[] {
   const m = sheetMetrics(doc.sheet);
+  const style = resolveTitleStyle(doc.sheet.titleStyle);
   const items: SceneItem[] = [rect(m.frame, 'frame'), rect(m.titleBlock, 'frame')];
   const values: Record<string, string> = {
     ...doc.title,
@@ -126,9 +127,15 @@ export function sheetItems(doc: DrawingDoc): SceneItem[] {
     const y = m.titleBlock.y + c.y;
     // the lines between cells are the cells' own borders; the block's outer line is already there
     items.push(rect({ x, y, w: c.w, h: c.h }, 'thin'));
-    items.push({ kind: 'text', at: [x + 1, y + c.h - 3], text: t(`drawing.title.${c.field}`), height: 2.2 });
+    // the name hangs 0.8 mm below the top of the cell at whatever height — at ISO's 2.2 mm that is exactly where it has always stood
+    const label = t(`drawing.title.${c.field}`);
+    const labelHeight = fittedTitleHeight(label, style.label, c.w, style.fit);
+    items.push({ kind: 'text', at: [x + 1, y + c.h - 0.8 - labelHeight], text: label, height: labelHeight });
     const text = values[c.field] ?? '';
-    if (text) items.push({ kind: 'text', at: [x + 2, y + (c.large ? 3.5 : 2.2)], text, height: c.large ? 6 : 3.5 });
+    if (text) {
+      const height = fittedTitleHeight(text, c.large ? style.title : style.value, c.w, style.fit);
+      items.push({ kind: 'text', at: [x + 2, y + (c.large ? 3.5 : 2.2)], text, height });
+    }
   }
   return items;
 }

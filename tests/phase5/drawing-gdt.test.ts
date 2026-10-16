@@ -141,7 +141,7 @@ describe('the file', () => {
     const doc = insert(drawing(), datum('ann1', 'A'), frame('ann2', { characteristic: 'position', diameter: true, material: 'M', datums: [{ label: 'A' }] }), { id: 'ann3', kind: 'note', view: 'view1', at: [0, 30], text: '未註公差依 ISO 2768-m' });
     const back = parseDrawing(serializeDrawing(doc));
     expect(back.annotations).toEqual(doc.annotations);
-    expect(DRAWING_SCHEMA_VERSION).toBe(19);
+    expect(DRAWING_SCHEMA_VERSION).toBe(20);
     const old = JSON.parse(serializeDrawing(drawing()));
     old.schemaVersion = 11;
     delete old.annotations;

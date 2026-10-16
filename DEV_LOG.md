@@ -1513,3 +1513,19 @@ ADR 0146 確效時記下的後續（下一節 §5 第三點）：新工程圖的
 另：查出 `manual-c20.js` 的窄視窗步驟在 `main` 上就是紅的（還原所有修改後同樣失敗），原因是 heads-up 工具列變高而方塊位置寫死；已改為量測，斷言沒有放寬。
 
 檢查：typecheck 0 錯誤；三項 lint 通過；vitest **2870 過、25 略過、0 失敗**；`verify:ui` c20／c21／c22／asm-view-normal 6/6。
+
+## 2026-10-16　標題欄的文字樣式：三種字高與自動縮放（ADR 0150）
+
+紅隊四問：
+1. **輸入破壞**：NaN、∞、負數、0、字串、`fit` 非布林、未知欄位在命令層拋 `CommandError` 並說明，**不四捨五入、不夾範圍**；合計規則（`label+value ≤ 7`、`label+title ≤ 11.7`）用**合成後的生效值**檢查，所以「只送一個欄位、其他用預設」的送法也擋得住（測試：`{ label: 3.6 }` 單獨送也被拒）。每欄的範圍上限都取到「搭配另一欄下限」仍可達，不留死上限（原稿 value 6／title 11 在合計規則下永遠到不了，實作時收斂為 5／9.5）。
+2. **幾何相交破壞**：同一格內名稱與文字垂直重疊是本功能的「自相交」，以前置的合計規則攔截（由 10 mm 公司列與 16 mm 標題列的基線幾何推導），不丟給畫出來才发现；水平溢出由 `fit` 等比縮小，封底 1.8 mm 後**明確允許溢出**（不是默默吞掉），關掉 `fit` 即維持舊行為。
+3. **依賴鏈**：`DrawingSheet.titleStyle`（model）→ `setSheet` 命令型別與 reducer → `serialize` v20（no-op 遷移）→ `resolveTitleStyle` → `sheetItems`（scene）→ SVG／PDF／DXF（都吃 `SceneText.height`，輸出端零改動）→ `TitleStyleFields`（UI「格式」群組）→ i18n 中／英 → 測試。
+4. **零 Mock**：斷言一律量測**畫出來的高度**（scene 文字項、SVG `font-size`、DXF 群組碼 40、PDF `Tf`），不讀回送進去的設定；縮放量以與 PDF 排版同源的 `textWidthMm` 反算實測寬度；200 組隨機（含 CJK 與 40 個 `M`）逐組驗證「至多等於設定、放得下、縮小量正確」。無 WASM 新路徑（純 JS 場景產生），§3.5 記憶體議題不適用。
+
+**反向對照（實際跑過，非宣稱）**：把名稱基線改回寫死 `y + h − 3` → A2 與 fuzz 紅；拿掉 `fit` 的 1.8 mm 封底 → A3 紅；共 3 項失敗，還原後 11/11 綠。基線改回寫死時「預設逐位元不變」那項仍綠，正是該斷言要的結果（2.2 mm 時兩種式子同值）。
+
+**行為變更（誠實記載）**：`fit` 預設為開，今天會溢出格子的標題欄文字在新版會被縮小；今天放得下的文字完全不變。
+
+**已知限制**：字體家族仍不可選（本 ADR 只做字高與縮放）；`fit` 的寬度以 Helvetica 度量＋CJK 全形 1 em 估算，SVG 實際由瀏覽器以 sans-serif 排版，兩者對 CJK 可能有數個百分比的差異（PDF 與 DXF 用同一估算，三份輸出一致）。
+
+檢查（數字一律取自執行輸出）：本改動的檔案 typecheck 0 錯誤——全repo `npm run typecheck` 為 EXIT=1，2 個 TS2345 都在另一工作階段未追蹤的 `tests/phase3/step-frag-probe.test.ts`（38、83 行，非本改動、未動它，因此 `npm run check` 目前卡在 typecheck 進不到測試）；lint:rules／lint:deps／lint:i18n 各自 EXIT=0；phase5 單獨跑 **419 過、1 略過（既有 D1）、0 失敗**（39 檔，P5_EXIT=0）；三處「目前版本 19」錨定斷言隨 schema v20 更新為 20。全量 vitest（253.35s）：**2887 過、27 略過、1 失敗（2915；檔 230 過／1 敗／5 略過，VITEST_EXIT=1）**，唯一的失敗是上面那個別人的 `step-frag-probe.test.ts`（`Kernel.deleteFaces` 拋「3 個面無法移除」，測的是 STEP 削薄片，與標題欄文字樣式無關；本改動的 `drawing-title-style.test.ts` 11 項在同一次全量跑裡全綠）。

@@ -13,7 +13,7 @@ import { ANNOTATION_FIELDS, checkAnnotation, framesUsing, type Annotation, type 
  * opened (exact hidden-line removal), so a drawing can never disagree with the model it shows.
  */
 
-export const DRAWING_SCHEMA_VERSION = 19;
+export const DRAWING_SCHEMA_VERSION = 20;
 
 export type SheetSize = 'A4' | 'A3' | 'A2' | 'A1' | 'A0';
 export const SHEET_SIZES: readonly SheetSize[] = ['A4', 'A3', 'A2', 'A1', 'A0'];
@@ -46,6 +46,8 @@ export interface DrawingSheet {
   language?: Locale;
   /** How the dimensions are drawn (v19, ADR 0146): the drawing's own style, as SolidWorks's document properties have it. Absent: ISO's sizes (`DIM_STYLE_DEFAULT`). */
   dimStyle?: DimStyle;
+  /** How the title block writes its texts (v20, ADR 0150): the three heights and whether a text too wide for its cell is drawn shrunk. Absent: ISO 7200's (`TITLE_STYLE_DEFAULT`). */
+  titleStyle?: TitleStyle;
 }
 
 /**
@@ -87,6 +89,51 @@ function checkDimStyle(s: unknown): void {
     if (typeof v !== 'number' || !Number.isFinite(v) || v < lo || v > hi) throw new CommandError(t('drawing.dimStyleRange', { field: t(`drawing.dimStyleField.${k}`), min: String(lo), max: String(hi) }));
   }
   if (st.arrowStyle !== undefined && !ARROW_STYLES.includes(st.arrowStyle)) throw new CommandError(t('drawing.badArrowStyle', { style: String(st.arrowStyle) }));
+}
+
+/**
+ * How the title block is written (v20, ADR 0150), in sheet millimetres: the height of a cell's field name, of the text it holds, of the drawing's own title
+ * (the big cell), and whether a text wider than its cell is drawn shrunk to fit (`fit`, shrink-only). The drawing has one style (`sheet.titleStyle`).
+ */
+export interface TitleStyle {
+  label?: number;
+  value?: number;
+  title?: number;
+  fit?: boolean;
+}
+
+/** ISO 7200 as the title block has always been drawn here: 2.2 mm names, 3.5 mm values, a 6 mm title; a too-wide text is shrunk (ADR 0150). */
+export const TITLE_STYLE_DEFAULT: Required<TitleStyle> = { label: 2.2, value: 3.5, title: 6, fit: true };
+
+/** The outer box of each height (mm): what is still readable, and what the sums below leave room for. */
+export const TITLE_STYLE_LIMITS = { label: [2, 5], value: [2, 5], title: [3, 9.5] } as const;
+
+/**
+ * The tallest the name and the text under it can sum to without touching (mm): the name hangs 0.8 mm below the cell's top and the value's baseline is 2.2 mm
+ * (the title's 3.5 mm) above its bottom, so in ISO 7200's narrowest row — the 10 mm company cell — the name's baseline must stay at or above the value's cap.
+ */
+export const TITLE_STYLE_SUM_LIMITS = { labelPlusValue: 7, labelPlusTitle: 11.7 } as const;
+
+/** The height each text of the title block is written at: the drawing's style over ISO 7200's. */
+export const resolveTitleStyle = (sheet: TitleStyle | undefined): Required<TitleStyle> => ({ ...TITLE_STYLE_DEFAULT, ...sheet });
+
+/** Checks a title style: each height a finite number within its limits, `fit` a boolean, nothing known outside them — and the name and the text under it summed small enough not to touch. Nothing is rounded or put in range: what is wrong is refused. */
+function checkTitleStyle(s: unknown): void {
+  if (typeof s !== 'object' || s === null || Array.isArray(s)) throw new CommandError(t('drawing.badTitleStyle'));
+  for (const k of Object.keys(s)) if (!['label', 'value', 'title', 'fit'].includes(k)) throw new CommandError(t('drawing.badTitleStyle'));
+  const st = s as TitleStyle;
+  for (const k of ['label', 'value', 'title'] as const) {
+    const v = st[k];
+    if (v === undefined) continue;
+    const [lo, hi] = TITLE_STYLE_LIMITS[k];
+    if (typeof v !== 'number' || !Number.isFinite(v) || v < lo || v > hi) throw new CommandError(t('drawing.titleStyleRange', { field: t(`drawing.titleStyleField.${k}`), min: String(lo), max: String(hi) }));
+  }
+  if (st.fit !== undefined && typeof st.fit !== 'boolean') throw new CommandError(t('drawing.badTitleFit'));
+  const eff = resolveTitleStyle(st);
+  const sum = eff.label + eff.value;
+  if (sum > TITLE_STYLE_SUM_LIMITS.labelPlusValue) throw new CommandError(t('drawing.titleStyleOverlap', { first: t('drawing.titleStyleField.label'), fh: String(eff.label), second: t('drawing.titleStyleField.value'), sh: String(eff.value), sum: String(sum), max: String(TITLE_STYLE_SUM_LIMITS.labelPlusValue) }));
+  const tsum = eff.label + eff.title;
+  if (tsum > TITLE_STYLE_SUM_LIMITS.labelPlusTitle) throw new CommandError(t('drawing.titleStyleOverlap', { first: t('drawing.titleStyleField.label'), fh: String(eff.label), second: t('drawing.titleStyleField.title'), sh: String(eff.title), sum: String(tsum), max: String(TITLE_STYLE_SUM_LIMITS.labelPlusTitle) }));
 }
 
 /** The side of a view another view is placed on, in the sheet. */
@@ -517,7 +564,7 @@ export const drawingIdsInUse = (doc: DrawingDoc): Id[] => [
 
 export type DrawingCommand =
   /** Changes the sheet: its size, orientation, projection, scale or (`shift: null`: take it back) the shift of the arrangement (C16.1). */
-  | { type: 'setSheet'; sheet: Partial<Omit<DrawingSheet, 'shift' | 'language' | 'dimStyle'>> & { shift?: [number, number] | null; language?: Locale | null; dimStyle?: DimStyle | null } }
+  | { type: 'setSheet'; sheet: Partial<Omit<DrawingSheet, 'shift' | 'language' | 'dimStyle' | 'titleStyle'>> & { shift?: [number, number] | null; language?: Locale | null; dimStyle?: DimStyle | null; titleStyle?: TitleStyle | null } }
   /** Writes a field of the title block; an empty text takes it away (C16.1). */
   | { type: 'setTitle'; field: TitleField; value: string }
   /** Adds views at the end of the list (C16.2), each with its own new id. */
@@ -799,10 +846,13 @@ export function mutateDrawing(draft: Draft<DrawingDoc>, cmd: DrawingCommand): vo
       if (s.unit !== undefined && s.unit !== 'mm' && s.unit !== 'in') throw new CommandError(t('drawing.badUnit'));
       if (s.language !== undefined && s.language !== null && !LOCALES.includes(s.language)) throw new CommandError(t('drawing.badLanguage'));
       if (s.dimStyle !== undefined && s.dimStyle !== null) checkDimStyle(s.dimStyle);
-      const { shift, language, dimStyle, ...rest } = s;
+      if (s.titleStyle !== undefined && s.titleStyle !== null) checkTitleStyle(s.titleStyle);
+      const { shift, language, dimStyle, titleStyle, ...rest } = s;
       // an empty style is the default's, written as none
       if (dimStyle === null || (dimStyle && Object.keys(dimStyle).length === 0)) delete draft.sheet.dimStyle;
       else if (dimStyle) draft.sheet.dimStyle = { ...dimStyle };
+      if (titleStyle === null || (titleStyle && Object.keys(titleStyle).length === 0)) delete draft.sheet.titleStyle;
+      else if (titleStyle) draft.sheet.titleStyle = { ...titleStyle };
       Object.assign(draft.sheet, rest);
       if (s.unit === 'mm') delete draft.sheet.unit;
       // `null` puts the sheet back to writing in whatever language the interface is in
