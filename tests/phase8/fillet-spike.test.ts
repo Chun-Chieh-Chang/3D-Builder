@@ -1,14 +1,14 @@
 /**
  * F-0 (docs/fillet-by-face-plan.md): what OCCT does for fillet and chamfer by face, face fillet and full round, before any of it is built into the features:
  * the corner a fillet round the edges of a face makes (the plan's hand calculation assumes a mitre), which edges of a face are smooth and so left out,
- * a full round by two fillets of half the width and by a cut, a fillet between two faces that do not meet.
+ * a full round by two fillets of half the width and by a cut, a fillet between two faces that do not meet, which side of a circular edge a fillet goes to.
  */
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { PartDoc } from '@3db/model';
 import { PlaneGcsSolver } from '@3db/sketch';
 import { Kernel, type Frame, type Region, type ShapeId } from '@3db/kernel';
 import { Regenerator } from '@3db/regen';
-import { build, extrude, front, rectangle, sketch } from '../phase1/builders';
+import { build, circle, extrude, front, rectangle, sketch } from '../phase1/builders';
 
 let kernel: Kernel;
 let solver: PlaneGcsSolver;
@@ -180,5 +180,50 @@ describe('F-0: a face fillet between faces that meet or do not', () => {
     const shared = topo.edges.filter((e) => e.faces.includes(front_) && e.faces.includes(back));
     expect(shared).toHaveLength(0);
     expect(sign === 1 || sign === -1).toBe(true);
+  });
+});
+
+describe('F-0: which side of a circular edge the fillet goes to', () => {
+  /** A 20 × 20 × 6 plate with a Ø10 boss reaching z = 30, fused into one body. */
+  const boss = () =>
+    shapeOf(
+      build(
+        sketch('s1', front, rectangle('p', 0, 0, 20, 20)),
+        extrude('e1', 's1', 'boss', { type: 'blind', depth: '6' }),
+        sketch('s2', front, circle('c', 10, 10, 5)),
+        extrude('e2', 's2', 'boss', { type: 'blind', depth: '30' }),
+      ),
+    );
+
+  /** Pappus for the R1 corner swept round the boss axis: 2π × ∫r dA over a unit square minus a quarter disc.
+   *  `arcAt` is where the arc centre sits (r = 6 at the root, r = 4 at the rim), `squareAt` the unit square's mid-radius. */
+  const corner = (arcAt: number, squareAt: number) => {
+    const disc = arcAt < squareAt ? arcAt + 4 / (3 * Math.PI) : arcAt - 4 / (3 * Math.PI);
+    return 2 * Math.PI * (squareAt - (Math.PI / 4) * disc);
+  };
+
+  const circleAt = (shape: ShapeId, z: number) =>
+    kernel.topology(shape).edges.findIndex((e) => e.curve === 'circle' && Math.abs(e.length - 2 * Math.PI * 5) < 1e-6 && Math.abs(e.mid[2] - z * zSign(shape)) < 1e-6);
+
+  it('the plate is 2400 and the boss above it is π·5²·24, before any fillet', () => {
+    expect(Math.abs(volume(boss()) - (400 * 6 + Math.PI * 25 * 24))).toBeLessThan(1e-3);
+  });
+
+  it('the root circle (concave, where the cylinder meets the face around it): the fillet adds material', () => {
+    const b = boss();
+    const root = circleAt(b, 6);
+    expect(root).toBeGreaterThanOrEqual(0);
+    const added = volume(kernel.fillet(b, [root], 1).shape) - volume(b);
+    expect(added).toBeGreaterThan(0);
+    expect(Math.abs(added - corner(6, 5.5))).toBeLessThan(1e-3);
+  });
+
+  it('the rim circle (convex, the top of the boss): the fillet of the same radius removes material', () => {
+    const b = boss();
+    const rim = circleAt(b, 30);
+    expect(rim).toBeGreaterThanOrEqual(0);
+    const moved = volume(kernel.fillet(b, [rim], 1).shape) - volume(b);
+    expect(moved).toBeLessThan(0);
+    expect(Math.abs(moved + corner(4, 4.5))).toBeLessThan(1e-3);
   });
 });
