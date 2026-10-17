@@ -145,10 +145,6 @@ code { font-family: Consolas, 'Cascadia Mono', monospace; font-size: 11px; }
 
 /* Left panel */
 .left-panel { background: var(--chrome); border-right: 1px solid var(--chrome-line); display: flex; flex-direction: column; min-height: 0; overflow: auto; }
-.panel-tabs { display: flex; border-bottom: 1px solid var(--chrome-line); background: var(--chrome-line); }
-.panel-tabs span { flex: 1; text-align: center; padding: 6px 0; font-size: 12px; color: var(--muted); }
-.panel-tabs span.active { color: var(--chrome-ink); background: var(--chrome); font-weight: 600; }
-
 /* FeatureManager */
 .feature-tree { padding: 6px 4px; user-select: none; }
 .tree-part { display: flex; gap: 6px; align-items: center; padding: 4px 6px; font-weight: 600; }

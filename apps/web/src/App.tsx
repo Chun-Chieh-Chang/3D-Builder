@@ -83,17 +83,30 @@ export function App() {
             <DrawingPanel />
           ) : (
             <div className="sw-panel">
-              {panel === 'properties' && editing ? (
-                assembly ? (
-                  mating ? <MatePanel /> : inserting ? <InsertComponentPanel /> : moving ? <MovePanel /> : patterning ? <PatternPanel /> : exploding ? <ExplodePanel /> : forming ? <FormSubPanel /> : <AssemblyTree />
-                ) : (
+              {/* Both panes stay in the page and the tab only hides one (the plan's §2.4): the fields of a session, which a script or a test reaches for, are never
+                  taken away by looking at the tree. Each pane is the one a drawing lays out (ADR 0133), so the two sidebars look the same. */}
+              <div className="sw-pane" hidden={panel !== 'tree'}>
+                {assembly ? <AssemblyTree /> : <FeatureTree />}
+              </div>
+              <div className="sw-pane" hidden={panel !== 'properties'}>
+                {assembly ? (
+                  mating ? (
+                    <MatePanel />
+                  ) : inserting ? (
+                    <InsertComponentPanel />
+                  ) : moving ? (
+                    <MovePanel />
+                  ) : patterning ? (
+                    <PatternPanel />
+                  ) : exploding ? (
+                    <ExplodePanel />
+                  ) : forming ? (
+                    <FormSubPanel />
+                  ) : null
+                ) : partEditing ? (
                   <PropertyManager />
-                )
-              ) : assembly ? (
-                <AssemblyTree />
-              ) : (
-                <FeatureTree />
-              )}
+                ) : null}
+              </div>
             </div>
           )}
         </aside>
