@@ -7,6 +7,7 @@ import type { AssemblyState } from '../state/assembly';
 import { DATUM_ITEMS, PART_STAGE_LABEL } from '../strings';
 import { Icon } from './Icon';
 import { ContextMenu } from './ContextMenu';
+import { treeFilterMatches, treeNeedle } from './treeFilter';
 
 type Menu = { x: number; y: number } & ({ component: Component } | { mate: Mate } | { pattern: ComponentPattern });
 
@@ -75,6 +76,7 @@ export function AssemblyTree() {
   const name = useDocumentName();
   const [menu, setMenu] = useState<Menu | null>(null);
   const [matesOpen, setMatesOpen] = useState(true);
+  const [filter, setFilter] = useState('');
   const returnTo = useStore((s) => s.returnTo);
   const opened = asm.opened;
 
@@ -97,6 +99,19 @@ export function AssemblyTree() {
     return c ? componentInfo(asm, c).name : id;
   };
   const errors = asm.doc.mates.filter((m) => mateProblem(asm, m)).length;
+  /**
+   * The search box (E1-P2, the one FeatureTree already had): the needle, and the rows it keeps. A component is kept by its name or file, a pattern by its name
+   * or seed, an exploded step by its name, a mate by its name or the components it joins. Datum rows are structure — as in FeatureTree, which never filters
+   * them — so they always stay. With nothing typed every row is kept, so the tree reads exactly as it did before.
+   */
+  const needle = treeNeedle(filter);
+  const shownComponents = asm.doc.components
+    .map((c) => ({ c, info: componentInfo(asm, c) }))
+    .filter(({ c, info }) => treeFilterMatches(needle, [info.name, info.path, componentPrefix(asm, c)]));
+  const shownPatterns = (asm.doc.patterns ?? []).filter((p) => treeFilterMatches(needle, [p.name, nameOf(p.seed)]));
+  const shownExplodeSteps = explosionSteps(asm.doc).filter((s) => treeFilterMatches(needle, [s.name]));
+  const shownMates = asm.doc.mates.filter((m) => treeFilterMatches(needle, [m.name, nameOf(m.a.component), nameOf(m.b.component)]));
+  const noMatch = !!needle && !shownComponents.length && !shownPatterns.length && !shownExplodeSteps.length && !shownMates.length;
   const additive = (e: MouseEvent) => e.ctrlKey || e.shiftKey || e.metaKey;
   const picked = (component: Id | null, name: string) => asm.picks.some((p) => p.component === component && !p.path?.length && p.ref.kind === 'datum' && p.ref.name === name);
   /** A datum row (the assembly's, or a component's own): a click picks it, Ctrl adds it (see `picks`). */
@@ -156,10 +171,16 @@ export function AssemblyTree() {
         <Icon name="assembly" />
         <span>{name}</span>
       </div>
+      <div className="tree-filter">
+        <label className="search-field">
+          <Icon name="search" />
+          <input type="search" value={filter} placeholder={t('tree.filter')} onChange={(e) => setFilter(e.target.value)} onKeyDown={(e) => e.stopPropagation()} aria-label={t('tree.filter')} />
+        </label>
+        {noMatch && <span className="muted">{t('tree.filterNone')}</span>}
+      </div>
       <ol className="tree-list">
         {DATUM_ITEMS.map((d) => datumRow(null, d.id, d.label, d.icon))}
-        {asm.doc.components.map((c) => {
-          const info = componentInfo(asm, c);
+        {shownComponents.map(({ c, info }) => {
           const result = asm.solution?.components.get(c.id);
           const freedom = result && result.status === 'under' ? `可移動的自由度：${result.dof}` : undefined;
           const tip = [info.path && `檔案：${info.path}`, freedom, info.loading && `載入中：${info.loading}`, info.error, ...info.warnings].filter(Boolean).join('\n');
@@ -232,7 +253,7 @@ export function AssemblyTree() {
             </Fragment>
           );
         })}
-        {(asm.doc.patterns ?? []).map((p) => {
+        {shownPatterns.map((p) => {
           const problem = a?.patternProblems().get(p.id);
           const seedName = nameOf(p.seed);
           const n = p.kind === 'mirror' ? 1 : componentPatternLabels(p).length - (p.skip?.length ?? 0);
@@ -256,7 +277,7 @@ export function AssemblyTree() {
             </li>
           );
         })}
-        {explosionSteps(asm.doc).length > 0 && (
+        {shownExplodeSteps.length > 0 && (
           <li className="tree-row folder" data-explode-folder title={asm.exploded ? t('explode.collapse') : t('explode.explode')} onClick={() => a?.setExploded(!asm.exploded)}>
             <Icon name="assembly" />
             <span className="name">
@@ -265,7 +286,7 @@ export function AssemblyTree() {
             </span>
           </li>
         )}
-        {explosionSteps(asm.doc).map((s) => {
+        {shownExplodeSteps.map((s) => {
           const problem = a?.explodeProblems().get(s.id);
           return (
             <li
@@ -282,13 +303,15 @@ export function AssemblyTree() {
             </li>
           );
         })}
-        <li className={`tree-row folder ${errors ? 'error' : ''}`} onClick={() => setMatesOpen((o) => !o)} title={errors ? `${errors} 個結合有錯誤` : undefined}>
-          <Icon name="mates" />
-          <span className="name">結合</span>
-          {errors > 0 && <Icon name="error" className="status-error" />}
-        </li>
+        {(!needle || shownMates.length > 0) && (
+          <li className={`tree-row folder ${errors ? 'error' : ''}`} onClick={() => setMatesOpen((o) => !o)} title={errors ? `${errors} 個結合有錯誤` : undefined}>
+            <Icon name="mates" />
+            <span className="name">結合</span>
+            {errors > 0 && <Icon name="error" className="status-error" />}
+          </li>
+        )}
         {matesOpen &&
-          asm.doc.mates.map((m) => {
+          shownMates.map((m) => {
             const problem = mateProblem(asm, m);
             return (
               <li

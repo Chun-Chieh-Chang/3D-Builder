@@ -30,7 +30,9 @@ E1-P1（`4ba2765`）把 `App.tsx` 的 `<span>` 換成可點的 `.sw-tabs` 按鈕
 
 5. **移除死 CSS**：`.panel-tabs`（`app.css` 舊 148–150 行）在 E1-P1 之後已無人引用（全 repo 僅 `app.css` 與計畫文件提到），移除之。
 
-6. **不做新功能**（計畫 §5）：本次不加搜尋列、不改任何特徵參數邏輯。
+6. **搜尋列比照 FeatureTree（E1-P2 補完）**：依使用者裁定「再加上 AssemblyTree 比照 FeatureTree」，`AssemblyTree` 補上與 `FeatureTree` **相同的** `div.tree-filter`（`.search-field` 搜尋框，加 `tree.filterNone` 無結果提示）。判定規則抽成純模組 `apps/web/src/components/treeFilter.ts`（`treeNeedle`／`treeFilterMatches`），**兩棵樹共用**（`FeatureTree` 原本自己的一份 `matches` 一併收斂過去），由 `tests/phase8/tree-filter.test.ts` 在 `node` 環境直接驗證。**未做**階層／平面檢視切換：`FeatureTree` 用它把草圖收進消耗它的特徵，組合件的零組件沒有「消耗它的特徵」這種對應概念，加上去只會是空轉控制項（AGENTS.md §3.2）。
+
+7. **除第 6 點（使用者明確要求）外不做新功能**（計畫 §5）：不改任何特徵參數或幾何邏輯。
 
 ## 驗收
 
@@ -43,12 +45,15 @@ E1-P1（`4ba2765`）把 `App.tsx` 的 `<span>` 換成可點的 `.sw-tabs` 按鈕
 | 組合件 6 個模式面板維持浮動、內部未動 | 本次未編輯任何 `*Panel.tsx` |
 | 與工程圖側邊欄視覺一致 | 沿用 `.sw-panel`／`.sw-tabs`／`.sw-pane`（ADR 0133 同一組樣式） |
 | 死 CSS 移除後無殘留引用 | 全 repo `panel-tabs` 僅剩計畫文件一處敘述 |
-| typecheck 0、lint 全過、全量測試 0 失敗 | typecheck **0**；`lint:rules`／`lint:deps`／`lint:i18n`（181 行，未逾基準）全過；全量 vitest **239 檔（235 過／4 略）、0 失敗** |
+| 組合件樹有與零件樹相同的搜尋框，看得到、打得了字 | `AssemblyTree`：`div.tree-filter` ＋ `label.search-field` ＋ `input[type=search]`（`aria-label={t('tree.filter')}`） |
+| 搜尋規則有單元測試，不靠瀏覽器 | `tests/phase8/tree-filter.test.ts`（7 項）；`treeFilterMatches`／`treeNeedle` 為純函式，`node` 環境直接跑 |
+| 未輸入時組合件樹與變更前逐列相同 | `treeFilterMatches` 對空字串／純空白恆真 → `shownComponents`／`shownPatterns`／`shownExplodeSteps`／`shownMates` 與原清單同序同內容；資料列（datum）不受搜尋影響（與 `FeatureTree` 一致） |
+| typecheck 0、lint 全過、全量測試 0 失敗 | typecheck **0**；`lint:rules`／`lint:deps`／`lint:i18n`（181 行，未逾基準）全過；全量 vitest **240 檔（236 過／4 略）、0 失敗** |
 | `verify:ui` | **未執行**（本機逾時 > 25 分鐘，與 B2.6／B2.7 相同）→ **介面未經瀏覽器驗證** |
 
 ## 已知限制與差異（明示，非默默降級）
 
-- **`FeatureTree` 有搜尋列（`.tree-filter`）＋階層／平面檢視切換；`AssemblyTree` 沒有**。**刻意不補**：計畫 §5 明訂「不做新功能」，且本專案 vitest 環境為 `environment: 'node'`（**無 jsdom／happy-dom**），新增的樹狀搜尋邏輯既**無法由單元測試**驗證、本機 `verify:ui` 又逾時，加上去等於交付一個無法驗證的功能（違反 AGENTS.md §3.2）。此差異**留待使用者裁定**是否要為組合件樹加搜尋列（若要做，應連同 e2e 驗證一起做）。
+- **組合件樹仍缺 `FeatureTree` 的階層／平面檢視切換**（搜尋框已補上，見決定 6）。**刻意不做**：`FeatureTree` 的 `treeMode` 只影響草圖要不要收進消耗它的特徵；組合件的零組件沒有這個概念，放一顆切換鈕只會是空轉控制項（AGENTS.md §3.2）。
 - **PropertyManager 仍由「工作階段（editing）」驅動，尚未做到計畫 §2.2 的「點選圖面→自動切到屬性、依選取切換群組框」**。本次只交付分頁外框與 §2.4 契約；選取驅動的切換屬後續（需動 `PropertyManager.tsx` 的標題／群組，風險較大）。
 - **未經瀏覽器驗證**：分頁在零件／組合件下的實際外觀與行為，待 `verify:ui`／實機確認（E1-P1 亦然）。
 - 指令仍在側邊欄（依使用者裁定），未移到頂端 CommandBar。

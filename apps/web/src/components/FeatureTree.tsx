@@ -8,6 +8,7 @@ import { store, useDocumentName, useStore } from '../state/store';
 import { DATUM_ITEMS, featureLabel, SKETCH_STATUS_PREFIX } from '../strings';
 import { Icon } from './Icon';
 import { ContextMenu } from './ContextMenu';
+import { treeFilterMatches, treeNeedle } from './treeFilter';
 
 interface Menu {
   x: number;
@@ -178,8 +179,8 @@ export function FeatureTree() {
   };
 
   const bodies = result?.bodies ?? [];
-  const needle = filter.trim().toLowerCase();
-  const matches = (f: Feature) => !needle || [f.name, featureLabel(f), f.tag ?? '', f.comment ?? ''].some((x) => x.toLowerCase().includes(needle));
+  const needle = treeNeedle(filter);
+  const matches = (f: Feature) => treeFilterMatches(needle, [f.name, featureLabel(f), f.tag ?? '', f.comment ?? '']);
   const canDrag = !editing && !needle;
   /** The id of the feature a dragged one lands before (null: at the end). */
   const landing = (): Id | null => {
