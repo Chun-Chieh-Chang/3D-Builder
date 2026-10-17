@@ -5,7 +5,7 @@ import { centreItems, holeRows, holeTableBox, holeTableItems, threadItems, type 
 import { annotationItems } from './gdt';
 import { balloonSpots, bomTableBox, bomTableItems, spotItems, type BalloonSpot, type ViewBom } from './bomTable';
 import { evaluateDimension, type DimensionOutcome, type ElementsResult } from './dimension';
-import { circlePolyline, hatch } from './geometry';
+import { circlePolyline, clipToBand, hatch, type Polyline } from './geometry';
 import { layoutViews, resolveLines, scaleOf, toSheet, type PlacedView, type ViewLines } from './layout';
 import { fittedTitleHeight, sheetMetrics, titleCells, type Rect } from './sheet';
 import { surfaceFinishItems } from './surfaceFinish';
@@ -150,23 +150,55 @@ export const showsHidden = (v: DrawingView): boolean => {
 /** The spacing of hatch lines on the sheet (ISO 128-50: 1.5 to 3 mm for small areas, up to 10 for large). */
 export const HATCH_SPACING = 3;
 
+/**
+ * The break lines of a view (B2.7): a zigzag across it at each end of the band left out, drawn thin as a break line is (ISO 128-30). In drawn coordinates the near
+ * line stands at `from` and the far one at `from + gap`: `toSheet` maps the view's own coordinates, so it cannot be used for the far line (it would put both at `from`).
+ */
+function breakItems(placed: PlacedView, box: ViewLines['box']): ScenePolyline[] {
+  const b = placed.break;
+  if (!b || !box) return [];
+  const across = b.axis === 0 ? 1 : 0;
+  const lo = box.min[across] - 3;
+  const hi = box.max[across] + 3;
+  const n = 8;
+  const items: ScenePolyline[] = [];
+  for (const edge of [b.from, b.from + b.gap]) {
+    const points: number[] = [];
+    for (let i = 0; i <= n; i++) {
+      const c = lo + ((hi - lo) * i) / n;
+      const lean = (i % 2 === 0 ? -1 : 1) * 1.5;
+      const p: [number, number] = b.axis === 0 ? [edge + lean, c] : [c, edge + lean];
+      points.push(placed.at[0] + (p[0] - placed.centre[0]) * placed.scale, placed.at[1] + (p[1] - placed.centre[1]) * placed.scale);
+    }
+    items.push({ kind: 'polyline', points, style: 'thin' });
+  }
+  return items;
+}
+
 /** A view's lines moved and scaled to where the view is on the sheet; for a section, the hatching of the faces it cut. */
 export function viewItems(view: DrawingView, lines: ViewLines | null | undefined, placed: PlacedView): ScenePolyline[] {
   if (!lines) return [];
-  const move = (line: number[]): number[] => {
+  const move = (line: readonly number[]): number[] => {
     const out: number[] = [];
     for (let i = 0; i < line.length; i += 2) out.push(...toSheet(placed, line[i]!, line[i + 1]!));
     return out;
   };
   const items: ScenePolyline[] = [];
   const display = displayOf(view);
+  // a broken view (B2.7) leaves its band out, so a line that crosses it is cut at the band's ends rather than drawn across the gap
+  const brk = placed.break;
+  const cut = (l: readonly number[]): readonly (readonly number[])[] => (brk ? clipToBand(l, brk.axis, brk.from, brk.to) : [l]);
+  const draw = (ls: readonly Polyline[] | undefined, style: LineStyle): void => {
+    for (const l of ls ?? []) for (const piece of cut(l)) items.push({ kind: 'polyline', points: move(piece), style });
+  };
   // the display style (ADR 0146): a wireframe draws the hidden edges as the visible ones; a shaded view without edges, neither
-  if (showsHidden(view)) for (const l of lines.hidden) items.push({ kind: 'polyline', points: move(l), style: display === 'wireframe' ? 'visible' : 'hidden' });
-  if (display !== 'shaded') for (const l of lines.visible) items.push({ kind: 'polyline', points: move(l), style: 'visible' });
-  for (const l of lines.center ?? []) items.push({ kind: 'polyline', points: move(l), style: 'center' });
+  if (showsHidden(view)) draw(lines.hidden, display === 'wireframe' ? 'visible' : 'hidden');
+  if (display !== 'shaded') draw(lines.visible, 'visible');
+  draw(lines.center, 'center');
   // the tangent edges (B2.3): the smooth lines where two faces meet, drawn thin. They are drawn as before unless the view leaves them out
-  if (display !== 'shaded' && view.showTangentEdges !== false) for (const l of lines.tangent ?? []) items.push({ kind: 'polyline', points: move(l), style: 'thin' });
+  if (display !== 'shaded' && view.showTangentEdges !== false) draw(lines.tangent, 'thin');
   if ((view.kind === 'section' || view.kind === 'sectionLocal') && lines.cut) for (const l of hatch(lines.cut, HATCH_SPACING / placed.scale)) items.push({ kind: 'polyline', points: move(l), style: 'thin' });
+  items.push(...breakItems(placed, lines.box));
   return items;
 }
 
@@ -174,6 +206,8 @@ export function viewItems(view: DrawingView, lines: ViewLines | null | undefined
 export function viewImage(view: DrawingView, lines: ViewLines | null | undefined, placed: PlacedView): SceneImage | null {
   const img = lines?.shade;
   if (!img || !isShaded(displayOf(view))) return null;
+  // a broken view is not shaded (B2.7): its image is one picture of the whole part and cannot be cut at the band, and drawing it squeezed would be a wrong picture
+  if (placed.break) return null;
   const at = toSheet(placed, img.box.min[0], img.box.min[1]);
   const top = toSheet(placed, img.box.max[0], img.box.max[1]);
   const clip = lines.shadeClip ? { centre: toSheet(placed, lines.shadeClip.centre[0], lines.shadeClip.centre[1]), radius: lines.shadeClip.radius * placed.scale } : undefined;

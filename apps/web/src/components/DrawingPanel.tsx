@@ -1,5 +1,5 @@
 import { t, type Locale } from '@3db/i18n';
-import { DIM_STYLE_DEFAULT, SHEET_SIZES, TITLE_FIELDS, TITLE_STYLE_DEFAULT, VIEW_CORNERS, VIEW_DISPLAYS, VIEW_NAMES, baseName, displayOf, isCorner, isDerived, isShaded, type DrawingView, type Scale, type SheetSize, type TitleField, type ViewCorner, type ViewDisplay, type ViewName, type ViewSide } from '@3db/model';
+import { BREAK_GAP, DIM_STYLE_DEFAULT, SHEET_SIZES, TITLE_FIELDS, TITLE_STYLE_DEFAULT, VIEW_CORNERS, VIEW_DISPLAYS, VIEW_NAMES, baseName, displayOf, isCorner, isDerived, isShaded, type DrawingView, type Scale, type SheetSize, type TitleField, type ViewCorner, type ViewDisplay, type ViewName, type ViewSide } from '@3db/model';
 import { STANDARD_SCALES, arrangementBase, lineAcrossBox, scaleText, type ViewLines } from '@3db/drawing';
 import { ACTIONS, openDrawingPart, shortcutOf } from '../actions';
 import { DimStyleFields } from './DimStyleFields';
@@ -373,6 +373,11 @@ export function DrawingPanel() {
   const [centre, setCentre] = useState<[string, string]>(['', '']);
   const [radius, setRadius] = useState('');
   const [localDepth, setLocalDepth] = useState('5');
+  /** The band left out of the selected view (B2.7): the fields, which start empty so that the view's own break (if any) shows as the placeholders, the way the cut above does. */
+  const [breakAxis, setBreakAxis] = useState<'x' | 'y'>('x');
+  const [breakFrom, setBreakFrom] = useState('');
+  const [breakTo, setBreakTo] = useState('');
+  const [breakGap, setBreakGap] = useState('');
   const scale = scaleText(doc.sheet.scale);
   const standard = STANDARD_SCALES.some((s) => same(s, doc.sheet.scale));
   const view = doc.views.find((x) => x.id === drw.selected);
@@ -421,6 +426,9 @@ export function DrawingPanel() {
   const num = (s: string, fallback: number) => (s.trim() !== '' && Number.isFinite(Number(s)) ? Number(s) : fallback);
   const mid: [number, number] = box ? [(box.min[0] + box.max[0]) / 2, (box.min[1] + box.max[1]) / 2] : [0, 0];
   const span = box ? Math.max(box.max[0] - box.min[0], box.max[1] - box.min[1]) : 20;
+  /** The break's fields (B2.7): the axis it is set on, and — when the view has none yet — the band's ends a third and two thirds across it. */
+  const breakK = (view?.break?.axis ?? breakAxis) === 'y' ? 1 : 0;
+  const breakDefault: [number, number] = box ? [box.min[breakK] + (box.max[breakK] - box.min[breakK]) / 3, box.min[breakK] + ((box.max[breakK] - box.min[breakK]) * 2) / 3] : [0, 0];
   return (
     <div className="drawing-panel sw-panel" data-drawing-panel>
       <div className="sw-tabs" role="tablist">
@@ -621,6 +629,33 @@ export function DrawingPanel() {
                 <input type="checkbox" data-field="viewShowTangentEdges" checked={view.showTangentEdges !== false} title={t('drawingUi.showTangentEdgesTip')} onChange={(e) => d.setView(view.id, { showTangentEdges: e.target.checked ? null : false })} />
                 <span>{t('drawingUi.showTangentEdges')}</span>
               </label>
+              {/* A break (B2.7): the band left out of the view, so that a long part is drawn shorter; what lies beyond it comes nearer by the band less the gap. */}
+              <div className="pm-row">
+                <span>{t('drawingUi.breakAxis')}</span>
+                <select data-field="breakAxis" value={view.break?.axis ?? breakAxis} onChange={(e) => { const ax = e.target.value as 'x' | 'y'; setBreakAxis(ax); if (view.break) d.setView(view.id, { break: { ...view.break, axis: ax } }); }}>
+                  <option value="x">{t('drawingUi.breakAxisX')}</option>
+                  <option value="y">{t('drawingUi.breakAxisY')}</option>
+                </select>
+                <input data-field="breakFrom" inputMode="decimal" placeholder={String(+(view.break?.from ?? breakDefault[0]).toFixed(2))} value={breakFrom} onChange={(e) => setBreakFrom(e.target.value)} onKeyDown={(e) => e.stopPropagation()} />
+                <input data-field="breakTo" inputMode="decimal" placeholder={String(+(view.break?.to ?? breakDefault[1]).toFixed(2))} value={breakTo} onChange={(e) => setBreakTo(e.target.value)} onKeyDown={(e) => e.stopPropagation()} />
+                <input data-field="breakGap" inputMode="decimal" title={t('drawingUi.breakGap')} placeholder={String(view.break?.gap ?? BREAK_GAP)} value={breakGap} onChange={(e) => setBreakGap(e.target.value)} onKeyDown={(e) => e.stopPropagation()} />
+              </div>
+              <div className="pm-row end">
+                <button
+                  className="pm-button"
+                  data-action="setBreak"
+                  disabled={!box}
+                  onClick={() => {
+                    if (!box) return;
+                    d.setView(view.id, { break: { axis: view.break?.axis ?? breakAxis, from: num(breakFrom, view.break?.from ?? breakDefault[0]), to: num(breakTo, view.break?.to ?? breakDefault[1]), gap: num(breakGap, view.break?.gap ?? BREAK_GAP) } });
+                  }}
+                >
+                  {t('drawingUi.breakView')}
+                </button>
+                <button className="pm-button danger" data-action="clearBreak" disabled={!view.break} onClick={() => d.setView(view.id, { break: null })}>
+                  {t('drawingUi.breakClear')}
+                </button>
+              </div>
               <label className="pm-row">
                 <span>{t('drawingUi.display')}</span>
                 <select data-field="display" value={displayOf(view)} onChange={(e) => d.setView(view.id, { display: e.target.value as ViewDisplay })}>

@@ -57,6 +57,52 @@ export function clipToCircle(line: readonly number[], centre: readonly [number, 
 }
 
 /**
+ * The pieces of a polyline outside a break's band (B2.7): the band between `from` and `to` along `axis` (0 for x, 1 for y) is left out of a broken view, so a segment that
+ * crosses the band is cut at its two ends rather than drawn straight across the gap. A polyline wholly inside the band gives none. Points where it crosses are exact.
+ */
+export function clipToBand(line: readonly number[], axis: 0 | 1, from: number, to: number): Polyline[] {
+  const lo = Math.min(from, to);
+  const hi = Math.max(from, to);
+  if (!(hi > lo)) return line.length >= 4 ? [line.slice()] : [];
+  const out: Polyline[] = [];
+  let current: number[] = [];
+  const flush = () => {
+    if (current.length >= 4) out.push(current);
+    current = [];
+  };
+  const at = (p: readonly number[], q: readonly number[], t: number): [number, number] => [p[0]! + (q[0]! - p[0]!) * t, p[1]! + (q[1]! - p[1]!) * t];
+  for (let i = 0; i + 3 < line.length; i += 2) {
+    const p: [number, number] = [line[i]!, line[i + 1]!];
+    const q: [number, number] = [line[i + 2]!, line[i + 3]!];
+    const span = q[axis] - p[axis];
+    // the segment cut where it crosses each end of the band: at most three pieces, the middle one inside the band and so not drawn
+    const ts = [0, 1];
+    if (Math.abs(span) > 1e-12) {
+      for (const edge of [lo, hi]) {
+        const t = (edge - p[axis]) / span;
+        if (t > 0 && t < 1) ts.push(t);
+      }
+    }
+    ts.sort((a, b) => a - b);
+    for (let k = 0; k + 1 < ts.length; k++) {
+      const t0 = ts[k]!;
+      const t1 = ts[k + 1]!;
+      const mid = p[axis] + span * ((t0 + t1) / 2);
+      if (mid > lo && mid < hi) {
+        flush();
+        continue;
+      }
+      const a = at(p, q, t0);
+      const b = at(p, q, t1);
+      if (current.length === 0) current.push(a[0], a[1]);
+      current.push(b[0], b[1]);
+    }
+  }
+  flush();
+  return out;
+}
+
+/**
  * Hatch lines (ISO 128-50) over the region the boundary polylines bound, by the even-odd rule: lines at `angle` (radians from the x axis), `spacing` apart,
  * each cut into the pieces inside the region. The boundary is every closed outline of the cut faces, holes included. Lines through a corner count it once
  * (a half-open rule), so a corner never leaves a line unpaired.

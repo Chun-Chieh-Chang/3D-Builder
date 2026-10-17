@@ -335,6 +335,9 @@ const drawingMigrations: Record<number, (doc: Json) => Json> = {
   // v21 (B1): a local (partial) section view kind (`sectionLocal`) is new; nothing to convert, the version keeps an older program
   // from opening a drawing whose views it would not know how to draw.
   20: (doc) => doc,
+  // v22 (B2.7): a view's break (`break`, the band left out so that a long part is shown shorter) is new and optional, so there is nothing to convert; the version
+  // keeps an older program, which would draw such a view whole and so at the wrong length, from opening it.
+  21: (doc) => doc,
 };
 
 export function parseDrawing(text: string): DrawingDoc {

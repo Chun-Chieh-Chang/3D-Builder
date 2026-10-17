@@ -1,4 +1,4 @@
-import { isCorner, isDerived, rightOf, sectionArrow, sectionSide, type ViewAxes, type DrawingDoc, type DrawingSheet, type DrawingView, type Id, type Scale, type ViewCorner, type ViewName, type ViewSide } from '@3db/model';
+import { BREAK_GAP, isCorner, isDerived, rightOf, sectionArrow, sectionSide, type ViewAxes, type DrawingDoc, type DrawingSheet, type DrawingView, type Id, type Scale, type ViewCorner, type ViewName, type ViewSide } from '@3db/model';
 import { clipToCircle } from './geometry';
 import type { ShadeImage } from './shade';
 import { sheetMetrics, type Rect } from './sheet';
@@ -58,6 +58,29 @@ export function lineAcrossBox(at: readonly [number, number], toward: readonly [n
   ];
 }
 
+/**
+ * A break (B2.7) as the layout and the scene use it: the model's `break` with the axis as 0 (x) or 1 (y) and the gap it defaults to. Absent when the view is not broken.
+ */
+export interface PlacedBreak {
+  axis: 0 | 1;
+  from: number;
+  to: number;
+  gap: number;
+}
+
+/** A view's break as it is drawn, from what the model says. */
+export const breakOf = (v: Pick<DrawingView, 'break'>): PlacedBreak | undefined => (v.break ? { axis: v.break.axis === 'y' ? 1 : 0, from: v.break.from, to: v.break.to, gap: v.break.gap ?? BREAK_GAP } : undefined);
+
+/**
+ * A view's own coordinate along the axis it is broken on, as it is drawn: the band between `from` and `to` is left out and the two halves are held `gap` apart, so what lies
+ * beyond the band is drawn `(to - from) - gap` nearer and the view is that much shorter. A coordinate inside the band has nothing drawn at it and comes to its near end (the
+ * far half starts at `from + gap` in drawn coordinates, which is where the scene draws its far break line).
+ */
+export const brokenAt = (b: PlacedBreak, v: number): number => (v <= b.from ? v : v >= b.to ? v - (b.to - b.from) + b.gap : b.from);
+
+/** The other way round (for a pointer that places something on the view): a drawn coordinate back to the view's own. */
+export const unbrokenAt = (b: PlacedBreak, v: number): number => (v <= b.from ? v : v + (b.to - b.from) - b.gap);
+
 /** A view placed on the sheet: the middle of its box (mm), the scale as a number, and the size it takes (mm). */
 export interface PlacedView {
   id: Id;
@@ -67,15 +90,27 @@ export interface PlacedView {
   h: number;
   /** The middle of the view's box in view coordinates (full size): what `at` is the sheet position of. */
   centre: [number, number];
+  /** The band left out of the view (B2.7), when it is broken: every item of the view is placed through `toSheet`, so they all follow it. */
+  break?: PlacedBreak;
 }
 
 export const ratio = (s: Scale): number => s[0] / s[1];
 
-/** A point of a view's coordinates (full size) on the sheet, where the view is placed. */
-export const toSheet = (placed: PlacedView, x: number, y: number): [number, number] => [placed.at[0] + (x - placed.centre[0]) * placed.scale, placed.at[1] + (y - placed.centre[1]) * placed.scale];
+/** A point of a view's coordinates (full size) on the sheet, where the view is placed. A broken view's band is left out, so what lies beyond it comes nearer by it (B2.7). */
+export const toSheet = (placed: PlacedView, x: number, y: number): [number, number] => {
+  const b = placed.break;
+  const vx = b && b.axis === 0 ? brokenAt(b, x) : x;
+  const vy = b && b.axis === 1 ? brokenAt(b, y) : y;
+  return [placed.at[0] + (vx - placed.centre[0]) * placed.scale, placed.at[1] + (vy - placed.centre[1]) * placed.scale];
+};
 
 /** A point of the sheet in the coordinates of the view placed there (full size): the other way round from `toSheet`, for a pointer that places something. */
-export const fromSheet = (placed: PlacedView, sx: number, sy: number): [number, number] => [placed.centre[0] + (sx - placed.at[0]) / placed.scale, placed.centre[1] + (sy - placed.at[1]) / placed.scale];
+export const fromSheet = (placed: PlacedView, sx: number, sy: number): [number, number] => {
+  const x = placed.centre[0] + (sx - placed.at[0]) / placed.scale;
+  const y = placed.centre[1] + (sy - placed.at[1]) / placed.scale;
+  const b = placed.break;
+  return [b && b.axis === 0 ? unbrokenAt(b, x) : x, b && b.axis === 1 ? unbrokenAt(b, y) : y];
+};
 
 /** The scales a drawing is made at (ISO 5455), from the largest. */
 export const STANDARD_SCALES: readonly Scale[] = [[50, 1], [20, 1], [10, 1], [5, 1], [2, 1], [1, 1], [1, 2], [1, 5], [1, 10], [1, 20], [1, 50], [1, 100]];
@@ -108,7 +143,17 @@ export function scaleTarget(doc: Pick<DrawingDoc, 'views'>, view: DrawingView, d
 /** The gap between views laid out together (mm), room for the dimensions between them. */
 export const VIEW_GAP = 25;
 
-const sizeOf = (g: ViewLines | null | undefined) => (g?.box ? { w: g.box.max[0] - g.box.min[0], h: g.box.max[1] - g.box.min[1], centre: [(g.box.min[0] + g.box.max[0]) / 2, (g.box.min[1] + g.box.max[1]) / 2] as [number, number] } : { w: 0, h: 0, centre: [0, 0] as [number, number] });
+/** The size and middle of what a view draws, with a break's band left out of the axis it is broken on (B2.7): the view is measured as it is drawn, which is what places it. */
+const sizeOf = (g: ViewLines | null | undefined, brk?: PlacedBreak) => {
+  if (!g?.box) return { w: 0, h: 0, centre: [0, 0] as [number, number] };
+  const min: [number, number] = [g.box.min[0], g.box.min[1]];
+  const max: [number, number] = [g.box.max[0], g.box.max[1]];
+  if (brk) {
+    min[brk.axis] = brokenAt(brk, min[brk.axis]!);
+    max[brk.axis] = brokenAt(brk, max[brk.axis]!);
+  }
+  return { w: max[0] - min[0], h: max[1] - min[1], centre: [(min[0] + max[0]) / 2, (min[1] + max[1]) / 2] as [number, number] };
+};
 
 /** The scale a view is drawn at: its own, else (a projected or section view) its parent's, else the sheet's. */
 export function scaleOf(doc: Pick<DrawingDoc, 'views' | 'sheet'>, view: DrawingView, depth = 0): Scale {
@@ -194,6 +239,8 @@ interface Measured {
   w: number;
   h: number;
   centre: [number, number];
+  /** The band left out of the view (B2.7), when it is broken. */
+  break?: PlacedBreak;
 }
 
 /** The side of its parent a derived view goes on. */
@@ -250,8 +297,9 @@ export function layoutViews(doc: DrawingDoc, rawLines: ReadonlyMap<Id, ViewLines
   const measured = new Map<Id, Measured>();
   for (const v of doc.views) {
     const s = ratio(scaleOf(doc, v));
-    const m = sizeOf(lines.get(v.id));
-    measured.set(v.id, { view: v, scale: s, w: m.w * s, h: m.h * s, centre: m.centre });
+    const brk = breakOf(v);
+    const m = sizeOf(lines.get(v.id), brk);
+    measured.set(v.id, { view: v, scale: s, w: m.w * s, h: m.h * s, centre: m.centre, break: brk });
   }
   const models = doc.views.filter((v) => !isDerived(v) && !v.at);
   const base = arrangementBase(doc);
@@ -354,7 +402,7 @@ export function layoutViews(doc: DrawingDoc, rawLines: ReadonlyMap<Id, ViewLines
     const m = measured.get(v.id)!;
     const at = abs.get(v.id) ?? ([sheet.area.x + sheet.area.w / 2, sheet.area.y + sheet.area.h / 2] as [number, number]);
     const by = movedBy(v);
-    out.set(v.id, { id: v.id, at: [at[0] + by[0], at[1] + by[1]], scale: m.scale, w: m.w, h: m.h, centre: m.centre });
+    out.set(v.id, { id: v.id, at: [at[0] + by[0], at[1] + by[1]], scale: m.scale, w: m.w, h: m.h, centre: m.centre, ...(m.break ? { break: m.break } : {}) });
   }
   return out;
 }

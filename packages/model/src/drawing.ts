@@ -13,7 +13,7 @@ import { ANNOTATION_FIELDS, checkAnnotation, framesUsing, type Annotation, type 
  * opened (exact hidden-line removal), so a drawing can never disagree with the model it shows.
  */
 
-export const DRAWING_SCHEMA_VERSION = 21;
+export const DRAWING_SCHEMA_VERSION = 22;
 
 export type SheetSize = 'A4' | 'A3' | 'A2' | 'A1' | 'A0';
 export const SHEET_SIZES: readonly SheetSize[] = ['A4', 'A3', 'A2', 'A1', 'A0'];
@@ -169,6 +169,22 @@ export const VIEW_DISPLAYS: readonly ViewDisplay[] = ['wireframe', 'hiddenVisibl
 export const displayOf = (v: Pick<DrawingView, 'display' | 'kind'>): ViewDisplay => v.display ?? (v.kind === 'section' ? 'hiddenRemoved' : 'hiddenVisible');
 export const isShaded = (d: ViewDisplay): boolean => d === 'shadedEdges' || d === 'shaded';
 
+/**
+ * A break view's band (B2.7): the strip of the view along `axis` between `from` and `to` is left out, and what lies beyond `to` is drawn `gap` nearer, so that a long
+ * part is shown shorter — SolidWorks's break view. The two numbers are in the view's own coordinates at full size, the space a local section's cutting outline is
+ * drawn in. What is shortened is the drawing, not the part: the dimensions on the view keep the model's numbers.
+ */
+export interface ViewBreak {
+  axis: 'x' | 'y';
+  from: number;
+  to: number;
+  /** The gap left between the two halves (mm, full size), where the break lines are drawn. Absent: `BREAK_GAP`. */
+  gap?: number;
+}
+
+/** The gap a break leaves between the two halves when it asks for none (mm, full size): room for the break lines to be drawn in. */
+export const BREAK_GAP = 2;
+
 interface ViewCommon {
   id: Id;
   name: string;
@@ -196,6 +212,11 @@ interface ViewCommon {
    * Absent: they are drawn, as they were before the field — a drawing made earlier looks the same. `false` leaves them out.
    */
   showTangentEdges?: boolean;
+  /**
+   * A break (B2.7): the band of the view left out, so that a long part is shown shorter. Absent: the view is drawn whole. See `ViewBreak` — the dimensions on the
+   * view keep the model's numbers, and the view takes the place and size of what is drawn (the band and the gap come off its box).
+   */
+  break?: ViewBreak;
 }
 
 /** A view of a model from one of the named directions (C16.2). */
@@ -713,6 +734,8 @@ export type ViewPatch = {
   locked?: boolean | null;
   /** `false` leaves the view's tangent edges out (B2.3); `true` or `null` draws them (the default), so `null` takes the setting back. */
   showTangentEdges?: boolean | null;
+  /** A break (B2.7): the band left out of the view; `null` takes it back (the view is drawn whole again). */
+  break?: ViewBreak | null;
 };
 
 /** Whether a scale is two whole numbers of 1 to 1000. */
@@ -729,10 +752,19 @@ const SIDES: readonly ViewSide[] = ['left', 'right', 'up', 'down'];
 /** The view with this id among `views`. */
 export const viewById = (views: readonly DrawingView[], id: Id): DrawingView | undefined => views.find((v) => v.id === id);
 
+/** Checks a break (B2.7): the band has to be one — an axis, two finite numbers with room between them, and a gap that is not negative. */
+function checkBreak(b: ViewBreak): void {
+  if (b.axis !== 'x' && b.axis !== 'y') throw new CommandError(t('drawing.badBreakAxis'));
+  if (![b.from, b.to].every(Number.isFinite)) throw new CommandError(t('drawing.badBreak'));
+  if (!(b.to - b.from > 0)) throw new CommandError(t('drawing.badBreak'));
+  if (b.gap !== undefined && (!Number.isFinite(b.gap) || b.gap < 0)) throw new CommandError(t('drawing.badBreakGap'));
+}
+
 /** Checks a view against the views it may refer to (its parent has to be one of them, and not the view itself). */
 function checkView(v: DrawingView, views: readonly DrawingView[]): void {
   if (!v.id) throw new CommandError(t('drawing.idMissing'));
   if (!v.name.trim()) throw new CommandError(t('drawing.nameEmpty'));
+  if (v.break) checkBreak(v.break);
   if (v.scale && !scaleOk(v.scale)) throw new CommandError(t('drawing.badScale', { scale: v.scale.join(':') }));
   if (v.at && !(v.at.length === 2 && v.at.every(Number.isFinite))) throw new CommandError(t('drawing.badPosition'));
   if (v.slide !== undefined && !Number.isFinite(v.slide)) throw new CommandError(t('drawing.badPosition'));
@@ -965,7 +997,7 @@ export function mutateDrawing(draft: Draft<DrawingDoc>, cmd: DrawingCommand): vo
       const v = viewOf(draft, cmd.viewId);
       // a locked view (B2.1) keeps its place and its scale: moving or rescaling it is refused, however it is asked for
       if (v.locked && (cmd.patch.at !== undefined || cmd.patch.scale !== undefined || cmd.patch.slide !== undefined)) throw new CommandError(t('drawing.viewLocked'));
-      const { at, scale, slide, flip, aligned, centreMarks, display, locked, showTangentEdges, ...rest } = cmd.patch;
+      const { at, scale, slide, flip, aligned, centreMarks, display, locked, showTangentEdges, break: brk, ...rest } = cmd.patch;
       const kind = v.kind ?? 'model';
       const belongs: Record<string, string[]> = { model: ['source', 'direction'], projected: ['side'], section: ['line', 'label'], detail: ['centre', 'radius', 'label'], sectionLocal: ['outline', 'depth', 'label'] };
       for (const k of Object.keys(rest)) if (k !== 'name' && !belongs[kind]!.includes(k)) throw new CommandError(t('drawing.notForKind', { field: k, kind }));
@@ -988,6 +1020,8 @@ export function mutateDrawing(draft: Draft<DrawingDoc>, cmd: DrawingCommand): vo
       else if (locked !== undefined) next.locked = true;
       if (showTangentEdges === null || showTangentEdges === true) delete next.showTangentEdges;
       else if (showTangentEdges === false) next.showTangentEdges = false;
+      if (brk === null) delete next.break;
+      else if (brk !== undefined) next.break = brk;
       if (flip === null || flip === false) delete next.flip;
       else if (flip === true) next.flip = true;
       checkView(next, draft.views.filter((x) => x.id !== v.id) as DrawingView[]);
