@@ -48,6 +48,7 @@ import {
   type MeasureReport,
   type MeasureTarget,
   bomName,
+  page,
   type Ref,
   type SketchFeature,
   type Vec3,
@@ -3348,7 +3349,7 @@ export function useDocumentName(): string {
   const untitled = useStore((s) => s.untitled);
   const asm = useStore((s) => s.asm);
   const drw = useStore((s) => s.drw);
-  if (drw) return drw.doc.title.drawingName ?? drw.fileName?.replace(/\.3dbd$/i, '') ?? drw.untitled;
+  if (drw) return page(drw.doc).title.drawingName ?? drw.fileName?.replace(/\.3dbd$/i, '') ?? drw.untitled;
   return asm ? assemblyName(asm.fileName, asm.untitled) : partName(doc, fileName, untitled);
 }
 

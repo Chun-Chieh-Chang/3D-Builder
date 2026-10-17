@@ -11,7 +11,8 @@
  *      that *is* shaded does get one from the same lines — the null is the crop's doing, not the lines'.
  */
 import { describe, expect, it } from 'vitest';
-import { applyDrawingCommand, createEmptyDrawing, DRAWING_SCHEMA_VERSION, parseDrawing, serializeDrawing, type CropDrawingView, type DrawingDoc, type DrawingView } from '@3db/model';
+import { applyDrawingCommand, createEmptyDrawing, DRAWING_SCHEMA_VERSION, parseDrawing, serializeDrawing, type CropDrawingView, type DrawingDoc, type DrawingView, page } from '@3db/model';
+import { olderDrawingFile } from '../support/drawingVersion';
 import { buildScene, layoutViews, resolveLines, scaleOf, scaleTarget, viewImage, viewItems, type ShadeImage, type ViewLines } from '@3db/drawing';
 
 /** A front view of a plate, and the local section that cuts a 20 × 20 rectangle out of it — the parent a crop is made from. */
@@ -69,21 +70,21 @@ const LINES: ViewLines = {
 const onePixel = (): ShadeImage => ({ width: 1, height: 1, box: { min: [0, 0], max: [40, 20] }, png: new Uint8Array(0), rgb: new Uint8Array(0), alpha: new Uint8Array(0) });
 
 describe('the cropped view (B2.7)', () => {
-  it('the drawing schema is 24', () => {
-    expect(DRAWING_SCHEMA_VERSION).toBe(24);
+  it('the drawing schema is 25', () => {
+    expect(DRAWING_SCHEMA_VERSION).toBe(25);
   });
 
   it('a crop of a local section inserts and keeps its outline and parent', () => {
-    const v = insertCrop(cut(), cropView()).views.find((x) => x.id === 'crop1')! as CropDrawingView;
+    const v = page(insertCrop(cut(), cropView())).views.find((x) => x.id === 'crop1')! as CropDrawingView;
     expect(v.kind).toBe('crop');
     expect(v.parent).toBe('localsec1');
     expect(v.outline).toEqual({ kind: 'rectangle', p0: [0, 0], p1: [20, 20] });
   });
 
   it('circle and polygon outlines are accepted', () => {
-    const circle = insertCrop(cut(), cropView({ outline: { kind: 'circle', centre: [10, 10], radius: 8 } })).views.find((x) => x.id === 'crop1')! as CropDrawingView;
+    const circle = page(insertCrop(cut(), cropView({ outline: { kind: 'circle', centre: [10, 10], radius: 8 } }))).views.find((x) => x.id === 'crop1')! as CropDrawingView;
     expect(circle.outline).toMatchObject({ kind: 'circle', centre: [10, 10], radius: 8 });
-    const poly = insertCrop(cut(), cropView({ outline: { kind: 'polygon', points: [[0, 0], [20, 0], [20, 20], [0, 20], [0, 0]] } })).views.find((x) => x.id === 'crop1')! as CropDrawingView;
+    const poly = page(insertCrop(cut(), cropView({ outline: { kind: 'polygon', points: [[0, 0], [20, 0], [20, 20], [0, 20], [0, 0]] } }))).views.find((x) => x.id === 'crop1')! as CropDrawingView;
     expect(poly.outline.kind).toBe('polygon');
     expect((poly.outline as { points: [number, number][] }).points).toHaveLength(5);
   });
@@ -120,18 +121,16 @@ describe('the cropped view (B2.7)', () => {
   it('a crop is saved and read back as it is', () => {
     const back = parseDrawing(serializeDrawing(insertCrop(cut())));
     expect(back.schemaVersion).toBe(DRAWING_SCHEMA_VERSION);
-    const v = back.views.find((x) => x.id === 'crop1')! as CropDrawingView;
+    const v = page(back).views.find((x) => x.id === 'crop1')! as CropDrawingView;
     expect(v.kind).toBe('crop');
     expect(v.parent).toBe('localsec1');
     expect(v.outline).toEqual({ kind: 'rectangle', p0: [0, 0], p1: [20, 20] });
   });
 
-  it('a version-22 drawing (before crops) is read as 24, keeping what it had', () => {
-    const old = JSON.parse(serializeDrawing(cut())) as Record<string, unknown>;
-    old.schemaVersion = 22;
-    const read = parseDrawing(JSON.stringify(old));
-    expect(read.schemaVersion).toBe(24);
-    expect(read.views.find((x) => x.id === 'localsec1')).toBeDefined();
+  it('a version-22 drawing (before crops) is read as 25, keeping what it had', () => {
+    const read = parseDrawing(JSON.stringify(olderDrawingFile(cut(), 22)));
+    expect(read.schemaVersion).toBe(25);
+    expect(page(read).views.find((x) => x.id === 'localsec1')).toBeDefined();
   });
 
   it("the crop shows its parent's lines clipped to the outline, and is as big as the outline not the parent", () => {
@@ -153,7 +152,7 @@ describe('the cropped view (B2.7)', () => {
 
   it('the crop is placed at its parent scale', () => {
     const d = insertCrop(cut([1, 2]));
-    const v = d.views.find((x) => x.id === 'crop1')!;
+    const v = page(d).views.find((x) => x.id === 'crop1')!;
     expect(scaleOf(d, v)).toEqual([1, 2]);
     const own = layoutViews(d, new Map([['localsec1', LINES]])).get('crop1')!;
     const parent = layoutViews(d, new Map([['localsec1', LINES]])).get('localsec1')!;
@@ -167,10 +166,10 @@ describe('the cropped view (B2.7)', () => {
     // the local section it crops has a scale of its own, so scaling the crop must reach that view and not the whole sheet (ADR 0152 defect: scaleOf followed the
     // parent but scaleTarget named the sheet, so dragging a crop's corner rescaled the sheet while the crop — drawn at its parent's scale — did not move)
     const d = insertCrop(cut([1, 2]));
-    expect(scaleTarget(d, d.views.find((x) => x.id === 'crop1')!)).toEqual({ view: 'localsec1' });
+    expect(scaleTarget(d, page(d).views.find((x) => x.id === 'crop1')!)).toEqual({ view: 'localsec1' });
     // the control: with no scale of its own anywhere up the chain, the sheet is what a scale change names — as before
     const plain = insertCrop(cut());
-    expect(scaleTarget(plain, plain.views.find((x) => x.id === 'crop1')!)).toEqual({ sheet: true });
+    expect(scaleTarget(plain, page(plain).views.find((x) => x.id === 'crop1')!)).toEqual({ sheet: true });
   });
 
   it('a crop is not shaded: no image is carried, and the same lines on a shaded view do give one', () => {

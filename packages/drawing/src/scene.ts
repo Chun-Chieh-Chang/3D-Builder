@@ -1,5 +1,5 @@
 import { getLocale, t, withLocale } from '@3db/i18n';
-import { axesOf, displayOf, isShaded, resolveDimStyle, resolveTitleStyle, sectionEndDirections, type CropDrawingView, type DetailDrawingView, type DimStyle, type DrawingDoc, type DrawingView, type Id, type Scale, type LocalSectionDrawingView, type SectionDrawingView, type TitleField, type ViewFeature } from '@3db/model';
+import { axesOf, displayOf, isShaded, page, resolveDimStyle, resolveTitleStyle, sectionEndDirections, type CropDrawingView, type DetailDrawingView, type DimStyle, type DrawingDoc, type DrawingView, type Id, type Scale, type LocalSectionDrawingView, type SectionDrawingView, type TitleField, type ViewFeature } from '@3db/model';
 import type { ShadeImage } from './shade';
 import { centreItems, holeRows, holeTableBox, holeTableItems, threadItems, type HoleRow } from './annotation';
 import { annotationItems } from './gdt';
@@ -113,14 +113,15 @@ export const scaleText = (s: readonly [number, number]) => `${s[0]}:${s[1]}`;
 
 /** The frame and the title block with what the document says in it, written at the heights the drawing's title style gives (ADR 0150). */
 export function sheetItems(doc: DrawingDoc): SceneItem[] {
-  const m = sheetMetrics(doc.sheet);
-  const style = resolveTitleStyle(doc.sheet.titleStyle);
+  const pg = page(doc);
+  const m = sheetMetrics(pg.sheet);
+  const style = resolveTitleStyle(pg.sheet.titleStyle);
   const items: SceneItem[] = [rect(m.frame, 'frame'), rect(m.titleBlock, 'frame')];
   const values: Record<string, string> = {
-    ...doc.title,
-    scale: scaleText(doc.sheet.scale),
-    sheet: doc.sheet.size,
-    projection: t(`drawing.projection.${doc.sheet.projection}`),
+    ...pg.title,
+    scale: scaleText(pg.sheet.scale),
+    sheet: pg.sheet.size,
+    projection: t(`drawing.projection.${pg.sheet.projection}`),
   };
   for (const c of titleCells()) {
     const x = m.titleBlock.x + c.x;
@@ -295,7 +296,8 @@ export function buildScene(
 ): { scene: Scene; placed: Map<Id, PlacedView>; dimensions: Map<Id, DimensionOutcome>; tables: Map<Id, HoleRow[]>; tableBoxes: Map<Id, Rect>; balloons: Map<Id, BalloonSpot[]> } {
   // Every text on the sheet is the sheet's own language, not the reader's (ADR 0128): a drawing leaves the program and goes to whoever machines the part.
   // The build is synchronous from here down, so scoping the language over it is safe.
-  return withLocale(doc.sheet.language ?? getLocale(), () => buildSceneIn(doc, lines, elements, features, boms));
+  const pg = page(doc);
+  return withLocale(pg.sheet.language ?? getLocale(), () => buildSceneIn(doc, lines, elements, features, boms));
 }
 
 function buildSceneIn(
@@ -305,14 +307,15 @@ function buildSceneIn(
   features: ReadonlyMap<Id, readonly ViewFeature[]>,
   boms: ReadonlyMap<Id, ViewBom>,
 ): { scene: Scene; placed: Map<Id, PlacedView>; dimensions: Map<Id, DimensionOutcome>; tables: Map<Id, HoleRow[]>; tableBoxes: Map<Id, Rect>; balloons: Map<Id, BalloonSpot[]> } {
-  const m = sheetMetrics(doc.sheet);
+  const pg = page(doc);
+  const m = sheetMetrics(pg.sheet);
   const placed = layoutViews(doc, lines);
   const resolved = resolveLines(doc, lines);
   const items: SceneItem[] = [...sheetItems(doc)];
   const images: SceneImage[] = [];
   // what a note's $PRP:key stands for: a field of the title block, else a property of the drawing
-  const lookup = (key: string): string | undefined => (doc.title as Record<string, string | undefined>)[key] ?? doc.properties?.[key];
-  for (const v of doc.views) {
+  const lookup = (key: string): string | undefined => (pg.title as Record<string, string | undefined>)[key] ?? doc.properties?.[key];
+  for (const v of pg.views) {
     const own = placed.get(v.id)!;
     const image = viewImage(v, resolved.get(v.id), own);
     if (image) images.push(image);
@@ -322,9 +325,9 @@ function buildSceneIn(
     // their own items already write, so only the rest are named here; without it a reader has the lines and no way to tell which view is which.
     if (v.kind !== 'section' && v.kind !== 'sectionLocal' && v.kind !== 'detail' && v.kind !== 'auxiliary') items.push({ kind: 'text', at: [own.at[0], own.at[1] - own.h / 2 - 8], text: v.name, height: 5, anchor: 'center' });
     items.push(...centreItems(v, features.get(v.id) ?? [], own));
-    items.push(...surfaceFinishItems(doc.surfaceFinishes.filter((f) => f.view === v.id), own));
+    items.push(...surfaceFinishItems(pg.surfaceFinishes.filter((f) => f.view === v.id), own));
     items.push(...threadItems(v, features.get(v.id) ?? [], own));
-    items.push(...annotationItems((doc.annotations ?? []).filter((a) => a.view === v.id), own, lookup, doc.sheet.unit ?? 'mm'));
+    items.push(...annotationItems((pg.annotations ?? []).filter((a) => a.view === v.id), own, lookup, pg.sheet.unit ?? 'mm'));
     const parent = v.kind === 'section' || v.kind === 'sectionLocal' || v.kind === 'detail' || v.kind === 'crop' || v.kind === 'auxiliary' ? placed.get(v.parent) : undefined;
     if ((v.kind === 'section' || v.kind === 'auxiliary') && parent) items.push(...sectionItems(v, parent, own));
     if (v.kind === 'sectionLocal' && parent) items.push(...localSectionItems(v, parent, own));
@@ -333,12 +336,12 @@ function buildSceneIn(
   }
   const dimensions = new Map<Id, DimensionOutcome>();
   const sceneDimensions: SceneDimension[] = [];
-  for (const d of doc.dimensions ?? []) {
-    const view = doc.views.find((v) => v.id === d.view);
+  for (const d of pg.dimensions ?? []) {
+    const view = pg.views.find((v) => v.id === d.view);
     const own = view && resolved.get(view.id) ? placed.get(view.id) : undefined;
-    const axes = view ? axesOf(doc.views, doc.sheet.projection, view) : null;
+    const axes = view ? axesOf(pg.views, pg.sheet.projection, view) : null;
     if (!view || !own || !axes) continue; // nothing to draw it on yet
-    const outcome = evaluateDimension(d, elements.get(d.id), axes, own, doc.sheet.unit ?? 'mm', resolveDimStyle(doc.sheet.dimStyle, d.style));
+    const outcome = evaluateDimension(d, elements.get(d.id), axes, own, pg.sheet.unit ?? 'mm', resolveDimStyle(pg.sheet.dimStyle, d.style));
     dimensions.set(d.id, outcome);
     if (!('error' in outcome)) {
       items.push(...outcome.items.map((i) => ({ ...i, group: d.id })));
@@ -348,14 +351,14 @@ function buildSceneIn(
   const tables = new Map<Id, HoleRow[]>();
   const tableBoxes = new Map<Id, Rect>();
   const balloons = new Map<Id, BalloonSpot[]>();
-  for (const table of doc.tables ?? []) {
+  for (const table of pg.tables ?? []) {
     const own = resolved.get(table.view) ? placed.get(table.view) : undefined;
     if (!own) continue;
     if (table.kind === 'bom') {
       const bom = boms.get(table.view);
       if (!bom) continue;
-      items.push(...bomTableItems(table, bom.rows, doc.sheet));
-      tableBoxes.set(table.id, bomTableBox(table, bom.rows, doc.sheet));
+      items.push(...bomTableItems(table, bom.rows, pg.sheet));
+      tableBoxes.set(table.id, bomTableBox(table, bom.rows, pg.sheet));
       if (table.balloons) {
         const spots = balloonSpots(bom, resolved.get(table.view)?.anchors, own, table.balloonAt);
         balloons.set(table.id, spots);
@@ -363,12 +366,12 @@ function buildSceneIn(
       }
       continue;
     }
-    const rows = holeRows(features.get(table.view) ?? [], table.fits, doc.sheet.unit ?? 'mm');
+    const rows = holeRows(features.get(table.view) ?? [], table.fits, pg.sheet.unit ?? 'mm');
     tables.set(table.id, rows);
-    items.push(...holeTableItems(table, rows, own, doc.sheet, doc.sheet.unit ?? 'mm'));
-    tableBoxes.set(table.id, holeTableBox(table, rows, doc.sheet, doc.sheet.unit ?? 'mm'));
+    items.push(...holeTableItems(table, rows, own, pg.sheet, pg.sheet.unit ?? 'mm'));
+    tableBoxes.set(table.id, holeTableBox(table, rows, pg.sheet, pg.sheet.unit ?? 'mm'));
   }
-  const scene: Scene = { width: m.width, height: m.height, items, ...(sceneDimensions.length > 0 ? { dimensions: sceneDimensions } : {}), ...(images.length > 0 ? { images } : {}), ...(doc.sheet.dimStyle ? { dimStyle: resolveDimStyle(doc.sheet.dimStyle) } : {}) };
+  const scene: Scene = { width: m.width, height: m.height, items, ...(sceneDimensions.length > 0 ? { dimensions: sceneDimensions } : {}), ...(images.length > 0 ? { images } : {}), ...(pg.sheet.dimStyle ? { dimStyle: resolveDimStyle(pg.sheet.dimStyle) } : {}) };
   return { scene, placed, dimensions, tables, tableBoxes, balloons };
 }
 

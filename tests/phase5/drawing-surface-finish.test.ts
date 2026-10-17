@@ -4,7 +4,7 @@
  * Ra over the bar and the note under it. Every number worked out by hand, not against the drawing itself.
  */
 import { describe, expect, it } from 'vitest';
-import { applyDrawingCommand, createEmptyDrawing, parseDrawing, serializeDrawing, type DrawingDoc, type SurfaceFinish } from '@3db/model';
+import { applyDrawingCommand, createEmptyDrawing, parseDrawing, serializeDrawing, type DrawingDoc, type SurfaceFinish, page } from '@3db/model';
 import { FINISH_HEIGHT, buildScene, raText, surfaceFinishBox, surfaceFinishItems, toSheet, type PlacedView, type SceneItem, type ScenePolyline, type ViewLines } from '@3db/drawing';
 
 const view = { id: 'view1', name: '前視', source: 'a.3dbx', direction: 'front' as const };
@@ -24,7 +24,7 @@ const dist = (a: readonly number[], b: readonly number[]) => Math.hypot(a[0]! - 
 describe('the surface finish in the document', () => {
   it('is inserted with its own id, and refuses what ISO 1302 does not allow', () => {
     const d = applyDrawingCommand(withViews(), { type: 'insertSurfaceFinishes', finishes: [finish('fin1', { ra: 1.6 })] });
-    expect(d.surfaceFinishes).toHaveLength(1);
+    expect(page(d).surfaceFinishes).toHaveLength(1);
     expect(d.idCounters).toMatchObject({ fin: 1 });
     const insert = (f: SurfaceFinish) => applyDrawingCommand(withViews(), { type: 'insertSurfaceFinishes', finishes: [f] });
     expect(() => insert(finish('fin1', { ra: 1.6, view: 'zzz' }))).toThrow(/找不到尺寸所在的視圖/);
@@ -35,16 +35,16 @@ describe('the surface finish in the document', () => {
     expect(() => insert(finish('fin1', { ra: 1.6, leader: -1 }))).toThrow(/引線/);
     expect(() => insert(finish('fin1', { ra: 1.6, method: 'x'.repeat(41) }))).toThrow(/40 字/);
     expect(() => insert(finish('fin1', { ra: 1.6, at: [0, NaN] }))).toThrow(/位置/);
-    expect(insert(finish('fin1', { ra: 0.8, kind: 'unmachined', method: '鑄造', note: '不加工' })).surfaceFinishes).toHaveLength(1);
+    expect(page(insert(finish('fin1', { ra: 0.8, kind: 'unmachined', method: '鑄造', note: '不加工' }))).surfaceFinishes).toHaveLength(1);
     expect(() => applyDrawingCommand(d, { type: 'insertSurfaceFinishes', finishes: [finish('fin1')] })).toThrow(/已被使用/);
   });
 
   it('changes one: the Ra, the method, the note, the kind, the direction and the leader, and takes them away again', () => {
     let d = applyDrawingCommand(withViews(), { type: 'insertSurfaceFinishes', finishes: [finish('fin1')] });
     d = applyDrawingCommand(d, { type: 'setSurfaceFinish', finishId: 'fin1', patch: { ra: 3.2, method: '銑削', note: 'Ra 3.2 以下', kind: 'basic', angle: 0, leader: 4, at: [1, 2] } });
-    expect(d.surfaceFinishes[0]).toMatchObject({ ra: 3.2, method: '銑削', note: 'Ra 3.2 以下', kind: 'basic', angle: 0, leader: 4, at: [1, 2] });
+    expect(page(d).surfaceFinishes[0]).toMatchObject({ ra: 3.2, method: '銑削', note: 'Ra 3.2 以下', kind: 'basic', angle: 0, leader: 4, at: [1, 2] });
     d = applyDrawingCommand(d, { type: 'setSurfaceFinish', finishId: 'fin1', patch: { ra: null, method: null, note: null, kind: null, angle: null, leader: null } });
-    expect(d.surfaceFinishes[0]).toEqual({ id: 'fin1', view: 'view1', at: [1, 2] });
+    expect(page(d).surfaceFinishes[0]).toEqual({ id: 'fin1', view: 'view1', at: [1, 2] });
     expect(() => applyDrawingCommand(d, { type: 'setSurfaceFinish', finishId: 'zzz', patch: { ra: 1.6 } })).toThrow(/找不到表面粗糙度/);
     expect(() => applyDrawingCommand(d, { type: 'setSurfaceFinish', finishId: 'fin1', patch: { ra: 999 } })).toThrow(/Ra/);
   });
@@ -52,11 +52,11 @@ describe('the surface finish in the document', () => {
   it('deletes them, and goes with a view that is deleted', () => {
     let d = applyDrawingCommand(withViews(), { type: 'insertSurfaceFinishes', finishes: [finish('fin1'), finish('fin2')] });
     d = applyDrawingCommand(d, { type: 'deleteSurfaceFinishes', finishIds: ['fin2'] });
-    expect(d.surfaceFinishes.map((f) => f.id)).toEqual(['fin1']);
+    expect(page(d).surfaceFinishes.map((f) => f.id)).toEqual(['fin1']);
     expect(() => applyDrawingCommand(d, { type: 'deleteSurfaceFinishes', finishIds: ['zzz'] })).toThrow(/找不到表面粗糙度/);
     // a view takes what is drawn on it with it
     d = applyDrawingCommand(d, { type: 'deleteViews', viewIds: ['view1'] });
-    expect(d.surfaceFinishes).toEqual([]);
+    expect(page(d).surfaceFinishes).toEqual([]);
   });
 
   it('is saved and read back as the same document', () => {

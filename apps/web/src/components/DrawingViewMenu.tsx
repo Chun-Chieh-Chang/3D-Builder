@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { t } from '@3db/i18n';
-import { VIEW_DISPLAYS, baseName, displayOf, isCorner, isShaded, type Id } from '@3db/model';
+import { VIEW_DISPLAYS, baseName, displayOf, isCorner, isShaded, page, type Id } from '@3db/model';
 import { arrangementBase, fitAllowed, toleranceForChoice, type ToleranceChoice } from '@3db/drawing';
 import { store } from '../state/store';
 import { ContextMenu } from './ContextMenu';
@@ -71,7 +71,7 @@ export function DrawingMenu({ at, onClose }: { at: DrawingMenuAt; onClose: () =>
   );
   let items: React.ReactNode[] = [];
   if (at.kind === 'view') {
-    const view = doc.views.find((v) => v.id === at.view);
+    const view = page(doc).views.find((v) => v.id === at.view);
     if (!view) return null;
     const source = d.viewSourcePath(at.view);
     const leaf = at.leaf ? d.leafPath(at.view, at.leaf) : null;
@@ -92,13 +92,13 @@ export function DrawingMenu({ at, onClose }: { at: DrawingMenuAt; onClose: () =>
       sep('sDisplay'),
       // the display style (ADR 0146), as SolidWorks's 顯示樣式; a flat pattern has no faces to shade
       ...VIEW_DISPLAYS.map((s) => item(`menuDisplay-${s}`, `${displayOf(view) === s ? '✓ ' : ''}${t(`drawingUi.display.${s}`)}`, () => d.setView(view.id, { display: s }), isShaded(s) && 'direction' in view && view.direction === 'flat')),
-      item('menuArrange', t('drawingUi.arrange'), () => arrange(doc.dimensions.filter((x) => x.view === view.id).map((x) => x.id)), !doc.dimensions.some((x) => x.view === view.id)),
+      item('menuArrange', t('drawingUi.arrange'), () => arrange(page(doc).dimensions.filter((x) => x.view === view.id).map((x) => x.id)), !page(doc).dimensions.some((x) => x.view === view.id)),
       sep('s2'),
       item('menuDelete', t('drawingUi.menu.delete'), () => d.deleteSelection()),
     ];
   } else if (at.kind === 'dimension') {
     const ids = d.chosen('dimension');
-    const dims = doc.dimensions.filter((x) => ids.includes(x.id));
+    const dims = page(doc).dimensions.filter((x) => ids.includes(x.id));
     const allReference = dims.length > 0 && dims.every((x) => !!x.reference);
     const slid = dims.some((x) => 'slide' in x && !!x.slide);
     // the tolerance of the chosen dimensions (B2.4): what the menu puts on all of them at once, as the panel does
@@ -123,7 +123,7 @@ export function DrawingMenu({ at, onClose }: { at: DrawingMenuAt; onClose: () =>
       item('menuDelete', t('drawingUi.menu.delete'), () => d.deleteSelection()),
     ];
   } else if (at.kind === 'annotation') {
-    const a = (doc.annotations ?? []).find((x) => x.id === at.id);
+    const a = (page(doc).annotations ?? []).find((x) => x.id === at.id);
     if (!a) return null;
     items = [
       ...('attach' in a && a.attach ? [item('menuDetach', t('drawingUi.detach'), () => d.setAnnotation(a.id, { attach: null }))] : []),
@@ -133,7 +133,7 @@ export function DrawingMenu({ at, onClose }: { at: DrawingMenuAt; onClose: () =>
     items = [item('menuDelete', t('drawingUi.menu.delete'), () => d.deleteSelection())];
   } else if (at.kind === 'table') {
     // a table's own menu (B2.6): the parts list asks for its balloons too, the hole table only for where it sits — the same commands the panel offers
-    const table = doc.tables.find((x) => x.id === at.id);
+    const table = page(doc).tables.find((x) => x.id === at.id);
     if (!table) return null;
     const bom = table.kind === 'bom';
     items = [
@@ -148,11 +148,11 @@ export function DrawingMenu({ at, onClose }: { at: DrawingMenuAt; onClose: () =>
       item('menuDelete', t('drawingUi.menu.delete'), () => d.deleteSelection()),
     ];
   } else {
-    const views = doc.views.length > 0;
+    const views = page(doc).views.length > 0;
     items = [
       item('menuStandard', t('drawingUi.standardViews'), () => d.addStandardViews(), !d.sourceForViews()),
       item('menuAutoScale', t('drawingUi.autoScale'), () => d.autoScale(), !views),
-      item('menuArrange', t('drawingUi.arrange'), () => arrange(doc.dimensions.map((x) => x.id)), doc.dimensions.length === 0),
+      item('menuArrange', t('drawingUi.arrange'), () => arrange(page(doc).dimensions.map((x) => x.id)), page(doc).dimensions.length === 0),
       sep('s1'),
       item('menuPdf', t('drawingUi.exportPdf'), () => d.exportPdf(), !views),
     ];

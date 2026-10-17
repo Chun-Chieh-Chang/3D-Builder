@@ -13,7 +13,7 @@ import { ANNOTATION_FIELDS, checkAnnotation, framesUsing, type Annotation, type 
  * opened (exact hidden-line removal), so a drawing can never disagree with the model it shows.
  */
 
-export const DRAWING_SCHEMA_VERSION = 24;
+export const DRAWING_SCHEMA_VERSION = 25;
 
 export type SheetSize = 'A4' | 'A3' | 'A2' | 'A1' | 'A0';
 export const SHEET_SIZES: readonly SheetSize[] = ['A4', 'A3', 'A2', 'A1', 'A0'];
@@ -622,9 +622,14 @@ export interface SurfaceFinish {
   leader?: number;
 }
 
-export interface DrawingDoc {
-  kind: 'drawing';
-  schemaVersion: number;
+/**
+ * One sheet of a drawing (B2.8, ADR 0154): the sheet set-up and title block, and the views, dimensions, tables, surface finishes and notes drawn on it. A drawing
+ * holds one or more pages; while there is only one, the rest of the program reads it through `page(doc)`.
+ */
+export interface DrawingPage {
+  id: Id;
+  /** The tab's name; empty is the default for its place (「圖頁 1」). */
+  name: string;
   sheet: DrawingSheet;
   title: Partial<Record<TitleField, string>>;
   views: DrawingView[];
@@ -633,33 +638,38 @@ export interface DrawingDoc {
   surfaceFinishes: SurfaceFinish[];
   /** Notes, datum symbols, feature control frames and the centre lines put by hand (v12, D-I3, ADR 0132). */
   annotations: Annotation[];
+}
+
+export interface DrawingDoc {
+  kind: 'drawing';
+  schemaVersion: number;
+  /** The sheets, first first. Exactly one until the page tabs arrive (B2.8, ADR 0154). */
+  pages: DrawingPage[];
   properties: Record<string, string>;
   idCounters: Record<string, number>;
 }
+
+/** The page the program reads while a drawing holds one sheet (B2.8, ADR 0154). */
+export const page = (doc: Pick<DrawingDoc, 'pages'>, index = 0): DrawingPage => doc.pages[index]!;
+
+/** A drawing of one page: what the layout builds when it tries a scale or a place (B2.8, ADR 0154). */
+export const drawingFromPage = (p: DrawingPage, properties: Record<string, string> = {}): DrawingDoc => ({ kind: 'drawing', schemaVersion: DRAWING_SCHEMA_VERSION, pages: [p], properties, idCounters: {} });
+
+/** The same drawing with its first page replaced (B2.8, ADR 0154). */
+export const withPage = (doc: DrawingDoc, p: DrawingPage): DrawingDoc => ({ ...doc, pages: [p, ...doc.pages.slice(1)] });
 
 export function createEmptyDrawing(): DrawingDoc {
   return {
     kind: 'drawing',
     schemaVersion: DRAWING_SCHEMA_VERSION,
-    sheet: { size: 'A3', orientation: 'landscape', projection: 'first', scale: [1, 1] },
-    title: {},
-    views: [],
-    dimensions: [],
-    tables: [],
-    surfaceFinishes: [],
-    annotations: [],
+    pages: [{ id: 'page1', name: '', sheet: { size: 'A3', orientation: 'landscape', projection: 'first', scale: [1, 1] }, title: {}, views: [], dimensions: [], tables: [], surfaceFinishes: [], annotations: [] }],
     properties: {},
     idCounters: {},
   };
 }
 
-export const drawingIdsInUse = (doc: DrawingDoc): Id[] => [
-  ...doc.views.map((v) => v.id),
-  ...doc.dimensions.map((d) => d.id),
-  ...doc.tables.map((x) => x.id),
-  ...doc.surfaceFinishes.map((f) => f.id),
-  ...(doc.annotations ?? []).map((a) => a.id),
-];
+export const drawingIdsInUse = (doc: DrawingDoc): Id[] =>
+  doc.pages.flatMap((p) => [...p.views.map((v) => v.id), ...p.dimensions.map((d) => d.id), ...p.tables.map((x) => x.id), ...p.surfaceFinishes.map((f) => f.id), ...(p.annotations ?? []).map((a) => a.id)]);
 
 export type DrawingCommand =
   /** Changes the sheet: its size, orientation, projection, scale or (`shift: null`: take it back) the shift of the arrangement (C16.1). */
@@ -778,7 +788,7 @@ export type ViewPatch = {
 export const scaleOk = (s: readonly number[]): boolean => s.length === 2 && s.every((n) => Number.isInteger(n) && n >= 1 && n <= 1000);
 
 function viewOf(draft: Draft<DrawingDoc>, id: Id): Draft<DrawingView> {
-  const v = draft.views.find((x) => x.id === id);
+  const v = draft.pages[0]!.views.find((x) => x.id === id);
   if (!v) throw new CommandError(t('drawing.noView', { id }));
   return v;
 }
@@ -1016,6 +1026,8 @@ function checkSurfaceFinish(f: SurfaceFinish, views: readonly DrawingView[]): vo
 
 /** Immer recipe: mutates the draft or throws CommandError, leaving the document untouched. */
 export function mutateDrawing(draft: Draft<DrawingDoc>, cmd: DrawingCommand): void {
+  // one sheet per drawing until the page tabs arrive (B2.8, ADR 0154): every command acts on the page that is there
+  const pg = draft.pages[0]!;
   switch (cmd.type) {
     case 'setSheet': {
       const s = cmd.sheet;
@@ -1030,35 +1042,35 @@ export function mutateDrawing(draft: Draft<DrawingDoc>, cmd: DrawingCommand): vo
       if (s.titleStyle !== undefined && s.titleStyle !== null) checkTitleStyle(s.titleStyle);
       const { shift, language, dimStyle, titleStyle, ...rest } = s;
       // an empty style is the default's, written as none
-      if (dimStyle === null || (dimStyle && Object.keys(dimStyle).length === 0)) delete draft.sheet.dimStyle;
-      else if (dimStyle) draft.sheet.dimStyle = { ...dimStyle };
-      if (titleStyle === null || (titleStyle && Object.keys(titleStyle).length === 0)) delete draft.sheet.titleStyle;
-      else if (titleStyle) draft.sheet.titleStyle = { ...titleStyle };
-      Object.assign(draft.sheet, rest);
-      if (s.unit === 'mm') delete draft.sheet.unit;
+      if (dimStyle === null || (dimStyle && Object.keys(dimStyle).length === 0)) delete pg.sheet.dimStyle;
+      else if (dimStyle) pg.sheet.dimStyle = { ...dimStyle };
+      if (titleStyle === null || (titleStyle && Object.keys(titleStyle).length === 0)) delete pg.sheet.titleStyle;
+      else if (titleStyle) pg.sheet.titleStyle = { ...titleStyle };
+      Object.assign(pg.sheet, rest);
+      if (s.unit === 'mm') delete pg.sheet.unit;
       // `null` puts the sheet back to writing in whatever language the interface is in
-      if (language === null) delete draft.sheet.language;
-      else if (language !== undefined) draft.sheet.language = language;
-      if (shift === null || (shift && shift[0] === 0 && shift[1] === 0)) delete draft.sheet.shift;
-      else if (shift) draft.sheet.shift = [shift[0], shift[1]];
+      if (language === null) delete pg.sheet.language;
+      else if (language !== undefined) pg.sheet.language = language;
+      if (shift === null || (shift && shift[0] === 0 && shift[1] === 0)) delete pg.sheet.shift;
+      else if (shift) pg.sheet.shift = [shift[0], shift[1]];
       return;
     }
     case 'setTitle': {
       const value = cmd.value.trim();
-      if (value === '') delete draft.title[cmd.field];
-      else draft.title[cmd.field] = value;
+      if (value === '') delete pg.title[cmd.field];
+      else pg.title[cmd.field] = value;
       return;
     }
     case 'insertViews': {
       const inUse = new Set(drawingIdsInUse(draft as DrawingDoc));
-      const seen: DrawingView[] = [...(draft.views as DrawingView[])];
+      const seen: DrawingView[] = [...(pg.views as DrawingView[])];
       for (const v of cmd.views) {
         checkView(v, seen);
         if (inUse.has(v.id)) throw new CommandError(t('drawing.idInUse', { id: v.id }));
         inUse.add(v.id);
         seen.push(v);
       }
-      for (const v of cmd.views) draft.views.push(v as Draft<DrawingView>);
+      for (const v of cmd.views) pg.views.push(v as Draft<DrawingView>);
       countersFor(cmd.views.map((v) => v.id), draft.idCounters);
       return;
     }
@@ -1093,7 +1105,7 @@ export function mutateDrawing(draft: Draft<DrawingDoc>, cmd: DrawingCommand): vo
       else if (brk !== undefined) next.break = brk;
       if (flip === null || flip === false) delete next.flip;
       else if (flip === true) next.flip = true;
-      checkView(next, draft.views.filter((x) => x.id !== v.id) as DrawingView[]);
+      checkView(next, pg.views.filter((x) => x.id !== v.id) as DrawingView[]);
       for (const k of Object.keys(v)) delete (v as unknown as Record<string, unknown>)[k];
       Object.assign(v, next);
       return;
@@ -1104,39 +1116,39 @@ export function mutateDrawing(draft: Draft<DrawingDoc>, cmd: DrawingCommand): vo
       // what is projected or cut from a deleted view goes with it, and so on down
       for (let grew = true; grew; ) {
         grew = false;
-        for (const v of draft.views as DrawingView[]) if (isDerived(v) && ids.has(v.parent) && !ids.has(v.id)) grew = ids.add(v.id) && true;
+        for (const v of pg.views as DrawingView[]) if (isDerived(v) && ids.has(v.parent) && !ids.has(v.id)) grew = ids.add(v.id) && true;
       }
       countersFor(ids, draft.idCounters); // deleted ids are never handed out again
-      draft.views = draft.views.filter((v) => !ids.has(v.id));
+      pg.views = pg.views.filter((v) => !ids.has(v.id));
       // the dimensions drawn on them go too
-      countersFor(draft.dimensions.filter((d) => ids.has(d.view)).map((d) => d.id), draft.idCounters);
-      draft.dimensions = draft.dimensions.filter((d) => !ids.has(d.view));
-      countersFor(draft.tables.filter((x) => ids.has(x.view)).map((x) => x.id), draft.idCounters);
-      draft.tables = draft.tables.filter((x) => !ids.has(x.view));
+      countersFor(pg.dimensions.filter((d) => ids.has(d.view)).map((d) => d.id), draft.idCounters);
+      pg.dimensions = pg.dimensions.filter((d) => !ids.has(d.view));
+      countersFor(pg.tables.filter((x) => ids.has(x.view)).map((x) => x.id), draft.idCounters);
+      pg.tables = pg.tables.filter((x) => !ids.has(x.view));
       // and the surface finishes drawn on them
-      countersFor(draft.surfaceFinishes.filter((f) => ids.has(f.view)).map((f) => f.id), draft.idCounters);
-      draft.surfaceFinishes = draft.surfaceFinishes.filter((f) => !ids.has(f.view));
+      countersFor(pg.surfaceFinishes.filter((f) => ids.has(f.view)).map((f) => f.id), draft.idCounters);
+      pg.surfaceFinishes = pg.surfaceFinishes.filter((f) => !ids.has(f.view));
       // and the annotations, unless a datum among them is what a frame on a view that stays refers to
-      const annotations = (draft.annotations ?? []) as Annotation[];
+      const annotations = (pg.annotations ?? []) as Annotation[];
       const going = annotations.filter((a) => ids.has(a.view));
       refuseOrphanedFrames(annotations, new Set(going.map((a) => a.id)));
       countersFor(going.map((a) => a.id), draft.idCounters);
-      draft.annotations = annotations.filter((a) => !ids.has(a.view)) as Draft<Annotation>[];
+      pg.annotations = annotations.filter((a) => !ids.has(a.view)) as Draft<Annotation>[];
       return;
     }
     case 'insertDimensions': {
       const inUse = new Set(drawingIdsInUse(draft as DrawingDoc));
       for (const d of cmd.dimensions) {
-        checkDimension(d, draft.views as DrawingView[]);
+        checkDimension(d, pg.views as DrawingView[]);
         if (inUse.has(d.id)) throw new CommandError(t('drawing.idInUse', { id: d.id }));
         inUse.add(d.id);
       }
-      for (const d of cmd.dimensions) draft.dimensions.push(d as Draft<Dimension>);
+      for (const d of cmd.dimensions) pg.dimensions.push(d as Draft<Dimension>);
       countersFor(cmd.dimensions.map((d) => d.id), draft.idCounters);
       return;
     }
     case 'setDimension': {
-      const d = draft.dimensions.find((x) => x.id === cmd.dimensionId);
+      const d = pg.dimensions.find((x) => x.id === cmd.dimensionId);
       if (!d) throw new CommandError(t('drawing.noDimension', { id: cmd.dimensionId }));
       const { reference, tolerance, count, callout, supplementary, precision, prefix, suffix, text, slide, leader, style, ...rest } = cmd.patch;
       const belongs: Record<Dimension['kind'], string[]> = { linear: ['offset', 'orientation', 'a', 'b'], diameter: ['angle', 'ref'], radius: ['angle', 'ref'], angle: ['arc', 'a', 'b'], ordinate: ['offset', 'axis', 'origin', 'refs'] };
@@ -1167,7 +1179,7 @@ export function mutateDrawing(draft: Draft<DrawingDoc>, cmd: DrawingCommand): vo
       // a style with nothing in it is the drawing's, written as none
       if (style === null || (style && typeof style === 'object' && Object.keys(style).length === 0)) delete next.style;
       else if (style !== undefined) next.style = { ...style };
-      checkDimension(next, draft.views as DrawingView[]);
+      checkDimension(next, pg.views as DrawingView[]);
       for (const k of Object.keys(d)) delete (d as unknown as Record<string, unknown>)[k];
       Object.assign(d, next);
       return;
@@ -1175,16 +1187,16 @@ export function mutateDrawing(draft: Draft<DrawingDoc>, cmd: DrawingCommand): vo
     case 'insertTables': {
       const inUse = new Set(drawingIdsInUse(draft as DrawingDoc));
       for (const x of cmd.tables) {
-        checkTable(x, draft.views as DrawingView[]);
+        checkTable(x, pg.views as DrawingView[]);
         if (inUse.has(x.id)) throw new CommandError(t('drawing.idInUse', { id: x.id }));
         inUse.add(x.id);
       }
-      for (const x of cmd.tables) draft.tables.push(x as Draft<DrawingTable>);
+      for (const x of cmd.tables) pg.tables.push(x as Draft<DrawingTable>);
       countersFor(cmd.tables.map((x) => x.id), draft.idCounters);
       return;
     }
     case 'setTable': {
-      const x = draft.tables.find((y) => y.id === cmd.tableId);
+      const x = pg.tables.find((y) => y.id === cmd.tableId);
       if (!x) throw new CommandError(t('drawing.noTable', { id: cmd.tableId }));
       const next = JSON.parse(JSON.stringify(x)) as DrawingTable;
       const { at, fits, balloons, balloonAt } = cmd.patch;
@@ -1205,38 +1217,38 @@ export function mutateDrawing(draft: Draft<DrawingDoc>, cmd: DrawingCommand): vo
         if (balloonAt === null || Object.keys(balloonAt).length === 0) delete next.balloonAt;
         else next.balloonAt = balloonAt;
       }
-      checkTable(next, draft.views as DrawingView[]);
+      checkTable(next, pg.views as DrawingView[]);
       for (const k of Object.keys(x)) delete (x as unknown as Record<string, unknown>)[k];
       Object.assign(x, next);
       return;
     }
     case 'deleteTables': {
       const ids = new Set(cmd.tableIds);
-      for (const id of ids) if (!draft.tables.some((x) => x.id === id)) throw new CommandError(t('drawing.noTable', { id }));
+      for (const id of ids) if (!pg.tables.some((x) => x.id === id)) throw new CommandError(t('drawing.noTable', { id }));
       countersFor(ids, draft.idCounters);
-      draft.tables = draft.tables.filter((x) => !ids.has(x.id));
+      pg.tables = pg.tables.filter((x) => !ids.has(x.id));
       return;
     }
     case 'deleteDimensions': {
       const ids = new Set(cmd.dimensionIds);
-      for (const id of ids) if (!draft.dimensions.some((d) => d.id === id)) throw new CommandError(t('drawing.noDimension', { id }));
+      for (const id of ids) if (!pg.dimensions.some((d) => d.id === id)) throw new CommandError(t('drawing.noDimension', { id }));
       countersFor(ids, draft.idCounters);
-      draft.dimensions = draft.dimensions.filter((d) => !ids.has(d.id));
+      pg.dimensions = pg.dimensions.filter((d) => !ids.has(d.id));
       return;
     }
     case 'insertSurfaceFinishes': {
       const inUse = new Set(drawingIdsInUse(draft as DrawingDoc));
       for (const f of cmd.finishes) {
-        checkSurfaceFinish(f, draft.views as DrawingView[]);
+        checkSurfaceFinish(f, pg.views as DrawingView[]);
         if (inUse.has(f.id)) throw new CommandError(t('drawing.idInUse', { id: f.id }));
         inUse.add(f.id);
       }
-      for (const f of cmd.finishes) draft.surfaceFinishes.push(f as Draft<SurfaceFinish>);
+      for (const f of cmd.finishes) pg.surfaceFinishes.push(f as Draft<SurfaceFinish>);
       countersFor(cmd.finishes.map((f) => f.id), draft.idCounters);
       return;
     }
     case 'setSurfaceFinish': {
-      const f = draft.surfaceFinishes.find((x) => x.id === cmd.finishId);
+      const f = pg.surfaceFinishes.find((x) => x.id === cmd.finishId);
       if (!f) throw new CommandError(t('drawing.noSurfaceFinish', { id: cmd.finishId }));
       const { at, angle, kind, ra, method, note, leader } = cmd.patch;
       const next = { ...(JSON.parse(JSON.stringify(f)) as SurfaceFinish), ...(at !== undefined ? { at } : {}) } as SurfaceFinish;
@@ -1245,28 +1257,28 @@ export function mutateDrawing(draft: Draft<DrawingDoc>, cmd: DrawingCommand): vo
         if (v === null) delete loose[k];
         else if (v !== undefined) loose[k] = v;
       }
-      checkSurfaceFinish(next, draft.views as DrawingView[]);
+      checkSurfaceFinish(next, pg.views as DrawingView[]);
       for (const k of Object.keys(f)) delete (f as unknown as Record<string, unknown>)[k];
       Object.assign(f, next);
       return;
     }
     case 'insertAnnotations': {
       const inUse = new Set(drawingIdsInUse(draft as DrawingDoc));
-      const all = [...((draft.annotations ?? []) as Annotation[])];
+      const all = [...((pg.annotations ?? []) as Annotation[])];
       // in the order given, so that a frame may refer to a datum added with it
       for (const a of cmd.annotations) {
-        checkAnnotation(a, (id) => draft.views.some((v) => v.id === id), all);
+        checkAnnotation(a, (id) => pg.views.some((v) => v.id === id), all);
         if (inUse.has(a.id)) throw new CommandError(t('drawing.idInUse', { id: a.id }));
         inUse.add(a.id);
         all.push(a);
       }
-      draft.annotations ??= [];
-      for (const a of cmd.annotations) draft.annotations.push(JSON.parse(JSON.stringify(a)) as Draft<Annotation>);
+      pg.annotations ??= [];
+      for (const a of cmd.annotations) pg.annotations.push(JSON.parse(JSON.stringify(a)) as Draft<Annotation>);
       countersFor(cmd.annotations.map((a) => a.id), draft.idCounters);
       return;
     }
     case 'setAnnotation': {
-      const list = (draft.annotations ?? []) as Annotation[];
+      const list = (pg.annotations ?? []) as Annotation[];
       const a = list.find((x) => x.id === cmd.annotationId);
       if (!a) throw new CommandError(t('drawing.noAnnotation', { id: cmd.annotationId }));
       const fields = ANNOTATION_FIELDS[a.kind];
@@ -1284,7 +1296,7 @@ export function mutateDrawing(draft: Draft<DrawingDoc>, cmd: DrawingCommand): vo
       // a datum renamed: the frames that refer to it are renamed with it (checked as they will be)
       const renamed = a.kind === 'datum' && typeof next.label === 'string' && next.label !== a.label ? { from: a.label, to: next.label as string } : null;
       const after = renamed ? others.map((o) => (o.kind === 'fcf' ? { ...o, datums: o.datums.map((d) => (d.label === renamed.from ? { ...d, label: renamed.to } : d)) } : o)) : others;
-      checkAnnotation(next as unknown as Annotation, (id) => draft.views.some((v) => v.id === id), after);
+      checkAnnotation(next as unknown as Annotation, (id) => pg.views.some((v) => v.id === id), after);
       for (const k of Object.keys(a)) delete (a as unknown as Record<string, unknown>)[k];
       Object.assign(a, next);
       if (renamed) for (const o of list) if (o.kind === 'fcf') for (const d of o.datums) if (d.label === renamed.from) d.label = renamed.to;
@@ -1292,11 +1304,11 @@ export function mutateDrawing(draft: Draft<DrawingDoc>, cmd: DrawingCommand): vo
     }
     case 'deleteAnnotations': {
       const ids = new Set(cmd.annotationIds);
-      const list = (draft.annotations ?? []) as Annotation[];
+      const list = (pg.annotations ?? []) as Annotation[];
       for (const id of ids) if (!list.some((a) => a.id === id)) throw new CommandError(t('drawing.noAnnotation', { id }));
       refuseOrphanedFrames(list, ids);
       countersFor(ids, draft.idCounters);
-      draft.annotations = list.filter((a) => !ids.has(a.id)) as Draft<Annotation>[];
+      pg.annotations = list.filter((a) => !ids.has(a.id)) as Draft<Annotation>[];
       return;
     }
     case 'batch': {
@@ -1310,9 +1322,9 @@ export function mutateDrawing(draft: Draft<DrawingDoc>, cmd: DrawingCommand): vo
     }
     case 'deleteSurfaceFinishes': {
       const ids = new Set(cmd.finishIds);
-      for (const id of ids) if (!draft.surfaceFinishes.some((f) => f.id === id)) throw new CommandError(t('drawing.noSurfaceFinish', { id }));
+      for (const id of ids) if (!pg.surfaceFinishes.some((f) => f.id === id)) throw new CommandError(t('drawing.noSurfaceFinish', { id }));
       countersFor(ids, draft.idCounters);
-      draft.surfaceFinishes = draft.surfaceFinishes.filter((f) => !ids.has(f.id));
+      pg.surfaceFinishes = pg.surfaceFinishes.filter((f) => !ids.has(f.id));
       return;
     }
   }
@@ -1363,7 +1375,7 @@ export function viewVectors(name: ViewName): { dir: [number, number, number]; up
  */
 export function relocateDrawing(doc: DrawingDoc, from: string, to: string): DrawingDoc {
   if (from === to) return doc;
-  return { ...doc, views: doc.views.map((v) => (isDerived(v) ? v : { ...v, source: relativePath(to, joinPath(from, v.source)) })) };
+  return { ...doc, pages: doc.pages.map((p) => ({ ...p, views: p.views.map((v) => (isDerived(v) ? v : { ...v, source: relativePath(to, joinPath(from, v.source)) })) })) };
 }
 
 // ---------------------------------------------------------------- where a view looks from, and what a derived view shows

@@ -1,4 +1,4 @@
-import { isDerived, type DrawingDoc, type DrawingView, type Id, type Scale, type ViewFeature } from '@3db/model';
+import { isDerived, page, withPage, type DrawingDoc, type DrawingView, type Id, type Scale, type ViewFeature } from '@3db/model';
 import type { ElementsResult } from './dimension';
 import type { ViewBom } from './bomTable';
 import { STANDARD_SCALES, type ViewLines } from './layout';
@@ -61,7 +61,7 @@ export function fitViews(
 ): Fit | null {
   const boxAt = arrangedBox(doc, lines, elements, features, boms);
   if (!boxAt) return null;
-  const area = sheetMetrics(doc.sheet).area;
+  const area = sheetMetrics(page(doc).sheet).area;
   for (const scale of [...STANDARD_SCALES, [1, 100] as Scale]) {
     const box = boxAt(scale);
     if (box && box.x1 - box.x0 <= area.w + 1e-9 && box.y1 - box.y0 <= area.h + 1e-9) return { scale, shift: shiftToCentre(doc, box) };
@@ -81,13 +81,13 @@ export function centreViews(
   features: ReadonlyMap<Id, readonly ViewFeature[]> = new Map(),
   boms: ReadonlyMap<Id, ViewBom> = new Map(),
 ): [number, number] | null {
-  const box = arrangedBox(doc, lines, elements, features, boms)?.(doc.sheet.scale);
+  const box = arrangedBox(doc, lines, elements, features, boms)?.(page(doc).sheet.scale);
   return box ? shiftToCentre(doc, box) : null;
 }
 
 /** Where the arrangement has to move for `box` to be in the middle of the area; null under 0.05 mm. */
 function shiftToCentre(doc: DrawingDoc, box: { x0: number; y0: number; x1: number; y1: number }): [number, number] | null {
-  const area = sheetMetrics(doc.sheet).area;
+  const area = sheetMetrics(page(doc).sheet).area;
   const dx = area.x + area.w / 2 - (box.x0 + box.x1) / 2;
   const dy = area.y + area.h / 2 - (box.y0 + box.y1) / 2;
   const r = (n: number) => Math.round(n * 100) / 100;
@@ -102,7 +102,8 @@ function arrangedBox(
   features: ReadonlyMap<Id, readonly ViewFeature[]>,
   boms: ReadonlyMap<Id, ViewBom>,
 ): ((scale: Scale) => { x0: number; y0: number; x1: number; y1: number } | null) | null {
-  const byId = new Map(doc.views.map((v) => [v.id, v]));
+  const p = page(doc);
+  const byId = new Map(p.views.map((v) => [v.id, v]));
   /** A view that is laid out with the others and takes the sheet's scale, and so is every view it hangs on. */
   const auto = (v: DrawingView, depth = 0): boolean => {
     if (v.at || v.scale) return false;
@@ -110,11 +111,12 @@ function arrangedBox(
     const parent = byId.get(v.parent);
     return !!parent && depth < 64 && auto(parent, depth + 1);
   };
-  const views = doc.views.filter((v) => auto(v));
+  const views = p.views.filter((v) => auto(v));
   if (views.length === 0) return null;
   const ids = new Set(views.map((v) => v.id));
   // only these views, their dimensions and no tables (they sit at the corner of the sheet, not among the views), where the arrangement is centred
-  const own: DrawingDoc = { ...doc, views, dimensions: (doc.dimensions ?? []).filter((d) => ids.has(d.view)), tables: [], sheet: { ...doc.sheet, shift: undefined } };
+  const own = withPage(doc, { ...p, views, dimensions: (p.dimensions ?? []).filter((d) => ids.has(d.view)), tables: [], sheet: { ...p.sheet, shift: undefined } });
   const skip = sheetItems(own).length;
-  return (scale) => itemsBounds(buildScene({ ...own, sheet: { ...own.sheet, scale } }, lines, elements, features, boms).scene.items.slice(skip));
+  const unshifted = page(own);
+  return (scale) => itemsBounds(buildScene(withPage(own, { ...unshifted, sheet: { ...unshifted.sheet, scale } }), lines, elements, features, boms).scene.items.slice(skip));
 }

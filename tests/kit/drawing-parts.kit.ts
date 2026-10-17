@@ -24,7 +24,7 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
-import { applyCommand, applyDrawingCommand, axesOf, createEmptyDrawing, createEmptyPart, sectionPlane, type Command, type Dimension, type DrawingDoc, type DrawingView, type ElementFacts, type Feature, type PartDoc, type Pose, type Ref, type SketchConstraint, type SketchEntity, type SurfaceFinish, type ViewAxes, dimensionRefs } from '@3db/model';
+import { applyCommand, applyDrawingCommand, axesOf, createEmptyDrawing, createEmptyPart, sectionPlane, type Command, type Dimension, type DrawingDoc, type DrawingView, type ElementFacts, type Feature, type PartDoc, type Pose, type Ref, type SketchConstraint, type SketchEntity, type SurfaceFinish, type ViewAxes, dimensionRefs, page } from '@3db/model';
 import { readAnyDocumentFile, writeDrawingFile, writePartFile } from '@3db/io';
 import { autoDimensions, buildScene, checkDxf, evaluateDimension, factsOf, featureAt, planDimension, readDxf, readTrueType, toDxf, toPdf, type DimensionOutcome, type ElementsResult, type PlacedView, type Scene, type ViewLines } from '@3db/drawing';
 import { PlaneGcsSolver } from '@3db/sketch';
@@ -354,13 +354,13 @@ async function sheet(o: {
   drawing = applyDrawingCommand(drawing, { type: 'setSheet', sheet: { scale: [1, 1] } });
 
   const project = (doc: DrawingDoc, extra?: DrawingView): Map<string, ViewLines> => {
-    const all = extra ? [...doc.views, extra] : doc.views;
+    const all = extra ? [...page(doc).views, extra] : page(doc).views;
     const lines = new Map<string, ViewLines>();
     for (const v of all) {
-      const axes = axesOf(all, doc.sheet.projection, v)!;
+      const axes = axesOf(all, page(doc).sheet.projection, v)!;
       if (v.kind === 'section') {
         const parent = all.find((x) => x.id === v.parent)!;
-        lines.set(v.id, projectDrawingView(kernel, shapes, axes, sectionPlane(axesOf(all, doc.sheet.projection, parent)!, v)));
+        lines.set(v.id, projectDrawingView(kernel, shapes, axes, sectionPlane(axesOf(all, page(doc).sheet.projection, parent)!, v)));
       } else {
         lines.set(v.id, projectDrawingView(kernel, shapes, axes));
       }
@@ -379,9 +379,9 @@ async function sheet(o: {
   const holes = holeFeatures(o.doc);
   const features = new Map<string, ReturnType<typeof viewFeatures>>();
   const axesById = new Map<string, ViewAxes>();
-  for (const v of drawing.views)
+  for (const v of page(drawing).views)
     if (v.kind !== 'section') {
-      const ax = axesOf(drawing.views, drawing.sheet.projection, v)!;
+      const ax = axesOf(page(drawing).views, page(drawing).sheet.projection, v)!;
       axesById.set(v.id, ax);
       features.set(v.id, viewFeatures(o.r.body!.topology, o.r.body!.names, ax, undefined, holes));
     }
@@ -389,7 +389,7 @@ async function sheet(o: {
   if (o.finishes) drawing = applyDrawingCommand(drawing, { type: 'insertSurfaceFinishes', finishes: o.finishes(VIEWS) });
 
   const elements = new Map<string, ElementsResult>(
-    drawing.dimensions.map((d) => {
+    page(drawing).dimensions.map((d) => {
       const refs: Ref[] = dimensionRefs(d);
       return [d.id, { elements: refs.map((r) => elementFacts(o.r.body!.topology, o.r.body!.names, r, holes)) as never }];
     }),

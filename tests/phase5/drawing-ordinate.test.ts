@@ -5,7 +5,7 @@
  */
 import { readFileSync } from 'node:fs';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { applyDrawingCommand, CommandError, createEmptyDrawing, parseDrawing, serializeDrawing, viewVectors, type Dimension, type ElementFacts, type PartDoc, type ViewFeature } from '@3db/model';
+import { applyDrawingCommand, CommandError, createEmptyDrawing, parseDrawing, serializeDrawing, viewVectors, type Dimension, type ElementFacts, type PartDoc, type ViewFeature, page } from '@3db/model';
 import { readPartFile } from '@3db/io';
 import { PlaneGcsSolver } from '@3db/sketch';
 import { Kernel } from '@3db/kernel';
@@ -99,7 +99,7 @@ describe('making one', () => {
     const r = (name: string) => ({ kind: 'face' as const, name });
     const ord = (patch: object) => ({ id: 'dim1', view: 'view1', kind: 'ordinate', axis: 'x', origin: r('o'), refs: [r('a'), r('b')], offset: -10, ...patch }) as Dimension;
     const ok = applyDrawingCommand(d0, { type: 'insertDimensions', dimensions: [ord({})] });
-    expect(parseDrawing(serializeDrawing(ok)).dimensions).toEqual(ok.dimensions);
+    expect(page(parseDrawing(serializeDrawing(ok))).dimensions).toEqual(page(ok).dimensions);
     for (const bad of [{ refs: [] }, { refs: [r('a'), r('a')] }, { refs: [r('o')] }, { tolerance: { type: 'fit', fit: 'H7' } }, { axis: 'z' }, { offset: 0 }])
       expect(() => applyDrawingCommand(d0, { type: 'insertDimensions', dimensions: [ord(bad)] }), JSON.stringify(bad)).toThrow(CommandError);
   });

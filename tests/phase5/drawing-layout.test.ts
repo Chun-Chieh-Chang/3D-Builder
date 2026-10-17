@@ -4,11 +4,11 @@
  */
 import { describe, expect, it } from 'vitest';
 import { getLocale, type Locale } from '@3db/i18n';
-import { applyDrawingCommand, createEmptyDrawing, type DrawingDoc, type DrawingView, type ModelDrawingView } from '@3db/model';
+import { applyDrawingCommand, createEmptyDrawing, type DrawingDoc, type DrawingPage, type DrawingView, type ModelDrawingView } from '@3db/model';
 import { buildScene, layoutViews, sheetMetrics, STANDARD_SCALES, suggestScale, titleCells, toSvg, VIEW_GAP, type SceneText, type ViewLines } from '@3db/drawing';
 
 const view = (id: string, direction: ModelDrawingView['direction'], extra: Partial<ModelDrawingView> = {}): DrawingView => ({ id, name: id, source: 'x.3dbx', direction, ...extra });
-const doc = (views: DrawingView[], sheet: Partial<DrawingDoc['sheet']> = {}): DrawingDoc => applyDrawingCommand(applyDrawingCommand(createEmptyDrawing(), { type: 'setSheet', sheet }), { type: 'insertViews', views });
+const doc = (views: DrawingView[], sheet: Partial<DrawingPage['sheet']> = {}): DrawingDoc => applyDrawingCommand(applyDrawingCommand(createEmptyDrawing(), { type: 'setSheet', sheet }), { type: 'insertViews', views });
 const box = (w: number, h: number, x = 0, y = 0): ViewLines => ({ visible: [[x, y, x + w, y + h]], hidden: [], box: { min: [x, y], max: [x + w, y + h] } });
 
 describe('the sheet (ISO 5457, ISO 7200)', () => {

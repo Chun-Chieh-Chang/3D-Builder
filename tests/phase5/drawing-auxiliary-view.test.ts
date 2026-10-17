@@ -23,8 +23,8 @@ import {
   sheetUp,
   type AuxiliaryDrawingView,
   type DrawingDoc,
-  type ViewAxes,
-} from '@3db/model';
+  type ViewAxes, page } from '@3db/model';
+import { olderDrawingFile } from '../support/drawingVersion';
 import { buildScene, layoutViews, scaleOf, slideAxis, type ViewLines } from '@3db/drawing';
 
 type P = [number, number];
@@ -77,12 +77,12 @@ const makeRandom = (seed: number): (() => number) => {
 };
 
 describe('the auxiliary view (B2.7)', () => {
-  it('the drawing schema is 24', () => {
-    expect(DRAWING_SCHEMA_VERSION).toBe(24);
+  it('the drawing schema is 25', () => {
+    expect(DRAWING_SCHEMA_VERSION).toBe(25);
   });
 
   it('an auxiliary view inserts and keeps its parent, fold line and letter', () => {
-    const v = insert(modelView()).views.find((x) => x.id === 'aux1')! as AuxiliaryDrawingView;
+    const v = page(insert(modelView())).views.find((x) => x.id === 'aux1')! as AuxiliaryDrawingView;
     expect(v.kind).toBe('auxiliary');
     expect(v.parent).toBe('view1');
     expect(v.line).toEqual([[0, -10], [0, 10]]);
@@ -90,20 +90,20 @@ describe('the auxiliary view (B2.7)', () => {
   });
 
   it('flip is kept, as a section keeps it', () => {
-    const v = insert(modelView(), auxiliaryView({ flip: true })).views.find((x) => x.id === 'aux1')! as AuxiliaryDrawingView;
+    const v = page(insert(modelView(), auxiliaryView({ flip: true }))).views.find((x) => x.id === 'aux1')! as AuxiliaryDrawingView;
     expect(v.flip).toBe(true);
   });
 
   it('looks square to the fold line and stays in the plane of its parent (a fuzz of angles)', () => {
     const doc = modelView();
-    const parent = axesOf(doc.views, doc.sheet.projection, doc.views[0]!)!;
+    const parent = axesOf(page(doc).views, page(doc).sheet.projection, page(doc).views[0]!)!;
     const random = makeRandom(20261019);
     let slanted = 0;
     for (let i = 0; i < 200; i++) {
       const line: [P, P] = [[0, 0], [Math.round((random() * 40 - 20) * 100) / 100, Math.round((random() * 40 - 20) * 100) / 100]];
       if (Math.hypot(line[1][0], line[1][1]) < 1e-3) continue;
       const withIt = applyDrawingCommand(doc, { type: 'insertViews', views: [auxiliaryView({ id: `f${i}`, line, label: 'B' })] });
-      const axes = axesOf(withIt.views, withIt.sheet.projection, withIt.views.find((v) => v.id === `f${i}`)!);
+      const axes = axesOf(page(withIt).views, page(withIt).sheet.projection, page(withIt).views.find((v) => v.id === `f${i}`)!);
       expect(axes).not.toBeNull();
       const a = axes!;
       // the frame is orthonormal, so the view is a true projection and not a squashed one
@@ -122,22 +122,22 @@ describe('the auxiliary view (B2.7)', () => {
 
   it('a vertical fold line on a front view turns the part round to the other side (a horizontal one over the top)', () => {
     const doc = modelView();
-    const vertical = axesOf(applyDrawingCommand(doc, { type: 'insertViews', views: [auxiliaryView()] }).views, doc.sheet.projection, auxiliaryView())!;
+    const vertical = axesOf(page(applyDrawingCommand(doc, { type: 'insertViews', views: [auxiliaryView()] })).views, page(doc).sheet.projection, auxiliaryView())!;
     // the arrows of a vertical line point along the parent's sheet x, so the view looks along it: the part's own left is what is seen
     expect(vertical.dir).toEqual([1, 0, 0]);
     expect(vertical.up).toEqual([0, 1, 0]);
-    const flipped = axesOf(applyDrawingCommand(doc, { type: 'insertViews', views: [auxiliaryView({ flip: true })] }).views, doc.sheet.projection, auxiliaryView({ flip: true }))!;
+    const flipped = axesOf(page(applyDrawingCommand(doc, { type: 'insertViews', views: [auxiliaryView({ flip: true })] })).views, page(doc).sheet.projection, auxiliaryView({ flip: true }))!;
     expect(flipped.dir).toEqual([-1, 0, 0]);
     // a horizontal fold line is square to the model's up instead: a view over the top (or under the bottom), not one of the depth
-    const horizontal = axesOf(applyDrawingCommand(doc, { type: 'insertViews', views: [auxiliaryView({ line: [[-10, 0], [10, 0]] })] }).views, doc.sheet.projection, auxiliaryView({ line: [[-10, 0], [10, 0]] }))!;
+    const horizontal = axesOf(page(applyDrawingCommand(doc, { type: 'insertViews', views: [auxiliaryView({ line: [[-10, 0], [10, 0]] })] })).views, page(doc).sheet.projection, auxiliaryView({ line: [[-10, 0], [10, 0]] }))!;
     expect(Math.abs(horizontal.dir[1])).toBeCloseTo(1, 9);
     expect(horizontal.dir[2]).toBe(0);
   });
 
   it('nothing is cut: a section plane is refused for it', () => {
     const doc = insert(modelView());
-    const parent = axesOf(doc.views, doc.sheet.projection, doc.views[0]!)!;
-    const v = doc.views.find((x) => x.id === 'aux1')!;
+    const parent = axesOf(page(doc).views, page(doc).sheet.projection, page(doc).views[0]!)!;
+    const v = page(doc).views.find((x) => x.id === 'aux1')!;
     expect(() => sectionCut(parent, v)).toThrow(/不屬於|does not belong/);
   });
 
@@ -164,7 +164,7 @@ describe('the auxiliary view (B2.7)', () => {
   it('setView takes its line, flip and letter, and refuses what it is not', () => {
     const d = insert(modelView());
     const moved = applyDrawingCommand(d, { type: 'setView', viewId: 'aux1', patch: { line: [[0, -5], [0, 5]], flip: true, label: 'B' } });
-    const v = moved.views.find((x) => x.id === 'aux1')! as AuxiliaryDrawingView;
+    const v = page(moved).views.find((x) => x.id === 'aux1')! as AuxiliaryDrawingView;
     expect(v.line).toEqual([[0, -5], [0, 5]]);
     expect(v.flip).toBe(true);
     expect(v.label).toBe('B');
@@ -183,19 +183,17 @@ describe('the auxiliary view (B2.7)', () => {
   it('an auxiliary view is saved and read back as it is', () => {
     const back = parseDrawing(serializeDrawing(insert(modelView())));
     expect(back.schemaVersion).toBe(DRAWING_SCHEMA_VERSION);
-    const v = back.views.find((x) => x.id === 'aux1')! as AuxiliaryDrawingView;
+    const v = page(back).views.find((x) => x.id === 'aux1')! as AuxiliaryDrawingView;
     expect(v.kind).toBe('auxiliary');
     expect(v.parent).toBe('view1');
     expect(v.line).toEqual([[0, -10], [0, 10]]);
     expect(v.label).toBe('A');
   });
 
-  it('a version-23 drawing (the last before auxiliary views) is read as 24, keeping what it had', () => {
-    const old = JSON.parse(serializeDrawing(insert(modelView()))) as Record<string, unknown>;
-    old.schemaVersion = 23;
-    const read = parseDrawing(JSON.stringify(old));
-    expect(read.schemaVersion).toBe(24);
-    expect(read.views.find((x) => x.id === 'aux1')).toBeDefined();
+  it('a version-23 drawing (the last before auxiliary views) is read as 25, keeping what it had', () => {
+    const read = parseDrawing(JSON.stringify(olderDrawingFile(insert(modelView()), 23)));
+    expect(read.schemaVersion).toBe(25);
+    expect(page(read).views.find((x) => x.id === 'aux1')).toBeDefined();
   });
 
   it('is placed on the fold line side of its parent and in line with it, as a section is', () => {
@@ -209,7 +207,7 @@ describe('the auxiliary view (B2.7)', () => {
     );
     const own = placed.get('aux1')!;
     const parent = placed.get('view1')!;
-    const side = sectionSide(sectionArrow(auxiliaryView()), d.sheet.projection);
+    const side = sectionSide(sectionArrow(auxiliaryView()), page(d).sheet.projection);
     // a vertical fold line puts it left or right, never above or below, and level with the parent (in line with it)
     expect(side === 'left' || side === 'right').toBe(true);
     expect(Math.abs(own.at[1] - parent.at[1])).toBeLessThan(1e-6);
@@ -227,13 +225,13 @@ describe('the auxiliary view (B2.7)', () => {
       views: [{ id: 'view1', kind: 'model', name: 'Front', source: 'part.3dbx', direction: 'front', scale: [1, 2] }],
     });
     const d = insert(scaled);
-    const aux = d.views.find((x) => x.id === 'aux1')!;
+    const aux = page(d).views.find((x) => x.id === 'aux1')!;
     // the auxiliary view is the parent turned, so it is the parent's 1:2, not the sheet's 1:1
     expect(scaleOf(d, aux)).toEqual([1, 2]);
-    expect(scaleOf(d, d.views[0]!)).toEqual([1, 2]);
+    expect(scaleOf(d, page(d).views[0]!)).toEqual([1, 2]);
     // the control: an auxiliary view whose parent has no scale of its own takes the sheet's, exactly as before
     const plain = insert(modelView());
-    expect(scaleOf(plain, plain.views.find((x) => x.id === 'aux1')!)).toEqual(plain.sheet.scale);
+    expect(scaleOf(plain, page(plain).views.find((x) => x.id === 'aux1')!)).toEqual(page(plain).sheet.scale);
   });
 
   it('the fold line is drawn across the parent with its arrows and letters, and the view is titled by its letter', () => {

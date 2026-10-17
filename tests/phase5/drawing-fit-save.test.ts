@@ -6,7 +6,7 @@
  * certain, not waited out; the part is read by a stand-in too (`buildSource`), the rest of the drawing store is the program's own.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { CommandError, createEmptyDrawing, DrawingHistory, type DrawingDoc, type DrawingView } from '@3db/model';
+import { CommandError, createEmptyDrawing, DrawingHistory, type DrawingDoc, type DrawingView, page, withPage } from '@3db/model';
 import { readAnyDocumentFile } from '@3db/io';
 import type { ViewLines } from '@3db/drawing';
 import type { DrawingHost, DrawingState } from '../../apps/web/src/state/drawing';
@@ -90,7 +90,7 @@ const flush = async () => {
   for (let i = 0; i < 20; i++) await new Promise((r) => setTimeout(r, 0));
 };
 
-const sheetOf = (doc: DrawingDoc) => ({ scale: doc.sheet.scale, shift: doc.sheet.shift ?? null });
+const sheetOf = (doc: DrawingDoc) => ({ scale: page(doc).sheet.scale, shift: page(doc).sheet.shift ?? null });
 
 let dialogs = 0;
 beforeEach(() => {
@@ -117,22 +117,22 @@ describe('History.amend: a change that finishes the last step instead of being o
     const h = new DrawingHistory(doc());
     h.execute({ type: 'insertViews', views: threeViews() });
     h.amend({ type: 'setSheet', sheet: { scale: [1, 10], shift: [3, -4] } });
-    expect(h.doc.sheet).toMatchObject({ scale: [1, 10], shift: [3, -4] });
+    expect(page(h.doc).sheet).toMatchObject({ scale: [1, 10], shift: [3, -4] });
     h.undo();
-    expect(h.doc.views).toEqual([]);
-    expect(h.doc.sheet.scale).toEqual([1, 1]);
-    expect(h.doc.sheet.shift).toBeUndefined();
+    expect(page(h.doc).views).toEqual([]);
+    expect(page(h.doc).sheet.scale).toEqual([1, 1]);
+    expect(page(h.doc).sheet.shift).toBeUndefined();
     expect(h.canUndo).toBe(false);
     h.redo();
-    expect(h.doc.views).toHaveLength(3);
-    expect(h.doc.sheet).toMatchObject({ scale: [1, 10], shift: [3, -4] });
+    expect(page(h.doc).views).toHaveLength(3);
+    expect(page(h.doc).sheet).toMatchObject({ scale: [1, 10], shift: [3, -4] });
     expect(h.canRedo).toBe(false);
   });
 
   it('with no step to undo, becomes part of the document as it started: nothing to undo', () => {
-    const h = new DrawingHistory({ ...doc(), views: threeViews() });
+    const h = new DrawingHistory(withPage(doc(), { ...page(doc()), views: threeViews() }));
     h.amend({ type: 'setSheet', sheet: { scale: [1, 5] } });
-    expect(h.doc.sheet.scale).toEqual([1, 5]);
+    expect(page(h.doc).sheet.scale).toEqual([1, 5]);
     expect(h.canUndo).toBe(false);
   });
 
@@ -145,7 +145,7 @@ describe('History.amend: a change that finishes the last step instead of being o
     expect(() => h.amend({ type: 'setSheet', sheet: { scale: [0, 1] } })).toThrow(CommandError);
     expect(h.doc).toBe(before);
     h.undo();
-    expect(h.doc.views).toEqual([]);
+    expect(page(h.doc).views).toEqual([]);
   });
 
   it('drops what redo would bring back: that was recorded on the document without the change', () => {
@@ -157,8 +157,8 @@ describe('History.amend: a change that finishes the last step instead of being o
     h.amend({ type: 'setSheet', sheet: { scale: [1, 2] } });
     expect(h.canRedo).toBe(false);
     h.undo();
-    expect(h.doc.views).toEqual([]);
-    expect(h.doc.sheet.scale).toEqual([1, 1]);
+    expect(page(h.doc).views).toEqual([]);
+    expect(page(h.doc).sheet.scale).toEqual([1, 1]);
   });
 
   it('in an edit session, finishes the session\'s last step: rolled back with it, and one step once committed', () => {
@@ -167,15 +167,15 @@ describe('History.amend: a change that finishes the last step instead of being o
     h.execute({ type: 'insertViews', views: threeViews() });
     h.amend({ type: 'setSheet', sheet: { scale: [1, 2] } });
     h.rollback();
-    expect(h.doc.views).toEqual([]);
-    expect(h.doc.sheet.scale).toEqual([1, 1]);
+    expect(page(h.doc).views).toEqual([]);
+    expect(page(h.doc).sheet.scale).toEqual([1, 1]);
     h.begin('s');
     h.execute({ type: 'insertViews', views: threeViews() });
     h.amend({ type: 'setSheet', sheet: { scale: [1, 2] } });
     h.commit();
     h.undo();
-    expect(h.doc.views).toEqual([]);
-    expect(h.doc.sheet.scale).toEqual([1, 1]);
+    expect(page(h.doc).views).toEqual([]);
+    expect(page(h.doc).sheet.scale).toEqual([1, 1]);
   });
 });
 
@@ -184,7 +184,7 @@ describe('a new drawing saved before its 最適比例 has come (ADR 0147)', () =
     const k = kernel();
     const { handle, project, writes } = target();
     dialogAnswers(handle);
-    const { store, state } = open(k, { ...createEmptyDrawing(), views: threeViews() }, project);
+    const { store, state } = open(k, withPage(createEmptyDrawing(), { ...page(createEmptyDrawing()), views: threeViews() }), project);
     k.lines.open();
     await flush();
     expect(state().lines.size).toBe(3);
@@ -226,12 +226,12 @@ describe('a new drawing saved before its 最適比例 has come (ADR 0147)', () =
     await flush();
     store.addStandardViews();
     await flush();
-    expect(state().doc.views).toHaveLength(3);
+    expect(page(state().doc).views).toHaveLength(3);
     const fitted = sheetOf(state().doc);
     expect(fitted.scale).not.toEqual([1, 1]);
     expect(state().canUndo).toBe(true);
     store.undo();
-    expect(state().doc.views).toEqual([]);
+    expect(page(state().doc).views).toEqual([]);
     expect(sheetOf(state().doc)).toEqual({ scale: [1, 1], shift: null });
     expect(state().canUndo).toBe(false);
     store.redo();
@@ -251,14 +251,14 @@ describe('a new drawing saved before its 最適比例 has come (ADR 0147)', () =
     store.autoScale();
     store.undo();
     expect(sheetOf(state().doc)).toEqual({ scale: [1, 1], shift: null });
-    expect(state().doc.views).toHaveLength(3);
+    expect(page(state().doc).views).toHaveLength(3);
   });
 
   it('does not wait for a fit that cannot come: the kernel failed', async () => {
     const k = kernel({ failLines: true });
     const { handle, project, writes } = target();
     dialogAnswers(handle);
-    const { store, state } = open(k, { ...createEmptyDrawing(), views: threeViews() }, project);
+    const { store, state } = open(k, withPage(createEmptyDrawing(), { ...page(createEmptyDrawing()), views: threeViews() }), project);
     k.lines.open();
     await flush();
     expect(notices.length).toBeGreaterThan(0);
@@ -287,7 +287,7 @@ describe('a new drawing saved before its 最適比例 has come (ADR 0147)', () =
     expect(ok).toBe(true);
     expect(writes).toHaveLength(1);
     const file = await readAnyDocumentFile(writes[0]!);
-    expect(file.kind === 'drawing' && file.doc.views).toEqual([]);
+    expect(file.kind === 'drawing' && page(file.doc).views).toEqual([]);
     expect(state().dirty).toBe(false);
   });
 
@@ -295,7 +295,7 @@ describe('a new drawing saved before its 最適比例 has come (ADR 0147)', () =
     const k = kernel();
     const { handle, project, writes } = target();
     dialogAnswers(handle);
-    const { store } = open(k, { ...createEmptyDrawing(), views: threeViews() }, project);
+    const { store } = open(k, withPage(createEmptyDrawing(), { ...page(createEmptyDrawing()), views: threeViews() }), project);
     k.lines.open();
     await flush();
     let saved: boolean | null = null;

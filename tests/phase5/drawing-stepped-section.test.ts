@@ -6,7 +6,7 @@
  * hatching. Random stepped and aligned lines (100 each) are checked the same way.
  */
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { applyDrawingCommand, createEmptyDrawing, sectionCut, sectionLookAxes, viewVectors, type DrawingView, type SectionDrawingView } from '@3db/model';
+import { applyDrawingCommand, createEmptyDrawing, sectionCut, sectionLookAxes, viewVectors, type DrawingView, type SectionDrawingView, page } from '@3db/model';
 import { PlaneGcsSolver } from '@3db/sketch';
 import { Kernel, planSectionPath, rightOfPolyline, turnRows, type ShapeId, type Vec3 } from '@3db/kernel';
 import { Regenerator } from '@3db/regen';
@@ -90,8 +90,8 @@ describe('what a stepped or aligned line may be (D-I5)', () => {
   const insert = (line: P[], extra: Partial<SectionDrawingView> = {}) =>
     applyDrawingCommand(base(), { type: 'insertViews', views: [{ id: 'view2', name: 'A', kind: 'section', parent: 'view1', line: line as SectionDrawingView['line'], label: 'A', ...extra } as DrawingView] });
   it('a stepped line: cuts along the first segment, jogs square to it, a cut first and last', () => {
-    expect(insert([[0, 10], [20, 10], [20, 20], [40, 20]]).views).toHaveLength(2);
-    expect(insert([[0, 10], [20, 10], [20, 0], [30, 0], [30, 25], [40, 25]]).views).toHaveLength(2);
+    expect(page(insert([[0, 10], [20, 10], [20, 20], [40, 20]])).views).toHaveLength(2);
+    expect(page(insert([[0, 10], [20, 10], [20, 0], [30, 0], [30, 25], [40, 25]])).views).toHaveLength(2);
     // ends with a jog
     expect(() => insert([[0, 10], [20, 10], [20, 20]])).toThrow(/奇數/);
     // a jog not square, a cut going back, a cut not parallel
@@ -103,7 +103,7 @@ describe('what a stepped or aligned line may be (D-I5)', () => {
     expect(() => insert([[0, 10], [20, NaN], [20, 20], [40, 20]])).toThrow(/數字/);
   });
   it('an aligned line: three points that bend', () => {
-    expect(insert([[0, 10], [20, 10], [40, 30]], { aligned: true }).views[1]).toMatchObject({ aligned: true });
+    expect(page(insert([[0, 10], [20, 10], [40, 30]], { aligned: true })).views[1]).toMatchObject({ aligned: true });
     expect(() => insert([[0, 10], [20, 10]], { aligned: true })).toThrow(/三個點/);
     expect(() => insert([[0, 10], [20, 10], [40, 30], [50, 30]], { aligned: true })).toThrow(/三個點/);
     expect(() => insert([[0, 10], [20, 10], [40, 10.0001]], { aligned: true })).toThrow(/同一直線/);
@@ -118,8 +118,8 @@ describe('what a stepped or aligned line may be (D-I5)', () => {
     expect(() => applyDrawingCommand(d, { type: 'setView', viewId: 'view1', patch: { aligned: true } })).toThrow(/不屬於/);
     // taking it off with a line that is a stepped one: kept off
     const stepped = applyDrawingCommand(d, { type: 'setView', viewId: 'view2', patch: { aligned: null, line: [[0, 10], [20, 10], [20, 20], [40, 20]] } });
-    expect(stepped.views[1]).not.toHaveProperty('aligned');
-    expect(applyDrawingCommand(stepped, { type: 'setView', viewId: 'view2', patch: { aligned: false } }).views[1]).not.toHaveProperty('aligned');
+    expect(page(stepped).views[1]).not.toHaveProperty('aligned');
+    expect(page(applyDrawingCommand(stepped, { type: 'setView', viewId: 'view2', patch: { aligned: false } })).views[1]).not.toHaveProperty('aligned');
   });
   it('on the parent the whole line is drawn, an arrow at each end square to its own segment (an aligned line\'s two differ)', () => {
     const lines = (w: number, h: number): ViewLines => ({ visible: [[0, 0, w, 0, w, h, 0, h, 0, 0]], hidden: [], box: { min: [0, 0], max: [w, h] } });

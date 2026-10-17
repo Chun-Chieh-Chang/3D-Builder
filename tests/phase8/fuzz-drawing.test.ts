@@ -4,7 +4,7 @@
  * file saved and read again is the same drawing.
  */
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { applyCommand, applyDrawingCommand, axesOf, createEmptyDrawing, createEmptyPart, parseDrawing, sectionPlane, serializeDrawing, type Dimension, type DrawingView, type Feature, type PartDoc, type Pose, type Ref, dimensionRefs } from '@3db/model';
+import { applyCommand, applyDrawingCommand, axesOf, createEmptyDrawing, createEmptyPart, parseDrawing, sectionPlane, serializeDrawing, type Dimension, type DrawingView, type Feature, type PartDoc, type Pose, type Ref, dimensionRefs, page } from '@3db/model';
 import { PlaneGcsSolver } from '@3db/sketch';
 import { Kernel } from '@3db/kernel';
 import { elementFacts, projectDrawingView, Regenerator, viewFeatures } from '@3db/regen';
@@ -95,11 +95,11 @@ describe('drawings of parts made at random', () => {
     const lines = new Map<string, ViewLines>();
     const features2 = new Map<string, ReturnType<typeof viewFeatures>>();
     const parts = [{ shape: body.shape, pose: IDENTITY, mirrored: false }];
-    for (const v of doc.views) {
-      const axes = axesOf(doc.views, doc.sheet.projection, v)!;
+    for (const v of page(doc).views) {
+      const axes = axesOf(page(doc).views, page(doc).sheet.projection, v)!;
       if (v.kind === 'section') {
-        const parent = doc.views.find((x) => x.id === v.parent)!;
-        lines.set(v.id, projectDrawingView(kernel, parts, axes, sectionPlane(axesOf(doc.views, doc.sheet.projection, parent)!, v)));
+        const parent = page(doc).views.find((x) => x.id === v.parent)!;
+        lines.set(v.id, projectDrawingView(kernel, parts, axes, sectionPlane(axesOf(page(doc).views, page(doc).sheet.projection, parent)!, v)));
       } else {
         lines.set(v.id, projectDrawingView(kernel, parts, axes));
         features2.set(v.id, viewFeatures(body.topology, body.names, axes));
@@ -120,7 +120,7 @@ describe('drawings of parts made at random', () => {
     doc = applyDrawingCommand(doc, { type: 'insertDimensions', dimensions });
     doc = applyDrawingCommand(doc, { type: 'insertTables', tables: [{ id: 'tbl1', kind: 'holes', view: 'view1' }] });
     const elements = new Map<string, ElementsResult>(
-      doc.dimensions.map((d) => {
+      page(doc).dimensions.map((d) => {
         const refs: Ref[] = dimensionRefs(d);
         return [d.id, { elements: refs.map((x) => elementFacts(body.topology, body.names, x)) as never }];
       }),
@@ -153,6 +153,6 @@ describe('drawings of parts made at random', () => {
     // -0 is written as 0, so the two are compared as they are written
     const saved = serializeDrawing(doc);
     expect(serializeDrawing(parseDrawing(saved)), `${why}: saved`).toBe(saved);
-    expect(parseDrawing(saved).dimensions.map((d) => d.id), why).toEqual(doc.dimensions.map((d) => d.id));
+    expect(page(parseDrawing(saved)).dimensions.map((d) => d.id), why).toEqual(page(doc).dimensions.map((d) => d.id));
   }, 120000);
 });

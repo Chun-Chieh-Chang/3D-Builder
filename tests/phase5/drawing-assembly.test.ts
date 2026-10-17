@@ -17,8 +17,7 @@ import {
   type BomRow,
   type DrawingDoc,
   type Pose,
-  type SourceTree,
-} from '@3db/model';
+  type SourceTree, page } from '@3db/model';
 import { readPartFile } from '@3db/io';
 import { PlaneGcsSolver } from '@3db/sketch';
 import { Kernel } from '@3db/kernel';
@@ -156,16 +155,16 @@ describe('the tables in the document', () => {
   it('a parts list is inserted on a view, given balloons, moved, deleted; it takes no tolerance classes and a hole table takes no balloons', () => {
     let d = applyDrawingCommand(base(), { type: 'insertTables', tables: [{ id: 'tbl1', kind: 'bom', view: 'view1' }] });
     d = applyDrawingCommand(d, { type: 'setTable', tableId: 'tbl1', patch: { balloons: true, at: [30, 250] } });
-    expect(d.tables[0]).toEqual({ id: 'tbl1', kind: 'bom', view: 'view1', balloons: true, at: [30, 250] });
+    expect(page(d).tables[0]).toEqual({ id: 'tbl1', kind: 'bom', view: 'view1', balloons: true, at: [30, 250] });
     expect(parseDrawing(serializeDrawing(d))).toEqual(d);
     d = applyDrawingCommand(d, { type: 'setTable', tableId: 'tbl1', patch: { balloons: null, at: null } });
-    expect(d.tables[0]).toEqual({ id: 'tbl1', kind: 'bom', view: 'view1' });
+    expect(page(d).tables[0]).toEqual({ id: 'tbl1', kind: 'bom', view: 'view1' });
     expect(() => applyDrawingCommand(d, { type: 'setTable', tableId: 'tbl1', patch: { fits: { '6': 'H7' } } })).toThrow(/不屬於/);
     expect(() => applyDrawingCommand(d, { type: 'insertTables', tables: [{ id: 'tbl2', kind: 'bom', view: 'view1', fits: { '6': 'H7' } } as never] })).toThrow(/不屬於/);
     const h = applyDrawingCommand(base(), { type: 'insertTables', tables: [{ id: 'tbl1', kind: 'holes', view: 'view1' }] });
     expect(() => applyDrawingCommand(h, { type: 'setTable', tableId: 'tbl1', patch: { balloons: true } })).toThrow(/不屬於/);
     d = applyDrawingCommand(d, { type: 'deleteViews', viewIds: ['view1'] });
-    expect(d.tables).toEqual([]);
+    expect(page(d).tables).toEqual([]);
   });
 });
 

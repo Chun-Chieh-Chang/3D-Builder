@@ -4,7 +4,7 @@
  * it touches (dragged to the left); the geometry is checked against an oracle that knows nothing of how it is worked out (dense sampling), on random boxes.
  */
 import { describe, expect, it } from 'vitest';
-import { applyDrawingCommand, CommandError, createEmptyDrawing, DrawingHistory, type Dimension, type DrawingDoc } from '@3db/model';
+import { applyDrawingCommand, CommandError, createEmptyDrawing, DrawingHistory, type Dimension, type DrawingDoc, page } from '@3db/model';
 import { dimensionsInBox, itemsInBox, rectInBox, segmentTouches, selectionBox, type SceneItem, type SheetRect } from '@3db/drawing';
 
 const ref = (name: string) => ({ kind: 'face' as const, name });
@@ -25,12 +25,12 @@ describe('several changes as one step (batch)', () => {
   it('the same tolerance on two dimensions is one undo step', () => {
     const h = new DrawingHistory(drawing());
     h.execute({ type: 'batch', commands: ['dim1', 'dim2'].map((id) => ({ type: 'setDimension', dimensionId: id, patch: { tolerance: { type: 'bilateral', upper: 0.05, lower: -0.05 } } })) });
-    expect(h.doc.dimensions.filter((d) => d.tolerance?.type === 'bilateral').map((d) => d.id)).toEqual(['dim1', 'dim2']);
+    expect(page(h.doc).dimensions.filter((d) => d.tolerance?.type === 'bilateral').map((d) => d.id)).toEqual(['dim1', 'dim2']);
     h.undo();
-    expect(h.doc.dimensions.every((d) => d.tolerance === undefined)).toBe(true);
+    expect(page(h.doc).dimensions.every((d) => d.tolerance === undefined)).toBe(true);
     expect(h.canUndo).toBe(false);
     h.redo();
-    expect(h.doc.dimensions.filter((d) => d.tolerance).length).toBe(2);
+    expect(page(h.doc).dimensions.filter((d) => d.tolerance).length).toBe(2);
   });
 
   it('is done wholly or not at all: a fit class on the angle refuses the whole batch and the document is as it was', () => {
@@ -46,8 +46,8 @@ describe('several changes as one step (batch)', () => {
   it('each command sees what the ones before it did; deleting a view after its dimensions are deleted is fine, the other way round is refused', () => {
     const doc = drawing();
     const ok = applyDrawingCommand(doc, { type: 'batch', commands: [{ type: 'deleteDimensions', dimensionIds: ['dim1'] }, { type: 'deleteViews', viewIds: ['view1'] }] });
-    expect(ok.views).toEqual([]);
-    expect(ok.dimensions).toEqual([]);
+    expect(page(ok).views).toEqual([]);
+    expect(page(ok).dimensions).toEqual([]);
     // the view takes its dimensions with it, so asking for one of them afterwards names a dimension that is not there
     expect(() => applyDrawingCommand(doc, { type: 'batch', commands: [{ type: 'deleteViews', viewIds: ['view1'] }, { type: 'deleteDimensions', dimensionIds: ['dim1'] }] })).toThrow(CommandError);
   });

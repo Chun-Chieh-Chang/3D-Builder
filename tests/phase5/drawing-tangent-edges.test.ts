@@ -5,7 +5,7 @@
  * filleted plate has them and a plain one has none, so the field is never made up.
  */
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { applyDrawingCommand, createEmptyDrawing, parseDrawing, serializeDrawing, type DrawingDoc, type DrawingView, type ModelDrawingView } from '@3db/model';
+import { applyDrawingCommand, createEmptyDrawing, parseDrawing, serializeDrawing, type DrawingDoc, type DrawingView, type ModelDrawingView, page } from '@3db/model';
 import { Kernel, type ShapeId } from '@3db/kernel';
 import { PlaneGcsSolver } from '@3db/sketch';
 import { Regenerator } from '@3db/regen';
@@ -82,7 +82,7 @@ describe('a view asks for its tangent edges (B2.3)', () => {
       type: 'insertViews',
       views: [{ id: 'front', kind: 'model', name: 'Front', source: 'part.3dbx', direction: 'front' }],
     });
-  const viewOf = (doc: DrawingDoc) => doc.views[0] as ModelDrawingView;
+  const viewOf = (doc: DrawingDoc) => page(doc).views[0] as ModelDrawingView;
 
   it('drawn by default; left out and taken back through setView', () => {
     const doc = oneView();
@@ -95,7 +95,7 @@ describe('a view asks for its tangent edges (B2.3)', () => {
 
   it('goes with the file: written and read back', () => {
     const doc = applyDrawingCommand(oneView(), { type: 'setView', viewId: 'front', patch: { showTangentEdges: false } });
-    expect((parseDrawing(serializeDrawing(doc)).views[0] as ModelDrawingView).showTangentEdges).toBe(false);
+    expect((page(parseDrawing(serializeDrawing(doc))).views[0] as ModelDrawingView).showTangentEdges).toBe(false);
   });
 });
 

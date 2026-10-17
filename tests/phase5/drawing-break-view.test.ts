@@ -9,7 +9,8 @@
  *   2. The lines really are cut at the band: no drawn point lies inside the gap, and a break line is drawn at each end of it.
  */
 import { describe, expect, it } from 'vitest';
-import { applyDrawingCommand, createEmptyDrawing, DRAWING_SCHEMA_VERSION, parseDrawing, serializeDrawing, type DrawingDoc, type DrawingView, type ModelDrawingView } from '@3db/model';
+import { applyDrawingCommand, createEmptyDrawing, DRAWING_SCHEMA_VERSION, parseDrawing, serializeDrawing, type DrawingDoc, type DrawingView, type ModelDrawingView, page } from '@3db/model';
+import { olderDrawingFile } from '../support/drawingVersion';
 import { fromSheet, layoutViews, toSheet, viewImage, viewItems, type PlacedView, type ViewLines } from '@3db/drawing';
 
 const front = (extra: Partial<ModelDrawingView> = {}): DrawingView => ({ id: 'front', kind: 'model', name: 'Front', source: 'part.3dbx', direction: 'front', ...extra });
@@ -26,20 +27,20 @@ const placedWith = (brk?: ModelDrawingView['break']): PlacedView => {
 };
 
 describe('a break is part of the view (B2.7)', () => {
-  it('the drawing schema is 24', () => {
-    expect(DRAWING_SCHEMA_VERSION).toBe(24);
+  it('the drawing schema is 25', () => {
+    expect(DRAWING_SCHEMA_VERSION).toBe(25);
   });
 
   it('a view with a break inserts, and the band it keeps is what was asked for', () => {
     const doc = oneView({ break: { axis: 'x', from: 10, to: 20 } });
-    expect(doc.views[0]!.break).toEqual({ axis: 'x', from: 10, to: 20 });
+    expect(page(doc).views[0]!.break).toEqual({ axis: 'x', from: 10, to: 20 });
   });
 
   it('setView sets a break and takes it back with null', () => {
     const doc = oneView();
     const broken = applyDrawingCommand(doc, { type: 'setView', viewId: 'front', patch: { break: { axis: 'y', from: 5, to: 15, gap: 3 } } });
-    expect(broken.views[0]!.break).toEqual({ axis: 'y', from: 5, to: 15, gap: 3 });
-    expect(applyDrawingCommand(broken, { type: 'setView', viewId: 'front', patch: { break: null } }).views[0]!.break).toBeUndefined();
+    expect(page(broken).views[0]!.break).toEqual({ axis: 'y', from: 5, to: 15, gap: 3 });
+    expect(page(applyDrawingCommand(broken, { type: 'setView', viewId: 'front', patch: { break: null } })).views[0]!.break).toBeUndefined();
   });
 
   it('an axis that is not x or y is refused', () => {
@@ -59,15 +60,15 @@ describe('a break is part of the view (B2.7)', () => {
 
   it('goes with the file: written and read back', () => {
     const doc = applyDrawingCommand(oneView(), { type: 'setView', viewId: 'front', patch: { break: { axis: 'x', from: 10, to: 20, gap: 2 } } });
-    expect(parseDrawing(serializeDrawing(doc)).views[0]!.break).toEqual({ axis: 'x', from: 10, to: 20, gap: 2 });
+    expect(page(parseDrawing(serializeDrawing(doc))).views[0]!.break).toEqual({ axis: 'x', from: 10, to: 20, gap: 2 });
   });
 
   it('a drawing written before the break has none, and still reads (v21 → v22)', () => {
     const raw = JSON.parse(serializeDrawing(oneView())) as { version: number; views: unknown[] };
     raw.version = 21;
     const older = parseDrawing(JSON.stringify(raw));
-    expect(older.views[0]!.break).toBeUndefined();
-    expect(older.views).toHaveLength(1);
+    expect(page(older).views[0]!.break).toBeUndefined();
+    expect(page(older).views).toHaveLength(1);
   });
 });
 

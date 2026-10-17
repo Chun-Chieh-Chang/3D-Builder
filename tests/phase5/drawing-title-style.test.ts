@@ -4,7 +4,8 @@
  * from the style it was given; the fit is checked against the same width the PDF writer lays out with.
  */
 import { describe, expect, it } from 'vitest';
-import { applyDrawingCommand, createEmptyDrawing, DRAWING_SCHEMA_VERSION, parseDrawing, serializeDrawing, TITLE_STYLE_DEFAULT, TITLE_STYLE_LIMITS, TITLE_STYLE_SUM_LIMITS, type DrawingDoc, type TitleField, type TitleStyle } from '@3db/model';
+import { applyDrawingCommand, createEmptyDrawing, DRAWING_SCHEMA_VERSION, parseDrawing, serializeDrawing, TITLE_STYLE_DEFAULT, TITLE_STYLE_LIMITS, TITLE_STYLE_SUM_LIMITS, type DrawingDoc, type TitleField, type TitleStyle, page } from '@3db/model';
+import { olderDrawingFile } from '../support/drawingVersion';
 import { fittedTitleHeight, sheetItems, sheetMetrics, textWidthMm, titleCells, toDxf, toPdf, toSvg, TITLE_FIT_MIN, type Scene, type SceneItem } from '@3db/drawing';
 
 type TextItem = Extract<SceneItem, { kind: 'text' }>;
@@ -26,14 +27,14 @@ const nameAt = (doc: DrawingDoc, x: number, y: number, h: number, height: number
   textItems(doc).find((i) => Math.abs(i.at[0] - x) < 1e-9 && Math.abs(i.at[1] - (y + h - 0.8 - height)) < 1e-9);
 
 const sceneOf = (doc: DrawingDoc): Scene => {
-  const m = sheetMetrics(doc.sheet);
+  const m = sheetMetrics(page(doc).sheet);
   return { width: m.width, height: m.height, items: sheetItems(doc) };
 };
 
 describe('the title block as it has always been drawn', () => {
   it('with no style: 2.2 mm names 3 mm below the top of each cell, 3.5 mm values, a 6 mm title', () => {
     const doc = titled(ALL);
-    const m = sheetMetrics(doc.sheet);
+    const m = sheetMetrics(page(doc).sheet);
     for (const c of titleCells()) {
       const x = m.titleBlock.x + c.x;
       const y = m.titleBlock.y + c.y;
@@ -50,7 +51,7 @@ describe('the title block as it has always been drawn', () => {
 describe('the heights drawn are the style\'s', () => {
   it('a style writes every text of the block at its height; the name keeps 0.8 mm below the top of the cell', () => {
     const doc = titled(ALL, { label: 2.5, value: 4.5, title: 9 });
-    const m = sheetMetrics(doc.sheet);
+    const m = sheetMetrics(page(doc).sheet);
     for (const c of titleCells()) {
       const name = nameAt(doc, m.titleBlock.x + c.x + 1, m.titleBlock.y + c.y, c.h, 2.5);
       expect(name, `the name of ${c.field}`).toBeDefined();
@@ -67,9 +68,9 @@ describe('the heights drawn are the style\'s', () => {
 
   it('null takes the style away and the block is ISO\'s again; an empty style is no style', () => {
     const doc = applyDrawingCommand(titled(ALL, { value: 4.5 }), { type: 'setSheet', sheet: { titleStyle: null } });
-    expect(doc.sheet).not.toHaveProperty('titleStyle');
+    expect(page(doc).sheet).not.toHaveProperty('titleStyle');
     expect(drawn(doc, 'ACME').height).toBeCloseTo(3.5, 12);
-    expect(applyDrawingCommand(doc, { type: 'setSheet', sheet: { titleStyle: {} } }).sheet).not.toHaveProperty('titleStyle');
+    expect(page(applyDrawingCommand(doc, { type: 'setSheet', sheet: { titleStyle: {} } })).sheet).not.toHaveProperty('titleStyle');
   });
 });
 
@@ -110,9 +111,9 @@ describe('what the style refuses', () => {
     ];
     for (const s of bad) expect(() => applyDrawingCommand(doc, { type: 'setSheet', sheet: { titleStyle: s as TitleStyle } }), JSON.stringify(s)).toThrow();
     // the limits themselves are allowed — with a partner small enough to stay inside the sums
-    expect(applyDrawingCommand(doc, { type: 'setSheet', sheet: { titleStyle: { label: 2, value: 5 } } }).sheet.titleStyle).toEqual({ label: 2, value: 5 });
-    expect(applyDrawingCommand(doc, { type: 'setSheet', sheet: { titleStyle: { label: 5, value: 2 } } }).sheet.titleStyle).toEqual({ label: 5, value: 2 });
-    expect(applyDrawingCommand(doc, { type: 'setSheet', sheet: { titleStyle: { label: 2, title: 9.5 } } }).sheet.titleStyle).toEqual({ label: 2, title: 9.5 });
+    expect(page(applyDrawingCommand(doc, { type: 'setSheet', sheet: { titleStyle: { label: 2, value: 5 } } })).sheet.titleStyle).toEqual({ label: 2, value: 5 });
+    expect(page(applyDrawingCommand(doc, { type: 'setSheet', sheet: { titleStyle: { label: 5, value: 2 } } })).sheet.titleStyle).toEqual({ label: 5, value: 2 });
+    expect(page(applyDrawingCommand(doc, { type: 'setSheet', sheet: { titleStyle: { label: 2, title: 9.5 } } })).sheet.titleStyle).toEqual({ label: 2, title: 9.5 });
   });
 
   it('a name and the text under it too tall for the same cell, though each is within its own limits', () => {
@@ -121,7 +122,7 @@ describe('what the style refuses', () => {
       expect(() => applyDrawingCommand(doc, { type: 'setSheet', sheet: { titleStyle: s } }), JSON.stringify(s)).toThrow();
     }
     // the sums themselves are allowed
-    expect(applyDrawingCommand(doc, { type: 'setSheet', sheet: { titleStyle: { label: 2.2, title: TITLE_STYLE_SUM_LIMITS.labelPlusTitle - 2.2 } } }).sheet.titleStyle).toEqual({ label: 2.2, title: 9.5 });
+    expect(page(applyDrawingCommand(doc, { type: 'setSheet', sheet: { titleStyle: { label: 2.2, title: TITLE_STYLE_SUM_LIMITS.labelPlusTitle - 2.2 } } })).sheet.titleStyle).toEqual({ label: 2.2, title: 9.5 });
   });
 });
 
@@ -143,7 +144,7 @@ describe('fuzz: 200 styles and texts', () => {
       drawn200++;
       const cell = titleCells().find((c) => c.field === 'material')!;
       const avail = cell.w - 3;
-      const text = doc.title.material!;
+      const text = page(doc).title.material!;
       const h = drawn(doc, text).height;
       const over = textWidthMm(text, style.value!) > avail;
       if (!style.fit || !over) expect(h).toBeCloseTo(style.value!, 12);
@@ -181,11 +182,9 @@ describe('the outputs draw it', () => {
 describe('the file keeps it', () => {
   it('a saved drawing comes back with its title style; a v19 file, which never had one, comes back without', () => {
     const doc = titled(ALL, { label: 2.5, value: 4, title: 9, fit: false });
-    expect(parseDrawing(serializeDrawing(doc)).sheet.titleStyle).toEqual({ label: 2.5, value: 4, title: 9, fit: false });
-    const old = JSON.parse(serializeDrawing(titled(ALL)));
-    old.schemaVersion = 19;
-    const back = parseDrawing(JSON.stringify(old));
-    expect(back.sheet).not.toHaveProperty('titleStyle');
+    expect(page(parseDrawing(serializeDrawing(doc))).sheet.titleStyle).toEqual({ label: 2.5, value: 4, title: 9, fit: false });
+    const back = parseDrawing(JSON.stringify(olderDrawingFile(titled(ALL), 19)));
+    expect(page(back).sheet).not.toHaveProperty('titleStyle');
     expect(back.schemaVersion).toBe(DRAWING_SCHEMA_VERSION); // upgraded, with nothing to convert
   });
 });

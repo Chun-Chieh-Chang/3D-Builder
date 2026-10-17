@@ -5,7 +5,7 @@
  * where it was, said to be lost.
  */
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { applyDrawingCommand, CommandError, createEmptyDrawing, viewVectors, type Annotation, type Feature, type ViewAxes } from '@3db/model';
+import { applyDrawingCommand, CommandError, createEmptyDrawing, viewVectors, type Annotation, type Feature, type ViewAxes, page } from '@3db/model';
 import { Kernel } from '@3db/kernel';
 import { PlaneGcsSolver } from '@3db/sketch';
 import { Regenerator, viewEdges, viewFeatures, type RebuildResult } from '@3db/regen';
@@ -89,6 +89,6 @@ describe('annotations fastened to the model', () => {
     let withNote = insert({ id: 'ann1', kind: 'note', view: 'view1', at: [0, 0], text: 'x', leader: [5, 5], attach: { ref: edge, u: 0 } });
     expect(() => applyDrawingCommand(withNote, { type: 'setAnnotation', annotationId: 'ann1', patch: { leader: null } })).toThrow(CommandError);
     withNote = applyDrawingCommand(withNote, { type: 'setAnnotation', annotationId: 'ann1', patch: { leader: null, attach: null } });
-    expect('attach' in withNote.annotations[0]!).toBe(false);
+    expect('attach' in page(withNote).annotations[0]!).toBe(false);
   });
 });

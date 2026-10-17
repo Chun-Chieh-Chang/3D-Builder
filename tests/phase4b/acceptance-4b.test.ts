@@ -7,7 +7,7 @@
  * Every gap is measured here, apart from the check the offset makes of itself.
  */
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { applyCommand, applyDrawingCommand, axesOf, createEmptyDrawing, createEmptyPart, sectionPlane, type DrawingDoc, type Feature, type PartDoc, type Pose } from '@3db/model';
+import { applyCommand, applyDrawingCommand, axesOf, createEmptyDrawing, createEmptyPart, sectionPlane, type DrawingDoc, type Feature, type PartDoc, type Pose, page } from '@3db/model';
 import { derivedAssemblyFiles, readDocumentFile, sha256Hex, writePartFile } from '@3db/io';
 import { PlaneGcsSolver } from '@3db/sketch';
 import { Kernel, type ShapeId } from '@3db/kernel';
@@ -250,11 +250,11 @@ describe('④ the gauge block drawn: three views and a section through the fille
     drawing = applyDrawingCommand(drawing, { type: 'setSheet', sheet: { scale: [1, 1] } });
     const lines = new Map<string, ViewLines>();
     const parts = [{ shape, pose: IDENTITY, mirrored: false }];
-    for (const v of drawing.views) {
-      const axes = axesOf(drawing.views, drawing.sheet.projection, v)!;
+    for (const v of page(drawing).views) {
+      const axes = axesOf(page(drawing).views, page(drawing).sheet.projection, v)!;
       if (v.kind === 'section') {
-        const parent = drawing.views.find((x) => x.id === v.parent)!;
-        lines.set(v.id, projectDrawingView(kernel, parts, axes, sectionPlane(axesOf(drawing.views, drawing.sheet.projection, parent)!, v)));
+        const parent = page(drawing).views.find((x) => x.id === v.parent)!;
+        lines.set(v.id, projectDrawingView(kernel, parts, axes, sectionPlane(axesOf(page(drawing).views, page(drawing).sheet.projection, parent)!, v)));
       } else lines.set(v.id, projectDrawingView(kernel, parts, axes));
     }
     // the front view looks along z: the block is 8 + … wide in x (−30 … 41) and 40 deep in y

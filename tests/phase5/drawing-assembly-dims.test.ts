@@ -4,7 +4,7 @@
  * mirrored: the numbers come from the parts' own corners moved by hand, never from the drawing's lines.
  */
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { applyDrawingCommand, CommandError, createEmptyDrawing, placeElementFacts, placementRows, rightOf, sheetUp, viewVectors, type Dimension, type DrawingRef, type ElementFacts, type Feature, type Pose, type ViewAxes } from '@3db/model';
+import { applyDrawingCommand, CommandError, createEmptyDrawing, placeElementFacts, placementRows, rightOf, sheetUp, viewVectors, type Dimension, type DrawingRef, type ElementFacts, type Feature, type Pose, type ViewAxes, page } from '@3db/model';
 import { Kernel } from '@3db/kernel';
 import { PlaneGcsSolver } from '@3db/sketch';
 import { elementFacts, Regenerator, viewEdges, type RebuildResult } from '@3db/regen';
@@ -96,7 +96,7 @@ describe('the parts of a view of an assembly, by name', () => {
     const v = (name: string, leaf?: string): DrawingRef => ({ kind: 'vertex', name, ...(leaf !== undefined ? { in: leaf } : {}) });
     const dim = (a: DrawingRef, b: DrawingRef) => ({ id: 'dim1', view: 'view1', kind: 'linear', a, b, orientation: 'horizontal', offset: 10 }) as Dimension;
     const ok = applyDrawingCommand(doc, { type: 'insertDimensions', dimensions: [dim(v('a', 'comp1'), v('b', 'comp2/pa'))] });
-    expect((ok.dimensions[0] as { a: DrawingRef }).a.in).toBe('comp1');
+    expect((page(ok).dimensions[0] as { a: DrawingRef }).a.in).toBe('comp1');
     expect(() => applyDrawingCommand(doc, { type: 'insertDimensions', dimensions: [dim(v('a', ''), v('b', 'comp2'))] })).toThrow(CommandError);
     expect(() => placeElementFacts({ kind: 'vertex', type: 'point', point: [0, 0, 0] }, [1, 0, 0])).toThrow();
     expect(() => placeElementFacts({ kind: 'vertex', type: 'point', point: [0, 0, 0] }, [1, 0, 0, Number.NaN, 0, 1, 0, 0, 0, 0, 1, 0])).toThrow();

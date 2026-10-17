@@ -4,7 +4,7 @@
  * so an angle and an ordinate have none, and the menu leaves that choice out rather than let the command fail.
  */
 import { describe, expect, it } from 'vitest';
-import { applyDrawingCommand, createEmptyDrawing, type Dimension, type DrawingDoc, type Ref } from '@3db/model';
+import { applyDrawingCommand, createEmptyDrawing, type Dimension, type DrawingDoc, type Ref, page } from '@3db/model';
 import { fitAllowed, toleranceForChoice } from '@3db/drawing';
 
 const ref = (name: string): Ref => ({ kind: 'face', name });
@@ -42,9 +42,9 @@ describe('the tolerance a dimension menu puts on a dimension (B2.4)', () => {
     const linear: Dimension = { id: 'dim1', view: 'view1', kind: 'linear', a: ref('a'), b: ref('b'), orientation: 'horizontal', offset: -10 };
     let d = applyDrawingCommand(base(), { type: 'insertDimensions', dimensions: [linear] });
     d = applyDrawingCommand(d, { type: 'setDimension', dimensionId: 'dim1', patch: { tolerance: toleranceForChoice('fit', 'linear') } });
-    expect(d.dimensions[0]).toMatchObject({ tolerance: { type: 'fit', fit: 'h7' } });
+    expect(page(d).dimensions[0]).toMatchObject({ tolerance: { type: 'fit', fit: 'h7' } });
     d = applyDrawingCommand(d, { type: 'setDimension', dimensionId: 'dim1', patch: { tolerance: toleranceForChoice('none', 'linear') } });
-    expect(d.dimensions[0]).not.toHaveProperty('tolerance');
+    expect(page(d).dimensions[0]).not.toHaveProperty('tolerance');
 
     const angle: Dimension = { id: 'dim2', view: 'view1', kind: 'angle', a: ref('a'), b: ref('b'), arc: 10 };
     d = applyDrawingCommand(d, { type: 'insertDimensions', dimensions: [angle] });

@@ -18,9 +18,10 @@ import {
   sourceOf,
   viewVectors,
   type DrawingDoc,
+  type DrawingPage,
   type DrawingView,
-  type SectionDrawingView,
-} from '@3db/model';
+  type SectionDrawingView, page } from '@3db/model';
+import { olderDrawingFile } from '../support/drawingVersion';
 import { readPartFile } from '@3db/io';
 import { PlaneGcsSolver } from '@3db/sketch';
 import { Kernel, type ShapeId } from '@3db/kernel';
@@ -109,9 +110,9 @@ describe('where a derived view looks from', () => {
         { id: 'view4', name: 'B', kind: 'detail', parent: 'view1', centre: [0, 0], radius: 5, label: 'B' },
       ],
     });
-    expect(doc.views.map((v) => sourceOf(doc.views, v))).toEqual(['a.3dbx', 'a.3dbx', 'a.3dbx', 'a.3dbx']);
-    expect(axesOf(doc.views, 'third', doc.views[3]!)).toEqual(viewVectors('front')); // a detail looks as its parent does
-    expect(axesOf(doc.views, 'third', doc.views[1]!)!.dir).toEqual(viewVectors('right').dir);
+    expect(page(doc).views.map((v) => sourceOf(page(doc).views, v))).toEqual(['a.3dbx', 'a.3dbx', 'a.3dbx', 'a.3dbx']);
+    expect(axesOf(page(doc).views, 'third', page(doc).views[3]!)).toEqual(viewVectors('front')); // a detail looks as its parent does
+    expect(axesOf(page(doc).views, 'third', page(doc).views[1]!)!.dir).toEqual(viewVectors('right').dir);
   });
 });
 
@@ -124,11 +125,11 @@ describe('the derived views in the document', () => {
     expect(() => insert({ id: 'view2', name: 'x', kind: 'projected', parent: 'zzz', side: 'right' })).toThrow(/母視圖/);
     expect(() => insert({ id: 'view2', name: 'x', kind: 'projected', parent: 'view1', side: 'sideways' as never })).toThrow(/側邊/);
     // a slanted section line is allowed (C-D-I5): it is placed by its nearer axis
-    expect(insert({ id: 'view2', name: 'A', kind: 'section', parent: 'view1', line: [[0, 0], [5, 5]], label: 'A' }).views).toHaveLength(2);
+    expect(page(insert({ id: 'view2', name: 'A', kind: 'section', parent: 'view1', line: [[0, 0], [5, 5]], label: 'A' })).views).toHaveLength(2);
     expect(() => insert({ id: 'view2', name: 'A', kind: 'section', parent: 'view1', line: [[0, 0], [0, 0]], label: 'A' })).toThrow(/重合/);
     expect(() => insert({ id: 'view2', name: 'A', kind: 'section', parent: 'view1', line: [[0, 0], [0, 5]], label: ' ' })).toThrow(/字母/);
     expect(() => insert({ id: 'view2', name: 'B', kind: 'detail', parent: 'view1', centre: [0, 0], radius: 0, label: 'B' })).toThrow(/半徑/);
-    expect(insert({ id: 'view2', name: 'B', kind: 'detail', parent: 'view1', centre: [0, 0], radius: 5, label: 'B' }).views).toHaveLength(2);
+    expect(page(insert({ id: 'view2', name: 'B', kind: 'detail', parent: 'view1', centre: [0, 0], radius: 5, label: 'B' })).views).toHaveLength(2);
   });
 
   it('deleting a view deletes what comes from it, down the line, and their ids are not given out again', () => {
@@ -140,28 +141,28 @@ describe('the derived views in the document', () => {
       ],
     });
     d = applyDrawingCommand(d, { type: 'deleteViews', viewIds: ['view2'] });
-    expect(d.views.map((v) => v.id)).toEqual(['view1']);
+    expect(page(d).views.map((v) => v.id)).toEqual(['view1']);
     expect(d.idCounters.view).toBe(3);
   });
 
   it('changes what belongs to a view\'s kind and refuses what does not', () => {
     let d = applyDrawingCommand(base(), { type: 'insertViews', views: [{ id: 'view2', name: 'A', kind: 'section', parent: 'view1', line: [[0, 0], [0, 5]], label: 'A' }] });
     d = applyDrawingCommand(d, { type: 'setView', viewId: 'view2', patch: { flip: true, label: 'B' } });
-    expect(d.views[1]).toMatchObject({ flip: true, label: 'B' });
+    expect(page(d).views[1]).toMatchObject({ flip: true, label: 'B' });
     d = applyDrawingCommand(d, { type: 'setView', viewId: 'view2', patch: { flip: false } });
-    expect(d.views[1]).not.toHaveProperty('flip');
+    expect(page(d).views[1]).not.toHaveProperty('flip');
     expect(() => applyDrawingCommand(d, { type: 'setView', viewId: 'view2', patch: { direction: 'top' } })).toThrow(/不屬於/);
     expect(() => applyDrawingCommand(d, { type: 'setView', viewId: 'view1', patch: { flip: true } })).toThrow(/不屬於/);
     // a slanted line is allowed (C-D-I5); one that is a point is not
-    expect(applyDrawingCommand(d, { type: 'setView', viewId: 'view2', patch: { line: [[0, 0], [3, 3]] } }).views[1]).toMatchObject({ line: [[0, 0], [3, 3]] });
+    expect(page(applyDrawingCommand(d, { type: 'setView', viewId: 'view2', patch: { line: [[0, 0], [3, 3]] } })).views[1]).toMatchObject({ line: [[0, 0], [3, 3]] });
     expect(() => applyDrawingCommand(d, { type: 'setView', viewId: 'view2', patch: { line: [[3, 3], [3, 3]] } })).toThrow(/重合/);
   });
 
   it('is a version-1 drawing read as the current version: nothing to convert but the empty list of dimensions', async () => {
-    const { parseDrawing, serializeDrawing } = await import('@3db/model');
-    const v1 = JSON.stringify({ ...JSON.parse(serializeDrawing(base())), schemaVersion: 1 });
+    const { parseDrawing } = await import('@3db/model');
+    const v1 = JSON.stringify(olderDrawingFile(base(), 1));
     expect(parseDrawing(v1).schemaVersion).toBe(DRAWING_SCHEMA_VERSION);
-    expect(parseDrawing(v1).views).toEqual(base().views);
+    expect(page(parseDrawing(v1)).views).toEqual(page(base()).views);
   });
 });
 
@@ -264,7 +265,7 @@ describe('the plate cut through a hole (C16.3)', () => {
 
 describe('where the derived views go and what is drawn on the parent', () => {
   const lines = (w: number, h: number, x = 0, y = 0): ViewLines => ({ visible: [[x, y, x + w, y + h]], hidden: [], box: { min: [x, y], max: [x + w, y + h] } });
-  const doc = (views: DrawingView[], sheet: Partial<DrawingDoc['sheet']> = {}): DrawingDoc => applyDrawingCommand(applyDrawingCommand(createEmptyDrawing(), { type: 'setSheet', sheet }), { type: 'insertViews', views });
+  const doc = (views: DrawingView[], sheet: Partial<DrawingPage['sheet']> = {}): DrawingDoc => applyDrawingCommand(applyDrawingCommand(createEmptyDrawing(), { type: 'setSheet', sheet }), { type: 'insertViews', views });
   const front: DrawingView = { id: 'f', name: 'f', source: 'a.3dbx', direction: 'front' };
 
   it('a projected view goes on its side, a gap from the parent, in line with it: the origin of the model at the same height', () => {

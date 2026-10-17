@@ -3,7 +3,8 @@
  * others keep clear of it; the scene says where every table and balloon is, so the sheet can be pointed at.
  */
 import { describe, expect, it } from 'vitest';
-import { applyDrawingCommand, createEmptyDrawing, DRAWING_SCHEMA_VERSION, parseDrawing, serializeDrawing, type BomRow, type DrawingDoc } from '@3db/model';
+import { applyDrawingCommand, createEmptyDrawing, DRAWING_SCHEMA_VERSION, parseDrawing, serializeDrawing, type BomRow, type DrawingDoc, page } from '@3db/model';
+import { olderDrawingFile } from '../support/drawingVersion';
 import { balloonSpots, buildScene, bomTableBox, type PlacedView, type ViewBom, type ViewLines } from '@3db/drawing';
 
 const row = (item: string, name: string, path: string): BomRow => ({ item, name, path, mirrored: false, qty: 1, partNo: '', vendor: '' }) as BomRow;
@@ -26,19 +27,18 @@ describe('the balloons the user moved', () => {
   it('the place is kept in the document (a balloon that is not there is placed by the program), cleared with null, and is for a parts list only', () => {
     let d = applyDrawingCommand(base(), { type: 'insertTables', tables: [{ id: 'tbl1', kind: 'bom', view: 'view1', balloons: true }] });
     d = applyDrawingCommand(d, { type: 'setTable', tableId: 'tbl1', patch: { balloonAt: { '1': [250, 120] } } });
-    expect(d.tables[0]).toEqual({ id: 'tbl1', kind: 'bom', view: 'view1', balloons: true, balloonAt: { '1': [250, 120] } });
+    expect(page(d).tables[0]).toEqual({ id: 'tbl1', kind: 'bom', view: 'view1', balloons: true, balloonAt: { '1': [250, 120] } });
     expect(parseDrawing(serializeDrawing(d))).toEqual(d);
     expect(d.schemaVersion).toBe(DRAWING_SCHEMA_VERSION);
     d = applyDrawingCommand(d, { type: 'setTable', tableId: 'tbl1', patch: { balloonAt: null } });
-    expect(d.tables[0]).toEqual({ id: 'tbl1', kind: 'bom', view: 'view1', balloons: true });
+    expect(page(d).tables[0]).toEqual({ id: 'tbl1', kind: 'bom', view: 'view1', balloons: true });
     expect(() => applyDrawingCommand(d, { type: 'setTable', tableId: 'tbl1', patch: { balloonAt: { '1': [Number.NaN, 1] } } })).toThrow();
     const h = applyDrawingCommand(base(), { type: 'insertTables', tables: [{ id: 'tbl1', kind: 'holes', view: 'view1' }] });
     expect(() => applyDrawingCommand(h, { type: 'setTable', tableId: 'tbl1', patch: { balloonAt: { '1': [1, 2] } } })).toThrow(/不屬於/);
   });
 
   it('an older drawing (schema 8) opens as it is', () => {
-    const old = JSON.parse(serializeDrawing(base())) as Record<string, unknown>;
-    old.schemaVersion = 8;
+    const old = olderDrawingFile(base(), 8);
     expect(parseDrawing(JSON.stringify(old)).schemaVersion).toBe(DRAWING_SCHEMA_VERSION);
   });
 });
@@ -50,7 +50,7 @@ describe('where the scene says the tables and balloons are', () => {
     const box = built.tableBoxes.get('tbl1')!;
     expect(box.x).toBe(30);
     expect(box.y + box.h).toBe(250);
-    expect(box).toEqual(bomTableBox(d.tables[0] as never, bom.rows, d.sheet));
+    expect(box).toEqual(bomTableBox(page(d).tables[0] as never, bom.rows, page(d).sheet));
     expect(built.balloons.get('tbl1')).toHaveLength(2);
     d = applyDrawingCommand(d, { type: 'setTable', tableId: 'tbl1', patch: { balloonAt: { '2': [260, 90] } } });
     const moved = buildScene(d, new Map([['view1', lines]]), new Map(), new Map(), new Map([['view1', bom]]));
