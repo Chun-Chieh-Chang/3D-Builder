@@ -1,5 +1,5 @@
 import { getLocale, subscribeLocale } from '@3db/i18n';
-import { useEffect, useSyncExternalStore } from 'react';
+import { useEffect, useState, useSyncExternalStore } from 'react';
 import { installShortcuts } from './actions';
 import { useDocumentTitle, useStore } from './state/store';
 import { AssemblyTree } from './components/AssemblyTree';
@@ -45,6 +45,12 @@ export function App() {
   const partEditing = useStore((s) => s.editing);
   const editing = assembly ? inserting || mating || moving || patterning || exploding || forming : !!partEditing;
   const title = useDocumentTitle();
+  // The part and assembly panels get the same two tabs as a drawing (ADR 0133). A session opens the PropertyManager tab by itself; the FeatureManager tab
+  // stays available, so the tree can be looked at without leaving the session (this relaxes ADR 0034 決定 9, which hid the tree for the whole session).
+  const [panel, setPanel] = useState<'tree' | 'properties'>('tree');
+  useEffect(() => {
+    setPanel(editing ? 'properties' : 'tree');
+  }, [editing]);
   useEffect(() => installShortcuts(), []);
   useEffect(() => installHelp({ currentTopic: currentTopicId, hasTopic: (id) => topicOf(id) !== null }), []);
   useEffect(() => {
@@ -57,12 +63,39 @@ export function App() {
         <aside className="left-panel" data-help={editing ? 'concept.property-manager' : 'concept.feature-tree'}>
           {/* a drawing has tabs of its own, which work (D-I1b, ADR 0133) */}
           {!drawing && (
-            <div className="panel-tabs">
-              <span className={editing ? '' : 'active'}>FeatureManager</span>
-              <span className={editing ? 'active' : ''}>PropertyManager</span>
+            <div className="sw-tabs" role="tablist">
+              <button type="button" role="tab" aria-selected={panel === 'tree'} className={panel === 'tree' ? 'active' : ''} onClick={() => setPanel('tree')}>
+                FeatureManager
+              </button>
+              <button
+                type="button"
+                role="tab"
+                aria-selected={panel === 'properties'}
+                className={panel === 'properties' ? 'active' : ''}
+                disabled={!editing}
+                onClick={() => setPanel('properties')}
+              >
+                PropertyManager
+              </button>
             </div>
           )}
-          {drawing ? <DrawingPanel /> : assembly ? mating ? <MatePanel /> : inserting ? <InsertComponentPanel /> : moving ? <MovePanel /> : patterning ? <PatternPanel /> : exploding ? <ExplodePanel /> : forming ? <FormSubPanel /> : <AssemblyTree /> : editing ? <PropertyManager /> : <FeatureTree />}
+          {drawing ? (
+            <DrawingPanel />
+          ) : (
+            <div className="sw-panel">
+              {panel === 'properties' && editing ? (
+                assembly ? (
+                  mating ? <MatePanel /> : inserting ? <InsertComponentPanel /> : moving ? <MovePanel /> : patterning ? <PatternPanel /> : exploding ? <ExplodePanel /> : forming ? <FormSubPanel /> : <AssemblyTree />
+                ) : (
+                  <PropertyManager />
+                )
+              ) : assembly ? (
+                <AssemblyTree />
+              ) : (
+                <FeatureTree />
+              )}
+            </div>
+          )}
         </aside>
         {drawing ? <DrawingViewport /> : assembly ? <AssemblyViewport /> : <Viewport />}
         {drawing && <DrawingTaskPane />}
