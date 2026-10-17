@@ -28,7 +28,7 @@
 
 3. **不切任何東西**：`layout.ts` 的 `resolveLines` 新增 `crop` 分支，把**母視圖已解析的線**（`visible`／`hidden`／`cut`／`center`／`tangent`）以新的 `clipToOutline`（`geometry.ts`：圓用既有的 `clipToCircle`，矩形／多邊形在邊的交點切開、以中點判內外）裁到輪廓內，`box` 取 `outlineBox(輪廓)`。因此**視圖大小＝輪廓大小**，與母視圖多大無關；母視圖的剖切面帶過來，所以裁剪視圖內照樣畫**剖面線**，與母視圖一致。
 
-4. **比例沿用母視圖、擺放與母視圖對齊**：`scaleOf` 加入 `crop` 分支（與 `projected`／`section` 同一條規則：自己沒設比例就往上找母視圖）。擺放走既有的「衍生視圖在母視圖某一側向外堆疊」機制（`sideOf` 對 crop 回 `'right'`，`spot` 走與 `section` 相同的「模型原點對齊」分支），**不是** detail 那種「與母視圖齊平」的規則。
+4. **比例沿用母視圖、擺放與母視圖對齊**：`scaleOf` 加入 `crop` 分支（與 `projected`／`section` 同一條規則：自己沒設比例就往上找母視圖）。擺放走既有的「衍生視圖在母視圖某一側向外堆疊」機制（`sideOf` 對 crop 回 `'right'`，`spot` 走與 `section` 相同的「模型原點對齊」分支），**不是** detail 那種「與母視圖齊平」的規則。（2026-10-19 修正：當時 `scaleTarget` 漏了 `crop`，拖曳裁剪視圖的角落會**改到整張圖紙**的比例，而裁剪視圖本身畫在母視圖比例、不動；已把 `crop` 補進 `scaleTarget`，使其與 `scaleOf` **同進退**——母視圖有自設比例時，縮放裁剪視圖改的是母視圖的比例。由 `drawing-crop-view.test.ts` 的 `scaleTarget` 測試鎖定。）
 
 5. **不塗彩（明確限制，非默默降級）**：`viewImage` 對 `crop` 回 `null`，且 `resolveLines` 也不把母視圖的 `shade` 帶過來。理由與 [ADR 0151](0151-drawing-break-view.md) 決定 6 相同：`SceneImage` 只有一個**圓形**裁切欄位，無法沿輪廓把一張整零件的圖切開，硬貼會得到錯誤的圖。寧可不畫，不畫錯。
 

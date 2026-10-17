@@ -12,7 +12,7 @@
  */
 import { describe, expect, it } from 'vitest';
 import { applyDrawingCommand, createEmptyDrawing, DRAWING_SCHEMA_VERSION, parseDrawing, serializeDrawing, type CropDrawingView, type DrawingDoc, type DrawingView } from '@3db/model';
-import { buildScene, layoutViews, resolveLines, scaleOf, viewImage, viewItems, type ShadeImage, type ViewLines } from '@3db/drawing';
+import { buildScene, layoutViews, resolveLines, scaleOf, scaleTarget, viewImage, viewItems, type ShadeImage, type ViewLines } from '@3db/drawing';
 
 /** A front view of a plate, and the local section that cuts a 20 × 20 rectangle out of it — the parent a crop is made from. */
 const cut = (sectionScale?: [number, number]): DrawingDoc =>
@@ -161,6 +161,16 @@ describe('the cropped view (B2.7)', () => {
     expect(own.w).toBeCloseTo(10, 6);
     expect(own.h).toBeCloseTo(10, 6);
     expect(own.w).toBeLessThan(parent.w);
+  });
+
+  it('is scaled with its parent: dragging its corner names the parent, not the sheet (as a section does)', () => {
+    // the local section it crops has a scale of its own, so scaling the crop must reach that view and not the whole sheet (ADR 0152 defect: scaleOf followed the
+    // parent but scaleTarget named the sheet, so dragging a crop's corner rescaled the sheet while the crop — drawn at its parent's scale — did not move)
+    const d = insertCrop(cut([1, 2]));
+    expect(scaleTarget(d, d.views.find((x) => x.id === 'crop1')!)).toEqual({ view: 'localsec1' });
+    // the control: with no scale of its own anywhere up the chain, the sheet is what a scale change names — as before
+    const plain = insertCrop(cut());
+    expect(scaleTarget(plain, plain.views.find((x) => x.id === 'crop1')!)).toEqual({ sheet: true });
   });
 
   it('a crop is not shaded: no image is carried, and the same lines on a shaded view do give one', () => {

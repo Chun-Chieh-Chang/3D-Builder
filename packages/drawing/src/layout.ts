@@ -133,7 +133,7 @@ export function scaleFromRatio(r: number): Scale {
 /** What a view's scale is made of: its own, else (a projected, section, cropped or auxiliary view) its parent's, else the sheet's. Changing the scale of a view changes the scale of what it names, and so of every view that takes it. */
 export function scaleTarget(doc: Pick<DrawingDoc, 'views'>, view: DrawingView, depth = 0): { view: Id } | { sheet: true } {
   if (view.scale) return { view: view.id };
-  if (view.kind === 'projected' || view.kind === 'section' || view.kind === 'auxiliary') {
+  if (view.kind === 'projected' || view.kind === 'section' || view.kind === 'crop' || view.kind === 'auxiliary') {
     const parent = doc.views.find((v) => v.id === view.parent);
     if (parent && depth < 64) return scaleTarget(doc, parent, depth + 1);
   }

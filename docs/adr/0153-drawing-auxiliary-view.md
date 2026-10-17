@@ -64,4 +64,4 @@
 - 折線必須是**單一直線（兩點）**；階梯／對正的補助線不支援（規格未要求，`checkAuxiliaryFold` 明示拒絕）。
 - 「補助線」是**任意畫的一條線**，不吸附到模型具名邊（使用者裁定採補助線法）；因此視圖的**尺寸標註**仍受既有限制（`docs/drawing-interaction-gap-plan.md`:112——沒有一條線「從模型哪條邊來」的對應），輔助視圖不會自動讓斜面上的邊可標尺寸。
 - 輔助視圖不能再被當作裁剪的母視圖等（`belongs['auxiliary']` 只有 `line`／`label`）；它可作為其他衍生視圖的母視圖鏈的一員（經 `axesOf` 遞迴），但無專門支援。
-- `scaleTarget` 對 **crop** 的既有不一致（`scaleOf` 沿用母視圖、`scaleTarget` 卻回 `{ sheet: true }`）為 ADR 0152 既有行為，本 ADR **未動**，另行回報使用者裁定。
+- **紅隊掃描一併發現並修掉一個 ADR 0152 的既有缺陷**：`scaleOf` 對 `crop` 沿用母視圖比例，`scaleTarget` 卻回 `{ sheet: true }`，拖曳裁剪視圖的角落會改到**整張圖紙**、而裁剪視圖不動。已把 `crop` 補進 `scaleTarget`（與 `scaleOf` 同進退），並在 `drawing-crop-view.test.ts` 加 `scaleTarget` 測試鎖定。輔助視圖的 `scaleOf`／`scaleTarget` 本次一併比照剖視圖處理（見決定 4）。
