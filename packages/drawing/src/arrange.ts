@@ -9,25 +9,41 @@ import type { DimensionOutcome } from './dimension';
  */
 
 type Linear = Extract<Dimension, { kind: 'linear' }>;
+type Ordinate = Extract<Dimension, { kind: 'ordinate' }>;
+/** What arranging stacks: a linear dimension's line and an ordinate's row both run along one way of a view, so they belong on one side's stack together (B2.5). */
+type Stacked = Linear | Ordinate;
 
-/** How long a linear dimension is on the sheet, along the way it measures: the shorter ones go nearest the view, so that no dimension line crosses another's extension lines. */
-function span(d: Linear, outcome: DimensionOutcome | undefined): number | null {
+/**
+ * The way a dimension's line runs, which tells one row of dimensions from another: an ordinate's row runs along its axis (B2.5), as a linear dimension's line
+ * runs along its orientation.
+ */
+function way(d: Stacked): 'horizontal' | 'vertical' | 'aligned' {
+  return d.kind === 'ordinate' ? (d.axis === 'x' ? 'horizontal' : 'vertical') : d.orientation;
+}
+
+/** How long a dimension is on the sheet, along the way it measures: the shorter ones go nearest the view, so that no dimension line crosses another's extension lines. */
+function span(d: Stacked, outcome: DimensionOutcome | undefined): number | null {
   if (!outcome || 'error' in outcome || outcome.handle?.kind !== 'linear') return null;
   const { a, b } = outcome.handle;
-  return d.orientation === 'horizontal' ? Math.abs(b[0] - a[0]) : d.orientation === 'vertical' ? Math.abs(b[1] - a[1]) : Math.hypot(b[0] - a[0], b[1] - a[1]);
+  const w = way(d);
+  return w === 'horizontal' ? Math.abs(b[0] - a[0]) : w === 'vertical' ? Math.abs(b[1] - a[1]) : Math.hypot(b[0] - a[0], b[1] - a[1]);
 }
 
 /**
- * Stacks the horizontal and vertical linear dimensions in `ids` outward from their views, one row each: on each side of each view the shortest nearest, every
- * row `OFFSET_STEP` beyond the last from `FIRST_OFFSET`, and the text back in the middle. A dimension that cannot be drawn (its elements gone) is left where it is.
+ * Stacks the horizontal and vertical dimensions in `ids` outward from their views, one row each: on each side of each view the shortest nearest, every row
+ * `OFFSET_STEP` beyond the last from `FIRST_OFFSET`, and the text back in the middle. An ordinate dimension's row is stacked with the linear dimensions of its
+ * side (B2.5), so that a coordinate dimension and a line do not land on each other; an ordinate has no text to slide along its row. A dimension that cannot be
+ * drawn (its elements gone) is left where it is.
  */
 export function arrangeDimensions(dimensions: readonly Dimension[], outcomes: ReadonlyMap<Id, DimensionOutcome>, ids: ReadonlySet<Id>): { id: Id; patch: DimensionPatch }[] {
-  const groups = new Map<string, { d: Linear; span: number }[]>();
+  const groups = new Map<string, { d: Stacked; span: number }[]>();
   for (const d of dimensions) {
-    if (d.kind !== 'linear' || !ids.has(d.id) || d.orientation === 'aligned') continue;
+    if ((d.kind !== 'linear' && d.kind !== 'ordinate') || !ids.has(d.id)) continue;
+    const w = way(d);
+    if (w === 'aligned') continue;
     const s = span(d, outcomes.get(d.id));
     if (s === null) continue;
-    const key = `${d.view}|${d.orientation}|${Math.sign(d.offset)}`;
+    const key = `${d.view}|${w}|${Math.sign(d.offset)}`;
     const list = groups.get(key);
     if (list) list.push({ d, span: s });
     else groups.set(key, [{ d, span: s }]);
@@ -38,7 +54,10 @@ export function arrangeDimensions(dimensions: readonly Dimension[], outcomes: Re
     list.sort((x, y) => x.span - y.span || Math.abs(x.d.offset) - Math.abs(y.d.offset) || (x.d.id < y.d.id ? -1 : 1));
     list.forEach(({ d }, i) => {
       const offset = Math.sign(d.offset) * (FIRST_OFFSET + i * OFFSET_STEP);
-      if (offset !== d.offset || (d.slide ?? 0) !== 0) out.push({ id: d.id, patch: { offset, slide: null } });
+      // an ordinate's row has no text to slide along it, and the model would refuse a slide on one
+      if (d.kind === 'ordinate') {
+        if (offset !== d.offset) out.push({ id: d.id, patch: { offset } });
+      } else if (offset !== d.offset || (d.slide ?? 0) !== 0) out.push({ id: d.id, patch: { offset, slide: null } });
     });
   }
   return out;
