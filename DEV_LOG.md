@@ -1,5 +1,29 @@
 # 3D-Builder 開發日誌 (DEV_LOG.md)
 
+## 2026-10-17：main 與 worktree-sidebar-parity 雙分支整合（Schema 25 頁面模型與 B2.2-B2.7 視圖對齊）
+
+### 1. 範圍
+將 `worktree-sidebar-parity` 分支合併進 `main`：
+- 對齊 Schema 25（`pages` 頁面架構，ADR 0154）。
+- 整合 B2.2（隱藏個別的邊）、B2.3（切邊顯示/隱藏）、B2.7（斷裂視圖、裁剪視圖、輔助視圖）與側邊欄樹狀篩選（`treeFilter`）。
+- 解決 5 個衝突檔案：`packages/i18n/src/zh-TW/drawing.ts`、`packages/i18n/src/en/drawing.ts`、`packages/model/src/drawing.ts`、`apps/web/src/state/drawing.ts`、`apps/web/src/components/DrawingPanel.tsx`。
+
+### 2. 做法與衝突排除
+- **i18n 語系檔**：保留 `hideEdge` 翻譯鍵，並納入 `toolCrop`、`toolAuxiliary`、`badBreak` 等翻譯鍵。
+- **模型層 (`drawing.ts`)**：`ViewCommon` 與 `ViewPatch` 完美並存 `hiddenEdges`、`showTangentEdges`、`break`；`mutateDrawing` 解構中納入上述全部設定；`DRAWING_SCHEMA_VERSION` 維持 25。
+- **狀態層 (`state/drawing.ts`)**：`DrawingTool` 包含 `hideEdge`、`crop`、`auxiliary`；`requestOf` 判定 `detail` 與 `crop` 均免向 Worker 請求投影；`hideEdge`/`unhideEdge` 全面改用 `page(this.history.doc).views`。
+- **介面層 (`DrawingPanel.tsx`、`DrawingViewport.tsx`)**：視圖屬性面板整合 `viewShowTangentEdges` 切換、`toolHideEdge` 隱藏邊按鈕與清單、以及斷裂視圖（`breakView`）控制項；Viewport 點選隱藏改用 `page(drw.doc).views`。
+- **測試層 (`drawing-hide-edge.test.ts`)**：更新 `DrawingDoc` 之頁面存取為 `page(doc).views`，並修復 `ViewEdgeSet` 模擬資料型別。
+
+### 3. 確效與驗收
+- `npm run typecheck`：**0 錯誤**。
+- `npm run lint:rules; npm run lint:deps; npm run lint:i18n`：**全數通過**。
+- `npx vitest run tests/phase5`：**48 檔全過、519 項通過、1 項略過、0 失敗**。
+- `npx vitest run tests/phase8`：**23 檔全過、662 項通過、0 失敗**。
+- 合併 Commit：`0e8ba1c`。
+
+---
+
 ## 2026-10-17：B2.2 隱藏個別的邊（hide individual edges）收尾與全鏈路確效
 
 ### 1. 範圍
