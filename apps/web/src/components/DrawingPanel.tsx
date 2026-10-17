@@ -592,6 +592,40 @@ export function DrawingPanel() {
                 <input type="checkbox" data-field="viewLock" checked={!!view.locked} title={t('drawingUi.viewLockTip')} onChange={(e) => (e.target.checked ? d.lockView(view.id) : d.unlockView(view.id))} />
                 <span>{t('drawingUi.viewLock')}</span>
               </label>
+              <div className="pm-row">
+                <button
+                  type="button"
+                  className={`pm-button${drw.tool?.kind === 'hideEdge' ? ' active' : ''}`}
+                  data-action="toolHideEdge"
+                  title={t('drawingUi.hint.hideEdge')}
+                  onClick={() => d.setTool(drw.tool?.kind === 'hideEdge' ? null : { kind: 'hideEdge' })}
+                >
+                  {t('drawingUi.toolHideEdge')}
+                </button>
+              </div>
+              {view.hiddenEdges && view.hiddenEdges.length > 0 && (
+                <div data-group="hiddenEdges">
+                  <div className="pm-row">
+                    <span style={{ fontWeight: 600 }}>{t('drawingUi.hiddenEdges')} ({view.hiddenEdges.length})</span>
+                  </div>
+                  {view.hiddenEdges.map((e, idx) => (
+                    <div key={`${e.name}_${e.in ?? ''}_${idx}`} className="pm-row between">
+                      <span className="truncate" title={e.name + (e.in ? ` (${e.in})` : '')}>
+                        {e.name}{e.in ? ` (${e.in})` : ''}
+                      </span>
+                      <button
+                        type="button"
+                        className="pm-button"
+                        data-action="unhideEdge"
+                        title={t('drawingUi.unhideEdge')}
+                        onClick={() => d.unhideEdge(view.id, e.name, e.in)}
+                      >
+                        {t('drawingUi.unhideEdge')}
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
               <label className="pm-row">
                 <span>{t('drawingUi.display')}</span>
                 <select data-field="display" value={displayOf(view)} onChange={(e) => d.setView(view.id, { display: e.target.value as ViewDisplay })}>

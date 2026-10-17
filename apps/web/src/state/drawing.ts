@@ -129,6 +129,8 @@ export type DrawingTool =
   | { kind: 'sectionLocal'; outlineKind: 'rectangle' | 'circle' | 'polygon'; depth: number }
   | { kind: 'detail' }
   | { kind: 'surface' }
+  /** Hide an edge of a view by pointing at it (B2.2): the tool stays until Esc, for the next one. */
+  | { kind: 'hideEdge' }
   /**
    * A view from the palette (D-V, ADR 0131) on its way to the sheet: it follows the pointer and the next click puts it there. `dragged`: it was pressed on in the
    * palette and is being dragged, so letting go over the sheet puts it there too.
@@ -594,7 +596,7 @@ export class DrawingStore {
    * What the worker is asked for a view: the part, where it looks from and for a section the plane that cuts it. A detail is asked for nothing (it is cut from its
    * parent's lines in the layout); a view whose part is not built or whose chain of parents is broken, nothing yet.
    */
-  private requestOf(view: DrawingView): { id: string; featureId?: string; key: string; parts: { part: string; mirrored: boolean; pose: typeof IDENTITY }[]; anchors: boolean; flat?: boolean; axes: ViewAxes; cut?: SectionCut; shade?: { px: number } } | null {
+  private requestOf(view: DrawingView): { id: string; featureId?: string; key: string; parts: { part: string; mirrored: boolean; pose: typeof IDENTITY; leaf?: string }[]; anchors: boolean; flat?: boolean; axes: ViewAxes; cut?: SectionCut; shade?: { px: number }; hidden?: DrawingRef[] } | null {
     if (view.kind === 'detail') return null;
     const doc = this.history.doc;
     const key = this.keyOf(view);
@@ -610,17 +612,20 @@ export class DrawingStore {
     // a shaded view (or one whose details are shaded) asks for its faces' image too, as finely as the largest of them is drawn (ADR 0146)
     const px = this.shadePx(view);
     const shade = px === null ? {} : { shade: { px } };
-    const id = `${key}|${JSON.stringify(axes)}|${cut ? JSON.stringify(cut) : ''}${px === null ? '' : `|shade:${px}`}`;
+    // the edges the view hides (B2.2) are part of what its lines are: the lines are asked for again when they change
+    const hidden = view.hiddenEdges?.length ? view.hiddenEdges : undefined;
+    const hideId = hidden ? `|hide:${JSON.stringify(hidden)}` : '';
+    const id = `${key}|${JSON.stringify(axes)}|${cut ? JSON.stringify(cut) : ''}${px === null ? '' : `|shade:${px}`}${hideId}`;
     const assembly = this.assemblyOf(view);
     if (assembly) {
       // the parts of the assembly where they are (a mirror is the file's part reflected); the balloons need to know where each is
       const unmirror = (k: string) => k.slice(0, -mirrorKey('').length);
-      const parts = assembly.leaves.map((l) => ({ part: l.mirrored ? unmirror(l.key) : l.key, mirrored: !!l.mirrored, pose: l.pose }));
-      return { id, key, parts, anchors: true, axes, ...(cut ? { cut } : {}), ...shade };
+      const parts = assembly.leaves.map((l) => ({ part: l.mirrored ? unmirror(l.key) : l.key, mirrored: !!l.mirrored, pose: l.pose, leaf: l.id }));
+      return { id, key, parts, anchors: true, axes, ...(cut ? { cut } : {}), ...shade, ...(hidden ? { hidden } : {}) };
     }
     // the flat pattern of a sheet metal part: not a projection, so nothing of the folded part can be dimensioned in it (nor shaded: it has no faces to light)
     if (view.kind === undefined || view.kind === 'model') if (view.direction === 'flat') return { id: `${key}|flat`, key, parts: [{ part: key, mirrored: false, pose: IDENTITY }], anchors: false, flat: true, axes };
-    return { id, featureId: `${key}|${JSON.stringify(axes)}`, key, parts: [{ part: key, mirrored: false, pose: IDENTITY }], anchors: false, axes, ...(cut ? { cut } : {}), ...shade };
+    return { id, featureId: `${key}|${JSON.stringify(axes)}`, key, parts: [{ part: key, mirrored: false, pose: IDENTITY }], anchors: false, axes, ...(cut ? { cut } : {}), ...shade, ...(hidden ? { hidden } : {}) };
   }
 
   /**
@@ -795,6 +800,32 @@ export class DrawingStore {
     return done;
   }
 
+  /**
+   * Hides an edge of a view (B2.2): its line is taken out of what the view shows, by the edge's persistent name (in a view of an assembly, `in` says
+   * which part's it is), so the part may change and the edge stays hidden as long as the change keeps it. Hiding an edge that is already hidden changes
+   * nothing.
+   */
+  hideEdge(viewId: Id, ref: DrawingRef): boolean {
+    const view = viewById(this.history.doc.views, viewId);
+    if (!view) return false;
+    const hidden = view.hiddenEdges ?? [];
+    if (hidden.some((h) => h.name === ref.name && (h.in ?? null) === (ref.in ?? null))) return false;
+    const done = this.execute({ type: 'setView', viewId, patch: { hiddenEdges: [...hidden, ref] } });
+    if (done) this.notifyInfo(t('drawingUi.edgeHidden'));
+    return done;
+  }
+
+  /** Shows a hidden edge of a view again (B2.2): it is taken out of the view's `hiddenEdges`, and its line comes back. */
+  unhideEdge(viewId: Id, name: string, inPart?: string): boolean {
+    const view = viewById(this.history.doc.views, viewId);
+    if (!view?.hiddenEdges) return false;
+    const next = view.hiddenEdges.filter((h) => !(h.name === name && (h.in ?? null) === (inPart ?? null)));
+    if (next.length === view.hiddenEdges.length) return false;
+    const done = this.execute({ type: 'setView', viewId, patch: { hiddenEdges: next.length > 0 ? next : null } });
+    if (done) this.notifyInfo(t('drawingUi.edgeShown'));
+    return done;
+  }
+
   /** A projected view of `parent` on `side`, slid `slide` mm along its line from where it would be laid out (C16.3). */
   placeProjected(parent: Id, side: ViewSide, slide: number, shift: [number, number] | null = null): Id | null {
     const doc = this.history.doc;
@@ -884,7 +915,7 @@ export class DrawingStore {
         const unique = [...new Map(wanted.map((w) => [w.id, w])).values()];
         if (unique.length > 0) {
           this.set({ computing: true });
-          const results = await this.host.api.drawingViews(unique.map((w) => ({ parts: w.parts, axes: w.axes, ...(w.anchors ? { anchors: true } : {}), ...(w.cut ? { cut: w.cut } : {}), ...(w.flat ? { flat: true } : {}), ...(w.shade ? { shade: w.shade } : {}) })));
+          const results = await this.host.api.drawingViews(unique.map((w) => ({ parts: w.parts, axes: w.axes, ...(w.anchors ? { anchors: true } : {}), ...(w.cut ? { cut: w.cut } : {}), ...(w.flat ? { flat: true } : {}), ...(w.shade ? { shade: w.shade } : {}), ...(w.hidden ? { hiddenEdges: w.hidden } : {}) })));
           if (this.closed) return;
           unique.forEach((w, i) => {
             const r = results[i]!;

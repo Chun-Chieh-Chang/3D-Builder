@@ -62,6 +62,7 @@ export function DrawingMenu({ at, onClose }: { at: DrawingMenuAt; onClose: () =>
       source ? item('openViewPart', t(assembly ? 'drawingUi.menu.openAssembly' : 'drawingUi.menu.openPart', { name: baseName(source) }), () => store.openPartOfDrawing(source)) : item('noSource', t('drawingUi.menu.noSource'), () => {}, true),
       sep('s1'),
       item('menuProjected', t('drawingUi.toolProjected'), () => d.setTool({ kind: 'project', parent: view.id }), 'direction' in view && view.direction === 'flat'),
+      item('menuHideEdge', t('drawingUi.toolHideEdge'), () => d.setTool({ kind: 'hideEdge' })),
       // in line with its parent, a projected or section view can be let go of it and put back (SolidWorks's 「解除對齊」 / 「預設對齊」, ADR 0146); one off a corner is in line with nothing
       ...(aligns
         ? [view.at ? item('menuDefaultAlignment', t('drawingUi.menu.defaultAlignment'), () => d.setView(view.id, { at: null, slide: null })) : item('menuBreakAlignment', t('drawingUi.menu.breakAlignment'), () => d.breakAlignment(view.id))]

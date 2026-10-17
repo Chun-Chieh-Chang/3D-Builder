@@ -65,7 +65,7 @@ M.run = async () => {
     d().clearSelection();
     document.querySelector('[data-drawing-panel] [data-tab="props"]').click();
     await H.waitFor(() => panel('[data-group="titleStyle"]'), 5000, 'the title style fields');
-    return { pass: drw().doc.schemaVersion === 20 && !('titleStyle' in drw().doc.sheet), schema: drw().doc.schemaVersion, fields: ['titleStyleLabel', 'titleStyleValue', 'titleStyleTitle', 'titleStyleFit'].every((f) => !!panel(`[data-field="${f}"]`)) && !!panel('[data-action="titleStyleReset"]') };
+    return { pass: drw().doc.schemaVersion === 21 && !('titleStyle' in drw().doc.sheet), schema: drw().doc.schemaVersion, fields: ['titleStyleLabel', 'titleStyleValue', 'titleStyleTitle', 'titleStyleFit'].every((f) => !!panel(`[data-field="${f}"]`)) && !!panel('[data-action="titleStyleReset"]') };
   });
 
   await step('1 with no style: names 2.2, texts 3.5, the title 6 — and the page writes them at 1.4 times that', async () => {

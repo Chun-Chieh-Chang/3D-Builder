@@ -445,6 +445,14 @@ export function DrawingViewport() {
       d.addSurfaceFinish(view.id, [round2(at[0]), round2(at[1])]);
       return;
     }
+    if (tool?.kind === 'hideEdge') {
+      // an edge pointed at is hidden (B2.2); the tool stays for the next one. A detail view's lines are its parent's: the edge it shows is the parent's
+      const hit = featureUnder(p);
+      if (!hit || hit.feature.type !== 'edge') return d.notifyInfo(t('drawingUi.hint.hideEdge'));
+      const under = drw.doc.views.find((v) => v.id === hit.view);
+      d.hideEdge(under?.kind === 'detail' ? under.parent : hit.view, hit.feature.ref);
+      return;
+    }
     if (tool) {
       if (pendingPlacement) {
         capture(e);
@@ -631,7 +639,7 @@ export function DrawingViewport() {
       setPan({ ...pan, x: e.clientX - panning.x, y: e.clientY - panning.y });
     } else if (tool || dimensionItems.length > 0) {
       // what is under the pointer: for the tool's preview, and for the cursor
-      const feature = tool?.kind === 'dimension' || tool?.kind === 'ordinate' ? featureUnder(p, tool.picks[0]?.view) : null;
+      const feature = tool?.kind === 'dimension' || tool?.kind === 'ordinate' ? featureUnder(p, tool.picks[0]?.view) : tool?.kind === 'hideEdge' ? featureUnder(p) : null;
       const dimension = tool ? null : (dimensionAt(dimensionItems, p, reach)?.id ?? null);
       setHover((h) => (tool || h?.dimension !== dimension || h?.feature ? { p, feature, dimension, ctrl: e.ctrlKey || e.metaKey } : h));
     }
@@ -1027,6 +1035,8 @@ export function DrawingViewport() {
       ? t(dimensionHints[Math.min(2, tool.picks.length)]!)
       : tool?.kind === 'surface'
       ? t('drawingUi.toolSurfaceFinish')
+      : tool?.kind === 'hideEdge'
+      ? t('drawingUi.hint.hideEdge')
       : tool
       ? t(tool.kind === 'section' ? (tool.path === 'stepped' ? 'drawingUi.hint.sectionStepped' : tool.path === 'aligned' ? 'drawingUi.hint.sectionAligned' : tool.slant ? 'drawingUi.hint.sectionSlant' : 'drawingUi.hint.section') : tool.kind === 'sectionLocal' ? 'drawingUi.hint.localSection' : 'drawingUi.hint.detail')
       : drw.doc.views.length === 0
@@ -1142,8 +1152,7 @@ export function DrawingViewport() {
             />
           )}
           {(tool?.kind === 'dimension' || tool?.kind === 'ordinate') &&
-            [...tool.picks.map((x) => x.feature), ...(hover?.feature && (tool.kind === 'ordinate' || tool.picks.length < 2) ? [hover.feature.feature] : [])].map((f, k) => {
-              const view = (tool.picks[0]?.view ?? hover?.feature?.view)!;
+            [...tool.picks.map((x) => x.feature), ...(hover?.feature && (tool.kind === 'ordinate' || tool.picks.length < 2) ? [hover.feature.feature] : [])].map((f, k) => {              const view = (tool.picks[0]?.view ?? hover?.feature?.view)!;
               const placed = basePlaced.get(view);
               if (!placed) return null;
               const colour = k < tool.picks.length ? 'var(--accent)' : 'var(--warn)';

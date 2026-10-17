@@ -191,6 +191,13 @@ interface ViewCommon {
    * arrangement's centring, the sheet's shift or the sheet's (or its parent's) scale.
    */
   locked?: boolean;
+  /**
+   * The edges of the view the user has hidden (B2.2): a straight edge or a circle of the part, by its persistent name (in a view of an assembly, with `in`
+   * naming the part it is in), is not drawn in this view. The part may change: an edge the change keeps keeps its name and stays hidden. Absent: nothing
+   * hidden. What a hidden edge's line is is what the view's own lines say: where several edges are one place on the sheet, it is the nearest of them,
+   * as pointing at it is.
+   */
+  hiddenEdges?: DrawingRef[];
 }
 
 /** A view of a model from one of the named directions (C16.2). */
@@ -706,6 +713,8 @@ export type ViewPatch = {
   depth?: number;
   /** `true` locks the view (giving it the place and scale it is drawn at now), `null` unlocks it. */
   locked?: boolean | null;
+  /** The edges the view hides (B2.2), replacing what is there; `null` shows them all again. */
+  hiddenEdges?: DrawingRef[] | null;
 };
 
 /** Whether a scale is two whole numbers of 1 to 1000. */
@@ -730,6 +739,8 @@ function checkView(v: DrawingView, views: readonly DrawingView[]): void {
   if (v.at && !(v.at.length === 2 && v.at.every(Number.isFinite))) throw new CommandError(t('drawing.badPosition'));
   if (v.slide !== undefined && !Number.isFinite(v.slide)) throw new CommandError(t('drawing.badPosition'));
   if (v.display !== undefined && !VIEW_DISPLAYS.includes(v.display)) throw new CommandError(t('drawing.badDisplay', { display: String(v.display) }));
+  // the hidden edges (B2.2) are edges of the part, each by name, and (in a view of an assembly) the part it is in
+  if (v.hiddenEdges !== undefined && (!Array.isArray(v.hiddenEdges) || v.hiddenEdges.some((e) => !e || e.kind !== 'edge' || typeof e.name !== 'string' || !e.name.trim() || (e.in !== undefined && (typeof e.in !== 'string' || !e.in.trim()))))) throw new CommandError(t('drawing.badHiddenEdge'));
   if ('hidden' in v) throw new CommandError(t('drawing.notForKind', { field: 'hidden', kind: v.kind ?? 'model' }));
   if (!isDerived(v)) {
     if (!isFilePath(v.source)) throw new CommandError(t('drawing.badSource', { path: v.source }));
@@ -958,7 +969,7 @@ export function mutateDrawing(draft: Draft<DrawingDoc>, cmd: DrawingCommand): vo
       const v = viewOf(draft, cmd.viewId);
       // a locked view (B2.1) keeps its place and its scale: moving or rescaling it is refused, however it is asked for
       if (v.locked && (cmd.patch.at !== undefined || cmd.patch.scale !== undefined || cmd.patch.slide !== undefined)) throw new CommandError(t('drawing.viewLocked'));
-      const { at, scale, slide, flip, aligned, centreMarks, display, locked, ...rest } = cmd.patch;
+      const { at, scale, slide, flip, aligned, centreMarks, display, locked, hiddenEdges, ...rest } = cmd.patch;
       const kind = v.kind ?? 'model';
       const belongs: Record<string, string[]> = { model: ['source', 'direction'], projected: ['side'], section: ['line', 'label'], detail: ['centre', 'radius', 'label'], sectionLocal: ['outline', 'depth', 'label'] };
       for (const k of Object.keys(rest)) if (k !== 'name' && !belongs[kind]!.includes(k)) throw new CommandError(t('drawing.notForKind', { field: k, kind }));
@@ -979,6 +990,9 @@ export function mutateDrawing(draft: Draft<DrawingDoc>, cmd: DrawingCommand): vo
       else if (display !== undefined) next.display = display;
       if (locked === null || locked === false) delete next.locked;
       else if (locked !== undefined) next.locked = true;
+      // the hidden edges (B2.2): `null` (or an empty list) shows them all again; the rest is written as it is
+      if (hiddenEdges === null || (hiddenEdges !== undefined && hiddenEdges.length === 0)) delete next.hiddenEdges;
+      else if (hiddenEdges !== undefined) next.hiddenEdges = hiddenEdges;
       if (flip === null || flip === false) delete next.flip;
       else if (flip === true) next.flip = true;
       checkView(next, draft.views.filter((x) => x.id !== v.id) as DrawingView[]);

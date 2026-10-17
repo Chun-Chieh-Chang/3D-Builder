@@ -1,6 +1,41 @@
 # 3D-Builder 開發日誌 (DEV_LOG.md)
 
-## 2026-10-16（B1）：局部剖視（local section）全鏈路——模型、核心、圖面、介面接線
+## 2026-10-17：B2.2 隱藏個別的邊（hide individual edges）收尾與全鏈路確效
+
+### 1. 範圍
+在工程圖視圖中隱藏指定的邊（零件邊或組合件中特定零組件的邊）：
+- 僅在所選視圖中隱藏，以邊的持久名稱（persistent name）記錄（組合件帶 `in` 指定零組件葉節點 ID）。
+- 零件修改只要該邊仍存在，則持續保持隱藏。
+- 支援取消隱藏（unhide），視圖屬性面板提供已隱藏邊清單與單獨恢復顯示按鈕。
+- 視圖外框包圍盒不因隱藏邊而縮減（保持幾何跨距不變）。
+
+### 2. 做法
+| 層 | 檔案 | 內容 |
+|---|---|---|
+| 模型 | `packages/model/src/drawing.ts` | `ViewCommon.hiddenEdges?: DrawingRef[]`；`checkView` 嚴格驗證格式（kind 限 edge、name 非空、in 非空）；`mutateDrawing` setView 支援 patch 寫入與 null 清除 |
+| 幾何 | `packages/drawing/src/viewEdges.ts` | `withoutHiddenEdges`：依據折線抽樣採樣點，排除落在隱藏邊上的多邊形折線，保留其他邊與外框 |
+| 流程/Worker | `apps/web/src/worker/protocol.ts`、`kernel.worker.ts`、`state/drawing.ts` | `DrawingViewRequest.hiddenEdges`；Worker 內呼叫 `withoutHiddenEdges`；`DrawingStore` 新增 `hideEdge` / `unhideEdge`；`DrawingTool` 納入 `{ kind: 'hideEdge' }` |
+| 介面 | `DrawingPanel.tsx`、`DrawingViewMenu.tsx`、`DrawingViewport.tsx` | 視圖屬性區塊加入「隱藏邊」按鈕與已隱藏邊清單（各項目可單獨取消隱藏）；右鍵選單加入「隱藏邊」捷徑；Viewport 支援點選邊線進行隱藏互動 |
+| 測試 | `tests/phase5/drawing-hide-edge.test.ts`（9 項） | 覆蓋模型驗證、紅隊輸入破壞、存檔讀回、`withoutHiddenEdges` 幾何過濾、組合件 `in` 隔離、`DrawingStore` 方法 |
+
+### 3. 自我紅隊四問（AGENTS.md §2.1）
+1. **輸入破壞**：`hiddenEdges` 傳入非陣列、非 edge kind、空字串 name、空字串 in，全部在 `checkView` 明確拋錯（`drawing.badHiddenEdge`），嚴禁靜默吞除。
+2. **拓樸與幾何防禦**：隱藏邊不會破壞視圖原始包圍盒（`lines.box` 嚴格保持原狀，避免觸發佈局跳動）；端對端端點抽樣（8 等分）比對，避免相鄰邊誤殺。
+3. **依賴鏈完整性**：Schema / Model -> Command (`setView`) -> Store (`hideEdge` / `unhideEdge`) -> Worker (`DrawingViewRequest`) -> HLR / `withoutHiddenEdges` -> DrawingPanel / DrawingViewport，全鏈路接通。
+4. **零 Mock 與真值**：測試使用真實 Kernel 建構之方塊零件（40 × 30 × 20）與真實 `projectView` / `viewEdges` 驗證，不使用假資料冒充。
+
+### 4. 過程紀錄（RCA／CAPA）
+- **根因 (RCA)**：主資料夾先前遺留 3 處 TS2367 錯誤，原因為 `apps/web/src/state/drawing.ts` 之 `DrawingTool` 聯集型別漏加上 `| { kind: 'hideEdge' }`，導致 Viewport 比對時型別無交集。
+- **矯正措施 (CAPA)**：補齊 `DrawingTool` 定義，完善 `DrawingPanel.tsx` 與 `DrawingViewMenu.tsx` 接線，建立獨立驗證測試 `drawing-hide-edge.test.ts`。
+
+### 5. 確效與品質驗收
+- `npm run typecheck`：**0 錯誤**。
+- `npm run lint:rules; npm run lint:deps; npm run lint:i18n`：**全數通過**。
+- `npx vitest run tests/phase5`：**43 檔全過、456 項通過、1 項略過、0 失敗**。
+
+---
+
+
 
 ### 1. 範圍（使用者 2026-10-16 裁定：八項細節第一批，一批一項，先只做局部剖視）
 矩形／圓／多邊形封閉輪廓內剖切到輸入深度，輪廓外照舊顯示。深度先為數值（參照欄位預留），深度 0／負／超出零件明確拋錯，Schema 20→21。

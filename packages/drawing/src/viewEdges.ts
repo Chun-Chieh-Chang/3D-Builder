@@ -1,4 +1,4 @@
-import type { Ref, ViewEdgeSet, ViewFeature } from '@3db/model';
+import type { DrawingRef, Ref, ViewEdge, ViewEdgeSet, ViewFeature } from '@3db/model';
 import type { ViewLines } from './layout';
 
 /**
@@ -129,4 +129,60 @@ export function visibleElements(lines: ViewLines | null | undefined, set: ViewEd
     e.ends = [shown(e.a, e.ends[0]), shown(e.b, e.ends[1])];
   }
   return out;
+}
+
+/** Whether a polyline's first and last points are the same place: a whole circle (drawn closed). */
+const closes = (pts: readonly number[], tol: number): boolean => pts.length >= 4 && Math.hypot(pts[0]! - pts[pts.length - 2]!, pts[1]! - pts[pts.length - 1]!) <= tol;
+
+/** The distance from (x, y) to the nearest segment of the polyline `pts` (flat x, y pairs), along its closing segment too when it is closed. */
+function distanceToPolyline(x: number, y: number, pts: readonly number[], tol: number): number {
+  const n = pts.length / 2;
+  const at = (i: number): P2 => [pts[2 * (i % n)]!, pts[2 * (i % n) + 1]!];
+  const last = closes(pts, tol) ? n : n - 1;
+  let best = Infinity;
+  for (let i = 0; i < last; i++) {
+    const a = at(i);
+    const b = at(i + 1);
+    const dx = b[0] - a[0];
+    const dy = b[1] - a[1];
+    const l2 = dx * dx + dy * dy;
+    const t = l2 === 0 ? 0 : Math.max(0, Math.min(1, ((x - a[0]) * dx + (y - a[1]) * dy) / l2));
+    best = Math.min(best, Math.hypot(x - a[0] - t * dx, y - a[1] - t * dy));
+  }
+  return best;
+}
+
+/**
+ * The lines of a view without the lines of the edges it hides (B2.2): a polyline that lies on a hidden edge is that edge's line — what the viewer sees of
+ * it — and hiding the edge means it is not drawn. `hidden` names the edges by their persistent name (in a view of an assembly, `in` says which part's).
+ * The view's box is kept as it is: what the view spans does not change because a line of it is taken away.
+ *
+ * A polyline lies on an edge when every point sampled along it is on the edge's own polyline (within `EDGE_TOLERANCE`, as the mesh's and the hidden-line
+ * removal's chords together allow). So the line of an edge split by the lines that cross it is taken away whole, while a neighbouring edge's line, which
+ * runs on from where the hidden one ends, is not.
+ */
+export function withoutHiddenEdges(lines: ViewLines, set: ViewEdgeSet | null | undefined, hidden: readonly DrawingRef[], tol = EDGE_TOLERANCE): ViewLines {
+  if (hidden.length === 0 || !set || set.edges.length === 0) return lines;
+  const wanted = set.edges.filter((e) => hidden.some((h) => h.name === e.ref.name && (h.in ?? null) === (e.ref.in ?? null)));
+  if (wanted.length === 0) return lines;
+  const liesOn = (poly: readonly number[]): boolean =>
+    wanted.some((e) => {
+      const n = poly.length / 2;
+      const at = (i: number): P2 => [poly[2 * (i % n)]!, poly[2 * (i % n) + 1]!];
+      const last = closes(poly, tol) ? n : n - 1;
+      for (let i = 0; i < last; i++) {
+        const a = at(i);
+        const b = at(i + 1);
+        for (let s = 0; s <= 8; s++) {
+          const t = s / 8;
+          if (distanceToPolyline(a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, e.points, tol) > tol) return false;
+        }
+      }
+      return true;
+    });
+  const kept = (ls: readonly number[][]) => ls.filter((l) => !liesOn(l));
+  const visible = kept(lines.visible);
+  const hiddenLines = kept(lines.hidden);
+  if (visible.length === lines.visible.length && hiddenLines.length === lines.hidden.length) return lines;
+  return { ...lines, visible, hidden: hiddenLines };
 }
