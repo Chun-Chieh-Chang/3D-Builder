@@ -302,6 +302,30 @@ describe('knurl (ADR 0124)', () => {
     it('refuses a knurl that would be made of too many pieces', () => {
       refuses({ pattern: 'helical', angle: deg(2), count: 200, to: 60, depth: 0.003 }, /段/);
     });
+
+    it('never hands back a fillet body that fails the validity check: a knurl’s wavy rim is refused, not corrupted', () => {
+      // grooves reaching the end faces leave a wavy rim; a fillet there is one place OCCT can come back "done" with a body that fails BRepCheck
+      const r = 9, from = 0, to = 20, count = 40, depth = 0.5;
+      const body = cylinder(r, from, to);
+      const k = kernel.knurl({ axis: Z_AXIS, radius: r, count, from, to, depth, included: deg(90), pattern: 'straight' });
+      const shape = kernel.boolean('cut', body, k.shape).shape;
+      const rim: number[] = [];
+      kernel.topology(shape).edges.forEach((e, i) => { if (Math.abs(e.mid[2] - to) < 1e-3 || Math.abs(e.mid[2] - from) < 1e-3) rim.push(i); });
+      const sample = rim.slice(0, 20);
+      expect(sample.length).toBeGreaterThan(0);
+      let refused = 0;
+      for (const radius of [0.05, 0.5, 1.0]) {
+        for (const i of sample) {
+          let res: { shape: ShapeId } | null = null;
+          try { res = kernel.fillet(shape, [i], radius); } catch { refused++; continue; }
+          // a returned fillet must be a valid body: the invariant the refusal enforces (before it, some came back corrupt without throwing)
+          expect(kernel.isValid(res.shape)).toBe(true);
+          kernel.release(res.shape);
+        }
+      }
+      // and the case is not vacuous: some of these really cannot be filleted and must be refused
+      expect(refused).toBeGreaterThan(0);
+    });
   });
 
   describe('5. STEP, mesh and the shape of the result', () => {

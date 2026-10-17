@@ -1578,7 +1578,12 @@ export class Kernel {
             if (!e) throw new KernelError(t('kernel.edgeOutOfRange', { index: i }));
             mk.Add(radius, arena.own(oc.TopoDS.Edge(e)));
           }
-          out = this.build(mk, t('feature.fillet'), arena);
+          const built = this.build(mk, t('feature.fillet'), arena);
+          // A fillet OCCT reports as done may still be a body that fails BRepCheck — common on the wavy edges of knurls and threads, where three fillet
+          // shapes are tried and the last one comes back "done" but corrupt. Refuse it here: handing a body that fails BRepCheck to whatever runs next is
+          // what produces the downstream WASM crashes (AGENTS.md §3.5); a clear refusal is the honest outcome.
+          if (!this.valid(built)) throw new KernelError(t('feature.filletInvalid'));
+          out = built;
           usedMk = mk;
           break;
         } catch (err) {

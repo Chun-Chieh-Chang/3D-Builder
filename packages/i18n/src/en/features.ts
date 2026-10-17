@@ -262,6 +262,7 @@ export const features: Translation = {
   'feature.sweepNoSolid': 'OCCT did not make a solid',
   'feature.sweepOverlap': 'The path turns too sharply and the sweep folds over itself (volume {volume} mm³, where the profile area and the path length call for at least {floor} mm³): ease the turn of the path or make the profile smaller',
   'feature.sweepInvalid': 'The result of the sweep is not a valid solid (common when the path turns with a radius smaller than the profile, so the profile overlaps itself)',
+  'feature.filletInvalid': 'The result of the fillet is not a valid solid (common on the wavy edges of free-form surfaces such as knurls and threads): use a smaller radius, or a method other than a fillet',
   'feature.threadSketchGone': 'The profile sketch of the thread does not exist, is suppressed or failed',
   'feature.threadAxis': 'axis of thread',
   'feature.threadNoProfile': 'The thread has no closed profile to use',
