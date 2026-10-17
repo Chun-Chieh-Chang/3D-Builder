@@ -10,7 +10,7 @@
     2. 深度：**先做輸入數值**，點孔中心或邊的深度**之後再加**（不要推翻第一步的資料結構：深度欄位要能之後接受一個參照）。
     - 需要新的視圖種類（或剖面的一種）與工程圖 Schema 升版（目前 19）；做法參考 [ADR 0143](docs/adr/0143-drawing-stepped-aligned-section.md)。紅隊重點：範圍必須是封閉、不自相交的圖形；深度不合理（零、負、超出零件）明確拋錯，不默默修正；局部剖視不能自己當父視圖以外的來源。
   - **小功能（D-I8）**：
-    3. 相切邊：**新視圖預設不畫**，視圖屬性裡可以打開（現有圖完全不變；新增視圖欄位，缺省＝不畫）。
+    3. 相切邊：**新視圖預設不畫**，視圖屬性裡可以打開（現有圖完全不變；新增視圖欄位，缺省＝不畫）。**→ 2026-10-19 使用者裁定修訂：改為預設繪製（`showTangentEdges: false` 才不畫），以滿足「現有圖完全不變」；見文末 〈2026-10-17〉 日誌。**
     4. 鎖定視圖：**鎖位置與比例**；尺寸與註記照常可編輯；拖動或改比例被擋時要說明「這個視圖已鎖定」。
     5. 隱藏個別的邊：**只在選的那個視圖**；以邊的持久名稱記錄，零件改了只要邊還在就仍然藏著；要有取消隱藏的清單。
   - **尺寸**：
@@ -379,6 +379,19 @@
   - **螺牙**：審查發現的問題已由 10-11 的 `d1dc276` 修掉，其後有標準螺紋規格庫（`c4de3ba`）與 `f832934`；這次沒有再動螺牙。
   - **待使用者決定**：客戶零件 `real-part1.json`、`real-part1-fixed.json`、`part1-demo.json` 仍在已推送的 `c7f46be` 歷史裡（私有倉庫）；要徹底清除需改寫歷史並強制推送，無法復原。
   - **下一步建議**：① 筆電 `git pull`；② 修上面 6 項 `verify:ui` 失敗（先修 `choose`，其餘先用 `--only <腳本>` 單獨重現、二分到是哪個提交造成）；③ 決定客戶零件歷史的處理。
+
+- **【2026-10-17：未做/待裁選擇題重整、8 項裁定執行、B1 壓花/螺牙圓角修正；側邊欄 E1-P1＋工程圖 B2.3 在 worktree（`kernel.ts` 已還原並重寫、驗證通過）（Claude）】**
+  - **已提交並推送**：`76c4081..2abdaf0`（3 個，含 B2.1 鎖定視圖）、`279b91a`（圓角結果過 `BRepCheck` 才收，不再回傳無效實體）、`6a56951`（文件）。目前 `main` = `origin/main` = `6a56951`，主資料夾工作樹乾淨（除了別的工作階段見下）。
+  - **新增文件（`6a56951`）**：`docs/decisions-2026-10-19.html`（8 題：A1／B1／B2／C1／D1／D2／E1／E2，全部採建議）、`docs/verify-user-list.html`（20 項「使用者必做」實機驗證清單，取自 `manual-verification.html` 的 `data-auto=user/part`）、`docs/sidebar-parity-plan.md`（E1 側邊欄比照 ADR 0133 的範圍與方案）。
+  - **裁定執行**：**A1** 已推送；**B1** 重現壓花/螺牙波浪邊下圓角——**沒有 WASM 崩潰**，而是 `Kernel.fillet` 只檢查 `mk.IsDone()`、缺 `BRepCheck`，**靜默回傳無效實體**；已加合格檢查、`feature.filletInvalid` i18n（中/英）、`tests/phase3/knurl.test.ts` 回歸（67 過，含反向對照）；**B2** 已於 Chrome 開 `3DB實機確認/輸出/基板加工圖.pdf` 供三項目視檢查；**D1** 查證 C22（`482a816`）、E4（`fa807bb`）早已修正、無需再改；**D2** ADR 0145 三項以清單為準、無需再改；**E2** 視角方塊不動。
+  - **E1 方向（使用者 2026-10-19 裁定）**：指令維持在側邊欄；組合件只換外框成兩分頁、6 個模式面板維持浮動；先零件（P1）通過驗證再做組合件。
+  - **worktree**：`D:\Self-developed_Apps\G3\3DB-sidebar-parity`（分支 `worktree-sidebar-parity` @ `6a56951`，**未提交、未推送**）。內含未提交的 **E1-P1**（`App.tsx` 分頁改可點＋`.sw-panel` 外框）與 **B2.3 相切邊顯示**（`kernel.ts` `projectView`、`kernel/types.ts`、`model/drawing.ts`、`drawing/scene.ts`、`drawing/layout.ts`、`DrawingPanel.tsx`、i18n `en`/`zh-TW` `drawing.ts`、新測試 `tests/phase5/drawing-tangent-edges.test.ts`）。
+  - **✅ B2.3 相切邊：已還原並重寫完成（2026-10-19）**。先前 worktree 的 `packages/kernel/src/kernel.ts` 曾被截斷成 2669 行（`projectView` 之後全失，含 `sectionView`）；已 `git checkout --` 還原為 HEAD 的 4540 行，再乾淨重寫（**未使用 `as any` 等型別抑制**）。做法：`Kernel.projectView` 把 HLR 的 `Rg1LineVCompound`／`Rg1LineHCompound`（相切邊，**含隱藏者**）自 `visible`／`hidden` 移出，放進新的 `ProjectedView.tangent`（僅非空時附上）；`ViewLines.tangent` 承接（detail 視圖會裁圓）；`scene.ts` 以細線繪製（塗彩視圖不畫）；`ViewCommon.showTangentEdges?`＋`ViewPatch`＋`mutateDrawing` 分支（修正前一版的 broken `else if` 鏈）；`DrawingPanel.tsx` 勾選框。
+  - **決定修訂（2026-10-19，使用者裁定）**：相切邊**預設改為繪製**（`showTangentEdges` 缺省＝畫，即變更前的行為；設 `false` 才不畫），以滿足「現有圖完全不變」。此**推翻**先前的「缺省＝不畫」（本檔第 13 行第 3 項）。唯一副作用：原本混在 `hidden` 的隱藏相切邊，由「虛線」改為「細實線」。
+  - **驗證（worktree）**：`npm run typecheck` = 0；`lint:rules`／`lint:deps`／`lint:i18n` 全過；新測試 `tests/phase5/drawing-tangent-edges.test.ts` **7/7**（實體真值：有圓角的板有相切邊、純方塊沒有、且不與 `visible` 重複）；`tests/phase5` 全套 **43 檔、454 過、1 略過、0 失敗**（塗彩記憶體量測 56.38 MiB／對照 366.31 MiB 與 §3.5 基準一致，未新增洩漏）；受影響的 phase3／4b／7／8 檔 **52 過**。
+  - **主資料夾未提交**：另一工作階段的 **B2.2 隱藏個別的邊**（9 個檔案），使主資料夾 `npm run typecheck` 在 `apps/web/src/components/DrawingViewport.tsx` 的 `hideEdge`（448／642／1038）紅燈；非本工作階段造成、**未動**。（worktree 不含 B2.2，故其上列驗證不受此影響。）
+  - **已知測試問題**：worktree 的 `npm run verify:ui` 曾在 25 分鐘逾時；`manual-drawing-title-style.js` 單獨跑即失敗（既存、與本次無關，待乾淨 worktree 重現確認）。原暫存腳本 `fix_drawing.ts` 已移出 worktree 至 `C:\Users\3kids\AppData\Local\Temp\opencode\fix_drawing.scratch.ts`（未刪除）。
+  - **下一步**：① B2.3 與 E1-P1 仍**未提交／未推送**（等使用者指示）；② 續做 B2.4–B2.8（部分可能已存在，先核對現況再寫）；③ E1-P2（組合件側邊欄）。
 ---
 
 ## ⚡ 今日任務總結 (2026-10-12)
