@@ -203,6 +203,8 @@ export const drawing = {
   'drawingUi.viewLockTip': '鎖定視圖的位置與比例：不能再拖曳或改比例，但尺寸與註記仍可編輯；再按一次解鎖',
   'drawingUi.viewLockedDone': '視圖已鎖定：位置與比例保持不變',
   'drawingUi.viewUnlockedDone': '視圖已解鎖：可以再拖曳或改比例',
+  'drawingUi.showTangentEdges': '相切邊',
+  'drawingUi.showTangentEdgesTip': '繪製視圖的相切邊：兩面平滑相接處的線（例如圓角與平面的接合）。視圖預設繪製，於此處取消',
   'drawingUi.selectParent': '先選取一個視圖作為母視圖',
   'drawing.dimNoView': '找不到尺寸所在的視圖：{id}',
   'drawing.dimBadRef': '尺寸要指到零件的面、邊或頂點（圓或圓柱的尺寸不能指到頂點）',

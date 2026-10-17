@@ -205,6 +205,8 @@ export const drawing: Translation = {
   'drawingUi.viewLockTip': "Lock the view's position and scale: it cannot be dragged or rescaled, but its dimensions and annotations stay editable; press again to unlock",
   'drawingUi.viewLockedDone': 'The view is locked: its position and scale stay as they are',
   'drawingUi.viewUnlockedDone': 'The view is unlocked: it can be dragged or rescaled again',
+  'drawingUi.showTangentEdges': 'Tangent edges',
+  'drawingUi.showTangentEdgesTip': 'Draw the tangent edges of the view: the smooth lines where two faces meet (a fillet meeting a face). A view draws them unless they are left out here',
   'drawingUi.selectParent': 'Select a view to be the parent first',
   'drawing.dimNoView': 'The view the dimension is on was not found: {id}',
   'drawing.dimBadRef': 'A dimension has to point at a face, edge or vertex of the part (a circle or cylinder, not a vertex)',

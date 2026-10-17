@@ -2620,9 +2620,12 @@ export class Kernel {
         }
         return out;
       };
-      const visible = [...polylines(lines.VCompound()), ...polylines(lines.Rg1LineVCompound()), ...polylines(lines.OutLineVCompound())];
+      const visible = [...polylines(lines.VCompound()), ...polylines(lines.OutLineVCompound())];
       // a hidden edge that lies wholly on a visible one (the back of the box under its front) is not drawn twice: the visible line is the one to see
-      const hidden = [...polylines(lines.HCompound()), ...polylines(lines.Rg1LineHCompound()), ...polylines(lines.OutLineHCompound())].filter((h) => !lyingOn(h, visible, Math.max(2 * tolerance, 1e-4)));
+      const hidden = [...polylines(lines.HCompound()), ...polylines(lines.OutLineHCompound())].filter((h) => !lyingOn(h, visible, Math.max(2 * tolerance, 1e-4)));
+      // the tangent edges (B2.3): the smooth lines where two faces meet (a fillet meeting a face), apart from the lines above so that a view can leave
+      // them out (showTangentEdges). The hidden ones are among them: a view that asks for its tangent edges has all of them, not only the seen ones.
+      const tangent = [...polylines(lines.Rg1LineVCompound()), ...polylines(lines.Rg1LineHCompound())];
       let min: [number, number] | null = null;
       let max: [number, number] | null = null;
       for (const line of visible) {
@@ -2631,7 +2634,7 @@ export class Kernel {
           max = [Math.max(max?.[0] ?? -Infinity, line[i]!), Math.max(max?.[1] ?? -Infinity, line[i + 1]!)];
         }
       }
-      const seen: ProjectedView = { visible, hidden, box: min && max ? { min, max } : null };
+      const seen: ProjectedView = { visible, hidden, box: min && max ? { min, max } : null, ...(tangent.length > 0 ? { tangent } : {}) };
       if (options.mesh) {
         // the faces, for shading (ADR 0146): the view's x and y as the lines have them (the projector's X is rx, its Y (−d) × rx), and z toward the viewer
         const zx: Vec3 = [-d[0], -d[1], -d[2]];

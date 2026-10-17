@@ -592,6 +592,10 @@ export function DrawingPanel() {
                 <input type="checkbox" data-field="viewLock" checked={!!view.locked} title={t('drawingUi.viewLockTip')} onChange={(e) => (e.target.checked ? d.lockView(view.id) : d.unlockView(view.id))} />
                 <span>{t('drawingUi.viewLock')}</span>
               </label>
+              <label className="pm-row checkbox">
+                <input type="checkbox" data-field="viewShowTangentEdges" checked={view.showTangentEdges !== false} title={t('drawingUi.showTangentEdgesTip')} onChange={(e) => d.setView(view.id, { showTangentEdges: e.target.checked ? null : false })} />
+                <span>{t('drawingUi.showTangentEdges')}</span>
+              </label>
               <label className="pm-row">
                 <span>{t('drawingUi.display')}</span>
                 <select data-field="display" value={displayOf(view)} onChange={(e) => d.setView(view.id, { display: e.target.value as ViewDisplay })}>

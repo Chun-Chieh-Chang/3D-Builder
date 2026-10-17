@@ -191,6 +191,11 @@ interface ViewCommon {
    * arrangement's centring, the sheet's shift or the sheet's (or its parent's) scale.
    */
   locked?: boolean;
+  /**
+   * Whether the view draws its tangent edges (B2.3): the smooth edges where two faces meet tangentially (a fillet meeting a face, the seam of a cylinder).
+   * Absent: they are drawn, as they were before the field — a drawing made earlier looks the same. `false` leaves them out.
+   */
+  showTangentEdges?: boolean;
 }
 
 /** A view of a model from one of the named directions (C16.2). */
@@ -706,6 +711,8 @@ export type ViewPatch = {
   depth?: number;
   /** `true` locks the view (giving it the place and scale it is drawn at now), `null` unlocks it. */
   locked?: boolean | null;
+  /** `false` leaves the view's tangent edges out (B2.3); `true` or `null` draws them (the default), so `null` takes the setting back. */
+  showTangentEdges?: boolean | null;
 };
 
 /** Whether a scale is two whole numbers of 1 to 1000. */
@@ -958,7 +965,7 @@ export function mutateDrawing(draft: Draft<DrawingDoc>, cmd: DrawingCommand): vo
       const v = viewOf(draft, cmd.viewId);
       // a locked view (B2.1) keeps its place and its scale: moving or rescaling it is refused, however it is asked for
       if (v.locked && (cmd.patch.at !== undefined || cmd.patch.scale !== undefined || cmd.patch.slide !== undefined)) throw new CommandError(t('drawing.viewLocked'));
-      const { at, scale, slide, flip, aligned, centreMarks, display, locked, ...rest } = cmd.patch;
+      const { at, scale, slide, flip, aligned, centreMarks, display, locked, showTangentEdges, ...rest } = cmd.patch;
       const kind = v.kind ?? 'model';
       const belongs: Record<string, string[]> = { model: ['source', 'direction'], projected: ['side'], section: ['line', 'label'], detail: ['centre', 'radius', 'label'], sectionLocal: ['outline', 'depth', 'label'] };
       for (const k of Object.keys(rest)) if (k !== 'name' && !belongs[kind]!.includes(k)) throw new CommandError(t('drawing.notForKind', { field: k, kind }));
@@ -979,6 +986,8 @@ export function mutateDrawing(draft: Draft<DrawingDoc>, cmd: DrawingCommand): vo
       else if (display !== undefined) next.display = display;
       if (locked === null || locked === false) delete next.locked;
       else if (locked !== undefined) next.locked = true;
+      if (showTangentEdges === null || showTangentEdges === true) delete next.showTangentEdges;
+      else if (showTangentEdges === false) next.showTangentEdges = false;
       if (flip === null || flip === false) delete next.flip;
       else if (flip === true) next.flip = true;
       checkView(next, draft.views.filter((x) => x.id !== v.id) as DrawingView[]);

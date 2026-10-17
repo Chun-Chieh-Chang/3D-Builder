@@ -17,6 +17,8 @@ export interface ViewLines {
   shade?: ShadeImage;
   /** A detail's: the circle of its parent's image it shows (view coordinates, full size). */
   shadeClip?: { centre: [number, number]; radius: number };
+  /** Tangent edges (B2.3): the smooth edges where two faces meet tangentially, drawn only when the view's showTangentEdges is true. */
+  tangent?: number[][];
 }
 
 /**
@@ -140,6 +142,7 @@ export function resolveLines(doc: Pick<DrawingDoc, 'views'>, lines: ReadonlyMap<
       hidden: clip(parent.hidden),
       box: { min: [v.centre[0] - v.radius, v.centre[1] - v.radius], max: [v.centre[0] + v.radius, v.centre[1] + v.radius] },
       ...(parent.shade ? { shade: parent.shade, shadeClip: { centre: [v.centre[0], v.centre[1]], radius: v.radius } } : {}),
+      ...(parent.tangent ? { tangent: clip(parent.tangent) } : {}),
     });
   }
   return out;

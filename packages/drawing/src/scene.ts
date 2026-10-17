@@ -164,6 +164,8 @@ export function viewItems(view: DrawingView, lines: ViewLines | null | undefined
   if (showsHidden(view)) for (const l of lines.hidden) items.push({ kind: 'polyline', points: move(l), style: display === 'wireframe' ? 'visible' : 'hidden' });
   if (display !== 'shaded') for (const l of lines.visible) items.push({ kind: 'polyline', points: move(l), style: 'visible' });
   for (const l of lines.center ?? []) items.push({ kind: 'polyline', points: move(l), style: 'center' });
+  // the tangent edges (B2.3): the smooth lines where two faces meet, drawn thin. They are drawn as before unless the view leaves them out
+  if (display !== 'shaded' && view.showTangentEdges !== false) for (const l of lines.tangent ?? []) items.push({ kind: 'polyline', points: move(l), style: 'thin' });
   if ((view.kind === 'section' || view.kind === 'sectionLocal') && lines.cut) for (const l of hatch(lines.cut, HATCH_SPACING / placed.scale)) items.push({ kind: 'polyline', points: move(l), style: 'thin' });
   return items;
 }
