@@ -1,0 +1,396 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>3D-Builder 未做/待裁選擇題(2026-10-19,重整理)</title>
+<style>
+:root{--hue:172;--bg:oklch(98.6% .006 var(--hue));--surface:oklch(100% 0 0);--text:oklch(26% .02 var(--hue));--text2:oklch(45% .025 var(--hue));--accent:oklch(48% .11 var(--hue));--on-accent:oklch(99.5% .004 var(--hue));--ok:oklch(50% .13 145);--warn:oklch(50% .16 27);--border:oklch(92.6% .013 var(--hue));--shadow:0 1px 2px rgba(17,24,39,.04),0 4px 16px rgba(17,24,39,.06);}
+*{box-sizing:border-box}html{font-size:16px}
+body{margin:0;background:var(--bg);color:var(--text);font-family:"Inter","Segoe UI","Microsoft JhengHei UI","Noto Sans TC",sans-serif;line-height:1.5}
+header{position:sticky;top:0;z-index:5;background:color-mix(in srgb,var(--surface) 88%,transparent);backdrop-filter:blur(12px);border-bottom:1px solid var(--border)}
+.bar{max-width:980px;margin:0 auto;padding:12px 16px;display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+h1{font-size:18px;font-weight:700;margin:0;flex:1 1 240px}
+.progress{font-size:14px;color:var(--text2)}.progress b{color:var(--accent)}
+button{font:inherit;font-size:14px;min-height:44px;padding:8px 16px;border-radius:8px;cursor:pointer;border:1px solid var(--border);background:var(--surface);color:var(--text)}
+button:hover{border-color:var(--accent)}button.primary{background:var(--accent);border-color:var(--accent);color:var(--on-accent);font-weight:600}
+main{max-width:980px;margin:0 auto;padding:24px 16px 96px}
+.lead{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:16px 24px;margin-bottom:24px}.lead p{margin:8px 0;font-size:15px}
+h2{font-size:16px;margin:32px 0 12px;color:var(--text2);border-bottom:1px solid var(--border);padding-bottom:6px}
+.chip{font-size:12px;color:var(--accent);font-weight:600;margin-left:8px}
+article.q{border:1px solid var(--border);border-radius:10px;padding:16px 20px;margin:0 0 16px;background:var(--surface);box-shadow:var(--shadow)}
+article.q.done{border-color:var(--ok);background:color-mix(in oklab,var(--ok) 8%,transparent)}
+article.q h3{margin:0 0 8px;font-size:15px;display:flex;gap:8px;align-items:baseline}
+article.q h3 .id{font-size:13px;font-weight:700;color:var(--accent);border:1px solid var(--accent);padding:1px 6px;border-radius:4px;flex:none}
+article.q h3 .state{margin-left:auto;font-size:12px;color:var(--ok);font-weight:600;display:none}
+article.q.done h3 .state{display:inline}
+.plain-desc{font-size:14.5px;margin:0 0 8px}
+.why{font-size:14px;color:var(--text2);margin:0 0 10px;padding:8px 12px;background:color-mix(in oklab,var(--accent) 4%,transparent);border-radius:6px;border-left:3px solid var(--accent)}
+.more{margin-top:10px}.more summary{font-size:13px;color:var(--text2);cursor:pointer;font-weight:600}.more li{font-size:13px;color:var(--text2);margin:3px 0}
+.opts{display:grid;gap:8px;margin-top:10px}
+.opt{display:flex;gap:12px;align-items:flex-start;padding:12px 16px;min-height:44px;border:1px solid var(--border);border-radius:8px;cursor:pointer}
+.opt:hover{border-color:var(--accent);background:color-mix(in oklab,var(--accent) 8%,transparent)}
+.opt input{margin:4px 0 0;width:20px;height:20px;accent-color:var(--accent);flex:none}
+.opt.sel{border-color:var(--accent);background:color-mix(in oklab,var(--accent) 8%,transparent)}
+.opt .t{font-size:14.5px;font-weight:600}.opt .d{display:block;font-size:13.5px;color:var(--text2);margin-top:4px}
+.rec{display:inline-block;font-size:11px;font-weight:700;color:var(--ok);background:color-mix(in oklab,var(--ok) 10%,transparent);border-radius:4px;padding:1px 6px;margin-right:6px}
+.warn-badge{display:inline-block;font-size:11px;font-weight:700;color:var(--warn);background:color-mix(in oklab,var(--warn) 10%,transparent);border-radius:4px;padding:1px 6px;margin-right:6px}
+.note{display:block;margin-top:14px;font-size:13.5px;color:var(--text2)}
+.note textarea{display:block;width:100%;margin-top:4px;font:inherit;font-size:14px;padding:8px 12px;border-radius:8px;border:1px solid var(--border);background:var(--bg);color:var(--text);resize:vertical;min-height:40px}
+.info{background:var(--surface);border:1px dashed var(--border);border-radius:12px;padding:16px 24px;font-size:14px;color:var(--text2);box-shadow:var(--shadow)}.info li{margin:6px 0}
+.info ul{margin:8px 0;padding-left:20px}
+code{font-family:Consolas,monospace;font-size:max(13px,.92em);background:color-mix(in oklab,var(--accent) 8%,transparent);padding:0 4px;border-radius:4px}
+#toast{position:fixed;left:50%;bottom:24px;transform:translate(-50%,16px);opacity:0;background:var(--text);color:var(--bg);padding:12px 24px;border-radius:8px;font-size:14px;pointer-events:none;z-index:9;transition:opacity .2s}#toast.on{opacity:1}
+</style>
+</head>
+<body>
+<header>
+  <div class="bar">
+    <h1>3D-Builder 未做/待裁選擇題(2026-10-19,重整理)</h1>
+    <span class="progress" id="progress"></span>
+    <button id="btn-rec" type="button">全部採用建議</button>
+    <button id="btn-clear" type="button">清除</button>
+    <button id="btn-copy" class="primary" type="button">複製結果</button>
+  </div>
+</header>
+<main>
+<section class="lead">
+  <p><b>這一頁是什麼:</b>依 <b>2026-10-16 收工現況</b>重新整理的「未做/待裁選擇題」。<b>只收需要你裁定</b>的決策題;已裁定的純實作待辦(工程圖 B2.3–B2.8 等)放在最下面的<b>一行摘要</b>與對照區,不佔題目。</p>
+  <p><b>已從題目移除(已完成或實作中):</b><code>B1</code> 局部剖視、<code>B2.1</code> 鎖定視圖、<code>B2.2</code> 隱藏個別的邊(未提交、實作中)、parity 影片降維線(整條移除)、fillet 迴轉件凹/凸圓角真值、<code>c13</code> 邊角矩形缺陷、標題欄文字樣式(<code>ADR 0150</code>)。</p>
+  <p><b>用法:</b>點一個選項即自動存到瀏覽器(localStorage);全部選完按右上角<b>「複製結果」</b>,貼回對話,我再依你的選擇實作或撰寫 ADR。本頁不改任何程式。</p>
+</section>
+
+<h2>A. Git / 發布<span class="chip">1 題</span></h2>
+
+<article class="q" id="q-a1">
+  <h3><span class="id">A1</span> <span>本地 main 領先 origin 三個提交,要推嗎?</span><span class="state">✓ 已選</span></h3>
+  <p class="plain-desc"><b>白話說明:</b>本地 <code>main</code> 比 <code>origin/main</code> 多三個提交:<code>2abdaf0</code>(B2.1 鎖定視圖)、<code>1bc21c4</code>、<code>10531e8</code>(B1 收尾兩筆)。另外工作樹裡還有<b>未提交</b>的在製品(B2.2 隱藏個別的邊,見下方對照區)。</p>
+  <p class="why"><b>為什麼要你點:</b>推送是對外動作,我照慣例先徵你同意。未推送的提交滯留越久越容易分岔。</p>
+  <details class="more"><summary>技術細節 ▸</summary><ul>
+    <li>推送憑證已可用(本機 <code>credential.helper=manager</code> + Git Credential Manager)。</li>
+    <li>B2.2 未提交的變更目前<b>跨另一個工作階段</b>的檔案(<code>DrawingViewport.tsx</code>、<code>state/drawing.ts</code>、<code>worker/*</code>、<code>viewEdges.ts</code>、i18n、<code>model/drawing.ts</code>)。依 AGENTS.md §4,合併前請先確認那個工作階段收工。</li>
+  </ul></details>
+  <div class="opts">
+    <label class="opt" data-idx="0"><input type="radio" name="r-a1" value="0">
+      <div><span class="t"><span class="rec">建議</span>先推這三個提交(<code>git push origin main</code>);B2.2 由它自己的工作階段提交後再推</span><span class="d">歷史最乾淨、分岔風險最低。</span></div>
+    </label>
+    <label class="opt" data-idx="1"><input type="radio" name="r-a1" value="1">
+      <div><span class="t">等 B2.2 隱藏個別的邊完成、一起提交後再推</span><span class="d">少推一次;四筆一起推。</span></div>
+    </label>
+    <label class="opt" data-idx="2"><input type="radio" name="r-a1" value="2">
+      <div><span class="t">暫時不推</span><span class="d">維持只在本機。</span></div>
+    </label>
+  </div>
+  <label class="note">補充備註(選填):<textarea data-qid="A1" placeholder="若有指定細節(例如只推哪幾筆)可寫在此處..."></textarea></label>
+</article>
+
+<h2>B. 缺陷 / 維護<span class="chip">2 題</span></h2>
+
+<article class="q" id="q-b1">
+  <h3><span class="id">B1</span> <span>壓花波浪邊下圓角拋 WASM 內部錯誤,要不要處理?</span><span class="state">✓ 已選</span></h3>
+  <p class="plain-desc"><b>白話說明:</b>檔案與記憶裡記著:對壓花(knurl)的波浪邊下圓角會拋 WASM 內部錯誤,列為另案。<b style="color:var(--warn)">近期沒有重現它</b>——所以現在<b>不能保證那個錯誤還在,也不能保證不在</b>。</p>
+  <p class="why"><b>為什麼要你點:</b>AGENTS.md §3.5 的原則是以量測為證。先花幾分鐘做最小案例+實際錯誤訊息+Heap,才能判斷是「立案修復」「標為已知限制」還是「擱置」。</p>
+  <details class="more"><summary>技術細節 ▸</summary><ul>
+    <li>背景(AGENTS.md §3.5):直線紋 knurl 走 <code>BRepPrimAPI_MakePrism</code>、不與掃出體布林,量測 0 洩漏;螺旋紋每次重建約 11.6 MiB,屬 OCCT 布林遇 B-spline 的既有限制。</li>
+    <li>若重現成功且是可修的判定問題 → ADR + 量化驗收;若是 WASM 崩潰(<code>table index is out of bounds</code> 那類)→ 多半只能加前置攔截與清楚錯誤訊息。</li>
+  </ul></details>
+  <div class="opts">
+    <label class="opt" data-idx="0"><input type="radio" name="r-b1" value="0">
+      <div><span class="t"><span class="rec">建議</span>先重現與量化(最小案例 + 實際錯誤訊息 + Heap),再回報給你裁</span><span class="d">避免第二次誤報;成本約一輪對話。</span></div>
+    </label>
+    <label class="opt" data-idx="1"><input type="radio" name="r-b1" value="1">
+      <div><span class="t"><span class="warn-badge">謹慎</span>直接立案:寫 ADR 並嘗試修復</span><span class="d">快,但可能為一個已經不存在的錯誤做設計。</span></div>
+    </label>
+    <label class="opt" data-idx="2"><input type="radio" name="r-b1" value="2">
+      <div><span class="t">擱置(實務上避開:波浪邊改用圓角以外的做法)</span><span class="d">零成本;代價是把風險留給使用者自己遇到。</span></div>
+    </label>
+  </div>
+  <label class="note">補充備註(選填):<textarea data-qid="B1" placeholder="..."></textarea></label>
+</article>
+
+<article class="q" id="q-b2">
+  <h3><span class="id">B2</span> <span>F6 的 PDF 那半件:用 Chrome 開一次就算驗收?</span><span class="state">✓ 已選</span></h3>
+  <p class="plain-desc"><b>白話說明:</b>ADR 0065 明寫輸出檔「尚未在真實 CAD 與 PDF 檢視器開啟」。PDF 不用 CAD 環境——用 Chrome 開 <code>輸出\基板加工圖.pdf</code> 就算驗收,約 2 分鐘;同一題的 DXF 那半件才需要真 CAD(點/移/量 DIMENSION 圖元),先不動。</p>
+  <p class="why"><b>為什麼要你點:</b>影響面 0 改動——只是把清單那一項從「未做」改成「已驗(附你看到的結論)」。圖面交付最常碰 PDF,性價比最高。</p>
+  <div class="opts">
+    <label class="opt" data-idx="0"><input type="radio" name="r-b2" value="0">
+      <div><span class="t"><span class="rec">建議</span>這週就點(我先把 PDF 開好、指出要看的三點)</span><span class="d">2 分鐘換掉一個交付風險;DXF 那半件繼續擱著。</span></div>
+    </label>
+    <label class="opt" data-idx="1"><input type="radio" name="r-b2" value="1">
+      <div><span class="t">排到下次上機,跟 K 章一起</span><span class="d">省一次開檔;PDF 未驗的狀態留著。</span></div>
+    </label>
+    <label class="opt" data-idx="2"><input type="radio" name="r-b2" value="2">
+      <div><span class="t">略過,寫「只在 eDrawings 驗過」</span><span class="d">誠實標記,帳掛著、不再問。</span></div>
+    </label>
+  </div>
+  <label class="note">補充備註(選填):<textarea data-qid="B2" placeholder="..."></textarea></label>
+</article>
+
+<h2>C. 實機驗證 vs 新功能(順位)<span class="chip">1 題</span></h2>
+
+<article class="q" id="q-c1">
+  <h3><span class="id">C1</span> <span>Phase 4b/5/6/7 的閘門都是「有條件通過(B 段待你)」,新功能要怎麼和 B 段排?</span><span class="state">✓ 已選</span></h3>
+  <p class="plain-desc"><b>白話說明:</b>Phase 4b(曲面)、5(工程圖)、6(塑膠件)、7(鈑金)目前狀態同一句:<b>開發完成、閘門有條件通過(B 段待你)</b>。B 段要你在 SolidWorks/eDrawings/實體滑鼠前對照,我無法代勞。新功能一路加,B 段就一路累積。</p>
+  <p class="why"><b>為什麼要你點:</b>不是技術取捨,是你的時間取捨:先清 B 段 → 閘門全通過、不再欠帳;繼續做新功能 → 產出多,但閘門永遠停在「有條件通過」。</p>
+  <details class="more"><summary>技術細節 ▸</summary><ul>
+    <li>B 段是階段閘門本身(你 2026-09-30 定的規則),不是抄資料——我能做的是把每一項寫成「點哪裡、應該看到什麼」的一頁清單。</li>
+    <li>選交錯的話,我每完成一批就補一段清單,不累積到一次幾十項。</li>
+  </ul></details>
+  <div class="opts">
+    <label class="opt" data-idx="0"><input type="radio" name="r-c1" value="0">
+      <div><span class="t"><span class="rec">建議</span>照順序把已裁定的做完;B 段我另外整理成一頁點擊清單供你一次走完</span><span class="d">新功能進度不中斷,B 段也不再無主。</span></div>
+    </label>
+    <label class="opt" data-idx="1"><input type="radio" name="r-c1" value="1">
+      <div><span class="t">先停新功能,把 B 段與另案清乾淨</span><span class="d">閘門全通過、欠帳歸零;代價是工程圖那批再等一輪。</span></div>
+    </label>
+    <label class="opt" data-idx="2"><input type="radio" name="r-c1" value="2">
+      <div><span class="t">交錯:每做完一批工程圖就補一段 B 段清單</span><span class="d">每輪都能收掉幾項,你不必一次花很長時間。</span></div>
+    </label>
+  </div>
+  <label class="note">補充備註(選填):<textarea data-qid="C1" placeholder="..."></textarea></label>
+</article>
+
+<h2>D. 文件對齊<span class="chip">2 題</span></h2>
+
+<article class="q" id="q-d1">
+  <h3><span class="id">D1</span> <span>手冊 C22、E4 兩處「寫錯」要不要改成與實際行為一致?</span><span class="state">✓ 已選</span></h3>
+  <p class="plain-desc"><b>白話說明:</b>10-14 頁記錄手冊有 11 處文字與程式不一致,其中 <b>C22 與 E4 不是「寫舊」而是「寫錯」</b>——照著點會被手冊誤導。這一題只問那兩處;其餘九處留在擱置清單。</p>
+  <p class="why"><b>為什麼要你點:</b>影響面:只動 <code>docs/manual-verification.html</code> 說明文字,0 支程式、0 Schema、0 斷言;不跑測試,驗證方式就是你看那兩段。改完可 <code>git checkout -- docs/manual-verification.html</code> 逐位元還原。</p>
+  <div class="opts">
+    <label class="opt" data-idx="0"><input type="radio" name="r-d1" value="0">
+      <div><span class="t"><span class="rec">建議</span>改這兩處</span><span class="d">把「會被手冊騙」的兩個點收掉;其他九處照現狀。</span></div>
+    </label>
+    <label class="opt" data-idx="1"><input type="radio" name="r-d1" value="1">
+      <div><span class="t">不動,整份擱置</span><span class="d">現狀最安全;實機時仍可能照錯文字點。</span></div>
+    </label>
+  </div>
+  <label class="note">補充備註(選填):<textarea data-qid="D1" placeholder="..."></textarea></label>
+</article>
+
+<article class="q" id="q-d2">
+  <h3><span class="id">D2</span> <span>ADR 0145 三項「要不要你實機」的矛盾,以哪邊為準?</span><span class="state">✓ 已選</span></h3>
+  <p class="plain-desc"><b>白話說明:</b>C21 步驟 1、C22 步驟 4、C23 空選取濾行這三項,<code>manual-verification.html</code> 標的是 <code>data-auto="full"</code>(這一項你不用做),但 10-16b 那份把它們列成「只等您點」。同一件事,兩份文件說法相反。三項的 e2e 已推送(<code>482a816</code>),測試與 lint 全綠。</p>
+  <p class="why"><b>為什麼要你點:</b>這是標記與文字的對齊,不動任何功能。真正的取捨是「人眼那半要不要補」。</p>
+  <div class="opts">
+    <label class="opt" data-idx="0"><input type="radio" name="r-d2" value="0">
+      <div><span class="t"><span class="rec">建議</span>以清單為準:三項 e2e 已覆蓋,16b「待您點」作廢(改它那句文字)</span><span class="d">不增加你的實機工作。</span></div>
+    </label>
+    <label class="opt" data-idx="1"><input type="radio" name="r-d2" value="1">
+      <div><span class="t">以 16b 為準:清單標記改成「需您實機」,排進點擊清單</span><span class="d">人眼補一次。</span></div>
+    </label>
+    <label class="opt" data-idx="2"><input type="radio" name="r-d2" value="2">
+      <div><span class="t">兩邊都保留,旁邊註明「數值已 e2e 覆蓋、人眼未驗」</span><span class="d">最誠實;兩份都要加一行。</span></div>
+    </label>
+  </div>
+  <label class="note">補充備註(選填):<textarea data-qid="D2" placeholder="..."></textarea></label>
+</article>
+
+<h2>E. 待確認的介面 / 其他<span class="chip">2 題</span></h2>
+
+<article class="q" id="q-e1">
+  <h3><span class="id">E1</span> <span>零件與組合件的側邊欄還是舊樣式,要不要比照工程圖重做?</span><span class="state">✓ 已選</span></h3>
+  <p class="plain-desc"><b>白話說明:</b>工程圖的側邊欄已比照 SolidWorks 重做(ADR 0133:FeatureManager/PropertyManager 分頁、依內容切換標題與群組框、常駐指令列)。<b>零件與組合件的側邊欄仍是舊樣式</b>,這件事 10-13 提出後待你確認。</p>
+  <p class="why"><b>為什麼要你點:</b>這是純介面一致性工作,不影響功能與檔案格式;做下去會動到零件/組合件的主要面板。</p>
+  <div class="opts">
+    <label class="opt" data-idx="0"><input type="radio" name="r-e1" value="0">
+      <div><span class="t"><span class="rec">建議</span>做:比照工程圖側邊欄重做零件/組合件</span><span class="d">三個模式介面一致,更接近 SW。</span></div>
+    </label>
+    <label class="opt" data-idx="1"><input type="radio" name="r-e1" value="1">
+      <div><span class="t">維持現狀</span><span class="d">不動主面板,風險最低。</span></div>
+    </label>
+  </div>
+  <label class="note">補充備註(選填):<textarea data-qid="E1" placeholder="..."></textarea></label>
+</article>
+
+<article class="q" id="q-e2">
+  <h3><span class="id">E2</span> <span>視角方塊後續:右鍵選單、拖曳旋轉要不要做?</span><span class="state">✓ 已選</span></h3>
+  <p class="plain-desc"><b>白話說明:</b>視角方塊已比照 FreeCAD 切角方塊(26 個可點面/邊/角、四周旋轉與滾轉箭頭、⌂ 首頁鈕、⇄ 翻面 180°)。<b>剩下兩項没做</b>:右鍵選單、拖曳方塊旋轉。</p>
+  <p class="why"><b>為什麼要你點:</b>這兩項是「SW/FreeCAD 有、我們沒有」的差別;不做也不影響現有操作(方向鍵、正視於已可用)。</p>
+  <div class="opts">
+    <label class="opt" data-idx="0"><input type="radio" name="r-e2" value="0">
+      <div><span class="t"><span class="rec">建議</span>都不做(維持現狀)</span><span class="d">方塊已能用;剩下兩項收益小。</span></div>
+    </label>
+    <label class="opt" data-idx="1"><input type="radio" name="r-e2" value="1">
+      <div><span class="t">只做右鍵選單</span><span class="d">比照 SW:方塊上右鍵出視角選單。</span></div>
+    </label>
+    <label class="opt" data-idx="2"><input type="radio" name="r-e2" value="2">
+      <div><span class="t">兩個都做(右鍵選單 + 拖曳旋轉)</span><span class="d">完整比照。</span></div>
+    </label>
+  </div>
+  <label class="note">補充備註(選填):<textarea data-qid="E2" placeholder="..."></textarea></label>
+</article>
+
+<h2>已裁定、純實作待辦(一行摘要,非題目)</h2>
+<div class="info">
+  <ul>
+    <li><b>工程圖 D-I5/D-I8(10-17 已裁定「做」,尚未實作):</b><code>B2.3</code> 相切邊顯示、<code>B2.4</code> 尺寸公差子選單、<code>B2.5</code> 自動排列含座標尺寸、<code>B2.6</code> 四個小項目、<code>B2.7</code> 輔助/斷裂/裁剪視圖、<code>B2.8</code> D-I6 多圖頁。</li>
+    <li><b>藍圖 P2 待辦池(規則:不提前做):</b><code>C4.9</code> 裝飾螺紋線、草圖進階(橢圓/不規則曲線/文字/複製排列…)、3D 草圖、多本體工具(<code>C7.3</code>–<code>C7.4</code>)、進階曲面(<code>C9.x</code>)、變化圓角(<code>C5.2</code>)等。</li>
+    <li><b>鈑金未做(部分待你決定):</b>凸折(需新核心操作)、斷開角落、長圓/撕裂離隙、平板型式進工程圖(部分已做)。</li>
+    <li><b>實機 B 段:</b><code>docs/manual-verification.html</code> 標 <code>data-auto="user"</code> 的項目,即各階段閘門的 B 段(桌面版安裝、真零件、外部 CAD/PDF 檢視…)。</li>
+  </ul>
+</div>
+
+<h2>已完成(供對照,無需再選)</h2>
+<div class="info">
+  <ul>
+    <li><b>B1 局部剖視</b>(<code>4f8968b</code> + 收尾 <code>1bc21c4</code>/<code>10531e8</code>,工程圖 Schema 21)。</li>
+    <li><b>B2.1 鎖定視圖</b>(<code>2abdaf0</code>)。</li>
+    <li><b>B2.2 隱藏個別的邊</b>:<b>實作中、尚未提交</b>(模型 <code>hiddenEdges</code> + worker + <code>viewEdges</code> + i18n)。</li>
+    <li>parity 影片降維線整條移除(<code>2785da3</code>);fillet 迴轉件凹/凸圓角手算真值(<code>d342166</code>);標題欄文字樣式(<code>ADR 0150</code>);<code>c13</code> 邊角矩形缺陷修正(<code>d650c05</code>)。</li>
+    <li><b>已記錄的裁定:</b><code>D2</code> dev server(5391)留著;<code>D3</code> sketch6 改由 e2e 在真實 UI 自動修、測試只鎖「圓角成功+逐位元相同重建」、體積只印不斷言。</li>
+  </ul>
+</div>
+</main>
+<div id="toast" role="status" aria-live="polite"></div>
+<script>
+(function(){
+  var STORE = '3db-decisions-2026-10-19';
+  var TITLES = {
+    'A1':'本地 main 領先 origin 三個提交,要推嗎?',
+    'B1':'壓花波浪邊下圓角拋 WASM 內部錯誤,要不要處理?',
+    'B2':'F6 的 PDF 那半件:用 Chrome 開一次就算驗收?',
+    'C1':'Phase 4b/5/6/7 的 B 段與新功能的順位',
+    'D1':'手冊 C22、E4 兩處「寫錯」要不要改?',
+    'D2':'ADR 0145 三項「要不要你實機」矛盾以哪邊為準?',
+    'E1':'零件與組合件的側邊欄要不要比照工程圖重做?',
+    'E2':'視角方塊後續:右鍵選單、拖曳旋轉要不要做?'
+  };
+  var IDS = Object.keys(TITLES);
+
+  function load(){ try{ return JSON.parse(localStorage.getItem(STORE) || '{}'); }catch(e){ return {}; } }
+  function save(s){ try{ localStorage.setItem(STORE, JSON.stringify(s)); }catch(e){} }
+
+  function render(){
+    var s = load();
+    var done = 0;
+    IDS.forEach(function(id){
+      var cur = s[id];
+      var art = document.getElementById('q-' + id.toLowerCase());
+      if(!art) return;
+      art.classList.toggle('done', cur !== undefined && cur !== null && cur.sel !== undefined);
+      if(cur && cur.sel !== undefined) done++;
+      var note = art.querySelector('textarea');
+      if(note && cur && cur.note) note.value = cur.note;
+      art.querySelectorAll('.opt').forEach(function(el){
+        var idx = parseInt(el.dataset.idx, 10);
+        var selected = cur && cur.sel === idx;
+        el.classList.toggle('sel', !!selected);
+        var input = el.querySelector('input');
+        if(input) input.checked = !!selected;
+      });
+    });
+    document.getElementById('progress').innerHTML = '進度:<b>' + done + '</b> / ' + IDS.length;
+  }
+
+  function select(id, idx){
+    var s = load();
+    s[id] = s[id] || {};
+    s[id].sel = idx;
+    save(s);
+    render();
+  }
+
+  document.querySelectorAll('article.q').forEach(function(art){
+    var id = art.id.replace('q-', '').toUpperCase();
+    art.querySelectorAll('.opt').forEach(function(el){
+      el.addEventListener('click', function(e){
+        if(e.target.tagName === 'TEXTAREA') return;
+        select(id, parseInt(el.dataset.idx, 10));
+      });
+    });
+    var ta = art.querySelector('textarea');
+    if(ta) ta.addEventListener('input', function(){
+      var s = load();
+      s[id] = s[id] || {};
+      s[id].note = ta.value;
+      save(s);
+    });
+  });
+
+  document.getElementById('btn-rec').addEventListener('click', function(){
+    var s = load();
+    IDS.forEach(function(id){
+      var art = document.getElementById('q-' + id.toLowerCase());
+      if(!art) return;
+      var opts = art.querySelectorAll('.opt');
+      for(var i = 0; i < opts.length; i++){
+        if(opts[i].querySelector('.rec')){
+          s[id] = s[id] || {};
+          s[id].sel = parseInt(opts[i].dataset.idx, 10);
+          break;
+        }
+      }
+    });
+    save(s); render(); toast('已套用所有建議選項');
+  });
+
+  document.getElementById('btn-clear').addEventListener('click', function(){
+    if(!confirm('確定要清除所有選擇嗎?')) return;
+    localStorage.removeItem(STORE); render(); toast('已清除');
+  });
+
+  function buildText(){
+    var s = load();
+    var text = '### 3D-Builder 未做/待裁選擇題結果(2026-10-19,重整理)\n\n';
+    IDS.forEach(function(id){
+      var cur = s[id] || {};
+      var art = document.getElementById('q-' + id.toLowerCase());
+      var title = TITLES[id];
+      if(cur.sel !== undefined && art){
+        var opt = art.querySelectorAll('.opt')[cur.sel];
+        var t = opt ? (opt.querySelector('.t') ? opt.querySelector('.t').innerText.replace(/^建議\s*/,'').trim() : '') : '';
+        text += '- **' + id + ' ' + title + '**:選「' + t + '」';
+        if(cur.note && cur.note.trim()) text += '(備註:' + cur.note.trim() + ')';
+        text += '\n';
+      } else {
+        text += '- **' + id + ' ' + title + '**:(未選=維持現狀)\n';
+      }
+    });
+    text += '\n(已完成或已裁定: B1 局部剖視 / B2.1 鎖定視圖 / B2.2 隱藏邊在製 / parity 移除 / fillet 真值 / c13 修正 / ADR 0150)';
+    return text;
+  }
+
+  function copyText(text){
+    if(navigator.clipboard && navigator.clipboard.writeText){
+      return navigator.clipboard.writeText(text).then(function(){ return true; }, function(){ return viaExec(text); });
+    }
+    return Promise.resolve(viaExec(text));
+  }
+  function viaExec(text){
+    var ta = document.createElement('textarea');
+    ta.value = text; ta.style.position = 'fixed'; ta.style.left = '-9999px';
+    document.body.appendChild(ta); ta.focus(); ta.select();
+    var ok = false; try{ ok = document.execCommand('copy'); }catch(e){}
+    document.body.removeChild(ta); return ok;
+  }
+  function overlay(text){
+    var ov = document.createElement('div');
+    ov.style.cssText = 'position:fixed;inset:0;z-index:20;background:rgba(0,0,0,.45);display:flex;align-items:center;justify-content:center;padding:16px';
+    var box = document.createElement('div');
+    box.style.cssText = 'background:#fff;color:#222;border:1px solid #ccc;border-radius:12px;max-width:640px;width:100%;padding:20px 24px';
+    box.innerHTML = '<p style="margin:0 0 8px;font-size:14px">剪貼簿被面板擋住了。下面的結果已全選,請按 <b>Ctrl+C</b> 複製,再貼回對話。</p>';
+    var ta = document.createElement('textarea');
+    ta.value = text; ta.style.cssText = 'width:100%;height:220px;font:inherit;font-size:13px;padding:8px 12px;border-radius:8px;border:1px solid #ccc;resize:vertical';
+    var close = document.createElement('button'); close.textContent = '關閉'; close.style.marginTop = '12px';
+    close.addEventListener('click', function(){ ov.remove(); });
+    box.appendChild(ta); box.appendChild(close); ov.appendChild(box);
+    ov.addEventListener('pointerdown', function(e){ if(e.target === ov) ov.remove(); });
+    document.body.appendChild(ov); ta.focus(); ta.select();
+  }
+
+  document.getElementById('btn-copy').addEventListener('click', function(){
+    var text = buildText();
+    copyText(text).then(function(ok){ if(ok) toast('已複製結果至剪貼簿!請貼回對話中。'); else overlay(text); });
+  });
+
+  function toast(msg){
+    var t = document.getElementById('toast');
+    t.textContent = msg; t.classList.add('on');
+    setTimeout(function(){ t.classList.remove('on'); }, 2500);
+  }
+
+  render();
+})();
+</script>
+</body>
+</html>

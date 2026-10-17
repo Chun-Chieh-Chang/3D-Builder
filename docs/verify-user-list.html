@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>3D-Builder 實機驗證:只列要你親自做的</title>
+<style>
+:root{--hue:172;--bg:oklch(98.6% .006 var(--hue));--surface:oklch(100% 0 0);--text:oklch(26% .02 var(--hue));--text2:oklch(45% .025 var(--hue));--accent:oklch(48% .11 var(--hue));--ok:oklch(50% .13 145);--warn:oklch(52% .15 70);--border:oklch(92.6% .013 var(--hue));}
+*{box-sizing:border-box}html{font-size:16px}
+body{margin:0;background:var(--bg);color:var(--text);font-family:"Inter","Segoe UI","Microsoft JhengHei UI","Noto Sans TC",sans-serif;line-height:1.5}
+header{position:sticky;top:0;z-index:5;background:color-mix(in srgb,var(--surface) 90%,transparent);backdrop-filter:blur(12px);border-bottom:1px solid var(--border)}
+.bar{max-width:820px;margin:0 auto;padding:12px 16px;display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+h1{font-size:17px;margin:0;flex:1 1 240px}
+.progress{font-size:14px;color:var(--text2)}.progress b{color:var(--accent)}
+button{font:inherit;font-size:13px;min-height:40px;padding:6px 14px;border-radius:8px;cursor:pointer;border:1px solid var(--border);background:var(--surface);color:var(--text)}
+button:hover{border-color:var(--accent)}
+main{max-width:820px;margin:0 auto;padding:24px 16px 96px}
+.lead{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:16px 22px;margin-bottom:22px;font-size:14.5px}
+.lead p{margin:6px 0}
+h2{font-size:15px;margin:26px 0 10px;color:var(--text2);border-bottom:1px solid var(--border);padding-bottom:5px}
+ul.list{list-style:none;margin:0;padding:0}
+li.item{border:1px solid var(--border);border-radius:9px;background:var(--surface);margin-bottom:8px;display:flex;gap:12px;align-items:flex-start;padding:12px 14px}
+li.item.done{background:color-mix(in oklab,var(--ok) 9%,transparent);border-color:var(--ok)}
+li.item input{margin:3px 0 0;width:20px;height:20px;accent-color:var(--accent);flex:none}
+li.item .body{flex:1}
+li.item .t{font-size:14.5px;font-weight:600}
+li.item .id{font-size:12px;font-weight:700;color:var(--accent);border:1px solid var(--accent);padding:0 5px;border-radius:4px;margin-right:8px}
+li.item a{color:var(--accent);font-size:13px;text-decoration:none;font-weight:600}
+li.item a:hover{text-decoration:underline}
+.badge{display:inline-block;font-size:11px;font-weight:700;border-radius:4px;padding:1px 6px;margin-left:8px}
+.badge.ext{color:var(--warn);background:color-mix(in oklab,var(--warn) 12%,transparent)}
+.badge.part{color:var(--accent);background:color-mix(in oklab,var(--accent) 10%,transparent)}
+.foot{margin-top:24px;font-size:13px;color:var(--text2)}
+</style>
+</head>
+<body>
+<header><div class="bar">
+  <h1>實機驗證:只列「要你親自做」的 20 項</h1>
+  <span class="progress" id="progress"></span>
+  <button id="clear" type="button">清除勾選</button>
+</div></header>
+<main>
+  <div class="lead">
+    <p>手冊 <a href="manual-verification.html">manual-verification.html</a> 共 76 項,其中 <b>56 項已自動重播驗過(不用你做)</b>。這頁只把<b>要你親自做</b>的挑出來,讓你能一頁走完。</p>
+    <p>每一項點右邊的「看步驟 →」會跳到手冊對應那一項;做完請<b>回手冊把狀態改成「通過/有問題」</b>(狀態存在瀏覽器,做完按手冊的「複製結果」貼回)。這一頁的勾選只是你自己追蹤進度,不會回傳。</p>
+    <p><span class="badge ext">需外部軟體</span> 要用 Chrome / 你的 CAD / eDrawings 開檔;&nbsp;<span class="badge part">部分自動</span> 數值已由 e2e 驗過,你只需看畫面順不順。</p>
+  </div>
+  <div id="root"></div>
+  <p class="foot">來源:<code>docs/manual-verification.html</code>(篩選 <code>data-auto=user/part</code>)。勾選存於本機瀏覽器。</p>
+</main>
+<script>
+(function(){
+  var STORE='3db-verify-user-list-v1';
+  var GROUPS=[
+    {sec:'準備(只做一次)',items:[
+      ['P1','啟動程式、選對瀏覽器',''],
+      ['P2','建立測試用的專案資料夾與樣本檔',''],
+      ['P3','怎麼回報問題','']]},
+    {sec:'A. 桌面版安裝',items:[
+      ['A1','在沒有裝過開發工具的 Windows 上安裝、斷網使用、解除安裝','ext']]},
+    {sec:'B. 基礎功能殘留',items:[
+      ['B1','設計樹的「眼睛」與遺失參考的修復','']]},
+    {sec:'C. 零件建模(Phase 3a)',items:[
+      ['C1','方程式、全域變數與檔案屬性',''],
+      ['C2','刪除面與移動面',''],
+      ['C3','輸入 STEP 為本體與診斷報告',''],
+      ['C4','多本體',''],
+      ['C5','草圖工具:狹槽、多邊形、圓角/導角、修剪、延伸、偏移、鏡射',''],
+      ['C17','材質、外觀、輸出 STEP/STL/影像','ext']]},
+    {sec:'D. 組合件',items:[
+      ['D3','輸入 STEP 組合件','ext'],
+      ['D8','輸出 STEP 組合件,用別的軟體看','ext'],
+      ['D9','測量像 eDrawings:圖上畫出距離與 dX/dY/dZ、英制、弧圓量法','part']]},
+    {sec:'F. 工程圖(Phase 5)',items:[
+      ['F4','中心記號、中心線、孔標註與孔表','part'],
+      ['F6','輸出 PDF、DXF、SVG,用真正的程式開','part-ext'],
+      ['F7','在圖上點選標註與畫剖面線(像 SolidWorks 那樣)','part']]},
+    {sec:'G. 檢具(Phase 4b)',items:[
+      ['G5','輸出 STEP,用別的 CAD 開','part-ext']]},
+    {sec:'H. 塑膠件(Phase 6)',items:[
+      ['H9','外殼加蓋子:實際走一遍','']]},
+    {sec:'I. 鈑金(Phase 7)',items:[
+      ['I9','輸出平板型式 DXF','part-ext']]}
+  ];
+  var all=[];
+  GROUPS.forEach(function(g){ g.items.forEach(function(it){ all.push(it[0]); }); });
+  function load(){ try{ return JSON.parse(localStorage.getItem(STORE)||'{}'); }catch(e){ return {}; } }
+  function save(s){ try{ localStorage.setItem(STORE,JSON.stringify(s)); }catch(e){} }
+  function render(){
+    var s=load(), root=document.getElementById('root'); root.innerHTML=''; var done=0;
+    GROUPS.forEach(function(g){
+      var h=document.createElement('h2'); h.textContent=g.sec+'('+g.items.length+')'; root.appendChild(h);
+      var ul=document.createElement('ul'); ul.className='list';
+      g.items.forEach(function(it){
+        var id=it[0], title=it[1], tag=it[2]; if(s[id]) done++;
+        var li=document.createElement('li'); li.className='item'+(s[id]?' done':'');
+        var badge='';
+        if(tag==='ext') badge='<span class="badge ext">需外部軟體</span>';
+        else if(tag==='part') badge='<span class="badge part">部分自動</span>';
+        else if(tag==='part-ext') badge='<span class="badge part">部分自動</span><span class="badge ext">需外部軟體</span>';
+        li.innerHTML='<input type="checkbox" '+(s[id]?'checked':'')+' data-id="'+id+'">'+
+          '<div class="body"><div class="t"><span class="id">'+id+'</span>'+title+badge+'</div>'+
+          '<a href="manual-verification.html#item-'+id+'" target="_blank">看步驟 →</a></div>';
+        ul.appendChild(li);
+      });
+      root.appendChild(ul);
+    });
+    document.getElementById('progress').innerHTML='已勾 <b>'+done+'</b> / '+all.length;
+    root.querySelectorAll('input[type=checkbox]').forEach(function(cb){
+      cb.addEventListener('change',function(){ var s2=load(); if(cb.checked) s2[cb.dataset.id]=1; else delete s2[cb.dataset.id]; save(s2); render(); });
+    });
+  }
+  document.getElementById('clear').addEventListener('click',function(){ if(confirm('清除全部勾選?')){ localStorage.removeItem(STORE); render(); } });
+  render();
+})();
+</script>
+</body>
+</html>
