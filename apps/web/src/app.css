@@ -195,6 +195,12 @@ code { font-family: Consolas, 'Cascadia Mono', monospace; font-size: 11px; }
 .context-menu li { padding: 6px 14px; cursor: pointer; font-size: 13px; color: var(--text); display: flex; align-items: center; gap: 8px; }
 .context-menu li:hover { background: var(--accent-soft); color: var(--accent-strong); }
 .context-menu li.separator { height: 1px; padding: 0; margin: 4px 0; background: var(--line); cursor: default; }
+/* a submenu (B2.4) opens inside the menu, since the menu scrolls and a fly-out would be clipped at the sheet's edge */
+.context-menu li.has-submenu { flex-wrap: wrap; }
+.context-menu li.has-submenu .submenu-arrow { margin-left: auto; color: var(--muted); font-size: 10px; }
+.context-menu li.has-submenu.open { background: none; }
+.context-menu li.has-submenu > .submenu { flex: 1 0 100%; margin: 0; padding: 0; list-style: none; }
+.context-menu li.has-submenu > .submenu li { padding-left: 28px; }
 .modal.wide { min-width: 480px; max-width: 640px; }
 .modal-actions button { margin-left: 6px; padding: 4px 14px; border: 1px solid var(--line); background: var(--card); border-radius: 4px; }
 .modal-actions button.primary { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }

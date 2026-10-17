@@ -1,7 +1,7 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { t } from '@3db/i18n';
 import { VIEW_DISPLAYS, baseName, displayOf, isCorner, isShaded, type Id } from '@3db/model';
-import { arrangementBase } from '@3db/drawing';
+import { arrangementBase, fitAllowed, toleranceForChoice, type ToleranceChoice } from '@3db/drawing';
 import { store } from '../state/store';
 import { ContextMenu } from './ContextMenu';
 
@@ -34,6 +34,8 @@ export function DrawingMenu({ at, onClose }: { at: DrawingMenuAt; onClose: () =>
       window.removeEventListener('keydown', key);
     };
   }, [onClose]);
+  /** which of the menu's submenus is open, if any (B2.4) */
+  const [openSub, setOpenSub] = useState<string | null>(null);
   const d = store.drawingStore;
   if (!d) return null;
   const doc = d.getState().doc;
@@ -47,6 +49,25 @@ export function DrawingMenu({ at, onClose }: { at: DrawingMenuAt; onClose: () =>
     </li>
   );
   const sep = (k: string) => <li key={k} className="separator" />;
+  /**
+   * A submenu (B2.4): its items are opened inside the menu itself rather than hung off its side, because the menu scrolls (`overflow-y: auto`), so a fly-out
+   * would be clipped at the edge of the sheet.
+   */
+  const sub = (action: string, label: string, children: React.ReactNode) => (
+    <li
+      key={action}
+      data-action={action}
+      className={`has-submenu${openSub === action ? ' open' : ''}`}
+      onClick={(e) => {
+        e.stopPropagation();
+        setOpenSub(openSub === action ? null : action);
+      }}
+    >
+      <span>{label}</span>
+      <span className="submenu-arrow">▸</span>
+      {openSub === action && <ul className="submenu">{children}</ul>}
+    </li>
+  );
   let items: React.ReactNode[] = [];
   if (at.kind === 'view') {
     const view = doc.views.find((v) => v.id === at.view);
@@ -79,12 +100,25 @@ export function DrawingMenu({ at, onClose }: { at: DrawingMenuAt; onClose: () =>
     const dims = doc.dimensions.filter((x) => ids.includes(x.id));
     const allReference = dims.length > 0 && dims.every((x) => !!x.reference);
     const slid = dims.some((x) => 'slide' in x && !!x.slide);
+    // the tolerance of the chosen dimensions (B2.4): what the menu puts on all of them at once, as the panel does
+    const withTol = (choice: ToleranceChoice) => dims.length > 0 && dims.every((x) => (x.tolerance?.type ?? 'none') === choice);
+    const setTol = (choice: ToleranceChoice) => () => d.setDimensionsEach(ids, (x) => ({ tolerance: toleranceForChoice(choice, x.kind) }));
     items = [
       item('menuReference', `${allReference ? '✓ ' : ''}${t('drawingUi.dimReference')}`, () => d.setDimensions(ids, { reference: !allReference })),
       item('menuCentreText', t('drawingUi.menu.centreText'), () => d.setDimensions(ids, { slide: null }), !slid),
       item('menuArrange', t('drawingUi.arrange'), () => arrange(ids)),
       item('menuAlignCollinear', t('drawingUi.alignCollinear'), () => d.alignCollinear(ids), ids.length < 2),
       sep('s1'),
+      // the tolerance, as a submenu (B2.4): the same five the properties panel offers, and no new file format — a shortcut for what is already written there
+      sub('menuTolerance', `${t('drawingUi.dimTolerance')}${dims.some((x) => x.tolerance) ? ' ✓' : ''}`, [
+        item('menuTolNone', `${withTol('none') ? '✓ ' : ''}${t('drawingUi.dimTolNone')}`, setTol('none')),
+        item('menuTolBilateral', `${withTol('bilateral') ? '✓ ' : ''}${t('drawingUi.dimTolBilateral')}`, setTol('bilateral')),
+        item('menuTolMax', `${withTol('max') ? '✓ ' : ''}${t('drawingUi.dimTolMax')}`, setTol('max')),
+        item('menuTolMin', `${withTol('min') ? '✓ ' : ''}${t('drawingUi.dimTolMin')}`, setTol('min')),
+        // a fit is a size's: the model refuses it on an angle and on an ordinate, so the choice is left out for them
+        item('menuTolFit', `${withTol('fit') ? '✓ ' : ''}${t('drawingUi.dimTolFit')}`, setTol('fit'), !fitAllowed(dims.map((x) => x.kind))),
+      ]),
+      sep('s2'),
       item('menuDelete', t('drawingUi.menu.delete'), () => d.deleteSelection()),
     ];
   } else if (at.kind === 'annotation') {
