@@ -1,11 +1,11 @@
 import { getLocale, t, withLocale } from '@3db/i18n';
-import { axesOf, displayOf, isShaded, resolveDimStyle, resolveTitleStyle, sectionEndDirections, type DetailDrawingView, type DimStyle, type DrawingDoc, type DrawingView, type Id, type Scale, type LocalSectionDrawingView, type SectionDrawingView, type TitleField, type ViewFeature } from '@3db/model';
+import { axesOf, displayOf, isShaded, resolveDimStyle, resolveTitleStyle, sectionEndDirections, type CropDrawingView, type DetailDrawingView, type DimStyle, type DrawingDoc, type DrawingView, type Id, type Scale, type LocalSectionDrawingView, type SectionDrawingView, type TitleField, type ViewFeature } from '@3db/model';
 import type { ShadeImage } from './shade';
 import { centreItems, holeRows, holeTableBox, holeTableItems, threadItems, type HoleRow } from './annotation';
 import { annotationItems } from './gdt';
 import { balloonSpots, bomTableBox, bomTableItems, spotItems, type BalloonSpot, type ViewBom } from './bomTable';
 import { evaluateDimension, type DimensionOutcome, type ElementsResult } from './dimension';
-import { circlePolyline, clipToBand, hatch, type Polyline } from './geometry';
+import { circlePolyline, clipToBand, hatch, outlinePoints, type Polyline } from './geometry';
 import { layoutViews, resolveLines, scaleOf, toSheet, type PlacedView, type ViewLines } from './layout';
 import { fittedTitleHeight, sheetMetrics, titleCells, type Rect } from './sheet';
 import { surfaceFinishItems } from './surfaceFinish';
@@ -197,7 +197,7 @@ export function viewItems(view: DrawingView, lines: ViewLines | null | undefined
   draw(lines.center, 'center');
   // the tangent edges (B2.3): the smooth lines where two faces meet, drawn thin. They are drawn as before unless the view leaves them out
   if (display !== 'shaded' && view.showTangentEdges !== false) draw(lines.tangent, 'thin');
-  if ((view.kind === 'section' || view.kind === 'sectionLocal') && lines.cut) for (const l of hatch(lines.cut, HATCH_SPACING / placed.scale)) items.push({ kind: 'polyline', points: move(l), style: 'thin' });
+  if ((view.kind === 'section' || view.kind === 'sectionLocal' || view.kind === 'crop') && lines.cut) for (const l of hatch(lines.cut, HATCH_SPACING / placed.scale)) items.push({ kind: 'polyline', points: move(l), style: 'thin' });
   items.push(...breakItems(placed, lines.box));
   return items;
 }
@@ -208,6 +208,8 @@ export function viewImage(view: DrawingView, lines: ViewLines | null | undefined
   if (!img || !isShaded(displayOf(view))) return null;
   // a broken view is not shaded (B2.7): its image is one picture of the whole part and cannot be cut at the band, and drawing it squeezed would be a wrong picture
   if (placed.break) return null;
+  // a cropped view is not shaded either (B2.7): its image is one picture of the whole view and the sheet's images can only be cut to a circle, so it would be a wrong picture
+  if (view.kind === 'crop') return null;
   const at = toSheet(placed, img.box.min[0], img.box.min[1]);
   const top = toSheet(placed, img.box.max[0], img.box.max[1]);
   const clip = lines.shadeClip ? { centre: toSheet(placed, lines.shadeClip.centre[0], lines.shadeClip.centre[1]), radius: lines.shadeClip.radius * placed.scale } : undefined;
@@ -238,25 +240,7 @@ function sectionItems(v: SectionDrawingView, parent: PlacedView, own: PlacedView
 
 /** The cutting outline of a local section on its parent view with its letter beside it, and the section's own title. */
 function localSectionItems(v: LocalSectionDrawingView, parent: PlacedView, own: PlacedView): SceneItem[] {
-  const outline = v.outline;
-  let pts: [number, number][];
-  if (outline.kind === 'rectangle') {
-    const [x0, y0] = outline.p0; const [x1, y1] = outline.p1;
-    pts = [[x0, y0], [x1, y0], [x1, y1], [x0, y1]];
-  } else if (outline.kind === 'circle') {
-    const { centre, radius } = outline;
-    const n = 32;
-    pts = [];
-    for (let i = 0; i < n; i++) {
-      const a = (i / n) * 2 * Math.PI;
-      pts.push([centre[0] + radius * Math.cos(a), centre[1] + radius * Math.sin(a)]);
-    }
-  } else {
-    pts = outline.points.slice();
-    // the polyline is drawn closed: a point repeating the first would give a degenerate last segment
-    const first = pts[0]; const last = pts[pts.length - 1];
-    if (first && last && Math.abs(first[0] - last[0]) < 1e-9 && Math.abs(first[1] - last[1]) < 1e-9) pts.pop();
-  }
+  const pts = outlinePoints(v.outline);
   const sheetPts = pts.map(([x, y]) => toSheet(parent, x, y));
   const items: SceneItem[] = [{ kind: 'polyline', points: sheetPts.flat(), style: 'center', closed: true }];
   // the letter beside the outline: off its first corner, away from the middle of it
@@ -271,6 +255,12 @@ function localSectionItems(v: LocalSectionDrawingView, parent: PlacedView, own: 
   }
   items.push({ kind: 'text', at: [own.at[0], own.at[1] - own.h / 2 - 8], text: `${v.label}-${v.label}`, height: 5, anchor: 'center' });
   return items;
+}
+
+/** The outline of a cropped view on its parent view (B2.7): which region the crop shows, drawn thin as the boundary it is. */
+function cropItems(v: CropDrawingView, parent: PlacedView): SceneItem[] {
+  const pts = outlinePoints(v.outline).map(([x, y]) => toSheet(parent, x, y));
+  return pts.length >= 2 ? [{ kind: 'polyline', points: pts.flat(), style: 'thin', closed: true }] : [];
 }
 
 /** The circle of a detail on its parent view with its letter, and the detail's own title (the letter and its scale). */
@@ -332,10 +322,11 @@ function buildSceneIn(
     items.push(...surfaceFinishItems(doc.surfaceFinishes.filter((f) => f.view === v.id), own));
     items.push(...threadItems(v, features.get(v.id) ?? [], own));
     items.push(...annotationItems((doc.annotations ?? []).filter((a) => a.view === v.id), own, lookup, doc.sheet.unit ?? 'mm'));
-    const parent = v.kind === 'section' || v.kind === 'sectionLocal' || v.kind === 'detail' ? placed.get(v.parent) : undefined;
+    const parent = v.kind === 'section' || v.kind === 'sectionLocal' || v.kind === 'detail' || v.kind === 'crop' ? placed.get(v.parent) : undefined;
     if (v.kind === 'section' && parent) items.push(...sectionItems(v, parent, own));
     if (v.kind === 'sectionLocal' && parent) items.push(...localSectionItems(v, parent, own));
     if (v.kind === 'detail' && parent) items.push(...detailItems(v, parent, own, scaleOf(doc, v)));
+    if (v.kind === 'crop' && parent) items.push(...cropItems(v, parent));
   }
   const dimensions = new Map<Id, DimensionOutcome>();
   const sceneDimensions: SceneDimension[] = [];

@@ -39,6 +39,7 @@ import {
   type ViewFeature,
   type ViewEdgeSet,
   type DrawingRef,
+  type ClosedOutline,
   placementRows,
   placeElementFacts,
   type ViewName,
@@ -127,6 +128,8 @@ export type DrawingTool =
   | { kind: 'section'; vertical?: boolean; slant?: boolean; path?: 'stepped' | 'aligned' }
   /** A local (partial) section of `parent` inside a closed outline (B1); the depth is how far the cut goes. */
   | { kind: 'sectionLocal'; outlineKind: 'rectangle' | 'circle' | 'polygon'; depth: number }
+  /** A cropped view (B2.7) of a local section: the part inside a closed outline, set out as a view of its own. */
+  | { kind: 'crop'; outlineKind: 'rectangle' | 'circle' | 'polygon' }
   | { kind: 'detail' }
   | { kind: 'surface' }
   /**
@@ -595,7 +598,7 @@ export class DrawingStore {
    * parent's lines in the layout); a view whose part is not built or whose chain of parents is broken, nothing yet.
    */
   private requestOf(view: DrawingView): { id: string; featureId?: string; key: string; parts: { part: string; mirrored: boolean; pose: typeof IDENTITY }[]; anchors: boolean; flat?: boolean; axes: ViewAxes; cut?: SectionCut; shade?: { px: number } } | null {
-    if (view.kind === 'detail') return null;
+    if (view.kind === 'detail' || view.kind === 'crop') return null;
     const doc = this.history.doc;
     const key = this.keyOf(view);
     const axes = axesOf(doc.views, doc.sheet.projection, view);
@@ -1204,6 +1207,16 @@ export class DrawingStore {
       views: [{ id, name: t('drawing.view.section', { label }), kind: 'sectionLocal', parent, outline, depth, label, ...(at ? { at } : {}) }],
     };
     if (this.execute(insert)) this.select(id);
+  }
+
+  /** A cropped view (B2.7) of `parent`: what the parent shows inside `outline` (a closed outline in the parent's view coordinates), set out as a view of its own. Its parent must be a local (partial) section. */
+  addCrop(parent: Id, outline: ClosedOutline, at?: [number, number]): void {
+    const doc = this.history.doc;
+    const p = viewById(doc.views, parent);
+    if (!p || p.kind !== 'sectionLocal') return this.host.notify(t('drawing.cropNeedsLocalSection'), 'error');
+    const ids = new IdAllocator(doc.idCounters, drawingIdsInUse(doc));
+    const id = ids.take('view');
+    if (this.execute({ type: 'insertViews', views: [{ id, name: t('drawing.view.crop'), kind: 'crop', parent, outline, ...(at ? { at } : {}) }] })) this.select(id);
   }
 
   /** The letter the next section or detail will have. */

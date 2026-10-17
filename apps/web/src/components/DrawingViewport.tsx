@@ -47,7 +47,7 @@ import {
   type SceneItem,
   type ViewLines,
 } from '@3db/drawing';
-import { axesOf, oppositeSide, projectedAxes, type Annotation, type Attachment, sectionArrow, sectionLookAxes, type Dimension, type DrawingView, type Id, type Scale, type LocalSectionDrawingView, type SectionDrawingView, type SurfaceFinish, type ViewCorner, type ViewSide } from '@3db/model';
+import { axesOf, oppositeSide, projectedAxes, type Annotation, type Attachment, type ClosedOutline, sectionArrow, sectionLookAxes, type Dimension, type DrawingView, type Id, type Scale, type LocalSectionDrawingView, type SectionDrawingView, type SurfaceFinish, type ViewCorner, type ViewSide } from '@3db/model';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { store, useStore } from '../state/store';
 import type { DrawingPick } from '../state/drawing';
@@ -73,7 +73,7 @@ type Drag =
   | { kind: 'surface'; id: string; from: P; origin: P; delta: P }
   /** An annotation (D-I3) moved as a whole; its leader's point stays on the feature. `delta` is in sheet mm. */
   | { kind: 'annotation'; id: string; from: P; delta: P }
-  | { kind: 'draw'; tool: 'section' | 'sectionLocal' | 'detail'; vertical?: boolean; slant?: boolean; view: Id; from: P; to: P }
+  | { kind: 'draw'; tool: 'section' | 'sectionLocal' | 'crop' | 'detail'; vertical?: boolean; slant?: boolean; view: Id; from: P; to: P }
   /** The last click of a section or a detail: where its view goes. `free` (Ctrl held): put where the pointer is, not in line with the parent. */
   | { kind: 'placeDraw'; placement: DrawPlacement; from: P; to: P; free: boolean }
   /** A box dragged over the paper from where nothing was (D-I1a): what it holds is chosen; with Ctrl it is added to what was. */
@@ -81,7 +81,8 @@ type Drag =
 type DrawPlacement =
   | { tool: 'section'; view: Id; line: SectionDrawingView['line']; aligned?: boolean }
   | { tool: 'detail'; view: Id; centre: P; radius: number }
-  | { tool: 'sectionLocal'; view: Id; outline: LocalSectionDrawingView['outline']; depth: number };
+  | { tool: 'sectionLocal'; view: Id; outline: LocalSectionDrawingView['outline']; depth: number }
+  | { tool: 'crop'; view: Id; outline: ClosedOutline };
 
 const round2 = (n: number) => Math.round(n * 100) / 100;
 
@@ -95,6 +96,22 @@ function movedAnnotation(a: Annotation, dv: P): Annotation {
 /** The line of a section as it is when it has been moved by `by` (view units) across itself: all its points (a stepped or aligned line bends, D-I5). */
 const movedLine = (line: SectionDrawingView['line'], vertical: boolean, by: number): SectionDrawingView['line'] =>
   line.map(([x, y]) => (vertical ? [x + by, y] : [x, y + by])) as SectionDrawingView['line'];
+
+/**
+ * The rectangle a drag drew, in a view's own coordinates (a local section's cutting outline, a cropped view's region, B1/B2.7); null when the drag is too small
+ * to be one (2 mm on either side, full size).
+ */
+function dragRectangle(placed: { at: [number, number]; scale: number; centre: [number, number] }, from: P, to: P): { kind: 'rectangle'; p0: [number, number]; p1: [number, number] } | null {
+  const toViewPt = (p: P): [number, number] => [(p[0] - placed.at[0]) / placed.scale + placed.centre[0], (p[1] - placed.at[1]) / placed.scale + placed.centre[1]];
+  const a = toViewPt(from);
+  const b = toViewPt(to);
+  const x0 = Math.min(a[0], b[0]);
+  const y0 = Math.min(a[1], b[1]);
+  const x1 = Math.max(a[0], b[0]);
+  const y1 = Math.max(a[1], b[1]);
+  if (x1 - x0 < 2 || y1 - y0 < 2) return null;
+  return { kind: 'rectangle', p0: [round2(x0), round2(y0)], p1: [round2(x1), round2(y1)] };
+}
 
 /** The shape a dimension chosen on the sheet is drawn over in, so that it can be seen which one it is. */
 function Highlight({ items, height, color }: { items: readonly SceneItem[]; height: number; color: string }) {
@@ -476,7 +493,9 @@ export function DrawingViewport() {
         return;
       }
       const view = viewUnder(p);
-      if (!view) return d.notifyInfo(t(tool.kind === 'section' ? 'drawingUi.hint.section' : tool.kind === 'sectionLocal' ? 'drawingUi.hint.localSection' : 'drawingUi.hint.detail'));
+      if (!view) return d.notifyInfo(t(tool.kind === 'section' ? 'drawingUi.hint.section' : tool.kind === 'sectionLocal' ? 'drawingUi.hint.localSection' : tool.kind === 'crop' ? 'drawingUi.hint.crop' : 'drawingUi.hint.detail'));
+      // a cropped view crops a local section (B2.7), so a drag anywhere else is not the start of one
+      if (tool.kind === 'crop' && view.kind !== 'sectionLocal') return d.notifyInfo(t('drawingUi.hint.cropParent'));
       if (pendingDraw?.tool === tool.kind) {
         if (view.id !== pendingDraw.view) return;
         const placement = makeDrawPlacement({ ...pendingDraw, to: p });
@@ -891,23 +910,25 @@ export function DrawingViewport() {
       return { tool: 'detail', view: g.view, centre: [round2(at[0]), round2(at[1])], radius: round2(radius) };
     }
     if (g.tool === 'sectionLocal') {
-      const depth = drw.tool?.kind === 'sectionLocal' ? drw.tool.depth : 5;
-      const toViewPt = (p: P): [number, number] => {
-        const x = p[0] ?? 0;
-        const y = p[1] ?? 0;
-        return [(x - placed.at[0]) / placed.scale + placed.centre[0], (y - placed.at[1]) / placed.scale + placed.centre[1]];
-      };
-      const p0: [number, number] = toViewPt(g.from as [number, number]);
-      const p1: [number, number] = toViewPt(g.to as [number, number]);
-      const [x0, y0] = [Math.min(p0[0] ?? 0, p1[0] ?? 0), Math.min(p0[1] ?? 0, p1[1] ?? 0)];
-      const [x1, y1] = [Math.max(p0[0] ?? 0, p1[0] ?? 0), Math.max(p0[1] ?? 0, p1[1] ?? 0)];
-      const msg = t('drawingUi.hint.localSectionDrag');
-      const w = x1 - x0; const h = y1 - y0;
-      if ((w < 0 ? -w : w) < 2 || (h < 0 ? -h : h) < 2) {
-        d.notifyInfo(msg);
+      const rectangle = dragRectangle(placed, g.from, g.to);
+      if (!rectangle) {
+        d.notifyInfo(t('drawingUi.hint.localSectionDrag'));
         return null;
       }
-      return { tool: 'sectionLocal', view: g.view, outline: { kind: 'rectangle', p0: [round2(x0), round2(y0)], p1: [round2(x1), round2(y1)] }, depth };
+      return { tool: 'sectionLocal', view: g.view, outline: rectangle, depth: drw.tool?.kind === 'sectionLocal' ? drw.tool.depth : 5 };
+    }
+    if (g.tool === 'crop') {
+      // only a local section can be cropped (B2.7): the region a partial section cuts out is what is set apart
+      if (drw.doc.views.find((v) => v.id === g.view)?.kind !== 'sectionLocal') {
+        d.notifyInfo(t('drawingUi.hint.cropParent'));
+        return null;
+      }
+      const rectangle = dragRectangle(placed, g.from, g.to);
+      if (!rectangle) {
+        d.notifyInfo(t('drawingUi.hint.crop'));
+        return null;
+      }
+      return { tool: 'crop', view: g.view, outline: rectangle };
     }
     if (g.slant) {
       // a slanted cut (D-I5): through the first point, along the drag (or toward the second click), across the whole view
@@ -940,6 +961,9 @@ export function DrawingViewport() {
         break;
       case 'sectionLocal':
         d.addLocalSection(placement.view, placement.outline, placement.depth, [round2(at[0]), round2(at[1])]);
+        break;
+      case 'crop':
+        d.addCrop(placement.view, placement.outline, [round2(at[0]), round2(at[1])]);
         break;
       case 'section': {
         const g = free ? null : sectionGhost(placement, at);
@@ -1016,7 +1040,7 @@ export function DrawingViewport() {
   const dimensionHints = ['drawingUi.hint.dimension0', 'drawingUi.hint.dimension1', 'drawingUi.hint.dimension2'] as const;
   const hint =
     pendingPlacement
-      ? t(pendingPlacement.tool === 'section' ? 'drawingUi.hint.placeSection' : pendingPlacement.tool === 'sectionLocal' ? 'drawingUi.hint.placeLocalSection' : 'drawingUi.hint.placeDerived')
+      ? t(pendingPlacement.tool === 'section' ? 'drawingUi.hint.placeSection' : pendingPlacement.tool === 'sectionLocal' ? 'drawingUi.hint.placeLocalSection' : pendingPlacement.tool === 'crop' ? 'drawingUi.hint.placeCrop' : 'drawingUi.hint.placeDerived')
       : tool?.kind === 'placeView'
       ? t('drawingUi.hint.placeView')
       : tool?.kind === 'project'
@@ -1030,7 +1054,7 @@ export function DrawingViewport() {
       : tool?.kind === 'surface'
       ? t('drawingUi.toolSurfaceFinish')
       : tool
-      ? t(tool.kind === 'section' ? (tool.path === 'stepped' ? 'drawingUi.hint.sectionStepped' : tool.path === 'aligned' ? 'drawingUi.hint.sectionAligned' : tool.slant ? 'drawingUi.hint.sectionSlant' : 'drawingUi.hint.section') : tool.kind === 'sectionLocal' ? 'drawingUi.hint.localSection' : 'drawingUi.hint.detail')
+      ? t(tool.kind === 'section' ? (tool.path === 'stepped' ? 'drawingUi.hint.sectionStepped' : tool.path === 'aligned' ? 'drawingUi.hint.sectionAligned' : tool.slant ? 'drawingUi.hint.sectionSlant' : 'drawingUi.hint.section') : tool.kind === 'sectionLocal' ? 'drawingUi.hint.localSection' : tool.kind === 'crop' ? 'drawingUi.hint.crop' : 'drawingUi.hint.detail')
       : drw.doc.views.length === 0
       ? t('drawingUi.mainViewFirst')
       : null;

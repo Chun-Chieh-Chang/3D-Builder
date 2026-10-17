@@ -13,7 +13,7 @@ import { ANNOTATION_FIELDS, checkAnnotation, framesUsing, type Annotation, type 
  * opened (exact hidden-line removal), so a drawing can never disagree with the model it shows.
  */
 
-export const DRAWING_SCHEMA_VERSION = 22;
+export const DRAWING_SCHEMA_VERSION = 23;
 
 export type SheetSize = 'A4' | 'A3' | 'A2' | 'A1' | 'A0';
 export const SHEET_SIZES: readonly SheetSize[] = ['A4', 'A3', 'A2', 'A1', 'A0'];
@@ -270,6 +270,15 @@ export interface DetailDrawingView extends ViewCommon {
 }
 
 /**
+ * A closed outline drawn on a view (B1, B2.7): a rectangle, a circle, or a closed polygon, in the view's own coordinates at full size. A local
+ * section cuts along one; a cropped view shows what is inside one. It must be closed and must not cross itself.
+ */
+export type ClosedOutline =
+  | { kind: 'rectangle'; p0: [number, number]; p1: [number, number] }
+  | { kind: 'circle'; centre: [number, number]; radius: number }
+  | { kind: 'polygon'; points: [number, number][] };
+
+/**
  * A local (partial) section (B1, D-I): only what lies inside a closed outline (rectangle, circle, polygon) drawn on the parent
  * view is cut; everything outside the outline is shown as an ordinary view. `depth` is how far the cut goes (mm); zero, negative,
  * or beyond the part is refused. The outline must be closed and non-self-intersecting. A local section may not serve as the parent
@@ -279,17 +288,27 @@ export interface LocalSectionDrawingView extends ViewCommon {
   kind: 'sectionLocal';
   parent: Id;
   /** The closed cutting outline in the parent's view coordinates at full size. */
-  outline:
-    | { kind: 'rectangle'; p0: [number, number]; p1: [number, number] }
-    | { kind: 'circle'; centre: [number, number]; radius: number }
-    | { kind: 'polygon'; points: [number, number][] };
+  outline: ClosedOutline;
   /** How deep the cut goes, mm. Must be positive and must actually reach the part. */
   depth: number;
   /** The letter on the outline and over the view: 「A」 for A–A. */
   label: string;
 }
 
-export type DrawingView = ModelDrawingView | ProjectedDrawingView | SectionDrawingView | DetailDrawingView | LocalSectionDrawingView;
+/**
+ * A cropped view (B2.7): the part of its parent's view inside a closed outline, drawn as a view of its own so that a small region of a crowded
+ * drawing can be set out on its own (SolidWorks's cropped view). Nothing is cut here — what the parent shows inside the outline is what this
+ * shows, at the parent's scale. Its parent must be a local (partial) section: the region a partial section cuts out is what is usually wanted
+ * apart. A cropped view is not shaded (its image is one picture of the whole view and cannot be cut at the outline).
+ */
+export interface CropDrawingView extends ViewCommon {
+  kind: 'crop';
+  parent: Id;
+  /** The closed outline in the parent's view coordinates at full size; only what lies inside it is shown. */
+  outline: ClosedOutline;
+}
+
+export type DrawingView = ModelDrawingView | ProjectedDrawingView | SectionDrawingView | DetailDrawingView | LocalSectionDrawingView | CropDrawingView;
 export type DerivedDrawingView = Exclude<DrawingView, ModelDrawingView>;
 
 export const isDerived = (v: DrawingView): v is DerivedDrawingView => v.kind !== undefined && v.kind !== 'model';
@@ -795,29 +814,41 @@ function checkView(v: DrawingView, views: readonly DrawingView[]): void {
     const p = views.find((x) => x.id === v.parent);
     if (!p) throw new CommandError(t('drawing.noParent', { id: v.parent }));
     if (p.kind === 'sectionLocal') throw new CommandError(t('drawing.localSectionNotFromLocal'));
-    // outline must be closed and non-self-intersecting
-    const outline = v.outline;
-    if (!outline) throw new CommandError(t('drawing.badLocalSectionOutline'));
-    if (outline.kind === 'polygon') {
-      const pts = outline.points;
-      if (!pts || pts.length < 3) throw new CommandError(t('drawing.badLocalSectionOutline'));
-      for (const q of pts) if (!q || q.length !== 2 || !q.every((x) => typeof x === 'number' && Number.isFinite(x))) throw new CommandError(t('drawing.badLocalSectionOutline'));
-      // closed: first and last must coincide
-      const first = pts[0]!; const last = pts[pts.length - 1]!;
-      if (Math.abs(first[0] - last[0]) > 1e-9 || Math.abs(first[1] - last[1]) > 1e-9) throw new CommandError(t('drawing.badLocalSectionOutline'));
-      // no segment of zero length
-      for (let i = 0; i < pts.length - 1; i++) {
-        const a = pts[i]!; const b = pts[i + 1]!;
-        if (Math.abs(a[0] - b[0]) < 1e-9 && Math.abs(a[1] - b[1]) < 1e-9) throw new CommandError(t('drawing.badLocalSectionOutline'));
-      }
+    checkOutline(v.outline, 'drawing.badLocalSectionOutline');
+  }
+  if (v.kind === 'crop') {
+    // a cropped view sets a cut region of a view apart, so what it crops must be the local section that cut it (B2.7)
+    if (views.find((x) => x.id === v.parent)?.kind !== 'sectionLocal') throw new CommandError(t('drawing.cropNeedsLocalSection'));
+    checkOutline(v.outline, 'drawing.badOutline');
+  }
+}
+
+/** Checks a closed outline (a local section's cutting outline, a cropped view's region): the shape it is and its numbers; it must be closed and not cross itself. */
+function checkOutline(outline: ClosedOutline | undefined, bad: 'drawing.badLocalSectionOutline' | 'drawing.badOutline'): void {
+  const ok = (): never => {
+    throw new CommandError(t(bad));
+  };
+  if (!outline) ok();
+  if (!outline) return;
+  if (outline.kind === 'polygon') {
+    const pts = outline.points;
+    if (!pts || pts.length < 3) ok();
+    for (const q of pts) if (!q || q.length !== 2 || !q.every((x) => typeof x === 'number' && Number.isFinite(x))) ok();
+    // closed: first and last must coincide
+    const first = pts[0]!; const last = pts[pts.length - 1]!;
+    if (Math.abs(first[0] - last[0]) > 1e-9 || Math.abs(first[1] - last[1]) > 1e-9) ok();
+    // no segment of zero length
+    for (let i = 0; i < pts.length - 1; i++) {
+      const a = pts[i]!; const b = pts[i + 1]!;
+      if (Math.abs(a[0] - b[0]) < 1e-9 && Math.abs(a[1] - b[1]) < 1e-9) ok();
     }
-    if (outline.kind === 'circle') {
-      if (!(outline.radius > 0) || !Number.isFinite(outline.radius)) throw new CommandError(t('drawing.badLocalSectionOutline'));
-    }
-    if (outline.kind === 'rectangle') {
-      const [p0, p1] = [outline.p0, outline.p1];
-      if (!p0 || !p1 || p0.length !== 2 || p1.length !== 2 || !p0.every((x) => typeof x === 'number' && Number.isFinite(x)) || !p1.every((x) => typeof x === 'number' && Number.isFinite(x))) throw new CommandError(t('drawing.badLocalSectionOutline'));
-    }
+  }
+  if (outline.kind === 'circle') {
+    if (!(outline.radius > 0) || !Number.isFinite(outline.radius)) ok();
+  }
+  if (outline.kind === 'rectangle') {
+    const [p0, p1] = [outline.p0, outline.p1];
+    if (!p0 || !p1 || p0.length !== 2 || p1.length !== 2 || !p0.every((x) => typeof x === 'number' && Number.isFinite(x)) || !p1.every((x) => typeof x === 'number' && Number.isFinite(x))) ok();
   }
 }
 
@@ -999,7 +1030,7 @@ export function mutateDrawing(draft: Draft<DrawingDoc>, cmd: DrawingCommand): vo
       if (v.locked && (cmd.patch.at !== undefined || cmd.patch.scale !== undefined || cmd.patch.slide !== undefined)) throw new CommandError(t('drawing.viewLocked'));
       const { at, scale, slide, flip, aligned, centreMarks, display, locked, showTangentEdges, break: brk, ...rest } = cmd.patch;
       const kind = v.kind ?? 'model';
-      const belongs: Record<string, string[]> = { model: ['source', 'direction'], projected: ['side'], section: ['line', 'label'], detail: ['centre', 'radius', 'label'], sectionLocal: ['outline', 'depth', 'label'] };
+      const belongs: Record<string, string[]> = { model: ['source', 'direction'], projected: ['side'], section: ['line', 'label'], detail: ['centre', 'radius', 'label'], sectionLocal: ['outline', 'depth', 'label'], crop: ['outline'] };
       for (const k of Object.keys(rest)) if (k !== 'name' && !belongs[kind]!.includes(k)) throw new CommandError(t('drawing.notForKind', { field: k, kind }));
       if (flip !== undefined && kind !== 'section') throw new CommandError(t('drawing.notForKind', { field: 'flip', kind }));
       if (aligned !== undefined && kind !== 'section') throw new CommandError(t('drawing.notForKind', { field: 'aligned', kind }));
@@ -1514,6 +1545,8 @@ export function axesOf(views: readonly DrawingView[], projection: DrawingSheet['
     case 'detail':
       return base;
     case 'sectionLocal':
+      return base;
+    case 'crop':
       return base;
   }
 }

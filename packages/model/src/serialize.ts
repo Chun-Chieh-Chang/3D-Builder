@@ -338,6 +338,9 @@ const drawingMigrations: Record<number, (doc: Json) => Json> = {
   // v22 (B2.7): a view's break (`break`, the band left out so that a long part is shown shorter) is new and optional, so there is nothing to convert; the version
   // keeps an older program, which would draw such a view whole and so at the wrong length, from opening it.
   21: (doc) => doc,
+  // v23 (B2.7): a cropped view kind (`crop`, the part of its parent inside a closed outline) is new; nothing to convert, the version keeps an older program
+  // from opening a drawing whose views it would not know how to draw.
+  22: (doc) => doc,
 };
 
 export function parseDrawing(text: string): DrawingDoc {

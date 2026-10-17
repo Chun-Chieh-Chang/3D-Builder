@@ -144,7 +144,7 @@ describe('the document', () => {
     const d = applyDrawingCommand(applyDrawingCommand(doc(views), { type: 'setSheet', sheet: { shift: [3, 4] } }), { type: 'setView', viewId: 'r', patch: { slide: -8 } });
     const back = parseDrawing(serializeDrawing(d));
     expect(back.schemaVersion).toBe(DRAWING_SCHEMA_VERSION);
-    expect(DRAWING_SCHEMA_VERSION).toBe(22);
+    expect(DRAWING_SCHEMA_VERSION).toBe(23);
     expect(back.sheet.shift).toEqual([3, 4]);
     expect(back.views.find((v) => v.id === 'r')!.slide).toBe(-8);
     const old = JSON.parse(serializeDrawing(doc(views))) as Record<string, unknown>;

@@ -1,5 +1,5 @@
 import { BREAK_GAP, isCorner, isDerived, rightOf, sectionArrow, sectionSide, type ViewAxes, type DrawingDoc, type DrawingSheet, type DrawingView, type Id, type Scale, type ViewCorner, type ViewName, type ViewSide } from '@3db/model';
-import { clipToCircle } from './geometry';
+import { clipToCircle, clipToOutline, outlineBox } from './geometry';
 import type { ShadeImage } from './shade';
 import { sheetMetrics, type Rect } from './sheet';
 
@@ -158,7 +158,7 @@ const sizeOf = (g: ViewLines | null | undefined, brk?: PlacedBreak) => {
 /** The scale a view is drawn at: its own, else (a projected or section view) its parent's, else the sheet's. */
 export function scaleOf(doc: Pick<DrawingDoc, 'views' | 'sheet'>, view: DrawingView, depth = 0): Scale {
   if (view.scale) return view.scale;
-  if (view.kind === 'projected' || view.kind === 'section') {
+  if (view.kind === 'projected' || view.kind === 'section' || view.kind === 'crop') {
     const parent = doc.views.find((v) => v.id === view.parent);
     if (parent && depth < 64) return scaleOf(doc, parent, depth + 1);
   }
@@ -167,11 +167,30 @@ export function scaleOf(doc: Pick<DrawingDoc, 'views' | 'sheet'>, view: DrawingV
 
 /**
  * The lines of every view, with the detail views made from their parents': what is inside the circle, the box of the circle (a detail view is as big as its
- * circle, so that its size does not depend on what happens to be in it). A detail of a view with no lines has none.
+ * circle, so that its size does not depend on what happens to be in it). A detail of a view with no lines has none. A cropped view (B2.7) is made the same
+ * way: what its parent shows inside its outline, and the box of the outline.
  */
 export function resolveLines(doc: Pick<DrawingDoc, 'views'>, lines: ReadonlyMap<Id, ViewLines | null>): Map<Id, ViewLines | null> {
   const out = new Map<Id, ViewLines | null>();
   for (const v of doc.views) {
+    if (v.kind === 'crop') {
+      const parent = lines.get(v.parent);
+      if (!parent) {
+        out.set(v.id, null);
+        continue;
+      }
+      // nothing is cut here: the crop shows what the parent shows inside the outline, at the outline's own size
+      const clip = (ls: number[][] | undefined) => (ls ?? []).flatMap((l) => clipToOutline(l, v.outline));
+      out.set(v.id, {
+        visible: clip(parent.visible),
+        hidden: clip(parent.hidden),
+        box: outlineBox(v.outline),
+        ...(parent.cut ? { cut: clip(parent.cut) } : {}),
+        ...(parent.center ? { center: clip(parent.center) } : {}),
+        ...(parent.tangent ? { tangent: clip(parent.tangent) } : {}),
+      });
+      continue;
+    }
     if (v.kind !== 'detail') {
       out.set(v.id, lines.get(v.id) ?? null);
       continue;
