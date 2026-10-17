@@ -14,6 +14,7 @@ export type DrawingMenuAt = { x: number; y: number } & (
   | { kind: 'dimension'; id: Id }
   | { kind: 'annotation'; id: Id }
   | { kind: 'finish'; id: Id }
+  | { kind: 'table'; id: Id }
   | { kind: 'sheet' }
 );
 /** A view's menu, as the tree opens it (the kind given). */
@@ -130,6 +131,22 @@ export function DrawingMenu({ at, onClose }: { at: DrawingMenuAt; onClose: () =>
     ];
   } else if (at.kind === 'finish') {
     items = [item('menuDelete', t('drawingUi.menu.delete'), () => d.deleteSelection())];
+  } else if (at.kind === 'table') {
+    // a table's own menu (B2.6): the parts list asks for its balloons too, the hole table only for where it sits — the same commands the panel offers
+    const table = doc.tables.find((x) => x.id === at.id);
+    if (!table) return null;
+    const bom = table.kind === 'bom';
+    items = [
+      item('menuTableHome', t(bom ? 'drawingUi.bomAutoPosition' : 'drawingUi.tableAutoPosition'), () => d.setTable(table.id, { at: null }), !table.at),
+      ...(bom
+        ? [
+            item('menuBalloons', `${table.balloons ? '✓ ' : ''}${t('drawingUi.balloons')}`, () => d.setTable(table.id, { balloons: !table.balloons })),
+            item('menuBalloonsAuto', t('drawingUi.balloonsAuto'), () => d.setTable(table.id, { balloonAt: null }), !table.balloonAt),
+          ]
+        : []),
+      sep('s1'),
+      item('menuDelete', t('drawingUi.menu.delete'), () => d.deleteSelection()),
+    ];
   } else {
     const views = doc.views.length > 0;
     items = [

@@ -1,7 +1,7 @@
 import { t, type Locale } from '@3db/i18n';
 import { DIM_STYLE_DEFAULT, SHEET_SIZES, TITLE_FIELDS, TITLE_STYLE_DEFAULT, VIEW_CORNERS, VIEW_DISPLAYS, VIEW_NAMES, baseName, displayOf, isCorner, isDerived, isShaded, type DrawingView, type Scale, type SheetSize, type TitleField, type ViewCorner, type ViewDisplay, type ViewName, type ViewSide } from '@3db/model';
-import { STANDARD_SCALES, arrangementBase, scaleText, type ViewLines } from '@3db/drawing';
-import { openDrawingPart } from '../actions';
+import { STANDARD_SCALES, arrangementBase, lineAcrossBox, scaleText, type ViewLines } from '@3db/drawing';
+import { ACTIONS, openDrawingPart, shortcutOf } from '../actions';
 import { DimStyleFields } from './DimStyleFields';
 import { TitleStyleFields } from './TitleStyleFields';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
@@ -362,12 +362,14 @@ export function DrawingPanel() {
   const drw = useStore((s) => s.drw)!;
   const d = store.drawingStore!;
   const doc = drw.doc;
-  const [tab, setTab] = useState<'tree' | 'props'>('props');
+  const [tab, setTab] = useState<'tree' | 'props' | 'tools'>('props');
   const [format, setFormat] = useState(false);
   const [direction, setDirection] = useState<ViewName>('isometric');
   const [side, setSide] = useState<ViewSide>('right');
   const [vertical, setVertical] = useState(true);
   const [at, setAt] = useState('');
+  /** The angle of a cut made by numbers (B2.6): 0 is the vertical or horizontal line the select asks for, anything else turns it about the same point. */
+  const [sectionAngle, setSectionAngle] = useState('');
   const [centre, setCentre] = useState<[string, string]>(['', '']);
   const [radius, setRadius] = useState('');
   const [localDepth, setLocalDepth] = useState('5');
@@ -430,6 +432,29 @@ export function DrawingPanel() {
           <Icon name="properties" />
           <span>{t('drawingUi.tabProps')}</span>
         </button>
+        <button type="button" role="tab" className={tab === 'tools' ? 'active' : ''} aria-selected={tab === 'tools'} data-tab="tools" title={t('drawingUi.tabTools')} onClick={() => setTab('tools')}>
+          <Icon name="palette" />
+          <span>{t('drawingUi.tabTools')}</span>
+        </button>
+      </div>
+      {/* Tools (B2.6): the options and the shortcuts of a drawing, and the keys the drawing's own commands answer to — the same registry the shortcuts dialog edits, so what is listed is what is in force */}
+      <div className="sw-pane" hidden={tab !== 'tools'}>
+        <div className="pm-row wrap">
+          <button className="pm-button" data-action="openOptions" onClick={() => store.openDialog('options')}>
+            {t('action.options')}
+          </button>
+          <button className="pm-button" data-action="openShortcuts" onClick={() => store.openDialog('shortcuts')}>
+            {t('action.shortcuts')}
+          </button>
+        </div>
+        <ul className="sw-keys" data-group="drawing-shortcuts">
+          {ACTIONS.filter((a) => a.group === 'drawing').map((a) => (
+            <li key={a.id} data-shortcut={a.id}>
+              <span className="sw-keys-name">{a.label}</span>
+              <span className="sw-keys-key">{shortcutOf(a) ?? ''}</span>
+            </li>
+          ))}
+        </ul>
       </div>
       <div className="sw-pane" hidden={tab !== 'tree'}>
         <DrawingTree
@@ -700,6 +725,8 @@ export function DrawingPanel() {
                 <option value="h">{t('drawingUi.sectionHorizontal')}</option>
               </select>
               <input data-field="sectionAt" inputMode="decimal" placeholder={String(+mid[vertical ? 0 : 1].toFixed(2))} value={at} onChange={(e) => setAt(e.target.value)} onKeyDown={(e) => e.stopPropagation()} />
+              <input data-field="sectionAngle" inputMode="decimal" title={t('drawingUi.sectionAngle')} value={sectionAngle} onChange={(e) => setSectionAngle(e.target.value)} onKeyDown={(e) => e.stopPropagation()} />
+              <span className="suffix">°</span>
               <button
                 className="pm-button"
                 data-action="addSection"
@@ -707,8 +734,18 @@ export function DrawingPanel() {
                 onClick={() => {
                   if (!box) return;
                   const p = num(at, mid[vertical ? 0 : 1]);
-                  const pad = 5;
-                  parent && d.addSection(parent.id, vertical ? [[p, box.min[1] - pad], [p, box.max[1] + pad]] : [[box.min[0] - pad, p], [box.max[0] + pad, p]]);
+                  const deg = num(sectionAngle, 0);
+                  if (deg === 0) {
+                    const pad = 5;
+                    parent && d.addSection(parent.id, vertical ? [[p, box.min[1] - pad], [p, box.max[1] + pad]] : [[box.min[0] - pad, p], [box.max[0] + pad, p]]);
+                    return;
+                  }
+                  // a cut by numbers at an angle (B2.6): through the same point, turned from the vertical or the horizontal the select asks for, across the whole view — the line the slanted tool draws (D-I5)
+                  const pt: [number, number] = vertical ? [p, mid[1]] : [mid[0], p];
+                  const rad = ((vertical ? 90 : 0) + deg) * (Math.PI / 180);
+                  const across = lineAcrossBox(pt, [pt[0] + Math.cos(rad), pt[1] + Math.sin(rad)], box, 5);
+                  if (!across) return d.notifyInfo(t('drawingUi.hint.sectionSlant'));
+                  parent && d.addSection(parent.id, across);
                 }}
               >
                 {t('drawingUi.section')}

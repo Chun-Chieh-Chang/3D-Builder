@@ -648,25 +648,27 @@ export function DrawingViewport() {
       const take = (pick: DrawingPick) => {
         if (!drw.selection.some((x) => x.kind === pick.kind && x.id === pick.id)) d.pick([pick], 'replace');
       };
-      const dim = dimensionAt(dimensionItems, p, reach);
-      const ann = dim ? null : dimensionAt(annotationHit, p, reach);
-      const finish = dim || ann ? null : finishUnder(p);
-      const view = dim || ann || finish ? undefined : viewUnder(p);
+      // the same order a ctrl-click takes things in: a dimension, an annotation, a surface finish, a table, then a view under them
+      const hit = pickUnder(p);
       const at = { x: e.clientX, y: e.clientY };
-      if (dim) {
-        take({ kind: 'dimension', id: dim.id });
-        setMenu({ ...at, kind: 'dimension', id: dim.id });
-      } else if (ann) {
-        take({ kind: 'annotation', id: ann.id });
-        setMenu({ ...at, kind: 'annotation', id: ann.id });
-      } else if (finish) {
-        take({ kind: 'finish', id: finish.id });
-        setMenu({ ...at, kind: 'finish', id: finish.id });
-      } else if (view) {
-        take({ kind: 'view', id: view.id });
-        const hit = featureUnder(p, view.id);
-        const leaf = (hit?.feature.ref as { in?: string } | undefined)?.in ?? null;
-        setMenu({ ...at, kind: 'view', view: view.id, leaf });
+      if (hit?.kind === 'dimension') {
+        take({ kind: 'dimension', id: hit.id });
+        setMenu({ ...at, kind: 'dimension', id: hit.id });
+      } else if (hit?.kind === 'annotation') {
+        take({ kind: 'annotation', id: hit.id });
+        setMenu({ ...at, kind: 'annotation', id: hit.id });
+      } else if (hit?.kind === 'finish') {
+        take({ kind: 'finish', id: hit.id });
+        setMenu({ ...at, kind: 'finish', id: hit.id });
+      } else if (hit?.kind === 'table') {
+        // a table's own menu (B2.6): the parts list and the hole table are drawn over the views, so they are taken before them, as SolidWorks does
+        take({ kind: 'table', id: hit.id });
+        setMenu({ ...at, kind: 'table', id: hit.id });
+      } else if (hit?.kind === 'view') {
+        take({ kind: 'view', id: hit.id });
+        const f = featureUnder(p, hit.id);
+        const leaf = (f?.feature.ref as { in?: string } | undefined)?.in ?? null;
+        setMenu({ ...at, kind: 'view', view: hit.id, leaf });
       } else setMenu({ ...at, kind: 'sheet' });
     }
     if (!drag && tool?.kind === 'placeView' && tool.dragged) {
