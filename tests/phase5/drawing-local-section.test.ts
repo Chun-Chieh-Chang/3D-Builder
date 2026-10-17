@@ -33,8 +33,8 @@ const withModelView = (doc: DrawingDoc) =>
   });
 
 describe('local section (sectionLocal) model validation', () => {
-  it('Schema version is 23', () => {
-    expect(DRAWING_SCHEMA_VERSION).toBe(23);
+  it('Schema version is 24', () => {
+    expect(DRAWING_SCHEMA_VERSION).toBe(24);
   });
 
   it('a circle-outline local section inserts', () => {

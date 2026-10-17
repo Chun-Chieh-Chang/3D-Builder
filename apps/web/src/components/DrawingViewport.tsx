@@ -47,7 +47,7 @@ import {
   type SceneItem,
   type ViewLines,
 } from '@3db/drawing';
-import { axesOf, oppositeSide, projectedAxes, type Annotation, type Attachment, type ClosedOutline, sectionArrow, sectionLookAxes, type Dimension, type DrawingView, type Id, type Scale, type LocalSectionDrawingView, type SectionDrawingView, type SurfaceFinish, type ViewCorner, type ViewSide } from '@3db/model';
+import { axesOf, oppositeSide, projectedAxes, type Annotation, type Attachment, type AuxiliaryDrawingView, type ClosedOutline, sectionArrow, sectionLookAxes, type Dimension, type DrawingView, type Id, type Scale, type LocalSectionDrawingView, type SectionDrawingView, type SurfaceFinish, type ViewCorner, type ViewSide } from '@3db/model';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { store, useStore } from '../state/store';
 import type { DrawingPick } from '../state/drawing';
@@ -73,7 +73,7 @@ type Drag =
   | { kind: 'surface'; id: string; from: P; origin: P; delta: P }
   /** An annotation (D-I3) moved as a whole; its leader's point stays on the feature. `delta` is in sheet mm. */
   | { kind: 'annotation'; id: string; from: P; delta: P }
-  | { kind: 'draw'; tool: 'section' | 'sectionLocal' | 'crop' | 'detail'; vertical?: boolean; slant?: boolean; view: Id; from: P; to: P }
+  | { kind: 'draw'; tool: 'section' | 'sectionLocal' | 'crop' | 'auxiliary' | 'detail'; vertical?: boolean; slant?: boolean; view: Id; from: P; to: P }
   /** The last click of a section or a detail: where its view goes. `free` (Ctrl held): put where the pointer is, not in line with the parent. */
   | { kind: 'placeDraw'; placement: DrawPlacement; from: P; to: P; free: boolean }
   /** A box dragged over the paper from where nothing was (D-I1a): what it holds is chosen; with Ctrl it is added to what was. */
@@ -82,7 +82,8 @@ type DrawPlacement =
   | { tool: 'section'; view: Id; line: SectionDrawingView['line']; aligned?: boolean }
   | { tool: 'detail'; view: Id; centre: P; radius: number }
   | { tool: 'sectionLocal'; view: Id; outline: LocalSectionDrawingView['outline']; depth: number }
-  | { tool: 'crop'; view: Id; outline: ClosedOutline };
+  | { tool: 'crop'; view: Id; outline: ClosedOutline }
+  | { tool: 'auxiliary'; view: Id; line: AuxiliaryDrawingView['line'] };
 
 const round2 = (n: number) => Math.round(n * 100) / 100;
 
@@ -493,7 +494,7 @@ export function DrawingViewport() {
         return;
       }
       const view = viewUnder(p);
-      if (!view) return d.notifyInfo(t(tool.kind === 'section' ? 'drawingUi.hint.section' : tool.kind === 'sectionLocal' ? 'drawingUi.hint.localSection' : tool.kind === 'crop' ? 'drawingUi.hint.crop' : 'drawingUi.hint.detail'));
+      if (!view) return d.notifyInfo(t(tool.kind === 'section' ? 'drawingUi.hint.section' : tool.kind === 'sectionLocal' ? 'drawingUi.hint.localSection' : tool.kind === 'crop' ? 'drawingUi.hint.crop' : tool.kind === 'auxiliary' ? 'drawingUi.hint.auxiliary' : 'drawingUi.hint.detail'));
       // a cropped view crops a local section (B2.7), so a drag anywhere else is not the start of one
       if (tool.kind === 'crop' && view.kind !== 'sectionLocal') return d.notifyInfo(t('drawingUi.hint.cropParent'));
       if (pendingDraw?.tool === tool.kind) {
@@ -930,6 +931,15 @@ export function DrawingViewport() {
       }
       return { tool: 'crop', view: g.view, outline: rectangle };
     }
+    if (g.tool === 'auxiliary') {
+      // the fold line (B2.7): the line dragged, carried across the whole view as a slanted cut is; the view is turned about it and looks square to it
+      const line = lineAcrossBox(at, toView(placed, g.to), box, 5);
+      if (!line) {
+        d.notifyInfo(t('drawingUi.hint.auxiliary'));
+        return null;
+      }
+      return { tool: 'auxiliary', view: g.view, line: [[round2(line[0][0]), round2(line[0][1])], [round2(line[1][0]), round2(line[1][1])]] };
+    }
     if (g.slant) {
       // a slanted cut (D-I5): through the first point, along the drag (or toward the second click), across the whole view
       const line = lineAcrossBox(at, toView(placed, g.to), box, 5);
@@ -972,6 +982,13 @@ export function DrawingViewport() {
         else d.addSection(placement.view, placement.line, [round2(at[0]), round2(at[1])], aligned);
         break;
       }
+      case 'auxiliary': {
+        // an auxiliary view goes on the fold line's side as a section does; with Ctrl, where the pointer is
+        const g = free ? null : auxiliaryGhost(placement, at);
+        if (g) d.addAuxiliary(placement.view, placement.line, undefined, { flip: g.flip, slide: g.slide, shift: g.shift });
+        else d.addAuxiliary(placement.view, placement.line, [round2(at[0]), round2(at[1])]);
+        break;
+      }
     }
     d.setTool(null);
   };
@@ -1007,15 +1024,16 @@ export function DrawingViewport() {
   };
 
   /**
-   * Where a section would go with the pointer at `p`: in line with its parent on the side the pointer is, its arrows looking the way that side asks (third angle:
-   * away from it; first angle: toward it), slid to the pointer.
+   * Where a view cut or turned about a line would go with the pointer at `p`: in line with its parent on the side the pointer is, its arrows looking the way that
+   * side asks (third angle: away from it; first angle: toward it), slid to the pointer. A section's line is where it cuts the part; an auxiliary view's fold line
+   * (B2.7) is what it is turned about — both look along the line's arrows, so both are placed the same way.
    */
-  const sectionGhost = (placement: Extract<DrawPlacement, { tool: 'section' }>, p: P): { flip: boolean; slide: number; shift: [number, number] | null; placed: PlacedView; lines: ViewLines; label: string } | null => {
+  const lineGhost = (placement: Extract<DrawPlacement, { tool: 'section' | 'auxiliary' }>, p: P): { flip: boolean; slide: number; shift: [number, number] | null; placed: PlacedView; lines: ViewLines; label: string } | null => {
     const parent = drw.doc.views.find((v) => v.id === placement.view);
     const parentPlaced = basePlaced.get(placement.view);
     const parentAxes = parent && axesOf(drw.doc.views, drw.doc.sheet.projection, parent);
     if (!parent || !parentPlaced || !parentAxes) return null;
-    // a line nearer vertical has its arrows nearer horizontal, so the section goes left or right of the parent (a slanted line too, D-I5)
+    // a line nearer vertical has its arrows nearer horizontal, so the view goes left or right of the parent (a slanted line too, D-I5)
     const [[x0, y0], [x1, y1]] = placement.line;
     const vertical = Math.abs(x1 - x0) <= Math.abs(y1 - y0);
     const side: ViewSide = vertical ? (p[0] >= parentPlaced.at[0] ? 'right' : 'left') : p[1] >= parentPlaced.at[1] ? 'up' : 'down';
@@ -1024,10 +1042,14 @@ export function DrawingViewport() {
     const lines = d.linesForAxes(sectionLookAxes(parentAxes, { line: placement.line, ...(flip ? { flip } : {}) }));
     if (!lines) return null;
     const label = d.peekLabel();
-    const view: SectionDrawingView = { id: 'ghost', name: '', kind: 'section', parent: placement.view, line: placement.line, label, ...(flip ? { flip: true } : {}) };
+    const view = placement.tool === 'section'
+      ? { id: 'ghost', name: '', kind: 'section' as const, parent: placement.view, line: placement.line, label, ...(flip ? { flip: true } : {}) }
+      : { id: 'ghost', name: '', kind: 'auxiliary' as const, parent: placement.view, line: placement.line, label, ...(flip ? { flip: true } : {}) };
     const g = previewDerived(drw.doc, drw.lines, view, lines, p);
     return g ? { flip, slide: g.slide, shift: g.shift, placed: g.placed, lines, label } : null;
   };
+  const sectionGhost = (placement: Extract<DrawPlacement, { tool: 'section' }>, p: P) => lineGhost(placement, p);
+  const auxiliaryGhost = (placement: Extract<DrawPlacement, { tool: 'auxiliary' }>, p: P) => lineGhost(placement, p);
 
   // the frame and the scale handle are on the view chosen last, when a view is what was chosen (a dimension chosen makes its view the panel's, not a chosen view)
   const selected = drw.selected && drw.selection.some((x) => x.kind === 'view' && x.id === drw.selected) ? built.placed.get(drw.selected) : undefined;
@@ -1040,7 +1062,7 @@ export function DrawingViewport() {
   const dimensionHints = ['drawingUi.hint.dimension0', 'drawingUi.hint.dimension1', 'drawingUi.hint.dimension2'] as const;
   const hint =
     pendingPlacement
-      ? t(pendingPlacement.tool === 'section' ? 'drawingUi.hint.placeSection' : pendingPlacement.tool === 'sectionLocal' ? 'drawingUi.hint.placeLocalSection' : pendingPlacement.tool === 'crop' ? 'drawingUi.hint.placeCrop' : 'drawingUi.hint.placeDerived')
+      ? t(pendingPlacement.tool === 'section' ? 'drawingUi.hint.placeSection' : pendingPlacement.tool === 'sectionLocal' ? 'drawingUi.hint.placeLocalSection' : pendingPlacement.tool === 'crop' ? 'drawingUi.hint.placeCrop' : pendingPlacement.tool === 'auxiliary' ? 'drawingUi.hint.placeAuxiliary' : 'drawingUi.hint.placeDerived')
       : tool?.kind === 'placeView'
       ? t('drawingUi.hint.placeView')
       : tool?.kind === 'project'
@@ -1054,7 +1076,7 @@ export function DrawingViewport() {
       : tool?.kind === 'surface'
       ? t('drawingUi.toolSurfaceFinish')
       : tool
-      ? t(tool.kind === 'section' ? (tool.path === 'stepped' ? 'drawingUi.hint.sectionStepped' : tool.path === 'aligned' ? 'drawingUi.hint.sectionAligned' : tool.slant ? 'drawingUi.hint.sectionSlant' : 'drawingUi.hint.section') : tool.kind === 'sectionLocal' ? 'drawingUi.hint.localSection' : tool.kind === 'crop' ? 'drawingUi.hint.crop' : 'drawingUi.hint.detail')
+      ? t(tool.kind === 'section' ? (tool.path === 'stepped' ? 'drawingUi.hint.sectionStepped' : tool.path === 'aligned' ? 'drawingUi.hint.sectionAligned' : tool.slant ? 'drawingUi.hint.sectionSlant' : 'drawingUi.hint.section') : tool.kind === 'sectionLocal' ? 'drawingUi.hint.localSection' : tool.kind === 'crop' ? 'drawingUi.hint.crop' : tool.kind === 'auxiliary' ? 'drawingUi.hint.auxiliary' : 'drawingUi.hint.detail')
       : drw.doc.views.length === 0
       ? t('drawingUi.mainViewFirst')
       : null;
@@ -1086,8 +1108,9 @@ export function DrawingViewport() {
       return placed && lines ? { placed, lines } : null;
     }
     if (tool?.kind === 'project') return projectGhost(at);
-    if (tool?.kind === 'section' && (pendingPlacement?.tool === 'section' || (drag?.kind === 'placeDraw' && drag.placement.tool === 'section'))) {
-      const placement = (drag?.kind === 'placeDraw' ? drag.placement : pendingPlacement) as Extract<DrawPlacement, { tool: 'section' }>;
+    const drawnBy = drag?.kind === 'placeDraw' ? drag.placement : pendingPlacement;
+    if ((tool?.kind === 'section' || tool?.kind === 'auxiliary') && drawnBy && (drawnBy.tool === 'section' || drawnBy.tool === 'auxiliary') && drawnBy.tool === tool.kind) {
+      const placement = drawnBy;
       const p = (drag?.kind === 'placeDraw' ? drag.to : drawCursor) ?? at;
       if (hover?.ctrl || (drag?.kind === 'placeDraw' && drag.free)) {
         const parent = drw.doc.views.find((v) => v.id === placement.view);
@@ -1096,7 +1119,7 @@ export function DrawingViewport() {
         const placed = ghostAt(lines, p, basePlaced.get(placement.view)?.scale);
         return placed && lines ? { placed, lines, label: d.peekLabel() } : null;
       }
-      const g = sectionGhost(placement, p);
+      const g = lineGhost(placement, p);
       return g ? { placed: g.placed, lines: g.lines, label: g.label } : null;
     }
     return null;
@@ -1216,8 +1239,9 @@ export function DrawingViewport() {
               </g>
             );
           })()}
-          {drawn && drawnPlaced && drawn.tool === 'section' && (() => {
-            if (drawn.slant) {
+          {drawn && drawnPlaced && (drawn.tool === 'section' || drawn.tool === 'auxiliary') && (() => {
+            // an auxiliary view's fold line (B2.7) is always taken across the view, at whatever angle was dragged, as a slanted cut is
+            if (drawn.slant || drawn.tool === 'auxiliary') {
               const box = { min: [drawnPlaced.at[0] - drawnPlaced.w / 2, drawnPlaced.at[1] - drawnPlaced.h / 2] as const, max: [drawnPlaced.at[0] + drawnPlaced.w / 2, drawnPlaced.at[1] + drawnPlaced.h / 2] as const };
               const across = Math.hypot(drawn.to[0] - drawn.from[0], drawn.to[1] - drawn.from[1]) >= 3 ? lineAcrossBox(drawn.from, drawn.to, box, 5) : null;
               return across ? <line data-slant-preview x1={across[0][0]} y1={sheet.height - across[0][1]} x2={across[1][0]} y2={sheet.height - across[1][1]} stroke="var(--accent)" strokeWidth={0.6} strokeDasharray="6 2 1 2" /> : null;

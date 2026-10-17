@@ -130,10 +130,10 @@ export function scaleFromRatio(r: number): Scale {
   return [n / g, d / g];
 }
 
-/** What a view's scale is made of: its own, else (a projected or section view) its parent's, else the sheet's. Changing the scale of a view changes the scale of what it names, and so of every view that takes it. */
+/** What a view's scale is made of: its own, else (a projected, section, cropped or auxiliary view) its parent's, else the sheet's. Changing the scale of a view changes the scale of what it names, and so of every view that takes it. */
 export function scaleTarget(doc: Pick<DrawingDoc, 'views'>, view: DrawingView, depth = 0): { view: Id } | { sheet: true } {
   if (view.scale) return { view: view.id };
-  if (view.kind === 'projected' || view.kind === 'section') {
+  if (view.kind === 'projected' || view.kind === 'section' || view.kind === 'auxiliary') {
     const parent = doc.views.find((v) => v.id === view.parent);
     if (parent && depth < 64) return scaleTarget(doc, parent, depth + 1);
   }
@@ -155,10 +155,10 @@ const sizeOf = (g: ViewLines | null | undefined, brk?: PlacedBreak) => {
   return { w: max[0] - min[0], h: max[1] - min[1], centre: [(min[0] + max[0]) / 2, (min[1] + max[1]) / 2] as [number, number] };
 };
 
-/** The scale a view is drawn at: its own, else (a projected or section view) its parent's, else the sheet's. */
+/** The scale a view is drawn at: its own, else (a projected, section, cropped or auxiliary view) its parent's, else the sheet's. */
 export function scaleOf(doc: Pick<DrawingDoc, 'views' | 'sheet'>, view: DrawingView, depth = 0): Scale {
   if (view.scale) return view.scale;
-  if (view.kind === 'projected' || view.kind === 'section' || view.kind === 'crop') {
+  if (view.kind === 'projected' || view.kind === 'section' || view.kind === 'crop' || view.kind === 'auxiliary') {
     const parent = doc.views.find((v) => v.id === view.parent);
     if (parent && depth < 64) return scaleOf(doc, parent, depth + 1);
   }
@@ -267,6 +267,8 @@ function sideOf(doc: Pick<DrawingDoc, 'sheet'>, v: Exclude<DrawingView, { kind?:
   // a view off a corner has a place of its own and is never laid out by its side; asked anyway (a probe without its place), it is beside the parent
   if (v.kind === 'projected') return isCorner(v.side) ? (v.side === 'upRight' || v.side === 'downRight' ? 'right' : 'left') : v.side;
   if (v.kind === 'section') return sectionSide(sectionArrow(v), doc.sheet.projection);
+  // an auxiliary view (B2.7) is turned about its fold line, which is drawn on the parent as a section's line is: it goes on that line's side, as the section does
+  if (v.kind === 'auxiliary') return sectionSide(sectionArrow(v), doc.sheet.projection);
   return 'right'; // a detail: beside its parent
 }
 

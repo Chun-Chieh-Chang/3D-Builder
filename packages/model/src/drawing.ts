@@ -13,7 +13,7 @@ import { ANNOTATION_FIELDS, checkAnnotation, framesUsing, type Annotation, type 
  * opened (exact hidden-line removal), so a drawing can never disagree with the model it shows.
  */
 
-export const DRAWING_SCHEMA_VERSION = 23;
+export const DRAWING_SCHEMA_VERSION = 24;
 
 export type SheetSize = 'A4' | 'A3' | 'A2' | 'A1' | 'A0';
 export const SHEET_SIZES: readonly SheetSize[] = ['A4', 'A3', 'A2', 'A1', 'A0'];
@@ -308,7 +308,24 @@ export interface CropDrawingView extends ViewCommon {
   outline: ClosedOutline;
 }
 
-export type DrawingView = ModelDrawingView | ProjectedDrawingView | SectionDrawingView | DetailDrawingView | LocalSectionDrawingView | CropDrawingView;
+/**
+ * An auxiliary view (B2.7): the model seen square to a fold line drawn on the parent (the arrows point to the right of the line from its first point to its
+ * second, the left with `flip`), so that a slanted face of the part is shown true size. Nothing is cut — the material is all there; the fold line is drawn across
+ * the parent with a letter at each end and the view carries the same letter (ISO 128-30). The view is placed on the side the arrows look away from (third
+ * angle), as a section is, and looks along them.
+ */
+export interface AuxiliaryDrawingView extends ViewCommon {
+  kind: 'auxiliary';
+  parent: Id;
+  /** The fold line on the parent, in the parent's view coordinates at full size: two points. The view looks square to it. */
+  line: [[number, number], [number, number]];
+  /** The arrows point to the right of the line from its first point to its second (the left with `flip`), as a section's. */
+  flip?: boolean;
+  /** The letter on the fold line and over the view: 「A」 for A–A. */
+  label: string;
+}
+
+export type DrawingView = ModelDrawingView | ProjectedDrawingView | SectionDrawingView | DetailDrawingView | LocalSectionDrawingView | CropDrawingView | AuxiliaryDrawingView;
 export type DerivedDrawingView = Exclude<DrawingView, ModelDrawingView>;
 
 export const isDerived = (v: DrawingView): v is DerivedDrawingView => v.kind !== undefined && v.kind !== 'model';
@@ -821,6 +838,27 @@ function checkView(v: DrawingView, views: readonly DrawingView[]): void {
     if (views.find((x) => x.id === v.parent)?.kind !== 'sectionLocal') throw new CommandError(t('drawing.cropNeedsLocalSection'));
     checkOutline(v.outline, 'drawing.badOutline');
   }
+  if (v.kind === 'auxiliary') {
+    // an auxiliary view is turned about one straight fold line (B2.7): two points, and the letter it is named by
+    checkAuxiliaryFold(v.line);
+    if (!v.label.trim()) throw new CommandError(t('drawing.labelEmpty'));
+  }
+}
+
+/**
+ * Checks a fold line: one straight line of two points that are numbers and are not the same point (a bend, or a line of no length, is no line to fold about).
+ * It is checked here rather than by `checkSectionLine`, whose stepped-section wording would name the wrong feature to a user who drew a crooked fold line.
+ */
+function checkAuxiliaryFold(line: readonly (readonly number[])[] | undefined): void {
+  const bad = (): never => {
+    throw new CommandError(t('drawing.badAuxiliaryLine'));
+  };
+  if (!Array.isArray(line) || line.length !== 2) bad();
+  const pts = line as readonly (readonly number[])[];
+  for (const r of pts) if (!r || r.length !== 2 || !r.every((x) => typeof x === 'number' && Number.isFinite(x))) bad();
+  const p = pts[0]!;
+  const q = pts[1]!;
+  if (Math.hypot(q[0]! - p[0]!, q[1]! - p[1]!) < 1e-9) bad();
 }
 
 /** Checks a closed outline (a local section's cutting outline, a cropped view's region): the shape it is and its numbers; it must be closed and not cross itself. */
@@ -1030,9 +1068,9 @@ export function mutateDrawing(draft: Draft<DrawingDoc>, cmd: DrawingCommand): vo
       if (v.locked && (cmd.patch.at !== undefined || cmd.patch.scale !== undefined || cmd.patch.slide !== undefined)) throw new CommandError(t('drawing.viewLocked'));
       const { at, scale, slide, flip, aligned, centreMarks, display, locked, showTangentEdges, break: brk, ...rest } = cmd.patch;
       const kind = v.kind ?? 'model';
-      const belongs: Record<string, string[]> = { model: ['source', 'direction'], projected: ['side'], section: ['line', 'label'], detail: ['centre', 'radius', 'label'], sectionLocal: ['outline', 'depth', 'label'], crop: ['outline'] };
+      const belongs: Record<string, string[]> = { model: ['source', 'direction'], projected: ['side'], section: ['line', 'label'], detail: ['centre', 'radius', 'label'], sectionLocal: ['outline', 'depth', 'label'], crop: ['outline'], auxiliary: ['line', 'label'] };
       for (const k of Object.keys(rest)) if (k !== 'name' && !belongs[kind]!.includes(k)) throw new CommandError(t('drawing.notForKind', { field: k, kind }));
-      if (flip !== undefined && kind !== 'section') throw new CommandError(t('drawing.notForKind', { field: 'flip', kind }));
+      if (flip !== undefined && kind !== 'section' && kind !== 'auxiliary') throw new CommandError(t('drawing.notForKind', { field: 'flip', kind }));
       if (aligned !== undefined && kind !== 'section') throw new CommandError(t('drawing.notForKind', { field: 'aligned', kind }));
       const next = { ...(JSON.parse(JSON.stringify(v)) as DrawingView), ...rest } as DrawingView & { flip?: boolean; aligned?: boolean; at?: [number, number]; scale?: Scale; slide?: number };
       if (aligned === null || aligned === false) delete next.aligned;
@@ -1548,6 +1586,9 @@ export function axesOf(views: readonly DrawingView[], projection: DrawingSheet['
       return base;
     case 'crop':
       return base;
+    case 'auxiliary':
+      // the view is turned about the fold line and looks square to it: the frame a section looks along, without the cut (B2.7)
+      return sectionLookAxes(base, view);
   }
 }
 

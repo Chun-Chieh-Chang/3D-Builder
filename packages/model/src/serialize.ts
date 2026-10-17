@@ -341,6 +341,9 @@ const drawingMigrations: Record<number, (doc: Json) => Json> = {
   // v23 (B2.7): a cropped view kind (`crop`, the part of its parent inside a closed outline) is new; nothing to convert, the version keeps an older program
   // from opening a drawing whose views it would not know how to draw.
   22: (doc) => doc,
+  // v24 (B2.7): an auxiliary view kind (`auxiliary`, the model seen square to a fold line drawn on its parent) is new; nothing to convert, the version keeps an
+  // older program from opening a drawing whose views it would not know how to draw.
+  23: (doc) => doc,
 };
 
 export function parseDrawing(text: string): DrawingDoc {

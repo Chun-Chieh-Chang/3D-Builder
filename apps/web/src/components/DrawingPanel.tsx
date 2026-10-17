@@ -718,6 +718,7 @@ export function DrawingPanel() {
             </button>
             <button className={`pm-button${drw.tool?.kind === 'sectionLocal' ? ' active' : ''}`} data-action="toolLocalSection" title={t('drawingUi.hint.localSection')} onClick={() => d.setTool(drw.tool?.kind === 'sectionLocal' ? null : { kind: 'sectionLocal', outlineKind: 'rectangle', depth: Number(localDepth) || 5 })}>{t('drawingUi.toolLocalSection')}</button>
             <button className={`pm-button${drw.tool?.kind === 'crop' ? ' active' : ''}`} data-action="toolCrop" title={t('drawingUi.hint.crop')} onClick={() => d.setTool(drw.tool?.kind === 'crop' ? null : { kind: 'crop', outlineKind: 'rectangle' })}>{t('drawingUi.toolCrop')}</button>
+            <button className={`pm-button${drw.tool?.kind === 'auxiliary' ? ' active' : ''}`} data-action="toolAuxiliary" title={t('drawingUi.hint.auxiliary')} onClick={() => d.setTool(drw.tool?.kind === 'auxiliary' ? null : { kind: 'auxiliary' })}>{t('drawingUi.toolAuxiliary')}</button>
             <input data-field="localSectionDepth" inputMode="decimal" placeholder={t('drawingUi.localSectionDepth')} value={localDepth} onChange={(e) => { setLocalDepth(e.target.value); if (drw.tool?.kind === 'sectionLocal') d.setTool({ ...drw.tool, depth: Number(e.target.value) || 5 }); }} onKeyDown={(e) => e.stopPropagation()} />
           </div>
           <details className="pm-details" data-group="derivedNumbers">

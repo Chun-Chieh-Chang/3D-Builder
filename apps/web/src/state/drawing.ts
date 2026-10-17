@@ -31,6 +31,7 @@ import {
   type ElementFacts,
   type Ref,
   type SectionDrawingView,
+  type AuxiliaryDrawingView,
   type LocalSectionDrawingView,
   type SurfaceFinish,
   type SurfaceFinishPatch,
@@ -130,6 +131,8 @@ export type DrawingTool =
   | { kind: 'sectionLocal'; outlineKind: 'rectangle' | 'circle' | 'polygon'; depth: number }
   /** A cropped view (B2.7) of a local section: the part inside a closed outline, set out as a view of its own. */
   | { kind: 'crop'; outlineKind: 'rectangle' | 'circle' | 'polygon' }
+  /** An auxiliary view (B2.7): the model seen square to a fold line drawn on a view, so a slanted face is shown true size. */
+  | { kind: 'auxiliary' }
   | { kind: 'detail' }
   | { kind: 'surface' }
   /**
@@ -1217,6 +1220,23 @@ export class DrawingStore {
     const ids = new IdAllocator(doc.idCounters, drawingIdsInUse(doc));
     const id = ids.take('view');
     if (this.execute({ type: 'insertViews', views: [{ id, name: t('drawing.view.crop'), kind: 'crop', parent, outline, ...(at ? { at } : {}) }] })) this.select(id);
+  }
+
+  /**
+   * An auxiliary view (B2.7) of `parent`: the model seen square to the fold line `line` (two points in the parent's view coordinates), so that a slanted face is
+   * shown true size. Nothing is cut — the material is all there. It is placed on the fold line's side as a section is (unless `at` says where); the letter is the
+   * next free one.
+   */
+  addAuxiliary(parent: Id, line: AuxiliaryDrawingView['line'], at?: [number, number], options: { flip?: boolean; slide?: number; shift?: [number, number] | null } = {}): void {
+    const doc = this.history.doc;
+    if (this.isFlat(parent)) return this.host.notify(t('drawing.flatNoDerived'), 'error');
+    const ids = new IdAllocator(doc.idCounters, drawingIdsInUse(doc));
+    const id = ids.take('view');
+    const label = this.nextLabel();
+    const slide = !at && options.slide !== undefined && Math.abs(options.slide) > 0.005 ? { slide: Math.round(options.slide * 100) / 100 } : {};
+    const insert: DrawingCommand = { type: 'insertViews', views: [{ id, name: t('drawing.view.auxiliary', { label }), kind: 'auxiliary', parent, line, label, ...(options.flip ? { flip: true } : {}), ...slide, ...(at ? { at } : {}) }] };
+    const shift = !at && options.shift ? options.shift : null;
+    if (this.execute(shift ? { type: 'batch', commands: [insert, { type: 'setSheet', sheet: { shift } }] } : insert)) this.select(id);
   }
 
   /** The letter the next section or detail will have. */

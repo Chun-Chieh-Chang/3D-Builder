@@ -216,8 +216,11 @@ export function viewImage(view: DrawingView, lines: ViewLines | null | undefined
   return { view: view.id, at, w: top[0] - at[0], h: top[1] - at[1], image: img, ...(clip ? { clip } : {}) };
 }
 
-/** The cutting plane line of a section on its parent view, with the arrows at its ends and the letter beside each; and the section's own title. */
-function sectionItems(v: SectionDrawingView, parent: PlacedView, own: PlacedView): SceneItem[] {
+/**
+ * The line of a section or the fold line of an auxiliary view on its parent view, with the arrows at its ends and the letter beside each; and the view's own
+ * title. A section's line is where it cuts the part (C16.3); an auxiliary view's (B2.7) is the fold it is turned about, drawn the same way (ISO 128-30).
+ */
+function sectionItems(v: Pick<SectionDrawingView, 'line' | 'label' | 'flip'>, parent: PlacedView, own: PlacedView): SceneItem[] {
   // the whole line (a stepped or aligned one bends, D-I5), an arrow at each end square to its own segment
   const pts = v.line.map(([x, y]) => toSheet(parent, x, y));
   const a = pts[0]!;
@@ -315,15 +318,15 @@ function buildSceneIn(
     if (image) images.push(image);
     items.push(...viewItems(v, resolved.get(v.id), own));
     if (!resolved.get(v.id)) continue;
-    // The view's name under it. A section and a detail are named by the letter they carry (ISO 128-30: 「A–A」, 「L」), which their own items already write,
-    // so only the rest are named here; without it a reader has the lines and no way to tell which view is which.
-    if (v.kind !== 'section' && v.kind !== 'sectionLocal' && v.kind !== 'detail') items.push({ kind: 'text', at: [own.at[0], own.at[1] - own.h / 2 - 8], text: v.name, height: 5, anchor: 'center' });
+    // The view's name under it. A section, a local section, a detail and an auxiliary view are named by the letter they carry (ISO 128-30: 「A–A」, 「L」), which
+    // their own items already write, so only the rest are named here; without it a reader has the lines and no way to tell which view is which.
+    if (v.kind !== 'section' && v.kind !== 'sectionLocal' && v.kind !== 'detail' && v.kind !== 'auxiliary') items.push({ kind: 'text', at: [own.at[0], own.at[1] - own.h / 2 - 8], text: v.name, height: 5, anchor: 'center' });
     items.push(...centreItems(v, features.get(v.id) ?? [], own));
     items.push(...surfaceFinishItems(doc.surfaceFinishes.filter((f) => f.view === v.id), own));
     items.push(...threadItems(v, features.get(v.id) ?? [], own));
     items.push(...annotationItems((doc.annotations ?? []).filter((a) => a.view === v.id), own, lookup, doc.sheet.unit ?? 'mm'));
-    const parent = v.kind === 'section' || v.kind === 'sectionLocal' || v.kind === 'detail' || v.kind === 'crop' ? placed.get(v.parent) : undefined;
-    if (v.kind === 'section' && parent) items.push(...sectionItems(v, parent, own));
+    const parent = v.kind === 'section' || v.kind === 'sectionLocal' || v.kind === 'detail' || v.kind === 'crop' || v.kind === 'auxiliary' ? placed.get(v.parent) : undefined;
+    if ((v.kind === 'section' || v.kind === 'auxiliary') && parent) items.push(...sectionItems(v, parent, own));
     if (v.kind === 'sectionLocal' && parent) items.push(...localSectionItems(v, parent, own));
     if (v.kind === 'detail' && parent) items.push(...detailItems(v, parent, own, scaleOf(doc, v)));
     if (v.kind === 'crop' && parent) items.push(...cropItems(v, parent));
