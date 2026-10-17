@@ -274,7 +274,7 @@ export function parseAssembly(text: string): AssemblyDoc {
   return raw as unknown as AssemblyDoc;
 }
 
-/** Forward migrations of drawings (B9.2): drawingMigrations[n] upgrades version n to n+1. 1 → 2 added the projected, section and detail kinds of view (a version-1 view is a model view as it is); 2 → 3 added the dimensions; 3 → 4 the tables; 4 → 5 the angle dimension; 5 → 6 the flat pattern; 6 → 7 the shift and the slide of views; 7 → 8 the text and the place of a dimension; 8 → 9 the places the user gave the balloons; 9 → 10 the surface finishes; 10 → 11 the language of the sheet. */
+/** Forward migrations of drawings (B9.2): drawingMigrations[n] upgrades version n to n+1. 1 → 2 added the projected, section and detail kinds of view (a version-1 view is a model view as it is); 2 → 3 added the dimensions; 3 → 4 the tables; 4 → 5 the angle dimension; 5 → 6 the flat pattern; 6 → 7 the shift and the slide of views; 7 → 8 the text and the place of a dimension; 8 → 9 the places the user gave the balloons; 9 → 10 the surface finishes; 10 → 11 the language of the sheet; the steps after that add a view kind or an option here and there, and 24 → 25 gathers the single sheet into a list of pages (B2.8, ADR 0154). */
 const drawingMigrations: Record<number, (doc: Json) => Json> = {
   // v2: projected, section and detail views (C16.3), each with its own fields; a version-1 drawing has only the views of a model. Nothing to convert.
   1: (doc) => doc,
@@ -335,22 +335,45 @@ const drawingMigrations: Record<number, (doc: Json) => Json> = {
   // v21 (B1): a local (partial) section view kind (`sectionLocal`) is new; nothing to convert, the version keeps an older program
   // from opening a drawing whose views it would not know how to draw.
   20: (doc) => doc,
+  // v22 (B2.7): a view's break (`break`, the band left out so that a long part is shown shorter) is new and optional, so there is nothing to convert; the version
+  // keeps an older program, which would draw such a view whole and so at the wrong length, from opening it.
+  21: (doc) => doc,
+  // v23 (B2.7): a cropped view kind (`crop`, the part of its parent inside a closed outline) is new; nothing to convert, the version keeps an older program
+  // from opening a drawing whose views it would not know how to draw.
+  22: (doc) => doc,
+  // v24 (B2.7): an auxiliary view kind (`auxiliary`, the model seen square to a fold line drawn on its parent) is new; nothing to convert, the version keeps an
+  // older program from opening a drawing whose views it would not know how to draw.
+  23: (doc) => doc,
+  // v25 (B2.8, ADR 0154): the drawing's single sheet becomes the first of a list of pages (`pages`), each holding its own sheet set-up, title block and the
+  // drawing on it. An older program would look for `sheet` and `views` at the root and open the file as an empty drawing, so the version keeps it away.
+  24: (doc) => ({
+    kind: doc.kind,
+    schemaVersion: doc.schemaVersion,
+    pages: [{ id: 'page1', name: '', sheet: doc.sheet, title: doc.title ?? {}, views: doc.views ?? [], dimensions: doc.dimensions ?? [], tables: doc.tables ?? [], surfaceFinishes: doc.surfaceFinishes ?? [], annotations: doc.annotations ?? [] }],
+    properties: doc.properties ?? {},
+    idCounters: doc.idCounters ?? {},
+  }),
 };
 
 export function parseDrawing(text: string): DrawingDoc {
   let raw = parseJson(text);
   if (raw.kind !== 'drawing') throw new FormatError(t('format.notDrawing'));
   raw = upgrade(raw, DRAWING_SCHEMA_VERSION, drawingMigrations);
-  if (!Array.isArray(raw.views) || !raw.sheet || typeof raw.sheet !== 'object') throw new FormatError(t('format.noViews'));
-  raw.dimensions ??= [];
-  raw.tables ??= [];
-  raw.surfaceFinishes ??= [];
-  raw.annotations ??= [];
-  const ids = [...(raw.views as Json[]), ...(raw.dimensions as Json[]), ...(raw.tables as Json[]), ...(raw.surfaceFinishes as Json[]), ...(raw.annotations as Json[])].map((v) => v.id as string);
+  const pages = raw.pages as Json[] | undefined;
+  if (!Array.isArray(pages) || pages.length === 0) throw new FormatError(t('format.noViews'));
+  for (const p of pages) {
+    if (!p.sheet || typeof p.sheet !== 'object') throw new FormatError(t('format.noViews'));
+    p.title ??= {};
+    p.views ??= [];
+    p.dimensions ??= [];
+    p.tables ??= [];
+    p.surfaceFinishes ??= [];
+    p.annotations ??= [];
+  }
   // As for parts: counters cover every id in the file, even one edited by hand or by a script.
+  const ids = pages.flatMap((p) => [...(p.views as Json[]), ...(p.dimensions as Json[]), ...(p.tables as Json[]), ...(p.surfaceFinishes as Json[]), ...(p.annotations as Json[])].map((v) => v.id as string));
   raw.idCounters = countersFor(ids, { ...((raw.idCounters as Record<string, number> | undefined) ?? {}) });
   raw.properties ??= {};
-  raw.title ??= {};
   return raw as unknown as DrawingDoc;
 }
 

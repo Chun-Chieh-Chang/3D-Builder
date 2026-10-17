@@ -568,3 +568,31 @@ export function leaderAt(h: Extract<DimensionHandle, { kind: 'round' }>, p: P): 
 export function arcAt(h: Extract<DimensionHandle, { kind: 'angle' }>, p: P): number {
   return Math.max(3, Math.hypot(p[0] - h.centre[0], p[1] - h.centre[1]));
 }
+
+/**
+ * The tolerance the drawing's right-click menu puts on a dimension (B2.4): the same choices the properties panel offers — taking it away, the two limits
+ * (±0.05), MAX, MIN, or a fit. Nothing of the file format is new here: it is the `DimensionTolerance` the panel already writes (ADR 0125), so the menu is a
+ * shortcut to it and no schema changes.
+ */
+export type ToleranceChoice = 'none' | 'bilateral' | 'max' | 'min' | 'fit';
+
+/**
+ * The tolerance a choice puts on a dimension (B2.4), as the properties panel does: a fit is `h7` on the size a linear dimension gives (a shaft's) and `H7`
+ * elsewhere (a hole's), the same letters the panel's own menu picks.
+ */
+export function toleranceForChoice(choice: ToleranceChoice, kind: Dimension['kind']): DimensionTolerance | null {
+  if (choice === 'none') return null;
+  if (choice === 'bilateral') return { type: 'bilateral', upper: 0.05, lower: -0.05 };
+  if (choice === 'max') return { type: 'max' };
+  if (choice === 'min') return { type: 'min' };
+  return { type: 'fit', fit: kind === 'linear' ? 'h7' : 'H7' };
+}
+
+/**
+ * Whether a fit can be put on all of these dimensions (B2.4). A fit is a size's (ISO 286): an angle dimension has no size, and an ordinate's is taken from
+ * the origin, so the model refuses a fit on either (`drawing.dimAngleFit`, `drawing.ordinateFit`) — the menu leaves that choice out rather than let a command
+ * fail, exactly as the properties panel hides it for an angle.
+ */
+export function fitAllowed(kinds: readonly Dimension['kind'][]): boolean {
+  return !kinds.some((k) => k === 'angle' || k === 'ordinate');
+}

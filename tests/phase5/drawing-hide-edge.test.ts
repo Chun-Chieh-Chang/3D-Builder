@@ -10,6 +10,7 @@ import {
   parseDrawing,
   serializeDrawing,
   viewVectors,
+  page,
   type DrawingDoc,
   type DrawingRef,
   type DrawingView,
@@ -58,7 +59,7 @@ describe('B2.2: hide individual edges — model validation and mutations', () =>
       viewId: 'v1',
       patch: { hiddenEdges: [edgeRef] },
     });
-    const v = next.views.find((x) => x.id === 'v1')!;
+    const v = page(next).views.find((x) => x.id === 'v1')!;
     expect(v.hiddenEdges).toHaveLength(1);
     expect(v.hiddenEdges![0]).toEqual(edgeRef);
   });
@@ -71,7 +72,7 @@ describe('B2.2: hide individual edges — model validation and mutations', () =>
       viewId: 'v1',
       patch: { hiddenEdges: [edgeRef] },
     });
-    const v = next.views.find((x) => x.id === 'v1')!;
+    const v = page(next).views.find((x) => x.id === 'v1')!;
     expect(v.hiddenEdges![0]).toEqual({ kind: 'edge', name: 'e1:side:s1.a1', in: 'pin_1' });
   });
 
@@ -82,21 +83,21 @@ describe('B2.2: hide individual edges — model validation and mutations', () =>
       viewId: 'v1',
       patch: { hiddenEdges: [{ kind: 'edge', name: 'edge1' }] },
     });
-    expect(withHidden.views[0]!.hiddenEdges).toBeDefined();
+    expect(page(withHidden).views[0]!.hiddenEdges).toBeDefined();
 
     const clearedNull = applyDrawingCommand(withHidden, {
       type: 'setView',
       viewId: 'v1',
       patch: { hiddenEdges: null },
     });
-    expect(clearedNull.views[0]!.hiddenEdges).toBeUndefined();
+    expect(page(clearedNull).views[0]!.hiddenEdges).toBeUndefined();
 
     const clearedEmpty = applyDrawingCommand(withHidden, {
       type: 'setView',
       viewId: 'v1',
       patch: { hiddenEdges: [] },
     });
-    expect(clearedEmpty.views[0]!.hiddenEdges).toBeUndefined();
+    expect(page(clearedEmpty).views[0]!.hiddenEdges).toBeUndefined();
   });
 
   it('rejects invalid hidden edge references (red team input corruption)', () => {
@@ -147,7 +148,7 @@ describe('B2.2: hide individual edges — model validation and mutations', () =>
     });
     const serialized = serializeDrawing(withHidden);
     const parsed = parseDrawing(serialized);
-    expect(parsed.views[0]!.hiddenEdges).toEqual([{ kind: 'edge', name: 'edge_abc', in: 'part_xyz' }]);
+    expect(page(parsed).views[0]!.hiddenEdges).toEqual([{ kind: 'edge', name: 'edge_abc', in: 'part_xyz' }]);
   });
 });
 
@@ -189,11 +190,11 @@ describe('B2.2: withoutHiddenEdges — geometry and line filtering', () => {
     const edgeSet: ViewEdgeSet = {
       edges: [
         {
+          kind: 'line',
           ref: { kind: 'edge', name: 'top_edge', in: 'comp_1' },
           points: [0, 30, 40, 30],
-          length: 40,
-          ends: ['v1', 'v2'],
-          depth: 0,
+          ends: [null, null],
+          depth: [0, 0],
         },
       ],
       vertices: [],
@@ -242,18 +243,18 @@ describe('B2.2: DrawingStore hideEdge and unhideEdge store methods', async () =>
     // 1. First hide succeeds
     const hide1 = store.hideEdge('v1', edgeRef);
     expect(hide1).toBe(true);
-    expect(store.getState().doc.views[0]!.hiddenEdges).toEqual([edgeRef]);
+    expect(page(store.getState().doc).views[0]!.hiddenEdges).toEqual([edgeRef]);
     expect(notices).toHaveLength(1);
 
     // 2. Duplicate hide is rejected as no-op
     const hide2 = store.hideEdge('v1', edgeRef);
     expect(hide2).toBe(false);
-    expect(store.getState().doc.views[0]!.hiddenEdges).toHaveLength(1);
+    expect(page(store.getState().doc).views[0]!.hiddenEdges).toHaveLength(1);
 
     // 3. Unhide removes it and clears property when empty
     const unhide1 = store.unhideEdge('v1', 'edge_top');
     expect(unhide1).toBe(true);
-    expect(store.getState().doc.views[0]!.hiddenEdges).toBeUndefined();
+    expect(page(store.getState().doc).views[0]!.hiddenEdges).toBeUndefined();
     expect(notices).toHaveLength(2);
 
     // 4. Duplicate unhide returns false

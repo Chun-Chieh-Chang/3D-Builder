@@ -1,0 +1,319 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>決策單：E1-P2 收尾 ＋ B2.8 shape 2（多圖頁 UI）</title>
+<style>
+  :root {
+    --ink: #2b2622;
+    --muted: #7a6f66;
+    --paper: #fbfaf8;
+    --card: #ffffff;
+    --line: #e7e1da;
+    --accent: #7c6f61;
+    --accent-soft: #f3efe9;
+    --rec: #2f6b4f;
+    --rec-soft: #eaf3ee;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--paper); color: var(--ink);
+         font: 15px/1.65 -apple-system, "Segoe UI", "Microsoft JhengHei", "Noto Sans TC", sans-serif; }
+  .wrap { max-width: 880px; margin: 0 auto; padding: 28px 20px 140px; }
+  header.top { border-bottom: 1px solid var(--line); padding-bottom: 18px; margin-bottom: 8px; }
+  h1 { font-size: 22px; margin: 0 0 6px; }
+  .meta { color: var(--muted); font-size: 13.5px; }
+  h2 { font-size: 17px; margin: 30px 0 4px; padding-left: 10px; border-left: 3px solid var(--accent); }
+  .why { color: var(--muted); font-size: 13.5px; margin: 0 0 14px 13px; }
+  .q { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 16px 18px; margin-bottom: 12px; }
+  .q .qtitle { font-weight: 600; font-size: 15.5px; margin-bottom: 2px; }
+  .q .qnum { display: inline-block; min-width: 34px; color: var(--accent); font-weight: 700; }
+  .q .bg { color: var(--muted); font-size: 13.5px; margin: 4px 0 12px; }
+  .opt { display: block; width: 100%; text-align: left; border: 1px solid var(--line); background: #fff;
+         border-radius: 8px; padding: 10px 12px; margin: 6px 0; cursor: pointer; font: inherit; color: inherit; }
+  .opt:hover { border-color: var(--accent); background: var(--accent-soft); }
+  .opt.sel { border-color: var(--accent); background: var(--accent-soft); box-shadow: inset 0 0 0 1px var(--accent); }
+  .opt .olabel { font-weight: 600; }
+  .opt .plain { display: block; font-size: 13.5px; margin-top: 3px; }
+  .opt .impact { display: block; font-size: 12.5px; color: var(--muted); margin-top: 2px; }
+  .badge { display: inline-block; font-size: 11.5px; font-weight: 700; color: var(--rec);
+           background: var(--rec-soft); border: 1px solid #cfe2d8; border-radius: 999px; padding: 1px 8px; margin-left: 6px; vertical-align: 1px; }
+  footer.bar { position: fixed; left: 0; right: 0; bottom: 0; background: rgba(251,250,248,.96);
+               border-top: 1px solid var(--line); backdrop-filter: blur(4px); }
+  .barin { max-width: 880px; margin: 0 auto; padding: 10px 20px; display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+  .barin .grow { flex: 1; color: var(--muted); font-size: 13px; }
+  .barin textarea { width: 100%; height: 84px; font: 12.5px/1.5 ui-monospace, "Cascadia Mono", Consolas, monospace;
+                    border: 1px solid var(--line); border-radius: 8px; padding: 8px; resize: none; background: #fff; color: var(--ink); }
+  .row2 { display: flex; gap: 10px; align-items: flex-start; margin-top: 10px; }
+  button.act { border: 1px solid var(--accent); background: var(--accent); color: #fff; border-radius: 8px;
+               padding: 8px 16px; font: inherit; font-weight: 600; cursor: pointer; }
+  button.act.ghost { background: #fff; color: var(--accent); }
+  button.act:hover { filter: brightness(1.06); }
+  .hint { font-size: 12.5px; color: var(--muted); margin-top: 8px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header class="top">
+    <h1>決策單：E1-P2 收尾 ＋ B2.8 shape 2（多圖頁 UI）</h1>
+    <div class="meta">
+      8 題，全部單選。每一題都有<b>白話說明</b>與<b>我的建議</b>（綠色「建議」標章）。<br>
+      選完拉到最下面，按「產生結果」→「複製」，貼回來给我即可。
+    </div>
+  </header>
+
+  <h2>甲、E1-P2 收尾（2 題）</h2>
+  <p class="why">E1-P2 的主體（兩分頁、切換只隱藏、死 CSS 移除、組合件搜尋列）已完成並通過驗證。以下是刻意留下的两个決定。</p>
+
+  <div class="q">
+    <div class="qtitle"><span class="qnum">Q1</span>組合件樹要不要補「階層／平面」切換鈕<span class="badge">建議 A</span></div>
+    <div class="bg">零件樹（FeatureTree）有一顆「🌿 階層 / ⏱ 平面」按鈕，決定草圖要不要收進消耗它的那個特徵底下。組合件樹目前沒有這顆。</div>
+    <button class="opt" data-q="Q1" data-v="A. 不補">
+      <span class="olabel">A. 不補</span>
+      <span class="plain">白話：那顆鈕沒有東西可以切換。組合件的零組件是靠「結合」定位的，不存在「誰消耗誰」，所以補上去按了也不會改變樹的樣子。</span>
+      <span class="impact">影響：完全不動程式。GUI 上仍少一顆在零件樹看得到的按鈕。</span>
+    </button>
+    <button class="opt" data-q="Q1" data-v="B. 補，定義為「攤平子組合件」">
+      <span class="olabel">B. 補，但定義成「攤平子組合件」</span>
+      <span class="plain">白話：不管子組合件的層級，把所有零件平鋪成一層。</span>
+      <span class="impact">影響：要寫新的樹狀排序邏輯，還要定義展開後的選取與右鍵行為。這是新功能。</span>
+    </button>
+    <button class="opt" data-q="Q1" data-v="C. 先擱置">
+      <span class="olabel">C. 先擱置，等實機用過再決定</span>
+      <span class="plain">白話：先不動，等我實際用過、確認真的需要再排。</span>
+      <span class="impact">影響：保留選項，先省工。</span>
+    </button>
+  </div>
+
+  <div class="q">
+    <div class="qtitle"><span class="qnum">Q2</span>PropertyManager 要做到什麼程度<span class="badge">建議 A</span></div>
+    <div class="bg">計畫 §2.2 期望「點圖面上的面 → 自動切到屬性頁，並切到對應的群組框」（例如點圓柱面就跳去「圓角」群組）。目前只做「進入特徵編輯時切到屬性頁」。</div>
+    <button class="opt" data-q="Q2" data-v="A. 現在不做">
+      <span class="olabel">A. 現在不做，維持現狀</span>
+      <span class="plain">白話：維持现状，不點東西就不會亂跳頁。</span>
+      <span class="impact">影響：少一個自動化。但 PropertyManager 內部是目前改動風險最大的地方，且在無法實機驗證的狀態下不適合盲改。</span>
+    </button>
+    <button class="opt" data-q="Q2" data-v="B. 只做「點東西自動切到屬性頁」">
+      <span class="olabel">B. 只做半步：點東西自動切到屬性頁</span>
+      <span class="plain">白話：在畫面點一個面，側邊欄自動跳到屬性頁，但不動群組框。</span>
+      <span class="impact">影響：中等。要接「選取 → 面板」的信號；不碰群組框，風險可控。</span>
+    </button>
+    <button class="opt" data-q="Q2" data-v="C. 完整做到 §2.2（含切群組框）">
+      <span class="olabel">C. 完整做到 §2.2（含自動切群組框）</span>
+      <span class="plain">白話：點圓柱面就自動切到「圓角」群組那一框。</span>
+      <span class="impact">影響：最大。要動 PropertyManager.tsx 的標題與群組邏輯；在無法實機驗證下屬於盲改。</span>
+    </button>
+  </div>
+
+  <h2>乙、B2.8 shape 2 設計（5 題）</h2>
+  <p class="why">shape 1 是「資料模型＋遷移」（已完成：pages 陣列、Schema 25、page／withPage／drawingFromPage）。shape 2 是把「多頁」在介面上真正做出來。目前 apps/web 對 pages 的引用是 0 筆，所以 UI 這一層完全是新的。</p>
+
+  <div class="q">
+    <div class="qtitle"><span class="qnum">Q3</span>多頁的頁籤長在哪<span class="badge">建議 A</span></div>
+    <div class="bg">目前工程圖沒有頁籤。DrawingPanel 已有 sw-tabs / sw-pane（設計樹／屬性／工具）那組樣式可沿用。SolidWorks 的圖紙頁籤在畫面<b>底部</b>。</div>
+    <button class="opt" data-q="Q3" data-v="A. 畫面底部（SolidWorks 慣例）">
+      <span class="olabel">A. 畫面底部（SolidWorks 慣例）</span>
+      <span class="plain">白話：像 Excel 的分頁，畫面最下方一排「圖紙 1 ／ 圖紙 2 ／ ＋」。</span>
+      <span class="impact">影響：完全不跟左側欄的既有分頁混在一起；與 CAD 使用者的直覺一致。</span>
+    </button>
+    <button class="opt" data-q="Q3" data-v="B. 左側欄最上方另開一排">
+      <span class="olabel">B. 左側欄最上方另開一排</span>
+      <span class="plain">白話：在左側欄「設計樹／屬性／工具」上面再加一排頁籤。</span>
+      <span class="impact">影響：左側欄多一層；語意上會和既有的三個分頁混淆（那是「面板」，這是「圖紙」）。</span>
+    </button>
+    <button class="opt" data-q="Q3" data-v="C. 當成左欄 sw-tabs 的第四個按鈕">
+      <span class="olabel">C. 當成左欄 sw-tabs 的第四個按鈕</span>
+      <span class="plain">白話：把頁籤塞進 DrawingPanel 現有那一排。</span>
+      <span class="impact">影響：最省 CSS，但把「編輯哪個面板」和「編輯哪張圖紙」兩個軸混在一起，語意最差。</span>
+    </button>
+  </div>
+
+  <div class="q">
+    <div class="qtitle"><span class="qnum">Q4</span>刪到最後一頁要怎麼處理<span class="badge">建議 A</span></div>
+    <div class="bg">資料模型是一份文件內含多頁。「文件 0 頁」是一個必須被處理（或被禁止）的邊界情況。</div>
+    <button class="opt" data-q="Q4" data-v="A. 禁止刪最後一頁">
+      <span class="olabel">A. 禁止刪最後一頁</span>
+      <span class="plain">白話：文件永遠至少一張圖紙；只剩一張時刪除按鈕是暗的。</span>
+      <span class="impact">影響：最單純。不會出現「文件 0 頁」這種要額外處理的邊界。</span>
+    </button>
+    <button class="opt" data-q="Q4" data-v="B. 允許刪，但自動補一張空白頁">
+      <span class="olabel">B. 允許刪，但自動補一張空白頁</span>
+      <span class="plain">白話：刪到 0 時立刻生一張新的空圖紙。</span>
+      <span class="impact">影響：行為像編輯器；仍要避免「瞬間空白」的一刻。</span>
+    </button>
+    <button class="opt" data-q="Q4" data-v="C. 允許刪到 0 頁">
+      <span class="olabel">C. 允許刪到 0 頁</span>
+      <span class="plain">白話：可以一張都不剩。</span>
+      <span class="impact">影響：所有「取得當前頁」的程式都要能處理 undefined，還要有「新增頁」的入口。風險最高。</span>
+    </button>
+  </div>
+
+  <div class="q">
+    <div class="qtitle"><span class="qnum">Q5</span>跨頁拖放第一版支援什麼<span class="badge">建議 A</span></div>
+    <div class="bg">要把物件從一頁拖到另一頁。視圖身上通常綁著尺寸與註記，所以拖曳視圖一定要連帶搬走它的註記，否則圖會破。</div>
+    <button class="opt" data-q="Q5" data-v="A. 只拖「視圖」，尺寸／註記自動跟著">
+      <span class="olabel">A. 只拖「視圖」，尺寸／註記自動跟著</span>
+      <span class="plain">白話：把一個視圖拖到別頁，它身上綁的尺寸和註記一起過去。</span>
+      <span class="impact">影響：先打通主幹；機制通了以後，其餘物件是同一套邏輯的擴充。</span>
+    </button>
+    <button class="opt" data-q="Q5" data-v="B. 視圖＋尺寸＋註記都可個別拖">
+      <span class="olabel">B. 視圖、尺寸、註記都可個別拖</span>
+      <span class="plain">白話：尺寸與註記也能獨立於視圖被拖到別頁。</span>
+      <span class="impact">影響：要處理「註記被拖走、視圖留下」這種孤儿問題，規則會變複雜。</span>
+    </button>
+    <button class="opt" data-q="Q5" data-v="C. 連表格也可以跨頁拖">
+      <span class="olabel">C. 連表格也可以跨頁拖</span>
+      <span class="plain">白話：BOM、孔表也能跨頁移動。</span>
+      <span class="impact">影響：表格的綁定規則與視圖不同，等於多開一條線。</span>
+    </button>
+  </div>
+
+  <div class="q">
+    <div class="qtitle"><span class="qnum">Q6</span>列印／PDF 要怎麼出<span class="badge">建議 A</span></div>
+    <div class="bg">目前 exportPdf() 是單頁輸出（DrawingPanel.tsx:814、DrawingViewMenu.tsx:157）。</div>
+    <button class="opt" data-q="Q6" data-v="A. 合併成一份多頁 PDF">
+      <span class="olabel">A. 合併成一份多頁 PDF</span>
+      <span class="plain">白話：一張圖紙 ＝ PDF 裡的一頁，整份文件輸出成同一個檔案。</span>
+      <span class="impact">影響：最自然，與 SolidWorks 的「圖紙→PDF」一致；要改 exportPdf() 逐頁輸出。</span>
+    </button>
+    <button class="opt" data-q="Q6" data-v="B. 逐頁各自輸出成多個 PDF">
+      <span class="olabel">B. 逐頁各自輸出成多個 PDF</span>
+      <span class="plain">白話：圖紙 1 一個檔、圖紙 2 一個檔。</span>
+      <span class="impact">影響：使用者要收一堆檔，命名規則也要設計。</span>
+    </button>
+    <button class="opt" data-q="Q6" data-v="C. 先維持只匯出「當前頁」">
+      <span class="olabel">C. 先維持只匯出「當前頁」</span>
+      <span class="plain">白話：第一版不動輸出，只讓你一次匯出正在看的那張圖紙。</span>
+      <span class="impact">影響：程式最少，但「多頁文件」仍印不完整，功能只做一半。</span>
+    </button>
+  </div>
+
+  <div class="q">
+    <div class="qtitle"><span class="qnum">Q7</span>圖紙大小／方向：逐頁設定還是整份共用<span class="badge">建議 A</span></div>
+    <div class="bg">資料模型目前每一頁各自有自己的 sheet（圖紙大小、方向、比例基準）。</div>
+    <button class="opt" data-q="Q7" data-v="A. 每頁各自設定，UI 開放逐頁改">
+      <span class="olabel">A. 每頁各自設定，UI 開放逐頁改</span>
+      <span class="plain">白話：圖紙 1 可以 A3 橫放、圖紙 2 可以 A4 直放。</span>
+      <span class="impact">影響：完全貼合現有資料模型，不必再動 Schema。</span>
+    </button>
+    <button class="opt" data-q="Q7" data-v="B. 整份文件共用，改一頁＝改全部">
+      <span class="olabel">B. 整份文件共用，改一頁＝改全部</span>
+      <span class="plain">白話：整份文件只有一組圖紙設定。</span>
+      <span class="impact">影響：要把 sheet 從「頁」上收斂回「文件」層，會動到 Schema 與所有呼叫端。</span>
+    </button>
+    <button class="opt" data-q="Q7" data-v="C. 每頁各自，但 UI 暫時不開放改">
+      <span class="olabel">C. 每頁各自，但 UI 暫時不開放改</span>
+      <span class="plain">白話：資料模型支援逐頁，但第一版只能沿用建立時的設定。</span>
+      <span class="impact">影響：UI 少一組控制項；以後要加回來是加料，不是改結構。</span>
+    </button>
+  </div>
+
+  <h2>丙、动工順序（1 題）</h2>
+  <p class="why">主資料夾另一個工作階段的 B2.2（隱藏個別的邊）還沒提交，且與 B2.8 同樣改了 packages/model/src/drawing.ts 與 DRAWING_SCHEMA_VERSION。</p>
+
+  <div class="q">
+    <div class="qtitle"><span class="qnum">Q8</span>B2.2 與 B2.8 shape 2 的先後<span class="badge">建議 A</span></div>
+    <div class="bg">若 B2.2 先合併，Schema 版本可能要重新編號、drawing.ts 要解衝突。</div>
+    <button class="opt" data-q="Q8" data-v="A. 先等 B2.2 收尾／合併，再開 shape 2">
+      <span class="olabel">A. 先等 B2.2 收尾／合併，再開 shape 2</span>
+      <span class="plain">白話：避免我一邊蓋、一邊踩到還沒定案的檔案；合併衝突也不會疊在我頭上。</span>
+      <span class="impact">影響：shape 2 晚一點開始；但返工風險最低。</span>
+    </button>
+    <button class="opt" data-q="Q8" data-v="B. 現在就開 B2.8 shape 2">
+      <span class="olabel">B. 現在就開 B2.8 shape 2</span>
+      <span class="plain">白話：以目前 worktree 的狀態開始，之後合併時再解衝突。</span>
+      <span class="impact">影響：時程快；但 schema 編號、drawing.ts 可能要二次調整。</span>
+    </button>
+    <button class="opt" data-q="Q8" data-v="C. 先只做「設計＋計畫」，不寫程式">
+      <span class="olabel">C. 先只做「設計＋計畫」，不寫程式</span>
+      <span class="plain">白話：我把多頁 UI 的規格與改法寫成 ADR／計畫，等 B2.2 定案再實作。</span>
+      <span class="impact">影響：有設計稿可 review；但程式還是要等。</span>
+    </button>
+  </div>
+
+  <div class="q">
+    <div class="qtitle"><span class="qnum">Q9</span>其他補充（自由填）</div>
+    <div class="bg">任何你想加的限制、想法、或「這一題我其實想問的是别的」。</div>
+    <textarea id="note" style="width:100%;height:70px;font:inherit;border:1px solid var(--line);border-radius:8px;padding:8px;resize:vertical;" placeholder="（選填）例如：我希望多頁在列印時自動加頁碼／頁首…"></textarea>
+  </div>
+
+</div>
+
+<footer class="bar">
+  <div class="barin">
+    <div class="grow" id="status">已選 0 / 8</div>
+    <button class="act" id="gen">產生結果</button>
+    <button class="act ghost" id="copy">複製</button>
+    <button class="act ghost" id="reset">重設</button>
+  </div>
+  <div class="barin" style="padding-top:0;">
+    <textarea id="out" readonly placeholder="按「產生結果」後，這裡會列出你選的答案，可直接全選複製。"></textarea>
+  </div>
+</footer>
+
+<script>
+  const picks = new Map();
+  const TOTAL = 8;
+
+  document.querySelectorAll('.opt').forEach((b) => {
+    b.addEventListener('click', () => {
+      document.querySelectorAll(`.opt[data-q="${b.dataset.q}"]`).forEach((x) => x.classList.remove('sel'));
+      b.classList.add('sel');
+      picks.set(b.dataset.q, b.dataset.v);
+      const n = picks.size;
+      document.getElementById('status').textContent = `已選 ${n} / ${TOTAL}` + (n === TOTAL ? ' — 可以按「產生結果」了' : '');
+      update();
+    });
+  });
+
+  function update() {
+    if (document.getElementById('out').value) build(); // keep it live while user reads it
+  }
+
+  function build() {
+    const order = ['Q1','Q2','Q3','Q4','Q5','Q6','Q7','Q8'];
+    const titles = {
+      Q1: '組合件樹「階層／平面」切換鈕',
+      Q2: 'PropertyManager 做到什麼程度',
+      Q3: '多頁頁籤長在哪',
+      Q4: '刪到最後一頁的處理',
+      Q5: '跨頁拖放第一版範圍',
+      Q6: '列印／PDF 輸出方式',
+      Q7: '圖紙大小／方向：逐頁或共用',
+      Q8: 'B2.2 與 B2.8 shape 2 的先後'
+    };
+    const lines = ['決策單回覆（E1-P2 收尾 ＋ B2.8 shape 2）', ''];
+    for (const q of order) {
+      lines.push(`${q} ${titles[q]}：${picks.has(q) ? picks.get(q) : '（未選）'}`);
+    }
+    const note = document.getElementById('note').value.trim();
+    if (note) lines.push('', '其他補充：', note);
+    document.getElementById('out').value = lines.join('\n');
+  }
+
+  document.getElementById('gen').addEventListener('click', build);
+
+  document.getElementById('copy').addEventListener('click', async () => {
+    const ta = document.getElementById('out');
+    if (!ta.value) build();
+    ta.focus(); ta.select();
+    try {
+      await navigator.clipboard.writeText(ta.value);
+      document.getElementById('status').textContent = '已複製到剪貼簿';
+    } catch {
+      document.execCommand('copy');
+      document.getElementById('status').textContent = '請在下面的框裡按 Ctrl+C 複製';
+    }
+  });
+
+  document.getElementById('reset').addEventListener('click', () => {
+    picks.clear();
+    document.getElementById('note').value = '';
+    document.querySelectorAll('.opt').forEach((x) => x.classList.remove('sel'));
+    document.getElementById('out').value = '';
+    document.getElementById('status').textContent = '已選 0 / 8';
+  });
+</script>
+</body>
+</html>

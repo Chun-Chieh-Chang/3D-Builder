@@ -21,8 +21,7 @@ import {
   type Ref,
   type SourceTree,
   type ViewFeature,
-  dimensionRefs,
-} from '@3db/model';
+  dimensionRefs, page } from '@3db/model';
 import { readAnyDocumentFile, writeDrawingFile } from '@3db/io';
 import { PlaneGcsSolver } from '@3db/sketch';
 import { Kernel } from '@3db/kernel';
@@ -100,11 +99,11 @@ function plateDrawing(part: OpenedPart): PlateDrawing {
   const lines = new Map<string, ViewLines>();
   const features = new Map<string, ViewFeature[]>();
   const parts = [{ shape: part.shape, pose: IDENTITY, mirrored: false }];
-  for (const v of doc.views) {
-    const axes = axesOf(doc.views, doc.sheet.projection, v)!;
+  for (const v of page(doc).views) {
+    const axes = axesOf(page(doc).views, page(doc).sheet.projection, v)!;
     if (v.kind === 'section') {
-      const parent = doc.views.find((x) => x.id === v.parent)!;
-      lines.set(v.id, projectDrawingView(kernel, parts, axes, sectionPlane(axesOf(doc.views, doc.sheet.projection, parent)!, v)));
+      const parent = page(doc).views.find((x) => x.id === v.parent)!;
+      lines.set(v.id, projectDrawingView(kernel, parts, axes, sectionPlane(axesOf(page(doc).views, page(doc).sheet.projection, parent)!, v)));
     } else {
       lines.set(v.id, projectDrawingView(kernel, parts, axes));
       features.set(v.id, viewFeatures(part.mate.topology, part.mate.names, axes, undefined, part.holes));
@@ -115,7 +114,7 @@ function plateDrawing(part: OpenedPart): PlateDrawing {
   doc = applyDrawingCommand(doc, { type: 'insertDimensions', dimensions });
   doc = applyDrawingCommand(doc, { type: 'insertTables', tables: [{ id: 'tbl1', kind: 'holes', view: 'view1', fits: { '6': 'H7' } }] });
   const elements = new Map<string, ElementsResult>(
-    doc.dimensions.map((d) => {
+    page(doc).dimensions.map((d) => {
       const refs: Ref[] = dimensionRefs(d);
       return [d.id, { elements: refs.map((r) => elementFacts(part.mate.topology, part.mate.names, r, part.holes)) as never }];
     }),
@@ -246,8 +245,8 @@ describe('② the assembly drawing (5-6)', () => {
     });
     doc = applyDrawingCommand(doc, { type: 'insertTables', tables: [{ id: 'tbl1', kind: 'bom', view: 'view1', balloons: true }] });
     lines = new Map();
-    for (const v of doc.views) {
-      const axes = axesOf(doc.views, doc.sheet.projection, v)!;
+    for (const v of page(doc).views) {
+      const axes = axesOf(page(doc).views, page(doc).sheet.projection, v)!;
       lines.set(v.id, { ...projectDrawingView(kernel, parts, axes), ...(v.id === 'view1' ? { anchors: drawingAnchors(kernel, parts, axes) } : {}) });
     }
     const rows = buildBom({ doc: p.doc, trees, propsOf: (key) => o.parts.get(key) && undefined, isReference: isRef }).flat;

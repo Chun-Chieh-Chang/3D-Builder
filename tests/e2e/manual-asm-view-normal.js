@@ -158,6 +158,32 @@ M.run = async () => {
     const hidden = !document.querySelector('.view-options .pick-filter');
     return { pass: hidden && store.getState().pickFilterBarVisible === false, hidden };
   });
+  await step('10 a whole component chosen, nothing flat picked: Ctrl+8 looks straight at that component’s own front datum plane — placed by its pose, off the assembly’s own front plane — where it used to answer with the isometric view (B2.6)', async () => {
+    // not while a mate is defined: there the tree picks are the mate's elements, and a whole component would join them
+    asm().cancelMate();
+    asm().select(null);
+    await H.wait(100);
+    const block = asm().leaves().map((l) => l.top).find((id) => id !== plate.id);
+    if (block === undefined) return { pass: false, why: 'no second component' };
+    asm().select(block);
+    await H.wait(100);
+    const front = asm().elementGeometry({ component: block, ref: { kind: 'datum', name: 'plane:front' } });
+    if (front?.kind !== 'plane') return { pass: false, why: 'the component has no front plane', front };
+    const own = asm().normalFrame(); // what the action is about to look along
+    const assemblyFront = asm().elementGeometry({ component: null, ref: { kind: 'datum', name: 'plane:front' } });
+    key('8', { ctrlKey: true });
+    await H.wait(200);
+    const d = store.viewer.viewDirection();
+    const near = (p, q) => Math.hypot(p[0] - q[0], p[1] - q[1], p[2] - q[2]) < 1e-6;
+    // straight at the front face: the camera sits opposite the plane's normal; the plane framed is the component's own, at the component's origin (the V-block sits off the assembly's)
+    return {
+      pass: !!own && near(own.origin, front.origin) && near(own.normal, front.normal) && dot(d, front.normal) < -0.999,
+      d,
+      front: { origin: front.origin, normal: front.normal },
+      own,
+      distinct: assemblyFront?.kind === 'plane' ? Math.hypot(...assemblyFront.origin.map((v, i) => v - front.origin[i])) : null,
+    };
+  });
   const pass = steps.every((s) => s.pass);
   return { name: 'manual-asm-view-normal', steps, pass };
 };

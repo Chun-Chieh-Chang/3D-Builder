@@ -15,8 +15,8 @@ import {
   serializeDrawing,
   type Annotation,
   type DrawingDoc,
-  type ToleranceFrameAnnotation,
-} from '@3db/model';
+  type ToleranceFrameAnnotation, page } from '@3db/model';
+import { olderDrawingFile } from '../support/drawingVersion';
 import { annotationItems, threadItems, threadMajor } from '@3db/drawing';
 
 function drawing(): DrawingDoc {
@@ -85,7 +85,7 @@ describe('datums', () => {
   it('renamed, it is renamed in every frame that refers to it; renamed to a letter in use, it is refused', () => {
     let doc = insert(drawing(), datum('ann1', 'A'), datum('ann2', 'B'), frame('ann3', { characteristic: 'parallelism', datums: [{ label: 'A' }] }), frame('ann4', { datums: [{ label: 'B' }, { label: 'A', material: 'M' }] }));
     doc = applyDrawingCommand(doc, { type: 'setAnnotation', annotationId: 'ann1', patch: { label: 'C' } });
-    const frames = doc.annotations.filter((a): a is ToleranceFrameAnnotation => a.kind === 'fcf');
+    const frames = page(doc).annotations.filter((a): a is ToleranceFrameAnnotation => a.kind === 'fcf');
     expect(frames.map((f) => f.datums.map((d) => d.label).join(''))).toEqual(['C', 'BC']);
     expect(frames[1]!.datums[1]!.material).toBe('M');
     expect(() => applyDrawingCommand(doc, { type: 'setAnnotation', annotationId: 'ann1', patch: { label: 'B' } })).toThrow(CommandError);
@@ -95,11 +95,11 @@ describe('datums', () => {
     const doc = insert(drawing(), datum('ann1', 'A'), frame('ann2', { characteristic: 'perpendicularity', datums: [{ label: 'A' }] }));
     expect(() => applyDrawingCommand(doc, { type: 'deleteAnnotations', annotationIds: ['ann1'] })).toThrow(CommandError);
     expect(() => applyDrawingCommand(doc, { type: 'deleteViews', viewIds: ['view1'] })).toThrow(CommandError);
-    expect(applyDrawingCommand(doc, { type: 'deleteAnnotations', annotationIds: ['ann1', 'ann2'] }).annotations).toEqual([]);
+    expect(page(applyDrawingCommand(doc, { type: 'deleteAnnotations', annotationIds: ['ann1', 'ann2'] })).annotations).toEqual([]);
     // the frame's view deleted: the frame goes, and then the datum may
     const without = applyDrawingCommand(doc, { type: 'deleteViews', viewIds: ['view2'] });
-    expect(without.annotations.map((a) => a.id)).toEqual(['ann1']);
-    expect(applyDrawingCommand(without, { type: 'deleteViews', viewIds: ['view1'] }).annotations).toEqual([]);
+    expect(page(without).annotations.map((a) => a.id)).toEqual(['ann1']);
+    expect(page(applyDrawingCommand(without, { type: 'deleteViews', viewIds: ['view1'] })).annotations).toEqual([]);
   });
 });
 
@@ -131,7 +131,7 @@ describe('notes, centre lines and marks', () => {
     expect(() => applyDrawingCommand(doc, { type: 'setAnnotation', annotationId: 'ann1', patch: { label: 'A' } })).toThrow(CommandError);
     expect(() => applyDrawingCommand(doc, { type: 'setAnnotation', annotationId: 'ann1', patch: { text: null } })).toThrow(CommandError);
     const after = applyDrawingCommand(doc, { type: 'setAnnotation', annotationId: 'ann1', patch: { leader: null } });
-    expect('leader' in after.annotations[0]!).toBe(false);
+    expect('leader' in page(after).annotations[0]!).toBe(false);
   });
 });
 
@@ -139,11 +139,9 @@ describe('the file', () => {
   it('keeps the annotations, and an older drawing (v11) reads with none', () => {
     const doc = insert(drawing(), datum('ann1', 'A'), frame('ann2', { characteristic: 'position', diameter: true, material: 'M', datums: [{ label: 'A' }] }), { id: 'ann3', kind: 'note', view: 'view1', at: [0, 30], text: '未註公差依 ISO 2768-m' });
     const back = parseDrawing(serializeDrawing(doc));
-    expect(back.annotations).toEqual(doc.annotations);
-    const old = JSON.parse(serializeDrawing(drawing()));
-    old.schemaVersion = 11;
-    delete old.annotations;
-    expect(parseDrawing(JSON.stringify(old)).annotations).toEqual([]);
+    expect(page(back).annotations).toEqual(page(doc).annotations);
+    const old = olderDrawingFile(drawing(), 11);
+    expect(page(parseDrawing(JSON.stringify(old))).annotations).toEqual([]);
     // the ids of annotations are counted, so a new one never takes an old one's id
     expect(back.idCounters.ann).toBeGreaterThanOrEqual(3);
   });

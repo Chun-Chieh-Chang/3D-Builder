@@ -3,7 +3,7 @@
  * (`style`). Every size is measured on what is drawn (the text's height, the arrowhead's polygon, the line's width), never taken from the style it was given.
  */
 import { describe, expect, it } from 'vitest';
-import { applyDrawingCommand, ARROW_STYLES, createEmptyDrawing, DIM_STYLE_DEFAULT, DIM_STYLE_LIMITS, resolveDimStyle, viewVectors, type ArrowStyle, type Dimension, type DimStyle, type DrawingDoc, type ElementFacts } from '@3db/model';
+import { applyDrawingCommand, ARROW_STYLES, createEmptyDrawing, DIM_STYLE_DEFAULT, DIM_STYLE_LIMITS, resolveDimStyle, viewVectors, type ArrowStyle, type Dimension, type DimStyle, type DrawingDoc, type ElementFacts, page } from '@3db/model';
 import { buildScene, evaluateDimension, toDxf, toPdf, toSvg, type PlacedView, type SceneItem, type ViewLines } from '@3db/drawing';
 
 const axes = viewVectors('front');
@@ -123,15 +123,15 @@ describe('the drawing\'s style and a dimension\'s own', () => {
     expect(texts(doc)).toEqual([5]);
     doc = applyDrawingCommand(doc, { type: 'setDimension', dimensionId: 'd1', patch: { style: { text: 7 } } });
     expect(texts(doc)).toEqual([7]);
-    expect(resolveDimStyle(doc.sheet.dimStyle, doc.dimensions[0]!.style)).toEqual({ text: 7, arrow: 3, arrowStyle: 'tick', line: 0.25 });
+    expect(resolveDimStyle(page(doc).sheet.dimStyle, page(doc).dimensions[0]!.style)).toEqual({ text: 7, arrow: 3, arrowStyle: 'tick', line: 0.25 });
     doc = applyDrawingCommand(doc, { type: 'setDimension', dimensionId: 'd1', patch: { style: null } });
-    expect(doc.dimensions[0]).not.toHaveProperty('style');
+    expect(page(doc).dimensions[0]).not.toHaveProperty('style');
     expect(texts(doc)).toEqual([5]);
     doc = applyDrawingCommand(doc, { type: 'setSheet', sheet: { dimStyle: null } });
-    expect(doc.sheet).not.toHaveProperty('dimStyle');
+    expect(page(doc).sheet).not.toHaveProperty('dimStyle');
     expect(texts(doc)).toEqual([3.5]);
     // an empty style is no style
-    expect(applyDrawingCommand(doc, { type: 'setSheet', sheet: { dimStyle: {} } }).sheet).not.toHaveProperty('dimStyle');
+    expect(page(applyDrawingCommand(doc, { type: 'setSheet', sheet: { dimStyle: {} } })).sheet).not.toHaveProperty('dimStyle');
   });
 
   it('refuses a size out of its limits, not a number, or a field or arrow it does not know — nothing is rounded or put in range', () => {
@@ -142,7 +142,7 @@ describe('the drawing\'s style and a dimension\'s own', () => {
       expect(() => applyDrawingCommand(doc, { type: 'setDimension', dimensionId: 'd1', patch: { style: s as DimStyle } }), JSON.stringify(s)).toThrow();
     }
     // the limits themselves are allowed
-    for (const k of ['text', 'arrow', 'line'] as const) for (const v of DIM_STYLE_LIMITS[k]) expect(applyDrawingCommand(doc, { type: 'setSheet', sheet: { dimStyle: { [k]: v } } }).sheet.dimStyle).toEqual({ [k]: v });
+    for (const k of ['text', 'arrow', 'line'] as const) for (const v of DIM_STYLE_LIMITS[k]) expect(page(applyDrawingCommand(doc, { type: 'setSheet', sheet: { dimStyle: { [k]: v } } })).sheet.dimStyle).toEqual({ [k]: v });
   });
 
   it('the outputs draw it: the SVG\'s and the PDF\'s line widths, the DXF\'s dimension style and lineweights', () => {

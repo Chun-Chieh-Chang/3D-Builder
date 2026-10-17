@@ -3,7 +3,7 @@
  * The numbers are worked out by hand: A3 landscape, the area is 374 x 213 at (28, 66); front 100 x 60, top 100 x 40, right 40 x 60, gap 25.
  */
 import { describe, expect, it } from 'vitest';
-import { applyDrawingCommand, createEmptyDrawing, type Dimension, type DrawingDoc, type DrawingView, type Ref } from '@3db/model';
+import { applyDrawingCommand, createEmptyDrawing, type Dimension, type DrawingDoc, type DrawingView, type Ref, page, withPage } from '@3db/model';
 import { centreViews, fitViews, itemsBounds, suggestScale, type ElementsResult, type ViewLines } from '@3db/drawing';
 
 const view = (id: string, direction: 'front' | 'top' | 'right', extra: Partial<DrawingView> = {}): DrawingView => ({ id, name: id, source: 'x.3dbx', direction, ...extra }) as DrawingView;
@@ -38,7 +38,7 @@ describe('the best scale', () => {
     const doc = make([view('f', 'front'), view('t', 'top'), view('r', 'right')]);
     const fit = fitViews(doc, lines)!;
     const sizes = new Map([['f', { w: 100, h: 60 }], ['t', { w: 100, h: 40 }], ['r', { w: 40, h: 60 }]]);
-    expect(fit.scale).toEqual(suggestScale(doc.views, sizes, doc.sheet));
+    expect(fit.scale).toEqual(suggestScale(page(doc).views, sizes, page(doc).sheet));
     expect(fit.scale).toEqual([1, 1]);
     // each view is named 8 mm under it (ISO 128-30); the lowest is the top view's, 8 below its box, so the drawn content's
     // middle sits 4 mm below the area's and the whole arrangement is shifted 4 mm up (8 / 2).
@@ -66,7 +66,7 @@ describe('the best scale', () => {
   it('the shift it gives puts the whole in the middle: the box of what is drawn is centred on the area', () => {
     const doc = applyDrawingCommand(make([view('f', 'front'), view('t', 'top'), view('r', 'right')], [width(-100)]), { type: 'setSheet', sheet: { shift: [0, 0] } });
     const fit = fitViews(doc, lines, elements)!;
-    expect(fit.shift![1]).toBeCloseTo(fitViews({ ...doc, sheet: { ...doc.sheet, shift: [50, 50] } }, lines, elements)!.shift![1], 6); // where it is now makes no difference
+    expect(fit.shift![1]).toBeCloseTo(fitViews(withPage(doc, { ...page(doc), sheet: { ...page(doc).sheet, shift: [50, 50] } }), lines, elements)!.shift![1], 6); // where it is now makes no difference
   });
 
   it('only the views that take the sheet\'s scale count: one with its own scale or a position of its own is not the sheet\'s business', () => {

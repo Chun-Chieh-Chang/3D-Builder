@@ -816,14 +816,18 @@ export class AssemblyStore {
 
   /**
    * What 「正視於」 looks straight at in an assembly (ADR 0148): the plane — a planar face, a plane of a component or of the assembly — picked last: the mate's
-   * second element, else its first, else the last datum picked in the FeatureManager. Placed where the component is now (assembly coordinates). Null when there is
-   * nothing picked, or what is picked is not flat (an edge, a vertex, an origin, a curved face): the action then returns to the isometric view, as in a part.
+   * second element, else its first, else the last datum picked in the FeatureManager. Placed where the component is now (assembly coordinates). A whole component
+   * chosen with nothing flat picked looks at its front datum plane (B2.6), as SolidWorks's Normal To does. Null when there is nothing picked at all, or what is
+   * picked is not flat (an edge, a vertex, an origin, a curved face): the action then returns to the isometric view, as in a part.
    */
   normalFrame(): PlaneFrame | null {
-    const { mate, picks } = this.state;
+    const { mate, picks, selected } = this.state;
     const ref = mate ? (mate.b ?? mate.a) : (picks.at(-1) ?? null);
     const geometry = ref ? this.elementGeometry(ref) : null;
-    return geometry?.kind === 'plane' ? planeFrame(geometry.origin, geometry.normal) : null;
+    if (geometry?.kind === 'plane') return planeFrame(geometry.origin, geometry.normal);
+    if (ref || selected === null) return null;
+    const front = this.elementGeometry({ component: selected, ref: { kind: 'datum', name: 'plane:front' } });
+    return front?.kind === 'plane' ? planeFrame(front.origin, front.normal) : null;
   }
 
   /** An element's geometry where it is now, in assembly coordinates (for what the PropertyManager offers). */

@@ -3,7 +3,7 @@
  * of its parent's line (「解除對齊」) is where it was put. Directions are worked out from the parent's axes; places from the layout.
  */
 import { describe, expect, it } from 'vitest';
-import { applyDrawingCommand, axesOf, cornerAxes, createEmptyDrawing, projectedAxes, rightOf, sheetUp, viewVectors, VIEW_CORNERS, type DrawingDoc, type ViewAxes, type ViewCorner } from '@3db/model';
+import { applyDrawingCommand, axesOf, cornerAxes, createEmptyDrawing, projectedAxes, rightOf, sheetUp, viewVectors, VIEW_CORNERS, type DrawingDoc, type ViewAxes, type ViewCorner, page } from '@3db/model';
 import { cornerAt, layoutViews, sideAt, slideAxis, type ViewLines } from '@3db/drawing';
 
 const unit = (v: readonly number[]) => v.map((x) => x / Math.hypot(...v));
@@ -57,11 +57,11 @@ describe('the isometric off a corner (ADR 0146, 6)', () => {
     doc = applyDrawingCommand(doc, { type: 'insertViews', views: [{ id: 'i', name: 'I', kind: 'projected', parent: 'f', side: 'downLeft', at: [300, 60] }] });
     const lines = new Map<string, ViewLines>([['f', { visible: [], hidden: [], box: { min: [0, 0], max: [40, 20] } }], ['i', { visible: [], hidden: [], box: { min: [-10, -10], max: [30, 25] } }]]);
     expect(layoutViews(doc, lines).get('i')!.at).toEqual([300, 60]);
-    expect(slideAxis(doc, doc.views[1]!)).toBeNull();
-    close(axesOf(doc.views, 'third', doc.views[1]!)!.dir, projectedAxes(viewVectors('front'), 'downLeft', 'third').dir);
+    expect(slideAxis(doc, page(doc).views[1]!)).toBeNull();
+    close(axesOf(page(doc).views, 'third', page(doc).views[1]!)!.dir, projectedAxes(viewVectors('front'), 'downLeft', 'third').dir);
     // the parent turned to the top view: the corner view turns with it
     const turned = applyDrawingCommand(doc, { type: 'setView', viewId: 'f', patch: { direction: 'top' } });
-    close(axesOf(turned.views, 'third', turned.views[1]!)!.dir, projectedAxes(viewVectors('top'), 'downLeft', 'third').dir);
+    close(axesOf(page(turned).views, 'third', page(turned).views[1]!)!.dir, projectedAxes(viewVectors('top'), 'downLeft', 'third').dir);
     // taking its place away is refused: it is in line with nothing
     expect(() => applyDrawingCommand(doc, { type: 'setView', viewId: 'i', patch: { at: null } })).toThrow();
   });
@@ -87,13 +87,13 @@ describe('「解除對齊」 of a section or a projected view (ADR 0146, 3)', ()
     for (const id of ['r', 's']) {
       const doc = base();
       const aligned = layoutViews(doc, lines).get(id)!.at;
-      expect(slideAxis(doc, doc.views.find((v) => v.id === id)!)).not.toBeNull();
+      expect(slideAxis(doc, page(doc).views.find((v) => v.id === id)!)).not.toBeNull();
       // let go where it is, then moved off the line both ways
       const free = applyDrawingCommand(applyDrawingCommand(doc, { type: 'setView', viewId: id, patch: { at: [aligned[0], aligned[1]], slide: null } }), { type: 'setView', viewId: id, patch: { at: [aligned[0] + 37.25, aligned[1] - 81.5] } });
       const at = layoutViews(free, lines).get(id)!.at;
       expect(Math.abs(at[0] - (aligned[0] + 37.25))).toBeLessThanOrEqual(0.01);
       expect(Math.abs(at[1] - (aligned[1] - 81.5))).toBeLessThanOrEqual(0.01);
-      expect(slideAxis(free, free.views.find((v) => v.id === id)!)).toBeNull();
+      expect(slideAxis(free, page(free).views.find((v) => v.id === id)!)).toBeNull();
       const back = applyDrawingCommand(free, { type: 'setView', viewId: id, patch: { at: null, slide: null } });
       expect(layoutViews(back, lines).get(id)!.at).toEqual(aligned);
     }

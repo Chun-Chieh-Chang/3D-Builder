@@ -3,7 +3,7 @@
  * model, the sheet and the file stay in millimetres. Worked out by hand: 25.4 mm to the inch.
  */
 import { describe, expect, it } from 'vitest';
-import { applyDrawingCommand, createEmptyDrawing, parseDrawing, serializeDrawing, viewVectors, type Dimension, type ViewFeature } from '@3db/model';
+import { applyDrawingCommand, createEmptyDrawing, parseDrawing, serializeDrawing, viewVectors, type Dimension, type ViewFeature, page } from '@3db/model';
 import { buildScene, dimensionText, factsOf, holeNote, holeRows, lengthNumber, toleranceText, type Pickable, type ViewLines } from '@3db/drawing';
 
 const ref = (name: string) => ({ kind: 'face' as const, name });
@@ -69,17 +69,17 @@ describe('what is written of a hole', () => {
 describe('the sheet', () => {
   it('says its unit: inches, back to millimetres (which takes the mark away); anything else is refused', () => {
     let d = applyDrawingCommand(createEmptyDrawing(), { type: 'setSheet', sheet: { unit: 'in' } });
-    expect(d.sheet.unit).toBe('in');
+    expect(page(d).sheet.unit).toBe('in');
     d = applyDrawingCommand(d, { type: 'setSheet', sheet: { scale: [1, 2] } });
-    expect(d.sheet.unit).toBe('in'); // the other fields leave it
+    expect(page(d).sheet.unit).toBe('in'); // the other fields leave it
     d = applyDrawingCommand(d, { type: 'setSheet', sheet: { unit: 'mm' } });
-    expect('unit' in d.sheet).toBe(false);
+    expect('unit' in page(d).sheet).toBe(false);
     expect(() => applyDrawingCommand(d, { type: 'setSheet', sheet: { unit: 'ft' as never } })).toThrow();
   });
 
   it('is kept in the file', () => {
     const d = applyDrawingCommand(createEmptyDrawing(), { type: 'setSheet', sheet: { unit: 'in' } });
-    expect(parseDrawing(serializeDrawing(d)).sheet.unit).toBe('in');
+    expect(page(parseDrawing(serializeDrawing(d))).sheet.unit).toBe('in');
   });
 
   it('writes the dimensions of the drawing in inches: the same dimension says 120 and 4.724', () => {

@@ -3,7 +3,8 @@
  * meshes made by hand (whose pixels are known) and on real parts built by OCCT (whose depths are worked out from the geometry), never on numbers typed in.
  */
 import { beforeAll, describe, expect, it } from 'vitest';
-import { applyDrawingCommand, createEmptyDrawing, DRAWING_SCHEMA_VERSION, parseDrawing, rightOf, sheetUp, viewVectors, type DrawingDoc, type Feature, type PartDoc, type ViewAxes } from '@3db/model';
+import { applyDrawingCommand, createEmptyDrawing, DRAWING_SCHEMA_VERSION, parseDrawing, rightOf, sheetUp, viewVectors, type DrawingDoc, type Feature, type PartDoc, type ViewAxes, page } from '@3db/model';
+import { olderDrawingFile } from '../support/drawingVersion';
 import { PlaneGcsSolver } from '@3db/sketch';
 import { Kernel, type ShapeId } from '@3db/kernel';
 import { Regenerator } from '@3db/regen';
@@ -184,13 +185,12 @@ describe('the display styles on the sheet', () => {
     const doc = plateDrawing('shaded');
     expect(() => applyDrawingCommand(doc, { type: 'setView', viewId: 'f', patch: { display: 'glossy' as never } })).toThrow();
     const back = applyDrawingCommand(doc, { type: 'setView', viewId: 'f', patch: { display: null } });
-    expect(back.views[0]).not.toHaveProperty('display');
+    expect(page(back).views[0]).not.toHaveProperty('display');
     expect(() => applyDrawingCommand(doc, { type: 'insertViews', views: [{ id: 'x', name: 'X', source: 'p.3dbx', direction: 'top', hidden: true } as never] })).toThrow();
   });
 
   it('a version-18 drawing reads its hidden lines as the display style: shown 「隱藏線可見」, not shown 「移除隱藏線」, unsaid the default', () => {
-    const old = JSON.parse(JSON.stringify(createEmptyDrawing())) as Record<string, unknown>;
-    old.schemaVersion = 18;
+    const old = olderDrawingFile(createEmptyDrawing(), 18);
     old.views = [
       { id: 'a', name: 'A', source: 'p.3dbx', direction: 'front', hidden: true },
       { id: 'b', name: 'B', source: 'p.3dbx', direction: 'top', hidden: false },
@@ -198,8 +198,8 @@ describe('the display styles on the sheet', () => {
     ];
     const doc = parseDrawing(JSON.stringify(old));
     expect(doc.schemaVersion).toBe(DRAWING_SCHEMA_VERSION);
-    expect(doc.views.map((v) => v.display)).toEqual(['hiddenVisible', 'hiddenRemoved', undefined]);
-    expect(doc.views.every((v) => !('hidden' in v))).toBe(true);
+    expect(page(doc).views.map((v) => v.display)).toEqual(['hiddenVisible', 'hiddenRemoved', undefined]);
+    expect(page(doc).views.every((v) => !('hidden' in v))).toBe(true);
   });
 });
 

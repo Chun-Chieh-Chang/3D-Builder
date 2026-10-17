@@ -31,6 +31,7 @@ import {
   type ElementFacts,
   type Ref,
   type SectionDrawingView,
+  type AuxiliaryDrawingView,
   type LocalSectionDrawingView,
   type SurfaceFinish,
   type SurfaceFinishPatch,
@@ -39,6 +40,7 @@ import {
   type ViewFeature,
   type ViewEdgeSet,
   type DrawingRef,
+  type ClosedOutline,
   placementRows,
   placeElementFacts,
   type ViewName,
@@ -49,6 +51,8 @@ import {
   type AnnotationPatch, dimensionRefs,
   displayOf,
   isShaded,
+  page,
+  withPage,
   type ViewCorner } from '@3db/model';
 import { drawingFileName, writeDrawingFile } from '@3db/io';
 import { alignCollinear, arrangeDimensions, attachedAnnotations, FontError, SHADE_SHEET_PX, readTrueType, resolveLines, sectionMissed, toDxf, toPdf, turnLines, visibleElements, type TrueTypeFont, type VisibleElements } from '@3db/drawing';
@@ -107,14 +111,14 @@ const samePick = (a: DrawingPick, b: DrawingPick) => a.kind === b.kind && a.id =
 /** Whether what a pick names is in the document. */
 const pickExists = (doc: DrawingDoc, p: DrawingPick): boolean =>
   p.kind === 'view'
-    ? doc.views.some((v) => v.id === p.id)
+    ? page(doc).views.some((v) => v.id === p.id)
     : p.kind === 'dimension'
-      ? doc.dimensions.some((d) => d.id === p.id)
+      ? page(doc).dimensions.some((d) => d.id === p.id)
       : p.kind === 'finish'
-        ? doc.surfaceFinishes.some((f) => f.id === p.id)
+        ? page(doc).surfaceFinishes.some((f) => f.id === p.id)
         : p.kind === 'annotation'
-          ? (doc.annotations ?? []).some((a) => a.id === p.id)
-          : doc.tables.some((x) => x.id === p.id);
+          ? (page(doc).annotations ?? []).some((a) => a.id === p.id)
+          : page(doc).tables.some((x) => x.id === p.id);
 
 /** What an annotation tool makes (D-I3). */
 export type AnnotateWhat = Annotation['kind'];
@@ -127,6 +131,10 @@ export type DrawingTool =
   | { kind: 'section'; vertical?: boolean; slant?: boolean; path?: 'stepped' | 'aligned' }
   /** A local (partial) section of `parent` inside a closed outline (B1); the depth is how far the cut goes. */
   | { kind: 'sectionLocal'; outlineKind: 'rectangle' | 'circle' | 'polygon'; depth: number }
+  /** A cropped view (B2.7) of a local section: the part inside a closed outline, set out as a view of its own. */
+  | { kind: 'crop'; outlineKind: 'rectangle' | 'circle' | 'polygon' }
+  /** An auxiliary view (B2.7): the model seen square to a fold line drawn on a view, so a slanted face is shown true size. */
+  | { kind: 'auxiliary' }
   | { kind: 'detail' }
   | { kind: 'surface' }
   /** Hide an edge of a view by pointing at it (B2.2): the tool stays until Esc, for the next one. */
@@ -293,7 +301,7 @@ export class DrawingStore {
 
   /** The project path of the part (or assembly) a view shows (D-I7): what 「開啟零件」 opens. */
   viewSourcePath(viewId: Id): string | null {
-    const view = this.history.doc.views.find((v) => v.id === viewId);
+    const view = page(this.history.doc).views.find((v) => v.id === viewId);
     return view ? this.pathOf(view) : null;
   }
 
@@ -302,7 +310,7 @@ export class DrawingStore {
    * part. Null when there is no view.
    */
   partToOpen(): string | null {
-    const views = this.history.doc.views;
+    const views = page(this.history.doc).views;
     const chosen = this.chosen('view').map((id) => this.viewSourcePath(id)).find((p) => p !== null);
     return chosen ?? views.map((v) => this.pathOf(v)).find((p) => p !== null) ?? null;
   }
@@ -310,14 +318,14 @@ export class DrawingStore {
   /** The project path of a part of the assembly a view shows, by its leaf id (as a picked element's `in` names it); null when not known. */
   leafPath(viewId: Id, leafId: string): string | null {
     const doc = this.history.doc;
-    const view = doc.views.find((v) => v.id === viewId);
-    const asm = view ? this.assemblyOf(this.ancestor(doc.views, view) ?? view) : null;
+    const view = page(doc).views.find((v) => v.id === viewId);
+    const asm = view ? this.assemblyOf(this.ancestor(page(doc).views, view) ?? view) : null;
     const file = asm?.leaves.find((l) => l.id === leafId)?.file;
     return file ?? null;
   }
 
   name(): string {
-    return this.state.doc.title.drawingName ?? this.state.fileName?.replace(/\.3dbd$/i, '') ?? this.state.untitled;
+    return page(this.state.doc).title.drawingName ?? this.state.fileName?.replace(/\.3dbd$/i, '') ?? this.state.untitled;
   }
 
   private set(patch: Partial<DrawingState>): void {
@@ -340,10 +348,10 @@ export class DrawingStore {
       canUndo: this.history.canUndo,
       canRedo: this.history.canRedo,
       dirty: !this.handle || serializeDrawing(doc) !== this.savedText,
-      selected: selected && doc.views.some((v) => v.id === selected) ? selected : null,
-      dimension: dimension && doc.dimensions.some((d) => d.id === dimension) ? dimension : null,
-      finish: finish && doc.surfaceFinishes.some((f) => f.id === finish) ? finish : null,
-      annotation: annotation && (doc.annotations ?? []).some((a) => a.id === annotation) ? annotation : null,
+      selected: selected && page(doc).views.some((v) => v.id === selected) ? selected : null,
+      dimension: dimension && page(doc).dimensions.some((d) => d.id === dimension) ? dimension : null,
+      finish: finish && page(doc).surfaceFinishes.some((f) => f.id === finish) ? finish : null,
+      annotation: annotation && (page(doc).annotations ?? []).some((a) => a.id === annotation) ? annotation : null,
     });
     this.loadSources();
     this.refreshBoms();
@@ -418,7 +426,7 @@ export class DrawingStore {
     const last = (kind: DrawingPick['kind']) => [...selection].reverse().find((p) => p.kind === kind)?.id ?? null;
     const tail = selection[selection.length - 1];
     const viewOfTail =
-      tail?.kind === 'dimension' ? doc.dimensions.find((d) => d.id === tail.id)?.view : tail?.kind === 'finish' ? doc.surfaceFinishes.find((f) => f.id === tail.id)?.view : tail?.kind === 'table' ? doc.tables.find((x) => x.id === tail.id)?.view : tail?.kind === 'annotation' ? (doc.annotations ?? []).find((a) => a.id === tail.id)?.view : undefined;
+      tail?.kind === 'dimension' ? page(doc).dimensions.find((d) => d.id === tail.id)?.view : tail?.kind === 'finish' ? page(doc).surfaceFinishes.find((f) => f.id === tail.id)?.view : tail?.kind === 'table' ? page(doc).tables.find((x) => x.id === tail.id)?.view : tail?.kind === 'annotation' ? (page(doc).annotations ?? []).find((a) => a.id === tail.id)?.view : undefined;
     const selected = tail?.kind === 'view' ? tail.id : (viewOfTail ?? last('view') ?? (selection.length === 0 ? null : this.state.selected));
     return { selection, selected, dimension: last('dimension'), finish: last('finish'), annotation: last('annotation') };
   }
@@ -437,13 +445,13 @@ export class DrawingStore {
     const gone = new Set(this.chosen('view'));
     for (let grew = true; grew; ) {
       grew = false;
-      for (const v of doc.views) if (isDerived(v) && gone.has(v.parent) && !gone.has(v.id)) grew = !!gone.add(v.id);
+      for (const v of page(doc).views) if (isDerived(v) && gone.has(v.parent) && !gone.has(v.id)) grew = !!gone.add(v.id);
     }
     const onKept = <T extends { id: Id; view: Id }>(ids: Id[], all: readonly T[]) => ids.filter((id) => !gone.has(all.find((x) => x.id === id)?.view ?? ''));
-    const dims = onKept(this.chosen('dimension'), doc.dimensions);
-    const finishes = onKept(this.chosen('finish'), doc.surfaceFinishes);
-    const tables = onKept(this.chosen('table'), doc.tables);
-    const annotations = onKept(this.chosen('annotation'), doc.annotations ?? []);
+    const dims = onKept(this.chosen('dimension'), page(doc).dimensions);
+    const finishes = onKept(this.chosen('finish'), page(doc).surfaceFinishes);
+    const tables = onKept(this.chosen('table'), page(doc).tables);
+    const annotations = onKept(this.chosen('annotation'), page(doc).annotations ?? []);
     const views = this.chosen('view');
     const commands: DrawingCommand[] = [];
     // the annotations before the views: a datum deleted with the frames that refer to it goes, which deleting its view first would refuse
@@ -465,7 +473,7 @@ export class DrawingStore {
   setDimensionsEach(ids: readonly Id[], patchOf: (d: Dimension) => DimensionPatch | null): boolean {
     const doc = this.history.doc;
     const commands = ids.flatMap((id): DrawingCommand[] => {
-      const dim = doc.dimensions.find((x) => x.id === id);
+      const dim = page(doc).dimensions.find((x) => x.id === id);
       const patch = dim ? patchOf(dim) : null;
       return patch ? [{ type: 'setDimension', dimensionId: id, patch }] : [];
     });
@@ -478,7 +486,7 @@ export class DrawingStore {
    * many moved.
    */
   arrangeDimensions(ids: readonly Id[]): number {
-    const changes = arrangeDimensions(this.history.doc.dimensions, this.scene().dimensions, new Set(ids));
+    const changes = arrangeDimensions(page(this.history.doc).dimensions, this.scene().dimensions, new Set(ids));
     if (changes.length === 0) return 0;
     const commands: DrawingCommand[] = changes.map((c) => ({ type: 'setDimension', dimensionId: c.id, patch: c.patch }));
     return this.execute(commands.length === 1 ? commands[0]! : { type: 'batch', commands }) ? changes.length : 0;
@@ -486,7 +494,7 @@ export class DrawingStore {
 
   /** 「共線對正」 (D-I4): the dimensions in `ids` on the first one's line, as one step; those that cannot be (another view, way or side) are said. */
   alignCollinear(ids: readonly Id[]): void {
-    const { changes, skipped } = alignCollinear(this.history.doc.dimensions, ids);
+    const { changes, skipped } = alignCollinear(page(this.history.doc).dimensions, ids);
     if (changes.length > 0) {
       const commands: DrawingCommand[] = changes.map((c) => ({ type: 'setDimension', dimensionId: c.id, patch: c.patch }));
       this.execute(commands.length === 1 ? commands[0]! : { type: 'batch', commands });
@@ -521,7 +529,7 @@ export class DrawingStore {
 
   /** The project path of a view's source. */
   private pathOf(view: DrawingView): string | null {
-    const source = sourceOf(this.history.doc.views, view);
+    const source = sourceOf(page(this.history.doc).views, view);
     return source === null ? null : joinPath(this.folder, source);
   }
 
@@ -531,9 +539,9 @@ export class DrawingStore {
       void this.askProject();
       return;
     }
-    const wanted = new Set(this.history.doc.views.flatMap((v) => this.pathOf(v) ?? []));
+    const wanted = new Set(page(this.history.doc).views.flatMap((v) => this.pathOf(v) ?? []));
     // the part of an empty drawing, for its palette
-    if (this.initialSource && this.history.doc.views.length === 0) wanted.add(joinPath(this.folder, this.initialSource));
+    if (this.initialSource && page(this.history.doc).views.length === 0) wanted.add(joinPath(this.folder, this.initialSource));
     for (const path of wanted) {
       if (this.state.sources.has(path)) continue;
       this.set({ sources: new Map(this.state.sources).set(path, { status: 'loading' }) });
@@ -597,15 +605,15 @@ export class DrawingStore {
    * parent's lines in the layout); a view whose part is not built or whose chain of parents is broken, nothing yet.
    */
   private requestOf(view: DrawingView): { id: string; featureId?: string; key: string; parts: { part: string; mirrored: boolean; pose: typeof IDENTITY; leaf?: string }[]; anchors: boolean; flat?: boolean; axes: ViewAxes; cut?: SectionCut; shade?: { px: number }; hidden?: DrawingRef[] } | null {
-    if (view.kind === 'detail') return null;
+    if (view.kind === 'detail' || view.kind === 'crop') return null;
     const doc = this.history.doc;
     const key = this.keyOf(view);
-    const axes = axesOf(doc.views, doc.sheet.projection, view);
+    const axes = axesOf(page(doc).views, page(doc).sheet.projection, view);
     if (!key || !axes) return null;
     let cut: SectionCut | undefined;
     if (view.kind === 'section' || view.kind === 'sectionLocal') {
-      const parent = viewById(doc.views, view.parent);
-      const parentAxes = parent ? axesOf(doc.views, doc.sheet.projection, parent) : null;
+      const parent = viewById(page(doc).views, view.parent);
+      const parentAxes = parent ? axesOf(page(doc).views, page(doc).sheet.projection, parent) : null;
       if (!parentAxes) return null;
       cut = sectionCut(parentAxes, view);
     }
@@ -634,7 +642,7 @@ export class DrawingStore {
    */
   private shadePx(view: DrawingView): number | null {
     const doc = this.history.doc;
-    const shaded = [view, ...doc.views.filter((v) => v.kind === 'detail' && v.parent === view.id)].filter((v) => isShaded(displayOf(v)));
+    const shaded = [view, ...page(doc).views.filter((v) => v.kind === 'detail' && v.parent === view.id)].filter((v) => isShaded(displayOf(v)));
     if (shaded.length === 0) return null;
     const most = Math.max(...shaded.map((v) => ratio(scaleOf(doc, v))));
     return Math.round(SHADE_SHEET_PX * most * 100) / 100;
@@ -644,7 +652,7 @@ export class DrawingStore {
 
   /** The source the palette shows: that of the first model view (relative to the drawing). */
   private paletteSource(): string | null {
-    const v = this.history.doc.views.find((x) => !isDerived(x));
+    const v = page(this.history.doc).views.find((x) => !isDerived(x));
     return v && !isDerived(v) ? v.source : this.initialSource;
   }
 
@@ -660,7 +668,7 @@ export class DrawingStore {
   addStandardViews(): void {
     const source = this.sourceForViews();
     if (!source) return this.host.notify(t('drawing.noSource'), 'error');
-    if (this.history.doc.views.length === 0) this.autoScalePending = true;
+    if (page(this.history.doc).views.length === 0) this.autoScalePending = true;
     const doc = this.history.doc;
     const ids = new IdAllocator(doc.idCounters, drawingIdsInUse(doc));
     const views = (['front', 'top', 'right'] as const).map((direction): DrawingView => ({ id: ids.take('view'), name: t(`drawing.view.${direction}`), source, direction }));
@@ -770,7 +778,7 @@ export class DrawingStore {
    * anywhere; 「預設對齊」 (`setView` with `at: null`) puts it back in line.
    */
   breakAlignment(id: Id): boolean {
-    const view = viewById(this.history.doc.views, id);
+    const view = viewById(page(this.history.doc).views, id);
     const placed = this.scene().placed.get(id);
     if (!view || !placed || view.at || (view.kind !== 'projected' && view.kind !== 'section')) return false;
     const done = this.execute({ type: 'setView', viewId: id, patch: { at: [Math.round(placed.at[0] * 100) / 100, Math.round(placed.at[1] * 100) / 100], slide: null } });
@@ -784,7 +792,7 @@ export class DrawingStore {
    * editable. 「解鎖」 keeps the place and the scale it had: the lock only stops them from changing.
    */
   lockView(id: Id): boolean {
-    const view = viewById(this.history.doc.views, id);
+    const view = viewById(page(this.history.doc).views, id);
     const placed = this.scene().placed.get(id);
     if (!view || !placed || view.locked) return false;
     const done = this.execute({ type: 'setView', viewId: id, patch: { at: [Math.round(placed.at[0] * 100) / 100, Math.round(placed.at[1] * 100) / 100], slide: null, scale: scaleOf(this.history.doc, view), locked: true } });
@@ -793,7 +801,7 @@ export class DrawingStore {
   }
 
   unlockView(id: Id): boolean {
-    const view = viewById(this.history.doc.views, id);
+    const view = viewById(page(this.history.doc).views, id);
     if (!view || !view.locked) return false;
     const done = this.execute({ type: 'setView', viewId: id, patch: { locked: null } });
     if (done) this.notifyInfo(t('drawingUi.viewUnlockedDone'));
@@ -806,7 +814,7 @@ export class DrawingStore {
    * nothing.
    */
   hideEdge(viewId: Id, ref: DrawingRef): boolean {
-    const view = viewById(this.history.doc.views, viewId);
+    const view = viewById(page(this.history.doc).views, viewId);
     if (!view) return false;
     const hidden = view.hiddenEdges ?? [];
     if (hidden.some((h) => h.name === ref.name && (h.in ?? null) === (ref.in ?? null))) return false;
@@ -817,7 +825,7 @@ export class DrawingStore {
 
   /** Shows a hidden edge of a view again (B2.2): it is taken out of the view's `hiddenEdges`, and its line comes back. */
   unhideEdge(viewId: Id, name: string, inPart?: string): boolean {
-    const view = viewById(this.history.doc.views, viewId);
+    const view = viewById(page(this.history.doc).views, viewId);
     if (!view?.hiddenEdges) return false;
     const next = view.hiddenEdges.filter((h) => !(h.name === name && (h.in ?? null) === (inPart ?? null)));
     if (next.length === view.hiddenEdges.length) return false;
@@ -875,7 +883,7 @@ export class DrawingStore {
   /** The parts lists and the parts of the views of assemblies (derived: kept in the state so that the scene is made from the state alone). */
   private refreshBoms(): void {
     const boms = new Map<Id, ViewBom>();
-    for (const v of this.history.doc.views) {
+    for (const v of page(this.history.doc).views) {
       const data = this.assemblyData(v);
       const own = this.assemblyOf(v);
       if (!data || !own) continue;
@@ -907,7 +915,7 @@ export class DrawingStore {
     try {
       do {
         this.computeAgain = false;
-        const views = this.history.doc.views;
+        const views = page(this.history.doc).views;
         const wanted = views.flatMap((v) => {
           const r = this.requestOf(v);
           return r && !this.cache.has(r.id) ? [r] : [];
@@ -928,7 +936,7 @@ export class DrawingStore {
         }
         const lines = new Map<Id, ViewLines | null>();
         const problems = new Map<Id, string>();
-        for (const v of this.history.doc.views) {
+        for (const v of page(this.history.doc).views) {
           const r = this.requestOf(v);
           const found = r ? this.cache.get(r.id) : undefined;
           const path = this.pathOf(v);
@@ -967,7 +975,7 @@ export class DrawingStore {
         this.featureAgain = false;
         const doc = this.history.doc;
         // what the views can be dimensioned from
-        const wantedFeatures = doc.views.flatMap((v) => {
+        const wantedFeatures = page(doc).views.flatMap((v) => {
           const r = this.requestOf(v);
           if (!r || !r.featureId || this.featureCache.has(r.featureId)) return [];
           return [{ id: r.featureId, part: r.key, axes: r.axes }];
@@ -985,18 +993,18 @@ export class DrawingStore {
         const need = new Map<string, Map<string, Ref>>();
         const refsOf = (d: Dimension): DrawingRef[] => dimensionRefs(d);
         const keyOfDim = (d: Dimension): string | null => {
-          const view = doc.views.find((v) => v.id === d.view);
+          const view = page(doc).views.find((v) => v.id === d.view);
           return view && !this.assemblyData(view) ? this.keyOf(view) : null;
         };
         /** The part an element of a view of an assembly is in (D-I2): its leaf, by the reference's `in`, and the part's key as built. */
         const leafOf = (d: Dimension, ref: DrawingRef): { leaf: Leaf; key: string } | null => {
-          const view = doc.views.find((v) => v.id === d.view);
-          const asm = view ? this.assemblyOf(this.ancestor(doc.views, view) ?? view) : null;
+          const view = page(doc).views.find((v) => v.id === d.view);
+          const asm = view ? this.assemblyOf(this.ancestor(page(doc).views, view) ?? view) : null;
           const leaf = asm?.leaves.find((l) => l.id === ref.in);
           if (!leaf) return null;
           return { leaf, key: leaf.mirrored ? leaf.key.slice(0, -mirrorKey('').length) : leaf.key };
         };
-        for (const d of doc.dimensions) {
+        for (const d of page(doc).dimensions) {
           const key = keyOfDim(d);
           for (const ref of refsOf(d)) {
             // in a view of an assembly the element is its part's, asked of that part
@@ -1007,7 +1015,7 @@ export class DrawingStore {
           }
         }
         // the edges and vertices of the parts of each view of an assembly (D-I2)
-        const wantedAsm = doc.views.flatMap((v) => {
+        const wantedAsm = page(doc).views.flatMap((v) => {
           const asm = this.assemblyOf(v);
           const r = asm && v.kind !== 'detail' ? this.requestOf(v) : null;
           if (!asm || !r || this.featureCache.has(`asm|${r.id}`)) return [];
@@ -1034,8 +1042,8 @@ export class DrawingStore {
         // the answers, by view and by dimension
         const features = new Map<Id, ViewFeature[]>();
         const edges = new Map<Id, ViewEdgeSet>();
-        for (const v of doc.views) {
-          const own = v.kind === 'detail' ? this.ancestor(doc.views, v) : v;
+        for (const v of page(doc).views) {
+          const own = v.kind === 'detail' ? this.ancestor(page(doc).views, v) : v;
           const r = own ? this.requestOf(own) : null;
           const asmFound = own && this.assemblyOf(own) && r ? this.featureCache.get(`asm|${r.id}`) : undefined;
           const found = asmFound ?? (r?.featureId ? this.featureCache.get(r.featureId) : undefined);
@@ -1045,9 +1053,9 @@ export class DrawingStore {
           }
         }
         const elements = new Map<Id, ElementsResult>();
-        for (const d of doc.dimensions) {
-          const view = doc.views.find((v) => v.id === d.view);
-          if (view && this.assemblyData(this.ancestor(doc.views, view) ?? view)) {
+        for (const d of page(doc).dimensions) {
+          const view = page(doc).views.find((v) => v.id === d.view);
+          if (view && this.assemblyData(this.ancestor(page(doc).views, view) ?? view)) {
             // a view of an assembly (D-I2): each element is its part's, put where the assembly has the part
             const got = refsOf(d).map((ref): ElementFacts | { error: string } | undefined => {
               const at = ref.in ? leafOf(d, ref) : null;
@@ -1086,7 +1094,7 @@ export class DrawingStore {
    */
   private autoScaleWhenReady(): void {
     if (!this.autoScalePending || this.closed) return;
-    const { views } = this.history.doc;
+    const { views } = page(this.history.doc);
     const { lines, problems } = this.state;
     if (views.length === 0) return;
     const drawn = views.every((v) => v.kind === 'detail' || lines.get(v.id) || problems.has(v.id));
@@ -1120,7 +1128,7 @@ export class DrawingStore {
   }
 
   private fitDone(): boolean {
-    return this.closed || !this.autoScalePending || this.history.doc.views.length === 0 || (!this.computing && !this.featuring && this.loadingSources === 0);
+    return this.closed || !this.autoScalePending || page(this.history.doc).views.length === 0 || (!this.computing && !this.featuring && this.loadingSources === 0);
   }
 
   private wakeFitWaiters(): void {
@@ -1142,8 +1150,8 @@ export class DrawingStore {
     const c = this.sceneCache;
     if (c && c.doc === this.state.doc && c.lines === this.state.lines && c.elements === this.state.elements && c.features === this.state.features && c.boms === this.state.boms && c.edges === this.state.edges) return c.value;
     // the annotations fastened to the model are drawn where the model has their elements now (D-I2)
-    const { annotations, lost } = attachedAnnotations(this.state.doc.annotations ?? [], this.viewsSeen());
-    const value = buildScene({ ...this.state.doc, annotations }, this.state.lines, this.state.elements, this.state.features, this.state.boms);
+    const { annotations, lost } = attachedAnnotations(page(this.state.doc).annotations ?? [], this.viewsSeen());
+    const value = buildScene(withPage(this.state.doc, { ...page(this.state.doc), annotations }), this.state.lines, this.state.elements, this.state.features, this.state.boms);
     this.lostCache = lost;
     this.sceneCache = { doc: this.state.doc, lines: this.state.lines, elements: this.state.elements, features: this.state.features, boms: this.state.boms, edges: this.state.edges, value };
     return value;
@@ -1160,7 +1168,7 @@ export class DrawingStore {
   /** What each view shows of the model's edges and vertices, and its features (D-I2): what the attachments are worked out from. */
   viewsSeen(): Map<Id, { seen: VisibleElements; features: ViewFeature[] }> {
     const lines = resolveLines(this.state.doc, this.state.lines);
-    return new Map(this.state.doc.views.map((v) => [v.id, { seen: visibleElements(lines.get(v.id), this.state.edges.get(v.id), this.state.features.get(v.id) ?? []), features: this.state.features.get(v.id) ?? [] }]));
+    return new Map(page(this.state.doc).views.map((v) => [v.id, { seen: visibleElements(lines.get(v.id), this.state.edges.get(v.id), this.state.features.get(v.id) ?? []), features: this.state.features.get(v.id) ?? [] }]));
   }
 
   // ------------------------------------------------------------ editing
@@ -1170,13 +1178,13 @@ export class DrawingStore {
   }
 
   setTitle(field: TitleField, value: string): void {
-    if ((this.state.doc.title[field] ?? '') !== value.trim()) this.execute({ type: 'setTitle', field, value });
+    if ((page(this.state.doc).title[field] ?? '') !== value.trim()) this.execute({ type: 'setTitle', field, value });
   }
 
   /** Views of the part the first view shows (or `source`, relative to the drawing), from these directions. */
   addViews(directions: readonly ViewName[], source?: string): void {
     const doc = this.history.doc;
-    const from = source ?? doc.views.flatMap((v) => (isDerived(v) ? [] : [v.source]))[0] ?? this.initialSource ?? undefined;
+    const from = source ?? page(doc).views.flatMap((v) => (isDerived(v) ? [] : [v.source]))[0] ?? this.initialSource ?? undefined;
     if (!from) return this.host.notify(t('drawing.noSource'), 'error');
     const ids = new IdAllocator(doc.idCounters, drawingIdsInUse(doc));
     const views = directions.map((direction): DrawingView => ({ id: ids.take('view'), name: t(`drawing.view.${direction}`), source: from, direction }));
@@ -1185,7 +1193,7 @@ export class DrawingStore {
 
   /** Whether a view is the flat pattern of a part (S-1): the folded part is not seen in it, so views projected or cut from it would show nothing true. */
   private isFlat(id: Id): boolean {
-    const v = viewById(this.history.doc.views, id);
+    const v = viewById(page(this.history.doc).views, id);
     return !!v && (v.kind === undefined || v.kind === 'model') && v.direction === 'flat';
   }
 
@@ -1215,8 +1223,8 @@ export class DrawingStore {
   addLocalSection(parent: Id, outline: LocalSectionDrawingView['outline'], depth: number, at?: [number, number]): void {
     const doc = this.history.doc;
     if (this.isFlat(parent)) return this.host.notify(t('drawing.flatNoDerived'), 'error');
-    const p = viewById(doc.views, parent);
-    const parentAxes = p ? axesOf(doc.views, doc.sheet.projection, p) : null;
+    const p = viewById(page(doc).views, parent);
+    const parentAxes = p ? axesOf(page(doc).views, page(doc).sheet.projection, p) : null;
     if (!parentAxes) return;
     const cut = sectionCut(parentAxes, {
       id: '',
@@ -1237,6 +1245,33 @@ export class DrawingStore {
     if (this.execute(insert)) this.select(id);
   }
 
+  /** A cropped view (B2.7) of `parent`: what the parent shows inside `outline` (a closed outline in the parent's view coordinates), set out as a view of its own. Its parent must be a local (partial) section. */
+  addCrop(parent: Id, outline: ClosedOutline, at?: [number, number]): void {
+    const doc = this.history.doc;
+    const p = viewById(page(doc).views, parent);
+    if (!p || p.kind !== 'sectionLocal') return this.host.notify(t('drawing.cropNeedsLocalSection'), 'error');
+    const ids = new IdAllocator(doc.idCounters, drawingIdsInUse(doc));
+    const id = ids.take('view');
+    if (this.execute({ type: 'insertViews', views: [{ id, name: t('drawing.view.crop'), kind: 'crop', parent, outline, ...(at ? { at } : {}) }] })) this.select(id);
+  }
+
+  /**
+   * An auxiliary view (B2.7) of `parent`: the model seen square to the fold line `line` (two points in the parent's view coordinates), so that a slanted face is
+   * shown true size. Nothing is cut — the material is all there. It is placed on the fold line's side as a section is (unless `at` says where); the letter is the
+   * next free one.
+   */
+  addAuxiliary(parent: Id, line: AuxiliaryDrawingView['line'], at?: [number, number], options: { flip?: boolean; slide?: number; shift?: [number, number] | null } = {}): void {
+    const doc = this.history.doc;
+    if (this.isFlat(parent)) return this.host.notify(t('drawing.flatNoDerived'), 'error');
+    const ids = new IdAllocator(doc.idCounters, drawingIdsInUse(doc));
+    const id = ids.take('view');
+    const label = this.nextLabel();
+    const slide = !at && options.slide !== undefined && Math.abs(options.slide) > 0.005 ? { slide: Math.round(options.slide * 100) / 100 } : {};
+    const insert: DrawingCommand = { type: 'insertViews', views: [{ id, name: t('drawing.view.auxiliary', { label }), kind: 'auxiliary', parent, line, label, ...(options.flip ? { flip: true } : {}), ...slide, ...(at ? { at } : {}) }] };
+    const shift = !at && options.shift ? options.shift : null;
+    if (this.execute(shift ? { type: 'batch', commands: [insert, { type: 'setSheet', sheet: { shift } }] } : insert)) this.select(id);
+  }
+
   /** The letter the next section or detail will have. */
   peekLabel(): string {
     return this.nextLabel();
@@ -1248,15 +1283,15 @@ export class DrawingStore {
     const ids = new IdAllocator(doc.idCounters, drawingIdsInUse(doc));
     const id = ids.take('view');
     const label = this.nextLabel();
-    const p = viewById(doc.views, parent);
-    const base = p ? scaleOf(doc, p) : doc.sheet.scale;
+    const p = viewById(page(doc).views, parent);
+    const base = p ? scaleOf(doc, p) : page(doc).sheet.scale;
     const scale = STANDARD_SCALES.slice().reverse().find((s) => ratio(s) >= 2 * ratio(base)) ?? STANDARD_SCALES[0]!;
     if (this.execute({ type: 'insertViews', views: [{ id, name: t('drawing.view.detail', { label }), kind: 'detail', parent, centre, radius, label, scale, ...(at ? { at } : {}) }] })) this.select(id);
   }
 
   /** The first capital letter no section or detail has yet. */
   private nextLabel(): string {
-    const used = new Set(this.history.doc.views.flatMap((v) => (v.kind === 'section' || v.kind === 'detail' ? [v.label] : [])));
+    const used = new Set(page(this.history.doc).views.flatMap((v) => (v.kind === 'section' || v.kind === 'detail' ? [v.label] : [])));
     for (let i = 0; i < 26; i++) {
       const c = String.fromCharCode(65 + i);
       if (!used.has(c)) return c;
@@ -1280,7 +1315,7 @@ export class DrawingStore {
     }
     const doc = this.history.doc;
     const same = (a: Ref, b: Ref) => a.kind === b.kind && a.name === b.name;
-    const have = doc.dimensions.filter((d) => d.view === viewId);
+    const have = page(doc).dimensions.filter((d) => d.view === viewId);
     const isNew = (d: ReturnType<typeof autoDimensions>[number]) =>
       !have.some(
         (h) =>
@@ -1309,7 +1344,7 @@ export class DrawingStore {
     const doc = this.history.doc;
     const ids = new IdAllocator(doc.idCounters, drawingIdsInUse(doc));
     const sign = orientation === 'horizontal' ? -1 : 1;
-    const n = doc.dimensions.filter((d) => d.view === viewId && d.kind === 'linear' && d.orientation === orientation && Math.sign(d.offset) === sign).length;
+    const n = page(doc).dimensions.filter((d) => d.view === viewId && d.kind === 'linear' && d.orientation === orientation && Math.sign(d.offset) === sign).length;
     const id = ids.take('dim');
     this.execute({ type: 'insertDimensions', dimensions: [{ id, view: viewId, kind: 'linear', a, b, orientation, offset: sign * (FIRST_OFFSET + n * OFFSET_STEP) }] });
   }
@@ -1318,7 +1353,7 @@ export class DrawingStore {
   addAngle(viewId: Id, a: Ref, b: Ref): void {
     const doc = this.history.doc;
     const ids = new IdAllocator(doc.idCounters, drawingIdsInUse(doc));
-    const n = doc.dimensions.filter((d) => d.view === viewId && d.kind === 'angle').length;
+    const n = page(doc).dimensions.filter((d) => d.view === viewId && d.kind === 'angle').length;
     this.execute({ type: 'insertDimensions', dimensions: [{ id: ids.take('dim'), view: viewId, kind: 'angle', a, b, arc: FIRST_ARC + n * OFFSET_STEP }] });
   }
 
@@ -1341,7 +1376,7 @@ export class DrawingStore {
 
   /** The surface finishes of the view, in the order they are in the document. */
   surfaceFinishesOf(viewId: Id): SurfaceFinish[] {
-    return this.state.doc.surfaceFinishes.filter((f) => f.view === viewId);
+    return page(this.state.doc).surfaceFinishes.filter((f) => f.view === viewId);
   }
 
   /** A surface finish (C16.5, ISO 1302) whose symbol's point is at a point of the view's coordinates (full size); it is chosen when it is there. */
@@ -1365,12 +1400,12 @@ export class DrawingStore {
 
   /** The annotations of the view, in the order they are in the document. */
   annotationsOf(viewId: Id): Annotation[] {
-    return (this.state.doc.annotations ?? []).filter((a) => a.view === viewId);
+    return (page(this.state.doc).annotations ?? []).filter((a) => a.view === viewId);
   }
 
   /** The first letter no datum of the drawing has (ISO 5459: not I, O or Q). */
   nextDatumLabel(): string {
-    const used = new Set((this.history.doc.annotations ?? []).flatMap((a) => (a.kind === 'datum' ? [a.label] : [])));
+    const used = new Set((page(this.history.doc).annotations ?? []).flatMap((a) => (a.kind === 'datum' ? [a.label] : [])));
     for (let i = 0; i < 26; i++) {
       const c = String.fromCharCode(65 + i);
       if (!'IOQ'.includes(c) && !used.has(c)) return c;
@@ -1448,8 +1483,8 @@ export class DrawingStore {
     const fit = fitViews(doc, lines, elements, features, boms);
     if (!fit) return null;
     const sheet: Extract<DrawingCommand, { type: 'setSheet' }>['sheet'] = {};
-    if (fit.scale[0] !== doc.sheet.scale[0] || fit.scale[1] !== doc.sheet.scale[1]) sheet.scale = fit.scale;
-    const was = doc.sheet.shift;
+    if (fit.scale[0] !== page(doc).sheet.scale[0] || fit.scale[1] !== page(doc).sheet.scale[1]) sheet.scale = fit.scale;
+    const was = page(doc).sheet.shift;
     if ((fit.shift?.[0] ?? 0) !== (was?.[0] ?? 0) || (fit.shift?.[1] ?? 0) !== (was?.[1] ?? 0)) sheet.shift = fit.shift;
     return Object.keys(sheet).length > 0 ? sheet : null;
   }
@@ -1463,7 +1498,7 @@ export class DrawingStore {
   /** Whether the arrangement is in the middle already: 「自動排版」 of the front view has nothing to do then. */
   arrangementCentred(): boolean {
     const want = this.centredShift();
-    const was = this.state.doc.sheet.shift;
+    const was = page(this.state.doc).sheet.shift;
     return (want?.[0] ?? 0) === (was?.[0] ?? 0) && (want?.[1] ?? 0) === (was?.[1] ?? 0);
   }
 

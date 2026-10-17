@@ -18,8 +18,8 @@ import {
   type PartDoc,
   type Ref,
   type ViewFeature,
-  dimensionRefs,
-} from '@3db/model';
+  dimensionRefs, page } from '@3db/model';
+import { olderDrawingFile } from '../support/drawingVersion';
 import { readPartFile } from '@3db/io';
 import { PlaneGcsSolver } from '@3db/sketch';
 import { Kernel } from '@3db/kernel';
@@ -103,13 +103,13 @@ describe('the annotations in the document', () => {
 
   it('a view can turn its centre marks on or off; a callout belongs to a diameter', () => {
     let d = applyDrawingCommand(base(), { type: 'setView', viewId: 'view1', patch: { centreMarks: false } });
-    expect(d.views[0]).toMatchObject({ centreMarks: false });
+    expect(page(d).views[0]).toMatchObject({ centreMarks: false });
     d = applyDrawingCommand(d, { type: 'setView', viewId: 'view1', patch: { centreMarks: null } });
-    expect(d.views[0]).not.toHaveProperty('centreMarks');
+    expect(page(d).views[0]).not.toHaveProperty('centreMarks');
     d = applyDrawingCommand(d, { type: 'insertDimensions', dimensions: [dia({ callout: true }), { ...dia(), id: 'dim2', kind: 'radius' } as Dimension, { id: 'dim3', view: 'view1', kind: 'linear', a: { kind: 'face', name: 'a' }, b: { kind: 'face', name: 'b' }, orientation: 'horizontal', offset: -10 }] });
-    expect(d.dimensions[0]).toMatchObject({ callout: true });
+    expect(page(d).dimensions[0]).toMatchObject({ callout: true });
     d = applyDrawingCommand(d, { type: 'setDimension', dimensionId: 'dim1', patch: { callout: false } });
-    expect(d.dimensions[0]).not.toHaveProperty('callout');
+    expect(page(d).dimensions[0]).not.toHaveProperty('callout');
     expect(() => applyDrawingCommand(d, { type: 'setDimension', dimensionId: 'dim2', patch: { callout: true } })).toThrow(/不屬於/);
     expect(() => applyDrawingCommand(d, { type: 'setDimension', dimensionId: 'dim3', patch: { callout: true } })).toThrow(/不屬於/);
     expect(() => applyDrawingCommand(base(), { type: 'insertDimensions', dimensions: [{ ...dia(), kind: 'radius', callout: true } as unknown as Dimension] })).toThrow(/不屬於/);
@@ -123,13 +123,13 @@ describe('the annotations in the document', () => {
     expect(() => applyDrawingCommand(d, { type: 'insertTables', tables: [{ id: 'tbl2', kind: 'chart' as never, view: 'view1' }] })).toThrow(/不明的表格種類/);
     expect(() => applyDrawingCommand(d, { type: 'insertTables', tables: [{ id: 'tbl2', kind: 'holes', view: 'view1', fits: { '9': 'X9' } }] })).toThrow(/不支援的配合等級/);
     d = applyDrawingCommand(d, { type: 'setTable', tableId: 'tbl1', patch: { at: [300, 250], fits: { '6': 'H7' } } });
-    expect(d.tables[0]).toMatchObject({ at: [300, 250], fits: { '6': 'H7' } });
+    expect(page(d).tables[0]).toMatchObject({ at: [300, 250], fits: { '6': 'H7' } });
     expect(() => applyDrawingCommand(d, { type: 'setTable', tableId: 'tbl1', patch: { at: [NaN, 1] } })).toThrow(/位置/);
     d = applyDrawingCommand(d, { type: 'setTable', tableId: 'tbl1', patch: { at: null, fits: {} } });
-    expect(d.tables[0]).toEqual({ id: 'tbl1', kind: 'holes', view: 'view1' });
+    expect(page(d).tables[0]).toEqual({ id: 'tbl1', kind: 'holes', view: 'view1' });
     expect(() => applyDrawingCommand(d, { type: 'setTable', tableId: 'zzz', patch: {} })).toThrow(/找不到表格/);
     d = applyDrawingCommand(d, { type: 'deleteTables', tableIds: ['tbl1'] });
-    expect(d.tables).toEqual([]);
+    expect(page(d).tables).toEqual([]);
     expect(() => applyDrawingCommand(d, { type: 'deleteTables', tableIds: ['tbl1'] })).toThrow(/找不到表格/);
   });
 
@@ -137,14 +137,11 @@ describe('the annotations in the document', () => {
     let d = applyDrawingCommand(base(), { type: 'insertTables', tables: [{ id: 'tbl1', kind: 'holes', view: 'view1', fits: { '6': 'H7' } }, { id: 'tbl2', kind: 'holes', view: 'view2', at: [10, 20] }] });
     expect(parseDrawing(serializeDrawing(d))).toEqual(d);
     d = applyDrawingCommand(d, { type: 'deleteViews', viewIds: ['view1'] });
-    expect(d.tables.map((x) => x.id)).toEqual(['tbl2']);
+    expect(page(d).tables.map((x) => x.id)).toEqual(['tbl2']);
     expect(d.idCounters.tbl).toBe(2);
-    const v3 = JSON.parse(serializeDrawing(base()));
-    delete v3.tables;
-    v3.schemaVersion = 3;
-    const back = parseDrawing(JSON.stringify(v3));
+    const back = parseDrawing(JSON.stringify(olderDrawingFile(base(), 3)));
     expect(back.schemaVersion).toBe(DRAWING_SCHEMA_VERSION);
-    expect(back.tables).toEqual([]);
+    expect(page(back).tables).toEqual([]);
   });
 });
 

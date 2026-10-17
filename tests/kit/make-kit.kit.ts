@@ -9,7 +9,7 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
-import { applyCommand, applyDrawingCommand, axesOf, buildBom, createEmptyDrawing, createEmptyPart, leavesOf, sectionPlane, type Dimension, type DrawingDoc, type DrawingView, type Feature, type PartDoc, type Pose, type Ref, type SourceTree, dimensionRefs } from '@3db/model';
+import { applyCommand, applyDrawingCommand, axesOf, buildBom, createEmptyDrawing, createEmptyPart, leavesOf, sectionPlane, type Dimension, type DrawingDoc, type DrawingView, type Feature, type PartDoc, type Pose, type Ref, type SourceTree, dimensionRefs, page } from '@3db/model';
 import { componentName, exportAssemblyStep, partNameOf, readAnyDocumentFile, sha256Hex, writeAssemblyFile, writeDrawingFile, writePartFile } from '@3db/io';
 import { autoDimensions, buildScene, checkDxf, flatPatternDxf, readDxf, readTrueType, toDxf, toPdf, type DxfLine, type ElementsResult, type Scene, type ViewLines } from '@3db/drawing';
 import { edgeFingerprint } from '@3db/naming';
@@ -149,11 +149,11 @@ describe('B. a jig made from a master model (checklist D, E, F)', () => {
     const features = new Map<string, ReturnType<typeof viewFeatures>>();
     const IDENTITY: Pose = { position: [0, 0, 0], rotation: [0, 0, 0, 1] };
     const shapes = [{ shape: part.shape, pose: IDENTITY, mirrored: false }];
-    for (const v of drawing.views) {
-      const axes = axesOf(drawing.views, drawing.sheet.projection, v)!;
+    for (const v of page(drawing).views) {
+      const axes = axesOf(page(drawing).views, page(drawing).sheet.projection, v)!;
       if (v.kind === 'section') {
-        const parent = drawing.views.find((x) => x.id === v.parent)!;
-        lines.set(v.id, projectDrawingView(kernel, shapes, axes, sectionPlane(axesOf(drawing.views, drawing.sheet.projection, parent)!, v)));
+        const parent = page(drawing).views.find((x) => x.id === v.parent)!;
+        lines.set(v.id, projectDrawingView(kernel, shapes, axes, sectionPlane(axesOf(page(drawing).views, page(drawing).sheet.projection, parent)!, v)));
       } else {
         lines.set(v.id, projectDrawingView(kernel, shapes, axes));
         features.set(v.id, viewFeatures(part.mate.topology, part.mate.names, axes, undefined, part.holes));
@@ -164,7 +164,7 @@ describe('B. a jig made from a master model (checklist D, E, F)', () => {
     drawing = applyDrawingCommand(drawing, { type: 'insertDimensions', dimensions });
     drawing = applyDrawingCommand(drawing, { type: 'insertTables', tables: [{ id: 'tbl1', kind: 'holes', view: 'view1', fits: { '6': 'H7' } }] });
     const elements = new Map<string, ElementsResult>(
-      drawing.dimensions.map((d) => {
+      page(drawing).dimensions.map((d) => {
         const refs: Ref[] = dimensionRefs(d);
         return [d.id, { elements: refs.map((r) => elementFacts(part.mate.topology, part.mate.names, r, part.holes)) as never }];
       }),

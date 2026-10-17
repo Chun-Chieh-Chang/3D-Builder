@@ -8,8 +8,7 @@ import {
   type Dimension,
   type DrawingDoc,
   type Ref,
-  dimensionRefs,
-} from '@3db/model';
+  dimensionRefs, page } from '@3db/model';
 import { readPartFile } from '@3db/io';
 import { PlaneGcsSolver } from '@3db/sketch';
 import { Kernel } from '@3db/kernel';
@@ -39,8 +38,8 @@ export async function plateScene(): Promise<{ scene: Scene; doc: DrawingDoc; val
     doc = applyDrawingCommand(doc, { type: 'setSheet', sheet: { scale: [1, 1] } });
     const lines = new Map<string, ViewLines>();
     const features = new Map();
-    for (const v of doc.views) {
-      const axes = axesOf(doc.views, doc.sheet.projection, v)!;
+    for (const v of page(doc).views) {
+      const axes = axesOf(page(doc).views, page(doc).sheet.projection, v)!;
       lines.set(v.id, projectDrawingView(kernel, [{ shape: body.shape, pose: { position: [0, 0, 0], rotation: [0, 0, 0, 1] }, mirrored: false }], axes));
       features.set(v.id, viewFeatures(body.topology, body.names, axes));
     }
@@ -54,7 +53,7 @@ export async function plateScene(): Promise<{ scene: Scene; doc: DrawingDoc; val
     doc = applyDrawingCommand(doc, { type: 'insertDimensions', dimensions });
     doc = applyDrawingCommand(doc, { type: 'insertTables', tables: [{ id: 'tbl1', kind: 'holes', view: 'view1', fits: { '8': 'H7' } }] });
     const elements = new Map<string, ElementsResult>(
-      doc.dimensions.map((d) => {
+      page(doc).dimensions.map((d) => {
         const refs: Ref[] = dimensionRefs(d);
         return [d.id, { elements: refs.map((r) => elementFacts(body.topology, body.names, r)) as never }];
       }),
@@ -62,7 +61,7 @@ export async function plateScene(): Promise<{ scene: Scene; doc: DrawingDoc; val
     const { scene, dimensions: outcomes } = buildScene(doc, lines, elements, features);
     void viewVectors;
     // what each dimension came to, in the order of the document
-    const values = new Map(doc.dimensions.flatMap((d) => { const o = outcomes.get(d.id); return o && 'value' in o ? [[d.id, o.value] as const] : []; }));
+    const values = new Map(page(doc).dimensions.flatMap((d) => { const o = outcomes.get(d.id); return o && 'value' in o ? [[d.id, o.value] as const] : []; }));
     return { scene, doc, values };
   } finally {
     regen.dispose();

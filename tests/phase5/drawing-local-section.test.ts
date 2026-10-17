@@ -7,8 +7,8 @@ import {
   createEmptyDrawing,
   DRAWING_SCHEMA_VERSION,
   type DrawingDoc,
-  type LocalSectionDrawingView,
-} from '@3db/model';
+  type LocalSectionDrawingView, page } from '@3db/model';
+import { olderDrawingFile } from '../support/drawingVersion';
 
 const base = (): DrawingDoc => createEmptyDrawing();
 
@@ -33,14 +33,14 @@ const withModelView = (doc: DrawingDoc) =>
   });
 
 describe('local section (sectionLocal) model validation', () => {
-  it('Schema version is 21', () => {
-    expect(DRAWING_SCHEMA_VERSION).toBe(21);
+  it('Schema version is 25', () => {
+    expect(DRAWING_SCHEMA_VERSION).toBe(25);
   });
 
   it('a circle-outline local section inserts', () => {
     const d = withModelView(base());
     const out = insertViews(d, localSection({ outline: { kind: 'circle', centre: [10, 10], radius: 8 } }));
-    const v = out.views.find((x) => x.id === 'localsec1')! as LocalSectionDrawingView;
+    const v = page(out).views.find((x) => x.id === 'localsec1')! as LocalSectionDrawingView;
     expect(v.outline).toMatchObject({ kind: 'circle', centre: [10, 10], radius: 8 });
   });
 
@@ -61,7 +61,7 @@ describe('local section (sectionLocal) model validation', () => {
         },
       })
     );
-    const v = out.views.find((x) => x.id === 'localsec1')! as LocalSectionDrawingView;
+    const v = page(out).views.find((x) => x.id === 'localsec1')! as LocalSectionDrawingView;
     expect(v.outline.kind).toBe('polygon');
     expect((v.outline as { points: [number, number][] }).points).toHaveLength(5);
   });
@@ -194,7 +194,7 @@ describe('local section (sectionLocal) model validation', () => {
       viewId: 'localsec1',
       patch: { depth: 8, label: 'B' },
     });
-    const v = out.views.find((x) => x.id === 'localsec1')! as LocalSectionDrawingView;
+    const v = page(out).views.find((x) => x.id === 'localsec1')! as LocalSectionDrawingView;
     expect(v.depth).toBe(8);
     expect(v.label).toBe('B');
   });
@@ -216,6 +216,6 @@ describe('local section (sectionLocal) model validation', () => {
       ],
     });
     const out = applyDrawingCommand(d, { type: 'deleteViews', viewIds: ['localsec1'] });
-    expect(out.views.find((x) => x.id === 'localsec1')).toBeUndefined();
+    expect(page(out).views.find((x) => x.id === 'localsec1')).toBeUndefined();
   });
 });

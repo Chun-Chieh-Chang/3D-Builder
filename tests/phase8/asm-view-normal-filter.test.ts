@@ -76,6 +76,18 @@ describe('「正視於」 and the selection filter in an assembly (ADR 0148)', (
     expect(a.normalFrame()).toMatchObject({ normal: [0, 1, 0] });
   });
 
+  it('a plane of the assembly picked wins over a chosen component, and a chosen component is never answered with the assembly\u2019s own plane (B2.6)', () => {
+    const a = open();
+    // A whole component chosen with nothing flat picked is looked at through its own front datum plane. That plane is read off the component's part, which this
+    // harness never reads (no built part, no file status): the answer is "no plane" (the press falls back to the nearest standard view), never the assembly's own
+    // front plane — looking at a component must not show the framing of the assembly it sits in.
+    a.select('c1');
+    expect(a.normalFrame()).toBeNull();
+    // a plane of the assembly itself, picked in the FeatureManager, is what is looked at — the pick still wins
+    a.pickDatum(datum('plane:right'), false);
+    expect(a.normalFrame()).toMatchObject({ normal: [1, 0, 0] });
+  });
+
   it('the frame is a unit one: perpendicular axes, normal unit length', () => {
     const a = open();
     for (const name of ['plane:front', 'plane:top', 'plane:right']) {

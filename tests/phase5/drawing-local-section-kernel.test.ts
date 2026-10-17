@@ -13,6 +13,7 @@ import {
   applyDrawingCommand,
   createEmptyDrawing,
   type DrawingDoc,
+  type DrawingPage,
   type DrawingView,
 } from '@3db/model';
 import { build, extrude, front, rectangle, sketch } from '../phase1/builders';
@@ -124,7 +125,7 @@ const lines = (w: number, h: number, x = 0, y = 0): ViewLines => ({
 });
 
 describe('the local section on the sheet', () => {
-  const doc = (views: DrawingView[], sheet: Partial<DrawingDoc['sheet']> = {}): DrawingDoc =>
+  const doc = (views: DrawingView[], sheet: Partial<DrawingPage['sheet']> = {}): DrawingDoc =>
     applyDrawingCommand(applyDrawingCommand(createEmptyDrawing(), { type: 'setSheet', sheet }), { type: 'insertViews', views });
   const front: DrawingView = { id: 'f', name: 'f', source: 'a.3dbx', direction: 'front' };
 

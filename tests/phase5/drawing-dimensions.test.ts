@@ -22,8 +22,8 @@ import {
   type Ref,
   type ViewAxes,
   type ViewFeature,
-  dimensionRefs,
-} from '@3db/model';
+  dimensionRefs, page } from '@3db/model';
+import { olderDrawingFile } from '../support/drawingVersion';
 import { readPartFile } from '@3db/io';
 import { PlaneGcsSolver } from '@3db/sketch';
 import { Kernel } from '@3db/kernel';
@@ -133,7 +133,7 @@ describe('the dimensions in the document', () => {
 
   it('inserts them with ids that are kept apart from the views\'', () => {
     const d = applyDrawingCommand(base(), { type: 'insertDimensions', dimensions: [lin('dim1'), round('dim2')] });
-    expect(d.dimensions.map((x) => x.id)).toEqual(['dim1', 'dim2']);
+    expect(page(d).dimensions.map((x) => x.id)).toEqual(['dim1', 'dim2']);
     expect(d.idCounters).toMatchObject({ dim: 2, view: 2 });
     expect(() => applyDrawingCommand(d, { type: 'insertDimensions', dimensions: [lin('dim1')] })).toThrow(/已被使用/);
     expect(() => applyDrawingCommand(d, { type: 'insertDimensions', dimensions: [lin('view1')] })).toThrow(/已被使用/);
@@ -150,26 +150,26 @@ describe('the dimensions in the document', () => {
     expect(() => insert(round('dim1', 'diameter', { count: 1 }))).toThrow(/個數/);
     expect(() => insert(lin('dim1', 'view1', { tolerance: { type: 'bilateral', upper: -0.1, lower: 0.1 } }))).toThrow(/上下限/);
     expect(() => insert(lin('dim1', 'view1', { tolerance: { type: 'fit', fit: 'X9' } }))).toThrow(/不支援的配合等級/);
-    expect(insert(lin('dim1', 'view1', { tolerance: { type: 'fit', fit: 'H7' } })).dimensions).toHaveLength(1);
-    expect(insert(lin('dim1', 'view1', { tolerance: { type: 'max' } })).dimensions).toHaveLength(1);
-    expect(insert(lin('dim1', 'view1', { tolerance: { type: 'min' } })).dimensions).toHaveLength(1);
+    expect(page(insert(lin('dim1', 'view1', { tolerance: { type: 'fit', fit: 'H7' } }))).dimensions).toHaveLength(1);
+    expect(page(insert(lin('dim1', 'view1', { tolerance: { type: 'max' } }))).dimensions).toHaveLength(1);
+    expect(page(insert(lin('dim1', 'view1', { tolerance: { type: 'min' } }))).dimensions).toHaveLength(1);
   });
 
   it('changes a dimension: the tolerance in and out, a reference dimension, the count, the offset; what is not its kind\'s is refused', () => {
     let d = applyDrawingCommand(base(), { type: 'insertDimensions', dimensions: [lin('dim1'), round('dim2')] });
     d = applyDrawingCommand(d, { type: 'setDimension', dimensionId: 'dim1', patch: { reference: true, offset: -17, tolerance: { type: 'bilateral', upper: 0.1, lower: -0.1 } } });
-    expect(d.dimensions[0]).toMatchObject({ reference: true, offset: -17, tolerance: { type: 'bilateral', upper: 0.1, lower: -0.1 } });
+    expect(page(d).dimensions[0]).toMatchObject({ reference: true, offset: -17, tolerance: { type: 'bilateral', upper: 0.1, lower: -0.1 } });
     d = applyDrawingCommand(d, { type: 'setDimension', dimensionId: 'dim1', patch: { reference: false, tolerance: null } });
-    expect(d.dimensions[0]).not.toHaveProperty('reference');
-    expect(d.dimensions[0]).not.toHaveProperty('tolerance');
+    expect(page(d).dimensions[0]).not.toHaveProperty('reference');
+    expect(page(d).dimensions[0]).not.toHaveProperty('tolerance');
     d = applyDrawingCommand(d, { type: 'setDimension', dimensionId: 'dim2', patch: { count: 4, angle: 120 } });
-    expect(d.dimensions[1]).toMatchObject({ count: 4, angle: 120 });
+    expect(page(d).dimensions[1]).toMatchObject({ count: 4, angle: 120 });
     d = applyDrawingCommand(d, { type: 'setDimension', dimensionId: 'dim2', patch: { count: null } });
-    expect(d.dimensions[1]).not.toHaveProperty('count');
+    expect(page(d).dimensions[1]).not.toHaveProperty('count');
     d = applyDrawingCommand(d, { type: 'setDimension', dimensionId: 'dim2', patch: { tolerance: { type: 'max' } } });
-    expect(d.dimensions[1]).toMatchObject({ tolerance: { type: 'max' } });
+    expect(page(d).dimensions[1]).toMatchObject({ tolerance: { type: 'max' } });
     d = applyDrawingCommand(d, { type: 'setDimension', dimensionId: 'dim2', patch: { tolerance: null } });
-    expect(d.dimensions[1]).not.toHaveProperty('tolerance');
+    expect(page(d).dimensions[1]).not.toHaveProperty('tolerance');
     expect(() => applyDrawingCommand(d, { type: 'setDimension', dimensionId: 'dim1', patch: { angle: 10 } })).toThrow(/不屬於/);
     expect(() => applyDrawingCommand(d, { type: 'setDimension', dimensionId: 'dim1', patch: { count: 4 } })).toThrow(/不屬於/);
     expect(() => applyDrawingCommand(d, { type: 'setDimension', dimensionId: 'dim2', patch: { offset: 4 } })).toThrow(/不屬於/);
@@ -179,22 +179,19 @@ describe('the dimensions in the document', () => {
   it('deleting a view deletes its dimensions, and the ids are not given out again', () => {
     let d = applyDrawingCommand(base(), { type: 'insertDimensions', dimensions: [lin('dim1'), lin('dim2', 'view2'), round('dim3')] });
     d = applyDrawingCommand(d, { type: 'deleteViews', viewIds: ['view1'] });
-    expect(d.dimensions.map((x) => x.id)).toEqual(['dim2']);
+    expect(page(d).dimensions.map((x) => x.id)).toEqual(['dim2']);
     expect(d.idCounters.dim).toBe(3);
     d = applyDrawingCommand(d, { type: 'deleteDimensions', dimensionIds: ['dim2'] });
-    expect(d.dimensions).toEqual([]);
+    expect(page(d).dimensions).toEqual([]);
     expect(() => applyDrawingCommand(d, { type: 'deleteDimensions', dimensionIds: ['dim2'] })).toThrow(/找不到尺寸/);
   });
 
   it('is saved and read back the same, and a version-2 drawing (no dimensions) is read as version 3 with none', () => {
     const d = applyDrawingCommand(base(), { type: 'insertDimensions', dimensions: [lin('dim1', 'view1', { tolerance: { type: 'fit', fit: 'H7' } }), round('dim2', 'radius', { count: 4 })] });
     expect(parseDrawing(serializeDrawing(d))).toEqual(d);
-    const v2 = JSON.parse(serializeDrawing(base()));
-    delete v2.dimensions;
-    v2.schemaVersion = 2;
-    const back = parseDrawing(JSON.stringify(v2));
+    const back = parseDrawing(JSON.stringify(olderDrawingFile(base(), 2)));
     expect(back.schemaVersion).toBe(DRAWING_SCHEMA_VERSION);
-    expect(back.dimensions).toEqual([]);
+    expect(page(back).dimensions).toEqual([]);
   });
 });
 
@@ -392,7 +389,7 @@ describe('the locating plate dimensioned in its top view', () => {
     d = applyDrawingCommand(d, { type: 'insertDimensions', dimensions: drafts.map((x, i) => ({ ...x, id: `dim${i + 1}`, view: 'view1' }) as Dimension) });
     const lines: ViewLines = { visible: [[-60, -40, 60, -40, 60, 40, -60, 40, -60, -40]], hidden: [], box: { min: [-60, -40], max: [60, 40] } };
     const elements = new Map<string, ElementsResult>(
-      d.dimensions.map((x) => {
+      page(d).dimensions.map((x) => {
         const refs = dimensionRefs(x);
         return [x.id, { elements: refs.map((r) => elementFacts(body.topology, body.names, r)) as never }];
       }),

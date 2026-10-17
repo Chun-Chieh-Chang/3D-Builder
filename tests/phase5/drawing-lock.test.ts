@@ -12,8 +12,8 @@ import {
   serializeDrawing,
   type DrawingDoc,
   type ModelDrawingView,
-  type ViewPatch,
-} from '@3db/model';
+  type ViewPatch, page } from '@3db/model';
+import { olderDrawingFile } from '../support/drawingVersion';
 import { layoutViews, scaleOf } from '@3db/drawing';
 
 /** A drawing with the front, top and right views, as a new drawing's 標準三視圖 makes them. */
@@ -27,7 +27,7 @@ const threeViews = (): DrawingDoc =>
     ],
   });
 
-const viewOf = (doc: DrawingDoc, id: string) => doc.views.find((v) => v.id === id) as ModelDrawingView;
+const viewOf = (doc: DrawingDoc, id: string) => page(doc).views.find((v) => v.id === id) as ModelDrawingView;
 
 describe('locking a view (B2.1)', () => {
   it('setView locks a view and unlockView takes it back', () => {
@@ -49,7 +49,7 @@ describe('locking a view (B2.1)', () => {
   it('a locked view still takes its name, its display and its label: what is drawn on it stays editable', () => {
     const doc = applyDrawingCommand(threeViews(), { type: 'setView', viewId: 'top', patch: { locked: true } });
     const renamed = applyDrawingCommand(doc, { type: 'setView', viewId: 'top', patch: { name: 'Top (locked)', display: 'wireframe' } });
-    expect(renamed.views.find((v) => v.id === 'top')).toMatchObject({ name: 'Top (locked)', display: 'wireframe', locked: true });
+    expect(page(renamed).views.find((v) => v.id === 'top')).toMatchObject({ name: 'Top (locked)', display: 'wireframe', locked: true });
   });
 
   it('a view can be born locked, and an unlocked one can be locked by a patch that also pins it', () => {
@@ -84,8 +84,8 @@ describe('locking a view (B2.1)', () => {
     const back = parseDrawing(serializeDrawing(doc));
     expect(viewOf(back, 'top').locked).toBe(true);
     // an old file (v21, before locking): the field is absent, and that means unlocked — no migration, no schema change
-    const old = JSON.parse(serializeDrawing(doc)) as Record<string, unknown>;
+    const old = olderDrawingFile(doc, 21);
     delete (old.views as { locked?: boolean }[])[1]!.locked;
-    expect(parseDrawing(JSON.stringify(old)).views.find((v) => v.id === 'top')!.locked).toBeUndefined();
+    expect(page(parseDrawing(JSON.stringify(old))).views.find((v) => v.id === 'top')!.locked).toBeUndefined();
   });
 });

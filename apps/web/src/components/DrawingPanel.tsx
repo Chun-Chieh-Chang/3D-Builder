@@ -1,7 +1,7 @@
 import { t, type Locale } from '@3db/i18n';
-import { DIM_STYLE_DEFAULT, SHEET_SIZES, TITLE_FIELDS, TITLE_STYLE_DEFAULT, VIEW_CORNERS, VIEW_DISPLAYS, VIEW_NAMES, baseName, displayOf, isCorner, isDerived, isShaded, type DrawingView, type Scale, type SheetSize, type TitleField, type ViewCorner, type ViewDisplay, type ViewName, type ViewSide } from '@3db/model';
-import { STANDARD_SCALES, arrangementBase, scaleText, type ViewLines } from '@3db/drawing';
-import { openDrawingPart } from '../actions';
+import { BREAK_GAP, DIM_STYLE_DEFAULT, SHEET_SIZES, TITLE_FIELDS, TITLE_STYLE_DEFAULT, VIEW_CORNERS, VIEW_DISPLAYS, VIEW_NAMES, baseName, displayOf, isCorner, isDerived, isShaded, page, type DrawingView, type Scale, type SheetSize, type TitleField, type ViewCorner, type ViewDisplay, type ViewName, type ViewSide } from '@3db/model';
+import { STANDARD_SCALES, arrangementBase, lineAcrossBox, scaleText, type ViewLines } from '@3db/drawing';
+import { ACTIONS, openDrawingPart, shortcutOf } from '../actions';
 import { DimStyleFields } from './DimStyleFields';
 import { TitleStyleFields } from './TitleStyleFields';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
@@ -251,18 +251,18 @@ function DrawingTree({ onFormat, onPick }: { onFormat: () => void; onPick: () =>
   const outcomes = d.scene().dimensions;
   const dimLabel = (id: string) => {
     const o = outcomes.get(id);
-    const dim = doc.dimensions.find((x) => x.id === id)!;
+    const dim = page(doc).dimensions.find((x) => x.id === id)!;
     const kind = t(`drawingUi.tree.dimKind.${dim.kind}` as 'drawingUi.tree.dimKind.linear');
     return o && !('error' in o) ? `${kind} ${o.text}` : kind;
   };
   const toggle = (id: string) => setClosed((c) => (c.has(id) ? new Set([...c].filter((x) => x !== id)) : new Set([...c, id])));
-  const children = (id: string | null) => doc.views.filter((v) => (id === null ? !isDerived(v) || !doc.views.some((p) => p.id === v.parent) : isDerived(v) && v.parent === id));
+  const children = (id: string | null) => page(doc).views.filter((v) => (id === null ? !isDerived(v) || !page(doc).views.some((p) => p.id === v.parent) : isDerived(v) && v.parent === id));
   const chosen = (id: string) => drw.selection.some((x) => x.kind === 'view' && x.id === id) || (id === drw.selected && drw.selection.length === 0);
   const row = (v: DrawingView, depth: number): ReactNode => {
     const kids = children(v.id);
-    const dims = doc.dimensions.filter((x) => x.view === v.id).length;
-    const anns = (doc.annotations ?? []).filter((x) => x.view === v.id).length + doc.surfaceFinishes.filter((x) => x.view === v.id).length;
-    const annList = (doc.annotations ?? []).filter((x) => x.view === v.id);
+    const dims = page(doc).dimensions.filter((x) => x.view === v.id).length;
+    const anns = (page(doc).annotations ?? []).filter((x) => x.view === v.id).length + page(doc).surfaceFinishes.filter((x) => x.view === v.id).length;
+    const annList = (page(doc).annotations ?? []).filter((x) => x.view === v.id);
     return (
       <li key={v.id}>
         <div
@@ -302,7 +302,7 @@ function DrawingTree({ onFormat, onPick }: { onFormat: () => void; onPick: () =>
         </div>
         {!closed.has(v.id) && (kids.length > 0 || dims > 0 || annList.length > 0) && (
           <ul>
-            {folder(v.id, 'dimension', doc.dimensions.filter((x) => x.view === v.id).map((x) => ({ id: x.id, label: dimLabel(x.id) })), depth + 1)}
+            {folder(v.id, 'dimension', page(doc).dimensions.filter((x) => x.view === v.id).map((x) => ({ id: x.id, label: dimLabel(x.id) })), depth + 1)}
             {folder(v.id, 'annotation', annList.map((a) => ({ id: a.id, label: annotationLabel(a) })), depth + 1)}
             {kids.map((k) => row(k, depth + 1))}
           </ul>
@@ -333,7 +333,7 @@ function DrawingTree({ onFormat, onPick }: { onFormat: () => void; onPick: () =>
         <div className={`sw-tree-row${!drw.selected && drw.selection.length === 0 ? ' selected' : ''}`} style={{ paddingLeft: 8 }} data-tree="sheet" onClick={() => (onPick(), d.clearSelection())}>
           <span className="sw-twisty" />
           <Icon name="sheet" />
-          <span className="sw-tree-name">{t('drawingUi.tree.sheet', { size: doc.sheet.size, scale: scaleText(doc.sheet.scale) })}</span>
+          <span className="sw-tree-name">{t('drawingUi.tree.sheet', { size: page(doc).sheet.size, scale: scaleText(page(doc).sheet.scale) })}</span>
         </div>
         <ul>
           <li>
@@ -346,7 +346,7 @@ function DrawingTree({ onFormat, onPick }: { onFormat: () => void; onPick: () =>
           {children(null).map((v) => row(v, 1))}
         </ul>
       </li>
-      {doc.views.length === 0 && <li className="muted sw-tree-empty">{t('drawingUi.noViews')}</li>}
+      {page(doc).views.length === 0 && <li className="muted sw-tree-empty">{t('drawingUi.noViews')}</li>}
       {menu && <DrawingMenu at={menu} onClose={() => setMenu(null)} />}
     </ul>
   );
@@ -362,18 +362,25 @@ export function DrawingPanel() {
   const drw = useStore((s) => s.drw)!;
   const d = store.drawingStore!;
   const doc = drw.doc;
-  const [tab, setTab] = useState<'tree' | 'props'>('props');
+  const [tab, setTab] = useState<'tree' | 'props' | 'tools'>('props');
   const [format, setFormat] = useState(false);
   const [direction, setDirection] = useState<ViewName>('isometric');
   const [side, setSide] = useState<ViewSide>('right');
   const [vertical, setVertical] = useState(true);
   const [at, setAt] = useState('');
+  /** The angle of a cut made by numbers (B2.6): 0 is the vertical or horizontal line the select asks for, anything else turns it about the same point. */
+  const [sectionAngle, setSectionAngle] = useState('');
   const [centre, setCentre] = useState<[string, string]>(['', '']);
   const [radius, setRadius] = useState('');
   const [localDepth, setLocalDepth] = useState('5');
-  const scale = scaleText(doc.sheet.scale);
-  const standard = STANDARD_SCALES.some((s) => same(s, doc.sheet.scale));
-  const view = doc.views.find((x) => x.id === drw.selected);
+  /** The band left out of the selected view (B2.7): the fields, which start empty so that the view's own break (if any) shows as the placeholders, the way the cut above does. */
+  const [breakAxis, setBreakAxis] = useState<'x' | 'y'>('x');
+  const [breakFrom, setBreakFrom] = useState('');
+  const [breakTo, setBreakTo] = useState('');
+  const [breakGap, setBreakGap] = useState('');
+  const scale = scaleText(page(doc).sheet.scale);
+  const standard = STANDARD_SCALES.some((s) => same(s, page(doc).sheet.scale));
+  const view = page(doc).views.find((x) => x.id === drw.selected);
   const tail = drw.selection[drw.selection.length - 1];
   const context: Context = tail ? (tail.kind === 'view' ? 'view' : tail.kind) : view ? 'view' : format ? 'format' : 'sheet';
   // what is chosen on the sheet brings the properties forward, as clicking something in the graphics area of SolidWorks does; a click in the tree stays in the tree
@@ -412,13 +419,16 @@ export function DrawingPanel() {
               ? { icon: 'table', title: t('drawingUi.pm.table'), sub: view?.name ?? '' }
               : context === 'format'
                 ? { icon: 'titleBlock', title: t('drawingUi.tree.format'), sub: d.name() }
-                : { icon: 'sheet', title: t('drawingUi.pm.sheet'), sub: `${doc.sheet.size} · ${scale}` };
+                : { icon: 'sheet', title: t('drawingUi.pm.sheet'), sub: `${page(doc).sheet.size} · ${scale}` };
   const hint = drw.selection.length > 1 ? t('drawingUi.selHint') : null;
   const parent = view;
   const box: { min: [number, number]; max: [number, number] } | null | undefined = parent ? (parent.kind === 'detail' ? { min: [parent.centre[0] - parent.radius, parent.centre[1] - parent.radius], max: [parent.centre[0] + parent.radius, parent.centre[1] + parent.radius] } : drw.lines.get(parent.id)?.box) : null;
   const num = (s: string, fallback: number) => (s.trim() !== '' && Number.isFinite(Number(s)) ? Number(s) : fallback);
   const mid: [number, number] = box ? [(box.min[0] + box.max[0]) / 2, (box.min[1] + box.max[1]) / 2] : [0, 0];
   const span = box ? Math.max(box.max[0] - box.min[0], box.max[1] - box.min[1]) : 20;
+  /** The break's fields (B2.7): the axis it is set on, and — when the view has none yet — the band's ends a third and two thirds across it. */
+  const breakK = (view?.break?.axis ?? breakAxis) === 'y' ? 1 : 0;
+  const breakDefault: [number, number] = box ? [box.min[breakK] + (box.max[breakK] - box.min[breakK]) / 3, box.min[breakK] + ((box.max[breakK] - box.min[breakK]) * 2) / 3] : [0, 0];
   return (
     <div className="drawing-panel sw-panel" data-drawing-panel>
       <div className="sw-tabs" role="tablist">
@@ -430,6 +440,29 @@ export function DrawingPanel() {
           <Icon name="properties" />
           <span>{t('drawingUi.tabProps')}</span>
         </button>
+        <button type="button" role="tab" className={tab === 'tools' ? 'active' : ''} aria-selected={tab === 'tools'} data-tab="tools" title={t('drawingUi.tabTools')} onClick={() => setTab('tools')}>
+          <Icon name="palette" />
+          <span>{t('drawingUi.tabTools')}</span>
+        </button>
+      </div>
+      {/* Tools (B2.6): the options and the shortcuts of a drawing, and the keys the drawing's own commands answer to — the same registry the shortcuts dialog edits, so what is listed is what is in force */}
+      <div className="sw-pane" hidden={tab !== 'tools'}>
+        <div className="pm-row wrap">
+          <button className="pm-button" data-action="openOptions" onClick={() => store.openDialog('options')}>
+            {t('action.options')}
+          </button>
+          <button className="pm-button" data-action="openShortcuts" onClick={() => store.openDialog('shortcuts')}>
+            {t('action.shortcuts')}
+          </button>
+        </div>
+        <ul className="sw-keys" data-group="drawing-shortcuts">
+          {ACTIONS.filter((a) => a.group === 'drawing').map((a) => (
+            <li key={a.id} data-shortcut={a.id}>
+              <span className="sw-keys-name">{a.label}</span>
+              <span className="sw-keys-key">{shortcutOf(a) ?? ''}</span>
+            </li>
+          ))}
+        </ul>
       </div>
       <div className="sw-pane" hidden={tab !== 'tree'}>
         <DrawingTree
@@ -468,7 +501,7 @@ export function DrawingPanel() {
           </button>
         </div>
         {hint && <div className="sw-message">{hint}</div>}
-        {doc.views.length === 0 && (
+        {page(doc).views.length === 0 && (
           <div className="sw-message" data-field="mainViewHint">
             {t('drawingUi.mainViewFirst')}
           </div>
@@ -478,7 +511,7 @@ export function DrawingPanel() {
         <PMGroup title={t('drawingUi.sheet')} icon="sheet" open={isOpen('sheet')} onToggle={() => toggle('sheet')} hidden={!onSheetGroups}>
           <label className="pm-row">
             <span>{t('drawingUi.size')}</span>
-            <select data-field="size" value={doc.sheet.size} onChange={(e) => d.setSheet({ size: e.target.value as SheetSize })}>
+            <select data-field="size" value={page(doc).sheet.size} onChange={(e) => d.setSheet({ size: e.target.value as SheetSize })}>
               {SHEET_SIZES.map((s) => (
                 <option key={s} value={s}>
                   {s}
@@ -488,14 +521,14 @@ export function DrawingPanel() {
           </label>
           <label className="pm-row">
             <span>{t('drawingUi.orientation')}</span>
-            <select data-field="orientation" value={doc.sheet.orientation} onChange={(e) => d.setSheet({ orientation: e.target.value as 'landscape' | 'portrait' })}>
+            <select data-field="orientation" value={page(doc).sheet.orientation} onChange={(e) => d.setSheet({ orientation: e.target.value as 'landscape' | 'portrait' })}>
               <option value="landscape">{t('drawingUi.landscape')}</option>
               <option value="portrait">{t('drawingUi.portrait')}</option>
             </select>
           </label>
           <label className="pm-row">
             <span>{t('drawing.title.projection')}</span>
-            <select data-field="projection" value={doc.sheet.projection} onChange={(e) => d.setSheet({ projection: e.target.value as 'first' | 'third' })}>
+            <select data-field="projection" value={page(doc).sheet.projection} onChange={(e) => d.setSheet({ projection: e.target.value as 'first' | 'third' })}>
               <option value="first">{t('drawing.projection.first')}</option>
               <option value="third">{t('drawing.projection.third')}</option>
             </select>
@@ -513,14 +546,14 @@ export function DrawingPanel() {
           </label>
           <label className="pm-row">
             <span>{t('drawingUi.unit')}</span>
-            <select data-field="unit" value={doc.sheet.unit ?? 'mm'} onChange={(e) => d.setSheet({ unit: e.target.value === 'in' ? 'in' : 'mm' })}>
+            <select data-field="unit" value={page(doc).sheet.unit ?? 'mm'} onChange={(e) => d.setSheet({ unit: e.target.value === 'in' ? 'in' : 'mm' })}>
               <option value="mm">{t('drawingUi.unit.mm')}</option>
               <option value="in">{t('drawingUi.unit.in')}</option>
             </select>
           </label>
           <label className="pm-row">
             <span>{t('drawingUi.language')}</span>
-            <select data-field="language" value={doc.sheet.language ?? ''} onChange={(e) => d.setSheet({ language: e.target.value === '' ? null : (e.target.value as Locale) })}>
+            <select data-field="language" value={page(doc).sheet.language ?? ''} onChange={(e) => d.setSheet({ language: e.target.value === '' ? null : (e.target.value as Locale) })}>
               <option value="">{t('drawingUi.language.auto')}</option>
               <option value="zh-TW">{t('options.languageZh')}</option>
               <option value="en">{t('options.languageEn')}</option>
@@ -535,17 +568,17 @@ export function DrawingPanel() {
 
         <PMGroup title={t('drawingUi.dimStyle')} icon="dimension" group="dimStyle" open={isOpen('dimStyle')} onToggle={() => toggle('dimStyle')} hidden={!onSheetGroups}>
           <div className="sw-message">{t('drawingUi.dimStyleSheetTip')}</div>
-          <DimStyleFields scope="sheet" value={doc.sheet.dimStyle ?? {}} base={DIM_STYLE_DEFAULT} onChange={(s) => d.setSheet({ dimStyle: s })} />
+          <DimStyleFields scope="sheet" value={page(doc).sheet.dimStyle ?? {}} base={DIM_STYLE_DEFAULT} onChange={(s) => d.setSheet({ dimStyle: s })} />
         </PMGroup>
 
         <PMGroup title={t('drawingUi.tree.format')} icon="titleBlock" open={isOpen('format')} onToggle={() => toggle('format')} hidden={!onSheetGroups}>
           {TITLE_FIELDS.map((field: TitleField) => (
             <label key={field} className="pm-row">
               <span>{t(`drawing.title.${field}`)}</span>
-              <TextBox value={doc.title[field] ?? ''} onCommit={(v) => d.setTitle(field, v)} />
+              <TextBox value={page(doc).title[field] ?? ''} onCommit={(v) => d.setTitle(field, v)} />
             </label>
           ))}
-          <TitleStyleFields value={doc.sheet.titleStyle ?? {}} base={TITLE_STYLE_DEFAULT} onChange={(s) => d.setSheet({ titleStyle: s })} />
+          <TitleStyleFields value={page(doc).sheet.titleStyle ?? {}} base={TITLE_STYLE_DEFAULT} onChange={(s) => d.setSheet({ titleStyle: s })} />
         </PMGroup>
 
         <PMGroup title={t('drawingUi.group.viewProps')} icon={view ? VIEW_ICON(view) : 'view'} open={isOpen('view')} onToggle={() => toggle('view')} hidden={!view}>
@@ -592,6 +625,10 @@ export function DrawingPanel() {
                 <input type="checkbox" data-field="viewLock" checked={!!view.locked} title={t('drawingUi.viewLockTip')} onChange={(e) => (e.target.checked ? d.lockView(view.id) : d.unlockView(view.id))} />
                 <span>{t('drawingUi.viewLock')}</span>
               </label>
+              <label className="pm-row checkbox">
+                <input type="checkbox" data-field="viewShowTangentEdges" checked={view.showTangentEdges !== false} title={t('drawingUi.showTangentEdgesTip')} onChange={(e) => d.setView(view.id, { showTangentEdges: e.target.checked ? null : false })} />
+                <span>{t('drawingUi.showTangentEdges')}</span>
+              </label>
               <div className="pm-row">
                 <button
                   type="button"
@@ -626,6 +663,33 @@ export function DrawingPanel() {
                   ))}
                 </div>
               )}
+              {/* A break (B2.7): the band left out of the view, so that a long part is drawn shorter; what lies beyond it comes nearer by the band less the gap. */}
+              <div className="pm-row">
+                <span>{t('drawingUi.breakAxis')}</span>
+                <select data-field="breakAxis" value={view.break?.axis ?? breakAxis} onChange={(e) => { const ax = e.target.value as 'x' | 'y'; setBreakAxis(ax); if (view.break) d.setView(view.id, { break: { ...view.break, axis: ax } }); }}>
+                  <option value="x">{t('drawingUi.breakAxisX')}</option>
+                  <option value="y">{t('drawingUi.breakAxisY')}</option>
+                </select>
+                <input data-field="breakFrom" inputMode="decimal" placeholder={String(+(view.break?.from ?? breakDefault[0]).toFixed(2))} value={breakFrom} onChange={(e) => setBreakFrom(e.target.value)} onKeyDown={(e) => e.stopPropagation()} />
+                <input data-field="breakTo" inputMode="decimal" placeholder={String(+(view.break?.to ?? breakDefault[1]).toFixed(2))} value={breakTo} onChange={(e) => setBreakTo(e.target.value)} onKeyDown={(e) => e.stopPropagation()} />
+                <input data-field="breakGap" inputMode="decimal" title={t('drawingUi.breakGap')} placeholder={String(view.break?.gap ?? BREAK_GAP)} value={breakGap} onChange={(e) => setBreakGap(e.target.value)} onKeyDown={(e) => e.stopPropagation()} />
+              </div>
+              <div className="pm-row end">
+                <button
+                  className="pm-button"
+                  data-action="setBreak"
+                  disabled={!box}
+                  onClick={() => {
+                    if (!box) return;
+                    d.setView(view.id, { break: { axis: view.break?.axis ?? breakAxis, from: num(breakFrom, view.break?.from ?? breakDefault[0]), to: num(breakTo, view.break?.to ?? breakDefault[1]), gap: num(breakGap, view.break?.gap ?? BREAK_GAP) } });
+                  }}
+                >
+                  {t('drawingUi.breakView')}
+                </button>
+                <button className="pm-button danger" data-action="clearBreak" disabled={!view.break} onClick={() => d.setView(view.id, { break: null })}>
+                  {t('drawingUi.breakClear')}
+                </button>
+              </div>
               <label className="pm-row">
                 <span>{t('drawingUi.display')}</span>
                 <select data-field="display" value={displayOf(view)} onChange={(e) => d.setView(view.id, { display: e.target.value as ViewDisplay })}>
@@ -687,6 +751,8 @@ export function DrawingPanel() {
               {t('drawingUi.toolDetail')}
             </button>
             <button className={`pm-button${drw.tool?.kind === 'sectionLocal' ? ' active' : ''}`} data-action="toolLocalSection" title={t('drawingUi.hint.localSection')} onClick={() => d.setTool(drw.tool?.kind === 'sectionLocal' ? null : { kind: 'sectionLocal', outlineKind: 'rectangle', depth: Number(localDepth) || 5 })}>{t('drawingUi.toolLocalSection')}</button>
+            <button className={`pm-button${drw.tool?.kind === 'crop' ? ' active' : ''}`} data-action="toolCrop" title={t('drawingUi.hint.crop')} onClick={() => d.setTool(drw.tool?.kind === 'crop' ? null : { kind: 'crop', outlineKind: 'rectangle' })}>{t('drawingUi.toolCrop')}</button>
+            <button className={`pm-button${drw.tool?.kind === 'auxiliary' ? ' active' : ''}`} data-action="toolAuxiliary" title={t('drawingUi.hint.auxiliary')} onClick={() => d.setTool(drw.tool?.kind === 'auxiliary' ? null : { kind: 'auxiliary' })}>{t('drawingUi.toolAuxiliary')}</button>
             <input data-field="localSectionDepth" inputMode="decimal" placeholder={t('drawingUi.localSectionDepth')} value={localDepth} onChange={(e) => { setLocalDepth(e.target.value); if (drw.tool?.kind === 'sectionLocal') d.setTool({ ...drw.tool, depth: Number(e.target.value) || 5 }); }} onKeyDown={(e) => e.stopPropagation()} />
           </div>
           <details className="pm-details" data-group="derivedNumbers">
@@ -730,6 +796,8 @@ export function DrawingPanel() {
                 <option value="h">{t('drawingUi.sectionHorizontal')}</option>
               </select>
               <input data-field="sectionAt" inputMode="decimal" placeholder={String(+mid[vertical ? 0 : 1].toFixed(2))} value={at} onChange={(e) => setAt(e.target.value)} onKeyDown={(e) => e.stopPropagation()} />
+              <input data-field="sectionAngle" inputMode="decimal" title={t('drawingUi.sectionAngle')} value={sectionAngle} onChange={(e) => setSectionAngle(e.target.value)} onKeyDown={(e) => e.stopPropagation()} />
+              <span className="suffix">°</span>
               <button
                 className="pm-button"
                 data-action="addSection"
@@ -737,8 +805,18 @@ export function DrawingPanel() {
                 onClick={() => {
                   if (!box) return;
                   const p = num(at, mid[vertical ? 0 : 1]);
-                  const pad = 5;
-                  parent && d.addSection(parent.id, vertical ? [[p, box.min[1] - pad], [p, box.max[1] + pad]] : [[box.min[0] - pad, p], [box.max[0] + pad, p]]);
+                  const deg = num(sectionAngle, 0);
+                  if (deg === 0) {
+                    const pad = 5;
+                    parent && d.addSection(parent.id, vertical ? [[p, box.min[1] - pad], [p, box.max[1] + pad]] : [[box.min[0] - pad, p], [box.max[0] + pad, p]]);
+                    return;
+                  }
+                  // a cut by numbers at an angle (B2.6): through the same point, turned from the vertical or the horizontal the select asks for, across the whole view — the line the slanted tool draws (D-I5)
+                  const pt: [number, number] = vertical ? [p, mid[1]] : [mid[0], p];
+                  const rad = ((vertical ? 90 : 0) + deg) * (Math.PI / 180);
+                  const across = lineAcrossBox(pt, [pt[0] + Math.cos(rad), pt[1] + Math.sin(rad)], box, 5);
+                  if (!across) return d.notifyInfo(t('drawingUi.hint.sectionSlant'));
+                  parent && d.addSection(parent.id, across);
                 }}
               >
                 {t('drawingUi.section')}

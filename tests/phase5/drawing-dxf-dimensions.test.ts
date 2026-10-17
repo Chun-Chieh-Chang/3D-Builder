@@ -4,7 +4,7 @@
  * the lines and text the drawing draws it with. Worked by hand: the plate's 120 and 80, the Ø9 and R10, and the angles 45° and 135°; and a scale of 1:2.
  */
 import { beforeAll, describe, expect, it } from 'vitest';
-import { rightOf, viewVectors, type Dimension, type ElementFacts } from '@3db/model';
+import { rightOf, viewVectors, type Dimension, type ElementFacts, page } from '@3db/model';
 import {
   checkDxf,
   dimensionMeasure,
@@ -37,8 +37,8 @@ describe('the dimensions of the plate\'s drawing', () => {
     const doc = readDxf(text);
     expect(checkDxf(doc)).toEqual([]);
     const dims = dimensionsOf(text);
-    expect(plate.scene.dimensions!.length).toBe(plate.doc.dimensions.length);
-    expect(dims).toHaveLength(plate.doc.dimensions.length);
+    expect(plate.scene.dimensions!.length).toBe(page(plate.doc).dimensions.length);
+    expect(dims).toHaveLength(page(plate.doc).dimensions.length);
     expect(doc.tables.get('DIMSTYLE')!.entries.map((e) => e.name)).toEqual(['STANDARD']);
     dims.forEach((e, i) => {
       expect(e.layer).toBe('DIMENSION');
@@ -70,7 +70,7 @@ describe('the dimensions of the plate\'s drawing', () => {
     expect(dims).toHaveLength(values.length);
     dims.forEach((e, i) => {
       const measured = dimensionMeasure(e)!;
-      const d = plate.doc.dimensions[i]!;
+      const d = page(plate.doc).dimensions[i]!;
       // a count is not part of what a CAD measures; the value of a diameter is the whole diameter, a radius the radius
       expect(measured, `${d.id} ${e.text}`).toBeCloseTo(values[i]!, 4); // a DXF is written to a millionth of a millimetre
     });

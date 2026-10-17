@@ -1,5 +1,5 @@
-import { isCorner, isDerived, rightOf, sectionArrow, sectionSide, type ViewAxes, type DrawingDoc, type DrawingSheet, type DrawingView, type Id, type Scale, type ViewCorner, type ViewName, type ViewSide } from '@3db/model';
-import { clipToCircle } from './geometry';
+import { BREAK_GAP, drawingFromPage, isCorner, isDerived, page, rightOf, sectionArrow, sectionSide, withPage, type ViewAxes, type DrawingDoc, type DrawingPage, type DrawingSheet, type DrawingView, type Id, type Scale, type ViewCorner, type ViewName, type ViewSide } from '@3db/model';
+import { clipToCircle, clipToOutline, outlineBox } from './geometry';
 import type { ShadeImage } from './shade';
 import { sheetMetrics, type Rect } from './sheet';
 
@@ -17,6 +17,8 @@ export interface ViewLines {
   shade?: ShadeImage;
   /** A detail's: the circle of its parent's image it shows (view coordinates, full size). */
   shadeClip?: { centre: [number, number]; radius: number };
+  /** Tangent edges (B2.3): the smooth edges where two faces meet tangentially, drawn only when the view's showTangentEdges is true. */
+  tangent?: number[][];
 }
 
 /**
@@ -56,6 +58,29 @@ export function lineAcrossBox(at: readonly [number, number], toward: readonly [n
   ];
 }
 
+/**
+ * A break (B2.7) as the layout and the scene use it: the model's `break` with the axis as 0 (x) or 1 (y) and the gap it defaults to. Absent when the view is not broken.
+ */
+export interface PlacedBreak {
+  axis: 0 | 1;
+  from: number;
+  to: number;
+  gap: number;
+}
+
+/** A view's break as it is drawn, from what the model says. */
+export const breakOf = (v: Pick<DrawingView, 'break'>): PlacedBreak | undefined => (v.break ? { axis: v.break.axis === 'y' ? 1 : 0, from: v.break.from, to: v.break.to, gap: v.break.gap ?? BREAK_GAP } : undefined);
+
+/**
+ * A view's own coordinate along the axis it is broken on, as it is drawn: the band between `from` and `to` is left out and the two halves are held `gap` apart, so what lies
+ * beyond the band is drawn `(to - from) - gap` nearer and the view is that much shorter. A coordinate inside the band has nothing drawn at it and comes to its near end (the
+ * far half starts at `from + gap` in drawn coordinates, which is where the scene draws its far break line).
+ */
+export const brokenAt = (b: PlacedBreak, v: number): number => (v <= b.from ? v : v >= b.to ? v - (b.to - b.from) + b.gap : b.from);
+
+/** The other way round (for a pointer that places something on the view): a drawn coordinate back to the view's own. */
+export const unbrokenAt = (b: PlacedBreak, v: number): number => (v <= b.from ? v : v + (b.to - b.from) - b.gap);
+
 /** A view placed on the sheet: the middle of its box (mm), the scale as a number, and the size it takes (mm). */
 export interface PlacedView {
   id: Id;
@@ -65,15 +90,27 @@ export interface PlacedView {
   h: number;
   /** The middle of the view's box in view coordinates (full size): what `at` is the sheet position of. */
   centre: [number, number];
+  /** The band left out of the view (B2.7), when it is broken: every item of the view is placed through `toSheet`, so they all follow it. */
+  break?: PlacedBreak;
 }
 
 export const ratio = (s: Scale): number => s[0] / s[1];
 
-/** A point of a view's coordinates (full size) on the sheet, where the view is placed. */
-export const toSheet = (placed: PlacedView, x: number, y: number): [number, number] => [placed.at[0] + (x - placed.centre[0]) * placed.scale, placed.at[1] + (y - placed.centre[1]) * placed.scale];
+/** A point of a view's coordinates (full size) on the sheet, where the view is placed. A broken view's band is left out, so what lies beyond it comes nearer by it (B2.7). */
+export const toSheet = (placed: PlacedView, x: number, y: number): [number, number] => {
+  const b = placed.break;
+  const vx = b && b.axis === 0 ? brokenAt(b, x) : x;
+  const vy = b && b.axis === 1 ? brokenAt(b, y) : y;
+  return [placed.at[0] + (vx - placed.centre[0]) * placed.scale, placed.at[1] + (vy - placed.centre[1]) * placed.scale];
+};
 
 /** A point of the sheet in the coordinates of the view placed there (full size): the other way round from `toSheet`, for a pointer that places something. */
-export const fromSheet = (placed: PlacedView, sx: number, sy: number): [number, number] => [placed.centre[0] + (sx - placed.at[0]) / placed.scale, placed.centre[1] + (sy - placed.at[1]) / placed.scale];
+export const fromSheet = (placed: PlacedView, sx: number, sy: number): [number, number] => {
+  const x = placed.centre[0] + (sx - placed.at[0]) / placed.scale;
+  const y = placed.centre[1] + (sy - placed.at[1]) / placed.scale;
+  const b = placed.break;
+  return [b && b.axis === 0 ? unbrokenAt(b, x) : x, b && b.axis === 1 ? unbrokenAt(b, y) : y];
+};
 
 /** The scales a drawing is made at (ISO 5455), from the largest. */
 export const STANDARD_SCALES: readonly Scale[] = [[50, 1], [20, 1], [10, 1], [5, 1], [2, 1], [1, 1], [1, 2], [1, 5], [1, 10], [1, 20], [1, 50], [1, 100]];
@@ -93,11 +130,12 @@ export function scaleFromRatio(r: number): Scale {
   return [n / g, d / g];
 }
 
-/** What a view's scale is made of: its own, else (a projected or section view) its parent's, else the sheet's. Changing the scale of a view changes the scale of what it names, and so of every view that takes it. */
-export function scaleTarget(doc: Pick<DrawingDoc, 'views'>, view: DrawingView, depth = 0): { view: Id } | { sheet: true } {
+/** What a view's scale is made of: its own, else (a projected, section, cropped or auxiliary view) its parent's, else the sheet's. Changing the scale of a view changes the scale of what it names, and so of every view that takes it. */
+export function scaleTarget(doc: Pick<DrawingDoc, 'pages'>, view: DrawingView, depth = 0): { view: Id } | { sheet: true } {
+  const pg = page(doc);
   if (view.scale) return { view: view.id };
-  if (view.kind === 'projected' || view.kind === 'section') {
-    const parent = doc.views.find((v) => v.id === view.parent);
+  if (view.kind === 'projected' || view.kind === 'section' || view.kind === 'crop' || view.kind === 'auxiliary') {
+    const parent = pg.views.find((v) => v.id === view.parent);
     if (parent && depth < 64) return scaleTarget(doc, parent, depth + 1);
   }
   return { sheet: true };
@@ -106,25 +144,56 @@ export function scaleTarget(doc: Pick<DrawingDoc, 'views'>, view: DrawingView, d
 /** The gap between views laid out together (mm), room for the dimensions between them. */
 export const VIEW_GAP = 25;
 
-const sizeOf = (g: ViewLines | null | undefined) => (g?.box ? { w: g.box.max[0] - g.box.min[0], h: g.box.max[1] - g.box.min[1], centre: [(g.box.min[0] + g.box.max[0]) / 2, (g.box.min[1] + g.box.max[1]) / 2] as [number, number] } : { w: 0, h: 0, centre: [0, 0] as [number, number] });
+/** The size and middle of what a view draws, with a break's band left out of the axis it is broken on (B2.7): the view is measured as it is drawn, which is what places it. */
+const sizeOf = (g: ViewLines | null | undefined, brk?: PlacedBreak) => {
+  if (!g?.box) return { w: 0, h: 0, centre: [0, 0] as [number, number] };
+  const min: [number, number] = [g.box.min[0], g.box.min[1]];
+  const max: [number, number] = [g.box.max[0], g.box.max[1]];
+  if (brk) {
+    min[brk.axis] = brokenAt(brk, min[brk.axis]!);
+    max[brk.axis] = brokenAt(brk, max[brk.axis]!);
+  }
+  return { w: max[0] - min[0], h: max[1] - min[1], centre: [(min[0] + max[0]) / 2, (min[1] + max[1]) / 2] as [number, number] };
+};
 
-/** The scale a view is drawn at: its own, else (a projected or section view) its parent's, else the sheet's. */
-export function scaleOf(doc: Pick<DrawingDoc, 'views' | 'sheet'>, view: DrawingView, depth = 0): Scale {
+/** The scale a view is drawn at: its own, else (a projected, section, cropped or auxiliary view) its parent's, else the sheet's. */
+export function scaleOf(doc: Pick<DrawingDoc, 'pages'>, view: DrawingView, depth = 0): Scale {
+  const pg = page(doc);
   if (view.scale) return view.scale;
-  if (view.kind === 'projected' || view.kind === 'section') {
-    const parent = doc.views.find((v) => v.id === view.parent);
+  if (view.kind === 'projected' || view.kind === 'section' || view.kind === 'crop' || view.kind === 'auxiliary') {
+    const parent = pg.views.find((v) => v.id === view.parent);
     if (parent && depth < 64) return scaleOf(doc, parent, depth + 1);
   }
-  return doc.sheet.scale;
+  return pg.sheet.scale;
 }
 
 /**
  * The lines of every view, with the detail views made from their parents': what is inside the circle, the box of the circle (a detail view is as big as its
- * circle, so that its size does not depend on what happens to be in it). A detail of a view with no lines has none.
+ * circle, so that its size does not depend on what happens to be in it). A detail of a view with no lines has none. A cropped view (B2.7) is made the same
+ * way: what its parent shows inside its outline, and the box of the outline.
  */
-export function resolveLines(doc: Pick<DrawingDoc, 'views'>, lines: ReadonlyMap<Id, ViewLines | null>): Map<Id, ViewLines | null> {
+export function resolveLines(doc: Pick<DrawingDoc, 'pages'>, lines: ReadonlyMap<Id, ViewLines | null>): Map<Id, ViewLines | null> {
+  const pg = page(doc);
   const out = new Map<Id, ViewLines | null>();
-  for (const v of doc.views) {
+  for (const v of pg.views) {
+    if (v.kind === 'crop') {
+      const parent = lines.get(v.parent);
+      if (!parent) {
+        out.set(v.id, null);
+        continue;
+      }
+      // nothing is cut here: the crop shows what the parent shows inside the outline, at the outline's own size
+      const clip = (ls: number[][] | undefined) => (ls ?? []).flatMap((l) => clipToOutline(l, v.outline));
+      out.set(v.id, {
+        visible: clip(parent.visible),
+        hidden: clip(parent.hidden),
+        box: outlineBox(v.outline),
+        ...(parent.cut ? { cut: clip(parent.cut) } : {}),
+        ...(parent.center ? { center: clip(parent.center) } : {}),
+        ...(parent.tangent ? { tangent: clip(parent.tangent) } : {}),
+      });
+      continue;
+    }
     if (v.kind !== 'detail') {
       out.set(v.id, lines.get(v.id) ?? null);
       continue;
@@ -140,6 +209,7 @@ export function resolveLines(doc: Pick<DrawingDoc, 'views'>, lines: ReadonlyMap<
       hidden: clip(parent.hidden),
       box: { min: [v.centre[0] - v.radius, v.centre[1] - v.radius], max: [v.centre[0] + v.radius, v.centre[1] + v.radius] },
       ...(parent.shade ? { shade: parent.shade, shadeClip: { centre: [v.centre[0], v.centre[1]], radius: v.radius } } : {}),
+      ...(parent.tangent ? { tangent: clip(parent.tangent) } : {}),
     });
   }
   return out;
@@ -191,19 +261,25 @@ interface Measured {
   w: number;
   h: number;
   centre: [number, number];
+  /** The band left out of the view (B2.7), when it is broken. */
+  break?: PlacedBreak;
 }
 
 /** The side of its parent a derived view goes on. */
-function sideOf(doc: Pick<DrawingDoc, 'sheet'>, v: Exclude<DrawingView, { kind?: 'model' }>): ViewSide {
+function sideOf(doc: Pick<DrawingDoc, 'pages'>, v: Exclude<DrawingView, { kind?: 'model' }>): ViewSide {
+  const pg = page(doc);
   // a view off a corner has a place of its own and is never laid out by its side; asked anyway (a probe without its place), it is beside the parent
   if (v.kind === 'projected') return isCorner(v.side) ? (v.side === 'upRight' || v.side === 'downRight' ? 'right' : 'left') : v.side;
-  if (v.kind === 'section') return sectionSide(sectionArrow(v), doc.sheet.projection);
+  if (v.kind === 'section') return sectionSide(sectionArrow(v), pg.sheet.projection);
+  // an auxiliary view (B2.7) is turned about its fold line, which is drawn on the parent as a section's line is: it goes on that line's side, as the section does
+  if (v.kind === 'auxiliary') return sectionSide(sectionArrow(v), pg.sheet.projection);
   return 'right'; // a detail: beside its parent
 }
 
 /** The view the others of the orthographic arrangement are laid out round: the front view, else the first of the model views that have no position of their own. */
-export function arrangementBase(doc: Pick<DrawingDoc, 'views'>): DrawingView | undefined {
-  const models = doc.views.filter((v) => !isDerived(v) && !v.at);
+export function arrangementBase(doc: Pick<DrawingDoc, 'pages'>): DrawingView | undefined {
+  const pg = page(doc);
+  const models = pg.views.filter((v) => !isDerived(v) && !v.at);
   return models.find((v) => !isDerived(v) && v.direction === 'front') ?? models[0];
 }
 
@@ -212,7 +288,7 @@ export function arrangementBase(doc: Pick<DrawingDoc, 'views'>): DrawingView | u
  * right), 1 up and down (the top and bottom views, and what is projected or cut up or down). Null when it has none: the view the others are arranged round (it moves
  * all of them), the isometric and flat views, a detail, a view with a position of its own.
  */
-export function slideAxis(doc: Pick<DrawingDoc, 'views' | 'sheet'>, v: DrawingView): 0 | 1 | null {
+export function slideAxis(doc: Pick<DrawingDoc, 'pages'>, v: DrawingView): 0 | 1 | null {
   if (v.at) return null;
   if (isDerived(v)) {
     if (v.kind === 'detail') return null;
@@ -242,23 +318,25 @@ export function slideAxis(doc: Pick<DrawingDoc, 'views' | 'sheet'>, v: DrawingVi
  * slide of a view moves it along its line (and what hangs on it); a view with a position of its own is where it was put.
  */
 export function layoutViews(doc: DrawingDoc, rawLines: ReadonlyMap<Id, ViewLines | null>): Map<Id, PlacedView> {
-  const sheet = sheetMetrics(doc.sheet);
+  const pg = page(doc);
+  const sheet = sheetMetrics(pg.sheet);
   const lines = resolveLines(doc, rawLines);
   const measured = new Map<Id, Measured>();
-  for (const v of doc.views) {
+  for (const v of pg.views) {
     const s = ratio(scaleOf(doc, v));
-    const m = sizeOf(lines.get(v.id));
-    measured.set(v.id, { view: v, scale: s, w: m.w * s, h: m.h * s, centre: m.centre });
+    const brk = breakOf(v);
+    const m = sizeOf(lines.get(v.id), brk);
+    measured.set(v.id, { view: v, scale: s, w: m.w * s, h: m.h * s, centre: m.centre, break: brk });
   }
-  const models = doc.views.filter((v) => !isDerived(v) && !v.at);
+  const models = pg.views.filter((v) => !isDerived(v) && !v.at);
   const base = arrangementBase(doc);
   /** Positions in the arrangement (relative to its base view) and positions that are fixed (on the sheet). */
   const rel = new Map<Id, [number, number]>();
   const abs = new Map<Id, [number, number]>();
-  for (const v of doc.views) if (v.at) abs.set(v.id, [v.at[0], v.at[1]]);
+  for (const v of pg.views) if (v.at) abs.set(v.id, [v.at[0], v.at[1]]);
   if (base) {
     const cells = new Map<Id, [number, number]>();
-    for (const v of models) cells.set(v.id, v === base || isDerived(v) ? [0, 0] : cell(v.direction, doc.sheet.projection));
+    for (const v of models) cells.set(v.id, v === base || isDerived(v) ? [0, 0] : cell(v.direction, pg.sheet.projection));
     const last = Math.max(0, ...[...cells.values()].filter(([c]) => c !== 99).map(([c]) => c));
     for (const [id, [c, r]] of cells) if (c === 99) cells.set(id, [last + 1, r]);
     const colW = new Map<number, number>();
@@ -278,8 +356,8 @@ export function layoutViews(doc: DrawingDoc, rawLines: ReadonlyMap<Id, ViewLines
   }
   // the derived views, each once its parent is placed; what is on a side of a parent is stacked outward
   const stacked = new Map<string, number>();
-  const pending = doc.views.filter((v) => isDerived(v) && !v.at);
-  for (let pass = 0; pass < doc.views.length + 1 && pending.length > 0; pass++) {
+  const pending = pg.views.filter((v) => isDerived(v) && !v.at);
+  for (let pass = 0; pass < pg.views.length + 1 && pending.length > 0; pass++) {
     for (const v of [...pending]) {
       if (!isDerived(v)) continue;
       const frame = rel.has(v.parent) ? rel : abs.has(v.parent) ? abs : null;
@@ -329,7 +407,7 @@ export function layoutViews(doc: DrawingDoc, rawLines: ReadonlyMap<Id, ViewLines
     for (const [id, [x, y]] of rel) abs.set(id, [x + dx, y + dy]);
   }
   // what the user moved: the arrangement as a whole, and the views along their lines, each with what hangs on it
-  const shift = doc.sheet.shift ?? [0, 0];
+  const shift = pg.sheet.shift ?? [0, 0];
   const moved = new Map<Id, [number, number]>();
   const movedBy = (v: DrawingView, depth = 0): [number, number] => {
     const known = moved.get(v.id);
@@ -338,7 +416,7 @@ export function layoutViews(doc: DrawingDoc, rawLines: ReadonlyMap<Id, ViewLines
     if (!v.at) {
       const axis = slideAxis(doc, v);
       const own: [number, number] = axis === null || !v.slide ? [0, 0] : axis === 0 ? [v.slide, 0] : [0, v.slide];
-      const parent = isDerived(v) && depth < 64 ? doc.views.find((x) => x.id === v.parent) : undefined;
+      const parent = isDerived(v) && depth < 64 ? pg.views.find((x) => x.id === v.parent) : undefined;
       // the top of a tree of views carries the shift of the arrangement, unless it was put somewhere (then nothing of it moves with the arrangement)
       const up = parent ? movedBy(parent, depth + 1) : shift;
       by = [up[0] + own[0], up[1] + own[1]];
@@ -347,11 +425,11 @@ export function layoutViews(doc: DrawingDoc, rawLines: ReadonlyMap<Id, ViewLines
     return by;
   };
   const out = new Map<Id, PlacedView>();
-  for (const v of doc.views) {
+  for (const v of pg.views) {
     const m = measured.get(v.id)!;
     const at = abs.get(v.id) ?? ([sheet.area.x + sheet.area.w / 2, sheet.area.y + sheet.area.h / 2] as [number, number]);
     const by = movedBy(v);
-    out.set(v.id, { id: v.id, at: [at[0] + by[0], at[1] + by[1]], scale: m.scale, w: m.w, h: m.h, centre: m.centre });
+    out.set(v.id, { id: v.id, at: [at[0] + by[0], at[1] + by[1]], scale: m.scale, w: m.w, h: m.h, centre: m.centre, ...(m.break ? { break: m.break } : {}) });
   }
   return out;
 }
@@ -360,7 +438,7 @@ export function layoutViews(doc: DrawingDoc, rawLines: ReadonlyMap<Id, ViewLines
 export function suggestScale(views: readonly DrawingView[], sizes: ReadonlyMap<Id, { w: number; h: number }>, sheet: Pick<DrawingSheet, 'size' | 'orientation' | 'projection'>): Scale {
   const area: Rect = sheetMetrics(sheet).area;
   for (const scale of STANDARD_SCALES) {
-    const doc = { kind: 'drawing', schemaVersion: 2, sheet: { ...sheet, scale }, title: {}, views: views.map((v) => ({ ...v, name: v.id, at: undefined, scale: undefined, hidden: true })), properties: {}, idCounters: {} } as unknown as DrawingDoc;
+    const doc = drawingFromPage({ id: 'page1', name: '', sheet: { ...sheet, scale }, title: {}, views: views.map((v) => ({ ...v, name: v.id, at: undefined, scale: undefined, hidden: true })), dimensions: [], tables: [], surfaceFinishes: [], annotations: [] } as unknown as DrawingPage);
     const lines = new Map<Id, ViewLines>(views.map((v) => [v.id, { visible: [], hidden: [], box: { min: [0, 0], max: [sizes.get(v.id)?.w ?? 0, sizes.get(v.id)?.h ?? 0] } }]));
     const placed = [...layoutViews(doc, lines).values()];
     const x0 = Math.min(...placed.map((p) => p.at[0] - p.w / 2));
@@ -422,17 +500,18 @@ export function previewDerived(
   pointer: readonly [number, number],
 ): { placed: PlacedView; slide: number; shift: [number, number] | null } | null {
   if (![pointer[0], pointer[1]].every(Number.isFinite)) return null;
+  const pg = page(doc);
   const probe = { ...view, slide: undefined, at: undefined } as DrawingView;
   const all = new Map(rawLines).set(probe.id, lines);
   const now = layoutViews(doc, rawLines).get(view.parent);
-  const first = layoutViews({ ...doc, views: [...doc.views, probe] }, all).get(view.parent);
+  const first = layoutViews(withPage(doc, { ...pg, views: [...pg.views, probe] }), all).get(view.parent);
   if (!now || !first) return null;
   // the shift that puts the parent (and so everything laid out with it) back where it is now
   const by: [number, number] = [now.at[0] - first.at[0], now.at[1] - first.at[1]];
   const moves = Math.hypot(by[0], by[1]) > 1e-6;
-  const was = doc.sheet.shift ?? [0, 0];
+  const was = pg.sheet.shift ?? [0, 0];
   const shift: [number, number] | null = moves ? [Math.round((was[0] + by[0]) * 100) / 100, Math.round((was[1] + by[1]) * 100) / 100] : null;
-  const withIt: DrawingDoc = { ...doc, sheet: { ...doc.sheet, ...(shift ? { shift } : {}) }, views: [...doc.views, probe] };
+  const withIt = withPage(doc, { ...pg, sheet: { ...pg.sheet, ...(shift ? { shift } : {}) }, views: [...pg.views, probe] });
   const layout = layoutViews(withIt, all);
   const placed = layout.get(probe.id);
   const parent = layout.get(view.parent);

@@ -4,7 +4,8 @@
  * chamfered block, which the view now offers beside the planes square to its x and y.
  */
 import { beforeAll, afterAll, describe, expect, it } from 'vitest';
-import { applyCommand, applyDrawingCommand, createEmptyDrawing, DRAWING_SCHEMA_VERSION, parseDrawing, rightOf, serializeDrawing, viewVectors, type Dimension, type DrawingDoc, type ElementFacts, type Feature, type Ref } from '@3db/model';
+import { applyCommand, applyDrawingCommand, createEmptyDrawing, DRAWING_SCHEMA_VERSION, parseDrawing, rightOf, serializeDrawing, viewVectors, type Dimension, type DrawingDoc, type ElementFacts, type Feature, type Ref, page } from '@3db/model';
+import { olderDrawingFile } from '../support/drawingVersion';
 import { PlaneGcsSolver } from '@3db/sketch';
 import { Kernel } from '@3db/kernel';
 import { Regenerator, elementFacts, viewFeatures } from '@3db/regen';
@@ -18,16 +19,16 @@ const angle = (id: string, extra: Partial<Dimension> = {}): Dimension => ({ id, 
 describe('the angle dimension in the document', () => {
   it('is inserted with its arc, and refused with a bad arc, a vertex, a fit, or fields that are not its kind\'s', () => {
     const d = applyDrawingCommand(base(), { type: 'insertDimensions', dimensions: [angle('dim1')] });
-    expect(d.dimensions[0]).toMatchObject({ kind: 'angle', arc: 20 });
+    expect(page(d).dimensions[0]).toMatchObject({ kind: 'angle', arc: 20 });
     const insert = (x: Dimension) => applyDrawingCommand(base(), { type: 'insertDimensions', dimensions: [x] });
     expect(() => insert(angle('dim1', { arc: 0 }))).toThrow(/弧半徑/);
     expect(() => insert(angle('dim1', { arc: NaN }))).toThrow(/弧半徑/);
     expect(() => insert(angle('dim1', { a: { kind: 'vertex', name: 'v' } }))).toThrow(/面、邊或頂點/);
     expect(() => insert(angle('dim1', { tolerance: { type: 'fit', fit: 'H7' } }))).toThrow(/上下限/);
-    expect(insert(angle('dim1', { tolerance: { type: 'bilateral', upper: 0.5, lower: -0.5 } })).dimensions).toHaveLength(1);
+    expect(page(insert(angle('dim1', { tolerance: { type: 'bilateral', upper: 0.5, lower: -0.5 } }))).dimensions).toHaveLength(1);
     // a one-sided limit needs no size, so an angle takes one (only a fit has none to come from)
-    expect(insert(angle('dim1', { tolerance: { type: 'max' } })).dimensions).toHaveLength(1);
-    expect(insert(angle('dim1', { tolerance: { type: 'min' } })).dimensions).toHaveLength(1);
+    expect(page(insert(angle('dim1', { tolerance: { type: 'max' } }))).dimensions).toHaveLength(1);
+    expect(page(insert(angle('dim1', { tolerance: { type: 'min' } }))).dimensions).toHaveLength(1);
     expect(() => applyDrawingCommand(d, { type: 'setDimension', dimensionId: 'dim1', patch: { count: 3 } })).toThrow(/不屬於/);
     expect(() => applyDrawingCommand(d, { type: 'setDimension', dimensionId: 'dim1', patch: { offset: 3 } })).toThrow(/不屬於/);
     expect(() => applyDrawingCommand(d, { type: 'setDimension', dimensionId: 'dim1', patch: { arc: -4 } })).toThrow(/弧半徑/);
@@ -36,9 +37,9 @@ describe('the angle dimension in the document', () => {
   it('changes the arc and takes the other angle, and puts it back', () => {
     let d = applyDrawingCommand(base(), { type: 'insertDimensions', dimensions: [angle('dim1')] });
     d = applyDrawingCommand(d, { type: 'setDimension', dimensionId: 'dim1', patch: { arc: 30, supplementary: true, reference: true } });
-    expect(d.dimensions[0]).toMatchObject({ arc: 30, supplementary: true, reference: true });
+    expect(page(d).dimensions[0]).toMatchObject({ arc: 30, supplementary: true, reference: true });
     d = applyDrawingCommand(d, { type: 'setDimension', dimensionId: 'dim1', patch: { supplementary: null } });
-    expect(d.dimensions[0]).not.toHaveProperty('supplementary');
+    expect(page(d).dimensions[0]).not.toHaveProperty('supplementary');
   });
 
   it('only an angle takes the other angle', () => {
@@ -49,10 +50,9 @@ describe('the angle dimension in the document', () => {
   it('is written and read back, and a version-4 drawing is read as the current one', () => {
     const d = applyDrawingCommand(base(), { type: 'insertDimensions', dimensions: [angle('dim1', { supplementary: true })] });
     const back = parseDrawing(serializeDrawing(d));
-    expect(back.dimensions[0]).toMatchObject({ kind: 'angle', supplementary: true });
+    expect(page(back).dimensions[0]).toMatchObject({ kind: 'angle', supplementary: true });
     expect(back.schemaVersion).toBe(DRAWING_SCHEMA_VERSION);
-    const old = JSON.parse(serializeDrawing(base())) as { schemaVersion: number };
-    old.schemaVersion = 4;
+    const old = olderDrawingFile(base(), 4);
     expect(parseDrawing(JSON.stringify(old)).schemaVersion).toBe(DRAWING_SCHEMA_VERSION);
     // one past what this build writes: a file from a newer build is refused rather than read as if it were this one
     const future = JSON.parse(serializeDrawing(base())) as { schemaVersion: number };

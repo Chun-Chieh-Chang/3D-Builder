@@ -4,7 +4,8 @@
  * (front 100 x 60, top 100 x 40, right 40 x 60, gap 25, first angle: front at (247.5, 205), top below it at (247.5, 130), right to its left at (152.5, 205)).
  */
 import { describe, expect, it } from 'vitest';
-import { applyDrawingCommand, createEmptyDrawing, DRAWING_SCHEMA_VERSION, parseDrawing, serializeDrawing, type DrawingDoc, type DrawingView, type ModelDrawingView } from '@3db/model';
+import { applyDrawingCommand, createEmptyDrawing, DRAWING_SCHEMA_VERSION, parseDrawing, serializeDrawing, type DrawingDoc, type DrawingView, type ModelDrawingView, page } from '@3db/model';
+import { olderDrawingFile } from '../support/drawingVersion';
 import { arrangementBase, layoutViews, scaleFromRatio, scaleTarget, slideAxis, type ViewLines } from '@3db/drawing';
 
 const view = (id: string, direction: ModelDrawingView['direction'], extra: Partial<ModelDrawingView> = {}): DrawingView => ({ id, name: id, source: 'x.3dbx', direction, ...extra });
@@ -19,13 +20,13 @@ describe('the lines views are in line on', () => {
   const d = doc(views);
   it('the front view is what the others are arranged round; the top slides up and down, the right sideways; the isometric view has no line', () => {
     expect(arrangementBase(d)?.id).toBe('f');
-    expect([slideAxis(d, d.views[0]!), slideAxis(d, d.views[1]!), slideAxis(d, d.views[2]!)]).toEqual([null, 1, 0]);
+    expect([slideAxis(d, page(d).views[0]!), slideAxis(d, page(d).views[1]!), slideAxis(d, page(d).views[2]!)]).toEqual([null, 1, 0]);
     expect(slideAxis(doc([view('f', 'front'), view('i', 'isometric')]), view('i', 'isometric'))).toBeNull();
   });
 
   it('a projected view slides along its side, a detail has no line, a view with a position of its own none', () => {
     const e = doc([...views, { id: 'p', name: 'p', kind: 'projected', parent: 'f', side: 'right' }, { id: 'd', name: 'd', kind: 'detail', parent: 'f', centre: [0, 0], radius: 5, label: 'B' }, view('x', 'back', { at: [100, 100] })]);
-    expect([slideAxis(e, e.views[3]!), slideAxis(e, e.views[4]!), slideAxis(e, e.views[5]!)]).toEqual([0, null, null]);
+    expect([slideAxis(e, page(e).views[3]!), slideAxis(e, page(e).views[4]!), slideAxis(e, page(e).views[5]!)]).toEqual([0, null, null]);
   });
 });
 
@@ -109,34 +110,34 @@ describe('the scale a drag gives', () => {
 
   it('the scale of a view is changed where it comes from: its own, its parent’s, or the sheet’s', () => {
     const e = doc([view('f', 'front'), view('t', 'top', { scale: [2, 1] }), { id: 'p', name: 'p', kind: 'projected', parent: 't', side: 'right' }, { id: 'q', name: 'q', kind: 'projected', parent: 'f', side: 'down' }]);
-    expect(scaleTarget(e, e.views[0]!)).toEqual({ sheet: true });
-    expect(scaleTarget(e, e.views[1]!)).toEqual({ view: 't' });
-    expect(scaleTarget(e, e.views[2]!)).toEqual({ view: 't' });
-    expect(scaleTarget(e, e.views[3]!)).toEqual({ sheet: true });
+    expect(scaleTarget(e, page(e).views[0]!)).toEqual({ sheet: true });
+    expect(scaleTarget(e, page(e).views[1]!)).toEqual({ view: 't' });
+    expect(scaleTarget(e, page(e).views[2]!)).toEqual({ view: 't' });
+    expect(scaleTarget(e, page(e).views[3]!)).toEqual({ sheet: true });
   });
 });
 
 describe('the document', () => {
   it('setSheet takes a shift and, with null (or none), takes it back', () => {
     let d = applyDrawingCommand(createEmptyDrawing(), { type: 'setSheet', sheet: { shift: [4, -2] } });
-    expect(d.sheet.shift).toEqual([4, -2]);
+    expect(page(d).sheet.shift).toEqual([4, -2]);
     d = applyDrawingCommand(d, { type: 'setSheet', sheet: { scale: [1, 2] } });
-    expect(d.sheet.shift).toEqual([4, -2]); // untouched by the other fields
+    expect(page(d).sheet.shift).toEqual([4, -2]); // untouched by the other fields
     d = applyDrawingCommand(d, { type: 'setSheet', sheet: { shift: null } });
-    expect('shift' in d.sheet).toBe(false);
+    expect('shift' in page(d).sheet).toBe(false);
     expect(() => applyDrawingCommand(d, { type: 'setSheet', sheet: { shift: [NaN, 0] } })).toThrow();
   });
 
   it('setView takes a slide, and 0 or null takes it back; it has to be a number', () => {
     let d = doc(views);
     d = applyDrawingCommand(d, { type: 'setView', viewId: 't', patch: { slide: -12 } });
-    expect(d.views.find((v) => v.id === 't')!.slide).toBe(-12);
+    expect(page(d).views.find((v) => v.id === 't')!.slide).toBe(-12);
     d = applyDrawingCommand(d, { type: 'setView', viewId: 't', patch: { slide: 0 } });
-    expect(d.views.find((v) => v.id === 't')!.slide).toBeUndefined();
+    expect(page(d).views.find((v) => v.id === 't')!.slide).toBeUndefined();
     d = applyDrawingCommand(d, { type: 'setView', viewId: 't', patch: { slide: 3 } });
     d = applyDrawingCommand(d, { type: 'setView', viewId: 't', patch: { slide: null, at: [100, 100] } });
-    expect(d.views.find((v) => v.id === 't')).toMatchObject({ at: [100, 100] });
-    expect(d.views.find((v) => v.id === 't')!.slide).toBeUndefined();
+    expect(page(d).views.find((v) => v.id === 't')).toMatchObject({ at: [100, 100] });
+    expect(page(d).views.find((v) => v.id === 't')!.slide).toBeUndefined();
     expect(() => applyDrawingCommand(d, { type: 'setView', viewId: 't', patch: { slide: NaN } })).toThrow();
   });
 
@@ -144,12 +145,10 @@ describe('the document', () => {
     const d = applyDrawingCommand(applyDrawingCommand(doc(views), { type: 'setSheet', sheet: { shift: [3, 4] } }), { type: 'setView', viewId: 'r', patch: { slide: -8 } });
     const back = parseDrawing(serializeDrawing(d));
     expect(back.schemaVersion).toBe(DRAWING_SCHEMA_VERSION);
-    expect(DRAWING_SCHEMA_VERSION).toBe(21);
-    expect(back.sheet.shift).toEqual([3, 4]);
-    expect(back.views.find((v) => v.id === 'r')!.slide).toBe(-8);
-    const old = JSON.parse(serializeDrawing(doc(views))) as Record<string, unknown>;
-    old.schemaVersion = 6;
-    const read = parseDrawing(JSON.stringify(old));
+    expect(DRAWING_SCHEMA_VERSION).toBe(25);
+    expect(page(back).sheet.shift).toEqual([3, 4]);
+    expect(page(back).views.find((v) => v.id === 'r')!.slide).toBe(-8);
+    const read = parseDrawing(JSON.stringify(olderDrawingFile(doc(views), 6)));
     expect(read.schemaVersion).toBe(DRAWING_SCHEMA_VERSION);
     expect(layoutViews(read, lines).get('t')!.at).toEqual(layoutViews(doc(views), lines).get('t')!.at);
   });

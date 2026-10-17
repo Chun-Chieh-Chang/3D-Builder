@@ -4,7 +4,7 @@
  * a flange of 90°, 30 from the outside, makes it 100 − 2 × 3.5 + 30 + BA long, the bend line in the middle of the allowance at x = 96.5 + BA/2).
  */
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { applyDrawingCommand, createEmptyDrawing, DRAWING_SCHEMA_VERSION, type Feature, type PartDoc, type Ref } from '@3db/model';
+import { applyDrawingCommand, createEmptyDrawing, DRAWING_SCHEMA_VERSION, type Feature, type PartDoc, type Ref, page } from '@3db/model';
 import { edgeFingerprint } from '@3db/naming';
 import { PlaneGcsSolver } from '@3db/sketch';
 import { Kernel } from '@3db/kernel';
@@ -102,7 +102,7 @@ describe('the view in a drawing', () => {
   const doc = () => applyDrawingCommand(createEmptyDrawing(), { type: 'insertViews', views: [{ id: 'view1', name: '展平圖', source: 'a.3dbx', direction: 'flat' }] });
 
   it('is a view of direction flat, which the document takes (schema 6)', () => {
-    expect(doc().views[0]).toMatchObject({ direction: 'flat' });
+    expect(page(doc()).views[0]).toMatchObject({ direction: 'flat' });
     expect(doc().schemaVersion).toBe(DRAWING_SCHEMA_VERSION);
   });
 

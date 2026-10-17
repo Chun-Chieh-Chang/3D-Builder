@@ -11,6 +11,7 @@ import {
   type SurfaceFinish,
   type SurfaceFinishKind,
   type ToleranceFrameAnnotation,
+  page,
 } from '@3db/model';
 import type { AnnotateWhat } from '../state/drawing';
 import { useState } from 'react';
@@ -170,7 +171,7 @@ function Fastened({ a }: { a: Annotation }) {
 function AnnotationFields({ a }: { a: Annotation }) {
   const drw = useStore((s) => s.drw)!;
   const d = store.drawingStore!;
-  const datums = (drw.doc.annotations ?? []).flatMap((x) => (x.kind === 'datum' ? [x.label] : []));
+  const datums = (page(drw.doc).annotations ?? []).flatMap((x) => (x.kind === 'datum' ? [x.label] : []));
   if (a.kind === 'note')
     return (
       <>
@@ -307,13 +308,13 @@ function FrameEditor({ a, datums }: { a: ToleranceFrameAnnotation; datums: strin
 export function AnnotationPanel() {
   const drw = useStore((s) => s.drw)!;
   const d = store.drawingStore!;
-  const view = drw.doc.views.find((v) => v.id === drw.selected);
+  const view = page(drw.doc).views.find((v) => v.id === drw.selected);
   if (!view) return null;
   const features = drw.features.get(view.id) ?? [];
-  const tables = drw.doc.tables.flatMap((x) => (x.view === view.id && x.kind === 'holes' ? [x] : []));
+  const tables = page(drw.doc).tables.flatMap((x) => (x.view === view.id && x.kind === 'holes' ? [x] : []));
   const centre = view.centreMarks ?? view.kind !== 'section';
   const assembly = drw.boms.has(view.id);
-  const boms = drw.doc.tables.flatMap((x) => (x.view === view.id && x.kind === 'bom' ? [x] : []));
+  const boms = page(drw.doc).tables.flatMap((x) => (x.view === view.id && x.kind === 'bom' ? [x] : []));
   const sizes = [...new Set(holeRows(features).map((r) => formatNumber(2 * r.radius)))];
   const finishes = d.surfaceFinishesOf(view.id);
   const annotations = d.annotationsOf(view.id);
