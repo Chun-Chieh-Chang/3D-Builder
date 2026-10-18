@@ -1,5 +1,25 @@
 # 交接文件
 
+- **【2026-10-18 晚：藍圖 C6.4 沿曲線/邊線複製排列特徵 (Curve-driven Pattern Feature) 全鏈路實作 [ADR 0166](docs/adr/0166-curve-driven-pattern.md) — 已提交並推送 `53d7c3b`（origin/main）】**
+  - **背景與目標**：依據藍圖 C6.4 規範，全鏈路實作沿曲線/邊線複製排列特徵（Curve-driven Pattern Feature，ADR 0166）。支援沿 3D 模型邊線（Model Edge）或草圖路徑（Sketch Path），以「等間距均分（Equal Spacing）」或「指定間距（Spacing）」排列特徵或本體種子，並支援「相切隨曲線旋轉（Tangent）」與「保持原始平行（Parallel）」兩種姿態對齊模式，以及反向排列（Reverse）。特徵完整融入既有 `PatternFeature` 架構，全面復用差集幾何提取、重疊防禦、實例跳過與布林融合管線。
+  - **完成項目**：
+    1. **架構決策紀錄 (`docs/adr/0166-curve-driven-pattern.md`)**：經 AI 智囊團 5 位顧問審查與主席結論，確立雙路徑支援（邊線/草圖）、雙對齊姿態（相切/平行）、均分/間距模式、反向排列與自我紅隊四問檢驗規範。
+    2. **資料模型 (`@3db/model`, Schema 65)**：升版 `SCHEMA_VERSION = 65`；定義 `CurvePatternDefinition`，擴充 `PatternDefinition` 聯合型別；實作 schema 64 遷移函式；`params.ts` 支援曲線模式之 `count` 與 `spacing` 表達式求值；`commands.ts` 新增 `curvePathRef` 驗證曲線參考（需為邊線或歷史之前的草圖）。
+    3. **幾何核心 (`@3db/kernel`, `@3db/regen`)**：定義 `EdgeSample` 與 `EdgeSamplingResult`；在 `kernel.ts` 實作 `sampleEdgeCurve`（透過 OCCT `BRepAdaptor_Curve`、`GCPnts_UniformAbscissa` 與 `GCPnts_AbscissaPoint` 進行 3D 邊線精確採樣，`EvalD1` 解析求導切線）與 `samplePathCurve`（透過 `BRepAdaptor_CompCurve` 進行 2D 草圖輪廓在 3D 空間的採樣）；`placements.ts` 實作 `curveMotion`，支援相切旋轉姿態與平行平移。
+    4. **依賴與再生 (`@3db/regen`)**：`rebuild` 主迴圈將 `sketches` 傳入 `pattern(feature, sketches, set)`；在 `placements` 中完整接線 `d.mode === 'curve'` 計算各實例之 `Motion`，無縫對接差集幾何提取、`noOverlap` 相交防禦、`skip` 略過與實體/切割布林融合。
+    5. **雙語與說明 (`@3db/i18n`, `apps/web`)**：補齊邊線採樣錯誤字典、`feature.curvePattern`、`pattern.curvePath*`、`cmd.curvePath*`、`pm.pattern.curve*`、`pm.pattern.alignment*`、`slot.curvePath`、`action.curvePattern` 與 `help.curvePattern.*` 中英文多國語言文檔。更新 `docs/help-links.json` 登記 `"curve-pattern"`，映射說明主題。
+    6. **介面適配 (`apps/web`)**：註冊 `curve-pattern` 動作；`store.ts` 擴充 `newPattern('curve')`；`datumSlots.ts` 擴充 `SlotType` 支援 `curvePath`（過濾 edge 與先行 sketch）；`PropertyManager.tsx` 新增曲線模式面板：槽位列表、實例數、間距/等間距切換、相切/平行下拉選單與反向排列核取方塊。
+    7. **自我紅隊測試 (`tests/phase3/curve-pattern.test.ts`)**：撰寫 11 項自我紅隊驗收測試，全數 100% 通過（含 WASM Heap 真實指標防呆，0 洩漏）；既有 24 項 pattern 測試與 40 項說明系統測試 100% 綠燈。
+  - **確效與測試驗收**：
+    - `npm run typecheck`：**0 錯誤**。
+    - `node scripts/check-anti-patterns.mjs`：**全域 RSI 反模式靜態守門通過**。
+    - `node scripts/check-deps.mjs`：**Layering OK**。
+    - `node scripts/check-i18n.mjs`：**i18n OK**。
+    - `tests/phase3/curve-pattern.test.ts`：**11 項測試全數通過 (100%)**。
+    - `tests/phase3/pattern.test.ts`：**24 項測試全數通過 (100%)**。
+    - `tests/phase8/help.test.ts`：**40 項說明守門測試全數通過 (100%)**。
+  - **停在哪裡**：已提交並推送 `53d7c3b`（origin/main）。
+
 - **【2026-10-18 晚：B2.8 多圖頁工程圖全量 E2E 測試確效（24 支工程圖測試 100% 綠燈，測試債歸零）】**
   - **背景與目標**：依據先前待辦「B2.8 多圖頁工程圖視圖端點重構（消除歷史殘留之 23 支 E2E 測試債）」，對全量工程圖相關 E2E 測試（11 支 `manual-drawing-*`、10 支 `phase5-*`、`manual-measure-view.js`、`phase4b-surface.js`、`phase4b-surface-edit-ui.js`）以及歷史標記未過的 `phase3-select-elements` 與 `manual-asm-view-normal` 進行端對端實際瀏覽器執行確效。
   - **完成項目與成果**：
@@ -28,7 +48,7 @@
     - `tests/phase1/move-copy-body.test.ts`：**8 項測試全數通過 (100%)**。
     - `tests/phase1/split-body.test.ts`：**7 項測試全數通過 (100%)**。
     - `tests/phase8/help.test.ts`：**40 項說明守門測試全數通過 (100%)**。
-  - **停在哪裡**：本地確效全部通過，待使用者確認授權執行 git commit 與 git push。
+  - **停在哪裡**：已提交並推送 `7ea4ba4`（origin/main）。
 
 - **【2026-10-18：藍圖 C7.3 實體移動與複製本體特徵 (Move/Copy Body Feature) 全鏈路實作 [ADR 0164](docs/adr/0164-move-copy-body.md) — 已提交並推送 `661f849`（origin/main）】**
   - **背景與目標**：依據藍圖 C7.3 規範，實作實體移動與複製本體特徵（Move/Copy Body Feature）。支援對多個目標實體進行線性平移（$dx, dy, dz$）與沿軸旋轉（$\theta$），支援主軸或參考線/直邊作為旋轉軸，具備原地移動與多實體複製兩種模式，保證剛體變換下體積與表面積 100% 物理守恆，零 WASM 布林洩漏，並達成全鏈路 Web 前端互動。
