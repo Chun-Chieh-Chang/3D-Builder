@@ -239,6 +239,7 @@ const api: KernelApi = {
       points: r.points,
       systems: r.systems,
       sketchGeometry: new Map([...r.sketches].map(([id, s]) => [id, s.solved.geometry])),
+      cosmeticThreads: r.cosmeticThreads,
       mass: massOf(r),
       totalMs: r.totalMs,
       heapBytes: heapOf(kernel.oc),
@@ -535,7 +536,7 @@ const api: KernelApi = {
           mesh = kernel.mesh(body.shape, { tolerance: 0.01, angular: 0.1 });
           edgeMeshes.set(built, mesh);
         }
-        out.push({ features: viewFeatures(body.topology, body.names, r.axes, allowed, built.holes), edges: viewEdges(kernel, body.shape, body.topology, body.names, r.axes, allowed, mesh) });
+        out.push({ features: viewFeatures(body.topology, body.names, r.axes, allowed, built.holes, built.result.cosmeticThreads), edges: viewEdges(kernel, body.shape, body.topology, body.names, r.axes, allowed, mesh) });
       } catch (e) {
         out.push({ error: e instanceof Error ? e.message : String(e) });
       }

@@ -326,6 +326,28 @@ export function mapExprs(feature: Feature, fn: (expr: Expr, kind: ExprKind, role
       };
     }
 
+    case 'cosmeticThread': {
+      const majorDiameter = fn(feature.majorDiameter, 'length', 'positive');
+      const minorDiameter = fn(feature.minorDiameter, 'length', 'positive');
+      const pitch = fn(feature.pitch, 'length', 'positive');
+      const depth = fn(feature.depth, 'length', 'positive');
+      if (
+        majorDiameter === feature.majorDiameter &&
+        minorDiameter === feature.minorDiameter &&
+        pitch === feature.pitch &&
+        depth === feature.depth
+      ) {
+        return feature;
+      }
+      return {
+        ...feature,
+        majorDiameter,
+        minorDiameter,
+        pitch,
+        depth,
+      };
+    }
+
     case 'rib': {
       const thickness = fn(feature.thickness, 'length', 'positive');
       return thickness === feature.thickness ? feature : { ...feature, thickness };

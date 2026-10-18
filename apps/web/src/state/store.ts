@@ -1784,6 +1784,37 @@ class AppStore {
     );
   }
 
+  /**
+   * Cosmetic Thread (裝飾螺紋線, C4.9, ADR 0156):
+   * Opens a new cosmetic thread in PropertyManager.
+   */
+  newCosmeticThread(): void {
+    const s = this.state;
+    if (!s.result?.mesh) return this.notify(t('feature.cosmeticThreadNeedsBody'), 'error');
+    let targetFace: Ref = { kind: 'face', name: '' };
+    if (s.selectedFace) targetFace = s.selectedFace;
+    const base = t('feature.cosmeticThread');
+    const id = this.allocator().take('cosmeticThread');
+    this.openNew(
+      {
+        id,
+        type: 'cosmeticThread',
+        name: nextName(this.history.doc, base),
+        suppressed: false,
+        targetFace,
+        threadType: 'external',
+        standardMode: 'standard',
+        standardDesignation: 'M8',
+        majorDiameter: '8',
+        minorDiameter: '6.466',
+        pitch: '1.25',
+        endCondition: 'through',
+        depth: '10',
+      },
+      base,
+    );
+  }
+
   /** 「旋轉填料/基材」 or 「旋轉除料」 (C4.3) about the sketch's centerline (or its only line). */
   newRevolve(op: 'boss' | 'cut'): void {
     const sketch = this.selectedSketch();

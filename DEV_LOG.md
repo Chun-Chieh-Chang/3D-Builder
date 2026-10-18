@@ -1,6 +1,63 @@
 # 3D-Builder 開發日誌 (DEV_LOG.md)
 
-## 2026-10-18：工程圖 PDF 中文字型內建多風格支援與零亂碼防禦（混合架構實作）
+## 2026-10-18：C4.9 裝飾螺紋線 (Cosmetic Threads, [ADR 0156](docs/adr/0156-cosmetic-threads.md)) 全鏈路落地與 ISO 6410-1 出圖整合
+
+### 1. 需求與背景
+- **需求起源**：藍圖 C4.9 特徵「裝飾螺紋線」（Cosmetic Threads），使用者在圓柱面（軸或孔）上標示螺紋規格，供 3D 視覺辨識與 2D 工程圖 ISO 6410-1 標準出圖。
+- **第一性原理定調**：**絕不做 3D 實體螺旋掃出布林運算**。依據 `AGENTS.md §3.5` 的量測事實，OCCT 之 `BRepAlgoAPI_Common` / `Cut` 只要運算元帶有 B-spline 曲面，每次執行即永久佔用 ~10 MiB WASM Heap 且永不歸還。裝飾螺紋線遵循現代機械 CAD（SolidWorks/Inventor）標準架構：特徵樹完整參數化管理、3D 空間繪製輕量化標示線（3/4 圈細實線圓弧）、2D 工程圖依 ISO 6410-1 出圖，再生 WASM Heap 成長量恆為 **0.00 MiB**。
+
+### 2. 做法與架構設計
+| 層級 | 核心檔案 | 實作內容與職責 |
+|---|---|---|
+| 決策紀錄 | `docs/adr/0156-cosmetic-threads.md` | 定義架構規範、數據結構、記憶體零洩漏保證與 ISO 6410-1 出圖標準。 |
+| 資料模型 | `packages/model/src/schema.ts`、`commands.ts`、`refs.ts`、`params.ts`、`serialize.ts`、`drawing.ts` | 升版 `SCHEMA_VERSION = 57`；定義 `CosmeticThreadFeature`；新增 `setCosmeticThread` 指令與校驗；支援引用拓樸與參數化表達式；在 `ViewFeature.circle` 擴充 `thread` 規格。 |
+| 再生引擎 | `packages/regen/src/engine.ts`、`dag.ts`、`drawingDimensions.ts` | 實作 `cosmeticThread` 解析方法：透過幾何探針與頂點投影萃取圓柱面軸線、半徑與長度，0 布林呼叫；`dag.ts` 依賴圖解析；`drawingDimensions.ts` 於端視圖圓柱投影自動帶入螺牙規格。 |
+| 出圖註記 | `packages/drawing/src/annotation.ts` | 擴充 `threadItems` 支援 `f.thread`，自動繪製 ISO 6410-1 規範之 3/4 圈細實線圓弧（第一象限開口，$\pi/2 \to 2\pi$），外螺紋取小徑、內螺紋取大徑。 |
+| 多國語言 | `packages/i18n/src/zh-TW/`、`en/features.ts`、`model.ts` | 補齊 `feature.cosmeticThread*`、`pm.cosmeticThread.*` 及命令層所有中英文雙語詞條。 |
+| 前端與視圖 | `packages/render/src/viewer.ts`、`apps/web/src/` (worker, PropertyManager, Viewport, actions, store, Icon) | 3D 視圖輕量化標示線渲染（3/4 圈細線圓弧 + 盲孔終止線圈）；Worker 協議對齊；PropertyManager 專屬參數面板；Viewport 響應式聯動。 |
+| 確效測試 | `tests/phase3/cosmetic-thread.test.ts` | 建立包含自我紅隊對抗邊界四問與 WASM 真值記憶體防禦的全面測試套件。 |
+
+### 3. 自我紅隊四問（AGENTS.md §2.1）
+1. **輸入破壞 (Input Corruption)**：
+   - 目標面若非解析圓柱面（如立方體平面），立即顯式拋出 `feature.cosmeticThreadNotCylinder` 錯誤並中斷，絕不崩潰。
+   - 給定深度 $\le 0$ 或 NaN，命令層與表達式層立即攔截並拋出 `cmd.mustBePositive`，再生層亦具備 `feature.cosmeticThreadBadDepth` 雙層防衛。
+   - 大徑 $\le$ 小徑、大徑 $\le 0$、螺距 $\le 0$ 拋出 `feature.cosmeticThreadBadDimensions`，**嚴禁使用 Math.round 或 Math.abs 靜默篡改使用者意圖**。
+2. **拓樸與幾何相交破壞 (Geometric Self-Intersection Defense)**：
+   - 裝飾螺紋線本身不執行布林運算（0 布林），完全不會造成相交幾何導致 WASM 崩潰。
+   - 給定深度超出圓柱軸向長度時：端點安全截斷至軸向長度，不會出現越界破面。
+3. **依賴鏈完整性 (Dependency Graph Integrity)**：
+   - 特徵所依賴的幾何參考（目標面 targetFace、起始邊 startEdge）在全鏈路中皆有完整支援：`schema` -> `commands` -> `refs` -> `dag` -> `engine` -> `PropertyManager`，缺一不可。
+   - 目標零件特徵被抑止（suppressed）時，連鎖過濾不生成裝飾線。
+4. **規格真實性與零 Mock 原則 (Zero-Mock & Ground Truth)**：
+   - 測試使用真實 OCCT 核心實體（旋轉圓柱圓棒與內孔）。
+   - 幾何必須以實體探針物理萃取（圓柱半徑、頂點端點、軸向長度）。
+   - 螺牙小徑大徑依據 ISO 68-1 / ISO 261 數學精確推導（如 M8 外螺紋小徑為 6.466 mm），2D 端視圖 3/4 圈圓弧直徑與實體探針物理量測完全吻合，零 Mock 數據。
+
+### 4. 記憶體量測與真值防呆（AGENTS.md §3.1, §3.5）
+- 監控真實 Emscripten WASM Heap：以唯一真實路徑 `(kernel.oc as any).wasmMemory.buffer.byteLength` 讀取。
+- **真值存在性防呆**：先顯式斷言基準指標非空且大於 0（`expect(initialHeap).toBeGreaterThan(0)`），嚴禁使用 `?? 0` 等靜默退化語意。
+- **實測結果**：連續執行 50 次 rebuild，WASM Heap 成長量為 **0.00 MiB**，且 `kernel.liveShapes` 在釋放後維持 0 殘留，徹底解決了實體螺牙的大內存洩漏問題。
+
+### 5. 過程紀錄（RCA／CAPA）
+- **RCA 1（反模式守門觸發）**：測試檔撰寫記憶體監控時使用了 `byteLength ?? 0`，被全域 RSI 守門腳本 `check-anti-patterns.mjs` 攔截。
+  - **根因分析**：寫測試時習慣使用預設值防 null，違反了 `AGENTS.md §3.1` 的「真值存在性防呆」原則（若 buffer 為 undefined 會變成 0，使後續比較失去意義）。
+  - **CAPA 措施**：改為顯式判斷 `const buf = oc?.wasmMemory?.buffer; if (!buf) throw new Error(...)`，確保底層指標真實存在，100% 通過守門。
+- **RCA 2（ISO 外螺紋小徑推導）**：M8 測試中初版誤將內螺紋底孔徑 6.647 mm 當作外螺紋小徑。
+  - **根因分析**：內外螺紋牙底削平量不同（外螺紋為 $H/6$，內螺紋為 $H/4$），外螺紋小徑公式為 $d_3 = d - 2(5/8)H - H/6 \approx 6.466$ mm。
+  - **CAPA 措施**：對照 `threadStandards.ts` 的 `extMinorDia`，確認規格數學正確性，修正測試斷言為 6.466 mm。
+
+### 6. 確效與品質驗收
+- `npm run typecheck`：**0 錯誤**。
+- `node scripts/check-anti-patterns.mjs`：**全域 RSI 反模式靜態守門通過**。
+- `node scripts/check-deps.mjs`：**Layering OK**。
+- `node scripts/check-i18n.mjs`：**i18n OK**。
+- `tests/phase3/cosmetic-thread.test.ts`：**8 項測試全部通過**。
+- `packages/model/test`：**9 個測試檔、159 項單元測試全部通過**。
+- `tests/phase3/thread*.test.ts`：**3 個既有螺牙測試檔、21 項測試全部通過（0 regression）**。
+
+---
+
+
 
 ### 1. 需求與背景
 - **使用者需求**：「工程圖的PDF中文字型需要預設內建多種，輸出要確保不會出亂碼」

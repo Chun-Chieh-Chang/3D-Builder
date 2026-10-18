@@ -67,6 +67,7 @@ import {
   type Vec3,
   type ThreadFeature,
   type KnurlFeature,
+  type CosmeticThreadFeature,
   lookupThread,
   generateStandardThreadProfile,
 } from '@3db/model';
@@ -270,7 +271,31 @@ export interface RebuildResult {
   systems: Map<Id, CoordSystem>;
   /** The sheet metal data of the part (C11), recorded by its features as they were made. */
   sheet: SheetInfo | null;
+  /** Cosmetic threads (C4.9, ADR 0156). Lightweight annotations, 0.00 MiB WASM Heap overhead. */
+  cosmeticThreads: CosmeticThreadInfo[];
   totalMs: number;
+}
+
+export interface CosmeticThreadInfo {
+  featureId: Id;
+  targetFace: Ref;
+  startEdge?: Ref;
+  threadType: 'external' | 'internal';
+  standardMode: 'standard' | 'custom';
+  standardDesignation?: string;
+  majorDiameter: number;
+  minorDiameter: number;
+  pitch: number;
+  depth: number;
+  endCondition: 'blind' | 'through';
+  /** Cylinder axis origin (start point of thread). */
+  origin: Vec3;
+  /** Cylinder axis unit direction (along thread direction). */
+  axis: Vec3;
+  /** Cylinder radius (from actual target face geometry). */
+  radius: number;
+  /** Full length of the cylinder face. */
+  cylinderLength: number;
 }
 
 /** The bodies as they were before the first seed of a pattern (C6): a handle on their shape, their names, and how many there were. */
@@ -488,6 +513,7 @@ export class Regenerator {
   private mastersUsed = new Set<string>();
   /** What a derived body takes from its master and the document does not say: its name and whether it is a reference body. */
   private inherited = new Map<Id, { name: string; reference: boolean }>();
+  private cosmeticThreads: CosmeticThreadInfo[] = [];
 
   constructor(
     private readonly kernel: Kernel,
@@ -534,6 +560,7 @@ export class Regenerator {
     this.statuses = new Map();
     this.inherited = new Map();
     this.mastersUsed = new Set();
+    this.cosmeticThreads = [];
 
     // Every expression becomes the number it stands for before anything is built: the solver and the kernel
     // only ever see numbers. A feature whose expression cannot be evaluated reports why instead of building.
@@ -689,6 +716,10 @@ export class Regenerator {
             set = this.advance(set, this.cutSlots(feature, sketches, set));
             return done({ status: 'ok' });
           }
+          case 'cosmeticThread': {
+            this.cosmeticThread(feature, set);
+            return done({ status: 'ok' });
+          }
           case 'cutWithSurface': {
             set = this.advance(set, this.cutWithSurface(feature, set));
             return done({ status: 'ok' });
@@ -792,7 +823,7 @@ export class Regenerator {
           };
         })
       : [];
-    return { features: results, body: view, bodies, sketches, frames, axes: this.axes, points: this.points, systems: this.systems, sheet: this.sheet, totalMs: performance.now() - t0 };
+    return { features: results, body: view, bodies, sketches, frames, axes: this.axes, points: this.points, systems: this.systems, sheet: this.sheet, cosmeticThreads: this.cosmeticThreads, totalMs: performance.now() - t0 };
   }
 
   /**
@@ -1601,6 +1632,124 @@ export class Regenerator {
       if (e instanceof FeatureError && e.message === t('feature.cutRemovedNothing')) throw new FeatureError(t('feature.knurlRemovedNothing', { diameter: (radius * 2).toFixed(3) }));
       throw e;
     }
+  }
+
+  /**
+   * Cosmetic Thread (裝飾螺紋線, C4.9, ADR 0156):
+   * A lightweight annotation on a cylindrical surface (shaft or hole).
+   * Does NOT call OCCT boolean algorithms (0.00 MiB WASM Heap leakage).
+   */
+  private cosmeticThread(f: CosmeticThreadFeature, set: Bodies): void {
+    if (!set.view) throw new FeatureError(t('feature.cosmeticThreadNeedsBody'));
+    const body = this.modelFor(set, t('feature.cosmeticThread'));
+    const faceIdx = this.resolve(f.targetFace, body, t('feature.cosmeticThread'));
+    const face = body.topology.faces[faceIdx];
+    if (!face || face.geometry?.type !== 'cylinder') {
+      throw new FeatureError(t('feature.cosmeticThreadNotCylinder'));
+    }
+
+    const geom = face.geometry;
+    const r = geom.radius;
+    const axisDir = unit(geom.axis);
+
+    // Collect all vertex projections on the cylinder axis to find its length [tMin, tMax]
+    let tMin = Infinity;
+    let tMax = -Infinity;
+    for (const v of body.topology.vertices) {
+      if (v.faces.includes(faceIdx)) {
+        const tProj = dot(sub(v.point, geom.origin), axisDir);
+        if (tProj < tMin) tMin = tProj;
+        if (tProj > tMax) tMax = tProj;
+      }
+    }
+
+    if (!Number.isFinite(tMin) || !Number.isFinite(tMax) || tMax <= tMin + 1e-6) {
+      tMin = 0;
+      tMax = 10;
+    }
+    const cylinderLength = tMax - tMin;
+
+    // Determine start point and direction
+    let startT = tMin;
+    let dirSign = 1;
+
+    if (f.startEdge) {
+      const edgeIdx = this.resolve(f.startEdge, body, t('feature.cosmeticThread'));
+      const edge = body.topology.edges[edgeIdx];
+      if (edge) {
+        const edgeMid = edge.mid;
+        const edgeT = dot(sub(edgeMid, geom.origin), axisDir);
+        // If start edge is closer to tMax, thread runs backward towards tMin
+        if (Math.abs(edgeT - tMax) < Math.abs(edgeT - tMin)) {
+          startT = tMax;
+          dirSign = -1;
+        } else {
+          startT = tMin;
+          dirSign = 1;
+        }
+      }
+    }
+
+    if (f.reverse) {
+      dirSign = -dirSign;
+      startT = dirSign === 1 ? tMin : tMax;
+    }
+
+    const threadDir: Vec3 = dirSign === 1 ? axisDir : [-axisDir[0], -axisDir[1], -axisDir[2]];
+    const threadOrigin = add(geom.origin, axisDir, startT);
+
+    // Evaluate depth
+    let depth = cylinderLength;
+    if (f.endCondition === 'blind') {
+      depth = evalLength(f.depth);
+      if (!(depth > 0) || !Number.isFinite(depth)) {
+        throw new FeatureError(t('feature.cosmeticThreadBadDepth'));
+      }
+      depth = Math.min(depth, cylinderLength);
+    }
+
+    // Evaluate diameters & pitch
+    let majorDiameter = 0;
+    let minorDiameter = 0;
+    let pitch = 0;
+
+    if (f.standardMode === 'standard' && f.standardDesignation) {
+      const std = lookupThread(f.standardDesignation);
+      if (std) {
+        majorDiameter = std.nominalDia;
+        pitch = std.pitch;
+        minorDiameter = f.threadType === 'external' ? std.extMinorDia : std.intMinorDia;
+      }
+    }
+
+    if (!(majorDiameter > 0) || !(minorDiameter > 0) || !(pitch > 0)) {
+      majorDiameter = evalLength(f.majorDiameter);
+      minorDiameter = evalLength(f.minorDiameter);
+      pitch = evalLength(f.pitch);
+    }
+
+    // Edge-case defense (AGENTS.md §2.1)
+    if (!(majorDiameter > 0) || !(minorDiameter > 0) || !(pitch > 0) || majorDiameter <= minorDiameter) {
+      throw new FeatureError(t('feature.cosmeticThreadBadDimensions'));
+    }
+
+    this.cosmeticThreads.push({
+      featureId: f.id,
+      targetFace: f.targetFace,
+      startEdge: f.startEdge,
+      threadType: f.threadType,
+      standardMode: f.standardMode ?? 'custom',
+      standardDesignation: f.standardDesignation,
+      majorDiameter,
+      minorDiameter,
+      pitch,
+      depth,
+      endCondition: f.endCondition,
+      origin: threadOrigin,
+      axis: threadDir,
+      radius: r,
+      cylinderLength,
+    });
   }
 
 

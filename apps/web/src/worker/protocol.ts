@@ -2,7 +2,7 @@ import type { Locale } from '@3db/i18n';
 import type { InterferenceComponent, MeasureReport, MeasureTarget, PartMass, ElementFacts, SectionCut, ViewAxes, ViewEdgeSet, ViewFeature, DrawingRef } from '@3db/model';
 import type { AssemblyDoc, Axis3, CoordSystem, Feature, Fingerprint, Id, PartDoc, PlaneFrame, Pose, Ref, SketchFeature, SourceTree, Vec3 } from '@3db/model';
 import type { DraftReport, ThicknessReport, UndercutReport, GeometryReport, MassProps, MeshData, ProjectedView } from '@3db/kernel';
-import type { AssemblyResult, AssemblySolveOptions, ClearanceRow, Converted, FeatureResult, FlatReport, SheetCheck, SheetCheckLimits, SnapItem, SweepResult } from '@3db/regen';
+import type { AssemblyResult, AssemblySolveOptions, ClearanceRow, Converted, FeatureResult, FlatReport, SheetCheck, SheetCheckLimits, SnapItem, SweepResult, CosmeticThreadInfo } from '@3db/regen';
 import type { MateGeometry } from '@3db/assembly';
 import type { StepAssemblyPlan, StepInstance, StepSub } from '@3db/io';
 import type { ShadeImage } from '@3db/drawing';
@@ -100,6 +100,8 @@ export interface RebuildPayload {
    * (D4.6, `isShown`), so hiding or showing one does not need a rebuild.
    */
   sketchGeometry: Map<Id, Map<Id, SolvedGeometry>>;
+  /** Cosmetic threads (C4.9, ADR 0156). */
+  cosmeticThreads: CosmeticThreadInfo[];
   mass: MassProps | null;
   totalMs: number;
   /**

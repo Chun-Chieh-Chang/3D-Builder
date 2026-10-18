@@ -108,6 +108,15 @@ export function mapRefs(feature: Feature, map: (ref: Ref) => Ref): { feature: Fe
       return typeof feature.axis === 'string' ? { feature, replaced } : { feature: { ...feature, axis: one(feature.axis) }, replaced };
     case 'knurl':
       return { feature: { ...feature, axis: one(feature.axis) }, replaced };
+    case 'cosmeticThread':
+      return {
+        feature: {
+          ...feature,
+          targetFace: one(feature.targetFace),
+          ...(feature.startEdge ? { startEdge: one(feature.startEdge) } : {}),
+        },
+        replaced,
+      };
     case 'revolve':
     case 'sweep':
     case 'loft':

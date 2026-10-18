@@ -6,7 +6,7 @@ import type { Id } from './ids';
  * DOF status, mass properties and error lists are derived data and never stored.
  */
 
-export const SCHEMA_VERSION = 56;
+export const SCHEMA_VERSION = 57;
 
 /** Value expression (B5.2, B5.3): "20", "25.4mm", "30deg", "wall_t*2", "D1@草圖1/2", "property('厚度')"; see `expr/`. */
 export type Expr = string;
@@ -315,6 +315,36 @@ export interface KnurlFeature extends FeatureBase {
   reverse?: boolean;
 }
 
+/**
+ * Cosmetic Thread (裝飾螺紋線, C4.9, ADR 0156, v57): a lightweight annotation representing a threaded shaft or hole.
+ * Does NOT generate 3D helical boolean geometry (0.00 MiB WASM Heap overhead).
+ * Renders lightweight cosmetic curves in 3D and generates ISO 6410-1 standard 3/4-circle arcs and thread lines in 2D drawings.
+ */
+export interface CosmeticThreadFeature extends FeatureBase {
+  type: 'cosmeticThread';
+  /** Target cylindrical surface: outer cylinder for external thread, inner hole wall for internal thread. */
+  targetFace: Ref;
+  /** Optional circular edge or end face indicating start position; if omitted, defaults to cylinder end. */
+  startEdge?: Ref;
+  /** External thread (shaft/bolt) or internal thread (bore/nut). */
+  threadType: 'external' | 'internal';
+  /** 'standard' uses built-in library (Metric/UNC); 'custom' uses user-entered diameters/pitch. */
+  standardMode?: 'standard' | 'custom';
+  /** Designation for standard thread, e.g. 'M8', 'M8x1.25', '1/4-20 UNC'. */
+  standardDesignation?: string;
+  /** Major diameter (crest for external, root for internal). */
+  majorDiameter: Expr;
+  /** Minor diameter (root for external, tap drill for internal). */
+  minorDiameter: Expr;
+  /** Thread pitch in mm. */
+  pitch: Expr;
+  /** End condition: 'blind' or 'through'. */
+  endCondition: 'blind' | 'through';
+  /** Thread length/depth along axis. */
+  depth: Expr;
+  /** Reverse direction along cylinder axis. */
+  reverse?: boolean;
+}
 
 /**
  * Rib (肋材, C4.7, v20): one straight line of a sketch thickened into a wall and grown from the line, in the plane of the sketch and square to the line,
@@ -942,7 +972,8 @@ export type Feature =
   | HoleFeature
   | CombineFeature
   | ThreadFeature
-  | KnurlFeature;
+  | KnurlFeature
+  | CosmeticThreadFeature;
 export type FeatureType = Feature['type'];
 
 // ---------------------------------------------------------------- document

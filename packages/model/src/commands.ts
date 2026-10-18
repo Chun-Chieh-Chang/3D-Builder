@@ -1,7 +1,7 @@
 import { t } from '@3db/i18n';
 import { current, produce, type Draft } from 'immer';
 import { countersFor, type Id } from './ids';
-import type { SheetGauge, AppearanceTarget, DocSettings, MaterialRef, Variable, BlobRef, ChamferFeature, FilletKind, CombineFeature, HoleFeature, ScrewBossFeature, BaseFlangeFeature, MidBendFeature, EdgeFlangeFeature, HemFeature, BreakCornerFeature, SnapHookFeature, SnapCatchFeature, VentFeature, LoftFeature, RibFeature, SweepFeature, Draft as WallDraft, EndCondition, Thin, Expr, Feature, ImportedBodyFeature, AxisDefinition, CoordSysFeature, MirrorFeature, PartDoc, PatternDefinition, PatternFeature, PlaneDefinition, PointDefinition, Ref, RevolveCondition, SketchConstraint, SketchEntity, SketchFeature, SketchPicture, CutWithSurfaceFeature, ThreadFeature, KnurlFeature } from './schema';
+import type { SheetGauge, AppearanceTarget, DocSettings, MaterialRef, Variable, BlobRef, ChamferFeature, FilletKind, CombineFeature, HoleFeature, ScrewBossFeature, BaseFlangeFeature, MidBendFeature, EdgeFlangeFeature, HemFeature, BreakCornerFeature, SnapHookFeature, SnapCatchFeature, VentFeature, LoftFeature, RibFeature, SweepFeature, Draft as WallDraft, EndCondition, Thin, Expr, Feature, ImportedBodyFeature, AxisDefinition, CoordSysFeature, MirrorFeature, PartDoc, PatternDefinition, PatternFeature, PlaneDefinition, PointDefinition, Ref, RevolveCondition, SketchConstraint, SketchEntity, SketchFeature, SketchPicture, CutWithSurfaceFeature, ThreadFeature, KnurlFeature, CosmeticThreadFeature } from './schema';
 import { isDatumPlaneName } from './datums';
 import { canBeSeed } from './patterns';
 import { colorOk, materialOk, sameTarget } from './materials';
@@ -85,6 +85,8 @@ ull). */
   | { type: 'setThread'; featureId: Id; params: Partial<Omit<ThreadFeature, 'id' | 'type' | 'name' | 'suppressed'>> }
   /** A knurl's parameters (ADR 0124): everything but which axis it is on. */
   | { type: 'setKnurl'; featureId: Id; knurl: Partial<Omit<KnurlFeature, 'id' | 'type' | 'name' | 'suppressed' | 'axis'>> & { axis?: Ref } }
+  /** A cosmetic thread's parameters (C4.9, ADR 0156). */
+  | { type: 'setCosmeticThread'; featureId: Id; params: Partial<Omit<CosmeticThreadFeature, 'id' | 'type' | 'name' | 'suppressed'>> }
   /** What a draft leans and about which plane (C5.5). */
   | { type: 'setDraftFeature'; featureId: Id; neutral: Ref; faces: Ref[]; angle: Expr; reverse?: boolean }
   /** What a shell takes away and how thick the wall is (C5.4). */
@@ -624,6 +626,11 @@ function validateNewFeature(doc: PartDoc, f: Feature, index: number): void {
       if (f.axis.kind !== 'datum' && f.axis.kind !== 'face' && f.axis.kind !== 'edge') throw new CommandError(t('cmd.knurlOnlyAxis'));
       return;
 
+    case 'cosmeticThread':
+      if (f.targetFace.kind !== 'face') throw new CommandError(t('cmd.cosmeticThreadOnlyFace'));
+      if (f.startEdge && f.startEdge.kind !== 'edge' && f.startEdge.kind !== 'face') throw new CommandError(t('cmd.cosmeticThreadOnlyEdge'));
+      return;
+
     case 'derivedBody':
       if (!isFilePath(f.source)) throw new CommandError(t('cmd.derivedSourceInvalid', { path: f.source }));
       if (f.body.trim() === '') throw new CommandError(t('cmd.derivedBodyEmpty'));
@@ -973,6 +980,17 @@ export function mutate(draft: Draft<PartDoc>, cmd: Command): void {
       if (next.axis.kind !== 'datum' && next.axis.kind !== 'face' && next.axis.kind !== 'edge') throw new CommandError(t('cmd.knurlOnlyAxis'));
       validateNewFeature(draft as PartDoc, next as Feature, draft.features.findIndex((x) => x.id === f.id));
       Object.assign(f, cmd.knurl);
+      checkExprs(draft as PartDoc, f as Feature);
+      return;
+    }
+    case 'setCosmeticThread': {
+      const f = feature(draft, cmd.featureId);
+      if (f.type !== 'cosmeticThread') throw new CommandError(t('cmd.onlyCosmeticThreadHasParams'));
+      const next = { ...f, ...cmd.params };
+      if (next.targetFace && next.targetFace.kind !== 'face') throw new CommandError(t('cmd.cosmeticThreadOnlyFace'));
+      if (next.startEdge && next.startEdge.kind !== 'edge' && next.startEdge.kind !== 'face') throw new CommandError(t('cmd.cosmeticThreadOnlyEdge'));
+      validateNewFeature(draft as PartDoc, next as Feature, draft.features.findIndex((x) => x.id === f.id));
+      Object.assign(f, cmd.params);
       checkExprs(draft as PartDoc, f as Feature);
       return;
     }

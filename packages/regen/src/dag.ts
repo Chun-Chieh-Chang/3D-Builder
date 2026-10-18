@@ -114,6 +114,9 @@ export function parentsOf(feature: Feature, doc: PartDoc): Id[] {
     case 'importedBody':
       parents = []; // it depends only on its data
       break;
+    case 'cosmeticThread':
+      parents = fromRefs([feature.targetFace, ...(feature.startEdge ? [feature.startEdge] : [])]);
+      break;
     case 'derivedBody':
       parents = []; // it depends only on another file
       break;

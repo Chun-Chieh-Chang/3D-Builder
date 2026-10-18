@@ -512,7 +512,7 @@ export type ViewFeature =
   /** A plane seen edge-on: a line across the view's x (`axis: 'x'`, at x = `coord`) or its y. */
   | { type: 'plane'; ref: Ref; axis: 'x' | 'y'; coord: number; area: number }
   /** A cylinder seen along its axis: a circle (a whole one, `full`, or an arc) with its middle in the view's coordinates and the direction (degrees) from there to the middle of the arc. */
-  | { type: 'circle'; ref: Ref; centre: [number, number]; radius: number; convex: boolean; full: boolean; outward: number; hole?: HoleInfo }
+  | { type: 'circle'; ref: Ref; centre: [number, number]; radius: number; convex: boolean; full: boolean; outward: number; hole?: HoleInfo; thread?: { majorDiameter: number; minorDiameter: number; threadType: 'external' | 'internal' } }
   /** A whole cylinder seen from the side: its axis from one end to the other, in the view's coordinates. */
   | { type: 'axis'; ref: Ref; from: [number, number]; to: [number, number]; radius: number }
   /**

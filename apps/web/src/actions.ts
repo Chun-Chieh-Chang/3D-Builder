@@ -114,6 +114,7 @@ export const ACTIONS: UiAction[] = [
   { id: 'loft-cut', get label() { return t('action.loftCut'); }, group: 'feature', enabled: (s) => sketchSelected(s) && !!s.result?.mesh, run: () => store.newLoft('cut') },
   { id: 'thread', get label() { return t('feature.thread'); }, group: 'feature', enabled: (s) => partIdle(s) && (sketchSelected(s) || s.doc.features.some((f) => f.type === 'sketch')), run: () => store.newThread() },
   { id: 'knurl', get label() { return t('feature.knurl'); }, group: 'feature', enabled: hasBody, run: () => store.newKnurl() },
+  { id: 'cosmetic-thread', get label() { return t('feature.cosmeticThread'); }, group: 'feature', enabled: hasBody, run: () => store.newCosmeticThread() },
   { id: 'fillet', get label() { return t('act.fillet'); }, group: 'feature', enabled: hasBody, run: () => store.newFillet() },
   { id: 'chamfer', get label() { return t('act.chamfer'); }, group: 'feature', enabled: hasBody, run: () => store.newChamfer() },
   { id: 'delete-face', get label() { return t('feature.deleteFace'); }, group: 'feature', enabled: hasBody, run: () => store.newDeleteFace() },

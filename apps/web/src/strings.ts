@@ -62,6 +62,7 @@ export const FEATURE_LABEL: Record<FeatureType, string> = labelsOf({
   combine: 'feature.combine',
   thread: 'feature.thread',
   knurl: 'feature.knurl',
+  cosmeticThread: 'feature.cosmeticThread',
 });
 
 /** SolidWorks names cuts after what they cut with: 「除料-伸長」, 「除料-旋轉」. */
