@@ -2265,6 +2265,16 @@ export class Viewer {
       const u = new THREE.Vector3().crossVectors(dir, arbitrary).normalize();
       const v = new THREE.Vector3().crossVectors(dir, u).normalize();
 
+      const addPoint = (ox: number, oy: number, oz: number, angle: number) => {
+        const cu = r * Math.cos(angle);
+        const cv = r * Math.sin(angle);
+        positions.push(
+          ox + cu * u.x + cv * v.x,
+          oy + cu * u.y + cv * v.y,
+          oz + cu * u.z + cv * v.z,
+        );
+      };
+
       // 3/4 circle arc (ISO 6410-1: 270 deg, gap in 1st quadrant from 0 to 90 deg)
       const SEGMENTS = 36;
       const startAngle = Math.PI / 2;
@@ -2272,21 +2282,21 @@ export class Viewer {
       for (let i = 0; i < SEGMENTS; i++) {
         const theta1 = startAngle + (i / SEGMENTS) * sweepAngle;
         const theta2 = startAngle + ((i + 1) / SEGMENTS) * sweepAngle;
-        const p1 = origin.clone().addScaledVector(u, r * Math.cos(theta1)).addScaledVector(v, r * Math.sin(theta1));
-        const p2 = origin.clone().addScaledVector(u, r * Math.cos(theta2)).addScaledVector(v, r * Math.sin(theta2));
-        positions.push(p1.x, p1.y, p1.z, p2.x, p2.y, p2.z);
+        addPoint(origin.x, origin.y, origin.z, theta1);
+        addPoint(origin.x, origin.y, origin.z, theta2);
       }
 
       // If blind, draw full end ring at origin + depth * dir
       if (t.endCondition === 'blind' && t.depth > 0) {
-        const endOrigin = origin.clone().addScaledVector(dir, t.depth);
+        const ex = origin.x + dir.x * t.depth;
+        const ey = origin.y + dir.y * t.depth;
+        const ez = origin.z + dir.z * t.depth;
         const FULL_SEGS = 32;
         for (let i = 0; i < FULL_SEGS; i++) {
           const theta1 = (i / FULL_SEGS) * 2 * Math.PI;
           const theta2 = ((i + 1) / FULL_SEGS) * 2 * Math.PI;
-          const p1 = endOrigin.clone().addScaledVector(u, r * Math.cos(theta1)).addScaledVector(v, r * Math.sin(theta1));
-          const p2 = endOrigin.clone().addScaledVector(u, r * Math.cos(theta2)).addScaledVector(v, r * Math.sin(theta2));
-          positions.push(p1.x, p1.y, p1.z, p2.x, p2.y, p2.z);
+          addPoint(ex, ey, ez, theta1);
+          addPoint(ex, ey, ez, theta2);
         }
       }
     }

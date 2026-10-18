@@ -991,6 +991,8 @@ export function mutate(draft: Draft<PartDoc>, cmd: Command): void {
       if (next.startEdge && next.startEdge.kind !== 'edge' && next.startEdge.kind !== 'face') throw new CommandError(t('cmd.cosmeticThreadOnlyEdge'));
       validateNewFeature(draft as PartDoc, next as Feature, draft.features.findIndex((x) => x.id === f.id));
       Object.assign(f, cmd.params);
+      if ('startEdge' in cmd.params && cmd.params.startEdge === undefined) delete f.startEdge;
+      if ('reverse' in cmd.params && !cmd.params.reverse) delete f.reverse;
       checkExprs(draft as PartDoc, f as Feature);
       return;
     }

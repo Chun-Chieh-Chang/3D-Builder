@@ -87,9 +87,13 @@ export function buildOverlayObjects(overlay: SketchOverlay, px: number): THREE.G
 
 export function disposeGroup(group: THREE.Group): void {
   group.traverse((o) => {
-    if (o instanceof THREE.Line || o instanceof THREE.Points) {
-      o.geometry.dispose();
-      (o.material as THREE.Material).dispose();
+    if ('geometry' in o && (o as { geometry?: THREE.BufferGeometry }).geometry?.dispose) {
+      (o as { geometry: THREE.BufferGeometry }).geometry.dispose();
+    }
+    if ('material' in o && (o as { material?: THREE.Material | THREE.Material[] }).material) {
+      const mat = (o as { material: THREE.Material | THREE.Material[] }).material;
+      if (Array.isArray(mat)) mat.forEach((m) => m.dispose());
+      else if (mat?.dispose) mat.dispose();
     }
   });
 }

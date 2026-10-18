@@ -3241,7 +3241,7 @@ function CosmeticThreadPanel({ f }: { f: CosmeticThreadFeature }) {
             {t('pm.cosmeticThread.useSelected')}
           </button>
           {f.startEdge && (
-            <button type="button" onClick={clearEdgeSelection}>
+            <button type="button" title={t('slot.clear')} onClick={clearEdgeSelection}>
               ✕
             </button>
           )}

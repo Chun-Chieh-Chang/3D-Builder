@@ -1,5 +1,29 @@
 # 3D-Builder 開發日誌 (DEV_LOG.md)
 
+## 2026-10-18：pstack poteto-mode 代碼品質深度審查與外科手術式優化
+
+### 1. 任務背景與範疇
+依據 `pstack-poteto-mode` 與 `pstack-unslop` 規範，對近期新增與關聯模組進行契約鎖定、垃圾分配消除與記憶體防禦升級。
+
+### 2. 做法與優化內容
+| 層級 | 核心檔案 | 優化項目與第一性原理 |
+|---|---|---|
+| 渲染清理 | `packages/render/src/overlay.ts` | **全物件 GPU 資源釋放防禦**：`disposeGroup` 原僅檢查 `THREE.Line` 與 `THREE.Points`，未處置 `THREE.Mesh` 與多重材質陣列。升級為全 Object3D 遍歷檢查，徹底釋放 BufferGeometry 與 Material，杜絕顯存洩漏。 |
+| 渲染投影 | `packages/render/src/viewer.ts` | **零暫態物件純量投影優化**：`setCosmeticThreads` 在生成 3/4 圓弧與盲孔端圈時，原在每步迴圈中使用 `origin.clone().addScaledVector(...)`，每次渲染建立 130+ 個短期 `THREE.Vector3` 物件。重構為純量運算直接 push，將 GC 垃圾物件分配量降為 **0**。 |
+| 資料模型 | `packages/model/src/commands.ts` | **MECE 乾淨序列化防禦**：`setCosmeticThread` 處理 patch 時，若選用的 `startEdge: undefined` 或 `reverse: false`，顯式執行 `delete f.startEdge` 與 `delete f.reverse`，確保 PartDoc JSON 維持乾淨無污染。 |
+| 契約鎖定 | `packages/model/test/model.test.ts` | **行為契約鎖定測試**：新增單元測試嚴格斷言可選欄位經更新後屬性確實被 delete（`'startEdge' in ct === false`），且非法面參考立即拋出 `CommandError`。 |
+| 介面無障礙 | `apps/web/src/components/PropertyManager.tsx` | 清除邊線按鈕補上無障礙 `title={t('slot.clear')}`，提供乾淨友好的操作提示。 |
+
+### 3. 確效與品質驗收
+- `npm run typecheck`：**0 錯誤**。
+- `node scripts/check-anti-patterns.mjs`：**全域 RSI 反模式靜態守門通過**。
+- `node scripts/check-deps.mjs`：**Layering OK**。
+- `node scripts/check-i18n.mjs`：**i18n OK**。
+- `packages/model/test`：**9 個測試檔、160 項單元測試全數通過**。
+- `tests/phase3/cosmetic-thread.test.ts`：**8 項測試全數通過**。
+
+---
+
 ## 2026-10-18：C4.9 裝飾螺紋線 (Cosmetic Threads, [ADR 0156](docs/adr/0156-cosmetic-threads.md)) 全鏈路落地與 ISO 6410-1 出圖整合
 
 ### 1. 需求與背景
