@@ -1,5 +1,21 @@
 # 交接文件
 
+- **【2026-10-18：B2.8 Shape 2 多圖頁 (Multi-sheet Drawing) 全鏈路實作與確效（Antigravity）— 已提交並推送 `756b7ae`（origin/main）】**
+  - **背景與決策**：接手 `handoff.md` 任務，落實決策單 `docs/decisions-e1p2-b28-shape2.html`（Q1–Q8 全選 Option A）與 SSOT 原則。
+  - **完成項目**：
+    1. **Q3 Option A（底部頁籤列）**：建立 `apps/web/src/components/SheetTabs.tsx`，比照 SolidWorks 慣例設置於畫面最底部（`[ 圖紙 1 ] [ 圖紙 2 ] ... [ + ]`），支援雙擊行內輸入重新命名、右鍵選單（重新命名、刪除、圖紙屬性）、`[ + ]` 新增頁面，並支援作為拖曳視圖的放下目標（Drop Target）。
+    2. **Q4 Option A（防刪最後一頁）**：在 `packages/model/src/drawing.ts` 的 `deletePage` 指令中顯式加入防禦防呆——剩餘 1 頁時強制拋出 `CommandError`，拒絕刪除；介面層右鍵選單在剩 1 頁時禁用「刪除圖紙」選項。
+    3. **Q5 Option A（跨頁搬移視圖無孤兒參考）**：模型層實作 `moveViewToPage` 指令，將所選視圖身上的尺寸（`dimensions`）、註記（`annotations`）、表格（`tables`）、表面符號（`surfaceFinishes`）隨同移轉至目標頁面，原頁面徹底清除，杜絕懸空/孤兒參考崩潰；右鍵選單提供「移動至圖紙」子選單；Viewport 拖放視圖至分頁頁籤放開直接跨頁轉移並切換至該頁。
+    4. **Q6 Option A（單一多頁 PDF 匯出）**：升級 `packages/drawing/src/pdf.ts` 之 `toPdf(sceneOrScenes, options)`，重構 Catalog/Pages 樹結構（`/Kids`, `/Count`），逐頁配置獨立的 `MediaBox` 與 `/Contents`，跨頁共用 Type 1/CID 內嵌字型及 XObject 圖像資源。
+    5. **Q7 Option A（逐頁圖紙屬性獨立設定）**：`DrawingPanel`、`DimensionPanel`、`AnnotationPanel`、`DrawingViewport` 全面對齊當前活動頁面（`curPage = page(drw.doc, activePageIndex)`），圖紙大小、方向、比例、投影視角、單位、標題欄與標註樣式開放逐頁獨立設定。
+    6. **狀態層全域預算快取 (`state/drawing.ts`)**：`activePageIndex` 集中管理；`loadSources`、`computeLines`、`computeDimensionData`、`refreshBoms` 遍歷所有圖紙視圖（`allViews`）進行預算快取，切換圖紙零延遲；`scene(pageIndex)` 隔離單頁渲染；`exportPdf` 匯出全圖紙單一多頁 PDF。
+  - **確效與測試**：
+    - 新增 `tests/phase5/drawing-pages-multisheet.test.ts`（4 項全過，涵蓋逐頁設定、防刪最後一頁拋錯、無孤兒跨頁轉移、多頁 PDF 真實結構與 MediaBox 解析驗證）。
+    - `npm run typecheck`：**0 錯誤**。
+    - `npm run lint:rules; npm run lint:deps; npm run lint:i18n`：**全數通過**。
+    - `npx vitest run tests/phase5/`：**49 個測試檔案、523 項測試全數通過（0 失敗，1 略過）**。
+  - **停在哪裡**：工作目錄乾淨（working tree clean），無做到一半的程式；`main` 分支在 `756b7ae` 已推送到遠端倉庫。下一棒可依藍圖或後續需求繼續進行。
+
 - **【2026-10-15 夜：桌面版安裝檔重建、整合 F: 的檔案（Claude）】**
   - **重建**：以 `main` 的 `10249a5`（含 F: 全部提交）執行 `npm run build -w @3db/desktop`，更新 `apps/desktop/src-tauri/target/release/desktop.exe`（13,885,952 位元組）與 `bundle/nsis/3D-Builder_0.2.2_x64-setup.exe`（11,965,187 位元組）；版本號維持 0.2.2，舊的 0.2.0、0.2.1 安裝檔未動。新版網頁打包的雜湊檔名（`index-C2ELDDv0.js` 等七個）都確實嵌在 exe 裡；啟動後 10 秒仍存活、視窗標題 `3D-Builder`。這兩個檔案被 git 忽略（`target/`），不在版本庫裡。
   - **整合 F:**：F: 的 git 內容早已全部在這邊的 `main`（`laptop/main` 是它的祖先，F: 的所有分支都沒有這邊沒有的提交，F: 工作樹乾淨）。F: 獨有、被 git 忽略的檔案已複製過來，沒有覆蓋任何既有檔案：`3DB實機確認/`（53 個）、`scratch/`（116 個，其中 `drawing-parts/凸緣襯套.3dbx` 以 F: 較新的版本為準）、`.workbuddy-ai/memory/`、`dev.log`。F: 本身沒有動，仍停在 `d19b9af`，落後 3 個提交，且它的 `desktop.exe` 與安裝檔仍是 10-11 的舊版；要同步請在 F: 執行 `git pull origin main`，並重建或複製這邊的安裝檔。
