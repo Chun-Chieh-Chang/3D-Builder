@@ -1,6 +1,113 @@
 # 交接文件
 
-- **【2026-10-18：工程圖 PDF 中文字型內建多風格支援與零亂碼防禦（混合架構實作）— 已提交並推送 `ee98a4e`（origin/main）】**
+- **【2026-10-18：藍圖 P2（C1.5 Phase A：草圖橢圓圖元與長出/旋轉特徵全鏈路實作）[ADR 0157](docs/adr/0157-sketch-ellipse.md) — 已完成本地確效】**
+  - **背景與目標**：依據藍圖推進規劃，完成草圖進階幾何圖元「橢圓（Ellipse）」的全鏈路閉環，支援 2D 草圖幾何求解映射、閉合輪廓與孔洞識別，並透過 OpenCASCADE 底層解析幾何 `gp_Elips`，使長出實體（Extrude Boss/Cut）、旋轉實體（Revolve）與斷面混成（Loft）全面支援橢圓。
+  - **完成項目**：
+    1. **架構決策紀錄 (`docs/adr/0157-sketch-ellipse.md`)**：
+       - 定義三點橢圓幾何模型（中心點、長軸頂點、短半徑純量），推導封閉解析體積真值公式與自適應正規化法則。
+    2. **資料模型 (`@3db/model`, Schema 58)**：
+       - `schema.ts`：升版 `SCHEMA_VERSION = 58`，新增 `SketchEntity.ellipse`。
+       - `sketch-rules.ts`：實作 `minorRadius > 0` 與中心/長軸重合端點檢驗。
+       - `serialize.ts`：補齊版本向後遷移 `57: (doc) => doc`。
+    3. **草圖幾何與輪廓識別 (`@3db/sketch`)**：
+       - `types.ts`：`SolvedGeometry` 與 `Segment2` 擴充 `ellipse` 類型。
+       - `planegcs.ts`：`readGeometry` 增加 `case 'ellipse'` 解析長短半徑與旋轉角度。
+       - `profiles.ts`：`sample`、`areaOf`、`findProfiles` 支援橢圓閉合輪廓識別與面積計算。
+       - `interact.ts`、`thin.ts`、`ops.ts`：補齊最近點偏心角求值、薄件位移與曲線點引用。
+    4. **幾何核心與再生引擎 (`@3db/kernel`, `@3db/regen`)**：
+       - `kernel.ts`：`Segment` 擴充 `ellipse`；`wire()` 呼叫 `gp_Elips` 構造拓樸邊；實作自適應正規化（若 $rx < ry$ 自動交換半徑並補正角度 $\theta \leftarrow \theta + \pi/2$，嚴格保證 OCCT 0 崩潰）。
+       - `sweepFloor.ts`：支援多邊形 64 點採樣與拉馬努金橢圓周長近似。
+       - `engine.ts`：`revolve` 擴充長短軸 4 個極值頂點採樣嚴防跨軸；螺牙軸向範圍取樣支援橢圓。
+    5. **介面屬性與多國語言 (`apps/web`, `packages/i18n`)**：
+       - `PropertyManager.tsx`：`ENTITY_LABEL` 加入 `ellipse: 'entity.ellipse'`。
+       - `overlay.ts`：約束標籤錨點計算補齊 `ellipse` 支援。
+       - `i18n`：`zh-TW` 與 `en` 字典新增 `entity.ellipse` 詞條。
+    6. **自我紅隊測試 (`tests/phase1/sketch-ellipse.test.ts`)**：
+       - 9 項測試全數 100% 綠燈：水平長出解析體積（零 Mock）、自適應半徑交換、45度旋轉長出、矩形板穿孔除料、帕普斯環體旋轉、跨軸攔截、非正半徑/重合點破壞性防禦，以及 WASM Heap 唯一真實路徑指標驗證。
+  - **確效與測試驗收**：
+    - `npm run typecheck`：**0 錯誤**。
+    - `node scripts/check-anti-patterns.mjs`：**全域 RSI 反模式靜態守門通過**。
+    - `node scripts/check-deps.mjs`：**Layering OK**。
+    - `node scripts/check-i18n.mjs`：**i18n OK**。
+    - `packages/model/test`：**9 個測試檔、160 項單元測試全數通過 (100%)**。
+    - `tests/phase1/`：**9 個測試檔、114 項測試全數通過 (100%)**。
+  - **停在哪裡**：本機全套測試通過，待向使用者回報並確認 git push。
+
+- **【2026-10-18：pstack poteto-mode 代碼品質深度審查與外科手術式優化 — 已提交並推送 `b288c62`（origin/main）】**
+  - **背景與目標**：依據 `@poteto` 的 `pstack-poteto-mode` 與 `pstack-unslop` 規範，對近期新增模組進行深度的行為契約鎖定、GC 垃圾分配消除與記憶體防禦硬化。
+  - **完成項目**：
+    1. **全物件 GPU 資源釋放健全化 (`packages/render/src/overlay.ts`)**：
+       - `disposeGroup` 原僅檢查 `THREE.Line` 與 `THREE.Points`，未處置 `THREE.Mesh` 與材質陣列（例如參考基準面 `planeGroup` 中包含的半透明 Mesh）。
+       - 升級為全 Object3D 遍歷檢查，安全釋放 BufferGeometry 與 Material/Material[]，徹底杜絕顯存洩漏。
+    2. **零暫態垃圾物件純量投影 (`packages/render/src/viewer.ts`)**：
+       - `setCosmeticThreads` 在生成 3/4 圓弧（36 segments）與盲孔端圈（32 segments）時，原在每步迴圈中使用 `origin.clone().addScaledVector(...)`，每次視圖刷新產生 130+ 個短期 `THREE.Vector3`。
+       - 重構為純量運算直接 push 數值到 positions 陣列，將視圖刷新時的臨時堆物件配置量直接降為 **0**。
+    3. **MECE 乾淨序列化防禦 (`packages/model/src/commands.ts`)**：
+       - `setCosmeticThread` 指令處理 patch 時，若選用的 `startEdge: undefined` 或 `reverse: false`，顯式執行 `delete f.startEdge` 與 `delete f.reverse`，確保 PartDoc JSON 維持乾淨無污染。
+    4. **行為契約鎖定測試 (`packages/model/test/model.test.ts`)**：
+       - 新增單元測試嚴格斷言可選欄位經更新後屬性確實被 delete（`'startEdge' in ct === false`），且非法面參考立即拋出 `CommandError`。
+    5. **介面操作提示 (`apps/web/src/components/PropertyManager.tsx`)**：
+       - 為清除邊線按鈕補上無障礙 `title={t('slot.clear')}` 提示。
+  - **確效與測試驗收**：
+    - `npm run typecheck`：**0 錯誤**。
+    - `node scripts/check-anti-patterns.mjs`：**全域 RSI 反模式靜態守門通過**。
+    - `node scripts/check-deps.mjs`：**Layering OK**。
+    - `node scripts/check-i18n.mjs`：**i18n OK**。
+    - `packages/model/test`：**9 個測試檔、160 項單元測試全數通過 (100%)**。
+    - `tests/phase3/cosmetic-thread.test.ts`：**8 項測試全數通過 (100%)**。
+  - **停在哪裡**：工作目錄乾淨（working tree clean），`main` 分支在 `b288c62` 已推送到遠端倉庫。
+
+- **【2026-10-18：C4.9 裝飾螺紋線 (Cosmetic Threads, [ADR 0156](docs/adr/0156-cosmetic-threads.md)) 全鏈路落地與 ISO 6410-1 出圖整合 — 已提交並推送 `2b376a0`（origin/main）】**
+  - **背景與定調**：
+    - 藍圖 C4.9 裝飾螺紋線（Cosmetic Threads）特徵落地。
+    - **第一性原理定調**：**絕不做 3D 實體螺旋掃出布林運算**。依據 `AGENTS.md §3.5` 量測事實，OCCT 之布林運算遇 B-spline 曲面必永久佔用 ~10 MiB WASM Heap 且永不歸還。採現代機械 CAD 業界標準架構：特徵樹完整參數化管理、3D 空間繪製輕量化標示線（3/4 圈細實線圓弧 + 盲孔終止線圈）、2D 工程圖依 ISO 6410-1 出圖，**再生 WASM Heap 成長量恆為 0.00 MiB**。
+    - **前置查證**：查證 D1 手動確效文件（早於 `fa807bb` 修訂）、B1 圓角失效語意（早於 `279b91a` 具備合格檢查與顯式拒絕 `feature.filletInvalid`）。
+  - **完成項目**：
+    1. **決策文件 (`docs/adr/0156-cosmetic-threads.md`)**：完整制定規格選型、數學推導、記憶體零洩漏保證與出圖規範。
+    2. **資料模型 (`@3db/model`, Schema 57)**：
+       - `packages/model/src/schema.ts`：新增 `CosmeticThreadFeature`，升版 `SCHEMA_VERSION = 57`。
+       - `commands.ts`：實作 `setCosmeticThread` 指令、參數校驗與拓樸防呆。
+       - `refs.ts` & `params.ts`：支援引用映射與參數化表達式求值。
+       - `serialize.ts`：新增向後相容遷移 `56: (doc) => doc`。
+       - `drawing.ts`：在 `ViewFeature.circle` 擴充 `thread` 規格。
+    3. **再生引擎 (`@3db/regen`)**：
+       - `engine.ts`：實作 `cosmeticThread` 解析方法，以純幾何拓樸探針與頂點投影萃取圓柱面軸線與長度，0 布林呼叫。
+       - `dag.ts`：`parentsOf` 加入 `cosmeticThread` 依賴關聯解析。
+       - `drawingDimensions.ts`：端視圖圓柱投影自動匹配帶入 `thread` 規格。
+    4. **出圖註記 (`@3db/drawing`)**：
+       - `annotation.ts`：`threadItems` 支援 `f.thread`，自動繪製 ISO 6410-1 標準之 3/4 圈細實線圓弧（第一象限開口，$\pi/2 \to 2\pi$），外螺紋取小徑、內螺紋取大徑。
+    5. **前端與渲染 (`apps/web`, `@3db/render`)**：
+       - `viewer.ts`：實作 3D 輕量化標示線渲染。
+       - `PropertyManager.tsx`：新增 `CosmeticThreadPanel`（標準規格下拉、公/母螺紋切換、貫穿/給定深度）。
+       - `kernel.worker.ts` & `protocol.ts`：Worker 雙向傳輸對齊。
+       - `Viewport.tsx`：響應式渲染聯動。
+       - `Icon.tsx` & `strings.ts`：新增專屬 SVG 圖示與多語系標籤。
+    6. **自我紅隊破壞性測試 (`tests/phase3/cosmetic-thread.test.ts`)**：
+       - 非圓柱面、負/零深度、大徑 $\le$ 小徑即時拋錯阻擋（輸入破壞防禦）。
+       - 實體探針物理萃取，M8 外螺紋小徑精確推導自 ISO 68-1 基本牙型（6.466 mm），零 Mock 數據。
+       - WASM 真值記憶體防禦：顯式斷言基準指標 `expect(initialHeap).toBeGreaterThan(0)`，50 次 rebuild 實測 WASM Heap 成長量為 **0.00 MiB**。
+       - 2D 工程圖端視圖投影與 ISO 6410-1 細實線圓弧註記驗證。
+  - **確效與測試驗收**：
+    - `npm run typecheck`：**0 錯誤**。
+    - `node scripts/check-anti-patterns.mjs`：**全數通過**。
+    - `node scripts/check-deps.mjs`：**Layering OK**。
+    - `node scripts/check-i18n.mjs`：**i18n OK**。
+    - `tests/phase3/cosmetic-thread.test.ts`：**8 項測試全數通過**。
+    - 既有實體螺牙測試 (`tests/phase3/thread*.test.ts`)：**21 項全數通過 (0 regression)**。
+  - **停在哪裡**：`main` 分支在 `2b376a0`（含 ADR 與測試）已推送到遠端倉庫。
+
+- **【查證與進度校正 (Verification & Reality Grounding, 2026-10-18)】**：
+  - **重要第一性原理查證**：經 Git 歷史與代碼實測查證，前次建議清單之項目早於先前提交中全數竣工：
+    1. 局部剖視圖 (Broken-out Section, B1/D-I5)：已於 `4f8968b1`、`1bc21c4`、`10531e8` 完成（Schema 21，22 項測試全過）。
+    2. 工程圖三大交互功能 (D-I8)：鎖定視圖（`2abdaf0`）、隱藏邊（`22463fe`）、相切邊（`2130f85`）全數竣工（22 項測試全過）。
+    3. 尺寸自動排列納入座標尺寸：已於 `18e24a3` (B2.5) 竣工。
+    4. 斷裂/裁剪/輔助視圖 (B2.7) 與多圖頁 (B2.8)：已於 `7118420`、`756b7ae` 竣工。
+    5. 全量 Phase 5 工程圖測試：49 個測試檔、525 項測試 100% 全數通過（0 失敗）。
+  - **真正的後續下一步建議 (True Next Directions)**：
+    1. **方向 A（藍圖 P2 核心擴充）：草圖進階幾何（C1.5 Spline 不規則曲線、文字與草圖複製排列）**。
+    2. **方向 B（藍圖 P2 核心擴充）：多本體布林與實體分割組合工具（C7.3–C7.4）**。
+    3. **方向 C（鈑金製造能力補完）：凸折 (Jog)、斷開角落與長圓/撕裂離隙**。
+    4. **方向 D（品質驗收收斂）：Phase 4b/5/6/7 B 段實機對照驗收清單整理**。
   - **背景與決策**：
     - 使用者提出「工程圖的PDF中文字型需要預設內建多種，輸出要確保不會出亂碼」。
     - 啟動 AI 智囊團（反駁者、本質追問者、機會發現者、外行人、無情執行者）審查，透過反向提問（Clarify Ambiguities）確認三大決策：

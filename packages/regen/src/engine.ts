@@ -1257,7 +1257,23 @@ export class Regenerator {
     if (axis?.type !== 'line') throw new FeatureError(t('regen.axisGone'));
     const [a, b] = [axis.a, axis.b];
     const side = (p: [number, number]) => (b[0] - a[0]) * (p[1] - a[1]) - (b[1] - a[1]) * (p[0] - a[0]);
-    const pts = s.profiles.regions.flatMap((r) => r.outer.flatMap((seg) => (seg.kind === 'line' ? [seg.a, seg.b] : seg.kind === 'arc' ? [seg.from, seg.to, seg.c] : [seg.c])));
+    const pts = s.profiles.regions.flatMap((r) =>
+      r.outer.flatMap((seg) =>
+        seg.kind === 'line'
+          ? [seg.a, seg.b]
+          : seg.kind === 'arc'
+            ? [seg.from, seg.to, seg.c]
+            : seg.kind === 'ellipse'
+              ? [
+                  seg.c,
+                  [seg.c[0] + seg.rx * Math.cos(seg.angle), seg.c[1] + seg.rx * Math.sin(seg.angle)] as [number, number],
+                  [seg.c[0] - seg.rx * Math.cos(seg.angle), seg.c[1] - seg.rx * Math.sin(seg.angle)] as [number, number],
+                  [seg.c[0] - seg.ry * Math.sin(seg.angle), seg.c[1] + seg.ry * Math.cos(seg.angle)] as [number, number],
+                  [seg.c[0] + seg.ry * Math.sin(seg.angle), seg.c[1] - seg.ry * Math.cos(seg.angle)] as [number, number],
+                ]
+              : [seg.c],
+      ),
+    );
     const scale = Math.hypot(b[0] - a[0], b[1] - a[1]) || 1;
     if (pts.some((p) => side(p) > 1e-9 * scale) && pts.some((p) => side(p) < -1e-9 * scale)) throw new FeatureError(t('regen.crossesAxis'));
 
@@ -1487,7 +1503,16 @@ export class Regenerator {
       for (const r of regions) {
         for (const seg of r.outer) {
           if (seg.kind === 'line') samples.push(at(seg.a), at(seg.b));
-          else {
+          else if (seg.kind === 'ellipse') {
+            const cosA = Math.cos(seg.angle);
+            const sinA = Math.sin(seg.angle);
+            for (let i = 0; i <= 64; i++) {
+              const u = (2 * Math.PI * i) / 64;
+              const x = seg.rx * Math.cos(u);
+              const y = seg.ry * Math.sin(u);
+              samples.push(at([seg.c[0] + x * cosA - y * sinA, seg.c[1] + x * sinA + y * cosA]));
+            }
+          } else {
             const a0 = seg.kind === 'circle' ? 0 : Math.atan2(seg.from[1] - seg.c[1], seg.from[0] - seg.c[0]);
             let sweep = seg.kind === 'circle' ? 2 * Math.PI : Math.atan2(seg.to[1] - seg.c[1], seg.to[0] - seg.c[0]) - a0;
             if (seg.kind === 'arc') {

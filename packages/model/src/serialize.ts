@@ -188,6 +188,8 @@ const migrations: Record<number, (doc: Json) => Json> = {
   55: (doc) => doc,
   // v57: cosmetic thread feature (`cosmeticThread`, ADR 0156). A new feature kind; nothing to convert.
   56: (doc) => doc,
+  // v58: sketch ellipse entity (`ellipse`, ADR 0157). A new sketch entity kind; nothing to convert.
+  57: (doc) => doc,
 };
 
 export class FormatError extends Error {

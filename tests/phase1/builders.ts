@@ -49,6 +49,21 @@ export function circle(id: string, cx: number, cy: number, r: number): SketchPar
   };
 }
 
+/** A fully defined ellipse `id` with center `${id}c`, major axis point `${id}m`, and minor radius `minorR`. */
+export function ellipse(id: string, cx: number, cy: number, majorX: number, majorY: number, minorR: number): SketchParts {
+  return {
+    entities: [
+      { id: `${id}c`, type: 'point', x: cx, y: cy },
+      { id: `${id}m`, type: 'point', x: majorX, y: majorY },
+      { id, type: 'ellipse', center: `${id}c`, major: `${id}m`, minorRadius: minorR },
+    ],
+    constraints: [
+      ...pin(id, `${id}c`, cx, cy),
+      ...pin(`${id}m`, `${id}m`, majorX, majorY),
+    ],
+  };
+}
+
 export const sketch = (id: string, plane: Ref, ...parts: SketchParts[]): Feature => ({
   id,
   type: 'sketch',

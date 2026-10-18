@@ -86,7 +86,8 @@ type P2 = [number, number];
 export type Segment =
   | { kind: 'line'; a: P2; b: P2; source: string }
   | { kind: 'arc'; c: P2; r: number; from: P2; to: P2; ccw: boolean; source: string }
-  | { kind: 'circle'; c: P2; r: number; source: string };
+  | { kind: 'circle'; c: P2; r: number; source: string }
+  | { kind: 'ellipse'; c: P2; rx: number; ry: number; angle: number; source: string };
 
 /** Counter-clockwise outer loop with clockwise holes (as produced by @3db/sketch findProfiles). */
 export interface Region {
@@ -379,6 +380,28 @@ export class Kernel {
         edge = arena.own(arena.own(new oc.BRepBuilderAPI_MakeEdge(this.pnt(arena, at(seg.a)), this.pnt(arena, at(seg.b)))).Edge());
       } else if (seg.kind === 'circle') {
         edge = arena.own(arena.own(new oc.BRepBuilderAPI_MakeEdge(circ(seg.c, seg.r))).Edge());
+        if (hole) edge = arena.own(oc.TopoDS.Edge(arena.own(edge.Reversed())));
+      } else if (seg.kind === 'ellipse') {
+        let { rx, ry, angle } = seg;
+        if (!(rx > 0 && ry > 0 && Number.isFinite(rx) && Number.isFinite(ry) && Number.isFinite(angle))) {
+          throw new KernelError(t('kernel.wireNotClosed', { source: seg.source }));
+        }
+        if (rx < ry) {
+          const tmp = rx;
+          rx = ry;
+          ry = tmp;
+          angle += Math.PI / 2;
+        }
+        const cos = Math.cos(angle);
+        const sin = Math.sin(angle);
+        const majorDirVec: Vec3 = [
+          frame.xDir[0] * cos + frame.yDir[0] * sin,
+          frame.xDir[1] * cos + frame.yDir[1] * sin,
+          frame.xDir[2] * cos + frame.yDir[2] * sin,
+        ];
+        const ax2 = arena.own(new oc.gp_Ax2(this.pnt(arena, at(seg.c)), this.dir(arena, frame.normal), this.dir(arena, majorDirVec)));
+        const elips = arena.own(new oc.gp_Elips(ax2, rx, ry));
+        edge = arena.own(arena.own(new oc.BRepBuilderAPI_MakeEdge(elips)).Edge());
         if (hole) edge = arena.own(oc.TopoDS.Edge(arena.own(edge.Reversed())));
       } else {
         const [p, q] = seg.ccw ? [seg.from, seg.to] : [seg.to, seg.from];
@@ -911,7 +934,16 @@ export class Kernel {
     for (const r of regions)
       for (const s of r.outer) {
         if (s.kind === 'line') samples.push(at(s.a), at(s.b));
-        else {
+        else if (s.kind === 'ellipse') {
+          const cosA = Math.cos(s.angle);
+          const sinA = Math.sin(s.angle);
+          for (let i = 0; i <= 64; i++) {
+            const u = (2 * Math.PI * i) / 64;
+            const x = s.rx * Math.cos(u);
+            const y = s.ry * Math.sin(u);
+            samples.push(at([s.c[0] + x * cosA - y * sinA, s.c[1] + x * sinA + y * cosA]));
+          }
+        } else {
           const a0 = s.kind === 'circle' ? 0 : Math.atan2(s.from[1] - s.c[1], s.from[0] - s.c[0]);
           let sweep = s.kind === 'circle' ? 2 * Math.PI : Math.atan2(s.to[1] - s.c[1], s.to[0] - s.c[0]) - a0;
           if (s.kind === 'arc') {

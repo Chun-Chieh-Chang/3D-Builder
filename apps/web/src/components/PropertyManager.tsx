@@ -151,7 +151,7 @@ function ValueInput({ value, toCommand, suffix = 'mm' }: { value: string; toComm
   );
 }
 
-const ENTITY_LABEL = labelsOf({ point: 'entity.point', line: 'entity.line', circle: 'entity.circle', arc: 'entity.arc' });
+const ENTITY_LABEL = labelsOf({ point: 'entity.point', line: 'entity.line', circle: 'entity.circle', arc: 'entity.arc', ellipse: 'entity.ellipse' });
 
 function describe(f: SketchFeature, id: Id): string {
   if (id === SKETCH_ORIGIN) return t('datum.origin');

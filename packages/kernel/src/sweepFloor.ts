@@ -27,7 +27,16 @@ function loopPoints(loop: readonly Segment[]): P2[] {
     let run: P2[];
     if (g.kind === 'line') run = [g.a, g.b];
     else if (g.kind === 'circle') run = Array.from({ length: 64 }, (_, i) => [g.c[0] + g.r * Math.cos((i * TAU) / 64), g.c[1] + g.r * Math.sin((i * TAU) / 64)] as P2);
-    else {
+    else if (g.kind === 'ellipse') {
+      const cosA = Math.cos(g.angle);
+      const sinA = Math.sin(g.angle);
+      run = Array.from({ length: 64 }, (_, i) => {
+        const u = (i * TAU) / 64;
+        const x = g.rx * Math.cos(u);
+        const y = g.ry * Math.sin(u);
+        return [g.c[0] + x * cosA - y * sinA, g.c[1] + x * sinA + y * cosA] as P2;
+      });
+    } else {
       const a0 = angleOf(g.c, g.from);
       const sweep = sweepAngle(g) * (g.ccw ? 1 : -1);
       run = Array.from({ length: 33 }, (_, i) => [g.c[0] + g.r * Math.cos(a0 + (sweep * i) / 32), g.c[1] + g.r * Math.sin(a0 + (sweep * i) / 32)] as P2);
@@ -55,12 +64,19 @@ function polygon(pts: readonly P2[]): { area: number; cx: number; cy: number } {
   return { area, cx, cy };
 }
 
-const lengthOf = (g: Segment): number => (g.kind === 'line' ? Math.hypot(g.b[0] - g.a[0], g.b[1] - g.a[1]) : g.kind === 'arc' ? g.r * sweepAngle(g) : TAU * g.r);
+const lengthOf = (g: Segment): number =>
+  g.kind === 'line'
+    ? Math.hypot(g.b[0] - g.a[0], g.b[1] - g.a[1])
+    : g.kind === 'arc'
+      ? g.r * sweepAngle(g)
+      : g.kind === 'circle'
+        ? TAU * g.r
+        : Math.PI * (3 * (g.rx + g.ry) - Math.sqrt((3 * g.rx + g.ry) * (g.rx + 3 * g.ry)));
 
 /** The direction the path leaves a segment (end = true) or enters it (end = false). */
 function tangent(g: Segment, end: boolean): P2 {
   if (g.kind === 'line') return [g.b[0] - g.a[0], g.b[1] - g.a[1]];
-  if (g.kind === 'circle') return [1, 0];
+  if (g.kind === 'circle' || g.kind === 'ellipse') return [1, 0];
   const p = end ? g.to : g.from;
   const r: P2 = [p[0] - g.c[0], p[1] - g.c[1]];
   return g.ccw ? [-r[1], r[0]] : [r[1], -r[0]];

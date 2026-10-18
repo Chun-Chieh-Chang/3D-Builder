@@ -39,6 +39,15 @@ function sample(loop: Loop2): P2[] {
       pts.push(s.a);
     } else if (s.kind === 'circle') {
       for (let i = 0; i < 64; i++) pts.push(polar(s.c, s.r, (2 * Math.PI * i) / 64));
+    } else if (s.kind === 'ellipse') {
+      const cosA = Math.cos(s.angle);
+      const sinA = Math.sin(s.angle);
+      for (let i = 0; i < 64; i++) {
+        const theta = (2 * Math.PI * i) / 64;
+        const u = s.rx * Math.cos(theta);
+        const v = s.ry * Math.sin(theta);
+        pts.push([s.c[0] + u * cosA - v * sinA, s.c[1] + u * sinA + v * cosA]);
+      }
     } else {
       const a0 = Math.atan2(s.from[1] - s.c[1], s.from[0] - s.c[0]);
       let a1 = Math.atan2(s.to[1] - s.c[1], s.to[0] - s.c[0]);
@@ -53,6 +62,7 @@ function sample(loop: Loop2): P2[] {
 /** The area a loop encloses, positive when it is walked counter-clockwise. */
 export function signedAreaOf(loop: Loop2): number {
   if (loop.length === 1 && loop[0]!.kind === 'circle') return Math.PI * loop[0]!.r * loop[0]!.r;
+  if (loop.length === 1 && loop[0]!.kind === 'ellipse') return Math.PI * loop[0]!.rx * loop[0]!.ry;
   return signedArea(sample(loop));
 }
 
@@ -107,7 +117,9 @@ export function contourChoices(regions: Region2[]): ContourChoice[] {
   /** Area of a closed loop: a circle exactly, anything else from its outline as a polygon. */
   const areaOf = (loop: Loop2): number => {
     const only = loop.length === 1 ? loop[0] : undefined;
-    return only?.kind === 'circle' ? Math.PI * only.r * only.r : Math.abs(signedArea(sample(loop)));
+    if (only?.kind === 'circle') return Math.PI * only.r * only.r;
+    if (only?.kind === 'ellipse') return Math.PI * only.rx * only.ry;
+    return Math.abs(signedArea(sample(loop)));
   };
   return regions.map((r) => {
     const outer = sample(r.outer);
@@ -164,6 +176,8 @@ export function findProfiles(sketch: SketchFeature, solved: SolvedSketch): Profi
     if (!g || g.type === 'point' || g.construction) continue;
     if (g.type === 'circle') {
       loops.push([{ kind: 'circle', c: g.c, r: g.r, source: e.id }]);
+    } else if (g.type === 'ellipse') {
+      loops.push([{ kind: 'ellipse', c: g.c, rx: g.majorRadius, ry: g.minorRadius, angle: g.angle, source: e.id }]);
     } else if (g.type === 'line') {
       if (Math.hypot(g.b[0] - g.a[0], g.b[1] - g.a[1]) < TOL) continue;
       edges.push({

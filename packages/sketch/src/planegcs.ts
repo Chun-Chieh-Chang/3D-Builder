@@ -397,6 +397,27 @@ function readGeometry(w: GcsWrapper, sketch: SketchFeature): Map<Id, SolvedGeome
         out.set(e.id, { type: 'arc', c: pt(e.center), r: canon(a.radius, LENGTH_GRID), a0: canon(a.start_angle, ANGLE_GRID), a1: canon(a.end_angle, ANGLE_GRID), center: e.center, start: e.start, end: e.end, construction });
         break;
       }
+      case 'ellipse': {
+        const c = pt(e.center);
+        const major = pt(e.major);
+        const dx = major[0] - c[0];
+        const dy = major[1] - c[1];
+        const a = Math.hypot(dx, dy);
+        const b = canon(e.minorRadius, LENGTH_GRID);
+        const angle = canon(Math.atan2(dy, dx), ANGLE_GRID);
+        out.set(e.id, {
+          type: 'ellipse',
+          c,
+          major,
+          majorRadius: canon(a, LENGTH_GRID),
+          minorRadius: b,
+          angle,
+          center: e.center,
+          majorId: e.major,
+          construction,
+        });
+        break;
+      }
     }
   }
   return out;

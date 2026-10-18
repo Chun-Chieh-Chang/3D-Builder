@@ -25,8 +25,22 @@ const angleAt = (c: P2, p: P2) => Math.atan2(p[1] - c[1], p[0] - c[0]);
 /** A curve as the offset sees it: a whole line or a whole circle. */
 type Whole = { kind: 'line'; a: P2; b: P2 } | { kind: 'circle'; c: P2; r: number };
 
-const startOf = (s: Segment2): P2 => (s.kind === 'line' ? s.a : s.kind === 'arc' ? s.from : [s.c[0] + s.r, s.c[1]]);
-const endOf = (s: Segment2): P2 => (s.kind === 'line' ? s.b : s.kind === 'arc' ? s.to : [s.c[0] + s.r, s.c[1]]);
+const startOf = (s: Segment2): P2 =>
+  s.kind === 'line'
+    ? s.a
+    : s.kind === 'arc'
+      ? s.from
+      : s.kind === 'circle'
+        ? [s.c[0] + s.r, s.c[1]]
+        : [s.c[0] + s.rx * Math.cos(s.angle), s.c[1] + s.rx * Math.sin(s.angle)];
+const endOf = (s: Segment2): P2 =>
+  s.kind === 'line'
+    ? s.b
+    : s.kind === 'arc'
+      ? s.to
+      : s.kind === 'circle'
+        ? [s.c[0] + s.r, s.c[1]]
+        : [s.c[0] + s.rx * Math.cos(s.angle), s.c[1] + s.rx * Math.sin(s.angle)];
 
 /** The direction of travel along a segment at one of its points. */
 function heading(s: Segment2, p: P2): P2 {
@@ -68,6 +82,10 @@ function movedWhole(s: Segment2, d: number): Whole | null {
   if (s.kind === 'line') {
     const n = scale(perp(unit(sub(s.b, s.a))), d);
     return { kind: 'line', a: add(s.a, n), b: add(s.b, n) };
+  }
+  if (s.kind === 'ellipse') {
+    const r = (s.rx + s.ry) / 2 - d;
+    return r > 1e-9 ? { kind: 'circle', c: s.c, r } : null;
   }
   const ccw = s.kind === 'arc' ? s.ccw : true;
   const r = ccw ? s.r - d : s.r + d; // the left of a counter-clockwise curve is towards its center
@@ -209,6 +227,8 @@ export function findOutlines(sketch: SketchFeature, solved: SolvedSketch): Outli
     if (!g || g.type === 'point' || g.construction) continue;
     if (g.type === 'circle') {
       loops.push({ loop: [{ kind: 'circle', c: g.c, r: g.r, source: e.id }], ccw: true });
+    } else if (g.type === 'ellipse') {
+      loops.push({ loop: [{ kind: 'ellipse', c: g.c, rx: g.majorRadius, ry: g.minorRadius, angle: g.angle, source: e.id }], ccw: true });
     } else if (g.type === 'line') {
       if (len(sub(g.b, g.a)) < TOL) continue;
       edges.push({ from: nodes.find(g.p1), to: nodes.find(g.p2), make: (fwd) => ({ kind: 'line', a: fwd ? g.a : g.b, b: fwd ? g.b : g.a, source: e.id }) });

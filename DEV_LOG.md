@@ -1,5 +1,49 @@
 # 3D-Builder 開發日誌 (DEV_LOG.md)
 
+## 2026-10-18：藍圖 P2（C1.5 Phase A：草圖橢圓圖元與長出/旋轉實體全鏈路實作）[ADR 0157](docs/adr/0157-sketch-ellipse.md)
+
+### 1. 任務背景與範疇
+依據使用者確認與藍圖規劃，實作草圖進階解析圖元「橢圓（Ellipse）」，達成從資料模型、幾何求解映射、閉合輪廓識別到 3D 實體長出（Extrude Boss/Cut）與旋轉（Revolve）的全鏈路閉環。
+
+### 2. 做法與架構設計
+| 層級 | 核心檔案 | 實作內容與職責 |
+|---|---|---|
+| 決策紀錄 | `docs/adr/0157-sketch-ellipse.md` | 定義三點橢圓幾何模型、自適應正規化規範、解析體積閉式解公式與紅隊破壞性檢驗標準。 |
+| 資料模型 | `packages/model/src/schema.ts`、`sketch-rules.ts`、`serialize.ts` | 升版 `SCHEMA_VERSION = 58`；定義 `SketchEntity.ellipse`；草圖校驗增加 `minorRadius > 0` 與重合點檢測；新增 schema 57 遷移。 |
+| 草圖幾何 | `packages/sketch/src/types.ts`、`planegcs.ts`、`profiles.ts`、`interact.ts`、`thin.ts`、`ops.ts` | 擴充 `SolvedGeometry` 與 `Segment2`；`planegcs.ts` 求解解析長短半徑與旋轉角；`profiles.ts` 取樣與面積計算；`interact.ts` 偏心角最近點計算；`thin.ts` 與 `ops.ts` 健全點引用。 |
+| 幾何核心 | `packages/kernel/src/kernel.ts`、`sweepFloor.ts` | `Segment` 擴充 `ellipse`；`wire()` 呼叫 `gp_Elips` 構造拓樸邊；嚴格自適應正規化（若 $rx < ry$ 自動交換半徑並補正角度 $\theta \leftarrow \theta + \pi/2$）；`sweepFloor.ts` 支援多邊形取樣與周長近似。 |
+| 再生引擎 | `packages/regen/src/engine.ts` | `revolve` 旋轉特徵跨軸判斷擴充 4 個極值頂點採樣；螺牙軸向範圍取樣支援橢圓。 |
+| 介面屬性 | `apps/web/src/components/PropertyManager.tsx`、`apps/web/src/sketcher/overlay.ts`、`packages/i18n/` | 屬性標籤 `entity.ellipse`（中英文）與旋轉/約束錨點計算對齊。 |
+| 確效測試 | `tests/phase1/sketch-ellipse.test.ts`、`tests/phase1/builders.ts` | 9 項自我紅隊測試全數 100% 綠燈，包含解析體積精確驗證、自適應正規化、旋轉體積、除料切割、極端輸入攔截與底層 WASM Heap 真值防呆。 |
+
+### 3. 自我紅隊四問（AGENTS.md §2.1）
+1. **輸入破壞 (Input Corruption)**：
+   - 短半徑為 0 或負數（如 `minorRadius: 0`、`minorRadius: -2`）：草圖規則檢驗立即攔截並拋出 `cmd.radiusMustBePositive`，拒絕退化或非法輸入。
+   - 中心點與長軸點重合（$cx = majorX, cy = majorY$）：即刻拋出重複端點錯誤（`rules.dupEnd`），嚴防退化為點。
+   - $rx < ry$（短半徑大於長軸半徑）：底層 `wire()` 自適應正規化自動交換半徑並旋轉角度 $\theta \leftarrow \theta + \pi/2$，確保傳入 OCCT 時 $MajorRadius \ge MinorRadius$，OCCT 0 崩潰。
+2. **拓樸與幾何相交破壞 (Geometric Self-Intersection Defense)**：
+   - 旋轉特徵（`revolve`）採樣中心點與長短軸 4 個極值頂點，嚴格攔截任何橫跨旋轉軸的橢圓輪廓，避免自相交導致底層布林爆炸。
+   - 橢圓槽孔除料（cut）經布林切割後，面拓樸包含 `c1:side:s2.hole`，實體有效性 `kernel.isValid` 恆為 true。
+3. **依賴鏈完整性 (Dependency Graph Integrity)**：
+   - 特徵所依賴的幾何參考在全鏈路中皆有完整支援：`schema` -> `sketch-rules` -> `planegcs` -> `profiles` -> `kernel` -> `engine` -> `PropertyManager` -> `overlay`，全鏈路無一脫節。
+4. **規格真實性與零 Mock 原則 (Zero-Mock & Ground Truth)**：
+   - 實體體積使用數學閉式解嚴格比對：
+     - 水平長出：$a=30, b=15, h=20 \to V = 9000\pi \approx 28274.334\text{ mm}^3$。
+     - 45度傾斜旋轉長出：$a=20, b=8, h=15 \to V = 2400\pi \approx 7539.822\text{ mm}^3$。
+     - 繞軸旋轉環體（帕普斯定理）：$R=30, a=10, b=5 \to V = 3000\pi^2 \approx 29608.813\text{ mm}^3$。
+     - 矩形板橢圓穿孔除料：$V = 48000 - 2000\pi \approx 41716.815\text{ mm}^3$（相對誤差 $< 1.6 \times 10^{-7}$）。
+   - 記憶體監控唯一真實指標：`(kernel.oc as any).wasmMemory?.buffer?.byteLength > 0`。
+
+### 4. 確效與品質驗收
+- `npm run typecheck`：**0 錯誤**。
+- `node scripts/check-anti-patterns.mjs`：**全域 RSI 反模式靜態守門通過**。
+- `node scripts/check-deps.mjs`：**Layering OK**。
+- `node scripts/check-i18n.mjs`：**i18n OK**。
+- `packages/model/test`：**9 個測試檔、160 項單元測試全數通過**。
+- `tests/phase1/`：**9 個測試檔、114 項測試全數通過**。
+
+---
+
 ## 2026-10-18：pstack poteto-mode 代碼品質深度審查與外科手術式優化
 
 ### 1. 任務背景與範疇
