@@ -1,5 +1,15 @@
 # 交接文件
 
+- **【2026-10-18 晚：B2.8 多圖頁工程圖全量 E2E 測試確效（24 支工程圖測試 100% 綠燈，測試債歸零）】**
+  - **背景與目標**：依據先前待辦「B2.8 多圖頁工程圖視圖端點重構（消除歷史殘留之 23 支 E2E 測試債）」，對全量工程圖相關 E2E 測試（11 支 `manual-drawing-*`、10 支 `phase5-*`、`manual-measure-view.js`、`phase4b-surface.js`、`phase4b-surface-edit-ui.js`）以及歷史標記未過的 `phase3-select-elements` 與 `manual-asm-view-normal` 進行端對端實際瀏覽器執行確效。
+  - **完成項目與成果**：
+    1. **工程圖批次實測**：`node scripts/verify-ui.mjs --only "(manual-drawing|phase5|manual-measure-view|phase4b-surface)"` $\to$ **24 of 24 PASS (100%)**！
+    2. **歷史未過其餘 2 支實測**：
+       - `phase3-select-elements.js` $\to$ **PASS (8.1s)**
+       - `manual-asm-view-normal.js` $\to$ **PASS (8.1s)**
+    3. **客觀事實確立 (RCA)**：多圖頁適配器 `H.page = (doc = store.getState().drw?.doc, index) => ...` 已全面發揮作用，歷史記載之視圖端點讀取未過在當前 `main` 分支已完全綠燈，測試債已全數消除。
+  - **停在哪裡**：確效完畢，記錄已更新。
+
 - **【2026-10-18：藍圖 C7.3 實體刪除與保留本體特徵 (Delete / Keep Body Feature) 全鏈路實作 [ADR 0165](docs/adr/0165-delete-keep-body.md) — 已提交並推送 `7ea4ba4`（origin/main）】**
   - **背景與目標**：依據藍圖 C7.3 規範，實作實體刪除與保留本體特徵（Delete / Keep Body Feature）。支援對多個目標實體進行時間軸上的參數化「黑名單刪除（delete）」或「白名單保留（keep）」，作為多實體建模、夾治具主模型與分割實體中清理輔助本體與廢料的收尾特徵。保證 0 WASM 記憶體洩漏與殘留實體 100% 物理體積/拓樸保真，並達成全鏈路 Web 前端交互與歷史可逆性。
   - **完成項目**：

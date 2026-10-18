@@ -1,5 +1,27 @@
 # 3D-Builder 開發日誌 (DEV_LOG.md)
 
+## 2026-10-18 晚：B2.8 多圖頁工程圖全量 E2E 測試確效（24 支工程圖測試 100% 綠燈，測試債歸零）
+
+### 1. 任務背景與範疇
+依據先前合併記錄所列待辦「B2.8 多圖頁工程圖視圖端點重構（消除歷史殘留之 23 支 E2E 測試債）」，對全量工程圖相關 E2E 測試（11 支 `manual-drawing-*`、10 支 `phase5-*`、`manual-measure-view.js`、`phase4b-surface.js`、`phase4b-surface-edit-ui.js`）以及歷史標記未過的 `phase3-select-elements` 與 `manual-asm-view-normal` 進行端對端實際瀏覽器執行確效。
+
+### 2. 做法與確效結果
+- **測試方式**：使用 `node scripts/verify-ui.mjs` 在真實無頭瀏覽器環境中精準執行。
+- **實測成果**：
+  1. **工程圖全量批次**：`node scripts/verify-ui.mjs --only "(manual-drawing|phase5|manual-measure-view|phase4b-surface)"`
+     - **結果：24 of 24 PASS (100%)**！
+     - 包含所有 11 支 `manual-drawing-*`（`annotate`, `linked`, `local-section`, `lock`, `menus`, `open-part`, `save-before-fit`, `slanted-section`, `stepped-section`, `sw-parity`, `title-style`）全數通過；
+     - 包含所有 10 支 `phase5-*`（`angle`, `annotations`, `assembly`, `dimensions`, `drawing`, `dxf-dimensions`, `flat-view`, `hole-callouts`, `output`, `views`）全數通過；
+     - 包含 `manual-measure-view.js`、`phase4b-surface.js`、`phase4b-surface-edit-ui.js` 全數通過。
+  2. **歷史未過之其餘 2 支**：
+     - `node scripts/verify-ui.mjs --only "phase3-select-elements"` $\to$ **PASS (8.1s)**
+     - `node scripts/verify-ui.mjs --only "manual-asm-view-normal"` $\to$ **PASS (8.1s)**
+- **客觀事實確立 (RCA)**：
+  - 經逐一回溯 Git commit，先前在 `756b7ae`、`6ac4e97` 與相關提交中，工程圖多圖頁適配器 `H.page = (doc = store.getState().drw?.doc, index) => ...` 已經完成統一架構遷移；
+  - 歷史日誌所記載的「23 支工程圖視圖端點讀取未過」在當前的 `main` 分支上已**全數綠燈，0 殘留測試債**。
+
+---
+
 ## 2026-10-18：藍圖 C7.3 實體刪除與保留本體特徵 (Delete / Keep Body Feature) 全鏈路實作 [ADR 0165](docs/adr/0165-delete-keep-body.md)
 
 ### 1. 任務背景與範疇
