@@ -1,5 +1,35 @@
 # 3D-Builder 開發日誌 (DEV_LOG.md)
 
+## 2026-10-18 晚：E1-P3（側邊欄 §2.2 選取驅動切換）合併進 main，與合併後的全量確效
+
+### 1. 任務背景與範疇
+使用者指示「把 E1-P3 合入 main」。E1-P3 在 worktree `D:\Self-developed_Apps\G3\3DB-sidebar-parity`（分支 `worktree-sidebar-parity`，提交 `d2b5547`）完成並經驗證後推送；本次在主倉庫 `D:\Self-developed_Apps\G3\3D-Builder` 執行合併、修補合併暴露的主倉庫自身缺口、重跑全量確效，並依使用者「合入後刪除」的授權清理分支與 worktree。
+
+### 2. 做法與結果
+| 項目 | 內容 |
+|---|---|
+| 合併 | 主倉庫 `main`（= `origin/main` `e8b0054`，工作樹乾淨）執行 `git merge worktree-sidebar-parity --no-ff` → **零衝突**（17 檔自動合併；DEV_LOG／handoff 這類雙方都在檔頭加條目的日誌也乾淨併入）。合併提交 `8ade9ee`。 |
+| 合併暴露的主倉庫紅燈 | `help.test.ts` 擋下 `jog`（ADR 0159，`902a80f`）與 `tool-intersect`（ADR 0162，`e8b0054`）——兩者在我合併前就已存在於 main、漏配 help 說明，違反「加指令必須同時加說明」約定。依 ADR 與錯誤訊息補 `help.jog.*`／`help.toolIntersect.*`（zh-TW＋en；鍵名規則 `helpKey()` 把連字符轉 camelCase）＋ `docs/help-links.json` `_untied` 記事由，提交 `17a0d4f`。 |
+| 單元確效（合併後主倉庫） | typecheck **0**；`lint:rules`／`lint:deps`／`lint:i18n` 全過；全量 vitest **247 檔 3066 過、0 敗（7m07s）**；help 40/40。 |
+| 瀏覽器確效（合併後主倉庫） | 全量 `verify:ui` **118/143（39m28s）**；25 個未過**逐支對上既有清單、零新增、零 flake**。 |
+
+### 3. 全量 verify:ui 的 25 個未過（全部既有，非合併造成）
+1. **B2.8 多圖頁（`432bb1f`）把 `DrawingDoc` 改為 `pages[]` 後讀不到頂層 `views` 的共 23 支**：11 支 `manual-drawing-*`（FAIL，`Cannot read properties of undefined (reading 'length'/'at'/'find')`）、10 支 `phase5-*`（ERROR，同讀 `drw().doc.views`）＋`manual-measure-view`（FAIL，讀 `drw.doc.views.length`）；`phase4b-surface`（ERROR）同型。根因在 main 上同樣成立（`756b7ae` 只遷了產品碼與單測）→ B2.8 shape 2 待辦：改寫為 `page(drw().doc).views`（決策單已由使用者回覆提交 `8cb1f2b`）。
+2. `phase3-select-elements`（ERROR）：呼叫已不存在的 `store.setPickFilter`（現名 `setPickFilterKind`）。
+3. `manual-asm-view-normal`（FAIL）：視角方塊的過時斷言。
+- **直接證據**：`manual-sidebar-tabs` 在同一全量批次 **PASS（7.5s）**——§2.2 選取驅動切換（圖面點選自動進屬性頁、清除回樹頁、樹內點選留在樹頁）在合併後的 main 上成立；`manual-e1` 亦 PASS（10.4s），上一輪於分支合併樹上出現的批次載入 flake 未復現。
+
+### 4. 清理（依使用者「合入後刪除」）
+- 推送：`8ade9ee`＋`17a0d4f` → `origin/main`（快轉 `e8b0054..17a0d4f`；HTTPS push 於本機可用，無需早期記載的 SSH URL 繞行）。
+- 遠端分支 `origin/worktree-sidebar-parity` 刪除前已確認其提交全部包含於 `origin/main`；`git worktree remove` 正規註銷 worktree 資料夾（禁用 rm -rf）；本地分支 `worktree-sidebar-parity` 刪除。
+- 工作區本地資產（不在版本庫）已先行備份至主倉庫：§2.2 實機驗證截圖 11 張 → `out/shots-sidebar/manual-sidebar-tabs/`；分支期全量 verify 日誌 → `scratch/sidebar-parity-worktree-2026-10-18/`；專案記憶（E1 全程）→ 主倉庫 `.workbuddy-ai/memory/`。
+
+### 5. 教訓
+- **「加指令必須同時加 help」的守門測試（`help.test.ts`）只在全量 vitest 跑時暴露**：main 側連續三個功能提交漏配（cosmetic-thread／split → jog／tool-intersect）。每次從 main 開工或合併進 main 後，先跑一次全量 vitest 再接其他工作。
+- 合併方向會改變日誌檔的衝突形態：「分支併 main」（對方條目在頭）需三段式重組；「main 併分支」後再把分支併回 main 時，雙方結構已對齊，反而零衝突。讓日誌衝突在合併到 feature 分支時就消化完，是最省事的路徑。
+
+---
+
 ## 2026-10-18：藍圖 C11.4 鈑金斷開角落與角落修剪 (Break Corner Feature) 全鏈路實作 [ADR 0161](docs/adr/0161-sheet-metal-break-corner.md)
 
 ### 1. 任務背景與範疇

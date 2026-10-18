@@ -1,5 +1,12 @@
 # 交接文件
 
+- **【2026-10-18 晚：E1-P3 合併進 `main`（`8ade9ee`）＋ 主倉庫 help 防漏修補（`17a0d4f`）— 已推送 origin/main】**
+  - **合併**：使用者指示「把 E1-P3 合入 main」。在主倉庫 `D:\Self-developed_Apps\G3\3D-Builder`（工作樹乾淨、`main` = `origin/main` `e8b0054`）執行 `git merge worktree-sidebar-parity --no-ff`：**零衝突**（17 檔自動合併；連 DEV_LOG／handoff 這類「雙方都在檔頭加條目」的日誌都乾淨併入——合併方向相反時曾需三段式重組，這次沒有）。合併提交 `8ade9ee`；E1-P3（`d2b5547`）自此進入 `main` 歷史，E1 側邊欄（[ADR 0155](docs/adr/0155-sidebar-tabs-hidden-contract.md)）三階段全部落地。
+  - **合併後主倉庫自身的紅燈**：`help.test.ts` 擋下 `main` 自己的兩個動作——`jog`（ADR 0159，`902a80f`）與 `tool-intersect`（ADR 0162，`e8b0054`）沒配 help 說明（**在我合併前就已存在於 main**，非本次合併造成）。依「加指令必須同時加說明」約定補齊（鍵名規則：`helpKey()` 把連字符轉 camelCase → `help.jog.*`／`help.toolIntersect.*`，zh-TW＋en 兩冊）＋ `docs/help-links.json` `_untied` 登記事由，提交 `17a0d4f`。
+  - **合併後確效（主倉庫）**：typecheck **0**、三 lint 過；全量 vitest **247 檔 3066 過、0 敗（7m07s）**、help 40/40；全量 `verify:ui` **118/143（39m28s）**——25 個未過**逐支對上既有清單、零新增、零 flake**：12 個 ERROR＝`phase3-select-elements`（呼叫已刪的 `store.setPickFilter`）＋`phase4b-surface` 與 10 支 `phase5-*`（B2.8 `pages[]` 後讀 `drw().doc.views`）；13 個 FAIL＝11 支 `manual-drawing-*`＋`manual-measure-view`（同讀 `views`）＋`manual-asm-view-normal`（過時斷言）；錯誤訊息全為預期的 `Cannot read properties of undefined`。**`manual-sidebar-tabs` 在全量批次 PASS（7.5s）＝§2.2 選取驅動切換在合併後的 main 上成立**；上一輪的 `manual-e1` 批次 flake 本次 PASS（10.4s），未復現。
+  - **停在哪裡**：已推送 `8ade9ee`＋`17a0d4f` → `origin/main`（快轉 `e8b0054..17a0d4f`）。分支 `worktree-sidebar-parity` 與 worktree `D:\Self-developed_Apps\G3\3DB-sidebar-parity` 依使用者「合入後刪除」的指示完成清理：遠端分支已刪、`git worktree remove` 正規註銷、本地分支已刪；工作區內的本地資產（§2.2 驗證截圖 11 張、分支期全量 verify 日誌）已備份至主倉庫 `out/shots-sidebar/` 與 `scratch/sidebar-parity-worktree-2026-10-18/`。下一步（共同待辦）：B2.8 shape 2 的 23 支工程圖 e2e 遷移到 `page(drw().doc).views`（決策單 `8cb1f2b`）、組合件 §2.2（`asm.selected`）、特徵參數群組框（另案）。
+
+
 - **【2026-10-18：藍圖 C7.4 實體分割特徵 (Split Body Feature) [ADR 0158](docs/adr/0158-split-body.md) — 已完成本地確效】**
   - **背景與目標**：實作實體分割特徵（Split Body Feature，C7.4），使用基準面（Datum Plane）或實體平面（Planar Face）將單一或多個目標本體切分為多個獨立 Solid，並建立雙向半空間切割、包圍盒相交防禦、TNP 拓樸面名稱繼承與多本體拆分管理之完整閉環。
   - **完成項目**：
@@ -187,7 +194,7 @@
     - `npx vitest run tests/phase5/`：**49 個測試檔案、523 項測試全數通過（0 失敗，1 略過）**。
   - **停在哪裡**：工作目錄乾淨（working tree clean），無做到一半的程式；`main` 分支在 `756b7ae` 已推送到遠端倉庫。下一棒可依藍圖或後續需求繼續進行。
 
-- **【2026-10-18：E1 側邊欄收尾——補上瀏覽器驗證，並落地 §2.2 選取切換（E1-P3，[ADR 0155](docs/adr/0155-sidebar-tabs-hidden-contract.md)）— 尚未提交】** 使用者指示「把 verify:ui 跑起來補上瀏覽器驗證，並開始動 §2.2 的選取切換」。在 worktree `D:\Self-developed_Apps\G3\3DB-sidebar-parity`（分支 `worktree-sidebar-parity`）完成。背景：E1-P1（`4ba2765`）與 E1-P2（`6831a44`、`db7432b`）已併入 `main`（`0e8ba1c`）；本次是「補驗證＋§2.2（零件範圍）」。
+- **【2026-10-18：E1 側邊欄收尾——補上瀏覽器驗證，並落地 §2.2 選取切換（E1-P3，[ADR 0155](docs/adr/0155-sidebar-tabs-hidden-contract.md)）— 已合併進 `main`（`8ade9ee`，見本檔最上方條目）】** 使用者指示「把 verify:ui 跑起來補上瀏覽器驗證，並開始動 §2.2 的選取切換」。在 worktree `D:\Self-developed_Apps\G3\3DB-sidebar-parity`（分支 `worktree-sidebar-parity`）完成。背景：E1-P1（`4ba2765`）與 E1-P2（`6831a44`、`db7432b`）已併入 `main`（`0e8ba1c`）；本次是「補驗證＋§2.2（零件範圍）」。
   - **verify:ui（補上 E1 的瀏覽器驗證）**：全量 **143 支腳本 → 118 過／25 敗**。新增 `tests/e2e/manual-sidebar-tabs.js`（**10 步全過、0 Console 錯誤**）：兩分頁存在與 aria 狀態、切換只隱藏不卸載（隱藏窗格內 `data-field` 仍可達）、工作階段自動進屬性頁且 FeatureManager 仍可點、✓ 提交後回樹頁、**圖面點面→自動進屬性頁**（名稱／所屬特徵／實測面積／中心，全部讀自畫面與 store）、✓ 清除→回樹頁、樹內點選留在樹頁、特徵屬性頁＋「編輯特徵」進入工作階段、Ctrl 多選兩邊逐邊長度、組合件兩分頁與搜尋列過濾。
   - **§2.2 選取驅動切換（零件，已完成並驗證）**：點圖面（面／邊／頂點）→ 側邊欄自動切到 PropertyManager，顯示標題列（圖示＋種類＋名稱＋✓）與兩個可收合群組框（識別／量測）；無選取時回樹頁；`✓` 清除選取回樹頁；樹內點選留在樹頁。新檔：`apps/web/src/state/selectionFacts.ts`（純邏輯：選取互斥、`pickKey`、同名以指紋消歧——不能分辨回 null 不猜、`measureTargetsOf`）、`SelectionPanel.tsx`、`PMGroup.tsx`（自 DrawingPanel 抽出，兩邊共用）、`tests/phase8/selection-facts.test.ts` 9 項。改動：`store.ts`（`selectionFacts` 狀態，`api.measure` 量開放中零件的**真實**資料，`selectionFactsSeq` 丟棄過期回答）、`App.tsx`（切換 effect 與分頁啟用條件）、`MeasurePanel.tsx`（匯出 `writer`/`typeName` 供共用）、`DrawingPanel.tsx`、i18n `sel.*` 14 鍵（zh-TW／en）。檔案格式與 Schema 不動。
   - **驗收**：typecheck **0**；`lint:rules`／`lint:deps`／`lint:i18n` 全過；全量 vitest **237 檔 2993 過／0 敗（425s）**；`verify:ui --only manual-sidebar-tabs` **10/10**。
