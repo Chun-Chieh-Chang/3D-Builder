@@ -201,6 +201,7 @@ function DrawingTree({ onFormat, onPick }: { onFormat: () => void; onPick: () =>
   const drw = useStore((s) => s.drw)!;
   const d = store.drawingStore!;
   const doc = drw.doc;
+  const curPage = page(doc, drw.activePageIndex ?? 0);
   const [closed, setClosed] = useState<Set<string>>(new Set());
   const [menu, setMenu] = useState<DrawingMenuAt | null>(null);
   /** The folders of dimensions and annotations under a view that are open (D-I1b): closed at first, as SolidWorks keeps its Annotations folder. */
@@ -251,18 +252,18 @@ function DrawingTree({ onFormat, onPick }: { onFormat: () => void; onPick: () =>
   const outcomes = d.scene().dimensions;
   const dimLabel = (id: string) => {
     const o = outcomes.get(id);
-    const dim = page(doc).dimensions.find((x) => x.id === id)!;
+    const dim = curPage.dimensions.find((x) => x.id === id)!;
     const kind = t(`drawingUi.tree.dimKind.${dim.kind}` as 'drawingUi.tree.dimKind.linear');
     return o && !('error' in o) ? `${kind} ${o.text}` : kind;
   };
   const toggle = (id: string) => setClosed((c) => (c.has(id) ? new Set([...c].filter((x) => x !== id)) : new Set([...c, id])));
-  const children = (id: string | null) => page(doc).views.filter((v) => (id === null ? !isDerived(v) || !page(doc).views.some((p) => p.id === v.parent) : isDerived(v) && v.parent === id));
+  const children = (id: string | null) => curPage.views.filter((v) => (id === null ? !isDerived(v) || !curPage.views.some((p) => p.id === v.parent) : isDerived(v) && v.parent === id));
   const chosen = (id: string) => drw.selection.some((x) => x.kind === 'view' && x.id === id) || (id === drw.selected && drw.selection.length === 0);
   const row = (v: DrawingView, depth: number): ReactNode => {
     const kids = children(v.id);
-    const dims = page(doc).dimensions.filter((x) => x.view === v.id).length;
-    const anns = (page(doc).annotations ?? []).filter((x) => x.view === v.id).length + page(doc).surfaceFinishes.filter((x) => x.view === v.id).length;
-    const annList = (page(doc).annotations ?? []).filter((x) => x.view === v.id);
+    const dims = curPage.dimensions.filter((x) => x.view === v.id).length;
+    const anns = (curPage.annotations ?? []).filter((x) => x.view === v.id).length + curPage.surfaceFinishes.filter((x) => x.view === v.id).length;
+    const annList = (curPage.annotations ?? []).filter((x) => x.view === v.id);
     return (
       <li key={v.id}>
         <div
@@ -302,7 +303,7 @@ function DrawingTree({ onFormat, onPick }: { onFormat: () => void; onPick: () =>
         </div>
         {!closed.has(v.id) && (kids.length > 0 || dims > 0 || annList.length > 0) && (
           <ul>
-            {folder(v.id, 'dimension', page(doc).dimensions.filter((x) => x.view === v.id).map((x) => ({ id: x.id, label: dimLabel(x.id) })), depth + 1)}
+            {folder(v.id, 'dimension', curPage.dimensions.filter((x) => x.view === v.id).map((x) => ({ id: x.id, label: dimLabel(x.id) })), depth + 1)}
             {folder(v.id, 'annotation', annList.map((a) => ({ id: a.id, label: annotationLabel(a) })), depth + 1)}
             {kids.map((k) => row(k, depth + 1))}
           </ul>
@@ -333,7 +334,7 @@ function DrawingTree({ onFormat, onPick }: { onFormat: () => void; onPick: () =>
         <div className={`sw-tree-row${!drw.selected && drw.selection.length === 0 ? ' selected' : ''}`} style={{ paddingLeft: 8 }} data-tree="sheet" onClick={() => (onPick(), d.clearSelection())}>
           <span className="sw-twisty" />
           <Icon name="sheet" />
-          <span className="sw-tree-name">{t('drawingUi.tree.sheet', { size: page(doc).sheet.size, scale: scaleText(page(doc).sheet.scale) })}</span>
+          <span className="sw-tree-name">{curPage.name || t('drawingUi.tree.sheet', { size: curPage.sheet.size, scale: scaleText(curPage.sheet.scale) })}</span>
         </div>
         <ul>
           <li>
@@ -346,7 +347,7 @@ function DrawingTree({ onFormat, onPick }: { onFormat: () => void; onPick: () =>
           {children(null).map((v) => row(v, 1))}
         </ul>
       </li>
-      {page(doc).views.length === 0 && <li className="muted sw-tree-empty">{t('drawingUi.noViews')}</li>}
+      {curPage.views.length === 0 && <li className="muted sw-tree-empty">{t('drawingUi.noViews')}</li>}
       {menu && <DrawingMenu at={menu} onClose={() => setMenu(null)} />}
     </ul>
   );
@@ -378,9 +379,10 @@ export function DrawingPanel() {
   const [breakFrom, setBreakFrom] = useState('');
   const [breakTo, setBreakTo] = useState('');
   const [breakGap, setBreakGap] = useState('');
-  const scale = scaleText(page(doc).sheet.scale);
-  const standard = STANDARD_SCALES.some((s) => same(s, page(doc).sheet.scale));
-  const view = page(doc).views.find((x) => x.id === drw.selected);
+  const curPage = page(doc, drw.activePageIndex ?? 0);
+  const scale = scaleText(curPage.sheet.scale);
+  const standard = STANDARD_SCALES.some((s) => same(s, curPage.sheet.scale));
+  const view = curPage.views.find((x) => x.id === drw.selected);
   const tail = drw.selection[drw.selection.length - 1];
   const context: Context = tail ? (tail.kind === 'view' ? 'view' : tail.kind) : view ? 'view' : format ? 'format' : 'sheet';
   // what is chosen on the sheet brings the properties forward, as clicking something in the graphics area of SolidWorks does; a click in the tree stays in the tree
@@ -419,7 +421,7 @@ export function DrawingPanel() {
               ? { icon: 'table', title: t('drawingUi.pm.table'), sub: view?.name ?? '' }
               : context === 'format'
                 ? { icon: 'titleBlock', title: t('drawingUi.tree.format'), sub: d.name() }
-                : { icon: 'sheet', title: t('drawingUi.pm.sheet'), sub: `${page(doc).sheet.size} · ${scale}` };
+                : { icon: 'sheet', title: t('drawingUi.pm.sheet'), sub: `${curPage.sheet.size} · ${scale}` };
   const hint = drw.selection.length > 1 ? t('drawingUi.selHint') : null;
   const parent = view;
   const box: { min: [number, number]; max: [number, number] } | null | undefined = parent ? (parent.kind === 'detail' ? { min: [parent.centre[0] - parent.radius, parent.centre[1] - parent.radius], max: [parent.centre[0] + parent.radius, parent.centre[1] + parent.radius] } : drw.lines.get(parent.id)?.box) : null;
@@ -501,7 +503,7 @@ export function DrawingPanel() {
           </button>
         </div>
         {hint && <div className="sw-message">{hint}</div>}
-        {page(doc).views.length === 0 && (
+        {curPage.views.length === 0 && (
           <div className="sw-message" data-field="mainViewHint">
             {t('drawingUi.mainViewFirst')}
           </div>
@@ -511,7 +513,7 @@ export function DrawingPanel() {
         <PMGroup title={t('drawingUi.sheet')} icon="sheet" open={isOpen('sheet')} onToggle={() => toggle('sheet')} hidden={!onSheetGroups}>
           <label className="pm-row">
             <span>{t('drawingUi.size')}</span>
-            <select data-field="size" value={page(doc).sheet.size} onChange={(e) => d.setSheet({ size: e.target.value as SheetSize })}>
+            <select data-field="size" value={curPage.sheet.size} onChange={(e) => d.setSheet({ size: e.target.value as SheetSize })}>
               {SHEET_SIZES.map((s) => (
                 <option key={s} value={s}>
                   {s}
@@ -521,14 +523,14 @@ export function DrawingPanel() {
           </label>
           <label className="pm-row">
             <span>{t('drawingUi.orientation')}</span>
-            <select data-field="orientation" value={page(doc).sheet.orientation} onChange={(e) => d.setSheet({ orientation: e.target.value as 'landscape' | 'portrait' })}>
+            <select data-field="orientation" value={curPage.sheet.orientation} onChange={(e) => d.setSheet({ orientation: e.target.value as 'landscape' | 'portrait' })}>
               <option value="landscape">{t('drawingUi.landscape')}</option>
               <option value="portrait">{t('drawingUi.portrait')}</option>
             </select>
           </label>
           <label className="pm-row">
             <span>{t('drawing.title.projection')}</span>
-            <select data-field="projection" value={page(doc).sheet.projection} onChange={(e) => d.setSheet({ projection: e.target.value as 'first' | 'third' })}>
+            <select data-field="projection" value={curPage.sheet.projection} onChange={(e) => d.setSheet({ projection: e.target.value as 'first' | 'third' })}>
               <option value="first">{t('drawing.projection.first')}</option>
               <option value="third">{t('drawing.projection.third')}</option>
             </select>
@@ -546,14 +548,14 @@ export function DrawingPanel() {
           </label>
           <label className="pm-row">
             <span>{t('drawingUi.unit')}</span>
-            <select data-field="unit" value={page(doc).sheet.unit ?? 'mm'} onChange={(e) => d.setSheet({ unit: e.target.value === 'in' ? 'in' : 'mm' })}>
+            <select data-field="unit" value={curPage.sheet.unit ?? 'mm'} onChange={(e) => d.setSheet({ unit: e.target.value === 'in' ? 'in' : 'mm' })}>
               <option value="mm">{t('drawingUi.unit.mm')}</option>
               <option value="in">{t('drawingUi.unit.in')}</option>
             </select>
           </label>
           <label className="pm-row">
             <span>{t('drawingUi.language')}</span>
-            <select data-field="language" value={page(doc).sheet.language ?? ''} onChange={(e) => d.setSheet({ language: e.target.value === '' ? null : (e.target.value as Locale) })}>
+            <select data-field="language" value={curPage.sheet.language ?? ''} onChange={(e) => d.setSheet({ language: e.target.value === '' ? null : (e.target.value as Locale) })}>
               <option value="">{t('drawingUi.language.auto')}</option>
               <option value="zh-TW">{t('options.languageZh')}</option>
               <option value="en">{t('options.languageEn')}</option>
@@ -568,17 +570,17 @@ export function DrawingPanel() {
 
         <PMGroup title={t('drawingUi.dimStyle')} icon="dimension" group="dimStyle" open={isOpen('dimStyle')} onToggle={() => toggle('dimStyle')} hidden={!onSheetGroups}>
           <div className="sw-message">{t('drawingUi.dimStyleSheetTip')}</div>
-          <DimStyleFields scope="sheet" value={page(doc).sheet.dimStyle ?? {}} base={DIM_STYLE_DEFAULT} onChange={(s) => d.setSheet({ dimStyle: s })} />
+          <DimStyleFields scope="sheet" value={curPage.sheet.dimStyle ?? {}} base={DIM_STYLE_DEFAULT} onChange={(s) => d.setSheet({ dimStyle: s })} />
         </PMGroup>
 
         <PMGroup title={t('drawingUi.tree.format')} icon="titleBlock" open={isOpen('format')} onToggle={() => toggle('format')} hidden={!onSheetGroups}>
           {TITLE_FIELDS.map((field: TitleField) => (
             <label key={field} className="pm-row">
               <span>{t(`drawing.title.${field}`)}</span>
-              <TextBox value={page(doc).title[field] ?? ''} onCommit={(v) => d.setTitle(field, v)} />
+              <TextBox value={curPage.title[field] ?? ''} onCommit={(v) => d.setTitle(field, v)} />
             </label>
           ))}
-          <TitleStyleFields value={page(doc).sheet.titleStyle ?? {}} base={TITLE_STYLE_DEFAULT} onChange={(s) => d.setSheet({ titleStyle: s })} />
+          <TitleStyleFields value={curPage.sheet.titleStyle ?? {}} base={TITLE_STYLE_DEFAULT} onChange={(s) => d.setSheet({ titleStyle: s })} />
         </PMGroup>
 
         <PMGroup title={t('drawingUi.group.viewProps')} icon={view ? VIEW_ICON(view) : 'view'} open={isOpen('view')} onToggle={() => toggle('view')} hidden={!view}>

@@ -103,7 +103,8 @@ const toleranceKind = (tol: DimensionTolerance | undefined) => tol?.type ?? 'non
 export function DimensionPanel() {
   const drw = useStore((s) => s.drw)!;
   const d = store.drawingStore!;
-  const view = page(drw.doc).views.find((v) => v.id === drw.selected);
+  const curPage = page(drw.doc, drw.activePageIndex ?? 0);
+  const view = curPage.views.find((v) => v.id === drw.selected);
   const [opts, setOpts] = useState({ overall: true, holes: true, positions: false, callouts: true, ordinate: false });
   const [a, setA] = useState(0);
   const [b, setB] = useState(1);
@@ -121,16 +122,16 @@ export function DimensionPanel() {
   const anglePick = [...planes, ...slants];
   const [ang1, setAng1] = useState(0);
   const [ang2, setAng2] = useState(1);
-  const mine = view ? page(drw.doc).dimensions.filter((x) => x.view === view.id) : [];
+  const mine = view ? curPage.dimensions.filter((x) => x.view === view.id) : [];
   const outcomes = d.scene().dimensions;
   const overlapping = overlappingDimensions(d.scene().scene.items, new Set(mine.map((x) => x.id)));
   // the dimensions chosen (on any view): with more than one, the panel changes them all at once instead of showing one
   const chosenIds = drw.selection.filter((x) => x.kind === 'dimension').map((x) => x.id);
-  const chosenDims = page(drw.doc).dimensions.filter((x) => chosenIds.includes(x.id));
+  const chosenDims = curPage.dimensions.filter((x) => chosenIds.includes(x.id));
   const batch = chosenDims.length > 1;
   const current = batch ? null : (mine.find((x) => x.id === selected) ?? null);
   // the numbers of a tolerance are typed and shown in the unit of the sheet; the document holds millimetres
-  const perUnit = page(drw.doc).sheet.unit === 'in' ? MM_PER_INCH : 1;
+  const perUnit = curPage.sheet.unit === 'in' ? MM_PER_INCH : 1;
   const shownTol = (mm: number) => Math.round((mm / perUnit) * 1e6) / 1e6;
   const textOf = (x: Dimension) => {
     const o = outcomes.get(x.id);
@@ -411,7 +412,7 @@ export function DimensionPanel() {
                   <FitBox value={current.tolerance.fit} onCommit={(fit) => d.setDimension(current.id, { tolerance: { type: 'fit', fit } })} />
                 </label>
               )}
-              <OwnStyle style={current.style} sheet={page(drw.doc).sheet.dimStyle} onChange={(style) => d.setDimension(current.id, { style })} />
+              <OwnStyle style={current.style} sheet={curPage.sheet.dimStyle} onChange={(style) => d.setDimension(current.id, { style })} />
             </>
           )}
         </>
@@ -564,7 +565,7 @@ function BatchDimensions({ dims, perUnit }: { dims: readonly Dimension[]; perUni
         </label>
       )}
       {/* their own style: shown when they all have the same one (or none); set, it is set on all of them as one step */}
-      <OwnStyle style={common(dims.map((x) => x.style)) ?? undefined} sheet={page(d.getState().doc).sheet.dimStyle} onChange={(style) => set({ style })} />
+      <OwnStyle style={common(dims.map((x) => x.style)) ?? undefined} sheet={page(d.getState().doc, d.getState().activePageIndex ?? 0).sheet.dimStyle} onChange={(style) => set({ style })} />
       <div className="pm-row wrap">
         <button className="pm-button" data-action="alignCollinear" title={t('drawingUi.alignCollinearTip')} onClick={() => d.alignCollinear(ids)}>
           {t('drawingUi.alignCollinear')}

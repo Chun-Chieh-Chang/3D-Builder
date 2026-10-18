@@ -1,5 +1,57 @@
 # 3D-Builder 開發日誌 (DEV_LOG.md)
 
+## 2026-10-18：B2.8 Shape 2 多圖頁 (Multi-sheet Drawing) 全鏈路實作（Q1–Q8 全選 Option A）
+
+### 1. 需求與範圍
+落實決策單 `docs/decisions-e1p2-b28-shape2.html`（Q1–Q8 全 Option A）與 SSOT 原則：
+- **Q3 Option A**：畫面底部頁籤（SolidWorks 慣例：`[ 圖紙 1 ] [ 圖紙 2 ] ... [ + ]`），支援雙擊重新命名、右鍵 ContextMenu、`[ + ]` 新增頁面。
+- **Q4 Option A**：防刪最後一頁（剩 1 頁時，指令層顯式拋出 `CommandError`，介面刪除鍵禁用）。
+- **Q5 Option A**：跨頁拖放視圖時，視圖身上掛載之尺寸（`dimensions`）、註記（`annotations`）、表格（`tables`）、表面符號（`surfaceFinishes`）隨同移轉（無孤兒參考）。
+- **Q6 Option A**：合併成單一多頁 PDF 匯出（`toPdf([scenes])` 逐頁生成 `MediaBox`，跨頁共用字型與圖像資源）。
+- **Q7 Option A**：每頁各自圖紙設定（大小/方向/比例/投影視角/單位/標題欄），UI 開放逐頁獨立設定。
+- **SSOT 原則**：3D 特徵與 2D 工程圖雙向屬性同步，跨頁視圖檢索全鏈路相容。
+
+### 2. 做法與架構
+| 層 | 檔案 | 內容 |
+|---|---|---|
+| 模型 | `packages/model/src/drawing.ts` | 新增指令 `insertPage`, `deletePage`, `setPage`, `moveViewToPage`；`withPage(doc, p, index)` 支援指定替換頁索引；導出 `allViews(doc)` 與 `drawingFromPage(p, properties)`；`mutateDrawing` 實作防刪最後一頁與無孤兒連帶轉移 |
+| 匯出 | `packages/drawing/src/pdf.ts` | `toPdf(sceneOrScenes, options)` 支援多頁 PDF，重構 Catalog/Pages 樹（`/Kids`, `/Count`），每頁個別配置 `MediaBox` 與 `/Contents`，跨頁共用 Type 1/CID 字型與 XObject 圖像 |
+| 語系 | `packages/i18n/src/zh-TW/drawing.ts`、`packages/i18n/src/en/drawing.ts` | 新增 `sheetTabs`（`sheetDefault`, `add`, `rename`, `delete`, `properties`）、`moveToSheet`、`movedToSheet` 鍵值 |
+| 狀態 | `apps/web/src/state/drawing.ts` | `DrawingState` 新增 `activePageIndex: number`；實作 `setActivePage`, `addPage`, `deletePage`, `renamePage`, `moveViewToPage`；`loadSources`, `computeLines`, `computeDimensionData`, `refreshBoms` 遍歷所有頁面（`allViews`, `allDims`）進行預算快取；`scene(pageIndex)` 隔離單頁渲染；`exportPdf` 匯出全圖紙單一多頁 PDF |
+| 介面 | `apps/web/src/components/SheetTabs.tsx` | 新增畫面底部頁籤列元件，支援分頁選取、雙擊行內輸入重新命名、右鍵選單、`[ + ]` 新增、拖放視圖放下目標 |
+| 介面 | `apps/web/src/components/DrawingViewport.tsx` | 整合 `<SheetTabs />`；使用 `curPage` 與 `pageDoc = drawingFromPage(curPage, doc.properties)` 隔離單頁畫布計算；拖曳視圖至頁籤放開時觸發 `moveViewToPage`；調整 hint 避免被頁籤列遮擋 |
+| 介面 | `apps/web/src/components/DrawingPanel.tsx`、`DimensionPanel.tsx`、`AnnotationPanel.tsx`、`DrawingViewMenu.tsx` | 屬性面板全面對齊 `curPage`，開放逐頁獨立設定；右鍵選單加入「移動至圖紙」子選單 |
+| 樣式 | `apps/web/src/app.css` | 依據色彩大師規範配置 `.drawing-sheet-tabs` 與各狀態樣式；`.drawing-hint` `bottom` 調整為 `42px` |
+| 測試 | `tests/phase5/drawing-pages-multisheet.test.ts` | 新增 4 項完整確效測試，嚴格驗證 Q3-Q7 Option A |
+
+### 3. 自我紅隊四問（AGENTS.md §2.1）
+1. **輸入破壞 (Input Corruption)**：
+   - 跨頁移動視圖若指定不存在之視圖 ID 或越界之 `targetPageIndex`，指令層顯式拋出 `CommandError`，絕不靜默無效或 `Math.round` 吞掉。
+   - 刪除圖紙在 `doc.pages.length <= 1` 時拋出顯式 `CommandError`，拒絕刪除最後一頁。
+2. **拓樸與相交破壞 (Geometric Self-Intersection Defense)**：
+   - 視圖跨頁搬移時，其身上綁定之尺寸、註記、表格、表面符號完整過濾隨同轉移，舊頁面徹底清除，杜絕懸空/孤兒參考崩潰。
+3. **依賴鏈完整性 (Dependency Graph Integrity)**：
+   - Schema -> Commands (`DrawingCommand`) -> State (`DrawingStore`) -> Viewport / Panels / Tabs -> PDF Export，全鏈路接線無斷點。
+4. **零 Mock 與真值原則 (Zero-Mock & Ground Truth)**：
+   - 多頁 PDF 匯出使用真實 `readPdf` 解析字節流，驗證 `/Count 2` 與個別頁面真實 MediaBox（A4 297×210 pt vs A3 420×297 pt）；
+   - 斷言 `bytes.byteLength > 0` 進行真值存在性防呆，拒絕代理指標。
+
+### 4. 過程紀錄（RCA／CAPA）
+- **問題 1：PDF 匯出時拋出 `TypeError: Cannot read properties of undefined (reading 'width')`**
+  - **根因 (RCA)**：`pdf.ts` 處理 `item.kind === 'polyline'` 時直接讀取 `LINE_STYLES[item.style].width`，若輸入項目缺少 `style` 則拋錯。
+  - **矯正措施 (CAPA)**：在 `pdf.ts` 加入防禦性回退 `LINE_STYLES[item.style] ?? LINE_STYLES.visible`，提高魯棒性。
+- **問題 2：多頁 PDF 確效報錯 `PDF 頁面的 MediaBox 不對`**
+  - **根因 (RCA)**：測試中構造 `Scene` 物件時誤將尺寸包裝為 `sheet: { width, height }`，而非 `Scene` 介面直屬的 `width, height`，導致 `pageW`/`pageH` 算為 `NaN`。
+  - **矯正措施 (CAPA)**：修正測試中的 `Scene` 資料結構；並在 `pdf.ts` 加入 `sc.width > 0 ? sc.width : 420` 防禦防呆。
+
+### 5. 確效與品質驗收
+- `npm run typecheck`：**0 錯誤**。
+- `npm run lint:rules; npm run lint:deps; npm run lint:i18n`：**全數通過**。
+- `npx vitest run tests/phase5`：**49 檔全過、523 項通過、1 項略過、0 失敗**。
+- `npx vitest run tests/phase5/drawing-pages-multisheet.test.ts`：**4 項全過**。
+
+---
+
 ## 2026-10-17：main 與 worktree-sidebar-parity 雙分支整合（Schema 25 頁面模型與 B2.2-B2.7 視圖對齊）
 
 ### 1. 範圍

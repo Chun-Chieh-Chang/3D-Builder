@@ -1,5 +1,6 @@
 import { t } from '@3db/i18n';
 import { DrawingMenu, type DrawingMenuAt } from './DrawingViewMenu';
+import { SheetTabs } from './SheetTabs';
 import {
   annotationItems,
   arrangementBase,
@@ -47,7 +48,7 @@ import {
   type SceneItem,
   type ViewLines,
 } from '@3db/drawing';
-import { axesOf, oppositeSide, page, projectedAxes, type Annotation, type Attachment, type AuxiliaryDrawingView, type ClosedOutline, sectionArrow, sectionLookAxes, type Dimension, type DrawingView, type Id, type Scale, type LocalSectionDrawingView, type SectionDrawingView, type SurfaceFinish, type ViewCorner, type ViewSide, withPage } from '@3db/model';
+import { axesOf, oppositeSide, page, drawingFromPage, projectedAxes, type Annotation, type Attachment, type AuxiliaryDrawingView, type ClosedOutline, sectionArrow, sectionLookAxes, type Dimension, type DrawingView, type Id, type Scale, type LocalSectionDrawingView, type SectionDrawingView, type SurfaceFinish, type ViewCorner, type ViewSide, withPage } from '@3db/model';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { store, useStore } from '../state/store';
 import type { DrawingPick } from '../state/drawing';
@@ -154,32 +155,35 @@ export function DrawingViewport() {
   const rightFrom = useRef<{ x: number; y: number } | null>(null);
   /** Where the pointer is on the sheet, and what is under it: for the preview of a tool and the cursor. */
   const [hover, setHover] = useState<{ p: P; feature: { view: Id; feature: Pickable } | null; dimension: string | null; ctrl?: boolean } | null>(null);
-  const sheet = sheetMetrics(page(drw.doc).sheet);
+  const activePageIndex = drw.activePageIndex ?? 0;
+  const curPage = page(drw.doc, activePageIndex);
+  const pageDoc = useMemo(() => drawingFromPage(curPage, drw.doc.properties), [curPage, drw.doc.properties]);
+  const sheet = sheetMetrics(curPage.sheet);
   const tool = drw.tool;
   /** Where the views are before anything is dragged: what the tools read their geometry from. */
-  const basePlaced = useMemo(() => layoutViews(drw.doc, drw.lines), [drw.doc, drw.lines]);
+  const basePlaced = useMemo(() => layoutViews(pageDoc, drw.lines), [pageDoc, drw.lines]);
 
   // a detail view's lines are its parent's, cut by its circle: what can be pointed at in it is what is drawn in it (its features and edges are its parent's)
-  const viewLines = useMemo(() => resolveLines(drw.doc, drw.lines), [drw.doc, drw.lines]);
-  const seenByView = useMemo(() => new Map(page(drw.doc).views.map((v) => [v.id, visibleElements(viewLines.get(v.id), drw.edges.get(v.id), drw.features.get(v.id) ?? [])])), [page(drw.doc).views, viewLines, drw.edges, drw.features]);
+  const viewLines = useMemo(() => resolveLines(pageDoc, drw.lines), [pageDoc, drw.lines]);
+  const seenByView = useMemo(() => new Map(curPage.views.map((v) => [v.id, visibleElements(viewLines.get(v.id), drw.edges.get(v.id), drw.features.get(v.id) ?? [])])), [curPage.views, viewLines, drw.edges, drw.features]);
   /** The dimension the tool would make from what is pointed at and where the pointer is (it is drawn while the pointer moves). */
   const plan = useMemo(() => {
     if (tool?.kind !== 'dimension' || !hover || tool.picks.length === 0) return null;
     const first = tool.picks[0]!;
-    const view = page(drw.doc).views.find((v) => v.id === first.view);
+    const view = curPage.views.find((v) => v.id === first.view);
     const placed = basePlaced.get(first.view);
-    const axes = view && axesOf(page(drw.doc).views, page(drw.doc).sheet.projection, view);
+    const axes = view && axesOf(curPage.views, curPage.sheet.projection, view);
     if (!view || !placed || !axes) return null;
     const picks = tool.picks.map((x) => x.feature);
     // with one element chosen, an element under the pointer is the second one for now
     const second = picks.length === 1 && hover.feature && hover.feature.view === first.view && hover.feature.feature.ref.name !== picks[0]!.ref.name ? hover.feature.feature : null;
     const result = planDimension(second ? [...picks, second] : picks, hover.p, placed, axes);
     return 'draft' in result ? { view: first.view, ...result } : null;
-  }, [tool, hover, drw.doc, basePlaced]);
+  }, [tool, hover, curPage, basePlaced]);
 
   // what is shown: the document, as the drag would leave it (the other views follow while the pointer moves), and the dimension being made
   const shown = useMemo(() => {
-    let pg = page(drw.doc);
+    let pg = curPage;
     if (plan) pg = { ...pg, dimensions: [...pg.dimensions, { id: 'preview', view: plan.view, ...plan.draft } as Dimension] };
     if (!drag) return pg;
     if (drag.kind === 'draw') return pg;
@@ -209,11 +213,11 @@ export function DrawingViewport() {
     }
     if (drag.mode === 'slide') return { ...pg, views: pg.views.map((v) => (v.id === drag.id ? { ...v, slide: (v.slide ?? 0) + drag.delta[drag.axis!] } : v)) };
     return { ...pg, views: pg.views.map((v) => (v.id === drag.id ? { ...v, at: [drag.origin[0] + drag.delta[0], drag.origin[1] + drag.delta[1]] as P, slide: undefined } : v)) };
-  }, [drw.doc, drag, plan]);
+  }, [curPage, drag, plan]);
   const elements = useMemo(() => (plan ? new Map(drw.elements).set('preview', { elements: plan.facts }) : drw.elements), [drw.elements, plan]);
   // the annotations fastened to the model, where the model has their elements now (D-I2)
-  const attached = useMemo(() => attachedAnnotations(shown.annotations ?? [], new Map(page(drw.doc).views.map((v) => [v.id, { seen: seenByView.get(v.id), features: drw.features.get(v.id) ?? [] }]))), [shown, seenByView, page(drw.doc).views, drw.features]);
-  const shownDoc = useMemo(() => withPage(drw.doc, { ...shown, annotations: attached.annotations }), [drw.doc, shown, attached]);
+  const attached = useMemo(() => attachedAnnotations(shown.annotations ?? [], new Map(curPage.views.map((v) => [v.id, { seen: seenByView.get(v.id), features: drw.features.get(v.id) ?? [] }]))), [shown, seenByView, curPage.views, drw.features]);
+  const shownDoc = useMemo(() => drawingFromPage({ ...shown, annotations: attached.annotations }, drw.doc.properties), [drw.doc.properties, shown, attached]);
   const built = useMemo(() => buildScene(shownDoc, drw.lines, elements, drw.features, drw.boms), [shownDoc, drw.lines, elements, drw.features, drw.boms]);
   const svg = useMemo(() => toSvg(built.scene), [built]);
   /** The items of the dimensions that are there (not the one being made): what the pointer can take hold of. */
@@ -225,7 +229,7 @@ export function DrawingViewport() {
       const pl = built.placed.get(a.view);
       return pl ? annotationItems([a], pl, lookup, shown.sheet.unit ?? 'mm').map((i) => ({ ...i, group: a.id })) : [];
     });
-  }, [shown, attached, built]);
+  }, [shown, attached, built, drw.doc.properties]);
   /** The lines of the sections on the sheet, where they are drawn on their parents (sheet mm). */
   const sectionLines = useMemo(
     () =>
@@ -246,7 +250,7 @@ export function DrawingViewport() {
     const zoom = Math.min((el.clientWidth - 40) / (sheet.width * PX), (el.clientHeight - 40) / (sheet.height * PX));
     setPan({ zoom, x: (el.clientWidth - sheet.width * PX * zoom) / 2, y: (el.clientHeight - sheet.height * PX * zoom) / 2 });
   };
-  useEffect(fit, [drw.fitRequest, page(drw.doc).sheet.size, page(drw.doc).sheet.orientation]);
+  useEffect(fit, [drw.fitRequest, curPage.sheet.size, curPage.sheet.orientation, activePageIndex]);
 
   useEffect(() => {
     const el = host.current;
@@ -313,8 +317,8 @@ export function DrawingViewport() {
   }, [tool?.kind, tool?.kind === 'section' ? tool.path : undefined]);
   // a dimension that is gone (deleted, undone) is not the one chosen
   useEffect(() => {
-    if (drw.dimension && !page(drw.doc).dimensions.some((x) => x.id === drw.dimension)) d.selectDimension(null);
-  }, [drw.doc, drw.dimension, d]);
+    if (drw.dimension && !curPage.dimensions.some((x) => x.id === drw.dimension)) d.selectDimension(null);
+  }, [curPage.dimensions, drw.dimension, d]);
 
   /** A pointer position on the sheet, in mm from its lower left corner. */
   const onSheet = (e: { clientX: number; clientY: number }): P => {
@@ -327,7 +331,7 @@ export function DrawingViewport() {
   /** The edges and vertices each view shows, by name (D-I2): worked out once per view from its lines and the worker's projected edges. */
   /** The element of a view under the point (the views in the order they are drawn, the last on top); when `only` is given, in that view only. */
   const featureUnder = (p: P, only?: Id): { view: Id; feature: Pickable } | null => {
-    for (const v of [...page(drw.doc).views].reverse()) {
+    for (const v of [...curPage.views].reverse()) {
       if (only && v.id !== only) continue;
       const placed = basePlaced.get(v.id);
       if (!placed || placed.w <= 0) continue;
@@ -338,7 +342,7 @@ export function DrawingViewport() {
   };
   /** The view whose box the point is in, the last drawn on top. */
   const viewUnder = (p: P): DrawingView | undefined =>
-    [...page(drw.doc).views].reverse().find((v) => {
+    [...curPage.views].reverse().find((v) => {
       const placed = built.placed.get(v.id);
       return placed && placed.w > 0 && Math.abs(p[0] - placed.at[0]) <= placed.w / 2 && Math.abs(p[1] - placed.at[1]) <= placed.h / 2;
     });
@@ -378,9 +382,9 @@ export function DrawingViewport() {
       else d.notifyInfo(t('drawingUi.hint.dimension0'));
       return;
     }
-    const view = page(drw.doc).views.find((v) => v.id === first.view);
+    const view = curPage.views.find((v) => v.id === first.view);
     const placed = basePlaced.get(first.view);
-    const axes = view && axesOf(page(drw.doc).views, page(drw.doc).sheet.projection, view);
+    const axes = view && axesOf(curPage.views, curPage.sheet.projection, view);
     if (!view || !placed || !axes) return;
     // a second element pointed at (not the same one): then the place comes
     if (tool.picks.length === 1 && hit && hit.feature.ref.name !== first.feature.ref.name) {
@@ -417,7 +421,7 @@ export function DrawingViewport() {
     const p = onSheet(e);
     // the handle at the corner of the chosen view: the scale
     if (!tool && (e.target as HTMLElement).closest('[data-scale-handle]') && drw.selected) {
-      const view = page(drw.doc).views.find((v) => v.id === drw.selected);
+      const view = curPage.views.find((v) => v.id === drw.selected);
       const placed = view && built.placed.get(view.id);
       // a locked view keeps its scale (B2.1): the handle does nothing, and that is said
       if (view?.locked) {
@@ -467,7 +471,7 @@ export function DrawingViewport() {
       // an edge pointed at is hidden (B2.2); the tool stays for the next one. A detail view's lines are its parent's: the edge it shows is the parent's
       const hit = featureUnder(p);
       if (!hit || hit.feature.type !== 'edge') return d.notifyInfo(t('drawingUi.hint.hideEdge'));
-      const under = page(drw.doc).views.find((v) => v.id === hit.view);
+      const under = curPage.views.find((v) => v.id === hit.view);
       d.hideEdge(under?.kind === 'detail' ? under.parent : hit.view, hit.feature.ref);
       return;
     }
@@ -537,7 +541,7 @@ export function DrawingViewport() {
       d.selectDimension(dim.id);
       if (outcome.handle) {
         capture(e);
-        setDrag({ kind: 'dimension', id: dim.id, onText: dim.text && page(drw.doc).dimensions.find((x) => x.id === dim.id)?.kind !== 'ordinate', handle: outcome.handle, patch: {} });
+        setDrag({ kind: 'dimension', id: dim.id, onText: dim.text && curPage.dimensions.find((x) => x.id === dim.id)?.kind !== 'ordinate', handle: outcome.handle, patch: {} });
       }
       return;
     }
@@ -665,7 +669,7 @@ export function DrawingViewport() {
     }
   };
   /** The scale the dragged view had before: the one of what the drag changes. */
-  const shownBefore = (drag: Extract<Drag, { kind: 'scale' }>): Scale | null => ('sheet' in drag.target ? page(drw.doc).sheet.scale : (page(drw.doc).views.find((v) => v.id === (drag.target as { view: string }).view)?.scale ?? null));
+  const shownBefore = (drag: Extract<Drag, { kind: 'scale' }>): Scale | null => ('sheet' in drag.target ? curPage.sheet.scale : (curPage.views.find((v) => v.id === (drag.target as { view: string }).view)?.scale ?? null));
   const up = (e: React.PointerEvent) => {
     const right = rightFrom.current;
     rightFrom.current = null;
@@ -727,7 +731,7 @@ export function DrawingViewport() {
       if (Math.hypot(drag.delta[0], drag.delta[1]) > 0.05) d.setTable(drag.id, { at: [round2(drag.origin[0] + drag.delta[0]), round2(drag.origin[1] + drag.delta[1])] });
     } else if (drag?.kind === 'balloon') {
       if (Math.hypot(drag.delta[0], drag.delta[1]) > 0.05) {
-        const table = page(drw.doc).tables.find((x) => x.id === drag.id);
+        const table = curPage.tables.find((x) => x.id === drag.id);
         const was = table?.kind === 'bom' ? table.balloonAt : undefined;
         d.setTable(drag.id, { balloonAt: { ...was, [drag.item]: [round2(drag.origin[0] + drag.delta[0]), round2(drag.origin[1] + drag.delta[1])] } });
       }
@@ -752,7 +756,7 @@ export function DrawingViewport() {
         }
       }
     } else if (drag?.kind === 'annotation') {
-      const a = (page(drw.doc).annotations ?? []).find((x) => x.id === drag.id);
+      const a = (curPage.annotations ?? []).find((x) => x.id === drag.id);
       const pl = a && basePlaced.get(a.view);
       if (a && pl && Math.hypot(drag.delta[0], drag.delta[1]) > 0.05 && a.kind === 'datum' && a.attach) {
         // fastened to the model, the triangle stays where the edge is: the square goes where it is let go (its direction and its distance)
@@ -771,12 +775,20 @@ export function DrawingViewport() {
     } else if (drag?.kind === 'surface') {
       if (Math.hypot(drag.delta[0], drag.delta[1]) > 0.05) d.setSurfaceFinish(drag.id, { at: [round2(drag.origin[0] + drag.delta[0]), round2(drag.origin[1] + drag.delta[1])] });
     } else if (drag && Math.hypot(drag.delta[0], drag.delta[1]) > 0.05) {
-      const view = page(drw.doc).views.find((v) => v.id === drag.id);
-      if (drag.mode === 'shift') {
-        const was = page(drw.doc).sheet.shift ?? [0, 0];
-        d.setSheet({ shift: [round2(was[0] + drag.delta[0]), round2(was[1] + drag.delta[1])] });
-      } else if (drag.mode === 'slide') d.setView(drag.id, { slide: round2((view?.slide ?? 0) + drag.delta[drag.axis!]) });
-      else d.setView(drag.id, { at: [round2(drag.origin[0] + drag.delta[0]), round2(drag.origin[1] + drag.delta[1])], slide: null });
+      // Drop target on sheet tab for cross-sheet move (Q5 Option A)
+      const tabEl = document.elementFromPoint(e.clientX, e.clientY)?.closest('[data-sheet-tab-index]') as HTMLElement | null;
+      const targetIdx = tabEl ? Number(tabEl.getAttribute('data-sheet-tab-index')) : null;
+      if (drag.kind === 'move' && targetIdx !== null && !isNaN(targetIdx) && targetIdx !== activePageIndex) {
+        d.moveViewToPage(drag.id, targetIdx);
+        d.setActivePage(targetIdx);
+      } else {
+        const view = curPage.views.find((v) => v.id === drag.id);
+        if (drag.mode === 'shift') {
+          const was = curPage.sheet.shift ?? [0, 0];
+          d.setSheet({ shift: [round2(was[0] + drag.delta[0]), round2(was[1] + drag.delta[1])] });
+        } else if (drag.mode === 'slide') d.setView(drag.id, { slide: round2((view?.slide ?? 0) + drag.delta[drag.axis!]) });
+        else d.setView(drag.id, { at: [round2(drag.origin[0] + drag.delta[0]), round2(drag.origin[1] + drag.delta[1])], slide: null });
+      }
     }
     setDrag(null);
     setPanning(null);
@@ -805,18 +817,18 @@ export function DrawingViewport() {
     // a feature is most often pointed at on the view's outline, which is the edge of its box: a point just outside it, within reach, is on that view
     const near = (q: P) =>
       viewUnder(q) ??
-      [...page(drw.doc).views].reverse().find((v) => {
+      [...curPage.views].reverse().find((v) => {
         const pl = built.placed.get(v.id);
         return pl && pl.w > 0 && Math.abs(q[0] - pl.at[0]) <= pl.w / 2 + reach && Math.abs(q[1] - pl.at[1]) <= pl.h / 2 + reach;
       });
     // a note may stand on the paper away from every view (a technical requirement): it belongs to the nearest view, and moves with it
     const nearest = (q: P) =>
-      [...page(drw.doc).views]
+      [...curPage.views]
         .map((v) => ({ v, pl: built.placed.get(v.id) }))
         .filter((x) => x.pl && x.pl.w > 0)
         .map(({ v, pl }) => ({ v, gap: Math.hypot(Math.max(0, Math.abs(q[0] - pl!.at[0]) - pl!.w / 2), Math.max(0, Math.abs(q[1] - pl!.at[1]) - pl!.h / 2)) }))
         .sort((x, y) => x.gap - y.gap)[0]?.v;
-    const view = first ? page(drw.doc).views.find((v) => v.id === first.view) : (near(p) ?? (tool.what === 'note' ? nearest(p) : undefined));
+    const view = first ? curPage.views.find((v) => v.id === first.view) : (near(p) ?? (tool.what === 'note' ? nearest(p) : undefined));
     const pl = view && basePlaced.get(view.id);
     if (!view || !pl) return d.notifyInfo(t(hintKey[tool.what]));
     const raw = fromSheet(pl, p[0], p[1]);
@@ -928,7 +940,7 @@ export function DrawingViewport() {
     }
     if (g.tool === 'crop') {
       // only a local section can be cropped (B2.7): the region a partial section cuts out is what is set apart
-      if (page(drw.doc).views.find((v) => v.id === g.view)?.kind !== 'sectionLocal') {
+      if (curPage.views.find((v) => v.id === g.view)?.kind !== 'sectionLocal') {
         d.notifyInfo(t('drawingUi.hint.cropParent'));
         return null;
       }
@@ -1002,7 +1014,7 @@ export function DrawingViewport() {
   };
 
   /** A preview at full size seen as a view placed at `at` (sheet mm) at the sheet's scale: for a view from the palette or the isometric off a corner. */
-  const ghostAt = (lines: ViewLines | null | undefined, at: P, scale = ratio(page(drw.doc).sheet.scale)): PlacedView | null => {
+  const ghostAt = (lines: ViewLines | null | undefined, at: P, scale = ratio(curPage.sheet.scale)): PlacedView | null => {
     if (!lines?.box) return null;
     const w = (lines.box.max[0] - lines.box.min[0]) * scale;
     const h = (lines.box.max[1] - lines.box.min[1]) * scale;
@@ -1012,22 +1024,22 @@ export function DrawingViewport() {
   /** What the projection tool would make with the pointer at `p`: a view on a side of the parent, in line and slid to the pointer, or the isometric off a corner. */
   const projectGhost = (p: P): { side: ViewSide; slide: number; shift: [number, number] | null; placed: PlacedView; lines: ViewLines } | { side: 'corner'; corner: ViewCorner; placed: PlacedView; lines: ViewLines } | null => {
     if (tool?.kind !== 'project') return null;
-    const parent = page(drw.doc).views.find((v) => v.id === tool.parent);
+    const parent = curPage.views.find((v) => v.id === tool.parent);
     const parentPlaced = basePlaced.get(tool.parent);
-    const parentAxes = parent && axesOf(page(drw.doc).views, page(drw.doc).sheet.projection, parent);
+    const parentAxes = parent && axesOf(curPage.views, curPage.sheet.projection, parent);
     if (!parent || !parentPlaced || parentPlaced.w <= 0 || !parentAxes) return null;
     const side = sideAt(parentPlaced, p);
     if (side === null) return null;
     if (side === 'corner') {
       // the isometric from the corner the pointer is off, as the parent sees the part (ADR 0146): not one fixed isometric whatever the corner and the parent
       const corner = cornerAt(parentPlaced, p);
-      const lines = d.linesForAxes(projectedAxes(parentAxes, corner, page(drw.doc).sheet.projection));
+      const lines = d.linesForAxes(projectedAxes(parentAxes, corner, curPage.sheet.projection));
       const placed = ghostAt(lines, p, parentPlaced.scale);
       return placed && lines ? { side, corner, placed, lines } : null;
     }
-    const lines = d.linesForAxes(projectedAxes(parentAxes, side, page(drw.doc).sheet.projection));
+    const lines = d.linesForAxes(projectedAxes(parentAxes, side, curPage.sheet.projection));
     if (!lines) return null;
-    const g = previewDerived(drw.doc, drw.lines, { id: 'ghost', name: '', kind: 'projected', parent: tool.parent, side }, lines, p);
+    const g = previewDerived(pageDoc, drw.lines, { id: 'ghost', name: '', kind: 'projected', parent: tool.parent, side }, lines, p);
     return g ? { side, slide: g.slide, shift: g.shift, placed: g.placed, lines } : null;
   };
 
@@ -1037,15 +1049,15 @@ export function DrawingViewport() {
    * (B2.7) is what it is turned about — both look along the line's arrows, so both are placed the same way.
    */
   const lineGhost = (placement: Extract<DrawPlacement, { tool: 'section' | 'auxiliary' }>, p: P): { flip: boolean; slide: number; shift: [number, number] | null; placed: PlacedView; lines: ViewLines; label: string } | null => {
-    const parent = page(drw.doc).views.find((v) => v.id === placement.view);
+    const parent = curPage.views.find((v) => v.id === placement.view);
     const parentPlaced = basePlaced.get(placement.view);
-    const parentAxes = parent && axesOf(page(drw.doc).views, page(drw.doc).sheet.projection, parent);
+    const parentAxes = parent && axesOf(curPage.views, curPage.sheet.projection, parent);
     if (!parent || !parentPlaced || !parentAxes) return null;
     // a line nearer vertical has its arrows nearer horizontal, so the view goes left or right of the parent (a slanted line too, D-I5)
     const [[x0, y0], [x1, y1]] = placement.line;
     const vertical = Math.abs(x1 - x0) <= Math.abs(y1 - y0);
     const side: ViewSide = vertical ? (p[0] >= parentPlaced.at[0] ? 'right' : 'left') : p[1] >= parentPlaced.at[1] ? 'up' : 'down';
-    const arrow = page(drw.doc).sheet.projection === 'first' ? side : oppositeSide(side);
+    const arrow = curPage.sheet.projection === 'first' ? side : oppositeSide(side);
     const flip = sectionArrow({ line: placement.line }) !== arrow;
     const lines = d.linesForAxes(sectionLookAxes(parentAxes, { line: placement.line, ...(flip ? { flip } : {}) }));
     if (!lines) return null;
@@ -1087,7 +1099,7 @@ export function DrawingViewport() {
       ? t('drawingUi.hint.hideEdge')
       : tool
       ? t(tool.kind === 'section' ? (tool.path === 'stepped' ? 'drawingUi.hint.sectionStepped' : tool.path === 'aligned' ? 'drawingUi.hint.sectionAligned' : tool.slant ? 'drawingUi.hint.sectionSlant' : 'drawingUi.hint.section') : tool.kind === 'sectionLocal' ? 'drawingUi.hint.localSection' : tool.kind === 'crop' ? 'drawingUi.hint.crop' : tool.kind === 'auxiliary' ? 'drawingUi.hint.auxiliary' : 'drawingUi.hint.detail')
-      : page(drw.doc).views.length === 0
+      : curPage.views.length === 0
       ? t('drawingUi.mainViewFirst')
       : null;
   const cursor = tool ? 'crosshair' : hover?.dimension || drag?.kind === 'dimension' || drag?.kind === 'surface' || drag?.kind === 'annotation' ? 'move' : undefined;
@@ -1123,8 +1135,8 @@ export function DrawingViewport() {
       const placement = drawnBy;
       const p = (drag?.kind === 'placeDraw' ? drag.to : drawCursor) ?? at;
       if (hover?.ctrl || (drag?.kind === 'placeDraw' && drag.free)) {
-        const parent = page(drw.doc).views.find((v) => v.id === placement.view);
-        const parentAxes = parent && axesOf(page(drw.doc).views, page(drw.doc).sheet.projection, parent);
+        const parent = curPage.views.find((v) => v.id === placement.view);
+        const parentAxes = parent && axesOf(curPage.views, curPage.sheet.projection, parent);
         const lines = parentAxes ? d.linesForAxes(sectionLookAxes(parentAxes, { line: placement.line })) : null;
         const placed = ghostAt(lines, p, basePlaced.get(placement.view)?.scale);
         return placed && lines ? { placed, lines, label: d.peekLabel() } : null;
@@ -1290,7 +1302,7 @@ export function DrawingViewport() {
             style={{ left: (selected.at[0] - selected.w / 2) * PX - 4, top: (sheet.height - selected.at[1] - selected.h / 2) * PX - 4, width: selected.w * PX + 8, height: selected.h * PX + 8 }}
           >
             {/* the scale handle is not shown on a locked view (B2.1): there is no scale to drag there */}
-            {!page(drw.doc).views.find((v) => v.id === selected.id)?.locked && (
+            {!curPage.views.find((v) => v.id === selected.id)?.locked && (
               <span
                 className="drawing-handle"
                 data-scale-handle
@@ -1336,6 +1348,7 @@ export function DrawingViewport() {
       )}
       {!bootMs && <div className="boot-overlay">{t('drawingUi.loadingKernel')}</div>}
       {menu && <DrawingMenu at={menu} onClose={() => setMenu(null)} />}
+      <SheetTabs />
     </main>
   );
 }

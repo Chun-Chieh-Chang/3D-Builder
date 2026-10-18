@@ -507,11 +507,93 @@ html[lang="en"] .view-cube .cube-label { font-size: 13px; }
 .drawing-paper svg { display: block; }
 .drawing-selection { position: absolute; border: 1px dashed var(--accent); pointer-events: none; }
 .drawing-overlay { position: absolute; left: 0; top: 0; pointer-events: none; }
-.drawing-hint { position: absolute; left: 50%; bottom: 14px; transform: translateX(-50%); max-width: 80%; background: color-mix(in oklab, var(--accent) 95%, transparent); color: var(--on-accent); padding: 6px 14px; border-radius: 6px; font-size: 13px; pointer-events: none; text-align: center; }
+.drawing-hint { position: absolute; left: 50%; bottom: 42px; transform: translateX(-50%); max-width: 80%; background: color-mix(in oklab, var(--accent) 95%, transparent); color: var(--on-accent); padding: 6px 14px; border-radius: 6px; font-size: 13px; pointer-events: none; text-align: center; }
 .drawing-handle { position: absolute; box-sizing: border-box; background: var(--accent); border-style: solid; border-color: var(--card); cursor: nwse-resize; pointer-events: auto; }
 .drawing-panel .drawing-views li { display: flex; gap: 6px; align-items: center; }
 .drawing-panel .drawing-views li .name { flex: 1; }
 .drawing-panel .drawing-views li.selected { background: var(--accent-soft); }
+
+/* Sheet Tabs (B2.8 / SolidWorks sheet tabs style) */
+.drawing-sheet-tabs {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 30px;
+  background: var(--card);
+  border-top: 1px solid var(--line);
+  display: flex;
+  align-items: flex-end;
+  padding: 0 8px;
+  gap: 2px;
+  z-index: 20;
+  overflow-x: auto;
+  user-select: none;
+}
+.drawing-sheet-tabs::-webkit-scrollbar {
+  height: 3px;
+}
+.drawing-sheet-tabs::-webkit-scrollbar-thumb {
+  background: var(--line);
+  border-radius: 2px;
+}
+.drawing-sheet-tab {
+  height: 26px;
+  padding: 0 12px;
+  border: 1px solid transparent;
+  border-bottom: none;
+  border-radius: 4px 4px 0 0;
+  background: transparent;
+  color: var(--muted);
+  font-size: 12px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  transition: all 0.15s ease;
+  white-space: nowrap;
+}
+.drawing-sheet-tab:hover {
+  background: color-mix(in oklab, var(--line) 40%, transparent);
+  color: var(--text);
+}
+.drawing-sheet-tab.active {
+  background: var(--desk);
+  color: var(--accent);
+  font-weight: 600;
+  border-color: var(--line);
+}
+.drawing-sheet-tab-input {
+  border: 1px solid var(--accent);
+  background: var(--card);
+  color: var(--text);
+  font-size: 12px;
+  padding: 1px 4px;
+  border-radius: 3px;
+  outline: none;
+  width: 90px;
+}
+.drawing-sheet-tab-add {
+  height: 22px;
+  width: 22px;
+  margin-bottom: 2px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 15px;
+  line-height: 1;
+  transition: all 0.15s ease;
+  margin-left: 4px;
+}
+.drawing-sheet-tab-add:hover {
+  background: color-mix(in oklab, var(--line) 50%, transparent);
+  color: var(--accent);
+  border-color: var(--line);
+}
 
 
 /* ---- help (docs/help-plan.md) ---- */

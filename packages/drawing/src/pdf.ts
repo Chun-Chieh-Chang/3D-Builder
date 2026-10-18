@@ -1,7 +1,7 @@
 import { t } from '@3db/i18n';
 import { HELVETICA_CAP_HEIGHT, helveticaCode, helveticaWidth } from './helvetica';
 import { circlePolyline } from './geometry';
-import { LINE_STYLES, type Scene, type SceneText } from './scene';
+import { LINE_STYLES, type Scene, type SceneImage, type SceneText } from './scene';
 import { FontError, subsetTrueType, type TrueTypeFont } from './ttf';
 
 /**
@@ -108,35 +108,48 @@ function toUnicode(used: Map<number, number>): string {
   return lines.join('\n') + '\n';
 }
 
-/** The scene as a PDF. */
-export function toPdf(scene: Scene, options: PdfOptions = {}): PdfResult {
+/** The scene (or scenes, one per sheet) as a PDF (B2.8 shape 2, Q6 Option A). */
+export function toPdf(sceneOrScenes: Scene | readonly Scene[], options: PdfOptions = {}): PdfResult {
+  const scenes: readonly Scene[] = Array.isArray(sceneOrScenes) ? sceneOrScenes : [sceneOrScenes];
+  if (scenes.length === 0) throw new Error('toPdf: at least one scene required');
   const font = options.font ?? null;
   if (font && !font.embeddable) throw new FontError(t('font.restricted'));
   const used = new Map<number, number>();
   const replacedChars = new Set<string>();
-  const ops: string[] = ['q', '1 J 1 j'];
-  // the shaded views' images first, under every line (ADR 0146): each an image XObject with its alpha as a soft mask, a detail's clipped to its circle
-  const images = scene.images ?? [];
-  images.forEach((img, i) => {
-    const clip = img.clip ? `${circlePolyline(img.clip.centre, img.clip.radius, 64).reduce<string[]>((acc, v, k, all) => (k % 2 === 0 ? [...acc, `${num(v * PT)} ${num(all[k + 1]! * PT)} ${k === 0 ? 'm' : 'l'}`] : acc), []).join(' ')} h W n ` : '';
-    ops.push(`q ${clip}${num(img.w * PT)} 0 0 ${num(img.h * PT)} ${num(img.at[0] * PT)} ${num(img.at[1] * PT)} cm /Im${i + 1} Do Q`);
+
+  // collect all images across all pages with global indexing
+  const allImages: { img: SceneImage; pageIndex: number; localIndex: number; globalIndex: number }[] = [];
+  scenes.forEach((sc, pageIndex) => {
+    (sc.images ?? []).forEach((img, localIndex) => {
+      allImages.push({ img, pageIndex, localIndex, globalIndex: allImages.length });
+    });
   });
-  for (const item of scene.items) {
-    if (item.kind === 'polyline') {
-      const s = LINE_STYLES[item.style];
-      const pts: string[] = [];
-      for (let i = 0; i + 1 < item.points.length; i += 2) pts.push(`${num(item.points[i]! * PT)} ${num(item.points[i + 1]! * PT)} ${i === 0 ? 'm' : 'l'}`);
-      if (pts.length < 2) continue;
-      if (item.filled) ops.push(`${pts.join(' ')} h f`);
-      else ops.push(`${num((item.width ?? s.width) * PT)} w ${s.dash ? `[${s.dash.map((d) => num(d * PT)).join(' ')}] 0 d` : '[] 0 d'} ${pts.join(' ')}${item.closed ? ' h' : ''} S`);
-    } else if (item.text !== '') {
-      const run = plan(item.text, font, used);
-      for (const c of run.replaced) replacedChars.add(c);
-      ops.push(textOps(item, run, font));
+
+  const pageContents: string[] = [];
+  scenes.forEach((sc, pageIndex) => {
+    const ops: string[] = ['q', '1 J 1 j'];
+    const pageImgs = allImages.filter((x) => x.pageIndex === pageIndex);
+    pageImgs.forEach(({ img, localIndex }) => {
+      const clip = img.clip ? `${circlePolyline(img.clip.centre, img.clip.radius, 64).reduce<string[]>((acc, v, k, all) => (k % 2 === 0 ? [...acc, `${num(v * PT)} ${num(all[k + 1]! * PT)} ${k === 0 ? 'm' : 'l'}`] : acc), []).join(' ')} h W n ` : '';
+      ops.push(`q ${clip}${num(img.w * PT)} 0 0 ${num(img.h * PT)} ${num(img.at[0] * PT)} ${num(img.at[1] * PT)} cm /Im${localIndex + 1} Do Q`);
+    });
+    for (const item of sc.items) {
+      if (item.kind === 'polyline') {
+        const s = LINE_STYLES[item.style] ?? LINE_STYLES.visible;
+        const pts: string[] = [];
+        for (let i = 0; i + 1 < item.points.length; i += 2) pts.push(`${num(item.points[i]! * PT)} ${num(item.points[i + 1]! * PT)} ${i === 0 ? 'm' : 'l'}`);
+        if (pts.length < 2) continue;
+        if (item.filled) ops.push(`${pts.join(' ')} h f`);
+        else ops.push(`${num((item.width ?? s.width) * PT)} w ${s.dash ? `[${s.dash.map((d) => num(d * PT)).join(' ')}] 0 d` : '[] 0 d'} ${pts.join(' ')}${item.closed ? ' h' : ''} S`);
+      } else if (item.text !== '') {
+        const run = plan(item.text, font, used);
+        for (const c of run.replaced) replacedChars.add(c);
+        ops.push(textOps(item, run, font));
+      }
     }
-  }
-  ops.push('Q');
-  const content = ops.join('\n') + '\n';
+    ops.push('Q');
+    pageContents.push(ops.join('\n') + '\n');
+  });
 
   const warnings: string[] = [];
   if (replacedChars.size > 0) {
@@ -147,37 +160,64 @@ export function toPdf(scene: Scene, options: PdfOptions = {}): PdfResult {
   // the objects, in order; 1-based numbers
   const objects: (string | Uint8Array)[][] = [];
   const add = (...parts: (string | Uint8Array)[]) => objects.push(parts) && objects.length;
-  const pageW = scene.width * PT;
-  const pageH = scene.height * PT;
+  const N = scenes.length;
   const embedded = font !== null && used.size > 0;
-  // the images come after the fonts: an image and its mask, two objects each
-  const firstImage = embedded ? 11 : 6;
-  const xobjects = images.length > 0 ? ` /XObject << ${images.map((_, i) => `/Im${i + 1} ${firstImage + 2 * i} 0 R`).join(' ')} >>` : '';
+  const fontObjCount = embedded ? 6 : 1;
+  const firstImage = 3 + 2 * N + fontObjCount;
+
+  // 1: Catalog
   add('<< /Type /Catalog /Pages 2 0 R >>');
-  add('<< /Type /Pages /Kids [3 0 R] /Count 1 >>');
-  add(`<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${num(pageW)} ${num(pageH)}] /Resources << /ProcSet [/PDF /Text${images.length > 0 ? ' /ImageC' : ''}] /Font << /F1 5 0 R${embedded ? ' /F2 6 0 R' : ''} >>${xobjects} >> /Contents 4 0 R >>`);
-  const body = latin1(content);
-  add(`<< /Length ${body.length} >>\nstream\n`, body, '\nendstream');
+  // 2: Pages root
+  const kidRefs = Array.from({ length: N }, (_, i) => `${3 + i} 0 R`).join(' ');
+  add(`<< /Type /Pages /Kids [${kidRefs}] /Count ${N} >>`);
+
+  // 3 .. 2 + N: Page objects
+  scenes.forEach((sc, i) => {
+    const pageW = (sc.width > 0 ? sc.width : 420) * PT;
+    const pageH = (sc.height > 0 ? sc.height : 297) * PT;
+    const pageImgs = allImages.filter((x) => x.pageIndex === i);
+    const hasImgs = pageImgs.length > 0;
+    const xobjects = hasImgs ? ` /XObject << ${pageImgs.map((x) => `/Im${x.localIndex + 1} ${firstImage + 2 * x.globalIndex} 0 R`).join(' ')} >>` : '';
+    const f1Id = 3 + 2 * N;
+    const f2Id = 4 + 2 * N;
+    const contentId = 3 + N + i;
+    add(`<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${num(pageW)} ${num(pageH)}] /Resources << /ProcSet [/PDF /Text${hasImgs ? ' /ImageC' : ''}] /Font << /F1 ${f1Id} 0 R${embedded ? ` /F2 ${f2Id} 0 R` : ''} >>${xobjects} >> /Contents ${contentId} 0 R >>`);
+  });
+
+  // 3 + N .. 2 + 2*N: Content streams
+  pageContents.forEach((c) => {
+    const body = latin1(c);
+    add(`<< /Length ${body.length} >>\nstream\n`, body, '\nendstream');
+  });
+
+  // Fonts
   add('<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>');
   if (embedded && font) {
     const file = subsetTrueType(font, used.keys());
     const name = `ABCDEF+${font.name}`;
     const per = 1000 / font.unitsPerEm;
     const widths = [...used.keys()].sort((a, b) => a - b).map((g) => `${g} [${Math.round(font.advance(g) * per)}]`);
-    add(`<< /Type /Font /Subtype /Type0 /BaseFont /${name} /Encoding /Identity-H /DescendantFonts [7 0 R] /ToUnicode 10 0 R >>`);
-    add(`<< /Type /Font /Subtype /CIDFontType2 /BaseFont /${name} /CIDSystemInfo << /Registry (Adobe) /Ordering (Identity) /Supplement 0 >> /FontDescriptor 8 0 R /DW 1000 /W [${widths.join(' ')}] /CIDToGIDMap /Identity >>`);
-    add(`<< /Type /FontDescriptor /FontName /${name} /Flags 4 /FontBBox [${font.bbox.map((v) => Math.round(v * per)).join(' ')}] /ItalicAngle 0 /Ascent ${Math.round(font.ascent * per)} /Descent ${Math.round(font.descent * per)} /CapHeight ${Math.round(font.capHeight * per)} /StemV 80 /FontFile2 9 0 R >>`);
+    const f2Id = 4 + 2 * N;
+    const cidId = f2Id + 1;
+    const descId = f2Id + 2;
+    const fileId = f2Id + 3;
+    const cmapId = f2Id + 4;
+    add(`<< /Type /Font /Subtype /Type0 /BaseFont /${name} /Encoding /Identity-H /DescendantFonts [${cidId} 0 R] /ToUnicode ${cmapId} 0 R >>`);
+    add(`<< /Type /Font /Subtype /CIDFontType2 /BaseFont /${name} /CIDSystemInfo << /Registry (Adobe) /Ordering (Identity) /Supplement 0 >> /FontDescriptor ${descId} 0 R /DW 1000 /W [${widths.join(' ')}] /CIDToGIDMap /Identity >>`);
+    add(`<< /Type /FontDescriptor /FontName /${name} /Flags 4 /FontBBox [${font.bbox.map((v) => Math.round(v * per)).join(' ')}] /ItalicAngle 0 /Ascent ${Math.round(font.ascent * per)} /Descent ${Math.round(font.descent * per)} /CapHeight ${Math.round(font.capHeight * per)} /StemV 80 /FontFile2 ${fileId} 0 R >>`);
     add(`<< /Length ${file.length} /Length1 ${file.length} >>\nstream\n`, file, '\nendstream');
     const cmap = latin1(toUnicode(used));
     add(`<< /Length ${cmap.length} >>\nstream\n`, cmap, '\nendstream');
   }
-  images.forEach((img, i) => {
-    // rows that begin with PNG's filter byte, deflated: what /Predictor 15 reads
+
+  // Images across all pages
+  allImages.forEach(({ img, globalIndex }) => {
     const decode = (colors: number) => `/Filter /FlateDecode /DecodeParms << /Predictor 15 /Colors ${colors} /BitsPerComponent 8 /Columns ${img.image.width} >>`;
-    const at = add(`<< /Type /XObject /Subtype /Image /Width ${img.image.width} /Height ${img.image.height} /ColorSpace /DeviceRGB /BitsPerComponent 8 ${decode(3)} /SMask ${firstImage + 2 * i + 1} 0 R /Length ${img.image.rgb.length} >>\nstream\n`, img.image.rgb, '\nendstream');
-    if (at !== firstImage + 2 * i) throw new Error('toPdf: the objects of the images are not where the page says');
+    const at = add(`<< /Type /XObject /Subtype /Image /Width ${img.image.width} /Height ${img.image.height} /ColorSpace /DeviceRGB /BitsPerComponent 8 ${decode(3)} /SMask ${firstImage + 2 * globalIndex + 1} 0 R /Length ${img.image.rgb.length} >>\nstream\n`, img.image.rgb, '\nendstream');
+    if (at !== firstImage + 2 * globalIndex) throw new Error('toPdf: the objects of the images are not where the page says');
     add(`<< /Type /XObject /Subtype /Image /Width ${img.image.width} /Height ${img.image.height} /ColorSpace /DeviceGray /BitsPerComponent 8 ${decode(1)} /Length ${img.image.alpha.length} >>\nstream\n`, img.image.alpha, '\nendstream');
   });
+
   const info = add(`<< /Title ${textString(options.title ?? '')} /Producer ${textString('3D-Builder')} >>`);
 
   const chunks: Uint8Array[] = [];
