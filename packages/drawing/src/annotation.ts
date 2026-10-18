@@ -74,10 +74,15 @@ export function threadMajor(size: string | undefined): number | null {
 export function threadItems(view: DrawingView, features: readonly ViewFeature[], placed: PlacedView): SceneItem[] {
   const out: SceneItem[] = [];
   for (const f of features) {
-    if (f.type !== 'circle' || !f.full || !f.hole?.thread) continue;
-    const major = threadMajor(f.hole.thread.size);
-    if (major === null || major / 2 <= f.radius) continue;
-    const r = major / 2;
+    if (f.type !== 'circle' || !f.full) continue;
+    let r = 0;
+    if (f.thread) {
+      r = f.thread.threadType === 'external' ? f.thread.minorDiameter / 2 : f.thread.majorDiameter / 2;
+    } else if (f.hole?.thread) {
+      const major = threadMajor(f.hole.thread.size);
+      if (major !== null && major / 2 > f.radius) r = major / 2;
+    }
+    if (r <= 0) continue;
     const arc: number[] = [];
     for (let i = 0; i <= 54; i++) {
       const a = Math.PI / 2 + ((3 * Math.PI) / 2) * (i / 54);

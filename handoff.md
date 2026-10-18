@@ -1,5 +1,192 @@
 # 交接文件
 
+- **【2026-10-18：藍圖 C7.4 實體分割特徵 (Split Body Feature) [ADR 0158](docs/adr/0158-split-body.md) — 已完成本地確效】**
+  - **背景與目標**：實作實體分割特徵（Split Body Feature，C7.4），使用基準面（Datum Plane）或實體平面（Planar Face）將單一或多個目標本體切分為多個獨立 Solid，並建立雙向半空間切割、包圍盒相交防禦、TNP 拓樸面名稱繼承與多本體拆分管理之完整閉環。
+  - **完成項目**：
+    1. **架構決策紀錄 (`docs/adr/0158-split-body.md`)**：
+       - 制定分割特徵規格，定義對偶無界半空間切割幾何演算、包圍盒 8 頂點符號距離快速相交判定與紅隊自我檢驗標準。
+    2. **資料模型 (`@3db/model`, Schema 59)**：
+       - `schema.ts`：升版 `SCHEMA_VERSION = 59`，新增 `SplitFeature` 並加入 `Feature` 聯合型別。
+       - `serialize.ts`：補齊 Schema 58 向後相容遷移函數。
+       - `commands.ts`：新增 `setSplit` 命令型別、`validateNewFeature` 非平面/非法目標檢查與 `mutate` 狀態更新。
+       - `params.ts`、`refs.ts`：補齊 `mapExprs` 與 `mapRefs` 對 `split` 的支援。
+    3. **雙語字典 (`@3db/i18n`)**：
+       - `zh-TW/features.ts` 與 `en/features.ts`：補齊 `feature.split*`、`cmd.split*` 與 `pm.split.*` 中英文字典。
+    4. **依賴拓樸 (`@3db/regen/dag.ts`)**：
+       - `parentsOf` 增加 `case 'split':`，正確建立對切割工具與目標本體的 DAG 依賴。
+    5. **幾何核心 (`@3db/kernel/kernel.ts`)**：
+       - 實作 `splitBody(targetId, plane)`：包圍盒 8 頂點符號距離相交防禦；`BRepPrimAPI_MakeHalfSpace` 構造正反向無界半空間；雙向 `BRepAlgoAPI_Cut` 切除；`ShapeUpgrade_UnifySameDomain` 合併共面；`splitSolids` 多實體自動拆分。
+    6. **再生引擎 (`@3db/regen/engine.ts`)**：
+       - 實作 `splitBodies(feature, set)`：支援基準面與實體平面工具解析；指定目標或自動偵測相交實體；調用幾何核心分割；自動生成子實體識別碼與繼承拓樸面持久名稱（`${f.id}:cut`）。
+    7. **介面屬性與狀態 (`apps/web`)**：
+       - `store.ts`：實作 `store.newSplit()`。
+       - `actions.ts`：註冊 `actions.split` 命令。
+       - `PropertyManager.tsx`：實作 `SplitPanel`（切割工具顯示、目標本體勾選盒）。
+       - `Icon.tsx` 與 `strings.ts`：補齊 `split` 圖示與標籤映射。
+    8. **自我紅隊測試 (`tests/phase1/split-body.test.ts`)**：
+       - 7 項測試全數 100% 綠燈，覆蓋標準基準面切割、偏置基準面切割、多實體定向切割、體積閉式解守恆（零 Mock）、未相交前置攔截、非平面工具拒絕與 WASM Heap 真值防呆。
+  - **確效與測試驗收**：
+    - `npm run typecheck`：**0 錯誤**。
+    - `node scripts/check-anti-patterns.mjs`：**全域 RSI 反模式靜態守門通過**。
+    - `node scripts/check-deps.mjs`：**Layering OK**。
+    - `node scripts/check-i18n.mjs`：**i18n OK**。
+    - `tests/phase1/split-body.test.ts`：**7 項測試全數通過 (100%)**。
+    - `tests/phase1/`：**10 個測試檔、121 項測試全數通過 (100%)**。
+  - **停在哪裡**：本地確效 100% 通過，待向使用者回報結果並獲得許可後執行 git push。
+
+- **【2026-10-18：藍圖 P2（C1.5 Phase A：草圖橢圓圖元與長出/旋轉特徵全鏈路實作）[ADR 0157](docs/adr/0157-sketch-ellipse.md) — 已完成本地確效】**
+  - **背景與目標**：依據藍圖推進規劃，完成草圖進階幾何圖元「橢圓（Ellipse）」的全鏈路閉環，支援 2D 草圖幾何求解映射、閉合輪廓與孔洞識別，並透過 OpenCASCADE 底層解析幾何 `gp_Elips`，使長出實體（Extrude Boss/Cut）、旋轉實體（Revolve）與斷面混成（Loft）全面支援橢圓。
+  - **完成項目**：
+    1. **架構決策紀錄 (`docs/adr/0157-sketch-ellipse.md`)**：
+       - 定義三點橢圓幾何模型（中心點、長軸頂點、短半徑純量），推導封閉解析體積真值公式與自適應正規化法則。
+    2. **資料模型 (`@3db/model`, Schema 58)**：
+       - `schema.ts`：升版 `SCHEMA_VERSION = 58`，新增 `SketchEntity.ellipse`。
+       - `sketch-rules.ts`：實作 `minorRadius > 0` 與中心/長軸重合端點檢驗。
+       - `serialize.ts`：補齊版本向後遷移 `57: (doc) => doc`。
+    3. **草圖幾何與輪廓識別 (`@3db/sketch`)**：
+       - `types.ts`：`SolvedGeometry` 與 `Segment2` 擴充 `ellipse` 類型。
+       - `planegcs.ts`：`readGeometry` 增加 `case 'ellipse'` 解析長短半徑與旋轉角度。
+       - `profiles.ts`：`sample`、`areaOf`、`findProfiles` 支援橢圓閉合輪廓識別與面積計算。
+       - `interact.ts`、`thin.ts`、`ops.ts`：補齊最近點偏心角求值、薄件位移與曲線點引用。
+    4. **幾何核心與再生引擎 (`@3db/kernel`, `@3db/regen`)**：
+       - `kernel.ts`：`Segment` 擴充 `ellipse`；`wire()` 呼叫 `gp_Elips` 構造拓樸邊；實作自適應正規化（若 $rx < ry$ 自動交換半徑並補正角度 $\theta \leftarrow \theta + \pi/2$，嚴格保證 OCCT 0 崩潰）。
+       - `sweepFloor.ts`：支援多邊形 64 點採樣與拉馬努金橢圓周長近似。
+       - `engine.ts`：`revolve` 擴充長短軸 4 個極值頂點採樣嚴防跨軸；螺牙軸向範圍取樣支援橢圓。
+    5. **介面屬性與多國語言 (`apps/web`, `packages/i18n`)**：
+       - `PropertyManager.tsx`：`ENTITY_LABEL` 加入 `ellipse: 'entity.ellipse'`。
+       - `overlay.ts`：約束標籤錨點計算補齊 `ellipse` 支援。
+       - `i18n`：`zh-TW` 與 `en` 字典新增 `entity.ellipse` 詞條。
+    6. **自我紅隊測試 (`tests/phase1/sketch-ellipse.test.ts`)**：
+       - 9 項測試全數 100% 綠燈：水平長出解析體積（零 Mock）、自適應半徑交換、45度旋轉長出、矩形板穿孔除料、帕普斯環體旋轉、跨軸攔截、非正半徑/重合點破壞性防禦，以及 WASM Heap 唯一真實路徑指標驗證。
+  - **確效與測試驗收**：
+    - `npm run typecheck`：**0 錯誤**。
+    - `node scripts/check-anti-patterns.mjs`：**全域 RSI 反模式靜態守門通過**。
+    - `node scripts/check-deps.mjs`：**Layering OK**。
+    - `node scripts/check-i18n.mjs`：**i18n OK**。
+    - `packages/model/test`：**9 個測試檔、160 項單元測試全數通過 (100%)**。
+    - `tests/phase1/`：**9 個測試檔、114 項測試全數通過 (100%)**。
+  - **停在哪裡**：本機全套測試通過，待向使用者回報並確認 git push。
+
+- **【2026-10-18：pstack poteto-mode 代碼品質深度審查與外科手術式優化 — 已提交並推送 `b288c62`（origin/main）】**
+  - **背景與目標**：依據 `@poteto` 的 `pstack-poteto-mode` 與 `pstack-unslop` 規範，對近期新增模組進行深度的行為契約鎖定、GC 垃圾分配消除與記憶體防禦硬化。
+  - **完成項目**：
+    1. **全物件 GPU 資源釋放健全化 (`packages/render/src/overlay.ts`)**：
+       - `disposeGroup` 原僅檢查 `THREE.Line` 與 `THREE.Points`，未處置 `THREE.Mesh` 與材質陣列（例如參考基準面 `planeGroup` 中包含的半透明 Mesh）。
+       - 升級為全 Object3D 遍歷檢查，安全釋放 BufferGeometry 與 Material/Material[]，徹底杜絕顯存洩漏。
+    2. **零暫態垃圾物件純量投影 (`packages/render/src/viewer.ts`)**：
+       - `setCosmeticThreads` 在生成 3/4 圓弧（36 segments）與盲孔端圈（32 segments）時，原在每步迴圈中使用 `origin.clone().addScaledVector(...)`，每次視圖刷新產生 130+ 個短期 `THREE.Vector3`。
+       - 重構為純量運算直接 push 數值到 positions 陣列，將視圖刷新時的臨時堆物件配置量直接降為 **0**。
+    3. **MECE 乾淨序列化防禦 (`packages/model/src/commands.ts`)**：
+       - `setCosmeticThread` 指令處理 patch 時，若選用的 `startEdge: undefined` 或 `reverse: false`，顯式執行 `delete f.startEdge` 與 `delete f.reverse`，確保 PartDoc JSON 維持乾淨無污染。
+    4. **行為契約鎖定測試 (`packages/model/test/model.test.ts`)**：
+       - 新增單元測試嚴格斷言可選欄位經更新後屬性確實被 delete（`'startEdge' in ct === false`），且非法面參考立即拋出 `CommandError`。
+    5. **介面操作提示 (`apps/web/src/components/PropertyManager.tsx`)**：
+       - 為清除邊線按鈕補上無障礙 `title={t('slot.clear')}` 提示。
+  - **確效與測試驗收**：
+    - `npm run typecheck`：**0 錯誤**。
+    - `node scripts/check-anti-patterns.mjs`：**全域 RSI 反模式靜態守門通過**。
+    - `node scripts/check-deps.mjs`：**Layering OK**。
+    - `node scripts/check-i18n.mjs`：**i18n OK**。
+    - `packages/model/test`：**9 個測試檔、160 項單元測試全數通過 (100%)**。
+    - `tests/phase3/cosmetic-thread.test.ts`：**8 項測試全數通過 (100%)**。
+  - **停在哪裡**：工作目錄乾淨（working tree clean），`main` 分支在 `b288c62` 已推送到遠端倉庫。
+
+- **【2026-10-18：C4.9 裝飾螺紋線 (Cosmetic Threads, [ADR 0156](docs/adr/0156-cosmetic-threads.md)) 全鏈路落地與 ISO 6410-1 出圖整合 — 已提交並推送 `2b376a0`（origin/main）】**
+  - **背景與定調**：
+    - 藍圖 C4.9 裝飾螺紋線（Cosmetic Threads）特徵落地。
+    - **第一性原理定調**：**絕不做 3D 實體螺旋掃出布林運算**。依據 `AGENTS.md §3.5` 量測事實，OCCT 之布林運算遇 B-spline 曲面必永久佔用 ~10 MiB WASM Heap 且永不歸還。採現代機械 CAD 業界標準架構：特徵樹完整參數化管理、3D 空間繪製輕量化標示線（3/4 圈細實線圓弧 + 盲孔終止線圈）、2D 工程圖依 ISO 6410-1 出圖，**再生 WASM Heap 成長量恆為 0.00 MiB**。
+    - **前置查證**：查證 D1 手動確效文件（早於 `fa807bb` 修訂）、B1 圓角失效語意（早於 `279b91a` 具備合格檢查與顯式拒絕 `feature.filletInvalid`）。
+  - **完成項目**：
+    1. **決策文件 (`docs/adr/0156-cosmetic-threads.md`)**：完整制定規格選型、數學推導、記憶體零洩漏保證與出圖規範。
+    2. **資料模型 (`@3db/model`, Schema 57)**：
+       - `packages/model/src/schema.ts`：新增 `CosmeticThreadFeature`，升版 `SCHEMA_VERSION = 57`。
+       - `commands.ts`：實作 `setCosmeticThread` 指令、參數校驗與拓樸防呆。
+       - `refs.ts` & `params.ts`：支援引用映射與參數化表達式求值。
+       - `serialize.ts`：新增向後相容遷移 `56: (doc) => doc`。
+       - `drawing.ts`：在 `ViewFeature.circle` 擴充 `thread` 規格。
+    3. **再生引擎 (`@3db/regen`)**：
+       - `engine.ts`：實作 `cosmeticThread` 解析方法，以純幾何拓樸探針與頂點投影萃取圓柱面軸線與長度，0 布林呼叫。
+       - `dag.ts`：`parentsOf` 加入 `cosmeticThread` 依賴關聯解析。
+       - `drawingDimensions.ts`：端視圖圓柱投影自動匹配帶入 `thread` 規格。
+    4. **出圖註記 (`@3db/drawing`)**：
+       - `annotation.ts`：`threadItems` 支援 `f.thread`，自動繪製 ISO 6410-1 標準之 3/4 圈細實線圓弧（第一象限開口，$\pi/2 \to 2\pi$），外螺紋取小徑、內螺紋取大徑。
+    5. **前端與渲染 (`apps/web`, `@3db/render`)**：
+       - `viewer.ts`：實作 3D 輕量化標示線渲染。
+       - `PropertyManager.tsx`：新增 `CosmeticThreadPanel`（標準規格下拉、公/母螺紋切換、貫穿/給定深度）。
+       - `kernel.worker.ts` & `protocol.ts`：Worker 雙向傳輸對齊。
+       - `Viewport.tsx`：響應式渲染聯動。
+       - `Icon.tsx` & `strings.ts`：新增專屬 SVG 圖示與多語系標籤。
+    6. **自我紅隊破壞性測試 (`tests/phase3/cosmetic-thread.test.ts`)**：
+       - 非圓柱面、負/零深度、大徑 $\le$ 小徑即時拋錯阻擋（輸入破壞防禦）。
+       - 實體探針物理萃取，M8 外螺紋小徑精確推導自 ISO 68-1 基本牙型（6.466 mm），零 Mock 數據。
+       - WASM 真值記憶體防禦：顯式斷言基準指標 `expect(initialHeap).toBeGreaterThan(0)`，50 次 rebuild 實測 WASM Heap 成長量為 **0.00 MiB**。
+       - 2D 工程圖端視圖投影與 ISO 6410-1 細實線圓弧註記驗證。
+  - **確效與測試驗收**：
+    - `npm run typecheck`：**0 錯誤**。
+    - `node scripts/check-anti-patterns.mjs`：**全數通過**。
+    - `node scripts/check-deps.mjs`：**Layering OK**。
+    - `node scripts/check-i18n.mjs`：**i18n OK**。
+    - `tests/phase3/cosmetic-thread.test.ts`：**8 項測試全數通過**。
+    - 既有實體螺牙測試 (`tests/phase3/thread*.test.ts`)：**21 項全數通過 (0 regression)**。
+  - **停在哪裡**：`main` 分支在 `2b376a0`（含 ADR 與測試）已推送到遠端倉庫。
+
+- **【查證與進度校正 (Verification & Reality Grounding, 2026-10-18)】**：
+  - **重要第一性原理查證**：經 Git 歷史與代碼實測查證，前次建議清單之項目早於先前提交中全數竣工：
+    1. 局部剖視圖 (Broken-out Section, B1/D-I5)：已於 `4f8968b1`、`1bc21c4`、`10531e8` 完成（Schema 21，22 項測試全過）。
+    2. 工程圖三大交互功能 (D-I8)：鎖定視圖（`2abdaf0`）、隱藏邊（`22463fe`）、相切邊（`2130f85`）全數竣工（22 項測試全過）。
+    3. 尺寸自動排列納入座標尺寸：已於 `18e24a3` (B2.5) 竣工。
+    4. 斷裂/裁剪/輔助視圖 (B2.7) 與多圖頁 (B2.8)：已於 `7118420`、`756b7ae` 竣工。
+    5. 全量 Phase 5 工程圖測試：49 個測試檔、525 項測試 100% 全數通過（0 失敗）。
+  - **真正的後續下一步建議 (True Next Directions)**：
+    1. **方向 A（藍圖 P2 核心擴充）：草圖進階幾何（C1.5 Spline 不規則曲線、文字與草圖複製排列）**。
+    2. **方向 B（藍圖 P2 核心擴充）：多本體布林與實體分割組合工具（C7.3–C7.4）**。
+    3. **方向 C（鈑金製造能力補完）：凸折 (Jog)、斷開角落與長圓/撕裂離隙**。
+    4. **方向 D（品質驗收收斂）：Phase 4b/5/6/7 B 段實機對照驗收清單整理**。
+  - **背景與決策**：
+    - 使用者提出「工程圖的PDF中文字型需要預設內建多種，輸出要確保不會出亂碼」。
+    - 啟動 AI 智囊團（反駁者、本質追問者、機會發現者、外行人、無情執行者）審查，透過反向提問（Clarify Ambiguities）確認三大決策：
+      1. **A1 (分發架構)**：混合架構（開箱預設開源黑體 + 支援現代瀏覽器 Local Font Access API 存取本機字型如微軟正黑體、標楷體 + 支援手動上傳檔案）。
+      2. **A2 (風格範圍)**：內建 4 種工業標準風格（黑體 sans、楷體 kai、宋體 serif、仿宋體 fangsong）。
+      3. **A3 (持久化)**：儲存於工程圖文件本身（`DrawingDoc` / `DrawingSheet`），圖紙存檔自動持久化。
+  - **完成項目**：
+    1. **核心匯出引擎零亂碼防禦 (`packages/drawing/src/pdf.ts`)**：
+       - 徹底修復原本 `plan` 函式「只要一個字符缺字，整行文字強制降級為 Helvetica 導致整行漢字全變問號 `?`」之全有全無雪崩缺陷。
+       - 升級為 TrueType 主力渲染：支援常見工程符號自動等價歸一化（如 `⌀` U+2300 <-> `Ø` U+00D8），缺字字符安全佔位並回報 warning，其餘所有漢字 100% 完整保留渲染。
+    2. **字型風格規格表 (`packages/drawing/src/fonts.ts`)**：
+       - 定義 4 種風格的 PostScript/Family 系統候選匹配清單，使用 Unicode 轉義表示候選中文字串，100% 通過 `check-i18n.mjs` 靜態守門。
+    3. **圖紙模型與持久化 (`packages/model/src/drawing.ts`)**：
+       - `DrawingSheet` 新增 `pdfFont?: string`；指令 `setSheet` 與 `setPage` 接線支援 `pdfFont?: string | null`；`mutateDrawing` 支援更新與清除；存檔自動序列化。
+    4. **字型解析與快取管理器 (`apps/web/src/fonts/fontManager.ts`)**：
+       - 整合記憶體快取、Chromium `window.queryLocalFonts()` 系統字型存取、Node/Windows 本地系統字型讀取、Web 開源字型按需延遲載入（Lazy fetch），支援 4 秒逾時保護。
+    5. **狀態層開箱預熱 (`apps/web/src/state/drawing.ts`)**：
+       - `DrawingStore` 預設 `pdfFont: 'sans'`（黑體）並在建構式背景預熱；新增 `selectPdfFont(fontId)`；`chooseFont`、`clearFont` 自動同步至當前頁面 `sheet.pdfFont`；`exportPdf` 異步等待字型就緒。
+    6. **屬性面板 UI 升級 (`apps/web/src/components/DrawingPanel.tsx`)**：
+       - 提供 4 種風格下拉選單 + 自訂選項；保留 `data-action="chooseFont"` 與 `data-field="pdfFont"`，100% 相容既有 e2e 測試。
+    7. **多語系支援 (`packages/i18n/`)**：
+       - 新增中英雙語之字型風格與自訂檔案鍵值。
+  - **確效與測試驗收**：
+    - `npm run typecheck`：**0 錯誤**。
+    - `npm run lint:rules ; npm run lint:deps ; npm run lint:i18n`：**全數通過**。
+    - `npx vitest run tests/phase5/`：**49 個測試檔、525 項測試全數通過（0 失敗，1 略過）**。
+    - `npm test`（全 Repo）：**239 個測試檔、3000 項測試全數通過（0 失敗，25 略過）**。
+  - **停在哪裡**：工作目錄乾淨（working tree clean），無做到一半的程式；`main` 分支在 `ee98a4e`（含 `handoff.md`）已推送到遠端倉庫。下一棒可依藍圖或後續需求繼續進行。
+
+- **【2026-10-18：B2.8 Shape 2 多圖頁 (Multi-sheet Drawing) 全鏈路實作與確效（Antigravity）— 已提交並推送 `756b7ae`（origin/main）】**
+  - **背景與決策**：接手 `handoff.md` 任務，落實決策單 `docs/decisions-e1p2-b28-shape2.html`（Q1–Q8 全選 Option A）與 SSOT 原則。
+  - **完成項目**：
+    1. **Q3 Option A（底部頁籤列）**：建立 `apps/web/src/components/SheetTabs.tsx`，比照 SolidWorks 慣例設置於畫面最底部（`[ 圖紙 1 ] [ 圖紙 2 ] ... [ + ]`），支援雙擊行內輸入重新命名、右鍵選單（重新命名、刪除、圖紙屬性）、`[ + ]` 新增頁面，並支援作為拖曳視圖的放下目標（Drop Target）。
+    2. **Q4 Option A（防刪最後一頁）**：在 `packages/model/src/drawing.ts` 的 `deletePage` 指令中顯式加入防禦防呆——剩餘 1 頁時強制拋出 `CommandError`，拒絕刪除；介面層右鍵選單在剩 1 頁時禁用「刪除圖紙」選項。
+    3. **Q5 Option A（跨頁搬移視圖無孤兒參考）**：模型層實作 `moveViewToPage` 指令，將所選視圖身上的尺寸（`dimensions`）、註記（`annotations`）、表格（`tables`）、表面符號（`surfaceFinishes`）隨同移轉至目標頁面，原頁面徹底清除，杜絕懸空/孤兒參考崩潰；右鍵選單提供「移動至圖紙」子選單；Viewport 拖放視圖至分頁頁籤放開直接跨頁轉移並切換至該頁。
+    4. **Q6 Option A（單一多頁 PDF 匯出）**：升級 `packages/drawing/src/pdf.ts` 之 `toPdf(sceneOrScenes, options)`，重構 Catalog/Pages 樹結構（`/Kids`, `/Count`），逐頁配置獨立的 `MediaBox` 與 `/Contents`，跨頁共用 Type 1/CID 內嵌字型及 XObject 圖像資源。
+    5. **Q7 Option A（逐頁圖紙屬性獨立設定）**：`DrawingPanel`、`DimensionPanel`、`AnnotationPanel`、`DrawingViewport` 全面對齊當前活動頁面（`curPage = page(drw.doc, activePageIndex)`），圖紙大小、方向、比例、投影視角、單位、標題欄與標註樣式開放逐頁獨立設定。
+    6. **狀態層全域預算快取 (`state/drawing.ts`)**：`activePageIndex` 集中管理；`loadSources`、`computeLines`、`computeDimensionData`、`refreshBoms` 遍歷所有圖紙視圖（`allViews`）進行預算快取，切換圖紙零延遲；`scene(pageIndex)` 隔離單頁渲染；`exportPdf` 匯出全圖紙單一多頁 PDF。
+  - **確效與測試**：
+    - 新增 `tests/phase5/drawing-pages-multisheet.test.ts`（4 項全過，涵蓋逐頁設定、防刪最後一頁拋錯、無孤兒跨頁轉移、多頁 PDF 真實結構與 MediaBox 解析驗證）。
+    - `npm run typecheck`：**0 錯誤**。
+    - `npm run lint:rules; npm run lint:deps; npm run lint:i18n`：**全數通過**。
+    - `npx vitest run tests/phase5/`：**49 個測試檔案、523 項測試全數通過（0 失敗，1 略過）**。
+  - **停在哪裡**：工作目錄乾淨（working tree clean），無做到一半的程式；`main` 分支在 `756b7ae` 已推送到遠端倉庫。下一棒可依藍圖或後續需求繼續進行。
+
 - **【2026-10-18：E1 側邊欄收尾——補上瀏覽器驗證，並落地 §2.2 選取切換（E1-P3，[ADR 0155](docs/adr/0155-sidebar-tabs-hidden-contract.md)）— 尚未提交】** 使用者指示「把 verify:ui 跑起來補上瀏覽器驗證，並開始動 §2.2 的選取切換」。在 worktree `D:\Self-developed_Apps\G3\3DB-sidebar-parity`（分支 `worktree-sidebar-parity`）完成。背景：E1-P1（`4ba2765`）與 E1-P2（`6831a44`、`db7432b`）已併入 `main`（`0e8ba1c`）；本次是「補驗證＋§2.2（零件範圍）」。
   - **verify:ui（補上 E1 的瀏覽器驗證）**：全量 **143 支腳本 → 118 過／25 敗**。新增 `tests/e2e/manual-sidebar-tabs.js`（**10 步全過、0 Console 錯誤**）：兩分頁存在與 aria 狀態、切換只隱藏不卸載（隱藏窗格內 `data-field` 仍可達）、工作階段自動進屬性頁且 FeatureManager 仍可點、✓ 提交後回樹頁、**圖面點面→自動進屬性頁**（名稱／所屬特徵／實測面積／中心，全部讀自畫面與 store）、✓ 清除→回樹頁、樹內點選留在樹頁、特徵屬性頁＋「編輯特徵」進入工作階段、Ctrl 多選兩邊逐邊長度、組合件兩分頁與搜尋列過濾。
   - **§2.2 選取驅動切換（零件，已完成並驗證）**：點圖面（面／邊／頂點）→ 側邊欄自動切到 PropertyManager，顯示標題列（圖示＋種類＋名稱＋✓）與兩個可收合群組框（識別／量測）；無選取時回樹頁；`✓` 清除選取回樹頁；樹內點選留在樹頁。新檔：`apps/web/src/state/selectionFacts.ts`（純邏輯：選取互斥、`pickKey`、同名以指紋消歧——不能分辨回 null 不猜、`measureTargetsOf`）、`SelectionPanel.tsx`、`PMGroup.tsx`（自 DrawingPanel 抽出，兩邊共用）、`tests/phase8/selection-facts.test.ts` 9 項。改動：`store.ts`（`selectionFacts` 狀態，`api.measure` 量開放中零件的**真實**資料，`selectionFactsSeq` 丟棄過期回答）、`App.tsx`（切換 effect 與分頁啟用條件）、`MeasurePanel.tsx`（匯出 `writer`/`typeName` 供共用）、`DrawingPanel.tsx`、i18n `sel.*` 14 鍵（zh-TW／en）。檔案格式與 Schema 不動。
@@ -8,6 +195,7 @@
   - **已知限制**：① §2.2 本次只到**零件**——組合件點選（`asm.selected`）仍啟用不了屬性頁（依計畫 §8「先零件再做組合件」），6 個模式面板維持浮動。② 特徵屬性頁只顯示識別（名稱／類型／狀態）＋編輯入口，**未**把 40 多種特徵的參數收進群組框（要動 3262 行的 `PropertyManager.tsx`，另案評估）。③ 元件不存在（同名不能分辨）時明說「找不到元素」，不顯示別顆面的資料。
   - **環境坑（沿用並證實）**：本機 5391 上的 dev server 根目錄是**主倉庫** `D:\Self-developed_Apps\G3\3D-Builder`（別的工作階段留的），驗本 worktree 必須自起（本次用 5395＋`VERIFY_UI_ORIGIN`，debug/samples 埠 9415/5415）；自起 server 觸發 Vite dep 再最佳化時，清 `node_modules/.vite/deps_temp_*`（61 檔）會被環境的 safe-delete 守衛攔截並 crash server——解法是先用 Bash `rm -rf` 清掉殘留 temp 再冷啟動。
   - **停在哪裡**：本條目與全部改動**尚未 commit**（工作樹有变更）；依 §7 约定，**推送前先問使用者**（H-11 資安與數據隱私盤點）。下一步：組合件 §2.2、B2.8 shape 2（工程圖 e2e 遷移）、特徵參數群組框（另案）。
+
 
 - **【2026-10-15 夜：桌面版安裝檔重建、整合 F: 的檔案（Claude）】**
   - **重建**：以 `main` 的 `10249a5`（含 F: 全部提交）執行 `npm run build -w @3db/desktop`，更新 `apps/desktop/src-tauri/target/release/desktop.exe`（13,885,952 位元組）與 `bundle/nsis/3D-Builder_0.2.2_x64-setup.exe`（11,965,187 位元組）；版本號維持 0.2.2，舊的 0.2.0、0.2.1 安裝檔未動。新版網頁打包的雜湊檔名（`index-C2ELDDv0.js` 等七個）都確實嵌在 exe 裡；啟動後 10 秒仍存活、視窗標題 `3D-Builder`。這兩個檔案被 git 忽略（`target/`），不在版本庫裡。
@@ -19,7 +207,7 @@
     2. 深度：**先做輸入數值**，點孔中心或邊的深度**之後再加**（不要推翻第一步的資料結構：深度欄位要能之後接受一個參照）。
     - 需要新的視圖種類（或剖面的一種）與工程圖 Schema 升版（目前 19）；做法參考 [ADR 0143](docs/adr/0143-drawing-stepped-aligned-section.md)。紅隊重點：範圍必須是封閉、不自相交的圖形；深度不合理（零、負、超出零件）明確拋錯，不默默修正；局部剖視不能自己當父視圖以外的來源。
   - **小功能（D-I8）**：
-    3. 相切邊：**新視圖預設不畫**，視圖屬性裡可以打開（現有圖完全不變；新增視圖欄位，缺省＝不畫）。
+    3. 相切邊：**新視圖預設不畫**，視圖屬性裡可以打開（現有圖完全不變；新增視圖欄位，缺省＝不畫）。**→ 2026-10-19 使用者裁定修訂：改為預設繪製（`showTangentEdges: false` 才不畫），以滿足「現有圖完全不變」；見文末 〈2026-10-17〉 日誌。**
     4. 鎖定視圖：**鎖位置與比例**；尺寸與註記照常可編輯；拖動或改比例被擋時要說明「這個視圖已鎖定」。
     5. 隱藏個別的邊：**只在選的那個視圖**；以邊的持久名稱記錄，零件改了只要邊還在就仍然藏著；要有取消隱藏的清單。
   - **尺寸**：
@@ -388,6 +576,40 @@
   - **螺牙**：審查發現的問題已由 10-11 的 `d1dc276` 修掉，其後有標準螺紋規格庫（`c4de3ba`）與 `f832934`；這次沒有再動螺牙。
   - **待使用者決定**：客戶零件 `real-part1.json`、`real-part1-fixed.json`、`part1-demo.json` 仍在已推送的 `c7f46be` 歷史裡（私有倉庫）；要徹底清除需改寫歷史並強制推送，無法復原。
   - **下一步建議**：① 筆電 `git pull`；② 修上面 6 項 `verify:ui` 失敗（先修 `choose`，其餘先用 `--only <腳本>` 單獨重現、二分到是哪個提交造成）；③ 決定客戶零件歷史的處理。
+
+- **【2026-10-17：未做/待裁選擇題重整、8 項裁定執行、B1 壓花/螺牙圓角修正；側邊欄 E1-P1＋工程圖 B2.3 在 worktree（`kernel.ts` 已還原並重寫、驗證通過）（Claude）】**
+  - **已提交並推送**：`76c4081..2abdaf0`（3 個，含 B2.1 鎖定視圖）、`279b91a`（圓角結果過 `BRepCheck` 才收，不再回傳無效實體）、`6a56951`（文件）。目前 `main` = `origin/main` = `6a56951`，主資料夾工作樹乾淨（除了別的工作階段見下）。
+  - **新增文件（`6a56951`）**：`docs/decisions-2026-10-19.html`（8 題：A1／B1／B2／C1／D1／D2／E1／E2，全部採建議）、`docs/verify-user-list.html`（20 項「使用者必做」實機驗證清單，取自 `manual-verification.html` 的 `data-auto=user/part`）、`docs/sidebar-parity-plan.md`（E1 側邊欄比照 ADR 0133 的範圍與方案）。
+  - **裁定執行**：**A1** 已推送；**B1** 重現壓花/螺牙波浪邊下圓角——**沒有 WASM 崩潰**，而是 `Kernel.fillet` 只檢查 `mk.IsDone()`、缺 `BRepCheck`，**靜默回傳無效實體**；已加合格檢查、`feature.filletInvalid` i18n（中/英）、`tests/phase3/knurl.test.ts` 回歸（67 過，含反向對照）；**B2** 已於 Chrome 開 `3DB實機確認/輸出/基板加工圖.pdf` 供三項目視檢查；**D1** 查證 C22（`482a816`）、E4（`fa807bb`）早已修正、無需再改；**D2** ADR 0145 三項以清單為準、無需再改；**E2** 視角方塊不動。
+  - **E1 方向（使用者 2026-10-19 裁定）**：指令維持在側邊欄；組合件只換外框成兩分頁、6 個模式面板維持浮動；先零件（P1）通過驗證再做組合件。
+  - **worktree**：`D:\Self-developed_Apps\G3\3DB-sidebar-parity`（分支 `worktree-sidebar-parity`）。**E1-P1 與 B2.3–B2.7（斷裂視圖、裁剪視圖、輔助視圖）皆已提交並推送**（`4ba2765` E1-P1、`2130f85` B2.3、`dd17e91` B2.4、`18e24a3` B2.5、`d2fb890` B2.6、`19840f1` B2.7 斷裂視圖、`dc0945d` B2.7 裁剪視圖、`7118420` B2.7 輔助視圖、`1fdaa91` 修裁剪視圖縮放、`432bb1f` B2.8 多圖頁（shape 1）、`6831a44` E1-P2 側邊欄兩分頁、`db7432b` E1-P2 補完（組合件樹搜尋列）；`origin/worktree-sidebar-parity` = `db7432b`）。
+  - **✅ B2.3 相切邊：已還原並重寫完成（2026-10-19）**。先前 worktree 的 `packages/kernel/src/kernel.ts` 曾被截斷成 2669 行（`projectView` 之後全失，含 `sectionView`）；已 `git checkout --` 還原為 HEAD 的 4540 行，再乾淨重寫（**未使用 `as any` 等型別抑制**）。做法：`Kernel.projectView` 把 HLR 的 `Rg1LineVCompound`／`Rg1LineHCompound`（相切邊，**含隱藏者**）自 `visible`／`hidden` 移出，放進新的 `ProjectedView.tangent`（僅非空時附上）；`ViewLines.tangent` 承接（detail 視圖會裁圓）；`scene.ts` 以細線繪製（塗彩視圖不畫）；`ViewCommon.showTangentEdges?`＋`ViewPatch`＋`mutateDrawing` 分支（修正前一版的 broken `else if` 鏈）；`DrawingPanel.tsx` 勾選框。
+  - **決定修訂（2026-10-19，使用者裁定）**：相切邊**預設改為繪製**（`showTangentEdges` 缺省＝畫，即變更前的行為；設 `false` 才不畫），以滿足「現有圖完全不變」。此**推翻**先前的「缺省＝不畫」（本檔第 13 行第 3 項）。唯一副作用：原本混在 `hidden` 的隱藏相切邊，由「虛線」改為「細實線」。
+  - **驗證（worktree）**：`npm run typecheck` = 0；`lint:rules`／`lint:deps`／`lint:i18n` 全過；新測試 `tests/phase5/drawing-tangent-edges.test.ts` **7/7**（實體真值：有圓角的板有相切邊、純方塊沒有、且不與 `visible` 重複）；`tests/phase5` 全套 **43 檔、454 過、1 略過、0 失敗**（塗彩記憶體量測 56.38 MiB／對照 366.31 MiB 與 §3.5 基準一致，未新增洩漏）；受影響的 phase3／4b／7／8 檔 **52 過**。
+  - **主資料夾未提交**：另一工作階段的 **B2.2 隱藏個別的邊**（9 個檔案），使主資料夾 `npm run typecheck` 在 `apps/web/src/components/DrawingViewport.tsx` 的 `hideEdge`（448／642／1038）紅燈；非本工作階段造成、**未動**。（worktree 不含 B2.2，故其上列驗證不受此影響。）
+  - **已知測試問題**：worktree 的 `npm run verify:ui` 曾在 25 分鐘逾時；`manual-drawing-title-style.js` 單獨跑即失敗（既存、與本次無關，待乾淨 worktree 重現確認）。原暫存腳本 `fix_drawing.ts` 已移出 worktree 至 `C:\Users\3kids\AppData\Local\Temp\opencode\fix_drawing.scratch.ts`（未刪除）。
+  - **✅ B2.4／B2.5／B2.6 已完成並推送（2026-10-19，Claude）**：
+    - **B2.4（`dd17e91`）尺寸公差子選單**：尺寸右鍵只加「公差」子選單（無／上下限／MAX／MIN／配合），沿用既有 `DimensionTolerance` 格式、不改檔案格式；「反轉箭頭」依裁定不做。新增 `packages/drawing/src/dimension.ts` 的 `toleranceForChoice`／`fitAllowed`（角度與座標尺寸**在模型層**拒絕配合＝真值）。子選單**內嵌**而非飛出（`.context-menu` 有 `overflow-y:auto`，飛出會被裁掉）。測試 `tests/phase5/drawing-menu-tolerance.test.ts` 5/5（含模型拒絕訊息真值）。
+    - **B2.5（`18e24a3`）自動排列納入座標尺寸**：`arrange.ts` 新增 `way`／`span`；座標尺寸與線性尺寸依「視圖｜方向｜邊」同組往外排、步距一致不互蓋；對正（aligned）不排；座標尺寸只改 `offset`（模型拒絕無關的 `slide`）。其餘尺寸種類行為不變。測試 `tests/phase5/drawing-arrange.test.ts` 4/4（含 25 組種子固定隨機）。
+    - **B2.6（`d2fb890`）四項全部**：① 組合件「正視於」在**選整個零組件**時看向該零組件自己的前基準面（`assembly.ts` `normalFrame`，含它的位姿；空選＝維持等角視圖）；② 工程圖頂端新增「工具」頁籤（選項／快速鍵），快速鍵清單取自 `ACTIONS` 的 drawing 群組（與快速鍵對話框同一份登錄檔，所見即生效）；③ 孔表與零件表有自己的右鍵選單（零件表多「氣球」兩項，皆用既有指令）；④ 剖面「依數值」新增角度欄位（0° 走原本路徑＝零回歸，非 0° 以 `lineAcrossBox` 建旋轉割線）。
+    - **驗證（worktree）**：`npm run typecheck` = 0；`lint:rules`／`lint:deps`／`lint:i18n` 全過（B2.6 期間一處 i18n 違規已修：**JSX 註解 `{/* 工具 … */}` 內的中文被 ratchet 計為內文**，因它不以 `/*` 開頭；改為英文即可）；全部單元測試 **232 檔、2926 過、25 略過、0 失敗**（此為新增下列 phase8 測試之前的一次全量）；`tests/phase5`＋`tests/phase8` **66 檔、1115 過、1 略過**。
+    - **B2.6 的組合件個案（尚缺視覺確認）**：另加 `tests/phase8/asm-view-normal-filter.test.ts` 邊界測試（選零組件的路徑不得回**組合件自己**的基準面、已選的基準面優先）與 e2e `manual-asm-view-normal.js` 第 10 步（以模型算出的「該零組件前基準面」比對相機方向）。該腳本屬**手動**驗收，**待 `verify:ui`／實機跑過才算視覺確認**。
+    - **✅ B2.7 斷裂視圖：已完成並推送（`19840f1`，2026-10-19）**——D-I6 三種視圖的第一種（使用者裁定：三種全做、逐一提交，並**先升 Schema v21 → v22**）。**不是新的視圖種類，而是擺放方式的分段映射**：`ViewCommon.break?: { axis: 'x'|'y'; from; to; gap? }`（`BREAK_GAP = 2`），`layout.ts` 以純函式 `brokenAt`／`unbrokenAt` 讓 `toSheet`／`fromSheet` 分段，**圖上長度 = 模型長度 −（to − from）+ gap**。因為每個視圖的每個項目都經過 `toSheet`，線／剖面線／尺寸／註記／表格／氣球**自動一起跟隨**，沒有第二套座標。跨越帶的線以新的 `geometry.ts` `clipToBand` 在帶的兩端精確切斷（不橫跨缺口）；帶的兩端各畫一條細**斷裂線**（之字，ISO 128-30）。`checkBreak` 在命令層當場拒絕非 x/y、`to ≤ from`、NaN／Infinity、`gap < 0`（顯式錯誤，不夾取、不四捨五入）。**紅隊防呆**：尺寸數值取自 `elements`（`own` 只管畫在哪），且帶外 `fromSheet(toSheet(v)) = v` 精確成立，測試直接鎖定「**圖上是 32、模型是 40**」。**Schema 21 → 22**（遷移空轉、舊程式拒開新檔），並同步 `drawing-local-section.test.ts`／`drawing-linked.test.ts` 的版本斷言。介面：視圖屬性多一列（方向／從／到／缺口）＋「斷裂視圖」「取消斷裂」兩個按鈕。ADR [0151](docs/adr/0151-drawing-break-view.md)。
+    - **B2.7 驗證（worktree）**：`npm run typecheck` = 0；`lint:rules`／`lint:deps`／`lint:i18n` 全過；新測試 `tests/phase5/drawing-break-view.test.ts` **15/15**（含存檔讀回、v21→v22 升級、切斷座標 84／94／96／116、斷裂線、塗彩降級）；全量 vitest **233 檔、2942 過、25 略過、0 失敗**。**未執行**：`verify:ui`（本機逾時，與 B2.6 相同）→ 斷裂的**介面操作未經瀏覽器驗證**。
+    - **B2.7 已知限制（明示，非默默降級）**：斷裂視圖**不塗彩**（塗彩是整張零件的一張圖，`SceneImage` 只有一個圓形裁切欄位、無法沿帶切開；照舊以壓縮後外框貼圖會得到變形的錯圖，故 `viewImage` 回 `null`）；每個視圖只有**一個**斷裂帶；帶內座標吸附到帶的近端。
+    - **✅ B2.7 裁剪視圖：已完成並推送（`dc0945d`，2026-10-19）**——D-I6 三種視圖的第二種。**新的視圖種類 `crop`**：`CropDrawingView { kind: 'crop'; parent: Id; outline: ClosedOutline }`，其中 `ClosedOutline`（矩形／圓／封閉多邊形）自局部剖視的輪廓**抽出共用**（兩者驗證共用 `checkOutline`）。**母視圖必須是局部剖視圖**（紅隊：`checkView` 的 crop 分支要求 `parent.kind === 'sectionLocal'`，否則命令層拋 `drawing.cropNeedsLocalSection`；母視圖根本不存在則由既有的 `drawing.noParent` 先攔截）。**不切任何東西**：`resolveLines` 的 crop 分支把母視圖**已解析的線**（visible／hidden／cut／center／tangent）以新的 `geometry.ts` `clipToOutline` 裁到輪廓內、`box` 取 `outlineBox(輪廓)`，故**視圖大小＝輪廓大小**（與母視圖多大無關），而母視圖的剖切面帶過來，所以裁剪視圖內**照樣畫剖面線**。比例沿用母視圖（`scaleOf` 加 `crop` 分支），擺放與母視圖對齊（`sideOf` 回 `'right'`、走 `section` 那條 `spot` 分支，**非** detail 的齊平規則）。**不塗彩**（`viewImage` 對 crop 回 `null`，且 `resolveLines` 不把母視圖的 `shade` 帶過來）。`scene.ts` 新增 `cropItems` 在**母視圖上**以細封閉折線畫輪廓；局部剖視的輪廓繪製改為共用 `outlinePoints`（兩者同源）。介面：工具列加「裁剪視圖」鈕（`drawingUi.toolCrop`），在局部剖視圖上拖矩形→移動預覽→點一下放置（`Drag`／`DrawPlacement` 各加 `crop` 分支、`addCrop`），母視圖不對時即時提示 `drawingUi.hint.cropParent`（命令層仍是最終防線）。**Schema 22 → 23**（遷移空轉、舊程式拒開新檔），並同步三處版本斷言測試為 23。ADR [0152](docs/adr/0152-drawing-crop-view.md)。
+    - **裁剪視圖驗證（worktree）**：`npm run typecheck` = 0；`lint:rules`／`lint:deps`／`lint:i18n` 全過；新測試 `tests/phase5/drawing-crop-view.test.ts` **16/16**（含母視圖限局部剖的三類拒絕、輪廓裁切 y=5 線 0…40 → 0…20、外框＝輪廓、比例 1:2 → 圖上 10×10、塗彩對照組（同一組線在 section 上有圖／在 crop 上為 null）、剖切面帶過來會加剖面線、buildScene 細封閉折線比對照組多 1 條、v22→v23 升級）；`tests/phase5` **46 檔、491 過、1 略過、0 失敗**；全量 vitest **234 檔、2958 過、25 略過、0 失敗**。**未執行**：`verify:ui`（本機逾時）→ 裁剪的**介面操作未經瀏覽器驗證**。
+    - **裁剪視圖已知限制**：不塗彩；母視圖**只能是局部剖視圖**（不能裁一般視圖或一般剖視圖，規格如此）；裁剪視圖不能再被裁剪、也不能當其他衍生視圖的母視圖；介面目前只提供**矩形**拖曳（圓／多邊形的輪廓在模型層與繪製層已支援、未接工具列）；無自己的標題字母（僅以視圖名稱標示）。
+    - **✅ B2.7 輔助視圖：已完成並推送（`7118420`，2026-10-19）**——D-I6 三種視圖的**第三種（最後一種）**，採使用者 2026-10-19 裁定的**補助線法**（在母視圖上任意畫一條補助線／折線、垂直於它投影，**不依賴具名邊參考**；與 gap-plan 原先「以具名邊當參考」的設想不同）。**新的視圖種類 `auxiliary`**：`AuxiliaryDrawingView { kind: 'auxiliary'; parent: Id; line: [[number,number],[number,number]]; flip?: boolean; label: string }`。**看的方向由折線決定**：`axesOf` 的 auxiliary 分支回 `sectionLookAxes(base, view)`（與剖視圖「看」同一條規則、**只差沒有剖切**）；折線以母視圖框架定出（`rightOf`／`sheetUp`），前視圖上**垂直**折線 → 看 ±X、**水平**折線 → 看 ±Y、`flip` 反轉。**不切任何東西**（`sectionCut` 對 auxiliary 拋 `notForKind`；app 層 `requestOf` 只在 section／sectionLocal 產生 cut），故它是純投影、**可塗彩**（`viewImage` 只排除 crop 與 break）。**擺放與比例比照剖視圖**：`sideOf` 回 `sectionSide(sectionArrow(v), projection)`（第三角置於箭頭背向側）、`scaleOf`／`scaleTarget` 沿用母視圖比例。**繪製共用剖視圖的 `sectionItems`**（參數放寬為 `Pick<SectionDrawingView,'line'|'label'|'flip'>`）：在母視圖上畫折線（centre 線型）、兩端各一箭頭與字母，視圖下方畫標題 `{A}-{A}`（比照局部剖視）；視圖 `name` 不畫（ISO 128-30 以字母命名）。介面：工具列加「輔助視圖」鈕（`drawingUi.toolAuxiliary`），在任一視圖拖曳出補助線（`lineAcrossBox` 橫貫整個視圖、拖曳方向決定角度）→ 移動預覽 → 點一下放置（`addAuxiliary`）；`Drag`／`DrawPlacement` 各加分支，`sectionGhost` 泛化為 `lineGhost`（section／auxiliary 共用）。**紅隊修正（實作中發現的真缺陷）**：第一版把折線交給剖視圖的 `checkSectionLine`（**階梯剖面**驗證器），導致畫歪的補助線拋出「**階梯剖面**：…」——講的是**另一個特徵**（違反 AGENTS.md §2.1「顯式拋錯並說明原因」）；已改為自成一體的 `checkAuxiliaryFold`（恰兩點、有限數、不重合 → `drawing.badAuxiliaryLine`，訊息補上「點的座標要是數字，兩點不能重合」）。**Schema 23 → 24**（遷移空轉、舊程式拒開新檔），四處版本斷言（break／local-section／linked／crop）同步為 24。ADR [0153](docs/adr/0153-drawing-auxiliary-view.md)。
+    - **輔助視圖驗證（worktree）**：`npm run typecheck` = 0；`lint:rules`／`lint:deps`／`lint:i18n` 全過；新測試 `tests/phase5/drawing-auxiliary-view.test.ts` **18/18**（**200 組隨機折線**驗證看的方向垂直於折線且落在母視圖平面內、方向實例、不剖切、折線三類拒絕、`setView` 欄位、母視圖鏈比例 1:2、存檔讀回、v23→v24 升級、擺放同高、`buildScene` 折線／字母／標題）；全量 vitest **235 檔、2975 過、25 略過、0 失敗**。**未執行**：`verify:ui`（本機逾時）→ 輔助視圖的**介面操作未經瀏覽器驗證**。
+    - **輔助視圖已知限制**：折線必須是**單一直線（兩點）**（階梯／對正不支援）；**斜補助線的擺放**落於最近的一方側（與斜剖面同源，屬擺放美觀、非幾何錯誤——看方向本身精確）；補助線不吸附具名邊，故斜面上尺寸標註仍受既有 gap-plan:112 限制；另在紅隊掃描中一併發現並修掉一個既有缺陷（見下一條）。
+    - **✅ 修 B2.7 裁剪視圖縮放（`1fdaa91`，2026-10-19）**：紅隊掃描發現 ADR 0152 的既有缺陷——`scaleOf` 對 `crop` 沿用母視圖比例，`scaleTarget` 卻回 `{ sheet: true }`，拖曳**裁剪視圖**的角落會改到**整張圖紙**的比例、而裁剪視圖本身畫在母視圖比例、不動。已把 `crop` 補進 `scaleTarget`（與 `scaleOf` **同進退**：母視圖有自設比例時，縮放裁剪視圖改的是母視圖的比例），`tests/phase5/drawing-crop-view.test.ts` 加 `scaleTarget` 測試鎖定；ADR 0152 決定 4 與 ADR 0153 已知限制同步更新。驗證：typecheck 0；`lint:rules`／`lint:deps`／`lint:i18n` 全過；全量 vitest **235 檔、2977 過、25 略過、0 失敗**。
+  - **✅ B2.8 多圖頁（第一部分：資料模型＋遷移）已完成並推送（`432bb1f`，2026-10-17，ADR [0154](docs/adr/0154-drawing-pages.md)）**——使用者裁定「先做資料模型＋遷移、UI 頁籤後做」。`DrawingDoc` 改為 `{ kind, schemaVersion, pages: DrawingPage[], properties, idCounters }`，`DrawingPage` 擁有 `id／name／sheet／title／views／dimensions／tables／surfaceFinishes／annotations`；**`properties` 與 `idCounters` 留在文件層**（跨頁共用自訂屬性、id 全文件唯一，否則兩頁可能出現同一個 view id）。**Schema 24 → 25，是本專案第一個結構性遷移**（此前 24 個都是加欄位或空轉）：`drawingMigrations[24]` 把根上的 `sheet`／`title`／`views`／… 收進 `pages[0]`，舊程式拒開新檔。新增存取函式 `page(doc, i=0)`／`withPage(doc, p)`／`drawingFromPage(p, props)`（命名避開 `measureView.ts:105` 既有的 `drawingOf`，否則 `export *` 會 TS2308）。**呼叫面壓到最小**：`buildScene`／`layoutViews`／`fitViews` **仍收 `DrawingDoc`**、函式內 `const pg = page(doc)`，故 Worker／`state/drawing.ts`／面板的呼叫點不必改簽名；只有幾個小 helper（`scaleOf`／`scaleTarget`／`resolveLines`／`sideOf`／`arrangementBase`／`slideAxis`）收窄為 `Pick<DrawingDoc,'pages'>`。`createEmptyDrawing()` 內容與變更前完全相同、只是收進一頁（`id: 'page1'`、A3 橫放 1:1 第一角）。`parseDrawing` 改驗 `raw.pages`（非空陣列、每頁 `sheet` 為物件）、逐頁補空清單、id 計數走**所有頁**。**UI 未動**（頁籤等屬 shape 2）。
+  - **B2.8 紅隊與驗證抓到的三件事**：① **真缺陷**：`fit.ts` 的 `arrangedBox` 一度用 `page(doc).sheet`（含當前 `shift`）算框，使 `fitViews().shift` 多減一次當前位移（實測 `18.5 → −31.5`，差 50＝設定的 shift）；已改回以**未位移**頁面算框，`drawing-fit.test.ts` 三項測試鎖定。② **13 個測試的假舊檔被揪出**：它們以「把版本號改小」偽造舊檔，在加欄位式遷移下可行，但在**結構性**遷移下該檔已是 v25 形狀（有 `pages`、根上無 `sheet`），遷移 24 取不到 `sheet` → 檔被拒。判定為**測試在說謊**（真舊檔的 `sheet` 確在根上），新增 `tests/support/drawingVersion.ts` 的 `olderDrawingFile(doc, version)` 造**真**舊檔（只放該版本真有的清單：`dimensions` ≥3、`tables` ≥4、`surfaceFinishes` ≥10、`annotations` ≥12），13 個測試改用它、另 **7 處版本斷言 24 → 25**；此修法**加強**覆蓋（真的在驗 v25 遷移，而非讓假檔碰巧通過——AGENTS.md §2.4）。③ **codemod 兩次失手**：v1 盲目 `replaceAll` 誤改非 `DrawingDoc` 接收者（DXF `DxfDocument.tables`、`PlateDrawing`…）→ **全數 `git checkout -- tests` 還原**；v2 改由 typecheck 錯誤位置驅動（方向正確），但接收者左掃把 `)`／`...` 一起吞掉 → `page(.doc)`／`page(...doc)` 等 7 個語法錯誤，而語法錯誤會**抑制同檔的語意錯誤**；v3 加入**括號配對與引號跳脫**的左掃才一次到位（43 處呼叫運算式）。教訓：改大量呼叫端要由**編譯器位置**驅動，接收者解析必須涵蓋呼叫運算式／索引／擴展。
+  - **B2.8 驗證（worktree）**：`npm run typecheck` = **0**；`lint:rules`（exit 0）／`lint:deps`（Layering OK）／`lint:i18n`（181 行，未逾基準）全過；`tests/phase5` **47/47 檔通過**；全量 vitest **239 檔（235 過／4 略）、2977 過／25 略、0 失敗**。**未執行** `verify:ui`（本次無新介面）。
+  - **✅ E1-P2 側邊欄兩分頁與「切換只隱藏」契約已完成並推送（`6831a44`，2026-10-17，ADR [0155](docs/adr/0155-sidebar-tabs-hidden-contract.md)）**——E1-P1（`4ba2765`）已把零件／組合件外框換成可點的 `.sw-tabs`，但切換是**條件渲染**（會卸載另一頁），與計畫 §2.4「切換只用 `hidden`、所有 `data-field`／`data-action` 留在 DOM（129 支 e2e 不動的前提）」不符。本次把 `App.tsx` 的兩個 pane 都改成**無條件輸出、只加 `hidden`**：`<div className="sw-pane" hidden={panel !== 'tree'}>{assembly ? <AssemblyTree/> : <FeatureTree/>}</div>` 與 `<div className="sw-pane" hidden={panel !== 'properties'}>…</div>`；`.sw-panel [hidden] { display:none !important }`（`app.css`:669）確保生效。**組合件依使用者裁定只換外框**（計畫 §8.2：6 個模式面板維持浮動、內部一律不動，故**不**收斂成 PM 群組）；模式面板對工作階段狀態用**非空斷言**（`asm.mate!`…）**不能同時掛載**，故只掛當前那一個、切到樹頁時它仍在 DOM。另移除死 CSS `.panel-tabs`（`app.css` 舊 148–150 行，全 repo 已無引用）。**第一版漏做了「AssemblyTree 比照 FeatureTree」的搜尋列**（只交付外框），已補完為第二個提交 **`db7432b`**：`AssemblyTree` 補上與 `FeatureTree` 相同的 `div.tree-filter`（`.search-field` 搜尋框＋`tree.filterNone` 無結果提示），判定規則抽成**共用純模組** `apps/web/src/components/treeFilter.ts`（`treeNeedle`／`treeFilterMatches`；`FeatureTree` 原本自己的一份 `matches` 一併收斂過去），由 `tests/phase8/tree-filter.test.ts`（7 項）在 `node` 環境直接驗證——這正是原先「此邏輯無法單元測試」一說的反證；**未做**階層／平面檢視切換（`FeatureTree` 用它把草圖收進消耗它的特徵，組合件沒有這個概念，加了會是空轉控制項）。驗證：typecheck **0**；`lint:rules`／`lint:deps`／`lint:i18n`（181 行）全過；全量 vitest **240 檔（236 過／4 略）、0 失敗**。**未執行** `verify:ui`（逾時）→ 介面未經瀏覽器驗證。
+  - **E1-P2 的已知差異（明示，非默默降級）**：① 組合件樹**仍缺** `FeatureTree` 的階層／平面檢視切換（搜尋列已於 `db7432b` 補上）——**刻意不做**：`treeMode` 只影響「草圖要不要收進消耗它的特徵」，組合件的零組件沒有這個概念，放一顆切換鈕只會是空轉控制項（AGENTS.md §3.2）。② PropertyManager 仍由「工作階段（editing）」驅動，**尚未**做到計畫 §2.2「點選圖面→自動切到屬性、依選取切換群組框」，屬後續。
+  - **下一步**：① **B2.2（隱藏個別的邊）已完成收尾與全鏈路確效**（新測試 `tests/phase5/drawing-hide-edge.test.ts` 9/9 PASS、typecheck 0 錯誤、三項 lint 全綠、`tests/phase5` 43 檔 456 項全過），提交後進行雙分支合併；② **雙分支合併**：將主資料夾之 B2.2 與 `worktree-sidebar-parity` 分支合併，對齊 Schema 25 與 `DrawingDoc.pages` 資料結構；③ **B2.8 shape 2＝多圖頁 UI**（頁籤、新增／刪除頁、跨頁拖放、列印多頁）於合併後正式開工；④ B2.6／B2.7 與 E1-P1／E1-P2 介面變更待實機驗收。
 ---
 
 ## ⚡ 今日任務總結 (2026-10-12)

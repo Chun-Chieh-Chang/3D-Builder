@@ -261,3 +261,52 @@ describe('variables, properties and names (B5.2, B5.3, B8.3)', () => {
     expect(parsePart(serializePart(doc))).toEqual(doc);
   });
 });
+
+describe('Cosmetic Thread Command (C4.9, Schema 57)', () => {
+  it('modifies cosmetic thread parameters and cleans up optional fields', () => {
+    let doc = createDemoPart();
+    doc = applyCommand(doc, {
+      type: 'insertFeature',
+      index: doc.features.length,
+      feature: {
+        id: 'ct1',
+        type: 'cosmeticThread',
+        name: '裝飾螺紋線1',
+        suppressed: false,
+        targetFace: { kind: 'face', name: 'ex1:side:sk1.l1' },
+        startEdge: { kind: 'edge', name: 'ex1:edge:sk1.p1' },
+        threadType: 'external',
+        majorDiameter: '10',
+        minorDiameter: '8.5',
+        pitch: '1.5',
+        endCondition: 'blind',
+        depth: '15',
+        reverse: true,
+      },
+    });
+
+    // Update parameters
+    doc = applyCommand(doc, {
+      type: 'setCosmeticThread',
+      featureId: 'ct1',
+      params: { depth: '20', reverse: false, startEdge: undefined },
+    });
+
+    const ct = doc.features.find((f) => f.id === 'ct1') as any;
+    expect(ct.depth).toBe('20');
+    expect(ct.startEdge).toBeUndefined();
+    expect('startEdge' in ct).toBe(false);
+    expect(ct.reverse).toBeUndefined();
+    expect('reverse' in ct).toBe(false);
+
+    // Non-face targetFace is rejected
+    expect(() =>
+      applyCommand(doc, {
+        type: 'setCosmeticThread',
+        featureId: 'ct1',
+        params: { targetFace: { kind: 'edge', name: 'bad' } as any },
+      }),
+    ).toThrow(CommandError);
+  });
+});
+

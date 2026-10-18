@@ -86,7 +86,8 @@ type P2 = [number, number];
 export type Segment =
   | { kind: 'line'; a: P2; b: P2; source: string }
   | { kind: 'arc'; c: P2; r: number; from: P2; to: P2; ccw: boolean; source: string }
-  | { kind: 'circle'; c: P2; r: number; source: string };
+  | { kind: 'circle'; c: P2; r: number; source: string }
+  | { kind: 'ellipse'; c: P2; rx: number; ry: number; angle: number; source: string };
 
 /** Counter-clockwise outer loop with clockwise holes (as produced by @3db/sketch findProfiles). */
 export interface Region {
@@ -208,6 +209,8 @@ const T = {
 } as const;
 
 const add = (a: Vec3, b: Vec3, s = 1): Vec3 => [a[0] + b[0] * s, a[1] + b[1] * s, a[2] + b[2] * s];
+const sub = (a: Vec3, b: Vec3): Vec3 => [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
+const dot = (a: Vec3, b: Vec3): number => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
 
 /** Area-weighted vertex normals. Vertices are per face, so smoothing never crosses a face boundary. */
 function smoothNormals(positions: number[], indices: number[], faceRanges: number[]): Float32Array {
@@ -379,6 +382,28 @@ export class Kernel {
         edge = arena.own(arena.own(new oc.BRepBuilderAPI_MakeEdge(this.pnt(arena, at(seg.a)), this.pnt(arena, at(seg.b)))).Edge());
       } else if (seg.kind === 'circle') {
         edge = arena.own(arena.own(new oc.BRepBuilderAPI_MakeEdge(circ(seg.c, seg.r))).Edge());
+        if (hole) edge = arena.own(oc.TopoDS.Edge(arena.own(edge.Reversed())));
+      } else if (seg.kind === 'ellipse') {
+        let { rx, ry, angle } = seg;
+        if (!(rx > 0 && ry > 0 && Number.isFinite(rx) && Number.isFinite(ry) && Number.isFinite(angle))) {
+          throw new KernelError(t('kernel.wireNotClosed', { source: seg.source }));
+        }
+        if (rx < ry) {
+          const tmp = rx;
+          rx = ry;
+          ry = tmp;
+          angle += Math.PI / 2;
+        }
+        const cos = Math.cos(angle);
+        const sin = Math.sin(angle);
+        const majorDirVec: Vec3 = [
+          frame.xDir[0] * cos + frame.yDir[0] * sin,
+          frame.xDir[1] * cos + frame.yDir[1] * sin,
+          frame.xDir[2] * cos + frame.yDir[2] * sin,
+        ];
+        const ax2 = arena.own(new oc.gp_Ax2(this.pnt(arena, at(seg.c)), this.dir(arena, frame.normal), this.dir(arena, majorDirVec)));
+        const elips = arena.own(new oc.gp_Elips(ax2, rx, ry));
+        edge = arena.own(arena.own(new oc.BRepBuilderAPI_MakeEdge(elips)).Edge());
         if (hole) edge = arena.own(oc.TopoDS.Edge(arena.own(edge.Reversed())));
       } else {
         const [p, q] = seg.ccw ? [seg.from, seg.to] : [seg.to, seg.from];
@@ -911,7 +936,16 @@ export class Kernel {
     for (const r of regions)
       for (const s of r.outer) {
         if (s.kind === 'line') samples.push(at(s.a), at(s.b));
-        else {
+        else if (s.kind === 'ellipse') {
+          const cosA = Math.cos(s.angle);
+          const sinA = Math.sin(s.angle);
+          for (let i = 0; i <= 64; i++) {
+            const u = (2 * Math.PI * i) / 64;
+            const x = s.rx * Math.cos(u);
+            const y = s.ry * Math.sin(u);
+            samples.push(at([s.c[0] + x * cosA - y * sinA, s.c[1] + x * sinA + y * cosA]));
+          }
+        } else {
           const a0 = s.kind === 'circle' ? 0 : Math.atan2(s.from[1] - s.c[1], s.from[0] - s.c[0]);
           let sweep = s.kind === 'circle' ? 2 * Math.PI : Math.atan2(s.to[1] - s.c[1], s.to[0] - s.c[0]) - a0;
           if (s.kind === 'arc') {
@@ -1506,6 +1540,100 @@ export class Kernel {
     } finally {
       faces.dispose();
       solids.dispose();
+      arena.dispose();
+    }
+  }
+
+  /**
+   * Splits a solid body by a planar frame (C7.4, ADR 0158).
+   * Returns an array of OpResult for the resulting separate solids.
+   */
+  splitBody(targetId: ShapeId, plane: Frame): OpResult[] {
+    if (this.solidCount(targetId) === 0) throw new KernelError(t('surface.notSolid'));
+    const oc = this.oc;
+    const arena = new Arena();
+    const target = this.get(targetId);
+
+    const b = this.bounds(targetId);
+    const corners: Vec3[] = [
+      [b.min[0], b.min[1], b.min[2]],
+      [b.min[0], b.min[1], b.max[2]],
+      [b.min[0], b.max[1], b.min[2]],
+      [b.min[0], b.max[1], b.max[2]],
+      [b.max[0], b.min[1], b.min[2]],
+      [b.max[0], b.min[1], b.max[2]],
+      [b.max[0], b.max[1], b.min[2]],
+      [b.max[0], b.max[1], b.max[2]],
+    ];
+    const signedDists = corners.map((p) => dot(sub(p, plane.origin), plane.normal));
+    const allPos = signedDists.every((d) => d > 1e-6);
+    const allNeg = signedDists.every((d) => d < -1e-6);
+    if (allPos || allNeg) {
+      throw new KernelError(t('feature.splitNoIntersection'));
+    }
+
+    const index = (s: TopoDS_Shape) => ({
+      faces: ShapeIndex.of(oc, s, T.FACE, arena),
+      edges: ShapeIndex.of(oc, s, T.EDGE, arena),
+      verts: ShapeIndex.of(oc, s, T.VERTEX, arena),
+    });
+
+    try {
+      const pln = arena.own(new oc.gp_Pln(arena.own(new oc.gp_Ax3(this.pnt(arena, plane.origin), this.dir(arena, plane.normal), this.dir(arena, plane.xDir)))));
+      const unbounded = arena.own(arena.own(new oc.BRepBuilderAPI_MakeFace(pln)).Face());
+      const posPt = add(plane.origin, plane.normal, 1);
+      const negPt = add(plane.origin, plane.normal, -1);
+      const hsPos = arena.own(arena.own(new oc.BRepPrimAPI_MakeHalfSpace(unbounded, this.pnt(arena, posPt))).Solid());
+      const hsNeg = arena.own(arena.own(new oc.BRepPrimAPI_MakeHalfSpace(unbounded, this.pnt(arena, negPt))).Solid());
+
+      const cut1 = this.boolOp('cut', target, hsPos, t('feature.split'), arena);
+      const cut2 = this.boolOp('cut', target, hsNeg, t('feature.split'), arena);
+
+      const raw1 = cut1.Shape();
+      const raw2 = cut2.Shape();
+
+      const ia = index(target);
+      const ihsPos = index(hsPos);
+      const ihsNeg = index(hsNeg);
+
+      try {
+        const origins1 = this.history(cut1, { faces: [...ia.faces.keys, ...ihsPos.faces.keys], edges: [...ia.edges.keys, ...ihsPos.edges.keys], verts: [...ia.verts.keys, ...ihsPos.verts.keys] }, raw1, arena);
+        const origins2 = this.history(cut2, { faces: [...ia.faces.keys, ...ihsNeg.faces.keys], edges: [...ia.edges.keys, ...ihsNeg.edges.keys], verts: [...ia.verts.keys, ...ihsNeg.verts.keys] }, raw2, arena);
+
+        const unified1 = this.unify(raw1, origins1, arena);
+        const unified2 = this.unify(raw2, origins2, arena);
+
+        const id1 = this.put(unified1.shape);
+        const id2 = this.put(unified2.shape);
+
+        const res1: OpResult = { shape: id1, faceOrigins: unified1.origins };
+        const res2: OpResult = { shape: id2, faceOrigins: unified2.origins };
+
+        const vol1 = this.massProps(id1).volume;
+        const vol2 = this.massProps(id2).volume;
+        if (vol1 <= 1e-9 || vol2 <= 1e-9) {
+          this.release(id1);
+          this.release(id2);
+          throw new KernelError(t('feature.splitNoIntersection'));
+        }
+
+        const solids1 = this.splitSolids(res1);
+        const solids2 = this.splitSolids(res2);
+        this.release(id1);
+        this.release(id2);
+
+        const all = [...solids1, ...solids2];
+        if (all.length < 2) {
+          for (const s of all) this.release(s.shape);
+          throw new KernelError(t('feature.splitNoIntersection'));
+        }
+        return all.map((s) => ({ shape: s.shape, faceOrigins: s.faceOrigins }));
+      } finally {
+        for (const i of [ia, ihsPos, ihsNeg]) for (const x of Object.values(i)) x.dispose();
+        raw1.delete();
+        raw2.delete();
+      }
+    } finally {
       arena.dispose();
     }
   }

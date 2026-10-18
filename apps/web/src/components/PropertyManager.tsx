@@ -17,15 +17,18 @@ import {
   SKETCH_ORIGIN,
   type ChamferFeature,
   type CombineFeature,
+  type SplitFeature,
   type Command,
   type DeleteFaceFeature,
   type DraftFeature,
   type HoleFeature,
+  type CosmeticThreadFeature,
   holeSize,
   RELIEF_SHAPES,
   HOLE_STANDARD_SOURCE,
   ISO_HOLE_SIZES,
   ALL_STANDARD_THREADS,
+  lookupThread,
   DOWEL_FITS,
   fitClearance,
   holeLimits,
@@ -149,7 +152,7 @@ function ValueInput({ value, toCommand, suffix = 'mm' }: { value: string; toComm
   );
 }
 
-const ENTITY_LABEL = labelsOf({ point: 'entity.point', line: 'entity.line', circle: 'entity.circle', arc: 'entity.arc' });
+const ENTITY_LABEL = labelsOf({ point: 'entity.point', line: 'entity.line', circle: 'entity.circle', arc: 'entity.arc', ellipse: 'entity.ellipse' });
 
 function describe(f: SketchFeature, id: Id): string {
   if (id === SKETCH_ORIGIN) return t('datum.origin');
@@ -3059,6 +3062,63 @@ function CombinePanel({ f }: { f: CombineFeature }) {
   );
 }
 
+/** Split feature (C7.4, ADR 0158): cutting tool (datum plane or planar face) and optional target bodies. */
+function SplitPanel({ f }: { f: SplitFeature }) {
+  const result = useStore((s) => s.result);
+  const bodies = (result?.bodies ?? []).filter((b) => !b.surface);
+  const set = (patch: Partial<Pick<SplitFeature, 'tool' | 'targets'>>): Command => ({
+    type: 'setSplit',
+    featureId: f.id,
+    tool: f.tool,
+    targets: f.targets,
+    ...patch,
+  });
+
+  const body = (name: string): Ref => ({ kind: 'body', name });
+  const toggle = (id: string) => {
+    const list = f.targets ?? [];
+    const next = list.some((x) => x.name === id) ? list.filter((x) => x.name !== id) : [...list, body(id)];
+    store.execute(set({ targets: next }));
+  };
+
+  const nameOf = (id: string) => bodies.find((b) => b.id === id)?.name ?? id;
+
+  return (
+    <>
+      <section className="pm-group">
+        <h4>{t('pm.split.tool')}</h4>
+        <div className="pm-row">
+          <input type="text" readOnly value={f.tool.name || t('cmd.mustPickPlane')} />
+        </div>
+      </section>
+      <section className="pm-group">
+        <h4>{t('pm.split.targets')}</h4>
+        <ul className="selection-box">
+          {(!f.targets || f.targets.length === 0) && <li className="muted">{t('pm.split.allBodies')}</li>}
+          {f.targets?.map((x) => {
+            const found = bodies.some((b) => b.id === x.name);
+            return (
+              <li key={x.name} className={found ? '' : 'missing'} title={x.name}>
+                {nameOf(x.name)}
+                {!found && t('pm.lost')}
+                <button className="use-nearest" onClick={() => toggle(x.name)}>
+                  ✕
+                </button>
+              </li>
+            );
+          })}
+        </ul>
+        {bodies.map((b) => (
+          <label key={b.id} className="pm-row checkbox">
+            <input type="checkbox" checked={f.targets?.some((x) => x.name === b.id) ?? false} onChange={() => toggle(b.id)} />
+            <span>{b.name}</span>
+          </label>
+        ))}
+      </section>
+    </>
+  );
+}
+
 /** Imported body (F2.1): where the data came from, and what happened to it on the way in. */
 function ImportedBodyPanel({ f }: { f: ImportedBodyFeature }) {
   const doc = useStore((s) => s.doc);
@@ -3183,6 +3243,211 @@ function SketchPlanePanel({ f }: { f: SketchFeature }) {
   );
 }
 
+/** CosmeticThread (ADR 0156): 2D/3D cosmetic thread annotation on cylindrical face. */
+function CosmeticThreadPanel({ f }: { f: CosmeticThreadFeature }) {
+  const selectedFace = useStore((s) => s.selectedFace);
+  const selected = useStore((s) => s.selected);
+
+  const update = (patch: Partial<Omit<CosmeticThreadFeature, 'id' | 'type' | 'name' | 'suppressed'>>) => {
+    store.execute({ type: 'setCosmeticThread', featureId: f.id, params: patch });
+  };
+
+  const isCustom = f.standardMode === 'custom';
+  const endCondition = f.endCondition ?? 'through';
+
+  const applyFaceSelection = () => {
+    if (selectedFace) {
+      update({ targetFace: selectedFace });
+    }
+  };
+
+  const applyEdgeSelection = () => {
+    if (selected) {
+      update({ startEdge: { kind: 'edge', name: selected } });
+    }
+  };
+
+  const clearEdgeSelection = () => {
+    update({ startEdge: undefined });
+  };
+
+  return (
+    <>
+      <section className="pm-group">
+        <h4>{t('pm.cosmeticThread.targetFace')}</h4>
+        <div className="pm-row">
+          <input
+            type="text"
+            readOnly
+            value={f.targetFace ? f.targetFace.name : t('pm.cosmeticThread.noFace')}
+            style={{ flex: 1, padding: '4px 8px', borderRadius: '4px', border: '1px solid var(--line)', background: 'var(--card)' }}
+          />
+          <button type="button" disabled={!selectedFace} title={t('pm.cosmeticThread.useSelected')} onClick={applyFaceSelection}>
+            {t('pm.cosmeticThread.useSelected')}
+          </button>
+        </div>
+
+        <h4>{t('pm.cosmeticThread.startEdge')}</h4>
+        <div className="pm-row">
+          <input
+            type="text"
+            readOnly
+            value={f.startEdge ? f.startEdge.name : t('pm.cosmeticThread.defaultEdge')}
+            style={{ flex: 1, padding: '4px 8px', borderRadius: '4px', border: '1px solid var(--line)', background: 'var(--card)' }}
+          />
+          <button type="button" disabled={!selected} title={t('pm.cosmeticThread.useSelected')} onClick={applyEdgeSelection}>
+            {t('pm.cosmeticThread.useSelected')}
+          </button>
+          {f.startEdge && (
+            <button type="button" title={t('slot.clear')} onClick={clearEdgeSelection}>
+              ✕
+            </button>
+          )}
+        </div>
+      </section>
+
+      <section className="pm-group">
+        <h4>{t('pm.cosmeticThread.type')}</h4>
+        <div className="pm-row">
+          <select
+            value={f.threadType ?? 'external'}
+            onChange={(e) => {
+              const nextType = e.target.value as 'external' | 'internal';
+              if (f.standardMode === 'standard' && f.standardDesignation) {
+                const std = lookupThread(f.standardDesignation);
+                if (std) {
+                  const minor = nextType === 'internal' ? std.intMinorDia : std.extMinorDia;
+                  update({ threadType: nextType, minorDiameter: `${minor}` });
+                  return;
+                }
+              }
+              update({ threadType: nextType });
+            }}
+          >
+            <option value="external">{t('pm.cosmeticThread.external')}</option>
+            <option value="internal">{t('pm.cosmeticThread.internal')}</option>
+          </select>
+        </div>
+
+        <h4>{t('pm.cosmeticThread.mode')}</h4>
+        <div className="pm-row">
+          <select
+            value={isCustom ? 'custom' : 'standard'}
+            onChange={(e) => {
+              if (e.target.value === 'custom') {
+                update({ standardMode: 'custom' });
+              } else {
+                const std = ALL_STANDARD_THREADS[0];
+                if (std) {
+                  const minor = f.threadType === 'internal' ? std.intMinorDia : std.extMinorDia;
+                  update({
+                    standardMode: 'standard',
+                    standardDesignation: std.designation,
+                    majorDiameter: `${std.nominalDia}`,
+                    minorDiameter: `${minor}`,
+                    pitch: `${std.pitch}`,
+                  });
+                }
+              }
+            }}
+          >
+            <option value="standard">{t('pm.cosmeticThread.standard')}</option>
+            <option value="custom">{t('pm.cosmeticThread.custom')}</option>
+          </select>
+        </div>
+
+        {!isCustom ? (
+          <>
+            <h4>{t('pm.cosmeticThread.standardSize')}</h4>
+            <div className="pm-row">
+              <select
+                value={f.standardDesignation ?? ALL_STANDARD_THREADS[0]?.designation ?? 'M8'}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  const found = lookupThread(val);
+                  if (found) {
+                    const minor = f.threadType === 'internal' ? found.intMinorDia : found.extMinorDia;
+                    update({
+                      standardDesignation: val,
+                      majorDiameter: `${found.nominalDia}`,
+                      minorDiameter: `${minor}`,
+                      pitch: `${found.pitch}`,
+                    });
+                  } else {
+                    update({ standardDesignation: val });
+                  }
+                }}
+              >
+                {ALL_STANDARD_THREADS.map((std) => (
+                  <option key={std.designation} value={std.designation}>
+                    {std.designation} (P={std.pitch.toFixed(2)} mm)
+                  </option>
+                ))}
+              </select>
+            </div>
+          </>
+        ) : (
+          <>
+            <label className="pm-row">
+              <span>{t('pm.cosmeticThread.majorDia')}</span>
+              <ValueInput
+                value={f.majorDiameter ?? '10'}
+                toCommand={(majorDiameter) => ({ type: 'setCosmeticThread', featureId: f.id, params: { majorDiameter } })}
+              />
+            </label>
+            <label className="pm-row">
+              <span>{t('pm.cosmeticThread.minorDia')}</span>
+              <ValueInput
+                value={f.minorDiameter ?? '8.5'}
+                toCommand={(minorDiameter) => ({ type: 'setCosmeticThread', featureId: f.id, params: { minorDiameter } })}
+              />
+            </label>
+            <label className="pm-row">
+              <span>{t('pm.cosmeticThread.pitch')}</span>
+              <ValueInput
+                value={f.pitch ?? '1.5'}
+                toCommand={(pitch) => ({ type: 'setCosmeticThread', featureId: f.id, params: { pitch } })}
+              />
+            </label>
+          </>
+        )}
+      </section>
+
+      <section className="pm-group">
+        <h4>{t('pm.cosmeticThread.endCondition')}</h4>
+        <div className="pm-row">
+          <select
+            value={endCondition}
+            onChange={(e) => update({ endCondition: e.target.value as 'blind' | 'through' })}
+          >
+            <option value="through">{t('pm.cosmeticThread.through')}</option>
+            <option value="blind">{t('pm.cosmeticThread.blind')}</option>
+          </select>
+        </div>
+
+        {endCondition === 'blind' && (
+          <label className="pm-row">
+            <span>{t('pm.cosmeticThread.depth')}</span>
+            <ValueInput
+              value={f.depth ?? '10'}
+              toCommand={(depth) => ({ type: 'setCosmeticThread', featureId: f.id, params: { depth } })}
+            />
+          </label>
+        )}
+
+        <label className="pm-row">
+          <span>{t('pm.cosmeticThread.reverse')}</span>
+          <input
+            type="checkbox"
+            checked={!!f.reverse}
+            onChange={(e) => update({ reverse: e.target.checked })}
+          />
+        </label>
+      </section>
+    </>
+  );
+}
+
 /** PropertyManager (D2): parameters of the feature being edited; ✔ commits one undo step, ✖ restores (B7.3). */
 export function PropertyManager() {
   const editing = useStore((s) => s.editing);
@@ -3255,8 +3520,10 @@ export function PropertyManager() {
       )}
       {f.type === 'cutWithSurface' && <CutWithSurfacePanel f={f} />}
       {f.type === 'combine' && <CombinePanel f={f} />}
+      {f.type === 'split' && <SplitPanel f={f} />}
       {f.type === 'thread' && <ThreadPanel f={f} />}
       {f.type === 'knurl' && <KnurlPanel f={f} />}
+      {f.type === 'cosmeticThread' && <CosmeticThreadPanel f={f} />}
     </div>
   );
 }

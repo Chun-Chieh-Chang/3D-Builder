@@ -13,6 +13,13 @@ apps/desktop/src-tauri/icons/ios/
 sync.ffs_db
 scratch/
 .workbuddy-ai/
+.omo/
+out/
+task_plan.md
+findings.md
+progress.md
+selection-board.html
+packages/kernel/test/zz-*.test.ts
 
 # Real customer parts and the fixes derived from them. They stay on disk for the real-machine checks but
 # must never enter the repository.

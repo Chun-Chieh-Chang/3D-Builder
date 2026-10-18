@@ -114,6 +114,14 @@ function anchorOf(geometry: Geometry, id: Id): P2 | null {
       return polar(g.c, g.r, -Math.PI / 4);
     case 'arc':
       return arcMidpoint(g);
+    case 'ellipse': {
+      const u = -Math.PI / 4;
+      const cosA = Math.cos(g.angle);
+      const sinA = Math.sin(g.angle);
+      const x = g.majorRadius * Math.cos(u);
+      const y = g.minorRadius * Math.sin(u);
+      return [g.c[0] + x * cosA - y * sinA, g.c[1] + x * sinA + y * cosA];
+    }
   }
 }
 

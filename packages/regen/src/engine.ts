@@ -61,12 +61,14 @@ import {
   type VentFeature,
   type CutWithSurfaceFeature,
   type ShellFeature,
+  type SplitFeature,
   type SketchFeature,
   type SweepFeature,
   type Thin,
   type Vec3,
   type ThreadFeature,
   type KnurlFeature,
+  type CosmeticThreadFeature,
   lookupThread,
   generateStandardThreadProfile,
 } from '@3db/model';
@@ -270,7 +272,31 @@ export interface RebuildResult {
   systems: Map<Id, CoordSystem>;
   /** The sheet metal data of the part (C11), recorded by its features as they were made. */
   sheet: SheetInfo | null;
+  /** Cosmetic threads (C4.9, ADR 0156). Lightweight annotations, 0.00 MiB WASM Heap overhead. */
+  cosmeticThreads: CosmeticThreadInfo[];
   totalMs: number;
+}
+
+export interface CosmeticThreadInfo {
+  featureId: Id;
+  targetFace: Ref;
+  startEdge?: Ref;
+  threadType: 'external' | 'internal';
+  standardMode: 'standard' | 'custom';
+  standardDesignation?: string;
+  majorDiameter: number;
+  minorDiameter: number;
+  pitch: number;
+  depth: number;
+  endCondition: 'blind' | 'through';
+  /** Cylinder axis origin (start point of thread). */
+  origin: Vec3;
+  /** Cylinder axis unit direction (along thread direction). */
+  axis: Vec3;
+  /** Cylinder radius (from actual target face geometry). */
+  radius: number;
+  /** Full length of the cylinder face. */
+  cylinderLength: number;
 }
 
 /** The bodies as they were before the first seed of a pattern (C6): a handle on their shape, their names, and how many there were. */
@@ -488,6 +514,7 @@ export class Regenerator {
   private mastersUsed = new Set<string>();
   /** What a derived body takes from its master and the document does not say: its name and whether it is a reference body. */
   private inherited = new Map<Id, { name: string; reference: boolean }>();
+  private cosmeticThreads: CosmeticThreadInfo[] = [];
 
   constructor(
     private readonly kernel: Kernel,
@@ -534,6 +561,7 @@ export class Regenerator {
     this.statuses = new Map();
     this.inherited = new Map();
     this.mastersUsed = new Set();
+    this.cosmeticThreads = [];
 
     // Every expression becomes the number it stands for before anything is built: the solver and the kernel
     // only ever see numbers. A feature whose expression cannot be evaluated reports why instead of building.
@@ -689,8 +717,16 @@ export class Regenerator {
             set = this.advance(set, this.cutSlots(feature, sketches, set));
             return done({ status: 'ok' });
           }
+          case 'cosmeticThread': {
+            this.cosmeticThread(feature, set);
+            return done({ status: 'ok' });
+          }
           case 'cutWithSurface': {
             set = this.advance(set, this.cutWithSurface(feature, set));
+            return done({ status: 'ok' });
+          }
+          case 'split': {
+            set = this.advance(set, this.splitBodies(feature, set));
             return done({ status: 'ok' });
           }
           case 'extrude':
@@ -792,7 +828,7 @@ export class Regenerator {
           };
         })
       : [];
-    return { features: results, body: view, bodies, sketches, frames, axes: this.axes, points: this.points, systems: this.systems, sheet: this.sheet, totalMs: performance.now() - t0 };
+    return { features: results, body: view, bodies, sketches, frames, axes: this.axes, points: this.points, systems: this.systems, sheet: this.sheet, cosmeticThreads: this.cosmeticThreads, totalMs: performance.now() - t0 };
   }
 
   /**
@@ -1226,7 +1262,23 @@ export class Regenerator {
     if (axis?.type !== 'line') throw new FeatureError(t('regen.axisGone'));
     const [a, b] = [axis.a, axis.b];
     const side = (p: [number, number]) => (b[0] - a[0]) * (p[1] - a[1]) - (b[1] - a[1]) * (p[0] - a[0]);
-    const pts = s.profiles.regions.flatMap((r) => r.outer.flatMap((seg) => (seg.kind === 'line' ? [seg.a, seg.b] : seg.kind === 'arc' ? [seg.from, seg.to, seg.c] : [seg.c])));
+    const pts = s.profiles.regions.flatMap((r) =>
+      r.outer.flatMap((seg) =>
+        seg.kind === 'line'
+          ? [seg.a, seg.b]
+          : seg.kind === 'arc'
+            ? [seg.from, seg.to, seg.c]
+            : seg.kind === 'ellipse'
+              ? [
+                  seg.c,
+                  [seg.c[0] + seg.rx * Math.cos(seg.angle), seg.c[1] + seg.rx * Math.sin(seg.angle)] as [number, number],
+                  [seg.c[0] - seg.rx * Math.cos(seg.angle), seg.c[1] - seg.rx * Math.sin(seg.angle)] as [number, number],
+                  [seg.c[0] - seg.ry * Math.sin(seg.angle), seg.c[1] + seg.ry * Math.cos(seg.angle)] as [number, number],
+                  [seg.c[0] + seg.ry * Math.sin(seg.angle), seg.c[1] - seg.ry * Math.cos(seg.angle)] as [number, number],
+                ]
+              : [seg.c],
+      ),
+    );
     const scale = Math.hypot(b[0] - a[0], b[1] - a[1]) || 1;
     if (pts.some((p) => side(p) > 1e-9 * scale) && pts.some((p) => side(p) < -1e-9 * scale)) throw new FeatureError(t('regen.crossesAxis'));
 
@@ -1456,7 +1508,16 @@ export class Regenerator {
       for (const r of regions) {
         for (const seg of r.outer) {
           if (seg.kind === 'line') samples.push(at(seg.a), at(seg.b));
-          else {
+          else if (seg.kind === 'ellipse') {
+            const cosA = Math.cos(seg.angle);
+            const sinA = Math.sin(seg.angle);
+            for (let i = 0; i <= 64; i++) {
+              const u = (2 * Math.PI * i) / 64;
+              const x = seg.rx * Math.cos(u);
+              const y = seg.ry * Math.sin(u);
+              samples.push(at([seg.c[0] + x * cosA - y * sinA, seg.c[1] + x * sinA + y * cosA]));
+            }
+          } else {
             const a0 = seg.kind === 'circle' ? 0 : Math.atan2(seg.from[1] - seg.c[1], seg.from[0] - seg.c[0]);
             let sweep = seg.kind === 'circle' ? 2 * Math.PI : Math.atan2(seg.to[1] - seg.c[1], seg.to[0] - seg.c[0]) - a0;
             if (seg.kind === 'arc') {
@@ -1601,6 +1662,124 @@ export class Regenerator {
       if (e instanceof FeatureError && e.message === t('feature.cutRemovedNothing')) throw new FeatureError(t('feature.knurlRemovedNothing', { diameter: (radius * 2).toFixed(3) }));
       throw e;
     }
+  }
+
+  /**
+   * Cosmetic Thread (裝飾螺紋線, C4.9, ADR 0156):
+   * A lightweight annotation on a cylindrical surface (shaft or hole).
+   * Does NOT call OCCT boolean algorithms (0.00 MiB WASM Heap leakage).
+   */
+  private cosmeticThread(f: CosmeticThreadFeature, set: Bodies): void {
+    if (!set.view) throw new FeatureError(t('feature.cosmeticThreadNeedsBody'));
+    const body = this.modelFor(set, t('feature.cosmeticThread'));
+    const faceIdx = this.resolve(f.targetFace, body, t('feature.cosmeticThread'));
+    const face = body.topology.faces[faceIdx];
+    if (!face || face.geometry?.type !== 'cylinder') {
+      throw new FeatureError(t('feature.cosmeticThreadNotCylinder'));
+    }
+
+    const geom = face.geometry;
+    const r = geom.radius;
+    const axisDir = unit(geom.axis);
+
+    // Collect all vertex projections on the cylinder axis to find its length [tMin, tMax]
+    let tMin = Infinity;
+    let tMax = -Infinity;
+    for (const v of body.topology.vertices) {
+      if (v.faces.includes(faceIdx)) {
+        const tProj = dot(sub(v.point, geom.origin), axisDir);
+        if (tProj < tMin) tMin = tProj;
+        if (tProj > tMax) tMax = tProj;
+      }
+    }
+
+    if (!Number.isFinite(tMin) || !Number.isFinite(tMax) || tMax <= tMin + 1e-6) {
+      tMin = 0;
+      tMax = 10;
+    }
+    const cylinderLength = tMax - tMin;
+
+    // Determine start point and direction
+    let startT = tMin;
+    let dirSign = 1;
+
+    if (f.startEdge) {
+      const edgeIdx = this.resolve(f.startEdge, body, t('feature.cosmeticThread'));
+      const edge = body.topology.edges[edgeIdx];
+      if (edge) {
+        const edgeMid = edge.mid;
+        const edgeT = dot(sub(edgeMid, geom.origin), axisDir);
+        // If start edge is closer to tMax, thread runs backward towards tMin
+        if (Math.abs(edgeT - tMax) < Math.abs(edgeT - tMin)) {
+          startT = tMax;
+          dirSign = -1;
+        } else {
+          startT = tMin;
+          dirSign = 1;
+        }
+      }
+    }
+
+    if (f.reverse) {
+      dirSign = -dirSign;
+      startT = dirSign === 1 ? tMin : tMax;
+    }
+
+    const threadDir: Vec3 = dirSign === 1 ? axisDir : [-axisDir[0], -axisDir[1], -axisDir[2]];
+    const threadOrigin = add(geom.origin, axisDir, startT);
+
+    // Evaluate depth
+    let depth = cylinderLength;
+    if (f.endCondition === 'blind') {
+      depth = evalLength(f.depth);
+      if (!(depth > 0) || !Number.isFinite(depth)) {
+        throw new FeatureError(t('feature.cosmeticThreadBadDepth'));
+      }
+      depth = Math.min(depth, cylinderLength);
+    }
+
+    // Evaluate diameters & pitch
+    let majorDiameter = 0;
+    let minorDiameter = 0;
+    let pitch = 0;
+
+    if (f.standardMode === 'standard' && f.standardDesignation) {
+      const std = lookupThread(f.standardDesignation);
+      if (std) {
+        majorDiameter = std.nominalDia;
+        pitch = std.pitch;
+        minorDiameter = f.threadType === 'external' ? std.extMinorDia : std.intMinorDia;
+      }
+    }
+
+    if (!(majorDiameter > 0) || !(minorDiameter > 0) || !(pitch > 0)) {
+      majorDiameter = evalLength(f.majorDiameter);
+      minorDiameter = evalLength(f.minorDiameter);
+      pitch = evalLength(f.pitch);
+    }
+
+    // Edge-case defense (AGENTS.md §2.1)
+    if (!(majorDiameter > 0) || !(minorDiameter > 0) || !(pitch > 0) || majorDiameter <= minorDiameter) {
+      throw new FeatureError(t('feature.cosmeticThreadBadDimensions'));
+    }
+
+    this.cosmeticThreads.push({
+      featureId: f.id,
+      targetFace: f.targetFace,
+      startEdge: f.startEdge,
+      threadType: f.threadType,
+      standardMode: f.standardMode ?? 'custom',
+      standardDesignation: f.standardDesignation,
+      majorDiameter,
+      minorDiameter,
+      pitch,
+      depth,
+      endCondition: f.endCondition,
+      origin: threadOrigin,
+      axis: threadDir,
+      radius: r,
+      cylinderLength,
+    });
   }
 
 
@@ -2016,6 +2195,85 @@ export class Regenerator {
     // the result takes the place of the main body; the tools are used up
     const used = new Set(tools.map((x) => x.id));
     return set.list.flatMap((b) => (b === main ? pieces : used.has(b.id) ? [] : [b]));
+  }
+
+  /** 「分割實體」 (C7.4, ADR 0158): splits bodies by a datum plane or planar face. */
+  private splitBodies(f: SplitFeature, set: Bodies): BodyState[] {
+    const plane = this.planeOf(f.tool, set, { what: t('pm.split.tool'), notPlanar: t('feature.splitToolNotPlanar') });
+    const k = this.kernel;
+
+    const findTarget = (ref: Ref): BodyState => {
+      if (!ref.name) throw new FeatureError(t('body.pick', { what: t('pm.split.targets') }));
+      const b = set.list.find((x) => x.id === ref.name);
+      if (!b) throw new FeatureError(t('body.lost', { name: ref.name }), [{ ref, reason: 'missing', candidates: [] }]);
+      if (b.surface) throw new FeatureError(t('surface.notSolid'));
+      return b;
+    };
+
+    const hasTargets = !!(f.targets && f.targets.length > 0);
+    const targetCandidates = hasTargets
+      ? f.targets!.map(findTarget)
+      : set.list.filter((b) => !b.surface);
+
+    if (targetCandidates.length === 0) {
+      throw new FeatureError(t('feature.splitNoIntersection'));
+    }
+
+    const made: ShapeId[] = [];
+    let nextPiece = 2;
+    const splitMap = new Map<BodyState, BodyState[]>();
+
+    try {
+      for (const target of targetCandidates) {
+        let results: OpResult[];
+        try {
+          results = k.splitBody(target.shape, plane);
+        } catch (e) {
+          if (hasTargets) {
+            throw e instanceof KernelError ? new FeatureError(e.message) : e;
+          }
+          continue;
+        }
+
+        const pieces: BodyState[] = [];
+        results.forEach((r, idx) => {
+          made.push(r.shape);
+          const topology = k.topology(r.shape);
+          const context = {
+            featureId: f.id,
+            role: 'split',
+            input: {
+              faces: [...target.names.faces, `${f.id}:cut`],
+              edges: target.names.edges,
+              vertices: target.names.vertices,
+            },
+          };
+          const names = nameElements(r.faceOrigins, topology, context);
+          const bodyId = idx === 0 ? target.id : `${f.id}#${nextPiece++}`;
+          pieces.push({ id: bodyId, shape: r.shape, topology, names, by: f.id });
+        });
+
+        splitMap.set(target, pieces);
+      }
+
+      if (splitMap.size === 0) {
+        throw new FeatureError(t('feature.splitNoIntersection'));
+      }
+
+      const out: BodyState[] = [];
+      for (const b of set.list) {
+        const pieces = splitMap.get(b);
+        if (pieces) {
+          out.push(...pieces);
+        } else {
+          out.push(b);
+        }
+      }
+      return out;
+    } catch (e) {
+      for (const s of made) k.release(s);
+      throw e;
+    }
   }
 
   // ------------------------------------------------------------------ imported bodies (F2.1)

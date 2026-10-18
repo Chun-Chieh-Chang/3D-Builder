@@ -642,6 +642,16 @@ export interface ViewerEvents {
   onComponentDragEnd?: (cancelled: boolean) => void;
 }
 
+export interface CosmeticThreadDisplay {
+  threadType: 'external' | 'internal';
+  majorDiameter: number;
+  minorDiameter: number;
+  depth: number;
+  endCondition: 'blind' | 'through';
+  origin: [number, number, number];
+  axis: [number, number, number];
+}
+
 /**
  * Framework-agnostic viewport (A4.2, A5.1, D4): shaded body with black edges, orthographic
  * camera like SolidWorks, a headlight, edge picking and highlighting, a reference triad, and an
@@ -699,6 +709,7 @@ export class Viewer {
   private readonly viewListeners = new Set<() => void>();
   private planes: PlaneDisplay[] = [];
   private planeGroup: THREE.Group | null = null;
+  private cosmeticThreadGroup: THREE.Group | null = null;
   /** Whether the shown planes take clicks (a plane to sketch on, or to put in a reference geometry box). */
   private pickPlanes = false;
   private hoveredPlane: string | null = null;
@@ -813,6 +824,7 @@ export class Viewer {
     this.setOrigin(false);
     this.setGuides([]);
     this.setPlanes([]);
+    this.setCosmeticThreads([]);
     this.setVertices(new Float32Array(0));
     this.setGhost(null);
     this.setHighlights([]);
@@ -2225,6 +2237,79 @@ export class Viewer {
 
   private pickFace(clientX: number, clientY: number): number {
     return this.pickFaceHit(clientX, clientY).face;
+  }
+
+  /**
+   * Cosmetic Threads (C4.9, ADR 0156):
+   * Renders lightweight 3/4-circle arcs (ISO 6410-1) and blind-hole boundary rings in 3D.
+   */
+  setCosmeticThreads(threads: readonly CosmeticThreadDisplay[]): void {
+    if (this.cosmeticThreadGroup) {
+      this.scene.remove(this.cosmeticThreadGroup);
+      disposeGroup(this.cosmeticThreadGroup);
+      this.cosmeticThreadGroup = null;
+    }
+    if (threads.length === 0) return this.requestRender();
+
+    const group = new THREE.Group();
+    const positions: number[] = [];
+
+    for (const t of threads) {
+      const dir = new THREE.Vector3(...t.axis).normalize();
+      const origin = new THREE.Vector3(...t.origin);
+      const dia = t.threadType === 'external' ? t.minorDiameter : t.majorDiameter;
+      const r = dia / 2;
+
+      // Find two orthogonal vectors u, v
+      const arbitrary = Math.abs(dir.x) < 0.9 ? new THREE.Vector3(1, 0, 0) : new THREE.Vector3(0, 1, 0);
+      const u = new THREE.Vector3().crossVectors(dir, arbitrary).normalize();
+      const v = new THREE.Vector3().crossVectors(dir, u).normalize();
+
+      const addPoint = (ox: number, oy: number, oz: number, angle: number) => {
+        const cu = r * Math.cos(angle);
+        const cv = r * Math.sin(angle);
+        positions.push(
+          ox + cu * u.x + cv * v.x,
+          oy + cu * u.y + cv * v.y,
+          oz + cu * u.z + cv * v.z,
+        );
+      };
+
+      // 3/4 circle arc (ISO 6410-1: 270 deg, gap in 1st quadrant from 0 to 90 deg)
+      const SEGMENTS = 36;
+      const startAngle = Math.PI / 2;
+      const sweepAngle = (3 * Math.PI) / 2;
+      for (let i = 0; i < SEGMENTS; i++) {
+        const theta1 = startAngle + (i / SEGMENTS) * sweepAngle;
+        const theta2 = startAngle + ((i + 1) / SEGMENTS) * sweepAngle;
+        addPoint(origin.x, origin.y, origin.z, theta1);
+        addPoint(origin.x, origin.y, origin.z, theta2);
+      }
+
+      // If blind, draw full end ring at origin + depth * dir
+      if (t.endCondition === 'blind' && t.depth > 0) {
+        const ex = origin.x + dir.x * t.depth;
+        const ey = origin.y + dir.y * t.depth;
+        const ez = origin.z + dir.z * t.depth;
+        const FULL_SEGS = 32;
+        for (let i = 0; i < FULL_SEGS; i++) {
+          const theta1 = (i / FULL_SEGS) * 2 * Math.PI;
+          const theta2 = ((i + 1) / FULL_SEGS) * 2 * Math.PI;
+          addPoint(ex, ey, ez, theta1);
+          addPoint(ex, ey, ez, theta2);
+        }
+      }
+    }
+
+    if (positions.length > 0) {
+      const geom = new THREE.BufferGeometry();
+      geom.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+      const mat = new THREE.LineBasicMaterial({ color: 0x3b82f6, depthTest: true });
+      group.add(new THREE.LineSegments(geom, mat));
+      this.cosmeticThreadGroup = group;
+      this.scene.add(group);
+    }
+    this.requestRender();
   }
 
   /** The face the cursor is on and how far the body is there: -1 and Infinity when the ray misses it. */

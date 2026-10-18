@@ -1817,6 +1817,37 @@ class AppStore {
     );
   }
 
+  /**
+   * Cosmetic Thread (裝飾螺紋線, C4.9, ADR 0156):
+   * Opens a new cosmetic thread in PropertyManager.
+   */
+  newCosmeticThread(): void {
+    const s = this.state;
+    if (!s.result?.mesh) return this.notify(t('feature.cosmeticThreadNeedsBody'), 'error');
+    let targetFace: Ref = { kind: 'face', name: '' };
+    if (s.selectedFace) targetFace = s.selectedFace;
+    const base = t('feature.cosmeticThread');
+    const id = this.allocator().take('cosmeticThread');
+    this.openNew(
+      {
+        id,
+        type: 'cosmeticThread',
+        name: nextName(this.history.doc, base),
+        suppressed: false,
+        targetFace,
+        threadType: 'external',
+        standardMode: 'standard',
+        standardDesignation: 'M8',
+        majorDiameter: '8',
+        minorDiameter: '6.466',
+        pitch: '1.25',
+        endCondition: 'through',
+        depth: '10',
+      },
+      base,
+    );
+  }
+
   /** 「旋轉填料/基材」 or 「旋轉除料」 (C4.3) about the sketch's centerline (or its only line). */
   newRevolve(op: 'boss' | 'cut'): void {
     const sketch = this.selectedSketch();
@@ -2203,6 +2234,14 @@ class AppStore {
     const main = face?.kind === 'face' ? this.bodyOfFace(face.name) : undefined;
     const name = t('feature.combine');
     this.openNew({ id: this.allocator().take('combine'), type: 'combine', name: nextName(this.history.doc, name), suppressed: false, op: 'add', main: { kind: 'body', name: main ?? '' }, tools: [] }, name);
+  }
+
+  /** 「分割實體」 (C7.4): the selected planar face or top plane is the tool; the PropertyManager picks the rest. */
+  newSplit(): void {
+    const face = this.state.selectedFace;
+    const tool: Ref = face?.kind === 'face' ? face : { kind: 'datum', name: 'plane:top' };
+    const name = t('feature.split');
+    this.openNew({ id: this.allocator().take('split'), type: 'split', name: nextName(this.history.doc, name), suppressed: false, tool, targets: [] }, name);
   }
 
   /** The id of the body a face of the model on screen belongs to. */

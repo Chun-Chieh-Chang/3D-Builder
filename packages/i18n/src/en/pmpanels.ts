@@ -6,6 +6,7 @@ export const pmpanels: Translation = {
   'entity.line': 'Line',
   'entity.circle': 'Circle',
   'entity.arc': 'Arc',
+  'entity.ellipse': 'Ellipse',
   'entity.construction': 'Construction',
   'dimension.generic': 'Dimension',
   'pm.sketchStatus': 'Sketch Status',

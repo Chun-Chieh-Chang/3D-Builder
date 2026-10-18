@@ -64,6 +64,18 @@ export function closestOn(g: SolvedGeometry, p: P2): P2 | null {
       const e = polar(g.c, g.r, g.a1);
       return dist(p, s) < dist(p, e) ? s : e;
     }
+    case 'ellipse': {
+      const cosA = Math.cos(g.angle);
+      const sinA = Math.sin(g.angle);
+      const dx = p[0] - g.c[0];
+      const dy = p[1] - g.c[1];
+      const lx = dx * cosA + dy * sinA;
+      const ly = -dx * sinA + dy * cosA;
+      const t = Math.atan2(ly * g.majorRadius, lx * g.minorRadius);
+      const ex = g.majorRadius * Math.cos(t);
+      const ey = g.minorRadius * Math.sin(t);
+      return [g.c[0] + ex * cosA - ey * sinA, g.c[1] + ex * sinA + ey * cosA];
+    }
   }
 }
 
@@ -82,6 +94,17 @@ export function sample(g: SolvedGeometry, px: number): P2[] {
       const step = Math.max(0.02, Math.min(0.5, 2 * Math.acos(Math.max(-1, 1 - (0.3 * px) / Math.max(g.r, 1e-9)))));
       const n = Math.max(8, Math.ceil(sweep / step));
       return Array.from({ length: n + 1 }, (_, i) => polar(g.c, g.r, a0 + (sweep * i) / n));
+    }
+    case 'ellipse': {
+      const n = 64;
+      const cosA = Math.cos(g.angle);
+      const sinA = Math.sin(g.angle);
+      return Array.from({ length: n + 1 }, (_, i) => {
+        const theta = (TAU * (i % n)) / n;
+        const u = g.majorRadius * Math.cos(theta);
+        const v = g.minorRadius * Math.sin(theta);
+        return [g.c[0] + u * cosA - v * sinA, g.c[1] + u * sinA + v * cosA];
+      });
     }
   }
 }

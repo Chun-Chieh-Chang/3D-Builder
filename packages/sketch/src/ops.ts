@@ -328,7 +328,7 @@ export function anchorModel(sketch: Pick<SketchFeature, 'entities'>, geometry: G
     const known: { id: Id; at: P2 }[] = [];
     for (const e of all) {
       if (e.type === 'point' || !e.ref) continue;
-      for (const id of e.type === 'line' ? [e.p1, e.p2] : e.type === 'circle' ? [e.center] : [e.center, e.start, e.end]) {
+      for (const id of e.type === 'line' ? [e.p1, e.p2] : e.type === 'circle' ? [e.center] : e.type === 'ellipse' ? [e.center, e.major] : [e.center, e.start, e.end]) {
         const g = geometry.get(id);
         const made_ = all.find((x) => x.id === id && x.type === 'point') as Extract<SketchEntity, { type: 'point' }> | undefined;
         const p = g?.type === 'point' ? g.p : made_ ? ([made_.x, made_.y] as P2) : null;
@@ -385,7 +385,7 @@ export function anchorModelForSelection(
     const known: { id: Id; at: P2 }[] = [];
     for (const e of all) {
       if (e.type === 'point' || !e.ref) continue;
-      for (const id of e.type === 'line' ? [e.p1, e.p2] : e.type === 'circle' ? [e.center] : [e.center, e.start, e.end]) {
+      for (const id of e.type === 'line' ? [e.p1, e.p2] : e.type === 'circle' ? [e.center] : e.type === 'ellipse' ? [e.center, e.major] : [e.center, e.start, e.end]) {
         const g = geometry.get(id);
         const made_ = all.find((x) => x.id === id && x.type === 'point') as Extract<SketchEntity, { type: 'point' }> | undefined;
         const p = g?.type === 'point' ? g.p : made_ ? ([made_.x, made_.y] as P2) : null;
@@ -632,7 +632,7 @@ export function hitsOf(geometry: Geometry, id: Id, g: Curve, beyond: boolean): H
   return hits.sort((x, y) => x.u - y.u).filter((h, i, all) => i === 0 || h.u - all[i - 1]!.u > SAME);
 }
 
-export const refsOf = (e: SketchEntity): Id[] => (e.type === 'point' ? [] : e.type === 'line' ? [e.p1, e.p2] : e.type === 'circle' ? [e.center] : [e.center, e.start, e.end]);
+export const refsOf = (e: SketchEntity): Id[] => (e.type === 'point' ? [] : e.type === 'line' ? [e.p1, e.p2] : e.type === 'circle' ? [e.center] : e.type === 'ellipse' ? [e.center, e.major] : [e.center, e.start, e.end]);
 const usedElsewhere = (sketch: Pick<SketchFeature, 'entities'>, point: Id, except: Id): boolean =>
   sketch.entities.some((e) => e.id !== except && refsOf(e).includes(point));
 

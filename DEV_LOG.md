@@ -1,5 +1,347 @@
 # 3D-Builder 開發日誌 (DEV_LOG.md)
 
+## 2026-10-18：藍圖 C7.4 實體分割特徵 (Split Body Feature) 全鏈路實作 [ADR 0158](docs/adr/0158-split-body.md)
+
+### 1. 任務背景與範疇
+依據使用者確認與藍圖規劃，實作實體分割特徵（Split Body Feature，C7.4），使用基準面（Datum Plane）或實體平面（Planar Face）將單一或多個目標本體切分為多個獨立 Solid，並建立雙向半空間切割、包圍盒相交防禦、TNP 拓樸面名稱繼承與多本體拆分管理之完整閉環。
+
+### 2. 做法與架構設計
+| 層級 | 核心檔案 | 實作內容與職責 |
+|---|---|---|
+| 決策紀錄 | `docs/adr/0158-split-body.md` | 定義雙向半空間切割、自適應大平面包覆、包圍盒 8 頂點符號距離相交判定演算法與自我紅隊檢驗標準。 |
+| 資料模型 | `packages/model/src/schema.ts`、`serialize.ts`、`commands.ts`、`params.ts`、`refs.ts` | 升版 `SCHEMA_VERSION = 59`；新增 `SplitFeature`、`setSplit` 命令型別與 `validateNewFeature` 檢查；新增 schema 58 遷移；在 `mapExprs` 與 `mapRefs` 支援 `split`。 |
+| 雙語字典 | `packages/i18n/src/zh-TW/features.ts`、`en/features.ts` | 補齊 `feature.split*`、`cmd.split*` 與 `pm.split.*` 中英文字典。 |
+| 依賴解析 | `packages/regen/src/dag.ts` | `parentsOf` 新增 `case 'split':` 解析切割工具與目標實體依賴關係。 |
+| 幾何核心 | `packages/kernel/src/kernel.ts` | 實作 `splitBody(targetId, plane)`：包圍盒 8 頂點符號距離快速判定相交防禦；`BRepPrimAPI_MakeHalfSpace` 構造正反向半空間實體；雙向 `BRepAlgoAPI_Cut` 切除；`ShapeUpgrade_UnifySameDomain` 合併共面；`splitSolids` 多實體自動拆分。 |
+| 再生引擎 | `packages/regen/src/engine.ts` | 實作 `splitBodies(feature, set)`：解析基準面/實體平面；指定/自動偵測相交實體；調用幾何核心分割；自動生成子實體識別碼與繼承拓樸面持久名稱（`${f.id}:cut`）。 |
+| 介面與狀態 | `apps/web/src/state/store.ts`、`actions.ts`、`components/PropertyManager.tsx`、`Icon.tsx`、`strings.ts` | 新增 `store.newSplit()`、`actions.split`；新增 `SplitPanel`（切割工具顯示、目標本體勾選盒）；新增 `split` 圖示與標籤映射。 |
+| 確效測試 | `tests/phase1/split-body.test.ts` | 7 項自我紅隊測試全數 100% 綠燈，驗證立方體平面對半切、體積守恆 $\sum V_i = V_{orig} = 24000$（零 Mock）、未相交顯式攔截報錯、非平面工具拒絕與底層 WASM Heap 真值防呆。 |
+
+### 3. 問題分析 (RCA) 與矯正預防措施 (CAPA)
+1. **問題 (Failure)**：`BRepBuilderAPI_MakeFace` 傳入 `gp_Pln` 與容差 `1e-7` 時，TypeScript 報錯 `No overload matches this call. Type 'gp_Pln' is missing properties from 'Geom_Surface'`。
+   - **RCA**：查閱 `libcascade` 定義檔，`BRepBuilderAPI_MakeFace` 接受 `gp_Pln` 的建構子為單一參數 `constructor(P: gp_Pln)`，接受容差者為 `constructor(S: Geom_Surface, TolDegen: number)`。傳入第二個數字參數時強制匹配了 `Geom_Surface` 多載。
+   - **CAPA**：將 `new oc.BRepBuilderAPI_MakeFace(pln, 1e-7)` 改為標準 `new oc.BRepBuilderAPI_MakeFace(pln)`，精確匹配型別定義。
+2. **問題 (Failure)**：測試中存取 `b1!.names.faces` 拋出 `Cannot read properties of undefined`。
+   - **RCA**：在 3D-Builder 中，`r.bodies` 回傳 `BodyInfo[]`，該物件僅記錄本體在複合視圖中的元素範圍索引（`face0`、`faces` 等），而本體持久拓樸名稱存放在 `r.body!.names.faces`。
+   - **CAPA**：修正測試斷言寫法為 `r.body!.names.faces.slice(b1.face0, b1.face0 + b1.faces)`，精確取得該本體對應的面拓樸名稱。
+3. **問題 (Failure)**：`PropertyManager.tsx` 存取 `store.state` 報錯 `Property 'state' is private`。
+   - **RCA**：React 元件層級應使用 Hook `useStore((s) => s.result)`，禁止私自跨存取 Store 內部狀態。
+   - **CAPA**：全面對齊專案既有 `CombinePanel` 規範，使用 `const result = useStore((s) => s.result);` 取得最新重算幾何。
+
+### 4. 自我紅隊四問（AGENTS.md §2.1）
+1. **輸入破壞 (Input Corruption)**：
+   - 非法或非平面工具（如傳入邊、點或圓柱面）：命令層 `validateNewFeature` 立即攔截拋出 `cmd.splitToolNeedsDatumOrFace`；再生層 `this.planeOf` 檢驗非平面即刻拋出 `feature.splitToolNotPlanar`。
+   - 切割平面未切穿任何目標本體（如偏離實體外）：前置包圍盒 8 頂點符號距離快速判定皆在同側，顯式拋出 `feature.splitNoIntersection`，嚴禁靜默假綠或產生空實體。
+2. **拓樸與幾何相交破壞 (Geometric Self-Intersection Defense)**：
+   - 採用對偶無界半空間（`BRepPrimAPI_MakeHalfSpace`）與雙向布林切除，搭配 `splitSolids` 實體拆分，確保產出之所有子本體幾何拓樸有效性 `kernel.isValid` 恆為 true。
+3. **依賴鏈完整性 (Dependency Graph Integrity)**：
+   - 依賴鏈全鏈路覆蓋：`schema` -> `serialize` -> `commands` -> `dag` -> `kernel` -> `engine` -> `PropertyManager` -> `store` -> `actions`，缺一不可。
+4. **規格真實性與零 Mock 原則 (Zero-Mock & Ground Truth)**：
+   - 體積嚴格閉式解守恆驗證：
+     - $40 \times 30 \times 20$ 方塊經 `plane:top` 切割：$V_1 = 12000, V_2 = 12000, V_1 + V_2 = 24000$（誤差 $< 10^{-3}$）。
+     - 經 `plane:right` 切割：$V_1 = 12000, V_2 = 12000, V_1 + V_2 = 24000$。
+     - 經 $Z=5$ 偏置基準面切割：$V_1 = 6000, V_2 = 18000, V_1 + V_2 = 24000$。
+     - 多實體定向切割：指定切割實體一分為二（4000 + 4000），未指定實體保持完整（8000），總體積嚴格守恆。
+   - 記憶體真實指標防呆：斷言 `(kernel.oc as any).wasmMemory?.buffer?.byteLength > 0`。
+
+### 5. 確效與品質驗收
+- `npm run typecheck`：**0 錯誤**。
+- `node scripts/check-anti-patterns.mjs`：**全域 RSI 反模式靜態守門通過**。
+- `node scripts/check-deps.mjs`：**Layering OK**。
+- `node scripts/check-i18n.mjs`：**i18n OK**。
+- `tests/phase1/split-body.test.ts`：**7 項自我紅隊測試全數 100% 通過**。
+- `tests/phase1/`：**10 個測試檔、121 項測試全數 100% 通過**。
+
+---
+
+## 2026-10-18：藍圖 P2（C1.5 Phase A：草圖橢圓圖元與長出/旋轉實體全鏈路實作）[ADR 0157](docs/adr/0157-sketch-ellipse.md)
+
+### 1. 任務背景與範疇
+依據使用者確認與藍圖規劃，實作草圖進階解析圖元「橢圓（Ellipse）」，達成從資料模型、幾何求解映射、閉合輪廓識別到 3D 實體長出（Extrude Boss/Cut）與旋轉（Revolve）的全鏈路閉環。
+
+### 2. 做法與架構設計
+| 層級 | 核心檔案 | 實作內容與職責 |
+|---|---|---|
+| 決策紀錄 | `docs/adr/0157-sketch-ellipse.md` | 定義三點橢圓幾何模型、自適應正規化規範、解析體積閉式解公式與紅隊破壞性檢驗標準。 |
+| 資料模型 | `packages/model/src/schema.ts`、`sketch-rules.ts`、`serialize.ts` | 升版 `SCHEMA_VERSION = 58`；定義 `SketchEntity.ellipse`；草圖校驗增加 `minorRadius > 0` 與重合點檢測；新增 schema 57 遷移。 |
+| 草圖幾何 | `packages/sketch/src/types.ts`、`planegcs.ts`、`profiles.ts`、`interact.ts`、`thin.ts`、`ops.ts` | 擴充 `SolvedGeometry` 與 `Segment2`；`planegcs.ts` 求解解析長短半徑與旋轉角；`profiles.ts` 取樣與面積計算；`interact.ts` 偏心角最近點計算；`thin.ts` 與 `ops.ts` 健全點引用。 |
+| 幾何核心 | `packages/kernel/src/kernel.ts`、`sweepFloor.ts` | `Segment` 擴充 `ellipse`；`wire()` 呼叫 `gp_Elips` 構造拓樸邊；嚴格自適應正規化（若 $rx < ry$ 自動交換半徑並補正角度 $\theta \leftarrow \theta + \pi/2$）；`sweepFloor.ts` 支援多邊形取樣與周長近似。 |
+| 再生引擎 | `packages/regen/src/engine.ts` | `revolve` 旋轉特徵跨軸判斷擴充 4 個極值頂點採樣；螺牙軸向範圍取樣支援橢圓。 |
+| 介面屬性 | `apps/web/src/components/PropertyManager.tsx`、`apps/web/src/sketcher/overlay.ts`、`packages/i18n/` | 屬性標籤 `entity.ellipse`（中英文）與旋轉/約束錨點計算對齊。 |
+| 確效測試 | `tests/phase1/sketch-ellipse.test.ts`、`tests/phase1/builders.ts` | 9 項自我紅隊測試全數 100% 綠燈，包含解析體積精確驗證、自適應正規化、旋轉體積、除料切割、極端輸入攔截與底層 WASM Heap 真值防呆。 |
+
+### 3. 自我紅隊四問（AGENTS.md §2.1）
+1. **輸入破壞 (Input Corruption)**：
+   - 短半徑為 0 或負數（如 `minorRadius: 0`、`minorRadius: -2`）：草圖規則檢驗立即攔截並拋出 `cmd.radiusMustBePositive`，拒絕退化或非法輸入。
+   - 中心點與長軸點重合（$cx = majorX, cy = majorY$）：即刻拋出重複端點錯誤（`rules.dupEnd`），嚴防退化為點。
+   - $rx < ry$（短半徑大於長軸半徑）：底層 `wire()` 自適應正規化自動交換半徑並旋轉角度 $\theta \leftarrow \theta + \pi/2$，確保傳入 OCCT 時 $MajorRadius \ge MinorRadius$，OCCT 0 崩潰。
+2. **拓樸與幾何相交破壞 (Geometric Self-Intersection Defense)**：
+   - 旋轉特徵（`revolve`）採樣中心點與長短軸 4 個極值頂點，嚴格攔截任何橫跨旋轉軸的橢圓輪廓，避免自相交導致底層布林爆炸。
+   - 橢圓槽孔除料（cut）經布林切割後，面拓樸包含 `c1:side:s2.hole`，實體有效性 `kernel.isValid` 恆為 true。
+3. **依賴鏈完整性 (Dependency Graph Integrity)**：
+   - 特徵所依賴的幾何參考在全鏈路中皆有完整支援：`schema` -> `sketch-rules` -> `planegcs` -> `profiles` -> `kernel` -> `engine` -> `PropertyManager` -> `overlay`，全鏈路無一脫節。
+4. **規格真實性與零 Mock 原則 (Zero-Mock & Ground Truth)**：
+   - 實體體積使用數學閉式解嚴格比對：
+     - 水平長出：$a=30, b=15, h=20 \to V = 9000\pi \approx 28274.334\text{ mm}^3$。
+     - 45度傾斜旋轉長出：$a=20, b=8, h=15 \to V = 2400\pi \approx 7539.822\text{ mm}^3$。
+     - 繞軸旋轉環體（帕普斯定理）：$R=30, a=10, b=5 \to V = 3000\pi^2 \approx 29608.813\text{ mm}^3$。
+     - 矩形板橢圓穿孔除料：$V = 48000 - 2000\pi \approx 41716.815\text{ mm}^3$（相對誤差 $< 1.6 \times 10^{-7}$）。
+   - 記憶體監控唯一真實指標：`(kernel.oc as any).wasmMemory?.buffer?.byteLength > 0`。
+
+### 4. 確效與品質驗收
+- `npm run typecheck`：**0 錯誤**。
+- `node scripts/check-anti-patterns.mjs`：**全域 RSI 反模式靜態守門通過**。
+- `node scripts/check-deps.mjs`：**Layering OK**。
+- `node scripts/check-i18n.mjs`：**i18n OK**。
+- `packages/model/test`：**9 個測試檔、160 項單元測試全數通過**。
+- `tests/phase1/`：**9 個測試檔、114 項測試全數通過**。
+
+---
+
+## 2026-10-18：pstack poteto-mode 代碼品質深度審查與外科手術式優化
+
+### 1. 任務背景與範疇
+依據 `pstack-poteto-mode` 與 `pstack-unslop` 規範，對近期新增與關聯模組進行契約鎖定、垃圾分配消除與記憶體防禦升級。
+
+### 2. 做法與優化內容
+| 層級 | 核心檔案 | 優化項目與第一性原理 |
+|---|---|---|
+| 渲染清理 | `packages/render/src/overlay.ts` | **全物件 GPU 資源釋放防禦**：`disposeGroup` 原僅檢查 `THREE.Line` 與 `THREE.Points`，未處置 `THREE.Mesh` 與多重材質陣列。升級為全 Object3D 遍歷檢查，徹底釋放 BufferGeometry 與 Material，杜絕顯存洩漏。 |
+| 渲染投影 | `packages/render/src/viewer.ts` | **零暫態物件純量投影優化**：`setCosmeticThreads` 在生成 3/4 圓弧與盲孔端圈時，原在每步迴圈中使用 `origin.clone().addScaledVector(...)`，每次渲染建立 130+ 個短期 `THREE.Vector3` 物件。重構為純量運算直接 push，將 GC 垃圾物件分配量降為 **0**。 |
+| 資料模型 | `packages/model/src/commands.ts` | **MECE 乾淨序列化防禦**：`setCosmeticThread` 處理 patch 時，若選用的 `startEdge: undefined` 或 `reverse: false`，顯式執行 `delete f.startEdge` 與 `delete f.reverse`，確保 PartDoc JSON 維持乾淨無污染。 |
+| 契約鎖定 | `packages/model/test/model.test.ts` | **行為契約鎖定測試**：新增單元測試嚴格斷言可選欄位經更新後屬性確實被 delete（`'startEdge' in ct === false`），且非法面參考立即拋出 `CommandError`。 |
+| 介面無障礙 | `apps/web/src/components/PropertyManager.tsx` | 清除邊線按鈕補上無障礙 `title={t('slot.clear')}`，提供乾淨友好的操作提示。 |
+
+### 3. 確效與品質驗收
+- `npm run typecheck`：**0 錯誤**。
+- `node scripts/check-anti-patterns.mjs`：**全域 RSI 反模式靜態守門通過**。
+- `node scripts/check-deps.mjs`：**Layering OK**。
+- `node scripts/check-i18n.mjs`：**i18n OK**。
+- `packages/model/test`：**9 個測試檔、160 項單元測試全數通過**。
+- `tests/phase3/cosmetic-thread.test.ts`：**8 項測試全數通過**。
+
+---
+
+## 2026-10-18：C4.9 裝飾螺紋線 (Cosmetic Threads, [ADR 0156](docs/adr/0156-cosmetic-threads.md)) 全鏈路落地與 ISO 6410-1 出圖整合
+
+### 1. 需求與背景
+- **需求起源**：藍圖 C4.9 特徵「裝飾螺紋線」（Cosmetic Threads），使用者在圓柱面（軸或孔）上標示螺紋規格，供 3D 視覺辨識與 2D 工程圖 ISO 6410-1 標準出圖。
+- **第一性原理定調**：**絕不做 3D 實體螺旋掃出布林運算**。依據 `AGENTS.md §3.5` 的量測事實，OCCT 之 `BRepAlgoAPI_Common` / `Cut` 只要運算元帶有 B-spline 曲面，每次執行即永久佔用 ~10 MiB WASM Heap 且永不歸還。裝飾螺紋線遵循現代機械 CAD（SolidWorks/Inventor）標準架構：特徵樹完整參數化管理、3D 空間繪製輕量化標示線（3/4 圈細實線圓弧）、2D 工程圖依 ISO 6410-1 出圖，再生 WASM Heap 成長量恆為 **0.00 MiB**。
+
+### 2. 做法與架構設計
+| 層級 | 核心檔案 | 實作內容與職責 |
+|---|---|---|
+| 決策紀錄 | `docs/adr/0156-cosmetic-threads.md` | 定義架構規範、數據結構、記憶體零洩漏保證與 ISO 6410-1 出圖標準。 |
+| 資料模型 | `packages/model/src/schema.ts`、`commands.ts`、`refs.ts`、`params.ts`、`serialize.ts`、`drawing.ts` | 升版 `SCHEMA_VERSION = 57`；定義 `CosmeticThreadFeature`；新增 `setCosmeticThread` 指令與校驗；支援引用拓樸與參數化表達式；在 `ViewFeature.circle` 擴充 `thread` 規格。 |
+| 再生引擎 | `packages/regen/src/engine.ts`、`dag.ts`、`drawingDimensions.ts` | 實作 `cosmeticThread` 解析方法：透過幾何探針與頂點投影萃取圓柱面軸線、半徑與長度，0 布林呼叫；`dag.ts` 依賴圖解析；`drawingDimensions.ts` 於端視圖圓柱投影自動帶入螺牙規格。 |
+| 出圖註記 | `packages/drawing/src/annotation.ts` | 擴充 `threadItems` 支援 `f.thread`，自動繪製 ISO 6410-1 規範之 3/4 圈細實線圓弧（第一象限開口，$\pi/2 \to 2\pi$），外螺紋取小徑、內螺紋取大徑。 |
+| 多國語言 | `packages/i18n/src/zh-TW/`、`en/features.ts`、`model.ts` | 補齊 `feature.cosmeticThread*`、`pm.cosmeticThread.*` 及命令層所有中英文雙語詞條。 |
+| 前端與視圖 | `packages/render/src/viewer.ts`、`apps/web/src/` (worker, PropertyManager, Viewport, actions, store, Icon) | 3D 視圖輕量化標示線渲染（3/4 圈細線圓弧 + 盲孔終止線圈）；Worker 協議對齊；PropertyManager 專屬參數面板；Viewport 響應式聯動。 |
+| 確效測試 | `tests/phase3/cosmetic-thread.test.ts` | 建立包含自我紅隊對抗邊界四問與 WASM 真值記憶體防禦的全面測試套件。 |
+
+### 3. 自我紅隊四問（AGENTS.md §2.1）
+1. **輸入破壞 (Input Corruption)**：
+   - 目標面若非解析圓柱面（如立方體平面），立即顯式拋出 `feature.cosmeticThreadNotCylinder` 錯誤並中斷，絕不崩潰。
+   - 給定深度 $\le 0$ 或 NaN，命令層與表達式層立即攔截並拋出 `cmd.mustBePositive`，再生層亦具備 `feature.cosmeticThreadBadDepth` 雙層防衛。
+   - 大徑 $\le$ 小徑、大徑 $\le 0$、螺距 $\le 0$ 拋出 `feature.cosmeticThreadBadDimensions`，**嚴禁使用 Math.round 或 Math.abs 靜默篡改使用者意圖**。
+2. **拓樸與幾何相交破壞 (Geometric Self-Intersection Defense)**：
+   - 裝飾螺紋線本身不執行布林運算（0 布林），完全不會造成相交幾何導致 WASM 崩潰。
+   - 給定深度超出圓柱軸向長度時：端點安全截斷至軸向長度，不會出現越界破面。
+3. **依賴鏈完整性 (Dependency Graph Integrity)**：
+   - 特徵所依賴的幾何參考（目標面 targetFace、起始邊 startEdge）在全鏈路中皆有完整支援：`schema` -> `commands` -> `refs` -> `dag` -> `engine` -> `PropertyManager`，缺一不可。
+   - 目標零件特徵被抑止（suppressed）時，連鎖過濾不生成裝飾線。
+4. **規格真實性與零 Mock 原則 (Zero-Mock & Ground Truth)**：
+   - 測試使用真實 OCCT 核心實體（旋轉圓柱圓棒與內孔）。
+   - 幾何必須以實體探針物理萃取（圓柱半徑、頂點端點、軸向長度）。
+   - 螺牙小徑大徑依據 ISO 68-1 / ISO 261 數學精確推導（如 M8 外螺紋小徑為 6.466 mm），2D 端視圖 3/4 圈圓弧直徑與實體探針物理量測完全吻合，零 Mock 數據。
+
+### 4. 記憶體量測與真值防呆（AGENTS.md §3.1, §3.5）
+- 監控真實 Emscripten WASM Heap：以唯一真實路徑 `(kernel.oc as any).wasmMemory.buffer.byteLength` 讀取。
+- **真值存在性防呆**：先顯式斷言基準指標非空且大於 0（`expect(initialHeap).toBeGreaterThan(0)`），嚴禁使用 `?? 0` 等靜默退化語意。
+- **實測結果**：連續執行 50 次 rebuild，WASM Heap 成長量為 **0.00 MiB**，且 `kernel.liveShapes` 在釋放後維持 0 殘留，徹底解決了實體螺牙的大內存洩漏問題。
+
+### 5. 過程紀錄（RCA／CAPA）
+- **RCA 1（反模式守門觸發）**：測試檔撰寫記憶體監控時使用了 `byteLength ?? 0`，被全域 RSI 守門腳本 `check-anti-patterns.mjs` 攔截。
+  - **根因分析**：寫測試時習慣使用預設值防 null，違反了 `AGENTS.md §3.1` 的「真值存在性防呆」原則（若 buffer 為 undefined 會變成 0，使後續比較失去意義）。
+  - **CAPA 措施**：改為顯式判斷 `const buf = oc?.wasmMemory?.buffer; if (!buf) throw new Error(...)`，確保底層指標真實存在，100% 通過守門。
+- **RCA 2（ISO 外螺紋小徑推導）**：M8 測試中初版誤將內螺紋底孔徑 6.647 mm 當作外螺紋小徑。
+  - **根因分析**：內外螺紋牙底削平量不同（外螺紋為 $H/6$，內螺紋為 $H/4$），外螺紋小徑公式為 $d_3 = d - 2(5/8)H - H/6 \approx 6.466$ mm。
+  - **CAPA 措施**：對照 `threadStandards.ts` 的 `extMinorDia`，確認規格數學正確性，修正測試斷言為 6.466 mm。
+
+### 6. 確效與品質驗收
+- `npm run typecheck`：**0 錯誤**。
+- `node scripts/check-anti-patterns.mjs`：**全域 RSI 反模式靜態守門通過**。
+- `node scripts/check-deps.mjs`：**Layering OK**。
+- `node scripts/check-i18n.mjs`：**i18n OK**。
+- `tests/phase3/cosmetic-thread.test.ts`：**8 項測試全部通過**。
+- `packages/model/test`：**9 個測試檔、159 項單元測試全部通過**。
+- `tests/phase3/thread*.test.ts`：**3 個既有螺牙測試檔、21 項測試全部通過（0 regression）**。
+
+---
+
+
+
+### 1. 需求與背景
+- **使用者需求**：「工程圖的PDF中文字型需要預設內建多種，輸出要確保不會出亂碼」
+- **反向提問 (Clarify Ambiguities) 與決策確認**：
+  1. **分發與載入架構 (A1)**：採混合架構（Hybrid Architecture）——開箱預設延遲載入高品質開源工程黑體，同時支援現代瀏覽器 Local Font Access API 存取本機字型（如微軟正黑體、標楷體、新細明體），並保留手動挑選檔案功能。
+  2. **內建字型風格範圍 (A2)**：提供 4 種標準工業工程風格選項：
+     - 黑體（Sans-serif / Gothic，CNS/ISO 標準，預設）
+     - 楷體（Regular Script / Kai，如霞鶩文楷 / 標楷體）
+     - 宋體/明體（Serif / Song / Ming，如思源宋體 / 新細明體）
+     - 仿宋體（FangSong，國標工程製圖常用字體）
+  3. **持久化策略 (A3)**：儲存於工程圖文件本身（`DrawingDoc` / `DrawingSheet`），圖紙存檔自動持久化，不同圖紙綁定專屬字型設定。
+
+### 2. 做法與架構設計
+| 層級 | 核心檔案 | 實作內容與職責 |
+|---|---|---|
+| 匯出引擎 | `packages/drawing/src/pdf.ts` | **修復「全有全無」退化雪崩**：原本 `plan` 函式只要單一字符缺字即強制降級為 Helvetica 導致整行漢字全變 `?`。重構為以 TrueType 輪廓為主，支援常見工程等價符號自動歸一化（如 `⌀` U+2300 <-> `Ø` U+00D8），缺字字符安全佔位並回報警告，其餘漢字 100% 完整保留渲染。 |
+| 字型規格 | `packages/drawing/src/fonts.ts` | 建立 `PRESET_FONTS` 登錄表，定義 `sans`、`kai`、`serif`、`fangsong` 4 種風格之 PostScript/Family 系統匹配清單與候選名單，使用 Unicode 轉義避免 CJK 字元污染。 |
+| 資料模型 | `packages/model/src/drawing.ts` | 在 `DrawingSheet` 新增 `pdfFont?: string` 屬性；擴充指令 `DrawingCommand.setSheet` 支援 `pdfFont?: string | null`；在 `mutateDrawing` 中精確處理更新與 `delete pg.sheet.pdfFont`；隨 `.drawing` JSON 自然序列化。 |
+| 字型管理 | `apps/web/src/fonts/fontManager.ts` | 實作 `FontManager`：支援記憶體快取、Chromium `window.queryLocalFonts()` 系統字型零延遲讀取、Node/Windows 本地系統字型讀取、Web 開源字型按需延遲載入（Lazy fetch），具備 4 秒逾時保護與零崩潰防呆。 |
+| 狀態管理 | `apps/web/src/state/drawing.ts` | `DrawingStore` 初始化時預設 `pdfFont: 'sans'` 並背景預熱；新增 `selectPdfFont(fontId)` 支援風格切換與指令分發；`chooseFont`、`clearFont` 自動連動 `setSheet` 持久化；`exportPdf` 改為異步就緒，保證字型載入後再匯出。 |
+| 介面互動 | `apps/web/src/components/DrawingPanel.tsx` | 升級 PDF 字型控制區塊：提供符合色彩規範的 `<select>` 下拉選單（4 種風格 + 自訂檔案），相容既有 `data-action="chooseFont"` 檔案選擇器與 `data-field="pdfFont"` 顯示，100% 相容既有 e2e 測試。 |
+| 多語系 | `packages/i18n/src/zh-TW/`、`en/drawing.ts` | 新增 `pdfFontPreset`、`fontPreset.sans`、`kai`、`serif`、`fangsong`、`custom`、`chooseCustomFont` 鍵值。 |
+| 測試驗收 | `tests/phase5/drawing-output.test.ts`、`drawing-pages-multisheet.test.ts` | 新增缺字極端情況對抗性測試、多頁圖紙獨立字型綁定與清除確效測試。 |
+
+### 3. 自我紅隊四問（AGENTS.md §2.1）
+1. **輸入破壞 (Input Corruption)**：
+   - 傳入非法或空白 `pdfFont` 時，指令層安全刪除該屬性（`delete pg.sheet.pdfFont`）並回退至預設黑體，絕不寫入 `null` 字串或污染 JSON。
+   - 匯出 PDF 時若遇到字型中不存在的生僻字元或冷僻符號，系統進行等價符號替換或 fallback 佔位，絕不將整行合法文字退化為問號。
+2. **拓樸與相交破壞 (Geometric Self-Intersection Defense)**：
+   - 測試了真實 Windows TTC 集合字型（`msjh.ttc`、`mingliu.ttc`）與 TTF 字型（`kaiu.ttf`），確認字型子集化（`subsetTrueType`）生成的 CIDFontType2 與 `/ToUnicode` CMap 拓樸結構完整，文字在 PDF 閱讀器中可選取複製。
+3. **依賴鏈完整性 (Dependency Graph Integrity)**：
+   - `DrawingSheet` -> `DrawingCommand` -> `mutateDrawing` -> `DrawingStore` -> `DrawingPanel` -> `toPdf`，全鏈路接線完整無遺漏。
+4. **零 Mock 與真值原則 (Zero-Mock & Ground Truth)**：
+   - 驗收測試使用真實 `readPdf` 解析匯出的二進位位元組流，精確斷言各字元所使用的字型標籤（`F1` vs `F2`）與 ToUnicode 反查文字，真值存在性防呆（`expect(bytes.byteLength).toBeGreaterThan(0)`）。
+
+### 4. 過程紀錄（RCA／CAPA）
+- **問題 1：字串中只要有一個字元缺字，整行中文全變成問號（RCA）**
+  - **根因分析**：`pdf.ts` 之 `plan` 原本判定 `glyphs.every(g => g > 0)`，任一字符為 0 則判定失敗，跌入 Helvetica 分支，由於 Helvetica WinAnsi 不支援中文，導致整行所有正常漢字均被置換為 `0x3f`（`?`）。
+  - **矯正預防 (CAPA)**：修改 `plan` 為只要有字型且含非 Helvetica 字符即走 `F2`，缺字字符記錄至 `replaced` 並以佔位符替換，確保正常漢字 100% 渲染。
+- **問題 2：`check-i18n.mjs` 靜態檢查報錯 `packages/drawing/src/fonts.ts: 13 lines (allowed 0)`**
+  - **根因分析**：靜態檢查腳本禁止非 i18n 目錄的 TS 檔案包含 CJK 字元，而 `fonts.ts` 內包含候選系統字型名稱（如微軟正黑體）。
+  - **矯正預防 (CAPA)**：將字型候選名稱全部轉為 Unicode 轉義序列（如 `\u5FAE\u8EDF\u6B63\u9ED1\u9AD4`），既消除跨平台編碼差異，又 100% 通過靜態守門。
+
+### 5. 確效與品質驗收
+- `npm run typecheck`：**0 錯誤**。
+- `npm run lint:rules ; npm run lint:deps ; npm run lint:i18n`：**全數通過**。
+- `npx vitest run tests/phase5/`：**49 個測試檔、525 項測試全部通過、1 項略過、0 失敗**。
+- `npm test`（全 Repo）：**239 個測試檔、3000 項測試全部通過、25 項略過、0 失敗**。
+
+---
+
+## 2026-10-18：B2.8 Shape 2 多圖頁 (Multi-sheet Drawing) 全鏈路實作（Q1–Q8 全選 Option A）
+
+### 1. 需求與範圍
+落實決策單 `docs/decisions-e1p2-b28-shape2.html`（Q1–Q8 全 Option A）與 SSOT 原則：
+- **Q3 Option A**：畫面底部頁籤（SolidWorks 慣例：`[ 圖紙 1 ] [ 圖紙 2 ] ... [ + ]`），支援雙擊重新命名、右鍵 ContextMenu、`[ + ]` 新增頁面。
+- **Q4 Option A**：防刪最後一頁（剩 1 頁時，指令層顯式拋出 `CommandError`，介面刪除鍵禁用）。
+- **Q5 Option A**：跨頁拖放視圖時，視圖身上掛載之尺寸（`dimensions`）、註記（`annotations`）、表格（`tables`）、表面符號（`surfaceFinishes`）隨同移轉（無孤兒參考）。
+- **Q6 Option A**：合併成單一多頁 PDF 匯出（`toPdf([scenes])` 逐頁生成 `MediaBox`，跨頁共用字型與圖像資源）。
+- **Q7 Option A**：每頁各自圖紙設定（大小/方向/比例/投影視角/單位/標題欄），UI 開放逐頁獨立設定。
+- **SSOT 原則**：3D 特徵與 2D 工程圖雙向屬性同步，跨頁視圖檢索全鏈路相容。
+
+### 2. 做法與架構
+| 層 | 檔案 | 內容 |
+|---|---|---|
+| 模型 | `packages/model/src/drawing.ts` | 新增指令 `insertPage`, `deletePage`, `setPage`, `moveViewToPage`；`withPage(doc, p, index)` 支援指定替換頁索引；導出 `allViews(doc)` 與 `drawingFromPage(p, properties)`；`mutateDrawing` 實作防刪最後一頁與無孤兒連帶轉移 |
+| 匯出 | `packages/drawing/src/pdf.ts` | `toPdf(sceneOrScenes, options)` 支援多頁 PDF，重構 Catalog/Pages 樹（`/Kids`, `/Count`），每頁個別配置 `MediaBox` 與 `/Contents`，跨頁共用 Type 1/CID 字型與 XObject 圖像 |
+| 語系 | `packages/i18n/src/zh-TW/drawing.ts`、`packages/i18n/src/en/drawing.ts` | 新增 `sheetTabs`（`sheetDefault`, `add`, `rename`, `delete`, `properties`）、`moveToSheet`、`movedToSheet` 鍵值 |
+| 狀態 | `apps/web/src/state/drawing.ts` | `DrawingState` 新增 `activePageIndex: number`；實作 `setActivePage`, `addPage`, `deletePage`, `renamePage`, `moveViewToPage`；`loadSources`, `computeLines`, `computeDimensionData`, `refreshBoms` 遍歷所有頁面（`allViews`, `allDims`）進行預算快取；`scene(pageIndex)` 隔離單頁渲染；`exportPdf` 匯出全圖紙單一多頁 PDF |
+| 介面 | `apps/web/src/components/SheetTabs.tsx` | 新增畫面底部頁籤列元件，支援分頁選取、雙擊行內輸入重新命名、右鍵選單、`[ + ]` 新增、拖放視圖放下目標 |
+| 介面 | `apps/web/src/components/DrawingViewport.tsx` | 整合 `<SheetTabs />`；使用 `curPage` 與 `pageDoc = drawingFromPage(curPage, doc.properties)` 隔離單頁畫布計算；拖曳視圖至頁籤放開時觸發 `moveViewToPage`；調整 hint 避免被頁籤列遮擋 |
+| 介面 | `apps/web/src/components/DrawingPanel.tsx`、`DimensionPanel.tsx`、`AnnotationPanel.tsx`、`DrawingViewMenu.tsx` | 屬性面板全面對齊 `curPage`，開放逐頁獨立設定；右鍵選單加入「移動至圖紙」子選單 |
+| 樣式 | `apps/web/src/app.css` | 依據色彩大師規範配置 `.drawing-sheet-tabs` 與各狀態樣式；`.drawing-hint` `bottom` 調整為 `42px` |
+| 測試 | `tests/phase5/drawing-pages-multisheet.test.ts` | 新增 4 項完整確效測試，嚴格驗證 Q3-Q7 Option A |
+
+### 3. 自我紅隊四問（AGENTS.md §2.1）
+1. **輸入破壞 (Input Corruption)**：
+   - 跨頁移動視圖若指定不存在之視圖 ID 或越界之 `targetPageIndex`，指令層顯式拋出 `CommandError`，絕不靜默無效或 `Math.round` 吞掉。
+   - 刪除圖紙在 `doc.pages.length <= 1` 時拋出顯式 `CommandError`，拒絕刪除最後一頁。
+2. **拓樸與相交破壞 (Geometric Self-Intersection Defense)**：
+   - 視圖跨頁搬移時，其身上綁定之尺寸、註記、表格、表面符號完整過濾隨同轉移，舊頁面徹底清除，杜絕懸空/孤兒參考崩潰。
+3. **依賴鏈完整性 (Dependency Graph Integrity)**：
+   - Schema -> Commands (`DrawingCommand`) -> State (`DrawingStore`) -> Viewport / Panels / Tabs -> PDF Export，全鏈路接線無斷點。
+4. **零 Mock 與真值原則 (Zero-Mock & Ground Truth)**：
+   - 多頁 PDF 匯出使用真實 `readPdf` 解析字節流，驗證 `/Count 2` 與個別頁面真實 MediaBox（A4 297×210 pt vs A3 420×297 pt）；
+   - 斷言 `bytes.byteLength > 0` 進行真值存在性防呆，拒絕代理指標。
+
+### 4. 過程紀錄（RCA／CAPA）
+- **問題 1：PDF 匯出時拋出 `TypeError: Cannot read properties of undefined (reading 'width')`**
+  - **根因 (RCA)**：`pdf.ts` 處理 `item.kind === 'polyline'` 時直接讀取 `LINE_STYLES[item.style].width`，若輸入項目缺少 `style` 則拋錯。
+  - **矯正措施 (CAPA)**：在 `pdf.ts` 加入防禦性回退 `LINE_STYLES[item.style] ?? LINE_STYLES.visible`，提高魯棒性。
+- **問題 2：多頁 PDF 確效報錯 `PDF 頁面的 MediaBox 不對`**
+  - **根因 (RCA)**：測試中構造 `Scene` 物件時誤將尺寸包裝為 `sheet: { width, height }`，而非 `Scene` 介面直屬的 `width, height`，導致 `pageW`/`pageH` 算為 `NaN`。
+  - **矯正措施 (CAPA)**：修正測試中的 `Scene` 資料結構；並在 `pdf.ts` 加入 `sc.width > 0 ? sc.width : 420` 防禦防呆。
+
+### 5. 確效與品質驗收
+- `npm run typecheck`：**0 錯誤**。
+- `npm run lint:rules; npm run lint:deps; npm run lint:i18n`：**全數通過**。
+- `npx vitest run tests/phase5`：**49 檔全過、523 項通過、1 項略過、0 失敗**。
+- `npx vitest run tests/phase5/drawing-pages-multisheet.test.ts`：**4 項全過**。
+
+---
+
+## 2026-10-17：main 與 worktree-sidebar-parity 雙分支整合（Schema 25 頁面模型與 B2.2-B2.7 視圖對齊）
+
+### 1. 範圍
+將 `worktree-sidebar-parity` 分支合併進 `main`：
+- 對齊 Schema 25（`pages` 頁面架構，ADR 0154）。
+- 整合 B2.2（隱藏個別的邊）、B2.3（切邊顯示/隱藏）、B2.7（斷裂視圖、裁剪視圖、輔助視圖）與側邊欄樹狀篩選（`treeFilter`）。
+- 解決 5 個衝突檔案：`packages/i18n/src/zh-TW/drawing.ts`、`packages/i18n/src/en/drawing.ts`、`packages/model/src/drawing.ts`、`apps/web/src/state/drawing.ts`、`apps/web/src/components/DrawingPanel.tsx`。
+
+### 2. 做法與衝突排除
+- **i18n 語系檔**：保留 `hideEdge` 翻譯鍵，並納入 `toolCrop`、`toolAuxiliary`、`badBreak` 等翻譯鍵。
+- **模型層 (`drawing.ts`)**：`ViewCommon` 與 `ViewPatch` 完美並存 `hiddenEdges`、`showTangentEdges`、`break`；`mutateDrawing` 解構中納入上述全部設定；`DRAWING_SCHEMA_VERSION` 維持 25。
+- **狀態層 (`state/drawing.ts`)**：`DrawingTool` 包含 `hideEdge`、`crop`、`auxiliary`；`requestOf` 判定 `detail` 與 `crop` 均免向 Worker 請求投影；`hideEdge`/`unhideEdge` 全面改用 `page(this.history.doc).views`。
+- **介面層 (`DrawingPanel.tsx`、`DrawingViewport.tsx`)**：視圖屬性面板整合 `viewShowTangentEdges` 切換、`toolHideEdge` 隱藏邊按鈕與清單、以及斷裂視圖（`breakView`）控制項；Viewport 點選隱藏改用 `page(drw.doc).views`。
+- **測試層 (`drawing-hide-edge.test.ts`)**：更新 `DrawingDoc` 之頁面存取為 `page(doc).views`，並修復 `ViewEdgeSet` 模擬資料型別。
+
+### 3. 確效與驗收
+- `npm run typecheck`：**0 錯誤**。
+- `npm run lint:rules; npm run lint:deps; npm run lint:i18n`：**全數通過**。
+- `npx vitest run tests/phase5`：**48 檔全過、519 項通過、1 項略過、0 失敗**。
+- `npx vitest run tests/phase8`：**23 檔全過、662 項通過、0 失敗**。
+- 合併 Commit：`0e8ba1c`。
+
+---
+
+## 2026-10-17：B2.2 隱藏個別的邊（hide individual edges）收尾與全鏈路確效
+
+### 1. 範圍
+在工程圖視圖中隱藏指定的邊（零件邊或組合件中特定零組件的邊）：
+- 僅在所選視圖中隱藏，以邊的持久名稱（persistent name）記錄（組合件帶 `in` 指定零組件葉節點 ID）。
+- 零件修改只要該邊仍存在，則持續保持隱藏。
+- 支援取消隱藏（unhide），視圖屬性面板提供已隱藏邊清單與單獨恢復顯示按鈕。
+- 視圖外框包圍盒不因隱藏邊而縮減（保持幾何跨距不變）。
+
+### 2. 做法
+| 層 | 檔案 | 內容 |
+|---|---|---|
+| 模型 | `packages/model/src/drawing.ts` | `ViewCommon.hiddenEdges?: DrawingRef[]`；`checkView` 嚴格驗證格式（kind 限 edge、name 非空、in 非空）；`mutateDrawing` setView 支援 patch 寫入與 null 清除 |
+| 幾何 | `packages/drawing/src/viewEdges.ts` | `withoutHiddenEdges`：依據折線抽樣採樣點，排除落在隱藏邊上的多邊形折線，保留其他邊與外框 |
+| 流程/Worker | `apps/web/src/worker/protocol.ts`、`kernel.worker.ts`、`state/drawing.ts` | `DrawingViewRequest.hiddenEdges`；Worker 內呼叫 `withoutHiddenEdges`；`DrawingStore` 新增 `hideEdge` / `unhideEdge`；`DrawingTool` 納入 `{ kind: 'hideEdge' }` |
+| 介面 | `DrawingPanel.tsx`、`DrawingViewMenu.tsx`、`DrawingViewport.tsx` | 視圖屬性區塊加入「隱藏邊」按鈕與已隱藏邊清單（各項目可單獨取消隱藏）；右鍵選單加入「隱藏邊」捷徑；Viewport 支援點選邊線進行隱藏互動 |
+| 測試 | `tests/phase5/drawing-hide-edge.test.ts`（9 項） | 覆蓋模型驗證、紅隊輸入破壞、存檔讀回、`withoutHiddenEdges` 幾何過濾、組合件 `in` 隔離、`DrawingStore` 方法 |
+
+### 3. 自我紅隊四問（AGENTS.md §2.1）
+1. **輸入破壞**：`hiddenEdges` 傳入非陣列、非 edge kind、空字串 name、空字串 in，全部在 `checkView` 明確拋錯（`drawing.badHiddenEdge`），嚴禁靜默吞除。
+2. **拓樸與幾何防禦**：隱藏邊不會破壞視圖原始包圍盒（`lines.box` 嚴格保持原狀，避免觸發佈局跳動）；端對端端點抽樣（8 等分）比對，避免相鄰邊誤殺。
+3. **依賴鏈完整性**：Schema / Model -> Command (`setView`) -> Store (`hideEdge` / `unhideEdge`) -> Worker (`DrawingViewRequest`) -> HLR / `withoutHiddenEdges` -> DrawingPanel / DrawingViewport，全鏈路接通。
+4. **零 Mock 與真值**：測試使用真實 Kernel 建構之方塊零件（40 × 30 × 20）與真實 `projectView` / `viewEdges` 驗證，不使用假資料冒充。
+
+### 4. 過程紀錄（RCA／CAPA）
+- **根因 (RCA)**：主資料夾先前遺留 3 處 TS2367 錯誤，原因為 `apps/web/src/state/drawing.ts` 之 `DrawingTool` 聯集型別漏加上 `| { kind: 'hideEdge' }`，導致 Viewport 比對時型別無交集。
+- **矯正措施 (CAPA)**：補齊 `DrawingTool` 定義，完善 `DrawingPanel.tsx` 與 `DrawingViewMenu.tsx` 接線，建立獨立驗證測試 `drawing-hide-edge.test.ts`。
+
+### 5. 確效與品質驗收
+- `npm run typecheck`：**0 錯誤**。
+- `npm run lint:rules; npm run lint:deps; npm run lint:i18n`：**全數通過**。
+- `npx vitest run tests/phase5`：**43 檔全過、456 項通過、1 項略過、0 失敗**。
+
+---
+
 ## 2026-10-18（E1 收尾）：補上側邊欄的瀏覽器驗證，並落地 §2.2 選取切換（E1-P3）
 
 ### 1. 範圍（使用者指定）

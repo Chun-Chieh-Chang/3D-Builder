@@ -104,10 +104,28 @@ export function mapRefs(feature: Feature, map: (ref: Ref) => Ref): { feature: Fe
       return { feature: { ...feature, edges: feature.edges.map(one) }, replaced };
     case 'combine':
       return { feature: { ...feature, main: one(feature.main), tools: feature.tools.map(one) }, replaced };
+    case 'split':
+      return {
+        feature: {
+          ...feature,
+          tool: one(feature.tool),
+          ...(feature.targets ? { targets: feature.targets.map(one) } : {}),
+        },
+        replaced,
+      };
     case 'thread':
       return typeof feature.axis === 'string' ? { feature, replaced } : { feature: { ...feature, axis: one(feature.axis) }, replaced };
     case 'knurl':
       return { feature: { ...feature, axis: one(feature.axis) }, replaced };
+    case 'cosmeticThread':
+      return {
+        feature: {
+          ...feature,
+          targetFace: one(feature.targetFace),
+          ...(feature.startEdge ? { startEdge: one(feature.startEdge) } : {}),
+        },
+        replaced,
+      };
     case 'revolve':
     case 'sweep':
     case 'loft':

@@ -1,7 +1,7 @@
 import { t } from '@3db/i18n';
 import { edgeFingerprint, faceFingerprint, resolveRef, vertexFingerprint, type ElementNames } from '@3db/naming';
 import type { Topology } from '@3db/kernel';
-import type { SourceProvider } from './engine';
+import type { CosmeticThreadInfo, SourceProvider } from './engine';
 import { rightOf, sheetUp, type ElementFacts, type HoleInfo, type PartDoc, type Ref, type ViewAxes, type ViewFeature } from '@3db/model';
 
 /**
@@ -179,7 +179,7 @@ export function elementFacts(topology: Topology, names: ElementNames, ref: Ref, 
  * The elements of the part that a view looking from `axes` sees edge-on or as a circle, in the view's coordinates (x to its right, y up): the planes square to the
  * view's x or y, and the cylinders along its direction. `faceAllowed` leaves out faces (those of a workpiece that is only there for reference).
  */
-export function viewFeatures(topology: Topology, names: ElementNames, axes: ViewAxes, faceAllowed: (face: number) => boolean = () => true, features?: HoleFeatures): ViewFeature[] {
+export function viewFeatures(topology: Topology, names: ElementNames, axes: ViewAxes, faceAllowed: (face: number) => boolean = () => true, features?: HoleFeatures, cosmeticThreads?: readonly CosmeticThreadInfo[]): ViewFeature[] {
   const right = rightOf(axes);
   const up = sheetUp(axes);
   const out: ViewFeature[] = [];
@@ -204,6 +204,8 @@ export function viewFeatures(topology: Topology, names: ElementNames, axes: View
       const to: V3 = [f.center[0] - g.origin[0], f.center[1] - g.origin[1], f.center[2] - g.origin[2]];
       const full = (longest.get(i) ?? 0) >= 2 * Math.PI * g.radius * (1 - 1e-3);
       const hole = full ? holeInfo(topology, i) : null;
+      const faceName = names.faces[i];
+      const ct = cosmeticThreads?.find((t) => t.targetFace.name === faceName);
       out.push({
         type: 'circle',
         ref: ref(),
@@ -211,7 +213,8 @@ export function viewFeatures(topology: Topology, names: ElementNames, axes: View
         radius: g.radius,
         convex: g.convex,
         full,
-        ...(hole ? { hole: withFeature(hole, names.faces[i]!, features) } : {}),
+        ...(hole ? { hole: withFeature(hole, faceName!, features) } : {}),
+        ...(ct ? { thread: { majorDiameter: ct.majorDiameter, minorDiameter: ct.minorDiameter, threadType: ct.threadType } } : {}),
         // a whole circle has no middle of its arc: its leader goes up and to the right
         outward: full ? 45 : (Math.atan2(dot(to, up), dot(to, right)) * 180) / Math.PI,
       });

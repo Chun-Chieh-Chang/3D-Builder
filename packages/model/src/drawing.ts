@@ -48,6 +48,8 @@ export interface DrawingSheet {
   dimStyle?: DimStyle;
   /** How the title block writes its texts (v20, ADR 0150): the three heights and whether a text too wide for its cell is drawn shrunk. Absent: ISO 7200's (`TITLE_STYLE_DEFAULT`). */
   titleStyle?: TitleStyle;
+  /** The font chosen for PDF export (e.g. 'sans', 'kai', 'serif', 'fangsong', a system font name, or custom font file name). */
+  pdfFont?: string;
 }
 
 /**
@@ -207,6 +209,13 @@ interface ViewCommon {
    * arrangement's centring, the sheet's shift or the sheet's (or its parent's) scale.
    */
   locked?: boolean;
+  /**
+   * The edges of the view the user has hidden (B2.2): a straight edge or a circle of the part, by its persistent name (in a view of an assembly, with `in`
+   * naming the part it is in), is not drawn in this view. The part may change: an edge the change keeps keeps its name and stays hidden. Absent: nothing
+   * hidden. What a hidden edge's line is is what the view's own lines say: where several edges are one place on the sheet, it is the nearest of them,
+   * as pointing at it is.
+   */
+  hiddenEdges?: DrawingRef[];
   /**
    * Whether the view draws its tangent edges (B2.3): the smooth edges where two faces meet tangentially (a fillet meeting a face, the seam of a cylinder).
    * Absent: they are drawn, as they were before the field — a drawing made earlier looks the same. `false` leaves them out.
@@ -503,7 +512,7 @@ export type ViewFeature =
   /** A plane seen edge-on: a line across the view's x (`axis: 'x'`, at x = `coord`) or its y. */
   | { type: 'plane'; ref: Ref; axis: 'x' | 'y'; coord: number; area: number }
   /** A cylinder seen along its axis: a circle (a whole one, `full`, or an arc) with its middle in the view's coordinates and the direction (degrees) from there to the middle of the arc. */
-  | { type: 'circle'; ref: Ref; centre: [number, number]; radius: number; convex: boolean; full: boolean; outward: number; hole?: HoleInfo }
+  | { type: 'circle'; ref: Ref; centre: [number, number]; radius: number; convex: boolean; full: boolean; outward: number; hole?: HoleInfo; thread?: { majorDiameter: number; minorDiameter: number; threadType: 'external' | 'internal' } }
   /** A whole cylinder seen from the side: its axis from one end to the other, in the view's coordinates. */
   | { type: 'axis'; ref: Ref; from: [number, number]; to: [number, number]; radius: number }
   /**
@@ -655,8 +664,14 @@ export const page = (doc: Pick<DrawingDoc, 'pages'>, index = 0): DrawingPage => 
 /** A drawing of one page: what the layout builds when it tries a scale or a place (B2.8, ADR 0154). */
 export const drawingFromPage = (p: DrawingPage, properties: Record<string, string> = {}): DrawingDoc => ({ kind: 'drawing', schemaVersion: DRAWING_SCHEMA_VERSION, pages: [p], properties, idCounters: {} });
 
-/** The same drawing with its first page replaced (B2.8, ADR 0154). */
-export const withPage = (doc: DrawingDoc, p: DrawingPage): DrawingDoc => ({ ...doc, pages: [p, ...doc.pages.slice(1)] });
+/** The same drawing with a page replaced (B2.8, ADR 0154). */
+export const withPage = (doc: DrawingDoc, p: DrawingPage, index = 0): DrawingDoc => ({
+  ...doc,
+  pages: doc.pages.map((existing, i) => (i === index ? p : existing)),
+});
+
+/** All views across all pages in the drawing (B2.8 shape 2). */
+export const allViews = (doc: Pick<DrawingDoc, 'pages'>): DrawingView[] => doc.pages.flatMap((p) => p.views);
 
 export function createEmptyDrawing(): DrawingDoc {
   return {
@@ -673,32 +688,32 @@ export const drawingIdsInUse = (doc: DrawingDoc): Id[] =>
 
 export type DrawingCommand =
   /** Changes the sheet: its size, orientation, projection, scale or (`shift: null`: take it back) the shift of the arrangement (C16.1). */
-  | { type: 'setSheet'; sheet: Partial<Omit<DrawingSheet, 'shift' | 'language' | 'dimStyle' | 'titleStyle'>> & { shift?: [number, number] | null; language?: Locale | null; dimStyle?: DimStyle | null; titleStyle?: TitleStyle | null } }
+  | { type: 'setSheet'; pageIndex?: number; pageId?: Id; sheet: Partial<Omit<DrawingSheet, 'shift' | 'language' | 'dimStyle' | 'titleStyle' | 'pdfFont'>> & { shift?: [number, number] | null; language?: Locale | null; dimStyle?: DimStyle | null; titleStyle?: TitleStyle | null; pdfFont?: string | null } }
   /** Writes a field of the title block; an empty text takes it away (C16.1). */
-  | { type: 'setTitle'; field: TitleField; value: string }
+  | { type: 'setTitle'; pageIndex?: number; pageId?: Id; field: TitleField; value: string }
   /** Adds views at the end of the list (C16.2), each with its own new id. */
-  | { type: 'insertViews'; views: DrawingView[] }
+  | { type: 'insertViews'; pageIndex?: number; pageId?: Id; views: DrawingView[] }
   /** Changes a view: what is given replaces what is there; `at: null` and `scale: null` take the choice back (the view is laid out again / uses the sheet's scale). */
   | { type: 'setView'; viewId: Id; patch: ViewPatch }
   /** Deletes views, and the views projected or cut from them, which have nothing to show without them, and the dimensions drawn on them. */
   | { type: 'deleteViews'; viewIds: Id[] }
   /** Adds dimensions (C16.4), each with its own new id, on views that are there. */
-  | { type: 'insertDimensions'; dimensions: Dimension[] }
+  | { type: 'insertDimensions'; pageIndex?: number; pageId?: Id; dimensions: Dimension[] }
   /** Changes a dimension: what is given replaces what is there; `null` takes `reference`, `count` or `tolerance` away. A field that does not belong to its kind is refused. */
   | { type: 'setDimension'; dimensionId: Id; patch: DimensionPatch }
   | { type: 'deleteDimensions'; dimensionIds: Id[] }
   /** Adds tables (C16.6), each with its own new id, on views that are there. */
-  | { type: 'insertTables'; tables: DrawingTable[] }
+  | { type: 'insertTables'; pageIndex?: number; pageId?: Id; tables: DrawingTable[] }
   /** Changes a table: `at: null` puts it back in the corner; `fits` replaces the classes (an empty one takes them all away). */
   | { type: 'setTable'; tableId: Id; patch: { at?: [number, number] | null; fits?: Record<string, string>; balloons?: boolean | null; balloonAt?: Record<string, [number, number]> | null } }
   | { type: 'deleteTables'; tableIds: Id[] }
   /** Adds surface finishes (C16.5), each with its own new id, on views that are there. */
-  | { type: 'insertSurfaceFinishes'; finishes: SurfaceFinish[] }
+  | { type: 'insertSurfaceFinishes'; pageIndex?: number; pageId?: Id; finishes: SurfaceFinish[] }
   /** Changes a surface finish: what is given replaces what is there; `null` takes a field away. */
   | { type: 'setSurfaceFinish'; finishId: Id; patch: SurfaceFinishPatch }
   | { type: 'deleteSurfaceFinishes'; finishIds: Id[] }
   /** Adds annotations (D-I3): notes, datum symbols, feature control frames, centre lines and marks, each with its own new id, on views that are there. */
-  | { type: 'insertAnnotations'; annotations: Annotation[] }
+  | { type: 'insertAnnotations'; pageIndex?: number; pageId?: Id; annotations: Annotation[] }
   /**
    * Changes an annotation: what is given replaces what is there; `null` takes an optional field away. A datum's new letter goes into every frame that refers
    * to it, so that renaming a datum never leaves a frame pointing at nothing.
@@ -706,6 +721,14 @@ export type DrawingCommand =
   | { type: 'setAnnotation'; annotationId: Id; patch: AnnotationPatch }
   /** Deletes annotations; a datum that a frame which stays refers to is not deleted (the frame would point at nothing), and that is said. */
   | { type: 'deleteAnnotations'; annotationIds: Id[] }
+  /** Inserts a new sheet/page (B2.8 shape 2). */
+  | { type: 'insertPage'; page?: Partial<DrawingPage>; afterIndex?: number }
+  /** Deletes a sheet/page (B2.8 shape 2). Refuses to delete the last page (Q4 Option A). */
+  | { type: 'deletePage'; pageIndex?: number; pageId?: Id }
+  /** Updates a page's properties (name, sheet, title) (B2.8 shape 2). */
+  | { type: 'setPage'; pageIndex?: number; pageId?: Id; patch: { name?: string; sheet?: Partial<DrawingSheet>; title?: Partial<Record<TitleField, string>> } }
+  /** Moves a view to another page, carrying all its dimensions and annotations along (B2.8 shape 2, Q5 Option A). */
+  | { type: 'moveViewToPage'; viewId: Id; targetPageIndex: number; at?: [number, number] | null }
   /**
    * Several commands as one step (D-I1a, ADR 0130): what is done to everything chosen at once — the same tolerance on five dimensions, deleting what is chosen —
    * is undone at once, and is done wholly or not at all (the first that is refused refuses them all and leaves the document as it was). Not nested.
@@ -778,6 +801,8 @@ export type ViewPatch = {
   depth?: number;
   /** `true` locks the view (giving it the place and scale it is drawn at now), `null` unlocks it. */
   locked?: boolean | null;
+  /** The edges the view hides (B2.2), replacing what is there; `null` shows them all again. */
+  hiddenEdges?: DrawingRef[] | null;
   /** `false` leaves the view's tangent edges out (B2.3); `true` or `null` draws them (the default), so `null` takes the setting back. */
   showTangentEdges?: boolean | null;
   /** A break (B2.7): the band left out of the view; `null` takes it back (the view is drawn whole again). */
@@ -788,9 +813,20 @@ export type ViewPatch = {
 export const scaleOk = (s: readonly number[]): boolean => s.length === 2 && s.every((n) => Number.isInteger(n) && n >= 1 && n <= 1000);
 
 function viewOf(draft: Draft<DrawingDoc>, id: Id): Draft<DrawingView> {
-  const v = draft.pages[0]!.views.find((x) => x.id === id);
-  if (!v) throw new CommandError(t('drawing.noView', { id }));
-  return v;
+  for (const p of draft.pages) {
+    const v = p.views.find((x) => x.id === id);
+    if (v) return v;
+  }
+  throw new CommandError(t('drawing.noView', { id }));
+}
+
+function pageOfView(draft: Draft<DrawingDoc>, id: Id): { page: Draft<DrawingPage>; pageIndex: number; view: Draft<DrawingView> } {
+  for (let i = 0; i < draft.pages.length; i++) {
+    const p = draft.pages[i]!;
+    const v = p.views.find((x) => x.id === id);
+    if (v) return { page: p, pageIndex: i, view: v };
+  }
+  throw new CommandError(t('drawing.noView', { id }));
 }
 
 const SIDES: readonly ViewSide[] = ['left', 'right', 'up', 'down'];
@@ -815,6 +851,8 @@ function checkView(v: DrawingView, views: readonly DrawingView[]): void {
   if (v.at && !(v.at.length === 2 && v.at.every(Number.isFinite))) throw new CommandError(t('drawing.badPosition'));
   if (v.slide !== undefined && !Number.isFinite(v.slide)) throw new CommandError(t('drawing.badPosition'));
   if (v.display !== undefined && !VIEW_DISPLAYS.includes(v.display)) throw new CommandError(t('drawing.badDisplay', { display: String(v.display) }));
+  // the hidden edges (B2.2) are edges of the part, each by name, and (in a view of an assembly) the part it is in
+  if (v.hiddenEdges !== undefined && (!Array.isArray(v.hiddenEdges) || v.hiddenEdges.some((e) => !e || e.kind !== 'edge' || typeof e.name !== 'string' || !e.name.trim() || (e.in !== undefined && (typeof e.in !== 'string' || !e.in.trim()))))) throw new CommandError(t('drawing.badHiddenEdge'));
   if ('hidden' in v) throw new CommandError(t('drawing.notForKind', { field: 'hidden', kind: v.kind ?? 'model' }));
   if (!isDerived(v)) {
     if (!isFilePath(v.source)) throw new CommandError(t('drawing.badSource', { path: v.source }));
@@ -1026,8 +1064,13 @@ function checkSurfaceFinish(f: SurfaceFinish, views: readonly DrawingView[]): vo
 
 /** Immer recipe: mutates the draft or throws CommandError, leaving the document untouched. */
 export function mutateDrawing(draft: Draft<DrawingDoc>, cmd: DrawingCommand): void {
-  // one sheet per drawing until the page tabs arrive (B2.8, ADR 0154): every command acts on the page that is there
-  const pg = draft.pages[0]!;
+  // Resolve target page (B2.8 shape 2): defaults to cmd.pageIndex / cmd.pageId, or page 0
+  const pageIdx = 'pageIndex' in cmd && typeof cmd.pageIndex === 'number'
+    ? Math.max(0, Math.min(draft.pages.length - 1, cmd.pageIndex))
+    : 'pageId' in cmd && typeof cmd.pageId === 'string'
+      ? Math.max(0, draft.pages.findIndex((p) => p.id === cmd.pageId))
+      : 0;
+  const pg = draft.pages[pageIdx] ?? draft.pages[0]!;
   switch (cmd.type) {
     case 'setSheet': {
       const s = cmd.sheet;
@@ -1040,12 +1083,14 @@ export function mutateDrawing(draft: Draft<DrawingDoc>, cmd: DrawingCommand): vo
       if (s.language !== undefined && s.language !== null && !LOCALES.includes(s.language)) throw new CommandError(t('drawing.badLanguage'));
       if (s.dimStyle !== undefined && s.dimStyle !== null) checkDimStyle(s.dimStyle);
       if (s.titleStyle !== undefined && s.titleStyle !== null) checkTitleStyle(s.titleStyle);
-      const { shift, language, dimStyle, titleStyle, ...rest } = s;
+      const { shift, language, dimStyle, titleStyle, pdfFont, ...rest } = s;
       // an empty style is the default's, written as none
       if (dimStyle === null || (dimStyle && Object.keys(dimStyle).length === 0)) delete pg.sheet.dimStyle;
       else if (dimStyle) pg.sheet.dimStyle = { ...dimStyle };
       if (titleStyle === null || (titleStyle && Object.keys(titleStyle).length === 0)) delete pg.sheet.titleStyle;
       else if (titleStyle) pg.sheet.titleStyle = { ...titleStyle };
+      if (pdfFont === null || pdfFont === '') delete pg.sheet.pdfFont;
+      else if (pdfFont !== undefined) pg.sheet.pdfFont = pdfFont;
       Object.assign(pg.sheet, rest);
       if (s.unit === 'mm') delete pg.sheet.unit;
       // `null` puts the sheet back to writing in whatever language the interface is in
@@ -1075,10 +1120,10 @@ export function mutateDrawing(draft: Draft<DrawingDoc>, cmd: DrawingCommand): vo
       return;
     }
     case 'setView': {
-      const v = viewOf(draft, cmd.viewId);
+      const { page: vPage, view: v } = pageOfView(draft, cmd.viewId);
       // a locked view (B2.1) keeps its place and its scale: moving or rescaling it is refused, however it is asked for
       if (v.locked && (cmd.patch.at !== undefined || cmd.patch.scale !== undefined || cmd.patch.slide !== undefined)) throw new CommandError(t('drawing.viewLocked'));
-      const { at, scale, slide, flip, aligned, centreMarks, display, locked, showTangentEdges, break: brk, ...rest } = cmd.patch;
+      const { at, scale, slide, flip, aligned, centreMarks, display, locked, hiddenEdges, showTangentEdges, break: brk, ...rest } = cmd.patch;
       const kind = v.kind ?? 'model';
       const belongs: Record<string, string[]> = { model: ['source', 'direction'], projected: ['side'], section: ['line', 'label'], detail: ['centre', 'radius', 'label'], sectionLocal: ['outline', 'depth', 'label'], crop: ['outline'], auxiliary: ['line', 'label'] };
       for (const k of Object.keys(rest)) if (k !== 'name' && !belongs[kind]!.includes(k)) throw new CommandError(t('drawing.notForKind', { field: k, kind }));
@@ -1099,13 +1144,16 @@ export function mutateDrawing(draft: Draft<DrawingDoc>, cmd: DrawingCommand): vo
       else if (display !== undefined) next.display = display;
       if (locked === null || locked === false) delete next.locked;
       else if (locked !== undefined) next.locked = true;
+      // the hidden edges (B2.2): `null` (or an empty list) shows them all again; the rest is written as it is
+      if (hiddenEdges === null || (hiddenEdges !== undefined && hiddenEdges.length === 0)) delete next.hiddenEdges;
+      else if (hiddenEdges !== undefined) next.hiddenEdges = hiddenEdges;
       if (showTangentEdges === null || showTangentEdges === true) delete next.showTangentEdges;
       else if (showTangentEdges === false) next.showTangentEdges = false;
       if (brk === null) delete next.break;
       else if (brk !== undefined) next.break = brk;
       if (flip === null || flip === false) delete next.flip;
       else if (flip === true) next.flip = true;
-      checkView(next, pg.views.filter((x) => x.id !== v.id) as DrawingView[]);
+      checkView(next, vPage.views.filter((x) => x.id !== v.id) as DrawingView[]);
       for (const k of Object.keys(v)) delete (v as unknown as Record<string, unknown>)[k];
       Object.assign(v, next);
       return;
@@ -1116,24 +1164,28 @@ export function mutateDrawing(draft: Draft<DrawingDoc>, cmd: DrawingCommand): vo
       // what is projected or cut from a deleted view goes with it, and so on down
       for (let grew = true; grew; ) {
         grew = false;
-        for (const v of pg.views as DrawingView[]) if (isDerived(v) && ids.has(v.parent) && !ids.has(v.id)) grew = ids.add(v.id) && true;
+        for (const p of draft.pages) {
+          for (const v of p.views as DrawingView[]) if (isDerived(v) && ids.has(v.parent) && !ids.has(v.id)) grew = ids.add(v.id) && true;
+        }
       }
       countersFor(ids, draft.idCounters); // deleted ids are never handed out again
-      pg.views = pg.views.filter((v) => !ids.has(v.id));
-      // the dimensions drawn on them go too
-      countersFor(pg.dimensions.filter((d) => ids.has(d.view)).map((d) => d.id), draft.idCounters);
-      pg.dimensions = pg.dimensions.filter((d) => !ids.has(d.view));
-      countersFor(pg.tables.filter((x) => ids.has(x.view)).map((x) => x.id), draft.idCounters);
-      pg.tables = pg.tables.filter((x) => !ids.has(x.view));
-      // and the surface finishes drawn on them
-      countersFor(pg.surfaceFinishes.filter((f) => ids.has(f.view)).map((f) => f.id), draft.idCounters);
-      pg.surfaceFinishes = pg.surfaceFinishes.filter((f) => !ids.has(f.view));
-      // and the annotations, unless a datum among them is what a frame on a view that stays refers to
-      const annotations = (pg.annotations ?? []) as Annotation[];
-      const going = annotations.filter((a) => ids.has(a.view));
-      refuseOrphanedFrames(annotations, new Set(going.map((a) => a.id)));
-      countersFor(going.map((a) => a.id), draft.idCounters);
-      pg.annotations = annotations.filter((a) => !ids.has(a.view)) as Draft<Annotation>[];
+      for (const p of draft.pages) {
+        p.views = p.views.filter((v) => !ids.has(v.id));
+        // the dimensions drawn on them go too
+        countersFor(p.dimensions.filter((d) => ids.has(d.view)).map((d) => d.id), draft.idCounters);
+        p.dimensions = p.dimensions.filter((d) => !ids.has(d.view));
+        countersFor(p.tables.filter((x) => ids.has(x.view)).map((x) => x.id), draft.idCounters);
+        p.tables = p.tables.filter((x) => !ids.has(x.view));
+        // and the surface finishes drawn on them
+        countersFor(p.surfaceFinishes.filter((f) => ids.has(f.view)).map((f) => f.id), draft.idCounters);
+        p.surfaceFinishes = p.surfaceFinishes.filter((f) => !ids.has(f.view));
+        // and the annotations, unless a datum among them is what a frame on a view that stays refers to
+        const annotations = (p.annotations ?? []) as Annotation[];
+        const going = annotations.filter((a) => ids.has(a.view));
+        refuseOrphanedFrames(annotations, new Set(going.map((a) => a.id)));
+        countersFor(going.map((a) => a.id), draft.idCounters);
+        p.annotations = annotations.filter((a) => !ids.has(a.view)) as Draft<Annotation>[];
+      }
       return;
     }
     case 'insertDimensions': {
@@ -1325,6 +1377,122 @@ export function mutateDrawing(draft: Draft<DrawingDoc>, cmd: DrawingCommand): vo
       for (const id of ids) if (!pg.surfaceFinishes.some((f) => f.id === id)) throw new CommandError(t('drawing.noSurfaceFinish', { id }));
       countersFor(ids, draft.idCounters);
       pg.surfaceFinishes = pg.surfaceFinishes.filter((f) => !ids.has(f.id));
+      return;
+    }
+    case 'insertPage': {
+      const inUse = new Set(draft.pages.map((p) => p.id));
+      let pageNum = draft.pages.length + 1;
+      let nextId = `page${pageNum}`;
+      while (inUse.has(nextId)) {
+        pageNum++;
+        nextId = `page${pageNum}`;
+      }
+      const inheritedSheet = JSON.parse(JSON.stringify(pg.sheet)) as DrawingSheet;
+      delete inheritedSheet.shift;
+      const newPage: DrawingPage = {
+        id: cmd.page?.id ?? nextId,
+        name: cmd.page?.name ?? t('drawingUi.sheetTabs.sheetDefault', { n: String(draft.pages.length + 1) }),
+        sheet: cmd.page?.sheet ? { ...inheritedSheet, ...cmd.page.sheet } : inheritedSheet,
+        title: cmd.page?.title ? { ...cmd.page.title } : {},
+        views: [],
+        dimensions: [],
+        tables: [],
+        surfaceFinishes: [],
+        annotations: [],
+      };
+      const insertIdx = cmd.afterIndex !== undefined && Number.isInteger(cmd.afterIndex) && cmd.afterIndex >= 0 && cmd.afterIndex < draft.pages.length
+        ? cmd.afterIndex + 1
+        : draft.pages.length;
+      draft.pages.splice(insertIdx, 0, newPage as Draft<DrawingPage>);
+      countersFor([newPage.id], draft.idCounters);
+      return;
+    }
+    case 'deletePage': {
+      if (draft.pages.length <= 1) throw new CommandError(t('drawing.cannotDeleteLastPage'));
+      const idx = cmd.pageIndex !== undefined && Number.isInteger(cmd.pageIndex) && cmd.pageIndex >= 0 && cmd.pageIndex < draft.pages.length
+        ? cmd.pageIndex
+        : cmd.pageId
+          ? draft.pages.findIndex((p) => p.id === cmd.pageId)
+          : -1;
+      if (idx < 0 || idx >= draft.pages.length) throw new CommandError(t('drawing.badPage'));
+      const goingPage = draft.pages[idx]!;
+      const ids = [
+        goingPage.id,
+        ...goingPage.views.map((v) => v.id),
+        ...goingPage.dimensions.map((d) => d.id),
+        ...goingPage.tables.map((x) => x.id),
+        ...goingPage.surfaceFinishes.map((f) => f.id),
+        ...(goingPage.annotations ?? []).map((a) => a.id),
+      ];
+      countersFor(ids, draft.idCounters);
+      draft.pages.splice(idx, 1);
+      return;
+    }
+    case 'setPage': {
+      const idx = cmd.pageIndex !== undefined && Number.isInteger(cmd.pageIndex) && cmd.pageIndex >= 0 && cmd.pageIndex < draft.pages.length
+        ? cmd.pageIndex
+        : cmd.pageId
+          ? draft.pages.findIndex((p) => p.id === cmd.pageId)
+          : pageIdx;
+      const target = draft.pages[idx];
+      if (!target) throw new CommandError(t('drawing.badPage'));
+      if (cmd.patch.name !== undefined) {
+        const trimmed = cmd.patch.name.trim();
+        if (!trimmed) throw new CommandError(t('drawing.nameEmpty'));
+        target.name = trimmed;
+      }
+      if (cmd.patch.sheet) {
+        const s = cmd.patch.sheet;
+        if (s.size !== undefined && !SHEET_SIZES.includes(s.size)) throw new CommandError(t('drawing.badSheet', { size: String(s.size) }));
+        if (s.orientation !== undefined && s.orientation !== 'landscape' && s.orientation !== 'portrait') throw new CommandError(t('drawing.badOrientation'));
+        if (s.projection !== undefined && s.projection !== 'first' && s.projection !== 'third') throw new CommandError(t('drawing.badProjection'));
+        if (s.scale !== undefined && !scaleOk(s.scale)) throw new CommandError(t('drawing.badScale', { scale: s.scale.join(':') }));
+        if (s.shift && !(s.shift.length === 2 && s.shift.every(Number.isFinite))) throw new CommandError(t('drawing.badPosition'));
+        if (s.unit !== undefined && s.unit !== 'mm' && s.unit !== 'in') throw new CommandError(t('drawing.badUnit'));
+        Object.assign(target.sheet, s);
+      }
+      if (cmd.patch.title) {
+        Object.assign(target.title, cmd.patch.title);
+      }
+      return;
+    }
+    case 'moveViewToPage': {
+      const { page: srcPage, pageIndex: srcIdx, view: targetView } = pageOfView(draft, cmd.viewId);
+      const dstIdx = cmd.targetPageIndex;
+      if (dstIdx < 0 || dstIdx >= draft.pages.length) throw new CommandError(t('drawing.badPage'));
+      const dstPage = draft.pages[dstIdx]!;
+      if (srcIdx === dstIdx) {
+        if (cmd.at) {
+          targetView.at = [cmd.at[0], cmd.at[1]];
+          delete targetView.slide;
+        }
+        return;
+      }
+      srcPage.views = srcPage.views.filter((v) => v.id !== cmd.viewId);
+      const clonedView = JSON.parse(JSON.stringify(targetView)) as DrawingView;
+      if (cmd.at) {
+        clonedView.at = [cmd.at[0], cmd.at[1]];
+        delete clonedView.slide;
+      }
+      dstPage.views.push(clonedView as Draft<DrawingView>);
+
+      const dimsToMove = srcPage.dimensions.filter((d) => d.view === cmd.viewId);
+      srcPage.dimensions = srcPage.dimensions.filter((d) => d.view !== cmd.viewId);
+      for (const d of dimsToMove) dstPage.dimensions.push(d);
+
+      const tablesToMove = srcPage.tables.filter((x) => x.view === cmd.viewId);
+      srcPage.tables = srcPage.tables.filter((x) => x.view !== cmd.viewId);
+      for (const x of tablesToMove) dstPage.tables.push(x);
+
+      const sfToMove = srcPage.surfaceFinishes.filter((f) => f.view === cmd.viewId);
+      srcPage.surfaceFinishes = srcPage.surfaceFinishes.filter((f) => f.view !== cmd.viewId);
+      for (const f of sfToMove) dstPage.surfaceFinishes.push(f);
+
+      const annToMove = (srcPage.annotations ?? []).filter((a) => a.view === cmd.viewId);
+      srcPage.annotations = (srcPage.annotations ?? []).filter((a) => a.view !== cmd.viewId);
+      dstPage.annotations ??= [];
+      for (const a of annToMove) dstPage.annotations.push(a);
+
       return;
     }
   }

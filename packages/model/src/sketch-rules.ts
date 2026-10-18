@@ -71,6 +71,8 @@ export function entityPoints(e: SketchEntity): Id[] {
       return [e.center];
     case 'arc':
       return [e.center, e.start, e.end];
+    case 'ellipse':
+      return [e.center, e.major];
   }
 }
 
@@ -111,6 +113,7 @@ export function sketchError(sketch: Pick<SketchFeature, 'entities' | 'constraint
     if (new Set(pts).size !== pts.length) return t('rules.dupEnd', { id: e.id });
     if (e.type === 'point' && !finite(e.x, e.y)) return t('cmd.pointCoordinateInvalid', { id: e.id });
     if (e.type === 'circle' && !(finite(e.radius) && e.radius > 0)) return t('cmd.radiusMustBePositive', { id: e.id });
+    if (e.type === 'ellipse' && !(finite(e.minorRadius) && e.minorRadius > 0)) return t('cmd.radiusMustBePositive', { id: e.id });
     const model = e.type === 'point' ? e.pierce : e.ref;
     if (model && model.kind !== 'edge') return t('cmd.sketchRefMustBeEdge', { id: e.id });
   }

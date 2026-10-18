@@ -368,6 +368,13 @@ export function Viewport() {
     v.setDatums(datums);
   }, [feature, editing, selected, doc, result]);
 
+  // Cosmetic threads (C4.9, ADR 0156): lightweight 3D annotation curves
+  useEffect(() => {
+    const v = store.viewer;
+    if (!v) return;
+    v.setCosmeticThreads(result?.cosmeticThreads ?? []);
+  }, [result?.cosmeticThreads]);
+
   // Shown sketches and the origin (D4.6). The sketch being edited is drawn by its own overlay.
   const zoomBand = store.viewer ? Math.round(Math.log2(store.viewer.pixelSize())) : 0;
   useEffect(() => {

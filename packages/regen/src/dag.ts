@@ -96,6 +96,12 @@ export function parentsOf(feature: Feature, doc: PartDoc): Id[] {
       // a body is named by the feature that made it (`extrude1`, or `cut1#2` for a piece a cut left)
       parents = [feature.main, ...feature.tools].filter((r) => r.name).map((r) => bodyFeature(r.name));
       break;
+    case 'split': {
+      const toolParents = feature.tool.kind === 'face' ? fromRefs([feature.tool]) : [];
+      const targetParents = (feature.targets ?? []).filter((r) => r.name).map((r) => bodyFeature(r.name));
+      parents = [...toolParents, ...targetParents];
+      break;
+    }
     case 'refPlane':
     case 'refAxis':
     case 'refPoint':
@@ -113,6 +119,9 @@ export function parentsOf(feature: Feature, doc: PartDoc): Id[] {
       break;
     case 'importedBody':
       parents = []; // it depends only on its data
+      break;
+    case 'cosmeticThread':
+      parents = fromRefs([feature.targetFace, ...(feature.startEdge ? [feature.startEdge] : [])]);
       break;
     case 'derivedBody':
       parents = []; // it depends only on another file

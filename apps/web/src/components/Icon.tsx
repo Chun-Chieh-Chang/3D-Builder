@@ -1,6 +1,6 @@
 import type { ReactElement } from 'react';
 
-export type IconName = 'part' | 'assembly' | 'mates' | 'origin' | 'plane' | 'refPlane' | 'refAxis' | 'refPoint' | 'coordSys' | 'sketch' | 'extrude' | 'revolve' | 'sweep' | 'thread' | 'knurl' | 'loft' | 'rib' | 'pattern' | 'mirror' | 'fillet' | 'chamfer' | 'importedBody' | 'derivedBody' | 'deleteFace' | 'moveFace' | 'shell' | 'draft' | 'hole' | 'combine' | 'offsetSurface' | 'splitLine' | 'knit' | 'fillSurface' | 'flatSurface' | 'trimSurface' | 'mutualTrim' | 'extendSurface' | 'thicken' | 'cutWithSurface' | 'lipGroove' | 'screwBoss' | 'baseFlange' | 'midBend' | 'edgeFlange' | 'breakCorner' | 'hem' | 'snapHook' | 'snapCatch' | 'vent' | 'body' | 'error' | 'warning' | 'ok' | 'cancel' | 'eye' | 'eyeOff' | 'drawingDoc' | 'sheet' | 'titleBlock' | 'view' | 'projectedView' | 'sectionView' | 'detailView' | 'dimension' | 'note' | 'datum' | 'gdt' | 'centreMark' | 'table' | 'surfaceFinish' | 'exportFile' | 'palette' | 'tree' | 'properties' | 'chevron' | 'pin' | 'search';
+export type IconName = 'part' | 'assembly' | 'mates' | 'origin' | 'plane' | 'refPlane' | 'refAxis' | 'refPoint' | 'coordSys' | 'sketch' | 'extrude' | 'revolve' | 'sweep' | 'thread' | 'knurl' | 'cosmeticThread' | 'loft' | 'rib' | 'pattern' | 'mirror' | 'fillet' | 'chamfer' | 'importedBody' | 'derivedBody' | 'deleteFace' | 'moveFace' | 'shell' | 'draft' | 'hole' | 'combine' | 'split' | 'offsetSurface' | 'splitLine' | 'knit' | 'fillSurface' | 'flatSurface' | 'trimSurface' | 'mutualTrim' | 'extendSurface' | 'thicken' | 'cutWithSurface' | 'lipGroove' | 'screwBoss' | 'baseFlange' | 'midBend' | 'edgeFlange' | 'breakCorner' | 'hem' | 'snapHook' | 'snapCatch' | 'vent' | 'body' | 'error' | 'warning' | 'ok' | 'cancel' | 'eye' | 'eyeOff' | 'drawingDoc' | 'sheet' | 'titleBlock' | 'view' | 'projectedView' | 'sectionView' | 'detailView' | 'dimension' | 'note' | 'datum' | 'gdt' | 'centreMark' | 'table' | 'surfaceFinish' | 'exportFile' | 'palette' | 'tree' | 'properties' | 'chevron' | 'pin' | 'search';
 
 /** Default planes and reference planes share one icon, as in SolidWorks. */
 const PLANE = <path d="M4 4h10l-2 8H2z" />;
@@ -20,6 +20,7 @@ const PATHS: Record<IconName, ReactElement> = {
   revolve: <path d="M8 1.5v13 M3 6a5 2.5 0 1 0 10 0 M11.5 3.2l1.5 2.8-3 0.4" />,
   thread: <path d="M4 2v12 M12 2v12 M4 4l8 2 M4 7l8 2 M4 10l8 2" />,
   knurl: <path d="M3 3v10 M13 3v10 M3 4.5l10 7 M13 4.5l-10 7 M3 11.5l10-7 M13 11.5l-10-7" />,
+  cosmeticThread: <path d="M4 2v12 M12 2v12 M8 8m-3 0a3 3 0 1 1 5.12 2.12" />,
   fillet: <path d="M3 13V3 M3 13h10 M3 7a6 6 0 0 0 6 6" />,
   chamfer: <path d="M3 13V7l4-4h6 M3 13h10V3" />,
   derivedBody: <path d="M3 5l5-3 5 3v6l-5 3-5-3z M8 5.5v5 M10.2 8.3L8 10.5 5.8 8.3" />,
@@ -55,6 +56,7 @@ const PATHS: Record<IconName, ReactElement> = {
   hole: <path d="M2 4h12v8H2z M6 4v4h4V4 M8 8v4" />,
   shell: <path d="M2 5l6-3 6 3v6l-6 3-6-3z M5 6.5l3-1.5 3 1.5v3l-3 1.5-3-1.5z" />,
   combine: <path d="M2 6h6v6H2z M8 4h6v6H8z M8 6v4" />,
+  split: <path d="M3 5l5-3 5 3v6l-5 3-5-3z M1 8h14" />,
   body: <path d="M3 5l5-3 5 3v6l-5 3-5-3z M3 5l5 3 5-3 M8 8v6" />,
   error: <path d="M8 2l6.5 11h-13z M8 6v3.5 M8 11.5v0.5" />,
   warning: <path d="M8 2.5l6 10.5H2z M8 6.5v3 M8 11v0.5" />,

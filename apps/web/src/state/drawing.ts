@@ -50,6 +50,8 @@ import {
   type Annotation,
   type AnnotationPatch, dimensionRefs,
   displayOf,
+  drawingFromPage,
+  allViews,
   isShaded,
   page,
   withPage,
@@ -62,6 +64,7 @@ import { download, fileIn, pathIn, pickDrawingSaveTarget, pickFontFile, writeFil
 import type { KernelApi } from '../worker/protocol';
 import type { AssemblyData } from './assemblySource';
 import { buildSource, type SourceStatus } from './partSource';
+import { fontManager } from '../fonts/fontManager';
 
 /**
  * One open drawing (B1.1, C16): the document, the parts its views show (read from the project folder and built in the worker, once per content), and the
@@ -109,16 +112,18 @@ export type PickMode = 'replace' | 'toggle' | 'add';
 const samePick = (a: DrawingPick, b: DrawingPick) => a.kind === b.kind && a.id === b.id;
 
 /** Whether what a pick names is in the document. */
-const pickExists = (doc: DrawingDoc, p: DrawingPick): boolean =>
-  p.kind === 'view'
-    ? page(doc).views.some((v) => v.id === p.id)
+const pickExists = (doc: DrawingDoc, p: DrawingPick, pageIndex = 0): boolean => {
+  const pg = page(doc, pageIndex);
+  return p.kind === 'view'
+    ? pg.views.some((v) => v.id === p.id)
     : p.kind === 'dimension'
-      ? page(doc).dimensions.some((d) => d.id === p.id)
+      ? pg.dimensions.some((d) => d.id === p.id)
       : p.kind === 'finish'
-        ? page(doc).surfaceFinishes.some((f) => f.id === p.id)
+        ? pg.surfaceFinishes.some((f) => f.id === p.id)
         : p.kind === 'annotation'
-          ? (page(doc).annotations ?? []).some((a) => a.id === p.id)
-          : page(doc).tables.some((x) => x.id === p.id);
+          ? (pg.annotations ?? []).some((a) => a.id === p.id)
+          : pg.tables.some((x) => x.id === p.id);
+};
 
 /** What an annotation tool makes (D-I3). */
 export type AnnotateWhat = Annotation['kind'];
@@ -137,6 +142,8 @@ export type DrawingTool =
   | { kind: 'auxiliary' }
   | { kind: 'detail' }
   | { kind: 'surface' }
+  /** Hide an edge of a view by pointing at it (B2.2): the tool stays until Esc, for the next one. */
+  | { kind: 'hideEdge' }
   /**
    * A view from the palette (D-V, ADR 0131) on its way to the sheet: it follows the pointer and the next click puts it there. `dragged`: it was pressed on in the
    * palette and is being dragged, so letting go over the sheet puts it there too.
@@ -160,6 +167,7 @@ export const PALETTE_DIRECTIONS: readonly ViewName[] = ['front', 'top', 'right',
 
 export interface DrawingState {
   doc: DrawingDoc;
+  activePageIndex: number;
   canUndo: boolean;
   canRedo: boolean;
   fileName: string | null;
@@ -235,7 +243,7 @@ export class DrawingStore {
   private cache = new Map<string, ViewLines | { error: string }>();
   private computing = false;
   private computeAgain = false;
-  private sceneCache: { doc: DrawingDoc; lines: DrawingState['lines']; elements: DrawingState['elements']; features: DrawingState['features']; boms: DrawingState['boms']; edges: DrawingState['edges']; value: { scene: Scene; placed: Map<Id, PlacedView>; dimensions: Map<Id, DimensionOutcome>; tables: Map<Id, HoleRow[]> } } | null = null;
+  private sceneCache: { pageIndex: number; doc: DrawingDoc; lines: DrawingState['lines']; elements: DrawingState['elements']; features: DrawingState['features']; boms: DrawingState['boms']; edges: DrawingState['edges']; value: { scene: Scene; placed: Map<Id, PlacedView>; dimensions: Map<Id, DimensionOutcome>; tables: Map<Id, HoleRow[]> } } | null = null;
   /** What a view can be dimensioned from, by the part's key and where it looks from; and what an element is, by the part's key and the reference. */
   private featureCache = new Map<string, { features: ViewFeature[]; edges?: ViewEdgeSet } | { error: string }>();
   private elementCache = new Map<string, ElementFacts | { error: string }>();
@@ -257,6 +265,7 @@ export class DrawingStore {
     this.initialSource = source.paletteSource ?? null;
     this.state = {
       doc: source.doc,
+      activePageIndex: 0,
       canUndo: false,
       canRedo: false,
       fileName: source.fileName,
@@ -270,7 +279,7 @@ export class DrawingStore {
       edges: new Map(),
       elements: new Map(),
       boms: new Map(),
-      pdfFont: null,
+      pdfFont: page(source.doc).sheet.pdfFont ?? 'sans',
       selected: null,
       dimension: null,
       finish: null,
@@ -281,6 +290,11 @@ export class DrawingStore {
       computing: false,
       fitRequest: 1,
     };
+    if (this.state.pdfFont) {
+      void fontManager.resolveFont(this.state.pdfFont).then((f) => {
+        if (f && !this.font) this.font = f;
+      });
+    }
     this.history.subscribe(() => this.onDocChanged());
     this.loadSources();
   }
@@ -299,7 +313,7 @@ export class DrawingStore {
 
   /** The project path of the part (or assembly) a view shows (D-I7): what 「開啟零件」 opens. */
   viewSourcePath(viewId: Id): string | null {
-    const view = page(this.history.doc).views.find((v) => v.id === viewId);
+    const view = allViews(this.history.doc).find((v) => v.id === viewId);
     return view ? this.pathOf(view) : null;
   }
 
@@ -308,7 +322,7 @@ export class DrawingStore {
    * part. Null when there is no view.
    */
   partToOpen(): string | null {
-    const views = page(this.history.doc).views;
+    const views = allViews(this.history.doc);
     const chosen = this.chosen('view').map((id) => this.viewSourcePath(id)).find((p) => p !== null);
     return chosen ?? views.map((v) => this.pathOf(v)).find((p) => p !== null) ?? null;
   }
@@ -316,14 +330,16 @@ export class DrawingStore {
   /** The project path of a part of the assembly a view shows, by its leaf id (as a picked element's `in` names it); null when not known. */
   leafPath(viewId: Id, leafId: string): string | null {
     const doc = this.history.doc;
-    const view = page(doc).views.find((v) => v.id === viewId);
-    const asm = view ? this.assemblyOf(this.ancestor(page(doc).views, view) ?? view) : null;
+    const view = allViews(doc).find((v) => v.id === viewId);
+    const pageOfV = doc.pages.find((p) => p.views.some((v) => v.id === viewId)) ?? page(doc, this.state.activePageIndex);
+    const asm = view ? this.assemblyOf(this.ancestor(pageOfV.views, view) ?? view) : null;
     const file = asm?.leaves.find((l) => l.id === leafId)?.file;
     return file ?? null;
   }
 
   name(): string {
-    return page(this.state.doc).title.drawingName ?? this.state.fileName?.replace(/\.3dbd$/i, '') ?? this.state.untitled;
+    const activePg = page(this.state.doc, this.state.activePageIndex);
+    return activePg.title.drawingName ?? page(this.state.doc).title.drawingName ?? this.state.fileName?.replace(/\.3dbd$/i, '') ?? this.state.untitled;
   }
 
   private set(patch: Partial<DrawingState>): void {
@@ -334,22 +350,26 @@ export class DrawingStore {
 
   private onDocChanged(): void {
     const doc = this.history.doc;
+    const activePageIndex = Math.max(0, Math.min(this.state.activePageIndex ?? 0, doc.pages.length - 1));
+    const activePg = page(doc, activePageIndex);
     const selected = this.state.selected;
     const dimension = this.state.dimension;
     const finish = this.state.finish;
     const annotation = this.state.annotation;
-    const selection = this.state.selection.filter((p) => pickExists(doc, p));
+    const selection = this.state.selection.filter((p) => pickExists(doc, p, activePageIndex));
     this.set({
       ...(selection.length !== this.state.selection.length ? { selection } : {}),
       doc,
+      activePageIndex,
       folder: this.folder,
       canUndo: this.history.canUndo,
       canRedo: this.history.canRedo,
       dirty: !this.handle || serializeDrawing(doc) !== this.savedText,
-      selected: selected && page(doc).views.some((v) => v.id === selected) ? selected : null,
-      dimension: dimension && page(doc).dimensions.some((d) => d.id === dimension) ? dimension : null,
-      finish: finish && page(doc).surfaceFinishes.some((f) => f.id === finish) ? finish : null,
-      annotation: annotation && (page(doc).annotations ?? []).some((a) => a.id === annotation) ? annotation : null,
+      selected: selected && activePg.views.some((v) => v.id === selected) ? selected : null,
+      dimension: dimension && activePg.dimensions.some((d) => d.id === dimension) ? dimension : null,
+      finish: finish && activePg.surfaceFinishes.some((f) => f.id === finish) ? finish : null,
+      annotation: annotation && (activePg.annotations ?? []).some((a) => a.id === annotation) ? annotation : null,
+      pdfFont: activePg.sheet.pdfFont ?? this.state.pdfFont ?? 'sans',
     });
     this.loadSources();
     this.refreshBoms();
@@ -359,11 +379,63 @@ export class DrawingStore {
 
   execute(cmd: DrawingCommand): boolean {
     try {
-      this.history.execute(cmd);
+      const pageIndex = this.state.activePageIndex ?? 0;
+      const withPage = ('pageIndex' in cmd || 'pageId' in cmd)
+        ? cmd
+        : ({ pageIndex, ...cmd } as DrawingCommand);
+      this.history.execute(withPage);
       return true;
     } catch (e) {
       this.host.notify(e instanceof CommandError ? e.message : String(e), 'error');
       return false;
+    }
+  }
+
+  setActivePage(index: number): void {
+    const maxIdx = this.history.doc.pages.length - 1;
+    const clamped = Math.max(0, Math.min(maxIdx, index));
+    if (clamped === this.state.activePageIndex) return;
+    this.set({
+      activePageIndex: clamped,
+      selected: null,
+      dimension: null,
+      finish: null,
+      annotation: null,
+      selection: [],
+      tool: null,
+    });
+  }
+
+  addPage(name?: string): void {
+    const ok = this.execute({ type: 'insertPage', page: name ? { name } : undefined });
+    if (ok) {
+      this.setActivePage(this.history.doc.pages.length - 1);
+    }
+  }
+
+  deletePage(index: number = this.state.activePageIndex): void {
+    if (this.history.doc.pages.length <= 1) {
+      this.host.notify(t('drawing.cannotDeleteLastPage'), 'error');
+      return;
+    }
+    const targetIdx = Math.max(0, Math.min(this.history.doc.pages.length - 1, index));
+    const ok = this.execute({ type: 'deletePage', pageIndex: targetIdx });
+    if (ok) {
+      const nextIdx = Math.max(0, Math.min(targetIdx, this.history.doc.pages.length - 1));
+      this.setActivePage(nextIdx);
+    }
+  }
+
+  renamePage(index: number, name: string): void {
+    this.execute({ type: 'setPage', pageIndex: index, patch: { name } });
+  }
+
+  moveViewToPage(viewId: Id, targetPageIndex: number, at?: [number, number]): void {
+    const ok = this.execute({ type: 'moveViewToPage', viewId, targetPageIndex, at });
+    if (ok) {
+      const targetPage = this.history.doc.pages[targetPageIndex];
+      const sheetName = targetPage?.name || t('drawingUi.sheetTabs.sheetDefault', { n: targetPageIndex + 1 });
+      this.host.notify(t('drawingUi.movedToSheet', { sheet: sheetName }));
     }
   }
 
@@ -422,9 +494,10 @@ export class DrawingStore {
   private primaryOf(selection: DrawingPick[]): Pick<DrawingState, 'selection' | 'selected' | 'dimension' | 'finish' | 'annotation'> {
     const doc = this.history.doc;
     const last = (kind: DrawingPick['kind']) => [...selection].reverse().find((p) => p.kind === kind)?.id ?? null;
+    const curPage = page(doc, this.state.activePageIndex);
     const tail = selection[selection.length - 1];
     const viewOfTail =
-      tail?.kind === 'dimension' ? page(doc).dimensions.find((d) => d.id === tail.id)?.view : tail?.kind === 'finish' ? page(doc).surfaceFinishes.find((f) => f.id === tail.id)?.view : tail?.kind === 'table' ? page(doc).tables.find((x) => x.id === tail.id)?.view : tail?.kind === 'annotation' ? (page(doc).annotations ?? []).find((a) => a.id === tail.id)?.view : undefined;
+      tail?.kind === 'dimension' ? curPage.dimensions.find((d) => d.id === tail.id)?.view : tail?.kind === 'finish' ? curPage.surfaceFinishes.find((f) => f.id === tail.id)?.view : tail?.kind === 'table' ? curPage.tables.find((x) => x.id === tail.id)?.view : tail?.kind === 'annotation' ? (curPage.annotations ?? []).find((a) => a.id === tail.id)?.view : undefined;
     const selected = tail?.kind === 'view' ? tail.id : (viewOfTail ?? last('view') ?? (selection.length === 0 ? null : this.state.selected));
     return { selection, selected, dimension: last('dimension'), finish: last('finish'), annotation: last('annotation') };
   }
@@ -440,16 +513,17 @@ export class DrawingStore {
    */
   deleteSelection(): boolean {
     const doc = this.history.doc;
+    const curPage = page(doc, this.state.activePageIndex);
     const gone = new Set(this.chosen('view'));
     for (let grew = true; grew; ) {
       grew = false;
-      for (const v of page(doc).views) if (isDerived(v) && gone.has(v.parent) && !gone.has(v.id)) grew = !!gone.add(v.id);
+      for (const v of curPage.views) if (isDerived(v) && gone.has(v.parent) && !gone.has(v.id)) grew = !!gone.add(v.id);
     }
     const onKept = <T extends { id: Id; view: Id }>(ids: Id[], all: readonly T[]) => ids.filter((id) => !gone.has(all.find((x) => x.id === id)?.view ?? ''));
-    const dims = onKept(this.chosen('dimension'), page(doc).dimensions);
-    const finishes = onKept(this.chosen('finish'), page(doc).surfaceFinishes);
-    const tables = onKept(this.chosen('table'), page(doc).tables);
-    const annotations = onKept(this.chosen('annotation'), page(doc).annotations ?? []);
+    const dims = onKept(this.chosen('dimension'), curPage.dimensions);
+    const finishes = onKept(this.chosen('finish'), curPage.surfaceFinishes);
+    const tables = onKept(this.chosen('table'), curPage.tables);
+    const annotations = onKept(this.chosen('annotation'), curPage.annotations ?? []);
     const views = this.chosen('view');
     const commands: DrawingCommand[] = [];
     // the annotations before the views: a datum deleted with the frames that refer to it goes, which deleting its view first would refuse
@@ -470,8 +544,9 @@ export class DrawingStore {
    */
   setDimensionsEach(ids: readonly Id[], patchOf: (d: Dimension) => DimensionPatch | null): boolean {
     const doc = this.history.doc;
+    const allDims = doc.pages.flatMap((p) => p.dimensions);
     const commands = ids.flatMap((id): DrawingCommand[] => {
-      const dim = page(doc).dimensions.find((x) => x.id === id);
+      const dim = allDims.find((x) => x.id === id);
       const patch = dim ? patchOf(dim) : null;
       return patch ? [{ type: 'setDimension', dimensionId: id, patch }] : [];
     });
@@ -484,7 +559,7 @@ export class DrawingStore {
    * many moved.
    */
   arrangeDimensions(ids: readonly Id[]): number {
-    const changes = arrangeDimensions(page(this.history.doc).dimensions, this.scene().dimensions, new Set(ids));
+    const changes = arrangeDimensions(page(this.history.doc, this.state.activePageIndex).dimensions, this.scene().dimensions, new Set(ids));
     if (changes.length === 0) return 0;
     const commands: DrawingCommand[] = changes.map((c) => ({ type: 'setDimension', dimensionId: c.id, patch: c.patch }));
     return this.execute(commands.length === 1 ? commands[0]! : { type: 'batch', commands }) ? changes.length : 0;
@@ -492,7 +567,7 @@ export class DrawingStore {
 
   /** 「共線對正」 (D-I4): the dimensions in `ids` on the first one's line, as one step; those that cannot be (another view, way or side) are said. */
   alignCollinear(ids: readonly Id[]): void {
-    const { changes, skipped } = alignCollinear(page(this.history.doc).dimensions, ids);
+    const { changes, skipped } = alignCollinear(page(this.history.doc, this.state.activePageIndex).dimensions, ids);
     if (changes.length > 0) {
       const commands: DrawingCommand[] = changes.map((c) => ({ type: 'setDimension', dimensionId: c.id, patch: c.patch }));
       this.execute(commands.length === 1 ? commands[0]! : { type: 'batch', commands });
@@ -526,8 +601,8 @@ export class DrawingStore {
   // ------------------------------------------------------------ the parts the views show
 
   /** The project path of a view's source. */
-  private pathOf(view: DrawingView): string | null {
-    const source = sourceOf(page(this.history.doc).views, view);
+  private pathOf(view: DrawingView, views: readonly DrawingView[] = page(this.history.doc, this.state.activePageIndex).views): string | null {
+    const source = sourceOf(views, view);
     return source === null ? null : joinPath(this.folder, source);
   }
 
@@ -537,9 +612,9 @@ export class DrawingStore {
       void this.askProject();
       return;
     }
-    const wanted = new Set(page(this.history.doc).views.flatMap((v) => this.pathOf(v) ?? []));
+    const wanted = new Set(this.history.doc.pages.flatMap((p) => p.views.flatMap((v) => this.pathOf(v, p.views) ?? [])));
     // the part of an empty drawing, for its palette
-    if (this.initialSource && page(this.history.doc).views.length === 0) wanted.add(joinPath(this.folder, this.initialSource));
+    if (this.initialSource && this.history.doc.pages.every((p) => p.views.length === 0)) wanted.add(joinPath(this.folder, this.initialSource));
     for (const path of wanted) {
       if (this.state.sources.has(path)) continue;
       this.set({ sources: new Map(this.state.sources).set(path, { status: 'loading' }) });
@@ -602,33 +677,37 @@ export class DrawingStore {
    * What the worker is asked for a view: the part, where it looks from and for a section the plane that cuts it. A detail is asked for nothing (it is cut from its
    * parent's lines in the layout); a view whose part is not built or whose chain of parents is broken, nothing yet.
    */
-  private requestOf(view: DrawingView): { id: string; featureId?: string; key: string; parts: { part: string; mirrored: boolean; pose: typeof IDENTITY }[]; anchors: boolean; flat?: boolean; axes: ViewAxes; cut?: SectionCut; shade?: { px: number } } | null {
+  private requestOf(view: DrawingView): { id: string; featureId?: string; key: string; parts: { part: string; mirrored: boolean; pose: typeof IDENTITY; leaf?: string }[]; anchors: boolean; flat?: boolean; axes: ViewAxes; cut?: SectionCut; shade?: { px: number }; hidden?: DrawingRef[] } | null {
     if (view.kind === 'detail' || view.kind === 'crop') return null;
     const doc = this.history.doc;
     const key = this.keyOf(view);
-    const axes = axesOf(page(doc).views, page(doc).sheet.projection, view);
+    const pageOfV = doc.pages.find((p) => p.views.some((v) => v.id === view.id)) ?? page(doc, this.state.activePageIndex);
+    const axes = axesOf(pageOfV.views, pageOfV.sheet.projection, view);
     if (!key || !axes) return null;
     let cut: SectionCut | undefined;
     if (view.kind === 'section' || view.kind === 'sectionLocal') {
-      const parent = viewById(page(doc).views, view.parent);
-      const parentAxes = parent ? axesOf(page(doc).views, page(doc).sheet.projection, parent) : null;
+      const parent = viewById(pageOfV.views, view.parent);
+      const parentAxes = parent ? axesOf(pageOfV.views, pageOfV.sheet.projection, parent) : null;
       if (!parentAxes) return null;
       cut = sectionCut(parentAxes, view);
     }
     // a shaded view (or one whose details are shaded) asks for its faces' image too, as finely as the largest of them is drawn (ADR 0146)
     const px = this.shadePx(view);
     const shade = px === null ? {} : { shade: { px } };
-    const id = `${key}|${JSON.stringify(axes)}|${cut ? JSON.stringify(cut) : ''}${px === null ? '' : `|shade:${px}`}`;
+    // the edges the view hides (B2.2) are part of what its lines are: the lines are asked for again when they change
+    const hidden = view.hiddenEdges?.length ? view.hiddenEdges : undefined;
+    const hideId = hidden ? `|hide:${JSON.stringify(hidden)}` : '';
+    const id = `${key}|${JSON.stringify(axes)}|${cut ? JSON.stringify(cut) : ''}${px === null ? '' : `|shade:${px}`}${hideId}`;
     const assembly = this.assemblyOf(view);
     if (assembly) {
       // the parts of the assembly where they are (a mirror is the file's part reflected); the balloons need to know where each is
       const unmirror = (k: string) => k.slice(0, -mirrorKey('').length);
-      const parts = assembly.leaves.map((l) => ({ part: l.mirrored ? unmirror(l.key) : l.key, mirrored: !!l.mirrored, pose: l.pose }));
-      return { id, key, parts, anchors: true, axes, ...(cut ? { cut } : {}), ...shade };
+      const parts = assembly.leaves.map((l) => ({ part: l.mirrored ? unmirror(l.key) : l.key, mirrored: !!l.mirrored, pose: l.pose, leaf: l.id }));
+      return { id, key, parts, anchors: true, axes, ...(cut ? { cut } : {}), ...shade, ...(hidden ? { hidden } : {}) };
     }
     // the flat pattern of a sheet metal part: not a projection, so nothing of the folded part can be dimensioned in it (nor shaded: it has no faces to light)
     if (view.kind === undefined || view.kind === 'model') if (view.direction === 'flat') return { id: `${key}|flat`, key, parts: [{ part: key, mirrored: false, pose: IDENTITY }], anchors: false, flat: true, axes };
-    return { id, featureId: `${key}|${JSON.stringify(axes)}`, key, parts: [{ part: key, mirrored: false, pose: IDENTITY }], anchors: false, axes, ...(cut ? { cut } : {}), ...shade };
+    return { id, featureId: `${key}|${JSON.stringify(axes)}`, key, parts: [{ part: key, mirrored: false, pose: IDENTITY }], anchors: false, axes, ...(cut ? { cut } : {}), ...shade, ...(hidden ? { hidden } : {}) };
   }
 
   /**
@@ -637,7 +716,8 @@ export class DrawingStore {
    */
   private shadePx(view: DrawingView): number | null {
     const doc = this.history.doc;
-    const shaded = [view, ...page(doc).views.filter((v) => v.kind === 'detail' && v.parent === view.id)].filter((v) => isShaded(displayOf(v)));
+    const pageOfV = doc.pages.find((p) => p.views.some((v) => v.id === view.id)) ?? page(doc, this.state.activePageIndex);
+    const shaded = [view, ...pageOfV.views.filter((v) => v.kind === 'detail' && v.parent === view.id)].filter((v) => isShaded(displayOf(v)));
     if (shaded.length === 0) return null;
     const most = Math.max(...shaded.map((v) => ratio(scaleOf(doc, v))));
     return Math.round(SHADE_SHEET_PX * most * 100) / 100;
@@ -647,7 +727,7 @@ export class DrawingStore {
 
   /** The source the palette shows: that of the first model view (relative to the drawing). */
   private paletteSource(): string | null {
-    const v = page(this.history.doc).views.find((x) => !isDerived(x));
+    const v = allViews(this.history.doc).find((x) => !isDerived(x));
     return v && !isDerived(v) ? v.source : this.initialSource;
   }
 
@@ -663,7 +743,7 @@ export class DrawingStore {
   addStandardViews(): void {
     const source = this.sourceForViews();
     if (!source) return this.host.notify(t('drawing.noSource'), 'error');
-    if (page(this.history.doc).views.length === 0) this.autoScalePending = true;
+    if (page(this.history.doc, this.state.activePageIndex).views.length === 0) this.autoScalePending = true;
     const doc = this.history.doc;
     const ids = new IdAllocator(doc.idCounters, drawingIdsInUse(doc));
     const views = (['front', 'top', 'right'] as const).map((direction): DrawingView => ({ id: ids.take('view'), name: t(`drawing.view.${direction}`), source, direction }));
@@ -773,7 +853,7 @@ export class DrawingStore {
    * anywhere; 「預設對齊」 (`setView` with `at: null`) puts it back in line.
    */
   breakAlignment(id: Id): boolean {
-    const view = viewById(page(this.history.doc).views, id);
+    const view = viewById(allViews(this.history.doc), id);
     const placed = this.scene().placed.get(id);
     if (!view || !placed || view.at || (view.kind !== 'projected' && view.kind !== 'section')) return false;
     const done = this.execute({ type: 'setView', viewId: id, patch: { at: [Math.round(placed.at[0] * 100) / 100, Math.round(placed.at[1] * 100) / 100], slide: null } });
@@ -787,7 +867,7 @@ export class DrawingStore {
    * editable. 「解鎖」 keeps the place and the scale it had: the lock only stops them from changing.
    */
   lockView(id: Id): boolean {
-    const view = viewById(page(this.history.doc).views, id);
+    const view = viewById(allViews(this.history.doc), id);
     const placed = this.scene().placed.get(id);
     if (!view || !placed || view.locked) return false;
     const done = this.execute({ type: 'setView', viewId: id, patch: { at: [Math.round(placed.at[0] * 100) / 100, Math.round(placed.at[1] * 100) / 100], slide: null, scale: scaleOf(this.history.doc, view), locked: true } });
@@ -796,10 +876,36 @@ export class DrawingStore {
   }
 
   unlockView(id: Id): boolean {
-    const view = viewById(page(this.history.doc).views, id);
+    const view = viewById(allViews(this.history.doc), id);
     if (!view || !view.locked) return false;
     const done = this.execute({ type: 'setView', viewId: id, patch: { locked: null } });
     if (done) this.notifyInfo(t('drawingUi.viewUnlockedDone'));
+    return done;
+  }
+
+  /**
+   * Hides an edge of a view (B2.2): its line is taken out of what the view shows, by the edge's persistent name (in a view of an assembly, `in` says
+   * which part's it is), so the part may change and the edge stays hidden as long as the change keeps it. Hiding an edge that is already hidden changes
+   * nothing.
+   */
+  hideEdge(viewId: Id, ref: DrawingRef): boolean {
+    const view = viewById(allViews(this.history.doc), viewId);
+    if (!view) return false;
+    const hidden = view.hiddenEdges ?? [];
+    if (hidden.some((h) => h.name === ref.name && (h.in ?? null) === (ref.in ?? null))) return false;
+    const done = this.execute({ type: 'setView', viewId, patch: { hiddenEdges: [...hidden, ref] } });
+    if (done) this.notifyInfo(t('drawingUi.edgeHidden'));
+    return done;
+  }
+
+  /** Shows a hidden edge of a view again (B2.2): it is taken out of the view's `hiddenEdges`, and its line comes back. */
+  unhideEdge(viewId: Id, name: string, inPart?: string): boolean {
+    const view = viewById(allViews(this.history.doc), viewId);
+    if (!view?.hiddenEdges) return false;
+    const next = view.hiddenEdges.filter((h) => !(h.name === name && (h.in ?? null) === (inPart ?? null)));
+    if (next.length === view.hiddenEdges.length) return false;
+    const done = this.execute({ type: 'setView', viewId, patch: { hiddenEdges: next.length > 0 ? next : null } });
+    if (done) this.notifyInfo(t('drawingUi.edgeShown'));
     return done;
   }
 
@@ -852,18 +958,20 @@ export class DrawingStore {
   /** The parts lists and the parts of the views of assemblies (derived: kept in the state so that the scene is made from the state alone). */
   private refreshBoms(): void {
     const boms = new Map<Id, ViewBom>();
-    for (const v of page(this.history.doc).views) {
-      const data = this.assemblyData(v);
-      const own = this.assemblyOf(v);
-      if (!data || !own) continue;
-      const rows = buildBom({
-        doc: data.doc,
-        trees: data.trees,
-        propsOf: (key) => data.parts.get(key)?.properties,
-        isReference: (key) => data.parts.get(key)?.referenceOnly === true,
-        problems: own.problems,
-      }).flat;
-      boms.set(v.id, { rows, parts: own.leaves.map((l) => ({ ...(l.file ? { file: l.file } : {}), mirrored: !!l.mirrored })) });
+    for (const p of this.history.doc.pages) {
+      for (const v of p.views) {
+        const data = this.assemblyData(v);
+        const own = this.assemblyOf(v);
+        if (!data || !own) continue;
+        const rows = buildBom({
+          doc: data.doc,
+          trees: data.trees,
+          propsOf: (key) => data.parts.get(key)?.properties,
+          isReference: (key) => data.parts.get(key)?.referenceOnly === true,
+          problems: own.problems,
+        }).flat;
+        boms.set(v.id, { rows, parts: own.leaves.map((l) => ({ ...(l.file ? { file: l.file } : {}), mirrored: !!l.mirrored })) });
+      }
     }
     const same = boms.size === this.state.boms.size && [...boms].every(([id, b]) => JSON.stringify(b) === JSON.stringify(this.state.boms.get(id)));
     if (!same) this.set({ boms });
@@ -884,7 +992,7 @@ export class DrawingStore {
     try {
       do {
         this.computeAgain = false;
-        const views = page(this.history.doc).views;
+        const views = allViews(this.history.doc);
         const wanted = views.flatMap((v) => {
           const r = this.requestOf(v);
           return r && !this.cache.has(r.id) ? [r] : [];
@@ -892,7 +1000,7 @@ export class DrawingStore {
         const unique = [...new Map(wanted.map((w) => [w.id, w])).values()];
         if (unique.length > 0) {
           this.set({ computing: true });
-          const results = await this.host.api.drawingViews(unique.map((w) => ({ parts: w.parts, axes: w.axes, ...(w.anchors ? { anchors: true } : {}), ...(w.cut ? { cut: w.cut } : {}), ...(w.flat ? { flat: true } : {}), ...(w.shade ? { shade: w.shade } : {}) })));
+          const results = await this.host.api.drawingViews(unique.map((w) => ({ parts: w.parts, axes: w.axes, ...(w.anchors ? { anchors: true } : {}), ...(w.cut ? { cut: w.cut } : {}), ...(w.flat ? { flat: true } : {}), ...(w.shade ? { shade: w.shade } : {}), ...(w.hidden ? { hiddenEdges: w.hidden } : {}) })));
           if (this.closed) return;
           unique.forEach((w, i) => {
             const r = results[i]!;
@@ -905,16 +1013,18 @@ export class DrawingStore {
         }
         const lines = new Map<Id, ViewLines | null>();
         const problems = new Map<Id, string>();
-        for (const v of page(this.history.doc).views) {
-          const r = this.requestOf(v);
-          const found = r ? this.cache.get(r.id) : undefined;
-          const path = this.pathOf(v);
-          const source = path === null ? undefined : this.state.sources.get(path);
-          if (found && 'error' in found) problems.set(v.id, found.error);
-          else if (source && (source.status === 'missing' || source.status === 'error')) problems.set(v.id, source.message);
-          // a section whose line misses the part cuts nothing: said, not drawn as if it were a section (D-I5)
-          else if (v.kind === 'section' && found && sectionMissed(found)) problems.set(v.id, t('drawing.sectionMisses', { label: v.label }));
-          lines.set(v.id, found && !('error' in found) ? found : null);
+        for (const p of this.history.doc.pages) {
+          for (const v of p.views) {
+            const r = this.requestOf(v);
+            const found = r ? this.cache.get(r.id) : undefined;
+            const path = this.pathOf(v, p.views);
+            const source = path === null ? undefined : this.state.sources.get(path);
+            if (found && 'error' in found) problems.set(v.id, found.error);
+            else if (source && (source.status === 'missing' || source.status === 'error')) problems.set(v.id, source.message);
+            // a section whose line misses the part cuts nothing: said, not drawn as if it were a section (D-I5)
+            else if (v.kind === 'section' && found && sectionMissed(found)) problems.set(v.id, t('drawing.sectionMisses', { label: v.label }));
+            lines.set(v.id, found && !('error' in found) ? found : null);
+          }
         }
         this.set({ lines, problems, computing: false });
         await this.ensurePalette();
@@ -943,8 +1053,10 @@ export class DrawingStore {
       do {
         this.featureAgain = false;
         const doc = this.history.doc;
+        const allDocViews = allViews(doc);
+        const allDocDims = doc.pages.flatMap((p) => p.dimensions);
         // what the views can be dimensioned from
-        const wantedFeatures = page(doc).views.flatMap((v) => {
+        const wantedFeatures = allDocViews.flatMap((v) => {
           const r = this.requestOf(v);
           if (!r || !r.featureId || this.featureCache.has(r.featureId)) return [];
           return [{ id: r.featureId, part: r.key, axes: r.axes }];
@@ -962,18 +1074,19 @@ export class DrawingStore {
         const need = new Map<string, Map<string, Ref>>();
         const refsOf = (d: Dimension): DrawingRef[] => dimensionRefs(d);
         const keyOfDim = (d: Dimension): string | null => {
-          const view = page(doc).views.find((v) => v.id === d.view);
+          const view = allDocViews.find((v) => v.id === d.view);
           return view && !this.assemblyData(view) ? this.keyOf(view) : null;
         };
         /** The part an element of a view of an assembly is in (D-I2): its leaf, by the reference's `in`, and the part's key as built. */
         const leafOf = (d: Dimension, ref: DrawingRef): { leaf: Leaf; key: string } | null => {
-          const view = page(doc).views.find((v) => v.id === d.view);
-          const asm = view ? this.assemblyOf(this.ancestor(page(doc).views, view) ?? view) : null;
+          const view = allDocViews.find((v) => v.id === d.view);
+          const p = doc.pages.find((pg) => pg.views.some((v) => v.id === d.view));
+          const asm = view && p ? this.assemblyOf(this.ancestor(p.views, view) ?? view) : null;
           const leaf = asm?.leaves.find((l) => l.id === ref.in);
           if (!leaf) return null;
           return { leaf, key: leaf.mirrored ? leaf.key.slice(0, -mirrorKey('').length) : leaf.key };
         };
-        for (const d of page(doc).dimensions) {
+        for (const d of allDocDims) {
           const key = keyOfDim(d);
           for (const ref of refsOf(d)) {
             // in a view of an assembly the element is its part's, asked of that part
@@ -984,7 +1097,7 @@ export class DrawingStore {
           }
         }
         // the edges and vertices of the parts of each view of an assembly (D-I2)
-        const wantedAsm = page(doc).views.flatMap((v) => {
+        const wantedAsm = allDocViews.flatMap((v) => {
           const asm = this.assemblyOf(v);
           const r = asm && v.kind !== 'detail' ? this.requestOf(v) : null;
           if (!asm || !r || this.featureCache.has(`asm|${r.id}`)) return [];
@@ -1011,38 +1124,42 @@ export class DrawingStore {
         // the answers, by view and by dimension
         const features = new Map<Id, ViewFeature[]>();
         const edges = new Map<Id, ViewEdgeSet>();
-        for (const v of page(doc).views) {
-          const own = v.kind === 'detail' ? this.ancestor(page(doc).views, v) : v;
-          const r = own ? this.requestOf(own) : null;
-          const asmFound = own && this.assemblyOf(own) && r ? this.featureCache.get(`asm|${r.id}`) : undefined;
-          const found = asmFound ?? (r?.featureId ? this.featureCache.get(r.featureId) : undefined);
-          if (found && !('error' in found)) {
-            features.set(v.id, found.features);
-            if (found.edges) edges.set(v.id, found.edges);
+        for (const p of doc.pages) {
+          for (const v of p.views) {
+            const own = v.kind === 'detail' ? this.ancestor(p.views, v) : v;
+            const r = own ? this.requestOf(own) : null;
+            const asmFound = own && this.assemblyOf(own) && r ? this.featureCache.get(`asm|${r.id}`) : undefined;
+            const found = asmFound ?? (r?.featureId ? this.featureCache.get(r.featureId) : undefined);
+            if (found && !('error' in found)) {
+              features.set(v.id, found.features);
+              if (found.edges) edges.set(v.id, found.edges);
+            }
           }
         }
         const elements = new Map<Id, ElementsResult>();
-        for (const d of page(doc).dimensions) {
-          const view = page(doc).views.find((v) => v.id === d.view);
-          if (view && this.assemblyData(this.ancestor(page(doc).views, view) ?? view)) {
-            // a view of an assembly (D-I2): each element is its part's, put where the assembly has the part
-            const got = refsOf(d).map((ref): ElementFacts | { error: string } | undefined => {
-              const at = ref.in ? leafOf(d, ref) : null;
-              if (!at) return { error: t('drawing.dimNoPart', { name: ref.name }) };
-              const facts = this.elementCache.get(`${at.key}|${ref.kind}|${ref.name}`);
-              return facts && !('error' in facts) ? placeElementFacts(facts, placementRows(at.leaf.pose, !!at.leaf.mirrored)) : facts;
-            });
+        for (const p of doc.pages) {
+          for (const d of p.dimensions) {
+            const view = p.views.find((v) => v.id === d.view);
+            if (view && this.assemblyData(this.ancestor(p.views, view) ?? view)) {
+              // a view of an assembly (D-I2): each element is its part's, put where the assembly has the part
+              const got = refsOf(d).map((ref): ElementFacts | { error: string } | undefined => {
+                const at = ref.in ? leafOf(d, ref) : null;
+                if (!at) return { error: t('drawing.dimNoPart', { name: ref.name }) };
+                const facts = this.elementCache.get(`${at.key}|${ref.kind}|${ref.name}`);
+                return facts && !('error' in facts) ? placeElementFacts(facts, placementRows(at.leaf.pose, !!at.leaf.mirrored)) : facts;
+              });
+              if (got.some((g) => !g)) continue;
+              const bad = got.find((g) => g && 'error' in g) as { error: string } | undefined;
+              elements.set(d.id, bad ? { error: bad.error } : { elements: got as ElementFacts[] });
+              continue;
+            }
+            const key = keyOfDim(d);
+            if (!key) continue;
+            const got = refsOf(d).map((ref) => this.elementCache.get(`${key}|${ref.kind}|${ref.name}`));
             if (got.some((g) => !g)) continue;
             const bad = got.find((g) => g && 'error' in g) as { error: string } | undefined;
             elements.set(d.id, bad ? { error: bad.error } : { elements: got as ElementFacts[] });
-            continue;
           }
-          const key = keyOfDim(d);
-          if (!key) continue;
-          const got = refsOf(d).map((ref) => this.elementCache.get(`${key}|${ref.kind}|${ref.name}`));
-          if (got.some((g) => !g)) continue;
-          const bad = got.find((g) => g && 'error' in g) as { error: string } | undefined;
-          elements.set(d.id, bad ? { error: bad.error } : { elements: got as ElementFacts[] });
         }
         this.set({ features, edges, elements });
         this.autoScaleWhenReady();
@@ -1063,7 +1180,7 @@ export class DrawingStore {
    */
   private autoScaleWhenReady(): void {
     if (!this.autoScalePending || this.closed) return;
-    const { views } = page(this.history.doc);
+    const { views } = page(this.history.doc, this.state.activePageIndex);
     const { lines, problems } = this.state;
     if (views.length === 0) return;
     const drawn = views.every((v) => v.kind === 'detail' || lines.get(v.id) || problems.has(v.id));
@@ -1078,7 +1195,7 @@ export class DrawingStore {
     const sheet = this.fitSheet();
     if (sheet) {
       try {
-        this.history.amend({ type: 'setSheet', sheet });
+        this.history.amend({ type: 'setSheet', pageIndex: this.state.activePageIndex, sheet });
       } catch (e) {
         this.host.notify(e instanceof CommandError ? e.message : String(e), 'error');
       }
@@ -1097,7 +1214,7 @@ export class DrawingStore {
   }
 
   private fitDone(): boolean {
-    return this.closed || !this.autoScalePending || page(this.history.doc).views.length === 0 || (!this.computing && !this.featuring && this.loadingSources === 0);
+    return this.closed || !this.autoScalePending || page(this.history.doc, this.state.activePageIndex).views.length === 0 || (!this.computing && !this.featuring && this.loadingSources === 0);
   }
 
   private wakeFitWaiters(): void {
@@ -1115,14 +1232,17 @@ export class DrawingStore {
   }
 
   /** The drawing as a scene (the sheet and every view's lines where they are), kept while the document and what it is drawn from are the same. */
-  scene(): { scene: Scene; placed: Map<Id, PlacedView>; dimensions: Map<Id, DimensionOutcome>; tables: Map<Id, HoleRow[]> } {
+  scene(pageIndex: number = this.state.activePageIndex): { scene: Scene; placed: Map<Id, PlacedView>; dimensions: Map<Id, DimensionOutcome>; tables: Map<Id, HoleRow[]> } {
+    const pIndex = Math.max(0, Math.min(this.state.doc.pages.length - 1, pageIndex));
     const c = this.sceneCache;
-    if (c && c.doc === this.state.doc && c.lines === this.state.lines && c.elements === this.state.elements && c.features === this.state.features && c.boms === this.state.boms && c.edges === this.state.edges) return c.value;
+    if (c && c.pageIndex === pIndex && c.doc === this.state.doc && c.lines === this.state.lines && c.elements === this.state.elements && c.features === this.state.features && c.boms === this.state.boms && c.edges === this.state.edges) return c.value;
     // the annotations fastened to the model are drawn where the model has their elements now (D-I2)
-    const { annotations, lost } = attachedAnnotations(page(this.state.doc).annotations ?? [], this.viewsSeen());
-    const value = buildScene(withPage(this.state.doc, { ...page(this.state.doc), annotations }), this.state.lines, this.state.elements, this.state.features, this.state.boms);
+    const targetPage = page(this.state.doc, pIndex);
+    const { annotations, lost } = attachedAnnotations(targetPage.annotations ?? [], this.viewsSeen(pIndex));
+    const singleDoc = drawingFromPage({ ...targetPage, annotations }, this.state.doc.properties);
+    const value = buildScene(singleDoc, this.state.lines, this.state.elements, this.state.features, this.state.boms);
     this.lostCache = lost;
-    this.sceneCache = { doc: this.state.doc, lines: this.state.lines, elements: this.state.elements, features: this.state.features, boms: this.state.boms, edges: this.state.edges, value };
+    this.sceneCache = { pageIndex: pIndex, doc: this.state.doc, lines: this.state.lines, elements: this.state.elements, features: this.state.features, boms: this.state.boms, edges: this.state.edges, value };
     return value;
   }
 
@@ -1135,9 +1255,12 @@ export class DrawingStore {
   }
 
   /** What each view shows of the model's edges and vertices, and its features (D-I2): what the attachments are worked out from. */
-  viewsSeen(): Map<Id, { seen: VisibleElements; features: ViewFeature[] }> {
-    const lines = resolveLines(this.state.doc, this.state.lines);
-    return new Map(page(this.state.doc).views.map((v) => [v.id, { seen: visibleElements(lines.get(v.id), this.state.edges.get(v.id), this.state.features.get(v.id) ?? []), features: this.state.features.get(v.id) ?? [] }]));
+  viewsSeen(pageIndex: number = this.state.activePageIndex): Map<Id, { seen: VisibleElements; features: ViewFeature[] }> {
+    const pIndex = Math.max(0, Math.min(this.state.doc.pages.length - 1, pageIndex));
+    const targetPage = page(this.state.doc, pIndex);
+    const singleDoc = drawingFromPage(targetPage, this.state.doc.properties);
+    const lines = resolveLines(singleDoc, this.state.lines);
+    return new Map(targetPage.views.map((v) => [v.id, { seen: visibleElements(lines.get(v.id), this.state.edges.get(v.id), this.state.features.get(v.id) ?? []), features: this.state.features.get(v.id) ?? [] }]));
   }
 
   // ------------------------------------------------------------ editing
@@ -1147,7 +1270,7 @@ export class DrawingStore {
   }
 
   setTitle(field: TitleField, value: string): void {
-    if ((page(this.state.doc).title[field] ?? '') !== value.trim()) this.execute({ type: 'setTitle', field, value });
+    if ((page(this.state.doc, this.state.activePageIndex).title[field] ?? '') !== value.trim()) this.execute({ type: 'setTitle', field, value });
   }
 
   /** Views of the part the first view shows (or `source`, relative to the drawing), from these directions. */
@@ -1448,26 +1571,29 @@ export class DrawingStore {
 
   /** What 「最適比例」 changes of the sheet; null when nothing (it fits already, or nothing is drawn to fit). */
   private fitSheet(): Extract<DrawingCommand, { type: 'setSheet' }>['sheet'] | null {
-    const { doc, lines, elements, features, boms } = this.state;
-    const fit = fitViews(doc, lines, elements, features, boms);
+    const { doc, lines, elements, features, boms, activePageIndex } = this.state;
+    const curDoc = drawingFromPage(page(doc, activePageIndex), doc.properties);
+    const fit = fitViews(curDoc, lines, elements, features, boms);
     if (!fit) return null;
+    const curSheet = page(doc, activePageIndex).sheet;
     const sheet: Extract<DrawingCommand, { type: 'setSheet' }>['sheet'] = {};
-    if (fit.scale[0] !== page(doc).sheet.scale[0] || fit.scale[1] !== page(doc).sheet.scale[1]) sheet.scale = fit.scale;
-    const was = page(doc).sheet.shift;
+    if (fit.scale[0] !== curSheet.scale[0] || fit.scale[1] !== curSheet.scale[1]) sheet.scale = fit.scale;
+    const was = curSheet.shift;
     if ((fit.shift?.[0] ?? 0) !== (was?.[0] ?? 0) || (fit.shift?.[1] ?? 0) !== (was?.[1] ?? 0)) sheet.shift = fit.shift;
     return Object.keys(sheet).length > 0 ? sheet : null;
   }
 
   /** The shift that puts the arrangement in the middle at the scale it has, the way a new drawing is put there (with the names under the views, the dimensions, the marks). */
   private centredShift(): [number, number] | null {
-    const { doc, lines, elements, features, boms } = this.state;
-    return centreViews(doc, lines, elements, features, boms);
+    const { doc, lines, elements, features, boms, activePageIndex } = this.state;
+    const curDoc = drawingFromPage(page(doc, activePageIndex), doc.properties);
+    return centreViews(curDoc, lines, elements, features, boms);
   }
 
   /** Whether the arrangement is in the middle already: 「自動排版」 of the front view has nothing to do then. */
   arrangementCentred(): boolean {
     const want = this.centredShift();
-    const was = page(this.state.doc).sheet.shift;
+    const was = page(this.state.doc, this.state.activePageIndex).sheet.shift;
     return (want?.[0] ?? 0) === (was?.[0] ?? 0) && (want?.[1] ?? 0) === (was?.[1] ?? 0);
   }
 
@@ -1493,15 +1619,30 @@ export class DrawingStore {
   }
 
   /** The drawing as a PDF, with the font chosen for the characters Helvetica does not have; what could not be written is said. */
-  exportPdf(): void {
+  async exportPdf(): Promise<void> {
     const name = this.name();
     try {
-      const { bytes, warnings } = toPdf(this.scene().scene, { title: name, font: this.font });
+      const currentFontId = this.state.pdfFont ?? page(this.history.doc).sheet.pdfFont ?? 'sans';
+      if (!this.font && currentFontId) {
+        this.font = await fontManager.resolveFont(currentFontId);
+      }
+      const scenes = this.history.doc.pages.map((_, i) => this.scene(i).scene);
+      const { bytes, warnings } = toPdf(scenes, { title: name, font: this.font });
       download(`${name}.pdf`, bytes as BlobPart, 'application/pdf');
       this.host.notify(t('drawing.exported', { name: `${name}.pdf` }));
       for (const w of warnings) this.host.notify(w, 'error');
     } catch (e) {
       this.host.notify(e instanceof FontError ? e.message : t('drawing.exportFailed', { why: e instanceof Error ? e.message : String(e) }), 'error');
+    }
+  }
+
+  /** Selects a preset or registered PDF font and saves it into the active sheet. */
+  async selectPdfFont(fontId: string | null): Promise<void> {
+    this.font = fontId ? (await fontManager.resolveFont(fontId)) : null;
+    this.setSheet({ pdfFont: fontId });
+    this.set({ pdfFont: fontId });
+    if (fontId) {
+      this.host.notify(t('drawing.fontChosen', { name: fontId }));
     }
   }
 
@@ -1513,6 +1654,8 @@ export class DrawingStore {
       const font = readTrueType(file.bytes);
       if (!font.embeddable) throw new FontError(t('font.restricted'));
       this.font = font;
+      fontManager.set(file.name, font);
+      this.setSheet({ pdfFont: file.name });
       this.set({ pdfFont: file.name });
       this.host.notify(t('drawing.fontChosen', { name: file.name }));
     } catch (e) {
@@ -1522,6 +1665,7 @@ export class DrawingStore {
 
   clearFont(): void {
     this.font = null;
+    this.setSheet({ pdfFont: null });
     this.set({ pdfFont: null });
   }
 

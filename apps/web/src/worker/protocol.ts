@@ -1,8 +1,8 @@
 import type { Locale } from '@3db/i18n';
-import type { InterferenceComponent, MeasureReport, MeasureTarget, PartMass, ElementFacts, SectionCut, ViewAxes, ViewEdgeSet, ViewFeature } from '@3db/model';
+import type { InterferenceComponent, MeasureReport, MeasureTarget, PartMass, ElementFacts, SectionCut, ViewAxes, ViewEdgeSet, ViewFeature, DrawingRef } from '@3db/model';
 import type { AssemblyDoc, Axis3, CoordSystem, Feature, Fingerprint, Id, PartDoc, PlaneFrame, Pose, Ref, SketchFeature, SourceTree, Vec3 } from '@3db/model';
 import type { DraftReport, ThicknessReport, UndercutReport, GeometryReport, MassProps, MeshData, ProjectedView } from '@3db/kernel';
-import type { AssemblyResult, AssemblySolveOptions, ClearanceRow, Converted, FeatureResult, FlatReport, SheetCheck, SheetCheckLimits, SnapItem, SweepResult } from '@3db/regen';
+import type { AssemblyResult, AssemblySolveOptions, ClearanceRow, Converted, FeatureResult, FlatReport, SheetCheck, SheetCheckLimits, SnapItem, SweepResult, CosmeticThreadInfo } from '@3db/regen';
 import type { MateGeometry } from '@3db/assembly';
 import type { StepAssemblyPlan, StepInstance, StepSub } from '@3db/io';
 import type { ShadeImage } from '@3db/drawing';
@@ -100,6 +100,8 @@ export interface RebuildPayload {
    * (D4.6, `isShown`), so hiding or showing one does not need a rebuild.
    */
   sketchGeometry: Map<Id, Map<Id, SolvedGeometry>>;
+  /** Cosmetic threads (C4.9, ADR 0156). */
+  cosmeticThreads: CosmeticThreadInfo[];
   mass: MassProps | null;
   totalMs: number;
   /**
@@ -214,7 +216,7 @@ export interface CollisionResult {
 
 /** A view of a drawing asked for (C16.2): the parts it shows, as built for the app (by key), where each is, and the direction it is seen from. */
 export interface DrawingViewRequest {
-  parts: { part: string; mirrored: boolean; pose: Pose }[];
+  parts: { part: string; mirrored: boolean; pose: Pose; /** A view of an assembly (B2.2): the leaf's id, which says which part of it an edge of the view is in. */ leaf?: string }[];
   /** Where it is seen from: the direction it looks along and the sheet's up. */
   axes: ViewAxes;
   /** A section (C16.3): the plane that cuts it, its normal toward the viewer (the side taken away); a stepped or aligned one's whole line too (D-I5). */
@@ -225,6 +227,8 @@ export interface DrawingViewRequest {
   flat?: boolean;
   /** Also the image of its faces (ADR 0146), `px` pixels a millimetre of the view at full size: a shaded view's. */
   shade?: { px: number };
+  /** The edges this view hides (B2.2): their lines are taken out of what it shows. */
+  hiddenEdges?: DrawingRef[];
 }
 
 /** What a view of a drawing looks like: its lines at full size (and, when asked, its shading), or why they could not be made. */

@@ -6,7 +6,7 @@ import gcsWasm from '@salusoft89/planegcs/dist/planegcs_dist/planegcs.wasm?url';
 import { bodyKey, combineMass, isShown, mirrorKey, MESH_QUALITY, placementRows, settingsOf, type ViewEdgeSet, type AssemblyDoc, type Id, type MeasureReport, type PartDoc, type SourceTree } from '@3db/model';
 import { findProfiles, PlaneGcsSolver } from '@3db/sketch';
 import { COMPONENT_MESH, Kernel, type ThicknessReport, type UndercutReport, type DraftReport, type GeometryReport, type MassProps, type MeshData, type MeshOptions, type ShapeId } from '@3db/kernel';
-import { encodeShade, flatViewLines, rasterizeShade, type ShadeImage } from '@3db/drawing';
+import { encodeShade, flatViewLines, rasterizeShade, withoutHiddenEdges, type ShadeImage, type ViewLines } from '@3db/drawing';
 import { drawingAnchors, holeFeatures, projectDrawingView, elementFacts, viewFeatures, viewEdges, findClearance, findInterference, flatPattern, FlatError, sheetChecks, sweepClearance, measureTargets, convertEdges, modelSnapItems, edgeMateGeometry, exportFaces, faceColors, intoFrame, faceEdges, faceMateGeometry, followReferences, ReferenceProblem, Regenerator, solveAssemblyTree, type AssemblyResult, type AssemblySolveOptions, type BodyInfo, type FlatReport, type HoleFeatures, type RebuildResult, type SheetCheck, type SheetCheckLimits } from '@3db/regen';
 import { edgeFingerprint, faceFingerprint, vertexFingerprint } from '@3db/naming';
 import { binaryStl, exportAssemblyStep, exportPartStep, portableShape, readComponentFile, stepAssemblyPlan, type StepAssemblyPlan } from '@3db/io';
@@ -14,7 +14,7 @@ import type { SourcePart, SourceProvider } from '@3db/regen';
 import { mergeMeshes } from './mergeMesh';
 import { heapOf } from './heap';
 import { partFeatures } from './partOutline';
-import type { AssemblyStepRequest, DrawingElementsResult, DrawingFeaturesResult, DrawingViewResult, ClearanceResult, CollisionResult, SweepOutcome, ConvertPayload, InterferenceResult, PartExportOptions, ConvertRequest, KernelApi, PartBuildPayload, PartStage, RebuildPayload, RebuildRequest, SketchSolvePayload, SketchSolveRequest, SourceFileData, StepOutput } from './protocol';
+import type { AssemblyStepRequest, DrawingElementsResult, DrawingFeaturesResult, DrawingViewRequest, DrawingViewResult, ClearanceResult, CollisionResult, SweepOutcome, ConvertPayload, InterferenceResult, PartExportOptions, ConvertRequest, KernelApi, PartBuildPayload, PartStage, RebuildPayload, RebuildRequest, SketchSolvePayload, SketchSolveRequest, SourceFileData, StepOutput } from './protocol';
 
 let kernel: Kernel;
 let solver: PlaneGcsSolver;
@@ -166,6 +166,32 @@ async function shapesOf(components: readonly { parts: readonly { part: string }[
 /** The mesh of each part as built, for the edges of its drawing views (D-I2): made once per part, gone with it. */
 const edgeMeshes = new WeakMap<object, MeshData>();
 
+/**
+ * The edges and vertices of a drawing view, each by its persistent name, projected (B2.2): the same the view's features request makes, for the parts of
+ * this view where they are. Only a view that hides edges asks for it.
+ */
+async function viewEdgesOf(r: DrawingViewRequest): Promise<ViewEdgeSet> {
+  const set: ViewEdgeSet = { edges: [], vertices: [] };
+  for (const p of r.parts) {
+    const built = await parts.get(p.part)?.catch(() => null);
+    const body = built?.result.body;
+    if (!built || !body) throw new Error(t('drawing.noBody'));
+    // what is drawn of a part is what it is made of: a workpiece kept for reference is left out
+    const own = built.result.bodies.filter((b) => !b.reference && !b.surface);
+    const only = own.length > 0 && own.length < built.result.bodies.length;
+    const allowed = only ? (i: number) => own.some((b) => i >= b.face0 && i < b.face0 + b.faces) : undefined;
+    let mesh = edgeMeshes.get(built);
+    if (!mesh) {
+      mesh = kernel.mesh(body.shape, { tolerance: 0.01, angular: 0.1 });
+      edgeMeshes.set(built, mesh);
+    }
+    const one = viewEdges(kernel, body.shape, body.topology, body.names, r.axes, allowed, mesh, p.leaf ? { rows: placementRows(p.pose, p.mirrored), in: p.leaf } : undefined);
+    set.edges.push(...one.edges);
+    set.vertices.push(...one.vertices);
+  }
+  return set;
+}
+
 const api: KernelApi = {
   async setLocale(locale) {
     setWorkerLocale(locale);
@@ -213,6 +239,7 @@ const api: KernelApi = {
       points: r.points,
       systems: r.systems,
       sketchGeometry: new Map([...r.sketches].map(([id, s]) => [id, s.solved.geometry])),
+      cosmeticThreads: r.cosmeticThreads,
       mass: massOf(r),
       totalMs: r.totalMs,
       heapBytes: heapOf(kernel.oc),
@@ -469,6 +496,8 @@ const api: KernelApi = {
           viewParts.push({ shape, pose: p.pose, mirrored: p.mirrored });
         }
         const { mesh, ...lines } = projectDrawingView(kernel, viewParts, r.axes, r.cut, !!r.shade);
+        // the edges this view hides are not drawn (B2.2): their lines are taken out of what the view shows, by the view's own lines (withoutHiddenEdges)
+        const drawn = r.hiddenEdges?.length ? withoutHiddenEdges(lines as ViewLines, await viewEdgesOf(r), r.hiddenEdges) : lines;
         // the faces drawn into an image (ADR 0146): a view whose shading fails keeps its lines, and says why it has no shading
         let shade: ShadeImage | { error: string } | undefined;
         if (r.shade) {
@@ -479,7 +508,7 @@ const api: KernelApi = {
             shade = { error: e instanceof Error ? e.message : String(e) };
           }
         }
-        out.push({ lines, ...(r.anchors ? { anchors: drawingAnchors(kernel, viewParts, r.axes) } : {}), ...(shade ? { shade } : {}), ms: performance.now() - began });
+        out.push({ lines: drawn, ...(r.anchors ? { anchors: drawingAnchors(kernel, viewParts, r.axes) } : {}), ...(shade ? { shade } : {}), ms: performance.now() - began });
       } catch (e) {
         out.push({ error: e instanceof Error ? e.message : String(e) });
       } finally {
@@ -507,7 +536,7 @@ const api: KernelApi = {
           mesh = kernel.mesh(body.shape, { tolerance: 0.01, angular: 0.1 });
           edgeMeshes.set(built, mesh);
         }
-        out.push({ features: viewFeatures(body.topology, body.names, r.axes, allowed, built.holes), edges: viewEdges(kernel, body.shape, body.topology, body.names, r.axes, allowed, mesh) });
+        out.push({ features: viewFeatures(body.topology, body.names, r.axes, allowed, built.holes, built.result.cosmeticThreads), edges: viewEdges(kernel, body.shape, body.topology, body.names, r.axes, allowed, mesh) });
       } catch (e) {
         out.push({ error: e instanceof Error ? e.message : String(e) });
       }

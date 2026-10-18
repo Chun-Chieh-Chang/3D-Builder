@@ -186,6 +186,12 @@ const migrations: Record<number, (doc: Json) => Json> = {
   54: (doc) => doc,
   // v56: a midpoint relation may be on an arc (the middle of its sweep). Nothing to convert; an older program refuses the file rather than fail to solve it.
   55: (doc) => doc,
+  // v57: cosmetic thread feature (`cosmeticThread`, ADR 0156). A new feature kind; nothing to convert.
+  56: (doc) => doc,
+  // v58: sketch ellipse entity (`ellipse`, ADR 0157). A new sketch entity kind; nothing to convert.
+  57: (doc) => doc,
+  // v59: split body feature (`split`, C7.4, ADR 0158). A new feature kind; nothing to convert.
+  58: (doc) => doc,
 };
 
 export class FormatError extends Error {
