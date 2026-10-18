@@ -373,12 +373,15 @@
 - **全量 `npm test`：237 檔（4 略過）、2993 過、0 失敗**，425s。
 - `verify:ui -- --only manual-sidebar-tabs`：**10 步全過、0 Console 錯誤**（PASS，8.7s）。
 - **全量 `verify:ui`（最終碼，背景跑）**：見 §5——118/143 通過，25 支失敗**全部為既有缺口**，與本次改動無關（證據鏈見 §5）。
+- **與 main 合併後再驗（2026-10-18，`b5b4068` 合併＋`0d635b5` 修補）**：typecheck 0、三 lint 過；全量 `npm test` **242 檔（4 略）3033 過、0 敗**（420s）；全量 `verify:ui` **117/143**——`manual-sidebar-tabs` 在全量批次 **PASS（8.8s）**，即 §2.2 在 main 最新碼（B2.8 多圖頁、ADR 0156–0158、pstack 重構）上仍然成立。
 
 ### 5. 已知限制／後續（誠實記載）
 - **全量 verify:ui 的 25 支失敗是既有的，不是這次造成的**。兩次全量跑（§2.2 改動前、只有新 e2e 檔時；以及最終碼）都是 **118/143**。逐支根因：① **B2.8 `pages[]` 根因 23 支**——11 支 `manual-drawing-*`、10 支 `phase5-*`（step 0 就 `Cannot read properties of undefined (reading 'length')`）、`manual-measure-view`（`tests/e2e/manual-measure-view.js:325` 讀 `drw.doc.views.length`）、`phase4b-surface`（`phase4b-surface.js:44` 讀 `drw.doc.views.find`）。② `phase3-select-elements`：呼叫已不存在的 `store.setPickFilter`（現名 `setPickFilterKind`，store.ts:1354）。③ `manual-asm-view-normal`：視角方塊的過時斷言（`top`/`d` 與 front normal 的量測差異，非 `pages[]`）。單獨重跑 `manual-drawing-title-style`／`phase5-drawing` 一樣失敗（**不是批次干擾**）。根因：**B2.8 多圖頁（`432bb1f`，10-17）把 `DrawingDoc` 改為 `pages[]`，頂層 `views` 已不存在，但這 23 支 e2e 仍讀 `drw().doc.views`**——該提交只更新了單元測試，e2e 遷移是 B2.8 shape 2 的待辦（決策單已由使用者回覆並提交：`8cb1f2b` `docs/decisions-e1p2-b28-shape2.html`）。本次改動是「一支新 e2e 檔＋新元件＋store 新增欄位」，觸及不到工程圖腳本讀的路徑；`manual-sidebar-tabs` 在同一批次裡 **PASS（7.7s）** 即為直接證據。**後續**：B2.8 shape 2 應把這 23 支改成 `page(drw().doc).views` 後重跑全量。
 - 側邊欄 §2.2 本次只交付**零件**：組合件的點選（`asm.selected` 零組件）仍啟用不了屬性頁（依計畫 §8「先零件再做組合件」），6 個模式面板維持浮動不變。
 - 特徵屬性頁只顯示識別（名稱/類型/狀態）＋編輯入口，**未**把 40 多種特徵的參數包進群組框（會動到 3262 行 PropertyManager 的既有欄位，風險另案評估）。
 - **環境坑（本次實測）**：① 5391 上的 dev server 根目錄是**主倉庫** `D:\Self-developed_Apps\G3\3D-Builder`（PID 13756，`vite --open`，上一階段留著的），不是本 worktree；驗證本 worktree 必須自起 server（本次用 5395＋`VERIFY_UI_ORIGIN`，debug/samples 用 9414/9415、5414/5415）。② 自起 server 若觸發 Vite dep 再最佳化，清理 `node_modules/.vite/deps_temp_*`（61 檔）會被環境的 safe-delete 守衛攔截並** crash server**；解法是先用 Bash `rm -rf` 清掉殘留 temp 再冷啟動（Bash 層級的 rm 不受該守衛影響）。
+- **合併後 verify:ui 的 26 支失敗 = 上述 25 支＋`manual-e1` 的批次 flake**：`ReferenceError: __manualE1 is not defined`、0.2 s 即掛＝腳本頂層 import 在頁面載入競爭下失敗，非斷言失敗。**同一份碼單跑 PASS（10.4 s）、三支小批次 3/3 PASS（10.5／14.2／18.9 s）**——與 10-12 handoff 記過的 `manual-e1` 批次敏感性同型，記為 flake，非功能回歸。
+- **合併時修了 main 的一個紅燈**（`0d635b5`）：ADR 0156（裝飾螺紋線）與 ADR 0158（實體分割）加了動作卻沒配 `help.*.summary`／`body`，違反 handoff §7「加指令必須同時加說明」的約定，`tests/phase8/help.test.ts` 的兩道防漏（每個動作都有一句話；有內文的主題都要掛上手冊條目或記事由）在合併樹上擋下。補 `help.cosmeticThread.*`／`help.split.*`（zh-TW／en，行為依兩份 ADR 與 `features.ts` 的錯誤訊息撰寫），並在 `docs/help-links.json` 的 `_untied` 登記「尚無手冊條目」與原因。
 
 ## 2026-10-16（B1）：局部剖視（local section）全鏈路——模型、核心、圖面、介面接線
 
