@@ -428,6 +428,15 @@ export const help = {
   'help.baseFlange.keywords': '鈑金 基材凸緣 板厚 折彎半徑 K因子 展開長度 折彎裕度',
 
   'help.baseFlange.see': 'edge-flange hem flat-pattern sketch',
+
+  'help.jog.summary': '沿草圖線把鈑金的一側固定、另一側階梯狀抬高或降低：兩道反向折彎加一段中間腹板，移動端與固定端保持平行。',
+
+  'help.jog.body':
+    '在鈑金的平面上畫一條草圖線當凸折線，按 ✔；線的一側固定，另一側朝法向抬高或降低。\n\n- 「凸折高度」是兩平行板表面的垂直位移；「凸折角度」預設 90°，可選 30° 到 90°。\n- 高度有下限 (2 × 內折彎半徑 + 板厚) × (1 − cos 角度)：更低時兩道折彎會互相穿透，特徵出錯並說明。\n- 內折彎半徑與 K 因子未指定時，用鈑金參數的預設值。\n- 與中間折彎的差別：中間折彎只折一次、端板轉一個角度；凸折折兩次，端板仍然平行，但低了（或高了）一段。',
+
+  'help.jog.keywords': '凸折 Z 形 折彎 鈑金 階梯 高度 角度 jog',
+
+  'help.jog.see': 'edge-flange base-flange concept.selection',
   'help.edgeFlange.summary': '在鈑金板的一條邊上折出凸緣，可設長度、角度、折彎半徑、自訂離隙與封閉角落。',
 
   'help.edgeFlange.body':
@@ -985,6 +994,15 @@ export const help = {
   'help.toolPierce.keywords': '穿透點 穿過 垂直邊 參考 孔軸',
 
   'help.toolPierce.see': 'tool-convert concept.sketch-snaps hole',
+
+  'help.toolIntersect.summary': '在草圖裡畫出草圖平面與模型幾何的交線，成為跟隨模型更新的草圖圖元。',
+
+  'help.toolIntersect.body':
+    '進入草圖後按它，在圖形區點模型的面或邊；工具算出草圖平面與它們的交線，在草圖上建成直線或樣條圖元。\n\n- 模型平面與草圖平面相交得到一條直線；曲面或樣條邊緣以自適取樣後投影成樣條圖元。\n- 圖元記住它的來源：模型修改後重新計算時會跟著更新，並維持固定的限制條件。\n\n與「轉換參考圖元」的差別：轉換參考圖元把選取的模型邊直接投影到草圖平面；本工具求的是面與草圖平面的交線。',
+
+  'help.toolIntersect.keywords': '相交 交線 轉換參考 投影 樣條 草圖 intersection',
+
+  'help.toolIntersect.see': 'tool-convert tool-pierce concept.selection',
 
   // ---------------------------------------------------------------- edit and view
   'help.undo.summary': '復原上一個修改。',

@@ -421,6 +421,15 @@ export const help: Translation = {
   'help.baseFlange.keywords': 'sheet metal base flange thickness bend radius k factor flat length bend allowance',
 
   'help.baseFlange.see': 'edge-flange hem flat-pattern sketch',
+
+  'help.jog.summary': 'Jogs the sheet along a sketch line: one side stays put while the other steps up or down, with two opposite bends and a flat web between them.',
+
+  'help.jog.body':
+    'Draw a sketch line on a face of the sheet as the jog line and press ✔; one side of the line stays fixed and the other is stepped up or down along the normal.\n\n- The "jog height" is the vertical offset between the two parallel plates; the "jog angle" is 90° at first, from 30° to 90°.\n- The height has a floor of (2 × inside bend radius + thickness) × (1 − cos angle): below it the two bends would cut through each other, and the feature fails and says so.\n- The inside bend radius and the K factor fall back to the sheet parameters when left unset.\n- Unlike a mid bend (one bend, the end plate turns by an angle), a jog bends twice: the end plate stays parallel but sits a step lower (or higher).',
+
+  'help.jog.keywords': 'jog z bend sheet metal step height angle',
+
+  'help.jog.see': 'edge-flange base-flange concept.selection',
   'help.edgeFlange.summary': 'Folds a flange up from an edge of a sheet metal plate, with length, angle and bend radius.',
 
   'help.edgeFlange.body':
@@ -977,6 +986,15 @@ export const help: Translation = {
   'help.toolPierce.keywords': 'pierce point edge through sketch plane reference',
 
   'help.toolPierce.see': 'tool-convert concept.sketch-snaps hole',
+
+  'help.toolIntersect.summary': 'Draws the curves where the sketch plane meets the model, as sketch geometry that follows the model.',
+
+  'help.toolIntersect.body':
+    'In a sketch, press it and pick faces or edges of the model in the graphics area; the tool works out where the sketch plane crosses them and builds lines or splines on the sketch.\n\n- A plane of the model crossing the sketch plane gives one line; curved faces and spline edges are sampled and projected into spline geometry.\n- The geometry remembers its source: when the model changes, it is recomputed and keeps its fix constraint.\n\nUnlike "Convert entities", which projects the picked edges themselves onto the sketch plane, this tool works out the intersection of a face with the sketch plane.',
+
+  'help.toolIntersect.keywords': 'intersection convert entities projection spline sketch',
+
+  'help.toolIntersect.see': 'tool-convert tool-pierce concept.selection',
 
   // ---------------------------------------------------------------- edit and view
   'help.undo.summary': 'Undoes the last change.',
