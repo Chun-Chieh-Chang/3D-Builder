@@ -669,6 +669,24 @@ export const help = {
 
   'help.importStep.see': 'delete-face move-face check-part export-step',
 
+  'help.cosmeticThread.summary': '在選取的圓柱面或孔壁上畫裝飾螺紋線：只改變顯示，不加真正的螺紋幾何。',
+
+  'help.cosmeticThread.body':
+    '在圖形區點一個圓柱面（公螺牙）或孔的內壁（母螺孔），選標準規格（例如 M8、1/4-20 UNC）或自訂大徑、小徑與螺距，選終止條件（貫穿或給定深度），按 ✔。\n\n- 3D 視窗在端面畫 3/4 圈細實線圓弧，側視圖畫兩條細實線（公螺牙）或虛線（母螺孔）；工程圖依 ISO 6410-1 表示。\n- 零件的幾何不變：不呼叫螺紋核心、不做布林運算，體積與質量都不受影響。\n- 只能放在圓柱面上；選到平面、圓錐或曲面時特徵出錯並說明。\n- 深度（給定長度）必須大於 0。',
+
+  'help.cosmeticThread.keywords': '裝飾螺紋 螺紋 表示法 ISO 6410 公牙 母牙 圓柱 cosmetic thread',
+
+  'help.cosmeticThread.see': 'thread hole export-step',
+
+  'help.split.summary': '用基準面或實體的平面把本體切成兩個獨立實體。',
+
+  'help.split.body':
+    '在圖形區點一個基準面或實體的平坦面當切割面，按 ✔；與它相交的本體被切成兩個獨立實體，都留在零件裡。\n\n- 切割面是基準面時沿該面整個切開；是實體的平面時，以該面所在的無限平面切開（自動放大到切得穿）。\n- 預設切割所有與工具相交的本體。\n- 切割面的範圍切不到任何本體時，特徵出錯並說明。\n- 切開後的實體可分別選取、抑制或刪除；面沿用原來的持久名稱。',
+
+  'help.split.keywords': '分割 實體 切開 平面 基準面 split body',
+
+  'help.split.see': 'concept.selection move-face import-step',
+
   // ---------------------------------------------------------------- assembly
   'help.insertComponent.summary': '把零件檔插入組合件，成為零組件。',
 

@@ -7,8 +7,9 @@ import { placeMeasureFrame } from '../state/measureFrames';
 /** mm (or degrees) to ten thousandths, without trailing zeros; "+ 0" turns −0 into 0. */
 const num = (v: number) => String(Math.round(v * 1e4) / 1e4 + 0);
 
-/** The way numbers are written in the tables: as they always were in millimetres (no unit), in the unit asked for otherwise. */
-function writer(o: MeasureOptions) {
+/** The way numbers are written in the tables: as they always were in millimetres (no unit), in the unit asked for otherwise. Shared with the selection
+ *  panel (E1 §2.2), which shows the same measured numbers in the sidebar. */
+export function writer(o: MeasureOptions) {
   const length = (mm: number) => (o.unit === 'mm' ? num(mm) : lengthText(mm, o));
   const area = (mm2: number) => (o.unit === 'mm' ? num(mm2) : `${num(mm2 / (MM_PER_INCH * MM_PER_INCH))}in²`);
   const angle = (deg: number) => (o.angle === 'deg' ? num(deg) : formatAngle(deg, 'rad'));
@@ -16,8 +17,8 @@ function writer(o: MeasureOptions) {
   return { length, area, angle, point };
 }
 
-/** What kind of face, edge or vertex it is, in words. */
-function typeName(e: MeasureElement): string {
+/** What kind of face, edge or vertex it is, in words. Shared with the selection panel (E1 §2.2). */
+export function typeName(e: MeasureElement): string {
   if (e.kind === 'vertex') return t('measure.type.point');
   if (e.kind === 'face') {
     const names: Record<string, string> = { plane: t('measure.surface.plane'), cylinder: t('measure.surface.cylinder'), cone: t('measure.surface.cone'), sphere: t('measure.surface.sphere'), torus: t('measure.surface.torus') };
