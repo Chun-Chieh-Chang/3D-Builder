@@ -4,6 +4,7 @@
  * solver, so the UI thread can use it; everything works on solved (derived) geometry.
  */
 import { SKETCH_ORIGIN, constraintRefs, type DimensionConstraint, type Id, type SketchConstraint, type SketchFeature } from '@3db/model';
+import { textContours } from './font';
 import type { ModelEdge, ModelItem } from './ops';
 import type { P2, SolvedGeometry } from './types';
 
@@ -76,7 +77,8 @@ export function closestOn(g: SolvedGeometry, p: P2): P2 | null {
       const ey = g.minorRadius * Math.sin(t);
       return [g.c[0] + ex * cosA - ey * sinA, g.c[1] + ex * sinA + ey * cosA];
     }
-    case 'spline': {
+    case 'spline':
+    case 'text': {
       const pts = sample(g, 1);
       let best: P2 | null = null;
       let bestDist = Infinity;
@@ -166,6 +168,24 @@ export function sample(g: SolvedGeometry, px: number): P2[] {
       }
       if (g.closed) out.push(out[0]!);
       else out.push(g.points[n - 1]!);
+      return out;
+    }
+    case 'text': {
+      const loops = textContours(g.text, {
+        size: g.size,
+        at: g.at,
+        angle: g.angle,
+        align: g.align,
+        bold: g.bold,
+        italic: g.italic,
+        source: '',
+      });
+      const out: P2[] = [];
+      for (const loop of loops) {
+        for (const s of loop) {
+          if (s.kind === 'line') out.push(s.a);
+        }
+      }
       return out;
     }
   }

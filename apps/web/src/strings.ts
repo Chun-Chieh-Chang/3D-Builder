@@ -138,6 +138,7 @@ export const TOOL_LABEL: Record<ToolId, string> = labelsOf({
   tangentArc: 'tool.tangentArc',
   threePointArc: 'tool.threePointArc',
   point: 'tool.point',
+  text: 'tool.text',
   dimension: 'tool.dimension',
   slot: 'tool.slot',
   polygon: 'tool.polygon',

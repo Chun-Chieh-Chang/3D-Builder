@@ -108,7 +108,7 @@ describe('edges projected from outside the plane (C1 2026-10-14): after the edge
 describe('the entities a click on the model makes (D5.3b)', () => {
   const maker = (): Maker => ({ ids: new IdAllocator({}, []), entities: [], constraints: [] });
   const item = (name: string) => plate().find((e) => e.ref.name === name)!;
-  const refs = (m: Maker) => m.entities.flatMap((e) => (e.type !== 'point' && e.ref ? [e.ref.name] : []));
+  const refs = (m: Maker) => m.entities.flatMap((e) => ('ref' in e && e.ref ? [e.ref.name] : []));
   const none = { entities: [] as SketchEntity[] };
   const nothing = new Map<string, SolvedGeometry>();
 

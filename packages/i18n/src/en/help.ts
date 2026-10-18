@@ -915,6 +915,11 @@ export const help: Translation = {
   'help.toolPoint.keywords': 'point hole position location',
 
   'help.toolPoint.see': 'hole screw-boss concept.sketch-snaps tool-line sketch',
+  'help.toolText.summary': 'Places vector text contours in the sketch plane for embossing or engraving.',
+  'help.toolText.body':
+    'Click to set the anchor position and place vector text contours.\n\n- Configure text content, font height, rotation angle, alignment, bold, and italic in the PropertyManager.\n- Closed contours can be extruded directly into embossed bosses or engraved cuts.\n- Use the "Dissolve Text" button to convert text entities into standard geometric lines and arcs.',
+  'help.toolText.keywords': 'text font emboss engrave height angle dissolve',
+  'help.toolText.see': 'tool-dimension tool-line sketch extrude extrude-cut',
   'help.toolDimension.summary': 'Dimensions: pick one or two entities, click to place, type the value and press Enter.',
   'help.toolDimension.body': '- Pick a line for its length; a circle for its diameter and an arc for its radius (arc length: "Dimension arc length" in the panel); two lines for the angle; two points for the distance.\n- A dimension that would over-define the sketch becomes a driven dimension, shown in gray italics in parentheses, only showing what is measured; the dimension list in the panel can switch it between driven and driving.\n- Double-click a dimension to change it; the box takes an expression or an equation variable.',
   'help.toolSlot.summary': 'Draws the outline of a slot from two centers and a width.',

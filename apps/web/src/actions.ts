@@ -71,7 +71,7 @@ const toolIs = (same: (t: NonNullable<ReturnType<typeof drawingTool>>) => boolea
   return !!on && same(on);
 };
 
-const SKETCH_TOOLS: ToolId[] = ['dimension', 'line', 'centerline', 'rect', 'centerRect', 'circle', 'perimeterCircle', 'arc', 'tangentArc', 'threePointArc', 'slot', 'polygon', 'point', 'sketchFillet', 'sketchChamfer', 'trim', 'extend', 'offset', 'mirror', 'convert', 'pierce', 'intersect'];
+const SKETCH_TOOLS: ToolId[] = ['dimension', 'line', 'centerline', 'rect', 'centerRect', 'circle', 'perimeterCircle', 'arc', 'tangentArc', 'threePointArc', 'slot', 'polygon', 'point', 'text', 'sketchFillet', 'sketchChamfer', 'trim', 'extend', 'offset', 'mirror', 'convert', 'pierce', 'intersect'];
 
 export const ACTIONS: UiAction[] = [
   { id: 'new-part', get label() { return t('act.newPart'); }, shortcut: 'Ctrl+N', group: 'file', enabled: idle, run: () => store.newPart() },

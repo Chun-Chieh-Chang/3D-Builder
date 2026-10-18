@@ -1,5 +1,59 @@
 # 3D-Builder 開發日誌 (DEV_LOG.md)
 
+## 2026-10-18：藍圖 C1.13 草圖文字特徵 (Sketch Text Feature) 全鏈路實作 [ADR 0163](docs/adr/0163-sketch-text.md)
+
+### 1. 任務背景與範疇
+依據使用者確認與藍圖 C1.13 規範，實作草圖文字特徵（Sketch Text Feature，ADR 0163）。支援基準面向量字型解析、外環逆時針（CCW）/ 內孔順時針（CW）定向前置保證、拓樸島嶼包含性 Nesting、3D 凸字長出（Extrude Boss）與凹字雕刻除料（Extrude Cut）、文字解散（Dissolve Text）轉換為標準線段圖元，以及全鏈路 Web 前端交互（放置/屬性面板/疊加層繪製）。
+
+### 2. 做法與架構設計
+| 層級 | 核心檔案 | 實作內容與職責 |
+|---|---|---|
+| 決策紀錄 | `docs/adr/0163-sketch-text.md` | 定義 ASCII 工業 Sans-Serif 幾何字庫、幾何閉合輪廓、島嶼包含性 Nesting、OCCT 映射方案與自我紅隊四問檢驗標準。 |
+| 幾何字庫 | `packages/sketch/src/font.ts` | 實作標準 ASCII 字符向量輪廓字典、有向面積計算（`signedArea`、`contourArea`）、輪廓定向前置保證（`orientContour`）、`textContours` 字元排列與仿射變換（縮放/旋轉/對齊/粗斜體）。在 `packages/sketch/package.json` 導出 `./font` 子路徑供主執行緒安全引用。 |
+| 資料模型 | `packages/model/src/schema.ts`、`serialize.ts`、`sketch-rules.ts`、`commands.ts` | 升版 `SCHEMA_VERSION = 62`；新增 `SketchTextEntity`；加入 schema 61 遷移；於 `sketchError` 校驗文字非空、字高大於 0、旋轉角為有限數；新增 `setSketchText` 指令。 |
+| 草圖抽象 | `packages/sketch/src/types.ts`、`planegcs.ts`、`profiles.ts`、`interact.ts`、`ops.ts` | `SolvedGeometry` 擴充 `text` 型別；`profiles.ts` 之 `findProfiles` 逐字元輪廓構造封閉 loops 自然完成島嶼 Nesting；`ops.ts` 實作 `dissolveText` 將文字分解為獨立線段圖元並自動移除原文字。 |
+| 雙語字典 | `packages/i18n/src/` | 補齊 `rules.text*`、`cmd.sketchItemNotText`、`hint.text`、`tool.text`、`entity.text`、`pm.text.*`、`help.toolText.*` 中英文多國語言與說明文檔。 |
+| 介面適配 | `apps/web/src/` | `actions.ts` 註冊 `tool-text`；`controller.ts` 實作點擊放置與自動切換選取、`dissolveText`；`overlay.ts` 逐輪廓繪製多邊形向量輪廓；`PropertyManager.tsx` 實作文字特徵屬性面板。 |
+| 確效測試 | `tests/phase1/sketch-text.test.ts`、`tests/phase8/help.test.ts` | 8 項自我紅隊測試全數 100% 綠燈，驗證單孔文字長出、多孔文字長出、旋轉對齊、凸字長出、凹字除料、解散文字、非整數與負數輸入攔截、底層 WASM Heap 真值防呆；說明系統 40 項測試 100% 綠燈。 |
+
+### 3. 問題分析 (RCA) 與矯正預防措施 (CAPA)
+1. **問題 (Failure)**：`SketchEntity` 聯合型別新增 `text` 後，通用模組（`refs.ts`、`references.ts`、`engine.ts`、`kernel.worker.ts`、`overlay.ts`）在檢查 `e.ref` 時因型別未狹化報錯 `Property 'ref' does not exist on type 'text'`。
+   - **RCA**：既有程式碼假設非 `point` 的圖元皆為具備 `ref` 的實體。
+   - **CAPA**：精準使用 `'ref' in e && e.ref` 守衛，確保任意新增圖元均不引發型別回歸。
+2. **問題 (Failure)**：`scripts/check-deps.mjs` 報告 `overlay.ts` 於主執行緒執行期引用 `@3db/sketch` 違規。
+   - **RCA**：`textContours` 函式原本由 `@3db/sketch` 頂層重導出，而頂層包含 WASM/PlaneGCS 等 Worker 專用模組。
+   - **CAPA**：將 `font.ts` 作為純 TypeScript 子路徑 `./font` 於 `packages/sketch/package.json` 與 `check-deps.mjs` 正式導出，`overlay.ts` 僅引用 `@3db/sketch/font`，保證主執行緒 0 WASM 負載。
+3. **問題 (Failure)**：`tests/phase8/help.test.ts` 守門報錯 `expected [ 'tool-text' ] to deeply equal []`。
+   - **RCA**：新增工具 `tool-text` 後未依照專案約定同時配置說明字典 `help.toolText.*` 與 `docs/help-links.json`。
+   - **CAPA**：補齊中英文說明字典與驗證手冊映射，使全量守門員測試全綠。
+
+### 4. 自我紅隊四問（AGENTS.md §2.1）
+1. **輸入破壞 (Input Corruption)**：
+   - 字高 $size \le 0$：模型規則層顯式攔截報錯（`rules.textSizeInvalid`）。
+   - 空字串或純空白字元：模型規則層顯式攔截報錯（`rules.textEmpty`）。
+   - 旋轉角度非有限數（NaN/Infinity）：模型規則層顯式攔截報錯（`rules.textAngleInvalid`）。
+2. **拓樸與幾何相交破壞 (Geometric Self-Intersection Defense)**：
+   - 包含單孔（'O'）與多孔（'8'）之文字輪廓，外環嚴格定為 CCW，內孔定為 CW，島嶼 Nesting 自然生成帶孔面，透過 `BRepCheck_Analyzer` 驗證 `kernel.isValid` 恆為 true，Solid 數量恆為 1。
+3. **依賴鏈完整性 (Dependency Graph Integrity)**：
+   - 依賴鏈全鏈路覆蓋：`schema.ts` $\to$ `commands.ts` $\to$ `sketch-rules.ts` $\to$ `font.ts` $\to$ `profiles.ts` $\to$ `engine.ts` $\to$ `controller.ts` $\to$ `overlay.ts` $\to$ `PropertyManager.tsx` $\to$ i18n 雙語字典，缺一不可。
+4. **規格真實性與零 Mock 原則 (Zero-Mock & Ground Truth)**：
+   - 實體探針物理量測：
+     - 凸字長出（Boss）：基板 $20\text{ mm}$、凸字厚度 $5\text{ mm}$，最高頂點探針實測精確為 $Z = 25.0\text{ mm}$。
+     - 凹字除料（Cut）：基板 $20\text{ mm}$、凹字深度 $3\text{ mm}$，實體體積實測小於原始基板體積。
+     - 解散文字（Dissolve Text）：文字圖元移除，原地生成封閉線段圖元並建立點重合約束。
+   - 記憶體真實指標防呆：斷言 `(kernel.oc as any).wasmMemory?.buffer?.byteLength > 0`。
+
+### 5. 確效與品質驗收
+- `npm run typecheck`：**0 錯誤**。
+- `node scripts/check-anti-patterns.mjs`：**全域 RSI 反模式靜態守門通過**。
+- `node scripts/check-deps.mjs`：**Layering OK**。
+- `node scripts/check-i18n.mjs`：**i18n OK**。
+- `tests/phase1/sketch-text.test.ts`：**8 項自我紅隊測試全數 100% 通過**。
+- `tests/phase8/help.test.ts`：**40 項說明守門測試全數 100% 通過**。
+- `tests/phase1/`：**13 個測試檔、145 項測試全數 100% 通過**。
+
+---
+
 ## 2026-10-18 晚：E1-P3（側邊欄 §2.2 選取驅動切換）合併進 main，與合併後的全量確效
 
 ### 1. 任務背景與範疇

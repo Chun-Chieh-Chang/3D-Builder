@@ -2,6 +2,7 @@ import { t } from '@3db/i18n';
 import { constraintRefs, isDimension, isPlain, SKETCH_ORIGIN, type DimensionConstraint, type Id, type PlaneFrame, type SketchConstraint, type SketchFeature } from '@3db/model';
 import { add, arcMidpoint, dimensionText, layoutDimension, measuredText, mid, polar, sample, type Geometry } from '@3db/sketch/interact';
 import { visibleGridSpacing } from '@3db/sketch/snaps';
+import { textContours } from '@3db/sketch/font';
 import type { EntityStatus, P2, SolvedGeometry } from '@3db/sketch';
 import type { OverlayCurve, OverlayLabel, OverlayPoint, SketchOverlay } from '@3db/render';
 import { RELATION_LABEL } from '../strings';
@@ -124,6 +125,8 @@ function anchorOf(geometry: Geometry, id: Id): P2 | null {
     }
     case 'spline':
       return g.points[Math.floor(g.points.length / 2)] ?? null;
+    case 'text':
+      return g.at;
   }
 }
 
@@ -153,7 +156,7 @@ export function buildOverlay(frame: PlaneFrame, sketch: SketchFeature, solve: Sk
   const over = new Set([...(solve?.conflicting ?? []), ...(solve?.redundant ?? [])]);
   const fallback: EntityStatus | undefined = solve?.status === 'fully' ? 'fully' : undefined;
   // what follows the model (C1.18) is drawn in its own colour: it is the model's, not the sketch's, to change
-  const followed = new Set(sketch.entities.filter((e) => (e.type === 'point' ? e.pierce : e.ref)).map((e) => e.id));
+  const followed = new Set(sketch.entities.filter((e) => (e.type === 'point' ? e.pierce : 'ref' in e && e.ref)).map((e) => e.id));
   const colorOf = (id: Id) =>
     selected.has(id) ? SKETCH_COLORS.selected : highlighted.has(id) ? SKETCH_COLORS.hover : followed.has(id) ? SKETCH_COLORS.reference : statusColor(solve?.entityStatus?.get(id) ?? fallback);
 
@@ -169,7 +172,23 @@ export function buildOverlay(frame: PlaneFrame, sketch: SketchFeature, solve: Sk
 
   for (const [id, g] of geometry) {
     if (g.type === 'point') points.push({ p: g.p, color: colorOf(id), size: selected.has(id) || highlighted.has(id) ? 8 : 5 });
-    else curves.push({ points: sample(g, px), color: colorOf(id), dashed: g.construction });
+    else if (g.type === 'text') {
+      const loops = textContours(g.text, {
+        size: g.size,
+        at: g.at,
+        angle: g.angle,
+        align: g.align,
+        bold: g.bold,
+        italic: g.italic,
+      });
+      for (const loop of loops) {
+        const pts: P2[] = loop.map((seg) => (seg.kind === 'line' ? seg.a : seg.kind === 'arc' ? seg.from : seg.kind === 'spline' ? seg.points[0]! : seg.c));
+        if (pts.length > 0) {
+          pts.push(pts[0]!);
+          curves.push({ points: pts, color: colorOf(id), dashed: g.construction });
+        }
+      }
+    } else curves.push({ points: sample(g, px), color: colorOf(id), dashed: g.construction });
   }
 
   curves.push(...previewCurves(view.preview, px));

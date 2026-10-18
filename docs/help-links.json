@@ -46,7 +46,8 @@
     "tool-offset",
     "tool-mirror",
     "construction",
-    "tool-centerline"
+    "tool-centerline",
+    "tool-text"
   ],
   "C6": [
     "tool-dimension",

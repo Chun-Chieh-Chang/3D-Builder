@@ -25,6 +25,7 @@ export const sketchtools: Translation = {
   'hint.threePoint2': 'Click to set the end.',
   'hint.threePoint3': 'Click a point on the arc.',
   'hint.point': 'Click to place the point.',
+  'hint.text': 'Click to place sketch text.',
   'hint.dimension1': 'Select the entity to dimension.',
   'hint.dimension2': 'Select a second entity, or click to place the dimension.',
   'hint.dimension3': 'Click to place the dimension.',

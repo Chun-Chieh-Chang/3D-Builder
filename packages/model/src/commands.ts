@@ -17,7 +17,7 @@ import { idsInUse, removalSet, sketchError } from './sketch-rules';
 import { pictureBlobs } from './picture';
 
 /** The point references of a curve that an edit may change. */
-export type EntityRefs = Partial<Record<'p1' | 'p2' | 'start' | 'end' | 'center', Id>>;
+export type EntityRefs = Partial<Record<'p1' | 'p2' | 'start' | 'end' | 'center' | 'at', Id>>;
 /** The references of a relation or dimension that an edit may change (`undefined` takes one away: the optional second reference). */
 export type ConstraintRefs = Partial<Record<'a' | 'b' | 'point' | 'line' | 'curve' | 'axis' | 'circle', Id | undefined>>;
 
@@ -192,6 +192,8 @@ ull). */
   | { type: 'removeSketchItems'; featureId: Id; ids: Id[] }
   /** Stores placement intent: where points are and how big circles are (e.g. after a drag). */
   | { type: 'setSketchGeometry'; featureId: Id; points: PointPosition[]; radii?: CircleRadius[] }
+  /** Changes the properties of a sketch text entity (text, size, angle, align, bold, italic). */
+  | { type: 'setSketchText'; featureId: Id; entityId: Id; text?: string; size?: number; angle?: number; align?: 'left' | 'center' | 'right'; bold?: boolean; italic?: boolean; font?: string; construction?: boolean }
   | { type: 'setConstruction'; featureId: Id; ids: Id[]; value: boolean }
   /** Shows or hides sketches, reference planes, default planes or the origin (D4.6). */
   | { type: 'setVisibility'; keys: string[]; value: boolean }
@@ -1486,6 +1488,23 @@ export function mutate(draft: Draft<PartDoc>, cmd: Command): void {
         if (!(Number.isFinite(r.radius) && r.radius > 0)) throw new CommandError(t('cmd.radiusMustBePositive', { id: r.id }));
         e.radius = r.radius;
       }
+      return;
+    }
+    case 'setSketchText': {
+      const f = sketchOf(draft, cmd.featureId);
+      const e = f.entities.find((x) => x.id === cmd.entityId);
+      if (!e) throw new CommandError(t('cmd.sketchItemNotFound', { id: cmd.entityId }));
+      if (e.type !== 'text') throw new CommandError(t('cmd.sketchItemNotText', { id: cmd.entityId }));
+      if (cmd.text !== undefined) e.text = cmd.text;
+      if (cmd.size !== undefined) e.size = cmd.size;
+      if (cmd.angle !== undefined) e.angle = cmd.angle;
+      if (cmd.align !== undefined) e.align = cmd.align;
+      if (cmd.bold !== undefined) e.bold = cmd.bold;
+      if (cmd.italic !== undefined) e.italic = cmd.italic;
+      if (cmd.font !== undefined) e.font = cmd.font;
+      if (cmd.construction !== undefined) e.construction = cmd.construction;
+      const err = sketchError(f as SketchFeature);
+      if (err) throw new CommandError(err);
       return;
     }
     case 'setVisibility': {

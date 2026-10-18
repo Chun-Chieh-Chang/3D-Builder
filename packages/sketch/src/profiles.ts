@@ -1,5 +1,6 @@
 import { t } from '@3db/i18n';
 import { SKETCH_ORIGIN, type Id, type SketchFeature } from '@3db/model';
+import { textContours } from './font';
 import type { Loop2, P2, ProfileResult, Region2, Segment2, SolvedSketch } from './types';
 
 export const TOL = 1e-6;
@@ -255,6 +256,17 @@ export function findProfiles(sketch: SketchFeature, solved: SolvedSketch): Profi
         to: nodes.find(g.p2),
         make: (fwd) => ({ kind: 'line', a: fwd ? g.a : g.b, b: fwd ? g.b : g.a, source: e.id }),
       });
+    } else if (g.type === 'text') {
+      const textLoops = textContours(g.text, {
+        size: g.size,
+        at: g.at,
+        angle: g.angle,
+        align: g.align,
+        bold: g.bold,
+        italic: g.italic,
+        source: e.id,
+      });
+      for (const loop of textLoops) loops.push(loop);
     } else {
       const s = polar(g.c, g.r, g.a0);
       const t = polar(g.c, g.r, g.a1);

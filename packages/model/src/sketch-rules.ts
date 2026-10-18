@@ -75,6 +75,8 @@ export function entityPoints(e: SketchEntity): Id[] {
       return [e.center, e.major];
     case 'spline':
       return e.points;
+    case 'text':
+      return [e.at];
   }
 }
 
@@ -120,7 +122,12 @@ export function sketchError(sketch: Pick<SketchFeature, 'entities' | 'constraint
       if (e.points.length < 2) return t('rules.splinePointsMin', { id: e.id });
       if (e.closed && e.points.length < 3) return t('rules.splineClosedMin', { id: e.id });
     }
-    const model = e.type === 'point' ? e.pierce : e.ref;
+    if (e.type === 'text') {
+      if (!e.text || typeof e.text !== 'string' || e.text.trim().length === 0) return t('rules.textEmpty', { id: e.id });
+      if (!(finite(e.size) && e.size > 0)) return t('rules.textSizeInvalid', { id: e.id });
+      if (e.angle !== undefined && !Number.isFinite(e.angle)) return t('rules.textAngleInvalid', { id: e.id });
+    }
+    const model = e.type === 'point' ? e.pierce : 'ref' in e ? e.ref : undefined;
     if (model && model.kind !== 'edge') return t('cmd.sketchRefMustBeEdge', { id: e.id });
   }
 

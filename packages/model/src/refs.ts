@@ -35,7 +35,8 @@ export function mapRefs(feature: Feature, map: (ref: Ref) => Ref): { feature: Fe
       // the model edges that projected entities and pierce points follow (C1.18)
       const entities = feature.entities.map((e) => {
         if (e.type === 'point') return e.pierce ? { ...e, pierce: one(e.pierce) } : e;
-        return e.ref ? { ...e, ref: one(e.ref) } : e;
+        if ('ref' in e && e.ref) return { ...e, ref: one(e.ref) };
+        return e;
       });
       return { feature: { ...feature, plane: one(feature.plane), entities }, replaced };
     }

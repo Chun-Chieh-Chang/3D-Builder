@@ -923,6 +923,11 @@ export const help = {
   'help.toolPoint.keywords': '點 孔位 位置',
 
   'help.toolPoint.see': 'hole screw-boss concept.sketch-snaps tool-line sketch',
+  'help.toolText.summary': '在草圖基準面放置向量文字輪廓，支援伸長或除料雕刻。',
+  'help.toolText.body':
+    '按一下設定文字錨定點放置向量文字。\n\n- 在屬性面板設定文字內容、字高、旋轉角度、對齊方式與粗斜體。\n- 產生的閉合向量輪廓可直接用於特徵伸長填料（凸字）或伸長除料（凹字刻印）。\n- 可使用「解散文字」按鈕將文字圖元轉換為一般幾何線段與圓弧。',
+  'help.toolText.keywords': '文字 雕刻 刻印 標籤 字母 字高 解散文字',
+  'help.toolText.see': 'tool-dimension tool-line sketch extrude extrude-cut',
   'help.toolDimension.summary': '標註尺寸：選一或兩個圖元，再點一下放置，輸入數值按 Enter。',
   'help.toolDimension.body': '- 選一條線標長度；選圓標直徑、選圓弧標半徑（弧長用面板的「標註弧長」）；選兩條線標角度；選兩點標距離。\n- 多餘的尺寸（會讓草圖過多定義的）會變成從動尺寸，顯示成灰色斜體加括號，只顯示量到的值，面板的尺寸清單可以切換「設為從動／設為驅動」。\n- 雙擊尺寸可以改數值，數值欄可以輸入運算式或方程式的變數。',
   'help.toolSlot.summary': '用兩個圓心與寬度畫長圓孔輪廓。',

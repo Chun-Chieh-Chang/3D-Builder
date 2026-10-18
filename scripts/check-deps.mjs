@@ -21,7 +21,7 @@ const ALLOWED = {
 /** Main-thread UI files may use these only as `import type` (runtime code stays in the worker). */
 const WORKER_ONLY = ['kernel', 'regen', 'sketch', 'io'];
 // Pure-TypeScript entry points without WASM: parent/child derivation and sketch interaction geometry.
-const MAIN_THREAD_ALLOWED_SUBPATHS = ['@3db/regen/dag', '@3db/io', '@3db/sketch/interact', '@3db/sketch/ops', '@3db/sketch/snaps', '@3db/sketch/check', '@3db/sketch/profiles'];
+const MAIN_THREAD_ALLOWED_SUBPATHS = ['@3db/regen/dag', '@3db/io', '@3db/sketch/interact', '@3db/sketch/ops', '@3db/sketch/snaps', '@3db/sketch/check', '@3db/sketch/profiles', '@3db/sketch/font'];
 
 const root = process.cwd();
 const files = (dir) =>

@@ -93,6 +93,8 @@ export const sketch: Translation = {
   'tool.extend': 'Extend',
   'tool.offset': 'Offset Entities',
   'tool.mirror': 'Mirror Entities',
+  'tool.text': 'Text',
+  'sketch.textNotFound': 'Specified sketch text entity not found',
 
   'sketch.hint.slot1': 'Click to set the first center.',
   'sketch.hint.slot2': 'Click to set the second center.',

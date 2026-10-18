@@ -10,7 +10,8 @@ export type SolvedGeometry =
   /** Counter-clockwise from angle a0 to a1 (radians). */
   | { type: 'arc'; c: P2; r: number; a0: number; a1: number; center: Id; start: Id; end: Id; construction: boolean }
   | { type: 'ellipse'; c: P2; major: P2; majorRadius: number; minorRadius: number; angle: number; center: Id; majorId: Id; construction: boolean }
-  | { type: 'spline'; points: P2[]; closed: boolean; pointIds: Id[]; construction: boolean };
+  | { type: 'spline'; points: P2[]; closed: boolean; pointIds: Id[]; construction: boolean }
+  | { type: 'text'; at: P2; atId: Id; text: string; size: number; angle: number; align: 'left' | 'center' | 'right'; bold: boolean; italic: boolean; font?: string; construction: boolean };
 
 /** SolidWorks sketch status (C1.31): black = fully, blue = under, red = over. */
 export type SketchStatus = 'fully' | 'under' | 'over' | 'failed';

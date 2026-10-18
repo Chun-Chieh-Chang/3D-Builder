@@ -103,7 +103,7 @@ function edgeIndex(scope: ReferenceScope, ref: Ref): number {
  * are replaced and "fixed" relations (a circle's radius, an arc's chord) added, none of which is stored. Throws `ReferenceProblem`.
  */
 export function followReferences(sketch: SketchFeature, scope: ReferenceScope): SketchFeature {
-  if (!sketch.entities.some((e) => (e.type === 'point' ? e.pierce : e.ref))) return sketch;
+  if (!sketch.entities.some((e) => (e.type === 'point' ? e.pierce : 'ref' in e && e.ref))) return sketch;
   const move = new Map<Id, P2>();
   const held = new Set<Id>();
   const constraints: SketchFeature['constraints'] = [...sketch.constraints];
@@ -119,7 +119,7 @@ export function followReferences(sketch: SketchFeature, scope: ReferenceScope): 
       hold(e.id, 0, e.id);
       return e;
     }
-    if (e.type === 'point' || !e.ref) return e;
+    if (e.type === 'point' || !('ref' in e) || !e.ref) return e;
     const p = projectEdge(scope.topology, edgeIndex(scope, e.ref), scope.frame);
     if (e.type === 'line' && p.kind === 'line') {
       move.set(e.p1, p.a);

@@ -1,6 +1,7 @@
 import { t, type PlainKey } from '@3db/i18n';
 import { constraintRefs, isDimension, SKETCH_ORIGIN, type Id, type IdAllocator, type Ref, type SketchConstraint, type SketchEdit, type SketchEntity, type SketchFeature } from '@3db/model';
-import { closestOn } from './interact';
+import { closestOn, pointOf } from './interact';
+import { textContours } from './font';
 import type { P2, SolvedGeometry } from './types';
 
 /**
@@ -330,12 +331,12 @@ export interface Maker {
 export function anchorModel(sketch: Pick<SketchFeature, 'entities'>, geometry: Geometry, made: Maker, item: ModelItem, part: 'start' | 'end' | 'center' | 'mid' | 'curve' | 'pierce', at: P2): Id {
   if ('pierce' in item) return piercePoint(sketch, made, item);
   const all = [...sketch.entities, ...made.entities];
-  let entity = all.find((e): e is Exclude<SketchEntity, { type: 'point' }> => e.type !== 'point' && e.ref?.name === item.ref.name);
+  let entity = all.find((e): e is Exclude<SketchEntity, { type: 'point' | 'text' }> => 'ref' in e && e.ref?.name === item.ref.name);
   if (!entity) {
     // corners already there: the ends and centers of the entities that follow the model
     const known: { id: Id; at: P2 }[] = [];
     for (const e of all) {
-      if (e.type === 'point' || !e.ref) continue;
+      if (e.type === 'point' || !('ref' in e) || !e.ref) continue;
       for (const id of refsOf(e)) {
         const g = geometry.get(id);
         const made_ = all.find((x) => x.id === id && x.type === 'point') as Extract<SketchEntity, { type: 'point' }> | undefined;
@@ -389,11 +390,11 @@ export function anchorModelForSelection(
 ): Id {
   if ('pierce' in item) return piercePoint(sketch, made, item);
   const all = [...sketch.entities, ...made.entities];
-  let entity = all.find((e): e is Exclude<SketchEntity, { type: 'point' }> => e.type !== 'point' && e.ref?.name === item.ref.name);
+  let entity = all.find((e): e is Exclude<SketchEntity, { type: 'point' | 'text' }> => 'ref' in e && e.ref?.name === item.ref.name);
   if (!entity) {
     const known: { id: Id; at: P2 }[] = [];
     for (const e of all) {
-      if (e.type === 'point' || !e.ref) continue;
+      if (e.type === 'point' || !('ref' in e) || !e.ref) continue;
       for (const id of refsOf(e)) {
         const g = geometry.get(id);
         const made_ = all.find((x) => x.id === id && x.type === 'point') as Extract<SketchEntity, { type: 'point' }> | undefined;
@@ -436,7 +437,7 @@ export function anchorModelForSelection(
  * the sketch already follows is left out, and when there is nothing new that is the message.
  */
 export function referenceEntities(sketch: Pick<SketchFeature, 'entities'>, ids: IdAllocator, items: ModelItem[]): OpResult {
-  const have = new Set(sketch.entities.flatMap((e) => (e.type === 'point' ? (e.pierce ? [`pierce:${e.pierce.name}`] : []) : e.ref ? [`ref:${e.ref.name}`] : [])));
+  const have = new Set(sketch.entities.flatMap((e) => (e.type === 'point' ? (e.pierce ? [`pierce:${e.pierce.name}`] : []) : 'ref' in e && e.ref ? [`ref:${e.ref.name}`] : [])));
   const fresh = items.filter((i) => !have.has(('pierce' in i ? 'pierce:' : 'ref:') + i.ref.name));
   if (fresh.length === 0) return error('reference.already');
   const b = new Parts(ids);
@@ -654,7 +655,9 @@ export const refsOf = (e: SketchEntity): Id[] =>
           ? [e.center, e.major]
           : e.type === 'spline'
             ? e.points
-            : [e.center, e.start, e.end];
+            : e.type === 'text'
+              ? [e.at]
+              : [e.center, e.start, e.end];
 const usedElsewhere = (sketch: Pick<SketchFeature, 'entities'>, point: Id, except: Id): boolean =>
   sketch.entities.some((e) => e.id !== except && refsOf(e).includes(point));
 
@@ -913,4 +916,50 @@ export function offset(sketch: Pick<SketchFeature, 'entities' | 'name'>, geometr
     });
   }
   return { edit: { add: b.added } };
+}
+
+/**
+ * Dissolves a sketch text entity into standard sketch lines and points (比照 SolidWorks 「解散草圖文字」).
+ */
+export function dissolveText(
+  sketch: SketchFeature,
+  geometry: Geometry,
+  textId: Id,
+  ids: IdAllocator,
+): OpResult {
+  const entity = sketch.entities.find((e) => e.id === textId);
+  if (!entity || entity.type !== 'text') {
+    return { error: t('sketch.textNotFound') };
+  }
+  const atPos = pointOf(geometry, entity.at) ?? [0, 0];
+  const loops = textContours(entity.text, {
+    size: entity.size,
+    at: atPos,
+    angle: entity.angle,
+    align: entity.align,
+    bold: entity.bold,
+    italic: entity.italic,
+  });
+  const parts = new Parts(ids);
+  for (const loop of loops) {
+    if (loop.length < 2) continue;
+    let prevPtId: Id | null = null;
+    let firstPtId: Id | null = null;
+    for (let i = 0; i < loop.length; i++) {
+      const seg = loop[i]!;
+      if (seg.kind === 'line') {
+        const ptId: Id = i === 0 ? parts.point(seg.a) : prevPtId!;
+        if (i === 0) firstPtId = ptId;
+        const nextPtId: Id = i === loop.length - 1 ? firstPtId! : parts.point(seg.b);
+        parts.line(ptId, nextPtId, entity.construction);
+        prevPtId = nextPtId;
+      }
+    }
+  }
+  return {
+    edit: {
+      remove: [textId],
+      add: parts.added,
+    },
+  };
 }

@@ -4,3 +4,4 @@ export { contourChoices, contourIds, findProfiles, selectContours, type ContourC
 export { bentPath, BendProblem, type Bend, type BentPath } from './bends';
 export { findOutlines, ribbonOf, ringOf, thinRegions, ThinProblem, offsetPath, reversePath, type Outlines, type Thickness } from './thin';
 export * from './ops';
+export * from './font';

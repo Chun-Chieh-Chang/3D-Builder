@@ -1,6 +1,7 @@
 import { t } from '@3db/i18n';
 import type { Id, SketchFeature } from '@3db/model';
 import { Nodes, signedAreaOf, TOL } from './profiles';
+import { contourArea, textContours } from './font';
 import type { Loop2, P2, Region2, Segment2, SolvedSketch } from './types';
 
 /**
@@ -260,7 +261,12 @@ export function findOutlines(sketch: SketchFeature, solved: SolvedSketch): Outli
     } else if (g.type === 'line') {
       if (len(sub(g.b, g.a)) < TOL) continue;
       edges.push({ from: nodes.find(g.p1), to: nodes.find(g.p2), make: (fwd) => ({ kind: 'line', a: fwd ? g.a : g.b, b: fwd ? g.b : g.a, source: e.id }) });
-    } else {
+    } else if (g.type === 'text') {
+      const textLoops = textContours(g.text, { size: g.size, at: g.at, angle: g.angle, align: g.align, bold: g.bold, italic: g.italic });
+      for (const tl of textLoops) {
+        loops.push({ loop: tl, ccw: contourArea(tl) > 0 });
+      }
+    } else if (g.type === 'arc') {
       const s: P2 = [g.c[0] + g.r * Math.cos(g.a0), g.c[1] + g.r * Math.sin(g.a0)];
       const f: P2 = [g.c[0] + g.r * Math.cos(g.a1), g.c[1] + g.r * Math.sin(g.a1)];
       edges.push({ from: nodes.find(g.start), to: nodes.find(g.end), make: (fwd) => ({ kind: 'arc', c: g.c, r: g.r, from: fwd ? s : f, to: fwd ? f : s, ccw: fwd, source: e.id }) });

@@ -91,6 +91,8 @@ export const sketch = {
   'tool.extend': '延伸',
   'tool.offset': '偏移圖元',
   'tool.mirror': '鏡射圖元',
+  'tool.text': '文字',
+  'sketch.textNotFound': '找不到指定的草圖文字圖元',
 
   'sketch.hint.slot1': '按一下設定第一個圓心。',
   'sketch.hint.slot2': '按一下設定第二個圓心。',

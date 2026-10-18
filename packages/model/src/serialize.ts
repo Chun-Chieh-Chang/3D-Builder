@@ -196,6 +196,8 @@ const migrations: Record<number, (doc: Json) => Json> = {
   59: (doc) => doc,
   // v61: sketch spline entity (`spline`, C1.11, ADR 0160). A new sketch entity kind; nothing to convert.
   60: (doc) => doc,
+  // v62: sketch text entity (`text`, C1.13, ADR 0163). A new sketch entity kind; nothing to convert.
+  61: (doc) => doc,
 };
 
 export class FormatError extends Error {

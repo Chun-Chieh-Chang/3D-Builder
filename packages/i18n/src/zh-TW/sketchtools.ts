@@ -23,6 +23,7 @@ export const sketchtools = {
   'hint.threePoint2': '按一下設定終點。',
   'hint.threePoint3': '按一下圓弧上的一點。',
   'hint.point': '按一下放置點。',
+  'hint.text': '按一下放置草圖文字。',
   'hint.dimension1': '選擇要標註的圖元。',
   'hint.dimension2': '選擇第二個圖元，或按一下放置尺寸。',
   'hint.dimension3': '按一下放置尺寸。',

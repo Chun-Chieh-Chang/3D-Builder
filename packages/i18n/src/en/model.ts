@@ -98,6 +98,7 @@ export const model: Translation = {
   'cmd.mustPickEdges': 'Only edges can be picked here (and faces, for a fillet or a chamfer)',
   'cmd.rollbackOutOfRange': 'The rollback position is out of range: {index}',
   'cmd.sketchItemNotFound': 'Not found in the sketch: {id}',
+  'cmd.sketchItemNotText': 'Entity is not text: {id}',
   'cmd.notSketchPoint': 'Not a sketch point: {id}',
   'cmd.pointCoordinateInvalid': 'The coordinates of point {id} are not valid',
   'cmd.notCircle': 'Not a circle: {id}',

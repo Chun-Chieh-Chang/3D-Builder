@@ -94,6 +94,18 @@ export function spline(id: string, coords: [number, number][], closed = false): 
   return { entities, constraints };
 }
 
+/** A fully defined sketch text `id` at (x, y). */
+export function sketchText(id: string, x: number, y: number, text: string, size = 10, angle = 0, align: 'left' | 'center' | 'right' = 'left', construction = false): SketchParts {
+  const atId = `${id}at`;
+  return {
+    entities: [
+      { id: atId, type: 'point', x, y },
+      { id, type: 'text', at: atId, text, size, angle, align, construction },
+    ],
+    constraints: [...pin(atId, atId, x, y)],
+  };
+}
+
 export const sketch = (id: string, plane: Ref, ...parts: SketchParts[]): Feature => ({
   id,
   type: 'sketch',

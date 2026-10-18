@@ -254,7 +254,7 @@ const api: KernelApi = {
     await loadSolver();
     const began = performance.now();
     let followed = sketch;
-    if (sketch.entities.some((e) => (e.type === 'point' ? e.pierce : e.ref))) {
+    if (sketch.entities.some((e) => (e.type === 'point' ? e.pierce : 'ref' in e && e.ref))) {
       const frame = lastModel?.frames.get(sketch.id);
       try {
         if (!lastModel || !frame) throw new ReferenceProblem(t('reference.noModel'));

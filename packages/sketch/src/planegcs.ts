@@ -432,6 +432,23 @@ function readGeometry(w: GcsWrapper, sketch: SketchFeature): Map<Id, SolvedGeome
         });
         break;
       }
+      case 'text': {
+        const at = pt(e.at);
+        out.set(e.id, {
+          type: 'text',
+          at,
+          atId: e.at,
+          text: e.text,
+          size: canon(e.size, LENGTH_GRID),
+          angle: canon(e.angle ?? 0, ANGLE_GRID),
+          align: e.align ?? 'left',
+          bold: e.bold ?? false,
+          italic: e.italic ?? false,
+          font: e.font,
+          construction,
+        });
+        break;
+      }
     }
   }
   return out;

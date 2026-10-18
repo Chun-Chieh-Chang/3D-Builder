@@ -96,6 +96,7 @@ export const model = {
   'cmd.mustPickEdges': '這裡只能選邊線（與面，圓角與導角）',
   'cmd.rollbackOutOfRange': '回溯位置超出範圍：{index}',
   'cmd.sketchItemNotFound': '草圖中找不到：{id}',
+  'cmd.sketchItemNotText': '圖元不是文字：{id}',
   'cmd.notSketchPoint': '不是草圖點：{id}',
   'cmd.pointCoordinateInvalid': '點 {id} 的座標無效',
   'cmd.notCircle': '不是圓：{id}',

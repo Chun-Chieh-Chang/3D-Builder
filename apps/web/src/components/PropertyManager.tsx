@@ -87,6 +87,7 @@ import {
   type KnurlFeature,
   type Thin,
   type SketchConstraint,
+  type SketchEntity,
   type SketchFeature,
 } from '@3db/model';
 import type { RebuildPayload, SketchSolvePayload } from '../worker/protocol';
@@ -153,7 +154,7 @@ function ValueInput({ value, toCommand, suffix = 'mm' }: { value: string; toComm
   );
 }
 
-const ENTITY_LABEL = labelsOf({ point: 'entity.point', line: 'entity.line', circle: 'entity.circle', arc: 'entity.arc', ellipse: 'entity.ellipse', spline: 'entity.spline' });
+const ENTITY_LABEL = labelsOf({ point: 'entity.point', line: 'entity.line', circle: 'entity.circle', arc: 'entity.arc', ellipse: 'entity.ellipse', spline: 'entity.spline', text: 'entity.text' });
 
 function describe(f: SketchFeature, id: Id): string {
   if (id === SKETCH_ORIGIN) return t('datum.origin');
@@ -376,6 +377,126 @@ function PicturesBox({ f }: { f: SketchFeature }) {
   );
 }
 
+function TextEntityBox({ f, entity, sketcher }: { f: SketchFeature; entity: Extract<SketchEntity, { type: 'text' }>; sketcher: SketchController | null }) {
+  const [text, setText] = useState(entity.text);
+  const [size, setSize] = useState(String(entity.size));
+  const [angle, setAngle] = useState(String(entity.angle ?? 0));
+
+  useEffect(() => {
+    setText(entity.text);
+    setSize(String(entity.size));
+    setAngle(String(entity.angle ?? 0));
+  }, [entity.id, entity.text, entity.size, entity.angle]);
+
+  const update = (patch: { text?: string; size?: number; angle?: number; align?: 'left' | 'center' | 'right'; bold?: boolean; italic?: boolean }) => {
+    store.execute({
+      type: 'setSketchText',
+      featureId: f.id,
+      entityId: entity.id,
+      ...patch,
+    });
+  };
+
+  const handleTextBlur = () => {
+    if (text.trim() && text !== entity.text) update({ text });
+    else setText(entity.text);
+  };
+
+  const handleSizeBlur = () => {
+    const s = Number(size);
+    if (Number.isFinite(s) && s > 0 && s !== entity.size) update({ size: s });
+    else setSize(String(entity.size));
+  };
+
+  const handleAngleBlur = () => {
+    const a = Number(angle);
+    if (Number.isFinite(a) && a !== (entity.angle ?? 0)) update({ angle: a });
+    else setAngle(String(entity.angle ?? 0));
+  };
+
+  return (
+    <div style={{ marginTop: '8px', borderTop: '1px solid var(--border-subtle, #e5e7eb)', paddingTop: '8px' }}>
+      <label className="pm-row">
+        <span>{t('pm.text.content')}</span>
+        <input
+          data-field="text-content"
+          value={text}
+          onChange={(e) => setText(e.target.value)}
+          onBlur={handleTextBlur}
+          onKeyDown={(e) => e.key === 'Enter' && handleTextBlur()}
+          style={{ width: '10em' }}
+        />
+      </label>
+      <label className="pm-row">
+        <span>{t('pm.text.size')}</span>
+        <input
+          data-field="text-size"
+          type="number"
+          min="0.1"
+          step="0.5"
+          value={size}
+          onChange={(e) => setSize(e.target.value)}
+          onBlur={handleSizeBlur}
+          onKeyDown={(e) => e.key === 'Enter' && handleSizeBlur()}
+          style={{ width: '6em' }}
+        />
+      </label>
+      <label className="pm-row">
+        <span>{t('pm.text.angle')}</span>
+        <input
+          data-field="text-angle"
+          type="number"
+          step="1"
+          value={angle}
+          onChange={(e) => setAngle(e.target.value)}
+          onBlur={handleAngleBlur}
+          onKeyDown={(e) => e.key === 'Enter' && handleAngleBlur()}
+          style={{ width: '6em' }}
+        />
+      </label>
+      <label className="pm-row">
+        <span>{t('pm.text.align')}</span>
+        <select
+          data-field="text-align"
+          value={entity.align ?? 'left'}
+          onChange={(e) => update({ align: e.target.value as 'left' | 'center' | 'right' })}
+        >
+          <option value="left">{t('pm.text.alignLeft')}</option>
+          <option value="center">{t('pm.text.alignCenter')}</option>
+          <option value="right">{t('pm.text.alignRight')}</option>
+        </select>
+      </label>
+      <div className="pm-row" style={{ display: 'flex', gap: '8px', marginTop: '4px' }}>
+        <button
+          type="button"
+          className={entity.bold ? 'active' : ''}
+          onClick={() => update({ bold: !entity.bold })}
+          style={{ fontWeight: 'bold', minWidth: '40px' }}
+        >
+          {t('pm.text.bold')}
+        </button>
+        <button
+          type="button"
+          className={entity.italic ? 'active' : ''}
+          onClick={() => update({ italic: !entity.italic })}
+          style={{ fontStyle: 'italic', minWidth: '40px' }}
+        >
+          {t('pm.text.italic')}
+        </button>
+      </div>
+      <div style={{ marginTop: '8px' }}>
+        <button
+          type="button"
+          onClick={() => sketcher?.dissolveText(entity.id)}
+          title={t('pm.text.dissolveHint')}
+        >
+          {t('pm.text.dissolve')}
+        </button>
+      </div>
+    </div>
+  );
+}
+
 function SketchPanel({ f }: { f: SketchFeature }) {
   const solve = useStore((s) => s.sketchSolve);
   const view = useSketcherView();
@@ -390,6 +511,7 @@ function SketchPanel({ f }: { f: SketchFeature }) {
   const isPointId = (id: Id) => f.entities.some((e) => e.id === id && e.type === 'point');
   const canMerge = selection.length === 2 && selection.every(isPointId);
   const arcSelected = selection.length === 1 ? f.entities.find((e) => e.id === selection[0] && e.type === 'arc') : undefined;
+  const textSelected = selection.length === 1 ? f.entities.find((e): e is Extract<SketchEntity, { type: 'text' }> => e.id === selection[0] && e.type === 'text') : undefined;
 
   return (
     <>
@@ -443,6 +565,7 @@ function SketchPanel({ f }: { f: SketchFeature }) {
               <li key={id}>{describe(f, id)}</li>
             ))}
           </ul>
+          {textSelected && <TextEntityBox f={f} entity={textSelected} sketcher={sketcher} />}
           {existing.length > 0 && (
             <>
               <h4 className="sub">{t('pm.existingRelations')}</h4>

@@ -41,7 +41,7 @@ import {
 import type { P2, SolvedGeometry } from '@3db/sketch';
 import { angleStep, DEFAULT_SNAPS, extensionSnap, gridPoint, intersectionSnap, lengthStep, perpendicularSnap, quadrantSnap, quickSettings, tangentSnap, visibleGridSpacing, type SnapItem, type SnapSettings } from '@3db/sketch/snaps';
 import { checkSketch, repairSketch, type SketchIssue } from '@3db/sketch/check';
-import { anchorModel, anchorModelForSelection, chamfer, extend, fillet, isCurve, mergePoints, mirror, offset, polygon, referenceEntities, relationCrossings, slot, trim, type Maker, type ModelItem, type OpResult } from '@3db/sketch/ops';
+import { anchorModel, anchorModelForSelection, chamfer, dissolveText, extend, fillet, isCurve, mergePoints, mirror, offset, polygon, referenceEntities, relationCrossings, slot, trim, type Maker, type ModelItem, type OpResult } from '@3db/sketch/ops';
 import type { SketchSolvePayload } from '../worker/protocol';
 
 export type ToolId =
@@ -56,6 +56,7 @@ export type ToolId =
   | 'tangentArc'
   | 'threePointArc'
   | 'point'
+  | 'text'
   | 'dimension'
   | 'slot'
   | 'polygon'
@@ -184,6 +185,7 @@ const HINT_KEYS: Record<Exclude<ToolId, OperationTool>, PlainKey[]> = {
   tangentArc: ['hint.tangentArc1', 'hint.tangentArc2'],
   threePointArc: ['hint.threePoint1', 'hint.threePoint2', 'hint.threePoint3'],
   point: ['hint.point'],
+  text: ['hint.text'],
   dimension: ['hint.dimension1', 'hint.dimension2', 'hint.dimension3'],
 };
 
@@ -801,6 +803,7 @@ export class SketchController {
       case 'line':
       case 'centerline':
       case 'point':
+      case 'text':
       case 'rect':
       case 'centerRect':
         return true;
@@ -866,6 +869,16 @@ export class SketchController {
       case 'point':
         this.commit(this.builder().point(s));
         return;
+      case 'text': {
+        const b = this.builder();
+        const pt = b.pointFor(s);
+        const txtId = b.text(pt);
+        if (this.commit(b)) {
+          this.setTool('select');
+          this.select([txtId]);
+        }
+        return;
+      }
       case 'rect':
       case 'centerRect':
       case 'circle':
@@ -1159,6 +1172,16 @@ export class SketchController {
     this.run(referenceEntities(this.sketch(), this.allocator(), items), () => this.host.notify(t('reference.added', { n: items.length }), 'info'));
   }
 
+  /** Dissolves a sketch text entity into standard line entities. */
+  dissolveText(textId: Id): void {
+    const sketch = this.sketch();
+    const geometry = this.geometry();
+    const ids = this.allocator();
+    this.run(dissolveText(sketch, geometry, textId, ids), () => {
+      this.select([]);
+    });
+  }
+
   // ------------------------------------------------------------------ check and repair (C1.35)
 
   /** What keeps the sketch from making a profile, as found in what the solver shows now. */
@@ -1415,6 +1438,12 @@ class Builder {
   arc(center: Id, start: Id, end: Id): Id {
     const id = this.ids.take('a');
     this.entities.push({ id, type: 'arc', center, start, end });
+    return id;
+  }
+
+  text(at: Id, text = 'Text', size = 10, angle = 0): Id {
+    const id = this.ids.take('txt');
+    this.entities.push({ id, type: 'text', at, text, size, angle, align: 'left' });
     return id;
   }
 

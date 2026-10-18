@@ -1109,7 +1109,7 @@ export class Regenerator {
     const frame = this.frame(f, set);
     // projected model edges and pierce points are put where the model has them now (C1.18)
     let followed = f;
-    if (f.entities.some((e) => (e.type === 'point' ? e.pierce : e.ref))) {
+    if (f.entities.some((e) => (e.type === 'point' ? e.pierce : 'ref' in e && e.ref))) {
       const body = set.view;
       if (!body) throw new FeatureError(t('reference.noModel'));
       try {
