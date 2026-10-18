@@ -150,6 +150,7 @@ export const ACTIONS: UiAction[] = [
   { id: 'delete-keep-body', get label() { return t('feature.deleteKeepBody'); }, group: 'feature', enabled: (s) => hasBody(s) && (s.result?.bodies.length ?? 0) >= 1, run: () => store.newDeleteKeepBody() },
   { id: 'linear-pattern', get label() { return t('action.linearPattern'); }, group: 'feature', enabled: canPattern, run: () => store.newPattern('linear') },
   { id: 'circular-pattern', get label() { return t('action.circularPattern'); }, group: 'feature', enabled: canPattern, run: () => store.newPattern('circular') },
+  { id: 'curve-pattern', get label() { return t('action.curvePattern'); }, group: 'feature', enabled: canPattern, run: () => store.newPattern('curve') },
   { id: 'mirror', get label() { return t('action.mirror'); }, group: 'feature', enabled: (s) => canPattern(s) || (partIdle(s) && (s.result?.bodies.length ?? 0) > 0), run: () => store.newMirror() },
   { id: 'ref-plane', get label() { return t('act.refPlane'); }, group: 'feature', enabled: partIdle, run: () => store.newRefPlane() },
   { id: 'ref-axis', get label() { return t('action.refAxis'); }, group: 'feature', enabled: partIdle, run: () => store.newRefAxis() },

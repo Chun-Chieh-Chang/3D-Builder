@@ -278,9 +278,14 @@ export function mapExprs(feature: Feature, fn: (expr: Expr, kind: ExprKind, role
         const dir2 = d.dir2 ? direction(d.dir2) : undefined;
         return dir1 === d.dir1 && dir2 === d.dir2 ? feature : { ...feature, def: { ...d, dir1, ...(dir2 ? { dir2 } : {}) } };
       }
+      if (d.mode === 'circular') {
+        const count = fn(d.count, 'count', 'count');
+        const angle = fn(d.angle, 'angle', 'revolveAngle');
+        return count === d.count && angle === d.angle ? feature : { ...feature, def: { ...d, count, angle } };
+      }
       const count = fn(d.count, 'count', 'count');
-      const angle = fn(d.angle, 'angle', 'revolveAngle');
-      return count === d.count && angle === d.angle ? feature : { ...feature, def: { ...d, count, angle } };
+      const spacing = d.spacing !== undefined ? fn(d.spacing, 'length', 'positive') : undefined;
+      return count === d.count && spacing === d.spacing ? feature : { ...feature, def: { ...d, count, ...(spacing !== undefined ? { spacing } : {}) } };
     }
     case 'thread': {
       const pitch = feature.pitch !== undefined && feature.pitch.trim() !== '' ? fn(feature.pitch, 'length', 'positive') : feature.pitch;

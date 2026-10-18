@@ -7,8 +7,8 @@ import { findFeature, isDatumPlaneName, type AxisDefinition, type Command, type 
  * definition has, patterns' directions and axis too, so the PropertyManager, the picking in the graphics area and the tree clicks cannot disagree.
  */
 
-/** What a box takes: a planar face or plane; a straight edge or axis; a vertex or point; a cylindrical face; a cylindrical or conical face; an edge or face; or a direction (a straight edge, an axis, or a plane's normal). */
-export type SlotType = 'plane' | 'axis' | 'point' | 'cylinder' | 'revolved' | 'element' | 'direction' | 'rotationAxis';
+/** What a box takes: a planar face or plane; a straight edge or axis; a vertex or point; a cylindrical face; a cylindrical or conical face; an edge or face; a direction; or a curve path (3D edge or sketch). */
+export type SlotType = 'plane' | 'axis' | 'point' | 'cylinder' | 'revolved' | 'element' | 'direction' | 'rotationAxis' | 'curvePath';
 
 export interface Slot {
   /** The property of the definition (or of the coordinate system) the box fills. */
@@ -52,6 +52,8 @@ export function accepts(type: SlotType, ref: Ref, doc: PartDoc): boolean {
       return planar || straight;
     case 'rotationAxis':
       return straight || (ref.kind === 'face' && (fp === 'cylinder' || fp === 'cone'));
+    case 'curvePath':
+      return ref.kind === 'edge' || (ref.kind === 'datum' && findFeature(doc, ref.name)?.type === 'sketch');
   }
 }
 
@@ -123,7 +125,9 @@ export function slotsOf(f: Feature | undefined): Slot[] {
     case 'pattern':
       return f.def.mode === 'linear'
         ? [one('dir1.ref', t('slot.direction1'), 'direction', f.def.dir1.ref), ...(f.def.dir2 ? [one('dir2.ref', t('slot.direction2'), 'direction', f.def.dir2.ref)] : [])]
-        : [one('axis', t('slot.rotationAxis'), 'rotationAxis', f.def.axis)];
+        : f.def.mode === 'circular'
+          ? [one('axis', t('slot.rotationAxis'), 'rotationAxis', f.def.axis)]
+          : [one('path', t('slot.curvePath'), 'curvePath', f.def.path)];
     case 'coordSys':
       return [one('origin', t('slot.origin'), 'point', f.origin, true), one('x', t('slot.xDirection'), 'direction', f.x), one('y', t('slot.yDirection'), 'direction', f.y)];
     default:
@@ -153,9 +157,11 @@ export function fill(f: Feature, key: string, refs: Ref[]): Command {
       const def: PatternDefinition =
         d.mode === 'circular'
           ? { ...d, axis: ref }
-          : key === 'dir2.ref'
-            ? { ...d, dir2: { ...d.dir2!, ref } }
-            : { ...d, dir1: { ...d.dir1, ref } };
+          : d.mode === 'curve'
+            ? { ...d, path: ref }
+            : key === 'dir2.ref'
+              ? { ...d, dir2: { ...d.dir2!, ref } }
+              : { ...d, dir1: { ...d.dir1, ref } };
       return { type: 'setPattern', featureId: f.id, seeds: f.seeds, def, ...(f.skip ? { skip: f.skip } : {}) };
     }
     case 'coordSys': {

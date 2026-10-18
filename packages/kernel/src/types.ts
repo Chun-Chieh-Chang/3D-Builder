@@ -365,3 +365,18 @@ export interface StepExportOptions {
   /** "#rrggbb" or null for each face, in the order of `Kernel.topology`. */
   faceColors?: readonly (string | null)[];
 }
+
+/** One sample along a curve or 3D edge (C6.4, ADR 0166). */
+export interface EdgeSample {
+  point: Vec3;
+  tangent: Vec3;
+  parameter: number;
+}
+
+/** The result of sampling a 3D edge along its arc length (C6.4, ADR 0166). */
+export interface EdgeSamplingResult {
+  samples: EdgeSample[];
+  length: number;
+  closed: boolean;
+}
+

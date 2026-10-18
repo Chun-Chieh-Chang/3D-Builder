@@ -620,7 +620,15 @@ export const help: Translation = {
 
   'help.circularPattern.keywords': 'circular pattern array round axis angle instances',
 
-  'help.circularPattern.see': 'linear-pattern mirror hole concept.property-manager',
+  'help.circularPattern.see': 'linear-pattern curve-pattern mirror hole concept.property-manager',
+  'help.curvePattern.summary': 'Repeats the selected features along a 3D edge or sketch curve.',
+
+  'help.curvePattern.body':
+    'Copies the selected features along a 3D model edge or sketch curve.\n\n- Features to pattern: tick one feature, or several one after the other.\n- Curve path: a 3D model edge (line, arc, spline) or a sketch outline.\n- Spacing mode: "Equal spacing" shares the curve length equally among instances; uncheck to specify the instance step distance.\n- Alignment: "Tangent to Curve" rotates instances to follow the curve tangent; "Keep Seed Orientation" maintains the seed\'s original orientation and translates only.\n- "Reverse direction" patterns along the opposite curve direction.\n- Instances to skip: click an instance number to skip it, click again to restore.\n\nExample: 6 mounting holes equally spaced and tangent-aligned along the circular top edge of a cylinder.',
+
+  'help.curvePattern.keywords': 'curve pattern curve-driven edge array spline tangent alignment instances spacing',
+
+  'help.curvePattern.see': 'linear-pattern circular-pattern mirror hole concept.property-manager',
   'help.mirror.summary': 'Mirrors the selected features or bodies about a plane.',
 
   'help.mirror.body':

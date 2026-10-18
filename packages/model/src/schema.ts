@@ -6,7 +6,7 @@ import type { Id } from './ids';
  * DOF status, mass properties and error lists are derived data and never stored.
  */
 
-export const SCHEMA_VERSION = 64;
+export const SCHEMA_VERSION = 65;
 
 /** Value expression (B5.2, B5.3): "20", "25.4mm", "30deg", "wall_t*2", "D1@草圖1/2", "property('厚度')"; see `expr/`. */
 export type Expr = string;
@@ -383,13 +383,36 @@ export interface PatternDirection {
 }
 
 /**
- * How a pattern repeats its seed (v22). Linear: along one direction, or a grid of two. Circular: about a straight edge, a reference axis or the axis of a
+ * A pattern along a 3D model edge or sketch curve (C6.4, v65, ADR 0166).
+ * Instances follow the curve by equal spacing or a specified distance step,
+ * and either rotate to stay tangent to the curve or keep the seed's orientation.
+ */
+export interface CurvePatternDefinition {
+  mode: 'curve';
+  /** Path reference: a 3D model edge or a sketch. */
+  path: Ref;
+  /** Number of instances counting the seed (>= 2). */
+  count: Expr;
+  /** Spacing along curve in mm (used when equal is false). */
+  spacing?: Expr;
+  /** Equal spacing along curve: divides curve length equally. Default true. */
+  equal: boolean;
+  /** Alignment method: 'tangent' rotates with curve tangent; 'parallel' keeps seed orientation. Default 'tangent'. */
+  alignment?: 'tangent' | 'parallel';
+  /** Reverse travel direction along curve. */
+  reverse?: boolean;
+}
+
+/**
+ * How a pattern repeats its seed (v22, v65). Linear: along one direction, or a grid of two. Circular: about a straight edge, a reference axis or the axis of a
  * cylindrical face, `count` instances counting the seed; with `equal` the `angle` is the whole sweep they share out (all the way round, 360°, puts the
- * last one one step short of the seed; less than that puts the last one at the end), without it `angle` is the step between neighbours.
+ * last one one step short of the seed; less than that puts the last one at the end), without it `angle` is the step between neighbours. Curve: along a 3D
+ * model edge or sketch curve, equally spaced or by step distance, optionally tangent-aligned.
  */
 export type PatternDefinition =
   | { mode: 'linear'; dir1: PatternDirection; dir2?: PatternDirection }
-  | { mode: 'circular'; axis: Ref; count: Expr; angle: Expr; equal: boolean; reverse?: boolean };
+  | { mode: 'circular'; axis: Ref; count: Expr; angle: Expr; equal: boolean; reverse?: boolean }
+  | CurvePatternDefinition;
 
 /**
  * Pattern (複製排列, C6.1, C6.2, v22): what the `seeds` (one feature, or a run of features that follow one another) added to the body and took away from

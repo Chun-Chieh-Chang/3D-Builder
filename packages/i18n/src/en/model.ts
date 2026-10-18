@@ -114,6 +114,8 @@ export const model: Translation = {
   'cmd.patternSeedTwice': 'A feature cannot be patterned twice',
   'cmd.patternSeedEarlier': 'The feature to pattern must come before the pattern',
   'cmd.patternSeedType': '"{name}" cannot be patterned: only bosses, cuts, holes, fillets and chamfers can',
+  'cmd.curvePathMustBeEarlier': 'The curve path sketch must come before the pattern feature',
+  'cmd.curvePathInvalid': 'The curve path must be a model edge or a sketch',
   'cmd.onlyMirrorHasParams': 'Only a mirror has these parameters',
   'cmd.onlyPatternHasParams': 'Only a pattern has these parameters',
   'cmd.materialInvalid': 'A material needs a name and a density greater than 0 and less than 30 g/cm³',

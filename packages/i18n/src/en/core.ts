@@ -50,4 +50,8 @@ export const core: Translation = {
   'kernel.noComponents': 'The assembly has no components to export',
   'kernel.noPartForComponent': 'The part of component "{name}" does not exist',
   'kernel.badPose': 'The pose of component "{name}" is not valid',
+  'kernel.edgeDegenerated': 'A degenerated edge cannot be sampled',
+  'kernel.edgeZeroLength': 'The edge length is zero and cannot be sampled',
+  'kernel.sampleCountTooSmall': 'Sample count must be at least 2',
+  'kernel.spacingPositive': 'Instance spacing must be greater than zero',
 };

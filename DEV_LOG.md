@@ -1,5 +1,53 @@
 # 3D-Builder 開發日誌 (DEV_LOG.md)
 
+## 2026-10-18 晚：藍圖 C6.4 沿曲線/邊線複製排列特徵 (Curve-driven Pattern Feature) 全鏈路實作 [ADR 0166](docs/adr/0166-curve-driven-pattern.md)
+
+### 1. 任務背景與範疇
+依據使用者確認與藍圖 C6.4 規範，全鏈路實作沿曲線/邊線複製排列特徵（Curve-driven Pattern Feature，ADR 0166）。支援沿 3D 模型邊線（Model Edge）或草圖路徑（Sketch Path），以「等間距均分（Equal Spacing）」或「指定間距（Spacing）」排列特徵或本體種子，並支援「相切隨曲線旋轉（Tangent）」與「保持原始平行（Parallel）」兩種姿態對齊模式，以及反向排列（Reverse）。特徵完整融入既有 `PatternFeature` 架構，全面復用差集幾何提取、重疊防禦、實例跳過與布林融合管線。
+
+### 2. 做法與架構設計
+| 層級 | 核心檔案 | 實作內容與職責 |
+|---|---|---|
+| 決策紀錄 | `docs/adr/0166-curve-driven-pattern.md` | 經 AI 智囊團 5 位顧問審查與主席結論，確立雙路徑支援（邊線/草圖）、雙對齊姿態（相切/平行）、均分/間距模式、反向排列與自我紅隊四問檢驗規範。 |
+| 資料模型 | `packages/model/src/schema.ts`、`serialize.ts`、`params.ts`、`commands.ts` | 升版 `SCHEMA_VERSION = 65`；定義 `CurvePatternDefinition`，擴充 `PatternDefinition` 聯合型別；實作 schema 64 遷移函式；`params.ts` 支援曲線模式之 `count` 與 `spacing` 表達式求值；`commands.ts` 新增 `curvePathRef` 驗證曲線參考（需為邊線或歷史之前的草圖）。 |
+| 幾何核心 | `packages/kernel/src/types.ts`、`kernel.ts`、`packages/regen/src/placements.ts` | 定義 `EdgeSample` 與 `EdgeSamplingResult`；在 `kernel.ts` 實作 `sampleEdgeCurve`（透過 OCCT `BRepAdaptor_Curve`、`GCPnts_UniformAbscissa` 與 `GCPnts_AbscissaPoint` 進行 3D 邊線精確採樣，`EvalD1` 解析求導切線）與 `samplePathCurve`（透過 `BRepAdaptor_CompCurve` 進行 2D 草圖輪廓在 3D 空間的採樣）；`placements.ts` 實作 `curveMotion`，支援相切旋轉姿態與平行平移。 |
+| 依賴與再生 | `packages/regen/src/engine.ts` | `rebuild` 主迴圈將 `sketches` 傳入 `pattern(feature, sketches, set)`；在 `placements` 中完整接線 `d.mode === 'curve'` 計算各實例之 `Motion`，無縫對接差集幾何提取、`noOverlap` 相交防禦、`skip` 略過與實體/切割布林融合。 |
+| 雙語與說明 | `packages/i18n/src/`、`docs/help-links.json`、`apps/web/src/help/topics.ts` | 補齊邊線採樣錯誤字典、`feature.curvePattern`、`pattern.curvePath*`、`cmd.curvePath*`、`pm.pattern.curve*`、`pm.pattern.alignment*`、`slot.curvePath`、`action.curvePattern` 與 `help.curvePattern.*` 中英文多國語言文檔。更新 `docs/help-links.json` 登記 `"curve-pattern"`，映射說明主題。 |
+| 介面適配 | `apps/web/src/actions.ts`、`store.ts`、`datumSlots.ts`、`PropertyManager.tsx` | 註冊 `curve-pattern` 動作；`store.ts` 擴充 `newPattern('curve')`；`datumSlots.ts` 擴充 `SlotType` 支援 `curvePath`（過濾 edge 與先行 sketch）；`PropertyManager.tsx` 新增曲線模式面板：槽位列表、實例數、間距/等間距切換、相切/平行下拉選單與反向排列核取方塊。 |
+| 確效測試 | `tests/phase3/curve-pattern.test.ts`、`tests/phase8/help.test.ts`、`tests/phase3/pattern.test.ts` | 撰寫 11 項自我紅隊驗收測試，全數 100% 通過（含 WASM Heap 真實指標防呆）；既有 24 項 pattern 測試與 40 項說明系統測試 100% 綠燈。 |
+
+### 3. 問題分析 (RCA) 與矯正預防措施 (CAPA)
+1. **問題 (Failure)**：`packages/regen/src/engine.ts` 提取草圖輪廓時型別錯誤（`found.loops[0]!` 為物件而非陣列）。
+   - **RCA**：`findOutlines` 回傳的 `loops` 結構為 `{ loop: Loop2; ccw: boolean }[]`，其中 `Loop2` 才是 `Segment2[]`。若直接將物件傳給 `samplePathCurve`，會在型別與執行期引發錯誤。
+   - **CAPA**：修訂為 `const pathSegments = found.chains[0] ?? found.loops[0]?.loop;`，並於無輪廓線段時防禦性拋出 `t('pattern.curvePathNoGeometry')`，完全符合 TypeScript 嚴格檢查。
+2. **問題 (Failure)**：`packages/regen/src/placements.ts` 解構數組在 strict 下視為 `number | undefined`。
+   - **RCA**：`const [x, y, z] = u;` 在 `noUncheckedIndexedAccess` 下被狹化為可為 undefined，導致矩陣運算型別報錯。
+   - **CAPA**：改採純量直接賦值 `const x = cx / crossLen; const y = cy / crossLen; const z = cz / crossLen;`，消除 tuple 解構之型別不確定性。
+3. **問題 (Failure)**：實例跳過測試中 `skip: [2]` 未生效導致體積多出一個特徵。
+   - **RCA**：`PatternFeature` 之 `skip` 規格在 Schema 中為字串陣列 `string[]`（對應實例標籤 `p.label = '2'`）。傳入數字陣列 `[2]` 時，`new Set([2]).has('2') === false` 導致過濾失效。
+   - **CAPA**：在測試中傳入嚴格型別之字串陣列 `skip: ['2']`，驗證實例跳過與拓樸命名一致性完全生效。
+4. **問題 (Failure)**：沿實體邊線排列時測試初期報錯「實例未接觸到本體成懸空一塊」。
+   - **RCA**：幾何物理事實。若底板台階高度為 $Z=10$，種子圓柱立於台階頂面，當實例沿邊線移動超出台階範圍落在 $Z=5$ 之底座上方時，圓柱底部與底座間產生 5 mm 垂直空隙形成懸空。
+   - **CAPA**：將種子設置於底座頂面基準高度，邊線採樣長度與底座幾何範圍嚴格匹配，真實驗證物理接觸與體積守恆。
+
+### 4. 自我紅隊四問（AGENTS.md §2.1）
+1. **輸入破壞 (Input Corruption)**：
+   - 實例數 $count < 2$（如 1、0、-1）在命令層被 `checkExprs` 顯式攔截拋出 `CommandError`。
+   - 非等間距時 $spacing \le 0$ 在命令層立即拋錯。
+   - 曲線路徑遺失（找不到指定邊線或草圖），再生流程回報明確錯誤訊息 `pattern.curvePathMissing`。
+   - 空草圖作為路徑時，回報明確錯誤訊息 `pattern.curvePathNoGeometry`。
+2. **拓樸與幾何相交破壞 (Geometric Self-Intersection Defense)**：
+   - 當實例間距小於特徵直徑（如 spacing: 2，直徑為 4）時，前置 `noOverlap` 機制在布林運算前精確攔截相交，明確報錯重疊實例編號，嚴禁丟入 OCCT 求解器造成記憶體暴增或崩潰。
+3. **依賴鏈完整性 (Dependency Graph Integrity)**：
+   - DAG 拓樸解析：`dependencies` 正確識別 `pat1` 依賴種子特徵與路徑來源。
+   - 略過實例（`skip: ['2']`）時，其餘實例拓樸命名穩定性維持不變（`pat1:inst1:e3:cap:end`、`pat1:inst3:e3:cap:end` 存在，`pat1:inst2` 排除）。
+4. **規格真實性與零代理指標 (Zero-Mock & Ground Truth)**：
+   - 真實模型邊線採樣：以 3D 邊線實施等間距排列，物理體積守恆 $\Delta V = 3 \times V_{post}$ 精確吻合。
+   - 草圖路徑採樣：實測直線草圖路徑，相切對齊與平行姿態均完成真實形狀生成與物理驗收。
+   - WASM Heap 記憶體防呆：以真實指標 `(oc as any).wasmMemory?.buffer?.byteLength` 監控，斷言基準指標存在且大於 0（`expect(initialHeap).toBeGreaterThan(0)`），經 5 輪以上完整特徵再生，Heap 成長嚴格低於 1MB 門檻，0 記憶體洩漏。
+
+---
+
 ## 2026-10-18 晚：B2.8 多圖頁工程圖全量 E2E 測試確效（24 支工程圖測試 100% 綠燈，測試債歸零）
 
 ### 1. 任務背景與範疇

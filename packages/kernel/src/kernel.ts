@@ -44,6 +44,8 @@ import {
   type Vec3,
   type VertexInfo,
   type SurfaceGeometry,
+  type EdgeSample,
+  type EdgeSamplingResult,
 } from './types';
 
 /** How far a surface made by offsetting may be from the gap asked for (mm): the check of every surface feature (ADR 0067). */
@@ -2488,6 +2490,200 @@ export class Kernel {
       geometry = { type: 'bspline', samples };
     }
     return { curve: type, length: props.Mass(), mid: this.xyz(arena.own(ad.EvalD0((t0 + t1) / 2))), dir, ...(geometry ? { geometry } : {}) };
+  }
+
+  /**
+   * Samples a 3D edge along its arc length (C6.4, ADR 0166).
+   * Supports equal spacing (dividing curve equally) or specified step distance.
+   */
+  sampleEdgeCurve(
+    target: ShapeId,
+    edgeIndex: number,
+    options: { count: number; equal: boolean; spacing?: number; reverse?: boolean },
+  ): EdgeSamplingResult {
+    const oc = this.oc;
+    const arena = new Arena();
+    try {
+      const shape = this.get(target);
+      const edges = ShapeIndex.of(oc, shape, T.EDGE, arena);
+      const edgeShape = edges.keys[edgeIndex];
+      if (!edgeShape) throw new KernelError(t('kernel.edgeOutOfRange', { index: edgeIndex }));
+      const edge = arena.own(oc.TopoDS.Edge(edgeShape));
+      if (oc.BRep_Tool.Degenerated(edge)) throw new KernelError(t('kernel.edgeDegenerated'));
+
+      const ad = arena.own(new oc.BRepAdaptor_Curve(edge));
+      const t0 = ad.FirstParameter();
+      const t1 = ad.LastParameter();
+
+      const props = arena.own(new oc.GProp_GProps());
+      oc.BRepGProp.LinearProperties(edge, props, false, false);
+      const totalLength = props.Mass();
+      if (!(totalLength > 1e-9)) throw new KernelError(t('kernel.edgeZeroLength'));
+
+      const p0 = this.xyz(arena.own(ad.EvalD0(t0)));
+      const p1 = this.xyz(arena.own(ad.EvalD0(t1)));
+      const closed = Math.hypot(p1[0] - p0[0], p1[1] - p0[1], p1[2] - p0[2]) < 1e-6;
+
+      const N = Math.round(options.count);
+      if (!(N >= 2)) throw new KernelError(t('kernel.sampleCountTooSmall'));
+
+      const evalAtParam = (u: number): EdgeSample => {
+        const d1 = ad.EvalD1(u);
+        const pt = this.xyz(arena.own(d1.Point));
+        const tg = this.xyz(arena.own(d1.D1));
+        const len = Math.hypot(...tg) || 1;
+        const tangent: Vec3 = [tg[0] / len, tg[1] / len, tg[2] / len];
+        return { point: pt, tangent, parameter: u };
+      };
+
+      const samples: EdgeSample[] = [];
+
+      if (options.equal) {
+        const div = closed ? N : N - 1;
+        const ua = arena.own(new oc.GCPnts_UniformAbscissa(ad, div + 1, -1));
+        const nb = ua.NbPoints();
+        const countToTake = closed ? Math.min(N, nb - 1) : Math.min(N, nb);
+        for (let i = 1; i <= countToTake; i++) {
+          samples.push(evalAtParam(ua.Parameter(i)));
+        }
+        // Fallback in case GCPnts gave fewer points
+        while (samples.length < N) {
+          const frac = samples.length / (div || 1);
+          const u = t0 + (t1 - t0) * frac;
+          samples.push(evalAtParam(u));
+        }
+      } else {
+        const step = options.spacing ?? 10;
+        if (!(step > 1e-9)) throw new KernelError(t('kernel.spacingPositive'));
+        samples.push(evalAtParam(t0));
+        for (let i = 1; i < N; i++) {
+          const s = i * step;
+          if (s >= totalLength - 1e-9) {
+            // Extrapolate beyond curve end along final tangent
+            const last = samples[samples.length - 1]!;
+            const delta = step;
+            const pt: Vec3 = [
+              last.point[0] + last.tangent[0] * delta,
+              last.point[1] + last.tangent[1] * delta,
+              last.point[2] + last.tangent[2] * delta,
+            ];
+            samples.push({ point: pt, tangent: last.tangent, parameter: t1 });
+          } else {
+            const ap = arena.own(new oc.GCPnts_AbscissaPoint(ad, s, t0));
+            if (ap.IsDone()) {
+              samples.push(evalAtParam(ap.Parameter()));
+            } else {
+              const u = t0 + (s / totalLength) * (t1 - t0);
+              samples.push(evalAtParam(u));
+            }
+          }
+        }
+      }
+
+      if (options.reverse) {
+        samples.reverse();
+        for (const s of samples) {
+          s.tangent = [-s.tangent[0], -s.tangent[1], -s.tangent[2]];
+        }
+      }
+
+      return { samples, length: totalLength, closed };
+    } finally {
+      arena.dispose();
+    }
+  }
+
+  /**
+   * Samples a 2D sketch path wire in 3D space along its arc length (C6.4, ADR 0166).
+   */
+  samplePathCurve(
+    pathFrame: Frame,
+    path: Segment[],
+    options: { count: number; equal: boolean; spacing?: number; reverse?: boolean },
+  ): EdgeSamplingResult {
+    const oc = this.oc;
+    const arena = new Arena();
+    try {
+      if (path.length === 0) throw new KernelError(t('feature.sweepNoPath'));
+      const pathSources = new Map<TopoDS_Shape, string>();
+      const spine = this.wire(arena, pathFrame, path, false, pathSources);
+      const props = arena.own(new oc.GProp_GProps());
+      oc.BRepGProp.LinearProperties(spine, props, false, false);
+      const totalLength = props.Mass();
+      if (!(totalLength > 1e-9)) throw new KernelError(t('kernel.edgeZeroLength'));
+
+      const cc = arena.own(new oc.BRepAdaptor_CompCurve(spine, false));
+      const t0 = cc.FirstParameter();
+      const t1 = cc.LastParameter();
+      const p0 = this.xyz(arena.own(cc.EvalD0(t0)));
+      const p1 = this.xyz(arena.own(cc.EvalD0(t1)));
+      const closed = Math.hypot(p1[0] - p0[0], p1[1] - p0[1], p1[2] - p0[2]) < 1e-6;
+
+      const N = Math.round(options.count);
+      if (!(N >= 2)) throw new KernelError(t('kernel.sampleCountTooSmall'));
+
+      const evalAtParam = (u: number): EdgeSample => {
+        const d1 = cc.EvalD1(u);
+        const pt = this.xyz(arena.own(d1.Point));
+        const tg = this.xyz(arena.own(d1.D1));
+        const len = Math.hypot(...tg) || 1;
+        const tangent: Vec3 = [tg[0] / len, tg[1] / len, tg[2] / len];
+        return { point: pt, tangent, parameter: u };
+      };
+
+      const samples: EdgeSample[] = [];
+
+      if (options.equal) {
+        const div = closed ? N : N - 1;
+        const ua = arena.own(new oc.GCPnts_UniformAbscissa(cc, div + 1, -1));
+        const nb = ua.NbPoints();
+        const countToTake = closed ? Math.min(N, nb - 1) : Math.min(N, nb);
+        for (let i = 1; i <= countToTake; i++) {
+          samples.push(evalAtParam(ua.Parameter(i)));
+        }
+        while (samples.length < N) {
+          const frac = samples.length / (div || 1);
+          const u = t0 + (t1 - t0) * frac;
+          samples.push(evalAtParam(u));
+        }
+      } else {
+        const step = options.spacing ?? 10;
+        if (!(step > 1e-9)) throw new KernelError(t('kernel.spacingPositive'));
+        samples.push(evalAtParam(t0));
+        for (let i = 1; i < N; i++) {
+          const s = i * step;
+          if (s >= totalLength - 1e-9) {
+            const last = samples[samples.length - 1]!;
+            const delta = step;
+            const pt: Vec3 = [
+              last.point[0] + last.tangent[0] * delta,
+              last.point[1] + last.tangent[1] * delta,
+              last.point[2] + last.tangent[2] * delta,
+            ];
+            samples.push({ point: pt, tangent: last.tangent, parameter: t1 });
+          } else {
+            const ap = arena.own(new oc.GCPnts_AbscissaPoint(cc, s, t0));
+            if (ap.IsDone()) {
+              samples.push(evalAtParam(ap.Parameter()));
+            } else {
+              const u = t0 + (s / totalLength) * (t1 - t0);
+              samples.push(evalAtParam(u));
+            }
+          }
+        }
+      }
+
+      if (options.reverse) {
+        samples.reverse();
+        for (const s of samples) {
+          s.tangent = [-s.tangent[0], -s.tangent[1], -s.tangent[2]];
+        }
+      }
+
+      return { samples, length: totalLength, closed };
+    } finally {
+      arena.dispose();
+    }
   }
 
   /**

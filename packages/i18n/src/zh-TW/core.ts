@@ -48,4 +48,8 @@ export const core = {
   'kernel.noComponents': '組合件沒有可輸出的零組件',
   'kernel.noPartForComponent': '零組件「{name}」的零件不存在',
   'kernel.badPose': '零組件「{name}」的位姿無效',
+  'kernel.edgeDegenerated': '退化的邊線無法進行曲線採樣',
+  'kernel.edgeZeroLength': '邊線長度為零，無法進行曲線採樣',
+  'kernel.sampleCountTooSmall': '採樣實例數必須至少為 2',
+  'kernel.spacingPositive': '實例間距必須大於 0',
 } as const;

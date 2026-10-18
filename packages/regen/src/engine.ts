@@ -81,7 +81,7 @@ import { nameElements, nameFromFaces, resolveRef, type Candidate, type ElementNa
 import { Bodies, type BodyState, type BodyView } from './bodies';
 import { followReferences, ReferenceProblem } from './references';
 import { notchOf, obroundFits, obroundRegion, type Notch } from './relief';
-import { angleStep, mirror, slide, turn, type Motion } from './placements';
+import { angleStep, curveMotion, mirror, slide, turn, type Motion } from './placements';
 
 export type FeatureStatus = 'ok' | 'error' | 'suppressed' | 'rolledBack';
 
@@ -794,7 +794,7 @@ export class Regenerator {
                           : feature.type === 'combine'
                             ? this.combineBodies(feature, set)
                             : feature.type === 'pattern'
-                              ? this.pattern(feature, set)
+                              ? this.pattern(feature, sketches, set)
                               : feature.type === 'mirror'
                                 ? this.mirror(feature, set)
                                 : this.importedBody(feature, doc, set);
@@ -1880,7 +1880,7 @@ export class Regenerator {
   }
 
   /** Where each instance goes, as a motion of space, by its label (the seed, which stays, is not among them). */
-  private placements(f: PatternFeature, set: Bodies): { label: string; motion: Motion }[] {
+  private placements(f: PatternFeature, sketches: RebuildResult['sketches'], set: Bodies): { label: string; motion: Motion }[] {
     const d = f.def;
     if (d.mode === 'linear') {
       const sign = (r?: boolean) => (r ? -1 : 1);
@@ -1897,10 +1897,54 @@ export class Regenerator {
         motion: slide([v1[0] * s1 * x.i + v2[0] * s2 * x.j, v1[1] * s1 * x.i + v2[1] * s2 * x.j, v1[2] * s1 * x.i + v2[2] * s2 * x.j]),
       }));
     }
-    const axis = this.axisOfRef(d.axis, set, t('pattern.rotationAxis'));
+    if (d.mode === 'circular') {
+      const axis = this.axisOfRef(d.axis, set, t('pattern.rotationAxis'));
+      const n = this.patternCount(d.count, t('pattern.count'));
+      const step = angleStep(n, evalAngle(d.angle), d.equal) * (d.reverse ? -1 : 1);
+      return patternInstances(n, null).map((x) => ({ label: x.label, motion: turn(axis.origin, axis.dir, step * x.i) }));
+    }
+    // Curve-driven pattern (C6.4, ADR 0166)
     const n = this.patternCount(d.count, t('pattern.count'));
-    const step = angleStep(n, evalAngle(d.angle), d.equal) * (d.reverse ? -1 : 1);
-    return patternInstances(n, null).map((x) => ({ label: x.label, motion: turn(axis.origin, axis.dir, step * x.i) }));
+    const spacing = d.spacing !== undefined && d.spacing.trim() !== '' ? evalLength(d.spacing) : undefined;
+    if (!d.equal && spacing !== undefined && !(spacing > 1e-9)) {
+      throw new FeatureError(t('pattern.spacingPositive'));
+    }
+    let samples: { point: Vec3; tangent: Vec3 }[];
+    if (d.path.kind === 'edge') {
+      const body = this.modelFor(set, t('pattern.curvePath'));
+      const edgeIndex = this.resolve(d.path, body, t('pattern.curvePath'));
+      const res = this.kernel.sampleEdgeCurve(body.shape, edgeIndex, {
+        count: n,
+        equal: d.equal,
+        spacing,
+        reverse: d.reverse,
+      });
+      samples = res.samples;
+    } else if (d.path.kind === 'datum') {
+      const p = sketches.get(d.path.name);
+      if (!p) throw new FeatureError(t('pattern.curvePathMissing'));
+      const found = findOutlines(p.sketch, p.solved);
+      const pathSegments = found.chains[0] ?? found.loops[0]?.loop;
+      if (!pathSegments || pathSegments.length === 0) {
+        throw new FeatureError(t('pattern.curvePathNoGeometry'));
+      }
+      const res = this.kernel.samplePathCurve(p.frame, pathSegments, {
+        count: n,
+        equal: d.equal,
+        spacing,
+        reverse: d.reverse,
+      });
+      samples = res.samples;
+    } else {
+      throw new FeatureError(t('pattern.curvePathInvalid'));
+    }
+
+    if (samples.length < 2) throw new FeatureError(t('pattern.noInstances'));
+    const seedSample = samples[0]!;
+    return samples.slice(1).map((s, idx) => ({
+      label: String(idx + 1),
+      motion: curveMotion(seedSample.point, seedSample.tangent, s.point, s.tangent, d.alignment),
+    }));
   }
 
   /** What the seeds of a pattern or a mirror did, or why there is nothing to repeat. */
@@ -1916,10 +1960,10 @@ export class Regenerator {
   }
 
   /** A pattern (C6.1, C6.2): a copy of what the seeds added, moved to each instance and joined like the seed was, and of what they took away, moved and cut. */
-  private pattern(f: PatternFeature, set: Bodies): BodyState[] {
+  private pattern(f: PatternFeature, sketches: RebuildResult['sketches'], set: Bodies): BodyState[] {
     const delta = this.deltaOf(f);
     const skip = new Set(f.skip ?? []);
-    const instances = this.placements(f, set).filter((p) => !skip.has(p.label));
+    const instances = this.placements(f, sketches, set).filter((p) => !skip.has(p.label));
     if (instances.length === 0) throw new FeatureError(t('pattern.noInstances'));
     return this.repeat(f, set, delta, instances.map((p) => ({ ...p, prefix: `inst${p.label}` })), {
       overlap: true,

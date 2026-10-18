@@ -95,7 +95,8 @@
   ],
   "C15": [
     "linear-pattern",
-    "circular-pattern"
+    "circular-pattern",
+    "curve-pattern"
   ],
   "C16": [
     "mirror"

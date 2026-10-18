@@ -1837,7 +1837,7 @@ function PatternPanel({ f }: { f: PatternFeature }) {
         <p className="hint">{t('pm.pattern.seedsHint')}</p>
       </section>
       <section className="pm-group">
-        <h4>{d.mode === 'linear' ? t('pm.pattern.directions') : t('pm.pattern.axis')}</h4>
+        <h4>{d.mode === 'linear' ? t('pm.pattern.directions') : d.mode === 'circular' ? t('pm.pattern.axis') : t('pm.pattern.curve')}</h4>
         <SlotList f={f} />
         <DatumPicker f={f} />
         {d.mode === 'linear' ? (
@@ -1852,7 +1852,7 @@ function PatternPanel({ f }: { f: PatternFeature }) {
               <button onClick={() => store.execute(cmd({ def: { ...d, dir2: { ref: { kind: 'datum', name: 'plane:top' }, spacing: '10', count: '2' } }, skip: [] }))}>{t('pm.pattern.addDir2')}</button>
             )}
           </>
-        ) : (
+        ) : d.mode === 'circular' ? (
           <>
             <label className="pm-row">
               <span>{t('pm.pattern.count')}</span>
@@ -1871,8 +1871,39 @@ function PatternPanel({ f }: { f: PatternFeature }) {
               <span>{t('pm.pattern.reverse')}</span>
             </label>
           </>
+        ) : (
+          <>
+            <label className="pm-row">
+              <span>{t('pm.pattern.count')}</span>
+              <ValueInput value={d.count} suffix="" toCommand={(count) => cmd({ def: { ...d, count } })} />
+            </label>
+            {!d.equal && (
+              <label className="pm-row">
+                <span>{t('pm.pattern.spacing')}</span>
+                <ValueInput value={d.spacing ?? '10'} toCommand={(spacing) => cmd({ def: { ...d, spacing } })} />
+              </label>
+            )}
+            <label className="pm-row checkbox">
+              <input type="checkbox" checked={d.equal} onChange={(e) => store.execute(cmd({ def: { ...d, equal: e.target.checked } }))} />
+              <span>{t('pm.pattern.equalDistance')}</span>
+            </label>
+            <label className="pm-row">
+              <span>{t('pm.pattern.alignment')}</span>
+              <select
+                value={d.alignment ?? 'tangent'}
+                onChange={(e) => store.execute(cmd({ def: { ...d, alignment: e.target.value as 'tangent' | 'parallel' } }))}
+              >
+                <option value="tangent">{t('pm.pattern.alignmentTangent')}</option>
+                <option value="parallel">{t('pm.pattern.alignmentParallel')}</option>
+              </select>
+            </label>
+            <label className="pm-row checkbox">
+              <input type="checkbox" checked={d.reverse ?? false} onChange={(e) => store.execute(cmd({ def: { ...d, reverse: e.target.checked ? true : undefined } }))} />
+              <span>{t('pm.pattern.reverse')}</span>
+            </label>
+          </>
         )}
-        <p className="hint">{t(d.mode === 'linear' ? 'pm.pattern.hintLinear' : 'pm.pattern.hintCircular')}</p>
+        <p className="hint">{t(d.mode === 'linear' ? 'pm.pattern.hintLinear' : d.mode === 'circular' ? 'pm.pattern.hintCircular' : 'pm.pattern.hintCurve')}</p>
       </section>
       {labels.length > 0 && (
         <section className="pm-group">

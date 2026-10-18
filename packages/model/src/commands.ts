@@ -439,7 +439,21 @@ function patternRefs(doc: PartDoc, f: Pick<PatternFeature, 'seeds' | 'def'>, ind
   if (f.def.mode === 'linear') {
     directionRef(doc, f.def.dir1.ref, index);
     if (f.def.dir2) directionRef(doc, f.def.dir2.ref, index);
-  } else rotationAxisRef(doc, f.def.axis, index);
+  } else if (f.def.mode === 'circular') {
+    rotationAxisRef(doc, f.def.axis, index);
+  } else if (f.def.mode === 'curve') {
+    curvePathRef(doc, f.def.path, index);
+  }
+}
+
+function curvePathRef(doc: PartDoc, ref: Ref, index: number): void {
+  if (ref.kind === 'edge') return;
+  if (ref.kind === 'datum') {
+    const at = doc.features.find((g) => g.id === ref.name);
+    if (!at || doc.features.indexOf(at) >= index || at.type !== 'sketch') throw new CommandError(t('cmd.curvePathMustBeEarlier'));
+    return;
+  }
+  throw new CommandError(t('cmd.curvePathInvalid'));
 }
 
 /** A Combine takes bodies, and its main body is not one of its tools. The boxes may still be empty while the user picks. */

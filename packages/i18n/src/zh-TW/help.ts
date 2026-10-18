@@ -628,7 +628,15 @@ export const help = {
 
   'help.circularPattern.keywords': '環狀複製排列 陣列 圓形 排列 軸 角度 實例',
 
-  'help.circularPattern.see': 'linear-pattern mirror hole concept.property-manager',
+  'help.circularPattern.see': 'linear-pattern curve-pattern mirror hole concept.property-manager',
+  'help.curvePattern.summary': '沿曲線或模型邊線複製排列所選的特徵。',
+
+  'help.curvePattern.body':
+    '把所選的特徵沿 3D 邊線或草圖曲線複製成幾份。\n\n- 要排列的特徵：勾一個特徵，或一個接著一個的幾個特徵。\n- 曲線路徑：可以是 3D 模型邊線（直線、圓弧、自由樣條）或草圖中的幾何輪廓線。\n- 間距模式：勾選「等間距」時沿整條曲線均勻平分；未勾選時依指定的「間距」數值排列。\n- 姿態對齊：可選擇「相切對齊」（實例隨曲線切線旋轉）或「保持平行」（實例維持原始種子姿態，僅平移）。\n- 「反轉方向」沿曲線相反方向排列。\n- 要跳過的實例：按一下略過那個實例，再按一次恢復。\n\n例子：沿圓柱上緣圓弧以相切對齊均勻排列 6 個螺孔。',
+
+  'help.curvePattern.keywords': '曲線複製排列 曲線導出 邊線排列 陣列 樣條 切線對齊 實例 間距',
+
+  'help.curvePattern.see': 'linear-pattern circular-pattern mirror hole concept.property-manager',
   'help.mirror.summary': '以一個平面為鏡面，鏡射所選的特徵或本體。',
 
   'help.mirror.body':

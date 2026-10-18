@@ -189,7 +189,7 @@ export function contextTopic(c: HelpContext): string {
     if (f.type === 'revolve') return cut ? 'revolve-cut' : 'revolve';
     if (f.type === 'sweep') return cut ? 'sweep-cut' : 'sweep';
     if (f.type === 'loft') return cut ? 'loft-cut' : 'loft';
-    if (f.type === 'pattern') return f.patternKind === 'circular' ? 'circular-pattern' : 'linear-pattern';
+    if (f.type === 'pattern') return f.patternKind === 'circular' ? 'circular-pattern' : f.patternKind === 'curve' ? 'curve-pattern' : 'linear-pattern';
     const action = FEATURE_ACTION[f.type];
     if (action) return action;
   }

@@ -1920,13 +1920,18 @@ class AppStore {
    * 「線性複製排列」 or 「環狀複製排列」 (C6.1, C6.2): repeats the feature that is selected (else the latest one that can be repeated); the
    * PropertyManager changes the seeds, the direction or axis, the count and the spacing, and the instances to skip.
    */
-  newPattern(mode: 'linear' | 'circular'): void {
+  newPattern(mode: 'linear' | 'circular' | 'curve'): void {
     const doc = this.history.doc;
     const selected = findFeature(doc, this.state.selected ?? '');
     const seed = selected && canBeSeed(selected) ? selected : [...doc.features].reverse().find(canBeSeed);
     if (!seed) return this.notify(t('pattern.nothingToRepeat'), 'error');
-    const name = t(mode === 'linear' ? 'feature.linearPattern' : 'feature.circularPattern');
-    const def: PatternDefinition = mode === 'linear' ? { mode, dir1: { ref: { kind: 'datum', name: 'plane:right' }, spacing: '10', count: '3' } } : { mode, axis: emptyRef('rotationAxis'), count: '6', angle: '360', equal: true };
+    const name = t(mode === 'linear' ? 'feature.linearPattern' : mode === 'circular' ? 'feature.circularPattern' : 'feature.curvePattern');
+    const def: PatternDefinition =
+      mode === 'linear'
+        ? { mode, dir1: { ref: { kind: 'datum', name: 'plane:right' }, spacing: '10', count: '3' } }
+        : mode === 'circular'
+          ? { mode, axis: emptyRef('rotationAxis'), count: '6', angle: '360', equal: true }
+          : { mode, path: emptyRef('curvePath'), count: '4', spacing: '10', equal: true, alignment: 'tangent' };
     this.openNew({ id: this.allocator().take('pattern'), type: 'pattern', name: nextName(doc, name), suppressed: false, seeds: [seed.id], def }, name);
   }
 
