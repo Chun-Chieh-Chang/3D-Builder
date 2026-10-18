@@ -26,10 +26,11 @@ const step = async (name, fn) => {
   return r;
 };
 const drw = () => store.getState().drw;
+const page = () => H.page(drw()?.doc);
 const d = () => store.drawingStore;
 const near = (a, b, tol = 0.02) => Math.abs(a - b) <= tol;
 const placed = (id) => d().scene().placed.get(id);
-const viewOf = (dir) => drw().doc.views.find((v) => v.direction === dir);
+const viewOf = (dir) => page()?.views.find((v) => v.direction === dir);
 const canvas = () => document.querySelector('[data-drawing-canvas]');
 const toClient = ([x, y]) => {
   const r = document.querySelector('[data-svg] svg').getBoundingClientRect();
@@ -93,7 +94,7 @@ M.run = async () => {
     await H.open('定位板.3dbx');
     await H.waitFor(() => store.getState().result?.mesh, 20000, 'the part');
     await H.newDrawing();
-    await H.waitFor(() => drw() && drw().doc.views.length === 3 && [...drw().lines.values()].filter(Boolean).length === 3, 30000, 'the three views');
+    await H.waitFor(() => drw() && page()?.views.length === 3 && [...drw().lines.values()].filter(Boolean).length === 3, 30000, 'the three views');
     await H.wait(300);
     top = viewOf('top').id;
     const offered = !!panel('[data-action="toolLocalSection"]') && !!panel('[data-field="localSectionDepth"]') && panel('[data-field="localSectionDepth"]').value === '5';
@@ -108,14 +109,14 @@ M.run = async () => {
     const p = placed(top);
     const a = [p.at[0] - p.w * 0.3, p.at[1] - p.h * 0.25];
     const b = [p.at[0] + p.w * 0.05, p.at[1] + p.h * 0.05];
-    const before = drw().doc.views.length;
+    const before = page()?.views.length;
     await drag(a, b);
     const waiting = (document.querySelector('[data-hint]')?.textContent ?? '').includes('放置');
     const placeAt = [p.at[0] + 10, p.at[1] - p.h / 2 - 60];
     await click(placeAt);
-    await H.waitFor(() => drw().doc.views.length === before + 1 && drw().lines.get(drw().doc.views.at(-1).id), 30000, 'the local section');
+    await H.waitFor(() => page()?.views.length === before + 1 && drw().lines.get(page()?.views.at(-1).id), 30000, 'the local section');
     await H.wait(200);
-    const v = drw().doc.views.at(-1);
+    const v = page()?.views.at(-1);
     local = v.id;
     const box = drw().lines.get(top).box;
     const inBox = v.outline.p0[0] >= box.min[0] && v.outline.p1[0] <= box.max[0] && v.outline.p0[1] >= box.min[1] && v.outline.p1[1] <= box.max[1];
@@ -124,7 +125,7 @@ M.run = async () => {
   });
 
   await step('3 the parent carries the closed outline, its letter A beside it, and the A–A title under the local section', async () => {
-    const v = drw().doc.views.find((x) => x.id === local);
+    const v = page()?.views.find((x) => x.id === local);
     const p = placed(top);
     const want = [v.outline.p0, [v.outline.p1[0], v.outline.p0[1]], v.outline.p1, [v.outline.p0[0], v.outline.p1[1]]].map(([x, y]) => toSheetOf(top, [x, y]));
     const items = d().scene().scene.items;
@@ -146,39 +147,39 @@ M.run = async () => {
     const p = placed(top);
     const a = [p.at[0] - p.w * 0.2, p.at[1] - p.h * 0.15];
     const b = [p.at[0] + p.w * 0.15, p.at[1] + p.h * 0.1];
-    const before = drw().doc.views.length;
+    const before = page()?.views.length;
     await drag(a, b);
     const placeAt = [p.at[0] - 60, p.at[1] - p.h / 2 - 60];
     await click(placeAt);
-    await H.waitFor(() => drw().doc.views.length === before + 1, 10000, 'the refused view');
-    await H.waitFor(() => drw().problems.has(drw().doc.views.at(-1).id), 10000, 'the refusal');
-    const v = drw().doc.views.at(-1);
+    await H.waitFor(() => page()?.views.length === before + 1, 10000, 'the refused view');
+    await H.waitFor(() => drw().problems.has(page()?.views.at(-1).id), 10000, 'the refusal');
+    const v = page()?.views.at(-1);
     const problem = drw().problems.get(v.id) ?? '';
     const kept = v.depth === 999; // not silently clamped
     return { pass: /深度/.test(problem) && kept, problem, kept };
   });
 
   await step('5 Esc lets go: a rectangle dragged and let go, then Esc before placing, makes no view', async () => {
-    const before = drw().doc.views.length;
+    const before = page()?.views.length;
     await localOn();
     await setDepth(5);
     const p = placed(top);
     await drag([p.at[0] - p.w * 0.15, p.at[1] - p.h * 0.1], [p.at[0] + p.w * 0.1, p.at[1] + p.h * 0.05]);
     const waiting = (document.querySelector('[data-hint]')?.textContent ?? '').includes('放置');
     await key('Escape');
-    const none = drw().doc.views.length === before && (document.querySelector('[data-hint]')?.textContent ?? '').includes('局部剖視');
+    const none = page()?.views.length === before && (document.querySelector('[data-hint]')?.textContent ?? '').includes('局部剖視');
     return { pass: waiting && none, waiting, none };
   });
 
   await step('6 the file keeps it: saved and opened again, the local section is as it was', async () => {
-    const was = stable(drw().doc.views.find((x) => x.id === local));
+    const was = stable(page()?.views.find((x) => x.id === local));
     H.next.save = '定位板-局部剖視.3dbd';
     await H.action('檔案', '儲存檔案');
     await H.waitFor(() => !drw().dirty, 10000, 'the save');
     await H.open('定位板-局部剖視.3dbd');
     await H.waitFor(() => drw() && drw().fileName === '定位板-局部剖視.3dbd' && [...drw().lines.values()].filter(Boolean).length >= 4, 30000, 'the drawing to open');
     await H.wait(300);
-    const now = stable(drw().doc.views.find((x) => x.id === local));
+    const now = stable(page()?.views.find((x) => x.id === local));
     const same = now === was;
     return { pass: same && drw().doc.schemaVersion >= 21, same, schema: drw().doc.schemaVersion };
   });

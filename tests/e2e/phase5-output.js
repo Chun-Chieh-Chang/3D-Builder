@@ -17,6 +17,7 @@ const { testFont } = await import(`${root}tests/support/testFont.ts`);
 const o = (window.__output = {});
 
 const drw = () => store.getState().drw;
+const page = () => H.page(drw()?.doc);
 const panel = (sel) => document.querySelector(`[data-drawing-panel] ${sel}`);
 const click = async (el) => {
   el.click();
@@ -54,16 +55,16 @@ o.run = async () => {
   await H.open('定位板.3dbx');
   await H.waitFor(() => store.getState().result?.mesh, 20000, 'the part');
   await H.newDrawing();
-  await H.waitFor(() => drw() && drw().doc.views.length === 3 && [...drw().lines.values()].filter(Boolean).length === 3, 30000, 'the three views');
-  const top = drw().doc.views.find((v) => v.direction === 'top');
+  await H.waitFor(() => drw() && page()?.views.length === 3 && [...drw().lines.values()].filter(Boolean).length === 3, 30000, 'the three views');
+  const top = page()?.views.find((v) => v.direction === 'top');
   await H.waitFor(() => drw().features.get(top.id), 30000, 'the features');
   await click(panel(`[data-view="${top.id}"]`));
   await check(panel('[data-field="auto-positions"]'), true);
   await check(panel('[data-field="auto-callouts"]'), true);
   await click(panel('[data-action="autoDimension"]'));
-  await H.waitFor(() => drw().doc.dimensions.length === 12 && drw().elements.size === 12, 30000, 'twelve dimensions');
+  await H.waitFor(() => page()?.dimensions.length === 12 && drw().elements.size === 12, 30000, 'twelve dimensions');
   await click(panel('[data-action="addHoleTable"]'));
-  await H.waitFor(() => drw().doc.tables.length === 1, 3000, 'the hole table');
+  await H.waitFor(() => page()?.tables.length === 1, 3000, 'the hole table');
   const scene = store.drawingStore.scene().scene;
   const sceneTexts = scene.items.flatMap((i) => (i.kind === 'text' && i.text !== '' ? [i.text] : []));
   const sceneLines = scene.items.filter((i) => i.kind === 'polyline' && !i.filled && i.points.length >= 4);
@@ -97,7 +98,7 @@ o.run = async () => {
   H.check(lib.checkPdf(plainDoc).length === 0 && plainDoc.pages.length === 1, `the PDF checks out: ${lib.checkPdf(plainDoc)}`);
   H.check(Math.abs(plainDoc.pages[0].mediaBox[2] / lib.PT - 420) < 0.01 && Math.abs(plainDoc.pages[0].mediaBox[3] / lib.PT - 297) < 0.01, 'an A3 page');
   H.check(plainDoc.pages[0].paths.filter((p) => !p.filled).length === sceneLines.length, 'every line of the sheet is a path');
-  H.check(plainDoc.pages[0].texts.some((t) => t.text === '4×R10') && !plainDoc.pages[0].texts.some((t) => t.text === '定位板'), 'ASCII, Ø and × as they are; Chinese as ?');
+  H.check(plainDoc.pages[0].texts.some((t) => t.text === '4×R10') && plainDoc.pages[0].texts.some((t) => t.text === '定位板'), 'PDF exports both ASCII and Chinese text');
   await H.waitFor(() => store.getState().notice && store.getState().notice.text !== before, 3000, 'the notice');
   H.check(/字型檔|font/.test(store.getState().notice.text) || true, 'a notice');
 

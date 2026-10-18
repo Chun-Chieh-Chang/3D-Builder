@@ -27,6 +27,13 @@ H.waitFor = async (fn, ms = 10000, what = 'condition') => {
   throw new Error(`timeout waiting for ${what}`);
 };
 H.asm = () => store.getState().asm;
+H.drw = () => store.getState().drw;
+/** The active page (or page at index) of the open drawing (B2.8, ADR 0154). */
+H.page = (doc = store.getState().drw?.doc, index) => {
+  if (!doc) return undefined;
+  if (doc.pages) return doc.pages[index ?? store.getState().drw?.activePageIndex ?? 0];
+  return doc;
+};
 /** Every part file of the open assembly has been read and rebuilt (or found missing). */
 H.loaded = async () => {
   await H.wait(100);
@@ -89,8 +96,9 @@ window.showSaveFilePicker = async (o) => {
 
 // ---------------------------------------------------------------- command bar, tree, dialogs, PropertyManager
 H.tab = (name) => {
-  const t = [...document.querySelectorAll('.tabs .tab')].find((b) => b.textContent === name);
-  if (!t) throw new Error(`no tab ${name}`);
+  const tabs = [...document.querySelectorAll('.tabs .tab')];
+  const t = tabs.find((b) => b.textContent === name);
+  if (!t) throw new Error(`no tab ${name} (have: ${tabs.map((b) => b.textContent).join(', ') || 'none'})`);
   t.click();
 };
 H.btn = (label) => {
@@ -100,8 +108,10 @@ H.btn = (label) => {
   b.click();
 };
 H.action = async (tab, label) => {
+  await H.waitFor(() => [...document.querySelectorAll('.tabs .tab')].some((b) => b.textContent === tab), 10000, `tab ${tab}`);
   H.tab(tab);
   await H.wait(80);
+  await H.waitFor(() => [...document.querySelectorAll('.tools button')].some((x) => x.textContent === label), 10000, `button ${label}`);
   H.btn(label);
   await H.wait(150);
   // a drawing needs the project folder: without one remembered from an earlier run the app asks, and the stand-in answers
@@ -163,7 +173,7 @@ H.pmInput = async (label, value) => {
 H.canvas = () => document.querySelector('.viewport-canvas canvas');
 H.rect = () => H.canvas().getBoundingClientRect();
 /** A hidden pane never lays the page out: give the viewer its real size first. */
-H.ready = () => store.viewer.resize();
+H.ready = () => store.viewer?.resize();
 H.ptr = (type, x, y) => H.canvas().dispatchEvent(new PointerEvent(type, { clientX: x, clientY: y, bubbles: true, pointerId: 1, button: 0, buttons: type === 'pointerdown' ? 1 : 0 }));
 /** A left click at a fraction of the canvas; it must land inside it, like a real mouse. */
 H.clickAt = async (fx, fy) => {

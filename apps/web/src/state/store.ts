@@ -1363,6 +1363,11 @@ class AppStore {
     this.set({ pickFilter: { faces: true, edges: true, vertices: true, planes: true } });
   }
 
+  /** Programmatic filter toggle for tests and direct control */
+  setPickFilter(kind: keyof PickFilter, on: boolean): void {
+    this.set({ pickFilter: { ...this.state.pickFilter, [kind]: on } });
+  }
+
   /** F5, as the SW toggle of the Selection Filter toolbar (ADR 0145): shows or hides the bar; kept in the options like a toolbar state. */
   togglePickFilterBar(): void {
     const next = !this.state.pickFilterBarVisible;

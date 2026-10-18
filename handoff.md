@@ -1,5 +1,64 @@
 # 交接文件
 
+- **【2026-10-18：藍圖 C1.13 草圖文字特徵 (Sketch Text Feature) 全鏈路實作 [ADR 0163](docs/adr/0163-sketch-text.md) — 已提交並推送 `7a8ce37`（origin/main）】**
+  - **背景與目標**：實作草圖文字特徵（Sketch Text Feature，C1.13），支援基準面向量字型解析、外環逆時針（CCW）/ 內孔順時針（CW）定向前置保證、拓樸島嶼包含性 Nesting、3D 凸字長出（Extrude Boss）與凹字雕刻除料（Extrude Cut）、文字解散（Dissolve Text）轉換為標準線段圖元，以及全鏈路 Web 前端交互（放置/屬性面板/疊加層繪製）。
+  - **完成項目**：
+    1. **架構決策紀錄 (`docs/adr/0163-sketch-text.md`)**：定義 ASCII 工業 Sans-Serif 幾何字庫、幾何閉合輪廓、島嶼包含性 Nesting、OCCT 映射方案與自我紅隊四問檢驗標準。
+    2. **幾何字庫 (`packages/sketch/src/font.ts`)**：實作標準 ASCII 字符向量輪廓字典、有向面積計算、輪廓定向前置保證、`textContours` 字元排列與仿射變換（縮放/旋轉/對齊/粗斜體）。在 `packages/sketch/package.json` 導出 `./font` 子路徑供主執行緒安全引用（0 WASM 負載）。
+    3. **資料模型 (`@3db/model`, Schema 62)**：升版 `SCHEMA_VERSION = 62`；新增 `SketchTextEntity`；加入 schema 61 遷移；於 `sketchError` 校驗文字非空、字高大於 0、旋轉角為有限數；新增 `setSketchText` 指令。
+    4. **草圖抽象 (`@3db/sketch`)**：`SolvedGeometry` 擴充 `text` 型別；`profiles.ts` 之 `findProfiles` 逐字元輪廓構造封閉 loops 自然完成島嶼 Nesting；`ops.ts` 實作 `dissolveText` 將文字分解為獨立線段圖元並自動移除原文字。
+    5. **雙語字典 (`@3db/i18n`)**：補齊 `rules.text*`、`cmd.sketchItemNotText`、`hint.text`、`tool.text`、`entity.text`、`pm.text.*`、`help.toolText.*` 中英文多國語言與說明文檔。
+    6. **介面適配 (`apps/web`)**：`actions.ts` 註冊 `tool-text`；`controller.ts` 實作點擊放置與自動切換選取、`dissolveText`；`overlay.ts` 逐輪廓繪製多邊形向量輪廓；`PropertyManager.tsx` 實作文字特徵屬性面板。
+    7. **自我紅隊測試 (`tests/phase1/sketch-text.test.ts`)**：8 項測試全綠，驗證單孔文字長出、多孔文字長出、旋轉對齊、凸字長出、凹字除料、解散文字、非整數與負數輸入攔截、底層 WASM Heap 真值防呆。
+  - **確效與測試驗收**：
+    - `npm run typecheck`：**0 錯誤**。
+    - `node scripts/check-anti-patterns.mjs`：**全域 RSI 反模式靜態守門通過**。
+    - `node scripts/check-deps.mjs`：**Layering OK**。
+    - `node scripts/check-i18n.mjs`：**i18n OK**。
+    - `tests/phase1/sketch-text.test.ts`：**8 項測試全數通過 (100%)**。
+    - `tests/phase8/help.test.ts`：**40 項說明守門測試全數通過 (100%)**。
+    - `tests/phase1/`：**13 個測試檔、145 項測試全數通過 (100%)**。
+  - **停在哪裡**：已提交並推送 `7a8ce37`（origin/main）。
+
+- **【2026-10-18：藍圖 C1.18 草圖參考圖元與相交曲線 (Convert Entities & Intersection Curves) 全鏈路實作 [ADR 0162](docs/adr/0162-convert-entities.md) — 已提交並推送 `e8b0054`（origin/main）】**
+  - **背景與目標**：依據藍圖 C1.18 規範，實作草圖參考圖元投影（Convert Entities）與相交曲線（Intersection Curves）。支援邊緣正交投影、B-spline 樣條邊採樣投影為 `spline` 圖元、選取面外環轉換為封閉輪廓、實體曲面/平面與草圖平面相交求交線圖元，並具備 `followReferences` 幾何模型變更聯動更新閉環。
+  - **完成項目**：
+    1. **決策紀錄 (`docs/adr/0162-convert-entities.md`)**：定義正交投影數學公式、B-spline 曲線採樣投影、面與平面截交演算法、閉合環構建與紅隊四問標準。
+    2. **再生引擎 (`@3db/regen`)**：`references.ts` 之 `Projected` 支援樣條；`projectEdge` 支援 B-spline 曲線邊線採樣投影；`followReferences` 支援 `SketchSplineEntity` 模型聯動更新；實作 `intersectFaces()` 計算選取面與草圖平面的相交交線（支援平面與曲面相交）；更新 `convertEdges` 與 `convertReferences` 支援 `'intersect'` 模式與顯式防禦報錯。
+    3. **草圖層 (`@3db/sketch`)**：`ops.ts` 之 `ModelItem` 與 `ModelEdge` 支援樣條類型；`referenceEntities` 支援樣條圖元生成與共享頂點閉合輪廓。
+    4. **雙語字典 (`@3db/i18n`) 與介面**：補齊 `reference.noIntersection` 等中英文翻譯，擴充 Web UI 工具列與選單支援「相交曲線」操作。
+    5. **自我紅隊測試 (`tests/phase1/convert-entities-advanced.test.ts`)**：8 項測試全綠，驗證選取面外環長出體積、B-spline 投影樣條聯動、平面與斜面求交直線、圓柱曲面與草圖平面相交曲線、平行無相交面顯式報錯攔截、無效 Ref 遺失攔截、極端微小邊緣防禦與底層 WASM Heap 真值指標防呆。
+  - **停在哪裡**：已提交並推送 `e8b0054`（origin/main）。
+
+- **【2026-10-18：藍圖 C11.4 鈑金斷開角落與角落修剪 (Break Corner Feature) 全鏈路實作 [ADR 0161](docs/adr/0161-sheet-metal-break-corner.md) — 已提交並推送 `8250a17`（origin/main）】**
+  - **背景與目標**：依據藍圖 C11.4 規範，全面強化並實作鈑金斷開角落特徵（Sheet Metal Break Corner Feature）。消除早期僅限於凸緣自由端之局限，全面開放基材平板（Base Flange）、邊線凸緣（Edge Flange）、鈑金凸折（Jog）與摺邊（Hem）的外露厚度邊（Thickness edge）的倒角（Chamfer）與倒圓（Fillet），並確保 3D 實體切除與 2D 展平圖（Flat Pattern）下料輪廓、下料面積之閉式解嚴格吻合。
+  - **完成項目**：
+    1. **決策紀錄 (`docs/adr/0161-sheet-metal-break-corner.md`)**：定義厚度邊識別第一性原理、凸外角拓樸判定條件、尺寸相鄰邊長防禦與閉式解體積/面積檢驗標準。
+    2. **再生引擎 (`@3db/regen`)**：重構 `breakCorner()`：通用支援基板、凸緣、凸折等所有未封閉外角厚度邊；加入尺寸有效性（$size > 0$）與尺寸上限（不可大於相鄰板邊長度）之顯式前置防禦；`flatPattern.ts` 自然支援基板與凸緣角落修剪，展開圖精確生成倒角線段與圓弧輪廓。
+    3. **雙語字典 (`@3db/i18n`)**：新增 `breakCorner.sizeInvalid`，並更新提示文字。
+    4. **自我紅隊測試 (`tests/phase7/break-corner-advanced.test.ts`)**：8 項測試全綠，驗證基板單角倒角、4 角同時倒圓、凸緣基板複合倒角、凸折角倒圓、非厚度邊拒絕、超大尺寸拒絕、尺寸 $\le 0$ 拒絕與底層 WASM Heap 真值防呆。Phase 7 全套 162 項測試 100% 綠燈。
+  - **停在哪裡**：已提交並推送 `8250a17`（origin/main）。
+
+- **【2026-10-18：藍圖 C1.11 草圖樣條曲線 (Sketch Spline Feature) 全鏈路實作 [ADR 0160](docs/adr/0160-sketch-spline.md) — 已提交並推送 `1b3a34e`（origin/main）】**
+  - **背景與目標**：依據藍圖 C1.11 規範，實作草圖樣條曲線（Sketch Spline Feature）。支援型值點內插樣條曲線、閉合與開放曲線雙重語意、輪廓與外環/內孔拓樸偵測、薄件輪廓偏置支援，以及 3D 造型實體長出（Extrude Boss）、除料（Extrude Cut）、旋轉（Revolve）等核心造型管線之全鏈路閉環。
+  - **完成項目**：
+    1. **決策紀錄 (`docs/adr/0160-sketch-spline.md`)**：定義型值點內插幾何第一性原理、閉合與開放樣條語意、OCCT 映射方案與自我紅隊四問檢驗標準。
+    2. **資料模型 (`@3db/model`, Schema 61)**：升版 `SCHEMA_VERSION = 61`；新增 `SketchSplineEntity`；新增 schema 60 空遷移；在 `sketchError` 與 `entityPoints` 支援 `spline` 圖元並加入點數少於 2 與閉合少於 3 的顯式防禦。
+    3. **幾何核心 (`@3db/kernel`)**：`wire()` 新增 `spline` 分支，以 OpenCASCADE 原生導出之 `GeomAPI_PointsToBSpline` 擬合連續 $C^2$ 曲線，閉合樣條首尾補合形成單一封閉 Wire，支援拉伸長出、除料與旋轉特徵。
+    4. **草圖層與介面**：`profiles.ts` 支援多邊形採樣逼近與閉合環搜尋；`PropertyManager.tsx` 與 `overlay.ts` 補齊中英文字典與疊加層繪製。
+    5. **自我紅隊測試 (`tests/phase1/sketch-spline.test.ts`)**：8 項測試全綠，驗證有機閉合長出、開放複合環、除料切除、旋轉成形、少於 2/3 點拒絕、重合點防禦與 WASM Heap 真值指標。Phase 1 全套 129 項測試 100% 通過。
+  - **停在哪裡**：已提交並推送 `1b3a34e`（origin/main）。
+
+- **【2026-10-18：藍圖 C11.3 鈑金凸折特徵 (Sheet Metal Jog Feature) 全鏈路實作 [ADR 0159](docs/adr/0159-sheet-metal-jog.md) — 已提交並推送 `902a80f`（origin/main）】**
+  - **背景與目標**：實作鈑金凸折特徵（Sheet Metal Jog Feature，C11.3），在平板中間沿一條草圖線，將固定側保留，移動側朝法向階梯狀位移指定凸折高度 $H$ 與角度 $\theta$，並在過渡區構造兩道相反方向之折彎（Bend 1 與 Bend 2）與中間平直腹板（Intermediate Web），同時在 Flat Pattern 展開圖中登記兩條反向折彎線，達成下料展開與折彎成形的全鏈路閉環。
+  - **完成項目**：
+    1. **決策紀錄 (`docs/adr/0159-sheet-metal-jog.md`)**：定義凸折幾何第一性原理、中間腹板閉式解 $L_{web} = [H - (2r_b + T)(1 - \cos\theta)] / \sin\theta$、最小高度幾何相交硬約束 $H_{min} = (2r_b + T)(1 - \cos\theta)$ 與紅隊檢驗標準。
+    2. **資料模型 (`@3db/model`, Schema 60)**：升版 `SCHEMA_VERSION = 60`；新增 `JogFeature`、`setJog` 命令型別與 `validateNewFeature` 檢查；新增 schema 59 空遷移。
+    3. **依賴與再生 (`@3db/regen`)**：`dag.ts` 新增 `case 'jog':` 解析草圖線依賴；`engine.ts` 實作 `jog()`：以單次 2D 解析圓柱與平直腹板區域輪廓進行無縫拉伸長出，剛體平移移動側，雙向布林融合，並在 `sheet.bends`/`midBends` 登記兩道反向折彎；`flatPattern.ts` 展開圖繪製兩道反向折彎線。
+    4. **介面與狀態 (`apps/web`)**：新增 `store.newJog()`、`actions.jog`、`JogPanel`、`Icon.tsx` 與多語系支援。
+    5. **自我紅隊測試 (`tests/phase7/jog.test.ts`)**：8 項測試全綠，驗證 90°/45° 凸折、相切極限邊界（$H = H_{min}, L_{web} = 0$）、體積嚴格守恆 $\sum V = 7500\text{ mm}^3$（零 Mock）、展開圖兩道折彎線、$H < H_{min}$ 顯式攔截報錯與底層 WASM Heap 真值防呆。
+  - **停在哪裡**：已提交並推送 `902a80f`（origin/main）。
+
 - **【2026-10-18 晚：E1-P3 合併進 `main`（`8ade9ee`）＋ 主倉庫 help 防漏修補（`17a0d4f`）— 已推送 origin/main】**
   - **合併**：使用者指示「把 E1-P3 合入 main」。在主倉庫 `D:\Self-developed_Apps\G3\3D-Builder`（工作樹乾淨、`main` = `origin/main` `e8b0054`）執行 `git merge worktree-sidebar-parity --no-ff`：**零衝突**（17 檔自動合併；連 DEV_LOG／handoff 這類「雙方都在檔頭加條目」的日誌都乾淨併入——合併方向相反時曾需三段式重組，這次沒有）。合併提交 `8ade9ee`；E1-P3（`d2b5547`）自此進入 `main` 歷史，E1 側邊欄（[ADR 0155](docs/adr/0155-sidebar-tabs-hidden-contract.md)）三階段全部落地。
   - **合併後主倉庫自身的紅燈**：`help.test.ts` 擋下 `main` 自己的兩個動作——`jog`（ADR 0159，`902a80f`）與 `tool-intersect`（ADR 0162，`e8b0054`）沒配 help 說明（**在我合併前就已存在於 main**，非本次合併造成）。依「加指令必須同時加說明」約定補齊（鍵名規則：`helpKey()` 把連字符轉 camelCase → `help.jog.*`／`help.toolIntersect.*`，zh-TW＋en 兩冊）＋ `docs/help-links.json` `_untied` 登記事由，提交 `17a0d4f`。
@@ -7,7 +66,7 @@
   - **停在哪裡**：已推送 `8ade9ee`＋`17a0d4f` → `origin/main`（快轉 `e8b0054..17a0d4f`）。分支 `worktree-sidebar-parity` 與 worktree `D:\Self-developed_Apps\G3\3DB-sidebar-parity` 依使用者「合入後刪除」的指示完成清理：遠端分支已刪、`git worktree remove` 正規註銷、本地分支已刪；工作區內的本地資產（§2.2 驗證截圖 11 張、分支期全量 verify 日誌）已備份至主倉庫 `out/shots-sidebar/` 與 `scratch/sidebar-parity-worktree-2026-10-18/`。下一步（共同待辦）：B2.8 shape 2 的 23 支工程圖 e2e 遷移到 `page(drw().doc).views`（決策單 `8cb1f2b`）、組合件 §2.2（`asm.selected`）、特徵參數群組框（另案）。
 
 
-- **【2026-10-18：藍圖 C7.4 實體分割特徵 (Split Body Feature) [ADR 0158](docs/adr/0158-split-body.md) — 已完成本地確效】**
+- **【2026-10-18：藍圖 C7.4 實體分割特徵 (Split Body Feature) [ADR 0158](docs/adr/0158-split-body.md) — 已提交並推送 `f8e7c37`（origin/main）】**
   - **背景與目標**：實作實體分割特徵（Split Body Feature，C7.4），使用基準面（Datum Plane）或實體平面（Planar Face）將單一或多個目標本體切分為多個獨立 Solid，並建立雙向半空間切割、包圍盒相交防禦、TNP 拓樸面名稱繼承與多本體拆分管理之完整閉環。
   - **完成項目**：
     1. **架構決策紀錄 (`docs/adr/0158-split-body.md`)**：
@@ -39,9 +98,9 @@
     - `node scripts/check-i18n.mjs`：**i18n OK**。
     - `tests/phase1/split-body.test.ts`：**7 項測試全數通過 (100%)**。
     - `tests/phase1/`：**10 個測試檔、121 項測試全數通過 (100%)**。
-  - **停在哪裡**：本地確效 100% 通過，待向使用者回報結果並獲得許可後執行 git push。
+  - **停在哪裡**：已提交並推送 `f8e7c37`（origin/main）。
 
-- **【2026-10-18：藍圖 P2（C1.5 Phase A：草圖橢圓圖元與長出/旋轉特徵全鏈路實作）[ADR 0157](docs/adr/0157-sketch-ellipse.md) — 已完成本地確效】**
+- **【2026-10-18：藍圖 P2（C1.5 Phase A：草圖橢圓圖元與長出/旋轉特徵全鏈路實作）[ADR 0157](docs/adr/0157-sketch-ellipse.md) — 已提交並推送 `357232c`（origin/main）】**
   - **背景與目標**：依據藍圖推進規劃，完成草圖進階幾何圖元「橢圓（Ellipse）」的全鏈路閉環，支援 2D 草圖幾何求解映射、閉合輪廓與孔洞識別，並透過 OpenCASCADE 底層解析幾何 `gp_Elips`，使長出實體（Extrude Boss/Cut）、旋轉實體（Revolve）與斷面混成（Loft）全面支援橢圓。
   - **完成項目**：
     1. **架構決策紀錄 (`docs/adr/0157-sketch-ellipse.md`)**：
@@ -72,7 +131,7 @@
     - `node scripts/check-i18n.mjs`：**i18n OK**。
     - `packages/model/test`：**9 個測試檔、160 項單元測試全數通過 (100%)**。
     - `tests/phase1/`：**9 個測試檔、114 項測試全數通過 (100%)**。
-  - **停在哪裡**：本機全套測試通過，待向使用者回報並確認 git push。
+  - **停在哪裡**：已提交並推送 `357232c`（origin/main）。
 
 - **【2026-10-18：pstack poteto-mode 代碼品質深度審查與外科手術式優化 — 已提交並推送 `b288c62`（origin/main）】**
   - **背景與目標**：依據 `@poteto` 的 `pstack-poteto-mode` 與 `pstack-unslop` 規範，對近期新增模組進行深度的行為契約鎖定、GC 垃圾分配消除與記憶體防禦硬化。

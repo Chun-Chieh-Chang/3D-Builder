@@ -26,10 +26,11 @@ const step = async (name, fn) => {
   return r;
 };
 const drw = () => store.getState().drw;
+const page = () => H.page(drw()?.doc);
 const d = () => store.drawingStore;
 const near = (a, b, tol = 0.02) => Math.abs(a - b) <= tol;
 const placed = (id) => d().scene().placed.get(id);
-const viewOf = (dir) => drw().doc.views.find((v) => v.direction === dir);
+const viewOf = (dir) => page()?.views.find((v) => v.direction === dir);
 const canvas = () => document.querySelector('[data-drawing-canvas]');
 const toClient = ([x, y]) => {
   const r = document.querySelector('[data-svg] svg').getBoundingClientRect();
@@ -85,7 +86,7 @@ M.run = async () => {
     await H.open('定位板.3dbx');
     await H.waitFor(() => store.getState().result?.mesh, 20000, 'the part');
     await H.newDrawing();
-    await H.waitFor(() => drw() && drw().doc.views.length === 3 && [...drw().lines.values()].filter(Boolean).length === 3 && drw().features.size === 3, 30000, 'the three views and their elements');
+    await H.waitFor(() => drw() && page()?.views.length === 3 && [...drw().lines.values()].filter(Boolean).length === 3 && drw().features.size === 3, 30000, 'the three views and their elements');
     await H.wait(300);
     top = viewOf('top').id;
     const on = await slantOn();
@@ -98,18 +99,18 @@ M.run = async () => {
     const p = placed(top);
     const from = [p.at[0] - p.w * 0.3, p.at[1] - p.h * 0.25];
     const to = [p.at[0] + p.w * 0.3, p.at[1] + p.h * 0.25];
-    const before = drw().doc.views.length;
+    const before = page()?.views.length;
     const previewed = await drag(from, to);
-    const waits = drw().doc.views.length === before && drw().tool?.kind === 'section';
+    const waits = page()?.views.length === before && drw().tool?.kind === 'section';
     // below the top view: above it is the front view (first angle)
     const placeAt = [p.at[0] + 10, p.at[1] - p.h / 2 - 60];
     await hoverAt(placeAt);
     // no standard view looks the slanted way: its preview is asked of the worker, and drawn when it comes
     const ghost = await H.waitFor(() => document.querySelector('[data-ghost]'), 15000, 'the preview of the slanted section').then(() => true, () => false);
     await click(placeAt);
-    await H.waitFor(() => drw().lines.get(drw().doc.views.at(-1).id), 30000, 'the section lines');
+    await H.waitFor(() => drw().lines.get(page()?.views.at(-1).id), 30000, 'the section lines');
     await H.wait(200);
-    const v = drw().doc.views.at(-1);
+    const v = page()?.views.at(-1);
     dragged = v.id;
     const [a, b] = v.line;
     const slanted = Math.abs(b[0] - a[0]) > 1 && Math.abs(b[1] - a[1]) > 1;
@@ -138,17 +139,17 @@ M.run = async () => {
     const p = placed(top);
     const first = [p.at[0] - 8, p.at[1] - 4];
     const second = [p.at[0] + 8, p.at[1] + 14];
-    const before = drw().doc.views.length;
+    const before = page()?.views.length;
     await click(first);
-    const waitsForDirection = drw().doc.views.length === before && drw().tool?.kind === 'section';
+    const waitsForDirection = page()?.views.length === before && drw().tool?.kind === 'section';
     await hoverAt(second);
     const previewed = !!document.querySelector('[data-slant-preview]');
     await click(second);
     const placeAt = [p.at[0] + p.w / 2 + 70, p.at[1] - 20];
     await click(placeAt, { ctrlKey: true });
-    await H.waitFor(() => drw().doc.views.length === before + 1 && drw().lines.get(drw().doc.views.at(-1).id), 30000, 'the second section');
+    await H.waitFor(() => page()?.views.length === before + 1 && drw().lines.get(page()?.views.at(-1).id), 30000, 'the second section');
     await H.wait(200);
-    const v = drw().doc.views.at(-1);
+    const v = page()?.views.at(-1);
     const [a, b] = v.line;
     const angle = degrees(a, b);
     const want = degrees(first, second);
@@ -157,7 +158,7 @@ M.run = async () => {
   });
 
   await step('4 a slanted line moved off the part cuts nothing, and the view says so instead of failing or drawing an empty section', async () => {
-    const was = drw().doc.views.find((v) => v.id === dragged).line;
+    const was = page()?.views.find((v) => v.id === dragged).line;
     d().setView(dragged, { line: [[1000, 1000], [1010, 1012]] });
     await H.waitFor(() => drw().problems.get(dragged), 30000, 'the problem of the section');
     const problem = drw().problems.get(dragged);
@@ -167,14 +168,14 @@ M.run = async () => {
   });
 
   await step('5 the file keeps the slanted sections: saved and opened again, their lines are as they were', async () => {
-    const sections = stable(drw().doc.views.filter((v) => v.kind === 'section'));
+    const sections = stable(page()?.views.filter((v) => v.kind === 'section'));
     H.next.save = '定位板-斜剖.3dbd';
     await H.action('檔案', '儲存檔案');
     await H.waitFor(() => !drw().dirty, 10000, 'the save');
     await H.open('定位板-斜剖.3dbd');
     await H.waitFor(() => drw() && drw().fileName === '定位板-斜剖.3dbd' && [...drw().lines.values()].filter(Boolean).length >= 5, 30000, 'the drawing to open');
     await H.wait(300);
-    const same = stable(drw().doc.views.filter((v) => v.kind === 'section')) === sections;
+    const same = stable(page()?.views.filter((v) => v.kind === 'section')) === sections;
     return { pass: same && drw().doc.schemaVersion >= 17, same, schema: drw().doc.schemaVersion };
   });
   return { name: 'drawing-slanted-section', steps, pass: steps.every((s) => s.pass) };

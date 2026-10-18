@@ -15,6 +15,7 @@ const { store } = H;
 const v = (window.__views = {});
 
 const drw = () => store.getState().drw;
+const page = () => H.page(drw()?.doc);
 const near = (a, b, tol = 1e-6) => Math.abs(a - b) <= tol;
 const panel = (sel) => document.querySelector(`[data-drawing-panel] ${sel}`);
 const type = async (el, text) => {
@@ -39,8 +40,8 @@ v.run = async () => {
   await H.open('定位板.3dbx');
   await H.waitFor(() => store.getState().result?.mesh, 20000, 'the part');
   await H.newDrawing();
-  await H.waitFor(() => drw() && drw().doc.views.length === 3 && [...drw().lines.values()].filter(Boolean).length === 3, 30000, 'the three views');
-  const front = drw().doc.views.find((x) => x.direction === 'front');
+  await H.waitFor(() => drw() && page()?.views.length === 3 && [...drw().lines.values()].filter(Boolean).length === 3, 30000, 'the three views');
+  const front = page()?.views.find((x) => x.direction === 'front');
 
   // nothing selected: the derived views cannot be made
   H.check(panel('[data-action="addSection"]').disabled, 'no section without a parent');
@@ -50,8 +51,8 @@ v.run = async () => {
   H.check(drw().selected === front.id, 'the front view is selected');
   await type(panel('[data-field="sectionAt"]'), '40');
   await click(panel('[data-action="addSection"]'));
-  await H.waitFor(() => drw().doc.views.length === 4, 3000, 'the section');
-  const section = drw().doc.views[3];
+  await H.waitFor(() => page()?.views.length === 4, 3000, 'the section');
+  const section = page()?.views[3];
   H.check(section.kind === 'section' && section.parent === front.id && section.label === 'A' && JSON.stringify(section.line) === '[[40,-5],[40,20]]', `the section: ${JSON.stringify(section)}`);
   await H.waitFor(() => drw().lines.get(section.id), 30000, 'the lines of the section');
   const lines = drw().lines.get(section.id);
@@ -76,7 +77,7 @@ v.run = async () => {
   // flipped: the arrows point the other way, the material taken away is the other half, and the section moves to the other side
   await click(panel(`[data-view="${section.id}"]`));
   await click(panel('[data-field="flip"]'));
-  await H.waitFor(() => drw().doc.views[3].flip === true, 3000, 'the flip');
+  await H.waitFor(() => page()?.views[3].flip === true, 3000, 'the flip');
   await H.waitFor(() => drw().lines.get(section.id)?.cut?.length > 4, 30000, 'the other half');
   // the side its arrows look to is taken by the right view (first angle: left of the front view), so the section goes to the next free side:
   // the rule is that no two views overlap
@@ -86,17 +87,17 @@ v.run = async () => {
     return [p.at[0] + (b.min[0] - p.centre[0]) * p.scale, p.at[1] + (b.min[1] - p.centre[1]) * p.scale, p.at[0] + (b.max[0] - p.centre[0]) * p.scale, p.at[1] + (b.max[1] - p.centre[1]) * p.scale];
   };
   const overlap = (a, b) => a[0] < b[2] - 1e-6 && b[0] < a[2] - 1e-6 && a[1] < b[3] - 1e-6 && b[1] < a[3] - 1e-6;
-  const others = drw().doc.views.filter((x) => x.id !== section.id && drw().lines.get(x.id));
+  const others = page()?.views.filter((x) => x.id !== section.id && drw().lines.get(x.id));
   H.check(others.length === 3 && others.every((x) => !overlap(rect(section.id), rect(x.id))), 'flipped: the section overlaps no other view');
   await click(panel('[data-field="flip"]'));
-  await H.waitFor(() => !drw().doc.views[3].flip, 3000, 'the flip back');
+  await H.waitFor(() => !page()?.views[3].flip, 3000, 'the flip back');
 
   // a view projected above the front view (first angle: it is the bottom view)
   await click(panel(`[data-view="${front.id}"]`));
   await choose(panel('[data-field="newSide"]'), 'up');
   await click(panel('[data-action="addProjected"]'));
-  await H.waitFor(() => drw().doc.views.length === 5, 3000, 'the projected view');
-  const projected = drw().doc.views[4];
+  await H.waitFor(() => page()?.views.length === 5, 3000, 'the projected view');
+  const projected = page()?.views[4];
   H.check(projected.kind === 'projected' && projected.parent === front.id && projected.side === 'up', 'projected from the front view, above');
   await H.waitFor(() => drw().lines.get(projected.id), 30000, 'the lines of the projected view');
   const pb = drw().lines.get(projected.id).box;
@@ -109,8 +110,8 @@ v.run = async () => {
   await type(panel('[data-field="detailY"]'), '7.5');
   await type(panel('[data-field="detailRadius"]'), '8');
   await click(panel('[data-action="addDetail"]'));
-  await H.waitFor(() => drw().doc.views.length === 6, 3000, 'the detail');
-  const detail = drw().doc.views[5];
+  await H.waitFor(() => page()?.views.length === 6, 3000, 'the detail');
+  const detail = page()?.views[5];
   H.check(detail.kind === 'detail' && detail.label === 'B' && JSON.stringify(detail.centre) === '[50,7.5]' && detail.radius === 8 && JSON.stringify(detail.scale) === '[2,1]', `the detail: ${JSON.stringify(detail)}`);
   const pd = placed().get(detail.id);
   H.check(near(pd.w, 32) && near(pd.h, 32), `a detail has the size of its circle at its scale: ${pd.w} × ${pd.h}`);
@@ -118,19 +119,19 @@ v.run = async () => {
   H.check(texts2.includes('B') && texts2.includes('B (2:1)'), 'the detail has its letter and scale');
 
   // deleting the front view takes everything that comes from it
-  const count = drw().doc.views.length;
+  const count = page()?.views.length;
   store.drawingStore.deleteViews([projected.id]);
-  await H.waitFor(() => drw().doc.views.length === count - 1, 3000, 'delete');
+  await H.waitFor(() => page()?.views.length === count - 1, 3000, 'delete');
   store.undo();
-  await H.waitFor(() => drw().doc.views.length === count, 3000, 'undo');
+  await H.waitFor(() => page()?.views.length === count, 3000, 'undo');
 
   // saved, opened again: the same views and the same lines
   H.next.save = '定位板.3dbd';
   await H.action('檔案', '儲存檔案');
   await H.waitFor(() => !drw().dirty, 10000, 'the save');
   await H.open('定位板.3dbd');
-  await H.waitFor(() => drw() && drw().fileName === '定位板.3dbd' && drw().doc.views.length === 6 && drw().lines.get(drw().doc.views[3].id)?.cut?.length > 4, 40000, 'the drawing to open');
-  H.check(JSON.stringify(drw().doc.views.map((x) => x.kind ?? 'model')) === JSON.stringify(['model', 'model', 'model', 'section', 'projected', 'detail']), 'the same views');
+  await H.waitFor(() => drw() && drw().fileName === '定位板.3dbd' && page()?.views.length === 6 && drw().lines.get(page()?.views[3].id)?.cut?.length > 4, 40000, 'the drawing to open');
+  H.check(JSON.stringify(page()?.views.map((x) => x.kind ?? 'model')) === JSON.stringify(['model', 'model', 'model', 'section', 'projected', 'detail']), 'the same views');
   console.log('phase5-views: all checks passed');
   return true;
 };

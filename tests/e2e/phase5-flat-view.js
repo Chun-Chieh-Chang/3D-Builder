@@ -14,6 +14,7 @@ const { store } = H;
 const x = (window.__flatView = {});
 
 const drw = () => store.getState().drw;
+const page = () => H.page(drw()?.doc);
 const panel = (sel) => document.querySelector(`[data-drawing-panel] ${sel}`);
 const choose = async (el, value) => {
   Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value').set.call(el, value);
@@ -27,11 +28,11 @@ x.run = async () => {
   await H.open('支架.3dbx');
   await H.waitFor(() => store.getState().result?.mesh, 20000, 'the part');
   await H.newDrawing();
-  await H.waitFor(() => drw() && drw().doc.views.length === 3 && [...drw().lines.values()].filter(Boolean).length === 3, 30000, 'the three views');
+  await H.waitFor(() => drw() && page()?.views.length === 3 && [...drw().lines.values()].filter(Boolean).length === 3, 30000, 'the three views');
   await choose(panel('[data-field="newDirection"]'), 'flat');
   panel('[data-action="addView"]').click();
-  await H.waitFor(() => drw().doc.views.length === 4 && drw().lines.get(drw().doc.views[3].id), 30000, 'the flat view');
-  const flat = drw().doc.views[3];
+  await H.waitFor(() => page()?.views.length === 4 && drw().lines.get(page()?.views[3].id), 30000, 'the flat view');
+  const flat = page()?.views[3];
   H.check(flat.direction === 'flat', `a view of direction flat: ${flat.direction}`);
   const lines = drw().lines.get(flat.id);
   H.check(lines.center?.length === 3, `three bend lines (chain): ${lines.center?.length}`);
@@ -41,10 +42,10 @@ x.run = async () => {
   const { scene } = store.drawingStore.scene();
   H.check(scene.items.filter((i) => i.kind === 'polyline' && i.style === 'center').length >= 3, 'the bend lines are drawn as chain lines');
   // views projected or cut from it are refused
-  const before = drw().doc.views.length;
+  const before = page()?.views.length;
   store.drawingStore.addProjected(flat.id, 'right');
-  H.check(drw().doc.views.length === before, 'a projected view of it is refused');
-  return { views: drw().doc.views.map((v) => [v.name, v.direction]), box };
+  H.check(page()?.views.length === before, 'a projected view of it is refused');
+  return { views: page()?.views.map((v) => [v.name, v.direction]), box };
 };
 
 /** A part that is not sheet metal says so in place of lines. */
@@ -54,11 +55,11 @@ x.notSheet = async () => {
   await H.open('定位板.3dbx');
   await H.waitFor(() => store.getState().result?.mesh, 20000, 'the part');
   await H.newDrawing();
-  await H.waitFor(() => drw() && drw().doc.views.length === 3 && [...drw().lines.values()].filter(Boolean).length === 3, 30000, 'the three views');
+  await H.waitFor(() => drw() && page()?.views.length === 3 && [...drw().lines.values()].filter(Boolean).length === 3, 30000, 'the three views');
   await choose(panel('[data-field="newDirection"]'), 'flat');
   panel('[data-action="addView"]').click();
-  await H.waitFor(() => drw().doc.views.length === 4 && drw().problems.get(drw().doc.views[3].id), 30000, 'the reason');
-  const why = drw().problems.get(drw().doc.views[3].id);
+  await H.waitFor(() => page()?.views.length === 4 && drw().problems.get(page()?.views[3].id), 30000, 'the reason');
+  const why = drw().problems.get(page()?.views[3].id);
   H.check(/鈑金/.test(why), `the reason: ${why}`);
   return why;
 };

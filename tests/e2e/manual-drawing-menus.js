@@ -26,8 +26,9 @@ const step = async (name, fn) => {
   return r;
 };
 const drw = () => store.getState().drw;
+const page = () => H.page(drw()?.doc);
 const d = () => store.drawingStore;
-const viewOf = (dir) => drw().doc.views.find((v) => v.direction === dir);
+const viewOf = (dir) => page()?.views.find((v) => v.direction === dir);
 const canvas = () => document.querySelector('[data-drawing-canvas]');
 const toClient = ([x, y]) => {
   const r = document.querySelector('[data-svg] svg').getBoundingClientRect();
@@ -60,7 +61,7 @@ M.run = async () => {
     await H.waitFor(() => store.getState().result?.mesh, 20000, 'the part');
     const partTabs = tabs();
     await H.newDrawing();
-    await H.waitFor(() => drw() && drw().doc.views.length === 3 && [...drw().lines.values()].filter(Boolean).length === 3, 30000, 'the three views');
+    await H.waitFor(() => drw() && page()?.views.length === 3 && [...drw().lines.values()].filter(Boolean).length === 3, 30000, 'the three views');
     await H.wait(200);
     const t = tabs();
     return { pass: partTabs.includes('特徵') && JSON.stringify(t) === JSON.stringify(['視圖配置', '註記', '檔案']), partTabs, t };
@@ -92,8 +93,8 @@ M.run = async () => {
     d().select(top.id);
     await H.waitFor(() => drw().features.get(top.id), 30000, 'the features of the top view');
     d().autoDimension(top.id, { overall: true, holes: false, callouts: false, positions: false });
-    await H.waitFor(() => drw().doc.dimensions.length >= 2 && drw().doc.dimensions.every((x) => d().scene().dimensions.get(x.id)), 30000, 'the dimensions');
-    dims = drw().doc.dimensions.filter((x) => x.view === top.id).map((x) => x.id);
+    await H.waitFor(() => page()?.dimensions.length >= 2 && page()?.dimensions.every((x) => d().scene().dimensions.get(x.id)), 30000, 'the dimensions');
+    dims = page()?.dimensions.filter((x) => x.view === top.id).map((x) => x.id);
     const key = `${top.id}:dimension`;
     const folder = document.querySelector(`[data-tree-folder="${key}"]`);
     const closedFirst = !document.querySelector(`[data-tree-dim="${dims[0]}"]`);
@@ -112,10 +113,10 @@ M.run = async () => {
     const kind = menu()?.getAttribute('data-drawing-menu');
     menuItem('menuReference').click();
     await H.wait(150);
-    const made = drw().doc.dimensions.find((x) => x.id === dims[0]).reference === true;
+    const made = page()?.dimensions.find((x) => x.id === dims[0]).reference === true;
     store.undo();
     await H.wait(150);
-    const back = !drw().doc.dimensions.find((x) => x.id === dims[0]).reference;
+    const back = !page()?.dimensions.find((x) => x.id === dims[0]).reference;
     return { pass: chosen && kind === 'dimension' && made && back && !menu(), chosen, kind, made, back };
   });
   await step('5 two dimensions chosen, the right button on one of them keeps both chosen; 刪除 deletes both in one step, undone in one', async () => {
@@ -125,10 +126,10 @@ M.run = async () => {
     const kept = drw().selection.length === 2;
     menuItem('menuDelete').click();
     await H.wait(200);
-    const gone = !drw().doc.dimensions.some((x) => dims.slice(0, 2).includes(x.id));
+    const gone = !page()?.dimensions.some((x) => dims.slice(0, 2).includes(x.id));
     store.undo();
     await H.wait(200);
-    const back = dims.slice(0, 2).every((id) => drw().doc.dimensions.some((x) => x.id === id));
+    const back = dims.slice(0, 2).every((id) => page()?.dimensions.some((x) => x.id === id));
     return { pass: kept && gone && back, kept, gone, back };
   });
   await step('6 the right button on the front view (away from its lines): its menu; 「移除隱藏線」 (one of the display styles, ADR 0146) takes its hidden lines away', async () => {
@@ -165,14 +166,14 @@ M.run = async () => {
     const folder = document.querySelector(`[data-tree-folder="${key}"]`);
     folder.click();
     await H.wait(150);
-    const id = drw().doc.annotations[0].id;
+    const id = page()?.annotations[0].id;
     const row = document.querySelector(`[data-tree-annotation="${id}"]`);
     row.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: 150, clientY: 300 }));
     await H.wait(150);
     const kind = menu()?.getAttribute('data-drawing-menu');
     menuItem('menuDelete').click();
     await H.wait(200);
-    return { pass: folder.textContent.includes('註記（1）') && row.textContent.includes('去毛邊') && kind === 'annotation' && (drw().doc.annotations ?? []).length === 0, folder: folder.textContent, row: row.textContent, kind };
+    return { pass: folder.textContent.includes('註記（1）') && row.textContent.includes('去毛邊') && kind === 'annotation' && (page()?.annotations ?? []).length === 0, folder: folder.textContent, row: row.textContent, kind };
   });
   const pass = steps.every((s) => s.pass);
   return { name: 'manual-drawing-menus', steps, pass };

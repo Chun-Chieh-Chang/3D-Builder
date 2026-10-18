@@ -27,8 +27,12 @@ const step = async (name, fn) => {
   return r;
 };
 const drw = () => store.getState().drw;
-const allLines = () => drw() && drw().doc.views.length === 3 && [...drw().lines.values()].filter(Boolean).length === 3;
-const sheetOf = (doc) => JSON.stringify({ scale: doc.sheet.scale, shift: doc.sheet.shift ?? null });
+const page = (d = drw()?.doc) => H.page(d);
+const allLines = () => drw() && page()?.views.length === 3 && [...drw().lines.values()].filter(Boolean).length === 3;
+const sheetOf = (doc) => {
+  const s = doc?.sheet ?? H.page(doc)?.sheet;
+  return JSON.stringify({ scale: s?.scale, shift: s?.shift ?? null });
+};
 
 /** The worker's answers about what the views can be dimensioned from, held until `release()`: the kernel that has not got there yet. */
 let release = () => {};
@@ -88,14 +92,14 @@ M.run = async () => {
     const fitted = sheetOf(drw().doc);
     store.drawingStore.undo();
     await H.wait(100);
-    const undone = { views: drw().doc.views.length, sheet: sheetOf(drw().doc), canUndo: drw().canUndo };
+    const undone = { views: page()?.views.length, sheet: sheetOf(drw().doc), canUndo: drw().canUndo };
     store.drawingStore.redo();
     await H.waitFor(allLines, 30000, 'the three views again');
-    const redone = { views: drw().doc.views.length, sheet: sheetOf(drw().doc), dirty: drw().dirty };
+    const redone = { views: page()?.views.length, sheet: sheetOf(drw().doc), dirty: drw().dirty };
     return { pass: undone.views === 0 && undone.sheet === unfitted && !undone.canUndo && redone.views === 3 && redone.sheet === fitted && !redone.dirty, undone, redone, fitted, unfitted };
   });
   await step('5 「開啟零件」 opens the part without asking about changes', async () => {
-    const front = drw().doc.views.find((v) => v.direction === 'front');
+    const front = page()?.views.find((v) => v.direction === 'front');
     store.openPartOfDrawing(store.drawingStore.viewSourcePath(front.id));
     await H.wait(200);
     const asked = !!store.getState().unsaved;

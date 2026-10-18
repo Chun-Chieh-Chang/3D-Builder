@@ -16,6 +16,7 @@ const { store } = H;
 const a = (window.__angle = {});
 
 const drw = () => store.getState().drw;
+const page = () => H.page(drw()?.doc);
 const panel = (sel) => document.querySelector(`[data-drawing-panel] ${sel}`);
 const choose = async (el, value) => {
   Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value').set.call(el, String(value));
@@ -30,8 +31,8 @@ a.run = async () => {
   await H.open('支架.3dbx');
   await H.waitFor(() => store.getState().result?.mesh, 20000, 'the part');
   await H.newDrawing();
-  await H.waitFor(() => drw() && drw().doc.views.length === 3 && [...drw().lines.values()].filter(Boolean).length === 3, 30000, 'the three views');
-  const right = drw().doc.views.find((v) => v.direction === 'right');
+  await H.waitFor(() => drw() && page()?.views.length === 3 && [...drw().lines.values()].filter(Boolean).length === 3, 30000, 'the three views');
+  const right = page()?.views.find((v) => v.direction === 'right');
   panel(`[data-view="${right.id}"]`).click();
   await H.waitFor(() => drw().features.get(right.id), 30000, 'the features of the right view');
   const features = drw().features.get(right.id);
@@ -47,13 +48,13 @@ a.run = async () => {
   await choose(A, 0);
   await choose(B, slantAt[0]);
   panel('[data-action="addAngle"]').click();
-  await H.waitFor(() => drw().doc.dimensions.length === 1 && texts().length === 1 && !texts()[0].includes('…'), 10000, 'the first angle');
+  await H.waitFor(() => page()?.dimensions.length === 1 && texts().length === 1 && !texts()[0].includes('…'), 10000, 'the first angle');
   H.check(texts()[0] === '45°', `a plane and a slanted face: ${texts()[0]}`);
   // two slanted faces: square to each other
   await choose(A, slantAt[0]);
   await choose(B, slantAt[1]);
   panel('[data-action="addAngle"]').click();
-  await H.waitFor(() => drw().doc.dimensions.length === 2 && texts().length === 2 && !texts().some((t) => t.includes('…')), 10000, 'the second angle');
+  await H.waitFor(() => page()?.dimensions.length === 2 && texts().length === 2 && !texts().some((t) => t.includes('…')), 10000, 'the second angle');
   H.check(texts().includes('90°'), `two faces square to each other: ${texts().join(' ')}`);
 
   // the first one: the other angle, and a bigger arc
@@ -61,14 +62,14 @@ a.run = async () => {
   await H.wait(300);
   panel('[data-field="dimSupplementary"]').click();
   await H.waitFor(() => texts().includes('135°'), 10000, 'the other angle');
-  H.check(drw().doc.dimensions[0].supplementary === true, 'kept in the dimension');
+  H.check(page()?.dimensions[0].supplementary === true, 'kept in the dimension');
   const arc = panel('[data-field="dimArc"]');
   Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(arc, '30');
   arc.dispatchEvent(new Event('input', { bubbles: true }));
   arc.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
-  await H.waitFor(() => drw().doc.dimensions[0].arc === 30, 5000, 'the arc radius');
+  await H.waitFor(() => page()?.dimensions[0].arc === 30, 5000, 'the arc radius');
   panel('[data-field="dimSupplementary"]').click();
   await H.waitFor(() => texts().includes('45°') && !texts().includes('135°'), 10000, 'back to the first angle');
-  H.check(!('supplementary' in drw().doc.dimensions[0]), 'and taken out of the dimension');
+  H.check(!('supplementary' in page()?.dimensions[0]), 'and taken out of the dimension');
   return { texts: texts() };
 };

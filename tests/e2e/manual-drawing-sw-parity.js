@@ -29,8 +29,9 @@ const step = async (name, fn) => {
   return r;
 };
 const drw = () => store.getState().drw;
+const page = () => H.page(drw()?.doc);
 const d = () => store.drawingStore;
-const viewOf = (dir) => drw().doc.views.find((v) => v.direction === dir);
+const viewOf = (dir) => page()?.views.find((v) => v.direction === dir);
 const placedOf = (id) => d().scene().placed.get(id);
 const canvas = () => document.querySelector('[data-drawing-canvas]');
 /** Sheet mm (from the lower left) on the screen: the SVG is the sheet, whatever the pan and the zoom. */
@@ -78,7 +79,7 @@ const setNumber = async (el, v) => {
 };
 const panel = (sel) => document.querySelector(`[data-drawing-panel] ${sel}`);
 const close = (a, b, tol = 1e-9) => a.every((v, i) => Math.abs(v - b[i]) <= tol);
-const allLines = () => drw() && drw().doc.views.every((v) => drw().lines.get(v.id));
+const allLines = () => drw() && page()?.views.every((v) => drw().lines.get(v.id));
 /** What the scene draws for a dimension: its texts' heights, its lines' widths, whether any is filled. */
 const drawnOf = (id) => {
   const items = d().scene().scene.items.filter((i) => i.group === id);
@@ -92,13 +93,13 @@ M.run = async () => {
     await H.open('定位板.3dbx');
     await H.waitFor(() => store.getState().result?.mesh, 20000, 'the part');
     await H.newDrawing();
-    await H.waitFor(() => drw() && drw().doc.views.length === 3 && allLines(), 30000, 'the three views');
+    await H.waitFor(() => drw() && page()?.views.length === 3 && allLines(), 30000, 'the three views');
     d().setSheet({ projection: 'third' });
     await H.waitFor(allLines, 30000, 'the views in third angle');
     H.next.save = '定位板.3dbd';
     await H.action('檔案', '儲存檔案');
     await H.waitFor(() => !drw().dirty && drw().fileName === '定位板.3dbd', 10000, 'the save');
-    return { pass: drw().doc.sheet.projection === 'third' };
+    return { pass: page()?.sheet.projection === 'third' };
   });
 
   await step('1a 「開啟零件」 is always on the drawing\'s tree, naming the part, and in the 檔案 menu', async () => {
@@ -118,7 +119,7 @@ M.run = async () => {
     const r = store.getState().returnTo;
     const back = await H.waitFor(() => document.querySelector('[data-action="returnBack"]'), 5000, 'the return bar');
     back.click();
-    await H.waitFor(() => store.getState().active === 'drawing' && drw()?.fileName === '定位板.3dbd' && drw().doc.views.length === 3 && allLines(), 30000, 'the drawing again');
+    await H.waitFor(() => store.getState().active === 'drawing' && drw()?.fileName === '定位板.3dbd' && page()?.views.length === 3 && allLines(), 30000, 'the drawing again');
     return { pass: r?.kind === 'drawing' && store.getState().active === 'drawing', returnTo: r };
   });
   await step('1c the 檔案 menu\'s 「開啟零件」 does the same', async () => {
@@ -126,7 +127,7 @@ M.run = async () => {
     await H.waitFor(() => store.getState().active === 'part' && store.getState().result?.mesh, 20000, 'the part to open');
     const r = store.getState().returnTo;
     document.querySelector('[data-action="returnBack"]').click();
-    await H.waitFor(() => store.getState().active === 'drawing' && drw()?.doc.views.length === 3 && allLines(), 30000, 'the drawing again');
+    await H.waitFor(() => store.getState().active === 'drawing' && page()?.views.length === 3 && allLines(), 30000, 'the drawing again');
     return { pass: r?.kind === 'drawing' && store.getState().active === 'drawing', returnTo: r };
   });
 
@@ -172,8 +173,8 @@ M.run = async () => {
     send('pointerdown', toClient(at));
     send('pointerup', toClient(at));
     await H.wait(300);
-    iso = drw().doc.views.find((v) => v.kind === 'projected' && v.side === 'upRight');
-    const axes = iso && axesOf(drw().doc.views, 'third', iso);
+    iso = page()?.views.find((v) => v.kind === 'projected' && v.side === 'upRight');
+    const axes = iso && axesOf(page()?.views, 'third', iso);
     const want = viewVectors('isometric').dir.map((x) => x / Math.sqrt(3));
     return { pass: !!iso && close(axes.dir, want, 1e-12) && Math.abs(iso.at[0] - at[0]) <= 0.01 && Math.abs(iso.at[1] - at[1]) <= 0.01 && iso.display === 'shadedEdges', iso, axes };
   });
@@ -187,11 +188,11 @@ M.run = async () => {
     send('pointerup', toClient(at));
     await H.wait(300);
     d().setTool(null);
-    const low = drw().doc.views.find((v) => v.kind === 'projected' && v.side === 'downLeft');
-    const axes = low && axesOf(drw().doc.views, 'third', low);
+    const low = page()?.views.find((v) => v.kind === 'projected' && v.side === 'downLeft');
+    const axes = low && axesOf(page()?.views, 'third', low);
     const want = cornerAxes(viewVectors('front'), 'downLeft', 'third');
     await H.waitFor(() => drw().lines.get(low.id)?.shade, 30000, 'the shading of the corner view');
-    const dot = axes.dir.reduce((s, v, i) => s + v * axesOf(drw().doc.views, 'third', iso).dir[i], 0);
+    const dot = axes.dir.reduce((s, v, i) => s + v * axesOf(page()?.views, 'third', iso).dir[i], 0);
     return { pass: !!low && close(axes.dir, want.dir, 1e-12) && Math.abs(dot - -1 / 3) < 1e-9, low, dot };
   });
 
@@ -203,7 +204,7 @@ M.run = async () => {
     d().execute({ type: 'insertViews', views: [{ id: 'view90', name: 'B-B', kind: 'section', parent: front.id, line: [[x, box.min[1] - 5], [x, box.max[1] + 5]], label: 'B' }] });
     await H.waitFor(() => drw().lines.get('view90'), 30000, 'the section');
     await H.wait(200);
-    sec = () => drw().doc.views.find((v) => v.id === 'view90');
+    sec = () => page()?.views.find((v) => v.id === 'view90');
     const at0 = placedOf('view90').at;
     await drag(at0, [20, -35]);
     const at1 = placedOf('view90').at;
@@ -234,7 +235,7 @@ M.run = async () => {
   let dims;
   await step('4/5a the drawing\'s dimension style from the sheet\'s properties: text 5 mm, open arrows, lines 0.35 mm — every dimension drawn so', async () => {
     d().autoDimension(viewOf('top').id, { overall: true, holes: false, callouts: false, positions: false, ordinate: false });
-    await H.waitFor(() => drw().doc.dimensions.length > 0 && drw().doc.dimensions.every((x) => d().scene().dimensions.get(x.id) && !('error' in d().scene().dimensions.get(x.id))), 30000, 'the dimensions');
+    await H.waitFor(() => page()?.dimensions.length > 0 && page()?.dimensions.every((x) => d().scene().dimensions.get(x.id) && !('error' in d().scene().dimensions.get(x.id))), 30000, 'the dimensions');
     d().clearSelection();
     document.querySelector('[data-drawing-panel] [data-tab="props"]').click();
     await H.wait(200);
@@ -242,16 +243,16 @@ M.run = async () => {
     await setNumber(group.querySelector('[data-field="dimStyleText"]'), 5);
     await setSelect(group.querySelector('[data-field="dimStyleArrowStyle"]'), 'open');
     await setNumber(group.querySelector('[data-field="dimStyleLine"]'), 0.35);
-    dims = drw().doc.dimensions.map((x) => x.id);
+    dims = page()?.dimensions.map((x) => x.id);
     const drawn = dims.map(drawnOf);
     const svgText = [...document.querySelectorAll('[data-svg] svg text[stroke="#ffffff"]')].map((t) => Number(t.getAttribute('font-size')));
-    return { pass: JSON.stringify(drw().doc.sheet.dimStyle) === JSON.stringify({ text: 5, arrowStyle: 'open', line: 0.35 }) && drawn.every((x) => x.heights.every((h) => h === 5) && x.widths.length === 1 && x.widths[0] === 0.35 && !x.filled) && svgText.length > 0 && svgText.every((s) => Math.abs(s - 7) < 1e-9), style: drw().doc.sheet.dimStyle, drawn, svgText };
+    return { pass: JSON.stringify(page()?.sheet.dimStyle) === JSON.stringify({ text: 5, arrowStyle: 'open', line: 0.35 }) && drawn.every((x) => x.heights.every((h) => h === 5) && x.widths.length === 1 && x.widths[0] === 0.35 && !x.filled) && svgText.length > 0 && svgText.every((s) => Math.abs(s - 7) < 1e-9), style: page()?.sheet.dimStyle, drawn, svgText };
   });
   await step('4/5b a size out of its limits is refused and said; the style stays as it was', async () => {
     const group = panel('[data-group="dimStyle-sheet"]');
     await setNumber(group.querySelector('[data-field="dimStyleText"]'), 0);
     const notice = store.getState().notice;
-    return { pass: drw().doc.sheet.dimStyle.text === 5 && notice?.kind === 'error' && /文字高度/.test(notice.text), notice };
+    return { pass: page()?.sheet.dimStyle.text === 5 && notice?.kind === 'error' && /文字高度/.test(notice.text), notice };
   });
   await step('4/5c one dimension with its own style: text 7 mm, filled arrows — the others keep the drawing\'s', async () => {
     const id = dims[0];
@@ -265,7 +266,7 @@ M.run = async () => {
     await setSelect(group.querySelector('[data-field="dimStyleArrowStyle"]'), 'filled');
     const own = drawnOf(id);
     const others = dims.slice(1).map(drawnOf);
-    return { pass: own.heights.every((h) => h === 7) && own.filled && others.every((x) => x.heights.every((h) => h === 5) && !x.filled), own, others, style: drw().doc.dimensions[0].style };
+    return { pass: own.heights.every((h) => h === 7) && own.filled && others.every((x) => x.heights.every((h) => h === 5) && !x.filled), own, others, style: page()?.dimensions[0].style };
   });
 
   const pass = steps.every((s) => s.pass);

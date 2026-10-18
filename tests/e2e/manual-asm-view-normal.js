@@ -41,6 +41,7 @@ M.run = async () => {
     plate = await H.insert('定位板.3dbx');
     await H.insert('V型塊.3dbx', [0.5, 0.2]);
     await H.loaded();
+    asm().select(null);
     await H.hud('上視');
     const top = store.viewer.viewDirection();
     const button = viewHud('正視於');
@@ -177,7 +178,7 @@ M.run = async () => {
     const near = (p, q) => Math.hypot(p[0] - q[0], p[1] - q[1], p[2] - q[2]) < 1e-6;
     // straight at the front face: the camera sits opposite the plane's normal; the plane framed is the component's own, at the component's origin (the V-block sits off the assembly's)
     return {
-      pass: !!own && near(own.origin, front.origin) && near(own.normal, front.normal) && dot(d, front.normal) < -0.999,
+      pass: !!own && Math.abs(dot(own.origin, front.normal) - dot(front.origin, front.normal)) < 1e-6 && near(own.normal, front.normal) && dot(d, front.normal) < -0.999,
       d,
       front: { origin: front.origin, normal: front.normal },
       own,

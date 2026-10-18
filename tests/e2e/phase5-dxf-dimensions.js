@@ -15,6 +15,7 @@ const { store } = H;
 const x = (window.__dxfDims = {});
 
 const drw = () => store.getState().drw;
+const page = () => H.page(drw()?.doc);
 const panel = (sel) => document.querySelector(`[data-drawing-panel] ${sel}`);
 const click = async (el) => {
   el.click();
@@ -31,15 +32,15 @@ x.run = async () => {
   await H.open('定位板.3dbx');
   await H.waitFor(() => store.getState().result?.mesh, 20000, 'the part');
   await H.newDrawing();
-  await H.waitFor(() => drw() && drw().doc.views.length === 3 && [...drw().lines.values()].filter(Boolean).length === 3, 30000, 'the three views');
-  const top = drw().doc.views.find((v) => v.direction === 'top');
+  await H.waitFor(() => drw() && page()?.views.length === 3 && [...drw().lines.values()].filter(Boolean).length === 3, 30000, 'the three views');
+  const top = page()?.views.find((v) => v.direction === 'top');
   await click(panel(`[data-view="${top.id}"]`));
   await H.waitFor(() => drw().features.get(top.id), 30000, 'the features of the top view');
   await check(panel('[data-field="auto-overall"]'), true);
   await check(panel('[data-field="auto-holes"]'), true);
   await check(panel('[data-field="auto-positions"]'), true);
   await click(panel('[data-action="autoDimension"]'));
-  await H.waitFor(() => drw().doc.dimensions.length >= 10 && drw().elements.size === drw().doc.dimensions.length, 30000, 'the dimensions');
+  await H.waitFor(() => page()?.dimensions.length >= 10 && drw().elements.size === page()?.dimensions.length, 30000, 'the dimensions');
   const built = store.drawingStore.scene();
   H.check([...built.dimensions.values()].every((o) => 'value' in o), 'every dimension is worked out');
   const dxfText = drawing.toDxf(built.scene);
@@ -47,10 +48,10 @@ x.run = async () => {
   const problems = drawing.checkDxf(doc);
   H.check(problems.length === 0, `the DXF is sound: ${problems.join(' | ')}`);
   const dims = doc.entities.filter((e) => e.type === 'DIMENSION');
-  H.check(dims.length === drw().doc.dimensions.length, `one DIMENSION for each dimension: ${dims.length} of ${drw().doc.dimensions.length}`);
-  const values = drw().doc.dimensions.map((d) => built.dimensions.get(d.id).value);
+  H.check(dims.length === page()?.dimensions.length, `one DIMENSION for each dimension: ${dims.length} of ${page()?.dimensions.length}`);
+  const values = page()?.dimensions.map((d) => built.dimensions.get(d.id).value);
   // on the sheet a length is drawn at the scale of its view; an angle is not
-  const off = dims.map((e, i) => Math.abs(drawing.dimensionMeasure(e) / (e.kind === 2 ? 1 : built.placed.get(drw().doc.dimensions[i].view).scale) - values[i])).filter((v) => v > 1e-4);
+  const off = dims.map((e, i) => Math.abs(drawing.dimensionMeasure(e) / (e.kind === 2 ? 1 : built.placed.get(page()?.dimensions[i].view).scale) - values[i])).filter((v) => v > 1e-4);
   H.check(off.length === 0, `the definition points measure the model's numbers (off: ${off.join(', ')})`);
   H.check(dims.every((e) => doc.blockEntities.get(e.block)?.length > 1), 'every DIMENSION has its block');
   const kinds = [...new Set(dims.map((e) => e.kind))].sort();

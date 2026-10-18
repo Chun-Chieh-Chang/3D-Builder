@@ -27,9 +27,10 @@ const step = async (name, fn) => {
   return r;
 };
 const drw = () => store.getState().drw;
+const page = () => H.page(drw()?.doc);
 const near = (a, b, tol = 0.02) => Math.abs(a - b) <= tol;
 const placed = () => store.drawingStore.scene().placed;
-const viewOf = (dir) => drw().doc.views.find((v) => v.direction === dir);
+const viewOf = (dir) => page()?.views.find((v) => v.direction === dir);
 const at = (dir) => placed().get(viewOf(dir).id).at;
 const canvas = () => document.querySelector('[data-drawing-canvas]');
 /** Sheet mm (from the lower left) on the screen: the SVG is the sheet, whatever the pan and the zoom. */
@@ -73,12 +74,12 @@ M.run = async () => {
     await H.open('定位板.3dbx');
     await H.waitFor(() => store.getState().result?.mesh, 20000, 'the part');
     await H.newDrawing();
-    await H.waitFor(() => drw() && drw().doc.views.length === 3 && [...drw().lines.values()].filter(Boolean).length === 3, 30000, 'the three views');
+    await H.waitFor(() => drw() && page()?.views.length === 3 && [...drw().lines.values()].filter(Boolean).length === 3, 30000, 'the three views');
     await H.wait(300);
     await H.waitFor(() => drw().features.size === 3, 30000, 'the features of the three views (the centre marks)');
     await H.wait(300);
     [f0, t0, r0] = [at('front'), at('top'), at('right')];
-    s0 = drw().doc.sheet.shift ?? [0, 0];
+    s0 = page()?.sheet.shift ?? [0, 0];
     const box = centredBox();
     select('front');
     await H.wait(150);
@@ -91,8 +92,8 @@ M.run = async () => {
     await drag(f0, [30, 20]);
     const [f, t, r] = [at('front'), at('top'), at('right')];
     const same = near(f[0] - f0[0], 30) && near(f[1] - f0[1], 20) && near(t[0] - t0[0], 30) && near(t[1] - t0[1], 20) && near(r[0] - r0[0], 30) && near(r[1] - r0[1], 20);
-    const doc = drw().doc;
-    return { pass: same && near(doc.sheet.shift?.[0], s0[0] + 30) && near(doc.sheet.shift?.[1], s0[1] + 20) && doc.views.every((v) => !v.at && !v.slide), shift: doc.sheet.shift, s0, f, t, r };
+    const pg = page();
+    return { pass: same && near(pg.sheet.shift?.[0], s0[0] + 30) && near(pg.sheet.shift?.[1], s0[1] + 20) && pg.views.every((v) => !v.at && !v.slide), shift: pg.sheet.shift, s0, f, t, r };
   });
   await step('3 dragging the top view down changes the distance to the front view only: it stays in line (same x), the others stay', async () => {
     const [f1, r1] = [at('front'), at('right')];
@@ -134,7 +135,7 @@ M.run = async () => {
     panelButton().click();
     await H.wait(250);
     const box = centredBox();
-    return { pass: backInLine && box.centred && panelButton().disabled === true, backInLine, box, disabled: panelButton().disabled, shift: drw().doc.sheet.shift, s0 };
+    return { pass: backInLine && box.centred && panelButton().disabled === true, backInLine, box, disabled: panelButton().disabled, shift: page()?.sheet.shift, s0 };
   });
   let before;
   await step('8 the handle at the corner of the chosen front view: dragging it outward makes the scale bigger, and the top and right views scale with it (the sheet takes the scale)', async () => {
@@ -148,9 +149,9 @@ M.run = async () => {
     const corner = [placedFront.at[0] + placedFront.w / 2, placedFront.at[1] - placedFront.h / 2];
     const away = [(corner[0] - placedFront.at[0]) * 0.2, (corner[1] - placedFront.at[1]) * 0.2];
     await drag(corner, away, {}, handle);
-    const s = drw().doc.sheet.scale;
+    const s = page()?.sheet.scale;
     const ratios = ['front', 'top', 'right'].map((d) => placed().get(viewOf(d).id).scale);
-    return { pass: s[0] / s[1] > 1.1 && ratios.every((x) => near(x, s[0] / s[1], 1e-9)) && drw().doc.views.every((v) => !v.scale), scale: s, ratios };
+    return { pass: s[0] / s[1] > 1.1 && ratios.every((x) => near(x, s[0] / s[1], 1e-9)) && page()?.views.every((v) => !v.scale), scale: s, ratios };
   });
   await step('9 dragging it in again to about half: the scale snaps to 1:2, and the views draw smaller together; undo takes the scale back', async () => {
     const placedFront = placed().get(viewOf('front').id);
@@ -161,12 +162,12 @@ M.run = async () => {
     const unit = [(corner[0] - placedFront.at[0]) / dist, (corner[1] - placedFront.at[1]) / dist];
     const wanted = 0.5 / ratio0 - 1; // the corner at half the distance it has now, for the ratio 1:2
     await drag(corner, [unit[0] * dist * -(1 - 0.5 / ratio0), unit[1] * dist * -(1 - 0.5 / ratio0)], {}, handle);
-    const s = drw().doc.sheet.scale;
+    const s = page()?.sheet.scale;
     const half = s[0] === 1 && s[1] === 2;
     const smaller = placed().get(viewOf('top').id).scale === 0.5;
     store.undo();
     await H.wait(200);
-    const back = drw().doc.sheet.scale;
+    const back = page()?.sheet.scale;
     return { pass: half && smaller && !(back[0] === 1 && back[1] === 2), s, back, wanted };
   });
   await step('10 the shift and the slides are in the file: saved, opened again, the views are where they were', async () => {
@@ -181,7 +182,7 @@ M.run = async () => {
     await H.open('定位板.3dbd');
     await H.waitFor(() => drw() && drw().fileName === '定位板.3dbd' && [...drw().lines.values()].filter(Boolean).length === 3, 30000, 'the drawing to open');
     await H.wait(300);
-    return { pass: near(at('front')[0], f[0]) && near(at('front')[1], f[1]) && near(at('top')[1], t[1]) && near(at('right')[0], r[0]) && drw().doc.sheet.shift?.[0] === 12 && viewOf('top').slide === -18, f, t, r };
+    return { pass: near(at('front')[0], f[0]) && near(at('front')[1], f[1]) && near(at('top')[1], t[1]) && near(at('right')[0], r[0]) && page()?.sheet.shift?.[0] === 12 && viewOf('top').slide === -18, f, t, r };
   });
   await step('11 with the dimensions drawn on the views and a scale that is too big, 最適比例 picks the scale at which the lines and the dimensions are all inside the area of the sheet', async () => {
     const panel = (sel) => document.querySelector(`[data-drawing-panel] ${sel}`);
@@ -190,7 +191,7 @@ M.run = async () => {
       await H.waitFor(() => drw().features.get(viewOf(dir).id), 30000, `the features of the ${dir} view`);
       await H.wait(150);
       panel('[data-action="autoDimension"]').click();
-      await H.waitFor(() => drw().doc.dimensions.some((x) => x.view === viewOf(dir).id) && drw().elements.size >= drw().doc.dimensions.length, 30000, `the dimensions of the ${dir} view`);
+      await H.waitFor(() => page()?.dimensions.some((x) => x.view === viewOf(dir).id) && drw().elements.size >= page()?.dimensions.length, 30000, `the dimensions of the ${dir} view`);
     }
     store.drawingStore.setSheet({ scale: [2, 1], shift: null });
     await H.wait(250);
@@ -200,7 +201,7 @@ M.run = async () => {
     })();
     panel('[data-action="autoScale"]').click();
     await H.wait(500);
-    const sheet = drw().doc.sheet;
+    const sheet = page()?.sheet;
     const { scene } = store.drawingStore.scene();
     // the lines of the views and the dimensions (not the frame and the title block)
     const pts = [];

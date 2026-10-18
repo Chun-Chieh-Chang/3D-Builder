@@ -26,12 +26,13 @@ const step = async (name, fn) => {
   return r;
 };
 const drw = () => store.getState().drw;
-const viewOf = (dir) => drw().doc.views.find((v) => v.direction === dir);
+const page = () => H.page(drw()?.doc);
+const viewOf = (dir) => page()?.views.find((v) => v.direction === dir);
 const canvas = () => document.querySelector('[data-drawing-canvas]');
 /** Sheet mm (from the lower left) on the screen: the SVG is the sheet, whatever the pan and the zoom. */
 const toClient = ([x, y]) => {
   const r = document.querySelector('[data-svg] svg').getBoundingClientRect();
-  const s = drw().doc.sheet.size === 'A4' ? [297, 210] : [420, 297];
+  const s = page()?.sheet.size === 'A4' ? [297, 210] : [420, 297];
   return [r.left + (x / s[0]) * r.width, r.top + ((s[1] - y) / s[1]) * r.height];
 };
 const right = async ([cx, cy], move = [0, 0]) => {
@@ -51,7 +52,7 @@ const frontWidth = () => {
   return b ? b.max[0] - b.min[0] : null;
 };
 const menu = () => document.querySelector('[data-view-menu]');
-const allLines = () => drw() && drw().doc.views.length === 3 && [...drw().lines.values()].filter(Boolean).length === 3;
+const allLines = () => drw() && page()?.views.length === 3 && [...drw().lines.values()].filter(Boolean).length === 3;
 
 M.run = async () => {
   await step('1 the plate and a drawing of it with the three views, saved: the front view is 120 wide', async () => {

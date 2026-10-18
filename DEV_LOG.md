@@ -2264,3 +2264,44 @@ ADR 0146 確效時記下的後續（下一節 §5 第三點）：新工程圖的
   - `npm run lint:deps`：**通過**。
   - `npm run lint:i18n`：**通過**。
 
+---
+
+## 2026-10-18：B2.8 多圖頁工程圖 E2E 測試全面遷移與 verify:ui 缺口清零
+
+### 1. 範圍
+- **背景**：B2.8 多圖頁架構重構（ADR 0154）將工程圖資料結構升級為 `pages: DrawingPage[]`，導致 23 支舊瀏覽器端 E2E 測試腳本在訪問 `drw().doc.views`、`drw().doc.sheet` 時拋錯。
+- **目標**：
+  1. 完整遷移 23 支工程圖 E2E 測試腳本，改為調用 `H.page(drw().doc)` 安全存取當前圖頁。
+  2. 解決 E2E 執行過程中的環境阻礙與其他紅燈測試（`phase3-select-elements.js`、`manual-asm-view-normal.js`、`phase5-output.js`、`manual-drawing-title-style.js`）。
+  3. 文檔銷帳校正（`handoff.md`、`task_plan.md`、`progress.md`）。
+
+### 2. 做法與代碼改動
+| 模組 | 檔案 | 改動內容 |
+|---|---|---|
+| 測試基建 | `tests/e2e/phase2-assembly.js` | 擴充通用 `H.page(doc)` 與 `H.drw()` 輔助函式；`H.ready()` 增加可選鏈安全調用；`H.action()` 增加 CommandBar tabs 與按鈕 DOM mount 的 `waitFor` 防禦。 |
+| 狀態相容 | `apps/web/src/state/store.ts` | 補齊 `setPickFilter(kind, on)` 相容方法，支援既有選取過濾器 E2E 呼叫。 |
+| E2E 腳本遷移 | `tests/e2e/*.js` (23 支工程圖腳本) | 全面將 `drw().doc.views`、`drw().doc.sheet` 替換為 `H.page(drw().doc)?.views` 與 `sheet`。 |
+| 斷言升級 | `tests/e2e/phase5-output.js` | 更新 PDF 中文字元斷言（反映 ADR 0153 預設 sans 黑體中文支援能力）。 |
+| 斷言升級 | `tests/e2e/manual-drawing-title-style.js` | 將 hardcode 之 `schemaVersion === 21` 升級為 `>= 21`（當前為 25）。 |
+| 邏輯修復 | `tests/e2e/manual-asm-view-normal.js` | Step 1 於放置零件後呼叫 `asm().select(null)` 確保無項目選取；Step 10 平面共面檢驗改為投影法向檢定。 |
+
+### 3. 問題分析與根因 (RCA) 及矯正防禦 (CAPA)
+1. **問題一：`Error: no tab 檔案`**
+   - **RCA**：背景存在兩天前（2026/10/16）啟動的過期 Vite dev server（PID 13756），`verify-ui.mjs` 偵測到 5391 有回應便未重新啟動，無頭瀏覽器載入舊 bundle 導致 `<div id="root"></div>` 為空；且 `H.action` 原先為同步查詢 DOM。
+   - **CAPA**：強制終止過期背景行程；在 `phase2-assembly.js` 的 `H.action` 內加入 `await H.waitFor(...)` 確保 CommandBar tabs 渲染就緒後再進行操作。
+2. **問題二：`manual-asm-view-normal.js` Step 1 & Step 10 失敗**
+   - **RCA**：Step 1 點擊畫布放置組件後該組件處於選中狀態，觸發「正視於選取組件 front plane」而非「無選取翻轉標準視角」；Step 10 由於 `planeFrame` 數學上會將局部原點投影至過世界原點之垂足以保證平行面坐標對齊，直接以歐氏距離比對未投影原點會產生偏差。
+   - **CAPA**：Step 1 明確呼叫 `asm().select(null)`；Step 10 改為嚴格檢查原點在法向上的投影差值小於 $10^{-6}$，符合幾何共面真值。
+
+### 4. 確效與品質驗收
+- **E2E 瀏覽器驗收 (`verify-ui`)**：
+  - 遷移與修復之 26 支腳本批量確效：**26 of 26 PASS**（100% 全綠）。
+- **單元與整合測試 (`vitest`)**：
+  - 全量 Vitest 單元測試：**248 passed, 4 skipped (252 files, 3074 tests 100% PASS)**。
+- **靜態防禦檢查**：
+  - `npm run typecheck`：**0 錯誤**。
+  - `npm run lint:rules`：**通過（全域 RSI 反模式靜態守門）**。
+  - `npm run lint:deps`：**通過（Layering OK）**。
+  - `npm run lint:i18n`：**通過（i18n OK）**。
+
+

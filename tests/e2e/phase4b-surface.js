@@ -41,7 +41,7 @@ s.run = async () => {
   await H.newDrawing();
   await H.waitFor(() => store.getState().drw && [...store.getState().drw.lines.values()].filter(Boolean).length === 3, 30000, 'the lines');
   const drw = store.getState().drw;
-  const front = drw.lines.get(drw.doc.views.find((v) => v.direction === 'front').id);
+  const front = drw.lines.get(H.page(drw.doc).views.find((v) => v.direction === 'front').id);
   H.check(Math.abs(front.box.max[0] - front.box.min[0] - 20) < 0.05, `the front view is the cylinder (20 wide), not the surface (26): ${front.box.max[0] - front.box.min[0]}`);
 
   console.log('phase4b-surface: all checks passed');

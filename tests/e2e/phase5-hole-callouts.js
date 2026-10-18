@@ -15,6 +15,7 @@ const { store } = H;
 const x = (window.__callouts = {});
 
 const drw = () => store.getState().drw;
+const page = () => H.page(drw()?.doc);
 const panel = (sel) => document.querySelector(`[data-drawing-panel] ${sel}`);
 const click = async (el) => {
   el.click();
@@ -31,8 +32,8 @@ x.run = async () => {
   await H.open('孔標註.3dbx');
   await H.waitFor(() => store.getState().result?.mesh, 20000, 'the part');
   await H.newDrawing();
-  await H.waitFor(() => drw() && drw().doc.views.length === 3 && [...drw().lines.values()].filter(Boolean).length === 3, 30000, 'the three views');
-  const front = drw().doc.views.find((v) => v.direction === 'front');
+  await H.waitFor(() => drw() && page()?.views.length === 3 && [...drw().lines.values()].filter(Boolean).length === 3, 30000, 'the three views');
+  const front = page()?.views.find((v) => v.direction === 'front');
   await click(panel(`[data-view="${front.id}"]`));
   await H.waitFor(() => drw().features.get(front.id), 30000, 'the features of the front view');
   await check(panel('[data-field="auto-overall"]'), false);
@@ -40,7 +41,7 @@ x.run = async () => {
   await check(panel('[data-field="auto-holes"]'), true);
   await check(panel('[data-field="auto-callouts"]'), true);
   await click(panel('[data-action="autoDimension"]'));
-  await H.waitFor(() => drw().doc.dimensions.length >= 6 && drw().elements.size === drw().doc.dimensions.length && !texts().some((t) => t.includes('…')), 30000, 'the hole callouts');
+  await H.waitFor(() => page()?.dimensions.length >= 6 && drw().elements.size === page()?.dimensions.length && !texts().some((t) => t.includes('…')), 30000, 'the hole callouts');
   const got = texts().sort();
   // the model calls six circles holes; the wall of the counterbore (Ø11) is a circle too, and is dimensioned as one
   const want = ['Ø9 深 8', 'M6 貫穿（底孔 Ø5）', 'M8 深 12（底孔 Ø6.8）', 'Ø6 貫穿 錐孔 Ø12 90°', 'Ø6.6 貫穿 沉頭 Ø11 深 6.5', 'Ø6 貫穿'].sort();
@@ -53,7 +54,7 @@ x.run = async () => {
 
   // the hole table says the same
   await click(panel('[data-action="addHoleTable"]'));
-  await H.waitFor(() => (drw().doc.tables ?? []).some((t) => t.kind === 'holes') && [...store.drawingStore.scene().tables.values()].some((rows) => rows.length === 6), 30000, 'the hole table');
+  await H.waitFor(() => (page()?.tables ?? []).some((t) => t.kind === 'holes') && [...store.drawingStore.scene().tables.values()].some((rows) => rows.length === 6), 30000, 'the hole table');
   const rows = [...store.drawingStore.scene().tables.values()].flat().map((r) => r.size).sort();
   H.check(JSON.stringify(rows) === JSON.stringify(want), `table: ${rows.join(' | ')}`);
   return { callouts: got, table: rows };

@@ -27,8 +27,9 @@ const step = async (name, fn) => {
   return r;
 };
 const drw = () => store.getState().drw;
+const page = () => H.page(drw()?.doc);
 const d = () => store.drawingStore;
-const allLines = () => drw() && drw().doc.views.every((v) => drw().lines.get(v.id));
+const allLines = () => drw() && page()?.views.every((v) => drw().lines.get(v.id));
 const panel = (sel) => document.querySelector(`[data-drawing-panel] ${sel}`);
 const setNumber = async (el, v) => {
   Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(el, String(v));
@@ -59,13 +60,13 @@ M.run = async () => {
     await H.open('定位板.3dbx');
     await H.waitFor(() => store.getState().result?.mesh, 20000, 'the part');
     await H.newDrawing();
-    await H.waitFor(() => drw() && drw().doc.views.length === 3 && allLines(), 30000, 'the three views');
+    await H.waitFor(() => drw() && page()?.views.length === 3 && allLines(), 30000, 'the three views');
     for (const [field, value] of [['company', 'Mouldex'], ['drawingName', TITLE_TEXT], ['drawingNo', 'Test'], ['revision', 'A'], ['material', 'Starvax'], ['generalTolerance', '+/- 0.01'], ['drafter', 'Wesley Chang'], ['date', '2026-10-16']]) d().setTitle(field, value);
     await H.wait(250);
     d().clearSelection();
     document.querySelector('[data-drawing-panel] [data-tab="props"]').click();
     await H.waitFor(() => panel('[data-group="titleStyle"]'), 5000, 'the title style fields');
-    return { pass: drw().doc.schemaVersion === 21 && !('titleStyle' in drw().doc.sheet), schema: drw().doc.schemaVersion, fields: ['titleStyleLabel', 'titleStyleValue', 'titleStyleTitle', 'titleStyleFit'].every((f) => !!panel(`[data-field="${f}"]`)) && !!panel('[data-action="titleStyleReset"]') };
+    return { pass: drw().doc.schemaVersion >= 21 && !('titleStyle' in (page()?.sheet ?? {})), schema: drw().doc.schemaVersion, fields: ['titleStyleLabel', 'titleStyleValue', 'titleStyleTitle', 'titleStyleFit'].every((f) => !!panel(`[data-field="${f}"]`)) && !!panel('[data-action="titleStyleReset"]') };
   });
 
   await step('1 with no style: names 2.2, texts 3.5, the title 6 — and the page writes them at 1.4 times that', async () => {
@@ -86,9 +87,9 @@ M.run = async () => {
     const others = ['公司', '圖名', '日期'].map(drawn);
     const values = ['Mouldex', 'Wesley Chang'].map(drawn);
     return {
-      pass: title.h === 9.5 && others.every((x) => x.h === 2.2) && values.every((x) => x.h === 3.5) && JSON.stringify(drw().doc.sheet.titleStyle) === JSON.stringify({ title: 9.5 }),
+      pass: title.h === 9.5 && others.every((x) => x.h === 2.2) && values.every((x) => x.h === 3.5) && JSON.stringify(page()?.sheet.titleStyle) === JSON.stringify({ title: 9.5 }),
       title,
-      style: drw().doc.sheet.titleStyle,
+      style: page()?.sheet.titleStyle,
     };
   });
 
@@ -112,14 +113,14 @@ M.run = async () => {
         /合計/.test(reason.textContent) &&
         store.getState().notice === null &&
         label.h === 2.2 &&
-        JSON.stringify(drw().doc.sheet.titleStyle) === JSON.stringify({ title: 9.5 }),
+        JSON.stringify(page()?.sheet.titleStyle) === JSON.stringify({ title: 9.5 }),
       marked,
       painted,
       reason: reason?.textContent,
       notice: store.getState().notice,
       box: box.value,
       labelHeight: label.h,
-      style: drw().doc.sheet.titleStyle,
+      style: page()?.sheet.titleStyle,
     };
   });
 
@@ -153,13 +154,13 @@ M.run = async () => {
     await H.wait(250);
     const date = drawn('2026-10-16');
     const avail = budget('date');
-    return { pass: date.h === 4.8 && date.mm > avail && drw().doc.sheet.titleStyle.fit === false, avail, date, style: drw().doc.sheet.titleStyle };
+    return { pass: date.h === 4.8 && date.mm > avail && page()?.sheet.titleStyle.fit === false, avail, date, style: page()?.sheet.titleStyle };
   });
   await step('5b back on: the full height is asked again, and the shrink comes back with it', async () => {
     panel('[data-field="titleStyleFit"]').click();
     await H.wait(250);
     const date = drawn('2026-10-16');
-    return { pass: date.h < 4.8 && drw().doc.sheet.titleStyle.fit !== false, date };
+    return { pass: date.h < 4.8 && page()?.sheet.titleStyle.fit !== false, date };
   });
 
   await step('6 nineteen full-width characters of title: shrunk to what the cell leaves, and the browser keeps it inside the line', async () => {
@@ -181,7 +182,7 @@ M.run = async () => {
     const boxes = { label: panel('[data-field="titleStyleLabel"]').value, value: panel('[data-field="titleStyleValue"]').value, title: panel('[data-field="titleStyleTitle"]').value };
     return {
       pass:
-        !('titleStyle' in drw().doc.sheet) &&
+        !('titleStyle' in (page()?.sheet ?? {})) &&
         label.h === 2.2 &&
         value.h === 3.5 &&
         title.h === 6 &&
@@ -205,7 +206,7 @@ M.run = async () => {
     store.set({ notice: null });
     await setNumber(box, 0);
     const notice = store.getState().notice;
-    const style = drw().doc.sheet.dimStyle;
+    const style = page()?.sheet.dimStyle;
     return { pass: box.value === before && notice?.kind === 'error' && /文字高度/.test(notice.text) && !(style && 'text' in (style ?? {})), before, after: box.value, notice, style };
   });
 

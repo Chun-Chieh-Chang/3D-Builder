@@ -15,6 +15,7 @@ const { store } = H;
 const x = (window.__dims = {});
 
 const drw = () => store.getState().drw;
+const page = () => H.page(drw()?.doc);
 const panel = (sel) => document.querySelector(`[data-drawing-panel] ${sel}`);
 const click = async (el) => {
   el.click();
@@ -36,8 +37,8 @@ x.run = async () => {
   await H.open('定位板.3dbx');
   await H.waitFor(() => store.getState().result?.mesh, 20000, 'the part');
   await H.newDrawing();
-  await H.waitFor(() => drw() && drw().doc.views.length === 3 && [...drw().lines.values()].filter(Boolean).length === 3, 30000, 'the three views');
-  const view = (dir) => drw().doc.views.find((v) => v.direction === dir);
+  await H.waitFor(() => drw() && page()?.views.length === 3 && [...drw().lines.values()].filter(Boolean).length === 3, 30000, 'the three views');
+  const view = (dir) => page()?.views.find((v) => v.direction === dir);
 
   // nothing selected: nothing to dimension
   H.check(!!panel('[data-group="dimensions"] .muted'), 'select a view first');
@@ -52,19 +53,19 @@ x.run = async () => {
   // the overall size and the holes, at once
   await check(panel('[data-field="auto-positions"]'), false);
   await click(panel('[data-action="autoDimension"]'));
-  await H.waitFor(() => drw().doc.dimensions.length === 5 && drw().elements.size === 5, 30000, 'five dimensions worked out');
+  await H.waitFor(() => page()?.dimensions.length === 5 && drw().elements.size === 5, 30000, 'five dimensions worked out');
   H.check(JSON.stringify(texts().sort()) === JSON.stringify(['120', '2×Ø8 貫穿', '4×R10', '4×Ø9 貫穿', '80'].sort()), `overall size and holes: ${texts().join(' | ')}`);
   // asked again: nothing new
   await click(panel('[data-action="autoDimension"]'));
-  H.check(drw().doc.dimensions.length === 5, 'no dimension is made twice');
+  H.check(page()?.dimensions.length === 5, 'no dimension is made twice');
 
   // where the holes are, from the left and the bottom
   await check(panel('[data-field="auto-overall"]'), false);
   await check(panel('[data-field="auto-holes"]'), false);
   await check(panel('[data-field="auto-positions"]'), true);
   await click(panel('[data-action="autoDimension"]'));
-  await H.waitFor(() => drw().doc.dimensions.length === 12 && drw().elements.size === 12, 30000, 'twelve dimensions');
-  const linear = drw().doc.dimensions.filter((d) => d.kind === 'linear');
+  await H.waitFor(() => page()?.dimensions.length === 12 && drw().elements.size === 12, 30000, 'twelve dimensions');
+  const linear = page()?.dimensions.filter((d) => d.kind === 'linear');
   const values = (o) =>
     linear
       .filter((d) => d.orientation === o)
@@ -76,7 +77,7 @@ x.run = async () => {
   H.check(new Set(linear.filter((d) => d.orientation === 'horizontal').map((d) => d.offset)).size === 5, 'the horizontal ones are stacked at different distances');
 
   // a tolerance class on the diameter of the Ø9 holes
-  const nine = drw().doc.dimensions.find((d) => d.kind === 'diameter' && d.count === 4);
+  const nine = page()?.dimensions.find((d) => d.kind === 'diameter' && d.count === 4);
   await click(panel(`[data-dimension="${nine.id}"]`));
   await choose(panel('[data-field="dimToleranceType"]'), 'fit');
   await H.waitFor(() => texts().includes('4×Ø9 H7 (+0.015/0) 貫穿'), 3000, 'H7');
@@ -92,10 +93,10 @@ x.run = async () => {
   fit.dispatchEvent(new Event('input', { bubbles: true }));
   fit.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
   await H.wait(300);
-  H.check(drw().doc.dimensions.find((d) => d.id === nine.id).tolerance.fit === 'H11', 'an unsupported class is refused');
+  H.check(page()?.dimensions.find((d) => d.id === nine.id).tolerance.fit === 'H11', 'an unsupported class is refused');
 
   // a reference dimension, and limits on a linear one
-  const overall = drw().doc.dimensions.find((d) => d.kind === 'linear' && d.orientation === 'horizontal' && store.drawingStore.scene().dimensions.get(d.id).text === '120');
+  const overall = page()?.dimensions.find((d) => d.kind === 'linear' && d.orientation === 'horizontal' && store.drawingStore.scene().dimensions.get(d.id).text === '120');
   await click(panel(`[data-dimension="${overall.id}"]`));
   await click(panel('[data-field="dimReference"]'));
   await H.waitFor(() => texts().includes('(120)'), 3000, 'a reference dimension');
@@ -103,14 +104,14 @@ x.run = async () => {
   await H.waitFor(() => texts().includes('(120 ±0.05)'), 3000, 'limits');
 
   // one between two elements, through the lists
-  const before = drw().doc.dimensions.length;
+  const before = page()?.dimensions.length;
   // a plane square to x and the first circle (the lists hold the planes and then the circles), measured horizontally
   const planes = features.filter((f) => f.type === 'plane');
   await choose(panel('[data-field="dimA"]'), String(planes.findIndex((f) => f.axis === 'x')));
   await choose(panel('[data-field="dimB"]'), String(planes.length));
   await choose(panel('[data-field="dimOrientation"]'), 'horizontal');
   await click(panel('[data-action="addLinear"]'));
-  await H.waitFor(() => drw().doc.dimensions.length === before + 1, 3000, 'a dimension between two elements');
+  await H.waitFor(() => page()?.dimensions.length === before + 1, 3000, 'a dimension between two elements');
 
   // the canvas: the dimensions are drawn (filled arrowheads, text)
   await H.waitFor(() => document.querySelector('[data-svg] svg'), 5000, 'the SVG');
@@ -119,13 +120,13 @@ x.run = async () => {
   H.check(svg.querySelectorAll('polygon[fill="#000000"]').length >= 20, `arrowheads are drawn: ${svg.querySelectorAll('polygon[fill="#000000"]').length}`);
 
   // undo and redo: one step for each command
-  const n = drw().doc.dimensions.length;
+  const n = page()?.dimensions.length;
   store.undo();
   await H.wait(200);
-  H.check(drw().doc.dimensions.length === n - 1, 'undone');
+  H.check(page()?.dimensions.length === n - 1, 'undone');
   store.redo();
   await H.wait(200);
-  H.check(drw().doc.dimensions.length === n, 'redone');
+  H.check(page()?.dimensions.length === n, 'redone');
 
   // the front view: the overall width and height; no holes are seen as circles there
   await click(panel(`[data-view="${view('front').id}"]`));
@@ -134,24 +135,24 @@ x.run = async () => {
   await check(panel('[data-field="auto-holes"]'), true);
   await check(panel('[data-field="auto-positions"]'), false);
   await click(panel('[data-action="autoDimension"]'));
-  await H.waitFor(() => drw().doc.dimensions.filter((d) => d.view === view('front').id).length === 2, 30000, 'the front view dimensions');
-  await H.waitFor(() => drw().doc.dimensions.every((d) => drw().elements.has(d.id)), 30000, 'every dimension worked out');
-  const front = drw().doc.dimensions.filter((d) => d.view === view('front').id).map((d) => store.drawingStore.scene().dimensions.get(d.id).text);
+  await H.waitFor(() => page()?.dimensions.filter((d) => d.view === view('front').id).length === 2, 30000, 'the front view dimensions');
+  await H.waitFor(() => page()?.dimensions.every((d) => drw().elements.has(d.id)), 30000, 'every dimension worked out');
+  const front = page()?.dimensions.filter((d) => d.view === view('front').id).map((d) => store.drawingStore.scene().dimensions.get(d.id).text);
   H.check(JSON.stringify(front.sort()) === JSON.stringify(['120', '15']), `the front view is 120 × 15: ${front}`);
   H.check(!texts().some((t) => t.startsWith('ERROR')), `no dimension is in error: ${texts().filter((t) => t.startsWith('ERROR'))}`);
 
   // saved and opened again: the same dimensions, worked out again from the part
-  const count = drw().doc.dimensions.length;
+  const count = page()?.dimensions.length;
   H.next.save = '定位板.3dbd';
   await H.action('檔案', '儲存檔案');
   await H.waitFor(() => !drw().dirty, 10000, 'the save');
   await H.open('定位板.3dbd');
-  await H.waitFor(() => drw() && drw().fileName === '定位板.3dbd' && drw().doc.dimensions.length === count && drw().elements.size === count, 40000, 'the drawing to open');
+  await H.waitFor(() => drw() && drw().fileName === '定位板.3dbd' && page()?.dimensions.length === count && drw().elements.size === count, 40000, 'the drawing to open');
   H.check(texts().includes('4×Ø9 H11 (+0.09/0) 貫穿') && texts().includes('(120 ±0.05)'), `the same dimensions: ${texts().length}`);
 
   // deleting a view takes its dimensions with it
   store.drawingStore.deleteViews([view('front').id]);
-  await H.waitFor(() => drw().doc.dimensions.length === count - 2, 3000, 'the dimensions of the deleted view');
+  await H.waitFor(() => page()?.dimensions.length === count - 2, 3000, 'the dimensions of the deleted view');
   console.log('phase5-dimensions: all checks passed');
   return true;
 };

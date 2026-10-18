@@ -322,14 +322,14 @@ M.run = async () => {
   await step('18 a drawing in inches: the sheet\'s unit takes the dimensions, the tolerance and the hole table with it (120 mm is 4.724)', async () => {
     store.stopMeasure();
     await H.newDrawing();
-    await H.waitFor(() => store.getState().drw && store.getState().drw.doc.views.length === 3 && [...store.getState().drw.lines.values()].filter(Boolean).length === 3 && store.getState().drw.features.size === 3, 30000, 'the drawing');
+    await H.waitFor(() => store.getState().drw && H.page()?.views.length === 3 && [...store.getState().drw.lines.values()].filter(Boolean).length === 3 && store.getState().drw.features.size === 3, 30000, 'the drawing');
     await H.wait(300);
-    const front = store.getState().drw.doc.views.find((v) => v.direction === 'front').id;
+    const front = H.page().views.find((v) => v.direction === 'front').id;
     document.querySelector(`[data-drawing-panel] [data-view="${front}"]`).click();
     await H.waitFor(() => store.getState().drw.features.get(front), 30000, 'the elements');
     await H.wait(150);
     document.querySelector('[data-drawing-panel] [data-action="autoDimension"]').click();
-    await H.waitFor(() => store.getState().drw.doc.dimensions.length > 0 && store.getState().drw.elements.size >= store.getState().drw.doc.dimensions.length, 30000, 'the dimensions');
+    await H.waitFor(() => H.page().dimensions.length > 0 && store.getState().drw.elements.size >= H.page().dimensions.length, 30000, 'the dimensions');
     const texts = () => [...store.drawingStore.scene().dimensions.values()].map((o) => o.text);
     const mm = texts();
     const unit = document.querySelector('[data-drawing-panel] [data-field="unit"]');
@@ -337,7 +337,7 @@ M.run = async () => {
     unit.dispatchEvent(new Event('change', { bubbles: true }));
     await H.wait(300);
     const inch = texts();
-    return { pass: mm.includes('120') && inch.includes('4.724') && !inch.includes('120') && store.getState().drw.doc.sheet.unit === 'in', mm, inch };
+    return { pass: mm.includes('120') && inch.includes('4.724') && !inch.includes('120') && H.page().sheet.unit === 'in', mm, inch };
   });
   return { name: 'measure-view', steps, pass: steps.every((s) => s.pass) };
 };
