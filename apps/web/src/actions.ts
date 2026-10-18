@@ -144,6 +144,7 @@ export const ACTIONS: UiAction[] = [
   { id: 'cut-with-surface', get label() { return t('feature.cutWithSurface'); }, group: 'feature', enabled: (s) => hasBody(s) && !!s.result?.bodies.some((b) => b.surface) && !!s.result?.bodies.some((b) => !b.surface), run: () => store.newCutWithSurface() },
   { id: 'lip-groove', get label() { return t('feature.lipGroove'); }, group: 'feature', enabled: hasBody, run: () => store.newLipGroove() },
   { id: 'combine', get label() { return t('feature.combine'); }, group: 'feature', enabled: (s) => hasBody(s) && (s.result?.bodies.length ?? 0) > 1, run: () => store.newCombine() },
+  { id: 'split', get label() { return t('feature.split'); }, group: 'feature', enabled: (s) => hasBody(s) && (s.result?.bodies.length ?? 0) >= 1, run: () => store.newSplit() },
   { id: 'linear-pattern', get label() { return t('action.linearPattern'); }, group: 'feature', enabled: canPattern, run: () => store.newPattern('linear') },
   { id: 'circular-pattern', get label() { return t('action.circularPattern'); }, group: 'feature', enabled: canPattern, run: () => store.newPattern('circular') },
   { id: 'mirror', get label() { return t('action.mirror'); }, group: 'feature', enabled: (s) => canPattern(s) || (partIdle(s) && (s.result?.bodies.length ?? 0) > 0), run: () => store.newMirror() },

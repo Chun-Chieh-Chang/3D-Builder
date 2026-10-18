@@ -61,6 +61,7 @@ import {
   type VentFeature,
   type CutWithSurfaceFeature,
   type ShellFeature,
+  type SplitFeature,
   type SketchFeature,
   type SweepFeature,
   type Thin,
@@ -722,6 +723,10 @@ export class Regenerator {
           }
           case 'cutWithSurface': {
             set = this.advance(set, this.cutWithSurface(feature, set));
+            return done({ status: 'ok' });
+          }
+          case 'split': {
+            set = this.advance(set, this.splitBodies(feature, set));
             return done({ status: 'ok' });
           }
           case 'extrude':
@@ -2190,6 +2195,85 @@ export class Regenerator {
     // the result takes the place of the main body; the tools are used up
     const used = new Set(tools.map((x) => x.id));
     return set.list.flatMap((b) => (b === main ? pieces : used.has(b.id) ? [] : [b]));
+  }
+
+  /** 「分割實體」 (C7.4, ADR 0158): splits bodies by a datum plane or planar face. */
+  private splitBodies(f: SplitFeature, set: Bodies): BodyState[] {
+    const plane = this.planeOf(f.tool, set, { what: t('pm.split.tool'), notPlanar: t('feature.splitToolNotPlanar') });
+    const k = this.kernel;
+
+    const findTarget = (ref: Ref): BodyState => {
+      if (!ref.name) throw new FeatureError(t('body.pick', { what: t('pm.split.targets') }));
+      const b = set.list.find((x) => x.id === ref.name);
+      if (!b) throw new FeatureError(t('body.lost', { name: ref.name }), [{ ref, reason: 'missing', candidates: [] }]);
+      if (b.surface) throw new FeatureError(t('surface.notSolid'));
+      return b;
+    };
+
+    const hasTargets = !!(f.targets && f.targets.length > 0);
+    const targetCandidates = hasTargets
+      ? f.targets!.map(findTarget)
+      : set.list.filter((b) => !b.surface);
+
+    if (targetCandidates.length === 0) {
+      throw new FeatureError(t('feature.splitNoIntersection'));
+    }
+
+    const made: ShapeId[] = [];
+    let nextPiece = 2;
+    const splitMap = new Map<BodyState, BodyState[]>();
+
+    try {
+      for (const target of targetCandidates) {
+        let results: OpResult[];
+        try {
+          results = k.splitBody(target.shape, plane);
+        } catch (e) {
+          if (hasTargets) {
+            throw e instanceof KernelError ? new FeatureError(e.message) : e;
+          }
+          continue;
+        }
+
+        const pieces: BodyState[] = [];
+        results.forEach((r, idx) => {
+          made.push(r.shape);
+          const topology = k.topology(r.shape);
+          const context = {
+            featureId: f.id,
+            role: 'split',
+            input: {
+              faces: [...target.names.faces, `${f.id}:cut`],
+              edges: target.names.edges,
+              vertices: target.names.vertices,
+            },
+          };
+          const names = nameElements(r.faceOrigins, topology, context);
+          const bodyId = idx === 0 ? target.id : `${f.id}#${nextPiece++}`;
+          pieces.push({ id: bodyId, shape: r.shape, topology, names, by: f.id });
+        });
+
+        splitMap.set(target, pieces);
+      }
+
+      if (splitMap.size === 0) {
+        throw new FeatureError(t('feature.splitNoIntersection'));
+      }
+
+      const out: BodyState[] = [];
+      for (const b of set.list) {
+        const pieces = splitMap.get(b);
+        if (pieces) {
+          out.push(...pieces);
+        } else {
+          out.push(b);
+        }
+      }
+      return out;
+    } catch (e) {
+      for (const s of made) k.release(s);
+      throw e;
+    }
   }
 
   // ------------------------------------------------------------------ imported bodies (F2.1)

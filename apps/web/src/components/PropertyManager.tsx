@@ -17,6 +17,7 @@ import {
   SKETCH_ORIGIN,
   type ChamferFeature,
   type CombineFeature,
+  type SplitFeature,
   type Command,
   type DeleteFaceFeature,
   type DraftFeature,
@@ -3061,6 +3062,63 @@ function CombinePanel({ f }: { f: CombineFeature }) {
   );
 }
 
+/** Split feature (C7.4, ADR 0158): cutting tool (datum plane or planar face) and optional target bodies. */
+function SplitPanel({ f }: { f: SplitFeature }) {
+  const result = useStore((s) => s.result);
+  const bodies = (result?.bodies ?? []).filter((b) => !b.surface);
+  const set = (patch: Partial<Pick<SplitFeature, 'tool' | 'targets'>>): Command => ({
+    type: 'setSplit',
+    featureId: f.id,
+    tool: f.tool,
+    targets: f.targets,
+    ...patch,
+  });
+
+  const body = (name: string): Ref => ({ kind: 'body', name });
+  const toggle = (id: string) => {
+    const list = f.targets ?? [];
+    const next = list.some((x) => x.name === id) ? list.filter((x) => x.name !== id) : [...list, body(id)];
+    store.execute(set({ targets: next }));
+  };
+
+  const nameOf = (id: string) => bodies.find((b) => b.id === id)?.name ?? id;
+
+  return (
+    <>
+      <section className="pm-group">
+        <h4>{t('pm.split.tool')}</h4>
+        <div className="pm-row">
+          <input type="text" readOnly value={f.tool.name || t('cmd.mustPickPlane')} />
+        </div>
+      </section>
+      <section className="pm-group">
+        <h4>{t('pm.split.targets')}</h4>
+        <ul className="selection-box">
+          {(!f.targets || f.targets.length === 0) && <li className="muted">{t('pm.split.allBodies')}</li>}
+          {f.targets?.map((x) => {
+            const found = bodies.some((b) => b.id === x.name);
+            return (
+              <li key={x.name} className={found ? '' : 'missing'} title={x.name}>
+                {nameOf(x.name)}
+                {!found && t('pm.lost')}
+                <button className="use-nearest" onClick={() => toggle(x.name)}>
+                  ✕
+                </button>
+              </li>
+            );
+          })}
+        </ul>
+        {bodies.map((b) => (
+          <label key={b.id} className="pm-row checkbox">
+            <input type="checkbox" checked={f.targets?.some((x) => x.name === b.id) ?? false} onChange={() => toggle(b.id)} />
+            <span>{b.name}</span>
+          </label>
+        ))}
+      </section>
+    </>
+  );
+}
+
 /** Imported body (F2.1): where the data came from, and what happened to it on the way in. */
 function ImportedBodyPanel({ f }: { f: ImportedBodyFeature }) {
   const doc = useStore((s) => s.doc);
@@ -3462,6 +3520,7 @@ export function PropertyManager() {
       )}
       {f.type === 'cutWithSurface' && <CutWithSurfacePanel f={f} />}
       {f.type === 'combine' && <CombinePanel f={f} />}
+      {f.type === 'split' && <SplitPanel f={f} />}
       {f.type === 'thread' && <ThreadPanel f={f} />}
       {f.type === 'knurl' && <KnurlPanel f={f} />}
       {f.type === 'cosmeticThread' && <CosmeticThreadPanel f={f} />}

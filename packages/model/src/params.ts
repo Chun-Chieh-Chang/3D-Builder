@@ -395,6 +395,7 @@ export function mapExprs(feature: Feature, fn: (expr: Expr, kind: ExprKind, role
     case 'sweep':
     case 'loft':
     case 'combine':
+    case 'split':
     case 'refAxis':
     case 'coordSys':
     case 'mirror':

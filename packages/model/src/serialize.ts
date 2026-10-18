@@ -190,6 +190,8 @@ const migrations: Record<number, (doc: Json) => Json> = {
   56: (doc) => doc,
   // v58: sketch ellipse entity (`ellipse`, ADR 0157). A new sketch entity kind; nothing to convert.
   57: (doc) => doc,
+  // v59: split body feature (`split`, C7.4, ADR 0158). A new feature kind; nothing to convert.
+  58: (doc) => doc,
 };
 
 export class FormatError extends Error {

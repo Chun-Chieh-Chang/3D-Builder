@@ -2203,6 +2203,14 @@ class AppStore {
     this.openNew({ id: this.allocator().take('combine'), type: 'combine', name: nextName(this.history.doc, name), suppressed: false, op: 'add', main: { kind: 'body', name: main ?? '' }, tools: [] }, name);
   }
 
+  /** 「分割實體」 (C7.4): the selected planar face or top plane is the tool; the PropertyManager picks the rest. */
+  newSplit(): void {
+    const face = this.state.selectedFace;
+    const tool: Ref = face?.kind === 'face' ? face : { kind: 'datum', name: 'plane:top' };
+    const name = t('feature.split');
+    this.openNew({ id: this.allocator().take('split'), type: 'split', name: nextName(this.history.doc, name), suppressed: false, tool, targets: [] }, name);
+  }
+
   /** The id of the body a face of the model on screen belongs to. */
   bodyOfFace(faceName: string): Id | undefined {
     const r = this.state.result;

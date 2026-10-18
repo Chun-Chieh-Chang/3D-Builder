@@ -6,7 +6,7 @@ import type { Id } from './ids';
  * DOF status, mass properties and error lists are derived data and never stored.
  */
 
-export const SCHEMA_VERSION = 58;
+export const SCHEMA_VERSION = 59;
 
 /** Value expression (B5.2, B5.3): "20", "25.4mm", "30deg", "wall_t*2", "D1@草圖1/2", "property('厚度')"; see `expr/`. */
 export type Expr = string;
@@ -929,6 +929,17 @@ export interface CombineFeature extends FeatureBase {
   tools: Ref[];
 }
 
+/**
+ * Split feature (分割實體, C7.4, v59): splits bodies by a datum plane or planar face.
+ */
+export interface SplitFeature extends FeatureBase {
+  type: 'split';
+  /** The cutting tool: a datum plane or planar face reference. */
+  tool: Ref;
+  /** Target bodies to split. When absent or empty, splits all intersecting bodies. */
+  targets?: Ref[];
+}
+
 export type Feature =
   | SketchFeature
   | ExtrudeFeature
@@ -972,6 +983,7 @@ export type Feature =
   | DraftFeature
   | HoleFeature
   | CombineFeature
+  | SplitFeature
   | ThreadFeature
   | KnurlFeature
   | CosmeticThreadFeature;

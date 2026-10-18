@@ -1,5 +1,39 @@
 # 交接文件
 
+- **【2026-10-18：藍圖 C7.4 實體分割特徵 (Split Body Feature) [ADR 0158](docs/adr/0158-split-body.md) — 已完成本地確效】**
+  - **背景與目標**：實作實體分割特徵（Split Body Feature，C7.4），使用基準面（Datum Plane）或實體平面（Planar Face）將單一或多個目標本體切分為多個獨立 Solid，並建立雙向半空間切割、包圍盒相交防禦、TNP 拓樸面名稱繼承與多本體拆分管理之完整閉環。
+  - **完成項目**：
+    1. **架構決策紀錄 (`docs/adr/0158-split-body.md`)**：
+       - 制定分割特徵規格，定義對偶無界半空間切割幾何演算、包圍盒 8 頂點符號距離快速相交判定與紅隊自我檢驗標準。
+    2. **資料模型 (`@3db/model`, Schema 59)**：
+       - `schema.ts`：升版 `SCHEMA_VERSION = 59`，新增 `SplitFeature` 並加入 `Feature` 聯合型別。
+       - `serialize.ts`：補齊 Schema 58 向後相容遷移函數。
+       - `commands.ts`：新增 `setSplit` 命令型別、`validateNewFeature` 非平面/非法目標檢查與 `mutate` 狀態更新。
+       - `params.ts`、`refs.ts`：補齊 `mapExprs` 與 `mapRefs` 對 `split` 的支援。
+    3. **雙語字典 (`@3db/i18n`)**：
+       - `zh-TW/features.ts` 與 `en/features.ts`：補齊 `feature.split*`、`cmd.split*` 與 `pm.split.*` 中英文字典。
+    4. **依賴拓樸 (`@3db/regen/dag.ts`)**：
+       - `parentsOf` 增加 `case 'split':`，正確建立對切割工具與目標本體的 DAG 依賴。
+    5. **幾何核心 (`@3db/kernel/kernel.ts`)**：
+       - 實作 `splitBody(targetId, plane)`：包圍盒 8 頂點符號距離相交防禦；`BRepPrimAPI_MakeHalfSpace` 構造正反向無界半空間；雙向 `BRepAlgoAPI_Cut` 切除；`ShapeUpgrade_UnifySameDomain` 合併共面；`splitSolids` 多實體自動拆分。
+    6. **再生引擎 (`@3db/regen/engine.ts`)**：
+       - 實作 `splitBodies(feature, set)`：支援基準面與實體平面工具解析；指定目標或自動偵測相交實體；調用幾何核心分割；自動生成子實體識別碼與繼承拓樸面持久名稱（`${f.id}:cut`）。
+    7. **介面屬性與狀態 (`apps/web`)**：
+       - `store.ts`：實作 `store.newSplit()`。
+       - `actions.ts`：註冊 `actions.split` 命令。
+       - `PropertyManager.tsx`：實作 `SplitPanel`（切割工具顯示、目標本體勾選盒）。
+       - `Icon.tsx` 與 `strings.ts`：補齊 `split` 圖示與標籤映射。
+    8. **自我紅隊測試 (`tests/phase1/split-body.test.ts`)**：
+       - 7 項測試全數 100% 綠燈，覆蓋標準基準面切割、偏置基準面切割、多實體定向切割、體積閉式解守恆（零 Mock）、未相交前置攔截、非平面工具拒絕與 WASM Heap 真值防呆。
+  - **確效與測試驗收**：
+    - `npm run typecheck`：**0 錯誤**。
+    - `node scripts/check-anti-patterns.mjs`：**全域 RSI 反模式靜態守門通過**。
+    - `node scripts/check-deps.mjs`：**Layering OK**。
+    - `node scripts/check-i18n.mjs`：**i18n OK**。
+    - `tests/phase1/split-body.test.ts`：**7 項測試全數通過 (100%)**。
+    - `tests/phase1/`：**10 個測試檔、121 項測試全數通過 (100%)**。
+  - **停在哪裡**：本地確效 100% 通過，待向使用者回報結果並獲得許可後執行 git push。
+
 - **【2026-10-18：藍圖 P2（C1.5 Phase A：草圖橢圓圖元與長出/旋轉特徵全鏈路實作）[ADR 0157](docs/adr/0157-sketch-ellipse.md) — 已完成本地確效】**
   - **背景與目標**：依據藍圖推進規劃，完成草圖進階幾何圖元「橢圓（Ellipse）」的全鏈路閉環，支援 2D 草圖幾何求解映射、閉合輪廓與孔洞識別，並透過 OpenCASCADE 底層解析幾何 `gp_Elips`，使長出實體（Extrude Boss/Cut）、旋轉實體（Revolve）與斷面混成（Loft）全面支援橢圓。
   - **完成項目**：

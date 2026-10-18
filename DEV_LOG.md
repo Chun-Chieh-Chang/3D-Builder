@@ -1,5 +1,59 @@
 # 3D-Builder 開發日誌 (DEV_LOG.md)
 
+## 2026-10-18：藍圖 C7.4 實體分割特徵 (Split Body Feature) 全鏈路實作 [ADR 0158](docs/adr/0158-split-body.md)
+
+### 1. 任務背景與範疇
+依據使用者確認與藍圖規劃，實作實體分割特徵（Split Body Feature，C7.4），使用基準面（Datum Plane）或實體平面（Planar Face）將單一或多個目標本體切分為多個獨立 Solid，並建立雙向半空間切割、包圍盒相交防禦、TNP 拓樸面名稱繼承與多本體拆分管理之完整閉環。
+
+### 2. 做法與架構設計
+| 層級 | 核心檔案 | 實作內容與職責 |
+|---|---|---|
+| 決策紀錄 | `docs/adr/0158-split-body.md` | 定義雙向半空間切割、自適應大平面包覆、包圍盒 8 頂點符號距離相交判定演算法與自我紅隊檢驗標準。 |
+| 資料模型 | `packages/model/src/schema.ts`、`serialize.ts`、`commands.ts`、`params.ts`、`refs.ts` | 升版 `SCHEMA_VERSION = 59`；新增 `SplitFeature`、`setSplit` 命令型別與 `validateNewFeature` 檢查；新增 schema 58 遷移；在 `mapExprs` 與 `mapRefs` 支援 `split`。 |
+| 雙語字典 | `packages/i18n/src/zh-TW/features.ts`、`en/features.ts` | 補齊 `feature.split*`、`cmd.split*` 與 `pm.split.*` 中英文字典。 |
+| 依賴解析 | `packages/regen/src/dag.ts` | `parentsOf` 新增 `case 'split':` 解析切割工具與目標實體依賴關係。 |
+| 幾何核心 | `packages/kernel/src/kernel.ts` | 實作 `splitBody(targetId, plane)`：包圍盒 8 頂點符號距離快速判定相交防禦；`BRepPrimAPI_MakeHalfSpace` 構造正反向半空間實體；雙向 `BRepAlgoAPI_Cut` 切除；`ShapeUpgrade_UnifySameDomain` 合併共面；`splitSolids` 多實體自動拆分。 |
+| 再生引擎 | `packages/regen/src/engine.ts` | 實作 `splitBodies(feature, set)`：解析基準面/實體平面；指定/自動偵測相交實體；調用幾何核心分割；自動生成子實體識別碼與繼承拓樸面持久名稱（`${f.id}:cut`）。 |
+| 介面與狀態 | `apps/web/src/state/store.ts`、`actions.ts`、`components/PropertyManager.tsx`、`Icon.tsx`、`strings.ts` | 新增 `store.newSplit()`、`actions.split`；新增 `SplitPanel`（切割工具顯示、目標本體勾選盒）；新增 `split` 圖示與標籤映射。 |
+| 確效測試 | `tests/phase1/split-body.test.ts` | 7 項自我紅隊測試全數 100% 綠燈，驗證立方體平面對半切、體積守恆 $\sum V_i = V_{orig} = 24000$（零 Mock）、未相交顯式攔截報錯、非平面工具拒絕與底層 WASM Heap 真值防呆。 |
+
+### 3. 問題分析 (RCA) 與矯正預防措施 (CAPA)
+1. **問題 (Failure)**：`BRepBuilderAPI_MakeFace` 傳入 `gp_Pln` 與容差 `1e-7` 時，TypeScript 報錯 `No overload matches this call. Type 'gp_Pln' is missing properties from 'Geom_Surface'`。
+   - **RCA**：查閱 `libcascade` 定義檔，`BRepBuilderAPI_MakeFace` 接受 `gp_Pln` 的建構子為單一參數 `constructor(P: gp_Pln)`，接受容差者為 `constructor(S: Geom_Surface, TolDegen: number)`。傳入第二個數字參數時強制匹配了 `Geom_Surface` 多載。
+   - **CAPA**：將 `new oc.BRepBuilderAPI_MakeFace(pln, 1e-7)` 改為標準 `new oc.BRepBuilderAPI_MakeFace(pln)`，精確匹配型別定義。
+2. **問題 (Failure)**：測試中存取 `b1!.names.faces` 拋出 `Cannot read properties of undefined`。
+   - **RCA**：在 3D-Builder 中，`r.bodies` 回傳 `BodyInfo[]`，該物件僅記錄本體在複合視圖中的元素範圍索引（`face0`、`faces` 等），而本體持久拓樸名稱存放在 `r.body!.names.faces`。
+   - **CAPA**：修正測試斷言寫法為 `r.body!.names.faces.slice(b1.face0, b1.face0 + b1.faces)`，精確取得該本體對應的面拓樸名稱。
+3. **問題 (Failure)**：`PropertyManager.tsx` 存取 `store.state` 報錯 `Property 'state' is private`。
+   - **RCA**：React 元件層級應使用 Hook `useStore((s) => s.result)`，禁止私自跨存取 Store 內部狀態。
+   - **CAPA**：全面對齊專案既有 `CombinePanel` 規範，使用 `const result = useStore((s) => s.result);` 取得最新重算幾何。
+
+### 4. 自我紅隊四問（AGENTS.md §2.1）
+1. **輸入破壞 (Input Corruption)**：
+   - 非法或非平面工具（如傳入邊、點或圓柱面）：命令層 `validateNewFeature` 立即攔截拋出 `cmd.splitToolNeedsDatumOrFace`；再生層 `this.planeOf` 檢驗非平面即刻拋出 `feature.splitToolNotPlanar`。
+   - 切割平面未切穿任何目標本體（如偏離實體外）：前置包圍盒 8 頂點符號距離快速判定皆在同側，顯式拋出 `feature.splitNoIntersection`，嚴禁靜默假綠或產生空實體。
+2. **拓樸與幾何相交破壞 (Geometric Self-Intersection Defense)**：
+   - 採用對偶無界半空間（`BRepPrimAPI_MakeHalfSpace`）與雙向布林切除，搭配 `splitSolids` 實體拆分，確保產出之所有子本體幾何拓樸有效性 `kernel.isValid` 恆為 true。
+3. **依賴鏈完整性 (Dependency Graph Integrity)**：
+   - 依賴鏈全鏈路覆蓋：`schema` -> `serialize` -> `commands` -> `dag` -> `kernel` -> `engine` -> `PropertyManager` -> `store` -> `actions`，缺一不可。
+4. **規格真實性與零 Mock 原則 (Zero-Mock & Ground Truth)**：
+   - 體積嚴格閉式解守恆驗證：
+     - $40 \times 30 \times 20$ 方塊經 `plane:top` 切割：$V_1 = 12000, V_2 = 12000, V_1 + V_2 = 24000$（誤差 $< 10^{-3}$）。
+     - 經 `plane:right` 切割：$V_1 = 12000, V_2 = 12000, V_1 + V_2 = 24000$。
+     - 經 $Z=5$ 偏置基準面切割：$V_1 = 6000, V_2 = 18000, V_1 + V_2 = 24000$。
+     - 多實體定向切割：指定切割實體一分為二（4000 + 4000），未指定實體保持完整（8000），總體積嚴格守恆。
+   - 記憶體真實指標防呆：斷言 `(kernel.oc as any).wasmMemory?.buffer?.byteLength > 0`。
+
+### 5. 確效與品質驗收
+- `npm run typecheck`：**0 錯誤**。
+- `node scripts/check-anti-patterns.mjs`：**全域 RSI 反模式靜態守門通過**。
+- `node scripts/check-deps.mjs`：**Layering OK**。
+- `node scripts/check-i18n.mjs`：**i18n OK**。
+- `tests/phase1/split-body.test.ts`：**7 項自我紅隊測試全數 100% 通過**。
+- `tests/phase1/`：**10 個測試檔、121 項測試全數 100% 通過**。
+
+---
+
 ## 2026-10-18：藍圖 P2（C1.5 Phase A：草圖橢圓圖元與長出/旋轉實體全鏈路實作）[ADR 0157](docs/adr/0157-sketch-ellipse.md)
 
 ### 1. 任務背景與範疇

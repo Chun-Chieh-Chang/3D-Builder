@@ -1,7 +1,7 @@
 import { t } from '@3db/i18n';
 import { current, produce, type Draft } from 'immer';
 import { countersFor, type Id } from './ids';
-import type { SheetGauge, AppearanceTarget, DocSettings, MaterialRef, Variable, BlobRef, ChamferFeature, FilletKind, CombineFeature, HoleFeature, ScrewBossFeature, BaseFlangeFeature, MidBendFeature, EdgeFlangeFeature, HemFeature, BreakCornerFeature, SnapHookFeature, SnapCatchFeature, VentFeature, LoftFeature, RibFeature, SweepFeature, Draft as WallDraft, EndCondition, Thin, Expr, Feature, ImportedBodyFeature, AxisDefinition, CoordSysFeature, MirrorFeature, PartDoc, PatternDefinition, PatternFeature, PlaneDefinition, PointDefinition, Ref, RevolveCondition, SketchConstraint, SketchEntity, SketchFeature, SketchPicture, CutWithSurfaceFeature, ThreadFeature, KnurlFeature, CosmeticThreadFeature } from './schema';
+import type { SheetGauge, AppearanceTarget, DocSettings, MaterialRef, Variable, BlobRef, ChamferFeature, FilletKind, CombineFeature, SplitFeature, HoleFeature, ScrewBossFeature, BaseFlangeFeature, MidBendFeature, EdgeFlangeFeature, HemFeature, BreakCornerFeature, SnapHookFeature, SnapCatchFeature, VentFeature, LoftFeature, RibFeature, SweepFeature, Draft as WallDraft, EndCondition, Thin, Expr, Feature, ImportedBodyFeature, AxisDefinition, CoordSysFeature, MirrorFeature, PartDoc, PatternDefinition, PatternFeature, PlaneDefinition, PointDefinition, Ref, RevolveCondition, SketchConstraint, SketchEntity, SketchFeature, SketchPicture, CutWithSurfaceFeature, ThreadFeature, KnurlFeature, CosmeticThreadFeature } from './schema';
 import { isDatumPlaneName } from './datums';
 import { canBeSeed } from './patterns';
 import { colorOk, materialOk, sameTarget } from './materials';
@@ -139,6 +139,8 @@ ull). */
   | { type: 'setContours'; featureId: Id; contours: Id[][] | null }
   /** What a Combine feature does to which bodies (C7.2). */
   | { type: 'setCombine'; featureId: Id; op: CombineFeature['op']; main: Ref; tools: Ref[] }
+  /** The cutting tool and target bodies of a Split feature (C7.4, v59). */
+  | { type: 'setSplit'; featureId: Id; tool: Ref; targets?: Ref[] }
   /** The name and the reference flag of a body (C7.1); an empty name or `false` takes the choice back. */
   | { type: 'setBody'; bodyId: Id; name?: string; reference?: boolean }
   /** The face and the distance of a Move Face feature (C10.1). */
@@ -629,6 +631,11 @@ function validateNewFeature(doc: PartDoc, f: Feature, index: number): void {
     case 'cosmeticThread':
       if (f.targetFace.kind !== 'face') throw new CommandError(t('cmd.cosmeticThreadOnlyFace'));
       if (f.startEdge && f.startEdge.kind !== 'edge' && f.startEdge.kind !== 'face') throw new CommandError(t('cmd.cosmeticThreadOnlyEdge'));
+      return;
+
+    case 'split':
+      if (f.tool.kind !== 'datum' && f.tool.kind !== 'face') throw new CommandError(t('cmd.splitToolNeedsDatumOrFace'));
+      if (f.targets && f.targets.some((r) => r.kind !== 'body')) throw new CommandError(t('cmd.splitTargetsOnlyBodies'));
       return;
 
     case 'derivedBody':
@@ -1265,6 +1272,16 @@ export function mutate(draft: Draft<PartDoc>, cmd: Command): void {
       f.op = cmd.op;
       f.main = cmd.main;
       f.tools = cmd.tools;
+      return;
+    }
+    case 'setSplit': {
+      const f = feature(draft, cmd.featureId);
+      if (f.type !== 'split') throw new CommandError(t('cmd.onlySplit'));
+      if (cmd.tool.kind !== 'datum' && cmd.tool.kind !== 'face') throw new CommandError(t('cmd.splitToolNeedsDatumOrFace'));
+      if (cmd.targets && cmd.targets.some((r) => r.kind !== 'body')) throw new CommandError(t('cmd.splitTargetsOnlyBodies'));
+      f.tool = cmd.tool;
+      if (cmd.targets && cmd.targets.length > 0) f.targets = cmd.targets;
+      else delete f.targets;
       return;
     }
     case 'setBody': {
