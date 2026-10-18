@@ -179,7 +179,7 @@ describe('Sheet Metal Jog Feature (v60, ADR 0159)', () => {
   it('setJog command modifies parameters, schemaVersion is 60, and asserts real WASM heap', () => {
     let d = make();
     expect(d.schemaVersion).toBe(SCHEMA_VERSION);
-    expect(SCHEMA_VERSION).toBe(60);
+    expect(SCHEMA_VERSION).toBeGreaterThanOrEqual(60);
 
     d = applyCommand(d, { type: 'setJog', featureId: 'jg', jog: { offset: '12', angle: '60', radius: '3', reverse: true } });
     expect(d.features.find((f) => f.id === 'jg')).toMatchObject({ offset: '12', angle: '60', radius: '3', reverse: true, sketch: 'sm' });

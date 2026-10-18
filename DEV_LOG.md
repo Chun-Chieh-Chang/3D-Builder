@@ -1,5 +1,52 @@
 # 3D-Builder 開發日誌 (DEV_LOG.md)
 
+## 2026-10-18：藍圖 C11.4 鈑金斷開角落與角落修剪 (Break Corner Feature) 全鏈路實作 [ADR 0161](docs/adr/0161-sheet-metal-break-corner.md)
+
+### 1. 任務背景與範疇
+依據使用者確認與藍圖 C11.4 規範，強化並實作鈑金斷開角落特徵（Sheet Metal Break Corner Feature，ADR 0161）。消除早期原型僅限於凸緣自由端之嚴重架構局限，全面開放基材平板（Base Flange）、邊線凸緣（Edge Flange）、鈑金凸折（Jog）與摺邊（Hem）的外露厚度邊（Thickness edge）的倒角（Chamfer）與倒圓（Fillet），並確保 3D 實體切除與 2D 展平圖（Flat Pattern）下料輪廓、下料面積之閉式解嚴格吻合。
+
+### 2. 做法與架構設計
+| 層級 | 核心檔案 | 實作內容與職責 |
+|---|---|---|
+| 決策紀錄 | `docs/adr/0161-sheet-metal-break-corner.md` | 定義厚度邊識別幾何第一性原理、凸外角拓樸判定條件、尺寸相鄰邊長防禦與閉式解體積/面積檢驗標準。 |
+| 再生引擎 | `packages/regen/src/engine.ts` | 徹底重構 `breakCorner()`：放寬過度嚴格的特定凸緣端點限制，改以通用厚度邊幾何條件（直線、長度接近板厚 $T$、雙側面法向正交且夾角非共面、排除折彎圓柱面、排除已封閉或已斜接凸緣邊）；加入尺寸有效性（$size > 0$）與尺寸上限（不可大於相鄰板邊長度）之顯式前置防禦。 |
+| 展開圖 | `packages/regen/src/engine.ts` (`recordCut`), `flatPattern.ts` | 透過 `engine.advance` 內的 `recordCut` 自動截取切除固體材料並登記至 `sheet.cuts`；`flatPattern` 透過 `placeOf(p)` 逆變換將切除體映射回展開板材進行布林切除，基板與凸緣角落自動在展開圖中精確生成倒角線段與圓弧輪廓。 |
+| 雙語字典 | `packages/i18n/src/zh-TW/features.ts`、`en/features.ts` | 新增 `breakCorner.sizeInvalid`，並更新 `breakCorner.unsupported` 與 `pm.breakCorner.*` 提示文字。 |
+| 確效測試 | `tests/phase7/break-corner-advanced.test.ts`、`jog.test.ts` | 8 項自我紅隊測試全數 100% 綠燈，驗證基板單角倒角、基板 4 角同時倒圓、凸緣與基板複合倒角、凸折板角倒圓、非厚度邊拒絕、超大尺寸拒絕、尺寸 $\le 0$ 拒絕與底層 WASM Heap 真值防呆。修復 `jog.test.ts` 中版本演進之 `SCHEMA_VERSION` 斷言。 |
+
+### 3. 問題分析 (RCA) 與矯正預防措施 (CAPA)
+1. **問題 (Failure)**：早期 `breakCorner` 僅能在特定 `sheet.flanges` 兩側自由端運作，基材板（Base Flange）4 個外角厚度邊選取時直接被 `matches.length !== 1` 拒絕報錯。
+   - **RCA**：早期實作者存在「構建者偏差」，僅為滿足單一邊線凸緣示範件而寫死比對邏輯，未從鈑金厚度邊的幾何第一性原理進行抽象。
+   - **CAPA**：重構厚度邊判定邏輯，以板厚 $T$、相鄰兩側面平面法向正交性、非折彎圓柱面作為通用檢驗準則，並保留對已封閉/已斜接凸緣的防禦，使基板、凸緣、凸折等所有未封閉外角厚度邊皆能通用支援。
+2. **問題 (Failure)**：倒角尺寸過大時交由底層 OCCT 拋出未捕獲異常。
+   - **RCA**：缺乏尺寸上限防禦，當 $size \ge$ 相鄰邊長時會完全吞噬相鄰邊造成幾何拓樸退化。
+   - **CAPA**：在命令層/模型層校驗 $size > 0$，並在引擎層搜尋厚度邊頂點相鄰的非厚度板邊長度，若 $size \ge L_{adj}$ 顯式拋出 `breakCorner.sizeInvalid` 攔截。
+
+### 4. 自我紅隊四問（AGENTS.md §2.1）
+1. **輸入破壞 (Input Corruption)**：
+   - 尺寸 $size \le 0$：命令層顯式攔截報錯。
+   - 尺寸 $size \ge$ 相鄰邊長：引擎層顯式拋出 `breakCorner.sizeInvalid`。
+   - 選取非厚度邊（如基板長邊或折彎面圓弧邊）：顯式拋出 `breakCorner.unsupported`。
+2. **拓樸與幾何相交破壞 (Geometric Self-Intersection Defense)**：
+   - 4 角同時倒圓或多特徵複合操作，實體經 `BRepCheck_Analyzer` 驗證 `kernel.isValid` 恆為 true，Solid 數量恆為 1。
+3. **依賴鏈完整性 (Dependency Graph Integrity)**：
+   - 依賴鏈全鏈路覆蓋：`schema.ts` $\to$ `commands.ts` $\to$ `dag.ts` $\to$ `engine.ts` $\to$ `flatPattern.ts` $\to$ `PropertyManager.tsx` $\to$ i18n 雙語字典，缺一不可。
+4. **規格真實性與零 Mock 原則 (Zero-Mock & Ground Truth)**：
+   - 閉式解體積與面積吻合：
+     - 單角倒角 $D=6$：$\Delta V = 27.0\text{ mm}^3, \Delta A_{flat} = 18.0\text{ mm}^2$。
+     - 4 角倒圓 $R=5$：$\Delta V = 20.602\text{ mm}^3, \Delta A_{flat} = 13.735\text{ mm}^2$，展開圖包含 4 道真值圓弧（`kind === 'arc'`）。
+   - 記憶體真實指標防呆：斷言 `(kernel.oc as any).wasmMemory?.buffer?.byteLength > 0`。
+
+### 5. 確效與品質驗收
+- `npm run typecheck`：**0 錯誤**。
+- `node scripts/check-anti-patterns.mjs`：**全域 RSI 反模式靜態守門通過**。
+- `node scripts/check-deps.mjs`：**Layering OK**。
+- `node scripts/check-i18n.mjs`：**i18n OK**。
+- `tests/phase7/break-corner-advanced.test.ts`：**8 項自我紅隊測試全數 100% 通過**。
+- `tests/phase7/`：**19 個測試檔、162 項測試全數 100% 通過**。
+
+---
+
 ## 2026-10-18：藍圖 C1.11 草圖樣條曲線 (Sketch Spline Feature) 全鏈路實作 [ADR 0160](docs/adr/0160-sketch-spline.md)
 
 ### 1. 任務背景與範疇

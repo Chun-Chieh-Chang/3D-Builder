@@ -3108,35 +3108,66 @@ export class Regenerator {
   private breakCorner(f: BreakCornerFeature, set: Bodies): BodyState[] {
     const sheet = this.sheet;
     if (!sheet) throw new FeatureError(t('breakCorner.needsSheet'));
+    const size = evalLength(f.size);
+    if (!(size > 0) || !Number.isFinite(size)) {
+      throw new FeatureError(t('breakCorner.sizeInvalid'));
+    }
     return this.perBody(set, f.corners, 'edge', t('edit.noBodyForChamfer'), lostRefs, (body, mine) => {
       const { edges } = this.edgesOfRefs(mine, body);
+      const topology = body.topology;
       for (const edgeIndex of edges) {
-        const edge = body.topology.edges[edgeIndex]!;
-        const matches: { flange: SheetFlange; end: 0 | 1 }[] = [];
-        if (edge.curve === 'line' && edge.dir && Math.abs(edge.length - sheet.thickness) <= 1e-5 * (1 + sheet.thickness)) {
-          for (const flange of sheet.flanges) {
-            const fold = flange.fold;
-            if (Math.abs(dot(unit(edge.dir), fold.m2)) < 1 - 1e-6) continue;
-            const along = dot(sub(edge.mid, fold.origin2), fold.d);
-            const across = dot(sub(edge.mid, fold.origin2), fold.e);
-            if (Math.abs(along - flange.straight) > 1e-5 * (1 + flange.straight)) continue;
-            for (const end of [0, 1] as const) {
-              if (flange.miter[end] || flange.corner[end] > 1e-8) continue;
-              const at = end === 0 ? fold.pa : fold.pb;
-              if (Math.abs(across - at) <= 1e-5 * (1 + flange.width)) matches.push({ flange, end });
+        const edge = topology.edges[edgeIndex]!;
+        if (edge.curve !== 'line' || !edge.dir || Math.abs(edge.length - sheet.thickness) > 1e-4 * (1 + sheet.thickness)) {
+          throw new FeatureError(t('breakCorner.unsupported'));
+        }
+        const faces = [...new Set(edge.faces)];
+        if (faces.length !== 2) throw new FeatureError(t('breakCorner.unsupported'));
+        const f0 = topology.faces[faces[0]!]!;
+        const f1 = topology.faces[faces[1]!]!;
+        if (f0.surface !== 'plane' || f1.surface !== 'plane' || !f0.normal || !f1.normal) {
+          throw new FeatureError(t('breakCorner.unsupported'));
+        }
+        const eDir = unit(edge.dir);
+        if (Math.abs(dot(f0.normal, eDir)) > 0.05 || Math.abs(dot(f1.normal, eDir)) > 0.05) {
+          throw new FeatureError(t('breakCorner.unsupported'));
+        }
+        if (Math.abs(dot(f0.normal, f1.normal)) > 0.99) {
+          throw new FeatureError(t('breakCorner.unsupported'));
+        }
+        for (const vIdx of edge.vertices) {
+          for (let eIdx = 0; eIdx < topology.edges.length; eIdx++) {
+            if (eIdx === edgeIndex) continue;
+            const adj = topology.edges[eIdx]!;
+            if (adj.vertices.includes(vIdx) && adj.curve === 'line') {
+              if (adj.length <= size + 1e-6) {
+                throw new FeatureError(t('breakCorner.sizeInvalid'));
+              }
             }
           }
         }
-        if (matches.length !== 1) throw new FeatureError(t('breakCorner.unsupported'));
+        for (const flange of sheet.flanges) {
+          const fold = flange.fold;
+          if (Math.abs(dot(eDir, fold.m2)) > 1 - 1e-5) {
+            const along = dot(sub(edge.mid, fold.origin2), fold.d);
+            const across = dot(sub(edge.mid, fold.origin2), fold.e);
+            if (Math.abs(along - flange.straight) <= 1e-4 * (1 + flange.straight)) {
+              for (const end of [0, 1] as const) {
+                const at = end === 0 ? fold.pa : fold.pb;
+                if (Math.abs(across - at) <= 1e-4 * (1 + flange.width)) {
+                  if (flange.miter[end] || flange.corner[end] > 1e-8) {
+                    throw new FeatureError(t('breakCorner.unsupported'));
+                  }
+                }
+              }
+            }
+          }
+        }
       }
-      const size = evalLength(f.size);
-      const topology = body.topology;
       let r: OpResult;
       if (f.kind === 'fillet') r = this.kernel.fillet(body.shape, edges, size);
       else {
         const specs = edges.map((edge) => {
           const faces = [...new Set(topology.edges[edge]!.faces)].sort((a, b) => (body.names.faces[a]! < body.names.faces[b]! ? -1 : 1));
-          if (faces.length !== 2) throw new FeatureError(t('breakCorner.unsupported'));
           return { edge, face: faces[0]! };
         });
         r = this.kernel.chamfer(body.shape, specs, 'distanceDistance', size, size);
