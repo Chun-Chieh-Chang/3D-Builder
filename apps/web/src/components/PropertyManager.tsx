@@ -19,6 +19,7 @@ import {
   type CombineFeature,
   type SplitFeature,
   type MoveCopyBodyFeature,
+  type DeleteKeepBodyFeature,
   type Command,
   type DeleteFaceFeature,
   type DraftFeature,
@@ -3406,6 +3407,78 @@ function MoveCopyBodyPanel({ f }: { f: MoveCopyBodyFeature }) {
   );
 }
 
+/** Delete/Keep Body feature (C7.3, ADR 0165): blacklist or whitelist body filtering. */
+function DeleteKeepBodyPanel({ f }: { f: DeleteKeepBodyFeature }) {
+  const result = useStore((s) => s.result);
+  const bodies = (result?.bodies ?? []).filter((b) => !b.surface);
+  const update = (patch: Partial<Omit<DeleteKeepBodyFeature, 'id' | 'type' | 'name' | 'suppressed'>>) => {
+    store.execute({
+      type: 'setDeleteKeepBody',
+      featureId: f.id,
+      mode: f.mode ?? 'delete',
+      targets: f.targets,
+      ...patch,
+    });
+  };
+
+  const body = (name: string): Ref => ({ kind: 'body', name });
+  const toggle = (id: string) => {
+    const list = f.targets ?? [];
+    const next = list.some((x) => x.name === id) ? list.filter((x) => x.name !== id) : [...list, body(id)];
+    update({ targets: next });
+  };
+
+  const nameOf = (id: string) => bodies.find((b) => b.id === id)?.name ?? id;
+
+  return (
+    <>
+      <section className="pm-group">
+        <h4>{t('pm.deleteKeepBody.mode')}</h4>
+        <div className="segmented-control">
+          <button
+            className={(f.mode ?? 'delete') === 'delete' ? 'active' : ''}
+            onClick={() => update({ mode: 'delete' })}
+          >
+            {t('pm.deleteKeepBody.modeDelete')}
+          </button>
+          <button
+            className={f.mode === 'keep' ? 'active' : ''}
+            onClick={() => update({ mode: 'keep' })}
+          >
+            {t('pm.deleteKeepBody.modeKeep')}
+          </button>
+        </div>
+      </section>
+
+      <section className="pm-group">
+        <h4>{t('pm.deleteKeepBody.targets')}</h4>
+        <ul className="selection-box">
+          {(!f.targets || f.targets.length === 0) && <li className="muted">{t('feature.deleteKeepNeedsTargets')}</li>}
+          {f.targets?.map((x) => {
+            const found = bodies.some((b) => b.id === x.name);
+            return (
+              <li key={x.name} className={found ? '' : 'missing'} title={x.name}>
+                {nameOf(x.name)}
+                {!found && t('pm.lost')}
+                <button className="use-nearest" onClick={() => toggle(x.name)}>
+                  ✕
+                </button>
+              </li>
+            );
+          })}
+        </ul>
+        {bodies.map((b) => (
+          <label key={b.id} className="pm-row checkbox">
+            <input type="checkbox" checked={f.targets?.some((x) => x.name === b.id) ?? false} onChange={() => toggle(b.id)} />
+            <span>{b.name}</span>
+          </label>
+        ))}
+        <p className="hint">{t('pm.deleteKeepBody.hint')}</p>
+      </section>
+    </>
+  );
+}
+
 /** Imported body (F2.1): where the data came from, and what happened to it on the way in. */
 function ImportedBodyPanel({ f }: { f: ImportedBodyFeature }) {
   const doc = useStore((s) => s.doc);
@@ -3810,6 +3883,7 @@ export function PropertyManager() {
       {f.type === 'combine' && <CombinePanel f={f} />}
       {f.type === 'split' && <SplitPanel f={f} />}
       {f.type === 'moveCopyBody' && <MoveCopyBodyPanel f={f} />}
+      {f.type === 'deleteKeepBody' && <DeleteKeepBodyPanel f={f} />}
       {f.type === 'thread' && <ThreadPanel f={f} />}
       {f.type === 'knurl' && <KnurlPanel f={f} />}
       {f.type === 'cosmeticThread' && <CosmeticThreadPanel f={f} />}

@@ -109,6 +109,10 @@ export function parentsOf(feature: Feature, doc: PartDoc): Id[] {
       parents = [...targetParents, ...axisParents];
       break;
     }
+    case 'deleteKeepBody': {
+      parents = feature.targets.filter((r) => r.name).map((r) => bodyFeature(r.name));
+      break;
+    }
     case 'refPlane':
     case 'refAxis':
     case 'refPoint':

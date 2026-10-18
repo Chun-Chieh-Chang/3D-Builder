@@ -1162,4 +1162,6 @@ export const help: Translation = {
   'help.drwDxf.keywords': 'dxf export cad',
   'help.drwSvg.summary': 'Writes the drawing out as an SVG image.',
   'help.drwSvg.keywords': 'svg export image',
+  'help.deleteKeepBody.summary': 'Deletes auxiliary or scrap bodies along the timeline, or specifies only finished bodies to keep.',
+  'help.deleteKeepBody.keywords': 'delete body keep body multibody auxiliary scrap remove',
 };

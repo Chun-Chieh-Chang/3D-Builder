@@ -1,6 +1,6 @@
 import type { ReactElement } from 'react';
 
-export type IconName = 'part' | 'assembly' | 'mates' | 'origin' | 'plane' | 'refPlane' | 'refAxis' | 'refPoint' | 'coordSys' | 'sketch' | 'extrude' | 'revolve' | 'sweep' | 'thread' | 'knurl' | 'cosmeticThread' | 'loft' | 'rib' | 'pattern' | 'mirror' | 'fillet' | 'chamfer' | 'importedBody' | 'derivedBody' | 'deleteFace' | 'moveFace' | 'shell' | 'draft' | 'hole' | 'combine' | 'split' | 'moveCopyBody' | 'offsetSurface' | 'splitLine' | 'knit' | 'fillSurface' | 'flatSurface' | 'trimSurface' | 'mutualTrim' | 'extendSurface' | 'thicken' | 'cutWithSurface' | 'lipGroove' | 'screwBoss' | 'baseFlange' | 'midBend' | 'jog' | 'edgeFlange' | 'breakCorner' | 'hem' | 'snapHook' | 'snapCatch' | 'vent' | 'body' | 'error' | 'warning' | 'ok' | 'cancel' | 'eye' | 'eyeOff' | 'drawingDoc' | 'sheet' | 'titleBlock' | 'view' | 'projectedView' | 'sectionView' | 'detailView' | 'dimension' | 'note' | 'datum' | 'gdt' | 'centreMark' | 'table' | 'surfaceFinish' | 'exportFile' | 'palette' | 'tree' | 'properties' | 'chevron' | 'pin' | 'search';
+export type IconName = 'part' | 'assembly' | 'mates' | 'origin' | 'plane' | 'refPlane' | 'refAxis' | 'refPoint' | 'coordSys' | 'sketch' | 'extrude' | 'revolve' | 'sweep' | 'thread' | 'knurl' | 'cosmeticThread' | 'loft' | 'rib' | 'pattern' | 'mirror' | 'fillet' | 'chamfer' | 'importedBody' | 'derivedBody' | 'deleteFace' | 'moveFace' | 'shell' | 'draft' | 'hole' | 'combine' | 'split' | 'moveCopyBody' | 'deleteKeepBody' | 'offsetSurface' | 'splitLine' | 'knit' | 'fillSurface' | 'flatSurface' | 'trimSurface' | 'mutualTrim' | 'extendSurface' | 'thicken' | 'cutWithSurface' | 'lipGroove' | 'screwBoss' | 'baseFlange' | 'midBend' | 'jog' | 'edgeFlange' | 'breakCorner' | 'hem' | 'snapHook' | 'snapCatch' | 'vent' | 'body' | 'error' | 'warning' | 'ok' | 'cancel' | 'eye' | 'eyeOff' | 'drawingDoc' | 'sheet' | 'titleBlock' | 'view' | 'projectedView' | 'sectionView' | 'detailView' | 'dimension' | 'note' | 'datum' | 'gdt' | 'centreMark' | 'table' | 'surfaceFinish' | 'exportFile' | 'palette' | 'tree' | 'properties' | 'chevron' | 'pin' | 'search';
 
 /** Default planes and reference planes share one icon, as in SolidWorks. */
 const PLANE = <path d="M4 4h10l-2 8H2z" />;
@@ -59,6 +59,7 @@ const PATHS: Record<IconName, ReactElement> = {
   combine: <path d="M2 6h6v6H2z M8 4h6v6H8z M8 6v4" />,
   split: <path d="M3 5l5-3 5 3v6l-5 3-5-3z M1 8h14" />,
   moveCopyBody: <path d="M2 6h6v6H2z M8 2h6v6H8z M5 3l3-2 3 2 M8 1v5" />,
+  deleteKeepBody: <path d="M3 5l5-3 5 3v6l-5 3-5-3z M10 10l4 4 M14 10l-4 4" />,
   body: <path d="M3 5l5-3 5 3v6l-5 3-5-3z M3 5l5 3 5-3 M8 8v6" />,
   error: <path d="M8 2l6.5 11h-13z M8 6v3.5 M8 11.5v0.5" />,
   warning: <path d="M8 2.5l6 10.5H2z M8 6.5v3 M8 11v0.5" />,

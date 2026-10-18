@@ -1170,4 +1170,6 @@ export const help = {
   'help.drwDxf.keywords': 'DXF 輸出 CAD',
   'help.drwSvg.summary': '把工程圖輸出成 SVG 圖檔。',
   'help.drwSvg.keywords': 'SVG 輸出 圖檔',
+  'help.deleteKeepBody.summary': '在時間軸上刪除指定的輔助或廢料本體，或指定僅保留選取的成品本體。',
+  'help.deleteKeepBody.keywords': '刪除本體 保留本體 多本體 輔助實體 廢料 移除',
 } as const;

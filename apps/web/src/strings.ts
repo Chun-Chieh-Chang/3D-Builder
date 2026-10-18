@@ -63,6 +63,7 @@ export const FEATURE_LABEL: Record<FeatureType, string> = labelsOf({
   combine: 'feature.combine',
   split: 'feature.split',
   moveCopyBody: 'feature.moveCopyBody',
+  deleteKeepBody: 'feature.deleteKeepBody',
   thread: 'feature.thread',
   knurl: 'feature.knurl',
   cosmeticThread: 'feature.cosmeticThread',

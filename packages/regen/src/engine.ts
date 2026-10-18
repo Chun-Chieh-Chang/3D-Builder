@@ -16,6 +16,7 @@ import {
   type CoordSystem,
   type CombineFeature,
   type MoveCopyBodyFeature,
+  type DeleteKeepBodyFeature,
   type DeleteFaceFeature,
   type DraftFeature,
   type HoleFeature,
@@ -737,6 +738,10 @@ export class Regenerator {
           }
           case 'moveCopyBody': {
             set = this.advance(set, this.moveCopyBody(feature, set));
+            return done({ status: 'ok' });
+          }
+          case 'deleteKeepBody': {
+            set = this.advance(set, this.deleteKeepBody(feature, set));
             return done({ status: 'ok' });
           }
           case 'extrude':
@@ -2436,6 +2441,32 @@ export class Regenerator {
       for (const s of made) k.release(s);
       throw e;
     }
+  }
+
+  /** 「刪除/保留本體」 (C7.3, ADR 0165): deletes or keeps specified bodies. */
+  private deleteKeepBody(f: DeleteKeepBodyFeature, set: Bodies): BodyState[] {
+    if (!f.targets || f.targets.length === 0) {
+      throw new FeatureError(t('feature.deleteKeepNeedsTargets'));
+    }
+
+    const targetNames = new Set(f.targets.map((r) => r.name).filter(Boolean));
+    if (targetNames.size === 0) {
+      throw new FeatureError(t('feature.deleteKeepNeedsTargets'));
+    }
+
+    const mode = f.mode ?? 'delete';
+    let remaining: BodyState[];
+
+    if (mode === 'delete') {
+      remaining = set.list.filter((b) => !targetNames.has(b.id));
+      const deletedCount = set.list.length - remaining.length;
+      this.info = t('feature.deleteBodyInfo', { count: deletedCount });
+    } else {
+      remaining = set.list.filter((b) => targetNames.has(b.id));
+      this.info = t('feature.keepBodyInfo', { count: remaining.length });
+    }
+
+    return remaining;
   }
 
   // ------------------------------------------------------------------ imported bodies (F2.1)

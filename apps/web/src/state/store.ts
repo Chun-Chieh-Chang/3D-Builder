@@ -2288,6 +2288,32 @@ class AppStore {
     );
   }
 
+  /** 「刪除/保留本體」 (C7.3, ADR 0165): deletes or keeps specified bodies. */
+  newDeleteKeepBody(): void {
+    const s = this.state;
+    const r = s.result;
+    if (!r?.bodies || r.bodies.length === 0) return void this.notify(t('feature.deleteKeepNeedsTargets'), 'error');
+    let targetId = r.bodies[0]?.id;
+    if (s.selectedFace) {
+      const bId = this.bodyOfFace(s.selectedFace.name);
+      if (bId) targetId = bId;
+    }
+    const targets: Ref[] = targetId ? [{ kind: 'body', name: targetId }] : [];
+    const base = t('feature.deleteKeepBody');
+    const id = this.allocator().take('deleteKeepBody');
+    this.openNew(
+      {
+        id,
+        type: 'deleteKeepBody',
+        name: nextName(this.history.doc, base),
+        suppressed: false,
+        mode: 'delete',
+        targets,
+      },
+      base,
+    );
+  }
+
   /** The id of the body a face of the model on screen belongs to. */
   bodyOfFace(faceName: string): Id | undefined {
     const r = this.state.result;

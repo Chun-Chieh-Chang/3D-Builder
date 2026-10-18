@@ -125,6 +125,14 @@ export function mapRefs(feature: Feature, map: (ref: Ref) => Ref): { feature: Fe
         },
         replaced,
       };
+    case 'deleteKeepBody':
+      return {
+        feature: {
+          ...feature,
+          targets: feature.targets.map(one),
+        },
+        replaced,
+      };
     case 'thread':
       return typeof feature.axis === 'string' ? { feature, replaced } : { feature: { ...feature, axis: one(feature.axis) }, replaced };
     case 'knurl':

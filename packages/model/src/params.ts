@@ -404,6 +404,7 @@ export function mapExprs(feature: Feature, fn: (expr: Expr, kind: ExprKind, role
     case 'loft':
     case 'combine':
     case 'split':
+    case 'deleteKeepBody':
       return feature;
     case 'moveCopyBody': {
       const dx = feature.dx !== undefined && feature.dx.trim() !== '' ? fn(feature.dx, 'length', 'any') : feature.dx;

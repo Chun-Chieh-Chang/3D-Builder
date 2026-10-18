@@ -1,5 +1,25 @@
 # 交接文件
 
+- **【2026-10-18：藍圖 C7.3 實體刪除與保留本體特徵 (Delete / Keep Body Feature) 全鏈路實作 [ADR 0165](docs/adr/0165-delete-keep-body.md) — 本地確效 100% 通過，待推送】**
+  - **背景與目標**：依據藍圖 C7.3 規範，實作實體刪除與保留本體特徵（Delete / Keep Body Feature）。支援對多個目標實體進行時間軸上的參數化「黑名單刪除（delete）」或「白名單保留（keep）」，作為多實體建模、夾治具主模型與分割實體中清理輔助本體與廢料的收尾特徵。保證 0 WASM 記憶體洩漏與殘留實體 100% 物理體積/拓樸保真，並達成全鏈路 Web 前端交互與歷史可逆性。
+  - **完成項目**：
+    1. **架構決策紀錄 (`docs/adr/0165-delete-keep-body.md`)**：定義黑名單刪除與白名單保留語意、集合層常數時間過濾、全刪除邊界安全防禦與自我紅隊四問檢驗標準。
+    2. **資料模型 (`@3db/model`, Schema 64)**：升版 `SCHEMA_VERSION = 64`；新增 `DeleteKeepBodyFeature` 模型；實作 schema 63 遷移函式；新增 `setDeleteKeepBody` 指令與 `validateNewFeature` 語意檢查（目標非空、mode 檢查）；`mapRefs` 支援 `targets` 映射。
+    3. **依賴與再生 (`@3db/regen`)**：`dag.ts` 解析目標本體依賴（`bodyFeature`）；`engine.ts` 實作 `deleteKeepBody(f, set)`：純 JS 集合快速過濾，0 WASM 開銷，維持拓樸命名穩定與實體狀態一致。
+    4. **雙語字典 (`@3db/i18n`)**：補齊 `feature.deleteKeepBody`、`cmd.setDeleteKeepBody`、`pm.deleteKeepBody.*`、`help.deleteKeepBody.*` 中英文多國語言與說明文檔。更新 `docs/help-links.json` 映射。
+    5. **介面適配 (`apps/web`)**：`store.ts` 新增 `newDeleteKeepBody()`；`actions.ts` 註冊 `delete-keep-body` 特徵動作；`PropertyManager.tsx` 實作分段控制切換（刪除 vs 保留）與目標選取面板；`Icon.tsx` 提供專屬向量圖示；`strings.ts` 登記標籤。
+    6. **自我紅隊測試 (`tests/phase1/delete-keep-body.test.ts`)**：8 項自我紅隊測試全數 100% 通過，涵蓋黑名單刪除物理守恆、白名單保留、多本體複合刪除、全刪除邊界防守、輸入破壞攔截、歷史抑制還原、DAG 依賴與 WASM Heap 真實指標防呆；說明系統 40 項測試 100% 通過。
+  - **確效與測試驗收**：
+    - `npm run typecheck`：**0 錯誤**。
+    - `node scripts/check-anti-patterns.mjs`：**全域 RSI 反模式靜態守門通過**。
+    - `node scripts/check-deps.mjs`：**Layering OK**。
+    - `node scripts/check-i18n.mjs`：**i18n OK**。
+    - `tests/phase1/delete-keep-body.test.ts`：**8 項測試全數通過 (100%)**。
+    - `tests/phase1/move-copy-body.test.ts`：**8 項測試全數通過 (100%)**。
+    - `tests/phase1/split-body.test.ts`：**7 項測試全數通過 (100%)**。
+    - `tests/phase8/help.test.ts`：**40 項說明守門測試全數通過 (100%)**。
+  - **停在哪裡**：本地確效全部通過，待使用者確認授權執行 git commit 與 git push。
+
 - **【2026-10-18：藍圖 C7.3 實體移動與複製本體特徵 (Move/Copy Body Feature) 全鏈路實作 [ADR 0164](docs/adr/0164-move-copy-body.md) — 已提交並推送 `661f849`（origin/main）】**
   - **背景與目標**：依據藍圖 C7.3 規範，實作實體移動與複製本體特徵（Move/Copy Body Feature）。支援對多個目標實體進行線性平移（$dx, dy, dz$）與沿軸旋轉（$\theta$），支援主軸或參考線/直邊作為旋轉軸，具備原地移動與多實體複製兩種模式，保證剛體變換下體積與表面積 100% 物理守恆，零 WASM 布林洩漏，並達成全鏈路 Web 前端互動。
   - **完成項目**：

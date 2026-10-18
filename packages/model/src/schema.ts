@@ -6,7 +6,7 @@ import type { Id } from './ids';
  * DOF status, mass properties and error lists are derived data and never stored.
  */
 
-export const SCHEMA_VERSION = 63;
+export const SCHEMA_VERSION = 64;
 
 /** Value expression (B5.2, B5.3): "20", "25.4mm", "30deg", "wall_t*2", "D1@草圖1/2", "property('厚度')"; see `expr/`. */
 export type Expr = string;
@@ -990,6 +990,17 @@ export interface MoveCopyBodyFeature extends FeatureBase {
   copy?: boolean;
 }
 
+/**
+ * Delete/Keep Body feature (刪除/保留本體, C7.3, v64): deletes or keeps specified bodies.
+ */
+export interface DeleteKeepBodyFeature extends FeatureBase {
+  type: 'deleteKeepBody';
+  /** Operation mode: 'delete' (blacklist) or 'keep' (whitelist). Default 'delete'. */
+  mode: 'delete' | 'keep';
+  /** Target bodies to delete or keep. */
+  targets: Ref[];
+}
+
 export type Feature =
   | SketchFeature
   | ExtrudeFeature
@@ -1035,6 +1046,7 @@ export type Feature =
   | CombineFeature
   | SplitFeature
   | MoveCopyBodyFeature
+  | DeleteKeepBodyFeature
   | JogFeature
   | ThreadFeature
   | KnurlFeature

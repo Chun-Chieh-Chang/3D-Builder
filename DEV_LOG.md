@@ -1,5 +1,54 @@
 # 3D-Builder 開發日誌 (DEV_LOG.md)
 
+## 2026-10-18：藍圖 C7.3 實體刪除與保留本體特徵 (Delete / Keep Body Feature) 全鏈路實作 [ADR 0165](docs/adr/0165-delete-keep-body.md)
+
+### 1. 任務背景與範疇
+依據使用者確認與藍圖 C7.3 規範，實作實體刪除與保留本體特徵（Delete / Keep Body Feature，ADR 0165）。在多實體零件造型、夾治具主模型與分割實體工作流中，支援對一個或多個目標本體進行時間軸上的參數化「黑名單刪除（delete）」或「白名單保留（keep）」。此特徵屬於幾何集合過濾運算，不涉及 OCCT 布林求解器運算，保證 0 WASM 堆記憶體洩漏與殘留實體 100% 物理體積/拓樸保真（$\Delta V = 0$），並達成全鏈路 Web 前端交互與歷史可逆性（回溯/抑制）。
+
+### 2. 做法與架構設計
+| 層級 | 核心檔案 | 實作內容與職責 |
+|---|---|---|
+| 決策紀錄 | `docs/adr/0165-delete-keep-body.md` | 定義黑名單刪除與白名單保留語意、集合層常數時間過濾、全刪除邊界安全防禦與自我紅隊四問檢驗標準。 |
+| 資料模型 | `packages/model/src/schema.ts`、`serialize.ts`、`commands.ts`、`params.ts`、`refs.ts` | 升版 `SCHEMA_VERSION = 64`；新增 `DeleteKeepBodyFeature` 模型；實作 schema 63 遷移函式；新增 `setDeleteKeepBody` 指令與 `validateNewFeature` 語意檢查（目標非空、mode 檢查）；`mapRefs` 支援 `targets` 映射。 |
+| 依賴與再生 | `packages/regen/src/dag.ts`、`engine.ts` | `dag.ts` 解析目標本體依賴（`bodyFeature`）；`engine.ts` 實作 `deleteKeepBody(f, set)`：純 JS 集合快速過濾，0 WASM 開銷，維持拓樸命名穩定與實體狀態一致。 |
+| 雙語字典 | `packages/i18n/src/` | 補齊 `feature.deleteKeepBody`、`cmd.setDeleteKeepBody`、`pm.deleteKeepBody.*`、`help.deleteKeepBody.*` 中英文多國語言與說明文檔。更新 `docs/help-links.json` 映射。 |
+| 介面適配 | `apps/web/src/` | `store.ts` 新增 `newDeleteKeepBody()`；`actions.ts` 註冊 `delete-keep-body` 特徵動作；`PropertyManager.tsx` 實作分段控制切換（刪除 vs 保留）與目標選取面板；`Icon.tsx` 提供專屬向量圖示；`strings.ts` 登記標籤。 |
+| 確效測試 | `tests/phase1/delete-keep-body.test.ts`、`tests/phase8/help.test.ts` | 8 項自我紅隊測試全數 100% 通過，涵蓋黑名單刪除物理守恆、白名單保留、多本體複合刪除、全刪除邊界防守、輸入破壞攔截、歷史抑制還原、DAG 依賴與 WASM Heap 真實指標防呆；說明系統 40 項測試 100% 通過。 |
+
+### 3. 問題分析 (RCA) 與矯正預防措施 (CAPA)
+1. **問題 (Failure)**：全刪除邊界時是否會導致渲染層或下游特徵報錯？
+   - **RCA**：若模型中所有實體均被刪除，`r.bodies` 變為長度為 0 之空陣列。若引擎或狀態層假設 `bodies[0]` 恆存在，會引發未捕獲例外。
+   - **CAPA**：在 `engine.ts` 與 `store.newDeleteKeepBody()` 實作防禦性檢查，容許 `bodies = []` 存在，並於 UI 提示「未指定本體或無實體」，保證 0 崩潰。
+
+### 4. 自我紅隊四問（AGENTS.md §2.1）
+1. **輸入破壞 (Input Corruption)**：
+   - 目標列表為空（`targets = []`）：命令層立即拋出顯式 `CommandError` 攔截，禁止空目標進入再生流程。
+   - 非法 mode：命令層驗證 `mode !== 'delete' && mode !== 'keep'` 顯式拋錯。
+   - 非 body 參考傳入：命令層驗證 `targets.some(r => r.kind !== 'body')` 顯式拋錯。
+2. **拓樸與幾何相交破壞 (Geometric Self-Intersection Defense)**：
+   - 集合過濾不產生新的幾何，無幾何自相交或布林失敗風險。
+   - 全刪除邊界：8 項測試包含全刪除測試，實體驗證 0 崩潰。
+3. **依賴鏈完整性 (Dependency Graph Integrity)**：
+   - 完整支援 `schema.ts` $\to$ `commands.ts` $\to$ `refs.ts` $\to$ `params.ts` $\to$ `dag.ts` $\to$ `engine.ts` $\to$ `store.ts` $\to$ `PropertyManager.tsx` 全鏈路。
+4. **規格真實性與零 Mock 原則 (Zero-Mock & Ground Truth)**：
+   - 物理量測真實探針：
+     - 黑名單刪除 Body 1（$24000\text{ mm}^3$）：殘留 Body 2 體積實測精確為 $8000.0\text{ mm}^3$，包圍盒邊界座標完全不變。
+     - 白名單保留 Body 1（$24000\text{ mm}^3$）：殘留 Body 1 體積實測精確為 $24000.0\text{ mm}^3$。
+     - 抑制測試：抑制特徵後 2 個實體全數重現。
+   - 記憶體真實指標防呆：斷言 `(kernel.oc as any).wasmMemory?.buffer?.byteLength > 0` 且 20 次 rebuild 後 Heap 大小完全恆定（0 洩漏）。
+
+### 5. 確效與品質驗收
+- `npm run typecheck`：**0 錯誤**。
+- `node scripts/check-anti-patterns.mjs`：**全域 RSI 反模式靜態守門通過**。
+- `node scripts/check-deps.mjs`：**Layering OK**。
+- `node scripts/check-i18n.mjs`：**i18n OK**。
+- `tests/phase1/delete-keep-body.test.ts`：**8 項自我紅隊測試全數 100% 通過**。
+- `tests/phase1/move-copy-body.test.ts`：**8 項測試全數 100% 通過**。
+- `tests/phase1/split-body.test.ts`：**7 項測試全數 100% 通過**。
+- `tests/phase8/help.test.ts`：**40 項說明守門測試全數 100% 通過**。
+
+---
+
 ## 2026-10-18：藍圖 C7.3 實體移動與複製本體特徵 (Move/Copy Body Feature) 全鏈路實作 [ADR 0164](docs/adr/0164-move-copy-body.md)
 
 ### 1. 任務背景與範疇

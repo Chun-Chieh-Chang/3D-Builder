@@ -145,6 +145,8 @@ ull). */
   | { type: 'setSplit'; featureId: Id; tool: Ref; targets?: Ref[] }
   /** The targets, displacement and rotation of a Move/Copy Body feature (C7.3, v63). */
   | { type: 'setMoveCopyBody'; featureId: Id; targets: Ref[]; dx?: Expr; dy?: Expr; dz?: Expr; rotationAxis?: Ref | 'x' | 'y' | 'z'; rotationAngle?: Expr; copy?: boolean }
+  /** The operation mode and target bodies of a Delete/Keep Body feature (C7.3, v64). */
+  | { type: 'setDeleteKeepBody'; featureId: Id; mode: 'delete' | 'keep'; targets: Ref[] }
   /** The name and the reference flag of a body (C7.1); an empty name or `false` takes the choice back. */
   | { type: 'setBody'; bodyId: Id; name?: string; reference?: boolean }
   /** The face and the distance of a Move Face feature (C10.1). */
@@ -655,6 +657,12 @@ function validateNewFeature(doc: PartDoc, f: Feature, index: number): void {
           throw new CommandError(t('cmd.moveCopyBodyAxisKind'));
         }
       }
+      return;
+
+    case 'deleteKeepBody':
+      if (!f.targets || f.targets.length === 0) throw new CommandError(t('cmd.deleteKeepBodyNeedsTargets'));
+      if (f.targets.some((r) => r.kind !== 'body')) throw new CommandError(t('cmd.deleteKeepBodyOnlyBodies'));
+      if (f.mode !== 'delete' && f.mode !== 'keep') throw new CommandError(t('cmd.deleteKeepBodyModeInvalid'));
       return;
 
     case 'derivedBody':
@@ -1330,6 +1338,16 @@ export function mutate(draft: Draft<PartDoc>, cmd: Command): void {
       if (cmd.rotationAngle !== undefined && cmd.rotationAngle.trim() !== '') f.rotationAngle = cmd.rotationAngle; else delete f.rotationAngle;
       if (cmd.copy) f.copy = true; else delete f.copy;
       checkExprs(draft as PartDoc, f as Feature);
+      return;
+    }
+    case 'setDeleteKeepBody': {
+      const f = feature(draft, cmd.featureId);
+      if (f.type !== 'deleteKeepBody') throw new CommandError(t('cmd.onlyDeleteKeepBody'));
+      if (!cmd.targets || cmd.targets.length === 0) throw new CommandError(t('cmd.deleteKeepBodyNeedsTargets'));
+      if (cmd.targets.some((r) => r.kind !== 'body')) throw new CommandError(t('cmd.deleteKeepBodyOnlyBodies'));
+      if (cmd.mode !== 'delete' && cmd.mode !== 'keep') throw new CommandError(t('cmd.deleteKeepBodyModeInvalid'));
+      f.mode = cmd.mode;
+      f.targets = cmd.targets;
       return;
     }
     case 'setBody': {
