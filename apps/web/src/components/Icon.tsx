@@ -1,6 +1,6 @@
 import type { ReactElement } from 'react';
 
-export type IconName = 'part' | 'assembly' | 'mates' | 'origin' | 'plane' | 'refPlane' | 'refAxis' | 'refPoint' | 'coordSys' | 'sketch' | 'extrude' | 'revolve' | 'sweep' | 'thread' | 'knurl' | 'cosmeticThread' | 'loft' | 'rib' | 'pattern' | 'mirror' | 'fillet' | 'chamfer' | 'importedBody' | 'derivedBody' | 'deleteFace' | 'moveFace' | 'shell' | 'draft' | 'hole' | 'combine' | 'split' | 'offsetSurface' | 'splitLine' | 'knit' | 'fillSurface' | 'flatSurface' | 'trimSurface' | 'mutualTrim' | 'extendSurface' | 'thicken' | 'cutWithSurface' | 'lipGroove' | 'screwBoss' | 'baseFlange' | 'midBend' | 'edgeFlange' | 'breakCorner' | 'hem' | 'snapHook' | 'snapCatch' | 'vent' | 'body' | 'error' | 'warning' | 'ok' | 'cancel' | 'eye' | 'eyeOff' | 'drawingDoc' | 'sheet' | 'titleBlock' | 'view' | 'projectedView' | 'sectionView' | 'detailView' | 'dimension' | 'note' | 'datum' | 'gdt' | 'centreMark' | 'table' | 'surfaceFinish' | 'exportFile' | 'palette' | 'tree' | 'properties' | 'chevron' | 'pin' | 'search';
+export type IconName = 'part' | 'assembly' | 'mates' | 'origin' | 'plane' | 'refPlane' | 'refAxis' | 'refPoint' | 'coordSys' | 'sketch' | 'extrude' | 'revolve' | 'sweep' | 'thread' | 'knurl' | 'cosmeticThread' | 'loft' | 'rib' | 'pattern' | 'mirror' | 'fillet' | 'chamfer' | 'importedBody' | 'derivedBody' | 'deleteFace' | 'moveFace' | 'shell' | 'draft' | 'hole' | 'combine' | 'split' | 'offsetSurface' | 'splitLine' | 'knit' | 'fillSurface' | 'flatSurface' | 'trimSurface' | 'mutualTrim' | 'extendSurface' | 'thicken' | 'cutWithSurface' | 'lipGroove' | 'screwBoss' | 'baseFlange' | 'midBend' | 'jog' | 'edgeFlange' | 'breakCorner' | 'hem' | 'snapHook' | 'snapCatch' | 'vent' | 'body' | 'error' | 'warning' | 'ok' | 'cancel' | 'eye' | 'eyeOff' | 'drawingDoc' | 'sheet' | 'titleBlock' | 'view' | 'projectedView' | 'sectionView' | 'detailView' | 'dimension' | 'note' | 'datum' | 'gdt' | 'centreMark' | 'table' | 'surfaceFinish' | 'exportFile' | 'palette' | 'tree' | 'properties' | 'chevron' | 'pin' | 'search';
 
 /** Default planes and reference planes share one icon, as in SolidWorks. */
 const PLANE = <path d="M4 4h10l-2 8H2z" />;
@@ -37,6 +37,7 @@ const PATHS: Record<IconName, ReactElement> = {
   mutualTrim: <path d="M2 11c3-5 9-5 12 0 M2 5c3 5 9 5 12 0" />,
   screwBoss: <path d="M5 13V6h6v7 M7 6V3h2v3 M2 13h12" />,
   midBend: <path d="M2 12h5l2-8h5" />,
+  jog: <path d="M2 13h4l4-8h4" />,
   baseFlange: <path d="M2 12h7a4 4 0 0 0 4-4V3 M2 14h8a5 5 0 0 0 5-5V3" />,
   edgeFlange: <path d="M2 13h8 M10 13a3 3 0 0 0 3-3V3" />,
   breakCorner: <path d="M2 13h6l5-5V3 M8 13V9h4 M10 9l3 2 2-2" />,

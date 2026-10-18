@@ -1,5 +1,57 @@
 # 3D-Builder 開發日誌 (DEV_LOG.md)
 
+## 2026-10-18：藍圖 C11.3 鈑金凸折特徵 (Sheet Metal Jog Feature) 全鏈路實作 [ADR 0159](docs/adr/0159-sheet-metal-jog.md)
+
+### 1. 任務背景與範疇
+依據使用者確認與藍圖 Phase 7 規範，實作鈑金凸折特徵（Sheet Metal Jog Feature，C11.3），在平板中間沿一條草圖線，將固定側保留，移動側朝法向階梯狀位移指定凸折高度 $H$ 與角度 $\theta$，並在過渡區構造兩道相反方向之折彎（Bend 1 與 Bend 2）與中間平直腹板（Intermediate Web），同時在 Flat Pattern 展開圖中登記兩條反向折彎線，達成下料展開與折彎成形的全鏈路閉環。
+
+### 2. 做法與架構設計
+| 層級 | 核心檔案 | 實作內容與職責 |
+|---|---|---|
+| 決策紀錄 | `docs/adr/0159-sheet-metal-jog.md` | 定義凸折幾何第一性原理、中間腹板閉式解 $L_{web} = [H - (2r_b + T)(1 - \cos\theta)] / \sin\theta$、最小高度幾何相交硬約束 $H_{min} = (2r_b + T)(1 - \cos\theta)$ 與紅隊檢驗標準。 |
+| 資料模型 | `packages/model/src/schema.ts`、`serialize.ts`、`commands.ts`、`params.ts`、`refs.ts` | 升版 `SCHEMA_VERSION = 60`；新增 `JogFeature`、`setJog` 命令型別與 `validateNewFeature` 檢查；新增 schema 59 空遷移；在 `mapExprs` 與 `mapRefs` 支援 `jog` 參數正規化與參照映射。 |
+| 雙語字典 | `packages/i18n/src/zh-TW/features.ts`、`en/features.ts` | 補齊 `feature.jog`、`jog.*`、`cmd.onlyJogHasParams` 與 `pm.jog.*` 中英文字典。 |
+| 依賴解析 | `packages/regen/src/dag.ts` | `parentsOf` 新增 `case 'jog':` 解析對草圖線之依賴關係。 |
+| 再生引擎 | `packages/regen/src/engine.ts` | 頂部 `SHEET_FEATURES` 加入 `'jog'`；在 `rebuildFeatures` 派發 `jog`；實作 `private jog()`：以單次 2D 解析圓柱與平直腹板區域輪廓進行無縫拉伸長出，剛體平移移動側，雙向布林融合，並在 `sheet.bends`/`midBends` 登記兩道反向折彎。 |
+| 展開圖 | `packages/regen/src/flatPattern.ts` | 自然承接 `sheet.midBends` 雙折彎登記，於展開圖中繪製兩道反向折彎線（一為 `up`，一為 `down`），展開區消耗下料長度 $L_{blank} = 2BA + L_{web}$。 |
+| 介面與狀態 | `apps/web/src/state/store.ts`、`actions.ts`、`components/PropertyManager.tsx`、`Icon.tsx`、`strings.ts`、`FeatureTree.tsx` | 新增 `store.newJog()`、`actions.jog`；新增 `JogPanel`；新增 `jog` Z階梯圖示與標籤映射。 |
+| 確效測試 | `tests/phase7/jog.test.ts` | 8 項自我紅隊測試全數 100% 綠燈，驗證 90°/45° 凸折、相切極限邊界（$H = H_{min}, L_{web} = 0$）、體積嚴格守恆 $\sum V = 7500\text{ mm}^3$（零 Mock）、展開圖兩道折彎線、$H < H_{min}$ 顯式攔截報錯與底層 WASM Heap 真值防呆。 |
+
+### 3. 問題分析 (RCA) 與矯正預防措施 (CAPA)
+1. **問題 (Failure)**：`reverse: true` 測試時報錯 `凸折的結果與手算的體積不符，或不是一個有效的實體（可能產生幾何干涉）`。
+   - **RCA**：早期拉伸截面原點使用 $q$（板底 $zBot$）。當 `f.reverse = false` 時，$up = n$，截面在 $+up$ 方向從 $0$ 到 $T$ 正好與板材完全重合；但當 `f.reverse = true` 時，$up = -n$，若仍以 $q$ 為原點，截面在 $+up = -n$ 方向由 $zBot$ 往下生長至 $zBot - T$，而固定側 A 位於 $[zBot, zBot + T]$，兩者在空間上僅以面接觸或錯位，導致布林融合失敗。
+   - **CAPA**：在反向時將原點設定為板頂 $q_0 = add(q, n, T)$，使截面在 $+up = -n$ 方向由 $zBot + T$ 往下長到 $zBot$，與固定側 A 達到 100% 絕對幾何貼合。
+2. **問題 (Failure)**：自我紅隊邊界測試 `stroke(2)` 原預期拋出 `沒有板`，但實際執行回傳成功。
+   - **RCA**：測試原直接移植自 `mid-bend.test.ts`，MidBend 之折彎區以線為中心（$[-BA/2, BA/2]$），線在 $x=2$ 時固定側 $x \le 2 - 2.16 = -0.16 < 0$ 無材料；但 Jog 幾何中固定端完全落在 $u \le 0$（線起點），線在 $x=2$ 時固定端依然保留 $2\text{ mm}$ 寬之材料（體積 $150\text{ mm}^3 > 0$），屬於合法幾何。
+   - **CAPA**：將邊界測試調整為 `stroke(-2)`（固定端 $x \le -2$，完全落在板外），精確觸發 `jog.noSide`。
+
+### 4. 自我紅隊四問（AGENTS.md §2.1）
+1. **輸入破壞 (Input Corruption)**：
+   - 凸折高度過小干涉（$H < H_{min}$，如 $H = 2\text{ mm}$ 小於最小高度 $5.5\text{ mm}$）：前置階段顯式拋出 `jog.tooShallow`，載明最小高度數值，嚴禁交由底層布林造成幾何穿透。
+   - 草圖未切穿板材或在板外：顯式拋出 `jog.lineOutside` / `jog.noSide`。
+   - 傳入非單一直線草圖：顯式拋出 `jog.oneLine`。
+2. **拓樸與幾何相交破壞 (Geometric Self-Intersection Defense)**：
+   - 採用單一 2D 閉合區域（含解析圓弧與直線）單次拉伸成型，避免多實體多次布林融合產生的共面縫隙與數值截斷，產出實體經 `BRepCheck_Analyzer` 驗證 `kernel.isValid` 恆為 true，實體數量恆為 1。
+3. **依賴鏈完整性 (Dependency Graph Integrity)**：
+   - 依賴鏈全鏈路覆蓋：`schema` -> `serialize` -> `commands` -> `dag` -> `engine` -> `flatPattern` -> `PropertyManager` -> `store` -> `actions`，缺一不可。
+4. **規格真實性與零 Mock 原則 (Zero-Mock & Ground Truth)**：
+   - 體積嚴格閉式解守恆驗證：
+     - $100 \times 50 \times 1.5$ 平板經 $90^\circ$ 凸折（$H=10$）：$V = 7500.0\text{ mm}^3$。
+     - $45^\circ$ 凸折（$H=6$）：$V = 7500.0\text{ mm}^3$。
+     - 相切極限邊界（$H = 5.5, L_{web} = 0$）：$V = 7500.0\text{ mm}^3$。
+   - 展開圖真實量測：展開面積 $5000\text{ mm}^2$，產生 2 條平行折彎線，方向一上（`up`）一下（`down`）。
+   - 記憶體真實指標防呆：斷言 `(kernel.oc as any).wasmMemory?.buffer?.byteLength > 0`。
+
+### 5. 確效與品質驗收
+- `npm run typecheck`：**0 錯誤**。
+- `node scripts/check-anti-patterns.mjs`：**全域 RSI 反模式靜態守門通過**。
+- `node scripts/check-deps.mjs`：**Layering OK**。
+- `node scripts/check-i18n.mjs`：**i18n OK**。
+- `tests/phase7/jog.test.ts`：**8 項自我紅隊測試全數 100% 通過**。
+- `tests/phase7/`：**18 個測試檔、154 項測試全數 100% 通過**。
+
+---
+
 ## 2026-10-18：藍圖 C7.4 實體分割特徵 (Split Body Feature) 全鏈路實作 [ADR 0158](docs/adr/0158-split-body.md)
 
 ### 1. 任務背景與範疇

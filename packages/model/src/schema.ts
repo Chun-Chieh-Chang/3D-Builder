@@ -6,7 +6,7 @@ import type { Id } from './ids';
  * DOF status, mass properties and error lists are derived data and never stored.
  */
 
-export const SCHEMA_VERSION = 59;
+export const SCHEMA_VERSION = 60;
 
 /** Value expression (B5.2, B5.3): "20", "25.4mm", "30deg", "wall_t*2", "D1@草圖1/2", "property('厚度')"; see `expr/`. */
 export type Expr = string;
@@ -762,6 +762,21 @@ export interface MidBendFeature extends FeatureBase {
 }
 
 /**
+ * Jog feature (鈑金凸折, C11.3, v60, ADR 0159): steps a plate along a sketched line with two opposite bends and an intermediate web.
+ * The side to the left of the sketched line vector stays fixed by default (`flipSide`: the right), while the other side is translated
+ * by `offset` height and re-aligned parallel to the original plate.
+ */
+export interface JogFeature extends FeatureBase {
+  type: 'jog';
+  sketch: Id;
+  offset: Expr;
+  angle?: Expr;
+  radius?: Expr;
+  reverse?: boolean;
+  flipSide?: boolean;
+}
+
+/**
  * Edge flange (邊線凸緣, C11.2, v37): on a straight edge of the sheet (the edge between a face of the sheet and its end face), a bend and a flat flange along the whole edge. It bends
  * toward the side of the face the edge is on (`flip`: the other side) by `angle` (90° when absent), with the inside radius `radius` (the base flange's when absent). `length` is
  * measured from the outside virtual sharp of the bend (`outer`, the default), from the inside one (`inner`), or is the flat piece after the bend (`tangent`). With
@@ -984,6 +999,7 @@ export type Feature =
   | HoleFeature
   | CombineFeature
   | SplitFeature
+  | JogFeature
   | ThreadFeature
   | KnurlFeature
   | CosmeticThreadFeature;

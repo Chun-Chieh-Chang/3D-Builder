@@ -45,6 +45,7 @@ import {
   type KnitFeature,
   type MutualTrimFeature,
   type MidBendFeature,
+  type JogFeature,
   type FillSurfaceFeature,
   type FlatSurfaceFeature,
   type TrimSurfaceFeature,
@@ -459,7 +460,7 @@ const importKey = (sha256: string, sewTolerance: string | undefined): string => 
 };
 
 /** The features that make the sheet itself: what they add and take away is in the data they record, not in `sheet.cuts`. */
-const SHEET_FEATURES = new Set<string>(['baseFlange', 'edgeFlange', 'hem', 'midBend']);
+const SHEET_FEATURES = new Set<string>(['baseFlange', 'edgeFlange', 'hem', 'midBend', 'jog']);
 
 const concatNames = (a: ElementNames, b: ElementNames): ElementNames => ({
   faces: [...a.faces, ...b.faces],
@@ -659,6 +660,10 @@ export class Regenerator {
           }
           case 'midBend': {
             set = this.advance(set, this.midBend(feature, sketches, set));
+            return done({ status: 'ok' });
+          }
+          case 'jog': {
+            set = this.advance(set, this.jog(feature, sketches, set));
             return done({ status: 'ok' });
           }
           case 'mutualTrim': {
@@ -2910,6 +2915,152 @@ export class Regenerator {
       sheet.bends.push({ feature: f.id, name: 'bend', angle: theta, radius: rb, thickness: T, width: w, kFactor: sheet.kFactor, allowance: BA });
       sheet.midBends.push({ feature: f.id, a: add(q, l, lo), b: add(q, l, hi), up, angle: theta, radius: rb, allowance: BA, q, side: p, center, axis, slide });
       this.info = t('midBend.info', { angle: ((theta * 180) / Math.PI).toFixed(1), allowance: BA.toFixed(3), width: w.toFixed(3), radius: String(rb) });
+      return set.list.map((x) => (x === plate ? { id: plate.id, shape: abb.shape, topology: abb.topology, names: abb.names, by: f.id } : x));
+    } finally {
+      for (const id of owned) k.release(id);
+    }
+  }
+
+  private jog(f: JogFeature, sketches: RebuildResult['sketches'], set: Bodies): BodyState[] {
+    const sheet = this.sheet;
+    if (!sheet) throw new FeatureError(t('flange.needsSheet'));
+    if (sheet.base?.kind !== 'plate' || sheet.flanges.length > 0 || sheet.midBends.length > 0) throw new FeatureError(t('jog.scope'));
+    const solids = set.list.filter((b) => !b.surface);
+    if (solids.length !== 1) throw new FeatureError(t('jog.oneBody'));
+    const plate = solids[0]!;
+    const s = sketches.get(f.sketch);
+    if (!s) throw new FeatureError(t('feature.sketchGone'));
+    const found = findOutlines(s.sketch, s.solved);
+    if (found.problems.length > 0) throw new FeatureError(found.problems.join(t('cmd.listSeparator')));
+    const line = found.chains.length === 1 && found.loops.length === 0 && found.chains[0]!.length === 1 ? found.chains[0]![0]! : null;
+    if (line?.kind !== 'line') throw new FeatureError(t('jog.oneLine', { n: String(found.chains.length + found.loops.length) }));
+    const T = sheet.thickness;
+    const rb = f.radius === undefined ? sheet.radius : evalLength(f.radius);
+    const theta = f.angle === undefined ? Math.PI / 2 : evalAngle(f.angle);
+    const H = evalLength(f.offset);
+    if (!(rb > 0) || !(theta > 1e-6 && theta < Math.PI - 0.01)) throw new FeatureError(t('flange.angleRange'));
+    const Hmin = (2 * rb + T) * (1 - Math.cos(theta));
+    if (H < Hmin - 1e-6) throw new FeatureError(t('jog.tooShallow', { min: Hmin.toFixed(2) }));
+    const Lweb = (H - Hmin) / Math.sin(theta);
+    const BA = theta * (rb + sheet.kFactor * T);
+    const Lblank = 2 * BA + Lweb;
+    const uEnd = (2 * rb + T) * Math.sin(theta) + Lweb * Math.cos(theta);
+
+    const k = this.kernel;
+    const neg = (v: Vec3): Vec3 => [-v[0], -v[1], -v[2]];
+    const at = (q: [number, number]): Vec3 => add(add(s.frame.origin, s.frame.xDir, q[0]), s.frame.yDir, q[1]);
+    const a = at(line.a);
+    const l = unit(sub(at(line.b), a));
+    const n = s.frame.normal;
+    // the plate square to the sketch normal, and as thick as the sheet
+    const heights = plate.topology.vertices.map((v) => dot(v.point, n));
+    const zBot = Math.min(...heights);
+    if (Math.abs(Math.max(...heights) - zBot - T) > 1e-6 * (1 + T)) throw new FeatureError(t('jog.notFlat'));
+    const q = add(a, n, zBot - dot(a, n));
+    const up: Vec3 = f.reverse ? neg(n) : n;
+    const left = cross(n, l);
+    const p: Vec3 = f.flipSide ? left : neg(left); // from the side that stays to the side that turns
+    const reach = Math.max(...plate.topology.vertices.map((v) => Math.hypot(...sub(v.point, q)))) * 2 + Lblank + 10;
+    const ctx = { featureId: f.id, sketchId: f.sketch };
+    const owned: ShapeId[] = [];
+    const keep = <X extends { shape: ShapeId }>(x: X): X => {
+      owned.push(x.shape);
+      return x;
+    };
+    try {
+      const strip = (u0: number, u1: number, tag: string): OpResult => {
+        const fr: PlaneFrame = { origin: add(q, n, -1), xDir: l, yDir: p, normal: cross(l, p) };
+        const pts: [number, number][] = [[-reach, u0], [reach, u0], [reach, u1], [-reach, u1]];
+        const region: Region = { outer: pts.map((pt, i) => ({ kind: 'line' as const, a: pt, b: pts[(i + 1) % 4]!, source: `jog.${tag}.p${i}` })), holes: [] };
+        return this.capsNamed(k.extrude(fr, [region], add([0, 0, 0], n, T + 2), 0), `jog.${tag}`, 'start', 'end');
+      };
+      const piece = (u0: number, u1: number, tag: string) => {
+        const cutter = strip(u0, u1, tag);
+        const cutNames = nameElements(cutter.faceOrigins, k.topology(cutter.shape), ctx);
+        const r = k.boolean('common', plate.shape, cutter.shape);
+        k.release(cutter.shape);
+        const topology = k.topology(r.shape);
+        return keep({ shape: r.shape, topology, names: nameElements(r.faceOrigins, topology, { ...ctx, input: concatNames(plate.names, cutNames) }), volume: k.massProps(r.shape).volume });
+      };
+      const A = piece(-reach, 0, 'a');
+      const Z = piece(0, Lblank, 'z');
+      const B = piece(Lblank, reach, 'b');
+      if (!(Z.volume > 1e-9)) throw new FeatureError(t('jog.lineOutside'));
+      if (!(A.volume > 1e-9) || !(B.volume > 1e-9)) throw new FeatureError(t('jog.noSide'));
+      const along = Z.topology.vertices.map((v) => dot(sub(v.point, q), l));
+      const [lo, hi] = [Math.min(...along), Math.max(...along)];
+      const w = hi - lo;
+      if (Math.abs(Z.volume - w * Lblank * T) > 1e-3 * Z.volume + 1e-6) throw new FeatureError(t('jog.zoneNotRect'));
+
+      // 2D Jog profile in (p, up) plane
+      const R1 = rb + T;
+      const C1: [number, number] = [0, R1];
+      const Pb1: [number, number] = [R1 * Math.sin(theta), R1 * (1 - Math.cos(theta))];
+      const Pw1: [number, number] = [Pb1[0] + Lweb * Math.cos(theta), Pb1[1] + Lweb * Math.sin(theta)];
+
+      const C2: [number, number] = [uEnd, H - rb];
+      const R2 = rb + T;
+      const Pw2: [number, number] = [uEnd - R2 * Math.sin(theta), H - rb + R2 * Math.cos(theta)];
+      const Pb2: [number, number] = [Pw2[0] - Lweb * Math.cos(theta), Pw2[1] - Lweb * Math.sin(theta)];
+
+      const segments: Segment[] = [
+        { kind: 'arc', c: C1, r: R1, from: [0, 0], to: Pb1, ccw: true, source: 'jog.b1.bot' },
+      ];
+      if (Lweb > 1e-6) {
+        segments.push({ kind: 'line', a: Pb1, b: Pw1, source: 'jog.web.bot' });
+      }
+      segments.push({ kind: 'arc', c: C2, r: rb, from: Pw1, to: [uEnd, H], ccw: false, source: 'jog.b2.bot' });
+      segments.push({ kind: 'line', a: [uEnd, H], b: [uEnd, H + T], source: 'jog.end' });
+      segments.push({ kind: 'arc', c: C2, r: R2, from: [uEnd, H + T], to: Pw2, ccw: true, source: 'jog.b2.top' });
+      if (Lweb > 1e-6) {
+        segments.push({ kind: 'line', a: Pw2, b: Pb2, source: 'jog.web.top' });
+      }
+      segments.push({ kind: 'arc', c: C1, r: rb, from: Pb2, to: [0, T], ccw: false, source: 'jog.b1.top' });
+      segments.push({ kind: 'line', a: [0, T], b: [0, 0], source: 'jog.start' });
+
+      const jogRegion: Region = { outer: segments, holes: [] };
+      const q0 = f.reverse ? add(q, n, T) : q;
+      const axis = unit(cross(p, up));
+      const dotL = dot(l, axis);
+      const frameOrigin = dotL > 0 ? add(q0, l, lo) : add(q0, l, hi);
+      const jogFrame: PlaneFrame = { origin: frameOrigin, xDir: p, yDir: up, normal: axis };
+      const jogOp = this.capsNamed(k.extrude(jogFrame, [jogRegion], add([0, 0, 0], axis, w)), 'jog.mid', 'start', 'end');
+      const jogTopology = k.topology(jogOp.shape);
+      const jogBody = keep({ shape: jogOp.shape, topology: jogTopology, names: nameElements(jogOp.faceOrigins, jogTopology, ctx), volume: k.massProps(jogOp.shape).volume });
+
+      // Move side B: translated by (uEnd - Lblank) along p, and H along up
+      const delta = add(add([0, 0, 0], p, uEnd - Lblank), up, H);
+      const moved = k.transformed(B.shape, [1, 0, 0, delta[0], 0, 1, 0, delta[1], 0, 0, 1, delta[2]]);
+      const B2 = keep({ shape: moved, topology: k.topology(moved), names: B.names, volume: B.volume });
+      if (B2.topology.faces.length !== B.names.faces.length) throw new FeatureError(t('jog.collides'));
+
+      const join = (x: { shape: ShapeId; names: ElementNames }, y: { shape: ShapeId; names: ElementNames }) => {
+        const r = k.boolean('fuse', x.shape, y.shape);
+        const topology = k.topology(r.shape);
+        return keep({ shape: r.shape, topology, names: nameElements(r.faceOrigins, topology, { ...ctx, input: concatNames(x.names, y.names) }) });
+      };
+      const ab = join(A, jogBody);
+      const abb = join(ab, B2);
+      const volume = k.massProps(abb.shape).volume;
+      const expected = A.volume + B.volume + jogBody.volume;
+      if (k.solidCount(abb.shape) !== 1 || !k.isValid(abb.shape) || Math.abs(volume - expected) > 1e-3 * expected + 1e-6) throw new FeatureError(t('jog.collides'));
+      owned.splice(owned.indexOf(abb.shape), 1);
+
+      // Register two bends to sheet: Bend 1 and Bend 2
+      const q1 = add(q, p, BA / 2);
+      const q2 = add(q, p, 1.5 * BA + Lweb);
+      sheet.bends.push({ feature: f.id, name: 'bend1', angle: theta, radius: rb, thickness: T, width: w, kFactor: sheet.kFactor, allowance: BA });
+      sheet.midBends.push({ feature: f.id, a: add(q1, l, lo), b: add(q1, l, hi), up, angle: theta, radius: rb, allowance: BA, q: q1, side: p, center: [0, 0, 0], axis, slide: delta });
+      sheet.bends.push({ feature: f.id, name: 'bend2', angle: theta, radius: rb, thickness: T, width: w, kFactor: sheet.kFactor, allowance: BA });
+      sheet.midBends.push({ feature: f.id, a: add(q2, l, lo), b: add(q2, l, hi), up: neg(up), angle: theta, radius: rb, allowance: BA, q: q2, side: p, center: [0, 0, 0], axis, slide: delta });
+
+      this.info = t('jog.info', {
+        offset: H.toFixed(2),
+        angle: ((theta * 180) / Math.PI).toFixed(1),
+        radius: String(rb),
+        allowance: (2 * BA + Lweb).toFixed(3),
+        width: w.toFixed(3),
+      });
       return set.list.map((x) => (x === plate ? { id: plate.id, shape: abb.shape, topology: abb.topology, names: abb.names, by: f.id } : x));
     } finally {
       for (const id of owned) k.release(id);

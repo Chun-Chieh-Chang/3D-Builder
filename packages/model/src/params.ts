@@ -189,6 +189,14 @@ export function mapExprs(feature: Feature, fn: (expr: Expr, kind: ExprKind, role
       if (angle === f.angle && radius === f.radius) return feature;
       return { ...f, angle, ...(radius === undefined ? {} : { radius }) };
     }
+    case 'jog': {
+      const f = feature;
+      const offset = fn(f.offset, 'length', 'positive');
+      const angle = f.angle === undefined ? undefined : fn(f.angle, 'angle', 'includedAngle');
+      const radius = f.radius === undefined ? undefined : fn(f.radius, 'length', 'positive');
+      if (offset === f.offset && angle === f.angle && radius === f.radius) return feature;
+      return { ...f, offset, ...(angle === undefined ? {} : { angle }), ...(radius === undefined ? {} : { radius }) };
+    }
     case 'baseFlange': {
       const f = feature;
       const thickness = fn(f.thickness, 'length', 'positive');

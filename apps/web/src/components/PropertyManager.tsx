@@ -50,6 +50,7 @@ import {
   type SplitLineFeature,
   type KnitFeature,
   type MidBendFeature,
+  type JogFeature,
   type MutualTrimFeature,
   type FillSurfaceFeature,
   type FlatSurfaceFeature,
@@ -2586,6 +2587,44 @@ function MidBendPanel({ f }: { f: MidBendFeature }) {
   );
 }
 
+/** Jog (C11.3, ADR 0159): offset height, angle, radius, flip side, reverse, and result info. */
+function JogPanel({ f }: { f: JogFeature }) {
+  const status = useStore((s) => s.result?.features.find((r) => r.id === f.id));
+  const { id, type, name, suppressed, sketch, ...settings } = f;
+  void [id, type, name, suppressed, sketch];
+  const run = (patch: Record<string, unknown>): Command => {
+    const next = { ...settings, ...patch } as Record<string, unknown>;
+    for (const k of Object.keys(next)) if (next[k] === undefined || next[k] === '' || next[k] === false) delete next[k];
+    return { type: 'setJog', featureId: f.id, jog: next as never };
+  };
+  return (
+    <section className="pm-group">
+      <label className="pm-row">
+        <span>{t('pm.jog.offset')}</span>
+        <ValueInput value={f.offset} toCommand={(offset) => run({ offset })} />
+      </label>
+      <label className="pm-row">
+        <span>{t('pm.jog.angle')}</span>
+        <ValueInput value={f.angle ?? ''} toCommand={(angle) => run({ angle })} suffix="°" />
+      </label>
+      <label className="pm-row">
+        <span>{t('pm.jog.radius')}</span>
+        <ValueInput value={f.radius ?? ''} toCommand={(radius) => run({ radius })} />
+      </label>
+      <label className="pm-row checkbox">
+        <input type="checkbox" checked={!!f.flipSide} onChange={(e) => store.execute(run({ flipSide: e.target.checked }))} />
+        <span>{t('pm.jog.flipSide')}</span>
+      </label>
+      <label className="pm-row checkbox">
+        <input type="checkbox" checked={!!f.reverse} onChange={(e) => store.execute(run({ reverse: e.target.checked }))} />
+        <span>{t('pm.jog.reverse')}</span>
+      </label>
+      {status?.status === 'ok' && status.info && <p className="hint gap-info">{status.info}</p>}
+      <p className="hint">{t('pm.jog.hint')}</p>
+    </section>
+  );
+}
+
 /** What an edge flange and a hem share beyond the edge (C11.4): how far they stop short of the two ends of it, and the relief notches beside them where they do. */
 function FlangeExtras({ f, run }: { f: EdgeFlangeFeature | HemFeature; run: (patch: Record<string, unknown>) => Command }) {
   const inset = f.inset ?? { start: '0', end: '0' };
@@ -3508,6 +3547,7 @@ export function PropertyManager() {
       {f.type === 'screwBoss' && <ScrewBossPanel f={f} />}
       {f.type === 'baseFlange' && <BaseFlangePanel f={f} />}
       {f.type === 'midBend' && <MidBendPanel f={f} />}
+      {f.type === 'jog' && <JogPanel f={f} />}
       {f.type === 'edgeFlange' && <EdgeFlangePanel f={f} />}
       {f.type === 'hem' && <HemPanel f={f} />}
       {f.type === 'breakCorner' && <BreakCornerPanel f={f} />}

@@ -192,6 +192,8 @@ const migrations: Record<number, (doc: Json) => Json> = {
   57: (doc) => doc,
   // v59: split body feature (`split`, C7.4, ADR 0158). A new feature kind; nothing to convert.
   58: (doc) => doc,
+  // v60: sheet metal jog feature (`jog`, C11.3, ADR 0159). A new feature kind; nothing to convert.
+  59: (doc) => doc,
 };
 
 export class FormatError extends Error {

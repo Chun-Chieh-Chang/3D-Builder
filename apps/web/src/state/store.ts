@@ -1651,6 +1651,14 @@ class AppStore {
     this.openNew({ id: this.allocator().take('midbend'), type: 'midBend', name: nextName(this.history.doc, name), suppressed: false, sketch: sketch.id, angle: '90' }, name);
   }
 
+  /** 「凸折」 (C11.3, ADR 0159): the selected sketch (one straight line), offset 10 to start with. */
+  newJog(): void {
+    const sketch = this.selectedSketch();
+    if (!sketch) return;
+    const name = t('feature.jog');
+    this.openNew({ id: this.allocator().take('jog'), type: 'jog', name: nextName(this.history.doc, name), suppressed: false, sketch: sketch.id, offset: '10', angle: '90' }, name);
+  }
+
   /** 「卡榫」 (C4.11): a beam 15 long, 2 thick and 6 wide with a hook 3 high standing out 1.2, at the free points of the selected sketch, to be set in the PropertyManager. */
   newSnapHook(): void {
     const sketch = this.selectedSketch();

@@ -35,6 +35,7 @@ function consumedSketchesOf(f: Feature): Id[] {
     case 'trimSurface':
     case 'baseFlange':
     case 'midBend':
+    case 'jog':
     case 'snapHook':
     case 'snapCatch':
       return f.sketch ? [f.sketch] : [];

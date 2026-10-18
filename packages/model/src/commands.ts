@@ -1,7 +1,7 @@
 import { t } from '@3db/i18n';
 import { current, produce, type Draft } from 'immer';
 import { countersFor, type Id } from './ids';
-import type { SheetGauge, AppearanceTarget, DocSettings, MaterialRef, Variable, BlobRef, ChamferFeature, FilletKind, CombineFeature, SplitFeature, HoleFeature, ScrewBossFeature, BaseFlangeFeature, MidBendFeature, EdgeFlangeFeature, HemFeature, BreakCornerFeature, SnapHookFeature, SnapCatchFeature, VentFeature, LoftFeature, RibFeature, SweepFeature, Draft as WallDraft, EndCondition, Thin, Expr, Feature, ImportedBodyFeature, AxisDefinition, CoordSysFeature, MirrorFeature, PartDoc, PatternDefinition, PatternFeature, PlaneDefinition, PointDefinition, Ref, RevolveCondition, SketchConstraint, SketchEntity, SketchFeature, SketchPicture, CutWithSurfaceFeature, ThreadFeature, KnurlFeature, CosmeticThreadFeature } from './schema';
+import type { SheetGauge, AppearanceTarget, DocSettings, MaterialRef, Variable, BlobRef, ChamferFeature, FilletKind, CombineFeature, SplitFeature, JogFeature, HoleFeature, ScrewBossFeature, BaseFlangeFeature, MidBendFeature, EdgeFlangeFeature, HemFeature, BreakCornerFeature, SnapHookFeature, SnapCatchFeature, VentFeature, LoftFeature, RibFeature, SweepFeature, Draft as WallDraft, EndCondition, Thin, Expr, Feature, ImportedBodyFeature, AxisDefinition, CoordSysFeature, MirrorFeature, PartDoc, PatternDefinition, PatternFeature, PlaneDefinition, PointDefinition, Ref, RevolveCondition, SketchConstraint, SketchEntity, SketchFeature, SketchPicture, CutWithSurfaceFeature, ThreadFeature, KnurlFeature, CosmeticThreadFeature } from './schema';
 import { isDatumPlaneName } from './datums';
 import { canBeSeed } from './patterns';
 import { colorOk, materialOk, sameTarget } from './materials';
@@ -111,6 +111,8 @@ ull). */
   /** The base flange's settings (C11.1): everything but which sketch it is made from. */
   /** Changes a mid bend (S-3): the angle, the radius, which side stays and which way it folds. */
   | { type: 'setMidBend'; featureId: Id; midBend: Omit<MidBendFeature, 'id' | 'type' | 'name' | 'suppressed' | 'sketch'> }
+  /** Changes a jog (C11.3, ADR 0159): the offset, the angle, the radius, which side stays and which way it folds. */
+  | { type: 'setJog'; featureId: Id; jog: Omit<JogFeature, 'id' | 'type' | 'name' | 'suppressed' | 'sketch'> }
   | { type: 'setBaseFlange'; featureId: Id; flange: Omit<BaseFlangeFeature, 'id' | 'type' | 'name' | 'suppressed' | 'sketch'> }
   /** The edge flange's settings (C11.2): the edge and everything else. */
   | { type: 'setEdgeFlange'; featureId: Id; flange: Omit<EdgeFlangeFeature, 'id' | 'type' | 'name' | 'suppressed'> }
@@ -600,6 +602,9 @@ function validateNewFeature(doc: PartDoc, f: Feature, index: number): void {
     case 'midBend':
       sketchBefore(doc, f.sketch, index, t('feature.midBend'));
       return;
+    case 'jog':
+      sketchBefore(doc, f.sketch, index, t('feature.jog'));
+      return;
     case 'snapHook':
       sketchBefore(doc, f.sketch, index, t('feature.snapHook'));
       return;
@@ -1086,6 +1091,15 @@ export function mutate(draft: Draft<PartDoc>, cmd: Command): void {
       const keep = { id: f.id, type: f.type, name: f.name, suppressed: f.suppressed, sketch: f.sketch } as const;
       for (const k of Object.keys(f)) delete (f as unknown as Record<string, unknown>)[k];
       Object.assign(f, keep, cmd.midBend);
+      checkExprs(draft as PartDoc, f as Feature);
+      return;
+    }
+    case 'setJog': {
+      const f = feature(draft, cmd.featureId);
+      if (f.type !== 'jog') throw new CommandError(t('cmd.onlyThisHasParams', { what: t('feature.jog') }));
+      const keep = { id: f.id, type: f.type, name: f.name, suppressed: f.suppressed, sketch: f.sketch } as const;
+      for (const k of Object.keys(f)) delete (f as unknown as Record<string, unknown>)[k];
+      Object.assign(f, keep, cmd.jog);
       checkExprs(draft as PartDoc, f as Feature);
       return;
     }
