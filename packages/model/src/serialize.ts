@@ -198,6 +198,8 @@ const migrations: Record<number, (doc: Json) => Json> = {
   60: (doc) => doc,
   // v62: sketch text entity (`text`, C1.13, ADR 0163). A new sketch entity kind; nothing to convert.
   61: (doc) => doc,
+  // v63: move/copy body feature (`moveCopyBody`, C7.3, ADR 0164). A new feature kind; nothing to convert.
+  62: (doc) => doc,
 };
 
 export class FormatError extends Error {

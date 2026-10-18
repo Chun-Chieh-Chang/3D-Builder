@@ -1,5 +1,24 @@
 # 交接文件
 
+- **【2026-10-18：藍圖 C7.3 實體移動與複製本體特徵 (Move/Copy Body Feature) 全鏈路實作 [ADR 0164](docs/adr/0164-move-copy-body.md) — 本地確效 100% 通過，待推送】**
+  - **背景與目標**：依據藍圖 C7.3 規範，實作實體移動與複製本體特徵（Move/Copy Body Feature）。支援對多個目標實體進行線性平移（$dx, dy, dz$）與沿軸旋轉（$\theta$），支援主軸或參考線/直邊作為旋轉軸，具備原地移動與多實體複製兩種模式，保證剛體變換下體積與表面積 100% 物理守恆，零 WASM 布林洩漏，並達成全鏈路 Web 前端互動。
+  - **完成項目**：
+    1. **架構決策紀錄 (`docs/adr/0164-move-copy-body.md`)**：定義 3×4 剛體仿射變換矩陣合成演算法（羅德里格旋轉公式）、參考軸拓樸解析、命名空間隔離機制與自我紅隊四問檢驗標準。
+    2. **資料模型 (`@3db/model`, Schema 63)**：升版 `SCHEMA_VERSION = 63`；新增 `MoveCopyBodyFeature`；實作 schema 62 遷移函式；新增 `setMoveCopyBody` 指令與 `checkFeature` 語意檢查（目標非空、平移/旋轉參數檢查）；`mapExprs` 支援 $dx, dy, dz, \text{rotationAngle}$；`mapRefs` 支援 `targets` 與 `rotationAxis`。
+    3. **依賴與再生 (`@3db/regen`)**：`dag.ts` 解析目標本體特徵與旋轉軸參考依賴；`engine.ts` 實作 `moveCopyBody(f, set)`：合成平移與旋轉為單一 3×4 仿射變換矩陣，呼叫 `Kernel.transformed` 進行純解析剛體變換；在複製模式下產生獨立本體並以 `mc1:copy:` 命名空間隔離拓樸。
+    4. **雙語字典 (`@3db/i18n`)**：補齊 `feature.moveCopyBody`、`cmd.setMoveCopyBody`、`pm.moveCopyBody.*`、`help.moveCopyBody.*` 中英文多國語言與說明文檔。更新 `docs/help-links.json` 映射。
+    5. **介面適配 (`apps/web`)**：`store.ts` 新增 `newMoveCopyBody()`；`actions.ts` 註冊 `move-copy-body` 特徵動作；`PropertyManager.tsx` 實作特徵參數面板（目標選取、平移與旋轉輸入、軸選擇、複製切換）；`Icon.tsx` 提供專屬向量圖示；`strings.ts` 登記標籤。
+    6. **自我紅隊測試 (`tests/phase1/move-copy-body.test.ts`)**：8 項自我紅隊測試全數 100% 通過，涵蓋線性平移物理守恆、主軸旋轉、參考直線邊旋轉、複合變換、多本體複製生成、目標為空攔截、DAG 依賴閉環與 WASM Heap 真實指標防呆；說明系統 40 項測試 100% 通過。
+  - **確效與測試驗收**：
+    - `npm run typecheck`：**0 錯誤**。
+    - `node scripts/check-anti-patterns.mjs`：**全域 RSI 反模式靜態守門通過**。
+    - `node scripts/check-deps.mjs`：**Layering OK**。
+    - `node scripts/check-i18n.mjs`：**i18n OK**。
+    - `tests/phase1/move-copy-body.test.ts`：**8 項測試全數通過 (100%)**。
+    - `tests/phase1/split-body.test.ts`：**7 項測試全數通過 (100%)**。
+    - `tests/phase8/help.test.ts`：**40 項說明守門測試全數通過 (100%)**。
+  - **停在哪裡**：本地確效全部通過，待使用者確認授權執行 git commit 與 git push。
+
 - **【2026-10-18：藍圖 C1.13 草圖文字特徵 (Sketch Text Feature) 全鏈路實作 [ADR 0163](docs/adr/0163-sketch-text.md) — 已提交並推送 `7a8ce37`（origin/main）】**
   - **背景與目標**：實作草圖文字特徵（Sketch Text Feature，C1.13），支援基準面向量字型解析、外環逆時針（CCW）/ 內孔順時針（CW）定向前置保證、拓樸島嶼包含性 Nesting、3D 凸字長出（Extrude Boss）與凹字雕刻除料（Extrude Cut）、文字解散（Dissolve Text）轉換為標準線段圖元，以及全鏈路 Web 前端交互（放置/屬性面板/疊加層繪製）。
   - **完成項目**：

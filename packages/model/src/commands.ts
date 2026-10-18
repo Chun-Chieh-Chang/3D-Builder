@@ -1,7 +1,7 @@
 import { t } from '@3db/i18n';
 import { current, produce, type Draft } from 'immer';
 import { countersFor, type Id } from './ids';
-import type { SheetGauge, AppearanceTarget, DocSettings, MaterialRef, Variable, BlobRef, ChamferFeature, FilletKind, CombineFeature, SplitFeature, JogFeature, HoleFeature, ScrewBossFeature, BaseFlangeFeature, MidBendFeature, EdgeFlangeFeature, HemFeature, BreakCornerFeature, SnapHookFeature, SnapCatchFeature, VentFeature, LoftFeature, RibFeature, SweepFeature, Draft as WallDraft, EndCondition, Thin, Expr, Feature, ImportedBodyFeature, AxisDefinition, CoordSysFeature, MirrorFeature, PartDoc, PatternDefinition, PatternFeature, PlaneDefinition, PointDefinition, Ref, RevolveCondition, SketchConstraint, SketchEntity, SketchFeature, SketchPicture, CutWithSurfaceFeature, ThreadFeature, KnurlFeature, CosmeticThreadFeature } from './schema';
+import type { SheetGauge, AppearanceTarget, DocSettings, MaterialRef, Variable, BlobRef, ChamferFeature, FilletKind, CombineFeature, SplitFeature, MoveCopyBodyFeature, JogFeature, HoleFeature, ScrewBossFeature, BaseFlangeFeature, MidBendFeature, EdgeFlangeFeature, HemFeature, BreakCornerFeature, SnapHookFeature, SnapCatchFeature, VentFeature, LoftFeature, RibFeature, SweepFeature, Draft as WallDraft, EndCondition, Thin, Expr, Feature, ImportedBodyFeature, AxisDefinition, CoordSysFeature, MirrorFeature, PartDoc, PatternDefinition, PatternFeature, PlaneDefinition, PointDefinition, Ref, RevolveCondition, SketchConstraint, SketchEntity, SketchFeature, SketchPicture, CutWithSurfaceFeature, ThreadFeature, KnurlFeature, CosmeticThreadFeature } from './schema';
 import { isDatumPlaneName } from './datums';
 import { canBeSeed } from './patterns';
 import { colorOk, materialOk, sameTarget } from './materials';
@@ -143,6 +143,8 @@ ull). */
   | { type: 'setCombine'; featureId: Id; op: CombineFeature['op']; main: Ref; tools: Ref[] }
   /** The cutting tool and target bodies of a Split feature (C7.4, v59). */
   | { type: 'setSplit'; featureId: Id; tool: Ref; targets?: Ref[] }
+  /** The targets, displacement and rotation of a Move/Copy Body feature (C7.3, v63). */
+  | { type: 'setMoveCopyBody'; featureId: Id; targets: Ref[]; dx?: Expr; dy?: Expr; dz?: Expr; rotationAxis?: Ref | 'x' | 'y' | 'z'; rotationAngle?: Expr; copy?: boolean }
   /** The name and the reference flag of a body (C7.1); an empty name or `false` takes the choice back. */
   | { type: 'setBody'; bodyId: Id; name?: string; reference?: boolean }
   /** The face and the distance of a Move Face feature (C10.1). */
@@ -643,6 +645,16 @@ function validateNewFeature(doc: PartDoc, f: Feature, index: number): void {
     case 'split':
       if (f.tool.kind !== 'datum' && f.tool.kind !== 'face') throw new CommandError(t('cmd.splitToolNeedsDatumOrFace'));
       if (f.targets && f.targets.some((r) => r.kind !== 'body')) throw new CommandError(t('cmd.splitTargetsOnlyBodies'));
+      return;
+
+    case 'moveCopyBody':
+      if (!f.targets || f.targets.length === 0) throw new CommandError(t('cmd.moveCopyBodyNeedsTargets'));
+      if (f.targets.some((r) => r.kind !== 'body')) throw new CommandError(t('cmd.moveCopyBodyOnlyBodies'));
+      if (f.rotationAxis && typeof f.rotationAxis === 'object') {
+        if (f.rotationAxis.kind !== 'datum' && f.rotationAxis.kind !== 'edge' && f.rotationAxis.kind !== 'face') {
+          throw new CommandError(t('cmd.moveCopyBodyAxisKind'));
+        }
+      }
       return;
 
     case 'derivedBody':
@@ -1298,6 +1310,26 @@ export function mutate(draft: Draft<PartDoc>, cmd: Command): void {
       f.tool = cmd.tool;
       if (cmd.targets && cmd.targets.length > 0) f.targets = cmd.targets;
       else delete f.targets;
+      return;
+    }
+    case 'setMoveCopyBody': {
+      const f = feature(draft, cmd.featureId);
+      if (f.type !== 'moveCopyBody') throw new CommandError(t('cmd.onlyMoveCopyBody'));
+      if (!cmd.targets || cmd.targets.length === 0) throw new CommandError(t('cmd.moveCopyBodyNeedsTargets'));
+      if (cmd.targets.some((r) => r.kind !== 'body')) throw new CommandError(t('cmd.moveCopyBodyOnlyBodies'));
+      if (cmd.rotationAxis && typeof cmd.rotationAxis === 'object') {
+        if (cmd.rotationAxis.kind !== 'datum' && cmd.rotationAxis.kind !== 'edge' && cmd.rotationAxis.kind !== 'face') {
+          throw new CommandError(t('cmd.moveCopyBodyAxisKind'));
+        }
+      }
+      f.targets = cmd.targets;
+      if (cmd.dx !== undefined && cmd.dx.trim() !== '') f.dx = cmd.dx; else delete f.dx;
+      if (cmd.dy !== undefined && cmd.dy.trim() !== '') f.dy = cmd.dy; else delete f.dy;
+      if (cmd.dz !== undefined && cmd.dz.trim() !== '') f.dz = cmd.dz; else delete f.dz;
+      if (cmd.rotationAxis !== undefined) f.rotationAxis = cmd.rotationAxis; else delete f.rotationAxis;
+      if (cmd.rotationAngle !== undefined && cmd.rotationAngle.trim() !== '') f.rotationAngle = cmd.rotationAngle; else delete f.rotationAngle;
+      if (cmd.copy) f.copy = true; else delete f.copy;
+      checkExprs(draft as PartDoc, f as Feature);
       return;
     }
     case 'setBody': {

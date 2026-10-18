@@ -15,6 +15,7 @@ import {
   type CoordSysFeature,
   type CoordSystem,
   type CombineFeature,
+  type MoveCopyBodyFeature,
   type DeleteFaceFeature,
   type DraftFeature,
   type HoleFeature,
@@ -732,6 +733,10 @@ export class Regenerator {
           }
           case 'split': {
             set = this.advance(set, this.splitBodies(feature, set));
+            return done({ status: 'ok' });
+          }
+          case 'moveCopyBody': {
+            set = this.advance(set, this.moveCopyBody(feature, set));
             return done({ status: 'ok' });
           }
           case 'extrude':
@@ -2281,6 +2286,152 @@ export class Regenerator {
         }
       }
       return out;
+    } catch (e) {
+      for (const s of made) k.release(s);
+      throw e;
+    }
+  }
+
+  /** 「移動/複製本體」 (C7.3, ADR 0164): translates or rotates bodies, optionally copying them. */
+  private moveCopyBody(f: MoveCopyBodyFeature, set: Bodies): BodyState[] {
+    const k = this.kernel;
+
+    const findTarget = (ref: Ref): BodyState => {
+      if (!ref.name) throw new FeatureError(t('body.pick', { what: t('pm.moveCopyBody.targets') }));
+      const b = set.list.find((x) => x.id === ref.name);
+      if (!b) throw new FeatureError(t('body.lost', { name: ref.name }), [{ ref, reason: 'missing', candidates: [] }]);
+      return b;
+    };
+
+    let targetCandidates: BodyState[];
+    if (f.targets && f.targets.length > 0) {
+      targetCandidates = f.targets.map(findTarget);
+    } else if (set.list.length === 1) {
+      targetCandidates = [set.list[0]!];
+    } else {
+      throw new FeatureError(t('feature.moveCopyNoTargets'));
+    }
+
+    const dx = f.dx !== undefined && f.dx.trim() !== '' ? evalLength(f.dx) : 0;
+    const dy = f.dy !== undefined && f.dy.trim() !== '' ? evalLength(f.dy) : 0;
+    const dz = f.dz !== undefined && f.dz.trim() !== '' ? evalLength(f.dz) : 0;
+    const angle = f.rotationAngle !== undefined && f.rotationAngle.trim() !== '' ? evalAngle(f.rotationAngle) : 0;
+
+    if (!Number.isFinite(dx) || !Number.isFinite(dy) || !Number.isFinite(dz) || !Number.isFinite(angle)) {
+      throw new FeatureError(t('feature.moveCopyInvalidInput'));
+    }
+
+    let matrix: number[];
+    if (Math.abs(angle) > 1e-9) {
+      let axis: Axis3;
+      if (f.rotationAxis === 'x') {
+        axis = { origin: [0, 0, 0], dir: [1, 0, 0] };
+      } else if (f.rotationAxis === 'y') {
+        axis = { origin: [0, 0, 0], dir: [0, 1, 0] };
+      } else if (f.rotationAxis === 'z' || !f.rotationAxis) {
+        axis = { origin: [0, 0, 0], dir: [0, 0, 1] };
+      } else if (typeof f.rotationAxis === 'object') {
+        axis = this.axisOfRef(f.rotationAxis, set, t('feature.moveCopyAxis'));
+      } else {
+        axis = { origin: [0, 0, 0], dir: [0, 0, 1] };
+      }
+
+      const len = Math.hypot(...axis.dir);
+      if (len < 1e-9) throw new FeatureError(t('feature.moveCopyNoAxis'));
+      const ux = axis.dir[0] / len;
+      const uy = axis.dir[1] / len;
+      const uz = axis.dir[2] / len;
+      const c = Math.cos(angle);
+      const s = Math.sin(angle);
+      const v = 1 - c;
+
+      const r00 = c + ux * ux * v;
+      const r01 = ux * uy * v - uz * s;
+      const r02 = ux * uz * v + uy * s;
+
+      const r10 = uy * ux * v + uz * s;
+      const r11 = c + uy * uy * v;
+      const r12 = uy * uz * v - ux * s;
+
+      const r20 = uz * ux * v - uy * s;
+      const r21 = uz * uy * v + ux * s;
+      const r22 = c + uz * uz * v;
+
+      const ox = axis.origin[0];
+      const oy = axis.origin[1];
+      const oz = axis.origin[2];
+
+      const rox = r00 * ox + r01 * oy + r02 * oz;
+      const roy = r10 * ox + r11 * oy + r12 * oz;
+      const roz = r20 * ox + r21 * oy + r22 * oz;
+
+      const tx = ox - rox + dx;
+      const ty = oy - roy + dy;
+      const tz = oz - roz + dz;
+
+      matrix = [
+        r00, r01, r02, tx,
+        r10, r11, r12, ty,
+        r20, r21, r22, tz,
+      ];
+    } else {
+      matrix = [
+        1, 0, 0, dx,
+        0, 1, 0, dy,
+        0, 0, 1, dz,
+      ];
+    }
+
+    const made: ShapeId[] = [];
+    const transformedMap = new Map<BodyState, BodyState>();
+
+    try {
+      let copyIndex = 1;
+      for (const target of targetCandidates) {
+        const newShape = k.transformed(target.shape, matrix);
+        made.push(newShape);
+        const topology = k.topology(newShape);
+
+        if (f.copy) {
+          const bodyId = targetCandidates.length === 1 ? `${f.id}#copy` : `${f.id}#copy${copyIndex++}`;
+          const copyNames: ElementNames = {
+            faces: target.names.faces.map((n) => `${f.id}:copy:${n}`),
+            edges: target.names.edges.map((n) => `${f.id}:copy:${n}`),
+            vertices: target.names.vertices.map((n) => `${f.id}:copy:${n}`),
+          };
+          transformedMap.set(target, {
+            id: bodyId,
+            shape: newShape,
+            topology,
+            names: copyNames,
+            by: f.id,
+            ...(target.surface ? { surface: true } : {}),
+          });
+        } else {
+          transformedMap.set(target, {
+            id: target.id,
+            shape: newShape,
+            topology,
+            names: target.names,
+            by: f.id,
+            ...(target.surface ? { surface: true } : {}),
+          });
+        }
+      }
+
+      this.info = t(f.copy ? 'feature.moveCopyInfoCopy' : 'feature.moveCopyInfoMove', {
+        dx: dx.toFixed(2),
+        dy: dy.toFixed(2),
+        dz: dz.toFixed(2),
+        angle: ((angle * 180) / Math.PI).toFixed(1),
+      });
+
+      if (f.copy) {
+        const copies = [...transformedMap.values()];
+        return [...set.list, ...copies];
+      } else {
+        return set.list.map((b) => transformedMap.get(b) ?? b);
+      }
     } catch (e) {
       for (const s of made) k.release(s);
       throw e;

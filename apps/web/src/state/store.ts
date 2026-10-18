@@ -2257,6 +2257,37 @@ class AppStore {
     this.openNew({ id: this.allocator().take('split'), type: 'split', name: nextName(this.history.doc, name), suppressed: false, tool, targets: [] }, name);
   }
 
+  /** 「移動/複製本體」 (C7.3, ADR 0164): translates or rotates bodies, optionally copying them. */
+  newMoveCopyBody(): void {
+    const s = this.state;
+    const r = s.result;
+    if (!r?.bodies || r.bodies.length === 0) return void this.notify(t('feature.moveCopyNoTargets'), 'error');
+    let targetId = r.bodies[0]?.id;
+    if (s.selectedFace) {
+      const bId = this.bodyOfFace(s.selectedFace.name);
+      if (bId) targetId = bId;
+    }
+    const targets: Ref[] = targetId ? [{ kind: 'body', name: targetId }] : [];
+    const base = t('feature.moveCopyBody');
+    const id = this.allocator().take('moveCopyBody');
+    this.openNew(
+      {
+        id,
+        type: 'moveCopyBody',
+        name: nextName(this.history.doc, base),
+        suppressed: false,
+        targets,
+        dx: '0',
+        dy: '0',
+        dz: '0',
+        rotationAxis: 'z',
+        rotationAngle: '0',
+        copy: false,
+      },
+      base,
+    );
+  }
+
   /** The id of the body a face of the model on screen belongs to. */
   bodyOfFace(faceName: string): Id | undefined {
     const r = this.state.result;

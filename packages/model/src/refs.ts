@@ -114,6 +114,17 @@ export function mapRefs(feature: Feature, map: (ref: Ref) => Ref): { feature: Fe
         },
         replaced,
       };
+    case 'moveCopyBody':
+      return {
+        feature: {
+          ...feature,
+          targets: feature.targets.map(one),
+          ...(feature.rotationAxis && typeof feature.rotationAxis === 'object'
+            ? { rotationAxis: one(feature.rotationAxis) }
+            : {}),
+        },
+        replaced,
+      };
     case 'thread':
       return typeof feature.axis === 'string' ? { feature, replaced } : { feature: { ...feature, axis: one(feature.axis) }, replaced };
     case 'knurl':

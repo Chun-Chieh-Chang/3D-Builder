@@ -688,6 +688,15 @@ export const help: Translation = {
 
   'help.split.see': 'concept.selection move-face import-step',
 
+  'help.moveCopyBody.summary': 'Translate or rotate one or more solid bodies, optionally copying them.',
+
+  'help.moveCopyBody.body':
+    'Select the solid bodies to move or copy, enter translation offsets along X, Y, Z, or choose a rotation axis and specify the rotation angle.\n\n- Rotation axis: choose principal axes (X/Y/Z) or pick datum axes, straight edges, cylindrical faces, or datum planes.\n- Check "Copy Body" to keep the original body and generate new independent bodies; leave unchecked to move the original in-place.\n- Preserves exact topological element order and shape with rigid transformation; volume is strictly conserved.\n- Useful for multi-body configurations, positioning duplicate components, or creating aligned assemblies of bodies.',
+
+  'help.moveCopyBody.keywords': 'move copy body translate rotate rigid transform multi-body',
+
+  'help.moveCopyBody.see': 'split combine import-step',
+
   // ---------------------------------------------------------------- assembly
   'help.insertComponent.summary': 'Inserts a part file into the assembly as a component.',
 

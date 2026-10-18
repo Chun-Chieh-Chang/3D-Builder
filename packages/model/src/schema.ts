@@ -6,7 +6,7 @@ import type { Id } from './ids';
  * DOF status, mass properties and error lists are derived data and never stored.
  */
 
-export const SCHEMA_VERSION = 62;
+export const SCHEMA_VERSION = 63;
 
 /** Value expression (B5.2, B5.3): "20", "25.4mm", "30deg", "wall_t*2", "D1@草圖1/2", "property('厚度')"; see `expr/`. */
 export type Expr = string;
@@ -969,6 +969,27 @@ export interface SplitFeature extends FeatureBase {
   targets?: Ref[];
 }
 
+/**
+ * Move/Copy Body feature (移動/複製本體, C7.3, v63): translates or rotates bodies, optionally copying them.
+ */
+export interface MoveCopyBodyFeature extends FeatureBase {
+  type: 'moveCopyBody';
+  /** Target bodies to move or copy. */
+  targets: Ref[];
+  /** Translation vector along X in mm (expression string). */
+  dx?: Expr;
+  /** Translation vector along Y in mm (expression string). */
+  dy?: Expr;
+  /** Translation vector along Z in mm (expression string). */
+  dz?: Expr;
+  /** Rotation axis: principal axis ('x' | 'y' | 'z') or reference. */
+  rotationAxis?: Ref | 'x' | 'y' | 'z';
+  /** Rotation angle expression string (e.g. '90deg'). */
+  rotationAngle?: Expr;
+  /** Whether to copy the body (true = keep original and produce copy; false = move original). Default false. */
+  copy?: boolean;
+}
+
 export type Feature =
   | SketchFeature
   | ExtrudeFeature
@@ -1013,6 +1034,7 @@ export type Feature =
   | HoleFeature
   | CombineFeature
   | SplitFeature
+  | MoveCopyBodyFeature
   | JogFeature
   | ThreadFeature
   | KnurlFeature

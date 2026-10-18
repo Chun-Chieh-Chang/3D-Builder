@@ -18,6 +18,7 @@ import {
   type ChamferFeature,
   type CombineFeature,
   type SplitFeature,
+  type MoveCopyBodyFeature,
   type Command,
   type DeleteFaceFeature,
   type DraftFeature,
@@ -3281,6 +3282,130 @@ function SplitPanel({ f }: { f: SplitFeature }) {
   );
 }
 
+/** Move/Copy Body feature (C7.3, ADR 0164): translation offsets, rotation axis and angle, copy toggle. */
+function MoveCopyBodyPanel({ f }: { f: MoveCopyBodyFeature }) {
+  const result = useStore((s) => s.result);
+  const bodies = (result?.bodies ?? []).filter((b) => !b.surface);
+  const update = (patch: Partial<Omit<MoveCopyBodyFeature, 'id' | 'type' | 'name' | 'suppressed'>>) => {
+    store.execute({
+      type: 'setMoveCopyBody',
+      featureId: f.id,
+      targets: f.targets,
+      dx: f.dx,
+      dy: f.dy,
+      dz: f.dz,
+      rotationAxis: f.rotationAxis,
+      rotationAngle: f.rotationAngle,
+      copy: f.copy,
+      ...patch,
+    });
+  };
+
+  const body = (name: string): Ref => ({ kind: 'body', name });
+  const toggle = (id: string) => {
+    const list = f.targets ?? [];
+    const next = list.some((x) => x.name === id) ? list.filter((x) => x.name !== id) : [...list, body(id)];
+    update({ targets: next });
+  };
+
+  const nameOf = (id: string) => bodies.find((b) => b.id === id)?.name ?? id;
+
+  const currentAxisMode = () => {
+    if (!f.rotationAxis || f.rotationAxis === 'z') return 'z';
+    if (f.rotationAxis === 'x') return 'x';
+    if (f.rotationAxis === 'y') return 'y';
+    return 'ref';
+  };
+
+  return (
+    <>
+      <section className="pm-group">
+        <h4>{t('pm.moveCopyBody.targets')}</h4>
+        <ul className="selection-box">
+          {(!f.targets || f.targets.length === 0) && <li className="muted">{t('feature.moveCopyNoTargets')}</li>}
+          {f.targets?.map((x) => {
+            const found = bodies.some((b) => b.id === x.name);
+            return (
+              <li key={x.name} className={found ? '' : 'missing'} title={x.name}>
+                {nameOf(x.name)}
+                {!found && t('pm.lost')}
+                <button className="use-nearest" onClick={() => toggle(x.name)}>
+                  ✕
+                </button>
+              </li>
+            );
+          })}
+        </ul>
+        {bodies.map((b) => (
+          <label key={b.id} className="pm-row checkbox">
+            <input type="checkbox" checked={f.targets?.some((x) => x.name === b.id) ?? false} onChange={() => toggle(b.id)} />
+            <span>{b.name}</span>
+          </label>
+        ))}
+      </section>
+
+      <section className="pm-group">
+        <h4>{t('pm.moveCopyBody.translate')}</h4>
+        <label className="pm-row">
+          <span>{t('pm.moveCopyBody.dx')}</span>
+          <ValueInput value={f.dx ?? '0'} toCommand={(dx) => ({ type: 'setMoveCopyBody', featureId: f.id, targets: f.targets, dx, dy: f.dy, dz: f.dz, rotationAxis: f.rotationAxis, rotationAngle: f.rotationAngle, copy: f.copy })} />
+        </label>
+        <label className="pm-row">
+          <span>{t('pm.moveCopyBody.dy')}</span>
+          <ValueInput value={f.dy ?? '0'} toCommand={(dy) => ({ type: 'setMoveCopyBody', featureId: f.id, targets: f.targets, dx: f.dx, dy, dz: f.dz, rotationAxis: f.rotationAxis, rotationAngle: f.rotationAngle, copy: f.copy })} />
+        </label>
+        <label className="pm-row">
+          <span>{t('pm.moveCopyBody.dz')}</span>
+          <ValueInput value={f.dz ?? '0'} toCommand={(dz) => ({ type: 'setMoveCopyBody', featureId: f.id, targets: f.targets, dx: f.dx, dy: f.dy, dz, rotationAxis: f.rotationAxis, rotationAngle: f.rotationAngle, copy: f.copy })} />
+        </label>
+      </section>
+
+      <section className="pm-group">
+        <h4>{t('pm.moveCopyBody.rotate')}</h4>
+        <label className="pm-row">
+          <span>{t('pm.moveCopyBody.rotationAxis')}</span>
+          <select
+            value={currentAxisMode()}
+            onChange={(e) => {
+              const val = e.target.value;
+              if (val === 'x' || val === 'y' || val === 'z') {
+                update({ rotationAxis: val });
+              }
+            }}
+          >
+            <option value="z">{t('pm.moveCopyBody.axisZ')}</option>
+            <option value="x">{t('pm.moveCopyBody.axisX')}</option>
+            <option value="y">{t('pm.moveCopyBody.axisY')}</option>
+            {typeof f.rotationAxis === 'object' && <option value="ref">{t('pm.moveCopyBody.axisRef')}</option>}
+          </select>
+        </label>
+        {typeof f.rotationAxis === 'object' && (
+          <div className="pm-row">
+            <span>{t('pm.moveCopyBody.axisRef')}</span>
+            <input type="text" readOnly value={f.rotationAxis.name || ''} />
+          </div>
+        )}
+        <label className="pm-row">
+          <span>{t('pm.moveCopyBody.rotationAngle')}</span>
+          <ValueInput
+            value={f.rotationAngle ?? '0'}
+            toCommand={(rotationAngle) => ({ type: 'setMoveCopyBody', featureId: f.id, targets: f.targets, dx: f.dx, dy: f.dy, dz: f.dz, rotationAxis: f.rotationAxis, rotationAngle, copy: f.copy })}
+            suffix="°"
+          />
+        </label>
+      </section>
+
+      <section className="pm-group">
+        <label className="pm-row checkbox">
+          <input type="checkbox" checked={!!f.copy} onChange={(e) => update({ copy: e.target.checked })} />
+          <span>{t('pm.moveCopyBody.copy')}</span>
+        </label>
+        <p className="hint">{t('pm.moveCopyBody.hint')}</p>
+      </section>
+    </>
+  );
+}
+
 /** Imported body (F2.1): where the data came from, and what happened to it on the way in. */
 function ImportedBodyPanel({ f }: { f: ImportedBodyFeature }) {
   const doc = useStore((s) => s.doc);
@@ -3684,6 +3809,7 @@ export function PropertyManager() {
       {f.type === 'cutWithSurface' && <CutWithSurfacePanel f={f} />}
       {f.type === 'combine' && <CombinePanel f={f} />}
       {f.type === 'split' && <SplitPanel f={f} />}
+      {f.type === 'moveCopyBody' && <MoveCopyBodyPanel f={f} />}
       {f.type === 'thread' && <ThreadPanel f={f} />}
       {f.type === 'knurl' && <KnurlPanel f={f} />}
       {f.type === 'cosmeticThread' && <CosmeticThreadPanel f={f} />}

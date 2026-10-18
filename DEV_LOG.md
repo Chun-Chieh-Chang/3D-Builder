@@ -1,5 +1,54 @@
 # 3D-Builder 開發日誌 (DEV_LOG.md)
 
+## 2026-10-18：藍圖 C7.3 實體移動與複製本體特徵 (Move/Copy Body Feature) 全鏈路實作 [ADR 0164](docs/adr/0164-move-copy-body.md)
+
+### 1. 任務背景與範疇
+依據使用者確認與藍圖 C7.3 規範，實作實體移動與複製本體特徵（Move/Copy Body Feature，ADR 0164）。在多實體零件造型中，支援對一個或多個目標實體進行三維線性平移（$dx, dy, dz$）、圍繞主座標軸或參考直線/直邊進行任意角度旋轉（$\theta$）。提供「原地變換（Move）」與「複製變換（Copy）」雙重模式，保證剛體變換下體積與表面積 100% 物理守恆（$\Delta V = 0$），零布林運算 WASM 記憶體洩漏，維持拓樸命名空間獨立與全鏈路 Web 前端互動。
+
+### 2. 做法與架構設計
+| 層級 | 核心檔案 | 實作內容與職責 |
+|---|---|---|
+| 決策紀錄 | `docs/adr/0164-move-copy-body.md` | 定義 3×4 剛體仿射變換矩陣合成演算法（羅德里格旋轉公式）、參考軸拓樸解析、命名空間隔離機制與自我紅隊四問檢驗標準。 |
+| 資料模型 | `packages/model/src/schema.ts`、`serialize.ts`、`commands.ts`、`params.ts`、`refs.ts` | 升版 `SCHEMA_VERSION = 63`；新增 `MoveCopyBodyFeature`；實作 schema 62 遷移函式；新增 `setMoveCopyBody` 指令與 `checkFeature` 語意檢查（目標非空、平移/旋轉參數檢查）；`mapExprs` 支援 $dx, dy, dz, \text{rotationAngle}$；`mapRefs` 支援 `targets` 與 `rotationAxis`。 |
+| 依賴與再生 | `packages/regen/src/dag.ts`、`engine.ts` | `dag.ts` 解析目標本體特徵與旋轉軸參考依賴；`engine.ts` 實作 `moveCopyBody(f, set)`：合成平移與旋轉為單一 3×4 仿射變換矩陣，呼叫 `Kernel.transformed` 進行純解析剛體變換；在複製模式下產生獨立本體並以 `mc1:copy:` 命名空間隔離拓樸。 |
+| 雙語字典 | `packages/i18n/src/` | 補齊 `feature.moveCopyBody`、`cmd.setMoveCopyBody`、`pm.moveCopyBody.*`、`help.moveCopyBody.*` 中英文多國語言與說明文檔。更新 `docs/help-links.json` 映射。 |
+| 介面適配 | `apps/web/src/` | `store.ts` 新增 `newMoveCopyBody()`；`actions.ts` 註冊 `move-copy-body` 特徵動作；`PropertyManager.tsx` 實作特徵參數面板（目標選取、平移與旋轉輸入、軸選擇、複製切換）；`Icon.tsx` 提供專屬向量圖示；`strings.ts` 登記標籤。 |
+| 確效測試 | `tests/phase1/move-copy-body.test.ts`、`tests/phase8/help.test.ts` | 8 項自我紅隊測試全數 100% 通過，涵蓋線性平移物理守恆、主軸旋轉、參考直線邊旋轉、複合變換、多本體複製生成、目標為空攔截、DAG 依賴閉環與 WASM Heap 真實指標防呆；說明系統 40 項測試 100% 通過。 |
+
+### 3. 問題分析 (RCA) 與矯正預防措施 (CAPA)
+1. **問題 (Failure)**：初期執行 `npm run typecheck` 報錯 `SplitFeature` 找不到以及 `mapExprs` 報錯型別不符合。
+   - **RCA**：先前在編輯 `schema.ts` 與 `refs.ts` 時，替換區塊意外覆蓋了緊鄰的 `SplitFeature` 與 `case 'split':`；且在 `params.ts` 中將 `case 'moveCopyBody':` 與不具備運算式的 `split / combine / loft` 共用同一個 fallthrough 區塊。
+   - **CAPA**：依據第一性原理嚴格檢查上下文，完整還原 `SplitFeature` 與 `refs.ts` 的 `split` 分支，並將 `moveCopyBody` 在 `params.ts` 的 `mapExprs` 中分離為獨立處理區塊，確保現有特徵 0 Regression。
+2. **問題 (Failure)**：測試中斷言空目標拋錯時，原寫法使用 `buildAsync` 導致尚未進入再生引擎前即在 `commands.ts` 的 `checkFeature` 拋錯。
+   - **RCA**：`commands.ts` 採用了前置防禦設計，在指令建構期（`insertFeature`）即對 `targets.length === 0` 進行物理攔截，而非等到再生期。
+   - **CAPA**：將測試斷言調整為捕捉同步建構時拋出的顯式 `CommandError`，精確覆蓋物理硬化層。
+
+### 4. 自我紅隊四問（AGENTS.md §2.1）
+1. **輸入破壞 (Input Corruption)**：
+   - 目標實體為空（`targets = []`）：命令層立即拋出顯式 `CommandError` 攔截，嚴禁空本體進入再生流程。
+   - 旋轉軸參考不存在或無效：再生引擎層驗證找不到軸幾何時顯式報錯。
+2. **拓樸與幾何相交破壞 (Geometric Self-Intersection Defense)**：
+   - 剛體運動保證不改動實體本身的幾何拓樸，不涉及 OCCT 布林 Fuse 運算，杜絕拓樸交錯造成的崩潰與記憶體爆炸。
+3. **依賴鏈完整性 (Dependency Graph Integrity)**：
+   - 完整支援 `schema.ts` $\to$ `commands.ts` $\to$ `refs.ts` $\to$ `params.ts` $\to$ `dag.ts` $\to$ `engine.ts` $\to$ `store.ts` $\to$ `PropertyManager.tsx` 全鏈路。
+4. **規格真實性與零 Mock 原則 (Zero-Mock & Ground Truth)**：
+   - 物理量測真實探針：
+     - 平移 $dx = 50, dy = 30, dz = 10$：實體體積實測精確守恆（$V_{after} = V_{before} = 6000\text{ mm}^3$），中心點探針精確位移至 $(60, 35, 15)$。
+     - 旋轉 90°：包圍盒軸長精確由 $20 \times 10 \times 30$ 轉為 $10 \times 20 \times 30$。
+     - 複製模式：實體總數由 1 變為 2，原始實體與複製實體各自獨立存在且體積均精確守恆。
+   - 記憶體真實指標防呆：斷言 `(kernel.oc as any).wasmMemory?.buffer?.byteLength > 0`。
+
+### 5. 確效與品質驗收
+- `npm run typecheck`：**0 錯誤**。
+- `node scripts/check-anti-patterns.mjs`：**全域 RSI 反模式靜態守門通過**。
+- `node scripts/check-deps.mjs`：**Layering OK**。
+- `node scripts/check-i18n.mjs`：**i18n OK**。
+- `tests/phase1/move-copy-body.test.ts`：**8 項自我紅隊測試全數 100% 通過**。
+- `tests/phase1/split-body.test.ts`：**7 項測試全數 100% 通過（確認 0 Regression）**。
+- `tests/phase8/help.test.ts`：**40 項說明守門測試全數 100% 通過**。
+
+---
+
 ## 2026-10-18：藍圖 C1.13 草圖文字特徵 (Sketch Text Feature) 全鏈路實作 [ADR 0163](docs/adr/0163-sketch-text.md)
 
 ### 1. 任務背景與範疇

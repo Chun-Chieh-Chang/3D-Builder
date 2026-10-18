@@ -404,6 +404,23 @@ export function mapExprs(feature: Feature, fn: (expr: Expr, kind: ExprKind, role
     case 'loft':
     case 'combine':
     case 'split':
+      return feature;
+    case 'moveCopyBody': {
+      const dx = feature.dx !== undefined && feature.dx.trim() !== '' ? fn(feature.dx, 'length', 'any') : feature.dx;
+      const dy = feature.dy !== undefined && feature.dy.trim() !== '' ? fn(feature.dy, 'length', 'any') : feature.dy;
+      const dz = feature.dz !== undefined && feature.dz.trim() !== '' ? fn(feature.dz, 'length', 'any') : feature.dz;
+      const rotationAngle = feature.rotationAngle !== undefined && feature.rotationAngle.trim() !== '' ? fn(feature.rotationAngle, 'angle', 'any') : feature.rotationAngle;
+      if (dx === feature.dx && dy === feature.dy && dz === feature.dz && rotationAngle === feature.rotationAngle) {
+        return feature;
+      }
+      return {
+        ...feature,
+        ...(dx !== undefined ? { dx } : {}),
+        ...(dy !== undefined ? { dy } : {}),
+        ...(dz !== undefined ? { dz } : {}),
+        ...(rotationAngle !== undefined ? { rotationAngle } : {}),
+      };
+    }
     case 'refAxis':
     case 'coordSys':
     case 'mirror':

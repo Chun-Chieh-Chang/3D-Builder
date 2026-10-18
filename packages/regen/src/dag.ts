@@ -103,6 +103,12 @@ export function parentsOf(feature: Feature, doc: PartDoc): Id[] {
       parents = [...toolParents, ...targetParents];
       break;
     }
+    case 'moveCopyBody': {
+      const targetParents = feature.targets.filter((r) => r.name).map((r) => bodyFeature(r.name));
+      const axisParents = feature.rotationAxis && typeof feature.rotationAxis === 'object' ? fromRefs([feature.rotationAxis]) : [];
+      parents = [...targetParents, ...axisParents];
+      break;
+    }
     case 'refPlane':
     case 'refAxis':
     case 'refPoint':

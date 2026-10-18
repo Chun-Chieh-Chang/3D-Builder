@@ -696,6 +696,15 @@ export const help = {
 
   'help.split.see': 'concept.selection move-face import-step',
 
+  'help.moveCopyBody.summary': '平移或旋轉一個或多個實體本體，可勾選複製生成新本體。',
+
+  'help.moveCopyBody.body':
+    '選取要移動或複製的實體本體，設定 X、Y、Z 平移位移量，或選取旋轉軸並指定旋轉角度。\n\n- 旋轉軸：可直接選主軸（X/Y/Z 軸），或在圖面點選基準軸、直邊、圓柱面或基準面。\n- 勾選「複製實體」時，原本體保留在零件中，並生成獨立的新實體本體；不勾選時直接移動原本體。\n- 採用剛體變換，面、邊、頂點之拓樸順序與形狀完全保持不變，體積嚴格守恆。\n- 多本體設計時可快速配置重複構件、產生對稱或排列零件。',
+
+  'help.moveCopyBody.keywords': '移動 複製 本體 平移 旋轉 剛體 複製實體 多本體 move copy body',
+
+  'help.moveCopyBody.see': 'split combine import-step',
+
   // ---------------------------------------------------------------- assembly
   'help.insertComponent.summary': '把零件檔插入組合件，成為零組件。',
 
