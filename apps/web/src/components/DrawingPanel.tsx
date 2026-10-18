@@ -852,17 +852,46 @@ export function DrawingPanel() {
             </button>
           </div>
           <div className="pm-row">
-            <button className="pm-button" data-action="chooseFont" onClick={() => void d.chooseFont()}>
+            <select
+              className="pm-select"
+              data-field="pdfFontSelect"
+              value={drw.pdfFont && ['sans', 'kai', 'serif', 'fangsong'].includes(drw.pdfFont) ? drw.pdfFont : (drw.pdfFont ? 'custom' : 'sans')}
+              onChange={(e) => {
+                const val = e.target.value;
+                if (val === 'custom') void d.chooseFont();
+                else void d.selectPdfFont(val);
+              }}
+              style={{ flex: 1, minWidth: 0 }}
+            >
+              <option value="sans">{t('drawingUi.fontPreset.sans')}</option>
+              <option value="kai">{t('drawingUi.fontPreset.kai')}</option>
+              <option value="serif">{t('drawingUi.fontPreset.serif')}</option>
+              <option value="fangsong">{t('drawingUi.fontPreset.fangsong')}</option>
+              <option value="custom">{t('drawingUi.fontPreset.custom')}</option>
+            </select>
+            <button className="pm-button" data-action="chooseFont" title={t('drawingUi.chooseCustomFont')} onClick={() => void d.chooseFont()}>
               {t('drawingUi.pdfFont')}
             </button>
-            <span className="muted" data-field="pdfFont">
-              {drw.pdfFont ?? t('drawingUi.pdfFontNone')}
-            </span>
             {drw.pdfFont && (
               <button title={t('drawingUi.pdfFontClear')} data-action="clearFont" onClick={() => d.clearFont()}>
                 ✕
               </button>
             )}
+          </div>
+          <div className="pm-row">
+            <span className="muted" data-field="pdfFont" style={{ fontSize: '0.85em', wordBreak: 'break-all' }}>
+              {drw.pdfFont
+                ? drw.pdfFont === 'sans'
+                  ? t('drawingUi.fontPreset.sans')
+                  : drw.pdfFont === 'kai'
+                    ? t('drawingUi.fontPreset.kai')
+                    : drw.pdfFont === 'serif'
+                      ? t('drawingUi.fontPreset.serif')
+                      : drw.pdfFont === 'fangsong'
+                        ? t('drawingUi.fontPreset.fangsong')
+                        : drw.pdfFont
+                : t('drawingUi.pdfFontNone')}
+            </span>
           </div>
         </PMGroup>
       </div>

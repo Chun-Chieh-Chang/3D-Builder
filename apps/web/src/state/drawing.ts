@@ -64,6 +64,7 @@ import { download, fileIn, pathIn, pickDrawingSaveTarget, pickFontFile, writeFil
 import type { KernelApi } from '../worker/protocol';
 import type { AssemblyData } from './assemblySource';
 import { buildSource, type SourceStatus } from './partSource';
+import { fontManager } from '../fonts/fontManager';
 
 /**
  * One open drawing (B1.1, C16): the document, the parts its views show (read from the project folder and built in the worker, once per content), and the
@@ -278,7 +279,7 @@ export class DrawingStore {
       edges: new Map(),
       elements: new Map(),
       boms: new Map(),
-      pdfFont: null,
+      pdfFont: page(source.doc).sheet.pdfFont ?? 'sans',
       selected: null,
       dimension: null,
       finish: null,
@@ -289,6 +290,11 @@ export class DrawingStore {
       computing: false,
       fitRequest: 1,
     };
+    if (this.state.pdfFont) {
+      void fontManager.resolveFont(this.state.pdfFont).then((f) => {
+        if (f && !this.font) this.font = f;
+      });
+    }
     this.history.subscribe(() => this.onDocChanged());
     this.loadSources();
   }
@@ -363,6 +369,7 @@ export class DrawingStore {
       dimension: dimension && activePg.dimensions.some((d) => d.id === dimension) ? dimension : null,
       finish: finish && activePg.surfaceFinishes.some((f) => f.id === finish) ? finish : null,
       annotation: annotation && (activePg.annotations ?? []).some((a) => a.id === annotation) ? annotation : null,
+      pdfFont: activePg.sheet.pdfFont ?? this.state.pdfFont ?? 'sans',
     });
     this.loadSources();
     this.refreshBoms();
@@ -1612,9 +1619,13 @@ export class DrawingStore {
   }
 
   /** The drawing as a PDF, with the font chosen for the characters Helvetica does not have; what could not be written is said. */
-  exportPdf(): void {
+  async exportPdf(): Promise<void> {
     const name = this.name();
     try {
+      const currentFontId = this.state.pdfFont ?? page(this.history.doc).sheet.pdfFont ?? 'sans';
+      if (!this.font && currentFontId) {
+        this.font = await fontManager.resolveFont(currentFontId);
+      }
       const scenes = this.history.doc.pages.map((_, i) => this.scene(i).scene);
       const { bytes, warnings } = toPdf(scenes, { title: name, font: this.font });
       download(`${name}.pdf`, bytes as BlobPart, 'application/pdf');
@@ -1622,6 +1633,16 @@ export class DrawingStore {
       for (const w of warnings) this.host.notify(w, 'error');
     } catch (e) {
       this.host.notify(e instanceof FontError ? e.message : t('drawing.exportFailed', { why: e instanceof Error ? e.message : String(e) }), 'error');
+    }
+  }
+
+  /** Selects a preset or registered PDF font and saves it into the active sheet. */
+  async selectPdfFont(fontId: string | null): Promise<void> {
+    this.font = fontId ? (await fontManager.resolveFont(fontId)) : null;
+    this.setSheet({ pdfFont: fontId });
+    this.set({ pdfFont: fontId });
+    if (fontId) {
+      this.host.notify(t('drawing.fontChosen', { name: fontId }));
     }
   }
 
@@ -1633,6 +1654,8 @@ export class DrawingStore {
       const font = readTrueType(file.bytes);
       if (!font.embeddable) throw new FontError(t('font.restricted'));
       this.font = font;
+      fontManager.set(file.name, font);
+      this.setSheet({ pdfFont: file.name });
       this.set({ pdfFont: file.name });
       this.host.notify(t('drawing.fontChosen', { name: file.name }));
     } catch (e) {
@@ -1642,6 +1665,7 @@ export class DrawingStore {
 
   clearFont(): void {
     this.font = null;
+    this.setSheet({ pdfFont: null });
     this.set({ pdfFont: null });
   }
 

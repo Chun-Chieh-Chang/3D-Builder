@@ -231,4 +231,20 @@ describe('Multi-sheet Drawing (B2.8 Shape 2)', () => {
     expect(pdf.pages[1]!.mediaBox[2]).toBeCloseTo(ptW2, 1);
     expect(pdf.pages[1]!.mediaBox[3]).toBeCloseTo(ptH2, 1);
   });
+
+  it('supports binding pdfFont per sheet and clears it when null', () => {
+    let doc = createEmptyDrawing();
+    doc = applyDrawingCommand(doc, { type: 'setSheet', pageIndex: 0, sheet: { pdfFont: 'kai' } });
+    expect(page(doc, 0).sheet.pdfFont).toBe('kai');
+
+    // Insert page 2 with sans font
+    doc = applyDrawingCommand(doc, { type: 'insertPage', page: { id: 'page2', sheet: { size: 'A4', orientation: 'portrait', projection: 'first', scale: [1, 1], pdfFont: 'sans' } } });
+    expect(page(doc, 0).sheet.pdfFont).toBe('kai');
+    expect(page(doc, 1).sheet.pdfFont).toBe('sans');
+
+    // Clear font on page 1
+    doc = applyDrawingCommand(doc, { type: 'setSheet', pageIndex: 0, sheet: { pdfFont: null } });
+    expect(page(doc, 0).sheet.pdfFont).toBeUndefined();
+    expect(page(doc, 1).sheet.pdfFont).toBe('sans');
+  });
 });

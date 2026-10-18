@@ -48,6 +48,8 @@ export interface DrawingSheet {
   dimStyle?: DimStyle;
   /** How the title block writes its texts (v20, ADR 0150): the three heights and whether a text too wide for its cell is drawn shrunk. Absent: ISO 7200's (`TITLE_STYLE_DEFAULT`). */
   titleStyle?: TitleStyle;
+  /** The font chosen for PDF export (e.g. 'sans', 'kai', 'serif', 'fangsong', a system font name, or custom font file name). */
+  pdfFont?: string;
 }
 
 /**
@@ -686,7 +688,7 @@ export const drawingIdsInUse = (doc: DrawingDoc): Id[] =>
 
 export type DrawingCommand =
   /** Changes the sheet: its size, orientation, projection, scale or (`shift: null`: take it back) the shift of the arrangement (C16.1). */
-  | { type: 'setSheet'; pageIndex?: number; pageId?: Id; sheet: Partial<Omit<DrawingSheet, 'shift' | 'language' | 'dimStyle' | 'titleStyle'>> & { shift?: [number, number] | null; language?: Locale | null; dimStyle?: DimStyle | null; titleStyle?: TitleStyle | null } }
+  | { type: 'setSheet'; pageIndex?: number; pageId?: Id; sheet: Partial<Omit<DrawingSheet, 'shift' | 'language' | 'dimStyle' | 'titleStyle' | 'pdfFont'>> & { shift?: [number, number] | null; language?: Locale | null; dimStyle?: DimStyle | null; titleStyle?: TitleStyle | null; pdfFont?: string | null } }
   /** Writes a field of the title block; an empty text takes it away (C16.1). */
   | { type: 'setTitle'; pageIndex?: number; pageId?: Id; field: TitleField; value: string }
   /** Adds views at the end of the list (C16.2), each with its own new id. */
@@ -1081,12 +1083,14 @@ export function mutateDrawing(draft: Draft<DrawingDoc>, cmd: DrawingCommand): vo
       if (s.language !== undefined && s.language !== null && !LOCALES.includes(s.language)) throw new CommandError(t('drawing.badLanguage'));
       if (s.dimStyle !== undefined && s.dimStyle !== null) checkDimStyle(s.dimStyle);
       if (s.titleStyle !== undefined && s.titleStyle !== null) checkTitleStyle(s.titleStyle);
-      const { shift, language, dimStyle, titleStyle, ...rest } = s;
+      const { shift, language, dimStyle, titleStyle, pdfFont, ...rest } = s;
       // an empty style is the default's, written as none
       if (dimStyle === null || (dimStyle && Object.keys(dimStyle).length === 0)) delete pg.sheet.dimStyle;
       else if (dimStyle) pg.sheet.dimStyle = { ...dimStyle };
       if (titleStyle === null || (titleStyle && Object.keys(titleStyle).length === 0)) delete pg.sheet.titleStyle;
       else if (titleStyle) pg.sheet.titleStyle = { ...titleStyle };
+      if (pdfFont === null || pdfFont === '') delete pg.sheet.pdfFont;
+      else if (pdfFont !== undefined) pg.sheet.pdfFont = pdfFont;
       Object.assign(pg.sheet, rest);
       if (s.unit === 'mm') delete pg.sheet.unit;
       // `null` puts the sheet back to writing in whatever language the interface is in

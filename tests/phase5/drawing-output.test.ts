@@ -316,6 +316,22 @@ describe('PDF', () => {
     expect(() => toPdf(scene, { font: readTrueType(testFont('定', { fsType: 2 }).bytes) })).toThrow(/授權/);
   });
 
+  it('when some character is missing in the font, valid Chinese characters are preserved in F2 and not turned into ?', () => {
+    const font = readTrueType(testFont('底板?').bytes);
+    const testScene: Scene = {
+      width: 420,
+      height: 297,
+      items: [{ kind: 'text', text: '底板↧', at: [100, 100], height: 3.5 }],
+    };
+    const { bytes, warnings } = toPdf(testScene, { font });
+    expect(warnings.length).toBe(1);
+    expect(warnings[0]).toContain('指定的字型沒有這 1 個字元');
+    const doc = readPdf(bytes);
+    const pageText = doc.pages[0]!.texts[0]!;
+    expect(pageText.font).toBe('F2');
+    expect(pageText.text).toBe('底板?');
+  });
+
   it('a PDF that is damaged is found out: not a PDF, no startxref, an object where the table does not say, a stream of the wrong length', () => {
     const { bytes } = toPdf(scene);
     expect(() => readPdf(new Uint8Array([1, 2, 3]))).toThrow(PdfError);

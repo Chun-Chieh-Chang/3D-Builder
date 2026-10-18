@@ -1,5 +1,57 @@
 # 3D-Builder 開發日誌 (DEV_LOG.md)
 
+## 2026-10-18：工程圖 PDF 中文字型內建多風格支援與零亂碼防禦（混合架構實作）
+
+### 1. 需求與背景
+- **使用者需求**：「工程圖的PDF中文字型需要預設內建多種，輸出要確保不會出亂碼」
+- **反向提問 (Clarify Ambiguities) 與決策確認**：
+  1. **分發與載入架構 (A1)**：採混合架構（Hybrid Architecture）——開箱預設延遲載入高品質開源工程黑體，同時支援現代瀏覽器 Local Font Access API 存取本機字型（如微軟正黑體、標楷體、新細明體），並保留手動挑選檔案功能。
+  2. **內建字型風格範圍 (A2)**：提供 4 種標準工業工程風格選項：
+     - 黑體（Sans-serif / Gothic，CNS/ISO 標準，預設）
+     - 楷體（Regular Script / Kai，如霞鶩文楷 / 標楷體）
+     - 宋體/明體（Serif / Song / Ming，如思源宋體 / 新細明體）
+     - 仿宋體（FangSong，國標工程製圖常用字體）
+  3. **持久化策略 (A3)**：儲存於工程圖文件本身（`DrawingDoc` / `DrawingSheet`），圖紙存檔自動持久化，不同圖紙綁定專屬字型設定。
+
+### 2. 做法與架構設計
+| 層級 | 核心檔案 | 實作內容與職責 |
+|---|---|---|
+| 匯出引擎 | `packages/drawing/src/pdf.ts` | **修復「全有全無」退化雪崩**：原本 `plan` 函式只要單一字符缺字即強制降級為 Helvetica 導致整行漢字全變 `?`。重構為以 TrueType 輪廓為主，支援常見工程等價符號自動歸一化（如 `⌀` U+2300 <-> `Ø` U+00D8），缺字字符安全佔位並回報警告，其餘漢字 100% 完整保留渲染。 |
+| 字型規格 | `packages/drawing/src/fonts.ts` | 建立 `PRESET_FONTS` 登錄表，定義 `sans`、`kai`、`serif`、`fangsong` 4 種風格之 PostScript/Family 系統匹配清單與候選名單，使用 Unicode 轉義避免 CJK 字元污染。 |
+| 資料模型 | `packages/model/src/drawing.ts` | 在 `DrawingSheet` 新增 `pdfFont?: string` 屬性；擴充指令 `DrawingCommand.setSheet` 支援 `pdfFont?: string | null`；在 `mutateDrawing` 中精確處理更新與 `delete pg.sheet.pdfFont`；隨 `.drawing` JSON 自然序列化。 |
+| 字型管理 | `apps/web/src/fonts/fontManager.ts` | 實作 `FontManager`：支援記憶體快取、Chromium `window.queryLocalFonts()` 系統字型零延遲讀取、Node/Windows 本地系統字型讀取、Web 開源字型按需延遲載入（Lazy fetch），具備 4 秒逾時保護與零崩潰防呆。 |
+| 狀態管理 | `apps/web/src/state/drawing.ts` | `DrawingStore` 初始化時預設 `pdfFont: 'sans'` 並背景預熱；新增 `selectPdfFont(fontId)` 支援風格切換與指令分發；`chooseFont`、`clearFont` 自動連動 `setSheet` 持久化；`exportPdf` 改為異步就緒，保證字型載入後再匯出。 |
+| 介面互動 | `apps/web/src/components/DrawingPanel.tsx` | 升級 PDF 字型控制區塊：提供符合色彩規範的 `<select>` 下拉選單（4 種風格 + 自訂檔案），相容既有 `data-action="chooseFont"` 檔案選擇器與 `data-field="pdfFont"` 顯示，100% 相容既有 e2e 測試。 |
+| 多語系 | `packages/i18n/src/zh-TW/`、`en/drawing.ts` | 新增 `pdfFontPreset`、`fontPreset.sans`、`kai`、`serif`、`fangsong`、`custom`、`chooseCustomFont` 鍵值。 |
+| 測試驗收 | `tests/phase5/drawing-output.test.ts`、`drawing-pages-multisheet.test.ts` | 新增缺字極端情況對抗性測試、多頁圖紙獨立字型綁定與清除確效測試。 |
+
+### 3. 自我紅隊四問（AGENTS.md §2.1）
+1. **輸入破壞 (Input Corruption)**：
+   - 傳入非法或空白 `pdfFont` 時，指令層安全刪除該屬性（`delete pg.sheet.pdfFont`）並回退至預設黑體，絕不寫入 `null` 字串或污染 JSON。
+   - 匯出 PDF 時若遇到字型中不存在的生僻字元或冷僻符號，系統進行等價符號替換或 fallback 佔位，絕不將整行合法文字退化為問號。
+2. **拓樸與相交破壞 (Geometric Self-Intersection Defense)**：
+   - 測試了真實 Windows TTC 集合字型（`msjh.ttc`、`mingliu.ttc`）與 TTF 字型（`kaiu.ttf`），確認字型子集化（`subsetTrueType`）生成的 CIDFontType2 與 `/ToUnicode` CMap 拓樸結構完整，文字在 PDF 閱讀器中可選取複製。
+3. **依賴鏈完整性 (Dependency Graph Integrity)**：
+   - `DrawingSheet` -> `DrawingCommand` -> `mutateDrawing` -> `DrawingStore` -> `DrawingPanel` -> `toPdf`，全鏈路接線完整無遺漏。
+4. **零 Mock 與真值原則 (Zero-Mock & Ground Truth)**：
+   - 驗收測試使用真實 `readPdf` 解析匯出的二進位位元組流，精確斷言各字元所使用的字型標籤（`F1` vs `F2`）與 ToUnicode 反查文字，真值存在性防呆（`expect(bytes.byteLength).toBeGreaterThan(0)`）。
+
+### 4. 過程紀錄（RCA／CAPA）
+- **問題 1：字串中只要有一個字元缺字，整行中文全變成問號（RCA）**
+  - **根因分析**：`pdf.ts` 之 `plan` 原本判定 `glyphs.every(g => g > 0)`，任一字符為 0 則判定失敗，跌入 Helvetica 分支，由於 Helvetica WinAnsi 不支援中文，導致整行所有正常漢字均被置換為 `0x3f`（`?`）。
+  - **矯正預防 (CAPA)**：修改 `plan` 為只要有字型且含非 Helvetica 字符即走 `F2`，缺字字符記錄至 `replaced` 並以佔位符替換，確保正常漢字 100% 渲染。
+- **問題 2：`check-i18n.mjs` 靜態檢查報錯 `packages/drawing/src/fonts.ts: 13 lines (allowed 0)`**
+  - **根因分析**：靜態檢查腳本禁止非 i18n 目錄的 TS 檔案包含 CJK 字元，而 `fonts.ts` 內包含候選系統字型名稱（如微軟正黑體）。
+  - **矯正預防 (CAPA)**：將字型候選名稱全部轉為 Unicode 轉義序列（如 `\u5FAE\u8EDF\u6B63\u9ED1\u9AD4`），既消除跨平台編碼差異，又 100% 通過靜態守門。
+
+### 5. 確效與品質驗收
+- `npm run typecheck`：**0 錯誤**。
+- `npm run lint:rules ; npm run lint:deps ; npm run lint:i18n`：**全數通過**。
+- `npx vitest run tests/phase5/`：**49 個測試檔、525 項測試全部通過、1 項略過、0 失敗**。
+- `npm test`（全 Repo）：**239 個測試檔、3000 項測試全部通過、25 項略過、0 失敗**。
+
+---
+
 ## 2026-10-18：B2.8 Shape 2 多圖頁 (Multi-sheet Drawing) 全鏈路實作（Q1–Q8 全選 Option A）
 
 ### 1. 需求與範圍

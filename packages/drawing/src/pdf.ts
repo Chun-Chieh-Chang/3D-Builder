@@ -62,11 +62,27 @@ function plan(text: string, font: TrueTypeFont | null | undefined, used: Map<num
   const chars = [...text].map((c) => c.codePointAt(0)!);
   // Helvetica when it has every character; the font given only for what Helvetica cannot write
   if (font && chars.some((c) => helveticaCode(c) === null)) {
-    const glyphs = chars.map((c) => font.glyphOf(c));
-    if (glyphs.every((g) => g > 0 || chars.length === 0)) {
-      chars.forEach((c, i) => used.has(glyphs[i]!) || used.set(glyphs[i]!, c));
-      return { font: 'F2', codes: glyphs, width: glyphs.reduce((w, g) => w + (font.advance(g) * 1000) / font.unitsPerEm, 0), replaced: [] };
-    }
+    const replaced: string[] = [];
+    const questionGlyph = font.glyphOf(0x3f);
+    const glyphs = chars.map((c) => {
+      let g = font.glyphOf(c);
+      if (g === 0) {
+        // Fallback for common equivalent symbols (e.g., diameter ⌀ U+2300 <-> Ø U+00D8)
+        if (c === 0x2300) g = font.glyphOf(0x00d8);
+        else if (c === 0x00d8) g = font.glyphOf(0x2300);
+        else if (c === 0x3000) g = font.glyphOf(0x0020);
+      }
+      if (g > 0) {
+        if (!used.has(g)) used.set(g, c);
+        return g;
+      }
+      replaced.push(String.fromCodePoint(c));
+      const fallbackGlyph = questionGlyph > 0 ? questionGlyph : 0;
+      if (fallbackGlyph > 0 && !used.has(fallbackGlyph)) used.set(fallbackGlyph, 0x3f);
+      return fallbackGlyph;
+    });
+    const width = glyphs.reduce((w, g) => w + (font.advance(g) * 1000) / font.unitsPerEm, 0);
+    return { font: 'F2', codes: glyphs, width, replaced };
   }
   const replaced: string[] = [];
   const codes = chars.map((c) => {

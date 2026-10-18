@@ -1,5 +1,35 @@
 # 交接文件
 
+- **【2026-10-18：工程圖 PDF 中文字型內建多風格支援與零亂碼防禦（混合架構實作）— 本地確效通過，待使用者確認推送】**
+  - **背景與決策**：
+    - 使用者提出「工程圖的PDF中文字型需要預設內建多種，輸出要確保不會出亂碼」。
+    - 啟動 AI 智囊團（反駁者、本質追問者、機會發現者、外行人、無情執行者）審查，透過反向提問（Clarify Ambiguities）確認三大決策：
+      1. **A1 (分發架構)**：混合架構（開箱預設開源黑體 + 支援現代瀏覽器 Local Font Access API 存取本機字型如微軟正黑體、標楷體 + 支援手動上傳檔案）。
+      2. **A2 (風格範圍)**：內建 4 種工業標準風格（黑體 sans、楷體 kai、宋體 serif、仿宋體 fangsong）。
+      3. **A3 (持久化)**：儲存於工程圖文件本身（`DrawingDoc` / `DrawingSheet`），圖紙存檔自動持久化。
+  - **完成項目**：
+    1. **核心匯出引擎零亂碼防禦 (`packages/drawing/src/pdf.ts`)**：
+       - 徹底修復原本 `plan` 函式「只要一個字符缺字，整行文字強制降級為 Helvetica 導致整行漢字全變問號 `?`」之全有全無雪崩缺陷。
+       - 升級為 TrueType 主力渲染：支援常見工程符號自動等價歸一化（如 `⌀` U+2300 <-> `Ø` U+00D8），缺字字符安全佔位並回報 warning，其餘所有漢字 100% 完整保留渲染。
+    2. **字型風格規格表 (`packages/drawing/src/fonts.ts`)**：
+       - 定義 4 種風格的 PostScript/Family 系統候選匹配清單，使用 Unicode 轉義表示候選中文字串，100% 通過 `check-i18n.mjs` 靜態守門。
+    3. **圖紙模型與持久化 (`packages/model/src/drawing.ts`)**：
+       - `DrawingSheet` 新增 `pdfFont?: string`；指令 `setSheet` 與 `setPage` 接線支援 `pdfFont?: string | null`；`mutateDrawing` 支援更新與清除；存檔自動序列化。
+    4. **字型解析與快取管理器 (`apps/web/src/fonts/fontManager.ts`)**：
+       - 整合記憶體快取、Chromium `window.queryLocalFonts()` 系統字型存取、Node/Windows 本地系統字型讀取、Web 開源字型按需延遲載入（Lazy fetch），支援 4 秒逾時保護。
+    5. **狀態層開箱預熱 (`apps/web/src/state/drawing.ts`)**：
+       - `DrawingStore` 預設 `pdfFont: 'sans'`（黑體）並在建構式背景預熱；新增 `selectPdfFont(fontId)`；`chooseFont`、`clearFont` 自動同步至當前頁面 `sheet.pdfFont`；`exportPdf` 異步等待字型就緒。
+    6. **屬性面板 UI 升級 (`apps/web/src/components/DrawingPanel.tsx`)**：
+       - 提供 4 種風格下拉選單 + 自訂選項；保留 `data-action="chooseFont"` 與 `data-field="pdfFont"`，100% 相容既有 e2e 測試。
+    7. **多語系支援 (`packages/i18n/`)**：
+       - 新增中英雙語之字型風格與自訂檔案鍵值。
+  - **確效與測試驗收**：
+    - `npm run typecheck`：**0 錯誤**。
+    - `npm run lint:rules ; npm run lint:deps ; npm run lint:i18n`：**全數通過**。
+    - `npx vitest run tests/phase5/`：**49 個測試檔、525 項測試全數通過（0 失敗，1 略過）**。
+    - `npm test`（全 Repo）：**239 個測試檔、3000 項測試全數通過（0 失敗，25 略過）**。
+  - **停在哪裡**：本地修改已完成且全套件綠燈確效；等待使用者審查與許可執行 `git push`。
+
 - **【2026-10-18：B2.8 Shape 2 多圖頁 (Multi-sheet Drawing) 全鏈路實作與確效（Antigravity）— 已提交並推送 `756b7ae`（origin/main）】**
   - **背景與決策**：接手 `handoff.md` 任務，落實決策單 `docs/decisions-e1p2-b28-shape2.html`（Q1–Q8 全選 Option A）與 SSOT 原則。
   - **完成項目**：
