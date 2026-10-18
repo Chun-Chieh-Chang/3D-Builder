@@ -1,5 +1,43 @@
 # 3D-Builder 開發日誌 (DEV_LOG.md)
 
+## 2026-10-18（E1 收尾）：補上側邊欄的瀏覽器驗證，並落地 §2.2 選取切換（E1-P3）
+
+### 1. 範圍（使用者指定）
+1. 把 E1-P1／E1-P2 以來「從未跑完的 `verify:ui`」跑起來，補上瀏覽器驗證（ADR 0155 的已知限制第一條）。
+2. 開始動計畫 §2.2 的選取切換：點選圖面自動進屬性頁、PropertyManager 依選取顯示標題列與可收合群組框。
+
+### 2. 做法
+| 層 | 檔案 | 內容 |
+|---|---|---|
+| e2e（新） | `tests/e2e/manual-sidebar-tabs.js` | **10 步**覆蓋 E1 全部契約＋§2.2：兩分頁存在與 aria 狀態、切換只隱藏不卸載（隱藏窗格內 `data-field` 仍可達）、工作階段自動進屬性頁且 FeatureManager 仍可點、✓ 提交後回樹頁、**圖面點面→自動進屬性頁**（名稱/所屬特徵/實測面積/中心，全部讀自畫面與 store）、✓ 清除→回樹頁、樹內點選留在樹頁、特徵屬性頁（名稱/類型/狀態）＋「編輯特徵」進入工作階段、Ctrl 多選兩邊（逐邊長度）、組合件兩分頁與搜尋列過濾 |
+| store | `apps/web/src/state/store.ts` | `selectedElements` 後新增 `selectionFacts`（`{key, keys, elements, unresolved, error}`）；`runSelectionFacts()` 以**測量工具同一條路**（`api.measure`，`part:null` 量開放中零件）實測選取元素；`set()` 在 `selectedFace`／`selectedElements`／`result` 變化時重問；`selectionFactsSeq` 丟棄過期回答 |
+| 純邏輯（新） | `apps/web/src/state/selectionFacts.ts` | `partSelection`（互斥選取推導）、`pickKey`（圖面選取的鍵，樹內點選不動它——自動切換與否的分界）、`elementIndexOf`（持久名→網格序號，同名以指紋分辨，**不能分辨就回 null 不猜**）、`measureTargetsOf`（帶回對齊的 `keys`） |
+| 元件（新） | `apps/web/src/components/SelectionPanel.tsx` | 無工作階段時的 PropertyManager：`sw-pm-header`（圖示＋種類＋名稱＋✓清除）＋兩個 `sw-group`（識別／量測）。數字用測量工具的 `writer`（mm／in 同一套選項），種類用 `typeName`；量不到就是不顯示，元素不存在就明說（`sel.unresolved`），不 placeholder |
+| 共用元件（新） | `apps/web/src/components/PMGroup.tsx` | 從 DrawingPanel 抽出（DOM 輸出逐字相同），兩邊側邊欄共用 |
+| 接線 | `apps/web/src/App.tsx` | 屬性頁分頁啟用條件 `!editing && !partSelection`（零件；組合件不變）；`useEffect`：圖面選取變化→進屬性頁、選取清空且無樹選取→回樹頁；properties 窗格 `partEditing ? <PropertyManager/> : <SelectionPanel/>` |
+| i18n | `packages/i18n/src/{zh-TW,en}/ui.ts` | 新增 `sel.*` 14 鍵（種類/量測/所屬特徵/狀態/已選 n 個/清除選取/找不到元素…），其餘全部複用 `measure.*` 既有詞彙 |
+| 單測（新） | `tests/phase8/selection-facts.test.ts` | 9 項：選取互斥與優先、pickKey 只隨圖面選取動、同名解析（唯一→直接、遺失→null、重名無指紋→null、有指紋→命中、指紋不符→null）、targets 順序與 keys 對齊、datum/body 不送 kernel |
+
+### 3. 自我紅隊四問（AGENTS.md §2.1）
+1. **輸入破壞**：選取不涉及數值輸入；量測數字一律由 kernel 回答，面板不四捨五入、不夾值、不 fallback。同名參考**不能分辨就整個不答**（回 null），寧可顯示「找不到元素」也不顯示別顆面的面積。
+2. **幾何相交**：不碰核心，無布林運算；唯有 `api.measure` 一個既有呼叫（測量工具天天在走的路）。
+3. **依賴鏈完整性**：`selectionFacts.ts`（純）→ `store.selectionFacts` → `SelectionPanel` → `App.tsx` 分頁啟用/自動切換 → `app.css`（`.sw-pm-header`/`.sw-group` 沿用工程圖既有樣式，零新 CSS）→ e2e。`writer`/`typeName` 從 MeasurementPanel 共用而非複製，單位選項（mm/in/g fraction）因此天然一致。
+4. **零 Mock**：e2e 斷言全部讀自畫面或 store——面積文字等於 `selectionFacts.elements[0].area`（相對 1e-4）、所屬特徵是 `doc.features` 裡真實存在的名字、邊長度兩個都 > 0 且等於 store 量測值；無任何 hardcode 期待值。**反向對照（實際跑過）**：step 3 第一版斷言「提交工作階段後屬性頁分頁應停用」→ 失敗，量到分頁仍啟用——因為 'eb' 在樹裡仍是選取態，§2.2 下本就該啟用；據此改正斷言（這正是新行為生效的證據，不是把測試改綠）。
+
+### 4. 確效（數字取自執行輸出）
+- `npm run typecheck`：EXIT=0。
+- `lint:rules` ✔／`lint:deps` Layering OK／`lint:i18n` 181 行（未逾基準）：各 EXIT=0。
+- `npx vitest run tests/phase8/selection-facts.test.ts`：9 過；tree-filter 7 過（迴歸同伴隨）。
+- **全量 `npm test`：237 檔（4 略過）、2993 過、0 失敗**，425s。
+- `verify:ui -- --only manual-sidebar-tabs`：**10 步全過、0 Console 錯誤**（PASS，8.7s）。
+- **全量 `verify:ui`（最終碼，背景跑）**：見 §5——118/143 通過，25 支失敗**全部為既有缺口**，與本次改動無關（證據鏈見 §5）。
+
+### 5. 已知限制／後續（誠實記載）
+- **全量 verify:ui 的 25 支失敗是既有的，不是這次造成的**。兩次全量跑（§2.2 改動前、只有新 e2e 檔時；以及最終碼）都是 **118/143**。逐支根因：① **B2.8 `pages[]` 根因 23 支**——11 支 `manual-drawing-*`、10 支 `phase5-*`（step 0 就 `Cannot read properties of undefined (reading 'length')`）、`manual-measure-view`（`tests/e2e/manual-measure-view.js:325` 讀 `drw.doc.views.length`）、`phase4b-surface`（`phase4b-surface.js:44` 讀 `drw.doc.views.find`）。② `phase3-select-elements`：呼叫已不存在的 `store.setPickFilter`（現名 `setPickFilterKind`，store.ts:1354）。③ `manual-asm-view-normal`：視角方塊的過時斷言（`top`/`d` 與 front normal 的量測差異，非 `pages[]`）。單獨重跑 `manual-drawing-title-style`／`phase5-drawing` 一樣失敗（**不是批次干擾**）。根因：**B2.8 多圖頁（`432bb1f`，10-17）把 `DrawingDoc` 改為 `pages[]`，頂層 `views` 已不存在，但這 23 支 e2e 仍讀 `drw().doc.views`**——該提交只更新了單元測試，e2e 遷移是 B2.8 shape 2 的待辦（決策單已由使用者回覆並提交：`8cb1f2b` `docs/decisions-e1p2-b28-shape2.html`）。本次改動是「一支新 e2e 檔＋新元件＋store 新增欄位」，觸及不到工程圖腳本讀的路徑；`manual-sidebar-tabs` 在同一批次裡 **PASS（7.7s）** 即為直接證據。**後續**：B2.8 shape 2 應把這 23 支改成 `page(drw().doc).views` 後重跑全量。
+- 側邊欄 §2.2 本次只交付**零件**：組合件的點選（`asm.selected` 零組件）仍啟用不了屬性頁（依計畫 §8「先零件再做組合件」），6 個模式面板維持浮動不變。
+- 特徵屬性頁只顯示識別（名稱/類型/狀態）＋編輯入口，**未**把 40 多種特徵的參數包進群組框（會動到 3262 行 PropertyManager 的既有欄位，風險另案評估）。
+- **環境坑（本次實測）**：① 5391 上的 dev server 根目錄是**主倉庫** `D:\Self-developed_Apps\G3\3D-Builder`（PID 13756，`vite --open`，上一階段留著的），不是本 worktree；驗證本 worktree 必須自起 server（本次用 5395＋`VERIFY_UI_ORIGIN`，debug/samples 用 9414/9415、5414/5415）。② 自起 server 若觸發 Vite dep 再最佳化，清理 `node_modules/.vite/deps_temp_*`（61 檔）會被環境的 safe-delete 守衛攔截並** crash server**；解法是先用 Bash `rm -rf` 清掉殘留 temp 再冷啟動（Bash 層級的 rm 不受該守衛影響）。
+
 ## 2026-10-16（B1）：局部剖視（local section）全鏈路——模型、核心、圖面、介面接線
 
 ### 1. 範圍（使用者 2026-10-16 裁定：八項細節第一批，一批一項，先只做局部剖視）

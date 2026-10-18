@@ -72,6 +72,7 @@ import type { KernelApi, PartExportOptions, RebuildPayload, SketchSolvePayload, 
 import { shouldRestartHeap } from '../worker/heap';
 import { SketchController, type ControllerView, type SketchHost } from '../sketcher/controller';
 import { axisDefinitionFor, emptyRef, put, treeRef } from './datumSlots';
+import { measureTargetsOf, pickKey, type SelectionFacts } from './selectionFacts';
 import { Autosaver, type Recovery } from '../autosave';
 import { loadOptions, parseOptions, saveOptions, type SystemOptions } from '../options';
 import {
@@ -296,6 +297,8 @@ export interface UiState {
   selectedFace: Ref | null;
   /** The edges and vertices picked while nothing is being edited (ADR 0117): ticked in or out with Ctrl or Shift. A command that starts takes them as what it was waiting for. */
   selectedElements: Ref[];
+  /** What the picked elements are, measured by the kernel (E1 §2.2): the numbers the selection panel shows, asked again when the pick or the model changes. Null when nothing is picked. */
+  selectionFacts: SelectionFacts | null;
   /** The bodies there were when a knit, thicken or cut with surface was started: what it can pick from (a body it uses up, or turns into a solid, is not what the model it shows has). */
   bodyPool: { id: Id; name: string; surface: boolean }[];
   /** Which kinds of element the graphics area lets be picked (D5.4): a command asks for kinds, this narrows them. Radio in the UI, as the SW filter toolbar (ADR 0145): at most one kind off the full set, or all of them. */
@@ -559,6 +562,7 @@ class AppStore {
       selected: null,
       selectedFace: null,
       selectedElements: [],
+      selectionFacts: null,
       bodyPool: [],
       pickFilter: { ...loadOptions().pickFilter },
       pickFilterBarVisible: loadOptions().pickFilterBar,
@@ -655,6 +659,8 @@ class AppStore {
     for (const fn of this.listeners) fn();
     // what is measured follows the model: a part rebuilt, or components placed anew, are measured again
     if ((this.state.measure?.picks.length || this.state.measure?.saved.length) && ('result' in patch || 'asm' in patch)) void this.runMeasure();
+    // what the picked elements are (E1 §2.2): the selection, or a rebuild of the model, is asked about again
+    if ('selectedFace' in patch || 'selectedElements' in patch || 'result' in patch) void this.runSelectionFacts();
     // the draft analysis follows the model too
     if (this.state.draft && 'result' in patch) void this.runDraft();
     if (this.state.undercut && 'result' in patch) void this.runUndercut();
@@ -1168,6 +1174,33 @@ class AppStore {
 
   /** The template the next 「新零件」 is made from (B1.4). */
   private template: PartTemplateId = 'blank';
+
+  /**
+   * What the picked elements are (E1 §2.2): the face, or the edges and vertices, asked of the kernel the way the 「測量」 tool asks it — the open part,
+   * measured as it is. The answer is kept against the pick it belongs to (`pickKey`), so a late one for an older pick is dropped, and the whole thing
+   * follows the model: a rebuild re-asks, and an element the new model no longer has is named back instead of being answered for by another element.
+   * A tree item is not measured (its properties are its own parameters), and nothing is asked while an assembly is open.
+   */
+  private async runSelectionFacts(): Promise<void> {
+    const { selectedFace, selectedElements, result } = this.state;
+    const refs = selectedFace ? [selectedFace] : selectedElements;
+    const key = pickKey(selectedFace, selectedElements);
+    if (this.assembly || !result || refs.length === 0) return void this.set({ selectionFacts: null });
+    const seq = ++this.selectionFactsSeq;
+    const { targets, unresolved, keys } = measureTargetsOf(refs, result);
+    if (targets.length === 0) {
+      this.set({ selectionFacts: { key, keys, elements: [], unresolved, error: null } });
+      return;
+    }
+    try {
+      const report = await this.api.measure(targets);
+      if (seq === this.selectionFactsSeq) this.set({ selectionFacts: { key, keys, elements: report.elements, unresolved, error: null } });
+    } catch (e) {
+      if (seq === this.selectionFactsSeq) this.set({ selectionFacts: { key, keys, elements: [], unresolved, error: e instanceof Error ? e.message : String(e) } });
+    }
+  }
+
+  private selectionFactsSeq = 0;
 
   /** 「系統選項」 (D8.1): changes some of the options, keeps them in the browser and puts them to work. */
   setOptions(patch: Partial<SystemOptions>): void {

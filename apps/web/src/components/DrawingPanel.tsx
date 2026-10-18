@@ -12,6 +12,7 @@ import { PALETTE_DIRECTIONS, type DrawingPick, type DrawingTool } from '../state
 import { AnnotationPanel } from './AnnotationPanel';
 import { DimensionPanel } from './DimensionPanel';
 import { Icon, type IconName } from './Icon';
+import { PMGroup } from './PMGroup';
 
 const SIDES: readonly ViewSide[] = ['right', 'left', 'up', 'down'];
 const same = (a: Scale, b: Scale) => a[0] === b[0] && a[1] === b[1];
@@ -166,25 +167,6 @@ function StandardViews() {
         {t('drawingUi.standardViews')}
       </button>
     </div>
-  );
-}
-
-/**
- * A group box of the PropertyManager, as SolidWorks draws them: a header with a chevron that opens and closes it, and its rows. A closed group keeps its rows
- * (only hidden), so that what they hold — the fields a script or a test reaches for — is always there.
- */
-function PMGroup({ title, icon, open, onToggle, group, hidden, children }: { title: string; icon: IconName; open: boolean; onToggle: () => void; group?: string; hidden?: boolean; children: ReactNode }) {
-  return (
-    <section className={`sw-group${open ? ' open' : ''}`} data-group={group} hidden={hidden}>
-      <button type="button" className="sw-group-head" onClick={onToggle} aria-expanded={open}>
-        <Icon name="chevron" className="sw-chevron" />
-        <Icon name={icon} className="sw-group-icon" />
-        <span>{title}</span>
-      </button>
-      <div className="sw-group-body" hidden={!open}>
-        {children}
-      </div>
-    </section>
   );
 }
 

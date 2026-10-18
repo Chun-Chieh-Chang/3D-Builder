@@ -23,6 +23,8 @@ import { DrawingViewport } from './components/DrawingViewport';
 import { ExplodePanel } from './components/ExplodePanel';
 import { FormSubPanel } from './components/FormSubPanel';
 import { PropertyManager } from './components/PropertyManager';
+import { SelectionPanel } from './components/SelectionPanel';
+import { pickKey } from './state/selectionFacts';
 import { ShutdownOverlay } from './components/ShutdownOverlay';
 import { StatusBar } from './components/StatusBar';
 import { Viewport } from './components/Viewport';
@@ -51,6 +53,19 @@ export function App() {
   useEffect(() => {
     setPanel(editing ? 'properties' : 'tree');
   }, [editing]);
+  // What is picked in a part with no session open (plan §2.2): the PropertyManager tab comes alive for it, a pick in the graphics area brings it
+  // forward the way a drawing's panel does (a pick in the tree stays in the tree), and letting go of everything goes back to the tree.
+  const selectedFace = useStore((s) => s.selectedFace);
+  const selectedElements = useStore((s) => s.selectedElements);
+  const selected = useStore((s) => s.selected);
+  const pick = pickKey(selectedFace, selectedElements);
+  const picked = !!pick;
+  const partSelection = picked || (!assembly && !!selected);
+  useEffect(() => {
+    if (editing) return;
+    if (picked) setPanel('properties');
+    else if (!selected) setPanel('tree');
+  }, [picked, selected, editing]);
   useEffect(() => installShortcuts(), []);
   useEffect(() => installHelp({ currentTopic: currentTopicId, hasTopic: (id) => topicOf(id) !== null }), []);
   useEffect(() => {
@@ -72,7 +87,7 @@ export function App() {
                 role="tab"
                 aria-selected={panel === 'properties'}
                 className={panel === 'properties' ? 'active' : ''}
-                disabled={!editing}
+                disabled={!editing && !partSelection}
                 onClick={() => setPanel('properties')}
               >
                 PropertyManager
@@ -105,7 +120,9 @@ export function App() {
                   ) : null
                 ) : partEditing ? (
                   <PropertyManager />
-                ) : null}
+                ) : (
+                  <SelectionPanel />
+                )}
               </div>
             </div>
           )}
