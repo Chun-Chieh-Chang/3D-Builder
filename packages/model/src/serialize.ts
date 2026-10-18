@@ -194,6 +194,8 @@ const migrations: Record<number, (doc: Json) => Json> = {
   58: (doc) => doc,
   // v60: sheet metal jog feature (`jog`, C11.3, ADR 0159). A new feature kind; nothing to convert.
   59: (doc) => doc,
+  // v61: sketch spline entity (`spline`, C1.11, ADR 0160). A new sketch entity kind; nothing to convert.
+  60: (doc) => doc,
 };
 
 export class FormatError extends Error {

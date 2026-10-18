@@ -1,6 +1,6 @@
 /** Document builders shared by the Phase 1 tests: fully defined sketches and features, all by name. */
 import { expect } from 'vitest';
-import { applyCommand, createEmptyPart, type Command, type Feature, type PartDoc, type Ref, type SketchFeature } from '@3db/model';
+import { applyCommand, createEmptyPart, type Command, type Feature, type PartDoc, type Ref, type SketchConstraint, type SketchEntity, type SketchFeature } from '@3db/model';
 import type { RebuildResult } from '@3db/regen';
 
 export type SketchParts = Pick<SketchFeature, 'entities' | 'constraints'>;
@@ -10,12 +10,27 @@ export const face = (name: string): Ref => ({ kind: 'face', name });
 export const edge = (name: string, fingerprint?: Ref['fingerprint']): Ref => ({ kind: 'edge', name, ...(fingerprint ? { fingerprint } : {}) });
 
 /** Pins a sketch point like SolidWorks: coincident with the origin, aligned with it, or a (positive) distance. */
-function pin(id: string, point: string, x: number, y: number): SketchParts['constraints'] {
+export function pin(id: string, point: string, x: number, y: number): SketchParts['constraints'] {
   if (x === 0 && y === 0) return [{ id: `${id}o`, type: 'coincident', a: point, b: '@origin' }];
   return [
     x === 0 ? { id: `${id}x`, type: 'vertical', a: point, b: '@origin' } : { id: `${id}x`, type: 'distanceX', a: '@origin', b: point, value: String(Math.abs(x)) },
     y === 0 ? { id: `${id}y`, type: 'horizontal', a: point, b: '@origin' } : { id: `${id}y`, type: 'distanceY', a: '@origin', b: point, value: String(Math.abs(y)) },
   ];
+}
+
+/** A fully defined line between two points. */
+export function line(id: string, x1: number, y1: number, x2: number, y2: number, construction = false): SketchParts {
+  return {
+    entities: [
+      { id: `${id}p1`, type: 'point', x: x1, y: y1 },
+      { id: `${id}p2`, type: 'point', x: x2, y: y2 },
+      { id, type: 'line', p1: `${id}p1`, p2: `${id}p2`, construction },
+    ],
+    constraints: [
+      ...pin(`${id}p1`, `${id}p1`, x1, y1),
+      ...pin(`${id}p2`, `${id}p2`, x2, y2),
+    ],
+  };
 }
 
 /** A fully defined w × h rectangle with its lower-left corner at (x, y); lines `${id}l0` bottom, l1 right, l2 top, l3 left. */
@@ -64,6 +79,21 @@ export function ellipse(id: string, cx: number, cy: number, majorX: number, majo
   };
 }
 
+/** A fully defined spline `id` passing through point coordinates `coords: [x, y][]`. */
+export function spline(id: string, coords: [number, number][], closed = false): SketchParts {
+  const entities: SketchEntity[] = [];
+  const constraints: SketchConstraint[] = [];
+  const pointIds: string[] = [];
+  coords.forEach(([x, y], i) => {
+    const pid = `${id}p${i}`;
+    pointIds.push(pid);
+    entities.push({ id: pid, type: 'point', x, y });
+    constraints.push(...pin(pid, pid, x, y));
+  });
+  entities.push({ id, type: 'spline', points: pointIds, closed });
+  return { entities, constraints };
+}
+
 export const sketch = (id: string, plane: Ref, ...parts: SketchParts[]): Feature => ({
   id,
   type: 'sketch',
@@ -75,6 +105,17 @@ export const sketch = (id: string, plane: Ref, ...parts: SketchParts[]): Feature
 });
 
 export const extrude = (id: string, sketchId: string, op: 'boss' | 'cut', dir1: Extract<Feature, { type: 'extrude' }>['dir1']): Feature => ({ id, type: 'extrude', name: id, suppressed: false, sketch: sketchId, op, dir1 });
+
+export const revolve = (id: string, sketchId: string, axis: string, op: 'boss' | 'cut' = 'boss', angle = '360'): Feature => ({
+  id,
+  type: 'revolve',
+  name: id,
+  suppressed: false,
+  sketch: sketchId,
+  axis,
+  op,
+  dir1: { type: 'blind', angle },
+});
 
 export const fillet = (id: string, edges: Ref[], radius = '2'): Feature => ({ id, type: 'fillet', name: id, suppressed: false, edges, radius });
 

@@ -5,6 +5,7 @@ export const pmpanels = {
   'entity.circle': '圓',
   'entity.arc': '圓弧',
   'entity.ellipse': '橢圓',
+  'entity.spline': '樣條曲線',
   'entity.construction': '幾何建構線',
   'dimension.generic': '尺寸',
   'pm.sketchStatus': '草圖狀態',

@@ -32,7 +32,9 @@ const startOf = (s: Segment2): P2 =>
       ? s.from
       : s.kind === 'circle'
         ? [s.c[0] + s.r, s.c[1]]
-        : [s.c[0] + s.rx * Math.cos(s.angle), s.c[1] + s.rx * Math.sin(s.angle)];
+        : s.kind === 'ellipse'
+          ? [s.c[0] + s.rx * Math.cos(s.angle), s.c[1] + s.rx * Math.sin(s.angle)]
+          : s.points[0]!;
 const endOf = (s: Segment2): P2 =>
   s.kind === 'line'
     ? s.b
@@ -40,11 +42,19 @@ const endOf = (s: Segment2): P2 =>
       ? s.to
       : s.kind === 'circle'
         ? [s.c[0] + s.r, s.c[1]]
-        : [s.c[0] + s.rx * Math.cos(s.angle), s.c[1] + s.rx * Math.sin(s.angle)];
+        : s.kind === 'ellipse'
+          ? [s.c[0] + s.rx * Math.cos(s.angle), s.c[1] + s.rx * Math.sin(s.angle)]
+          : s.points[s.points.length - 1]!;
 
 /** The direction of travel along a segment at one of its points. */
 function heading(s: Segment2, p: P2): P2 {
   if (s.kind === 'line') return unit(sub(s.b, s.a));
+  if (s.kind === 'spline') {
+    if (s.points.length < 2) return [1, 0];
+    const p1 = s.points[0]!;
+    const p2 = s.points[s.points.length - 1]!;
+    return unit(sub(p2, p1));
+  }
   const radial = unit(sub(p, s.c));
   const ccw = s.kind === 'arc' ? s.ccw : true;
   return ccw ? perp(radial) : scale(perp(radial), -1);
@@ -86,6 +96,9 @@ function movedWhole(s: Segment2, d: number): Whole | null {
   if (s.kind === 'ellipse') {
     const r = (s.rx + s.ry) / 2 - d;
     return r > 1e-9 ? { kind: 'circle', c: s.c, r } : null;
+  }
+  if (s.kind === 'spline') {
+    return null;
   }
   const ccw = s.kind === 'arc' ? s.ccw : true;
   const r = ccw ? s.r - d : s.r + d; // the left of a counter-clockwise curve is towards its center
@@ -229,6 +242,21 @@ export function findOutlines(sketch: SketchFeature, solved: SolvedSketch): Outli
       loops.push({ loop: [{ kind: 'circle', c: g.c, r: g.r, source: e.id }], ccw: true });
     } else if (g.type === 'ellipse') {
       loops.push({ loop: [{ kind: 'ellipse', c: g.c, rx: g.majorRadius, ry: g.minorRadius, angle: g.angle, source: e.id }], ccw: true });
+    } else if (g.type === 'spline') {
+      if (g.closed) {
+        loops.push({ loop: [{ kind: 'spline', points: g.points, closed: true, source: e.id }], ccw: true });
+      } else if (g.points.length >= 2 && g.pointIds.length >= 2) {
+        edges.push({
+          from: nodes.find(g.pointIds[0]!),
+          to: nodes.find(g.pointIds[g.pointIds.length - 1]!),
+          make: (fwd) => ({
+            kind: 'spline',
+            points: fwd ? g.points : [...g.points].reverse(),
+            closed: false,
+            source: e.id,
+          }),
+        });
+      }
     } else if (g.type === 'line') {
       if (len(sub(g.b, g.a)) < TOL) continue;
       edges.push({ from: nodes.find(g.p1), to: nodes.find(g.p2), make: (fwd) => ({ kind: 'line', a: fwd ? g.a : g.b, b: fwd ? g.b : g.a, source: e.id }) });

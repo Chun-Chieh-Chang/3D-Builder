@@ -76,6 +76,20 @@ export function closestOn(g: SolvedGeometry, p: P2): P2 | null {
       const ey = g.minorRadius * Math.sin(t);
       return [g.c[0] + ex * cosA - ey * sinA, g.c[1] + ex * sinA + ey * cosA];
     }
+    case 'spline': {
+      const pts = sample(g, 1);
+      let best: P2 | null = null;
+      let bestDist = Infinity;
+      for (let i = 0; i < pts.length - 1; i++) {
+        const q = closestOnSegment(p, pts[i]!, pts[i + 1]!);
+        const d = dist(p, q);
+        if (d < bestDist) {
+          bestDist = d;
+          best = q;
+        }
+      }
+      return best ?? pts[0] ?? null;
+    }
   }
 }
 
@@ -105,6 +119,54 @@ export function sample(g: SolvedGeometry, px: number): P2[] {
         const v = g.minorRadius * Math.sin(theta);
         return [g.c[0] + u * cosA - v * sinA, g.c[1] + u * sinA + v * cosA];
       });
+    }
+    case 'spline': {
+      const n = g.points.length;
+      if (n < 2) return g.points;
+      const getP = (idx: number): P2 => {
+        if (g.closed) return g.points[((idx % n) + n) % n]!;
+        if (idx < 0) {
+          const p0 = g.points[0]!;
+          const p1 = g.points[1]!;
+          return [2 * p0[0] - p1[0], 2 * p0[1] - p1[1]];
+        }
+        if (idx >= n) {
+          const pn1 = g.points[n - 1]!;
+          const pn2 = g.points[n - 2]!;
+          return [2 * pn1[0] - pn2[0], 2 * pn1[1] - pn2[1]];
+        }
+        return g.points[idx]!;
+      };
+      const out: P2[] = [];
+      const segments = g.closed ? n : n - 1;
+      const steps = 16;
+      for (let s = 0; s < segments; s++) {
+        const p0 = getP(s - 1);
+        const p1 = getP(s);
+        const p2 = getP(s + 1);
+        const p3 = getP(s + 2);
+        for (let i = 0; i < steps; i++) {
+          const t = i / steps;
+          const t2 = t * t;
+          const t3 = t2 * t;
+          const x = 0.5 * (
+            2 * p1[0] +
+            (-p0[0] + p2[0]) * t +
+            (2 * p0[0] - 5 * p1[0] + 4 * p2[0] - p3[0]) * t2 +
+            (-p0[0] + 3 * p1[0] - 3 * p2[0] + p3[0]) * t3
+          );
+          const y = 0.5 * (
+            2 * p1[1] +
+            (-p0[1] + p2[1]) * t +
+            (2 * p0[1] - 5 * p1[1] + 4 * p2[1] - p3[1]) * t2 +
+            (-p0[1] + 3 * p1[1] - 3 * p2[1] + p3[1]) * t3
+          );
+          out.push([x, y]);
+        }
+      }
+      if (g.closed) out.push(out[0]!);
+      else out.push(g.points[n - 1]!);
+      return out;
     }
   }
 }

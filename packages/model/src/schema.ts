@@ -6,7 +6,7 @@ import type { Id } from './ids';
  * DOF status, mass properties and error lists are derived data and never stored.
  */
 
-export const SCHEMA_VERSION = 60;
+export const SCHEMA_VERSION = 61;
 
 /** Value expression (B5.2, B5.3): "20", "25.4mm", "30deg", "wall_t*2", "D1@草圖1/2", "property('厚度')"; see `expr/`. */
 export type Expr = string;
@@ -48,7 +48,8 @@ export type SketchEntity =
   | { id: Id; type: 'line'; p1: Id; p2: Id; construction?: boolean; ref?: Ref }
   | { id: Id; type: 'circle'; center: Id; radius: number; construction?: boolean; ref?: Ref }
   | { id: Id; type: 'arc'; center: Id; start: Id; end: Id; construction?: boolean; ref?: Ref }
-  | { id: Id; type: 'ellipse'; center: Id; major: Id; minorRadius: number; construction?: boolean; ref?: Ref };
+  | { id: Id; type: 'ellipse'; center: Id; major: Id; minorRadius: number; construction?: boolean; ref?: Ref }
+  | { id: Id; type: 'spline'; points: Id[]; closed?: boolean; construction?: boolean; ref?: Ref };
 
 /**
  * Sketch relations and dimensions (C1.25–C1.28). Point coordinates stored on entities are the

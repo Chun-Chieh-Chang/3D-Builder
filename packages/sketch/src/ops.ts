@@ -328,7 +328,7 @@ export function anchorModel(sketch: Pick<SketchFeature, 'entities'>, geometry: G
     const known: { id: Id; at: P2 }[] = [];
     for (const e of all) {
       if (e.type === 'point' || !e.ref) continue;
-      for (const id of e.type === 'line' ? [e.p1, e.p2] : e.type === 'circle' ? [e.center] : e.type === 'ellipse' ? [e.center, e.major] : [e.center, e.start, e.end]) {
+      for (const id of refsOf(e)) {
         const g = geometry.get(id);
         const made_ = all.find((x) => x.id === id && x.type === 'point') as Extract<SketchEntity, { type: 'point' }> | undefined;
         const p = g?.type === 'point' ? g.p : made_ ? ([made_.x, made_.y] as P2) : null;
@@ -352,9 +352,9 @@ export function anchorModel(sketch: Pick<SketchFeature, 'entities'>, geometry: G
     else entity = { id: made.ids.take('a'), type: 'arc', center: corner(q.c), start: corner(q.start), end: corner(q.end), ref: item.ref, ...held };
     made.entities.push(entity);
   }
-  if (part === 'center' && entity.type !== 'line') return entity.center;
-  if (part === 'start') return entity.type === 'line' ? entity.p1 : entity.type === 'arc' ? entity.start : entity.center;
-  if (part === 'end') return entity.type === 'line' ? entity.p2 : entity.type === 'arc' ? entity.end : entity.center;
+  if (part === 'center' && 'center' in entity) return entity.center;
+  if (part === 'start') return entity.type === 'line' ? entity.p1 : entity.type === 'arc' ? entity.start : entity.type === 'spline' ? entity.points[0]! : entity.center;
+  if (part === 'end') return entity.type === 'line' ? entity.p2 : entity.type === 'arc' ? entity.end : entity.type === 'spline' ? entity.points[entity.points.length - 1]! : entity.center;
   const id = made.ids.take('p');
   made.entities.push({ id, type: 'point', x: at[0], y: at[1] });
   made.constraints.push(
@@ -385,7 +385,7 @@ export function anchorModelForSelection(
     const known: { id: Id; at: P2 }[] = [];
     for (const e of all) {
       if (e.type === 'point' || !e.ref) continue;
-      for (const id of e.type === 'line' ? [e.p1, e.p2] : e.type === 'circle' ? [e.center] : e.type === 'ellipse' ? [e.center, e.major] : [e.center, e.start, e.end]) {
+      for (const id of refsOf(e)) {
         const g = geometry.get(id);
         const made_ = all.find((x) => x.id === id && x.type === 'point') as Extract<SketchEntity, { type: 'point' }> | undefined;
         const p = g?.type === 'point' ? g.p : made_ ? ([made_.x, made_.y] as P2) : null;
@@ -407,9 +407,9 @@ export function anchorModelForSelection(
     made.entities.push(entity);
   }
   if (part === 'curve') return entity.id;
-  if (part === 'center' && entity.type !== 'line') return entity.center;
-  if (part === 'start') return entity.type === 'line' ? entity.p1 : entity.type === 'arc' ? entity.start : entity.center;
-  if (part === 'end') return entity.type === 'line' ? entity.p2 : entity.type === 'arc' ? entity.end : entity.center;
+  if (part === 'center' && 'center' in entity) return entity.center;
+  if (part === 'start') return entity.type === 'line' ? entity.p1 : entity.type === 'arc' ? entity.start : entity.type === 'spline' ? entity.points[0]! : entity.center;
+  if (part === 'end') return entity.type === 'line' ? entity.p2 : entity.type === 'arc' ? entity.end : entity.type === 'spline' ? entity.points[entity.points.length - 1]! : entity.center;
   if (part === 'mid' && entity.type === 'line') {
     const midPoint = all.find((e): e is Extract<SketchEntity, { type: 'point' }> => e.type === 'point' && dist([e.x, e.y], at) < 1e-6);
     if (midPoint) return midPoint.id;
@@ -632,7 +632,18 @@ export function hitsOf(geometry: Geometry, id: Id, g: Curve, beyond: boolean): H
   return hits.sort((x, y) => x.u - y.u).filter((h, i, all) => i === 0 || h.u - all[i - 1]!.u > SAME);
 }
 
-export const refsOf = (e: SketchEntity): Id[] => (e.type === 'point' ? [] : e.type === 'line' ? [e.p1, e.p2] : e.type === 'circle' ? [e.center] : e.type === 'ellipse' ? [e.center, e.major] : [e.center, e.start, e.end]);
+export const refsOf = (e: SketchEntity): Id[] =>
+  e.type === 'point'
+    ? []
+    : e.type === 'line'
+      ? [e.p1, e.p2]
+      : e.type === 'circle'
+        ? [e.center]
+        : e.type === 'ellipse'
+          ? [e.center, e.major]
+          : e.type === 'spline'
+            ? e.points
+            : [e.center, e.start, e.end];
 const usedElsewhere = (sketch: Pick<SketchFeature, 'entities'>, point: Id, except: Id): boolean =>
   sketch.entities.some((e) => e.id !== except && refsOf(e).includes(point));
 
@@ -653,7 +664,7 @@ const stale = (sketch: Pick<SketchFeature, 'constraints'>, id: Id): Id[] =>
 export function trim(sketch: Pick<SketchFeature, 'entities' | 'constraints'>, geometry: Geometry, ids: IdAllocator, entityId: Id, click: P2): OpResult {
   const e = sketch.entities.find((x) => x.id === entityId);
   const g = geometry.get(entityId);
-  if (!e || e.type === 'point' || !isCurve(g)) return error('sketch.trimNotCurve');
+  if (!e || e.type === 'point' || e.type === 'spline' || !isCurve(g)) return error('sketch.trimNotCurve');
   const [lo0, hi0] = [SAME, spanOf(g) - SAME];
   const hits = hitsOf(geometry, entityId, g, false).filter((h) => g.type === 'circle' || (h.u > lo0 && h.u < hi0));
   const here = along(g, closestOn(g, click) ?? click);
@@ -705,7 +716,7 @@ export function trim(sketch: Pick<SketchFeature, 'entities' | 'constraints'>, ge
           b.relation({ type: k.type, a: k.a === entityId ? copy : k.a, b: k.b === entityId ? copy : k.b });
         }
       }
-    } else {
+    } else if (e.type === 'arc') {
       const copy = b.arc(e.center, x2, end, e.construction);
       b.relation({ type: 'equal', a: entityId, b: copy });
     }

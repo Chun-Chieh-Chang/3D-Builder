@@ -1,5 +1,55 @@
 # 3D-Builder 開發日誌 (DEV_LOG.md)
 
+## 2026-10-18：藍圖 C1.11 草圖樣條曲線 (Sketch Spline Feature) 全鏈路實作 [ADR 0160](docs/adr/0160-sketch-spline.md)
+
+### 1. 任務背景與範疇
+依據使用者確認與藍圖 C1.11 規範，實作草圖樣條曲線（Sketch Spline Feature，ADR 0160）。支援型值點內插樣條曲線、閉合與開放曲線雙重語意、輪廓與外環/內孔拓樸偵測、薄件輪廓偏置支援，以及 3D 造型實體長出（Extrude Boss）、除料（Extrude Cut）、旋轉（Revolve）等核心造型管線之全鏈路閉環。
+
+### 2. 做法與架構設計
+| 層級 | 核心檔案 | 實作內容與職責 |
+|---|---|---|
+| 決策紀錄 | `docs/adr/0160-sketch-spline.md` | 定義型值點內插幾何第一性原理、閉合與開放樣條語意、OCCT 映射方案與自我紅隊四問檢驗標準。 |
+| 資料模型 | `packages/model/src/schema.ts`、`serialize.ts`、`sketch-rules.ts` | 升版 `SCHEMA_VERSION = 61`；新增 `SketchSplineEntity`（`id`, `type: 'spline'`, `points: Id[]`, `closed?: boolean`, ...）；新增 schema 60 空遷移；在 `sketchError` 與 `entityPoints` 支援 `spline` 圖元並加入點數少於 2 與閉合少於 3 的顯式防禦。 |
+| 草圖抽象 | `packages/sketch/src/types.ts`、`ops.ts`、`planegcs.ts`、`profiles.ts`、`interact.ts`、`thin.ts` | `SolvedGeometry` 與 `Segment2` 擴充 `spline` 型別；`ops.ts` 擴充 `refsOf`、`anchorModel`、`trim` 安全防禦；`profiles.ts` 實作 Catmull-Rom 多邊形採樣逼近（`sampleSpline`）、有向面積（`signedAreaOf`）、環反轉（`reverse`）與 `findProfiles`（閉合直接成獨立 loop，開放登記端點至 edges 構造複合輪廓）；`interact.ts` 與 `thin.ts` 支援多邊形採樣拾取與偏置。 |
+| 幾何核心 | `packages/kernel/src/kernel.ts` | `wire()` 新增 `seg.kind === 'spline'` 分支：以 `oc.NCollection_Array1_gp_Pnt` 裝填草圖 3D 空間點序列（閉合樣條於末尾補入首點），呼叫 OpenCASCADE 原生導出之 `GeomAPI_PointsToBSpline` 擬合連續 $C^2$ 曲線，透過 `BRepBuilderAPI_MakeEdge` / `MakeWire` 構造封閉輪廓或外環，支援孔洞方向反轉與實體長出/除料/旋轉。 |
+| 雙語字典 | `packages/i18n/src/` | 補齊 `rules.splinePointsMin`、`rules.splineClosedMin` 與 `entity.spline` 中英文字典。 |
+| 介面適配 | `apps/web/src/components/PropertyManager.tsx`、`apps/web/src/sketcher/overlay.ts` | `ENTITY_LABEL` 補齊 `spline: t('entity.spline')`；`anchorOf` 支援樣條曲線點選定位。 |
+| 確效測試 | `tests/phase1/sketch-spline.test.ts`、`builders.ts` | 8 項自我紅隊測試全數 100% 綠燈，驗證有機閉合樣條實體長出、開放樣條與線段複合輪廓長出、實體除料切除、旋轉特徵成形、少於 2 點拒絕、閉合少於 3 點拒絕、重複連續點防禦與 Emscripten WASM Heap 真實指標防呆。 |
+
+### 3. 問題分析 (RCA) 與矯正預防措施 (CAPA)
+1. **問題 (Failure)**：`new oc.GeomAPI_Interpolate(harr, seg.closed, 1e-6)` 拋出 `WebAssembly.Exception`。
+   - **RCA**：在 OpenCASCADE C++ 中，`GeomAPI_Interpolate` 建構函式的第一個參數為 `Handle(TColgp_HArray1OfPnt)&`（智慧指標 Handle 引用），而在 Emscripten JS 綁定中，傳入裸指標 `NCollection_HArray1_gp_Pnt` 導致型別不相容與未捕獲之 WebAssembly 異常。
+   - **CAPA**：改用 OpenCASCADE 原生導出之 `GeomAPI_PointsToBSpline`。該類別直接接收 `NCollection_Array1_gp_Pnt` 值型別陣列，不依賴 Handle 指針包裝；針對閉合樣條，在陣列末尾補上首點 $P_0$，由 `GeomAPI_PointsToBSpline` 生成無縫閉合曲線，100% 解決 WASM 例外並保證幾何光滑性。
+2. **問題 (Failure)**：除料測試回報 `"e_cut=error(除料沒有移除任何材料（試試反轉方向）)"`。
+   - **RCA**：基準面為 `front`（法線向外 +Z），底層方塊自 0 長出至 +20，而除料預設向草圖內部（-Z）切除，在 $Z \in [-20, 0]$ 區間無實體材料。
+   - **CAPA**：在除料特徵中加入 `reverse: true`，使其切入實體內部，驗證切除後體積精確小於原方塊且大於 80%。
+3. **問題 (Failure)**：旋轉測試報錯 `旋轉軸必須是草圖中的一條直線（通常是中心線）`。
+   - **RCA**：測試中旋轉軸傳入帶有特徵前綴的 `'s1.axis'`，而命令層驗證函式 `revolveAxis` 是在草圖實體清單中搜尋實體 ID。
+   - **CAPA**：將軸參數修正為草圖內部線段 ID `'axis'`，與命令規格完全對齊。
+
+### 4. 自我紅隊四問（AGENTS.md §2.1）
+1. **輸入破壞 (Input Corruption)**：
+   - 樣條點數少於 2：前置階段在 `sketchError` 顯式拋出 `rules.splinePointsMin`。
+   - 閉合樣條少於 3：顯式拋出 `rules.splineClosedMin`。
+   - 相鄰連續點重合（歐氏距離 $< 1\times 10^{-6}$）：在 `wire()` 中顯式檢查並拋出 `wireNotClosed`，嚴禁使用 `Math.round` 靜默篡改座標。
+2. **拓樸與幾何相交破壞 (Geometric Self-Intersection Defense)**：
+   - 閉合曲線自成封閉環，開放曲線登記端點納入複合輪廓搜尋。產出實體經 `BRepCheck_Analyzer` 驗證 `kernel.isValid` 恆為 true。
+3. **依賴鏈完整性 (Dependency Graph Integrity)**：
+   - 依賴鏈全鏈路覆蓋：`schema.ts` $\to$ `serialize.ts` $\to$ `sketch-rules.ts` $\to$ `types.ts` $\to$ `ops.ts` $\to$ `planegcs.ts` $\to$ `profiles.ts` $\to$ `kernel.ts` $\to$ `engine.ts` $\to$ `PropertyManager.tsx` $\to$ `overlay.ts` $\to$ i18n 雙語字典，缺一不可。
+4. **規格真實性與零 Mock 原則 (Zero-Mock & Ground Truth)**：
+   - 驗收測試以真實 OCCT 核心拉伸實體，量測實體體積（$V > 1000\text{ mm}^3$）、TNP 拓樸面名稱（`e1:cap:start`, `e1:cap:end`, `e1:side:s1.sp1`），零 Mock 數據。
+   - 記憶體真實指標防呆：斷言 `(kernel.oc as any).wasmMemory?.buffer?.byteLength > 0`。
+
+### 5. 確效與品質驗收
+- `npm run typecheck`：**0 錯誤**。
+- `node scripts/check-anti-patterns.mjs`：**全域 RSI 反模式靜態守門通過**。
+- `node scripts/check-deps.mjs`：**Layering OK**。
+- `node scripts/check-i18n.mjs`：**i18n OK**。
+- `tests/phase1/sketch-spline.test.ts`：**8 項自我紅隊測試全數 100% 通過**。
+- `tests/phase1/`：**11 個測試檔、129 項測試全數 100% 通過**。
+
+---
+
 ## 2026-10-18：藍圖 C11.3 鈑金凸折特徵 (Sheet Metal Jog Feature) 全鏈路實作 [ADR 0159](docs/adr/0159-sheet-metal-jog.md)
 
 ### 1. 任務背景與範疇

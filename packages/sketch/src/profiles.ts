@@ -31,6 +31,55 @@ interface Edge {
 
 const polar = (c: P2, r: number, a: number): P2 => [c[0] + r * Math.cos(a), c[1] + r * Math.sin(a)];
 
+function sampleSpline(points: P2[], closed: boolean): P2[] {
+  if (points.length < 2) return points;
+  const n = points.length;
+  const getP = (i: number): P2 => {
+    if (closed) return points[((i % n) + n) % n]!;
+    if (i < 0) {
+      const p0 = points[0]!;
+      const p1 = points[1]!;
+      return [2 * p0[0] - p1[0], 2 * p0[1] - p1[1]];
+    }
+    if (i >= n) {
+      const pn1 = points[n - 1]!;
+      const pn2 = points[n - 2]!;
+      return [2 * pn1[0] - pn2[0], 2 * pn1[1] - pn2[1]];
+    }
+    return points[i]!;
+  };
+
+  const out: P2[] = [];
+  const segments = closed ? n : n - 1;
+  const stepsPerSeg = 16;
+  for (let s = 0; s < segments; s++) {
+    const p0 = getP(s - 1);
+    const p1 = getP(s);
+    const p2 = getP(s + 1);
+    const p3 = getP(s + 2);
+    for (let i = 0; i < stepsPerSeg; i++) {
+      const t = i / stepsPerSeg;
+      const t2 = t * t;
+      const t3 = t2 * t;
+      const x = 0.5 * (
+        2 * p1[0] +
+        (-p0[0] + p2[0]) * t +
+        (2 * p0[0] - 5 * p1[0] + 4 * p2[0] - p3[0]) * t2 +
+        (-p0[0] + 3 * p1[0] - 3 * p2[0] + p3[0]) * t3
+      );
+      const y = 0.5 * (
+        2 * p1[1] +
+        (-p0[1] + p2[1]) * t +
+        (2 * p0[1] - 5 * p1[1] + 4 * p2[1] - p3[1]) * t2 +
+        (-p0[1] + 3 * p1[1] - 3 * p2[1] + p3[1]) * t3
+      );
+      out.push([x, y]);
+    }
+  }
+  if (!closed) out.push(points[n - 1]!);
+  return out;
+}
+
 /** Polygonal approximation used only for area and containment tests. */
 function sample(loop: Loop2): P2[] {
   const pts: P2[] = [];
@@ -48,6 +97,9 @@ function sample(loop: Loop2): P2[] {
         const v = s.ry * Math.sin(theta);
         pts.push([s.c[0] + u * cosA - v * sinA, s.c[1] + u * sinA + v * cosA]);
       }
+    } else if (s.kind === 'spline') {
+      const sampled = sampleSpline(s.points, s.closed);
+      for (const p of sampled) pts.push(p);
     } else {
       const a0 = Math.atan2(s.from[1] - s.c[1], s.from[0] - s.c[0]);
       let a1 = Math.atan2(s.to[1] - s.c[1], s.to[0] - s.c[0]);
@@ -93,6 +145,7 @@ function reverse(loop: Loop2): Loop2 {
     .map((s): Segment2 => {
       if (s.kind === 'line') return { ...s, a: s.b, b: s.a };
       if (s.kind === 'arc') return { ...s, from: s.to, to: s.from, ccw: !s.ccw };
+      if (s.kind === 'spline') return { ...s, points: [...s.points].reverse() };
       return s;
     });
 }
@@ -178,6 +231,22 @@ export function findProfiles(sketch: SketchFeature, solved: SolvedSketch): Profi
       loops.push([{ kind: 'circle', c: g.c, r: g.r, source: e.id }]);
     } else if (g.type === 'ellipse') {
       loops.push([{ kind: 'ellipse', c: g.c, rx: g.majorRadius, ry: g.minorRadius, angle: g.angle, source: e.id }]);
+    } else if (g.type === 'spline') {
+      if (g.closed) {
+        loops.push([{ kind: 'spline', points: g.points, closed: true, source: e.id }]);
+      } else if (g.points.length >= 2 && g.pointIds.length >= 2) {
+        edges.push({
+          source: e.id,
+          from: nodes.find(g.pointIds[0]!),
+          to: nodes.find(g.pointIds[g.pointIds.length - 1]!),
+          make: (fwd) => ({
+            kind: 'spline',
+            points: fwd ? g.points : [...g.points].reverse(),
+            closed: false,
+            source: e.id,
+          }),
+        });
+      }
     } else if (g.type === 'line') {
       if (Math.hypot(g.b[0] - g.a[0], g.b[1] - g.a[1]) < TOL) continue;
       edges.push({

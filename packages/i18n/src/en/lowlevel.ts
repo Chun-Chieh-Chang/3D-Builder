@@ -26,6 +26,8 @@ export const lowlevel: Translation = {
   'rules.dupEntity': 'Duplicate entity ID: {id}',
   'rules.missingPoint': 'Entity {id} refers to a point that does not exist',
   'rules.dupEnd': 'The end points of entity {id} are the same',
+  'rules.splinePointsMin': 'Spline must have at least 2 points: {id}',
+  'rules.splineClosedMin': 'Closed spline must have at least 3 points: {id}',
   'rules.dupId': 'Duplicate ID: {id}',
   'rules.unsupported': 'Unsupported relation: {type}',
   'rules.missingRef': 'Relation {id} lacks a reference',

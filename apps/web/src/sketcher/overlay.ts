@@ -122,6 +122,8 @@ function anchorOf(geometry: Geometry, id: Id): P2 | null {
       const y = g.minorRadius * Math.sin(u);
       return [g.c[0] + x * cosA - y * sinA, g.c[1] + x * sinA + y * cosA];
     }
+    case 'spline':
+      return g.points[Math.floor(g.points.length / 2)] ?? null;
   }
 }
 

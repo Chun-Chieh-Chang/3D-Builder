@@ -24,6 +24,8 @@ export const lowlevel = {
   'rules.dupEntity': '重複的圖元 ID：{id}',
   'rules.missingPoint': '圖元 {id} 參考了不存在的點',
   'rules.dupEnd': '圖元 {id} 的端點重複',
+  'rules.splinePointsMin': '樣條曲線至少需要 2 個點：{id}',
+  'rules.splineClosedMin': '閉合樣條曲線至少需要 3 個點：{id}',
   'rules.dupId': '重複的 ID：{id}',
   'rules.unsupported': '不支援的限制條件：{type}',
   'rules.missingRef': '限制條件 {id} 缺少參考',

@@ -149,6 +149,9 @@ function toPrimitives(sketch: SketchFeature, start: Start, pinned: ReadonlySet<I
         prims.push({ id: `${e.id}#rules`, type: 'arc_rules', a_id: e.id });
         break;
       }
+      case 'ellipse':
+      case 'spline':
+        break;
     }
   }
 
@@ -414,6 +417,17 @@ function readGeometry(w: GcsWrapper, sketch: SketchFeature): Map<Id, SolvedGeome
           angle,
           center: e.center,
           majorId: e.major,
+          construction,
+        });
+        break;
+      }
+      case 'spline': {
+        const pts = e.points.map((pid) => pt(pid));
+        out.set(e.id, {
+          type: 'spline',
+          points: pts,
+          closed: e.closed ?? false,
+          pointIds: e.points,
           construction,
         });
         break;

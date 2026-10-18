@@ -87,7 +87,8 @@ export type Segment =
   | { kind: 'line'; a: P2; b: P2; source: string }
   | { kind: 'arc'; c: P2; r: number; from: P2; to: P2; ccw: boolean; source: string }
   | { kind: 'circle'; c: P2; r: number; source: string }
-  | { kind: 'ellipse'; c: P2; rx: number; ry: number; angle: number; source: string };
+  | { kind: 'ellipse'; c: P2; rx: number; ry: number; angle: number; source: string }
+  | { kind: 'spline'; points: P2[]; closed: boolean; source: string };
 
 /** Counter-clockwise outer loop with clockwise holes (as produced by @3db/sketch findProfiles). */
 export interface Region {
@@ -404,6 +405,39 @@ export class Kernel {
         const ax2 = arena.own(new oc.gp_Ax2(this.pnt(arena, at(seg.c)), this.dir(arena, frame.normal), this.dir(arena, majorDirVec)));
         const elips = arena.own(new oc.gp_Elips(ax2, rx, ry));
         edge = arena.own(arena.own(new oc.BRepBuilderAPI_MakeEdge(elips)).Edge());
+        if (hole) edge = arena.own(oc.TopoDS.Edge(arena.own(edge.Reversed())));
+      } else if (seg.kind === 'spline') {
+        const pts = seg.points;
+        if (pts.length < 2) {
+          throw new KernelError(t('kernel.wireNotClosed', { source: seg.source }));
+        }
+        for (let i = 0; i < pts.length - 1; i++) {
+          const pA = pts[i]!;
+          const pB = pts[i + 1]!;
+          if (Math.hypot(pB[0] - pA[0], pB[1] - pA[1]) < 1e-6) {
+            throw new KernelError(t('kernel.wireNotClosed', { source: seg.source }));
+          }
+        }
+        if (seg.closed && pts.length >= 3) {
+          const pFirst = pts[0]!;
+          const pLast = pts[pts.length - 1]!;
+          if (Math.hypot(pLast[0] - pFirst[0], pLast[1] - pFirst[1]) < 1e-6) {
+            throw new KernelError(t('kernel.wireNotClosed', { source: seg.source }));
+          }
+        }
+        const totalPts = seg.closed ? pts.length + 1 : pts.length;
+        const arr = arena.own(new oc.NCollection_Array1_gp_Pnt(1, totalPts));
+        for (let i = 0; i < pts.length; i++) {
+          arr.SetValue(i + 1, this.pnt(arena, at(pts[i]!)));
+        }
+        if (seg.closed) {
+          arr.SetValue(totalPts, this.pnt(arena, at(pts[0]!)));
+        }
+        const approx = arena.own(new oc.GeomAPI_PointsToBSpline(arr));
+        if (!approx.IsDone()) {
+          throw new KernelError(t('kernel.wireNotClosed', { source: seg.source }));
+        }
+        edge = arena.own(arena.own(new oc.BRepBuilderAPI_MakeEdge(approx.Curve())).Edge());
         if (hole) edge = arena.own(oc.TopoDS.Edge(arena.own(edge.Reversed())));
       } else {
         const [p, q] = seg.ccw ? [seg.from, seg.to] : [seg.to, seg.from];
@@ -945,6 +979,8 @@ export class Kernel {
             const y = s.ry * Math.sin(u);
             samples.push(at([s.c[0] + x * cosA - y * sinA, s.c[1] + x * sinA + y * cosA]));
           }
+        } else if (s.kind === 'spline') {
+          for (const p of s.points) samples.push(at(p));
         } else {
           const a0 = s.kind === 'circle' ? 0 : Math.atan2(s.from[1] - s.c[1], s.from[0] - s.c[0]);
           let sweep = s.kind === 'circle' ? 2 * Math.PI : Math.atan2(s.to[1] - s.c[1], s.to[0] - s.c[0]) - a0;

@@ -1281,7 +1281,9 @@ export class Regenerator {
                   [seg.c[0] - seg.ry * Math.sin(seg.angle), seg.c[1] + seg.ry * Math.cos(seg.angle)] as [number, number],
                   [seg.c[0] + seg.ry * Math.sin(seg.angle), seg.c[1] - seg.ry * Math.cos(seg.angle)] as [number, number],
                 ]
-              : [seg.c],
+              : seg.kind === 'spline'
+                ? seg.points
+                : [seg.c],
       ),
     );
     const scale = Math.hypot(b[0] - a[0], b[1] - a[1]) || 1;
@@ -1325,8 +1327,8 @@ export class Regenerator {
     const away = (q: [number, number]) => Math.abs(dot(sub(at(p.frame, q), s.frame.origin), s.frame.normal));
     const first = path[0]!;
     const last = path[path.length - 1]!;
-    const head = first.kind === 'line' ? first.a : first.kind === 'arc' ? first.from : first.c;
-    const tail = last.kind === 'line' ? last.b : last.kind === 'arc' ? last.to : last.c;
+    const head = first.kind === 'line' ? first.a : first.kind === 'arc' ? first.from : first.kind === 'spline' ? first.points[0]! : first.c;
+    const tail = last.kind === 'line' ? last.b : last.kind === 'arc' ? last.to : last.kind === 'spline' ? last.points[last.points.length - 1]! : last.c;
     const extent = Math.max(1, ...path.map((g) => (g.kind === 'line' ? Math.hypot(g.b[0] - g.a[0], g.b[1] - g.a[1]) : g.kind === 'arc' ? g.r : 0)));
     const tol = 1e-6 * extent;
     if (away(head) > tol) {
@@ -1343,7 +1345,9 @@ export class Regenerator {
               const r: [number, number] = [start.from[0] - start.c[0], start.from[1] - start.c[1]];
               return start.ccw ? [-r[1], r[0]] : [r[1], -r[0]];
             })()
-          : [1, 0];
+          : start.kind === 'spline'
+            ? [start.points[1]![0] - start.points[0]![0], start.points[1]![1] - start.points[0]![1]]
+            : [1, 0];
     const dir = unit(add(add([0, 0, 0], p.frame.xDir, heading[0]), p.frame.yDir, heading[1]));
     if (Math.abs(dot(dir, s.frame.normal)) < 1e-3) throw new FeatureError(t('feature.sweepPathAlongPlane'));
     const tool = this.kernel.sweepAlongPath(s.frame, s.profiles.regions, p.frame, path);
@@ -1522,6 +1526,8 @@ export class Regenerator {
               const y = seg.ry * Math.sin(u);
               samples.push(at([seg.c[0] + x * cosA - y * sinA, seg.c[1] + x * sinA + y * cosA]));
             }
+          } else if (seg.kind === 'spline') {
+            for (const p of seg.points) samples.push(at(p));
           } else {
             const a0 = seg.kind === 'circle' ? 0 : Math.atan2(seg.from[1] - seg.c[1], seg.from[0] - seg.c[0]);
             let sweep = seg.kind === 'circle' ? 2 * Math.PI : Math.atan2(seg.to[1] - seg.c[1], seg.to[0] - seg.c[0]) - a0;

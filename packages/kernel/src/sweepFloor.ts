@@ -36,6 +36,8 @@ function loopPoints(loop: readonly Segment[]): P2[] {
         const y = g.ry * Math.sin(u);
         return [g.c[0] + x * cosA - y * sinA, g.c[1] + x * sinA + y * cosA] as P2;
       });
+    } else if (g.kind === 'spline') {
+      run = g.points;
     } else {
       const a0 = angleOf(g.c, g.from);
       const sweep = sweepAngle(g) * (g.ccw ? 1 : -1);
@@ -71,12 +73,20 @@ const lengthOf = (g: Segment): number =>
       ? g.r * sweepAngle(g)
       : g.kind === 'circle'
         ? TAU * g.r
-        : Math.PI * (3 * (g.rx + g.ry) - Math.sqrt((3 * g.rx + g.ry) * (g.rx + 3 * g.ry)));
+        : g.kind === 'ellipse'
+          ? Math.PI * (3 * (g.rx + g.ry) - Math.sqrt((3 * g.rx + g.ry) * (g.rx + 3 * g.ry)))
+          : g.points.reduce((acc, p, i, arr) => (i === 0 ? 0 : acc + Math.hypot(p[0] - arr[i - 1]![0], p[1] - arr[i - 1]![1])), 0);
 
 /** The direction the path leaves a segment (end = true) or enters it (end = false). */
 function tangent(g: Segment, end: boolean): P2 {
   if (g.kind === 'line') return [g.b[0] - g.a[0], g.b[1] - g.a[1]];
   if (g.kind === 'circle' || g.kind === 'ellipse') return [1, 0];
+  if (g.kind === 'spline') {
+    if (g.points.length < 2) return [1, 0];
+    const pA = end ? g.points[g.points.length - 2]! : g.points[0]!;
+    const pB = end ? g.points[g.points.length - 1]! : g.points[1]!;
+    return [pB[0] - pA[0], pB[1] - pA[1]];
+  }
   const p = end ? g.to : g.from;
   const r: P2 = [p[0] - g.c[0], p[1] - g.c[1]];
   return g.ccw ? [-r[1], r[0]] : [r[1], -r[0]];
@@ -106,7 +116,7 @@ export function sweepVolumeFloor(profile: Frame, regions: readonly Region[], pat
   if (!(area > 1e-12)) return { floor: 0, area: 0 };
   const centroid = start3(profile, [cx / area, cy / area]);
   const first = path[0]!;
-  const from = start3(pathFrame, first.kind === 'line' ? first.a : first.kind === 'arc' ? first.from : first.c);
+  const from = start3(pathFrame, first.kind === 'line' ? first.a : first.kind === 'arc' ? first.from : first.kind === 'spline' ? first.points[0]! : first.c);
   const d = Math.hypot(centroid[0] - from[0], centroid[1] - from[1], centroid[2] - from[2]);
   let length = 0;
   let turn = 0;
