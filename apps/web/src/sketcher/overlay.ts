@@ -178,13 +178,17 @@ export function buildOverlay(frame: PlaneFrame, sketch: SketchFeature, solve: Sk
   // A pierce point is only the point drawn above.
   if (view.snap?.kind === 'model' && 'projected' in view.snap.item) {
     const q = view.snap.item.projected;
-    const shape: SolvedGeometry =
-      q.kind === 'line'
-        ? { type: 'line', a: q.a, b: q.b, p1: '', p2: '', construction: false }
-        : q.kind === 'circle'
-          ? { type: 'circle', c: q.c, r: q.r, center: '', construction: false }
-          : { type: 'arc', c: q.c, r: q.r, a0: Math.atan2(q.start[1] - q.c[1], q.start[0] - q.c[0]), a1: Math.atan2(q.end[1] - q.c[1], q.end[0] - q.c[0]), center: '', start: '', end: '', construction: false };
-    curves.push({ points: sample(shape, px), color: SKETCH_COLORS.hover, dashed: view.snap.item.off !== undefined });
+    if (q.kind === 'spline') {
+      curves.push({ points: q.points, color: SKETCH_COLORS.hover, dashed: view.snap.item.off !== undefined });
+    } else {
+      const shape: SolvedGeometry =
+        q.kind === 'line'
+          ? { type: 'line', a: q.a, b: q.b, p1: '', p2: '', construction: false }
+          : q.kind === 'circle'
+            ? { type: 'circle', c: q.c, r: q.r, center: '', construction: false }
+            : { type: 'arc', c: q.c, r: q.r, a0: Math.atan2(q.start[1] - q.c[1], q.start[0] - q.c[0]), a1: Math.atan2(q.end[1] - q.c[1], q.end[0] - q.c[0]), center: '', start: '', end: '', construction: false };
+      curves.push({ points: sample(shape, px), color: SKETCH_COLORS.hover, dashed: view.snap.item.off !== undefined });
+    }
   }
   // the dotted lines to the points the cursor lines up with (D5.3a)
   if (view.snap?.kind === 'free' && view.snap.align) {

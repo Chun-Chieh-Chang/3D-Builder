@@ -174,7 +174,7 @@ export interface ConvertRequest {
   sketchId: Id;
   edges: Ref[];
   faces: Ref[];
-  mode: 'convert' | 'pierce';
+  mode: 'convert' | 'pierce' | 'intersect';
 }
 
 export interface ConvertPayload {

@@ -149,6 +149,7 @@ export const TOOL_LABEL: Record<ToolId, string> = labelsOf({
   mirror: 'tool.mirror',
   convert: 'tool.convert',
   pierce: 'tool.pierce',
+  intersect: 'tool.intersect',
 });
 
 /** What the selection filter of the graphics area offers (D5.4): the kinds of element a click can take. */

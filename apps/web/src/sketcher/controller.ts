@@ -66,10 +66,11 @@ export type ToolId =
   | 'offset'
   | 'mirror'
   | 'convert'
-  | 'pierce';
+  | 'pierce'
+  | 'intersect';
 
 /** The tools of C1.8–C1.19, whose hints and messages come from the message catalog. */
-type OperationTool = 'slot' | 'polygon' | 'sketchFillet' | 'sketchChamfer' | 'trim' | 'extend' | 'offset' | 'mirror' | 'convert' | 'pierce';
+type OperationTool = 'slot' | 'polygon' | 'sketchFillet' | 'sketchChamfer' | 'trim' | 'extend' | 'offset' | 'mirror' | 'convert' | 'pierce' | 'intersect';
 
 /** Tools that pick existing geometry instead of placing points: no snapping, the element under the cursor is what counts. */
 const PICK_TOOLS: ReadonlySet<ToolId> = new Set(['dimension', 'trim', 'extend', 'sketchFillet', 'sketchChamfer', 'offset', 'mirror']);
@@ -293,6 +294,8 @@ export class SketchController {
         return t('sketch.hint.convert');
       case 'pierce':
         return t('sketch.hint.pierce');
+      case 'intersect':
+        return t('sketch.hint.intersect');
       default: {
         const hints = HINT_KEYS[tool];
         return t(hints[Math.min(step, hints.length - 1)]!);

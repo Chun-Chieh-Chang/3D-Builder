@@ -50,7 +50,7 @@ interface MenuItem {
  * What the graphics area picks during a PropertyManager session, what it shows as already picked
  * (the SolidWorks selection boxes), and the prompt. Outside sessions faces are picked for selection.
  */
-function picking(feature: Feature | undefined, editing: boolean, modelTool: 'convert' | 'pierce' | null = null, measuring = false) {
+function picking(feature: Feature | undefined, editing: boolean, modelTool: 'convert' | 'pierce' | 'intersect' | null = null, measuring = false) {
   // reference geometry (C3.2–C3.5): what its empty selection boxes take, and what they hold
   const datum = feature?.type === 'refPlane' || feature?.type === 'refAxis' || feature?.type === 'refPoint' || feature?.type === 'coordSys' || feature?.type === 'pattern' || feature?.type === 'mirror' ? feature : undefined;
   // what the empty boxes take (kinds) and what they already hold (the elements) — the two are different shapes, so they are kept apart
@@ -81,7 +81,7 @@ function picking(feature: Feature | undefined, editing: boolean, modelTool: 'con
   return {
     // with nothing being edited, edges and vertices can be picked too (ADR 0117): they are what the next command starts with
     edges: (!!edgeFeature && !byGroups) || !!slots?.edges || modelTool !== null || measuring || !editing,
-    faces: !editing || modelTool === 'convert' || !!upTo || !!faceFeature || combine || !!slots?.faces || measuring || edgeFeature?.type === 'fillet' || edgeFeature?.type === 'chamfer',
+    faces: !editing || modelTool === 'convert' || modelTool === 'intersect' || !!upTo || !!faceFeature || combine || !!slots?.faces || measuring || edgeFeature?.type === 'fillet' || edgeFeature?.type === 'chamfer',
     vertices: !!slots?.vertices || endVertices.length > 0 || measuring || !editing,
     pickedEdges: byGroups ? [] : edgeFeature ? (edgeFeature.type === 'edgeFlange' || edgeFeature.type === 'hem' ? (edgeFeature.edge.name ? [edgeFeature.edge] : []) : edgeFeature.edges) : (slots?.edges ?? []),
     pickedFaces: edgeFeature?.type === 'fillet' ? [...(edgeFeature.faces ?? []), ...(edgeFeature.faces2 ?? []), ...(edgeFeature.center ?? [])] : edgeFeature?.type === 'chamfer' ? (edgeFeature.faces ?? []) : faceFeature ? (faceFeature.type === 'shell' ? [...faceFeature.faces, ...(faceFeature.faceThickness ?? []).map((x) => x.face)] : faceFeature.type === 'deleteFace' || faceFeature.type === 'offsetSurface' ? faceFeature.faces : faceFeature.type === 'draft' ? [faceFeature.neutral, ...faceFeature.faces] : faceFeature.type === 'mutualTrim' ? (faceFeature.discard ?? []) : [faceFeature.face]) : upTo ? endFaces : (slots?.faces ?? []),
@@ -253,8 +253,8 @@ export function Viewport() {
   }, []);
 
   const feature = editing ? findFeature(doc, editing.featureId) : undefined;
-  // 「轉換實體引用」 and 「貫穿」 pick the model, not points on the sketch plane (C1.18)
-  const modelTool = sketching && (view?.tool === 'convert' || view?.tool === 'pierce') ? view.tool : null;
+  // 「轉換實體引用」, 「貫穿」 and 「相交曲線」 pick the model, not points on the sketch plane (C1.18)
+  const modelTool = sketching && (view?.tool === 'convert' || view?.tool === 'pierce' || view?.tool === 'intersect') ? view.tool : null;
   const measure = useStore((s) => s.measure);
   const draftReport = useStore((s) => s.draft?.report ?? null);
   const undercutReport = useStore((s) => s.undercut?.report ?? null);

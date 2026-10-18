@@ -1,7 +1,7 @@
 import { t } from '@3db/i18n';
 import type { Id, PlaneFrame, Ref, SketchEntity, SketchFeature, Vec3 } from '@3db/model';
 import type { Topology } from '@3db/kernel';
-import { resolveRef, type Candidate, type ElementNames } from '@3db/naming';
+import { edgeFingerprint, resolveRef, type Candidate, type ElementNames } from '@3db/naming';
 
 /**
  * Sketch entities that follow the model (C1.18, C1.26): the projection of a model edge onto the sketch plane, and the point where a
@@ -16,7 +16,8 @@ export type Projected =
   | { kind: 'line'; a: P2; b: P2 }
   | { kind: 'circle'; c: P2; r: number }
   /** Counter-clockwise from `start` to `end`. */
-  | { kind: 'arc'; c: P2; r: number; start: P2; end: P2 };
+  | { kind: 'arc'; c: P2; r: number; start: P2; end: P2 }
+  | { kind: 'spline'; points: P2[] };
 
 /** A reference that cannot be followed: the message, and the reference itself when it is the model that no longer has it. */
 export class ReferenceProblem extends Error {
@@ -45,7 +46,7 @@ const local = (frame: PlaneFrame, p: Vec3): P2 => {
   return [dot(d, frame.xDir), dot(d, frame.yDir)];
 };
 
-/** Projects model edge `index` onto the plane: a straight edge to a line, a circle or arc lying in a plane parallel to it to a circle or arc. */
+/** Projects model edge `index` onto the plane: a straight edge to a line, a circle or arc lying in a plane parallel to it to a circle or arc, or a freeform/slanted edge to a spline. */
 export function projectEdge(topology: Topology, index: number, frame: PlaneFrame): Projected {
   const e = topology.edges[index];
   if (!e) throw new ReferenceProblem(t('reference.noEdge'));
@@ -55,16 +56,26 @@ export function projectEdge(topology: Topology, index: number, frame: PlaneFrame
     return { kind: 'line', a: local(frame, points[0]!), b: local(frame, points[1]!) };
   }
   if (e.curve === 'circle' && e.geometry?.type === 'circle') {
-    if (Math.abs(dot(e.geometry.normal, frame.normal)) < 1 - 1e-6) throw new ReferenceProblem(t('reference.notParallel'));
-    const c = local(frame, e.geometry.center);
-    const r = e.geometry.radius;
-    const [p0, p1] = [points[0], points[1]];
-    if (!p0 || !p1 || Math.hypot(...sub(p0, p1)) < 1e-9) return { kind: 'circle', c, r };
-    const [s, f, m] = [local(frame, p0), local(frame, p1), local(frame, e.mid)];
-    const angle = (p: P2) => Math.atan2(p[1] - c[1], p[0] - c[0]);
-    // the arc runs counter-clockwise from the first end to the second when the middle of the edge is on that sweep
-    const ccw = norm(angle(m) - angle(s)) < norm(angle(f) - angle(s));
-    return ccw ? { kind: 'arc', c, r, start: s, end: f } : { kind: 'arc', c, r, start: f, end: s };
+    if (Math.abs(Math.abs(dot(e.geometry.normal, frame.normal)) - 1) < 1e-6) {
+      const c = local(frame, e.geometry.center);
+      const r = e.geometry.radius;
+      const [p0, p1] = [points[0], points[1]];
+      if (!p0 || !p1 || Math.hypot(...sub(p0, p1)) < 1e-9) return { kind: 'circle', c, r };
+      const [s, f, m] = [local(frame, p0), local(frame, p1), local(frame, e.mid)];
+      const angle = (p: P2) => Math.atan2(p[1] - c[1], p[0] - c[0]);
+      // the arc runs counter-clockwise from the first end to the second when the middle of the edge is on that sweep
+      const ccw = norm(angle(m) - angle(s)) < norm(angle(f) - angle(s));
+      return ccw ? { kind: 'arc', c, r, start: s, end: f } : { kind: 'arc', c, r, start: f, end: s };
+    }
+    throw new ReferenceProblem(t('reference.notParallel'));
+  }
+  if (e.geometry?.type === 'bspline' && e.geometry.samples && e.geometry.samples.length >= 3) {
+    const pts = e.geometry.samples.map((p) => local(frame, p));
+    return { kind: 'spline', points: pts };
+  }
+  if (points.length >= 2) {
+    const pts: P2[] = [local(frame, points[0]!), local(frame, e.mid), local(frame, points[1]!)];
+    return { kind: 'spline', points: pts };
   }
   throw new ReferenceProblem(t('reference.notSimple', { curve: e.curve }));
 }
@@ -127,6 +138,14 @@ export function followReferences(sketch: SketchFeature, scope: ReferenceScope): 
       hold(e.id, 1, e.center);
       hold(e.id, 2, e.start);
       constraints.push({ id: `ref:${e.id}:chord`, type: 'distance', a: e.start, b: e.end, value: String(Math.hypot(p.end[0] - p.start[0], p.end[1] - p.start[1])) });
+    } else if (e.type === 'spline' && p.kind === 'spline') {
+      p.points.forEach((pt, idx) => {
+        const ptId = e.points[idx];
+        if (ptId) {
+          move.set(ptId, pt);
+          hold(e.id, idx + 1, ptId);
+        }
+      });
     } else throw new ReferenceProblem(t('reference.changedKind', { id: e.id }));
     return e;
   });
@@ -163,6 +182,147 @@ export function faceEdges(scope: Pick<ReferenceScope, 'names' | 'topology'>, fac
   const r = resolveRef(face, scope.names, scope.topology);
   if (!r.ok) throw new ReferenceProblem(t('reference.lost'));
   return scope.topology.edges.flatMap((e, i) => (e.faces.includes(r.index) ? [{ kind: 'edge' as const, name: scope.names.edges[i]!, fingerprint: fingerprintOf(i) }] : []));
+}
+
+/**
+ * Computes intersection curves between selected model faces and the sketch plane (C1.18, ADR 0162).
+ * Intersects each face's boundary edges and geometry with the sketch plane.
+ * Throws ReferenceProblem if a face is parallel or does not intersect the sketch plane.
+ */
+export function intersectFaces(scope: ReferenceScope, faces: Ref[]): Converted[] {
+  const { topology, names, frame } = scope;
+  const items: Converted[] = [];
+  const TOL = 1e-6;
+  const side = (p: Vec3) => dot(sub(p, frame.origin), frame.normal);
+
+  for (const faceRef of faces) {
+    const r = resolveRef(faceRef, names, topology);
+    if (!r.ok) throw new ReferenceProblem(t('reference.lost'));
+    const faceIndex = r.index;
+    const face = topology.faces[faceIndex];
+    if (!face) throw new ReferenceProblem(t('reference.lost'));
+
+    // Collect face edges and unique vertices
+    const faceEdgesList = topology.edges.filter((e) => e.faces.includes(faceIndex));
+    const allVertices = Array.from(new Set(faceEdgesList.flatMap((e) => e.vertices))).map((vi) => topology.vertices[vi]!.point);
+
+    // Cylindrical surface intersection: if cross-section is perpendicular, it's a circle
+    if (face.surface === 'cylinder' && face.geometry?.type === 'cylinder') {
+      const cyl = face.geometry;
+      const axisDot = Math.abs(dot(cyl.axis, frame.normal));
+      if (axisDot > 1 - 1e-5) {
+        if (allVertices.length > 0) {
+          const sides = allVertices.map(side);
+          const minSide = Math.min(...sides);
+          const maxSide = Math.max(...sides);
+          if ((minSide > TOL && maxSide > TOL) || (minSide < -TOL && maxSide < -TOL)) {
+            throw new ReferenceProblem(t('reference.noIntersection'));
+          }
+        }
+        const sAxis = dot(sub(cyl.origin, frame.origin), frame.normal);
+        const center3d: Vec3 = [cyl.origin[0] - cyl.axis[0] * sAxis, cyl.origin[1] - cyl.axis[1] * sAxis, cyl.origin[2] - cyl.axis[2] * sAxis];
+        items.push({
+          ref: { kind: 'edge', name: `int:${faceRef.name}` },
+          projected: { kind: 'circle', c: local(frame, center3d), r: cyl.radius },
+        });
+        continue;
+      }
+    }
+
+    if (allVertices.length === 0) throw new ReferenceProblem(t('reference.noIntersection'));
+
+    const sides = allVertices.map(side);
+    const minSide = Math.min(...sides);
+    const maxSide = Math.max(...sides);
+
+    // If completely to one side without crossing the plane
+    if ((minSide > TOL && maxSide > TOL) || (minSide < -TOL && maxSide < -TOL)) {
+      throw new ReferenceProblem(t('reference.noIntersection'));
+    }
+
+    // If parallel to the sketch plane:
+    if (face.normal && Math.abs(Math.abs(dot(face.normal, frame.normal)) - 1) < 1e-5) {
+      if (Math.abs(minSide) > TOL) {
+        throw new ReferenceProblem(t('reference.noIntersection'));
+      }
+      // If coplanar, convert its boundary edges
+      const outline = faceEdges(scope, faceRef, (i) => edgeFingerprint(topology, i));
+      const res = convertEdges(scope, outline, 'convert');
+      items.push(...res.items);
+      continue;
+    }
+
+    // Find pierce points on the face boundary edges
+    const piercePoints: P2[] = [];
+    for (const edge of faceEdgesList) {
+      if (edge.vertices.length < 2) continue;
+      const p0 = topology.vertices[edge.vertices[0]!]!.point;
+      const p1 = topology.vertices[edge.vertices[1]!]!.point;
+      const s0 = side(p0);
+      const s1 = side(p1);
+      if ((s0 < -TOL && s1 > TOL) || (s0 > TOL && s1 < -TOL)) {
+        const tVal = -s0 / (s1 - s0);
+        const pInt: Vec3 = [
+          p0[0] + tVal * (p1[0] - p0[0]),
+          p0[1] + tVal * (p1[1] - p0[1]),
+          p0[2] + tVal * (p1[2] - p0[2]),
+        ];
+        const pt = local(frame, pInt);
+        if (!piercePoints.some((q) => Math.hypot(q[0] - pt[0], q[1] - pt[1]) < TOL)) {
+          piercePoints.push(pt);
+        }
+      } else if (Math.abs(s0) <= TOL) {
+        const pt = local(frame, p0);
+        if (!piercePoints.some((q) => Math.hypot(q[0] - pt[0], q[1] - pt[1]) < TOL)) {
+          piercePoints.push(pt);
+        }
+      } else if (Math.abs(s1) <= TOL) {
+        const pt = local(frame, p1);
+        if (!piercePoints.some((q) => Math.hypot(q[0] - pt[0], q[1] - pt[1]) < TOL)) {
+          piercePoints.push(pt);
+        }
+      }
+    }
+
+    if (piercePoints.length < 2) {
+      // Cylindrical or curved face intersection
+      if (face.surface === 'cylinder' && face.geometry?.type === 'cylinder') {
+        const cyl = face.geometry;
+        const axisDot = Math.abs(dot(cyl.axis, frame.normal));
+        if (axisDot > 1 - 1e-5) {
+          // Cross-section is a circle
+          const sAxis = dot(sub(cyl.origin, frame.origin), frame.normal);
+          const center3d: Vec3 = [cyl.origin[0] - cyl.axis[0] * sAxis, cyl.origin[1] - cyl.axis[1] * sAxis, cyl.origin[2] - cyl.axis[2] * sAxis];
+          items.push({
+            ref: { kind: 'edge', name: `int:${faceRef.name}` },
+            projected: { kind: 'circle', c: local(frame, center3d), r: cyl.radius },
+          });
+          continue;
+        }
+      }
+      throw new ReferenceProblem(t('reference.noIntersection'));
+    }
+
+    // Connect pierce points into intersection curve segments
+    if (piercePoints.length === 2) {
+      items.push({
+        ref: { kind: 'edge', name: `int:${faceRef.name}` },
+        projected: { kind: 'line', a: piercePoints[0]!, b: piercePoints[1]! },
+      });
+    } else {
+      for (let i = 0; i < piercePoints.length - 1; i += 2) {
+        if (i + 1 < piercePoints.length) {
+          items.push({
+            ref: { kind: 'edge', name: `int:${faceRef.name}:${i / 2}` },
+            projected: { kind: 'line', a: piercePoints[i]!, b: piercePoints[i + 1]! },
+          });
+        }
+      }
+    }
+  }
+
+  if (items.length === 0) throw new ReferenceProblem(t('reference.noIntersection'));
+  return items;
 }
 
 /**
@@ -218,7 +378,13 @@ export function modelSnapItems(scope: ReferenceScope, fingerprintOf: (edge: numb
   const r6 = (x: number) => (Math.round(x * 1e6) / 1e6 + 0).toFixed(6);
   const pt = (p: P2) => `${r6(p[0])},${r6(p[1])}`;
   const look = (q: Projected) =>
-    q.kind === 'line' ? `l:${[pt(q.a), pt(q.b)].sort().join(';')}` : q.kind === 'circle' ? `c:${pt(q.c)};${r6(q.r)}` : `a:${pt(q.c)};${r6(q.r)};${pt(q.start)};${pt(q.end)}`;
+    q.kind === 'line'
+      ? `l:${[pt(q.a), pt(q.b)].sort().join(';')}`
+      : q.kind === 'circle'
+        ? `c:${pt(q.c)};${r6(q.r)}`
+        : q.kind === 'arc'
+          ? `a:${pt(q.c)};${r6(q.r)};${pt(q.start)};${pt(q.end)}`
+          : `sp:${q.points.map(pt).join(';')}`;
   const seen = new Map<string, Extract<SnapItem, { projected: Projected }>>();
   for (const i of inPlane) seen.set(look(i.projected), i);
   const pierces: Extract<SnapItem, { pierce: P2 }>[] = [];
@@ -246,7 +412,15 @@ export function modelSnapItems(scope: ReferenceScope, fingerprintOf: (edge: numb
   });
   const items = [...seen.values()].sort((a, b) => (a.off ?? -1) - (b.off ?? -1));
   // a pierce point where an item already has a corner or a center adds nothing to snap to
-  const corners = items.flatMap((i) => (i.projected.kind === 'line' ? [i.projected.a, i.projected.b] : i.projected.kind === 'circle' ? [i.projected.c] : [i.projected.c, i.projected.start, i.projected.end]));
+  const corners = items.flatMap((i) =>
+    i.projected.kind === 'line'
+      ? [i.projected.a, i.projected.b]
+      : i.projected.kind === 'circle'
+        ? [i.projected.c]
+        : i.projected.kind === 'arc'
+          ? [i.projected.c, i.projected.start, i.projected.end]
+          : i.projected.points,
+  );
   const fresh = pierces.filter((p, k) => !corners.some((c) => Math.hypot(c[0] - p.pierce[0], c[1] - p.pierce[1]) < TOL) && pierces.findIndex((q) => Math.hypot(q.pierce[0] - p.pierce[0], q.pierce[1] - p.pierce[1]) < TOL) === k);
   return [...items, ...fresh];
 }

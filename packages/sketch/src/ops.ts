@@ -291,7 +291,15 @@ export function chamfer(sketch: Pick<SketchFeature, 'constraints'>, geometry: Ge
  * the edge was projected onto the plane from outside (C1 2026-10-14): how near it comes to the plane, 0 when it passes through it; absent: it lies in it.
  */
 export type ModelItem =
-  | { ref: Ref; projected: { kind: 'line'; a: P2; b: P2 } | { kind: 'circle'; c: P2; r: number } | { kind: 'arc'; c: P2; r: number; start: P2; end: P2 }; off?: number }
+  | {
+      ref: Ref;
+      projected:
+        | { kind: 'line'; a: P2; b: P2 }
+        | { kind: 'circle'; c: P2; r: number }
+        | { kind: 'arc'; c: P2; r: number; start: P2; end: P2 }
+        | { kind: 'spline'; points: P2[] };
+      off?: number;
+    }
   | { ref: Ref; pierce: P2 };
 
 /** A model edge as it lies in the sketch plane (or projected onto it). */
@@ -349,7 +357,8 @@ export function anchorModel(sketch: Pick<SketchFeature, 'entities'>, geometry: G
     const held = { construction: true };
     if (q.kind === 'line') entity = { id: made.ids.take('l'), type: 'line', p1: corner(q.a), p2: corner(q.b), ref: item.ref, ...held };
     else if (q.kind === 'circle') entity = { id: made.ids.take('ci'), type: 'circle', center: corner(q.c), radius: q.r, ref: item.ref, ...held };
-    else entity = { id: made.ids.take('a'), type: 'arc', center: corner(q.c), start: corner(q.start), end: corner(q.end), ref: item.ref, ...held };
+    else if (q.kind === 'arc') entity = { id: made.ids.take('a'), type: 'arc', center: corner(q.c), start: corner(q.start), end: corner(q.end), ref: item.ref, ...held };
+    else entity = { id: made.ids.take('sp'), type: 'spline', points: q.points.map(corner), ref: item.ref, ...held };
     made.entities.push(entity);
   }
   if (part === 'center' && 'center' in entity) return entity.center;
@@ -403,7 +412,8 @@ export function anchorModelForSelection(
     const q = item.projected;
     if (q.kind === 'line') entity = { id: made.ids.take('l'), type: 'line', p1: corner(q.a), p2: corner(q.b), ref: item.ref, construction: true };
     else if (q.kind === 'circle') entity = { id: made.ids.take('ci'), type: 'circle', center: corner(q.c), radius: q.r, ref: item.ref, construction: true };
-    else entity = { id: made.ids.take('a'), type: 'arc', center: corner(q.c), start: corner(q.start), end: corner(q.end), ref: item.ref, construction: true };
+    else if (q.kind === 'arc') entity = { id: made.ids.take('a'), type: 'arc', center: corner(q.c), start: corner(q.start), end: corner(q.end), ref: item.ref, construction: true };
+    else entity = { id: made.ids.take('sp'), type: 'spline', points: q.points.map(corner), ref: item.ref, construction: true };
     made.entities.push(entity);
   }
   if (part === 'curve') return entity.id;
@@ -445,10 +455,11 @@ export function referenceEntities(sketch: Pick<SketchFeature, 'entities'>, ids: 
       continue;
     }
     const p = item.projected;
-    const lineId = b.ids.take(p.kind === 'line' ? 'l' : p.kind === 'circle' ? 'ci' : 'a');
+    const lineId = b.ids.take(p.kind === 'line' ? 'l' : p.kind === 'circle' ? 'ci' : p.kind === 'arc' ? 'a' : 'sp');
     if (p.kind === 'line') b.entities.push({ id: lineId, type: 'line', p1: corner(p.a), p2: corner(p.b), ref: item.ref });
     else if (p.kind === 'circle') b.entities.push({ id: lineId, type: 'circle', center: corner(p.c), radius: p.r, ref: item.ref });
-    else b.entities.push({ id: lineId, type: 'arc', center: corner(p.c), start: corner(p.start), end: corner(p.end), ref: item.ref });
+    else if (p.kind === 'arc') b.entities.push({ id: lineId, type: 'arc', center: corner(p.c), start: corner(p.start), end: corner(p.end), ref: item.ref });
+    else b.entities.push({ id: lineId, type: 'spline', points: p.points.map(corner), ref: item.ref });
   }
   return { edit: { add: b.added } };
 }

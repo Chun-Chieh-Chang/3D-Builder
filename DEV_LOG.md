@@ -2089,3 +2089,53 @@ ADR 0146 確效時記下的後續（下一節 §5 第三點）：新工程圖的
 - **記憶體（§3.1、§3.5）**：純 JS／CSS，不碰核心與 WASM，無新增 OCCT 呼叫；不做 Heap 量測，也不宣稱任何 Heap 數字。
 
 **使用者裁定的其餘項（本日未做，寫下來待排）**：A2「縮到 1.8 mm 封底仍放不下時加一行提示」、A3 字型家族與 A4 標題欄版面都**維持現狀**；B1 今天只做 A1，故 A2 排到 10-19 額度重置後；B2 標題欄的實機確認**排進另一階段那份「一頁點擊清單」**，不另造 checklist 項目；C1 `thread.test.ts` 的 120 秒牆鐘**拆成數個小 `it`**（不放寬門檻，§3.3）；D1 推送**先問另一階段**再推（本地領先 origin 三筆：`605460da`、`2785da35`、`d3421664`，同一條 main 推了就一起帶上）——已用聊天工具問過，未收到回覆前不推；D2 dev server（5391）留著；D3 sketch6 改由 e2e 在真實 UI 裡自動修、測試只鎖「圓角成功＋逐位元相同重建」、**體積只印出不斷言**（避免自我確認，§2.1.4）。
+
+---
+
+## 2026-10-18　藍圖 C1.18 草圖參考圖元與相交曲線（ADR 0162：Convert Entities & Intersection Curves）
+
+### 1. 需求內容 (Requirements)
+依據第一性原理審查與 AI 智囊團綜合評定，選定推進關鍵草圖建模核心能力 C1.18（ADR 0162）：
+1. **參考轉換圖元 (Convert Entities)**：
+   - 支援將現有 3D 實體幾何的邊線正交投影至草圖平面，轉換為完全拘束的草圖圖元（直線、圓弧、B-spline 樣條）。
+   - 支援點選單一面（Face），自動萃取其外環（Outer Wire）所有邊線轉換為閉合輪廓，並自動共享鄰接頂點（`corner(at)`），可直接供長出（Extrude Boss/Cut）或旋轉。
+   - 支援幾何關聯聯動（`followReferences`）：當底層實體邊緣或輪廓變更時，草圖樣條/直線/圓弧圖元自動更新型值點與幾何位置。
+2. **相交曲線 (Intersection Curves)**：
+   - 支援計算選取的 3D 實體面（平面、圓柱面）與當前草圖平面的三維截交線，並將交線降維投影至草圖座標系生成圖元。
+   - 平面與草圖平面相交求解精確交線（線段）。
+   - 圓柱面與垂直草圖平面相交求解截交圓（圓圖元）。
+3. **介面與前端工作流程整合**：
+   - 在草圖動作列（CommandBar）、動作清單（`actions.ts`）、雙語系（`packages/i18n`）新增「相交曲線 (`intersect`)」工具。
+   - Web Worker 與主執行緒通訊協定（`protocol.ts`）支援 `ConvertRequest.mode: 'convert' | 'pierce' | 'intersect'`。
+   - Viewport 即時拾取支援相交曲線模式懸停預覽與點選面相交計算。
+
+---
+
+### 2. 紅隊破壞性邊界四問（AGENTS.md §2.1）
+
+1. **輸入破壞 (Input Corruption)**：
+   - **非平行圓維持既有契約**：既有測試規範嚴格要求非平行圓邊線必須顯式拋出 `reference.notParallel`（含「橢圓」字樣），不擅自降級為樣條；而對 B-spline 自由曲線邊線才自適應採樣轉換為樣條圖元，杜絕行為回歸。
+   - **未相交/平行面嚴格攔截**：面與草圖平面無實質交線時，顯式拋出 `reference.noIntersection`，嚴禁靜默回傳退化點或空陣列。
+   - **無效/遺失 Ref 攔截**：無法在模型拓樸中定位的面或邊，顯式拋出 `reference.notFound`。
+2. **拓樸與幾何相交破壞 (Geometric Self-Intersection Defense)**：
+   - **頂點共享與閉合環拓樸**：選取面轉換外環時，依相鄰邊線端點幾何距離（容差 $10^{-6}$）自動去重共享頂點（`corner(at)`），避免自相交或微小縫隙導致幾何求解器崩潰或長出失敗。
+   - **方向法向量約束**：圓柱面求交時，若其軸線未平行於草圖平面（截交線非真圓），及時拒絕避免產生偽圓圖元。
+3. **依賴鏈完整性 (Dependency Graph Integrity)**：
+   - 貫穿完整依賴鏈：`@3db/kernel` (`CurveGeometry.bspline`, `edgeInfo`) → `@3db/regen` (`references.ts`, `followReferences`, `intersectFaces`) → `@3db/sketch` (`ops.ts`, `interact.ts`, `index.ts`) → `@3db/i18n` (zh-TW, en) → `apps/web` (`protocol.ts`, `kernel.worker.ts`, `store.ts`, `Viewport.tsx`, `actions.ts`, `strings.ts`, `overlay.ts`)。
+4. **規格真實性與零 Mock (Zero-Mock & Ground Truth)**：
+   - **長出體積物理驗證**：選取 $30 \times 20 \times 10\text{ mm}$ 方塊頂面，轉換為外環輪廓後直接長出 $5\text{ mm}$，布林融合後總體積精確驗證為 $30 \times 20 \times 15 = 9000\text{ mm}^3$。
+   - **底層記憶體真值存在性防呆 (AGENTS.md §3.1)**：測試斷言真實 Emscripten WASM Heap 指標 `(oc as any).wasmMemory.buffer.byteLength > 0`，嚴禁使用 `?? 0` 假綠。
+
+---
+
+### 3. 確效與驗收成果 (Validation Results)
+- **單元與整合測試**：
+  - `tests/phase1/convert-entities-advanced.test.ts`：**8/8 PASS**（100% 綠燈）。
+  - `tests/phase3/references.test.ts`：**8/8 PASS**（100% 綠燈，零迴歸）。
+  - Phase 1 & Phase 3 合計 29 個測試檔案、288 項單元測試全數綠燈通過。
+- **靜態檢查守門**：
+  - `npm run typecheck`：**0 錯誤**。
+  - `npm run lint:rules`：**通過**。
+  - `npm run lint:deps`：**通過**。
+  - `npm run lint:i18n`：**通過**。
+

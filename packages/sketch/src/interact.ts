@@ -275,11 +275,18 @@ export function snapModel(items: readonly ModelItem[], p: P2, tol: number, point
         consider(item, 'start', q.a);
         consider(item, 'end', q.b);
         consider(item, 'mid', mid(q.a, q.b));
-      } else if (q.kind === 'circle') consider(item, 'center', q.c);
-      else {
+      } else if (q.kind === 'circle') {
+        consider(item, 'center', q.c);
+      } else if (q.kind === 'arc') {
         consider(item, 'center', q.c);
         consider(item, 'start', q.start);
         consider(item, 'end', q.end);
+      } else if (q.kind === 'spline') {
+        q.points.forEach((pt, idx) => {
+          if (idx === 0) consider(item, 'start', pt);
+          else if (idx === q.points.length - 1) consider(item, 'end', pt);
+          else consider(item, 'curve', pt);
+        });
       }
     }
     return best && (best as { s: Extract<Snap, { kind: 'model' }> }).s;
@@ -292,7 +299,11 @@ export function snapModel(items: readonly ModelItem[], p: P2, tol: number, point
       const at =
         q.kind === 'line'
           ? closestOnSegment(p, q.a, q.b)
-          : closestOn(q.kind === 'circle' ? { type: 'circle', c: q.c, r: q.r, center: '', construction: false } : { type: 'arc', c: q.c, r: q.r, a0: Math.atan2(q.start[1] - q.c[1], q.start[0] - q.c[0]), a1: Math.atan2(q.end[1] - q.c[1], q.end[0] - q.c[0]), center: '', start: '', end: '', construction: false }, p);
+          : q.kind === 'circle'
+            ? closestOn({ type: 'circle', c: q.c, r: q.r, center: '', construction: false }, p)
+            : q.kind === 'arc'
+              ? closestOn({ type: 'arc', c: q.c, r: q.r, a0: Math.atan2(q.start[1] - q.c[1], q.start[0] - q.c[0]), a1: Math.atan2(q.end[1] - q.c[1], q.end[0] - q.c[0]), center: '', start: '', end: '', construction: false }, p)
+              : q.points[0];
       const d = at ? dist(p, at) : Infinity;
       if (at && d <= tol && (!best || d < best.d)) best = { s: { kind: 'model', p: at, item, part: 'curve' }, d };
     }

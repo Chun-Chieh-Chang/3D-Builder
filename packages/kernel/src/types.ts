@@ -14,8 +14,11 @@ export type SurfaceGeometry =
   | { type: 'sphere'; center: Vec3; radius: number; convex: boolean }
   | { type: 'torus'; center: Vec3; axis: Vec3; major: number; minor: number; convex: boolean };
 
-/** The analytic curve under an edge (A5.2). */
-export type CurveGeometry = { type: 'line'; origin: Vec3; dir: Vec3 } | { type: 'circle'; center: Vec3; normal: Vec3; radius: number };
+/** The analytic curve or sampled freeform curve under an edge (A5.2, C1.18). */
+export type CurveGeometry =
+  | { type: 'line'; origin: Vec3; dir: Vec3 }
+  | { type: 'circle'; center: Vec3; normal: Vec3; radius: number }
+  | { type: 'bspline'; samples: Vec3[] };
 
 /** What a face is to a mold that opens along a direction (draft analysis, E3.2): the four classes of SolidWorks's analysis, and `unknown` for a face the analysis could not sample. */
 export type DraftClass = 'positive' | 'negative' | 'required' | 'straddle' | 'unknown';

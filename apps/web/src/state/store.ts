@@ -2587,9 +2587,9 @@ class AppStore {
     const sketcher = this.sketcher;
     const sketch = this.editedSketch();
     const tool = sketcher?.getView().tool;
-    if (!sketcher || !sketch || (tool !== 'convert' && tool !== 'pierce')) return;
-    const mode = tool === 'pierce' ? 'pierce' : 'convert';
-    if (ref.kind !== 'edge' && !(ref.kind === 'face' && mode === 'convert')) return;
+    if (!sketcher || !sketch || (tool !== 'convert' && tool !== 'pierce' && tool !== 'intersect')) return;
+    const mode = tool === 'pierce' ? 'pierce' : tool === 'intersect' ? 'intersect' : 'convert';
+    if (ref.kind !== 'edge' && !(ref.kind === 'face' && (mode === 'convert' || mode === 'intersect'))) return;
     const r = await this.api.convertReferences({ sketchId: sketch.id, edges: ref.kind === 'edge' ? [ref] : [], faces: ref.kind === 'face' ? [ref] : [], mode });
     if (r.items.length > 0) sketcher.addReferences(r.items);
     if (r.errors.length > 0) this.notify(r.errors[0]!, r.items.length > 0 ? 'info' : 'error');

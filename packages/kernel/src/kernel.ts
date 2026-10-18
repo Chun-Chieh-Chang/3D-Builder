@@ -2478,6 +2478,14 @@ export class Kernel {
       const c = arena.own(ad.Circle());
       const axis = arena.own(c.Axis());
       geometry = { type: 'circle', center: this.xyz(arena.own(axis.Location())), normal: this.xyz(arena.own(axis.Direction())), radius: c.Radius() };
+    } else if (type === 'bsplinecurve' || type === 'beziercurve' || type === 'othercurve' || type === 'ellipse') {
+      const SAMPLES = 7;
+      const samples: Vec3[] = [];
+      for (let s = 0; s < SAMPLES; s++) {
+        const t = t0 + (t1 - t0) * (s / (SAMPLES - 1));
+        samples.push(this.xyz(arena.own(ad.EvalD0(t))));
+      }
+      geometry = { type: 'bspline', samples };
     }
     return { curve: type, length: props.Mass(), mid: this.xyz(arena.own(ad.EvalD0((t0 + t1) / 2))), dir, ...(geometry ? { geometry } : {}) };
   }
