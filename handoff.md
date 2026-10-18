@@ -1,6 +1,6 @@
 # 交接文件
 
-- **【2026-10-18：工程圖 PDF 中文字型內建多風格支援與零亂碼防禦（混合架構實作）— 本地確效通過，待使用者確認推送】**
+- **【2026-10-18：工程圖 PDF 中文字型內建多風格支援與零亂碼防禦（混合架構實作）— 已提交並推送 `ee98a4e`（origin/main）】**
   - **背景與決策**：
     - 使用者提出「工程圖的PDF中文字型需要預設內建多種，輸出要確保不會出亂碼」。
     - 啟動 AI 智囊團（反駁者、本質追問者、機會發現者、外行人、無情執行者）審查，透過反向提問（Clarify Ambiguities）確認三大決策：
@@ -28,7 +28,7 @@
     - `npm run lint:rules ; npm run lint:deps ; npm run lint:i18n`：**全數通過**。
     - `npx vitest run tests/phase5/`：**49 個測試檔、525 項測試全數通過（0 失敗，1 略過）**。
     - `npm test`（全 Repo）：**239 個測試檔、3000 項測試全數通過（0 失敗，25 略過）**。
-  - **停在哪裡**：本地修改已完成且全套件綠燈確效；等待使用者審查與許可執行 `git push`。
+  - **停在哪裡**：工作目錄乾淨（working tree clean），無做到一半的程式；`main` 分支在 `ee98a4e`（含 `handoff.md`）已推送到遠端倉庫。下一棒可依藍圖或後續需求繼續進行。
 
 - **【2026-10-18：B2.8 Shape 2 多圖頁 (Multi-sheet Drawing) 全鏈路實作與確效（Antigravity）— 已提交並推送 `756b7ae`（origin/main）】**
   - **背景與決策**：接手 `handoff.md` 任務，落實決策單 `docs/decisions-e1p2-b28-shape2.html`（Q1–Q8 全選 Option A）與 SSOT 原則。
