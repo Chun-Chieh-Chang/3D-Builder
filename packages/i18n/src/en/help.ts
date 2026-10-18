@@ -661,6 +661,24 @@ export const help: Translation = {
 
   'help.importStep.see': 'delete-face move-face check-part export-step',
 
+  'help.cosmeticThread.summary': 'Draws a cosmetic thread on the selected cylinder or hole wall: display only, no real thread geometry.',
+
+  'help.cosmeticThread.body':
+    'Pick a cylindrical face (an external thread) or the wall of a hole (an internal thread) in the graphics area, choose a standard designation (M8, 1/4-20 UNC, …) or custom major, minor and pitch values, pick the end condition (through, or a given depth) and press ✔.\n\n- The 3D window draws a 3/4 thin arc at the end face, and two thin lines (external) or two dashed lines (internal) in the side view; drawings follow ISO 6410-1.\n- The geometry of the part does not change: no thread kernel and no booleans, so volume and mass are unaffected.\n- Only cylindrical faces are accepted; a plane, a cone or a free surface makes the feature fail and say why.\n- The depth (the given length) must be greater than 0.',
+
+  'help.cosmeticThread.keywords': 'cosmetic thread representation ISO 6410 external internal cylinder',
+
+  'help.cosmeticThread.see': 'thread hole export-step',
+
+  'help.split.summary': 'Cuts bodies in two with a datum plane or a planar face of a solid.',
+
+  'help.split.body':
+    'Pick a datum plane or a flat face of a solid as the cutting plane and press ✔; every body it crosses is cut into two independent solids, both kept in the part.\n\n- With a datum plane the cut runs along that plane; with a face of a solid it runs along the infinite plane of that face (enlarged automatically so that it cuts through).\n- By default every body that crosses the tool is cut.\n- When the plane crosses no body at all, the feature fails and says so.\n- The resulting solids can be selected, suppressed or deleted one by one; faces keep their persistent names.',
+
+  'help.split.keywords': 'split body cut plane datum plane',
+
+  'help.split.see': 'concept.selection move-face import-step',
+
   // ---------------------------------------------------------------- assembly
   'help.insertComponent.summary': 'Inserts a part file into the assembly as a component.',
 
