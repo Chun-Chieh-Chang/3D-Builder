@@ -1,6 +1,6 @@
 import { t } from '@3db/i18n';
 import type { Id } from './ids';
-import { isSketchAxis, SKETCH_ORIGIN, type PartDoc, type SketchConstraint, type SketchEntity, type SketchFeature } from './schema';
+import { isSketchAxis, SKETCH_ORIGIN, type PartDoc, type Ref, type SketchConstraint, type SketchEntity, type SketchFeature } from './schema';
 
 /**
  * Structural rules of a sketch (B1.2): which entities a relation or dimension may reference, and
@@ -62,6 +62,12 @@ export function constraintRefs(c: SketchConstraint): Id[] {
     if (v !== undefined) out.push(v);
   }
   return out;
+}
+
+/** The model element an entity follows (C1.18, ADR 0171): a point's pierce edge or vertex, a curve's edge; undefined for one of the sketch's own. */
+export function modelRefOf(e: SketchEntity): Ref | undefined {
+  if (e.type === 'point') return e.pierce ?? e.ref;
+  return 'ref' in e ? e.ref : undefined;
 }
 
 /** Point ids an entity is built on. */
@@ -131,8 +137,12 @@ export function sketchError(sketch: Pick<SketchFeature, 'entities' | 'constraint
       if (!(finite(e.size) && e.size > 0)) return t('rules.textSizeInvalid', { id: e.id });
       if (e.angle !== undefined && !Number.isFinite(e.angle)) return t('rules.textAngleInvalid', { id: e.id });
     }
-    const model = e.type === 'point' ? e.pierce : 'ref' in e ? e.ref : undefined;
-    if (model && model.kind !== 'edge') return t('cmd.sketchRefMustBeEdge', { id: e.id });
+    // what an entity follows on the model (C1.18, ADR 0171): a point pierces an edge or is a vertex, never both; a curve follows an edge
+    if (e.type === 'point') {
+      if (e.pierce && e.ref) return t('rules.pointFollowsTwo', { id: e.id });
+      if (e.pierce && e.pierce.kind !== 'edge') return t('cmd.sketchRefMustBeEdge', { id: e.id });
+      if (e.ref && e.ref.kind !== 'vertex') return t('cmd.sketchPointRefMustBeVertex', { id: e.id });
+    } else if ('ref' in e && e.ref && e.ref.kind !== 'edge') return t('cmd.sketchRefMustBeEdge', { id: e.id });
   }
 
   const seen = new Set<Id>(kinds.keys());

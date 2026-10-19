@@ -41,6 +41,7 @@ export const lowlevel: Translation = {
   'rules.tangentNeedsCurve': 'Tangent needs at least one circle or arc',
   'rules.equalKinds': 'Equal only applies to two lines or two circles/arcs',
   'rules.distanceLine': 'The distance of a single entity only applies to a line',
+  'rules.pointFollowsTwo': 'Point {id} follows both an edge it pierces and a vertex: it can follow one model element only',
   'rules.axisPair': 'Relation {id} refers to both axes of the sketch: they are always perpendicular through the origin',
   'rules.horizontalVertical': 'Horizontal/vertical applies to one line, or to two points',
   'map.notPoint': '"{id}" is not a point',

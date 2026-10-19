@@ -296,7 +296,7 @@ export type Snap =
   | { kind: 'free'; p: P2; align?: Alignment };
 
 /** Which place of a model edge: an end, the center of a circle or arc, the middle of a line, anywhere along it, or where it passes through the plane. */
-export type ModelPart = 'start' | 'end' | 'center' | 'mid' | 'curve' | 'pierce';
+export type ModelPart = 'start' | 'end' | 'center' | 'mid' | 'curve' | 'pierce' | 'vertex';
 
 /**
  * The place on the model the cursor is near, the nearest within each step, in this order: the ends, centers and middles of the edges in the sketch plane;
@@ -315,6 +315,10 @@ export function snapModel(items: readonly ModelItem[], p: P2, tol: number, point
       if (!pick(item)) continue;
       if ('pierce' in item) {
         consider(item, 'pierce', item.pierce);
+        continue;
+      }
+      if ('vertex' in item) {
+        consider(item, 'vertex', item.vertex);
         continue;
       }
       const q = item.projected;

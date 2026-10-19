@@ -1,7 +1,7 @@
 import { t } from '@3db/i18n';
-import type { Id, PlaneFrame, Ref, SketchEntity, SketchFeature, Vec3 } from '@3db/model';
+import { modelRefOf, type Id, type PlaneFrame, type Ref, type SketchEntity, type SketchFeature, type Vec3 } from '@3db/model';
 import type { Topology } from '@3db/kernel';
-import { edgeFingerprint, resolveRef, type Candidate, type ElementNames } from '@3db/naming';
+import { edgeFingerprint, resolveRef, vertexFingerprint, type Candidate, type ElementNames } from '@3db/naming';
 
 /**
  * Sketch entities that follow the model (C1.18, C1.26): the projection of a model edge onto the sketch plane, and the point where a
@@ -91,6 +91,13 @@ export function pierceEdge(topology: Topology, index: number, frame: PlaneFrame)
   return local(frame, [e.geometry.origin[0] + e.geometry.dir[0] * s, e.geometry.origin[1] + e.geometry.dir[1] * s, e.geometry.origin[2] + e.geometry.dir[2] * s]);
 }
 
+/** Where model vertex `index` lies on the plane, projected along its normal (ADR 0171), and how far it is from the plane. */
+export function vertexPoint(topology: Topology, index: number, frame: PlaneFrame): { at: P2; off: number } {
+  const v = topology.vertices[index];
+  if (!v) throw new ReferenceProblem(t('reference.noVertex'));
+  return { at: local(frame, v.point), off: Math.abs(dot(sub(v.point, frame.origin), frame.normal)) };
+}
+
 function edgeIndex(scope: ReferenceScope, ref: Ref): number {
   if (!ref.name) throw new ReferenceProblem(t('reference.empty'));
   const r = resolveRef(ref, scope.names, scope.topology);
@@ -103,7 +110,7 @@ function edgeIndex(scope: ReferenceScope, ref: Ref): number {
  * are replaced and "fixed" relations (a circle's radius, an arc's chord) added, none of which is stored. Throws `ReferenceProblem`.
  */
 export function followReferences(sketch: SketchFeature, scope: ReferenceScope): SketchFeature {
-  if (!sketch.entities.some((e) => (e.type === 'point' ? e.pierce : 'ref' in e && e.ref))) return sketch;
+  if (!sketch.entities.some((e) => modelRefOf(e))) return sketch;
   const move = new Map<Id, P2>();
   const held = new Set<Id>();
   const constraints: SketchFeature['constraints'] = [...sketch.constraints];
@@ -116,6 +123,11 @@ export function followReferences(sketch: SketchFeature, scope: ReferenceScope): 
     if (e.type === 'point' && e.pierce) {
       const at = pierceEdge(scope.topology, edgeIndex(scope, e.pierce), scope.frame);
       move.set(e.id, at);
+      hold(e.id, 0, e.id);
+      return e;
+    }
+    if (e.type === 'point' && e.ref) {
+      move.set(e.id, vertexPoint(scope.topology, edgeIndex(scope, e.ref), scope.frame).at);
       hold(e.id, 0, e.id);
       return e;
     }
@@ -159,16 +171,21 @@ export function followReferences(sketch: SketchFeature, scope: ReferenceScope): 
   };
 }
 
-/** One thing converted from the model, in sketch coordinates, with the edge it came from. */
-export type Converted = { ref: Ref; projected: Projected } | { ref: Ref; pierce: P2 };
+/** One thing converted from the model, in sketch coordinates, with the edge (or vertex, ADR 0171) it came from. */
+export type Converted = { ref: Ref; projected: Projected } | { ref: Ref; pierce: P2 } | { ref: Ref; vertex: P2; off?: number };
 
-/** What 「轉換實體引用」 or 「貫穿」 would make of these edges; `errors` says why the others cannot. */
+/** What 「轉換實體引用」 or 「貫穿」 would make of these edges (and, converted, vertices: a point each); `errors` says why the others cannot. */
 export function convertEdges(scope: ReferenceScope, refs: Ref[], mode: 'convert' | 'pierce'): { items: Converted[]; errors: string[] } {
   const items: Converted[] = [];
   const errors: string[] = [];
   for (const ref of refs) {
     try {
       const index = edgeIndex(scope, ref);
+      if (ref.kind === 'vertex') {
+        if (mode === 'pierce') throw new ReferenceProblem(t('reference.pierceStraight'));
+        items.push({ ref, vertex: vertexPoint(scope.topology, index, scope.frame).at });
+        continue;
+      }
       items.push(mode === 'pierce' ? { ref, pierce: pierceEdge(scope.topology, index, scope.frame) } : { ref, projected: projectEdge(scope.topology, index, scope.frame) });
     } catch (e) {
       errors.push(e instanceof Error ? e.message : String(e));
@@ -359,7 +376,7 @@ export function planarEdgeItems(scope: ReferenceScope, fingerprintOf: (edge: num
  * What a sketch can snap to on the model: an edge as it looks on the plane, with `off` when it was projected onto it from outside (how near it comes to
  * the plane, 0 when it passes through it), none when it lies in the plane; or where an edge passes through the plane.
  */
-export type SnapItem = { ref: Ref; projected: Projected; off?: number } | { ref: Ref; pierce: P2 };
+export type SnapItem = { ref: Ref; projected: Projected; off?: number } | { ref: Ref; pierce: P2 } | { ref: Ref; vertex: P2; off: number };
 
 /**
  * Everything a sketch can snap to on the model (D5.3b; C1 of the decisions of 2026-10-14, as SolidWorks offers the model around the sketch): the edges in
@@ -422,5 +439,25 @@ export function modelSnapItems(scope: ReferenceScope, fingerprintOf: (edge: numb
           : i.projected.points,
   );
   const fresh = pierces.filter((p, k) => !corners.some((c) => Math.hypot(c[0] - p.pierce[0], c[1] - p.pierce[1]) < TOL) && pierces.findIndex((q) => Math.hypot(q.pierce[0] - p.pierce[0], q.pierce[1] - p.pierce[1]) < TOL) === k);
-  return [...items, ...fresh];
+  // the vertices nothing above lets the cursor reach (ADR 0171): those of edges square to the plane, of tilted circles and freeform edges, an apex. Where two
+  // vertices look the same on the plane, the nearer one; a vertex whose projection is already a corner, a center or a pierce point adds nothing
+  const reached = [...corners, ...fresh.map((p) => p.pierce)];
+  // a vertex only closed edges start and end at (with seams and degenerate edges) is where the B-rep begins a loop, not a place of the design: the seam
+  // vertex on the rim of a hole or on the base of a cone. An apex has no closed edge and stays
+  const real = (e: Topology['edges'][number]) => e.curve !== 'degenerated' && new Set(e.faces).size >= 2;
+  const onlyLoops = (v: number) => {
+    const at = topology.edges.filter((e) => e.vertices.includes(v) && real(e));
+    return at.length > 0 && at.every((e) => e.vertices.length === 1 || e.vertices[0] === e.vertices[e.vertices.length - 1]);
+  };
+  const vertices = new Map<string, Extract<SnapItem, { vertex: P2 }>>();
+  topology.vertices.forEach((_, i) => {
+    const name = names.vertices[i];
+    if (!name || onlyLoops(i)) return;
+    const { at, off } = vertexPoint(topology, i, frame);
+    if (reached.some((c) => Math.hypot(c[0] - at[0], c[1] - at[1]) < TOL)) return;
+    const key = pt(at);
+    const there = vertices.get(key);
+    if (!there || there.off > off) vertices.set(key, { ref: { kind: 'vertex', name, fingerprint: vertexFingerprint(topology, i) }, vertex: at, off });
+  });
+  return [...items, ...fresh, ...[...vertices.values()].sort((a, b) => a.off - b.off)];
 }

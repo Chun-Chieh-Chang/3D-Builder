@@ -3,7 +3,7 @@ import * as Comlink from 'comlink';
 import { setLocale as setWorkerLocale, t } from '@3db/i18n';
 import occtWasm from 'libcascade/single/wasm?url';
 import gcsWasm from '@salusoft89/planegcs/dist/planegcs_dist/planegcs.wasm?url';
-import { bodyKey, combineMass, isShown, mirrorKey, MESH_QUALITY, placementRows, settingsOf, type ViewEdgeSet, type AssemblyDoc, type Id, type MeasureReport, type PartDoc, type SourceTree } from '@3db/model';
+import { bodyKey, combineMass, isShown, mirrorKey, modelRefOf, MESH_QUALITY, placementRows, settingsOf, type ViewEdgeSet, type AssemblyDoc, type Id, type MeasureReport, type PartDoc, type SourceTree } from '@3db/model';
 import { findProfiles, PlaneGcsSolver } from '@3db/sketch';
 import { COMPONENT_MESH, Kernel, type ThicknessReport, type UndercutReport, type DraftReport, type GeometryReport, type MassProps, type MeshData, type MeshOptions, type ShapeId } from '@3db/kernel';
 import { encodeShade, flatViewLines, rasterizeShade, withoutHiddenEdges, type ShadeImage, type ViewLines } from '@3db/drawing';
@@ -254,7 +254,7 @@ const api: KernelApi = {
     await loadSolver();
     const began = performance.now();
     let followed = sketch;
-    if (sketch.entities.some((e) => (e.type === 'point' ? e.pierce : 'ref' in e && e.ref))) {
+    if (sketch.entities.some((e) => modelRefOf(e))) {
       const frame = lastModel?.frames.get(sketch.id);
       try {
         if (!lastModel || !frame) throw new ReferenceProblem(t('reference.noModel'));

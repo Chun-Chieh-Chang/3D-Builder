@@ -50,6 +50,7 @@ export const sketch: Translation = {
   'contour.item': 'Contour {n}: area {area} mm², center ({x}, {y}){holes}',
   'contour.holes': ', {n} hole(s)',
   'contour.loading': 'Reading contours…',
+  'reference.noVertex': 'This vertex was not found',
   'reference.noEdge': 'This edge was not found',
   'reference.empty': 'Select an edge',
   'reference.lost': 'Lost reference: the edge the sketch refers to was not found; select it again',

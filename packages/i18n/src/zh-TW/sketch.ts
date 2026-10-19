@@ -48,6 +48,7 @@ export const sketch = {
   'contour.item': '輪廓 {n}：面積 {area} mm²，中心 ({x}, {y}){holes}',
   'contour.holes': '，{n} 個孔',
   'contour.loading': '讀取輪廓中…',
+  'reference.noVertex': '找不到這個頂點',
   'reference.noEdge': '找不到這條邊線',
   'reference.empty': '請選擇一條邊線',
   'reference.lost': '遺失參考：草圖引用的邊線找不到了，請重新選擇',

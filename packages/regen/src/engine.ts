@@ -76,6 +76,7 @@ import {
   lookupThread,
   generateStandardThreadProfile,
   sketchAxisDir,
+  modelRefOf,
 } from '@3db/model';
 import { bentPath, BendProblem, findOutlines, findProfiles, reversePath, ribbonOf, selectContours, ThinProblem, thinRegions, type ProfileResult, type SketchSolver, type SketchStatus, type SolvedSketch } from '@3db/sketch';
 import { KernelError, SURFACE_TOLERANCE, type KnurlSpec, type Region, type Segment, type SweepSpec, type ThreadSpec, type FaceOrigin, type ImportDiagnostics, type Kernel, type OpResult, type ShapeId, type Topology } from '@3db/kernel';
@@ -1152,7 +1153,7 @@ export class Regenerator {
     const frame = this.frame(f, set);
     // projected model edges and pierce points are put where the model has them now (C1.18)
     let followed = f;
-    if (f.entities.some((e) => (e.type === 'point' ? e.pierce : 'ref' in e && e.ref))) {
+    if (f.entities.some((e) => modelRefOf(e))) {
       const body = set.view;
       if (!body) throw new FeatureError(t('reference.noModel'));
       try {

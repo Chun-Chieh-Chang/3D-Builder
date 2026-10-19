@@ -80,11 +80,11 @@ describe('relations to the axes in the model', () => {
     expect(Math.min(...ys)).toBeCloseTo(0, 9);
   });
 
-  it('a part with relations to the axes is written as version 68 and read back the same', () => {
+  it('a part with relations to the axes is written as the current version (68 or later) and read back the same', () => {
     const doc = centered();
     const file = serializePart(doc);
     expect(JSON.parse(file).schemaVersion).toBe(SCHEMA_VERSION);
-    expect(SCHEMA_VERSION).toBe(68);
+    expect(SCHEMA_VERSION).toBeGreaterThanOrEqual(68);
     expect(parsePart(file).features).toEqual(doc.features);
   });
 });

@@ -6,7 +6,7 @@ import type { Id } from './ids';
  * DOF status, mass properties and error lists are derived data and never stored.
  */
 
-export const SCHEMA_VERSION = 68;
+export const SCHEMA_VERSION = 69;
 
 /** Value expression (B5.2, B5.3): "20", "25.4mm", "30deg", "wall_t*2", "D1@草圖1/2", "property('厚度')"; see `expr/`. */
 export type Expr = string;
@@ -55,10 +55,11 @@ export function sketchAxisDir(id: Id): [number, number] | undefined {
 /**
  * A `ref` on a line, circle or arc makes it the projection of a model edge onto the sketch plane (C1.18, v13): where it lies comes from the
  * model, never from the sketch, so it follows the edge when the model changes. A `pierce` on a point makes it the place where a straight model
- * edge passes through the sketch plane (「貫穿」, C1.26). Their points keep their stored places only as a first guess; the model fixes them.
+ * edge passes through the sketch plane (「貫穿」, C1.26); a `ref` on a point (v69, ADR 0171) makes it a model vertex projected onto the plane along its
+ * normal. A point has one or the other, never both. Their points keep their stored places only as a first guess; the model fixes them.
  */
 export type SketchEntity =
-  | { id: Id; type: 'point'; x: number; y: number; construction?: boolean; pierce?: Ref }
+  | { id: Id; type: 'point'; x: number; y: number; construction?: boolean; pierce?: Ref; ref?: Ref }
   | { id: Id; type: 'line'; p1: Id; p2: Id; construction?: boolean; ref?: Ref }
   | { id: Id; type: 'circle'; center: Id; radius: number; construction?: boolean; ref?: Ref }
   | { id: Id; type: 'arc'; center: Id; start: Id; end: Id; construction?: boolean; ref?: Ref }

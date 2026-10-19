@@ -1,5 +1,5 @@
 import { t } from '@3db/i18n';
-import { constraintRefs, isDimension, isPlain, SKETCH_AXIS_H, SKETCH_AXIS_V, SKETCH_ORIGIN, type DimensionConstraint, type Id, type PlaneFrame, type SketchConstraint, type SketchFeature } from '@3db/model';
+import { constraintRefs, isDimension, isPlain, modelRefOf, SKETCH_AXIS_H, SKETCH_AXIS_V, SKETCH_ORIGIN, type DimensionConstraint, type Id, type PlaneFrame, type SketchConstraint, type SketchFeature } from '@3db/model';
 import { add, arcMidpoint, dimensionText, geometryOf, layoutDimension, measuredText, mid, polar, sample, type Geometry } from '@3db/sketch/interact';
 import { visibleGridSpacing } from '@3db/sketch/snaps';
 import { textContours } from '@3db/sketch/font';
@@ -156,7 +156,7 @@ export function buildOverlay(frame: PlaneFrame, sketch: SketchFeature, solve: Sk
   const over = new Set([...(solve?.conflicting ?? []), ...(solve?.redundant ?? [])]);
   const fallback: EntityStatus | undefined = solve?.status === 'fully' ? 'fully' : undefined;
   // what follows the model (C1.18) is drawn in its own colour: it is the model's, not the sketch's, to change
-  const followed = new Set(sketch.entities.filter((e) => (e.type === 'point' ? e.pierce : 'ref' in e && e.ref)).map((e) => e.id));
+  const followed = new Set(sketch.entities.filter((e) => modelRefOf(e)).map((e) => e.id));
   const colorOf = (id: Id) =>
     selected.has(id) ? SKETCH_COLORS.selected : highlighted.has(id) ? SKETCH_COLORS.hover : followed.has(id) ? SKETCH_COLORS.reference : statusColor(solve?.entityStatus?.get(id) ?? fallback);
 

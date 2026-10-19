@@ -1,5 +1,35 @@
 # 3D-Builder 開發日誌 (DEV_LOG.md)
 
+## 2026-10-19：模型頂點投影成草圖點（G2，[ADR 0171](docs/adr/0171-sketch-vertex-points.md)）
+
+### 1. 背景與決策
+第一批的 G2。以前沒有任何邊帶得到的頂點（錐頂、只連著與草圖平面垂直的邊或傾斜圓的頂點），游標吸不到，轉換實體引用也不收。草圖的點新增 `ref`（種類為頂點，與 `pierce` 互斥），升為 Schema 69。
+
+### 2. 做法
+| 層級 | 檔案 | 改動 |
+|---|---|---|
+| 模型 | `schema.ts`、`serialize.ts`、`sketch-rules.ts`、`refs.ts` | 點新增 `ref`；新增 `modelRefOf()` 取代 5 處散落的判斷；規則（頂點、兩者互斥）；`mapRefs` 也處理點的 `ref` |
+| 再生 | `references.ts`、`engine.ts` | 新增 `vertexPoint`；`followReferences` 處理頂點點；`convertEdges` 收頂點；`modelSnapItems` 補上吸不到的頂點，並排除只是封閉環起點的頂點 |
+| 草圖 | `ops.ts`、`interact.ts` | `ModelItem` 新增頂點項目；`anchorModel*` 與 `referenceEntities` 支援頂點；新增 `ModelPart` `'vertex'` |
+| 介面 | `Viewport.tsx`、`store.ts`、`controller.ts`、`overlay.ts`、`kernel.worker.ts`、`protocol.ts` | 轉換工具可以點頂點；推斷文字「模型頂點」；跟著模型走的點以參照色顯示 |
+| 雙語／說明 | `lowlevel.ts`、`model.ts`、`sketch.ts`、`sketchtools.ts`、`help.ts` | 3 個錯誤訊息、1 個推斷文字；吸附與轉換說明各補一段 |
+
+### 3. 紅隊四問
+1. **輸入破壞**：`ref` 不是頂點、`ref` 與 `pierce` 並存，都會明確拒絕；貫穿頂點也會拒絕。
+2. **幾何相交**：不涉及布林運算。頂點投影重疊時取較近的那一個。
+3. **依賴鏈**：schema → rules → refs（`mapRefs`）→ regen（follow、convert、snap）→ worker → ops／interact → controller／overlay → Viewport／store 全部接上。DAG 以 `modelRefOf` 判斷草圖是否跟著模型。
+4. **零 Mock**：頂點在 OCCT 真實拓樸中的位置、命名與指紋都經實測；e2e 走真實 UI。
+
+### 4. 測試與 RCA
+- `tests/phase3/sketch-vertex.test.ts` 10 項；`tests/e2e/manual-sketch-vertex.js` 3/3 PASS。另有 3 組反向對照，見 ADR §4。
+- **RCA 1（測試寫錯）**：第一版從前基準面看圓錐，但接縫邊就在這個平面上，錐頂已經是端點，因此沒有頂點項目。這是正確的行為。改成從右基準面看，才真正測到缺口。
+- **RCA 2（設計補強）**：既有的 `sketch-snap.test.ts` 有 2 項轉紅，原因是孔緣的接縫頂點被列成可吸附的點。這只是 B-rep 封閉環的起點，不是設計上的點，所以改為排除「除了接縫邊與退化邊之外，只連著封閉邊」的頂點。
+- **RCA 3（我寫的測試有兩個缺陷，全閘門抓到一個，另一個是自查發現）**：
+  1. G1 的 `sketch-axes.test.ts` 寫死 `SCHEMA_VERSION` 為 68，G2 升版後就紅了。改為斷言「寫出的版本等於目前版本，且 ≥ 68」。
+  2. G2 第一版的版本測試寫成 `doc.schemaVersion ?? 69` 再與 69 比較，是恆真式的假綠燈，正是 AGENTS §3.1 禁止的寫法。改為實際序列化 → 讀回 → 比對頂點 `ref`。
+  - **之後的做法**：版本測試一律斷言「寫出的版本等於 `SCHEMA_VERSION`」，並且 ≥ 該功能引入的版本；不寫死目前的版號，也不用 `??` 退化。
+- 全閘門 `npm run check`：3193 通過，1 項失敗，即 RCA 3 第 1 點寫死版號的那一項。修正後重跑該 2 個檔案，16/16 通過。與草圖相關的 `verify:ui` 27/27 通過，含新增的 `manual-sketch-vertex.js`。未跑 `make:drawing`。
+
 ## 2026-10-19：草圖內建水平軸與垂直軸（G1，[ADR 0170](docs/adr/0170-sketch-origin-axes.md)）
 
 ### 1. 背景與決策

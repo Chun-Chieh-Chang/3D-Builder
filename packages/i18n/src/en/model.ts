@@ -136,6 +136,7 @@ export const model: Translation = {
   'cmd.variableInUse': 'Variable "{name}" is in use; change these expressions before deleting it: {users}',
   'cmd.propertyNameEmpty': 'The name of a property cannot be empty',
   'cmd.propertyNotFound': 'Property not found: {name}',
+  'cmd.sketchPointRefMustBeVertex': 'Point {id} must refer to a vertex of the model',
   'cmd.sketchRefMustBeEdge': 'Entity {id} must refer to an edge of the model',
   'cmd.onlyExtrudeRevolveContours': 'Only Extrude and Revolve features can choose the contours of a sketch',
   'cmd.contoursEmpty': 'Pick at least one contour',

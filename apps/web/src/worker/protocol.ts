@@ -172,6 +172,7 @@ export interface SketchSolvePayload {
 /** Edges (and faces, by their outlines) of the model to turn into sketch entities, or into pierce points (C1.18, C1.26). */
 export interface ConvertRequest {
   sketchId: Id;
+  /** Edges, and (to convert, ADR 0171) vertices: each becomes a point that follows it. */
   edges: Ref[];
   faces: Ref[];
   mode: 'convert' | 'pierce' | 'intersect';

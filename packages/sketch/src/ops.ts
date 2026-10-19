@@ -302,7 +302,9 @@ export type ModelItem =
         | { kind: 'spline'; points: P2[] };
       off?: number;
     }
-  | { ref: Ref; pierce: P2 };
+  | { ref: Ref; pierce: P2 }
+  /** A model vertex projected onto the plane (ADR 0171); `off` is how far it is from it. */
+  | { ref: Ref; vertex: P2; off?: number };
 
 /** A model edge as it lies in the sketch plane (or projected onto it). */
 export type ModelEdge = Extract<ModelItem, { projected: unknown }>;
@@ -313,6 +315,15 @@ function piercePoint(sketch: Pick<SketchFeature, 'entities'>, made: Maker, item:
   if (have) return have.id;
   const id = made.ids.take('p');
   made.entities.push({ id, type: 'point', x: item.pierce[0], y: item.pierce[1], pierce: item.ref });
+  return id;
+}
+
+/** The sketch point that follows model vertex `item` (ADR 0171): the one the sketch or this action already has, else a new one. */
+function vertexPoint(sketch: Pick<SketchFeature, 'entities'>, made: Maker, item: Extract<ModelItem, { vertex: P2 }>): Id {
+  const have = [...sketch.entities, ...made.entities].find((e) => e.type === 'point' && e.ref?.name === item.ref.name);
+  if (have) return have.id;
+  const id = made.ids.take('p');
+  made.entities.push({ id, type: 'point', x: item.vertex[0], y: item.vertex[1], ref: item.ref });
   return id;
 }
 
@@ -329,8 +340,9 @@ export interface Maker {
  * midpoint / on-curve relation to the entity. Ends that lie where an earlier entity of that kind already has a point are shared
  * with it, so two edges meeting at a corner meet at one point. A pierce point is a sketch point that follows the edge (as 「貫穿」 makes).
  */
-export function anchorModel(sketch: Pick<SketchFeature, 'entities'>, geometry: Geometry, made: Maker, item: ModelItem, part: 'start' | 'end' | 'center' | 'mid' | 'curve' | 'pierce', at: P2): Id {
+export function anchorModel(sketch: Pick<SketchFeature, 'entities'>, geometry: Geometry, made: Maker, item: ModelItem, part: 'start' | 'end' | 'center' | 'mid' | 'curve' | 'pierce' | 'vertex', at: P2): Id {
   if ('pierce' in item) return piercePoint(sketch, made, item);
+  if ('vertex' in item) return vertexPoint(sketch, made, item);
   const all = [...sketch.entities, ...made.entities];
   let entity = all.find((e): e is Exclude<SketchEntity, { type: 'point' | 'text' }> => 'ref' in e && e.ref?.name === item.ref.name);
   if (!entity) {
@@ -386,10 +398,11 @@ export function anchorModelForSelection(
   geometry: Geometry,
   made: Maker,
   item: ModelItem,
-  part: 'start' | 'end' | 'center' | 'mid' | 'curve' | 'pierce',
+  part: 'start' | 'end' | 'center' | 'mid' | 'curve' | 'pierce' | 'vertex',
   at: P2,
 ): Id {
   if ('pierce' in item) return piercePoint(sketch, made, item);
+  if ('vertex' in item) return vertexPoint(sketch, made, item);
   const all = [...sketch.entities, ...made.entities];
   let entity = all.find((e): e is Exclude<SketchEntity, { type: 'point' | 'text' }> => 'ref' in e && e.ref?.name === item.ref.name);
   if (!entity) {
@@ -438,8 +451,11 @@ export function anchorModelForSelection(
  * the sketch already follows is left out, and when there is nothing new that is the message.
  */
 export function referenceEntities(sketch: Pick<SketchFeature, 'entities'>, ids: IdAllocator, items: ModelItem[]): OpResult {
-  const have = new Set(sketch.entities.flatMap((e) => (e.type === 'point' ? (e.pierce ? [`pierce:${e.pierce.name}`] : []) : 'ref' in e && e.ref ? [`ref:${e.ref.name}`] : [])));
-  const fresh = items.filter((i) => !have.has(('pierce' in i ? 'pierce:' : 'ref:') + i.ref.name));
+  const key = (kind: 'pierce' | 'vertex' | 'ref', name: string) => `${kind}:${name}`;
+  const have = new Set(
+    sketch.entities.flatMap((e) => (e.type === 'point' ? (e.pierce ? [key('pierce', e.pierce.name)] : e.ref ? [key('vertex', e.ref.name)] : []) : 'ref' in e && e.ref ? [key('ref', e.ref.name)] : [])),
+  );
+  const fresh = items.filter((i) => !have.has(key('pierce' in i ? 'pierce' : 'vertex' in i ? 'vertex' : 'ref', i.ref.name)));
   if (fresh.length === 0) return error('reference.already');
   const b = new Parts(ids);
   const points: { id: Id; at: P2 }[] = [];
@@ -454,6 +470,11 @@ export function referenceEntities(sketch: Pick<SketchFeature, 'entities'>, ids: 
     if ('pierce' in item) {
       b.point(item.pierce);
       (b.entities.at(-1) as Extract<SketchEntity, { type: 'point' }>).pierce = item.ref;
+      continue;
+    }
+    if ('vertex' in item) {
+      b.point(item.vertex);
+      (b.entities.at(-1) as Extract<SketchEntity, { type: 'point' }>).ref = item.ref;
       continue;
     }
     const p = item.projected;

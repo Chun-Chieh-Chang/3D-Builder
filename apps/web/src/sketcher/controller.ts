@@ -165,7 +165,7 @@ const PICK_PX = 7;
 const AXIS_TOOLS: ReadonlySet<ToolId> = new Set(['dimension', 'mirror']);
 /** What the cursor says it found on the model, by the place of the edge (D5.3b; a pierce point, C1 2026-10-14). */
 const modelInference = (part: Extract<Snap, { kind: 'model' }>['part']) =>
-  part === 'curve' ? 'modelEdge' : part === 'mid' ? 'modelMid' : part === 'center' ? 'modelCenter' : part === 'pierce' ? 'modelPierce' : 'modelPoint';
+  part === 'curve' ? 'modelEdge' : part === 'mid' ? 'modelMid' : part === 'center' ? 'modelCenter' : part === 'pierce' ? 'modelPierce' : part === 'vertex' ? 'modelVertex' : 'modelPoint';
 /** How close (screen pixels) the cursor must be to a sketch point in x or y to line up with it (D5.3a). */
 const ALIGN_PX = 5;
 /** A line leaving within this angle of another line's direction (or a quarter turn from it) is made collinear, parallel or perpendicular to it. */
@@ -205,7 +205,7 @@ export class SketchController {
   private hover: Hit | null = null;
   private snapTarget: Snap | null = null;
   /** Inferred relation shown next to the cursor while drawing. */
-  private inference: 'coincident' | 'midpoint' | 'onCurve' | 'tangent' | 'horizontal' | 'vertical' | 'horizontalPoint' | 'verticalPoint' | 'alignedPoints' | 'collinear' | 'parallel' | 'perpendicular' | 'modelPoint' | 'modelMid' | 'modelCenter' | 'modelEdge' | 'modelPierce' | 'intersection' | 'quadrant' | 'onExtension' | null = null;
+  private inference: 'coincident' | 'midpoint' | 'onCurve' | 'tangent' | 'horizontal' | 'vertical' | 'horizontalPoint' | 'verticalPoint' | 'alignedPoints' | 'collinear' | 'parallel' | 'perpendicular' | 'modelPoint' | 'modelMid' | 'modelCenter' | 'modelEdge' | 'modelPierce' | 'modelVertex' | 'intersection' | 'quadrant' | 'onExtension' | null = null;
   /** Arc the line being drawn is inferred to be tangent to. */
   private tangentTo: Id | null = null;
   /** Line the one being drawn is inferred collinear / parallel / perpendicular to (D5.3a). */

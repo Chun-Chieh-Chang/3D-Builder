@@ -82,7 +82,7 @@ function picking(feature: Feature | undefined, editing: boolean, modelTool: 'con
     // with nothing being edited, edges and vertices can be picked too (ADR 0117): they are what the next command starts with
     edges: (!!edgeFeature && !byGroups) || !!want?.edges || modelTool !== null || measuring || !editing,
     faces: !editing || modelTool === 'convert' || modelTool === 'intersect' || !!upTo || !!faceFeature || combine || !!want?.faces || measuring || edgeFeature?.type === 'fillet' || edgeFeature?.type === 'chamfer',
-    vertices: !!want?.vertices || endVertices.length > 0 || measuring || !editing,
+    vertices: !!want?.vertices || endVertices.length > 0 || measuring || !editing || modelTool === 'convert',
     pickedEdges: byGroups ? [] : edgeFeature ? (edgeFeature.type === 'edgeFlange' || edgeFeature.type === 'hem' ? (edgeFeature.edge.name ? [edgeFeature.edge] : []) : edgeFeature.edges) : (slots?.edges ?? []),
     pickedFaces: edgeFeature?.type === 'fillet' ? [...(edgeFeature.faces ?? []), ...(edgeFeature.faces2 ?? []), ...(edgeFeature.center ?? [])] : edgeFeature?.type === 'chamfer' ? (edgeFeature.faces ?? []) : faceFeature ? (faceFeature.type === 'shell' ? [...faceFeature.faces, ...(faceFeature.faceThickness ?? []).map((x) => x.face)] : faceFeature.type === 'deleteFace' || faceFeature.type === 'offsetSurface' ? faceFeature.faces : faceFeature.type === 'draft' ? [faceFeature.neutral, ...faceFeature.faces] : faceFeature.type === 'mutualTrim' ? (faceFeature.discard ?? []) : [faceFeature.face]) : upTo ? endFaces : (slots?.faces ?? []),
     pickedVertices: slots ? slots.vertices : endVertices,
