@@ -1,5 +1,33 @@
 # 3D-Builder 開發日誌 (DEV_LOG.md)
 
+## 2026-10-20：任意曲線的貫穿點（G4，[ADR 0173](docs/adr/0173-pierce-any-curve.md)）
+
+### 1. 背景與決策
+這是第一批的 G4。以前「貫穿」只支援直線邊。做法是在 kernel 對曲線求值找出交點，不用布林運算：
+- `BRepAlgoAPI_Section` 對 B-spline 運算元會佔用 Heap（AGENTS §3.5），所以不採用；
+- 綁定裡也沒有 `GeomAPI_IntCS`。
+
+一條曲線多次穿過平面時，跟著最接近該點儲存位置的那個交點。
+
+### 2. 做法
+| 層級 | 檔案 | 改動 |
+|---|---|---|
+| Kernel | `kernel.ts`、`types.ts` | 新增 `edgePlaneCrossings`：以約 0.5 mm 一步分段，有變號的段落用 Newton 法求根，落在段外時改用二分法；新增 `edgeNearest`（供 G5 使用）；共用 `edgeCurve`；新型別 `EdgeCrossing`、`EdgeNearest` |
+| 再生 | `references.ts`、`engine.ts` | 新增 `CurveScope`、`piercePoints`／`piercePoint`；跟隨時取最近的交點；轉換時每個交點產生一點；吸附加入曲線的內部交點（曲線本體沒有面，也算在內）；engine 提供 `curves` |
+| worker | `kernel.worker.ts` | `lastModel.shape`；`scopeOf` 提供 `curves` |
+| 雙語／說明 | `sketch.ts`、`help.ts` | 新增 `reference.noPierce`；貫穿工具和吸附的說明補上曲線 |
+
+### 3. 紅隊四問
+1. **輸入破壞**：曲線沒有穿過平面、沒有 kernel 可問、對頂點或基準做貫穿，都會明確拒絕。
+2. **幾何相交**：只求值、不切割，Heap 在 2000 輪後成長 +0.00 MiB；對照組 +330.88 MiB。
+3. **依賴鏈**：kernel → references → engine／worker → snap → ops（沿用原本的貫穿點流程）。DAG 已由 G3 涵蓋貫穿邊。
+4. **零 Mock**：真值分兩件事驗證，交點在平面上（1e-12）與符合理想螺旋（Precision::Confusion 1e-7，理由見下方 RCA）。
+
+### 4. 測試與 RCA
+- 新增 kernel 測試 6 項、OCCT 重建測試 6 項、Heap 測試 1 項；e2e 3/3。3 組反向對照全部轉紅後還原。
+- **RCA（我的測試假設錯誤）**：第一版要求交點與理想螺旋公式差 < 1e-9，實測差 1.3e-9 和 3.6e-9。這不是求根的誤差（交點落在平面上的殘差 < 1e-12），而是 kernel 的螺旋本身以 `BuildCurves3d` 近似，與理想螺旋的差在 OCCT 容許的 Precision::Confusion = 1e-7 內。改為把兩件事分開驗證，並在測試中寫明理由。這不是為了變綠而放寬門檻：1e-9 這個門檻本來就假設了一個不存在的精確螺旋。
+- 全閘門 `npm run check`：**3218 通過、0 失敗**。`verify:ui`（草圖、吸附、螺旋、彈簧、掃出、參照、示範零件、c10–c19）**31/31 通過**，含新增的 `manual-sketch-pierce-curve.js`。未跑 `make:drawing`。
+
 ## 2026-10-19：基準軸／點／面進草圖，並補上草圖參照的 DAG 父項（G3，[ADR 0172](docs/adr/0172-sketch-datum-references.md)）
 
 ### 1. 背景與決策

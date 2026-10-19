@@ -15,6 +15,42 @@
 
 ---
 
+## 〇之一、 2026-10-20：草圖參照優化第一批 G1–G5（對比 SW／FreeCAD）— 進行中，**未推送**
+
+**使用者決策（2026-10-19）**：
+- 第一批做 G1–G5；
+- 維持 FreeCAD 式看得見的參照圖元；
+- 跨草圖參照（G6，屬第二批）只允許參照較前面的草圖；
+- 每一項各一份 ADR、一個 commit；
+- 工作期間每 5 分鐘回報進度。
+
+**進度**：
+
+| 項目 | 狀態 | 提交 |
+|---|---|---|
+| G1 草圖內建水平軸、垂直軸 | ADR 0170 | `2d2e7aa` |
+| G2 模型頂點投影成點 | ADR 0171，Schema 69 | `6cc8e57` |
+| G3 基準軸／點／面進草圖，並補上草圖參照的 DAG 父項 | ADR 0172，Schema 70 | `564e035` |
+| G4 任意曲線的貫穿點 | **進行中**，未提交 | — |
+| G5 參考平面「垂直於曲線」 | 未開始 | — |
+
+**G4 進度**：
+- 已寫：kernel 的 `edgePlaneCrossings`、`edgeNearest`（`kernel.ts`、`types.ts`）；
+- 已寫：`tests/phase3/edge-crossings.test.ts`，6/6 通過；
+- 已寫：`docs/adr/0173-pierce-any-curve.md`。
+- 尚未做：把 `ReferenceScope.curves` 接進 `references.ts`（`piercePoint` 取代 `pierceEdge` 的三個呼叫點：follow 取最接近儲存位置的交點、convert 每個交點一點、snap 列內部交點）；engine 與 worker 提供 `curves`（worker 需要 `lastResult.body.shape`）；OCCT 測試、e2e、全閘門、commit。
+
+**G5 計畫**：
+- `refPlane` 新增 `normalToCurve` 模式：參數為 `edge` 與 `point`（頂點或參考點，必須在曲線上），用 `edgeNearest` 取切線當法向。
+- Schema 71。
+
+**本次學到的事（已寫進 DEV_LOG）**：
+- `verify:ui` 跑的期間不能改原始碼：Vite 熱更新會讓整輪結果作廢。
+- 版本測試不得寫死版號，也不得用 `??` 退化。
+- Git Bash 的 heredoc 會吞掉 `\\`：在 heredoc 裡寫反斜線用 `chr(92)`。
+
+---
+
 ## 〇、 2026-10-19 晚：C8.3 螺旋曲線審查修正（[ADR 0168 §5](docs/adr/0168-helix-spiral-curve.md)）— 已推送 `139ab6a`（origin/main，`81b9322..139ab6a`）
 
 - **下面第一節「14 項 100% 通過、0 洩漏」的宣稱不成立**：探針實測有 7 個缺陷，已全部修正並加測試（詳 `DEV_LOG.md` 同日條目）：逐圈命名與拓樸不對齊（4 邊只命名 1 邊）、往內錐形穿過軸心回報 ok、負錐角被 `Math.abs` 改掉、90° 錐角內部錯誤、兩個圓默默取第一個、圈數無上限、線本體被曲面特徵當曲面吃（縫織 ok）。

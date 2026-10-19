@@ -57,6 +57,7 @@ export const sketch = {
   'reference.endOn': '這條邊線垂直於草圖面，投影後只是一個點',
   'reference.notParallel': '這條圓邊線不在與草圖面平行的面上，投影後是橢圓，目前不能轉換',
   'reference.notSimple': '這條邊線是「{curve}」，目前只能轉換直線與圓、圓弧',
+  'reference.noPierce': '這條邊線沒有穿過草圖平面',
   'reference.pierceStraight': '貫穿只能用直線邊線',
   'reference.parallel': '這條邊線與草圖面平行，沒有穿過草圖面的位置',
   'reference.changedKind': '圖元 {id} 參考的邊線形狀改變了（例如直線變成了圓弧），請刪掉它再轉換一次',

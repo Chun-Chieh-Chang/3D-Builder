@@ -36,12 +36,21 @@ export interface DatumScope {
   plane(name: string): PlaneFrame | undefined;
 }
 
-/** The model the references are looked up in: its names and shapes, and the plane of the sketch; and the reference geometry before it (ADR 0172). */
+/** Where a curved model edge crosses the sketch plane (ADR 0173), from the kernel, which evaluates the curve: each place, and whether it is an end of the edge. */
+export interface CurveScope {
+  crossings(edge: number): { point: Vec3; end: boolean }[];
+}
+
+/**
+ * The model the references are looked up in: its names and shapes, and the plane of the sketch; the reference geometry before it (ADR 0172); and, for a
+ * pierce of a curved edge, where its curves cross the plane (ADR 0173).
+ */
 export interface ReferenceScope {
   names: ElementNames;
   topology: Topology;
   frame: PlaneFrame;
   datums?: DatumScope;
+  curves?: CurveScope;
 }
 
 const sub = (a: Vec3, b: Vec3): Vec3 => [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
@@ -86,6 +95,27 @@ export function projectEdge(topology: Topology, index: number, frame: PlaneFrame
     return { kind: 'spline', points: pts };
   }
   throw new ReferenceProblem(t('reference.notSimple', { curve: e.curve }));
+}
+
+/**
+ * Every place where model edge `index` passes through the sketch plane (「貫穿」): a straight edge, extended, once (worked out here, as always); a curved one
+ * where its curve crosses the plane, from the kernel (ADR 0173), its ends lying on the plane included. Throws when there is none, or no kernel to ask.
+ */
+export function piercePoints(scope: ReferenceScope, index: number): P2[] {
+  const e = scope.topology.edges[index];
+  if (!e) throw new ReferenceProblem(t('reference.noEdge'));
+  if (e.curve === 'line' && e.geometry?.type === 'line') return [pierceEdge(scope.topology, index, scope.frame)];
+  if (!scope.curves) throw new ReferenceProblem(t('reference.pierceStraight'));
+  const at = scope.curves.crossings(index).map((c) => local(scope.frame, c.point));
+  if (at.length === 0) throw new ReferenceProblem(t('reference.noPierce'));
+  return at;
+}
+
+/** The pierce point of edge `index` nearest `near` (the point's stored place: where it was last), or the first (ADR 0173: a curve may cross several times). */
+export function piercePoint(scope: ReferenceScope, index: number, near?: P2): P2 {
+  const all = piercePoints(scope, index);
+  if (!near) return all[0]!;
+  return all.reduce((a, b) => (Math.hypot(b[0] - near[0], b[1] - near[1]) < Math.hypot(a[0] - near[0], a[1] - near[1]) ? b : a));
 }
 
 /** Where a straight edge, extended, passes through the plane (「貫穿」). */
@@ -177,7 +207,8 @@ export function followReferences(sketch: SketchFeature, scope: ReferenceScope): 
   };
   const entities: SketchEntity[] = sketch.entities.map((e) => {
     if (e.type === 'point' && e.pierce) {
-      const at = pierceEdge(scope.topology, edgeIndex(scope, e.pierce), scope.frame);
+      // a curve may cross the plane several times: the crossing nearest where the point was (ADR 0173)
+      const at = piercePoint(scope, edgeIndex(scope, e.pierce), [e.x, e.y]);
       move.set(e.id, at);
       hold(e.id, 0, e.id);
       return e;
@@ -264,7 +295,9 @@ export function convertEdges(scope: ReferenceScope, refs: Ref[], mode: 'convert'
         items.push({ ref, vertex: vertexPoint(scope.topology, index, scope.frame).at });
         continue;
       }
-      items.push(mode === 'pierce' ? { ref, pierce: pierceEdge(scope.topology, index, scope.frame) } : { ref, projected: projectEdge(scope.topology, index, scope.frame) });
+      // a pierce point at each place the edge passes through the plane (a curve may several times, ADR 0173)
+      if (mode === 'pierce') items.push(...piercePoints(scope, index).map((pierce) => ({ ref, pierce })));
+      else items.push({ ref, projected: projectEdge(scope.topology, index, scope.frame) });
     } catch (e) {
       errors.push(e instanceof Error ? e.message : String(e));
     }
@@ -516,6 +549,15 @@ export function modelSnapItems(scope: ReferenceScope, fingerprintOf: (edge: numb
           ? [i.projected.c, i.projected.start, i.projected.end]
           : i.projected.points,
   );
+  // where curved edges pass through the plane (ADR 0173): the places inside an edge, from the kernel; an end on the plane is a vertex or a corner already.
+  // Curve bodies (a helix, ADR 0168) have edges with no face at all, and count; a seam (a face against itself) does not
+  if (scope.curves) {
+    topology.edges.forEach((e, i) => {
+      const name = names.edges[i];
+      if (!name || e.curve === 'line' || e.curve === 'degenerated' || (e.faces.length > 0 && new Set(e.faces).size < 2)) return;
+      for (const c of scope.curves!.crossings(i)) if (!c.end) pierces.push({ ref: { kind: 'edge', name, fingerprint: fingerprintOf(i) }, pierce: local(frame, c.point) });
+    });
+  }
   const fresh = pierces.filter((p, k) => !corners.some((c) => Math.hypot(c[0] - p.pierce[0], c[1] - p.pierce[1]) < TOL) && pierces.findIndex((q) => Math.hypot(q.pierce[0] - p.pierce[0], q.pierce[1] - p.pierce[1]) < TOL) === k);
   // the vertices nothing above lets the cursor reach (ADR 0171): those of edges square to the plane, of tilted circles and freeform edges, an apex. Where two
   // vertices look the same on the plane, the nearer one; a vertex whose projection is already a corner, a center or a pierce point adds nothing

@@ -25,7 +25,7 @@ let ready: Promise<{ occtMs: number; gcsMs: number }> | null = null;
  * The model as the last rebuild left it, which an edited sketch follows (C1.18): its names and shapes (empty while there is no body), the frames of the
  * sketches and planes, and the reference axes and points (ADR 0172). The rebuild stops at the edited sketch, so what is here is what is before it.
  */
-let lastModel: { names: NonNullable<RebuildResult['body']>['names']; topology: NonNullable<RebuildResult['body']>['topology']; frames: RebuildResult['frames']; axes: RebuildResult['axes']; points: RebuildResult['points']; hasBody: boolean } | null = null;
+let lastModel: { names: NonNullable<RebuildResult['body']>['names']; topology: NonNullable<RebuildResult['body']>['topology']; frames: RebuildResult['frames']; axes: RebuildResult['axes']; points: RebuildResult['points']; hasBody: boolean; shape?: ShapeId } | null = null;
 
 /** Where an edited sketch looks its references up (C1.18, ADR 0172). */
 function scopeOf(model: NonNullable<typeof lastModel>, frame: PlaneFrame): ReferenceScope {
@@ -34,6 +34,8 @@ function scopeOf(model: NonNullable<typeof lastModel>, frame: PlaneFrame): Refer
     names: model.names,
     topology: model.topology,
     frame,
+    // a curved edge's crossings with the plane, from the kernel (ADR 0173): the shape is the last rebuild's, alive until the next one
+    ...(model.shape !== undefined ? { curves: { crossings: (i: number) => kernel.edgePlaneCrossings(model.shape!, i, { origin: frame.origin, normal: frame.normal }) } } : {}),
     datums: {
       axis: (name) => (name in origin ? { origin: [0, 0, 0], dir: [...origin[name as keyof typeof origin]] } : model.axes.get(name)),
       point: (name) => model.points.get(name),
@@ -237,7 +239,7 @@ const api: KernelApi = {
     const r = regen.rebuild(doc, until === undefined ? {} : { until });
     const body = r.body;
     lastResult = r;
-    lastModel = { names: body?.names ?? NO_NAMES, topology: body?.topology ?? NO_TOPOLOGY, frames: r.frames, axes: r.axes, points: r.points, hasBody: !!body };
+    lastModel = { names: body?.names ?? NO_NAMES, topology: body?.topology ?? NO_TOPOLOGY, frames: r.frames, axes: r.axes, points: r.points, hasBody: !!body, ...(body ? { shape: body.shape } : {}) };
     const shown = r.bodies.map((b) => isShown(doc, bodyKey(b.id)));
     const mesh = meshOf(r, shown, MESH_QUALITY[settingsOf(doc).meshQuality]);
     const payload: RebuildPayload = {

@@ -373,6 +373,18 @@ export interface EdgeSample {
   parameter: number;
 }
 
+/** Where an edge crosses a plane (ADR 0173): the place, its curve parameter, and whether it is an end of the edge lying on the plane. */
+export interface EdgeCrossing {
+  point: Vec3;
+  parameter: number;
+  end: boolean;
+}
+
+/** The place of an edge nearest a point (ADR 0174): with the unit tangent there (the way the curve's parameter grows) and how far the point is from it. */
+export interface EdgeNearest extends EdgeSample {
+  distance: number;
+}
+
 /** The result of sampling a 3D edge along its arc length (C6.4, ADR 0166). */
 export interface EdgeSamplingResult {
   samples: EdgeSample[];

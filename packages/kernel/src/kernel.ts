@@ -45,6 +45,8 @@ import {
   type VertexInfo,
   type SurfaceGeometry,
   type EdgeSample,
+  type EdgeCrossing,
+  type EdgeNearest,
   type EdgeSamplingResult,
   type HelixCurveSpec,
   type HelixCurveResult,
@@ -2667,6 +2669,113 @@ export class Kernel {
       geometry = { type: 'bspline', samples };
     }
     return { curve: type, length: props.Mass(), mid: this.xyz(arena.own(ad.EvalD0((t0 + t1) / 2))), dir, ...(geometry ? { geometry } : {}) };
+  }
+
+  /**
+   * Where edge `edgeIndex` of `target` crosses a plane (「貫穿」 for any curve, ADR 0173): the curve is evaluated, never cut — no boolean, so nothing is
+   * taken from the heap (AGENTS §3.5). The parameter range is split into steps of about half a millimetre (64 to 4096 of them), every step whose ends lie
+   * on opposite sides is refined by Newton's method kept inside it (bisection when a step would leave it) to 1e-12 mm, and an end lying on the plane
+   * (within 1e-9 mm) is a crossing marked `end`. A curve that only touches the plane between two samples, or crosses it twice within one step, is not
+   * found: that is the resolution, written in the ADR.
+   */
+  edgePlaneCrossings(target: ShapeId, edgeIndex: number, plane: { origin: Vec3; normal: Vec3 }): EdgeCrossing[] {
+    const oc = this.oc;
+    const arena = new Arena();
+    try {
+      const { ad, t0, t1, length } = this.edgeCurve(target, edgeIndex, arena);
+      const nl = Math.hypot(...plane.normal) || 1;
+      const n: Vec3 = [plane.normal[0] / nl, plane.normal[1] / nl, plane.normal[2] / nl];
+      const at = (u: number) => this.xyz(arena.own(ad.EvalD0(u)));
+      const f = (u: number) => dot3(sub3(at(u), plane.origin), n);
+      const steps = Math.min(4096, Math.max(64, Math.ceil(length / 0.5)));
+      const us = Array.from({ length: steps + 1 }, (_, i) => t0 + ((t1 - t0) * i) / steps);
+      const fs = us.map(f);
+      const out: EdgeCrossing[] = [];
+      const ON = 1e-9;
+      if (Math.abs(fs[0]!) <= ON) out.push({ point: at(t0), parameter: t0, end: true });
+      for (let i = 0; i < steps; i++) {
+        let [a, b] = [us[i]!, us[i + 1]!];
+        let [fa, fb] = [fs[i]!, fs[i + 1]!];
+        if (Math.abs(fa) <= ON || Math.abs(fb) <= ON || fa * fb > 0) continue;
+        let u = (a + b) / 2;
+        for (let k = 0; k < 80; k++) {
+          const d1 = ad.EvalD1(u);
+          const p = this.xyz(arena.own(d1.Point));
+          const fu = dot3(sub3(p, plane.origin), n);
+          if (Math.abs(fu) < 1e-12) break;
+          if (fa * fu < 0) [b, fb] = [u, fu];
+          else [a, fa] = [u, fu];
+          const slope = dot3(this.xyz(arena.own(d1.D1)), n);
+          const next = slope !== 0 ? u - fu / slope : NaN;
+          u = next > a && next < b ? next : (a + b) / 2;
+          if (b - a < 1e-15 * Math.max(1, Math.abs(t1 - t0))) break;
+        }
+        out.push({ point: at(u), parameter: u, end: false });
+      }
+      if (Math.abs(fs[steps]!) <= ON && Math.hypot(...sub3(at(t1), at(t0))) > 1e-9) out.push({ point: at(t1), parameter: t1, end: true });
+      return out;
+    } finally {
+      arena.dispose();
+    }
+  }
+
+  /**
+   * The place of edge `edgeIndex` of `target` nearest `p` (ADR 0174), with the unit tangent there, the way the curve's parameter grows: sampled like
+   * `edgePlaneCrossings`, then Newton's method on (C(u) − p)·C′(u) = 0 from the nearest sample, kept inside the edge.
+   */
+  edgeNearest(target: ShapeId, edgeIndex: number, p: Vec3): EdgeNearest {
+    const arena = new Arena();
+    try {
+      const { ad, t0, t1, length } = this.edgeCurve(target, edgeIndex, arena);
+      const steps = Math.min(4096, Math.max(64, Math.ceil(length / 0.5)));
+      let u = t0;
+      let best = Infinity;
+      for (let i = 0; i <= steps; i++) {
+        const v = t0 + ((t1 - t0) * i) / steps;
+        const d = Math.hypot(...sub3(this.xyz(arena.own(ad.EvalD0(v))), p));
+        if (d < best) [best, u] = [d, v];
+      }
+      for (let k = 0; k < 50; k++) {
+        const d2 = ad.EvalD2(u);
+        const c = this.xyz(arena.own(d2.Point));
+        const c1 = this.xyz(arena.own(d2.D1));
+        const c2 = this.xyz(arena.own(d2.D2));
+        const r = sub3(c, p);
+        const g = dot3(r, c1);
+        const h = dot3(c1, c1) + dot3(r, c2);
+        if (!(Math.abs(h) > 0)) break;
+        const next = Math.min(t1, Math.max(t0, u - g / h));
+        if (Math.abs(next - u) < 1e-15 * Math.max(1, Math.abs(t1 - t0))) {
+          u = next;
+          break;
+        }
+        u = next;
+      }
+      const d1 = ad.EvalD1(u);
+      const point = this.xyz(arena.own(d1.Point));
+      const tg = this.xyz(arena.own(d1.D1));
+      const l = Math.hypot(...tg);
+      if (!(l > 0)) throw new KernelError(t('kernel.edgeDegenerated'));
+      return { point, tangent: [tg[0] / l, tg[1] / l, tg[2] / l], parameter: u, distance: Math.hypot(...sub3(point, p)) };
+    } finally {
+      arena.dispose();
+    }
+  }
+
+  /** The curve of edge `edgeIndex` of `target`, its parameter range and its length; a degenerated or zero-length edge is refused. */
+  private edgeCurve(target: ShapeId, edgeIndex: number, arena: Arena) {
+    const oc = this.oc;
+    const edges = ShapeIndex.of(oc, this.get(target), T.EDGE, arena);
+    const edgeShape = edges.keys[edgeIndex];
+    if (!edgeShape) throw new KernelError(t('kernel.edgeOutOfRange', { index: edgeIndex }));
+    const edge = arena.own(oc.TopoDS.Edge(edgeShape));
+    if (oc.BRep_Tool.Degenerated(edge)) throw new KernelError(t('kernel.edgeDegenerated'));
+    const ad = arena.own(new oc.BRepAdaptor_Curve(edge));
+    const props = arena.own(new oc.GProp_GProps());
+    oc.BRepGProp.LinearProperties(edge, props, false, false);
+    const length = props.Mass();
+    if (!(length > 1e-9)) throw new KernelError(t('kernel.edgeZeroLength'));
+    return { ad, t0: ad.FirstParameter(), t1: ad.LastParameter(), length };
   }
 
   /**

@@ -1168,7 +1168,14 @@ export class Regenerator {
       // reference geometry needs no model (ADR 0172); an edge or a vertex does
       if (!body && f.entities.some((e) => (modelRefOf(e)?.kind ?? 'datum') !== 'datum')) throw new FeatureError(t('reference.noModel'));
       try {
-        followed = followReferences(f, { names: body?.names ?? NO_NAMES, topology: body?.topology ?? NO_TOPOLOGY, frame, datums: this.datumScope(set) });
+        followed = followReferences(f, {
+          names: body?.names ?? NO_NAMES,
+          topology: body?.topology ?? NO_TOPOLOGY,
+          frame,
+          datums: this.datumScope(set),
+          // a curved edge's crossings with the plane are the kernel's to find (ADR 0173)
+          ...(body ? { curves: { crossings: (i: number) => this.kernel.edgePlaneCrossings(body.shape, i, { origin: frame.origin, normal: frame.normal }) } } : {}),
+        });
       } catch (e) {
         if (e instanceof ReferenceProblem) throw new FeatureError(e.message, e.unresolved);
         throw e;

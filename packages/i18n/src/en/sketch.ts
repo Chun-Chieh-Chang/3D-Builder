@@ -59,6 +59,7 @@ export const sketch: Translation = {
   'reference.endOn': 'This edge is perpendicular to the sketch plane; projected, it is only a point',
   'reference.notParallel': 'This circular edge is not on a face parallel to the sketch plane; projected it is an ellipse, which cannot be converted yet',
   'reference.notSimple': 'This edge is a "{curve}"; only lines, circles and arcs can be converted for now',
+  'reference.noPierce': 'This edge does not pass through the sketch plane',
   'reference.pierceStraight': 'Pierce only works with straight edges',
   'reference.parallel': 'This edge is parallel to the sketch plane and does not pass through it',
   'reference.changedKind': 'The edge that entity {id} refers to changed shape (for example a line became an arc); delete it and convert again',
