@@ -1,7 +1,7 @@
 # 交接文件
 
-- **【2026-10-19 傍晚：變化半徑圓角（C5.2，[ADR 0167](docs/adr/0167-variable-radius-fillet.md)）全鏈路完成 — 已提交 `feb4c05`＋`2212720`＋`2400c26`（本地領先 origin/main，未推送，等使用者說「推」）；下方「下一步」兩節已全數做完，僅供追溯】**
-  - **收尾結果**：UI（`FilletVariable`）、雙語、help、e2e（`tests/e2e/manual-variable-fillet.js` 7 步 PASS）完成；`npm run check` 全量 3120 過 0 敗、`make:drawing` 過。**唯一未做**：反向對照（拿掉 `<FilletVariable>` 確認 e2e 轉紅）。
+- **【2026-10-19 傍晚：變化半徑圓角（C5.2，[ADR 0167](docs/adr/0167-variable-radius-fillet.md)）全鏈路完成 — 已推送 origin/main（`fd460d1..173ad35`，含 `feb4c05`＋`2212720`＋`2400c26`）；下方「下一步」兩節已全數做完，僅供追溯】**
+  - **收尾結果**：UI（`FilletVariable`）、雙語、help、e2e（`tests/e2e/manual-variable-fillet.js` 7 步 PASS）完成；`npm run check` 全量 3120 過 0 敗、`make:drawing` 過；反向對照（關掉 `<FilletVariable>`）e2e 如預期轉紅，已還原。無遺留待辦。
   - **以下為交棒當時的紀錄**：
   - **背景與目標**：藍圖 C5.2——圓角半徑沿一條「揀選的邊線」由一端走到另一端（例：R2→R6），兩個控制點之間線性內插；`t` 是沿邊位置（0＝第一端、1＝最後端，錨定規則見下），半徑是表達式（可掛參數）。只有「固定半徑」種類可用：面圓角／完整圓角的半徑由面組決定，指令會在種類切換時把控制點收走。從「選面」算出的邊沒有自己的點，一律吃固定半徑（多條邊可與有控制點的邊混用）。
   - **已完成①（已提交 `feb4c05`，本地領先 origin/main 一筆；推送前等使用者說「推」）**：零件 Schema **66** 新增 `FilletVariablePoint { edge, t, radius }` 與 `FilletFeature.variable`（選填欄位，舊檔照開）；指令 `setFilletVariable` 整套替換控制點（驗證：點只能綁本特徵揀選的邊、t∈[0,1]、同邊同位不可重複、半徑為正、每條邊的點必含 t=0 與 t=1；空清單＝刪除，回到固定半徑）；`setEdges` 把邊移出時一併放掉繫結它的點，`setFilletSets` 改變種類時清空；`refs.ts` 讓 `mapRefs`／`replaceRef` 追蹤邊線更名（更名的邊，點跟著改名走）；模型層 5 項測試。
