@@ -208,6 +208,8 @@ const migrations: Record<number, (doc: Json) => Json> = {
   65: (doc) => doc,
   // v67: helix and spiral curve feature (`helix`, C8.3, ADR 0168). A new feature kind; nothing to convert.
   66: (doc) => doc,
+  // v68: sketch relations, dimensions and a revolve may refer to the sketch's axes `@axisH` / `@axisV` (ADR 0170). Nothing to convert; an older program refuses the file rather than fail to solve it.
+  67: (doc) => doc,
 };
 
 export class FormatError extends Error {

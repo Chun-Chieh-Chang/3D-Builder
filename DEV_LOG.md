@@ -1,5 +1,49 @@
 # 3D-Builder 開發日誌 (DEV_LOG.md)
 
+## 2026-10-19：草圖內建水平軸與垂直軸（G1，[ADR 0170](docs/adr/0170-sketch-origin-axes.md)）
+
+### 1. 背景與決策
+比對 SolidWorks／FreeCAD 的草圖參照，盤點出 G1–G9 九個缺口，使用者決定第一批做 G1–G5。決策是：維持 FreeCAD 式、看得見的參照圖元；跨草圖參照只允許參照特徵樹中較前面的草圖；每項各自一份 ADR、一個 commit。本筆是 G1：每張草圖都內建通過原點的 `@axisH` 與 `@axisV`。
+
+### 2. 做法
+| 層級 | 檔案 | 改動 |
+|---|---|---|
+| 模型 | `schema.ts`、`serialize.ts`、`sketch-rules.ts`、`commands.ts` | 新增保留 id 與 `isSketchAxis`／`sketchAxisDir`；Schema 68（無資料轉換）；新增 `RefKind` `'axis'`，並列出它在每種條件中允許與拒絕的情況；條件同時參照兩條軸時回報 `rules.axisPair`；旋轉軸可以是草圖軸 |
+| 求解 | `planegcs.ts` | 只有被參照時才推入固定端點與軸線；交錯點的初值也支援軸 |
+| 互動 | `interact.ts`、`ops.ts` | `axisGeometry`／`geometryOf`：依 id 查詢的地方查得到軸，但軸不進入求解結果；`hitTest` 只在開啟 `axes` 時、而且是在草圖曲線之後才看軸（畫圖吸附不看）；提供的關係依 `AXIS_RELATIONS` 過濾；智慧尺寸對單獨一條軸或兩條軸不給尺寸；鏡射可以用軸當鏡射線 |
+| 再生 | `engine.ts` | `sketchLine()`：旋轉與螺牙的草圖軸線可以是草圖軸 |
+| 介面 | `controller.ts`、`overlay.ts`、`PropertyManager.tsx`、`store.ts` | 軸不能拖曳（從軸上拖曳會改成框選），修剪、延伸不會選到軸，鏡射會；兩條軸以虛線畫滿整個畫面；面板顯示「水平軸／垂直軸」，旋轉面板的軸清單列出兩條軸；`newRevolve` 在沒有中心線時，取整張草圖所在一側的那條軸 |
+| 雙語／說明 | `ui.ts`、`lowlevel.ts`、`storemsg.ts`、`help.ts` | 軸的名稱、`rules.axisPair` 訊息、旋轉的錯誤訊息；草圖與旋轉的說明各加一段 |
+
+### 3. 紅隊四問
+1. **輸入破壞**：`@axis*` 不能當圖元或條件的 id；`@axisZ`、`@origin` 當旋轉軸會被拒絕；不合理的組合（水平、相等、中點、單獨一條軸的距離、水平／垂直距離、兩軸並用）都會明確報錯，不會被默默改寫。
+2. **幾何相交**：輪廓被軸穿過時，旋轉照原有規則報錯，已用 `@axisV` 測過。
+3. **依賴鏈**：schema → commands（`revolveAxis`）→ sketch-rules → planegcs → interact／ops → engine → PropertyManager 全部接上。軸是草圖內的 id，不是 `Ref`，所以 `refs.ts`／`mapRefs` 與 DAG 不受影響；`ops.ts:509` 的 id 重新對應以 `?? r` 保留未知 id，軸的 id 不會被改掉；刪除時 `deleteSelection` 只收存在的圖元，軸刪不掉。
+4. **零 Mock**：體積用 Pappus 手算；位置用解析值；e2e 走真實 UI。
+
+### 4. 測試與 RCA
+- `packages/sketch/test/axes.test.ts` 16 項，其中有 200 組 Fuzz；`tests/phase1/sketch-axes.test.ts` 6 項（OCCT）；`tests/e2e/manual-sketch-axes.js` 4/4 PASS。
+- **反向對照**：讓 `toPrimitives` 不推入軸 → 求解的 8 項全紅（狀態 `failed`），還原後全綠。
+- **RCA（測試第一版紅，3 件，都是測試寫錯，不是程式錯）**：
+  1. 「對稱於垂直軸」加上矩形底邊原本的水平關係 → 過多定義。對稱本身就已經讓兩點連線水平，所以求解器的判斷是對的，已拿掉多餘的水平關係。
+  2. e2e 預期第一點不動，但它沒有固定：對稱以最小移動量求解，兩點都會動。已改為斷言兩點互為鏡像。
+  3. `IdAllocator` 的參數順序寫錯。
+- **RCA（全套 7 項紅，`sketcher.test.ts`；是設計錯，不是測試錯）**：
+  - 現象：第一版的 `hitTest` 預設就會看軸，畫圖時經由 `snap()` 也會吸到軸。軸是無限長的，因此搶走了置中零件落在軸上的模型邊吸附，以及沿 y = 0 畫線時的水平推斷；選取模式也因為先命中軸，選不到軸上的模型邊。
+  - **CAPA**：
+    1. `hitTest` 新增 `axes` 參數，預設 false。
+    2. 選取模式依序看草圖圖元 → 模型邊 → 軸（`axisAt`）。
+    3. 只有智慧尺寸和鏡射開啟 `axes`。
+    4. 新增測試「畫圖吸附看不到軸」。
+  - 結果：`sketcher.test.ts` 加上 axes 測試共 83/83 通過，e2e 4/4 通過。
+- **RCA（verify:ui 3 支紅：c11、c13、sketch-dimension-label）**：
+  - 現象：智慧尺寸先點一條直線，下一下要放尺寸，而放的位置剛好在 x = 0 上，被當成第二次點選（線＋軸＝角度），Modify 框始終沒有開。
+  - **CAPA**：新增 `axisPickable`，只有第一次點選、或第一個點選的圖元單獨無法標尺寸時，才選得到軸。
+  - 新增控制器測試：線的尺寸放在軸上仍然是長度；點→軸是距離 5。**反向對照**：讓軸永遠選得到 → 這項測試轉紅。
+  - 重跑後 4/4 通過；與草圖相關的 26 支腳本：第一輪 23 支通過，修正後原本紅的 3 支也通過。
+- **工具陷阱**：Git Bash 的 heredoc 會把 `\\` 吞成 `\`，Python 因此在 TS 字串裡插入了真的換行（`help.ts`）。已改用 `chr(92)` 修正並重新檢查 diff。之後在 heredoc 裡寫反斜線一律用 `chr(92)`。
+- 全閘門 `npm run check`：**3184 通過、0 失敗**（3160 ＋ 本次 24；25 項跳過為既有）。與草圖相關的 `verify:ui` 26 支全部通過（第一輪 23 支通過，紅的 3 支修正後也通過）。未跑 `make:drawing`。
+
 ## 2026-10-20：沿螺旋曲線掃出——彈簧（[ADR 0169](docs/adr/0169-sweep-along-helix.md)）
 
 ### 1. 背景與決策

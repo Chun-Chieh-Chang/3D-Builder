@@ -11,7 +11,7 @@ export const storemsg: Translation = {
   'sketch.planeOnly': 'A sketch can only be placed on a plane',
   'sketch.newSketch': 'New sketch',
   'sketch.pickInTree': 'Select a sketch in the tree first',
-  'feature.axisNeeded': 'A revolve needs a centerline in the sketch as its axis',
+  'feature.axisNeeded': 'A revolve needs an axis: a centerline in the sketch, or a sketch drawn wholly on one side of its horizontal or vertical axis',
   'feature.importName': 'Import',
   'sketch.planeNotFound': 'The plane of the sketch was not found (fix the features before the sketch first)',
   'rebuild.failed': 'The rebuild failed: {why}',

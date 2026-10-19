@@ -4,6 +4,7 @@ import {
   IdAllocator,
   idsInUse,
   isDimension,
+  isSketchAxis,
   SKETCH_ORIGIN,
   type CircleRadius,
   type Command,
@@ -19,6 +20,7 @@ import {
   alignments,
   circleThrough,
   dist,
+  geometryOf,
   hitTest,
   inBox,
   inferDirection,
@@ -159,6 +161,8 @@ export interface ControllerView {
 }
 
 const PICK_PX = 7;
+/** The picking tools that may take one of the sketch's axes (ADR 0170): a dimension to it, a mirror about it; never trim, extend, fillet or offset. */
+const AXIS_TOOLS: ReadonlySet<ToolId> = new Set(['dimension', 'mirror']);
 /** What the cursor says it found on the model, by the place of the edge (D5.3b; a pierce point, C1 2026-10-14). */
 const modelInference = (part: Extract<Snap, { kind: 'model' }>['part']) =>
   part === 'curve' ? 'modelEdge' : part === 'mid' ? 'modelMid' : part === 'center' ? 'modelCenter' : part === 'pierce' ? 'modelPierce' : 'modelPoint';
@@ -471,8 +475,10 @@ export class SketchController {
 
   pointerDown(e: PointerInput): void {
     this.cursor = e.p;
-    const hit = hitTest(this.geometry(), e.p, PICK_PX * e.px);
+    let hit = hitTest(this.geometry(), e.p, PICK_PX * e.px);
     const modelSnap = !hit && this.tool === 'select' && this.host.modelItems ? snapModel(this.host.modelItems(), e.p, PICK_PX * e.px) : null;
+    // the sketch's axes last of all (ADR 0170): what was drawn and the model's edges come first
+    if (!hit && !modelSnap && this.tool === 'select') hit = this.axisAt(e);
     this.press = { p: e.p, hit, modelSnap, moved: false };
     if (this.tool !== 'select') this.updateSnap(e);
     this.changed();
@@ -523,6 +529,11 @@ export class SketchController {
         const snap = snapModel(this.host.modelItems(), e.p, PICK_PX * e.px);
         this.snapTarget = snap;
         this.inference = snap ? modelInference(snap.part) : null;
+        if (!snap) this.hover = this.axisAt(e);
+      } else if (!this.hover) {
+        this.hover = this.axisAt(e);
+        this.snapTarget = null;
+        this.inference = null;
       } else {
         this.snapTarget = null;
         this.inference = null;
@@ -531,7 +542,8 @@ export class SketchController {
     }
     if (!press.moved && dist(press.p, e.p) > DRAG_PX * e.px) {
       press.moved = true;
-      if (press.hit && press.hit.id !== SKETCH_ORIGIN) this.startDrag(press.hit, press.p);
+      // the origin and the sketch's axes (ADR 0170) never move: dragging from them draws a selection box
+      if (press.hit && press.hit.id !== SKETCH_ORIGIN && !isSketchAxis(press.hit.id)) this.startDrag(press.hit, press.p);
       else this.box = { a: press.p, b: e.p };
     }
     if (this.drag) this.dragTo(e.p);
@@ -647,7 +659,7 @@ export class SketchController {
   private updateSnap(e: PointerInput): void {
     const geometry = this.geometry();
     if (PICK_TOOLS.has(this.tool)) {
-      this.hover = hitTest(geometry, e.p, PICK_PX * e.px);
+      this.hover = hitTest(geometry, e.p, PICK_PX * e.px, undefined, AXIS_TOOLS.has(this.tool) && (this.tool !== 'dimension' || this.axisPickable(geometry, e.p)));
       this.snapTarget = null;
       this.inference = null;
       return;
@@ -1043,10 +1055,15 @@ export class SketchController {
     }
   }
 
-  /** The line a click picks, or null. */
-  private pickedCurve(e: PointerInput): { id: Id; g: SolvedGeometry } | null {
-    const hit = hitTest(this.geometry(), e.p, PICK_PX * e.px);
-    const g = hit && this.geometry().get(hit.id);
+  /** One of the sketch's axes under the cursor (ADR 0170), and nothing else: the last thing the select tool looks for. */
+  private axisAt(e: PointerInput): Hit | null {
+    return hitTest(new Map(), e.p, PICK_PX * e.px, new Set([SKETCH_ORIGIN]), true);
+  }
+
+  /** The line a click picks, or null; one of the sketch's axes only when `axes` (ADR 0170: a mirror line, never something to trim). */
+  private pickedCurve(e: PointerInput, axes = false): { id: Id; g: SolvedGeometry } | null {
+    const hit = hitTest(this.geometry(), e.p, PICK_PX * e.px, undefined, axes);
+    const g = hit && geometryOf(this.geometry(), hit.id);
     return hit && g && g.type !== 'point' ? { id: hit.id, g } : null;
   }
 
@@ -1092,7 +1109,7 @@ export class SketchController {
         this.run(offset(sketch, geometry, ids, this.picks, this.options.offsetDistance, e.p), () => this.setTool('select'));
         return;
       case 'mirror': {
-        const hit = this.pickedCurve(e);
+        const hit = this.pickedCurve(e, true);
         if (hit) this.run(mirror(sketch, geometry, ids, this.picks, hit.id), () => this.setTool('select'));
         return;
       }
@@ -1232,9 +1249,18 @@ export class SketchController {
 
   // ------------------------------------------------------------------ smart dimension (C1.28)
 
+  /**
+   * Whether a click of the dimension tool may pick one of the sketch's axes (ADR 0170): as the first pick, or after one that cannot be dimensioned by
+   * itself (a point). After a line, circle or arc the next click is where the dimension goes, and an infinite axis must not take it: parts are drawn
+   * around the origin, so that place is often on x = 0 or y = 0. For the angle of a line to an axis, the axis is picked first.
+   */
+  private axisPickable(geometry: ReturnType<SketchController['geometry']>, p: P2): boolean {
+    return this.picks.length === 0 || smartDimension(geometry, [this.picks[0]!], p) === null;
+  }
+
   private dimensionClick(e: PointerInput): void {
     const geometry = this.geometry();
-    const hit = hitTest(geometry, e.p, PICK_PX * e.px);
+    const hit = hitTest(geometry, e.p, PICK_PX * e.px, undefined, this.axisPickable(geometry, e.p));
     if (this.picks.length === 0) {
       if (hit) this.picks = [hit.id];
       return;

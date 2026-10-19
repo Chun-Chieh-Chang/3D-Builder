@@ -6,7 +6,7 @@ import type { Id } from './ids';
  * DOF status, mass properties and error lists are derived data and never stored.
  */
 
-export const SCHEMA_VERSION = 67;
+export const SCHEMA_VERSION = 68;
 
 /** Value expression (B5.2, B5.3): "20", "25.4mm", "30deg", "wall_t*2", "D1@草圖1/2", "property('厚度')"; see `expr/`. */
 export type Expr = string;
@@ -37,6 +37,20 @@ export type DatumPlaneName = 'plane:front' | 'plane:top' | 'plane:right';
 
 /** Reserved id of the projected part origin inside every sketch (fixed at 0,0). */
 export const SKETCH_ORIGIN: Id = '@origin';
+
+/**
+ * Reserved ids of the two axes of every sketch (FreeCAD's H_Axis and V_Axis, ADR 0170, v68): infinite lines through the origin along the sketch's x and y.
+ * Like the origin they are never stored among the entities; relations and dimensions, a revolve and a mirror may refer to them.
+ */
+export const SKETCH_AXIS_H: Id = '@axisH';
+export const SKETCH_AXIS_V: Id = '@axisV';
+
+export const isSketchAxis = (id: Id): boolean => id === SKETCH_AXIS_H || id === SKETCH_AXIS_V;
+
+/** The direction of a sketch axis (a unit vector in sketch coordinates), or undefined for any other id. */
+export function sketchAxisDir(id: Id): [number, number] | undefined {
+  return id === SKETCH_AXIS_H ? [1, 0] : id === SKETCH_AXIS_V ? [0, 1] : undefined;
+}
 
 /**
  * A `ref` on a line, circle or arc makes it the projection of a model edge onto the sketch plane (C1.18, v13): where it lies comes from the

@@ -75,6 +75,7 @@ import {
   type HelixFeature,
   lookupThread,
   generateStandardThreadProfile,
+  sketchAxisDir,
 } from '@3db/model';
 import { bentPath, BendProblem, findOutlines, findProfiles, reversePath, ribbonOf, selectContours, ThinProblem, thinRegions, type ProfileResult, type SketchSolver, type SketchStatus, type SolvedSketch } from '@3db/sketch';
 import { KernelError, SURFACE_TOLERANCE, type KnurlSpec, type Region, type Segment, type SweepSpec, type ThreadSpec, type FaceOrigin, type ImportDiagnostics, type Kernel, type OpResult, type ShapeId, type Topology } from '@3db/kernel';
@@ -497,6 +498,14 @@ const FILL_TANGENT_TOLERANCE = 0.02;
 /** The message for references that are not found among edges and faces: it says which of the two. */
 const lostRefs = (n: number, unresolved: Unresolved[]): string =>
   unresolved.every((u) => u.ref.kind === 'face') ? t('edit.facesLost', { n }) : unresolved.every((u) => u.ref.kind === 'edge') ? t('edit.edgesLost', { n }) : t('edit.refsLost', { n });
+
+/** A line of a solved sketch, or one of the sketch's axes (ADR 0170): the line a revolve or a thread turns about. */
+function sketchLine(geometry: SolvedSketch['geometry'], id: Id): { a: [number, number]; b: [number, number] } | undefined {
+  const dir = sketchAxisDir(id);
+  if (dir) return { a: [0, 0], b: dir };
+  const g = geometry.get(id);
+  return g?.type === 'line' ? g : undefined;
+}
 
 export class Regenerator {
   private owned: ShapeId[] = [];
@@ -1297,8 +1306,8 @@ export class Regenerator {
   private revolve(f: RevolveFeature, sketches: RebuildResult['sketches'], set: Bodies): BodyState[] {
     const s = this.profileOf(sketches, f.sketch, f.contours, f.thin);
     if (f.op === 'cut' && !set.view) throw new FeatureError(t('feature.cutNeedsBody'));
-    const axis = s.solved.geometry.get(f.axis);
-    if (axis?.type !== 'line') throw new FeatureError(t('regen.axisGone'));
+    const axis = sketchLine(s.solved.geometry, f.axis);
+    if (!axis) throw new FeatureError(t('regen.axisGone'));
     const [a, b] = [axis.a, axis.b];
     const side = (p: [number, number]) => (b[0] - a[0]) * (p[1] - a[1]) - (b[1] - a[1]) * (p[0] - a[0]);
     const pts = s.profiles.regions.flatMap((r) =>
@@ -1479,8 +1488,8 @@ export class Regenerator {
         } else if (f.sketch) {
           const s = sketches.get(f.sketch);
           if (!s) throw new FeatureError(t('feature.threadSketchGone'));
-          const line = s.solved.geometry.get(f.axis);
-          if (line?.type !== 'line') throw new FeatureError(t('regen.axisGone'));
+          const line = sketchLine(s.solved.geometry, f.axis);
+          if (!line) throw new FeatureError(t('regen.axisGone'));
           const at2 = (p: [number, number]): Vec3 => add(add(s.frame.origin, s.frame.xDir, p[0]), s.frame.yDir, p[1]);
           axis = { origin: at2(line.a), dir: sub(at2(line.b), at2(line.a)) };
         } else {

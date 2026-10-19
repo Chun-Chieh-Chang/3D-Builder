@@ -1,6 +1,6 @@
 import { t } from '@3db/i18n';
-import { constraintRefs, isDimension, isPlain, SKETCH_ORIGIN, type DimensionConstraint, type Id, type PlaneFrame, type SketchConstraint, type SketchFeature } from '@3db/model';
-import { add, arcMidpoint, dimensionText, layoutDimension, measuredText, mid, polar, sample, type Geometry } from '@3db/sketch/interact';
+import { constraintRefs, isDimension, isPlain, SKETCH_AXIS_H, SKETCH_AXIS_V, SKETCH_ORIGIN, type DimensionConstraint, type Id, type PlaneFrame, type SketchConstraint, type SketchFeature } from '@3db/model';
+import { add, arcMidpoint, dimensionText, geometryOf, layoutDimension, measuredText, mid, polar, sample, type Geometry } from '@3db/sketch/interact';
 import { visibleGridSpacing } from '@3db/sketch/snaps';
 import { textContours } from '@3db/sketch/font';
 import type { EntityStatus, P2, SolvedGeometry } from '@3db/sketch';
@@ -104,7 +104,7 @@ function statusColor(s: EntityStatus | undefined): number {
 /** Where a relation symbol is shown: near the first entity it refers to. */
 function anchorOf(geometry: Geometry, id: Id): P2 | null {
   if (id === SKETCH_ORIGIN) return [0, 0];
-  const g = geometry.get(id);
+  const g = geometryOf(geometry, id);
   if (!g) return null;
   switch (g.type) {
     case 'point':
@@ -168,6 +168,13 @@ export function buildOverlay(frame: PlaneFrame, sketch: SketchFeature, solve: Sk
   if (view.grid !== null && options.visible) curves.push(...gridCurves(options.visible, view.grid, px));
   // origin (C3.1): short red axes
   curves.push({ points: [[0, 0], [14 * px, 0]], color: SKETCH_COLORS.origin }, { points: [[0, 0], [0, 14 * px]], color: SKETCH_COLORS.origin });
+  // the sketch's axes (ADR 0170, FreeCAD's H_Axis and V_Axis): across what is on the screen, dashed, lit like anything else under the cursor or selected
+  const span = options.visible ?? { min: [-2000 * px, -2000 * px] as P2, max: [2000 * px, 2000 * px] as P2 };
+  const axisColor = (id: Id) => (selected.has(id) ? SKETCH_COLORS.selected : highlighted.has(id) ? SKETCH_COLORS.hover : SKETCH_COLORS.origin);
+  curves.push(
+    { points: [[span.min[0], 0], [span.max[0], 0]], color: axisColor(SKETCH_AXIS_H), dashed: true },
+    { points: [[0, span.min[1]], [0, span.max[1]]], color: axisColor(SKETCH_AXIS_V), dashed: true },
+  );
   points.push({ p: [0, 0], color: highlighted.has(SKETCH_ORIGIN) ? SKETCH_COLORS.hover : SKETCH_COLORS.origin, size: 6 });
 
   for (const [id, g] of geometry) {

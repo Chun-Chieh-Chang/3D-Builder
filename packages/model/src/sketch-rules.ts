@@ -1,6 +1,6 @@
 import { t } from '@3db/i18n';
 import type { Id } from './ids';
-import { SKETCH_ORIGIN, type PartDoc, type SketchConstraint, type SketchEntity, type SketchFeature } from './schema';
+import { isSketchAxis, SKETCH_ORIGIN, type PartDoc, type SketchConstraint, type SketchEntity, type SketchFeature } from './schema';
 
 /**
  * Structural rules of a sketch (B1.2): which entities a relation or dimension may reference, and
@@ -9,15 +9,19 @@ import { SKETCH_ORIGIN, type PartDoc, type SketchConstraint, type SketchEntity, 
  */
 
 export type EntityKind = SketchEntity['type'];
-type RefKind = EntityKind | 'origin';
+/** `axis`: one of the sketch's two axes (ADR 0170), an infinite line through the origin that never moves. */
+type RefKind = EntityKind | 'origin' | 'axis';
 
 const POINT: RefKind[] = ['point', 'origin'];
 const LINE: RefKind[] = ['line'];
+/** A line, or a sketch axis where a fixed infinite line means something. */
+const LINE_OR_AXIS: RefKind[] = ['line', 'axis'];
 const RADIAL: RefKind[] = ['circle', 'arc'];
 const CURVE: RefKind[] = ['line', 'circle', 'arc'];
+const CURVE_OR_AXIS: RefKind[] = ['line', 'circle', 'arc', 'axis'];
 /** Points, or circles/arcs measured from their centers (as SolidWorks does). */
 const ANCHOR: RefKind[] = ['point', 'origin', 'circle', 'arc'];
-const ANY: RefKind[] = ['point', 'origin', 'line', 'circle', 'arc'];
+const ANY: RefKind[] = ['point', 'origin', 'line', 'circle', 'arc', 'axis'];
 
 const REF_FIELDS = ['a', 'b', 'point', 'line', 'curve', 'axis', 'circle'] as const;
 type RefField = (typeof REF_FIELDS)[number];
@@ -29,17 +33,17 @@ const RULES: { [T in SketchConstraint['type']]: Partial<Record<RefField, RefKind
   coincident: { a: POINT, b: POINT },
   horizontal: { a: ['line', 'point', 'origin'], b: POINT },
   vertical: { a: ['line', 'point', 'origin'], b: POINT },
-  collinear: { a: LINE, b: LINE },
-  parallel: { a: LINE, b: LINE },
-  perpendicular: { a: LINE, b: LINE },
-  tangent: { a: CURVE, b: CURVE },
+  collinear: { a: LINE_OR_AXIS, b: LINE_OR_AXIS },
+  parallel: { a: LINE_OR_AXIS, b: LINE_OR_AXIS },
+  perpendicular: { a: LINE_OR_AXIS, b: LINE_OR_AXIS },
+  tangent: { a: CURVE_OR_AXIS, b: CURVE_OR_AXIS },
   concentric: { a: RADIAL, b: RADIAL },
   coradial: { a: RADIAL, b: RADIAL },
-  intersection: { point: POINT, a: CURVE, b: CURVE },
+  intersection: { point: POINT, a: CURVE_OR_AXIS, b: CURVE_OR_AXIS },
   equal: { a: CURVE, b: CURVE },
   midpoint: { point: POINT, line: ['line', 'arc'] },
-  pointOnCurve: { point: POINT, curve: CURVE },
-  symmetric: { a: POINT, b: POINT, axis: LINE },
+  pointOnCurve: { point: POINT, curve: CURVE_OR_AXIS },
+  symmetric: { a: POINT, b: POINT, axis: LINE_OR_AXIS },
   fix: { point: ['point'] },
   distance: { a: ANY, b: ANY },
   distanceX: { a: ANCHOR, b: ANCHOR },
@@ -47,7 +51,7 @@ const RULES: { [T in SketchConstraint['type']]: Partial<Record<RefField, RefKind
   radius: { circle: RADIAL },
   diameter: { circle: RADIAL },
   arcLength: { circle: ['arc'] },
-  angle: { a: LINE, b: LINE },
+  angle: { a: LINE_OR_AXIS, b: LINE_OR_AXIS },
 };
 
 /** Ids a relation or dimension refers to. */
@@ -105,10 +109,10 @@ const finite = (...xs: number[]) => xs.every(Number.isFinite);
 export function sketchError(sketch: Pick<SketchFeature, 'entities' | 'constraints'>): string | null {
   const kinds = new Map<Id, EntityKind>();
   for (const e of sketch.entities) {
-    if (e.id === SKETCH_ORIGIN || kinds.has(e.id)) return t('rules.dupEntity', { id: e.id });
+    if (e.id === SKETCH_ORIGIN || isSketchAxis(e.id) || kinds.has(e.id)) return t('rules.dupEntity', { id: e.id });
     kinds.set(e.id, e.type);
   }
-  const kindOf = (id: Id): RefKind | undefined => (id === SKETCH_ORIGIN ? 'origin' : kinds.get(id));
+  const kindOf = (id: Id): RefKind | undefined => (id === SKETCH_ORIGIN ? 'origin' : isSketchAxis(id) ? 'axis' : kinds.get(id));
   const byId = new Map(sketch.entities.map((e) => [e.id, e]));
 
   for (const e of sketch.entities) {
@@ -133,7 +137,7 @@ export function sketchError(sketch: Pick<SketchFeature, 'entities' | 'constraint
 
   const seen = new Set<Id>(kinds.keys());
   for (const c of sketch.constraints) {
-    if (c.id === SKETCH_ORIGIN || seen.has(c.id)) return t('rules.dupId', { id: c.id });
+    if (c.id === SKETCH_ORIGIN || isSketchAxis(c.id) || seen.has(c.id)) return t('rules.dupId', { id: c.id });
     seen.add(c.id);
     const rule = RULES[c.type];
     if (!rule) return t('rules.unsupported', { type: (c as { type: string }).type });
@@ -151,7 +155,10 @@ export function sketchError(sketch: Pick<SketchFeature, 'entities' | 'constraint
     const refs = constraintRefs(c);
     if (new Set(refs).size !== refs.length) return t('rules.sameTwice', { id: c.id });
     const ks = refs.map(kindOf);
-    if (c.type === 'tangent' && ks[0] === 'line' && ks[1] === 'line') return t('rules.tangentNeedsCurve');
+    // the two axes are always square to each other through the origin: any relation between them is redundant or conflicting
+    if (ks.filter((k) => k === 'axis').length > 1) return t('rules.axisPair', { id: c.id });
+    const straight = (k: RefKind | undefined) => k === 'line' || k === 'axis';
+    if (c.type === 'tangent' && straight(ks[0]) && straight(ks[1])) return t('rules.tangentNeedsCurve');
     if (c.type === 'equal' && (ks[0] === 'line') !== (ks[1] === 'line')) return t('rules.equalKinds');
     if (c.type === 'distance' && c.b === undefined && ks[0] !== 'line') return t('rules.distanceLine');
     // the middle of an arc cannot be one of its own points (an end, or its center): no arc would satisfy it. Only arcs (schema 56): a line's own end was

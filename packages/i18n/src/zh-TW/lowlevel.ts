@@ -39,6 +39,7 @@ export const lowlevel = {
   'rules.tangentNeedsCurve': '相切需要至少一個圓或圓弧',
   'rules.equalKinds': '相等只適用於兩條直線或兩個圓/圓弧',
   'rules.distanceLine': '單一圖元的距離只適用於直線',
+  'rules.axisPair': '限制條件 {id} 同時參照草圖的兩條軸：兩軸永遠在原點互相垂直，不能再加關係',
   'rules.horizontalVertical': '水平/垂直適用於一條直線，或兩個點',
   'map.notPoint': '「{id}」不是點',
   'map.notLine': '「{id}」不是直線',

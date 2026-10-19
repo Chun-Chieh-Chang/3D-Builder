@@ -72,6 +72,8 @@ export const ui = {
   'planeMode.threePoint': '三點',
 
   'datum.origin': '原點',
+  'datum.sketchAxisH': '水平軸',
+  'datum.sketchAxisV': '垂直軸',
   'datum.front': '前基準面',
   'datum.top': '上基準面',
   'datum.right': '右基準面',

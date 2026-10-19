@@ -58,6 +58,8 @@ import {
   baseName,
   createEmptyDrawing,
   mirrorKey,
+  SKETCH_AXIS_H,
+  SKETCH_AXIS_V,
 } from '@3db/model';
 import { readAnyDocumentFile, ASSEMBLY_FILE_EXTENSION, assemblyName, derivedAssemblyFiles, PART_FILE_EXTENSION, partFileName, partName, readDocumentFile, sha256Hex, imageFileName, stepAssemblyFiles, stepFileName, stlFileName, writePartFile } from '@3db/io';
 import { gatherSources } from './sources';
@@ -1863,16 +1865,22 @@ class AppStore {
     );
   }
 
-  /** 「旋轉填料/基材」 or 「旋轉除料」 (C4.3) about the sketch's centerline (or its only line). */
+  /**
+   * 「旋轉填料/基材」 or 「旋轉除料」 (C4.3) about the sketch's centerline (or its only line); with neither, about the axis of the sketch (ADR 0170) the whole
+   * sketch is on one side of — the vertical first, as a turned part is usually drawn beside it.
+   */
   newRevolve(op: 'boss' | 'cut'): void {
     const sketch = this.selectedSketch();
     if (!sketch) return;
     const lines = sketch.entities.filter((e) => e.type === 'line');
-    const axis = lines.find((e) => e.construction) ?? (lines.length === 1 ? lines[0] : undefined);
+    const points = sketch.entities.filter((e) => e.type === 'point');
+    const oneSide = (c: 'x' | 'y') => points.length > 0 && (points.every((p) => p[c] >= -1e-9) || points.every((p) => p[c] <= 1e-9));
+    const sideAxis = oneSide('x') ? SKETCH_AXIS_V : oneSide('y') ? SKETCH_AXIS_H : undefined;
+    const axis = (lines.find((e) => e.construction) ?? (lines.length === 1 ? lines[0] : undefined))?.id ?? sideAxis;
     if (!axis) return this.notify(t('feature.axisNeeded'), 'error');
     const base = op === 'boss' ? t('feature.revolve') : t('feature.cut', { name: t('feature.revolve') });
     const id = this.allocator().take('revolve');
-    this.openNew({ id, type: 'revolve', name: nextName(this.history.doc, base), suppressed: false, sketch: sketch.id, axis: axis.id, op, dir1: { type: 'blind', angle: '360' } }, base);
+    this.openNew({ id, type: 'revolve', name: nextName(this.history.doc, base), suppressed: false, sketch: sketch.id, axis, op, dir1: { type: 'blind', angle: '360' } }, base);
   }
 
   /** 「圓角」 (C5.1): picks edges on the model in the PropertyManager session. */

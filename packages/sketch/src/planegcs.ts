@@ -6,6 +6,8 @@ import {
   entityPoints,
   evalAngle,
   evalLength,
+  isSketchAxis,
+  sketchAxisDir,
   SKETCH_ORIGIN,
   type Id,
   type SketchEntity,
@@ -45,6 +47,8 @@ type CurveShape = Extract<SolvedGeometry, { type: 'line' | 'circle' | 'arc' }>;
 function intersectionSeeds(sketch: SketchFeature, pointXY: (id: Id) => [number, number], radiusAt: (id: Id) => number): Map<Id, [number, number]> {
   const byId = new Map<Id, SketchEntity>(sketch.entities.map((e) => [e.id, e]));
   const curve = (id: Id): CurveShape | undefined => {
+    const axis = sketchAxisDir(id);
+    if (axis) return { type: 'line', a: [0, 0], b: axis, p1: SKETCH_ORIGIN, p2: `${id}.end`, construction: true };
     const e = byId.get(id);
     if (e?.type === 'line') return { type: 'line', a: pointXY(e.p1), b: pointXY(e.p2), p1: e.p1, p2: e.p2, construction: false };
     if (e?.type === 'circle') return { type: 'circle', c: pointXY(e.center), r: radiusAt(e.id), center: e.center, construction: false };
@@ -75,6 +79,9 @@ function intersectionSeeds(sketch: SketchFeature, pointXY: (id: Id) => [number, 
  */
 function toPrimitives(sketch: SketchFeature, start: Start, pinned: ReadonlySet<Id> = new Set()): Prim[] {
   const byId = new Map<Id, SketchEntity>(sketch.entities.map((e) => [e.id, e]));
+  // the sketch's axes (ADR 0170), only when a relation refers to one: a sketch without them gives the solver exactly what it did before (B3.1)
+  const axes = [...new Set(sketch.constraints.flatMap(constraintRefs).filter(isSketchAxis))];
+  for (const axis of axes) byId.set(axis, { id: axis, type: 'line', p1: SKETCH_ORIGIN, p2: `${axis}.end`, construction: true });
   const kind = (id: Id) => (id === SKETCH_ORIGIN ? 'point' : byId.get(id)?.type);
   const point = (id: Id) => {
     if (kind(id) !== 'point') throw new MappingError(t('map.notPoint', { id }));
@@ -116,6 +123,10 @@ function toPrimitives(sketch: SketchFeature, start: Start, pinned: ReadonlySet<I
   const seeds = intersectionSeeds(sketch, pointXY, radiusAt);
 
   const prims: Prim[] = [{ id: SKETCH_ORIGIN, type: 'point', x: 0, y: 0, fixed: true }];
+  for (const axis of axes) {
+    const [x, y] = sketchAxisDir(axis)!;
+    prims.push({ id: `${axis}.end`, type: 'point', x, y, fixed: true }, { id: axis, type: 'line', p1_id: SKETCH_ORIGIN, p2_id: `${axis}.end` });
+  }
   // Points first: PlaneGCS needs what a curve refers to defined before it, and an edit can make a line point at a later point.
   for (const e of sketch.entities) {
     if (e.type !== 'point') continue;

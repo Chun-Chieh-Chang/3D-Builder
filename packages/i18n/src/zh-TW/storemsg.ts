@@ -9,7 +9,7 @@ export const storemsg = {
   'sketch.planeOnly': '草圖只能放在平面上',
   'sketch.newSketch': '新草圖',
   'sketch.pickInTree': '請先在設計樹中選擇一個草圖',
-  'feature.axisNeeded': '旋轉需要草圖中的一條中心線作為旋轉軸',
+  'feature.axisNeeded': '旋轉需要旋轉軸：草圖中的一條中心線，或整張草圖都在水平軸或垂直軸的同一側',
   'feature.importName': '輸入',
   'sketch.planeNotFound': '找不到草圖所在的平面（先修正草圖前面的特徵）',
   'rebuild.failed': '重新計算失敗：{why}',

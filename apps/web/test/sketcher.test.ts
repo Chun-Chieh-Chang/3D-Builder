@@ -121,6 +121,26 @@ describe('sketch tools', () => {
     expect([...h.last!.entityStatus!.values()].every((s) => s === 'fully')).toBe(true);
   });
 
+  it('a dimension of a line placed on an axis of the sketch is placed there, not turned into an angle to the axis (ADR 0170)', async () => {
+    const h = new Host();
+    const c = new SketchController(h);
+    c.setTool('rect');
+    click(c, 5, 5);
+    click(c, 25, 15);
+    c.setTool('dimension');
+    click(c, 15, 5); // the bottom line
+    click(c, 15, 0); // placed on the horizontal axis
+    await flush();
+    expect(h.sketch().constraints.at(-1)).toMatchObject({ type: 'distance', value: '20' });
+    expect(h.sketch().constraints.at(-1)).not.toHaveProperty('b');
+    // a point first, then the axis: the distance from the point to the axis
+    click(c, 5, 15); // the top left corner
+    click(c, 0, 30); // the vertical axis
+    click(c, 2, 20);
+    await flush();
+    expect(h.sketch().constraints.at(-1)).toMatchObject({ type: 'distance', b: '@axisV', value: '5' });
+  });
+
   it('stores a moved dimension label without changing its driving value', async () => {
     const h = new Host();
     const c = new SketchController(h);

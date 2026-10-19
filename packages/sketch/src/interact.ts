@@ -3,7 +3,7 @@
  * inference, smart dimensions, applicable relations and dimension layout. Pure TypeScript with no
  * solver, so the UI thread can use it; everything works on solved (derived) geometry.
  */
-import { SKETCH_ORIGIN, constraintRefs, type DimensionConstraint, type Id, type SketchConstraint, type SketchFeature } from '@3db/model';
+import { SKETCH_AXIS_H, SKETCH_AXIS_V, SKETCH_ORIGIN, constraintRefs, isSketchAxis, sketchAxisDir, type DimensionConstraint, type Id, type SketchConstraint, type SketchFeature } from '@3db/model';
 import { textContours } from './font';
 import type { ModelEdge, ModelItem } from './ops';
 import type { P2, SolvedGeometry } from './types';
@@ -41,6 +41,20 @@ export function closestOnSegment(p: P2, a: P2, b: P2): P2 {
   const l2 = dot(d, d);
   const t = l2 === 0 ? 0 : Math.max(0, Math.min(1, dot(sub(p, a), d) / l2));
   return add(a, scale(d, t));
+}
+
+/**
+ * One of the sketch's two axes (ADR 0170) as a solved line: from the origin one unit along it. It is not in the solved geometry (nothing iterating that
+ * should draw it, box-select it or make a profile of it); what looks an id up asks `geometryOf` instead.
+ */
+export function axisGeometry(id: Id): Extract<SolvedGeometry, { type: 'line' }> | undefined {
+  const d = sketchAxisDir(id);
+  return d && { type: 'line', a: [0, 0], b: d, p1: SKETCH_ORIGIN, p2: `${id}.end`, construction: true };
+}
+
+/** The solved geometry of `id`, or of a sketch axis. */
+export function geometryOf(geometry: Geometry, id: Id): SolvedGeometry | undefined {
+  return geometry.get(id) ?? axisGeometry(id);
 }
 
 export function pointOf(geometry: Geometry, id: Id): P2 | undefined {
@@ -203,8 +217,12 @@ export interface Hit {
   d: number;
 }
 
-/** What is under the cursor within `tol`: points (and the origin) win over curves, like SolidWorks. */
-export function hitTest(geometry: Geometry, p: P2, tol: number, exclude: ReadonlySet<Id> = new Set()): Hit | null {
+/**
+ * What is under the cursor within `tol`: points (and the origin) win over curves, like SolidWorks. The sketch's axes (ADR 0170) only with `axes`: where
+ * the user picks a reference (select, smart dimension, a mirror line), never in the snaps of drawing, where an infinite line along x = 0 or y = 0 would
+ * take the place of the model's edges there and of horizontal and vertical.
+ */
+export function hitTest(geometry: Geometry, p: P2, tol: number, exclude: ReadonlySet<Id> = new Set(), axes = false): Hit | null {
   let point: Hit | null = null;
   let curve: Hit | null = null;
   const consider = (h: Hit) => {
@@ -223,6 +241,15 @@ export function hitTest(geometry: Geometry, p: P2, tol: number, exclude: Readonl
   }
   // Last, so a sketch point lying on the origin wins the tie: merging with it beats a new relation.
   if (!exclude.has(SKETCH_ORIGIN)) consider({ id: SKETCH_ORIGIN, kind: 'origin', q: [0, 0], d: len(p) });
+  // the axes (ADR 0170), infinite, only where no curve of the sketch is: what the user drew comes first
+  if (axes && !curve) {
+    for (const id of [SKETCH_AXIS_H, SKETCH_AXIS_V]) {
+      if (exclude.has(id)) continue;
+      const d = sketchAxisDir(id)!;
+      const q = scale(d, dot(p, d));
+      consider({ id, kind: 'line', q, d: dist(p, q) });
+    }
+  }
   return point ?? curve;
 }
 
@@ -490,7 +517,7 @@ export interface DimensionProposal {
 
 const kindOf = (geometry: Geometry, id: Id, sketch?: Pick<SketchFeature, 'entities'>): HitKind | undefined => {
   if (id === SKETCH_ORIGIN) return 'origin';
-  const t = geometry.get(id)?.type;
+  const t = geometryOf(geometry, id)?.type;
   if (t) return t;
   const ent = sketch?.entities.find((e) => e.id === id);
   return ent?.type;
@@ -498,7 +525,7 @@ const kindOf = (geometry: Geometry, id: Id, sketch?: Pick<SketchFeature, 'entiti
 
 /** Point used to measure an entity: the point itself, or the center of a circle/arc. */
 function anchorOf(geometry: Geometry, id: Id): P2 | undefined {
-  const g = geometry.get(id);
+  const g = geometryOf(geometry, id);
   if (g?.type === 'circle' || g?.type === 'arc') return g.c;
   return pointOf(geometry, id);
 }
@@ -548,8 +575,10 @@ export function smartDimension(geometry: Geometry, picks: Id[], place: P2): Dime
   const [a, b] = picks;
   if (a === undefined || picks.length > 2) return null;
   const ka = kindOf(geometry, a);
+  // an axis has no length, and the angle between the two axes is always a right one
+  if (isSketchAxis(a) && (b === undefined || isSketchAxis(b))) return null;
   if (b === undefined) {
-    const g = geometry.get(a);
+    const g = geometryOf(geometry, a);
     if (g?.type === 'circle') return { body: { type: 'diameter', circle: a }, value: 2 * g.r, unit: 'mm' };
     if (g?.type === 'arc') return { body: { type: 'radius', circle: a }, value: g.r, unit: 'mm' };
     if (g?.type === 'line') {
@@ -565,8 +594,8 @@ export function smartDimension(geometry: Geometry, picks: Id[], place: P2): Dime
   }
   if (a === b) return null;
   const kb = kindOf(geometry, b);
-  const ga = geometry.get(a);
-  const gb = geometry.get(b);
+  const ga = geometryOf(geometry, a);
+  const gb = geometryOf(geometry, b);
   if (ga?.type === 'line' && gb?.type === 'line') {
     const da = unit(sub(ga.b, ga.a));
     const db = unit(sub(gb.b, gb.a));
@@ -588,7 +617,7 @@ export function smartDimension(geometry: Geometry, picks: Id[], place: P2): Dime
   }
   if (ga?.type === 'line' || gb?.type === 'line') {
     const [lineId, otherId] = ga?.type === 'line' ? [a, b] : [b, a];
-    const l = geometry.get(lineId) as Extract<SolvedGeometry, { type: 'line' }>;
+    const l = geometryOf(geometry, lineId) as Extract<SolvedGeometry, { type: 'line' }>;
     const p = anchorOf(geometry, otherId);
     if (!p) return null;
     const d = Math.abs(cross(unit(sub(l.b, l.a)), sub(p, l.a)));
@@ -605,8 +634,18 @@ export function smartDimension(geometry: Geometry, picks: Id[], place: P2): Dime
 
 // ---------------------------------------------------------------- relations (C1.26, C1.27)
 
+/** What a sketch axis (ADR 0170) may be part of: a fixed infinite line has no length, no middle, and is already horizontal or vertical. */
+const AXIS_RELATIONS = new Set<RelationBody['type']>(['collinear', 'parallel', 'perpendicular', 'tangent', 'pointOnCurve', 'symmetric', 'intersection']);
+
 /** Relations SolidWorks offers in 「加入限制條件」 for the current selection. */
 export function applicableRelations(geometry: Geometry, selection: Id[], sketch?: Pick<SketchFeature, 'entities'>): RelationBody[] {
+  const axes = selection.filter(isSketchAxis).length;
+  if (axes > 1) return [];
+  const all = candidateRelations(geometry, selection, sketch);
+  return axes === 0 ? all : all.filter((r) => AXIS_RELATIONS.has(r.type));
+}
+
+function candidateRelations(geometry: Geometry, selection: Id[], sketch?: Pick<SketchFeature, 'entities'>): RelationBody[] {
   const items = selection.map((id) => ({ id, kind: kindOf(geometry, id, sketch) }));
   if (items.some((i) => !i.kind)) return [];
   const isPoint = (k: HitKind | undefined) => k === 'point' || k === 'origin';
@@ -650,7 +689,7 @@ export function applicableRelations(geometry: Geometry, selection: Id[], sketch?
     ];
   }
   if (points.length === 1 && radials.length === 1) {
-    const arc = geometry.get(radials[0]!);
+    const arc = geometryOf(geometry, radials[0]!);
     // the middle of an arc as well, unless the point is one of the arc's own (no arc could have it in the middle)
     const middle = arc?.type === 'arc' && ![arc.center, arc.start, arc.end].includes(points[0]!);
     return [{ type: 'pointOnCurve', point: points[0]!, curve: radials[0]! }, ...(middle ? [{ type: 'midpoint' as const, point: points[0]!, line: radials[0]! }] : [])];
@@ -723,15 +762,15 @@ export function layoutDimension(c: SketchConstraint, geometry: Geometry, px: num
   switch (c.type) {
     case 'distance': {
       if (c.b === undefined) {
-        const l = geometry.get(c.a);
+        const l = geometryOf(geometry, c.a);
         return l?.type === 'line' ? linear(l.a, l.b, outward(l.a, l.b)) : null;
       }
-      const ga = geometry.get(c.a);
-      const gb = geometry.get(c.b);
+      const ga = geometryOf(geometry, c.a);
+      const gb = geometryOf(geometry, c.b);
       if (ga?.type === 'line' || gb?.type === 'line') {
         const [lineId, otherId] = ga?.type === 'line' ? [c.a, c.b] : [c.b, c.a];
-        const l = geometry.get(lineId) as Extract<SolvedGeometry, { type: 'line' }>;
-        const other = geometry.get(otherId);
+        const l = geometryOf(geometry, lineId) as Extract<SolvedGeometry, { type: 'line' }>;
+        const other = geometryOf(geometry, otherId);
         const p = other?.type === 'line' ? other.a : anchorOf(geometry, otherId);
         if (!p) return null;
         const foot = add(l.a, scale(unit(sub(l.b, l.a)), dot(sub(p, l.a), unit(sub(l.b, l.a)))));
@@ -759,7 +798,7 @@ export function layoutDimension(c: SketchConstraint, geometry: Geometry, px: num
     }
     case 'radius':
     case 'diameter': {
-      const g = geometry.get(c.circle);
+      const g = geometryOf(geometry, c.circle);
       if (g?.type !== 'circle' && g?.type !== 'arc') return null;
       const angle = g.type === 'arc' ? g.a0 + norm(g.a1 - g.a0) / 2 : Math.PI / 4;
       const rim = polar(g.c, g.r, angle);
@@ -768,7 +807,7 @@ export function layoutDimension(c: SketchConstraint, geometry: Geometry, px: num
       return { segments: [[from, tail], ...arrowhead(rim, from)], text: polar(g.c, g.r + off + 10 * px, angle) };
     }
     case 'arcLength': {
-      const g = geometry.get(c.circle);
+      const g = geometryOf(geometry, c.circle);
       if (g?.type !== 'arc') return null;
       const sweep = norm(g.a1 - g.a0) || 2 * Math.PI;
       const r = g.r + off;
@@ -778,8 +817,8 @@ export function layoutDimension(c: SketchConstraint, geometry: Geometry, px: num
       return { segments, text: polar(g.c, r + 12 * px, g.a0 + sweep / 2) };
     }
     case 'angle': {
-      const ga = geometry.get(c.a);
-      const gb = geometry.get(c.b);
+      const ga = geometryOf(geometry, c.a);
+      const gb = geometryOf(geometry, c.b);
       if (ga?.type !== 'line' || gb?.type !== 'line') return null;
       const { vertex, ra, rb } = angleRays(ga, gb, c.flip);
       const r = off * 1.6;
@@ -810,15 +849,15 @@ export function measure(c: DimensionConstraint, geometry: Geometry): number | nu
   switch (c.type) {
     case 'distance': {
       if (c.b === undefined) {
-        const l = geometry.get(c.a);
+        const l = geometryOf(geometry, c.a);
         return l?.type === 'line' ? dist(l.a, l.b) : null;
       }
-      const [ga, gb] = [geometry.get(c.a), geometry.get(c.b)];
+      const [ga, gb] = [geometryOf(geometry, c.a), geometryOf(geometry, c.b)];
       // like the solver: from the first point of a line (or the anchor) to the other line
       const [lineId, other] = gb?.type === 'line' ? [c.b, c.a] : ga?.type === 'line' ? [c.a, c.b] : [null, null];
       if (lineId !== null) {
-        const l = geometry.get(lineId) as SolvedLine;
-        const o = geometry.get(other!);
+        const l = geometryOf(geometry, lineId) as SolvedLine;
+        const o = geometryOf(geometry, other!);
         const p = o?.type === 'line' ? o.a : anchorOf(geometry, other!);
         return p ? Math.abs(cross(unit(sub(l.b, l.a)), sub(p, l.a))) : null;
       }
@@ -833,15 +872,15 @@ export function measure(c: DimensionConstraint, geometry: Geometry): number | nu
     }
     case 'radius':
     case 'diameter': {
-      const g = geometry.get(c.circle);
+      const g = geometryOf(geometry, c.circle);
       return g?.type === 'circle' || g?.type === 'arc' ? (c.type === 'radius' ? g.r : 2 * g.r) : null;
     }
     case 'arcLength': {
-      const g = geometry.get(c.circle);
+      const g = geometryOf(geometry, c.circle);
       return g?.type === 'arc' ? g.r * (norm(g.a1 - g.a0) || 2 * Math.PI) : null;
     }
     case 'angle': {
-      const [ga, gb] = [geometry.get(c.a), geometry.get(c.b)];
+      const [ga, gb] = [geometryOf(geometry, c.a), geometryOf(geometry, c.b)];
       if (ga?.type !== 'line' || gb?.type !== 'line') return null;
       const { ra, rb } = angleRays(ga, gb, c.flip);
       return (norm(rayAngle(ra, rb)) * 180) / Math.PI;

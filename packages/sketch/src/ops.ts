@@ -1,6 +1,6 @@
 import { t, type PlainKey } from '@3db/i18n';
 import { constraintRefs, isDimension, SKETCH_ORIGIN, type Id, type IdAllocator, type Ref, type SketchConstraint, type SketchEdit, type SketchEntity, type SketchFeature } from '@3db/model';
-import { closestOn, pointOf } from './interact';
+import { closestOn, geometryOf, pointOf } from './interact';
 import { textContours } from './font';
 import type { P2, SolvedGeometry } from './types';
 
@@ -146,7 +146,8 @@ export function polygon(ids: IdAllocator, center: { id?: Id; p: P2 }, q: P2, sid
  * point on the axis is its own twin. The relations among the originals are not copied: the symmetry carries them over.
  */
 export function mirror(sketch: Pick<SketchFeature, 'entities'>, geometry: Geometry, ids: IdAllocator, entityIds: Id[], axisId: Id): OpResult {
-  const axis = geometry.get(axisId);
+  // a line of the sketch, or one of its axes (ADR 0170)
+  const axis = geometryOf(geometry, axisId);
   if (axis?.type !== 'line') return error('sketch.mirrorAxis');
   const chosen = sketch.entities.filter((e) => entityIds.includes(e.id) && e.id !== axisId);
   if (chosen.length === 0) return error('sketch.mirrorNothing');

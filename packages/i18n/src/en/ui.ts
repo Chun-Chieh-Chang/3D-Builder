@@ -73,6 +73,8 @@ export const ui: Translation = {
   'planeMode.threePoint': 'Three Points',
 
   'datum.origin': 'Origin',
+  'datum.sketchAxisH': 'Horizontal axis',
+  'datum.sketchAxisV': 'Vertical axis',
   'datum.front': 'Front Plane',
   'datum.top': 'Top Plane',
   'datum.right': 'Right Plane',

@@ -14,6 +14,9 @@ import {
   MAX_INSTANCES,
   Parameters,
   patternInstances,
+  isSketchAxis,
+  SKETCH_AXIS_H,
+  SKETCH_AXIS_V,
   SKETCH_ORIGIN,
   type ChamferFeature,
   type CombineFeature,
@@ -163,6 +166,8 @@ const ENTITY_LABEL = labelsOf({ point: 'entity.point', line: 'entity.line', circ
 
 function describe(f: SketchFeature, id: Id): string {
   if (id === SKETCH_ORIGIN) return t('datum.origin');
+  if (id === SKETCH_AXIS_H) return t('datum.sketchAxisH');
+  if (id === SKETCH_AXIS_V) return t('datum.sketchAxisV');
   const e = f.entities.find((x) => x.id === id);
   if (e) return `${e.construction ? `${t('entity.construction')} ` : ''}${ENTITY_LABEL[e.type]} ${id}`;
   const c = f.constraints.find((x) => x.id === id);
@@ -507,7 +512,7 @@ function SketchPanel({ f }: { f: SketchFeature }) {
   const view = useSketcherView();
   const sketcher = store.sketcher;
   const selection = view?.selection ?? [];
-  const entityIds = selection.filter((id) => id === SKETCH_ORIGIN || f.entities.some((e) => e.id === id));
+  const entityIds = selection.filter((id) => id === SKETCH_ORIGIN || isSketchAxis(id) || f.entities.some((e) => e.id === id));
   const curves = f.entities.filter((e) => e.type !== 'point' && entityIds.includes(e.id));
   const existing = constraintsOf(f.constraints, entityIds);
   const offered = solve ? applicableRelations(solve.geometry, entityIds, f).filter((r) => !existing.some((c) => sameRelation(c, r))) : [];
@@ -929,6 +934,9 @@ function RevolvePanel({ f }: { f: RevolveFeature }) {
               {l.construction ? t('tool.centerline') : t('entity.line')} {l.id}
             </option>
           ))}
+          {/* the sketch's own axes (ADR 0170): no centerline needs drawing to turn about one */}
+          <option value={SKETCH_AXIS_H}>{t('datum.sketchAxisH')}</option>
+          <option value={SKETCH_AXIS_V}>{t('datum.sketchAxisV')}</option>
         </select>
       </section>
       <section className="pm-group">
