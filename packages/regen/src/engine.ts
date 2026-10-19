@@ -72,6 +72,7 @@ import {
   type ThreadFeature,
   type KnurlFeature,
   type CosmeticThreadFeature,
+  type HelixFeature,
   lookupThread,
   generateStandardThreadProfile,
 } from '@3db/model';
@@ -726,6 +727,10 @@ export class Regenerator {
           }
           case 'cosmeticThread': {
             this.cosmeticThread(feature, set);
+            return done({ status: 'ok' });
+          }
+          case 'helix': {
+            set = this.advance(set, this.helix(feature, sketches, set));
             return done({ status: 'ok' });
           }
           case 'cutWithSurface': {
@@ -1801,6 +1806,130 @@ export class Regenerator {
       radius: r,
       cylinderLength,
     });
+  }
+
+  /**
+   * Helix and Spiral Curve (螺旋曲線與渦捲線, C8.3, ADR 0168):
+   * Constructs a 3D space helix or planar Archimedean spiral wire from a reference circle.
+   */
+  private helix(f: HelixFeature, sketches: RebuildResult['sketches'], set: Bodies): BodyState[] {
+    let center: Vec3;
+    let normal: Vec3;
+    let radius: number;
+    let refDir: Vec3 | undefined;
+
+    if (f.circle.kind === 'edge') {
+      const body = this.modelFor(set, t('pm.helix.circle'));
+      const edgeIndex = this.resolve(f.circle, body, t('pm.helix.circle'));
+      const edge = body.topology.edges[edgeIndex]!;
+      if (edge.geometry?.type !== 'circle') {
+        throw new FeatureError(t('helix.noCircle'));
+      }
+      center = edge.geometry.center;
+      normal = edge.geometry.normal;
+      radius = edge.geometry.radius;
+      refDir = [edge.mid[0] - center[0], edge.mid[1] - center[1], edge.mid[2] - center[2]];
+    } else if (f.circle.kind === 'datum') {
+      const s = sketches.get(f.circle.name);
+      if (!s) throw new FeatureError(t('helix.noCircle'));
+      // Find the first circular or arc entity in the sketch
+      let foundCircle: { center: [number, number]; radius: number } | null = null;
+      for (const geom of s.solved.geometry.values()) {
+        if (geom.type === 'circle' || geom.type === 'arc') {
+          foundCircle = { center: [geom.c[0], geom.c[1]], radius: geom.r };
+          break;
+        }
+      }
+      if (!foundCircle) throw new FeatureError(t('helix.noCircle'));
+      const fr = s.frame;
+      center = add(add(fr.origin, fr.xDir, foundCircle.center[0]), fr.yDir, foundCircle.center[1]);
+      normal = fr.normal;
+      radius = foundCircle.radius;
+      refDir = fr.xDir;
+    } else {
+      throw new FeatureError(t('helix.noCircle'));
+    }
+
+    const definedBy = f.definedBy ?? 'pitchAndRev';
+    let pitch = 0;
+    let revolutions = 0;
+    let height = 0;
+    const isSpiral = definedBy === 'spiral';
+
+    if (definedBy === 'pitchAndRev') {
+      if (!f.pitch) throw new FeatureError(t('helix.invalidPitch'));
+      if (!f.revolutions) throw new FeatureError(t('helix.invalidRevolutions'));
+      pitch = evalLength(f.pitch);
+      revolutions = evalNumber(f.revolutions);
+      height = pitch * revolutions;
+    } else if (definedBy === 'heightAndRev') {
+      if (!f.height) throw new FeatureError(t('helix.invalidHeight'));
+      if (!f.revolutions) throw new FeatureError(t('helix.invalidRevolutions'));
+      height = evalLength(f.height);
+      revolutions = evalNumber(f.revolutions);
+      if (!(revolutions > 1e-6)) throw new FeatureError(t('helix.invalidRevolutions'));
+      pitch = height / revolutions;
+    } else if (definedBy === 'heightAndPitch') {
+      if (!f.height) throw new FeatureError(t('helix.invalidHeight'));
+      if (!f.pitch) throw new FeatureError(t('helix.invalidPitch'));
+      height = evalLength(f.height);
+      pitch = evalLength(f.pitch);
+      if (!(pitch > 1e-6)) throw new FeatureError(t('helix.invalidPitch'));
+      revolutions = height / pitch;
+    } else if (definedBy === 'spiral') {
+      if (!f.pitch) throw new FeatureError(t('helix.invalidPitch'));
+      if (!f.revolutions) throw new FeatureError(t('helix.invalidRevolutions'));
+      pitch = evalLength(f.pitch);
+      revolutions = evalNumber(f.revolutions);
+      height = 0;
+    }
+
+    const startAngle = f.startAngle ? evalAngle(f.startAngle) : 0;
+    const clockwise = f.clockwise ?? true;
+    const reverse = f.reverse ?? false;
+    const taperAngle = f.taperAngle ? evalAngle(f.taperAngle) : 0;
+    const taperOutward = f.taperOutward ?? false;
+
+    const res = this.kernel.helixCurve({
+      center,
+      normal,
+      refDir,
+      radius,
+      pitch,
+      revolutions,
+      height,
+      startAngle,
+      clockwise,
+      reverse,
+      taperAngle,
+      taperOutward,
+      isSpiral,
+    });
+
+    this.owned.push(res.shape);
+    const topology = this.kernel.topology(res.shape);
+    const names: ElementNames = {
+      faces: [],
+      edges: [`${f.id}:helix`],
+      vertices: [`${f.id}:v0`, `${f.id}:v1`],
+    };
+
+    this.info = t('helix.info', {
+      mode: t(`pm.helix.${definedBy}`),
+      radius: radius.toFixed(2),
+      length: res.totalLength.toFixed(2),
+    });
+
+    const newBody: BodyState = {
+      id: f.id,
+      shape: res.shape,
+      topology,
+      names,
+      by: f.id,
+      surface: true,
+    };
+
+    return [...set.list, newBody];
   }
 
 

@@ -6,7 +6,7 @@ import type { Id } from './ids';
  * DOF status, mass properties and error lists are derived data and never stored.
  */
 
-export const SCHEMA_VERSION = 66;
+export const SCHEMA_VERSION = 67;
 
 /** Value expression (B5.2, B5.3): "20", "25.4mm", "30deg", "wall_t*2", "D1@草圖1/2", "property('厚度')"; see `expr/`. */
 export type Expr = string;
@@ -359,6 +359,36 @@ export interface CosmeticThreadFeature extends FeatureBase {
   depth: Expr;
   /** Reverse direction along cylinder axis. */
   reverse?: boolean;
+}
+
+/**
+ * Helix and Spiral Curve (螺旋曲線與渦捲線, C8.3, ADR 0168, v67): 3D space curve or flat spiral curve
+ * driven by a reference circular sketch entity or circular model edge.
+ */
+export type HelixDefinedBy = 'pitchAndRev' | 'heightAndRev' | 'heightAndPitch' | 'spiral';
+
+export interface HelixFeature extends FeatureBase {
+  type: 'helix';
+  /** Reference circular sketch (circle/arc) or circular model edge. */
+  circle: Ref;
+  /** Definition mode: 'pitchAndRev' | 'heightAndRev' | 'heightAndPitch' | 'spiral'. Default: 'pitchAndRev'. */
+  definedBy: HelixDefinedBy;
+  /** Pitch in mm (used in pitchAndRev, heightAndPitch, spiral). */
+  pitch?: Expr;
+  /** Revolutions count (used in pitchAndRev, heightAndRev, spiral). */
+  revolutions?: Expr;
+  /** Total height in mm (used in heightAndRev, heightAndPitch). */
+  height?: Expr;
+  /** Starting angle (e.g. '0deg', '90deg'). Default '0deg'. */
+  startAngle?: Expr;
+  /** Whether winding is clockwise. Default true. */
+  clockwise?: boolean;
+  /** Reverse along axis direction. Default false. */
+  reverse?: boolean;
+  /** Optional taper angle (e.g. '5deg'). */
+  taperAngle?: Expr;
+  /** Taper expands outward (true) or narrows inward (false). Default false. */
+  taperOutward?: boolean;
 }
 
 /**
@@ -1091,7 +1121,8 @@ export type Feature =
   | JogFeature
   | ThreadFeature
   | KnurlFeature
-  | CosmeticThreadFeature;
+  | CosmeticThreadFeature
+  | HelixFeature;
 export type FeatureType = Feature['type'];
 
 // ---------------------------------------------------------------- document

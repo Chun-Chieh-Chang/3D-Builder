@@ -1,7 +1,7 @@
 import { t } from '@3db/i18n';
 import { current, produce, type Draft } from 'immer';
 import { countersFor, type Id } from './ids';
-import type { SheetGauge, AppearanceTarget, DocSettings, MaterialRef, Variable, BlobRef, ChamferFeature, FilletKind, FilletVariablePoint, CombineFeature, SplitFeature, MoveCopyBodyFeature, JogFeature, HoleFeature, ScrewBossFeature, BaseFlangeFeature, MidBendFeature, EdgeFlangeFeature, HemFeature, BreakCornerFeature, SnapHookFeature, SnapCatchFeature, VentFeature, LoftFeature, RibFeature, SweepFeature, Draft as WallDraft, EndCondition, Thin, Expr, Feature, ImportedBodyFeature, AxisDefinition, CoordSysFeature, MirrorFeature, PartDoc, PatternDefinition, PatternFeature, PlaneDefinition, PointDefinition, Ref, RevolveCondition, SketchConstraint, SketchEntity, SketchFeature, SketchPicture, CutWithSurfaceFeature, ThreadFeature, KnurlFeature, CosmeticThreadFeature } from './schema';
+import type { SheetGauge, AppearanceTarget, DocSettings, MaterialRef, Variable, BlobRef, ChamferFeature, FilletKind, FilletVariablePoint, CombineFeature, SplitFeature, MoveCopyBodyFeature, JogFeature, HoleFeature, ScrewBossFeature, BaseFlangeFeature, MidBendFeature, EdgeFlangeFeature, HemFeature, BreakCornerFeature, SnapHookFeature, SnapCatchFeature, VentFeature, LoftFeature, RibFeature, SweepFeature, Draft as WallDraft, EndCondition, Thin, Expr, Feature, ImportedBodyFeature, AxisDefinition, CoordSysFeature, MirrorFeature, PartDoc, PatternDefinition, PatternFeature, PlaneDefinition, PointDefinition, Ref, RevolveCondition, SketchConstraint, SketchEntity, SketchFeature, SketchPicture, CutWithSurfaceFeature, ThreadFeature, KnurlFeature, CosmeticThreadFeature, HelixFeature } from './schema';
 import { isDatumPlaneName } from './datums';
 import { canBeSeed } from './patterns';
 import { colorOk, materialOk, sameTarget } from './materials';
@@ -89,6 +89,8 @@ ull). */
   | { type: 'setKnurl'; featureId: Id; knurl: Partial<Omit<KnurlFeature, 'id' | 'type' | 'name' | 'suppressed' | 'axis'>> & { axis?: Ref } }
   /** A cosmetic thread's parameters (C4.9, ADR 0156). */
   | { type: 'setCosmeticThread'; featureId: Id; params: Partial<Omit<CosmeticThreadFeature, 'id' | 'type' | 'name' | 'suppressed'>> }
+  /** A helix/spiral curve's parameters (C8.3, ADR 0168). */
+  | { type: 'setHelix'; featureId: Id; params: Partial<Omit<HelixFeature, 'id' | 'type' | 'name' | 'suppressed'>> }
   /** What a draft leans and about which plane (C5.5). */
   | { type: 'setDraftFeature'; featureId: Id; neutral: Ref; faces: Ref[]; angle: Expr; reverse?: boolean }
   /** What a shell takes away and how thick the wall is (C5.4). */
@@ -658,6 +660,13 @@ function validateNewFeature(doc: PartDoc, f: Feature, index: number): void {
     case 'cosmeticThread':
       if (f.targetFace.kind !== 'face') throw new CommandError(t('cmd.cosmeticThreadOnlyFace'));
       if (f.startEdge && f.startEdge.kind !== 'edge' && f.startEdge.kind !== 'face') throw new CommandError(t('cmd.cosmeticThreadOnlyEdge'));
+      return;
+
+    case 'helix':
+      if (f.circle.kind !== 'edge' && f.circle.kind !== 'datum') throw new CommandError(t('cmd.helixNeedsCircle'));
+      if (f.definedBy !== 'pitchAndRev' && f.definedBy !== 'heightAndRev' && f.definedBy !== 'heightAndPitch' && f.definedBy !== 'spiral') {
+        throw new CommandError(t('cmd.helixModeInvalid'));
+      }
       return;
 
     case 'split':
@@ -1395,6 +1404,32 @@ export function mutate(draft: Draft<PartDoc>, cmd: Command): void {
       if (cmd.mode !== 'delete' && cmd.mode !== 'keep') throw new CommandError(t('cmd.deleteKeepBodyModeInvalid'));
       f.mode = cmd.mode;
       f.targets = cmd.targets;
+      return;
+    }
+    case 'setHelix': {
+      const f = feature(draft, cmd.featureId);
+      if (f.type !== 'helix') throw new CommandError(t('cmd.onlyHelix'));
+      if (cmd.params.circle) {
+        if (cmd.params.circle.kind !== 'edge' && cmd.params.circle.kind !== 'datum') {
+          throw new CommandError(t('cmd.helixNeedsCircle'));
+        }
+        f.circle = cmd.params.circle;
+      }
+      if (cmd.params.definedBy !== undefined) {
+        if (cmd.params.definedBy !== 'pitchAndRev' && cmd.params.definedBy !== 'heightAndRev' && cmd.params.definedBy !== 'heightAndPitch' && cmd.params.definedBy !== 'spiral') {
+          throw new CommandError(t('cmd.helixModeInvalid'));
+        }
+        f.definedBy = cmd.params.definedBy;
+      }
+      if (cmd.params.pitch !== undefined) f.pitch = cmd.params.pitch;
+      if (cmd.params.revolutions !== undefined) f.revolutions = cmd.params.revolutions;
+      if (cmd.params.height !== undefined) f.height = cmd.params.height;
+      if (cmd.params.startAngle !== undefined) f.startAngle = cmd.params.startAngle;
+      if (cmd.params.clockwise !== undefined) f.clockwise = cmd.params.clockwise;
+      if (cmd.params.reverse !== undefined) f.reverse = cmd.params.reverse;
+      if (cmd.params.taperAngle !== undefined) f.taperAngle = cmd.params.taperAngle;
+      if (cmd.params.taperOutward !== undefined) f.taperOutward = cmd.params.taperOutward;
+      checkExprs(draft as PartDoc, f as Feature);
       return;
     }
     case 'setBody': {

@@ -1,5 +1,53 @@
 # 3D-Builder 開發日誌 (DEV_LOG.md)
 
+## 2026-10-19 傍晚：藍圖 C8.3 螺旋曲線與渦捲線特徵 (Helix / Spiral Curve Feature) 全鏈路實作 [ADR 0168](docs/adr/0168-helix-spiral-curve.md)
+
+### 1. 任務背景與範疇
+依據藍圖 C8.3 與工業級 CAD 規範（SolidWorks「螺旋曲線/渦捲線」對標），全鏈路實作螺旋曲線與渦捲線特徵（Helix and Spiral Curve Feature，ADR 0168）。支援由草圖圓形圖元或實體圓形邊線驅動，提供「螺距和圈數」、「高度和圈數」、「高度和螺距」與「平面渦捲線」4 種定義模式，支援錐度外擴/內縮、順時針/逆時針及旋向反向。產出的 Wire 曲線實體無縫整合至 DAG 拓樸管線，供後續掃出路徑、特徵引導線與裝飾實體使用。
+
+### 2. 做法與架構設計
+| 層級 | 核心檔案 | 實作內容與職責 |
+|---|---|---|
+| 決策紀錄 | `docs/adr/0168-helix-spiral-curve.md` | 經架構審查確立 4 種定義模式、錐度幾何公式、阿基米德渦捲線擬合演算法與紅隊標準。 |
+| 資料模型 | `packages/model/src/schema.ts`、`serialize.ts`、`params.ts`、`commands.ts`、`refs.ts` | 升版 `SCHEMA_VERSION = 67`；定義 `HelixDefinedBy` 與 `HelixFeature`；實作 66 $\to$ 67 遷移函式；`params.ts` 支援 `pitch`、`revolutions`、`height`、`startAngle`、`taperAngle` 表達式求值；`commands.ts` 實作 `setHelix` 指令與參數合法性校驗；`refs.ts` 支援 `circle` 參考重映射。 |
+| 幾何核心 | `packages/kernel/src/types.ts`、`kernel.ts` | 定義 `HelixCurveSpec` 與 `HelixCurveResult`；在 `kernel.ts` 實作 `helixCurve`：圓柱/圓錐螺旋線採用 OCCT `Geom_CylindricalSurface` / `Geom_ConicalSurface` + `Geom2d_Line` 搭配 `BRepBuilderAPI_MakeEdge` 與 `BRepLib.BuildCurves3d`，逐圈分割建構並以 `BRepBuilderAPI_MakeWire` 合成單一 Wire；平面渦捲線採阿基米德極坐標取樣並以 `GeomAPI_PointsToBSpline` 擬合 $C^2$ 平滑曲線；計算精確線段長度並萃取起訖端點頂點。 |
+| 依賴與再生 | `packages/regen/src/dag.ts`、`packages/regen/src/engine.ts` | `dag.ts` 追蹤 `circle` 父節點依賴；`engine.ts` 實作 `private helix(...)`：自動解析草圖實體圓或模型圓形邊線提取中心點、法向量與半徑，調用 `kernel.helixCurve` 建構形狀，登記 `${f.id}:helix` 與端點頂點命名，發布再生資訊。 |
+| 雙語與說明 | `packages/i18n/src/`、`docs/help-links.json` | 補齊 `feature.helix`、`cmd.onlyHelix`、`cmd.helixNeedsCircle`、`cmd.helixModeInvalid`、`pm.helix.*`、`helix.*` 與 `help.helix.*` 完整中英雙語詞條；`docs/help-links.json` 在 `_untied` 正式登記 `"helix"`。 |
+| 介面適配 | `apps/web/src/strings.ts`、`Icon.tsx`、`store.ts`、`PropertyManager.tsx` | 註冊 `helix` 圖示與標籤；`store.ts` 實作 `newHelix()`；`PropertyManager.tsx` 實作 `HelixPanel`（支援 4 種模式切換、動態參數群組、錐度與方向控制），接線至 `FeatureParams`。 |
+| 確效測試 | `tests/phase3/helix-curve.test.ts` | 撰寫 14 項自我紅隊驗收測試，涵蓋破壞性輸入檢驗、解析幾何閉式真值解比對（弧長相對誤差 $< 10^{-4}$）、實體邊線引用與 WASM Heap 100 次連續建構 0.00 MiB 成長真實指標防呆。 |
+
+### 3. 問題分析 (RCA) 與矯正預防措施 (CAPA)
+1. **問題 (Failure)**：`validateNewFeature` 最初寫入 `if (f.circle.kind !== 'edge' && f.circle.kind !== 'datum')`，而在單元測試中傳入 `{ kind: 'sketch', ... }` 導致被拒絕。
+   - **RCA**：`Ref` 的聯合型別為 `'face' | 'edge' | 'vertex' | 'datum' | 'body'`，專案設計上對草圖特徵的引用一律使用 `{ kind: 'datum', name: 'sk1' }`，並由 `engine.ts` 自草圖求解結果之 `solved.geometry` 提取圓形圖元。
+   - **CAPA**：明確草圖圖元引用標準規範，草圖來源一律以 `{ kind: 'datum', name: sketchId }` 指派，實體邊線以 `{ kind: 'edge', name: edgeName }` 指派，全鏈路語意與型別完全一致。
+2. **問題 (Failure)**：測試初期嘗試直接讀取 `body!.topology` 導致 `TypeError: Cannot read properties of undefined`。
+   - **RCA**：`RebuildResult.bodies` 儲存的是 `BodyInfo[]`（包含 `id`、`name`、`shape` 等中繼資訊），不含完整的 `topology` 物件。
+3. **問題 (Failure)**：`tests/phase8/help.test.ts` 報錯 `every key belongs to an action, a tool or a concept` 與 `_untied` 包含未知項目 `'helix'`。
+   - **RCA**：說明守門機制會比對 `apps/web/src/actions.ts` 內註冊之所有 action id 與概念集合。若僅新增 i18n 與 help-links 而未在 `actions.ts` 正式登記對應動作，會被靜態守門判定為存在無主說明項目。
+   - **CAPA**：在 `actions.ts` 註冊 `{ id: 'helix', label: t('feature.helix'), group: 'feature', ... }`，使動作系統、UI 工具列與說明手冊達成 100% 映射一致。
+
+### 4. 自我紅隊四問（AGENTS.md §2.1）
+1. **輸入破壞 (Input Corruption)**：
+   - 螺距 $P \le 0$、圈數 $N \le 0$、高度 $H \le 0$、半徑 $R \le 0$ 在命令層與模型層由 `checkExprs` 與 `KernelError` 顯式攔截，嚴禁使用 `Math.round` 或 `Math.abs` 隱含竄改意圖。
+2. **拓樸與幾何相交破壞 (Geometric Defense)**：
+   - 圓柱與圓錐螺旋線採逐圈構建 Edge 後縫合成單一 Wire，避免多圈布林運算導致 Emscripten Heap 暴增。
+3. **依賴鏈完整性 (Dependency Graph Integrity)**：
+   - 全鏈路支援草圖基準圓與實體圓柱邊線，`parentsOf` 正確記錄 `fromRefs([feature.circle])`，父項變更觸發正確重算。
+4. **規格真實性與零 Mock 原則 (Zero-Mock & Ground Truth)**：
+   - 弧長比對解析閉式解 $L = \sqrt{(2\pi N R)^2 + H^2}$，實體探針長度相對誤差 $< 10^{-4}$；平面渦捲線外徑嚴格符合 $R_{\text{end}} = R_0 + N \cdot P$。
+   - 記憶體監控以 `(kernel.oc as any).wasmMemory?.buffer?.byteLength` 配合基準指標大於 0 防呆（`expect(initial).toBeGreaterThan(0)`），100 次循環證實 0.00 MiB 成長。
+
+### 5. 確效與反向對照 (Negative Verification)
+- **確效現況**：
+  - `npm run typecheck`：**Exit Code 0**（0 錯誤）。
+  - `npm run lint:rules` / `lint:deps` / `lint:i18n`：**全數通過**。
+  - `tests/phase3/helix-curve.test.ts`：**14/14 項全過**。
+  - `tests/phase8/help.test.ts`：**40/40 項全過**。
+  - `npm run make:drawing`：**6/6 項全過**。
+  - 全量 vitest：**3134 過、0 敗**（25 既有跳過）。
+- **反向對照 (Negative Verification)**：
+  - 暫時將 `apps/web/src/actions.ts` 內的 `id: 'helix'` 移除（重命名為 `helix-disabled`）$\to$ 執行 `tests/phase8/help.test.ts` 如預期**轉紅報錯 3 項**（缺少 action 語義、未歸屬鍵、untied 未知項目）；還原為 `helix` 後**立即恢復 40/40 綠燈**。證明守門防線精確有效。
+
 ## 2026-10-19 下午：變化半徑圓角（C5.2，ADR 0167）UI／雙語／help／e2e 收尾 — 已推送 `173ad35`（origin/main）
 
 - **做法**：`PropertyManager.tsx` 圓角面板（種類「固定半徑」）新增 `FilletVariable`：「變化半徑」核取方塊（勾選＝每條揀選邊建立 t=0／t=1 兩個控制點，半徑取目前固定半徑；取消＝送空陣列）、每條邊的控制點表（t 用 `PositionInput`、半徑用 `ValueInput` 走表達式）、新增中間點、移除中間點。寫入一律走既有 `setFilletVariable`（指令做全部驗證，被拒絕的 t 欄位標紅）；以 `f.variable` 為單一真相。`pmpanels.ts` 雙語 6 鍵、`help.fillet.body` 補說明與驗證體積 14251.21。

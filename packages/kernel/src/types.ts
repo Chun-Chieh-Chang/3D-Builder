@@ -380,3 +380,42 @@ export interface EdgeSamplingResult {
   closed: boolean;
 }
 
+/** Specification for 3D helix or planar spiral curve (C8.3, ADR 0168). */
+export interface HelixCurveSpec {
+  /** Center of reference circle */
+  center: Vec3;
+  /** Normal vector along helix axis */
+  normal: Vec3;
+  /** Reference radial vector (X axis) */
+  refDir?: Vec3;
+  /** Base radius in mm */
+  radius: number;
+  /** Pitch in mm (used in pitchAndRev, heightAndPitch, spiral) */
+  pitch: number;
+  /** Revolutions count */
+  revolutions: number;
+  /** Total height in mm */
+  height: number;
+  /** Starting angle in radians (default 0) */
+  startAngle?: number;
+  /** Clockwise winding (default true) */
+  clockwise?: boolean;
+  /** Reverse along normal direction (default false) */
+  reverse?: boolean;
+  /** Optional taper half-angle in radians */
+  taperAngle?: number;
+  /** Whether taper expands outward */
+  taperOutward?: boolean;
+  /** Is flat spiral (height = 0, pitch is radial expansion per turn) */
+  isSpiral?: boolean;
+}
+
+/** The result of building a helix or spiral curve (C8.3, ADR 0168). */
+export interface HelixCurveResult {
+  shape: ShapeId;
+  totalLength: number;
+  startPoint: Vec3;
+  endPoint: Vec3;
+}
+
+

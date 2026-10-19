@@ -11,7 +11,8 @@
     "move-copy-body": "move/copy body feature (ADR 0164): no item of the manual yet",
     "delete-keep-body": "delete/keep body feature (ADR 0165): no item of the manual yet",
     "jog": "jog feature (ADR 0159): no item of the manual yet",
-    "tool-intersect": "intersection curves sketch tool (ADR 0162): no item of the manual yet"
+    "tool-intersect": "intersection curves sketch tool (ADR 0162): no item of the manual yet",
+    "helix": "helix and spiral curve feature (C8.3, ADR 0168): no item of the manual yet"
   },
   "C1": [
     "equations",

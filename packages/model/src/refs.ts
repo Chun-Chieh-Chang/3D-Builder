@@ -148,6 +148,14 @@ export function mapRefs(feature: Feature, map: (ref: Ref) => Ref): { feature: Fe
         },
         replaced,
       };
+    case 'helix':
+      return {
+        feature: {
+          ...feature,
+          circle: one(feature.circle),
+        },
+        replaced,
+      };
     case 'revolve':
     case 'sweep':
     case 'loft':

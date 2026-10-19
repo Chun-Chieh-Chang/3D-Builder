@@ -1,5 +1,15 @@
 # 交接文件
 
+- **【2026-10-19 傍晚：螺旋曲線與渦捲線特徵（C8.3，[ADR 0168](docs/adr/0168-helix-spiral-curve.md)）全鏈路完成 — 待推送】**
+  - **收尾結果**：
+    1. **Schema 67 與模型層**：定義 `HelixDefinedBy`（`pitchAndRev`、`heightAndRev`、`heightAndPitch`、`spiral`）與 `HelixFeature`；實作 66 $\to$ 67 遷移函式；`params.ts` 支援 5 類參數表達式求值；`commands.ts` 實作 `setHelix` 指令與合法性校驗；`refs.ts` 支援 `circle` 參考重映射。
+    2. **幾何核心（`packages/kernel/src/kernel.ts`）**：實作 `Kernel.helixCurve`，圓柱/圓錐螺旋線採 OCCT `Geom_CylindricalSurface` / `Geom_ConicalSurface` + `Geom2d_Line` 搭配 `BRepBuilderAPI_MakeEdge` 與 `BRepLib.BuildCurves3d` 逐圈構建並合成為單一 Wire；平面渦捲線採阿基米德極坐標取樣並以 `GeomAPI_PointsToBSpline` 擬合 $C^2$ 平滑曲線；量測線段長度並萃取起點/終點頂點。
+    3. **DAG 與再生管線（`packages/regen`）**：`dag.ts` 追蹤 `circle` 父節點依賴；`engine.ts` 解析草圖實體圓或模型圓形邊線，調用幾何核心建構 Wire 實體，登記 `${f.id}:helix` 與端點頂點命名，發布再生資訊。
+    4. **Web UI 與雙語系統**：`PropertyManager.tsx` 實作 `HelixPanel`，支援 4 種模式切換、動態參數群組、錐度與方向控制，接線至 `FeatureParams`；`Icon.tsx` 與 `strings.ts` 提供專屬圖示與標籤；`packages/i18n` 補齊中英雙語詞條；`docs/help-links.json` 登記 `"helix"`。
+    5. **驗收與自我紅隊對抗測試（`tests/phase3/helix-curve.test.ts`）**：14/14 項 100% 通過（含負數/零破壞性輸入檢驗、解析幾何閉式真值解比對 $L = \sqrt{(2\pi N R)^2 + H^2}$ 相對誤差 $< 10^{-4}$、實體邊線引用與 Emscripten WASM Heap 100 次連續建構 0.00 MiB 成長真實指標防呆）。
+    6. **守門檢查**：`typecheck` 0 錯、`lint:rules` 全域反模式守門通過、`lint:deps` Layering OK、`lint:i18n` 雙語 OK、`make:drawing` 6/6 PASS。
+    7. **反向對照 (Negative Verification)**：將 `actions.ts` 中 helix action 刻意更名為 `helix-disabled`，`tests/phase8/help.test.ts` 如預期轉紅報錯 3 項；還原後立即恢復 40/40 綠燈，確認說明守門防線精確有效。無遺留待辦。
+
 - **【2026-10-19 傍晚：變化半徑圓角（C5.2，[ADR 0167](docs/adr/0167-variable-radius-fillet.md)）全鏈路完成 — 已推送 origin/main（`fd460d1..173ad35`，含 `feb4c05`＋`2212720`＋`2400c26`）；下方「下一步」兩節已全數做完，僅供追溯】**
   - **收尾結果**：UI（`FilletVariable`）、雙語、help、e2e（`tests/e2e/manual-variable-fillet.js` 7 步 PASS）完成；`npm run check` 全量 3120 過 0 敗、`make:drawing` 過；反向對照（關掉 `<FilletVariable>`）e2e 如預期轉紅，已還原。無遺留待辦。
   - **以下為交棒當時的紀錄**：

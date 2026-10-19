@@ -36,6 +36,7 @@ import {
   type EdgeFlangeFeature,
   type HemFeature,
   type ThreadFeature,
+  type HelixFeature,
   type BreakCornerFeature,
   type Fingerprint,
   type Id,
@@ -2314,6 +2315,44 @@ class AppStore {
         suppressed: false,
         mode: 'delete',
         targets,
+      },
+      base,
+    );
+  }
+
+  /** 「螺旋曲線與渦捲線」 (C8.3, ADR 0168): constructs a 3D helix or flat spiral curve from a circular reference. */
+  newHelix(): void {
+    const s = this.state;
+    let circleRef: Ref | undefined;
+    if (s.selectedElements.length > 0 && s.selectedElements[0]?.kind === 'edge') {
+      circleRef = s.selectedElements[0];
+    } else {
+      const selected = findFeature(this.history.doc, s.selected ?? '');
+      if (selected?.type === 'sketch') {
+        circleRef = { kind: 'datum', name: selected.id };
+      } else {
+        const lastSketch = [...this.history.doc.features].reverse().find((f): f is SketchFeature => f.type === 'sketch');
+        if (lastSketch) circleRef = { kind: 'datum', name: lastSketch.id };
+      }
+    }
+    const base = t('feature.helix');
+    const id = this.allocator().take('helix');
+    this.openNew(
+      {
+        id,
+        type: 'helix',
+        name: nextName(this.history.doc, base),
+        suppressed: false,
+        circle: circleRef ?? { kind: 'datum', name: '' },
+        definedBy: 'pitchAndRev',
+        pitch: '5',
+        revolutions: '3',
+        height: '15',
+        startAngle: '0deg',
+        clockwise: true,
+        reverse: false,
+        taperAngle: '0deg',
+        taperOutward: false,
       },
       base,
     );

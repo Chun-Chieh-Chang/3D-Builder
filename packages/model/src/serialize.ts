@@ -206,6 +206,8 @@ const migrations: Record<number, (doc: Json) => Json> = {
   64: (doc) => doc,
   // v66: variable-radius fillet control points (`fillet.variable`, C5.2, ADR 0167). Absent until a control point is added; nothing to convert.
   65: (doc) => doc,
+  // v67: helix and spiral curve feature (`helix`, C8.3, ADR 0168). A new feature kind; nothing to convert.
+  66: (doc) => doc,
 };
 
 export class FormatError extends Error {

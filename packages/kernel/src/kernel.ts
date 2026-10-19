@@ -46,6 +46,8 @@ import {
   type SurfaceGeometry,
   type EdgeSample,
   type EdgeSamplingResult,
+  type HelixCurveSpec,
+  type HelixCurveResult,
 } from './types';
 
 /** How far a surface made by offsetting may be from the gap asked for (mm): the check of every surface feature (ADR 0067). */
@@ -2750,6 +2752,162 @@ export class Kernel {
       }
 
       return { samples, length: totalLength, closed };
+    } finally {
+      arena.dispose();
+    }
+  }
+
+  /**
+   * Constructs a 3D helix or planar Archimedean spiral wire (C8.3, ADR 0168).
+   */
+  helixCurve(spec: HelixCurveSpec): HelixCurveResult {
+    const oc = this.oc;
+    const {
+      center,
+      normal,
+      radius,
+      pitch,
+      revolutions,
+      height,
+      startAngle = 0,
+      clockwise = true,
+      reverse = false,
+      taperAngle = 0,
+      taperOutward = false,
+      isSpiral = false,
+    } = spec;
+
+    // Red-team parameter assertions (no silent degradation)
+    if (!(Number.isFinite(radius) && radius > 1e-6)) throw new KernelError(t('helix.invalidRadius'));
+    if (!(Number.isFinite(pitch) && pitch > 1e-6)) throw new KernelError(t('helix.invalidPitch'));
+    if (!(Number.isFinite(revolutions) && revolutions > 1e-6)) throw new KernelError(t('helix.invalidRevolutions'));
+    if (!isSpiral && !(Number.isFinite(height) && height > 1e-6)) throw new KernelError(t('helix.invalidHeight'));
+
+    const normLen = Math.hypot(normal[0], normal[1], normal[2]);
+    if (!(normLen > 1e-6)) throw new KernelError(t('helix.noCircle'));
+    const Z: Vec3 = reverse
+      ? [-normal[0] / normLen, -normal[1] / normLen, -normal[2] / normLen]
+      : [normal[0] / normLen, normal[1] / normLen, normal[2] / normLen];
+
+    const perp = (v: Vec3): Vec3 => {
+      const ax = Math.abs(v[0]), ay = Math.abs(v[1]), az = Math.abs(v[2]);
+      const other: Vec3 = ax <= ay && ax <= az ? [1, 0, 0] : ay <= az ? [0, 1, 0] : [0, 0, 1];
+      const cx = v[1] * other[2] - v[2] * other[1];
+      const cy = v[2] * other[0] - v[0] * other[2];
+      const cz = v[0] * other[1] - v[1] * other[0];
+      const cl = Math.hypot(cx, cy, cz) || 1;
+      return [cx / cl, cy / cl, cz / cl];
+    };
+
+    let X: Vec3;
+    if (spec.refDir) {
+      const rLen = Math.hypot(spec.refDir[0], spec.refDir[1], spec.refDir[2]);
+      if (rLen > 1e-6) {
+        const rNorm: Vec3 = [spec.refDir[0] / rLen, spec.refDir[1] / rLen, spec.refDir[2] / rLen];
+        const dot = rNorm[0] * Z[0] + rNorm[1] * Z[1] + rNorm[2] * Z[2];
+        const proj: Vec3 = [rNorm[0] - Z[0] * dot, rNorm[1] - Z[1] * dot, rNorm[2] - Z[2] * dot];
+        const projLen = Math.hypot(proj[0], proj[1], proj[2]);
+        X = projLen > 1e-6 ? [proj[0] / projLen, proj[1] / projLen, proj[2] / projLen] : perp(Z);
+      } else {
+        X = perp(Z);
+      }
+    } else {
+      X = perp(Z);
+    }
+    const Y: Vec3 = [
+      Z[1] * X[2] - Z[2] * X[1],
+      Z[2] * X[0] - Z[0] * X[2],
+      Z[0] * X[1] - Z[1] * X[0],
+    ];
+
+    const arena = new Arena();
+    try {
+      const mw = arena.own(new oc.BRepBuilderAPI_MakeWire());
+      const hand = clockwise ? 1 : -1;
+
+      if (isSpiral) {
+        const ptsPerRev = 64;
+        const totalSamples = Math.max(8, Math.ceil(revolutions * ptsPerRev));
+        const arr = arena.own(new oc.NCollection_Array1_gp_Pnt(1, totalSamples + 1));
+        const deltaTheta = (2 * Math.PI * revolutions) / totalSamples;
+        for (let i = 0; i <= totalSamples; i++) {
+          const theta = i * deltaTheta;
+          const r = radius + (pitch / (2 * Math.PI)) * theta;
+          const angle = startAngle + hand * theta;
+          const px = center[0] + r * (Math.cos(angle) * X[0] + Math.sin(angle) * Y[0]);
+          const py = center[1] + r * (Math.cos(angle) * X[1] + Math.sin(angle) * Y[1]);
+          const pz = center[2] + r * (Math.cos(angle) * X[2] + Math.sin(angle) * Y[2]);
+          arr.SetValue(i + 1, this.pnt(arena, [px, py, pz]));
+        }
+        const approx = arena.own(new oc.GeomAPI_PointsToBSpline(arr));
+        if (!approx.IsDone()) throw new KernelError(t('feature.helixFailed', { why: 'spiralBSpline' }));
+        const edge = arena.own(arena.own(new oc.BRepBuilderAPI_MakeEdge(approx.Curve())).Edge());
+        mw.Add(edge);
+      } else {
+        const taper = Math.abs(taperAngle);
+        const effectiveTaper = taperOutward ? taper : -taper;
+        const ax3 = arena.own(new oc.gp_Ax3(this.pnt(arena, center), this.dir(arena, Z), this.dir(arena, X)));
+        const surface = arena.own(
+          taper === 0
+            ? new oc.Geom_CylindricalSurface(ax3, radius)
+            : new oc.Geom_ConicalSurface(ax3, effectiveTaper, radius),
+        );
+        const dv = pitch / Math.cos(effectiveTaper);
+        const line = arena.own(
+          new oc.Geom2d_Line(
+            arena.own(new oc.gp_Pnt2d(startAngle, 0)),
+            arena.own(new oc.gp_Dir2d(hand * 2 * Math.PI, dv)),
+          ),
+        );
+        const perTurn = Math.hypot(2 * Math.PI, dv);
+
+        const wholeTurns = Math.floor(revolutions);
+        const remainder = revolutions - wholeTurns;
+
+        for (let i = 0; i < wholeTurns; i++) {
+          const edge = arena.own(
+            arena.own(new oc.BRepBuilderAPI_MakeEdge(line, surface, i * perTurn, (i + 1) * perTurn)).Edge(),
+          );
+          if (!oc.BRepLib.BuildCurves3d(edge, 1e-7, oc.GeomAbs_Shape.GeomAbs_C1, 14, 30)) {
+            throw new KernelError(t('feature.helixFailed', { why: 'BuildCurves3d' }));
+          }
+          mw.Add(edge);
+          if (!mw.IsDone()) throw new KernelError(t('feature.helixFailed', { why: 'MakeWire' }));
+        }
+
+        if (remainder > 1e-6) {
+          const edge = arena.own(
+            arena.own(new oc.BRepBuilderAPI_MakeEdge(line, surface, wholeTurns * perTurn, revolutions * perTurn)).Edge(),
+          );
+          if (!oc.BRepLib.BuildCurves3d(edge, 1e-7, oc.GeomAbs_Shape.GeomAbs_C1, 14, 30)) {
+            throw new KernelError(t('feature.helixFailed', { why: 'BuildCurves3d' }));
+          }
+          mw.Add(edge);
+          if (!mw.IsDone()) throw new KernelError(t('feature.helixFailed', { why: 'MakeWire' }));
+        }
+      }
+
+      if (!mw.IsDone()) throw new KernelError(t('feature.helixFailed', { why: 'MakeWireFinal' }));
+      const wire = arena.own(mw.Wire());
+
+      const props = arena.own(new oc.GProp_GProps());
+      oc.BRepGProp.LinearProperties(wire, props, false, false);
+      const totalLength = props.Mass();
+
+      let startPoint: Vec3 = center;
+      let endPoint: Vec3 = center;
+      const vExp = arena.own(new oc.TopExp_Explorer(wire, oc.TopAbs_ShapeEnum.TopAbs_VERTEX, oc.TopAbs_ShapeEnum.TopAbs_SHAPE));
+      if (vExp.More()) {
+        startPoint = this.xyz(arena.own(oc.BRep_Tool.Pnt(arena.own(oc.TopoDS.Vertex(vExp.Current())))));
+        vExp.Next();
+        while (vExp.More()) {
+          endPoint = this.xyz(arena.own(oc.BRep_Tool.Pnt(arena.own(oc.TopoDS.Vertex(vExp.Current())))));
+          vExp.Next();
+        }
+      }
+
+      const shape = this.put(wire.Oriented(wire.Orientation()));
+      return { shape, totalLength, startPoint, endPoint };
     } finally {
       arena.dispose();
     }

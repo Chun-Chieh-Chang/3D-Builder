@@ -1,6 +1,6 @@
 import type { ReactElement } from 'react';
 
-export type IconName = 'part' | 'assembly' | 'mates' | 'origin' | 'plane' | 'refPlane' | 'refAxis' | 'refPoint' | 'coordSys' | 'sketch' | 'extrude' | 'revolve' | 'sweep' | 'thread' | 'knurl' | 'cosmeticThread' | 'loft' | 'rib' | 'pattern' | 'mirror' | 'fillet' | 'chamfer' | 'importedBody' | 'derivedBody' | 'deleteFace' | 'moveFace' | 'shell' | 'draft' | 'hole' | 'combine' | 'split' | 'moveCopyBody' | 'deleteKeepBody' | 'offsetSurface' | 'splitLine' | 'knit' | 'fillSurface' | 'flatSurface' | 'trimSurface' | 'mutualTrim' | 'extendSurface' | 'thicken' | 'cutWithSurface' | 'lipGroove' | 'screwBoss' | 'baseFlange' | 'midBend' | 'jog' | 'edgeFlange' | 'breakCorner' | 'hem' | 'snapHook' | 'snapCatch' | 'vent' | 'body' | 'error' | 'warning' | 'ok' | 'cancel' | 'eye' | 'eyeOff' | 'drawingDoc' | 'sheet' | 'titleBlock' | 'view' | 'projectedView' | 'sectionView' | 'detailView' | 'dimension' | 'note' | 'datum' | 'gdt' | 'centreMark' | 'table' | 'surfaceFinish' | 'exportFile' | 'palette' | 'tree' | 'properties' | 'chevron' | 'pin' | 'search';
+export type IconName = 'part' | 'assembly' | 'mates' | 'origin' | 'plane' | 'refPlane' | 'refAxis' | 'refPoint' | 'coordSys' | 'sketch' | 'extrude' | 'revolve' | 'sweep' | 'thread' | 'knurl' | 'cosmeticThread' | 'helix' | 'loft' | 'rib' | 'pattern' | 'mirror' | 'fillet' | 'chamfer' | 'importedBody' | 'derivedBody' | 'deleteFace' | 'moveFace' | 'shell' | 'draft' | 'hole' | 'combine' | 'split' | 'moveCopyBody' | 'deleteKeepBody' | 'offsetSurface' | 'splitLine' | 'knit' | 'fillSurface' | 'flatSurface' | 'trimSurface' | 'mutualTrim' | 'extendSurface' | 'thicken' | 'cutWithSurface' | 'lipGroove' | 'screwBoss' | 'baseFlange' | 'midBend' | 'jog' | 'edgeFlange' | 'breakCorner' | 'hem' | 'snapHook' | 'snapCatch' | 'vent' | 'body' | 'error' | 'warning' | 'ok' | 'cancel' | 'eye' | 'eyeOff' | 'drawingDoc' | 'sheet' | 'titleBlock' | 'view' | 'projectedView' | 'sectionView' | 'detailView' | 'dimension' | 'note' | 'datum' | 'gdt' | 'centreMark' | 'table' | 'surfaceFinish' | 'exportFile' | 'palette' | 'tree' | 'properties' | 'chevron' | 'pin' | 'search';
 
 /** Default planes and reference planes share one icon, as in SolidWorks. */
 const PLANE = <path d="M4 4h10l-2 8H2z" />;
@@ -21,6 +21,7 @@ const PATHS: Record<IconName, ReactElement> = {
   thread: <path d="M4 2v12 M12 2v12 M4 4l8 2 M4 7l8 2 M4 10l8 2" />,
   knurl: <path d="M3 3v10 M13 3v10 M3 4.5l10 7 M13 4.5l-10 7 M3 11.5l10-7 M13 11.5l-10-7" />,
   cosmeticThread: <path d="M4 2v12 M12 2v12 M8 8m-3 0a3 3 0 1 1 5.12 2.12" />,
+  helix: <path d="M4 13c0-2 8-2 8-4s-8-2-8-4 8-2 8-4" />,
   fillet: <path d="M3 13V3 M3 13h10 M3 7a6 6 0 0 0 6 6" />,
   chamfer: <path d="M3 13V7l4-4h6 M3 13h10V3" />,
   derivedBody: <path d="M3 5l5-3 5 3v6l-5 3-5-3z M8 5.5v5 M10.2 8.3L8 10.5 5.8 8.3" />,

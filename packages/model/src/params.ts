@@ -361,6 +361,31 @@ export function mapExprs(feature: Feature, fn: (expr: Expr, kind: ExprKind, role
       };
     }
 
+    case 'helix': {
+      const pitch = feature.pitch !== undefined && feature.pitch.trim() !== '' ? fn(feature.pitch, 'length', 'positive') : feature.pitch;
+      const revolutions = feature.revolutions !== undefined && feature.revolutions.trim() !== '' ? fn(feature.revolutions, 'count', 'positive') : feature.revolutions;
+      const height = feature.height !== undefined && feature.height.trim() !== '' ? fn(feature.height, 'length', 'positive') : feature.height;
+      const startAngle = feature.startAngle !== undefined && feature.startAngle.trim() !== '' ? fn(feature.startAngle, 'angle', 'any') : feature.startAngle;
+      const taperAngle = feature.taperAngle !== undefined && feature.taperAngle.trim() !== '' ? fn(feature.taperAngle, 'angle', 'any') : feature.taperAngle;
+      if (
+        pitch === feature.pitch &&
+        revolutions === feature.revolutions &&
+        height === feature.height &&
+        startAngle === feature.startAngle &&
+        taperAngle === feature.taperAngle
+      ) {
+        return feature;
+      }
+      return {
+        ...feature,
+        ...(pitch !== undefined ? { pitch } : {}),
+        ...(revolutions !== undefined ? { revolutions } : {}),
+        ...(height !== undefined ? { height } : {}),
+        ...(startAngle !== undefined ? { startAngle } : {}),
+        ...(taperAngle !== undefined ? { taperAngle } : {}),
+      };
+    }
+
     case 'rib': {
       const thickness = fn(feature.thickness, 'length', 'positive');
       return thickness === feature.thickness ? feature : { ...feature, thickness };

@@ -88,6 +88,8 @@ import {
   type SweepFeature,
   type ThreadFeature,
   type KnurlFeature,
+  type HelixFeature,
+  type HelixDefinedBy,
   type Thin,
   type SketchConstraint,
   type SketchEntity,
@@ -3921,6 +3923,115 @@ function CosmeticThreadPanel({ f }: { f: CosmeticThreadFeature }) {
   );
 }
 
+function HelixPanel({ f }: { f: HelixFeature }) {
+  const definedBy = f.definedBy ?? 'pitchAndRev';
+  const update = (params: Partial<Omit<HelixFeature, 'id' | 'type' | 'name' | 'suppressed'>>) =>
+    store.execute({ type: 'setHelix', featureId: f.id, params });
+
+  return (
+    <>
+      <section className="pm-group">
+        <h4>{t('pm.helix.definedBy')}</h4>
+        <div className="pm-row">
+          <select
+            value={definedBy}
+            onChange={(e) => update({ definedBy: e.target.value as HelixDefinedBy })}
+          >
+            <option value="pitchAndRev">{t('pm.helix.pitchAndRev')}</option>
+            <option value="heightAndRev">{t('pm.helix.heightAndRev')}</option>
+            <option value="heightAndPitch">{t('pm.helix.heightAndPitch')}</option>
+            <option value="spiral">{t('pm.helix.spiral')}</option>
+          </select>
+        </div>
+      </section>
+
+      <section className="pm-group">
+        <h4>{t('pm.helix.parameters')}</h4>
+        {(definedBy === 'pitchAndRev' || definedBy === 'heightAndPitch' || definedBy === 'spiral') && (
+          <label className="pm-row">
+            <span>{t('pm.helix.pitch')}</span>
+            <ValueInput
+              value={f.pitch ?? '5'}
+              toCommand={(pitch) => ({ type: 'setHelix', featureId: f.id, params: { pitch } })}
+            />
+          </label>
+        )}
+
+        {(definedBy === 'pitchAndRev' || definedBy === 'heightAndRev' || definedBy === 'spiral') && (
+          <label className="pm-row">
+            <span>{t('pm.helix.revolutions')}</span>
+            <ValueInput
+              value={f.revolutions ?? '3'}
+              toCommand={(revolutions) => ({ type: 'setHelix', featureId: f.id, params: { revolutions } })}
+            />
+          </label>
+        )}
+
+        {(definedBy === 'heightAndRev' || definedBy === 'heightAndPitch') && (
+          <label className="pm-row">
+            <span>{t('pm.helix.height')}</span>
+            <ValueInput
+              value={f.height ?? '30'}
+              toCommand={(height) => ({ type: 'setHelix', featureId: f.id, params: { height } })}
+            />
+          </label>
+        )}
+
+        <label className="pm-row">
+          <span>{t('pm.helix.startAngle')}</span>
+          <ValueInput
+            value={f.startAngle ?? '0deg'}
+            toCommand={(startAngle) => ({ type: 'setHelix', featureId: f.id, params: { startAngle } })}
+          />
+        </label>
+      </section>
+
+      <section className="pm-group">
+        <h4>{t('pm.helix.direction')}</h4>
+        <label className="pm-row">
+          <span>{t('pm.helix.clockwise')}</span>
+          <input
+            type="checkbox"
+            checked={f.clockwise ?? true}
+            onChange={(e) => update({ clockwise: e.target.checked })}
+          />
+        </label>
+        <label className="pm-row">
+          <span>{t('pm.helix.reverse')}</span>
+          <input
+            type="checkbox"
+            checked={!!f.reverse}
+            onChange={(e) => update({ reverse: e.target.checked })}
+          />
+        </label>
+      </section>
+
+      {definedBy !== 'spiral' && (
+        <section className="pm-group">
+          <h4>{t('pm.helix.taper')}</h4>
+          <label className="pm-row">
+            <span>{t('pm.helix.taperAngle')}</span>
+            <ValueInput
+              value={f.taperAngle ?? '0deg'}
+              toCommand={(taperAngle) => ({ type: 'setHelix', featureId: f.id, params: { taperAngle } })}
+            />
+          </label>
+          <label className="pm-row">
+            <span>{t('pm.helix.taperOutward')}</span>
+            <input
+              type="checkbox"
+              checked={!!f.taperOutward}
+              onChange={(e) => update({ taperOutward: e.target.checked })}
+            />
+          </label>
+        </section>
+      )}
+
+      <p className="pm-hint">{t('pm.helix.hint')}</p>
+    </>
+  );
+}
+
 /**
  * The parameter groups of a feature — the same body a session's PropertyManager lays out, as plain components: each reads the feature from the
  * document and writes through commands, so the body depends on nothing but the feature. That is what lets the FeatureManager's properties page
@@ -3982,6 +4093,7 @@ export function FeatureParams({ f }: { f: Feature }) {
       {f.type === 'thread' && <ThreadPanel f={f} />}
       {f.type === 'knurl' && <KnurlPanel f={f} />}
       {f.type === 'cosmeticThread' && <CosmeticThreadPanel f={f} />}
+      {f.type === 'helix' && <HelixPanel f={f} />}
     </>
   );
 }
