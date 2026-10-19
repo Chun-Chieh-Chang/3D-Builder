@@ -1,5 +1,33 @@
 # 交接文件
 
+- **【2026-10-19 下午交棒：變化半徑圓角（C5.2，[ADR 0167](docs/adr/0167-variable-radius-fillet.md)）——模型層已提交 `feb4c05`（未推送）、核心／再生層在工作區未提交且全綠、UI／help 未動 — 下一個 agent 從「下一步」接手】**
+  - **背景與目標**：藍圖 C5.2——圓角半徑沿一條「揀選的邊線」由一端走到另一端（例：R2→R6），兩個控制點之間線性內插；`t` 是沿邊位置（0＝第一端、1＝最後端，錨定規則見下），半徑是表達式（可掛參數）。只有「固定半徑」種類可用：面圓角／完整圓角的半徑由面組決定，指令會在種類切換時把控制點收走。從「選面」算出的邊沒有自己的點，一律吃固定半徑（多條邊可與有控制點的邊混用）。
+  - **已完成①（已提交 `feb4c05`，本地領先 origin/main 一筆；推送前等使用者說「推」）**：零件 Schema **66** 新增 `FilletVariablePoint { edge, t, radius }` 與 `FilletFeature.variable`（選填欄位，舊檔照開）；指令 `setFilletVariable` 整套替換控制點（驗證：點只能綁本特徵揀選的邊、t∈[0,1]、同邊同位不可重複、半徑為正、每條邊的點必含 t=0 與 t=1；空清單＝刪除，回到固定半徑）；`setEdges` 把邊移出時一併放掉繫結它的點，`setFilletSets` 改變種類時清空；`refs.ts` 讓 `mapRefs`／`replaceRef` 追蹤邊線更名（更名的邊，點跟著改名走）；模型層 5 項測試。
+  - **已完成②（工作區未提交，驗證全綠——勿丟）**：
+    - `packages/kernel/src/kernel.ts`：`Kernel.fillet(target, edges, radius, laws?)` 多一個選用 `laws?: Map<邊序號, {t, r}[]>`；新私有 `radiusLaw()` 組出 `NCollection_Array1_gp_Pnt2d`（含 `LAW_STRETCH_SAMPLES = 64` 密化常數）。
+    - `packages/regen/src/engine.ts`：`fillet()`（`engine.ts` 約 4196 行）檢查 `f.variable`，非空走新私有 `filletLaws()`（約 4214 行：永續邊名→邊序號、半徑求值、三項驗證），並**直接呼叫 `kernel.fillet`**——變化半徑不走 `roundEdges` 的「半徑減半重試」後路（ADR 0167：法律失敗就是失敗，並說明原因）。
+    - `packages/i18n/src/{zh-TW,en}/edit.ts`：3 個鍵 `edit.filletVariableEdge`／`edit.filletVariablePositive`／`edit.filletVariableEnds`。
+    - `packages/kernel/test/kernel.test.ts`：4 項（體積積分手值、控制點半徑精確、常數法律等價、混合常數＋變化）。
+    - `tests/phase3/variable-fillet.test.ts`：**新檔（未追蹤，勿丟）** 5 項（R2→R6 斜坡體積 14251.209393、控制點非本特徵邊、負半徑、缺端點、與常數邊混用）。
+    - `tests/phase1/builders.ts`：`fillet()` 加第四個選用參數 `variable?: { edge, t, radius }[]`。
+  - **關鍵實作須知（三個坑，接手必讀）**：
+    1. **OCCT 的 `Add(UandR, E)` 是平滑內插，不是線性**：兩個控制點 (0,2)→(1,6) 會跑出 S 形（四分點偏差幾個 %），三個點會在折角過衝。解法：每段直線密化成 `LAW_STRETCH_SAMPLES = 64` 個樣本，量測半徑與直線差 1e-5、體積與積分差 1e-4。**不要改成 `Add(Law_Function, E)`**——libcascade WASM 的 Law_Function 全部失效（任何 law 型別都「圓角失敗」），已試過。
+    2. **`t` 的錨點不是 OCCT 的參數方向**：邊的參數方向取決於它所在 wire 的朝向，同一個歷史重建後可能反轉；`t=0` 一律錨在「座標較小的端點」（先比 x，再 y，再 z，用 `BRep_Tool.Parameter` 取該端點在邊上的參數）。閉合邊沒有這種端點，沿用曲線自身方向。
+    3. **WASM 綁定簽名坑**：`BRep_Tool.Degenerated` 只吃 `TopoDS_Edge`，傳 `TopoDS_Vertex` 會報 `BindingError: invalid signature`。
+  - **體積計算公式（改測試時的依據）**：90° 凸緣每單位長度去料 `(1 − π/4)·r²`；40×30×12 方塊（體積 14400）頂邊 R2→R6 走 40 mm：`∫₀⁴⁰ (1−π/4)(2+0.1x)² dx ＝ 148.7906` → **14251.209393**（測試斷言到 3 位小數）。
+  - **下一步（任務 #14 UI＋雙語＋help，未開始）**：
+    1. **面板**（`apps/web/src/components/PropertyManager.tsx` 的 `FilletPanel`，約 **1529 行**）：種類選「固定半徑」時加「變化半徑」核取方塊；勾選後列出**每條揀選邊的控制點表**（邊名、t、半徑、新增／移除）。寫入一律走既有指令 `{ type: 'setFilletVariable', featureId, points }`（指令已做完所有驗證；取消勾選＝送空陣列）。**store 還沒有對應 helper**，可直接 `store.execute(...)` 或仿 `setFilletKind`（`state/store.ts` 約 2421 行）加一個。`store.toggleEdge` 已因 `setEdges` 放掉離散點，不用動。半徑值輸入沿用 `ValueInput`（走表達式）。以 `f.variable` 為單一真相（改種類會被指令清空，表格要跟著清）。
+    2. **雙語**：UI 新字串鍵放 `packages/i18n/src/{zh-TW,en}/pmpanels.ts`（`pm.fillet.*` 一帶）；英文冊不得出現中文（`lint:i18n` 會查 CJK）。
+    3. **help**：`packages/i18n/src/{zh-TW,en}/help.ts` 的 `help.fillet.body` 補一段變化半徑說明＋「驗證過的例子」體積數字（照該檔既有體例：手動步驟＋條列＋驗證數字）。
+  - **下一步（任務 #15 測試與全閘門，未開始）**：
+    1. e2e：為新面板寫重播腳本（`tests/e2e/manual-*.js`，照 `manual-sidebar-tabs.js` 體例），`npm run verify:ui` 跑相關批次，並做反向對照。
+    2. 全閘門：`npm run check`（typecheck＋三支 linter＋全量 vitest；基線 **3106 過 0 敗**，本次新增 5 支應為 **3111 過 0 敗**）＋`npm run make:drawing`（不在 `npm test` 內，單獨跑）。
+    3. **提交拆兩個**：① `feat(kernel/regen)`：kernel、regen、i18n edit 鍵、兩支測試與 builders；② `feat(web)`：面板＋pmpanels＋help＋e2e。每個提交都要能獨立編譯（提交慣例見 `.workbuddy-ai/memory/MEMORY.md`）。
+    4. 收尾：`DEV_LOG.md` 開頭加本條目、`handoff.md` 把本條目改寫成「已完成」、`.workbuddy-ai/memory/2026-10-19.md` 追加紀錄。
+    5. **推送等使用者說「推」**（origin 已可走 HTTPS＋Git Credential Manager，不再需要 SSH URL 變通）。
+  - **確效現況（2026-10-19 15:2x，工作區現狀）**：`npm run typecheck` **0 錯**；`packages/kernel/test/kernel.test.ts` **14/14 過**（含 4 項變化半徑）；`tests/phase3/variable-fillet.test.ts` **5/5 過**。尚未跑：全量 vitest、`lint:rules`／`lint:deps`／`lint:i18n`、`verify:ui`。
+  - **環境小提醒**：vitest 5 在 Windows 會因 cwd 磁碟機代號大小寫不同而無法 externalize 自己（跑任何 vitest 前先 `cd /e/Self-developed_Apps/G3/3D-Builder`，大寫 E:）；其餘沙箱限制見 `.workbuddy-ai/memory/MEMORY.md`（execFileSync EBUSY→`stdio: ['ignore','pipe','pipe']`、MSYS `ln -s` 建空目錄、`bash -e` 吃反引號）。
+
 - **【2026-10-19：特徵參數群組框——屬性頁直接顯示並編輯特徵參數（E1 §2.2 最後一項共同待辦）— 已推送 `478a422`（origin/main）】**
   - **背景與目標**：零件在 FeatureManager 樹上點選特徵時，屬性頁原本只有識別群組＋「編輯特徵」——看參數非得先開工作階段。本次讓屬性頁**直接排出該特徵的參數群組框**（extrude／revolve／fillet／hole／pattern…40+ 特徵型別全覽），且**不開工作階段就能改**：改動走 immediate command，一步一 undo，Ctrl+Z 可復原。草圖維持識別＋「編輯特徵」（其參數群組屬於草圖編輯器，SKetchPlane/SKetch 面板需要 sketcher session）。
   - **關鍵設計——面板自足性**：所有 ~50 個 `<XxxPanel f={f}/>` 本就只吃 `{ f }`、透過 `store.execute(...)` 寫入（ValueInput 的 Enter/blur、select/checkbox 的 onChange 全是 immediate command），不讀 `editing`、不開 transaction、不觸發揀取模式（`RefItem` 只能清除參考，指派參考是進 session 時在圖面點選）。session 只是用 `beginEdit`/`commitEdit` 把這些包成一步；沒有 session 時每一步自成一 undo。**抽取不改變 session 的 DOM 與行為**——e2e 第 1～3 步（session 開合、隱藏不卸載）原式通過。
@@ -999,12 +1027,12 @@
 
 ### 0.0 快速接手（2026-10-04，H-11 之後，換電腦先看這段）
 
-**狀態（2026-10-09 更新）**：Phase 0 到 7 開發完成，之後的功能到 ADR 0122；`npm run check` **2482 項通過、22 項略過**；零件 Schema **52**、組合件 Schema 7、工程圖 Schema **9**。已經沒有「進行中」的里程碑，**等使用者的實機驗證結果**。鞏固 H-1 到 H-11 已做完（[hardening-plan](docs/hardening-plan.md)）。2026-10-07 使用者用選擇題決定了後續的項目，做完的與還沒做的在下面「2026-10-07 的選擇」。每個里程碑的 ADR、驗收表與限制在對應的 ADR，§3 有一行摘要。
+**狀態（2026-10-19 更新）**：Phase 0 到 7 開發完成，之後的功能到 ADR 0167；全量 vitest **3106 過、0 敗**（2026-10-19 基線；C5.2 又新增 5 支，全量尚未重跑）；零件 Schema **66**、組合件 Schema 7、工程圖 Schema **25**。**進行中的功能：C5.2 變化半徑圓角**——見本檔最上方條目（模型層已提交 `feb4c05`，核心／再生層在工作區未提交且全綠，UI／help 未動；下一個 agent 照最上方條目的「下一步」接手）。除此之外沒有其他進行中的里程碑，**等使用者的實機驗證結果**。鞏固 H-1 到 H-11 已做完（[hardening-plan](docs/hardening-plan.md)）。2026-10-07 使用者用選擇題決定了後續的項目，做完的與還沒做的在下面「2026-10-07 的選擇」。每個里程碑的 ADR、驗收表與限制在對應的 ADR，§3 有一行摘要。
 
 **2026-10-07 的選擇（使用者在選擇題頁面選的；做完的都已提交並推送，ADR 在 §2 文件地圖）**
 - **已做**：折彎之後才切的孔進平板型式（ADR 0113）；厚面遇尖角拒絕並說明根因（ADR 0112）；曲面互相修剪補測自由曲面（ADR 0109 的補充，沒有發現問題）；折過的基材上的凸緣的平板型式（ADR 0114）；3D 視窗顯示展開的狀態（ADR 0115）；`make:kit` 加了新功能的範例檔（`曲面/`、`鈑金/` 的互相修剪、厚面兩側、斜接、中間折彎、折過基材加凸緣、折彎後的孔；**使用者要再跑一次 `npm run make:kit`**，手冊的步驟已寫「範例檔」）；刪除舊分支 `spike/occt-gaps`（已與 main 合併）。
 - **選了但前提已經過時**：「摺邊的最小半徑規則」——ADR 0093 已決定摺邊不參加最小半徑檢查，沒有摺邊專屬規則（沒有可靠的數值，等工廠的規定）；§8 Phase 7 C 的那句舊話已更正。**要做就要先有工廠的數值。**
-- **選「先不做」或「等回饋」**：圓角與導角的其餘功能（變數半徑、選特徵與迴路、不相鄰面的面圓角、兩側不平行的完整圓角）；工程圖號球與表格拖曳（等 F 章驗證）；以曲面除料的任意向量方向；下一個大功能（組態與設計表格、由上而下設計、IGES、腳本 API）——**驗證到 H 章再選**；桌面版圖示、自動更新、簽章——**驗證結束重建安裝檔時一起處理**。
+- **選「先不做」或「等回饋」**：圓角與導角的其餘功能（~~變數半徑~~→**2026-10-19 使用者改做，C5.2 進行中，見本檔最上方條目**；尚餘選特徵與迴路、不相鄰面的面圓角、兩側不平行的完整圓角）；工程圖號球與表格拖曳（等 F 章驗證）；以曲面除料的任意向量方向；下一個大功能（組態與設計表格、由上而下設計、IGES、腳本 API）——**驗證到 H 章再選**；桌面版圖示、自動更新、簽章——**驗證結束重建安裝檔時一起處理**。
 - **SW 原生檔（使用者沒有 SolidWorks，2026-10-07 再次強調：不要要求他使用 SW）**：決定在 blueprint §1；輸出原生檔放棄；輸入靠別人給的 STEP。我曾寫過在 SW 裡跑的批次轉 STEP 巨集，使用者說不需要，已刪除。找到兩個開源專案：openswx（MIT，只讀屬性與組合件零件參照，沒有幾何）與 open-sld-to-step（Apache-2.0，NIST 比對面只吻合約 52%）；要不要用它們評估，等使用者決定（他手上的 `.SLDASM` 樣本放在 `<使用者資料夾>\Downloads\SW樣本`）。
 - **2026-10-07 的清理（使用者用選擇題決定）**：個人路徑換成 `<使用者資料夾>`、`<檢出路徑>`（git 歷史裡仍有舊的）；`sync.ffs_db` 進 `.gitignore`；`tests/e2e/phase2-assembly.js` 的 STEP 路徑改由檔案位置推出；死碼與無效資源只列清單（`docs/cleanup-candidates.md`），使用者勾選後才刪（已刪 `conjugate`、`DOWEL_STANDARD_SOURCE` 與 17 個沒被引用的文字鍵；其餘保留）；文件只對齊現有的，不新建 DEV_LOG.md 與 wiki/；**重新打包等實機驗證做完才做，形式選安裝檔（NSIS）**（已於 2026-10-09 重打：桌面版 0.2.0；舊的 0.1.0 安裝檔已刪）；推送要使用者說「推」才推。
 
