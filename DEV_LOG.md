@@ -1,5 +1,28 @@
 # 3D-Builder 開發日誌 (DEV_LOG.md)
 
+## 2026-10-20：`verify:ui` 的匯出檔不再寫進使用者的「下載」資料夾
+
+### 現象
+使用者的「下載」資料夾不斷累積同名檔案，每跑一次多一份，編號為 (2)、(3)……：
+- `夾具-零件表.csv`：零件表的 CSV；
+- `板-flat.dxf`：鈑金展開圖的 DXF；
+- `定位板.svg`：工程圖的 SVG。
+
+### RCA
+- App 的 `files.ts` `download()` 會建立 Blob URL，再點擊 `<a download>` 觸發下載。
+- `phase3-bom.js`、`phase7-flat-ui.js`、`phase5-drawing.js`、`phase5-output.js` 等腳本攔截 `URL.createObjectURL` 取得內容做斷言，但仍呼叫原本的函式，所以下載照樣發生。
+- `verify-ui.mjs` 用全新的暫存 profile 啟動 headless Chrome，卻沒有告訴它下載要存到哪裡，Chrome 便存進使用者自己的「下載」資料夾。
+
+### 修正（在 harness 層一次解決，現有與未來的腳本都涵蓋）
+- `verify-ui.mjs` 連上頁面後送出 `Browser.setDownloadBehavior { allow, downloadPath: <暫存 profile>/downloads }`；Chrome 不接受時改用 `Page.setDownloadBehavior`。
+- 兩者都失敗時直接中止這輪，而不是退回去寫「下載」資料夾。注意：這個 harness 的 CDP 錯誤是以 `error` 欄位回傳，不會拋出例外，第一版的 `.catch` 因此無效，已改為檢查 `.error`。
+- 結束時印出攔下了幾個下載，再連同 profile 一起刪除。
+
+### 驗證
+- 跑會匯出的腳本（零件表、展開圖、工程圖 SVG、輸出）：4/4 PASS，「下載」資料夾的相關檔案仍為 15 個，最新的檔案也沒變。
+- 再跑 3 支：3/3 PASS，輸出「3 download(s) … kept in the run's own folder」，「下載」資料夾仍為 15 個。這證明下載確實被導向暫存資料夾，而不是根本沒有發生。
+- 既有的 15 個外溢檔案沒有自行刪除（那是使用者的資料夾），已交由使用者決定。
+
 ## 2026-10-20：參考平面「垂直於曲線」（G5，[ADR 0174](docs/adr/0174-plane-normal-to-curve.md)）— 第一批 G1–G5 完成
 
 ### 1. 背景與決策

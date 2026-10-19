@@ -130,6 +130,9 @@ async function main() {
     samples.close();
     kill(chrome);
     kill(server);
+    // the downloads the run made, kept out of the user's Downloads folder (see Browser.setDownloadBehavior below)
+    const caught = existsSync(join(profile, 'downloads')) ? readdirSync(join(profile, 'downloads')).length : 0;
+    if (caught > 0) console.log(`${caught} download(s) of the scripts kept in the run's own folder and removed with it`);
     try {
       rmSync(profile, { recursive: true, force: true });
     } catch {
@@ -203,6 +206,14 @@ async function main() {
         ws.send(JSON.stringify({ id, method, params }));
       });
     await send('Page.enable');
+    // What a script exports (a BOM's CSV, a flat pattern's DXF, a drawing's SVG …) is clicked through to a real download: the scripts read the file from
+    // the blob they catch, but the browser saves it too, and left to itself a fresh profile saves into the user's own Downloads folder — a copy for every
+    // run. It goes into the throw-away profile instead, which is removed with it.
+    // A refused call comes back with an `error` (it is not thrown): the page-level form is the fallback, and with neither the run stops rather than litter.
+    const downloads = { behavior: 'allow', downloadPath: join(profile, 'downloads') };
+    if ((await send('Browser.setDownloadBehavior', downloads)).error && (await send('Page.setDownloadBehavior', downloads)).error) {
+      throw new Error('the browser would not say where downloads go: stopped so as not to save into the Downloads folder');
+    }
     await send('Runtime.enable');
     await send('Log.enable');
     // `window.__shot(label)` for the scripts: the page asks, this process takes the screenshot (the page cannot), and the page goes on when it is saved
