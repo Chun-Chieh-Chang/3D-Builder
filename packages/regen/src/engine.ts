@@ -375,6 +375,22 @@ const KNURL_MAX_DIAMOND_GROOVES = 40;
 const add = (a: Vec3, b: Vec3, s = 1): Vec3 => [a[0] + b[0] * s, a[1] + b[1] * s, a[2] + b[2] * s];
 const sub = (a: Vec3, b: Vec3): Vec3 => [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
 const dot = (a: Vec3, b: Vec3) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+const scale = (a: Vec3, s: number): Vec3 => [a[0] * s, a[1] * s, a[2] * s];
+
+/**
+ * The names of a helix curve's elements (C8.3), one per edge and vertex in the order of `topology`: the wire has an edge per turn (and one for a part turn),
+ * so turn k's edge is `<id>:helix:<k>`, the ends `<id>:start` and `<id>:end` and the vertices between turns `<id>:turn:<k>`. Which turn an element is on is
+ * worked out from how far up the axis it is (`rise` per turn), not from the order the kernel lists them in; a spiral (`rise` 0) is a single edge.
+ */
+function helixNames(id: Id, topology: Topology, at: { start: Vec3; end: Vec3; origin: Vec3; axis: Vec3; rise: number }): ElementNames {
+  const near = (p: Vec3, q: Vec3) => Math.hypot(...sub(p, q)) < 1e-6 * (1 + Math.hypot(...sub(at.end, at.start)));
+  const turn = (p: Vec3) => (at.rise > 0 ? dot(sub(p, at.origin), at.axis) / at.rise : 0);
+  const edges = topology.edges.map((e) => `${id}:helix:${Math.floor(turn(e.mid) + 1e-9)}`);
+  const vertices = topology.vertices.map((v) => (near(v.point, at.start) ? `${id}:start` : near(v.point, at.end) ? `${id}:end` : `${id}:turn:${Math.round(turn(v.point))}`));
+  // two elements of one name would make a reference to either pick the wrong one
+  if (new Set(edges).size !== edges.length || new Set(vertices).size !== vertices.length) throw new Error(`helix ${id}: element names are not unique`);
+  return { faces: [], edges, vertices };
+}
 const cross = (a: Vec3, b: Vec3): Vec3 => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
 const unit = (a: Vec3): Vec3 => {
   const l = Math.hypot(...a) || 1;
@@ -1832,15 +1848,13 @@ export class Regenerator {
     } else if (f.circle.kind === 'datum') {
       const s = sketches.get(f.circle.name);
       if (!s) throw new FeatureError(t('helix.noCircle'));
-      // Find the first circular or arc entity in the sketch
-      let foundCircle: { center: [number, number]; radius: number } | null = null;
-      for (const geom of s.solved.geometry.values()) {
-        if (geom.type === 'circle' || geom.type === 'arc') {
-          foundCircle = { center: [geom.c[0], geom.c[1]], radius: geom.r };
-          break;
-        }
-      }
-      if (!foundCircle) throw new FeatureError(t('helix.noCircle'));
+      // the reference is the sketch, not one of its entities: it has to have exactly one circle or arc (construction geometry aside), as in
+      // SolidWorks; with two the helix would silently take whichever came first
+      const circles = [...s.solved.geometry.values()].filter((g): g is Extract<typeof g, { type: 'circle' | 'arc' }> => (g.type === 'circle' || g.type === 'arc') && !g.construction);
+      if (circles.length === 0) throw new FeatureError(t('helix.noCircle'));
+      if (circles.length > 1) throw new FeatureError(t('helix.ambiguousCircle', { count: String(circles.length) }));
+      const geom = circles[0]!;
+      const foundCircle = { center: [geom.c[0], geom.c[1]] as [number, number], radius: geom.r };
       const fr = s.frame;
       center = add(add(fr.origin, fr.xDir, foundCircle.center[0]), fr.yDir, foundCircle.center[1]);
       normal = fr.normal;
@@ -1908,11 +1922,13 @@ export class Regenerator {
 
     this.owned.push(res.shape);
     const topology = this.kernel.topology(res.shape);
-    const names: ElementNames = {
-      faces: [],
-      edges: [`${f.id}:helix`],
-      vertices: [`${f.id}:v0`, `${f.id}:v1`],
-    };
+    const names = helixNames(f.id, topology, {
+      start: res.startPoint,
+      end: res.endPoint,
+      origin: center,
+      axis: reverse ? scale(normal, -1 / Math.hypot(...normal)) : scale(normal, 1 / Math.hypot(...normal)),
+      rise: isSpiral ? 0 : pitch,
+    });
 
     this.info = t('helix.info', {
       mode: t(`pm.helix.${definedBy}`),
@@ -1927,6 +1943,7 @@ export class Regenerator {
       names,
       by: f.id,
       surface: true,
+      curve: true,
     };
 
     return [...set.list, newBody];
@@ -3900,7 +3917,7 @@ export class Regenerator {
    */
   private trimSurface(f: TrimSurfaceFeature, sketches: RebuildResult['sketches'], set: Bodies): BodyState[] {
     return this.perBody(set, [f.face], 'face', t('surface.noBodyForSplit'), () => t('surface.splitFacesLost'), (body) => {
-      if (!body.surface) throw new FeatureError(t('surface.trimNeedsSurface'));
+      if (!body.surface || body.curve) throw new FeatureError(t('surface.trimNeedsSurface'));
       const p = this.projectSplit(f, sketches, body);
       try {
         const gone = new Set(f.keep === 'outside' ? p.regions : p.pieces.filter((j) => !p.regions.includes(j)));
@@ -3928,7 +3945,7 @@ export class Regenerator {
       if (!ref.name) throw new FeatureError(t('body.pick', { what: t('surface.knitNone') }));
       const b = set.list.find((x) => x.id === ref.name);
       if (!b) throw new FeatureError(t('body.lost', { name: ref.name }), [{ ref, reason: 'missing', candidates: [] }]);
-      if (!b.surface) throw new FeatureError(t('surface.knitNeedsSurface', { name: b.id }));
+      if (!b.surface || b.curve) throw new FeatureError(t('surface.knitNeedsSurface', { name: b.id }));
       if (!bodies.includes(b)) bodies.push(b);
     }
     const r = this.kernel.knit(bodies.map((b) => b.shape), f.tolerance ? evalLength(f.tolerance) : 0.01, f.solid !== false);
@@ -3948,7 +3965,7 @@ export class Regenerator {
     const a = this.bodyByRef(set, f.a, t('surface.trimBodyA'));
     const b = this.bodyByRef(set, f.b, t('surface.trimBodyB'));
     if (a === b) throw new FeatureError(t('surface.trimSameBody'));
-    for (const x of [a, b]) if (!x.surface) throw new FeatureError(t('surface.trimNeedsSurfaces', { name: x.id }));
+    for (const x of [a, b]) if (!x.surface || x.curve) throw new FeatureError(t('surface.trimNeedsSurfaces', { name: x.id }));
     const k = this.kernel;
     const r = k.trimSurfaces(a.shape, b.shape);
     const state = (body: BodyState, res: { shape: ShapeId; faceOrigins: FaceOrigin[][] }): BodyState => {
@@ -4103,7 +4120,7 @@ export class Regenerator {
    */
   private thicken(f: ThickenFeature, set: Bodies): BodyState[] {
     const b = this.bodyByRef(set, f.body, t('surface.thickenBody'));
-    if (!b.surface) throw new FeatureError(t('surface.thickenNeedsSurface', { name: b.id }));
+    if (!b.surface || b.curve) throw new FeatureError(t('surface.thickenNeedsSurface', { name: b.id }));
     const thickness = evalLength(f.thickness);
     const k = this.kernel;
     // a copy of the surface for the solid when it is kept: its names are changed so that no name is in two bodies
@@ -4138,7 +4155,7 @@ export class Regenerator {
     const target = this.bodyByRef(set, f.target, t('surface.cutTarget'));
     const surface = this.bodyByRef(set, f.surface, t('surface.cutSurface'));
     if (target.surface) throw new FeatureError(t('surface.cutNeedsSolid', { name: target.id }));
-    if (!surface.surface) throw new FeatureError(t('surface.cutNeedsSurface', { name: surface.id }));
+    if (!surface.surface || surface.curve) throw new FeatureError(t('surface.cutNeedsSurface', { name: surface.id }));
     const normal = f.direction.kind === 'vector'
       ? f.direction.value
       : this.planeOf(f.direction, set, { what: t('surface.cutDirection'), notPlanar: t('surface.cutDirectionNotPlanar') }).normal;
@@ -4163,7 +4180,7 @@ export class Regenerator {
   /** 「延伸曲面」 (C9.3): a surface body of one face made `distance` longer past the edges picked; the face keeps its name. */
   private extendSurface(f: ExtendSurfaceFeature, set: Bodies): BodyState[] {
     return this.perBody(set, f.edges, 'edge', t('surface.noBodyForExtend'), (n) => t('edit.edgesLost', { n }), (body, mine) => {
-      if (!body.surface) throw new FeatureError(t('surface.notSurface'));
+      if (!body.surface || body.curve) throw new FeatureError(t('surface.notSurface'));
       const r = this.kernel.extendFace(body.shape, this.edgeIndices(mine, body), evalLength(f.distance));
       const topology = this.kernel.topology(r.shape);
       return { id: body.id, shape: r.shape, topology, names: nameElements(r.faceOrigins, topology, { featureId: f.id, input: body.names }), by: f.id, surface: true };

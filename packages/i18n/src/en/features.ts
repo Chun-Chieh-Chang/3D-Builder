@@ -639,6 +639,10 @@ export const features: Translation = {
   'helix.invalidHeight': 'Height must be greater than 0',
   'helix.invalidRevolutions': 'Revolutions must be greater than 0',
   'helix.invalidRadius': 'Radius must be greater than 0',
+  'helix.invalidTaper': 'The taper angle must be from 0° up to (not including) 90°; inward or outward is set by "Taper Outward"',
+  'helix.crossesAxis': 'The tapered helix narrows inward: {height} mm up its radius is {radius} mm, which crosses the axis; make the taper angle, the revolutions or the pitch smaller',
+  'helix.tooManyTurns': '{turns} revolutions is more than the limit of {max}',
+  'helix.ambiguousCircle': 'The sketch has {count} circles or arcs (construction geometry not counted), so the helix cannot tell which to use; the sketch may have only one',
   'helix.info': 'Helix: mode {mode}, radius {radius} mm, length {length} mm',
   'pm.helix.title': 'Helix / Spiral Curve',
   'pm.helix.circle': 'Reference Circle (Sketch/Edge)',
@@ -659,6 +663,6 @@ export const features: Translation = {
   'pm.helix.taper': 'Taper Helix',
   'pm.helix.taperAngle': 'Taper Angle',
   'pm.helix.taperOutward': 'Taper Outward',
-  'pm.helix.hint': 'Construct a 3D space helix or planar Archimedean spiral from a circular reference, usable for spring sweep, thread paths, or curve pattern guides.',
+  'pm.helix.hint': 'Pick a sketch with one circle, or a circular edge, to build a 3D helix or a flat Archimedean spiral; the result is a curve body with an edge per turn (it cannot be a sweep path yet).',
   'feature.helixFailed': 'Failed to build helix curve: {why}',
 };

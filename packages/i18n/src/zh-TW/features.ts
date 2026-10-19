@@ -636,6 +636,10 @@ export const features = {
   'helix.invalidHeight': '高度必須大於 0',
   'helix.invalidRevolutions': '圈數必須大於 0',
   'helix.invalidRadius': '半徑必須大於 0',
+  'helix.invalidTaper': '錐角必須介於 0° 與 90° 之間（不含 90°）；往內或往外由「往外擴展」決定',
+  'helix.crossesAxis': '錐形螺旋往內縮，升高 {height} mm 時半徑為 {radius} mm，會穿過軸心；請減小錐角、圈數或螺距',
+  'helix.tooManyTurns': '圈數 {turns} 超過上限 {max} 圈',
+  'helix.ambiguousCircle': '草圖裡有 {count} 個圓或圓弧（不算建構線），螺旋曲線不知道要用哪一個；草圖中只能有一個',
   'helix.info': '螺旋曲線：模式 {mode}，半徑 {radius} mm，長度 {length} mm',
   'pm.helix.title': '螺旋曲線與渦捲線',
   'pm.helix.circle': '基準圓 (草圖圓/圓形邊線)',
@@ -656,6 +660,6 @@ export const features = {
   'pm.helix.taper': '錐形螺旋',
   'pm.helix.taperAngle': '錐角',
   'pm.helix.taperOutward': '往外擴展',
-  'pm.helix.hint': '選取圓形幾何建構 3D 空間螺旋線或平面阿基米德渦捲線，可用於彈簧掃出、螺紋軌跡或曲線複製排列導引。',
+  'pm.helix.hint': '選取只含一個圓的草圖或圓形邊線，建構 3D 螺旋線或平面阿基米德渦捲線；結果是曲線本體，每圈一條邊（目前還不能當掃出路徑）。',
   'feature.helixFailed': '螺旋曲線建構失敗：{why}',
 } as const;

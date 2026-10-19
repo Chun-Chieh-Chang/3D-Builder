@@ -130,6 +130,9 @@ export const THREAD_MAX_STARTS = 16;
 export const THREAD_MAX_TAPER = (30 * Math.PI) / 180;
 export const THREAD_MAX_TURNS = 400;
 
+/** A helix curve (C8.3) of more turns than this is refused, not tried: each turn is an edge, and 5000 turns already took 0.7 s and as many shapes. */
+export const HELIX_MAX_TURNS = 1000;
+
 /** A knurl (壓花): see `Kernel.knurl`. */
 export interface KnurlSpec {
   /** A point on the axis and the way it runs (any length). */
@@ -2782,6 +2785,13 @@ export class Kernel {
     if (!(Number.isFinite(pitch) && pitch > 1e-6)) throw new KernelError(t('helix.invalidPitch'));
     if (!(Number.isFinite(revolutions) && revolutions > 1e-6)) throw new KernelError(t('helix.invalidRevolutions'));
     if (!isSpiral && !(Number.isFinite(height) && height > 1e-6)) throw new KernelError(t('helix.invalidHeight'));
+    if (revolutions > HELIX_MAX_TURNS) throw new KernelError(t('helix.tooManyTurns', { turns: String(revolutions), max: String(HELIX_MAX_TURNS) }));
+    // the taper is a half-angle of a cone, 0 up to (not including) 90°; which way it goes is `taperOutward`, so a negative angle is refused, not made positive
+    if (!(Number.isFinite(taperAngle) && taperAngle >= 0 && taperAngle < Math.PI / 2 - 1e-6)) throw new KernelError(t('helix.invalidTaper'));
+    // a helix narrowing inward reaches the axis (the apex of the cone) and comes out the other side: refused, as the radius there is not positive
+    const rise = pitch * revolutions;
+    const endRadius = isSpiral ? radius + rise : radius + (taperOutward ? 1 : -1) * rise * Math.tan(taperAngle);
+    if (!(endRadius > 1e-6)) throw new KernelError(t('helix.crossesAxis', { height: rise.toFixed(3), radius: endRadius.toFixed(3) }));
 
     const normLen = Math.hypot(normal[0], normal[1], normal[2]);
     if (!(normLen > 1e-6)) throw new KernelError(t('helix.noCircle'));
@@ -2844,7 +2854,7 @@ export class Kernel {
         const edge = arena.own(arena.own(new oc.BRepBuilderAPI_MakeEdge(approx.Curve())).Edge());
         mw.Add(edge);
       } else {
-        const taper = Math.abs(taperAngle);
+        const taper = taperAngle;
         const effectiveTaper = taperOutward ? taper : -taper;
         const ax3 = arena.own(new oc.gp_Ax3(this.pnt(arena, center), this.dir(arena, Z), this.dir(arena, X)));
         const surface = arena.own(
@@ -2894,17 +2904,10 @@ export class Kernel {
       oc.BRepGProp.LinearProperties(wire, props, false, false);
       const totalLength = props.Mass();
 
-      let startPoint: Vec3 = center;
-      let endPoint: Vec3 = center;
-      const vExp = arena.own(new oc.TopExp_Explorer(wire, oc.TopAbs_ShapeEnum.TopAbs_VERTEX, oc.TopAbs_ShapeEnum.TopAbs_SHAPE));
-      if (vExp.More()) {
-        startPoint = this.xyz(arena.own(oc.BRep_Tool.Pnt(arena.own(oc.TopoDS.Vertex(vExp.Current())))));
-        vExp.Next();
-        while (vExp.More()) {
-          endPoint = this.xyz(arena.own(oc.BRep_Tool.Pnt(arena.own(oc.TopoDS.Vertex(vExp.Current())))));
-          vExp.Next();
-        }
-      }
+      // the ends from the curve's own equation, not from the order an explorer happens to visit the vertices in
+      const at = (r: number, angle: number, z: number): Vec3 => [0, 1, 2].map((k) => center[k]! + r * (Math.cos(angle) * X[k]! + Math.sin(angle) * Y[k]!) + z * Z[k]!) as Vec3;
+      const startPoint = at(radius, startAngle, 0);
+      const endPoint = at(endRadius, startAngle + hand * 2 * Math.PI * revolutions, isSpiral ? 0 : rise);
 
       const shape = this.put(wire.Oriented(wire.Orientation()));
       return { shape, totalLength, startPoint, endPoint };

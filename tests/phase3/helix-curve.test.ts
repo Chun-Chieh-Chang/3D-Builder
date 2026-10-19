@@ -7,7 +7,9 @@
  * 2. Closed-Form Ground Truth: Analytic arc-length comparison (L = sqrt((2*pi*N*R)^2 + H^2)).
  * 3. Dependency Graph Integrity: Parent-child DAG chain, sketch circle & circular model edge.
  * 4. Zero-Mock & Ground Truth: Real B-Rep wire probe extraction, topological vertices.
- * 5. Memory Defense: Real WASM Heap monitoring, initial heap > 0 ground truth assertion, 0.00 MiB growth.
+ * 5. Memory Defense: every shape released (liveShapes exact). The heap growth is printed, not asserted: 100 runs are absorbed by
+ *    the heap slack (AGENTS.md §3.5). Measured apart, each in a fresh heap, 2000 rebuilds: helix +0.0 MiB; the control (extrude
+ *    boss + cut) +422.7 MiB, and +0.0 over its first 500 — the slack.
  */
 import { beforeAll, describe, expect, it } from 'vitest';
 import {
@@ -21,7 +23,7 @@ import {
   type HelixFeature,
 } from '@3db/model';
 import { PlaneGcsSolver } from '@3db/sketch';
-import { Kernel } from '@3db/kernel';
+import { HELIX_MAX_TURNS, Kernel } from '@3db/kernel';
 import { Regenerator, type RebuildResult } from '@3db/regen';
 import { build, circle, front, rectangle, sketch, statuses } from '../phase1/builders';
 
@@ -307,31 +309,123 @@ describe('Helix and Spiral Curve Feature (ADR 0168 / C8.3)', () => {
   });
 
   describe('Red Team 4: Memory Defense & Emscripten WASM Heap Monitoring', () => {
-    it('executes 100 iterations with 0.00 MiB WASM heap growth and exact resource cleanup', () => {
-      const initialHeap = getWasmHeap();
-      const initialLiveShapes = kernel.liveShapes;
-
-      // Warmup run
+    it('releases every shape it makes over 100 rebuilds (heap growth printed, see the header)', () => {
       const hx = helix('hx_mem', 'pitchAndRev', { kind: 'datum', name: 'sk1' }, { pitch: '5', revolutions: '4' });
       const doc = circleSketchDoc('sk1', 'c1', 10, hx);
       const warmup = rebuild(doc);
       for (const b of warmup.bodies) kernel.release(b.shape);
 
-      const heapAfterWarmup = getWasmHeap();
-
-      // Stress test: 100 rebuild iterations
+      const initialHeap = getWasmHeap();
+      const initialLiveShapes = kernel.liveShapes;
       for (let i = 0; i < 100; i++) {
         const res = rebuild(doc);
         for (const b of res.bodies) kernel.release(b.shape);
       }
+      console.log(`helix: 100 rebuilds, heap ${((getWasmHeap() - initialHeap) / (1024 * 1024)).toFixed(1)} MiB`);
+      expect(kernel.liveShapes).toBe(initialLiveShapes);
+    });
+  });
 
-      const finalHeap = getWasmHeap();
-      const finalLiveShapes = kernel.liveShapes;
+  describe('Red Team 5: review of 2026-10-19 (names, taper, ambiguity, limits, surface features)', () => {
+    const doc = (o: Partial<HelixFeature>, ...extra: Feature[]) =>
+      circleSketchDoc('sk1', 'c1', 10, helix('hx', 'pitchAndRev', { kind: 'datum', name: 'sk1' }, { pitch: '5', revolutions: '4', ...o }), ...extra);
+    const statusOf = (r: RebuildResult, id: string) => statuses(r).find((s) => s.startsWith(`${id}=`));
+    const release = (r: RebuildResult) => {
+      for (const b of r.bodies) kernel.release(b.shape);
+    };
+    const near = (p: readonly number[], q: readonly number[]) => Math.hypot(p[0]! - q[0]!, p[1]! - q[1]!, p[2]! - q[2]!) < 1e-6;
+    const vertex = (r: RebuildResult, name: string) => {
+      const v = r.body!;
+      const i = v.names.vertices.indexOf(name);
+      expect(i, `vertex ${name}`).toBeGreaterThanOrEqual(0);
+      return v.topology.vertices[i]!.point;
+    };
 
-      const heapGrowthMiB = (finalHeap - heapAfterWarmup) / (1024 * 1024);
-      // Helix Curve creates wire curves without Boolean CSG, memory must stay at 0.00 MiB growth!
-      expect(heapGrowthMiB).toBeCloseTo(0, 1);
-      expect(finalLiveShapes).toBeLessThanOrEqual(initialLiveShapes + 5);
+    it('names every turn: one edge name per edge and one vertex name per vertex, in topology order', () => {
+      const r = rebuild(doc({}));
+      expect(failures(r)).toEqual([]);
+      const view = r.body!;
+      // 4 whole turns: an edge each, and 5 vertices (it used to name 1 edge and 2 vertices, leaving turns 2 to 4 without a name)
+      expect(view.topology.edges.length).toBe(4);
+      expect(view.topology.vertices.length).toBe(5);
+      expect(view.names.edges).toEqual(view.topology.edges.map((e) => `hx:helix:${Math.floor(e.mid[2] / 5)}`));
+      expect(new Set(view.names.vertices).size).toBe(5);
+      expect(near(vertex(r, 'hx:start'), [10, 0, 0])).toBe(true);
+      expect(near(vertex(r, 'hx:turn:2'), [10, 0, 10])).toBe(true);
+      expect(near(vertex(r, 'hx:end'), [10, 0, 20])).toBe(true);
+      release(r);
+    });
+
+    it('a part turn (2.75 revolutions) keeps the closed-form length and ends where the equation says', () => {
+      const r = rebuild(doc({ revolutions: '2.75' }));
+      expect(failures(r)).toEqual([]);
+      expect([...r.body!.names.edges].sort()).toEqual(['hx:helix:0', 'hx:helix:1', 'hx:helix:2']);
+      const length = r.body!.topology.edges.reduce((sum, e) => sum + e.length, 0);
+      const expected = Math.hypot(2 * Math.PI * 2.75 * 10, 5 * 2.75);
+      expect(Math.abs(length - expected) / expected).toBeLessThan(1e-4);
+      // 2.75 turns from angle 0, the angle growing: 990° = 270°, so (0, -10) in the sketch's x, y
+      expect(near(vertex(r, 'hx:end'), [0, -10, 13.75])).toBe(true);
+      release(r);
+    });
+
+    it('starts at the start angle and winds clockwise or counter-clockwise', () => {
+      const ends = (clockwise: boolean) => {
+        const r = rebuild(doc({ revolutions: '0.25', startAngle: '90deg', clockwise }));
+        expect(failures(r)).toEqual([]);
+        const out = [vertex(r, 'hx:start'), vertex(r, 'hx:end')] as const;
+        release(r);
+        return out;
+      };
+      const [s1, e1] = ends(true);
+      expect(near(s1, [0, 10, 0])).toBe(true);
+      expect(near(e1, [-10, 0, 1.25])).toBe(true); // the angle grows going up the axis: a right-hand helix
+      const [s2, e2] = ends(false);
+      expect(near(s2, [0, 10, 0])).toBe(true);
+      expect(near(e2, [10, 0, 1.25])).toBe(true);
+    });
+
+    it('an inward taper narrows to the closed-form radius, and is refused where it would cross the axis', () => {
+      const ok = rebuild(doc({ taperAngle: '5deg', taperOutward: false }));
+      expect(failures(ok)).toEqual([]);
+      const end = vertex(ok, 'hx:end');
+      expect(Math.hypot(end[0], end[1])).toBeCloseTo(10 - 20 * Math.tan((5 * Math.PI) / 180), 6);
+      release(ok);
+      // R 10, 100 up at 10° inward: 10 - 100·tan 10° = -7.6 (this used to rebuild "ok" through the apex of the cone)
+      const bad = rebuild(doc({ pitch: '10', revolutions: '10', taperAngle: '10deg', taperOutward: false }));
+      expect(statusOf(bad, 'hx')).toMatch(/穿過軸心/);
+      release(bad);
+    });
+
+    it('refuses a negative taper and one of 90° with a reason (they used to be made positive, and an internal error)', () => {
+      for (const taperAngle of ['-10deg', '90deg']) {
+        const r = rebuild(doc({ taperAngle, taperOutward: true }));
+        expect(statusOf(r, 'hx')).toMatch(/錐角必須介於/);
+        release(r);
+      }
+    });
+
+    it('refuses a sketch of two circles rather than taking the first', () => {
+      const sk = sketch('sk2', front, circle('a', 0, 0, 10), circle('b', 50, 0, 3));
+      const r = rebuild(build(sk, helix('hx', 'pitchAndRev', { kind: 'datum', name: 'sk2' }, { pitch: '5', revolutions: '3' })));
+      expect(statusOf(r, 'hx')).toMatch(/2 個圓或圓弧/);
+      release(r);
+    });
+
+    it(`refuses more revolutions than the limit (${HELIX_MAX_TURNS}) before building any`, () => {
+      const r = rebuild(doc({ revolutions: String(HELIX_MAX_TURNS + 1) }));
+      expect(statusOf(r, 'hx')).toMatch(/超過上限/);
+      release(r);
+    });
+
+    it('is a curve: surface features refuse it with a reason (knit used to take it "ok")', () => {
+      const knit = { id: 'kn', type: 'knit', name: 'kn', suppressed: false, bodies: [{ kind: 'body', name: 'hx' }] } as Feature;
+      const thicken = { id: 'th', type: 'thicken', name: 'th', suppressed: false, body: { kind: 'body', name: 'hx' }, thickness: '1' } as Feature;
+      for (const f of [knit, thicken]) {
+        const r = rebuild(doc({}, f));
+        expect(statusOf(r, 'hx')).toBe('hx=ok');
+        expect(statusOf(r, f.id)).toMatch(/=error\(.*hx/);
+        release(r);
+      }
     });
   });
 });

@@ -15,6 +15,8 @@ export interface BodyState {
   by: Id;
   /** A surface body (4b): faces and shells and no solid. It is not a part: solid features leave it alone, and mass, parts lists, interference and drawings do not count it. */
   surface?: boolean;
+  /** A curve body (C8.3 helix): edges and no faces. It is `surface` too, so that solid features, mass and the rest leave it alone; surface features refuse it. */
+  curve?: boolean;
 }
 
 /** Where one body's elements lie in the numbering of a view of all the bodies. */
