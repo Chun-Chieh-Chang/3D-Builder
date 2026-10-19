@@ -37,7 +37,8 @@ const sketching = (s: UiState) => s.editing?.kind === 'sketch';
 const selectedFeature = (s: UiState) => s.doc.features.find((f) => f.id === s.selected);
 const sketchSelected = (s: UiState) => partIdle(s) && selectedFeature(s)?.type === 'sketch';
 /** A sweep takes a profile (the selected sketch) and a path (another sketch). */
-const canSweep = (s: UiState) => sketchSelected(s) && s.doc.features.filter((f) => f.type === 'sketch').length >= 2;
+/** A profile sketch selected and a path to take it along: another sketch, or a helix curve (ADR 0169). */
+const canSweep = (s: UiState) => sketchSelected(s) && (s.doc.features.filter((f) => f.type === 'sketch').length >= 2 || s.doc.features.some((f) => f.type === 'helix'));
 const hasBody = (s: UiState) => partIdle(s) && !!s.result?.mesh;
 /** A pattern repeats a feature that adds to or takes from the bodies: there has to be one. */
 const canPattern = (s: UiState) => partIdle(s) && s.doc.features.some(canBeSeed);

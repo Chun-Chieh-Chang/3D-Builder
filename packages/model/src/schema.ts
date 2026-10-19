@@ -238,7 +238,10 @@ export interface SweepFeature extends FeatureBase {
   type: 'sweep';
   /** The sketch of the profile. */
   sketch: Id;
-  /** The sketch of the path. */
+  /**
+   * The path: a sketch, or a helix curve feature (C8.3, ADR 0169). Along a helix the profile keeps its place relative to the helix's axis (a screw
+   * motion, as a thread is made) rather than following the path's curvature.
+   */
   path: Id;
   op: 'boss' | 'cut';
   /** As for `ExtrudeFeature.merge`. */

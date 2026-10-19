@@ -470,6 +470,9 @@ function combineRefs(main: Ref, tools: Ref[]): void {
 function sweepSketches(doc: PartDoc, f: SweepFeature, index: number): void {
   const label = t('feature.sweep');
   sketchBefore(doc, f.sketch, index, label);
+  // the path is another sketch, or a helix curve (C8.3) made before the sweep
+  const at = doc.features.findIndex((x) => x.id === f.path);
+  if (doc.features[at]?.type === 'helix' && at < index) return;
   sketchBefore(doc, f.path, index, label);
   if (f.path === f.sketch) throw new CommandError(t('cmd.sweepPathIsProfile'));
 }

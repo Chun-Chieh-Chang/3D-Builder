@@ -5,7 +5,7 @@ import { forEachSample } from './sampling';
 import { escapeStepText } from './stepText';
 import { inheritBodySurface } from './sameSurface';
 import { planSectionPath } from './sectionPath';
-import { sweepVolumeFloor } from './sweepFloor';
+import { loopPoints, sweepVolumeFloor } from './sweepFloor';
 import { Arena, loadOcct, ShapeIndex, type LoadOptions, type OC } from './occt';
 import {
   KernelError,
@@ -48,6 +48,7 @@ import {
   type EdgeSamplingResult,
   type HelixCurveSpec,
   type HelixCurveResult,
+  type HelixAxisPath,
 } from './types';
 
 /** How far a surface made by offsetting may be from the gap asked for (mm): the check of every surface feature (ADR 0067). */
@@ -830,26 +831,8 @@ export class Kernel {
       const pathSources = new Map<TopoDS_Shape, string>();
       const spine = this.wire(arena, pathFrame, path, false, pathSources);
       const parts = regions.map((region) => this.sweepRegion(frame, region, spine, pathSources, arena));
-      let whole = parts[0]!;
-      if (parts.length > 1) {
-        // separate regions are separate solids of one compound; a face keeps what its own sweep said it was
-        const compound = arena.own(new oc.TopoDS_Compound());
-        const builder = arena.own(new oc.TopoDS_Builder());
-        builder.MakeCompound(compound);
-        for (const p of parts) builder.Add(compound, p.shape);
-        const index = ShapeIndex.of(oc, compound, T.FACE, arena);
-        const origins: FaceOrigin[][] = index.keys.map(() => []);
-        for (const p of parts) {
-          const own = ShapeIndex.of(oc, p.shape, T.FACE, arena);
-          own.keys.forEach((face, i) => {
-            const j = index.indexOf(face);
-            if (j >= 0) origins[j]!.push(...(p.origins[i] ?? []));
-          });
-          own.dispose();
-        }
-        index.dispose();
-        whole = { shape: compound, origins };
-      }
+      // separate regions are separate solids of one compound
+      const whole = this.sweptCompound(parts, arena);
       if (!this.valid(whole.shape)) throw new KernelError(t('feature.sweepInvalid'));
       const id = this.put(whole.shape.Oriented(whole.shape.Orientation()));
       if (!(this.massProps(id).volume > 1e-9)) {
@@ -869,14 +852,134 @@ export class Kernel {
     }
   }
 
-  /** One region swept along `spine`: its outline, less its holes (each swept in the same way). The shape is the arena's. */
-  private sweepRegion(frame: Frame, region: Region, spine: TopoDS_Wire, pathSources: Map<TopoDS_Shape, string>, arena: Arena): { shape: TopoDS_Shape; origins: FaceOrigin[][] } {
+  /**
+   * The profile swept along a helix curve (ADR 0169): a screw motion about the helix's axis, as a thread is made (the binormal held on the axis), so a
+   * spring does not twist. One end of the helix must be on the profile's plane and the helix must cross that plane there. Neighbouring turns must not
+   * meet and the profile must stay off the axis: both are refused here, from the profile's extent, before OCCT is asked (AGENTS.md §2.1-2) — overlapping
+   * helical solids cost hundreds of MB of WASM heap each (see `threadProfileTooWide`). `edgeNames` name the helix's edges in the order of its topology.
+   */
+  sweepAlongHelix(frame: Frame, regions: Region[], helix: { shape: ShapeId; edgeNames: string[]; path: HelixAxisPath }): OpResult {
+    if (regions.length === 0) throw new KernelError(t('feature.sweepNoProfile'));
+    const h = helix.path;
+    const Z = h.axis;
+    const cross = (a: Vec3, b: Vec3): Vec3 => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
+    const len = (v: Vec3) => Math.hypot(v[0], v[1], v[2]);
+    const r0 = len(sub(h.start, h.origin));
+    const X0: Vec3 = [(h.start[0] - h.origin[0]) / r0, (h.start[1] - h.origin[1]) / r0, (h.start[2] - h.origin[2]) / r0];
+    const Y0 = cross(Z, X0);
+    const turn = 2 * Math.PI * h.revolutions;
+    const rise = h.spiral ? 0 : h.pitch * h.revolutions;
+    // how fast the radius and the height change per radian of turn
+    const dr = h.spiral ? h.pitch / (2 * Math.PI) : (h.pitch / (2 * Math.PI)) * Math.tan(h.taper);
+    const dz = h.spiral ? 0 : h.pitch / (2 * Math.PI);
+    const r1 = r0 + dr * turn;
+    const phi = h.hand * turn;
+    const X1 = add(add([0, 0, 0], X0, Math.cos(phi)), Y0, Math.sin(phi));
+    const Y1 = cross(Z, X1);
+    const tangentAt = (r: number, X: Vec3, Y: Vec3): Vec3 => add(add(add([0, 0, 0], Y, r * h.hand), X, dr), Z, dz);
+
+    // which end is on the profile's plane: the sweep starts there
+    const scale = Math.max(1, r0, r1, rise);
+    const tol = 1e-6 * scale;
+    const away = (p: Vec3) => Math.abs(dot(sub(p, frame.origin), frame.normal));
+    let reversed = false;
+    if (away(h.start) > tol) {
+      if (away(h.end) > tol) throw new KernelError(t('feature.sweepPathOffPlane', { a: away(h.start).toFixed(3), b: away(h.end).toFixed(3) }));
+      reversed = true;
+    }
+    const tangent = reversed ? tangentAt(r1, X1, Y1) : tangentAt(r0, X0, Y0);
+    if (Math.abs(dot(tangent, frame.normal)) < 1e-3 * len(tangent)) throw new KernelError(t('feature.sweepPathAlongPlane'));
+
+    // the profile in the helix's frame at the end it starts from: along the axis, and out from it (the radial line through that end)
+    const O = reversed ? add(h.origin, Z, rise) : h.origin;
+    const X = reversed ? X1 : X0;
+    const pts: Vec3[] = regions.flatMap((r) => [r.outer, ...r.holes]).flatMap((loop) => loopPoints(loop).map((q) => add(add(frame.origin, frame.xDir, q[0]), frame.yDir, q[1])));
+    const along = pts.map((p) => dot(sub(p, O), Z));
+    const out = pts.map((p) => dot(sub(p, O), X));
+    const width = Math.max(...along) - Math.min(...along);
+    const radial = Math.max(...out) - Math.min(...out);
+    if (h.spiral && radial >= h.pitch - tol) throw new KernelError(t('feature.sweepSpiralTooWide', { width: radial.toFixed(3), pitch: h.pitch.toFixed(3) }));
+    if (!h.spiral && width >= h.pitch - tol) throw new KernelError(t('feature.sweepHelixTooWide', { width: width.toFixed(3), pitch: h.pitch.toFixed(3) }));
+    // the radius changes by this much over the run: the profile must stay off the axis at both ends
+    const grows = (reversed ? -1 : 1) * (r1 - r0);
+    const inner = Math.min(...out);
+    if (!(inner > tol && inner + grows > tol)) throw new KernelError(t('feature.sweepHelixCrossesAxis', { inner: Math.min(inner, inner + grows).toFixed(3) }));
+
+    const oc = this.oc;
+    const arena = new Arena();
+    try {
+      const wire = arena.own(oc.TopoDS.Wire(this.get(helix.shape)));
+      const pathSources = new Map<TopoDS_Shape, string>();
+      const edges = ShapeIndex.of(oc, wire, T.EDGE, arena);
+      edges.keys.forEach((edge, i) => pathSources.set(edge, helix.edgeNames[i] ?? `helix:${i}`));
+      const spine = reversed ? arena.own(oc.TopoDS.Wire(arena.own(wire.Reversed()))) : wire;
+      const parts = regions.map((region) => this.sweepRegion(frame, region, spine, pathSources, arena, Z));
+      edges.dispose();
+      const whole = this.sweptCompound(parts, arena);
+      if (!this.valid(whole.shape)) throw new KernelError(t('feature.sweepInvalid'));
+      const id = this.put(whole.shape.Oriented(whole.shape.Orientation()));
+      const volume = this.massProps(id).volume;
+      // what the motion sweeps: the flux of the profile through it. In the frame that turns with the profile (X out from the axis, Y = Z×X) the profile's
+      // area A, normal n and centroid c = O + rc·X + t·Y stay put, but rc changes by ±dr per radian. Per radian the rotation carries h·A·(n·Y·rc − n·X·t),
+      // the rise A·dz·(n·Z) and the change of radius A·dr·(n·X); a run from the far end turns, rises and grows the other way (s = −1)
+      const props = arena.own(new oc.GProp_GProps());
+      oc.BRepGProp.SurfaceProperties(this.profile(arena, frame, regions, new Map()), props, false, false);
+      const area = props.Mass();
+      const c = this.xyz(arena.own(props.CentreOfMass()));
+      const n = frame.normal;
+      const Y = cross(Z, X);
+      const rc = dot(sub(c, O), X);
+      const tc = dot(sub(c, O), Y);
+      const sgn = reversed ? -1 : 1;
+      const expected = Math.abs(area * (h.hand * (dot(n, Y) * (rc * turn + (sgn * dr * turn * turn) / 2) - dot(n, X) * tc * turn) + dz * turn * dot(n, Z) + dr * turn * dot(n, X)));
+      // a cylinder is an exact screw motion; a cone or a spiral turns the profile a little as the radius changes, so it is held to the floor of a sketch path
+      const exact = !h.spiral && h.taper === 0;
+      if (exact ? Math.abs(volume - expected) > 1e-3 * expected : volume < 0.7 * expected) {
+        this.release(id);
+        throw new KernelError(t('feature.sweepOverlap', { volume: volume.toFixed(1), floor: (exact ? expected : 0.7 * expected).toFixed(1) }));
+      }
+      return { shape: id, faceOrigins: whole.origins };
+    } finally {
+      arena.dispose();
+    }
+  }
+
+  /** The solids of separate regions as one compound; a face keeps what its own sweep said it was. The shape is the arena's. */
+  private sweptCompound(parts: { shape: TopoDS_Shape; origins: FaceOrigin[][] }[], arena: Arena): { shape: TopoDS_Shape; origins: FaceOrigin[][] } {
+    const oc = this.oc;
+    if (parts.length === 1) return parts[0]!;
+    const compound = arena.own(new oc.TopoDS_Compound());
+    const builder = arena.own(new oc.TopoDS_Builder());
+    builder.MakeCompound(compound);
+    for (const p of parts) builder.Add(compound, p.shape);
+    const index = ShapeIndex.of(oc, compound, T.FACE, arena);
+    const origins: FaceOrigin[][] = index.keys.map(() => []);
+    for (const p of parts) {
+      const own = ShapeIndex.of(oc, p.shape, T.FACE, arena);
+      own.keys.forEach((face, i) => {
+        const j = index.indexOf(face);
+        if (j >= 0) origins[j]!.push(...(p.origins[i] ?? []));
+      });
+      own.dispose();
+    }
+    index.dispose();
+    return { shape: compound, origins };
+  }
+
+  /**
+   * One region swept along `spine`: its outline, less its holes (each swept in the same way). The shape is the arena's. Along a sketch path the profile
+   * follows the path (corrected Frenet); given a `binormal` (a helix's axis) it keeps its angle to it, a screw motion.
+   */
+  private sweepRegion(frame: Frame, region: Region, spine: TopoDS_Wire, pathSources: Map<TopoDS_Shape, string>, arena: Arena, binormal?: Vec3): { shape: TopoDS_Shape; origins: FaceOrigin[][] } {
     const oc = this.oc;
     const one = (loop: Segment[], hole: boolean) => {
       const sources = new Map<TopoDS_Shape, string>();
       const wire = this.wire(arena, frame, loop, hole, sources);
       const mk = arena.own(new oc.BRepOffsetAPI_MakePipeShell(spine));
-      mk.SetMode(false); // corrected Frenet
+      if (binormal) {
+        mk.SetMode(this.dir(arena, binormal));
+        mk.SetTolerance(1e-6, 1e-6, 1e-4); // as a thread's: the default 1e-4 mm leaves the volume 1.5e-5 off
+      } else mk.SetMode(false); // corrected Frenet
       mk.Add(wire, false, false);
       try {
         mk.Build(arena.own(new oc.Message_ProgressRange()));

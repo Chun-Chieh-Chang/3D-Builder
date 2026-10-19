@@ -410,6 +410,25 @@ export interface HelixCurveSpec {
   isSpiral?: boolean;
 }
 
+/** A helix curve as a sweep along it sees it (ADR 0169): the axis it winds about, its ends, and how far each turn is from the next. */
+export interface HelixAxisPath {
+  /** On the axis, at the height of the start. */
+  origin: Vec3;
+  /** The axis, unit, the way the helix rises (a spiral: the normal of its plane). */
+  axis: Vec3;
+  start: Vec3;
+  end: Vec3;
+  /** Along the axis per turn; for a spiral, outward per turn. */
+  pitch: number;
+  revolutions: number;
+  /** +1 when the angle grows about `axis` by the right-hand rule, -1 the other way. */
+  hand: 1 | -1;
+  /** A flat spiral. */
+  spiral: boolean;
+  /** A cone's half-angle in radians, negative when it narrows going up; 0 for a cylinder. */
+  taper: number;
+}
+
 /** The result of building a helix or spiral curve (C8.3, ADR 0168). */
 export interface HelixCurveResult {
   shape: ShapeId;

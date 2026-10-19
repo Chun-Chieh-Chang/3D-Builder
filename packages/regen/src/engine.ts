@@ -516,6 +516,8 @@ export class Regenerator {
   private axes = new Map<Id, Axis3>();
   private points = new Map<Id, Vec3>();
   private systems = new Map<Id, CoordSystem>();
+  /** The helix curve features of the document being rebuilt (C8.3): a sweep's path may name one instead of a sketch (ADR 0169). */
+  private helixIds = new Set<Id>();
   /** Patterns (C6), for the rebuild in progress: the first seed's bodies before it, the delta of each pattern, why a pattern has none, and how each feature ended. */
   private snapshots = new Map<Id, Snapshot>();
   private deltas = new Map<Id, Delta>();
@@ -582,6 +584,7 @@ export class Regenerator {
     this.inherited = new Map();
     this.mastersUsed = new Set();
     this.cosmeticThreads = [];
+    this.helixIds = new Set(doc.features.filter((f) => f.type === 'helix').map((f) => f.id));
 
     // Every expression becomes the number it stands for before anything is built: the solver and the kernel
     // only ever see numbers. A feature whose expression cannot be evaluated reports why instead of building.
@@ -1346,6 +1349,13 @@ export class Regenerator {
   private sweep(f: SweepFeature, sketches: RebuildResult['sketches'], set: Bodies): BodyState[] {
     const s = this.profileOf(sketches, f.sketch, f.contours);
     if (f.op === 'cut' && !set.view) throw new FeatureError(t('feature.cutNeedsBody'));
+    // along a helix curve (ADR 0169): its body carries the helix; a failed or suppressed helix left none
+    if (this.helixIds.has(f.path)) {
+      const curve = set.list.find((b) => b.id === f.path && b.helix);
+      if (!curve?.helix) throw new FeatureError(t('feature.sweepPathHelixGone'));
+      const tool = this.kernel.sweepAlongHelix(s.frame, s.profiles.regions, { shape: curve.shape, edgeNames: curve.names.edges, path: curve.helix });
+      return this.apply(f.id, f.op, tool, { featureId: f.id, sketchId: f.sketch }, set.list, f.merge !== false);
+    }
     const p = sketches.get(f.path);
     if (!p) throw new FeatureError(t('feature.sweepPathGone'));
     const found = findOutlines(p.sketch, p.solved);
@@ -1926,7 +1936,7 @@ export class Regenerator {
       start: res.startPoint,
       end: res.endPoint,
       origin: center,
-      axis: reverse ? scale(normal, -1 / Math.hypot(...normal)) : scale(normal, 1 / Math.hypot(...normal)),
+      axis: scale(normal, (reverse ? -1 : 1) / Math.hypot(...normal)),
       rise: isSpiral ? 0 : pitch,
     });
 
@@ -1936,6 +1946,7 @@ export class Regenerator {
       length: res.totalLength.toFixed(2),
     });
 
+    const axis = scale(normal, (reverse ? -1 : 1) / Math.hypot(...normal));
     const newBody: BodyState = {
       id: f.id,
       shape: res.shape,
@@ -1944,6 +1955,17 @@ export class Regenerator {
       by: f.id,
       surface: true,
       curve: true,
+      helix: {
+        origin: center,
+        axis,
+        start: res.startPoint,
+        end: res.endPoint,
+        pitch,
+        revolutions,
+        hand: clockwise ? 1 : -1,
+        spiral: isSpiral,
+        taper: isSpiral ? 0 : (taperOutward ? 1 : -1) * taperAngle,
+      },
     };
 
     return [...set.list, newBody];

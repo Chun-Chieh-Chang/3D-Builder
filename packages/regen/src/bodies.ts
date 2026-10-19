@@ -1,5 +1,5 @@
 import type { Id } from '@3db/model';
-import type { Kernel, ShapeId, Topology } from '@3db/kernel';
+import type { HelixAxisPath, Kernel, ShapeId, Topology } from '@3db/kernel';
 import type { ElementNames } from '@3db/naming';
 
 /**
@@ -17,6 +17,8 @@ export interface BodyState {
   surface?: boolean;
   /** A curve body (C8.3 helix): edges and no faces. It is `surface` too, so that solid features, mass and the rest leave it alone; surface features refuse it. */
   curve?: boolean;
+  /** The helix a curve body is (C8.3), for a sweep along it (ADR 0169). */
+  helix?: HelixAxisPath;
 }
 
 /** Where one body's elements lie in the numbering of a view of all the bodies. */

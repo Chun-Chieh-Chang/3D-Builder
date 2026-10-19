@@ -1,5 +1,27 @@
 # 3D-Builder 開發日誌 (DEV_LOG.md)
 
+## 2026-10-20：沿螺旋曲線掃出——彈簧（[ADR 0169](docs/adr/0169-sweep-along-helix.md)）
+
+### 1. 背景與決策
+C8.3 審查時把「可作為彈簧掃出導引」改為照實寫「尚不支援」；本次補上。開工前與使用者確認三項（見 ADR §2）：`path` 可指螺旋特徵（不改檔案格式）；斷面對螺旋軸保持不變（副法線固定為軸，與螺牙相同）；圓柱、錐形、渦捲三種都做。
+
+### 2. 做法
+| 層級 | 檔案 | 改動 |
+|---|---|---|
+| 模型 | `commands.ts`、`schema.ts` | `sweepSketches`：路徑可為較早的螺旋特徵；`SweepFeature.path` 註解 |
+| Kernel | `kernel.ts`、`types.ts`、`sweepFloor.ts` | 新 `sweepAlongHelix`（端點在輪廓平面、切線、相鄰圈相碰／越過軸前置攔截、體積後擋）；`sweepRegion` 多一個 `binormal`；抽出 `sweptCompound` 與 `sweepAlongPath` 共用；`HelixAxisPath` 型別；匯出 `loopPoints` |
+| 再生 | `engine.ts`、`bodies.ts` | 螺旋本體帶 `helix: HelixAxisPath`；`helixIds` 判斷路徑種類；`sweep()` 分流 |
+| 介面 | `PropertyManager.tsx`、`store.ts`、`actions.ts` | 路徑清單列螺旋；`newSweep` 取最新路徑候選；`canSweep` 有螺旋時一張草圖即可 |
+| 雙語／說明 | `features.ts`、`help.ts` | 4 個錯誤訊息；掃出說明加彈簧段與手算例；螺旋說明與提示改為可當路徑 |
+
+### 3. 測試與真值
+- `tests/phase3/helix-sweep.test.ts` 14 項：圓柱彈簧＝Pappus 789.5683521（量 789.5683486，1e-8 內；逆時針與從遠端掃相同）、錐形 5° 內外＝平均半徑 Pappus（3e-7／9e-7）、渦捲 0.22% 內、除料剛好少一個彈簧、側面依每圈命名、6 種拒絕、指令（之後的螺旋不可當路徑）、依賴（改 3 圈＝四分之三）、30 次重建 `liveShapes` 嚴格相等。
+- **RCA（測試第一版紅）**：① `liveShapes` 每次多 1——不是洩漏，是兩個本體時重建結果自己保留一個複合形狀（`bodies.ts` 的 view compound），測試只釋放了各本體；改為一併釋放後嚴格相等。② 抑制指令參數是 `value` 不是 `suppressed`，我用 `as never` 蓋掉了型別錯誤——已改為正確參數、拿掉轉型。
+- 我推的體積式第一版漏了 `−n·X·t` 項並把反向時旋轉項的號弄錯，寫測試前重推並修正（ADR §3）。
+- **反向對照**：關掉過軸檢查 → 2 項紅；`newSweep` 不選螺旋 → e2e 第 3～5 步紅；皆已還原。
+- e2e `tests/e2e/manual-spring.js` 5 步 PASS（期望體積用草圖實際求解出的圓心與半徑代入 Pappus，不寫死）；與掃出有關的 e2e 7/7 PASS。截圖確認為 4 圈彈簧，狀態列體積 789.568 mm³。
+- 全閘門 `npm run check` **3160 過、0 敗**（3146＋本次 14；25 跳過為既有）。未跑 `make:drawing`。
+
 ## 2026-10-19 深夜：選取框的兩個舊缺陷（審查時順手發現，`bbeb630` 起）
 
 ### 1. 圖面可點的元素種類失效（`Viewport.tsx` `picking()`）

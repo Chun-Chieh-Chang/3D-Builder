@@ -1749,7 +1749,8 @@ class AppStore {
   newSweep(op: 'boss' | 'cut'): void {
     const profile = this.selectedSketch();
     if (!profile) return;
-    const path = [...this.history.doc.features].reverse().find((f): f is SketchFeature => f.type === 'sketch' && f.id !== profile.id && f.entities.some((e) => (e.type === 'line' || e.type === 'arc') && !e.construction));
+    // the latest path in the history: a sketch of lines or arcs, or a helix curve (a spring, ADR 0169)
+    const path = [...this.history.doc.features].reverse().find((f) => f.type === 'helix' || (f.type === 'sketch' && f.id !== profile.id && f.entities.some((e) => (e.type === 'line' || e.type === 'arc') && !e.construction)));
     if (!path) return this.notify(t('feature.sweepNeedsPathSketch'), 'error');
     const base = op === 'boss' ? t('feature.sweep') : t('feature.cut', { name: t('feature.sweep') });
     const id = this.allocator().take('sweep');

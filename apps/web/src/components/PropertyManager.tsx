@@ -967,7 +967,8 @@ function RevolvePanel({ f }: { f: RevolveFeature }) {
 function SweepPanel({ f }: { f: SweepFeature }) {
   const doc = useStore((s) => s.doc);
   const index = doc.features.findIndex((x) => x.id === f.id);
-  const paths = doc.features.filter((x, i): x is SketchFeature => x.type === 'sketch' && x.id !== f.sketch && i < index);
+  // another sketch, or a helix curve (ADR 0169), made before the sweep
+  const paths = doc.features.filter((x, i) => (x.type === 'sketch' || x.type === 'helix') && x.id !== f.sketch && i < index);
   return (
     <section className="pm-group">
       <h4>{t('pm.sweep.profile')}</h4>

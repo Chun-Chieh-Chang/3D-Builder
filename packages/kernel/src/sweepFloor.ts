@@ -21,7 +21,7 @@ function sweepAngle(g: Extract<Segment, { kind: 'arc' }>): number {
 }
 
 /** The points of a loop of segments, in order round it (a segment stored the other way round is turned). */
-function loopPoints(loop: readonly Segment[]): P2[] {
+export function loopPoints(loop: readonly Segment[]): P2[] {
   const pts: P2[] = [];
   for (const g of loop) {
     let run: P2[];
