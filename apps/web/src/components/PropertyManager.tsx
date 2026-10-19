@@ -1746,7 +1746,7 @@ function DatumPicker({ f }: { f: Feature }) {
   const slots = slotsOf(f);
   const choices = [
     ...DATUM_ITEMS.filter((d) => d.icon === 'plane').map((d) => ({ id: d.id as string, label: d.label, icon: 'plane' as const })),
-    ...doc.features.slice(0, Math.max(at, 0)).flatMap((x) => (x.type === 'refPlane' || x.type === 'refAxis' || x.type === 'refPoint' || x.type === 'coordSys' ? [{ id: x.id, label: x.name, icon: x.type }] : [])),
+    ...doc.features.slice(0, Math.max(at, 0)).flatMap((x) => (x.type === 'refPlane' || x.type === 'refAxis' || x.type === 'refPoint' || x.type === 'coordSys' || x.type === 'sketch' ? [{ id: x.id, label: x.name, icon: x.type }] : [])),
   ].filter((c) => slots.some((s) => accepts(s.type, { kind: 'datum', name: c.id }, doc)));
   if (choices.length === 0) return null;
   return (
@@ -3924,12 +3924,19 @@ function CosmeticThreadPanel({ f }: { f: CosmeticThreadFeature }) {
 }
 
 function HelixPanel({ f }: { f: HelixFeature }) {
+  const status = useStore((s) => s.result?.features.find((r) => r.id === f.id));
   const definedBy = f.definedBy ?? 'pitchAndRev';
   const update = (params: Partial<Omit<HelixFeature, 'id' | 'type' | 'name' | 'suppressed'>>) =>
     store.execute({ type: 'setHelix', featureId: f.id, params });
 
   return (
     <>
+      <section className="pm-group">
+        <h4>{t('pm.helix.circle')}</h4>
+        <SlotList f={f} />
+        <DatumPicker f={f} />
+      </section>
+
       <section className="pm-group">
         <h4>{t('pm.helix.definedBy')}</h4>
         <div className="pm-row">
@@ -4027,6 +4034,7 @@ function HelixPanel({ f }: { f: HelixFeature }) {
         </section>
       )}
 
+      {status?.status === 'ok' && status.info && <p className="hint gap-info">{status.info}</p>}
       <p className="pm-hint">{t('pm.helix.hint')}</p>
     </>
   );

@@ -72,7 +72,7 @@ import { captureVertexAnchor, resolveVertexAnchor } from './measureAnchors';
 import type { KernelApi, PartExportOptions, RebuildPayload, SketchSolvePayload, SketchSolveRequest, SourceFileData } from '../worker/protocol';
 import { shouldRestartHeap } from '../worker/heap';
 import { SketchController, type ControllerView, type SketchHost } from '../sketcher/controller';
-import { axisDefinitionFor, emptyRef, put, treeRef } from './datumSlots';
+import { accepts, axisDefinitionFor, emptyRef, put, treePick, treeRef } from './datumSlots';
 import { measureTargetsOf, pickKey, type SelectionFacts } from './selectionFacts';
 import { Autosaver, type Recovery } from '../autosave';
 import { loadOptions, parseOptions, saveOptions, type SystemOptions } from '../options';
@@ -2324,8 +2324,9 @@ class AppStore {
   newHelix(): void {
     const s = this.state;
     let circleRef: Ref | undefined;
-    if (s.selectedElements.length > 0 && s.selectedElements[0]?.kind === 'edge') {
-      circleRef = s.selectedElements[0];
+    const picked = s.selectedElements[0];
+    if (picked && accepts('circle', picked, this.history.doc)) {
+      circleRef = picked;
     } else {
       const selected = findFeature(this.history.doc, s.selected ?? '');
       if (selected?.type === 'sketch') {
@@ -2343,7 +2344,7 @@ class AppStore {
         type: 'helix',
         name: nextName(this.history.doc, base),
         suppressed: false,
-        circle: circleRef ?? { kind: 'datum', name: '' },
+        circle: circleRef ?? emptyRef('circle'),
         definedBy: 'pitchAndRev',
         pitch: '5',
         revolutions: '3',
@@ -2503,7 +2504,7 @@ class AppStore {
     else if (f?.type === 'fillet' || f?.type === 'chamfer') (ref.kind === 'face' ? this.toggleEdgeFeatureFace(ref) : this.toggleEdge(ref));
     else if (f?.type === 'breakCorner' && ref.kind === 'edge') this.toggleEdge(ref);
     else if (f?.type === 'extrude') this.setUpToFace(ref);
-    else if (f?.type === 'refPlane' || f?.type === 'refAxis' || f?.type === 'refPoint' || f?.type === 'coordSys' || f?.type === 'pattern' || f?.type === 'mirror') this.putDatumRef(ref);
+    else if (f?.type === 'refPlane' || f?.type === 'refAxis' || f?.type === 'refPoint' || f?.type === 'coordSys' || f?.type === 'pattern' || f?.type === 'mirror' || f?.type === 'helix') this.putDatumRef(ref);
     else if (f?.type === 'deleteFace') this.toggleFace(ref);
     else if (f?.type === 'shell') (this.state.shellPick === 'thickness' ? this.toggleShellWallFace(ref) : this.toggleShellFace(ref));
     else if (f?.type === 'draft') this.pickDraftFace(ref);
@@ -2559,7 +2560,7 @@ class AppStore {
       }
     }
     const f = this.editedFeature();
-    const datum = f && id !== f.id && (f.type === 'refPlane' || f.type === 'refAxis' || f.type === 'refPoint' || f.type === 'coordSys' || f.type === 'pattern' || f.type === 'mirror') ? treeRef(this.history.doc, id) : null;
+    const datum = f && id !== f.id && (f.type === 'refPlane' || f.type === 'refAxis' || f.type === 'refPoint' || f.type === 'coordSys' || f.type === 'pattern' || f.type === 'mirror' || f.type === 'helix') ? treePick(f, this.history.doc, id) : null;
     if (datum && this.putDatumRef(datum)) return;
     this.select(id);
   }

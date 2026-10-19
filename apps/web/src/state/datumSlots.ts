@@ -7,8 +7,8 @@ import { findFeature, isDatumPlaneName, type AxisDefinition, type Command, type 
  * definition has, patterns' directions and axis too, so the PropertyManager, the picking in the graphics area and the tree clicks cannot disagree.
  */
 
-/** What a box takes: a planar face or plane; a straight edge or axis; a vertex or point; a cylindrical face; a cylindrical or conical face; an edge or face; a direction; or a curve path (3D edge or sketch). */
-export type SlotType = 'plane' | 'axis' | 'point' | 'cylinder' | 'revolved' | 'element' | 'direction' | 'rotationAxis' | 'curvePath';
+/** What a box takes: a planar face or plane; a straight edge or axis; a vertex or point; a cylindrical face; a cylindrical or conical face; an edge or face; a direction; a curve path (3D edge or sketch); or a circle (a circular edge or a sketch with one circle). */
+export type SlotType = 'plane' | 'axis' | 'point' | 'cylinder' | 'revolved' | 'element' | 'direction' | 'rotationAxis' | 'curvePath' | 'circle';
 
 export interface Slot {
   /** The property of the definition (or of the coordinate system) the box fills. */
@@ -54,6 +54,9 @@ export function accepts(type: SlotType, ref: Ref, doc: PartDoc): boolean {
       return straight || (ref.kind === 'face' && (fp === 'cylinder' || fp === 'cone'));
     case 'curvePath':
       return ref.kind === 'edge' || (ref.kind === 'datum' && findFeature(doc, ref.name)?.type === 'sketch');
+    case 'circle':
+      // how many circles the sketch has is the rebuild's to say (it names the count); here only the kind is checked
+      return (ref.kind === 'edge' && fp === 'circle') || (ref.kind === 'datum' && findFeature(doc, ref.name)?.type === 'sketch');
   }
 }
 
@@ -128,6 +131,8 @@ export function slotsOf(f: Feature | undefined): Slot[] {
         : f.def.mode === 'circular'
           ? [one('axis', t('slot.rotationAxis'), 'rotationAxis', f.def.axis)]
           : [one('path', t('slot.curvePath'), 'curvePath', f.def.path)];
+    case 'helix':
+      return [one('circle', t('pm.helix.circle'), 'circle', f.circle)];
     case 'coordSys':
       return [one('origin', t('slot.origin'), 'point', f.origin, true), one('x', t('slot.xDirection'), 'direction', f.x), one('y', t('slot.yDirection'), 'direction', f.y)];
     default:
@@ -164,6 +169,8 @@ export function fill(f: Feature, key: string, refs: Ref[]): Command {
               : { ...d, dir1: { ...d.dir1, ref } };
       return { type: 'setPattern', featureId: f.id, seeds: f.seeds, def, ...(f.skip ? { skip: f.skip } : {}) };
     }
+    case 'helix':
+      return { type: 'setHelix', featureId: f.id, params: { circle: value as Ref } };
     case 'coordSys': {
       const { origin, x, y } = f;
       const next = { origin, x, y, [key]: key === 'origin' ? refs[0] : value } as { origin?: Ref; x: Ref; y: Ref };
@@ -198,11 +205,19 @@ export function treeRef(doc: PartDoc, id: Id): Ref | null {
   return datumType(doc, id) ? { kind: 'datum', name: id } : null;
 }
 
+/** What a click on the tree gives the feature being defined: a datum, or a sketch when one of its boxes takes sketches (a curve path, a helix's circle). */
+export function treePick(f: Feature, doc: PartDoc, id: Id): Ref | null {
+  const datum = treeRef(doc, id);
+  if (datum) return datum;
+  const sketch: Ref = { kind: 'datum', name: id };
+  return findFeature(doc, id)?.type === 'sketch' && slotsOf(f).some((s) => accepts(s.type, sketch, doc)) ? sketch : null;
+}
+
 /** What the graphics area picks while this feature is being defined: the kinds of element the empty boxes take. */
 export function pickable(f: Feature | undefined): { edges: boolean; faces: boolean; vertices: boolean; planes: boolean } {
   const out = { edges: false, faces: false, vertices: false, planes: false };
   for (const s of slotsOf(f)) {
-    if (s.type === 'axis' || s.type === 'direction' || s.type === 'element' || s.type === 'rotationAxis') out.edges = true;
+    if (s.type === 'axis' || s.type === 'direction' || s.type === 'element' || s.type === 'rotationAxis' || s.type === 'curvePath' || s.type === 'circle') out.edges = true;
     if (s.type === 'plane' || s.type === 'cylinder' || s.type === 'revolved' || s.type === 'direction' || s.type === 'element' || s.type === 'rotationAxis') out.faces = true;
     if (s.type === 'point') out.vertices = true;
     if (s.type === 'plane' || s.type === 'direction') out.planes = true;

@@ -52,7 +52,7 @@ interface MenuItem {
  */
 function picking(feature: Feature | undefined, editing: boolean, modelTool: 'convert' | 'pierce' | 'intersect' | null = null, measuring = false) {
   // reference geometry (C3.2–C3.5): what its empty selection boxes take, and what they hold
-  const datum = feature?.type === 'refPlane' || feature?.type === 'refAxis' || feature?.type === 'refPoint' || feature?.type === 'coordSys' || feature?.type === 'pattern' || feature?.type === 'mirror' ? feature : undefined;
+  const datum = feature?.type === 'refPlane' || feature?.type === 'refAxis' || feature?.type === 'refPoint' || feature?.type === 'coordSys' || feature?.type === 'pattern' || feature?.type === 'mirror' || feature?.type === 'helix' ? feature : undefined;
   // what the empty boxes take (kinds) and what they already hold (the elements) — the two are different shapes, so they are kept apart
   const want = datum ? pickable(datum) : null;
   const slots = datum ? { ...want, ...chosen(datum), prompt: prompt(datum) } : null;

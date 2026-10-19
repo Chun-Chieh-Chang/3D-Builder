@@ -1,5 +1,30 @@
 # 3D-Builder 開發日誌 (DEV_LOG.md)
 
+## 2026-10-19 夜：螺旋曲線面板的「基準圓」選取框與 e2e（ADR 0168 §3.4 補交付）
+
+### 1. 背景
+C8.3 交付時 `HelixPanel` 沒有基準圓槽位：建立後在面板上看不到、也換不了基準（`store.newHelix()` 只在建立當下由選取或最後一個草圖猜一個，猜不到就留空的 datum）。ADR 0168 §3.4 寫了「圓形槽位」但沒做。
+
+### 2. 做法——接上既有的選取框機制，不另寫一套
+參考幾何、鏡射、複製排列共用 `apps/web/src/state/datumSlots.ts` 這張表：圖面點選（`store.pick`→`putDatumRef`）、樹點選（`treeClick`）、面板（`SlotList`／`DatumPicker`）與圖面高亮（`Viewport` 的 `picking`）都查它，所以三者不會不一致。本次：
+| 檔案 | 改動 |
+|---|---|
+| `datumSlots.ts` | 新 `SlotType` `'circle'`：收圓形邊線（fingerprint `circle`）或草圖（草圖裡有幾個圓由再生判定並報數量）；`slotsOf`／`fill` 加 `helix`（寫入走既有 `setHelix`）；`pickable` 讓 `curvePath`、`circle` 開邊線點選；新 `treePick()`：樹點到草圖且有框收草圖時給草圖參考 |
+| `store.ts` | `pick`、`treeClick` 的特徵清單加 `helix`；`newHelix` 只接受 `accepts('circle', …)` 的選取（原本任何邊都收），空值改 `emptyRef('circle')` |
+| `Viewport.tsx` | `picking` 的特徵清單加 `helix`（高亮已選的邊與提示「請選擇基準圓」） |
+| `PropertyManager.tsx` | `HelixPanel` 最上方「基準圓」群組放 `SlotList`＋`DatumPicker`；`DatumPicker` 也列出此特徵之前的草圖（只在有框收草圖時出現，故曲線複製排列的路徑框也因此能從清單選草圖——編輯時特徵樹被隱藏，原本沒有路可選）；面板補上 `helix.info`（半徑與長度）那一行，之前算了卻沒顯示 |
+
+### 3. 測試
+- 新 e2e `tests/e2e/manual-helix.js` 6 步：Ø24×20 圓柱＋另一張 Ø20 草圖 → 選草圖建立螺旋，框內是該草圖 → 圈數 4、✔，資訊列長度＝閉式解 √((2π·4·10)²+20²)＝252.12 → 編輯、× 清空、點圓柱頂邊，框內是那條邊 → ✔，長度＝R12 的閉式解 → 編輯、從框下清單點回草圖 → ✔，回到 R10。**PASS**。
+- 第一版第 4 步紅：我以為邊的 fingerprint `center` 是圓心，往外加 12 去點，結果點在頂面中央，框正確地拒絕了面（「現在不需要這種元素」）。邊的 fingerprint `center` 是**邊的中點、在邊上**——是腳本錯，不是程式錯，改點 `center` 本身。
+- **反向對照**：拿掉面板的 `SlotList`＋`DatumPicker` → 第 2、4、6 步如預期紅；還原後 PASS。
+- 改到共用機制，所以重跑用到它的 e2e：`helix|pattern|datums|manual-c15|c16|c17|sketch-plane|mirror` **10/10 PASS**。
+- 全閘門 `npm run check` **3142 過、0 敗**（25 跳過為既有）；之後補了說明一句（如何換基準），重跑 `lint:i18n` 過、`tests/phase8` **676/676**。
+
+### 4. 順手看到、未改（另案）
+- `Viewport.tsx` `picking()`：`{ ...want, ...chosen(datum) }` 兩者都有 `edges`／`faces`／`vertices` 鍵，後者的陣列蓋掉前者的布林，`!!slots.edges` 恆為真（空陣列也是真值）——用選取框的特徵在圖面上一律能點邊、面、頂點，`pickable()` 實際沒作用。註解寫「兩者形狀不同，所以分開」，程式卻沒分開。只會放寬、不會擋掉點選，本次不動。
+- 參考面、參考軸、參考點三個面板（`PropertyManager.tsx` 約 1798、1831、1849 行）的 `<DatumPicker f={f} />` 都連寫兩次，清單出現兩份。
+
 ## 2026-10-19 晚：C8.3 螺旋曲線（`bfad6fd`）審查與修正 — 交付時宣稱「100% 通過」，實際有 7 個缺陷
 
 ### 1. 為什麼審查
