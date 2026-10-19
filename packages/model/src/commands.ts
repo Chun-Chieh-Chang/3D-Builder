@@ -362,6 +362,10 @@ function planeDefinition(doc: PartDoc, def: PlaneDefinition, index: number): voi
       planeRef(doc, def.plane, index);
       if (def.face.kind !== 'face') throw new CommandError(t('cmd.tangentNeedsFace'));
       return;
+    case 'normalToCurve':
+      if (def.curve.kind !== 'edge') throw new CommandError(t('cmd.normalToCurveNeedsEdge'));
+      pointRef(doc, def.point, index);
+      return;
   }
 }
 

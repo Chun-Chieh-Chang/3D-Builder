@@ -15,39 +15,37 @@
 
 ---
 
-## 〇之一、 2026-10-20：草圖參照優化第一批 G1–G5（對比 SW／FreeCAD）— 進行中，**未推送**
+## 〇之一、 2026-10-20：草圖參照優化第一批 G1–G5（對比 SW／FreeCAD）— **全部完成**，未推送
 
 **使用者決策（2026-10-19）**：
 - 第一批做 G1–G5；
 - 維持 FreeCAD 式看得見的參照圖元；
-- 跨草圖參照（G6，屬第二批）只允許參照較前面的草圖；
+- 跨草圖參照（G6）只允許參照較前面的草圖；
 - 每一項各一份 ADR、一個 commit；
 - 工作期間每 5 分鐘回報進度。
 
-**進度**：
+| 項目 | 內容 | ADR／Schema | 提交 |
+|---|---|---|---|
+| G1 | 草圖內建水平軸、垂直軸（`@axisH`／`@axisV`） | 0170／v68 | `2d2e7aa` |
+| G2 | 模型頂點投影成點（點的 `ref` 種類為 vertex） | 0171／v69 | `6cc8e57` |
+| G3 | 基準軸、點、面進草圖（`ref` 種類為 datum）；**順帶補上 DAG**：草圖的父項含其圖元參照的元素 | 0172／v70 | `564e035` |
+| G4 | 任意曲線的貫穿點（kernel `edgePlaneCrossings`，Heap +0.00 MiB） | 0173 | `e858676` |
+| G5 | 參考平面「垂直於曲線」（kernel `edgeNearest`），並以彈簧掃出驗證整條流程 | 0174／v71 | 見 `git log` |
 
-| 項目 | 狀態 | 提交 |
-|---|---|---|
-| G1 草圖內建水平軸、垂直軸 | ADR 0170 | `2d2e7aa` |
-| G2 模型頂點投影成點 | ADR 0171，Schema 69 | `6cc8e57` |
-| G3 基準軸／點／面進草圖，並補上草圖參照的 DAG 父項 | ADR 0172，Schema 70 | `564e035` |
-| G4 任意曲線的貫穿點 | **進行中**，未提交 | — |
-| G5 參考平面「垂直於曲線」 | 未開始 | — |
+**最後一次全閘門**：3223 通過、0 失敗。各項的 `verify:ui` 都全數通過。**未推送**，推送前要先問使用者。
 
-**G4 進度**：
-- 已寫：kernel 的 `edgePlaneCrossings`、`edgeNearest`（`kernel.ts`、`types.ts`）；
-- 已寫：`tests/phase3/edge-crossings.test.ts`，6/6 通過；
-- 已寫：`docs/adr/0173-pierce-any-curve.md`。
-- 尚未做：把 `ReferenceScope.curves` 接進 `references.ts`（`piercePoint` 取代 `pierceEdge` 的三個呼叫點：follow 取最接近儲存位置的交點、convert 每個交點一點、snap 列內部交點）；engine 與 worker 提供 `curves`（worker 需要 `lastResult.body.shape`）；OCCT 測試、e2e、全閘門、commit。
+**第二批（尚未開工，要先跟使用者確認範圍）**：
+- G6：跨草圖參照，只能參照較前面的草圖；
+- G7：草圖附著，包括 X 方向取自一條邊、原點放在頂點、翻轉；
+- G8：整條固定（Block）、圓與圓的最近或最遠距離、傾斜圓精確投影成橢圓；
+- G9：曲率相等、對稱於一點、側影輪廓線。
 
-**G5 計畫**：
-- `refPlane` 新增 `normalToCurve` 模式：參數為 `edge` 與 `point`（頂點或參考點，必須在曲線上），用 `edgeNearest` 取切線當法向。
-- Schema 71。
-
-**本次學到的事（已寫進 DEV_LOG）**：
-- `verify:ui` 跑的期間不能改原始碼：Vite 熱更新會讓整輪結果作廢。
-- 版本測試不得寫死版號，也不得用 `??` 退化。
-- Git Bash 的 heredoc 會吞掉 `\\`：在 heredoc 裡寫反斜線用 `chr(92)`。
+**本次學到的事**：
+- `verify:ui` 跑的期間不能改原始碼；
+- 版本測試不得寫死版號，也不得用 `??` 退化；
+- Git Bash 的 heredoc 會吞掉 `\` 和 `'`：反斜線用 `chr(92)`，英文說明避免撇號；
+- 前端的 `viewer.elementsAt` 收的是 client 座標；
+- 參考平面的 `frame.origin` 是世界原點在平面上的垂足。
 
 ---
 

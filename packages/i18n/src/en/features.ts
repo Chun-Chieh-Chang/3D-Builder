@@ -64,6 +64,7 @@ export const features: Translation = {
   'datum.yDirection': 'Y direction',
   'datum.midParallel': 'A mid plane needs two parallel faces (the angle between them is {angle}°)',
   'datum.midCoincident': 'The two faces coincide; there is no mid plane',
+  'datum.pointNotOnCurve': 'The point is not on the curve ({distance} mm from it): pick a vertex of the curve or a point on it',
   'datum.tangentCylinder': 'A tangent plane needs a cylindrical face',
   'datum.tangentNotParallel': 'The reference plane must be parallel to the axis of the cylinder (its normal perpendicular to the axis) for a tangent plane parallel to it to exist',
   'datum.twoPointsNeedTwo': 'An axis through two points needs two points (vertices or reference points)',

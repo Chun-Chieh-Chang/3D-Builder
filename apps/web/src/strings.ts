@@ -168,6 +168,7 @@ export const PLANE_MODE_LABEL = labelsOf({
   perpendicular: 'planeMode.perpendicular',
   midplane: 'planeMode.midplane',
   tangent: 'planeMode.tangent',
+  normalToCurve: 'planeMode.normalToCurve',
 });
 
 /** How a reference axis (C3.3) and a reference point (C3.5) are defined. */

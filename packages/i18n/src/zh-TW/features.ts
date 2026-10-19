@@ -62,6 +62,7 @@ export const features = {
   'datum.yDirection': 'Y 方向',
   'datum.midParallel': '中間面要兩個平行的面（現在夾角 {angle}°）',
   'datum.midCoincident': '兩個面重合，沒有中間面',
+  'datum.pointNotOnCurve': '點不在曲線上（相距 {distance} mm）：請選曲線上的頂點或點',
   'datum.tangentCylinder': '相切基準面要選圓柱面',
   'datum.tangentNotParallel': '參考面要和圓柱的軸平行（法向垂直於軸），才有平行於它的相切面',
   'datum.twoPointsNeedTwo': '兩點基準軸需要兩個點（頂點或參考點）',

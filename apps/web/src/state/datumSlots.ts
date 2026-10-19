@@ -8,7 +8,7 @@ import { findFeature, isDatumPlaneName, type AxisDefinition, type Command, type 
  */
 
 /** What a box takes: a planar face or plane; a straight edge or axis; a vertex or point; a cylindrical face; a cylindrical or conical face; an edge or face; a direction; a curve path (3D edge or sketch); or a circle (a circular edge or a sketch with one circle). */
-export type SlotType = 'plane' | 'axis' | 'point' | 'cylinder' | 'revolved' | 'element' | 'direction' | 'rotationAxis' | 'curvePath' | 'circle';
+export type SlotType = 'plane' | 'axis' | 'point' | 'cylinder' | 'revolved' | 'element' | 'direction' | 'rotationAxis' | 'curvePath' | 'circle' | 'curve';
 
 export interface Slot {
   /** The property of the definition (or of the coordinate system) the box fills. */
@@ -54,6 +54,9 @@ export function accepts(type: SlotType, ref: Ref, doc: PartDoc): boolean {
       return straight || (ref.kind === 'face' && (fp === 'cylinder' || fp === 'cone'));
     case 'curvePath':
       return ref.kind === 'edge' || (ref.kind === 'datum' && findFeature(doc, ref.name)?.type === 'sketch');
+    case 'curve':
+      // any edge of the model, a curve body's too (ADR 0174)
+      return ref.kind === 'edge';
     case 'circle':
       // how many circles the sketch has is the rebuild's to say (it names the count); here only the kind is checked
       return (ref.kind === 'edge' && fp === 'circle') || (ref.kind === 'datum' && findFeature(doc, ref.name)?.type === 'sketch');
@@ -87,6 +90,8 @@ function planeSlots(d: PlaneDefinition): Slot[] {
       return [planeSlot(d), one('plane2', t('slot.secondPlane'), 'plane', d.plane2)];
     case 'tangent':
       return [one('face', t('slot.cylinderFace'), 'cylinder', d.face), planeSlot(d)];
+    case 'normalToCurve':
+      return [one('curve', t('slot.curve'), 'curve', d.curve), one('point', t('slot.pointOnCurve'), 'point', d.point)];
   }
 }
 
@@ -217,7 +222,7 @@ export function treePick(f: Feature, doc: PartDoc, id: Id): Ref | null {
 export function pickable(f: Feature | undefined): { edges: boolean; faces: boolean; vertices: boolean; planes: boolean } {
   const out = { edges: false, faces: false, vertices: false, planes: false };
   for (const s of slotsOf(f)) {
-    if (s.type === 'axis' || s.type === 'direction' || s.type === 'element' || s.type === 'rotationAxis' || s.type === 'curvePath' || s.type === 'circle') out.edges = true;
+    if (s.type === 'axis' || s.type === 'direction' || s.type === 'element' || s.type === 'rotationAxis' || s.type === 'curvePath' || s.type === 'circle' || s.type === 'curve') out.edges = true;
     if (s.type === 'plane' || s.type === 'cylinder' || s.type === 'revolved' || s.type === 'direction' || s.type === 'element' || s.type === 'rotationAxis') out.faces = true;
     if (s.type === 'point') out.vertices = true;
     if (s.type === 'plane' || s.type === 'direction') out.planes = true;
@@ -264,6 +269,8 @@ export function planeDefinitionFor(mode: PlaneDefinition['mode'], old: PlaneDefi
       return { mode, plane, plane2: emptyRef('plane') };
     case 'tangent':
       return { mode, face: emptyRef('cylinder'), plane };
+    case 'normalToCurve':
+      return { mode, curve: emptyRef('curve'), point: emptyRef('point') };
   }
 }
 

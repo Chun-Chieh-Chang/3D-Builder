@@ -1,5 +1,34 @@
 # 3D-Builder 開發日誌 (DEV_LOG.md)
 
+## 2026-10-20：參考平面「垂直於曲線」（G5，[ADR 0174](docs/adr/0174-plane-normal-to-curve.md)）— 第一批 G1–G5 完成
+
+### 1. 背景與決策
+第一批的最後一項。`PlaneDefinition` 新增 `normalToCurve`（Schema 71）：
+- 曲線是一條模型邊，曲線本體的邊（例如螺旋）也可以；
+- 點是頂點或較前面的參考點，而且必須在曲線上：用 G4 寫好的 `Kernel.edgeNearest` 判斷，距離大於 1e-6 mm 就拒絕，不靜默投影；
+- 法向取曲線參數遞增的方向，`reverse` 可以反轉。
+
+### 2. 做法
+| 層級 | 檔案 | 改動 |
+|---|---|---|
+| 模型 | `schema.ts`、`serialize.ts`、`commands.ts` | v71；新增 `planeDefinition` 的檢查；`defRefs`／`mapDefRefs` 以泛型方式自動涵蓋 DAG 與參照修復 |
+| 再生 | `engine.ts` | `refPlane` 新增 `normalToCurve` 分支 |
+| 介面 | `datumSlots.ts`、`strings.ts` | 新增 `curve` 選取框種類、這個模式的兩個選取框與預設定義；模式清單多一項 |
+| 雙語／說明 | `datums.ts`、`features.ts`、`model.ts`、`help.ts` | 模式名稱、選取框名稱、面板提示、2 個錯誤訊息；參考平面說明 |
+
+### 3. 紅隊四問
+1. **輸入破壞**：曲線不是邊、點不在曲線上（會附上距離）、點的種類不對、點在之後，都會明確拒絕；不會把點投影到曲線上。
+2. **幾何相交**：只對曲線求值（`edgeNearest`），Heap 測量已含在 G4 的測試內（+0.00 MiB）。
+3. **依賴鏈**：schema → commands → refs（泛型）→ DAG（父項含螺旋，已測）→ engine → datumSlots／PM。
+4. **零 Mock**：法向以螺旋的解析切線作為真值；以彈簧掃出的體積 π·r²·L 做整合驗證，同時串起 G2、G5 與 ADR 0169。
+
+### 4. 測試與 RCA
+- `tests/phase3/plane-normal-to-curve.test.ts` 5 項；3 組反向對照全部轉紅後還原；`tests/e2e/manual-plane-normal-to-curve.js` 3/3 PASS，並有截圖。
+- **RCA 1（測試假設錯誤）**：參考平面的 `frame.origin` 依 `planeFrame` 的約定，是世界原點在該平面上的垂足，不是平面所通過的那一點。改為斷言「起點在平面上」。
+- **RCA 2（測試錯，保護機制正確）**：輪廓圓畫在草圖原點，也就是垂足，靠近螺旋軸，ADR 0169 的前置檢查正確地拒絕了它。改用 G2 的頂點點當圓心，這正是實際使用時的做法。
+- **RCA 3（e2e，三個都是測試錯）**：見 ADR §4。其中「`elementsAt` 收的是 client 座標」這個踩坑，讓第一次探測得到錯誤結論；後來正確探測，確認點選是一致的，不是產品缺陷。
+- 全閘門 `npm run check`：**3223 通過、0 失敗**。`verify:ui`（基準、平面、螺旋、彈簧、掃出、草圖、垂直於曲線）**19/19 通過**。未跑 `make:drawing`。
+
 ## 2026-10-20：任意曲線的貫穿點（G4，[ADR 0173](docs/adr/0173-pierce-any-curve.md)）
 
 ### 1. 背景與決策

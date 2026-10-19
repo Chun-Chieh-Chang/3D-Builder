@@ -6,7 +6,7 @@ import type { Id } from './ids';
  * DOF status, mass properties and error lists are derived data and never stored.
  */
 
-export const SCHEMA_VERSION = 70;
+export const SCHEMA_VERSION = 71;
 
 /** Value expression (B5.2, B5.3): "20", "25.4mm", "30deg", "wall_t*2", "D1@草圖1/2", "property('厚度')"; see `expr/`. */
 export type Expr = string;
@@ -576,7 +576,12 @@ export type PlaneDefinition =
   /** Halfway between two parallel planes. */
   | { mode: 'midplane'; plane: Ref; plane2: Ref; reverse?: boolean }
   /** Touching a cylindrical face along a line, parallel to the plane (`reverse`: on the other side of the cylinder). */
-  | { mode: 'tangent'; face: Ref; plane: Ref; reverse?: boolean };
+  | { mode: 'tangent'; face: Ref; plane: Ref; reverse?: boolean }
+  /**
+   * Square to a curve where `point` lies on it (v71, ADR 0174): `curve` a model edge (a curve body's too, a helix), `point` a model vertex or a reference
+   * point on that curve; the normal is the curve's tangent there, the way its parameter grows (`reverse`: the other way). A point off the curve is refused.
+   */
+  | { mode: 'normalToCurve'; curve: Ref; point: Ref; reverse?: boolean };
 
 export interface RefPlaneFeature extends FeatureBase {
   type: 'refPlane';

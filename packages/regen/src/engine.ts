@@ -1072,6 +1072,15 @@ export class Regenerator {
         if (Math.abs(dot(base.normal, axis)) > 1e-6) throw new FeatureError(t('datum.tangentNotParallel'));
         return planeFrame(add(g.origin, base.normal, g.radius * sign), signed(base.normal));
       }
+      case 'normalToCurve': {
+        // the point must be on the curve: the place nearest it is found by the kernel and must be the point itself, not a place it is moved to (ADR 0174)
+        const body = this.modelFor(set, t('slot.curve'));
+        const edge = this.resolve(d.curve, body, t('slot.curve'));
+        const p = this.pointOfRef(d.point, set, t('slot.throughPoint'));
+        const near = this.kernel.edgeNearest(body.shape, edge, p);
+        if (near.distance > 1e-6) throw new FeatureError(t('datum.pointNotOnCurve', { distance: near.distance.toFixed(4) }));
+        return planeFrame(near.point, signed(near.tangent));
+      }
     }
   }
 

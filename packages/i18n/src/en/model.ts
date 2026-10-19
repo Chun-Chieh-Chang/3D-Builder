@@ -56,6 +56,7 @@ export const model: Translation = {
   'cmd.refPointMustBeEarlier': 'The point it refers to must come before it',
   'cmd.axisMustBeStraightEdge': 'Pick a straight edge or a reference axis',
   'cmd.mustPickPoint': 'Pick a vertex or a reference point',
+  'cmd.normalToCurveNeedsEdge': 'A plane normal to a curve needs an edge of the model as the curve',
   'cmd.tangentNeedsFace': 'A tangent plane needs a cylindrical face',
   'cmd.twoPointsNeedsTwo': 'An axis through two points takes exactly two points',
   'cmd.axisNeedsFace': 'Pick a cylindrical or conical face',

@@ -54,6 +54,7 @@ export const model = {
   'cmd.refPointMustBeEarlier': '參考的點必須在它之前',
   'cmd.axisMustBeStraightEdge': '必須選擇直線邊線或基準軸',
   'cmd.mustPickPoint': '必須選擇頂點或參考點',
+  'cmd.normalToCurveNeedsEdge': '垂直於曲線的基準面要選模型的一條邊當曲線',
   'cmd.tangentNeedsFace': '相切基準面要選一個圓柱面',
   'cmd.twoPointsNeedsTwo': '兩點基準軸只需要兩個點',
   'cmd.axisNeedsFace': '要選一個圓柱面或圓錐面',

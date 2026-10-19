@@ -650,9 +650,9 @@ export const help: Translation = {
   'help.refPlane.summary': 'Makes a reference plane (offset, angle, three points, parallel…).',
 
   'help.refPlane.body':
-    'Makes a datum plane for reference: to sketch on, to mirror in, or to end an extrusion at.\n\n- Kinds: offset (a distance from a reference plane), angle (0° is parallel to the reference, 90° square to it), three points (click vertices or reference points), parallel (through a point, parallel to a reference), perpendicular (through a point, square to a straight edge or datum axis), midplane (midway between two parallel faces), tangent (tangent to a cylinder and parallel to a reference; "Reverse direction" goes to the other side of the cylinder).\n- The reference can be a planar face in the view, or one of the datum buttons in the panel (front, top, right).\n- The datum plane follows the model: when the face it refers to changes, the plane moves with it.',
+    'Makes a datum plane for reference: to sketch on, to mirror in, or to end an extrusion at.\n\n- Kinds: offset (a distance from a reference plane), angle (0° is parallel to the reference, 90° square to it), three points (click vertices or reference points), parallel (through a point, parallel to a reference), perpendicular (through a point, square to a straight edge or datum axis), midplane (midway between two parallel faces), tangent (tangent to a cylinder and parallel to a reference; "Reverse direction" goes to the other side of the cylinder), normal to curve (through a vertex or reference point on an edge — a helix too, usually its end — square to the edge there; the place to draw the profile of a sweep, a spring for one; a point off the curve is refused).\n- The reference can be a planar face in the view, or one of the datum buttons in the panel (front, top, right).\n- The datum plane follows the model: when the face it refers to changes, the plane moves with it.',
 
-  'help.refPlane.keywords': 'datum plane reference geometry offset angle midplane tangent',
+  'help.refPlane.keywords': 'datum plane reference geometry offset angle midplane tangent normal to curve sweep profile',
 
   'help.refPlane.see': 'ref-axis ref-point coord-sys',
   'help.refAxis.summary': 'Makes a reference axis.',
