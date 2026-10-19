@@ -82,7 +82,7 @@ import { bentPath, BendProblem, findOutlines, findProfiles, reversePath, ribbonO
 import { KernelError, SURFACE_TOLERANCE, type KnurlSpec, type Region, type Segment, type SweepSpec, type ThreadSpec, type FaceOrigin, type ImportDiagnostics, type Kernel, type OpResult, type ShapeId, type Topology } from '@3db/kernel';
 import { nameElements, nameFromFaces, resolveRef, type Candidate, type ElementNames } from '@3db/naming';
 import { Bodies, type BodyState, type BodyView } from './bodies';
-import { followReferences, ReferenceProblem } from './references';
+import { followReferences, NO_NAMES, NO_TOPOLOGY, ReferenceProblem, type DatumScope } from './references';
 import { notchOf, obroundFits, obroundRegion, type Notch } from './relief';
 import { angleStep, curveMotion, mirror, slide, turn, type Motion } from './placements';
 
@@ -953,6 +953,16 @@ export class Regenerator {
     return planeFrame(face.center, face.normal);
   }
 
+  /** The reference geometry built so far, which a sketch's entities may follow (ADR 0172): the history is rebuilt in order, so only what is before it. */
+  private datumScope(set: Bodies): DatumScope {
+    const labels = { what: t('regen.whatSketchPlane'), notPlanar: t('sketch.planeOnly') };
+    return {
+      axis: (name) => (/^axis:[xyz]$/.test(name) || this.axes.has(name) ? this.axisOfRef({ kind: 'datum', name }, set, labels.what) : undefined),
+      point: (name) => this.points.get(name),
+      plane: (name) => (isDatumPlaneName(name) || this.planes.has(name) || this.systems.has(name) ? this.planeOf({ kind: 'datum', name }, set, labels) : undefined),
+    };
+  }
+
   /** Where a sketch lies (C1.1): a default plane, a reference plane, or a planar face of the model before it. */
   private frame(f: SketchFeature, set: Bodies): PlaneFrame {
     return this.planeOf(f.plane, set, { what: t('regen.whatSketchPlane'), notPlanar: t('sketch.planeOnly') });
@@ -1155,9 +1165,10 @@ export class Regenerator {
     let followed = f;
     if (f.entities.some((e) => modelRefOf(e))) {
       const body = set.view;
-      if (!body) throw new FeatureError(t('reference.noModel'));
+      // reference geometry needs no model (ADR 0172); an edge or a vertex does
+      if (!body && f.entities.some((e) => (modelRefOf(e)?.kind ?? 'datum') !== 'datum')) throw new FeatureError(t('reference.noModel'));
       try {
-        followed = followReferences(f, { names: body.names, topology: body.topology, frame });
+        followed = followReferences(f, { names: body?.names ?? NO_NAMES, topology: body?.topology ?? NO_TOPOLOGY, frame, datums: this.datumScope(set) });
       } catch (e) {
         if (e instanceof ReferenceProblem) throw new FeatureError(e.message, e.unresolved);
         throw e;

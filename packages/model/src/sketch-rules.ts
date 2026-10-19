@@ -141,8 +141,8 @@ export function sketchError(sketch: Pick<SketchFeature, 'entities' | 'constraint
     if (e.type === 'point') {
       if (e.pierce && e.ref) return t('rules.pointFollowsTwo', { id: e.id });
       if (e.pierce && e.pierce.kind !== 'edge') return t('cmd.sketchRefMustBeEdge', { id: e.id });
-      if (e.ref && e.ref.kind !== 'vertex') return t('cmd.sketchPointRefMustBeVertex', { id: e.id });
-    } else if ('ref' in e && e.ref && e.ref.kind !== 'edge') return t('cmd.sketchRefMustBeEdge', { id: e.id });
+      if (e.ref && e.ref.kind !== 'vertex' && e.ref.kind !== 'datum') return t('cmd.sketchPointRefMustBeVertex', { id: e.id });
+    } else if ('ref' in e && e.ref && e.ref.kind !== 'edge' && !(e.type === 'line' && e.ref.kind === 'datum')) return t('cmd.sketchRefMustBeEdge', { id: e.id });
   }
 
   const seen = new Set<Id>(kinds.keys());

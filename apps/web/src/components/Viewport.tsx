@@ -89,9 +89,9 @@ function picking(feature: Feature | undefined, editing: boolean, modelTool: 'con
     /** Default and reference planes, axes and points the geometry being defined is based on: they are drawn while they are used. */
     referenceDatums: slots?.datums ?? [],
     /** A shown plane takes the click when nothing is being edited or measured (it becomes the selection), or when a box of a reference geometry wants one (ADR 0127). */
-    planes: (!editing && !measuring) || (want?.planes ?? false),
+    planes: (!editing && !measuring) || (want?.planes ?? false) || modelTool === 'convert',
     /** The same for an axis, a point or a coordinate system: their boxes, or nothing going on at all (ADR 0127). */
-    datums: (!editing && !measuring) || (want?.edges ?? false) || (want?.vertices ?? false),
+    datums: (!editing && !measuring) || (want?.edges ?? false) || (want?.vertices ?? false) || modelTool === 'convert',
     prompt: measuring ? t('measure.prompt') : prompt_,
   };
 }

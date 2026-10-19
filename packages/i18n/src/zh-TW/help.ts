@@ -1016,7 +1016,7 @@ export const help = {
 
   'help.toolMirror.see': 'tool-centerline tool-offset concept.sketch-snaps tool-line sketch',
   'help.toolConvert.summary': '把模型的邊或面的外框轉進草圖，成為跟著模型走的圖元。',
-  'help.toolConvert.body': '在面上畫草圖時按這個指令，再點模型的邊、面或頂點：邊的投影成為圖元；面會轉成它的外框與孔；頂點成為一個點。這些圖元是紫色的，位置由模型決定，模型改了它們跟著動；邊不見了草圖會報「遺失參考」。\n\n也可以不按這個指令，直接把游標移到模型的邊上畫，見「草圖的吸附與推斷」。',
+  'help.toolConvert.body': '在面上畫草圖時按這個指令，再點模型的邊、面或頂點：邊的投影成為圖元；面會轉成它的外框與孔；頂點成為一個點。也可以在設計樹或圖形區點參考平面、基準面、基準軸或參考點：平面與軸成為草圖上的建構線（平面取它與草圖平面的交線；與草圖平面平行的平面不行），垂直於草圖的軸與參考點成為一個點，都跟著基準走；只能選草圖之前建立的基準。這些圖元是紫色的，位置由模型決定，模型改了它們跟著動；邊不見了草圖會報「遺失參考」。\n\n也可以不按這個指令，直接把游標移到模型的邊上畫，見「草圖的吸附與推斷」。',
   'help.toolConvert.see': 'concept.sketch-snaps tool-pierce',
   'help.toolPierce.summary': '在模型的一條垂直邊穿過草圖面的位置放一個點。',
 

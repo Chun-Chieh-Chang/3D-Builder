@@ -1,5 +1,37 @@
 # 3D-Builder 開發日誌 (DEV_LOG.md)
 
+## 2026-10-19：基準軸／點／面進草圖，並補上草圖參照的 DAG 父項（G3，[ADR 0172](docs/adr/0172-sketch-datum-references.md)）
+
+### 1. 背景與決策
+第一批的 G3。草圖圖元的 `ref` 新增 `datum` 種類（Schema 70）：
+- 參考點，或垂直於草圖平面的軸 → 點；
+- 軸，或平面與草圖平面的交線 → 建構線，端點固定在投影原點兩側各 25 mm。
+
+只能參照草圖之前的基準，由指令層檢查。
+
+**順帶補上的既有缺口**：`dag.ts` 計算草圖的父項時只看 `plane`。被投影的邊、貫穿邊和頂點都不算父項，所以刪除被參照的特徵時，影響清單不會列出這張草圖（AGENTS §2.1-3）。現在父項改為平面加上所有 `modelRefOf`。
+
+### 2. 做法
+| 層級 | 檔案 | 改動 |
+|---|---|---|
+| 模型 | `schema.ts`、`serialize.ts`、`sketch-rules.ts`、`commands.ts` | v70；規則允許點和直線參照 `datum`；新增 `sketchDatums()`，在新增草圖特徵、`addSketchItems`、`editSketch` 三處檢查「在草圖之前」與種類是否相符 |
+| 再生 | `references.ts`、`engine.ts`、`dag.ts` | 新增 `DatumScope`、`datumItem`、`DATUM_HALF_SPAN`、`NO_NAMES`／`NO_TOPOLOGY`；`followReferences` 與 `convertEdges` 支援基準；engine 新增 `datumScope()`，沒有實體時也能跟著基準；DAG 父項 |
+| worker | `kernel.worker.ts` | `lastModel` 一律存在，並帶 `axes`／`points`／`hasBody`；新增 `scopeOf()` |
+| 介面 | `store.ts`、`Viewport.tsx`、`ops.ts` | 轉換工具下，點設計樹或圖形區的基準就轉進草圖；基準直線一律為建構線 |
+| 雙語／說明 | `model.ts`、`sketch.ts`、`help.ts` | 4 個訊息；轉換實體引用的說明補一段 |
+
+### 3. 紅隊四問
+1. **輸入破壞**：基準在草圖之後、不存在、種類不符（直線跟著點、點跟著面、圓跟著基準），以及兩平面平行，都會明確拒絕並說明原因。
+2. **幾何相交**：不涉及布林運算。平面平行會在前置階段攔下。
+3. **依賴鏈**：schema → rules → commands → refs → dag（本次補上）→ regen（follow、convert）→ worker → ops → store／Viewport 全部接上。
+4. **零 Mock**：基準的位置都由真實重建得到；e2e 走真實 UI 與設計樹。
+
+### 4. 測試
+- `tests/phase3/sketch-datum.test.ts` 11 項；3 組反向對照全部轉紅後還原；`tests/e2e/manual-sketch-datum.js` 3/3 PASS，並以截圖確認紫色虛線出現在 x = 15。
+- **事故（我自己造成的）**：第一次跑 `verify:ui` 時，我同時在改 `kernel.ts`（G4），Vite 熱更新讓頁面在跑到一半時重載，跑完 c11 就中止（exit 1）。這次結果作廢。
+  - **之後的做法**：`verify:ui` 跑的期間不改任何會被 dev server 載入的原始碼，只寫文件。AGENTS §4 原本只提到「其他工作階段」的干擾；同一個工作階段自己編輯，也一樣會干擾。
+- 全閘門 `npm run check`：**3205 通過、0 失敗**。重跑 `verify:ui`（草圖、鏡射、吸附、示範零件、基準、c10–c2x）**39/39 通過**。未跑 `make:drawing`。
+
 ## 2026-10-19：模型頂點投影成草圖點（G2，[ADR 0171](docs/adr/0171-sketch-vertex-points.md)）
 
 ### 1. 背景與決策

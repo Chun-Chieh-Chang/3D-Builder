@@ -6,7 +6,7 @@ import type { Id } from './ids';
  * DOF status, mass properties and error lists are derived data and never stored.
  */
 
-export const SCHEMA_VERSION = 69;
+export const SCHEMA_VERSION = 70;
 
 /** Value expression (B5.2, B5.3): "20", "25.4mm", "30deg", "wall_t*2", "D1@草圖1/2", "property('厚度')"; see `expr/`. */
 export type Expr = string;
@@ -56,7 +56,9 @@ export function sketchAxisDir(id: Id): [number, number] | undefined {
  * A `ref` on a line, circle or arc makes it the projection of a model edge onto the sketch plane (C1.18, v13): where it lies comes from the
  * model, never from the sketch, so it follows the edge when the model changes. A `pierce` on a point makes it the place where a straight model
  * edge passes through the sketch plane (「貫穿」, C1.26); a `ref` on a point (v69, ADR 0171) makes it a model vertex projected onto the plane along its
- * normal. A point has one or the other, never both. Their points keep their stored places only as a first guess; the model fixes them.
+ * normal. A point has one or the other, never both. A `ref` of kind 'datum' (v70, ADR 0172) follows reference geometry earlier in the history: a point a
+ * reference point (or an axis square to the plane, where it passes through), a line a reference axis (`axis:x|y|z` too, projected) or a plane (where it
+ * crosses the sketch plane): such a line is construction, never part of a profile. Their points keep their stored places only as a first guess; the model fixes them.
  */
 export type SketchEntity =
   | { id: Id; type: 'point'; x: number; y: number; construction?: boolean; pierce?: Ref; ref?: Ref }

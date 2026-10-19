@@ -29,11 +29,19 @@ export class ReferenceProblem extends Error {
   }
 }
 
-/** The model the references are looked up in: its names and shapes, and the plane of the sketch. */
+/** The reference geometry built before the sketch (ADR 0172), by name: a default plane or axis of the part, or a feature id. */
+export interface DatumScope {
+  axis(name: string): { origin: Vec3; dir: Vec3 } | undefined;
+  point(name: string): Vec3 | undefined;
+  plane(name: string): PlaneFrame | undefined;
+}
+
+/** The model the references are looked up in: its names and shapes, and the plane of the sketch; and the reference geometry before it (ADR 0172). */
 export interface ReferenceScope {
   names: ElementNames;
   topology: Topology;
   frame: PlaneFrame;
+  datums?: DatumScope;
 }
 
 const sub = (a: Vec3, b: Vec3): Vec3 => [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
@@ -98,6 +106,54 @@ export function vertexPoint(topology: Topology, index: number, frame: PlaneFrame
   return { at: local(frame, v.point), off: Math.abs(dot(sub(v.point, frame.origin), frame.normal)) };
 }
 
+/** No model yet: a sketch that follows only reference geometry (ADR 0172) is looked up in these. */
+export const NO_NAMES: ElementNames = { faces: [], edges: [], vertices: [] };
+export const NO_TOPOLOGY: Topology = { faces: [], edges: [], vertices: [] };
+
+/** Half the length a line made from reference geometry is drawn (ADR 0172): a convention, the same whatever the model; to the solver a line has no ends. */
+export const DATUM_HALF_SPAN = 25;
+const cross3 = (a: Vec3, b: Vec3): Vec3 => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
+
+/**
+ * What reference geometry looks like on the sketch plane (ADR 0172): a reference point projected along the normal; an axis projected, or where it passes
+ * through the plane when it is square to it; a plane where it crosses the sketch plane. A line is DATUM_HALF_SPAN each way from the projection of the
+ * axis's own origin (from the place on it nearest the sketch origin, for a plane). Throws when the datum is not there, or a plane is parallel to the sketch.
+ */
+export function datumItem(scope: ReferenceScope, ref: Ref): { line: [P2, P2] } | { point: P2 } {
+  const { frame } = scope;
+  const d = scope.datums;
+  const line = (origin: Vec3, dir: Vec3): { line: [P2, P2] } => {
+    const o = local(frame, origin);
+    const u: P2 = [dot(dir, frame.xDir), dot(dir, frame.yDir)];
+    const l = Math.hypot(u[0], u[1]);
+    const h = DATUM_HALF_SPAN / l;
+    return { line: [[o[0] - u[0] * h, o[1] - u[1] * h], [o[0] + u[0] * h, o[1] + u[1] * h]] };
+  };
+  const point = d?.point(ref.name);
+  if (point) return { point: local(frame, point) };
+  const axis = d?.axis(ref.name);
+  if (axis) {
+    const along = dot(axis.dir, frame.normal);
+    const len = Math.hypot(...axis.dir);
+    if (Math.abs(along) > (1 - SAME) * len) {
+      // square to the plane: where it passes through
+      const s = -dot(frame.normal, sub(axis.origin, frame.origin)) / along;
+      return { point: local(frame, [axis.origin[0] + axis.dir[0] * s, axis.origin[1] + axis.dir[1] * s, axis.origin[2] + axis.dir[2] * s]) };
+    }
+    return line(axis.origin, axis.dir);
+  }
+  const plane = d?.plane(ref.name);
+  if (plane) {
+    const dir = cross3(plane.normal, frame.normal);
+    if (Math.hypot(...dir) < 1e-9) throw new ReferenceProblem(t('reference.planeParallel', { name: ref.name }));
+    // the place on both planes nearest the sketch origin: in the sketch plane, along its direction square to the line, as far as the other plane
+    const across = cross3(frame.normal, dir);
+    const s = dot(plane.normal, sub(plane.origin, frame.origin)) / dot(plane.normal, across);
+    return line([frame.origin[0] + across[0] * s, frame.origin[1] + across[1] * s, frame.origin[2] + across[2] * s], dir);
+  }
+  throw new ReferenceProblem(t('reference.datumMissing', { name: ref.name }), [{ ref, reason: 'missing', candidates: [] }]);
+}
+
 function edgeIndex(scope: ReferenceScope, ref: Ref): number {
   if (!ref.name) throw new ReferenceProblem(t('reference.empty'));
   const r = resolveRef(ref, scope.names, scope.topology);
@@ -124,6 +180,22 @@ export function followReferences(sketch: SketchFeature, scope: ReferenceScope): 
       const at = pierceEdge(scope.topology, edgeIndex(scope, e.pierce), scope.frame);
       move.set(e.id, at);
       hold(e.id, 0, e.id);
+      return e;
+    }
+    if (e.type === 'point' && e.ref?.kind === 'datum') {
+      const item = datumItem(scope, e.ref);
+      if (!('point' in item)) throw new ReferenceProblem(t('reference.changedKind', { id: e.id }));
+      move.set(e.id, item.point);
+      hold(e.id, 0, e.id);
+      return e;
+    }
+    if (e.type === 'line' && e.ref?.kind === 'datum') {
+      const item = datumItem(scope, e.ref);
+      if (!('line' in item)) throw new ReferenceProblem(t('reference.changedKind', { id: e.id }));
+      move.set(e.p1, item.line[0]);
+      move.set(e.p2, item.line[1]);
+      hold(e.id, 1, e.p1);
+      hold(e.id, 2, e.p2);
       return e;
     }
     if (e.type === 'point' && e.ref) {
@@ -180,6 +252,12 @@ export function convertEdges(scope: ReferenceScope, refs: Ref[], mode: 'convert'
   const errors: string[] = [];
   for (const ref of refs) {
     try {
+      if (ref.kind === 'datum') {
+        if (mode === 'pierce') throw new ReferenceProblem(t('reference.pierceStraight'));
+        const item = datumItem(scope, ref);
+        items.push('point' in item ? { ref, vertex: item.point } : { ref, projected: { kind: 'line', a: item.line[0], b: item.line[1] } });
+        continue;
+      }
       const index = edgeIndex(scope, ref);
       if (ref.kind === 'vertex') {
         if (mode === 'pierce') throw new ReferenceProblem(t('reference.pierceStraight'));

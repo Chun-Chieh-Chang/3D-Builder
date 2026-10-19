@@ -212,6 +212,8 @@ const migrations: Record<number, (doc: Json) => Json> = {
   67: (doc) => doc,
   // v69: a sketch point may follow a model vertex (`ref` of kind 'vertex' on a point, ADR 0171). Nothing to convert; an older program refuses the file.
   68: (doc) => doc,
+  // v70: sketch points and lines may follow reference geometry (`ref` of kind 'datum', ADR 0172). Nothing to convert; an older program refuses the file.
+  69: (doc) => doc,
 };
 
 export class FormatError extends Error {

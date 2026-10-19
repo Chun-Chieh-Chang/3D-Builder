@@ -1,4 +1,4 @@
-import { bodyFeature, defRefs, expressionParents, type Feature, type Id, type PartDoc, type Ref } from '@3db/model';
+import { bodyFeature, defRefs, expressionParents, modelRefOf, type Feature, type Id, type PartDoc, type Ref } from '@3db/model';
 import { ownerFeatures } from '@3db/naming';
 
 /**
@@ -12,7 +12,8 @@ export function parentsOf(feature: Feature, doc: PartDoc): Id[] {
   let parents: Id[];
   switch (feature.type) {
     case 'sketch':
-      parents = fromRefs([feature.plane]);
+      // its plane, and what its entities follow (C1.18, ADR 0171, ADR 0172): model edges and vertices (by the features that made them), reference geometry
+      parents = fromRefs([feature.plane, ...feature.entities.flatMap((e) => modelRefOf(e) ?? [])]);
       break;
     case 'extrude':
       parents = [

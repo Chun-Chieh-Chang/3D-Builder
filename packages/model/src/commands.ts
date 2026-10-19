@@ -486,6 +486,22 @@ function loftSections(doc: PartDoc, f: LoftFeature, index: number): void {
 }
 
 /** A line of the sketch, or one of its two axes (ADR 0170). */
+/**
+ * The reference geometry a sketch's entities follow (ADR 0172) must be earlier in the history than the sketch at `index` (or a default plane or axis of the
+ * part), and of a kind the entity can follow: a point a reference point or an axis (where it passes through the plane), a line an axis or a plane.
+ */
+function sketchDatums(doc: PartDoc, entities: readonly SketchEntity[], index: number): void {
+  for (const e of entities) {
+    const ref = 'ref' in e ? e.ref : undefined;
+    if (ref?.kind !== 'datum') continue;
+    const at = doc.features.findIndex((f) => f.id === ref.name);
+    const type = isDatumPlaneName(ref.name) ? 'refPlane' : /^axis:[xyz]$/.test(ref.name) ? 'refAxis' : at >= 0 && at < index ? doc.features[at]!.type : null;
+    if (type !== 'refPlane' && type !== 'refAxis' && type !== 'refPoint' && type !== 'coordSys') throw new CommandError(t('cmd.sketchDatumNotEarlier', { id: e.id, name: ref.name }));
+    const fits = e.type === 'point' ? type === 'refPoint' || type === 'refAxis' : type !== 'refPoint';
+    if (!fits) throw new CommandError(t('cmd.sketchDatumWrongKind', { id: e.id, name: ref.name }));
+  }
+}
+
 function revolveAxis(sketch: SketchFeature, axis: Id): void {
   if (!isSketchAxis(axis) && sketch.entities.find((e) => e.id === axis)?.type !== 'line') throw new CommandError(t('cmd.revolveAxisMustBeLine'));
 }
@@ -519,6 +535,7 @@ function validateNewFeature(doc: PartDoc, f: Feature, index: number): void {
       planeRef(doc, f.plane, index);
       const err = sketchError(f);
       if (err) throw new CommandError(err);
+      sketchDatums(doc, f.entities, index);
       return;
     }
     case 'extrude':
@@ -1547,6 +1564,7 @@ export function mutate(draft: Draft<PartDoc>, cmd: Command): void {
       assertFresh(draft as PartDoc, ids);
       const err = sketchError({ entities: [...f.entities, ...cmd.entities], constraints: [...f.constraints, ...cmd.constraints] });
       if (err) throw new CommandError(err);
+      sketchDatums(draft as PartDoc, cmd.entities, draft.features.findIndex((x) => x.id === cmd.featureId));
       f.entities.push(...(cmd.entities as Draft<SketchEntity>[]));
       f.constraints.push(...(cmd.constraints as Draft<SketchConstraint>[]));
       checkExprs(draft as PartDoc, f as Feature, new Set(ids));
@@ -1587,6 +1605,7 @@ export function mutate(draft: Draft<PartDoc>, cmd: Command): void {
       }
       const err = sketchError(f as SketchFeature);
       if (err) throw new CommandError(err);
+      sketchDatums(draft as PartDoc, f.entities as SketchEntity[], draft.features.findIndex((x) => x.id === cmd.featureId));
       checkExprs(draft as PartDoc, f as Feature);
       countersFor(ids, draft.idCounters);
       return;

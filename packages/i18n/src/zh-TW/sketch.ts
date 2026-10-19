@@ -48,6 +48,8 @@ export const sketch = {
   'contour.item': '輪廓 {n}：面積 {area} mm²，中心 ({x}, {y}){holes}',
   'contour.holes': '，{n} 個孔',
   'contour.loading': '讀取輪廓中…',
+  'reference.planeParallel': '「{name}」與草圖平面平行，兩者沒有交線',
+  'reference.datumMissing': '草圖之前找不到基準「{name}」',
   'reference.noVertex': '找不到這個頂點',
   'reference.noEdge': '找不到這條邊線',
   'reference.empty': '請選擇一條邊線',

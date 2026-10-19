@@ -2561,6 +2561,11 @@ class AppStore {
   /** A click in the FeatureManager selects; while a plane is being defined it picks a plane like SolidWorks' flyout tree. */
   treeClick(id: Id): void {
     const e = this.state.editing;
+    // 「轉換實體引用」 while a sketch is edited: a reference plane, axis or point (in the tree or the graphics area) goes into the sketch (ADR 0172)
+    if (e?.kind === 'sketch' && this.sketcher?.getView().tool === 'convert') {
+      const datum = treeRef(this.history.doc, id);
+      if (datum) return void this.convertPicked(datum);
+    }
     if (e && e.kind === 'sketchPlane') {
       const ref = treeRef(this.history.doc, id);
       if (ref && (ref.kind === 'datum' || ref.kind === 'face')) {
@@ -2738,9 +2743,10 @@ class AppStore {
     const tool = sketcher?.getView().tool;
     if (!sketcher || !sketch || (tool !== 'convert' && tool !== 'pierce' && tool !== 'intersect')) return;
     const mode = tool === 'pierce' ? 'pierce' : tool === 'intersect' ? 'intersect' : 'convert';
-    // an edge; a face (its outline, or where it crosses the plane); a vertex, converted into a point that follows it (ADR 0171)
-    if (ref.kind !== 'edge' && !(ref.kind === 'face' && (mode === 'convert' || mode === 'intersect')) && !(ref.kind === 'vertex' && mode === 'convert')) return;
-    const r = await this.api.convertReferences({ sketchId: sketch.id, edges: ref.kind === 'edge' || ref.kind === 'vertex' ? [ref] : [], faces: ref.kind === 'face' ? [ref] : [], mode });
+    // an edge; a face (its outline, or where it crosses the plane); a vertex, converted into a point that follows it (ADR 0171); reference geometry (ADR 0172)
+    const one = ref.kind === 'edge' || ((ref.kind === 'vertex' || ref.kind === 'datum') && mode === 'convert');
+    if (!one && !(ref.kind === 'face' && (mode === 'convert' || mode === 'intersect'))) return;
+    const r = await this.api.convertReferences({ sketchId: sketch.id, edges: one ? [ref] : [], faces: ref.kind === 'face' ? [ref] : [], mode });
     if (r.items.length > 0) sketcher.addReferences(r.items);
     if (r.errors.length > 0) this.notify(r.errors[0]!, r.items.length > 0 ? 'info' : 'error');
   }

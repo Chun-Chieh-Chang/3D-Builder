@@ -3,11 +3,11 @@ import * as Comlink from 'comlink';
 import { setLocale as setWorkerLocale, t } from '@3db/i18n';
 import occtWasm from 'libcascade/single/wasm?url';
 import gcsWasm from '@salusoft89/planegcs/dist/planegcs_dist/planegcs.wasm?url';
-import { bodyKey, combineMass, isShown, mirrorKey, modelRefOf, MESH_QUALITY, placementRows, settingsOf, type ViewEdgeSet, type AssemblyDoc, type Id, type MeasureReport, type PartDoc, type SourceTree } from '@3db/model';
+import { bodyKey, combineMass, DATUM_PLANES, isDatumPlaneName, isShown, mirrorKey, modelRefOf, type PlaneFrame, MESH_QUALITY, placementRows, settingsOf, type ViewEdgeSet, type AssemblyDoc, type Id, type MeasureReport, type PartDoc, type SourceTree } from '@3db/model';
 import { findProfiles, PlaneGcsSolver } from '@3db/sketch';
 import { COMPONENT_MESH, Kernel, type ThicknessReport, type UndercutReport, type DraftReport, type GeometryReport, type MassProps, type MeshData, type MeshOptions, type ShapeId } from '@3db/kernel';
 import { encodeShade, flatViewLines, rasterizeShade, withoutHiddenEdges, type ShadeImage, type ViewLines } from '@3db/drawing';
-import { drawingAnchors, holeFeatures, projectDrawingView, elementFacts, viewFeatures, viewEdges, findClearance, findInterference, flatPattern, FlatError, sheetChecks, sweepClearance, measureTargets, convertEdges, intersectFaces, modelSnapItems, edgeMateGeometry, exportFaces, faceColors, intoFrame, faceEdges, faceMateGeometry, followReferences, ReferenceProblem, Regenerator, solveAssemblyTree, type AssemblyResult, type AssemblySolveOptions, type BodyInfo, type FlatReport, type HoleFeatures, type RebuildResult, type SheetCheck, type SheetCheckLimits } from '@3db/regen';
+import { drawingAnchors, holeFeatures, projectDrawingView, elementFacts, viewFeatures, viewEdges, findClearance, findInterference, flatPattern, FlatError, sheetChecks, sweepClearance, measureTargets, convertEdges, intersectFaces, modelSnapItems, edgeMateGeometry, exportFaces, faceColors, intoFrame, faceEdges, faceMateGeometry, followReferences, NO_NAMES, NO_TOPOLOGY, ReferenceProblem, Regenerator, type ReferenceScope, solveAssemblyTree, type AssemblyResult, type AssemblySolveOptions, type BodyInfo, type FlatReport, type HoleFeatures, type RebuildResult, type SheetCheck, type SheetCheckLimits } from '@3db/regen';
 import { edgeFingerprint, faceFingerprint, vertexFingerprint } from '@3db/naming';
 import { binaryStl, exportAssemblyStep, exportPartStep, portableShape, readComponentFile, stepAssemblyPlan, type StepAssemblyPlan } from '@3db/io';
 import type { SourcePart, SourceProvider } from '@3db/regen';
@@ -21,7 +21,26 @@ let solver: PlaneGcsSolver;
 let regen: Regenerator;
 let ready: Promise<{ occtMs: number; gcsMs: number }> | null = null;
 /** The model as the last rebuild saw it (before the sketch being edited, when a sketch is): what its projected edges are looked up in (C1.18). */
-let lastModel: { names: NonNullable<RebuildResult['body']>['names']; topology: NonNullable<RebuildResult['body']>['topology']; frames: RebuildResult['frames'] } | null = null;
+/**
+ * The model as the last rebuild left it, which an edited sketch follows (C1.18): its names and shapes (empty while there is no body), the frames of the
+ * sketches and planes, and the reference axes and points (ADR 0172). The rebuild stops at the edited sketch, so what is here is what is before it.
+ */
+let lastModel: { names: NonNullable<RebuildResult['body']>['names']; topology: NonNullable<RebuildResult['body']>['topology']; frames: RebuildResult['frames']; axes: RebuildResult['axes']; points: RebuildResult['points']; hasBody: boolean } | null = null;
+
+/** Where an edited sketch looks its references up (C1.18, ADR 0172). */
+function scopeOf(model: NonNullable<typeof lastModel>, frame: PlaneFrame): ReferenceScope {
+  const origin = { 'axis:x': [1, 0, 0], 'axis:y': [0, 1, 0], 'axis:z': [0, 0, 1] } as const;
+  return {
+    names: model.names,
+    topology: model.topology,
+    frame,
+    datums: {
+      axis: (name) => (name in origin ? { origin: [0, 0, 0], dir: [...origin[name as keyof typeof origin]] } : model.axes.get(name)),
+      point: (name) => model.points.get(name),
+      plane: (name) => (isDatumPlaneName(name) ? DATUM_PLANES[name] : model.frames.get(name)),
+    },
+  };
+}
 /** Imported data the document refers to by hash; the regenerator reads each file from here once. */
 const blobs = new Map<string, Uint8Array>();
 let solverReady: Promise<PlaneGcsSolver> | null = null;
@@ -218,7 +237,7 @@ const api: KernelApi = {
     const r = regen.rebuild(doc, until === undefined ? {} : { until });
     const body = r.body;
     lastResult = r;
-    lastModel = body ? { names: body.names, topology: body.topology, frames: r.frames } : null;
+    lastModel = { names: body?.names ?? NO_NAMES, topology: body?.topology ?? NO_TOPOLOGY, frames: r.frames, axes: r.axes, points: r.points, hasBody: !!body };
     const shown = r.bodies.map((b) => isShown(doc, bodyKey(b.id)));
     const mesh = meshOf(r, shown, MESH_QUALITY[settingsOf(doc).meshQuality]);
     const payload: RebuildPayload = {
@@ -257,8 +276,9 @@ const api: KernelApi = {
     if (sketch.entities.some((e) => modelRefOf(e))) {
       const frame = lastModel?.frames.get(sketch.id);
       try {
-        if (!lastModel || !frame) throw new ReferenceProblem(t('reference.noModel'));
-        followed = followReferences(sketch, { names: lastModel.names, topology: lastModel.topology, frame });
+        // reference geometry needs no model (ADR 0172); an edge or a vertex does
+        if (!lastModel || !frame || (!lastModel.hasBody && sketch.entities.some((e) => (modelRefOf(e)?.kind ?? 'datum') !== 'datum'))) throw new ReferenceProblem(t('reference.noModel'));
+        followed = followReferences(sketch, scopeOf(lastModel, frame));
       } catch (e) {
         if (!(e instanceof ReferenceProblem)) throw e;
         return { seq, geometry: new Map(), status: 'failed', dof: 0, conflicting: [], redundant: [], problems: [], message: e.message, ms: performance.now() - began };
@@ -272,7 +292,7 @@ const api: KernelApi = {
   async convertReferences({ sketchId, edges, faces, mode }: ConvertRequest): Promise<ConvertPayload> {
     const frame = lastModel?.frames.get(sketchId);
     if (!lastModel || !frame) return { items: [], errors: [t('reference.noModel')] };
-    const scope = { names: lastModel.names, topology: lastModel.topology, frame };
+    const scope = scopeOf(lastModel, frame);
     try {
       if (mode === 'intersect') {
         const items = intersectFaces(scope, faces);
@@ -288,7 +308,7 @@ const api: KernelApi = {
   async sketchSnapItems(sketchId) {
     const frame = lastModel?.frames.get(sketchId);
     if (!lastModel || !frame) return [];
-    const scope = { names: lastModel.names, topology: lastModel.topology, frame };
+    const scope = scopeOf(lastModel, frame);
     return modelSnapItems(scope, (i) => edgeFingerprint(scope.topology, i));
   },
 

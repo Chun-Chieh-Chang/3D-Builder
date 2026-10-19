@@ -50,6 +50,8 @@ export const sketch: Translation = {
   'contour.item': 'Contour {n}: area {area} mm², center ({x}, {y}){holes}',
   'contour.holes': ', {n} hole(s)',
   'contour.loading': 'Reading contours…',
+  'reference.planeParallel': '"{name}" is parallel to the sketch plane: they do not cross',
+  'reference.datumMissing': 'The reference geometry "{name}" was not found before the sketch',
   'reference.noVertex': 'This vertex was not found',
   'reference.noEdge': 'This edge was not found',
   'reference.empty': 'Select an edge',
