@@ -4197,10 +4197,40 @@ export class Regenerator {
     if (f.kind === 'face') return this.faceFillet(f, set);
     if (f.kind === 'full') return this.fullRound(f, set);
     return this.perBody(set, [...f.edges, ...(f.faces ?? [])], 'edge', t('edit.noBodyForFillet'), lostRefs, (body, mine) => {
-      const r = this.roundEdges(body.shape, this.edgesOfRefs(mine, body).edges, evalLength(f.radius));
+      const { edges } = this.edgesOfRefs(mine, body);
+      const laws = this.filletLaws(f, mine, body);
+      // a variable radius has no "slightly smaller works" to fall back to: a law that fails fails, and says so (ADR 0167)
+      const r = laws ? this.kernel.fillet(body.shape, edges, evalLength(f.radius), laws) : this.roundEdges(body.shape, edges, evalLength(f.radius));
       const topology = this.kernel.topology(r.shape);
       return { id: body.id, shape: r.shape, topology, names: nameElements(r.faceOrigins, topology, { featureId: f.id, role: 'fillet', input: body.names }), by: f.id };
     });
+  }
+
+  /**
+   * The radius laws a variable-radius fillet (C5.2, ADR 0167) hands to `Kernel.fillet`: one per edge that has control points, the radii evaluated and
+   * the points sorted along the edge. A control point may sit on an edge the fillet picked (the model keeps it that way); the edges that came from
+   * picked faces have no points of their own and take the constant radius.
+   */
+  private filletLaws(f: FilletFeature, mine: Ref[], body: BodyState): Map<number, { t: number; r: number }[]> | undefined {
+    const points = f.variable;
+    if (!points || points.length === 0) return undefined;
+    const edgeRefs = mine.filter((r) => r.kind === 'edge');
+    const indices = this.edgeIndices(edgeRefs, body);
+    const byName = new Map(edgeRefs.map((r, i) => [r.name, indices[i]!] as const));
+    const laws = new Map<number, { t: number; r: number }[]>();
+    for (const p of points) {
+      const edge = byName.get(p.edge);
+      if (edge === undefined) throw new FeatureError(t('edit.filletVariableEdge', { edge: p.edge }));
+      const radius = evalLength(p.radius);
+      if (!(radius > 0)) throw new FeatureError(t('edit.filletVariablePositive', { radius: String(radius) }));
+      (laws.get(edge) ?? laws.set(edge, []).get(edge)!).push({ t: p.t, r: radius });
+    }
+    for (const law of laws.values()) {
+      law.sort((a, b) => a.t - b.t);
+      // the law is only defined between its first and last point, and the edge runs from end to end: both ends have to be there
+      if (law[0]!.t !== 0 || law[law.length - 1]!.t !== 1) throw new FeatureError(t('edit.filletVariableEnds'));
+    }
+    return laws;
   }
 
   /** 「完整圓角」: the center face between two parallel sides becomes half a cylinder tangent to both (`Kernel.fullRound`); the radius is half the width, not typed. */

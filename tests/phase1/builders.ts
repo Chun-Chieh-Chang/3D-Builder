@@ -129,7 +129,7 @@ export const revolve = (id: string, sketchId: string, axis: string, op: 'boss' |
   dir1: { type: 'blind', angle },
 });
 
-export const fillet = (id: string, edges: Ref[], radius = '2'): Feature => ({ id, type: 'fillet', name: id, suppressed: false, edges, radius });
+export const fillet = (id: string, edges: Ref[], radius = '2', variable?: { edge: string; t: number; radius: string }[]): Feature => ({ id, type: 'fillet', name: id, suppressed: false, edges, radius, variable });
 
 export function build(...features: Feature[]): PartDoc {
   return features.reduce<PartDoc>((doc, feature, index) => applyCommand(doc, { type: 'insertFeature', feature, index } satisfies Command), createEmptyPart());

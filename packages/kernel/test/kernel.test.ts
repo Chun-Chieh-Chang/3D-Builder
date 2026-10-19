@@ -1,5 +1,5 @@
 import { afterEach, beforeAll, describe, expect, it } from 'vitest';
-import { Kernel, type Frame, type Region, type ShapeId } from '../src/index';
+import { Kernel, type Frame, type Region, type ShapeId, type Vec3 } from '../src/index';
 
 let k: Kernel;
 beforeAll(async () => {
@@ -67,6 +67,79 @@ describe('fillet', () => {
   it('turns an impossible fillet into a KernelError', () => {
     const box = keep(k.extrude(front, [rect(20, 10)], [0, 0, 5]).shape);
     expect(() => k.fillet(box, [0], 50)).toThrow(/圓角失敗/);
+  });
+});
+
+describe('a fillet whose radius evolves (variable radius, C5.2)', () => {
+  /** A 40 × 30 × 12 box and its long top edge (along x, between the top face and the y = 30 side): a corner of 90° all the way. */
+  const boxWithTopEdge = () => {
+    const box = keep(k.extrude(front, [rect(40, 30)], [0, 0, 12]).shape);
+    const topo = k.topology(box);
+    const edge = topo.edges.findIndex((e) => Math.abs(e.mid[2] - 12) < 1e-9 && Math.abs(e.mid[1] - 30) < 1e-9);
+    if (edge < 0) throw new Error('no long top edge');
+    return { box, edge };
+  };
+  /** What a corner of 90° loses per unit length at radius r: the square of the corner less the quarter circle. */
+  const corner = (r: number) => (1 - Math.PI / 4) * r * r;
+  /**
+   * The radius the fillet has at x, measured off the solid itself (AGENTS.md §3.5): the corner (y = 30, z = 12) loses material up to the distance
+   * d = r·(√2 − 1) along the diagonal into it, so bisecting for where the material starts at that x gives r.
+   */
+  const radiusAt = (id: ShapeId, x: number): number => {
+    let lo = 0;
+    let hi = 12;
+    for (let i = 0; i < 60; i++) {
+      const mid = (lo + hi) / 2;
+      const p: Vec3 = [x, 30 - mid / Math.SQRT2, 12 - mid / Math.SQRT2];
+      const [c] = k.classify(id, [p]);
+      if (c === 'out') lo = mid;
+      else hi = mid;
+    }
+    return ((lo + hi) / 2) * (1 + Math.SQRT2);
+  };
+
+  it('evolves the radius along the edge, interpolating linearly, and its volume is the integral', () => {
+    const { box, edge } = boxWithTopEdge();
+    // r = 2 at x = 0 growing to r = 6 at x = 40: the removed volume is the corner loss integrated along the edge
+    const r = k.fillet(box, [edge], 2, new Map([[edge, [{ t: 0, r: 2 }, { t: 1, r: 6 }]]]));
+    keep(r.shape);
+    expect(k.isValid(r.shape)).toBe(true);
+    expect(k.massProps(r.shape).volume).toBeCloseTo(14400 - ((1 - Math.PI / 4) * 2080) / 3, 3);
+    expect(r.faceOrigins.filter((o) => o.some((x) => x.rel === 'generated' && x.kind === 'edge' && x.index === edge))).toHaveLength(1);
+  });
+
+  it('interpolates at the positions the points are, not at fixed steps', () => {
+    const { box, edge } = boxWithTopEdge();
+    // three points: r = 2 at x = 0, r = 4 at x = 10, r = 6 at x = 40 — two linear stretches
+    const r = k.fillet(box, [edge], 2, new Map([[edge, [{ t: 0, r: 2 }, { t: 0.25, r: 4 }, { t: 1, r: 6 }]]]));
+    keep(r.shape);
+    // the volume is the integral of the two stretches (the kink where they meet leaves a few thousandths behind in OCCT's surface approximation)
+    expect(k.massProps(r.shape).volume).toBeCloseTo(14400 - ((1 - Math.PI / 4) * 2560) / 3, 2);
+    // the radius is exactly the one asked for at each point, and a straight line away from them in between
+    expect(radiusAt(r.shape, 0.5)).toBeCloseTo(2.1, 5);
+    expect(radiusAt(r.shape, 10)).toBeCloseTo(4, 5);
+    expect(radiusAt(r.shape, 38)).toBeCloseTo(4 + 28 / 15, 5);
+    expect(radiusAt(r.shape, 5)).toBeCloseTo(3, 5);
+    expect(radiusAt(r.shape, 25)).toBeCloseTo(5, 5);
+  });
+
+  it('a law whose ends have the same radius is the constant fillet of that radius', () => {
+    const { box, edge } = boxWithTopEdge();
+    const varying = keep(k.fillet(box, [edge], 2, new Map([[edge, [{ t: 0, r: 2 }, { t: 1, r: 2 }]]])).shape);
+    const constant = keep(k.fillet(box, [edge], 2).shape);
+    expect(k.massProps(varying).volume).toBeCloseTo(k.massProps(constant).volume, 6);
+    expect(k.massProps(constant).volume).toBeCloseTo(14400 - corner(2) * 40, 6);
+  });
+
+  it('rounds the other edges of the same fillet at the constant radius', () => {
+    const { box, edge } = boxWithTopEdge();
+    const topo = k.topology(box);
+    const second = topo.edges.findIndex((e) => Math.abs(e.mid[2] - 12) < 1e-9 && Math.abs(e.mid[1]) < 1e-9);
+    const r = k.fillet(box, [edge, second], 2, new Map([[edge, [{ t: 0, r: 2 }, { t: 1, r: 6 }]]]));
+    keep(r.shape);
+    expect(k.massProps(r.shape).volume).toBeCloseTo(14400 - ((1 - Math.PI / 4) * 2080) / 3 - corner(2) * 40, 3);
+    // the second edge is rounded at 2 all the way, the first at its law
+    expect(radiusAt(r.shape, 20)).toBeCloseTo(4, 5);
   });
 });
 

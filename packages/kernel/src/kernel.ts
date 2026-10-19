@@ -1,5 +1,5 @@
 import { t } from '@3db/i18n';
-import type { BRepBuilderAPI_MakeShape, NCollection_List_TopoDS_Shape, TopoDS_Shape, TopoDS_Wire } from 'libcascade/single/init';
+import type { BRepBuilderAPI_MakeShape, NCollection_Array1_gp_Pnt2d, NCollection_List_TopoDS_Shape, TopoDS_Shape, TopoDS_Wire } from 'libcascade/single/init';
 import { anyHit, buildBvh, nearestHitAt, triangleNormal } from './rays';
 import { forEachSample } from './sampling';
 import { escapeStepText } from './stepText';
@@ -210,6 +210,13 @@ const T = {
   EDGE: 'TopAbs_EDGE',
   VERTEX: 'TopAbs_VERTEX',
 } as const;
+
+/**
+ * How many pieces one stretch of a variable-radius law (C5.2, ADR 0167) is cut into. OCCT fills its laws smoothly, so the straight line between two
+ * control points has to be sampled to come out straight; at this many pieces the fill stays within a few hundredths of a millimetre of it (measured:
+ * a law of 2 to 6 over a 40 mm edge comes out with the radius of the line at every position to 1e-5, and its volume to 1e-4 of the integral).
+ */
+const LAW_STRETCH_SAMPLES = 64;
 
 const add = (a: Vec3, b: Vec3, s = 1): Vec3 => [a[0] + b[0] * s, a[1] + b[1] * s, a[2] + b[2] * s];
 const sub = (a: Vec3, b: Vec3): Vec3 => [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
@@ -1723,8 +1730,12 @@ export class Kernel {
     }
   }
 
-  /** Constant-radius fillet on the given edges of `target` (C5.1). */
-  fillet(target: ShapeId, edgeIndices: number[], radius: number): OpResult {
+  /**
+   * Constant-radius fillet on the given edges of `target` (C5.1). With `laws` (C5.2, ADR 0167) an edge takes a variable radius instead: its entry is the
+   * radius at the positions along it (`t`: the fraction of the edge from the smaller-coordinate end, see `radiusLaw`), between two of them linear. An edge
+   * of `laws` is rounded by its law, the others by `radius`; a law needs its two ends (t = 0 and t = 1), the radius outside them is not defined.
+   */
+  fillet(target: ShapeId, edgeIndices: number[], radius: number, laws?: Map<number, { t: number; r: number }[]>): OpResult {
     if (edgeIndices.length === 0) throw new KernelError(t('kernel.filletNeedsEdge'));
     const oc = this.oc;
     const arena = new Arena();
@@ -1742,7 +1753,9 @@ export class Kernel {
           for (const i of edgeIndices) {
             const e = edges.keys[i];
             if (!e) throw new KernelError(t('kernel.edgeOutOfRange', { index: i }));
-            mk.Add(radius, arena.own(oc.TopoDS.Edge(e)));
+            const law = laws?.get(i);
+            if (law && law.length > 0) mk.Add(this.radiusLaw(law, e, arena), arena.own(oc.TopoDS.Edge(e)));
+            else mk.Add(radius, arena.own(oc.TopoDS.Edge(e)));
           }
           const built = this.build(mk, t('feature.fillet'), arena);
           // A fillet OCCT reports as done may still be a body that fails BRepCheck — common on the wavy edges of knurls and threads, where three fillet
@@ -1764,6 +1777,62 @@ export class Kernel {
       verts.dispose();
       arena.dispose();
     }
+  }
+
+  /**
+   * The radius evolution OCCT interpolates along one edge (C5.2, ADR 0167): a law that is straight between two control points, so the radius at the
+   * points the caller gave is exactly the one it asked for, and nowhere else is it anything but a straight line away from them.
+   *
+   * Three decisions are not the caller's to make and cannot be left to OCCT:
+   * - OCCT fills its laws smoothly, and a smooth fill through two far-apart points is not the straight line between them: a law of two points comes
+   *   out as a gentle S (the radius at the middle of the edge is right, at the quarters a few percent off), a law of three overshoots at the kinks.
+   *   Sampling every stretch finely enough makes that fill coincide with the straight line to within a few hundredths of a millimetre; the samples
+   *   sit at the caller's own points as well, so those stay exact.
+   * - which end of the edge the fraction 0 is measured from. An edge's parameter direction depends on how the wire it sits in happens to be oriented,
+   *   and that is allowed to turn around between two builds of the same history; the fraction is anchored to the end with the smaller coordinates
+   *   (x first, then y, then z) instead — a rule the two ends of an edge never disagree about. An edge whose ends meet (a closed one) has no such end,
+   *   and keeps the parameter direction of its own curve.
+   * - the array's positions are the fraction of the edge (0 at one end, 1 at the other), not the parameter of the edge's curve.
+   */
+  private radiusLaw(points: { t: number; r: number }[], edge: TopoDS_Shape, arena: Arena): NCollection_Array1_gp_Pnt2d {
+    const oc = this.oc;
+    const e = arena.own(oc.TopoDS.Edge(edge));
+    if (oc.BRep_Tool.Degenerated(e)) throw new KernelError(t('kernel.edgeDegenerated'));
+    const curve = arena.own(new oc.BRepAdaptor_Curve(e));
+    const first = curve.FirstParameter();
+    const span = curve.LastParameter() - first;
+    if (!(span > 0)) throw new KernelError(t('kernel.edgeZeroLength'));
+    // the two ends of the edge, each with the parameter its own vertex has on the edge
+    const ends: { p: Vec3; u: number }[] = [];
+    for (const ex = arena.own(new oc.TopExp_Explorer(edge, oc.TopAbs_ShapeEnum.TopAbs_VERTEX, oc.TopAbs_ShapeEnum.TopAbs_SHAPE)); ex.More(); ex.Next()) {
+      const v = arena.own(oc.TopoDS.Vertex(ex.Current()));
+      ends.push({ p: this.xyz(arena.own(oc.BRep_Tool.Pnt(v))), u: oc.BRep_Tool.Parameter(v, e) });
+    }
+    // the fraction the caller wrote runs from the smaller-coordinate end; a closed edge has none, so it runs with its own parameter
+    let u0 = first;
+    let u1 = first + span;
+    if (ends.length >= 2) {
+      const sorted = [...ends].sort((a, b) => a.p[0] - b.p[0] || a.p[1] - b.p[1] || a.p[2] - b.p[2]);
+      const apart = Math.hypot(sorted[1]!.p[0] - sorted[0]!.p[0], sorted[1]!.p[1] - sorted[0]!.p[1], sorted[1]!.p[2] - sorted[0]!.p[2]);
+      if (apart > 1e-9) [u0, u1] = [sorted[0]!.u, sorted[1]!.u];
+    }
+    const stops = [...points].sort((a, b) => a.t - b.t);
+    const frac = (t: number) => (u0 + t * (u1 - u0) - first) / span; // the fraction of the edge, from the end the caller counts from
+    // the samples of the polyline through the stops, each stretch cut into LAW_STRETCH_SAMPLES pieces
+    const samples: { x: number; r: number }[] = [];
+    for (let s = 0; s < stops.length - 1; s++) {
+      const a = stops[s]!;
+      const b = stops[s + 1]!;
+      for (let i = 0; i < LAW_STRETCH_SAMPLES; i++) {
+        const f = i / LAW_STRETCH_SAMPLES;
+        samples.push({ x: frac(a.t + (b.t - a.t) * f), r: a.r + (b.r - a.r) * f });
+      }
+    }
+    samples.push({ x: frac(stops[stops.length - 1]!.t), r: stops[stops.length - 1]!.r });
+    samples.sort((a, b) => a.x - b.x); // the fraction may run either way along the edge's parameter; OCCT takes it increasing
+    const array = arena.own(new oc.NCollection_Array1_gp_Pnt2d(1, samples.length));
+    samples.forEach((s, i) => array.SetValue(i + 1, arena.own(new oc.gp_Pnt2d(s.x, s.r))));
+    return array;
   }
 
   /**
