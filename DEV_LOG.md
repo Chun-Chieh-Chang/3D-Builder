@@ -1,5 +1,12 @@
 # 3D-Builder 開發日誌 (DEV_LOG.md)
 
+## 2026-10-19 下午：變化半徑圓角（C5.2，ADR 0167）UI／雙語／help／e2e 收尾 — 已提交 `2212720`＋`2400c26`（未推送）
+
+- **做法**：`PropertyManager.tsx` 圓角面板（種類「固定半徑」）新增 `FilletVariable`：「變化半徑」核取方塊（勾選＝每條揀選邊建立 t=0／t=1 兩個控制點，半徑取目前固定半徑；取消＝送空陣列）、每條邊的控制點表（t 用 `PositionInput`、半徑用 `ValueInput` 走表達式）、新增中間點、移除中間點。寫入一律走既有 `setFilletVariable`（指令做全部驗證，被拒絕的 t 欄位標紅）；以 `f.variable` 為單一真相。`pmpanels.ts` 雙語 6 鍵、`help.fillet.body` 補說明與驗證體積 14251.21。
+- **RCA（e2e 第一版紅燈）**：編輯工作階段內畫面顯示「該特徵之前的模型」，體積在按 ✔ 前不會變；第一版在 ✔ 前就斷言體積而失敗。**CAPA**：體積斷言一律在 `pmOk()` 之後（與 manual-c23 同體例）。
+- **確效**：typecheck 0；check-deps／check-i18n 過；`npm run check` 全量 vitest **3120 過、0 敗**（25 skip 為既有）；`make:drawing` 通過；`verify:ui manual-variable-fillet` 7 步 PASS。
+- **未做**：反向對照（拿掉 `<FilletVariable>` 確認 e2e 轉紅）；推送等使用者說「推」。
+
 ## 2026-10-19：特徵參數群組框——屬性頁直接顯示並編輯特徵參數（共同待辦收尾）— 已推送 `478a422`（origin/main）
 
 ### 1. 任務背景與範疇
