@@ -24,7 +24,7 @@ import { ExplodePanel } from './components/ExplodePanel';
 import { FormSubPanel } from './components/FormSubPanel';
 import { PropertyManager } from './components/PropertyManager';
 import { SelectionPanel } from './components/SelectionPanel';
-import { pickKey } from './state/selectionFacts';
+import { assemblySelection, pickKey } from './state/selectionFacts';
 import { ShutdownOverlay } from './components/ShutdownOverlay';
 import { StatusBar } from './components/StatusBar';
 import { Viewport } from './components/Viewport';
@@ -54,18 +54,25 @@ export function App() {
     setPanel(editing ? 'properties' : 'tree');
   }, [editing]);
   // What is picked in a part with no session open (plan §2.2): the PropertyManager tab comes alive for it, a pick in the graphics area brings it
-  // forward the way a drawing's panel does (a pick in the tree stays in the tree), and letting go of everything goes back to the tree.
+  // forward the way a drawing's panel does (a pick in the tree stays in the tree), and letting go of everything goes back to the tree. An assembly
+  // is the same story: the component clicked in the view brings it forward, a component or a mate picked in the tree only makes the tab reachable.
   const selectedFace = useStore((s) => s.selectedFace);
   const selectedElements = useStore((s) => s.selectedElements);
   const selected = useStore((s) => s.selected);
+  const asm = useStore((s) => s.asm);
+  const asmViewPick = useStore((s) => s.asm?.viewPick ?? null);
+  const asmSelected = useStore((s) => s.asm?.selected ?? null);
+  const asmPick = assembly ? assemblySelection(asmViewPick, asmSelected, asm!.doc) : { kind: 'none' as const };
   const pick = pickKey(selectedFace, selectedElements);
   const picked = !!pick;
   const partSelection = picked || (!assembly && !!selected);
+  const asmPicked = assembly && asmPick.kind !== 'none' && asmPick.fromView; // from the graphics area: brings the properties forward
+  const asmReachable = assembly && asmPick.kind !== 'none'; // from the tree: the tab comes alive, the page stays
   useEffect(() => {
     if (editing) return;
-    if (picked) setPanel('properties');
-    else if (!selected) setPanel('tree');
-  }, [picked, selected, editing]);
+    if (picked || asmPicked) setPanel('properties');
+    else if (!selected && !asmReachable) setPanel('tree');
+  }, [picked, selected, editing, asmPicked, asmReachable]);
   useEffect(() => installShortcuts(), []);
   useEffect(() => installHelp({ currentTopic: currentTopicId, hasTopic: (id) => topicOf(id) !== null }), []);
   useEffect(() => {
@@ -87,7 +94,7 @@ export function App() {
                 role="tab"
                 aria-selected={panel === 'properties'}
                 className={panel === 'properties' ? 'active' : ''}
-                disabled={!editing && !partSelection}
+                disabled={!editing && !partSelection && !asmReachable}
                 onClick={() => setPanel('properties')}
               >
                 PropertyManager
@@ -117,7 +124,10 @@ export function App() {
                     <ExplodePanel />
                   ) : forming ? (
                     <FormSubPanel />
-                  ) : null
+                  ) : (
+                    /* no session: what is picked in the view or the tree, as in a part (plan §2.2) */
+                    <SelectionPanel />
+                  )
                 ) : partEditing ? (
                   <PropertyManager />
                 ) : (

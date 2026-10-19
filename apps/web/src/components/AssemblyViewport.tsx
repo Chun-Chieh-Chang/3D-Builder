@@ -103,9 +103,10 @@ export function AssemblyViewport() {
     };
     const viewer = new Viewer(host.current!, {
       onComponentHover: setHover,
-      onComponentClick: (key) => store.assembly?.select(key),
+      onComponentClick: (key) => store.assembly?.selectComponentFromView(key),
       onComponentContextMenu: (key, x, y) => {
         if (!key) return setMenu(null);
+        // the menu is the answer to a right click: the pick is the tree's kind, so the PropertyManager is not brought forward for it
         store.assembly?.select(key);
         setMenu({ x, y, id: key });
       },

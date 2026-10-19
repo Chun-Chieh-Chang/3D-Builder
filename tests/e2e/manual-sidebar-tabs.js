@@ -244,7 +244,8 @@ M.run = async () => {
     const p = panes();
     const rows = document.querySelectorAll('.sw-pane:not([hidden]) [data-component-row]').length;
     return {
-      pass: during.tabs[1].selected === 'true' && during.tabs[0].disabled === false && okDuring && t[0].selected === 'true' && t[1].disabled === true && p[0].hidden === false && rows === 1,
+      // the inserted component is the tree's pick, so the properties page stays reachable for it (§2.2) — the page itself is the tree's
+      pass: during.tabs[1].selected === 'true' && during.tabs[0].disabled === false && okDuring && t[0].selected === 'true' && t[1].disabled === false && p[0].hidden === false && rows === 1,
       during,
       tabs: t,
       panes: p,

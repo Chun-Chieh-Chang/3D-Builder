@@ -1,17 +1,29 @@
 import { t } from '@3db/i18n';
+import { MATE_LABEL } from '@3db/assembly';
 import { ownerFeatures } from '@3db/naming';
 import { useState } from 'react';
 import { store, useStore } from '../state/store';
-import { partSelection } from '../state/selectionFacts';
+import { assemblySelection, partSelection } from '../state/selectionFacts';
 import { currentTopicId } from '../help/context';
 import { featureLabel } from '../strings';
 import { Icon, type IconName } from './Icon';
 import { typeName, writer } from './MeasurePanel';
+import { componentInfo } from './AssemblyTree';
+import { elementLabel } from './MatePanel';
 import { PMGroup } from './PMGroup';
 import type { MeasureElement, Ref } from '@3db/model';
 
 /** The word for a picked kind — the 「測量」 tool's words, so the sidebar and the tool say the same thing. */
 const kindLabel = (kind: 'face' | 'edge' | 'vertex') => (kind === 'face' ? t('measure.kind.face') : kind === 'edge' ? t('measure.kind.edge') : t('measure.kind.vertex'));
+
+/**
+ * The PropertyManager of what is picked with no session open (plan §2.2): a part's pick (its face, edges and vertices, or the tree item), or an
+ * assembly's (the component clicked in the view, or a component or mate picked in its tree). Both are the panel a drawing lays out (ADR 0133).
+ */
+export function SelectionPanel() {
+  const assembly = useStore((s) => s.asm);
+  return assembly ? <AssemblySelection /> : <PartSelection />;
+}
 
 /**
  * The PropertyManager of what is picked in a part with no session open (plan §2.2): the face, the edges and vertices the graphics area was clicked on,
@@ -20,7 +32,7 @@ const kindLabel = (kind: 'face' | 'edge' | 'vertex') => (kind === 'face' ? t('me
  * the kernel the same way the 「測量」 tool asks (`store.selectionFacts`, re-asked when the model or the pick changes). Nothing here is a placeholder:
  * a number the kernel did not answer is a row that is not there, and an element the model no longer has is said so.
  */
-export function SelectionPanel() {
+function PartSelection() {
   const selected = useStore((s) => s.selected);
   const selectedFace = useStore((s) => s.selectedFace);
   const selectedElements = useStore((s) => s.selectedElements);
@@ -175,6 +187,90 @@ export function SelectionPanel() {
           </PMGroup>
         </>
       )}
+    </div>
+  );
+}
+
+/**
+ * The PropertyManager of what is picked in an assembly with no session open (plan §2.2): the component clicked in the graphics area (which brought
+ * this page forward), or the component or mate the FeatureManager has selected. The header says what it is, as a drawing's panel does (ADR 0133);
+ * the group holds what the document really says of it. A component has no parameters of its own here — its shape is its part's business — and a
+ * mate is changed in its own session, so nothing here is a placeholder: ✓ lets go of the pick, and 「編輯結合」 opens the mate the way the tree does.
+ */
+function AssemblySelection() {
+  const asm = useStore((s) => s.asm)!;
+  const selected = useStore((s) => s.asm?.selected ?? null);
+  const viewPick = useStore((s) => s.asm?.viewPick ?? null);
+  const pick = assemblySelection(viewPick, selected, asm.doc);
+  const [open, setOpen] = useState<Record<string, boolean>>({});
+  const isOpen = (g: string) => open[g] ?? true;
+  const toggle = (g: string) => setOpen((m) => ({ ...m, [g]: !isOpen(g) }));
+  if (pick.kind === 'none') return null;
+  const component = pick.kind === 'component' ? asm.doc.components.find((c) => c.id === pick.id) : undefined;
+  const mate = pick.kind === 'mate' ? asm.doc.mates.find((m) => m.id === pick.id) : undefined;
+  if (!component && !mate) return null;
+  const info = component ? componentInfo(asm, component) : undefined;
+  const head: { icon: IconName; title: string; sub: string } = component
+    ? { icon: 'assembly', title: t('sel.component'), sub: info!.name }
+    : { icon: 'mates', title: t('sel.mate'), sub: mate!.name };
+  const state = component
+    ? component.suppressed
+      ? t('sel.stateSuppressed')
+      : component.fixed
+        ? t('sel.stateFixed')
+        : t('sel.stateFloating')
+    : mate!.suppressed
+      ? t('sel.stateSuppressed')
+      : t('sel.stateNormal');
+  return (
+    <div className="property-manager" data-selection-panel data-help={currentTopicId()}>
+      <div className="sw-pm-header">
+        <Icon name={head.icon} className="sw-pm-icon" />
+        <div className="sw-pm-title">
+          <strong>{head.title}</strong>
+          <span>{head.sub}</span>
+        </div>
+        <button type="button" className="sw-ok" title={t('sel.clear')} data-action="clearSelection" onClick={() => store.assembly?.select(null)}>
+          <Icon name="ok" />
+        </button>
+      </div>
+      <PMGroup title={t('sel.identity')} icon={head.icon} open={isOpen('identity')} onToggle={() => toggle('identity')} group="identity">
+        <label className="pm-row">
+          <span>{t('sel.name')}</span>
+          <span data-field="name">{component ? info!.name : mate!.name}</span>
+        </label>
+        <label className="pm-row">
+          <span>{t('sel.kind')}</span>
+          <span data-field="kind">{component ? (store.assembly?.isSubAssembly(component.id) ? t('sel.subassembly') : t('sel.component')) : MATE_LABEL[mate!.type]}</span>
+        </label>
+        <label className="pm-row">
+          <span>{t('sel.state')}</span>
+          <span data-field="state">{state}</span>
+        </label>
+        {info?.path && (
+          <label className="pm-row">
+            <span>{t('sel.file')}</span>
+            <span data-field="file">{info.path}</span>
+          </label>
+        )}
+        {mate && (
+          <>
+            <label className="pm-row">
+              <span>{t('sel.referenceA')}</span>
+              <span data-field="referenceA">{elementLabel(asm, mate.a)}</span>
+            </label>
+            <label className="pm-row">
+              <span>{t('sel.referenceB')}</span>
+              <span data-field="referenceB">{elementLabel(asm, mate.b)}</span>
+            </label>
+            <div className="pm-row">
+              <button type="button" className="pm-button" data-action="editMate" onClick={() => store.assembly?.editMate(mate.id)}>
+                {t('sel.editMate')}
+              </button>
+            </div>
+          </>
+        )}
+      </PMGroup>
     </div>
   );
 }

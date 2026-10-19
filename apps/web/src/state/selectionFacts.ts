@@ -11,6 +11,36 @@ export type PartSelection =
   | { kind: 'feature'; id: string }
   | { kind: 'none' };
 
+/**
+ * What is picked in an assembly with no session open (plan §2.2), as the PropertyManager sees it: a component clicked in the graphics area
+ * (`viewPick`, which brings the properties forward the way a pick in a part's view does), a component or a mate picked in the FeatureManager
+ * (`selected`, which stays in the tree and only makes the tab reachable), or a datum plane or the origin — the tree's to show, nothing the
+ * properties can say. The store keeps exactly one pick at a time; the view pick is kept apart so the panel can tell the two sources the way a
+ * part's `pickKey` does.
+ */
+export type AsmSelection =
+  | { kind: 'component'; id: string; fromView: boolean }
+  | { kind: 'mate'; id: string; fromView: boolean }
+  | { kind: 'none' };
+
+/**
+ * The one pick of `viewPick` (a component clicked in the graphics area) and `selected` (a tree item), in the order the graphics area outranks
+ * the tree. The view pick counts only while it is still the selection (`viewPick === selected`): a pick anywhere else — the tree, a dialog, a
+ * session's own — says its piece through `selected` alone, so a stale view pick is let go of rather than answered for. `doc` says which of its
+ * components and mates an id is; anything else (a datum plane, the origin, or an id the document no longer has) is the tree's to show and
+ * answers `none` rather than a guess.
+ */
+export function assemblySelection(viewPick: string | null, selected: string | null, doc: { components: readonly { id: string }[]; mates: readonly { id: string }[] }): AsmSelection {
+  const placed = (id: string | null, fromView: boolean): AsmSelection => {
+    if (id === null) return { kind: 'none' };
+    if (doc.components.some((c) => c.id === id)) return { kind: 'component', id, fromView };
+    if (doc.mates.some((m) => m.id === id)) return { kind: 'mate', id, fromView };
+    return { kind: 'none' };
+  };
+  const fromViewPick = viewPick !== null && viewPick === selected ? placed(viewPick, true) : { kind: 'none' } as const;
+  return fromViewPick.kind === 'none' ? placed(selected, false) : fromViewPick;
+}
+
 /** The one pick of `selected` (a tree item), `selectedFace` and `selectedElements`, in the order the store keeps them exclusive. */
 export function partSelection(selected: string | null, selectedFace: Ref | null, selectedElements: readonly Ref[]): PartSelection {
   if (selectedFace) return { kind: 'face', ref: selectedFace };

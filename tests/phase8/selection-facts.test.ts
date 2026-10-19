@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { elementIndexOf, measureTargetsOf, partSelection, pickKey, sameFingerprint } from '../../apps/web/src/state/selectionFacts';
+import { assemblySelection, elementIndexOf, measureTargetsOf, partSelection, pickKey, sameFingerprint } from '../../apps/web/src/state/selectionFacts';
 import type { Fingerprint, Ref } from '@3db/model';
 
 // The rules behind the selection panel's pick (E1 §2.2). They live in a plain module, not in the component, so they can be exercised here: this
@@ -22,6 +22,38 @@ describe('the pick the panel is about (E1 §2.2)', () => {
     expect(pickKey(null, [edge('a:2'), edge('a:3')])).toBe('edge:a:2,edge:a:3');
     // a tree click changes none of these: the panel tells the two apart by this key
     expect(pickKey(null, [])).toBe('');
+  });
+});
+
+describe('the pick an assembly is about (E1 §2.2, the assembly half)', () => {
+  const doc = { components: [{ id: 'c1' }, { id: 'c2' }], mates: [{ id: 'm1' }] };
+
+  it('tells a component clicked in the graphics area from one picked in the tree', () => {
+    expect(assemblySelection('c1', 'c1', doc)).toEqual({ kind: 'component', id: 'c1', fromView: true });
+    expect(assemblySelection(null, 'c1', doc)).toEqual({ kind: 'component', id: 'c1', fromView: false });
+  });
+
+  it('answers for a mate picked in the tree, as one the properties can show', () => {
+    expect(assemblySelection(null, 'm1', doc)).toEqual({ kind: 'mate', id: 'm1', fromView: false });
+  });
+
+  it('lets the graphics area outrank the tree, as in a part', () => {
+    expect(assemblySelection('c2', 'c1', doc)).toEqual({ kind: 'component', id: 'c1', fromView: false });
+    expect(assemblySelection('c2', 'c2', doc)).toEqual({ kind: 'component', id: 'c2', fromView: true });
+  });
+
+  it('lets go of a view pick that is no longer the selection (a datum picked in the tree, a session that took over)', () => {
+    expect(assemblySelection('c1', null, doc)).toEqual({ kind: 'none' });
+    expect(assemblySelection('c1', 'm1', doc)).toEqual({ kind: 'mate', id: 'm1', fromView: false });
+    expect(assemblySelection('c1', 'c2', doc)).toEqual({ kind: 'component', id: 'c2', fromView: false });
+  });
+
+  it('answers none for a datum plane, the origin, or an id the document no longer has', () => {
+    expect(assemblySelection(null, 'plane:front', doc)).toEqual({ kind: 'none' });
+    expect(assemblySelection(null, 'origin', doc)).toEqual({ kind: 'none' });
+    expect(assemblySelection(null, 'gone', doc)).toEqual({ kind: 'none' });
+    expect(assemblySelection('gone', 'c1', doc)).toEqual({ kind: 'component', id: 'c1', fromView: false });
+    expect(assemblySelection(null, null, doc)).toEqual({ kind: 'none' });
   });
 });
 

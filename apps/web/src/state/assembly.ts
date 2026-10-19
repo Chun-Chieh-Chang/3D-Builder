@@ -195,6 +195,12 @@ export interface AssemblyState {
   /** A component, a mate, or a default plane ("plane:front" …). */
   selected: Id | null;
   /**
+   * The component last clicked in the graphics area, kept apart from `selected` (plan §2.2) so the PropertyManager can tell a pick in the view
+   * — which brings the properties forward, the way a face clicked in a part's view does — from a pick in the FeatureManager, which stays in
+   * the tree. Always a component, or null: the tree, the dialogs and the 「清除選取」 action select without it.
+   */
+  viewPick: Id | null;
+  /**
    * Datums picked in the FeatureManager (the assembly's, or a component's own origin and planes, as SolidWorks lists them under a
    * component): shown in the graphics area, and the elements 「結合」 starts with, in the order they were picked.
    */
@@ -329,6 +335,7 @@ export class AssemblyStore {
       files: new Map(),
       builds: new Map(),
       selected: null,
+      viewPick: null,
       picks: [],
       opened: new Set(),
       insert: null,
@@ -377,6 +384,7 @@ export class AssemblyStore {
   private onDocChanged(): void {
     const doc = this.history.doc;
     const selected = this.state.selected;
+    const viewPick = this.state.viewPick;
     const exists = (id: Id) => id.startsWith('plane:') || doc.components.some((c) => c.id === id) || doc.mates.some((m) => m.id === id);
     this.set({
       doc,
@@ -386,6 +394,7 @@ export class AssemblyStore {
       dirty: serializeAssembly(doc) !== this.savedText,
       // What undo took away is no longer selected; nor is a datum of a component deleted or suppressed.
       selected: selected && !exists(selected) ? null : selected,
+      viewPick: viewPick && !exists(viewPick) ? null : viewPick,
       picks: this.state.picks.filter((r) => r.component === null || doc.components.some((c) => c.id === r.component && !c.suppressed)),
     });
     this.loadFiles();
@@ -1102,7 +1111,16 @@ export class AssemblyStore {
   // ------------------------------------------------------------ FeatureManager (C15.2, C15.12)
 
   select(id: Id | null): void {
-    this.set({ selected: id, picks: [] });
+    this.set({ selected: id, picks: [], viewPick: null });
+  }
+
+  /**
+   * A component clicked in the graphics area: it alone is selected, as the tree's `select` does, but it says it came from the view — which is
+   * what brings the PropertyManager forward (plan §2.2). Right-clicking a component for its menu goes through `select` instead: the menu is
+   * already the answer to that click.
+   */
+  selectComponentFromView(id: Id | null): void {
+    this.set({ selected: id, picks: [], viewPick: id });
   }
 
   /**
