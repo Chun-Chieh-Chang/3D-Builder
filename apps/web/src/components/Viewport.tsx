@@ -55,7 +55,7 @@ function picking(feature: Feature | undefined, editing: boolean, modelTool: 'con
   const datum = feature?.type === 'refPlane' || feature?.type === 'refAxis' || feature?.type === 'refPoint' || feature?.type === 'coordSys' || feature?.type === 'pattern' || feature?.type === 'mirror' || feature?.type === 'helix' ? feature : undefined;
   // what the empty boxes take (kinds) and what they already hold (the elements) — the two are different shapes, so they are kept apart
   const want = datum ? pickable(datum) : null;
-  const slots = datum ? { ...want, ...chosen(datum), prompt: prompt(datum) } : null;
+  const slots = datum ? { ...chosen(datum), prompt: prompt(datum) } : null;
   // the end of an extrusion that is a face, a vertex or a body: what is clicked on the model goes to the direction that is waiting for it
   const ends = feature?.type === 'extrude' ? [feature.dir1, feature.dir2].flatMap((d) => (d ? [d] : [])) : [];
   const endFaces = ends.flatMap((d) => (d.type === 'upToFace' || d.type === 'offsetFromFace' ? [d.face] : []));
@@ -80,9 +80,9 @@ function picking(feature: Feature | undefined, editing: boolean, modelTool: 'con
       : (slots?.prompt ?? null);
   return {
     // with nothing being edited, edges and vertices can be picked too (ADR 0117): they are what the next command starts with
-    edges: (!!edgeFeature && !byGroups) || !!slots?.edges || modelTool !== null || measuring || !editing,
-    faces: !editing || modelTool === 'convert' || modelTool === 'intersect' || !!upTo || !!faceFeature || combine || !!slots?.faces || measuring || edgeFeature?.type === 'fillet' || edgeFeature?.type === 'chamfer',
-    vertices: !!slots?.vertices || endVertices.length > 0 || measuring || !editing,
+    edges: (!!edgeFeature && !byGroups) || !!want?.edges || modelTool !== null || measuring || !editing,
+    faces: !editing || modelTool === 'convert' || modelTool === 'intersect' || !!upTo || !!faceFeature || combine || !!want?.faces || measuring || edgeFeature?.type === 'fillet' || edgeFeature?.type === 'chamfer',
+    vertices: !!want?.vertices || endVertices.length > 0 || measuring || !editing,
     pickedEdges: byGroups ? [] : edgeFeature ? (edgeFeature.type === 'edgeFlange' || edgeFeature.type === 'hem' ? (edgeFeature.edge.name ? [edgeFeature.edge] : []) : edgeFeature.edges) : (slots?.edges ?? []),
     pickedFaces: edgeFeature?.type === 'fillet' ? [...(edgeFeature.faces ?? []), ...(edgeFeature.faces2 ?? []), ...(edgeFeature.center ?? [])] : edgeFeature?.type === 'chamfer' ? (edgeFeature.faces ?? []) : faceFeature ? (faceFeature.type === 'shell' ? [...faceFeature.faces, ...(faceFeature.faceThickness ?? []).map((x) => x.face)] : faceFeature.type === 'deleteFace' || faceFeature.type === 'offsetSurface' ? faceFeature.faces : faceFeature.type === 'draft' ? [faceFeature.neutral, ...faceFeature.faces] : faceFeature.type === 'mutualTrim' ? (faceFeature.discard ?? []) : [faceFeature.face]) : upTo ? endFaces : (slots?.faces ?? []),
     pickedVertices: slots ? slots.vertices : endVertices,

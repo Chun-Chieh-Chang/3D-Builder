@@ -1795,7 +1795,6 @@ function RefPlanePanel({ f }: { f: RefPlaneFeature }) {
       <section className="pm-group">
         <h4>{t('pm.refs')}</h4>
         <SlotList f={f} />
-      <DatumPicker f={f} />
         <DatumPicker f={f} />
         {d.mode === 'offset' && (
           <label className="pm-row">
@@ -1828,7 +1827,6 @@ function RefAxisPanel({ f }: { f: RefAxisFeature }) {
       <section className="pm-group">
         <h4>{t('pm.refs')}</h4>
         <SlotList f={f} />
-      <DatumPicker f={f} />
         <DatumPicker f={f} />
         <p className="hint">{t(`pm.axis.hint.${d.mode}`)}</p>
       </section>
@@ -1846,7 +1844,6 @@ function RefPointPanel({ f }: { f: RefPointFeature }) {
       <section className="pm-group">
         <h4>{t('pm.refs')}</h4>
         <SlotList f={f} />
-      <DatumPicker f={f} />
         <DatumPicker f={f} />
         {d.mode === 'coords' &&
           (['x', 'y', 'z'] as const).map((axis) => (

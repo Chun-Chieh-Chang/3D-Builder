@@ -1,5 +1,18 @@
 # 3D-Builder 開發日誌 (DEV_LOG.md)
 
+## 2026-10-19 深夜：選取框的兩個舊缺陷（審查時順手發現，`bbeb630` 起）
+
+### 1. 圖面可點的元素種類失效（`Viewport.tsx` `picking()`）
+- **現象**：用選取框的特徵（參考面／軸／點、座標系統、鏡射、複製排列、螺旋曲線）編輯時，圖面一律可點邊、面、頂點，不論框要什麼。
+- **RCA**：`const slots = { ...want, ...chosen(datum), … }`——`pickable()` 回傳布林 `edges/faces/vertices`，`chosen()` 回傳同名的 `Ref[]`，後者蓋掉前者；`!!slots.edges` 對空陣列也是真。註解寫「兩者形狀不同，所以分開」，程式卻沒分開。`pickable()` 從未真正被讀。
+- **連帶揭露**：`pickable()` 根本沒有 `curvePath`——曲線複製排列的路徑框其實從未開放點邊，只是被這個 bug 蓋住。上一筆（`e53f4c8`）已把 `curvePath`、`circle` 加進去，所以修正後不會倒退。
+- **修正**：`slots` 只放 `chosen` 與 `prompt`；`edges/faces/vertices` 改讀 `want`。
+- **確效**：新 `tests/phase8/datum-slots.test.ts` 4 項（曲線路徑／圓框只開邊、鏡射只開面與基準面、`accepts('circle')` 只收圓形邊與草圖、`put` 經 `setHelix` 取代、樹點草圖只給收草圖的框）；**反向對照**：自 `pickable` 拿掉 `curvePath` → 1 項如預期紅，還原後 4/4。用到選取框的 e2e 16/16 PASS（helix、pattern×3、datums、mirror、c14、c15、c16、c17、c22×3、d2、measure-view、sketch-plane、asm-component-datums）。
+- 全閘門 `npm run check` **3146 過、0 敗**（3142＋本次 4；25 跳過為既有）。
+
+### 2. 參考面／軸／點面板的清單重複一份
+`PropertyManager.tsx` 三個面板 `<SlotList>` 後的 `<DatumPicker f={f} />` 都連寫兩次（縮排也不一致），框下的基準清單出現兩份。刪掉重複的一行。
+
 ## 2026-10-19 夜：螺旋曲線面板的「基準圓」選取框與 e2e（ADR 0168 §3.4 補交付）
 
 ### 1. 背景

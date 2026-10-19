@@ -22,7 +22,7 @@
 - **記憶體**：原測試落入 AGENTS §3.5 量測陷阱（100 次、`liveShapes` 容許 +5）。改 `liveShapes` 嚴格相等；全新 Heap 2000 次隔離量測 helix +0.0 MiB、對照組 +422.7 MiB。
 - **確效**：`tests/phase3/helix-curve.test.ts` **22/22**（新增 8 項），反向對照 2 項如預期轉紅後還原；`npm run check` 全量 **3142 過、0 敗**。
 - **① 已補（同日夜，見 `DEV_LOG.md`）**：`HelixPanel` 的「基準圓」選取框（接既有 `datumSlots` 機制：圖面點圓形邊、框下清單點草圖、× 清除），e2e `tests/e2e/manual-helix.js` 6 步 PASS。
-- **留給下一步的缺口（另案）**：② 沿螺旋曲線掃出（彈簧）尚未支援（掃出 `path` 只收草圖 id）；③ 曲線本體在 UI 本體清單仍歸在曲面本體；④ `Viewport.tsx` `picking()` 的 `{ ...want, ...chosen }` 鍵衝突使 `pickable()` 失效（恆可點邊面點）；⑤ 參考面／軸／點三個面板的 `DatumPicker` 各重複渲染一次。
+- **留給下一步的缺口（另案）**：② 沿螺旋曲線掃出（彈簧）尚未支援（掃出 `path` 只收草圖 id）；③ 曲線本體在 UI 本體清單仍歸在曲面本體。（原列 ④ `picking()` 鍵衝突、⑤ `DatumPicker` 重複渲染，已於同日深夜修正，見 `DEV_LOG.md`。）
 
 ## 一、 最新完成特徵：藍圖 C8.3 螺旋曲線與渦捲線特徵（ADR 0168）— 已推送 `bfad6fd`
 
