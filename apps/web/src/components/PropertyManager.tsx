@@ -40,6 +40,7 @@ import {
   type Draft,
   type ExtrudeFeature,
   type FilletFeature,
+  type FilletVariablePoint,
   type FilletKind,
   type Id,
   type AxisDefinition,
@@ -1526,6 +1527,86 @@ function FilletGroups({ f }: { f: FilletFeature }) {
   );
 }
 
+/** A position along an edge, 0 to 1: commits the control points on Enter/blur; a refused entry (the command says why) stays red. */
+function PositionInput({ value, commit }: { value: number; commit: (t: number) => boolean }) {
+  const [text, setText] = useState(String(value));
+  const [invalid, setInvalid] = useState(false);
+  useEffect(() => {
+    setText(String(value));
+    setInvalid(false);
+  }, [value]);
+  const go = () => {
+    if (text.trim() === String(value)) return;
+    const n = Number(text);
+    setInvalid(text.trim() === '' || !Number.isFinite(n) || !commit(n));
+  };
+  return (
+    <span className="value-input">
+      <input
+        className={invalid ? 'invalid' : ''}
+        value={text}
+        onChange={(e) => setText(e.target.value)}
+        onBlur={go}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') {
+            e.preventDefault();
+            go();
+          }
+        }}
+      />
+    </span>
+  );
+}
+
+/** The control points of a variable-radius fillet (C5.2): per picked edge, the radius at positions along it (0 = first end, 1 = last end). */
+function FilletVariable({ f }: { f: FilletFeature }) {
+  const points = f.variable ?? [];
+  const on = points.length > 0;
+  const send = (next: FilletVariablePoint[]) => store.execute({ type: 'setFilletVariable', featureId: f.id, points: next });
+  const enable = (checked: boolean) => {
+    if (!checked) return void send([]);
+    send(f.edges.flatMap((e) => [{ edge: e.name, t: 0, radius: f.radius }, { edge: e.name, t: 1, radius: f.radius }]));
+  };
+  return (
+    <section className="pm-group" data-fillet-variable>
+      <label className="pm-row checkbox">
+        <input type="checkbox" checked={on} disabled={!on && f.edges.length === 0} onChange={(e) => enable(e.target.checked)} />
+        <span>{t('pm.fillet.variable')}</span>
+      </label>
+      {!on && <p className="hint">{f.edges.length === 0 ? t('pm.fillet.variableNoEdges') : t('pm.fillet.variableHint')}</p>}
+      {on &&
+        f.edges.map((e, i) => {
+          const mine = points.filter((p) => p.edge === e.name);
+          const others = points.filter((p) => p.edge !== e.name);
+          const put = (list: FilletVariablePoint[]) => send([...others, ...list].sort((a, b) => f.edges.findIndex((x) => x.name === a.edge) - f.edges.findIndex((x) => x.name === b.edge) || a.t - b.t));
+          return (
+            <div key={e.name} data-variable-edge={e.name}>
+              <h4 title={e.name}>{t('pm.edges.item', { n: i + 1 })}</h4>
+              {mine.length === 0 && <p className="hint">{t('pm.fillet.variableConstantEdge')}</p>}
+              {mine.map((p, k) => (
+                <div className="pm-row" key={k} data-variable-point>
+                  <PositionInput value={p.t} commit={(n) => send(points.map((q) => (q === p ? { ...q, t: n } : q)))} />
+                  <ValueInput value={p.radius} toCommand={(radius) => ({ type: 'setFilletVariable', featureId: f.id, points: points.map((q) => (q === p ? { ...q, radius } : q)) })} />
+                  {p.t !== 0 && p.t !== 1 && (
+                    <button className="link" title={t('pm.fillet.variableRemove')} onClick={() => put(mine.filter((q) => q !== p))}>
+                      ×
+                    </button>
+                  )}
+                </div>
+              ))}
+              {mine.length > 0 && (
+                <button className="link" onClick={() => put([...mine, { edge: e.name, t: 0.5, radius: f.radius }])}>
+                  {t('pm.fillet.variableAdd')}
+                </button>
+              )}
+            </div>
+          );
+        })}
+      {on && <p className="hint">{t('pm.fillet.variableHint')}</p>}
+    </section>
+  );
+}
+
 function FilletPanel({ f }: { f: FilletFeature }) {
   const kind = f.kind ?? 'constant';
   return (
@@ -1548,6 +1629,7 @@ function FilletPanel({ f }: { f: FilletFeature }) {
         )}
       </section>
       {kind === 'constant' ? <EdgeList f={f} /> : <FilletGroups f={f} />}
+      {kind === 'constant' && <FilletVariable f={f} />}
     </>
   );
 }
