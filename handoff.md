@@ -1,5 +1,15 @@
 # 交接文件
 
+- **【2026-10-19：特徵參數群組框——屬性頁直接顯示並編輯特徵參數（E1 §2.2 最後一項共同待辦）— 已提交 `478a422`（尚未推送）】**
+  - **背景與目標**：零件在 FeatureManager 樹上點選特徵時，屬性頁原本只有識別群組＋「編輯特徵」——看參數非得先開工作階段。本次讓屬性頁**直接排出該特徵的參數群組框**（extrude／revolve／fillet／hole／pattern…40+ 特徵型別全覽），且**不開工作階段就能改**：改動走 immediate command，一步一 undo，Ctrl+Z 可復原。草圖維持識別＋「編輯特徵」（其參數群組屬於草圖編輯器，SKetchPlane/SKetch 面板需要 sketcher session）。
+  - **關鍵設計——面板自足性**：所有 ~50 個 `<XxxPanel f={f}/>` 本就只吃 `{ f }`、透過 `store.execute(...)` 寫入（ValueInput 的 Enter/blur、select/checkbox 的 onChange 全是 immediate command），不讀 `editing`、不開 transaction、不觸發揀取模式（`RefItem` 只能清除參考，指派參考是進 session 時在圖面點選）。session 只是用 `beginEdit`/`commitEdit` 把這些包成一步；沒有 session 時每一步自成一 undo。**抽取不改變 session 的 DOM 與行為**——e2e 第 1～3 步（session 開合、隱藏不卸載）原式通過。
+  - **完成項目**：
+    1. **參數分派（`PropertyManager.tsx`）**：50 行的 `{f.type === … && <XxxPanel f={f}/>}` 鏈抽成 `export function FeatureParams({ f }: { f: Feature })`，sketch 提前 `return null`；`PropertyManager()` 本體改為「sketch 分支自己渲染（`SketchPlanePanel`/`SketchPanel`）＋其餘用 `<FeatureParams f={f}/>`」。
+    2. **屬性頁接線（`SelectionPanel.tsx`）**：`PartSelection` 訂閱 `result`；非草圖特徵在識別群組後排 `<FeatureParams f={feature} />`，並在標頭下顯示與 session 同樣的 rebuild 錯誤訊息（`pm-message error-text`）；草圖因 `FeatureParams` 回 null 自動維持原狀。
+    3. **e2e（`manual-sidebar-tabs.js` 第 6 步）**：樹點 `eb`（擠出、blind depth 15）→屬性頁出現「方向 1」群組與深度欄（值 15）→打成 18 按 Enter→文件 depth 變 18、基板體積 144000→172800 mm³（真的重建）、全程無 session→Ctrl+Z 兩者復原→「編輯特徵」仍能開 session。另斷言「編輯特徵」開 session 時選擇面板讓位（既有行為不變）。
+  - **確效**：typecheck **0**；`lint:rules`／`lint:deps`／`lint:i18n` 全過；全量 vitest **3106 過、0 敗**；verify:ui `manual-sidebar-tabs|manual-asm-selection` **2/2 PASS**；**反向對照**：拔掉 `<FeatureParams>` → 第 6 步如預期紅（「no depth field in the properties page」），恢復後重跑 2/2。
+  - **停在哪裡**：本地提交 `478a422`（feat）在工作樹乾淨狀態，**尚未推送**（等使用者授權；push 需走 SSH URL）。**共同待辦已全部收尾**（E1 §2.2 零件＋組合件、特徵參數群組框）；handoff 待辦區僅剩明確「另案」項目。
+
 - **【2026-10-19：E1 §2.2 選取驅動切換交付組合件（共同待辦第一項）— 已提交 `eaca9af`（尚未推送）】**
   - **背景與目標**：E1-P3 的 §2.2 只到零件——組合件點圖面仍啟用不了屬性頁。本次把同一套行為帶到組合件：**圖面點到的零組件**自動切到屬性頁（零件是「點到面」），**樹上點選**的零組件／結合只讓屬性頁可達、頁面留在樹頁，✓ 清除回樹頁。右鍵選單與左鍵拖曳行為不變。
   - **關鍵設計——viewPick 不變式**：`AssemblyState` 新增 `viewPick: Id | null`，只有 `selectComponentFromView(id)`（圖面左鍵）會設它；`select()`（樹、對話框、「清除選取」Esc）與 `onDocChanged`（文件改寫後失效）會清。純函式 `assemblySelection(viewPick, selected, doc)`（`state/selectionFacts.ts`，可在 node 測）**只在 `viewPick === selected` 時視為圖面選取**：assembly.ts 裡 13 處直接寫 `selected` 的呼叫點（`startMate`／`editMate`／`applyMate`／pattern／explode／`place`／`startDrag`…）因此完全不用改，過期的 viewPick 自動失效而不是被當成選取。基準面／原點（`plane:*`、`origin`）回 `none`——樹的事，屬性頁無話可說。

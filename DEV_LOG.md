@@ -1,5 +1,26 @@
 # 3D-Builder 開發日誌 (DEV_LOG.md)
 
+## 2026-10-19：特徵參數群組框——屬性頁直接顯示並編輯特徵參數（共同待辦收尾）— 已提交 `478a422`（未推送）
+
+### 1. 任務背景與範疇
+E1 §2.2 的最後一項共同待辦：零件在 FeatureManager 樹上點選特徵時，屬性頁原本只有識別群組＋「編輯特徵」按鈕——看參數非得先開工作階段。本次讓屬性頁**直接排出該特徵的參數群組框**（extrude／revolve／fillet／hole／pattern…40+ 特徵型別全覽），且**不開工作階段就能改**（immediate command，一步一 undo，Ctrl+Z 可復原）。草圖維持識別＋「編輯特徵」：它的參數群組屬於草圖編輯器。檔案格式不動。
+
+### 2. 做法與架構設計
+| 層級 | 核心檔案 | 實作內容與職責 |
+|---|---|---|
+| 參數分派 | `apps/web/src/components/PropertyManager.tsx` | 把 `PropertyManager()` 裡 50 行的 `{f.type === … && <XxxPanel f={f}/>}` 鏈抽成 `export function FeatureParams({ f }: { f: Feature })`：sketch 提前 `return null`，其餘原封不動。`PropertyManager()` 本體改為「sketch 分支自己渲染（`SketchPlanePanel`/`SketchPanel`）＋其餘用 `<FeatureParams f={f}/>`」——**session 路徑的 DOM 與行為完全不變**。 |
+| 屬性頁接線 | `apps/web/src/components/SelectionPanel.tsx` | `PartSelection` 訂閱 `result`；非草圖特徵多算一列 rebuild 狀態（與 session 同樣的 `pm-message error-text`，置於標頭下）；識別群組後排 `<FeatureParams f={feature} />`（sketch 回 null，自動維持識別＋編輯特徵）。 |
+| 通性基礎 | （既有設計） | 所有 ~50 個 `<XxxPanel>` 本就自足：只吃 `{ f }`、經 `store.execute(...)` 寫入（ValueInput 的 Enter/blur、select/checkbox 的 onChange），不讀 `editing`、不開 transaction、不觸發揀取模式（`RefItem` 只能清除參考；指派參考是進 session 時在圖面點選）。session 只是用 `beginEdit`/`commitEdit` 把這些包成一步；沒有 session 時每一步自成一 undo。 |
+
+### 3. 測試與確效
+- e2e：`tests/e2e/manual-sidebar-tabs.js` 第 6 步改寫——樹點 `eb`（擠出、blind depth 15）→屬性頁出現「方向 1」群組與深度欄（值 15）→打成 18 按 Enter→文件 depth 變 18、基板體積 144000→172800 mm³（真的重建）、全程無 session→Ctrl+Z 兩者復原→「編輯特徵」仍能開 session（且開 session 時選擇面板讓位）。
+- 守門：typecheck 0；`check-deps`／`check-i18n`／`check-anti-patterns`／`lint:rules` 全過。
+- 回歸：全量 vitest **3106 過、0 敗**；verify:ui `manual-sidebar-tabs|manual-asm-selection` **2/2 PASS**。
+- 反向對照：拔掉 `<FeatureParams>` → 第 6 步如預期紅（「no depth field in the properties page」），恢復後重跑 2/2。
+
+### 4. 停在哪裡
+本地提交 `478a422`（feat）。**尚未推送**（等使用者授權；push 需走 SSH URL）。共同待辦已全部收尾。
+
 ## 2026-10-19：E1 §2.2 選取驅動切換交付組合件（共同待辦第一項）— 已提交 `eaca9af`（未推送）
 
 ### 1. 任務背景與範疇
