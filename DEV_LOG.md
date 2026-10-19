@@ -1,5 +1,41 @@
 # 3D-Builder 開發日誌 (DEV_LOG.md)
 
+## 2026-10-19：E1 §2.2 選取驅動切換交付組合件（共同待辦第一項）— 已提交 `eaca9af`（未推送）
+
+### 1. 任務背景與範疇
+E1-P3（`8ade9ee`）把「點圖面自動進屬性頁、樹點選留在樹頁」交付到**零件**；組合件仍是共同待辦（handoff §E1-P3：「組合件點選（`asm.selected`）仍啟用不了屬性頁」）。本次閉合這一項：組合件無工作階段時，**圖面左鍵點到的零組件**自動切到屬性頁，**樹上點選**的零組件／結合只讓分頁可達（頁面留在樹頁），✓ 清除回樹頁；右鍵選單與左鍵拖曳行為不變。檔案格式（Assembly Schema）不動。
+
+### 2. 做法與架構設計
+| 層級 | 核心檔案 | 實作內容與職責 |
+|---|---|---|
+| 純邏輯 | `apps/web/src/state/selectionFacts.ts` | 新增 `AsmSelection` 型別與 `assemblySelection(viewPick, selected, doc)`：圖面選取優先於樹選取；**只有 `viewPick === selected` 時才視為圖面選取**（過期即放手，不猜）；`plane:*`／`origin` 回 `none`（樹的事，屬性頁無話可說）。可在 node 測。 |
+| 組合件狀態 | `apps/web/src/state/assembly.ts` | `AssemblyState` 新增 `viewPick: Id \| null`；`selectComponentFromView(id)`（圖面左鍵）設它，`select()`（樹、對話框、Esc）與 `onDocChanged`（文件改寫後失效）清它。**13 處直接寫 `selected` 的呼叫點因此完全不用改**——不變式讓過期 viewPick 自動失效。右鍵選單刻意維持 `select`：選單本身就是那個點擊的答案。 |
+| 圖面 | `apps/web/src/components/AssemblyViewport.tsx` | `onComponentClick` 改走 `selectComponentFromView`；拖曳路徑（`onPointerDown`→`press`）不受影響，左鍵拖曳仍可移動零組件（e2e 實測）。 |
+| 分頁切換 | `apps/web/src/App.tsx` | `asmPicked`（圖面選取）→自動進屬性頁；`asmReachable`（樹選取）→屬性頁啟用；皆無→回樹頁。無工作世代的屬性窗格渲染 `SelectionPanel`。 |
+| 面板 | `apps/web/src/components/SelectionPanel.tsx` | 拆分入口＋`PartSelection`（原邏輯不動）＋`AssemblySelection`：零組件的名稱、零組件／子組合件、固定／浮動／已抑制、零件檔；結合的名稱、種類、狀態、兩個參考與「編輯結合」。無 placeholder 列。 |
+| 雙語 | `packages/i18n/src/{zh-TW,en}/ui.ts` | `sel.component`／`sel.subassembly`／`sel.mate`／`sel.editMate`／`sel.referenceA/B`／`sel.file`／`sel.stateFixed`／`sel.stateFloating`。 |
+
+### 3. 測試與確效
+- 單元：`tests/phase8/selection-facts.test.ts` 新增 5 項（14/14 過）。
+- e2e：新 `tests/e2e/manual-asm-selection.js` 7 步全過；`manual-sidebar-tabs.js` 第 8 步連帶更新（插入的零組件是樹的選取→屬性頁可達）。
+- 守門：typecheck 0；`check-deps`／`check-i18n`／`check-anti-patterns`／`lint:rules` 全過。
+- 回歸：verify:ui `asm|sidebar|assembly` 批次 6/9，3 個 ERROR 全為 dev server 批次後段 crash 的 import 失敗（`chrome-error://chromewebdata`，Vite dep 再最佳化老問題），單跑全部 PASS；全量 vitest 3105 過、0 敗。
+- 反向對照：`App.tsx` 的 `asmPicked` 置 false → e2e 如預期紅（「the selection panel is not the page shown」）。
+
+### 4. 問題分析 (RCA) 與矯正預防措施 (CAPA)
+1. **問題**：全量 vitest 出現 1 個失敗——`help-manual.test.ts`「says what the links say」。
+   - **RCA**：與本次改動無關。`git stash` 後在 clean main 上重跑同樣紅：`53d7c3b`（C6.4）往 `docs/help-links.json` 登了 `"curve-pattern"` 卻沒有重生產 `docs/manual-verification.html`。
+   - **CAPA**：測試自身的提示即修法——`SYNC_MANUAL_HELP=1 npx vitest run tests/phase8/help-manual.test.ts` 重生產（一行：pattern 項目列出「曲線複製排列」），另以 `4e522dd` 獨立提交，不與功能提交混在一起。
+2. **問題**：e2e 首版 `Cannot read properties of undefined (reading 'files')`。
+   - **RCA**：`H.asm()` 回的是 UI **state**（`.doc`／`.drag`／`.mate`），`store.assembly` 才是 **store 實例**（`.select()`／`.getState()`）；兩者混用。
+   - **CAPA**：state 存取一律經 `H.asm()`／`asm()`（本檔定義為 state），方法呼叫一律 `store.assembly?.x()`；結合樹列名稱含括號（「重合1（定位板<1>，V型塊<1>）」），找列用 `[data-mate-row="<id>"]`。
+3. **問題**：批次中 3 支腳本 import 失敗（`chrome-error://chromewebdata`）。
+   - **RCA**：dev server 在批次後段 crash（memory 記載的 Vite dep 再最佳化＋safe-delete 守衛問題），非測試邏輯。
+   - **CAPA**：單跑確認全 PASS 即可判定；跑長批次前若需，先以 `rm -rf node_modules/.vite/deps_temp_*` 再冷啟動。
+
+### 5. 停在哪裡
+本地兩個提交：`4e522dd`（docs：manual 重生產）、`eaca9af`（feat：組合件選取驅動）。**尚未推送**（等使用者授權；push 需走 SSH URL）。共同待辦剩：特徵參數群組框（另案）。
+
 ## 2026-10-18 晚：藍圖 C6.4 沿曲線/邊線複製排列特徵 (Curve-driven Pattern Feature) 全鏈路實作 [ADR 0166](docs/adr/0166-curve-driven-pattern.md)
 
 ### 1. 任務背景與範疇

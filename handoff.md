@@ -1,5 +1,19 @@
 # 交接文件
 
+- **【2026-10-19：E1 §2.2 選取驅動切換交付組合件（共同待辦第一項）— 已提交 `eaca9af`（尚未推送）】**
+  - **背景與目標**：E1-P3 的 §2.2 只到零件——組合件點圖面仍啟用不了屬性頁。本次把同一套行為帶到組合件：**圖面點到的零組件**自動切到屬性頁（零件是「點到面」），**樹上點選**的零組件／結合只讓屬性頁可達、頁面留在樹頁，✓ 清除回樹頁。右鍵選單與左鍵拖曳行為不變。
+  - **關鍵設計——viewPick 不變式**：`AssemblyState` 新增 `viewPick: Id | null`，只有 `selectComponentFromView(id)`（圖面左鍵）會設它；`select()`（樹、對話框、「清除選取」Esc）與 `onDocChanged`（文件改寫後失效）會清。純函式 `assemblySelection(viewPick, selected, doc)`（`state/selectionFacts.ts`，可在 node 測）**只在 `viewPick === selected` 時視為圖面選取**：assembly.ts 裡 13 處直接寫 `selected` 的呼叫點（`startMate`／`editMate`／`applyMate`／pattern／explode／`place`／`startDrag`…）因此完全不用改，過期的 viewPick 自動失效而不是被當成選取。基準面／原點（`plane:*`、`origin`）回 `none`——樹的事，屬性頁無話可說。
+  - **完成項目**：
+    1. **純邏輯與單元測試**：`AsmSelection` 型別＋`assemblySelection()`；`tests/phase8/selection-facts.test.ts` 新增 5 項（圖面 vs 樹、結合、基準面回 none、圖面優先、過期 viewPick 放手）。
+    2. **狀態（`state/assembly.ts`）**：`viewPick`＋`selectComponentFromView`；右鍵選單刻意維持 `select`（選單本身就是那個點擊的答案，不該把屬性頁拉到前面）。
+    3. **介面（`App.tsx`）**：組合件無工作階段時 `asmPicked`→自動進屬性頁；`asmReachable`→屬性頁啟用；屬性窗格無工作階段渲染 `SelectionPanel`。
+    4. **面板（`SelectionPanel.tsx`）**：拆分為 `SelectionPanel`（入口）＋`PartSelection`（原邏輯不動）＋`AssemblySelection`——零組件的名稱、零組件／子組合件（`isSubAssembly`）、固定／浮動／已抑制、零件檔路徑；結合的名稱、種類（`MATE_LABEL`）、狀態、兩個參考（`elementLabel`）與「編輯結合」。沒有任何placeholder列。
+    5. **雙語（`@3db/i18n`）**：`sel.component`／`sel.subassembly`／`sel.mate`／`sel.editMate`／`sel.referenceA/B`／`sel.file`／`sel.stateFixed`／`sel.stateFloating`（zh-TW＋en，英文冊無中文）。
+    6. **e2e**：新 `tests/e2e/manual-asm-selection.js` 7 步全過（開組合件→點零組件自動進屬性頁與識別列→換點 V 型塊→✓回樹頁→樹點選留在樹頁且屬性頁可開→左鍵拖曳仍可移動零組件→結合的識別與「編輯結合」開工作階段）；`manual-sidebar-tabs.js` 第 8 步連帶更新（插入的零組件是樹的選取，屬性頁由 disabled 變可達）。
+  - **確效**：typecheck **0**；`check-deps`／`check-i18n`／`check-anti-patterns`／`lint:rules` 全過；單元 selection-facts **14/14**；verify:ui `asm|sidebar|assembly` 批次 6/9（3 個 ERROR 全為 dev server 批次後段 crash 的 import 失敗，非測試邏輯——單跑 manual-sidebar-tabs／phase2-assembly／phase5-assembly 全 PASS）；反向對照：`App.tsx` 的 `asmPicked` 置 false → e2e 如預期紅。
+  - **順手修的舊債（`4e522dd`，獨立提交）**：全量 vitest 發現 `help-manual.test.ts` 在 clean main 上就是紅的——`53d7c3b` 往 `docs/help-links.json` 登了 `"curve-pattern"` 卻沒重生產手册。`SYNC_MANUAL_HELP=1 npx vitest run tests/phase8/help-manual.test.ts` 重生產（一行：pattern 項目列出「曲線複製排列」）。**全量 vitest 現為 3105 過、0 敗**。
+  - **停在哪裡**：本地兩個提交（`4e522dd` docs、`eaca9af` feat）在工作樹乾淨狀態，**尚未推送**（等使用者授權；push 需走 SSH URL）。共同待辦剩：特徵參數群組框（另案）。
+
 - **【2026-10-18 晚：藍圖 C6.4 沿曲線/邊線複製排列特徵 (Curve-driven Pattern Feature) 全鏈路實作 [ADR 0166](docs/adr/0166-curve-driven-pattern.md) — 已提交並推送 `53d7c3b`（origin/main）】**
   - **背景與目標**：依據藍圖 C6.4 規範，全鏈路實作沿曲線/邊線複製排列特徵（Curve-driven Pattern Feature，ADR 0166）。支援沿 3D 模型邊線（Model Edge）或草圖路徑（Sketch Path），以「等間距均分（Equal Spacing）」或「指定間距（Spacing）」排列特徵或本體種子，並支援「相切隨曲線旋轉（Tangent）」與「保持原始平行（Parallel）」兩種姿態對齊模式，以及反向排列（Reverse）。特徵完整融入既有 `PatternFeature` 架構，全面復用差集幾何提取、重疊防禦、實例跳過與布林融合管線。
   - **完成項目**：
