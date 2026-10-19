@@ -49,6 +49,74 @@ describe('commands', () => {
   });
 });
 
+describe('the variable-radius control points of a fillet (C5.2, ADR 0167)', () => {
+  const edge = '{extrude1:cap:end|extrude1:side:sketch1.l2}';
+  const at = (t: number, radius: string) => ({ edge, t, radius });
+  const points = (doc: ReturnType<typeof createDemoPart>) => (doc.features.find((f) => f.id === 'fillet1') as { variable?: unknown }).variable;
+
+  it('takes control points from one end of an edge to the other, and an empty list takes them away', () => {
+    const h = new DocHistory(createDemoPart());
+    h.execute({ type: 'setFilletVariable', featureId: 'fillet1', points: [at(1, '4'), at(0, '2')] });
+    expect(points(h.doc)).toEqual([{ edge, t: 1, radius: '4' }, { edge, t: 0, radius: '2' }]);
+    h.execute({ type: 'setFilletVariable', featureId: 'fillet1', points: [] });
+    expect(points(h.doc)).toBeUndefined();
+  });
+
+  it('refuses what cannot be a control point and leaves the document unchanged', () => {
+    const h = new DocHistory(createDemoPart());
+    const before = h.doc;
+    h.execute({ type: 'setFilletVariable', featureId: 'fillet1', points: [at(0, '2'), at(1, '4')] });
+    const kept = points(h.doc);
+    for (const bad of [
+      [at(0, '2'), at(1, '4'), { edge: '{extrude1:cap:start}', t: 0.5, radius: '3' }], // an edge not picked
+      [at(0, '2'), { edge, t: 1.5, radius: '4' }], // past the end of the edge
+      [at(0, '2'), { edge, t: 0, radius: '4' }], // two points at one position
+      [at(0, '2'), { edge, radius: '4' } as never], // no position of its own
+      [at(0, '2'), { edge, t: 1, radius: 'x' }], // not an expression that is a length
+      [at(0, '2'), { edge, t: 1, radius: '0' }], // no radius at all
+      [at(0.4, '2'), at(1, '4')], // the edge does not start at t = 0
+    ]) {
+      expect(() => h.execute({ type: 'setFilletVariable', featureId: 'fillet1', points: bad })).toThrow(CommandError);
+    }
+    expect(points(h.doc)).toEqual(kept);
+  });
+
+  it('lets go of the points of an edge that is taken out, and keeps what the other edges hold', () => {
+    const h = new DocHistory(createDemoPart());
+    h.execute({ type: 'setEdges', featureId: 'fillet1', edges: [{ kind: 'edge', name: edge }, { kind: 'edge', name: '{extrude1:cap:end|extrude1:side:sketch1.l3}' }] });
+    h.execute({ type: 'setFilletVariable', featureId: 'fillet1', points: [at(0, '2'), at(1, '4'), { edge: '{extrude1:cap:end|extrude1:side:sketch1.l3}', t: 0, radius: '1' }, { edge: '{extrude1:cap:end|extrude1:side:sketch1.l3}', t: 1, radius: '3' }] });
+    h.execute({ type: 'setEdges', featureId: 'fillet1', edges: [{ kind: 'edge', name: edge }] });
+    expect(points(h.doc)).toEqual([at(0, '2'), at(1, '4')]);
+    h.execute({ type: 'setEdges', featureId: 'fillet1', edges: [] });
+    expect(points(h.doc)).toBeUndefined();
+  });
+
+  it('belongs to a constant radius only: a face or full round fillet has no per-edge radius', () => {
+    const h = new DocHistory(createDemoPart());
+    h.execute({ type: 'setFilletVariable', featureId: 'fillet1', points: [at(0, '2'), at(1, '4')] });
+    h.execute({ type: 'setFilletSets', featureId: 'fillet1', kind: 'face', faces: [{ kind: 'face', name: '{extrude1:side:sketch1.l2}' }] });
+    expect(points(h.doc)).toBeUndefined();
+    expect(() => h.execute({ type: 'setFilletVariable', featureId: 'fillet1', points: [at(0, '2'), at(1, '4')] })).toThrow(CommandError);
+  });
+
+  it('follows an edge that is replaced (B4.3) and keeps one set per position', () => {
+    const doc = createDemoPart();
+    const other = '{extrude1:cap:end|extrude1:side:sketch1.l3}';
+    const withTwo = applyCommand(doc, { type: 'setEdges', featureId: 'fillet1', edges: [{ kind: 'edge', name: edge }, { kind: 'edge', name: other }] });
+    const withPoints = applyCommand(withTwo, {
+      type: 'setFilletVariable',
+      featureId: 'fillet1',
+      points: [at(0, '2'), at(1, '4'), { edge: other, t: 0, radius: '1' }, { edge: other, t: 1, radius: '3' }],
+    });
+    // the first edge is named the second's: one edge is kept, and its control points follow it to the name it has now
+    const replaced = applyCommand(withPoints, { type: 'replaceRef', featureId: 'fillet1', from: { kind: 'edge', name: edge }, to: { kind: 'edge', name: other } });
+    const fillet = replaced.features.find((f) => f.id === 'fillet1') as { edges: { name: string }[]; variable: unknown };
+    expect(fillet.edges.map((e) => e.name)).toEqual([other]);
+    expect(fillet.variable).toEqual([{ edge: other, t: 0, radius: '2' }, { edge: other, t: 1, radius: '4' }]);
+    expect(() => applyCommand(withPoints, { type: 'replaceRef', featureId: 'fillet1', from: { kind: 'edge', name: '{extrude1:cap:start}' }, to: { kind: 'edge', name: edge } })).toThrow(CommandError);
+  });
+});
+
 describe('history', () => {
   it('undoes and redoes', () => {
     const h = new DocHistory(createDemoPart());

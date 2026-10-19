@@ -1,7 +1,7 @@
 import { t } from '@3db/i18n';
 import { current, produce, type Draft } from 'immer';
 import { countersFor, type Id } from './ids';
-import type { SheetGauge, AppearanceTarget, DocSettings, MaterialRef, Variable, BlobRef, ChamferFeature, FilletKind, CombineFeature, SplitFeature, MoveCopyBodyFeature, JogFeature, HoleFeature, ScrewBossFeature, BaseFlangeFeature, MidBendFeature, EdgeFlangeFeature, HemFeature, BreakCornerFeature, SnapHookFeature, SnapCatchFeature, VentFeature, LoftFeature, RibFeature, SweepFeature, Draft as WallDraft, EndCondition, Thin, Expr, Feature, ImportedBodyFeature, AxisDefinition, CoordSysFeature, MirrorFeature, PartDoc, PatternDefinition, PatternFeature, PlaneDefinition, PointDefinition, Ref, RevolveCondition, SketchConstraint, SketchEntity, SketchFeature, SketchPicture, CutWithSurfaceFeature, ThreadFeature, KnurlFeature, CosmeticThreadFeature } from './schema';
+import type { SheetGauge, AppearanceTarget, DocSettings, MaterialRef, Variable, BlobRef, ChamferFeature, FilletKind, FilletVariablePoint, CombineFeature, SplitFeature, MoveCopyBodyFeature, JogFeature, HoleFeature, ScrewBossFeature, BaseFlangeFeature, MidBendFeature, EdgeFlangeFeature, HemFeature, BreakCornerFeature, SnapHookFeature, SnapCatchFeature, VentFeature, LoftFeature, RibFeature, SweepFeature, Draft as WallDraft, EndCondition, Thin, Expr, Feature, ImportedBodyFeature, AxisDefinition, CoordSysFeature, MirrorFeature, PartDoc, PatternDefinition, PatternFeature, PlaneDefinition, PointDefinition, Ref, RevolveCondition, SketchConstraint, SketchEntity, SketchFeature, SketchPicture, CutWithSurfaceFeature, ThreadFeature, KnurlFeature, CosmeticThreadFeature } from './schema';
 import { isDatumPlaneName } from './datums';
 import { canBeSeed } from './patterns';
 import { colorOk, materialOk, sameTarget } from './materials';
@@ -76,6 +76,8 @@ ull). */
   | { type: 'setEdges'; featureId: Id; edges: Ref[]; faces?: Ref[] }
   /** The kind of a fillet and the groups of faces it takes (face fillet: two groups; full round: two sides and a center); each group left out or empty is taken away. */
   | { type: 'setFilletSets'; featureId: Id; kind: FilletKind; faces?: Ref[]; faces2?: Ref[]; center?: Ref[] }
+  /** The control points of a variable-radius fillet (C5.2, ADR 0167); an empty list takes the feature back to its constant radius. */
+  | { type: 'setFilletVariable'; featureId: Id; points: FilletVariablePoint[] }
   | { type: 'setChamfer'; featureId: Id; value: Pick<ChamferFeature, 'mode' | 'distance' | 'second' | 'flip'> }
   /** The hole wizard's settings (C4.8): everything but which sketch it drills at. */
   | { type: 'setHole'; featureId: Id; hole: Omit<HoleFeature, 'id' | 'type' | 'name' | 'suppressed' | 'sketch'> }
@@ -970,6 +972,31 @@ export function mutate(draft: Draft<PartDoc>, cmd: Command): void {
         if (value && value.length > 0) f[key] = value;
         else delete f[key];
       }
+      // a face fillet or a full round has no per-edge radius to evolve: its control points would be words without a meaning
+      if (f.kind) delete f.variable;
+      return;
+    }
+    case 'setFilletVariable': {
+      const f = feature(draft, cmd.featureId);
+      if (f.type !== 'fillet') throw new CommandError(t('cmd.onlyFilletHasRadius'));
+      if (f.kind) throw new CommandError(t('cmd.filletVariableConstantOnly'));
+      const picked = new Set(f.edges.map((e) => e.name));
+      const byEdge = new Map<string, FilletVariablePoint[]>();
+      const p = new Parameters(draft as PartDoc);
+      for (const point of cmd.points) {
+        if (!picked.has(point.edge)) throw new CommandError(t('cmd.filletVariableEdge', { edge: point.edge }));
+        if (!(point.t >= 0 && point.t <= 1)) throw new CommandError(t('cmd.filletVariablePosition', { t: String(point.t) }));
+        if ((byEdge.get(point.edge) ?? []).some((x) => x.t === point.t)) throw new CommandError(t('cmd.filletVariableSame', { t: String(point.t) }));
+        positive(p, point.radius);
+        byEdge.set(point.edge, [...(byEdge.get(point.edge) ?? []), point]);
+      }
+      // the radius law is only defined between the first and the last point: an edge's points run from one end of it to the other
+      for (const points of byEdge.values()) {
+        const sorted = [...points].sort((a, b) => a.t - b.t);
+        if (sorted[0]!.t !== 0 || sorted[sorted.length - 1]!.t !== 1) throw new CommandError(t('cmd.filletVariableEnds'));
+      }
+      if (cmd.points.length === 0) delete f.variable;
+      else f.variable = cmd.points;
       return;
     }
     case 'setEdges': {
@@ -977,6 +1004,12 @@ export function mutate(draft: Draft<PartDoc>, cmd: Command): void {
       if (f.type !== 'fillet' && f.type !== 'chamfer') throw new CommandError(t('cmd.onlyEdgeFeaturesPickEdges'));
       if (cmd.edges.some((r) => r.kind !== 'edge') || (cmd.faces ?? []).some((r) => r.kind !== 'face')) throw new CommandError(t('cmd.mustPickEdges'));
       f.edges = cmd.edges;
+      // an edge taken out lets go of the variable-radius control points bound to it: they say where along it, and it is gone (ADR 0167)
+      if (f.type === 'fillet' && f.variable?.length) {
+        const left = f.variable.filter((x) => f.edges.some((e) => e.name === x.edge));
+        if (left.length === 0) delete f.variable;
+        else if (left.length !== f.variable.length) f.variable = left;
+      }
       if (cmd.faces !== undefined) {
         if (cmd.faces.length > 0) f.faces = cmd.faces;
         else delete f.faces;
@@ -1592,6 +1625,15 @@ export function mutate(draft: Draft<PartDoc>, cmd: Command): void {
           for (const key of ['faces2', 'center'] as const) {
             const list = next[key];
             if (list) next[key] = list.filter((r, i) => list.findIndex((x) => x.name === r.name) === i);
+          }
+          // two edges that now name the same edge also bring their control points together: the edge that stayed keeps its own
+          if (next.variable?.length) {
+            const kept = new Map<string, FilletVariablePoint>();
+            for (const p of next.variable) {
+              const key = `${p.edge}:${p.t}`;
+              if (!kept.has(key)) kept.set(key, p);
+            }
+            next.variable = [...kept.values()];
           }
         }
       }

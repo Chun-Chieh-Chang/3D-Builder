@@ -6,7 +6,7 @@ import type { Id } from './ids';
  * DOF status, mass properties and error lists are derived data and never stored.
  */
 
-export const SCHEMA_VERSION = 65;
+export const SCHEMA_VERSION = 66;
 
 /** Value expression (B5.2, B5.3): "20", "25.4mm", "30deg", "wall_t*2", "D1@草圖1/2", "property('厚度')"; see `expr/`. */
 export type Expr = string;
@@ -470,6 +470,24 @@ export interface FilletFeature extends FeatureBase {
   kind?: FilletKind;
   faces2?: Ref[];
   center?: Ref[];
+  radius: Expr;
+  /**
+   * The control points of a variable-radius fillet (C5.2, v66, ADR 0167): present means the radius evolves along `edge`, interpolating (t, radius) linearly
+   * between a point and the next. `t` is where along the edge, 0 at its first vertex and 1 at its last, so a variable edge's points start at t = 0 and end
+   * at t = 1. Only a picked edge (`edges`) carries points: an edge worked out from `faces` is not known until the model is rebuilt, and none exists to say
+   * where the radius would change. Absent (or empty) is a constant radius, as every file before v66.
+   */
+  variable?: FilletVariablePoint[];
+}
+
+/**
+ * A control point of a variable-radius fillet (C5.2, v66, ADR 0167): the radius `radius` at the position `t` along the edge of persistent name `edge`,
+ * one of the fillet feature's own `edges`. Between two points the radius is linear, so the two ends of an edge can be points themselves (t = 0 and t = 1)
+ * and that is what a fillet opened as variable starts with.
+ */
+export interface FilletVariablePoint {
+  edge: string;
+  t: number;
   radius: Expr;
 }
 

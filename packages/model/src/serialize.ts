@@ -204,6 +204,8 @@ const migrations: Record<number, (doc: Json) => Json> = {
   63: (doc) => doc,
   // v65: curve-driven pattern feature (`def.mode === 'curve'`, C6.4, ADR 0166). A new pattern mode; nothing to convert.
   64: (doc) => doc,
+  // v66: variable-radius fillet control points (`fillet.variable`, C5.2, ADR 0167). Absent until a control point is added; nothing to convert.
+  65: (doc) => doc,
 };
 
 export class FormatError extends Error {

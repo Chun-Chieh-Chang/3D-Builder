@@ -61,6 +61,8 @@ export function mapRefs(feature: Feature, map: (ref: Ref) => Ref): { feature: Fe
           ...(feature.faces ? { faces: feature.faces.map(one) } : {}),
           ...(feature.faces2 ? { faces2: feature.faces2.map(one) } : {}),
           ...(feature.center ? { center: feature.center.map(one) } : {}),
+          // the control points of a variable radius (C5.2) follow the edge they are on: that edge holds their names
+          ...(feature.variable ? { variable: feature.variable.map((p) => ({ ...p, edge: map({ kind: 'edge', name: p.edge }).name })) } : {}),
         },
         replaced,
       };
