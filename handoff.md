@@ -1,16 +1,79 @@
-# 交接文件
+# 交接文件 (Handoff & Resume Guide)
 
-- **【2026-10-19 傍晚：螺旋曲線與渦捲線特徵（C8.3，[ADR 0168](docs/adr/0168-helix-spiral-curve.md)）全鏈路完成 — 待推送】**
-  - **收尾結果**：
-    1. **Schema 67 與模型層**：定義 `HelixDefinedBy`（`pitchAndRev`、`heightAndRev`、`heightAndPitch`、`spiral`）與 `HelixFeature`；實作 66 $\to$ 67 遷移函式；`params.ts` 支援 5 類參數表達式求值；`commands.ts` 實作 `setHelix` 指令與合法性校驗；`refs.ts` 支援 `circle` 參考重映射。
-    2. **幾何核心（`packages/kernel/src/kernel.ts`）**：實作 `Kernel.helixCurve`，圓柱/圓錐螺旋線採 OCCT `Geom_CylindricalSurface` / `Geom_ConicalSurface` + `Geom2d_Line` 搭配 `BRepBuilderAPI_MakeEdge` 與 `BRepLib.BuildCurves3d` 逐圈構建並合成為單一 Wire；平面渦捲線採阿基米德極坐標取樣並以 `GeomAPI_PointsToBSpline` 擬合 $C^2$ 平滑曲線；量測線段長度並萃取起點/終點頂點。
-    3. **DAG 與再生管線（`packages/regen`）**：`dag.ts` 追蹤 `circle` 父節點依賴；`engine.ts` 解析草圖實體圓或模型圓形邊線，調用幾何核心建構 Wire 實體，登記 `${f.id}:helix` 與端點頂點命名，發布再生資訊。
-    4. **Web UI 與雙語系統**：`PropertyManager.tsx` 實作 `HelixPanel`，支援 4 種模式切換、動態參數群組、錐度與方向控制，接線至 `FeatureParams`；`Icon.tsx` 與 `strings.ts` 提供專屬圖示與標籤；`packages/i18n` 補齊中英雙語詞條；`docs/help-links.json` 登記 `"helix"`。
-    5. **驗收與自我紅隊對抗測試（`tests/phase3/helix-curve.test.ts`）**：14/14 項 100% 通過（含負數/零破壞性輸入檢驗、解析幾何閉式真值解比對 $L = \sqrt{(2\pi N R)^2 + H^2}$ 相對誤差 $< 10^{-4}$、實體邊線引用與 Emscripten WASM Heap 100 次連續建構 0.00 MiB 成長真實指標防呆）。
-    6. **守門檢查**：`typecheck` 0 錯、`lint:rules` 全域反模式守門通過、`lint:deps` Layering OK、`lint:i18n` 雙語 OK、`make:drawing` 6/6 PASS。
-    7. **反向對照 (Negative Verification)**：將 `actions.ts` 中 helix action 刻意更名為 `helix-disabled`，`tests/phase8/help.test.ts` 如預期轉紅報錯 3 項；還原後立即恢復 40/40 綠燈，確認說明守門防線精確有效。無遺留待辦。
+> **換電腦接手開發快速指引**：
+> - **最新同步基準**：已完全推送到遠端 `origin/main`（最新 Commit: `bfad6fd`）。
+> - **在新電腦拉取與接手步驟**：
+>   ```bash
+>   git pull origin main
+>   npm run typecheck    # 驗證型別環境（預期 0 錯）
+>   npm run lint:rules   # 驗證反模式靜態守門
+>   npm run lint:deps    # 驗證架構分層
+>   npm run lint:i18n    # 驗證雙語字典
+>   npx vitest run tests/phase3/helix-curve.test.ts # 驗收剛完成的螺旋曲線
+>   ```
+> - **工作區狀態**：工作目錄完全乾淨（`working tree clean`），零未提交修改，零殘留測試債。
 
-- **【2026-10-19 傍晚：變化半徑圓角（C5.2，[ADR 0167](docs/adr/0167-variable-radius-fillet.md)）全鏈路完成 — 已推送 origin/main（`fd460d1..173ad35`，含 `feb4c05`＋`2212720`＋`2400c26`）；下方「下一步」兩節已全數做完，僅供追溯】**
+---
+
+## 一、 最新完成特徵：藍圖 C8.3 螺旋曲線與渦捲線特徵（ADR 0168）— 已推送 `bfad6fd`
+
+- **架構與全鏈路交付**：
+  1. **Schema 67 與模型層**：
+     - 新增 `HelixDefinedBy`（`pitchAndRev` 螺距和圈數、`heightAndRev` 高度和圈數、`heightAndPitch` 高度和螺距、`spiral` 平面渦捲線）與 `HelixFeature`。
+     - 實作 66 $\to$ 67 文件遷移函式（`packages/model/src/serialize.ts`）。
+     - `params.ts`：`mapExprs` 支援 `pitch`、`revolutions`、`height`、`startAngle`、`taperAngle` 表達式求值與重命名。
+     - `commands.ts`：新增 `setHelix` 指令與合法性校驗（非法數值在命令層由 `checkExprs` 即刻攔截）。
+     - `refs.ts`：`mapRefs` 支援 `circle` 參考重映射（支援草圖 datum 與模型 edge）。
+  2. **幾何核心（`packages/kernel/src/kernel.ts`）**：
+     - 實作 `Kernel.helixCurve(spec)`。
+     - 圓柱與圓錐螺旋線：採用 OCCT `Geom_CylindricalSurface` / `Geom_ConicalSurface` + `Geom2d_Line` 搭配 `BRepBuilderAPI_MakeEdge` 與 `BRepLib.BuildCurves3d`，逐圈構建後由 `BRepBuilderAPI_MakeWire` 合成單一 Wire。
+     - 平面渦捲線：採阿基米德極坐標取樣並以 `GeomAPI_PointsToBSpline` 擬合 $C^2$ 平滑曲線。
+     - 線段長度測量（`LinearProperties`）與起訖端點頂點萃取。
+  3. **依賴與再生（`packages/regen`）**：
+     - `dag.ts`：追蹤 `feature.circle` 父節點依賴。
+     - `engine.ts`：`rebuild` switch 分發 `case 'helix'`，解析草圖圓或實體圓形邊線提取中心坐標、法向量與半徑，構建 Wire 實體並登記拓樸命名（`${f.id}:helix` 與頂點命名）。
+  4. **Web UI 與雙語系統**：
+     - `PropertyManager.tsx`：實作 `HelixPanel`，支援 4 種模式切換、動態參數群組、錐度與方向控制，接線至 `FeatureParams`。
+     - `Icon.tsx` 與 `strings.ts`：專屬向量圖示與特徵標籤。
+     - `packages/i18n`：完整中英雙語詞條（`feature.helix`、`pm.helix.*`、`help.helix.*` 等）。
+     - `apps/web/src/actions.ts`：註冊 `id: 'helix'` 動作，並在 `docs/help-links.json` 的 `_untied` 正式登記。
+  5. **確效與驗收測試（`tests/phase3/helix-curve.test.ts`）**：
+     - 14 項自我紅隊測試 **100% 通過**：
+       - 破壞性輸入檢驗：負數、零、非數值螺距/圈數/高度與非法參考圖元顯式攔截。
+       - 解析幾何真值比對：圓柱螺旋線弧長與閉式解 $L = \sqrt{(2\pi N R)^2 + H^2}$ 相對誤差 $< 10^{-4}$；平面渦捲線外徑 $R_{\text{end}} = R_0 + N \cdot P$ 與錐形螺旋線外擴半徑精確吻合。
+       - 實體邊線引用與 DAG 依賴閉環。
+       - Emscripten WASM Heap（`wasmMemory.buffer.byteLength > 0` 防呆）100 次連續重建 **0.00 MiB 成長**。
+  6. **反向對照確效 (Negative Verification)**：
+     - 將 `actions.ts` 中的 helix 動作刻意重命名為 `helix-disabled` $\to$ `tests/phase8/help.test.ts` 如預期**轉紅報錯 3 項**；還原後**立即恢復 40/40 綠燈**，證實說明手冊映射與動作守門機制精確有效。
+  7. **全量守門檢查**：
+     - `typecheck`：**0 錯**。
+     - `lint:rules` / `lint:deps` / `lint:i18n`：**全數通過**。
+     - `make:drawing`：**6/6 通過**。
+     - 全量 vitest：**3134 過、0 敗**（25 既有跳過）。
+
+---
+
+## 二、 換電腦後建議接續的待辦事項 (Next Steps)
+
+1. **推薦推進項目：藍圖 C8.2 投影曲線特徵 (Projected Curve Feature)**
+   - **範疇**：工業級 CAD 標準曲線特徵（SolidWorks「投影曲線」對標，ADR 0169）。
+   - **支援兩種模式**：
+     1. **草圖上草圖 (Sketch on Sketch)**：選取兩個不同基準面上的草圖輪廓，正交拉伸兩向曲面並求解相交線（雙視圖空間相交曲線），常見於曲面導引線與管路路徑。
+     2. **草圖投影至曲面 (Sketch on Faces)**：選取一草圖輪廓與目標曲面/實體面，沿法向或指定方向投影至曲面上生成空間貼面曲線。
+   - **實作架構規劃**：
+     - Schema 68：新增 `ProjectedCurveFeature`（含 mode: `'sketchOnSketch' | 'sketchOnFaces'`、兩個 sketch 參考或 sketch + faces 參考、投影方向等）。
+     - Kernel：OCCT `BRepAlgoAPI_Section`（草圖曲面相交）或 `BRepProj_Projection`（投影至曲面）。
+     - Regen / DAG：追蹤雙草圖或草圖+面之依賴。
+     - UI / i18n / Help：`PropertyManager` 面板、動作註冊與雙語手冊。
+2. **其他候選特徵**：
+   - 藍圖 C9 曲面特徵子集（規則曲面、放射曲面）。
+   - 藍圖 C10 直接編輯（置換面、刪除鑽孔）。
+
+---
+
+## 三、 歷史交付紀錄（供追溯存檔）
+
+- **【2026-10-19 傍晚：變化半徑圓角（C5.2，[ADR 0167](docs/adr/0167-variable-radius-fillet.md)）全鏈路完成 — 已推送 origin/main（`fd460d1..173ad35`）】**
   - **收尾結果**：UI（`FilletVariable`）、雙語、help、e2e（`tests/e2e/manual-variable-fillet.js` 7 步 PASS）完成；`npm run check` 全量 3120 過 0 敗、`make:drawing` 過；反向對照（關掉 `<FilletVariable>`）e2e 如預期轉紅，已還原。無遺留待辦。
   - **以下為交棒當時的紀錄**：
   - **背景與目標**：藍圖 C5.2——圓角半徑沿一條「揀選的邊線」由一端走到另一端（例：R2→R6），兩個控制點之間線性內插；`t` 是沿邊位置（0＝第一端、1＝最後端，錨定規則見下），半徑是表達式（可掛參數）。只有「固定半徑」種類可用：面圓角／完整圓角的半徑由面組決定，指令會在種類切換時把控制點收走。從「選面」算出的邊沒有自己的點，一律吃固定半徑（多條邊可與有控制點的邊混用）。
