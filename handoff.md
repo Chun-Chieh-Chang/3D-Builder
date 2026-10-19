@@ -1,6 +1,6 @@
 # 交接文件
 
-- **【2026-10-19：特徵參數群組框——屬性頁直接顯示並編輯特徵參數（E1 §2.2 最後一項共同待辦）— 已提交 `478a422`（尚未推送）】**
+- **【2026-10-19：特徵參數群組框——屬性頁直接顯示並編輯特徵參數（E1 §2.2 最後一項共同待辦）— 已推送 `478a422`（origin/main）】**
   - **背景與目標**：零件在 FeatureManager 樹上點選特徵時，屬性頁原本只有識別群組＋「編輯特徵」——看參數非得先開工作階段。本次讓屬性頁**直接排出該特徵的參數群組框**（extrude／revolve／fillet／hole／pattern…40+ 特徵型別全覽），且**不開工作階段就能改**：改動走 immediate command，一步一 undo，Ctrl+Z 可復原。草圖維持識別＋「編輯特徵」（其參數群組屬於草圖編輯器，SKetchPlane/SKetch 面板需要 sketcher session）。
   - **關鍵設計——面板自足性**：所有 ~50 個 `<XxxPanel f={f}/>` 本就只吃 `{ f }`、透過 `store.execute(...)` 寫入（ValueInput 的 Enter/blur、select/checkbox 的 onChange 全是 immediate command），不讀 `editing`、不開 transaction、不觸發揀取模式（`RefItem` 只能清除參考，指派參考是進 session 時在圖面點選）。session 只是用 `beginEdit`/`commitEdit` 把這些包成一步；沒有 session 時每一步自成一 undo。**抽取不改變 session 的 DOM 與行為**——e2e 第 1～3 步（session 開合、隱藏不卸載）原式通過。
   - **完成項目**：
@@ -8,9 +8,9 @@
     2. **屬性頁接線（`SelectionPanel.tsx`）**：`PartSelection` 訂閱 `result`；非草圖特徵在識別群組後排 `<FeatureParams f={feature} />`，並在標頭下顯示與 session 同樣的 rebuild 錯誤訊息（`pm-message error-text`）；草圖因 `FeatureParams` 回 null 自動維持原狀。
     3. **e2e（`manual-sidebar-tabs.js` 第 6 步）**：樹點 `eb`（擠出、blind depth 15）→屬性頁出現「方向 1」群組與深度欄（值 15）→打成 18 按 Enter→文件 depth 變 18、基板體積 144000→172800 mm³（真的重建）、全程無 session→Ctrl+Z 兩者復原→「編輯特徵」仍能開 session。另斷言「編輯特徵」開 session 時選擇面板讓位（既有行為不變）。
   - **確效**：typecheck **0**；`lint:rules`／`lint:deps`／`lint:i18n` 全過；全量 vitest **3106 過、0 敗**；verify:ui `manual-sidebar-tabs|manual-asm-selection` **2/2 PASS**；**反向對照**：拔掉 `<FeatureParams>` → 第 6 步如預期紅（「no depth field in the properties page」），恢復後重跑 2/2。
-  - **停在哪裡**：本地提交 `478a422`（feat）在工作樹乾淨狀態，**尚未推送**（等使用者授權；push 需走 SSH URL）。**共同待辦已全部收尾**（E1 §2.2 零件＋組合件、特徵參數群組框）；handoff 待辦區僅剩明確「另案」項目。
+  - **停在哪裡**：已推送 origin/main（`6f915e7..e3fdd52`；HTTPS＋Git Credential Manager 已可用，不再需要 SSH URL 變通）。**共同待辦已全部收尾**（E1 §2.2 零件＋組合件、特徵參數群組框）；handoff 待辦區僅剩明確「另案」項目。
 
-- **【2026-10-19：E1 §2.2 選取驅動切換交付組合件（共同待辦第一項）— 已提交 `eaca9af`（尚未推送）】**
+- **【2026-10-19：E1 §2.2 選取驅動切換交付組合件（共同待辦第一項）— 已推送 `eaca9af`（origin/main）】**
   - **背景與目標**：E1-P3 的 §2.2 只到零件——組合件點圖面仍啟用不了屬性頁。本次把同一套行為帶到組合件：**圖面點到的零組件**自動切到屬性頁（零件是「點到面」），**樹上點選**的零組件／結合只讓屬性頁可達、頁面留在樹頁，✓ 清除回樹頁。右鍵選單與左鍵拖曳行為不變。
   - **關鍵設計——viewPick 不變式**：`AssemblyState` 新增 `viewPick: Id | null`，只有 `selectComponentFromView(id)`（圖面左鍵）會設它；`select()`（樹、對話框、「清除選取」Esc）與 `onDocChanged`（文件改寫後失效）會清。純函式 `assemblySelection(viewPick, selected, doc)`（`state/selectionFacts.ts`，可在 node 測）**只在 `viewPick === selected` 時視為圖面選取**：assembly.ts 裡 13 處直接寫 `selected` 的呼叫點（`startMate`／`editMate`／`applyMate`／pattern／explode／`place`／`startDrag`…）因此完全不用改，過期的 viewPick 自動失效而不是被當成選取。基準面／原點（`plane:*`、`origin`）回 `none`——樹的事，屬性頁無話可說。
   - **完成項目**：
@@ -22,7 +22,7 @@
     6. **e2e**：新 `tests/e2e/manual-asm-selection.js` 7 步全過（開組合件→點零組件自動進屬性頁與識別列→換點 V 型塊→✓回樹頁→樹點選留在樹頁且屬性頁可開→左鍵拖曳仍可移動零組件→結合的識別與「編輯結合」開工作階段）；`manual-sidebar-tabs.js` 第 8 步連帶更新（插入的零組件是樹的選取，屬性頁由 disabled 變可達）。
   - **確效**：typecheck **0**；`check-deps`／`check-i18n`／`check-anti-patterns`／`lint:rules` 全過；單元 selection-facts **14/14**；verify:ui `asm|sidebar|assembly` 批次 6/9（3 個 ERROR 全為 dev server 批次後段 crash 的 import 失敗，非測試邏輯——單跑 manual-sidebar-tabs／phase2-assembly／phase5-assembly 全 PASS）；反向對照：`App.tsx` 的 `asmPicked` 置 false → e2e 如預期紅。
   - **順手修的舊債（`4e522dd`，獨立提交）**：全量 vitest 發現 `help-manual.test.ts` 在 clean main 上就是紅的——`53d7c3b` 往 `docs/help-links.json` 登了 `"curve-pattern"` 卻沒重生產手册。`SYNC_MANUAL_HELP=1 npx vitest run tests/phase8/help-manual.test.ts` 重生產（一行：pattern 項目列出「曲線複製排列」）。**全量 vitest 現為 3105 過、0 敗**。
-  - **停在哪裡**：本地兩個提交（`4e522dd` docs、`eaca9af` feat）在工作樹乾淨狀態，**尚未推送**（等使用者授權；push 需走 SSH URL）。共同待辦剩：特徵參數群組框（另案）。
+  - **停在哪裡**：已推送 origin/main（`4e522dd` docs＋`eaca9af` feat 等五筆一併推上；`6f915e7..e3fdd52`）。
 
 - **【2026-10-18 晚：藍圖 C6.4 沿曲線/邊線複製排列特徵 (Curve-driven Pattern Feature) 全鏈路實作 [ADR 0166](docs/adr/0166-curve-driven-pattern.md) — 已提交並推送 `53d7c3b`（origin/main）】**
   - **背景與目標**：依據藍圖 C6.4 規範，全鏈路實作沿曲線/邊線複製排列特徵（Curve-driven Pattern Feature，ADR 0166）。支援沿 3D 模型邊線（Model Edge）或草圖路徑（Sketch Path），以「等間距均分（Equal Spacing）」或「指定間距（Spacing）」排列特徵或本體種子，並支援「相切隨曲線旋轉（Tangent）」與「保持原始平行（Parallel）」兩種姿態對齊模式，以及反向排列（Reverse）。特徵完整融入既有 `PatternFeature` 架構，全面復用差集幾何提取、重疊防禦、實例跳過與布林融合管線。
