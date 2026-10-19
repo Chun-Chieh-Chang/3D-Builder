@@ -11,6 +11,7 @@ import { typeName, writer } from './MeasurePanel';
 import { componentInfo } from './AssemblyTree';
 import { elementLabel } from './MatePanel';
 import { PMGroup } from './PMGroup';
+import { FeatureParams } from './PropertyManager';
 import type { MeasureElement, Ref } from '@3db/model';
 
 /** The word for a picked kind — the 「測量」 tool's words, so the sidebar and the tool say the same thing. */
@@ -29,8 +30,10 @@ export function SelectionPanel() {
  * The PropertyManager of what is picked in a part with no session open (plan §2.2): the face, the edges and vertices the graphics area was clicked on,
  * or the tree item the FeatureManager has selected — whichever the store keeps. The header says what it is, as a drawing's panel does (ADR 0133); the
  * groups hold what is really known of it: the element's identity (its persistent name and the feature that made it) and its measured numbers, asked of
- * the kernel the same way the 「測量」 tool asks (`store.selectionFacts`, re-asked when the model or the pick changes). Nothing here is a placeholder:
- * a number the kernel did not answer is a row that is not there, and an element the model no longer has is said so.
+ * the kernel the same way the 「測量」 tool asks (`store.selectionFacts`, re-asked when the model or the pick changes). A feature picked in the tree also
+ * lays out its parameter groups — the same components a session shows, each writing through an immediate command — so the page says what the feature
+ * really is before any session is opened for it; a sketch is the exception, its body belongs to the sketch editor. Nothing here is a placeholder: a
+ * number the kernel did not answer is a row that is not there, and an element the model no longer has is said so.
  */
 function PartSelection() {
   const selected = useStore((s) => s.selected);
@@ -38,6 +41,7 @@ function PartSelection() {
   const selectedElements = useStore((s) => s.selectedElements);
   const facts = useStore((s) => s.selectionFacts);
   const doc = useStore((s) => s.doc);
+  const result = useStore((s) => s.result);
   const options = useStore((s) => s.measureOptions);
   const pick = partSelection(selected, selectedFace, selectedElements);
   const w = writer(options);
@@ -48,6 +52,8 @@ function PartSelection() {
   if (pick.kind === 'none') return null;
   const feature = pick.kind === 'feature' ? doc.features.find((f) => f.id === pick.id) : undefined;
   const rolledBack = feature ? doc.features.indexOf(feature) >= (doc.rollbackIndex ?? doc.features.length) : false;
+  // Why the feature cannot be built yet, as the session's PropertyManager says it — but not for a sketch: that one is rebuilt by its own editor.
+  const status = feature && feature.type !== 'sketch' ? result?.features.find((r) => r.id === feature.id) : undefined;
   const clear = () => {
     if (pick.kind === 'feature') store.select(null);
     else if (pick.kind === 'face') store.selectFace(null);
@@ -114,26 +120,30 @@ function PartSelection() {
           <Icon name="ok" />
         </button>
       </div>
+      {status?.status === 'error' && <p className="pm-message error-text">{status.message}</p>}
       {pick.kind === 'feature' && feature && (
-        <PMGroup title={t('sel.identity')} icon={feature.type} open={isOpen('identity')} onToggle={() => toggle('identity')} group="identity">
-          <label className="pm-row">
-            <span>{t('sel.name')}</span>
-            <span data-field="name">{feature.name}</span>
-          </label>
-          <label className="pm-row">
-            <span>{t('sel.kind')}</span>
-            <span data-field="kind">{featureLabel(feature)}</span>
-          </label>
-          <label className="pm-row">
-            <span>{t('sel.state')}</span>
-            <span data-field="state">{feature.suppressed ? t('sel.stateSuppressed') : t('sel.stateNormal')}</span>
-          </label>
-          <div className="pm-row">
-            <button type="button" className="pm-button" data-action="editFeature" disabled={rolledBack} title={rolledBack ? t('tree.rollbackBar') : t('tree.editFeature')} onClick={() => store.beginEdit(feature.id)}>
-              {t('sel.editFeature')}
-            </button>
-          </div>
-        </PMGroup>
+        <>
+          <PMGroup title={t('sel.identity')} icon={feature.type} open={isOpen('identity')} onToggle={() => toggle('identity')} group="identity">
+            <label className="pm-row">
+              <span>{t('sel.name')}</span>
+              <span data-field="name">{feature.name}</span>
+            </label>
+            <label className="pm-row">
+              <span>{t('sel.kind')}</span>
+              <span data-field="kind">{featureLabel(feature)}</span>
+            </label>
+            <label className="pm-row">
+              <span>{t('sel.state')}</span>
+              <span data-field="state">{feature.suppressed ? t('sel.stateSuppressed') : t('sel.stateNormal')}</span>
+            </label>
+            <div className="pm-row">
+              <button type="button" className="pm-button" data-action="editFeature" disabled={rolledBack} title={rolledBack ? t('tree.rollbackBar') : t('tree.editFeature')} onClick={() => store.beginEdit(feature.id)}>
+                {t('sel.editFeature')}
+              </button>
+            </div>
+          </PMGroup>
+          <FeatureParams f={feature} />
+        </>
       )}
       {(pick.kind === 'face' || pick.kind === 'elements') && (
         <>

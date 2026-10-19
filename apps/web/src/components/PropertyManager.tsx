@@ -3839,34 +3839,16 @@ function CosmeticThreadPanel({ f }: { f: CosmeticThreadFeature }) {
   );
 }
 
-/** PropertyManager (D2): parameters of the feature being edited; ✔ commits one undo step, ✖ restores (B7.3). */
-export function PropertyManager() {
-  const editing = useStore((s) => s.editing);
-  const doc = useStore((s) => s.doc);
-  const result = useStore((s) => s.result);
-  if (!editing) return null;
-  const f = findFeature(doc, editing.featureId);
-  if (!f) return null;
-  const isSketchPlane = editing.kind === 'sketchPlane';
-  const sketching = editing.kind === 'sketch';
-  // Like the message box at the top of a SolidWorks PropertyManager: why the feature cannot be built yet.
-  const status = sketching || isSketchPlane ? undefined : result?.features.find((r) => r.id === f.id);
+/**
+ * The parameter groups of a feature — the same body a session's PropertyManager lays out, as plain components: each reads the feature from the
+ * document and writes through commands, so the body depends on nothing but the feature. That is what lets the FeatureManager's properties page
+ * show what a picked feature really is (plan §2.2) without opening a session for it. A sketch is the exception: its body belongs to the sketch
+ * editor, so this answers nothing for one and the caller keeps its own entry to the session.
+ */
+export function FeatureParams({ f }: { f: Feature }) {
+  if (f.type === 'sketch') return null;
   return (
-    <div className="property-manager" data-help={currentTopicId()}>
-      <div className="pm-header">
-        <Icon name={f.type} />
-        <span className="pm-title">
-          {isSketchPlane ? `${t('pm.editSketchPlane')}: ${f.name}` : sketching ? `${t('pm.editSketch')}: ${f.name}` : `${featureLabel(f)}: ${f.name}`}
-        </span>
-        <button className="pm-ok" title={sketching ? t('pm.exitSketch') : t('pm.ok')} onClick={() => store.commitEdit()}>
-          <Icon name="ok" />
-        </button>
-        <button className="pm-cancel" title={sketching ? t('pm.discardChanges') : t('pm.cancel')} onClick={() => store.cancelEdit()}>
-          <Icon name="cancel" />
-        </button>
-      </div>
-      {status?.status === 'error' && <p className="pm-message error-text">{status.message}</p>}
-      {f.type === 'sketch' && (isSketchPlane ? <SketchPlanePanel f={f} /> : <SketchPanel f={f} />)}
+    <>
       {f.type === 'extrude' && <ExtrudePanel f={f} />}
       {f.type === 'revolve' && <RevolvePanel f={f} />}
       {f.type === 'sweep' && <SweepPanel f={f} />}
@@ -3918,6 +3900,38 @@ export function PropertyManager() {
       {f.type === 'thread' && <ThreadPanel f={f} />}
       {f.type === 'knurl' && <KnurlPanel f={f} />}
       {f.type === 'cosmeticThread' && <CosmeticThreadPanel f={f} />}
+    </>
+  );
+}
+
+export function PropertyManager() {
+  const editing = useStore((s) => s.editing);
+  const doc = useStore((s) => s.doc);
+  const result = useStore((s) => s.result);
+  if (!editing) return null;
+  const f = findFeature(doc, editing.featureId);
+  if (!f) return null;
+  const isSketchPlane = editing.kind === 'sketchPlane';
+  const sketching = editing.kind === 'sketch';
+  // Like the message box at the top of a SolidWorks PropertyManager: why the feature cannot be built yet.
+  const status = sketching || isSketchPlane ? undefined : result?.features.find((r) => r.id === f.id);
+  return (
+    <div className="property-manager" data-help={currentTopicId()}>
+      <div className="pm-header">
+        <Icon name={f.type} />
+        <span className="pm-title">
+          {isSketchPlane ? `${t('pm.editSketchPlane')}: ${f.name}` : sketching ? `${t('pm.editSketch')}: ${f.name}` : `${featureLabel(f)}: ${f.name}`}
+        </span>
+        <button className="pm-ok" title={sketching ? t('pm.exitSketch') : t('pm.ok')} onClick={() => store.commitEdit()}>
+          <Icon name="ok" />
+        </button>
+        <button className="pm-cancel" title={sketching ? t('pm.discardChanges') : t('pm.cancel')} onClick={() => store.cancelEdit()}>
+          <Icon name="cancel" />
+        </button>
+      </div>
+      {status?.status === 'error' && <p className="pm-message error-text">{status.message}</p>}
+      {f.type === 'sketch' && (isSketchPlane ? <SketchPlanePanel f={f} /> : <SketchPanel f={f} />)}
+      <FeatureParams f={f} />
     </div>
   );
 }

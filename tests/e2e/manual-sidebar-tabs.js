@@ -167,7 +167,7 @@ M.run = async () => {
     return { pass: t[0].selected === 'true' && t[1].disabled === true && p[0].hidden === false && p[1].hidden === true && !document.querySelector('[data-selection-panel]'), tabs: t, panes: p };
   });
 
-  await step('6 a click in the tree stays in the tree; the properties page can still be opened for the feature, and 「編輯特徵」 starts the session', async () => {
+  await step('6 a click in the tree stays in the tree; the properties page shows the feature\'s parameters and edits them with no session open, and 「編輯特徵」 starts the session', async () => {
     const row = [...document.querySelectorAll('.feature-tree .tree-row')].filter((r) => H.rowName(r) === 'eb').at(-1);
     if (!row) throw new Error('no eb row in the tree');
     row.click();
@@ -184,6 +184,24 @@ M.run = async () => {
       title: panel.querySelector('.sw-pm-title strong')?.textContent ?? '',
       sub: panel.querySelector('.sw-pm-title span')?.textContent ?? '',
     };
+    // §2.2: the properties page lays out the feature's parameter groups — the very ones a session shows (「方向 1」 with the depth in it)
+    const heads = [...panel.querySelectorAll('.pm-group h4')].map((h) => h.textContent);
+    const depthRow = [...panel.querySelectorAll('.pm-group .pm-row')].find((r) => r.querySelector('span')?.textContent === '深度');
+    const depthInput = depthRow?.querySelector('input');
+    if (!depthInput) throw new Error('no depth field in the properties page');
+    const depthBefore = depthInput.value;
+    const ebFeature = () => store.getState().doc.features.find((f) => f.id === 'eb');
+    const plateVolume = () => Math.max(...store.getState().result.bodies.map((b) => b.volume));
+    // typing a depth here writes an immediate command (no session, one undo step) and the model is rebuilt from it
+    await typeIn(depthInput, '18');
+    depthInput.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+    await H.waitFor(() => ebFeature()?.dir1.depth === '18', 10000, 'the depth to be written');
+    await H.waitFor(() => Math.abs(plateVolume() - 120 * 80 * 18) < 1, 20000, 'the plate to be rebuilt 18 deep');
+    const edited = { depth: ebFeature().dir1.depth, volume: plateVolume(), session: !!document.querySelector('.property-manager .pm-ok') };
+    await H.ctrl('z');
+    await H.waitFor(() => ebFeature()?.dir1.depth === '15', 10000, 'the depth to be undone');
+    await H.waitFor(() => Math.abs(plateVolume() - 120 * 80 * 15) < 1, 20000, 'the plate to be back');
+    const undone = { depth: ebFeature().dir1.depth, volume: plateVolume() };
     const edit = panel.querySelector('[data-action="editFeature"]');
     edit.click();
     await H.waitFor(() => store.getState().editing?.featureId && document.querySelector('.sw-pane:not([hidden]) .property-manager .pm-title')?.textContent.includes('eb'), 10000, 'the session');
@@ -195,10 +213,17 @@ M.run = async () => {
       pass:
         afterTreeClick[0].selected === 'true' && afterTreeClick[1].disabled === false &&
         rows.title === '特徵' && rows.sub === 'eb' && rows.name === 'eb' && rows.kind.length > 0 && rows.state === '正常' &&
+        heads.includes('方向 1') && depthBefore === '15' &&
+        edited.depth === '18' && Math.abs(edited.volume - 172800) < 1 && !edited.session &&
+        undone.depth === '15' && Math.abs(undone.volume - 144000) < 1 &&
         inSession.panel && !inSession.selectionPanel &&
         tabs()[0].selected === 'true',
       afterTreeClick,
       rows,
+      heads,
+      depthBefore,
+      edited,
+      undone,
       inSession,
     };
   });
