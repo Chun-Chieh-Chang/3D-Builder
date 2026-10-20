@@ -1,5 +1,52 @@
 # 3D-Builder 開發日誌 (DEV_LOG.md)
 
+## 2026-10-20：全面盤點與清理（[cleanup-candidates.md](docs/cleanup-candidates.md) 第三輪）＋文件同步
+
+### 1. 使用者的決定（選擇題）
+- 死碼：刪除沒有任何引用的；只有測試用到的保留並記錄。
+- `handoff.md`：歷史紀錄歸檔，只留現在。
+- 「投影曲線」的舊計畫：保留為候選，拿掉預定的編號。
+- 本機被忽略的檔案：移到資源回收筒；`scratch/` 和 `out/` 只移沒有被引用的。
+
+### 2. 程式（零功能變更）
+- 刪除 3 個沒有引用的匯出：`PRESET_FONT_IDS`、`threadEngagementHeight`、`externalThreadDepth`。
+- 刪除 28 個沒有引用的介面文字鍵，中英文各一份，共 56 行。每個候選都人工確認過不是在執行期組出的（`` `prefix.${…}` ``），完整清單見 cleanup-candidates §G。
+- 只有測試用到的 17 個匯出照舊保留。其中 4 個（`suggestScale`、`balloonItems`、`listThreadsBySystem`、`valueIn`）是寫好、測過但沒有接到畫面的功能，記為待決。
+
+### 3. 文件
+- **`handoff.md` 365 KB → 133 KB**：
+  - 2026-10-12～19 的交付紀錄與舊 §0.0–0.2 移到 `docs/handoff-history.md`，內容沒有改寫，只修連結；
+  - 新的〇（現況表：Schema 71／7／25、ADR 0001–0174、e2e 140 支、實機清單 90 項）與一（下一步）；
+  - §3 改名為「各階段的狀態紀錄」並註明以當天為準；§8 補上清單的現值；
+  - 刪除過時的「`spike/occt-gaps` 可以刪除」（該分支已不存在）。
+- **文件地圖補齊**：原本缺 ADR 0123–0174 共 52 份，以及 `docs/` 的 22 份文件；這些列的說明都取自各檔案自己的標題。
+- **自相矛盾的修正**：handoff 的「下一步」把投影曲線預定為 ADR 0170／Schema 68，但這兩個號碼已被 G1 使用，改為不預定編號；歷史紀錄中的裝飾螺紋 ADR 0129 更正為 0156。
+- **失效連結 15 → 0**：14 個是另一台電腦的 `file:///e:/…` 絕對路徑，改為相對連結；`docs/handoff-history.md` 到 `phase1-verification.md` 的相對路徑改正；一個指向從未存在的 `views.ts` 的連結改為純文字並加註。
+- **README**：ADR 範圍由 0117 改為 0174；實機清單由 84 項改為 90 項；文件表補上 DEV_LOG、AGENTS；結構補上 `tests/kit`，並在 `scripts` 列補上反模式、效能、doctor、verify-ui。
+- **AGENTS.md §4**：新增 6 條從本次工作萃取的規則：
+  1. `verify:ui` 跑的期間自己也不能改原始碼；
+  2. 版本測試的寫法；
+  3. 真值要分層；
+  4. harness 的下載要導向暫存資料夾；
+  5. 計畫文件不預先佔用編號；
+  6. e2e 點選的座標與遮擋。
+
+### 4. 本機檔案（不在版本庫，已移到資源回收筒，可以還原）
+- `dev.log`、`thread-solo.log`、`selection-board.html`、`task_plan.md`、`findings.md`、`progress.md`、`test-output/`；
+- `scratch/` 中沒有被引用的 110 項、`out/` 的 41 項。
+
+保留 12 項被引用的證據，以及 `sync.ffs_db`。
+
+### 5. 沒有處理、只記錄
+- `git worktree list` 中有 3 個指向另一台電腦路徑（`C:/Users/ws61/…`）的 prunable 項目；
+- 本機分支 `drawing-partial-section`；
+- `laptop/*` 遠端。
+
+這些屬於版本庫的狀態，不是文件，沒有使用者的指示不動。
+
+### 6. 回歸防護
+- 全閘門與完整 `verify:ui`：（待填）
+
 ## 2026-10-20：`verify:ui` 的匯出檔不再寫進使用者的「下載」資料夾
 
 ### 現象

@@ -42,3 +42,43 @@
 重新掃描（同一種方法）：沒被引用的匯出 2 個（`slideAt`、`arcSlideAt`，工程圖尺寸改成在圖上拖之後留下的）、沒被引用的文字鍵 2 個（`drawingUi.dimTolUnit`、`measure.units`；`sketch.hint.slot1/2/3` 是動態組出來的，不算）——**已刪**。檢出目錄裡的舊檔案組 `3DB實機確認/`（被 `.gitignore` 排除，與 `D:\3DB實機確認` 重複）已刪，其中使用者可能自己存的 `零件1.3dbx` 先複製到 `D:\3DB實機確認` 才刪；舊的桌面版安裝檔 `3D-Builder_0.1.0_x64-setup.exe` 已刪（`desktop.exe` 在 2026-10-09 重打時已更新）。
 
 **沒刪的與原因**：B 的 11 個「只有測試用到的匯出」是 DXF、PDF、STL 的讀取器與量測，驗收測試靠它們證明輸出是對的，不是死碼；`spikes/occt-gaps` 是 ADR 0017 等的證據，刪了文件會指到不存在的檔案。這兩項如果要刪，要連測試或 ADR 一起改。
+
+## G. 2026-10-20 的第三輪（使用者決定：刪掉沒有引用的，只有測試用到的保留並記錄）
+
+掃描方法同上：
+- **匯出**：278 個原始檔，比對整個版本庫，排除定義所在的那一行。
+- **介面文字鍵**：3859 個 zh-TW 鍵。排除 `help.*`；排除 47 個在執行期組出鍵名的前綴；再對每個候選以 `` `prefix.${…}` `` 形式逐一人工確認。
+
+**已刪**：
+- 沒有任何引用的匯出 3 個：
+  - `PRESET_FONT_IDS`（`packages/drawing/src/fonts.ts`）；
+  - `threadEngagementHeight`、`externalThreadDepth`（`packages/model/src/threadStandards.ts`），以及只說明它們的註解。
+- 沒有引用的介面文字鍵 28 個，中英文各一份，共 56 行：
+  - `pm.pattern.curveHint`、`pm.pattern.modeLinear`、`pm.pattern.modeCircular`、`pm.pattern.modeCurve`；
+  - `drawingUi.titleBlock`、`drawingUi.views`、`drawingUi.breakFrom`、`drawingUi.breakTo`、`drawingUi.derived`、`drawingUi.selectParent`、`drawing.dimAssembly`、`drawingUi.pdfFontPreset`、`drawingUi.annList`；
+  - `drawingUi.cmd.projected`、`.dimension`、`.note`、`.datum`、`.fcf`、`.centreMark`、`.centreLine`、`.surface`、`drawingUi.taskPane`；
+  - `pm.thread.autoLength`、`pm.knurl.axisEmpty`、`pm.split.title`、`pm.moveCopyBody.title`、`pm.deleteKeepBody.title`、`pm.jog.title`。
+
+  另外 `sketch.hint.slot1/2/3` 是在執行期組出的，不算。
+
+**保留（只有測試用到）**：
+- B 類 11 個：讀取器與量測，加上 `standardTolerance`、`resetHelp`、`pictureCorners`。
+- `registerTranslation`、`placeholdersOf`：翻譯測試的機制。
+- `fundamentalTriangleHeight`：刪掉上面兩個之後，只剩 ISO 68-1 的測試用到它。
+- 4 個產品沒有呼叫、只有測試覆蓋的功能函式：
+  - `suggestScale`（工程圖比例建議，C16.1）；
+  - `balloonItems`（組合件視圖的號球）；
+  - `listThreadsBySystem`；
+  - `valueIn`。
+
+  它們是「寫好、測過，但沒有接到畫面」的功能，要嘛接線，要嘛連測試一起刪，**留給使用者決定**。
+
+**本機、不在版本庫的檔案**：已移到資源回收筒，可以還原。
+- `dev.log`、`thread-solo.log`、`selection-board.html`、`task_plan.md`、`findings.md`、`progress.md`、`test-output/`；
+- `scratch/` 中沒有被任何追蹤檔案提到的 110 項、`out/` 的 41 項。
+
+**有被 ADR、DEV_LOG 或 handoff 提到的證據**都留著：
+- `scratch/`：`drawing-feasibility-2026-10-11.md`、審查報告、決策頁、`diagnostics/`、兩份 worktree 備份、`drawing-parts/`、客戶零件等 11 項；
+- `out/shots-sidebar/`。
+
+`sync.ffs_db`（FreeFileSync）沒有動。
