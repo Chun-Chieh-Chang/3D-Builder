@@ -14,7 +14,7 @@
 |---|---|
 | 零件／組合件／工程圖 Schema | 71／7／25 |
 | ADR | 0001–0174，共 174 份，在 `docs/adr/`，全部列在 §2 |
-| 全閘門 `npm run check` | 見 [DEV_LOG.md](DEV_LOG.md) 最上方的條目（2026-10-20 清理後重跑） |
+| 全閘門 `npm run check` | 3226 通過、0 失敗、25 略過；完整 `verify:ui` 152/152（2026-10-20） |
 | 瀏覽器腳本 | `tests/e2e/` 共 140 支（`npm run verify:ui`） |
 | 實機驗證清單 | [docs/manual-verification.html](docs/manual-verification.html) 90 項 |
 | 階段 | Phase 0–7 開發完成。Phase 0–2 閘門通過；3a–7 有條件通過：只用手算的金樣與種子固定的隨機測試驗過，尚未用真實檔案對照（§3、§8） |

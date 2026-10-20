@@ -18,7 +18,47 @@ export type P2 = [number, number];
  * What a dimension can be attached to: everything the worker found except the sides of cylinders, and (D-I2) the straight edges and the vertices of the model the
  * view shows, by name.
  */
-export type Pickable = Exclude<ViewFeature, { type: 'axis' }> | EdgePick | VertexPick | OutlinePick;
+export type Pickable = Exclude<ViewFeature, { type: 'axis' }> | LinePick | EdgePick | VertexPick | OutlinePick;
+
+/**
+ * A line of a view that is a plane seen edge-on (or a slanted face), with the straight edge of the model drawn on it where it was pointed at, when there is one: what
+ * a line pointed at alone is measured by — its length, between the edge's two ends, as SolidWorks's Smart Dimension does.
+ */
+export type LinePick = Extract<ViewFeature, { type: 'plane' | 'slant' }> & { along?: EdgePick };
+
+/**
+ * What kind of dimension the tool makes: `smart` works it out from what was pointed at (SolidWorks's Smart Dimension); the others are the kinds asked for by name,
+ * as SolidWorks's Horizontal, Vertical, ... dimension tools. One that cannot be made from what was pointed at is refused with the reason, never turned into another.
+ */
+export type DimensionMode = 'smart' | 'horizontal' | 'vertical' | 'aligned' | 'radius' | 'diameter' | 'angle';
+export const DIMENSION_MODES: readonly DimensionMode[] = ['smart', 'horizontal', 'vertical', 'aligned', 'radius', 'diameter', 'angle'];
+
+/** What an element pointed at is, as the right-click menu tells them apart (ADR 0175). */
+export type PickKind = 'line' | 'vertex' | 'circle' | 'arc' | 'fillet' | 'outline';
+export const pickKind = (f: Pickable): PickKind =>
+  f.type === 'vertex' ? 'vertex' : f.type === 'circle' ? (f.full ? 'circle' : 'arc') : f.type === 'torus' ? 'fillet' : f.type === 'outline' ? 'outline' : 'line';
+
+/**
+ * The kinds of dimension that can be started from an element (ADR 0175), the one it makes alone first: what the right-click menu of the element offers. Each can be
+ * made from it — alone (a line's length, a circle's diameter) or with a second element pointed at next; none is offered that `planDimension` would refuse for it
+ * whatever the second one is.
+ */
+export function dimensionModesFor(f: Pickable): DimensionMode[] {
+  switch (pickKind(f)) {
+    case 'line':
+      return ['smart', 'horizontal', 'vertical', 'aligned', 'angle'];
+    case 'vertex':
+      return ['smart', 'horizontal', 'vertical', 'aligned'];
+    case 'circle':
+      return ['diameter', 'radius', 'smart', 'horizontal', 'vertical', 'aligned'];
+    case 'arc':
+      return ['radius', 'diameter', 'smart', 'horizontal', 'vertical', 'aligned'];
+    case 'fillet':
+      return ['radius'];
+    case 'outline':
+      return ['diameter', 'smart', 'horizontal', 'vertical'];
+  }
+}
 
 /**
  * One of the two outlines of a whole cylinder seen from the side (D-I2, ADR 0138): the line drawn `radius` off its axis, left (1) or right (-1) of it. It is the
@@ -117,7 +157,29 @@ export function featureAt(lines: ViewLines | null | undefined, features: readonl
       else if (f.type === 'torus') offer(f, Math.abs(hyp(p[0] - f.at[0], p[1] - f.at[1]) - f.radius));
     }
   }
-  return (best as { f: Pickable } | null)?.f ?? null;
+  const found = (best as { f: Pickable } | null)?.f ?? null;
+  // a line that is a plane or a slanted face: the model's straight edge drawn on it where the pointer is, which is what the line alone is measured by
+  if (found && (found.type === 'plane' || found.type === 'slant')) {
+    let along: { e: EdgePick; d: number } | null = null;
+    for (const e of seen?.edges ?? []) {
+      const d = segmentDistance(p, e.a, e.b);
+      if (d <= tol && onLine(e, found) && (!along || d < along.d)) along = { e, d };
+    }
+    if (along) return { ...found, along: along.e };
+  }
+  return found;
+}
+
+/** Whether a straight edge of the view lies on the line a plane seen edge-on (or a slanted face) is drawn as. */
+function onLine(e: EdgePick, f: Extract<ViewFeature, { type: 'plane' | 'slant' }>): boolean {
+  // an edge seen end-on is a point on the line, with no length to measure
+  if (hyp(e.b[0] - e.a[0], e.b[1] - e.a[1]) < 1e-6) return false;
+  if (f.type === 'plane') {
+    const k = f.axis === 'x' ? 0 : 1;
+    return Math.abs(e.a[k] - f.coord) < 1e-3 && Math.abs(e.b[k] - f.coord) < 1e-3;
+  }
+  const off = (q: P2) => Math.abs((q[0] - f.at[0]) * f.dir[1] - (q[1] - f.at[1]) * f.dir[0]);
+  return off(e.a) < 1e-2 && off(e.b) < 1e-2;
 }
 
 /** What the model would say of an element, made from what a view knows of it: enough for a dimension to be drawn before the worker has been asked (the part's frame is the view's: x right, y up, the rest along the view). */
@@ -195,8 +257,42 @@ export function dragDimension(handle: DimensionHandle, onText: boolean, p: P2): 
  */
 export type Plan = { draft: DimensionDraft; refs: Pickable[]; facts: ElementFacts[] } | { need: 'second' } | { error: string };
 
-export function planDimension(picks: readonly Pickable[], p: P2, placed: PlacedView, axes: ViewAxes): Plan {
-  if (!picks.some((f) => f.type === 'outline')) return planPlain(picks, p, placed, axes);
+export function planDimension(picks: readonly Pickable[], p: P2, placed: PlacedView, axes: ViewAxes, mode: DimensionMode = 'smart'): Plan {
+  if (!DIMENSION_MODES.includes(mode)) return { error: t('drawing.dimBadMode', { mode: String(mode) }) };
+  if (!p.every(Number.isFinite)) return { error: t('drawing.badPosition') };
+  if (mode === 'radius' || mode === 'diameter') return planRound(picks, p, placed, axes, mode);
+  if (mode === 'angle') {
+    if (picks.length < 2) return { need: 'second' };
+    const plan = planSmart(picks, p, placed, axes);
+    return 'draft' in plan && plan.draft.kind !== 'angle' ? { error: t('drawing.dimNeedsAngle') } : plan;
+  }
+  const force = mode === 'smart' ? undefined : mode;
+  // a circle or an arc alone is a diameter or a radius: asked for as a distance along a way, it is said what it is measured by instead
+  if (force && picks.length === 1 && (picks[0]!.type === 'circle' || picks[0]!.type === 'torus')) return { error: t('drawing.dimModeRound') };
+  const plan = planSmart(picks, p, placed, axes, force);
+  if (!force || !('draft' in plan)) return plan;
+  if (plan.draft.kind !== 'linear') return { error: t('drawing.dimModeDirection', { mode: t(`drawingUi.dimMode.${force}`) }) };
+  // the way asked for is the way it runs; an aligned one between two parallel lines square to x or y is the same distance as the one across them, and is that one
+  const across = force === 'aligned' && plan.refs.some((f) => f.type === 'plane');
+  if (plan.draft.orientation !== force && !across) return { error: t('drawing.dimModeDirection', { mode: t(`drawingUi.dimMode.${force}`) }) };
+  return plan;
+}
+
+/** A diameter or a radius asked for by name: of a circle or an arc seen in its true shape; a fillet has only its radius; a cylinder seen from the side its diameter. */
+function planRound(picks: readonly Pickable[], p: P2, placed: PlacedView, axes: ViewAxes, kind: 'radius' | 'diameter'): Plan {
+  if (picks.length === 0) return { need: 'second' };
+  if (picks.length > 1) return { error: t('drawing.dimModeNotRound') };
+  const f = picks[0]!;
+  if (f.type === 'outline') return kind === 'diameter' ? planSmart(picks, p, placed, axes) : { error: t('drawing.dimModeNotRound') };
+  if (f.type === 'torus') return kind === 'radius' ? planSmart(picks, p, placed, axes) : { error: t('drawing.dimFilletRadius') };
+  if (f.type !== 'circle') return { error: t('drawing.dimModeNotRound') };
+  const plan = planSmart(picks, p, placed, axes);
+  if (!('draft' in plan) || plan.draft.kind === kind) return plan;
+  return { ...plan, draft: { ...(plan.draft as Extract<DimensionDraft, { kind: 'radius' | 'diameter' }>), kind } };
+}
+
+function planSmart(picks: readonly Pickable[], p: P2, placed: PlacedView, axes: ViewAxes, force?: Orientation): Plan {
+  if (!picks.some((f) => f.type === 'outline')) return planPlain(picks, p, placed, axes, force);
   // an outline (D-I2): the cylinder's face, measured from its side
   const box = { left: placed.at[0] - placed.w / 2, right: placed.at[0] + placed.w / 2, bottom: placed.at[1] - placed.h / 2, top: placed.at[1] + placed.h / 2 };
   const sheetOf = (x: number, y: number): P2 => toSheet(placed, x, y);
@@ -220,7 +316,7 @@ export function planDimension(picks: readonly Pickable[], p: P2, placed: PlacedV
     if (Math.abs(f.axisDir[1]) < 1e-6) return { type: 'plane', ref: f.ref, axis: 'y', coord: f.from[1], area: 0 };
     return { type: 'slant', ref: f.ref, at: mid(f.from, f.to), dir: f.axisDir, area: 0 };
   };
-  const plan = planPlain([asLine(a), asLine(b)], p, placed, axes);
+  const plan = planPlain([asLine(a), asLine(b)], p, placed, axes, force);
   if (!('draft' in plan)) return plan;
   if (plan.draft.kind !== 'linear') return { error: t('drawing.dimNoOutline') };
   return {
@@ -232,19 +328,24 @@ export function planDimension(picks: readonly Pickable[], p: P2, placed: PlacedV
 
 const mid = (a: P2, b: P2): P2 => [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2];
 
-function planPlain(picks: readonly Pickable[], p: P2, placed: PlacedView, axes: ViewAxes): Plan {
+type Orientation = 'horizontal' | 'vertical' | 'aligned';
+
+function planPlain(picks: readonly Pickable[], p: P2, placed: PlacedView, axes: ViewAxes, force?: Orientation): Plan {
   const facts = picks.map((f) => factsOf(f, axes));
   const box = { left: placed.at[0] - placed.w / 2, right: placed.at[0] + placed.w / 2, bottom: placed.at[1] - placed.h / 2, top: placed.at[1] + placed.h / 2 };
   const sheetOf = (x: number, y: number): P2 => toSheet(placed, x, y);
   if (picks.length === 0) return { need: 'second' };
-  if (picks.length === 1 && picks[0]!.type === 'edge') {
-    // a straight edge alone: its length, between its two ends (SolidWorks): along x or y when it lies so on the sheet, else along itself
-    const e = picks[0]!;
+  // a line pointed at alone is the model's edge drawn on it there: its length
+  const alone = picks.length === 1 ? picks[0]! : null;
+  const edge: EdgePick | undefined = alone?.type === 'edge' ? alone : alone && (alone.type === 'plane' || alone.type === 'slant') ? (alone as LinePick).along : undefined;
+  if (edge) {
+    // a straight edge alone: its length, between its two ends (SolidWorks): along x or y when it lies so on the sheet, else along itself — or the way asked for
+    const e = edge;
     if (!e.ends[0] || !e.ends[1]) return { need: 'second' };
     const ends: Pickable[] = [{ type: 'vertex', ref: e.ends[0], at: e.a, depth: e.depth }, { type: 'vertex', ref: e.ends[1], at: e.b, depth: e.depth }];
     const dx = Math.abs(e.b[0] - e.a[0]);
     const dy = Math.abs(e.b[1] - e.a[1]);
-    const orientation = dy < 1e-6 ? 'horizontal' : dx < 1e-6 ? 'vertical' : 'aligned';
+    const orientation = force ?? (dy < 1e-6 ? 'horizontal' : dx < 1e-6 ? 'vertical' : 'aligned');
     const plan = linearDraft(ends[0]!, ends[1]!, orientation, p, placed, box, sheetOf);
     return 'error' in plan ? plan : { draft: plan.draft, refs: ends, facts: ends.map((f) => factsOf(f, axes)) };
   }
@@ -318,6 +419,7 @@ function planPlain(picks: readonly Pickable[], p: P2, placed: PlacedView, axes: 
     const planeB = b.type === 'plane' ? b.axis : null;
     let orientation: 'horizontal' | 'vertical' | 'aligned';
     if (planeA ?? planeB) orientation = (planeA ?? planeB) === 'x' ? 'horizontal' : 'vertical';
+    else if (force) orientation = force;
     else {
       const above = p[1] > box.top || p[1] < box.bottom;
       const beside = p[0] > box.right || p[0] < box.left;
@@ -333,6 +435,11 @@ function planPlain(picks: readonly Pickable[], p: P2, placed: PlacedView, axes: 
   const axisB = planeAxis(b);
   if (axisA && axisB && axisA !== axisB) return { error: t('drawing.dimNotAcross') };
   if (axisA ?? axisB) orientation = (axisA ?? axisB) === 'x' ? 'horizontal' : 'vertical';
+  else if (force === 'aligned') {
+    // two circles' middles, the true distance between them
+    const plan = linearDraft(a, b, 'aligned', p, placed, box, sheetOf);
+    return 'error' in plan ? plan : { draft: plan.draft, refs: original, facts };
+  } else if (force) orientation = force;
   else {
     const above = p[1] > box.top || p[1] < box.bottom;
     const beside = p[0] > box.right || p[0] < box.left;

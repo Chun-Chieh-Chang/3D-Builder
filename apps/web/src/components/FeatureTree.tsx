@@ -9,6 +9,12 @@ import { DATUM_ITEMS, featureLabel, SKETCH_STATUS_PREFIX } from '../strings';
 import { Icon } from './Icon';
 import { ContextMenu } from './ContextMenu';
 import { treeFilterMatches, treeNeedle } from './treeFilter';
+import { consumedSketchesOf } from '../state/featureSketches';
+import { command, type MenuEntry } from '../contextMenus';
+import { MenuEntries } from './GraphicsMenu';
+
+/** A line the tree shows only when it can be done now (editing above the rollback bar, hiding what can be hidden), as it always has. */
+const enabledEntry = (e: MenuEntry) => e.kind !== 'command' || !e.disabled;
 
 interface Menu {
   x: number;
@@ -21,33 +27,6 @@ interface BodyMenu {
   x: number;
   y: number;
   id: Id;
-}
-
-/** Returns the sketch IDs consumed by a feature to build its 3D geometry. */
-function consumedSketchesOf(f: Feature): Id[] {
-  switch (f.type) {
-    case 'extrude':
-    case 'revolve':
-    case 'hole':
-    case 'rib':
-    case 'vent':
-    case 'splitLine':
-    case 'trimSurface':
-    case 'baseFlange':
-    case 'midBend':
-    case 'jog':
-    case 'snapHook':
-    case 'snapCatch':
-      return f.sketch ? [f.sketch] : [];
-    case 'sweep':
-      return [f.sketch, f.path].filter((x): x is Id => !!x);
-    case 'thread':
-      return f.sketch ? [f.sketch] : [];
-    case 'loft':
-      return [...f.sections];
-    default:
-      return [];
-  }
 }
 
 /**
@@ -586,9 +565,8 @@ export function FeatureTree() {
 
       {menu && (
         <ContextMenu x={menu.x} y={menu.y} onPointerDown={(e) => e.stopPropagation()}>
-          {doc.features.indexOf(menu.feature) < rollback && (
-            <li onClick={act(() => store.beginEdit(menu.feature.id))}>{menu.feature.type === 'sketch' ? t('tree.editSketch') : t('tree.editFeature')}</li>
-          )}
+          {/* the commands a right click on the feature's faces offers too (ADR 0176): the feature is the one selected, so they work on it */}
+          <MenuEntries items={[{ ...command(store.getState(), 'edit-feature'), ...(menu.feature.type === 'sketch' ? { label: t('tree.editSketch') } : {}) } as MenuEntry].filter(enabledEntry)} onClose={() => setMenu(null)} />
           {menu.feature.type === 'sketch' && doc.features.indexOf(menu.feature) < rollback && (
             <li onClick={act(() => store.beginEditSketchPlane(menu.feature.id))}>{t('tree.editSketchPlane')}</li>
           )}
@@ -598,15 +576,13 @@ export function FeatureTree() {
               <li onClick={act(() => store.suppress(menu.feature.id, 'unsuppressWithDependents'))}>{t('tree.unsuppressDeps')}</li>
             </>
           ) : (
-            <li onClick={act(() => store.suppress(menu.feature.id, 'suppress'))}>{t('tree.suppress')}</li>
+            <MenuEntries items={[command(store.getState(), 'suppress-feature')]} onClose={() => setMenu(null)} />
           )}
-          {isHideable(doc, menu.feature.id) && (
-            <li onClick={act(() => store.setVisibility([menu.feature.id], !isShown(doc, menu.feature.id)))}>{isShown(doc, menu.feature.id) ? t('tree.hide') : t('tree.show')}</li>
-          )}
+          <MenuEntries items={[command(store.getState(), 'toggle-visibility')].filter(enabledEntry)} onClose={() => setMenu(null)} />
           <li onClick={act(() => setRenamingFeature(menu.feature.id))}>{t('tree.renameFeature')}</li>
           <li onClick={act(() => setNoting(menu.feature))}>{t('tree.editNote')}</li>
           {menu.feature.folder ? <li onClick={act(() => store.leaveFolder(menu.feature.id))}>{t('tree.leaveFolder')}</li> : <li onClick={act(() => store.newFolder(menu.feature.id))}>{t('tree.intoFolder')}</li>}
-          <li onClick={act(() => store.requestDelete(menu.feature.id))}>{t('tree.delete')}</li>
+          <MenuEntries items={[command(store.getState(), 'delete-feature')]} onClose={() => setMenu(null)} />
           <li className="separator" />
           <li onClick={act(() => store.rollTo(menu.feature.id))}>{t('tree.rollHere')}</li>
           {doc.rollbackIndex !== null && <li onClick={act(() => store.rollTo(null))}>{t('tree.rollEnd')}</li>}
@@ -626,7 +602,7 @@ export function FeatureTree() {
           };
           return (
             <ContextMenu x={bodyMenu.x} y={bodyMenu.y} onPointerDown={(e) => e.stopPropagation()}>
-              <li onClick={done(() => store.setVisibility([bodyKey(b.id)], !b.shown))}>{t(b.shown ? 'tree.hide' : 'tree.show')}</li>
+              <MenuEntries items={[command(store.getState(), 'toggle-visibility')]} onClose={() => setBodyMenu(null)} />
               <li onClick={done(() => setRenaming(b.id))}>{t('tree.rename')}</li>
               <li onClick={done(() => store.setBody(b.id, { reference: !b.reference }))}>{t(b.reference ? 'tree.unmakeReference' : 'tree.makeReference')}</li>
             </ContextMenu>

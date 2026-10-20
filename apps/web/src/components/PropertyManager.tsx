@@ -14,7 +14,6 @@ import {
   MAX_INSTANCES,
   Parameters,
   patternInstances,
-  isSketchAxis,
   SKETCH_AXIS_H,
   SKETCH_AXIS_V,
   SKETCH_ORIGIN,
@@ -99,7 +98,8 @@ import {
   type SketchFeature,
 } from '@3db/model';
 import type { RebuildPayload, SketchSolvePayload } from '../worker/protocol';
-import { applicableRelations, constraintsOf, dimensionText, measuredText, sameRelation } from '@3db/sketch/interact';
+import { dimensionText, measuredText } from '@3db/sketch/interact';
+import { relationsOffered } from '../sketcher/relationsOffered';
 import { nearestElement } from '../state/candidates';
 import { store, useSketcherView, useStore, type FilletGroup } from '../state/store';
 import { accepts, axisDefinitionFor, fill, filled, planeDefinitionFor, pointDefinitionFor, slotsOf } from '../state/datumSlots';
@@ -512,10 +512,8 @@ function SketchPanel({ f }: { f: SketchFeature }) {
   const view = useSketcherView();
   const sketcher = store.sketcher;
   const selection = view?.selection ?? [];
-  const entityIds = selection.filter((id) => id === SKETCH_ORIGIN || isSketchAxis(id) || f.entities.some((e) => e.id === id));
+  const { entityIds, existing, offered } = relationsOffered(f, solve, selection);
   const curves = f.entities.filter((e) => e.type !== 'point' && entityIds.includes(e.id));
-  const existing = constraintsOf(f.constraints, entityIds);
-  const offered = solve ? applicableRelations(solve.geometry, entityIds, f).filter((r) => !existing.some((c) => sameRelation(c, r))) : [];
   const dims = f.constraints.filter(isDimension);
   const conflicting = solve?.conflicting.map((id) => describe(f, id)) ?? [];
   const isPointId = (id: Id) => f.entities.some((e) => e.id === id && e.type === 'point');

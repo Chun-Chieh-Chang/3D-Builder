@@ -135,6 +135,7 @@
   ],
   "C21": [
     "concept.selection",
+    "edit-feature",
     "filter-bar",
     "clear-filters"
   ],
@@ -275,7 +276,14 @@
     "tool-circle"
   ],
   "F3": [
-    "concept.drawing-dimensions"
+    "concept.drawing-dimensions",
+    "drw-dimension",
+    "drw-dim-horizontal",
+    "drw-dim-vertical",
+    "drw-dim-aligned",
+    "drw-dim-angle",
+    "drw-dim-radius",
+    "drw-dim-diameter"
   ],
   "F4": [
     "concept.drawing-dimensions"

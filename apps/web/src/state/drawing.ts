@@ -58,7 +58,7 @@ import {
   type ViewCorner } from '@3db/model';
 import { drawingFileName, writeDrawingFile } from '@3db/io';
 import { alignCollinear, arrangeDimensions, attachedAnnotations, FontError, SHADE_SHEET_PX, readTrueType, resolveLines, sectionMissed, toDxf, toPdf, turnLines, visibleElements, type TrueTypeFont, type VisibleElements } from '@3db/drawing';
-import { autoDimensions, buildScene, type DimensionDraft, type Pickable, FIRST_OFFSET, OFFSET_STEP, ratio, scaleOf, STANDARD_SCALES, centreViews, fitViews, toSvg, type AutoDimensionOptions, type DimensionOutcome, type ElementsResult, type HoleRow, type PlacedView, type ViewBom, type Scene, type ViewLines } from '@3db/drawing';
+import { autoDimensions, buildScene, type DimensionDraft, type DimensionMode, type Pickable, FIRST_OFFSET, OFFSET_STEP, ratio, scaleOf, STANDARD_SCALES, centreViews, fitViews, toSvg, type AutoDimensionOptions, type DimensionOutcome, type ElementsResult, type HoleRow, type PlacedView, type ViewBom, type Scene, type ViewLines } from '@3db/drawing';
 import type { Remote } from 'comlink';
 import { download, fileIn, pathIn, pickDrawingSaveTarget, pickFontFile, writeFile } from '../files';
 import type { KernelApi } from '../worker/protocol';
@@ -131,8 +131,12 @@ export type AnnotateWhat = Annotation['kind'];
 /** Omit over each member of a union (the plain Omit merges them). */
 type DistributiveOmit<T, K extends keyof never> = T extends unknown ? Omit<T, K> : never;
 
+/** An element of a view pointed at for a dimension. */
+export type DimensionSeed = { view: Id; feature: Pickable };
+
 export type DrawingTool =
-  | { kind: 'dimension'; picks: { view: Id; feature: Pickable }[] }
+  /** The dimension tool: what has been pointed at so far, and the kind asked for (none: 智慧型尺寸, worked out from what is pointed at; ADR 0175). */
+  | { kind: 'dimension'; picks: DimensionSeed[]; mode?: Exclude<DimensionMode, 'smart'> }
   | { kind: 'section'; vertical?: boolean; slant?: boolean; path?: 'stepped' | 'aligned' }
   /** A local (partial) section of `parent` inside a closed outline (B1); the depth is how far the cut goes. */
   | { kind: 'sectionLocal'; outlineKind: 'rectangle' | 'circle' | 'polygon'; depth: number }

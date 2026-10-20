@@ -1,5 +1,53 @@
 # 3D-Builder 開發日誌 (DEV_LOG.md)
 
+## 2026-10-20：零件、草圖、組合件畫面的右鍵選單（ADR 0176）
+
+### 現象與根因
+- 使用者：「很多功能都可以加進滑鼠右鍵選單。」審查報告 `docs/ui-interaction-audit.md` §8 第 1 批。
+- 零件畫面右鍵只有 PropertyManager 中的選取工具；草圖選取模式下右鍵沒有選單；組合件零組件選單缺結合／移動／旋轉且文字寫死中文（審查報告說組合件「沒有選單」有誤，`ComponentMenu` 早已存在）。設計樹與畫面各自呼叫 store，沒有共用的命令。
+
+### 變更
+- `actions.ts`：14 個只在右鍵出現的命令（`menuOnly`，`CommandBar` 不畫按鈕）；`contextFeature`／`contextVisibilityKey` 決定命令作用的對象。
+- `contextMenus.ts`：`partMenu`／`sketchMenu`／`assemblyMenu` 純函式，命令名稱與可否執行取自 `ACTIONS`；`GraphicsMenu.tsx` 繪製畫面選單（`data-action`、`data-graphics-menu`），`MenuEntries` 讓設計樹用同一批命令。
+- `SketchController`：`contextPick`、`selectChain`、`startDimension`；`relationsOffered` 由 PropertyManager 抽出共用。
+- `FeatureTree`、`AssemblyTree.ComponentMenu` 改用同一批命令；`AssemblyTree` 寫死的中文移到 i18n（基準 16 → 12）。
+- 一併修正：`tests/phase5/drawing-dimension-modes.test.ts` 第 167 行的型別（ADR 0175 留下的 2 個 typecheck 錯誤）。
+- 環境：worktree 沒有 `node_modules` 時 `@3db/*` 會解析到主資料夾的套件（型別錯誤全是假的）；Vite 也拒絕讀 worktree 以外的 WASM。改在 worktree 內 `npm install`（`package-lock.json` 未變）。
+
+### 使用者裁決後的補充（同日）
+- 右鍵本來就遵守選擇濾器（裁決頁的說明是讀碼錯誤）；未改程式碼，新增 e2e 步驟 5b 證明。
+- 面的選單加入「外觀」，對話框開啟時停在所選的最窄對象（e2e 6b：從面的右鍵開啟，對象為該面）。
+- `MovePanel`、`AssemblyViewport` 的中文移到 i18n（`asmui.*`、`movepm.*`），基準 177 → 145。
+- 審查報告「待查」兩項在 App 實測：無獨立的自動關係開關（關係與抓取綁定）；3D 畫面雙擊特徵只選取面、不顯示尺寸。皆列入第 6 批。
+
+### 紅隊四問（AGENTS §2）
+1. **輸入破壞**：右鍵點在空白、點在已選取的東西上、在 PropertyManager／量測中、在沒有網格的新零件上，各有明確結果（空白給視角選單；已選取的保持；編輯中只有選取工具；量測中沒有特徵指令）。不能做的命令一律反灰（非平面的「草圖」、組合件 PropertyManager 開著時全部），不偷偷改成別的動作。`startDimension` 兩個選取無法成對標註時只帶第一個，不自行猜測。
+2. **拓樸與幾何相交**：被擋在後面的面仍由「選取其他」處理（保留）；頂點、邊、面依 viewer 的點選順序（頂點優先）決定是哪一類選單；本功能不做任何布林或 WASM 配置。
+3. **依賴鏈完整性**：面／邊／頂點 → `ownerFeatures` → 特徵 → `consumedSketchesOf` → 草圖；本體由 `bodies[].face0/faces` 與 `topologyOf().edgeFaces` 找到（頂點沒有對照，故頂點不給「隱藏本體」，寫入 ADR §4）。每一個新命令都有 `help.*` 說明，`edit-feature` 有完整說明並接到手冊 C21（`docs/help-links.json`，手冊已同步）。
+4. **零 Mock 與真值**：e2e `manual-context-menus.js` 以真實右鍵事件（viewer 自己找指標下的元素）開選單，比對 `data-action` 清單，並在執行後檢查文件狀態（本體 `shown`、特徵 `suppressed`、圓角的 `edges`、量測的 pick、新限制條件的 `type`/`a`、構造線旗標、尺寸值＝線長、鏈＝矩形四邊、零組件 `hidden`/`suppressed`、結合／移動／插入 PropertyManager）。單元測試用真實 PlaneGCS 求解器驗證 `contextPick`、`selectChain`、`startDimension` 與加入關係。
+
+## 2026-10-20：工程圖尺寸類型與右鍵選單（ADR 0175）
+
+### 現象與根因
+- 使用者：「只能標註直徑；每次都要到『註記』點選標註太麻煩，應該在右鍵選單中點選。」
+- 實測：單選一條直線後點空白處只得到「再點選第二個元素」。`featureAt` 以面積優先把線判為側視平面，`planDimension` 對單一平面回 `need: 'second'`；只有圓單擊即可成立。右鍵選單沒有任何尺寸／註記指令。
+
+### 變更
+- `pick.ts`：`LinePick.along`（線下的模型直線邊）、單選直線＝線長、`DimensionMode` 七種、`planDimension(..., mode)` 不符即拒絕並說明、`dimensionModesFor`／`pickKind`。
+- `actions.ts`：六個尺寸類型命令（`parent: 'drw-dimension'`）、`DIMENSION_ACTION`、`startDimension`；`CommandBar` 主按鈕＋▾ 下拉；`DrawingViewMenu` 依對象（線／頂點／圓／圓弧／視圖／圖紙）列出同一份命令，另加剖面、細部、屬性、結束工具；指在視圖外框線上也算該視圖。
+- `regen/drawingEdges.ts`：邊的兩端依點列方向排定（Fuzz 抓到：兩端同名 → 線長 0）。
+
+### 紅隊四問（AGENTS §2）
+1. **輸入破壞**：不存在的類型（`'diagonal'`）、NaN／±Infinity 指標位置 → `drawing.dimBadMode`／`drawing.badPosition`；長度為 0 的方向 → `drawing.dimZero`；指定類型做不出來一律拒絕並說原因，**不改成別的類型**（圓配水平、線配半徑、圓角配直徑、平行線配角度、方向不符皆有測試）。
+2. **拓樸與幾何相交**：沿視線方向的邊（投影成點）不當作線長來源；兩條平行於 x／y 的線配對齊尺寸＝跨距（同一個量，接受）；點到斜線取垂足。本功能不做任何布林運算，不新增 WASM 配置（只讀既有投影與拓樸）。
+3. **依賴鏈完整性**：參考仍是 `face`／`edge`／`vertex` 名稱，經既有 `dimensionRefs` → DAG → `elementFacts`；**發現並修正** `ends` 與點列順序不一致導致兩端同名（新增逐邊斷言：第一端在第一點、第二端在最後一點 < 1e-6）。工具列、下拉、右鍵讀同一份 `ACTIONS`；help 說明逐項可追到程式（`help.drwDim*`、`docs/help-links.json` F3、手冊同步）。
+4. **零 Mock 與真值**：`tests/phase5/drawing-dimension-modes.test.ts` 以 OCCT 建五邊形板（斜邊、R5 圓角、Ø8 孔），經真實 `projectView`／`viewEdges`／`featureAt`／`evaluateDimension`，期望值全由拓樸頂點與圓柱半徑推導；Fuzz 200 組（0 例外、>20 組實際成立）。e2e 的期望值取自 worker 的特徵與邊，不寫死。
+
+### 驗證
+- 單元：新檔 19/19；全量 3243 通過（唯一失敗為手冊 help 行未同步，依測試指示 `SYNC_MANUAL_HELP=1` 同步後 phase8 680/680）。
+- typecheck 0 錯誤；lint:rules／lint:deps／lint:i18n 通過。
+- `verify:ui`（自有埠 5491／9433／5493）：新腳本 13/13；既有工程圖 22 支 22/22，0 Console 錯誤。
+
 ## 2026-10-20：全面盤點與清理（[cleanup-candidates.md](docs/cleanup-candidates.md) 第三輪）＋文件同步
 
 ### 1. 使用者的決定（選擇題）
@@ -45,7 +93,14 @@
 這些屬於版本庫的狀態，不是文件，沒有使用者的指示不動。
 
 ### 6. 回歸防護
-- 全閘門與完整 `verify:ui`：（待填）
+- 全閘門 `npm run check`：**3223 通過、0 失敗**，與清理前相同。
+- 完整 `verify:ui`：**151/152**。唯一失敗的是 `manual-c7.js`，**不是這次清理造成的，而是 G1 的回歸**。
+  - **二分法**：`7549315` 通過；`2d2e7aa`（G1）、`6cc8e57` 都失敗。
+  - **RCA**：「全部顯示」把畫滿畫面的草圖軸也算進範圍，每按一次就再縮小一次，詳見 ADR 0170 §4b。網格開啟時也有同樣的問題。
+  - **修正**：`OverlayCurve.fit = false` 加上 `overlayFitBox`。新增 `apps/web/test/overlay-fit.test.ts` 3 項，並做了反向對照。
+  - **為什麼當時沒抓到**：G1–G5 的 `verify:ui` 只跑了以檔名過濾的腳本，c7 不在其中。**之後改到繪圖層或疊加層時，要跑完整的 `verify:ui`**，這條已寫進 AGENTS §4。
+- 修正後：c7 加草圖相關腳本 29/29 通過；**完整 `verify:ui` 152/152 通過**；全閘門 **3226 通過、0 失敗**（新增 3 項）。
+- 另一個我自己的缺陷：新測試檔第一版少了 `OverlayOptions.dimensionPreview`，vitest 會剝掉型別所以照樣通過，但全閘門的 typecheck 擋下了。之後寫完測試檔要先跑 typecheck。
 
 ## 2026-10-20：`verify:ui` 的匯出檔不再寫進使用者的「下載」資料夾
 

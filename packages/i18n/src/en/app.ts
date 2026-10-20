@@ -10,6 +10,7 @@ export const app: Translation = {
   'tab.assembly': 'Assembly',
   'tab.viewLayout': 'View Layout',
   'tab.annotation': 'Annotation',
+  'cmdbar.moreKinds': 'Other kinds of {name}',
   'doc.unsaved': 'Unsaved changes',
   'act.newPart': 'New Part',
   'act.newAssembly': 'New Assembly',

@@ -168,3 +168,15 @@ const unit = (v: Vec): Vec => {
   const l = Math.hypot(v[0], v[1], v[2]) || 1;
   return [v[0] / l, v[1] / l, v[2] / l];
 };
+
+/** The topology of a rebuilt model, worked out once per result: the graphics area's selection menu and the right-click commands (ADR 0176) share it. */
+const topologies = new WeakMap<object, Topology>();
+export function topologyOf(r: { faceNames: string[]; edgeNames: string[]; mesh: TopologyInput['mesh'] | null }): Topology | null {
+  if (!r.mesh) return null;
+  let topo = topologies.get(r);
+  if (!topo) {
+    topo = new Topology({ faceNames: r.faceNames, edgeNames: r.edgeNames, mesh: r.mesh });
+    topologies.set(r, topo);
+  }
+  return topo;
+}

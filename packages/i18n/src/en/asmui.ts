@@ -1,0 +1,31 @@
+import type { Translation } from '../index';
+
+/** asmui: the assembly's graphics area hints and the Move / Rotate Component PropertyManager (D9.1; written in the code until ADR 0176). */
+export const asmui: Translation = {
+  'asmui.elementHover': '{kind}: {name} ({owner})',
+  'asmui.dragging': '{verb} "{name}": only along the freedoms its mates leave (Esc cancels)',
+  'asmui.place': 'Click in the graphics area to place "{name}" (Esc cancels)',
+  'asmui.loadingPart': 'Loading the part…',
+  'asmui.choosePart': 'Choose the part to insert on the left',
+  'asmui.mateHint': 'Pick the two elements to mate: faces, edges or vertices of components, or planes and origins in the tree at the top left',
+  'asmui.componentHover': 'Component: {name} ({hint})',
+  'asmui.moveHint': 'Drag a component in the graphics area to {verb} it (a right drag rotates)',
+  'movepm.apply': 'Apply',
+  'movepm.fixed': 'Fixed: it cannot move',
+  'movepm.defined': 'Fully defined by mates: it cannot move',
+  'movepm.dof': 'Degrees of freedom left: {n}',
+  'movepm.close': 'Close (Enter)',
+  'movepm.component': 'Component',
+  'movepm.pickComponent': 'Click the component to move, in the graphics area or the tree.',
+  'movepm.whileDragging': 'While dragging',
+  'movepm.move': 'Move',
+  'movepm.rotate': 'Rotate',
+  'movepm.dragHint': 'Hold a component in the graphics area and drag it (a right drag always rotates). It moves only along the freedoms its mates leave; Esc cancels the drag.',
+  'movepm.moveMode': 'Move mode',
+  'movepm.turnMode': 'Rotate mode',
+  'movepm.free': 'Free Drag',
+  'movepm.byDelta': 'By Delta XYZ',
+  'movepm.toXyz': 'To XYZ Position',
+  'movepm.toHint': "The component's origin goes to this position (assembly coordinates).",
+  'movepm.turnHint': "Rotates about the assembly's X, Y and Z axes in turn, through the centre of the part.",
+};

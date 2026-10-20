@@ -37,6 +37,8 @@ const ASSEMBLY_TABS: Tab[] = [
 export function CommandBar() {
   const [tab, setTab] = useState('features');
   const [open, setOpen] = useState(false);
+  /** The button whose drop-down of kinds is open, if any. */
+  const [dropped, setDropped] = useState<string | null>(null);
   const bar = useRef<HTMLElement>(null);
   const state = useStore((s) => s);
   const title = useDocumentTitle();
@@ -54,6 +56,9 @@ export function CommandBar() {
     setTab(drawing ? 'layout' : assembly ? 'assembly' : 'features');
     setOpen(false);
   }, [assembly, drawing, state.documentSerial]);
+  useEffect(() => {
+    if (!open) setDropped(null);
+  }, [open]);
   // folds up on Esc, and on a press anywhere that is not the menu
   useEffect(() => {
     if (!open) return;
@@ -104,22 +109,51 @@ export function CommandBar() {
               </button>
               {here && (
                 <div className={open ? 'tools menu-panel' : 'tools menu-panel folded'} role="menu">
-                  {ACTIONS.filter((a) => m.groups.includes(a.group) && !quick.includes(a)).map((a) => (
-                    <button
-                      key={a.id}
-                      role="menuitem"
-                      className={a.active?.() ? 'tool active' : 'tool'}
-                      data-help={a.id}
-                      disabled={!a.enabled(state)}
-                      onClick={() => {
-                        setOpen(false);
-                        a.run();
-                      }}
-                      title={actionTooltip(a)}
-                    >
-                      {a.label}
-                    </button>
-                  ))}
+                  {ACTIONS.filter((a) => m.groups.includes(a.group) && !quick.includes(a) && !a.parent && !a.menuOnly).map((a) => {
+                    const button = (x: UiAction) => (
+                      <button
+                        key={x.id}
+                        role="menuitem"
+                        className={x.active?.() ? 'tool active' : 'tool'}
+                        data-help={x.id}
+                        disabled={!x.enabled(state)}
+                        onClick={() => {
+                          setOpen(false);
+                          setDropped(null);
+                          x.run();
+                        }}
+                        title={actionTooltip(x)}
+                      >
+                        {x.label}
+                      </button>
+                    );
+                    const children = ACTIONS.filter((x) => x.parent === a.id);
+                    if (children.length === 0) return button(a);
+                    // a button with a drop-down of its kinds (ADR 0175), as SolidWorks's 智慧型尺寸 ▾: the kind on now is the one shown as on
+                    const on = children.find((x) => x.active?.());
+                    return (
+                      <span key={a.id} className={`tool-split${dropped === a.id ? ' open' : ''}`} data-split={a.id}>
+                        {button(a)}
+                        <button
+                          className={on ? 'tool split-arrow active' : 'tool split-arrow'}
+                          aria-haspopup="menu"
+                          aria-expanded={dropped === a.id}
+                          aria-label={t('cmdbar.moreKinds', { name: a.label })}
+                          title={t('cmdbar.moreKinds', { name: a.label })}
+                          data-split-toggle={a.id}
+                          disabled={!a.enabled(state)}
+                          onClick={() => setDropped(dropped === a.id ? null : a.id)}
+                        >
+                          ▾
+                        </button>
+                        {dropped === a.id && (
+                          <span className="split-menu" role="menu">
+                            {children.map(button)}
+                          </span>
+                        )}
+                      </span>
+                    );
+                  })}
                 </div>
               )}
             </div>
