@@ -216,6 +216,8 @@ const migrations: Record<number, (doc: Json) => Json> = {
   69: (doc) => doc,
   // v71: a reference plane normal to a curve (`def.mode === 'normalToCurve'`, ADR 0174). A new plane mode; nothing to convert.
   70: (doc) => doc,
+  // v72: sketch entities may follow entities of an earlier sketch (`Ref.kind === 'sketch'`, ADR 0175). Nothing to convert; an older program refuses the file.
+  71: (doc) => doc,
 };
 
 export class FormatError extends Error {

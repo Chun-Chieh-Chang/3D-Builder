@@ -4,6 +4,10 @@
 > - **同步基準**：`origin/main`；本機另有未推送的提交時以 `git log origin/main..main` 為準。
 > - **新電腦**：`git pull origin main` → `npm install` → `npm run doctor` → `npm run check`（型別＋分層＋i18n＋全部測試）。
 > - **瀏覽器驗收**：`npm run verify:ui -- --only "<檔名片段>"`。跑的期間不要改原始碼（Vite 熱更新會讓整輪作廢）；匯出的檔案存在這一輪自己的暫存資料夾，不會進「下載」。
+> - **一次一條工作線（2026-10-20 整理）**：這個資料夾只能有一個工作階段在改程式碼。
+>   - 要平行做事，就讓另一個工作階段用自己的 worktree（`isolation: worktree`）。
+>   - 不要在 fork 自舊對話的工作階段裡繼續開發：它的認知停在 fork 當時，可能是好幾週前。
+>   - 接手前一律先 `git pull --ff-only origin main`，再讀本檔。
 > - **本檔只放現在**：目前狀態、下一步、文件地圖、約定。每次交付的細節在 [DEV_LOG.md](DEV_LOG.md)，舊的交接段落在 [docs/handoff-history.md](docs/handoff-history.md)。
 
 ---
@@ -12,13 +16,13 @@
 
 | 項目 | 現值 |
 |---|---|
-| 零件／組合件／工程圖 Schema | 71／7／25 |
-| ADR | 0001–0174，共 174 份，在 `docs/adr/`，全部列在 §2 |
-| 全閘門 `npm run check` | 3230 通過、0 失敗、25 略過；完整 `verify:ui` 153/153（2026-10-20） |
-| 瀏覽器腳本 | `tests/e2e/` 共 141 支（`npm run verify:ui`） |
+| 零件／組合件／工程圖 Schema | 72／7／25 |
+| ADR | 0001–0175，共 175 份，在 `docs/adr/`，全部列在 §2 |
+| 全閘門 `npm run check` | 3242 通過、0 失敗、25 略過；完整 `verify:ui` 154/154（2026-10-20，G6 之後） |
+| 瀏覽器腳本 | `tests/e2e/` 共 142 支（`npm run verify:ui`） |
 | 實機驗證清單 | [docs/manual-verification.html](docs/manual-verification.html) 90 項 |
 | 階段 | Phase 0–7 開發完成。Phase 0–2 閘門通過；3a–7 有條件通過：只用手算的金樣與種子固定的隨機測試驗過，尚未用真實檔案對照（§3、§8） |
-| 最近完成 | 草圖參照第一批 G1–G5（ADR 0170–0174，見下）；`verify:ui` 的下載外溢修正；2026-10-20 全面清理（`docs/cleanup-candidates.md` 第三輪） |
+| 最近完成 | **G6 草圖參照較前面的草圖（ADR 0175）**；草圖參照第一批 G1–G5（ADR 0170–0174，見下）；`verify:ui` 的下載外溢修正；2026-10-20 全面清理（`docs/cleanup-candidates.md` 第三輪） |
 | 已知缺口 | 曲線本體在 UI 的本體清單仍歸在曲面本體一類（ADR 0168 §5） |
 
 ### 最近完成：塗彩視圖不畫被遮住的相切邊（2026-10-20，ADR 0146 §7，檔案格式不變）
@@ -58,7 +62,7 @@
 ## 一、下一步（候選；開工前先跟使用者確認範圍與順序）
 
 1. **草圖參照第二批 G6–G9**（對照 SW／FreeCAD 的盤點，2026-10-19）：
-   - G6 參照其他草圖：最實用，但要動 DAG、要防循環，風險最高；使用者已定「只能參照較前面的草圖」。
+   - ~~G6 參照其他草圖~~：**2026-10-20 完成**（ADR 0175，Schema 72）。
    - G7 草圖附著：X 方向取自一條邊、原點放在頂點、翻轉、偏移。FreeCAD 有完整的 Attachment；SW 只能事後用「修改草圖」調整。
    - G8 整條固定（Block）、圓與圓的最近／最遠距離（SW 的圓弧條件）、傾斜的圓精確投影成橢圓。
    - G9 曲率相等、對稱於一點、側影輪廓線（藍圖 C1.37 原本標為不做）。
@@ -291,6 +295,7 @@
 | [ADR 0172](docs/adr/0172-sketch-datum-references.md) | ADR 0172：基準軸、基準點、基準面進草圖（G3）；草圖參照補入 DAG |
 | [ADR 0173](docs/adr/0173-pierce-any-curve.md) | ADR 0173：任意曲線的貫穿點（G4） |
 | [ADR 0174](docs/adr/0174-plane-normal-to-curve.md) | ADR 0174：參考平面「垂直於曲線」（G5） |
+| [ADR 0175](docs/adr/0175-sketch-references-to-sketches.md) | ADR 0175：草圖參照較前面的草圖（G6） |
 | [docs/assembly-explode-plan.md](docs/assembly-explode-plan.md) | 組合件：爆炸線與動畫、多組爆炸、形成新次組合件（計畫） |
 | [docs/cleanup-candidates.md](docs/cleanup-candidates.md) | 清理候選清單（2026-10-07） |
 | [docs/decisions-2026-10-11.html](docs/decisions-2026-10-11.html) | 3D-Builder 待辦與待裁決選擇題（2026-10-11） |

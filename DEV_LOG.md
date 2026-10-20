@@ -1,5 +1,31 @@
 # 3D-Builder 開發日誌 (DEV_LOG.md)
 
+## 2026-10-20：草圖參照較前面的草圖（G6，[ADR 0175](docs/adr/0175-sketch-references-to-sketches.md)）
+
+### 1. 背景與決策
+第二批的第一項，使用者選定。`Ref.kind` 新增 `sketch`，名稱寫成 `<草圖>:<圖元>`，Schema 72。圖元可以跟著之前草圖的點、直線、圓與圓弧走（以投影跟隨，並一律做成建構線）；點的 `pierce` 也可以是之前草圖的曲線。只能參照較前面的草圖，沿用使用者已定的原則。
+
+### 2. 做法
+| 層級 | 檔案 | 改動 |
+|---|---|---|
+| 模型 | `schema.ts`、`serialize.ts`、`sketch-rules.ts`、`commands.ts` | v72；規則；新增 `sketchSketchRefs`：被參照的草圖必須在前面、圖元必須存在、種類必須相符 |
+| 再生 | `references.ts`、`engine.ts`、`dag.ts` | 新增 `OtherSketch`、`sketchItem`（投影；兩平面面向相反時圓弧起訖互換）、`sketchPierces`（直線與平面、圓與平面相交的解析解）、`sketchEntityRefs`（整張轉換）；抽出 `followProjected`，供模型邊與草圖圖元共用；吸附加入顯示中的之前草圖；engine 把前面的草圖傳給 scope；DAG 父項 |
+| worker／介面 | `kernel.worker.ts`、`protocol.ts`、`store.ts`、`ops.ts`、`MatePanel.tsx` | `lastModel.sketches`；`ConvertRequest.sketch`；`sketchSnapItems(id, shown)`；在轉換或貫穿工具下點設計樹中較前面的草圖，就整張轉進來；草圖參照產生的是建構線 |
+| 雙語／說明 | `model.ts`、`sketch.ts`、`help.ts` | 5 個訊息；轉換實體引用與貫穿的說明各補一段 |
+
+### 3. 紅隊四問
+1. **輸入破壞**：參照較後的草圖、圖元不存在、種類不符、傾斜的圓、平行而沒有交點，都會明確拒絕並說明原因；不做近似投影。
+2. **幾何相交**：只做解析投影與相交，不涉及布林運算；圓與平面相交以 `a·cosθ + b·sinθ = −d₀/r` 解出，|k| > 1 時判定沒有交點，再依圓弧的掃掠範圍過濾。
+3. **依賴鏈**：schema → rules → commands → dag → regen（follow、convert、snap）→ worker → store／ops 全部接上。不會出現循環：只能參照前面的草圖，而重建是依序進行的。
+4. **零 Mock**：前基準面與右基準面的座標關係都是手算的；e2e 走真實 UI 與設計樹。
+
+### 4. 測試
+- `tests/phase3/sketch-to-sketch.test.ts` 11 項；`tests/e2e/manual-sketch-to-sketch.js` 3/3 PASS。
+- 反向對照：3 組轉紅，1 組仍綠，原因已寫在 ADR §4。
+- 測試第一版的 3 個錯都在測試這邊，見 ADR §4。
+- 撰寫過程自查兩件事：e2e 註解裡出現一個簡體字「体」，已改為「體」；英文說明裡的撇號讓 TS 字串斷掉，已改寫。
+- 全閘門 `npm run check`：**3242 通過、0 失敗**。完整 `verify:ui` **154/154 通過**，含新增的 `manual-sketch-to-sketch.js`。
+
 ## 2026-10-20：塗彩視圖不再畫出被遮住的相切邊（[ADR 0146 §7](docs/adr/0146-drawing-sw-parity-six.md)，檔案格式不變）
 
 ### 1. 範圍
