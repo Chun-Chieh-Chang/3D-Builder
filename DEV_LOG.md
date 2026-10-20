@@ -1,5 +1,27 @@
 # 3D-Builder 開發日誌 (DEV_LOG.md)
 
+## 2026-10-20：工程圖尺寸類型與右鍵選單（ADR 0175）
+
+### 現象與根因
+- 使用者：「只能標註直徑；每次都要到『註記』點選標註太麻煩，應該在右鍵選單中點選。」
+- 實測：單選一條直線後點空白處只得到「再點選第二個元素」。`featureAt` 以面積優先把線判為側視平面，`planDimension` 對單一平面回 `need: 'second'`；只有圓單擊即可成立。右鍵選單沒有任何尺寸／註記指令。
+
+### 變更
+- `pick.ts`：`LinePick.along`（線下的模型直線邊）、單選直線＝線長、`DimensionMode` 七種、`planDimension(..., mode)` 不符即拒絕並說明、`dimensionModesFor`／`pickKind`。
+- `actions.ts`：六個尺寸類型命令（`parent: 'drw-dimension'`）、`DIMENSION_ACTION`、`startDimension`；`CommandBar` 主按鈕＋▾ 下拉；`DrawingViewMenu` 依對象（線／頂點／圓／圓弧／視圖／圖紙）列出同一份命令，另加剖面、細部、屬性、結束工具；指在視圖外框線上也算該視圖。
+- `regen/drawingEdges.ts`：邊的兩端依點列方向排定（Fuzz 抓到：兩端同名 → 線長 0）。
+
+### 紅隊四問（AGENTS §2）
+1. **輸入破壞**：不存在的類型（`'diagonal'`）、NaN／±Infinity 指標位置 → `drawing.dimBadMode`／`drawing.badPosition`；長度為 0 的方向 → `drawing.dimZero`；指定類型做不出來一律拒絕並說原因，**不改成別的類型**（圓配水平、線配半徑、圓角配直徑、平行線配角度、方向不符皆有測試）。
+2. **拓樸與幾何相交**：沿視線方向的邊（投影成點）不當作線長來源；兩條平行於 x／y 的線配對齊尺寸＝跨距（同一個量，接受）；點到斜線取垂足。本功能不做任何布林運算，不新增 WASM 配置（只讀既有投影與拓樸）。
+3. **依賴鏈完整性**：參考仍是 `face`／`edge`／`vertex` 名稱，經既有 `dimensionRefs` → DAG → `elementFacts`；**發現並修正** `ends` 與點列順序不一致導致兩端同名（新增逐邊斷言：第一端在第一點、第二端在最後一點 < 1e-6）。工具列、下拉、右鍵讀同一份 `ACTIONS`；help 說明逐項可追到程式（`help.drwDim*`、`docs/help-links.json` F3、手冊同步）。
+4. **零 Mock 與真值**：`tests/phase5/drawing-dimension-modes.test.ts` 以 OCCT 建五邊形板（斜邊、R5 圓角、Ø8 孔），經真實 `projectView`／`viewEdges`／`featureAt`／`evaluateDimension`，期望值全由拓樸頂點與圓柱半徑推導；Fuzz 200 組（0 例外、>20 組實際成立）。e2e 的期望值取自 worker 的特徵與邊，不寫死。
+
+### 驗證
+- 單元：新檔 19/19；全量 3243 通過（唯一失敗為手冊 help 行未同步，依測試指示 `SYNC_MANUAL_HELP=1` 同步後 phase8 680/680）。
+- typecheck 0 錯誤；lint:rules／lint:deps／lint:i18n 通過。
+- `verify:ui`（自有埠 5491／9433／5493）：新腳本 13/13；既有工程圖 22 支 22/22，0 Console 錯誤。
+
 ## 2026-10-20：全面盤點與清理（[cleanup-candidates.md](docs/cleanup-candidates.md) 第三輪）＋文件同步
 
 ### 1. 使用者的決定（選擇題）

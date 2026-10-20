@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react';
 import { t } from '@3db/i18n';
 import { VIEW_DISPLAYS, baseName, displayOf, isCorner, isShaded, page, type Id } from '@3db/model';
-import { arrangementBase, fitAllowed, toleranceForChoice, type ToleranceChoice } from '@3db/drawing';
+import { DIMENSION_MODES, arrangementBase, dimensionModesFor, fitAllowed, pickKind, toleranceForChoice, type DimensionMode, type Pickable, type ToleranceChoice } from '@3db/drawing';
+import { ACTIONS, DIMENSION_ACTION, startDimension } from '../actions';
 import { store } from '../state/store';
 import { ContextMenu } from './ContextMenu';
 
@@ -10,7 +11,8 @@ import { ContextMenu } from './ContextMenu';
  * a surface finish, or the empty sheet.
  */
 export type DrawingMenuAt = { x: number; y: number } & (
-  | { kind: 'view'; view: Id; leaf: string | null }
+  /** `element`: the edge, vertex, circle or arc of the view under the pointer, when there is one (ADR 0175): the dimensions that start from it are offered first */
+  | { kind: 'view'; view: Id; leaf: string | null; element?: Pickable | null }
   | { kind: 'dimension'; id: Id }
   | { kind: 'annotation'; id: Id }
   | { kind: 'finish'; id: Id }
@@ -70,6 +72,25 @@ export function DrawingMenu({ at, onClose }: { at: DrawingMenuAt; onClose: () =>
       {openSub === action && <ul className="submenu">{children}</ul>}
     </li>
   );
+  /**
+   * A command of the CommandManager (ADR 0175): its name and whether it can be done now are the registry's, and so is what it does unless `run` says otherwise —
+   * the menu and the 註記 tab are one set of commands, not two.
+   */
+  const command = (id: string, run?: () => void) => {
+    const a = ACTIONS.find((x) => x.id === id);
+    if (!a) return null;
+    return item(`cmd-${id}`, a.label, run ?? (() => a.run()), !a.enabled(store.getState()));
+  };
+  /** A dimension of this kind, its tool started (from `element` when one is given: the next click places it, or picks the second element). */
+  const dimension = (mode: DimensionMode, element?: { view: Id; feature: Pickable }) => command(DIMENSION_ACTION[mode], () => startDimension(mode, element ? [element] : []));
+  /** The kinds of dimension and the annotation tools, as submenus: what the 註記 tab has. */
+  const annotating = () => [
+    sub('menuDimensions', t('drawingUi.menu.dimensions'), [...DIMENSION_MODES.map((m) => dimension(m)), command('drw-ordinate'), command('drw-arrange')]),
+    sub('menuAnnotations', t('drawingUi.menu.annotations'), ['drw-note', 'drw-datum', 'drw-fcf', 'drw-centre-mark', 'drw-centre-line', 'drw-surface', 'drw-hole-table', 'drw-bom'].map((id) => command(id))),
+  ];
+  // a tool that is on: the first thing the menu offers is to end it, as SolidWorks's 「選擇」
+  const tool = d.getState().tool;
+  const ending = tool ? [item('menuEndTool', t('drawingUi.menu.endTool'), () => d.setTool(null)), sep('sTool')] : [];
   let items: React.ReactNode[] = [];
   if (at.kind === 'view') {
     const view = curPage.views.find((v) => v.id === at.view);
@@ -80,12 +101,29 @@ export function DrawingMenu({ at, onClose }: { at: DrawingMenuAt; onClose: () =>
     const base = arrangementBase(doc)?.id === view.id;
     const corner = view.kind === 'projected' && isCorner(view.side);
     const aligns = (view.kind === 'projected' || view.kind === 'section') && !corner;
+    // the element under the pointer (ADR 0175): the dimensions that start from it, the one it makes alone first; a circle's centre mark too
+    const element = at.element ? { view: view.id, feature: at.element } : null;
+    const kind = element ? pickKind(element.feature) : null;
+    const onElement = element
+      ? [
+          ...dimensionModesFor(element.feature).map((m) => dimension(m, element)),
+          ...(kind === 'circle' || kind === 'arc' ? [command('drw-centre-mark')] : []),
+          sep('sElement'),
+        ]
+      : [];
     items = [
+      ...ending,
+      ...onElement,
       ...(leaf ? [item('openLeafPart', t('drawingUi.menu.openLeaf', { name: baseName(leaf) }), () => store.openPartOfDrawing(leaf))] : []),
       source ? item('openViewPart', t(assembly ? 'drawingUi.menu.openAssembly' : 'drawingUi.menu.openPart', { name: baseName(source) }), () => store.openPartOfDrawing(source)) : item('noSource', t('drawingUi.menu.noSource'), () => {}, true),
       sep('s1'),
       item('menuProjected', t('drawingUi.toolProjected'), () => d.setTool({ kind: 'project', parent: view.id }), 'direction' in view && view.direction === 'flat'),
+      // a section and a detail of this view: the 視圖配置 tab's tools, with the view chosen as their parent
+      command('drw-section', () => d.setTool({ kind: 'section', vertical: true })),
+      command('drw-detail', () => d.setTool({ kind: 'detail' })),
       item('menuHideEdge', t('drawingUi.toolHideEdge'), () => d.setTool({ kind: 'hideEdge' })),
+      sep('sAnnotate'),
+      ...annotating(),
       // in line with its parent, a projected or section view can be let go of it and put back (SolidWorks's 「解除對齊」 / 「預設對齊」, ADR 0146); one off a corner is in line with nothing
       ...(aligns
         ? [view.at ? item('menuDefaultAlignment', t('drawingUi.menu.defaultAlignment'), () => d.setView(view.id, { at: null, slide: null })) : item('menuBreakAlignment', t('drawingUi.menu.breakAlignment'), () => d.breakAlignment(view.id))]
@@ -112,6 +150,7 @@ export function DrawingMenu({ at, onClose }: { at: DrawingMenuAt; onClose: () =>
       ...VIEW_DISPLAYS.map((s) => item(`menuDisplay-${s}`, `${displayOf(view) === s ? '✓ ' : ''}${t(`drawingUi.display.${s}`)}`, () => d.setView(view.id, { display: s }), isShaded(s) && 'direction' in view && view.direction === 'flat')),
       item('menuArrange', t('drawingUi.arrange'), () => arrange(curPage.dimensions.filter((x) => x.view === view.id).map((x) => x.id)), !curPage.dimensions.some((x) => x.view === view.id)),
       sep('s2'),
+      item('menuProperties', t('drawingUi.menu.properties'), () => showProperties(view.id)),
       item('menuDelete', t('drawingUi.menu.delete'), () => d.deleteSelection()),
     ];
   } else if (at.kind === 'dimension') {
@@ -168,9 +207,12 @@ export function DrawingMenu({ at, onClose }: { at: DrawingMenuAt; onClose: () =>
   } else {
     const views = curPage.views.length > 0;
     items = [
+      ...ending,
       item('menuStandard', t('drawingUi.standardViews'), () => d.addStandardViews(), !d.sourceForViews()),
       item('menuAutoScale', t('drawingUi.autoScale'), () => d.autoScale(), !views),
       item('menuArrange', t('drawingUi.arrange'), () => arrange(curPage.dimensions.map((x) => x.id)), curPage.dimensions.length === 0),
+      sep('sAnnotate'),
+      ...annotating(),
       sep('s1'),
       item('menuPdf', t('drawingUi.exportPdf'), () => d.exportPdf(), !views),
     ];
@@ -184,6 +226,12 @@ export function DrawingMenu({ at, onClose }: { at: DrawingMenuAt; onClose: () =>
       {items}
     </ContextMenu>
   );
+}
+
+/** 「屬性」 of a view (ADR 0175): the view alone chosen, which is what the panel shows the properties of, and the panel brought to where they are. */
+function showProperties(view: Id): void {
+  store.drawingStore?.select(view);
+  requestAnimationFrame(() => document.querySelector('[data-drawing-panel] .sw-pm-header')?.scrollIntoView({ block: 'start' }));
 }
 
 /** A view's menu (the tree's): the drawing's menu about that view. */

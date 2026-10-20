@@ -43,6 +43,7 @@ import {
   toView,
   visibleElements,
   type DimensionHandle,
+  type DimensionMode,
   type PlacedView,
   type Pickable,
   type SceneItem,
@@ -56,6 +57,14 @@ import type { DrawingPick } from '../state/drawing';
 /** Pixels in a millimetre of an SVG drawn at its size (CSS: 96 pixels to the inch). */
 const PX = 96 / 25.4;
 type P = [number, number];
+
+/** Whether a dimension of this kind is made from two elements as well as one: a diameter and a radius are of one circle, and the next click places them. */
+const takesSecond = (mode: DimensionMode | undefined) => mode !== 'radius' && mode !== 'diameter';
+/** What the dimension tool says it wants next (ADR 0175): the first element (said for the kind asked for), a second one or the place, the place. */
+function dimensionHint(mode: Exclude<DimensionMode, 'smart'> | undefined, picked: number): string {
+  if (picked === 0) return t(mode ? `drawingUi.hint.dimMode.${mode}` : 'drawingUi.hint.dimension0');
+  return t(picked === 1 && takesSecond(mode) ? 'drawingUi.hint.dimension1' : 'drawingUi.hint.dimension2');
+}
 
 /**
  * What the pointer is doing on the sheet. To a view: a move, of the view the others are arranged round, which takes them all with it (`shift`); of a view that is in line with
@@ -175,9 +184,9 @@ export function DrawingViewport() {
     const axes = view && axesOf(curPage.views, curPage.sheet.projection, view);
     if (!view || !placed || !axes) return null;
     const picks = tool.picks.map((x) => x.feature);
-    // with one element chosen, an element under the pointer is the second one for now
-    const second = picks.length === 1 && hover.feature && hover.feature.view === first.view && hover.feature.feature.ref.name !== picks[0]!.ref.name ? hover.feature.feature : null;
-    const result = planDimension(second ? [...picks, second] : picks, hover.p, placed, axes);
+    // with one element chosen, an element under the pointer is the second one for now (a diameter or a radius has none)
+    const second = picks.length === 1 && takesSecond(tool.mode) && hover.feature && hover.feature.view === first.view && hover.feature.feature.ref.name !== picks[0]!.ref.name ? hover.feature.feature : null;
+    const result = planDimension(second ? [...picks, second] : picks, hover.p, placed, axes, tool.mode);
     return 'draft' in result ? { view: first.view, ...result } : null;
   }, [tool, hover, curPage, basePlaced]);
 
@@ -295,7 +304,7 @@ export function DrawingViewport() {
           setDrawCursor(null);
         }
         else if (tool) {
-          if (tool.kind === 'dimension' && tool.picks.length > 0) d.setTool({ kind: 'dimension', picks: [] });
+          if (tool.kind === 'dimension' && tool.picks.length > 0) d.setTool({ kind: 'dimension', picks: [], ...(tool.mode ? { mode: tool.mode } : {}) });
           else if (tool.kind === 'ordinate' && tool.picks.length > 0) d.setTool({ kind: 'ordinate', picks: [] });
           else if (tool.kind === 'annotate' && tool.first) d.setTool({ kind: 'annotate', what: tool.what });
           else d.setTool(null);
@@ -377,9 +386,11 @@ export function DrawingViewport() {
     if (tool?.kind !== 'dimension') return;
     const first = tool.picks[0];
     const hit = featureUnder(p, first?.view);
+    const mode = tool.mode;
+    const keep = mode ? { mode } : {};
     if (!first) {
-      if (hit) d.setTool({ kind: 'dimension', picks: [hit] });
-      else d.notifyInfo(t('drawingUi.hint.dimension0'));
+      if (hit) d.setTool({ kind: 'dimension', picks: [hit], ...keep });
+      else d.notifyInfo(dimensionHint(mode, 0));
       return;
     }
     const view = curPage.views.find((v) => v.id === first.view);
@@ -387,14 +398,15 @@ export function DrawingViewport() {
     const axes = view && axesOf(curPage.views, curPage.sheet.projection, view);
     if (!view || !placed || !axes) return;
     // a second element pointed at (not the same one): then the place comes
-    if (tool.picks.length === 1 && hit && hit.feature.ref.name !== first.feature.ref.name) {
-      d.setTool({ kind: 'dimension', picks: [first, hit] });
+    if (tool.picks.length === 1 && takesSecond(mode) && hit && hit.feature.ref.name !== first.feature.ref.name) {
+      d.setTool({ kind: 'dimension', picks: [first, hit], ...keep });
       return;
     }
-    const result = planDimension(tool.picks.map((x) => x.feature), p, placed, axes);
+    const result = planDimension(tool.picks.map((x) => x.feature), p, placed, axes, mode);
     if ('error' in result) return d.notifyInfo(result.error);
-    if ('need' in result) return d.notifyInfo(t('drawingUi.hint.dimension1'));
-    if (d.addDimension(first.view, result.draft)) d.setTool({ kind: 'dimension', picks: [] });
+    if ('need' in result) return d.notifyInfo(dimensionHint(mode, 1));
+    // the tool stays the kind it is, for the next one (as SolidWorks's)
+    if (d.addDimension(first.view, result.draft)) d.setTool({ kind: 'dimension', picks: [], ...keep });
   };
 
   /** A press with the ordinate tool (D-I4): the origin, an element, or (on the paper) where the row goes. */
@@ -681,7 +693,12 @@ export function DrawingViewport() {
         if (!drw.selection.some((x) => x.kind === pick.kind && x.id === pick.id)) d.pick([pick], 'replace');
       };
       // the same order a ctrl-click takes things in: a dimension, an annotation, a surface finish, a table, then a view under them
-      const hit = pickUnder(p);
+      // a line of a view on the edge of its box (its outline) is the view's, though the pointer is a hair outside the box (ADR 0175)
+      const edgeOf = (): { kind: 'view'; id: Id } | null => {
+        const f = featureUnder(p);
+        return f ? { kind: 'view', id: f.view } : null;
+      };
+      const hit = pickUnder(p) ?? edgeOf();
       const at = { x: e.clientX, y: e.clientY };
       if (hit?.kind === 'dimension') {
         take({ kind: 'dimension', id: hit.id });
@@ -700,7 +717,7 @@ export function DrawingViewport() {
         take({ kind: 'view', id: hit.id });
         const f = featureUnder(p, hit.id);
         const leaf = (f?.feature.ref as { in?: string } | undefined)?.in ?? null;
-        setMenu({ ...at, kind: 'view', view: hit.id, leaf });
+        setMenu({ ...at, kind: 'view', view: hit.id, leaf, element: f?.feature ?? null });
       } else setMenu({ ...at, kind: 'sheet' });
     }
     if (!drag && tool?.kind === 'placeView' && tool.dragged) {
@@ -1079,7 +1096,6 @@ export function DrawingViewport() {
   const otherViews = drw.selection.flatMap((x) => (x.kind === 'view' && x.id !== drw.selected ? [built.placed.get(x.id)].filter((v) => v && v.w > 0) : [])) as NonNullable<ReturnType<typeof built.placed.get>>[];
   const chosenTables = drw.selection.flatMap((x) => (x.kind === 'table' ? [built.tableBoxes.get(x.id)].filter(Boolean) : [])) as { x: number; y: number; w: number; h: number }[];
   const boxing = drag?.kind === 'box' && Math.hypot(drag.to[0] - drag.from[0], drag.to[1] - drag.from[1]) >= reach ? selectionBox(drag.from, drag.to) : null;
-  const dimensionHints = ['drawingUi.hint.dimension0', 'drawingUi.hint.dimension1', 'drawingUi.hint.dimension2'] as const;
   const hint =
     pendingPlacement
       ? t(pendingPlacement.tool === 'section' ? 'drawingUi.hint.placeSection' : pendingPlacement.tool === 'sectionLocal' ? 'drawingUi.hint.placeLocalSection' : pendingPlacement.tool === 'crop' ? 'drawingUi.hint.placeCrop' : pendingPlacement.tool === 'auxiliary' ? 'drawingUi.hint.placeAuxiliary' : 'drawingUi.hint.placeDerived')
@@ -1092,7 +1108,7 @@ export function DrawingViewport() {
       : tool?.kind === 'annotate'
       ? t(({ note: 'drawingUi.hint.note', datum: 'drawingUi.hint.datum', fcf: 'drawingUi.hint.fcf', centreLine: 'drawingUi.hint.centreLine', centreMark: 'drawingUi.hint.centreMark' } as const)[tool.what])
       : tool?.kind === 'dimension'
-      ? t(dimensionHints[Math.min(2, tool.picks.length)]!)
+      ? dimensionHint(tool.mode, tool.picks.length)
       : tool?.kind === 'surface'
       ? t('drawingUi.toolSurfaceFinish')
       : tool?.kind === 'hideEdge'

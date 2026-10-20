@@ -69,7 +69,17 @@ export function viewEdges(
     const kind: ViewEdge['kind'] = info.curve === 'line' ? 'line' : g?.type === 'circle' ? 'circle' : 'curve';
     // a circle is dimensioned as one only where it is seen in its true shape: its plane square to the view
     const circle = g?.type === 'circle' && Math.abs(Math.abs(dot(turn(g.normal), axes.dir)) - 1) < 1e-6 ? { centre: [dot(put(g.center), right), dot(put(g.center), up)] as [number, number], radius: g.radius } : undefined;
-    const vs = info.vertices;
+    // the ends in the order the points run (ADR 0175): the mesh walks an edge either way round, and an end named for the other end is a dimension of 0 when it
+    // is taken as it stands (a line measured alone between its two ends)
+    let vs = info.vertices;
+    if (vs.length > 1 && vs[1] !== vs[0] && points.length >= 4) {
+      const off = (v: number, k: number) => {
+        const p = put(topology.vertices[v]!.point);
+        return Math.hypot(dot(p, right) - points[k]!, dot(p, up) - points[k + 1]!);
+      };
+      const last = points.length - 2;
+      if (off(vs[0]!, 0) + off(vs[1]!, last) > off(vs[1]!, 0) + off(vs[0]!, last)) vs = [vs[1]!, vs[0]!];
+    }
     const inPlane = kind === 'line' && !!info.dir && Math.abs(dot(turn(info.dir), axes.dir)) < 1e-6;
     edges.push({ ref: named(refOf(topology, names, 'edge', ei)), kind, points, depth, ends: [vertexRef(vs[0]), vs.length > 1 && vs[1] !== vs[0] ? vertexRef(vs[1]) : null], ...(circle ? { circle } : {}), ...(inPlane ? { inPlane } : {}) });
   }

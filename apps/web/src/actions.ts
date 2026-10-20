@@ -1,6 +1,8 @@
 import { canBeSeed, explosionSteps, isDatumPlaneName, page, type DatumPlaneName, type PlaneFrame, type Ref } from '@3db/model';
 import { OPPOSITE_VIEW } from '@3db/render';
+import type { DimensionMode } from '@3db/drawing';
 import { store, type UiState } from './state/store';
+import type { DimensionSeed } from './state/drawing';
 import { t } from '@3db/i18n';
 import { TOOL_LABEL } from './strings';
 import { effective, matchesShortcut, overrides } from './shortcuts';
@@ -20,6 +22,8 @@ export interface UiAction {
   run(): void;
   /** Toggle state for tool buttons (the active sketch tool). */
   active?(): boolean;
+  /** The action whose button this one drops down from, instead of being a button of its own (智慧型尺寸 and the kinds of dimension, ADR 0175). */
+  parent?: string;
 }
 
 /** Nothing going on in the open assembly: no PropertyManager, no drag. */
@@ -71,6 +75,28 @@ const toolIs = (same: (t: NonNullable<ReturnType<typeof drawingTool>>) => boolea
   const on = drawingTool(store.getState());
   return !!on && same(on);
 };
+/** The drawing has a view on its sheet: there is something to dimension or annotate. */
+const hasViews = (s: UiState) => drawingOn(s) && (s.drw ? page(s.drw.doc).views.length : 0) > 0;
+
+/** The action of each kind of dimension the tool makes (ADR 0175): the button, the drop-down and the right-click menu all name the same one. */
+export const DIMENSION_ACTION: Record<DimensionMode, string> = {
+  smart: 'drw-dimension',
+  horizontal: 'drw-dim-horizontal',
+  vertical: 'drw-dim-vertical',
+  aligned: 'drw-dim-aligned',
+  angle: 'drw-dim-angle',
+  radius: 'drw-dim-radius',
+  diameter: 'drw-dim-diameter',
+};
+const isDimensionTool = (mode: DimensionMode) => (x: NonNullable<ReturnType<typeof drawingTool>>) => x.kind === 'dimension' && (x.mode ?? 'smart') === mode;
+/**
+ * Starts the dimension tool for this kind (ADR 0175), with what was already pointed at when it is given (the right-click menu of an element starts from that
+ * element, so that the next click places the dimension or picks the second element).
+ */
+export function startDimension(mode: DimensionMode, seed: readonly DimensionSeed[] = []): void {
+  store.drawingStore?.setTool({ kind: 'dimension', picks: [...seed], ...(mode === 'smart' ? {} : { mode }) });
+}
+const dimensionTool = (mode: DimensionMode) => ({ active: toolIs(isDimensionTool(mode)), run: () => (toolIs(isDimensionTool(mode))() ? store.drawingStore?.setTool(null) : startDimension(mode)) });
 
 const SKETCH_TOOLS: ToolId[] = ['dimension', 'line', 'centerline', 'rect', 'centerRect', 'circle', 'perimeterCircle', 'arc', 'tangentArc', 'threePointArc', 'slot', 'polygon', 'point', 'text', 'sketchFillet', 'sketchChamfer', 'trim', 'extend', 'offset', 'mirror', 'convert', 'pierce', 'intersect'];
 
@@ -216,7 +242,14 @@ export const ACTIONS: UiAction[] = [
   { id: 'drw-detail', get label() { return t('drawingUi.cmd.detail'); }, group: 'drawing', enabled: (s) => drawingOn(s) && ((s.drw ? page(s.drw.doc).views.length : 0)) > 0, active: toolIs((x) => x.kind === 'detail'), run: toggleTool((x) => x.kind === 'detail', () => ({ kind: 'detail' })) },
   { id: 'drw-autoscale', get label() { return t('drawingUi.autoScale'); }, group: 'drawing', enabled: (s) => drawingOn(s) && ((s.drw ? page(s.drw.doc).views.length : 0)) > 0, run: () => store.drawingStore?.autoScale() },
   // 註記
-  { id: 'drw-dimension', get label() { return t('drawingUi.toolDimension'); }, group: 'annotation', enabled: (s) => drawingOn(s) && ((s.drw ? page(s.drw.doc).views.length : 0)) > 0, active: toolIs((x) => x.kind === 'dimension'), run: toggleTool((x) => x.kind === 'dimension', () => ({ kind: 'dimension', picks: [] })) },
+  { id: 'drw-dimension', get label() { return t('drawingUi.toolDimension'); }, group: 'annotation', enabled: hasViews, ...dimensionTool('smart') },
+  // the kinds asked for by name, in the drop-down of 智慧型尺寸 (SolidWorks's 水平尺寸, 垂直尺寸, ...); the right-click menu offers the same ones (ADR 0175)
+  { id: 'drw-dim-horizontal', get label() { return t('drawingUi.toolDim.horizontal'); }, group: 'annotation', parent: 'drw-dimension', enabled: hasViews, ...dimensionTool('horizontal') },
+  { id: 'drw-dim-vertical', get label() { return t('drawingUi.toolDim.vertical'); }, group: 'annotation', parent: 'drw-dimension', enabled: hasViews, ...dimensionTool('vertical') },
+  { id: 'drw-dim-aligned', get label() { return t('drawingUi.toolDim.aligned'); }, group: 'annotation', parent: 'drw-dimension', enabled: hasViews, ...dimensionTool('aligned') },
+  { id: 'drw-dim-angle', get label() { return t('drawingUi.toolDim.angle'); }, group: 'annotation', parent: 'drw-dimension', enabled: hasViews, ...dimensionTool('angle') },
+  { id: 'drw-dim-radius', get label() { return t('drawingUi.toolDim.radius'); }, group: 'annotation', parent: 'drw-dimension', enabled: hasViews, ...dimensionTool('radius') },
+  { id: 'drw-dim-diameter', get label() { return t('drawingUi.toolDim.diameter'); }, group: 'annotation', parent: 'drw-dimension', enabled: hasViews, ...dimensionTool('diameter') },
   { id: 'drw-ordinate', get label() { return t('drawingUi.toolOrdinate'); }, group: 'annotation', enabled: (s) => drawingOn(s) && ((s.drw ? page(s.drw.doc).views.length : 0)) > 0, active: toolIs((x) => x.kind === 'ordinate'), run: toggleTool((x) => x.kind === 'ordinate', () => ({ kind: 'ordinate', picks: [] })) },
   { id: 'drw-arrange', get label() { return t('drawingUi.arrange'); }, group: 'annotation', enabled: (s) => drawingOn(s) && ((s.drw ? page(s.drw.doc).dimensions.length : 0)) > 0, run: () => { const d = store.drawingStore; if (!d) return; const n = d.arrangeDimensions(page(d.getState().doc).dimensions.map((x) => x.id)); d.notifyInfo(n > 0 ? t('drawingUi.arranged', { n }) : t('drawingUi.arrangedNothing')); } },
   { id: 'drw-note', get label() { return t('drawingUi.toolNote'); }, group: 'annotation', enabled: (s) => drawingOn(s) && ((s.drw ? page(s.drw.doc).views.length : 0)) > 0, active: toolIs((x) => x.kind === 'annotate' && x.what === 'note'), run: toggleTool((x) => x.kind === 'annotate' && x.what === 'note', () => ({ kind: 'annotate', what: 'note' })) },

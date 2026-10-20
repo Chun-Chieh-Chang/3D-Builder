@@ -8,6 +8,7 @@ export const app = {
   'tab.assembly': '組合件',
   'tab.viewLayout': '視圖配置',
   'tab.annotation': '註記',
+  'cmdbar.moreKinds': '{name}的其他類型',
   'doc.unsaved': '有尚未儲存的變更',
   'act.newPart': '新零件',
   'act.newAssembly': '新組合件',
