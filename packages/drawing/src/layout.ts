@@ -17,8 +17,10 @@ export interface ViewLines {
   shade?: ShadeImage;
   /** A detail's: the circle of its parent's image it shows (view coordinates, full size). */
   shadeClip?: { centre: [number, number]; radius: number };
-  /** Tangent edges (B2.3): the smooth edges where two faces meet tangentially, drawn only when the view's showTangentEdges is true. */
+  /** Tangent edges (B2.3): the smooth edges where two faces meet tangentially, drawn only when the view's showTangentEdges is true. The seen ones only. */
   tangent?: number[][];
+  /** The tangent edges behind the material (ADR 0146 §7): drawn with the hidden lines, where a view draws them, and nowhere else. */
+  tangentHidden?: number[][];
 }
 
 /**
@@ -191,6 +193,7 @@ export function resolveLines(doc: Pick<DrawingDoc, 'pages'>, lines: ReadonlyMap<
         ...(parent.cut ? { cut: clip(parent.cut) } : {}),
         ...(parent.center ? { center: clip(parent.center) } : {}),
         ...(parent.tangent ? { tangent: clip(parent.tangent) } : {}),
+        ...(parent.tangentHidden ? { tangentHidden: clip(parent.tangentHidden) } : {}),
       });
       continue;
     }
@@ -210,6 +213,7 @@ export function resolveLines(doc: Pick<DrawingDoc, 'pages'>, lines: ReadonlyMap<
       box: { min: [v.centre[0] - v.radius, v.centre[1] - v.radius], max: [v.centre[0] + v.radius, v.centre[1] + v.radius] },
       ...(parent.shade ? { shade: parent.shade, shadeClip: { centre: [v.centre[0], v.centre[1]], radius: v.radius } } : {}),
       ...(parent.tangent ? { tangent: clip(parent.tangent) } : {}),
+      ...(parent.tangentHidden ? { tangentHidden: clip(parent.tangentHidden) } : {}),
     });
   }
   return out;

@@ -1,5 +1,33 @@
 # 3D-Builder 開發日誌 (DEV_LOG.md)
 
+## 2026-10-20：塗彩視圖不再畫出被遮住的相切邊（[ADR 0146 §7](docs/adr/0146-drawing-sw-parity-six.md)，檔案格式不變）
+
+### 1. 範圍
+使用者：「工程圖中的圖彩部份會出現突兀的線條，可能是原本應該被遮蔽的輪廓線」。由工程圖六項（ADR 0146）的工作階段接手。
+
+### 2. 查明（量測，不猜）
+- 以零件網格的 3D 邊對照塗彩的深度緩衝，判斷每條線在它所畫的位置是否被零件的面擋住。
+- **削邊銷**（使用者可能測的圓柱件）：相切邊 0 條；等角視圖的可見線最多只有端點落在邊界（被遮比例 ≤ 0.50，兩個取樣點），**排除**網格接縫、側影線、z-fighting。
+- **定位板**（四角圓角）：等角視圖 12 條相切邊，前 8 條（`Rg1LineV`）被遮 0.00，後 4 條（`Rg1LineH`）1.00／1.00／1.00／0.50。截圖上就是後方角落的兩條線畫在頂面上。前視、上視的「被遮 1.00」來自前後邊投影重合、2D→3D 對應不唯一，故驗收用等角視圖。
+- 根因：B2.3（相切邊）核心把看得到與被遮住的相切邊合併成 `tangent`，繪圖層在「線架構」以外的樣式都畫成細實線（「移除隱藏線」同樣有錯，塗彩只是最明顯）。
+
+### 3. 做法
+| 層 | 檔案 | 內容 |
+|---|---|---|
+| 核心 | `packages/kernel/src/kernel.ts`、`types.ts` | `tangent` 只放 `Rg1LineV`；新增 `tangentHidden`（`Rg1LineH`，落在可見線或可見相切邊上的不給） |
+| 圖面 | `packages/drawing/src/scene.ts`、`layout.ts` | 被遮住的相切邊只在「隱藏線可見」（虛線）與「線架構」（細線）畫，且受「相切邊」開關控制；細部放大圖、裁剪視圖照樣裁切 |
+
+### 4. 自我紅隊四問（AGENTS.md §2.1）
+1. **輸入破壞**：沒有新的使用者輸入或參數；「相切邊」開關（`showTangentEdges`）的三種值（未設定、true、false）在五種樣式下逐一驗證。
+2. **幾何相交**：判斷看得到與否交給 OCCT 的精確隱藏線演算法（V／H 分類），不自己做；重疊的處理沿用 `hidden` 的規則（`lyingOn`，落在可見線上的被遮線不重複給），避免同一條線同時畫成實線與虛線。
+3. **依賴鏈**：`Kernel.projectView` → `ProjectedView.tangentHidden` → 剖面路徑（`{ ...seen }` 帶過去）→ worker（`{ mesh, ...lines }` 帶過去）→ 快取 → `resolveLines`（細部放大、裁剪）→ `viewItems` → SVG／PDF／DXF。`turnLines`（放置預覽）原本就不帶相切邊，不受影響。
+4. **零 Mock**：真值是零件本身：每條線對應到零件網格的 3D 邊，以該邊在該處的深度比對塗彩的深度緩衝（20 px/mm，門檻 0.2 mm），兩類各 ≥ 3 條，避免空集合的假綠。e2e 在實際 App 比對場景與頁面上的線。兩個突變（繪圖層畫回、核心合併回）各自讓測試失敗。
+
+### 5. 確效與品質驗收
+- `typecheck` 0 錯誤；`lint:deps`／`lint:rules`／`lint:i18n` 全過。
+- 全量 vitest：**3230 過、25 略過、0 失敗**（264 檔過、4 檔略過）；新 `drawing-tangent-hidden.test.ts` 5 項，既有 `drawing-tangent-edges.test.ts` 7 項照過。
+- `manual-drawing-shade-tangent.js` 5 步 PASS；全量 `verify:ui`：**153/153**（以 `VERIFY_UI_DEBUG_PORT=9433`、`VERIFY_UI_SAMPLES_PORT=5493` 跑，避開其他工作階段）。
+
 ## 2026-10-20：全面盤點與清理（[cleanup-candidates.md](docs/cleanup-candidates.md) 第三輪）＋文件同步
 
 ### 1. 使用者的決定（選擇題）
