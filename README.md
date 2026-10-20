@@ -2,7 +2,7 @@
 
 類 SolidWorks 的參數式 3D CAD（Web 先行，另有 Windows 桌面版）。設計意圖是唯一真相（SSOT）：幾何、網格、STEP 都由文件重新計算而來；參考一律用持久名稱，不用拓撲索引。
 
-目前進度：**Phase 0 到 7 的開發都完成**（零件、組合件、夾治具、檢具、工程圖、塑膠件、鈑金）。Phase 0、1、2 的閘門已通過；3a、3b、4a、4b、5、6、7 是「有條件通過」：只用手算的金樣與種子固定的隨機測試驗過，**還沒有用真實檔案對照**（使用者沒有 SolidWorks，改用 eDrawings 看輸出的 STEP 與手算的數字，見 `npm run make:kit`）。逐階段的狀態在 [handoff.md](handoff.md) §3，待使用者做的實機驗證在 [docs/manual-verification.html](docs/manual-verification.html)（84 項，用瀏覽器開）。
+目前進度：**Phase 0 到 7 的開發都完成**（零件、組合件、夾治具、檢具、工程圖、塑膠件、鈑金）。Phase 0、1、2 的閘門已通過；3a、3b、4a、4b、5、6、7 是「有條件通過」：只用手算的金樣與種子固定的隨機測試驗過，**還沒有用真實檔案對照**（使用者沒有 SolidWorks，改用 eDrawings 看輸出的 STEP 與手算的數字，見 `npm run make:kit`）。逐階段的狀態在 [handoff.md](handoff.md) §3，待使用者做的實機驗證在 [docs/manual-verification.html](docs/manual-verification.html)（90 項，用瀏覽器開）。
 
 ## 快速開始
 
@@ -24,7 +24,9 @@ npm run build -w @3db/desktop   # 桌面版安裝檔（要 Rust 與 MSVC，見 a
 |---|---|
 | [handoff.md](handoff.md) | 目前狀態、待辦、下一步、工作約定、已知陷阱（換電腦先讀 §0） |
 | [docs/blueprint.md](docs/blueprint.md) | 範圍、架構、階段與驗收標準 |
-| [docs/adr/](docs/adr) | 架構決策紀錄（0001–0117），每個里程碑一份，含驗收表與限制 |
+| [docs/adr/](docs/adr) | 架構決策紀錄（0001–0174），每個里程碑一份，含驗收表與限制；全部列在 handoff.md §2 |
+| [DEV_LOG.md](DEV_LOG.md) | 每次交付的做法、紅隊四問、測試與 RCA（新的在最上面） |
+| [AGENTS.md](AGENTS.md) | 從過去錯誤萃取的強制規則（紅隊四問、記憶體量測、測試門檻） |
 | `docs/phase*-plan.md` | 各階段的里程碑與驗收標準；[docs/hardening-plan.md](docs/hardening-plan.md) 為鞏固（H-1 到 H-11） |
 | [docs/manual-verification.html](docs/manual-verification.html) | 逐項實機驗證清單 |
 
@@ -48,8 +50,9 @@ tests/phase0–8     各階段的驗收、回歸與隨機測試（phase8 是鞏�
 tests/support      測試共用的夾具與輔助
 tests/fixtures     舊版程式寫出的文件樣本（證明舊檔可開啟）、STEP 金樣
 tests/golden       只用 UI 做出的三個示範零件
-tests/e2e          在瀏覽器中只用 UI 操作的驗收腳本
-scripts            分層檢查、i18n 檢查、文字化檔案工具
+tests/e2e          在瀏覽器中只用 UI 操作的驗收腳本（`npm run verify:ui` 在無頭 Chrome 跑）
+tests/kit          `make:kit`／`make:drawing`：產生給使用者實機驗證的檔案組
+scripts            分層檢查、反模式檢查、i18n 檢查、效能檢查、環境診斷（doctor）、瀏覽器驗收（verify-ui）、文字化檔案工具
 spikes             技術驗證腳本（ADR 的證據，不屬於產品程式碼）
 ```
 

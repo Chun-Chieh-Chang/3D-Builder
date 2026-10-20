@@ -9,8 +9,6 @@
 
 export type PresetFontId = 'sans' | 'kai' | 'serif' | 'fangsong';
 
-export const PRESET_FONT_IDS: readonly PresetFontId[] = ['sans', 'kai', 'serif', 'fangsong'];
-
 export interface PresetFontDefinition {
   id: PresetFontId;
   /** System font family or font names to look for when accessing OS installed fonts (ordered by preference). */

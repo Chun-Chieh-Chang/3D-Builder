@@ -31,19 +31,6 @@ export const fundamentalTriangleHeight = (pitch: number): number => {
   return (Math.sqrt(3) / 2) * pitch;
 };
 
-/**
- * ISO 68-1 basic thread depth:
- * Engagement height H1 = 5/8 * H = 0.541266 * P
- * External thread height h3 = 17/24 * H ≈ 0.613435 * P
- */
-export const threadEngagementHeight = (pitch: number): number => {
-  return (5 / 8) * fundamentalTriangleHeight(pitch);
-};
-
-export const externalThreadDepth = (pitch: number): number => {
-  return (17 / 24) * fundamentalTriangleHeight(pitch);
-};
-
 // -----------------------------------------------------------------------------
 // 1. ISO Metric Coarse Pitch Threads (ISO 261 / ISO 262 / DIN 13-1)
 // -----------------------------------------------------------------------------
