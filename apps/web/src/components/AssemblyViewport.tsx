@@ -18,7 +18,6 @@ import { ComponentMenu } from './AssemblyTree';
 import { GraphicsMenu } from './GraphicsMenu';
 import { assemblyMenu, type MenuEntry } from '../contextMenus';
 
-const KIND_WORD = { face: '面', edge: '邊線', vertex: '頂點' } as const;
 
 /** A frame of a part, placed by the component's pose. */
 function placedFrame(frame: PlaneFrame, pose: Pose): PlaneFrame {
@@ -247,27 +246,27 @@ export function AssemblyViewport() {
     const leaf = store.assembly?.leaves().find((l) => l.id === hoverElement.key);
     const build = leaf && store.assembly?.buildOfLeaf(leaf);
     const names = hoverElement.kind === 'face' ? build?.faceNames : hoverElement.kind === 'edge' ? build?.edgeNames : build?.vertexNames;
-    return build && leaf ? `${KIND_WORD[hoverElement.kind]}：${names?.[hoverElement.index] ?? '?'}（${store.assembly?.ownerLabel(leaf.top, leaf.path)}）` : null;
+    return build && leaf ? t('asmui.elementHover', { kind: t(`measure.kind.${hoverElement.kind}`), name: names?.[hoverElement.index] ?? '?', owner: store.assembly?.ownerLabel(leaf.top, leaf.path) ?? '' }) : null;
   })();
   const dragged = asm.drag ? asm.doc.components.find((c) => c.id === asm.drag!.component) : undefined;
   const hint = measuring
     ? (elementName ?? t('measure.prompt'))
     : dragged
-    ?`${asm.drag!.mode === 'move' ? '移動' : '旋轉'}「${componentInfo(asm, dragged).name}」：只沿結合留下的自由度（Esc 取消）`
+    ? t('asmui.dragging', { verb: t(asm.drag!.mode === 'move' ? 'movepm.move' : 'movepm.rotate'), name: componentInfo(asm, dragged).name })
     : asm.insert
     ? ghost || subChosen
-      ? `在圖面中按一下以放置「${partNameOf(chosen!)}」（Esc 取消）`
+      ? t('asmui.place', { name: partNameOf(chosen!) })
       : chosen
-        ? '正在載入零件…'
-        : '在左側選擇要插入的零件'
+        ? t('asmui.loadingPart')
+        : t('asmui.choosePart')
     : pickingAxis
     ? (elementName ?? t('pattern.picking'))
     : mating
-      ? (elementName ?? '點選兩個要結合的元素：零組件的面、邊線、頂點，或左上樹中的基準面與原點')
+      ? (elementName ?? t('asmui.mateHint'))
       : hovered
-        ? `零組件：${componentInfo(asm, hovered).name}（${dragHint(hovered, asm.solution, asm.move?.tool)}）`
+        ? t('asmui.componentHover', { name: componentInfo(asm, hovered).name, hint: dragHint(hovered, asm.solution, asm.move?.tool) })
         : asm.move
-          ? `在圖面中拖曳零組件以${asm.move.tool === 'move' ? '移動' : '旋轉'}（右鍵拖曳旋轉）`
+          ? t('asmui.moveHint', { verb: t(asm.move.tool === 'move' ? 'move.verbMove' : 'move.verbRotate') })
           : null;
 
   return (
@@ -279,13 +278,13 @@ export function AssemblyViewport() {
       {menu && asm.doc.components.some((c) => c.id === menu.id) && <ComponentMenu x={menu.x} y={menu.y} component={asm.doc.components.find((c) => c.id === menu.id)!} onClose={() => setMenu(null)} />}
       <div className="heads-up">
         {ACTIONS.filter((a) => a.group === 'view').map((a) => (
-          <button key={a.id} onClick={a.run} disabled={!a.enabled(store.getState())} title={shortcutOf(a) ? `${a.label}（${shortcutOf(a)}）` : a.label}>
+          <button key={a.id} onClick={a.run} disabled={!a.enabled(store.getState())} title={shortcutOf(a) ? `${a.label} (${shortcutOf(a)})` : a.label}>
             {a.label}
           </button>
         ))}
       </div>
       {mating && <MateFlyout />}
-      {!bootMs && <div className="boot-overlay">{bootError ? `幾何核心載入失敗：${bootError}` : '正在載入幾何核心（OCCT WASM，約 43 MB）…'}</div>}
+      {!bootMs && <div className="boot-overlay">{bootError ? t('boot.failed', { why: bootError }) : t('boot.loading')}</div>}
       <LoadProgress />
       <MeasurePanel />
       <InterferencePanel />

@@ -177,7 +177,35 @@ C.part = async () => {
     return { pass: ids.includes('select-tangent-edges') && ids.some((x) => x.startsWith('select-loop-')) && !ids.includes('edit-feature') && !left && state().editing === null, ids, left };
   });
 
-  await step('6 a face: the feature, its sketch, 草圖, 隱藏本體, 抑制, 量測, and 選取其他 kept; the face is selected first', async () => {
+  await step('5b the selection filter holds for the right click as for the left: with only 面 on, a right click on the edge gives the menu of the face there', async () => {
+    // a point of an edge with a face behind it too (an edge on the outline has none): an edge between two faces that face the viewer
+    const m = result().mesh;
+    let at = null;
+    for (let g = 0; g < m.edgeRanges.length && !at; g += 3) {
+      const index = m.edgeRanges[g + 2];
+      const [k0, k1] = [m.edgeRanges[g], m.edgeRanges[g] + m.edgeRanges[g + 1] - 1];
+      const P = [0, 1, 2].map((c) => (m.edgePoints[k0 * 3 + c] + m.edgePoints[k1 * 3 + c]) / 2);
+      const q = H.worldToClient(P);
+      const el = store.viewer.elementsAt(q.x, q.y);
+      if (el.vertex < 0 && el.edge === index && el.face >= 0) at = q;
+    }    if (!at) return { pass: false, why: 'no point of the edge with a face behind it' };
+    store.setPickFilterKind('faces');
+    await H.wait(150);
+    await rightAt(H, at);
+    const what = gmenu()?.dataset.graphicsMenu;
+    const elements = state().selectedElements.length;
+    const face = state().selectedFace?.name ?? null;
+    await closeMenus(H);
+    store.clearPickFilter();
+    await H.wait(150);
+    // and with every kind on again, the same point is the edge
+    await rightAt(H, at);
+    const back = gmenu()?.dataset.graphicsMenu;
+    await closeMenus(H);
+    return { pass: what === 'face' && elements === 0 && !!face && back === 'edge', what, elements, face, back };
+  });
+
+  await step('6 a face: the feature, its sketch, 草圖, 隱藏本體, 外觀, 抑制, 量測, and 選取其他 kept; the face is selected first', async () => {
     const p = elementSpot('face', top);
     if (!p) return { pass: false, why: 'the top face is not under its centre' };
     await rightAt(H, p);
@@ -187,7 +215,17 @@ C.part = async () => {
     await closeMenus(H);
     // 選取其他 (D5.6) stays at the end when there are faces behind this one (the bottom of the block is)
     const own = ids.filter((x) => !x.startsWith('select-other'));
-    return { pass: what === 'face' && same(own, ['edit-feature', 'edit-feature-sketch', 'sketch', 'toggle-visibility', 'suppress-feature', 'measure-part']) && ids.at(-1) === 'select-other' && chosen === result().faceNames[top], what, ids, chosen };
+    return { pass: what === 'face' && same(own, ['edit-feature', 'edit-feature-sketch', 'sketch', 'toggle-visibility', 'appearance', 'suppress-feature', 'measure-part']) && ids.at(-1) === 'select-other' && chosen === result().faceNames[top], what, ids, chosen };
+  });
+
+  await step('6b 外觀 on the face opens the appearance dialog on that face (not on the whole part)', async () => {
+    await rightAt(H, elementSpot('face', top));
+    await gclick(H, 'appearance');
+    await H.wait(200);
+    const target = document.querySelector('.modal select')?.value ?? null;
+    const offered = [...(document.querySelector('.modal select')?.options ?? [])].map((o) => o.value);
+    await S.modalButton('關閉');
+    return { pass: target === 'face' && offered.includes('part'), target, offered };
   });
 
   await step('7 隱藏本體 on the face hides the body; the tree\'s body row shows it again with the same command', async () => {

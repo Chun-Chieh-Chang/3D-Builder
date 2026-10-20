@@ -349,6 +349,11 @@ export function AppearanceDialog() {
   const bodies = useStore((s) => s.result?.bodies) ?? [];
   const [choice, setChoice] = useState('part');
   const [color, setColor] = useState('#3366cc');
+  // opened, it is on what is selected, the narrowest of it (a face before its feature, as 「外觀」 of a face's right-click menu means, ADR 0176); the part when nothing is
+  const narrowest = selectedFace?.kind === 'face' ? 'face' : selected?.startsWith('body:') ? 'body' : selected && doc.features.some((f) => f.id === selected && f.type !== 'sketch') ? 'feature' : 'part';
+  useEffect(() => {
+    if (open) setChoice(narrowest);
+  }, [open]);
   if (!open) return null;
   const bodyId = selected?.startsWith('body:') ? selected.slice('body:'.length) : null;
   const feature = selected && !bodyId ? doc.features.find((f) => f.id === selected) : undefined;

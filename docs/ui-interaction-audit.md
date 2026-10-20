@@ -61,7 +61,7 @@ SolidWorks 在任何地方按右鍵，選單內容依指到的東西而定，並
 | 抓取種類 | 端點、中心、中點、象限、交點、最近、相切、垂直、平行、水平垂直線、水平垂直到點、長度（Shift）、格線、角度 | 格線、物件（邊與中點）、角度（Ctrl） | `packages/sketch/src/snaps.ts` 12 種＋格線＋角度：point、midpoint、curve、quadrant、intersection、tangent、perpendicular、alignment、horizontalVertical、lineRelations、extension、model；Shift 長度步進、Ctrl 暫停抓取（`controller.ts` 672、795 行） | — |
 | 快速抓取 | 右鍵 → Quick Snaps，只開一種 | 無 | 有（`quickSettings`、`setQuickSnap`） | — |
 | 推論線與游標符號 | 有 | 自動約束圖示、方向輔助線（26.3） | 有（`inference`、`inferLine`） | — |
-| 自動關係開關 | 可與抓取分開關閉 | Auto constraints 每張草圖一個開關 | 讀碼：抓取總開關（`snap.enabled`）；**未確認是否能只關自動關係而保留抓取** | 待查 |
+| 自動關係開關 | 可與抓取分開關閉 | Auto constraints 每張草圖一個開關 | **實測（2026-10-20）**：沒有獨立的自動關係開關。關係與抓取綁在一起：同一條接近水平的線，抓取全開 → 加上「水平」；只關「水平線與垂直線」抓取 → 沒有關係；關掉抓取總開關 → 沒有關係。也就是說，**要抓取就一定加關係**，無法「保留抓取、不加關係」 | L–M |
 | 拖曳未完全定義的圖元 | 可；藍色＝未定義、黑色＝完全定義 | 可；26.3 起拖曳時也加自動約束 | 有（`startDrag`／`dragTo`，求解預覽後提交 `setSketchGeometry`） | — |
 | 拖曳時覆寫尺寸 | Override dimensions on drag/move | 無 | 無 | L |
 | 移動／複製／旋轉／縮放／延展圖元 | Move、Copy、Rotate、Scale、Stretch Entities（含「保持關係」） | Sketcher Translate（含陣列）、Rotate、Scale | **無**（`SKETCH_TOOLS` 沒有；`ops.ts` 只有 stretch 字樣） | **H** |
@@ -78,7 +78,7 @@ SolidWorks 在任何地方按右鍵，選單內容依指到的東西而定，並
 |---|---|---|---|---|
 | 畫面右鍵特徵指令 | 有 | 3D 畫面右鍵有 Transform 等 | **無**（見 §2） | **H** |
 | 直接拖曳修改（Instant3D） | 拖曳面上的把手改深度，帶尺規，Alt 拖到另一面貼齊 | 無（用 Transform 移動物件） | 無（只有剖面平面可拖、尺寸標籤可拖） | M |
-| 雙擊特徵顯示尺寸並就地修改 | 有 | 雙擊進入編輯 | 讀碼：3D 尺寸標籤可雙擊（`viewer.ts` `onLabelDoubleClick`）；未實測流程 | 待查 |
+| 雙擊特徵顯示尺寸並就地修改 | 有 | 雙擊進入編輯 | **實測（2026-10-20）**：在 3D 畫面雙擊伸長的面，只會選取該面，`editing` 仍為 null，畫面上不出現尺寸也沒有輸入框。`onLabelDoubleClick` 只用於**草圖中**的尺寸標籤。要改特徵尺寸只能在設計樹雙擊（或右鍵「編輯特徵」）開 PropertyManager | M |
 | 量測 | 有 | 有 | 有（`MeasurePanel.tsx`） | — |
 | 框選 | 有 | 有 | **無** | M |
 | 參考三軸 | 有 | 有 | 有（`viewer.ts` `buildTriad`，僅顯示方向，不能拖） | — |
@@ -127,11 +127,11 @@ SolidWorks 在任何地方按右鍵，選單內容依指到的東西而定，並
 3. **組合件 Triad**——拖軸、拖平面、拖環、步進貼齊、中心輸入座標，只沿結合自由度；驗收：拖曳後的位姿以矩陣比對、受限方向不動。
 4. **3D 框選、SmartMates、Instant3D**——差距 #5–#7，依使用頻率排序。
 5. **工程圖補完**——預選高亮、顯示為半徑／直徑／線性、基線與倒角尺寸。
-6. **小項**——i18n 寫死文字、Enter 重複指令、Tab 翻轉結合、選取仍有自由度的圖元。
+6. **小項**——Enter 重複指令、Tab 翻轉結合、選取仍有自由度的圖元；獨立的「自動關係」開關（保留抓取、不加關係）；在 3D 畫面雙擊特徵顯示其尺寸並可就地修改（2026-10-20 實測確認為缺口）。i18n 寫死文字中 `MovePanel`、`AssemblyViewport` 已隨 ADR 0176 完成。
 
 ## 9. 限制與未查證
 
-- 第 3–5 節「讀碼」的項目沒有在 App 裡操作確認，標「待查」的兩項（自動關係是否可單獨關、雙擊特徵顯示尺寸）需要實測。
+- 第 3–5 節「讀碼」的項目沒有在 App 裡操作確認。原本標「待查」的兩項（自動關係是否可單獨關、雙擊特徵顯示尺寸）已於 2026-10-20 在 App 中實測，結果見 §3、§4：兩者都是缺口，列入第 6 批。
 - SolidWorks 的 Triad、SmartMates、Instant3D、Move/Rotate Entities、Display Options 只找到 2011–2017 版的 Help 頁面，名稱或位置在新版可能略有不同。
 - FreeCAD 的 Assembly 拖曳與 Dragger 細節以 Std TransformManip 頁面為準；Assembly 工作台本身的拖曳說明頁面不存在（Assembly CreateJoint 頁面為空）。
 

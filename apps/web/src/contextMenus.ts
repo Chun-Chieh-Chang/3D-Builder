@@ -58,7 +58,7 @@ export type PartTarget = { kind: 'face' | 'edge' | 'vertex'; index: number } | n
 
 /**
  * The part (ADR 0176): on a face, edge or vertex, what SolidWorks offers there — the feature that made it (edit, its sketch, suppress), a sketch on a planar
- * face, a fillet or chamfer of an edge, hiding the body, measuring; on nothing, the view. Only while nothing is edited or measured: in a PropertyManager
+ * face, a fillet or chamfer of an edge, hiding the body, its appearance (a face), measuring; on nothing, the view. Only while nothing is edited or measured: in a PropertyManager
  * session the right click is for the selection tools (`selection`), which come last.
  */
 export function partMenu(s: UiState, at: PartTarget, selection: MenuEntry[] = []): MenuEntry[] {
@@ -72,7 +72,7 @@ export function partMenu(s: UiState, at: PartTarget, selection: MenuEntry[] = []
   const feature = [command(s, 'edit-feature'), ...(at.kind === 'vertex' ? [] : [command(s, 'edit-feature-sketch')])];
   const items: MenuEntry[] =
     at.kind === 'face'
-      ? [...feature, command(s, 'sketch'), SEPARATOR, command(s, 'toggle-visibility'), command(s, 'suppress-feature'), SEPARATOR, measure]
+      ? [...feature, command(s, 'sketch'), SEPARATOR, command(s, 'toggle-visibility'), command(s, 'appearance'), command(s, 'suppress-feature'), SEPARATOR, measure]
       : at.kind === 'edge'
         ? [...feature, SEPARATOR, command(s, 'fillet'), command(s, 'chamfer'), SEPARATOR, command(s, 'toggle-visibility'), command(s, 'suppress-feature'), SEPARATOR, measure]
         : [...feature, SEPARATOR, measure];

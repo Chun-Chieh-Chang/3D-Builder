@@ -106,9 +106,9 @@ describe('the part menu', () => {
   const ids = (s: UiState, at: Parameters<Menus['partMenu']>[1]) => menus.menuIds(menus.partMenu(s, at));
   const VIEW = ['fit', 'view-normal', 'standard-views', 'view-front', 'view-back', 'view-top', 'view-bottom', 'view-left', 'view-right', 'view-iso', 'filter-bar'];
 
-  it('on a face: the feature, its sketch, a sketch on the face, hiding the body, suppressing, measuring', () => {
+  it('on a face: the feature, its sketch, a sketch on the face, hiding the body, its appearance, suppressing, measuring', () => {
     const s = part({ selectedFace: face('extrude1:a') });
-    expect(ids(s, { kind: 'face', index: 2 })).toEqual(['edit-feature', 'edit-feature-sketch', 'sketch', 'toggle-visibility', 'suppress-feature', 'measure-part']);
+    expect(ids(s, { kind: 'face', index: 2 })).toEqual(['edit-feature', 'edit-feature-sketch', 'sketch', 'toggle-visibility', 'appearance', 'suppress-feature', 'measure-part']);
     const sketchOn = menus.partMenu(s, { kind: 'face', index: 2 }).find((e) => e.kind === 'command' && e.id === 'sketch');
     expect(sketchOn).toMatchObject({ disabled: false });
     // a face that is not flat takes no sketch: the line is there, greyed

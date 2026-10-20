@@ -40,7 +40,7 @@ function XyzFields({ labels, suffix, initial, onApply }: { labels: string[]; suf
       <div className="pm-row">
         <span />
         <button className="pm-button" onClick={() => onApply(values)}>
-          套用
+          {t('movepm.apply')}
         </button>
       </div>
     </div>
@@ -72,32 +72,32 @@ export function MovePanel() {
       return null;
     }
   };
-  const state = !c ? null : c.fixed ? '已固定：不能移動' : result?.dof === 0 ? '已被結合完全定義：不能移動' : result ? `可移動的自由度：${result.dof}` : null;
+  const state = !c ? null : c.fixed ? t('movepm.fixed') : result?.dof === 0 ? t('movepm.defined') : result ? t('movepm.dof', { n: result.dof }) : null;
   return (
     <div className="property-manager" data-help="move-component">
       <div className="pm-header">
         <Icon name="assembly" />
-        <span className="pm-title">{tool === 'move' ? '移動零組件' : '旋轉零組件'}</span>
-        <button className="pm-ok" title="關閉（Enter）" onClick={() => a?.closeMove()}>
+        <span className="pm-title">{t(tool === 'move' ? 'act.moveComponent' : 'act.rotateComponent')}</span>
+        <button className="pm-ok" title={t('movepm.close')} onClick={() => a?.closeMove()}>
           <Icon name="ok" />
         </button>
       </div>
       <div className="pm-group">
-        <h4>零組件</h4>
+        <h4>{t('movepm.component')}</h4>
         <ul className="selection-box">{c && <li>{componentInfo(asm, c).name}</li>}</ul>
-        {state ? <p className={c?.fixed || result?.dof === 0 ? 'error-text' : 'hint'}>{state}</p> : <p className="hint">在圖面或設計樹中點選要移動的零組件。</p>}
+        {state ? <p className={c?.fixed || result?.dof === 0 ? 'error-text' : 'hint'}>{state}</p> : <p className="hint">{t('movepm.pickComponent')}</p>}
       </div>
       <div className="pm-group">
-        <h4>拖曳時</h4>
+        <h4>{t('movepm.whileDragging')}</h4>
         <span className="mate-align">
           <button className={tool === 'move' ? 'active' : ''} onClick={() => a?.setMoveTool('move')}>
-            移動
+            {t('movepm.move')}
           </button>
           <button className={tool === 'rotate' ? 'active' : ''} onClick={() => a?.setMoveTool('rotate')}>
-            旋轉
+            {t('movepm.rotate')}
           </button>
         </span>
-        <p className="hint">在圖面中按住零組件拖曳（右鍵拖曳一律旋轉）。零組件只沿結合留下的自由度移動；Esc 取消這次拖曳。</p>
+        <p className="hint">{t('movepm.dragHint')}</p>
         <label className="pm-row checkbox">
           <input type="checkbox" data-field="collisionStop" checked={asm.collisionStop} onChange={(e) => a?.setCollisionStop(e.target.checked)} />
           <span>{t('move.collision')}</span>
@@ -107,12 +107,12 @@ export function MovePanel() {
       </div>
       {tool === 'move' ? (
         <div className="pm-group">
-          <h4>移動</h4>
+          <h4>{t('movepm.move')}</h4>
           <div className="pm-row">
-            <select value={moveMode} onChange={(e) => setMoveMode(e.target.value as MoveMode)} aria-label="移動方式">
-              <option value="free">自由拖曳</option>
-              <option value="by">依據 Delta XYZ</option>
-              <option value="to">至 XYZ 位置</option>
+            <select value={moveMode} onChange={(e) => setMoveMode(e.target.value as MoveMode)} aria-label={t('movepm.moveMode')}>
+              <option value="free">{t('movepm.free')}</option>
+              <option value="by">{t('movepm.byDelta')}</option>
+              <option value="to">{t('movepm.toXyz')}</option>
             </select>
           </div>
           {moveMode === 'by' && (
@@ -137,15 +137,15 @@ export function MovePanel() {
               }}
             />
           )}
-          {moveMode === 'to' && <p className="hint">零組件的原點移到這個位置（組合件座標）。</p>}
+          {moveMode === 'to' && <p className="hint">{t('movepm.toHint')}</p>}
         </div>
       ) : (
         <div className="pm-group">
-          <h4>旋轉</h4>
+          <h4>{t('movepm.rotate')}</h4>
           <div className="pm-row">
-            <select value={turnMode} onChange={(e) => setTurnMode(e.target.value as TurnMode)} aria-label="旋轉方式">
-              <option value="free">自由拖曳</option>
-              <option value="by">依據 Delta XYZ</option>
+            <select value={turnMode} onChange={(e) => setTurnMode(e.target.value as TurnMode)} aria-label={t('movepm.turnMode')}>
+              <option value="free">{t('movepm.free')}</option>
+              <option value="by">{t('movepm.byDelta')}</option>
             </select>
           </div>
           {turnMode === 'by' && (
@@ -159,7 +159,7 @@ export function MovePanel() {
               }}
             />
           )}
-          {turnMode === 'by' && <p className="hint">依序繞組合件的 X、Y、Z 軸旋轉，轉軸通過零件的中心。</p>}
+          {turnMode === 'by' && <p className="hint">{t('movepm.turnHint')}</p>}
         </div>
       )}
     </div>
