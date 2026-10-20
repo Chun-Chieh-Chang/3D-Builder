@@ -1,5 +1,4 @@
-import { SNAP_ITEMS } from '@3db/sketch/snaps';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { imageBitmapOf } from '../state/pictures';
 import { t } from '@3db/i18n';
 import { DATUM_PLANES, findFeature, isDimension, isShown, ORIGIN_KEY, Parameters, settingsOf, type DatumPlaneName, type Id, type Feature, type PlaneFrame, type Ref } from '@3db/model';
@@ -12,7 +11,9 @@ import { buildOverlay, SKETCH_COLORS } from '../sketcher/overlay';
 import { store, useSketcherView, useStore } from '../state/store';
 import { FEATURE_LABEL, PICK_FILTER_LABEL } from '../strings';
 import type { RebuildPayload } from '../worker/protocol';
-import { Topology } from '../state/selectionSets';
+import { topologyOf } from '../state/selectionSets';
+import { entry, partMenu, sketchMenu, type MenuEntry, type PartTarget } from '../contextMenus';
+import { GraphicsMenu } from './GraphicsMenu';
 import { Icon } from './Icon';
 import { draftColors, thicknessColors, undercutColors } from '../state/analysis';
 import { DraftPanel } from './DraftPanel';
@@ -28,23 +29,6 @@ import { MeasurePanel } from './MeasurePanel';
 const aloneOn = (f: { faces: boolean; edges: boolean; vertices: boolean; planes: boolean }, k: 'faces' | 'edges' | 'vertices' | 'planes') =>
   f[k] && (Object.keys(f) as ('faces' | 'edges' | 'vertices' | 'planes')[]).every((o) => o === k || !f[o]);
 
-/** Topology for selecting loops, tangent chains and the like, built once per rebuilt model (D5.6). */
-const topologies = new WeakMap<RebuildPayload, Topology>();
-function topologyOf(r: RebuildPayload): Topology | null {
-  if (!r.mesh) return null;
-  let topo = topologies.get(r);
-  if (!topo) {
-    topo = new Topology({ faceNames: r.faceNames, edgeNames: r.edgeNames, mesh: r.mesh });
-    topologies.set(r, topo);
-  }
-  return topo;
-}
-
-/** One line of the right-click menu; one that returns more lines opens them in its place. */
-interface MenuItem {
-  label: string;
-  run: () => MenuItem[] | void;
-}
 
 /**
  * What the graphics area picks during a PropertyManager session, what it shows as already picked
@@ -104,8 +88,6 @@ function picking(feature: Feature | undefined, editing: boolean, modelTool: 'con
  * Picked indices are resolved against the payload whose mesh is on screen — never against a newer
  * or older result — so an index can only ever name the element the user actually clicked.
  */
-/** The tools a 快速抓取 can be chosen for: the ones that put points down. */
-const QUICK_SNAP_TOOLS = new Set(['line', 'centerline', 'rect', 'centerRect', 'circle', 'perimeterCircle', 'arc', 'tangentArc', 'threePointArc', 'point', 'slot', 'polygon']);
 
 export function Viewport() {
   const host = useRef<HTMLDivElement>(null);
@@ -130,7 +112,8 @@ export function Viewport() {
   const [hoverFace, setHoverFace] = useState(-1);
   const [hoverVertex, setHoverVertex] = useState(-1);
   const [viewTick, setViewTick] = useState(0);
-  const [menu, setMenu] = useState<{ x: number; y: number; items: MenuItem[] } | null>(null);
+  const [menu, setMenu] = useState<{ x: number; y: number; items: MenuEntry[]; what: string } | null>(null);
+  const closeMenu = useCallback(() => setMenu(null), []);
   const pickFilter = useStore((s) => s.pickFilter);
   const sketching = editing?.kind === 'sketch';
   sketchingRef.current = sketching;
@@ -177,49 +160,49 @@ export function Viewport() {
       onPlaneClick: (key) => store.treeClick(key),
       onDatumClick: (key) => store.treeClick(key),
       onContextMenu: (x, y) => {
+        const rect = host.current?.getBoundingClientRect();
+        if (!rect) return;
         const r = displayed.current;
         const topo = r && topologyOf(r);
-        if (!r || !topo) return;
-        const el = viewer.elementsAt(x, y);
-        const kind = store.multiPickKind();
-        const refs = (indices: number[], of: 'edge' | 'face') => indices.flatMap((i) => { const ref = of === 'edge' ? edgeRef(i) : faceRef(i); return ref ? [ref] : []; });
-        const add = (list: Ref[]) => () => void store.pickMany(list);
-        const items: MenuItem[] = [];
-        if (kind === 'edge' && el.edge >= 0) {
-          items.push({ label: t('select.tangentEdges'), run: add(refs(topo.tangentEdges(el.edge), 'edge')) });
-          for (const f of topo.edgeFaces[el.edge] ?? []) items.push({ label: t('select.loopOf', { name: r.faceNames[f] ?? '' }), run: add(refs(topo.loop(f, el.edge), 'edge')) });
+        const el = r && topo ? viewer.elementsAt(x, y) : { vertex: -1, edge: -1, face: -1 };
+        // the selection tools of a PropertyManager session (D5.6): the loop, the tangent chain, the faces behind
+        const selection: MenuEntry[] = [];
+        if (r && topo) {
+          const kind = store.multiPickKind();
+          const refs = (indices: number[], of: 'edge' | 'face') => indices.flatMap((i) => { const ref = of === 'edge' ? edgeRef(i) : faceRef(i); return ref ? [ref] : []; });
+          const add = (list: Ref[]) => () => void store.pickMany(list);
+          if (kind === 'edge' && el.edge >= 0) {
+            selection.push(entry('select-tangent-edges', t('select.tangentEdges'), add(refs(topo.tangentEdges(el.edge), 'edge'))));
+            for (const f of topo.edgeFaces[el.edge] ?? []) selection.push(entry(`select-loop-${f}`, t('select.loopOf', { name: r.faceNames[f] ?? '' }), add(refs(topo.loop(f, el.edge), 'edge'))));
+          }
+          if (kind === 'face' && el.face >= 0) selection.push(entry('select-tangent-faces', t('select.tangentFaces'), add(refs(topo.tangentFaces(el.face), 'face'))));
+          const stack = el.face >= 0 ? viewer.facesAt(x, y) : [];
+          if (stack.length > 1) selection.push({ kind: 'submenu', id: 'select-other', label: t('select.other', { count: stack.length }), items: stack.map((f, i) => entry(`select-other-${i}`, t('select.otherFace', { n: i + 1, name: r.faceNames[f] ?? '' }), () => clickFace(f))) });
         }
-        if (kind === 'face' && el.face >= 0) items.push({ label: t('select.tangentFaces'), run: add(refs(topo.tangentFaces(el.face), 'face')) });
-        const stack = el.face >= 0 ? viewer.facesAt(x, y) : [];
-        if (stack.length > 1) {
-          const others: MenuItem[] = stack.map((f, i) => ({ label: t('select.otherFace', { n: i + 1, name: r.faceNames[f] ?? '' }), run: () => clickFace(f) }));
-          items.push({ label: t('select.other', { count: stack.length }), run: () => others });
+        // what is under the pointer is chosen first (ADR 0176), unless it already is among what is chosen; the commands work on it
+        const s = store.getState();
+        const at: PartTarget = el.vertex >= 0 ? { kind: 'vertex', index: el.vertex } : el.edge >= 0 ? { kind: 'edge', index: el.edge } : el.face >= 0 ? { kind: 'face', index: el.face } : null;
+        if (at && s.editing === null && !s.measure) {
+          const ref = at.kind === 'face' ? faceRef(at.index) : at.kind === 'edge' ? edgeRef(at.index) : vertexRef(at.index);
+          if (ref && at.kind === 'face' && s.selectedFace?.name !== ref.name) store.selectFace(ref);
+          else if (ref && at.kind !== 'face' && !s.selectedElements.some((x) => x.kind === ref.kind && x.name === ref.name)) store.selectElement(ref, false);
         }
-        const rect = host.current?.getBoundingClientRect();
-        if (items.length > 0 && rect) setMenu({ x: x - rect.left, y: y - rect.top, items });
+        const items = partMenu(store.getState(), at, selection);
+        if (items.length > 0) setMenu({ x: x - rect.left, y: y - rect.top, items, what: at?.kind ?? 'empty' });
         else setMenu(null);
       },
-      // While a sketch is edited a tool owns the left button and the picking menu is not asked for; what a right click gives there is 快速抓取 (S-4), the same wherever the cursor is
-      // (a part with no solid yet included)
+      // While a sketch is edited a tool owns the left button: the right click is the sketch's menu (ADR 0176) — what is under the pointer chosen first with
+      // the select tool, else 結束目前的工具 and the 快速抓取 (S-4)
       onToolContextMenu: (x, y) => {
         const sketcher = store.sketcher;
-        const tool = sketcher?.getView().tool;
+        const sketch = store.editedSketch();
+        const frame = sketch && store.frameOf(sketch);
         const rect = host.current?.getBoundingClientRect();
-        if (!sketcher || !tool || !QUICK_SNAP_TOOLS.has(tool) || !rect) return setMenu(null);
-        const chosen = sketcher.getView().quickSnap;
-        setMenu({
-          x: x - rect.left,
-          y: y - rect.top,
-          items: [
-            {
-              label: t('snap.quickHeading'),
-              run: () => [
-                ...SNAP_ITEMS.map((k) => ({ label: `${chosen === k ? '✔ ' : ''}${t(`snap.name.${k}`)}`, run: () => sketcher.setQuickSnap(k) })),
-                ...(chosen ? [{ label: t('snap.quickOff'), run: () => sketcher.setQuickSnap(null) }] : []),
-              ],
-            },
-          ],
-        });
+        if (!sketcher || !sketch || !frame || !rect) return setMenu(null);
+        const p = viewer.planePoint(x, y, frame);
+        const hit = p && sketcher.getView().tool === 'select' ? sketcher.contextPick({ p, px: viewer.pixelSize(), ctrl: false, shift: false }) : null;
+        const items = sketchMenu(store.getState(), sketcher, sketch, hit);
+        setMenu({ x: x - rect.left, y: y - rect.top, items, what: sketcher.getView().tool !== 'select' ? 'sketch-tool' : hit ? 'sketch-entity' : 'sketch-empty' });
       },
       onVertexHover: setHoverVertex,
       onVertexClick: (vertex, additive) => {
@@ -568,37 +551,8 @@ export function Viewport() {
       <UndercutPanel />
       <FlatPanel />
       <ThicknessPanel />
-      {menu && <ContextMenu x={menu.x} y={menu.y} items={menu.items} onItems={(items) => setMenu({ ...menu, items })} onClose={() => setMenu(null)} />}
+      {menu && <GraphicsMenu x={menu.x} y={menu.y} items={menu.items} what={menu.what} onClose={closeMenu} />}
     </main>
-  );
-}
-
-/** The right-click menu of the graphics area (D5.5, D5.6): closes on any click elsewhere or Esc. */
-function ContextMenu({ x, y, items, onItems, onClose }: { x: number; y: number; items: MenuItem[]; onItems: (items: MenuItem[]) => void; onClose: () => void }) {
-  useEffect(() => {
-    const key = (e: KeyboardEvent) => e.key === 'Escape' && onClose();
-    window.addEventListener('pointerdown', onClose);
-    window.addEventListener('keydown', key);
-    return () => {
-      window.removeEventListener('pointerdown', onClose);
-      window.removeEventListener('keydown', key);
-    };
-  }, [onClose]);
-  return (
-    <div className="ctx-menu" style={{ left: x, top: y }} onPointerDown={(e) => e.stopPropagation()} onContextMenu={(e) => e.preventDefault()}>
-      {items.map((item, i) => (
-        <button
-          key={i}
-          onClick={() => {
-            const more = item.run();
-            if (more) onItems(more);
-            else onClose();
-          }}
-        >
-          {item.label}
-        </button>
-      ))}
-    </div>
   );
 }
 

@@ -109,7 +109,7 @@ export function CommandBar() {
               </button>
               {here && (
                 <div className={open ? 'tools menu-panel' : 'tools menu-panel folded'} role="menu">
-                  {ACTIONS.filter((a) => m.groups.includes(a.group) && !quick.includes(a) && !a.parent).map((a) => {
+                  {ACTIONS.filter((a) => m.groups.includes(a.group) && !quick.includes(a) && !a.parent && !a.menuOnly).map((a) => {
                     const button = (x: UiAction) => (
                       <button
                         key={x.id}

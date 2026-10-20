@@ -1,5 +1,5 @@
 import { t } from '@3db/i18n';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { DATUM_PLANES, IDENTITY_ROTATION, isDatumPlaneName, poseMatrix, transformPoint, type MateRef, type PlaneFrame, type Pose, type Vec3 } from '@3db/model';
 import { partNameOf } from '@3db/io';
 import { Viewer, type DatumDisplay, type InstanceElement, type PlaneDisplay, type ViewInstance, type ViewPart } from '@3db/render';
@@ -15,6 +15,8 @@ import { ClearancePanel } from './ClearancePanel';
 import { MeasurePanel } from './MeasurePanel';
 import { ViewCube, ViewOptions } from './Viewport';
 import { ComponentMenu } from './AssemblyTree';
+import { GraphicsMenu } from './GraphicsMenu';
+import { assemblyMenu, type MenuEntry } from '../contextMenus';
 
 const KIND_WORD = { face: '面', edge: '邊線', vertex: '頂點' } as const;
 
@@ -77,8 +79,10 @@ export function AssemblyViewport() {
   const pickFilter = useStore((s) => s.pickFilter);
   const [hover, setHover] = useState<string | null>(null);
   const [hoverElement, setHoverElement] = useState<InstanceElement | null>(null);
-  /** The component's context menu (right click on it in the graphics area). */
+  /** The component's context menu (right click on it in the graphics area); with no component under the pointer, the assembly's own (ADR 0176). */
   const [menu, setMenu] = useState<{ x: number; y: number; id: string } | null>(null);
+  const [spaceMenu, setSpaceMenu] = useState<{ x: number; y: number; items: MenuEntry[] } | null>(null);
+  const closeSpaceMenu = useCallback(() => setSpaceMenu(null), []);
   useEffect(() => {
     if (!menu) return;
     const close = () => setMenu(null);
@@ -105,7 +109,13 @@ export function AssemblyViewport() {
       onComponentHover: setHover,
       onComponentClick: (key) => store.assembly?.selectComponentFromView(key),
       onComponentContextMenu: (key, x, y) => {
-        if (!key) return setMenu(null);
+        setSpaceMenu(null);
+        if (!key) {
+          setMenu(null);
+          const rect = host.current?.getBoundingClientRect();
+          if (rect) setSpaceMenu({ x: x - rect.left, y: y - rect.top, items: assemblyMenu(store.getState(), null) });
+          return;
+        }
         // the menu is the answer to a right click: the pick is the tree's kind, so the PropertyManager is not brought forward for it
         store.assembly?.select(key);
         setMenu({ x, y, id: key });
@@ -265,6 +275,7 @@ export function AssemblyViewport() {
       <div ref={host} className="viewport-canvas" />
       <ViewCube />
       <ViewOptions assembly />
+      {spaceMenu && <GraphicsMenu x={spaceMenu.x} y={spaceMenu.y} items={spaceMenu.items} what="assembly-empty" onClose={closeSpaceMenu} />}
       {menu && asm.doc.components.some((c) => c.id === menu.id) && <ComponentMenu x={menu.x} y={menu.y} component={asm.doc.components.find((c) => c.id === menu.id)!} onClose={() => setMenu(null)} />}
       <div className="heads-up">
         {ACTIONS.filter((a) => a.group === 'view').map((a) => (

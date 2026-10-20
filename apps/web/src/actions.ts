@@ -1,4 +1,7 @@
-import { canBeSeed, explosionSteps, isDatumPlaneName, page, type DatumPlaneName, type PlaneFrame, type Ref } from '@3db/model';
+import { bodyKey, canBeSeed, explosionSteps, isDatumPlaneName, isHideable, isShown, page, type DatumPlaneName, type Feature, type PlaneFrame, type Ref } from '@3db/model';
+import { ownerFeatures } from '@3db/naming';
+import { consumedSketchesOf } from './state/featureSketches';
+import { topologyOf } from './state/selectionSets';
 import { OPPOSITE_VIEW } from '@3db/render';
 import type { DimensionMode } from '@3db/drawing';
 import { store, type UiState } from './state/store';
@@ -24,6 +27,11 @@ export interface UiAction {
   active?(): boolean;
   /** The action whose button this one drops down from, instead of being a button of its own (智慧型尺寸 and the kinds of dimension, ADR 0175). */
   parent?: string;
+  /**
+   * A command of the right-click menus only (ADR 0176): it works on what the right click chose (the feature of a face, the body of an edge, the component under
+   * the pointer), so it has no button on the CommandManager; the tree's menu and the graphics area's run the same one.
+   */
+  menuOnly?: boolean;
 }
 
 /** Nothing going on in the open assembly: no PropertyManager, no drag. */
@@ -52,6 +60,49 @@ const sketchPlane = (s: UiState): DatumPlaneName | Ref | null => {
   const type = selectedFeature(s)?.type;
   if (s.selected !== null && (type === 'refPlane' || type === 'coordSys')) return { kind: 'datum', name: s.selected };
   return s.selectedFace?.fingerprint?.type === 'plane' ? s.selectedFace : null;
+};
+
+/**
+ * The feature a right-click command works on (ADR 0176): the one selected in the tree, else the one that made the face, edge or vertex selected in the
+ * graphics area (the right click selects what is under the pointer first).
+ */
+export const contextFeature = (s: UiState): Feature | undefined => {
+  const tree = selectedFeature(s);
+  if (tree) return tree;
+  const name = s.selectedFace?.name ?? s.selectedElements[0]?.name;
+  const id = name ? ownerFeatures(name)[0] : undefined;
+  return id ? s.doc.features.find((f) => f.id === id) : undefined;
+};
+/** Above the rollback bar: what can be edited. */
+const beforeRollback = (s: UiState, f: Feature) => s.doc.features.indexOf(f) < (s.doc.rollbackIndex ?? s.doc.features.length);
+/** The sketch the feature of the right click was made from (the first, for a sweep or a loft); none for a sketch itself. */
+const contextSketch = (s: UiState): Feature | undefined => {
+  const f = contextFeature(s);
+  const id = f && f.type !== 'sketch' ? consumedSketchesOf(f)[0] : undefined;
+  return id ? s.doc.features.find((x) => x.id === id) : undefined;
+};
+/**
+ * What 「隱藏／顯示」 of a right click works on (ADR 0176): the body selected in the tree, else the body of the face or edge selected in the graphics area, else a
+ * sketch, reference geometry or plane selected in the tree.
+ */
+export const contextVisibilityKey = (s: UiState): string | null => {
+  if (s.selected?.startsWith('body:')) return s.selected;
+  const r = s.result;
+  const edge = s.selectedElements[0]?.kind === 'edge' ? s.selectedElements[0] : undefined;
+  if (r && (s.selectedFace || edge)) {
+    const faces = s.selectedFace ? [r.faceNames.indexOf(s.selectedFace.name)] : (topologyOf(r)?.edgeFaces[r.edgeNames.indexOf(edge!.name)] ?? []);
+    const body = r.bodies.find((b) => faces.some((f) => f >= b.face0 && f < b.face0 + b.faces));
+    return body ? bodyKey(body.id) : null;
+  }
+  return s.selected !== null && isHideable(s.doc, s.selected) ? s.selected : null;
+};
+/** What is selected in the sketch being edited. */
+const sketchSelection = (): string[] => store.sketcher?.getView().selection ?? [];
+/** A line, arc or circle among what is selected in the sketch: what a chain is grown from. */
+const sketchCurveSelected = (s: UiState): boolean => {
+  const sketch = s.editing?.kind === 'sketch' ? s.doc.features.find((f) => f.id === s.editing?.featureId) : undefined;
+  const chosen = new Set(sketchSelection());
+  return sketch?.type === 'sketch' && sketch.entities.some((e) => (e.type === 'line' || e.type === 'arc' || e.type === 'circle') && chosen.has(e.id));
 };
 
 /** A drawing is open (D-I1b): its tools are on the CommandManager's 視圖配置 and 註記 tabs, as SolidWorks has them. */
@@ -185,6 +236,28 @@ export const ACTIONS: UiAction[] = [
   { id: 'ref-point', get label() { return t('action.refPoint'); }, group: 'feature', enabled: partIdle, run: () => store.newRefPoint() },
   { id: 'coord-sys', get label() { return t('action.coordSys'); }, group: 'feature', enabled: partIdle, run: () => store.newCoordSys() },
   { id: 'import-step', get label() { return t('act.importStep'); }, group: 'feature', enabled: (s) => partIdle(s) && s.bootMs !== null, run: () => void store.importStep() },
+  // what a right click on a feature in the tree, or on a face, edge or vertex it made in the graphics area, offers (ADR 0176)
+  { id: 'edit-feature', get label() { return t('tree.editFeature'); }, group: 'edit', menuOnly: true, enabled: (s) => { const f = contextFeature(s); return partIdle(s) && !!f && beforeRollback(s, f); }, run: () => { const f = contextFeature(store.getState()); if (f) store.beginEdit(f.id); } },
+  { id: 'edit-feature-sketch', get label() { return t('tree.editSketch'); }, group: 'edit', menuOnly: true, enabled: (s) => { const k = contextSketch(s); return partIdle(s) && !!k && beforeRollback(s, k); }, run: () => { const k = contextSketch(store.getState()); if (k) store.beginEdit(k.id); } },
+  { id: 'suppress-feature', get label() { return t('tree.suppress'); }, group: 'edit', menuOnly: true, enabled: (s) => partIdle(s) && contextFeature(s)?.suppressed === false, run: () => { const f = contextFeature(store.getState()); if (f) store.suppress(f.id, 'suppress'); } },
+  {
+    id: 'toggle-visibility',
+    get label() {
+      const s = store.getState();
+      const key = contextVisibilityKey(s);
+      const shown = key !== null && isShown(s.doc, key);
+      return key?.startsWith('body:') ? t(shown ? 'ctx.hideBody' : 'ctx.showBody') : t(shown ? 'tree.hide' : 'tree.show');
+    },
+    group: 'edit',
+    menuOnly: true,
+    enabled: (s) => partIdle(s) && contextVisibilityKey(s) !== null,
+    run: () => {
+      const s = store.getState();
+      const key = contextVisibilityKey(s);
+      if (key) store.setVisibility([key], !isShown(s.doc, key));
+    },
+  },
+  { id: 'delete-feature', get label() { return t('tree.delete'); }, group: 'edit', menuOnly: true, enabled: (s) => partIdle(s) && !!contextFeature(s), run: () => { const f = contextFeature(store.getState()); if (f) store.requestDelete(f.id); } },
 
   { id: 'insert-component', get label() { return t('act.insertComponent'); }, group: 'assembly', enabled: assemblyIdle, run: () => void store.assembly?.startInsert() },
   { id: 'mate', get label() { return t('act.mate'); }, group: 'assembly', enabled: (s) => assemblyIdle(s) && hasComponents(s), run: () => store.assembly?.startMate() },
@@ -203,6 +276,13 @@ export const ACTIONS: UiAction[] = [
   { id: 'mirror-component', get label() { return t('pattern.actMirror'); }, group: 'assembly', enabled: (s) => assemblyIdle(s) && hasComponents(s), run: () => store.assembly?.startPattern('mirror') },
   { id: 'fix-component', get label() { return t('act.fixComponent'); }, group: 'assembly', enabled: (s) => assemblyIdle(s) && selectedComponent(s)?.fixed === false, run: () => setFixed(true) },
   { id: 'float-component', get label() { return t('act.floatComponent'); }, group: 'assembly', enabled: (s) => assemblyIdle(s) && selectedComponent(s)?.fixed === true, run: () => setFixed(false) },
+  // what a right click on a component offers, in the tree and in the graphics area alike (ADR 0176): they work on the component selected
+  { id: 'open-component', get label() { const c = selectedComponent(store.getState()); return c && store.assembly?.isSubAssembly(c.id) ? t('subassembly.open') : t('ctx.openPart'); }, group: 'assembly', menuOnly: true, enabled: (s) => assemblyIdle(s) && !!selectedComponent(s), run: () => { const c = selectedComponent(store.getState()); if (c) store.openComponentPart(c.id); } },
+  { id: 'relink-component', get label() { return t('ctx.relink'); }, group: 'assembly', menuOnly: true, enabled: (s) => assemblyIdle(s) && !!selectedComponent(s), run: () => { const c = selectedComponent(store.getState()); if (c) void store.assembly?.browseRelink(c.file); } },
+  { id: 'hide-component', get label() { return t(selectedComponent(store.getState())?.hidden ? 'subassembly.show' : 'subassembly.hide'); }, group: 'assembly', menuOnly: true, enabled: (s) => assemblyIdle(s) && !!selectedComponent(s), run: () => toggleComponent('hidden') },
+  { id: 'transparent-component', get label() { return t(selectedComponent(store.getState())?.transparent ? 'subassembly.opaque' : 'subassembly.transparent'); }, group: 'assembly', menuOnly: true, enabled: (s) => assemblyIdle(s) && !!selectedComponent(s), run: () => toggleComponent('transparent') },
+  { id: 'suppress-component', get label() { return t(selectedComponent(store.getState())?.suppressed ? 'tree.unsuppress' : 'tree.suppress'); }, group: 'assembly', menuOnly: true, enabled: (s) => assemblyIdle(s) && !!selectedComponent(s), run: () => toggleComponent('suppressed') },
+  { id: 'delete-component', get label() { return t('ctx.deleteComponent'); }, group: 'assembly', menuOnly: true, enabled: (s) => assemblyIdle(s) && !!selectedComponent(s), run: () => { const c = selectedComponent(store.getState()); if (c) store.assembly?.requestDelete([c.id]); } },
 
   {
     id: 'sketch',
@@ -233,6 +313,10 @@ export const ACTIONS: UiAction[] = [
   ),
   { id: 'construction', get label() { return t('act.construction'); }, group: 'sketch-tool', enabled: sketching, run: () => toggleConstruction() },
   { id: 'exit-sketch', get label() { return t('act.exitSketch'); }, group: 'sketch-tool', enabled: sketching, run: () => store.commitEdit() },
+  // the sketch's right-click menu (ADR 0176): on what is selected, or on the tool that is on
+  { id: 'sketch-delete', get label() { return t('ctx.sketchDelete'); }, group: 'sketch-tool', menuOnly: true, enabled: (s) => sketching(s) && sketchSelection().length > 0, run: () => store.sketcher?.deleteSelection() },
+  { id: 'sketch-select-chain', get label() { return t('ctx.selectChain'); }, group: 'sketch-tool', menuOnly: true, enabled: sketchCurveSelected, run: () => store.sketcher?.selectChain() },
+  { id: 'sketch-end-tool', get label() { return t('ctx.endTool'); }, group: 'sketch-tool', menuOnly: true, enabled: (s) => sketching(s) && !!store.sketcher && store.sketcher.getView().tool !== 'select', run: () => store.sketcher?.setTool('select') },
 
   // the drawing (D-I1b): 視圖配置
   { id: 'drw-open-part', get label() { return t('drawingUi.openPartButton'); }, group: 'drawing', enabled: (s) => drawingOn(s) && !!store.drawingStore?.partToOpen(), run: () => openDrawingPart() },
@@ -297,6 +381,12 @@ function selectedComponent(s: UiState) {
 function setFixed(value: boolean): void {
   const c = selectedComponent(store.getState());
   if (c) store.assembly?.setFixed([c.id], value);
+}
+
+/** Turns one of the selected component's states over: hidden, see-through, suppressed (C15.5). */
+function toggleComponent(state: 'hidden' | 'transparent' | 'suppressed'): void {
+  const c = selectedComponent(store.getState());
+  if (c) store.assembly?.setComponentState([c.id], state, !c[state]);
 }
 
 /**

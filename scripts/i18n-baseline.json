@@ -1,5 +1,5 @@
 {
-  "apps/web/src/components/AssemblyTree.tsx": 16,
+  "apps/web/src/components/AssemblyTree.tsx": 12,
   "apps/web/src/components/AssemblyViewport.tsx": 11,
   "apps/web/src/components/InsertComponentPanel.tsx": 14,
   "apps/web/src/components/MatePanel.tsx": 18,

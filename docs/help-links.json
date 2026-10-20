@@ -135,6 +135,7 @@
   ],
   "C21": [
     "concept.selection",
+    "edit-feature",
     "filter-bar",
     "clear-filters"
   ],

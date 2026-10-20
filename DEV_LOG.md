@@ -1,5 +1,25 @@
 # 3D-Builder 開發日誌 (DEV_LOG.md)
 
+## 2026-10-20：零件、草圖、組合件畫面的右鍵選單（ADR 0176）
+
+### 現象與根因
+- 使用者：「很多功能都可以加進滑鼠右鍵選單。」審查報告 `docs/ui-interaction-audit.md` §8 第 1 批。
+- 零件畫面右鍵只有 PropertyManager 中的選取工具；草圖選取模式下右鍵沒有選單；組合件零組件選單缺結合／移動／旋轉且文字寫死中文（審查報告說組合件「沒有選單」有誤，`ComponentMenu` 早已存在）。設計樹與畫面各自呼叫 store，沒有共用的命令。
+
+### 變更
+- `actions.ts`：14 個只在右鍵出現的命令（`menuOnly`，`CommandBar` 不畫按鈕）；`contextFeature`／`contextVisibilityKey` 決定命令作用的對象。
+- `contextMenus.ts`：`partMenu`／`sketchMenu`／`assemblyMenu` 純函式，命令名稱與可否執行取自 `ACTIONS`；`GraphicsMenu.tsx` 繪製畫面選單（`data-action`、`data-graphics-menu`），`MenuEntries` 讓設計樹用同一批命令。
+- `SketchController`：`contextPick`、`selectChain`、`startDimension`；`relationsOffered` 由 PropertyManager 抽出共用。
+- `FeatureTree`、`AssemblyTree.ComponentMenu` 改用同一批命令；`AssemblyTree` 寫死的中文移到 i18n（基準 16 → 12）。
+- 一併修正：`tests/phase5/drawing-dimension-modes.test.ts` 第 167 行的型別（ADR 0175 留下的 2 個 typecheck 錯誤）。
+- 環境：worktree 沒有 `node_modules` 時 `@3db/*` 會解析到主資料夾的套件（型別錯誤全是假的）；Vite 也拒絕讀 worktree 以外的 WASM。改在 worktree 內 `npm install`（`package-lock.json` 未變）。
+
+### 紅隊四問（AGENTS §2）
+1. **輸入破壞**：右鍵點在空白、點在已選取的東西上、在 PropertyManager／量測中、在沒有網格的新零件上，各有明確結果（空白給視角選單；已選取的保持；編輯中只有選取工具；量測中沒有特徵指令）。不能做的命令一律反灰（非平面的「草圖」、組合件 PropertyManager 開著時全部），不偷偷改成別的動作。`startDimension` 兩個選取無法成對標註時只帶第一個，不自行猜測。
+2. **拓樸與幾何相交**：被擋在後面的面仍由「選取其他」處理（保留）；頂點、邊、面依 viewer 的點選順序（頂點優先）決定是哪一類選單；本功能不做任何布林或 WASM 配置。
+3. **依賴鏈完整性**：面／邊／頂點 → `ownerFeatures` → 特徵 → `consumedSketchesOf` → 草圖；本體由 `bodies[].face0/faces` 與 `topologyOf().edgeFaces` 找到（頂點沒有對照，故頂點不給「隱藏本體」，寫入 ADR §4）。每一個新命令都有 `help.*` 說明，`edit-feature` 有完整說明並接到手冊 C21（`docs/help-links.json`，手冊已同步）。
+4. **零 Mock 與真值**：e2e `manual-context-menus.js` 以真實右鍵事件（viewer 自己找指標下的元素）開選單，比對 `data-action` 清單，並在執行後檢查文件狀態（本體 `shown`、特徵 `suppressed`、圓角的 `edges`、量測的 pick、新限制條件的 `type`/`a`、構造線旗標、尺寸值＝線長、鏈＝矩形四邊、零組件 `hidden`/`suppressed`、結合／移動／插入 PropertyManager）。單元測試用真實 PlaneGCS 求解器驗證 `contextPick`、`selectChain`、`startDimension` 與加入關係。
+
 ## 2026-10-20：工程圖尺寸類型與右鍵選單（ADR 0175）
 
 ### 現象與根因

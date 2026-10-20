@@ -164,7 +164,7 @@ describe('two elements', () => {
   it('a vertex and the slanted line: square to it', () => {
     const [a, b] = [cornerAt(40, 20), cornerAt(30, 30)];
     const q = cornerAt(0, 30);
-    const u = [(b[0] - a[0]) / Math.hypot(b[0] - a[0], b[1] - a[1]), (b[1] - a[1]) / Math.hypot(b[0] - a[0], b[1] - a[1])];
+    const u: [number, number] = [(b[0] - a[0]) / Math.hypot(b[0] - a[0], b[1] - a[1]), (b[1] - a[1]) / Math.hypot(b[0] - a[0], b[1] - a[1])];
     const off = Math.abs((q[0] - a[0]) * u[1] - (q[1] - a[1]) * u[0]);
     expect(make([pickAt(0, 30), pickAt(35, 25)], sheetAt(20, 40))).toMatchObject({ orientation: 'aligned', value: expect.closeTo(off, 9) });
   });

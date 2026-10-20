@@ -26,10 +26,11 @@ import { bom } from './bom';
 import { explode } from './explode';
 import { evaluate } from './evaluate';
 import { help } from './help';
+import { ctxmenu } from './ctxmenu';
 
 /**
  * The source catalog. Keys are `<area>.<name>` and say what the text is for, never what it says, so
  * rewording or translating a message never renames its key. Values are templates: `{name}` is filled by
  * `t(key, { name })`, and the compiler checks the names (see `t`). One file per owner of the messages.
  */
-export const zhTW = { ...ui, ...model, ...expr, ...equations, ...edit, ...sketch, ...features, ...datums, ...output, ...app, ...viewport, ...tree, ...pmpanels, ...dialogs, ...storemsg, ...sketchtools, ...core, ...lowlevel, ...subassembly, ...patterns, ...mates, ...library, ...drawing, ...stepasm, ...bom, ...explode, ...evaluate, ...help } as const;
+export const zhTW = { ...ui, ...model, ...expr, ...equations, ...edit, ...sketch, ...features, ...datums, ...output, ...app, ...viewport, ...tree, ...pmpanels, ...dialogs, ...storemsg, ...sketchtools, ...core, ...lowlevel, ...subassembly, ...patterns, ...mates, ...library, ...drawing, ...stepasm, ...bom, ...explode, ...evaluate, ...help, ...ctxmenu } as const;

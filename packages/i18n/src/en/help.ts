@@ -850,6 +850,39 @@ export const help: Translation = {
 
   'help.floatComponent.see': 'fix-component mate move-component',
 
+  // ---------------------------------------------------------------- right-click menus (ADR 0176)
+  'help.editFeature.summary': 'Opens the PropertyManager of the feature right-clicked: its row in the tree, or a face, edge or vertex it made in the graphics area.',
+  'help.editFeature.body':
+    'Right-click a feature in the tree, or a face, edge or vertex in the graphics area, and the menu lists what can be done to it; the commands are the same as the tree\'s.\n\n- Face: Edit Feature, Edit Sketch, Sketch on this face (planar ones only), Hide Body, Suppress, Measure.\n- Edge: the same, plus Fillet and Chamfer with this edge already in them.\n- Vertex: Edit Feature, Measure.\n- Empty space: Zoom to Fit, Normal To, the standard views, the selection filter.\n- The right click selects what is under the pointer first; when it is already among what is selected, the selection stays as it is.\n- In a sketch: select entities and right-click to add relations, Smart Dimension, construction, Select Chain, Delete, Exit Sketch; with a drawing tool on, "End the current tool" and the Quick Snaps.\n- Assembly: on a component, Open Part, Mate, Move, Rotate, Fix or Float, Hide, Transparent, Suppress, Delete.',
+  'help.editFeature.keywords': 'right click context menu edit feature face edge vertex',
+  'help.editFeature.see': 'edit-feature-sketch suppress-feature toggle-visibility measure-part fillet chamfer concept.selection',
+  'help.editFeatureSketch.summary': 'Opens the sketch the right-clicked feature was made from (the first one of a sweep or a loft).',
+  'help.editFeatureSketch.keywords': 'right click edit sketch profile',
+  'help.suppressFeature.summary': 'Suppresses the right-clicked feature: it stays in the tree but is not computed.',
+  'help.suppressFeature.keywords': 'right click suppress',
+  'help.toggleVisibility.summary': 'Hides or shows the right-clicked body (a face or edge in the graphics area), sketch or reference geometry.',
+  'help.toggleVisibility.keywords': 'right click hide show body',
+  'help.deleteFeature.summary': 'Deletes the right-clicked feature (asking first about the features that use it).',
+  'help.deleteFeature.keywords': 'right click delete feature',
+  'help.openComponent.summary': 'Opens the part file of the right-clicked component (the sub-assembly, for one).',
+  'help.openComponent.keywords': 'right click open part component',
+  'help.relinkComponent.summary': 'Points the right-clicked component at another part file.',
+  'help.relinkComponent.keywords': 'right click replace part file missing',
+  'help.hideComponent.summary': 'Hides or shows the right-clicked component; a hidden one still takes part in the mates.',
+  'help.hideComponent.keywords': 'right click hide show component',
+  'help.transparentComponent.summary': 'Draws the right-clicked component see-through, or opaque again.',
+  'help.transparentComponent.keywords': 'right click transparent component',
+  'help.suppressComponent.summary': 'Suppresses the right-clicked component (not loaded, not solved), or brings it back.',
+  'help.suppressComponent.keywords': 'right click suppress component',
+  'help.deleteComponent.summary': 'Deletes the right-clicked component (asking first).',
+  'help.deleteComponent.keywords': 'right click delete component',
+  'help.sketchDelete.summary': 'Deletes the entities, dimensions or relations selected in the sketch.',
+  'help.sketchDelete.keywords': 'right click delete sketch entity',
+  'help.sketchSelectChain.summary': 'Selects the whole chain of curves joined end to end to the selected lines, arcs and circles.',
+  'help.sketchSelectChain.keywords': 'right click select chain sketch contour',
+  'help.sketchEndTool.summary': 'Ends the drawing tool that is on and goes back to selecting (the same as Esc).',
+  'help.sketchEndTool.keywords': 'right click end tool select',
+
   // ---------------------------------------------------------------- sketch
   'help.construction.summary': 'Switches the selected entities to construction geometry (dashed, not part of the outline).',
 

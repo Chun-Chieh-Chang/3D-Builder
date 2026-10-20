@@ -412,6 +412,42 @@ export class SketchController {
     this.changed();
   }
 
+  /**
+   * A right click in the sketch (ADR 0176): what is under the pointer — an entity, else one of the sketch's axes — becomes the selection, unless it is
+   * already part of it (then the selection is kept, and the menu's commands work on all of it). Nothing under the pointer: the selection is kept as it is.
+   * Returns what was under the pointer.
+   */
+  contextPick(e: PointerInput): Id | null {
+    const hit = hitTest(this.geometry(), e.p, PICK_PX * e.px) ?? this.axisAt(e);
+    if (hit && !this.selection.has(hit.id)) {
+      this.selection.clear();
+      this.selection.add(hit.id);
+      this.changed();
+    }
+    return hit?.id ?? null;
+  }
+
+  /** 「選擇鏈」 (ADR 0176): the selected lines, arcs and circles and every curve joined to them end to end become the selection. */
+  selectChain(): void {
+    const chain = this.offsetTargets();
+    if (chain.length === 0) return;
+    this.selection = new Set(chain);
+    this.changed();
+  }
+
+  /**
+   * 「智慧型尺寸」 from the right-click menu (ADR 0176): the tool starts with what was selected as its picks — one entity, or two when the pair can be
+   * dimensioned — so the next click places the dimension (or, with one, picks the second entity), as the tool does after its own clicks.
+   */
+  startDimension(): void {
+    const geometry = this.geometry();
+    const ids = [...this.selection].filter((id) => geometryOf(geometry, id) != null).slice(0, 2);
+    const seed = ids.length === 2 && !smartDimension(geometry, ids, this.cursor ?? [0, 0]) ? ids.slice(0, 1) : ids;
+    this.setTool('dimension');
+    this.picks = seed;
+    this.changed();
+  }
+
   deleteSelection(): void {
     const s = this.sketch();
     const present = new Set([...s.entities.map((e) => e.id), ...s.constraints.map((c) => c.id)]);

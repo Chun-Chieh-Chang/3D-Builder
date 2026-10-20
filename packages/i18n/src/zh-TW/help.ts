@@ -858,6 +858,39 @@ export const help = {
 
   'help.floatComponent.see': 'fix-component mate move-component',
 
+  // ---------------------------------------------------------------- right-click menus (ADR 0176)
+  'help.editFeature.summary': '打開右鍵所點的特徵的設定面板：設計樹的那一列，或它在 3D 畫面上做出的面、邊、頂點。',
+  'help.editFeature.body':
+    '在設計樹的特徵上、或在 3D 畫面的面、邊、頂點上按右鍵，選單列出能對它做的事；指令和設計樹的右鍵是同一份。\n\n- 面：編輯特徵、編輯草圖、在此面畫草圖（平面才可）、隱藏本體、抑制、量測。\n- 邊線：同上，再加圓角、倒角（這條邊已經放進去）。\n- 頂點：編輯特徵、量測。\n- 空白處：全部顯示、正視於、標準視角、選擇濾器。\n- 右鍵會先選取指標下的東西；它若本來就在已選取的裡面，選取保持不變。\n- 草圖中：選取圖元後按右鍵可加限制條件、智慧型尺寸、構造線、選擇鏈、刪除、離開草圖；畫圖工具開著時有「結束目前的工具」與「快速抓取」。\n- 組合件：零組件上可開啟零件、結合、移動、旋轉、固定或浮動、隱藏、透明、抑制、刪除。',
+  'help.editFeature.keywords': '右鍵 選單 編輯特徵 面 邊線 頂點',
+  'help.editFeature.see': 'edit-feature-sketch suppress-feature toggle-visibility measure-part fillet chamfer concept.selection',
+  'help.editFeatureSketch.summary': '打開右鍵所點的特徵所用的草圖（掃出、疊層拉伸取第一張）。',
+  'help.editFeatureSketch.keywords': '右鍵 編輯草圖 輪廓',
+  'help.suppressFeature.summary': '抑制右鍵所點的特徵：它留在設計樹上，但不計算。',
+  'help.suppressFeature.keywords': '右鍵 抑制',
+  'help.toggleVisibility.summary': '隱藏或顯示右鍵所點的本體（3D 畫面的面或邊）、草圖或參考幾何。',
+  'help.toggleVisibility.keywords': '右鍵 隱藏 顯示 本體',
+  'help.deleteFeature.summary': '刪除右鍵所點的特徵（會先問要不要一起刪掉用到它的特徵）。',
+  'help.deleteFeature.keywords': '右鍵 刪除 特徵',
+  'help.openComponent.summary': '開啟右鍵所點的零組件的零件檔（次組合件則開啟次組合件）。',
+  'help.openComponent.keywords': '右鍵 開啟零件 零組件',
+  'help.relinkComponent.summary': '為右鍵所點的零組件重新指定零件檔。',
+  'help.relinkComponent.keywords': '右鍵 重新指定 零件檔 遺失',
+  'help.hideComponent.summary': '隱藏或顯示右鍵所點的零組件；隱藏的仍參與結合。',
+  'help.hideComponent.keywords': '右鍵 隱藏 顯示 零組件',
+  'help.transparentComponent.summary': '把右鍵所點的零組件畫成透明，或改回不透明。',
+  'help.transparentComponent.keywords': '右鍵 透明 零組件',
+  'help.suppressComponent.summary': '抑制右鍵所點的零組件（不載入、不求解），或恢復它。',
+  'help.suppressComponent.keywords': '右鍵 抑制 零組件',
+  'help.deleteComponent.summary': '刪除右鍵所點的零組件（會先確認）。',
+  'help.deleteComponent.keywords': '右鍵 刪除 零組件',
+  'help.sketchDelete.summary': '刪除草圖中選取的圖元、尺寸或限制條件。',
+  'help.sketchDelete.keywords': '右鍵 刪除 草圖 圖元',
+  'help.sketchSelectChain.summary': '選取與已選直線、圓弧、圓頭尾相接的整條鏈。',
+  'help.sketchSelectChain.keywords': '右鍵 選擇鏈 草圖 輪廓',
+  'help.sketchEndTool.summary': '結束目前的畫圖工具，回到選取（和 Esc 相同）。',
+  'help.sketchEndTool.keywords': '右鍵 結束 工具 選取',
+
   // ---------------------------------------------------------------- sketch
   'help.construction.summary': '把選取的圖元切換成幾何建構線（虛線，不參與輪廓）。',
 

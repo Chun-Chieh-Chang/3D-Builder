@@ -8,6 +8,8 @@ import { DATUM_ITEMS, PART_STAGE_LABEL } from '../strings';
 import { Icon } from './Icon';
 import { ContextMenu } from './ContextMenu';
 import { treeFilterMatches, treeNeedle } from './treeFilter';
+import { assemblyMenu } from '../contextMenus';
+import { MenuEntries } from './GraphicsMenu';
 
 type Menu = { x: number; y: number } & ({ component: Component } | { mate: Mate } | { pattern: ComponentPattern });
 
@@ -42,26 +44,15 @@ export function mateProblem(asm: AssemblyState, m: Mate): string | undefined {
   return r.message;
 }
 
-/** A component's context menu (the tree's row, or the component in the graphics area): what to do with it, as SolidWorks offers it. */
+/**
+ * A component's context menu (the tree's row, or the component in the graphics area): what to do with it, as SolidWorks offers it. The component is the one
+ * selected (the right click selects it first), and the lines are the registry's commands (ADR 0176), the same in both places.
+ */
 export function ComponentMenu({ x, y, component, onClose }: { x: number; y: number; component: Component; onClose: () => void }) {
-  const a = store.assembly;
-  if (!a) return null;
-  const act = (fn: () => void) => () => {
-    onClose();
-    fn();
-  };
+  if (!store.assembly) return null;
   return (
     <ContextMenu x={x} y={y} onPointerDown={(e) => e.stopPropagation()} data-component-menu={component.id}>
-      <li onClick={act(() => store.openComponentPart(component.id))}>{a.isSubAssembly(component.id) ? t('subassembly.open') : '開啟零件'}</li>
-      <li onClick={act(() => void a.browseRelink(component.file))}>重新指定零件檔…</li>
-      <li className="separator" />
-      {component.fixed ? <li onClick={act(() => a.setFixed([component.id], false))}>浮動</li> : <li onClick={act(() => a.setFixed([component.id], true))}>固定</li>}
-      <li className="separator" />
-      <li onClick={act(() => a.setComponentState([component.id], 'hidden', !component.hidden))}>{component.hidden ? t('subassembly.show') : t('subassembly.hide')}</li>
-      <li onClick={act(() => a.setComponentState([component.id], 'transparent', !component.transparent))}>{component.transparent ? t('subassembly.opaque') : t('subassembly.transparent')}</li>
-      <li onClick={act(() => a.setComponentState([component.id], 'suppressed', !component.suppressed))}>{component.suppressed ? t('tree.unsuppress') : t('tree.suppress')}</li>
-      <li className="separator" />
-      <li onClick={act(() => a.requestDelete([component.id]))}>刪除…</li>
+      <MenuEntries items={assemblyMenu(store.getState(), component.id)} onClose={onClose} />
     </ContextMenu>
   );
 }
