@@ -83,8 +83,9 @@ export function gridCurves(visible: { min: P2; max: P2 }, spacing: number, px: n
   if (!(Number.isFinite(i0) && Number.isFinite(i1) && Number.isFinite(j0) && Number.isFinite(j1)) || i1 - i0 + (j1 - j0) > GRID_MAX_LINES) return [];
   const curves: OverlayCurve[] = [];
   const color = (k: number) => (k % 5 === 0 ? SKETCH_COLORS.gridMajor : SKETCH_COLORS.grid);
-  for (let i = i0; i <= i1; i++) curves.push({ points: [[i * step, visible.min[1]], [i * step, visible.max[1]]], color: color(i) });
-  for (let j = j0; j <= j1; j++) curves.push({ points: [[visible.min[0], j * step], [visible.max[0], j * step]], color: color(j) });
+  // as large as the view: left out of 「全部顯示」 (OverlayCurve.fit)
+  for (let i = i0; i <= i1; i++) curves.push({ points: [[i * step, visible.min[1]], [i * step, visible.max[1]]], color: color(i), fit: false });
+  for (let j = j0; j <= j1; j++) curves.push({ points: [[visible.min[0], j * step], [visible.max[0], j * step]], color: color(j), fit: false });
   return curves;
 }
 
@@ -172,8 +173,8 @@ export function buildOverlay(frame: PlaneFrame, sketch: SketchFeature, solve: Sk
   const span = options.visible ?? { min: [-2000 * px, -2000 * px] as P2, max: [2000 * px, 2000 * px] as P2 };
   const axisColor = (id: Id) => (selected.has(id) ? SKETCH_COLORS.selected : highlighted.has(id) ? SKETCH_COLORS.hover : SKETCH_COLORS.origin);
   curves.push(
-    { points: [[span.min[0], 0], [span.max[0], 0]], color: axisColor(SKETCH_AXIS_H), dashed: true },
-    { points: [[0, span.min[1]], [0, span.max[1]]], color: axisColor(SKETCH_AXIS_V), dashed: true },
+    { points: [[span.min[0], 0], [span.max[0], 0]], color: axisColor(SKETCH_AXIS_H), dashed: true, fit: false },
+    { points: [[0, span.min[1]], [0, span.max[1]]], color: axisColor(SKETCH_AXIS_V), dashed: true, fit: false },
   );
   points.push({ p: [0, 0], color: highlighted.has(SKETCH_ORIGIN) ? SKETCH_COLORS.hover : SKETCH_COLORS.origin, size: 6 });
 

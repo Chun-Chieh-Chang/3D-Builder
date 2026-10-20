@@ -6,7 +6,7 @@ import { acceleratedRaycast, computeBoundsTree, disposeBoundsTree } from 'three-
 import { ViewControls } from './controls';
 import { cubeDirection, nearestView, orbitView, panView, restoreView, rollView, viewState, ViewHistory, zoomView } from './viewNav';
 import { circleCentre, middleOf, polylinesOf, type V3 } from './snap';
-import { buildOverlayObjects, disposeGroup, toWorld, type P2, type PlaneFrame, type SketchOverlay } from './overlay';
+import { buildOverlayObjects, disposeGroup, overlayFitBox, toWorld, type P2, type PlaneFrame, type SketchOverlay } from './overlay';
 
 /** A picture of a sketch to be drawn (ADR 0116): its place in the plane (the centre, the size in mm, the turn in degrees), how see-through it is, and the decoded image. */
 export interface ViewPicture {
@@ -2956,7 +2956,7 @@ export class Viewer {
     }
     this.pendingFit = false;
     const box = this.contentBox();
-    if (this.overlayGroup) box.union(new THREE.Box3().setFromObject(this.overlayGroup));
+    if (this.overlayGroup) box.union(overlayFitBox(this.overlayGroup));
     if (this.picturesGroup) box.union(new THREE.Box3().setFromObject(this.picturesGroup));
     if (box.isEmpty()) box.set(new THREE.Vector3(-50, -50, -50), new THREE.Vector3(50, 50, 50));
     const center = box.getCenter(new THREE.Vector3());

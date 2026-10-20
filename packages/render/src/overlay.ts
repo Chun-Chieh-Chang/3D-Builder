@@ -15,6 +15,11 @@ export interface OverlayCurve {
   points: P2[];
   color: number;
   dashed?: boolean;
+  /**
+   * `false` for what is drawn to the edges of what is on screen (the grid, the sketch's axes, ADR 0170): it is left out of 「全部顯示」. Counted, it is as
+   * large as the view, so a fit takes in the whole view — and the next drawing, of the wider view, is larger again: each fit zoomed further out.
+   */
+  fit?: false;
 }
 
 export interface OverlayPoint {
@@ -71,6 +76,7 @@ export function buildOverlayObjects(overlay: SketchOverlay, px: number): THREE.G
     const g = new THREE.BufferGeometry().setFromPoints(c.points.map((p) => toWorld(overlay.frame, p)));
     const line = new THREE.Line(g, material(c.color, c.dashed ?? false));
     if (c.dashed) line.computeLineDistances();
+    if (c.fit === false) line.userData.noFit = true;
     group.add(line);
   }
   const bySize = new Map<number, OverlayPoint[]>();
@@ -83,6 +89,13 @@ export function buildOverlayObjects(overlay: SketchOverlay, px: number): THREE.G
     group.add(new THREE.Points(g, new THREE.PointsMaterial({ size, sizeAttenuation: false, vertexColors: true, depthTest: false })));
   }
   return group;
+}
+
+/** What of the overlay 「全部顯示」 takes in: everything but what is drawn to the edges of the view (`OverlayCurve.fit`). */
+export function overlayFitBox(group: THREE.Group): THREE.Box3 {
+  const box = new THREE.Box3();
+  for (const child of group.children) if (!child.userData.noFit) box.expandByObject(child);
+  return box;
 }
 
 export function disposeGroup(group: THREE.Group): void {
