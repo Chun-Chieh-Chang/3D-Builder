@@ -279,7 +279,48 @@ describe('the sketch menu', () => {
     const ids = menus.menuIds(items);
     expect(ids.slice(0, 1)).toEqual(['add-relation']);
     expect(ids).toEqual(expect.arrayContaining(['relation-horizontal', 'relation-vertical']));
-    expect(ids.filter((x) => !x.startsWith('relation-') && x !== 'add-relation')).toEqual(['tool-dimension', 'construction', 'sketch-select-chain', 'sketch-delete', 'view-normal', 'exit-sketch']);
+    expect(ids.filter((x) => !x.startsWith('relation-') && x !== 'add-relation')).toEqual([
+      'tool-dimension',
+      'construction',
+      // 移動／複製 (ADR 0177): the transforms, the patterns and the mirror
+      'transform-entities',
+      'tool-moveEntities',
+      'tool-copyEntities',
+      'tool-rotateEntities',
+      'tool-scaleEntities',
+      'tool-linearPattern',
+      'tool-circularPattern',
+      'tool-mirror',
+      'sketch-select-chain',
+      'sketch-delete',
+      'view-normal',
+      'exit-sketch',
+    ]);
+  });
+
+  it('移動／複製 → 移動圖元 starts the tool on what the right click selected (ADR 0177)', async () => {
+    // the registry's command acts on the store's sketcher: this controller is it for the test
+    const { store } = await import('../../apps/web/src/state/store');
+    const h = new Host();
+    const c = new Controller(h);
+    c.setTool('line');
+    click(c, 0, 0);
+    click(c, 10, 4);
+    c.escape();
+    c.escape();
+    const hit = c.contextPick(at(5, 2));
+    const sub = menus.sketchMenu(sketchState(h), c, h.sketch(), hit).find((e) => e.kind === 'submenu' && e.id === 'transform-entities');
+    const move = sub?.kind === 'submenu' ? sub.items.find((e) => e.kind === 'command' && e.id === 'tool-moveEntities') : undefined;
+    expect(move?.kind === 'command' && !move.disabled).toBe(true);
+    const was = store.sketcher;
+    store.sketcher = c;
+    try {
+      if (move?.kind === 'command') move.run();
+    } finally {
+      store.sketcher = was;
+    }
+    expect(c.getView().tool).toBe('moveEntities');
+    expect(c.getView().picks).toEqual([hit]);
   });
 
   it('a relation from the menu is added, and is no longer offered', async () => {

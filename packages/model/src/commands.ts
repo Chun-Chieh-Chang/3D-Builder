@@ -17,17 +17,33 @@ import { ExprError } from './expr';
 import { idsInUse, removalSet, sketchError } from './sketch-rules';
 import { pictureBlobs } from './picture';
 
-/** The point references of a curve that an edit may change. */
-export type EntityRefs = Partial<Record<'p1' | 'p2' | 'start' | 'end' | 'center' | 'at', Id>>;
+/** The point references of a curve that an edit may change (an ellipse's `major` and a spline's `points` since ADR 0177). */
+export type EntityRefs = Partial<Record<'p1' | 'p2' | 'start' | 'end' | 'center' | 'at' | 'major', Id>> & { points?: Id[] };
 /** The references of a relation or dimension that an edit may change (`undefined` takes one away: the optional second reference). */
 export type ConstraintRefs = Partial<Record<'a' | 'b' | 'point' | 'line' | 'curve' | 'axis' | 'circle', Id | undefined>>;
 
-/** What `editSketch` does to a sketch, in this order: `entities`, `constraints`, `remove`, `add`. */
+/**
+ * Where an entity now is (ADR 0177, 移動／旋轉／縮放圖元): a point's place, a circle's radius, an ellipse's minor radius, a text's size and turn (degrees).
+ * Each field only for the entity that has it; the values are checked like any stored sketch.
+ */
+export interface SketchPlacement {
+  id: Id;
+  x?: number;
+  y?: number;
+  radius?: number;
+  minorRadius?: number;
+  size?: number;
+  angle?: number;
+}
+
+/** What `editSketch` does to a sketch, in this order: `entities`, `constraints`, `place`, `add`, `remove`. */
 export interface SketchEdit {
   /** Entities whose points change (a line that now ends elsewhere). */
   entities?: { id: Id; set: EntityRefs }[];
   /** Relations and dimensions that now refer to something else, or whose value changes. */
-  constraints?: { id: Id; set: ConstraintRefs & { value?: Expr } }[];
+  constraints?: { id: Id; set: ConstraintRefs & { value?: Expr; labelPosition?: [number, number] } }[];
+  /** Entities that are now somewhere else (ADR 0177). */
+  place?: SketchPlacement[];
   /** Deleted together with whatever depends on them. */
   remove?: Id[];
   add?: { entities: SketchEntity[]; constraints: SketchConstraint[] };
@@ -1582,7 +1598,17 @@ export function mutate(draft: Draft<PartDoc>, cmd: Command): void {
         if (!e) throw new CommandError(t('cmd.sketchItemNotFound', { id: patch.id }));
         for (const [field, value] of Object.entries(patch.set)) {
           if (!(field in e)) throw new CommandError(t('cmd.sketchEditField', { id: patch.id, field }));
-          (e as unknown as Record<string, Id>)[field] = value;
+          (e as unknown as Record<string, Id | Id[]>)[field] = Array.isArray(value) ? [...value] : value;
+        }
+      }
+      for (const at of cmd.place ?? []) {
+        const e = f.entities.find((x) => x.id === at.id);
+        if (!e) throw new CommandError(t('cmd.sketchItemNotFound', { id: at.id }));
+        const fields: Record<SketchEntity['type'], readonly string[]> = { point: ['x', 'y'], circle: ['radius'], ellipse: ['minorRadius'], text: ['size', 'angle'], line: [], arc: [], spline: [] };
+        for (const [field, value] of Object.entries(at)) {
+          if (field === 'id' || value === undefined) continue;
+          if (!fields[e.type].includes(field)) throw new CommandError(t('cmd.sketchEditField', { id: at.id, field }));
+          (e as unknown as Record<string, number>)[field] = value as number;
         }
       }
       for (const patch of cmd.constraints ?? []) {

@@ -14,6 +14,7 @@ import {
   type SketchConstraint,
   type SketchEntity,
   type SketchFeature,
+  type SketchPlacement,
 } from '@3db/model';
 import {
   add,
@@ -43,7 +44,35 @@ import {
 import type { P2, SolvedGeometry } from '@3db/sketch';
 import { angleStep, DEFAULT_SNAPS, extensionSnap, gridPoint, intersectionSnap, lengthStep, perpendicularSnap, quadrantSnap, quickSettings, tangentSnap, visibleGridSpacing, type SnapItem, type SnapSettings } from '@3db/sketch/snaps';
 import { checkSketch, repairSketch, type SketchIssue } from '@3db/sketch/check';
-import { anchorModel, anchorModelForSelection, chamfer, dissolveText, extend, fillet, isCurve, mergePoints, mirror, offset, polygon, referenceEntities, relationCrossings, slot, trim, type Maker, type ModelItem, type OpResult } from '@3db/sketch/ops';
+import {
+  anchorModel,
+  anchorModelForSelection,
+  applyTransform,
+  chamfer,
+  dissolveText,
+  extend,
+  fillet,
+  isCurve,
+  mergePoints,
+  mirror,
+  offset,
+  patternEntities,
+  patternProblem,
+  patternTransforms,
+  polygon,
+  referenceEntities,
+  relationCrossings,
+  slot,
+  transformEntities,
+  transformProblem,
+  trim,
+  type Maker,
+  type ModelItem,
+  type OpResult,
+  type PatternSpec,
+  type Transform2,
+  type TransformResult,
+} from '@3db/sketch/ops';
 import type { SketchSolvePayload } from '../worker/protocol';
 
 export type ToolId =
@@ -70,10 +99,26 @@ export type ToolId =
   | 'mirror'
   | 'convert'
   | 'pierce'
-  | 'intersect';
+  | 'intersect'
+  | TransformTool;
+
+/** 移動／複製／旋轉／縮放圖元 and the sketch patterns (ADR 0177): they act on the entities selected when the tool starts. */
+export type TransformTool = 'moveEntities' | 'copyEntities' | 'rotateEntities' | 'scaleEntities' | 'linearPattern' | 'circularPattern';
+export const TRANSFORM_TOOLS: readonly TransformTool[] = ['moveEntities', 'copyEntities', 'rotateEntities', 'scaleEntities', 'linearPattern', 'circularPattern'];
+const isTransformTool = (tool: ToolId): tool is TransformTool => (TRANSFORM_TOOLS as readonly ToolId[]).includes(tool);
+/** The clicks each transform tool takes: base and target; center, from and to; a pattern's center. */
+const TRANSFORM_CLICKS: Record<TransformTool, number> = { moveEntities: 2, copyEntities: 2, rotateEntities: 3, scaleEntities: 3, linearPattern: 2, circularPattern: 1 };
+const TRANSFORM_HINTS: Record<TransformTool, PlainKey[]> = {
+  moveEntities: ['sketch.hint.xformBase', 'sketch.hint.xformTarget'],
+  copyEntities: ['sketch.hint.xformBase', 'sketch.hint.xformTarget'],
+  rotateEntities: ['sketch.hint.rotateCenter', 'sketch.hint.rotateFrom', 'sketch.hint.rotateTo'],
+  scaleEntities: ['sketch.hint.scaleBase', 'sketch.hint.scaleFrom', 'sketch.hint.scaleTo'],
+  linearPattern: ['sketch.hint.xformBase', 'sketch.hint.patternStep'],
+  circularPattern: ['sketch.hint.circularCenter'],
+};
 
 /** The tools of C1.8–C1.19, whose hints and messages come from the message catalog. */
-type OperationTool = 'slot' | 'polygon' | 'sketchFillet' | 'sketchChamfer' | 'trim' | 'extend' | 'offset' | 'mirror' | 'convert' | 'pierce' | 'intersect';
+type OperationTool = 'slot' | 'polygon' | 'sketchFillet' | 'sketchChamfer' | 'trim' | 'extend' | 'offset' | 'mirror' | 'convert' | 'pierce' | 'intersect' | TransformTool;
 
 /** Tools that pick existing geometry instead of placing points: no snapping, the element under the cursor is what counts. */
 const PICK_TOOLS: ReadonlySet<ToolId> = new Set(['dimension', 'trim', 'extend', 'sketchFillet', 'sketchChamfer', 'offset', 'mirror']);
@@ -95,9 +140,41 @@ export interface ToolOptions {
   offsetDistance: number;
   /** 「修復草圖」 closes gaps up to this wide (mm). */
   gapTolerance: number;
+  /**
+   * The transform tools (ADR 0177): 「保持關係」, 「複製」 (rotate and scale), the values typed in (ΔX/ΔY, angle in degrees, factor; a pattern's step, copies and
+   * total angle). Kept as typed, even when not a valid value: the operation says why it cannot use one, it is never quietly made into another (AGENTS.md §2.1).
+   */
+  keepRelations: boolean;
+  transformCopy: boolean;
+  moveX: number;
+  moveY: number;
+  rotateAngle: number;
+  scaleFactor: number;
+  patternX: number;
+  patternY: number;
+  patternCount: number;
+  patternAngle: number;
 }
 
-const DEFAULT_OPTIONS: ToolOptions = { polygonSides: 6, circumscribed: false, filletRadius: 5, chamferDistance1: 5, chamferDistance2: 5, offsetDistance: 5, gapTolerance: 0.1 };
+const DEFAULT_OPTIONS: ToolOptions = {
+  polygonSides: 6,
+  circumscribed: false,
+  filletRadius: 5,
+  chamferDistance1: 5,
+  chamferDistance2: 5,
+  offsetDistance: 5,
+  gapTolerance: 0.1,
+  keepRelations: false,
+  transformCopy: false,
+  moveX: 10,
+  moveY: 0,
+  rotateAngle: 90,
+  scaleFactor: 2,
+  patternX: 20,
+  patternY: 0,
+  patternCount: 3,
+  patternAngle: 360,
+};
 
 /** What the controller needs from the application. The store implements it; tests use a fake. */
 export interface SketchHost {
@@ -108,8 +185,8 @@ export interface SketchHost {
   execute(cmd: Command): boolean;
   /** Solves a drag frame for display only; null ends the preview. */
   dragPreview(options: { drag: { points?: PointPosition[]; radii?: CircleRadius[] }; initial: { points: PointPosition[]; radii: CircleRadius[] } } | null): void;
-  /** Solves a candidate sketch without changing anything. */
-  trial(sketch: SketchFeature, doc?: PartDoc): Promise<SketchSolvePayload>;
+  /** Solves a candidate sketch without changing anything; dragged toward the targets of `options` when given (a move of entities, ADR 0177). */
+  trial(sketch: SketchFeature, doc?: PartDoc, options?: { drag: { points?: PointPosition[]; radii?: CircleRadius[] }; initial: { points: PointPosition[]; radii: CircleRadius[] } }): Promise<SketchSolvePayload>;
   notify(text: string, kind?: 'error' | 'info'): void;
   /** Opens the Modify box of a dimension (D6.1). */
   editDimension(constraintId: Id): void;
@@ -302,6 +379,15 @@ export class SketchController {
         return t('sketch.hint.pierce');
       case 'intersect':
         return t('sketch.hint.intersect');
+      case 'moveEntities':
+      case 'copyEntities':
+      case 'rotateEntities':
+      case 'scaleEntities':
+      case 'linearPattern':
+      case 'circularPattern': {
+        const hints = TRANSFORM_HINTS[tool];
+        return t(hints[Math.min(step, hints.length - 1)]!);
+      }
       default: {
         const hints = HINT_KEYS[tool];
         return t(hints[Math.min(step, hints.length - 1)]!);
@@ -340,10 +426,10 @@ export class SketchController {
   // ------------------------------------------------------------------ tools
 
   setTool(tool: ToolId): void {
-    // mirror and offset act on what is selected when the tool starts (SolidWorks takes a pre-selection too)
-    const chosen = tool === 'mirror' ? this.mirrorTargets() : tool === 'offset' ? this.offsetTargets() : [];
-    if ((tool === 'mirror' || tool === 'offset') && chosen.length === 0) {
-      const why = t(tool === 'mirror' ? 'sketch.needMirrorSelection' : 'sketch.needOffsetSelection');
+    // mirror, offset and the transforms act on what is selected when the tool starts (SolidWorks takes a pre-selection too)
+    const chosen = tool === 'mirror' || isTransformTool(tool) ? this.mirrorTargets() : tool === 'offset' ? this.offsetTargets() : [];
+    if ((tool === 'mirror' || tool === 'offset' || isTransformTool(tool)) && chosen.length === 0) {
+      const why = t(tool === 'mirror' ? 'sketch.needMirrorSelection' : tool === 'offset' ? 'sketch.needOffsetSelection' : 'sketch.needTransformSelection');
       this.host.notify(why, 'info');
       this.notice(why);
       return;
@@ -396,7 +482,7 @@ export class SketchController {
 
   /** Esc: ends the current chain or pick, then returns to selection (SolidWorks behaviour). */
   escape(): void {
-    if (this.tool === 'mirror' || this.tool === 'offset') this.setTool('select');
+    if (this.tool === 'mirror' || this.tool === 'offset' || isTransformTool(this.tool)) this.setTool('select');
     else if (this.clicks.length > 0 || this.chain || this.picks.length > 0) this.resetTool();
     else if (this.tool !== 'select') this.tool = 'select';
     else this.selection.clear();
@@ -902,6 +988,7 @@ export class SketchController {
     this.updateSnap(e);
     const s = this.snapTarget;
     if (!s) return;
+    if (isTransformTool(this.tool)) return this.transformClick(this.tool, s);
     switch (this.tool) {
       case 'slot':
       case 'polygon':
@@ -1152,6 +1239,169 @@ export class SketchController {
     }
   }
 
+  // ------------------------------------------------------------------ move, copy, rotate, scale, sketch patterns (ADR 0177)
+
+  /** A click of a transform tool: the clicks gather until the tool has its last one, which applies it. */
+  private transformClick(tool: TransformTool, s: Snap): void {
+    this.clicks.push(s);
+    if (this.clicks.length < TRANSFORM_CLICKS[tool]) return;
+    const points = this.clicks.map((c) => c.p);
+    this.clicks = [];
+    if (tool === 'linearPattern' || tool === 'circularPattern') return this.finishTransform(tool, this.patternResult(this.patternSpec(tool, points)));
+    const transforms = this.transformsThrough(tool, points);
+    if ('error' in transforms) return this.host.notify(transforms.error, 'info');
+    this.finishTransform(tool, this.transformResult(tool, transforms));
+  }
+
+  /** A pattern from its clicks: the step from the first to the second (linear), the center (circular); the copies and the angle as set. */
+  private patternSpec(tool: 'linearPattern' | 'circularPattern', p: P2[]): PatternSpec {
+    const o = this.options;
+    return tool === 'linearPattern' ? { kind: 'linear', step: sub(p[1]!, p[0]!), count: o.patternCount } : { kind: 'circular', c: p[0]!, angle: o.patternAngle, count: o.patternCount };
+  }
+
+  /**
+   * 「套用」 in the PropertyManager: the values typed in instead of the clicks. A move, a copy and a linear pattern need nothing else; a rotation and a
+   * scale need their center clicked first (a circular pattern is applied by the click on its center).
+   */
+  applyToolValues(): void {
+    const tool = this.tool;
+    if (!isTransformTool(tool)) return;
+    const o = this.options;
+    const center = this.clicks[0]?.p;
+    let r: TransformResult;
+    if (tool === 'moveEntities' || tool === 'copyEntities') r = this.transformResult(tool, [{ kind: 'translate', d: [o.moveX, o.moveY] }]);
+    else if (tool === 'linearPattern') r = this.patternResult({ kind: 'linear', step: [o.patternX, o.patternY], count: o.patternCount });
+    else if (!center) return this.host.notify(t('sketch.xformNeedCenter'), 'info');
+    else if (tool === 'rotateEntities') r = this.transformResult(tool, [{ kind: 'rotate', c: center, angle: o.rotateAngle }]);
+    else if (tool === 'scaleEntities') r = this.transformResult(tool, [{ kind: 'scale', c: center, k: o.scaleFactor }]);
+    else r = this.patternResult({ kind: 'circular', c: center, angle: o.patternAngle, count: o.patternCount });
+    this.clicks = [];
+    this.finishTransform(tool, r);
+  }
+
+  /** The transforms the clicked points (and, for the preview, the cursor as the last of them) make; a pattern's copies. */
+  private transformsThrough(tool: TransformTool, p: P2[]): Transform2[] | { error: string } {
+    switch (tool) {
+      case 'moveEntities':
+      case 'copyEntities':
+        return [{ kind: 'translate', d: sub(p[1]!, p[0]!) }];
+      case 'linearPattern':
+      case 'circularPattern': {
+        const spec = this.patternSpec(tool, p);
+        const problem = patternProblem(spec);
+        return problem ? { error: problem } : patternTransforms(spec);
+      }
+      case 'rotateEntities':
+      case 'scaleEntities': {
+        const [from, to] = [sub(p[1]!, p[0]!), sub(p[2]!, p[0]!)];
+        if (Math.hypot(...from) < 1e-9 || Math.hypot(...to) < 1e-9) return { error: t('sketch.xformPickApart') };
+        if (tool === 'scaleEntities') return [{ kind: 'scale', c: p[0]!, k: Math.hypot(...to) / Math.hypot(...from) }];
+        return [{ kind: 'rotate', c: p[0]!, angle: (Math.atan2(cross(from, to), dot(from, to)) * 180) / Math.PI }];
+      }
+    }
+  }
+
+  private transformResult(tool: TransformTool, transforms: Transform2[]): TransformResult {
+    const copy = tool === 'copyEntities' || ((tool === 'rotateEntities' || tool === 'scaleEntities') && this.options.transformCopy);
+    return transformEntities(this.sketch(), this.geometry(), this.allocator(), this.picks, transforms[0]!, { keepRelations: this.options.keepRelations, copy });
+  }
+
+  private patternResult(spec: PatternSpec): TransformResult {
+    return patternEntities(this.sketch(), this.geometry(), this.allocator(), this.picks, spec, this.options.keepRelations);
+  }
+
+  /** After the transform: back to selecting, with what was moved (in place) still selected. */
+  private finishTransform(tool: TransformTool, r: TransformResult): void {
+    const moved = this.picks;
+    const inPlace = tool === 'moveEntities' || ((tool === 'rotateEntities' || tool === 'scaleEntities') && !this.options.transformCopy);
+    this.runTransform(r, () => {
+      this.setTool('select');
+      if (inPlace) this.select(moved);
+      if (!('error' in r) && r.removed > 0) this.host.notify(t('sketch.xformRemoved', { n: r.removed }), 'info');
+    });
+  }
+
+  /**
+   * A transform as one command (one undo step), checked by the solver like any operation. The moved points and circles are dragged to where the
+   * transform takes them (the rest of the sketch starts where it is shown), and what the solver makes of it is stored, as after dragging: with
+   * 「保持關係」 the relations to the rest may hold the selection back, or bring the rest with it.
+   */
+  private runTransform(r: TransformResult, done?: () => void): void {
+    if ('error' in r) return this.host.notify(r.error, 'info');
+    if (this.busy) return;
+    const base = { type: 'editSketch', featureId: this.host.featureId, ...r.edit } as Extract<Command, { type: 'editSketch' }>;
+    let next: PartDoc;
+    try {
+      next = applyCommand(this.host.doc(), base);
+    } catch (e) {
+      return this.host.notify(t('sketch.opFailed', { reason: e instanceof Error ? e.message : String(e) }), 'error');
+    }
+    const candidate = next.features.find((f) => f.id === this.host.featureId) as SketchFeature;
+    const targets = new Set(r.targets.map((p) => p.id));
+    const sized = new Set(r.radii.map((x) => x.id));
+    const initial = { points: [...r.targets], radii: [...r.radii] };
+    for (const [id, g] of this.geometry()) {
+      if (g.type === 'point' && !targets.has(id)) initial.points.push({ id, x: g.p[0], y: g.p[1] });
+      else if (g.type === 'circle' && !sized.has(id)) initial.radii.push({ id, radius: g.r });
+    }
+    this.busy = true;
+    this.pending = this.host
+      .trial(candidate, next, { drag: { points: r.targets, radii: r.radii }, initial })
+      // the drag toward the targets can find no way when the relations kept to the rest pull against it (a turn of two lines that end on a line
+      // kept vertical): then the sketch is solved from the targets without the pull, and the relations have their way, as they do when they only hold it back
+      .then((dragged) => (dragged.status === 'failed' ? this.host.trial(candidate, next, { drag: {}, initial }) : dragged))
+      .then((solved) => {
+        if (solved.status === 'over') return this.host.notify(t('sketch.opOverDefined'), 'error');
+        // the relations kept to the rest of the sketch cannot follow the transform (with 保持關係): said as such, not as an over-defined sketch
+        if (solved.status === 'failed') return this.host.notify(t('sketch.xformBlocked'), 'error');
+        const at = (id: Id): P2 | null => {
+          const g = solved.geometry.get(id);
+          return g?.type === 'point' ? g.p : null;
+        };
+        const radius = (id: Id): number | null => {
+          const g = solved.geometry.get(id);
+          return g?.type === 'circle' ? g.r : null;
+        };
+        const added = new Set((r.edit.add?.entities ?? []).map((e) => e.id));
+        // what the solver made of it is stored, as after a drag: the new places of the existing points and circles …
+        const place: SketchPlacement[] = (r.edit.place ?? []).flatMap(({ x: _x, y: _y, radius: _r, ...rest }) => (Object.keys(rest).length > 1 ? [rest] : []));
+        for (const e of candidate.entities) {
+          if (added.has(e.id)) continue;
+          const p = e.type === 'point' ? at(e.id) : null;
+          const rr = e.type === 'circle' ? radius(e.id) : null;
+          if (p) place.push({ id: e.id, x: p[0], y: p[1] });
+          if (rr !== null) place.push({ id: e.id, radius: rr });
+        }
+        // … and of the new ones
+        const entities = (r.edit.add?.entities ?? []).map((e): SketchEntity => {
+          const p = e.type === 'point' ? at(e.id) : null;
+          const rr = e.type === 'circle' ? radius(e.id) : null;
+          return p && e.type === 'point' ? { ...e, x: p[0], y: p[1] } : rr !== null && e.type === 'circle' ? { ...e, radius: rr } : e;
+        });
+        const cmd: Command = { ...base, place, add: { entities, constraints: r.edit.add?.constraints ?? [] } };
+        if (this.host.execute(cmd)) done?.();
+      })
+      .catch((e: unknown) => this.host.notify(t('sketch.opFailed', { reason: e instanceof Error ? e.message : String(e) }), 'error'))
+      .finally(() => {
+        this.busy = false;
+        this.changed();
+      });
+  }
+
+  /** What the transform tool shows before its last click: the selection where the cursor would take it (each copy of a pattern), and the line from the first click. */
+  private transformPreview(tool: TransformTool, cursor: P2): PreviewShape[] {
+    const need = TRANSFORM_CLICKS[tool];
+    const points = [...this.clicks.map((c) => c.p), cursor];
+    const shapes: PreviewShape[] = this.clicks.slice(1).map((c) => ({ kind: 'line', a: this.clicks[0]!.p, b: c.p, construction: true }));
+    if (this.clicks.length > 0) shapes.push({ kind: 'line', a: this.clicks[0]!.p, b: cursor, construction: true });
+    if (points.length < need) return shapes;
+    const transforms = this.transformsThrough(tool, points);
+    if ('error' in transforms || transforms.some((m) => transformProblem(m))) return shapes;
+    const geometry = this.geometry();
+    for (const m of transforms) for (const id of this.picks) shapes.push(...transformedShapes(geometry.get(id), m));
+    return shapes;
+  }
+
   /**
    * Applies the result of an operation as one command (one undo step), after the solver agrees the sketch is not
    * over-defined by it, like a dimension or a relation.
@@ -1346,6 +1596,7 @@ export class SketchController {
     if (this.box) shapes.push({ kind: 'box', a: this.box.a, b: this.box.b });
     const cursor = this.snapTarget?.p ?? this.cursor;
     if (!cursor || this.tool === 'select' || PICK_TOOLS.has(this.tool)) return shapes;
+    if (isTransformTool(this.tool)) return [...shapes, ...this.transformPreview(this.tool, cursor)];
     const [c1, c2] = this.clicks;
     switch (this.tool) {
       case 'slot':
@@ -1437,6 +1688,36 @@ export class SketchController {
 
 function rectLines(corners: P2[]): PreviewShape[] {
   return corners.map((a, i) => ({ kind: 'line' as const, a, b: corners[(i + 1) % 4]! }));
+}
+
+/** How an entity looks where a transform takes it (ADR 0177 preview): lines, circles and arcs exactly; ellipses and splines as polylines; points and texts not at all. */
+function transformedShapes(g: SolvedGeometry | undefined, m: Transform2): PreviewShape[] {
+  const k = m.kind === 'scale' ? m.k : 1;
+  const turn = m.kind === 'rotate' ? (m.angle * Math.PI) / 180 : 0;
+  const polyline = (pts: P2[], closed: boolean): PreviewShape[] => {
+    const q = pts.map((p) => applyTransform(m, p));
+    return q.slice(0, closed ? q.length : q.length - 1).map((a, i) => ({ kind: 'line', a, b: q[(i + 1) % q.length]! }));
+  };
+  switch (g?.type) {
+    case 'line':
+      return [{ kind: 'line', a: applyTransform(m, g.a), b: applyTransform(m, g.b), construction: g.construction }];
+    case 'circle':
+      return [{ kind: 'circle', c: applyTransform(m, g.c), r: g.r * k }];
+    case 'arc':
+      return [{ kind: 'arc', c: applyTransform(m, g.c), r: g.r * k, a0: g.a0 + turn, a1: g.a1 + turn }];
+    case 'ellipse': {
+      const pts = Array.from({ length: 48 }, (_, i): P2 => {
+        const u = (2 * Math.PI * i) / 48;
+        const [x, y] = [g.majorRadius * Math.cos(u), g.minorRadius * Math.sin(u)];
+        return [g.c[0] + x * Math.cos(g.angle) - y * Math.sin(g.angle), g.c[1] + x * Math.sin(g.angle) + y * Math.cos(g.angle)];
+      });
+      return polyline(pts, true);
+    }
+    case 'spline':
+      return polyline(g.points, g.closed);
+    default:
+      return [];
+  }
 }
 
 /** Collects the entities and relations of one drawing action (one command, one undo step). */

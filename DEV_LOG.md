@@ -1,5 +1,37 @@
 # 3D-Builder 開發日誌 (DEV_LOG.md)
 
+## 2026-10-20：草圖的移動／複製／旋轉／縮放圖元與草圖陣列（ADR 0177）
+
+### 現象與根因
+- 審查報告 `docs/ui-interaction-audit.md` §8 第 2 批（差距 #4）：草圖沒有 SolidWorks Move／Copy／Rotate／Scale Entities（含「保持關係」）與草圖陣列。使用者確認計畫、關係規則與三個假設（副本數不含原圖元；線性陣列一個方向；旋轉與縮放另有「複製」）。
+- 分支以 fast-forward 建在第 1 批 `claude/zealous-elion-0bae8c`（ADR 0176）之上：右鍵選單在那裡。
+
+### 變更
+- `packages/sketch/src/ops.ts`：`transformEntities`、`patternEntities`（純函式）、`applyTransform`、`transformProblem`／`patternProblem`（非法輸入的說明）、`patternTransforms`；關係規則見 ADR 0177 §2.2。
+- `packages/model/src/commands.ts`：`SketchEdit.place`（點、半徑、短半徑、文字大小與角度）、`EntityRefs` 加 `major`／`points`、`constraints[].set.labelPosition`；不改 Schema。
+- `SketchController`：六個工具（點選流程、預覽、`applyToolValues` 套用面板數值、`runTransform` 以拖曳目標試解並把結果寫入同一個命令；拖曳無解時不拉拖曳再解一次）；`SketchHost.trial` 可帶拖曳參數（store 轉給 worker）。
+- PropertyManager 的 `TransformOptions`（保持關係、複製、數值欄位保留原值、套用）；`actions.ts`／`strings.ts` 六個工具；`contextMenus.ts` 圖元選單加「移動／複製 ▸」（六個工具＋鏡射）。
+- i18n `sketchxform.*`（zh-TW／en）；`help.tool*Entities`、`help.tool*Pattern`；手冊新增 C27，`docs/help-links.json` C27，`SYNC_MANUAL_HELP=1` 同步。
+- 既有測試隨選單改變更新：`tests/phase8/context-menus.test.ts`、`tests/e2e/manual-context-menus.js` 步驟 12。
+
+### RCA／CAPA（開發中發現）
+1. **Fuzz 的兩次「過多定義」來自產生器**：隨機草圖把同一段圓弧的起點與終點設成重合（退化圓弧）。CAPA：產生器不在同一形狀（含連成一串的直線）內加重合；Fuzz 改為斷言 0 拒絕、200 組全部套用。
+2. **保持關係開時拖曳無解**：兩條選取的線夾住一條被保持垂直、未選取的線，旋轉 114° 時 PlaneGCS 的暫時約束求解回 `failed`，原本會被報成「過多定義」（訊息錯誤）。CAPA：無解時不拉拖曳、從目標位置再解一次（關係為準）；仍無解時用專屬訊息 `sketch.xformBlocked`。專屬測試斷言第一次試解確實 `failed`、第二次成功（§3.2：分支被實際觸發）。
+3. **help 守門的盲點**：`tests/phase8/help.test.ts` 以正規式讀 `SKETCH_TOOLS` 的字面清單；若寫成 `...TRANSFORM_TOOLS` 展開，新工具就不在檢查範圍內卻照樣綠燈。CAPA：`SKETCH_TOOLS` 逐一寫出六個 id。
+4. **e2e 腳本自己的錯**：以「目前位置」找角點，移動後找不到而誤判。CAPA：移動前先記下 id。
+
+### 紅隊四問（AGENTS §2）
+1. **輸入破壞**：比例 0／負／NaN／∞／1、角度 NaN／∞／720、ΔX NaN、移動 0、副本數 2.5／0／−1／NaN／∞／201、間距 0、總角度 NaN／0／400／−361、旋轉與縮放沒先點中心——全部在運算層（`transformProblem`／`patternProblem`）拒絕並給指定訊息，文件物件不變（測試斷言 `history.doc` 為同一個參考）。面板欄位不靜默修正（空白＝NaN，交給運算層說明）；沒有 `Math.round`／`Math.abs` 改寫輸入（`quarterTurns` 的四捨五入只用於判斷是否為 90° 的整數倍，誤差 1e-9）。
+2. **拓樸與幾何相交**：陣列整圈時以副本數＋1 等分，最後一個副本不會疊回原圖元；間距 0 直接拒絕。縮放比例必須 > 0，圓弧方向不會翻轉；本功能不做布林、不配置 WASM 幾何（只有 PlaneGCS 求解）。
+3. **依賴鏈完整性**：關係的分類用 `constraintRefs`（含原點與草圖軸，視為閉包外）；拆點時同步改圖元的 `p1/p2/start/end/center/at/major/points` 與內部關係的參考；`editSketch` 的 `place` 走既有 `sketchError` 檢查；help 每項宣稱都可追到程式與測試（例：「訊息會說刪了幾個」＝`sketch.xformRemoved`）。不碰 `schema.ts`、`dag.ts`、`engine.ts`：草圖內的變換不新增特徵或參考種類。
+4. **零 Mock 與真值**：單元測試與 e2e 的期望座標都由 `applyTransform`（或腳本內自寫的同一個矩陣）作用在變換前的求解結果上得到，從未寫死；比對求解器結果（< 1e-9；app 內 < 1e-6）。e2e 以真實 pointer 事件點在既有的點上（抓取使位置精確）並讀文件狀態。
+
+### 驗證
+- 單元：`apps/web/test/sketch-transform.test.ts` 64/64（Fuzz 200 組：200 套用、0 拒絕、0 例外，77 組逐點對照矩陣）；`tests/phase8/context-menus.test.ts` 22/22；help 42/42。
+- 全量 vitest：266 檔通過、4 skipped（原有），3330 tests 0 失敗。
+- typecheck 0 錯誤；lint:rules／lint:deps／lint:i18n 通過（i18n 基準不變，145 行）。
+- `verify:ui`（自有埠 5591／9533／5593）：新腳本 `manual-c27.js` 13/13；完整一輪 156/156 PASS，0 Console 錯誤（結束碼 0）。
+
 ## 2026-10-20：零件、草圖、組合件畫面的右鍵選單（ADR 0176）
 
 ### 現象與根因

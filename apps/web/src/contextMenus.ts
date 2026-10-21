@@ -3,7 +3,7 @@ import type { Id, SketchFeature } from '@3db/model';
 import { SNAP_ITEMS } from '@3db/sketch/snaps';
 import { ACTIONS } from './actions';
 import { relationsOffered } from './sketcher/relationsOffered';
-import type { SketchController, ToolId } from './sketcher/controller';
+import { TRANSFORM_TOOLS, type SketchController, type ToolId } from './sketcher/controller';
 import { store, type UiState } from './state/store';
 import { RELATION_LABEL } from './strings';
 
@@ -111,7 +111,9 @@ export function sketchMenu(s: UiState, sketcher: SketchController, sketch: Sketc
   if (hit === null) return tidy([...SKETCH_START_TOOLS.map((id) => command(s, id)), ...leave]);
   const { offered } = relationsOffered(sketch, s.sketchSolve, view.selection);
   const relations: MenuEntry[] = offered.length > 0 ? [{ kind: 'submenu', id: 'add-relation', label: t('ctx.addRelation'), items: offered.map((r) => entry(`relation-${r.type}`, RELATION_LABEL[r.type], () => void sketcher.addRelation(r))) }] : [];
-  return tidy([...relations, command(s, 'tool-dimension', () => sketcher.startDimension()), command(s, 'construction'), SEPARATOR, command(s, 'sketch-select-chain'), command(s, 'sketch-delete'), ...leave]);
+  // 移動／複製／旋轉／縮放圖元, the sketch patterns and the mirror (ADR 0177): they start with the selection the right click made
+  const transforms: MenuEntry = { kind: 'submenu', id: 'transform-entities', label: t('ctx.transform'), items: [...TRANSFORM_TOOLS, 'mirror'].map((tool) => command(s, `tool-${tool}`)) };
+  return tidy([...relations, command(s, 'tool-dimension', () => sketcher.startDimension()), command(s, 'construction'), SEPARATOR, transforms, SEPARATOR, command(s, 'sketch-select-chain'), command(s, 'sketch-delete'), ...leave]);
 }
 
 /**

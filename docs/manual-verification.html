@@ -591,6 +591,25 @@ code{background:var(--chip);padding:0 4px;border-radius:4px}
 <h4>應該看到</h4><ul><li>每種抓取都顯示名稱並建立對應的關係；網格與角度預設不啟用；關掉「啟用抓取」什麼都不會自動做；快速抓取只留一種。</li></ul>
 <p class="report"><b>有問題時請回報：</b>哪一步、游標旁的名稱和實際吸到的位置、和預期的差別。</p>
 <label class="note">備註<textarea rows="2" placeholder="做到哪一步、畫面訊息原文、和預期的差別…"></textarea></label>
+</div></details><details class="item" id="item-C27" data-id="C27" data-auto="user" data-sec="p3a" data-tag="core">
+<summary><span class="iid">C27</span><span class="ttl">草圖：移動／複製／旋轉／縮放圖元與線性、環狀草圖陣列（ADR 0177）</span><span class="tag t-core">必做</span>
+<select class="st" aria-label="C27 狀態"><option value="">未做</option><option value="ok">通過</option><option value="bad">有問題</option><option value="skip">略過</option></select></summary>
+<div class="inner">
+<p class="why"><b>為什麼要做：</b>SolidWorks 的 Move／Copy／Rotate／Scale Entities 與草圖陣列是草圖的基本編輯；這一項看「保持關係」開與關的差別、副本的關係，以及打錯數字時的說明。</p>
+<p class="why helpref"><b>程式內的說明（按 F1，或功能列最右的「說明」搜尋）：</b>移動圖元、複製圖元、旋轉圖元、縮放圖元、線性草圖陣列、環狀草圖陣列。這一項驗出問題、修好時，這些說明也要一起改。</p>
+<p class="why"><b>預跑（2026-10-20）：</b>腳本 <code>manual-c27.js</code> 以真實滑鼠事件操作六個工具與右鍵選單，並斷言文件內容；座標與求解器結果的比對、非法輸入、200 組隨機組態由 <code>apps/web/test/sketch-transform.test.ts</code> 驗過。腳本沒涵蓋：預覽的觀感。</p>
+<h4>先準備</h4><p>新零件，在「前基準面」進入草圖。按「邊角矩形」畫一個約 20×10 的矩形，再按「直線」從矩形右上角往右上方畫一條斜線（斜線與矩形共用那個角）。用「智慧型尺寸」標矩形的寬度 20。</p><h4>怎麼做</h4><ol>
+<li>框選矩形的四條邊（不含斜線），在其中一條邊上按右鍵 →「移動／複製」→「移動圖元」。左邊面板不勾「保持關係」，按一下矩形左下角，再按一下右邊約 30 處。<span class="see">矩形移到新位置，寬度尺寸 20 還在；斜線留在原處，不再與矩形相連（共用的角分開了）；訊息說刪了幾個關係（如果有）。</span></li>
+<li>按 Ctrl+Z 復原，再做一次，這次勾「保持關係」。<span class="see">矩形移動時斜線的那一端跟著矩形的角走，另一端不動。</span></li>
+<li>選取矩形，按「複製圖元」，面板輸入 ΔX <code>0</code>、ΔY <code>-25</code>，勾「保持關係」，按「套用」。<span class="see">下方多一個矩形，原矩形不動；新矩形也有寬度 20 的尺寸。不勾「保持關係」再做一次：新矩形沒有尺寸與關係。</span></li>
+<li>選取矩形，按「旋轉圖元」，按一下矩形中心附近當作中心，面板角度輸入 <code>90</code> 按「套用」。<span class="see">矩形轉 90°；原本的「水平」關係變成「垂直」，「垂直」變成「水平」。復原後改輸入 <code>30</code>：轉 30°，水平與垂直關係被刪除並有訊息。</span></li>
+<li>選取矩形，按「縮放圖元」，按一下左下角，面板比例輸入 <code>2</code> 按「套用」。<span class="see">矩形變成兩倍大，寬度尺寸變成 40。再試比例 <code>0</code>、<code>-1</code>、清空：每次都說「比例必須是大於 0 的數字」，草圖不變。</span></li>
+<li>選取矩形，按「線性草圖陣列」，副本數 <code>3</code>、間距 ΔX <code>30</code>、ΔY <code>0</code>，按「套用」。<span class="see">右邊多出 3 個矩形，間距 30。副本數改成 <code>2.5</code> 或 <code>0</code>：說「副本數必須是 1 到 200 的整數」，不執行。</span></li>
+<li>選取斜線，按「環狀草圖陣列」，副本數 <code>5</code>、總角度 <code>360</code>，在圖面按一下中心。<span class="see">斜線繞中心平均排成 6 條（原本 1 條加 5 個副本，每 60° 一條）。</span></li>
+</ol>
+<h4>應該看到</h4><ul><li>每個工具的結果與上面說的一致；「保持關係」開與關的差別如步驟 1、2；打錯的數字都有說明且草圖不變。</li></ul>
+<p class="report"><b>有問題時請回報：</b>哪個工具、哪一步、畫面訊息原文、和預期的差別。</p>
+<label class="note">備註<textarea rows="2" placeholder="做到哪一步、畫面訊息原文、和預期的差別…"></textarea></label>
 </div></details></section><section id="p3b" class="sec"><h2>D. 組合件（Phase 3b）</h2><p class="intro">前置：先做一個小組合件。「檔案」→「新組合件」→ 開始組合件，選驗證資料夾（D:\3DB實機確認），點 locating-plate 按 ✓ 放在原點（固定），再用「組合件」→「插入零組件」插入 diamond-pin 兩次。用「結合」把銷插進板的孔（同軸心加重合）。存檔成 小夾具.3dba。</p><details class="item" id="item-D1" data-id="D1" data-auto="full" data-sec="p3b" data-tag="core">
 <summary><span class="iid">D1</span><span class="ttl">剛性次組合件（3b-1）</span><span class="tag t-core">必做</span>
 <select class="st" aria-label="D1 狀態"><option value="">未做</option><option value="ok">通過</option><option value="bad">有問題</option><option value="skip">略過</option></select></summary>

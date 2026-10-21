@@ -224,9 +224,72 @@ function ToolOptionsBox({ view, sketcher }: { view: ControllerView; sketcher: Sk
       );
     case 'offset':
       return <OptionNumber label={t('sketch.option.offset')} value={o.offsetDistance} onChange={(v) => sketcher.setOption('offsetDistance', v)} />;
+    case 'moveEntities':
+    case 'copyEntities':
+    case 'rotateEntities':
+    case 'scaleEntities':
+    case 'linearPattern':
+    case 'circularPattern':
+      return <TransformOptions view={view} sketcher={sketcher} />;
     default:
       return null;
   }
+}
+
+/** A value of a transform tool exactly as typed: an empty or unreadable field is NaN, which the operation refuses and says why (ADR 0177, AGENTS.md §2.1). */
+function TypedNumber({ label, value, name, onChange }: { label: string; value: number; name: string; onChange: (v: number) => void }) {
+  return (
+    <label className="pm-row">
+      <span>{label}</span>
+      <input type="number" step="any" name={name} value={Number.isFinite(value) ? value : ''} onChange={(e) => onChange(e.target.value === '' ? Number.NaN : Number(e.target.value))} />
+    </label>
+  );
+}
+
+/** 移動／複製／旋轉／縮放圖元 and the sketch patterns (ADR 0177): 保持關係, 複製, the values and 套用. */
+function TransformOptions({ view, sketcher }: { view: ControllerView; sketcher: SketchController }) {
+  const o = view.options;
+  const tool = view.tool;
+  const set = (key: 'moveX' | 'moveY' | 'rotateAngle' | 'scaleFactor' | 'patternX' | 'patternY' | 'patternCount' | 'patternAngle') => (v: number) => sketcher.setOption(key, v);
+  const pattern = tool === 'linearPattern' || tool === 'circularPattern';
+  return (
+    <>
+      <label className="pm-row checkbox" title={t('sketch.option.keepRelationsHint')}>
+        <input type="checkbox" name="keepRelations" checked={o.keepRelations} onChange={(e) => sketcher.setOption('keepRelations', e.target.checked)} />
+        <span>{t('sketch.option.keepRelations')}</span>
+      </label>
+      {(tool === 'rotateEntities' || tool === 'scaleEntities') && (
+        <label className="pm-row checkbox">
+          <input type="checkbox" name="transformCopy" checked={o.transformCopy} onChange={(e) => sketcher.setOption('transformCopy', e.target.checked)} />
+          <span>{t('sketch.option.copy')}</span>
+        </label>
+      )}
+      {(tool === 'moveEntities' || tool === 'copyEntities') && (
+        <>
+          <TypedNumber label={t('sketch.option.moveX')} name="moveX" value={o.moveX} onChange={set('moveX')} />
+          <TypedNumber label={t('sketch.option.moveY')} name="moveY" value={o.moveY} onChange={set('moveY')} />
+        </>
+      )}
+      {tool === 'rotateEntities' && <TypedNumber label={t('sketch.option.angle')} name="rotateAngle" value={o.rotateAngle} onChange={set('rotateAngle')} />}
+      {tool === 'scaleEntities' && <TypedNumber label={t('sketch.option.factor')} name="scaleFactor" value={o.scaleFactor} onChange={set('scaleFactor')} />}
+      {tool === 'linearPattern' && (
+        <>
+          <TypedNumber label={t('sketch.option.patternX')} name="patternX" value={o.patternX} onChange={set('patternX')} />
+          <TypedNumber label={t('sketch.option.patternY')} name="patternY" value={o.patternY} onChange={set('patternY')} />
+        </>
+      )}
+      {pattern && <TypedNumber label={t('sketch.option.patternCount')} name="patternCount" value={o.patternCount} onChange={set('patternCount')} />}
+      {tool === 'circularPattern' && <TypedNumber label={t('sketch.option.patternAngle')} name="patternAngle" value={o.patternAngle} onChange={set('patternAngle')} />}
+      {tool !== 'circularPattern' && (
+        <div className="relation-buttons">
+          <button type="button" name="applyTransform" onClick={() => sketcher.applyToolValues()}>
+            {t('sketch.option.apply')}
+          </button>
+        </div>
+      )}
+      <p className="hint">{t('sketch.option.keepRelationsHint')}</p>
+    </>
+  );
 }
 
 /** Over-defined sketch (A2.5, D7.2): the relations and dimensions that conflict, and what the solver confirms cures it, one click each. */

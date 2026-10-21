@@ -1048,6 +1048,36 @@ export const help = {
   'help.toolMirror.keywords': '草圖鏡射 鏡射 對稱 鏡像 中心線',
 
   'help.toolMirror.see': 'tool-centerline tool-offset concept.sketch-snaps tool-line sketch',
+  'help.toolMoveEntities.summary': '把選取的圖元從基準點移到目標點。',
+  'help.toolMoveEntities.body':
+    '先選取圖元（也可以在圖元上按右鍵 →「移動／複製」），再按這個指令；按一下基準點，再按一下目標點。也可以在左邊面板輸入 ΔX、ΔY 後按「套用」。\n\n- **保持關係**（預設不勾）：勾選時，選取的圖元與其他圖元之間的關係與尺寸都留著，其他圖元會被一起帶動；若被尺寸擋住，圖元會停在尺寸允許的位置。不勾時，這些關係與尺寸會被刪除（訊息會說刪了幾個），與未選取圖元共用的端點會分開。\n- 選取的圖元之間的關係與尺寸一律保留。\n- 有「固定」關係的點、跟隨模型的圖元（轉換實體引用、貫穿點）、原點與草圖的軸不能移動，會說明原因。\n- 一次移動是一個復原步驟；移動後回到選取，原本的圖元仍是選取狀態。',
+  'help.toolMoveEntities.keywords': '移動 平移 搬移 移動圖元 保持關係 move',
+  'help.toolMoveEntities.see': 'tool-copyEntities tool-rotateEntities tool-scaleEntities tool-linearPattern tool-mirror',
+  'help.toolCopyEntities.summary': '把選取的圖元複製一份，從基準點移到目標點。',
+  'help.toolCopyEntities.body':
+    '用法與「移動圖元」相同：基準點、目標點，或輸入 ΔX、ΔY 後按「套用」。原圖元不動，副本有自己的點與曲線（即使原圖元跟隨模型，副本也是一般圖元）。\n\n- **保持關係** 勾選時，選取的圖元之間的關係與尺寸會複製到副本上；不勾時副本只有幾何。\n- 與其他圖元之間的關係，以及「固定」關係，一律不複製。',
+  'help.toolCopyEntities.keywords': '複製 拷貝 副本 copy',
+  'help.toolCopyEntities.see': 'tool-moveEntities tool-linearPattern tool-circularPattern',
+  'help.toolRotateEntities.summary': '把選取的圖元繞一個中心旋轉一個角度。',
+  'help.toolRotateEntities.body':
+    '先選取圖元再按這個指令。按一下旋轉中心，再按一下起始方向上的一點與要轉到的方向上的一點（角度＝兩者的夾角，逆時針為正）；或按完中心後在面板輸入角度（度）按「套用」。勾「複製」則保留原圖元。\n\n- 選取的圖元之間的「水平」「垂直」與 X、Y 方向的尺寸：轉 90°、270° 時互換，轉 180° 時保留，其他角度時刪除（不再成立）。\n- 角度是 360° 的整數倍、或不是有限的數字時，會說明而不執行。\n- 「保持關係」的意思與「移動圖元」相同。',
+  'help.toolRotateEntities.keywords': '旋轉 轉動 角度 rotate',
+  'help.toolRotateEntities.see': 'tool-moveEntities tool-scaleEntities tool-circularPattern',
+  'help.toolScaleEntities.summary': '把選取的圖元以一個基準點縮放一個比例。',
+  'help.toolScaleEntities.body':
+    '先選取圖元再按這個指令。按一下基準點，再按一下參考點與參考點要到的位置（比例＝兩者到基準點的距離比）；或按完基準點後在面板輸入比例按「套用」。勾「複製」則保留原圖元。\n\n- 選取的圖元之間的長度、半徑、直徑、弧長尺寸會乘上比例；角度不變。尺寸是運算式時不能自動乘，會說明哪一個尺寸。\n- 比例必須大於 0；0、負數、不是數字、或剛好 1 時會說明而不執行。',
+  'help.toolScaleEntities.keywords': '縮放 比例 放大 縮小 scale',
+  'help.toolScaleEntities.see': 'tool-moveEntities tool-rotateEntities',
+  'help.toolLinearPattern.summary': '把選取的圖元沿一個方向等距複製多份。',
+  'help.toolLinearPattern.body':
+    '先選取圖元再按這個指令。按一下基準點，再按一下第一個副本的位置（間距與方向）；或在面板輸入間距 ΔX、ΔY 後按「套用」。「副本數」不含原圖元，必須是 1 到 200 的整數，否則會說明而不執行。\n\n- 每個副本是獨立的圖元，不與原圖元連動；「保持關係」勾選時，選取的圖元之間的關係與尺寸會複製到每個副本上。',
+  'help.toolLinearPattern.keywords': '草圖陣列 線性陣列 直線陣列 複製排列 pattern',
+  'help.toolLinearPattern.see': 'tool-circularPattern tool-copyEntities linear-pattern',
+  'help.toolCircularPattern.summary': '把選取的圖元繞一個中心等角度複製多份。',
+  'help.toolCircularPattern.body':
+    '先選取圖元再按這個指令，在面板設定「副本數」（不含原圖元，1 到 200 的整數）與「總角度」，再按一下陣列的中心。\n\n- 總角度 360：整圈平均分布（副本數＋1 等分）；其他角度：最後一個副本轉到總角度（副本數等分）；負的角度順時針。總角度為 0、超過 360 或不是數字時會說明而不執行。\n- 每個副本是獨立的圖元；旋轉時「水平」「垂直」關係的處理與「旋轉圖元」相同。',
+  'help.toolCircularPattern.keywords': '草圖陣列 環狀陣列 圓周陣列 複製排列 pattern',
+  'help.toolCircularPattern.see': 'tool-linearPattern tool-rotateEntities circular-pattern',
   'help.toolConvert.summary': '把模型的邊或面的外框轉進草圖，成為跟著模型走的圖元。',
   'help.toolConvert.body': '在面上畫草圖時按這個指令，再點模型的邊、面或頂點：邊的投影成為圖元；面會轉成它的外框與孔；頂點成為一個點。也可以在設計樹或圖形區點參考平面、基準面、基準軸或參考點：平面與軸成為草圖上的建構線（平面取它與草圖平面的交線；與草圖平面平行的平面不行），垂直於草圖的軸與參考點成為一個點，都跟著基準走；只能選草圖之前建立的基準。這些圖元是紫色的，位置由模型決定，模型改了它們跟著動；邊不見了草圖會報「遺失參考」。\n\n也可以不按這個指令，直接把游標移到模型的邊上畫，見「草圖的吸附與推斷」。',
   'help.toolConvert.see': 'concept.sketch-snaps tool-pierce',

@@ -275,6 +275,14 @@
     "tool-point",
     "tool-circle"
   ],
+  "C27": [
+    "tool-moveEntities",
+    "tool-copyEntities",
+    "tool-rotateEntities",
+    "tool-scaleEntities",
+    "tool-linearPattern",
+    "tool-circularPattern"
+  ],
   "F3": [
     "concept.drawing-dimensions",
     "drw-dimension",

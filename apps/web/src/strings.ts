@@ -154,6 +154,12 @@ export const TOOL_LABEL: Record<ToolId, string> = labelsOf({
   convert: 'tool.convert',
   pierce: 'tool.pierce',
   intersect: 'tool.intersect',
+  moveEntities: 'tool.moveEntities',
+  copyEntities: 'tool.copyEntities',
+  rotateEntities: 'tool.rotateEntities',
+  scaleEntities: 'tool.scaleEntities',
+  linearPattern: 'tool.linearPattern',
+  circularPattern: 'tool.circularPattern',
 });
 
 /** What the selection filter of the graphics area offers (D5.4): the kinds of element a click can take. */

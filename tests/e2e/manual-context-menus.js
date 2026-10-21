@@ -306,7 +306,8 @@ C.part = async () => {
     const ids = gids();
     const selection = [...H.view().selection];
     await closeMenus(H);
-    return { pass: what === 'sketch-entity' && same(ids, ['add-relation', 'tool-dimension', 'construction', 'sketch-select-chain', 'sketch-delete', 'view-normal', 'exit-sketch']) && same(selection, [line]), what, ids, selection };
+    // 移動／複製 ▸ (ADR 0177) between 構造線 and 選擇鏈; its lines are replayed in manual-c27.js
+    return { pass: what === 'sketch-entity' && same(ids, ['add-relation', 'tool-dimension', 'construction', 'transform-entities', 'sketch-select-chain', 'sketch-delete', 'view-normal', 'exit-sketch']) && same(selection, [line]), what, ids, selection };
   });
 
   await step('13 加入限制條件 ▸ 水平 adds a horizontal relation on the line', async () => {

@@ -1,5 +1,21 @@
 import { t, type PlainKey } from '@3db/i18n';
-import { constraintRefs, isDimension, SKETCH_ORIGIN, type Id, type IdAllocator, type Ref, type SketchConstraint, type SketchEdit, type SketchEntity, type SketchFeature } from '@3db/model';
+import {
+  constraintRefs,
+  isDimension,
+  isSketchAxis,
+  SKETCH_ORIGIN,
+  type CircleRadius,
+  type EntityRefs,
+  type Id,
+  type IdAllocator,
+  type PointPosition,
+  type Ref,
+  type SketchConstraint,
+  type SketchEdit,
+  type SketchEntity,
+  type SketchFeature,
+  type SketchPlacement,
+} from '@3db/model';
 import { closestOn, geometryOf, pointOf } from './interact';
 import { textContours } from './font';
 import type { P2, SolvedGeometry } from './types';
@@ -985,4 +1001,354 @@ export function dissolveText(
       add: parts.added,
     },
   };
+}
+
+// ---------------------------------------------------------------- move, copy, rotate, scale and sketch patterns (ADR 0177)
+
+/** A map of the sketch plane: a move by `d`; a turn of `angle` degrees counter-clockwise about `c`; a scale by `k` about `c`. */
+export type Transform2 = { kind: 'translate'; d: P2 } | { kind: 'rotate'; c: P2; angle: number } | { kind: 'scale'; c: P2; k: number };
+
+/** A sketch pattern: `count` copies (the original is not counted), each `step` on from the last; or turned about `c`, the last one `angle` degrees round (360: spaced evenly all the way round). */
+export type PatternSpec = { kind: 'linear'; step: P2; count: number } | { kind: 'circular'; c: P2; angle: number; count: number };
+
+export interface TransformOptions {
+  /** 「保持關係」: the relations and dimensions between the selection and the rest of the sketch stay (moving), the ones within the selection are copied (copying). */
+  keepRelations: boolean;
+  /** 「複製」: copies of the selection are made where the transform takes it, the selection stays. */
+  copy: boolean;
+}
+
+/** What the operation asks of the sketch: the edit, and where the points and circles it moved or made should end up (the targets the solver is dragged to). */
+export type TransformResult = { edit: SketchEdit; targets: PointPosition[]; radii: CircleRadius[]; removed: number } | { error: string };
+
+/** The most copies one sketch pattern makes. */
+export const PATTERN_MAX = 200;
+
+export function applyTransform(m: Transform2, p: P2): P2 {
+  switch (m.kind) {
+    case 'translate':
+      return [p[0] + m.d[0], p[1] + m.d[1]];
+    case 'rotate': {
+      const a = (m.angle * Math.PI) / 180;
+      const [c, s] = [Math.cos(a), Math.sin(a)];
+      const [x, y] = [p[0] - m.c[0], p[1] - m.c[1]];
+      return [m.c[0] + c * x - s * y, m.c[1] + s * x + c * y];
+    }
+    case 'scale':
+      return [m.c[0] + m.k * (p[0] - m.c[0]), m.c[1] + m.k * (p[1] - m.c[1])];
+  }
+}
+
+const finiteP = (p: P2) => Number.isFinite(p[0]) && Number.isFinite(p[1]);
+
+/** Why a transform cannot be applied (it is never quietly changed into one that can, AGENTS.md §2.1), or null. */
+export function transformProblem(m: Transform2): string | null {
+  switch (m.kind) {
+    case 'translate':
+      if (!finiteP(m.d)) return t('sketch.xformDistanceInvalid');
+      return Math.hypot(m.d[0], m.d[1]) < TINY ? t('sketch.xformNoMove') : null;
+    case 'rotate': {
+      if (!finiteP(m.c)) return t('sketch.xformPointInvalid');
+      if (!Number.isFinite(m.angle)) return t('sketch.xformAngleInvalid');
+      const turns = m.angle / 360;
+      return Math.abs(turns - Math.round(turns)) < 1e-12 ? t('sketch.xformNoTurn') : null;
+    }
+    case 'scale':
+      if (!finiteP(m.c)) return t('sketch.xformPointInvalid');
+      if (!Number.isFinite(m.k) || m.k <= 0) return t('sketch.xformScaleInvalid');
+      return Math.abs(m.k - 1) < 1e-12 ? t('sketch.xformScaleOne') : null;
+  }
+}
+
+/** Quarter turns of a transform (0–3), or null when it turns by something else: what a horizontal or vertical relation becomes. */
+function quarterTurns(m: Transform2): number | null {
+  if (m.kind !== 'rotate') return 0;
+  const q = m.angle / 90;
+  const r = Math.round(q);
+  return Math.abs(q - r) < 1e-9 ? ((r % 4) + 4) % 4 : null;
+}
+
+const LENGTH_DIMENSIONS: ReadonlySet<SketchConstraint['type']> = new Set(['distance', 'distanceX', 'distanceY', 'radius', 'diameter', 'arcLength']);
+const SWAPPED: Partial<Record<SketchConstraint['type'], SketchConstraint['type']>> = { horizontal: 'vertical', vertical: 'horizontal', distanceX: 'distanceY', distanceY: 'distanceX' };
+const PLAIN_NUMBER = /^\s*[-+]?(\d+\.?\d*|\.\d+)(e[-+]?\d+)?\s*$/i;
+
+/**
+ * What a relation or dimension among the transformed entities becomes: the same; another (a turn of a quarter swaps horizontal and vertical, X and Y
+ * distances); nothing (a turn by anything else than quarters: horizontal, vertical and X/Y distances no longer hold); a scaled length (a scale multiplies the
+ * driving length dimensions; one given as an expression cannot be, and the scale is refused). A dimension's label goes with the entities.
+ */
+function carried(c: SketchConstraint, m: Transform2): { body: SketchConstraint } | 'drop' | { error: string } {
+  let body = { ...c } as SketchConstraint & { value?: string; label?: string; labelPosition?: [number, number]; driving?: boolean };
+  const swap = SWAPPED[c.type];
+  if (swap) {
+    const q = quarterTurns(m);
+    if (q === null) return 'drop';
+    if (q % 2 === 1) body = { ...body, type: swap } as typeof body;
+  }
+  if (m.kind === 'scale' && LENGTH_DIMENSIONS.has(c.type) && body.driving !== false) {
+    const v = body.value;
+    if (typeof v !== 'string' || !PLAIN_NUMBER.test(v)) return { error: t('sketch.xformScaleExpression', { name: body.label ?? c.id }) };
+    // the full number, not rounded for display: the solver is to put the scaled entities exactly where the scale takes them
+    body = { ...body, value: String(Number(v) * m.k) };
+  }
+  if (body.labelPosition) body = { ...body, labelPosition: applyTransform(m, body.labelPosition) };
+  return { body };
+}
+
+/** The entities picked to be transformed, the points they move (their own and the selected points), and the stored entities by id. */
+function transformSelection(sketch: Pick<SketchFeature, 'entities'>, entityIds: Id[]): { chosen: SketchEntity[]; points: Id[]; byId: Map<Id, SketchEntity> } | { error: string } {
+  if (entityIds.some((id) => id === SKETCH_ORIGIN || isSketchAxis(id))) return error('sketch.xformOrigin');
+  const wanted = new Set(entityIds);
+  const chosen = sketch.entities.filter((e) => wanted.has(e.id));
+  if (chosen.length === 0) return error('sketch.xformNothing');
+  const points = [...new Set(chosen.flatMap((e) => (e.type === 'point' ? [e.id] : refsOf(e))))];
+  return { chosen, points, byId: new Map(sketch.entities.map((e) => [e.id, e])) };
+}
+
+const followsModel = (e: SketchEntity | undefined): boolean => !!e && (('ref' in e && !!e.ref) || (e.type === 'point' && !!e.pierce));
+
+/** Relations or dimensions get fresh ids of their own series, like the tools that make them. */
+const freshConstraintId = (ids: IdAllocator, c: SketchConstraint): Id => ids.take(isDimension(c) ? 'd' : 'c');
+
+function remapConstraint(c: SketchConstraint, map: ReadonlyMap<Id, Id>): SketchConstraint {
+  const out = { ...c } as Record<string, unknown>;
+  for (const f of REF_FIELDS) {
+    const v = out[f];
+    if (typeof v === 'string' && map.has(v)) out[f] = map.get(v);
+  }
+  return out as SketchConstraint;
+}
+
+/**
+ * 移動／旋轉／縮放圖元 (ADR 0177), in place (`copy` false). The points of the selection go where the transform takes them (the targets);
+ * circles, ellipses and texts scale, texts turn. Relations and dimensions:
+ * - among the selection: kept, as `carried` says (rotate: horizontal and vertical; scale: lengths);
+ * - between the selection and the rest, `keepRelations` on: kept (the solver then moves the rest with it as far as they say, or holds the selection back);
+ *   off: deleted, and a point the selection shares with an entity that is not selected is split: the selection takes a new point, the rest keeps the old one,
+ *   and so do the relations that only touch the old one.
+ * A selected point is the selection's own: what uses it goes with it. Refused: a point with a fix relation, geometry that follows the model.
+ */
+function transformInPlace(
+  sketch: Pick<SketchFeature, 'entities' | 'constraints'>,
+  geometry: Geometry,
+  ids: IdAllocator,
+  entityIds: Id[],
+  m: Transform2,
+  keepRelations: boolean,
+): TransformResult {
+  const sel = transformSelection(sketch, entityIds);
+  if ('error' in sel) return sel;
+  const { chosen, points, byId } = sel;
+  if (chosen.some(followsModel) || points.some((p) => followsModel(byId.get(p)))) return error('sketch.xformFollowsModel');
+  const chosenIds = new Set(chosen.map((e) => e.id));
+  const moved = new Set<Id>([...chosenIds, ...points]);
+  const shared = new Set<Id>(
+    keepRelations ? [] : points.filter((p) => !chosenIds.has(p) && sketch.entities.some((e) => !chosenIds.has(e.id) && refsOf(e).includes(p))),
+  );
+  const own = (r: Id) => moved.has(r) && !shared.has(r);
+  if (sketch.constraints.some((c) => c.type === 'fix' && own(c.point))) return error('sketch.xformFixed');
+
+  const posOf = (id: Id): P2 => {
+    const g = geometry.get(id);
+    const e = byId.get(id);
+    return g?.type === 'point' ? g.p : e?.type === 'point' ? [e.x, e.y] : [0, 0];
+  };
+  const b = new Parts(ids);
+  const split = new Map<Id, Id>();
+  for (const p of shared) split.set(p, b.point(applyTransform(m, posOf(p))));
+  const targets: PointPosition[] = [];
+  const radii: CircleRadius[] = [];
+  const place: SketchPlacement[] = [];
+  const entities: NonNullable<SketchEdit['entities']> = [];
+  for (const p of points) {
+    if (shared.has(p)) continue;
+    const [x, y] = applyTransform(m, posOf(p));
+    place.push({ id: p, x, y });
+    targets.push({ id: p, x, y });
+  }
+  for (const p of shared) {
+    const e = b.entities.find((x) => x.id === split.get(p)) as Extract<SketchEntity, { type: 'point' }>;
+    targets.push({ id: e.id, x: e.x, y: e.y });
+  }
+  const k = m.kind === 'scale' ? m.k : 1;
+  const turn = m.kind === 'rotate' ? m.angle : 0;
+  for (const e of chosen) {
+    const g = geometry.get(e.id);
+    if (e.type === 'circle') {
+      const radius = (g?.type === 'circle' ? g.r : e.radius) * k;
+      if (k !== 1) place.push({ id: e.id, radius });
+      radii.push({ id: e.id, radius });
+    } else if (e.type === 'ellipse' && k !== 1) place.push({ id: e.id, minorRadius: (g?.type === 'ellipse' ? g.minorRadius : e.minorRadius) * k });
+    else if (e.type === 'text') place.push({ id: e.id, ...(k !== 1 ? { size: e.size * k } : {}), ...(turn !== 0 ? { angle: (e.angle ?? 0) + turn } : {}) });
+    if (split.size === 0 || e.type === 'point') continue;
+    const set: EntityRefs = {};
+    if (e.type === 'spline') {
+      if (e.points.some((p) => split.has(p))) set.points = e.points.map((p) => split.get(p) ?? p);
+    } else {
+      for (const field of ['p1', 'p2', 'start', 'end', 'center', 'at', 'major'] as const) {
+        const v = (e as Partial<Record<typeof field, Id>>)[field];
+        if (v !== undefined && split.has(v)) set[field] = split.get(v)!;
+      }
+    }
+    if (Object.keys(set).length > 0) entities.push({ id: e.id, set });
+  }
+
+  const constraints: NonNullable<SketchEdit['constraints']> = [];
+  const remove: Id[] = [];
+  let removed = 0;
+  for (const c of sketch.constraints) {
+    const refs = constraintRefs(c);
+    const mine = refs.some(own);
+    if (!mine) continue; // the rest's (or only touches a point the rest keeps)
+    const outside = refs.some((r) => !moved.has(r));
+    if (outside) {
+      if (!keepRelations) {
+        remove.push(c.id);
+        removed++;
+      }
+      continue;
+    }
+    const r = carried(remapConstraint(c, split), m);
+    if (r === 'drop') {
+      remove.push(c.id);
+      removed++;
+    } else if ('error' in r) return r;
+    else if (r.body.type !== c.type) {
+      // another kind of relation: the old one goes, a new one (with an id of its own) takes its place
+      remove.push(c.id);
+      b.constraints.push({ ...r.body, id: freshConstraintId(ids, r.body) });
+    } else {
+      const set: Record<string, unknown> = {};
+      const before = c as unknown as Record<string, unknown>;
+      const after = r.body as unknown as Record<string, unknown>;
+      for (const f of [...REF_FIELDS, 'value', 'labelPosition']) if (after[f] !== before[f]) set[f] = after[f];
+      if (Object.keys(set).length > 0) constraints.push({ id: c.id, set: set as NonNullable<SketchEdit['constraints']>[number]['set'] });
+    }
+  }
+  return { edit: { entities, constraints, place, remove, add: b.added }, targets, radii, removed };
+}
+
+/**
+ * Copies of the selection, one for each transform (複製圖元, 旋轉／縮放並複製, sketch patterns; ADR 0177). Each copy has points and curves of its own, free
+ * geometry even where the original follows the model. With `keepRelations` the relations and dimensions among the selection are copied onto each copy (as
+ * `carried` says); a fix relation and anything between the selection and the rest never are. Without it, the copies are bare geometry.
+ */
+function copies(sketch: Pick<SketchFeature, 'entities' | 'constraints'>, geometry: Geometry, ids: IdAllocator, entityIds: Id[], transforms: Transform2[], keepRelations: boolean): TransformResult {
+  const sel = transformSelection(sketch, entityIds);
+  if ('error' in sel) return sel;
+  const { chosen, points, byId } = sel;
+  const inside = new Set<Id>([...chosen.map((e) => e.id), ...points]);
+  const internal = keepRelations ? sketch.constraints.filter((c) => c.type !== 'fix' && constraintRefs(c).length > 0 && constraintRefs(c).every((r) => inside.has(r))) : [];
+  const posOf = (id: Id): P2 => {
+    const g = geometry.get(id);
+    const e = byId.get(id);
+    return g?.type === 'point' ? g.p : e?.type === 'point' ? [e.x, e.y] : [0, 0];
+  };
+  const b = new Parts(ids);
+  const targets: PointPosition[] = [];
+  const radii: CircleRadius[] = [];
+  for (const m of transforms) {
+    const k = m.kind === 'scale' ? m.k : 1;
+    const turn = m.kind === 'rotate' ? m.angle : 0;
+    const twin = new Map<Id, Id>();
+    for (const p of points) {
+      const [x, y] = applyTransform(m, posOf(p));
+      const id = ids.take('p');
+      const construction = byId.get(p)?.construction;
+      b.entities.push({ id, type: 'point', x, y, ...(construction ? { construction: true } : {}) });
+      twin.set(p, id);
+      targets.push({ id, x, y });
+    }
+    const pt = (p: Id) => twin.get(p)!;
+    for (const e of chosen) {
+      if (e.type === 'point') continue;
+      const g = geometry.get(e.id);
+      const construction = e.construction ? { construction: true } : {};
+      let copy: SketchEntity;
+      switch (e.type) {
+        case 'line':
+          copy = { id: ids.take('l'), type: 'line', p1: pt(e.p1), p2: pt(e.p2), ...construction };
+          break;
+        case 'arc':
+          copy = { id: ids.take('a'), type: 'arc', center: pt(e.center), start: pt(e.start), end: pt(e.end), ...construction };
+          break;
+        case 'circle': {
+          const radius = (g?.type === 'circle' ? g.r : e.radius) * k;
+          copy = { id: ids.take('ci'), type: 'circle', center: pt(e.center), radius, ...construction };
+          radii.push({ id: copy.id, radius });
+          break;
+        }
+        case 'ellipse':
+          copy = { id: ids.take('el'), type: 'ellipse', center: pt(e.center), major: pt(e.major), minorRadius: (g?.type === 'ellipse' ? g.minorRadius : e.minorRadius) * k, ...construction };
+          break;
+        case 'spline':
+          copy = { id: ids.take('sp'), type: 'spline', points: e.points.map(pt), ...(e.closed ? { closed: true } : {}), ...construction };
+          break;
+        case 'text': {
+          const { id: _old, at, size, angle, ...rest } = e;
+          copy = { ...rest, id: ids.take('txt'), at: pt(at), size: size * k, ...(angle !== undefined || turn !== 0 ? { angle: (angle ?? 0) + turn } : {}) };
+          break;
+        }
+      }
+      b.entities.push(copy);
+      twin.set(e.id, copy.id);
+    }
+    for (const c of internal) {
+      const r = carried(remapConstraint(c, twin), m);
+      if (r === 'drop') continue;
+      if ('error' in r) return r;
+      b.constraints.push({ ...r.body, id: freshConstraintId(ids, r.body) });
+    }
+  }
+  return { edit: { add: b.added }, targets, radii, removed: 0 };
+}
+
+/** 移動／複製／旋轉／縮放圖元 (ADR 0177): see `transformInPlace` and `copies` for what happens to the relations. */
+export function transformEntities(
+  sketch: Pick<SketchFeature, 'entities' | 'constraints'>,
+  geometry: Geometry,
+  ids: IdAllocator,
+  entityIds: Id[],
+  m: Transform2,
+  options: TransformOptions,
+): TransformResult {
+  const problem = transformProblem(m);
+  if (problem) return { error: problem };
+  return options.copy ? copies(sketch, geometry, ids, entityIds, [m], options.keepRelations) : transformInPlace(sketch, geometry, ids, entityIds, m, options.keepRelations);
+}
+
+/** Why a pattern cannot be made, or null; nothing is rounded or turned round to make it possible (AGENTS.md §2.1). */
+export function patternProblem(spec: PatternSpec): string | null {
+  if (!Number.isInteger(spec.count) || spec.count < 1 || spec.count > PATTERN_MAX) return t('sketch.patternCount', { max: PATTERN_MAX });
+  if (spec.kind === 'linear') {
+    if (!finiteP(spec.step)) return t('sketch.xformDistanceInvalid');
+    return Math.hypot(spec.step[0], spec.step[1]) < TINY ? t('sketch.patternNoStep') : null;
+  }
+  if (!finiteP(spec.c)) return t('sketch.xformPointInvalid');
+  if (!Number.isFinite(spec.angle) || spec.angle === 0 || Math.abs(spec.angle) > 360) return t('sketch.patternAngle');
+  return null;
+}
+
+/** The transform of each copy of a pattern, the first copy first. */
+export function patternTransforms(spec: PatternSpec): Transform2[] {
+  return Array.from({ length: spec.count }, (_, j): Transform2 => {
+    const i = j + 1;
+    if (spec.kind === 'linear') return { kind: 'translate', d: [spec.step[0] * i, spec.step[1] * i] };
+    const each = Math.abs(spec.angle) === 360 ? spec.angle / (spec.count + 1) : spec.angle / spec.count;
+    return { kind: 'rotate', c: spec.c, angle: each * i };
+  });
+}
+
+/** 線性／環狀草圖陣列 (ADR 0177): copies of the selection, as `copies` makes them. */
+export function patternEntities(
+  sketch: Pick<SketchFeature, 'entities' | 'constraints'>,
+  geometry: Geometry,
+  ids: IdAllocator,
+  entityIds: Id[],
+  spec: PatternSpec,
+  keepRelations: boolean,
+): TransformResult {
+  const problem = patternProblem(spec);
+  if (problem) return { error: problem };
+  return copies(sketch, geometry, ids, entityIds, patternTransforms(spec), keepRelations);
 }

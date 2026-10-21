@@ -1040,6 +1040,36 @@ export const help: Translation = {
   'help.toolMirror.keywords': 'sketch mirror symmetric image centerline',
 
   'help.toolMirror.see': 'tool-centerline tool-offset concept.sketch-snaps tool-line sketch',
+  'help.toolMoveEntities.summary': 'Moves the selected entities from a base point to a target point.',
+  'help.toolMoveEntities.body':
+    'Select the entities first (or right-click one → Move / Copy), then press this command; click the base point, then the target point. Or type ΔX and ΔY in the left panel and press Apply.\n\n- **Keep relations** (off by default): on, the relations and dimensions between the selection and other entities stay, and those entities are brought along; held back by a dimension, the selection stops where the dimension lets it. Off, those relations and dimensions are deleted (a message says how many) and end points shared with entities that are not selected come apart.\n- The relations and dimensions among the selected entities always stay.\n- A point with a Fix relation, entities that follow the model (converted entities, pierce points), the origin and the sketch axes cannot be moved; the reason is given.\n- One move is one undo step; afterwards the tool returns to Select with the moved entities still selected.',
+  'help.toolMoveEntities.keywords': 'move translate shift entities keep relations',
+  'help.toolMoveEntities.see': 'tool-copyEntities tool-rotateEntities tool-scaleEntities tool-linearPattern tool-mirror',
+  'help.toolCopyEntities.summary': 'Copies the selected entities from a base point to a target point.',
+  'help.toolCopyEntities.body':
+    'Used like Move Entities: base point and target, or ΔX and ΔY and Apply. The originals stay; the copy has points and curves of its own (ordinary geometry even where the originals follow the model).\n\n- With **Keep relations** the relations and dimensions among the selection are copied onto the copy; without, the copy is geometry only.\n- Relations to other entities, and Fix relations, are never copied.',
+  'help.toolCopyEntities.keywords': 'copy duplicate entities',
+  'help.toolCopyEntities.see': 'tool-moveEntities tool-linearPattern tool-circularPattern',
+  'help.toolRotateEntities.summary': 'Turns the selected entities about a center by an angle.',
+  'help.toolRotateEntities.body':
+    'Select the entities first, then press this command. Click the center, then a point in the start direction and a point in the direction to turn to (the angle between them, counter-clockwise positive); or, after the center, type the angle (degrees) in the panel and press Apply. Copy keeps the originals.\n\n- Horizontal and vertical relations and X/Y dimensions among the selection swap on a turn of 90° or 270°, stay on 180°, and are deleted on any other angle (they no longer hold).\n- A whole number of turns, or an angle that is not a finite number, is refused with the reason.\n- Keep relations means what it means for Move Entities.',
+  'help.toolRotateEntities.keywords': 'rotate turn angle entities',
+  'help.toolRotateEntities.see': 'tool-moveEntities tool-scaleEntities tool-circularPattern',
+  'help.toolScaleEntities.summary': 'Scales the selected entities about a base point by a factor.',
+  'help.toolScaleEntities.body':
+    'Select the entities first, then press this command. Click the base point, then a reference point and where it goes (the factor is the ratio of their distances to the base point); or, after the base point, type the factor in the panel and press Apply. Copy keeps the originals.\n\n- Length, radius, diameter and arc length dimensions among the selection are multiplied by the factor; angles stay. A dimension given as an expression cannot be multiplied, and the one in the way is named.\n- The factor must be greater than 0; 0, a negative number, something that is not a number, or exactly 1 is refused with the reason.',
+  'help.toolScaleEntities.keywords': 'scale factor enlarge shrink entities',
+  'help.toolScaleEntities.see': 'tool-moveEntities tool-rotateEntities',
+  'help.toolLinearPattern.summary': 'Copies the selected entities several times, evenly spaced in one direction.',
+  'help.toolLinearPattern.body':
+    'Select the entities first, then press this command. Click a base point, then where the first copy goes (the spacing and direction); or type the spacing ΔX and ΔY in the panel and press Apply. Copies do not count the original and must be a whole number from 1 to 200, or it is refused with the reason.\n\n- Each copy is entities of its own, not linked to the original; with Keep relations the relations and dimensions among the selection are copied onto each.',
+  'help.toolLinearPattern.keywords': 'sketch pattern linear array copies',
+  'help.toolLinearPattern.see': 'tool-circularPattern tool-copyEntities linear-pattern',
+  'help.toolCircularPattern.summary': 'Copies the selected entities several times, evenly turned about a center.',
+  'help.toolCircularPattern.body':
+    'Select the entities first, then press this command, set Copies (original not counted, a whole number from 1 to 200) and Total angle in the panel, and click the center of the pattern.\n\n- A total angle of 360 spaces the copies evenly all round (copies + 1 shares); any other angle puts the last copy at that angle (copies shares); a negative angle runs clockwise. A total angle of 0, beyond 360, or not a number is refused with the reason.\n- Each copy is entities of its own; horizontal and vertical relations are handled as in Rotate Entities.',
+  'help.toolCircularPattern.keywords': 'sketch pattern circular polar array copies',
+  'help.toolCircularPattern.see': 'tool-linearPattern tool-rotateEntities circular-pattern',
   'help.toolConvert.summary': 'Brings the edges or the outline of a face of the model into the sketch as entities that follow the model.',
   'help.toolConvert.body': 'When sketching on a face, press this and click an edge, a face or a vertex of the model: an edge is projected into an entity; a face becomes its outline and holes; a vertex becomes a point. A reference plane, a default plane, a reference axis or a reference point can be clicked too, in the tree or the graphics area: a plane or an axis becomes a construction line in the sketch (a plane where it crosses the sketch plane; one parallel to it cannot), an axis square to the sketch and a reference point a point, all following the reference geometry; only reference geometry made before the sketch can be taken. These entities are purple, their place is the model\'s, and they move when the model changes; if the edge is gone the sketch reports "missing reference".\n\nYou do not have to press it: moving the cursor onto an edge of the model while drawing also works, see "Sketch Snaps and Inference".',
   'help.toolConvert.see': 'concept.sketch-snaps tool-pierce',
