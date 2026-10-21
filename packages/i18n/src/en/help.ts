@@ -748,6 +748,11 @@ export const help: Translation = {
   'help.rotateComponent.keywords': 'rotate component turn angle drag right button',
 
   'help.rotateComponent.see': 'move-component mate fix-component',
+  'help.moveWithTriad.summary': 'Shows a triad on the selected component: drag an arrow, square or ring to move or turn it exactly.',
+  'help.moveWithTriad.body':
+    'Select a component (or right-click one), then press this command; the triad appears at the middle of the component, along the assembly\'s X (red), Y (green) and Z (blue). With Move Component open, the selected component shows it too.\n\n- **Arrow**: moves along that axis only, without turning.\n- **Square**: moves in that plane only, without turning or leaving the plane.\n- **Ring**: turns about that axis only; the middle stays.\n- A direction a mate locks does not move; where the mates allow only another motion (such as turning about another axis), the drag is not taken and the component stays. Collision detection still works.\n- Right-click a ring: turn 90°, −90° or 180° about it. Right-click any handle: Move to XYZ… opens Move Component on To XYZ position.\n- Steps: set the move (mm) and turn (°) steps under Triad steps in the Move Component panel; 0 does not snap; a negative, empty or non-number value is refused with the reason.\n- A fixed, fully defined or suppressed component cannot be used; the reason is given. Each drag is one undo step; Esc ends it.',
+  'help.moveWithTriad.keywords': 'triad move turn rotate drag step snap',
+  'help.moveWithTriad.see': 'move-component rotate-component mate',
   'help.explode.summary': 'Makes an exploded view: moves components apart along directions; it only changes the display, not where they are assembled.',
 
   'help.formSubAssembly.summary': 'Makes the components you pick, and the mates among them, into a new sub-assembly file.',

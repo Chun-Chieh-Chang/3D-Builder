@@ -47,6 +47,8 @@ export interface Solution {
 export type GoalTerm =
   /** A point of the part onto a line: the part dragged by that point along the line under the cursor. */
   | { kind: 'pointOnLine'; point: Vec3; origin: Vec3; dir: Vec3 }
+  /** A point of the part kept in a plane (through `origin`, square to `normal`): a triad's plane handle (ADR 0179). */
+  | { kind: 'pointOnPlane'; point: Vec3; origin: Vec3; normal: Vec3 }
   /** A point of the part at a position. */
   | { kind: 'pointAt'; point: Vec3; target: Vec3 }
   /** The part turned to an orientation. */
@@ -416,6 +418,10 @@ function termOf(g: GoalTerm): Term {
         const v = sub(add(rotate(q, g.point), t), g.origin);
         return [dot(v, e1), dot(v, e2)];
       };
+    }
+    case 'pointOnPlane': {
+      const n = unit(g.normal);
+      return (q, t) => [dot(sub(add(rotate(q, g.point), t), g.origin), n)];
     }
     case 'pointAt':
       return (q, t) => sub(add(rotate(q, g.point), t), g.target);

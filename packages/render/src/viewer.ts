@@ -662,6 +662,27 @@ export interface ViewerEvents {
   onComponentDragEnd?: (cancelled: boolean) => void;
   /** A marker (setMarkers) was clicked: its key. */
   onMarkerClick?: (key: string) => void;
+  /** A handle of the triad (ADR 0179) was taken hold of with the left button: the ray of the pointer then. Returning false refuses the drag. */
+  onTriadDragStart?: (part: TriadPart, ray: TriadRayEvent) => boolean;
+  onTriadDrag?: (ray: TriadRayEvent) => void;
+  onTriadDragEnd?: (cancelled: boolean) => void;
+  /** A right click on a handle of the triad: its menu, instead of the component's. */
+  onTriadContextMenu?: (part: TriadPart, clientX: number, clientY: number) => void;
+}
+
+/** A handle of the triad (ADR 0179): an arrow along an axis, the square of the plane square to an axis, the ring about an axis, or the ball in the middle. */
+export type TriadPart = { kind: 'axis' | 'plane' | 'ring'; axis: 0 | 1 | 2 } | { kind: 'center' };
+
+/** The triad to draw: a key for the component it is on, and where its middle is. */
+export interface TriadDisplay {
+  key: string;
+  origin: [number, number, number];
+}
+
+/** The ray of the pointer, in the scene's coordinates. */
+export interface TriadRayEvent {
+  origin: [number, number, number];
+  dir: [number, number, number];
 }
 
 export interface CosmeticThreadDisplay {
@@ -741,6 +762,12 @@ export class Viewer {
   private originShown = false;
   private originGroup: THREE.Group | null = null;
   private guidesGroup: THREE.Group | null = null;
+  /** The triad of 「以座標軸移動」 (ADR 0179): its group, its handles, which one is lit, and a drag of one in progress. */
+  private triadGroup: THREE.Group | null = null;
+  private triadParts: TriadGizmoPart[] = [];
+  private triadKey: string | null = null;
+  private triadHovered: string | null = null;
+  private triadDrag: { move: (e: PointerEvent) => void; up: () => void } | null = null;
   private datums: DatumDisplay = { axes: [], points: [], systems: [] };
   private datumGroup: THREE.Group | null = null;
   private overlayGroup: THREE.Group | null = null;
@@ -816,6 +843,7 @@ export class Viewer {
 
     this.controls = new ViewControls(this.camera, this.renderer.domElement, () => this.viewChanged(), () => this.rememberView());
     const dom = this.renderer.domElement;
+    dom.addEventListener('pointerdown', this.onTriadDown, true); // first of all: the triad is drawn over everything, so a press on it is its own
     dom.addEventListener('pointerdown', this.onSectionDown, true); // before the controls and the component drags: a press on the cut is the cut's
     dom.addEventListener('pointerdown', this.onPointerDown);
     dom.addEventListener('pointermove', this.onPointerMove);
@@ -829,6 +857,9 @@ export class Viewer {
         return;
       }
       if (this.toolHandler) return void this.events.onToolContextMenu?.(e.clientX, e.clientY);
+      // a handle of the triad: its own menu (turn 90° or 180° on a ring, coordinates on the ball)
+      const handle = this.triadPartAt(e.clientX, e.clientY);
+      if (handle && this.events.onTriadContextMenu) return void this.events.onTriadContextMenu(handle, e.clientX, e.clientY);
       // components, not the faces of one, while no mate is being defined
       if (this.pickInstances && !this.pickElements && this.events.onComponentContextMenu) return void this.events.onComponentContextMenu(this.pickInstance(e.clientX, e.clientY), e.clientX, e.clientY);
       this.events.onContextMenu?.(e.clientX, e.clientY);
@@ -848,6 +879,7 @@ export class Viewer {
     this.setOverlay(null);
     this.setSketches([]);
     this.setOrigin(false);
+    this.setTriad(null);
     this.setGuides([]);
     this.setPlanes([]);
     this.setCosmeticThreads([]);
@@ -2538,6 +2570,8 @@ export class Viewer {
       return;
     }
     if (e.buttons !== 0) return;
+    // over a handle of the triad, only the handle is lit
+    if (this.hoverTriad(e.clientX, e.clientY)) return void this.setHoveredInstance(null);
     if (this.pickInstances) this.setHoveredInstance(this.pickInstance(e.clientX, e.clientY));
     if (this.pickElements) this.setHoveredElement(this.pickElement(e.clientX, e.clientY));
     // One element at a time, in the order a click takes it (pickOrder).
@@ -3124,10 +3158,169 @@ export class Viewer {
 
   private viewChanged(): void {
     if (this.originShown) this.paintOrigin(); // a constant size on screen
+    this.scaleTriad();
     if (this.datums.points.length + this.datums.systems.length > 0) this.paintDatums();
     this.events.onViewChange?.();
     for (const fn of this.viewListeners) fn();
     this.requestRender();
+  }
+
+  // ---------------------------------------------------------------- the triad on a component (以座標軸移動, ADR 0179)
+
+  /**
+   * Shows the triad of 「以座標軸移動」 at `origin` (assembly coordinates), pointing along X, Y and Z: an arrow per axis, a square per plane, a ring per
+   * axis and a ball in the middle. It is drawn over everything, the same size on screen at any zoom, and taken hold of before anything else under it.
+   * Null takes it away.
+   */
+  setTriad(triad: TriadDisplay | null): void {
+    if (!triad) {
+      this.cancelTriadDrag();
+      if (this.triadGroup) {
+        this.overlayScene.remove(this.triadGroup);
+        disposeGroup(this.triadGroup);
+        this.triadGroup = null;
+        this.triadParts = [];
+      }
+      this.triadKey = null;
+      if (this.triadHovered) {
+        this.triadHovered = null;
+        this.renderer.domElement.style.cursor = '';
+      }
+      return this.requestRender();
+    }
+    if (!this.triadGroup || this.triadKey !== triad.key) {
+      if (this.triadGroup) {
+        this.overlayScene.remove(this.triadGroup);
+        disposeGroup(this.triadGroup);
+      }
+      const built = buildTriadGizmo();
+      this.triadGroup = built.group;
+      this.triadParts = built.parts;
+      this.triadKey = triad.key;
+      this.triadHovered = null;
+      this.overlayScene.add(built.group);
+    }
+    this.triadGroup.position.set(...triad.origin);
+    this.scaleTriad();
+    this.requestRender();
+  }
+
+  /** The triad keeps its size on the screen: one unit of its geometry is one pixel. */
+  private scaleTriad(): void {
+    if (!this.triadGroup) return;
+    this.triadGroup.scale.setScalar(this.pixelSize());
+    this.triadGroup.updateMatrixWorld(true);
+  }
+
+  /** The handle of the triad under a screen position, or null. */
+  triadPartAt(clientX: number, clientY: number): TriadPart | null {
+    if (!this.triadGroup) return null;
+    this.scaleTriad();
+    const r = this.rayAt(clientX, clientY);
+    const hits = new THREE.Raycaster(r.origin, r.direction).intersectObjects(this.triadParts.map((p) => p.pick), false);
+    // the ball before the arrows before the squares before the rings: the smaller handle wins where they overlap on the screen
+    const order = { center: 0, axis: 1, plane: 2, ring: 3 } as const;
+    const found = hits.map((h) => this.triadParts.find((p) => p.pick === h.object)!.part).sort((a, b) => order[a.kind] - order[b.kind]);
+    return found[0] ?? null;
+  }
+
+  /**
+   * Where on the screen each handle can be taken hold of (client coordinates), for the replays of the manual: an arrow two thirds of the way out, a square's
+   * middle, a ring on the side that faces the screen most, the ball's middle. Each is checked to pick its own handle; one that does not (seen end-on) is left out.
+   */
+  triadScreenPoints(): { part: TriadPart; x: number; y: number }[] {
+    if (!this.triadGroup) return [];
+    this.scaleTriad();
+    this.syncCamera();
+    const rect = this.renderer.domElement.getBoundingClientRect();
+    const view = new THREE.Vector3().setFromMatrixColumn(this.camera.matrixWorld, 2);
+    const toClient = (local: THREE.Vector3) => {
+      const v = local.clone().applyMatrix4(this.triadGroup!.matrixWorld).project(this.camera);
+      return { x: rect.left + ((v.x + 1) / 2) * rect.width, y: rect.top + ((1 - v.y) / 2) * rect.height };
+    };
+    const unit = (k: number) => new THREE.Vector3(k === 0 ? 1 : 0, k === 1 ? 1 : 0, k === 2 ? 1 : 0);
+    const out: { part: TriadPart; x: number; y: number }[] = [];
+    const add = (part: TriadPart, local: THREE.Vector3) => {
+      const p = toClient(local);
+      const at = this.triadPartAt(p.x, p.y);
+      if (at && JSON.stringify(at) === JSON.stringify(part)) out.push({ part, ...p });
+    };
+    add({ kind: 'center' }, new THREE.Vector3());
+    for (const k of [0, 1, 2] as const) {
+      add({ kind: 'axis', axis: k }, unit(k).multiplyScalar(TRIAD_SIZE.arrow * 0.7));
+      const [i, j] = [0, 1, 2].filter((x) => x !== k) as [number, number];
+      add({ kind: 'plane', axis: k }, unit(i).add(unit(j)).multiplyScalar((TRIAD_SIZE.squareFrom + TRIAD_SIZE.squareTo) / 2));
+      const across = unit(k).cross(view);
+      if (across.lengthSq() > 1e-6) add({ kind: 'ring', axis: k }, across.normalize().multiplyScalar(TRIAD_SIZE.ring));
+    }
+    return out;
+  }
+
+  /** Ends a drag of a triad handle in progress as cancelled (Esc). */
+  cancelTriadDrag(): void {
+    const d = this.triadDrag;
+    if (!d) return;
+    this.endTriadDragListeners();
+    this.events.onTriadDragEnd?.(true);
+  }
+
+  private endTriadDragListeners(): void {
+    const d = this.triadDrag;
+    if (!d) return;
+    this.triadDrag = null;
+    window.removeEventListener('pointermove', d.move);
+    window.removeEventListener('pointerup', d.up);
+    window.removeEventListener('pointercancel', d.up);
+    this.renderer.domElement.style.cursor = '';
+  }
+
+  private rayOf(clientX: number, clientY: number): TriadRayEvent {
+    const r = this.rayAt(clientX, clientY);
+    return { origin: [r.origin.x, r.origin.y, r.origin.z], dir: [r.direction.x, r.direction.y, r.direction.z] };
+  }
+
+  /** A left press on an arrow, a square or a ring takes hold of it (before the view's controls and the component drags); a right press on any handle is its menu's. */
+  private onTriadDown = (e: PointerEvent) => {
+    if (!this.triadGroup || this.triadDrag || e.altKey || e.ctrlKey || e.shiftKey) return;
+    const part = this.triadPartAt(e.clientX, e.clientY);
+    if (!part) return;
+    if (e.button === 2) {
+      e.stopImmediatePropagation(); // no component turn and no pan: the context menu that follows is the handle's
+      return;
+    }
+    if (e.button !== 0 || part.kind === 'center') return;
+    e.stopImmediatePropagation();
+    e.preventDefault();
+    if (!(this.events.onTriadDragStart?.(part, this.rayOf(e.clientX, e.clientY)) ?? false)) return;
+    this.renderer.domElement.style.cursor = 'grabbing';
+    const move = (m: PointerEvent) => this.events.onTriadDrag?.(this.rayOf(m.clientX, m.clientY));
+    const up = () => {
+      this.endTriadDragListeners();
+      this.events.onTriadDragEnd?.(false);
+      this.swallowClick = true; // the click that ends the press is not a pick
+      setTimeout(() => (this.swallowClick = false), 0);
+    };
+    this.triadDrag = { move, up };
+    window.addEventListener('pointermove', move);
+    window.addEventListener('pointerup', up);
+    window.addEventListener('pointercancel', up);
+  };
+
+  /** The handle under the pointer is lit, and the cursor says it can be taken hold of. */
+  private hoverTriad(clientX: number, clientY: number): boolean {
+    if (!this.triadGroup || this.triadDrag) return false;
+    const part = this.triadPartAt(clientX, clientY);
+    const key = part ? JSON.stringify(part) : null;
+    if (key !== this.triadHovered) {
+      this.triadHovered = key;
+      for (const p of this.triadParts) {
+        const lit = key === JSON.stringify(p.part);
+        for (const m of p.shown) (m.material as THREE.MeshBasicMaterial).color.setHex(lit ? TRIAD_HOVER : p.color);
+      }
+      this.renderer.domElement.style.cursor = part ? (part.kind === 'center' ? 'pointer' : 'grab') : '';
+      this.requestRender();
+    }
+    return !!part;
   }
 
   // ---------------------------------------------------------------- triad (D4.2)
@@ -3189,6 +3382,78 @@ export class Viewer {
     r.setViewport(8, 8, size, size);
     r.render(this.triadScene, this.triadCamera);
   }
+}
+
+/** The triad's sizes, in screen pixels: arrows, the squares between two arrows, the rings, the ball. */
+const TRIAD_SIZE = { arrow: 90, shaft: 1.6, head: 6, headLength: 16, squareFrom: 26, squareTo: 46, ring: 64, tube: 1.6, ball: 7, grab: 7 };
+const TRIAD_COLORS = [0xe03131, 0x2f9e44, 0x1c7ed6];
+const TRIAD_HOVER = 0xf59f00;
+
+interface TriadGizmoPart {
+  part: TriadPart;
+  /** The invisible, wider shape a press is tested against. */
+  pick: THREE.Mesh;
+  /** What is drawn, and its colour when not lit. */
+  shown: THREE.Mesh[];
+  color: number;
+}
+
+/** The triad's geometry in pixels (the group is scaled to the view): along +X, +Y, +Z for the arrows, the rings square to them. */
+function buildTriadGizmo(): { group: THREE.Group; parts: TriadGizmoPart[] } {
+  const group = new THREE.Group();
+  group.renderOrder = 10;
+  const parts: TriadGizmoPart[] = [];
+  const solid = (color: number, opacity = 1) => new THREE.MeshBasicMaterial({ color, depthTest: false, depthWrite: false, transparent: true, opacity, side: THREE.DoubleSide });
+  const hidden = () => new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthTest: false, depthWrite: false, colorWrite: false, side: THREE.DoubleSide });
+  const mesh = (g: THREE.BufferGeometry, m: THREE.Material) => {
+    const o = new THREE.Mesh(g, m);
+    o.renderOrder = 10;
+    return o;
+  };
+  const S = TRIAD_SIZE;
+  // turns a shape made along +Y (cylinders, cones) or about +Z (rings) to the axis k
+  const alongY = (k: number) => (k === 0 ? new THREE.Euler(0, 0, -Math.PI / 2) : k === 2 ? new THREE.Euler(Math.PI / 2, 0, 0) : new THREE.Euler());
+  const aboutZ = (k: number) => (k === 0 ? new THREE.Euler(0, Math.PI / 2, 0) : k === 1 ? new THREE.Euler(Math.PI / 2, 0, 0) : new THREE.Euler());
+  const dir = (k: number) => new THREE.Vector3(k === 0 ? 1 : 0, k === 1 ? 1 : 0, k === 2 ? 1 : 0);
+  for (const k of [0, 1, 2] as const) {
+    const color = TRIAD_COLORS[k]!;
+    // the arrow: a shaft from the ball out, a head at the end; taken hold of along all of it
+    const shaftLength = S.arrow - S.headLength - S.ball;
+    const shaft = mesh(new THREE.CylinderGeometry(S.shaft, S.shaft, shaftLength, 8), solid(color));
+    shaft.setRotationFromEuler(alongY(k));
+    shaft.position.copy(dir(k).multiplyScalar(S.ball + shaftLength / 2));
+    const head = mesh(new THREE.ConeGeometry(S.head, S.headLength, 16), solid(color));
+    head.setRotationFromEuler(alongY(k));
+    head.position.copy(dir(k).multiplyScalar(S.arrow - S.headLength / 2));
+    const arrowPick = mesh(new THREE.CylinderGeometry(S.grab, S.grab, S.arrow - S.ball, 8), hidden());
+    arrowPick.setRotationFromEuler(alongY(k));
+    arrowPick.position.copy(dir(k).multiplyScalar(S.ball + (S.arrow - S.ball) / 2));
+    group.add(shaft, head, arrowPick);
+    parts.push({ part: { kind: 'axis', axis: k }, pick: arrowPick, shown: [shaft, head], color });
+    // the square of the plane square to axis k, between the other two arrows
+    const [i, j] = [0, 1, 2].filter((x) => x !== k) as [number, number];
+    const side = S.squareTo - S.squareFrom;
+    const quad = new THREE.PlaneGeometry(side, side);
+    const square = mesh(quad, solid(color, 0.45));
+    square.setRotationFromEuler(aboutZ(k));
+    square.position.copy(dir(i).add(dir(j)).multiplyScalar((S.squareFrom + S.squareTo) / 2));
+    const squarePick = mesh(quad.clone(), hidden());
+    squarePick.setRotationFromEuler(aboutZ(k));
+    squarePick.position.copy(square.position);
+    group.add(square, squarePick);
+    parts.push({ part: { kind: 'plane', axis: k }, pick: squarePick, shown: [square], color });
+    // the ring about axis k
+    const ring = mesh(new THREE.TorusGeometry(S.ring, S.tube, 6, 96), solid(color));
+    ring.setRotationFromEuler(aboutZ(k));
+    const ringPick = mesh(new THREE.TorusGeometry(S.ring, S.grab, 6, 96), hidden());
+    ringPick.setRotationFromEuler(aboutZ(k));
+    group.add(ring, ringPick);
+    parts.push({ part: { kind: 'ring', axis: k }, pick: ringPick, shown: [ring], color });
+  }
+  const ball = mesh(new THREE.SphereGeometry(S.ball, 16, 12), solid(0x868e96));
+  group.add(ball);
+  parts.push({ part: { kind: 'center' }, pick: ball, shown: [ball], color: 0x868e96 });
+  return { group, parts };
 }
 
 function clearMarks(marks: THREE.Group): void {

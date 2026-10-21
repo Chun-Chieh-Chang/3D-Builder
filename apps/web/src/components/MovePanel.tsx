@@ -57,7 +57,11 @@ export function MovePanel() {
   const asm = useStore((s) => s.asm)!;
   const a = store.assembly;
   const tool = asm.move!.tool;
-  const [moveMode, setMoveMode] = useState<MoveMode>('free');
+  const [moveMode, setMoveMode] = useState<MoveMode>(asm.move?.mode ?? 'free');
+  // the triad's centre ball opens this on 「至 XYZ 位置」 (ADR 0179)
+  useEffect(() => {
+    if (asm.move?.mode) setMoveMode(asm.move.mode);
+  }, [asm.move?.mode]);
   const [turnMode, setTurnMode] = useState<TurnMode>('free');
   const c = asm.doc.components.find((x) => x.id === asm.selected);
   const result = c ? asm.solution?.components.get(c.id) : undefined;
@@ -105,6 +109,7 @@ export function MovePanel() {
         {asm.collisionStop && <p className="hint">{t('move.collisionHint')}</p>}
         {asm.drag?.blocked && <p className="error-text" data-field="collisionHit">{t('move.collisionHit', { names: asm.drag.blocked.names.join(', ') })}</p>}
       </div>
+      <TriadSteps />
       {tool === 'move' ? (
         <div className="pm-group">
           <h4>{t('movepm.move')}</h4>
@@ -162,6 +167,48 @@ export function MovePanel() {
           {turnMode === 'by' && <p className="hint">{t('movepm.turnHint')}</p>}
         </div>
       )}
+    </div>
+  );
+}
+
+/**
+ * The triad's steps (以座標軸移動, ADR 0179): a drag of an arrow or a square snaps to the move step, of a ring to the turn step; 0 does not snap. What is
+ * typed stays in the box; a value that is not 0 or a positive finite number is refused with the reason when applied, and the steps stay as they were.
+ */
+function TriadSteps() {
+  const steps = useStore((s) => s.asm?.triadSteps);
+  const [move, setMove] = useState(String(steps?.move ?? 0));
+  const [turn, setTurn] = useState(String(steps?.turn ?? 0));
+  const apply = () => void store.assembly?.setTriadSteps({ move: move.trim() === '' ? Number.NaN : Number(move), turn: turn.trim() === '' ? Number.NaN : Number(turn) });
+  const field = (label: string, name: string, value: string, set: (v: string) => void) => (
+    <div className="pm-row">
+      <span>{label}</span>
+      <input
+        name={name}
+        value={value}
+        onChange={(e) => set(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') {
+            e.preventDefault();
+            apply();
+          }
+          e.stopPropagation();
+        }}
+      />
+    </div>
+  );
+  return (
+    <div className="pm-group">
+      <h4>{t('triad.steps')}</h4>
+      {field(t('triad.moveStep'), 'triadMoveStep', move, setMove)}
+      {field(t('triad.turnStep'), 'triadTurnStep', turn, setTurn)}
+      <div className="pm-row">
+        <span />
+        <button className="pm-button" name="applyTriadSteps" onClick={apply}>
+          {t('movepm.apply')}
+        </button>
+      </div>
+      <p className="hint">{t('triad.hint')}</p>
     </div>
   );
 }

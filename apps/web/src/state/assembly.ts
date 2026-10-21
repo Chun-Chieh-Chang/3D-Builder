@@ -66,7 +66,29 @@ import {
   type SourceTree,
   type Vec3,
 } from '@3db/model';
-import { axisOf, closerAlignment, currentValue, defaultType, hasAlignment, MATE_LABEL, placed, supportedTypes, type GoalTerm, type MateGeometry } from '@3db/assembly';
+import {
+  axisOf,
+  closerAlignment,
+  currentValue,
+  defaultType,
+  hasAlignment,
+  MATE_LABEL,
+  placed,
+  supportedTypes,
+  triadHolds,
+  triadMotion,
+  triadStepsProblem,
+  triadTerms,
+  TRIAD_NO_STEPS,
+  type GoalTerm,
+  type MateGeometry,
+  type TriadAxis,
+  type TriadGrab,
+  type TriadHandle,
+  type TriadMotion,
+  type TriadRay,
+  type TriadSteps,
+} from '@3db/assembly';
 import { contentKey, gatherSources } from './sources';
 import { ASSEMBLY_FILE_EXTENSION, assemblyFileName, assemblyName, componentName, PART_FILE_EXTENSION, readDocumentFile, sha256Hex, stepStructure, writeAssemblyFile, writePartFile } from '@3db/io';
 import { t } from '@3db/i18n';
@@ -143,6 +165,13 @@ export interface DragState {
 /** 「移動零組件」/「旋轉零組件」 (C15.3): what a left-button drag does while the PropertyManager is open. */
 export interface MoveState {
   tool: 'move' | 'rotate';
+  /** How the move by numbers starts: 「至 XYZ 位置」 when the triad's centre ball asked for it (ADR 0179). */
+  mode?: 'free' | 'by' | 'to';
+}
+
+/** 「以座標軸移動」 (ADR 0179): the component the triad is on, until Esc or another command; it is also on the selected component while 移動零組件 is open. */
+export interface TriadState {
+  component: Id;
 }
 
 /** A numeric move of the selected component: by ΔX ΔY ΔZ (mm), its origin to X Y Z, or turned about X, Y, Z (radians). */
@@ -221,6 +250,10 @@ export interface AssemblyState {
   collisionStop: boolean;
   /** The move PropertyManager (C15.3); null while it is closed. */
   move: MoveState | null;
+  /** 「以座標軸移動」 (ADR 0179); null while no triad is asked for. */
+  triad: TriadState | null;
+  /** The triad's steps (ADR 0179): kept for the session, 0 (no snapping) to begin with. */
+  triadSteps: TriadSteps;
   /** The dialog for part files that cannot be found (B9.4); null while it is closed. */
   relink: RelinkState | null;
   /** The pattern PropertyManager (C15.13); null while it is closed. */
@@ -312,6 +345,8 @@ export class AssemblyStore {
     ending: boolean;
     /** The pairs that shared volume when the drag began (A3.6): not held against it. */
     baseline?: Set<string>;
+    /** A drag of the triad's handle (ADR 0179): where it began, and how far it has gone; a solve is kept only when it is a motion the handle offers. */
+    triad?: { grab: TriadGrab; motion: TriadMotion | null };
   } | null = null;
   private centers = new Map<string, Vec3>();
 
@@ -346,6 +381,8 @@ export class AssemblyStore {
       drag: null,
       collisionStop: false,
       move: null,
+      triad: null,
+      triadSteps: TRIAD_NO_STEPS,
       relink: null,
       pattern: null,
       explode: null,
@@ -1799,6 +1836,9 @@ export class AssemblyStore {
         d.goal = null;
         const solved = await this.host.api.solveAssembly(this.history.doc, this.trees(), { start: d.latest, goal: { body: d.component, terms } });
         if (this.dragging !== d) return;
+        // a triad handle offers one motion: what the mates allow only as another one is not taken, the component stays where it last held (ADR 0179)
+        const reached = solved.poses.get(d.component);
+        if (d.triad && (!reached || !triadHolds(d.triad.grab, reached))) continue;
         const guarded = this.state.collisionStop ? await this.stopBeforeContact(d, solved) : { result: solved, hit: null };
         if (this.dragging !== d) return;
         const r = guarded.result;
@@ -1921,12 +1961,12 @@ export class AssemblyStore {
   }
 
   /** 「移動零組件」 / 「旋轉零組件」: the PropertyManager for moving by numbers (dragging works with it open too). */
-  startMove(tool: MoveState['tool']): void {
+  startMove(tool: MoveState['tool'], mode?: MoveState['mode']): void {
     if (this.state.insert) this.cancelInsert();
     if (this.state.mate) this.cancelMate();
     if (this.state.pattern) this.cancelPattern();
     this.leaveExplode();
-    this.set({ move: { tool } });
+    this.set({ move: { tool, ...(mode ? { mode } : {}) } });
   }
 
   setMoveTool(tool: MoveState['tool']): void {
@@ -1937,6 +1977,153 @@ export class AssemblyStore {
     this.set({ move: null });
   }
 
+  // ------------------------------------------------------------ 以座標軸移動 (Move with Triad, ADR 0179)
+
+  /**
+   * 「以座標軸移動」: the triad on a component (the selected one when none is named), until Esc. Refused with the reason, as a drag is, when the component
+   * is fixed, fully defined or suppressed.
+   */
+  showTriad(componentId: Id | null = this.state.selected): boolean {
+    const c = componentId ? this.history.doc.components.find((x) => x.id === componentId) : undefined;
+    if (!c) {
+      this.host.notify(t('triad.pickComponent'));
+      return false;
+    }
+    const why = this.cannotMove(c.id);
+    if (why) {
+      this.host.notify(why, 'error');
+      return false;
+    }
+    if (this.state.exploded) {
+      this.host.notify(t('explode.cannotWhileExploded'));
+      return false;
+    }
+    this.set({ triad: { component: c.id }, selected: c.id });
+    return true;
+  }
+
+  hideTriad(): void {
+    if (this.state.triad) this.set({ triad: null });
+  }
+
+  /** The component the triad is drawn on now: the one asked for, else the selected one while 移動零組件 is open; null when none (or it cannot move). */
+  triadComponent(): Id | null {
+    const s = this.state;
+    if (s.mate || s.insert || s.pattern || s.explode || s.exploded || s.formSub) return null;
+    const id = s.triad?.component ?? (s.move ? s.selected : null);
+    if (!id || !s.doc.components.some((c) => c.id === id)) return null;
+    return this.cannotMove(id) ? null : id;
+  }
+
+  /** Where the triad sits: the component's middle, as the drag or the solution has it now (assembly coordinates). */
+  triadOrigin(componentId: Id): Vec3 | null {
+    const pose = this.state.drag?.poses?.get(componentId) ?? this.poseOf(componentId);
+    return pose ? transformPoint(pose, this.centerOf(componentId)) : null;
+  }
+
+  /** The steps a triad drag snaps to; refused with the reason when one is not 0 or a positive finite number (nothing is changed then). */
+  setTriadSteps(steps: TriadSteps): boolean {
+    const why = triadStepsProblem(steps);
+    if (why) {
+      this.host.notify(why, 'error');
+      return false;
+    }
+    this.set({ triadSteps: { ...steps } });
+    return true;
+  }
+
+  /** The grab of a triad drag (or turn) on a component: its middle, its orientation, its size, the ray it starts from. */
+  private triadGrab(componentId: Id, handle: TriadHandle, start: TriadRay): TriadGrab | null {
+    const pose = this.poseOf(componentId);
+    if (!pose) return null;
+    const center = this.centerOf(componentId);
+    const build = this.buildOf(componentId);
+    let size = 50;
+    if (build?.mesh) {
+      const p = build.mesh.positions;
+      const lo = [Infinity, Infinity, Infinity];
+      const hi = [-Infinity, -Infinity, -Infinity];
+      for (let i = 0; i < p.length; i += 3) {
+        for (let k = 0; k < 3; k++) {
+          lo[k] = Math.min(lo[k]!, p[i + k]!);
+          hi[k] = Math.max(hi[k]!, p[i + k]!);
+        }
+      }
+      if (p.length) size = Math.max(1, Math.hypot(hi[0]! - lo[0]!, hi[1]! - lo[1]!, hi[2]! - lo[2]!));
+    }
+    return { handle, center, centerAt: transformPoint(pose, center), rotation: pose.rotation, size, start };
+  }
+
+  /** A handle of the triad is taken hold of: a drag like a component drag, held to the handle's motion. False when it cannot move. */
+  startTriadDrag(componentId: Id, handle: TriadHandle, ray: TriadRay): boolean {
+    const solution = this.state.solution;
+    if (!solution || this.state.mate || this.state.insert || this.dragging) return false;
+    if (this.state.exploded) {
+      this.host.notify(t('explode.cannotWhileExploded'));
+      return false;
+    }
+    const why = this.cannotMove(componentId);
+    if (why) {
+      this.host.notify(why);
+      return false;
+    }
+    const grab = this.triadGrab(componentId, handle, ray);
+    if (!grab) return false;
+    const mode = handle.kind === 'ring' ? 'rotate' : 'move';
+    this.dragging = {
+      component: componentId,
+      mode,
+      grab: grab.center,
+      center: grab.center,
+      centerAt: grab.centerAt,
+      rotation: grab.rotation,
+      latest: solution.poses,
+      result: null,
+      goal: null,
+      running: false,
+      ending: false,
+      triad: { grab, motion: null },
+    };
+    this.set({ drag: { component: componentId, mode, poses: null }, selected: componentId });
+    return true;
+  }
+
+  /** The pointer moved with a handle held: the motion it makes (snapped to the steps), as goal terms. A ray along the handle's motion reads nothing: the last motion stays. */
+  triadDragTo(ray: TriadRay): void {
+    const d = this.dragging;
+    if (!d?.triad || d.ending) return;
+    const motion = triadMotion(d.triad.grab, ray, this.state.triadSteps, d.triad.motion);
+    if (!motion) return;
+    d.triad.motion = motion;
+    d.goal = triadTerms(d.triad.grab, motion);
+    void this.pumpDrag();
+  }
+
+  /** 「旋轉 90°／180°」 from a ring's right-click menu: the component turned about that axis through its middle, if its mates allow that turn (one undo step). */
+  async triadTurn(axis: TriadAxis, degrees: number): Promise<void> {
+    const id = this.triadComponent();
+    if (!id) return;
+    if (!Number.isFinite(degrees)) return this.host.notify(t('sketch.xformAngleInvalid'), 'error');
+    const solution = this.state.solution;
+    const grab = this.triadGrab(id, { kind: 'ring', axis }, { origin: [0, 0, 0], dir: [0, 0, 1] });
+    if (!solution || !grab) return;
+    try {
+      const r = await this.host.api.solveAssembly(this.history.doc, this.trees(), { start: solution.poses, goal: { body: id, terms: triadTerms(grab, { kind: 'ring', angle: (degrees * Math.PI) / 180 }) } });
+      const reached = r.poses.get(id);
+      if (!reached || !triadHolds(grab, reached) || !this.commitMove(r)) this.host.notify(t('triad.limited', { name: this.componentLabel(id) }));
+    } catch (e) {
+      this.host.notify(t('triad.failed', { why: e instanceof Error ? e.message : String(e) }), 'error');
+    }
+  }
+
+  /** The centre ball's 「移至 XYZ 座標…」: 移動零組件 opens on 「至 XYZ 位置」 for the triad's component. */
+  triadMoveTo(): void {
+    const id = this.triadComponent();
+    if (!id) return;
+    this.startMove('move', 'to');
+    this.set({ selected: id });
+  }
+
   /**
    * 「依據 Delta XYZ」, 「至 XYZ 位置」, and turning by degrees about the assembly's X, Y and Z (in that
    * order, about the part's middle), for the selected component: as far as its mates allow, as SolidWorks
@@ -1945,7 +2132,7 @@ export class AssemblyStore {
   async moveSelected(op: MoveOp): Promise<void> {
     const id = this.state.selected;
     const c = id ? this.history.doc.components.find((x) => x.id === id) : undefined;
-    if (!c) return this.host.notify('請先選擇要移動的零組件（在圖面或設計樹中點選）');
+    if (!c) return this.host.notify(t('triad.pickComponent'));
     const why = this.cannotMove(c.id);
     if (why) return this.host.notify(why, 'error');
     const pose = this.poseOf(c.id);
@@ -1971,7 +2158,7 @@ export class AssemblyStore {
       const r = await this.host.api.solveAssembly(this.history.doc, this.trees(), { start: solution.poses, goal: { body: c.id, terms } });
       if (!this.commitMove(r)) this.host.notify(`「${this.componentLabel(c.id)}」受結合限制，不能這樣移動`);
     } catch (e) {
-      this.host.notify(`移動失敗：${e instanceof Error ? e.message : String(e)}`, 'error');
+      this.host.notify(t('triad.failed', { why: e instanceof Error ? e.message : String(e) }), 'error');
     }
   }
 

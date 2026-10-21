@@ -17,7 +17,8 @@ import { MeasurePanel } from './MeasurePanel';
 import { ViewCube, ViewOptions } from './Viewport';
 import { ComponentMenu } from './AssemblyTree';
 import { GraphicsMenu } from './GraphicsMenu';
-import { assemblyMenu, type MenuEntry } from '../contextMenus';
+import { assemblyMenu, triadMenu, type MenuEntry } from '../contextMenus';
+import type { TriadHandle } from '@3db/assembly';
 
 
 /** A frame of a part, placed by the component's pose. */
@@ -81,7 +82,7 @@ export function AssemblyViewport() {
   const [hoverElement, setHoverElement] = useState<InstanceElement | null>(null);
   /** The component's context menu (right click on it in the graphics area); with no component under the pointer, the assembly's own (ADR 0176). */
   const [menu, setMenu] = useState<{ x: number; y: number; id: string } | null>(null);
-  const [spaceMenu, setSpaceMenu] = useState<{ x: number; y: number; items: MenuEntry[] } | null>(null);
+  const [spaceMenu, setSpaceMenu] = useState<{ x: number; y: number; items: MenuEntry[]; what?: string } | null>(null);
   const closeSpaceMenu = useCallback(() => setSpaceMenu(null), []);
   useEffect(() => {
     if (!menu) return;
@@ -132,6 +133,21 @@ export function AssemblyViewport() {
       onComponentDragEnd: (cancelled) => store.assembly?.endDrag(cancelled),
       // the only markers of an assembly are the interferences', keyed by their place in the list
       onMarkerClick: (key) => store.selectInterference(Number(key)),
+      // 以座標軸移動 (ADR 0179): a handle held, the ray of the pointer as it moves; a right click on a handle is its menu
+      onTriadDragStart: (part, ray) => {
+        const a = store.assembly;
+        const id = a?.triadComponent();
+        if (!a || !id || part.kind === 'center') return false;
+        const handle: TriadHandle = part.kind === 'plane' ? { kind: 'plane', normal: part.axis } : { kind: part.kind, axis: part.axis };
+        return a.startTriadDrag(id, handle, ray);
+      },
+      onTriadDrag: (ray) => store.assembly?.triadDragTo(ray),
+      onTriadDragEnd: (cancelled) => store.assembly?.endDrag(cancelled),
+      onTriadContextMenu: (part, x, y) => {
+        setMenu(null);
+        const rect = host.current?.getBoundingClientRect();
+        if (rect) setSpaceMenu({ x: x - rect.left, y: y - rect.top, items: triadMenu(part), what: 'triad' });
+      },
     });
     viewer.setComponentPicking(true);
     store.viewer = viewer;
@@ -185,6 +201,16 @@ export function AssemblyViewport() {
   useEffect(() => {
     store.viewer?.setCollidedComponents(asm.drag?.blocked?.tops ?? []);
   }, [asm.drag]);
+
+  // 以座標軸移動 (ADR 0179): the triad on the component asked for (or the selected one while 移動零組件 is open), at its middle as it is now, also mid-drag
+  useEffect(() => {
+    const v = store.viewer;
+    const a = store.assembly;
+    if (!v || !a) return;
+    const id = a.triadComponent();
+    const origin = id ? a.triadOrigin(id) : null;
+    v.setTriad(id && origin ? { key: id, origin } : null);
+  }, [asm.triad, asm.move, asm.selected, asm.solution, asm.drag, asm.builds, asm.doc, asm.mate, asm.insert, asm.pattern, asm.explode, asm.exploded]);
 
   // Where components share volume (E2.1, ADR 0180): the overlaps in red with a ring round each pair's, or only the chosen pair's; while one is chosen its two
   // components turn see-through and the others look as the window says. Pairs set aside are left out unless listed.
@@ -285,7 +311,9 @@ export function AssemblyViewport() {
       ? (elementName ?? t('asmui.mateHint'))
       : hovered
         ? t('asmui.componentHover', { name: componentInfo(asm, hovered).name, hint: dragHint(hovered, asm.solution, asm.move?.tool) })
-        : asm.move
+        : asm.triad
+          ? t('triad.hint')
+          : asm.move
           ? t('asmui.moveHint', { verb: t(asm.move.tool === 'move' ? 'move.verbMove' : 'move.verbRotate') })
           : null;
 
@@ -294,7 +322,7 @@ export function AssemblyViewport() {
       <div ref={host} className="viewport-canvas" />
       <ViewCube />
       <ViewOptions assembly />
-      {spaceMenu && <GraphicsMenu x={spaceMenu.x} y={spaceMenu.y} items={spaceMenu.items} what="assembly-empty" onClose={closeSpaceMenu} />}
+      {spaceMenu && <GraphicsMenu x={spaceMenu.x} y={spaceMenu.y} items={spaceMenu.items} what={spaceMenu.what ?? 'assembly-empty'} onClose={closeSpaceMenu} />}
       {menu && asm.doc.components.some((c) => c.id === menu.id) && <ComponentMenu x={menu.x} y={menu.y} component={asm.doc.components.find((c) => c.id === menu.id)!} onClose={() => setMenu(null)} />}
       <div className="heads-up">
         {ACTIONS.filter((a) => a.group === 'view').map((a) => (
