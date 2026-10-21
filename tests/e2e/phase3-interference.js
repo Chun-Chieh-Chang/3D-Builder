@@ -56,7 +56,8 @@ interference.run = async () => {
   H.check(p.aName.includes('定位') && p.bName.includes('定位'), `named after the components: ${p.aName} × ${p.bName}`);
   H.check(Number(field('volume').textContent) > 0 && field('pairs').querySelectorAll('tbody tr').length === 1, 'listed');
   await H.waitFor(() => store.viewer.highlights.length === p.overlaps.length && p.overlaps.length > 0, 3000, 'the overlap drawn red');
-  H.check(store.viewer.highlights.every((m) => m.material.color.getHex() === 0xe53935), 'red');
+  // the theme's --view-highlight (ADR 0180): a red, whatever its exact value
+  H.check(store.viewer.highlights.every((m) => m.material.color.r > 0.6 && m.material.color.g < 0.25 && m.material.color.b < 0.25), `red: ${store.viewer.highlights.map((m) => m.material.color.getHexString())}`);
   H.check(store.viewer.highlights.every((m) => m.geometry.getAttribute('position').count > 0), 'with triangles');
   await window.__shot?.('interference-red');
   // choosing the pair selects its two components in the view

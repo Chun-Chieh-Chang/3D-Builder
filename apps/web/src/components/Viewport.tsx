@@ -775,6 +775,11 @@ export function ViewOptions({ assembly = false }: { assembly?: boolean }) {
     const plane: SectionPlane = { normal, offset: cut.flip ? -cut.at : cut.at };
     v.setSection(plane);
   }, [cut, result, placed]);
+  // an open cut goes through what the user is taken to (a chosen interference, ADR 0180): its axis stays, its place along it is the point's
+  const sectionRequest = useStore((s) => s.sectionRequest);
+  useEffect(() => {
+    if (sectionRequest) setCut((c) => (c ? { ...c, at: sectionRequest.at[c.axis] } : c));
+  }, [sectionRequest]);
   // the cut can be taken hold of in the graphics area (left button on the orange fill) and dragged: the viewer says where it is now
   const cutting = cut !== null;
   useEffect(() => {

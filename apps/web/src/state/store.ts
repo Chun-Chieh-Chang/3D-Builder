@@ -104,6 +104,7 @@ import {
 } from '../files';
 import type { DraftReport, GeometryReport, MeshData, ThicknessReport, UndercutReport } from '@3db/kernel';
 import { AssemblyStore, type AssemblySource, type AssemblyState } from './assembly';
+import { groupOverlaps, pairKey, shownPairs, stepPair, type InterferenceOthers, type InterferencePair } from './interferenceView';
 
 export interface EditSession {
   featureId: Id;
@@ -199,19 +200,7 @@ export interface MeasureState {
 /** A measurement with nothing picked: the way of picking and what was kept stay. */
 const emptyMeasure = (from?: MeasureState | null): MeasureState => ({ picks: [], report: null, error: null, mode: from?.mode ?? 'element', saved: from?.saved ?? [], offsets: {} });
 
-/** Two components that share volume, and what they share (one overlap for each pair of their parts that meet). */
-export interface InterferencePair {
-  a: string;
-  b: string;
-  aName: string;
-  bName: string;
-  /** The components of the assembly they are (what is shown as selected). */
-  aTop: string;
-  bTop: string;
-  /** mm³, the overlaps together. */
-  volume: number;
-  overlaps: MeshData[];
-}
+export type { InterferencePair } from './interferenceView';
 
 /** One pair of components that are closer than the least clearance asked for (E2.2). */
 export interface ClearancePair {
@@ -268,6 +257,13 @@ export interface InterferenceState {
   /** The document and solution it was worked out on: when the assembly shows others, the result is out of date. */
   doc: unknown;
   solution: unknown;
+  /** The pairs set aside (「忽略」, by pairKey) while this assembly is open: not listed, not drawn, unless `showIgnored` (ADR 0180). */
+  ignored: string[];
+  showIgnored: boolean;
+  /** What the other components look like while a pair is chosen. */
+  others: InterferenceOthers;
+  /** Goes up each time the view is to go to the chosen pair (choosing it, or 「縮放至干涉」). */
+  focus: number;
 }
 
 export interface Notice {
@@ -337,6 +333,8 @@ export interface UiState {
   recovery: { name: string; savedAt: number } | null;
   /** Bumped when a part replaces the current one: the viewport fits the next model it shows. */
   fitRequest: number;
+  /** Where an open section is to go through (the chosen interference, ADR 0180): the cut keeps its axis and is moved to this point's place along it. */
+  sectionRequest: { at: Vec3; serial: number } | null;
   /** Name of a part never saved (「零件1」, 「零件2」 …, or the STEP file it was made from). */
   untitled: string;
   rebuilding: boolean;
@@ -585,6 +583,7 @@ class AppStore {
       unsaved: null,
       recovery: null,
       fitRequest: 0,
+      sectionRequest: null,
       untitled: t('doc.untitledPart', { n: 1 }),
       rebuilding: false,
       bootMs: null,
@@ -1077,9 +1076,65 @@ class AppStore {
     if (this.state.interference) this.set({ interference: null });
   }
 
-  /** One pair alone in the view, or (null) all of them. */
+  /**
+   * One pair alone in the view, or (null) all of them. Choosing one takes the view to it (ADR 0180): the view zooms to its overlap and, with a section open, the cut
+   * is moved through its centre.
+   */
   selectInterference(index: number | null): void {
-    if (this.state.interference) this.set({ interference: { ...this.state.interference, selected: index } });
+    const s = this.state.interference;
+    if (!s) return;
+    const pair = index === null ? undefined : s.pairs[index];
+    if (index !== null && !pair) return;
+    this.set({
+      interference: { ...s, selected: index, focus: pair ? s.focus + 1 : s.focus },
+      ...(pair ? { sectionRequest: { at: pair.center, serial: (this.state.sectionRequest?.serial ?? 0) + 1 } } : {}),
+    });
+  }
+
+  /** The next (1) or the previous (−1) pair of the list chosen, round from the end to the start (↓ and ↑ in the list). */
+  stepInterference(by: 1 | -1): void {
+    const s = this.state.interference;
+    if (s?.status !== 'done') return;
+    const next = stepPair(s.pairs, s.ignored, s.showIgnored, s.selected, by);
+    if (next !== null) this.selectInterference(next);
+  }
+
+  /** The view goes to the chosen pair again (「縮放至干涉」). */
+  focusInterference(): void {
+    const s = this.state.interference;
+    if (s && s.selected !== null) this.selectInterference(s.selected);
+  }
+
+  /** The pairs set aside, by assembly: kept while it is open, through checks again and the window closed and opened (ADR 0180: not written to the file). */
+  private interferenceIgnored = new WeakMap<AssemblyStore, Set<string>>();
+
+  /** Sets a pair aside (「忽略」) or takes it back. Set aside, it leaves the list and the view; the chosen one goes to the next shown, or none. */
+  ignoreInterference(index: number, ignore: boolean): void {
+    const s = this.state.interference;
+    const pair = s?.pairs[index];
+    if (!s || !pair || !this.assembly) return;
+    const set = this.interferenceIgnored.get(this.assembly) ?? new Set<string>();
+    this.interferenceIgnored.set(this.assembly, set);
+    if (ignore) set.add(pairKey(pair));
+    else set.delete(pairKey(pair));
+    const ignored = [...set];
+    const shown = shownPairs(s.pairs, ignored, s.showIgnored);
+    const selected = s.selected === null || shown.includes(s.selected) ? s.selected : (shown.find((i) => i > s.selected!) ?? null);
+    this.set({ interference: { ...s, ignored, selected } });
+  }
+
+  /** Whether the pairs set aside are listed (greyed) too. */
+  setInterferenceShowIgnored(showIgnored: boolean): void {
+    const s = this.state.interference;
+    if (!s) return;
+    const shown = shownPairs(s.pairs, s.ignored, showIgnored);
+    this.set({ interference: { ...s, showIgnored, selected: s.selected !== null && shown.includes(s.selected) ? s.selected : null } });
+  }
+
+  /** What the other components look like while a pair is chosen. */
+  setInterferenceOthers(others: InterferenceOthers): void {
+    const s = this.state.interference;
+    if (s) this.set({ interference: { ...s, others } });
   }
 
   async runInterference(within: boolean = this.state.interference?.within ?? false): Promise<void> {
@@ -1087,26 +1142,20 @@ class AppStore {
     if (!a) return;
     const input = a.interferenceInput(undefined, within);
     const seq = ++this.interferenceSeq;
-    const base = { status: 'running' as const, pairs: [], selected: null, unknown: [], failed: [], checked: 0, ms: 0, tooFew: input.components.length < 2, error: null, within, doc: this.state.asm?.doc, solution: this.state.asm?.solution };
+    const was = this.state.interference;
+    const view = { ignored: [...(this.interferenceIgnored.get(a) ?? [])], showIgnored: was?.showIgnored ?? false, others: was?.others ?? ('transparent' as const), focus: was?.focus ?? 0 };
+    const base = { status: 'running' as const, pairs: [], selected: null, unknown: [], failed: [], checked: 0, ms: 0, tooFew: input.components.length < 2, error: null, within, doc: this.state.asm?.doc, solution: this.state.asm?.solution, ...view };
     if (base.tooFew) return void this.set({ interference: { ...base, status: 'done' } });
     this.set({ interference: base });
     try {
       const r = await this.api.interference(input.components);
       if (seq !== this.interferenceSeq) return;
-      const pairs = new Map<string, InterferencePair>();
-      for (const o of r.overlaps) {
-        const key = `${o.a}|${o.b}`;
-        const pair = pairs.get(key) ?? { a: o.a, b: o.b, aName: input.names.get(o.a) ?? o.a, bName: input.names.get(o.b) ?? o.b, aTop: input.tops.get(o.a) ?? o.a, bTop: input.tops.get(o.b) ?? o.b, volume: 0, overlaps: [] };
-        pair.volume += o.volume;
-        pair.overlaps.push(o.mesh);
-        pairs.set(key, pair);
-      }
       const nameOf = (id: string) => input.names.get(id) ?? id;
       this.set({
         interference: {
           ...base,
           status: 'done',
-          pairs: [...pairs.values()].sort((x, y) => y.volume - x.volume),
+          pairs: groupOverlaps(r.overlaps, input.names, input.tops),
           unknown: r.unknown.map(nameOf),
           failed: r.failed.map((f) => `${nameOf(f.a)} × ${nameOf(f.b)}`),
           checked: r.checked,

@@ -1,5 +1,36 @@
 # 3D-Builder 開發日誌 (DEV_LOG.md)
 
+## 2026-10-21：看得見的干涉檢查（ADR 0180）
+
+### 現象與根因
+- 使用者：組合件「干涉檢查」看不出干涉位置與干涉情形（截圖：0.083 mm³，剖面開著，畫面只有兩小塊紅色），要求比照 SolidWorks。
+- 根因：0.083 mm³ ≈ 0.44 mm 見方，在整體畫面只有幾個像素；選取一組不縮放、不淡化其他零組件；worker 不回傳位置，面板只有名稱與體積。使用者確認計畫與 12 項驗收標準，四個問題照建議（非干涉零組件預設透明、忽略不寫檔、相符視為干涉延後、剖面移到干涉中心）。
+
+### 變更
+- `Kernel.common` 一併回傳質心；`findInterference` 每個重疊帶 `center`／`min`／`max`；worker／protocol 轉送。
+- `apps/web/src/state/interferenceView.ts`（純函式）；store：`selectInterference` 帶 `focus` 與 `sectionRequest`、`stepInterference`、`focusInterference`、`ignoreInterference`、`setInterferenceShowIgnored`、`setInterferenceOthers`。
+- `viewNav.fitBoxView`；viewer：`fitBox`、`setComponentFocus`、`setMarkers`、`screenPoint`、`onMarkerClick`，紅色體積加邊線，顏色改由主題變數 `--view-highlight*`；`faded()` 讓淡化／線架構／隱藏的零組件不參與剖面填色與邊線；隱藏的不能點選。
+- `InterferencePanel` 改版（位置、縮放、忽略、非干涉零組件、顯示已忽略、↑／↓）；`ViewOptions` 依 `sectionRequest` 移動剖切面；i18n `interference.*`、`help.interference`（中英）。
+- 手冊 D7 新增步驟、`verification-coverage.md` D7、ADR 0180。
+
+### RCA／CAPA（開發中發現）
+1. **PowerShell 5.1 以 ANSI 讀 UTF-8 檔**：用 `Get-Content -Raw … -replace … | Set-Content` 改 e2e 腳本的一個字串，`Get-Content` 未指定編碼，中文全被讀壞再寫回（`干涉檢查` 變亂碼）。CAPA：當場以 Write 從原稿重建；之後的批次取代一律用 `[IO.File]::ReadAllText(<絕對路徑>, UTF8)`／`WriteAllText(..., UTF8 無 BOM)`，或直接用編輯工具（AGENTS §4 已規定 .NET 要用絕對路徑；編碼是另一個陷阱）。
+2. **e2e 的小干涉一開始找不到**：用兩片定位板角對角重疊，結果沒有干涉。探針量出定位板 8 個角離最近的頂點都有 4.35–4.47 mm（角是圓的）；V 型塊的角是尖的（0）。CAPA：腳本先找出零件確實存在的兩個相對尖角（有頂點落在包圍盒角上）才擺放，找不到就明確丟錯，不默默跑空。
+3. **單元測試的期望值撞到二進位的捨入**：`9.995` 在二進位略小於 9.995，`Math.round(×100)` 得 9.99，是正確行為；改用不在捨入邊界的 9.996，並在測試註明原因（未放寬門檻）。
+4. **說明文字的舊錯**：原本中英說明寫「點一組只顯示那兩個零組件」，實際只是只畫那一組的紅色。隨本次改寫更正（AGENTS §4 2026-10-19 第 3 條：說明的宣稱要追得到程式）。
+
+### 紅隊四問（AGENTS §2）
+1. **輸入破壞**：`fitBoxView` 對 NaN、∞、反向盒、長寬比 0／負／NaN、比例 0 或 > 1 一律丟錯且相機不變（測試斷言）；退化成一點的盒以 `least = 1e-3 mm` 看，不會除以 0。`selectInterference` 對不存在的索引不動作；`stepPair` 在全部忽略時回 null。沒有 `Math.round`／`Math.abs` 改寫使用者輸入（`pairPlace` 的四捨五入只用於顯示）。
+2. **拓樸與幾何相交**：本功能不新增布林運算，`common` 原本就做的 `VolumeProperties` 只多取 `CentreOfMass`；`bounds` 不配置形狀。一個 pair 的多個重疊（多零件的零組件）以體積加權合成中心、包圍盒取聯集（單元測試）。重疊之後失敗的 pair 仍整組丟棄、釋放（既有邏輯，`bounds` 若丟錯也走同一個 catch）。
+3. **依賴鏈完整性**：`kernel.common` → `regen.findInterference` → worker → `protocol.InterferenceResult` → `groupOverlaps` → store → `InterferencePanel`／`AssemblyViewport` → `viewer`；`clearance.ts` 也呼叫 `common`，只多一個不用的欄位。help 的每項宣稱（縮放、半透明、四種設定、忽略不寫檔、↑／↓、剖面移到中心、紅色不受剖切）都有 e2e 步驟對應。不碰 `schema.ts`／`dag.ts`：沒有新的參考或特徵。
+4. **零 Mock 與真值**：中心與包圍盒由 OCCT 計算，單元測試對照解析解（≤ 1e-6）與 `massProps`；e2e 以 `viewer.snapshot()` 讀回畫布的實際像素判斷紅色，以 `screenPoint` 投影比對紅圈位置，以真實材質屬性判斷透明度，指標事件打在 `elementFromPoint` 取得的元素上（被擋住就算失敗）。
+
+### 驗證
+- 單元：`tests/phase8/interference-view.test.ts` 16/16；`tests/phase3/interference.test.ts` 新增 2 項，全檔通過。
+- e2e：`manual-interference-view.js` 9/9；`manual-d7.js`、`phase3-interference.js` 通過。
+- 全量 vitest：269 檔通過、4 skipped（原有），3364 tests 0 失敗。
+- typecheck 0 錯誤；lint:rules／lint:deps／lint:i18n 通過（i18n 基準不變，145 行）。
+
 ## 2026-10-20：草圖的移動／複製／旋轉／縮放圖元與草圖陣列（ADR 0178）
 
 ### 現象與根因

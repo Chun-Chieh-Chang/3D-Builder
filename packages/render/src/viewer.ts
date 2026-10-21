@@ -4,7 +4,7 @@ import { LineSegments2 } from 'three/examples/jsm/lines/LineSegments2.js';
 import { LineSegmentsGeometry } from 'three/examples/jsm/lines/LineSegmentsGeometry.js';
 import { acceleratedRaycast, computeBoundsTree, disposeBoundsTree } from 'three-mesh-bvh';
 import { ViewControls } from './controls';
-import { cubeDirection, nearestView, orbitView, panView, restoreView, rollView, viewState, ViewHistory, zoomView } from './viewNav';
+import { cubeDirection, fitBoxView, nearestView, orbitView, panView, restoreView, rollView, viewState, ViewHistory, zoomView } from './viewNav';
 import { circleCentre, middleOf, polylinesOf, type V3 } from './snap';
 import { buildOverlayObjects, disposeGroup, overlayFitBox, toWorld, type P2, type PlaneFrame, type SketchOverlay } from './overlay';
 
@@ -95,6 +95,9 @@ export const COLORS = {
   componentHover: 0xf2c48d,
   componentSelected: 0x8fb8e8,
   componentCollided: 0xe5484d,
+  /** what is pointed out in the scene (an interference): its volume, and its edges */
+  highlight: 0xe53935,
+  highlightEdge: 0x8b0000,
 };
 
 export type Palette = typeof COLORS;
@@ -167,10 +170,27 @@ interface PartGeometry {
   silIndex: SilhouetteIndex | null;
 }
 
+/** What the components not looked at look like while some are (setComponentFocus): see-through, edges only, not drawn, or as they are. */
+export type FocusOthers = 'transparent' | 'wireframe' | 'hidden' | 'current';
+
+/** How see-through components are: the ones looked at (the overlap inside them shows), the others faded, and one the user made see-through (C15.5). */
+export const FOCUS_OPACITY = { looked: 0.45, faded: 0.12, user: 0.4 } as const;
+
+/** A place pointed out on the screen (an interference, ADR 0180): a ring of a constant size in pixels round `at`, with its label; lit is the chosen one. */
+export interface ViewMarker {
+  key: string;
+  at: [number, number, number];
+  label: string;
+  title?: string;
+  lit?: boolean;
+}
+
 interface Instance {
   part: string;
   /** The component it belongs to (see `ViewInstance.owner`). */
   owner: string;
+  /** Made see-through by the user (ViewInstance.transparent), whatever the focus does to it. */
+  userTransparent: boolean;
   group: THREE.Group;
   body: THREE.Mesh;
   edges: THREE.LineSegments | null;
@@ -640,6 +660,8 @@ export interface ViewerEvents {
   onComponentDrag?: (e: ComponentDragEvent) => void;
   /** The drag is over: the button was released, or it was cancelled (Esc). */
   onComponentDragEnd?: (cancelled: boolean) => void;
+  /** A marker (setMarkers) was clicked: its key. */
+  onMarkerClick?: (key: string) => void;
 }
 
 export interface CosmeticThreadDisplay {
@@ -746,6 +768,10 @@ export class Viewer {
   private selectedElements: InstanceElement[] = [];
   private instances = new Map<string, Instance>();
   private readonly instanceEdges = new THREE.LineBasicMaterial({ color: COLORS.edge });
+  /** The edges of a component faded while others are looked at (setComponentFocus 'transparent'). */
+  private readonly fadedEdges = new THREE.LineBasicMaterial({ color: COLORS.edge, transparent: true, opacity: FOCUS_OPACITY.faded, depthWrite: false });
+  /** The components looked at, and what the others look like meanwhile (ADR 0180); null: all as they are. */
+  private focus: { keys: Set<string>; others: FocusOthers } | null = null;
   private pickInstances = false;
   private hoveredInstance: string | null = null;
   private selectedInstances = new Set<string>();
@@ -828,6 +854,7 @@ export class Viewer {
     this.setVertices(new Float32Array(0));
     this.setGhost(null);
     this.setHighlights([]);
+    this.setMarkers([]);
     this.setParts(new Map());
     this.setSection(null);
     this.setMeasureGraphics(null);
@@ -835,6 +862,7 @@ export class Viewer {
     this.setSnapMarker(null);
     this.endSectionDrag();
     this.instanceEdges.dispose();
+    this.fadedEdges.dispose();
     this.renderer.dispose();
     this.renderer.domElement.remove();
     this.labelLayer.remove();
@@ -952,13 +980,7 @@ export class Viewer {
         this.scene.add(inst.group);
       }
       inst.owner = i.owner ?? i.key;
-      const material = inst.body.material as THREE.MeshStandardMaterial;
-      if (material.transparent !== !!i.transparent) {
-        material.transparent = !!i.transparent;
-        material.opacity = i.transparent ? 0.4 : 1;
-        material.depthWrite = !i.transparent;
-        material.needsUpdate = true;
-      }
+      inst.userTransparent = !!i.transparent;
       this.styleInstance(inst);
       setMatrix(inst.group, i.matrix);
     }
@@ -970,13 +992,34 @@ export class Viewer {
     if (this.planes.length > 0) this.paintPlanes(); // sized to the content
   }
 
-  /** An instance as the display mode and the section say (A4.3, D4.4), the way applyDisplay does for a part's body. */
+  /** What the focus makes of a component: looked at, one of the others (as `others` says), or (null) nothing, with no focus. */
+  private focusRole(inst: Instance): 'looked' | FocusOthers | null {
+    if (!this.focus) return null;
+    return this.focus.keys.has(inst.owner) ? 'looked' : this.focus.others;
+  }
+
+  /** A component that is not a solid on the screen now: see-through, edges only or not drawn. The section's fill and edges and the silhouettes leave it out. */
+  private faded(inst: Instance): boolean {
+    const role = this.focusRole(inst);
+    return (inst.body.material as THREE.Material).transparent || role === 'wireframe' || role === 'hidden';
+  }
+
+  /** An instance as the display mode, the section and the focus say (A4.3, D4.4, ADR 0180), the way applyDisplay does for a part's body. */
   private styleInstance(inst: Instance): void {
     const mode = this.displayMode;
+    const role = this.focusRole(inst);
     const m = inst.body.material as THREE.MeshStandardMaterial;
     const cutBefore = m.clippingPlanes?.length ?? 0;
-    m.colorWrite = !(mode === 'wireframe' || mode === 'hiddenVisible');
-    m.depthWrite = !m.transparent && mode !== 'wireframe';
+    const transparent = inst.userTransparent || role === 'looked' || role === 'transparent';
+    if (m.transparent !== transparent) {
+      m.transparent = transparent;
+      m.needsUpdate = true;
+    }
+    m.opacity = role === 'looked' ? FOCUS_OPACITY.looked : role === 'transparent' ? FOCUS_OPACITY.faded : inst.userTransparent ? FOCUS_OPACITY.user : 1;
+    inst.group.visible = role !== 'hidden';
+    if (inst.edges) inst.edges.material = role === 'transparent' ? this.fadedEdges : this.instanceEdges;
+    m.colorWrite = !(mode === 'wireframe' || mode === 'hiddenVisible' || role === 'wireframe');
+    m.depthWrite = !m.transparent && mode !== 'wireframe' && role !== 'wireframe';
     m.emissive.set(mode === 'hiddenRemoved' ? 0xffffff : 0x000000);
     m.emissiveIntensity = mode === 'hiddenRemoved' ? 0.85 : 1;
     m.clippingPlanes = this.clip;
@@ -998,7 +1041,7 @@ export class Viewer {
     if (edges) group.add(edges);
     const marks = new THREE.Group();
     group.add(marks);
-    return { part, owner: '', group, body, edges, marks };
+    return { part, owner: '', userTransparent: false, group, body, edges, marks };
   }
 
   private removeInstance(key: string): void {
@@ -1164,7 +1207,7 @@ export class Viewer {
   private hitInstance(clientX: number, clientY: number): { key: string; point: THREE.Vector3 } | null {
     if (this.instances.size === 0) return null;
     const r = this.rayAt(clientX, clientY);
-    const hit = new THREE.Raycaster(r.origin, r.direction).intersectObjects([...this.instances.values()].map((i) => i.body)).find((h) => this.kept(h.point));
+    const hit = new THREE.Raycaster(r.origin, r.direction).intersectObjects(this.shownBodies()).find((h) => this.kept(h.point));
     if (!hit) return null;
     for (const inst of this.instances.values()) if (inst.body === hit.object) return { key: inst.owner, point: hit.point.clone() };
     return null;
@@ -1229,20 +1272,28 @@ export class Viewer {
   private pickInstance(clientX: number, clientY: number): string | null {
     if (this.instances.size === 0) return null;
     const r = this.rayAt(clientX, clientY);
-    const hit = new THREE.Raycaster(r.origin, r.direction).intersectObjects([...this.instances.values()].map((i) => i.body)).find((h) => this.kept(h.point));
+    const hit = new THREE.Raycaster(r.origin, r.direction).intersectObjects(this.shownBodies()).find((h) => this.kept(h.point));
     if (!hit) return null;
     for (const inst of this.instances.values()) if (inst.body === hit.object) return inst.owner;
     return null;
   }
 
+  /** The bodies of the components that are drawn: one the focus hides is not there to be picked (a ray does not look at `visible`). */
+  private shownBodies(): THREE.Mesh[] {
+    return [...this.instances.values()].flatMap((i) => (i.group.visible ? [i.body] : []));
+  }
+
   private highlights: THREE.Mesh[] = [];
+  /** The outlines of the highlights: their edges, darker, over everything too. */
+  private highlightEdges: THREE.LineSegments[] = [];
 
   /**
-   * Volumes pointed out in the scene, in its coordinates (the overlap of two components, E2.1): red, drawn over what is in front of them, never hovered or picked.
-   * The list replaces the one before; an empty list takes them away.
+   * Volumes pointed out in the scene, in its coordinates (the overlap of two components, E2.1): red with their edges darker, drawn whole over what is in front
+   * of them, a section's cut included (it leaves out the model, not what is pointed out in it), never hovered or picked. The list replaces the one before; an
+   * empty list takes them away.
    */
   setHighlights(list: readonly { mesh: ViewMesh }[]): void {
-    for (const m of this.highlights) {
+    for (const m of [...this.highlights, ...this.highlightEdges]) {
       this.scene.remove(m);
       m.geometry.dispose();
       (m.material as THREE.Material).dispose();
@@ -1252,12 +1303,87 @@ export class Viewer {
       g.setAttribute('position', new THREE.BufferAttribute(mesh.positions, 3));
       g.setAttribute('normal', new THREE.BufferAttribute(mesh.normals, 3));
       g.setIndex(new THREE.BufferAttribute(mesh.indices, 1));
-      const m = new THREE.Mesh(g, new THREE.MeshBasicMaterial({ color: 0xe53935, transparent: true, opacity: 0.8, depthTest: false, side: THREE.DoubleSide }));
+      const m = new THREE.Mesh(g, new THREE.MeshBasicMaterial({ color: COLORS.highlight, transparent: true, opacity: 0.8, depthTest: false, side: THREE.DoubleSide }));
       m.renderOrder = 10;
       this.scene.add(m);
       return m;
     });
+    this.highlightEdges = list.map(({ mesh }) => {
+      const g = new THREE.BufferGeometry().setAttribute('position', new THREE.Float32BufferAttribute(edgeSegments(mesh).segs, 3));
+      const line = new THREE.LineSegments(g, new THREE.LineBasicMaterial({ color: COLORS.highlightEdge, depthTest: false }));
+      line.renderOrder = 11;
+      line.raycast = () => {};
+      this.scene.add(line);
+      return line;
+    });
     this.requestRender();
+  }
+
+  private markers = new Map<string, { el: HTMLElement; world: THREE.Vector3; offset?: [number, number] }>();
+
+  /**
+   * Places pointed out on the screen (ADR 0180): a ring of a constant size in pixels round each, whatever the zoom, so an overlap too small to see is still found;
+   * a click on one is told (onMarkerClick). The list replaces the one before.
+   */
+  setMarkers(list: readonly ViewMarker[]): void {
+    const keep = new Set(list.map((m) => m.key));
+    for (const [key, entry] of this.markers) {
+      if (keep.has(key)) continue;
+      entry.el.remove();
+      this.markers.delete(key);
+    }
+    for (const m of list) {
+      let entry = this.markers.get(m.key);
+      if (!entry) {
+        const el = document.createElement('div');
+        const key = m.key;
+        el.setAttribute('role', 'button');
+        el.addEventListener('pointerdown', (e) => e.stopPropagation()); // a click on it is not a click on the model behind
+        el.addEventListener('click', () => this.events.onMarkerClick?.(key));
+        this.labelLayer.appendChild(el);
+        entry = { el, world: new THREE.Vector3() };
+        this.markers.set(m.key, entry);
+      }
+      entry.world.set(...m.at);
+      entry.el.className = `view-marker${m.lit ? ' lit' : ''}`;
+      entry.el.dataset.marker = m.key;
+      entry.el.title = m.title ?? '';
+      entry.el.setAttribute('aria-label', m.title ?? m.label);
+      entry.el.dataset.label = m.label; // drawn beside the ring (CSS), so the middle stays empty
+    }
+    this.requestRender();
+  }
+
+  /**
+   * Some components looked at (ADR 0180): they turn see-through, so what is pointed out inside them shows, and the others are faded, drawn as edges only, not drawn,
+   * or left as they are (`others`). Null puts every component back as it was (one the user made see-through stays so).
+   */
+  setComponentFocus(focus: { keys: Iterable<string>; others: FocusOthers } | null): void {
+    this.focus = focus ? { keys: new Set(focus.keys), others: focus.others } : null;
+    for (const inst of this.instances.values()) this.styleInstance(inst);
+    if (this.hoveredInstance !== null && ![...this.instances.values()].some((i) => i.owner === this.hoveredInstance && i.group.visible)) this.setHoveredInstance(null);
+    this.updateCap();
+    this.updateSectionEdges();
+    this.lastSilViewDir = null;
+    this.requestRender();
+  }
+
+  /** Looks at a box (scene coordinates) from where the view looks now, filling FIT_BOX_FRACTION of it (「縮放至干涉」, ADR 0180); kept for 「上一個視角」. */
+  fitBox(min: readonly number[], max: readonly number[]): void {
+    const { w, h } = this.canvasSize();
+    if (w === 0 || h === 0) return;
+    this.rememberView();
+    fitBoxView(this.camera, this.controls.target, { min, max }, w / h);
+    this.viewChanged();
+  }
+
+  /** Where a point of the scene is on the screen, in client pixels (what a marker is put at). */
+  screenPoint(p: readonly number[]): [number, number] {
+    this.syncCamera();
+    const rect = this.renderer.domElement.getBoundingClientRect();
+    const { w, h } = this.canvasSize();
+    const q = new THREE.Vector3(p[0], p[1], p[2]).project(this.camera);
+    return [rect.left + ((q.x + 1) / 2) * w, rect.top + ((1 - q.y) / 2) * h];
   }
 
   /** Shows a see-through copy of a part (null removes it); moveGhost places it. */
@@ -2620,9 +2746,11 @@ export class Viewer {
     }
     for (const inst of this.instances.values()) this.styleInstance(inst);
     // with no edges drawn ('shaded') the components' edges are the colour of the body
-    this.instanceEdges.color.setHex(mode === 'shaded' ? COLORS.body : COLORS.edge);
-    if ((this.instanceEdges.clippingPlanes?.length ?? 0) !== this.clip.length) this.instanceEdges.needsUpdate = true;
-    this.instanceEdges.clippingPlanes = this.clip;
+    for (const edges of [this.instanceEdges, this.fadedEdges]) {
+      edges.color.setHex(mode === 'shaded' ? COLORS.body : COLORS.edge);
+      if ((edges.clippingPlanes?.length ?? 0) !== this.clip.length) edges.needsUpdate = true;
+      edges.clippingPlanes = this.clip;
+    }
     if (mode === 'hiddenVisible' && this.edges && !this.hiddenEdges) {
       const g = this.edges.geometry.clone();
       const line = new THREE.LineSegments(g, new THREE.LineDashedMaterial({ color: COLORS.ghost, dashSize: 1, gapSize: 1, depthFunc: THREE.GreaterDepth, depthWrite: false }));
@@ -2658,7 +2786,7 @@ export class Viewer {
     const solids: { mesh: THREE.Mesh; parent: THREE.Object3D; id: string }[] = [];
     if (plane && mode !== 'wireframe' && mode !== 'hiddenVisible') {
       if (this.body) solids.push({ mesh: this.body, parent: this.scene, id: this.body.uuid });
-      for (const inst of this.instances.values()) if (!(inst.body.material as THREE.Material).transparent) solids.push({ mesh: inst.body, parent: inst.group, id: inst.body.uuid });
+      for (const inst of this.instances.values()) if (!this.faded(inst)) solids.push({ mesh: inst.body, parent: inst.group, id: inst.body.uuid });
     }
     const key = solids.map((x) => x.id).join(',');
     if (this.cap && (!plane || this.cap.key !== key)) {
@@ -2726,7 +2854,7 @@ export class Viewer {
       solids.push({ mesh: this.body, matrixWorld: this.body.matrixWorld });
     }
     for (const inst of this.instances.values()) {
-      if (!(inst.body.material as THREE.Material).transparent) {
+      if (!this.faded(inst)) {
         inst.body.updateMatrixWorld(true);
         solids.push({ mesh: inst.body, matrixWorld: inst.body.matrixWorld });
       }
@@ -2786,7 +2914,8 @@ export class Viewer {
     }
     for (const inst of this.instances.values()) {
       const geo = this.partGeometry.get(inst.part);
-      if (geo && geo.silIndex && !(inst.body.material as THREE.Material).transparent) {
+      // a component drawn as edges only keeps its silhouettes: they are edges too
+      if (geo && geo.silIndex && !(inst.body.material as THREE.Material).transparent && inst.group.visible) {
         const pos = geo.body.getAttribute('position');
         if (pos) {
           inst.body.updateMatrixWorld(true);
@@ -3046,7 +3175,7 @@ export class Viewer {
       r.render(this.overlayScene, this.camera);
     }
     const canvas = this.canvasSize();
-    for (const { el, world, offset } of [...this.labels.values(), ...[...this.measureLabels.values()]]) {
+    for (const { el, world, offset } of [...this.labels.values(), ...this.measureLabels.values(), ...this.markers.values()]) {
       const v = world.clone().project(this.camera);
       const [ox, oy] = offset ?? [0, 0];
       el.style.transform = `translate(${((v.x + 1) / 2) * canvas.w + ox}px, ${((1 - v.y) / 2) * canvas.h + oy}px) translate(-50%, -50%)`;

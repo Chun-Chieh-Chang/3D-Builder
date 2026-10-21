@@ -54,6 +54,33 @@ describe('what two components share (3b-5d)', () => {
     expect(kernel.liveShapes).toBe(before); // nothing else was kept
   });
 
+  it('where the overlap is (ADR 0180): its centre of mass and its box, against the block x 5..10, y 0..20, z 0..30 they share', () => {
+    const before = kernel.liveShapes;
+    const r = find([{ id: 'a', parts: [part('box', at(0))] }, { id: 'b', parts: [part('box', at(5))] }]);
+    const o = r.overlaps[0]!;
+    [7.5, 10, 15].forEach((v, k) => expect(Math.abs(o.center[k]! - v)).toBeLessThanOrEqual(1e-6));
+    [5, 0, 0].forEach((v, k) => expect(Math.abs(o.min[k]! - v)).toBeLessThanOrEqual(1e-6));
+    [10, 20, 30].forEach((v, k) => expect(Math.abs(o.max[k]! - v)).toBeLessThanOrEqual(1e-6));
+    expect(Math.abs(o.volume - 3000) / 3000).toBeLessThanOrEqual(1e-9);
+    // the centre is the one massProps gives the shape itself: one integration, not a second guess
+    const m = kernel.massProps(o.shape);
+    m.center.forEach((v, k) => expect(o.center[k]).toBeCloseTo(v, 9));
+    release(r);
+    expect(kernel.liveShapes).toBe(before);
+  });
+
+  it('a small overlap far from the origin, as the user reported (about 0.08 mm³): its centre and box all the same', () => {
+    // 0.01 mm into each other over 20 × 30 is 6 mm³; up the z axis too, the overlap is x 9.99..10, z 29.6..30, all of y: 0.01 · 20 · 0.4 = 0.08 mm³
+    const r = find([{ id: 'a', parts: [part('box', at(0, 0, 0))] }, { id: 'b', parts: [part('box', at(9.99, 0, 29.6))] }]);
+    expect(r.overlaps).toHaveLength(1);
+    const o = r.overlaps[0]!;
+    expect(o.volume).toBeCloseTo(0.08, 9);
+    [9.995, 10, 29.8].forEach((v, k) => expect(Math.abs(o.center[k]! - v)).toBeLessThanOrEqual(1e-6));
+    [9.99, 0, 29.6].forEach((v, k) => expect(Math.abs(o.min[k]! - v)).toBeLessThanOrEqual(1e-6));
+    [10, 20, 30].forEach((v, k) => expect(Math.abs(o.max[k]! - v)).toBeLessThanOrEqual(1e-6));
+    release(r);
+  });
+
   it('touching is not interference: faces that meet, and an overlap that is only the tolerance', () => {
     expect(find([{ id: 'a', parts: [part('box', at(0))] }, { id: 'b', parts: [part('box', at(10))] }]).overlaps).toHaveLength(0);
     // 1e-9 mm into each other over 20 × 30 mm: a sliver of 6e-7 mm³, under what is reported

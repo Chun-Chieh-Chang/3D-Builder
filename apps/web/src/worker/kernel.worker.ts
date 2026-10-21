@@ -673,7 +673,7 @@ const api: KernelApi = {
     const shapes = await shapesOf(components, temp);
     const found = findInterference(kernel, components, (key) => shapes.get(key) ?? null);
     try {
-      const overlaps = found.overlaps.map((o) => ({ a: o.a, b: o.b, volume: o.volume, mesh: kernel.mesh(o.shape, COMPONENT_MESH) }));
+      const overlaps = found.overlaps.map((o) => ({ a: o.a, b: o.b, volume: o.volume, center: o.center, min: o.min, max: o.max, mesh: kernel.mesh(o.shape, COMPONENT_MESH) }));
       const result: InterferenceResult = { overlaps, checked: found.checked, unknown: found.unknown, failed: found.failed, ms: performance.now() - began };
       return Comlink.transfer(result, overlaps.flatMap((o) => [o.mesh.positions, o.mesh.normals, o.mesh.indices, o.mesh.faceRanges, o.mesh.edgePoints, o.mesh.edgeRanges].map((a) => a.buffer as ArrayBuffer)));
     } finally {

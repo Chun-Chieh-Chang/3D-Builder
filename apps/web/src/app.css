@@ -90,6 +90,9 @@
   --view-component-hover: oklch(83% 0.075 80);
   --view-component-selected: var(--accent-line);
   --view-collided: var(--error);
+  /* what is pointed out in the model (an interference's volume, ADR 0180): a red bright enough to read through the parts it is in, its edges darker */
+  --view-highlight: oklch(60% 0.22 27);
+  --view-highlight-edge: oklch(38% 0.15 27);
 
   /* the sketcher: the same colours the panels use, on the grid the sketch is drawn over */
   --sketch-grid: var(--line);
@@ -292,6 +295,11 @@ code { font-family: Consolas, 'Cascadia Mono', monospace; font-size: 11px; }
 /* Without motion the bar stands full: it says "going on", not how far. */
 @media (prefers-reduced-motion: reduce) { .busy-bar::after { animation: none; left: 0; width: 100%; opacity: 0.45; } }
 .overlay-label { position: absolute; left: 0; top: 0; white-space: nowrap; font-size: 12px; line-height: 1; user-select: none; }
+/* A place pointed out (an interference, ADR 0180): a ring of a constant size round it, empty in the middle so what it points at shows, and its number beside it. */
+.view-marker { position: absolute; left: 0; top: 0; width: 24px; height: 24px; box-sizing: border-box; border: 2px solid var(--error); border-radius: 50%; pointer-events: auto; cursor: pointer; user-select: none; box-shadow: 0 0 0 1px var(--card); }
+.view-marker::after { content: attr(data-label); position: absolute; left: 20px; top: -12px; min-width: 18px; padding: 1px 4px; box-sizing: border-box; border-radius: 9px; background: var(--error); color: var(--on-accent); font-size: 13px; line-height: 1.3; font-weight: 600; text-align: center; white-space: nowrap; }
+.view-marker.lit { width: 32px; height: 32px; border-width: 3px; }
+.view-marker.lit::after { left: 26px; top: -14px; }
 .overlay-label.interactive { pointer-events: auto; cursor: pointer; }
 .measure-options { display: flex; flex-wrap: wrap; gap: 4px 10px; align-items: center; padding: 4px 0; font-size: 12px; }
 .measure-options label { display: inline-flex; gap: 4px; align-items: center; }
@@ -327,6 +335,14 @@ code { font-family: Consolas, 'Cascadia Mono', monospace; font-size: 11px; }
 .measure-panel table { width: 100%; margin-bottom: 6px; }
 .measure-panel td:last-child { text-align: right; font-variant-numeric: tabular-nums; }
 .measure-panel .error { color: var(--error); }
+/* 干涉檢查 (ADR 0180): each pair with where it is and what can be done with it; the chosen one stands out, one set aside is greyed. */
+.interference-panel { width: 360px; }
+.interference-panel .eq-table td { vertical-align: top; padding: 4px; }
+.interference-panel .eq-table tr.selected td { background: var(--accent-soft); }
+.interference-panel .eq-table tr.ignored { opacity: 0.55; }
+.interference-panel .eq-table:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.interference-panel .interference-actions { display: flex; gap: 4px; margin-top: 2px; }
+.interference-panel .muted { color: var(--muted); font-variant-numeric: tabular-nums; }
 
 /* Status bar */
 .status-bar { display: flex; gap: 16px; align-items: center; padding: 4px 10px; background: var(--card); border-top: 1px solid var(--line); font-size: 12px; }

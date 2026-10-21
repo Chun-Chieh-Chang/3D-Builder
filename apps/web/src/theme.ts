@@ -26,6 +26,8 @@ const VIEW: Record<keyof Palette, string> = {
   componentHover: '--view-component-hover',
   componentSelected: '--view-component-selected',
   componentCollided: '--view-collided',
+  highlight: '--view-highlight',
+  highlightEdge: '--view-highlight-edge',
 };
 
 const SKETCH: Record<keyof SketchColors, string> = {

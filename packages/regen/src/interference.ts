@@ -1,11 +1,17 @@
 import { KernelError, type Kernel, type ShapeId } from '@3db/kernel';
-import { MIN_INTERFERENCE_VOLUME, placementRows, type InterferenceComponent } from '@3db/model';
+import { MIN_INTERFERENCE_VOLUME, placementRows, type InterferenceComponent, type Vec3 } from '@3db/model';
 
-/** Where two components share volume: the part of it that two of their parts share, as a shape of its own (in the assembly's frame) that the caller releases. */
+/**
+ * Where two components share volume: the part of it that two of their parts share, as a shape of its own (in the assembly's frame) that the caller releases,
+ * with where it is: its centre of mass and the box round it (ADR 0180).
+ */
 export interface Overlap {
   a: string;
   b: string;
   volume: number;
+  center: Vec3;
+  min: Vec3;
+  max: Vec3;
   shape: ShapeId;
 }
 
@@ -60,7 +66,12 @@ export function findInterference(kernel: Kernel, components: readonly Interferen
               if (!meet(pa.box, pb.box)) continue;
               found.checked++;
               const common = kernel.common(pa.shape, pb.shape, minVolume);
-              if (common.shape !== null) found.overlaps.push({ a: a.id, b: b.id, volume: common.volume, shape: common.shape });
+              if (common.shape !== null) {
+                // kept before it is measured: should bounds throw, the catch below releases it with the pair's others
+                const at = found.overlaps.push({ a: a.id, b: b.id, volume: common.volume, center: common.center!, min: [0, 0, 0], max: [0, 0, 0], shape: common.shape }) - 1;
+                const box = kernel.bounds(common.shape);
+                found.overlaps[at] = { ...found.overlaps[at]!, min: box.min, max: box.max };
+              }
             }
           }
         } catch (e) {

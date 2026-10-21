@@ -11,6 +11,7 @@ import { dragHint } from '../state/movability';
 import { LoadProgress } from './LoadProgress';
 import { MateFlyout } from './MatePanel';
 import { InterferencePanel } from './InterferencePanel';
+import { shownPairs } from '../state/interferenceView';
 import { ClearancePanel } from './ClearancePanel';
 import { MeasurePanel } from './MeasurePanel';
 import { ViewCube, ViewOptions } from './Viewport';
@@ -129,6 +130,8 @@ export function AssemblyViewport() {
       onComponentDragStart: (key, point, button) => store.assembly?.startDrag(key, point, button) ?? false,
       onComponentDrag: (e) => store.assembly?.dragTo(e),
       onComponentDragEnd: (cancelled) => store.assembly?.endDrag(cancelled),
+      // the only markers of an assembly are the interferences', keyed by their place in the list
+      onMarkerClick: (key) => store.selectInterference(Number(key)),
     });
     viewer.setComponentPicking(true);
     store.viewer = viewer;
@@ -183,13 +186,30 @@ export function AssemblyViewport() {
     store.viewer?.setCollidedComponents(asm.drag?.blocked?.tops ?? []);
   }, [asm.drag]);
 
-  // Where components share volume (E2.1): the overlaps in red, or only the chosen pair's
+  // Where components share volume (E2.1, ADR 0180): the overlaps in red with a ring round each pair's, or only the chosen pair's; while one is chosen its two
+  // components turn see-through and the others look as the window says. Pairs set aside are left out unless listed.
   useEffect(() => {
     const v = store.viewer;
     if (!v) return;
-    const shown = interference?.status === 'done' ? (interference.selected === null ? interference.pairs : interference.pairs.slice(interference.selected, interference.selected + 1)) : [];
-    v.setHighlights(shown.flatMap((p) => p.overlaps.map((mesh) => ({ mesh }))));
+    const done = interference?.status === 'done' ? interference : null;
+    const listed = done ? shownPairs(done.pairs, done.ignored, done.showIgnored) : [];
+    const shown = !done ? [] : done.selected === null ? listed : [done.selected];
+    v.setHighlights(shown.flatMap((i) => done!.pairs[i]!.overlaps.map((mesh) => ({ mesh }))));
+    v.setMarkers(shown.map((i) => {
+      const p = done!.pairs[i]!;
+      return { key: String(i), at: p.center, label: String(i + 1), lit: done!.selected === i, title: t('interference.markerTip', { n: i + 1, a: p.aName, b: p.bName }) };
+    }));
+    const pair = done && done.selected !== null ? done.pairs[done.selected] : undefined;
+    v.setComponentFocus(pair ? { keys: [pair.aTop, pair.bTop], others: done!.others } : null);
   }, [interference]);
+
+  // Choosing a pair (or 「縮放至干涉」) takes the view to its overlap
+  const focus = interference?.focus ?? 0;
+  useEffect(() => {
+    const s = store.getState().interference;
+    const pair = s && s.selected !== null ? s.pairs[s.selected] : undefined;
+    if (pair) store.viewer?.fitBox(pair.min, pair.max);
+  }, [focus]);
 
   // Placing a component: the chosen part follows the cursor, a click puts it down.
   const chosen = asm.insert?.chosen ?? null;

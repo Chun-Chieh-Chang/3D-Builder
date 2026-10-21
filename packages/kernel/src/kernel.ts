@@ -3204,9 +3204,10 @@ export class Kernel {
   }
 
   /**
-   * What two shapes have in common (E2.1): its volume, and the shape itself (null when it is empty or too small to be one: under minVolume). The caller releases the shape.
+   * What two shapes have in common (E2.1): its volume, its centre of mass (from the same integration; null with no shape), and the shape itself (null when it is
+   * empty or too small to be one: under minVolume). The caller releases the shape.
    */
-  common(a: ShapeId, b: ShapeId, minVolume = 1e-6): { volume: number; shape: ShapeId | null } {
+  common(a: ShapeId, b: ShapeId, minVolume = 1e-6): { volume: number; center: Vec3 | null; shape: ShapeId | null } {
     const oc = this.oc;
     const arena = new Arena();
     try {
@@ -3217,9 +3218,9 @@ export class Kernel {
       const volume = props.Mass();
       if (!(volume > minVolume)) {
         shape.delete();
-        return { volume: Math.max(0, volume), shape: null };
+        return { volume: Math.max(0, volume), center: null, shape: null };
       }
-      return { volume, shape: this.put(shape) };
+      return { volume, center: this.xyz(arena.own(props.CentreOfMass())), shape: this.put(shape) };
     } finally {
       arena.dispose();
     }

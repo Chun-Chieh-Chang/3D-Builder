@@ -91,6 +91,43 @@ export function zoomView(camera: THREE.OrthographicCamera, factor: number): void
   camera.updateProjectionMatrix();
 }
 
+/** How much of the view a box is made to fill by fitBoxView: its larger side on the screen, as a part of the view's height (or width) (ADR 0180). */
+export const FIT_BOX_FRACTION = 0.3;
+
+/**
+ * Looks at a box from the direction the view has now, its middle in the middle of the screen, as big as `fraction` of the view: the larger of its height on
+ * the screen against the view's height and its width against the view's width. `aspect` is the view's width over its height. A box smaller than `least` (mm)
+ * is looked at as if it were that big: a point still gets a view to be seen in. The zoom is put back to 1, as 「全部顯示」 leaves it.
+ */
+export function fitBoxView(camera: THREE.OrthographicCamera, target: THREE.Vector3, box: { min: readonly number[]; max: readonly number[] }, aspect: number, fraction: number = FIT_BOX_FRACTION, least = 1e-3): void {
+  finite('box', ...box.min, ...box.max);
+  finite('aspect', aspect);
+  if (!(aspect > 0)) throw new Error(`a view's aspect is a positive number, not ${aspect}`);
+  if (!(fraction > 0 && fraction <= 1)) throw new Error(`the part of the view a box fills is above 0 and at most 1, not ${fraction}`);
+  if (!box.min.every((v, k) => v <= box.max[k]!)) throw new Error(`a box's least corner is below its greatest: ${box.min.join(', ')} and ${box.max.join(', ')}`);
+  const { right, up, toViewer } = screenAxes(camera, target);
+  const distance = camera.position.distanceTo(target);
+  const center = new THREE.Vector3((box.min[0]! + box.max[0]!) / 2, (box.min[1]! + box.max[1]!) / 2, (box.min[2]! + box.max[2]!) / 2);
+  // the box on the screen: the spread of its eight corners along the screen's axes
+  let [w, h] = [0, 0];
+  for (let i = 0; i < 8; i++) {
+    const p = new THREE.Vector3(i & 1 ? box.max[0] : box.min[0], i & 2 ? box.max[1] : box.min[1], i & 4 ? box.max[2] : box.min[2]).sub(center);
+    w = Math.max(w, 2 * Math.abs(p.dot(right)));
+    h = Math.max(h, 2 * Math.abs(p.dot(up)));
+  }
+  const half = Math.max(h, w / aspect, least) / (2 * fraction);
+  target.copy(center);
+  camera.position.copy(center).addScaledVector(toViewer, distance);
+  camera.lookAt(target);
+  camera.left = -half * aspect;
+  camera.right = half * aspect;
+  camera.top = half;
+  camera.bottom = -half;
+  camera.zoom = 1;
+  camera.updateProjectionMatrix();
+  camera.updateMatrixWorld();
+}
+
 /**
  * The 26 directions of the view cube (FreeCAD's NaviCube): a face (one of x, y, z is ±1), an edge (two are) or a corner (all three), as the direction from
  * the model toward the viewer, and the screen's up for it: the world's +Y, except straight down or up the Y axis (the top view has −Z up, the bottom +Z, as

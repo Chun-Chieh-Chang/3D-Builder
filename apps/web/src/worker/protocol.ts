@@ -186,9 +186,12 @@ export interface ConvertPayload {
   errors: string[];
 }
 
-/** What interference found (E2.1): where components share volume (each overlap meshed, in the assembly's frame), and what could not be compared. */
+/**
+ * What interference found (E2.1): where components share volume (each overlap meshed, in the assembly's frame, with its centre of mass and box, ADR 0180),
+ * and what could not be compared.
+ */
 export interface InterferenceResult {
-  overlaps: { a: string; b: string; volume: number; mesh: MeshData }[];
+  overlaps: { a: string; b: string; volume: number; center: Vec3; min: Vec3; max: Vec3; mesh: MeshData }[];
   /** Pairs of parts the kernel was asked about. */
   checked: number;
   /** Components with a part that is not built. */
