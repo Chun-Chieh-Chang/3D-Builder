@@ -3,7 +3,7 @@
  * (parallel, square, at an angle; the total length along the axes); and for round elements the distance from centre to centre and the farthest. Worked out by hand.
  */
 import { describe, expect, it } from 'vitest';
-import { DEFAULT_MEASURE_OPTIONS, between, components, edgeElement, faceElement, formatAngle, formatLength, measureReport, roundReport, toInches, valueIn, viewMeasure, type MeasureElement, type MeasureRound } from '@3db/model';
+import { DEFAULT_MEASURE_OPTIONS, between, components, edgeElement, faceElement, formatAngle, formatLength, measureReport, roundReport, toInches, viewMeasure, type MeasureElement, type MeasureRound } from '@3db/model';
 
 describe('lengths', () => {
   it('millimetres: as many decimals as asked, none that are zero', () => {
@@ -18,8 +18,6 @@ describe('lengths', () => {
     expect(formatLength(25.4, { unit: 'in' })).toBe('1in');
     expect(formatLength(43.104, { unit: 'in' })).toBe('1.697in');
     expect(formatLength(43.104, { unit: 'in', places: 2 })).toBe('1.7in');
-    expect(valueIn(12.7, 'in')).toBe('0.5');
-    expect(valueIn(12.7, 'mm')).toBe('12.7');
   });
 
   it('fractions of an inch: reduced; a number that is one is written as one, any other as a decimal, unless the nearest is asked for', () => {

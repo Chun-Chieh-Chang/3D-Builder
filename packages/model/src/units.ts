@@ -43,11 +43,6 @@ export const toInches = (mm: number): number => mm / MM_PER_INCH;
 /** The length in the unit, as a number. */
 export const inUnit = (mm: number, unit: LengthUnit): number => (unit === 'in' ? toInches(mm) : mm);
 
-/** A length in the unit, as a number with the decimals of `places` and no more. */
-export function valueIn(mm: number, unit: LengthUnit, places = DEFAULT_PLACES[unit]): string {
-  return decimal(inUnit(mm, unit), places);
-}
-
 /** The whole inches and the fraction of a length in inches at `denominator`, reduced: `{ whole: 1, num: 11, den: 16 }` for 1.6875. Null when it is not that fraction (and `nearest` is not asked). */
 function fractionOf(inches: number, denominator: number, nearest: boolean): { sign: string; whole: number; num: number; den: number } | null {
   const sign = inches < 0 ? '-' : '';

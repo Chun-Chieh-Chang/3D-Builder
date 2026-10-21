@@ -379,13 +379,6 @@
 | [ADR 0180](docs/adr/0180-interference-made-visible.md) | ADR 0180：看得見的干涉檢查（縮放到干涉、淡化其他零組件、每塊一個紅圈、位置、忽略）；§3.1 紅圈改放在重疊本身上（質心在環形的空處） |
 | [docs/assembly-explode-plan.md](docs/assembly-explode-plan.md) | 組合件：爆炸線與動畫、多組爆炸、形成新次組合件（計畫） |
 | [docs/cleanup-candidates.md](docs/cleanup-candidates.md) | 清理候選清單（2026-10-07） |
-| [docs/decisions-2026-10-11.html](docs/decisions-2026-10-11.html) | 3D-Builder 待辦與待裁決選擇題（2026-10-11） |
-| [docs/decisions-2026-10-14.html](docs/decisions-2026-10-14.html) | 3D-Builder 未做／待裁選擇題（2026-10-14） |
-| [docs/decisions-2026-10-14b.html](docs/decisions-2026-10-14b.html) | 3D-Builder 未做／待裁選擇題（2026-10-14 晚） |
-| [docs/decisions-2026-10-17.html](docs/decisions-2026-10-17.html) | 3D-Builder 未做／待裁選擇題（彙整，2026-10-16） |
-| [docs/decisions-2026-10-18.html](docs/decisions-2026-10-18.html) | 3D-Builder 未做／待裁選擇題（2026-10-17 之後） |
-| [docs/decisions-2026-10-19.html](docs/decisions-2026-10-19.html) | 3D-Builder 未做/待裁選擇題(2026-10-19,重整理) |
-| [docs/decisions-e1p2-b28-shape2.html](docs/decisions-e1p2-b28-shape2.html) | 決策單：E1-P2 收尾 ＋ B2.8 shape 2（多圖頁 UI） |
 | [docs/drawing-callouts-plan.md](docs/drawing-callouts-plan.md) | 工程圖：螺紋孔與錐形沉孔的標註、DXF 的 DIMENSION 圖元（計畫） |
 | [docs/drawing-interaction-gap-plan.md](docs/drawing-interaction-gap-plan.md) | 工程圖交互邏輯：與 SolidWorks / FreeCAD TechDraw 的差距分析與改進規劃（草案） |
 | [docs/fillet-picking-impact.md](docs/fillet-picking-impact.md) | 圓角在工程圖上可點選的影響面盤點（E1a） |
@@ -398,7 +391,6 @@
 | [docs/surface-trim-plan.md](docs/surface-trim-plan.md) | 曲面互相修剪（P-3）：小驗證與計畫 |
 | [docs/thread-plan.md](docs/thread-plan.md) | 螺牙（真實螺紋實體）：計畫與驗證方案 |
 | [docs/verification-coverage.md](docs/verification-coverage.md) | 人工驗證清單的自動化覆蓋（更新至 2026-10-14） |
-| [docs/verify-user-list.html](docs/verify-user-list.html) | 3D-Builder 實機驗證:只列要你親自做的 |
 | 本文件 | 狀態、待辦、下一步、約定 |
 
 ## 3. 各階段的狀態紀錄
@@ -468,14 +460,7 @@
 
 ## 4. 如何執行
 
-```bash
-npm install          # 第一次
-npm run dev          # 自動開啟 http://127.0.0.1:5391
-npm run dev:auto     # 同上；最後一個分頁關掉 30 秒後伺服器自己結束（ADR 0118）
-npm run check        # 型別檢查 + 分層檢查 + 全部測試
-npm run build        # 正式版建置
-npm run build -w @3db/desktop   # 桌面版安裝檔（要 Rust 與 MSVC，見 apps/desktop/README.md）
-```
+指令的單一來源是 [README.md](README.md)（安裝、開發、檢查、建置）。這裡只留 handoff 獨有的說明：
 
 - 內建瀏覽器的預覽伺服器設定在 `.claude/launch.json`，名稱是 `web`。
 - `spikes/occt-gaps/` 是 ADR 0003 的證據腳本，不屬於產品程式碼。

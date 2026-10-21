@@ -5,7 +5,7 @@
 import { describe, expect, it } from 'vitest';
 import { getLocale, type Locale } from '@3db/i18n';
 import { applyDrawingCommand, createEmptyDrawing, type DrawingDoc, type DrawingPage, type DrawingView, type ModelDrawingView } from '@3db/model';
-import { buildScene, layoutViews, sheetMetrics, STANDARD_SCALES, suggestScale, titleCells, toSvg, VIEW_GAP, type SceneText, type ViewLines } from '@3db/drawing';
+import { buildScene, layoutViews, sheetMetrics, STANDARD_SCALES, titleCells, toSvg, VIEW_GAP, type SceneText, type ViewLines } from '@3db/drawing';
 
 const view = (id: string, direction: ModelDrawingView['direction'], extra: Partial<ModelDrawingView> = {}): DrawingView => ({ id, name: id, source: 'x.3dbx', direction, ...extra });
 const doc = (views: DrawingView[], sheet: Partial<DrawingPage['sheet']> = {}): DrawingDoc => applyDrawingCommand(applyDrawingCommand(createEmptyDrawing(), { type: 'setSheet', sheet }), { type: 'insertViews', views });
@@ -88,17 +88,7 @@ describe('laying out the views (C16.2)', () => {
 });
 
 describe('the scale (ISO 5455)', () => {
-  const sizes = new Map([['f', { w: 100, h: 60 }], ['t', { w: 100, h: 40 }], ['r', { w: 40, h: 60 }]]);
-  const views = [view('f', 'front'), view('t', 'top'), view('r', 'right')];
-
-  it('the largest standard scale at which the views fit the area: 1:1 for 140 x 100 on an A3 (2:1 would not fit the height), 10:1 for a small part (28 x 18 at 10:1 is 305 x 205 with the gap, in 374 x 213)', () => {
-    expect(suggestScale(views, sizes, { size: 'A3', orientation: 'landscape', projection: 'first' })).toEqual([1, 1]);
-    expect(suggestScale(views, new Map([['f', { w: 20, h: 10 }], ['t', { w: 20, h: 8 }], ['r', { w: 8, h: 10 }]]), { size: 'A3', orientation: 'landscape', projection: 'first' })).toEqual([10, 1]);
-  });
-
-  it('a big part is made smaller: 800 x 500 does not fit at 1:2 on an A3 and does at 1:5', () => {
-    const big = new Map([['f', { w: 800, h: 500 }], ['t', { w: 800, h: 300 }], ['r', { w: 300, h: 500 }]]);
-    expect(suggestScale(views, big, { size: 'A3', orientation: 'landscape', projection: 'first' })).toEqual([1, 5]);
+  it('the standard scales are the ISO 5455 list, 1:5 among them', () => {
     expect(STANDARD_SCALES.map((s) => `${s[0]}:${s[1]}`)).toContain('1:5');
   });
 });

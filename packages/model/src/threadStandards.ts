@@ -115,18 +115,6 @@ export const lookupThread = (designation: string): StandardThreadEntry | undefin
   return ALL_STANDARD_THREADS.find((t) => t.designation.toUpperCase() === norm);
 };
 
-/**
- * List standard threads by system category.
- */
-export const listThreadsBySystem = (system: StandardThreadSystem): readonly StandardThreadEntry[] => {
-  switch (system) {
-    case 'metric-coarse': return METRIC_COARSE;
-    case 'metric-fine': return METRIC_FINE;
-    case 'unc': return INCH_UNC;
-    case 'unf': return INCH_UNF;
-  }
-};
-
 // -----------------------------------------------------------------------------
 // 5. ISO 68-1 60° Standard Profile Point Generator
 // -----------------------------------------------------------------------------

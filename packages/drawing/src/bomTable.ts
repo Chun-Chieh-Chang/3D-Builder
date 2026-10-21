@@ -139,7 +139,3 @@ export function spotItems(spots: readonly BalloonSpot[]): SceneItem[] {
   return items;
 }
 
-/** The balloons of a view of an assembly (where they are: `balloonSpots`), drawn. */
-export function balloonItems(bom: ViewBom, anchors: readonly [number, number][] | undefined, placed: PlacedView, moved: Readonly<Record<string, [number, number]>> = {}): SceneItem[] {
-  return spotItems(balloonSpots(bom, anchors, placed, moved));
-}

@@ -438,22 +438,6 @@ export function layoutViews(doc: DrawingDoc, rawLines: ReadonlyMap<Id, ViewLines
   return out;
 }
 
-/** The largest standard scale at which the views laid out fit the area of the sheet (C16.1); 1:100 when none does. */
-export function suggestScale(views: readonly DrawingView[], sizes: ReadonlyMap<Id, { w: number; h: number }>, sheet: Pick<DrawingSheet, 'size' | 'orientation' | 'projection'>): Scale {
-  const area: Rect = sheetMetrics(sheet).area;
-  for (const scale of STANDARD_SCALES) {
-    const doc = drawingFromPage({ id: 'page1', name: '', sheet: { ...sheet, scale }, title: {}, views: views.map((v) => ({ ...v, name: v.id, at: undefined, scale: undefined, hidden: true })), dimensions: [], tables: [], surfaceFinishes: [], annotations: [] } as unknown as DrawingPage);
-    const lines = new Map<Id, ViewLines>(views.map((v) => [v.id, { visible: [], hidden: [], box: { min: [0, 0], max: [sizes.get(v.id)?.w ?? 0, sizes.get(v.id)?.h ?? 0] } }]));
-    const placed = [...layoutViews(doc, lines).values()];
-    const x0 = Math.min(...placed.map((p) => p.at[0] - p.w / 2));
-    const x1 = Math.max(...placed.map((p) => p.at[0] + p.w / 2));
-    const y0 = Math.min(...placed.map((p) => p.at[1] - p.h / 2));
-    const y1 = Math.max(...placed.map((p) => p.at[1] + p.h / 2));
-    if (x1 - x0 <= area.w + 1e-9 && y1 - y0 <= area.h + 1e-9) return scale;
-  }
-  return [1, 100];
-}
-
 // ---------------------------------------------------------------- placing views with the pointer (D-V, ADR 0131)
 
 /**

@@ -22,7 +22,7 @@ import { readPartFile } from '@3db/io';
 import { PlaneGcsSolver } from '@3db/sketch';
 import { Kernel } from '@3db/kernel';
 import { Regenerator, drawingAnchors, projectDrawingView } from '@3db/regen';
-import { balloonItems, bomColumns, bomTableItems, bomTableSize, buildScene, toSvg, type PlacedView, type ViewBom, type ViewLines } from '@3db/drawing';
+import { balloonSpots, bomColumns, bomTableItems, bomTableSize, buildScene, spotItems, toSvg, type PlacedView, type ViewBom, type ViewLines } from '@3db/drawing';
 
 const at: Pose = { position: [0, 0, 0], rotation: [0, 0, 0, 1] };
 const comp = (id: string, file: string, instance: number) => ({ id, file, instance, fixed: false, placement: at });
@@ -77,6 +77,10 @@ describe('the parts list as a table', () => {
     expect(moved.filter((i) => i.kind === 'polyline' && !i.closed && i.points.length === 4 && i.points[1] === i.points[3])).toHaveLength(2);
   });
 });
+
+/** The balloons of a view as the scene draws them: where they are (balloonSpots), then the items (spotItems). */
+const balloonItems = (bom: ViewBom, anchors: Parameters<typeof balloonSpots>[1], placed: PlacedView, moved: Parameters<typeof balloonSpots>[3] = {}) =>
+  spotItems(balloonSpots(bom, anchors, placed, moved));
 
 describe('the balloons', () => {
   const placed: PlacedView = { id: 'view1', at: [200, 150], scale: 1, w: 100, h: 60, centre: [0, 0] };

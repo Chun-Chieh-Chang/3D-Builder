@@ -3,7 +3,6 @@ import {
   ALL_STANDARD_THREADS,
   fundamentalTriangleHeight,
   generateStandardThreadProfile,
-  listThreadsBySystem,
   lookupThread,
 } from '../src/threadStandards';
 
@@ -47,19 +46,6 @@ describe('Standard Thread Library & ISO 68-1 Profile (T-6)', () => {
     expect(unfQuarter?.nominalDia).toBeCloseTo(6.350, 3);
     expect(unfQuarter?.pitch).toBeCloseTo(25.4 / 28, 5);
     expect(unfQuarter?.tpi).toBe(28);
-  });
-
-  it('categorizes threads properly across systems', () => {
-    const coarse = listThreadsBySystem('metric-coarse');
-    const fine = listThreadsBySystem('metric-fine');
-    const unc = listThreadsBySystem('unc');
-    const unf = listThreadsBySystem('unf');
-
-    expect(coarse.length).toBeGreaterThanOrEqual(15);
-    expect(fine.length).toBeGreaterThanOrEqual(10);
-    expect(unc.length).toBeGreaterThanOrEqual(11);
-    expect(unf.length).toBeGreaterThanOrEqual(6);
-    expect(ALL_STANDARD_THREADS.length).toBe(coarse.length + fine.length + unc.length + unf.length);
   });
 
   it('calculates fundamental triangle height H = sqrt(3)/2 * P', () => {

@@ -4,7 +4,7 @@
  */
 import { describe, expect, it } from 'vitest';
 import { applyDrawingCommand, createEmptyDrawing, type Dimension, type DrawingDoc, type DrawingView, type Ref, page, withPage } from '@3db/model';
-import { centreViews, fitViews, itemsBounds, suggestScale, type ElementsResult, type ViewLines } from '@3db/drawing';
+import { centreViews, fitViews, itemsBounds, type ElementsResult, type ViewLines } from '@3db/drawing';
 
 const view = (id: string, direction: 'front' | 'top' | 'right', extra: Partial<DrawingView> = {}): DrawingView => ({ id, name: id, source: 'x.3dbx', direction, ...extra }) as DrawingView;
 const box = (w: number, h: number): ViewLines => ({ visible: [[0, 0, w, h]], hidden: [], box: { min: [0, 0], max: [w, h] } });
@@ -37,8 +37,6 @@ describe('the best scale', () => {
   it('with nothing but views it is the scale of their boxes, as suggestScale says; the name under the lowest view is drawn content, so the arrangement moves up 4 mm to centre it', () => {
     const doc = make([view('f', 'front'), view('t', 'top'), view('r', 'right')]);
     const fit = fitViews(doc, lines)!;
-    const sizes = new Map([['f', { w: 100, h: 60 }], ['t', { w: 100, h: 40 }], ['r', { w: 40, h: 60 }]]);
-    expect(fit.scale).toEqual(suggestScale(page(doc).views, sizes, page(doc).sheet));
     expect(fit.scale).toEqual([1, 1]);
     // each view is named 8 mm under it (ISO 128-30); the lowest is the top view's, 8 below its box, so the drawn content's
     // middle sits 4 mm below the area's and the whole arrangement is shifted 4 mm up (8 / 2).

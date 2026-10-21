@@ -1,5 +1,39 @@
 # 3D-Builder 開發日誌 (DEV_LOG.md)
 
+## 2026-10-21：文件 SSOT 整理與待裁項目的執行（使用者於選擇題頁面裁決）
+
+### 1. 範圍（使用者裁決）
+- Q1 只做文件（不做程式資源的合併）。
+- Q2 刪除兩份已實作的計畫：`docs/plans/2026-10-09-cut-with-surface-vector.md`（ADR 0122）、`docs/plans/2026-10-09-sheet-metal-break-corner.md`（ADR 0121／0161）。
+- Q3 直接刪除 `docs/verify-user-list.html`（舊的實機清單）。使用者選擇不逐條比對，風險已說明：若有項目只在這份清單，需由 `docs/manual-verification.html` 補上。
+- Q4 刪除 7 份 `docs/decisions-*.html`（原先數成 6 份，漏了 `decisions-e1p2-b28-shape2.html`）。它們的結論已在 ADR 與 DEV_LOG；歷史段落仍保留檔名的文字。
+- Q5 ADR 0121 加註「已由 0161 取代」，不刪檔。
+- Q6 保留 `docs/fillet-picking-impact.md`。
+- Q7 刪除四個只有測試用到的函式：`suggestScale`、`balloonItems`、`listThreadsBySystem`、`valueIn`，以及它們的測試。
+- Q8–Q13：未選擇，這一輪不動。
+
+### 2. 做法
+| 檔案 | 改動 |
+|---|---|
+| `packages/drawing/src/layout.ts`、`bomTable.ts`、`packages/model/src/threadStandards.ts`、`units.ts` | 刪除四個函式（只刪函式本身） |
+| `tests/phase5/drawing-layout.test.ts` | `suggestScale` 的兩項測試刪除；`STANDARD_SCALES` 含 1:5 的斷言保留 |
+| `tests/phase5/drawing-fit.test.ts` | 刪除與 `suggestScale` 比對的一行；產品的 `fit.scale === [1, 1]` 斷言保留 |
+| `packages/model/test/threadStandards.test.ts`、`tests/phase3/measure-units.test.ts` | 刪除只測該函式的斷言與匯入 |
+| `tests/phase5/drawing-assembly.test.ts` | **例外**：號球的行為測試保留，改用產品路徑（`scene.ts` 直接用的 `balloonSpots` 與 `spotItems`）。`balloonItems` 只是包一層，所以測試檔內用一個同名的本地 helper 呼叫產品函式。刪掉這些測試會失去對產品號球（不重疊、不超出視圖）的保護。 |
+| `docs/adr/0121-sheet-break-corner.md` | 狀態改為「已由 0161 取代」 |
+| `handoff.md` | 刪除指向 8 個已刪檔案的文件地圖列；§4 的重複指令改為指向 `README.md`（指令的單一來源），保留 handoff 獨有的兩點說明 |
+
+### 3. 紅隊四問
+1. **輸入破壞**：不涉及輸入路徑；刪除的函式沒有產品呼叫端（`git grep` 確認）。
+2. **幾何相交**：不涉及幾何。
+3. **依賴鏈**：`balloonSpots`／`spotItems`（產品）與 `layoutViews`、`fitViews`（產品）保留；`tsc` 通過，沒有懸空的引用。
+4. **零 Mock**：號球的測試直接呼叫產品函式，沒有 mock。
+- 過程中的錯誤：第一次刪 `listThreadsBySystem` 時，找函式結尾的規則（找第一個頂格的 `}`）對箭頭函式不準，多刪了後面的程式。已用 `git checkout` 還原，改為精確地找 `};` 結尾後重做，`tsc` 通過。
+
+### 4. 驗證
+- `npm run check`：3409 通過、0 失敗、25 略過（原 3411：少 2 項是只測已刪函式的測試）。
+- 完整 `verify:ui`：**161/161 通過**，0 失敗。
+
 ## 2026-10-21：用過的草圖一律隱藏——鈑金支架上多出的線架構（[ADR 0018 補充](docs/adr/0018-visibility-and-reference-repair.md)，檔案格式不變）
 
 ### 1. 查明
