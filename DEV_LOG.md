@@ -19,6 +19,8 @@
 ### 驗證
 - 單元：`tests/phase3/interference.test.ts`（新增環形、兩塊）與 `tests/phase8/interference-view.test.ts` 共 33/33。
 - e2e：`manual-interference-view.js` `run` 9/9、`ring` 3/3（4 個紅圈的像素皆為紅色）；`manual-d7.js`、`phase3-interference.js` 通過。
+- 全量 vitest：270 檔通過、4 skipped（原有），3390 tests 0 失敗；typecheck、lint:rules／deps／i18n 通過（i18n 基準 143）。
+- `verify:ui`（自有埠 5691／9633／5693）完整一輪：161/161 PASS，0 Console 錯誤（結束碼 0）。
 
 ## 2026-10-21：看得見的干涉檢查（ADR 0180）
 
