@@ -1,4 +1,5 @@
 import { t } from '@3db/i18n';
+import type { SolvedGeometry } from '@3db/sketch';
 import { modelRefOf, type Id, type PlaneFrame, type Ref, type SketchEntity, type SketchFeature, type Vec3 } from '@3db/model';
 import type { Topology } from '@3db/kernel';
 import { edgeFingerprint, resolveRef, vertexFingerprint, type Candidate, type ElementNames } from '@3db/naming';
@@ -41,9 +42,15 @@ export interface CurveScope {
   crossings(edge: number): { point: Vec3; end: boolean }[];
 }
 
+/** A sketch rebuilt before this one (ADR 0175): its plane and its solved geometry, in its own coordinates. */
+export interface OtherSketch {
+  frame: PlaneFrame;
+  geometry: ReadonlyMap<Id, SolvedGeometry>;
+}
+
 /**
- * The model the references are looked up in: its names and shapes, and the plane of the sketch; the reference geometry before it (ADR 0172); and, for a
- * pierce of a curved edge, where its curves cross the plane (ADR 0173).
+ * The model the references are looked up in: its names and shapes, and the plane of the sketch; the reference geometry before it (ADR 0172); for a
+ * pierce of a curved edge, where its curves cross the plane (ADR 0173); and the sketches before it (ADR 0175).
  */
 export interface ReferenceScope {
   names: ElementNames;
@@ -51,6 +58,7 @@ export interface ReferenceScope {
   frame: PlaneFrame;
   datums?: DatumScope;
   curves?: CurveScope;
+  sketches?: (id: Id) => OtherSketch | undefined;
 }
 
 const sub = (a: Vec3, b: Vec3): Vec3 => [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
@@ -114,9 +122,10 @@ export function piercePoints(scope: ReferenceScope, index: number): P2[] {
 /** The pierce point of edge `index` nearest `near` (the point's stored place: where it was last), or the first (ADR 0173: a curve may cross several times). */
 export function piercePoint(scope: ReferenceScope, index: number, near?: P2): P2 {
   const all = piercePoints(scope, index);
-  if (!near) return all[0]!;
-  return all.reduce((a, b) => (Math.hypot(b[0] - near[0], b[1] - near[1]) < Math.hypot(a[0] - near[0], a[1] - near[1]) ? b : a));
+  return near ? nearestTo(all, near) : all[0]!;
 }
+
+const nearestTo = (all: P2[], near: P2): P2 => all.reduce((a, b) => (Math.hypot(b[0] - near[0], b[1] - near[1]) < Math.hypot(a[0] - near[0], a[1] - near[1]) ? b : a));
 
 /** Where a straight edge, extended, passes through the plane (「貫穿」). */
 export function pierceEdge(topology: Topology, index: number, frame: PlaneFrame): P2 {
@@ -139,6 +148,77 @@ export function vertexPoint(topology: Topology, index: number, frame: PlaneFrame
 /** No model yet: a sketch that follows only reference geometry (ADR 0172) is looked up in these. */
 export const NO_NAMES: ElementNames = { faces: [], edges: [], vertices: [] };
 export const NO_TOPOLOGY: Topology = { faces: [], edges: [], vertices: [] };
+
+// ---------------------------------------------------------------- entities of earlier sketches (ADR 0175)
+
+const onFrame = (f: PlaneFrame, p: P2): Vec3 => [f.origin[0] + f.xDir[0] * p[0] + f.yDir[0] * p[1], f.origin[1] + f.xDir[1] * p[0] + f.yDir[1] * p[1], f.origin[2] + f.xDir[2] * p[0] + f.yDir[2] * p[1]];
+
+/** The entity `ref` (kind sketch, `<sketch>:<entity>`) names, as its sketch solved it, with that sketch's plane. Throws when it is not there. */
+function otherEntity(scope: ReferenceScope, ref: Ref): { frame: PlaneFrame; g: SolvedGeometry } {
+  const [sketchId, entityId] = ref.name.split(':');
+  const other = sketchId ? scope.sketches?.(sketchId) : undefined;
+  const g = other && entityId ? other.geometry.get(entityId) : undefined;
+  if (!other || !g) throw new ReferenceProblem(t('reference.sketchMissing', { name: ref.name }), [{ ref, reason: 'missing', candidates: [] }]);
+  return { frame: other.frame, g };
+}
+
+/**
+ * What an entity of an earlier sketch looks like on this plane (ADR 0175): a point or a line projected along the normal; a circle or an arc as itself
+ * when the two planes are parallel (an arc runs the other way round when they face apart). A tilted circle, an ellipse, a spline or a text is refused.
+ */
+export function sketchItem(scope: ReferenceScope, ref: Ref): { point: P2 } | { projected: Projected } {
+  const { frame: f, g } = otherEntity(scope, ref);
+  const at = (p: P2) => local(scope.frame, onFrame(f, p));
+  if (g.type === 'point') return { point: at(g.p) };
+  if (g.type === 'line') {
+    const [a, b] = [at(g.a), at(g.b)];
+    if (Math.hypot(b[0] - a[0], b[1] - a[1]) < 1e-9) throw new ReferenceProblem(t('reference.endOn'));
+    return { projected: { kind: 'line', a, b } };
+  }
+  if (g.type === 'circle' || g.type === 'arc') {
+    const facing = dot(f.normal, scope.frame.normal);
+    if (Math.abs(Math.abs(facing) - 1) >= 1e-9) throw new ReferenceProblem(t('reference.notParallel'));
+    const c = at(g.c);
+    if (g.type === 'circle') return { projected: { kind: 'circle', c, r: g.r } };
+    const [s, e] = [at([g.c[0] + g.r * Math.cos(g.a0), g.c[1] + g.r * Math.sin(g.a0)]), at([g.c[0] + g.r * Math.cos(g.a1), g.c[1] + g.r * Math.sin(g.a1)])];
+    return { projected: facing > 0 ? { kind: 'arc', c, r: g.r, start: s, end: e } : { kind: 'arc', c, r: g.r, start: e, end: s } };
+  }
+  throw new ReferenceProblem(t('reference.sketchKind', { name: ref.name }));
+}
+
+/**
+ * Where a line, circle or arc of an earlier sketch passes through this plane (ADR 0175): a line extended, once (refused when it is parallel to the plane);
+ * a circle at the zero, one or two places it meets the plane, an arc at those on its sweep — worked out exactly, P(θ) = C + r(cos θ X + sin θ Y).
+ */
+export function sketchPierces(scope: ReferenceScope, ref: Ref): P2[] {
+  const { frame: f, g } = otherEntity(scope, ref);
+  const n = scope.frame.normal;
+  const side = (p: Vec3) => dot(sub(p, scope.frame.origin), n);
+  if (g.type === 'line') {
+    const [a, b] = [onFrame(f, g.a), onFrame(f, g.b)];
+    const d = sub(b, a);
+    const along = dot(d, n);
+    if (Math.abs(along) < SAME * Math.max(1, Math.hypot(...d))) throw new ReferenceProblem(t('reference.parallel'));
+    const s = -side(a) / along;
+    return [local(scope.frame, [a[0] + d[0] * s, a[1] + d[1] * s, a[2] + d[2] * s])];
+  }
+  if (g.type === 'circle' || g.type === 'arc') {
+    const C = onFrame(f, g.c);
+    const [ca, cb] = [dot(f.xDir, n), dot(f.yDir, n)];
+    const R = Math.hypot(ca, cb);
+    if (R < 1e-12) throw new ReferenceProblem(t('reference.parallel'));
+    const k = -side(C) / (g.r * R);
+    if (Math.abs(k) > 1 + 1e-12) throw new ReferenceProblem(t('reference.noPierce'));
+    const phi = Math.atan2(cb, ca);
+    const delta = Math.acos(Math.max(-1, Math.min(1, k)));
+    const angles = delta < 1e-12 ? [phi] : [phi - delta, phi + delta];
+    const onSweep = (th: number) => g.type === 'circle' || norm(th - g.a0) <= norm(g.a1 - g.a0) + 1e-12;
+    const out = angles.filter(onSweep).map((th) => local(scope.frame, onFrame(f, [g.c[0] + g.r * Math.cos(th), g.c[1] + g.r * Math.sin(th)])));
+    if (out.length === 0) throw new ReferenceProblem(t('reference.noPierce'));
+    return out;
+  }
+  throw new ReferenceProblem(t('reference.sketchKind', { name: ref.name }));
+}
 
 /** Half the length a line made from reference geometry is drawn (ADR 0172): a convention, the same whatever the model; to the solver a line has no ends. */
 export const DATUM_HALF_SPAN = 25;
@@ -205,37 +285,8 @@ export function followReferences(sketch: SketchFeature, scope: ReferenceScope): 
     held.add(point);
     constraints.push({ id: `ref:${owner}:${n}`, type: 'fix', point });
   };
-  const entities: SketchEntity[] = sketch.entities.map((e) => {
-    if (e.type === 'point' && e.pierce) {
-      // a curve may cross the plane several times: the crossing nearest where the point was (ADR 0173)
-      const at = piercePoint(scope, edgeIndex(scope, e.pierce), [e.x, e.y]);
-      move.set(e.id, at);
-      hold(e.id, 0, e.id);
-      return e;
-    }
-    if (e.type === 'point' && e.ref?.kind === 'datum') {
-      const item = datumItem(scope, e.ref);
-      if (!('point' in item)) throw new ReferenceProblem(t('reference.changedKind', { id: e.id }));
-      move.set(e.id, item.point);
-      hold(e.id, 0, e.id);
-      return e;
-    }
-    if (e.type === 'line' && e.ref?.kind === 'datum') {
-      const item = datumItem(scope, e.ref);
-      if (!('line' in item)) throw new ReferenceProblem(t('reference.changedKind', { id: e.id }));
-      move.set(e.p1, item.line[0]);
-      move.set(e.p2, item.line[1]);
-      hold(e.id, 1, e.p1);
-      hold(e.id, 2, e.p2);
-      return e;
-    }
-    if (e.type === 'point' && e.ref) {
-      move.set(e.id, vertexPoint(scope.topology, edgeIndex(scope, e.ref), scope.frame).at);
-      hold(e.id, 0, e.id);
-      return e;
-    }
-    if (e.type === 'point' || !('ref' in e) || !e.ref) return e;
-    const p = projectEdge(scope.topology, edgeIndex(scope, e.ref), scope.frame);
+  /** An entity put where its projection is and held there: the ends of a line, the center (and radius) of a circle, the center, ends (and chord) of an arc. */
+  const followProjected = (e: SketchEntity, p: Projected): SketchEntity => {
     if (e.type === 'line' && p.kind === 'line') {
       move.set(e.p1, p.a);
       move.set(e.p2, p.b);
@@ -263,6 +314,50 @@ export function followReferences(sketch: SketchFeature, scope: ReferenceScope): 
       });
     } else throw new ReferenceProblem(t('reference.changedKind', { id: e.id }));
     return e;
+  };
+  const entities: SketchEntity[] = sketch.entities.map((e) => {
+    if (e.type === 'point' && e.pierce) {
+      // a curve may cross the plane several times: the crossing nearest where the point was (ADR 0173); a curve of an earlier sketch the same (ADR 0175)
+      const all = e.pierce.kind === 'sketch' ? sketchPierces(scope, e.pierce) : null;
+      const at = all ? nearestTo(all, [e.x, e.y]) : piercePoint(scope, edgeIndex(scope, e.pierce), [e.x, e.y]);
+      move.set(e.id, at);
+      hold(e.id, 0, e.id);
+      return e;
+    }
+    const own = 'ref' in e ? e.ref : undefined;
+    if (own?.kind === 'sketch') {
+      const item = sketchItem(scope, own);
+      if (e.type === 'point' && 'point' in item) {
+        move.set(e.id, item.point);
+        hold(e.id, 0, e.id);
+        return e;
+      }
+      if (e.type === 'point' || !('projected' in item)) throw new ReferenceProblem(t('reference.changedKind', { id: e.id }));
+      return followProjected(e, item.projected);
+    }
+    if (e.type === 'point' && e.ref?.kind === 'datum') {
+      const item = datumItem(scope, e.ref);
+      if (!('point' in item)) throw new ReferenceProblem(t('reference.changedKind', { id: e.id }));
+      move.set(e.id, item.point);
+      hold(e.id, 0, e.id);
+      return e;
+    }
+    if (e.type === 'line' && e.ref?.kind === 'datum') {
+      const item = datumItem(scope, e.ref);
+      if (!('line' in item)) throw new ReferenceProblem(t('reference.changedKind', { id: e.id }));
+      move.set(e.p1, item.line[0]);
+      move.set(e.p2, item.line[1]);
+      hold(e.id, 1, e.p1);
+      hold(e.id, 2, e.p2);
+      return e;
+    }
+    if (e.type === 'point' && e.ref) {
+      move.set(e.id, vertexPoint(scope.topology, edgeIndex(scope, e.ref), scope.frame).at);
+      hold(e.id, 0, e.id);
+      return e;
+    }
+    if (e.type === 'point' || !('ref' in e) || !e.ref) return e;
+    return followProjected(e, projectEdge(scope.topology, edgeIndex(scope, e.ref), scope.frame));
   });
   return {
     ...sketch,
@@ -283,6 +378,15 @@ export function convertEdges(scope: ReferenceScope, refs: Ref[], mode: 'convert'
   const errors: string[] = [];
   for (const ref of refs) {
     try {
+      if (ref.kind === 'sketch') {
+        // an entity of an earlier sketch (ADR 0175): a point or a projection, or where a curve of it passes through the plane
+        if (mode === 'pierce') items.push(...sketchPierces(scope, ref).map((pierce) => ({ ref, pierce })));
+        else {
+          const item = sketchItem(scope, ref);
+          items.push('point' in item ? { ref, vertex: item.point } : { ref, projected: item.projected });
+        }
+        continue;
+      }
       if (ref.kind === 'datum') {
         if (mode === 'pierce') throw new ReferenceProblem(t('reference.pierceStraight'));
         const item = datumItem(scope, ref);
@@ -303,6 +407,16 @@ export function convertEdges(scope: ReferenceScope, refs: Ref[], mode: 'convert'
     }
   }
   return { items, errors };
+}
+
+/**
+ * What of an earlier sketch 「轉換實體引用」 takes when the whole sketch is picked (ADR 0175): its lines, circles and arcs, and the points no curve is built
+ * on, as references; what cannot be projected (a tilted circle, an ellipse, a spline, a text) is left for `convertEdges` to say why.
+ */
+export function sketchEntityRefs(sketch: Pick<SketchFeature, 'id' | 'entities'>): Ref[] {
+  const used = new Set(sketch.entities.flatMap((e) => (e.type === 'line' ? [e.p1, e.p2] : e.type === 'circle' ? [e.center] : e.type === 'arc' ? [e.center, e.start, e.end] : e.type === 'ellipse' ? [e.center, e.major] : e.type === 'spline' ? e.points : e.type === 'text' ? [e.at] : [])));
+  const taken = sketch.entities.filter((e) => (e.type === 'point' ? !used.has(e.id) : e.type !== 'text'));
+  return taken.map((e): Ref => ({ kind: 'sketch', name: `${sketch.id}:${e.id}` }));
 }
 
 /** The edges around a planar face (its outline and its holes), as references. */
@@ -497,7 +611,7 @@ export type SnapItem = { ref: Ref; projected: Projected; off?: number } | { ref:
  * one that looks like an edge in the plane is left out; so is a pierce point where an item already has a corner or a center, and a seam (an edge between a
  * face and itself, which is not an edge anyone sees). In the plane first, then the rest from the nearest, then the pierce points.
  */
-export function modelSnapItems(scope: ReferenceScope, fingerprintOf: (edge: number) => Ref['fingerprint']): SnapItem[] {
+export function modelSnapItems(scope: ReferenceScope, fingerprintOf: (edge: number) => Ref['fingerprint'], shownSketches: readonly Pick<SketchFeature, 'id' | 'entities'>[] = []): SnapItem[] {
   const { topology, names, frame } = scope;
   const TOL = 1e-6;
   const side = (p: Vec3) => dot(sub(p, frame.origin), frame.normal);
@@ -579,5 +693,28 @@ export function modelSnapItems(scope: ReferenceScope, fingerprintOf: (edge: numb
     const there = vertices.get(key);
     if (!there || there.off > off) vertices.set(key, { ref: { kind: 'vertex', name, fingerprint: vertexFingerprint(topology, i) }, vertex: at, off });
   });
-  return [...items, ...fresh, ...[...vertices.values()].sort((a, b) => a.off - b.off)];
+  // the entities of earlier sketches on show (ADR 0175): points, the projections of lines, circles and arcs, and where those curves pass through the plane;
+  // `off` how far from the plane. What cannot be projected is left out; what lands on a corner the model already offers is not offered twice
+  const fromSketches: SnapItem[] = [];
+  for (const s of shownSketches) {
+    const other = scope.sketches?.(s.id);
+    if (!other) continue;
+    const off = Math.abs(dot(sub(other.frame.origin, frame.origin), frame.normal));
+    for (const ref of sketchEntityRefs(s)) {
+      try {
+        const item = sketchItem(scope, ref);
+        if ('point' in item) {
+          if (!reached.some((c) => Math.hypot(c[0] - item.point[0], c[1] - item.point[1]) < TOL)) fromSketches.push({ ref, vertex: item.point, off });
+        } else fromSketches.push({ ref, projected: item.projected, off });
+      } catch (err) {
+        if (!(err instanceof ReferenceProblem)) throw err;
+      }
+      try {
+        for (const pierce of sketchPierces(scope, ref)) if (!reached.some((c) => Math.hypot(c[0] - pierce[0], c[1] - pierce[1]) < TOL)) fromSketches.push({ ref, pierce });
+      } catch (err) {
+        if (!(err instanceof ReferenceProblem)) throw err;
+      }
+    }
+  }
+  return [...items, ...fresh, ...[...vertices.values()].sort((a, b) => a.off - b.off), ...fromSketches];
 }

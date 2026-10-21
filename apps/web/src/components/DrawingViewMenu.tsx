@@ -11,7 +11,7 @@ import { ContextMenu } from './ContextMenu';
  * a surface finish, or the empty sheet.
  */
 export type DrawingMenuAt = { x: number; y: number } & (
-  /** `element`: the edge, vertex, circle or arc of the view under the pointer, when there is one (ADR 0175): the dimensions that start from it are offered first */
+  /** `element`: the edge, vertex, circle or arc of the view under the pointer, when there is one (ADR 0177): the dimensions that start from it are offered first */
   | { kind: 'view'; view: Id; leaf: string | null; element?: Pickable | null }
   | { kind: 'dimension'; id: Id }
   | { kind: 'annotation'; id: Id }
@@ -73,7 +73,7 @@ export function DrawingMenu({ at, onClose }: { at: DrawingMenuAt; onClose: () =>
     </li>
   );
   /**
-   * A command of the CommandManager (ADR 0175): its name and whether it can be done now are the registry's, and so is what it does unless `run` says otherwise —
+   * A command of the CommandManager (ADR 0177): its name and whether it can be done now are the registry's, and so is what it does unless `run` says otherwise —
    * the menu and the 註記 tab are one set of commands, not two.
    */
   const command = (id: string, run?: () => void) => {
@@ -101,7 +101,7 @@ export function DrawingMenu({ at, onClose }: { at: DrawingMenuAt; onClose: () =>
     const base = arrangementBase(doc)?.id === view.id;
     const corner = view.kind === 'projected' && isCorner(view.side);
     const aligns = (view.kind === 'projected' || view.kind === 'section') && !corner;
-    // the element under the pointer (ADR 0175): the dimensions that start from it, the one it makes alone first; a circle's centre mark too
+    // the element under the pointer (ADR 0177): the dimensions that start from it, the one it makes alone first; a circle's centre mark too
     const element = at.element ? { view: view.id, feature: at.element } : null;
     const kind = element ? pickKind(element.feature) : null;
     const onElement = element
@@ -228,7 +228,7 @@ export function DrawingMenu({ at, onClose }: { at: DrawingMenuAt; onClose: () =>
   );
 }
 
-/** 「屬性」 of a view (ADR 0175): the view alone chosen, which is what the panel shows the properties of, and the panel brought to where they are. */
+/** 「屬性」 of a view (ADR 0177): the view alone chosen, which is what the panel shows the properties of, and the panel brought to where they are. */
 function showProperties(view: Id): void {
   store.drawingStore?.select(view);
   requestAnimationFrame(() => document.querySelector('[data-drawing-panel] .sw-pm-header')?.scrollIntoView({ block: 'start' }));

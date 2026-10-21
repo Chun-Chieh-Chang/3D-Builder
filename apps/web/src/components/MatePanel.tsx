@@ -9,7 +9,7 @@ import { componentInfo } from './AssemblyTree';
 import { Icon } from './Icon';
 
 const TYPES: MateType[] = ['coincident', 'parallel', 'perpendicular', 'tangent', 'concentric', 'lock', 'distance', 'angle']; // the mates of two elements; width and symmetric are under the advanced mates
-const KIND_WORD = { face: '面', edge: '邊線', vertex: '頂點', datum: '', body: '本體' } as const;
+const KIND_WORD = { face: '面', edge: '邊線', vertex: '頂點', datum: '', body: '本體', sketch: '草圖圖元' } as const;
 const PLANE_LABEL: Record<string, string> = Object.fromEntries(DATUM_ITEMS.map((d) => [d.id, d.label]));
 
 /** An element as the selection box lists it: 「面 extrude1:cap:end@定位板<1>」, 「前基準面@組合件」. */

@@ -198,6 +198,9 @@ export function viewItems(view: DrawingView, lines: ViewLines | null | undefined
   draw(lines.center, 'center');
   // the tangent edges (B2.3): the smooth lines where two faces meet, drawn thin. They are drawn as before unless the view leaves them out
   if (display !== 'shaded' && view.showTangentEdges !== false) draw(lines.tangent, 'thin');
+  // the hidden ones (ADR 0146 §7) only where the hidden lines are drawn: dashed with them, or thin in a wireframe, which draws every edge alike. Drawn in
+  // any other style they would be lines across the faces in front of them — on a shaded view, lines that the shading says are not there
+  if (showsHidden(view) && view.showTangentEdges !== false) draw(lines.tangentHidden, display === 'wireframe' ? 'thin' : 'hidden');
   if ((view.kind === 'section' || view.kind === 'sectionLocal' || view.kind === 'crop') && lines.cut) for (const l of hatch(lines.cut, HATCH_SPACING / placed.scale)) items.push({ kind: 'polyline', points: move(l), style: 'thin' });
   items.push(...breakItems(placed, lines.box));
   return items;

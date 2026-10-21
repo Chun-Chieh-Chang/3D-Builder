@@ -6,7 +6,7 @@ import type { Id } from './ids';
  * DOF status, mass properties and error lists are derived data and never stored.
  */
 
-export const SCHEMA_VERSION = 71;
+export const SCHEMA_VERSION = 72;
 
 /** Value expression (B5.2, B5.3): "20", "25.4mm", "30deg", "wall_t*2", "D1@草圖1/2", "property('厚度')"; see `expr/`. */
 export type Expr = string;
@@ -24,9 +24,12 @@ export interface Fingerprint {
   dir?: Vec3;
 }
 
-/** Reference = persistent name + fingerprint. Never a topology index (H3). */
+/**
+ * Reference = persistent name + fingerprint. Never a topology index (H3). Kind `sketch` (v72, ADR 0175) names an entity of an earlier sketch:
+ * `<sketch id>:<entity id>`, held by the sketch entities that follow it.
+ */
 export interface Ref {
-  kind: 'face' | 'edge' | 'vertex' | 'datum' | 'body';
+  kind: 'face' | 'edge' | 'vertex' | 'datum' | 'body' | 'sketch';
   name: string;
   fingerprint?: Fingerprint;
 }
@@ -58,7 +61,8 @@ export function sketchAxisDir(id: Id): [number, number] | undefined {
  * edge passes through the sketch plane (「貫穿」, C1.26); a `ref` on a point (v69, ADR 0171) makes it a model vertex projected onto the plane along its
  * normal. A point has one or the other, never both. A `ref` of kind 'datum' (v70, ADR 0172) follows reference geometry earlier in the history: a point a
  * reference point (or an axis square to the plane, where it passes through), a line a reference axis (`axis:x|y|z` too, projected) or a plane (where it
- * crosses the sketch plane): such a line is construction, never part of a profile. Their points keep their stored places only as a first guess; the model fixes them.
+ * crosses the sketch plane): such a line is construction, never part of a profile. A `ref` (or a point's `pierce`) of kind 'sketch' (v72, ADR 0175)
+ * follows a point, line, circle or arc of an earlier sketch, projected onto this plane (or, a pierce, where that curve passes through it). Their points keep their stored places only as a first guess; the model fixes them.
  */
 export type SketchEntity =
   | { id: Id; type: 'point'; x: number; y: number; construction?: boolean; pierce?: Ref; ref?: Ref }

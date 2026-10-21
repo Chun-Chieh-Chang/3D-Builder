@@ -140,9 +140,13 @@ export function sketchError(sketch: Pick<SketchFeature, 'entities' | 'constraint
     // what an entity follows on the model (C1.18, ADR 0171): a point pierces an edge or is a vertex, never both; a curve follows an edge
     if (e.type === 'point') {
       if (e.pierce && e.ref) return t('rules.pointFollowsTwo', { id: e.id });
-      if (e.pierce && e.pierce.kind !== 'edge') return t('cmd.sketchRefMustBeEdge', { id: e.id });
-      if (e.ref && e.ref.kind !== 'vertex' && e.ref.kind !== 'datum') return t('cmd.sketchPointRefMustBeVertex', { id: e.id });
-    } else if ('ref' in e && e.ref && e.ref.kind !== 'edge' && !(e.type === 'line' && e.ref.kind === 'datum')) return t('cmd.sketchRefMustBeEdge', { id: e.id });
+      if (e.pierce && e.pierce.kind !== 'edge' && e.pierce.kind !== 'sketch') return t('cmd.sketchRefMustBeEdge', { id: e.id });
+      if (e.ref && e.ref.kind !== 'vertex' && e.ref.kind !== 'datum' && e.ref.kind !== 'sketch') return t('cmd.sketchPointRefMustBeVertex', { id: e.id });
+    } else if ('ref' in e && e.ref) {
+      // a line follows an edge, reference geometry or a line of an earlier sketch; a circle or an arc an edge or one of an earlier sketch (ADR 0172, 0175)
+      const ok = e.ref.kind === 'edge' || (e.type === 'line' && e.ref.kind === 'datum') || (e.ref.kind === 'sketch' && (e.type === 'line' || e.type === 'circle' || e.type === 'arc'));
+      if (!ok) return t('cmd.sketchRefMustBeEdge', { id: e.id });
+    }
   }
 
   const seen = new Set<Id>(kinds.keys());

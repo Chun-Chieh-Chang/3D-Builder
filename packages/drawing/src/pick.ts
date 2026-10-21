@@ -33,13 +33,13 @@ export type LinePick = Extract<ViewFeature, { type: 'plane' | 'slant' }> & { alo
 export type DimensionMode = 'smart' | 'horizontal' | 'vertical' | 'aligned' | 'radius' | 'diameter' | 'angle';
 export const DIMENSION_MODES: readonly DimensionMode[] = ['smart', 'horizontal', 'vertical', 'aligned', 'radius', 'diameter', 'angle'];
 
-/** What an element pointed at is, as the right-click menu tells them apart (ADR 0175). */
+/** What an element pointed at is, as the right-click menu tells them apart (ADR 0177). */
 export type PickKind = 'line' | 'vertex' | 'circle' | 'arc' | 'fillet' | 'outline';
 export const pickKind = (f: Pickable): PickKind =>
   f.type === 'vertex' ? 'vertex' : f.type === 'circle' ? (f.full ? 'circle' : 'arc') : f.type === 'torus' ? 'fillet' : f.type === 'outline' ? 'outline' : 'line';
 
 /**
- * The kinds of dimension that can be started from an element (ADR 0175), the one it makes alone first: what the right-click menu of the element offers. Each can be
+ * The kinds of dimension that can be started from an element (ADR 0177), the one it makes alone first: what the right-click menu of the element offers. Each can be
  * made from it — alone (a line's length, a circle's diameter) or with a second element pointed at next; none is offered that `planDimension` would refuse for it
  * whatever the second one is.
  */

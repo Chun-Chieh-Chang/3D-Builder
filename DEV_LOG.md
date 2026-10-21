@@ -11,7 +11,7 @@
 - `contextMenus.ts`：`partMenu`／`sketchMenu`／`assemblyMenu` 純函式，命令名稱與可否執行取自 `ACTIONS`；`GraphicsMenu.tsx` 繪製畫面選單（`data-action`、`data-graphics-menu`），`MenuEntries` 讓設計樹用同一批命令。
 - `SketchController`：`contextPick`、`selectChain`、`startDimension`；`relationsOffered` 由 PropertyManager 抽出共用。
 - `FeatureTree`、`AssemblyTree.ComponentMenu` 改用同一批命令；`AssemblyTree` 寫死的中文移到 i18n（基準 16 → 12）。
-- 一併修正：`tests/phase5/drawing-dimension-modes.test.ts` 第 167 行的型別（ADR 0175 留下的 2 個 typecheck 錯誤）。
+- 一併修正：`tests/phase5/drawing-dimension-modes.test.ts` 第 167 行的型別（ADR 0177 留下的 2 個 typecheck 錯誤）。
 - 環境：worktree 沒有 `node_modules` 時 `@3db/*` 會解析到主資料夾的套件（型別錯誤全是假的）；Vite 也拒絕讀 worktree 以外的 WASM。改在 worktree 內 `npm install`（`package-lock.json` 未變）。
 
 ### 使用者裁決後的補充（同日）
@@ -26,7 +26,7 @@
 3. **依賴鏈完整性**：面／邊／頂點 → `ownerFeatures` → 特徵 → `consumedSketchesOf` → 草圖；本體由 `bodies[].face0/faces` 與 `topologyOf().edgeFaces` 找到（頂點沒有對照，故頂點不給「隱藏本體」，寫入 ADR §4）。每一個新命令都有 `help.*` 說明，`edit-feature` 有完整說明並接到手冊 C21（`docs/help-links.json`，手冊已同步）。
 4. **零 Mock 與真值**：e2e `manual-context-menus.js` 以真實右鍵事件（viewer 自己找指標下的元素）開選單，比對 `data-action` 清單，並在執行後檢查文件狀態（本體 `shown`、特徵 `suppressed`、圓角的 `edges`、量測的 pick、新限制條件的 `type`/`a`、構造線旗標、尺寸值＝線長、鏈＝矩形四邊、零組件 `hidden`/`suppressed`、結合／移動／插入 PropertyManager）。單元測試用真實 PlaneGCS 求解器驗證 `contextPick`、`selectChain`、`startDimension` 與加入關係。
 
-## 2026-10-20：工程圖尺寸類型與右鍵選單（ADR 0175）
+## 2026-10-20：工程圖尺寸類型與右鍵選單（ADR 0177）
 
 ### 現象與根因
 - 使用者：「只能標註直徑；每次都要到『註記』點選標註太麻煩，應該在右鍵選單中點選。」
@@ -47,6 +47,59 @@
 - 單元：新檔 19/19；全量 3243 通過（唯一失敗為手冊 help 行未同步，依測試指示 `SYNC_MANUAL_HELP=1` 同步後 phase8 680/680）。
 - typecheck 0 錯誤；lint:rules／lint:deps／lint:i18n 通過。
 - `verify:ui`（自有埠 5491／9433／5493）：新腳本 13/13；既有工程圖 22 支 22/22，0 Console 錯誤。
+## 2026-10-20：草圖參照較前面的草圖（G6，[ADR 0175](docs/adr/0175-sketch-references-to-sketches.md)）
+
+### 1. 背景與決策
+第二批的第一項，使用者選定。`Ref.kind` 新增 `sketch`，名稱寫成 `<草圖>:<圖元>`，Schema 72。圖元可以跟著之前草圖的點、直線、圓與圓弧走（以投影跟隨，並一律做成建構線）；點的 `pierce` 也可以是之前草圖的曲線。只能參照較前面的草圖，沿用使用者已定的原則。
+
+### 2. 做法
+| 層級 | 檔案 | 改動 |
+|---|---|---|
+| 模型 | `schema.ts`、`serialize.ts`、`sketch-rules.ts`、`commands.ts` | v72；規則；新增 `sketchSketchRefs`：被參照的草圖必須在前面、圖元必須存在、種類必須相符 |
+| 再生 | `references.ts`、`engine.ts`、`dag.ts` | 新增 `OtherSketch`、`sketchItem`（投影；兩平面面向相反時圓弧起訖互換）、`sketchPierces`（直線與平面、圓與平面相交的解析解）、`sketchEntityRefs`（整張轉換）；抽出 `followProjected`，供模型邊與草圖圖元共用；吸附加入顯示中的之前草圖；engine 把前面的草圖傳給 scope；DAG 父項 |
+| worker／介面 | `kernel.worker.ts`、`protocol.ts`、`store.ts`、`ops.ts`、`MatePanel.tsx` | `lastModel.sketches`；`ConvertRequest.sketch`；`sketchSnapItems(id, shown)`；在轉換或貫穿工具下點設計樹中較前面的草圖，就整張轉進來；草圖參照產生的是建構線 |
+| 雙語／說明 | `model.ts`、`sketch.ts`、`help.ts` | 5 個訊息；轉換實體引用與貫穿的說明各補一段 |
+
+### 3. 紅隊四問
+1. **輸入破壞**：參照較後的草圖、圖元不存在、種類不符、傾斜的圓、平行而沒有交點，都會明確拒絕並說明原因；不做近似投影。
+2. **幾何相交**：只做解析投影與相交，不涉及布林運算；圓與平面相交以 `a·cosθ + b·sinθ = −d₀/r` 解出，|k| > 1 時判定沒有交點，再依圓弧的掃掠範圍過濾。
+3. **依賴鏈**：schema → rules → commands → dag → regen（follow、convert、snap）→ worker → store／ops 全部接上。不會出現循環：只能參照前面的草圖，而重建是依序進行的。
+4. **零 Mock**：前基準面與右基準面的座標關係都是手算的；e2e 走真實 UI 與設計樹。
+
+### 4. 測試
+- `tests/phase3/sketch-to-sketch.test.ts` 11 項；`tests/e2e/manual-sketch-to-sketch.js` 3/3 PASS。
+- 反向對照：3 組轉紅，1 組仍綠，原因已寫在 ADR §4。
+- 測試第一版的 3 個錯都在測試這邊，見 ADR §4。
+- 撰寫過程自查兩件事：e2e 註解裡出現一個簡體字「体」，已改為「體」；英文說明裡的撇號讓 TS 字串斷掉，已改寫。
+- 全閘門 `npm run check`：**3242 通過、0 失敗**。完整 `verify:ui` **154/154 通過**，含新增的 `manual-sketch-to-sketch.js`。
+
+## 2026-10-20：塗彩視圖不再畫出被遮住的相切邊（[ADR 0146 §7](docs/adr/0146-drawing-sw-parity-six.md)，檔案格式不變）
+
+### 1. 範圍
+使用者：「工程圖中的圖彩部份會出現突兀的線條，可能是原本應該被遮蔽的輪廓線」。由工程圖六項（ADR 0146）的工作階段接手。
+
+### 2. 查明（量測，不猜）
+- 以零件網格的 3D 邊對照塗彩的深度緩衝，判斷每條線在它所畫的位置是否被零件的面擋住。
+- **削邊銷**（使用者可能測的圓柱件）：相切邊 0 條；等角視圖的可見線最多只有端點落在邊界（被遮比例 ≤ 0.50，兩個取樣點），**排除**網格接縫、側影線、z-fighting。
+- **定位板**（四角圓角）：等角視圖 12 條相切邊，前 8 條（`Rg1LineV`）被遮 0.00，後 4 條（`Rg1LineH`）1.00／1.00／1.00／0.50。截圖上就是後方角落的兩條線畫在頂面上。前視、上視的「被遮 1.00」來自前後邊投影重合、2D→3D 對應不唯一，故驗收用等角視圖。
+- 根因：B2.3（相切邊）核心把看得到與被遮住的相切邊合併成 `tangent`，繪圖層在「線架構」以外的樣式都畫成細實線（「移除隱藏線」同樣有錯，塗彩只是最明顯）。
+
+### 3. 做法
+| 層 | 檔案 | 內容 |
+|---|---|---|
+| 核心 | `packages/kernel/src/kernel.ts`、`types.ts` | `tangent` 只放 `Rg1LineV`；新增 `tangentHidden`（`Rg1LineH`，落在可見線或可見相切邊上的不給） |
+| 圖面 | `packages/drawing/src/scene.ts`、`layout.ts` | 被遮住的相切邊只在「隱藏線可見」（虛線）與「線架構」（細線）畫，且受「相切邊」開關控制；細部放大圖、裁剪視圖照樣裁切 |
+
+### 4. 自我紅隊四問（AGENTS.md §2.1）
+1. **輸入破壞**：沒有新的使用者輸入或參數；「相切邊」開關（`showTangentEdges`）的三種值（未設定、true、false）在五種樣式下逐一驗證。
+2. **幾何相交**：判斷看得到與否交給 OCCT 的精確隱藏線演算法（V／H 分類），不自己做；重疊的處理沿用 `hidden` 的規則（`lyingOn`，落在可見線上的被遮線不重複給），避免同一條線同時畫成實線與虛線。
+3. **依賴鏈**：`Kernel.projectView` → `ProjectedView.tangentHidden` → 剖面路徑（`{ ...seen }` 帶過去）→ worker（`{ mesh, ...lines }` 帶過去）→ 快取 → `resolveLines`（細部放大、裁剪）→ `viewItems` → SVG／PDF／DXF。`turnLines`（放置預覽）原本就不帶相切邊，不受影響。
+4. **零 Mock**：真值是零件本身：每條線對應到零件網格的 3D 邊，以該邊在該處的深度比對塗彩的深度緩衝（20 px/mm，門檻 0.2 mm），兩類各 ≥ 3 條，避免空集合的假綠。e2e 在實際 App 比對場景與頁面上的線。兩個突變（繪圖層畫回、核心合併回）各自讓測試失敗。
+
+### 5. 確效與品質驗收
+- `typecheck` 0 錯誤；`lint:deps`／`lint:rules`／`lint:i18n` 全過。
+- 全量 vitest：**3230 過、25 略過、0 失敗**（264 檔過、4 檔略過）；新 `drawing-tangent-hidden.test.ts` 5 項，既有 `drawing-tangent-edges.test.ts` 7 項照過。
+- `manual-drawing-shade-tangent.js` 5 步 PASS；全量 `verify:ui`：**153/153**（以 `VERIFY_UI_DEBUG_PORT=9433`、`VERIFY_UI_SAMPLES_PORT=5493` 跑，避開其他工作階段）。
 
 ## 2026-10-20：全面盤點與清理（[cleanup-candidates.md](docs/cleanup-candidates.md) 第三輪）＋文件同步
 

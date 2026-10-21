@@ -129,7 +129,7 @@ export function CommandBar() {
                     );
                     const children = ACTIONS.filter((x) => x.parent === a.id);
                     if (children.length === 0) return button(a);
-                    // a button with a drop-down of its kinds (ADR 0175), as SolidWorks's 智慧型尺寸 ▾: the kind on now is the one shown as on
+                    // a button with a drop-down of its kinds (ADR 0177), as SolidWorks's 智慧型尺寸 ▾: the kind on now is the one shown as on
                     const on = children.find((x) => x.active?.());
                     return (
                       <span key={a.id} className={`tool-split${dropped === a.id ? ' open' : ''}`} data-split={a.id}>

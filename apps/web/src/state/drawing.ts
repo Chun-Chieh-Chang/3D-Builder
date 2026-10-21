@@ -135,7 +135,7 @@ type DistributiveOmit<T, K extends keyof never> = T extends unknown ? Omit<T, K>
 export type DimensionSeed = { view: Id; feature: Pickable };
 
 export type DrawingTool =
-  /** The dimension tool: what has been pointed at so far, and the kind asked for (none: 智慧型尺寸, worked out from what is pointed at; ADR 0175). */
+  /** The dimension tool: what has been pointed at so far, and the kind asked for (none: 智慧型尺寸, worked out from what is pointed at; ADR 0177). */
   | { kind: 'dimension'; picks: DimensionSeed[]; mode?: Exclude<DimensionMode, 'smart'> }
   | { kind: 'section'; vertical?: boolean; slant?: boolean; path?: 'stepped' | 'aligned' }
   /** A local (partial) section of `parent` inside a closed outline (B1); the depth is how far the cut goes. */

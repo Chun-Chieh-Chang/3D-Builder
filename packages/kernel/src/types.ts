@@ -258,9 +258,12 @@ export interface ProjectedView {
   center?: number[][];
   /**
    * Tangent edges (B2.3): the smooth edges where two faces meet tangentially (a fillet meeting a face), as polylines in the same coordinates. Not part of
-   * `visible` or `hidden`, so a view may leave them out; drawn only when the view asks (`showTangentEdges`). Absent when the shape has none.
+   * `visible` or `hidden`, so a view may leave them out; drawn only when the view asks (`showTangentEdges`). Absent when the shape has none. Only the ones
+   * that are seen: the hidden ones are `tangentHidden` (ADR 0146 §7).
    */
   tangent?: number[][];
+  /** The tangent edges behind the material (ADR 0146 §7): drawn only where a view draws its hidden lines, never as lines on the faces in front of them. */
+  tangentHidden?: number[][];
   /** Asked for (`mesh: true`, ADR 0146): the faces of what is seen, as triangles in the same coordinates, for shading. */
   mesh?: ViewMesh;
 }

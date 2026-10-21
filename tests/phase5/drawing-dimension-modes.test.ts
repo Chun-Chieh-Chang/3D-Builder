@@ -1,5 +1,5 @@
 /**
- * ADR 0175: every kind of dimension made from a drawing view, through the same path the sheet takes ??the element under the pointer (`featureAt`, on the view's real
+ * ADR 0177: every kind of dimension made from a drawing view, through the same path the sheet takes ??the element under the pointer (`featureAt`, on the view's real
  * hidden-line projection and the part's named edges), the plan (`planDimension` with the kind asked for) and the number (`evaluateDimension` on the model's own
  * facts of the elements). Every expected value is worked out here from the part's topology (its vertices and its cylinders), never from the drawing's lines and
  * never written in by hand.
@@ -225,7 +225,7 @@ describe('what is refused before anything is planned', () => {
   });
 });
 
-describe('what the right-click menu of an element offers (ADR 0175)', () => {
+describe('what the right-click menu of an element offers (ADR 0177)', () => {
   /** A second element each kind can be made with, for the kinds that need one. */
   const partner = (mode: DimensionMode, first: Pickable): Pickable | null => {
     if (mode === 'angle') return pickAt(35, 25) === first || pickAt(35, 25).type === first.type ? pickAt(40, 10) : pickAt(35, 25);

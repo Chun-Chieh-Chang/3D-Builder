@@ -8,7 +8,8 @@ import { ownerFeatures } from '@3db/naming';
 export function parentsOf(feature: Feature, doc: PartDoc): Id[] {
   const ids = new Set(doc.features.map((f) => f.id));
   // A datum reference names a default plane (no parent) or a reference plane feature (its id).
-  const fromRefs = (refs: Ref[]) => refs.flatMap((r) => (r.kind === 'datum' ? [r.name] : ownerFeatures(r.name)));
+  // an entity of another sketch (ADR 0175) is named `<sketch id>:<entity id>`: its parent is that sketch
+  const fromRefs = (refs: Ref[]) => refs.flatMap((r) => (r.kind === 'datum' ? [r.name] : r.kind === 'sketch' ? [r.name.split(':')[0]!] : ownerFeatures(r.name)));
   let parents: Id[];
   switch (feature.type) {
     case 'sketch':

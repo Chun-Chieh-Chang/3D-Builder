@@ -1,4 +1,4 @@
-// ADR 0175: the kinds of dimension on a drawing, and the right-click menu that offers them. The CommandManager's 智慧型尺寸 has a drop-down (▾) of the kinds
+// ADR 0177: the kinds of dimension on a drawing, and the right-click menu that offers them. The CommandManager's 智慧型尺寸 has a drop-down (▾) of the kinds
 // asked for by name (水平, 垂直, 對齊, 角度, 半徑, 直徑); a line pointed at alone is its length; the right button on a line, a vertex, a circle or an arc lists
 // the kinds that start from it, and on a view or the sheet the 尺寸 and 註記 submenus — the same commands as the 註記 tab. Every number is checked against what the
 // model says of the elements (the worker's features and edges of the view), never written in. Replayed in the app's page (http://127.0.0.1:5391, 1280×720;
@@ -306,5 +306,5 @@ K.run = async () => {
   });
 
   const pass = steps.every((s) => s.pass);
-  return { name: 'drawing dimension kinds and right-click menu (ADR 0175)', steps, pass };
+  return { name: 'drawing dimension kinds and right-click menu (ADR 0177)', steps, pass };
 };
