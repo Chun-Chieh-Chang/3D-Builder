@@ -34,7 +34,7 @@
    - 零組件：開啟零件、重新指定零件檔、結合、移動、旋轉、固定或浮動（依現況擇一）、隱藏、透明、抑制、刪除。
    - 組合件空白處：插入零組件、結合、全部顯示、正視於、標準視角 ▸、選擇濾器。
 4. **畫面與設計樹共用**：`FeatureTree` 的編輯、抑制、隱藏、刪除與本體的隱藏改用同一批命令（`MenuEntries` 把 `MenuEntry` 畫成設計樹的 `<li>`）；`ComponentMenu` 整個改成 `assemblyMenu`。畫面上的選單由 `GraphicsMenu` 繪製（沿用 `.ctx-menu` 樣式，每一行帶 `data-action`，選單本身帶 `data-graphics-menu`，供 e2e 判斷）。
-5. **共用的小模組**：`state/featureSketches.ts`（特徵用到的草圖，原在 `FeatureTree`）、`selectionSets.topologyOf`（原在 `Viewport`）、`sketcher/relationsOffered.ts`（原在 `PropertyManager`）。
+5. **共用的小模組**：`state/featureSketches.ts`（特徵用到的草圖，原在 `FeatureTree`；2026-10-21 併入 `@3db/model` 的 `absorbedSketches`，見 ADR 0018 補充）、`selectionSets.topologyOf`（原在 `Viewport`）、`sketcher/relationsOffered.ts`（原在 `PropertyManager`）。
 
 ## 3. 驗證
 

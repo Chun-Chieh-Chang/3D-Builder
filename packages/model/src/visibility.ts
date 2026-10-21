@@ -1,6 +1,6 @@
 import { isDatumPlaneName } from './datums';
 import type { Id } from './ids';
-import type { PartDoc } from './schema';
+import type { Feature, PartDoc } from './schema';
 
 /** The part's origin, as a key of `PartDoc.visibility` (D4.6). */
 export const ORIGIN_KEY = 'origin';
@@ -23,14 +23,83 @@ export function isHideable(doc: PartDoc, key: string): boolean {
 }
 
 /**
- * Where nothing was chosen. As in SolidWorks: a sketch a feature has used is hidden (it is now part of
- * the feature), an unused one is shown; reference planes and the origin are shown; the three default
+ * The sketches a feature absorbs: the ones it is built from, which then sit under it in the tree and are hidden by
+ * default. Every feature type is listed, so a new one does not compile until it is decided here. A sketch used only
+ * through a reference (a plane normal to one of its lines, a sketch following it, a helix on its circle) is not absorbed.
+ */
+export function absorbedSketches(f: Feature): Id[] {
+  switch (f.type) {
+    case 'extrude':
+    case 'revolve':
+    case 'hole':
+    case 'rib':
+    case 'vent':
+    case 'splitLine':
+    case 'trimSurface':
+    case 'screwBoss':
+    case 'baseFlange':
+    case 'midBend':
+    case 'jog':
+    case 'snapHook':
+    case 'snapCatch':
+      return [f.sketch];
+    case 'thread':
+      return f.sketch ? [f.sketch] : [];
+    case 'sweep':
+      return [f.sketch, f.path];
+    case 'loft':
+      return [...f.sections];
+    case 'sketch':
+    case 'pattern':
+    case 'mirror':
+    case 'offsetSurface':
+    case 'knit':
+    case 'fillSurface':
+    case 'flatSurface':
+    case 'mutualTrim':
+    case 'extendSurface':
+    case 'thicken':
+    case 'lipGroove':
+    case 'edgeFlange':
+    case 'breakCorner':
+    case 'hem':
+    case 'cutWithSurface':
+    case 'fillet':
+    case 'chamfer':
+    case 'refPlane':
+    case 'refAxis':
+    case 'refPoint':
+    case 'coordSys':
+    case 'importedBody':
+    case 'derivedBody':
+    case 'deleteFace':
+    case 'moveFace':
+    case 'shell':
+    case 'draft':
+    case 'combine':
+    case 'split':
+    case 'moveCopyBody':
+    case 'deleteKeepBody':
+    case 'knurl':
+    case 'cosmeticThread':
+    case 'helix':
+      return [];
+    default: {
+      const unlisted: never = f;
+      return unlisted;
+    }
+  }
+}
+
+/**
+ * Where nothing was chosen. As in SolidWorks: a sketch a feature has absorbed is hidden (it is now part of
+ * the feature), any other one is shown; reference planes and the origin are shown; the three default
  * planes are hidden, and appear only while selected or referenced.
  */
 export function shownByDefault(doc: PartDoc, key: string): boolean {
   if (isDatumPlaneName(key)) return false;
   const f = doc.features.find((x) => x.id === key);
-  if (f?.type === 'sketch') return !doc.features.some((g) => ((g.type === 'extrude' || g.type === 'revolve') && g.sketch === key) || (g.type === 'sweep' && (g.sketch === key || g.path === key)) || (g.type === 'loft' && g.sections.includes(key)) || (g.type === 'rib' && g.sketch === key) || (g.type === 'thread' && g.sketch === key));
+  if (f?.type === 'sketch') return !doc.features.some((g) => absorbedSketches(g).includes(key));
   return true;
 }
 

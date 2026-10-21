@@ -1,6 +1,5 @@
-import { bodyKey, canBeSeed, explosionSteps, isDatumPlaneName, isHideable, isShown, page, type DatumPlaneName, type Feature, type PlaneFrame, type Ref } from '@3db/model';
+import { absorbedSketches, bodyKey, canBeSeed, explosionSteps, isDatumPlaneName, isHideable, isShown, page, type DatumPlaneName, type Feature, type PlaneFrame, type Ref } from '@3db/model';
 import { ownerFeatures } from '@3db/naming';
-import { consumedSketchesOf } from './state/featureSketches';
 import { topologyOf } from './state/selectionSets';
 import { OPPOSITE_VIEW } from '@3db/render';
 import type { DimensionMode } from '@3db/drawing';
@@ -78,7 +77,7 @@ const beforeRollback = (s: UiState, f: Feature) => s.doc.features.indexOf(f) < (
 /** The sketch the feature of the right click was made from (the first, for a sweep or a loft); none for a sketch itself. */
 const contextSketch = (s: UiState): Feature | undefined => {
   const f = contextFeature(s);
-  const id = f && f.type !== 'sketch' ? consumedSketchesOf(f)[0] : undefined;
+  const id = f && f.type !== 'sketch' ? absorbedSketches(f)[0] : undefined;
   return id ? s.doc.features.find((x) => x.id === id) : undefined;
 };
 /**

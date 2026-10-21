@@ -1,5 +1,27 @@
 # 3D-Builder 開發日誌 (DEV_LOG.md)
 
+## 2026-10-21：用過的草圖一律隱藏——鈑金支架上多出的線架構（[ADR 0018 補充](docs/adr/0018-visibility-and-reference-repair.md)，檔案格式不變）
+
+### 1. 查明
+使用者截圖：鈑金支架外圍有一圈細線。那是基材凸緣的草圖：`shownByDefault` 的手寫清單只有 6 種特徵，schema 中帶草圖 id 的有 16 種，漏了孔、分割線、修剪曲面、螺柱、基材凸緣、草圖折彎、凸折、卡榫、卡榫的窗、排氣口；設計樹的另一份清單漏了螺柱。
+
+### 2. 做法
+| 檔案 | 改動 |
+|---|---|
+| `packages/model/src/visibility.ts` | 新增 `absorbedSketches`，窮舉 50 種特徵型別（`never` 收尾）；`shownByDefault` 改用它 |
+| `apps/web/src/components/FeatureTree.tsx`、`apps/web/src/actions.ts` | 設計樹與右鍵選單「編輯草圖」改用 `absorbedSketches`；刪掉 `state/featureSketches.ts`（同樣漏了螺柱）|
+
+### 3. 紅隊四問
+1. **輸入破壞**：沒有草圖的螺牙（標準牙型）回傳空清單；使用者明確的選擇照舊優先。
+2. **幾何相交**：不涉及幾何。
+3. **依賴鏈**：只經參照用到的草圖（垂直於曲線的基準面、G6 跟隨、螺旋曲線的圓）不算吸收，維持顯示；新增特徵型別不決定就無法編譯。
+4. **零 Mock**：支架那一項用 `build()` 建出真實的文件；瀏覽器用真實的開檔與重建，讀 viewer 實際畫出的草圖群組。
+
+### 4. 測試
+- `tests/phase1/sketch-visibility.test.ts` 20 項。反向對照：換回舊清單，11 項轉紅。
+- 瀏覽器：基材凸緣做好後，viewer 沒有草圖群組；「顯示」後畫出 1 張，「隱藏」後消失。
+- 全閘門 `npm run check`（rebase 到含 ADR 0176–0180 的 `origin/main` 之後）：**3411 通過、0 失敗**、25 略過。完整 `verify:ui` **161/161 通過**。
+
 ## 2026-10-21：干涉紅圈不在紅色上（ADR 0180 §3.1）
 
 ### 現象與根因

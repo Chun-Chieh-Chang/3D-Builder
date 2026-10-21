@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactElement } from 'react';
 import { t } from '@3db/i18n';
-import { bodyKey, isHideable, isShown, type Feature, type Id } from '@3db/model';
+import { absorbedSketches, bodyKey, isHideable, isShown, type Feature, type Id } from '@3db/model';
 import { ownerFeatures } from '@3db/naming';
 import { dependencies } from '@3db/regen/dag';
 import type { FeatureResult } from '@3db/regen';
@@ -9,7 +9,6 @@ import { DATUM_ITEMS, featureLabel, SKETCH_STATUS_PREFIX } from '../strings';
 import { Icon } from './Icon';
 import { ContextMenu } from './ContextMenu';
 import { treeFilterMatches, treeNeedle } from './treeFilter';
-import { consumedSketchesOf } from '../state/featureSketches';
 import { command, type MenuEntry } from '../contextMenus';
 import { MenuEntries } from './GraphicsMenu';
 
@@ -97,7 +96,7 @@ export function FeatureTree() {
   // In hierarchy mode a sketch is shown under the feature that uses it, but only when both are in the same folder (or neither is in one): a folder
   // keeps what it holds, so a sketch in a folder whose feature is outside it stays in the folder, and folding the folder hides it.
   const byId = new Map(doc.features.map((x) => [x.id, x] as const));
-  const sketchesUnder = (f: Feature): Id[] => consumedSketchesOf(f).filter((sid) => byId.get(sid)?.folder === f.folder);
+  const sketchesUnder = (f: Feature): Id[] => absorbedSketches(f).filter((sid) => byId.get(sid)?.folder === f.folder);
   const absorbedSketchSet = new Set<Id>();
   for (const f of doc.features) {
     for (const sid of sketchesUnder(f)) absorbedSketchSet.add(sid);
