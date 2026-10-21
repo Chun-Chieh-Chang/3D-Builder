@@ -135,6 +135,8 @@ export const model = {
   'cmd.variableInUse': '變數「{name}」正被使用，先改掉那些運算式才能刪除：{users}',
   'cmd.propertyNameEmpty': '屬性名稱不可空白',
   'cmd.propertyNotFound': '找不到屬性：{name}',
+  'cmd.sketchRefNotEarlier': '{id} 跟著的「{name}」不是本草圖之前的草圖中的圖元',
+  'cmd.sketchRefWrongKind': '點跟著點（貫穿則跟著直線、圓或圓弧），直線跟著直線，圓或圓弧跟著圓或圓弧：{id} 不能跟著「{name}」',
   'cmd.sketchDatumNotEarlier': '{id} 參考的「{name}」不是草圖之前的參考平面、軸或點',
   'cmd.sketchDatumWrongKind': '點只能跟著參考點或基準軸，直線只能跟著基準軸或平面：{id} 不能跟著「{name}」',
   'cmd.sketchPointRefMustBeVertex': '點 {id} 參考的必須是模型的頂點或基準',

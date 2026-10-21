@@ -2,7 +2,7 @@
 
 ## 1. 背景
 
-2026-10-20 使用者反映「很多功能都可以加進滑鼠右鍵選單」，並要求以 SolidWorks／FreeCAD 公開文件為準審查交互。審查報告 `docs/ui-interaction-audit.md` §8 第 1 批即本 ADR：3D 畫面的右鍵統一，比照 ADR 0175（工程圖）的作法。
+2026-10-20 使用者反映「很多功能都可以加進滑鼠右鍵選單」，並要求以 SolidWorks／FreeCAD 公開文件為準審查交互。審查報告 `docs/ui-interaction-audit.md` §8 第 1 批即本 ADR：3D 畫面的右鍵統一，比照 ADR 0177（工程圖）的作法。
 
 **開工前讀碼的現況**：
 
@@ -18,7 +18,7 @@
    - 組合件：`open-component`、`relink-component`、`hide-component`、`transparent-component`、`suppress-component`、`delete-component`。
    - 草圖：`sketch-delete`、`sketch-select-chain`、`sketch-end-tool`。
    - 其餘直接沿用既有命令：`sketch`（在面上畫草圖）、`fillet`、`chamfer`、`measure-part`、`tool-dimension`、`construction`、`exit-sketch`、`view-normal`、`fit`、標準視角、`filter-bar`、`mate`、`move-component`、`rotate-component`、`fix-component`／`float-component`、`insert-component`。
-2. **命令作用在「選取的東西」上**，右鍵先選取指標下的東西（ADR 0175 同一原則）：指標下的若已在選取之中，選取保持不變。
+2. **命令作用在「選取的東西」上**，右鍵先選取指標下的東西（ADR 0177 同一原則）：指標下的若已在選取之中，選取保持不變。
    - `contextFeature(s)`：設計樹選取的特徵，否則選取的面／邊／頂點的名稱經 `ownerFeatures` 得到的特徵。
    - `contextVisibilityKey(s)`：設計樹選取的本體；否則選取的面所在本體（依 `bodies[].face0/faces` 範圍）、選取的邊兩側的面所在本體（`topologyOf(r).edgeFaces`）；否則設計樹選取、可隱藏的草圖或參考幾何。
    - 草圖：`SketchController.contextPick` 先找圖元、再找草圖的軸（ADR 0170），選取規則同上；沒點到東西時選取不變。

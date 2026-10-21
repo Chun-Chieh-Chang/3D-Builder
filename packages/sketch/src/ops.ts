@@ -495,10 +495,12 @@ export function referenceEntities(sketch: Pick<SketchFeature, 'entities'>, ids: 
     }
     const p = item.projected;
     const lineId = b.ids.take(p.kind === 'line' ? 'l' : p.kind === 'circle' ? 'ci' : p.kind === 'arc' ? 'a' : 'sp');
-    // a line from reference geometry (ADR 0172) is an infinite reference, never part of a profile
-    if (p.kind === 'line') b.entities.push({ id: lineId, type: 'line', p1: corner(p.a), p2: corner(p.b), ref: item.ref, ...(item.ref.kind === 'datum' ? { construction: true } : {}) });
-    else if (p.kind === 'circle') b.entities.push({ id: lineId, type: 'circle', center: corner(p.c), radius: p.r, ref: item.ref });
-    else if (p.kind === 'arc') b.entities.push({ id: lineId, type: 'arc', center: corner(p.c), start: corner(p.start), end: corner(p.end), ref: item.ref });
+    // a line from reference geometry (ADR 0172) is an infinite reference, never part of a profile; what follows another sketch (ADR 0175) is a reference
+    // too: that sketch's profile stays its own
+    const held = item.ref.kind === 'datum' || item.ref.kind === 'sketch' ? { construction: true } : {};
+    if (p.kind === 'line') b.entities.push({ id: lineId, type: 'line', p1: corner(p.a), p2: corner(p.b), ref: item.ref, ...held });
+    else if (p.kind === 'circle') b.entities.push({ id: lineId, type: 'circle', center: corner(p.c), radius: p.r, ref: item.ref, ...held });
+    else if (p.kind === 'arc') b.entities.push({ id: lineId, type: 'arc', center: corner(p.c), start: corner(p.start), end: corner(p.end), ref: item.ref, ...held });
     else b.entities.push({ id: lineId, type: 'spline', points: p.points.map(corner), ref: item.ref });
   }
   return { edit: { add: b.added } };

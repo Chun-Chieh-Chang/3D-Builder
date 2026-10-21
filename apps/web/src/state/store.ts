@@ -60,6 +60,7 @@ import {
   mirrorKey,
   SKETCH_AXIS_H,
   SKETCH_AXIS_V,
+  isShown,
 } from '@3db/model';
 import { readAnyDocumentFile, ASSEMBLY_FILE_EXTENSION, assemblyName, derivedAssemblyFiles, PART_FILE_EXTENSION, partFileName, partName, readDocumentFile, sha256Hex, imageFileName, stepAssemblyFiles, stepFileName, stlFileName, writePartFile } from '@3db/io';
 import { gatherSources } from './sources';
@@ -2561,9 +2562,17 @@ class AppStore {
   /** A click in the FeatureManager selects; while a plane is being defined it picks a plane like SolidWorks' flyout tree. */
   treeClick(id: Id): void {
     const e = this.state.editing;
-    // 「轉換實體引用」 while a sketch is edited: a reference plane, axis or point (in the tree or the graphics area) goes into the sketch (ADR 0172)
-    if (e?.kind === 'sketch' && this.sketcher?.getView().tool === 'convert') {
-      const datum = treeRef(this.history.doc, id);
+    // 「轉換實體引用」 while a sketch is edited: a reference plane, axis or point (in the tree or the graphics area) goes into the sketch (ADR 0172); an
+    // earlier sketch clicked in the tree, with 「轉換實體引用」 or 「貫穿」, goes in whole (ADR 0175)
+    const tool = this.sketcher?.getView().tool;
+    if (e?.kind === 'sketch' && (tool === 'convert' || tool === 'pierce')) {
+      const doc = this.history.doc;
+      const at = doc.features.findIndex((f) => f.id === id);
+      if (findFeature(doc, id)?.type === 'sketch' && id !== e.featureId) {
+        if (at >= doc.features.findIndex((f) => f.id === e.featureId)) return void this.notify(t('reference.sketchNotEarlier'), 'error');
+        return void this.convertSketch(id, tool);
+      }
+      const datum = tool === 'convert' ? treeRef(doc, id) : null;
       if (datum) return void this.convertPicked(datum);
     }
     if (e && e.kind === 'sketchPlane') {
@@ -2751,6 +2760,16 @@ class AppStore {
     if (r.errors.length > 0) this.notify(r.errors[0]!, r.items.length > 0 ? 'info' : 'error');
   }
 
+  /** A whole earlier sketch into the edited one (ADR 0175): its curves and free points converted, or where its curves pass through the plane. */
+  private async convertSketch(id: Id, tool: 'convert' | 'pierce'): Promise<void> {
+    const sketcher = this.sketcher;
+    const sketch = this.editedSketch();
+    if (!sketcher || !sketch) return;
+    const r = await this.api.convertReferences({ sketchId: sketch.id, edges: [], faces: [], mode: tool, sketch: id });
+    if (r.items.length > 0) sketcher.addReferences(r.items);
+    if (r.errors.length > 0) this.notify(r.errors[0]!, r.items.length > 0 ? 'info' : 'error');
+  }
+
   /** While a sketch is edited: asks the worker (which has the model before the sketch) for what the sketch can snap to on it. */
   private async refreshModelSnap(): Promise<void> {
     const e = this.state.editing;
@@ -2759,7 +2778,11 @@ class AppStore {
       return;
     }
     try {
-      const items = await this.api.sketchSnapItems(e.featureId);
+      // and the sketches before it that are on show (ADR 0175): a sketch a feature has used is hidden by default, as in SolidWorks
+      const doc = this.history.doc;
+      const index = doc.features.findIndex((f) => f.id === e.featureId);
+      const shown = doc.features.slice(0, Math.max(0, index)).flatMap((f) => (f.type === 'sketch' && isShown(doc, f.id) ? [f.id] : []));
+      const items = await this.api.sketchSnapItems(e.featureId, shown);
       if (this.state.editing?.featureId === e.featureId) this.modelSnap = items;
     } catch {
       this.modelSnap = []; // snapping to the model is a convenience: a failure only takes it away

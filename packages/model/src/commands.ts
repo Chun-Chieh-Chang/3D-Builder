@@ -510,7 +510,28 @@ function loftSections(doc: PartDoc, f: LoftFeature, index: number): void {
  * The reference geometry a sketch's entities follow (ADR 0172) must be earlier in the history than the sketch at `index` (or a default plane or axis of the
  * part), and of a kind the entity can follow: a point a reference point or an axis (where it passes through the plane), a line an axis or a plane.
  */
+/**
+ * The entities of other sketches a sketch's entities follow (ADR 0175) must be in a sketch earlier than the one at `index`, be there, and be of a kind the
+ * entity can follow: a point a point (or, a pierce, a line, circle or arc), a line a line, a circle or an arc a circle or an arc.
+ */
+function sketchSketchRefs(doc: PartDoc, entities: readonly SketchEntity[], index: number): void {
+  for (const e of entities) {
+    for (const [ref, pierce] of [[e.type === 'point' ? e.pierce : undefined, true], ['ref' in e ? e.ref : undefined, false]] as const) {
+      if (ref?.kind !== 'sketch') continue;
+      const [sketchId, entityId] = ref.name.split(':');
+      const at = doc.features.findIndex((f) => f.id === sketchId);
+      const other = at >= 0 && at < index ? doc.features[at] : undefined;
+      const target = other?.type === 'sketch' ? other.entities.find((x) => x.id === entityId) : undefined;
+      if (!target) throw new CommandError(t('cmd.sketchRefNotEarlier', { id: e.id, name: ref.name }));
+      const curve = target.type === 'line' || target.type === 'circle' || target.type === 'arc';
+      const fits = e.type === 'point' ? (pierce ? curve : target.type === 'point') : e.type === 'line' ? target.type === 'line' : (e.type === 'circle' || e.type === 'arc') && (target.type === 'circle' || target.type === 'arc');
+      if (!fits) throw new CommandError(t('cmd.sketchRefWrongKind', { id: e.id, name: ref.name }));
+    }
+  }
+}
+
 function sketchDatums(doc: PartDoc, entities: readonly SketchEntity[], index: number): void {
+  sketchSketchRefs(doc, entities, index);
   for (const e of entities) {
     const ref = 'ref' in e ? e.ref : undefined;
     if (ref?.kind !== 'datum') continue;

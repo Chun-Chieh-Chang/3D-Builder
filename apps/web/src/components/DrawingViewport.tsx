@@ -60,7 +60,7 @@ type P = [number, number];
 
 /** Whether a dimension of this kind is made from two elements as well as one: a diameter and a radius are of one circle, and the next click places them. */
 const takesSecond = (mode: DimensionMode | undefined) => mode !== 'radius' && mode !== 'diameter';
-/** What the dimension tool says it wants next (ADR 0175): the first element (said for the kind asked for), a second one or the place, the place. */
+/** What the dimension tool says it wants next (ADR 0177): the first element (said for the kind asked for), a second one or the place, the place. */
 function dimensionHint(mode: Exclude<DimensionMode, 'smart'> | undefined, picked: number): string {
   if (picked === 0) return t(mode ? `drawingUi.hint.dimMode.${mode}` : 'drawingUi.hint.dimension0');
   return t(picked === 1 && takesSecond(mode) ? 'drawingUi.hint.dimension1' : 'drawingUi.hint.dimension2');
@@ -693,7 +693,7 @@ export function DrawingViewport() {
         if (!drw.selection.some((x) => x.kind === pick.kind && x.id === pick.id)) d.pick([pick], 'replace');
       };
       // the same order a ctrl-click takes things in: a dimension, an annotation, a surface finish, a table, then a view under them
-      // a line of a view on the edge of its box (its outline) is the view's, though the pointer is a hair outside the box (ADR 0175)
+      // a line of a view on the edge of its box (its outline) is the view's, though the pointer is a hair outside the box (ADR 0177)
       const edgeOf = (): { kind: 'view'; id: Id } | null => {
         const f = featureUnder(p);
         return f ? { kind: 'view', id: f.view } : null;

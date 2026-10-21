@@ -641,7 +641,7 @@ export class Regenerator {
       try {
         switch (feature.type) {
           case 'sketch': {
-            const s = this.sketch(feature, set);
+            const s = this.sketch(feature, set, sketches);
             frames.set(feature.id, s.frame);
             const info = { status: s.solved.status, dof: s.solved.dof, conflicting: s.solved.conflicting, redundant: s.solved.redundant, problems: s.profiles.problems };
             if (s.solved.status === 'failed' || s.solved.status === 'over') {
@@ -1168,20 +1168,26 @@ export class Regenerator {
     return { origin, x, y: cross(zu, x), z: zu };
   }
 
-  private sketch(f: SketchFeature, set: Bodies) {
+  private sketch(f: SketchFeature, set: Bodies, earlier: RebuildResult['sketches'] = new Map()) {
     const frame = this.frame(f, set);
     // projected model edges and pierce points are put where the model has them now (C1.18)
     let followed = f;
     if (f.entities.some((e) => modelRefOf(e))) {
       const body = set.view;
       // reference geometry needs no model (ADR 0172); an edge or a vertex does
-      if (!body && f.entities.some((e) => (modelRefOf(e)?.kind ?? 'datum') !== 'datum')) throw new FeatureError(t('reference.noModel'));
+      // reference geometry and other sketches need no model (ADR 0172, 0175); an edge or a vertex does
+      if (!body && f.entities.some((e) => !['datum', 'sketch'].includes(modelRefOf(e)?.kind ?? 'datum'))) throw new FeatureError(t('reference.noModel'));
       try {
         followed = followReferences(f, {
           names: body?.names ?? NO_NAMES,
           topology: body?.topology ?? NO_TOPOLOGY,
           frame,
           datums: this.datumScope(set),
+          // the sketches rebuilt before this one: the history is in order, so a sketch sees only those before it (ADR 0175)
+          sketches: (id: Id) => {
+            const s = earlier.get(id);
+            return s && { frame: s.frame, geometry: s.solved.geometry };
+          },
           // a curved edge's crossings with the plane are the kernel's to find (ADR 0173)
           ...(body ? { curves: { crossings: (i: number) => this.kernel.edgePlaneCrossings(body.shape, i, { origin: frame.origin, normal: frame.normal }) } } : {}),
         });

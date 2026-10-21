@@ -137,6 +137,8 @@ export const model: Translation = {
   'cmd.variableInUse': 'Variable "{name}" is in use; change these expressions before deleting it: {users}',
   'cmd.propertyNameEmpty': 'The name of a property cannot be empty',
   'cmd.propertyNotFound': 'Property not found: {name}',
+  'cmd.sketchRefNotEarlier': '{id} follows "{name}", which is not an entity of a sketch earlier than this one',
+  'cmd.sketchRefWrongKind': 'A point follows a point (a pierce a line, circle or arc), a line a line, a circle or arc a circle or arc: {id} cannot follow "{name}"',
   'cmd.sketchDatumNotEarlier': '{id} refers to "{name}", which is not a reference plane, axis or point earlier than the sketch',
   'cmd.sketchDatumWrongKind': 'A point can follow a reference point or axis, a line a reference axis or plane: {id} cannot follow "{name}"',
   'cmd.sketchPointRefMustBeVertex': 'Point {id} must refer to a vertex of the model or to reference geometry',

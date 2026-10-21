@@ -25,7 +25,7 @@ export interface UiAction {
   run(): void;
   /** Toggle state for tool buttons (the active sketch tool). */
   active?(): boolean;
-  /** The action whose button this one drops down from, instead of being a button of its own (智慧型尺寸 and the kinds of dimension, ADR 0175). */
+  /** The action whose button this one drops down from, instead of being a button of its own (智慧型尺寸 and the kinds of dimension, ADR 0177). */
   parent?: string;
   /**
    * A command of the right-click menus only (ADR 0176): it works on what the right click chose (the feature of a face, the body of an edge, the component under
@@ -129,7 +129,7 @@ const toolIs = (same: (t: NonNullable<ReturnType<typeof drawingTool>>) => boolea
 /** The drawing has a view on its sheet: there is something to dimension or annotate. */
 const hasViews = (s: UiState) => drawingOn(s) && (s.drw ? page(s.drw.doc).views.length : 0) > 0;
 
-/** The action of each kind of dimension the tool makes (ADR 0175): the button, the drop-down and the right-click menu all name the same one. */
+/** The action of each kind of dimension the tool makes (ADR 0177): the button, the drop-down and the right-click menu all name the same one. */
 export const DIMENSION_ACTION: Record<DimensionMode, string> = {
   smart: 'drw-dimension',
   horizontal: 'drw-dim-horizontal',
@@ -141,7 +141,7 @@ export const DIMENSION_ACTION: Record<DimensionMode, string> = {
 };
 const isDimensionTool = (mode: DimensionMode) => (x: NonNullable<ReturnType<typeof drawingTool>>) => x.kind === 'dimension' && (x.mode ?? 'smart') === mode;
 /**
- * Starts the dimension tool for this kind (ADR 0175), with what was already pointed at when it is given (the right-click menu of an element starts from that
+ * Starts the dimension tool for this kind (ADR 0177), with what was already pointed at when it is given (the right-click menu of an element starts from that
  * element, so that the next click places the dimension or picks the second element).
  */
 export function startDimension(mode: DimensionMode, seed: readonly DimensionSeed[] = []): void {
@@ -327,7 +327,7 @@ export const ACTIONS: UiAction[] = [
   { id: 'drw-autoscale', get label() { return t('drawingUi.autoScale'); }, group: 'drawing', enabled: (s) => drawingOn(s) && ((s.drw ? page(s.drw.doc).views.length : 0)) > 0, run: () => store.drawingStore?.autoScale() },
   // 註記
   { id: 'drw-dimension', get label() { return t('drawingUi.toolDimension'); }, group: 'annotation', enabled: hasViews, ...dimensionTool('smart') },
-  // the kinds asked for by name, in the drop-down of 智慧型尺寸 (SolidWorks's 水平尺寸, 垂直尺寸, ...); the right-click menu offers the same ones (ADR 0175)
+  // the kinds asked for by name, in the drop-down of 智慧型尺寸 (SolidWorks's 水平尺寸, 垂直尺寸, ...); the right-click menu offers the same ones (ADR 0177)
   { id: 'drw-dim-horizontal', get label() { return t('drawingUi.toolDim.horizontal'); }, group: 'annotation', parent: 'drw-dimension', enabled: hasViews, ...dimensionTool('horizontal') },
   { id: 'drw-dim-vertical', get label() { return t('drawingUi.toolDim.vertical'); }, group: 'annotation', parent: 'drw-dimension', enabled: hasViews, ...dimensionTool('vertical') },
   { id: 'drw-dim-aligned', get label() { return t('drawingUi.toolDim.aligned'); }, group: 'annotation', parent: 'drw-dimension', enabled: hasViews, ...dimensionTool('aligned') },
