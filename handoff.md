@@ -36,7 +36,7 @@
 | G6 草圖參照較前面的草圖（ADR 0175）、塗彩相切邊 | `main`（`ea37dff`、`d8b20a2`） | 已推送 |
 | **第 2 批：草圖移動／複製／旋轉／縮放與陣列（ADR 0178）** | **`claude/ecstatic-hertz-078773`** | 已同步 `main`（`96d58dc`）並改號（`2ce9809`）；2026-10-21 經使用者同意 fast-forward 合併進 `main` 並推送（`8fa2ef5`） |
 | 組合件零件基準面可供結合（Qoder 任務） | `main` | 已完成（`manual-asm-component-datums.js`） |
-| 其他 worktree：`drawing-dims-menu`、`zealous-elion-0bae8c`（detached）、`~/.qoder/...` 兩個、`~/.local/share/opencode/...` 一個（共 5 個） | 各自資料夾 | **2026-10-21 經使用者同意全部移除**（內容都已在 `main`）；被忽略的 `out/`（截圖、vitest 紀錄）與 Qoder 的 `scratch/parity-brief-v1-discarded-2026-10-16/` 先複製到主資料夾 `scratch/archived-worktrees/`（git 忽略）再刪。已合併的本機分支 `drawing-partial-section`、`shade-lines`、`worktree-drawing-dims-menu` 保留未刪 |
+| 其他 worktree：`drawing-dims-menu`、`zealous-elion-0bae8c`（detached）、`~/.qoder/...` 兩個、`~/.local/share/opencode/...` 一個（共 5 個） | 各自資料夾 | **2026-10-21 經使用者同意全部移除**（內容都已在 `main`）；被忽略的 `out/`（截圖、vitest 紀錄）與 Qoder 的 `scratch/parity-brief-v1-discarded-2026-10-16/` 先複製到主資料夾 `scratch/archived-worktrees/`（git 忽略）再刪。已合併的本機分支 `drawing-partial-section`、`shade-lines`、`worktree-drawing-dims-menu` 也已刪除（`git branch -d`，三者都已在 `main`，origin 上本來就沒有） |
 
 **本機的工作階段（2026-10-21 盤點，只算這台電腦、未封存的；其他電腦的不在內）**：17 個，全部閒置。逐一讀了每個的最後回報，並以 `main` 的提交與檔案核對：
 
