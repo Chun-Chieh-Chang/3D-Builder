@@ -282,7 +282,7 @@ describe('the sketch menu', () => {
     expect(ids.filter((x) => !x.startsWith('relation-') && x !== 'add-relation')).toEqual([
       'tool-dimension',
       'construction',
-      // 移動／複製 (ADR 0177): the transforms, the patterns and the mirror
+      // 移動／複製 (ADR 0178): the transforms, the patterns and the mirror
       'transform-entities',
       'tool-moveEntities',
       'tool-copyEntities',
@@ -298,7 +298,7 @@ describe('the sketch menu', () => {
     ]);
   });
 
-  it('移動／複製 → 移動圖元 starts the tool on what the right click selected (ADR 0177)', async () => {
+  it('移動／複製 → 移動圖元 starts the tool on what the right click selected (ADR 0178)', async () => {
     // the registry's command acts on the store's sketcher: this controller is it for the test
     const { store } = await import('../../apps/web/src/state/store');
     const h = new Host();

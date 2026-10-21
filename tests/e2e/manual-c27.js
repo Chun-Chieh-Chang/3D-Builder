@@ -1,4 +1,4 @@
-// Manual checklist C27 (docs/manual-verification.html, ADR 0177): 移動／複製／旋轉／縮放圖元 and the linear and circular sketch patterns, each tool used with real
+// Manual checklist C27 (docs/manual-verification.html, ADR 0178): 移動／複製／旋轉／縮放圖元 and the linear and circular sketch patterns, each tool used with real
 // pointer events in the app's page (http://127.0.0.1:5391, 1280×720; `npm run verify:ui` does it): the right-click menu 移動／複製 ▸, the clicks on the base,
 // target and center points (on existing points, so that they are exact), the values and 套用 of the PropertyManager. After each, the document is read: where
 // every point is, compared with the transform applied to where it was (the truth is the matrix, worked out here, never written down), the relations kept,

@@ -1,13 +1,13 @@
 # 3D-Builder 開發日誌 (DEV_LOG.md)
 
-## 2026-10-20：草圖的移動／複製／旋轉／縮放圖元與草圖陣列（ADR 0177）
+## 2026-10-20：草圖的移動／複製／旋轉／縮放圖元與草圖陣列（ADR 0178）
 
 ### 現象與根因
 - 審查報告 `docs/ui-interaction-audit.md` §8 第 2 批（差距 #4）：草圖沒有 SolidWorks Move／Copy／Rotate／Scale Entities（含「保持關係」）與草圖陣列。使用者確認計畫、關係規則與三個假設（副本數不含原圖元；線性陣列一個方向；旋轉與縮放另有「複製」）。
 - 分支以 fast-forward 建在第 1 批 `claude/zealous-elion-0bae8c`（ADR 0176）之上：右鍵選單在那裡。
 
 ### 變更
-- `packages/sketch/src/ops.ts`：`transformEntities`、`patternEntities`（純函式）、`applyTransform`、`transformProblem`／`patternProblem`（非法輸入的說明）、`patternTransforms`；關係規則見 ADR 0177 §2.2。
+- `packages/sketch/src/ops.ts`：`transformEntities`、`patternEntities`（純函式）、`applyTransform`、`transformProblem`／`patternProblem`（非法輸入的說明）、`patternTransforms`；關係規則見 ADR 0178 §2.2。
 - `packages/model/src/commands.ts`：`SketchEdit.place`（點、半徑、短半徑、文字大小與角度）、`EntityRefs` 加 `major`／`points`、`constraints[].set.labelPosition`；不改 Schema。
 - `SketchController`：六個工具（點選流程、預覽、`applyToolValues` 套用面板數值、`runTransform` 以拖曳目標試解並把結果寫入同一個命令；拖曳無解時不拉拖曳再解一次）；`SketchHost.trial` 可帶拖曳參數（store 轉給 worker）。
 - PropertyManager 的 `TransformOptions`（保持關係、複製、數值欄位保留原值、套用）；`actions.ts`／`strings.ts` 六個工具；`contextMenus.ts` 圖元選單加「移動／複製 ▸」（六個工具＋鏡射）。

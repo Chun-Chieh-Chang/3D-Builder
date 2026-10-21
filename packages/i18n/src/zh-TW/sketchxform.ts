@@ -1,4 +1,4 @@
-/** sketchxform: 移動／複製／旋轉／縮放圖元與草圖陣列 (ADR 0177): the tools, their steps, their options, and why one cannot be done. */
+/** sketchxform: 移動／複製／旋轉／縮放圖元與草圖陣列 (ADR 0178): the tools, their steps, their options, and why one cannot be done. */
 export const sketchxform = {
   'tool.moveEntities': '移動圖元',
   'tool.copyEntities': '複製圖元',

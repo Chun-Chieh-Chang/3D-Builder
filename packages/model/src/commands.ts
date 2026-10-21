@@ -17,13 +17,13 @@ import { ExprError } from './expr';
 import { idsInUse, removalSet, sketchError } from './sketch-rules';
 import { pictureBlobs } from './picture';
 
-/** The point references of a curve that an edit may change (an ellipse's `major` and a spline's `points` since ADR 0177). */
+/** The point references of a curve that an edit may change (an ellipse's `major` and a spline's `points` since ADR 0178). */
 export type EntityRefs = Partial<Record<'p1' | 'p2' | 'start' | 'end' | 'center' | 'at' | 'major', Id>> & { points?: Id[] };
 /** The references of a relation or dimension that an edit may change (`undefined` takes one away: the optional second reference). */
 export type ConstraintRefs = Partial<Record<'a' | 'b' | 'point' | 'line' | 'curve' | 'axis' | 'circle', Id | undefined>>;
 
 /**
- * Where an entity now is (ADR 0177, 移動／旋轉／縮放圖元): a point's place, a circle's radius, an ellipse's minor radius, a text's size and turn (degrees).
+ * Where an entity now is (ADR 0178, 移動／旋轉／縮放圖元): a point's place, a circle's radius, an ellipse's minor radius, a text's size and turn (degrees).
  * Each field only for the entity that has it; the values are checked like any stored sketch.
  */
 export interface SketchPlacement {
@@ -42,7 +42,7 @@ export interface SketchEdit {
   entities?: { id: Id; set: EntityRefs }[];
   /** Relations and dimensions that now refer to something else, or whose value changes. */
   constraints?: { id: Id; set: ConstraintRefs & { value?: Expr; labelPosition?: [number, number] } }[];
-  /** Entities that are now somewhere else (ADR 0177). */
+  /** Entities that are now somewhere else (ADR 0178). */
   place?: SketchPlacement[];
   /** Deleted together with whatever depends on them. */
   remove?: Id[];

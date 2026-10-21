@@ -7,7 +7,7 @@ import { SketchController, type PointerInput, type SketchHost, type ToolId } fro
 import type { SketchSolvePayload } from '../src/worker/protocol';
 
 /**
- * 移動／複製／旋轉／縮放圖元 and sketch patterns (ADR 0177), through the controller with the real solver: where every point ends up is compared with the
+ * 移動／複製／旋轉／縮放圖元 and sketch patterns (ADR 0178), through the controller with the real solver: where every point ends up is compared with the
  * transform applied to where it was (the truth comes from the matrix, never written down), with 「保持關係」 on and off, moving and copying.
  */
 
@@ -163,7 +163,7 @@ const kOf = (m: Transform2) => (m.kind === 'scale' ? m.k : 1);
 /** What a horizontal relation becomes under the transform: kept, made vertical, or gone. */
 const horizontalBecomes = (m: Transform2): 'horizontal' | 'vertical' | null => (m.kind !== 'rotate' ? 'horizontal' : m.angle % 180 === 0 ? 'horizontal' : m.angle % 90 === 0 ? 'vertical' : null);
 
-describe('moving in place (ADR 0177)', () => {
+describe('moving in place (ADR 0178)', () => {
   for (const { name, m, tool, set } of CASES) {
     for (const keep of [false, true]) {
       it(`${name}, keep relations ${keep ? 'on' : 'off'}: every point where the matrix takes it`, async () => {
@@ -265,7 +265,7 @@ describe('moving in place (ADR 0177)', () => {
   });
 });
 
-describe('copying (ADR 0177)', () => {
+describe('copying (ADR 0178)', () => {
   const copyCases = [
     { name: 'copy by (13, −7)', m: { kind: 'translate', d: [13, -7] } as Transform2, tool: 'copyEntities' as ToolId, set: (c: SketchController) => (c.setOption('moveX', 13), c.setOption('moveY', -7)) },
     ...CASES.filter((x) => x.tool !== 'moveEntities').map((x) => ({ ...x, name: `${x.name}, copied`, set: (c: SketchController) => x.set(c, true) })),
@@ -312,7 +312,7 @@ describe('copying (ADR 0177)', () => {
   }
 });
 
-describe('sketch patterns (ADR 0177)', () => {
+describe('sketch patterns (ADR 0178)', () => {
   const patterns: { name: string; spec: PatternSpec; tool: ToolId; set: (c: SketchController) => void }[] = [
     { name: 'linear, 4 copies 12 by 5 apart', spec: { kind: 'linear', step: [12, 5], count: 4 }, tool: 'linearPattern', set: (c) => (c.setOption('patternX', 12), c.setOption('patternY', 5), c.setOption('patternCount', 4)) },
     { name: 'circular, 5 copies all round (60° apart)', spec: { kind: 'circular', c: [-10, -10], angle: 360, count: 5 }, tool: 'circularPattern', set: (c) => (c.setOption('patternCount', 5), c.setOption('patternAngle', 360), click(c, -10, -10)) },
@@ -355,7 +355,7 @@ describe('sketch patterns (ADR 0177)', () => {
   }
 });
 
-describe('the tools by pointer clicks (ADR 0177)', () => {
+describe('the tools by pointer clicks (ADR 0178)', () => {
   it('move: base point, then target point', async () => {
     const h = new Host(fixture());
     const before = points(h);

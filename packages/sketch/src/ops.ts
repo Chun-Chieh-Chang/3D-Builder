@@ -1005,7 +1005,7 @@ export function dissolveText(
   };
 }
 
-// ---------------------------------------------------------------- move, copy, rotate, scale and sketch patterns (ADR 0177)
+// ---------------------------------------------------------------- move, copy, rotate, scale and sketch patterns (ADR 0178)
 
 /** A map of the sketch plane: a move by `d`; a turn of `angle` degrees counter-clockwise about `c`; a scale by `k` about `c`. */
 export type Transform2 = { kind: 'translate'; d: P2 } | { kind: 'rotate'; c: P2; angle: number } | { kind: 'scale'; c: P2; k: number };
@@ -1122,7 +1122,7 @@ function remapConstraint(c: SketchConstraint, map: ReadonlyMap<Id, Id>): SketchC
 }
 
 /**
- * 移動／旋轉／縮放圖元 (ADR 0177), in place (`copy` false). The points of the selection go where the transform takes them (the targets);
+ * 移動／旋轉／縮放圖元 (ADR 0178), in place (`copy` false). The points of the selection go where the transform takes them (the targets);
  * circles, ellipses and texts scale, texts turn. Relations and dimensions:
  * - among the selection: kept, as `carried` says (rotate: horizontal and vertical; scale: lengths);
  * - between the selection and the rest, `keepRelations` on: kept (the solver then moves the rest with it as far as they say, or holds the selection back);
@@ -1231,7 +1231,7 @@ function transformInPlace(
 }
 
 /**
- * Copies of the selection, one for each transform (複製圖元, 旋轉／縮放並複製, sketch patterns; ADR 0177). Each copy has points and curves of its own, free
+ * Copies of the selection, one for each transform (複製圖元, 旋轉／縮放並複製, sketch patterns; ADR 0178). Each copy has points and curves of its own, free
  * geometry even where the original follows the model. With `keepRelations` the relations and dimensions among the selection are copied onto each copy (as
  * `carried` says); a fix relation and anything between the selection and the rest never are. Without it, the copies are bare geometry.
  */
@@ -1305,7 +1305,7 @@ function copies(sketch: Pick<SketchFeature, 'entities' | 'constraints'>, geometr
   return { edit: { add: b.added }, targets, radii, removed: 0 };
 }
 
-/** 移動／複製／旋轉／縮放圖元 (ADR 0177): see `transformInPlace` and `copies` for what happens to the relations. */
+/** 移動／複製／旋轉／縮放圖元 (ADR 0178): see `transformInPlace` and `copies` for what happens to the relations. */
 export function transformEntities(
   sketch: Pick<SketchFeature, 'entities' | 'constraints'>,
   geometry: Geometry,
@@ -1341,7 +1341,7 @@ export function patternTransforms(spec: PatternSpec): Transform2[] {
   });
 }
 
-/** 線性／環狀草圖陣列 (ADR 0177): copies of the selection, as `copies` makes them. */
+/** 線性／環狀草圖陣列 (ADR 0178): copies of the selection, as `copies` makes them. */
 export function patternEntities(
   sketch: Pick<SketchFeature, 'entities' | 'constraints'>,
   geometry: Geometry,

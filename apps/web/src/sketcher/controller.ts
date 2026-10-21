@@ -102,7 +102,7 @@ export type ToolId =
   | 'intersect'
   | TransformTool;
 
-/** 移動／複製／旋轉／縮放圖元 and the sketch patterns (ADR 0177): they act on the entities selected when the tool starts. */
+/** 移動／複製／旋轉／縮放圖元 and the sketch patterns (ADR 0178): they act on the entities selected when the tool starts. */
 export type TransformTool = 'moveEntities' | 'copyEntities' | 'rotateEntities' | 'scaleEntities' | 'linearPattern' | 'circularPattern';
 export const TRANSFORM_TOOLS: readonly TransformTool[] = ['moveEntities', 'copyEntities', 'rotateEntities', 'scaleEntities', 'linearPattern', 'circularPattern'];
 const isTransformTool = (tool: ToolId): tool is TransformTool => (TRANSFORM_TOOLS as readonly ToolId[]).includes(tool);
@@ -141,7 +141,7 @@ export interface ToolOptions {
   /** 「修復草圖」 closes gaps up to this wide (mm). */
   gapTolerance: number;
   /**
-   * The transform tools (ADR 0177): 「保持關係」, 「複製」 (rotate and scale), the values typed in (ΔX/ΔY, angle in degrees, factor; a pattern's step, copies and
+   * The transform tools (ADR 0178): 「保持關係」, 「複製」 (rotate and scale), the values typed in (ΔX/ΔY, angle in degrees, factor; a pattern's step, copies and
    * total angle). Kept as typed, even when not a valid value: the operation says why it cannot use one, it is never quietly made into another (AGENTS.md §2.1).
    */
   keepRelations: boolean;
@@ -185,7 +185,7 @@ export interface SketchHost {
   execute(cmd: Command): boolean;
   /** Solves a drag frame for display only; null ends the preview. */
   dragPreview(options: { drag: { points?: PointPosition[]; radii?: CircleRadius[] }; initial: { points: PointPosition[]; radii: CircleRadius[] } } | null): void;
-  /** Solves a candidate sketch without changing anything; dragged toward the targets of `options` when given (a move of entities, ADR 0177). */
+  /** Solves a candidate sketch without changing anything; dragged toward the targets of `options` when given (a move of entities, ADR 0178). */
   trial(sketch: SketchFeature, doc?: PartDoc, options?: { drag: { points?: PointPosition[]; radii?: CircleRadius[] }; initial: { points: PointPosition[]; radii: CircleRadius[] } }): Promise<SketchSolvePayload>;
   notify(text: string, kind?: 'error' | 'info'): void;
   /** Opens the Modify box of a dimension (D6.1). */
@@ -1239,7 +1239,7 @@ export class SketchController {
     }
   }
 
-  // ------------------------------------------------------------------ move, copy, rotate, scale, sketch patterns (ADR 0177)
+  // ------------------------------------------------------------------ move, copy, rotate, scale, sketch patterns (ADR 0178)
 
   /** A click of a transform tool: the clicks gather until the tool has its last one, which applies it. */
   private transformClick(tool: TransformTool, s: Snap): void {
@@ -1690,7 +1690,7 @@ function rectLines(corners: P2[]): PreviewShape[] {
   return corners.map((a, i) => ({ kind: 'line' as const, a, b: corners[(i + 1) % 4]! }));
 }
 
-/** How an entity looks where a transform takes it (ADR 0177 preview): lines, circles and arcs exactly; ellipses and splines as polylines; points and texts not at all. */
+/** How an entity looks where a transform takes it (ADR 0178 preview): lines, circles and arcs exactly; ellipses and splines as polylines; points and texts not at all. */
 function transformedShapes(g: SolvedGeometry | undefined, m: Transform2): PreviewShape[] {
   const k = m.kind === 'scale' ? m.k : 1;
   const turn = m.kind === 'rotate' ? (m.angle * Math.PI) / 180 : 0;

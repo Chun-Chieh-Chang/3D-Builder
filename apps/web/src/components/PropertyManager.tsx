@@ -236,7 +236,7 @@ function ToolOptionsBox({ view, sketcher }: { view: ControllerView; sketcher: Sk
   }
 }
 
-/** A value of a transform tool exactly as typed: an empty or unreadable field is NaN, which the operation refuses and says why (ADR 0177, AGENTS.md §2.1). */
+/** A value of a transform tool exactly as typed: an empty or unreadable field is NaN, which the operation refuses and says why (ADR 0178, AGENTS.md §2.1). */
 function TypedNumber({ label, value, name, onChange }: { label: string; value: number; name: string; onChange: (v: number) => void }) {
   return (
     <label className="pm-row">
@@ -246,7 +246,7 @@ function TypedNumber({ label, value, name, onChange }: { label: string; value: n
   );
 }
 
-/** 移動／複製／旋轉／縮放圖元 and the sketch patterns (ADR 0177): 保持關係, 複製, the values and 套用. */
+/** 移動／複製／旋轉／縮放圖元 and the sketch patterns (ADR 0178): 保持關係, 複製, the values and 套用. */
 function TransformOptions({ view, sketcher }: { view: ControllerView; sketcher: SketchController }) {
   const o = view.options;
   const tool = view.tool;

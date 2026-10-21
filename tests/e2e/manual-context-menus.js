@@ -306,7 +306,7 @@ C.part = async () => {
     const ids = gids();
     const selection = [...H.view().selection];
     await closeMenus(H);
-    // 移動／複製 ▸ (ADR 0177) between 構造線 and 選擇鏈; its lines are replayed in manual-c27.js
+    // 移動／複製 ▸ (ADR 0178) between 構造線 and 選擇鏈; its lines are replayed in manual-c27.js
     return { pass: what === 'sketch-entity' && same(ids, ['add-relation', 'tool-dimension', 'construction', 'transform-entities', 'sketch-select-chain', 'sketch-delete', 'view-normal', 'exit-sketch']) && same(selection, [line]), what, ids, selection };
   });
 

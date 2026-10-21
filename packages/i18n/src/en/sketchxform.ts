@@ -1,4 +1,4 @@
-/** sketchxform: move, copy, rotate and scale entities, and sketch patterns (ADR 0177). */
+/** sketchxform: move, copy, rotate and scale entities, and sketch patterns (ADR 0178). */
 export const sketchxform = {
   'tool.moveEntities': 'Move Entities',
   'tool.copyEntities': 'Copy Entities',
