@@ -146,4 +146,5 @@ export const model = {
   'cmd.dimensionStillUsed': '尺寸「{name}」正被運算式使用，不能改成從動尺寸',
   'cmd.dimensionLabelInvalid': '尺寸名稱只能用文字、數字與底線，且不能以數字開頭：「{name}」',
   'cmd.dimensionLabelTaken': '這個草圖已經有名稱是「{name}」的尺寸',
+  'cmd.sketchAttachEmpty': '草圖附著要有原點、X 方向或反向；要取消附著，請清除它',
 } as const;

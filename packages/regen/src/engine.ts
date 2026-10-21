@@ -65,6 +65,7 @@ import {
   type CutWithSurfaceFeature,
   type ShellFeature,
   type SplitFeature,
+  type SketchAttach,
   type SketchFeature,
   type SweepFeature,
   type Thin,
@@ -963,9 +964,38 @@ export class Regenerator {
     };
   }
 
-  /** Where a sketch lies (C1.1): a default plane, a reference plane, or a planar face of the model before it. */
+  /** Where a sketch lies (C1.1): a default plane, a reference plane, or a planar face of the model before it; its axes as the plane gives them, or as it is attached (ADR 0181). */
   private frame(f: SketchFeature, set: Bodies): PlaneFrame {
-    return this.planeOf(f.plane, set, { what: t('regen.whatSketchPlane'), notPlanar: t('sketch.planeOnly') });
+    const plane = this.planeOf(f.plane, set, { what: t('regen.whatSketchPlane'), notPlanar: t('sketch.planeOnly') });
+    return f.attach ? this.attachedFrame(plane, f.attach, set) : plane;
+  }
+
+  /**
+   * The frame of a sketch attached to the model (ADR 0181): the same plane, the origin moved to where a vertex or point lies (along the normal, onto the
+   * plane), x along a straight edge or axis projected onto the plane, optionally turned half a turn about the normal. A direction square to the plane has
+   * no projection and is refused, never replaced by a default.
+   */
+  private attachedFrame(plane: PlaneFrame, a: SketchAttach, set: Bodies): PlaneFrame {
+    const n = plane.normal;
+    let origin = plane.origin;
+    let xDir = plane.xDir;
+    let yDir = plane.yDir;
+    if (a.origin) {
+      const p = this.pointOfRef(a.origin, set, t('sketch.attachOrigin'));
+      origin = sub(p, scale(n, dot(sub(p, plane.origin), n)));
+    }
+    if (a.x) {
+      const dir = this.axisOfRef(a.x, set, t('sketch.attachX')).dir;
+      const flat = sub(dir, scale(n, dot(dir, n)));
+      if (Math.hypot(...flat) < 1e-9 * Math.hypot(...dir)) throw new FeatureError(t('sketch.attachXSquare'));
+      xDir = unit(flat);
+      yDir = cross(n, xDir);
+    }
+    if (a.flipX) {
+      xDir = scale(xDir, -1);
+      yDir = scale(yDir, -1);
+    }
+    return { origin, xDir, yDir, normal: n };
   }
 
   /** The model so far, which a reference to one of its elements is looked up in. */

@@ -34,9 +34,10 @@ const aloneOn = (f: { faces: boolean; edges: boolean; vertices: boolean; planes:
  * What the graphics area picks during a PropertyManager session, what it shows as already picked
  * (the SolidWorks selection boxes), and the prompt. Outside sessions faces are picked for selection.
  */
-function picking(feature: Feature | undefined, editing: boolean, modelTool: 'convert' | 'pierce' | 'intersect' | null = null, measuring = false) {
+function picking(feature: Feature | undefined, editing: boolean, modelTool: 'convert' | 'pierce' | 'intersect' | null = null, measuring = false, attaching = false) {
   // reference geometry (C3.2–C3.5): what its empty selection boxes take, and what they hold
-  const datum = feature?.type === 'refPlane' || feature?.type === 'refAxis' || feature?.type === 'refPoint' || feature?.type === 'coordSys' || feature?.type === 'pattern' || feature?.type === 'mirror' || feature?.type === 'helix' ? feature : undefined;
+  // a sketch whose plane is being edited takes the vertex or point and the edge or axis its attachment is made from (ADR 0181)
+  const datum = attaching && feature?.type === 'sketch' ? feature : feature?.type === 'refPlane' || feature?.type === 'refAxis' || feature?.type === 'refPoint' || feature?.type === 'coordSys' || feature?.type === 'pattern' || feature?.type === 'mirror' || feature?.type === 'helix' ? feature : undefined;
   // what the empty boxes take (kinds) and what they already hold (the elements) — the two are different shapes, so they are kept apart
   const want = datum ? pickable(datum) : null;
   const slots = datum ? { ...chosen(datum), prompt: prompt(datum) } : null;
@@ -251,7 +252,7 @@ export function Viewport() {
         : thicknessReport && thicknessReport.faces.length === faceCount
           ? thicknessColors(thicknessReport)
           : null;
-  const pick = picking(feature, !!editing, modelTool, measure !== null);
+  const pick = picking(feature, !!editing, modelTool, measure !== null, editing?.kind === 'sketchPlane');
 
   // the flat pattern shown in the place of the folded part (ADR 0115): nothing of the model's names fits its faces, so nothing is picked and no colors are painted
   const flatMesh = useStore((s) => (s.flat?.show3d ? s.flat.mesh : null));
@@ -274,7 +275,7 @@ export function Viewport() {
   useEffect(() => {
     const v = store.viewer;
     if (!v) return;
-    const p = picking(feature, !!editing, modelTool, measure !== null);
+    const p = picking(feature, !!editing, modelTool, measure !== null, editing?.kind === 'sketchPlane');
     v.setEdgePicking(p.edges);
     v.setFacePicking(p.faces);
     v.setVertexPicking(p.vertices);
@@ -314,7 +315,7 @@ export function Viewport() {
   useEffect(() => {
     const v = store.viewer;
     if (!v) return;
-    const reference = picking(feature, !!editing).referenceDatums;
+    const reference = picking(feature, !!editing, null, false, editing?.kind === 'sketchPlane').referenceDatums;
     const planes: PlaneDisplay[] = [];
     const show = (key: string, frame: PlaneFrame | undefined, highlighted: boolean) => frame && planes.push({ key, frame, highlighted });
     for (const name of Object.keys(DATUM_PLANES) as DatumPlaneName[]) {
@@ -332,7 +333,7 @@ export function Viewport() {
   useEffect(() => {
     const v = store.viewer;
     if (!v) return;
-    const reference = picking(feature, !!editing).referenceDatums;
+    const reference = picking(feature, !!editing, null, false, editing?.kind === 'sketchPlane').referenceDatums;
     const lit = (id: Id) => selected === id || editing?.featureId === id;
     const datums: DatumDisplay = { axes: [], points: [], systems: [] };
     for (const f of doc.features) {

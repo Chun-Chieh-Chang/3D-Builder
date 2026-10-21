@@ -1,5 +1,31 @@
 # 3D-Builder 開發日誌 (DEV_LOG.md)
 
+## 2026-10-21：草圖附著，原點與 X 方向取自模型（G7，[ADR 0181](docs/adr/0181-sketch-attachment.md)，Schema 73）
+
+### 1. 背景與決策
+第二批 G7，使用者 2026-10-21 選「做」。裁決：翻轉只做 X 反向；不做沿法向偏移與旋轉角度；原點只取頂點與參考點；介面放在草圖的屬性管理員（「編輯草圖基準面」）。`SketchFeature.attach`：`origin`（頂點或參考點，沿法向落到平面）、`x`（直線邊或參考軸，投影到平面）、`flipX`。平面不變，沒有 `attach` 的舊檔行為不變。
+
+### 2. 做法
+| 層級 | 檔案 | 改動 |
+|---|---|---|
+| 模型 | `schema.ts`、`serialize.ts`、`refs.ts`、`commands.ts` | v73；`mapRefs` 處理附著的參照；新命令 `setSketchAttach`；新增草圖時也檢查 |
+| 再生 | `engine.ts`、`dag.ts` | `frame()` 套用 `attachedFrame`（唯一算出草圖座標系的地方）；草圖的父項含附著的參照 |
+| 介面 | `datumSlots.ts`、`store.ts`、`Viewport.tsx`、`PropertyManager.tsx` | 草圖有兩個選取欄；編輯基準面時，圖形區與設計樹的點選分流給附著；面板新增「草圖附著」 |
+| 雙語／說明 | `model.ts`、`features.ts`、`pmpanels.ts`、`help.ts` | 訊息、面板文字、「草圖」說明補一段 |
+
+### 3. 紅隊四問
+1. **輸入破壞**：X 方向垂直於平面（投影成一點）明確拒絕並說明；空的附著被拒絕（取消請傳 `null`）；`flipX: false` 不寫入；參考點、參考軸比草圖後面時指令層拒絕；遺失的頂點與邊使草圖報錯，不退回預設座標。沒有數值輸入。
+2. **拓樸與幾何相交**：純向量運算，沒有布林運算，不涉及 OCCT 的 Heap。這一項**沒有量測 Heap**，也不宣稱「零洩漏」；基底稜柱的建構每次重建照舊。
+3. **依賴鏈**：`schema.ts` → `commands.ts` → `refs.ts`（遺失參考修復）→ `dag.ts` → `engine.ts` → `PropertyManager.tsx`，另有 `store.ts`、`Viewport.tsx`、`datumSlots.ts`、i18n 與說明。重建期間的草圖座標系只在 `engine.frame()` 一處算出，所以快取的畫面、吸附與跟隨參照自動跟著。
+4. **零 Mock**：單元測試用真實的 OCCT 稜柱與手算座標（斜邊 (−0.6, 0.8, 0)；頂點 (30,0,10) 落在 (30,0,25)）；e2e 在真實的 UI 上點選。
+
+### 4. 測試
+- `tests/phase3/sketch-attach.test.ts` 19 項（含 150 組固定種子的隨機壓力）；`tests/e2e/manual-sketch-attach.js` 6 步。
+- 反向對照：引擎不套用附著，8 項轉紅；原點不投影，3 項；不拒絕垂直邊，2 項；DAG 忽略附著，2 項；`mapRefs` 忽略附著，1 項；e2e 在引擎不套用、或點選不分流時轉紅。全部已還原。
+- 測試第一版的錯，都在測試這邊：在 `describe` 內直接建模型（核心尚未載入）；參考點的模式名稱寫成 `coordinates`（實際是 `coords`），其中一項只寫 `toThrow()` 而假通過，已收緊成指定的訊息；e2e 在編輯基準面期間要求 `S.failed()` 為空，但被編輯的草圖當下是 `rolledBack`（設計如此，座標系仍會算出）。
+- 過程中的錯：加說明時，Python 的 `\n` 在這個環境被轉成真正的換行，`tsc` 抓到，改用 `chr(92)` 重做（AGENTS §4 2026-10-19～20 第 8 點之前就記過 heredoc 會吞掉反斜線）。
+- 全閘門 `npm run check`：**273 檔、3428 通過、0 失敗**、25 略過。完整 `verify:ui`：**162/162 通過**（含 `manual-sketch-attach.js`）。
+
 ## 2026-10-21：文件 SSOT 整理與待裁項目的執行（使用者於選擇題頁面裁決）
 
 ### 1. 範圍（使用者裁決）

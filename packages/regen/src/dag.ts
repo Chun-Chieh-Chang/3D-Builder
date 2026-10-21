@@ -14,7 +14,8 @@ export function parentsOf(feature: Feature, doc: PartDoc): Id[] {
   switch (feature.type) {
     case 'sketch':
       // its plane, and what its entities follow (C1.18, ADR 0171, ADR 0172): model edges and vertices (by the features that made them), reference geometry
-      parents = fromRefs([feature.plane, ...feature.entities.flatMap((e) => modelRefOf(e) ?? [])]);
+      // and what its axes are taken from (ADR 0181)
+      parents = fromRefs([feature.plane, ...(feature.attach?.origin ? [feature.attach.origin] : []), ...(feature.attach?.x ? [feature.attach.x] : []), ...feature.entities.flatMap((e) => modelRefOf(e) ?? [])]);
       break;
     case 'extrude':
       parents = [

@@ -148,4 +148,5 @@ export const model: Translation = {
   'cmd.dimensionStillUsed': 'Dimension "{name}" is used by an expression and cannot become a driven dimension',
   'cmd.dimensionLabelInvalid': 'A dimension name can only use letters, digits and underscores, and cannot start with a digit: "{name}"',
   'cmd.dimensionLabelTaken': 'This sketch already has a dimension named "{name}"',
+  'cmd.sketchAttachEmpty': 'A sketch attachment needs an origin, an x direction or a flip; clear it to take it away',
 };

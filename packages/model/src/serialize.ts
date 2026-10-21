@@ -218,6 +218,8 @@ const migrations: Record<number, (doc: Json) => Json> = {
   70: (doc) => doc,
   // v72: sketch entities may follow entities of an earlier sketch (`Ref.kind === 'sketch'`, ADR 0175). Nothing to convert; an older program refuses the file.
   71: (doc) => doc,
+  // v73: a sketch may take its origin and x direction from the model (`attach`, ADR 0181). Absent until set; nothing to convert, an older program refuses the file.
+  72: (doc) => doc,
 };
 
 export class FormatError extends Error {

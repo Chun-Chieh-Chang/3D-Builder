@@ -102,7 +102,7 @@ import { dimensionText, measuredText } from '@3db/sketch/interact';
 import { relationsOffered } from '../sketcher/relationsOffered';
 import { nearestElement } from '../state/candidates';
 import { store, useSketcherView, useStore, type FilletGroup } from '../state/store';
-import { accepts, axisDefinitionFor, fill, filled, planeDefinitionFor, pointDefinitionFor, slotsOf } from '../state/datumSlots';
+import { accepts, attachFlip, axisDefinitionFor, fill, filled, planeDefinitionFor, pointDefinitionFor, slotsOf } from '../state/datumSlots';
 import { AXIS_MODE_LABEL, DATUM_ITEMS, DIMENSION_LABEL, FEATURE_LABEL, featureLabel, PLANE_MODE_LABEL, POINT_MODE_LABEL, RELATION_LABEL, SKETCH_STATUS_LABEL, TOOL_LABEL } from '../strings';
 import { Icon } from './Icon';
 import type { ControllerView, SketchController, SketchFix } from '../sketcher/controller';
@@ -3712,6 +3712,7 @@ function ImportedBodyPanel({ f }: { f: ImportedBodyFeature }) {
 /** Panel for editing the plane of a sketch (SolidWorks 「編輯草圖基準面」). */
 function SketchPlanePanel({ f }: { f: SketchFeature }) {
   const doc = useStore((s) => s.doc);
+  const result = useStore((s) => s.result);
   const at = doc.features.findIndex((x) => x.id === f.id);
   const availablePlanes = [
     ...DATUM_ITEMS.filter((d) => d.icon === 'plane').map((d) => ({ id: d.id as string, label: d.label, ref: { kind: 'datum' as const, name: d.id as string } })),
@@ -3748,6 +3749,23 @@ function SketchPlanePanel({ f }: { f: SketchFeature }) {
           <span style={{ marginLeft: '8px' }}>{currentLabel()}</span>
         </div>
         <p className="hint" style={{ marginTop: '8px' }}>{t('pm.sketchPlaneHint')}</p>
+      </section>
+
+      <section className="pm-group">
+        <h4>{t('pm.sketchAttach')}</h4>
+        <ul className="selection-box">
+          {slotsOf(f).flatMap((slot) => {
+            const refs = filled(slot);
+            if (refs.length === 0) return [<li key={slot.key} className="muted">{t(slot.key === 'origin' ? 'pm.sketchAttach.originEmpty' : 'pm.sketchAttach.xEmpty')}</li>];
+            return refs.map((r) => <RefItem key={`${slot.key}:${r.name}`} label={slot.label} refr={r} doc={doc} result={result} featureId={f.id} onClear={() => store.execute(fill(f, slot.key, []))} />);
+          })}
+        </ul>
+        <label className="pm-row checkbox">
+          <input type="checkbox" checked={f.attach?.flipX ?? false} onChange={(e) => store.execute(attachFlip(f, e.target.checked))} />
+          <span>{t('pm.sketchAttach.flip')}</span>
+        </label>
+        <DatumPicker f={f} />
+        <p className="hint">{t('pm.sketchAttachHint')}</p>
       </section>
 
       <section className="pm-group">

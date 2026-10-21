@@ -6,7 +6,7 @@ import type { Id } from './ids';
  * DOF status, mass properties and error lists are derived data and never stored.
  */
 
-export const SCHEMA_VERSION = 72;
+export const SCHEMA_VERSION = 73;
 
 /** Value expression (B5.2, B5.3): "20", "25.4mm", "30deg", "wall_t*2", "D1@草圖1/2", "property('厚度')"; see `expr/`. */
 export type Expr = string;
@@ -145,9 +145,24 @@ interface FeatureBase {
   folder?: string;
 }
 
+/**
+ * Where the axes of a sketch sit in its plane (v73, ADR 0181): the plane stays the sketch's `plane`, this only moves the origin and turns x. Absent is what
+ * every sketch had before: the origin where the part origin falls on the plane, x as the plane gives it.
+ */
+export interface SketchAttach {
+  /** A model vertex or a reference point: the origin goes where it lies, moved along the plane's normal onto the plane. */
+  origin?: Ref;
+  /** A straight model edge or a reference axis: x runs along it, as drawn, projected onto the plane. */
+  x?: Ref;
+  /** x and y turned half a turn about the normal (the normal, and the way the sketch is seen from, stay). */
+  flipX?: boolean;
+}
+
 export interface SketchFeature extends FeatureBase {
   type: 'sketch';
   plane: Ref;
+  /** Origin and x direction taken from the model (v73, ADR 0181). */
+  attach?: SketchAttach;
   entities: SketchEntity[];
   constraints: SketchConstraint[];
   /** Images laid in the plane to be traced from (v49, ADR 0116): only looked at while the sketch is edited. */

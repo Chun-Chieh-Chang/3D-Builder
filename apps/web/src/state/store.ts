@@ -2559,6 +2559,8 @@ class AppStore {
   /** An element picked in the graphics area goes to the selection box of the feature being edited that takes its kind. */
   pick(ref: Ref): void {
     if (this.state.editing?.kind === 'sketch') return void this.convertPicked(ref);
+    // the plane of a sketch is being edited: a vertex, point, edge or axis is what its axes are attached to (ADR 0181)
+    if (this.state.editing?.kind === 'sketchPlane') return void this.putDatumRef(ref);
     const f = this.editedFeature();
     if (f?.type === 'fillet' && f.kind && f.kind !== 'constant') this.toggleFilletGroupFace(ref);
     else if (f?.type === 'fillet' || f?.type === 'chamfer') (ref.kind === 'face' ? this.toggleEdgeFeatureFace(ref) : this.toggleEdge(ref));
@@ -2627,6 +2629,11 @@ class AppStore {
     }
     if (e && e.kind === 'sketchPlane') {
       const ref = treeRef(this.history.doc, id);
+      // a plane is the sketch's plane; a reference point or axis is what its axes are attached to (ADR 0181)
+      if (ref && ref.kind === 'datum' && !accepts('plane', ref, this.history.doc)) {
+        this.putDatumRef(ref);
+        return;
+      }
       if (ref && (ref.kind === 'datum' || ref.kind === 'face')) {
         this.execute({ type: 'redefineSketchPlane', featureId: e.featureId, plane: ref });
         return;
@@ -2643,7 +2650,8 @@ class AppStore {
    * Returns whether anything took it; an element nothing takes is left to the caller (a click in the tree selects).
    */
   putDatumRef(ref: Ref): boolean {
-    const f = this.editedFeature();
+    const e = this.state.editing;
+    const f = e?.kind === 'sketchPlane' ? findFeature(this.history.doc, e.featureId) : this.editedFeature();
     if (!f) return false;
     const result = put(f, this.history.doc, ref);
     if (!result) {

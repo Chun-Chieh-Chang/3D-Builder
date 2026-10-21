@@ -38,7 +38,8 @@ export function mapRefs(feature: Feature, map: (ref: Ref) => Ref): { feature: Fe
         if ('ref' in e && e.ref) return { ...e, ref: one(e.ref) };
         return e;
       });
-      return { feature: { ...feature, plane: one(feature.plane), entities }, replaced };
+      const attach = feature.attach ? { ...feature.attach, ...(feature.attach.origin ? { origin: one(feature.attach.origin) } : {}), ...(feature.attach.x ? { x: one(feature.attach.x) } : {}) } : undefined;
+      return { feature: { ...feature, plane: one(feature.plane), ...(attach ? { attach } : {}), entities }, replaced };
     }
     case 'extrude': {
       const cond = <C extends { type: string }>(c: C): C => {

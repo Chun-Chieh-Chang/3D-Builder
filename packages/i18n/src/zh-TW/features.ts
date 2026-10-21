@@ -661,4 +661,7 @@ export const features = {
   'pm.helix.taperOutward': '往外擴展',
   'pm.helix.hint': '選取只含一個圓的草圖或圓形邊線，建構 3D 螺旋線或平面阿基米德渦捲線；結果是曲線本體，每圈一條邊，可當掃出的路徑做彈簧。',
   'feature.helixFailed': '螺旋曲線建構失敗：{why}',
+  'sketch.attachOrigin': '草圖的原點',
+  'sketch.attachX': '草圖的 X 方向',
+  'sketch.attachXSquare': '草圖的 X 方向垂直於草圖平面，投影成一點，沒有方向可用；請選一條與平面平行或斜交的直線',
 } as const;

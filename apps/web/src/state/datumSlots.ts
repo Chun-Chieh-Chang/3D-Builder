@@ -1,5 +1,5 @@
 import { t } from '@3db/i18n';
-import { findFeature, isDatumPlaneName, type AxisDefinition, type Command, type Feature, type Id, type PartDoc, type PatternDefinition, type PlaneDefinition, type PointDefinition, type Ref } from '@3db/model';
+import { findFeature, isDatumPlaneName, type AxisDefinition, type Command, type Feature, type Id, type PartDoc, type PatternDefinition, type PlaneDefinition, type PointDefinition, type Ref, type SketchAttach, type SketchFeature } from '@3db/model';
 
 /**
  * The selection boxes of reference geometry (C3.2–C3.5): a plane, axis, point or coordinate system is defined by references, and what is clicked in
@@ -140,6 +140,9 @@ export function slotsOf(f: Feature | undefined): Slot[] {
       return [one('circle', t('pm.helix.circle'), 'circle', f.circle)];
     case 'coordSys':
       return [one('origin', t('slot.origin'), 'point', f.origin, true), one('x', t('slot.xDirection'), 'direction', f.x), one('y', t('slot.yDirection'), 'direction', f.y)];
+    case 'sketch':
+      // where the axes of the sketch are taken from (ADR 0181); both may stay empty
+      return [one('origin', t('slot.origin'), 'point', f.attach?.origin, true), one('x', t('slot.xDirection'), 'axis', f.attach?.x, true)];
     default:
       return [];
   }
@@ -181,9 +184,25 @@ export function fill(f: Feature, key: string, refs: Ref[]): Command {
       const next = { origin, x, y, [key]: key === 'origin' ? refs[0] : value } as { origin?: Ref; x: Ref; y: Ref };
       return { type: 'setCoordSys', featureId: f.id, value: { ...(next.origin ? { origin: next.origin } : {}), x: next.x, y: next.y, ...(f.flipX ? { flipX: true } : {}), ...(f.flipY ? { flipY: true } : {}) } };
     }
+    case 'sketch': {
+      const attach: SketchAttach = { ...(f.attach?.flipX ? { flipX: true } : {}) };
+      const origin = key === 'origin' ? refs[0] : f.attach?.origin;
+      const x = key === 'x' ? refs[0] : f.attach?.x;
+      return attachCommand(f, { ...(origin ? { origin } : {}), ...(x ? { x } : {}), ...attach });
+    }
     default:
       throw new Error('not a reference geometry feature');
   }
+}
+
+/** The command that sets the attachment of a sketch to `attach`; one with nothing in it takes the attachment away (ADR 0181). */
+export function attachCommand(f: SketchFeature, attach: SketchAttach): Command {
+  return { type: 'setSketchAttach', featureId: f.id, attach: attach.origin || attach.x || attach.flipX ? attach : null };
+}
+
+/** The command that turns the x direction of a sketch half a turn (or back). */
+export function attachFlip(f: SketchFeature, on: boolean): Command {
+  return attachCommand(f, { ...(f.attach?.origin ? { origin: f.attach.origin } : {}), ...(f.attach?.x ? { x: f.attach.x } : {}), ...(on ? { flipX: true } : {}) });
 }
 
 export type Put = { command: Command } | { message: string } | null;

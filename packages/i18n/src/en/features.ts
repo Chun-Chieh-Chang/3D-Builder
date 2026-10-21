@@ -664,4 +664,7 @@ export const features: Translation = {
   'pm.helix.taperOutward': 'Taper Outward',
   'pm.helix.hint': 'Pick a sketch with one circle, or a circular edge, to build a 3D helix or a flat Archimedean spiral; the result is a curve body with an edge per turn, which can be the path of a sweep for a spring.',
   'feature.helixFailed': 'Failed to build helix curve: {why}',
+  'sketch.attachOrigin': 'The sketch origin',
+  'sketch.attachX': 'The sketch x direction',
+  'sketch.attachXSquare': 'The x direction is square to the sketch plane and projects to a point, so it gives no direction; pick a line that is parallel or slanted to the plane',
 };

@@ -99,4 +99,9 @@ export const pmpanels = {
   'pm.text.italic': '斜體',
   'pm.text.dissolve': '解散文字',
   'pm.text.dissolveHint': '將文字輪廓轉換為獨立的幾何線段，可自由編輯各筆畫。',
+  'pm.sketchAttach': '草圖附著',
+  'pm.sketchAttachHint': '選取模型頂點或參考點作為原點、直線邊或參考軸作為 X 方向。平面不變，只移動原點、轉動 X；都不選就是平面的預設座標。',
+  'pm.sketchAttach.originEmpty': '原點：不選就是零件原點在此平面上的位置',
+  'pm.sketchAttach.xEmpty': 'X 方向：不選就依平面的預設方向',
+  'pm.sketchAttach.flip': 'X 反向（X 與 Y 一起轉 180°）',
 } as const;

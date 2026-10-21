@@ -1,7 +1,7 @@
 import { t } from '@3db/i18n';
 import { current, produce, type Draft } from 'immer';
 import { countersFor, type Id } from './ids';
-import type { SheetGauge, AppearanceTarget, DocSettings, MaterialRef, Variable, BlobRef, ChamferFeature, FilletKind, FilletVariablePoint, CombineFeature, SplitFeature, MoveCopyBodyFeature, JogFeature, HoleFeature, ScrewBossFeature, BaseFlangeFeature, MidBendFeature, EdgeFlangeFeature, HemFeature, BreakCornerFeature, SnapHookFeature, SnapCatchFeature, VentFeature, LoftFeature, RibFeature, SweepFeature, Draft as WallDraft, EndCondition, Thin, Expr, Feature, ImportedBodyFeature, AxisDefinition, CoordSysFeature, MirrorFeature, PartDoc, PatternDefinition, PatternFeature, PlaneDefinition, PointDefinition, Ref, RevolveCondition, SketchConstraint, SketchEntity, SketchFeature, SketchPicture, CutWithSurfaceFeature, ThreadFeature, KnurlFeature, CosmeticThreadFeature, HelixFeature } from './schema';
+import type { SheetGauge, AppearanceTarget, DocSettings, MaterialRef, Variable, BlobRef, ChamferFeature, FilletKind, FilletVariablePoint, CombineFeature, SplitFeature, MoveCopyBodyFeature, JogFeature, HoleFeature, ScrewBossFeature, BaseFlangeFeature, MidBendFeature, EdgeFlangeFeature, HemFeature, BreakCornerFeature, SnapHookFeature, SnapCatchFeature, VentFeature, LoftFeature, RibFeature, SweepFeature, Draft as WallDraft, EndCondition, Thin, Expr, Feature, ImportedBodyFeature, AxisDefinition, CoordSysFeature, MirrorFeature, PartDoc, PatternDefinition, PatternFeature, PlaneDefinition, PointDefinition, Ref, RevolveCondition, SketchConstraint, SketchEntity, SketchFeature, SketchPicture, CutWithSurfaceFeature, ThreadFeature, KnurlFeature, CosmeticThreadFeature, HelixFeature , SketchAttach } from './schema';
 import { isSketchAxis } from './schema';
 import { isDatumPlaneName } from './datums';
 import { canBeSeed } from './patterns';
@@ -205,6 +205,8 @@ ull). */
   | { type: 'setRollback'; index: number | null }
   /** Changes the plane or planar face a sketch lies in (SolidWorks 「編輯草圖基準面」). */
   | { type: 'redefineSketchPlane'; featureId: Id; plane: Ref }
+  /** Takes the origin and the x direction of a sketch from the model (ADR 0181); `null` takes the attachment away. */
+  | { type: 'setSketchAttach'; featureId: Id; attach: SketchAttach | null }
   /** Sketch editing (C1): add geometry together with its relations and dimensions. */
   | { type: 'addSketchItems'; featureId: Id; entities: SketchEntity[]; constraints: SketchConstraint[] }
   /**
@@ -343,6 +345,16 @@ function pointRef(doc: PartDoc, ref: Ref, index: number): void {
   if (ref.kind === 'vertex') return;
   if (ref.kind !== 'datum') throw new CommandError(t('cmd.mustPickPoint'));
   datumFeature(doc, ref, index, 'refPoint');
+}
+
+/**
+ * What a sketch takes its origin and x direction from (ADR 0181): a model vertex or a reference point, a straight model edge or a reference axis, the
+ * datums made before the sketch. An attachment holds something: `null` takes it away, an empty one is refused rather than kept as nothing.
+ */
+function sketchAttachRefs(doc: PartDoc, a: SketchAttach, index: number): void {
+  if (!a.origin && !a.x && !a.flipX) throw new CommandError(t('cmd.sketchAttachEmpty'));
+  if (a.origin) pointRef(doc, a.origin, index);
+  if (a.x) axisRef(doc, a.x, index);
 }
 
 /**
@@ -574,6 +586,7 @@ function validateNewFeature(doc: PartDoc, f: Feature, index: number): void {
     case 'sketch': {
       if (f.plane.kind !== 'datum' && f.plane.kind !== 'face') throw new CommandError(t('cmd.sketchNeedsPlane'));
       planeRef(doc, f.plane, index);
+      if (f.attach) sketchAttachRefs(doc, f.attach, index);
       const err = sketchError(f);
       if (err) throw new CommandError(err);
       sketchDatums(doc, f.entities, index);
@@ -1666,6 +1679,17 @@ export function mutate(draft: Draft<PartDoc>, cmd: Command): void {
       // the same rule as placing a sketch: a plane that exists, earlier in the history than the sketch (a later one would be a cycle in the DAG)
       planeRef(draft as PartDoc, cmd.plane, draft.features.findIndex((x) => x.id === f.id));
       f.plane = cmd.plane;
+      return;
+    }
+    case 'setSketchAttach': {
+      const f = sketchOf(draft, cmd.featureId);
+      if (cmd.attach === null) {
+        delete f.attach;
+        return;
+      }
+      sketchAttachRefs(draft as PartDoc, cmd.attach, draft.features.findIndex((x) => x.id === f.id));
+      const { origin, x, flipX } = cmd.attach;
+      f.attach = { ...(origin ? { origin } : {}), ...(x ? { x } : {}), ...(flipX ? { flipX: true } : {}) };
       return;
     }
     case 'removeSketchItems': {

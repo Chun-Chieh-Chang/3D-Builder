@@ -101,4 +101,9 @@ export const pmpanels: Translation = {
   'pm.text.italic': 'Italic',
   'pm.text.dissolve': 'Dissolve Text',
   'pm.text.dissolveHint': 'Convert text outline into independent geometric segments for freeform editing.',
+  'pm.sketchAttach': 'Sketch Attachment',
+  'pm.sketchAttachHint': 'Pick a model vertex or a reference point for the origin, a straight edge or a reference axis for the x direction. The plane stays; only the origin moves and x turns. Pick nothing to keep the axes the plane gives.',
+  'pm.sketchAttach.originEmpty': 'Origin: if none, where the part origin falls on this plane',
+  'pm.sketchAttach.xEmpty': 'X direction: if none, the one the plane gives',
+  'pm.sketchAttach.flip': 'Reverse X (x and y turned 180 degrees)',
 };
