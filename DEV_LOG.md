@@ -1,5 +1,25 @@
 # 3D-Builder 開發日誌 (DEV_LOG.md)
 
+## 2026-10-21：干涉紅圈不在紅色上（ADR 0180 §3.1）
+
+### 現象與根因
+- 使用者：「球號及圈選的位置與紅色干涉區域並不相符」。組合件4.3dba 的重疊分成兩塊，在圓柱兩側；紅圈與「中心 (0.00, 0.37, 0.00)」在軸上的空處。
+- 根因：以整組的質心當作標示位置——環形或繞軸分散的重疊，質心本來就在空處。**構建者偏差**：e2e 只用了質心落在材料裡的方塊重疊，紅隊第 2 問（幾何）沒有問「質心一定在實體裡嗎？」。
+
+### 變更
+- `Kernel.regions`（分開的實體各自的體積、質心、範圍、錨點）；`Overlap.regions`、worker／protocol 轉送。
+- `groupOverlaps` 收集各塊（大者先）；`pairPlace` 改為最大一塊的錨點與塊數；每一塊一個紅圈；剖面穿過錨點；i18n `interference.at`／`interference.pieces`，說明與提示文字同步。
+
+### 紅隊四問（AGENTS §2）
+1. **輸入破壞**：沒有實體的結果（理論上 `common` 不會給）以整個形狀當一塊；沒有塊時面板退回質心。錨點計算失敗（無距離解）丟 `KernelError`，整組依既有邏輯丟棄並釋放。
+2. **拓樸與幾何相交**：本次的錯誤就在這裡——質心不在實體內。現以分類器判定，並以真實的環形（桿在孔中）與兩塊（條橫跨孔）測試，斷言質心確實在外（分支被觸發，§3.2）。
+3. **依賴鏈完整性**：`kernel.regions` → `findInterference` → worker → protocol → `groupOverlaps` → 面板／紅圈／剖面，三處都改用錨點；`clearance` 不受影響（不讀 `regions`）。
+4. **零 Mock 與真值**：錨點由 OCCT 分類器與距離計算，測試以 `kernel.classify` 反查；e2e 從畫布讀回紅圈中心的像素。
+
+### 驗證
+- 單元：`tests/phase3/interference.test.ts`（新增環形、兩塊）與 `tests/phase8/interference-view.test.ts` 共 33/33。
+- e2e：`manual-interference-view.js` `run` 9/9、`ring` 3/3（4 個紅圈的像素皆為紅色）；`manual-d7.js`、`phase3-interference.js` 通過。
+
 ## 2026-10-21：看得見的干涉檢查（ADR 0180）
 
 ### 現象與根因

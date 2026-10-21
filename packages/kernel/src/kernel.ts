@@ -3226,6 +3226,41 @@ export class Kernel {
     }
   }
 
+  /**
+   * The pieces of a shape that are apart (its solids; the shape itself when it has none), each with its volume, centre of mass, box, and an anchor: a point
+   * on the piece itself (ADR 0180). The centre of a ring or of a bent piece is in the empty middle, so the anchor is the centre when the piece holds it, else
+   * the point of the piece's boundary nearest the centre.
+   */
+  regions(id: ShapeId): { volume: number; center: Vec3; min: Vec3; max: Vec3; anchor: Vec3 }[] {
+    const oc = this.oc;
+    const arena = new Arena();
+    const shape = this.get(id);
+    const solids = ShapeIndex.of(oc, shape, 'TopAbs_SOLID', arena);
+    try {
+      return (solids.size > 0 ? solids.keys : [shape]).map((piece) => {
+        const props = arena.own(new oc.GProp_GProps());
+        oc.BRepGProp.VolumeProperties(piece, props, false, false, false);
+        const center = this.xyz(arena.own(props.CentreOfMass()));
+        const box = arena.own(new oc.Bnd_Box());
+        oc.BRepBndLib.Add(piece, box, false);
+        const point = arena.own(new oc.gp_Pnt(center[0], center[1], center[2]));
+        const classifier = arena.own(new oc.BRepClass3d_SolidClassifier(piece));
+        classifier.Perform(point, 1e-7);
+        let anchor = center;
+        if (classifier.State() !== oc.TopAbs_State.TopAbs_IN) {
+          const vertex = arena.own(arena.own(new oc.BRepBuilderAPI_MakeVertex(point)).Vertex());
+          const d = arena.own(new (oc.BRepExtrema_DistShapeShape as unknown as new (a: TopoDS_Shape, b: TopoDS_Shape) => InstanceType<OC['BRepExtrema_DistShapeShape']>)(vertex, piece));
+          if (!d.IsDone() || d.NbSolution() < 1) throw new KernelError(t('measure.noDistance'));
+          anchor = this.xyz(arena.own(d.PointOnShape2(1)));
+        }
+        return { volume: props.Mass(), center, min: this.xyz(arena.own(box.CornerMin())), max: this.xyz(arena.own(box.CornerMax())), anchor };
+      });
+    } finally {
+      solids.dispose();
+      arena.dispose();
+    }
+  }
+
   /** Checks a shape (E3.1): whether it is valid, which faces are not, whether its skin is closed, how many solids and how much volume it has. */
   check(id: ShapeId): GeometryReport {
     const oc = this.oc;

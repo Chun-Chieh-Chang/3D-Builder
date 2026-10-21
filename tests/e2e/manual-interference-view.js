@@ -6,10 +6,11 @@
 //
 //   await import('/@fs/<checkout>/tests/e2e/manual-interference-view.js?' + Date.now());   // in a freshly loaded page
 //   await __manualInterferenceView.run();   // -> { name, steps: [{ name, pass }], pass }
+//   await __manualInterferenceView.ring();  // the pins in the plate's holes: ring-shaped overlaps, whose centre of mass is in the hole (the user's report of 2026-10-21)
 
 const here = new URL(import.meta.url).pathname;
 const root = here.replace(/tests\/e2e\/[^/]*$/, '');
-await import(`${root}tests/e2e/phase2-assembly.js?` + Date.now());
+await import(`${root}tests/e2e/phase3-subassembly.js?` + Date.now()); // the helpers of phase2-assembly.js come with it
 const H = window.__ui2;
 const { store } = H;
 const M = (window.__manualInterferenceView = {});
@@ -47,6 +48,7 @@ const done = async () => {
 };
 /** A press of the left button where an element is on the screen, through whatever is there: what is under the pointer gets the events, as with a mouse. */
 const press = async (el) => {
+  el.scrollIntoView({ block: 'nearest' }); // as a person scrolls the list to a row below its bottom
   const r = el.getBoundingClientRect();
   const [x, y] = [r.left + r.width / 2, r.top + r.height / 2];
   const at = document.elementFromPoint(x, y);
@@ -99,6 +101,11 @@ const ringOff = (el, at) => {
   const [x, y] = v().screenPoint(at);
   return Math.hypot(r.left + r.width / 2 - x, r.top + r.height / 2 - y);
 };
+/** Where the list says a pair is, and where its first ring is: a point on its biggest piece. */
+const anchorOf = (p) => p.regions[0]?.anchor ?? p.center;
+/** The rings the pairs shown have: one for each piece. */
+const ringsOf = (indices) => indices.reduce((n, i) => n + Math.max(1, state().pairs[i].regions.length), 0);
+const ringOf = (i, k = 0) => markers().find((m) => m.dataset.marker === `${i}:${k}`);
 const row = (i, what = 'td') => field('pairs')?.querySelector(`tbody tr[data-pair="${i}"] ${what}`);
 
 let plate; // at the origin, the V-block standing in it: the big pair, and the component not in the small one
@@ -151,18 +158,19 @@ M.run = async () => {
     };
   });
 
-  await step('2 the list says where each pair is (its centre and the size of its box, to two places); a ring of a constant size is round each overlap, on its centre', async () => {
+  await step('2 the list says where each pair is (a point on it and the size of its box, to two places); a ring of a constant size is round each piece, on that point', async () => {
     const s = state();
     const f = (x) => (Math.round(x * 100) / 100 + 0).toFixed(2);
     const rows = [...field('pairs').querySelectorAll('tbody tr')];
     const t = s.pairs[tiny];
-    const centre = row(tiny, '[data-field="center"]')?.textContent;
+    const place = row(tiny, '[data-field="at"]')?.textContent;
     const size = row(tiny, '[data-field="size"]')?.textContent;
-    const ring = markers().find((m) => m.dataset.marker === String(tiny));
-    const off = ring ? ringOff(ring, t.center) : null;
+    const ring = ringOf(tiny);
+    const off = ring ? ringOff(ring, anchorOf(t)) : null;
     return {
-      pass: rows.length === 2 && centre === `中心 (${t.center.map(f).join(', ')}) mm` && size === `範圍 ${t.max.map((m, k) => f(m - t.min[k])).join(' × ')} mm` && markers().length === 2 && ring?.getBoundingClientRect().width === 24 && off <= 2 && ring.dataset.label === String(tiny + 1),
-      centre,
+      // a cube's corner is one piece that holds its centre of mass: the point is the centre
+      pass: rows.length === 2 && t.regions.length === 1 && place === `位置 (${anchorOf(t).map(f).join(', ')}) mm` && size === `範圍 ${t.max.map((m, k) => f(m - t.min[k])).join(' × ')} mm` && markers().length === ringsOf([0, 1]) && ring?.getBoundingClientRect().width === 24 && off <= 2 && ring.dataset.label === String(tiny + 1),
+      place,
       size,
       markers: markers().length,
       off,
@@ -202,13 +210,13 @@ M.run = async () => {
     for (const factor of [1, 3, 1 / 9]) {
       if (factor !== 1) v().zoom(factor);
       await H.wait(150);
-      const ring = markers().find((m) => m.dataset.marker === String(tiny));
-      sizes.push({ width: ring.getBoundingClientRect().width, off: ringOff(ring, t.center) });
+      const ring = ringOf(tiny);
+      sizes.push({ width: ring.getBoundingClientRect().width, off: ringOff(ring, anchorOf(t)) });
     }
     // the chosen pair alone has its ring: the panel's 全部顯示 shows the other one again, and the view's 全部顯示 brings it on the screen
     await press(button('全部顯示'));
     await H.hud('全部顯示');
-    const other = markers().find((m) => m.dataset.marker === String(big));
+    const other = ringOf(big);
     const ringHit = other ? await press(other) : { hit: false };
     return {
       pass: hit.hit && fraction >= 0.2 && fraction <= 0.4 && sizes.every((s) => s.width === 32 && s.off <= 2) && ringHit.hit && state().selected === big,
@@ -233,7 +241,7 @@ M.run = async () => {
     return { pass: seen.join() === [seen[0], other, seen[0], other].join(), seen };
   });
 
-  await step('6 any display type, with the section on or off: the chosen overlap is red on the screen, drawn whole over what is in front of it; with the section on, choosing the pair moves the cut through its centre', async () => {
+  await step('6 any display type, with the section on or off: the chosen overlap is red on the screen, drawn whole over what is in front of it; with the section on, choosing the pair moves the cut through where it is', async () => {
     if (state().selected !== tiny) await press(row(tiny));
     const t = state().pairs[tiny];
     const bar = document.querySelector('.view-options');
@@ -247,15 +255,15 @@ M.run = async () => {
       }
       for (const mode of modes) {
         await setSelect(bar.querySelector('select'), mode);
-        const px = await pixelAt(t.center);
+        const px = await pixelAt(anchorOf(t));
         seen.push({ cut, mode, px, red: red(px) });
       }
     }
     const at = Number(bar.querySelector('.section-value')?.value);
-    const through = Math.abs(at - t.center[0]) <= 0.005; // the cut is along X at the start, shown to two places
+    const through = Math.abs(at - anchorOf(t)[0]) <= 0.005; // the cut is along X at the start, shown to two places
     await press(sectionButton);
     await setSelect(bar.querySelector('select'), 'shadedEdges');
-    return { pass: modes.length === 4 && seen.length === 8 && seen.every((x) => x.red) && through, seen, at, centre: t.center[0] };
+    return { pass: modes.length === 4 && seen.length === 8 && seen.every((x) => x.red) && through, seen, at, anchor: anchorOf(t)[0] };
   });
 
   await step('7 「非干涉零組件」: 線架構 draws the plate as edges, 隱藏 leaves it out (and it cannot be picked), 保持目前顯示 leaves it as it was', async () => {
@@ -278,7 +286,7 @@ M.run = async () => {
     if (state().selected !== null) await press(button('全部顯示'));
     const bigKey = `${state().pairs[big].a}|${state().pairs[big].b}`;
     await press(row(big, '[data-field="ignore"]'));
-    const gone = field('pairs').querySelectorAll('tbody tr').length === 1 && markers().length === 1 && v().highlights.length === state().pairs[tiny].overlaps.length;
+    const gone = field('pairs').querySelectorAll('tbody tr').length === 1 && markers().length === ringsOf([tiny]) && v().highlights.length === state().pairs[tiny].overlaps.length;
     await press(field('showIgnored'));
     const greyed = field('pairs').querySelector(`tbody tr[data-pair="${big}"]`)?.classList.contains('ignored') === true;
     await press(field('showIgnored'));
@@ -293,7 +301,7 @@ M.run = async () => {
     const index = state().pairs.findIndex((x) => `${x.a}|${x.b}` === bigKey);
     await press(row(index, '[data-field="ignore"]'));
     await press(field('showIgnored'));
-    const back = field('pairs').querySelectorAll('tbody tr').length === 2 && markers().length === 2 && state().ignored.length === 0;
+    const back = field('pairs').querySelectorAll('tbody tr').length === 2 && markers().length === ringsOf([0, 1]) && state().ignored.length === 0;
     return { pass: gone && greyed && kept && reopened && back, gone, greyed, kept, reopened, back };
   });
 
@@ -312,4 +320,49 @@ M.run = async () => {
   });
 
   return { name: 'interference-view', steps, pass: steps.every((s) => s.pass) };
+};
+
+// The user's report of 2026-10-21: the ring was in empty space beside the red. An overlap round an axis has its centre of mass on the axis, where nothing is.
+// The golden fixture's pins (shank r 5) stand in the plate's holes (r 4): each overlap is a ring. Every ring must be on its piece of red.
+M.ring = async () => {
+  steps.length = 0;
+  await step('1 the 夾具 of two 定位組, 「也檢查子組合件裡面的零件」: four pairs, each a ring round the pin\'s axis whose centre of mass is in the hole (≥ 3.9 mm from where the ring is)', async () => {
+    H.ready();
+    await window.__sub.open();
+    await H.hud('等角');
+    await H.hud('全部顯示');
+    await open();
+    await press(field('within'));
+    const s = await done();
+    const rings = s.pairs.map((p) => ({ pieces: p.regions.length, gap: Math.hypot(...anchorOf(p).map((x, k) => x - p.center[k])) }));
+    return { pass: s.within && s.pairs.length === 4 && rings.every((r) => r.pieces >= 1 && r.gap >= 3.9), rings };
+  });
+
+  await step('2 one ring for each piece of every pair, each on the screen where its point is (±2 px), and the list gives that point', async () => {
+    const s = state();
+    const f = (x) => (Math.round(x * 100) / 100 + 0).toFixed(2);
+    const offs = [];
+    s.pairs.forEach((p, i) => p.regions.forEach((g, k) => offs.push(ringOf(i, k) ? ringOff(ringOf(i, k), g.anchor) : Infinity)));
+    const texts = s.pairs.map((p, i) => row(i, '[data-field="at"]')?.textContent.startsWith(`位置 (${anchorOf(p).map(f).join(', ')}) mm`));
+    return { pass: markers().length === ringsOf([0, 1, 2, 3]) && offs.every((d) => d <= 2) && texts.every(Boolean), rings: markers().length, offs, texts };
+  });
+
+  await step('3 a pointer on each row in turn: the view goes to it, and under the middle of each of its rings the screen is red (read from the canvas)', async () => {
+    const seen = [];
+    for (let i = 0; i < state().pairs.length; i++) {
+      const hit = await press(row(i));
+      const p = state().pairs[i];
+      for (const [k, g] of p.regions.entries()) {
+        const ring = ringOf(i, k);
+        const r = ring?.getBoundingClientRect();
+        const [x, y] = r ? [r.left + r.width / 2, r.top + r.height / 2] : v().screenPoint(g.anchor);
+        // the pixel under the ring's middle: the point of the scene there is the anchor (step 2), read as the canvas drew it
+        const px = await pixelAt(g.anchor);
+        seen.push({ pair: i, piece: k, hit: hit.hit, px, red: red(px), ringAt: [Math.round(x), Math.round(y)] });
+      }
+    }
+    return { pass: seen.length >= 4 && seen.every((x) => x.hit && x.red), seen };
+  });
+
+  return { name: 'interference-view-ring', steps, pass: steps.every((s) => s.pass) };
 };

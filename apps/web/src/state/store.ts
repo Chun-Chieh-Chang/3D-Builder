@@ -1078,7 +1078,7 @@ class AppStore {
 
   /**
    * One pair alone in the view, or (null) all of them. Choosing one takes the view to it (ADR 0180): the view zooms to its overlap and, with a section open, the cut
-   * is moved through its centre.
+   * is moved through a point of its biggest piece (the 「位置」 the list gives).
    */
   selectInterference(index: number | null): void {
     const s = this.state.interference;
@@ -1087,7 +1087,8 @@ class AppStore {
     if (index !== null && !pair) return;
     this.set({
       interference: { ...s, selected: index, focus: pair ? s.focus + 1 : s.focus },
-      ...(pair ? { sectionRequest: { at: pair.center, serial: (this.state.sectionRequest?.serial ?? 0) + 1 } } : {}),
+      // through a point of its biggest piece: a cut through the centre of mass of pieces round an axis can pass between them and cut none
+      ...(pair ? { sectionRequest: { at: pair.regions[0]?.anchor ?? pair.center, serial: (this.state.sectionRequest?.serial ?? 0) + 1 } } : {}),
     });
   }
 

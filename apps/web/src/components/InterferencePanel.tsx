@@ -91,8 +91,9 @@ export function InterferencePanel() {
                             {p.aName} × {p.bName}
                             {off && <span className="muted">{t('interference.ignored')}</span>}
                           </div>
-                          <div className="muted" data-field="center">
-                            {t('interference.center', { xyz: place.center })}
+                          <div className="muted" data-field="at">
+                            {t('interference.at', { xyz: place.at })}
+                            {place.pieces > 1 && t('interference.pieces', { n: place.pieces })}
                           </div>
                           <div className="muted" data-field="size">
                             {t('interference.size', { size: place.size })}

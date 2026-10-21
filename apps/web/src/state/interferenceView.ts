@@ -10,7 +10,16 @@ import type { Vec3 } from '@3db/model';
 export const INTERFERENCE_OTHERS = ['transparent', 'wireframe', 'hidden', 'current'] as const;
 export type InterferenceOthers = (typeof INTERFERENCE_OTHERS)[number];
 
-/** One overlap as the worker gives it: in the assembly's frame, with its centre of mass and box. */
+/** A piece of an overlap apart from the others, with a point on the piece itself (the centre of a ring is in its empty middle). */
+export interface OverlapRegion {
+  volume: number;
+  center: Vec3;
+  min: Vec3;
+  max: Vec3;
+  anchor: Vec3;
+}
+
+/** One overlap as the worker gives it: in the assembly's frame, with its centre of mass, box and pieces. */
 export interface OverlapFound {
   a: string;
   b: string;
@@ -18,6 +27,7 @@ export interface OverlapFound {
   center: Vec3;
   min: Vec3;
   max: Vec3;
+  regions: OverlapRegion[];
   mesh: MeshData;
 }
 
@@ -37,6 +47,8 @@ export interface InterferencePair {
   /** The box round all of them, mm. */
   min: Vec3;
   max: Vec3;
+  /** The pieces of all of them, the biggest first: where the rings go, and the first one's anchor is where the list says the pair is. */
+  regions: OverlapRegion[];
   overlaps: MeshData[];
 }
 
@@ -53,7 +65,7 @@ export function groupOverlaps(overlaps: readonly OverlapFound[], names: Readonly
     const key = pairKey(o);
     let p = pairs.get(key);
     if (!p) {
-      p = { a: o.a, b: o.b, aName: names.get(o.a) ?? o.a, bName: names.get(o.b) ?? o.b, aTop: tops.get(o.a) ?? o.a, bTop: tops.get(o.b) ?? o.b, volume: 0, center: [0, 0, 0], min: [o.min[0], o.min[1], o.min[2]], max: [o.max[0], o.max[1], o.max[2]], overlaps: [], moment: [0, 0, 0] };
+      p = { a: o.a, b: o.b, aName: names.get(o.a) ?? o.a, bName: names.get(o.b) ?? o.b, aTop: tops.get(o.a) ?? o.a, bTop: tops.get(o.b) ?? o.b, volume: 0, center: [0, 0, 0], min: [o.min[0], o.min[1], o.min[2]], max: [o.max[0], o.max[1], o.max[2]], regions: [], overlaps: [], moment: [0, 0, 0] };
       pairs.set(key, p);
     }
     p.volume += o.volume;
@@ -63,9 +75,10 @@ export function groupOverlaps(overlaps: readonly OverlapFound[], names: Readonly
       p.max[k] = Math.max(p.max[k]!, o.max[k]!);
     }
     p.overlaps.push(o.mesh);
+    p.regions.push(...o.regions);
   }
   return [...pairs.values()]
-    .map(({ moment, ...p }): InterferencePair => ({ ...p, center: [moment[0] / p.volume, moment[1] / p.volume, moment[2] / p.volume] }))
+    .map(({ moment, ...p }): InterferencePair => ({ ...p, center: [moment[0] / p.volume, moment[1] / p.volume, moment[2] / p.volume], regions: [...p.regions].sort((x, y) => y.volume - x.volume) }))
     .sort((x, y) => y.volume - x.volume);
 }
 
@@ -87,8 +100,11 @@ export function stepPair(pairs: readonly InterferencePair[], ignored: readonly s
   return shown[(at + by + shown.length) % shown.length]!;
 }
 
-/** What the list says of where a pair is: its centre and the size of its box, mm, to two places. */
-export function pairPlace(p: Pick<InterferencePair, 'center' | 'min' | 'max'>): { center: string; size: string } {
+/**
+ * What the list says of where a pair is, mm to two places: a point on its biggest piece (not the centre of mass, which for a ring or pieces round an axis is
+ * in empty space; with no pieces, the centre), how many pieces there are, and the size of the box round them all.
+ */
+export function pairPlace(p: Pick<InterferencePair, 'center' | 'min' | 'max' | 'regions'>): { at: string; pieces: number; size: string } {
   const f = (v: number) => (Math.round(v * 100) / 100 + 0).toFixed(2);
-  return { center: p.center.map(f).join(', '), size: [0, 1, 2].map((k) => f(p.max[k]! - p.min[k]!)).join(' × ') };
+  return { at: (p.regions[0]?.anchor ?? p.center).map(f).join(', '), pieces: p.regions.length, size: [0, 1, 2].map((k) => f(p.max[k]! - p.min[k]!)).join(' × ') };
 }

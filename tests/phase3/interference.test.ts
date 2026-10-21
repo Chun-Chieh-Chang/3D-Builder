@@ -9,7 +9,7 @@ import { readPartFile } from '@3db/io';
 import { PlaneGcsSolver } from '@3db/sketch';
 import { Kernel, type ShapeId } from '@3db/kernel';
 import { Regenerator, findInterference } from '@3db/regen';
-import { build, extrude, front, rectangle, sketch } from '../phase1/builders';
+import { build, circle, extrude, front, rectangle, sketch } from '../phase1/builders';
 
 let kernel: Kernel;
 let solver: PlaneGcsSolver;
@@ -26,6 +26,11 @@ beforeAll(async () => {
   };
   // 10 × 20 × 30: x 0..10, y 0..20, z 0..30 (see measure.test.ts)
   shapes.box = make(build(sketch('s', front, rectangle('r', 0, 0, 10, 20)), extrude('e', 's', 'boss', { type: 'blind', depth: '30' })));
+  // ADR 0180: a 40 × 40 × 10 plate with a hole of radius 4 at the origin, a rod of radius 5 standing in it (their overlap a ring round the axis), and a bar
+  // 1 mm wide across the hole (its overlap two pieces, one each side of the hole): both centres of mass are on the axis, in the hole
+  shapes.holed = make(build(sketch('s', front, rectangle('r', -20, -20, 40, 40), circle('c', 0, 0, 4)), extrude('e', 's', 'boss', { type: 'blind', depth: '10' })));
+  shapes.rod = make(build(sketch('s', front, circle('c', 0, 0, 5)), extrude('e', 's', 'boss', { type: 'blind', depth: '10' })));
+  shapes.bar = make(build(sketch('s', front, rectangle('r', -0.5, -6, 1, 12)), extrude('e', 's', 'boss', { type: 'blind', depth: '10' })));
   const file = await readPartFile(new Uint8Array(readFileSync(new URL('../golden/locating-plate.3dbx', import.meta.url))));
   const regen = new Regenerator(kernel, solver);
   kept.push(regen);
@@ -79,6 +84,52 @@ describe('what two components share (3b-5d)', () => {
     [9.99, 0, 29.6].forEach((v, k) => expect(Math.abs(o.min[k]! - v)).toBeLessThanOrEqual(1e-6));
     [10, 20, 30].forEach((v, k) => expect(Math.abs(o.max[k]! - v)).toBeLessThanOrEqual(1e-6));
     release(r);
+  });
+
+  it('a ring round an axis (a rod of r 5 in a hole of r 4): its centre of mass is in the hole, so the ring\'s point is on the ring itself', () => {
+    const before = kernel.liveShapes;
+    const r = find([{ id: 'plate', parts: [part('holed', at(0))] }, { id: 'rod', parts: [part('rod', at(0))] }]);
+    expect(r.overlaps).toHaveLength(1);
+    const o = r.overlaps[0]!;
+    expect(o.volume).toBeCloseTo(Math.PI * (25 - 16) * 10, 6);
+    expect(o.regions).toHaveLength(1);
+    const g = o.regions[0]!;
+    // the branch is really taken: the centre of mass (on the axis) is not in the ring
+    expect(Math.hypot(g.center[0], g.center[1])).toBeLessThan(1e-6);
+    expect(kernel.classify(o.shape, [g.center])[0]).toBe('out');
+    // the anchor is on the ring: in it or on its boundary, between r 4 and 5
+    expect(kernel.classify(o.shape, [g.anchor], 1e-6)[0]).not.toBe('out');
+    const radius = Math.hypot(g.anchor[0], g.anchor[1]);
+    expect(radius).toBeGreaterThanOrEqual(4 - 1e-6);
+    expect(radius).toBeLessThanOrEqual(5 + 1e-6);
+    expect(Math.abs(g.volume - o.volume) / o.volume).toBeLessThanOrEqual(1e-9);
+    release(r);
+    expect(kernel.liveShapes).toBe(before);
+  });
+
+  it('a bar across the hole: two pieces apart, each with its own volume, box and a point on itself', () => {
+    const before = kernel.liveShapes;
+    const r = find([{ id: 'plate', parts: [part('holed', at(0))] }, { id: 'bar', parts: [part('bar', at(0))] }]);
+    expect(r.overlaps).toHaveLength(1);
+    const o = r.overlaps[0]!;
+    expect(o.regions).toHaveLength(2);
+    expect(Math.abs(o.regions.reduce((n, g) => n + g.volume, 0) - o.volume) / o.volume).toBeLessThanOrEqual(1e-9);
+    // the whole overlap's centre of mass is on the axis, in the hole
+    expect(kernel.classify(o.shape, [o.center])[0]).toBe('out');
+    const sides = o.regions.map((g) => Math.sign(g.anchor[1])).sort();
+    expect(sides).toEqual([-1, 1]); // one each side of the hole
+    for (const g of o.regions) {
+      expect(kernel.classify(o.shape, [g.anchor], 1e-6)[0]).not.toBe('out');
+      // the anchor is in its own piece's box
+      for (let k = 0; k < 3; k++) {
+        expect(g.anchor[k]).toBeGreaterThanOrEqual(g.min[k]! - 1e-6);
+        expect(g.anchor[k]).toBeLessThanOrEqual(g.max[k]! + 1e-6);
+      }
+      // a piece that holds its own centre has it as its anchor
+      expect(Math.hypot(...g.anchor.map((v, k) => v - g.center[k]!))).toBeLessThan(1e-9);
+    }
+    release(r);
+    expect(kernel.liveShapes).toBe(before);
   });
 
   it('touching is not interference: faces that meet, and an overlap that is only the tolerance', () => {

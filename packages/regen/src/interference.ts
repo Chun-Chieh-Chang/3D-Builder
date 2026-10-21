@@ -3,7 +3,7 @@ import { MIN_INTERFERENCE_VOLUME, placementRows, type InterferenceComponent, typ
 
 /**
  * Where two components share volume: the part of it that two of their parts share, as a shape of its own (in the assembly's frame) that the caller releases,
- * with where it is: its centre of mass and the box round it (ADR 0180).
+ * with where it is: its centre of mass and the box round it, and the pieces it is made of that are apart, each with a point on it (ADR 0180).
  */
 export interface Overlap {
   a: string;
@@ -12,7 +12,17 @@ export interface Overlap {
   center: Vec3;
   min: Vec3;
   max: Vec3;
+  regions: OverlapRegion[];
   shape: ShapeId;
+}
+
+/** A piece of an overlap apart from the others: the centre of a ring is in its empty middle, so `anchor` is a point on the piece itself (Kernel.regions). */
+export interface OverlapRegion {
+  volume: number;
+  center: Vec3;
+  min: Vec3;
+  max: Vec3;
+  anchor: Vec3;
 }
 
 export interface InterferenceFound {
@@ -67,10 +77,10 @@ export function findInterference(kernel: Kernel, components: readonly Interferen
               found.checked++;
               const common = kernel.common(pa.shape, pb.shape, minVolume);
               if (common.shape !== null) {
-                // kept before it is measured: should bounds throw, the catch below releases it with the pair's others
-                const at = found.overlaps.push({ a: a.id, b: b.id, volume: common.volume, center: common.center!, min: [0, 0, 0], max: [0, 0, 0], shape: common.shape }) - 1;
+                // kept before it is measured: should bounds or regions throw, the catch below releases it with the pair's others
+                const at = found.overlaps.push({ a: a.id, b: b.id, volume: common.volume, center: common.center!, min: [0, 0, 0], max: [0, 0, 0], regions: [], shape: common.shape }) - 1;
                 const box = kernel.bounds(common.shape);
-                found.overlaps[at] = { ...found.overlaps[at]!, min: box.min, max: box.max };
+                found.overlaps[at] = { ...found.overlaps[at]!, min: box.min, max: box.max, regions: kernel.regions(common.shape) };
               }
             }
           }

@@ -131,8 +131,8 @@ export function AssemblyViewport() {
       onComponentDragStart: (key, point, button) => store.assembly?.startDrag(key, point, button) ?? false,
       onComponentDrag: (e) => store.assembly?.dragTo(e),
       onComponentDragEnd: (cancelled) => store.assembly?.endDrag(cancelled),
-      // the only markers of an assembly are the interferences', keyed by their place in the list
-      onMarkerClick: (key) => store.selectInterference(Number(key)),
+      // the only markers of an assembly are the interferences', keyed by their place in the list and the piece ("2:0")
+      onMarkerClick: (key) => store.selectInterference(Number(key.split(':')[0])),
       // 以座標軸移動 (ADR 0179): a handle held, the ray of the pointer as it moves; a right click on a handle is its menu
       onTriadDragStart: (part, ray) => {
         const a = store.assembly;
@@ -221,10 +221,14 @@ export function AssemblyViewport() {
     const listed = done ? shownPairs(done.pairs, done.ignored, done.showIgnored) : [];
     const shown = !done ? [] : done.selected === null ? listed : [done.selected];
     v.setHighlights(shown.flatMap((i) => done!.pairs[i]!.overlaps.map((mesh) => ({ mesh }))));
-    v.setMarkers(shown.map((i) => {
-      const p = done!.pairs[i]!;
-      return { key: String(i), at: p.center, label: String(i + 1), lit: done!.selected === i, title: t('interference.markerTip', { n: i + 1, a: p.aName, b: p.bName }) };
-    }));
+    // a ring on each piece of the overlap, at a point of the piece itself: the centre of mass of a ring or of pieces round an axis is in empty space
+    v.setMarkers(
+      shown.flatMap((i) => {
+        const p = done!.pairs[i]!;
+        const title = t('interference.markerTip', { n: i + 1, a: p.aName, b: p.bName });
+        return (p.regions.length > 0 ? p.regions.map((r) => r.anchor) : [p.center]).map((at, k) => ({ key: `${i}:${k}`, at, label: String(i + 1), lit: done!.selected === i, title }));
+      }),
+    );
     const pair = done && done.selected !== null ? done.pairs[done.selected] : undefined;
     v.setComponentFocus(pair ? { keys: [pair.aTop, pair.bTop], others: done!.others } : null);
   }, [interference]);

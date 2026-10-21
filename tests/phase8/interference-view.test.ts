@@ -7,10 +7,12 @@ import * as THREE from 'three';
 import type { MeshData } from '@3db/kernel';
 import type { Vec3 } from '@3db/model';
 import { FIT_BOX_FRACTION, fitBoxView, restoreView, viewState } from '@3db/render';
-import { groupOverlaps, pairKey, pairPlace, shownPairs, stepPair, type InterferencePair, type OverlapFound } from '../../apps/web/src/state/interferenceView';
+import { groupOverlaps, pairKey, pairPlace, shownPairs, stepPair, type InterferencePair, type OverlapFound, type OverlapRegion } from '../../apps/web/src/state/interferenceView';
 
 const mesh = {} as MeshData;
-const overlap = (a: string, b: string, volume: number, center: Vec3, min: Vec3, max: Vec3): OverlapFound => ({ a, b, volume, center, min, max, mesh });
+/** An overlap of one piece (its anchor its centre), or of the pieces given. */
+const overlap = (a: string, b: string, volume: number, center: Vec3, min: Vec3, max: Vec3, regions?: OverlapRegion[]): OverlapFound => ({ a, b, volume, center, min, max, regions: regions ?? [{ volume, center, min, max, anchor: center }], mesh });
+const region = (volume: number, anchor: Vec3): OverlapRegion => ({ volume, center: [0, 0, 0], min: anchor, max: anchor, anchor });
 const names = new Map([['a', 'A<1>'], ['b', 'B<1>'], ['c', 'C<1>']]);
 const tops = new Map([['a', 'a'], ['b', 'b'], ['c', 'c']]);
 
@@ -29,6 +31,16 @@ describe('the overlaps put together by pair', () => {
     expect(ab.max).toEqual([5, 2, 9]);
     expect(ab.overlaps).toHaveLength(2);
     expect([ab.aName, ab.bName, ab.aTop, ab.bTop]).toEqual(['A<1>', 'B<1>', 'a', 'b']);
+  });
+
+  it('the pieces of all the overlaps of a pair are kept, the biggest first', () => {
+    const [p] = groupOverlaps(
+      [overlap('a', 'b', 3, [0, 0, 0], [-5, 0, -5], [5, 1, 5], [region(1, [5, 0, 0]), region(2, [-5, 0, 0])]), overlap('a', 'b', 4, [9, 9, 9], [8, 8, 8], [10, 10, 10], [region(4, [9, 9, 9])])],
+      names,
+      tops,
+    );
+    expect(p!.regions.map((r) => r.volume)).toEqual([4, 2, 1]);
+    expect(p!.regions.map((r) => r.anchor)).toEqual([[9, 9, 9], [-5, 0, 0], [5, 0, 0]]);
   });
 
   it('a component not named is called by its id; the overlaps given are not changed', () => {
@@ -67,10 +79,12 @@ describe('the list as shown, and ↑／↓ through it', () => {
     expect(stepPair(pairs, ['a|b', 'a|c', 'b|c'], false, null, 1)).toBeNull();
   });
 
-  it('what the list says of where a pair is: the centre and the size of the box, to two places', () => {
+  it('what the list says of where a pair is: a point on its biggest piece (not the centre of mass), how many pieces, the size of the box, to two places', () => {
     // (9.995 itself is a tie that binary floating point holds a little under: it rounds to 9.99, as toFixed does)
-    expect(pairPlace({ center: [9.996, 10, 29.8], min: [9.99, 0, 29.6], max: [10, 20, 30] })).toEqual({ center: '10.00, 10.00, 29.80', size: '0.01 × 20.00 × 0.40' });
-    expect(pairPlace({ center: [-0.001, 0, 0], min: [0, 0, 0], max: [0, 0, 0] }).center).toBe('0.00, 0.00, 0.00'); // no "-0.00"
+    expect(pairPlace({ center: [9.996, 10, 29.8], min: [9.99, 0, 29.6], max: [10, 20, 30], regions: [region(1, [9.996, 10, 29.8])] })).toEqual({ at: '10.00, 10.00, 29.80', pieces: 1, size: '0.01 × 20.00 × 0.40' });
+    expect(pairPlace({ center: [-0.001, 0, 0], min: [0, 0, 0], max: [0, 0, 0], regions: [] })).toEqual({ at: '0.00, 0.00, 0.00', pieces: 0, size: '0.00 × 0.00 × 0.00' }); // no "-0.00"; no pieces: the centre
+    // the report of 2026-10-21: two pieces round an axis, the centre of mass between them on the axis
+    expect(pairPlace({ center: [0, 0.37, 0], min: [-4.44, -1.5, -4.6], max: [4.44, 2.27, 4.6], regions: [region(0.05, [4.2, 0.4, -1.1]), region(0.033, [-4.2, 0.3, 1.1])] })).toEqual({ at: '4.20, 0.40, -1.10', pieces: 2, size: '8.88 × 3.77 × 9.20' });
   });
 });
 

@@ -191,7 +191,7 @@ export interface ConvertPayload {
  * and what could not be compared.
  */
 export interface InterferenceResult {
-  overlaps: { a: string; b: string; volume: number; center: Vec3; min: Vec3; max: Vec3; mesh: MeshData }[];
+  overlaps: { a: string; b: string; volume: number; center: Vec3; min: Vec3; max: Vec3; regions: { volume: number; center: Vec3; min: Vec3; max: Vec3; anchor: Vec3 }[]; mesh: MeshData }[];
   /** Pairs of parts the kernel was asked about. */
   checked: number;
   /** Components with a part that is not built. */
