@@ -2,7 +2,7 @@
   "apps/web/src/components/AssemblyTree.tsx": 12,
   "apps/web/src/components/InsertComponentPanel.tsx": 14,
   "apps/web/src/components/MatePanel.tsx": 18,
-  "apps/web/src/state/assembly.ts": 32,
+  "apps/web/src/state/assembly.ts": 30,
   "packages/assembly/src/equations.ts": 14,
   "packages/assembly/src/geometry.ts": 7,
   "packages/assembly/src/solver.ts": 2,

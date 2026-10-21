@@ -756,6 +756,11 @@ export const help = {
   'help.rotateComponent.keywords': '旋轉零組件 旋轉 角度 拖曳 右鍵',
 
   'help.rotateComponent.see': 'move-component mate fix-component',
+  'help.moveWithTriad.summary': '在選取的零組件上顯示座標軸，拖曳箭頭、方塊或圓環精確移動或旋轉它。',
+  'help.moveWithTriad.body':
+    '先選取零組件（或在零組件上按右鍵），再按這個指令；座標軸出現在零組件的中心，方向是組合件的 X（紅）、Y（綠）、Z（藍）。開著「移動零組件」時，選取的零組件也會顯示座標軸。\n\n- **箭頭**：只沿那個軸移動，不旋轉。\n- **方塊**：只在那個平面內移動，不旋轉，也不離開平面。\n- **圓環**：只繞那個軸旋轉，中心不動。\n- 結合鎖住的方向不會動；結合只允許「別種動法」時（例如只能繞另一條軸轉），這次拖曳不採用，零組件留在原處。碰撞偵測照常作用。\n- 在圓環上按右鍵：繞該軸旋轉 90°、−90° 或 180°。在任一個把手上按右鍵：「移至 XYZ 座標…」打開「移動零組件」的「至 XYZ 位置」。\n- 步進：在「移動零組件」面板的「座標軸的步進」設定移動（mm）與旋轉（°）的步進，0 表示不貼齊；負數、空白或不是數字會說明而不採用。\n- 固定、被結合完全定義或抑制的零組件不能用，會說明原因。每次拖曳是一個復原步驟；按 Esc 結束。',
+  'help.moveWithTriad.keywords': '座標軸 三軸 triad 移動 旋轉 拖曳 步進 貼齊',
+  'help.moveWithTriad.see': 'move-component rotate-component mate',
   'help.explode.summary': '建立爆炸視圖：把零組件沿方向分開，只是顯示，不改變組裝位置。',
 
   'help.formSubAssembly.summary': '把選的幾個零組件和它們之間的結合，做成一個新的次組合件檔。',

@@ -158,7 +158,7 @@ function assembly(over: Record<string, unknown> = {}): UiState {
 
 describe('the assembly menu', () => {
   it('on a component: what the tree row offers, with mate, move and rotate; fix or float as it is', () => {
-    expect(menus.menuIds(menus.assemblyMenu(assembly(), 'c1'))).toEqual(['open-component', 'relink-component', 'mate', 'move-component', 'rotate-component', 'fix-component', 'hide-component', 'transparent-component', 'suppress-component', 'delete-component']);
+    expect(menus.menuIds(menus.assemblyMenu(assembly(), 'c1'))).toEqual(['open-component', 'relink-component', 'mate', 'move-component', 'rotate-component', 'move-with-triad', 'fix-component', 'hide-component', 'transparent-component', 'suppress-component', 'delete-component']);
     expect(menus.menuIds(menus.assemblyMenu(assembly({ selected: 'c2' }), 'c2'))).toContain('float-component');
   });
 

@@ -1,5 +1,35 @@
 # 3D-Builder 開發日誌 (DEV_LOG.md)
 
+## 2026-10-21：組合件「以座標軸移動」（Move with Triad，ADR 0179）
+
+### 現象與根因
+- 審查報告第 3 批（差距 #3，H）：組合件沒有座標軸拖曳器，精確擺放只能自由拖或打數字。使用者確認計畫與三個假設（對齊組合件軸、放在外框中心、步進預設 0）。
+
+### 變更
+- `packages/assembly`：`triad.ts`（`triadMotion`、`triadTerms`、`triadHolds`、`triadStepsProblem`），求解器新增 `pointOnPlane` 目標項。
+- `packages/render/viewer.ts`：座標軸把手（箭頭、方塊、圓環、中心球）、capture 階段取得按下、滑過亮顯、`triadScreenPoints`（供 e2e）、把手右鍵事件。
+- `apps/web`：`AssemblyStore` 的 `triad`／`triadSteps` 狀態、`showTriad`／`hideTriad`／`startTriadDrag`／`triadDragTo`／`triadTurn`／`triadMoveTo`／`setTriadSteps`，`pumpDrag` 以 `triadHolds` 守衛；`move-with-triad` 指令、零組件右鍵選單、把手右鍵選單（`triadMenu`）、`MovePanel` 的步進群組與「至 XYZ」起始模式、Esc。
+- i18n `asmtriad.*`、`help.moveWithTriad`；手冊新增 D10，`docs/help-links.json` 同步；i18n 基準 145 → 143。
+- 既有測試隨選單更新：`tests/phase8/context-menus.test.ts`、`tests/e2e/manual-context-menus.js`。
+
+### RCA／CAPA（開發中發現）
+1. **圓環完全不轉**：原本把「中心不動」放第一項。繞中心的轉動在求解器變數中不是直線，每步都讓第一項多出二次誤差，`follow` 依字典序判定變差而全部拒絕。CAPA：圓環改成「先轉、再拉回中心」（與既有右鍵旋轉相同），另以 `triadHolds` 事後排除「別種運動」；新增一個**守衛實際決定結果**的測試（同心於偏離中心的軸：未經守衛中心移動 >1 mm，經守衛不動），避免守衛成為空轉閘控（§3.2）。
+2. **有結合時 8e-9 的差**：計畫寫「< 1e-9」，但有結合時每步重解結合，精度只到拖曳求解器的收斂；既有 `move.test.ts` 對結合件也只比 6 位。CAPA：容差分層——無結合 1e-9（未放寬），有結合 1e-7，ADR §3 寫明理由。
+3. **e2e 右鍵落在空白**：腳本找到的點 y=123.41 在 V 型塊上緣，`contextmenu` 是 MouseEvent，座標取整後落到零件外。CAPA：取點一律用整數像素，並要求上下左右 3 px 都在零組件上。
+4. **e2e 誤以為上基準面鎖 Z**：本專案與 SW 相同，上基準面法向是 Y。另，結合加入後文件裡的 placement 仍是結合前的值，比較要用求解後的位姿。
+
+### 紅隊四問（AGENTS §2）
+1. **輸入破壞**：步進 −1、NaN、±∞、空白 → `triadStepsProblem` 拒絕並說明，步進不變（單元與 e2e 皆斷言）；指標射線含 NaN、看向軸、平面側視 → `triadMotion` 回 null，保留上一個運動，不產生 NaN 位姿；圓環右鍵角度非有限 → 拒絕。貼齊用 `Math.round` 是步進的定義，不是改寫使用者輸入的值。
+2. **拓樸與幾何相交**：拖曳沿用既有碰撞偵測（`stopBeforeContact`）；結合只允許別種運動時不採用解（`triadHolds`），不讓零組件跑到結合要求以外的位置；沒有新的 OCCT 布林或 WASM 配置。
+3. **依賴鏈完整性**：零組件 → `poseOf`／`centerOf`／`buildOf` → 抓取 → 目標項 → `solveAssembly`（worker）→ `commitMove`（`setPlacements` 一個復原步驟）；固定／完全定義／抑制沿用 `cannotMove`；選單命令在 `ACTIONS` 且有說明（`help.moveWithTriad`，手冊 D10）；不改 Schema。
+4. **零 Mock 與真值**：單元測試用真實求解器，期望位姿由平移向量或 `axisAngle∘q0` 與「中心不動」自行推導；e2e 以真實 pointer 事件拖曳 viewer 回報的把手位置，期望值由拖曳前後的位姿自行計算（只沿軸、不離面、中心不動、步進整數倍、恰好 π/2）。
+
+### 驗證
+- 單元：packages/assembly/test/triad.test.ts 23/23（Fuzz 200 組 0 例外、0 違反）；move.test.ts 不受影響；context-menus.test.ts 22/22；help 42/42。
+- 全量 vitest：269 檔通過、4 skipped（原有），3369 tests 0 失敗。
+- typecheck 0 錯誤；lint:rules／deps／i18n 通過（i18n 基準 145 → 143）。
+- erify:ui（自有埠 5591／9533／5593）：新腳本 manual-asm-triad.js 11/11；完整一輪 159/159，0 Console 錯誤（結束碼 0）。
+
 ## 2026-10-20：草圖的移動／複製／旋轉／縮放圖元與草圖陣列（ADR 0178）
 
 ### 現象與根因

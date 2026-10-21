@@ -732,6 +732,27 @@ code{background:var(--chip);padding:0 4px;border-radius:4px}
 <h4>應該看到</h4><ul><li>線與標籤清楚、不被模型擋住（線畫在最上面）；同一位置的標籤上下錯開；放大縮小時線的粗細與標籤大小不變。</li><li>不順的地方請逐項寫在備註：標籤蓋住了什麼、顏色看不清、選的元素跟圖上標示對不起來、吸附到的位置不是你要的。</li><li>範圍說明：離開測量工具後，未保留的即時標註會消失；「保留這筆」的量測在目前文件開啟期間可關閉再開工具並恢復，切換／載入文件時清除。頂點抓點以 persistent name 重建追蹤；名稱失效會顯示錯誤，不會靜默綁到其他頂點。中點、圓心、邊上與面上抓點目前仍存固定座標，重建後不保證跟隨拓樸。</li></ul>
 <p class="report"><b>有問題時請回報：</b>選了哪兩個元素、哪個單位與選項、截圖。</p>
 <label class="note">備註<textarea rows="2" placeholder="做到哪一步、畫面訊息原文、和預期的差別…"></textarea></label>
+</div></details><details class="item" id="item-D10" data-id="D10" data-auto="user" data-sec="p3b" data-tag="core">
+<summary><span class="iid">D10</span><span class="ttl">以座標軸移動（Triad）：拖曳箭頭、方塊、圓環，只沿結合留下的自由度（ADR 0179）</span><span class="tag t-core">必做</span>
+<select class="st" aria-label="D10 狀態"><option value="">未做</option><option value="ok">通過</option><option value="bad">有問題</option><option value="skip">略過</option></select></summary>
+<div class="inner">
+<p class="why"><b>為什麼要做：</b>SolidWorks 用座標軸（Triad）精確擺放零件；這一項看三種把手各自只動一種方式、結合鎖住的方向不動、步進貼齊與右鍵的 90°／180°。</p>
+<p class="why helpref"><b>程式內的說明（按 F1，或功能列最右的「說明」搜尋）：</b>以座標軸移動。這一項驗出問題、修好時，這些說明也要一起改。</p>
+<p class="why"><b>預跑（2026-10-21）：</b>腳本 <code>manual-asm-triad.js</code> 以真實滑鼠事件拖曳每一種把手並讀組合件的位置；位姿與矩陣的比對、結合下的限制、步進、200 組隨機組態由 <code>packages/assembly/test/triad.test.ts</code> 驗過。腳本沒涵蓋：把手的觀感與亮顯。</p>
+<h4>先準備</h4><p>用本節開頭的「小夾具」組合件（定位板固定、削邊銷插在孔裡），再用「插入零組件」插入一個沒有結合的 V 型塊。</p>
+<h4>怎麼做</h4><ol>
+<li>在 V 型塊上按右鍵 →「以座標軸移動」。<span class="see">V 型塊中心出現座標軸：紅 X、綠 Y、藍 Z 箭頭，三個半透明方塊，三個圓環，中心一顆灰球；滑到把手上會變橘色。</span></li>
+<li>拖曳紅色箭頭。<span class="see">V 型塊只沿 X 移動，不轉、Y 與 Z 不變；放開後可以 Ctrl+Z 一次復原。</span></li>
+<li>拖曳藍色的圓環（繞 Z）。<span class="see">V 型塊繞自己的中心、繞 Z 軸轉，中心不動。</span></li>
+<li>拖曳其中一個方塊。<span class="see">只在那個平面內移動，離開平面的那個方向不變。</span></li>
+<li>開「移動零組件」，在「座標軸的步進」填移動 <code>5</code>、旋轉 <code>15</code>，按「套用」，再拖曳箭頭與圓環。<span class="see">移動的距離是 5 的整數倍，旋轉是 15° 的整數倍。改填 <code>-1</code> 或清空再套用：說明「必須是 0 或正的有限數字」，步進不變。</span></li>
+<li>在圓環上按右鍵 →「繞 Z 軸旋轉 90°」。<span class="see">V 型塊轉 90°；在中心球上按右鍵 →「移至 XYZ 座標…」打開「移動零組件」的「至 XYZ 位置」。</span></li>
+<li>對削邊銷用「以座標軸移動」，拖曳每一個箭頭與繞 X 的圓環。<span class="see">都不會動（結合鎖住）；銷的軸若正好沿 X、Y 或 Z，繞那個軸的圓環會讓它轉，其餘圓環不會。對固定的定位板用：說明「已固定，不能移動」，不出現座標軸。</span></li>
+<li>按 Esc。<span class="see">座標軸消失。</span></li>
+</ol>
+<h4>應該看到</h4><ul><li>每種把手只做一種動作；結合鎖住的方向不動；步進貼齊；右鍵的旋轉與座標輸入正確；每次拖曳一個復原步驟。</li></ul>
+<p class="report"><b>有問題時請回報：</b>哪個零組件、哪個把手、畫面訊息原文、和預期的差別。</p>
+<label class="note">備註<textarea rows="2" placeholder="做到哪一步、畫面訊息原文、和預期的差別…"></textarea></label>
 </div></details>
 </section><section id="p4a" class="sec"><h2>E. 夾治具（Phase 4a）</h2><p class="intro">前置：新零件，用多本體做一個主模型：基板（一個方塊）、兩個定位銷孔位置、一個壓板，各是獨立的本體。存成 夾具主模型.3dbx 在驗證資料夾（D:\3DB實機確認）。</p><details class="item" id="item-E1" data-id="E1" data-auto="full" data-sec="p4a" data-tag="core">
 <summary><span class="iid">E1</span><span class="ttl">從本體產生組合件（衍生零件）</span><span class="tag t-core">必做</span>

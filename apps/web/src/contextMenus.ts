@@ -3,6 +3,7 @@ import type { Id, SketchFeature } from '@3db/model';
 import { SNAP_ITEMS } from '@3db/sketch/snaps';
 import { ACTIONS } from './actions';
 import { relationsOffered } from './sketcher/relationsOffered';
+import type { TriadPart } from '@3db/render';
 import { TRANSFORM_TOOLS, type SketchController, type ToolId } from './sketcher/controller';
 import { store, type UiState } from './state/store';
 import { RELATION_LABEL } from './strings';
@@ -116,6 +117,22 @@ export function sketchMenu(s: UiState, sketcher: SketchController, sketch: Sketc
   return tidy([...relations, command(s, 'tool-dimension', () => sketcher.startDimension()), command(s, 'construction'), SEPARATOR, transforms, SEPARATOR, command(s, 'sketch-select-chain'), command(s, 'sketch-delete'), ...leave]);
 }
 
+const AXIS_NAME = ['X', 'Y', 'Z'] as const;
+
+/**
+ * A right click on a handle of the triad (以座標軸移動, ADR 0179): on a ring, turning 90° either way or 180° about its axis (as SolidWorks offers on the
+ * triad's rings); on any handle, 「移至 XYZ 座標…」 and ending the triad.
+ */
+export function triadMenu(part: TriadPart): MenuEntry[] {
+  const a = store.assembly;
+  const end = entry('triad-close', t('triad.close'), () => a?.hideTriad());
+  const moveTo = entry('triad-move-to', t('triad.moveTo'), () => a?.triadMoveTo());
+  if (part.kind !== 'ring') return tidy([moveTo, SEPARATOR, end]);
+  const axis = AXIS_NAME[part.axis];
+  const turns = [90, -90, 180].map((deg) => entry(`triad-turn-${axis}${deg}`, t('triad.turn', { axis, angle: String(deg) }), () => void a?.triadTurn(part.axis, deg)));
+  return tidy([...turns, SEPARATOR, moveTo, SEPARATOR, end]);
+}
+
 /**
  * The assembly (ADR 0176): on a component (chosen first), what the tree's row offers — open its part, mate, move, turn, fix or float, hide, see-through,
  * suppress, delete; on nothing, inserting and mating and the view.
@@ -131,6 +148,7 @@ export function assemblyMenu(s: UiState, component: Id | null): MenuEntry[] {
     command(s, 'mate'),
     command(s, 'move-component'),
     command(s, 'rotate-component'),
+    command(s, 'move-with-triad'),
     SEPARATOR,
     command(s, c.fixed ? 'float-component' : 'fix-component'),
     SEPARATOR,

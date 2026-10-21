@@ -155,6 +155,9 @@
     "redo",
     "form-sub-assembly"
   ],
+  "D10": [
+    "move-with-triad"
+  ],
   "D2": [
     "pattern-linear",
     "pattern-circular",

@@ -263,6 +263,8 @@ export const ACTIONS: UiAction[] = [
   { id: 'mate', get label() { return t('act.mate'); }, group: 'assembly', enabled: (s) => assemblyIdle(s) && hasComponents(s), run: () => store.assembly?.startMate() },
   { id: 'move-component', get label() { return t('act.moveComponent'); }, group: 'assembly', enabled: (s) => assemblyIdle(s) && hasComponents(s), run: () => store.assembly?.startMove('move') },
   { id: 'rotate-component', get label() { return t('act.rotateComponent'); }, group: 'assembly', enabled: (s) => assemblyIdle(s) && hasComponents(s), run: () => store.assembly?.startMove('rotate') },
+  // 以座標軸移動 (ADR 0179): the triad on the selected component; a second press takes it away
+  { id: 'move-with-triad', get label() { return t('act.moveWithTriad'); }, group: 'assembly', enabled: (s) => assemblyIdle(s) && !!s.asm?.selected && s.asm.doc.components.some((c) => c.id === s.asm!.selected), active: () => !!store.getState().asm?.triad, run: () => (store.getState().asm?.triad ? store.assembly?.hideTriad() : store.assembly?.showTriad()) },
   { id: 'form-sub-assembly', get label() { return t('subassembly.form.act'); }, group: 'assembly', enabled: (s) => assemblyIdle(s) && (s.asm?.doc.components.length ?? 0) >= 2, run: () => store.assembly?.startFormSub() },
   { id: 'explode', get label() { return t('explode.act'); }, group: 'assembly', enabled: (s) => assemblyIdle(s) && hasComponents(s), run: () => store.assembly?.startExplode() },
   { id: 'measure-assembly', get label() { return t('measure.act'); }, group: 'assembly', enabled: (s) => s.active === 'assembly' && canMeasure(s), run: toggleMeasure, active: () => store.getState().measure !== null },
@@ -496,9 +498,14 @@ export function installShortcuts(): () => void {
       const selected = s.asm.selected;
       if (s.asm.drag) {
         // A drag owns the keyboard: Esc puts everything back where it was.
-        if (e.key === 'Escape') store.viewer?.cancelComponentDrag();
+        if (e.key === 'Escape') {
+          store.viewer?.cancelComponentDrag();
+          store.viewer?.cancelTriadDrag();
+        }
         return;
       }
+      // the triad first (ADR 0179): Esc takes it away, then closes 移動零組件 if that is open
+      if (s.asm.triad && e.key === 'Escape') return void a?.hideTriad();
       if (s.asm.move) {
         if (e.key === 'Escape' || e.key === 'Enter') return void a?.closeMove();
       } else if (s.asm.formSub) {

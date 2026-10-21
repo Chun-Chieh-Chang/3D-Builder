@@ -420,7 +420,7 @@ C.assembly = async () => {
     li.click();
     await H.wait(250);
   };
-  const ON_COMPONENT = ['open-component', 'relink-component', 'mate', 'move-component', 'rotate-component', 'float-component', 'hide-component', 'transparent-component', 'suppress-component', 'delete-component'];
+  const ON_COMPONENT = ['open-component', 'relink-component', 'mate', 'move-component', 'rotate-component', 'move-with-triad', 'float-component', 'hide-component', 'transparent-component', 'suppress-component', 'delete-component'];
   let block;
 
   await step('1 a new assembly with the plate (fixed) and the V-block (floating)', async () => {
