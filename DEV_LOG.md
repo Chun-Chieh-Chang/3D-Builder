@@ -28,8 +28,10 @@
 ### 驗證
 - 單元：`tests/phase8/interference-view.test.ts` 16/16；`tests/phase3/interference.test.ts` 新增 2 項，全檔通過。
 - e2e：`manual-interference-view.js` 9/9；`manual-d7.js`、`phase3-interference.js` 通過。
-- 全量 vitest：269 檔通過、4 skipped（原有），3364 tests 0 失敗。
-- typecheck 0 錯誤；lint:rules／lint:deps／lint:i18n 通過（i18n 基準不變，145 行）。
+- 與 main（含 ADR 0179 Triad，27e5977）合併後重跑：`viewer.ts`、`AssemblyViewport.tsx`、`DEV_LOG.md` 的衝突兩邊都是新增，全部保留。
+- 全量 vitest：270 檔通過、4 skipped（原有），3387 tests 0 失敗。
+- typecheck 0 錯誤；lint:rules／lint:deps／lint:i18n 通過（i18n 基準 143，本功能未新增寫死的文字）。
+- `verify:ui`（自有埠 5691／9633／5693）完整一輪：160/160 PASS，0 Console 錯誤（結束碼 0）。
 
 ## 2026-10-21：組合件「以座標軸移動」（Move with Triad，ADR 0179）
 

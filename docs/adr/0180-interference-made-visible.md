@@ -35,7 +35,9 @@ SolidWorks 的對照（說明網站以腳本產生，抓不到內文；以下依
 | `tests/e2e/manual-interference-view.js`（瀏覽器，指標事件打在 `elementFromPoint` 取得的元素上） | 9 步：0.027 mm³ 的小干涉在整體畫面中 < 4 px；面板中心與範圍文字；紅圈 24 px、在中心 ±2 px；點列後佔畫面 30 %、中心偏差 ≤ 範圍的 1 %、干涉零件 0.45、其他 0.12、上一個視角還原；「縮放」、三種縮放下紅圈仍為 32 px 且在中心、點紅圈選取另一組；↑／↓；四種顯示類型 × 剖面開關共 8 種組合的畫面像素為紅色（R > 180、G < 90、B < 90，以 `viewer.snapshot()` 讀回），剖切面移到中心；非干涉零組件四種設定（隱藏的點不到）；忽略（重新檢查、關閉重開仍保留）、取消忽略；Esc 後全部還原（使用者設的透明仍為 0.4） | 9/9 PASS |
 | `tests/e2e/phase3-interference.js` | 紅色改以主題變數判斷（不再寫死 `0xe53935`） | PASS |
 
-完整的 vitest、`verify:ui` 與靜態檢查結果記在 `DEV_LOG.md` 同日條目。
+| 完整 `npm run verify:ui`（自有埠 5691／9633／5693，與 main 27e5977 合併後） | 全部 160 支 | 160/160 PASS，0 Console 錯誤 |
+| 全量 vitest（合併後） | 274 檔 | 270 PASS、4 skipped（原有），3387 tests 0 失敗 |
+| typecheck、lint:rules、lint:deps、lint:i18n | | 全部通過 |
 
 ## 4. 已知限制
 
