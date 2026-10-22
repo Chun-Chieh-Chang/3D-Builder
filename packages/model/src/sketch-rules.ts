@@ -23,7 +23,7 @@ const CURVE_OR_AXIS: RefKind[] = ['line', 'circle', 'arc', 'axis'];
 const ANCHOR: RefKind[] = ['point', 'origin', 'circle', 'arc'];
 const ANY: RefKind[] = ['point', 'origin', 'line', 'circle', 'arc', 'axis'];
 
-const REF_FIELDS = ['a', 'b', 'point', 'line', 'curve', 'axis', 'circle'] as const;
+const REF_FIELDS = ['a', 'b', 'point', 'line', 'curve', 'axis', 'circle', 'entity'] as const;
 type RefField = (typeof REF_FIELDS)[number];
 
 /** Constraint types whose second reference is optional (one entity, or a pair). */
@@ -45,6 +45,7 @@ const RULES: { [T in SketchConstraint['type']]: Partial<Record<RefField, RefKind
   pointOnCurve: { point: POINT, curve: CURVE_OR_AXIS },
   symmetric: { a: POINT, b: POINT, axis: LINE_OR_AXIS },
   fix: { point: ['point'] },
+  block: { entity: CURVE },
   distance: { a: ANY, b: ANY },
   distanceX: { a: ANCHOR, b: ANCHOR },
   distanceY: { a: ANCHOR, b: ANCHOR },

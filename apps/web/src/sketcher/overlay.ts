@@ -54,6 +54,7 @@ const RELATION_SYMBOL: Record<Exclude<SketchConstraint['type'], 'distance' | 'di
   pointOnCurve: '⊙',
   symmetric: '⇋',
   fix: '⚓',
+  block: '⚓',
 };
 
 export interface OverlayOptions {

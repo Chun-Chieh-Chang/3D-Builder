@@ -53,6 +53,7 @@ export const ui = {
   'relation.pointOnCurve': '重合',
   'relation.symmetric': '對稱',
   'relation.fix': '固定',
+  'relation.block': '固定',
 
   'tool.select': '選取',
   'tool.line': '直線',

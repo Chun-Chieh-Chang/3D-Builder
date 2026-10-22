@@ -642,11 +642,28 @@ export function smartDimension(geometry: Geometry, picks: Id[], place: P2): Dime
 const AXIS_RELATIONS = new Set<RelationBody['type']>(['collinear', 'parallel', 'perpendicular', 'tangent', 'pointOnCurve', 'symmetric', 'intersection']);
 
 /** Relations SolidWorks offers in 「加入限制條件」 for the current selection. */
-export function applicableRelations(geometry: Geometry, selection: Id[], sketch?: Pick<SketchFeature, 'entities'>): RelationBody[] {
+export function applicableRelations(geometry: Geometry, selection: Id[], sketch?: Pick<SketchFeature, 'entities'> & Partial<Pick<SketchFeature, 'constraints'>>): RelationBody[] {
   const axes = selection.filter(isSketchAxis).length;
   if (axes > 1) return [];
-  const all = candidateRelations(geometry, selection, sketch);
+  const all = [...candidateRelations(geometry, selection, sketch), ...blockOffer(geometry, selection, sketch)];
   return axes === 0 ? all : all.filter((r) => AXIS_RELATIONS.has(r.type));
+}
+
+/**
+ * 「固定」 of whole curves (ADR 0182): offered when what is selected is lines, circles and arcs and nothing else, for as long as one of them is not held yet.
+ * The body names the first one that is not; the controller adds one for each of the selected that is not (`blockTargets`), in one step.
+ */
+function blockOffer(geometry: Geometry, selection: Id[], sketch?: Pick<SketchFeature, 'entities'> & Partial<Pick<SketchFeature, 'constraints'>>): RelationBody[] {
+  const next = blockTargets(geometry, selection, sketch)[0];
+  return next === undefined ? [] : [{ type: 'block', entity: next }];
+}
+
+/** The selected lines, circles and arcs that no `block` holds yet; none when the selection holds anything else (a point, an axis). */
+export function blockTargets(geometry: Geometry, selection: readonly Id[], sketch?: Pick<SketchFeature, 'entities'> & Partial<Pick<SketchFeature, 'constraints'>>): Id[] {
+  if (selection.length === 0) return [];
+  if (!selection.every((id) => ['line', 'circle', 'arc'].includes(kindOf(geometry, id, sketch) ?? ''))) return [];
+  const held = new Set((sketch?.constraints ?? []).flatMap((c) => (c.type === 'block' ? [c.entity] : [])));
+  return selection.filter((id) => !held.has(id));
 }
 
 function candidateRelations(geometry: Geometry, selection: Id[], sketch?: Pick<SketchFeature, 'entities'>): RelationBody[] {

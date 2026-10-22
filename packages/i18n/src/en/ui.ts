@@ -54,6 +54,7 @@ export const ui: Translation = {
   'relation.pointOnCurve': 'Coincident',
   'relation.symmetric': 'Symmetric',
   'relation.fix': 'Fix',
+  'relation.block': 'Fix',
 
   'tool.select': 'Select',
   'tool.line': 'Line',

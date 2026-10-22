@@ -1148,7 +1148,12 @@ function transformInPlace(
     keepRelations ? [] : points.filter((p) => !chosenIds.has(p) && sketch.entities.some((e) => !chosenIds.has(e.id) && refsOf(e).includes(p))),
   );
   const own = (r: Id) => moved.has(r) && !shared.has(r);
-  if (sketch.constraints.some((c) => c.type === 'fix' && own(c.point))) return error('sketch.xformFixed');
+  // a point held by 「固定」, or a curve held whole (ADR 0182) that is moved or has a point that is
+  const heldCurve = (id: Id) => {
+    const e = byId.get(id);
+    return chosenIds.has(id) || (e !== undefined && refsOf(e).some(own));
+  };
+  if (sketch.constraints.some((c) => (c.type === 'fix' && own(c.point)) || (c.type === 'block' && heldCurve(c.entity)))) return error('sketch.xformFixed');
 
   const posOf = (id: Id): P2 => {
     const g = geometry.get(id);
@@ -1240,7 +1245,7 @@ function copies(sketch: Pick<SketchFeature, 'entities' | 'constraints'>, geometr
   if ('error' in sel) return sel;
   const { chosen, points, byId } = sel;
   const inside = new Set<Id>([...chosen.map((e) => e.id), ...points]);
-  const internal = keepRelations ? sketch.constraints.filter((c) => c.type !== 'fix' && constraintRefs(c).length > 0 && constraintRefs(c).every((r) => inside.has(r))) : [];
+  const internal = keepRelations ? sketch.constraints.filter((c) => c.type !== 'fix' && c.type !== 'block' && constraintRefs(c).length > 0 && constraintRefs(c).every((r) => inside.has(r))) : [];
   const posOf = (id: Id): P2 => {
     const g = geometry.get(id);
     const e = byId.get(id);

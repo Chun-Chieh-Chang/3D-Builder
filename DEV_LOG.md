@@ -1,5 +1,32 @@
 # 3D-Builder 開發日誌 (DEV_LOG.md)
 
+## 2026-10-22：固定整個圖元（Block，G8a，[ADR 0182](docs/adr/0182-sketch-block.md)，Schema 74）
+
+### 1. 背景與決策
+G8 拆成兩項（8a 這項、8b 圓弧條件的最近／最遠距離，ADR 0183）。使用者裁決：固定可一次選多個圖元，各加一個。新限制條件 `block`（`entity`：線、圓或圓弧）把圖元的全部自由度鎖在儲存的位置：線兩端（4）、圓的圓心與半徑（3）、圓弧的圓心、起點與終點方向（5，不直接固定三個點，否則多 1 個重複）。
+
+### 2. 做法
+| 層級 | 檔案 | 改動 |
+|---|---|---|
+| 模型 | `schema.ts`、`serialize.ts`、`sketch-rules.ts` | `block`、v74、規則表；`entity` 加入參照欄位 |
+| 求解器 | `planegcs.ts` | `block` 的對應 |
+| 選取 | `interact.ts` | `blockTargets`、`blockOffer` |
+| 介面 | `controller.ts`、`overlay.ts`、`strings.ts`、i18n、說明 | 一次加多個（一次復原）、符號 ⚓、標籤「固定」 |
+| 移動與複製 | `ops.ts` | 固定的圖元不能移動／旋轉／縮放；複製不帶固定 |
+
+### 3. 紅隊四問
+1. **輸入破壞**：點、不存在的圖元當 `entity` 被規則拒絕；圖元已被其他限制完全決定時再固定，被「過多定義」機制拒絕；沒有數值輸入。
+2. **幾何相交**：純求解器限制，沒有布林運算，不涉及 OCCT 的 Heap。
+3. **依賴鏈**：`schema.ts` → `sketch-rules.ts`（`entity` 是參照欄位，刪除、移動、衝突都靠它）→ `planegcs.ts` → `interact.ts` → `controller.ts` → 符號、標籤、說明；`ops.ts` 的移動與複製規則。草圖的特徵依賴圖不涉及（固定的圖元都在同一張草圖內）。
+4. **零 Mock**：用真實的 PlaneGCS 求解器，值手算（圓心 (1,2)、半徑 5 的 90° 圓弧：三個點在 (1,2)、(6,2)、(1,7)）；e2e 在真實的 UI 上選取與按鈕。
+
+### 4. 測試
+- `packages/sketch/test/block.test.ts` 14 項（含 150 組固定種子的隨機圓弧，角度跨越 ±π）；`tests/e2e/manual-sketch-block.js` 4 步。既有的 `interact.test.ts` 預期更新：選線、兩條線、線加圓時多了「固定」。
+- 反向對照（皆已還原）：6 種破壞各讓測試轉紅；2 種破壞讓 e2e 轉紅。
+- **實作的錯**：一次產生多個 `block` 時，每次呼叫 `this.allocator()` 都新建分配器，兩個固定拿到同一個 id（`object with id c1#0 already exists`）。單元測試沒碰到控制器，是 e2e 抓到的；改成一個分配器產生全部。
+- 測試第一版的錯：`IdAllocator` 要兩個參數；e2e 借用了組合件腳本才有的 `H.ctrl`。
+- 全閘門 `npm run check`：**274 檔、3442 通過、0 失敗**、25 略過。完整 `verify:ui`：**163/163 通過**（含 `manual-sketch-block.js`）。
+
 ## 2026-10-21：草圖附著，原點與 X 方向取自模型（G7，[ADR 0181](docs/adr/0181-sketch-attachment.md)，Schema 73）
 
 ### 1. 背景與決策

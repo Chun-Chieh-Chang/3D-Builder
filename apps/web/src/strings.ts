@@ -120,6 +120,7 @@ export const RELATION_LABEL: Record<SketchConstraint['type'], string> = labelsOf
   pointOnCurve: 'relation.pointOnCurve',
   symmetric: 'relation.symmetric',
   fix: 'relation.fix',
+  block: 'relation.block',
   distance: 'dimension.distance',
   distanceX: 'dimension.distanceX',
   distanceY: 'dimension.distanceY',

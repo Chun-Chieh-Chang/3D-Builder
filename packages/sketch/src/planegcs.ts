@@ -300,6 +300,26 @@ function toPrimitives(sketch: SketchFeature, start: Start, pinned: ReadonlySet<I
         ]);
         break;
       }
+      case 'block': {
+        // every freedom of the entity, no more (a constraint too many would be called redundant): a line's two ends; a circle's center and radius; an arc's
+        // center, its start, and the direction of its end from the center (the end is on the circle already, the arc's own rule)
+        const e = byId.get(c.entity);
+        const hold = (pid: Id): Prim[] => {
+          const [x, y] = stored(pid);
+          return [
+            { id, type: 'coordinate_x', p_id: point(pid), x },
+            { id, type: 'coordinate_y', p_id: point(pid), y },
+          ];
+        };
+        if (e?.type === 'line') add(id, [...hold(e.p1), ...hold(e.p2)]);
+        else if (e?.type === 'circle') add(id, [...hold(e.center), { id, type: 'circle_radius', c_id: e.id, radius: radiusAt(e.id) }]);
+        else if (e?.type === 'arc') {
+          const [cx, cy] = stored(e.center);
+          const [ex, ey] = stored(e.end);
+          add(id, [...hold(e.center), ...hold(e.start), { id, type: 'p2p_angle', p1_id: point(e.center), p2_id: point(e.end), angle: Math.atan2(ey - cy, ex - cx) }]);
+        } else throw new MappingError(t('map.notCurve', { id: c.entity }));
+        break;
+      }
       case 'distance': {
         const value = evalLength(c.value);
         const a = byId.get(c.a);

@@ -22,6 +22,7 @@ import {
   circleThrough,
   dist,
   geometryOf,
+  blockTargets,
   hitTest,
   inBox,
   inferDirection,
@@ -560,8 +561,16 @@ export class SketchController {
 
   /** 「加入限制條件」 (C1.26): refused, like a dimension, when it would over-define the sketch. */
   async addRelation(body: RelationBody): Promise<boolean> {
-    const relation = { id: this.allocator().take('c'), ...body } as SketchConstraint;
     const s = this.sketch();
+    // 「固定」 of curves holds each of the selected that is not held yet, one relation for each, in one step (ADR 0182)
+    // one allocator for all of them: each call of `allocator()` starts from what the document has, so two would hand out the same id twice
+    const ids = this.allocator();
+    const relations =
+      body.type === 'block'
+        ? blockTargets(this.geometry(), [...this.selection], s).map((entity) => ({ id: ids.take('c'), type: 'block', entity }) as SketchConstraint)
+        : [{ id: ids.take('c'), ...body } as SketchConstraint];
+    if (relations.length === 0) return false;
+    const relation = relations[0]!;
     // 「交錯」 names the point where two curves meet; say that they do not meet rather than let the solver call it over-defined (C6.2)
     if (relation.type === 'intersection') {
       const g = this.geometry();
@@ -571,12 +580,12 @@ export class SketchController {
         return false;
       }
     }
-    const r = await this.host.trial({ ...s, constraints: [...s.constraints, relation] });
+    const r = await this.host.trial({ ...s, constraints: [...s.constraints, ...relations] });
     if (r.status === 'over' || r.status === 'failed') {
       this.host.notify(t('sketch.overDefinedRelation'), 'error');
       return false;
     }
-    const ok = this.host.execute({ type: 'addSketchItems', featureId: this.host.featureId, entities: [], constraints: [relation] });
+    const ok = this.host.execute({ type: 'addSketchItems', featureId: this.host.featureId, entities: [], constraints: relations });
     this.changed();
     return ok;
   }
