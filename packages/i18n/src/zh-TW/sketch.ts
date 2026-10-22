@@ -87,6 +87,12 @@ export const sketch = {
   'sketch.dimensionDriven': '這個尺寸會使草圖過多定義，已加為從動尺寸（只顯示量到的值）',
   'sketch.driven': '從動尺寸',
   'sketch.makeDriven': '設為從動',
+  'sketch.condition': '圓弧條件',
+  'sketch.condition.center': '圓心',
+  'sketch.condition.min': '最近',
+  'sketch.condition.max': '最遠',
+  'sketch.conditionCrossing': '兩個圖元相交（圓與直線相交也一樣），沒有「最近」；請先分開，或改用圓心或最遠',
+  'sketch.conditionNoDirection': '圓心與另一端重合，沒有「最遠」可言（每個方向都一樣遠）',
   'sketch.makeDriving': '設為驅動',
   'sketch.arcLengthButton': '標註弧長',
 

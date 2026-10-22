@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from 'react';
+import { Fragment, useEffect, useState, type ReactNode } from 'react';
 import { labelsOf, t } from '@3db/i18n';
 import { currentTopicId } from '../help/context';
 import {
@@ -98,7 +98,7 @@ import {
   type SketchFeature,
 } from '@3db/model';
 import type { RebuildPayload, SketchSolvePayload } from '../worker/protocol';
-import { dimensionText, measuredText } from '@3db/sketch/interact';
+import { conditionEnds, dimensionText, measuredText } from '@3db/sketch/interact';
 import { relationsOffered } from '../sketcher/relationsOffered';
 import { nearestElement } from '../state/candidates';
 import { store, useSketcherView, useStore, type FilletGroup } from '../state/store';
@@ -689,7 +689,8 @@ function SketchPanel({ f }: { f: SketchFeature }) {
         <h4>{t('pm.dimensions')}</h4>
         {dims.length === 0 && <p className="muted">{t('pm.dimensionsHint')}</p>}
         {dims.map((c) => (
-          <label key={c.id} className="pm-row">
+          <Fragment key={c.id}>
+          <label className="pm-row">
             <span>{c.label ?? `${DIMENSION_LABEL[c.type] ?? t('dimension.generic')} ${c.id}`}</span>
             {c.driving === false ? (
               <span className="muted" title={t('sketch.driven')}>
@@ -706,6 +707,17 @@ function SketchPanel({ f }: { f: SketchFeature }) {
               {c.driving === false ? t('sketch.makeDriving') : t('sketch.makeDriven')}
             </button>
           </label>
+          {c.type === 'distance' && c.b !== undefined && solve && conditionEnds(solve.geometry, c.a, c.b, 'max') !== null && (
+            <label className="pm-row">
+              <span>{t('sketch.condition')}</span>
+              <select value={c.condition ?? 'center'} onChange={(e) => sketcher?.setDistanceCondition(c.id, e.target.value === 'center' ? null : (e.target.value as 'min' | 'max'))}>
+                <option value="center">{t('sketch.condition.center')}</option>
+                <option value="min">{t('sketch.condition.min')}</option>
+                <option value="max">{t('sketch.condition.max')}</option>
+              </select>
+            </label>
+          )}
+          </Fragment>
         ))}
       </section>
     </>

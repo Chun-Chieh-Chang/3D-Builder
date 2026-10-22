@@ -6,7 +6,7 @@ import type { Id } from './ids';
  * DOF status, mass properties and error lists are derived data and never stored.
  */
 
-export const SCHEMA_VERSION = 74;
+export const SCHEMA_VERSION = 75;
 
 /** Value expression (B5.2, B5.3): "20", "25.4mm", "30deg", "wall_t*2", "D1@草圖1/2", "property('厚度')"; see `expr/`. */
 export type Expr = string;
@@ -115,7 +115,7 @@ export type SketchConstraint =
    * radius, an arc's center, start and the way its end lies. Taken from the positions stored in the sketch, as `fix` is.
    */
   | { id: Id; type: 'block'; entity: Id }
-  | { id: Id; type: 'distance'; a: Id; b?: Id; value: Expr; label?: string; /** Position of the dimension text in sketch coordinates; absent uses automatic layout. */ labelPosition?: [number, number]; driving?: boolean }
+  | { id: Id; type: 'distance'; a: Id; b?: Id; value: Expr; label?: string; /** Position of the dimension text in sketch coordinates; absent uses automatic layout. */ labelPosition?: [number, number]; driving?: boolean; /** Between a circle or arc and a point, line, circle or arc (v75, ADR 0183): absent is from its center, `min` the nearest points of the two, `max` the farthest. */ condition?: 'min' | 'max' }
   | { id: Id; type: 'distanceX'; a: Id; b: Id; value: Expr; label?: string; /** Position of the dimension text in sketch coordinates; absent uses automatic layout. */ labelPosition?: [number, number]; driving?: boolean }
   | { id: Id; type: 'distanceY'; a: Id; b: Id; value: Expr; label?: string; /** Position of the dimension text in sketch coordinates; absent uses automatic layout. */ labelPosition?: [number, number]; driving?: boolean }
   | { id: Id; type: 'radius'; circle: Id; value: Expr; label?: string; /** Position of the dimension text in sketch coordinates; absent uses automatic layout. */ labelPosition?: [number, number]; driving?: boolean }

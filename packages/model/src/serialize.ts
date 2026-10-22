@@ -222,6 +222,8 @@ const migrations: Record<number, (doc: Json) => Json> = {
   72: (doc) => doc,
   // v74: a sketch relation that holds a whole line, circle or arc in place (`block`, ADR 0182). A new relation kind; nothing to convert, an older program refuses the file.
   73: (doc) => doc,
+  // v75: a distance to or between circles and arcs may be measured to their nearest or farthest points (`distance.condition`, ADR 0183). Absent is the center, as before; nothing to convert, an older program refuses the file.
+  74: (doc) => doc,
 };
 
 export class FormatError extends Error {

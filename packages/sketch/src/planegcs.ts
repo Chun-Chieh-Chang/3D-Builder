@@ -183,6 +183,65 @@ function toPrimitives(sketch: SketchFeature, start: Start, pinned: ReadonlySet<I
 
   const add = (id: Id, list: Prim[]) => list.forEach((p, k) => prims.push({ ...p, id: list.length === 1 ? id : `${id}#${k}` } as Prim));
 
+  /**
+   * A distance measured to the nearest or farthest points (ADR 0183): `a` and `b` are a circle or an arc and a point, a line, or another circle or arc.
+   * The nearest the solver has its own relation for (circle to circle, point to circle, circle to line), with the radii as unknowns like everything else.
+   * The farthest it has none: it is made of a helper point on the circle at the far side (on the line through the centers, or through the center and the
+   * point, or on the perpendicular from the center to the line), and the distance of that point. Each helper point has exactly the freedoms its two
+   * relations take away, so none is added; it starts where the circle is farthest now, and the solver keeps it near there.
+   */
+  const conditioned = (id: Id, aId: Id, bId: Id, condition: 'min' | 'max', value: number) => {
+    const isRadial = (e: SketchEntity | undefined): e is Extract<SketchEntity, { type: 'circle' | 'arc' }> => e?.type === 'circle' || e?.type === 'arc';
+    const [a, b] = [byId.get(aId), byId.get(bId)];
+    const [r, otherId] = isRadial(a) ? [a, bId] : [b as Extract<SketchEntity, { type: 'circle' | 'arc' }>, aId];
+    if (!isRadial(r)) throw new MappingError(t('map.notCircleOrArc', { id: aId }));
+    const other = byId.get(otherId);
+    if (condition === 'min') {
+      if (isRadial(other)) add(id, [{ id, type: 'c2cdistance', c1_id: r.id, c2_id: other.id, dist: value }]);
+      else if (other?.type === 'line') add(id, [{ id, type: 'c2ldistance', c_id: r.id, l_id: other.id, dist: value }]);
+      else add(id, [{ id, type: 'p2cdistance', p_id: point(otherId), c_id: r.id, distance: value }]);
+      return;
+    }
+    const centerOf = (e: Extract<SketchEntity, { type: 'circle' | 'arc' }>) => pointXY(e.center);
+    /** The helper point on `e`'s circle, `from` the center in the direction `u`, with the two relations that keep it there. */
+    const helper = (name: string, e: Extract<SketchEntity, { type: 'circle' | 'arc' }>, u: [number, number], along: Prim[]): Id => {
+      const hid = `${id}.${name}`;
+      const [cx, cy] = centerOf(e);
+      const rad = radiusAt(e.id);
+      prims.push({ id: hid, type: 'point', x: cx + u[0] * rad, y: cy + u[1] * rad, fixed: false });
+      along.push(onCurve(hid, e.id, id));
+      return hid;
+    };
+    const unitOf = (from: [number, number], to: [number, number]): [number, number] => {
+      const d = Math.hypot(to[0] - from[0], to[1] - from[1]);
+      if (d < 1e-9) throw new MappingError(t('map.conditionNoDirection', { id }));
+      return [(to[0] - from[0]) / d, (to[1] - from[1]) / d];
+    };
+    const cons: Prim[] = [];
+    if (isRadial(other)) {
+      const [c1, c2] = [centerOf(r), centerOf(other)];
+      const u = unitOf(c1, c2);
+      const q1 = helper('q1', r, [-u[0], -u[1]], cons);
+      const q2 = helper('q2', other, u, cons);
+      cons.push({ id, type: 'point_on_line_ppp', p_id: q1, lp1_id: r.center, lp2_id: other.center }, { id, type: 'point_on_line_ppp', p_id: q2, lp1_id: r.center, lp2_id: other.center }, { id, type: 'p2p_distance', p1_id: q1, p2_id: q2, distance: value });
+    } else if (other?.type === 'line') {
+      const [p1, p2] = [pointXY(other.p1), pointXY(other.p2)];
+      const dir = unitOf(p1, p2);
+      const n: [number, number] = [-dir[1], dir[0]];
+      const [cx, cy] = centerOf(r);
+      // the far side of the circle is the side of the center away from the line (the center on the line: either)
+      const side = (cx - p1[0]) * n[0] + (cy - p1[1]) * n[1] >= 0 ? 1 : -1;
+      const q = helper('q', r, [n[0] * side, n[1] * side], cons);
+      cons.push({ id, type: 'perpendicular_pppp', l1p1_id: r.center, l1p2_id: q, l2p1_id: other.p1, l2p2_id: other.p2 }, { id, type: 'p2l_distance', p_id: q, l_id: other.id, distance: value });
+    } else {
+      const p = point(otherId);
+      const u = unitOf(pointXY(otherId), centerOf(r));
+      const q = helper('q', r, u, cons);
+      cons.push({ id, type: 'point_on_line_ppp', p_id: q, lp1_id: r.center, lp2_id: p }, { id, type: 'p2p_distance', p1_id: p, p2_id: q, distance: value });
+    }
+    add(id, cons);
+  };
+
   for (const c of sketch.constraints) {
     if ('driving' in c && c.driving === false) continue; // driven (reference) dimensions are outputs
     const id = c.id;
@@ -324,6 +383,10 @@ function toPrimitives(sketch: SketchFeature, start: Start, pinned: ReadonlySet<I
         const value = evalLength(c.value);
         const a = byId.get(c.a);
         const b = c.b === undefined ? undefined : byId.get(c.b);
+        if (c.condition !== undefined && c.b !== undefined) {
+          conditioned(id, c.a, c.b, c.condition, value);
+          break;
+        }
         if (c.b === undefined) {
           const l = line(c.a);
           add(id, [{ id, type: 'p2p_distance', p1_id: l.p1, p2_id: l.p2, distance: value }]);

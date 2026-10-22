@@ -89,6 +89,12 @@ export const sketch: Translation = {
   'sketch.dimensionDriven': 'This dimension would over define the sketch, so it was added as a driven dimension (it only shows the measured value)',
   'sketch.driven': 'Driven dimension',
   'sketch.makeDriven': 'Make driven',
+  'sketch.condition': 'Arc condition',
+  'sketch.condition.center': 'Center',
+  'sketch.condition.min': 'Nearest',
+  'sketch.condition.max': 'Farthest',
+  'sketch.conditionCrossing': 'The two cross (a circle across a line too), so there is no nearest; move them apart first, or use the center or the farthest',
+  'sketch.conditionNoDirection': 'The center and the other end coincide, so there is no farthest (every direction is as far)',
   'sketch.makeDriving': 'Make driving',
   'sketch.arcLengthButton': 'Dimension arc length',
 

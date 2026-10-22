@@ -1,5 +1,30 @@
 # 3D-Builder 開發日誌 (DEV_LOG.md)
 
+## 2026-10-22：圓弧條件，最近與最遠距離（G8b，[ADR 0183](docs/adr/0183-distance-arc-condition.md)，Schema 75）
+
+### 1. 背景與決策
+G8 的後半。使用者裁決：只用屬性管理員的下拉選單選條件；點對圓、線對圓一起做。`distance` 新增選填的 `condition`（`min`／`max`，沒有就是圓心），適用於圓或圓弧與點、直線、另一個圓或圓弧之間的距離。最近用 PlaneGCS 原生的 `c2cdistance`／`p2cdistance`／`c2ldistance`（實測：分離與包含的圓都正確，半徑是求解變數）；最遠沒有原生版本，用圓上的輔助點（每個輔助點的兩個關係剛好拿掉它的兩個自由度，不增加自由度）。
+
+### 2. 做法
+| 層級 | 檔案 | 改動 |
+|---|---|---|
+| 模型 | `schema.ts`、`serialize.ts`、`sketch-rules.ts`、`commands.ts` | `condition`、v75、規則、新命令 `setDistanceCondition` |
+| 求解器 | `planegcs.ts` | `conditioned()` |
+| 幾何 | `interact.ts` | `conditionEnds`；`measure` 與標註的畫法都用它 |
+| 介面 | `controller.ts`、`PropertyManager.tsx`、i18n、說明 | 下拉選單「圓弧條件」；切換時取量得的值（圖形不跳動）；不能量的條件被拒絕並說明 |
+
+### 3. 紅隊四問
+1. **輸入破壞**：相交的圖元（圓與直線相交也一樣）沒有「最近」、圓心重合沒有「最遠」，介面拒絕並說明，求解器對同心的最遠回報失敗，不隨便挑方向；兩個點、兩條線、不認得的條件被規則拒絕；值必須大於 0 沿用既有規則。
+2. **幾何相交**：純求解器限制，沒有布林運算，不涉及 OCCT 的 Heap。
+3. **依賴鏈**：`schema.ts` → `sketch-rules.ts` → `commands.ts` → `planegcs.ts` → `interact.ts`（量測、畫法）→ `controller.ts` → `PropertyManager.tsx`；輔助點只在求解器裡，不在文件與幾何結果中；從動尺寸整個跳過。
+4. **零 Mock**：真實的 PlaneGCS 求解器，值手算（R10 與 R5 的圓、間隙 5 → 圓心距 20；最遠 30 → 15）；隨機測試用手寫的公式，不用被測的程式；e2e 在真實的 UI 上操作。
+
+### 4. 測試
+- `packages/sketch/test/distance-condition.test.ts` 11 項，含 150 組固定種子的隨機測試（五種配對、最近與最遠各半，各量兩件事：維持原值時什麼都不動；改值後量得的就是新值，且在原來那一側）；`tests/e2e/manual-sketch-condition.js` 5 步。
+- 反向對照（皆已還原）：6 種破壞讓單元測試轉紅；3 種破壞讓 e2e 轉紅（切換時不帶值，圓心真的跳到 y = 57.66）。
+- 測試第一版的錯，都在測試這邊：`t` 的匯入位置、圓弧的點 id 與草圖 id 撞名、距離值 0、把最遠的 35 寫成 30、固定的圓弧用三個 `fix` 多 1 個重複（改用 8a 的 `block`）、**隨機測試要求了沒有解的值**（一個圓在另一個裡面，間隙最大只到 |R₂ − R₁|，求解器回報 `failed` 是對的）、圓心沒有相對於直線的位置。
+- 全閘門 `npm run check`：**275 檔、3453 通過、0 失敗**、25 略過。完整 `verify:ui`：**164/164 通過**（含 `manual-sketch-condition.js`）。
+
 ## 2026-10-22：固定整個圖元（Block，G8a，[ADR 0182](docs/adr/0182-sketch-block.md)，Schema 74）
 
 ### 1. 背景與決策

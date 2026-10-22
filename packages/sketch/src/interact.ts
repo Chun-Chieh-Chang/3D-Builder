@@ -786,6 +786,13 @@ export function layoutDimension(c: SketchConstraint, geometry: Geometry, px: num
         const l = geometryOf(geometry, c.a);
         return l?.type === 'line' ? linear(l.a, l.b, outward(l.a, l.b)) : null;
       }
+      if (c.condition !== undefined) {
+        // the nearest or the farthest points (ADR 0183): a dimension line between them, which is what the value is the length of
+        const m = conditionEnds(geometry, c.a, c.b, c.condition);
+        if (!m || !('ends' in m)) return null;
+        const [from, to] = m.ends;
+        return dist(from, to) < 1e-9 ? null : linear(from, to, outward(from, to));
+      }
       const ga = geometryOf(geometry, c.a);
       const gb = geometryOf(geometry, c.b);
       if (ga?.type === 'line' || gb?.type === 'line') {
@@ -865,6 +872,58 @@ export function dimensionText(c: DimensionConstraint, measured?: string): string
   return c.driving === false ? `(${text})` : text;
 }
 
+/** Where a distance with a condition (ADR 0183) is measured between, and how long it is; or why it cannot be (no direction, the curves cross). */
+export type ConditionEnds = { ends: [P2, P2]; value: number } | { error: 'noDirection' | 'crossing' };
+
+/**
+ * The two points the nearest (`min`) or the farthest (`max`) distance is measured between, for a circle or an arc and a point, a line, or another circle or
+ * arc (an arc is taken as the whole circle it lies on). Null when the pair is not one of those. A circle that crosses the line, two circles that cross, and
+ * a point at the center (or concentric circles for the farthest) have no nearest or no farthest to speak of: `error` says which.
+ */
+export function conditionEnds(geometry: Geometry, aId: Id, bId: Id, condition: 'min' | 'max'): ConditionEnds | null {
+  const radial = (id: Id) => {
+    const g = geometryOf(geometry, id);
+    return g?.type === 'circle' || g?.type === 'arc' ? g : null;
+  };
+  const [ra, rb] = [radial(aId), radial(bId)];
+  const r = ra ?? rb;
+  if (!r) return null;
+  const otherId = ra ? bId : aId;
+  const ro = ra ? rb : null;
+  const done = (e: [P2, P2]): ConditionEnds => ({ ends: e, value: dist(e[0], e[1]) });
+  if (ro) {
+    const d = dist(r.c, ro.c);
+    if (condition === 'max') {
+      if (d < 1e-9) return { error: 'noDirection' };
+      const u = unit(sub(ro.c, r.c));
+      return done([sub(r.c, scale(u, r.r)), add(ro.c, scale(u, ro.r))]);
+    }
+    if (d < 1e-9) return done([add(r.c, [r.r, 0]), add(ro.c, [ro.r, 0])]); // concentric: the same on every ray
+    const u = unit(sub(ro.c, r.c));
+    if (d >= r.r + ro.r) return done([add(r.c, scale(u, r.r)), sub(ro.c, scale(u, ro.r))]);
+    if (d + ro.r <= r.r) return done([add(r.c, scale(u, r.r)), add(ro.c, scale(u, ro.r))]); // the other inside this one
+    if (d + r.r <= ro.r) return done([sub(r.c, scale(u, r.r)), sub(ro.c, scale(u, ro.r))]); // this one inside the other
+    return { error: 'crossing' };
+  }
+  const o = geometryOf(geometry, otherId);
+  if (o?.type === 'line') {
+    const dir = unit(sub(o.b, o.a));
+    const n = perp(dir);
+    const signed = dot(sub(r.c, o.a), n);
+    const side = signed >= 0 ? 1 : -1;
+    if (condition === 'min' && Math.abs(signed) < r.r - 1e-9) return { error: 'crossing' };
+    const q = add(r.c, scale(n, (condition === 'max' ? side : -side) * r.r));
+    const foot = sub(q, scale(n, dot(sub(q, o.a), n)));
+    return done([q, foot]);
+  }
+  const p = anchorOf(geometry, otherId);
+  if (!p) return null;
+  const d = dist(p, r.c);
+  if (d < 1e-9) return { error: 'noDirection' };
+  const u = unit(sub(p, r.c));
+  return done([p, condition === 'min' ? add(r.c, scale(u, r.r)) : sub(r.c, scale(u, r.r))]);
+}
+
 /** What a dimension measures in the solved sketch: millimetres, or degrees for an angle; null when its entities are not there. */
 export function measure(c: DimensionConstraint, geometry: Geometry): number | null {
   switch (c.type) {
@@ -872,6 +931,10 @@ export function measure(c: DimensionConstraint, geometry: Geometry): number | nu
       if (c.b === undefined) {
         const l = geometryOf(geometry, c.a);
         return l?.type === 'line' ? dist(l.a, l.b) : null;
+      }
+      if (c.condition !== undefined) {
+        const m = conditionEnds(geometry, c.a, c.b, c.condition);
+        return m && 'value' in m ? m.value : null;
       }
       const [ga, gb] = [geometryOf(geometry, c.a), geometryOf(geometry, c.b)];
       // like the solver: from the first point of a line (or the anchor) to the other line

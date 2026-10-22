@@ -176,6 +176,13 @@ export function sketchError(sketch: Pick<SketchFeature, 'entities' | 'constraint
     if (c.type === 'tangent' && straight(ks[0]) && straight(ks[1])) return t('rules.tangentNeedsCurve');
     if (c.type === 'equal' && (ks[0] === 'line') !== (ks[1] === 'line')) return t('rules.equalKinds');
     if (c.type === 'distance' && c.b === undefined && ks[0] !== 'line') return t('rules.distanceLine');
+    // the nearest or the farthest points (ADR 0183) are between a circle or an arc and a point, a line, or another circle or arc
+    if (c.type === 'distance' && c.condition !== undefined) {
+      const radial = (k: RefKind | undefined) => k === 'circle' || k === 'arc';
+      const other = (k: RefKind | undefined) => k === 'point' || k === 'origin' || k === 'line' || radial(k);
+      const fits = (radial(ks[0]) && other(ks[1])) || (radial(ks[1]) && other(ks[0]));
+      if (c.b === undefined || (c.condition !== 'min' && c.condition !== 'max') || !fits) return t('rules.distanceCondition', { id: c.id });
+    }
     // the middle of an arc cannot be one of its own points (an end, or its center): no arc would satisfy it. Only arcs (schema 56): a line's own end was
     // never refused, and every edit checks the whole sketch, so refusing it now could leave an old sketch that cannot be changed
     if (c.type === 'midpoint') {

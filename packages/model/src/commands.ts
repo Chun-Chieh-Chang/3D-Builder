@@ -73,6 +73,8 @@ export type Command =
   | { type: 'setDimensionPosition'; featureId: Id; constraintId: Id; position: [number, number] | null }
   /** Makes a dimension driven (a reference that shows what is measured) or driving again; `value` is the new value when it drives again (C1.29). */
   | { type: 'setDimensionDriving'; featureId: Id; constraintId: Id; driving: boolean; value?: Expr }
+  /** Measures a distance to or between circles and arcs to their nearest or farthest points, or from the center again (`null`); `value` is what is measured under the new condition, so the sketch stays where it is (ADR 0183). */
+  | { type: 'setDistanceCondition'; featureId: Id; constraintId: Id; condition: 'min' | 'max' | null; value?: Expr }
   /** 
 ull removes direction 2 (and its draft). */
   | { type: 'setEndCondition'; featureId: Id; dir: 'dir1' | 'dir2'; value: EndCondition | null }
@@ -885,6 +887,18 @@ export function mutate(draft: Draft<PartDoc>, cmd: Command): void {
       const [x, y] = cmd.position;
       if (!Number.isFinite(x) || !Number.isFinite(y)) throw new CommandError(t('cmd.dimensionPositionNotFinite'));
       c.labelPosition = [x, y];
+      return;
+    }
+    case 'setDistanceCondition': {
+      const f = sketchOf(draft, cmd.featureId);
+      const c = f.constraints.find((x) => x.id === cmd.constraintId);
+      if (!c || c.type !== 'distance') throw new CommandError(t('cmd.dimensionNotFound', { id: cmd.constraintId }));
+      if (cmd.condition === null) delete c.condition;
+      else c.condition = cmd.condition;
+      if (cmd.value !== undefined) c.value = cmd.value;
+      const err = sketchError(f as SketchFeature);
+      if (err) throw new CommandError(err);
+      checkExprs(draft as PartDoc, f as Feature, new Set([c.id]));
       return;
     }
     case 'setDimensionDriving': {

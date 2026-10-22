@@ -23,6 +23,7 @@ import {
   dist,
   geometryOf,
   blockTargets,
+  conditionEnds,
   hitTest,
   inBox,
   inferDirection,
@@ -1540,6 +1541,29 @@ export class SketchController {
     }
     const value = measure(c, this.geometry());
     this.submit({ type: 'setDimensionDriving', featureId: this.host.featureId, constraintId, driving: true, ...(value === null ? {} : { value: fmt(value) }) });
+  }
+
+  /**
+   * 「圓弧條件」 of a distance (ADR 0183): measured to the nearest or the farthest points of a circle or an arc, or from the center again. The value becomes
+   * what is measured under the new condition, so nothing moves (SolidWorks does the same); a condition that cannot be measured now (the two cross, or there
+   * is no direction) is refused, and says why.
+   */
+  setDistanceCondition(constraintId: Id, condition: 'min' | 'max' | null): void {
+    const c = this.sketch().constraints.find((x) => x.id === constraintId);
+    if (c?.type !== 'distance' || c.b === undefined) return;
+    const g = this.geometry();
+    let value: number | null = null;
+    if (c.driving !== false) {
+      if (condition === null) {
+        const { condition: _was, ...plain } = c;
+        value = measure(plain, g);
+      } else {
+        const m = conditionEnds(g, c.a, c.b, condition);
+        if (m && 'error' in m) return void this.host.notify(t(m.error === 'crossing' ? 'sketch.conditionCrossing' : 'sketch.conditionNoDirection'), 'error');
+        value = m ? m.value : null;
+      }
+    }
+    this.submit({ type: 'setDistanceCondition', featureId: this.host.featureId, constraintId, condition, ...(value === null ? {} : { value: fmt(value) }) });
   }
 
   // ------------------------------------------------------------------ smart dimension (C1.28)
