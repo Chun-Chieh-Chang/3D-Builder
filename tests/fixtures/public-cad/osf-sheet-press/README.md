@@ -16,4 +16,13 @@ These are test-only geometry samples downloaded 2026-10-09 from the OSF files li
 
 The checks exercise external STEP part import, sheet enclosure and flat-pattern geometry, and an external assembly STEP with product hierarchy. Passing these tests demonstrates importer behavior on these samples; it does not establish equivalence to SolidWorks feature history, mass-property settings, or manufacturing acceptance.
 
+Run the automated import and same-kernel STEP round-trip probe for the folded enclosure and its flat-pattern reference with:
+
+```powershell
+$env:SHEET_METAL_ACCEPTANCE_REPORT = 'C:\absolute\path\sheet-metal-acceptance.json'
+npm test -- tests/phase7/public-sheet-metal-acceptance.test.ts
+```
+
+The JSON records the fixture hash, import diagnostics, extracted topology counts, mass properties, and round-trip differences. These are reproducible facts about this repository's importer/exporter. They are not an independent SolidWorks comparison. For that, add a separately generated and reviewed baseline from the paired `.sldprt` file and record its units, sheet thickness, bend radius, K-factor, and export settings.
+
 The corresponding native SolidWorks part files are also included for future feature-tree and model-to-STEP comparison in SolidWorks. Their SHA-256 values are recorded above. The repository does not parse `.sldprt` files.

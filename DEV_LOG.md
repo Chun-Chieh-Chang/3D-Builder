@@ -3270,3 +3270,13 @@ ADR 0146 確效時記下的後續（下一節 §5 第三點）：新工程圖的
   - `npm run lint:i18n`：**通過（i18n OK）**。
 
 
+# 2026-10-23：公開鈑金樣本自動驗收探針
+
+- 新增 `tests/phase7/public-sheet-metal-acceptance.test.ts`，讀取公開的折疊鈑金外殼與平板 STEP 樣本，記錄 SHA-256、匯入診斷、真實拓樸數量、質量特性，以及 STEP 輸出後再匯入的差異。
+- 可用 `SHEET_METAL_ACCEPTANCE_REPORT` 指定絕對路徑輸出 JSON，避免報告位置依執行目錄漂移。
+- 此探針只驗證公開 STEP 樣本在本專案中的幾何匯入與同核心往返穩定性；不宣稱 SolidWorks 數值或製造驗收。README 已說明如何執行及後續建立獨立基準所需資料。
+- 紅隊檢視：輸入是固定公開檔案，以 README 公開的 SHA-256 防止樣本被無聲置換；折疊件與外部提供的平板參考檔以實際體積交叉比對。不新增幾何特徵或底層布林；無依賴鏈/UI 變更；檢查讀入拓樸和實際質量特性，不使用 mock。
+- 驗證（2026-10-23）：`SHEET_METAL_ACCEPTANCE_REPORT=D:\Self-developed_Apps\G3\3D-Builder\out\sheet-metal-acceptance.json npm test -- tests/phase7/public-sheet-metal-acceptance.test.ts` 為 1 檔、3 項通過；`npm run typecheck` 通過。折疊件／平板的體積都是 190800.956722 mm³（相對誤差在 1e-13 級），各自 STEP 往返後仍有效。
+- 驗證過程曾把平板樣本雜湊中的 `...32883a4a071...` 輸入為 `...32883a8a071...`；雜湊斷言立即攔截，已依 README 與檔案的實測值修正。樣本內容與原有 README 基準表均未變更。
+- 補入 `scripts/freecad-step-report.py` 與 `npm run verify:freecad-sheet-metal`：代理可用另一個 CAD 應用程式 FreeCAD 的命令列實際開啟兩個公開 STEP，擷取物件／實體／拓樸／質量特性後寫入合併 JSON。2026-10-23 實測 FreeCAD 26 兩檔各讀得 1 個實體，折疊與平板材料體積相對差 `7.32e-15`；FreeCAD 同樣採 OCCT，故紀錄為「外部應用程式匯入」而非跨核心或 SolidWorks 等價性證明。
+

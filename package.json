@@ -21,6 +21,8 @@
     "lint:rules": "node scripts/check-anti-patterns.mjs",
     "lint:i18n": "node scripts/check-i18n.mjs",
     "verify:ui": "node scripts/verify-ui.mjs",
+    "verify:external-samples": "vitest run tests/phase7/public-sheet-metal-acceptance.test.ts",
+    "verify:freecad-sheet-metal": "node scripts/verify-freecad-sheet-metal.mjs",
     "check:perf": "node scripts/check-perf.mjs",
     "check": "npm run typecheck && npm run lint:rules && npm run lint:deps && npm run lint:i18n && npm test"
   },
