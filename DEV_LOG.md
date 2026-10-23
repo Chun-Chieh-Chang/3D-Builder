@@ -1,5 +1,31 @@
 # 3D-Builder 開發日誌 (DEV_LOG.md)
 
+## 2026-10-23：藍圖附錄 C 與草圖吸附計畫文件校正（B3）
+
+### 1. 背景與 RCA
+- **現象**：`docs/blueprint.md` 附錄 C 中，D5.3a（草圖推斷線）、D5.3b（吸附到模型幾何）、D5.3c（快速抓取與逐項開關）仍被標記為「**未做**」；`docs/sketch-snapping-plan.md` 標頭狀態停留在 2026-10-06「已實作（未提交）」。
+- **根因分析 (RCA)**：
+  - 2026-10-06 開發 S-1~S-4 吸附功能時，先撰寫了 `sketch-snapping-plan.md` 作為規劃與實作暫存草稿。同日完成實作並寫入 ADR 0099（2026-10-06），且後續於 2026-10-14 透過 ADR 0136 擴充草圖平面外邊緣自動投影與貫穿點、以及 ADR 0171/0173 基準點與貫穿點擴充。
+  - 程式碼、單元測試、控制器測試、regen 參考測試與 Web e2e 測試均已 100% 跑通並合併至主分支，但當時交接時未同步回寫更新 `docs/blueprint.md` 附錄 C 與計畫文件的標題狀態，導致文件與代碼產生不一致。
+- **真值核對證據 (Ground Truth Verification)**：
+  - D5.3a（推斷線）：`alignments.test.ts` (12/12)、`infer-line.test.ts` (12/12)
+  - D5.3b（吸附模型幾何）：`snap-model.test.ts` (25/25)、`tests/phase3/sketch-snap.test.ts` (9/9)
+  - D5.3c（快速抓取與開關）：`snaps.test.ts` (27/27)、`apps/web/test/sketcher.test.ts`（D5.3a–c 專屬段落 34 項、整體 67 項）
+  - 全部 140+ 相關測試全數通過，功能確已於 ADR 0099 與 ADR 0136 完整落地。
+- **矯正措施 (CAPA)**：
+  - 更新 `docs/blueprint.md` 附錄 C：D5.3、D5.3a、D5.3b、D5.3c 標註為「已做」，列明對應之 ADR 0099、ADR 0136 與實作路徑。
+  - 更新 `docs/sketch-snapping-plan.md`：標題與狀態改為「已實作並提交」，列出 S-1～S-4 對應提交與模組。
+  - 更新 `handoff.md`：標記 B3 為已完成。
+
+### 2. 做法
+| 層級 | 檔案 | 改動 |
+|---|---|---|
+| 規格文件 | `docs/blueprint.md` | 附錄 C 之 D5.3、D5.3a、D5.3b、D5.3c 狀態更新為已做 |
+| 計畫文件 | `docs/sketch-snapping-plan.md` | 更新標頭與狀態段落（確認已於 ADR 0099 與 ADR 0136 提交） |
+| 交接文件 | `handoff.md` | 待辦清單 B3 標記為完成 |
+
+---
+
 ## 2026-10-23：工程圖「隱藏個別的邊」作用在相切邊上（B2，ADR 0146 補充）
 
 ### 1. 背景與 RCA
