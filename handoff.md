@@ -18,18 +18,18 @@
 |---|---|
 | 零件／組合件／工程圖 Schema | 75／7／25（ADR 0178 只改命令，不改 Schema） |
 | ADR | 0001–0183，共 183 份，在 `docs/adr/`，全部列在 §2 |
-| 全閘門 | 2026-10-22，G8b 之後：`npm run check` 275 檔、3453 通過、0 失敗、25 略過；完整 `verify:ui` 164/164（含 `manual-sketch-block.js`、`manual-sketch-condition.js`）。2026-10-23 新增驗收探針後：`verify:external-samples` 3/3、`verify:freecad-sheet-metal`、`typecheck`、`lint:rules`、`lint:deps`、`git diff --check` 均通過。 |
+| 全閘門 | 2026-10-22，G8b 之後：`npm run check` 275 檔、3453 通過、0 失敗、25 略過；完整 `verify:ui` 164/164（含 `manual-sketch-block.js`、`manual-sketch-condition.js`）。2026-10-23 新增驗收探針後：`verify:external-samples` 3/3、`verify:freecad-sheet-metal`、`typecheck`、`lint:rules`、`lint:deps`、`git diff --check` 均通過；2026-10-23 提交前完整 `npm run check` 276 檔、3456 通過、0 失敗、25 略過。 |
 | 瀏覽器腳本 | `tests/e2e/` 共 150 個檔案（含輔助檔；`npm run verify:ui` 依檔頭的呼叫逐項跑，共 164 項） |
 | 實機驗證清單 | [docs/manual-verification.html](docs/manual-verification.html) 91 項（新增 C27） |
 | 階段 | Phase 0–7 開發完成。Phase 0–2 閘門通過；3a–7 有條件通過。2026-10-23 已用公開外部 STEP 樣本完成可重跑的匯入／平板材料體積／FreeCAD 開檔探針；使用者私有零件、SolidWorks 特徵樹與製造基準仍未對照（§3、§8）。 |
 | 最近完成 | **G8b 圓弧條件，最近與最遠距離（ADR 0183，Schema 75，2026-10-22）**：`distance.condition`，圓或圓弧與點、直線、圓或圓弧之間，屬性管理員的下拉選單；最近用求解器原生關係、最遠用輔助點；切換時圖形不跳動；**G8a 固定整個圖元（ADR 0182，Schema 74）**：新限制條件 `block`，可多選、各加一個、一次復原；**G7 草圖附著（ADR 0181，Schema 73，2026-10-21）**：草圖的原點取自模型頂點或參考點、X 方向取自直線邊或參考軸、可 X 反向；平面不變；在「編輯草圖基準面」設定；**用過的草圖一律隱藏**（鈑金支架上多出的線架構，ADR 0018 補充，2026-10-21）；**組合件干涉檢查看得見（ADR 0180，2026-10-21 已合併並推送 `f262090`，紅圈位置修正 `10bdf86`）**：選一組縮放到干涉、其他零組件淡化／線架構／隱藏、每塊重疊一個固定大小的紅圈、位置與範圍、忽略、↑／↓、剖面移到干涉位置；**介面交互審查第 3 批：組合件「以座標軸移動」Triad（ADR 0179，2026-10-21 已合併並推送 `7ba88b5`）**；第 2 批：草圖移動／複製／旋轉／縮放圖元與草圖陣列（ADR 0178，2026-10-21 已合併並推送）**；第 1 批右鍵選單（ADR 0176）；工程圖尺寸類型與右鍵（ADR 0177）；G6 草圖參照較前面的草圖（ADR 0175）；草圖參照第一批 G1–G5（ADR 0170–0174） |
 | 已知缺口 | 曲線本體在 UI 的本體清單仍歸在曲面本體一類（ADR 0168 §5）；工程圖「隱藏個別的邊」不作用在相切邊上（ADR 0146 §7）。完整待辦見〈一〉 |
 
-### 最近完成：公開鈑金樣本自動驗收（2026-10-23，待提交）
+### 最近完成：公開鈑金樣本自動驗收（2026-10-23，`d79bbfe`）
 
 - `npm run verify:external-samples`：固定兩個公開 STEP 的 SHA-256，量測實際匯入診斷、拓樸、質量特性與 STEP 往返；折疊件與公開平板參考檔的材料體積相符。
 - `npm run verify:freecad-sheet-metal`：代理透過 FreeCAD 26 命令列實際開啟同一對 STEP，輸出 JSON；各讀得 1 個實體，材料體積相對差 `7.32e-15`。FreeCAD 同樣採 OCCT，故這是外部應用程式匯入證據，不能替代獨立核心、SolidWorks 或製造驗收。
-- 使用方式與剩餘邊界見 [docs/automated-acceptance.md](docs/automated-acceptance.md)。變更尚在工作區，尚未提交或推送。
+- 使用方式與剩餘邊界見 [docs/automated-acceptance.md](docs/automated-acceptance.md)。已提交為 `d79bbfe`。FreeCAD 探針需先設定 `FREECAD_CMD`（本機為 `C:\Program Files\FreeCAD 26.3\bin\freecadcmd.exe`），未設定時明確報錯。
 
 ### 工作線統整（2026-10-21）
 
@@ -109,7 +109,7 @@
 
 ## 一、待辦與建議的優先順序（2026-10-21 統整；開工前先跟使用者確認範圍與順序）
 
-**現況**（2026-10-23）：`main` 含所有既有工作線（第 2 批 `8fa2ef5`、E3 Triad `7ba88b5`、干涉檢查 ADR 0180 `10bdf86`、用過的草圖一律隱藏 `2b4bf9e`、文件與清理 `990792e`、G7 草圖附著 ADR 0181 `a2344ad`，以及 G8a 固定整個圖元 ADR 0182、G8b 圓弧條件 ADR 0183，各一個提交，以 `git log` 為準）。目前工作區有 2026-10-23 的自動驗收變更，尚未提交。
+**現況**（2026-10-23）：`main` 含所有既有工作線（第 2 批 `8fa2ef5`、E3 Triad `7ba88b5`、干涉檢查 ADR 0180 `10bdf86`、用過的草圖一律隱藏 `2b4bf9e`、文件與清理 `990792e`、G7 草圖附著 ADR 0181 `a2344ad`，以及 G8a 固定整個圖元 ADR 0182、G8b 圓弧條件 ADR 0183，各一個提交，以 `git log` 為準）。另含 2026-10-23 公開鈑金樣本自動驗收 `d79bbfe`；主資料夾工作區乾淨。
 
 ### 1.1 待辦清單
 
