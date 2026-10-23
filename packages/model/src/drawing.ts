@@ -13,7 +13,7 @@ import { ANNOTATION_FIELDS, checkAnnotation, framesUsing, type Annotation, type 
  * opened (exact hidden-line removal), so a drawing can never disagree with the model it shows.
  */
 
-export const DRAWING_SCHEMA_VERSION = 25;
+export const DRAWING_SCHEMA_VERSION = 26;
 
 export type SheetSize = 'A4' | 'A3' | 'A2' | 'A1' | 'A0';
 export const SHEET_SIZES: readonly SheetSize[] = ['A4', 'A3', 'A2', 'A1', 'A0'];
@@ -452,8 +452,27 @@ export interface OrdinateDimension extends DimensionCommon {
 
 /** The most elements one ordinate dimension measures. */
 export const ORDINATE_MAX = 64;
+/**
+ * A chamfer dimension (v26, E5): notes a chamfer on an edge or slanted face.
+ * `size` is the chamfer width/distance (mm).
+ * `chamferAngle` is the chamfer angle (degrees, default 45).
+ * `chamferFormat` is whether it is written as `C{size}` or `{size} × {chamferAngle}°` (default 'c').
+ * `angle` is the leader angle (degrees counter-clockwise from x axis).
+ * `leader` is the length of the leader (mm, default 8).
+ * `count` is how many instances (e.g. 「2×C2」).
+ */
+export interface ChamferDimension extends DimensionCommon {
+  kind: 'chamfer';
+  ref: DrawingRef;
+  angle: number;
+  size: number;
+  chamferAngle?: number;
+  chamferFormat?: 'c' | 'distanceAngle';
+  leader?: number;
+  count?: number;
+}
 
-export type Dimension = LinearDimension | DiameterDimension | RadiusDimension | AngleDimension | OrdinateDimension;
+export type Dimension = LinearDimension | DiameterDimension | RadiusDimension | AngleDimension | OrdinateDimension | ChamferDimension;
 
 /** The elements a dimension points at, in the order its facts are asked for (an ordinate's origin first). */
 export const dimensionRefs = (d: Dimension): DrawingRef[] => (d.kind === 'linear' || d.kind === 'angle' ? [d.a, d.b] : d.kind === 'ordinate' ? [d.origin, ...d.refs] : [d.ref]);
@@ -776,6 +795,10 @@ export type DimensionPatch = {
   style?: DimStyle | null;
   /** Toggles circular dimension between diameter and radius display format. */
   kind?: 'diameter' | 'radius';
+  /** Chamfer dimension fields (v26, E5). */
+  size?: number;
+  chamferAngle?: number | null;
+  chamferFormat?: 'c' | 'distanceAngle' | null;
 };
 
 /** What `setView` may change: the fields every view has, and those of its kind; a field that does not belong to the view's kind is refused. */
@@ -1022,11 +1045,18 @@ function checkDimension(d: Dimension, views: readonly DrawingView[]): void {
     const all = [d.origin, ...d.refs].map(key);
     if (new Set(all).size !== all.length) throw new CommandError(t('drawing.ordinateTwice'));
     if (d.tolerance?.type === 'fit') throw new CommandError(t('drawing.ordinateFit'));
+  } else if (d.kind === 'chamfer') {
+    if (!isRefValue(d.ref) || d.ref.kind === 'vertex') throw new CommandError(t('drawing.dimBadRef'));
+    if (!Number.isFinite(d.angle)) throw new CommandError(t('drawing.dimBadAngle'));
+    if (!Number.isFinite(d.size) || d.size <= 0) throw new CommandError(t('drawing.dimBadOffset'));
+    if (d.chamferAngle !== undefined && (!Number.isFinite(d.chamferAngle) || d.chamferAngle <= 0 || d.chamferAngle >= 90)) throw new CommandError(t('drawing.dimBadAngle'));
+    if (d.chamferFormat !== undefined && d.chamferFormat !== 'c' && d.chamferFormat !== 'distanceAngle') throw new CommandError(t('drawing.dimBadKind', { kind: String(d.chamferFormat) }));
+    if (d.count !== undefined && !(Number.isInteger(d.count) && d.count >= 2)) throw new CommandError(t('drawing.dimBadCount'));
   } else throw new CommandError(t('drawing.dimBadKind', { kind: String((d as { kind?: unknown }).kind) }));
   if (d.precision !== undefined && !(Number.isInteger(d.precision) && d.precision >= 0 && d.precision <= 4)) throw new CommandError(t('drawing.dimBadPrecision'));
   for (const k of ['prefix', 'suffix', 'text'] as const) if (d[k] !== undefined && (typeof d[k] !== 'string' || d[k]!.length > 80)) throw new CommandError(t('drawing.dimBadText'));
   if (d.slide !== undefined && (!Number.isFinite(d.slide) || (d.kind !== 'linear' && d.kind !== 'angle'))) throw new CommandError(t('drawing.dimBadSlide'));
-  if ((d.kind === 'diameter' || d.kind === 'radius') && d.leader !== undefined && !(Number.isFinite(d.leader) && d.leader > 0)) throw new CommandError(t('drawing.dimBadLeader'));
+  if ((d.kind === 'diameter' || d.kind === 'radius' || d.kind === 'chamfer') && d.leader !== undefined && !(Number.isFinite(d.leader) && d.leader > 0)) throw new CommandError(t('drawing.dimBadLeader'));
   if (d.style !== undefined) checkDimStyle(d.style);
   const tol = d.tolerance;
   if (tol) {
@@ -1204,20 +1234,30 @@ export function mutateDrawing(draft: Draft<DrawingDoc>, cmd: DrawingCommand): vo
     case 'setDimension': {
       const d = pg.dimensions.find((x) => x.id === cmd.dimensionId);
       if (!d) throw new CommandError(t('drawing.noDimension', { id: cmd.dimensionId }));
-      const { reference, tolerance, count, callout, supplementary, precision, prefix, suffix, text, slide, leader, style, kind, ...rest } = cmd.patch;
+      const { reference, tolerance, count, callout, supplementary, precision, prefix, suffix, text, slide, leader, style, kind, size, chamferAngle, chamferFormat, ...rest } = cmd.patch;
       if (kind !== undefined) {
         if (d.kind !== 'diameter' && d.kind !== 'radius') throw new CommandError(t('drawing.notForKind', { field: 'kind', kind: d.kind }));
         if (kind !== 'diameter' && kind !== 'radius') throw new CommandError(t('drawing.notForKind', { field: 'kind', kind }));
       }
       const targetKind = kind ?? d.kind;
-      const belongs: Record<Dimension['kind'], string[]> = { linear: ['offset', 'orientation', 'a', 'b'], diameter: ['angle', 'ref'], radius: ['angle', 'ref'], angle: ['arc', 'a', 'b'], ordinate: ['offset', 'axis', 'origin', 'refs'] };
+      const belongs: Record<Dimension['kind'], string[]> = {
+        linear: ['offset', 'orientation', 'a', 'b'],
+        diameter: ['angle', 'ref'],
+        radius: ['angle', 'ref'],
+        angle: ['arc', 'a', 'b'],
+        ordinate: ['offset', 'axis', 'origin', 'refs'],
+        chamfer: ['angle', 'ref', 'size', 'chamferAngle', 'chamferFormat'],
+      };
       if (slide !== undefined && targetKind !== 'linear' && targetKind !== 'angle') throw new CommandError(t('drawing.notForKind', { field: 'slide', kind: targetKind }));
-      if (leader !== undefined && targetKind !== 'diameter' && targetKind !== 'radius') throw new CommandError(t('drawing.notForKind', { field: 'leader', kind: targetKind }));
+      if (leader !== undefined && targetKind !== 'diameter' && targetKind !== 'radius' && targetKind !== 'chamfer') throw new CommandError(t('drawing.notForKind', { field: 'leader', kind: targetKind }));
       if (callout !== undefined && targetKind !== 'diameter') throw new CommandError(t('drawing.notForKind', { field: 'callout', kind: targetKind }));
       if (supplementary !== undefined && targetKind !== 'angle') throw new CommandError(t('drawing.notForKind', { field: 'supplementary', kind: targetKind }));
+      if (size !== undefined && targetKind !== 'chamfer') throw new CommandError(t('drawing.notForKind', { field: 'size', kind: targetKind }));
+      if (chamferAngle !== undefined && targetKind !== 'chamfer') throw new CommandError(t('drawing.notForKind', { field: 'chamferAngle', kind: targetKind }));
+      if (chamferFormat !== undefined && targetKind !== 'chamfer') throw new CommandError(t('drawing.notForKind', { field: 'chamferFormat', kind: targetKind }));
       for (const k of Object.keys(rest)) if (!belongs[targetKind].includes(k)) throw new CommandError(t('drawing.notForKind', { field: k, kind: targetKind }));
       if (count !== undefined && (targetKind === 'linear' || targetKind === 'angle')) throw new CommandError(t('drawing.notForKind', { field: 'count', kind: targetKind }));
-      const next = { ...(JSON.parse(JSON.stringify(d)) as Dimension), ...rest } as Dimension & { reference?: boolean; count?: number; tolerance?: DimensionTolerance; callout?: boolean; supplementary?: boolean };
+      const next = { ...(JSON.parse(JSON.stringify(d)) as Dimension), ...rest } as Dimension & { reference?: boolean; count?: number; tolerance?: DimensionTolerance; callout?: boolean; supplementary?: boolean; size?: number; chamferAngle?: number; chamferFormat?: 'c' | 'distanceAngle' };
       if (kind !== undefined) {
         next.kind = kind;
         if (kind === 'radius') delete next.callout;
@@ -1228,6 +1268,11 @@ export function mutateDrawing(draft: Draft<DrawingDoc>, cmd: DrawingCommand): vo
       else if (callout === true) next.callout = true;
       if (reference === null || reference === false) delete next.reference;
       else if (reference === true) next.reference = true;
+      if (size !== undefined) next.size = size;
+      if (chamferAngle === null) delete next.chamferAngle;
+      else if (chamferAngle !== undefined) next.chamferAngle = chamferAngle;
+      if (chamferFormat === null) delete next.chamferFormat;
+      else if (chamferFormat !== undefined) next.chamferFormat = chamferFormat;
       const loose = next as unknown as Record<string, unknown>;
       for (const [k, v] of [['precision', precision], ['prefix', prefix], ['suffix', suffix], ['text', text], ['leader', leader]] as const) {
         if (v === null || v === '') delete loose[k];

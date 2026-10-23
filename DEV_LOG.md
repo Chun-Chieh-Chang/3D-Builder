@@ -1,5 +1,45 @@
 # 3D-Builder 開發日誌 (DEV_LOG.md)
 
+## 2026-10-23：工程圖補完 Phase 2（基線尺寸標註與倒角尺寸標註）
+
+### 1. 需求與背景
+- **需求目標 (Option A Phase 2)**：
+  1. **基線尺寸 (Baseline Dimension)**：從同一基線／原點出發連續標註多個平行圖元，每次標註自動計算標準間距（`offset_k = offset_0 + k × 8mm`，依 ISO 129 間距規範），避免引線與尺寸線重疊。支援雙入口：專用工具欄工具（`drw-baseline`）與線性尺寸右鍵選單（「以此為基線繼續標註」/ `menuContinueBaseline`）。
+  2. **倒角尺寸 (Chamfer Dimension)**：專用引線標註倒角斜面與斜邊，預設格式為 `C{c}`（如 `C2`，依 ISO 13715 / DIN 406），屬性面板可無縫切換為距離角度制 `{c} × {chamferAngle}°`（如 `2 × 45°`）。支援滑鼠拖曳即時調整引線方向與折線底座，全鏈路完整支援單選與批次屬性更新。
+  3. **Schema 版本升級**：`DRAWING_SCHEMA_VERSION` 升級至 26，新增 `ChamferDimension` 聯合型別，於 `serialize.ts` 註冊遷移規則 `25: (doc) => doc`。
+
+### 2. 做法與架構對齊
+| 層級 | 檔案 | 改動說明 |
+|---|---|---|
+| 模型層 Schema | `packages/model/src/drawing.ts`<br>`packages/model/src/serialize.ts` | 升版至 26；新增 `ChamferDimension`（含 `size`, `chamferAngle`, `chamferFormat`, `leader`, `angle`）；`DimensionPatch` 擴充相應屬性；`checkDimension` 與 `applyDrawingCommand` 嚴格校驗非負與非零約束；遷移器升級支援 |
+| 尺寸計算與解算 | `packages/drawing/src/pick.ts`<br>`packages/drawing/src/dimension.ts` | `pick.ts` 擴充 `planChamfer` 自動從斜面／邊緣計算倒角尺寸與方位；`dimension.ts` 於 `dimensionText` 輸出 `C{c}` 與 `{c} × {angle}°`，於 `evaluateDimension` 繪製折線引線、水平底座、文字與拖曳 handle |
+| UI 互動與動作 | `apps/web/src/actions.ts`<br>`apps/web/src/state/drawing.ts`<br>`apps/web/src/components/DrawingViewport.tsx`<br>`apps/web/src/components/DrawingViewMenu.tsx` | 註冊 `drw-dim-chamfer` 與 `drw-baseline` 動作；Viewport 實作 `baselineDown`，選取基準線性尺寸後，每次點擊下一點即刻建立遞增間距之平行尺寸，按 Esc 取消；視圖快顯功能表整合 `menuContinueBaseline` |
+| 屬性面板 | `apps/web/src/components/DimensionPanel.tsx` | 倒角尺寸單選與批次面板：倒角格式下拉（`C{c}` vs `{c} × 45°`）、倒角深度、角度、引線長度、個數前綴等即時編輯與雙向綁定 |
+| 國際化語系 | `packages/i18n/src/zh-TW/drawing.ts`<br>`packages/i18n/src/en/drawing.ts` | 補齊繁體中文與英文語系鍵值，通過 `npm run lint:i18n` 守門驗證 |
+| 單元測試 | `tests/phase5/drawing-chamfer-baseline.test.ts` | 10 項單元測試涵蓋：模型校驗、不合法輸入防禦、屬性修補、文字格式化、場景幾何評估、引線拖曳、Edge 拾取規劃、基線步進累積、Schema 遷移 |
+
+### 3. 自我紅隊四問檢驗 (Self-Red-Teaming Protocol)
+1. **輸入破壞 (Input Corruption)**：
+   - 傳入負數或零之倒角尺寸（`size <= 0`）、無效角度（`chamferAngle <= 0 || >= 90`）或負引線長度時，`checkDimension` 顯式回報錯誤，`applyDrawingCommand` 拋出 `CommandError`。
+   - 基準尺寸若非線性尺寸（例如點擊角度或圓形尺寸試圖基線標註）時，直接提示錯誤或忽略無效圖元，絕不靜默產生錯位幾何。
+2. **拓樸與幾何相交破壞 (Geometric Defense)**：
+   - 基線尺寸各階段標註獨立建立新尺寸實體，引線偏置（offset）嚴格依階數遞增 $k \times 8\text{mm}$，尺寸線平行不重疊，文字位置互不干涉。
+   - 倒角引線端點精確對齊幾何點，並提供折線底座支持 ISO 標準水平文字標註。
+3. **依賴鏈完整性 (Dependency Graph Integrity)**：
+   - 全鏈路完整接線：`drawing.ts` -> `dimension.ts` -> `pick.ts` -> `actions.ts` -> `state/drawing.ts` -> `DrawingViewport.tsx` -> `DrawingViewMenu.tsx` -> `DimensionPanel.tsx`，無任何懸空參照。
+4. **規格真實性與零 Mock 原則 (Zero-Mock)**：
+   - 使用真實 ISO 幾何投影與座標系，測試全數驗證真實 `DrawingDoc` 與真實場景圖元，無代理指標。
+
+### 4. 確效結果
+- `npm run lint:rules`：通過（全域 RSI 守門零告警）。
+- `npm run lint:deps`：通過（分層依賴架構通過）。
+- `npm run lint:i18n`：通過（100% 語系對齊，零遺漏）。
+- `npm run typecheck`：通過（0 TypeScript 錯誤）。
+- `npx vitest run tests/phase5/drawing-chamfer-baseline.test.ts`：10/10 通過。
+- `npx vitest run tests/phase5/`：53 個測試檔、565 個測試通過（1 個既有 skipped）。
+
+---
+
 ## 2026-10-23：工程圖補完 Phase 1（無工具預選高亮與圓弧尺寸直徑／半徑切換）
 
 ### 1. 需求與背景

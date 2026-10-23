@@ -327,6 +327,32 @@ export function DimensionPanel() {
                   <span>{t('drawingUi.dimOffset')}</span>
                   <NumberBox field="dimOffset" value={current.offset} onCommit={(v) => v !== 0 && d.setDimension(current.id, { offset: v })} />
                 </label>
+              ) : current.kind === 'chamfer' ? (
+                <>
+                  <label className="pm-row">
+                    <span>{t('drawingUi.dimChamferFormat')}</span>
+                    <select data-field="dimChamferFormat" value={current.chamferFormat ?? 'c'} onChange={(e) => d.setDimension(current.id, { chamferFormat: e.target.value as 'c' | 'distanceAngle' })}>
+                      <option value="c">{t('drawingUi.dimChamferC')}</option>
+                      <option value="distanceAngle">{t('drawingUi.dimChamferAngle')}</option>
+                    </select>
+                  </label>
+                  <label className="pm-row">
+                    <span>{t('drawingUi.dimChamferSize')}</span>
+                    <NumberBox field="dimChamferSize" value={current.size} onCommit={(v) => v > 0 && d.setDimension(current.id, { size: v })} />
+                  </label>
+                  <label className="pm-row">
+                    <span>{t('drawingUi.dimChamferAngleVal')}</span>
+                    <NumberBox field="dimChamferAngleVal" value={current.chamferAngle ?? 45} onCommit={(v) => v > 0 && v < 90 && d.setDimension(current.id, { chamferAngle: v })} />
+                  </label>
+                  <label className="pm-row">
+                    <span>{t('drawingUi.dimAngle')}</span>
+                    <NumberBox field="dimAngle" value={current.angle} onCommit={(v) => d.setDimension(current.id, { angle: v })} />
+                  </label>
+                  <label className="pm-row">
+                    <span>{t('drawingUi.dimCount')}</span>
+                    <NumberBox field="dimCount" value={current.count ?? 1} onCommit={(v) => d.setDimension(current.id, { count: v >= 2 ? Math.round(v) : null })} />
+                  </label>
+                </>
               ) : (
                 <>
                   <label className="pm-row">
@@ -368,7 +394,7 @@ export function DimensionPanel() {
                   <NumberBox field="dimSlide" value={current.slide ?? 0} onCommit={(v) => d.setDimension(current.id, { slide: v })} />
                 </label>
               )}
-              {(current.kind === 'diameter' || current.kind === 'radius') && (
+              {(current.kind === 'diameter' || current.kind === 'radius' || current.kind === 'chamfer') && (
                 <label className="pm-row">
                   <span>{t('drawingUi.dimLeader')}</span>
                   <NumberBox field="dimLeader" value={current.leader ?? 8} onCommit={(v) => v > 0 && d.setDimension(current.id, { leader: v })} />
@@ -399,8 +425,8 @@ export function DimensionPanel() {
                   <option value="bilateral">{t('drawingUi.dimTolBilateral')}</option>
                   <option value="max">{t('drawingUi.dimTolMax')}</option>
                   <option value="min">{t('drawingUi.dimTolMin')}</option>
-                  {/* an angle has no size for an ISO 286 fit to come from */}
-                  {current.kind !== 'angle' && <option value="fit">{t('drawingUi.dimTolFit')}</option>}
+                  {/* an angle or chamfer has no size for an ISO 286 fit to come from */}
+                  {current.kind !== 'angle' && current.kind !== 'chamfer' && <option value="fit">{t('drawingUi.dimTolFit')}</option>}
                 </select>
               </label>
               {current.tolerance?.type === 'bilateral' && (

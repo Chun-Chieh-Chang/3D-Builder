@@ -137,6 +137,7 @@ export const DIMENSION_ACTION: Record<DimensionMode, string> = {
   angle: 'drw-dim-angle',
   radius: 'drw-dim-radius',
   diameter: 'drw-dim-diameter',
+  chamfer: 'drw-dim-chamfer',
 };
 const isDimensionTool = (mode: DimensionMode) => (x: NonNullable<ReturnType<typeof drawingTool>>) => x.kind === 'dimension' && (x.mode ?? 'smart') === mode;
 /**
@@ -335,6 +336,8 @@ export const ACTIONS: UiAction[] = [
   { id: 'drw-dim-angle', get label() { return t('drawingUi.toolDim.angle'); }, group: 'annotation', parent: 'drw-dimension', enabled: hasViews, ...dimensionTool('angle') },
   { id: 'drw-dim-radius', get label() { return t('drawingUi.toolDim.radius'); }, group: 'annotation', parent: 'drw-dimension', enabled: hasViews, ...dimensionTool('radius') },
   { id: 'drw-dim-diameter', get label() { return t('drawingUi.toolDim.diameter'); }, group: 'annotation', parent: 'drw-dimension', enabled: hasViews, ...dimensionTool('diameter') },
+  { id: 'drw-dim-chamfer', get label() { return t('drawingUi.toolDim.chamfer'); }, group: 'annotation', parent: 'drw-dimension', enabled: hasViews, ...dimensionTool('chamfer') },
+  { id: 'drw-baseline', get label() { return t('drawingUi.toolBaseline'); }, group: 'annotation', enabled: hasViews, active: toolIs((x) => x.kind === 'baseline'), run: toggleTool((x) => x.kind === 'baseline', () => ({ kind: 'baseline' })) },
   { id: 'drw-ordinate', get label() { return t('drawingUi.toolOrdinate'); }, group: 'annotation', enabled: (s) => drawingOn(s) && ((s.drw ? page(s.drw.doc).views.length : 0)) > 0, active: toolIs((x) => x.kind === 'ordinate'), run: toggleTool((x) => x.kind === 'ordinate', () => ({ kind: 'ordinate', picks: [] })) },
   { id: 'drw-arrange', get label() { return t('drawingUi.arrange'); }, group: 'annotation', enabled: (s) => drawingOn(s) && ((s.drw ? page(s.drw.doc).dimensions.length : 0)) > 0, run: () => { const d = store.drawingStore; if (!d) return; const n = d.arrangeDimensions(page(d.getState().doc).dimensions.map((x) => x.id)); d.notifyInfo(n > 0 ? t('drawingUi.arranged', { n }) : t('drawingUi.arrangedNothing')); } },
   { id: 'drw-note', get label() { return t('drawingUi.toolNote'); }, group: 'annotation', enabled: (s) => drawingOn(s) && ((s.drw ? page(s.drw.doc).views.length : 0)) > 0, active: toolIs((x) => x.kind === 'annotate' && x.what === 'note'), run: toggleTool((x) => x.kind === 'annotate' && x.what === 'note', () => ({ kind: 'annotate', what: 'note' })) },

@@ -44,6 +44,7 @@ import {
   visibleElements,
   type DimensionHandle,
   type DimensionMode,
+  type DimensionDraft,
   type PlacedView,
   type Pickable,
   type SceneItem,
@@ -58,8 +59,8 @@ import type { DrawingPick } from '../state/drawing';
 const PX = 96 / 25.4;
 type P = [number, number];
 
-/** Whether a dimension of this kind is made from two elements as well as one: a diameter and a radius are of one circle, and the next click places them. */
-const takesSecond = (mode: DimensionMode | undefined) => mode !== 'radius' && mode !== 'diameter';
+/** Whether a dimension of this kind is made from two elements as well as one: a diameter, radius and chamfer are of one element, and the next click places them. */
+const takesSecond = (mode: DimensionMode | undefined) => mode !== 'radius' && mode !== 'diameter' && mode !== 'chamfer';
 /** What the dimension tool says it wants next (ADR 0177): the first element (said for the kind asked for), a second one or the place, the place. */
 function dimensionHint(mode: Exclude<DimensionMode, 'smart'> | undefined, picked: number): string {
   if (picked === 0) return t(mode ? `drawingUi.hint.dimMode.${mode}` : 'drawingUi.hint.dimension0');
@@ -306,6 +307,7 @@ export function DrawingViewport() {
         else if (tool) {
           if (tool.kind === 'dimension' && tool.picks.length > 0) d.setTool({ kind: 'dimension', picks: [], ...(tool.mode ? { mode: tool.mode } : {}) });
           else if (tool.kind === 'ordinate' && tool.picks.length > 0) d.setTool({ kind: 'ordinate', picks: [] });
+          else if (tool.kind === 'baseline') d.setTool(null);
           else if (tool.kind === 'annotate' && tool.first) d.setTool({ kind: 'annotate', what: tool.what });
           else d.setTool(null);
         } else if (drw.selection.length > 0) d.clearSelection();
@@ -428,6 +430,85 @@ export function DrawingViewport() {
     if (d.addDimension(first.view, plan.draft)) d.setTool({ kind: 'ordinate', picks: [] });
   };
 
+  /** A press with the baseline tool (E5): pick base element, pick 2nd element + sheet point to place initial dim, then subsequent picks auto-step */
+  const baselineDown = (p: P) => {
+    if (tool?.kind !== 'baseline') return;
+    const viewId = tool.view ?? tool.base?.view;
+    const hit = featureUnder(p, viewId);
+
+    // 1. If base element is not chosen yet:
+    if (!tool.base && !tool.baseRef) {
+      if (hit) {
+        d.setTool({ kind: 'baseline', view: hit.view, base: hit });
+        d.notifyInfo(t('drawingUi.hint.baselineNext'));
+      } else {
+        d.notifyInfo(t('drawingUi.hint.baseline0'));
+      }
+      return;
+    }
+
+    const curViewId = tool.view ?? tool.base!.view;
+    const view = curPage.views.find((v) => v.id === curViewId);
+    const placed = curViewId ? basePlaced.get(curViewId) : undefined;
+    const axes = view && axesOf(curPage.views, curPage.sheet.projection, view);
+    if (!view || !placed || !axes) return;
+
+    // 2. If initial offset not established yet:
+    if (tool.lastOffset === undefined) {
+      if (!tool.second) {
+        if (hit && (!tool.base || hit.feature.ref.name !== tool.base.feature.ref.name)) {
+          d.setTool({ ...tool, second: hit });
+          d.notifyInfo(t('drawingUi.hint.baselinePlace'));
+        }
+        return;
+      }
+      const baseFeature = tool.base ? tool.base.feature : hit?.feature;
+      if (!baseFeature) return;
+      const result = planDimension([baseFeature, tool.second.feature], p, placed, axes, 'smart');
+      if ('error' in result) return d.notifyInfo(result.error);
+      if ('draft' in result && result.draft.kind === 'linear') {
+        const orientation = result.draft.orientation;
+        const offset = result.draft.offset;
+        if (d.addDimension(view.id, result.draft)) {
+          d.setTool({
+            kind: 'baseline',
+            view: view.id,
+            baseRef: result.draft.a,
+            base: tool.base,
+            lastOffset: offset,
+            orientation,
+            stepIndex: 1,
+          });
+          d.notifyInfo(t('drawingUi.hint.baselineContinue'));
+        }
+      }
+      return;
+    }
+
+    // 3. Continuous baseline stepping: each subsequent element pick immediately creates a stepped linear dimension!
+    if (hit) {
+      const baseRef = tool.baseRef ?? tool.base?.feature.ref;
+      if (!baseRef || hit.feature.ref.name === baseRef.name) return;
+      const stepDist = 8;
+      const sign = tool.lastOffset >= 0 ? 1 : -1;
+      const nextOffset = tool.lastOffset + sign * stepDist;
+      const draft: DimensionDraft = {
+        kind: 'linear',
+        a: baseRef,
+        b: hit.feature.ref,
+        orientation: tool.orientation ?? 'horizontal',
+        offset: nextOffset,
+      };
+      if (d.addDimension(view.id, draft)) {
+        d.setTool({
+          ...tool,
+          lastOffset: nextOffset,
+          stepIndex: (tool.stepIndex ?? 1) + 1,
+        });
+      }
+    }
+  };
+
   const down = (e: React.PointerEvent) => {
     if ((e.target as HTMLElement).closest('.heads-up')) return;
     const p = onSheet(e);
@@ -470,6 +551,7 @@ export function DrawingViewport() {
     }
     if (tool?.kind === 'dimension') return dimensionDown(p);
     if (tool?.kind === 'ordinate') return ordinateDown(p);
+    if (tool?.kind === 'baseline') return baselineDown(p);
     if (tool?.kind === 'annotate') return annotateDown(p);
     if (tool?.kind === 'surface') {
       const view = viewUnder(p);

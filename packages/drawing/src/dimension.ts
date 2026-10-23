@@ -120,6 +120,16 @@ function base(d: Dimension, value: number, facts: ElementFacts | undefined, unit
     const angle = `${formatNumber(value, d.precision ?? 2)}°${tolerance}`;
     return d.reference ? `(${angle})` : angle;
   }
+  if (d.kind === 'chamfer') {
+    const count = d.count ? `${d.count}×` : '';
+    const tol = d.tolerance ? ` ${toleranceText(d.tolerance, d.size, unit)}` : '';
+    const places = d.precision !== undefined ? d.precision : (unit === 'in' ? 3 : 2);
+    const sizeStr = d.precision !== undefined ? formatNumber(inUnit(d.size, unit), places) : lengthNumber(d.size, places, unit);
+    const angle = d.chamferAngle ?? 45;
+    const body = d.chamferFormat === 'distanceAngle' ? `${sizeStr} × ${angle}°` : `C${sizeStr}`;
+    const text = `${count}${body}${tol}`;
+    return d.reference ? `(${text})` : text;
+  }
   const count = (d.kind === 'diameter' || d.kind === 'radius') && d.count ? `${d.count}×` : '';
   // a tapped hole's callout names the thread in place of the diameter
   const threaded = d.kind === 'diameter' && d.callout && facts?.hole ? threadedHoleText(facts.hole, value, unit) : null;
@@ -219,6 +229,7 @@ export function evaluateDimension(d: Dimension, resolved: ElementsResult | undef
   if (d.kind === 'linear') return linear(d, els[0]!, els[1]!, axes, placed, unit, style);
   if (d.kind === 'angle') return angle(d, els[0]!, els[1]!, axes, placed, style);
   if (d.kind === 'ordinate') return ordinate(d, els, axes, placed, unit, style);
+  if (d.kind === 'chamfer') return chamfer(d, els[0]!, axes, placed, unit, style);
   return circle(d, els[0]!, axes, placed, unit, style);
 }
 
@@ -532,6 +543,37 @@ function circle(d: Extract<Dimension, { kind: 'diameter' | 'radius' }>, e: Eleme
     items,
     handle: { kind: 'round', centre, radius: r },
     dxf: { textAt: middle, geometry: d.kind === 'diameter' ? { kind: 'diameter', far: add(centre, u, -r), near, leader } : { kind: 'radius', centre, near, leader } },
+  };
+}
+
+function chamfer(d: Extract<Dimension, { kind: 'chamfer' }>, e: ElementFacts, axes: ViewAxes, placed: PlacedView, unit: LengthUnit, st: Style): DimensionOutcome {
+  const { line, arrowhead } = pen(st);
+  const DIM_TEXT = st.text;
+  const right = rightOf(axes);
+  const up = sheetUp(axes);
+  const to = (v: readonly number[]): P => [dot(v, right), dot(v, up)];
+  const ptModel = e.center ?? e.point;
+  const ptView = to(ptModel);
+  const centre = toSheet(placed, ptView[0], ptView[1]);
+  const th = (d.angle * Math.PI) / 180;
+  const u: P = [Math.cos(th), Math.sin(th)];
+  const leader = d.leader ?? LEADER;
+  const outer = add(centre, u, leader);
+  const value = d.size;
+  const text = dimensionText(d, value, e, unit);
+  const dir = u[0] >= 0 ? 1 : -1;
+  const shelfEnd: P = [outer[0] + dir * (textWidth(text, DIM_TEXT) + 2), outer[1]];
+  const items: SceneItem[] = [];
+  items.push(line(shelfEnd, outer, centre), ...arrowhead(centre, [-u[0], -u[1]]));
+  const textAt: P = [outer[0] + dir * 1, outer[1] + 1];
+  items.push({ kind: 'text', at: textAt, text, height: DIM_TEXT, anchor: dir > 0 ? 'left' : 'right' });
+  const middle: P = [textAt[0] + (dir * textWidth(text, DIM_TEXT)) / 2, textAt[1] + DIM_TEXT / 2];
+  return {
+    value,
+    text,
+    items,
+    handle: { kind: 'round', centre, radius: 0 },
+    dxf: { textAt: middle, geometry: { kind: 'radius', centre, near: centre, leader } },
   };
 }
 

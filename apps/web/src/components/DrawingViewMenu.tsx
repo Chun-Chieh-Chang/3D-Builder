@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { t } from '@3db/i18n';
-import { VIEW_DISPLAYS, baseName, displayOf, isCorner, isShaded, page, type Id } from '@3db/model';
+import { VIEW_DISPLAYS, baseName, displayOf, isCorner, isShaded, page, type Id, type Dimension, type LinearDimension } from '@3db/model';
 import { DIMENSION_MODES, arrangementBase, dimensionModesFor, fitAllowed, pickKind, toleranceForChoice, type DimensionMode, type Pickable, type ToleranceChoice } from '@3db/drawing';
 import { ACTIONS, DIMENSION_ACTION, startDimension } from '../actions';
 import { store } from '../state/store';
@@ -85,7 +85,7 @@ export function DrawingMenu({ at, onClose }: { at: DrawingMenuAt; onClose: () =>
   const dimension = (mode: DimensionMode, element?: { view: Id; feature: Pickable }) => command(DIMENSION_ACTION[mode], () => startDimension(mode, element ? [element] : []));
   /** The kinds of dimension and the annotation tools, as submenus: what the 註記 tab has. */
   const annotating = () => [
-    sub('menuDimensions', t('drawingUi.menu.dimensions'), [...DIMENSION_MODES.map((m) => dimension(m)), command('drw-ordinate'), command('drw-arrange')]),
+    sub('menuDimensions', t('drawingUi.menu.dimensions'), [...DIMENSION_MODES.map((m) => dimension(m)), command('drw-ordinate'), command('drw-baseline'), command('drw-arrange')]),
     sub('menuAnnotations', t('drawingUi.menu.annotations'), ['drw-note', 'drw-datum', 'drw-fcf', 'drw-centre-mark', 'drw-centre-line', 'drw-surface', 'drw-hole-table', 'drw-bom'].map((id) => command(id))),
   ];
   // a tool that is on: the first thing the menu offers is to end it, as SolidWorks's 「選擇」
@@ -176,6 +176,21 @@ export function DrawingMenu({ at, onClose }: { at: DrawingMenuAt; onClose: () =>
       item('menuCentreText', t('drawingUi.menu.centreText'), () => d.setDimensions(ids, { slide: null }), !slid),
       item('menuArrange', t('drawingUi.arrange'), () => arrange(ids)),
       item('menuAlignCollinear', t('drawingUi.alignCollinear'), () => d.alignCollinear(ids), ids.length < 2),
+      ...(dims.length === 1 && dims[0]!.kind === 'linear'
+        ? [
+            item('menuContinueBaseline', t('drawingUi.menuContinueBaseline'), () => {
+              const ld = dims[0] as Extract<Dimension, { kind: 'linear' }>;
+              d.setTool({
+                kind: 'baseline',
+                view: ld.view,
+                baseRef: ld.a,
+                lastOffset: ld.offset,
+                orientation: ld.orientation,
+                stepIndex: 1,
+              });
+            }),
+          ]
+        : []),
       sep('s1'),
       // the tolerance, as a submenu (B2.4): the same five the properties panel offers, and no new file format — a shortcut for what is already written there
       sub('menuTolerance', `${t('drawingUi.dimTolerance')}${dims.some((x) => x.tolerance) ? ' ✓' : ''}`, [

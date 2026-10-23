@@ -160,6 +160,17 @@ export type DrawingTool =
   | { kind: 'project'; parent: Id }
   /** An ordinate dimension (D-I4): the origin first, then the elements; a click on the paper puts the row there. */
   | { kind: 'ordinate'; picks: { view: Id; feature: Pickable }[] }
+  /** A baseline dimension tool (E5): creates parallel linear dimensions sharing a common baseline. */
+  | {
+      kind: 'baseline';
+      view?: Id;
+      baseRef?: DrawingRef;
+      base?: DimensionSeed;
+      second?: DimensionSeed;
+      lastOffset?: number;
+      orientation?: DimensionOrientation;
+      stepIndex?: number;
+    }
   /**
    * An annotation (D-I3): a note, a frame or a datum takes two clicks (the feature it is about, then where it goes; for a note or a frame the same place twice
    * means no leader); a centre line two points; a centre mark one circle. `first` is the first click, in the view it was made on.

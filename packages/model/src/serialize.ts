@@ -391,6 +391,8 @@ const drawingMigrations: Record<number, (doc: Json) => Json> = {
     properties: doc.properties ?? {},
     idCounters: doc.idCounters ?? {},
   }),
+  // v26 (E5): chamfer dimension (ChamferDimension) is new; nothing to convert, the version keeps an older program from opening what it cannot draw.
+  25: (doc) => doc,
 };
 
 export function parseDrawing(text: string): DrawingDoc {

@@ -30,8 +30,8 @@ export type LinePick = Extract<ViewFeature, { type: 'plane' | 'slant' }> & { alo
  * What kind of dimension the tool makes: `smart` works it out from what was pointed at (SolidWorks's Smart Dimension); the others are the kinds asked for by name,
  * as SolidWorks's Horizontal, Vertical, ... dimension tools. One that cannot be made from what was pointed at is refused with the reason, never turned into another.
  */
-export type DimensionMode = 'smart' | 'horizontal' | 'vertical' | 'aligned' | 'radius' | 'diameter' | 'angle';
-export const DIMENSION_MODES: readonly DimensionMode[] = ['smart', 'horizontal', 'vertical', 'aligned', 'radius', 'diameter', 'angle'];
+export type DimensionMode = 'smart' | 'horizontal' | 'vertical' | 'aligned' | 'radius' | 'diameter' | 'angle' | 'chamfer';
+export const DIMENSION_MODES: readonly DimensionMode[] = ['smart', 'horizontal', 'vertical', 'aligned', 'radius', 'diameter', 'angle', 'chamfer'];
 
 /** What an element pointed at is, as the right-click menu tells them apart (ADR 0177). */
 export type PickKind = 'line' | 'vertex' | 'circle' | 'arc' | 'fillet' | 'outline';
@@ -46,7 +46,7 @@ export const pickKind = (f: Pickable): PickKind =>
 export function dimensionModesFor(f: Pickable): DimensionMode[] {
   switch (pickKind(f)) {
     case 'line':
-      return ['smart', 'horizontal', 'vertical', 'aligned', 'angle'];
+      return ['smart', 'horizontal', 'vertical', 'aligned', 'angle', 'chamfer'];
     case 'vertex':
       return ['smart', 'horizontal', 'vertical', 'aligned'];
     case 'circle':
@@ -260,6 +260,7 @@ export type Plan = { draft: DimensionDraft; refs: Pickable[]; facts: ElementFact
 export function planDimension(picks: readonly Pickable[], p: P2, placed: PlacedView, axes: ViewAxes, mode: DimensionMode = 'smart'): Plan {
   if (!DIMENSION_MODES.includes(mode)) return { error: t('drawing.dimBadMode', { mode: String(mode) }) };
   if (!p.every(Number.isFinite)) return { error: t('drawing.badPosition') };
+  if (mode === 'chamfer') return planChamfer(picks, p, placed, axes);
   if (mode === 'radius' || mode === 'diameter') return planRound(picks, p, placed, axes, mode);
   if (mode === 'angle') {
     if (picks.length < 2) return { need: 'second' };
@@ -276,6 +277,54 @@ export function planDimension(picks: readonly Pickable[], p: P2, placed: PlacedV
   const across = force === 'aligned' && plan.refs.some((f) => f.type === 'plane');
   if (plan.draft.orientation !== force && !across) return { error: t('drawing.dimModeDirection', { mode: t(`drawingUi.dimMode.${force}`) }) };
   return plan;
+}
+
+/** A chamfer dimension asked for by name: of a chamfer edge or slanted line seen in the view. */
+function planChamfer(picks: readonly Pickable[], p: P2, placed: PlacedView, axes: ViewAxes): Plan {
+  if (picks.length === 0) return { need: 'second' };
+  if (picks.length > 1) return { error: t('drawing.dimModeChamferSingle') };
+  const f = picks[0]!;
+  let a: P2 | undefined;
+  let b: P2 | undefined;
+  const along = 'along' in f ? (f as LinePick).along : undefined;
+  if (f.type === 'edge') {
+    a = f.a;
+    b = f.b;
+  } else if (f.type === 'slant') {
+    if (along) {
+      a = along.a;
+      b = along.b;
+    } else {
+      a = [f.at[0] - f.dir[0] * 5, f.at[1] - f.dir[1] * 5];
+      b = [f.at[0] + f.dir[0] * 5, f.at[1] + f.dir[1] * 5];
+    }
+  } else if (f.type === 'plane' && along) {
+    a = along.a;
+    b = along.b;
+  }
+  if (!a || !b) return { error: t('drawing.dimNeedsChamfer') };
+  const dx = Math.abs(b[0] - a[0]);
+  const dy = Math.abs(b[1] - a[1]);
+  const c = dx > 1e-4 && dy > 1e-4 ? Math.min(dx, dy) : hyp(dx, dy) / Math.SQRT2;
+  const midPoint: P2 = [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2];
+  const sheetMid = toSheet(placed, midPoint[0], midPoint[1]);
+  const g = leaderAt({ kind: 'round', centre: sheetMid, radius: 0 }, p);
+  const angle = Math.round(g.angle * 10) / 10;
+  const leader = Math.round(g.leader * 100) / 100;
+  const size = Math.max(0.1, Math.round(c * 100) / 100);
+  return {
+    draft: {
+      kind: 'chamfer',
+      ref: f.ref,
+      angle,
+      size,
+      chamferAngle: 45,
+      chamferFormat: 'c',
+      leader,
+    },
+    refs: [f],
+    facts: [factsOf(f, axes)],
+  };
 }
 
 /** A diameter or a radius asked for by name: of a circle or an arc seen in its true shape; a fillet has only its radius; a cylinder seen from the side its diameter. */

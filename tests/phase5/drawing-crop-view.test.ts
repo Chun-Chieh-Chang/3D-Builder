@@ -70,8 +70,8 @@ const LINES: ViewLines = {
 const onePixel = (): ShadeImage => ({ width: 1, height: 1, box: { min: [0, 0], max: [40, 20] }, png: new Uint8Array(0), rgb: new Uint8Array(0), alpha: new Uint8Array(0) });
 
 describe('the cropped view (B2.7)', () => {
-  it('the drawing schema is 25', () => {
-    expect(DRAWING_SCHEMA_VERSION).toBe(25);
+  it('the drawing schema is at least 25', () => {
+    expect(DRAWING_SCHEMA_VERSION).toBeGreaterThanOrEqual(25);
   });
 
   it('a crop of a local section inserts and keeps its outline and parent', () => {
@@ -127,9 +127,9 @@ describe('the cropped view (B2.7)', () => {
     expect(v.outline).toEqual({ kind: 'rectangle', p0: [0, 0], p1: [20, 20] });
   });
 
-  it('a version-22 drawing (before crops) is read as 25, keeping what it had', () => {
+  it('a version-22 drawing (before crops) is upgraded, keeping what it had', () => {
     const read = parseDrawing(JSON.stringify(olderDrawingFile(cut(), 22)));
-    expect(read.schemaVersion).toBe(25);
+    expect(read.schemaVersion).toBe(DRAWING_SCHEMA_VERSION);
     expect(page(read).views.find((x) => x.id === 'localsec1')).toBeDefined();
   });
 
