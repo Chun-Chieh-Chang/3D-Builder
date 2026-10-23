@@ -1,5 +1,33 @@
 # 3D-Builder 開發日誌 (DEV_LOG.md)
 
+## 2026-10-23：工程圖「隱藏個別的邊」作用在相切邊上（B2，ADR 0146 補充）
+
+### 1. 背景與 RCA
+- **現象**：工程圖視圖的「隱藏個別的邊」功能（B2.2，`withoutHiddenEdges`）不作用在相切邊上；在圓角、相切面相交處，相切邊無法被選取隱藏，且即使視圖的 `hiddenEdges` 包含相切邊名稱，繪製時仍不會隱藏。
+- **根因分析 (RCA)**：
+  1. `packages/drawing/src/viewEdges.ts` 中的 `visibleElements` 僅將 `lines.visible` 傳入 `segmentGrid`，未將 `lines.tangent` 納入可見線段網格中，導致 `seen(e.points)` 判定未達門檻，視圖上可見的相切邊無法被探測或選取為元素。
+  2. `withoutHiddenEdges` 僅對 `lines.visible` 與 `lines.hidden` 執行 `kept()` 過濾，未過濾 `lines.tangent` 與 `lines.tangentHidden`，且比對長度時若只有相切邊被隱藏會提早退回原物件。
+- **矯正措施 (CAPA)**：
+  1. `visibleElements`：將 `lines.tangent` 併入 `segmentGrid` 索引，使相切邊能被正確選取。
+  2. `withoutHiddenEdges`：對 `lines.tangent` 與 `lines.tangentHidden` 一併套用 `kept()` 過濾，並在長度比較與輸出物件中完整支援相切邊剔除。
+
+### 2. 做法
+| 層級 | 檔案 | 改動 |
+|---|---|---|
+| 工程圖幾何 | `packages/drawing/src/viewEdges.ts` | `visibleElements` 納入 `lines.tangent`；`withoutHiddenEdges` 過濾 `tangent` 與 `tangentHidden` |
+| 確效測試 | `tests/phase5/drawing-hide-edge.test.ts` | 新增相切邊選取與隱藏單元測試（斷言 `tangent` 與 `tangentHidden` 被精準剔除） |
+
+### 3. 紅隊四問檢驗
+1. **輸入破壞**：空 `hidden`、無相切邊視圖均安全原樣返回。
+2. **幾何相交與圖層完整**：保留原有的包圍盒 `box` 與 `visible`/`hidden` 正常線條，相切邊被剔除時不影響相鄰非相切線段。
+3. **依賴鏈完整性**：視圖命令 `hiddenEdges` → Worker `withoutHiddenEdges` → `DrawingViewport` 點選全鏈路完整。
+4. **零 Mock**：使用真實二維投影折線幾何量測。
+
+### 4. 測試
+- `tests/phase5/drawing-hide-edge.test.ts` 10/10 通過。
+- `tests/phase5/` 51 檔 549 測試全數通過。
+- 全套靜態檢查通過。
+
 ## 2026-10-23：曲線本體在 UI 的本體清單標記（曲線）並自曲面工具池排除（B1，ADR 0168 補充）
 
 ### 1. 背景與 RCA

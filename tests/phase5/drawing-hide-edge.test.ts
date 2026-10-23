@@ -216,6 +216,45 @@ describe('B2.2: withoutHiddenEdges — geometry and line filtering', () => {
     // Box preserved
     expect(match.box).toEqual(mockLines.box);
   });
+
+  it('recognizes tangent edges as visible elements and hides them from tangent and tangentHidden lines', () => {
+    const tangentEdge = {
+      kind: 'line' as const,
+      ref: { kind: 'edge' as const, name: 'tangent_fillet_1' },
+      points: [0, 15, 40, 15],
+      ends: [null, null] as [null, null],
+      depth: [0, 0],
+    };
+    const otherTangentEdge = {
+      kind: 'line' as const,
+      ref: { kind: 'edge' as const, name: 'tangent_fillet_2' },
+      points: [0, 25, 40, 25],
+      ends: [null, null] as [null, null],
+      depth: [0, 0],
+    };
+    const edgeSet: ViewEdgeSet = {
+      edges: [tangentEdge, otherTangentEdge],
+      vertices: [],
+    };
+    const mockLines: ViewLines = {
+      visible: [[0, 0, 40, 0]],
+      hidden: [],
+      tangent: [[0, 15, 40, 15], [0, 25, 40, 25]],
+      tangentHidden: [[0, 15, 40, 15]],
+      box: { min: [0, 0], max: [40, 30] },
+    };
+
+    // 1. visibleElements detects tangent edges
+    const seen = visibleElements(mockLines, edgeSet);
+    expect(seen.edges.map((e) => e.ref.name)).toContain('tangent_fillet_1');
+    expect(seen.edges.map((e) => e.ref.name)).toContain('tangent_fillet_2');
+
+    // 2. withoutHiddenEdges removes tangent_fillet_1 from tangent and tangentHidden
+    const filtered = withoutHiddenEdges(mockLines, edgeSet, [{ kind: 'edge', name: 'tangent_fillet_1' }]);
+    expect(filtered.tangent).toEqual([[0, 25, 40, 25]]);
+    expect(filtered.tangentHidden).toEqual([]);
+    expect(filtered.visible).toEqual([[0, 0, 40, 0]]);
+  });
 });
 
 describe('B2.2: DrawingStore hideEdge and unhideEdge store methods', async () => {

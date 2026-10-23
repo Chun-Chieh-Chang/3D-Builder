@@ -65,11 +65,12 @@ function segmentGrid(lines: readonly number[][], cell: number) {
  */
 export function visibleElements(lines: ViewLines | null | undefined, set: ViewEdgeSet | null | undefined, faceCircles: readonly ViewFeature[] = [], tol = EDGE_TOLERANCE): VisibleElements {
   const out: VisibleElements = { edges: [], circles: [], vertices: [] };
-  if (!lines || !set || lines.visible.length === 0) return out;
+  if (!lines || !set || (lines.visible.length === 0 && (!lines.tangent || lines.tangent.length === 0))) return out;
   if (!(Number.isFinite(tol) && tol > 0)) throw new Error(`visibleElements: tolerance ${tol} is not a length`);
   const box = lines.box;
   const extent = box ? Math.max(box.max[0] - box.min[0], box.max[1] - box.min[1], 1) : 100;
-  const near = segmentGrid(lines.visible, Math.max(tol * 8, extent / 64));
+  const allVisible = lines.tangent && lines.tangent.length > 0 ? [...lines.visible, ...lines.tangent] : lines.visible;
+  const near = segmentGrid(allVisible, Math.max(tol * 8, extent / 64));
   const on = (x: number, y: number) => near(x, y, tol) <= tol;
   /** The share of an edge's polyline (each segment sampled) on visible lines. */
   const seen = (pts: readonly number[]): number => {
@@ -183,6 +184,19 @@ export function withoutHiddenEdges(lines: ViewLines, set: ViewEdgeSet | null | u
   const kept = (ls: readonly number[][]) => ls.filter((l) => !liesOn(l));
   const visible = kept(lines.visible);
   const hiddenLines = kept(lines.hidden);
-  if (visible.length === lines.visible.length && hiddenLines.length === lines.hidden.length) return lines;
-  return { ...lines, visible, hidden: hiddenLines };
+  const tangent = lines.tangent ? kept(lines.tangent) : undefined;
+  const tangentHidden = lines.tangentHidden ? kept(lines.tangentHidden) : undefined;
+  if (
+    visible.length === lines.visible.length &&
+    hiddenLines.length === lines.hidden.length &&
+    (lines.tangent === undefined || tangent?.length === lines.tangent.length) &&
+    (lines.tangentHidden === undefined || tangentHidden?.length === lines.tangentHidden.length)
+  ) return lines;
+  return {
+    ...lines,
+    visible,
+    hidden: hiddenLines,
+    ...(lines.tangent !== undefined ? { tangent } : {}),
+    ...(lines.tangentHidden !== undefined ? { tangentHidden } : {}),
+  };
 }
