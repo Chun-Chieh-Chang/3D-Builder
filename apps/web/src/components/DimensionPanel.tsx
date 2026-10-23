@@ -291,6 +291,15 @@ export function DimensionPanel() {
                 <input type="checkbox" data-field="dimReference" checked={!!current.reference} onChange={(e) => d.setDimension(current.id, { reference: e.target.checked })} />
                 <span>{t('drawingUi.dimReference')}</span>
               </label>
+              {(current.kind === 'diameter' || current.kind === 'radius') && (
+                <label className="pm-row">
+                  <span>{t('drawingUi.dimDisplayKind')}</span>
+                  <select data-field="dimDisplayKind" value={current.kind} onChange={(e) => d.setDimension(current.id, { kind: e.target.value as 'diameter' | 'radius' })}>
+                    <option value="diameter">{t('drawingUi.dimDisplayDiameter')}</option>
+                    <option value="radius">{t('drawingUi.dimDisplayRadius')}</option>
+                  </select>
+                </label>
+              )}
               {current.kind === 'diameter' && (
                 <label className="pm-row checkbox">
                   <input type="checkbox" data-field="dimCallout" checked={!!current.callout} onChange={(e) => d.setDimension(current.id, { callout: e.target.checked })} />
@@ -511,6 +520,19 @@ function BatchDimensions({ dims, perUnit }: { dims: readonly Dimension[]; perUni
         />
         <span>{t('drawingUi.dimReference')}</span>
       </label>
+      {dims.every((x) => x.kind === 'diameter' || x.kind === 'radius') && (() => {
+        const kinds = common(dims.map((x) => x.kind));
+        return (
+          <label className="pm-row">
+            <span>{t('drawingUi.dimDisplayKind')}</span>
+            <select data-field="batchDisplayKind" value={kinds ?? 'mixed'} onChange={(e) => e.target.value !== 'mixed' && set({ kind: e.target.value as 'diameter' | 'radius' })}>
+              {kinds === undefined && <option value="mixed">{t('drawingUi.mixed')}</option>}
+              <option value="diameter">{t('drawingUi.dimDisplayDiameter')}</option>
+              <option value="radius">{t('drawingUi.dimDisplayRadius')}</option>
+            </select>
+          </label>
+        );
+      })()}
       <label className="pm-row">
         <span>{t('drawingUi.dimPrecision')}</span>
         <select data-field="batchPrecision" value={precision === undefined && dims.some((x) => x.precision !== undefined) ? 'mixed' : precision === undefined ? '' : String(precision)} onChange={(e) => e.target.value !== 'mixed' && set({ precision: e.target.value === '' ? null : Number(e.target.value) })}>

@@ -1,5 +1,46 @@
 # 3D-Builder 開發日誌 (DEV_LOG.md)
 
+## 2026-10-23：工程圖補完 Phase 1（無工具預選高亮與圓弧尺寸直徑／半徑切換）
+
+### 1. 需求與背景
+- **需求目標 (Option A Phase 1)**：
+  1. **無工具時的預選高亮 (Hover Pre-selection Highlight)**：在無任何工具選中且無拖曳狀態下，滑鼠懸停於視圖內的邊緣、圓形、圓弧、頂點、平面或斜面時，立即顯示預選高亮（`var(--warn)`，`data-pick="..."`），滑鼠移開時自動清除，提升圖紙幾何辨識與互動體驗。
+  2. **既有尺寸切換顯示 (Diameter ↔ Radius Display Toggle)**：允許將現有之圓形／圓弧尺寸在直徑（Ø）與半徑（R）之間直接切換顯示格式，無須刪除並重新標註。
+  3. **雙入口支援**：左側屬性面板（`DimensionPanel.tsx`，單選與批次多選）及視圖快顯功能表（`DrawingViewMenu.tsx`，含勾選標記）。
+  4. **Schema 影響**：0 Schema bump（`DrawingDoc` 維持 v25，`DiameterDimension` 與 `RadiusDimension` 既有型別完全相容）。
+
+### 2. 做法與架構對齊
+| 層級 | 檔案 | 改動說明 |
+|---|---|---|
+| 模型層指令 | `packages/model/src/drawing.ts` | `DimensionPatch` 新增 `kind?: 'diameter' \| 'radius'`；`applyDrawingCommand` 之 `setDimension` 支援原位切換 `kind`，當切換至 `radius` 時自動清除孔標註（`callout`），非圓形尺寸嘗試切換時顯式拒絕（`CommandError`） |
+| 國際化語系 | `packages/i18n/src/zh-TW/drawing.ts`<br>`packages/i18n/src/en/drawing.ts` | 新增 `drawingUi.dimDisplayKind`、`drawingUi.dimDisplayDiameter`、`drawingUi.dimDisplayRadius` |
+| 視圖懸停高亮 | `apps/web/src/components/DrawingViewport.tsx` | 當 `!tool && !drag` 且懸停於幾何元素時，計算 `featureUnder(p)` 並於 SVG overlay 渲染高亮線條/圓圈（`var(--warn)`，`data-pick={f.type}`）；於 `<main>` 綁定 `onPointerLeave` 即時清空 `hover` |
+| 屬性面板切換 | `apps/web/src/components/DimensionPanel.tsx` | 當選中尺寸為 `diameter` 或 `radius` 時（單選與批次），渲染 `<select data-field="dimDisplayKind">` / `batchDisplayKind` 提供直徑／半徑切換 |
+| 快顯功能表 | `apps/web/src/components/DrawingViewMenu.tsx` | 當所選尺寸皆為圓形尺寸時，於選單頂部新增 `menuDisplayDiameter` 與 `menuDisplayRadius`，並根據目前狀態顯示勾選符號（`✓`） |
+| 單元測試 | `tests/phase5/drawing-dim-display.test.ts` | 6 項單元測試涵蓋：原位切換、屬性保留、孔標註清理、非圓形尺寸拒絕、非法值防禦、批次切換與 `dimensionText` 輸出驗證 |
+
+### 3. 自我紅隊四問檢驗 (Self-Red-Teaming Protocol)
+1. **輸入破壞 (Input Corruption)**：
+   - 傳入非法 `kind`（如 `'linear'`、`'angle'` 或非預期字串）時，`setDimension` 顯式拋出 `CommandError`，拒絕篡改。
+   - 傳入非圓形尺寸（如 `linear`、`angle`、`ordinate`）嘗試更改 `kind` 時，顯式拋出 `CommandError` 攔截。
+2. **拓樸與幾何相交破壞 (Geometric Defense)**：
+   - 尺寸切換僅改變標註顯示格式（Ø ↔ R 文本與引線引出定義），不變更底層模型幾何拓樸與參考點。
+   - 孔標註（`callout`）僅適用於孔直徑；切換為半徑時強制清除 `callout`，防止半徑尺寸帶有深度的無效幾何語意。
+3. **依賴鏈完整性 (Dependency Graph Integrity)**：
+   - 全鏈路完整覆蓋：`DimensionPatch` -> `applyDrawingCommand` -> `state/drawing.ts` (`d.setDimension` / `d.setDimensions`) -> `DimensionPanel.tsx` -> `DrawingViewMenu.tsx` -> `DrawingViewport.tsx`，無任何未接線分支。
+4. **規格真實性與零 Mock 原則 (Zero-Mock)**：
+   - 使用真實 `DrawingDoc` 與真實 `dimensionText` 進行斷言，無假資料或代理計數。
+
+### 4. 確效結果
+- `npm run lint:i18n`：通過（0 缺失鍵值）。
+- `npm run lint:rules` 與 `npm run lint:deps`：通過（全域 RSI 守門與階層架構 100% 綠燈）。
+- `npm run typecheck`：通過（0 TypeScript 錯誤）。
+- `npx vitest run tests/phase5/drawing-dim-display.test.ts`：6/6 通過。
+- `npx vitest run tests/phase5/`：52 個測試檔、555 個測試全數通過（1 個既有 skipped）。
+- `npx vitest run packages/model/test/`：9 個測試檔、164 個測試全數通過。
+
+---
+
 ## 2026-10-23：工程圖 DXF／PDF 外部應用程式自動驗收探針（ADR 0146 確效擴充）
 
 ### 1. 背景與 RCA

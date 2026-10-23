@@ -774,6 +774,8 @@ export type DimensionPatch = {
   refs?: DrawingRef[];
   /** Its own style (v19), replacing the one it had; `null` (or an empty one) and it is drawn in the drawing's. */
   style?: DimStyle | null;
+  /** Toggles circular dimension between diameter and radius display format. */
+  kind?: 'diameter' | 'radius';
 };
 
 /** What `setView` may change: the fields every view has, and those of its kind; a field that does not belong to the view's kind is refused. */
@@ -1202,15 +1204,24 @@ export function mutateDrawing(draft: Draft<DrawingDoc>, cmd: DrawingCommand): vo
     case 'setDimension': {
       const d = pg.dimensions.find((x) => x.id === cmd.dimensionId);
       if (!d) throw new CommandError(t('drawing.noDimension', { id: cmd.dimensionId }));
-      const { reference, tolerance, count, callout, supplementary, precision, prefix, suffix, text, slide, leader, style, ...rest } = cmd.patch;
+      const { reference, tolerance, count, callout, supplementary, precision, prefix, suffix, text, slide, leader, style, kind, ...rest } = cmd.patch;
+      if (kind !== undefined) {
+        if (d.kind !== 'diameter' && d.kind !== 'radius') throw new CommandError(t('drawing.notForKind', { field: 'kind', kind: d.kind }));
+        if (kind !== 'diameter' && kind !== 'radius') throw new CommandError(t('drawing.notForKind', { field: 'kind', kind }));
+      }
+      const targetKind = kind ?? d.kind;
       const belongs: Record<Dimension['kind'], string[]> = { linear: ['offset', 'orientation', 'a', 'b'], diameter: ['angle', 'ref'], radius: ['angle', 'ref'], angle: ['arc', 'a', 'b'], ordinate: ['offset', 'axis', 'origin', 'refs'] };
-      if (slide !== undefined && d.kind !== 'linear' && d.kind !== 'angle') throw new CommandError(t('drawing.notForKind', { field: 'slide', kind: d.kind }));
-      if (leader !== undefined && d.kind !== 'diameter' && d.kind !== 'radius') throw new CommandError(t('drawing.notForKind', { field: 'leader', kind: d.kind }));
-      if (callout !== undefined && d.kind !== 'diameter') throw new CommandError(t('drawing.notForKind', { field: 'callout', kind: d.kind }));
-      if (supplementary !== undefined && d.kind !== 'angle') throw new CommandError(t('drawing.notForKind', { field: 'supplementary', kind: d.kind }));
-      for (const k of Object.keys(rest)) if (!belongs[d.kind].includes(k)) throw new CommandError(t('drawing.notForKind', { field: k, kind: d.kind }));
-      if (count !== undefined && (d.kind === 'linear' || d.kind === 'angle')) throw new CommandError(t('drawing.notForKind', { field: 'count', kind: d.kind }));
+      if (slide !== undefined && targetKind !== 'linear' && targetKind !== 'angle') throw new CommandError(t('drawing.notForKind', { field: 'slide', kind: targetKind }));
+      if (leader !== undefined && targetKind !== 'diameter' && targetKind !== 'radius') throw new CommandError(t('drawing.notForKind', { field: 'leader', kind: targetKind }));
+      if (callout !== undefined && targetKind !== 'diameter') throw new CommandError(t('drawing.notForKind', { field: 'callout', kind: targetKind }));
+      if (supplementary !== undefined && targetKind !== 'angle') throw new CommandError(t('drawing.notForKind', { field: 'supplementary', kind: targetKind }));
+      for (const k of Object.keys(rest)) if (!belongs[targetKind].includes(k)) throw new CommandError(t('drawing.notForKind', { field: k, kind: targetKind }));
+      if (count !== undefined && (targetKind === 'linear' || targetKind === 'angle')) throw new CommandError(t('drawing.notForKind', { field: 'count', kind: targetKind }));
       const next = { ...(JSON.parse(JSON.stringify(d)) as Dimension), ...rest } as Dimension & { reference?: boolean; count?: number; tolerance?: DimensionTolerance; callout?: boolean; supplementary?: boolean };
+      if (kind !== undefined) {
+        next.kind = kind;
+        if (kind === 'radius') delete next.callout;
+      }
       if (supplementary === null || supplementary === false) delete next.supplementary;
       else if (supplementary === true) next.supplementary = true;
       if (callout === null || callout === false) delete next.callout;

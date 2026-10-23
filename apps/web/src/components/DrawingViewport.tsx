@@ -673,11 +673,11 @@ export function DrawingViewport() {
       setDrag({ ...drag, delta: [p[0] - drag.from[0], p[1] - drag.from[1]] } as Drag);
     } else if (panning) {
       setPan({ ...pan, x: e.clientX - panning.x, y: e.clientY - panning.y });
-    } else if (tool || dimensionItems.length > 0) {
-      // what is under the pointer: for the tool's preview, and for the cursor
-      const feature = tool?.kind === 'dimension' || tool?.kind === 'ordinate' ? featureUnder(p, tool.picks[0]?.view) : tool?.kind === 'hideEdge' ? featureUnder(p) : null;
+    } else {
+      // what is under the pointer: for the tool's preview, and for the cursor (and hover highlight when no tool)
+      const feature = tool?.kind === 'dimension' || tool?.kind === 'ordinate' ? featureUnder(p, tool.picks[0]?.view) : tool?.kind === 'hideEdge' ? featureUnder(p) : !tool ? featureUnder(p) : null;
       const dimension = tool ? null : (dimensionAt(dimensionItems, p, reach)?.id ?? null);
-      setHover((h) => (tool || h?.dimension !== dimension || h?.feature ? { p, feature, dimension, ctrl: e.ctrlKey || e.metaKey } : h));
+      setHover((h) => (tool || h?.dimension !== dimension || h?.feature || feature ? { p, feature, dimension, ctrl: e.ctrlKey || e.metaKey } : h));
     }
   };
   /** The scale the dragged view had before: the one of what the drag changes. */
@@ -1186,6 +1186,7 @@ export function DrawingViewport() {
       onPointerDown={down}
       onPointerMove={move}
       onPointerUp={up}
+      onPointerLeave={() => setHover(null)}
       onContextMenu={(e) => e.preventDefault()}
       onDoubleClick={(e) => {
         if (tool) return;
@@ -1228,17 +1229,18 @@ export function DrawingViewport() {
               strokeDasharray={boxing.crossing ? '2 1' : undefined}
             />
           )}
-          {(tool?.kind === 'dimension' || tool?.kind === 'ordinate') &&
-            [...tool.picks.map((x) => x.feature), ...(hover?.feature && (tool.kind === 'ordinate' || tool.picks.length < 2) ? [hover.feature.feature] : [])].map((f, k) => {              const view = (tool.picks[0]?.view ?? hover?.feature?.view)!;
+          {((tool?.kind === 'dimension' || tool?.kind === 'ordinate') || (!tool && !drag && hover?.feature)) &&
+            [...(tool ? tool.picks.map((x) => x.feature) : []), ...(hover?.feature && (!tool || tool.kind === 'ordinate' || tool.picks.length < 2) ? [hover.feature.feature] : [])].map((f, k) => {
+              const view = (tool?.picks[0]?.view ?? hover?.feature?.view)!;
               const placed = basePlaced.get(view);
               if (!placed) return null;
-              const colour = k < tool.picks.length ? 'var(--accent)' : 'var(--warn)';
+              const colour = tool && k < tool.picks.length ? 'var(--accent)' : 'var(--warn)';
               const box = viewLines.get(view)?.box;
               if (f.type === 'circle' || f.type === 'torus') {
                 // a circle is drawn about its own middle, a fillet's arc about `at` (which is `major` off the torus's centre), both of the radius written
                 const [fx, fy] = f.type === 'circle' ? f.centre : f.at;
                 const c = toSheet(placed, fx, fy);
-                return <circle key={k} cx={c[0]} cy={sheet.height - c[1]} r={f.radius * placed.scale} fill="none" stroke={colour} strokeWidth={0.8} />;
+                return <circle key={k} data-pick={f.type} cx={c[0]} cy={sheet.height - c[1]} r={f.radius * placed.scale} fill="none" stroke={colour} strokeWidth={0.8} />;
               }
               if (f.type === 'vertex') {
                 const c = toSheet(placed, f.at[0], f.at[1]);
@@ -1257,7 +1259,7 @@ export function DrawingViewport() {
               const [a, b] = f.type === 'plane' ? (f.axis === 'x' ? [[f.coord, box?.min[1] ?? 0], [f.coord, box?.max[1] ?? 0]] : [[box?.min[0] ?? 0, f.coord], [box?.max[0] ?? 0, f.coord]]) : [[f.at[0] - f.dir[0] * 15, f.at[1] - f.dir[1] * 15], [f.at[0] + f.dir[0] * 15, f.at[1] + f.dir[1] * 15]];
               const sa = toSheet(placed, a![0]!, a![1]!);
               const sb = toSheet(placed, b![0]!, b![1]!);
-              return <line key={k} x1={sa[0]} y1={sheet.height - sa[1]} x2={sb[0]} y2={sheet.height - sb[1]} stroke={colour} strokeWidth={0.8} />;
+              return <line key={k} data-pick={f.type} x1={sa[0]} y1={sheet.height - sa[1]} x2={sb[0]} y2={sheet.height - sb[1]} stroke={colour} strokeWidth={0.8} />;
             })}
           {plan && <Highlight items={built.scene.items.filter((i) => i.group === 'preview')} height={sheet.height} color="var(--accent)" />}
           {drawn && drawnPlaced && drawn.tool === 'detail' && <circle cx={drawn.from[0]} cy={sheet.height - drawn.from[1]} r={Math.hypot(drawn.to[0] - drawn.from[0], drawn.to[1] - drawn.from[1])} fill="none" stroke="var(--accent)" strokeWidth={0.5} strokeDasharray="2 1" />}
