@@ -18,12 +18,19 @@
 |---|---|
 | 零件／組合件／工程圖 Schema | 75／7／25（ADR 0178 只改命令，不改 Schema） |
 | ADR | 0001–0183，共 183 份，在 `docs/adr/`，全部列在 §2 |
-| 全閘門 | 2026-10-22，G8b 之後：`npm run check` 275 檔、3453 通過、0 失敗、25 略過；完整 `verify:ui` 164/164（含 `manual-sketch-block.js`、`manual-sketch-condition.js`）。2026-10-23 新增驗收探針後：`verify:external-samples` 3/3、`verify:freecad-sheet-metal`、`typecheck`、`lint:rules`、`lint:deps`、`git diff --check` 均通過；2026-10-23 提交前完整 `npm run check` 276 檔、3456 通過、0 失敗、25 略過。 |
+| 全閘門 | 2026-10-22，G8b 之後：`npm run check` 275 檔、3453 通過、0 失敗、25 略過；完整 `verify:ui` 164/164（含 `manual-sketch-block.js`、`manual-sketch-condition.js`）。2026-10-23 新增驗收探針後：`verify:external-samples` 3/3、`verify:freecad-sheet-metal`、`verify:drawing-export`、`typecheck`、`lint:rules`、`lint:deps`、`git diff --check` 均通過；2026-10-23 提交前完整 `npm run check` 276 檔、3456 通過、0 失敗、25 略過。 |
 | 瀏覽器腳本 | `tests/e2e/` 共 150 個檔案（含輔助檔；`npm run verify:ui` 依檔頭的呼叫逐項跑，共 164 項） |
 | 實機驗證清單 | [docs/manual-verification.html](docs/manual-verification.html) 91 項（新增 C27） |
-| 階段 | Phase 0–7 開發完成。Phase 0–2 閘門通過；3a–7 有條件通過。2026-10-23 已用公開外部 STEP 樣本完成可重跑的匯入／平板材料體積／FreeCAD 開檔探針；使用者私有零件、SolidWorks 特徵樹與製造基準仍未對照（§3、§8）。 |
-| 最近完成 | **G8b 圓弧條件，最近與最遠距離（ADR 0183，Schema 75，2026-10-22）**：`distance.condition`，圓或圓弧與點、直線、圓或圓弧之間，屬性管理員的下拉選單；最近用求解器原生關係、最遠用輔助點；切換時圖形不跳動；**G8a 固定整個圖元（ADR 0182，Schema 74）**：新限制條件 `block`，可多選、各加一個、一次復原；**G7 草圖附著（ADR 0181，Schema 73，2026-10-21）**：草圖的原點取自模型頂點或參考點、X 方向取自直線邊或參考軸、可 X 反向；平面不變；在「編輯草圖基準面」設定；**用過的草圖一律隱藏**（鈑金支架上多出的線架構，ADR 0018 補充，2026-10-21）；**組合件干涉檢查看得見（ADR 0180，2026-10-21 已合併並推送 `f262090`，紅圈位置修正 `10bdf86`）**：選一組縮放到干涉、其他零組件淡化／線架構／隱藏、每塊重疊一個固定大小的紅圈、位置與範圍、忽略、↑／↓、剖面移到干涉位置；**介面交互審查第 3 批：組合件「以座標軸移動」Triad（ADR 0179，2026-10-21 已合併並推送 `7ba88b5`）**；第 2 批：草圖移動／複製／旋轉／縮放圖元與草圖陣列（ADR 0178，2026-10-21 已合併並推送）**；第 1 批右鍵選單（ADR 0176）；工程圖尺寸類型與右鍵（ADR 0177）；G6 草圖參照較前面的草圖（ADR 0175）；草圖參照第一批 G1–G5（ADR 0170–0174） |
-| 已知缺口 | 無（B1 曲線本體標記、B2 工程圖隱藏相切邊均已於 2026-10-23 完成）。完整待辦見〈一〉 |
+| 階段 | Phase 0–7 開發完成。Phase 0–2 閘門通過；3a–7 有條件通過。2026-10-23 已用公開外部 STEP 樣本完成可重跑的匯入／平板材料體積／FreeCAD 開檔探針，並新增工程圖 DXF (FreeCAD) 與 PDF (Chromium) 外部應用程式相容性探針；使用者私有零件、SolidWorks 特徵樹與製造基準仍未對照（§3、§8）。 |
+| 最近完成 | **工程圖外部自動化確效探針（`npm run verify:drawing-export`，2026-10-23）**：FreeCAD 26 命令列 DXF 匯入確效（130+ 幾何實體、ISO A3 圖框邊界、全圖層檢驗）與 Chromium CDP PDF 渲染確效；**藍圖附錄 C 與草圖吸附計畫文件校正（B3，2026-10-23）**；**工程圖相切邊隱藏（B2，ADR 0146 補充，2026-10-23）**；**曲線本體標記與曲面池分流（B1，ADR 0168 補充，2026-10-23）**；**G8b 圓弧條件，最近與最遠距離（ADR 0183，Schema 75，2026-10-22）**：`distance.condition`，圓或圓弧與點、直線、圓或圓弧之間，屬性管理員的下拉選單；最近用求解器原生關係、最遠用輔助點；切換時圖形不跳動；**G8a 固定整個圖元（ADR 0182，Schema 74）**：新限制條件 `block`，可多選、各加一個、一次復原；**G7 草圖附著（ADR 0181，Schema 73，2026-10-21）**；**組合件干涉檢查看得見（ADR 0180，2026-10-21）** |
+| 已知缺口 | 無（B1 曲線本體標記、B2 工程圖隱藏相切邊、B3 文件不一致均已於 2026-10-23 完成）。完整待辦見〈一〉 |
+
+### 最近完成：工程圖 DXF／PDF 外部應用程式自動驗收（2026-10-23）
+
+- `npm run verify:drawing-export`：
+  - **FreeCAD DXF 匯入確效**：透過 FreeCAD 26 命令列（`scripts/freecad-dxf-report.py`）實際載入代表性生產加工圖（`凸緣襯套加工圖.dxf` 與 `壓花旋鈕銷加工圖.dxf`），輸出 JSON 事實報告。驗證 FreeCAD 產生 100+ 個幾何物件、包含所有標準圖層（`VISIBLE`, `HIDDEN`, `CENTER`, `THIN`, `FRAME`, `DIMENSION`, `TEXT`），且邊界幾何精確符合 ISO A3 圖紙邊距約束（X: 20..410 mm, Y: 10..287 mm）。
+  - **Chromium PDF 渲染確效**：透過 Chrome DevTools Protocol (CDP) 於無外框環境下以內建 PDFium 引擎載入對應之 `凸緣襯套加工圖.pdf` 與 `壓花旋鈕銷加工圖.pdf`，斷言 `contentType === 'application/pdf'` 且無崩潰地完成繪圖快照截取。
+  - 使用方式與邊界限制見 [docs/automated-acceptance.md](docs/automated-acceptance.md)。
 
 ### 最近完成：公開鈑金樣本自動驗收（2026-10-23，`d79bbfe`）
 
@@ -143,7 +150,7 @@
 **原則：先收尾，再一次只開一條開發線。** 這兩天的混亂來自同時有三、四條工作線各自改同一個資料夾，還有 ADR 編號兩度撞號（0175、0177）。收尾之後，開發一次只走一條線；要平行時，另一條必須在自己的 worktree，並在開工時才取 ADR 編號、寫進共用筆記。
 
 1. ~~M1 合併第 2 批、M2 清理 worktree 與封存舊工作階段~~：2026-10-21 都已完成，`main` 就是全部，本機只剩一個工作階段。
-2. **自動驗收下一段：工程圖 PDF／DXF 的外部應用程式探針**：先讓代理產生一張代表性工程圖，保留既有結構解析，再用 FreeCAD 讀 DXF、用本機 PDF 檢視器或 Chromium 的 PDF 引擎載入 PDF，輸出可比較的報告。這會將 F6 的重複手動開檔改成可重跑證據；內容與版面標準仍等獨立基準。
+2. ~~**自動驗收下一段：工程圖 PDF／DXF 的外部應用程式探針**~~：2026-10-23 已完成（`npm run verify:drawing-export`，FreeCAD 26 DXF 匯入確效與 Chromium CDP PDF 渲染確效，產出 `out/drawing-acceptance.json`）。
 3. ~~**E3 組合件 Triad**~~：2026-10-21 完成（ADR 0179，手冊 D10，`verify:ui` 159/159）。組合件干涉檢查比照 SW 顯示干涉位置也已完成（ADR 0180，手冊 D7，`verify:ui` 161/161，`10bdf86`）；建議使用者用組合件4.3dba 實際確認一次紅圈圈在兩塊紅色上。
 4. ~~**B1、B2 已知缺口**~~（2026-10-23 全數完成，ADR 0168、0146 補充）：〈已知缺口〉已清空。
 5. ~~**B3 文件核對**~~：藍圖 D5.3a–c 經測試路徑核對（單元、控制器與 Web 測試 140+ 項通過）確認功能完整，已更新藍圖附錄 C 與計畫文件。

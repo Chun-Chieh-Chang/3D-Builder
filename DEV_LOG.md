@@ -1,5 +1,39 @@
 # 3D-Builder 開發日誌 (DEV_LOG.md)
 
+## 2026-10-23：工程圖 DXF／PDF 外部應用程式自動驗收探針（ADR 0146 確效擴充）
+
+### 1. 背景與 RCA
+- **現象**：先前的工程圖匯出確效主要依賴內建解析器（`tests/phase5/drawing-output.test.ts` 的 `readDxf`、`readPdf`）以及瀏覽器內部 blob 檢查（`tests/e2e/phase5-output.js`）。缺少獨立的第三方 CAD 軟體與外部 PDF 渲染器對實際輸出檔案開檔與幾何解析的自動化探針（手動驗證項目 F6）。
+- **目標**：
+  1. 將 F6 的手動開檔轉化為可隨時重跑的客觀事實探針。
+  2. 透過第三方外部工具 FreeCAD 26 命令列直接載入產出的生產加工圖 DXF，客觀驗證第三方 CAD 能正確解析實體、識別圖層並重構幾何形狀。
+  3. 透過無外框 Chromium/Edge 瀏覽器利用 Chrome DevTools Protocol (CDP) 實際載入 PDF，驗證 PDFium 引擎能正常渲染無崩潰、`contentType` 識別正確。
+- **矯正措施 (CAPA)**：
+  1. 建立 FreeCAD DXF 幾何事實解析腳本 `scripts/freecad-dxf-report.py`：使用 `importDXF` 載入 DXF，量測總物件數、幾何形狀數、圖層清單與包圍盒。
+  2. 建立自動化驗收探針腳本 `scripts/verify-drawing-export.mjs`（對應命令 `npm run verify:drawing-export`）：
+     - 自動檢查加工圖 fixtures（`凸緣襯套加工圖`、`壓花旋鈕銷加工圖`）。
+     - 調用 FreeCAD 匯入 DXF，斷言產生 100+ 幾何實體、保留所有 ISO 規範圖層（`VISIBLE`, `HIDDEN`, `CENTER`, `THIN`, `FRAME`, `DIMENSION`, `TEXT`），並精確驗證圖框外邊距符合 ISO A3 邊界約束（X: 20..410 mm, Y: 10..287 mm）。
+     - 調用 Chromium CDP 載入 PDF，斷言 PDFium 成功載入 `application/pdf` 並輸出非空渲染截圖。
+     - 輸出 JSON 事實報告至 `out/drawing-acceptance.json`。
+  3. 更新 `docs/automated-acceptance.md`、`package.json` 與 `handoff.md`。
+
+### 2. 做法
+| 層級 | 檔案 | 改動 |
+|---|---|---|
+| FreeCAD 探針 | `scripts/freecad-dxf-report.py` | 透過 FreeCAD 26 `importDXF` 萃取幾何物件、圖層與包圍盒 |
+| 驗收腳本 | `scripts/verify-drawing-export.mjs` | 自動執行 FreeCAD DXF 匯入與 Chromium CDP PDF 渲染確效 |
+| NPM 命令 | `package.json` | 新增 `verify:drawing-export` 命令 |
+| 確效文件 | `docs/automated-acceptance.md` | 增列工程圖外部驗收探針章節與邊界說明 |
+| 交接文件 | `handoff.md` | 標記工程圖外部驗收探針為已完成 |
+
+### 3. 紅隊四問檢驗
+1. **輸入破壞**：當傳入非絕對路徑、檔案不存在或 FreeCAD 未安裝時，腳本顯式報錯退出，不默默略過。
+2. **幾何邊界防禦**：FreeCAD 探針嚴格斷言圖框邊界必須在 ISO A3 紙張範圍內，若產生越界或 0 實體立即阻斷。
+3. **依賴鏈完整性**：`scripts/freecad-dxf-report.py` 與 `scripts/verify-drawing-export.mjs` 透過環境變數傳遞絕對路徑，不依賴相對目錄或未宣告的暫存路徑。
+4. **零 Mock**：使用真實 FreeCAD 26 命令列與真實 Chromium 瀏覽器引擎進行物理開檔。
+
+---
+
 ## 2026-10-23：藍圖附錄 C 與草圖吸附計畫文件校正（B3）
 
 ### 1. 背景與 RCA
