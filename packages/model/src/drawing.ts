@@ -13,7 +13,7 @@ import { ANNOTATION_FIELDS, checkAnnotation, framesUsing, type Annotation, type 
  * opened (exact hidden-line removal), so a drawing can never disagree with the model it shows.
  */
 
-export const DRAWING_SCHEMA_VERSION = 25;
+export const DRAWING_SCHEMA_VERSION = 26;
 
 export type SheetSize = 'A4' | 'A3' | 'A2' | 'A1' | 'A0';
 export const SHEET_SIZES: readonly SheetSize[] = ['A4', 'A3', 'A2', 'A1', 'A0'];
@@ -412,6 +412,8 @@ export interface DiameterDimension extends DimensionCommon {
   count?: number;
   /** A hole callout (C16.5): what the model says of the hole is written after the diameter — through, or how deep, and its counterbore. */
   callout?: boolean;
+  /** Absent keeps the legacy localized text. Formatting only; values come from the model. */
+  calloutStyle?: CalloutStyle;
 }
 
 /** The radius (R) of a cylinder or circle seen as an arc or a circle in the view. */
@@ -476,8 +478,23 @@ export interface ElementFacts {
   major?: number;
   /** A cylinder that is a hole: how deep it is. */
   hole?: HoleInfo;
+  thread?: ThreadCallout;
   /** A face's middle (the centroid of its area): where on the plane the face is, which a plane's own `point` does not say. */
   center?: [number, number, number];
+}
+
+export type CalloutStyle = 'text' | 'symbols';
+
+/** Evaluated cosmetic thread metadata, never inferred from helical topology. Lengths in mm. */
+export interface ThreadCallout {
+  majorDiameter: number;
+  minorDiameter: number;
+  pitch: number;
+  depth: number;
+  threadType: 'external' | 'internal';
+  endCondition: 'blind' | 'through';
+  /** Only standard-mode features carry a designation. Custom threads stay explicitly custom. */
+  designation?: string;
 }
 
 /**
@@ -492,7 +509,7 @@ export interface HoleInfo {
   depth: number;
   counterbore?: { diameter: number; depth: number };
   countersink?: { diameter: number; angle: number };
-  thread?: { size?: string };
+  thread?: { size?: string; pitch?: number };
 }
 
 /**
@@ -512,7 +529,7 @@ export type ViewFeature =
   /** A plane seen edge-on: a line across the view's x (`axis: 'x'`, at x = `coord`) or its y. */
   | { type: 'plane'; ref: Ref; axis: 'x' | 'y'; coord: number; area: number }
   /** A cylinder seen along its axis: a circle (a whole one, `full`, or an arc) with its middle in the view's coordinates and the direction (degrees) from there to the middle of the arc. */
-  | { type: 'circle'; ref: Ref; centre: [number, number]; radius: number; convex: boolean; full: boolean; outward: number; hole?: HoleInfo; thread?: { majorDiameter: number; minorDiameter: number; threadType: 'external' | 'internal' } }
+  | { type: 'circle'; ref: Ref; centre: [number, number]; radius: number; convex: boolean; full: boolean; outward: number; hole?: HoleInfo; thread?: ThreadCallout }
   /** A whole cylinder seen from the side: its axis from one end to the other, in the view's coordinates. */
   | { type: 'axis'; ref: Ref; from: [number, number]; to: [number, number]; radius: number }
   /**
@@ -754,6 +771,7 @@ export type DimensionPatch = {
   angle?: number;
   count?: number | null;
   callout?: boolean | null;
+  calloutStyle?: CalloutStyle | null;
   /** An angle dimension: the radius of its arc (mm), and the other angle of the two lines. */
   arc?: number;
   precision?: number | null;
@@ -1021,6 +1039,8 @@ function checkDimension(d: Dimension, views: readonly DrawingView[]): void {
     if (new Set(all).size !== all.length) throw new CommandError(t('drawing.ordinateTwice'));
     if (d.tolerance?.type === 'fit') throw new CommandError(t('drawing.ordinateFit'));
   } else throw new CommandError(t('drawing.dimBadKind', { kind: String((d as { kind?: unknown }).kind) }));
+  const calloutStyle = (d as DiameterDimension).calloutStyle;
+  if (calloutStyle !== undefined && (d.kind !== 'diameter' || !['text', 'symbols'].includes(calloutStyle))) throw new CommandError(t('drawing.dimBadCalloutStyle'));
   if (d.precision !== undefined && !(Number.isInteger(d.precision) && d.precision >= 0 && d.precision <= 4)) throw new CommandError(t('drawing.dimBadPrecision'));
   for (const k of ['prefix', 'suffix', 'text'] as const) if (d[k] !== undefined && (typeof d[k] !== 'string' || d[k]!.length > 80)) throw new CommandError(t('drawing.dimBadText'));
   if (d.slide !== undefined && (!Number.isFinite(d.slide) || (d.kind !== 'linear' && d.kind !== 'angle'))) throw new CommandError(t('drawing.dimBadSlide'));
@@ -1202,10 +1222,11 @@ export function mutateDrawing(draft: Draft<DrawingDoc>, cmd: DrawingCommand): vo
     case 'setDimension': {
       const d = pg.dimensions.find((x) => x.id === cmd.dimensionId);
       if (!d) throw new CommandError(t('drawing.noDimension', { id: cmd.dimensionId }));
-      const { reference, tolerance, count, callout, supplementary, precision, prefix, suffix, text, slide, leader, style, ...rest } = cmd.patch;
+      const { reference, tolerance, count, callout, calloutStyle, supplementary, precision, prefix, suffix, text, slide, leader, style, ...rest } = cmd.patch;
       const belongs: Record<Dimension['kind'], string[]> = { linear: ['offset', 'orientation', 'a', 'b'], diameter: ['angle', 'ref'], radius: ['angle', 'ref'], angle: ['arc', 'a', 'b'], ordinate: ['offset', 'axis', 'origin', 'refs'] };
       if (slide !== undefined && d.kind !== 'linear' && d.kind !== 'angle') throw new CommandError(t('drawing.notForKind', { field: 'slide', kind: d.kind }));
       if (leader !== undefined && d.kind !== 'diameter' && d.kind !== 'radius') throw new CommandError(t('drawing.notForKind', { field: 'leader', kind: d.kind }));
+      if (calloutStyle !== undefined && d.kind !== 'diameter') throw new CommandError(t('drawing.notForKind', { field: 'calloutStyle', kind: d.kind }));
       if (callout !== undefined && d.kind !== 'diameter') throw new CommandError(t('drawing.notForKind', { field: 'callout', kind: d.kind }));
       if (supplementary !== undefined && d.kind !== 'angle') throw new CommandError(t('drawing.notForKind', { field: 'supplementary', kind: d.kind }));
       for (const k of Object.keys(rest)) if (!belongs[d.kind].includes(k)) throw new CommandError(t('drawing.notForKind', { field: k, kind: d.kind }));
@@ -1217,6 +1238,10 @@ export function mutateDrawing(draft: Draft<DrawingDoc>, cmd: DrawingCommand): vo
       else if (callout === true) next.callout = true;
       if (reference === null || reference === false) delete next.reference;
       else if (reference === true) next.reference = true;
+      if (next.kind === 'diameter' && calloutStyle !== undefined) {
+        if (calloutStyle === null) delete next.calloutStyle;
+        else next.calloutStyle = calloutStyle;
+      }
       const loose = next as unknown as Record<string, unknown>;
       for (const [k, v] of [['precision', precision], ['prefix', prefix], ['suffix', suffix], ['text', text], ['leader', leader]] as const) {
         if (v === null || v === '') delete loose[k];

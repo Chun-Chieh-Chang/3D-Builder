@@ -2,7 +2,7 @@ import { t } from '@3db/i18n';
 import { edgeFingerprint, faceFingerprint, resolveRef, vertexFingerprint, type ElementNames } from '@3db/naming';
 import type { Topology } from '@3db/kernel';
 import type { CosmeticThreadInfo, SourceProvider } from './engine';
-import { rightOf, sheetUp, type ElementFacts, type HoleInfo, type PartDoc, type Ref, type ViewAxes, type ViewFeature } from '@3db/model';
+import { lookupThread, rightOf, sheetUp, type ElementFacts, type HoleInfo, type ThreadCallout, type PartDoc, type Ref, type ViewAxes, type ViewFeature } from '@3db/model';
 
 /**
  * What a drawing's dimensions need to know of the part a view shows (C16.4): the elements a dimension points at, by persistent name, as numbers; and the
@@ -144,18 +144,34 @@ function withFeature(hole: HoleInfo, name: string, features: HoleFeatures | unde
   if (!f) return hole;
   const { countersink, ...rest } = hole;
   const out: HoleInfo = f.kind === 'countersink' && countersink ? { ...rest, countersink } : rest;
-  return f.kind === 'tapped' ? { ...out, thread: f.size ? { size: f.size } : {} } : out;
+  return f.kind === 'tapped' ? { ...out, thread: f.size ? { size: f.size, ...(lookupThread(f.size) ? { pitch: lookupThread(f.size)!.pitch } : {}) } : {} } : out;
+}
+
+/** Resolve through the same persistent-name/fingerprint path as dimensions; ambiguous annotations stay unlabelled. */
+function threadOnFace(topology: Topology, names: ElementNames, face: number, threads: readonly CosmeticThreadInfo[] = []): ThreadCallout | undefined {
+  const matches = threads.filter((ct) => {
+    const resolved = resolveRef(ct.targetFace, names, topology);
+    return resolved.ok && resolved.index === face;
+  });
+  if (matches.length !== 1) return undefined;
+  const ct = matches[0]!;
+  return { majorDiameter: ct.majorDiameter, minorDiameter: ct.minorDiameter, pitch: ct.pitch, depth: ct.depth, threadType: ct.threadType, endCondition: ct.endCondition,
+    ...(ct.standardMode === 'standard' && ct.standardDesignation && lookupThread(ct.standardDesignation) ? { designation: ct.standardDesignation } : {}) };
 }
 
 /** What the element a reference points at is (a face, edge or vertex of the part), or why it cannot be told: it is gone, or the name fits more than one. */
-export function elementFacts(topology: Topology, names: ElementNames, ref: Ref, features?: HoleFeatures): ElementFacts | { error: string } {
+export function elementFacts(topology: Topology, names: ElementNames, ref: Ref, features?: HoleFeatures, cosmeticThreads?: readonly CosmeticThreadInfo[]): ElementFacts | { error: string } {
   const r = resolveRef(ref, names, topology);
   if (!r.ok) return { error: t(r.reason === 'missing' ? 'drawing.refMissing' : 'drawing.refAmbiguous', { name: ref.name }) };
   if (ref.kind === 'vertex') return { kind: 'vertex', type: 'point', point: topology.vertices[r.index]!.point };
   if (ref.kind === 'edge') {
     const e = topology.edges[r.index]!;
     const g = e.geometry;
-    if (g?.type === 'circle') return { kind: 'edge', type: 'circle', point: g.center, dir: g.normal, radius: g.radius };
+    if (g?.type === 'circle') {
+      const holes = e.faces.flatMap((face) => { const h = holeInfo(topology, face); return h ? [withFeature(h, names.faces[face]!, features)] : []; });
+      const threads = e.faces.flatMap((face) => { const ct = threadOnFace(topology, names, face, cosmeticThreads); return ct ? [ct] : []; });
+      return { kind: 'edge', type: 'circle', point: g.center, dir: g.normal, radius: g.radius, ...(threads.length === 1 ? { thread: threads[0] } : {}), ...(holes.length === 1 ? { hole: holes[0] } : {}) };
+    }
     if (e.curve === 'line' && e.dir) return { kind: 'edge', type: 'line', point: e.mid, dir: e.dir };
     return { error: t('drawing.refKind', { name: ref.name }) };
   }
@@ -165,7 +181,8 @@ export function elementFacts(topology: Topology, names: ElementNames, ref: Ref, 
     if (g?.type === 'plane') return { kind: 'face', type: 'plane', point: g.origin, dir: g.normal, center: f.center };
     if (g?.type === 'cylinder') {
       const hole = holeInfo(topology, r.index);
-      return { kind: 'face', type: 'cylinder', point: g.origin, dir: g.axis, radius: g.radius, ...(hole ? { hole: withFeature(hole, names.faces[r.index]!, features) } : {}) };
+      const thread = threadOnFace(topology, names, r.index, cosmeticThreads);
+      return { kind: 'face', type: 'cylinder', point: g.origin, dir: g.axis, radius: g.radius, ...(thread ? { thread } : {}), ...(hole ? { hole: withFeature(hole, names.faces[r.index]!, features) } : {}) };
     }
     if (g?.type === 'sphere') return { kind: 'face', type: 'sphere', point: g.center, radius: g.radius };
     // a fillet or a round: its radius is the tube's, and its axis and the circle the tube's middle runs on are what say where the arc is
@@ -205,7 +222,7 @@ export function viewFeatures(topology: Topology, names: ElementNames, axes: View
       const full = (longest.get(i) ?? 0) >= 2 * Math.PI * g.radius * (1 - 1e-3);
       const hole = full ? holeInfo(topology, i) : null;
       const faceName = names.faces[i];
-      const ct = cosmeticThreads?.find((t) => t.targetFace.name === faceName);
+      const ct = threadOnFace(topology, names, i, cosmeticThreads);
       out.push({
         type: 'circle',
         ref: ref(),
@@ -214,7 +231,7 @@ export function viewFeatures(topology: Topology, names: ElementNames, axes: View
         convex: g.convex,
         full,
         ...(hole ? { hole: withFeature(hole, faceName!, features) } : {}),
-        ...(ct ? { thread: { majorDiameter: ct.majorDiameter, minorDiameter: ct.minorDiameter, threadType: ct.threadType } } : {}),
+        ...(ct ? { thread: ct } : {}),
         // a whole circle has no middle of its arc: its leader goes up and to the right
         outward: full ? 45 : (Math.atan2(dot(to, up), dot(to, right)) * 180) / Math.PI,
       });

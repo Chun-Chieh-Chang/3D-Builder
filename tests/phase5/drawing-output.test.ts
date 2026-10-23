@@ -321,7 +321,7 @@ describe('PDF', () => {
     const testScene: Scene = {
       width: 420,
       height: 297,
-      items: [{ kind: 'text', text: '底板↧', at: [100, 100], height: 3.5 }],
+      items: [{ kind: 'text', text: '底板☃', at: [100, 100], height: 3.5 }],
     };
     const { bytes, warnings } = toPdf(testScene, { font });
     expect(warnings.length).toBe(1);

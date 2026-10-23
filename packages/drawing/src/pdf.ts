@@ -1,3 +1,4 @@
+import { CALLOUT_SYMBOL_FALLBACKS } from './calloutSymbols';
 import { t } from '@3db/i18n';
 import { HELVETICA_CAP_HEIGHT, helveticaCode, helveticaWidth } from './helvetica';
 import { circlePolyline } from './geometry';
@@ -59,6 +60,7 @@ interface Run {
 }
 
 function plan(text: string, font: TrueTypeFont | null | undefined, used: Map<number, number>): Run {
+  text = text.replace(/[↧⌴⌵]/g, (ch) => font?.glyphOf(ch.codePointAt(0)!) ? ch : CALLOUT_SYMBOL_FALLBACKS[ch]!);
   const chars = [...text].map((c) => c.codePointAt(0)!);
   // Helvetica when it has every character; the font given only for what Helvetica cannot write
   if (font && chars.some((c) => helveticaCode(c) === null)) {

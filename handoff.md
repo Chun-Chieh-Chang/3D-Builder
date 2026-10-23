@@ -12,13 +12,19 @@
 
 ---
 
+## 2026-10-23 接手：工程圖 Phase 3
+
+- 已實作孔／裝飾螺紋標註的每尺寸文字／符號切換、內外裝飾螺紋規格與有效長度、鑽孔深度分離、DXF／PDF 缺字符號回退。見 [ADR 0184](docs/adr/0184-drawing-thread-callout-style.md)。
+- 圖紙 Schema 26；舊圖維持文字模式。沒有公差等級資料，不補造 6H／6g；沒有從真實螺旋幾何反查規格。
+- 本次 `npm run check`：3461 通過、0 失敗、24 略過；完整 `verify:ui`：164/164 通過。結果整理於 DEV_LOG 的 2026-10-23 項與 `out/phase3-2026-10-23/`。圖紙全域樣式預設、側視圖獨立螺紋引線、外部 CAD 字型驗證仍未納入。
+
 ## 〇、目前狀態（2026-10-21 統整）
 
 | 項目 | 現值 |
 |---|---|
-| 零件／組合件／工程圖 Schema | 75／7／25（ADR 0178 只改命令，不改 Schema） |
-| ADR | 0001–0183，共 183 份，在 `docs/adr/`，全部列在 §2 |
-| 全閘門 | 2026-10-22，G8b 之後：`npm run check` 275 檔、3453 通過、0 失敗、25 略過；完整 `verify:ui` 164/164（含 `manual-sketch-block.js`、`manual-sketch-condition.js`） |
+| 零件／組合件／工程圖 Schema | 75／7／26（ADR 0178 只改命令，不改 Schema） |
+| ADR | 0001–0184，共 184 份，在 `docs/adr/`，全部列在 §2 |
+| 全閘門 | 2026-10-23，工程圖 Phase 3：`npm run check` 275 檔通過、4 檔略過；3461 通過、0 失敗、24 略過；完整 `verify:ui` 164/164 通過 |
 | 瀏覽器腳本 | `tests/e2e/` 共 150 個檔案（含輔助檔；`npm run verify:ui` 依檔頭的呼叫逐項跑，共 164 項） |
 | 實機驗證清單 | [docs/manual-verification.html](docs/manual-verification.html) 91 項（新增 C27） |
 | 階段 | Phase 0–7 開發完成。Phase 0–2 閘門通過；3a–7 有條件通過：只用手算的金樣與種子固定的隨機測試驗過，尚未用真實檔案對照（§3、§8） |
@@ -380,6 +386,7 @@
 | [ADR 0181](docs/adr/0181-sketch-attachment.md) | ADR 0181：草圖附著，原點與 X 方向取自模型（G7，零件 **Schema 73**）：`sketch.attach`（`origin` 頂點或參考點、`x` 直線邊或參考軸、`flipX`），平面不變；X 垂直於平面時拒絕；在「編輯草圖基準面」設定 |
 | [ADR 0182](docs/adr/0182-sketch-block.md) | ADR 0182：固定整個圖元（Block，G8a，零件 **Schema 74**）：`block`（`entity` 線、圓或圓弧），線鎖兩端、圓鎖圓心與半徑、圓弧鎖圓心、起點與終點方向；可多選、每個圖元各一個、一次復原；移動、旋轉、縮放拒絕，複製不帶固定 |
 | [ADR 0183](docs/adr/0183-distance-arc-condition.md) | ADR 0183：圓弧條件，最近與最遠距離（G8b，零件 **Schema 75**）：`distance.condition`（`min`／`max`），適用圓或圓弧與點、直線、圓或圓弧；最近用 PlaneGCS 原生的 `c2cdistance`／`p2cdistance`／`c2ldistance`，最遠用圓上的輔助點；切換時數值換成量得的值；相交或圓心重合明確拒絕 |
+| [ADR 0184](docs/adr/0184-drawing-thread-callout-style.md) | 工程圖 Phase 3：每尺寸文字／製造符號切換，內外裝飾螺紋規格與有效長度，底孔深度分離，DXF／PDF 符號回退；圖紙 Schema 26 |
 | [docs/assembly-explode-plan.md](docs/assembly-explode-plan.md) | 組合件：爆炸線與動畫、多組爆炸、形成新次組合件（計畫） |
 | [docs/cleanup-candidates.md](docs/cleanup-candidates.md) | 清理候選清單（2026-10-07） |
 | [docs/drawing-callouts-plan.md](docs/drawing-callouts-plan.md) | 工程圖：螺紋孔與錐形沉孔的標註、DXF 的 DIMENSION 圖元（計畫） |

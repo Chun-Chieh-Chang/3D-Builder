@@ -1,5 +1,5 @@
 import { t } from '@3db/i18n';
-import { DIM_STYLE_DEFAULT, fitDeviations, inUnit, rightOf, sheetUp, type DimStyle, type LengthUnit, type Dimension, type DimensionTolerance, type ElementFacts, type HoleInfo, type ViewAxes } from '@3db/model';
+import { DIM_STYLE_DEFAULT, fitDeviations, inUnit, rightOf, sheetUp, type CalloutStyle, type ThreadCallout, type DimStyle, type LengthUnit, type Dimension, type DimensionTolerance, type ElementFacts, type HoleInfo, type ViewAxes } from '@3db/model';
 import { circlePolyline } from './geometry';
 import { toSheet, type PlacedView } from './layout';
 import type { SceneDimensionGeometry, SceneItem } from './scene';
@@ -72,7 +72,13 @@ export function toleranceText(tol: DimensionTolerance, nominal: number, unit: Le
 }
 
 /** What is written of a hole after its diameter: 「貫穿」, 「深 12」, and 「沉頭 Ø15 深 8」 for a counterbore, 「錐孔 Ø12 90°」 for a countersink. */
-export function holeNote(h: HoleInfo, unit: LengthUnit = 'mm'): string {
+export function holeNote(h: HoleInfo, unit: LengthUnit = 'mm', style: CalloutStyle = 'text'): string {
+  if (style === 'symbols') {
+    const parts = [h.through ? 'THRU' : `↧ ${lengthNumber(h.depth, 2, unit)}`];
+    if (h.counterbore) parts.push(`⌴ Ø${lengthNumber(h.counterbore.diameter, 2, unit)} ↧ ${lengthNumber(h.counterbore.depth, 2, unit)}`);
+    if (h.countersink) parts.push(`⌵ Ø${lengthNumber(h.countersink.diameter, 2, unit)} × ${formatNumber(h.countersink.angle, 2)}°`);
+    return parts.join(' ');
+  }
   const parts = [h.through ? t('drawing.holeThrough') : t('drawing.holeDeep', { depth: lengthNumber(h.depth, 2, unit) })];
   if (h.counterbore) parts.push(t('drawing.holeCbore', { diameter: lengthNumber(h.counterbore.diameter, 2, unit), depth: lengthNumber(h.counterbore.depth, 2, unit) }));
   if (h.countersink) parts.push(t('drawing.holeCsink', { diameter: lengthNumber(h.countersink.diameter, 2, unit), angle: formatNumber(h.countersink.angle, 2) }));
@@ -92,10 +98,21 @@ export function holeSignature(h: HoleInfo | undefined): string {
  * (`diameter`); a hole whose size was typed has no name to give: 「螺紋底孔 Ø5 貫穿」. Null for a hole that is not tapped. The depth is the depth the hole is drilled to
  * (the model has no thread, so the thread is as deep as the hole).
  */
-export function threadedHoleText(h: HoleInfo, diameter: number, unit: LengthUnit = 'mm'): string | null {
+export function threadedHoleText(h: HoleInfo, diameter: number, unit: LengthUnit = 'mm', style: CalloutStyle = 'text'): string | null {
   if (!h.thread) return null;
   const d = lengthNumber(diameter, 3, unit);
-  return h.thread.size ? `${h.thread.size} ${holeNote(h, unit)}${t('drawing.holeTapDrill', { diameter: d })}` : `${t('drawing.holeTapPlain')} Ø${d} ${holeNote(h, unit)}`;
+  const size = style === 'symbols' && h.thread.pitch && h.thread.size && /^M[0-9]+$/.test(h.thread.size) ? `${h.thread.size}×${formatNumber(h.thread.pitch, 4)}` : h.thread.size;
+  return size ? `${size} ${holeNote(h, unit, style)}${t('drawing.holeTapDrill', { diameter: d })}` : `${t('drawing.holeTapPlain')} Ø${d} ${holeNote(h, unit, style)}`;
+}
+
+/** The designation and pitch use the thread standard's mm units even on an inch drawing. Never invent a tolerance class. */
+export function cosmeticThreadText(ct: ThreadCallout, unit: LengthUnit = 'mm', style: CalloutStyle = 'text', hole?: HoleInfo): string {
+  const designation = ct.designation
+    ? (!/^M[0-9]/.test(ct.designation) || /[×xX]/.test(ct.designation) ? ct.designation : `${ct.designation}×${formatNumber(ct.pitch, 4)}`)
+    : t('drawing.threadCustom', { major: lengthNumber(ct.majorDiameter, 4, unit), pitch: lengthNumber(ct.pitch, 4, unit) });
+  // External threads cover a length, not a through hole; always give the evaluated length.
+  const through = ct.threadType === 'internal' && ct.endCondition === 'through' && hole?.through === true;
+  return `${designation} ${holeNote({ through, depth: ct.depth }, unit, style)}`;
 }
 
 /**
@@ -122,11 +139,14 @@ function base(d: Dimension, value: number, facts: ElementFacts | undefined, unit
   }
   const count = (d.kind === 'diameter' || d.kind === 'radius') && d.count ? `${d.count}×` : '';
   // a tapped hole's callout names the thread in place of the diameter
-  const threaded = d.kind === 'diameter' && d.callout && facts?.hole ? threadedHoleText(facts.hole, value, unit) : null;
+  const style = d.kind === 'diameter' ? d.calloutStyle ?? 'text' : 'text';
+  const threaded = d.kind === 'diameter' && d.callout
+    ? facts?.thread ? `${cosmeticThreadText(facts.thread, unit, style, facts.hole)}${facts.hole ? t('drawing.threadDrill', { diameter: lengthNumber(value, 3, unit), note: holeNote(facts.hole, unit, style) }) : ''}` : facts?.hole ? threadedHoleText(facts.hole, value, unit, style) : null
+    : null;
   if (threaded) return d.reference ? `(${count}${threaded})` : `${count}${threaded}`;
   const prefix = d.kind === 'diameter' ? 'Ø' : d.kind === 'radius' ? 'R' : '';
   const tol = d.tolerance ? ` ${toleranceText(d.tolerance, value, unit)}` : '';
-  const note = d.kind === 'diameter' && d.callout && facts?.hole ? ` ${holeNote(facts.hole, unit)}` : '';
+  const note = d.kind === 'diameter' && d.callout && facts?.hole ? ` ${holeNote(facts.hole, unit, style)}` : '';
   // the decimals the user asked for are the decimals written, in either unit
   const number = d.precision !== undefined ? formatNumber(inUnit(value, unit), d.precision) : lengthNumber(value, 3, unit);
   const text = `${count}${prefix}${number}${tol}${note}`;

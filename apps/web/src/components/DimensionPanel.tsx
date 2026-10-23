@@ -297,6 +297,15 @@ export function DimensionPanel() {
                   <span>{t('drawingUi.dimCallout')}</span>
                 </label>
               )}
+              {current.kind === 'diameter' && current.callout && (
+                <label className="pm-row">
+                  <span>{t('drawingUi.dimCalloutStyle')}</span>
+                  <select data-field="dimCalloutStyle" value={current.calloutStyle ?? 'text'} onChange={(e) => d.setDimension(current.id, { calloutStyle: e.target.value as 'text' | 'symbols' })}>
+                    <option value="text">{t('drawingUi.dimCalloutText')}</option>
+                    <option value="symbols">{t('drawingUi.dimCalloutSymbols')}</option>
+                  </select>
+                </label>
+              )}
               {current.kind === 'linear' ? (
                 <label className="pm-row">
                   <span>{t('drawingUi.dimOffset')}</span>

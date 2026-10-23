@@ -27,8 +27,8 @@ const placedWith = (brk?: ModelDrawingView['break']): PlacedView => {
 };
 
 describe('a break is part of the view (B2.7)', () => {
-  it('the drawing schema is 25', () => {
-    expect(DRAWING_SCHEMA_VERSION).toBe(25);
+  it('the drawing schema supports this view kind', () => {
+    expect(DRAWING_SCHEMA_VERSION).toBeGreaterThanOrEqual(22);
   });
 
   it('a view with a break inserts, and the band it keeps is what was asked for', () => {

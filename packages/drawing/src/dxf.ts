@@ -1,3 +1,4 @@
+import { CALLOUT_SYMBOL_FALLBACKS } from './calloutSymbols';
 import { ARROW, DIM_TEXT, GAP, OVERSHOOT } from './dimension';
 import { LINE_STYLES, type LineStyle, type Scene, type SceneDimension, type SceneItem } from './scene';
 
@@ -34,7 +35,8 @@ const num = (v: number) => {
 /** Text for a DXF string: characters outside ASCII (and the backslash) written as \U+XXXX; a surrogate pair is two of them. */
 export function dxfEscape(text: string): string {
   let out = '';
-  for (const ch of text) {
+  // ASCII equivalents also cover old SHX fonts; both DIMENSION overrides and block TEXT use this path.
+  for (const ch of text.replace(/[↧⌴⌵]/g, (ch) => CALLOUT_SYMBOL_FALLBACKS[ch]!)) {
     const cp = ch.codePointAt(0)!;
     if (cp === 0x5c) out += '\\\\';
     else if (cp >= 0x20 && cp < 0x7f) out += ch;

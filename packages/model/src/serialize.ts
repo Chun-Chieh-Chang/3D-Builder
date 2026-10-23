@@ -391,6 +391,8 @@ const drawingMigrations: Record<number, (doc: Json) => Json> = {
     properties: doc.properties ?? {},
     idCounters: doc.idCounters ?? {},
   }),
+  // v26: per-dimension callout style; absent preserves localized text.
+  25: (doc) => doc,
 };
 
 export function parseDrawing(text: string): DrawingDoc {
