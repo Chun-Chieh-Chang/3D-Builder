@@ -7,7 +7,7 @@ import { viewVectors, type Dimension, type Feature, type PartDoc } from '@3db/mo
 import { PlaneGcsSolver } from '@3db/sketch';
 import { Kernel } from '@3db/kernel';
 import { Regenerator, elementFacts, holeInfo, holeFeatures, viewFeatures } from '@3db/regen';
-import { autoDimensions, evaluateDimension, holeNote, holeRows, threadedHoleText, type PlacedView } from '@3db/drawing';
+import { autoDimensions, dimensionText, evaluateDimension, holeNote, holeRows, threadedHoleText, type PlacedView } from '@3db/drawing';
 import { build, extrude, face, front, rectangle, sketch } from '../phase1/builders';
 
 const point = (id: string, x: number, y: number) => ({ id, type: 'point', x, y }) as const;
@@ -165,5 +165,93 @@ describe('a tapped hole', () => {
   it('threadedHoleText says nothing of a hole that is not tapped', () => {
     expect(threadedHoleText({ through: true, depth: 20 }, 5)).toBeNull();
     expect(threadedHoleText({ through: true, depth: 20, thread: { size: 'M6' } }, 5)).toBe('M6 貫穿（底孔 Ø5）');
+  });
+});
+
+
+describe('manufacturing callouts from evaluated cosmetic threads', () => {
+  const cosmetic = (name: string, threadType: 'external' | 'internal', depth: string): Feature => ({
+    id: 'ct1', name: 'ct1', type: 'cosmeticThread', suppressed: false, targetFace: { kind: 'face', name },
+    threadType, standardMode: 'standard', standardDesignation: 'M8', majorDiameter: '8', minorDiameter: '6.466',
+    pitch: '1.25', endCondition: 'blind', depth,
+  });
+
+  it('uses the external model annotation, updates depth after rebuild and leaves plain diameter measurement available', () => {
+    const base = build(sketch('s1', front, {
+      entities: [{ id: 'p', type: 'point', x: 0, y: 0 }, { id: 'c', type: 'circle', center: 'p', radius: 4 }], constraints: [],
+    }), extrude('e1', 's1', 'boss', { type: 'blind', depth: '30' }));
+    for (const depth of [8, 18, 25]) {
+      const doc = { ...base, features: [...base.features, cosmetic('e1:side:s1.c', 'external', String(depth))] };
+      const r = regen.rebuild(doc);
+      expect(r.features.map((f) => f.status)).toEqual(['ok', 'ok', 'ok']);
+      const body = r.body!;
+      const features = viewFeatures(body.topology, body.names, top, undefined, holeFeatures(doc), r.cosmeticThreads);
+      const circle = features.find((f) => f.type === 'circle' && f.thread);
+      if (!circle || circle.type !== 'circle') throw new Error('threaded cylinder missing');
+      expect(circle.thread).toMatchObject({ pitch: 1.25, depth, designation: 'M8' });
+      const facts = elementFacts(body.topology, body.names, circle.ref, holeFeatures(doc), r.cosmeticThreads);
+      if ('error' in facts) throw new Error(facts.error);
+      const d = { id: 'd1', view: 'view1', kind: 'diameter', ref: circle.ref, angle: 45, callout: true, calloutStyle: 'symbols' } as const;
+      expect(dimensionText(d, 8, facts)).toBe(`M8×1.25 ↧ ${depth}`);
+      expect(dimensionText({ ...d, callout: false }, 8, facts)).toBe('Ø8');
+      expect(dimensionText(d, 8, facts, 'in')).toBe(`M8×1.25 ↧ ${Number((depth / 25.4).toFixed(3))}`);
+      const auto = autoDimensions(features, { overall: false, holes: true, positions: false, callouts: true });
+      expect(auto).toContainEqual(expect.objectContaining({ kind: 'diameter', callout: true }));
+      // Two competing annotations must never silently select the first one.
+      expect(elementFacts(body.topology, body.names, circle.ref, undefined, [...r.cosmeticThreads, ...r.cosmeticThreads])).not.toHaveProperty('thread');
+      // A circular edge can carry the metadata when exactly one adjacent cylinder is annotated.
+      const edge = body.topology.edges.findIndex((e) => e.geometry?.type === 'circle');
+      expect(edge).toBeGreaterThanOrEqual(0);
+      expect(elementFacts(body.topology, body.names, { kind: 'edge', name: body.names.edges[edge]! }, undefined, r.cosmeticThreads)).toHaveProperty('thread.depth', depth);
+    }
+  });
+
+  it('keeps the blind thread length separate from through drilling depth for internal cosmetic threads', () => {
+    const doc = plate(holeSketch('s2', 20, 15), hole('h1', 's2', { diameter: '6.8', end: { type: 'throughAll' } }), cosmetic('h1:side:s2.s2p.wall', 'internal', '12'));
+    const r = regen.rebuild(doc);
+    expect(r.features.map((f) => f.status)).toEqual(['ok', 'ok', 'ok', 'ok', 'ok']);
+    const body = r.body!;
+    const circle = viewFeatures(body.topology, body.names, top, undefined, holeFeatures(doc), r.cosmeticThreads).find((f) => f.type === 'circle' && f.thread);
+    if (!circle || circle.type !== 'circle') throw new Error('internal annotation missing');
+    const facts = elementFacts(body.topology, body.names, circle.ref, holeFeatures(doc), r.cosmeticThreads);
+    if ('error' in facts) throw new Error(facts.error);
+    expect(facts.hole).toMatchObject({ through: true, depth: 20 });
+    const d = { id: 'd1', view: 'view1', kind: 'diameter', ref: circle.ref, angle: 45, callout: true, calloutStyle: 'symbols' } as const;
+    expect(dimensionText(d, 6.8, facts)).toBe('M8×1.25 ↧ 12（底孔 Ø6.8 THRU）');
+    const edgeIndex = body.topology.edges.findIndex((e) => e.geometry?.type === 'circle' && Math.abs(e.geometry.radius - 3.4) < 1e-6);
+    expect(edgeIndex).toBeGreaterThanOrEqual(0);
+    const edgeFacts = elementFacts(body.topology, body.names, { kind: 'edge', name: body.names.edges[edgeIndex]! }, holeFeatures(doc), r.cosmeticThreads);
+    if ('error' in edgeFacts) throw new Error(edgeFacts.error);
+    expect(dimensionText(d, 6.8, edgeFacts)).toBe('M8×1.25 ↧ 12（底孔 Ø6.8 THRU）');
+    const tappedDoc = plate(holeSketch('s2', 20, 15), hole('h1', 's2', { kind: 'tapped', size: 'M8', diameter: '6.8', end: { type: 'throughAll' } }));
+    const tapped = regen.rebuild(tappedDoc).body!;
+    const tappedRef = { kind: 'face', name: 'h1:side:s2.s2p.wall' } as const;
+    const tappedFacts = elementFacts(tapped.topology, tapped.names, tappedRef, holeFeatures(tappedDoc));
+    if ('error' in tappedFacts) throw new Error(tappedFacts.error);
+    expect(dimensionText(d, 6.8, tappedFacts)).toBe('M8×1.25 THRU（底孔 Ø6.8）');
+
+  });
+
+  it('does not call a blind hole THRU when its cosmetic thread runs the full available length', () => {
+    for (const through of [false, true]) {
+      const ct = { ...cosmetic('h1:side:s2.s2p.wall', 'internal', '12'), endCondition: 'through' } as Feature;
+      const doc = plate(holeSketch('s2', 20, 15), hole('h1', 's2', { diameter: '6.8', end: through ? { type: 'throughAll' } : { type: 'blind', depth: '12' } }), ct);
+      const result = regen.rebuild(doc);
+      expect(result.features.every((f) => f.status === 'ok')).toBe(true);
+      const body = result.body!;
+      const ref = { kind: 'face', name: 'h1:side:s2.s2p.wall' } as const;
+      const facts = elementFacts(body.topology, body.names, ref, holeFeatures(doc), result.cosmeticThreads);
+      if ('error' in facts) throw new Error(facts.error);
+      expect(facts.hole?.through).toBe(through);
+      const d = { id: 'd1', view: 'view1', kind: 'diameter', ref, angle: 45, callout: true, calloutStyle: 'symbols' } as const;
+      expect(dimensionText(d, 6.8, facts)).toBe(through ? 'M8×1.25 THRU（底孔 Ø6.8 THRU）' : 'M8×1.25 ↧ 12（底孔 Ø6.8 ↧ 12）');
+    }
+  });
+
+  it('formats bore, sink and drilling depths with symbols without changing the legacy text', () => {
+    const h = { through: false, depth: 15, counterbore: { diameter: 15, depth: 8 }, countersink: { diameter: 18, angle: 90 } };
+    expect(holeNote(h, 'mm', 'symbols')).toBe('↧ 15 ⌴ Ø15 ↧ 8 ⌵ Ø18 × 90°');
+    expect(holeNote(h)).toBe('深 15 沉頭 Ø15 深 8 錐孔 Ø18 90°');
+    expect(threadedHoleText({ through: true, depth: 20, thread: { size: 'M6' } }, 5, 'mm', 'symbols')).toBe('M6 THRU（底孔 Ø5）');
   });
 });

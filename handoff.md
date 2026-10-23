@@ -12,12 +12,24 @@
 
 ---
 
+## 2026-10-23：main 整合完成（E5 Phase 1–3）
+
+- main 的預選高亮、半徑／直徑顯示切換、基線與倒角尺寸，與 Phase 3 孔／裝飾螺紋標註皆保留。
+- 整合後圖紙 Schema **27**；兩種來源的版本 26 文件均可升級。直徑切為半徑會清除孔標註及其樣式，切回後可重新設定。
+- 全量檢查僅發現新命令缺說明；補齊雙語說明及 F3 映射後，64 項相關單元測試全過。完整 UI 初輪 163/164，更新舊選單清單預期後，相關 UI 重驗 2/2 通過；164 項均有通過結果。完整細節見 DEV_LOG 合併項與 `out/merge-main-2026-10-23/`。
+
+## 2026-10-23 接手：工程圖 Phase 3
+
+- 已實作孔／裝飾螺紋標註的每尺寸文字／符號切換、內外裝飾螺紋規格與有效長度、鑽孔深度分離、DXF／PDF 缺字符號回退。見 [ADR 0184](docs/adr/0184-drawing-thread-callout-style.md)。
+- Phase 3 獨立分支原為圖紙 Schema 26；與 main 整合後使用 27，舊圖維持文字模式。沒有公差等級資料，不補造 6H／6g；沒有從真實螺旋幾何反查規格。
+- 本次 `npm run check`：3461 通過、0 失敗、24 略過；完整 `verify:ui`：164/164 通過。結果整理於 DEV_LOG 的 2026-10-23 項與 `out/phase3-2026-10-23/`。圖紙全域樣式預設、側視圖獨立螺紋引線、外部 CAD 字型驗證仍未納入。
+
 ## 〇、目前狀態（2026-10-23 更新）
 
 | 項目 | 現值 |
 |---|---|
-| 零件／組合件／工程圖 Schema | 75／7／26（E5 Phase 2 升級工程圖至 26） |
-| ADR | 0001–0183，共 183 份，在 `docs/adr/`，全部列在 §2 |
+| 零件／組合件／工程圖 Schema | 75／7／27（整合 E5 Phase 2 與 Phase 3） |
+| ADR | 0001–0184，共 184 份，在 `docs/adr/`，全部列在 §2 |
 | 全閘門 | 2026-10-22，G8b 之後：`npm run check` 275 檔、3453 通過、0 失敗、25 略過；完整 `verify:ui` 164/164（含 `manual-sketch-block.js`、`manual-sketch-condition.js`）。2026-10-23 新增驗收探針後：`verify:external-samples` 3/3、`verify:freecad-sheet-metal`、`verify:drawing-export`、`typecheck`、`lint:rules`、`lint:deps`、`git diff --check` 均通過；2026-10-23 提交前完整 `npm run check` 276 檔、3456 通過、0 失敗、25 略過。 |
 | 瀏覽器腳本 | `tests/e2e/` 共 150 個檔案（含輔助檔；`npm run verify:ui` 依檔頭的呼叫逐項跑，共 164 項） |
 | 實機驗證清單 | [docs/manual-verification.html](docs/manual-verification.html) 91 項（新增 C27） |
@@ -393,6 +405,7 @@
 | [ADR 0181](docs/adr/0181-sketch-attachment.md) | ADR 0181：草圖附著，原點與 X 方向取自模型（G7，零件 **Schema 73**）：`sketch.attach`（`origin` 頂點或參考點、`x` 直線邊或參考軸、`flipX`），平面不變；X 垂直於平面時拒絕；在「編輯草圖基準面」設定 |
 | [ADR 0182](docs/adr/0182-sketch-block.md) | ADR 0182：固定整個圖元（Block，G8a，零件 **Schema 74**）：`block`（`entity` 線、圓或圓弧），線鎖兩端、圓鎖圓心與半徑、圓弧鎖圓心、起點與終點方向；可多選、每個圖元各一個、一次復原；移動、旋轉、縮放拒絕，複製不帶固定 |
 | [ADR 0183](docs/adr/0183-distance-arc-condition.md) | ADR 0183：圓弧條件，最近與最遠距離（G8b，零件 **Schema 75**）：`distance.condition`（`min`／`max`），適用圓或圓弧與點、直線、圓或圓弧；最近用 PlaneGCS 原生的 `c2cdistance`／`p2cdistance`／`c2ldistance`，最遠用圓上的輔助點；切換時數值換成量得的值；相交或圓心重合明確拒絕 |
+| [ADR 0184](docs/adr/0184-drawing-thread-callout-style.md) | 工程圖 Phase 3：每尺寸文字／製造符號切換，內外裝飾螺紋規格與有效長度，底孔深度分離，DXF／PDF 符號回退；圖紙 Schema 26 |
 | [docs/assembly-explode-plan.md](docs/assembly-explode-plan.md) | 組合件：爆炸線與動畫、多組爆炸、形成新次組合件（計畫） |
 | [docs/cleanup-candidates.md](docs/cleanup-candidates.md) | 清理候選清單（2026-10-07） |
 | [docs/drawing-callouts-plan.md](docs/drawing-callouts-plan.md) | 工程圖：螺紋孔與錐形沉孔的標註、DXF 的 DIMENSION 圖元（計畫） |

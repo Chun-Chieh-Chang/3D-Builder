@@ -77,8 +77,8 @@ const makeRandom = (seed: number): (() => number) => {
 };
 
 describe('the auxiliary view (B2.7)', () => {
-  it('the drawing schema is at least 25', () => {
-    expect(DRAWING_SCHEMA_VERSION).toBeGreaterThanOrEqual(25);
+  it('the drawing schema supports auxiliary views', () => {
+    expect(DRAWING_SCHEMA_VERSION).toBeGreaterThanOrEqual(24);
   });
 
   it('an auxiliary view inserts and keeps its parent, fold line and letter', () => {
@@ -190,7 +190,7 @@ describe('the auxiliary view (B2.7)', () => {
     expect(v.label).toBe('A');
   });
 
-  it('a version-23 drawing (the last before auxiliary views) is upgraded, keeping what it had', () => {
+  it('a version-23 drawing (the last before auxiliary views) is upgraded to the current version, keeping what it had', () => {
     const read = parseDrawing(JSON.stringify(olderDrawingFile(insert(modelView()), 23)));
     expect(read.schemaVersion).toBe(DRAWING_SCHEMA_VERSION);
     expect(page(read).views.find((x) => x.id === 'aux1')).toBeDefined();

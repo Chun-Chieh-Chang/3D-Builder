@@ -619,7 +619,7 @@ const api: KernelApi = {
         const built = await parts.get(r.part)?.catch(() => null);
         const body = built?.result.body;
         if (!built || !body) throw new Error(t('drawing.noBody'));
-        out.push({ elements: r.refs.map((ref) => elementFacts(body.topology, body.names, ref, built.holes)) });
+        out.push({ elements: r.refs.map((ref) => elementFacts(body.topology, body.names, ref, built.holes, built.result.cosmeticThreads)) });
       } catch (e) {
         out.push({ error: e instanceof Error ? e.message : String(e) });
       }

@@ -40,8 +40,8 @@ const baseDoc = (): DrawingDoc =>
   });
 
 describe('E5 Phase 2: Chamfer Dimension (Model & Schema)', () => {
-  it('schema version is 26', () => {
-    expect(DRAWING_SCHEMA_VERSION).toBe(26);
+  it('schema supports chamfer dimensions', () => {
+    expect(DRAWING_SCHEMA_VERSION).toBeGreaterThanOrEqual(26);
   });
 
   it('inserts a valid chamfer dimension and keeps its fields', () => {
@@ -194,7 +194,7 @@ describe('E5 Phase 2: Chamfer Dimension (Model & Schema)', () => {
   it('migrates v25 document to v26 cleanly', () => {
     const json = JSON.stringify({ ...baseDoc(), schemaVersion: 25 });
     const upgraded = parseDrawing(json);
-    expect(upgraded.schemaVersion).toBe(26);
+    expect(upgraded.schemaVersion).toBe(DRAWING_SCHEMA_VERSION);
   });
 });
 

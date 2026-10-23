@@ -294,7 +294,9 @@
     "drw-dim-aligned",
     "drw-dim-angle",
     "drw-dim-radius",
-    "drw-dim-diameter"
+    "drw-dim-diameter",
+    "drw-dim-chamfer",
+    "drw-baseline"
   ],
   "F4": [
     "concept.drawing-dimensions"

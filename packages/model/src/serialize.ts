@@ -393,6 +393,8 @@ const drawingMigrations: Record<number, (doc: Json) => Json> = {
   }),
   // v26 (E5): chamfer dimension (ChamferDimension) is new; nothing to convert, the version keeps an older program from opening what it cannot draw.
   25: (doc) => doc,
+  // v27: merge per-dimension callout styles with v26 chamfer dimensions. Both v26 lineages upgrade without rewriting values.
+  26: (doc) => doc,
 };
 
 export function parseDrawing(text: string): DrawingDoc {

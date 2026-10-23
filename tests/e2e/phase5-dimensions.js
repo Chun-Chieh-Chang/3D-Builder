@@ -55,6 +55,23 @@ x.run = async () => {
   await click(panel('[data-action="autoDimension"]'));
   await H.waitFor(() => page()?.dimensions.length === 5 && drw().elements.size === 5, 30000, 'five dimensions worked out');
   H.check(JSON.stringify(texts().sort()) === JSON.stringify(['120', '2×Ø8 貫穿', '4×R10', '4×Ø9 貫穿', '80'].sort()), `overall size and holes: ${texts().join(' | ')}`);
+  // Manufacturing symbols are a per-dimension display choice; the measured hole stays the same.
+  const callout = page().dimensions.find((d) => d.kind === 'diameter' && d.callout);
+  H.check(!!callout, 'a real hole callout exists');
+  await click(panel(`[data-dimension="${callout.id}"]`));
+  const priorText = store.drawingStore.scene().dimensions.get(callout.id).text;
+  await choose(panel('[data-field="dimCalloutStyle"]'), 'symbols');
+  H.check(store.drawingStore.scene().dimensions.get(callout.id).text === priorText.replace('貫穿', 'THRU'), 'symbol style follows the same model hole');
+  H.check(page().dimensions.find((d) => d.id === callout.id).calloutStyle === 'symbols', 'style is stored in the dimension');
+  await choose(panel('[data-field="dimCalloutStyle"]'), 'text');
+  H.check(store.drawingStore.scene().dimensions.get(callout.id).text === priorText, 'localized text restored');
+  await choose(panel('[data-field="dimDisplayKind"]'), 'radius');
+  H.check(page().dimensions.find((d) => d.id === callout.id).kind === 'radius' && !('calloutStyle' in page().dimensions.find((d) => d.id === callout.id)), 'radius display clears diameter-only callout style');
+  await choose(panel('[data-field="dimDisplayKind"]'), 'diameter');
+  await check(panel('[data-field="dimCallout"]'), true);
+  await choose(panel('[data-field="dimCalloutStyle"]'), 'text');
+  H.check(store.drawingStore.scene().dimensions.get(callout.id).text === priorText, 'diameter display and model callout restored');
+
   // asked again: nothing new
   await click(panel('[data-action="autoDimension"]'));
   H.check(page()?.dimensions.length === 5, 'no dimension is made twice');

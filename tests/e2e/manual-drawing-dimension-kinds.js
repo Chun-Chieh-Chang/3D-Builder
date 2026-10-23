@@ -131,7 +131,7 @@ K.run = async () => {
     await H.wait(100);
     d().setTool(null);
     await H.wait(100);
-    const want = ['drw-dim-horizontal', 'drw-dim-vertical', 'drw-dim-aligned', 'drw-dim-angle', 'drw-dim-radius', 'drw-dim-diameter'];
+    const want = ['drw-dim-horizontal', 'drw-dim-vertical', 'drw-dim-aligned', 'drw-dim-angle', 'drw-dim-radius', 'drw-dim-diameter', 'drw-dim-chamfer'];
     return { pass: JSON.stringify(kinds) === JSON.stringify(want) && tool?.kind === 'dimension' && tool.mode === 'horizontal' && shown, kinds, tool, shown };
   });
 
@@ -196,7 +196,7 @@ K.run = async () => {
     await rightClick(sheetOf(top.id, left().coord, 0));
     const items = topItems();
     const offered = items.filter((x) => x.startsWith('cmd-drw-dim') || x === 'cmd-drw-dimension');
-    const want = ['cmd-drw-dimension', 'cmd-drw-dim-horizontal', 'cmd-drw-dim-vertical', 'cmd-drw-dim-aligned', 'cmd-drw-dim-angle'];
+    const want = ['cmd-drw-dimension', 'cmd-drw-dim-horizontal', 'cmd-drw-dim-vertical', 'cmd-drw-dim-aligned', 'cmd-drw-dim-angle', 'cmd-drw-dim-chamfer'];
     menuItem('cmd-drw-dim-vertical').click();
     await H.wait(150);
     const tool = drw().tool;
@@ -253,7 +253,7 @@ K.run = async () => {
     const tool = drw().tool;
     d().setTool(null);
     await H.wait(100);
-    const wantDims = ['cmd-drw-dimension', 'cmd-drw-dim-horizontal', 'cmd-drw-dim-vertical', 'cmd-drw-dim-aligned', 'cmd-drw-dim-radius', 'cmd-drw-dim-diameter', 'cmd-drw-dim-angle', 'cmd-drw-ordinate', 'cmd-drw-arrange'];
+    const wantDims = ['cmd-drw-dimension', 'cmd-drw-dim-horizontal', 'cmd-drw-dim-vertical', 'cmd-drw-dim-aligned', 'cmd-drw-dim-radius', 'cmd-drw-dim-diameter', 'cmd-drw-dim-angle', 'cmd-drw-dim-chamfer', 'cmd-drw-ordinate', 'cmd-drw-baseline', 'cmd-drw-arrange'];
     return {
       pass: kind === 'view' && needed.every((x) => items.includes(x)) && !items.some((x) => x.startsWith('cmd-drw-dim')) && JSON.stringify(dims) === JSON.stringify(wantDims) && anns.includes('cmd-drw-note') && anns.includes('cmd-drw-centre-mark') && tool?.kind === 'annotate' && tool.what === 'note',
       kind,

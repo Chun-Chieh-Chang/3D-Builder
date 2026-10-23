@@ -59,13 +59,13 @@ export function autoDimensions(features: readonly ViewFeature[], options: AutoDi
     // equal circles are one dimension with their count (with callouts, only those the callout says the same of: a countersunk Ø6 is not a dowel Ø6)
     const groups = new Map<string, Circle[]>();
     for (const c of circles) {
-      const key = `${c.full}|${c.convex}|${Math.round(c.radius * 1e4)}|${options.callouts && c.full ? holeSignature(c.hole) : ''}`;
+      const key = `${c.full}|${c.convex}|${Math.round(c.radius * 1e4)}|${options.callouts && c.full ? `${holeSignature(c.hole)}|${JSON.stringify(c.thread ?? null)}` : ''}`;
       groups.set(key, [...(groups.get(key) ?? []), c]);
     }
     for (const g of groups.values()) {
       const first = g[0]!;
       const count = g.length > 1 ? { count: g.length } : {};
-      const callout = options.callouts && first.hole ? { callout: true } : {};
+      const callout = options.callouts && (first.hole || first.thread) ? { callout: true } : {};
       out.push(first.full ? { kind: 'diameter', ref: first.ref, angle: first.outward, ...count, ...callout } : { kind: 'radius', ref: first.ref, angle: first.outward, ...count });
     }
     // A fillet is one radius per *face*, and a face gives the view two features — the tube is cut once either side of its axis — so the faces are collected first
