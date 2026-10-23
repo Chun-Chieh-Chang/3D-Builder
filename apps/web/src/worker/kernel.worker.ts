@@ -250,7 +250,7 @@ const api: KernelApi = {
     const payload: RebuildPayload = {
       seq,
       features: r.features,
-      bodies: r.bodies.map((b, i) => ({ id: b.id, name: b.name, reference: b.reference, surface: b.surface, shown: shown[i]!, face0: b.face0, faces: b.faces, volume: kernel.massProps(b.shape).volume })),
+      bodies: r.bodies.map((b, i) => ({ id: b.id, name: b.name, reference: b.reference, surface: b.surface, ...(b.curve ? { curve: true } : {}), shown: shown[i]!, face0: b.face0, faces: b.faces, volume: kernel.massProps(b.shape).volume })),
       mesh,
       faceNames: body?.names.faces ?? [],
       faceFingerprints: body ? body.topology.faces.map((_, i) => faceFingerprint(body.topology, i)) : [],

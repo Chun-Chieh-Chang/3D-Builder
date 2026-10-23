@@ -417,7 +417,11 @@ describe('Helix and Spiral Curve Feature (ADR 0168 / C8.3)', () => {
       release(r);
     });
 
-    it('is a curve: surface features refuse it with a reason (knit used to take it "ok")', () => {
+    it('is a curve: body list marks it as curve and surface features refuse it', () => {
+      const pure = rebuild(doc({}));
+      expect(pure.bodies[0]?.curve).toBe(true);
+      expect(pure.bodies[0]?.surface).toBe(true);
+      release(pure);
       const knit = { id: 'kn', type: 'knit', name: 'kn', suppressed: false, bodies: [{ kind: 'body', name: 'hx' }] } as Feature;
       const thicken = { id: 'th', type: 'thicken', name: 'th', suppressed: false, body: { kind: 'body', name: 'hx' }, thickness: '1' } as Feature;
       for (const f of [knit, thicken]) {

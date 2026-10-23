@@ -59,6 +59,8 @@ export interface BodyPayload {
   reference: boolean;
   /** A surface body (4b): no solid, not a part. */
   surface: boolean;
+  /** A curve body (C8.3 helix): edges and no faces. */
+  curve?: boolean;
   /** Whether it is drawn (D4.6): a hidden body has no faces in mesh, so it cannot be picked either. */
   shown: boolean;
   /** Its faces are numbers face0 … face0 + faces - 1 of the names and fingerprints below. */

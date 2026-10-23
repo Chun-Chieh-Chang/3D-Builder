@@ -1,5 +1,38 @@
 # 3D-Builder 開發日誌 (DEV_LOG.md)
 
+## 2026-10-23：曲線本體在 UI 的本體清單標記（曲線）並自曲面工具池排除（B1，ADR 0168 補充）
+
+### 1. 背景與 RCA
+- **現象**：螺旋曲線特徵（C8.3，ADR 0168）建立的曲線本體（Wire body），在 UI 的本體清單中仍被標示為 `（曲面）`，且「縫織曲面」、「加厚」等曲面工具在只有曲線本體時仍會被啟用，面板下拉清單中也包含曲線本體。
+- **根因分析 (RCA)**：
+  1. `BodyState`（`packages/regen/src/bodies.ts`）當初為了避免實體布林、質量計算與干涉檢查誤算曲線本體，同時標記了 `surface: true` 與 `curve: true`。但再生核心傳遞給 UI 的 `BodyInfo`（`packages/regen/src/engine.ts`）與 `BodyPayload`（`apps/web/src/worker/protocol.ts`）漏掉了 `curve` 旗標。
+  2. UI 的 `FeatureTree.tsx` 僅判斷 `b.surface && t('tree.surface')`，故直接顯示為「（曲面）」。
+  3. `actions.ts` 與 `store.ts` 的 `bodyPool`（曲面工具快照池）僅判斷 `b.surface`，導致曲面特徵工具列被誤點亮、下拉清單列入曲線本體。
+- **矯正措施 (CAPA)**：
+  1. `BodyInfo` 與 `BodyPayload` 補齊 `curve?: boolean` 傳遞鏈。
+  2. `FeatureTree.tsx` 顯示邏輯改為 `{b.curve ? t('tree.curve') : b.surface && t('tree.surface')}`，補齊雙語 `'tree.curve': '（曲線）'` / `'(curve)'`。
+  3. `actions.ts` 與 `store.ts` 快照池將曲面特徵判定嚴格收斂為 `b.surface && !b.curve`，確保曲線本體不污染曲面特徵工具池。
+
+### 2. 做法
+| 層級 | 檔案 | 改動 |
+|---|---|---|
+| 再生核心 | `packages/regen/src/engine.ts` | `BodyInfo` 增加 `curve?: boolean` 並映射 `...(b.curve ? { curve: true } : {})` |
+| 通訊協議 | `apps/web/src/worker/protocol.ts`、`kernel.worker.ts` | `BodyPayload` 增加 `curve?: boolean` 並由 Worker 轉發 |
+| 雙語字典 | `packages/i18n/src/zh-TW/edit.ts`、`packages/i18n/src/en/edit.ts` | 增加 `'tree.curve'` 標籤 |
+| 介面樹 | `apps/web/src/components/FeatureTree.tsx` | 本體標籤優先判斷 `b.curve` 標為 `（曲線）` |
+| 狀態與動作 | `apps/web/src/state/store.ts`、`apps/web/src/actions.ts` | `bodyPool` 與曲面動作啟用條件過濾掉 `b.curve` |
+| 確效測試 | `tests/phase3/helix-curve.test.ts` | 斷言 `pure.bodies[0]?.curve === true` |
+
+### 3. 紅隊四問檢驗
+1. **輸入破壞**：非法圖元依然被螺旋特徵前置攔截，不受影響。
+2. **幾何自交**：幾何求值管線不變，純屬型別標記與 UI 分流優化。
+3. **依賴鏈完整性**：`BodyState` → `BodyInfo` → `BodyPayload` → `FeatureTree.tsx` / `actions.ts` 全鏈路打通。
+4. **規格真實性**：斷言真實再生結果 `r.bodies[0].curve === true`。
+
+### 4. 測試
+- `tests/phase3/helix-curve.test.ts` 22/22 全數通過。
+- `npm run typecheck`、`npm run lint:rules`、`npm run lint:deps`、`npm run lint:i18n` 通過。
+
 ## 2026-10-22：圓弧條件，最近與最遠距離（G8b，[ADR 0183](docs/adr/0183-distance-arc-condition.md)，Schema 75）
 
 ### 1. 背景與決策

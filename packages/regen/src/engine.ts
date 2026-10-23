@@ -118,6 +118,8 @@ export interface BodyInfo {
   reference: boolean;
   /** A surface body (4b): no solid, not a part (see `BodyState.surface`). */
   surface: boolean;
+  /** A curve body (C8.3 helix): edges and no faces. */
+  curve?: boolean;
   shape: ShapeId;
   face0: number;
   faces: number;
@@ -868,6 +870,7 @@ export class Regenerator {
             name: doc.bodies[b.id]?.name ?? this.inherited.get(b.id)?.name ?? `${make?.name ?? bodyFeature(b.id)}${piece}`,
             reference: doc.bodies[b.id]?.reference ?? this.inherited.get(b.id)?.reference ?? false,
             surface: !!b.surface,
+            ...(b.curve ? { curve: true } : {}),
             shape: b.shape,
             face0: p.face0,
             faces: p.faces,

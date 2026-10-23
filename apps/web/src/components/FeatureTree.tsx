@@ -441,7 +441,7 @@ export function FeatureTree() {
                 <span className="name">
                   {b.name}
                   {b.reference && t('tree.reference')}
-                  {b.surface && t('tree.surface')}
+                  {b.curve ? t('tree.curve') : b.surface && t('tree.surface')}
                 </span>
               )}
               {isParent && <span className="dep-badge parent-badge">{t('tree.bodyBadge')}</span>}

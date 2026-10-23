@@ -300,7 +300,7 @@ export interface UiState {
   /** What the picked elements are, measured by the kernel (E1 §2.2): the numbers the selection panel shows, asked again when the pick or the model changes. Null when nothing is picked. */
   selectionFacts: SelectionFacts | null;
   /** The bodies there were when a knit, thicken or cut with surface was started: what it can pick from (a body it uses up, or turns into a solid, is not what the model it shows has). */
-  bodyPool: { id: Id; name: string; surface: boolean }[];
+  bodyPool: { id: Id; name: string; surface: boolean; curve?: boolean }[];
   /** Which kinds of element the graphics area lets be picked (D5.4): a command asks for kinds, this narrows them. Radio in the UI, as the SW filter toolbar (ADR 0145): at most one kind off the full set, or all of them. */
   pickFilter: PickFilter;
   /** Whether the graphics area shows the selection filter bar (ADR 0145); F5 toggles, the choice is kept in the options. */
@@ -2203,7 +2203,7 @@ class AppStore {
 
   /** The bodies of the model on screen, kept for the session that is about to start (`bodyPool`). */
   private snapshotBodies(result: UiState['result']): UiState['bodyPool'] {
-    const pool = (result?.bodies ?? []).map((b) => ({ id: b.id, name: b.name, surface: b.surface }));
+    const pool = (result?.bodies ?? []).map((b) => ({ id: b.id, name: b.name, surface: b.surface && !b.curve, ...(b.curve ? { curve: true } : {}) }));
     this.set({ bodyPool: pool });
     return pool;
   }
