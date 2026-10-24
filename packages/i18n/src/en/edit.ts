@@ -52,6 +52,7 @@ export const edit: Translation = {
   'edit.fullRoundOneCenter': 'A full round fillet takes only one center face for now',
   'edit.refsLost': 'Missing reference: {n} picked elements (edges or faces) were not found, please pick again',
   'edit.faceNoEdges': 'The face has no edge to round: its edges are all smooth ones or seams',
+  'edit.noEdgeOrFacePicked': 'No edges or faces selected: pick an edge or face in the graphics area',
   'edit.noEdgePicked': 'No edge has been picked',
   'edit.edgesLost': 'Lost references: {n} edge(s) not found, pick them again',
   'edit.filletVariableEdge': 'A control point of a variable radius can only sit on an edge this fillet picked: {edge}',

@@ -4524,6 +4524,7 @@ export class Regenerator {
   private fillet(f: FilletFeature, set: Bodies): BodyState[] {
     if (f.kind === 'face') return this.faceFillet(f, set);
     if (f.kind === 'full') return this.fullRound(f, set);
+    if (f.edges.length === 0 && !f.faces?.length) throw new FeatureError(t('edit.noEdgeOrFacePicked'));
     return this.perBody(set, [...f.edges, ...(f.faces ?? [])], 'edge', t('edit.noBodyForFillet'), lostRefs, (body, mine) => {
       const { edges } = this.edgesOfRefs(mine, body);
       const laws = this.filletLaws(f, mine, body);
@@ -4593,6 +4594,7 @@ export class Regenerator {
   }
 
   private chamfer(f: ChamferFeature, set: Bodies): BodyState[] {
+    if (f.edges.length === 0 && !f.faces?.length) throw new FeatureError(t('edit.noEdgeOrFacePicked'));
     return this.perBody(set, [...f.edges, ...(f.faces ?? [])], 'edge', t('edit.noBodyForChamfer'), lostRefs, (body, mine) => {
       const { edges, via } = this.edgesOfRefs(mine, body);
       const specs = edges.map((edge) => {

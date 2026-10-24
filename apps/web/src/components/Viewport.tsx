@@ -147,12 +147,13 @@ export function Viewport() {
       return name && fingerprint ? { kind: 'vertex', name, fingerprint } : null;
     };
     const idOf = (key: string) => key.slice(key.indexOf(':') + 1);
-    const clickFace = (face: number) => {
+    const clickFace = (face: number, additive = false) => {
       if (store.getState().measure) return store.measurePick('face', face, null);
       const ref = faceRef(face);
       if (store.getState().editing) {
         if (ref) store.pick(ref);
-      } else store.selectFace(ref);
+      } else if (additive && ref) store.selectElement(ref, true);
+      else store.selectFace(ref);
     };
     const viewer = new Viewer(host.current!, {
       onEdgeHover: setHover,

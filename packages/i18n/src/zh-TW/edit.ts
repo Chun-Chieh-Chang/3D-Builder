@@ -50,6 +50,7 @@ export const edit = {
   'edit.fullRoundOneCenter': '完整圓角的中央面目前只能選一個面',
   'edit.refsLost': '遺失參考：{n} 個選取（邊線或面）找不到，請重新選擇',
   'edit.faceNoEdges': '選的面沒有可以倒的邊：它的邊都是相切連續的邊或接縫',
+  'edit.noEdgeOrFacePicked': '尚未選擇邊線或面：請在圖形區點選要處理的邊線或面',
   'edit.noEdgePicked': '尚未選擇邊線',
   'edit.edgesLost': '遺失參考：{n} 條邊線找不到，請重新選擇',
   'edit.filletVariableEdge': '變化半徑的控制點只能綁在這個圓角揀選的邊線上：{edge}',

@@ -1391,7 +1391,7 @@ class AppStore {
   selectElement(ref: Ref | null, additive: boolean): void {
     if (!ref) return void this.set({ selectedElements: [] });
     const same = (a: Ref, b: Ref) => a.kind === b.kind && a.name === b.name;
-    const cur = this.state.selectedElements;
+    const cur = [...this.state.selectedElements, ...(this.state.selectedFace ? [this.state.selectedFace] : [])];
     const next = additive ? (cur.some((x) => same(x, ref)) ? cur.filter((x) => !same(x, ref)) : [...cur, ref]) : [ref];
     this.set({ selectedElements: next, selectedFace: null, selected: null });
   }
@@ -1408,6 +1408,12 @@ class AppStore {
   /** The edges selected before a command was started, for it to begin with. */
   private preselectedEdges(): Ref[] {
     return this.state.selectedElements.filter((r) => r.kind === 'edge');
+  }
+
+  /** Faces selected before a fillet/chamfer: keep model references, not a snapshot of their edges. */
+  private preselectedFaces(): Ref[] {
+    const faces = [...this.state.selectedElements, ...(this.state.selectedFace ? [this.state.selectedFace] : [])].filter((r) => r.kind === 'face');
+    return faces.filter((r, i) => faces.findIndex((other) => other.name === r.name) === i);
   }
 
   /**
@@ -1947,7 +1953,7 @@ class AppStore {
   newFillet(): void {
     this.set({ filletPick: 'faces' });
     const id = this.allocator().take('fillet');
-    this.openNew({ id, type: 'fillet', name: nextName(this.history.doc, t('feature.fillet')), suppressed: false, edges: this.preselectedEdges(), radius: '2' }, t('feature.fillet'));
+    this.openNew({ id, type: 'fillet', name: nextName(this.history.doc, t('feature.fillet')), suppressed: false, edges: this.preselectedEdges(), faces: this.preselectedFaces(), radius: '2' }, t('feature.fillet'));
   }
 
   /**
@@ -2046,7 +2052,7 @@ class AppStore {
   /** 「導角」 (C5.3), angle–distance by default like SolidWorks. */
   newChamfer(): void {
     const id = this.allocator().take('chamfer');
-    this.openNew({ id, type: 'chamfer', name: nextName(this.history.doc, t('feature.chamfer')), suppressed: false, edges: this.preselectedEdges(), mode: 'angleDistance', distance: '1', second: '45' }, t('feature.chamfer'));
+    this.openNew({ id, type: 'chamfer', name: nextName(this.history.doc, t('feature.chamfer')), suppressed: false, edges: this.preselectedEdges(), faces: this.preselectedFaces(), mode: 'angleDistance', distance: '1', second: '45' }, t('feature.chamfer'));
   }
 
   /** 「刪除面」 (C10.2): starts with the face selected in the graphics area, if there is one. */
@@ -2502,6 +2508,11 @@ class AppStore {
   commitEdit(): void {
     const e = this.state.editing;
     if (!e) return;
+    const pending = findFeature(this.history.doc, e.featureId);
+    if ((pending?.type === 'chamfer' || (pending?.type === 'fillet' && (!pending.kind || pending.kind === 'constant'))) && pending.edges.length === 0 && !pending.faces?.length) {
+      this.notify(t('edit.noEdgeOrFacePicked'), 'error');
+      return;
+    }
     this.history.commit();
     this.leaveSession();
     // the last plain distance a person confirmed is what the next 「基準面」 and 「偏移草圖」 start from (ADR 0127)
@@ -2637,7 +2648,7 @@ class AppStore {
     if (f?.type === 'fillet' && f.kind && f.kind !== 'constant') {
       const group = this.state.filletPick;
       this.execute({ type: 'setFilletSets', featureId: f.id, kind: f.kind, faces: f.faces, faces2: f.faces2, center: f.center, ...{ [group]: more(f[group] ?? [], 'face') } });
-    } else if (f?.type === 'fillet' || f?.type === 'chamfer') this.execute({ type: 'setEdges', featureId: f.id, edges: more(f.edges, 'edge') });
+    } else if (f?.type === 'fillet' || f?.type === 'chamfer') this.execute({ type: 'setEdges', featureId: f.id, edges: more(f.edges, 'edge'), faces: more(f.faces ?? [], 'face') });
     else if (f?.type === 'breakCorner') this.execute({ type: 'setBreakCorner', featureId: f.id, corners: more(f.corners, 'edge'), kind: f.kind, size: f.size });
     else if (f?.type === 'deleteFace') this.execute({ type: 'setFaces', featureId: f.id, faces: more(f.faces, 'face'), ...(f.hole ? { hole: true } : {}) });
     else if (f?.type === 'shell') this.execute({ type: 'setShell', featureId: f.id, faces: more(f.faces, 'face'), thickness: f.thickness, ...(f.outward ? { outward: true } : {}) });
