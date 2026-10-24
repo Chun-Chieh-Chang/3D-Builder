@@ -1,4 +1,5 @@
 import { t } from '@3db/i18n';
+import { silhouetteProjector } from './silhouette';
 import {
   DATUM_PLANES,
   evalAngle,
@@ -74,7 +75,12 @@ import {
   type KnurlFeature,
   type CosmeticThreadFeature,
   type HelixFeature,
+  type ProjectedCurveFeature,
+  type RuledSurfaceFeature,
+  type RadiatedSurfaceFeature,
+  type ReplaceFaceFeature,
   lookupThread,
+  validThreadTolerance,
   generateStandardThreadProfile,
   sketchAxisDir,
   modelRefOf,
@@ -293,6 +299,7 @@ export interface CosmeticThreadInfo {
   threadType: 'external' | 'internal';
   standardMode: 'standard' | 'custom';
   standardDesignation?: string;
+  toleranceClass?: string;
   majorDiameter: number;
   minorDiameter: number;
   pitch: number;
@@ -761,6 +768,15 @@ export class Regenerator {
             this.cosmeticThread(feature, set);
             return done({ status: 'ok' });
           }
+          case 'ruledSurface':
+          case 'radiatedSurface':
+          case 'replaceFace': {
+            set=this.advance(set,this.surfaceTools(feature,set));return done({status:'ok'});
+          }
+          case 'projectedCurve': {
+            set = this.advance(set, this.projectedCurve(feature, sketches, set));
+            return done({ status: 'ok' });
+          }
           case 'helix': {
             set = this.advance(set, this.helix(feature, sketches, set));
             return done({ status: 'ok' });
@@ -1216,6 +1232,7 @@ export class Regenerator {
           topology: body?.topology ?? NO_TOPOLOGY,
           frame,
           datums: this.datumScope(set),
+          ...(body ? { silhouettes: silhouetteProjector(this.kernel,body.shape,body.names,body.topology,frame).branch } : {}),
           // the sketches rebuilt before this one: the history is in order, so a sketch sees only those before it (ADR 0175)
           sketches: (id: Id) => {
             const s = earlier.get(id);
@@ -1798,6 +1815,7 @@ export class Regenerator {
    * Does NOT call OCCT boolean algorithms (0.00 MiB WASM Heap leakage).
    */
   private cosmeticThread(f: CosmeticThreadFeature, set: Bodies): void {
+    if (!validThreadTolerance(f.toleranceClass, f.standardMode === 'standard' ? f.standardDesignation : undefined, f.threadType)) throw new FeatureError(t('cmd.badThreadTolerance'));
     if (!set.view) throw new FeatureError(t('feature.cosmeticThreadNeedsBody'));
     const body = this.modelFor(set, t('feature.cosmeticThread'));
     const faceIdx = this.resolve(f.targetFace, body, t('feature.cosmeticThread'));
@@ -1898,6 +1916,7 @@ export class Regenerator {
       threadType: f.threadType,
       standardMode: f.standardMode ?? 'custom',
       standardDesignation: f.standardDesignation,
+      toleranceClass: f.toleranceClass,
       majorDiameter,
       minorDiameter,
       pitch,
@@ -1914,6 +1933,70 @@ export class Regenerator {
    * Helix and Spiral Curve (螺旋曲線與渦捲線, C8.3, ADR 0168):
    * Constructs a 3D space helix or planar Archimedean spiral wire from a reference circle.
    */
+  private surfaceTools(f:RuledSurfaceFeature|RadiatedSurfaceFeature|ReplaceFaceFeature,set:Bodies):BodyState[] {
+    const owner=(ref:Ref)=>{
+      const body=set.list.find(b=>(ref.kind==='edge'?b.names.edges:b.names.faces).includes(ref.name));
+      if(!body)throw new FeatureError(t('reference.lost'),[{ref,reason:'missing',candidates:[]}]);
+      return {body,index:this.resolve(ref,body,t('surfaceTools.pickEdges'))};
+    };
+    if(f.type==='replaceFace') {
+      const {body,index}=owner(f.face),face=body.topology.faces[index]!;
+      const plane=this.planeOf(f.replacement,set,{what:t('feature.replaceFace'),notPlanar:t('surfaceTools.parallelPlane')});
+      if(body.surface||!face.normal||face.surface!=='plane'||Math.abs(dot(face.normal,plane.normal))<1-1e-9)throw new FeatureError(t('surfaceTools.parallelPlane'));
+      const distance=dot(sub(plane.origin,face.center),face.normal);
+      if(!Number.isFinite(distance)||Math.abs(distance)>1e6)throw new FeatureError(t('surfaceTools.range'));
+      if(Math.abs(distance)<1e-9)throw new FeatureError(t('surfaceTools.distance'));
+      const result=this.kernel.moveFace(body.shape,index,distance);
+      const topology=this.kernel.topology(result.shape);
+      if(!topology.faces.some(g=>g.surface==='plane'&&g.normal&&Math.abs(dot(g.normal,plane.normal))>1-1e-9&&Math.abs(dot(sub(g.center,plane.origin),plane.normal))<1e-6)){this.kernel.release(result.shape);throw new FeatureError(t('surfaceTools.invalid'));}
+      return set.list.map(b=>b===body?this.edited(f,result,body):b);
+    }
+    let shape:ShapeId;
+    if(f.type==='ruledSurface') {
+      const a=owner(f.first),b=owner(f.second);shape=this.kernel.ruledSurface({shape:a.body.shape,edge:a.index},{shape:b.body.shape,edge:b.index},!!f.reverseSecond);
+    } else {
+      const a=owner(f.edge),plane=this.planeOf(f.plane,set,{what:t('feature.radiatedSurface'),notPlanar:t('surfaceTools.planarEdge')});
+      shape=this.kernel.radiatedSurface(a.body.shape,a.index,plane.normal,evalLength(f.distance)*(f.reverse?-1:1));
+    }
+    this.owned.push(shape);const topology=this.kernel.topology(shape),names=nameFromFaces(topology.faces.map((_,i)=>`${f.id}:surface:${i}`),topology);
+    return [...set.list,{id:f.id,by:f.id,shape,topology,names,surface:true}];
+  }
+
+  private projectedCurve(f: ProjectedCurveFeature, sketches: RebuildResult['sketches'], set: Bodies): BodyState[] {
+    const paths = (id: Id) => {
+      const s = sketches.get(id);
+      if (!s) throw new FeatureError(t('projection.twoSketches'));
+      const found = findOutlines(s.sketch, s.solved);
+      if (found.problems.length) throw new FeatureError(found.problems.join('; '));
+      const all = [...found.chains, ...found.loops.map(l=>l.loop)];
+      if (!all.length) throw new FeatureError(t('projection.empty'));
+      return { frame: s.frame, paths: all };
+    };
+    const a = paths(f.sketch);
+    let shape: ShapeId;
+    if (f.mode === 'sketchOnSketch') {
+      if (!f.secondSketch || f.secondSketch === f.sketch) throw new FeatureError(t('projection.twoSketches'));
+      const b = paths(f.secondSketch);
+      shape = this.kernel.intersectSketchCurves(a.frame, a.paths, b.frame, b.paths);
+    } else {
+      const targets = (f.faces ?? []).map(ref => {
+        const body = set.list.find(b=>b.names.faces.includes(ref.name));
+        if (!body) throw new FeatureError(t('projection.faces'), [{ ref, reason: 'missing', candidates: [] }]);
+        return { shape: body.shape, face: this.resolve(ref, body, t('projection.faces')) };
+      });
+      shape = this.kernel.projectedCurve(a.frame, a.paths, targets, f.direction ? this.directionOf(f.direction, set, t('feature.projectedCurve')) : a.frame.normal);
+    }
+    this.owned.push(shape);
+    const topology = this.kernel.topology(shape);
+    // Geometry-ranked names, aligned with the actual topology, never with an assumed number of sketch segments.
+    const namesOf = (points: Vec3[], kind: string) => {
+      const order = points.map((point, index)=>({point,index})).sort((a,b)=>a.point[0]-b.point[0] || a.point[1]-b.point[1] || a.point[2]-b.point[2]);
+      const names: string[] = []; order.forEach((v,i)=>{names[v.index]=`${f.id}:${kind}:${i}`;}); return names;
+    };
+    const names: ElementNames = { faces: [], edges: namesOf(topology.edges.map(e=>e.mid), 'curve'), vertices: namesOf(topology.vertices.map(v=>v.point), 'vertex') };
+    return [...set.list, { id: f.id, by: f.id, shape, topology, names, surface: true, curve: true }];
+  }
+
   private helix(f: HelixFeature, sketches: RebuildResult['sketches'], set: Bodies): BodyState[] {
     let center: Vec3;
     let normal: Vec3;
@@ -2928,6 +3011,7 @@ export class Regenerator {
    * `.cbfloor`, `.cone`, `.bottom`), so every face of every hole has a name of its own.
    */
   private hole(f: HoleFeature, sketches: RebuildResult['sketches'], set: Bodies): BodyState[] {
+    if (!validThreadTolerance(f.toleranceClass, f.kind === 'tapped' ? f.size : undefined, 'internal')) throw new FeatureError(t('cmd.badThreadTolerance'));
     const s = sketches.get(f.sketch);
     if (!s) throw new FeatureError(t('feature.sketchGone'));
     const body = set.view;

@@ -326,6 +326,7 @@ describe('sketch patterns (ADR 0178)', () => {
         const entitiesBefore = new Set(h.sketch().entities.map((e) => e.id));
         const constraintsBefore = h.sketch().constraints.length;
         const c = new SketchController(h);
+        c.setOption('linkCopies', false); // ADR 0178: independent copies and copied internal relations.
         c.select(SELECTION);
         c.setTool(tool);
         c.setOption('keepRelations', keep);
@@ -589,6 +590,7 @@ describe('fuzz: 200 random sketches, transforms and options (AGENTS.md §3.4)', 
       const center: P2 = [r() * 20 - 10, r() * 20 - 10];
       const entitiesBefore = new Set(h.sketch().entities.map((e) => e.id));
       const c = new SketchController(h);
+      c.setOption('linkCopies',false);
       c.select(selection);
       c.setTool(tool);
       c.setOption('keepRelations', keep);
@@ -644,4 +646,14 @@ describe('fuzz: 200 random sketches, transforms and options (AGENTS.md §3.4)', 
     expect(done).toBe(checked);
     expect(exact).toBeGreaterThan(20);
   });
+});
+
+it('linked circular copies preserve real arc validity without redundant radius rules or native OOM',async()=>{
+ const h=new Host(fixture()),before=points(h),c=new SketchController(h);c.select(SELECTION);c.setTool('circularPattern');c.setOption('linkCopies',true);c.setOption('patternCount',5);c.setOption('patternAngle',360);click(c,-10,-10);await c.settled();
+ expect(h.notices).toEqual([]);expect(h.sketch().constraints.filter(k=>k.type==='patternPoint')).toHaveLength(35);
+ const transforms=patternTransforms({kind:'circular',c:[-10,-10],angle:360,count:5}),after=points(h);
+ const originals=new Set(['A','B','C','D','E','F','G','H','Q']);
+ sameSet([...after].filter(([id])=>!originals.has(id)).map(([,p])=>p),transforms.flatMap(m=>CLOSURE.map(id=>applyTransform(m,before.get(id)!))));
+ for(const [id,p] of before)near(after.get(id),p);
+ for(const g of h.last!.geometry.values())if(g.type==='arc') {expect(Math.hypot(g.r)).toBeGreaterThan(0);const start=after.get(g.start)!,end=after.get(g.end)!;expect(Math.hypot(start[0]-g.c[0],start[1]-g.c[1])).toBeCloseTo(g.r,7);expect(Math.hypot(end[0]-g.c[0],end[1]-g.c[1])).toBeCloseTo(g.r,7);}
 });

@@ -90,8 +90,11 @@ export function holeSignature(h: HoleInfo | undefined): string {
   if (!h) return '';
   const cb = h.counterbore ? `${Math.round(h.counterbore.diameter * 1e3)}/${Math.round(h.counterbore.depth * 1e3)}` : '';
   const cs = h.countersink ? `${Math.round(h.countersink.diameter * 1e3)}/${Math.round(h.countersink.angle * 100)}` : '';
-  return `${h.through ? 'through' : Math.round(h.depth * 1e3)}|${cb}|${cs}|${h.thread ? (h.thread.size ?? 'tap') : ''}`;
+  return `${h.through ? 'through' : Math.round(h.depth * 1e3)}|${cb}|${cs}|${h.thread ? `${h.thread.size ?? 'tap'}:${h.thread.toleranceClass ?? ''}` : ''}`;
 }
+
+/** Manufacturing identity excludes placement used to locate a side-view leader. */
+export const threadSignature = (thread: ThreadCallout | undefined): string => JSON.stringify(thread ? { ...thread, origin: undefined, axis: undefined } : null);
 
 /**
  * What a tapped hole is called on a drawing, in place of its diameter: 「M6 貫穿（底孔 Ø5）」, the thread first and the drilled circle the model really has after it
@@ -102,7 +105,7 @@ export function threadedHoleText(h: HoleInfo, diameter: number, unit: LengthUnit
   if (!h.thread) return null;
   const d = lengthNumber(diameter, 3, unit);
   const size = style === 'symbols' && h.thread.pitch && h.thread.size && /^M[0-9]+$/.test(h.thread.size) ? `${h.thread.size}×${formatNumber(h.thread.pitch, 4)}` : h.thread.size;
-  return size ? `${size} ${holeNote(h, unit, style)}${t('drawing.holeTapDrill', { diameter: d })}` : `${t('drawing.holeTapPlain')} Ø${d} ${holeNote(h, unit, style)}`;
+  return size ? `${size}${h.thread.toleranceClass ? ` - ${h.thread.toleranceClass}` : ''} ${holeNote(h, unit, style)}${t('drawing.holeTapDrill', { diameter: d })}` : `${t('drawing.holeTapPlain')} Ø${d} ${holeNote(h, unit, style)}`;
 }
 
 /** The designation and pitch use the thread standard's mm units even on an inch drawing. Never invent a tolerance class. */
@@ -112,7 +115,7 @@ export function cosmeticThreadText(ct: ThreadCallout, unit: LengthUnit = 'mm', s
     : t('drawing.threadCustom', { major: lengthNumber(ct.majorDiameter, 4, unit), pitch: lengthNumber(ct.pitch, 4, unit) });
   // External threads cover a length, not a through hole; always give the evaluated length.
   const through = ct.threadType === 'internal' && ct.endCondition === 'through' && hole?.through === true;
-  return `${designation} ${holeNote({ through, depth: ct.depth }, unit, style)}`;
+  return `${designation}${ct.toleranceClass ? ` - ${ct.toleranceClass}` : ''} ${holeNote({ through, depth: ct.depth }, unit, style)}`;
 }
 
 /**
@@ -533,6 +536,24 @@ function circle(d: Extract<Dimension, { kind: 'diameter' | 'radius' }>, e: Eleme
   if (e.radius === undefined) return { error: t('drawing.dimNotRound') };
   const th = (d.angle * Math.PI) / 180;
   const u: P = [Math.cos(th), Math.sin(th)];
+  if (d.kind === 'diameter' && d.threadLeader) {
+    if (!d.callout || e.type !== 'cylinder' || !e.dir || Math.abs(dot(e.dir, axes.dir)) > PERPENDICULAR || (!e.thread && !e.hole?.thread)) return { error: t('drawing.threadLeaderNeedsThread') };
+    const ax: P = [dot(e.dir, rightOf(axes)), dot(e.dir, sheetUp(axes))];
+    const n: P = [-ax[1], ax[0]];
+    const side = n[0] * u[0] + n[1] * u[1] >= 0 ? 1 : -1;
+    const ct = e.thread;
+    const point = ct?.origin && ct.axis ? ct.origin.map((v, i) => v + ct.axis![i]! * ct.depth / 2) as [number, number, number] : e.center ?? e.point;
+    const at = inView({ ...e, point }, axes);
+    const centre = toSheet(placed, at[0], at[1]);
+    const near = add(centre, n, side * e.radius * placed.scale);
+    const outer = add(near, u, d.leader ?? LEADER);
+    const text = dimensionText(d, 2 * e.radius, e, unit);
+    const dir = u[0] >= 0 ? 1 : -1;
+    const shelf: P = [outer[0] + dir * (textWidth(text, DIM_TEXT) + 2), outer[1]];
+    return { value: 2 * e.radius, text, items: [line(near, outer, shelf), ...arrowhead(near, [-u[0], -u[1]]),
+      { kind: 'text', at: [outer[0] + dir, outer[1] + 1], text, height: DIM_TEXT, anchor: dir > 0 ? 'left' : 'right' }],
+      handle: { kind: 'round', centre: near, radius: 0 } };
+  }
   // the circle has to be seen as a circle
   const at = circleCentre(e, axes, u);
   if (!at) return { error: t('drawing.dimNotTrueShape') };

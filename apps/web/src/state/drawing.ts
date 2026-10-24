@@ -1471,6 +1471,14 @@ export class DrawingStore {
     this.execute({ type: 'insertDimensions', dimensions: [{ id: ids.take('dim'), view: viewId, kind, ref, angle }] });
   }
 
+  /** A model-linked specification leader on a side-view cylindrical surface. */
+  addThreadLeader(viewId: Id, ref: Ref): void {
+    const doc = this.history.doc;
+    const ids = new IdAllocator(doc.idCounters, drawingIdsInUse(doc));
+    this.execute({ type: 'insertDimensions', dimensions: [{ id: ids.take('dim'), view: viewId,
+      kind: 'diameter', ref, angle: 45, leader: 15, callout: true, threadLeader: true }] });
+  }
+
   setDimension(id: Id, patch: DimensionPatch): void {
     this.execute({ type: 'setDimension', dimensionId: id, patch });
   }

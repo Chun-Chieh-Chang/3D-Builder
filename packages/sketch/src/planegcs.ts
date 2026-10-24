@@ -122,6 +122,20 @@ function toPrimitives(sketch: SketchFeature, start: Start, pinned: ReadonlySet<I
   };
   const seeds = intersectionSeeds(sketch, pointXY, radiusAt);
 
+  // Rigidly linked arc points already preserve the source arc's radial consistency. Adding the
+  // fourth arc rule again would be redundant. Keep radius and both angle parameters connected.
+  const links=new Map<Id,Extract<SketchFeature['constraints'][number],{type:'patternPoint'}>[]>();
+  for(const c of sketch.constraints)if(c.type==='patternPoint')links.set(c.b,[...(links.get(c.b)??[]),c]);
+  const linkedArcs=new Map<Id,Id>();
+  for(const e of sketch.entities)if(e.type==='arc') {
+    const all=[e.center,e.start,e.end].map(p=>links.get(p));
+    if(all.some(a=>a?.length!==1))continue;
+    const [c,s,t]=all.map(a=>a![0]!);
+    if(![s!,t!].every(v=>v.dx===c!.dx&&v.dy===c!.dy&&v.angle===c!.angle&&v.center[0]===c!.center[0]&&v.center[1]===c!.center[1]))continue;
+    const source=sketch.entities.find(a=>a.type==='arc'&&a.center===c!.a&&a.start===s!.a&&a.end===t!.a);
+    if(source)linkedArcs.set(e.id,source.id);
+  }
+  for(const id of [...linkedArcs.keys()]) {const seen=new Set<Id>();let at=id;while(linkedArcs.has(at)&&!seen.has(at)){seen.add(at);at=linkedArcs.get(at)!;}if(seen.has(at))linkedArcs.delete(id);}
   const prims: Prim[] = [{ id: SKETCH_ORIGIN, type: 'point', x: 0, y: 0, fixed: true }];
   for (const axis of axes) {
     const [x, y] = sketchAxisDir(axis)!;
@@ -157,7 +171,7 @@ function toPrimitives(sketch: SketchFeature, start: Start, pinned: ReadonlySet<I
           end_angle: Math.atan2(ey - cy, ex - cx),
           radius: Math.hypot(sx - cx, sy - cy),
         });
-        prims.push({ id: `${e.id}#rules`, type: 'arc_rules', a_id: e.id });
+        if(!linkedArcs.has(e.id))prims.push({ id: `${e.id}#rules`, type: 'arc_rules', a_id: e.id });
         break;
       }
       case 'ellipse':
@@ -166,6 +180,12 @@ function toPrimitives(sketch: SketchFeature, start: Start, pinned: ReadonlySet<I
     }
   }
 
+  for(const [copy,source] of linkedArcs) {
+    const arc=byId.get(copy) as Extract<SketchEntity,{type:'arc'}>;
+    prims.push({id:`${copy}#radius`,type:'equal_radius_aa',a1_id:source,a2_id:copy},
+      {id:`${copy}#start`,type:'p2p_angle',p1_id:arc.center,p2_id:arc.start,angle:{o_id:copy,prop:'start_angle'}},
+      {id:`${copy}#end`,type:'p2p_angle',p1_id:arc.center,p2_id:arc.end,angle:{o_id:copy,prop:'end_angle'}});
+  }
   /** "The point lies on this line, circle or arc". */
   const onCurve = (p: Id, curveId: Id, id: Id): Prim => {
     const curve = byId.get(curveId);
@@ -317,6 +337,35 @@ function toPrimitives(sketch: SketchFeature, start: Start, pinned: ReadonlySet<I
         add(id, [{ id, type: 'p2p_coincident', p1_id: ra.center, p2_id: rb.center }, equalRadius(ra, rb, id)]);
         break;
       }
+      case 'patternPoint': {
+        const a=point(c.a),b=point(c.b),angle=evalAngle(c.angle),dx=evalLength(c.dx),dy=evalLength(c.dy);
+        const param=(o_id:string,prop:'x'|'y')=>({o_id,prop});
+        if(angle===0) {
+          add(id,[{id,type:'difference',param1:param(a,'x'),param2:param(b,'x'),difference:dx},{id,type:'difference',param1:param(a,'y'),param2:param(b,'y'),difference:dy}]);break;
+        }
+        // Bounded half-angle equations avoid proportional-constraint reduction and zero-radius
+        // singularities. U=(ay+by,bx-ax), V=(ax+bx,by-ay), each on a fixed line.
+        const half=angle/2,ch=Math.cos(half),sh=Math.sin(half),co=Math.cos(angle),si=Math.sin(angle),[cx,cy]=c.center,[ax,ay]=pointXY(a);
+        const bx=cx+co*(ax-cx)-si*(ay-cy)+dx,by=cy+si*(ax-cx)+co*(ay-cy)+dy;
+        const u=`${id}:u`,v=`${id}:v`,u0=`${id}:u0`,u1=`${id}:u1`,v0=`${id}:v0`,v1=`${id}:v1`,lu=`${id}:lu`,lv=`${id}:lv`;
+        prims.push({id:u0,type:'point',x:2*cy+dy,y:dx,fixed:true},{id:u1,type:'point',x:2*cy+dy+ch,y:dx-sh,fixed:true},
+          {id:v0,type:'point',x:2*cx+dx,y:dy,fixed:true},{id:v1,type:'point',x:2*cx+dx+ch,y:dy+sh,fixed:true},
+          {id:lu,type:'line',p1_id:u0,p2_id:u1},{id:lv,type:'line',p1_id:v0,p2_id:v1},
+          {id:u,type:'point',x:ay+by,y:bx-ax,fixed:false},{id:v,type:'point',x:ax+bx,y:by-ay,fixed:false});
+        add(id,[
+          {id,type:'difference',param1:param(a,'y'),param2:param(u,'x'),difference:param(b,'y')},
+          {id,type:'difference',param1:param(a,'x'),param2:param(b,'x'),difference:param(u,'y')},
+          {id,type:'difference',param1:param(a,'x'),param2:param(v,'x'),difference:param(b,'x')},
+          {id,type:'difference',param1:param(a,'y'),param2:param(b,'y'),difference:param(v,'y')},
+          {id,type:'point_on_line_pl',p_id:u,l_id:lu},{id,type:'point_on_line_pl',p_id:v,l_id:lv},
+        ]);break;
+      }
+      case 'equalCurvature':
+        add(id, [equalRadius(radial(c.a), radial(c.b), id)]);
+        break;
+      case 'symmetricPoint':
+        add(id, [{ id, type: 'p2p_symmetric_ppp', p1_id: point(c.a), p2_id: point(c.b), p_id: point(c.point) }]);
+        break;
       case 'equal': {
         const a = byId.get(c.a);
         const b = byId.get(c.b);

@@ -6,7 +6,7 @@ import type { Id } from './ids';
  * DOF status, mass properties and error lists are derived data and never stored.
  */
 
-export const SCHEMA_VERSION = 75;
+export const SCHEMA_VERSION = 80;
 
 /** Value expression (B5.2, B5.3): "20", "25.4mm", "30deg", "wall_t*2", "D1@草圖1/2", "property('厚度')"; see `expr/`. */
 export type Expr = string;
@@ -32,6 +32,8 @@ export interface Ref {
   kind: 'face' | 'edge' | 'vertex' | 'datum' | 'body' | 'sketch';
   name: string;
   fingerprint?: Fingerprint;
+  /** An apparent contour branch of the referenced face, viewed along the sketch normal (v78). */
+  silhouette?: number;
 }
 
 export type DatumPlaneName = 'plane:front' | 'plane:top' | 'plane:right';
@@ -101,6 +103,11 @@ export type SketchConstraint =
   | { id: Id; type: 'concentric'; a: Id; b: Id }
   /** Two circles or arcs with the same center and the same radius (SolidWorks 「同心同徑」, v11). */
   | { id: Id; type: 'coradial'; a: Id; b: Id }
+  /** Equal unsigned curvature for circular entities (1/r); spline curvature is not supported by PlaneGCS. */
+  /** A pattern copy point follows a rigid transform of its seed (v80); signed offsets and an angle about a fixed sketch-space center. */
+  | { id: Id; type:'patternPoint'; a:Id; b:Id; dx:Expr; dy:Expr; angle:Expr; center:[number,number] }
+  | { id: Id; type: 'equalCurvature'; a: Id; b: Id }
+  | { id: Id; type: 'symmetricPoint'; a: Id; b: Id; point: Id }
   | { id: Id; type: 'equal'; a: Id; b: Id }
   /** `point` at the middle of `line`, a line or (schema 56) an arc: the middle of its sweep. */
   | { id: Id; type: 'midpoint'; point: Id; line: Id }
@@ -255,6 +262,8 @@ export interface HoleFeature extends FeatureBase {
   kind: 'straight' | 'counterbore' | 'countersink' | 'tapped' | 'dowel';
   /** The standard size the diameters came from, e.g. M6 (a label; custom or absent when typed). */
   size?: string;
+  /** Explicit thread specification; only valid on a standard tapped hole. */
+  toleranceClass?: string;
   diameter: Expr;
   end: { type: 'blind'; depth: Expr } | { type: 'throughAll' };
   /** Counterbore: the wider part's diameter and depth. */
@@ -391,6 +400,8 @@ export interface CosmeticThreadFeature extends FeatureBase {
   standardMode?: 'standard' | 'custom';
   /** Designation for standard thread, e.g. 'M8', 'M8x1.25', '1/4-20 UNC'. */
   standardDesignation?: string;
+  /** Explicit metric or unified tolerance class, never an assumed default. */
+  toleranceClass?: string;
   /** Major diameter (crest for external, root for internal). */
   majorDiameter: Expr;
   /** Minor diameter (root for external, tap drill for internal). */
@@ -409,6 +420,23 @@ export interface CosmeticThreadFeature extends FeatureBase {
  * Helix and Spiral Curve (螺旋曲線與渦捲線, C8.3, ADR 0168, v67): 3D space curve or flat spiral curve
  * driven by a reference circular sketch entity or circular model edge.
  */
+/** C8.2 projected 3D curve body, v77. Faces are trimmed targets; direction defaults to the first sketch normal. */
+/** C9.2: linear interpolation between two model edges. */
+export interface RuledSurfaceFeature extends FeatureBase { type:'ruledSurface'; first:Ref; second:Ref; reverseSecond?:boolean }
+/** C9.2: planar line/circular rail extended perpendicular to its tangent, in a reference plane. */
+export interface RadiatedSurfaceFeature extends FeatureBase { type:'radiatedSurface'; edge:Ref; plane:Ref; distance:Expr; reverse?:boolean }
+/** Replacement by a parallel planar face or datum plane; neighbouring faces extend/trim with the target. */
+export interface ReplaceFaceFeature extends FeatureBase { type:'replaceFace'; face:Ref; replacement:Ref }
+
+export interface ProjectedCurveFeature extends FeatureBase {
+  type: 'projectedCurve';
+  mode: 'sketchOnSketch' | 'sketchOnFaces';
+  sketch: Id;
+  secondSketch?: Id;
+  faces?: Ref[];
+  direction?: Ref;
+}
+
 export type HelixDefinedBy = 'pitchAndRev' | 'heightAndRev' | 'heightAndPitch' | 'spiral';
 
 export interface HelixFeature extends FeatureBase {
@@ -1171,7 +1199,11 @@ export type Feature =
   | ThreadFeature
   | KnurlFeature
   | CosmeticThreadFeature
-  | HelixFeature;
+  | HelixFeature
+  | ProjectedCurveFeature
+  | RuledSurfaceFeature
+  | RadiatedSurfaceFeature
+  | ReplaceFaceFeature;
 export type FeatureType = Feature['type'];
 
 // ---------------------------------------------------------------- document

@@ -82,6 +82,10 @@ export function absorbedSketches(f: Feature): Id[] {
     case 'deleteKeepBody':
     case 'knurl':
     case 'cosmeticThread':
+    case 'ruledSurface':
+    case 'radiatedSurface':
+    case 'replaceFace':
+    case 'projectedCurve':
     case 'helix':
       return [];
     default: {

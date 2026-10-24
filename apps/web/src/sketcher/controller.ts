@@ -101,16 +101,18 @@ export type ToolId =
   | 'mirror'
   | 'convert'
   | 'pierce'
+  | 'silhouette'
   | 'intersect'
   | TransformTool;
 
 /** 移動／複製／旋轉／縮放圖元 and the sketch patterns (ADR 0178): they act on the entities selected when the tool starts. */
-export type TransformTool = 'moveEntities' | 'copyEntities' | 'rotateEntities' | 'scaleEntities' | 'linearPattern' | 'circularPattern';
-export const TRANSFORM_TOOLS: readonly TransformTool[] = ['moveEntities', 'copyEntities', 'rotateEntities', 'scaleEntities', 'linearPattern', 'circularPattern'];
+export type TransformTool = 'stretchEntities' | 'moveEntities' | 'copyEntities' | 'rotateEntities' | 'scaleEntities' | 'linearPattern' | 'circularPattern';
+export const TRANSFORM_TOOLS: readonly TransformTool[] = ['stretchEntities', 'moveEntities', 'copyEntities', 'rotateEntities', 'scaleEntities', 'linearPattern', 'circularPattern'];
 const isTransformTool = (tool: ToolId): tool is TransformTool => (TRANSFORM_TOOLS as readonly ToolId[]).includes(tool);
 /** The clicks each transform tool takes: base and target; center, from and to; a pattern's center. */
-const TRANSFORM_CLICKS: Record<TransformTool, number> = { moveEntities: 2, copyEntities: 2, rotateEntities: 3, scaleEntities: 3, linearPattern: 2, circularPattern: 1 };
+const TRANSFORM_CLICKS: Record<TransformTool, number> = { stretchEntities:2, moveEntities: 2, copyEntities: 2, rotateEntities: 3, scaleEntities: 3, linearPattern: 2, circularPattern: 1 };
 const TRANSFORM_HINTS: Record<TransformTool, PlainKey[]> = {
+  stretchEntities: ['sketch.hint.stretch','sketch.hint.xformTarget'],
   moveEntities: ['sketch.hint.xformBase', 'sketch.hint.xformTarget'],
   copyEntities: ['sketch.hint.xformBase', 'sketch.hint.xformTarget'],
   rotateEntities: ['sketch.hint.rotateCenter', 'sketch.hint.rotateFrom', 'sketch.hint.rotateTo'],
@@ -120,7 +122,7 @@ const TRANSFORM_HINTS: Record<TransformTool, PlainKey[]> = {
 };
 
 /** The tools of C1.8–C1.19, whose hints and messages come from the message catalog. */
-type OperationTool = 'slot' | 'polygon' | 'sketchFillet' | 'sketchChamfer' | 'trim' | 'extend' | 'offset' | 'mirror' | 'convert' | 'pierce' | 'intersect' | TransformTool;
+type OperationTool = 'slot' | 'polygon' | 'sketchFillet' | 'sketchChamfer' | 'trim' | 'extend' | 'offset' | 'mirror' | 'convert' | 'pierce' | 'intersect' | 'silhouette' | TransformTool;
 
 /** Tools that pick existing geometry instead of placing points: no snapping, the element under the cursor is what counts. */
 const PICK_TOOLS: ReadonlySet<ToolId> = new Set(['dimension', 'trim', 'extend', 'sketchFillet', 'sketchChamfer', 'offset', 'mirror']);
@@ -156,9 +158,19 @@ export interface ToolOptions {
   patternY: number;
   patternCount: number;
   patternAngle: number;
+  linkCopies:boolean;
+  secondDirection:boolean;
+  pattern2X:number;
+  pattern2Y:number;
+  pattern2Count:number;
 }
 
 const DEFAULT_OPTIONS: ToolOptions = {
+  linkCopies:true,
+  secondDirection:false,
+  pattern2X:0,
+  pattern2Y:10,
+  pattern2Count:1,
   polygonSides: 6,
   circumscribed: false,
   filletRadius: 5,
@@ -196,6 +208,7 @@ export interface SketchHost {
   modelItems?(): readonly ModelItem[];
   /** Which snaps are on (「啟用抓取」 and the choices under it); every one is when the host does not say. */
   snapSettings?(): SnapSettings;
+  automaticRelations?(): boolean;
 }
 
 export interface PointerInput {
@@ -379,8 +392,10 @@ export class SketchController {
         return t('sketch.hint.convert');
       case 'pierce':
         return t('sketch.hint.pierce');
+      case 'silhouette': return t('sketch.hint.silhouette');
       case 'intersect':
         return t('sketch.hint.intersect');
+      case 'stretchEntities':
       case 'moveEntities':
       case 'copyEntities':
       case 'rotateEntities':
@@ -417,7 +432,7 @@ export class SketchController {
 
   /** What a drawing action collects its entities in; it can make the entities that follow the model that a click on the model needs. */
   private builder(): Builder {
-    return new Builder(this.allocator(), (made, snap) => anchorModel(this.sketch(), this.geometry(), made, snap.item, snap.part, snap.p));
+    return new Builder(this.allocator(), (made, snap) => anchorModel(this.sketch(), this.geometry(), made, snap.item, snap.part, snap.p), this.host.automaticRelations?.() ?? true);
   }
 
   private allocator(): IdAllocator {
@@ -429,9 +444,9 @@ export class SketchController {
 
   setTool(tool: ToolId): void {
     // mirror, offset and the transforms act on what is selected when the tool starts (SolidWorks takes a pre-selection too)
-    const chosen = tool === 'mirror' || isTransformTool(tool) ? this.mirrorTargets() : tool === 'offset' ? this.offsetTargets() : [];
+    const chosen = tool==='stretchEntities' ? [...this.selection].filter(id=>this.sketch().entities.some(e=>e.id===id&&e.type==='point')) : tool === 'mirror' || isTransformTool(tool) ? this.mirrorTargets() : tool === 'offset' ? this.offsetTargets() : [];
     if ((tool === 'mirror' || tool === 'offset' || isTransformTool(tool)) && chosen.length === 0) {
-      const why = t(tool === 'mirror' ? 'sketch.needMirrorSelection' : tool === 'offset' ? 'sketch.needOffsetSelection' : 'sketch.needTransformSelection');
+      const why = t(tool==='stretchEntities'?'sketch.hint.stretch':tool === 'mirror' ? 'sketch.needMirrorSelection' : tool === 'offset' ? 'sketch.needOffsetSelection' : 'sketch.needTransformSelection');
       this.host.notify(why, 'info');
       this.notice(why);
       return;
@@ -533,6 +548,14 @@ export class SketchController {
     const seed = ids.length === 2 && !smartDimension(geometry, ids, this.cursor ?? [0, 0]) ? ids.slice(0, 1) : ids;
     this.setTool('dimension');
     this.picks = seed;
+    this.changed();
+  }
+
+  selectUnderdefined(): void {
+    const statuses = this.host.solved()?.entityStatus;
+    if (!statuses) return this.host.notify(t('sketch.analysisPending'), 'info');
+    this.setTool('select');
+    this.selection = new Set(this.sketch().entities.filter(e=>statuses.get(e.id)==='under').map(e=>e.id));
     this.changed();
   }
 
@@ -1060,13 +1083,13 @@ export class SketchController {
     }
     const b = this.builder();
     const from = this.chain ? ({ kind: 'point', id: this.chain.from, p: this.positionOf(this.chain.from) ?? s.p } as Snap) : this.clicks[0]!;
-    const p1 = b.pointFor(from);
+    const p1 = this.chain ? this.chain.from : b.pointFor(from);
     const p2 = b.pointFor(s);
     if (p1 === p2) return;
     const line = b.line(p1, p2, construction);
-    if (this.inference === 'horizontal' || this.inference === 'vertical') b.relation({ type: this.inference, a: line });
-    if (this.tangentTo) b.relation({ type: 'tangent', a: this.tangentTo, b: line });
-    if (this.lineTo) b.relation({ type: this.lineTo.kind, a: line, b: this.lineTo.line });
+    if ((this.host.automaticRelations?.() ?? true) && (this.inference === 'horizontal' || this.inference === 'vertical')) b.relation({ type: this.inference, a: line });
+    if ((this.host.automaticRelations?.() ?? true) && this.tangentTo) b.relation({ type: 'tangent', a: this.tangentTo, b: line });
+    if ((this.host.automaticRelations?.() ?? true) && this.lineTo) b.relation({ type: this.lineTo.kind, a: line, b: this.lineTo.line });
     if (!this.commit(b)) return;
     const first = this.chain?.first ?? p1;
     this.clicks = [];
@@ -1114,7 +1137,7 @@ export class SketchController {
         const r = dist(a, q);
         if (r < 1e-9) return;
         const circle = b.circle(b.pointFor(first), r);
-        if (s.kind === 'point') b.relation({ type: 'pointOnCurve', point: s.id, curve: circle });
+        if ((this.host.automaticRelations?.() ?? true) && s.kind === 'point') b.relation({ type: 'pointOnCurve', point: s.id, curve: circle });
         break;
       }
       case 'tangentArc': {
@@ -1141,7 +1164,7 @@ export class SketchController {
         const circle3 = circleThrough(c1.p, c2.p, c3.p);
         if (!circle3) return this.host.notify(t('sketch.collinearCircle'), 'info');
         const circle = b.circle(b.newPoint(circle3.c), circle3.r);
-        for (const s of [c1, c2, c3]) if (s.kind === 'point') b.relation({ type: 'pointOnCurve', point: s.id, curve: circle });
+        for (const s of [c1, c2, c3]) if ((this.host.automaticRelations?.() ?? true) && s.kind === 'point') b.relation({ type: 'pointOnCurve', point: s.id, curve: circle });
         break;
       }
       case 'threePointArc': {
@@ -1266,7 +1289,7 @@ export class SketchController {
   /** A pattern from its clicks: the step from the first to the second (linear), the center (circular); the copies and the angle as set. */
   private patternSpec(tool: 'linearPattern' | 'circularPattern', p: P2[]): PatternSpec {
     const o = this.options;
-    return tool === 'linearPattern' ? { kind: 'linear', step: sub(p[1]!, p[0]!), count: o.patternCount } : { kind: 'circular', c: p[0]!, angle: o.patternAngle, count: o.patternCount };
+    return tool === 'linearPattern' ? { kind: 'linear', step: sub(p[1]!, p[0]!), count: o.patternCount, ...(o.secondDirection?{second:{step:[o.pattern2X,o.pattern2Y],count:o.pattern2Count}}:{}) } : { kind: 'circular', c: p[0]!, angle: o.patternAngle, count: o.patternCount };
   }
 
   /**
@@ -1279,7 +1302,7 @@ export class SketchController {
     const o = this.options;
     const center = this.clicks[0]?.p;
     let r: TransformResult;
-    if (tool === 'moveEntities' || tool === 'copyEntities') r = this.transformResult(tool, [{ kind: 'translate', d: [o.moveX, o.moveY] }]);
+    if (tool === 'stretchEntities' || tool === 'moveEntities' || tool === 'copyEntities') r = this.transformResult(tool, [{ kind: 'translate', d: [o.moveX, o.moveY] }]);
     else if (tool === 'linearPattern') r = this.patternResult({ kind: 'linear', step: [o.patternX, o.patternY], count: o.patternCount });
     else if (!center) return this.host.notify(t('sketch.xformNeedCenter'), 'info');
     else if (tool === 'rotateEntities') r = this.transformResult(tool, [{ kind: 'rotate', c: center, angle: o.rotateAngle }]);
@@ -1292,6 +1315,7 @@ export class SketchController {
   /** The transforms the clicked points (and, for the preview, the cursor as the last of them) make; a pattern's copies. */
   private transformsThrough(tool: TransformTool, p: P2[]): Transform2[] | { error: string } {
     switch (tool) {
+      case 'stretchEntities':
       case 'moveEntities':
       case 'copyEntities':
         return [{ kind: 'translate', d: sub(p[1]!, p[0]!) }];
@@ -1317,13 +1341,15 @@ export class SketchController {
   }
 
   private patternResult(spec: PatternSpec): TransformResult {
-    return patternEntities(this.sketch(), this.geometry(), this.allocator(), this.picks, spec, this.options.keepRelations);
+    const o=this.options;
+    const grid:PatternSpec=spec.kind==='linear'&&o.secondDirection?{...spec,second:{step:[o.pattern2X,o.pattern2Y],count:o.pattern2Count}}:spec;
+    return patternEntities(this.sketch(), this.geometry(), this.allocator(), this.picks, grid, o.keepRelations, o.linkCopies);
   }
 
   /** After the transform: back to selecting, with what was moved (in place) still selected. */
   private finishTransform(tool: TransformTool, r: TransformResult): void {
     const moved = this.picks;
-    const inPlace = tool === 'moveEntities' || ((tool === 'rotateEntities' || tool === 'scaleEntities') && !this.options.transformCopy);
+    const inPlace = tool==='stretchEntities' || tool === 'moveEntities' || ((tool === 'rotateEntities' || tool === 'scaleEntities') && !this.options.transformCopy);
     this.runTransform(r, () => {
       this.setTool('select');
       if (inPlace) this.select(moved);
@@ -1761,6 +1787,7 @@ class Builder {
   constructor(
     readonly ids: IdAllocator,
     private readonly onModel: (made: Builder, snap: Extract<Snap, { kind: 'model' }>) => Id,
+    private readonly automaticRelations = true,
   ) {}
 
   newPoint(p: P2): Id {
@@ -1771,6 +1798,7 @@ class Builder {
 
   /** The point a snap stands for: an existing point is reused (merged); otherwise a new point with its relation. */
   pointFor(s: Snap): Id {
+    if (!this.automaticRelations) return this.newPoint(s.p);
     if (s.kind === 'point' && s.id !== SKETCH_ORIGIN) return s.id;
     if (s.kind === 'model') return this.onModel(this, s);
     const id = this.newPoint(s.p);
@@ -1795,7 +1823,7 @@ class Builder {
 
   /** A point drawn with the Point tool: a snap onto an existing point adds nothing. */
   point(s: Snap): this {
-    if (!(s.kind === 'point' && s.id !== SKETCH_ORIGIN)) this.pointFor(s);
+    if (!this.automaticRelations || !(s.kind === 'point' && s.id !== SKETCH_ORIGIN)) this.pointFor(s);
     return this;
   }
 

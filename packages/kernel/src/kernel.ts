@@ -4531,6 +4531,192 @@ export class Kernel {
     }
   }
 
+  /** A ruled face between actual rails; reject intersecting rails and crossing generators before construction. */
+  ruledSurface(a: {shape:ShapeId;edge:number}, b: {shape:ShapeId;edge:number}, reverseSecond=false): ShapeId {
+    const arena=new Arena(),oc=this.oc,indexA=ShapeIndex.of(oc,this.get(a.shape),T.EDGE,arena),indexB=ShapeIndex.of(oc,this.get(b.shape),T.EDGE,arena);
+    try {
+      const first=indexA.keys[a.edge],second=indexB.keys[b.edge];if(!first||!second)throw new KernelError(t('surfaceTools.pickEdges'));
+      return this.put(this.ruledFace(first,reverseSecond?arena.own(second.Reversed()):second,arena));
+    } finally {indexA.dispose();indexB.dispose();arena.dispose();}
+  }
+
+  private ruledFace(first:TopoDS_Shape,second:TopoDS_Shape,arena:Arena):TopoDS_Shape {
+    const oc=this.oc,a=arena.own(oc.TopoDS.Edge(first)),b=arena.own(oc.TopoDS.Edge(second));
+    const distance=(a:TopoDS_Shape,b:TopoDS_Shape)=>{
+      const d=arena.own(new (oc.BRepExtrema_DistShapeShape as unknown as new(a:TopoDS_Shape,b:TopoDS_Shape)=>InstanceType<OC['BRepExtrema_DistShapeShape']>)(a,b));
+      if(!d.IsDone())throw new KernelError(t('surfaceTools.invalid'));return d.Value();
+    };
+    if(distance(a,b)<1e-7)throw new KernelError(t('surfaceTools.crossing'));
+    const points=(edge:typeof a)=>{
+      const c=arena.own(new oc.BRepAdaptor_Curve(edge)),lo=c.FirstParameter(),hi=c.LastParameter(),reverse=edge.Orientation()===oc.TopAbs_Orientation.TopAbs_REVERSED;
+      return [0,.25,.5,.75,1].map(f=>this.xyz(arena.own(c.Value(lo+(hi-lo)*(reverse?1-f:f)))));
+    };
+    const pa=points(a),pb=points(b),generators: {shape:TopoDS_Shape;a:Vec3;b:Vec3}[]=[];
+    for(let i=0;i<pa.length;i++) {
+      const p=pa[i]!,q=pb[i]!;
+      if(Math.hypot(...sub3(p,q))<1e-7)throw new KernelError(t('surfaceTools.crossing'));
+      if(generators.some(g=>Math.hypot(...sub3(g.a,p))<1e-7&&Math.hypot(...sub3(g.b,q))<1e-7))continue;
+      const edge=arena.own(arena.own(new oc.BRepBuilderAPI_MakeEdge(this.pnt(arena,p),this.pnt(arena,q))).Edge());
+      if(generators.some(g=>distance(g.shape,edge)<1e-7))throw new KernelError(t('surfaceTools.crossing'));
+      generators.push({shape:edge,a:p,b:q});
+    }
+    const face=arena.own(oc.BRepFill.Face(a,b)),props=arena.own(new oc.GProp_GProps());oc.BRepGProp.SurfaceProperties(face,props,false,false);
+    if(!this.valid(face)||!(props.Mass()>1e-9))throw new KernelError(t('surfaceTools.invalid'));
+    return face.Oriented(face.Orientation());
+  }
+
+  /** A planar line or circular edge radiated perpendicular to its tangent in the reference plane. */
+  radiatedSurface(target:ShapeId,index:number,normal:Vec3,distance:number):ShapeId {
+    if(!normal.every(Number.isFinite)||Math.hypot(...normal)<1e-12||!Number.isFinite(distance)||Math.abs(distance)<1e-9 || Math.abs(distance)>1e6)throw new KernelError(t('surfaceTools.range'));
+    const oc=this.oc,arena=new Arena(),edges=ShapeIndex.of(oc,this.get(target),T.EDGE,arena);
+    try {
+      const source=edges.keys[index];if(!source)throw new KernelError(t('surfaceTools.pickEdges'));
+      const edge=arena.own(oc.TopoDS.Edge(source)),curve=arena.own(new oc.BRepAdaptor_Curve(edge)),kind=String(curve.GetType()).replace('GeomAbs_','').toLowerCase(),n=scale3(normal,1/Math.hypot(...normal));
+      let offset:TopoDS_Shape;
+      if(kind==='line') {
+        const a=this.xyz(arena.own(curve.Value(curve.FirstParameter()))),b=this.xyz(arena.own(curve.Value(curve.LastParameter()))),tangent=sub3(b,a);
+        if(Math.abs(dot3(tangent,n))>1e-9*Math.hypot(...tangent))throw new KernelError(t('surfaceTools.planarEdge'));
+        const v=scale3(cross3(tangent,n),distance/Math.hypot(...tangent)),transform=arena.own(new oc.gp_Trsf());transform.SetTranslation(arena.own(new oc.gp_Vec(...v)));
+        offset=arena.own(arena.own(new oc.BRepBuilderAPI_Transform(edge,transform,true)).Shape());
+      } else if(kind==='circle') {
+        const circle=arena.own(curve.Circle()),axis=arena.own(circle.Axis()),direction=this.xyz(arena.own(axis.Direction())),along=dot3(direction,n);
+        if(Math.abs(along)<1-1e-9)throw new KernelError(t('surfaceTools.planarEdge'));
+        const radius=circle.Radius()+distance*(along>0?1:-1);
+        if(!(radius>1e-7))throw new KernelError(t('surfaceTools.crossing'));
+        const enlarged=arena.own(new oc.gp_Circ(arena.own(circle.Position()),radius));
+        offset=arena.own(arena.own(new oc.BRepBuilderAPI_MakeEdge(enlarged,curve.FirstParameter(),curve.LastParameter())).Edge());
+        if(edge.Orientation()===oc.TopAbs_Orientation.TopAbs_REVERSED)offset=arena.own(offset.Reversed());
+      } else throw new KernelError(t('surfaceTools.planarEdge'));
+      return this.put(this.ruledFace(edge,offset,arena));
+    } finally {edges.dispose();arena.dispose();}
+  }
+
+  /** Actual apparent contours of a trimmed face on a sketch plane. Analytic lines/circles remain analytic; other curves are sampled. */
+  silhouetteCurves(id: ShapeId, face: number, frame: Frame): Segment[] {
+    const oc=this.oc, arena=new Arena(),faces=ShapeIndex.of(oc,this.get(id),T.FACE,arena);
+    try {
+      const target=faces.keys[face];if(!target)throw new KernelError(t('reference.lost'));
+      const algo=arena.own(new oc.HLRBRep_Algo());algo.Add(target,0);
+      const axes=arena.own(new oc.gp_Ax2(this.pnt(arena,frame.origin),this.dir(arena,frame.normal),this.dir(arena,frame.xDir)));
+      algo.Projector(arena.own(new oc.HLRAlgo_Projector(axes)));algo.Update();algo.Hide();
+      const lines=arena.own(new oc.HLRBRep_HLRToShape(algo));
+      const outlines=[arena.own(lines.OutLineVCompound()),arena.own(lines.OutLineHCompound())].filter(s=>!s.IsNull());
+      if(!outlines.length)outlines.push(...[arena.own(lines.VCompound()),arena.own(lines.HCompound())].filter(s=>!s.IsNull()));
+      if(!outlines.length)throw new KernelError(t('silhouette.empty'));
+      const shape=arena.own(this.compound(outlines,arena));
+      const edges=ShapeIndex.of(oc,shape,T.EDGE,arena);
+      const out:Segment[]=[];
+      try {for(const edge of edges.keys) {
+        const curve=arena.own(new oc.BRepAdaptor_Curve(arena.own(oc.TopoDS.Edge(edge))));
+        const type=String(curve.GetType()).replace('GeomAbs_','').toLowerCase(),first=curve.FirstParameter(),last=curve.LastParameter();
+        const point=(u:number):P2=>{const p=arena.own(curve.Value(u));return [p.X(),p.Y()];};
+        const source=String(out.length);
+        if(type==='line') {const a=point(first),b=point(last);if(Math.hypot(a[0]-b[0],a[1]-b[1])>1e-7)out.push({kind:'line',a,b,source});}
+        else if(type==='circle') {
+          const circle=arena.own(curve.Circle()),p=arena.own(circle.Location()),c:P2=[p.X(),p.Y()],r=circle.Radius();
+          if(last-first>=2*Math.PI-1e-7)out.push({kind:'circle',c,r,source});
+          else {const dir=arena.own(arena.own(circle.Axis()).Direction());const a=point(first),b=point(last);out.push({kind:'arc',c,r,from:dir.Z()>0?a:b,to:dir.Z()>0?b:a,ccw:true,source});}
+        } else {
+          const points=Array.from({length:65},(_,i)=>point(first+(last-first)*i/64));
+          const closed=Math.hypot(points[0]![0]-points[64]![0],points[0]![1]-points[64]![1])<1e-7;
+          if(closed)points.pop();out.push({kind:'spline',points,closed,source});
+        }
+      }} finally {edges.dispose();}
+      // A periodic surface may put a silhouette exactly on its seam. HLR lists that as a sewn/boundary edge,
+      // rather than an internal outline. Include it only when its actual surface normals are perpendicular
+      // to the viewing direction along the edge; interior seams must not become apparent contours.
+      const original=ShapeIndex.of(oc,target,T.EDGE,arena),surface=arena.own(new oc.BRepAdaptor_Surface(arena.own(oc.TopoDS.Face(target)),true));
+      try {for(const key of original.keys) {
+        const edge=arena.own(oc.TopoDS.Edge(key)),face=arena.own(oc.TopoDS.Face(target));
+        if(!oc.BRep_Tool.IsClosed(edge,face))continue;
+        const pc=arena.own(new oc.BRepAdaptor_Curve2d(edge,face)),first=pc.FirstParameter(),last=pc.LastParameter();
+        let tangent=true;
+        for(const fraction of [.1,.3,.5,.7,.9]) {
+          const uv=arena.own(pc.Value(first+(last-first)*fraction));
+          const d=surface.EvalD1(uv.X(),uv.Y());arena.own(d.Point);
+          const du=this.xyz(arena.own(d.D1U)),dv=this.xyz(arena.own(d.D1V));
+          const n=cross3(du,dv),length=Math.hypot(...n)*Math.hypot(...frame.normal);
+          if(!(length>1e-12)||Math.abs(dot3(n,frame.normal))>1e-9*length){tangent=false;break;}
+        }
+        if(!tangent)continue;
+        const curve=arena.own(new oc.BRepAdaptor_Curve(edge));
+        const local=(u:number):P2=>{const p=this.xyz(arena.own(curve.Value(u))),delta=sub3(p,frame.origin);return [dot3(delta,frame.xDir),dot3(delta,frame.yDir)];};
+        const a=local(curve.FirstParameter()),b=local(curve.LastParameter());
+        if(String(curve.GetType())==='GeomAbs_Line' && Math.hypot(a[0]-b[0],a[1]-b[1])>1e-7) {
+          const same=(p:P2,q:P2)=>Math.hypot(p[0]-q[0],p[1]-q[1])<1e-7;
+          if(!out.some(s=>s.kind==='line'&&((same(s.a,a)&&same(s.b,b))||(same(s.a,b)&&same(s.b,a)))))out.push({kind:'line',a,b,source:String(out.length)});
+        }
+      }} finally {original.dispose();}
+      if(!out.length)throw new KernelError(t('silhouette.empty'));
+      const center=(s:Segment):P2=>s.kind==='line'?[(s.a[0]+s.b[0])/2,(s.a[1]+s.b[1])/2]:s.kind==='spline'?s.points[Math.floor(s.points.length/2)]!:s.c;
+      out.sort((a,b)=>{const p=center(a),q=center(b);return p[0]-q[0]||p[1]-q[1]||a.kind.localeCompare(b.kind);});
+      return out;
+    } finally {faces.dispose();arena.dispose();}
+  }
+
+  /** C8.2: retains every branch of open or closed sketch paths projected along a line onto selected, trimmed faces. */
+  projectedCurve(frame: Frame, paths: Segment[][], targets: { shape: ShapeId; face: number }[], dir: Vec3): ShapeId {
+    if (!dir.every(Number.isFinite) || Math.hypot(...dir) < 1e-12 || !paths.length || !targets.length) throw new KernelError(t('projection.empty'));
+    const oc = this.oc, arena = new Arena();
+    const indexes: ShapeIndex[] = [];
+    try {
+      const wires: TopoDS_Shape[] = [];
+      const direction = this.dir(arena, dir);
+      for (const target of targets) {
+        const index = ShapeIndex.of(oc, this.get(target.shape), T.FACE, arena); indexes.push(index);
+        const face = index.keys[target.face];
+        if (!face) throw new KernelError(t('edit.faceOutOfRange', { index: target.face }));
+        for (const path of paths) {
+          const wire = this.wire(arena, frame, path, false, new Map());
+          const projection = arena.own(new oc.BRepProj_Projection(wire, face, direction));
+          if (!projection.IsDone()) continue;
+          for (projection.Init(); projection.More(); projection.Next()) wires.push(arena.own(projection.Current()));
+        }
+      }
+      if (!wires.length) throw new KernelError(t('projection.empty'));
+      return this.put(this.compound(wires, arena));
+    } finally { for (const index of indexes) index.dispose(); arena.dispose(); }
+  }
+
+  /** C8.2: intersection of two bounded sketch extrusion surfaces. The bound follows the actual wire boxes and the angle of the normals. */
+  intersectSketchCurves(a: Frame, pathsA: Segment[][], b: Frame, pathsB: Segment[][]): ShapeId {
+    const cross = [a.normal[1]*b.normal[2]-a.normal[2]*b.normal[1], a.normal[2]*b.normal[0]-a.normal[0]*b.normal[2], a.normal[0]*b.normal[1]-a.normal[1]*b.normal[0]];
+    const sine = Math.hypot(...cross) / (Math.hypot(...a.normal)*Math.hypot(...b.normal));
+    if (!Number.isFinite(sine) || sine < 1e-5) throw new KernelError(t('projection.parallel'));
+    if (!pathsA.length || !pathsB.length) throw new KernelError(t('projection.empty'));
+    const oc = this.oc, arena = new Arena();
+    let edges: ShapeIndex | undefined;
+    try {
+      const wa = pathsA.map(p => this.wire(arena, a, p, false, new Map()));
+      const wb = pathsB.map(p => this.wire(arena, b, p, false, new Map()));
+      const box = arena.own(new oc.Bnd_Box());
+      for (const wire of [...wa, ...wb]) oc.BRepBndLib.Add(wire, box, false);
+      const lo = this.xyz(arena.own(box.CornerMin())), hi = this.xyz(arena.own(box.CornerMax()));
+      const span = (Math.hypot(...hi.map((v,i)=>v-lo[i]!)) + 1) / sine;
+      if (!Number.isFinite(span) || span > 1e9) throw new KernelError(t('projection.parallel'));
+      const surface = (wire: TopoDS_Wire, frame: Frame) => {
+        const n = frame.normal.map(v=>v/Math.hypot(...frame.normal)) as Vec3;
+        const transform = arena.own(new oc.gp_Trsf());
+        transform.SetTranslation(arena.own(new oc.gp_Vec(-span*n[0],-span*n[1],-span*n[2])));
+        const moved = arena.own(new oc.BRepBuilderAPI_Transform(wire, transform, true));
+        const start = arena.own(moved.Shape());
+        const prism = arena.own(new oc.BRepPrimAPI_MakePrism(start, arena.own(new oc.gp_Vec(2*span*n[0],2*span*n[1],2*span*n[2])), false, true));
+        return arena.own(prism.Shape());
+      };
+      const sa = wa.map(w=>surface(w,a)), sb = wb.map(w=>surface(w,b));
+      const sections: TopoDS_Shape[] = [];
+      for (const first of sa) for (const second of sb) {
+        const section = arena.own(new oc.BRepAlgoAPI_Section(first, second, false));
+        section.Approximation(true);
+        sections.push(arena.own(this.build(section, t('feature.projectedCurve'), arena)));
+      }
+      const result = arena.own(this.compound(sections, arena));
+      edges = ShapeIndex.of(oc, result, T.EDGE, arena);
+      if (!edges.size) throw new KernelError(t('projection.empty'));
+      return this.put(result.Oriented(result.Orientation()));
+    } finally { edges?.dispose(); arena.dispose(); }
+  }
+
   /**
    * Splits a face along curves projected onto it (C8.1 分割線): each closed loop of `loops` drawn in `frame` is projected along `dir` onto face `faceIndex` of the
    * target, and the face is cut along them. A line of sight crosses the shape more than once, and the projection has a wire on each crossing: only the nearest to the

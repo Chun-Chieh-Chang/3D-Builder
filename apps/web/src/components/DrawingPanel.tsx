@@ -553,6 +553,13 @@ export function DrawingPanel() {
         <PMGroup title={t('drawingUi.dimStyle')} icon="dimension" group="dimStyle" open={isOpen('dimStyle')} onToggle={() => toggle('dimStyle')} hidden={!onSheetGroups}>
           <div className="sw-message">{t('drawingUi.dimStyleSheetTip')}</div>
           <DimStyleFields scope="sheet" value={curPage.sheet.dimStyle ?? {}} base={DIM_STYLE_DEFAULT} onChange={(s) => d.setSheet({ dimStyle: s })} />
+          <label className="pm-row">
+            <span>{t('drawingUi.dimCalloutStyle')}</span>
+            <select data-field="sheetCalloutStyle" value={curPage.sheet.calloutStyle ?? 'text'} onChange={e => d.setSheet({ calloutStyle: e.target.value as 'text' | 'symbols' })}>
+              <option value="text">{t('drawingUi.dimCalloutText')}</option>
+              <option value="symbols">{t('drawingUi.dimCalloutSymbols')}</option>
+            </select>
+          </label>
         </PMGroup>
 
         <PMGroup title={t('drawingUi.tree.format')} icon="titleBlock" open={isOpen('format')} onToggle={() => toggle('format')} hidden={!onSheetGroups}>

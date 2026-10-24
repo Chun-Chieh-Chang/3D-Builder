@@ -7,7 +7,7 @@ import { bodyKey, combineMass, DATUM_PLANES, isDatumPlaneName, isShown, mirrorKe
 import { findProfiles, PlaneGcsSolver } from '@3db/sketch';
 import { COMPONENT_MESH, Kernel, type ThicknessReport, type UndercutReport, type DraftReport, type GeometryReport, type MassProps, type MeshData, type MeshOptions, type ShapeId } from '@3db/kernel';
 import { encodeShade, flatViewLines, rasterizeShade, withoutHiddenEdges, type ShadeImage, type ViewLines } from '@3db/drawing';
-import { drawingAnchors, holeFeatures, projectDrawingView, elementFacts, viewFeatures, viewEdges, findClearance, findInterference, flatPattern, FlatError, sheetChecks, sweepClearance, measureTargets, convertEdges, intersectFaces, modelSnapItems, edgeMateGeometry, exportFaces, faceColors, intoFrame, faceEdges, faceMateGeometry, followReferences, NO_NAMES, NO_TOPOLOGY, sketchEntityRefs, ReferenceProblem, Regenerator, type ReferenceScope, solveAssemblyTree, type AssemblyResult, type AssemblySolveOptions, type BodyInfo, type FlatReport, type HoleFeatures, type RebuildResult, type SheetCheck, type SheetCheckLimits } from '@3db/regen';
+import { silhouetteProjector, silhouetteItems, drawingAnchors, holeFeatures, projectDrawingView, elementFacts, viewFeatures, viewEdges, findClearance, findInterference, flatPattern, FlatError, sheetChecks, sweepClearance, measureTargets, convertEdges, intersectFaces, modelSnapItems, edgeMateGeometry, exportFaces, faceColors, intoFrame, faceEdges, faceMateGeometry, followReferences, NO_NAMES, NO_TOPOLOGY, sketchEntityRefs, ReferenceProblem, Regenerator, type ReferenceScope, solveAssemblyTree, type AssemblyResult, type AssemblySolveOptions, type BodyInfo, type FlatReport, type HoleFeatures, type RebuildResult, type SheetCheck, type SheetCheckLimits } from '@3db/regen';
 import { edgeFingerprint, faceFingerprint, vertexFingerprint } from '@3db/naming';
 import { binaryStl, exportAssemblyStep, exportPartStep, portableShape, readComponentFile, stepAssemblyPlan, type StepAssemblyPlan } from '@3db/io';
 import type { SourcePart, SourceProvider } from '@3db/regen';
@@ -34,6 +34,7 @@ function scopeOf(model: NonNullable<typeof lastModel>, frame: PlaneFrame): Refer
     names: model.names,
     topology: model.topology,
     frame,
+    ...(model.shape !== undefined ? { silhouettes: silhouetteProjector(kernel,model.shape,model.names,model.topology,frame).branch } : {}),
     // a curved edge's crossings with the plane, from the kernel (ADR 0173): the shape is the last rebuild's, alive until the next one
     ...(model.shape !== undefined ? { curves: { crossings: (i: number) => kernel.edgePlaneCrossings(model.shape!, i, { origin: frame.origin, normal: frame.normal }) } } : {}),
     // the sketches the rebuild made before the edited one (it stops there): what its entities may follow (ADR 0175)
@@ -301,6 +302,10 @@ const api: KernelApi = {
     if (!lastModel || !frame) return { items: [], errors: [t('reference.noModel')] };
     const scope = scopeOf(lastModel, frame);
     try {
+      if (mode === 'silhouette') {
+        if(lastModel.shape===undefined)throw new Error(t('reference.noModel'));
+        return {items:silhouetteItems(silhouetteProjector(kernel,lastModel.shape,lastModel.names,lastModel.topology,frame),faces),errors:[]};
+      }
       if (mode === 'intersect') {
         const items = intersectFaces(scope, faces);
         return { items, errors: [] };
@@ -385,6 +390,7 @@ const api: KernelApi = {
       edgeNames: body?.names.edges ?? [],
       edgeFingerprints: topo ? topo.edges.map((_, i) => edgeFingerprint(topo, i)) : [],
       edgeGeometry: topo ? topo.edges.map(edgeMateGeometry) : [],
+      edgeFaces: topo ? topo.edges.map(edge=>edge.faces) : [],
       vertexNames: body?.names.vertices ?? [],
       vertexPoints: Float32Array.from(topo?.vertices.flatMap((v) => v.point) ?? []),
       vertexFingerprints: topo ? topo.vertices.map((_, i) => vertexFingerprint(topo, i)) : [],

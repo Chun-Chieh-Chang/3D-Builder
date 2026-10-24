@@ -40,6 +40,9 @@ const RULES: { [T in SketchConstraint['type']]: Partial<Record<RefField, RefKind
   concentric: { a: RADIAL, b: RADIAL },
   coradial: { a: RADIAL, b: RADIAL },
   intersection: { point: POINT, a: CURVE_OR_AXIS, b: CURVE_OR_AXIS },
+  patternPoint: {a:POINT,b:POINT},
+  equalCurvature: { a: RADIAL, b: RADIAL },
+  symmetricPoint: { a: POINT, b: POINT, point: POINT },
   equal: { a: CURVE, b: CURVE },
   midpoint: { point: POINT, line: ['line', 'arc'] },
   pointOnCurve: { point: POINT, curve: CURVE_OR_AXIS },
@@ -145,7 +148,9 @@ export function sketchError(sketch: Pick<SketchFeature, 'entities' | 'constraint
       if (e.ref && e.ref.kind !== 'vertex' && e.ref.kind !== 'datum' && e.ref.kind !== 'sketch') return t('cmd.sketchPointRefMustBeVertex', { id: e.id });
     } else if ('ref' in e && e.ref) {
       // a line follows an edge, reference geometry or a line of an earlier sketch; a circle or an arc an edge or one of an earlier sketch (ADR 0172, 0175)
-      const ok = e.ref.kind === 'edge' || (e.type === 'line' && e.ref.kind === 'datum') || (e.ref.kind === 'sketch' && (e.type === 'line' || e.type === 'circle' || e.type === 'arc'));
+      if(e.ref.silhouette!==undefined && (e.ref.kind!=='face'||!Number.isInteger(e.ref.silhouette)||e.ref.silhouette<0))return t('cmd.sketchRefMustBeEdge',{id:e.id});
+      const silhouette = e.ref.kind === 'face' && Number.isInteger(e.ref.silhouette) && e.ref.silhouette! >= 0;
+      const ok = silhouette || e.ref.kind === 'edge' || (e.type === 'line' && e.ref.kind === 'datum') || (e.ref.kind === 'sketch' && (e.type === 'line' || e.type === 'circle' || e.type === 'arc'));
       if (!ok) return t('cmd.sketchRefMustBeEdge', { id: e.id });
     }
   }
@@ -167,6 +172,7 @@ export function sketchError(sketch: Pick<SketchFeature, 'entities' | 'constraint
       const k = kindOf(ref);
       if (!k || !allowed.includes(k)) return t('rules.badRef', { id: c.id, ref });
     }
+    if(c.type==='patternPoint' && (!Array.isArray(c.center)||c.center.length!==2||!c.center.every(Number.isFinite)))return t('sketch.xformPointInvalid');
     const refs = constraintRefs(c);
     if (new Set(refs).size !== refs.length) return t('rules.sameTwice', { id: c.id });
     const ks = refs.map(kindOf);

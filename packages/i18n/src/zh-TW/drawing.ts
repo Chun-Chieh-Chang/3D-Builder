@@ -1,5 +1,9 @@
 /** drawing: the drawing document (Phase 5). */
 export const drawing = {
+  'drawing.badThreadLeader': '螺紋引線必須為連結模型的直徑規格標註。',
+  'drawing.threadLeaderNeedsThread': '請選取側視圖中具有螺紋規格的圓柱面。',
+  'drawingUi.threadLeader': '螺紋引線',
+  'drawingUi.calloutInherit': '使用圖紙預設',
   'format.notDrawing': '這不是工程圖檔',
   'format.noViews': '工程圖檔裡沒有圖頁與視圖',
   'picker.drawing': '工程圖（.3dbd）',

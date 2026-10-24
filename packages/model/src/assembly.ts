@@ -37,6 +37,7 @@ export type AssemblyCommand =
   | { type: 'deleteComponents'; componentIds: Id[] }
   /** Adds a mate at the end of the mates folder (C15.8). */
   | { type: 'insertMate'; mate: Mate }
+  | { type: 'insertMates'; mates: Mate[] }
   /** Replaces a mate's definition, e.g. from its PropertyManager (C15.12). */
   | { type: 'setMate'; mate: Mate }
   | { type: 'deleteMates'; mateIds: Id[] }
@@ -273,6 +274,10 @@ export function mutateAssembly(draft: Draft<AssemblyDoc>, cmd: AssemblyCommand):
       }
       const used = new Set(draft.components.map((c) => c.file));
       draft.files = draft.files.filter((f) => used.has(f.id));
+      return;
+    }
+    case 'insertMates': {
+      for(const mate of cmd.mates) mutateAssembly(draft,{type:'insertMate',mate});
       return;
     }
     case 'insertMate': {

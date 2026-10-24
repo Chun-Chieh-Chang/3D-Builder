@@ -1,0 +1,67 @@
+// Sheet defaults, model tolerance classes and associative side-view thread leaders.
+// Generate fixtures first with CALLOUT_EXTENSIONS=1 and CALLOUT_ACCEPTANCE_OUT=out/thread-extensions.
+//   await import('/@fs/<checkout>/tests/e2e/manual-thread-extensions.js?' + Date.now());
+//   await __threadExtensions.run();
+const root = new URL(import.meta.url).pathname.replace(/tests\/e2e\/[^/]*$/, '');
+await import(`${root}tests/e2e/phase2-assembly.js?` + Date.now());
+const H = window.__ui2;
+const { store } = H;
+const drw = () => store.getState().drw;
+const page = () => H.page(drw()?.doc);
+const panel = sel => document.querySelector(`[data-drawing-panel] ${sel}`);
+const choose = async (el, value) => {
+  if (!el) throw new Error('Select field missing');
+  el.value = value;
+  el.dispatchEvent(new Event('change', { bubbles: true }));
+  await H.wait(200);
+};
+const text = () => {
+  const o = [...store.drawingStore.scene().dimensions.values()][0];
+  return o && ('error' in o ? `ERROR ${o.error}` : o.text);
+};
+window.__threadExtensions = { run: async () => {
+  H.ready();
+  await H.project({ 'part.3dbx': `${root}out/thread-extensions/side-external-en-symbols.3dbx` });
+  await H.open('part.3dbx');
+  await H.waitFor(() => store.getState().result?.mesh, 20000, 'threaded model');
+  await H.treeClick('ct1');
+  await H.waitFor(() => document.querySelector('[data-field="threadToleranceClass"]'), 5000, 'model tolerance selector');
+  await choose(document.querySelector('[data-field="threadToleranceClass"]'), '6h');
+  await H.waitFor(() => store.getState().doc.features.find(f => f.type === 'cosmeticThread')?.toleranceClass === '6h', 5000, 'model class changed');
+  await H.save('part.3dbx');
+  await H.newDrawing(['top']);
+  await H.waitFor(() => page()?.views.length === 1 && drw().lines.get(page().views[0].id), 30000, 'side view');
+  const d = store.drawingStore;
+  d.clearSelection();
+  panel('[data-tab="props"]').click();
+  await H.wait(100);
+  const group = panel('[data-group="dimStyle"]');
+  if (!group.classList.contains('open')) group.querySelector('.sw-group-head').click();
+  await choose(panel('[data-field="sheetCalloutStyle"]'), 'symbols');
+  H.check(page().sheet.calloutStyle === 'symbols', 'sheet default stored');
+  const view = page().views[0];
+  d.select(view.id);
+  await H.waitFor(() => drw().features.has(view.id), 10000, 'side feature data');
+  const features = drw().features.get(view.id);
+  H.check(features.some(f => f.type === 'axis' && (f.thread || f.hole?.thread)), `thread axis metadata: ${JSON.stringify({ features, model: store.getState().doc.features, statuses: store.getState().result?.features, problems: [...drw().problems] })}`);
+  await H.wait(100);
+  const dimensions = panel('[data-group="dimensions"]');
+  if (!dimensions.classList.contains('open')) dimensions.querySelector('.sw-group-head').click();
+  await H.waitFor(() => panel('[data-action="addThreadLeader"]'), 10000, 'thread leader UI');
+  panel('[data-action="addThreadLeader"]').click();
+  await H.waitFor(() => text()?.includes('6h') && text()?.includes('↧ 18'), 20000, 'model-linked thread specification');
+  const dim = page().dimensions[0];
+  H.check(dim.threadLeader === true && dim.calloutStyle === undefined, 'independent leader inherits sheet');
+  d.selectDimension(dim.id);
+  await H.wait(100);
+  await choose(panel('[data-field="dimCalloutStyle"]'), 'text');
+  H.check(!text().includes('↧'), 'local override');
+  await choose(panel('[data-field="dimCalloutStyle"]'), '');
+  H.check(text().includes('↧ 18'), 'inherit reset');
+  store.undo(); await H.wait(150);
+  H.check(!text().includes('↧'), 'undo inherited style');
+  store.redo(); await H.wait(150);
+  H.check(text().includes('↧ 18'), 'redo inherited style');
+  H.check([...document.querySelectorAll('[data-svg] svg text')].some(n => n.textContent === text()), 'real viewport contains the specification');
+  return { pass: true, text: text(), sheetStyle: page().sheet.calloutStyle, modelTolerance: '6h' };
+} };

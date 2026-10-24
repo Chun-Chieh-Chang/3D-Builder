@@ -108,7 +108,8 @@ export function AssemblyViewport() {
     };
     const viewer = new Viewer(host.current!, {
       onComponentHover: setHover,
-      onComponentClick: (key) => store.assembly?.selectComponentFromView(key),
+      onComponentClick: (key, additive) => store.assembly?.selectComponentFromView(key, additive),
+      onBoxSelect: (box, additive) => store.assembly?.selectComponents(box.components,additive),
       onComponentContextMenu: (key, x, y) => {
         setSpaceMenu(null);
         if (!key) {
@@ -118,7 +119,7 @@ export function AssemblyViewport() {
           return;
         }
         // the menu is the answer to a right click: the pick is the tree's kind, so the PropertyManager is not brought forward for it
-        store.assembly?.select(key);
+        if(!store.getState().asm?.selectedComponents.includes(key)) store.assembly?.select(key);
         setMenu({ x, y, id: key });
       },
       onElementHover: setHoverElement,
@@ -131,6 +132,10 @@ export function AssemblyViewport() {
       onComponentDragStart: (key, point, button) => store.assembly?.startDrag(key, point, button) ?? false,
       onComponentDrag: (e) => store.assembly?.dragTo(e),
       onComponentDragEnd: (cancelled) => store.assembly?.endDrag(cancelled),
+      onSmartMateStart: el => {const ref=refOf(el);return !!ref && (store.assembly?.startSmartMate(ref)??false);},
+      onSmartMateHover: el => store.assembly?.hoverSmartMate(el?refOf(el):null),
+      onSmartMateFlip: ()=>store.assembly?.flipMateAlignment(),
+      onSmartMateEnd: cancelled=>void store.assembly?.finishSmartMate(cancelled),
       // the only markers of an assembly are the interferences', keyed by their place in the list and the piece ("2:0")
       onMarkerClick: (key) => store.selectInterference(Number(key.split(':')[0])),
       // 以座標軸移動 (ADR 0179): a handle held, the ray of the pointer as it moves; a right click on a handle is its menu
@@ -187,6 +192,7 @@ export function AssemblyViewport() {
     const v = store.viewer;
     if (!v) return;
     const refs = asm.mate ? [asm.mate.a, asm.mate.b] : selectedMate ? [selectedMate.a, selectedMate.b] : asm.picks;
+    v.setBoxSelectionEnabled(!asm.insert && !asm.mate && !asm.move && !asm.pattern && !asm.explode && !asm.formSub && !measure);
     const shown = refs.flatMap((r) => (r ? [shownElement(r)] : []));
     // while measuring, what is picked is what is shown as chosen
     v.setSelectedElements(measure ? measure.picks.flatMap((p) => (p.leaf && !p.point ? [{ key: p.leaf, kind: p.kind, index: p.index }] : [])) : shown.flatMap((s) => (s.element ? [s.element] : [])));
@@ -194,8 +200,8 @@ export function AssemblyViewport() {
     v.setDatums({ axes: [], points: measure ? [] : shown.flatMap((s) => (s.point ? [s.point] : [])), systems: [] });
     const pair = interference && interference.selected !== null ? interference.pairs[interference.selected] : undefined;
     const close = clearance && clearance.selected !== null ? clearance.pairs[clearance.selected] : undefined;
-    v.setSelectedComponents(pair ? [pair.aTop, pair.bTop] : close ? [close.aTop, close.bTop] : !asm.mate && asm.selected && asm.doc.components.some((c) => c.id === asm.selected) ? [asm.selected] : []);
-  }, [asm.mate, asm.selected, asm.picks, asm.doc, asm.solution, asm.drag, asm.builds, measure, interference, clearance]);
+    v.setSelectedComponents(pair ? [pair.aTop, pair.bTop] : close ? [close.aTop, close.bTop] : !asm.mate ? asm.selectedComponents : []);
+  }, [asm.mate, asm.selected, asm.selectedComponents, asm.picks, asm.doc, asm.solution, asm.drag, asm.builds, asm.insert, asm.move, asm.pattern, asm.explode, asm.formSub, measure, interference, clearance]);
 
   // What a dragged component has run into (A3.6): those components are red
   useEffect(() => {
@@ -312,7 +318,7 @@ export function AssemblyViewport() {
     : pickingAxis
     ? (elementName ?? t('pattern.picking'))
     : mating
-      ? (elementName ?? t('asmui.mateHint'))
+      ? (elementName ?? t(asm.smartMate?'smartMate.hint':'asmui.mateHint'))
       : hovered
         ? t('asmui.componentHover', { name: componentInfo(asm, hovered).name, hint: dragHint(hovered, asm.solution, asm.move?.tool) })
         : asm.triad

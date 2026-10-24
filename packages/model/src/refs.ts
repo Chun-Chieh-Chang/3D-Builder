@@ -149,6 +149,11 @@ export function mapRefs(feature: Feature, map: (ref: Ref) => Ref): { feature: Fe
         },
         replaced,
       };
+    case 'ruledSurface': return {feature:{...feature,first:one(feature.first),second:one(feature.second)},replaced};
+    case 'radiatedSurface': return {feature:{...feature,edge:one(feature.edge),plane:one(feature.plane)},replaced};
+    case 'replaceFace': return {feature:{...feature,face:one(feature.face),replacement:one(feature.replacement)},replaced};
+    case 'projectedCurve':
+      return { feature: { ...feature, faces: feature.faces?.map(one), ...(feature.direction ? { direction: one(feature.direction) } : {}) }, replaced };
     case 'helix':
       return {
         feature: {

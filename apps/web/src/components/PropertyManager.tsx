@@ -33,6 +33,8 @@ import {
   ISO_HOLE_SIZES,
   ALL_STANDARD_THREADS,
   lookupThread,
+  threadToleranceClasses,
+  validThreadTolerance,
   DOWEL_FITS,
   fitClearance,
   holeLimits,
@@ -91,6 +93,10 @@ import {
   type ThreadFeature,
   type KnurlFeature,
   type HelixFeature,
+  type ProjectedCurveFeature,
+  type RuledSurfaceFeature,
+  type RadiatedSurfaceFeature,
+  type ReplaceFaceFeature,
   type HelixDefinedBy,
   type Thin,
   type SketchConstraint,
@@ -224,6 +230,7 @@ function ToolOptionsBox({ view, sketcher }: { view: ControllerView; sketcher: Sk
       );
     case 'offset':
       return <OptionNumber label={t('sketch.option.offset')} value={o.offsetDistance} onChange={(v) => sketcher.setOption('offsetDistance', v)} />;
+    case 'stretchEntities':
     case 'moveEntities':
     case 'copyEntities':
     case 'rotateEntities':
@@ -250,12 +257,12 @@ function TypedNumber({ label, value, name, onChange }: { label: string; value: n
 function TransformOptions({ view, sketcher }: { view: ControllerView; sketcher: SketchController }) {
   const o = view.options;
   const tool = view.tool;
-  const set = (key: 'moveX' | 'moveY' | 'rotateAngle' | 'scaleFactor' | 'patternX' | 'patternY' | 'patternCount' | 'patternAngle') => (v: number) => sketcher.setOption(key, v);
+  const set = (key: 'moveX' | 'moveY' | 'rotateAngle' | 'scaleFactor' | 'patternX' | 'patternY' | 'patternCount' | 'patternAngle' | 'pattern2X' | 'pattern2Y' | 'pattern2Count') => (v: number) => sketcher.setOption(key, v);
   const pattern = tool === 'linearPattern' || tool === 'circularPattern';
   return (
     <>
       <label className="pm-row checkbox" title={t('sketch.option.keepRelationsHint')}>
-        <input type="checkbox" name="keepRelations" checked={o.keepRelations} onChange={(e) => sketcher.setOption('keepRelations', e.target.checked)} />
+        <input type="checkbox" name="keepRelations" checked={o.keepRelations} disabled={pattern&&o.linkCopies} onChange={(e) => sketcher.setOption('keepRelations', e.target.checked)} />
         <span>{t('sketch.option.keepRelations')}</span>
       </label>
       {(tool === 'rotateEntities' || tool === 'scaleEntities') && (
@@ -264,7 +271,7 @@ function TransformOptions({ view, sketcher }: { view: ControllerView; sketcher: 
           <span>{t('sketch.option.copy')}</span>
         </label>
       )}
-      {(tool === 'moveEntities' || tool === 'copyEntities') && (
+      {(tool==='stretchEntities' || tool === 'moveEntities' || tool === 'copyEntities') && (
         <>
           <TypedNumber label={t('sketch.option.moveX')} name="moveX" value={o.moveX} onChange={set('moveX')} />
           <TypedNumber label={t('sketch.option.moveY')} name="moveY" value={o.moveY} onChange={set('moveY')} />
@@ -278,6 +285,8 @@ function TransformOptions({ view, sketcher }: { view: ControllerView; sketcher: 
           <TypedNumber label={t('sketch.option.patternY')} name="patternY" value={o.patternY} onChange={set('patternY')} />
         </>
       )}
+      {pattern && <label className="pm-row checkbox"><input type="checkbox" name="linkCopies" checked={o.linkCopies} onChange={e=>sketcher.setOption('linkCopies',e.target.checked)}/>{t('sketch.option.linkCopies')}</label>}
+      {tool==='linearPattern' && <><label className="pm-row checkbox"><input type="checkbox" name="secondDirection" checked={o.secondDirection} onChange={e=>sketcher.setOption('secondDirection',e.target.checked)}/>{t('sketch.option.secondDirection')}</label>{o.secondDirection&&<><TypedNumber label={t('sketch.option.pattern2X')} name="pattern2X" value={o.pattern2X} onChange={set('pattern2X')}/><TypedNumber label={t('sketch.option.pattern2Y')} name="pattern2Y" value={o.pattern2Y} onChange={set('pattern2Y')}/><TypedNumber label={t('sketch.option.pattern2Count')} name="pattern2Count" value={o.pattern2Count} onChange={set('pattern2Count')}/></>}</>}
       {pattern && <TypedNumber label={t('sketch.option.patternCount')} name="patternCount" value={o.patternCount} onChange={set('patternCount')} />}
       {tool === 'circularPattern' && <TypedNumber label={t('sketch.option.patternAngle')} name="patternAngle" value={o.patternAngle} onChange={set('patternAngle')} />}
       {tool !== 'circularPattern' && (
@@ -2213,7 +2222,11 @@ function DeleteFacePanel({ f }: { f: DeleteFaceFeature }) {
 function HolePanel({ f }: { f: HoleFeature }) {
   const { sketch: _sketch, id: _id, type: _type, name: _name, suppressed: _suppressed, ...settings } = f;
   void [_sketch, _id, _type, _name, _suppressed];
-  const run = (patch: Partial<typeof settings>) => store.execute({ type: 'setHole', featureId: f.id, hole: { ...settings, ...patch } });
+  const run = (patch: Partial<typeof settings>) => {
+    const next = { ...settings, ...patch };
+    if (!validThreadTolerance(next.toleranceClass, next.kind === 'tapped' ? next.size : undefined, 'internal')) delete next.toleranceClass;
+    store.execute({ type: 'setHole', featureId: f.id, hole: next });
+  };
   const size = holeSize(f.size ?? '');
   /** The diameters of a standard size, for the kind of hole this is (a threaded hole is drilled to its tap size, the others to the clearance). */
   const fill = (kind: HoleFeature['kind'], name: string): Partial<typeof settings> => {
@@ -2269,8 +2282,17 @@ function HolePanel({ f }: { f: HoleFeature }) {
       )}
       <label className="pm-row">
         <span>{t('pm.hole.diameter')}</span>
-        <ValueInput value={f.diameter} toCommand={(diameter) => ({ type: 'setHole', featureId: f.id, hole: { ...settings, diameter, size: undefined } })} />
+        <ValueInput value={f.diameter} toCommand={(diameter) => ({ type: 'setHole', featureId: f.id, hole: { ...settings, diameter, size: undefined, toleranceClass: undefined } })} />
       </label>
+      {f.kind === 'tapped' && f.size && (
+        <label className="pm-row">
+          <span>{t('pm.threadTolerance')}</span>
+          <select data-field="holeToleranceClass" value={f.toleranceClass ?? ''} onChange={e => run({ toleranceClass: e.target.value || undefined })}>
+            <option value="">{t('pm.threadToleranceNone')}</option>
+            {threadToleranceClasses(f.size, 'internal').map(c => <option key={c} value={c}>{c}</option>)}
+          </select>
+        </label>
+      )}
       {f.kind === 'dowel' && (
         <>
           <label className="pm-row">
@@ -3821,6 +3843,8 @@ function CosmeticThreadPanel({ f }: { f: CosmeticThreadFeature }) {
   const selected = useStore((s) => s.selected);
 
   const update = (patch: Partial<Omit<CosmeticThreadFeature, 'id' | 'type' | 'name' | 'suppressed'>>) => {
+    const next = { ...f, ...patch };
+    if (!validThreadTolerance(next.toleranceClass, next.standardMode === 'standard' ? next.standardDesignation : undefined, next.threadType)) patch = { ...patch, toleranceClass: undefined };
     store.execute({ type: 'setCosmeticThread', featureId: f.id, params: patch });
   };
 
@@ -3880,6 +3904,15 @@ function CosmeticThreadPanel({ f }: { f: CosmeticThreadFeature }) {
 
       <section className="pm-group">
         <h4>{t('pm.cosmeticThread.type')}</h4>
+        {!isCustom && (
+          <label className="pm-row">
+            <span>{t('pm.threadTolerance')}</span>
+            <select data-field="threadToleranceClass" value={f.toleranceClass ?? ''} onChange={e => update({ toleranceClass: e.target.value || undefined })}>
+              <option value="">{t('pm.threadToleranceNone')}</option>
+              {threadToleranceClasses(f.standardDesignation, f.threadType).map(c => <option key={c} value={c}>{c}</option>)}
+            </select>
+          </label>
+        )}
         <div className="pm-row">
           <select
             value={f.threadType ?? 'external'}
@@ -4018,6 +4051,38 @@ function CosmeticThreadPanel({ f }: { f: CosmeticThreadFeature }) {
       </section>
     </>
   );
+}
+
+function SurfaceToolsPanel({f}:{f:RuledSurfaceFeature|RadiatedSurfaceFeature|ReplaceFaceFeature}) {
+  const doc=useStore(s=>s.doc);
+  const update=(params:Extract<Command,{type:'setSurfaceTools'}>['params'])=>store.execute({type:'setSurfaceTools',featureId:f.id,params});
+  const field=(key:'first'|'second'|'edge'|'face'|'replacement',ref:Ref)=><div className="pm-row"><span>{t(`surfaceTools.${key}`)}</span><input readOnly value={ref.name} /><button onClick={()=>update({[key]:{kind:ref.kind,name:''}})} aria-label={t('surfaceTools.clear')}>×</button></div>;
+  const plane=f.type==='radiatedSurface'?f.plane:f.type==='replaceFace'?f.replacement:null;
+  const planes=plane&&<label className="pm-row"><span>{t('surfaceTools.plane')}</span><select value={plane.kind==='datum'?plane.name:''} onChange={e=>update(f.type==='radiatedSurface'?{plane:{kind:'datum',name:e.target.value}}:{replacement:{kind:'datum',name:e.target.value}})}><option value="" disabled>{t('projection.faces')}</option>{(['front','top','right'] as const).map(name=><option key={name} value={'plane:'+name}>{t(`datum.${name}`)}</option>)}{doc.features.slice(0,doc.features.findIndex(x=>x.id===f.id)).filter(x=>x.type==='refPlane').map(x=><option key={x.id} value={x.id}>{x.name}</option>)}</select></label>;
+  return <section className="pm-group">
+    {f.type==='ruledSurface'?<>{field('first',f.first)}{field('second',f.second)}<label className="pm-row"><input type="checkbox" checked={!!f.reverseSecond} onChange={e=>update({reverseSecond:e.target.checked})}/>{t('surfaceTools.reverse')}</label></>:f.type==='radiatedSurface'?<>{field('edge',f.edge)}{planes}<label className="pm-row"><span>{t('surfaceTools.distanceLabel')}</span><ValueInput value={f.distance} toCommand={distance=>({type:'setSurfaceTools',featureId:f.id,params:{distance}})}/></label><label className="pm-row"><input type="checkbox" checked={!!f.reverse} onChange={e=>update({reverse:e.target.checked})}/>{t('surfaceTools.reverse')}</label></>:<>{field('face',f.face)}{field('replacement',f.replacement)}{planes}</>}
+    <p className="pm-hint">{t(f.type==='replaceFace'?'surfaceTools.replaceHint':f.type==='radiatedSurface'?'surfaceTools.radiateHint':'surfaceTools.ruledHint')}</p>
+  </section>;
+}
+
+function ProjectedCurvePanel({ f }: { f: ProjectedCurveFeature }) {
+  const doc = useStore(s=>s.doc);
+  const update = (params: Partial<Omit<ProjectedCurveFeature, 'id' | 'type' | 'name' | 'suppressed'>>) => store.execute({ type: 'setProjectedCurve', featureId: f.id, params });
+  const earlier = doc.features.slice(0,doc.features.findIndex(x=>x.id===f.id)).filter(x=>x.type==='sketch');
+  return <section className="pm-group">
+    <label className="pm-row"><span>{t('projection.modeLabel')}</span><select value={f.mode} onChange={e=>update({mode:e.target.value as ProjectedCurveFeature['mode'], ...(e.target.value==='sketchOnSketch' ? {secondSketch:earlier.find(s=>s.id!==f.sketch)?.id} : {})})}>
+      <option value="sketchOnSketch">{t('projection.sketchOnSketch')}</option><option value="sketchOnFaces">{t('projection.sketchOnFaces')}</option>
+    </select></label>
+    <label className="pm-row"><span>{t('projection.first')}</span><select value={f.sketch} onChange={e=>update({sketch:e.target.value})}>{earlier.map(s=><option key={s.id} value={s.id}>{s.name}</option>)}</select></label>
+    {f.mode==='sketchOnSketch' ? <label className="pm-row"><span>{t('projection.second')}</span><select value={f.secondSketch ?? ''} onChange={e=>update({secondSketch:e.target.value})}>{earlier.filter(s=>s.id!==f.sketch).map(s=><option key={s.id} value={s.id}>{s.name}</option>)}</select></label> : <>
+      <p>{(f.faces ?? []).map(r=>r.name).join(', ') || t('projection.faces')}</p>
+      <button onClick={()=>update({faces:[]})}>{t('projection.clearFaces')}</button>
+      <button onClick={()=>update({direction:undefined})}>{t('projection.normal')}</button>
+      <select aria-label={t('projection.useDirection')} value={f.direction?.kind==='datum'?f.direction.name:''} onChange={e=>update({direction:e.target.value?{kind:'datum',name:e.target.value}:undefined})}><option value="">{t('projection.normal')}</option>{doc.features.slice(0,doc.features.findIndex(x=>x.id===f.id)).filter(x=>x.type==='refAxis'||x.type==='refPlane').map(x=><option key={x.id} value={x.id}>{x.name}</option>)}</select>
+      <p>{f.direction?.name ?? t('projection.normal')}</p>
+    </>}
+    <p className="pm-hint">{t('projection.hint')}</p>
+  </section>;
 }
 
 function HelixPanel({ f }: { f: HelixFeature }) {
@@ -4198,6 +4263,8 @@ export function FeatureParams({ f }: { f: Feature }) {
       {f.type === 'thread' && <ThreadPanel f={f} />}
       {f.type === 'knurl' && <KnurlPanel f={f} />}
       {f.type === 'cosmeticThread' && <CosmeticThreadPanel f={f} />}
+      {(f.type==='ruledSurface'||f.type==='radiatedSurface'||f.type==='replaceFace') && <SurfaceToolsPanel f={f}/>}
+      {f.type === 'projectedCurve' && <ProjectedCurvePanel f={f} />}
       {f.type === 'helix' && <HelixPanel f={f} />}
     </>
   );

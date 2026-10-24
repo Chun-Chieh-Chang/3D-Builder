@@ -1,5 +1,8 @@
 /** asmui: the assembly's graphics area hints and the 「移動零組件」／「旋轉零組件」 PropertyManager (D9.1; written in the code until ADR 0176). */
 export const asmui = {
+  'smartMate.conflict':'無法建立智慧結合：與目前的結合衝突，未修改組合件。',
+  'smartMate.failed':'智慧結合失敗：{why}',
+  'smartMate.hint':'Alt 拖曳到另一個零組件的面／圓邊以預覽結合；Tab 翻轉，放開套用，Esc 取消。',
   'asmui.elementHover': '{kind}：{name}（{owner}）',
   'asmui.dragging': '{verb}「{name}」：只沿結合留下的自由度（Esc 取消）',
   'asmui.place': '在圖面中按一下以放置「{name}」（Esc 取消）',

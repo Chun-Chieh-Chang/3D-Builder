@@ -629,6 +629,7 @@ export function OptionsDialog() {
               </option>
             ))}
           </select>
+          <label>{t('sketch.automaticRelations')}</label><input type="checkbox" checked={options.automaticRelations} onChange={e=>store.setOptions({automaticRelations:e.target.checked})} />
           <label>{t('snap.title')}</label>
           <span className="snap-options">
             {SNAP_FLAGS.map((k) => (

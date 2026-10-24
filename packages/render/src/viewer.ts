@@ -4,6 +4,7 @@ import { LineSegments2 } from 'three/examples/jsm/lines/LineSegments2.js';
 import { LineSegmentsGeometry } from 'three/examples/jsm/lines/LineSegmentsGeometry.js';
 import { acceleratedRaycast, computeBoundsTree, disposeBoundsTree } from 'three-mesh-bvh';
 import { ViewControls } from './controls';
+import { geometryInRect, inSelectionRect, selectionRect, type ScreenPoint } from './boxSelection';
 import { cubeDirection, fitBoxView, nearestView, orbitView, panView, restoreView, rollView, viewState, ViewHistory, zoomView } from './viewNav';
 import { circleCentre, middleOf, polylinesOf, type V3 } from './snap';
 import { buildOverlayObjects, disposeGroup, overlayFitBox, toWorld, type P2, type PlaneFrame, type SketchOverlay } from './overlay';
@@ -158,6 +159,8 @@ export interface InstanceElement {
   kind: 'face' | 'edge' | 'vertex';
   index: number;
 }
+
+export interface BoxSelection { faces: number[]; edges: number[]; vertices: number[]; components: string[] }
 
 interface PartGeometry {
   mesh: ViewMesh;
@@ -626,6 +629,8 @@ export interface ViewerEvents {
   onFaceHover?: (face: number) => void;
   /** Left click on a face (or -1 on empty space). */
   onFaceClick?: (face: number, additive: boolean) => void;
+  onFaceDoubleClick?: (face: number) => void;
+  onBoxSelect?: (selection: BoxSelection, additive: boolean) => void;
   /**
    * Left click on a reference plane that is shown (D4.6): its key, which is a default plane name
    * ("plane:front") or the id of the reference plane feature (ADR 0127).
@@ -660,6 +665,10 @@ export interface ViewerEvents {
   onComponentDrag?: (e: ComponentDragEvent) => void;
   /** The drag is over: the button was released, or it was cancelled (Esc). */
   onComponentDragEnd?: (cancelled: boolean) => void;
+  onSmartMateStart?: (element: InstanceElement) => boolean;
+  onSmartMateHover?: (element: InstanceElement | null) => void;
+  onSmartMateFlip?: () => void;
+  onSmartMateEnd?: (cancelled: boolean) => void;
   /** A marker (setMarkers) was clicked: its key. */
   onMarkerClick?: (key: string) => void;
   /** A handle of the triad (ADR 0179) was taken hold of with the left button: the ray of the pointer then. Returning false refuses the drag. */
@@ -788,6 +797,10 @@ export class Viewer {
   private snapCache = new WeakMap<object, { lines: Map<number, V3[]>; ends: V3[]; middles: V3[]; centres: V3[] }>();
   private measureLabels = new Map<string, { el: HTMLElement; world: THREE.Vector3; offset: [number, number] }>();
   private toolHandler: ((e: ToolPointerEvent) => void) | null = null;
+  private boxEnabled = true;
+  private smartGesture: { owner: string; move:(e:PointerEvent)=>void; up:(e:PointerEvent)=>void; key:(e:KeyboardEvent)=>void } | null = null;
+  private boxPress: { from: [number, number]; to: [number, number]; pointer: number; additive: boolean } | null = null;
+  private readonly boxFrame = document.createElement('div');
   /** Part meshes that instances show, by key: built once, shared by every instance of the part. */
   private partGeometry = new Map<string, PartGeometry>();
   private pickElements = false;
@@ -828,6 +841,8 @@ export class Viewer {
     this.renderer.setClearColor(COLORS.background);
     this.renderer.autoClear = false;
     container.appendChild(this.renderer.domElement);
+    Object.assign(this.boxFrame.style, { position:'absolute', pointerEvents:'none', zIndex:'8', display:'none', boxSizing:'border-box' });
+    container.appendChild(this.boxFrame);
     this.renderer.domElement.style.display = 'block';
     this.labelLayer = document.createElement('div');
     this.labelLayer.className = 'overlay-labels';
@@ -845,9 +860,12 @@ export class Viewer {
     const dom = this.renderer.domElement;
     dom.addEventListener('pointerdown', this.onTriadDown, true); // first of all: the triad is drawn over everything, so a press on it is its own
     dom.addEventListener('pointerdown', this.onSectionDown, true); // before the controls and the component drags: a press on the cut is the cut's
+    dom.addEventListener('pointerdown', this.onSmartMateDown, true);
     dom.addEventListener('pointerdown', this.onPointerDown);
     dom.addEventListener('pointermove', this.onPointerMove);
     dom.addEventListener('pointerup', this.onPointerUp);
+    dom.addEventListener('pointercancel', this.cancelBox);
+    window.addEventListener('keydown', this.boxKey, true);
     dom.addEventListener('pointerleave', this.onPointerLeave);
     dom.addEventListener('pointercancel', () => this.cancelComponentDrag()); // the system took the pointer
     dom.addEventListener('click', this.onClick);
@@ -872,6 +890,10 @@ export class Viewer {
   }
 
   dispose(): void {
+    this.endSmartGesture(true);
+    this.cancelBox();
+    window.removeEventListener('keydown', this.boxKey, true);
+    this.boxFrame.remove();
     cancelAnimationFrame(this.frame);
     this.resizeObserver.disconnect();
     this.controls.dispose();
@@ -1158,11 +1180,12 @@ export class Viewer {
    * what can be found: what it leaves out is not hovered, picked, or found *instead of* what is wanted (an edge-only filter never answers with the face behind it).
    * Bodies still hide what is behind them, whatever the filter.
    */
-  private pickElement(clientX: number, clientY: number): InstanceElement | null {
+  private pickElement(clientX: number, clientY: number, excludeOwner?: string): InstanceElement | null {
     if (this.instances.size === 0) return null;
     const ray = this.rayAt(clientX, clientY);
     const caster = new THREE.Raycaster(ray.origin, ray.direction);
-    const bodies = [...this.instances.values()].map((i) => i.body);
+    const selectable=[...this.instances].filter(([,i])=>i.group.visible && i.owner!==excludeOwner);
+    const bodies = selectable.map(([,i]) => i.body);
     const bodyHit = caster.intersectObjects(bodies).find((h) => this.kept(h.point));
     const depth = bodyHit?.distance ?? Infinity;
     const scale = (this.camera.right - this.camera.left) / this.camera.zoom;
@@ -1175,7 +1198,7 @@ export class Viewer {
     this.syncCamera();
     let best: { d: number; el: InstanceElement; p: THREE.Vector3 } | null = null;
     const p = new THREE.Vector3();
-    for (const [key, inst] of this.instances) {
+    for (const [key, inst] of selectable) {
       const v = this.filter.vertices ? this.partGeometry.get(inst.part)?.vertices : undefined;
       if (!v) continue;
       for (let i = 0; i < v.length / 3; i++) {
@@ -1195,7 +1218,7 @@ export class Viewer {
 
     // Edges within 6 px, in front of the bodies.
     caster.params.Line = { threshold: (6 * scale) / rect.width };
-    const edges = this.filter.edges ? [...this.instances.values()].flatMap((i) => (i.edges ? [i.edges] : [])) : [];
+    const edges = this.filter.edges ? selectable.flatMap(([,i]) => (i.edges ? [i.edges] : [])) : [];
     const edgeHit = caster.intersectObjects(edges).find((x) => x.distance <= depth + slack && this.kept(x.point));
     if (edgeHit && edgeHit.index !== undefined) {
       const found = owner(edgeHit.object);
@@ -2535,9 +2558,133 @@ export class Viewer {
     this.toolHandler?.({ type, clientX: e.clientX, clientY: e.clientY, ctrl: e.ctrlKey || e.metaKey, shift: e.shiftKey, pressed });
   }
 
+  setBoxSelectionEnabled(enabled: boolean): void {
+    this.boxEnabled=enabled;
+    if(!enabled) this.cancelBox();
+  }
+
+  private endSmartGesture(cancelled:boolean):void {
+    const g=this.smartGesture;
+    if(!g) return;
+    this.smartGesture=null;
+    window.removeEventListener('pointermove',g.move,true);
+    window.removeEventListener('pointerup',g.up,true);
+    window.removeEventListener('pointercancel',g.up,true);
+    window.removeEventListener('keydown',g.key,true);
+    this.swallowClick=true;
+    this.events.onSmartMateEnd?.(cancelled);
+  }
+  private onSmartMateDown=(event:PointerEvent):void=>{
+    if(event.button!==0 || !event.altKey || this.toolHandler || this.smartGesture || !this.events.onSmartMateStart) return;
+    const source=this.pickElement(event.clientX,event.clientY);
+    if(!source || !this.events.onSmartMateStart(source)) return;
+    event.preventDefault();event.stopImmediatePropagation();
+    const owner=this.instances.get(source.key)?.owner??source.key;
+    const move=(e:PointerEvent)=>{if(e.pointerId!==event.pointerId)return;e.preventDefault();e.stopImmediatePropagation();this.events.onSmartMateHover?.(this.pickElement(e.clientX,e.clientY,owner));};
+    const up=(e:PointerEvent)=>{if(e.pointerId!==event.pointerId)return;e.preventDefault();e.stopImmediatePropagation();if(e.type!=='pointercancel')this.events.onSmartMateHover?.(this.pickElement(e.clientX,e.clientY,owner));this.endSmartGesture(e.type==='pointercancel');};
+    const key=(e:KeyboardEvent)=>{if(e.key==='Escape'||e.key==='Tab'){e.preventDefault();e.stopImmediatePropagation();if(e.key==='Escape')this.endSmartGesture(true);else this.events.onSmartMateFlip?.();}};
+    this.smartGesture={owner,move,up,key};
+    window.addEventListener('pointermove',move,true);window.addEventListener('pointerup',up,true);window.addEventListener('pointercancel',up,true);window.addEventListener('keydown',key,true);
+  };
+
+  private cancelBox = (): void => {
+    const p=this.boxPress;
+    this.boxPress=null;
+    this.boxFrame.style.display='none';
+    if(p) try { this.renderer.domElement.releasePointerCapture(p.pointer); } catch { /* capture already released */ }
+  };
+  private boxKey = (event: KeyboardEvent): void => {
+    if(event.key==='Escape' && this.boxPress) { event.preventDefault(); event.stopImmediatePropagation(); this.swallowClick=true; this.cancelBox(); }
+  };
+  private paintBox(): void {
+    const p=this.boxPress;
+    if(!p || Math.hypot(p.to[0]-p.from[0],p.to[1]-p.from[1])<4) return;
+    const rect=selectionRect(p.from,p.to),host=this.container.getBoundingClientRect();
+    this.boxFrame.dataset.selectionBox=rect.crossing?'crossing':'window';
+    Object.assign(this.boxFrame.style,{display:'block',left:`${rect.left-host.left}px`,top:`${rect.top-host.top}px`,width:`${rect.right-rect.left}px`,height:`${rect.bottom-rect.top}px`,
+      border:`1px ${rect.crossing?'dashed #26975a':'solid #2675c9'}`,background:rect.crossing?'#26975a18':'#2675c918'});
+  }
+
+  /** Geometry as actually placed and section-clipped. Window requires containment; crossing tests polygons, not only extents. */
+  elementsInBox(from: ScreenPoint, to: ScreenPoint): BoxSelection {
+    const rect=selectionRect(from,to),canvas=this.renderer.domElement.getBoundingClientRect();
+    const result: BoxSelection={faces:[],edges:[],vertices:[],components:[]};
+    this.camera.updateMatrixWorld();
+    const project=(p:THREE.Vector3):ScreenPoint=>{
+      const q=p.clone().project(this.camera);
+      return [canvas.left+(q.x+1)*canvas.width/2,canvas.top+(1-q.y)*canvas.height/2];
+    };
+    const clip=(points:THREE.Vector3[]):THREE.Vector3[]=>{
+      let polygon=points;
+      for(const plane of this.clip) {
+        const next:THREE.Vector3[]=[];
+        for(let i=0;i<polygon.length;i++) {
+          const a=polygon[i]!,b=polygon[(i+1)%polygon.length]!,da=plane.distanceToPoint(a),db=plane.distanceToPoint(b);
+          if(da>=0) next.push(a);
+          if((da>=0)!==(db>=0)) next.push(a.clone().lerp(b,da/(da-db)));
+        }
+        polygon=next;
+      }
+      return polygon;
+    };
+    const facePolygons=(mesh:ViewMesh,matrix?:THREE.Matrix4):Map<number,ScreenPoint[][]>=>{
+      const faces=new Map<number,ScreenPoint[][]>();
+      for(let r=0;r<mesh.faceRanges.length;r+=3) {
+        const face=mesh.faceRanges[r+2]!,polygons=faces.get(face)??[];
+        for(let i=mesh.faceRanges[r]!;i<mesh.faceRanges[r]!+mesh.faceRanges[r+1]!;i+=3) {
+          const polygon=clip([0,1,2].map(k=>{
+            const p=new THREE.Vector3().fromArray(mesh.positions,mesh.indices[i+k]!*3);
+            return matrix?p.applyMatrix4(matrix):p;
+          }));
+          if(polygon.length) polygons.push(polygon.map(project));
+        }
+        faces.set(face,polygons);
+      }
+      return faces;
+    };
+    if(this.pickInstances) {
+      const owners=new Map<string,ScreenPoint[][]>();
+      for(const instance of this.instances.values()) {
+        if(!instance.group.visible) continue;
+        const mesh=this.partGeometry.get(instance.part)?.mesh;
+        if(!mesh) continue;
+        instance.group.updateMatrixWorld(true);
+        const polygons=[...facePolygons(mesh,instance.group.matrixWorld).values()].flat();
+        owners.set(instance.owner,[...(owners.get(instance.owner)??[]),...polygons]);
+      }
+      result.components=[...owners].filter(([,polygons])=>geometryInRect(polygons,rect)).map(([owner])=>owner);
+      return result;
+    }
+    const mesh=this.mesh;
+    if(!mesh) return result;
+    if(this.facesOn) result.faces=[...facePolygons(mesh)].filter(([,polygons])=>geometryInRect(polygons,rect)).map(([face])=>face);
+    if(this.edgesOn) for(let r=0;r<mesh.edgeRanges.length;r+=3) {
+      const segments:ScreenPoint[][]=[];
+      for(let i=mesh.edgeRanges[r]!;i<mesh.edgeRanges[r]!+mesh.edgeRanges[r+1]!-1;i++) {
+        const points=clip([new THREE.Vector3().fromArray(mesh.edgePoints,i*3),new THREE.Vector3().fromArray(mesh.edgePoints,(i+1)*3)]);
+        if(points.length) segments.push(points.map(project));
+      }
+      if(geometryInRect(segments,rect)) result.edges.push(mesh.edgeRanges[r+2]!);
+    }
+    if(this.verticesOn) for(let i=0;i<this.vertices.length;i+=3) {
+      const p=new THREE.Vector3().fromArray(this.vertices,i);
+      if(this.kept(p) && inSelectionRect(project(p),rect)) result.vertices.push(i/3);
+    }
+    return result;
+  }
+
   private onPointerDown = (e: PointerEvent) => {
     this.swallowClick = false; // a new press: whatever the last drag left no longer applies
     this.swallowContext = false;
+    if (this.boxEnabled && this.events.onBoxSelect && !this.toolHandler && !this.snapPicking && e.button===0 && !e.altKey) {
+      const p=this.pickOrder(e.clientX,e.clientY);
+      const empty = this.pickInstances || this.pickElements ? !this.hitInstance(e.clientX,e.clientY) : p.face<0 && p.edge<0 && p.vertex<0 && !p.plane && !p.datum;
+      if(empty) {
+        this.boxPress={from:[e.clientX,e.clientY],to:[e.clientX,e.clientY],pointer:e.pointerId,additive:e.ctrlKey||e.metaKey||e.shiftKey};
+        try { this.renderer.domElement.setPointerCapture(e.pointerId); } catch { /* synthetic pointer */ }
+        return;
+      }
+    }
     if (this.dragInstances && !this.toolHandler && (e.button === 0 || e.button === 2) && !e.altKey && !e.ctrlKey && !e.shiftKey) {
       const hit = this.hitInstance(e.clientX, e.clientY);
       this.press = hit && { ...hit, button: e.button === 0 ? 'left' : 'right', x: e.clientX, y: e.clientY, pointerId: e.pointerId, dragging: false };
@@ -2552,6 +2699,12 @@ export class Viewer {
   };
 
   private onPointerMove = (e: PointerEvent) => {
+    if(this.boxPress) {
+      if(e.pointerId!==this.boxPress.pointer) return;
+      this.boxPress.to=[e.clientX,e.clientY];
+      this.paintBox();
+      return;
+    }
     if (this.snapPicking && e.buttons === 0) {
       this.snapEvents.hover?.(this.snapAt(e.clientX, e.clientY));
       return;
@@ -2584,6 +2737,14 @@ export class Viewer {
   };
 
   private onPointerUp = (e: PointerEvent) => {
+    if(this.boxPress && e.button===0 && e.pointerId===this.boxPress.pointer) {
+      const box=this.boxPress;
+      box.to=[e.clientX,e.clientY];
+      const dragged=Math.hypot(box.to[0]-box.from[0],box.to[1]-box.from[1])>=4;
+      this.cancelBox();
+      if(dragged) { this.swallowClick=true; this.events.onBoxSelect?.(this.elementsInBox(box.from,box.to),box.additive); }
+      return;
+    }
     const p = this.press;
     if (p && e.button === (p.button === 'left' ? 0 : 2)) {
       this.press = null;
@@ -2633,6 +2794,7 @@ export class Viewer {
 
   private onDoubleClick = (e: MouseEvent) => {
     if (this.toolHandler && !e.altKey) this.tool('dblclick', e, false);
+    else if (!this.pickInstances && !this.pickElements) { const face=this.pickOrder(e.clientX,e.clientY).face; if(face>=0)this.events.onFaceDoubleClick?.(face); }
   };
 
   // ---------------------------------------------------------------- display modes (A4.3) and section (D4.4)

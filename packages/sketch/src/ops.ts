@@ -315,7 +315,7 @@ export type ModelItem =
         | { kind: 'line'; a: P2; b: P2 }
         | { kind: 'circle'; c: P2; r: number }
         | { kind: 'arc'; c: P2; r: number; start: P2; end: P2 }
-        | { kind: 'spline'; points: P2[] };
+        | { kind: 'spline'; points: P2[]; closed?: boolean };
       off?: number;
     }
   | { ref: Ref; pierce: P2 }
@@ -469,9 +469,9 @@ export function anchorModelForSelection(
 export function referenceEntities(sketch: Pick<SketchFeature, 'entities'>, ids: IdAllocator, items: ModelItem[]): OpResult {
   const key = (kind: 'pierce' | 'vertex' | 'ref', name: string) => `${kind}:${name}`;
   const have = new Set(
-    sketch.entities.flatMap((e) => (e.type === 'point' ? (e.pierce ? [key('pierce', e.pierce.name)] : e.ref ? [key('vertex', e.ref.name)] : []) : 'ref' in e && e.ref ? [key('ref', e.ref.name)] : [])),
+    sketch.entities.flatMap((e) => (e.type === 'point' ? (e.pierce ? [key('pierce', e.pierce.name)] : e.ref ? [key('vertex', e.ref.name)] : []) : 'ref' in e && e.ref ? [key('ref', e.ref.name+(e.ref.silhouette!==undefined?':silhouette:'+e.ref.silhouette:''))] : [])),
   );
-  const fresh = items.filter((i) => !have.has(key('pierce' in i ? 'pierce' : 'vertex' in i ? 'vertex' : 'ref', i.ref.name)));
+  const fresh = items.filter((i) => !have.has(key('pierce' in i ? 'pierce' : 'vertex' in i ? 'vertex' : 'ref', i.ref.name+(i.ref.silhouette!==undefined?':silhouette:'+i.ref.silhouette:''))));
   if (fresh.length === 0) return error('reference.already');
   const b = new Parts(ids);
   const points: { id: Id; at: P2 }[] = [];
@@ -501,7 +501,7 @@ export function referenceEntities(sketch: Pick<SketchFeature, 'entities'>, ids: 
     if (p.kind === 'line') b.entities.push({ id: lineId, type: 'line', p1: corner(p.a), p2: corner(p.b), ref: item.ref, ...held });
     else if (p.kind === 'circle') b.entities.push({ id: lineId, type: 'circle', center: corner(p.c), radius: p.r, ref: item.ref, ...held });
     else if (p.kind === 'arc') b.entities.push({ id: lineId, type: 'arc', center: corner(p.c), start: corner(p.start), end: corner(p.end), ref: item.ref, ...held });
-    else b.entities.push({ id: lineId, type: 'spline', points: p.points.map(corner), ref: item.ref });
+    else b.entities.push({ id: lineId, type: 'spline', points: p.points.map(corner), ...(p.closed?{closed:true}:{}), ref: item.ref });
   }
   return { edit: { add: b.added } };
 }
@@ -1011,7 +1011,7 @@ export function dissolveText(
 export type Transform2 = { kind: 'translate'; d: P2 } | { kind: 'rotate'; c: P2; angle: number } | { kind: 'scale'; c: P2; k: number };
 
 /** A sketch pattern: `count` copies (the original is not counted), each `step` on from the last; or turned about `c`, the last one `angle` degrees round (360: spaced evenly all the way round). */
-export type PatternSpec = { kind: 'linear'; step: P2; count: number } | { kind: 'circular'; c: P2; angle: number; count: number };
+export type PatternSpec = { kind: 'linear'; step: P2; count: number; second?: {step:P2;count:number} } | { kind: 'circular'; c: P2; angle: number; count: number };
 
 export interface TransformOptions {
   /** 「保持關係」: the relations and dimensions between the selection and the rest of the sketch stay (moving), the ones within the selection are copied (copying). */
@@ -1240,12 +1240,15 @@ function transformInPlace(
  * geometry even where the original follows the model. With `keepRelations` the relations and dimensions among the selection are copied onto each copy (as
  * `carried` says); a fix relation and anything between the selection and the rest never are. Without it, the copies are bare geometry.
  */
-function copies(sketch: Pick<SketchFeature, 'entities' | 'constraints'>, geometry: Geometry, ids: IdAllocator, entityIds: Id[], transforms: Transform2[], keepRelations: boolean): TransformResult {
+function copies(sketch: Pick<SketchFeature, 'entities' | 'constraints'>, geometry: Geometry, ids: IdAllocator, entityIds: Id[], transforms: Transform2[], keepRelations: boolean, linked=false): TransformResult {
   const sel = transformSelection(sketch, entityIds);
   if ('error' in sel) return sel;
   const { chosen, points, byId } = sel;
+  if(linked && chosen.some(e=>e.type==='ellipse'||e.type==='text'))return error('sketch.patternLinkKinds');
+  const linkedCost=transforms.reduce((sum,m)=>sum+points.length*(m.kind==='rotate'?6:2)+chosen.filter(e=>e.type==='arc').length*3+chosen.filter(e=>e.type==='circle').length,0);
+  if(linked && linkedCost>360)return error('sketch.patternLinkLimit');
   const inside = new Set<Id>([...chosen.map((e) => e.id), ...points]);
-  const internal = keepRelations ? sketch.constraints.filter((c) => c.type !== 'fix' && c.type !== 'block' && constraintRefs(c).length > 0 && constraintRefs(c).every((r) => inside.has(r))) : [];
+  const internal = keepRelations && !linked ? sketch.constraints.filter((c) => c.type !== 'fix' && c.type !== 'block' && constraintRefs(c).length > 0 && constraintRefs(c).every((r) => inside.has(r))) : [];
   const posOf = (id: Id): P2 => {
     const g = geometry.get(id);
     const e = byId.get(id);
@@ -1265,6 +1268,10 @@ function copies(sketch: Pick<SketchFeature, 'entities' | 'constraints'>, geometr
       b.entities.push({ id, type: 'point', x, y, ...(construction ? { construction: true } : {}) });
       twin.set(p, id);
       targets.push({ id, x, y });
+      if(linked) {
+        if(m.kind==='scale')return error('sketch.patternLinkKinds');
+        b.relation({type:'patternPoint',a:p,b:id,dx:String(m.kind==='translate'?m.d[0]:0),dy:String(m.kind==='translate'?m.d[1]:0),angle:String(m.kind==='rotate'?m.angle:0)+'deg',center:m.kind==='rotate'?m.c:[0,0]});
+      }
     }
     const pt = (p: Id) => twin.get(p)!;
     for (const e of chosen) {
@@ -1299,6 +1306,7 @@ function copies(sketch: Pick<SketchFeature, 'entities' | 'constraints'>, geometr
       }
       b.entities.push(copy);
       twin.set(e.id, copy.id);
+      if(linked && e.type==='circle')b.relation({type:'equal',a:e.id,b:copy.id});
     }
     for (const c of internal) {
       const r = carried(remapConstraint(c, twin), m);
@@ -1329,6 +1337,13 @@ export function patternProblem(spec: PatternSpec): string | null {
   if (!Number.isInteger(spec.count) || spec.count < 1 || spec.count > PATTERN_MAX) return t('sketch.patternCount', { max: PATTERN_MAX });
   if (spec.kind === 'linear') {
     if (!finiteP(spec.step)) return t('sketch.xformDistanceInvalid');
+    if(spec.second) {
+      const second=spec.second;
+      if(!Number.isInteger(second.count)||second.count<1||(spec.count+1)*(second.count+1)-1>PATTERN_MAX)return t('sketch.patternCount',{max:PATTERN_MAX});
+      if(!finiteP(second.step))return t('sketch.xformDistanceInvalid');
+      const scale=Math.hypot(...spec.step)*Math.hypot(...second.step);
+      if(!(scale>TINY)||Math.abs(cross(spec.step,second.step))<1e-9*scale)return t('sketch.patternSecondDirection');
+    }
     return Math.hypot(spec.step[0], spec.step[1]) < TINY ? t('sketch.patternNoStep') : null;
   }
   if (!finiteP(spec.c)) return t('sketch.xformPointInvalid');
@@ -1338,6 +1353,12 @@ export function patternProblem(spec: PatternSpec): string | null {
 
 /** The transform of each copy of a pattern, the first copy first. */
 export function patternTransforms(spec: PatternSpec): Transform2[] {
+  const problem=patternProblem(spec);if(problem)throw new Error(problem);
+  if(spec.kind==='linear' && spec.second) {
+    const out:Transform2[]=[];
+    for(let j=0;j<=spec.second.count;j++)for(let i=0;i<=spec.count;i++)if(i||j)out.push({kind:'translate',d:[spec.step[0]*i+spec.second.step[0]*j,spec.step[1]*i+spec.second.step[1]*j]});
+    return out;
+  }
   return Array.from({ length: spec.count }, (_, j): Transform2 => {
     const i = j + 1;
     if (spec.kind === 'linear') return { kind: 'translate', d: [spec.step[0] * i, spec.step[1] * i] };
@@ -1354,8 +1375,9 @@ export function patternEntities(
   entityIds: Id[],
   spec: PatternSpec,
   keepRelations: boolean,
+  linked = false,
 ): TransformResult {
   const problem = patternProblem(spec);
   if (problem) return { error: problem };
-  return copies(sketch, geometry, ids, entityIds, patternTransforms(spec), keepRelations);
+  return copies(sketch, geometry, ids, entityIds, patternTransforms(spec), keepRelations, linked);
 }

@@ -1396,6 +1396,15 @@ class AppStore {
     this.set({ selectedElements: next, selectedFace: null, selected: null });
   }
 
+  /** Window/crossing selection adds a set atomically, without toggling existing members off. */
+  selectElements(refs: readonly Ref[], additive: boolean): void {
+    const prior=additive?[...this.state.selectedElements,...(this.state.selectedFace?[this.state.selectedFace]:[])]:[];
+    const unique=new Map([...prior,...refs].map(ref=>[`${ref.kind}:${ref.name}`,ref]));
+    const next=[...unique.values()];
+    this.set({selected:null,selectedFace:next.length===1&&next[0]!.kind==='face'?next[0]!:null,
+      selectedElements:next.length===1&&next[0]!.kind==='face'?[]:next});
+  }
+
   /** The edges selected before a command was started, for it to begin with. */
   private preselectedEdges(): Ref[] {
     return this.state.selectedElements.filter((r) => r.kind === 'edge');
@@ -2381,6 +2390,24 @@ class AppStore {
   }
 
   /** 「螺旋曲線與渦捲線」 (C8.3, ADR 0168): constructs a 3D helix or flat spiral curve from a circular reference. */
+  newSurfaceTool(type:'ruledSurface'|'radiatedSurface'|'replaceFace'):void {
+    const edges=this.state.selectedElements.filter(r=>r.kind==='edge'),faces=[...(this.state.selectedFace?[this.state.selectedFace]:[]),...this.state.selectedElements.filter(r=>r.kind==='face')];
+    const name=t(`feature.${type}`),base={id:this.allocator().take(type),type,name:nextName(this.history.doc,name),suppressed:false};
+    const f:Feature=type==='ruledSurface'?{...base,type,first:edges[0]??{kind:'edge',name:''},second:edges[1]??{kind:'edge',name:''}}:type==='radiatedSurface'?{...base,type,edge:edges[0]??{kind:'edge',name:''},plane:{kind:'datum',name:'plane:front'},distance:'10'}:{...base,type,face:faces[0]??{kind:'face',name:''},replacement:faces[1]??{kind:'face',name:''}};
+    this.openNew(f,name);
+  }
+
+  newProjectedCurve(): void {
+    const sketches = this.history.doc.features.filter((f): f is SketchFeature => f.type === 'sketch');
+    if (sketches.length < 1) return;
+    const faces = this.state.selectedElements.filter(r=>r.kind === 'face');
+    const first = sketches.find(f=>f.id === this.state.selected) ?? sketches[sketches.length-1]!;
+    const second = sketches.find(f=>f.id !== first.id);
+    const base = t('feature.projectedCurve');
+    this.openNew({ id: this.allocator().take('projectedCurve'), type: 'projectedCurve', name: nextName(this.history.doc, base), suppressed: false, sketch: first.id,
+      mode: faces.length || !second ? 'sketchOnFaces' : 'sketchOnSketch', ...(second ? { secondSketch: second.id } : {}), faces }, base);
+  }
+
   newHelix(): void {
     const s = this.state;
     let circleRef: Ref | undefined;
@@ -2562,6 +2589,14 @@ class AppStore {
     // the plane of a sketch is being edited: a vertex, point, edge or axis is what its axes are attached to (ADR 0181)
     if (this.state.editing?.kind === 'sketchPlane') return void this.putDatumRef(ref);
     const f = this.editedFeature();
+    if(f?.type==='ruledSurface' && ref.kind==='edge') {this.execute({type:'setSurfaceTools',featureId:f.id,params:!f.first.name?{first:ref}:{second:ref}});return;}
+    if(f?.type==='radiatedSurface') {if(ref.kind==='edge')this.execute({type:'setSurfaceTools',featureId:f.id,params:{edge:ref}});else if(ref.kind==='face')this.execute({type:'setSurfaceTools',featureId:f.id,params:{plane:ref}});return;}
+    if(f?.type==='replaceFace' && ref.kind==='face') {this.execute({type:'setSurfaceTools',featureId:f.id,params:!f.face.name?{face:ref}:{replacement:ref}});return;}
+    if (f?.type === 'projectedCurve' && f.mode === 'sketchOnFaces') {
+      if (ref.kind === 'face') this.execute({type:'setProjectedCurve',featureId:f.id,params:{faces:(f.faces ?? []).some(r=>r.name===ref.name)?f.faces!.filter(r=>r.name!==ref.name):[...(f.faces ?? []),ref]}});
+      else if (ref.kind === 'edge' || ref.kind === 'datum') this.execute({type:'setProjectedCurve',featureId:f.id,params:{direction:ref}});
+      return;
+    }
     if (f?.type === 'fillet' && f.kind && f.kind !== 'constant') this.toggleFilletGroupFace(ref);
     else if (f?.type === 'fillet' || f?.type === 'chamfer') (ref.kind === 'face' ? this.toggleEdgeFeatureFace(ref) : this.toggleEdge(ref));
     else if (f?.type === 'breakCorner' && ref.kind === 'edge') this.toggleEdge(ref);
@@ -2797,6 +2832,7 @@ class AppStore {
       editDimension: (id) => this.set({ dimensionEdit: id }),
       modelItems: () => this.modelSnap,
       snapSettings: () => this.state.options.snap,
+      automaticRelations: () => this.state.options.automaticRelations,
     };
   }
 
@@ -2808,11 +2844,11 @@ class AppStore {
     const sketcher = this.sketcher;
     const sketch = this.editedSketch();
     const tool = sketcher?.getView().tool;
-    if (!sketcher || !sketch || (tool !== 'convert' && tool !== 'pierce' && tool !== 'intersect')) return;
-    const mode = tool === 'pierce' ? 'pierce' : tool === 'intersect' ? 'intersect' : 'convert';
+    if (!sketcher || !sketch || (tool !== 'convert' && tool !== 'pierce' && tool !== 'intersect' && tool !== 'silhouette')) return;
+    const mode = tool === 'silhouette' ? 'silhouette' : tool === 'pierce' ? 'pierce' : tool === 'intersect' ? 'intersect' : 'convert';
     // an edge; a face (its outline, or where it crosses the plane); a vertex, converted into a point that follows it (ADR 0171); reference geometry (ADR 0172)
     const one = ref.kind === 'edge' || ((ref.kind === 'vertex' || ref.kind === 'datum') && mode === 'convert');
-    if (!one && !(ref.kind === 'face' && (mode === 'convert' || mode === 'intersect'))) return;
+    if (!one && !(ref.kind === 'face' && (mode === 'convert' || mode === 'intersect' || mode === 'silhouette'))) return;
     const r = await this.api.convertReferences({ sketchId: sketch.id, edges: one ? [ref] : [], faces: ref.kind === 'face' ? [ref] : [], mode });
     if (r.items.length > 0) sketcher.addReferences(r.items);
     if (r.errors.length > 0) this.notify(r.errors[0]!, r.items.length > 0 ? 'info' : 'error');

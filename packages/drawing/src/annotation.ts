@@ -1,8 +1,8 @@
 import { t } from '@3db/i18n';
-import type { DrawingView, HoleInfo, HoleTable, ViewFeature } from '@3db/model';
+import type { DrawingView, HoleTable, ViewFeature } from '@3db/model';
 import { datumPlanes } from './autoDimension';
-import type { LengthUnit } from '@3db/model';
-import { DIM_TEXT, formatNumber, holeNote, holeSignature, lengthNumber, threadedHoleText, toleranceText } from './dimension';
+import type { LengthUnit, CalloutStyle } from '@3db/model';
+import { DIM_TEXT, cosmeticThreadText, formatNumber, holeNote, holeSignature, lengthNumber, threadedHoleText, threadSignature, toleranceText } from './dimension';
 import { clipToCircle } from './geometry';
 import { toSheet, type PlacedView } from './layout';
 import type { SceneItem } from './scene';
@@ -120,14 +120,14 @@ const letters = (i: number): string => (i < 26 ? String.fromCharCode(65 + i) : `
  * how deep, counterbore) from the biggest, each group a letter; the holes of a group numbered from the top left. Where each is is measured from the left and
  * bottom planes of the view, the way the automatic dimensions do.
  */
-export function holeRows(features: readonly ViewFeature[], fits: Record<string, string> = {}, unit: LengthUnit = 'mm'): HoleRow[] {
+export function holeRows(features: readonly ViewFeature[], fits: Record<string, string> = {}, unit: LengthUnit = 'mm', style: CalloutStyle = 'text'): HoleRow[] {
   const holes = features.flatMap((f) => (f.type === 'circle' && f.full && !f.convex && f.hole ? [{ f, hole: f.hole }] : []));
   const datum = datumPlanes(features);
   const ox = datum.minX?.coord ?? 0;
   const oy = datum.minY?.coord ?? 0;
-  const key = (r: number, h: HoleInfo) => `${Math.round(2 * r * 1e4)}|${holeSignature(h)}`;
+  const key = (h: (typeof holes)[number]) => `${Math.round(2 * (h.f.type === 'circle' ? h.f.radius : 0) * 1e4)}|${holeSignature(h.hole)}|${threadSignature(h.f.type === 'circle' ? h.f.thread : undefined)}`;
   const groups = new Map<string, typeof holes>();
-  for (const h of holes) groups.set(key(h.f.type === 'circle' ? h.f.radius : 0, h.hole), [...(groups.get(key(h.f.type === 'circle' ? h.f.radius : 0, h.hole)) ?? []), h]);
+  for (const h of holes) groups.set(key(h), [...(groups.get(key(h)) ?? []), h]);
   const ordered = [...groups.values()].sort((a, b) => {
     const ra = a[0]!.f.type === 'circle' ? a[0]!.f.radius : 0;
     const rb = b[0]!.f.type === 'circle' ? b[0]!.f.radius : 0;
@@ -139,7 +139,9 @@ export function holeRows(features: readonly ViewFeature[], fits: Record<string, 
     const radius = first.f.type === 'circle' ? first.f.radius : 0;
     const d = 2 * radius;
     const fit = fits[formatNumber(d)]; // the fits are told by the diameter in millimetres, whatever the unit written
-    const size = threadedHoleText(first.hole, d, unit) ?? [`Ø${lengthNumber(d, 3, unit)}`, ...(fit ? [toleranceText({ type: 'fit', fit }, d, unit)] : []), holeNote(first.hole, unit)].join(' ');
+    const thread = first.f.type === 'circle' ? first.f.thread : undefined;
+    const size = thread ? `${cosmeticThreadText(thread, unit, style, first.hole)}${t('drawing.threadDrill', { diameter: lengthNumber(d, 3, unit), note: holeNote(first.hole, unit, style) })}`
+      : threadedHoleText(first.hole, d, unit, style) ?? [`Ø${lengthNumber(d, 3, unit)}`, ...(fit ? [toleranceText({ type: 'fit', fit }, d, unit)] : []), holeNote(first.hole, unit, style)].join(' ');
     const sorted = [...g].sort((a, b) => {
       const ca = a.f.type === 'circle' ? a.f.centre : [0, 0];
       const cb = b.f.type === 'circle' ? b.f.centre : [0, 0];

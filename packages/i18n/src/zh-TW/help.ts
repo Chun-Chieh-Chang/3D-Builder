@@ -10,6 +10,30 @@
  * (docs/help-links.json says which topics an item is about).
  */
 export const help = {
+  "help.toolStretchEntities.summary": "移動選取的端點，讓相接圖元延展；可用框選選取一組端點。",
+  "help.toolStretchEntities.body": "先選取需延展的端點，再指定基點與目標；未選端點會保留其關係。",
+  "help.toolStretchEntities.see": "tool-moveEntities tool-extend tool-linearPattern",
+
+  "help.ruledSurface.summary": "依序點選兩條軌線。線性母線連接兩邊，拒絕相交或退化。",
+  "help.ruledSurface.see": "offset-surface flat-surface",
+  "help.radiatedSurface.summary": "點選直線或圓形邊線，再選平面；沿平面內垂直切線方向延展。",
+  "help.radiatedSurface.see": "offset-surface flat-surface",
+  "help.replaceFace.summary": "先點原始面，再點目標平面；目前限平行平面，鄰面隨之伸縮。",
+  "help.replaceFace.see": "offset-surface flat-surface",
+
+  "help.toolSilhouette.summary": "將所選曲面的實際側影曲線投影到草圖，保留模型參照。",
+  "help.toolSilhouette.body": "選取模型面，擷取其沿草圖法向的側影線；平面或無內部側影的面取可見外框。",
+  "help.toolSilhouette.keywords": "silhouette contour 側影 輪廓 曲面",
+  "help.toolSilhouette.see": "tool-convert tool-intersect",
+
+  "help.selectUnderdefined.summary": "選取求解器分析仍有自由度的圖元。",
+  "help.automaticRelations.summary": "獨立控制自動建立幾何關係，不影響抓取開關。",
+
+  "help.projectedCurve.summary": "由兩個草圖的法向延伸交線或草圖到面的投影建立空間曲線。",
+  "help.projectedCurve.body": "保留所選面上沿投影線的全部分支。輸出為線本體，目前不能用作掃出路徑。",
+  "help.projectedCurve.keywords": "project curve sketch face 投影 曲線 草圖 面",
+  "help.projectedCurve.see": "helix split-line",
+
   // ---------------------------------------------------------------- the window
   'helpui.title': '說明',
   'helpui.button': '說明',
@@ -1074,13 +1098,11 @@ export const help = {
   'help.toolScaleEntities.keywords': '縮放 比例 放大 縮小 scale',
   'help.toolScaleEntities.see': 'tool-moveEntities tool-rotateEntities',
   'help.toolLinearPattern.summary': '把選取的圖元沿一個方向等距複製多份。',
-  'help.toolLinearPattern.body':
-    '先選取圖元再按這個指令。按一下基準點，再按一下第一個副本的位置（間距與方向）；或在面板輸入間距 ΔX、ΔY 後按「套用」。「副本數」不含原圖元，必須是 1 到 200 的整數，否則會說明而不執行。\n\n- 每個副本是獨立的圖元，不與原圖元連動；「保持關係」勾選時，選取的圖元之間的關係與尺寸會複製到每個副本上。',
+  "help.toolLinearPattern.body": "先選取圖元再按這個指令。點基準點與第一個副本位置，或輸入 ΔX／ΔY 按套用。副本數不含原圖元，必須是 1 到 200 的整數。可啟用第二方向；兩方向不可平行，全部副本合計最多 200。\n\n副本預設與種子連動，種子的端點與半徑改變會同步更新副本。取消「副本與種子連動」則建立獨立副本，此時「保持關係」可複製種子內部關係。連動支援點、線、圓／圓弧與樣條，規模依種子複雜度受求解器限制；橢圓／文字需取消連動。",
   'help.toolLinearPattern.keywords': '草圖陣列 線性陣列 直線陣列 複製排列 pattern',
   'help.toolLinearPattern.see': 'tool-circularPattern tool-copyEntities linear-pattern',
   'help.toolCircularPattern.summary': '把選取的圖元繞一個中心等角度複製多份。',
-  'help.toolCircularPattern.body':
-    '先選取圖元再按這個指令，在面板設定「副本數」（不含原圖元，1 到 200 的整數）與「總角度」，再按一下陣列的中心。\n\n- 總角度 360：整圈平均分布（副本數＋1 等分）；其他角度：最後一個副本轉到總角度（副本數等分）；負的角度順時針。總角度為 0、超過 360 或不是數字時會說明而不執行。\n- 每個副本是獨立的圖元；旋轉時「水平」「垂直」關係的處理與「旋轉圖元」相同。',
+  "help.toolCircularPattern.body": "先選取圖元，在面板輸入副本數與總角度，再點陣列中心。360° 按原圖元＋副本數等分；其餘角度最後一份到達總角度，負角度順時針。\n\n副本預設與種子連動，更新端點或圓半徑即同步重算；取消連動可建立獨立副本。連動支援點、線、圓／圓弧與樣條，包含位於中心的端點。",
   'help.toolCircularPattern.keywords': '草圖陣列 環狀陣列 圓周陣列 複製排列 pattern',
   'help.toolCircularPattern.see': 'tool-linearPattern tool-rotateEntities circular-pattern',
   'help.toolConvert.summary': '把模型的邊或面的外框轉進草圖，成為跟著模型走的圖元。',

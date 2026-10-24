@@ -149,7 +149,7 @@ export function startDimension(mode: DimensionMode, seed: readonly DimensionSeed
 }
 const dimensionTool = (mode: DimensionMode) => ({ active: toolIs(isDimensionTool(mode)), run: () => (toolIs(isDimensionTool(mode))() ? store.drawingStore?.setTool(null) : startDimension(mode)) });
 
-const SKETCH_TOOLS: ToolId[] = ['dimension', 'line', 'centerline', 'rect', 'centerRect', 'circle', 'perimeterCircle', 'arc', 'tangentArc', 'threePointArc', 'slot', 'polygon', 'point', 'text', 'sketchFillet', 'sketchChamfer', 'trim', 'extend', 'offset', 'mirror', 'convert', 'pierce', 'intersect', 'moveEntities', 'copyEntities', 'rotateEntities', 'scaleEntities', 'linearPattern', 'circularPattern'];
+const SKETCH_TOOLS: ToolId[] = ['dimension', 'line', 'centerline', 'rect', 'centerRect', 'circle', 'perimeterCircle', 'arc', 'tangentArc', 'threePointArc', 'slot', 'polygon', 'point', 'text', 'sketchFillet', 'sketchChamfer', 'trim', 'extend', 'offset', 'mirror', 'convert', 'pierce', 'intersect', 'silhouette', 'stretchEntities', 'moveEntities', 'copyEntities', 'rotateEntities', 'scaleEntities', 'linearPattern', 'circularPattern'];
 
 export const ACTIONS: UiAction[] = [
   { id: 'new-part', get label() { return t('act.newPart'); }, shortcut: 'Ctrl+N', group: 'file', enabled: idle, run: () => store.newPart() },
@@ -193,6 +193,10 @@ export const ACTIONS: UiAction[] = [
   { id: 'thread', get label() { return t('feature.thread'); }, group: 'feature', enabled: (s) => partIdle(s) && (sketchSelected(s) || s.doc.features.some((f) => f.type === 'sketch')), run: () => store.newThread() },
   { id: 'knurl', get label() { return t('feature.knurl'); }, group: 'feature', enabled: hasBody, run: () => store.newKnurl() },
   { id: 'cosmetic-thread', get label() { return t('feature.cosmeticThread'); }, group: 'feature', enabled: hasBody, run: () => store.newCosmeticThread() },
+  { id: 'ruled-surface', get label() { return t('feature.ruledSurface'); }, group: 'feature', enabled: hasBody, run: () => store.newSurfaceTool('ruledSurface') },
+  { id: 'radiated-surface', get label() { return t('feature.radiatedSurface'); }, group: 'feature', enabled: hasBody, run: () => store.newSurfaceTool('radiatedSurface') },
+  { id: 'replace-face', get label() { return t('feature.replaceFace'); }, group: 'feature', enabled: hasBody, run: () => store.newSurfaceTool('replaceFace') },
+  { id: 'projected-curve', get label() { return t('feature.projectedCurve'); }, group: 'feature', enabled: (s) => partIdle(s) && s.doc.features.some(f=>f.type === 'sketch'), run: () => store.newProjectedCurve() },
   { id: 'helix', get label() { return t('feature.helix'); }, group: 'feature', enabled: (s) => partIdle(s) && (s.doc.features.some((f) => f.type === 'sketch') || hasBody(s)), run: () => store.newHelix() },
   { id: 'fillet', get label() { return t('act.fillet'); }, group: 'feature', enabled: hasBody, run: () => store.newFillet() },
   { id: 'chamfer', get label() { return t('act.chamfer'); }, group: 'feature', enabled: hasBody, run: () => store.newChamfer() },
@@ -284,7 +288,7 @@ export const ACTIONS: UiAction[] = [
   { id: 'hide-component', get label() { return t(selectedComponent(store.getState())?.hidden ? 'subassembly.show' : 'subassembly.hide'); }, group: 'assembly', menuOnly: true, enabled: (s) => assemblyIdle(s) && !!selectedComponent(s), run: () => toggleComponent('hidden') },
   { id: 'transparent-component', get label() { return t(selectedComponent(store.getState())?.transparent ? 'subassembly.opaque' : 'subassembly.transparent'); }, group: 'assembly', menuOnly: true, enabled: (s) => assemblyIdle(s) && !!selectedComponent(s), run: () => toggleComponent('transparent') },
   { id: 'suppress-component', get label() { return t(selectedComponent(store.getState())?.suppressed ? 'tree.unsuppress' : 'tree.suppress'); }, group: 'assembly', menuOnly: true, enabled: (s) => assemblyIdle(s) && !!selectedComponent(s), run: () => toggleComponent('suppressed') },
-  { id: 'delete-component', get label() { return t('ctx.deleteComponent'); }, group: 'assembly', menuOnly: true, enabled: (s) => assemblyIdle(s) && !!selectedComponent(s), run: () => { const c = selectedComponent(store.getState()); if (c) store.assembly?.requestDelete([c.id]); } },
+  { id: 'delete-component', get label() { return t('ctx.deleteComponent'); }, group: 'assembly', menuOnly: true, enabled: (s) => assemblyIdle(s) && !!selectedComponent(s), run: () => { const c = selectedComponent(store.getState()); if (c) store.assembly?.requestDelete(selectedComponentIds()); } },
 
   {
     id: 'sketch',
@@ -314,6 +318,8 @@ export const ACTIONS: UiAction[] = [
     }),
   ),
   { id: 'construction', get label() { return t('act.construction'); }, group: 'sketch-tool', enabled: sketching, run: () => toggleConstruction() },
+  { id: 'select-underdefined', get label() { return t('sketch.selectUnderdefined'); }, group: 'sketch', enabled: sketching, run: () => store.sketcher?.selectUnderdefined() },
+  { id: 'automatic-relations', get label() { return t('sketch.automaticRelations'); }, group: 'sketch', enabled: (s) => s.active === 'part', active: () => store.getState().options.automaticRelations, run: () => store.setOptions({automaticRelations:!store.getState().options.automaticRelations}) },
   { id: 'exit-sketch', get label() { return t('act.exitSketch'); }, group: 'sketch-tool', enabled: sketching, run: () => store.commitEdit() },
   // the sketch's right-click menu (ADR 0176): on what is selected, or on the tool that is on
   { id: 'sketch-delete', get label() { return t('ctx.sketchDelete'); }, group: 'sketch-tool', menuOnly: true, enabled: (s) => sketching(s) && sketchSelection().length > 0, run: () => store.sketcher?.deleteSelection() },
@@ -371,6 +377,26 @@ export const ACTIONS: UiAction[] = [
   { id: 'clear-filters', get label() { return t('act.clearFilters'); }, shortcut: 'F6', group: 'view', enabled: (s) => s.active === 'part' || s.active === 'assembly', run: () => store.clearPickFilter() },
 ];
 
+// Only creation tools are repeatable; file, delete, undo, view and toggle commands never replace this intent.
+let lastRepeatable: { action: UiAction; selected: string|null; face: Ref|null; elements: Ref[]; serial: number } | null = null;
+for (const a of ACTIONS) {
+  if ((!a.menuOnly && (a.group === 'feature' || a.group === 'sheet')) || a.id.startsWith('tool-') || a.id === 'mate' || a.id === 'insert-component') {
+    const run = a.run;
+    a.run = () => { if (!a.enabled(store.getState())) return; const s=store.getState(); lastRepeatable = {action:a,selected:s.selected,face:s.selectedFace,elements:s.selectedElements,serial:s.documentSerial}; run(); };
+  }
+}
+export function repeatLastCommand(): boolean {
+  const last=lastRepeatable,s=store.getState();
+  if(!last || last.serial!==s.documentSerial)return false;
+  if(!last.action.enabled(s)) {
+    if(last.selected && (isDatumPlaneName(last.selected)||s.doc.features.some(f=>f.id===last.selected))) store.select(last.selected);
+    else if(last.face) store.selectFace(last.face);
+    else if(last.elements.length) store.selectElements(last.elements,false);
+  }
+  if(!last.action.enabled(store.getState()))return false;
+  last.action.run();return true;
+}
+
 export const action = (id: string): UiAction => {
   const a = ACTIONS.find((x) => x.id === id);
   if (!a) throw new Error(`unknown action ${id}`);
@@ -390,7 +416,12 @@ function setFixed(value: boolean): void {
 /** Turns one of the selected component's states over: hidden, see-through, suppressed (C15.5). */
 function toggleComponent(state: 'hidden' | 'transparent' | 'suppressed'): void {
   const c = selectedComponent(store.getState());
-  if (c) store.assembly?.setComponentState([c.id], state, !c[state]);
+  if (c) store.assembly?.setComponentState(selectedComponentIds(), state, !c[state]);
+}
+
+function selectedComponentIds(): string[] {
+  const s=store.getState().asm;
+  return s?.selectedComponents.length?s.selectedComponents:s?.selected?[s.selected]:[];
 }
 
 /**
@@ -520,6 +551,7 @@ export function installShortcuts(): () => void {
         if (e.key === 'Escape') return void (s.asm.pattern.picking ? a?.pickPatternAxis(null) : a?.cancelPattern());
       } else if (s.asm.mate) {
         if (e.key === 'Escape') return void a?.cancelMate();
+        if (e.key === 'Tab') {e.preventDefault();return void a?.flipMateAlignment();}
         if (e.key === 'Enter') return void a?.applyMate();
       } else if (s.asm.insert) {
         if (e.key === 'Escape') return void a?.cancelInsert();
@@ -531,7 +563,7 @@ export function installShortcuts(): () => void {
       } else if (e.key === 'Delete' && selected && s.asm.doc.patterns?.some((p) => p.id === selected)) {
         return void a?.deletePatterns([selected]); // a pattern's instances are derived: nothing else goes with it
       } else if (e.key === 'Delete' && selected && (selectedComponent(s) || s.asm.doc.mates.some((m) => m.id === selected))) {
-        return void a?.requestDelete([selected]);
+        return void a?.requestDelete(selectedComponent(s)?selectedComponentIds():[selected]);
       }
     } else if (s.editing?.kind === 'sketch') {
       // Inside a sketch, Esc ends the current tool and Delete removes the selection (SolidWorks);
@@ -544,6 +576,11 @@ export function installShortcuts(): () => void {
     } else if (e.key === 'Delete' && s.doc.features.some((f) => f.id === s.selected)) {
       return void store.requestDelete(s.selected); // 「確認刪除」 for the feature selected in the tree
     }
+    if (e.key === 'Enter' && !e.repeat && !e.ctrlKey && !e.metaKey && !e.altKey && !s.dialog && !s.editing && !s.drw && (!s.asm || assemblyFree(s))) {
+      if (repeatLastCommand()) e.preventDefault();
+      return;
+    }
+    if (e.key === 'Enter' && !e.repeat && s.editing?.kind === 'sketch') {if(repeatLastCommand()) e.preventDefault(); return;}
     // The view from the keyboard (SolidWorks: arrows, Shift/Alt/Ctrl+arrows, Z, Shift+Z, Ctrl+Shift+Z, space): fixed keys, before the shortcuts, so
     // Ctrl+Shift+Z is not taken for undo (a shortcut without Shift also matches with it). Not on a drawing sheet: it has no model to turn.
     // Nor while a dialog is open: its buttons take the space bar and the arrows.

@@ -18,7 +18,7 @@ export type Projected =
   | { kind: 'circle'; c: P2; r: number }
   /** Counter-clockwise from `start` to `end`. */
   | { kind: 'arc'; c: P2; r: number; start: P2; end: P2 }
-  | { kind: 'spline'; points: P2[] };
+  | { kind: 'spline'; points: P2[]; closed?: boolean };
 
 /** A reference that cannot be followed: the message, and the reference itself when it is the model that no longer has it. */
 export class ReferenceProblem extends Error {
@@ -58,6 +58,7 @@ export interface ReferenceScope {
   frame: PlaneFrame;
   datums?: DatumScope;
   curves?: CurveScope;
+  silhouettes?: (ref: Ref) => Projected;
   sketches?: (id: Id) => OtherSketch | undefined;
 }
 
@@ -305,6 +306,7 @@ export function followReferences(sketch: SketchFeature, scope: ReferenceScope): 
       hold(e.id, 2, e.start);
       constraints.push({ id: `ref:${e.id}:chord`, type: 'distance', a: e.start, b: e.end, value: String(Math.hypot(p.end[0] - p.start[0], p.end[1] - p.start[1])) });
     } else if (e.type === 'spline' && p.kind === 'spline') {
+      if(e.points.length!==p.points.length || !!e.closed!==!!p.closed)throw new ReferenceProblem(t('reference.changedKind',{id:e.id}));
       p.points.forEach((pt, idx) => {
         const ptId = e.points[idx];
         if (ptId) {
@@ -325,6 +327,10 @@ export function followReferences(sketch: SketchFeature, scope: ReferenceScope): 
       return e;
     }
     const own = 'ref' in e ? e.ref : undefined;
+    if(own?.silhouette!==undefined) {
+      if(!scope.silhouettes)throw new ReferenceProblem(t('silhouette.empty'));
+      return followProjected(e,scope.silhouettes(own));
+    }
     if (own?.kind === 'sketch') {
       const item = sketchItem(scope, own);
       if (e.type === 'point' && 'point' in item) {

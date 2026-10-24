@@ -344,7 +344,8 @@ function buildSceneIn(
     const own = view && resolved.get(view.id) ? placed.get(view.id) : undefined;
     const axes = view ? axesOf(pg.views, pg.sheet.projection, view) : null;
     if (!view || !own || !axes) continue; // nothing to draw it on yet
-    const outcome = evaluateDimension(d, elements.get(d.id), axes, own, pg.sheet.unit ?? 'mm', resolveDimStyle(pg.sheet.dimStyle, d.style));
+    const effective = d.kind === 'diameter' ? { ...d, calloutStyle: d.calloutStyle ?? pg.sheet.calloutStyle ?? 'text' } : d;
+    const outcome = evaluateDimension(effective, elements.get(d.id), axes, own, pg.sheet.unit ?? 'mm', resolveDimStyle(pg.sheet.dimStyle, d.style));
     dimensions.set(d.id, outcome);
     if (!('error' in outcome)) {
       items.push(...outcome.items.map((i) => ({ ...i, group: d.id })));
@@ -369,7 +370,7 @@ function buildSceneIn(
       }
       continue;
     }
-    const rows = holeRows(features.get(table.view) ?? [], table.fits, pg.sheet.unit ?? 'mm');
+    const rows = holeRows(features.get(table.view) ?? [], table.fits, pg.sheet.unit ?? 'mm', pg.sheet.calloutStyle ?? 'text');
     tables.set(table.id, rows);
     items.push(...holeTableItems(table, rows, own, pg.sheet, pg.sheet.unit ?? 'mm'));
     tableBoxes.set(table.id, holeTableBox(table, rows, pg.sheet, pg.sheet.unit ?? 'mm'));

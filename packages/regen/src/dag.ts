@@ -140,6 +140,12 @@ export function parentsOf(feature: Feature, doc: PartDoc): Id[] {
     case 'derivedBody':
       parents = []; // it depends only on another file
       break;
+    case 'ruledSurface': parents=fromRefs([feature.first,feature.second]);break;
+    case 'radiatedSurface': parents=fromRefs([feature.edge,feature.plane]);break;
+    case 'replaceFace': parents=fromRefs([feature.face,feature.replacement]);break;
+    case 'projectedCurve':
+      parents = [feature.sketch, ...(feature.mode === 'sketchOnSketch' && feature.secondSketch ? [feature.secondSketch] : []), ...fromRefs(feature.mode === 'sketchOnFaces' ? [...(feature.faces ?? []), ...(feature.direction ? [feature.direction] : [])] : [])];
+      break;
     case 'helix':
       parents = fromRefs([feature.circle]);
       break;

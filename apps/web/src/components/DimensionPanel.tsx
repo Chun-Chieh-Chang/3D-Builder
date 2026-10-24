@@ -110,6 +110,7 @@ export function DimensionPanel() {
   const [b, setB] = useState(1);
   const [orientation, setOrientation] = useState<DimensionOrientation>('horizontal');
   const [round, setRound] = useState(0);
+  const [threadIndex, setThreadIndex] = useState(0);
   // the dimension chosen is the document's state: it is chosen on the sheet as well
   const selected = drw.dimension;
   const setSelected = (id: string | null) => d.selectDimension(id);
@@ -117,6 +118,7 @@ export function DimensionPanel() {
   const planes = (features ?? []).filter((f): f is Extract<Pickable, { type: 'plane' }> => f.type === 'plane');
   const slants = (features ?? []).filter((f): f is Extract<Pickable, { type: 'slant' }> => f.type === 'slant');
   const circles = (features ?? []).filter((f): f is Extract<Pickable, { type: 'circle' }> => f.type === 'circle');
+  const threadAxes = (features ?? []).filter((f): f is Extract<ViewFeature, { type: 'axis' }> => f.type === 'axis' && !!(f.thread || f.hole?.thread));
   const linearPick = [...planes, ...circles];
   /** What an angle can be between: the planes seen edge-on, the ones square to x and y and the slanted ones. */
   const anglePick = [...planes, ...slants];
@@ -157,6 +159,14 @@ export function DimensionPanel() {
           {t('drawingUi.toolOrdinate')}
         </button>
       </div>
+      {view && threadAxes.length > 0 && (
+        <div className="pm-row">
+          <select data-field="threadLeaderFace" value={Math.min(threadIndex, threadAxes.length - 1)} onChange={e => setThreadIndex(Number(e.target.value))}>
+            {threadAxes.map((f, i) => <option key={i} value={i}>{f.thread?.designation ?? f.hole?.thread?.size ?? f.ref.name}</option>)}
+          </select>
+          <button className="pm-button" data-action="addThreadLeader" onClick={() => d.addThreadLeader(view.id, threadAxes[Math.min(threadIndex, threadAxes.length - 1)]!.ref)}>{t('drawingUi.threadLeader')}</button>
+        </div>
+      )}
       {/* dimensions are put where they are wanted, one at a time, as SolidWorks's Smart Dimension does; nothing is dimensioned unless asked */}
       <p className="muted">{t('drawingUi.dimOnDemand')}</p>
       {!view && <p className="muted">{t('drawingUi.dimSelectView')}</p>}
@@ -291,7 +301,7 @@ export function DimensionPanel() {
                 <input type="checkbox" data-field="dimReference" checked={!!current.reference} onChange={(e) => d.setDimension(current.id, { reference: e.target.checked })} />
                 <span>{t('drawingUi.dimReference')}</span>
               </label>
-              {(current.kind === 'diameter' || current.kind === 'radius') && (
+              {((current.kind === 'diameter' && !current.threadLeader) || current.kind === 'radius') && (
                 <label className="pm-row">
                   <span>{t('drawingUi.dimDisplayKind')}</span>
                   <select data-field="dimDisplayKind" value={current.kind} onChange={(e) => d.setDimension(current.id, { kind: e.target.value as 'diameter' | 'radius' })}>
@@ -300,7 +310,7 @@ export function DimensionPanel() {
                   </select>
                 </label>
               )}
-              {current.kind === 'diameter' && (
+              {current.kind === 'diameter' && !current.threadLeader && (
                 <label className="pm-row checkbox">
                   <input type="checkbox" data-field="dimCallout" checked={!!current.callout} onChange={(e) => d.setDimension(current.id, { callout: e.target.checked })} />
                   <span>{t('drawingUi.dimCallout')}</span>
@@ -309,7 +319,8 @@ export function DimensionPanel() {
               {current.kind === 'diameter' && current.callout && (
                 <label className="pm-row">
                   <span>{t('drawingUi.dimCalloutStyle')}</span>
-                  <select data-field="dimCalloutStyle" value={current.calloutStyle ?? 'text'} onChange={(e) => d.setDimension(current.id, { calloutStyle: e.target.value as 'text' | 'symbols' })}>
+                  <select data-field="dimCalloutStyle" value={current.calloutStyle ?? ''} onChange={(e) => d.setDimension(current.id, { calloutStyle: e.target.value === '' ? null : e.target.value as 'text' | 'symbols' })}>
+                    <option value="">{t('drawingUi.calloutInherit')}</option>
                     <option value="text">{t('drawingUi.dimCalloutText')}</option>
                     <option value="symbols">{t('drawingUi.dimCalloutSymbols')}</option>
                   </select>
@@ -393,10 +404,10 @@ export function DimensionPanel() {
                 <span>{t('drawingUi.dimSuffix')}</span>
                 <TextField field="dimSuffix" value={current.suffix ?? ''} onCommit={(v) => d.setDimension(current.id, { suffix: v })} />
               </label>
-              <label className="pm-row" title={t('drawingUi.dimTextTip')}>
+              {!(current.kind === 'diameter' && current.threadLeader) && <label className="pm-row" title={t('drawingUi.dimTextTip')}>
                 <span>{t('drawingUi.dimText')}</span>
                 <TextField field="dimText" value={current.text ?? ''} onCommit={(v) => d.setDimension(current.id, { text: v })} />
-              </label>
+              </label>}
               {(current.kind === 'linear' || current.kind === 'angle') && (
                 <label className="pm-row">
                   <span>{t('drawingUi.dimSlide')}</span>

@@ -1,7 +1,8 @@
 import { t } from '@3db/i18n';
+import { validThreadTolerance } from './threadTolerance';
 import { current, produce, type Draft } from 'immer';
 import { countersFor, type Id } from './ids';
-import type { SheetGauge, AppearanceTarget, DocSettings, MaterialRef, Variable, BlobRef, ChamferFeature, FilletKind, FilletVariablePoint, CombineFeature, SplitFeature, MoveCopyBodyFeature, JogFeature, HoleFeature, ScrewBossFeature, BaseFlangeFeature, MidBendFeature, EdgeFlangeFeature, HemFeature, BreakCornerFeature, SnapHookFeature, SnapCatchFeature, VentFeature, LoftFeature, RibFeature, SweepFeature, Draft as WallDraft, EndCondition, Thin, Expr, Feature, ImportedBodyFeature, AxisDefinition, CoordSysFeature, MirrorFeature, PartDoc, PatternDefinition, PatternFeature, PlaneDefinition, PointDefinition, Ref, RevolveCondition, SketchConstraint, SketchEntity, SketchFeature, SketchPicture, CutWithSurfaceFeature, ThreadFeature, KnurlFeature, CosmeticThreadFeature, HelixFeature , SketchAttach } from './schema';
+import type { SheetGauge, AppearanceTarget, DocSettings, MaterialRef, Variable, BlobRef, ChamferFeature, FilletKind, FilletVariablePoint, CombineFeature, SplitFeature, MoveCopyBodyFeature, JogFeature, HoleFeature, ScrewBossFeature, BaseFlangeFeature, MidBendFeature, EdgeFlangeFeature, HemFeature, BreakCornerFeature, SnapHookFeature, SnapCatchFeature, VentFeature, LoftFeature, RibFeature, SweepFeature, Draft as WallDraft, EndCondition, Thin, Expr, Feature, ImportedBodyFeature, AxisDefinition, CoordSysFeature, MirrorFeature, PartDoc, PatternDefinition, PatternFeature, PlaneDefinition, PointDefinition, Ref, RevolveCondition, SketchConstraint, SketchEntity, SketchFeature, SketchPicture, CutWithSurfaceFeature, ThreadFeature, KnurlFeature, CosmeticThreadFeature, HelixFeature, ProjectedCurveFeature, RuledSurfaceFeature, RadiatedSurfaceFeature, ReplaceFaceFeature, SketchAttach } from './schema';
 import { isSketchAxis } from './schema';
 import { isDatumPlaneName } from './datums';
 import { canBeSeed } from './patterns';
@@ -109,6 +110,8 @@ ull). */
   /** A cosmetic thread's parameters (C4.9, ADR 0156). */
   | { type: 'setCosmeticThread'; featureId: Id; params: Partial<Omit<CosmeticThreadFeature, 'id' | 'type' | 'name' | 'suppressed'>> }
   /** A helix/spiral curve's parameters (C8.3, ADR 0168). */
+  | { type:'setSurfaceTools'; featureId:Id; params:Partial<Omit<RuledSurfaceFeature,'id'|'type'|'name'|'suppressed'>> | Partial<Omit<RadiatedSurfaceFeature,'id'|'type'|'name'|'suppressed'>> | Partial<Omit<ReplaceFaceFeature,'id'|'type'|'name'|'suppressed'>> }
+  | { type: 'setProjectedCurve'; featureId: Id; params: Partial<Omit<ProjectedCurveFeature, 'id' | 'type' | 'name' | 'suppressed'>> }
   | { type: 'setHelix'; featureId: Id; params: Partial<Omit<HelixFeature, 'id' | 'type' | 'name' | 'suppressed'>> }
   /** What a draft leans and about which plane (C5.5). */
   | { type: 'setDraftFeature'; featureId: Id; neutral: Ref; faces: Ref[]; angle: Expr; reverse?: boolean }
@@ -685,6 +688,7 @@ function validateNewFeature(doc: PartDoc, f: Feature, index: number): void {
       if (!doc.blobs.some((b) => b.id === f.blob)) throw new CommandError(t('cmd.importDataNotFound', { id: f.blob }));
       return;
     case 'hole':
+      if (!validThreadTolerance(f.toleranceClass, f.kind === 'tapped' ? f.size : undefined, 'internal')) throw new CommandError(t('cmd.badThreadTolerance'));
       checkDowel(f);
       return;
     case 'screwBoss':
@@ -736,8 +740,30 @@ function validateNewFeature(doc: PartDoc, f: Feature, index: number): void {
       return;
 
     case 'cosmeticThread':
+      if (!validThreadTolerance(f.toleranceClass, f.standardMode === 'standard' ? f.standardDesignation : undefined, f.threadType)) throw new CommandError(t('cmd.badThreadTolerance'));
       if (f.targetFace.kind !== 'face') throw new CommandError(t('cmd.cosmeticThreadOnlyFace'));
       if (f.startEdge && f.startEdge.kind !== 'edge' && f.startEdge.kind !== 'face') throw new CommandError(t('cmd.cosmeticThreadOnlyEdge'));
+      return;
+
+    case 'ruledSurface':
+      if(f.first.kind!=='edge'||f.second.kind!=='edge')throw new CommandError(t('surfaceTools.pickEdges'));
+      if(f.first.name && f.first.name===f.second.name)throw new CommandError(t('surfaceTools.crossing'));
+      return;
+    case 'radiatedSurface':
+      if(f.edge.kind!=='edge')throw new CommandError(t('surfaceTools.pickEdges'));
+      planeRef(doc,f.plane,index);return;
+    case 'replaceFace':
+      if(f.face.kind!=='face')throw new CommandError(t('projection.faces'));
+      planeRef(doc,f.replacement,index);return;
+    case 'projectedCurve':
+      sketchBefore(doc, f.sketch, index, t('feature.projectedCurve'));
+      if (f.mode === 'sketchOnSketch') {
+        if (!f.secondSketch || f.secondSketch === f.sketch) throw new CommandError(t('projection.twoSketches'));
+        sketchBefore(doc, f.secondSketch, index, t('feature.projectedCurve'));
+      } else if (f.mode === 'sketchOnFaces') {
+        if (f.faces?.some(r=>r.kind !== 'face')) throw new CommandError(t('projection.faces'));
+        if (f.direction) directionRef(doc, f.direction, index);
+      } else throw new CommandError(t('projection.mode'));
       return;
 
     case 'helix':
@@ -1130,6 +1156,7 @@ export function mutate(draft: Draft<PartDoc>, cmd: Command): void {
       const keep = { id: f.id, type: f.type, name: f.name, suppressed: f.suppressed, sketch: f.sketch } as const;
       for (const k of Object.keys(f)) delete (f as unknown as Record<string, unknown>)[k];
       Object.assign(f, keep, cmd.hole);
+      if (!validThreadTolerance(f.toleranceClass, f.kind === 'tapped' ? f.size : undefined, 'internal')) throw new CommandError(t('cmd.badThreadTolerance'));
       checkDowel(f as HoleFeature);
       checkExprs(draft as PartDoc, f as Feature);
       return;
@@ -1494,6 +1521,22 @@ export function mutate(draft: Draft<PartDoc>, cmd: Command): void {
       if (cmd.mode !== 'delete' && cmd.mode !== 'keep') throw new CommandError(t('cmd.deleteKeepBodyModeInvalid'));
       f.mode = cmd.mode;
       f.targets = cmd.targets;
+      return;
+    }
+    case 'setSurfaceTools': {
+      const f=feature(draft,cmd.featureId);
+      if(f.type!=='ruledSurface'&&f.type!=='radiatedSurface'&&f.type!=='replaceFace')throw new CommandError(t('surfaceTools.invalid'));
+      const next={...f,...cmd.params} as typeof f;
+      const allowed=f.type==='ruledSurface'?['first','second','reverseSecond']:f.type==='radiatedSurface'?['edge','plane','distance','reverse']:['face','replacement'];
+      if(Object.keys(cmd.params).some(k=>!allowed.includes(k)))throw new CommandError(t('surfaceTools.invalid'));
+      validateNewFeature(draft as PartDoc,next,draft.features.indexOf(f));Object.assign(f,cmd.params);checkExprs(draft as PartDoc,f as Feature);return;
+    }
+    case 'setProjectedCurve': {
+      const f = feature(draft, cmd.featureId);
+      if (f.type !== 'projectedCurve') throw new CommandError(t('projection.mode'));
+      const next = { ...f, ...cmd.params };
+      validateNewFeature(draft as PartDoc, next, draft.features.indexOf(f));
+      Object.assign(f, cmd.params);
       return;
     }
     case 'setHelix': {

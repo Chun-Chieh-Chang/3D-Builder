@@ -68,6 +68,10 @@ export const FEATURE_LABEL: Record<FeatureType, string> = labelsOf({
   knurl: 'feature.knurl',
   cosmeticThread: 'feature.cosmeticThread',
   helix: 'feature.helix',
+  projectedCurve: 'feature.projectedCurve',
+  ruledSurface:'feature.ruledSurface',
+  radiatedSurface:'feature.radiatedSurface',
+  replaceFace:'feature.replaceFace',
 });
 
 /** SolidWorks names cuts after what they cut with: 「除料-伸長」, 「除料-旋轉」. */
@@ -119,6 +123,9 @@ export const RELATION_LABEL: Record<SketchConstraint['type'], string> = labelsOf
   midpoint: 'relation.midpoint',
   pointOnCurve: 'relation.pointOnCurve',
   symmetric: 'relation.symmetric',
+  symmetricPoint: 'relation.symmetricPoint',
+  equalCurvature: 'relation.equalCurvature',
+  patternPoint:'relation.patternPoint',
   fix: 'relation.fix',
   block: 'relation.block',
   distance: 'dimension.distance',
@@ -155,7 +162,9 @@ export const TOOL_LABEL: Record<ToolId, string> = labelsOf({
   convert: 'tool.convert',
   pierce: 'tool.pierce',
   intersect: 'tool.intersect',
+  silhouette: 'tool.silhouette',
   moveEntities: 'tool.moveEntities',
+  stretchEntities:'tool.stretchEntities',
   copyEntities: 'tool.copyEntities',
   rotateEntities: 'tool.rotateEntities',
   scaleEntities: 'tool.scaleEntities',

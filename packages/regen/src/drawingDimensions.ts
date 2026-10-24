@@ -56,7 +56,7 @@ function neighbour(topology: Topology, g: { origin: readonly number[]; axis: rea
 }
 
 /** The countersink at a cylinder's end, when the face beyond it is a cone whose other circular edge is bigger and about the same axis: its diameter and included angle (degrees). */
-function countersinkAt(topology: Topology, g: { origin: readonly number[]; axis: readonly number[]; radius: number }, end: { edge: Topology['edges'][number] }, own: number): HoleInfo['countersink'] | null {
+function countersinkAt(topology: Topology, g: { origin: readonly number[]; axis: readonly number[]; radius: number }, end: { edge: Topology['edges'][number]; t: number }, own: number): { callout: NonNullable<HoleInfo['countersink']>; depth: number } | null {
   const f = end.edge.faces.find((x) => x !== own);
   const cone = f === undefined ? undefined : topology.faces[f]!.geometry;
   if (f === undefined || cone?.type !== 'cone' || !parallel(cone.axis, g.axis)) return null;
@@ -67,7 +67,7 @@ function countersinkAt(topology: Topology, g: { origin: readonly number[]; axis:
     const rel = [c.center[0] - g.origin[0]!, c.center[1] - g.origin[1]!, c.center[2] - g.origin[2]!];
     const t = rel[0]! * g.axis[0]! + rel[1]! * g.axis[1]! + rel[2]! * g.axis[2]!;
     if (Math.hypot(rel[0]! - t * g.axis[0]!, rel[1]! - t * g.axis[1]!, rel[2]! - t * g.axis[2]!) > tol) continue;
-    return { diameter: 2 * c.radius, angle: (2 * Math.abs(cone.halfAngle) * 180) / Math.PI };
+    return { callout: { diameter: 2 * c.radius, angle: (2 * Math.abs(cone.halfAngle) * 180) / Math.PI }, depth: Math.abs(t - end.t) };
   }
   return null;
 }
@@ -100,14 +100,20 @@ export function holeInfo(topology: Topology, face: number): HoleInfo | null {
     if (closed[i] || info.counterbore || info.countersink) return;
     const cone = countersinkAt(topology, g, e, face);
     if (cone) {
-      info.countersink = cone;
+      info.countersink = cone.callout;
+      // The depth is measured from the mouth, not from the end of its cone.
+      info.depth += cone.depth;
       return;
     }
     const wall = neighbour(topology, g, e, face, true);
     if (wall === null) return;
     const wg = topology.faces[wall]!.geometry;
     const wallEnds = cylinderEnds(topology, wall);
-    if (wg?.type === 'cylinder' && wallEnds.length === 2) info.counterbore = { diameter: 2 * wg.radius, depth: wallEnds[1]!.t - wallEnds[0]!.t };
+    if (wg?.type === 'cylinder' && wallEnds.length === 2) {
+      info.counterbore = { diameter: 2 * wg.radius, depth: wallEnds[1]!.t - wallEnds[0]!.t };
+      // Include the larger cylinder between the shoulder and the mouth.
+      info.depth += info.counterbore.depth;
+    }
   });
   return info;
 }
@@ -116,7 +122,7 @@ export function holeInfo(topology: Topology, face: number): HoleInfo | null {
  * The hole features of a part, by id: what the shape cannot say of a hole (a tapped one has no thread in the model; a 45° chamfer at the mouth of a dowel hole is the
  * same cone as a countersink), for `elementFacts` and `viewFeatures`. A hole whose feature is not here (an imported shape) is read from its shape alone.
  */
-export type HoleFeatures = ReadonlyMap<string, { kind: HoleKindName; size?: string }>;
+export type HoleFeatures = ReadonlyMap<string, { kind: HoleKindName; size?: string; toleranceClass?: string }>;
 type HoleKindName = Extract<PartDoc['features'][number], { type: 'hole' }>['kind'];
 
 /**
@@ -124,13 +130,13 @@ type HoleKindName = Extract<PartDoc['features'][number], { type: 'hole' }>['kind
  * its master's faces, so the holes the master made are the holes of the part. A feature of the document itself is the one a clashing id means.
  */
 export function holeFeatures(doc: Pick<PartDoc, 'features'>, sources?: SourceProvider): HoleFeatures {
-  const out = new Map<string, { kind: HoleKindName; size?: string }>();
+  const out = new Map<string, { kind: HoleKindName; size?: string; toleranceClass?: string }>();
   for (const f of doc.features) {
     if (f.type !== 'derivedBody') continue;
     const master = sources?.get(f.source);
     if (master) for (const [id, h] of holeFeatures(master.doc, master.sources)) out.set(id, h);
   }
-  for (const f of doc.features) if (f.type === 'hole') out.set(f.id, { kind: f.kind, ...(f.size ? { size: f.size } : {}) });
+  for (const f of doc.features) if (f.type === 'hole') out.set(f.id, { kind: f.kind, ...(f.size ? { size: f.size } : {}), ...(f.toleranceClass ? { toleranceClass: f.toleranceClass } : {}) });
   return out;
 }
 
@@ -144,7 +150,7 @@ function withFeature(hole: HoleInfo, name: string, features: HoleFeatures | unde
   if (!f) return hole;
   const { countersink, ...rest } = hole;
   const out: HoleInfo = f.kind === 'countersink' && countersink ? { ...rest, countersink } : rest;
-  return f.kind === 'tapped' ? { ...out, thread: f.size ? { size: f.size, ...(lookupThread(f.size) ? { pitch: lookupThread(f.size)!.pitch } : {}) } : {} } : out;
+  return f.kind === 'tapped' ? { ...out, thread: f.size ? { size: f.size, ...(f.toleranceClass ? { toleranceClass: f.toleranceClass } : {}), ...(lookupThread(f.size) ? { pitch: lookupThread(f.size)!.pitch } : {}) } : {} } : out;
 }
 
 /** Resolve through the same persistent-name/fingerprint path as dimensions; ambiguous annotations stay unlabelled. */
@@ -156,6 +162,7 @@ function threadOnFace(topology: Topology, names: ElementNames, face: number, thr
   if (matches.length !== 1) return undefined;
   const ct = matches[0]!;
   return { majorDiameter: ct.majorDiameter, minorDiameter: ct.minorDiameter, pitch: ct.pitch, depth: ct.depth, threadType: ct.threadType, endCondition: ct.endCondition,
+    origin: ct.origin, axis: ct.axis, ...(ct.toleranceClass ? { toleranceClass: ct.toleranceClass } : {}),
     ...(ct.standardMode === 'standard' && ct.standardDesignation && lookupThread(ct.standardDesignation) ? { designation: ct.standardDesignation } : {}) };
 }
 
@@ -182,7 +189,7 @@ export function elementFacts(topology: Topology, names: ElementNames, ref: Ref, 
     if (g?.type === 'cylinder') {
       const hole = holeInfo(topology, r.index);
       const thread = threadOnFace(topology, names, r.index, cosmeticThreads);
-      return { kind: 'face', type: 'cylinder', point: g.origin, dir: g.axis, radius: g.radius, ...(thread ? { thread } : {}), ...(hole ? { hole: withFeature(hole, names.faces[r.index]!, features) } : {}) };
+      return { kind: 'face', type: 'cylinder', point: g.origin, center: f.center, dir: g.axis, radius: g.radius, ...(thread ? { thread } : {}), ...(hole ? { hole: withFeature(hole, names.faces[r.index]!, features) } : {}) };
     }
     if (g?.type === 'sphere') return { kind: 'face', type: 'sphere', point: g.center, radius: g.radius };
     // a fillet or a round: its radius is the tube's, and its axis and the circle the tube's middle runs on are what say where the arc is
@@ -240,7 +247,10 @@ export function viewFeatures(topology: Topology, names: ElementNames, axes: View
       const ends = cylinderEnds(topology, i);
       if (ends.length === 2) {
         const at = (e: (typeof ends)[number]): [number, number] => [dot(e.center, right), dot(e.center, up)];
-        out.push({ type: 'axis', ref: ref(), from: at(ends[0]!), to: at(ends[1]!), radius: g.radius });
+        const thread = threadOnFace(topology, names, i, cosmeticThreads);
+        const hole = holeInfo(topology, i);
+        out.push({ type: 'axis', ref: ref(), from: at(ends[0]!), to: at(ends[1]!), radius: g.radius,
+          ...(thread ? { thread } : {}), ...(hole ? { hole: withFeature(hole, names.faces[i]!, features) } : {}) });
       }
     } else if (g.type === 'torus' && Math.abs(dot(g.axis, axes.dir)) < 1e-6 && g.major > 1e-9) {
       // a fillet or a round seen in its true shape (E1a): its axis lies in the sheet, so the view cuts its tube and the cut is the arc. The same condition

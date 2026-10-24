@@ -2,6 +2,30 @@ import type { Translation } from '../index';
 
 /** help: English of `zh-TW/help.ts` (docs/help-plan.md). The ids a topic points to (`see`) are not translated. */
 export const help: Translation = {
+  "help.toolStretchEntities.summary": "Moves selected endpoints while the rest of each entity stretches with them.",
+  "help.toolStretchEntities.body": "Select the endpoints to stretch, then specify base and target points. Unselected endpoints retain their relations.",
+  "help.toolStretchEntities.see": "tool-moveEntities tool-extend tool-linearPattern",
+
+  "help.ruledSurface.summary": "Select two rails in order. Straight generators connect them; crossings and degeneracy are rejected.",
+  "help.ruledSurface.see": "offset-surface flat-surface",
+  "help.radiatedSurface.summary": "Select a line/circular edge and a reference plane. Extends perpendicular to the tangent within that plane.",
+  "help.radiatedSurface.see": "offset-surface flat-surface",
+  "help.replaceFace.summary": "Select the original face, then a target plane. Parallel planes are supported; neighbouring faces extend or trim.",
+  "help.replaceFace.see": "offset-surface flat-surface",
+
+  "help.toolSilhouette.summary": "Projects apparent contours of a selected face into the active sketch.",
+  "help.toolSilhouette.body": "Select a model face for its apparent contours along the sketch normal; faces without internal contours use visible boundary edges.",
+  "help.toolSilhouette.keywords": "silhouette contour 側影 輪廓 曲面",
+  "help.toolSilhouette.see": "tool-convert tool-intersect",
+
+  "help.selectUnderdefined.summary": "Selects entities with remaining degrees of freedom from the solver analysis.",
+  "help.automaticRelations.summary": "Controls automatic geometric relations independently of snapping.",
+
+  "help.projectedCurve.summary": "Projected Curve",
+  "help.projectedCurve.body": "Retains every branch on the selected faces along the projection line. Produces a curve body; sweep paths are not yet supported.",
+  "help.projectedCurve.keywords": "project curve sketch face 投影 曲線 草圖 面",
+  "help.projectedCurve.see": "helix split-line",
+
   // ---------------------------------------------------------------- the window
   'helpui.title': 'Help',
   'helpui.button': 'Help',
@@ -1066,13 +1090,11 @@ export const help: Translation = {
   'help.toolScaleEntities.keywords': 'scale factor enlarge shrink entities',
   'help.toolScaleEntities.see': 'tool-moveEntities tool-rotateEntities',
   'help.toolLinearPattern.summary': 'Copies the selected entities several times, evenly spaced in one direction.',
-  'help.toolLinearPattern.body':
-    'Select the entities first, then press this command. Click a base point, then where the first copy goes (the spacing and direction); or type the spacing ΔX and ΔY in the panel and press Apply. Copies do not count the original and must be a whole number from 1 to 200, or it is refused with the reason.\n\n- Each copy is entities of its own, not linked to the original; with Keep relations the relations and dimensions among the selection are copied onto each.',
+  "help.toolLinearPattern.body": "Select entities, then click a base and the first copy position, or type ΔX/ΔY and apply. Copies exclude the original and must be integers from 1 to 200. A nonparallel second direction is optional; the total may not exceed 200 copies.\n\nCopies are linked to seed points and circle radii by default. Disable Link copies to seed for independent geometry; Keep relations then copies internal relations. Linking supports points, lines, circles, arcs and splines, with a solver size limit based on seed complexity. Unlink ellipses and text.",
   'help.toolLinearPattern.keywords': 'sketch pattern linear array copies',
   'help.toolLinearPattern.see': 'tool-circularPattern tool-copyEntities linear-pattern',
   'help.toolCircularPattern.summary': 'Copies the selected entities several times, evenly turned about a center.',
-  'help.toolCircularPattern.body':
-    'Select the entities first, then press this command, set Copies (original not counted, a whole number from 1 to 200) and Total angle in the panel, and click the center of the pattern.\n\n- A total angle of 360 spaces the copies evenly all round (copies + 1 shares); any other angle puts the last copy at that angle (copies shares); a negative angle runs clockwise. A total angle of 0, beyond 360, or not a number is refused with the reason.\n- Each copy is entities of its own; horizontal and vertical relations are handled as in Rotate Entities.',
+  "help.toolCircularPattern.body": "Select entities, set copies and total angle, then click the center. At 360° the original and copies are evenly spaced; otherwise the last copy reaches the total angle. Negative angles turn clockwise.\n\nCopies follow seed points and circle radii by default. Disable linking for independent copies. Linking supports points, lines, circles, arcs and splines, including points at the rotation center.",
   'help.toolCircularPattern.keywords': 'sketch pattern circular polar array copies',
   'help.toolCircularPattern.see': 'tool-linearPattern tool-rotateEntities circular-pattern',
   'help.toolConvert.summary': 'Brings the edges or the outline of a face of the model into the sketch as entities that follow the model.',

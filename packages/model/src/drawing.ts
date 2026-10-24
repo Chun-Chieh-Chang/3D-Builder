@@ -13,7 +13,7 @@ import { ANNOTATION_FIELDS, checkAnnotation, framesUsing, type Annotation, type 
  * opened (exact hidden-line removal), so a drawing can never disagree with the model it shows.
  */
 
-export const DRAWING_SCHEMA_VERSION = 27;
+export const DRAWING_SCHEMA_VERSION = 28;
 
 export type SheetSize = 'A4' | 'A3' | 'A2' | 'A1' | 'A0';
 export const SHEET_SIZES: readonly SheetSize[] = ['A4', 'A3', 'A2', 'A1', 'A0'];
@@ -38,6 +38,8 @@ export interface DrawingSheet {
   shift?: [number, number];
   /** The unit the lengths of the dimensions are written in (v8): absent is millimetres; `in` is inches. The model and the sheet stay in millimetres; only the numbers written change. */
   unit?: 'mm' | 'in';
+  /** Default for model callouts and hole tables; dimensions may override it. */
+  calloutStyle?: CalloutStyle;
   /**
    * The language the texts on the sheet are written in (v11): absent is the interface's, which is what every drawing did before this. A sheet is not read
    * the way the program is: it leaves the program and goes to whoever machines the part, so 「最大」 or 「MAX」 has to be the drawing's choice and not the
@@ -412,8 +414,10 @@ export interface DiameterDimension extends DimensionCommon {
   count?: number;
   /** A hole callout (C16.5): what the model says of the hole is written after the diameter — through, or how deep, and its counterbore. */
   callout?: boolean;
-  /** Absent keeps the legacy localized text. Formatting only; values come from the model. */
+  /** Absent inherits the sheet default (legacy sheets use localized text). Values come from the model. */
   calloutStyle?: CalloutStyle;
+  /** Independent side-view thread leader. Requires model thread data and callout=true. */
+  threadLeader?: boolean;
 }
 
 /** The radius (R) of a cylinder or circle seen as an arc or a circle in the view. */
@@ -514,6 +518,9 @@ export interface ThreadCallout {
   endCondition: 'blind' | 'through';
   /** Only standard-mode features carry a designation. Custom threads stay explicitly custom. */
   designation?: string;
+  toleranceClass?: string;
+  origin?: [number, number, number];
+  axis?: [number, number, number];
 }
 
 /**
@@ -524,11 +531,11 @@ export interface ThreadCallout {
  */
 export interface HoleInfo {
   through: boolean;
-  /** mm: the length of the cylinder (the thickness a through hole goes through). */
+  /** mm: depth from the entrance, including the counterbore/conical mouth. */
   depth: number;
   counterbore?: { diameter: number; depth: number };
   countersink?: { diameter: number; angle: number };
-  thread?: { size?: string; pitch?: number };
+  thread?: { size?: string; pitch?: number; toleranceClass?: string };
 }
 
 /**
@@ -540,7 +547,8 @@ export function placeElementFacts(f: ElementFacts, rows: readonly number[]): Ele
   const R = rows;
   const put = (p: readonly number[]): [number, number, number] => [R[0]! * p[0]! + R[1]! * p[1]! + R[2]! * p[2]! + R[3]!, R[4]! * p[0]! + R[5]! * p[1]! + R[6]! * p[2]! + R[7]!, R[8]! * p[0]! + R[9]! * p[1]! + R[10]! * p[2]! + R[11]!];
   const turn = (v: readonly number[]): [number, number, number] => [R[0]! * v[0]! + R[1]! * v[1]! + R[2]! * v[2]!, R[4]! * v[0]! + R[5]! * v[1]! + R[6]! * v[2]!, R[8]! * v[0]! + R[9]! * v[1]! + R[10]! * v[2]!];
-  return { ...f, point: put(f.point), ...(f.dir ? { dir: turn(f.dir) } : {}), ...(f.center ? { center: put(f.center) } : {}) };
+  return { ...f, point: put(f.point), ...(f.dir ? { dir: turn(f.dir) } : {}), ...(f.center ? { center: put(f.center) } : {}),
+    ...(f.thread ? { thread: { ...f.thread, ...(f.thread.origin ? { origin: put(f.thread.origin) } : {}), ...(f.thread.axis ? { axis: turn(f.thread.axis) } : {}) } } : {}) };
 }
 
 /** What a dimension can be attached to in a view (the elements the view sees edge-on or as circles), found in the worker; the material of the automatic dimensions and of the choice in the panel. */
@@ -550,7 +558,7 @@ export type ViewFeature =
   /** A cylinder seen along its axis: a circle (a whole one, `full`, or an arc) with its middle in the view's coordinates and the direction (degrees) from there to the middle of the arc. */
   | { type: 'circle'; ref: Ref; centre: [number, number]; radius: number; convex: boolean; full: boolean; outward: number; hole?: HoleInfo; thread?: ThreadCallout }
   /** A whole cylinder seen from the side: its axis from one end to the other, in the view's coordinates. */
-  | { type: 'axis'; ref: Ref; from: [number, number]; to: [number, number]; radius: number }
+  | { type: 'axis'; ref: Ref; from: [number, number]; to: [number, number]; radius: number; thread?: ThreadCallout; hole?: HoleInfo }
   /**
    * A fillet or a round — a torus — seen in its true shape: its axis lies *in* the sheet, so the view cuts its tube and what is drawn is the arc of the cut. This is
    * the other way round from a cylinder, which shows a circle only when its axis runs *along* the view.
@@ -1073,6 +1081,9 @@ function checkDimension(d: Dimension, views: readonly DrawingView[]): void {
   } else throw new CommandError(t('drawing.dimBadKind', { kind: String((d as { kind?: unknown }).kind) }));
   const calloutStyle = (d as DiameterDimension).calloutStyle;
   if (calloutStyle !== undefined && (d.kind !== 'diameter' || !['text', 'symbols'].includes(calloutStyle))) throw new CommandError(t('drawing.dimBadCalloutStyle'));
+  const threadLeader = (d as DiameterDimension).threadLeader;
+  if (threadLeader !== undefined && (d.kind !== 'diameter' || typeof threadLeader !== 'boolean' || (threadLeader && !d.callout))) throw new CommandError(t('drawing.badThreadLeader'));
+  if (threadLeader && d.text !== undefined) throw new CommandError(t('drawing.badThreadLeader'));
   if (d.precision !== undefined && !(Number.isInteger(d.precision) && d.precision >= 0 && d.precision <= 4)) throw new CommandError(t('drawing.dimBadPrecision'));
   for (const k of ['prefix', 'suffix', 'text'] as const) if (d[k] !== undefined && (typeof d[k] !== 'string' || d[k]!.length > 80)) throw new CommandError(t('drawing.dimBadText'));
   if (d.slide !== undefined && (!Number.isFinite(d.slide) || (d.kind !== 'linear' && d.kind !== 'angle'))) throw new CommandError(t('drawing.dimBadSlide'));
@@ -1132,6 +1143,7 @@ export function mutateDrawing(draft: Draft<DrawingDoc>, cmd: DrawingCommand): vo
       if (s.scale !== undefined && !scaleOk(s.scale)) throw new CommandError(t('drawing.badScale', { scale: s.scale.join(':') }));
       if (s.shift && !(s.shift.length === 2 && s.shift.every(Number.isFinite))) throw new CommandError(t('drawing.badPosition'));
       if (s.unit !== undefined && s.unit !== 'mm' && s.unit !== 'in') throw new CommandError(t('drawing.badUnit'));
+      if (s.calloutStyle !== undefined && !['text', 'symbols'].includes(s.calloutStyle)) throw new CommandError(t('drawing.dimBadCalloutStyle'));
       if (s.language !== undefined && s.language !== null && !LOCALES.includes(s.language)) throw new CommandError(t('drawing.badLanguage'));
       if (s.dimStyle !== undefined && s.dimStyle !== null) checkDimStyle(s.dimStyle);
       if (s.titleStyle !== undefined && s.titleStyle !== null) checkTitleStyle(s.titleStyle);
@@ -1533,6 +1545,7 @@ export function mutateDrawing(draft: Draft<DrawingDoc>, cmd: DrawingCommand): vo
         if (s.scale !== undefined && !scaleOk(s.scale)) throw new CommandError(t('drawing.badScale', { scale: s.scale.join(':') }));
         if (s.shift && !(s.shift.length === 2 && s.shift.every(Number.isFinite))) throw new CommandError(t('drawing.badPosition'));
         if (s.unit !== undefined && s.unit !== 'mm' && s.unit !== 'in') throw new CommandError(t('drawing.badUnit'));
+        if (s.calloutStyle !== undefined && !['text', 'symbols'].includes(s.calloutStyle)) throw new CommandError(t('drawing.dimBadCalloutStyle'));
         Object.assign(target.sheet, s);
       }
       if (cmd.patch.title) {

@@ -2,6 +2,9 @@ import type { Translation } from '../index';
 
 /** asmui: the assembly's graphics area hints and the Move / Rotate Component PropertyManager (D9.1; written in the code until ADR 0176). */
 export const asmui: Translation = {
+  'smartMate.conflict':'SmartMate conflicts with existing mates; the assembly was not changed.',
+  'smartMate.failed':'SmartMate failed: {why}',
+  'smartMate.hint':'Alt-drag onto another component face or circular edge to preview a mate; Tab flips, release applies, Esc cancels.',
   'asmui.elementHover': '{kind}: {name} ({owner})',
   'asmui.dragging': '{verb} "{name}": only along the freedoms its mates leave (Esc cancels)',
   'asmui.place': 'Click in the graphics area to place "{name}" (Esc cancels)',

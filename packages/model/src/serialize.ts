@@ -224,6 +224,16 @@ const migrations: Record<number, (doc: Json) => Json> = {
   73: (doc) => doc,
   // v75: a distance to or between circles and arcs may be measured to their nearest or farthest points (`distance.condition`, ADR 0183). Absent is the center, as before; nothing to convert, an older program refuses the file.
   74: (doc) => doc,
+  // v76: explicit thread tolerance annotations. Old documents retain no assumed class.
+  75: (doc) => doc,
+  // v77: projected curve feature, no conversion of older design intent.
+  76: (doc) => doc,
+  // v78: circular curvature, point symmetry and associative face silhouettes.
+  77: (doc) => doc,
+  // v79: ruled/radiated surfaces and replacement face references.
+  78: (doc) => doc,
+  // v80: linked sketch pattern point transforms.
+  79: (doc) => doc,
 };
 
 export class FormatError extends Error {
@@ -395,6 +405,8 @@ const drawingMigrations: Record<number, (doc: Json) => Json> = {
   25: (doc) => doc,
   // v27: merge per-dimension callout styles with v26 chamfer dimensions. Both v26 lineages upgrade without rewriting values.
   26: (doc) => doc,
+  // v28: sheet callout defaults and associative side-view thread leaders.
+  27: (doc) => doc,
 };
 
 export function parseDrawing(text: string): DrawingDoc {

@@ -182,7 +182,7 @@ export function AssemblyTree() {
             <Fragment key={c.id}>
               <li
                 data-component-row={c.id}
-                className={`tree-row ${asm.selected === c.id ? 'selected' : ''} ${info.error ? 'error' : ''} ${info.loading ? 'loading' : ''} ${c.suppressed ? 'suppressed' : ''} ${c.hidden ? 'hidden-component' : ''}`}
+                className={`tree-row ${asm.selected === c.id || asm.selectedComponents.includes(c.id) ? 'selected' : ''} ${info.error ? 'error' : ''} ${info.loading ? 'loading' : ''} ${c.suppressed ? 'suppressed' : ''} ${c.hidden ? 'hidden-component' : ''}`}
                 title={tip}
                 onClick={() => select(c.id)}
                 onContextMenu={(e) => {

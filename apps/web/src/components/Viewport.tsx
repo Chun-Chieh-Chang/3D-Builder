@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { imageBitmapOf } from '../state/pictures';
 import { t } from '@3db/i18n';
+import { ModelDimensions } from './ModelDimensions';
+import { InstantDepthHandle } from './InstantDepthHandle';
 import { DATUM_PLANES, findFeature, isDimension, isShown, ORIGIN_KEY, Parameters, settingsOf, type DatumPlaneName, type Id, type Feature, type PlaneFrame, type Ref } from '@3db/model';
 import { ownerFeatures } from '@3db/naming';
 import { cubeFacets, Viewer, type DatumDisplay, type DisplayMode, type PlaneDisplay, type SectionPlane, type SketchOverlay, type StandardView } from '@3db/render';
@@ -34,7 +36,7 @@ const aloneOn = (f: { faces: boolean; edges: boolean; vertices: boolean; planes:
  * What the graphics area picks during a PropertyManager session, what it shows as already picked
  * (the SolidWorks selection boxes), and the prompt. Outside sessions faces are picked for selection.
  */
-function picking(feature: Feature | undefined, editing: boolean, modelTool: 'convert' | 'pierce' | 'intersect' | null = null, measuring = false, attaching = false) {
+function picking(feature: Feature | undefined, editing: boolean, modelTool: 'convert' | 'pierce' | 'intersect' | 'silhouette' | null = null, measuring = false, attaching = false) {
   // reference geometry (C3.2–C3.5): what its empty selection boxes take, and what they hold
   // a sketch whose plane is being edited takes the vertex or point and the edge or axis its attachment is made from (ADR 0181)
   const datum = attaching && feature?.type === 'sketch' ? feature : feature?.type === 'refPlane' || feature?.type === 'refAxis' || feature?.type === 'refPoint' || feature?.type === 'coordSys' || feature?.type === 'pattern' || feature?.type === 'mirror' || feature?.type === 'helix' ? feature : undefined;
@@ -51,6 +53,9 @@ function picking(feature: Feature | undefined, editing: boolean, modelTool: 'con
   /** A face fillet or a full round fillet takes groups of faces, not edges. */
   const byGroups = feature?.type === 'fillet' && !!feature.kind && feature.kind !== 'constant';
   const faceFeature = feature?.type === 'deleteFace' || feature?.type === 'moveFace' || feature?.type === 'shell' || feature?.type === 'draft' || feature?.type === 'offsetSurface' || feature?.type === 'splitLine' || feature?.type === 'trimSurface' || feature?.type === 'mutualTrim' || feature?.type === 'lipGroove' ? feature : null;
+  const surfaceEdges=feature?.type==='ruledSurface'||feature?.type==='radiatedSurface';
+  const surfaceFaces=feature?.type==='replaceFace'||feature?.type==='radiatedSurface';
+  const projection = feature?.type === 'projectedCurve' && feature.mode === 'sketchOnFaces' ? feature : null;
   const combine = feature?.type === 'combine' || feature?.type === 'knit' || feature?.type === 'thicken' || feature?.type === 'cutWithSurface';
   const prompt_ = combine
     ? t(feature?.type === 'knit' ? 'pick.knit' : feature?.type === 'thicken' ? 'pick.thicken' : feature?.type === 'cutWithSurface' ? 'pick.cutWithSurface' : 'pick.combine')
@@ -65,11 +70,11 @@ function picking(feature: Feature | undefined, editing: boolean, modelTool: 'con
       : (slots?.prompt ?? null);
   return {
     // with nothing being edited, edges and vertices can be picked too (ADR 0117): they are what the next command starts with
-    edges: (!!edgeFeature && !byGroups) || !!want?.edges || modelTool !== null || measuring || !editing,
-    faces: !editing || modelTool === 'convert' || modelTool === 'intersect' || !!upTo || !!faceFeature || combine || !!want?.faces || measuring || edgeFeature?.type === 'fillet' || edgeFeature?.type === 'chamfer',
+    edges: surfaceEdges || !!projection || (!!edgeFeature && !byGroups) || !!want?.edges || modelTool !== null || measuring || !editing,
+    faces: surfaceFaces || !!projection || !editing || modelTool === 'convert' || (modelTool === 'intersect' || modelTool === 'silhouette') || !!upTo || !!faceFeature || combine || !!want?.faces || measuring || edgeFeature?.type === 'fillet' || edgeFeature?.type === 'chamfer',
     vertices: !!want?.vertices || endVertices.length > 0 || measuring || !editing || modelTool === 'convert',
     pickedEdges: byGroups ? [] : edgeFeature ? (edgeFeature.type === 'edgeFlange' || edgeFeature.type === 'hem' ? (edgeFeature.edge.name ? [edgeFeature.edge] : []) : edgeFeature.edges) : (slots?.edges ?? []),
-    pickedFaces: edgeFeature?.type === 'fillet' ? [...(edgeFeature.faces ?? []), ...(edgeFeature.faces2 ?? []), ...(edgeFeature.center ?? [])] : edgeFeature?.type === 'chamfer' ? (edgeFeature.faces ?? []) : faceFeature ? (faceFeature.type === 'shell' ? [...faceFeature.faces, ...(faceFeature.faceThickness ?? []).map((x) => x.face)] : faceFeature.type === 'deleteFace' || faceFeature.type === 'offsetSurface' ? faceFeature.faces : faceFeature.type === 'draft' ? [faceFeature.neutral, ...faceFeature.faces] : faceFeature.type === 'mutualTrim' ? (faceFeature.discard ?? []) : [faceFeature.face]) : upTo ? endFaces : (slots?.faces ?? []),
+    pickedFaces: projection ? (projection.faces ?? []) : edgeFeature?.type === 'fillet' ? [...(edgeFeature.faces ?? []), ...(edgeFeature.faces2 ?? []), ...(edgeFeature.center ?? [])] : edgeFeature?.type === 'chamfer' ? (edgeFeature.faces ?? []) : faceFeature ? (faceFeature.type === 'shell' ? [...faceFeature.faces, ...(faceFeature.faceThickness ?? []).map((x) => x.face)] : faceFeature.type === 'deleteFace' || faceFeature.type === 'offsetSurface' ? faceFeature.faces : faceFeature.type === 'draft' ? [faceFeature.neutral, ...faceFeature.faces] : faceFeature.type === 'mutualTrim' ? (faceFeature.discard ?? []) : [faceFeature.face]) : upTo ? endFaces : (slots?.faces ?? []),
     pickedVertices: slots ? slots.vertices : endVertices,
     /** Default and reference planes, axes and points the geometry being defined is based on: they are drawn while they are used. */
     referenceDatums: slots?.datums ?? [],
@@ -77,7 +82,7 @@ function picking(feature: Feature | undefined, editing: boolean, modelTool: 'con
     planes: (!editing && !measuring) || (want?.planes ?? false) || modelTool === 'convert',
     /** The same for an axis, a point or a coordinate system: their boxes, or nothing going on at all (ADR 0127). */
     datums: (!editing && !measuring) || (want?.edges ?? false) || (want?.vertices ?? false) || modelTool === 'convert',
-    prompt: measuring ? t('measure.prompt') : prompt_,
+    prompt: projection ? t('projection.hint') : measuring ? t('measure.prompt') : prompt_,
   };
 }
 
@@ -109,6 +114,9 @@ export function Viewport() {
   const bootError = useStore((s) => s.bootError);
   const fitRequest = useStore((s) => s.fitRequest);
   const view = useSketcherView();
+  const documentSerial=useStore(s=>s.documentSerial);
+  useEffect(()=>setModelDimensions(null),[documentSerial]);
+  const [modelDimensions,setModelDimensions] = useState<{id:string;faceName:string}|null>(null);
   const [hover, setHover] = useState(-1);
   const [hoverFace, setHoverFace] = useState(-1);
   const [hoverVertex, setHoverVertex] = useState(-1);
@@ -157,6 +165,17 @@ export function Viewport() {
       },
       onFaceHover: setHoverFace,
       onFaceClick: clickFace,
+      onFaceDoubleClick: face => {
+        if(store.getState().editing || store.getState().measure)return;
+        const name=displayed.current?.faceNames[face];
+        const id=name&&ownerFeatures(name).find(id=>store.getState().doc.features.some(f=>f.id===id));
+        if(id&&name)setModelDimensions({id,faceName:name});
+      },
+      onBoxSelect: (box, additive) => store.selectElements([
+        ...box.faces.flatMap(i=>{const ref=faceRef(i);return ref?[ref]:[];}),
+        ...box.edges.flatMap(i=>{const ref=edgeRef(i);return ref?[ref]:[];}),
+        ...box.vertices.flatMap(i=>{const ref=vertexRef(i);return ref?[ref]:[];}),
+      ],additive),
       // A plane clicked in the graphics area is the selection, or goes into the box of the plane being defined (ADR 0127)
       onPlaneClick: (key) => store.treeClick(key),
       onDatumClick: (key) => store.treeClick(key),
@@ -238,7 +257,7 @@ export function Viewport() {
 
   const feature = editing ? findFeature(doc, editing.featureId) : undefined;
   // 「轉換實體引用」, 「貫穿」 and 「相交曲線」 pick the model, not points on the sketch plane (C1.18)
-  const modelTool = sketching && (view?.tool === 'convert' || view?.tool === 'pierce' || view?.tool === 'intersect') ? view.tool : null;
+  const modelTool = sketching && (view?.tool === 'convert' || view?.tool === 'pierce' || (view?.tool === 'intersect' || view?.tool === 'silhouette')) ? view.tool : null;
   const measure = useStore((s) => s.measure);
   const draftReport = useStore((s) => s.draft?.report ?? null);
   const undercutReport = useStore((s) => s.undercut?.report ?? null);
@@ -282,6 +301,7 @@ export function Viewport() {
     v.setPlanePicking(p.planes);
     v.setDatumPicking(p.datums);
     v.setPickFilter(flatMesh ? { faces: false, edges: false, vertices: false, planes: false } : pickFilter); // the user's filter (what can be picked) holds for measuring too
+    v.setBoxSelectionEnabled(!editing && !measure && !modelTool && !flatMesh);
     if (flatMesh) {
       v.setSelectedEdges([]);
       v.setSelectedFaces([]);
@@ -307,6 +327,7 @@ export function Viewport() {
     else if (!editing && selected?.startsWith('body:')) v.setSelectedFaces(ofBodies([selected.slice('body:'.length)]));
     else if (editing) v.setSelectedFaces(indices(r?.faceNames, p.pickedFaces));
     else if (selectedFace?.kind === 'face') v.setSelectedFaces(indices(r?.faceNames, [selectedFace]));
+    else if (selectedElements.some(ref=>ref.kind==='face')) v.setSelectedFaces(indices(r?.faceNames,selectedElements.filter(ref=>ref.kind==='face')));
     // D1.2: a feature selected in the FeatureManager shows the faces it made.
     else v.setSelectedFaces(selected ? (r?.faceNames ?? []).flatMap((n, i) => (ownerFeatures(n)[0] === selected ? [i] : [])) : []);
   }, [feature, editing, selectedFace, selectedElements, selected, result, modelTool, pickFilter, measure, flatMesh]);
@@ -491,6 +512,7 @@ export function Viewport() {
       <div ref={host} className="viewport-canvas" data-help={sketching ? 'concept.sketch-snaps' : 'concept.selection'} />
       <ViewCube />
       <ViewOptions />
+      {!sketching && <InstantDepthHandle />}
       <div ref={barRef} className="heads-up">
         {ACTIONS.filter((a) => a.group === 'view').map((a) => (
           <button key={a.id} onClick={a.run} disabled={!a.enabled(store.getState())} title={shortcutOf(a) ? `${a.label} (${shortcutOf(a)})` : a.label}>
@@ -547,6 +569,7 @@ export function Viewport() {
         </div>
       )}
       {sketching && view && <div className="pick-hint">{view.hint}</div>}
+      {modelDimensions && <ModelDimensions {...modelDimensions} onClose={()=>setModelDimensions(null)} />}
       <MeasurePanel />
       <DraftPanel />
       <UndercutPanel />

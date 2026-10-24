@@ -132,6 +132,8 @@ export interface PartBuildPayload {
   edgeNames: string[];
   edgeFingerprints: Fingerprint[];
   edgeGeometry: (MateGeometry | null)[];
+  /** Adjacent faces, for a circular SmartMate's physical seating faces. */
+  edgeFaces?: number[][];
   vertexNames: string[];
   /** xyz per vertex, in the order of vertexNames. */
   vertexPoints: Float32Array;
@@ -179,7 +181,7 @@ export interface ConvertRequest {
   faces: Ref[];
   /** A whole earlier sketch to convert (ADR 0175): its lines, circles, arcs and free points. */
   sketch?: Id;
-  mode: 'convert' | 'pierce' | 'intersect';
+  mode: 'convert' | 'pierce' | 'intersect' | 'silhouette';
 }
 
 export interface ConvertPayload {

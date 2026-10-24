@@ -681,6 +681,7 @@ function candidateRelations(geometry: Geometry, selection: Id[], sketch?: Pick<S
   if (n === 1 && points.length === 1 && points[0] !== SKETCH_ORIGIN) return [{ type: 'fix', point: points[0]! }];
   if (n !== 2 && n !== 3) return [];
   if (n === 3) {
+    if (points.length === 3) return [{type:'symmetricPoint',a:points[0]!,b:points[1]!,point:points[2]!}];
     if (points.length === 2 && lines.length === 1) return [{ type: 'symmetric', a: points[0]!, b: points[1]!, axis: lines[0]! }];
     // a point and two curves: the point where they cross
     const curves = [...lines, ...radials];
@@ -720,6 +721,7 @@ function candidateRelations(geometry: Geometry, selection: Id[], sketch?: Pick<S
     return [
       { type: 'concentric', a, b },
       { type: 'coradial', a, b },
+      { type: 'equalCurvature', a, b },
       { type: 'equal', a, b },
       { type: 'tangent', a, b },
     ];
@@ -736,6 +738,7 @@ export function constraintsOf<C extends SketchConstraint>(constraints: readonly 
 /** Same relation type between the same entities (so the UI does not offer a duplicate). */
 export function sameRelation(a: RelationBody | SketchConstraint, b: RelationBody | SketchConstraint): boolean {
   if (a.type !== b.type) return false;
+  if(a.type==='symmetricPoint' && b.type==='symmetricPoint' && a.point!==b.point)return false;
   const ra = constraintRefs(a as SketchConstraint).slice().sort();
   const rb = constraintRefs(b as SketchConstraint).slice().sort();
   return ra.length === rb.length && ra.every((r, i) => r === rb[i]);

@@ -53,6 +53,9 @@ const RELATION_SYMBOL: Record<Exclude<SketchConstraint['type'], 'distance' | 'di
   midpoint: '◇',
   pointOnCurve: '⊙',
   symmetric: '⇋',
+  symmetricPoint: '⊞',
+  equalCurvature: 'κ=',
+  patternPoint:'▦',
   fix: '⚓',
   block: '⚓',
 };

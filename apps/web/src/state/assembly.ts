@@ -223,6 +223,8 @@ export interface AssemblyState {
   builds: ReadonlyMap<string, PartBuildPayload>;
   /** A component, a mate, or a default plane ("plane:front" …). */
   selected: Id | null;
+  /** Multiple components selected by a directional window or Ctrl-click. Session state only. */
+  selectedComponents: Id[];
   /**
    * The component last clicked in the graphics area, kept apart from `selected` (plan §2.2) so the PropertyManager can tell a pick in the view
    * — which brings the properties forward, the way a face clicked in a part's view does — from a pick in the FeatureManager, which stays in
@@ -239,6 +241,7 @@ export interface AssemblyState {
   insert: InsertState | null;
   /** The mate PropertyManager (C15.8); null while it is closed. */
   mate: MateDraft | null;
+  smartMate: boolean;
   /** The mates solved (A3.2, A3.4): where the components are, how defined, which mates hold. Derived. */
   solution: AssemblyResult | null;
   /** Components or mates whose 「確認刪除」 dialog is open. */
@@ -370,11 +373,13 @@ export class AssemblyStore {
       files: new Map(),
       builds: new Map(),
       selected: null,
+      selectedComponents: [],
       viewPick: null,
       picks: [],
       opened: new Set(),
       insert: null,
       mate: null,
+      smartMate: false,
       solution: null,
       confirmDelete: null,
       fitRequest: 1,
@@ -414,6 +419,7 @@ export class AssemblyStore {
 
   private set(patch: Partial<AssemblyState>): void {
     if (this.closed) return;
+    if ('selected' in patch && !('selectedComponents' in patch)) patch.selectedComponents=patch.selected&&this.history.doc.components.some(c=>c.id===patch.selected)?[patch.selected]:[];
     this.state = { ...this.state, ...patch };
     this.host.changed(this.state);
   }
@@ -431,6 +437,7 @@ export class AssemblyStore {
       dirty: serializeAssembly(doc) !== this.savedText,
       // What undo took away is no longer selected; nor is a datum of a component deleted or suppressed.
       selected: selected && !exists(selected) ? null : selected,
+      selectedComponents: this.state.selectedComponents.filter(id=>exists(id)),
       viewPick: viewPick && !exists(viewPick) ? null : viewPick,
       picks: this.state.picks.filter((r) => r.component === null || doc.components.some((c) => c.id === r.component && !c.suppressed)),
     });
@@ -920,6 +927,74 @@ export class AssemblyStore {
     for (const ref of picks.slice(0, 2)) this.pickElement(ref);
   }
 
+  /** Alt-drag uses the ordinary mate preview, but commits only after a successful solve. */
+  startSmartMate(source:MateRef):boolean {
+    const c=this.history.doc.components.find(c=>c.id===source.component);
+    if(!c || c.fixed || c.suppressed || this.state.mate || this.state.insert || this.state.move || this.state.pattern || this.state.exploded || !this.elementGeometry(source)) return false;
+    this.set({smartMate:true,mate:{editing:null,a:source,b:null,type:null},selected:null,picks:[]});
+    return true;
+  }
+  hoverSmartMate(target:MateRef|null):void {
+    const d=this.state.mate;
+    if(!this.state.smartMate || !d?.a) return;
+    const b=target?.component!==d.a.component?target:null;
+    if(b&&sameRef(d.b,b) || !d.b&&!b) return;
+    const next=this.suggested({...d,b,type:null});
+    this.setDraft({...next,type:next.type && ['coincident','concentric','tangent'].includes(next.type)?next.type:null});
+  }
+  flipMateAlignment():void {
+    const d=this.state.mate;
+    if(!d?.type) return;
+    if(d.align) this.setMateOptions({align:d.align==='aligned'?'antiAligned':'aligned'});
+    else if(d.type==='tangent') this.setMateOptions({flip:!d.flip});
+  }
+  private smartSeatingFace(ref:MateRef):MateRef|null {
+    if(ref.ref.kind!=='edge') return null;
+    const b=this.elementPart(ref)?.build;
+    const index=b?.edgeNames.indexOf(ref.ref.name)??-1;
+    const circle=b?.edgeGeometry[index];
+    if(!b || circle?.kind!=='circle')return null;
+    const faces=(b.edgeFaces?.[index]??[]).filter(i=>{
+      const g=b.faceGeometry[i];
+      return g?.kind==='plane' && Math.abs(g.normal.reduce((s,v,k)=>s+v*circle.normal[k]!,0))>1-1e-6;
+    });
+    if(faces.length!==1)return null;
+    const face=faces[0]!;
+    return {...ref,ref:{kind:'face',name:b.faceNames[face]!,fingerprint:b.faceFingerprints[face]}};
+  }
+  async finishSmartMate(cancelled:boolean):Promise<void> {
+    const d=this.state.mate;
+    if(!this.state.smartMate) return;
+    if(cancelled || !d?.a || !d.b || !d.type) return this.cancelMate();
+    const before=this.history.doc;
+    const first=this.draftMate(d,true);
+    if(!first) return this.cancelMate();
+    const mates=[first];
+    const ga=this.elementGeometry(d.a),gb=this.elementGeometry(d.b);
+    if(d.type==='concentric' && ga?.kind==='circle' && gb?.kind==='circle') {
+      const a=this.smartSeatingFace(d.a),b=this.smartSeatingFace(d.b);
+      const pa=a&&this.elementGeometry(a),pb=b&&this.elementGeometry(b);
+      if(a&&b&&pa&&pb) {
+        const ids=new IdAllocator(before.idCounters,[...assemblyIdsInUse(before),first.id]);
+        const seating=this.draftMate(this.withOptions({editing:null,a,b,type:'coincident'},pa,pb,false),true);
+        if(seating)mates.push({...seating,id:ids.take('mate')});
+      }
+    }
+    try {
+      const solved=await this.host.api.solveAssembly({...before,mates:[...before.mates,...mates]},this.trees());
+      if(this.history.doc!==before || this.state.mate!==d || !this.state.smartMate) return;
+      if(mates.some(m=>solved.mates.get(m.id)?.status!=='ok') || [...solved.mates.values()].some(m=>m.status!=='ok'&&m.status!=='suppressed')) {
+        this.host.notify(t('smartMate.conflict'),'error');
+        return this.cancelMate();
+      }
+      this.set({smartMate:false,mate:null});
+      this.execute({type:'insertMates',mates});
+    } catch(e) {
+      this.host.notify(t('smartMate.failed',{why:e instanceof Error?e.message:String(e)}),'error');
+      this.cancelMate();
+    }
+  }
+
   /** 「編輯結合」: the PropertyManager with the mate's definition; ✓ replaces it. */
   editMate(id: Id): void {
     const m = this.history.doc.mates.find((x) => x.id === id);
@@ -1137,7 +1212,7 @@ export class AssemblyStore {
   }
 
   cancelMate(): void {
-    this.set({ mate: null });
+    this.set({ mate: null, smartMate:false });
     this.requestSolve();
   }
 
@@ -1156,8 +1231,16 @@ export class AssemblyStore {
    * what brings the PropertyManager forward (plan §2.2). Right-clicking a component for its menu goes through `select` instead: the menu is
    * already the answer to that click.
    */
-  selectComponentFromView(id: Id | null): void {
-    this.set({ selected: id, picks: [], viewPick: id });
+  selectComponentFromView(id: Id | null, additive = false): void {
+    const ids = id ? additive ? this.state.selectedComponents.includes(id) ? this.state.selectedComponents.filter(x=>x!==id) : [...this.state.selectedComponents,id] : [id] : [];
+    this.selectComponents(ids);
+  }
+
+  selectComponents(ids: readonly Id[], additive = false): void {
+    const valid=new Set(this.leaves().map(leaf=>leaf.top));
+    const next=[...new Set([...(additive?this.state.selectedComponents:[]),...ids])].filter(id=>valid.has(id));
+    const selected=next.at(-1)??null;
+    this.set({selected,selectedComponents:next,picks:[],viewPick:selected});
   }
 
   /**

@@ -1,0 +1,36 @@
+// await __e6.run();
+// E6: native double click/Enter, actual model rebuild and degree-of-freedom selection, independent options.
+const root=new URL(import.meta.url).pathname.replace(/tests\/e2e\/[^/]*$/,'');
+await import(`${root}tests/e2e/phase2-assembly.js?`+Date.now());
+const H=window.__ui2,{store}=H;
+window.__e6={run:async()=>{
+ H.ready();await H.project({'plate.3dbx':`${H.GOLDEN}locating-plate.3dbx`});await H.open('plate.3dbx');
+ await H.waitFor(()=>store.getState().result?.mesh,20000,'mesh');
+ const v=store.viewer;v.setView('iso');v.fitAll();await H.wait(100);
+ const f=store.getState().doc.features.find(f=>f.type==='extrude'&&f.dir1.type==='blind'),r=store.getState().result;
+ const face=r.faceNames.indexOf(`${f.id}:cap:end`),center=r.faceFingerprints[face].center;
+ const box=H.rect();let p=null;for(let y=box.top+30;y<box.bottom-20&&!p;y+=8)for(let x=box.left+20;x<box.right-20;x+=8){const hit=v.pickOrder(x,y).face;if(hit>=0&&r.faceNames[hit].startsWith(f.id+':')){p=[x,y];break;}}H.check(!!p,'visible real feature face');
+ H.canvas().dispatchEvent(new MouseEvent('dblclick',{bubbles:true,clientX:p[0],clientY:p[1]}));
+ const panel=await H.waitFor(()=>document.querySelector('[data-model-dimensions]'),5000,'in-place dimensions');
+ const field=panel.querySelector('[data-model-dimension="dir1"]');H.check(!!field,'actual extrusion depth field');
+ const set=(input,value)=>{Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(input,value);input.dispatchEvent(new Event('input',{bubbles:true}));};
+ const key=(target,key)=>target.dispatchEvent(new KeyboardEvent('keydown',{key,bubbles:true,cancelable:true}));
+ const before=Number(f.dir1.depth);set(field,String(before+3));await H.wait(50);key(field,'Enter');
+ await H.waitFor(()=>store.getState().doc.features.find(x=>x.id===f.id).dir1.depth===String(before+3),5000,'model command committed');
+ await H.waitFor(()=>!store.getState().rebuilding,20000,'actual changed cap');
+ const after=store.getState().result,cap=after.faceFingerprints[after.faceNames.indexOf(`${f.id}:cap:end`)].center,normal=r.frames.get(f.sketch).normal;
+ H.check(Math.abs(cap.reduce((sum,value,i)=>sum+(value-center[i])*normal[i],0)-3)<1e-6,'real cap advanced 3 mm along its actual sketch normal');
+ store.undo();await H.waitFor(()=>store.getState().doc.features.find(x=>x.id===f.id).dir1.depth===f.dir1.depth,5000,'one undo');
+ document.querySelector('[data-model-dimensions] button').click();
+ store.select(f.sketch);await H.action('特徵','伸長填料/基材');
+ H.check(!!store.getState().editing,'feature starts from menu');store.cancelEdit();key(window,'Enter');
+ H.check(store.getState().editing?.kind==='feature','Enter repeats menu command');store.cancelEdit();
+ store.beginEdit(f.sketch);store.execute({type:'addSketchItems',featureId:f.sketch,entities:[{id:'underdefinedProbe',type:'point',x:100,y:100}],constraints:[]});
+ await H.waitFor(()=>store.getState().sketchSolve?.entityStatus?.get('underdefinedProbe')==='under',10000,'entity analysis');
+ const count=store.getState().sketchSolve.entityStatus;store.sketcher.selectUnderdefined();
+ H.check(store.sketcher.getView().selection.includes('underdefinedProbe'),'free point is selected');
+ H.check(store.sketcher.getView().selection.every(id=>count.get(id)==='under'),'selection uses actual entity DOF');
+ store.setOptions({automaticRelations:false});H.check(store.getState().options.snap.enabled,'snapping remains enabled');
+ store.setOptions({automaticRelations:true});store.commitEdit();
+ return {pass:true,feature:f.id};
+}};

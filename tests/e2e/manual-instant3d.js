@@ -1,0 +1,33 @@
+// Instant3D: actual extrusion cap and ruler; cancel, one commit, rebuilt geometry and one undo.
+//   await import('/@fs/<checkout>/tests/e2e/manual-instant3d.js?' + Date.now());
+//   await __instant3d.run();
+const root=new URL(import.meta.url).pathname.replace(/tests\/e2e\/[^/]*$/,'');
+await import(`${root}tests/e2e/phase2-assembly.js?`+Date.now());
+const H=window.__ui2,{store}=H;
+window.__instant3d={run:async()=>{
+ H.ready();await H.project({'plate.3dbx':`${H.GOLDEN}locating-plate.3dbx`});await H.open('plate.3dbx');
+ await H.waitFor(()=>store.getState().result?.mesh,20000,'real extrusion');
+ const f=store.getState().doc.features.find(f=>f.type==='extrude'&&f.dir1.type==='blind'&&!f.dir2);
+ H.check(!!f,'blind extrusion exists');store.select(f.id);store.viewer.setView('iso');await H.wait(100);
+ document.querySelector('[data-action="instant3D"]').click();
+ const button=await H.waitFor(()=>document.querySelector('[data-action="instantDepthDrag"]'),5000,'cap depth handle');
+ const r=store.getState().result,center=r.faceFingerprints[r.faceNames.indexOf(`${f.id}:cap:end`)].center;
+ const frame=r.frames.get(f.sketch),p=store.viewer.screenPoint(center),q=store.viewer.screenPoint(center.map((v,i)=>v+frame.normal[i]));
+ const axis=q.map((v,i)=>v-p[i]);H.check(Math.hypot(...axis)>1,'visible depth direction');
+ const initial=Number(f.dir1.depth),initialText=JSON.stringify(store.getState().doc);
+ const start=()=>{const b=button.getBoundingClientRect();return [b.left+b.width/2,b.top+b.height/2];};
+ const send=(target,type,at,buttons)=>target.dispatchEvent(new PointerEvent(type,{bubbles:true,clientX:at[0],clientY:at[1],pointerId:1,button:0,buttons}));
+ let from=start(),to=from.map((v,i)=>v+axis[i]*5);
+ send(button,'pointerdown',from,1);send(window,'pointermove',to,1);await H.wait(100);
+ H.check(JSON.stringify(store.getState().doc)===initialText,'ruler preview does not create intermediate history');
+ window.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}));
+ H.check(JSON.stringify(store.getState().doc)===initialText,'Esc preserves model');
+ from=start();to=from.map((v,i)=>v+axis[i]*5);send(button,'pointerdown',from,1);send(window,'pointermove',to,1);send(window,'pointerup',to,0);
+ await H.waitFor(()=>Math.abs(Number(store.getState().doc.features.find(x=>x.id===f.id).dir1.depth)-initial-5)<1e-6&&!store.getState().rebuilding,20000,'depth rebuild');
+ const after=store.getState().result,cap=after.faceFingerprints[after.faceNames.indexOf(`${f.id}:cap:end`)].center;
+ H.check(Math.abs(cap.reduce((s,v,i)=>s+(v-center[i])*frame.normal[i],0)-5)<1e-6,'real cap moved exactly 5 mm');
+ store.undo();await H.wait(150);H.check(Number(store.getState().doc.features.find(x=>x.id===f.id).dir1.depth)===initial,'one undo restores depth');
+ store.execute({type:'setEndCondition',featureId:f.id,dir:'dir1',value:{type:'blind',depth:'5+5'}});await H.wait(100);
+ H.check(document.querySelector('[data-action="instantDepthDrag"]').disabled,'expression-controlled depths are preserved');
+ return {pass:true,initial,dragged:initial+5};
+}};

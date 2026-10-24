@@ -158,7 +158,7 @@ export function DrawingMenu({ at, onClose }: { at: DrawingMenuAt; onClose: () =>
     const dims = curPage.dimensions.filter((x) => ids.includes(x.id));
     const allReference = dims.length > 0 && dims.every((x) => !!x.reference);
     const slid = dims.some((x) => 'slide' in x && !!x.slide);
-    const allCircular = dims.length > 0 && dims.every((x) => x.kind === 'diameter' || x.kind === 'radius');
+    const allCircular = dims.length > 0 && dims.every((x) => (x.kind === 'diameter' && !x.threadLeader) || x.kind === 'radius');
     const allDiameter = allCircular && dims.every((x) => x.kind === 'diameter');
     const allRadius = allCircular && dims.every((x) => x.kind === 'radius');
     // the tolerance of the chosen dimensions (B2.4): what the menu puts on all of them at once, as the panel does

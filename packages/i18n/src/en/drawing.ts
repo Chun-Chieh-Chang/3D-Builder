@@ -2,6 +2,10 @@ import type { Translation } from '../index';
 
 /** drawing: the drawing document (Phase 5). */
 export const drawing: Translation = {
+  'drawing.badThreadLeader': 'A thread leader requires a diameter callout linked to the model.',
+  'drawing.threadLeaderNeedsThread': 'Select a threaded cylindrical face seen from the side.',
+  'drawingUi.threadLeader': 'Thread leader',
+  'drawingUi.calloutInherit': 'Use sheet default',
   'format.notDrawing': 'This is not a drawing file',
   'format.noViews': 'The drawing file has no sheet or views',
   'picker.drawing': 'Drawing (.3dbd)',

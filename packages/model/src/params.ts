@@ -16,12 +16,13 @@ import { isDimension } from './schema';
 export type ExprKind = 'length' | 'angle' | 'count';
 
 /** What a value must be for the feature to make sense: a size above zero, or an angle in the range its feature allows. */
-export type ExprRole = 'positive' | 'unitInterval' | 'nonNegative' | 'nonZero' | 'revolveAngle' | 'chamferAngle' | 'draftAngle' | 'includedAngle' | 'planeAngle' | 'count' | 'knurlCount' | 'any';
+export type ExprRole = 'positive' | 'unitInterval' | 'nonNegative' | 'nonZero' | 'revolveAngle' | 'chamferAngle' | 'draftAngle' | 'includedAngle' | 'planeAngle' | 'count' | 'knurlCount' | 'surfaceDistance' | 'any';
 
 /** Why a value is not acceptable for its role (in words), or null. `expr` is what the user wrote. */
 export function roleProblem(v: number, role: ExprRole, expr: Expr): string | null {
   const angle = (min: number, max: number, label: string) => (v > min && v <= max + 1e-12 ? null : t('cmd.angleOutOfRange', { label, value: expr }));
   switch (role) {
+    case 'surfaceDistance': return v>0 && v<=1e6 ? null : t('surfaceTools.range');
     case 'positive':
       return v > 0 ? null : t('cmd.mustBePositive', { value: expr });
     case 'unitInterval':
@@ -85,6 +86,11 @@ export function mapExprs(feature: Feature, fn: (expr: Expr, kind: ExprKind, role
     case 'sketch': {
       let changed = false;
       const constraints = feature.constraints.map((c) => {
+        if(c.type==='patternPoint') {
+          const dx=fn(c.dx,'length','any'),dy=fn(c.dy,'length','any'),angle=fn(c.angle,'angle','any');
+          if(dx===c.dx&&dy===c.dy&&angle===c.angle)return c;
+          changed=true;return {...c,dx,dy,angle};
+        }
         if (!isDimension(c)) return c;
         const value = fn(c.value, dimensionKind(c), c.type === 'angle' ? 'any' : 'positive');
         if (value === c.value) return c;
@@ -361,6 +367,10 @@ export function mapExprs(feature: Feature, fn: (expr: Expr, kind: ExprKind, role
       };
     }
 
+    case 'ruledSurface':
+    case 'replaceFace':
+    case 'projectedCurve': return feature;
+    case 'radiatedSurface': {const distance=fn(feature.distance,'length','surfaceDistance');return distance===feature.distance?feature:{...feature,distance};}
     case 'helix': {
       const pitch = feature.pitch !== undefined && feature.pitch.trim() !== '' ? fn(feature.pitch, 'length', 'positive') : feature.pitch;
       const revolutions = feature.revolutions !== undefined && feature.revolutions.trim() !== '' ? fn(feature.revolutions, 'count', 'positive') : feature.revolutions;
