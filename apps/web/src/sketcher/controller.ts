@@ -20,6 +20,8 @@ import {
   add,
   alignments,
   circleThrough,
+  closestOnSegment,
+  layoutDimension,
   dist,
   geometryOf,
   blockTargets,
@@ -228,6 +230,7 @@ export type PreviewShape =
   | { kind: 'box'; a: P2; b: P2 };
 
 export interface ControllerView {
+  dimensionDrag?: { id: Id; position: P2 };
   tool: ToolId;
   selection: Id[];
   /** Element under the cursor (highlight). */
@@ -314,6 +317,7 @@ export class SketchController {
   private picks: Id[] = [];
   private press: { p: P2; hit: Hit | null; modelSnap?: Extract<Snap, { kind: 'model' }> | null; moved: boolean } | null = null;
   private drag: { kind: 'points'; ids: Id[]; origin: P2; from: P2[] } | { kind: 'radius'; id: Id } | null = null;
+  private dimensionDrag: { id: Id; from: P2; text: P2; position: P2; moved: boolean } | null = null;
   private box: { a: P2; b: P2 } | null = null;
   private options: ToolOptions = { ...DEFAULT_OPTIONS };
   /** An operation (trim, round, mirror …) being checked by the solver: clicks wait until it is done. */
@@ -353,6 +357,7 @@ export class SketchController {
     const drawingLine = this.tool === 'line' || this.tool === 'centerline';
     const step = this.tool === 'dimension' ? Math.min(this.picks.length, 2) : drawingLine && this.chain ? 1 : this.clicks.length;
     return {
+      dimensionDrag: this.dimensionDrag?.moved ? { id: this.dimensionDrag.id, position: this.dimensionDrag.position } : undefined,
       tool: this.tool,
       selection: [...this.selection],
       hover: this.hover?.id ?? null,
@@ -499,7 +504,8 @@ export class SketchController {
 
   /** Esc: ends the current chain or pick, then returns to selection (SolidWorks behaviour). */
   escape(): void {
-    if (this.tool === 'mirror' || this.tool === 'offset' || isTransformTool(this.tool)) this.setTool('select');
+    if (this.dimensionDrag) { this.dimensionDrag = null; this.press = null; }
+    else if (this.tool === 'mirror' || this.tool === 'offset' || isTransformTool(this.tool)) this.setTool('select');
     else if (this.clicks.length > 0 || this.chain || this.picks.length > 0) this.resetTool();
     else if (this.tool !== 'select') this.tool = 'select';
     else this.selection.clear();
@@ -618,7 +624,11 @@ export class SketchController {
 
   pointerMove(e: PointerInput, pressed: boolean): void {
     this.cursor = e.p;
-    if (this.tool === 'select') {
+    if (this.dimensionDrag && pressed) {
+      const drag = this.dimensionDrag;
+      drag.moved ||= dist(drag.from, e.p) > DRAG_PX * e.px;
+      drag.position = add(drag.text, sub(e.p, drag.from));
+    } else if (this.tool === 'select') {
       this.selectMove(e, pressed);
     } else {
       this.updateSnap(e);
@@ -630,6 +640,15 @@ export class SketchController {
 
   pointerDown(e: PointerInput): void {
     this.cursor = e.p;
+    if (this.tool === 'select') {
+      const hit = this.dimensionAt(e);
+      if (hit) {
+        this.dimensionDrag = { id: hit.id, from: e.p, text: hit.text, position: hit.text, moved: false };
+        this.press = null;
+        this.changed();
+        return;
+      }
+    }
     let hit = hitTest(this.geometry(), e.p, PICK_PX * e.px);
     const modelSnap = !hit && this.tool === 'select' && this.host.modelItems ? snapModel(this.host.modelItems(), e.p, PICK_PX * e.px) : null;
     // the sketch's axes last of all (ADR 0170): what was drawn and the model's edges come first
@@ -640,6 +659,14 @@ export class SketchController {
   }
 
   pointerUp(e: PointerInput): void {
+    if (this.dimensionDrag) {
+      const drag = this.dimensionDrag;
+      this.dimensionDrag = null;
+      if (drag.moved) this.moveDimensionLabel(drag.id, add(drag.text, sub(e.p, drag.from)));
+      else this.select([drag.id], e.ctrl || e.shift);
+      this.changed();
+      return;
+    }
     const press = this.press;
     this.press = null;
     if (this.tool === 'select') {
@@ -662,12 +689,15 @@ export class SketchController {
       return;
     }
     if (this.tool === 'select') {
+      const dim = this.dimensionAt(e);
+      if (dim) { this.host.editDimension(dim.id); return; }
       const hit = hitTest(this.geometry(), e.p, PICK_PX * e.px);
       if (hit && this.sketch().constraints.some((c) => c.id === hit.id)) this.host.editDimension(hit.id);
     }
   }
 
   leave(): void {
+    if (this.dimensionDrag) { this.dimensionDrag = null; this.press = null; }
     this.cursor = null;
     this.hover = null;
     this.snapTarget = null;
@@ -675,6 +705,23 @@ export class SketchController {
   }
 
   // ------------------------------------------------------------------ selecting and dragging
+
+  /** Uses the same derived segments as the overlay, in sketch units at the current zoom. */
+  private dimensionAt(e: PointerInput): { id: Id; text: P2 } | null {
+    const geometry = this.geometry();
+    const points = [...geometry.values()].flatMap(g => g.type === 'point' ? [g.p] : []);
+    const center: P2 = points.length ? [points.reduce((sum, p) => sum + p[0], 0) / points.length, points.reduce((sum, p) => sum + p[1], 0) / points.length] : [0, 0];
+    let best: { id: Id; text: P2; distance: number } | null = null;
+    for (const constraint of this.sketch().constraints) {
+      if (!isDimension(constraint)) continue;
+      const layout = layoutDimension(constraint, geometry, e.px, center);
+      if (!layout) continue;
+      const distance = Math.min(...layout.segments.map(([a, b]) => dist(e.p, closestOnSegment(e.p, a, b))));
+      if (distance <= PICK_PX * e.px && (!best || distance < best.distance)) best = { id: constraint.id, text: layout.text, distance };
+    }
+    // A real sketch point/curve under the pointer takes priority over an overlapping extension line.
+    return hitTest(geometry, e.p, PICK_PX * e.px) ? null : best;
+  }
 
   private selectMove(e: PointerInput, pressed: boolean): void {
     const press = this.press;

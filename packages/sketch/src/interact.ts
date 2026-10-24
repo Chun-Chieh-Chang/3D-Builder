@@ -757,6 +757,7 @@ export interface DimensionLayout {
  * outside the geometry like a SolidWorks dimension. `px` = one screen pixel in sketch units.
  */
 export function layoutDimension(c: SketchConstraint, geometry: Geometry, px: number, center: P2): DimensionLayout | null {
+  const position = 'labelPosition' in c ? c.labelPosition : undefined;
   const off = 28 * px;
   const arrow = 7 * px;
   const arrowhead = (tip: P2, toward: P2): [P2, P2][] => {
@@ -770,11 +771,12 @@ export function layoutDimension(c: SketchConstraint, geometry: Geometry, px: num
   };
   /** Dimension line parallel to a→b, pushed out along `n`, with extension lines and arrows. */
   const linear = (a: P2, b: P2, n: P2): DimensionLayout => {
-    const s = add(a, scale(n, off));
-    const e = add(b, scale(n, off));
+    const offset = position ? dot(sub(position, a), n) - 10 * px : off;
+    const s = add(a, scale(n, offset));
+    const e = add(b, scale(n, offset));
     return {
       segments: [[a, add(s, scale(n, arrow * 0.6))], [b, add(e, scale(n, arrow * 0.6))], [s, e], ...arrowhead(s, e), ...arrowhead(e, s)],
-      text: add(mid(s, e), scale(n, 10 * px)),
+      text: position ?? add(mid(s, e), scale(n, 10 * px)),
     };
   };
   const outward = (a: P2, b: P2): P2 => {
@@ -805,7 +807,7 @@ export function layoutDimension(c: SketchConstraint, geometry: Geometry, px: num
         const p = other?.type === 'line' ? other.a : anchorOf(geometry, otherId);
         if (!p) return null;
         const foot = add(l.a, scale(unit(sub(l.b, l.a)), dot(sub(p, l.a), unit(sub(l.b, l.a)))));
-        return { segments: [[p, foot], ...arrowhead(p, foot), ...arrowhead(foot, p)], text: add(mid(p, foot), scale(perp(unit(sub(foot, p))), 10 * px)) };
+        return linear(p, foot, perp(unit(sub(foot, p))));
       }
       const pa = anchorOf(geometry, c.a);
       const pb = anchorOf(geometry, c.b);
@@ -817,47 +819,49 @@ export function layoutDimension(c: SketchConstraint, geometry: Geometry, px: num
       const pb = anchorOf(geometry, c.b);
       if (!pa || !pb) return null;
       const ax = c.type === 'distanceX' ? 1 : 0; // coordinate that is shared by the dimension line
-      const level = ax === 1 ? (center[1] > Math.min(pa[1], pb[1]) ? Math.min(pa[1], pb[1]) - off : Math.max(pa[1], pb[1]) + off) : center[0] > Math.min(pa[0], pb[0]) ? Math.min(pa[0], pb[0]) - off : Math.max(pa[0], pb[0]) + off;
+      const autoLevel = ax === 1 ? (center[1] > Math.min(pa[1], pb[1]) ? Math.min(pa[1], pb[1]) - off : Math.max(pa[1], pb[1]) + off) : center[0] > Math.min(pa[0], pb[0]) ? Math.min(pa[0], pb[0]) - off : Math.max(pa[0], pb[0]) + off;
+      const sign = Math.sign(autoLevel - (ax === 1 ? pa[1] : pa[0])) || 1;
+      const level = position ? position[ax]! - sign * 10 * px : autoLevel;
       const onLevel = (p: P2): P2 => (ax === 1 ? [p[0], level] : [level, p[1]]);
       const s = onLevel(pa);
       const e = onLevel(pb);
       const n: P2 = ax === 1 ? [0, Math.sign(level - pa[1]) || 1] : [Math.sign(level - pa[0]) || 1, 0];
       return {
         segments: [[pa, add(s, scale(n, arrow * 0.6))], [pb, add(e, scale(n, arrow * 0.6))], [s, e], ...arrowhead(s, e), ...arrowhead(e, s)],
-        text: add(mid(s, e), scale(n, 10 * px)),
+        text: position ?? add(mid(s, e), scale(n, 10 * px)),
       };
     }
     case 'radius':
     case 'diameter': {
       const g = geometryOf(geometry, c.circle);
       if (g?.type !== 'circle' && g?.type !== 'arc') return null;
-      const angle = g.type === 'arc' ? g.a0 + norm(g.a1 - g.a0) / 2 : Math.PI / 4;
+      const angle = position ? Math.atan2(position[1] - g.c[1], position[0] - g.c[0]) : g.type === 'arc' ? g.a0 + norm(g.a1 - g.a0) / 2 : Math.PI / 4;
       const rim = polar(g.c, g.r, angle);
-      const tail = polar(g.c, g.r + off, angle);
+      const tail = position ? add(position, scale(unit(sub(g.c, position)), 10 * px)) : polar(g.c, g.r + off, angle);
       const from = c.type === 'diameter' ? polar(g.c, g.r, angle + Math.PI) : g.c;
-      return { segments: [[from, tail], ...arrowhead(rim, from)], text: polar(g.c, g.r + off + 10 * px, angle) };
+      return { segments: [[from, tail], ...arrowhead(rim, from)], text: position ?? polar(g.c, g.r + off + 10 * px, angle) };
     }
     case 'arcLength': {
       const g = geometryOf(geometry, c.circle);
       if (g?.type !== 'arc') return null;
       const sweep = norm(g.a1 - g.a0) || 2 * Math.PI;
-      const r = g.r + off;
+      const r = position ? dist(g.c, position) : g.r + off;
       const pts = Array.from({ length: 17 }, (_, i) => polar(g.c, r, g.a0 + (sweep * i) / 16));
       const segments: [P2, P2][] = pts.slice(1).map((p, i) => [pts[i]!, p]);
       segments.push([polar(g.c, g.r, g.a0), pts[0]!], [polar(g.c, g.r, g.a1), pts[16]!]);
-      return { segments, text: polar(g.c, r + 12 * px, g.a0 + sweep / 2) };
+      return { segments, text: position ?? polar(g.c, r + 12 * px, g.a0 + sweep / 2) };
     }
     case 'angle': {
       const ga = geometryOf(geometry, c.a);
       const gb = geometryOf(geometry, c.b);
       if (ga?.type !== 'line' || gb?.type !== 'line') return null;
       const { vertex, ra, rb } = angleRays(ga, gb, c.flip);
-      const r = off * 1.6;
+      const r = position ? dist(vertex, position) : off * 1.6;
       const a0 = Math.atan2(ra[1], ra[0]);
       const sweep = rayAngle(ra, rb);
       const pts = Array.from({ length: 17 }, (_, i) => polar(vertex, r, a0 + (sweep * i) / 16));
       const segments: [P2, P2][] = pts.slice(1).map((p, i) => [pts[i]!, p]);
-      return { segments, text: polar(vertex, r + 12 * px, a0 + sweep / 2) };
+      return { segments, text: position ?? polar(vertex, r + 12 * px, a0 + sweep / 2) };
     }
     default:
       return null;

@@ -77,7 +77,7 @@ function dimensionHint(mode: Exclude<DimensionMode, 'smart'> | undefined, picked
 type Drag =
   | { kind: 'move'; id: string; mode: 'shift' | 'slide' | 'free'; axis: 0 | 1 | null; from: P; origin: P; delta: P }
   | { kind: 'scale'; id: string; target: ReturnType<typeof scaleTarget>; centre: P; r0: number; ratio0: number; scale: Scale }
-  | { kind: 'dimension'; id: string; onText: boolean; handle: DimensionHandle; patch: ReturnType<typeof dragDimension> }
+  | { kind: 'dimension'; id: string; from: P; onText: boolean; handle: DimensionHandle; patch: ReturnType<typeof dragDimension> }
   | { kind: 'sectionLine'; id: string; line: SectionDrawingView['line']; vertical: boolean; scale: number; from: P; delta: number }
   | { kind: 'table'; id: string; from: P; origin: P; delta: P }
   | { kind: 'balloon'; id: string; item: string; from: P; origin: P; delta: P }
@@ -635,7 +635,7 @@ export function DrawingViewport() {
       d.selectDimension(dim.id);
       if (outcome.handle) {
         capture(e);
-        setDrag({ kind: 'dimension', id: dim.id, onText: dim.text && curPage.dimensions.find((x) => x.id === dim.id)?.kind !== 'ordinate', handle: outcome.handle, patch: {} });
+        setDrag({ kind: 'dimension', id: dim.id, from: p, onText: dim.text && curPage.dimensions.find((x) => x.id === dim.id)?.kind !== 'ordinate', handle: outcome.handle, patch: {} });
       }
       return;
     }
@@ -740,7 +740,16 @@ export function DrawingViewport() {
       setDrag({ ...drag, scale: scaleFromRatio((drag.ratio0 * Math.hypot(p[0] - drag.centre[0], p[1] - drag.centre[1])) / drag.r0) });
     } else if (drag?.kind === 'dimension') {
       // measured against the dimension as it was when it was taken hold of, not as the drag has moved it since
-      setDrag({ ...drag, patch: dragDimension(drag.handle, drag.onText, p) });
+      const patch = dragDimension(drag.handle, drag.onText, p);
+      const start = dragDimension(drag.handle, drag.onText, drag.from);
+      const original = curPage.dimensions.find(dimension => dimension.id === drag.id);
+      // Preserve the grab point: extension lines and text need not start on the dimension line itself.
+      if (original) {
+        if (patch.offset !== undefined && start.offset !== undefined && 'offset' in original) patch.offset = round2(original.offset + patch.offset - start.offset);
+        if (patch.slide !== undefined && start.slide !== undefined && (original.kind === 'linear' || original.kind === 'angle')) patch.slide = round2((original.slide ?? 0) + patch.slide - start.slide);
+        if (patch.arc !== undefined && start.arc !== undefined && 'arc' in original) patch.arc = round2(original.arc + patch.arc - start.arc);
+      }
+      setDrag({ ...drag, patch });
     } else if (drag?.kind === 'sectionLine') {
       const by = drag.vertical ? p[0] - drag.from[0] : p[1] - drag.from[1];
       setDrag({ ...drag, delta: by / drag.scale });

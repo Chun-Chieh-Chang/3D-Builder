@@ -12,6 +12,10 @@
 
 ---
 
+## 2026-10-24：尺寸標註線拖曳（ADR 0192）
+
+草圖可直接抓尺寸線拖曳，數字移位時標註線亦跟隨；工程圖數字同時帶動尺寸線，抓延伸線不跳位。保留數值與模型幾何，一次復原。新增核心 4 項、相關 1 項及 UI 2 項各有通過紀錄，未跑全套。使用者本機需拉取此次修正並重啟。普通面導角更新後已確認正常，螺紋邊問題尚待原始模型重現。
+
 ## 2026-10-24：圓角／導角預選面已修正
 
 先選單面或 Ctrl／Shift 多選面，再啟動圓角／導角，會帶入面清單；可混合選邊，工具啟動後仍可點面加入或移除。沿用既有每次重建展開面邊界、排除接縫／相切邊及去重的運算，Schema 不變。新 UI 2/2 真實體積及復原通過，詳 DEV_LOG 與 ADR 0098 補充；本次修正一併提交至 main（提交與同步狀態以 Git 為準）。後續使用者截圖顯示空參照錯誤，另補上空選取確認攔截及雙語提示，受影響 UI 2/2 再驗通過（out/face-preselection-empty-guard-ui.json）。雲端 5391 已重啟載入修正；使用者確認是在本機執行，本機需先儲存文件，再拉取 main、重啟開發服務並重新整理頁面。
@@ -51,9 +55,9 @@
 | 項目 | 現值 |
 |---|---|
 | 零件／組合件／工程圖 Schema | 80／7／28（另含投影曲線、草圖關係／側影、曲面工具及連動陣列） |
-| ADR | 0001–0191，共 191 份，在 `docs/adr/`，全部列在 §2 |
+| ADR | 0001–0192，共 192 份，在 `docs/adr/`，全部列在 §2 |
 | 全閘門 | 2026-10-22，G8b 之後：`npm run check` 275 檔、3453 通過、0 失敗、25 略過；完整 `verify:ui` 164/164（含 `manual-sketch-block.js`、`manual-sketch-condition.js`）。2026-10-23 新增驗收探針後：`verify:external-samples` 3/3、`verify:freecad-sheet-metal`、`verify:drawing-export`、`typecheck`、`lint:rules`、`lint:deps`、`git diff --check` 均通過；2026-10-23 提交前完整 `npm run check` 276 檔、3456 通過、0 失敗、25 略過。 |
-| 瀏覽器腳本 | `tests/e2e/` 共 165 個檔案（含輔助檔）；依 `verify-ui.mjs` 的檔頭解析規則，目前有 161 個可執行腳本、180 項呼叫。最新六項功能的 13 項新案例各有通過紀錄，另有預選面修正的 2 項通過，非本版完整 180 項皆已通過。 |
+| 瀏覽器腳本 | `tests/e2e/` 共 166 個檔案（含輔助檔）；依 `verify-ui.mjs` 的檔頭解析規則，目前有 162 個可執行腳本、182 項呼叫。最新六項功能的 13 項新案例各有通過紀錄，另有預選面修正的 2 項通過，另有尺寸線拖曳 2 項通過，非本版完整 182 項皆已通過。 |
 | 實機驗證清單 | [docs/manual-verification.html](docs/manual-verification.html) 91 項（新增 C27） |
 | 階段 | Phase 0–7 開發完成。Phase 0–2 閘門通過；3a–7 有條件通過。2026-10-23 已用公開外部 STEP 樣本完成可重跑的匯入／平板材料體積／FreeCAD 開檔探針，並新增工程圖 DXF (FreeCAD) 與 PDF (Chromium) 外部應用程式相容性探針；使用者私有零件、SolidWorks 特徵樹與製造基準仍未對照（§3、§8）。 |
 | 最近完成 | **E5 工程圖補完 Phase 2（2026-10-23）**：基線尺寸（連續平行間距階梯累積）與倒角尺寸（`C{c}` 與 `{c} × 45°` 格式切換、折線引線拖曳與屬性面板整合，Schema 26）；**E5 工程圖補完 Phase 1（2026-10-23）**：無工具預選高亮（懸停即顯 `var(--warn)`，移開清除）、圓形／圓弧既有尺寸直徑 ↔ 半徑切換顯示（左側面板與右鍵選單雙入口，0 Schema 變更）；**工程圖外部自動化確效探針（`npm run verify:drawing-export`，2026-10-23）**：FreeCAD 26 命令列 DXF 匯入確效（130+ 幾何實體、ISO A3 圖框邊界、全圖層檢驗）與 Chromium CDP PDF 渲染確效；**藍圖附錄 C 與草圖吸附計畫文件校正（B3，2026-10-23）**；**工程圖相切邊隱藏（B2，ADR 0146 補充，2026-10-23）**；**曲線本體標記與曲面池分流（B1，ADR 0168 補充，2026-10-23）**；**G8b 圓弧條件，最近與最遠距離（ADR 0183，Schema 75，2026-10-22）**；**G8a 固定整個圖元（ADR 0182，Schema 74）**；**G7 草圖附著（ADR 0181，Schema 73，2026-10-21）**；**組合件干涉檢查看得見（ADR 0180，2026-10-21）** |
@@ -435,6 +439,7 @@
 | [ADR 0189](docs/adr/0189-sketch-curvature-point-symmetry-silhouette.md) | 圓弧曲率、點對稱、關聯側影，Schema 78 |
 | [ADR 0190](docs/adr/0190-ruled-radiated-replace-face.md) | 直紋、放射、平行平面取代，Schema 79 |
 | [ADR 0191](docs/adr/0191-stretch-linked-sketch-patterns.md) | 端點延展、連動副本與第二方向，Schema 80 |
+| [ADR 0192](docs/adr/0192-dimension-line-drag.md) | 草圖／工程圖尺寸文字與標註線連動拖曳，Schema 不變 |
 | [docs/assembly-explode-plan.md](docs/assembly-explode-plan.md) | 組合件：爆炸線與動畫、多組爆炸、形成新次組合件（計畫） |
 | [docs/cleanup-candidates.md](docs/cleanup-candidates.md) | 清理候選清單（2026-10-07） |
 | [docs/drawing-callouts-plan.md](docs/drawing-callouts-plan.md) | 工程圖：螺紋孔與錐形沉孔的標註、DXF 的 DIMENSION 圖元（計畫） |

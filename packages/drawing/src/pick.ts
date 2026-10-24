@@ -233,7 +233,7 @@ export function dimensionAt(items: readonly SceneItem[], p: P2, tol: number): { 
 /** What the pointer does to a dimension that is dragged: the changes to make, from where the pointer is (sheet mm). */
 export function dragDimension(handle: DimensionHandle, onText: boolean, p: P2): { offset?: number; slide?: number; angle?: number; leader?: number; arc?: number } {
   if (handle.kind === 'linear') {
-    if (onText) return { slide: Math.round((handle.u[0] * (p[0] - handle.mid[0]) + handle.u[1] * (p[1] - handle.mid[1])) * 100) / 100 };
+    if (onText) return { offset: Math.round(offsetAt(handle, p) * 100) / 100, slide: Math.round((handle.u[0] * (p[0] - handle.mid[0]) + handle.u[1] * (p[1] - handle.mid[1])) * 100) / 100 };
     return { offset: Math.round(offsetAt(handle, p) * 100) / 100 };
   }
   if (handle.kind === 'round') {
@@ -244,7 +244,7 @@ export function dragDimension(handle: DimensionHandle, onText: boolean, p: P2): 
     let turn = Math.atan2(p[1] - handle.centre[1], p[0] - handle.centre[0]) - handle.mid;
     while (turn > Math.PI) turn -= 2 * Math.PI;
     while (turn <= -Math.PI) turn += 2 * Math.PI;
-    return { slide: Math.round(turn * handle.radius * 100) / 100 };
+    return { arc: Math.round(arcAt(handle, p) * 100) / 100, slide: Math.round(turn * handle.radius * 100) / 100 };
   }
   return { arc: Math.round(arcAt(handle, p) * 100) / 100 };
 }
