@@ -1491,7 +1491,7 @@ export class SketchController {
    */
   private run(r: OpResult, done?: () => void): void {
     if ('error' in r) return this.host.notify(r.error, 'info');
-    this.submit({ type: 'editSketch', featureId: this.host.featureId, ...r.edit } as Command, done);
+    this.submit({ type: 'editSketch', featureId: this.host.featureId, ...r.edit } as Command, () => { if(r.message)this.host.notify(r.message,'info');done?.(); });
   }
 
   /** Trial-solves what the command would make of the sketch and, if it is not over-defined, executes it. */

@@ -1063,7 +1063,7 @@ export const help: Translation = {
   'help.toolExtend.summary': 'Extends: click the end of a line to lengthen it up to the line in its way.',
 
   'help.toolExtend.body':
-    'Click near the end of a line or arc to extend: that end grows until it meets the first curve in its way.\n\n- The new end lies on that curve; the old end goes together with what was attached to it, and so do the length and the equalities of the whole curve.\n- An end that other elements also use (they share the point) cannot be extended, and it says so; separate them first.\n- When there is nothing ahead of the end to extend to, it says so too.\n- Only lines and arcs can be extended.',
+    'Click near the end of a line or arc to extend: that end grows until it meets the first curve in its way.\n\n- For a free endpoint, the new end lies on the target curve; the old endpoint and its relations, as well as whole-curve length and equality relations, are removed.\n- A shared end is preserved along with its original entity: a collinear line or same-circle arc continues from it. Rectangle neighbors and dimensions stay put. The original length remains its own dimension; the continuation is a separate entity. If an extension already overlaps the path, pick the outermost segment instead.\n- When there is nothing ahead of the end to extend to, it says so too.\n- Only lines and arcs can be extended.',
 
   'help.toolExtend.keywords': 'extend lengthen end meet curve',
 

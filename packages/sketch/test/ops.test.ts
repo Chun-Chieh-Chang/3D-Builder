@@ -389,11 +389,16 @@ describe('extend (C1.16)', () => {
     everyRefExists(out);
   });
 
-  it('says so when nothing is in the way, or the end is joined to something else', () => {
+  it('says so when nothing is in the way, and continues from a shared end without moving its neighbor', () => {
     const lone = start([point('a', 0, 0), point('b', 5, 0), line('L', 'a', 'b')]);
     expect(extend(sketchOf(lone), solve(lone).geometry, ids(lone), 'L', [5, 0])).toMatchObject({ error: expect.stringContaining('沒有可以延伸') });
     const joined = start([point('a', 0, 0), point('b', 5, 0), point('c', 5, 5), line('L', 'a', 'b'), line('M', 'b', 'c'), ...wall()]);
-    expect(extend(sketchOf(joined), solve(joined).geometry, ids(joined), 'L', [5, 0])).toMatchObject({ error: expect.stringContaining('共用') });
+    const continued = run(joined, extend(sketchOf(joined), solve(joined).geometry, ids(joined), 'L', [5, 0]));
+    everyRefExists(continued);
+    expect(lineOf(solve(continued), 'L').b).toEqual([5, 0]);
+    expect(lineOf(solve(continued), 'M').a).toEqual([5, 0]);
+    const extra = sketchOf(continued).entities.find(e => e.type === 'line' && !sketchOf(joined).entities.some(old => old.id === e.id))!;
+    expect(lineOf(solve(continued), extra.id).b).toEqual([10, 0]);
   });
 });
 

@@ -28,7 +28,7 @@ import type { P2, SolvedGeometry } from './types';
  */
 
 export type Geometry = ReadonlyMap<Id, SolvedGeometry>;
-export type OpResult = { edit: SketchEdit } | { error: string };
+export type OpResult = { edit: SketchEdit; message?: string } | { error: string };
 
 const add = (a: P2, b: P2): P2 => [a[0] + b[0], a[1] + b[1]];
 const sub = (a: P2, b: P2): P2 => [a[0] - b[0], a[1] - b[1]];
@@ -787,12 +787,31 @@ export function trim(sketch: Pick<SketchFeature, 'entities' | 'constraints'>, ge
 
 // ---------------------------------------------------------------- extend (C1.16)
 
+/** Reject a continuation that would retrace an already drawn collinear line or same-circle arc. */
+function extensionOverlaps(geometry:Geometry,id:Id,g:Extract<Curve,{type:'line'|'arc'}>,atEnd:boolean,next:Hit):boolean {
+  for(const [other,h] of geometry) {
+    if(other===id||!isCurve(h))continue;
+    if(g.type==='line'&&h.type==='line') {
+      const start=atEnd?g.b:g.a,axis=unit(sub(next.at,start)),length=dist(next.at,start);
+      if(Math.abs(cross(sub(h.a,start),axis))>SAME||Math.abs(cross(sub(h.b,start),axis))>SAME)continue;
+      const a=dot(sub(h.a,start),axis),b=dot(sub(h.b,start),axis);
+      if(Math.min(length,Math.max(a,b))-Math.max(0,Math.min(a,b))>SAME)return true;
+    } else if(g.type==='arc'&&(h.type==='arc'||h.type==='circle')&&dist(g.c,h.c)<=SAME&&Math.abs(g.r-h.r)<=SAME) {
+      if(h.type==='circle')return true;
+      const low=atEnd?spanOf(g):next.u,high=atEnd?next.u:TAU,start=norm(h.a0-g.a0),sweep=spanOf(h);
+      for(const shift of [-TAU,0,TAU])if(Math.min(high,start+shift+sweep)-Math.max(low,start+shift)>SAME)return true;
+    }
+  }
+  return false;
+}
+
 /**
  * Lengthens the end of a line or arc nearest `click` until it meets the first curve in its way. The new end lies on that
  * curve; the old end goes (with what was attached to it), and so do the length and equalities of the whole curve. An end
- * that other curves also use is not extended: that would drag them along.
+ * shared with another entity is kept: an adjacent collinear line (or same-circle arc) continues from it without changing the original curves or dimensions.
  */
 export function extend(sketch: Pick<SketchFeature, 'entities' | 'constraints'>, geometry: Geometry, ids: IdAllocator, entityId: Id, click: P2): OpResult {
+  if(!click.every(Number.isFinite))return error('sketch.extendPointInvalid');
   const e = sketch.entities.find((x) => x.id === entityId);
   const g = geometry.get(entityId);
   if (!e || (e.type !== 'line' && e.type !== 'arc') || (g?.type !== 'line' && g?.type !== 'arc')) return error('sketch.extendNotCurve');
@@ -806,11 +825,19 @@ export function extend(sketch: Pick<SketchFeature, 'entities' | 'constraints'>, 
   if (!next) return error('sketch.extendNothing');
   const field = e.type === 'line' ? (atEnd ? 'p2' : 'p1') : atEnd ? 'end' : 'start';
   const old = (e as unknown as Record<string, Id>)[field]!;
-  if (usedElsewhere(sketch, old, entityId)) return error('sketch.extendShared');
+  if(extensionOverlaps(geometry,entityId,g,atEnd,next))return error('sketch.extendOverlap');
+  const shared=usedElsewhere(sketch,old,entityId);
   const b = new Parts(ids);
   const x = b.point(next.at);
   b.relation({ type: 'pointOnCurve', point: x, curve: next.other });
-  return { edit: { entities: [{ id: entityId, set: { [field]: x } }], add: b.added, remove: [old, ...stale(sketch, entityId)] } };
+  if(shared) {
+    if(e.type==='line') {
+      const continuation=b.line(atEnd?old:x,atEnd?x:old,e.construction);
+      b.relation({type:'parallel',a:entityId,b:continuation});
+    } else b.arc(e.center,atEnd?old:x,atEnd?x:old,e.construction);
+    return {edit:{add:b.added},message:t('sketch.extendContinued')};
+  }
+  return { edit: { entities: [{ id: entityId, set: { [field]: x } }], add: b.added, remove: [old, ...stale(sketch, entityId)] }, message:t('sketch.extendCompleted') };
 }
 
 // ---------------------------------------------------------------- offset (C1.17)
