@@ -1,3 +1,4 @@
+import { initialLoftSections } from './loftSections';
 import * as Comlink from 'comlink';
 import { DEFAULT_LOCALE, getLocale, LOCALES, setLocale, t, type Locale } from '@3db/i18n';
 import { useSyncExternalStore } from 'react';
@@ -1799,16 +1800,15 @@ class AppStore {
   }
 
   /**
-   * 「疊層拉伸」 or 「除料-疊層拉伸」 (C4.5): the selected sketch is the last section, the latest other sketch with a circle, a line or an arc the first; the
+   * 「疊層拉伸」 or 「除料-疊層拉伸」 (C4.5): a selected profile is the last section; without preselection use the latest two eligible profiles. The
    * PropertyManager adds, removes and orders the sections.
    */
   newLoft(op: 'boss' | 'cut'): void {
-    const last = this.selectedSketch();
-    if (!last) return;
-    const first = [...this.history.doc.features].reverse().find((f): f is SketchFeature => f.type === 'sketch' && f.id !== last.id && f.entities.some((e) => (e.type === 'line' || e.type === 'arc' || e.type === 'circle') && !e.construction));
+    const sections = initialLoftSections(this.history.doc, this.state.selected);
+    if (sections.length === 0) return;
     const base = op === 'boss' ? t('feature.loft') : t('feature.cut', { name: t('feature.loft') });
     const id = this.allocator().take('loft');
-    this.openNew({ id, type: 'loft', name: nextName(this.history.doc, base), suppressed: false, sections: first ? [first.id, last.id] : [last.id], op }, base);
+    this.openNew({ id, type: 'loft', name: nextName(this.history.doc, base), suppressed: false, sections, op }, base);
   }
 
   /**
@@ -2686,6 +2686,10 @@ class AppStore {
       }
     }
     const f = this.editedFeature();
+    if (f?.type === 'loft' && findFeature(this.history.doc, id)?.type === 'sketch') {
+      if (!f.sections.includes(id)) this.execute({ type: 'setLoftSections', featureId: f.id, sections: [...f.sections, id] });
+      return;
+    }
     const datum = f && id !== f.id && (f.type === 'refPlane' || f.type === 'refAxis' || f.type === 'refPoint' || f.type === 'coordSys' || f.type === 'pattern' || f.type === 'mirror' || f.type === 'helix') ? treePick(f, this.history.doc, id) : null;
     if (datum && this.putDatumRef(datum)) return;
     this.select(id);

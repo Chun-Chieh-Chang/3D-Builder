@@ -54,6 +54,22 @@ describe('the loft (C4.5)', () => {
     expect(r.body!.names.faces.slice().sort()).toEqual(['lf1:cap:end', 'lf1:cap:start', 'lf1:side:s1.a']);
   });
 
+  it('two circles on distinct parallel datum planes make a frustum that follows both diameter and plane edits', () => {
+    const doc = build(plane('lower', 10), plane('upper', 40), sketch('s1', on('lower'), circle('a', 0, 0, 5)), sketch('s2', on('upper'), circle('b', 0, 0, 2)), loft(['s1', 's2']));
+    const check = (d: PartDoc, height: number, radius: number) => {
+      const result = rebuild(d);
+      expect(failures(result)).toEqual([]);
+      expect(kernel.isValid(result.body!.shape)).toBe(true);
+      expect(volume(result)).toBeCloseTo(Math.PI * height / 3 * (25 + 5 * radius + radius * radius), 6);
+      expect(result.body!.topology.faces).toHaveLength(3);
+    };
+    check(doc, 30, 2);
+    const wider = applyCommand(doc, { type: 'setDimension', featureId: 's2', constraintId: 'br', value: '3' });
+    check(wider, 30, 3);
+    const taller = applyCommand(wider, { type: 'setRefPlane', featureId: 'upper', def: { mode: 'offset', plane: front, distance: '60' } });
+    check(taller, 50, 3);
+  });
+
   it('a square to a circle, a different number of edges: valid, between the circle and the square, every face with a name of its own', () => {
     for (const [a, b] of [[centred('a', 10, 10), circle('b', 0, 0, 5)], [circle('a', 0, 0, 5), centred('b', 10, 10)]] as const) {
       const r = rebuild(two(a, b));

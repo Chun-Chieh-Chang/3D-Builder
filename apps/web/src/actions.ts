@@ -1,3 +1,4 @@
+import { initialLoftSections } from './state/loftSections';
 import { absorbedSketches, bodyKey, canBeSeed, explosionSteps, isDatumPlaneName, isHideable, isShown, page, type DatumPlaneName, type Feature, type PlaneFrame, type Ref } from '@3db/model';
 import { ownerFeatures } from '@3db/naming';
 import { topologyOf } from './state/selectionSets';
@@ -47,6 +48,7 @@ const hasComponents = (s: UiState) => (s.asm?.doc.components.length ?? 0) > 0;
 const sketching = (s: UiState) => s.editing?.kind === 'sketch';
 const selectedFeature = (s: UiState) => s.doc.features.find((f) => f.id === s.selected);
 const sketchSelected = (s: UiState) => partIdle(s) && selectedFeature(s)?.type === 'sketch';
+const loftReady = (s: UiState) => partIdle(s) && (sketchSelected(s) || initialLoftSections(s.doc, s.selected).length >= 2);
 /** A sweep takes a profile (the selected sketch) and a path (another sketch). */
 /** A profile sketch selected and a path to take it along: another sketch, or a helix curve (ADR 0169). */
 const canSweep = (s: UiState) => sketchSelected(s) && (s.doc.features.filter((f) => f.type === 'sketch').length >= 2 || s.doc.features.some((f) => f.type === 'helix'));
@@ -184,12 +186,12 @@ export const ACTIONS: UiAction[] = [
   { id: 'extrude', get label() { return t('act.extrude'); }, group: 'feature', enabled: sketchSelected, run: () => store.newExtrude('boss') },
   { id: 'revolve', get label() { return t('act.revolve'); }, group: 'feature', enabled: sketchSelected, run: () => store.newRevolve('boss') },
   { id: 'sweep', get label() { return t('action.sweep'); }, group: 'feature', enabled: canSweep, run: () => store.newSweep('boss') },
-  { id: 'loft', get label() { return t('action.loft'); }, group: 'feature', enabled: sketchSelected, run: () => store.newLoft('boss') },
+  { id: 'loft', get label() { return t('action.loft'); }, group: 'feature', enabled: loftReady, run: () => store.newLoft('boss') },
   { id: 'rib', get label() { return t('action.rib'); }, group: 'feature', enabled: (s) => sketchSelected(s) && !!s.result?.mesh, run: () => store.newRib() },
   { id: 'extrude-cut', get label() { return t('act.extrudeCut'); }, group: 'feature', enabled: (s) => sketchSelected(s) && !!s.result?.mesh, run: () => store.newExtrude('cut') },
   { id: 'revolve-cut', get label() { return t('act.revolveCut'); }, group: 'feature', enabled: (s) => sketchSelected(s) && !!s.result?.mesh, run: () => store.newRevolve('cut') },
   { id: 'sweep-cut', get label() { return t('action.sweepCut'); }, group: 'feature', enabled: (s) => canSweep(s) && !!s.result?.mesh, run: () => store.newSweep('cut') },
-  { id: 'loft-cut', get label() { return t('action.loftCut'); }, group: 'feature', enabled: (s) => sketchSelected(s) && !!s.result?.mesh, run: () => store.newLoft('cut') },
+  { id: 'loft-cut', get label() { return t('action.loftCut'); }, group: 'feature', enabled: (s) => loftReady(s) && !!s.result?.mesh, run: () => store.newLoft('cut') },
   { id: 'thread', get label() { return t('feature.thread'); }, group: 'feature', enabled: (s) => partIdle(s) && (sketchSelected(s) || s.doc.features.some((f) => f.type === 'sketch')), run: () => store.newThread() },
   { id: 'knurl', get label() { return t('feature.knurl'); }, group: 'feature', enabled: hasBody, run: () => store.newKnurl() },
   { id: 'cosmetic-thread', get label() { return t('feature.cosmeticThread'); }, group: 'feature', enabled: hasBody, run: () => store.newCosmeticThread() },

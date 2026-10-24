@@ -346,7 +346,7 @@ export const features: Translation = {
   'pm.loft.up': 'Move up',
   'pm.loft.down': 'Move down',
   'pm.loft.remove': 'Remove',
-  'pm.loft.hint': 'Each section is one closed contour of a sketch, without holes; the surface passes smoothly through all the sections (ruled when there are two). Which corner it starts at and which way it goes round need not be matched.',
+  'pm.loft.hint': 'Add profile sketches from the design tree or the Add section list; two coaxial circles of different radii on parallel planes make a cone frustum. Each section is one closed contour of a sketch, without holes; the surface passes smoothly through all the sections (ruled when there are two). Which corner it starts at and which way it goes round need not be matched.',
   'feature.ribNeedsBody': 'A rib grows onto an existing body, and there is none before it',
   'feature.ribSketchGone': 'The sketch of the rib does not exist, is suppressed or failed',
   'feature.ribOneLine': 'The sketch of a rib needs exactly one line (it has {n} lines or contours; an arc will not do)',
