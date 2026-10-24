@@ -95,7 +95,7 @@ export type Segment =
   | { kind: 'arc'; c: P2; r: number; from: P2; to: P2; ccw: boolean; source: string }
   | { kind: 'circle'; c: P2; r: number; source: string }
   | { kind: 'ellipse'; c: P2; rx: number; ry: number; angle: number; source: string }
-  | { kind: 'spline'; points: P2[]; closed: boolean; source: string };
+  | { kind: 'spline'; points: P2[]; closed: boolean; source: string; bezierPoles?: P2[] };
 
 /** Counter-clockwise outer loop with clockwise holes (as produced by @3db/sketch findProfiles). */
 export interface Region {
@@ -442,19 +442,20 @@ export class Kernel {
             throw new KernelError(t('kernel.wireNotClosed', { source: seg.source }));
           }
         }
-        const totalPts = seg.closed ? pts.length + 1 : pts.length;
+        const fitPoints=seg.bezierPoles??pts;
+        if(seg.bezierPoles&&(seg.closed||fitPoints.length<2||fitPoints.length>26||!fitPoints.flat().every(Number.isFinite)))throw new KernelError(t('gear.invalid'));
+        const totalPts = seg.closed ? fitPoints.length + 1 : fitPoints.length;
         const arr = arena.own(new oc.NCollection_Array1_gp_Pnt(1, totalPts));
-        for (let i = 0; i < pts.length; i++) {
-          arr.SetValue(i + 1, this.pnt(arena, at(pts[i]!)));
+        for (let i = 0; i < fitPoints.length; i++) arr.SetValue(i + 1, this.pnt(arena, at(fitPoints[i]!)));
+        if (seg.closed) arr.SetValue(totalPts, this.pnt(arena, at(fitPoints[0]!)));
+        if(seg.bezierPoles) {
+          const curve=arena.own(new oc.Geom_BezierCurve(arr));
+          edge=arena.own(arena.own(new oc.BRepBuilderAPI_MakeEdge(curve)).Edge());
+        } else {
+          const approx = arena.own(new oc.GeomAPI_PointsToBSpline(arr));
+          if (!approx.IsDone()) throw new KernelError(t('kernel.wireNotClosed', { source: seg.source }));
+          edge = arena.own(arena.own(new oc.BRepBuilderAPI_MakeEdge(approx.Curve())).Edge());
         }
-        if (seg.closed) {
-          arr.SetValue(totalPts, this.pnt(arena, at(pts[0]!)));
-        }
-        const approx = arena.own(new oc.GeomAPI_PointsToBSpline(arr));
-        if (!approx.IsDone()) {
-          throw new KernelError(t('kernel.wireNotClosed', { source: seg.source }));
-        }
-        edge = arena.own(arena.own(new oc.BRepBuilderAPI_MakeEdge(approx.Curve())).Edge());
         if (hole) edge = arena.own(oc.TopoDS.Edge(arena.own(edge.Reversed())));
       } else {
         const [p, q] = seg.ccw ? [seg.from, seg.to] : [seg.to, seg.from];

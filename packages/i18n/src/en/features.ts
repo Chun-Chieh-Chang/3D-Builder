@@ -2,6 +2,28 @@ import type { Translation } from '../index';
 
 /** Messages of the features of Phase 3a-5 to 3a-7 (C4.1–C4.3, C5.4, C5.5, C6, C3): end conditions, draft, thin features, shell, patterns. */
 export const features: Translation = {
+  "feature.gear": "Spur Gear",
+  "feature.rack": "Gear Rack",
+  "gear.module": "Module",
+  "gear.teeth": "Teeth",
+  "gear.pressureAngle": "Pressure angle",
+  "gear.width": "Face width",
+  "gear.backlash": "Tooth thickness reduction (backlash)",
+  "gear.bore": "Bore diameter",
+  "gear.baseHeight": "Backing below tooth roots",
+  "gear.plane": "Construction plane",
+  "gear.face": "Selected planar face",
+  "gear.pitch": "Circular pitch",
+  "gear.pitchDiameter": "Pitch diameter",
+  "gear.length": "Rack length",
+  "gear.range": "Parameters out of range: module 0.1–100 mm, width 0.1–1000 mm, pressure angle 15–30°, overall size at most 10000 mm; rack backing 0.1–1000 mm.",
+  "gear.count": "Tooth count must be an integer from 1 to 200 without units.",
+  "gear.undercut": "This tooth count and pressure angle require undercut geometry. Increase the count or pressure angle; undercut teeth are not supported.",
+  "gear.boreError": "The bore must be nonnegative and leave at least 0.05 module wall below the tooth root.",
+  "gear.overlap": "The tooth thickness reduction is too large or teeth overlap; positive tip thickness and root gaps are required.",
+  "gear.invalid": "Invalid gear/rack parameters or generated solid.",
+  "gear.hint": "Match module and pressure angle to pair gears and racks. Involute gear flanks with simplified roots; straight rack flanks. No hob-generated roots, profile shift, helical teeth or motion mates. The plane origin is the gear center / rack pitch-line midpoint; an independent solid extends along the plane normal.",
+
   "modelDimensions.depth1": "Depth 1",
   "modelDimensions.depth2": "Depth 2",
   "modelDimensions.angle": "Angle",

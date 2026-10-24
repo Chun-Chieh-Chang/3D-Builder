@@ -1,3 +1,4 @@
+import { gearParameters } from './gears';
 import { t } from '@3db/i18n';
 import type { Id } from './ids';
 import { evalAngle, evalLength, evalQuantity, ExprError, parseExpr, referencesOf, rewriteRefs, type Env, type NameRef, type Quantity } from './expr';
@@ -16,12 +17,13 @@ import { isDimension } from './schema';
 export type ExprKind = 'length' | 'angle' | 'count';
 
 /** What a value must be for the feature to make sense: a size above zero, or an angle in the range its feature allows. */
-export type ExprRole = 'positive' | 'unitInterval' | 'nonNegative' | 'nonZero' | 'revolveAngle' | 'chamferAngle' | 'draftAngle' | 'includedAngle' | 'planeAngle' | 'count' | 'knurlCount' | 'surfaceDistance' | 'any';
+export type ExprRole = 'gearCount' | 'positive' | 'unitInterval' | 'nonNegative' | 'nonZero' | 'revolveAngle' | 'chamferAngle' | 'draftAngle' | 'includedAngle' | 'planeAngle' | 'count' | 'knurlCount' | 'surfaceDistance' | 'any';
 
 /** Why a value is not acceptable for its role (in words), or null. `expr` is what the user wrote. */
 export function roleProblem(v: number, role: ExprRole, expr: Expr): string | null {
   const angle = (min: number, max: number, label: string) => (v > min && v <= max + 1e-12 ? null : t('cmd.angleOutOfRange', { label, value: expr }));
   switch (role) {
+    case 'gearCount': return Number.isInteger(v)&&v>=1&&v<=200?null:t('gear.count');
     case 'surfaceDistance': return v>0 && v<=1e6 ? null : t('surfaceTools.range');
     case 'positive':
       return v > 0 ? null : t('cmd.mustBePositive', { value: expr });
@@ -367,6 +369,8 @@ export function mapExprs(feature: Feature, fn: (expr: Expr, kind: ExprKind, role
       };
     }
 
+    case 'gear':
+    case 'rack': return {...feature,module:fn(feature.module,'length','positive'),teeth:fn(feature.teeth,'count','gearCount'),pressureAngle:fn(feature.pressureAngle,'angle','any'),width:fn(feature.width,'length','positive'),backlash:fn(feature.backlash,'length','nonNegative'),...(feature.type==='gear'?{bore:fn(feature.bore,'length','nonNegative')}:{baseHeight:fn(feature.baseHeight,'length','positive')})};
     case 'ruledSurface':
     case 'replaceFace':
     case 'projectedCurve': return feature;
@@ -636,6 +640,9 @@ export class Parameters implements Env {
         return expr;
       }
     });
+    if (!problem && (next.type==='gear'||next.type==='rack')) {
+      try { gearParameters(next); } catch(error) { problem=error instanceof Error?error.message:String(error); }
+    }
     return { feature: next as F, problem };
   }
 }

@@ -33,3 +33,5 @@ export * from './drawingAnnotations';
 export * from './tolerance';
 export * from './picture';
 export * from './threadStandards';
+
+export * from './gears';

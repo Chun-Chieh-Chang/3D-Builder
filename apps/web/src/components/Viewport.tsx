@@ -54,7 +54,7 @@ function picking(feature: Feature | undefined, editing: boolean, modelTool: 'con
   const byGroups = feature?.type === 'fillet' && !!feature.kind && feature.kind !== 'constant';
   const faceFeature = feature?.type === 'deleteFace' || feature?.type === 'moveFace' || feature?.type === 'shell' || feature?.type === 'draft' || feature?.type === 'offsetSurface' || feature?.type === 'splitLine' || feature?.type === 'trimSurface' || feature?.type === 'mutualTrim' || feature?.type === 'lipGroove' ? feature : null;
   const surfaceEdges=feature?.type==='ruledSurface'||feature?.type==='radiatedSurface';
-  const surfaceFaces=feature?.type==='replaceFace'||feature?.type==='radiatedSurface';
+  const surfaceFaces=feature?.type==='gear'||feature?.type==='rack'||feature?.type==='replaceFace'||feature?.type==='radiatedSurface';
   const projection = feature?.type === 'projectedCurve' && feature.mode === 'sketchOnFaces' ? feature : null;
   const combine = feature?.type === 'combine' || feature?.type === 'knit' || feature?.type === 'thicken' || feature?.type === 'cutWithSurface';
   const prompt_ = combine

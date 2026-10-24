@@ -1803,6 +1803,13 @@ class AppStore {
    * 「疊層拉伸」 or 「除料-疊層拉伸」 (C4.5): a selected profile is the last section; without preselection use the latest two eligible profiles. The
    * PropertyManager adds, removes and orders the sections.
    */
+  newGear(type:'gear'|'rack'):void {
+    const selected=this.state.selected;
+    const plane=this.state.selectedFace?.fingerprint?.type==='plane'?this.state.selectedFace:{kind:'datum' as const,name:selected&&this.isPlane(selected)?selected:'plane:front'};
+    const name=t(`feature.${type}`),base={id:this.allocator().take(type),name:nextName(this.history.doc,name),suppressed:false,plane,module:'2',teeth:type==='gear'?'24':'10',pressureAngle:'20deg',width:'10',backlash:'0'};
+    this.openNew(type==='gear'?{...base,type,bore:'5'}:{...base,type,baseHeight:'5'},name);
+  }
+
   newLoft(op: 'boss' | 'cut'): void {
     const sections = initialLoftSections(this.history.doc, this.state.selected);
     if (sections.length === 0) return;
@@ -2600,6 +2607,7 @@ class AppStore {
     // the plane of a sketch is being edited: a vertex, point, edge or axis is what its axes are attached to (ADR 0181)
     if (this.state.editing?.kind === 'sketchPlane') return void this.putDatumRef(ref);
     const f = this.editedFeature();
+    if((f?.type==='gear'||f?.type==='rack')&&ref.kind==='face') {this.execute({type:'setGear',featureId:f.id,params:{plane:ref}});return;}
     if(f?.type==='ruledSurface' && ref.kind==='edge') {this.execute({type:'setSurfaceTools',featureId:f.id,params:!f.first.name?{first:ref}:{second:ref}});return;}
     if(f?.type==='radiatedSurface') {if(ref.kind==='edge')this.execute({type:'setSurfaceTools',featureId:f.id,params:{edge:ref}});else if(ref.kind==='face')this.execute({type:'setSurfaceTools',featureId:f.id,params:{plane:ref}});return;}
     if(f?.type==='replaceFace' && ref.kind==='face') {this.execute({type:'setSurfaceTools',featureId:f.id,params:!f.face.name?{face:ref}:{replacement:ref}});return;}
@@ -2686,6 +2694,7 @@ class AppStore {
       }
     }
     const f = this.editedFeature();
+    if ((f?.type==='gear'||f?.type==='rack') && this.isPlane(id)) {this.execute({type:'setGear',featureId:f.id,params:{plane:{kind:'datum',name:id}}});return;}
     if (f?.type === 'loft' && findFeature(this.history.doc, id)?.type === 'sketch') {
       if (!f.sections.includes(id)) this.execute({ type: 'setLoftSections', featureId: f.id, sections: [...f.sections, id] });
       return;

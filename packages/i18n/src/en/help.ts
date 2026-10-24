@@ -2,6 +2,15 @@ import type { Translation } from '../index';
 
 /** help: English of `zh-TW/help.ts` (docs/help-plan.md). The ids a topic points to (`see`) are not translated. */
 export const help: Translation = {
+  "help.gear.summary": "Build an involute external spur gear from module, tooth count and pressure angle.",
+  "help.gear.body": "Choose a construction plane and Spur Gear in Features. Set module, tooth count, pressure angle, face width and bore. Addendum is one module, dedendum 1.25 modules, pitch diameter module times teeth. Backlash is a reduction in this component tooth thickness; reductions on mating components add. Degree-17 Bezier curves approximate the analytic involute; roots are simplified, not hob-generated manufacturing roots. Tooth counts requiring undercut are rejected. No helical/internal gears, profile shift or motion mates. The result is an independent solid; Move/Copy Body can position it.",
+  "help.gear.keywords": "gear spur involute module pressure angle teeth",
+  "help.gear.see": "rack move-copy-body",
+  "help.rack.summary": "Build a straight rack from module, tooth count and pressure angle.",
+  "help.rack.body": "Choose a plane and Gear Rack in Features. The rack runs along plane X, tips point along Y, and face width extends along the normal. Length is teeth times π times module. Backing is measured below the roots. Match module and pressure angle with the mating gear; backlash reduces this component pitch-line tooth thickness. Flanks are straight at the pressure angle, with sharp roots; no manufacturing root fillets or motion mates.",
+  "help.rack.keywords": "rack pinion module pitch teeth",
+  "help.rack.see": "gear move-copy-body",
+
   "help.toolStretchEntities.summary": "Moves selected endpoints while the rest of each entity stretches with them.",
   "help.toolStretchEntities.body": "Select the endpoints to stretch, then specify base and target points. Unselected endpoints retain their relations.",
   "help.toolStretchEntities.see": "tool-moveEntities tool-extend tool-linearPattern",

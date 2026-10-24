@@ -2,7 +2,7 @@ import { t } from '@3db/i18n';
 import { validThreadTolerance } from './threadTolerance';
 import { current, produce, type Draft } from 'immer';
 import { countersFor, type Id } from './ids';
-import type { SheetGauge, AppearanceTarget, DocSettings, MaterialRef, Variable, BlobRef, ChamferFeature, FilletKind, FilletVariablePoint, CombineFeature, SplitFeature, MoveCopyBodyFeature, JogFeature, HoleFeature, ScrewBossFeature, BaseFlangeFeature, MidBendFeature, EdgeFlangeFeature, HemFeature, BreakCornerFeature, SnapHookFeature, SnapCatchFeature, VentFeature, LoftFeature, RibFeature, SweepFeature, Draft as WallDraft, EndCondition, Thin, Expr, Feature, ImportedBodyFeature, AxisDefinition, CoordSysFeature, MirrorFeature, PartDoc, PatternDefinition, PatternFeature, PlaneDefinition, PointDefinition, Ref, RevolveCondition, SketchConstraint, SketchEntity, SketchFeature, SketchPicture, CutWithSurfaceFeature, ThreadFeature, KnurlFeature, CosmeticThreadFeature, HelixFeature, ProjectedCurveFeature, RuledSurfaceFeature, RadiatedSurfaceFeature, ReplaceFaceFeature, SketchAttach } from './schema';
+import type { SpurGearFeature, RackFeature, SheetGauge, AppearanceTarget, DocSettings, MaterialRef, Variable, BlobRef, ChamferFeature, FilletKind, FilletVariablePoint, CombineFeature, SplitFeature, MoveCopyBodyFeature, JogFeature, HoleFeature, ScrewBossFeature, BaseFlangeFeature, MidBendFeature, EdgeFlangeFeature, HemFeature, BreakCornerFeature, SnapHookFeature, SnapCatchFeature, VentFeature, LoftFeature, RibFeature, SweepFeature, Draft as WallDraft, EndCondition, Thin, Expr, Feature, ImportedBodyFeature, AxisDefinition, CoordSysFeature, MirrorFeature, PartDoc, PatternDefinition, PatternFeature, PlaneDefinition, PointDefinition, Ref, RevolveCondition, SketchConstraint, SketchEntity, SketchFeature, SketchPicture, CutWithSurfaceFeature, ThreadFeature, KnurlFeature, CosmeticThreadFeature, HelixFeature, ProjectedCurveFeature, RuledSurfaceFeature, RadiatedSurfaceFeature, ReplaceFaceFeature, SketchAttach } from './schema';
 import { isSketchAxis } from './schema';
 import { isDatumPlaneName } from './datums';
 import { canBeSeed } from './patterns';
@@ -91,6 +91,7 @@ ull). */
   | { type: 'setSweepPath'; featureId: Id; path: Id }
   /** The sketches of a loft's sections, in order (C4.5). */
   | { type: 'setLoftSections'; featureId: Id; sections: Id[] }
+  | {type:'setGear';featureId:Id;params:Partial<Omit<SpurGearFeature,'id'|'type'|'name'|'suppressed'>>|Partial<Omit<RackFeature,'id'|'type'|'name'|'suppressed'>>}
   | { type: 'setFilletRadius'; featureId: Id; value: Expr }
   /** Edges of an edge-based feature (fillet, chamfer). */
   | { type: 'setEdges'; featureId: Id; edges: Ref[]; faces?: Ref[] }
@@ -745,6 +746,8 @@ function validateNewFeature(doc: PartDoc, f: Feature, index: number): void {
       if (f.startEdge && f.startEdge.kind !== 'edge' && f.startEdge.kind !== 'face') throw new CommandError(t('cmd.cosmeticThreadOnlyEdge'));
       return;
 
+    case 'gear':
+    case 'rack': planeRef(doc,f.plane,index);return;
     case 'ruledSurface':
       if(f.first.kind!=='edge'||f.second.kind!=='edge')throw new CommandError(t('surfaceTools.pickEdges'));
       if(f.first.name && f.first.name===f.second.name)throw new CommandError(t('surfaceTools.crossing'));
@@ -1522,6 +1525,13 @@ export function mutate(draft: Draft<PartDoc>, cmd: Command): void {
       f.mode = cmd.mode;
       f.targets = cmd.targets;
       return;
+    }
+    case 'setGear': {
+      const f=feature(draft,cmd.featureId);
+      if(f.type!=='gear'&&f.type!=='rack')throw new CommandError(t('gear.invalid'));
+      const allowed=['plane','module','teeth','pressureAngle','width','backlash',f.type==='gear'?'bore':'baseHeight'];
+      if(Object.keys(cmd.params).some(key=>!allowed.includes(key)))throw new CommandError(t('gear.invalid'));
+      const next={...f,...cmd.params} as Feature;validateNewFeature(draft as PartDoc,next,draft.features.indexOf(f));Object.assign(f,cmd.params);checkExprs(draft as PartDoc,f as Feature);return;
     }
     case 'setSurfaceTools': {
       const f=feature(draft,cmd.featureId);

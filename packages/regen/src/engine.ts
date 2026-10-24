@@ -1,3 +1,5 @@
+import { toothedProfile } from './gears';
+import { gearParameters, type SpurGearFeature, type RackFeature } from '@3db/model';
 import { t } from '@3db/i18n';
 import { silhouetteProjector } from './silhouette';
 import {
@@ -764,6 +766,8 @@ export class Regenerator {
             set = this.advance(set, this.cutSlots(feature, sketches, set));
             return done({ status: 'ok' });
           }
+          case 'gear':
+          case 'rack': {set=this.advance(set,this.toothedSolid(feature,set));return done({status:'ok'});}
           case 'cosmeticThread': {
             this.cosmeticThread(feature, set);
             return done({ status: 'ok' });
@@ -1933,6 +1937,13 @@ export class Regenerator {
    * Helix and Spiral Curve (螺旋曲線與渦捲線, C8.3, ADR 0168):
    * Constructs a 3D space helix or planar Archimedean spiral wire from a reference circle.
    */
+  private toothedSolid(f:SpurGearFeature|RackFeature,set:Bodies):BodyState[] {
+    const p=gearParameters(f),frame=this.planeOf(f.plane,set,{what:t('feature.gear'),notPlanar:t('sketch.planeOnly')});
+    const region=toothedProfile(p),tool=this.kernel.extrude(frame,[region],scale(frame.normal,p.width));
+    if(!this.kernel.isValid(tool.shape)||this.kernel.solidCount(tool.shape)!==1) {this.kernel.release(tool.shape);throw new FeatureError(t('gear.invalid'));}
+    return this.apply(f.id,'boss',tool,{featureId:f.id},set.list,false);
+  }
+
   private surfaceTools(f:RuledSurfaceFeature|RadiatedSurfaceFeature|ReplaceFaceFeature,set:Bodies):BodyState[] {
     const owner=(ref:Ref)=>{
       const body=set.list.find(b=>(ref.kind==='edge'?b.names.edges:b.names.faces).includes(ref.name));

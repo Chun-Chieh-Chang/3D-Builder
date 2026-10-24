@@ -3,6 +3,7 @@ import { labelsOf, t } from '@3db/i18n';
 import { currentTopicId } from '../help/context';
 import {
   canBeSeed,
+  gearParameters, gearDimensions, type SpurGearFeature, type RackFeature,
   evalLength,
   evalNumber,
   evalQuantity,
@@ -144,7 +145,7 @@ function ValueInput({ value, toCommand, suffix = 'mm' }: { value: string; toComm
     setInvalid(false);
   }, [value]);
   const commit = () => {
-    if (text === value) return;
+    if (text === value) { if (invalid) store.dismissNotice(); setInvalid(false); return; }
     setInvalid(!store.execute(toCommand(text.trim())));
   };
   return (
@@ -4053,6 +4054,22 @@ function CosmeticThreadPanel({ f }: { f: CosmeticThreadFeature }) {
   );
 }
 
+function GearPanel({f}:{f:SpurGearFeature|RackFeature}) {
+  const doc=useStore(s=>s.doc),at=doc.features.findIndex(feature=>feature.id===f.id);
+  const fields=['module','teeth','pressureAngle','width','backlash',f.type==='gear'?'bore':'baseHeight'] as const;
+  let dimensions:ReturnType<typeof gearDimensions>|null=null;
+  try {const result=new Parameters(doc).resolve(f);if(!result.problem)dimensions=gearDimensions(gearParameters(result.feature));}catch { /* The feature's existing error panel explains invalid expressions. */ }
+  return <section className="pm-group" data-gear-panel={f.type}>
+    <label className="pm-row"><span>{t('gear.plane')}</span><select data-gear-plane value={f.plane.kind==='datum'?f.plane.name:''} onChange={e=>store.execute({type:'setGear',featureId:f.id,params:{plane:{kind:'datum',name:e.target.value}}})}>
+      <option value="" disabled>{t('gear.face')}</option>{(['front','top','right'] as const).map(name=><option key={name} value={'plane:'+name}>{t(`datum.${name}`)}</option>)}
+      {doc.features.slice(0,at).filter(feature=>feature.type==='refPlane').map(plane=><option key={plane.id} value={plane.id}>{plane.name}</option>)}
+    </select></label>
+    {fields.map(field=><label key={field} className="pm-row"><span>{t(`gear.${field}`)}</span><ValueInput suffix={field==='teeth'?'':field==='pressureAngle'?'°':'mm'} value={field==='bore'?(f.type==='gear'?f.bore:'0'):field==='baseHeight'?(f.type==='rack'?f.baseHeight:'0'):f[field]} toCommand={value=>({type:'setGear',featureId:f.id,params:{[field]:value}})}/></label>)}
+    {dimensions&&<output data-gear-pitch={dimensions.pitch}>{t('gear.pitch')}: {dimensions.pitch.toFixed(4)} mm<br/>{t(f.type==='gear'?'gear.pitchDiameter':'gear.length')}: {(f.type==='gear'?dimensions.pitchRadius*2:dimensions.length).toFixed(4)} mm</output>}
+    <p className="hint">{t('gear.hint')}</p>
+  </section>;
+}
+
 function SurfaceToolsPanel({f}:{f:RuledSurfaceFeature|RadiatedSurfaceFeature|ReplaceFaceFeature}) {
   const doc=useStore(s=>s.doc);
   const update=(params:Extract<Command,{type:'setSurfaceTools'}>['params'])=>store.execute({type:'setSurfaceTools',featureId:f.id,params});
@@ -4215,6 +4232,7 @@ export function FeatureParams({ f }: { f: Feature }) {
       {f.type === 'extrude' && <ExtrudePanel f={f} />}
       {f.type === 'revolve' && <RevolvePanel f={f} />}
       {f.type === 'sweep' && <SweepPanel f={f} />}
+      {(f.type==='gear'||f.type==='rack')&&<GearPanel f={f}/>}
       {f.type === 'loft' && <LoftPanel f={f} />}
       {f.type === 'rib' && <RibPanel f={f} />}
       {f.type === 'fillet' && <FilletPanel f={f} />}

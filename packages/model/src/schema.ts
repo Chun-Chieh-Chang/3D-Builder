@@ -6,7 +6,7 @@ import type { Id } from './ids';
  * DOF status, mass properties and error lists are derived data and never stored.
  */
 
-export const SCHEMA_VERSION = 80;
+export const SCHEMA_VERSION = 81;
 
 /** Value expression (B5.2, B5.3): "20", "25.4mm", "30deg", "wall_t*2", "D1@草圖1/2", "property('厚度')"; see `expr/`. */
 export type Expr = string;
@@ -422,6 +422,13 @@ export interface CosmeticThreadFeature extends FeatureBase {
  */
 /** C8.2 projected 3D curve body, v77. Faces are trimmed targets; direction defaults to the first sketch normal. */
 /** C9.2: linear interpolation between two model edges. */
+interface ToothedBase extends FeatureBase {
+  plane:Ref; module:Expr; teeth:Expr; pressureAngle:Expr; width:Expr; backlash:Expr;
+}
+/** Unshifted involute external spur gear; simplified root transitions, v81. */
+export interface SpurGearFeature extends ToothedBase { type:'gear'; bore:Expr }
+/** Straight rack, X along pitch line, Y toward tooth tips, v81. */
+export interface RackFeature extends ToothedBase { type:'rack'; baseHeight:Expr }
 export interface RuledSurfaceFeature extends FeatureBase { type:'ruledSurface'; first:Ref; second:Ref; reverseSecond?:boolean }
 /** C9.2: planar line/circular rail extended perpendicular to its tangent, in a reference plane. */
 export interface RadiatedSurfaceFeature extends FeatureBase { type:'radiatedSurface'; edge:Ref; plane:Ref; distance:Expr; reverse?:boolean }
@@ -1150,6 +1157,8 @@ export interface DeleteKeepBodyFeature extends FeatureBase {
 }
 
 export type Feature =
+  | SpurGearFeature
+  | RackFeature
   | SketchFeature
   | ExtrudeFeature
   | RevolveFeature

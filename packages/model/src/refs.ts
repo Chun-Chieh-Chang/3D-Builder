@@ -149,6 +149,8 @@ export function mapRefs(feature: Feature, map: (ref: Ref) => Ref): { feature: Fe
         },
         replaced,
       };
+    case 'gear':
+    case 'rack': return {feature:{...feature,plane:one(feature.plane)},replaced};
     case 'ruledSurface': return {feature:{...feature,first:one(feature.first),second:one(feature.second)},replaced};
     case 'radiatedSurface': return {feature:{...feature,edge:one(feature.edge),plane:one(feature.plane)},replaced};
     case 'replaceFace': return {feature:{...feature,face:one(feature.face),replacement:one(feature.replacement)},replaced};

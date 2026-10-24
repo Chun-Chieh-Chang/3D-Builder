@@ -10,6 +10,15 @@
  * (docs/help-links.json says which topics an item is about).
  */
 export const help = {
+  "help.gear.summary": "從模數、齒數與壓力角建構漸開線直齒外齒輪。",
+  "help.gear.body": "選擇建構平面，在特徵選單啟動直齒齒輪，設定模數、齒數、壓力角、齒寬與軸孔。齒頂高為一模數，齒根深為 1.25 模數，節圓直徑為模數乘齒數。背隙欄位是該零件節圓齒厚的減量，兩配對零件的減量會相加。工作齒面以 17 次 Bézier 近似漸開線，齒根為簡化過渡，非製造等級的滾刀齒根；拒絕須根切的齒數。不含斜齒、內齒、變位與傳動結合。生成獨立實體，可後續移動本體定位。",
+  "help.gear.keywords": "齒輪 漸開線 模數 壓力角 齒數 gear spur involute",
+  "help.gear.see": "rack move-copy-body",
+  "help.rack.summary": "從模數、齒數與壓力角建構直齒齒條。",
+  "help.rack.body": "選擇建構平面，在特徵選單啟動直齒齒條。齒條沿平面 X 方向，齒頂朝 Y，齒寬沿法向。長度為齒數乘 π 乘模數，底座厚度從齒根向下量。模數與壓力角須和配對齒輪相同；背隙是此零件節線齒厚的減量。每個齒的直線工作面依壓力角推導，齒根為銳角，不含製造齒根圓角或運動結合。",
+  "help.rack.keywords": "齒條 小齒輪 節距 模數 rack pinion",
+  "help.rack.see": "gear move-copy-body",
+
   "help.toolStretchEntities.summary": "移動選取的端點，讓相接圖元延展；可用框選選取一組端點。",
   "help.toolStretchEntities.body": "先選取需延展的端點，再指定基點與目標；未選端點會保留其關係。",
   "help.toolStretchEntities.see": "tool-moveEntities tool-extend tool-linearPattern",
