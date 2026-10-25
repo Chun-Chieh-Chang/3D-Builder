@@ -714,7 +714,7 @@ export class Viewer {
   private readonly renderer: THREE.WebGLRenderer;
   private readonly scene = new THREE.Scene();
   private readonly overlayScene = new THREE.Scene();
-  /** Background-only geometry is excluded from all content bounds and picking. */
+  /** Reference geometry shares model depth, but stays outside content bounds and picking. */
   private readonly gridScene = new THREE.Scene();
   private gridGroup: THREE.Group | null = null;
   private gridVisible = true;
@@ -3573,7 +3573,7 @@ export class Viewer {
     for (const [points, color] of [[lines.minor, 0xdfe7e5], [lines.major, 0xc4d3ce]] as const) {
       const geometry = new THREE.BufferGeometry();
       geometry.setAttribute('position', new THREE.Float32BufferAttribute(points, 3));
-      group.add(new THREE.LineSegments(geometry, new THREE.LineBasicMaterial({ color, depthTest: false, depthWrite: false })));
+      group.add(new THREE.LineSegments(geometry, new THREE.LineBasicMaterial({ color, depthTest: true, depthWrite: true })));
     }
     this.gridGroup = group;
     this.gridScene.add(group);
@@ -3586,7 +3586,9 @@ export class Viewer {
     const h = this.container.clientHeight;
     r.setViewport(0, 0, w, h);
     r.clear();
-    if (this.gridVisible) { this.updateGrid(); r.render(this.gridScene, this.camera); r.clearDepth(); }
+    // Grid lines and model share depth: foreground lines remain visible, opaque material hides lines behind it.
+    // Drawing the grid first also lets transparent faces blend over the grid at their real depth.
+    if (this.gridVisible) { this.updateGrid(); r.render(this.gridScene, this.camera); }
     r.render(this.scene, this.camera);
     if (this.overlayScene.children.length > 0) {
       r.clearDepth();
