@@ -14,3 +14,5 @@ export * from './clearance';
 export * from './drawingViews';
 export * from './drawingDimensions';
 export * from './drawingEdges';
+
+export * from './flatDrawing';

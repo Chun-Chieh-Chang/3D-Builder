@@ -1,3 +1,4 @@
+import { bendTableItems } from './bendTable';
 import { getLocale, t, withLocale } from '@3db/i18n';
 import { axesOf, hatchStyleOf, displayOf, isShaded, page, resolveDimStyle, resolveTitleStyle, sectionEndDirections, type HatchStyle, type CropDrawingView, type DetailDrawingView, type DimStyle, type DrawingDoc, type DrawingView, type Id, type Scale, type LocalSectionDrawingView, type SectionDrawingView, type TitleField, type ViewFeature } from '@3db/model';
 import type { ShadeImage } from './shade';
@@ -331,6 +332,7 @@ function buildSceneIn(
     // The view's name under it. A section, a local section, a detail and an auxiliary view are named by the letter they carry (ISO 128-30: 「A–A」, 「L」), which
     // their own items already write, so only the rest are named here; without it a reader has the lines and no way to tell which view is which.
     if (v.kind !== 'section' && v.kind !== 'sectionLocal' && v.kind !== 'detail' && v.kind !== 'auxiliary') items.push({ kind: 'text', at: [own.at[0], own.at[1] - own.h / 2 - 8], text: v.name, height: 5, anchor: 'center' });
+    items.push(...bendTableItems(v, resolved.get(v.id), own));
     items.push(...centreItems(v, features.get(v.id) ?? [], own));
     items.push(...surfaceFinishItems(pg.surfaceFinishes.filter((f) => f.view === v.id), own));
     items.push(...threadItems(v, features.get(v.id) ?? [], own));

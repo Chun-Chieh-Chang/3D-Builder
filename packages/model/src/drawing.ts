@@ -13,7 +13,7 @@ import { ANNOTATION_FIELDS, checkAnnotation, framesUsing, type Annotation, type 
  * opened (exact hidden-line removal), so a drawing can never disagree with the model it shows.
  */
 
-export const DRAWING_SCHEMA_VERSION = 29;
+export const DRAWING_SCHEMA_VERSION = 30;
 
 export type SheetSize = 'A4' | 'A3' | 'A2' | 'A1' | 'A0';
 export const SHEET_SIZES: readonly SheetSize[] = ['A4', 'A3', 'A2', 'A1', 'A0'];
@@ -215,7 +215,10 @@ export function hatchStyleOf(view: DrawingView, views: readonly DrawingView[] = 
   return HATCH_STYLE_DEFAULT;
 }
 
+export interface FlatBendStyle { notes: boolean; table: boolean; at?: [number, number] }
 interface ViewCommon {
+  /** Flat-pattern manufacturing annotations; coordinates are paper millimetres. */
+  flatBends?: FlatBendStyle;
   /** Absent: 3 mm / 45 degrees, inherited by section details and crops. */
   hatch?: HatchStyle;
   id: Id;
@@ -857,6 +860,7 @@ export type DimensionPatch = {
 
 /** What `setView` may change: the fields every view has, and those of its kind; a field that does not belong to the view's kind is refused. */
 export type ViewPatch = {
+  flatBends?: FlatBendStyle | null;
   hatch?: HatchStyle | null;
   name?: string;
   /** `null` puts the view back to its kind's default. */
@@ -926,6 +930,11 @@ function checkBreak(b: ViewBreak): void {
 function checkView(v: DrawingView, views: readonly DrawingView[]): void {
   if (!v.id) throw new CommandError(t('drawing.idMissing'));
   if (!v.name.trim()) throw new CommandError(t('drawing.nameEmpty'));
+  if (v.flatBends !== undefined) {
+    if (isDerived(v) || v.direction !== 'flat') throw new CommandError(t('drawing.notForKind', { field: 'flatBends', kind: v.kind ?? 'model' }));
+    const b = v.flatBends;
+    if (!b || typeof b.notes !== 'boolean' || typeof b.table !== 'boolean' || (b.at !== undefined && (!Array.isArray(b.at) || b.at.length !== 2 || !b.at.every(Number.isFinite)))) throw new CommandError(t('drawing.badFlatBends'));
+  }
   if (v.hatch !== undefined) {
     if (!canHatch(v, views)) throw new CommandError(t('drawing.notForKind', { field: 'hatch', kind: v.kind ?? 'model' }));
     if (!v.hatch || !Number.isFinite(v.hatch.spacing) || v.hatch.spacing < 0.5 || v.hatch.spacing > 20 || !Number.isFinite(v.hatch.angle) || v.hatch.angle < -180 || v.hatch.angle > 180) throw new CommandError(t('drawing.badHatch'));
@@ -1068,6 +1077,16 @@ const isRefValue = (r: unknown): r is DrawingRef =>
   // the part of an assembly it is in: a leaf's id, never empty
   ((r as DrawingRef).in === undefined || (typeof (r as DrawingRef).in === 'string' && (r as DrawingRef).in !== ''));
 
+/** Geometry references belong to either manufacturing coordinates or folded model coordinates. */
+function flatViewOf(views: readonly DrawingView[], id: Id): boolean {
+  let v = viewById(views, id);
+  for (let i = 0; v && i < 64; i++) {
+    if (!isDerived(v)) return v.direction === 'flat';
+    v = viewById(views, v.parent);
+  }
+  return false;
+}
+
 /** Checks a dimension against the views it may be drawn on and what its kind needs. */
 function checkDimension(d: Dimension, views: readonly DrawingView[]): void {
   if (!d.id) throw new CommandError(t('drawing.idMissing'));
@@ -1130,6 +1149,7 @@ function checkDimension(d: Dimension, views: readonly DrawingView[]): void {
       if (!parseFit(tol.fit)) throw new CommandError(t('drawing.dimBadFit', { fit: String(tol.fit) }));
     } else if (tol.type !== 'max' && tol.type !== 'min') throw new CommandError(t('drawing.dimBadLimits'));
   }
+  if (dimensionRefs(d).some(ref => flatViewOf(views, d.view) !== ref.name.includes('@flat:'))) throw new CommandError(t('drawing.flatDimensionState'));
 }
 
 /** Checks a table against the views it may be on. */
@@ -1220,13 +1240,27 @@ export function mutateDrawing(draft: Draft<DrawingDoc>, cmd: DrawingCommand): vo
       const { page: vPage, view: v } = pageOfView(draft, cmd.viewId);
       // a locked view (B2.1) keeps its place and its scale: moving or rescaling it is refused, however it is asked for
       if (v.locked && (cmd.patch.at !== undefined || cmd.patch.scale !== undefined || cmd.patch.slide !== undefined)) throw new CommandError(t('drawing.viewLocked'));
-      const { at, scale, slide, flip, aligned, centreMarks, display, locked, hiddenEdges, showTangentEdges, hatch, break: brk, ...rest } = cmd.patch;
+      const { at, scale, slide, flip, aligned, centreMarks, display, locked, hiddenEdges, showTangentEdges, hatch, flatBends, break: brk, ...rest } = cmd.patch;
       const kind = v.kind ?? 'model';
       const belongs: Record<string, string[]> = { model: ['source', 'direction'], projected: ['side'], section: ['line', 'label'], detail: ['centre', 'radius', 'label'], sectionLocal: ['outline', 'depth', 'label'], crop: ['outline'], auxiliary: ['line', 'label'] };
       for (const k of Object.keys(rest)) if (k !== 'name' && !belongs[kind]!.includes(k)) throw new CommandError(t('drawing.notForKind', { field: k, kind }));
       if (flip !== undefined && kind !== 'section' && kind !== 'auxiliary') throw new CommandError(t('drawing.notForKind', { field: 'flip', kind }));
       if (aligned !== undefined && kind !== 'section') throw new CommandError(t('drawing.notForKind', { field: 'aligned', kind }));
       const next = { ...(JSON.parse(JSON.stringify(v)) as DrawingView), ...rest } as DrawingView & { flip?: boolean; aligned?: boolean; at?: [number, number]; scale?: Scale; slide?: number };
+      if (!isDerived(v) && !isDerived(next) && (v.direction === 'flat') !== (next.direction === 'flat')) {
+        const reaches = (id: Id): boolean => {
+          let child = viewById(vPage.views, id);
+          for (let i = 0; child && i < 64; i++) {
+            if (child.id === v.id) return true;
+            if (!isDerived(child)) return false;
+            child = viewById(vPage.views, child.parent);
+          }
+          return false;
+        };
+        if (vPage.dimensions.some(d => reaches(d.view))) throw new CommandError(t('drawing.flatDimensionState'));
+        if (next.direction !== 'flat') delete next.flatBends;
+      }
+
       if (aligned === null || aligned === false) delete next.aligned;
       else if (aligned === true) next.aligned = true;
       if (at === null) delete next.at;
@@ -1246,6 +1280,8 @@ export function mutateDrawing(draft: Draft<DrawingDoc>, cmd: DrawingCommand): vo
       else if (hiddenEdges !== undefined) next.hiddenEdges = hiddenEdges;
       if (showTangentEdges === null || showTangentEdges === true) delete next.showTangentEdges;
       else if (showTangentEdges === false) next.showTangentEdges = false;
+      if (flatBends === null) delete next.flatBends;
+      else if (flatBends !== undefined) next.flatBends = flatBends;
       if (hatch === null) delete next.hatch;
       else if (hatch !== undefined) next.hatch = hatch;
       if (brk === null) delete next.break;

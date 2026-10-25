@@ -242,7 +242,7 @@ export interface DrawingViewRequest {
 }
 
 /** What a view of a drawing looks like: its lines at full size (and, when asked, its shading), or why they could not be made. */
-export type DrawingViewResult = { lines: ProjectedView; /** Where each part is, in the order asked, when asked for. */ anchors?: [number, number][]; shade?: ShadeImage | { error: string }; ms: number } | { error: string };
+export type DrawingViewResult = { lines: ProjectedView & { bends?: import('@3db/drawing').ViewLines['bends'] }; /** Where each part is, in the order asked, when asked for. */ anchors?: [number, number][]; shade?: ShadeImage | { error: string }; ms: number } | { error: string };
 
 /** What a view of a drawing can be dimensioned from, or why not (C16.4). */
 /** What a view can be dimensioned from: its features, and (D-I2) the edges and vertices of the part by name, projected, for the drawing to see which are drawn. */
@@ -286,7 +286,7 @@ export interface KernelApi {
   /** The lines of the views of a drawing (C16.2, A4.4): exact hidden-line removal on parts built for the app (`buildPart`); one result for each request. */
   drawingViews(requests: DrawingViewRequest[]): Promise<DrawingViewResult[]>;
   /** What each view can be dimensioned from (C16.4): the planes it sees edge-on and the cylinders it sees as circles, of the part built for the app. */
-  drawingFeatures(requests: { part: string; axes: ViewAxes }[]): Promise<DrawingFeaturesResult[]>;
+  drawingFeatures(requests: { part: string; axes: ViewAxes; flat?: boolean }[]): Promise<DrawingFeaturesResult[]>;
   /**
    * The edges and vertices of the parts of a view of an assembly, by name (D-I2): each part put where the assembly has it (`pose`, `mirrored`), its references
    * carrying the leaf's id (`leaf`).

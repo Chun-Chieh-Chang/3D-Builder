@@ -709,6 +709,12 @@ function validateNewFeature(doc: PartDoc, f: Feature, index: number): void {
       if (f.corners.length === 0 || f.corners.some((r) => r.kind !== 'edge')) throw new CommandError(t('cmd.flangeOnlyEdge'));
       if (f.kind !== 'chamfer' && f.kind !== 'fillet') throw new CommandError(t('cmd.featureTypeInvalid'));
       return;
+    case 'sheetUnfold': return;
+    case 'sheetRefold': {
+      const source = doc.features.findIndex(x => x.id === f.unfold);
+      if (source < 0 || source >= index || doc.features[source]!.type !== 'sheetUnfold') throw new CommandError(t('sheetState.noUnfold'));
+      return;
+    }
     case 'baseFlange':
       sketchBefore(doc, f.sketch, index, t('feature.baseFlange'));
       return;

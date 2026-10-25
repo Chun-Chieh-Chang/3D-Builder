@@ -155,6 +155,8 @@ const FEATURE_ACTION: Record<string, string> = {
   screwBoss: 'screw-boss',
   baseFlange: 'base-flange',
   midBend: 'mid-bend',
+  sheetUnfold: 'sheet-unfold',
+  sheetRefold: 'sheet-refold',
   edgeFlange: 'edge-flange',
   hem: 'hem',
   breakCorner: 'break-corner',

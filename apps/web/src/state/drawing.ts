@@ -721,7 +721,7 @@ export class DrawingStore {
       return { id, key, parts, anchors: true, axes, ...(cut ? { cut } : {}), ...shade, ...(hidden ? { hidden } : {}) };
     }
     // the flat pattern of a sheet metal part: not a projection, so nothing of the folded part can be dimensioned in it (nor shaded: it has no faces to light)
-    if (view.kind === undefined || view.kind === 'model') if (view.direction === 'flat') return { id: `${key}|flat`, key, parts: [{ part: key, mirrored: false, pose: IDENTITY }], anchors: false, flat: true, axes };
+    if (view.kind === undefined || view.kind === 'model') if (view.direction === 'flat') return { id: `${key}|flat`, featureId: `${key}|flat-features`, key, parts: [{ part: key, mirrored: false, pose: IDENTITY }], anchors: false, flat: true, axes };
     return { id, featureId: `${key}|${JSON.stringify(axes)}`, key, parts: [{ part: key, mirrored: false, pose: IDENTITY }], anchors: false, axes, ...(cut ? { cut } : {}), ...shade, ...(hidden ? { hidden } : {}) };
   }
 
@@ -1074,11 +1074,11 @@ export class DrawingStore {
         const wantedFeatures = allDocViews.flatMap((v) => {
           const r = this.requestOf(v);
           if (!r || !r.featureId || this.featureCache.has(r.featureId)) return [];
-          return [{ id: r.featureId, part: r.key, axes: r.axes }];
+          return [{ id: r.featureId, part: r.key, axes: r.axes, ...(r.flat ? { flat: true } : {}) }];
         });
         const uniqueFeatures = [...new Map(wantedFeatures.map((w) => [w.id, w])).values()];
         if (uniqueFeatures.length > 0) {
-          const results = await this.host.api.drawingFeatures(uniqueFeatures.map((w) => ({ part: w.part, axes: w.axes })));
+          const results = await this.host.api.drawingFeatures(uniqueFeatures.map((w) => ({ part: w.part, axes: w.axes, ...(w.flat ? { flat: true } : {}) })));
           if (this.closed) return;
           uniqueFeatures.forEach((w, i) => {
             const r = results[i]!;

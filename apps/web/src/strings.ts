@@ -42,6 +42,8 @@ export const FEATURE_LABEL: Record<FeatureType, string> = labelsOf({
   lipGroove: 'feature.lipGroove',
   screwBoss: 'feature.screwBoss',
   baseFlange: 'feature.baseFlange',
+  sheetUnfold: 'feature.sheetUnfold',
+  sheetRefold: 'feature.sheetRefold',
   midBend: 'feature.midBend',
   jog: 'feature.jog',
   edgeFlange: 'feature.edgeFlange',

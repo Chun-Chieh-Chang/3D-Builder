@@ -7,7 +7,7 @@ import { bodyKey, combineMass, DATUM_PLANES, isDatumPlaneName, isShown, mirrorKe
 import { findProfiles, PlaneGcsSolver } from '@3db/sketch';
 import { COMPONENT_MESH, Kernel, type ThicknessReport, type UndercutReport, type DraftReport, type GeometryReport, type MassProps, type MeshData, type MeshOptions, type ShapeId } from '@3db/kernel';
 import { encodeShade, flatViewLines, rasterizeShade, withoutHiddenEdges, type ShadeImage, type ViewLines } from '@3db/drawing';
-import { silhouetteProjector, silhouetteItems, drawingAnchors, holeFeatures, projectDrawingView, elementFacts, viewFeatures, viewEdges, findClearance, findInterference, flatPattern, FlatError, sheetChecks, sweepClearance, measureTargets, convertEdges, intersectFaces, modelSnapItems, edgeMateGeometry, exportFaces, faceColors, intoFrame, faceEdges, faceMateGeometry, followReferences, NO_NAMES, NO_TOPOLOGY, sketchEntityRefs, ReferenceProblem, Regenerator, type ReferenceScope, solveAssemblyTree, type AssemblyResult, type AssemblySolveOptions, type BodyInfo, type FlatReport, type HoleFeatures, type RebuildResult, type SheetCheck, type SheetCheckLimits } from '@3db/regen';
+import { silhouetteProjector, silhouetteItems, drawingAnchors, holeFeatures, projectDrawingView, elementFacts, viewFeatures, viewEdges, findClearance, findInterference, flatDrawingGeometry, flatPattern, FlatError, sheetChecks, sweepClearance, measureTargets, convertEdges, intersectFaces, modelSnapItems, edgeMateGeometry, exportFaces, faceColors, intoFrame, faceEdges, faceMateGeometry, followReferences, NO_NAMES, NO_TOPOLOGY, sketchEntityRefs, ReferenceProblem, Regenerator, type ReferenceScope, solveAssemblyTree, type AssemblyResult, type AssemblySolveOptions, type BodyInfo, type FlatReport, type HoleFeatures, type RebuildResult, type SheetCheck, type SheetCheckLimits } from '@3db/regen';
 import { edgeFingerprint, faceFingerprint, vertexFingerprint } from '@3db/naming';
 import { binaryStl, exportAssemblyStep, exportPartStep, portableShape, readComponentFile, stepAssemblyPlan, type StepAssemblyPlan } from '@3db/io';
 import type { SourcePart, SourceProvider } from '@3db/regen';
@@ -517,6 +517,7 @@ const api: KernelApi = {
           if (!built.result.sheet) throw new Error(t('flat.noSheet'));
           const pattern = flatPattern(kernel, built.result.sheet);
           try {
+            if (pattern.notIncluded.length) throw new Error(t('sheetState.bendCut'));
             out.push({ lines: flatViewLines(pattern), ms: performance.now() - began });
           } finally {
             kernel.release(pattern.shape);
@@ -568,6 +569,13 @@ const api: KernelApi = {
         const built = await parts.get(r.part)?.catch(() => null);
         const body = built?.result.body;
         if (!built || !body) throw new Error(t('drawing.noBody'));
+        if (r.flat) {
+          if (!built.result.sheet) throw new Error(t('flat.noSheet'));
+          const flat = flatDrawingGeometry(kernel, built.result.sheet, built.result.body);
+          try { out.push({ features: viewFeatures(flat.topology, flat.names, r.axes), edges: viewEdges(kernel, flat.shape, flat.topology, flat.names, r.axes) }); }
+          finally { kernel.release(flat.shape); }
+          continue;
+        }
         // the faces of a workpiece that is only there for reference are not the part's (as in the lines of its views)
         const own = built.result.bodies.filter((b) => !b.reference && !b.surface);
         const only = own.length > 0 && own.length < built.result.bodies.length;
@@ -625,7 +633,10 @@ const api: KernelApi = {
         const built = await parts.get(r.part)?.catch(() => null);
         const body = built?.result.body;
         if (!built || !body) throw new Error(t('drawing.noBody'));
-        out.push({ elements: r.refs.map((ref) => elementFacts(body.topology, body.names, ref, built.holes, built.result.cosmeticThreads)) });
+        const needsFlat = r.refs.some(ref => ref.name.includes('@flat:'));
+        const flat = needsFlat && built.result.sheet ? flatDrawingGeometry(kernel, built.result.sheet, built.result.body) : null;
+        try { out.push({ elements: r.refs.map(ref => ref.name.includes('@flat:') ? (flat ? elementFacts(flat.topology, flat.names, ref) : { error: t('flat.noSheet') }) : elementFacts(body.topology, body.names, ref, built.holes, built.result.cosmeticThreads)) }); }
+        finally { if (flat) kernel.release(flat.shape); }
       } catch (e) {
         out.push({ error: e instanceof Error ? e.message : String(e) });
       }

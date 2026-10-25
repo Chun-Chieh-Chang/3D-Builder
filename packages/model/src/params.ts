@@ -474,6 +474,8 @@ export function mapExprs(feature: Feature, fn: (expr: Expr, kind: ExprKind, role
     case 'refAxis':
     case 'coordSys':
     case 'mirror':
+    case 'sheetUnfold':
+    case 'sheetRefold':
     case 'derivedBody':
     case 'splitLine':
     case 'fillSurface':

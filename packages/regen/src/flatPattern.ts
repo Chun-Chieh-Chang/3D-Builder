@@ -1,3 +1,4 @@
+import { mappedBlank } from './sheetMapping';
 import { t } from '@3db/i18n';
 import type { Frame, Kernel, Region, ShapeId } from '@3db/kernel';
 import type { Id } from '@3db/model';
@@ -194,7 +195,12 @@ export function flatPattern(kernel: Kernel, sheet: SheetInfo): FlatPattern {
         maps[k] = compose(F, undo);
       });
     };
-    if (base.kind === 'bent') {
+    if (sheet.mapping?.active) {
+      frame = sheet.mapping.frame;
+      body = sheet.unfolding ? keep(kernel.copy(sheet.unfolding.current)) : mappedBlank(kernel, sheet.mapping, keep);
+      bends.push(...sheet.mapping.bends);
+      notIncluded.push(...sheet.mapping.notIncluded);
+    } else if (base.kind === 'bent') {
       for (const c of sheet.cuts) notIncluded.push({ feature: c.feature, why: 'bentBase' });
       frame = base.frame;
       body = keep(kernel.extrude(frame, [rect(0, 0, base.flatLength, base.width, 'flat')], addv([0, 0, 0], frame.normal, T)).shape);

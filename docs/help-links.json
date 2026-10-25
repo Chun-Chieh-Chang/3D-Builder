@@ -24,7 +24,9 @@
     "gear": "gear/rack builder, ADR 0193; no manual item yet",
     "rack": "gear/rack builder, ADR 0193; no manual item yet",
     "tool-ellipse": "Sketch constraint expansion; dedicated e2e, no manual item yet",
-    "tool-bezier": "Sketch constraint expansion; dedicated e2e, no manual item yet"
+    "tool-bezier": "Sketch constraint expansion; dedicated e2e, no manual item yet",
+    "sheet-unfold": "Editable sheet manufacturing, ADR 0199",
+    "sheet-refold": "Editable sheet manufacturing, ADR 0199"
   },
   "C1": [
     "equations",

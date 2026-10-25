@@ -1,3 +1,4 @@
+import { activeSheetUnfold } from '@3db/model';
 import { initialLoftSections } from './loftSections';
 import * as Comlink from 'comlink';
 import { DEFAULT_LOCALE, getLocale, LOCALES, setLocale, t, type Locale } from '@3db/i18n';
@@ -1752,6 +1753,16 @@ class AppStore {
   }
 
   /** 「中間折彎」 (S-3): the selected sketch (one straight line), 90° to start with. */
+  newSheetState(type: 'sheetUnfold' | 'sheetRefold'): void {
+    const doc = this.history.doc;
+    const unfolded = activeSheetUnfold(doc.features);
+    if (type === 'sheetRefold' && !unfolded) return;
+    const name = t(type === 'sheetUnfold' ? 'feature.sheetUnfold' : 'feature.sheetRefold');
+    const base = { id: this.allocator().take(type), name: nextName(doc, name), suppressed: false };
+    const feature: Feature = type === 'sheetUnfold' ? { ...base, type } : { ...base, type, unfold: unfolded!.id };
+    this.execute({ type: 'insertFeature', feature, index: doc.features.length });
+  }
+
   newMidBend(): void {
     const sketch = this.selectedSketch();
     if (!sketch) return;

@@ -1,3 +1,4 @@
+import { activeSheetUnfold } from '@3db/model';
 import { initialLoftSections } from './state/loftSections';
 import { absorbedSketches, bodyKey, canBeSeed, explosionSteps, isDatumPlaneName, isHideable, isShown, page, type DatumPlaneName, type Feature, type PlaneFrame, type Ref } from '@3db/model';
 import { ownerFeatures } from '@3db/naming';
@@ -208,6 +209,8 @@ export const ACTIONS: UiAction[] = [
   { id: 'hole', get label() { return t('feature.hole'); }, group: 'feature', enabled: (s) => sketchSelected(s) && !!s.result?.mesh, run: () => store.newHole() },
   { id: 'screw-boss', get label() { return t('feature.screwBoss'); }, group: 'feature', enabled: (s) => sketchSelected(s) && !!s.result?.mesh, run: () => store.newScrewBoss() },
   { id: 'base-flange', get label() { return t('feature.baseFlange'); }, group: 'sheet', enabled: sketchSelected, run: () => store.newBaseFlange() },
+  { id: 'sheet-unfold', get label() { return t('feature.sheetUnfold'); }, group: 'sheet', enabled: s => hasBody(s) && s.doc.features.some(f => f.type === 'baseFlange' && !f.suppressed) && !activeSheetUnfold(s.doc.features), run: () => store.newSheetState('sheetUnfold') },
+  { id: 'sheet-refold', get label() { return t('feature.sheetRefold'); }, group: 'sheet', enabled: s => hasBody(s) && !!activeSheetUnfold(s.doc.features), run: () => store.newSheetState('sheetRefold') },
   { id: 'mid-bend', get label() { return t('feature.midBend'); }, group: 'sheet', enabled: (s) => hasBody(s) && sketchSelected(s), run: () => store.newMidBend() },
   { id: 'jog', get label() { return t('feature.jog'); }, group: 'sheet', enabled: (s) => hasBody(s) && sketchSelected(s), run: () => store.newJog() },
   { id: 'edge-flange', get label() { return t('feature.edgeFlange'); }, group: 'sheet', enabled: hasBody, run: () => store.newEdgeFlange() },

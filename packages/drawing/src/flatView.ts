@@ -41,5 +41,5 @@ export function flatViewLines(p: FlatDxfInput): ViewLines & { center: number[][]
     else visible.push(arcPolyline(at(s.c), s.r, at(s.from), at(s.to), at(s.mid)));
   }
   const center = p.bends.map((b) => [...at(b.a), ...at(b.b)]);
-  return { visible, hidden: [], center, box: { min: [0, 0], max: [p.width, p.height] } };
+  return { visible, hidden: [], center, bends: p.bends.map((b,i) => ({ id: b.feature && b.name ? `${b.feature}:${b.name}` : `bend${i+1}`, a: at(b.a), b: at(b.b), angle: b.angle, radius: b.radius, direction: b.direction, allowance: b.allowance ?? b.angle * (b.radius + b.kFactor * p.thickness) })), box: { min: [0, 0], max: [p.width, p.height] } };
 }

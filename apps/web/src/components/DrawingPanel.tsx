@@ -22,7 +22,7 @@ const parseScale = (s: string): Scale => {
 };
 
 /** A text box that commits on Enter or when it loses focus. */
-function TextBox({ value, onCommit }: { value: string; onCommit: (v: string) => void }) {
+function TextBox({ value, onCommit, field }: { value: string; onCommit: (v: string) => void; field?: string }) {
   const [text, setText] = useState(value);
   const [shown, setShown] = useState(value);
   if (value !== shown) {
@@ -32,6 +32,7 @@ function TextBox({ value, onCommit }: { value: string; onCommit: (v: string) => 
   const commit = () => text !== value && onCommit(text);
   return (
     <input
+      data-field={field}
       value={text}
       onChange={(e) => setText(e.target.value)}
       onBlur={commit}
@@ -706,6 +707,16 @@ export function DrawingPanel() {
                   ))}
                 </select>
               </label>
+              {!isDerived(view) && view.direction === 'flat' && (
+                <div>
+                  {(['notes', 'table'] as const).map(field => <label className="pm-row checkbox" key={field}><input type="checkbox" data-field={field === 'notes' ? 'bendNotes' : 'bendTable'} checked={!!view.flatBends?.[field]} onChange={e => d.setView(view.id, { flatBends: { notes: false, table: false, ...view.flatBends, [field]: e.target.checked } })} /><span>{t(field === 'notes' ? 'drawingUi.bendNotes' : 'drawingUi.bendTable')}</span></label>)}
+                  {view.flatBends?.table && (['x','y'] as const).map((axis,index) => {
+                    const p = d.scene().placed.get(view.id);
+                    const at: [number,number] = view.flatBends?.at ?? [p ? p.at[0]+p.w/2+8 : 20, p ? p.at[1]+p.h/2 : 100];
+                    return <label className="pm-row" key={axis}><span>{t(axis === 'x' ? 'drawingUi.bendTableX' : 'drawingUi.bendTableY')}</span><TextBox field={axis === 'x' ? 'bendTableX' : 'bendTableY'} value={String(at[index])} onCommit={text => { const next: [number,number] = [...at]; next[index] = text.trim() ? Number(text) : NaN; d.setView(view.id, { flatBends: { ...view.flatBends!, at: next } }); }} /></label>;
+                  })}
+                </div>
+              )}
               {canHatch(view, curPage.views) && (
                 <div title={t('drawingUi.hatchTip')}>
                   {(['spacing', 'angle'] as const).map(field => (

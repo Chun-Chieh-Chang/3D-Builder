@@ -12,6 +12,17 @@ export function parentsOf(feature: Feature, doc: PartDoc): Id[] {
   const fromRefs = (refs: Ref[]) => refs.flatMap((r) => (r.kind === 'datum' ? [r.name] : r.kind === 'sketch' ? [r.name.split(':')[0]!] : ownerFeatures(r.name)));
   let parents: Id[];
   switch (feature.type) {
+    case 'sheetUnfold': {
+      const index = doc.features.findIndex(x => x.id === feature.id);
+      parents = doc.features.slice(0, index).filter(x => x.type !== 'sketch').map(x => x.id);
+      break;
+    }
+    case 'sheetRefold': {
+      const start = doc.features.findIndex(x => x.id === feature.unfold);
+      const end = doc.features.findIndex(x => x.id === feature.id);
+      parents = doc.features.slice(Math.max(0, start), end).map(x => x.id);
+      break;
+    }
     case 'sketch':
       // its plane, and what its entities follow (C1.18, ADR 0171, ADR 0172): model edges and vertices (by the features that made them), reference geometry
       // and what its axes are taken from (ADR 0181)

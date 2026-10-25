@@ -71,6 +71,8 @@ export function absorbedSketches(f: Feature): Id[] {
     case 'refPoint':
     case 'coordSys':
     case 'importedBody':
+    case 'sheetUnfold':
+    case 'sheetRefold':
     case 'derivedBody':
     case 'deleteFace':
     case 'moveFace':

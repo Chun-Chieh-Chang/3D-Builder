@@ -6,7 +6,7 @@ import type { Id } from './ids';
  * DOF status, mass properties and error lists are derived data and never stored.
  */
 
-export const SCHEMA_VERSION = 82;
+export const SCHEMA_VERSION = 83;
 
 /** Value expression (B5.2, B5.3): "20", "25.4mm", "30deg", "wall_t*2", "D1@草圖1/2", "property('厚度')"; see `expr/`. */
 export type Expr = string;
@@ -923,12 +923,16 @@ export interface BaseFlangeFeature extends FeatureBase {
   flipSide?: boolean;
 }
 
+/** Editable manufacturing state; refold explicitly names its earlier unfold feature. */
+export interface SheetUnfoldFeature extends FeatureBase { type: 'sheetUnfold' }
+export interface SheetRefoldFeature extends FeatureBase { type: 'sheetRefold'; unfold: Id }
+
 /**
  * Mid bend (中間折彎, S-3, v48): the plate of a sheet metal part bent along the one line of a sketch, in the middle of the plate. The line divides the plate; the side to the left of the
  * way the line is drawn stays (`flipSide`: the right), the other side turns by `angle` about an axis parallel to the line, `radius` from the face the plate folds toward (the
  * sheet's when absent). It folds toward the sketch normal (`reverse`: against it). The bend is centred on the line: its zone is as wide as the bend allowance, so the flat pattern is
- * the plate as it was drawn. Only for a plate with nothing but holes and notches outside the zone (a zone that is not a plain strip is refused), made by a base flange of a closed
- * profile with no edge flange or hem before it, and one mid bend to a part.
+ * the plate as it was drawn. Each new bend zone must be one planar strip free of holes, notches or earlier curved zones. Sequential bends can be mixed with ordinary edge
+ * flanges, hems and jogs on a closed-profile sheet base; a rigid panel mapping keeps their manufacturing coordinates.
  */
 export interface MidBendFeature extends FeatureBase {
   type: 'midBend';
@@ -1187,6 +1191,8 @@ export type Feature =
   | ThickenFeature
   | LipGrooveFeature
   | ScrewBossFeature
+  | SheetUnfoldFeature
+  | SheetRefoldFeature
   | BaseFlangeFeature
   | MidBendFeature
   | EdgeFlangeFeature

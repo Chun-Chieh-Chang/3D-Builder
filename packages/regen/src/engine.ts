@@ -1,3 +1,4 @@
+import { SHEET_IDENTITY, sheetHost, sheetCompose, sheetInverse, sheetPoint, sheetVector, sheetRows, sheetPlanar, sheetSplitPanels, sheetClipPanels, mappedBlank, type SheetMapping, type SheetRigid } from './sheetMapping';
 import { toothedProfile } from './gears';
 import { gearParameters, type SpurGearFeature, type RackFeature } from '@3db/model';
 import { t } from '@3db/i18n';
@@ -257,12 +258,14 @@ export interface SheetFlange {
 
 /** What the sheet metal features of a part have recorded (null for a part that is not sheet metal). */
 export interface SheetInfo {
+  mapping?: SheetMapping;
+  unfolding?: { feature: Id; folded: ShapeId; names: ElementNames; blank: ShapeId; current: ShapeId };
   thickness: number;
   radius: number;
   kFactor: number;
   bends: SheetBend[];
   flanges: SheetFlange[];
-  /** The mid bends of a plate (at most one). */
+  /** Mid bends in feature order; manufacturing coordinates are tracked by the panel mapping. */
   midBends: SheetMidBend[];
   /** What the features after the sheet's own took away (holes, notches), in the order they were made. */
   cuts: SheetCut[];
@@ -493,7 +496,7 @@ const importKey = (sha256: string, sewTolerance: string | undefined): string => 
 };
 
 /** The features that make the sheet itself: what they add and take away is in the data they record, not in `sheet.cuts`. */
-const SHEET_FEATURES = new Set<string>(['baseFlange', 'edgeFlange', 'hem', 'midBend', 'jog']);
+const SHEET_FEATURES = new Set<string>(['baseFlange', 'edgeFlange', 'hem', 'midBend', 'jog', 'sheetUnfold', 'sheetRefold']);
 
 const concatNames = (a: ElementNames, b: ElementNames): ElementNames => ({
   faces: [...a.faces, ...b.faces],
@@ -651,7 +654,14 @@ export class Regenerator {
       if (problem) return done({ status: 'error', message: problem });
       this.current = feature;
       try {
+        if (this.sheet?.unfolding && ['baseFlange','edgeFlange','hem','midBend','jog'].includes(feature.type)) throw new FeatureError(t('sheetState.foldFirst'));
         switch (feature.type) {
+          case 'sheetUnfold':
+          case 'sheetRefold': {
+            const next = this.sheetState(feature, set);
+            set = this.advance(set, next);
+            return done({ status: 'ok' });
+          }
           case 'sketch': {
             const s = this.sketch(feature, set, sketches);
             frames.set(feature.id, s.frame);
@@ -909,6 +919,11 @@ export class Regenerator {
    * and says which it did away with by leaving them out), and so is the old view of them all.
    */
   private advance(old: Bodies, next: BodyState[]): Bodies {
+    if (this.sheet?.unfolding && this.current && !SHEET_FEATURES.has(this.current.type) && next.length === 1) {
+      const current = this.kernel.copy(next[0]!.shape);
+      this.owned.push(current);
+      this.sheet.unfolding.current = current;
+    }
     if (this.sheet && this.current && !SHEET_FEATURES.has(this.current.type)) this.recordCut(old, next);
     const kept = new Set(next.map((b) => b.shape));
     for (const b of old.list) if (!kept.has(b.shape)) this.kernel.release(b.shape);
@@ -923,19 +938,27 @@ export class Regenerator {
   private recordCut(old: Bodies, next: BodyState[]): void {
     const sheet = this.sheet;
     const feature = this.current;
-    if (!sheet || !feature) return;
+    if (!sheet || !feature || sheet.unfolding) return;
     const before = old.list.filter((b) => !b.surface);
     const after = next.filter((b) => !b.surface);
     if (before.length !== 1 || after.length !== 1 || before[0]!.shape === after[0]!.shape) return;
     const k = this.kernel;
     const vBefore = k.massProps(before[0]!.shape).volume;
     const vAfter = k.massProps(after[0]!.shape).volume;
-    if (!(vBefore - vAfter > 1e-6 * vBefore + 1e-9)) return;
+    if (!(vBefore - vAfter > (sheet.mapping ? 1e-9 : 1e-6 * vBefore + 1e-9))) return;
     try {
       const r = k.boolean('cut', before[0]!.shape, after[0]!.shape);
       if (k.massProps(r.shape).volume <= 1e-9) return void k.release(r.shape);
       this.owned.push(r.shape);
       sheet.cuts.push({ feature: feature.id, shape: r.shape });
+      if (sheet.mapping) {
+        const own = (shape: ShapeId) => { this.owned.push(shape); return shape; };
+        const beforePanels = sheet.mapping.panels.reduce((a,p) => a + k.massProps(p.shape).volume, 0);
+        const panels = sheetClipPanels(k, sheet.mapping.panels, after[0]!.shape, own);
+        const removed = beforePanels - panels.reduce((a,p) => a + k.massProps(p.shape).volume, 0);
+        if (Math.abs(removed - (vBefore - vAfter)) > 1e-3 * (vBefore - vAfter) + 1e-6) sheet.mapping.notIncluded.push({ feature: feature.id, why: 'bend' });
+        sheet.mapping.panels = panels;
+      }
     } catch {
       // the difference could not be made: the flat pattern will not have this cut, and does not say it does
     }
@@ -3383,8 +3406,64 @@ export class Regenerator {
       }
     }
     const out = this.apply(f.id, 'boss', tool, { featureId: f.id, sketchId: f.sketch }, set.list, true);
+    if (sheet.base?.kind === 'plate' && out.length === 1) {
+      const shape = this.kernel.copy(out[0]!.shape);
+      this.owned.push(shape);
+      sheet.mapping = { active: false, frame: sheet.base.frame, panels: [{ shape, toFlat: SHEET_IDENTITY }], zones: [], bends: [], notIncluded: [] };
+    }
     this.sheet = sheet;
     return out;
+  }
+
+  private sheetState(f: Extract<Feature, { type: 'sheetUnfold' | 'sheetRefold' }>, set: Bodies): BodyState[] {
+    const sheet = this.sheet;
+    if (!sheet?.mapping || set.list.length !== 1 || set.list[0]!.surface) throw new FeatureError(t('sheetState.needsMappedSheet'));
+    const k = this.kernel;
+    const current = set.list[0]!;
+    const own = (shape: ShapeId) => { this.owned.push(shape); return shape; };
+    if (f.type === 'sheetUnfold') {
+      if (sheet.unfolding) throw new FeatureError(t('sheetState.alreadyFlat'));
+      if (sheet.mapping.notIncluded.length) throw new FeatureError(t('sheetState.bendCut'));
+      const blank = mappedBlank(k, sheet.mapping, own);
+      const shape = k.copy(blank);
+      const topology = k.topology(shape);
+      const names = nameElements(topology.faces.map((_, index) => [{ rel: 'imported' as const, index }]), topology, { featureId: f.id });
+      sheet.unfolding = { feature: f.id, folded: own(k.copy(current.shape)), names: current.names, blank, current: blank };
+      sheet.mapping.active = true;
+      return [{ ...current, shape, topology, names, by: f.id }];
+    }
+    const session = sheet.unfolding;
+    if (!session || session.feature !== f.unfold) throw new FeatureError(t('sheetState.noUnfold'));
+    const removed = own(k.boolean('cut', session.blank, current.shape).shape);
+    const extra = own(k.boolean('cut', current.shape, session.blank).shape);
+    if (k.massProps(extra).volume > 1e-7) throw new FeatureError(t('sheetState.cutOnly'));
+    const volume = k.massProps(removed).volume;
+    let mapped = 0;
+    const tools: ShapeId[] = [];
+    for (const panel of sheet.mapping.panels) {
+      const flatPanel = own(k.transformed(panel.shape, sheetRows(panel.toFlat)));
+      const portion = own(k.boolean('common', removed, flatPanel).shape);
+      const v = k.massProps(portion).volume;
+      if (v <= 1e-8) continue;
+      mapped += v;
+      tools.push(own(k.transformed(portion, sheetRows(sheetInverse(panel.toFlat)))));
+    }
+    if (Math.abs(mapped - volume) > 1e-6 * Math.max(1, volume)) throw new FeatureError(t('sheetState.bendCut'));
+    const shape = own(k.copy(session.folded));
+    let list: BodyState[] = [{ ...current, shape, topology: k.topology(shape), names: session.names, by: f.id }];
+    for (const tool of tools) {
+      if (!this.owned.includes(list[0]!.shape)) this.owned.push(list[0]!.shape);
+      const topology = k.topology(tool);
+      list = this.apply(f.id, 'cut', { shape: k.copy(tool), faceOrigins: topology.faces.map((_,index) => [{ rel:'imported' as const,index }]) }, { featureId: f.id }, list, false);
+    }
+    for (const body of list) if (!this.owned.includes(body.shape)) this.owned.push(body.shape);
+    if (list.length !== 1 || !k.isValid(list[0]!.shape) || k.solidCount(list[0]!.shape) !== 1) throw new FeatureError(t('sheetMapping.invalidFlat'));
+    // Each planar patch keeps its manufacturing transform; only the cut-away material changes.
+    sheet.mapping.panels = sheetClipPanels(k, sheet.mapping.panels, list[0]!.shape, own);
+    delete sheet.unfolding;
+    const ownedResult = this.owned.indexOf(list[0]!.shape);
+    if (ownedResult >= 0) this.owned.splice(ownedResult, 1);
+    return list;
   }
 
   /**
@@ -3396,7 +3475,7 @@ export class Regenerator {
   private midBend(f: MidBendFeature, sketches: RebuildResult['sketches'], set: Bodies): BodyState[] {
     const sheet = this.sheet;
     if (!sheet) throw new FeatureError(t('flange.needsSheet'));
-    if (sheet.base?.kind !== 'plate' || sheet.flanges.length > 0 || sheet.midBends.length > 0) throw new FeatureError(t('midBend.scope'));
+    if (sheet.base?.kind !== 'plate' || !sheet.mapping) throw new FeatureError(t('midBend.scope'));
     const solids = set.list.filter((b) => !b.surface);
     if (solids.length !== 1) throw new FeatureError(t('midBend.oneBody'));
     const plate = solids[0]!;
@@ -3418,10 +3497,7 @@ export class Regenerator {
     const l = unit(sub(at(line.b), a));
     const n = s.frame.normal;
     // the plate square to the sketch normal, and as thick as the sheet
-    const heights = plate.topology.vertices.map((v) => dot(v.point, n));
-    const zBot = Math.min(...heights);
-    if (Math.abs(Math.max(...heights) - zBot - T) > 1e-6 * (1 + T)) throw new FeatureError(t('midBend.notFlat'));
-    const q = add(a, n, zBot - dot(a, n));
+    let q = a;
     const up: Vec3 = f.reverse ? neg(n) : n;
     const left = cross(n, l);
     const p: Vec3 = f.flipSide ? left : neg(left); // from the side that stays to the side that turns
@@ -3434,10 +3510,10 @@ export class Regenerator {
     };
     try {
       const strip = (u0: number, u1: number, tag: string): OpResult => {
-        const fr: PlaneFrame = { origin: add(q, n, -1), xDir: l, yDir: p, normal: cross(l, p) };
+        const fr: PlaneFrame = { origin: add(q, n, -reach), xDir: l, yDir: p, normal: cross(l, p) };
         const pts: [number, number][] = [[-reach, u0], [reach, u0], [reach, u1], [-reach, u1]];
         const region: Region = { outer: pts.map((pt, i) => ({ kind: 'line' as const, a: pt, b: pts[(i + 1) % 4]!, source: `mid.${tag}.p${i}` })), holes: [] };
-        return this.capsNamed(k.extrude(fr, [region], add([0, 0, 0], n, T + 2), 0), `mid.${tag}`, 'start', 'end');
+        return this.capsNamed(k.extrude(fr, [region], add([0, 0, 0], n, 2 * reach), 0), `mid.${tag}`, 'start', 'end');
       };
       const piece = (u0: number, u1: number, tag: string) => {
         const cutter = strip(u0, u1, tag);
@@ -3452,10 +3528,15 @@ export class Regenerator {
       const B = piece(BA / 2, reach, 'b');
       if (!(Z.volume > 1e-9)) throw new FeatureError(t('midBend.lineOutside'));
       if (!(A.volume > 1e-9) || !(B.volume > 1e-9)) throw new FeatureError(t('midBend.noSide'));
+      const heights = Z.topology.vertices.map(v => dot(v.point, n));
+      const bottom = Math.min(...heights);
+      if (Math.abs(Math.max(...heights) - bottom - T) > 1e-6 * (1 + T)) throw new FeatureError(t('midBend.notFlat'));
+      q = add(q, n, bottom - dot(q, n));
       const along = Z.topology.vertices.map((v) => dot(sub(v.point, q), l));
       const [lo, hi] = [Math.min(...along), Math.max(...along)];
       const w = hi - lo;
       if (Math.abs(Z.volume - w * BA * T) > 1e-3 * Z.volume + 1e-6) throw new FeatureError(t('midBend.zoneNotRect'));
+      const host = sheetHost(k, sheet.mapping!, k.massProps(Z.shape).center);
       // the zone made again as the bend: the section revolved about the axis, which lies `radius` from the face the plate folds toward
       const frameS: PlaneFrame = { origin: add(q, p, -BA / 2), xDir: l, yDir: n, normal: cross(l, n) };
       const rect: [number, number][] = [[lo, 0], [hi, 0], [hi, T], [lo, T]];
@@ -3482,6 +3563,16 @@ export class Regenerator {
       const volume = k.massProps(abb.shape).volume;
       const expected = A.volume + B.volume + bend.volume;
       if (k.solidCount(abb.shape) !== 1 || !k.isValid(abb.shape) || Math.abs(volume - expected) > 1e-3 * expected + 1e-6) throw new FeatureError(t('midBend.collides'));
+      const motion: SheetRigid = { R: [R[0]![0], R[1]![0], R[2]![0], R[0]![1], R[1]![1], R[2]![1], R[0]![2], R[1]![2], R[2]![2]], t: shift };
+      const own = (shape: ShapeId) => { this.owned.push(shape); return shape; };
+      const mapping = sheet.mapping!;
+      const panels = sheetSplitPanels(k, mapping, A.shape, B.shape, motion, own);
+      const flatZone = own(k.transformed(Z.shape, sheetRows(host.toFlat)));
+      const atFlat = (point: Vec3) => sheetPlanar(mapping.frame, sheetPoint(host.toFlat, point));
+      mapping.panels = panels;
+      mapping.zones.push(flatZone);
+      mapping.bends.push({ feature: f.id, name: 'bend', a: atFlat(add(q, l, lo)), b: atFlat(add(q, l, hi)), angle: theta, radius: rb, direction: dot(sheetVector(host.toFlat, up), mapping.frame.normal) > 0 ? 'up' : 'down', kFactor: sheet.kFactor, allowance: BA });
+      mapping.active = true;
       owned.splice(owned.indexOf(abb.shape), 1);
       sheet.bends.push({ feature: f.id, name: 'bend', angle: theta, radius: rb, thickness: T, width: w, kFactor: sheet.kFactor, allowance: BA });
       sheet.midBends.push({ feature: f.id, a: add(q, l, lo), b: add(q, l, hi), up, angle: theta, radius: rb, allowance: BA, q, side: p, center, axis, slide });
@@ -3495,7 +3586,7 @@ export class Regenerator {
   private jog(f: JogFeature, sketches: RebuildResult['sketches'], set: Bodies): BodyState[] {
     const sheet = this.sheet;
     if (!sheet) throw new FeatureError(t('flange.needsSheet'));
-    if (sheet.base?.kind !== 'plate' || sheet.flanges.length > 0 || sheet.midBends.length > 0) throw new FeatureError(t('jog.scope'));
+    if (sheet.base?.kind !== 'plate' || !sheet.mapping) throw new FeatureError(t('jog.scope'));
     const solids = set.list.filter((b) => !b.surface);
     if (solids.length !== 1) throw new FeatureError(t('jog.oneBody'));
     const plate = solids[0]!;
@@ -3524,10 +3615,7 @@ export class Regenerator {
     const l = unit(sub(at(line.b), a));
     const n = s.frame.normal;
     // the plate square to the sketch normal, and as thick as the sheet
-    const heights = plate.topology.vertices.map((v) => dot(v.point, n));
-    const zBot = Math.min(...heights);
-    if (Math.abs(Math.max(...heights) - zBot - T) > 1e-6 * (1 + T)) throw new FeatureError(t('jog.notFlat'));
-    const q = add(a, n, zBot - dot(a, n));
+    let q = a;
     const up: Vec3 = f.reverse ? neg(n) : n;
     const left = cross(n, l);
     const p: Vec3 = f.flipSide ? left : neg(left); // from the side that stays to the side that turns
@@ -3540,10 +3628,10 @@ export class Regenerator {
     };
     try {
       const strip = (u0: number, u1: number, tag: string): OpResult => {
-        const fr: PlaneFrame = { origin: add(q, n, -1), xDir: l, yDir: p, normal: cross(l, p) };
+        const fr: PlaneFrame = { origin: add(q, n, -reach), xDir: l, yDir: p, normal: cross(l, p) };
         const pts: [number, number][] = [[-reach, u0], [reach, u0], [reach, u1], [-reach, u1]];
         const region: Region = { outer: pts.map((pt, i) => ({ kind: 'line' as const, a: pt, b: pts[(i + 1) % 4]!, source: `jog.${tag}.p${i}` })), holes: [] };
-        return this.capsNamed(k.extrude(fr, [region], add([0, 0, 0], n, T + 2), 0), `jog.${tag}`, 'start', 'end');
+        return this.capsNamed(k.extrude(fr, [region], add([0, 0, 0], n, 2 * reach), 0), `jog.${tag}`, 'start', 'end');
       };
       const piece = (u0: number, u1: number, tag: string) => {
         const cutter = strip(u0, u1, tag);
@@ -3558,10 +3646,15 @@ export class Regenerator {
       const B = piece(Lblank, reach, 'b');
       if (!(Z.volume > 1e-9)) throw new FeatureError(t('jog.lineOutside'));
       if (!(A.volume > 1e-9) || !(B.volume > 1e-9)) throw new FeatureError(t('jog.noSide'));
+      const heights = Z.topology.vertices.map(v => dot(v.point, n));
+      const bottom = Math.min(...heights);
+      if (Math.abs(Math.max(...heights) - bottom - T) > 1e-6 * (1 + T)) throw new FeatureError(t('jog.notFlat'));
+      q = add(q, n, bottom - dot(q, n));
       const along = Z.topology.vertices.map((v) => dot(sub(v.point, q), l));
       const [lo, hi] = [Math.min(...along), Math.max(...along)];
       const w = hi - lo;
       if (Math.abs(Z.volume - w * Lblank * T) > 1e-3 * Z.volume + 1e-6) throw new FeatureError(t('jog.zoneNotRect'));
+      const host = sheetHost(k, sheet.mapping!, k.massProps(Z.shape).center);
 
       // 2D Jog profile in (p, up) plane
       const R1 = rb + T;
@@ -3615,6 +3708,26 @@ export class Regenerator {
       const volume = k.massProps(abb.shape).volume;
       const expected = A.volume + B.volume + jogBody.volume;
       if (k.solidCount(abb.shape) !== 1 || !k.isValid(abb.shape) || Math.abs(volume - expected) > 1e-3 * expected + 1e-6) throw new FeatureError(t('jog.collides'));
+      const own = (shape: ShapeId) => { this.owned.push(shape); return shape; };
+      const mapping = sheet.mapping!;
+      const motion: SheetRigid = { R: SHEET_IDENTITY.R, t: delta };
+      const panels = sheetSplitPanels(k, mapping, A.shape, B.shape, motion, own);
+      // The web is planar material; only the two allowance strips become curved.
+      const c1 = add(q, n, f.reverse ? -rb : T + rb);
+      const rotateWeb = (v: Vec3) => rotate(v, axis, theta);
+      const cols = [[1,0,0],[0,1,0],[0,0,1]].map(v => rotateWeb(v as Vec3));
+      const webMotion: SheetRigid = { R: [cols[0]![0],cols[1]![0],cols[2]![0],cols[0]![1],cols[1]![1],cols[2]![1],cols[0]![2],cols[1]![2],cols[2]![2]], t: add(c1, rotateWeb(sub(add([0,0,0],p,-BA),c1))) };
+      if (Lweb > 1e-6) {
+        const web = piece(BA, BA + Lweb, 'web');
+        panels.push({ shape: own(k.transformed(web.shape, sheetRows(webMotion))), toFlat: sheetCompose(host.toFlat, sheetInverse(webMotion)) });
+      }
+      const atFlat = (point: Vec3) => sheetPlanar(mapping.frame, sheetPoint(host.toFlat, point));
+      const zones = [piece(0, BA, 'z1'), piece(BA + Lweb, Lblank, 'z2')].map(z => own(k.transformed(z.shape, sheetRows(host.toFlat))));
+      const forward = dot(sheetVector(host.toFlat, up), mapping.frame.normal) > 0;
+      mapping.panels = panels;
+      mapping.zones.push(...zones);
+      for (const [index, u] of [BA / 2, 1.5 * BA + Lweb].entries()) mapping.bends.push({ feature: f.id, name: `bend${index + 1}`, a: atFlat(add(add(q, p, u), l, lo)), b: atFlat(add(add(q, p, u), l, hi)), angle: theta, radius: rb, direction: (index === 0 ? forward : !forward) ? 'up' : 'down', kFactor: sheet.kFactor, allowance: BA });
+      mapping.active = true;
       owned.splice(owned.indexOf(abb.shape), 1);
 
       // Register two bends to sheet: Bend 1 and Bend 2
@@ -3775,7 +3888,7 @@ export class Regenerator {
   ): BodyState[] {
     const sheet = this.sheet;
     if (!sheet) throw new FeatureError(t('flange.needsSheet'));
-    if (sheet.midBends.length > 0) throw new FeatureError(t('flange.afterMidBend'));
+    if (sheet.mapping?.active && (f.corner?.start !== undefined || f.corner?.end !== undefined || f.miter?.start !== undefined || f.miter?.end !== undefined)) throw new FeatureError(t('sheetMapping.miterMixed'));
     const view = set.view;
     if (!view) throw new FeatureError(t('feature.needsBody', { what: t('feature.edgeFlange') }));
     if (!f.edge.name) throw new FeatureError(t('edit.noEdgePicked'));
@@ -3797,6 +3910,7 @@ export class Regenerator {
     // walked with the face in front of you and the outside on your right: e = nF × o (so that the two ends of the edge have a name)
     const e = unit(cross(nF, o));
     if (Math.abs(dot(o, nF)) > 1e-6 || Math.abs(dot(e, unit(edge.dir))) < 1 - 1e-6) throw new FeatureError(t('flange.notSheetEdge'));
+    const hostMapping = sheet.mapping ? sheetHost(this.kernel, sheet.mapping, edge.mid) : null;
     const { rb, theta, straight, trim, info } = plan(sheet);
     const insetA = f.inset ? evalLength(f.inset.start) : 0;
     const insetB = f.inset ? evalLength(f.inset.end) : 0;
@@ -3984,6 +4098,10 @@ export class Regenerator {
       if (!near(afterMitre - now, mt.removed, mt.removed)) throw new FeatureError(t('flange.miterBad'));
       afterMitre = now;
     }
+    // Keep the host's trimmed planar material before fusing the curved bend back into the body.
+    const mappedPanels = sheet.mapping ? sheetClipPanels(this.kernel, sheet.mapping.panels, list.find(b => !b.surface)!.shape, shape => { this.owned.push(shape); return shape; }) : null;
+    const mappedFlange = sheet.mapping ? this.kernel.copy(flangeTool.shape) : null;
+    if (mappedFlange !== null) this.owned.push(mappedFlange);
     list = this.apply(f.id, 'boss', bendTool, { featureId: f.id, sketchId: 'flange' }, list, true, f.id, named?.bend);
     list = this.apply(f.id, 'boss', flangeTool, { featureId: f.id, sketchId: 'flange' }, list, true, f.id, named?.flange);
     const added = named ? toolVolume : theta * T * Wf * (rb + T / 2) + T * (Wf + extA + extB) * straight;
@@ -4023,6 +4141,22 @@ export class Regenerator {
     const miter: SheetFlange['miter'] = [mitres[0] ? { s: mitres[0].s, xOuter: xa - trim } : null, mitres[1] ? { s: mitres[1].s, xOuter: xb + trim } : null];
     for (const mt of mitres) if (mt) mt.g.miter[mt.end] = { s: mt.s, xOuter: mt.xOuterG };
     sheet.flanges.push({ feature: f.id, edge: f.edge.name, width: Wf, angle: theta, radius: rb, trim, straight, allowance, inset: [insetA, insetB], relief, corner: [extA, extB], miter, parent, host, fold });
+    if (sheet.mapping && hostMapping && mappedFlange !== null) {
+      if (mitres[0] || mitres[1]) delete sheet.mapping;
+      else {
+        const mapping = sheet.mapping;
+        const own = (shape: ShapeId) => { this.owned.push(shape); return shape; };
+        mapping.panels = mappedPanels!;
+        const backR = [[1, 0, 0], [0, 1, 0], [0, 0, 1]].map(v => rotate(v as Vec3, axis, -theta));
+        const back: SheetRigid = { R: [backR[0]![0], backR[1]![0], backR[2]![0], backR[0]![1], backR[1]![1], backR[2]![1], backR[0]![2], backR[1]![2], backR[2]![2]], t: add(sub(center, rotate(center, axis, -theta)), o, allowance) };
+        mapping.panels.push({ shape: mappedFlange, toFlat: sheetCompose(hostMapping.toFlat, back) });
+        const rawZone = this.kernel.extrude(frame, [strip('flat.bend', ylo, yhi)], add([0,0,0], o, allowance)).shape;
+        own(rawZone);
+        mapping.zones.push(own(this.kernel.transformed(rawZone, sheetRows(hostMapping.toFlat))));
+        const atFlat = (point: Vec3) => sheetPlanar(mapping.frame, sheetPoint(hostMapping.toFlat, point));
+        mapping.bends.push({ feature: f.id, name: 'bend', a: atFlat(add(add(origin, o, allowance / 2), e, xa)), b: atFlat(add(add(origin, o, allowance / 2), e, xb)), angle: theta, radius: rb, direction: dot(sheetVector(hostMapping.toFlat, m), mapping.frame.normal) > 0 ? 'up' : 'down', kFactor: sheet.kFactor, allowance });
+      }
+    }
     this.info = info(allowance) + (insetA > 0 || insetB > 0 ? t('flange.info.inset', { start: String(insetA), end: String(insetB) }) : '') + (mitres[0] || mitres[1] ? t('flange.info.miter', { gap: String(((mitres[0]?.s ?? mitres[1]!.s) * Math.SQRT2).toFixed(3)) }) : '');
     return [...list];
   }

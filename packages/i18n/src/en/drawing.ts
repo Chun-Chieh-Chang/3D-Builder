@@ -2,6 +2,16 @@ import type { Translation } from '../index';
 
 /** drawing: the drawing document (Phase 5). */
 export const drawing: Translation = {
+  'drawing.flatDimensionState': 'Flat and folded dimensions use different geometry; remove attached dimensions before switching view type and dimension the matching geometry',
+  'drawing.badFlatBends': 'Bend annotations require boolean switches and finite paper coordinates',
+  'drawingUi.bendNotes': 'Bend numbers and directions',
+  'drawingUi.bendTable': 'Bend table (mm)',
+  'drawingUi.bendTableX': 'Bend table X (mm)',
+  'drawingUi.bendTableY': 'Bend table Y (mm)',
+  'drawingUi.bendUp': 'UP',
+  'drawingUi.bendDown': 'DOWN',
+  'drawingUi.bendDirection': 'Direction',
+  'drawingUi.bendAngle': 'Angle',
   'drawing.badThreadLeader': 'A thread leader requires a diameter callout linked to the model.',
   'drawing.threadLeaderNeedsThread': 'Select a threaded cylindrical face seen from the side.',
   'drawingUi.threadLeader': 'Thread leader',

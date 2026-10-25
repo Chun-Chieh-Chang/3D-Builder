@@ -170,6 +170,8 @@ export function mapRefs(feature: Feature, map: (ref: Ref) => Ref): { feature: Fe
     case 'rib':
     case 'hole':
     case 'screwBoss':
+    case 'sheetUnfold':
+    case 'sheetRefold':
     case 'baseFlange':
     case 'midBend':
     case 'jog':

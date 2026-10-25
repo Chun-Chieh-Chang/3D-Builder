@@ -12,7 +12,7 @@ type P2 = [number, number];
 /** What a flat pattern is as the DXF needs it (the report of `flatPattern`, which has more). */
 export interface FlatDxfInput {
   outline: ({ kind: 'line'; a: P2; b: P2 } | { kind: 'arc'; c: P2; r: number; from: P2; to: P2; mid: P2 } | { kind: 'circle'; c: P2; r: number })[];
-  bends: { a: P2; b: P2; angle: number; radius: number; direction: 'up' | 'down'; kFactor: number }[];
+  bends: { a: P2; b: P2; angle: number; radius: number; direction: 'up' | 'down'; kFactor: number; feature?: string; name?: string; allowance?: number }[];
   min: P2;
   max: P2;
   width: number;

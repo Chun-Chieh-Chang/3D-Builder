@@ -123,18 +123,18 @@ describe('the mid bend (v48)', () => {
     expect(inZone.features.find((f) => f.id === 'mb')).toMatchObject({ status: 'error', message: expect.stringContaining('折彎區') });
   });
 
-  it('says why when it cannot: a line outside the plate, no plate on one side, two lines, not a plate, a flange before it, a flange after it, a second bend', () => {
+  it('says why when it cannot: a line outside the plate, no plate on one side, two lines, not a plate; supports a flange before/after and a second bend', () => {
     const why = (r: RebuildResult, id = 'mb') => r.features.find((f) => f.id === id)!;
     expect(why(rebuild(make({}, stroke(150))))).toMatchObject({ status: 'error', message: expect.stringContaining('沒有穿過') });
     expect(why(rebuild(make({}, stroke(2))))).toMatchObject({ status: 'error', message: expect.stringMatching(/沒有板|折彎區/) });
     const two: SketchParts = { entities: [point('a', 50, 0), point('b', 50, 50), { id: 'l', type: 'line', p1: 'a', p2: 'b' }, point('c', 30, 0), point('d', 30, 50), { id: 'm', type: 'line', p1: 'c', p2: 'd' }], constraints: [] };
     expect(why(rebuild(make({}, two)))).toMatchObject({ status: 'error', message: expect.stringContaining('一條直線') });
     const flangeFirst: Feature = { id: 'fa', type: 'edgeFlange', name: 'fa', suppressed: false, edge: { kind: 'edge', name: '{bf:cap:end|bf:side:sk.rl1}' }, length: '20' } as Feature;
-    expect(why(rebuild(make({}, stroke(50), [flangeFirst])))).toMatchObject({ status: 'error', message: expect.stringContaining('邊線凸緣') });
+    expect(why(rebuild(make({}, stroke(50), [flangeFirst])))).toMatchObject({ status: 'ok' });
     const flangeAfter = rebuild(build([...plate, sketch('sm', front, stroke(50)), bendFeature(), flangeFirst]));
-    expect(why(flangeAfter, 'fa')).toMatchObject({ status: 'error', message: expect.stringContaining('中間折彎') });
+    expect(why(flangeAfter, 'fa')).toMatchObject({ status: 'ok' });
     const second = rebuild(build([...plate, sketch('sm', front, stroke(50)), bendFeature(), sketch('sm2', front, stroke(20, -5, 55, 'q')), { ...bendFeature(), id: 'mb2', name: 'mb2', sketch: 'sm2' } as Feature]));
-    expect(why(second, 'mb2')).toMatchObject({ status: 'error', message: expect.stringContaining('一個零件只能做一個') });
+    expect(why(second, 'mb2')).toMatchObject({ status: 'ok' });
     const notSheet = rebuild(build([sketch('sk', front, rectangle('r', 0, 0, 100, 50)), extrude('e1', 'sk', 'boss', { type: 'blind', depth: '10' }), sketch('sm', front, stroke(50)), bendFeature()]));
     expect(why(notSheet)).toMatchObject({ status: 'error' });
     expect(() => make({ angle: '0' })).toThrow(); // the angle is refused where it is given, as for the edge flange

@@ -155,7 +155,7 @@ describe('Sheet Metal Jog Feature (v60, ADR 0159)', () => {
     expect(why.message).toContain('5.50');
   });
 
-  it('self-red-teaming edge cases: line outside, no side, two lines, preceding flange or midBend rejected', () => {
+  it('self-red-teaming edge cases: invalid strips rejected, preceding flange supported', () => {
     const why = (r: RebuildResult, id = 'jg') => r.features.find((f) => f.id === id)!;
 
     // Line outside
@@ -173,7 +173,7 @@ describe('Sheet Metal Jog Feature (v60, ADR 0159)', () => {
 
     // Preceding flange
     const flangeFirst: Feature = { id: 'fa', type: 'edgeFlange', name: 'fa', suppressed: false, edge: { kind: 'edge', name: '{bf:cap:end|bf:side:sk.rl1}' }, length: '20' } as Feature;
-    expect(why(rebuild(make({}, stroke(50), [flangeFirst])))).toMatchObject({ status: 'error', message: expect.stringContaining('邊線凸緣') });
+    expect(why(rebuild(make({}, stroke(50), [flangeFirst])))).toMatchObject({ status: 'ok' });
   });
 
   it('setJog command modifies parameters, schemaVersion is 60, and asserts real WASM heap', () => {

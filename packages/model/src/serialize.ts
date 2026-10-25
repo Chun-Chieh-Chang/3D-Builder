@@ -238,6 +238,8 @@ const migrations: Record<number, (doc: Json) => Json> = {
   80: (doc) => doc,
   // v82: sketch constraint expansion.
   81: (doc) => doc,
+  // v83: editable sheet unfold/refold features.
+  82: (doc) => doc,
 };
 
 export class FormatError extends Error {
@@ -413,6 +415,8 @@ const drawingMigrations: Record<number, (doc: Json) => Json> = {
   27: (doc) => doc,
   // v29: per-view paper-space hatch spacing and angle.
   28: (doc) => doc,
+  // v30: flat-pattern bend annotations and table placement.
+  29: (doc) => doc,
 };
 
 export function parseDrawing(text: string): DrawingDoc {

@@ -1,5 +1,15 @@
 /** drawing: the drawing document (Phase 5). */
 export const drawing = {
+  'drawing.flatDimensionState': '展平與折疊視圖的尺寸來源不同；請先移除相關尺寸再切換視圖，並以相符的幾何重新標註',
+  'drawing.badFlatBends': '折彎註記設定必須使用開關與有效的紙面座標',
+  'drawingUi.bendNotes': '折彎編號／方向註記',
+  'drawingUi.bendTable': '折彎表（mm）',
+  'drawingUi.bendTableX': '折彎表 X（mm）',
+  'drawingUi.bendTableY': '折彎表 Y（mm）',
+  'drawingUi.bendUp': '向上',
+  'drawingUi.bendDown': '向下',
+  'drawingUi.bendDirection': '方向',
+  'drawingUi.bendAngle': '角度',
   'drawing.badThreadLeader': '螺紋引線必須為連結模型的直徑規格標註。',
   'drawing.threadLeaderNeedsThread': '請選取側視圖中具有螺紋規格的圓柱面。',
   'drawingUi.threadLeader': '螺紋引線',

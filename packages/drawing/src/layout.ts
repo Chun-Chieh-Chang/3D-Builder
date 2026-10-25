@@ -5,6 +5,8 @@ import { sheetMetrics, type Rect } from './sheet';
 
 /** What a view needs to be laid out and drawn: its lines at full size, and for a section the outlines of the faces the cut made (to be hatched). */
 export interface ViewLines {
+  /** Native flat-pattern bends, in this view's normalized coordinates. */
+  bends?: { id: string; a: [number, number]; b: [number, number]; angle: number; radius: number; direction: 'up' | 'down'; allowance: number }[];
   visible: number[][];
   hidden: number[][];
   /** Chain lines (the bend lines of a flat pattern). */
