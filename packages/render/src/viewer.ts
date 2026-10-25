@@ -719,6 +719,7 @@ export class Viewer {
   private gridGroup: THREE.Group | null = null;
   private gridVisible = true;
   private gridSpacing = 5;
+  private gridFrame: PlaneFrame = { origin: [0, 0, 0], xDir: [1, 0, 0], yDir: [0, 1, 0], normal: [0, 0, 1] };
   private gridKey = '';
   private readonly camera: THREE.OrthographicCamera;
   private readonly controls: ViewControls;
@@ -2365,6 +2366,8 @@ export class Viewer {
   /** Reference planes to show; each is a translucent square centered on the model's projection. */
   setPlanes(planes: PlaneDisplay[]): void {
     this.planes = planes;
+    const chosen = planes.filter(p => p.highlighted);
+    if (chosen.length === 1) this.setGridPlane(chosen[0]!.frame);
     this.paintPlanes();
   }
 
@@ -3552,14 +3555,21 @@ export class Viewer {
     this.requestRender();
   }
 
+  /** Retain the work plane across camera changes and deselection; null resets a new document. */
+  setGridPlane(frame: PlaneFrame | null): void {
+    this.gridFrame = frame ? { origin: [...frame.origin], xDir: [...frame.xDir], yDir: [...frame.yDir], normal: [...frame.normal] } : { origin: [0, 0, 0], xDir: [1, 0, 0], yDir: [0, 1, 0], normal: [0, 0, 1] };
+    this.gridKey = '';
+    this.requestRender();
+  }
+
   private updateGrid(): void {
     this.camera.updateMatrixWorld();
-    const key = [this.container.clientHeight, this.gridSpacing, ...this.camera.matrixWorld.elements, ...this.camera.projectionMatrix.elements].join(',');
+    const key = [this.container.clientHeight, this.gridSpacing, ...this.gridFrame.origin, ...this.gridFrame.xDir, ...this.gridFrame.yDir, ...this.gridFrame.normal, ...this.camera.matrixWorld.elements, ...this.camera.projectionMatrix.elements].join(',');
     if (key === this.gridKey) return;
     this.gridKey = key;
     if (this.gridGroup) { disposeGroup(this.gridGroup); this.gridScene.remove(this.gridGroup); }
     const group = new THREE.Group();
-    const lines = referenceGrid(this.camera, this.container.clientHeight, this.gridSpacing);
+    const lines = referenceGrid(this.camera, this.container.clientHeight, this.gridSpacing, this.gridFrame);
     for (const [points, color] of [[lines.minor, 0xdfe7e5], [lines.major, 0xc4d3ce]] as const) {
       const geometry = new THREE.BufferGeometry();
       geometry.setAttribute('position', new THREE.Float32BufferAttribute(points, 3));

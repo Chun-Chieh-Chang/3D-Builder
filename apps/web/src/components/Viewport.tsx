@@ -118,7 +118,7 @@ export function Viewport() {
   const gridVisible = useStore(s => s.options.showGrid);
   const gridSpacing = useStore(s => s.options.snap.gridSpacing);
   const documentSerial=useStore(s=>s.documentSerial);
-  useEffect(()=>setModelDimensions(null),[documentSerial]);
+  useEffect(()=>{setModelDimensions(null);store.viewer?.setGridPlane(null);},[documentSerial]);
   const [modelDimensions,setModelDimensions] = useState<{id:string;faceName:string}|null>(null);
   const [hover, setHover] = useState(-1);
   const [hoverFace, setHoverFace] = useState(-1);

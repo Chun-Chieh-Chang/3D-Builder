@@ -1,27 +1,30 @@
 import * as THREE from 'three';
+import type { PlaneFrame } from './overlay';
 
-/** A world-origin reference grid on the principal plane facing the camera most directly. */
-export function referenceGrid(camera: THREE.OrthographicCamera, height: number, spacing: number): { minor: number[]; major: number[] } {
+const DEFAULT_FRAME: PlaneFrame = { origin: [0, 0, 0], xDir: [1, 0, 0], yDir: [0, 1, 0], normal: [0, 0, 1] };
+
+/** A grid anchored to a real work plane. Orbiting never changes the plane or its origin. */
+export function referenceGrid(camera: THREE.OrthographicCamera, height: number, spacing: number, frame: PlaneFrame = DEFAULT_FRAME): { minor: number[]; major: number[] } {
   const minor: number[] = [], major: number[] = [];
   if (!(height > 0) || !Number.isFinite(height) || !(spacing > 0) || !Number.isFinite(spacing)) return { minor, major };
+  const tuples = [frame.origin, frame.xDir, frame.yDir, frame.normal];
+  if (tuples.some(v => v.length !== 3 || !v.every(Number.isFinite))) return { minor, major };
+  const [origin, xDir, yDir, normal] = tuples.map(v => new THREE.Vector3(...v)) as [THREE.Vector3, THREE.Vector3, THREE.Vector3, THREE.Vector3];
+  if ([xDir, yDir, normal].some(v => Math.abs(v.lengthSq() - 1) > 1e-6) || Math.abs(xDir.dot(yDir)) > 1e-6 || xDir.clone().cross(yDir).dot(normal) < 1 - 1e-6) return { minor, major };
   camera.updateMatrixWorld();
-  const direction = camera.getWorldDirection(new THREE.Vector3());
-  const abs = [Math.abs(direction.x), Math.abs(direction.y), Math.abs(direction.z)];
-  // Prefer XY for the isometric tie. Other views use YZ / XZ so the grid never becomes edge-on.
-  const normal = abs[2]! >= Math.max(abs[0]!, abs[1]!) - 1e-10 ? 2 : abs[1]! >= abs[0]! ? 1 : 0;
-  const axes = [0, 1, 2].filter(i => i !== normal);
-  const n = new THREE.Vector3().setComponent(normal, 1), plane = new THREE.Plane(n, 0);
-  const points: THREE.Vector3[] = [];
+  const points: THREE.Vector2[] = [];
   for (const x of [-1, 1]) for (const y of [-1, 1]) {
     const ray = new THREE.Raycaster(); ray.setFromCamera(new THREE.Vector2(x, y), camera);
-    // A reference plane can be behind the near plane after a pan; intersect the infinite line.
-    const denominator = n.dot(ray.ray.direction);
+    // A work plane can be behind the near plane after a pan; intersect the infinite line.
+    const denominator = normal.dot(ray.ray.direction);
+    // Edge-on has no visible plane area. Never substitute a different plane.
     if (Math.abs(denominator) < 1e-8) return { minor, major };
-    points.push(ray.ray.origin.clone().addScaledVector(ray.ray.direction, -n.dot(ray.ray.origin) / denominator));
+    const p = ray.ray.origin.clone().addScaledVector(ray.ray.direction, normal.dot(origin.clone().sub(ray.ray.origin)) / denominator).sub(origin);
+    points.push(new THREE.Vector2(p.dot(xDir), p.dot(yDir)));
   }
   if (points.some(p => !p.toArray().every(Number.isFinite))) return { minor, major };
-  const lo = axes.map(a => Math.min(...points.map(p => p.getComponent(a))));
-  const hi = axes.map(a => Math.max(...points.map(p => p.getComponent(a))));
+  const lo = [0, 1].map(a => Math.min(...points.map(p => p.getComponent(a))));
+  const hi = [0, 1].map(a => Math.max(...points.map(p => p.getComponent(a))));
   const px = (camera.top - camera.bottom) / (camera.zoom * height);
   const wanted = Math.max(spacing, px * 16, (hi[0]! - lo[0]! + hi[1]! - lo[1]!) / 400);
   const decade = 10 ** Math.floor(Math.log10(wanted / spacing));
@@ -32,10 +35,11 @@ export function referenceGrid(camera: THREE.OrthographicCamera, height: number, 
     const first = Math.ceil(lo[a]! / step), last = Math.floor(hi[a]! / step);
     if (!Number.isSafeInteger(first) || !Number.isSafeInteger(last) || last - first > 600) return { minor: [], major: [] };
     for (let index = first; index <= last; index++) {
-      const start = new THREE.Vector3(), end = new THREE.Vector3();
-      start.setComponent(axes[a]!, index * step); end.setComponent(axes[a]!, index * step);
-      start.setComponent(axes[1 - a]!, lo[1 - a]!); end.setComponent(axes[1 - a]!, hi[1 - a]!);
-      (index % 5 === 0 ? major : minor).push(...start.toArray(), ...end.toArray());
+      const uv0 = [0, 0], uv1 = [0, 0];
+      uv0[a] = uv1[a] = index * step;
+      uv0[1 - a] = lo[1 - a]!; uv1[1 - a] = hi[1 - a]!;
+      const world = (uv: number[]) => origin.clone().addScaledVector(xDir, uv[0]!).addScaledVector(yDir, uv[1]!);
+      (index % 5 === 0 ? major : minor).push(...world(uv0).toArray(), ...world(uv1).toArray());
     }
   }
   return { minor, major };
