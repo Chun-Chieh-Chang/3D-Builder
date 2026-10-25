@@ -10,6 +10,15 @@
  * (docs/help-links.json says which topics an item is about).
  */
 export const help = {
+  'help.toolEllipse.summary': "以中心、長軸端點及短軸半徑繪製橢圓。",
+  'help.toolEllipse.body': "依序點選中心、長軸端點，再設定較小的短軸半徑。選取橢圓可加入軸半徑拘束，並在現有拘束清單修改表達式。中心與長軸端點可套用點拘束；橢圓可與直線相切，或讓點落在曲線上。長短軸相等請改用圓。",
+  'help.toolEllipse.keywords': "橢圓 長軸 短軸 半徑 相切",
+  'help.toolEllipse.see': "tool-circle tool-bezier tool-dimension sketch",
+  'help.toolBezier.summary': "以四個控制點建立三次 Bézier 曲線，支援端點相切。",
+  'help.toolBezier.body': "依序選起點、起點切線控制點、終點切線控制點及終點。曲線通過首尾點，中間兩點控制切線。選取兩個開放圖元可用最近端點重合＋相切；支援 Bézier 與線、圓弧或另一條 Bézier。匯出保留真實 Bézier。既有擬合樣條不會改為控制點曲線；尚不支援 G2 曲率連續。",
+  'help.toolBezier.keywords': "樣條 Bézier 控制點 G1 相切",
+  'help.toolBezier.see': "tool-line tool-ellipse sketch",
+
   "help.gear.summary": "從模數、齒數與壓力角建構漸開線直齒外齒輪。",
   "help.gear.body": "選擇建構平面，在特徵選單啟動直齒齒輪，設定模數、齒數、壓力角、齒寬與軸孔。齒頂高為一模數，齒根深為 1.25 模數，節圓直徑為模數乘齒數。背隙欄位是該零件節圓齒厚的減量，兩配對零件的減量會相加。工作齒面以 17 次 Bézier 近似漸開線，齒根為簡化過渡，非製造等級的滾刀齒根；拒絕須根切的齒數。不含斜齒、內齒、變位與傳動結合。生成獨立實體，可後續移動本體定位。",
   "help.gear.keywords": "齒輪 漸開線 模數 壓力角 齒數 gear spur involute",

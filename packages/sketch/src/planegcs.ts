@@ -6,6 +6,7 @@ import {
   entityPoints,
   evalAngle,
   evalLength,
+  evalQuantity,
   isSketchAxis,
   sketchAxisDir,
   SKETCH_ORIGIN,
@@ -21,7 +22,7 @@ class MappingError extends Error {}
 
 /** End points of an open curve (none for points and circles). */
 function endpoints(e: SketchEntity): Id[] {
-  return e.type === 'line' ? [e.p1, e.p2] : e.type === 'arc' ? [e.start, e.end] : [];
+  return e.type === 'line' ? [e.p1, e.p2] : e.type === 'arc' ? [e.start, e.end] : e.type==='spline'&&e.bezier?[e.points[0]!,e.points[e.points.length-1]!]:[];
 }
 
 /** Values the solver starts from: stored positions unless overridden (drag frames, analysis). */
@@ -121,6 +122,14 @@ function toPrimitives(sketch: SketchFeature, start: Start, pinned: ReadonlySet<I
     return 0;
   };
   const seeds = intersectionSeeds(sketch, pointXY, radiusAt);
+  // Seed an axis dimension on the intended ellipse. Inside the focal segment the native
+  // point-on-ellipse residual has zero derivative in the major-point direction; starting
+  // there can prevent a valid size increase from converging. These are guesses, not edits.
+  for(const c of sketch.constraints)if(c.type==='ellipseAxes'){
+    const e=byId.get(c.entity);if(e?.type!=='ellipse')continue;
+    const center=pointXY(e.center),major=pointXY(e.major),dx=major[0]-center[0],dy=major[1]-center[1],length=Math.hypot(dx,dy),r=evalLength(c.majorRadius);
+    seeds.set(e.major,[center[0]+r*(length>1e-9?dx/length:1),center[1]+r*(length>1e-9?dy/length:0)]);
+  }
 
   // Rigidly linked arc points already preserve the source arc's radial consistency. Adding the
   // fourth arc rule again would be redundant. Keep radius and both angle parameters connected.
@@ -134,6 +143,9 @@ function toPrimitives(sketch: SketchFeature, start: Start, pinned: ReadonlySet<I
     if(![s!,t!].every(v=>v.dx===c!.dx&&v.dy===c!.dy&&v.angle===c!.angle&&v.center[0]===c!.center[0]&&v.center[1]===c!.center[1]))continue;
     const source=sketch.entities.find(a=>a.type==='arc'&&a.center===c!.a&&a.start===s!.a&&a.end===t!.a);
     if(source)linkedArcs.set(e.id,source.id);
+  }
+  for(const c of sketch.constraints)if(c.type==='symmetricEntity'||c.type==='symmetricEntityPoint'){
+    if(byId.get(c.a)?.type==='arc'&&byId.get(c.b)?.type==='arc'&&!linkedArcs.has(c.b))linkedArcs.set(c.b,c.a);
   }
   for(const id of [...linkedArcs.keys()]) {const seen=new Set<Id>();let at=id;while(linkedArcs.has(at)&&!seen.has(at)){seen.add(at);at=linkedArcs.get(at)!;}if(seen.has(at))linkedArcs.delete(id);}
   const prims: Prim[] = [{ id: SKETCH_ORIGIN, type: 'point', x: 0, y: 0, fixed: true }];
@@ -174,8 +186,19 @@ function toPrimitives(sketch: SketchFeature, start: Start, pinned: ReadonlySet<I
         if(!linkedArcs.has(e.id))prims.push({ id: `${e.id}#rules`, type: 'arc_rules', a_id: e.id });
         break;
       }
-      case 'ellipse':
+      case 'ellipse': {
+        const center=pointXY(e.center),major=pointXY(e.major),dx=major[0]-center[0],dy=major[1]-center[1],seedLength=Math.hypot(dx,dy),axes=sketch.constraints.find(c=>c.type==='ellipseAxes'&&c.entity===e.id),b=axes?.type==='ellipseAxes'?evalLength(axes.minorRadius):e.minorRadius,a=axes?.type==='ellipseAxes'?evalLength(axes.majorRadius):seedLength;
+        // Old files may use the endpoint on the shorter axis. Preserve their representation until converted explicitly.
+        if(a<=b+1e-6){if(sketch.constraints.some(c=>constraintRefs(c).includes(e.id)))throw new MappingError(t('sketch.ellipseAxesInvalid'));break;}
+        const focus=`${e.id}:focus`,f=Math.sqrt(a*a-b*b);
+        prims.push({id:focus,type:'point',x:center[0]+(seedLength>1e-9?dx/seedLength:1)*f,y:center[1]+(seedLength>1e-9?dy/seedLength:0)*f,fixed:false},{id:e.id,type:'ellipse',c_id:e.center,focus1_id:focus,radmin:b},
+          {id:`${e.id}:axis`,type:'line',p1_id:e.center,p2_id:focus},
+          {id:`${e.id}#majorOn`,type:'point_on_ellipse',p_id:e.major,e_id:e.id},
+          {id:`${e.id}#majorAxis`,type:'point_on_line_pl',p_id:e.major,l_id:`${e.id}:axis`});
+        if(!axes)prims.push({id:`${e.id}#minor`,type:'equal',param1:{o_id:e.id,prop:'radmin'},param2:b});break;
+      }
       case 'spline':
+        if(e.bezier)prims.push({id:e.id,type:'bspline',pole_ids:e.points,weights:e.points.map(()=>1),knots:[0,1],mult:[e.points.length,e.points.length],degree:e.points.length-1,periodic:false});
         break;
     }
   }
@@ -191,6 +214,7 @@ function toPrimitives(sketch: SketchFeature, start: Start, pinned: ReadonlySet<I
     const curve = byId.get(curveId);
     if (curve?.type === 'line') return { id, type: 'point_on_line_pl', p_id: p, l_id: curve.id };
     if (curve?.type === 'circle') return { id, type: 'point_on_circle', p_id: p, c_id: curve.id };
+    if(curve?.type==='ellipse')return {id,type:'point_on_ellipse',p_id:p,e_id:curve.id};
     if (curve?.type === 'arc') return { id, type: 'point_on_arc', p_id: p, a_id: curve.id };
     throw new MappingError(t('map.notCurve', { id: curveId }));
   };
@@ -289,9 +313,38 @@ function toPrimitives(sketch: SketchFeature, start: Start, pinned: ReadonlySet<I
         add(id, [{ id, type: 'parallel', l1_id: a.id, l2_id: b.id }, ...(shares ? [] : [{ id, type: 'point_on_line_pl' as const, p_id: a.p1, l_id: b.id }])]);
         break;
       }
+      case 'tangentExternal':
+      case 'tangentInternal': {
+        const a=radial(c.a),b=radial(c.b);
+        add(id,[{id,type:'tangent_circumf',p1_id:a.center,p2_id:b.center,rd1:{o_id:a.id,prop:'radius'},rd2:{o_id:b.id,prop:'radius'},internal:c.type==='tangentInternal'}]);break;
+      }
+      case 'endpointTangent': {
+        const a=byId.get(c.a)!,b=byId.get(c.b)!,pa=endpoints(a)[c.aEnd==='start'?0:1]!,pb=endpoints(b)[c.bEnd==='start'?0:1]!;
+        const connected=new Set([pa]);for(let changed=true;changed;){changed=false;for(const k of sketch.constraints)if(k.type==='coincident'&&(connected.has(k.a)||connected.has(k.b)))for(const p of [k.a,k.b])if(!connected.has(p)){connected.add(p);changed=true;}}
+        const rows:Prim[]=[];
+        if(!connected.has(pb))rows.push({id,type:'p2p_coincident',p1_id:pa,p2_id:pb});
+        if(a.type==='spline'||b.type==='spline'){
+          // A Bezier endpoint derivative is degree * (P1-P0), or degree * (Pn-Pn-1).
+          const direction=(e:SketchEntity,end:'start'|'end',at:string):string=>{
+            if(e.type==='line')return e.id;
+            const l=`${id}:${e.id}:tangent`;
+            if(e.type==='spline'){const pts=e.points;prims.push({id:l,type:'line',p1_id:end==='start'?pts[0]!:pts[pts.length-2]!,p2_id:end==='start'?pts[1]!:pts[pts.length-1]!});}
+            else if(e.type==='arc'){prims.push({id:l,type:'line',p1_id:e.center,p2_id:at});}
+            else throw new MappingError(t('sketch.bezierRequired'));return l;
+          };
+          const la=direction(a,c.aEnd,pa),lb=direction(b,c.bEnd,pb),arc=a.type==='arc'||b.type==='arc';
+          rows.push(arc?{id,type:'perpendicular_ll',l1_id:la,l2_id:lb}:{id,type:'parallel',l1_id:la,l2_id:lb});
+        }else rows.push({id,type:'angle_via_point',crv1_id:a.id,crv2_id:b.id,p_id:pa,angle:c.opposed?Math.PI:0});
+        add(id,rows);break;
+      }
+      case 'ellipseAxes': {
+        const e=byId.get(c.entity);if(e?.type!=='ellipse')throw new MappingError(t('sketch.ellipseAxesInvalid'));
+        add(id,[{id,type:'p2p_distance',p1_id:e.center,p2_id:e.major,distance:evalLength(c.majorRadius)},{id,type:'equal',param1:{o_id:e.id,prop:'radmin'},param2:evalLength(c.minorRadius)}]);break;
+      }
       case 'tangent': {
         const a = byId.get(c.a);
         const b = byId.get(c.b);
+        if(a?.type==='ellipse'||b?.type==='ellipse'){const e=a?.type==='ellipse'?a:b,l=a?.type==='line'?a:b;if(e?.type!=='ellipse'||l?.type!=='line')throw new MappingError(t('sketch.ellipseTangentLine'));add(id,[{id,type:'tangent_le',l_id:l.id,e_id:e.id}]);break;}
         const shared = a && b ? endpoints(a).find((p) => endpoints(b).includes(p)) : undefined;
         if (a && b && shared) {
           // Tangent where the curves meet (e.g. a tangent arc): the curves' normals at the shared end
@@ -360,9 +413,36 @@ function toPrimitives(sketch: SketchFeature, start: Start, pinned: ReadonlySet<I
           {id,type:'point_on_line_pl',p_id:u,l_id:lu},{id,type:'point_on_line_pl',p_id:v,l_id:lv},
         ]);break;
       }
+      case 'lengthRatio': {
+        const a=line(c.a),b=line(c.b),q=evalQuantity(c.ratio),ratio=q.v;
+        if(q.L!==0||q.A!==0||!Number.isFinite(ratio)||ratio<0.001||ratio>1000)throw new MappingError(t('sketch.ratioInvalid'));
+        const u=`${id}:ratio`,o=`${id}:o`,e=`${id}:e`,l=`${id}:ratioLine`,norm=Math.hypot(1,ratio);
+        const length=(a:ReturnType<typeof line>)=>Math.hypot(...pointXY(a.p2).map((v,i)=>v-pointXY(a.p1)[i]!) as [number,number]);
+        prims.push({id:u,type:'point',x:length(b),y:length(a),fixed:false},{id:o,type:'point',x:0,y:0,fixed:true},{id:e,type:'point',x:1/norm,y:ratio/norm,fixed:true},{id:l,type:'line',p1_id:o,p2_id:e});
+        add(id,[{id,type:'p2p_distance',p1_id:a.p1,p2_id:a.p2,distance:{o_id:u,prop:'y'}},{id,type:'p2p_distance',p1_id:b.p1,p2_id:b.p2,distance:{o_id:u,prop:'x'}},{id,type:'point_on_line_pl',p_id:u,l_id:l}]);break;
+      }
+      case 'equalSpacing': {
+        const ids=c.points.map(anchor),a=ids[0]!,b=ids[ids.length-1]!,rows:Prim[]=[];
+        for(let i=1;i<ids.length-1;i++)for(const prop of ['x','y'] as const){
+          const at=prop==='x'?0:1,t=i/(ids.length-1),u=`${id}:${i}:${prop}`,o=`${u}:o`,e=`${u}:e`,l=`${u}:line`,param=(o_id:string,prop:'x'|'y')=>({o_id,prop});
+          prims.push({id:u,type:'point',x:pointXY(ids[i]!)[at]-pointXY(a)[at],y:pointXY(b)[at]-pointXY(a)[at],fixed:false},{id:o,type:'point',x:0,y:0,fixed:true},{id:e,type:'point',x:t,y:1,fixed:true},{id:l,type:'line',p1_id:o,p2_id:e});
+          rows.push({id,type:'difference',param1:param(a,prop),param2:param(ids[i]!,prop),difference:param(u,'x')},{id,type:'difference',param1:param(a,prop),param2:param(b,prop),difference:param(u,'y')},{id,type:'point_on_line_pl',p_id:u,l_id:l});
+        }
+        add(id,rows);break;
+      }
       case 'equalCurvature':
         add(id, [equalRadius(radial(c.a), radial(c.b), id)]);
         break;
+      case 'symmetricEntity':
+      case 'symmetricEntityPoint': {
+        const a=byId.get(c.a)!,b=byId.get(c.b)!,rows:Prim[]=[];
+        const mirror=(a:string,b:string):Prim=>c.type==='symmetricEntity'?{id,type:'p2p_symmetric_ppl',p1_id:a,p2_id:b,l_id:c.axis}:{id,type:'p2p_symmetric_ppp',p1_id:a,p2_id:b,p_id:c.point};
+        if(a.type==='line'&&b.type==='line')rows.push(mirror(a.p1,c.reverse?b.p2:b.p1),mirror(a.p2,c.reverse?b.p1:b.p2));
+        else if(a.type==='circle'&&b.type==='circle')rows.push(mirror(a.center,b.center),equalRadius(a,b,id));
+        else if(a.type==='arc'&&b.type==='arc')rows.push(mirror(a.center,b.center),mirror(a.start,c.type==='symmetricEntity'?b.end:b.start),mirror(a.end,c.type==='symmetricEntity'?b.start:b.end));
+        else throw new MappingError(t('sketch.symmetryKinds'));
+        add(id,rows);break;
+      }
       case 'symmetricPoint':
         add(id, [{ id, type: 'p2p_symmetric_ppp', p1_id: point(c.a), p2_id: point(c.b), p_id: point(c.point) }]);
         break;
@@ -549,7 +629,8 @@ function readGeometry(w: GcsWrapper, sketch: SketchFeature): Map<Id, SolvedGeome
         const dx = major[0] - c[0];
         const dy = major[1] - c[1];
         const a = Math.hypot(dx, dy);
-        const b = canon(e.minorRadius, LENGTH_GRID);
+        const primitive=w.sketch_index.get_primitive(e.id);
+        const b = canon(primitive?.type==='ellipse'?primitive.radmin:e.minorRadius, LENGTH_GRID);
         const angle = canon(Math.atan2(dy, dx), ANGLE_GRID);
         out.set(e.id, {
           type: 'ellipse',
@@ -568,6 +649,7 @@ function readGeometry(w: GcsWrapper, sketch: SketchFeature): Map<Id, SolvedGeome
         const pts = e.points.map((pid) => pt(pid));
         out.set(e.id, {
           type: 'spline',
+          ...(e.bezier?{bezier:true}:{}),
           points: pts,
           closed: e.closed ?? false,
           pointIds: e.points,
@@ -658,6 +740,7 @@ export class PlaneGcsSolver implements SketchSolver {
       redundant,
       ...(ok ? {} : { message: t('regen.sketchUnsolved') }),
     };
+    for(const g of result.geometry.values())if(g.type==='spline'&&g.bezier&&(!(Math.hypot(g.points[1]![0]-g.points[0]![0],g.points[1]![1]-g.points[0]![1])>1e-8)||!(Math.hypot(g.points[g.points.length-1]![0]-g.points[g.points.length-2]![0],g.points[g.points.length-1]![1]-g.points[g.points.length-2]![1])>1e-8))){result.status='failed';result.message=t('sketch.bezierInvalid');}
     if (options.analyze) result.entityStatus = this.analyze(sketch, result, ok);
     return result;
   }

@@ -111,7 +111,7 @@ describe('applicable relations (C1.26)', () => {
   const types = (sel: Id[]) => applicableRelations(g, sel).map((r) => r.type);
   it('offers what SolidWorks offers for each selection', () => {
     expect(types(['l1'])).toEqual(['horizontal', 'vertical', 'block']);
-    expect(types(['l1', 'l3'])).toEqual(['collinear', 'parallel', 'perpendicular', 'equal', 'block']);
+    expect(types(['l1', 'l3'])).toEqual(['collinear', 'parallel', 'perpendicular', 'equal', 'lengthRatio', 'block', 'endpointTangent']);
     expect(types(['p1', 'p3'])).toEqual(['coincident', 'horizontal', 'vertical']);
     expect(types(['kc', 'l1'])).toEqual(['pointOnCurve', 'midpoint']);
     expect(types(['l1', 'k1'])).toEqual(['tangent', 'block']);

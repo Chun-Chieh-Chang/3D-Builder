@@ -1,0 +1,20 @@
+import {beforeAll,expect,it}from 'vitest';
+import {applyCommand,createEmptyPart,DocHistory,resolveSketch,type SketchFeature,type SketchEntity,type SketchConstraint}from '@3db/model';
+import {PlaneGcsSolver}from '@3db/sketch';
+import {SketchController,type SketchHost}from '../src/sketcher/controller';
+let solver:PlaneGcsSolver;beforeAll(async()=>{solver=await PlaneGcsSolver.create();});
+const p=(id:string,x:number,y:number):SketchEntity=>({id,type:'point',x,y});
+function fixture(entities:SketchEntity[],constraints:SketchConstraint[]){const feature:SketchFeature={id:'sk',type:'sketch',name:'diagnostics',suppressed:false,plane:{kind:'datum',name:'plane:front'},entities,constraints},history=new DocHistory(applyCommand(createEmptyPart(),{type:'insertFeature',index:0,feature})),notices:string[]=[];const sketch=()=>history.doc.features[0] as SketchFeature,solve=(s=sketch(),options={})=>({...solver.solve(resolveSketch(s,history.doc),options),seq:0,ms:0,problems:[]});const h:SketchHost={featureId:'sk',doc:()=>history.doc,solved:()=>solve(),execute:c=>{history.execute(c);return true;},trial:async(s,_doc,options)=>solve(s,options),dragPreview:()=>{},notify:t=>void notices.push(t),editDimension:()=>{}};return {h,history,sketch,solve,notices,controller:new SketchController(h)};}
+it('finds solver-verified two-constraint repairs when no single edit can solve two independent conflicts, in one undo step',async()=>{
+ const h=fixture([p('a',0,0),p('b',10,0),p('c',0,10),p('d',10,10)],[{id:'fa',type:'fix',point:'a'},{id:'fb',type:'fix',point:'b'},{id:'fc',type:'fix',point:'c'},{id:'fd',type:'fix',point:'d'},{id:'ab',type:'coincident',a:'a',b:'b'},{id:'cd',type:'coincident',a:'c',b:'d'}]),before=h.history.doc;expect(h.solve().status).toBe('over');const fixes=await h.controller.diagnose();expect(fixes.length).toBeGreaterThan(0);expect(fixes.every(f=>f.related?.length===1)).toBe(true);expect(h.history.doc).toBe(before);h.controller.applyFix(fixes[0]!);expect(['fully','under']).toContain(h.solve().status);h.history.undo();expect(h.history.doc).toEqual(before);
+ h.history.execute({type:'editSketch',featureId:'sk',place:[{id:'a',x:2,y:0}]});const changed=h.history.doc;h.controller.applyFix(fixes[0]!);expect(h.history.doc).toBe(changed);expect(h.notices.length).toBe(1);
+});
+it('probes only feasible point motions and reports independent constraint contributions without editing the document',async()=>{
+ const h=fixture([p('a',0,0),p('b',10,0),{id:'l',type:'line',p1:'a',p2:'b'}],[{id:'fa',type:'fix',point:'a'},{id:'h',type:'horizontal',a:'l'}]),before=h.history.doc;expect(h.solve().dof).toBe(1);const probes=await h.controller.motionProbes('b');expect(probes.map(p=>p.axis)).toEqual(['x']);expect(probes[0]!.delta[1]).toBeCloseTo(0,8);expect(probes[0]!.remainingDof).toBe(0);expect(await h.controller.motionProbes('a')).toEqual([]);const contribution=await h.controller.constraintContributions(['h','fa']);expect(contribution).toEqual([{id:'h',releasedDof:1},{id:'fa',releasedDof:2}]);expect(h.history.doc).toBe(before);
+});
+it('handles curved feasible motion without calling X/Y independent DOFs',async()=>{
+ const h=fixture([p('c',0,0),p('q',0,5),{id:'circle',type:'circle',center:'c',radius:5}],[{id:'bc',type:'block',entity:'circle'},{id:'on',type:'pointOnCurve',point:'q',curve:'circle'}]);expect(h.solve().dof).toBe(1);const probes=await h.controller.motionProbes('q');expect(probes.length).toBeGreaterThan(0);for(const probe of probes){expect((probe.delta[0])**2+(5+probe.delta[1])**2).toBeCloseTo(25,7);expect(probe.remainingDof).toBe(0);}
+});
+it('refuses malformed repairs and does not silently delete dimensions',()=>{
+ const h=fixture([p('a',0,0),p('b',10,0),{id:'l',type:'line',p1:'a',p2:'b'}],[{id:'len',type:'distance',a:'l',value:'10'},{id:'h',type:'horizontal',a:'l'}]);for(const changes of [[],[{id:'len',kind:'delete' as const}],[{id:'h',kind:'driven' as const}],[{id:'missing',kind:'delete' as const}],[{id:'h',kind:'delete' as const},{id:'h',kind:'delete' as const}]])expect(()=>applyCommand(h.history.doc,{type:'applySketchFix',featureId:'sk',changes})).toThrow();
+});

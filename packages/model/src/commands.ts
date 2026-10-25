@@ -11,7 +11,7 @@ import { isFilePath } from './paths';
 import { DOWEL_FITS } from './dowel';
 import { mapRefs } from './refs';
 import { bodyFeature, isBodyKey, isHideable } from './visibility';
-import { dimensionName, Parameters, renameInDoc, resolveDoc, variableUsers, type ExprKind } from './params';
+import { dimensionName, roleProblem, Parameters, renameInDoc, resolveDoc, variableUsers, type ExprKind } from './params';
 import type { NameRef } from './expr';
 import { isDimension } from './schema';
 import { ExprError } from './expr';
@@ -21,7 +21,7 @@ import { pictureBlobs } from './picture';
 /** The point references of a curve that an edit may change (an ellipse's `major` and a spline's `points` since ADR 0178). */
 export type EntityRefs = Partial<Record<'p1' | 'p2' | 'start' | 'end' | 'center' | 'at' | 'major', Id>> & { points?: Id[] };
 /** The references of a relation or dimension that an edit may change (`undefined` takes one away: the optional second reference). */
-export type ConstraintRefs = Partial<Record<'a' | 'b' | 'point' | 'line' | 'curve' | 'axis' | 'circle', Id | undefined>>;
+export type ConstraintRefs = Partial<Record<'a' | 'b' | 'point' | 'line' | 'curve' | 'axis' | 'circle' | 'entity', Id | undefined>> & {points?:Id[]};
 
 /**
  * Where an entity now is (ADR 0178, 移動／旋轉／縮放圖元): a point's place, a circle's radius, an ellipse's minor radius, a text's size and turn (degrees).
@@ -42,7 +42,7 @@ export interface SketchEdit {
   /** Entities whose points change (a line that now ends elsewhere). */
   entities?: { id: Id; set: EntityRefs }[];
   /** Relations and dimensions that now refer to something else, or whose value changes. */
-  constraints?: { id: Id; set: ConstraintRefs & { value?: Expr; labelPosition?: [number, number] } }[];
+  constraints?: { id: Id; set: ConstraintRefs & { value?: Expr; majorRadius?:Expr; minorRadius?:Expr; labelPosition?: [number, number] } }[];
   /** Entities that are now somewhere else (ADR 0178). */
   place?: SketchPlacement[];
   /** Deleted together with whatever depends on them. */
@@ -69,6 +69,9 @@ export interface CircleRadius {
 export type Command =
   /** Inserts a feature at `index` (at or above the rollback bar), like SolidWorks inserting at the bar. */
   | { type: 'insertFeature'; feature: Feature; index: number }
+  | { type:'applySketchFix'; featureId:Id; changes:{id:Id;kind:'delete'|'driven'}[] }
+  | { type:'setEllipseAxes'; featureId:Id; constraintId:Id; majorRadius:Expr; minorRadius:Expr }
+  | { type: 'setLengthRatio'; featureId:Id; constraintId:Id; ratio:Expr }
   | { type: 'setDimension'; featureId: Id; constraintId: Id; value: Expr }
   /** Moves only the displayed dimension text; it never changes the measured geometry or value. */
   | { type: 'setDimensionPosition'; featureId: Id; constraintId: Id; position: [number, number] | null }
@@ -297,7 +300,10 @@ function checkExprs(doc: PartDoc, f: Feature, only?: Set<Id>): void {
   switch (f.type) {
     case 'sketch':
       for (const c of f.constraints) {
-        if (!isDimension(c) || (only && !only.has(c.id))) continue;
+        if(only&&!only.has(c.id))continue;
+        if(c.type==='ellipseAxes'){const a=valueOf(p,c.majorRadius,'length'),b=valueOf(p,c.minorRadius,'length');if(!(Number.isFinite(a)&&Number.isFinite(b)&&b>=1e-6&&a>b+1e-6&&a<=1e6&&a/b<=1e4))throw new CommandError(t('sketch.ellipseAxesInvalid'));continue;}
+        if(c.type==='lengthRatio'){const v=valueOf(p,c.ratio,'count'),problem=roleProblem(v,'lengthRatio',c.ratio);if(problem)throw new CommandError(problem);continue;}
+        if (!isDimension(c)) continue;
         if (c.type === 'angle') valueOf(p, c.value, 'angle');
         else positive(p, c.value);
       }
@@ -896,6 +902,19 @@ export function mutate(draft: Draft<PartDoc>, cmd: Command): void {
       // the data stays in the file only while a picture still uses it
       if (!pictureBlobs(draft.features as never).has(gone!.blob)) draft.blobs = draft.blobs.filter((b) => b.id !== gone!.blob);
       return;
+    }
+    case 'applySketchFix': {
+      const f=sketchOf(draft,cmd.featureId);if(!Array.isArray(cmd.changes)||cmd.changes.length<1||cmd.changes.length>2||new Set(cmd.changes.map(c=>c.id)).size!==cmd.changes.length)throw new CommandError(t('sketch.fixInvalid'));
+      const removed=new Set<Id>();for(const change of cmd.changes){const c=f.constraints.find(c=>c.id===change.id);if(!c||!['delete','driven'].includes(change.kind)||change.kind==='driven'&&!isDimension(c)||change.kind==='delete'&&isDimension(c))throw new CommandError(t('sketch.fixInvalid'));if(change.kind==='delete')removed.add(c.id);else if(isDimension(c))c.driving=false;}
+      f.constraints=f.constraints.filter(c=>!removed.has(c.id));countersFor(removed,draft.idCounters);return;
+    }
+    case 'setEllipseAxes': {
+      const f=sketchOf(draft,cmd.featureId),c=f.constraints.find(x=>x.id===cmd.constraintId);if(c?.type!=='ellipseAxes')throw new CommandError(t('cmd.sketchItemNotFound',{id:cmd.constraintId}));c.majorRadius=cmd.majorRadius;c.minorRadius=cmd.minorRadius;checkExprs(draft as PartDoc,f as Feature,new Set([c.id]));return;
+    }
+    case 'setLengthRatio': {
+      const f=sketchOf(draft,cmd.featureId),c=f.constraints.find(x=>x.id===cmd.constraintId);
+      if(c?.type!=='lengthRatio')throw new CommandError(t('cmd.sketchItemNotFound',{id:cmd.constraintId}));
+      c.ratio=cmd.ratio;checkExprs(draft as PartDoc,f as Feature,new Set([c.id]));return;
     }
     case 'setDimension': {
       const f = sketchOf(draft, cmd.featureId);

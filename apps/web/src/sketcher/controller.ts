@@ -18,6 +18,7 @@ import {
 } from '@3db/model';
 import {
   add,
+  bezierPoint,
   alignments,
   circleThrough,
   closestOnSegment,
@@ -25,6 +26,7 @@ import {
   dist,
   geometryOf,
   blockTargets,
+  expandRelation,
   conditionEnds,
   hitTest,
   inBox,
@@ -85,6 +87,8 @@ export type ToolId =
   | 'centerline'
   | 'rect'
   | 'centerRect'
+  | 'ellipse'
+  | 'bezier'
   | 'circle'
   | 'perimeterCircle'
   | 'arc'
@@ -133,7 +137,10 @@ const PICK_TOOLS: ReadonlySet<ToolId> = new Set(['dimension', 'trim', 'extend', 
 export interface SketchFix {
   id: Id;
   kind: 'delete' | 'driven';
+  related?:{id:Id;kind:'delete'|'driven'}[];
 }
+export interface MotionProbe {axis:'x'|'y';delta:P2;remainingDof:number}
+export interface ConstraintContribution {id:Id;releasedDof:number}
 
 /** What the user sets for a tool before using it (shown in the PropertyManager). */
 export interface ToolOptions {
@@ -278,6 +285,8 @@ const HINT_KEYS: Record<Exclude<ToolId, OperationTool>, PlainKey[]> = {
   centerline: ['hint.centerline1', 'hint.centerline2'],
   rect: ['hint.rect1', 'hint.rect2'],
   centerRect: ['hint.centerRect1', 'hint.centerRect2'],
+  ellipse:['hint.ellipse1','hint.ellipse2','hint.ellipse3'],
+  bezier:['hint.bezier1','hint.bezier2','hint.bezier3','hint.bezier4'],
   circle: ['hint.circle1', 'hint.circle2'],
   perimeterCircle: ['hint.perimeter1', 'hint.perimeter2', 'hint.perimeter3'],
   arc: ['hint.arc1', 'hint.arc2', 'hint.arc3'],
@@ -324,6 +333,7 @@ export class SketchController {
   private busy = false;
   /** See ControllerView.message: the text and the selection it was said for. */
   private message: { text: string; selection: string } | null = null;
+  private readonly verifiedFixes=new WeakMap<SketchFix,PartDoc>();
   private pending: Promise<void> = Promise.resolve();
   private listeners = new Set<() => void>();
   private view: ControllerView;
@@ -591,6 +601,8 @@ export class SketchController {
 
   /** 「加入限制條件」 (C1.26): refused, like a dimension, when it would over-define the sketch. */
   async addRelation(body: RelationBody): Promise<boolean> {
+    if (this.busy) return false;
+    const base=this.host.doc();
     const s = this.sketch();
     // 「固定」 of curves holds each of the selected that is not held yet, one relation for each, in one step (ADR 0182)
     // one allocator for all of them: each call of `allocator()` starts from what the document has, so two would hand out the same id twice
@@ -598,7 +610,7 @@ export class SketchController {
     const relations =
       body.type === 'block'
         ? blockTargets(this.geometry(), [...this.selection], s).map((entity) => ({ id: ids.take('c'), type: 'block', entity }) as SketchConstraint)
-        : [{ id: ids.take('c'), ...body } as SketchConstraint];
+        : expandRelation(body,this.geometry(),[...this.selection],s).map(relation=>({id:ids.take('c'),...relation} as SketchConstraint));
     if (relations.length === 0) return false;
     const relation = relations[0]!;
     // 「交錯」 names the point where two curves meet; say that they do not meet rather than let the solver call it over-defined (C6.2)
@@ -610,14 +622,18 @@ export class SketchController {
         return false;
       }
     }
-    const r = await this.host.trial({ ...s, constraints: [...s.constraints, ...relations] });
-    if (r.status === 'over' || r.status === 'failed') {
-      this.host.notify(t('sketch.overDefinedRelation'), 'error');
-      return false;
-    }
-    const ok = this.host.execute({ type: 'addSketchItems', featureId: this.host.featureId, entities: [], constraints: relations });
-    this.changed();
-    return ok;
+    let accepted=false;
+    this.busy=true;
+    this.pending=this.host.trial({...s,constraints:[...s.constraints,...relations]})
+      .then(result=>{
+        if(this.host.doc()!==base) {this.host.notify(t('sketch.relationStale'),'info');return;}
+        if(result.status==='over'||result.status==='failed') {this.host.notify(t('sketch.overDefinedRelation'),'error');return;}
+        accepted=this.host.execute({type:'addSketchItems',featureId:this.host.featureId,entities:[],constraints:relations});
+      })
+      .catch((error:unknown)=>this.host.notify(t('sketch.opFailed',{reason:error instanceof Error?error.message:String(error)}),'error'))
+      .finally(()=>{this.busy=false;this.changed();});
+    await this.pending;
+    return accepted;
   }
 
   // ------------------------------------------------------------------ pointer input
@@ -1070,6 +1086,9 @@ export class SketchController {
     if (!s) return;
     if (isTransformTool(this.tool)) return this.transformClick(this.tool, s);
     switch (this.tool) {
+      case 'bezier': {
+        this.clicks.push(s);if(this.clicks.length===4){const b=this.builder(),points=this.clicks.map(s=>b.pointFor(s));if(new Set(points).size===4){b.entities.push({id:b.ids.take('sp'),type:'spline',points,bezier:true});this.commit(b);}else this.host.notify(t('sketch.bezierInvalid'),'info');this.clicks=[];}return;
+      }
       case 'slot':
       case 'polygon':
         this.clicks.push(s);
@@ -1106,6 +1125,7 @@ export class SketchController {
         this.finishTwoClick(s);
         this.clicks = [];
         return;
+      case 'ellipse':
       case 'perimeterCircle':
       case 'threePointArc':
       case 'arc':
@@ -1207,6 +1227,10 @@ export class SketchController {
     const [c1, c2, c3] = this.clicks as [Snap, Snap, Snap];
     const b = this.builder();
     switch (this.tool) {
+      case 'ellipse': {
+        const a=dist(c1.p,c2.p),bRadius=Math.abs(cross(unit(sub(c2.p,c1.p)),sub(c3.p,c1.p)));if(!(bRadius>=1e-6&&a>bRadius+1e-6&&a<=1e6&&a/bRadius<=1e4))return this.host.notify(t('sketch.ellipseAxesInvalid'),'info');
+        const center=b.pointFor(c1),major=b.pointFor(c2);if(center===major)return; b.entities.push({id:b.ids.take('el'),type:'ellipse',center,major,minorRadius:bRadius});break;
+      }
       case 'perimeterCircle': {
         const circle3 = circleThrough(c1.p, c2.p, c3.p);
         if (!circle3) return this.host.notify(t('sketch.collinearCircle'), 'info');
@@ -1531,24 +1555,59 @@ export class SketchController {
    * the solver, so what is offered works.
    */
   async diagnose(): Promise<SketchFix[]> {
-    const solved = this.host.solved();
-    if (!solved || solved.status !== 'over') return [];
-    const sketch = this.sketch();
-    const named = new Set([...solved.conflicting, ...solved.redundant]);
-    const fixes: SketchFix[] = [];
-    for (const c of sketch.constraints.filter((k) => named.has(k.id))) {
-      const driven = isDimension(c);
-      const constraints = sketch.constraints.flatMap((k) => (k.id !== c.id ? [k] : driven ? [{ ...k, driving: false } as SketchConstraint] : []));
-      const r = await this.host.trial({ ...sketch, constraints });
-      if (r.status !== 'over' && r.status !== 'failed') fixes.push({ id: c.id, kind: driven ? 'driven' : 'delete' });
-    }
+    const solved=this.host.solved(),base=this.host.doc();
+    if(!solved||solved.status!=='over')return [];
+    const sketch=this.sketch(),named=new Set([...solved.conflicting,...solved.redundant]);
+    // Bounded search: all singles first, then pairs only if no single edit can cure the sketch.
+    const candidates=sketch.constraints.filter(c=>named.has(c.id)).slice(0,12).map(c=>({id:c.id,kind:isDimension(c)?'driven' as const:'delete' as const}));
+    const fixes:SketchFix[]=[];
+    const check=async(changes:typeof candidates)=>{
+      const chosen=new Map(changes.map(c=>[c.id,c.kind]));
+      const constraints=sketch.constraints.flatMap(c=>!chosen.has(c.id)?[c]:chosen.get(c.id)==='driven'?[{...c,driving:false} as SketchConstraint]:[]);
+      const r=await this.host.trial({...sketch,constraints});
+      if(this.host.doc()!==base)return false;
+      if(r.status==='under'||r.status==='fully'){const fix:SketchFix={...changes[0]!,...(changes.length>1?{related:changes.slice(1)}:{})};this.verifiedFixes.set(fix,base);fixes.push(fix);}return true;
+    };
+    for(const c of candidates)if(!await check([c]))return [];
+    if(fixes.length===0)for(let i=0;i<candidates.length;i++)for(let j=i+1;j<candidates.length;j++)if(!await check([candidates[i]!,candidates[j]!]))return [];
     return fixes;
   }
 
-  applyFix(fix: SketchFix): void {
-    if (fix.kind === 'driven') this.host.execute({ type: 'setDimensionDriving', featureId: this.host.featureId, constraintId: fix.id, driving: false });
-    else this.host.execute({ type: 'removeSketchItems', featureId: this.host.featureId, ids: [fix.id] });
+  applyFix(fix:SketchFix):void {
+    if(this.verifiedFixes.get(fix)!==this.host.doc()){this.host.notify(t('sketch.relationStale'),'info');return;}
+    this.host.execute({type:'applySketchFix',featureId:this.host.featureId,changes:[{id:fix.id,kind:fix.kind},...(fix.related??[])]});
     this.changed();
+  }
+
+  /** Read-only, finite feasible displacements. These are solver probes, not a claim that X/Y form independent DOFs. */
+  async motionProbes(pointId:Id):Promise<MotionProbe[]> {
+    const base=this.host.doc(),solved=this.host.solved(),sketch=this.sketch(),g=solved?.geometry.get(pointId);
+    if(!solved||solved.status!=='under'||g?.type!=='point')return [];
+    const initial=this.analysisInitial(),ids=this.allocator(),guide=ids.take('p'),fix=ids.take('c'),relation=ids.take('c'),out:MotionProbe[]=[];
+    const span=Math.max(1,...initial.points.flatMap(p=>[Math.abs(p.x-g.p[0]),Math.abs(p.y-g.p[1])])),step=Math.min(1,Math.max(0.01,span*0.01));
+    for(const axis of ['x','y'] as const)for(const sign of [1,-1]){
+      const target:P2=[...g.p];target[axis==='x'?0:1]+=sign*step;
+      const candidate:SketchFeature={...sketch,entities:[...sketch.entities,{id:guide,type:'point',x:target[0],y:target[1]}],constraints:[...sketch.constraints,{id:fix,type:'fix',point:guide},{id:relation,type:axis==='x'?'vertical':'horizontal',a:pointId,b:guide}]};
+      const r=await this.host.trial(candidate,base,{drag:{},initial});if(this.host.doc()!==base)return [];
+      const p=r.geometry.get(pointId);if((r.status==='fully'||r.status==='under')&&p?.type==='point'&&Math.abs(p.p[axis==='x'?0:1]-target[axis==='x'?0:1])<1e-7&&dist(p.p,g.p)>step/2){out.push({axis,delta:sub(p.p,g.p),remainingDof:r.dof});break;}
+    }
+    return out;
+  }
+
+  /** Freedoms restored by removing each selected constraint, independently; values are not additive. */
+  async constraintContributions(ids:readonly Id[]):Promise<ConstraintContribution[]> {
+    const base=this.host.doc(),solved=this.host.solved(),sketch=this.sketch(),out:ConstraintContribution[]=[];
+    if(!solved||(solved.status!=='fully'&&solved.status!=='under'))return [];
+    for(const id of [...new Set(ids)].slice(0,24)){
+      if(!sketch.constraints.some(c=>c.id===id))continue;
+      const r=await this.host.trial({...sketch,constraints:sketch.constraints.filter(c=>c.id!==id)},base,{drag:{},initial:this.analysisInitial()});if(this.host.doc()!==base)return [];
+      if((r.status==='fully'||r.status==='under')&&r.dof>=solved.dof)out.push({id,releasedDof:r.dof-solved.dof});
+    }
+    return out;
+  }
+
+  private analysisInitial():{points:PointPosition[];radii:CircleRadius[]} {
+    const points:PointPosition[]=[],radii:CircleRadius[]=[];for(const [id,g]of this.geometry()){if(g.type==='point')points.push({id,x:g.p[0],y:g.p[1]});if(g.type==='circle')radii.push({id,radius:g.r});}return {points,radii};
   }
 
   // ------------------------------------------------------------------ entities that follow the model (C1.18, C1.26)
@@ -1705,6 +1764,12 @@ export class SketchController {
     if (isTransformTool(this.tool)) return [...shapes, ...this.transformPreview(this.tool, cursor)];
     const [c1, c2] = this.clicks;
     switch (this.tool) {
+      case 'bezier': {
+        const points=[...this.clicks.map(c=>c.p),cursor];if(points.length>1){for(let i=1;i<points.length;i++)shapes.push({kind:'line',a:points[i-1]!,b:points[i]!,construction:true});const samples=Array.from({length:33},(_,i)=>bezierPoint(points,i/32));for(let i=1;i<samples.length;i++)shapes.push({kind:'line',a:samples[i-1]!,b:samples[i]!});}break;
+      }
+      case 'ellipse': {
+        if(c1&&c2){const a=dist(c1.p,c2.p),b=Math.abs(cross(unit(sub(c2.p,c1.p)),sub(cursor,c1.p))),theta=Math.atan2(c2.p[1]-c1.p[1],c2.p[0]-c1.p[0]);const pts=Array.from({length:65},(_,i):P2=>{const u=a*Math.cos(i*Math.PI/32),v=b*Math.sin(i*Math.PI/32);return [c1.p[0]+u*Math.cos(theta)-v*Math.sin(theta),c1.p[1]+u*Math.sin(theta)+v*Math.cos(theta)];});for(let i=1;i<pts.length;i++)shapes.push({kind:'line',a:pts[i-1]!,b:pts[i]!});}else if(c1)shapes.push({kind:'line',a:c1.p,b:cursor,construction:true});break;
+      }
       case 'slot':
         if (c1 && c2) {
           const theta = Math.atan2(c2.p[1] - c1.p[1], c2.p[0] - c1.p[0]);

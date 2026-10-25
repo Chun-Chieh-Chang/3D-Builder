@@ -3,12 +3,17 @@
  * inference, smart dimensions, applicable relations and dimension layout. Pure TypeScript with no
  * solver, so the UI thread can use it; everything works on solved (derived) geometry.
  */
-import { SKETCH_AXIS_H, SKETCH_AXIS_V, SKETCH_ORIGIN, constraintRefs, isSketchAxis, sketchAxisDir, type DimensionConstraint, type Id, type SketchConstraint, type SketchFeature } from '@3db/model';
+import { SKETCH_AXIS_H, SKETCH_AXIS_V, SKETCH_ORIGIN, constraintRefs, entityPoints, isSketchAxis, sketchAxisDir, type DimensionConstraint, type Id, type SketchConstraint, type SketchFeature } from '@3db/model';
 import { textContours } from './font';
 import type { ModelEdge, ModelItem } from './ops';
 import type { P2, SolvedGeometry } from './types';
 
 export type Geometry = ReadonlyMap<Id, SolvedGeometry>;
+
+/** Exact polynomial Bezier evaluation, shared by display, profile area and tests. */
+export function bezierPoint(points:readonly P2[],t:number):P2 {
+  const work=points.map(p=>[...p] as P2);for(let n=work.length-1;n>0;n--)for(let i=0;i<n;i++)work[i]=[work[i]![0]*(1-t)+work[i+1]![0]*t,work[i]![1]*(1-t)+work[i+1]![1]*t];return work[0]??[0,0];
+}
 
 // ---------------------------------------------------------------- 2D math
 
@@ -137,6 +142,7 @@ export function sample(g: SolvedGeometry, px: number): P2[] {
       });
     }
     case 'spline': {
+      if(g.bezier)return Array.from({length:65},(_,i)=>bezierPoint(g.points,i/64));
       const n = g.points.length;
       if (n < 2) return g.points;
       const getP = (idx: number): P2 => {
@@ -639,13 +645,14 @@ export function smartDimension(geometry: Geometry, picks: Id[], place: P2): Dime
 // ---------------------------------------------------------------- relations (C1.26, C1.27)
 
 /** What a sketch axis (ADR 0170) may be part of: a fixed infinite line has no length, no middle, and is already horizontal or vertical. */
-const AXIS_RELATIONS = new Set<RelationBody['type']>(['collinear', 'parallel', 'perpendicular', 'tangent', 'pointOnCurve', 'symmetric', 'intersection']);
+const AXIS_RELATIONS = new Set<RelationBody['type']>(['collinear', 'parallel', 'perpendicular', 'tangent', 'pointOnCurve', 'symmetric', 'symmetricEntity', 'intersection']);
 
 /** Relations SolidWorks offers in 「加入限制條件」 for the current selection. */
 export function applicableRelations(geometry: Geometry, selection: Id[], sketch?: Pick<SketchFeature, 'entities'> & Partial<Pick<SketchFeature, 'constraints'>>): RelationBody[] {
   const axes = selection.filter(isSketchAxis).length;
   if (axes > 1) return [];
-  const all = [...candidateRelations(geometry, selection, sketch), ...blockOffer(geometry, selection, sketch)];
+  const end=selection.length===2?endpointTangentOffer(geometry,selection[0]!,selection[1]!):null;
+  const all = [...candidateRelations(geometry, selection, sketch), ...blockOffer(geometry, selection, sketch),...(end?[end]:[])];
   return axes === 0 ? all : all.filter((r) => AXIS_RELATIONS.has(r.type));
 }
 
@@ -666,7 +673,37 @@ export function blockTargets(geometry: Geometry, selection: readonly Id[], sketc
   return selection.filter((id) => !held.has(id));
 }
 
-function candidateRelations(geometry: Geometry, selection: Id[], sketch?: Pick<SketchFeature, 'entities'>): RelationBody[] {
+/** Expand a multi-selection into a minimal forest of ordinary model constraints. */
+export function expandRelation(body:RelationBody,geometry:Geometry,selection:readonly Id[],sketch:Pick<SketchFeature,'entities'|'constraints'>):RelationBody[] {
+  const ids=[...new Set(selection)];
+  if(ids.length<3)return [body];
+  const kinds=ids.map(id=>kindOf(geometry,id,sketch));
+  const lines=kinds.every(kind=>kind==='line'),points=kinds.every(kind=>kind==='point'||kind==='origin'),radials=kinds.every(kind=>kind==='circle'||kind==='arc');
+  if(body.type==='coradial'&&radials)return [...expandRelation({type:'concentric',a:ids[0]!,b:ids[1]!},geometry,ids,sketch),...expandRelation({type:'equal',a:ids[0]!,b:ids[1]!},geometry,ids,sketch)];
+  if((body.type==='horizontal'||body.type==='vertical')&&lines) {
+    return ids.filter(id=>!sketch.constraints.some(c=>(c.type===body.type&&c.a===id&&c.b===undefined)||(c.type==='block'&&c.entity===id))).map(a=>({type:body.type,a}));
+  }
+  const type=body.type;
+  if(!((lines&&(type==='parallel'||type==='equal'))||(radials&&(type==='concentric'||type==='equal'||type==='equalCurvature'))||(points&&(type==='coincident'||type==='horizontal'||type==='vertical'))))return [body];
+  const parents=new Map<Id,Id>();
+  const root=(id:Id):Id=>{const p=parents.get(id);if(!p){parents.set(id,id);return id;}if(p===id)return id;const result=root(p);parents.set(id,result);return result;};
+  const join=(a:Id,b:Id)=>{const x=root(a),y=root(b);if(x!==y)parents.set(y,x);};
+  const key=(id:Id):Id=>{const g=geometryOf(geometry,id);return type==='concentric'&&(g?.type==='circle'||g?.type==='arc')?g.center:id;};
+  for(const c of sketch.constraints) {
+    if(type==='concentric') {
+      if(c.type==='coincident')join(c.a,c.b);
+      if(c.type==='concentric'||c.type==='coradial')join(key(c.a),key(c.b));
+    } else if(type==='parallel'&&(c.type==='parallel'||c.type==='collinear'))join(c.a,c.b);
+    else if((type==='equal'||type==='equalCurvature')&&(c.type==='equal'||c.type==='equalCurvature'||(radials&&c.type==='coradial')))join(c.a,c.b);
+    else if(points&&((c.type===type&&'b'in c&&c.b!==undefined)||c.type==='coincident'))join(c.a,c.b!);
+  }
+  if(lines&&type==='parallel')for(const orientation of ['horizontal','vertical'] as const){const held=sketch.constraints.filter(c=>c.type===orientation&&c.b===undefined);for(let i=1;i<held.length;i++)join((held[0] as {a:Id}).a,(held[i] as {a:Id}).a);}
+  const result:RelationBody[]=[];
+  for(let i=1;i<ids.length;i++){const a=ids[0]!,b=ids[i]!;if(root(key(a))===root(key(b)))continue;result.push({type,a,b} as RelationBody);join(key(a),key(b));}
+  return result;
+}
+
+function candidateRelations(geometry: Geometry, selection: Id[], sketch?: Pick<SketchFeature, 'entities'> & Partial<Pick<SketchFeature,'constraints'>>): RelationBody[] {
   const items = selection.map((id) => ({ id, kind: kindOf(geometry, id, sketch) }));
   if (items.some((i) => !i.kind)) return [];
   const isPoint = (k: HitKind | undefined) => k === 'point' || k === 'origin';
@@ -676,17 +713,44 @@ function candidateRelations(geometry: Geometry, selection: Id[], sketch?: Pick<S
   const points = byKind(isPoint);
   const radials = byKind(isRadial);
   const n = items.length;
+  const whole:RelationBody[]=[];
+  if(n===3&&sketch){
+    const a=sketch.entities.find(e=>e.id===selection[0]),b=sketch.entities.find(e=>e.id===selection[1]),reference=items[2]!;
+    if(a&&b&&a.type===b.type&&['line','circle','arc'].includes(a.type)&&!entityPoints(a).some(p=>entityPoints(b).includes(p))){
+      let reverse=false;
+      if(a.type==='line'&&b.type==='line'){
+        const ga=geometryOf(geometry,a.id),gb=geometryOf(geometry,b.id),axis=geometryOf(geometry,reference.id),center=pointOf(geometry,reference.id);
+        if(ga?.type==='line'&&gb?.type==='line'){const reflected=(p:P2):P2=>{if(axis?.type==='line'){const d=unit(sub(axis.b,axis.a)),v=sub(p,axis.a);return sub(add(axis.a,scale(d,2*dot(v,d))),v);}return center?sub(scale(center,2),p):p;};reverse=dist(reflected(ga.a),gb.b)+dist(reflected(ga.b),gb.a)<dist(reflected(ga.a),gb.a)+dist(reflected(ga.b),gb.b);}
+      }
+      if(reference.kind==='line')whole.push({type:'symmetricEntity',a:a.id,b:b.id,axis:reference.id,...(reverse?{reverse}: {})});
+      if(isPoint(reference.kind))whole.push({type:'symmetricEntityPoint',a:a.id,b:b.id,point:reference.id,...(reverse?{reverse}: {})});
+    }
+  }
 
+  if(n===1&&items[0]?.kind==='ellipse'){const g=geometryOf(geometry,selection[0]!);if(g?.type==='ellipse'&&g.majorRadius>g.minorRadius+1e-6)return [{type:'ellipseAxes',entity:selection[0]!,majorRadius:String(g.majorRadius),minorRadius:String(g.minorRadius)}];}
+  if(n===2){const ellipse=items.find(i=>i.kind==='ellipse'),other=items.find(i=>i!==ellipse);if(ellipse&&other){if(isPoint(other.kind))return [{type:'pointOnCurve',point:other.id,curve:ellipse.id}];if(other.kind==='line')return [{type:'tangent',a:other.id,b:ellipse.id}];}}
   if (n === 1 && lines.length === 1) return [{ type: 'horizontal', a: lines[0]! }, { type: 'vertical', a: lines[0]! }];
   if (n === 1 && points.length === 1 && points[0] !== SKETCH_ORIGIN) return [{ type: 'fix', point: points[0]! }];
+  if(n>=3) {
+    const allLines=lines.length===n,allRadials=radials.length===n,allPoints=points.length===n;
+    const types:RelationBody['type'][]=allLines?['horizontal','vertical','parallel','equal']:allRadials?['concentric','coradial','equal','equalCurvature']:allPoints?['coincident','horizontal','vertical']:[];
+    const batch=types.flatMap(type=>{
+      const body={type,a:selection[0]!,b:selection[1]!} as RelationBody;
+      const missing=expandRelation(body,geometry,selection,{entities:sketch?.entities??[],constraints:sketch?.constraints??[]});
+      if(!missing.length)return [];
+      return [{...missing[0]!,type} as RelationBody];
+    });
+    if(n<=32&&(allPoints||allRadials))batch.push({type:'equalSpacing',points:[...selection]});
+    if(types.length)return [...batch,...whole,...(n===3&&allPoints?[{type:'symmetricPoint' as const,a:points[0]!,b:points[1]!,point:points[2]!}]:[])];
+  }
   if (n !== 2 && n !== 3) return [];
   if (n === 3) {
     if (points.length === 3) return [{type:'symmetricPoint',a:points[0]!,b:points[1]!,point:points[2]!}];
     if (points.length === 2 && lines.length === 1) return [{ type: 'symmetric', a: points[0]!, b: points[1]!, axis: lines[0]! }];
     // a point and two curves: the point where they cross
     const curves = [...lines, ...radials];
-    if (points.length === 1 && curves.length === 2) return [{ type: 'intersection', point: points[0]!, a: curves[0]!, b: curves[1]! }];
-    return [];
+    if (points.length === 1 && curves.length === 2) return [...whole,{ type: 'intersection', point: points[0]!, a: curves[0]!, b: curves[1]! }];
+    return whole;
   }
   const [a, b] = selection as [Id, Id];
   if (lines.length === 2) {
@@ -695,6 +759,7 @@ function candidateRelations(geometry: Geometry, selection: Id[], sketch?: Pick<S
       { type: 'parallel', a, b },
       { type: 'perpendicular', a, b },
       { type: 'equal', a, b },
+      { type:'lengthRatio',a,b,ratio:'2' },
     ];
   }
   if (points.length === 2) {
@@ -724,6 +789,8 @@ function candidateRelations(geometry: Geometry, selection: Id[], sketch?: Pick<S
       { type: 'equalCurvature', a, b },
       { type: 'equal', a, b },
       { type: 'tangent', a, b },
+      { type:'tangentExternal',a,b },
+      { type:'tangentInternal',a,b },
     ];
   }
   return [];
@@ -735,9 +802,24 @@ export function constraintsOf<C extends SketchConstraint>(constraints: readonly 
   return constraints.filter((c) => constraintRefs(c).some((r) => set.has(r)));
 }
 
+/** Endpoint pair closest in solved geometry; normal orientation is stored so later edits do not choose another branch. */
+export function endpointTangentOffer(geometry:Geometry,a:Id,b:Id):Extract<RelationBody,{type:'endpointTangent'}>|null {
+  const ga=geometryOf(geometry,a),gb=geometryOf(geometry,b);
+  if(!ga||!gb||!['line','arc','spline'].includes(ga.type)||!['line','arc','spline'].includes(gb.type)||(ga.type==='spline'&&!ga.bezier)||(gb.type==='spline'&&!gb.bezier))return null;
+  const ends=(g:SolvedGeometry):P2[]=>g.type==='line'?[g.a,g.b]:g.type==='arc'?[polar(g.c,g.r,g.a0),polar(g.c,g.r,g.a1)]:g.type==='spline'?[g.points[0]!,g.points[g.points.length-1]!]:[];
+  const ea=ends(ga),eb=ends(gb);let ai=0,bi=0,best=Infinity;for(let i=0;i<2;i++)for(let j=0;j<2;j++){const d=dist(ea[i]!,eb[j]!);if(d<best){best=d;ai=i;bi=j;}}
+  const normal=(g:SolvedGeometry,p:P2):P2=>g.type==='line'?perp(sub(g.b,g.a)):g.type==='arc'?sub(g.c,p):g.type==='spline'?perp(dist(p,g.points[0]!)<1e-9?sub(g.points[1]!,g.points[0]!):sub(g.points[g.points.length-1]!,g.points[g.points.length-2]!)):[0,0];
+  return {type:'endpointTangent',a,b,aEnd:ai===0?'start':'end',bEnd:bi===0?'start':'end',opposed:dot(normal(ga,ea[ai]!),normal(gb,eb[bi]!))<0};
+}
+
 /** Same relation type between the same entities (so the UI does not offer a duplicate). */
 export function sameRelation(a: RelationBody | SketchConstraint, b: RelationBody | SketchConstraint): boolean {
   if (a.type !== b.type) return false;
+  if(a.type==='endpointTangent'&&b.type==='endpointTangent')return a.a===b.a&&a.b===b.b&&a.aEnd===b.aEnd&&a.bEnd===b.bEnd;
+  if(a.type==='symmetricEntity'&&b.type==='symmetricEntity')return a.a===b.a&&a.b===b.b&&a.axis===b.axis;
+  if(a.type==='symmetricEntityPoint'&&b.type==='symmetricEntityPoint')return a.a===b.a&&a.b===b.b&&a.point===b.point;
+  if(a.type==='lengthRatio'&&b.type==='lengthRatio')return a.a===b.a&&a.b===b.b;
+  if(a.type==='equalSpacing'&&b.type==='equalSpacing')return a.points.length===b.points.length&&a.points.every((p,i)=>p===b.points[i]);
   if(a.type==='symmetricPoint' && b.type==='symmetricPoint' && a.point!==b.point)return false;
   const ra = constraintRefs(a as SketchConstraint).slice().sort();
   const rb = constraintRefs(b as SketchConstraint).slice().sort();

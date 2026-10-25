@@ -1,0 +1,34 @@
+import {beforeAll,expect,it}from 'vitest';
+import {applyCommand,createEmptyPart,resolveSketch,type SketchFeature,type SketchEntity,type SketchConstraint}from '@3db/model';
+import {PlaneGcsSolver,findProfiles}from '@3db/sketch';
+import {bezierPoint,endpointTangentOffer,sample}from '@3db/sketch/interact';
+let solver:PlaneGcsSolver;beforeAll(async()=>{solver=await PlaneGcsSolver.create();});
+const p=(id:string,x:number,y:number):SketchEntity=>({id,type:'point',x,y});
+const sketch=(entities:SketchEntity[],constraints:SketchConstraint[]):SketchFeature=>({id:'sk',type:'sketch',name:'curves',suppressed:false,plane:{kind:'datum',name:'plane:front'},entities,constraints});
+const ellipse=()=>sketch([p('c',0,0),p('m',8,0),{id:'el',type:'ellipse',center:'c',major:'m',minorRadius:4}],[{id:'f',type:'fix',point:'c'},{id:'h',type:'horizontal',a:'c',b:'m'},{id:'axes',type:'ellipseAxes',entity:'el',majorRadius:'8',minorRadius:'4'}]);
+it('solves ellipse axes and follows both axis expressions without keeping the stored minor radius',()=>{
+ let f=ellipse(),d=applyCommand(createEmptyPart(),{type:'insertFeature',index:0,feature:f}),r=solver.solve(f);expect(r.status).toBe('fully');expect(r.geometry.get('el')).toMatchObject({majorRadius:8,minorRadius:4});
+ d=applyCommand(d,{type:'setEllipseAxes',featureId:'sk',constraintId:'axes',majorRadius:'12',minorRadius:'6'});f=d.features[0] as SketchFeature;r=solver.solve(resolveSketch(f,d));expect(r.status).toBe('fully');expect(r.geometry.get('el')).toMatchObject({majorRadius:12,minorRadius:6});
+ for(const [majorRadius,minorRadius]of [['0','2'],['4','4'],['3','4'],['NaN','2'],['8','-2'],['1e9','1'],['8','2deg']])expect(()=>applyCommand(d,{type:'setEllipseAxes',featureId:'sk',constraintId:'axes',majorRadius:majorRadius!,minorRadius:minorRadius!})).toThrow();
+});
+it('constrains a point on an ellipse and a line tangent to its actual native equation',()=>{
+ const f=ellipse();f.entities.push(p('q',4,3),p('l0',-10,5),p('l1',10,5),{id:'l',type:'line',p1:'l0',p2:'l1'});f.constraints.push({id:'on',type:'pointOnCurve',point:'q',curve:'el'},{id:'qx',type:'distanceX',a:'c',b:'q',value:'4'},{id:'hl',type:'horizontal',a:'l'},{id:'t',type:'tangent',a:'l',b:'el'});const r=solver.solve(f);expect(['under','fully']).toContain(r.status);const q=r.geometry.get('q')!,l=r.geometry.get('l')!;if(q.type!=='point'||l.type!=='line')throw Error('missing solved geometry');expect(q.p[0]**2/64+q.p[1]**2/16).toBeCloseTo(1,8);expect(Math.abs(l.a[1])).toBeCloseTo(4,8);
+});
+it('joins control-point Bezier to a line with exact endpoint G1 and retains poles in manufacturing profiles',()=>{
+ const f=sketch([p('a',0,0),p('b',4,2),p('c',8,4),p('d',12,0),p('l0',-8,0),p('l1',-1,0),{id:'s',type:'spline',points:['a','b','c','d'],bezier:true},{id:'l',type:'line',p1:'l0',p2:'l1'},{id:'close',type:'line',p1:'d',p2:'l0'}],[{id:'block',type:'block',entity:'l'},{id:'fc',type:'fix',point:'c'},{id:'fd',type:'fix',point:'d'}]);const initial=solver.solve(f),offer=endpointTangentOffer(initial.geometry,'l','s')!;expect(offer).toMatchObject({aEnd:'end',bEnd:'start'});f.constraints.push({id:'join',...offer});const r=solver.solve(f);expect(['under','fully']).toContain(r.status);const g=r.geometry.get('s')!;if(g.type!=='spline')throw Error('missing spline');expect(g.bezier).toBe(true);expect(g.points[0]).toEqual([-1,0]);expect(g.points[1]![1]).toBeCloseTo(0,8);expect(bezierPoint(g.points,0)).toEqual(g.points[0]);expect(bezierPoint(g.points,1)).toEqual(g.points[3]);expect(sample(g,0.1)[32]).toEqual(bezierPoint(g.points,0.5));const loops=findProfiles(f,r).regions.flatMap(r=>[r.outer,...r.holes]);expect(loops.flat().some(s=>s.kind==='spline'&&s.bezierPoles?.length===4)).toBe(true);
+});
+it('rejects collapsed or closed Bezier definitions and keeps fit-spline meaning intact',()=>{
+ for(const entity of [{id:'s',type:'spline' as const,points:['a','b'],bezier:true,closed:true},{id:'s',type:'spline' as const,points:['a','b'],bezier:true}])expect(()=>applyCommand(createEmptyPart(),{type:'insertFeature',index:0,feature:sketch([p('a',0,0),p('b',0,0),entity],[])})).toThrow();
+ const f=sketch([p('a',0,0),p('b',3,4),p('c',6,0),{id:'s',type:'spline',points:['a','b','c']}],[]),r=solver.solve(f);expect(endpointTangentOffer(r.geometry,'s','s')).toBeNull();expect(r.geometry.get('s')).not.toHaveProperty('bezier');
+});
+it('fuzzes 100 rotated native ellipses and 100 exact Bezier endpoint derivatives',()=>{
+ let seed=198;const rand=()=>{seed=(Math.imul(seed,1664525)+1013904223)>>>0;return seed/4294967296;};for(let i=0;i<100;i++){const a=2+rand()*30,b=a*(0.1+rand()*0.7),theta=rand()*6,cx=rand()*10,cy=rand()*10,f=sketch([p('c',cx,cy),p('m',cx+a*Math.cos(theta),cy+a*Math.sin(theta)),{id:'e',type:'ellipse',center:'c',major:'m',minorRadius:b}],[{id:'fc',type:'fix',point:'c'},{id:'fm',type:'fix',point:'m'}]),r=solver.solve(f);expect(r.status).toBe('fully');const g=r.geometry.get('e')!;if(g.type!=='ellipse')throw Error('missing ellipse');expect(g.majorRadius).toBeCloseTo(a,8);expect(g.minorRadius).toBeCloseTo(b,8);
+ const target=a*(0.4+rand()*2),sized:SketchFeature={...f,constraints:[...f.constraints.filter(c=>c.id!=='fm'),{id:'axes',type:'ellipseAxes',entity:'e',majorRadius:String(target),minorRadius:String(target*0.2)}]},sizedResult=solver.solve(sized);expect(sizedResult.status).toBe('under');expect(sizedResult.geometry.get('e')).toMatchObject({majorRadius:expect.closeTo(target,8),minorRadius:expect.closeTo(target*0.2,8)});
+ const turn=rand()*6,origin:[number,number]=[rand()*10,rand()*10],rotate=(v:[number,number]):[number,number]=>[origin[0]+v[0]*Math.cos(turn)-v[1]*Math.sin(turn),origin[1]+v[0]*Math.sin(turn)+v[1]*Math.cos(turn)];
+ const pts:[[number,number],[number,number],[number,number],[number,number]]=[[0,0],[2+rand(),1+rand()],[6,rand()*4],[8,2]],entities:SketchEntity[]=pts.map((q,i)=>p('p'+i,...rotate(q)));
+ entities.push(p('la',...rotate([-5,0])),p('lb',...rotate([0,0])),{id:'line',type:'line',p1:'la',p2:'lb'},{id:'sp',type:'spline',bezier:true,points:['p0','p1','p2','p3']});
+ const curve=sketch(entities,[{id:'bl',type:'block',entity:'line'},{id:'fc',type:'fix',point:'p2'},{id:'fd',type:'fix',point:'p3'},{id:'g1',type:'endpointTangent',a:'line',b:'sp',aEnd:'end',bEnd:'start',opposed:false}]),sr=solver.solve(curve);expect(sr.status).toBe('under');const sg=sr.geometry.get('sp')!;if(sg.type!=='spline')throw Error('missing Bezier');expect(sg.points[0]![0]).toBeCloseTo(origin[0],8);expect(sg.points[0]![1]).toBeCloseTo(origin[1],8);const tangent=[sg.points[1]![0]-sg.points[0]![0],sg.points[1]![1]-sg.points[0]![1]];expect(tangent[0]!*Math.sin(turn)-tangent[1]!*Math.cos(turn)).toBeCloseTo(0,8);
+ const near=bezierPoint(sg.points,1e-6),derivative=[(near[0]-sg.points[0]![0])/1e-6,(near[1]-sg.points[0]![1])/1e-6];expect(derivative[0]).toBeCloseTo(3*tangent[0]!,4);expect(derivative[1]).toBeCloseTo(3*tangent[1]!,4);
+
+ }
+});

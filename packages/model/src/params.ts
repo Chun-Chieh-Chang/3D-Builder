@@ -13,16 +13,17 @@ import { isDimension } from './schema';
  * Nothing here is stored: the document holds the expressions only.
  */
 
-/** What a value is: a length, an angle, or a count (a whole number without a unit: how many instances). */
+/** What a value is: a length, an angle, or a dimensionless number (the role decides whether it must be an integer). */
 export type ExprKind = 'length' | 'angle' | 'count';
 
 /** What a value must be for the feature to make sense: a size above zero, or an angle in the range its feature allows. */
-export type ExprRole = 'gearCount' | 'positive' | 'unitInterval' | 'nonNegative' | 'nonZero' | 'revolveAngle' | 'chamferAngle' | 'draftAngle' | 'includedAngle' | 'planeAngle' | 'count' | 'knurlCount' | 'surfaceDistance' | 'any';
+export type ExprRole = 'lengthRatio' | 'gearCount' | 'positive' | 'unitInterval' | 'nonNegative' | 'nonZero' | 'revolveAngle' | 'chamferAngle' | 'draftAngle' | 'includedAngle' | 'planeAngle' | 'count' | 'knurlCount' | 'surfaceDistance' | 'any';
 
 /** Why a value is not acceptable for its role (in words), or null. `expr` is what the user wrote. */
 export function roleProblem(v: number, role: ExprRole, expr: Expr): string | null {
   const angle = (min: number, max: number, label: string) => (v > min && v <= max + 1e-12 ? null : t('cmd.angleOutOfRange', { label, value: expr }));
   switch (role) {
+    case 'lengthRatio': return Number.isFinite(v)&&v>=0.001&&v<=1000?null:t('sketch.ratioInvalid');
     case 'gearCount': return Number.isInteger(v)&&v>=1&&v<=200?null:t('gear.count');
     case 'surfaceDistance': return v>0 && v<=1e6 ? null : t('surfaceTools.range');
     case 'positive':
@@ -88,6 +89,10 @@ export function mapExprs(feature: Feature, fn: (expr: Expr, kind: ExprKind, role
     case 'sketch': {
       let changed = false;
       const constraints = feature.constraints.map((c) => {
+        if(c.type==='ellipseAxes'){const majorRadius=fn(c.majorRadius,'length','positive'),minorRadius=fn(c.minorRadius,'length','positive');if(majorRadius===c.majorRadius&&minorRadius===c.minorRadius)return c;changed=true;return {...c,majorRadius,minorRadius};}
+        if(c.type==='lengthRatio') {
+          const ratio=fn(c.ratio,'count','lengthRatio');if(ratio===c.ratio)return c;changed=true;return {...c,ratio};
+        }
         if(c.type==='patternPoint') {
           const dx=fn(c.dx,'length','any'),dy=fn(c.dy,'length','any'),angle=fn(c.angle,'angle','any');
           if(dx===c.dx&&dy===c.dy&&angle===c.angle)return c;

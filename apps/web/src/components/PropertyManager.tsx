@@ -1,8 +1,9 @@
-import { Fragment, useEffect, useState, type ReactNode } from 'react';
+import { Fragment, useEffect, useRef, useState, type ReactNode } from 'react';
 import { labelsOf, t } from '@3db/i18n';
 import { currentTopicId } from '../help/context';
 import {
   canBeSeed,
+  entityPoints,
   gearParameters, gearDimensions, type SpurGearFeature, type RackFeature,
   evalLength,
   evalNumber,
@@ -105,7 +106,7 @@ import {
   type SketchFeature,
 } from '@3db/model';
 import type { RebuildPayload, SketchSolvePayload } from '../worker/protocol';
-import { conditionEnds, dimensionText, measuredText } from '@3db/sketch/interact';
+import { constraintsOf, conditionEnds, dimensionText, measuredText } from '@3db/sketch/interact';
 import { relationsOffered } from '../sketcher/relationsOffered';
 import { nearestElement } from '../state/candidates';
 import { store, useSketcherView, useStore, type FilletGroup } from '../state/store';
@@ -305,16 +306,16 @@ function TransformOptions({ view, sketcher }: { view: ControllerView; sketcher: 
 /** Over-defined sketch (A2.5, D7.2): the relations and dimensions that conflict, and what the solver confirms cures it, one click each. */
 function DiagnosisBox({ f, solve, sketcher }: { f: SketchFeature; solve: SketchSolvePayload; sketcher: SketchController }) {
   const [fixes, setFixes] = useState<SketchFix[] | null>(null);
-  const key = `${solve.status}|${solve.conflicting.join(',')}|${solve.redundant.join(',')}|${f.constraints.length}`;
+  const key = `${solve.status}|${solve.conflicting.join(',')}|${solve.redundant.join(',')}`;
   useEffect(() => {
     let live = true;
     setFixes(null);
-    if (solve.status === 'over') void sketcher.diagnose().then((r) => live && setFixes(r));
+    if (solve.status === 'over') void sketcher.diagnose().then((r) => live && setFixes(r)).catch((error:unknown)=>{if(live){setFixes([]);store.notify(error instanceof Error?error.message:String(error));}});
     return () => {
       live = false;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [key, sketcher]);
+  }, [key, sketcher, f]);
   if (solve.status !== 'over') return null;
   return (
     <section className="pm-group">
@@ -324,16 +325,33 @@ function DiagnosisBox({ f, solve, sketcher }: { f: SketchFeature; solve: SketchS
       {fixes !== null && fixes.length > 0 && <p className="hint">{t('sketch.diagnose.intro')}</p>}
       <ul className="relation-list">
         {(fixes ?? []).map((x) => (
-          <li key={x.id} onMouseEnter={() => sketcher.select([x.id])}>
-            <span>{describe(f, x.id)}</span>
+          <li key={[x.id,...(x.related??[]).map(c=>c.id)].join(',')} onMouseEnter={() => sketcher.select([x.id,...(x.related??[]).map(c=>c.id)])}>
+            <span>{[x,...(x.related??[])].map(c=>`${describe(f,c.id)} (${c.kind==='driven'?t('sketch.diagnose.driven'):t('sketch.diagnose.delete')})`).join(' + ')}</span>
             <button type="button" onClick={() => sketcher.applyFix(x)}>
-              {x.kind === 'driven' ? t('sketch.diagnose.driven') : t('sketch.diagnose.delete')}
+              {t('sketch.diagnose.apply')}
             </button>
           </li>
         ))}
       </ul>
     </section>
   );
+}
+
+/** Finite native-solver probes, explicitly separate from the global DOF count. */
+function ConstraintAnalysisBox({f,selection,sketcher,solve}:{f:SketchFeature;selection:Id[];sketcher:SketchController;solve:SketchSolvePayload|null}) {
+  const [busy,setBusy]=useState(false),[motion,setMotion]=useState<Awaited<ReturnType<SketchController['motionProbes']>>|null>(null),[contributions,setContributions]=useState<Awaited<ReturnType<SketchController['constraintContributions']>>|null>(null);
+  const version=useRef(0),key=selection.join(',');
+  useEffect(()=>{version.current++;setMotion(null);setContributions(null);setBusy(false);return ()=>{version.current++;};},[f,key]);
+  if(!solve||!['fully','under'].includes(solve.status))return null;
+  const point=selection.length===1&&f.entities.some(e=>e.id===selection[0]&&e.type==='point')?selection[0]:undefined;
+  const affected=new Set(selection);for(const e of f.entities){if(selection.includes(e.id))for(const p of entityPoints(e))affected.add(p);if(entityPoints(e).some(p=>selection.includes(p)))affected.add(e.id);}
+  const relations=constraintsOf(f.constraints,affected);
+  const run=async()=>{const current=version.current;setBusy(true);try{const m=point?await sketcher.motionProbes(point):null,c=await sketcher.constraintContributions(relations.map(c=>c.id));if(current===version.current){setMotion(m);setContributions(c);}}catch(error){if(current===version.current)store.notify(error instanceof Error?error.message:String(error));}finally{if(current===version.current)setBusy(false);}};
+  if(!point&&relations.length===0)return null;
+  return <div className="constraint-analysis"><button disabled={busy} onClick={()=>void run()}>{busy?t('sketch.diagnose.busy'):t('sketch.analysis.run')}</button>
+    {motion!==null&&<><p className="hint">{t('sketch.analysis.motionHint')}</p>{motion.length===0?<p>{t('sketch.analysis.noMotion')}</p>:<ul>{motion.map(m=><li key={m.axis}>{t('sketch.analysis.motion',{axis:m.axis.toUpperCase(),dx:m.delta[0].toFixed(4),dy:m.delta[1].toFixed(4),dof:m.remainingDof})}</li>)}</ul>}</>}
+    {contributions!==null&&contributions.length>0&&<><p className="hint">{t('sketch.analysis.contributionHint')}</p><ul>{contributions.map(c=><li key={c.id}>{describe(f,c.id)}: {t('sketch.analysis.released',{n:c.releasedDof})}</li>)}</ul></>}
+  </div>;
 }
 
 /** 「檢查草圖用於特徵」 (C1.35): what keeps the sketch from making a profile; click one to see where, and 「修復草圖」 for what needs no decision. */
@@ -646,6 +664,7 @@ function SketchPanel({ f }: { f: SketchFeature }) {
               <li key={id}>{describe(f, id)}</li>
             ))}
           </ul>
+          <ConstraintAnalysisBox f={f} selection={selection} sketcher={sketcher} solve={solve}/>
           {textSelected && <TextEntityBox f={f} entity={textSelected} sketcher={sketcher} />}
           {existing.length > 0 && (
             <>
@@ -654,6 +673,8 @@ function SketchPanel({ f }: { f: SketchFeature }) {
                 {existing.map((c) => (
                   <li key={c.id} className={solve?.conflicting.includes(c.id) ? 'over' : ''}>
                     <span>{relationText(f, c, solve?.geometry)}</span>
+                    {c.type==='ellipseAxes'&&<span><label>{t('sketch.ellipseMajor')}<ValueInput value={c.majorRadius} toCommand={majorRadius=>({type:'setEllipseAxes',featureId:f.id,constraintId:c.id,majorRadius,minorRadius:c.minorRadius})}/></label><label>{t('sketch.ellipseMinor')}<ValueInput value={c.minorRadius} toCommand={minorRadius=>({type:'setEllipseAxes',featureId:f.id,constraintId:c.id,majorRadius:c.majorRadius,minorRadius})}/></label></span>}
+                    {c.type==='lengthRatio'&&<ValueInput value={c.ratio} suffix="" toCommand={ratio=>({type:'setLengthRatio',featureId:f.id,constraintId:c.id,ratio})}/>}
                     <button title={t('pm.delete')} onClick={() => store.execute({ type: 'removeSketchItems', featureId: f.id, ids: [c.id] })}>
                       <Icon name="cancel" />
                     </button>

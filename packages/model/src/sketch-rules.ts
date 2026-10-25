@@ -36,16 +36,24 @@ const RULES: { [T in SketchConstraint['type']]: Partial<Record<RefField, RefKind
   collinear: { a: LINE_OR_AXIS, b: LINE_OR_AXIS },
   parallel: { a: LINE_OR_AXIS, b: LINE_OR_AXIS },
   perpendicular: { a: LINE_OR_AXIS, b: LINE_OR_AXIS },
-  tangent: { a: CURVE_OR_AXIS, b: CURVE_OR_AXIS },
+  tangent: { a: [...CURVE_OR_AXIS,'ellipse'], b: [...CURVE_OR_AXIS,'ellipse'] },
+  tangentExternal:{a:RADIAL,b:RADIAL},
+  tangentInternal:{a:RADIAL,b:RADIAL},
+  endpointTangent:{a:['line','arc','spline'],b:['line','arc','spline']},
   concentric: { a: RADIAL, b: RADIAL },
   coradial: { a: RADIAL, b: RADIAL },
   intersection: { point: POINT, a: CURVE_OR_AXIS, b: CURVE_OR_AXIS },
   patternPoint: {a:POINT,b:POINT},
   equalCurvature: { a: RADIAL, b: RADIAL },
+  symmetricEntity: {a:CURVE,b:CURVE,axis:LINE_OR_AXIS},
+  symmetricEntityPoint: {a:CURVE,b:CURVE,point:POINT},
   symmetricPoint: { a: POINT, b: POINT, point: POINT },
   equal: { a: CURVE, b: CURVE },
+  lengthRatio: {a:LINE,b:LINE},
+  equalSpacing: {},
+  ellipseAxes:{entity:['ellipse']},
   midpoint: { point: POINT, line: ['line', 'arc'] },
-  pointOnCurve: { point: POINT, curve: CURVE_OR_AXIS },
+  pointOnCurve: { point: POINT, curve: [...CURVE_OR_AXIS,'ellipse'] },
   symmetric: { a: POINT, b: POINT, axis: LINE_OR_AXIS },
   fix: { point: ['point'] },
   block: { entity: CURVE },
@@ -60,7 +68,7 @@ const RULES: { [T in SketchConstraint['type']]: Partial<Record<RefField, RefKind
 
 /** Ids a relation or dimension refers to. */
 export function constraintRefs(c: SketchConstraint): Id[] {
-  const out: Id[] = [];
+  const out: Id[] = c.type==='equalSpacing' && Array.isArray(c.points) ? [...c.points] : [];
   for (const f of REF_FIELDS) {
     const v = (c as Partial<Record<RefField, Id>>)[f];
     if (v !== undefined) out.push(v);
@@ -133,6 +141,8 @@ export function sketchError(sketch: Pick<SketchFeature, 'entities' | 'constraint
     if (e.type === 'circle' && !(finite(e.radius) && e.radius > 0)) return t('cmd.radiusMustBePositive', { id: e.id });
     if (e.type === 'ellipse' && !(finite(e.minorRadius) && e.minorRadius > 0)) return t('cmd.radiusMustBePositive', { id: e.id });
     if (e.type === 'spline') {
+      if(e.bezier!==undefined&&(typeof e.bezier!=='boolean'||e.bezier&&(e.closed||e.points.length<2||e.points.length>4)))return t('sketch.bezierInvalid');
+      if(e.bezier){const pts=e.points.map(id=>byId.get(id));const distance=(a:SketchEntity|undefined,b:SketchEntity|undefined)=>a?.type==='point'&&b?.type==='point'?Math.hypot(a.x-b.x,a.y-b.y):0;if(!(distance(pts[0],pts[1])>1e-8&&distance(pts[pts.length-1],pts[pts.length-2])>1e-8))return t('sketch.bezierInvalid');}
       if (e.points.length < 2) return t('rules.splinePointsMin', { id: e.id });
       if (e.closed && e.points.length < 3) return t('rules.splineClosedMin', { id: e.id });
     }
@@ -155,6 +165,8 @@ export function sketchError(sketch: Pick<SketchFeature, 'entities' | 'constraint
     }
   }
 
+  const auxiliary=sketch.constraints.reduce((n,c)=>n+(c.type==='equalSpacing'?4*Math.max(0,(c.points?.length??0)-2):c.type==='lengthRatio'?2:0),0);
+  if(auxiliary>128)return t('sketch.constraintBudget');
   const seen = new Set<Id>(kinds.keys());
   for (const c of sketch.constraints) {
     if (c.id === SKETCH_ORIGIN || isSketchAxis(c.id) || seen.has(c.id)) return t('rules.dupId', { id: c.id });
@@ -173,6 +185,11 @@ export function sketchError(sketch: Pick<SketchFeature, 'entities' | 'constraint
       if (!k || !allowed.includes(k)) return t('rules.badRef', { id: c.id, ref });
     }
     if(c.type==='patternPoint' && (!Array.isArray(c.center)||c.center.length!==2||!c.center.every(Number.isFinite)))return t('sketch.xformPointInvalid');
+    if(c.type==='equalSpacing') {
+      if(!Array.isArray(c.points)||c.points.length<3||c.points.length>32||Array.from(c.points).some(p=>!ANCHOR.includes(kindOf(p)!)))return t('sketch.spacingInvalid');
+      const centers=c.points.map(p=>{const e=byId.get(p);return e?.type==='circle'||e?.type==='arc'?e.center:p;});
+      if(new Set(centers).size!==centers.length)return t('sketch.spacingInvalid');
+    }
     const refs = constraintRefs(c);
     if (new Set(refs).size !== refs.length) return t('rules.sameTwice', { id: c.id });
     const ks = refs.map(kindOf);
@@ -180,6 +197,16 @@ export function sketchError(sketch: Pick<SketchFeature, 'entities' | 'constraint
     if (ks.filter((k) => k === 'axis').length > 1) return t('rules.axisPair', { id: c.id });
     const straight = (k: RefKind | undefined) => k === 'line' || k === 'axis';
     if (c.type === 'tangent' && straight(ks[0]) && straight(ks[1])) return t('rules.tangentNeedsCurve');
+    if(c.type==='tangent'&&(ks[0]==='ellipse'||ks[1]==='ellipse')&&!(ks.includes('line')||ks.includes('axis')))return t('sketch.ellipseTangentLine');
+    if(c.type==='endpointTangent'&&[c.a,c.b].some(id=>{const e=byId.get(id);return e?.type==='spline'&&!e.bezier;}))return t('sketch.bezierRequired');
+    if(c.type==='endpointTangent'&&(!['start','end'].includes(c.aEnd)||!['start','end'].includes(c.bEnd)||typeof c.opposed!=='boolean'))return t('sketch.endpointInvalid');
+    if(c.type==='symmetricEntity'||c.type==='symmetricEntityPoint'){
+      if(ks[0]!==ks[1]||(c.reverse!==undefined&&typeof c.reverse!=='boolean'))return t('sketch.symmetryKinds');
+      const a=byId.get(c.a)!,b=byId.get(c.b)!;
+      if(entityPoints(a).some(p=>entityPoints(b).includes(p)))return t('sketch.symmetryShared');
+      if(c.type==='symmetricEntity'&&[...entityPoints(a),...entityPoints(b)].some(p=>entityPoints(byId.get(c.axis)??{id:'',type:'point',x:0,y:0}).includes(p)))return t('sketch.symmetryShared');
+      if(c.type==='symmetricEntityPoint'&&[...entityPoints(a),...entityPoints(b)].includes(c.point))return t('sketch.symmetryShared');
+    }
     if (c.type === 'equal' && (ks[0] === 'line') !== (ks[1] === 'line')) return t('rules.equalKinds');
     if (c.type === 'distance' && c.b === undefined && ks[0] !== 'line') return t('rules.distanceLine');
     // the nearest or the farthest points (ADR 0183) are between a circle or an arc and a point, a line, or another circle or arc

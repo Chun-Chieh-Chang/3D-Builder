@@ -1,3 +1,4 @@
+import { bezierPoint } from './interact';
 import { t } from '@3db/i18n';
 import { SKETCH_ORIGIN, type Id, type SketchFeature } from '@3db/model';
 import { textContours } from './font';
@@ -99,7 +100,7 @@ function sample(loop: Loop2): P2[] {
         pts.push([s.c[0] + u * cosA - v * sinA, s.c[1] + u * sinA + v * cosA]);
       }
     } else if (s.kind === 'spline') {
-      const sampled = sampleSpline(s.points, s.closed);
+      const sampled = s.bezierPoles?Array.from({length:65},(_,i)=>bezierPoint(s.bezierPoles!,i/64)):sampleSpline(s.points, s.closed);
       for (const p of sampled) pts.push(p);
     } else {
       const a0 = Math.atan2(s.from[1] - s.c[1], s.from[0] - s.c[0]);
@@ -146,7 +147,7 @@ function reverse(loop: Loop2): Loop2 {
     .map((s): Segment2 => {
       if (s.kind === 'line') return { ...s, a: s.b, b: s.a };
       if (s.kind === 'arc') return { ...s, from: s.to, to: s.from, ccw: !s.ccw };
-      if (s.kind === 'spline') return { ...s, points: [...s.points].reverse() };
+      if (s.kind === 'spline') return { ...s, points: [...s.points].reverse(),...(s.bezierPoles?{bezierPoles:[...s.bezierPoles].reverse()}: {}) };
       return s;
     });
 }
@@ -242,8 +243,9 @@ export function findProfiles(sketch: SketchFeature, solved: SolvedSketch): Profi
           to: nodes.find(g.pointIds[g.pointIds.length - 1]!),
           make: (fwd) => ({
             kind: 'spline',
-            points: fwd ? g.points : [...g.points].reverse(),
+            points: g.bezier?Array.from({length:65},(_,i)=>bezierPoint(g.points,fwd?i/64:1-i/64)):fwd ? g.points : [...g.points].reverse(),
             closed: false,
+            ...(g.bezier?{bezierPoles:fwd?g.points:[...g.points].reverse()}:{}),
             source: e.id,
           }),
         });

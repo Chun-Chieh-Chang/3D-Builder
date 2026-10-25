@@ -236,6 +236,8 @@ const migrations: Record<number, (doc: Json) => Json> = {
   79: (doc) => doc,
   // v81: parametric spur gears and racks.
   80: (doc) => doc,
+  // v82: sketch constraint expansion.
+  81: (doc) => doc,
 };
 
 export class FormatError extends Error {

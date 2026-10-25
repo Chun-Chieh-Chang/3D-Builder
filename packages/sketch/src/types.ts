@@ -10,7 +10,7 @@ export type SolvedGeometry =
   /** Counter-clockwise from angle a0 to a1 (radians). */
   | { type: 'arc'; c: P2; r: number; a0: number; a1: number; center: Id; start: Id; end: Id; construction: boolean }
   | { type: 'ellipse'; c: P2; major: P2; majorRadius: number; minorRadius: number; angle: number; center: Id; majorId: Id; construction: boolean }
-  | { type: 'spline'; points: P2[]; closed: boolean; pointIds: Id[]; construction: boolean }
+  | { type: 'spline'; points: P2[]; closed: boolean; bezier?:boolean; pointIds: Id[]; construction: boolean }
   | { type: 'text'; at: P2; atId: Id; text: string; size: number; angle: number; align: 'left' | 'center' | 'right'; bold: boolean; italic: boolean; font?: string; construction: boolean };
 
 /** SolidWorks sketch status (C1.31): black = fully, blue = under, red = over. */
@@ -49,7 +49,7 @@ export type Segment2 =
   | { kind: 'arc'; c: P2; r: number; from: P2; to: P2; ccw: boolean; source: Id }
   | { kind: 'circle'; c: P2; r: number; source: Id }
   | { kind: 'ellipse'; c: P2; rx: number; ry: number; angle: number; source: Id }
-  | { kind: 'spline'; points: P2[]; closed: boolean; source: Id };
+  | { kind: 'spline'; points: P2[]; closed: boolean; source: Id; bezierPoles?:P2[] };
 
 export type Loop2 = Segment2[];
 

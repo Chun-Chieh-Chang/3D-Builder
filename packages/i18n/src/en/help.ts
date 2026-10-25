@@ -2,6 +2,15 @@ import type { Translation } from '../index';
 
 /** help: English of `zh-TW/help.ts` (docs/help-plan.md). The ids a topic points to (`see`) are not translated. */
 export const help: Translation = {
+  'help.toolEllipse.summary': "Draw an ellipse by its center, major-axis endpoint and minor radius.",
+  'help.toolEllipse.body': "Pick center, major-axis endpoint, then a smaller minor radius. Select the ellipse to constrain and edit both axis radii using expressions. Its center and major-axis point accept point relations. A line can be tangent, or a point can lie on the curve. Use a circle for equal axes.",
+  'help.toolEllipse.keywords': "ellipse major minor axes radius tangent",
+  'help.toolEllipse.see': "tool-circle tool-bezier tool-dimension sketch",
+  'help.toolBezier.summary': "Draw a cubic Bezier with four control points and endpoint tangency.",
+  'help.toolBezier.body': "Pick start, start tangent control point, end tangent control point, then end. The curve passes through the endpoints; the inner points control tangents. Select two open entities to join nearest endpoints and make them tangent: Bezier to line, arc or Bezier. Export retains an exact Bezier. Existing fit splines keep their meaning. G2 curvature continuity is not supported.",
+  'help.toolBezier.keywords': "spline Bezier control points G1 tangent",
+  'help.toolBezier.see': "tool-line tool-ellipse sketch",
+
   "help.gear.summary": "Build an involute external spur gear from module, tooth count and pressure angle.",
   "help.gear.body": "Choose a construction plane and Spur Gear in Features. Set module, tooth count, pressure angle, face width and bore. Addendum is one module, dedendum 1.25 modules, pitch diameter module times teeth. Backlash is a reduction in this component tooth thickness; reductions on mating components add. Degree-17 Bezier curves approximate the analytic involute; roots are simplified, not hob-generated manufacturing roots. Tooth counts requiring undercut are rejected. No helical/internal gears, profile shift or motion mates. The result is an independent solid; Move/Copy Body can position it.",
   "help.gear.keywords": "gear spur involute module pressure angle teeth",

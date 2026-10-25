@@ -508,7 +508,7 @@ export function referenceEntities(sketch: Pick<SketchFeature, 'entities'>, ids: 
 
 // ---------------------------------------------------------------- merge (C1.26)
 
-const REF_FIELDS = ['a', 'b', 'point', 'line', 'curve', 'axis', 'circle'] as const;
+const REF_FIELDS = ['a', 'b', 'point', 'line', 'curve', 'axis', 'circle', 'entity'] as const;
 
 interface Merged {
   edit: SketchEdit;
@@ -545,10 +545,11 @@ export function mergeGroups(sketch: Pick<SketchFeature, 'entities' | 'constraint
   const constraints: NonNullable<SketchEdit['constraints']> = [];
   for (const k of sketch.constraints) {
     const fields = REF_FIELDS.filter((f) => into.has((k as Record<string, Id>)[f] as Id));
-    if (fields.length === 0) continue;
+    const array=k.type==='equalSpacing'&&k.points.some(p=>into.has(p));
+    if (fields.length === 0&&!array) continue;
     const refs = constraintRefs(k).map((r) => into.get(r) ?? r);
     if (new Set(refs).size < refs.length) remove.push(k.id); // it says something about one point now
-    else constraints.push({ id: k.id, set: Object.fromEntries(fields.map((f) => [f, into.get((k as Record<string, Id>)[f]!)!])) });
+    else constraints.push({ id: k.id, set: {...Object.fromEntries(fields.map((f) => [f, into.get((k as Record<string, Id>)[f]!)!])),...(k.type==='equalSpacing'?{points:k.points.map(p=>into.get(p)??p)}:{})} });
   }
   // A line's own horizontal or vertical and one between its two ends say the same once the gap between them is closed, and the
   // solver would call the sketch over-defined: the later of the two goes.
@@ -1120,6 +1121,7 @@ function carried(c: SketchConstraint, m: Transform2): { body: SketchConstraint }
     // the full number, not rounded for display: the solver is to put the scaled entities exactly where the scale takes them
     body = { ...body, value: String(Number(v) * m.k) };
   }
+  if(c.type==='ellipseAxes'&&m.kind==='scale'){if(!PLAIN_NUMBER.test(c.majorRadius)||!PLAIN_NUMBER.test(c.minorRadius))return {error:t('sketch.xformScaleExpression',{name:c.id})};body={...c,majorRadius:String(Number(c.majorRadius)*m.k),minorRadius:String(Number(c.minorRadius)*m.k)};}
   if (body.labelPosition) body = { ...body, labelPosition: applyTransform(m, body.labelPosition) };
   return { body };
 }
@@ -1145,6 +1147,7 @@ function remapConstraint(c: SketchConstraint, map: ReadonlyMap<Id, Id>): SketchC
     const v = out[f];
     if (typeof v === 'string' && map.has(v)) out[f] = map.get(v);
   }
+  if(c.type==='equalSpacing')out.points=c.points.map(p=>map.get(p)??p);
   return out as SketchConstraint;
 }
 
@@ -1255,7 +1258,7 @@ function transformInPlace(
       const set: Record<string, unknown> = {};
       const before = c as unknown as Record<string, unknown>;
       const after = r.body as unknown as Record<string, unknown>;
-      for (const f of [...REF_FIELDS, 'value', 'labelPosition']) if (after[f] !== before[f]) set[f] = after[f];
+      for (const f of [...REF_FIELDS, 'points', 'majorRadius', 'minorRadius', 'value', 'labelPosition']) if (after[f] !== before[f]) set[f] = after[f];
       if (Object.keys(set).length > 0) constraints.push({ id: c.id, set: set as NonNullable<SketchEdit['constraints']>[number]['set'] });
     }
   }
@@ -1323,7 +1326,7 @@ function copies(sketch: Pick<SketchFeature, 'entities' | 'constraints'>, geometr
           copy = { id: ids.take('el'), type: 'ellipse', center: pt(e.center), major: pt(e.major), minorRadius: (g?.type === 'ellipse' ? g.minorRadius : e.minorRadius) * k, ...construction };
           break;
         case 'spline':
-          copy = { id: ids.take('sp'), type: 'spline', points: e.points.map(pt), ...(e.closed ? { closed: true } : {}), ...construction };
+          copy = { id: ids.take('sp'), type: 'spline', points: e.points.map(pt), ...(e.bezier?{bezier:true}:{}), ...(e.closed ? { closed: true } : {}), ...construction };
           break;
         case 'text': {
           const { id: _old, at, size, angle, ...rest } = e;
