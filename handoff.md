@@ -12,6 +12,10 @@
 
 ---
 
+## 2026-10-25：模型透明塗彩（ADR 0197）
+
+使用者已要求撤回圖示工具列，`e2d0e0f` 已恢復文字名稱；不要自動恢復圖示版。這次在原文字版新增零件／組合件「透明塗彩」，不透明度 10–90%（預設 35%），保留面色／邊線與個別透明、聚焦、剖面配合，網格重建後仍保留顯示設定。純視窗功能，Schema 不變。三個新 UI 案例分項通過（含實際 PNG 像素、原生邊線／體積及配置），help 40 與型別／lint／build 通過，未跑全套。詳 [ADR 0197](docs/adr/0197-transparent-shaded-view.md)。
+
 ## 2026-10-25：草圖拘束六項擴充（ADR 0195）
 
 已依使用者順序完成批次拘束、等距與比例、線／圓／弧的軸／點對稱、端點重合相切與內外相切、橢圓與 Bézier G1、可行位移／DOF 貢獻／單雙拘束修復。Schema 82；有序參照、表達式 DAG、複製與縮放、原子復原皆接線。33 個新核心、13 個新 UI 各有通過紀錄（含 800 組原生參數組態與真實 OCCT 量測），型別／分層／反模式／i18n／build 通過；依指示只測相關與失敗案例，未跑全套。證據 out/sketch-constraints/。G2、任意擬合樣條相切及一般最小不可滿足衝突集合仍不支援；能力邊界與操作見 [執行表](docs/sketch-constraint-expansion.md)及 [ADR 0195](docs/adr/0195-sketch-constraint-expansion.md)。
@@ -71,9 +75,9 @@
 | 項目 | 現值 |
 |---|---|
 | 零件／組合件／工程圖 Schema | 82／7／28（含草圖拘束六項擴充、齒輪／齒條、投影曲線、草圖關係／側影、曲面工具及連動陣列） |
-| ADR | 0001–0195，共 195 份，在 `docs/adr/`，全部列在 §2 |
+| ADR | 0001–0195、0197，共 196 份（0196 圖示工具列已撤回），在 `docs/adr/`，全部列在 §2 |
 | 全閘門 | 2026-10-22，G8b 之後：`npm run check` 275 檔、3453 通過、0 失敗、25 略過；完整 `verify:ui` 164/164（含 `manual-sketch-block.js`、`manual-sketch-condition.js`）。2026-10-23 新增驗收探針後：`verify:external-samples` 3/3、`verify:freecad-sheet-metal`、`verify:drawing-export`、`typecheck`、`lint:rules`、`lint:deps`、`git diff --check` 均通過；2026-10-23 提交前完整 `npm run check` 276 檔、3456 通過、0 失敗、25 略過。 |
-| 瀏覽器腳本 | `tests/e2e/` 共 175 個檔案（含輔助檔）；依 `verify-ui.mjs` 的檔頭解析規則，目前有 171 個可執行腳本、199 項呼叫。最新六項功能的 13 項新案例各有通過紀錄，另有預選面修正的 2 項通過，另有尺寸線拖曳 2 項通過，另有圓形 Loft 1 項通過，另有齒輪／齒條 2 項通過，另有共用端點延伸 1 項通過，另有本次草圖拘束六項的 13 項各有通過紀錄；非本版完整 199 項皆已通過。 |
+| 瀏覽器腳本 | `tests/e2e/` 共 176 個檔案（含輔助檔）；依 `verify-ui.mjs` 的檔頭解析規則，目前有 172 個可執行腳本、202 項呼叫。最新六項功能的 13 項新案例各有通過紀錄，另有預選面修正的 2 項通過，另有尺寸線拖曳 2 項通過，另有圓形 Loft 1 項通過，另有齒輪／齒條 2 項通過，另有共用端點延伸 1 項通過，另有本次草圖拘束六項的 13 項各有通過紀錄；另有透明塗彩 3 項各自通過；非本版完整 202 項皆已通過。 |
 | 實機驗證清單 | [docs/manual-verification.html](docs/manual-verification.html) 91 項（新增 C27） |
 | 階段 | Phase 0–7 開發完成。Phase 0–2 閘門通過；3a–7 有條件通過。2026-10-23 已用公開外部 STEP 樣本完成可重跑的匯入／平板材料體積／FreeCAD 開檔探針，並新增工程圖 DXF (FreeCAD) 與 PDF (Chromium) 外部應用程式相容性探針；使用者私有零件、SolidWorks 特徵樹與製造基準仍未對照（§3、§8）。 |
 | 最近完成 | **E5 工程圖補完 Phase 2（2026-10-23）**：基線尺寸（連續平行間距階梯累積）與倒角尺寸（`C{c}` 與 `{c} × 45°` 格式切換、折線引線拖曳與屬性面板整合，Schema 26）；**E5 工程圖補完 Phase 1（2026-10-23）**：無工具預選高亮（懸停即顯 `var(--warn)`，移開清除）、圓形／圓弧既有尺寸直徑 ↔ 半徑切換顯示（左側面板與右鍵選單雙入口，0 Schema 變更）；**工程圖外部自動化確效探針（`npm run verify:drawing-export`，2026-10-23）**：FreeCAD 26 命令列 DXF 匯入確效（130+ 幾何實體、ISO A3 圖框邊界、全圖層檢驗）與 Chromium CDP PDF 渲染確效；**藍圖附錄 C 與草圖吸附計畫文件校正（B3，2026-10-23）**；**工程圖相切邊隱藏（B2，ADR 0146 補充，2026-10-23）**；**曲線本體標記與曲面池分流（B1，ADR 0168 補充，2026-10-23）**；**G8b 圓弧條件，最近與最遠距離（ADR 0183，Schema 75，2026-10-22）**；**G8a 固定整個圖元（ADR 0182，Schema 74）**；**G7 草圖附著（ADR 0181，Schema 73，2026-10-21）**；**組合件干涉檢查看得見（ADR 0180，2026-10-21）** |
@@ -459,6 +463,7 @@
 | [ADR 0193](docs/adr/0193-gear-and-rack-builders.md) | 直齒外齒輪／齒條，Schema 81 |
 | [ADR 0194](docs/adr/0194-extend-shared-sketch-endpoints.md) | 共用端點保留原圖元並接續延伸，Schema 不變 |
 | [ADR 0195](docs/adr/0195-sketch-constraint-expansion.md) | 草圖拘束六項擴充、橢圓／Bezier G1、有界雙拘束修復，Schema 82 |
+| [ADR 0197](docs/adr/0197-transparent-shaded-view.md) | 模型透明塗彩、不透明度、濾器／聚焦／剖面組合，Schema 不變（0196 已撤回） |
 | [docs/assembly-explode-plan.md](docs/assembly-explode-plan.md) | 組合件：爆炸線與動畫、多組爆炸、形成新次組合件（計畫） |
 | [docs/cleanup-candidates.md](docs/cleanup-candidates.md) | 清理候選清單（2026-10-07） |
 | [docs/drawing-callouts-plan.md](docs/drawing-callouts-plan.md) | 工程圖：螺紋孔與錐形沉孔的標註、DXF 的 DIMENSION 圖元（計畫） |

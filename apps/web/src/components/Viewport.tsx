@@ -775,8 +775,8 @@ function SectionValue({ value, onCommit }: { value: number; onCommit: (at: numbe
   );
 }
 
-const DISPLAY_MODES: DisplayMode[] = ['shadedEdges', 'shaded', 'hiddenRemoved', 'hiddenVisible', 'wireframe'];
-/** The components of an assembly have no dashed hidden edges (yet): the other four. */
+const DISPLAY_MODES: DisplayMode[] = ['shadedEdges', 'transparent', 'shaded', 'hiddenRemoved', 'hiddenVisible', 'wireframe'];
+/** The components of an assembly have no dashed hidden edges (yet): the other modes. */
 const ASSEMBLY_DISPLAY_MODES = DISPLAY_MODES.filter((m) => m !== 'hiddenVisible');
 
 /** 顯示類型 (A4.3) and 剖面視圖 (D4.4): how the model is drawn, and a cut through it; in an assembly the cut goes through every component. */
@@ -784,11 +784,13 @@ export function ViewOptions({ assembly = false }: { assembly?: boolean }) {
   const filter = useStore((s) => s.pickFilter);
   const filterBar = useStore((s) => s.pickFilterBarVisible);
   const [mode, setMode] = useState<DisplayMode>('shadedEdges');
+  const [opacity,setOpacity]=useState(35);
   const [cut, setCut] = useState<{ axis: 0 | 1 | 2; at: number; flip: boolean } | null>(null);
   // what the model is made of changes: the part's result, or the assembly's parts and placements
   const result = useStore((s) => (assembly ? s.asm?.builds : s.result));
   const placed = useStore((s) => (assembly ? s.asm?.solution : null));
   useEffect(() => store.viewer?.setDisplayMode(mode), [mode, result]);
+  useEffect(() => store.viewer?.setTransparencyOpacity(opacity/100), [opacity,result]);
   const bounds = store.viewer?.contentBounds() ?? null;
   const range = bounds && cut ? ([bounds.min[cut.axis], bounds.max[cut.axis]] as const) : null;
   useEffect(() => {
@@ -823,6 +825,7 @@ export function ViewOptions({ assembly = false }: { assembly?: boolean }) {
           </option>
         ))}
       </select>
+      {mode==='transparent'&&<label className="view-opacity" title={t('view.opacityTip')}><span>{t('view.opacity')}</span><input aria-label={t('view.opacity')} type="range" min="10" max="90" step="5" value={opacity} onChange={e=>setOpacity(Number(e.target.value))}/><output>{opacity}%</output></label>}
       {filterBar && (
       <span className="pick-filter" title={t('select.filterTitle')}>
         <button className="view-chip pick-filter-hide" title={t('select.filterHide')} onClick={() => store.togglePickFilterBar()}>✕</button>

@@ -31,8 +31,8 @@ export interface ViewMesh {
   edgeRanges: Int32Array;
 }
 
-/** How the model is drawn (A4.3): shaded with edges, shaded, hidden lines removed (white fill), hidden lines dashed, or wireframe. */
-export type DisplayMode = 'shadedEdges' | 'shaded' | 'hiddenRemoved' | 'hiddenVisible' | 'wireframe';
+/** How the model is drawn (A4.3): shaded with edges, translucent shaded, shaded, hidden lines removed (white fill), hidden lines dashed, or wireframe. */
+export type DisplayMode = 'shadedEdges' | 'transparent' | 'shaded' | 'hiddenRemoved' | 'hiddenVisible' | 'wireframe';
 
 /** A cut through the model (D4.4): what is on the side of `normal` beyond `offset` (the points with normal · p > offset) is left out. */
 export interface SectionPlane {
@@ -742,6 +742,7 @@ export class Viewer {
   /** The color of each face (C14.2): "#rrggbb" or null for the body's own. */
   private faceColors: readonly (string | null)[] = [];
   private displayMode: DisplayMode = 'shadedEdges';
+  private transparencyOpacity = 0.35;
   private clip: THREE.Plane[] = [];
   /** The section as it was asked for (setSection), and who is told when the user drags it with the left button (setSectionDrag). */
   private section: SectionPlane | null = null;
@@ -1064,12 +1065,13 @@ export class Viewer {
     const role = this.focusRole(inst);
     const m = inst.body.material as THREE.MeshStandardMaterial;
     const cutBefore = m.clippingPlanes?.length ?? 0;
-    const transparent = inst.userTransparent || role === 'looked' || role === 'transparent';
+    const transparent = mode==='transparent' || inst.userTransparent || role === 'looked' || role === 'transparent';
     if (m.transparent !== transparent) {
       m.transparent = transparent;
       m.needsUpdate = true;
     }
-    m.opacity = role === 'looked' ? FOCUS_OPACITY.looked : role === 'transparent' ? FOCUS_OPACITY.faded : inst.userTransparent ? FOCUS_OPACITY.user : 1;
+    const localOpacity=role === 'looked' ? FOCUS_OPACITY.looked : role === 'transparent' ? FOCUS_OPACITY.faded : inst.userTransparent ? FOCUS_OPACITY.user : 1;
+    m.opacity = Math.min(mode==='transparent'?this.transparencyOpacity:1,localOpacity);
     inst.group.visible = role !== 'hidden';
     if (inst.edges) inst.edges.material = role === 'transparent' ? this.fadedEdges : this.instanceEdges;
     m.colorWrite = !(mode === 'wireframe' || mode === 'hiddenVisible' || role === 'wireframe');
@@ -1900,15 +1902,24 @@ export class Viewer {
 
   /** What the selection filter takes out of what can be picked is drawn so: the faces see-through, the edges faint (ADR 0117). Vertices are not drawn, so there is nothing to show for them. */
   private paintFilterLook(): void {
-    const dimFaces = this.pickFaces && !this.filter.faces;
-    if (this.body) {
-      const m = this.body.material as THREE.Material;
-      m.transparent = dimFaces;
-      m.opacity = dimFaces ? 0.45 : 1;
-      m.depthWrite = !dimFaces;
+    this.styleBodyOpacity();
+    this.updateCap();
+    this.paintEdges();
+  }
+
+  /** Compose view translucency with temporary face-filter fading; neither can erase the other. */
+  private styleBodyOpacity(): void {
+    if (!this.body) return;
+    const m = this.body.material as THREE.MeshStandardMaterial;
+    const dim = this.pickFaces && !this.filter.faces;
+    const opacity = Math.min(this.displayMode === 'transparent' ? this.transparencyOpacity : 1, dim ? 0.45 : 1);
+    const transparent = opacity < 1;
+    if (m.transparent !== transparent) {
+      m.transparent = transparent;
       m.needsUpdate = true;
     }
-    this.paintEdges();
+    m.opacity = opacity;
+    m.depthWrite = !transparent && this.displayMode !== 'wireframe';
   }
 
   /**
@@ -2547,7 +2558,7 @@ export class Viewer {
     ray.set(this.rayAt(clientX, clientY).origin, this.rayAt(clientX, clientY).direction);
     const hits = ray.intersectObject(this.edges);
     // Prefer edges not hidden behind the body.
-    const seeThrough = this.displayMode === 'wireframe' || this.displayMode === 'hiddenVisible';
+    const seeThrough = this.displayMode === 'transparent' || this.displayMode === 'wireframe' || this.displayMode === 'hiddenVisible';
     const bodyHit = this.body && !seeThrough ? this.firstBodyHit(ray) : Infinity;
     const visible = hits.filter((h) => this.kept(h.point) && h.distance <= bodyHit + (1e-3 * (this.camera.right - this.camera.left)) / this.camera.zoom);
     const hit = visible[0] ?? null;
@@ -2805,6 +2816,14 @@ export class Viewer {
     this.applyDisplay();
   }
 
+  /** Opacity of the transparent shaded view only; component transparency/focus still compose with it. */
+  setTransparencyOpacity(opacity: number): void {
+    if (!Number.isFinite(opacity) || opacity < 0.1 || opacity > 0.9) throw new RangeError('Transparency opacity must be between 0.1 and 0.9.');
+    if (opacity === this.transparencyOpacity) return;
+    this.transparencyOpacity = opacity;
+    if (this.displayMode === 'transparent') this.applyDisplay();
+  }
+
   /** Cuts the model open at a plane, or (null) puts it back. */
   setSection(section: SectionPlane | null): void {
     this.section = section;
@@ -2926,7 +2945,7 @@ export class Viewer {
       const m = body.material as THREE.MeshStandardMaterial;
       const seeThrough = mode === 'wireframe' || mode === 'hiddenVisible';
       m.colorWrite = !seeThrough;
-      m.depthWrite = mode !== 'wireframe';
+      this.styleBodyOpacity();
       m.emissive.set(mode === 'hiddenRemoved' ? 0xffffff : 0x000000);
       m.emissiveIntensity = mode === 'hiddenRemoved' ? 0.85 : 1;
       m.clippingPlanes = this.clip;
@@ -2981,7 +3000,7 @@ export class Viewer {
     const mode = this.displayMode;
     const solids: { mesh: THREE.Mesh; parent: THREE.Object3D; id: string }[] = [];
     if (plane && mode !== 'wireframe' && mode !== 'hiddenVisible') {
-      if (this.body) solids.push({ mesh: this.body, parent: this.scene, id: this.body.uuid });
+      if (this.body&&!(this.body.material as THREE.Material).transparent) solids.push({ mesh: this.body, parent: this.scene, id: this.body.uuid });
       for (const inst of this.instances.values()) if (!this.faded(inst)) solids.push({ mesh: inst.body, parent: inst.group, id: inst.body.uuid });
     }
     const key = solids.map((x) => x.id).join(',');
@@ -3050,7 +3069,7 @@ export class Viewer {
       solids.push({ mesh: this.body, matrixWorld: this.body.matrixWorld });
     }
     for (const inst of this.instances.values()) {
-      if (!this.faded(inst)) {
+      if (!this.faded(inst)||(mode==='transparent'&&inst.group.visible&&this.focusRole(inst)!=='wireframe')) {
         inst.body.updateMatrixWorld(true);
         solids.push({ mesh: inst.body, matrixWorld: inst.body.matrixWorld });
       }
