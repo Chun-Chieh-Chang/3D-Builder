@@ -1,9 +1,10 @@
+import { ToolButton } from './ToolButton';
 import { t } from '@3db/i18n';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { DATUM_PLANES, IDENTITY_ROTATION, isDatumPlaneName, poseMatrix, transformPoint, type MateRef, type PlaneFrame, type Pose, type Vec3 } from '@3db/model';
 import { partNameOf } from '@3db/io';
 import { Viewer, type DatumDisplay, type InstanceElement, type PlaneDisplay, type ViewInstance, type ViewPart } from '@3db/render';
-import { ACTIONS, shortcutOf } from '../actions';
+import { ACTIONS } from '../actions';
 import { store, useStore } from '../state/store';
 import type { AssemblyStore } from '../state/assembly';
 import { componentInfo } from './AssemblyTree';
@@ -336,9 +337,7 @@ export function AssemblyViewport() {
       {menu && asm.doc.components.some((c) => c.id === menu.id) && <ComponentMenu x={menu.x} y={menu.y} component={asm.doc.components.find((c) => c.id === menu.id)!} onClose={() => setMenu(null)} />}
       <div className="heads-up">
         {ACTIONS.filter((a) => a.group === 'view').map((a) => (
-          <button key={a.id} onClick={a.run} disabled={!a.enabled(store.getState())} title={shortcutOf(a) ? `${a.label} (${shortcutOf(a)})` : a.label}>
-            {a.label}
-          </button>
+          <ToolButton key={a.id} action={a} disabled={!a.enabled(store.getState())} active={!!a.active?.()} onClick={a.run}/>
         ))}
       </div>
       {mating && <MateFlyout />}

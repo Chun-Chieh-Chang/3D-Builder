@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState } from 'react';
 import { t } from '@3db/i18n';
 import { ACTIONS, type UiAction } from '../actions';
-import { actionTooltip, currentTopicId } from '../help/context';
+import { currentTopicId } from '../help/context';
 import { closeHelp, openHelp, setPicking, useHelp } from '../help/state';
 import { useDocumentTitle, useSketcherView, useStore } from '../state/store';
+import { ToolButton } from './ToolButton';
 import { ShutdownButton } from './ShutdownButton';
 
 type Tab = { id: string; label: string; groups: UiAction['group'][] };
@@ -111,21 +112,7 @@ export function CommandBar() {
                 <div className={open ? 'tools menu-panel' : 'tools menu-panel folded'} role="menu">
                   {ACTIONS.filter((a) => m.groups.includes(a.group) && !quick.includes(a) && !a.parent && !a.menuOnly).map((a) => {
                     const button = (x: UiAction) => (
-                      <button
-                        key={x.id}
-                        role="menuitem"
-                        className={x.active?.() ? 'tool active' : 'tool'}
-                        data-help={x.id}
-                        disabled={!x.enabled(state)}
-                        onClick={() => {
-                          setOpen(false);
-                          setDropped(null);
-                          x.run();
-                        }}
-                        title={actionTooltip(x)}
-                      >
-                        {x.label}
-                      </button>
+                      <ToolButton key={x.id} menuItem action={x} disabled={!x.enabled(state)} active={!!x.active?.()} onClick={()=>{setOpen(false);setDropped(null);x.run();}}/>
                     );
                     const children = ACTIONS.filter((x) => x.parent === a.id);
                     if (children.length === 0) return button(a);
@@ -162,18 +149,12 @@ export function CommandBar() {
       </nav>
       <div className="quick-actions">
         {quick.map((a) => (
-          <button key={a.id} className="tool" data-help={a.id} disabled={!a.enabled(state)} onClick={a.run} title={actionTooltip(a)}>
-            {a.label}
-          </button>
+          <ToolButton key={a.id} action={a} disabled={!a.enabled(state)} active={!!a.active?.()} onClick={a.run}/>
         ))}
       </div>
       <div className="help-buttons">
-        <button className={help.open ? 'tool active' : 'tool'} title={t('helpui.buttonTip')} onClick={() => (help.open ? closeHelp() : openHelp(currentTopicId()))}>
-          {t('helpui.button')}
-        </button>
-        <button className={help.picking ? 'tool active' : 'tool'} title={t('helpui.whatIsThisTip')} onClick={() => setPicking(!help.picking)}>
-          {t('helpui.whatIsThis')}
-        </button>
+        <ToolButton action={{id:'help',label:t('helpui.button'),group:'tools',shortcut:'F1',enabled:()=>true,run:()=>{}}} active={help.open} pressed={help.open} description={t('helpui.buttonTip')} onClick={()=>(help.open?closeHelp():openHelp(currentTopicId()))}/>
+        <ToolButton action={{id:'help-pick',label:t('helpui.whatIsThis'),group:'tools',enabled:()=>true,run:()=>{}}} active={help.picking} pressed={help.picking} description={t('helpui.whatIsThisTip')} onClick={()=>setPicking(!help.picking)}/>
         <ShutdownButton />
       </div>
       <div className="doc-title" title={state.dirty ? t('doc.unsaved') : undefined}>

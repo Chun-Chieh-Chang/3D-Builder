@@ -1,5 +1,8 @@
 /** Messages of the features of Phase 3a-5 (C4.1–C4.3, C5.4, C5.5): end conditions, draft, thin features, shell. */
 export const features = {
+  'instant3d.name':'Instant3D',
+  'instant3d.tip':'啟用後選取單向盲伸長特徵或其端面，再拖曳控制柄修改深度。放開一次套用；Esc 取消。運算式深度請在屬性面板修改。',
+
   "feature.gear": "直齒齒輪",
   "feature.rack": "直齒齒條",
   "gear.module": "模數",

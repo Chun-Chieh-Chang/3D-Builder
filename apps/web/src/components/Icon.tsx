@@ -97,6 +97,8 @@ const PATHS: Record<IconName, ReactElement> = {
   eyeOff: <path d="M1.5 8s2.5-4.5 6.5-4.5S14.5 8 14.5 8 12 12.5 8 12.5 1.5 8 1.5 8z M2.5 13.5l11-11" />,
 };
 
+export const isIconName = (name:string):name is IconName => Object.prototype.hasOwnProperty.call(PATHS,name);
+
 export function Icon({ name, className }: { name: IconName; className?: string }) {
   return (
     <svg className={`icon ${className ?? ''}`} viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">

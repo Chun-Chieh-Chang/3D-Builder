@@ -2,6 +2,9 @@ import type { Translation } from '../index';
 
 /** Messages of the features of Phase 3a-5 to 3a-7 (C4.1–C4.3, C5.4, C5.5, C6, C3): end conditions, draft, thin features, shell, patterns. */
 export const features: Translation = {
+  'instant3d.name':'Instant3D',
+  'instant3d.tip':'Enable, select a one-direction blind extrusion or its end face, then drag the handle to change depth. Release applies once; Esc cancels. Edit expression-driven depths in the property panel.',
+
   "feature.gear": "Spur Gear",
   "feature.rack": "Gear Rack",
   "gear.module": "Module",

@@ -1,6 +1,6 @@
-import { ACTIONS, shortcutOf, type UiAction } from '../actions';
+import { ACTIONS, type UiAction } from '../actions';
 import { store, type UiState } from '../state/store';
-import { allTopics, contextTopic, helpTopic, tooltipOf, type HelpContext, type HelpTopic } from './topics';
+import { allTopics, contextTopic, helpTopic, type HelpContext, type HelpTopic } from './topics';
 
 /** What the program is doing now, read from the store (the help itself holds none of this). */
 export function currentContext(s: UiState = store.getState()): HelpContext {
@@ -25,9 +25,3 @@ const actionLikes = (): UiAction[] => ACTIONS;
 
 export const topics = (): HelpTopic[] => allTopics(actionLikes());
 export const topicOf = (id: string): HelpTopic | null => helpTopic(id, actionLikes());
-
-/** The tooltip of an action's button: read from the topic, like everything the help says. */
-export function actionTooltip(a: UiAction): string {
-  const topic = topicOf(a.id);
-  return topic ? tooltipOf(topic, shortcutOf(a)) : a.label;
-}
