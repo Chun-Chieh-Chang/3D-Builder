@@ -2,12 +2,16 @@ import type { Translation } from '../index';
 
 /** help: English of `zh-TW/help.ts` (docs/help-plan.md). The ids a topic points to (`see`) are not translated. */
 export const help: Translation = {
+  'help.sheetUnfoldSelected.see': "sheet-unfold sheet-refold flat-pattern",
+  'help.sheetUnfoldSelected.keywords': "sheet metal partial unfold machining bends",
+  'help.sheetUnfoldSelected.body': "Choose Sheet Metal → Partial unfold, select bend features in the property panel and confirm. A jog selects both bends together. All bends switches to full unfolding. Machine the unfolded material, then Refold. Add any curved bend touched by machining to the selection.",
+  'help.sheetUnfoldSelected.summary': "Unfold selected bends for machining while keeping other bends folded.",
   'help.sheetUnfold.summary': "Creates editable flat manufacturing geometry while retaining panel mappings.",
-  'help.sheetUnfold.body': "Build sheet bends, then choose Sheet Metal → Unfold for machining. Sketch on the flat material and cut holes or slots in planar panel regions, then Refold. These are saved parametric features with undo and suppression, separate from the read-only flat-pattern preview.\n\nSupports closed-profile bases and ordinary flanges, hems, sequential mid bends and jogs. Mixed mitred or closed corners, added material and machining across curved bend zones are refused.",
+  'help.sheetUnfold.body': "Choose Sheet Metal → Unfold for machining, or Partial unfold and select bends in the property panel. Unselected bends stay folded; a jog is selected as one two-bend group. Sketch and cut holes or slots, then Refold. Features support undo, suppression and saving.\n\nSupports closed-profile bases, flanges, hems, sequential mid bends, jogs and compatible mitred/closed corners. Cuts across selected bend zones must have a constant section normal to sheet thickness. Unselected curved zones, oblique cuts, added material, re-bending across upright flanges and overlapping unfolded material are refused. Mitre developments retain the existing approximate boundary.",
   'help.sheetUnfold.keywords': "sheet metal unfold refold machining 鈑金 展開 摺回 加工",
   'help.sheetUnfold.see': "sheet-unfold sheet-refold flat-pattern mid-bend jog",
   'help.sheetRefold.summary': "Maps machining on unfolded planar panels back to the folded sheet.",
-  'help.sheetRefold.body': "Choose Sheet Metal → Refold after its matching Unfold for machining feature. Planar cuts and the flat pattern stay associated with the folded part. Cuts crossing curved bend zones are explicitly refused. You may unfold again, machine more and refold.",
+  'help.sheetRefold.body': "Choose Sheet Metal → Refold after the matching unfold feature. Planar cuts use rigid transforms; cuts across unfolded cylindrical bend zones use neutral-length and thickness-radius mapping to native surfaces. Holes, slots and the flat pattern stay associated. Bend-zone cuts must have a constant section normal to sheet thickness. Include every machined curved bend in the unfold selection.",
   'help.sheetRefold.keywords': "sheet metal unfold refold machining 鈑金 展開 摺回 加工",
   'help.sheetRefold.see': "sheet-unfold sheet-refold flat-pattern mid-bend jog",
   'help.toolEllipse.summary': "Draw an ellipse by its center, major-axis endpoint and minor radius.",

@@ -58,6 +58,7 @@ import {
   type OffsetSurfaceFeature,
   type SplitLineFeature,
   type KnitFeature,
+  type SheetUnfoldFeature,
   type MidBendFeature,
   type JogFeature,
   type MutualTrimFeature,
@@ -2916,6 +2917,16 @@ function BaseFlangePanel({ f }: { f: BaseFlangeFeature }) {
   );
 }
 
+/** Select construction bends to unfold; jogs remain a two-bend group. */
+function SheetUnfoldPanel({f}:{f:SheetUnfoldFeature}) {
+  const doc=useStore(s=>s.doc);
+  const before=doc.features.slice(0,doc.features.findIndex(x=>x.id===f.id)).filter(x=>!x.suppressed&&['midBend','jog','edgeFlange','hem'].includes(x.type));
+  return <div data-sheet-unfold-panel><p className="hint">{t('pm.sheetUnfold.hint')}</p>
+    <label className="pm-row checkbox"><input type="checkbox" data-field="unfoldAll" disabled={!before.length} checked={!f.bends} onChange={e=>store.execute({type:'setSheetUnfold',featureId:f.id,bends:e.target.checked?null:[before[0]!.id]})} /><span>{t('pm.sheetUnfold.all')}</span></label>
+    {before.map(b=><label className="pm-row checkbox" key={b.id}><input type="checkbox" data-bend={b.id} checked={!f.bends||f.bends.includes(b.id)} disabled={!f.bends} onChange={e=>store.execute({type:'setSheetUnfold',featureId:f.id,bends:e.target.checked?[...f.bends!,b.id]:f.bends!.filter(id=>id!==b.id)})}/><span>{b.name}{b.type==='jog'?t('pm.sheetUnfold.jogPair'):''}</span></label>)}
+  </div>;
+}
+
 /** Mid bend (S-3): the angle, the radius, which side of the line stays and which way the other folds, and what came of it. */
 function MidBendPanel({ f }: { f: MidBendFeature }) {
   const status = useStore((s) => s.result?.features.find((r) => r.id === f.id));
@@ -4281,6 +4292,7 @@ export function FeatureParams({ f }: { f: Feature }) {
       {f.type === 'thicken' && <ThickenPanel f={f} />}
       {f.type === 'lipGroove' && <LipGroovePanel f={f} />}
       {f.type === 'screwBoss' && <ScrewBossPanel f={f} />}
+      {f.type === 'sheetUnfold' && <SheetUnfoldPanel f={f} />}
       {f.type === 'baseFlange' && <BaseFlangePanel f={f} />}
       {f.type === 'midBend' && <MidBendPanel f={f} />}
       {f.type === 'jog' && <JogPanel f={f} />}

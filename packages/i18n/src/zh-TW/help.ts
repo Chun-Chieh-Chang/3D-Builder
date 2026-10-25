@@ -10,12 +10,16 @@
  * (docs/help-links.json says which topics an item is about).
  */
 export const help = {
+  'help.sheetUnfoldSelected.see': "sheet-unfold sheet-refold flat-pattern",
+  'help.sheetUnfoldSelected.keywords': "鈑金 部分 展開 折彎 加工 partial unfold",
+  'help.sheetUnfoldSelected.body': "按「鈑金 → 部分展開」，在屬性面板勾選要展開的折彎，再確認。凸折兩道彎作為一組；勾選「全部折彎」可改成完整展開。加工後按「摺回」。加工碰到尚未展開的彎曲帶時，請把該折彎加入清單。",
+  'help.sheetUnfoldSelected.summary': "選擇部分折彎展開加工，保留其他折彎。",
   'help.sheetUnfold.summary': "建立可編輯的平板加工狀態，保留摺回所需的板片映射。",
-  'help.sheetUnfold.body': "先建立鈑金折彎，再按「鈑金 → 展開加工」。在展開實體的平直板片範圍畫草圖並以拉伸除料切孔／開槽，完成後按「摺回」。這是文件中的參數式特徵，可復原、抑制及存檔；與平板型式視窗的唯讀預覽不同。\n\n目前支援封閉輪廓基材與一般凸緣／摺邊／多道中間折彎／凸折；不接受斜接或封閉角落的混用、展開時新增材料或切孔跨彎曲帶。",
+  'help.sheetUnfold.body': "先建立鈑金折彎，再按「鈑金 → 展開加工」；或以「部分展開」勾選折彎，未選的保留折疊，凸折的兩道彎作為一組。在展開板片畫草圖並以拉伸除料切孔／開槽，完成後按「摺回」。特徵支援復原、抑制與存檔。\n\n支援封閉基材、凸緣、摺邊、多道中間折彎、凸折及相容的斜接／封閉角落。跨已展開彎曲帶的加工須為沿板厚方向等截面除料。未展開的曲面、斜向加工、新增材料及穿越既有垂直凸緣的再折彎會拒絕；展開後不得重疊。斜接展平邊界沿用既有近似。",
   'help.sheetUnfold.keywords': "sheet metal unfold refold machining 鈑金 展開 摺回 加工",
   'help.sheetUnfold.see': "sheet-unfold sheet-refold flat-pattern mid-bend jog",
   'help.sheetRefold.summary': "將展開狀態的平直板片加工映射回原折疊零件。",
-  'help.sheetRefold.body': "按「鈑金 → 摺回」，將對應「展開加工」之後的平直板片除料映射回折疊狀態；孔位、尺寸及平板型式保持連動。若切孔跨入彎曲帶，會明確拒絕，不產生錯誤孔形。可重新展開、繼續加工並再次摺回。",
+  'help.sheetRefold.body': "按「鈑金 → 摺回」，將相符展開特徵後的除料映射回原零件。平直板片以剛體映射，已展開的圓柱彎曲帶以中性層長度與厚度半徑建立原生曲面，因此孔／槽可跨彎曲帶。孔形與平板型式保持連動。只支援沿板厚方向等截面彎曲帶除料；請先展開加工所碰到的折彎。",
   'help.sheetRefold.keywords': "sheet metal unfold refold machining 鈑金 展開 摺回 加工",
   'help.sheetRefold.see': "sheet-unfold sheet-refold flat-pattern mid-bend jog",
   'help.toolEllipse.summary': "以中心、長軸端點及短軸半徑繪製橢圓。",

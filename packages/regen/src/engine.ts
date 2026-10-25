@@ -1,4 +1,5 @@
-import { SHEET_IDENTITY, sheetHost, sheetCompose, sheetInverse, sheetPoint, sheetVector, sheetRows, sheetPlanar, sheetSplitPanels, sheetClipPanels, mappedBlank, type SheetMapping, type SheetRigid } from './sheetMapping';
+import { flatFlangeBend } from './flatPattern';
+import { sheetConjugate, sheetMoveCurves, sheetMapFlat, unfoldSheetPieces, type SheetUnfoldSession, SHEET_IDENTITY, sheetHost, sheetCompose, sheetInverse, sheetPoint, sheetVector, sheetRows, sheetPlanar, sheetSplitPanels, sheetClipPanels, type SheetMapping, type SheetRigid } from './sheetMapping';
 import { toothedProfile } from './gears';
 import { gearParameters, type SpurGearFeature, type RackFeature } from '@3db/model';
 import { t } from '@3db/i18n';
@@ -259,7 +260,7 @@ export interface SheetFlange {
 /** What the sheet metal features of a part have recorded (null for a part that is not sheet metal). */
 export interface SheetInfo {
   mapping?: SheetMapping;
-  unfolding?: { feature: Id; folded: ShapeId; names: ElementNames; blank: ShapeId; current: ShapeId };
+  unfolding?: SheetUnfoldSession;
   thickness: number;
   radius: number;
   kFactor: number;
@@ -3409,10 +3410,20 @@ export class Regenerator {
     if (sheet.base?.kind === 'plate' && out.length === 1) {
       const shape = this.kernel.copy(out[0]!.shape);
       this.owned.push(shape);
-      sheet.mapping = { active: false, frame: sheet.base.frame, panels: [{ shape, toFlat: SHEET_IDENTITY }], zones: [], bends: [], notIncluded: [] };
+      sheet.mapping = { active: false, frame: sheet.base.frame, panels: [{ shape, toFlat: SHEET_IDENTITY, unfolds: {} }], zones: [], curves: [], order: [], bends: [], notIncluded: [] };
     }
     this.sheet = sheet;
     return out;
+  }
+
+  private moveSheetFlanges(sheet: SheetInfo, moving: ShapeId, motion: SheetRigid): void {
+    for(const f of sheet.flanges){
+      const g=f.fold;
+      const point=add(add(add(g.origin2,g.e,(g.pa+g.pb)/2),g.d,f.straight/2),g.m2,(g.ylo+g.yhi)/2);
+      if(this.kernel.classify(moving,[point],1e-6)[0]==='out')continue;
+      for(const key of ['mid','origin','center','origin2'] as const)g[key]=sheetPoint(motion,g[key]);
+      for(const key of ['axis','e','o','m','d','m2'] as const)g[key]=sheetVector(motion,g[key]);
+    }
   }
 
   private sheetState(f: Extract<Feature, { type: 'sheetUnfold' | 'sheetRefold' }>, set: Bodies): BodyState[] {
@@ -3424,11 +3435,14 @@ export class Regenerator {
     if (f.type === 'sheetUnfold') {
       if (sheet.unfolding) throw new FeatureError(t('sheetState.alreadyFlat'));
       if (sheet.mapping.notIncluded.length) throw new FeatureError(t('sheetState.bendCut'));
-      const blank = mappedBlank(k, sheet.mapping, own);
+      const selected=f.bends??sheet.mapping.order??[];
+      if(selected.some(id=>!sheet.mapping!.order?.includes(id)))throw new FeatureError(t('sheetCurve.badSelection'));
+      const unfolded=unfoldSheetPieces(k,sheet.mapping,selected,own);
+      const blank=unfolded.shape;
       const shape = k.copy(blank);
       const topology = k.topology(shape);
       const names = nameElements(topology.faces.map((_, index) => [{ rel: 'imported' as const, index }]), topology, { featureId: f.id });
-      sheet.unfolding = { feature: f.id, folded: own(k.copy(current.shape)), names: current.names, blank, current: blank };
+      sheet.unfolding = { feature: f.id, folded: own(k.copy(current.shape)), names: current.names, blank, current: blank, pieces:unfolded.pieces, partial:selected.length!==(sheet.mapping.order?.length??0) };
       sheet.mapping.active = true;
       return [{ ...current, shape, topology, names, by: f.id }];
     }
@@ -3440,13 +3454,15 @@ export class Regenerator {
     const volume = k.massProps(removed).volume;
     let mapped = 0;
     const tools: ShapeId[] = [];
-    for (const panel of sheet.mapping.panels) {
-      const flatPanel = own(k.transformed(panel.shape, sheetRows(panel.toFlat)));
-      const portion = own(k.boolean('common', removed, flatPanel).shape);
+    const flatCuts: {shape:ShapeId; zone?:number}[]=[];
+    for (const piece of session.pieces) {
+      const portion = own(k.boolean('common', removed, piece.shape).shape);
       const v = k.massProps(portion).volume;
       if (v <= 1e-8) continue;
+      if(piece.foldedCurve)throw new FeatureError(t('sheetCurve.notUnfolded'));
       mapped += v;
-      tools.push(own(k.transformed(portion, sheetRows(sheetInverse(panel.toFlat)))));
+      flatCuts.push({shape:own(k.transformed(portion,sheetRows(piece.toFlat))),zone:piece.zone});
+      tools.push(piece.curve?own(k.bendSheetMaterial(portion,piece.curve).shape):own(k.transformed(portion,sheetRows(piece.toFolded))));
     }
     if (Math.abs(mapped - volume) > 1e-6 * Math.max(1, volume)) throw new FeatureError(t('sheetState.bendCut'));
     const shape = own(k.copy(session.folded));
@@ -3458,8 +3474,16 @@ export class Regenerator {
     }
     for (const body of list) if (!this.owned.includes(body.shape)) this.owned.push(body.shape);
     if (list.length !== 1 || !k.isValid(list[0]!.shape) || k.solidCount(list[0]!.shape) !== 1) throw new FeatureError(t('sheetMapping.invalidFlat'));
+    const expectedRemoval=tools.reduce((sum,tool)=>sum+k.massProps(tool).volume,0);
+    const actualRemoval=k.massProps(session.folded).volume-k.massProps(list[0]!.shape).volume;
+    if(Math.abs(expectedRemoval-actualRemoval)>1e-6*Math.max(1,expectedRemoval))throw new FeatureError(t('sheetCurve.buildFailed'));
     // Each planar patch keeps its manufacturing transform; only the cut-away material changes.
     sheet.mapping.panels = sheetClipPanels(k, sheet.mapping.panels, list[0]!.shape, own);
+    for(const [index,curve] of (sheet.mapping.curves??[]).entries()){
+      for(const cut of flatCuts.filter(c=>c.zone===index))curve.flat=own(k.boolean('cut',curve.flat,cut.shape).shape);
+      curve.folded=own(k.boolean('common',curve.folded,list[0]!.shape).shape);
+    }
+    sheet.mapping.zones=(sheet.mapping.curves??[]).map(c=>c.flat);
     delete sheet.unfolding;
     const ownedResult = this.owned.indexOf(list[0]!.shape);
     if (ownedResult >= 0) this.owned.splice(ownedResult, 1);
@@ -3566,9 +3590,14 @@ export class Regenerator {
       const motion: SheetRigid = { R: [R[0]![0], R[1]![0], R[2]![0], R[0]![1], R[1]![1], R[2]![1], R[0]![2], R[1]![2], R[2]![2]], t: shift };
       const own = (shape: ShapeId) => { this.owned.push(shape); return shape; };
       const mapping = sheet.mapping!;
-      const panels = sheetSplitPanels(k, mapping, A.shape, B.shape, motion, own);
+      const panels = sheetSplitPanels(k, mapping, A.shape, B.shape, motion, own, f.id);
       const flatZone = own(k.transformed(Z.shape, sheetRows(host.toFlat)));
       const atFlat = (point: Vec3) => sheetPlanar(mapping.frame, sheetPoint(host.toFlat, point));
+      mapping.curves = sheetMoveCurves(k, mapping, B.shape, motion, f.id, own);
+      const rawMap: import('@3db/kernel').SheetBendMap = { flatOrigin: add(q,p,-BA/2), flatAcross:p, flatAlong:axis, flatNormal:n, center, axis, radial:unit(sub(add(q,p,-BA/2),center)), radiusAtZero: f.reverse ? rb : rb+T, radialSlope:f.reverse ? 1 : -1, neutralRadius:rb+sheet.kFactor*T, angle:theta };
+      mapping.curves.push({feature:f.id,name:'bend',flat:flatZone,folded:own(k.copy(bend.shape)),map:sheetMapFlat(rawMap,host.toFlat),placement:sheetInverse(host.toFlat),unfolds:{...host.unfolds}});
+      (mapping.order??=[]).push(f.id);
+      this.moveSheetFlanges(sheet, B.shape, motion);
       mapping.panels = panels;
       mapping.zones.push(flatZone);
       mapping.bends.push({ feature: f.id, name: 'bend', a: atFlat(add(q, l, lo)), b: atFlat(add(q, l, hi)), angle: theta, radius: rb, direction: dot(sheetVector(host.toFlat, up), mapping.frame.normal) > 0 ? 'up' : 'down', kFactor: sheet.kFactor, allowance: BA });
@@ -3711,7 +3740,7 @@ export class Regenerator {
       const own = (shape: ShapeId) => { this.owned.push(shape); return shape; };
       const mapping = sheet.mapping!;
       const motion: SheetRigid = { R: SHEET_IDENTITY.R, t: delta };
-      const panels = sheetSplitPanels(k, mapping, A.shape, B.shape, motion, own);
+      const panels = sheetSplitPanels(k, mapping, A.shape, B.shape, motion, own, f.id);
       // The web is planar material; only the two allowance strips become curved.
       const c1 = add(q, n, f.reverse ? -rb : T + rb);
       const rotateWeb = (v: Vec3) => rotate(v, axis, theta);
@@ -3719,11 +3748,26 @@ export class Regenerator {
       const webMotion: SheetRigid = { R: [cols[0]![0],cols[1]![0],cols[2]![0],cols[0]![1],cols[1]![1],cols[2]![1],cols[0]![2],cols[1]![2],cols[2]![2]], t: add(c1, rotateWeb(sub(add([0,0,0],p,-BA),c1))) };
       if (Lweb > 1e-6) {
         const web = piece(BA, BA + Lweb, 'web');
-        panels.push({ shape: own(k.transformed(web.shape, sheetRows(webMotion))), toFlat: sheetCompose(host.toFlat, sheetInverse(webMotion)) });
+        panels.push({ shape: own(k.transformed(web.shape, sheetRows(webMotion))), toFlat: sheetCompose(host.toFlat, sheetInverse(webMotion)), unfolds:{...sheetConjugate(webMotion,host.unfolds),[f.id]:sheetInverse(webMotion)} });
       }
       const atFlat = (point: Vec3) => sheetPlanar(mapping.frame, sheetPoint(host.toFlat, point));
       const zones = [piece(0, BA, 'z1'), piece(BA + Lweb, Lblank, 'z2')].map(z => own(k.transformed(z.shape, sheetRows(host.toFlat))));
       const forward = dot(sheetVector(host.toFlat, up), mapping.frame.normal) > 0;
+      mapping.curves = sheetMoveCurves(k, mapping, B.shape, motion, f.id, own);
+      for (let index=0;index<2;index++) {
+        const start=index===0?q:add(q,p,BA+Lweb);
+        const localMap: import('@3db/kernel').SheetBendMap={flatOrigin:start,flatAcross:p,flatAlong:index===0?axis:neg(axis),flatNormal:n,center:index===0?c1:add(add(q,p,uEnd),n,f.reverse?T-H+rb:H-rb),axis:index===0?axis:neg(axis),radial:index===0?neg(up):up,radiusAtZero:index===0?(f.reverse?rb:rb+T):(f.reverse?rb+T:rb),radialSlope:index===0?(f.reverse?1:-1):(f.reverse?-1:1),neutralRadius:rb+sheet.kFactor*T,angle:theta};
+        if(index===1){
+          // Second bend begins after the web, already rotated by the first bend.
+          const startWorld=sheetPoint(webMotion,start);
+          localMap.radial=unit(sub(startWorld,localMap.center));
+        }
+        const map=sheetMapFlat(localMap,host.toFlat);
+        const folded=own(k.bendSheetMaterial(zones[index]!,map).shape);
+        mapping.curves.push({feature:f.id,name:`bend${index+1}`,flat:zones[index]!,folded,map,placement:sheetInverse(host.toFlat),unfolds:{...host.unfolds}});
+      }
+      (mapping.order??=[]).push(f.id);
+      this.moveSheetFlanges(sheet,B.shape,motion);
       mapping.panels = panels;
       mapping.zones.push(...zones);
       for (const [index, u] of [BA / 2, 1.5 * BA + Lweb].entries()) mapping.bends.push({ feature: f.id, name: `bend${index + 1}`, a: atFlat(add(add(q, p, u), l, lo)), b: atFlat(add(add(q, p, u), l, hi)), angle: theta, radius: rb, direction: (index === 0 ? forward : !forward) ? 'up' : 'down', kFactor: sheet.kFactor, allowance: BA });
@@ -3888,7 +3932,6 @@ export class Regenerator {
   ): BodyState[] {
     const sheet = this.sheet;
     if (!sheet) throw new FeatureError(t('flange.needsSheet'));
-    if (sheet.mapping?.active && (f.corner?.start !== undefined || f.corner?.end !== undefined || f.miter?.start !== undefined || f.miter?.end !== undefined)) throw new FeatureError(t('sheetMapping.miterMixed'));
     const view = set.view;
     if (!view) throw new FeatureError(t('feature.needsBody', { what: t('feature.edgeFlange') }));
     if (!f.edge.name) throw new FeatureError(t('edit.noEdgePicked'));
@@ -4100,6 +4143,9 @@ export class Regenerator {
     }
     // Keep the host's trimmed planar material before fusing the curved bend back into the body.
     const mappedPanels = sheet.mapping ? sheetClipPanels(this.kernel, sheet.mapping.panels, list.find(b => !b.surface)!.shape, shape => { this.owned.push(shape); return shape; }) : null;
+    const mappedBend = sheet.mapping ? this.kernel.copy(bendTool.shape) : null;
+    if(mappedBend!==null)this.owned.push(mappedBend);
+    const mappedCurves=sheet.mapping?(sheet.mapping.curves??[]).map(c=>({...c,folded:(()=>{const shape=this.kernel.boolean('common',c.folded,list.find(b=>!b.surface)!.shape).shape;this.owned.push(shape);return shape;})()})):null;
     const mappedFlange = sheet.mapping ? this.kernel.copy(flangeTool.shape) : null;
     if (mappedFlange !== null) this.owned.push(mappedFlange);
     list = this.apply(f.id, 'boss', bendTool, { featureId: f.id, sketchId: 'flange' }, list, true, f.id, named?.bend);
@@ -4141,21 +4187,27 @@ export class Regenerator {
     const miter: SheetFlange['miter'] = [mitres[0] ? { s: mitres[0].s, xOuter: xa - trim } : null, mitres[1] ? { s: mitres[1].s, xOuter: xb + trim } : null];
     for (const mt of mitres) if (mt) mt.g.miter[mt.end] = { s: mt.s, xOuter: mt.xOuterG };
     sheet.flanges.push({ feature: f.id, edge: f.edge.name, width: Wf, angle: theta, radius: rb, trim, straight, allowance, inset: [insetA, insetB], relief, corner: [extA, extB], miter, parent, host, fold });
-    if (sheet.mapping && hostMapping && mappedFlange !== null) {
-      if (mitres[0] || mitres[1]) delete sheet.mapping;
-      else {
-        const mapping = sheet.mapping;
-        const own = (shape: ShapeId) => { this.owned.push(shape); return shape; };
-        mapping.panels = mappedPanels!;
-        const backR = [[1, 0, 0], [0, 1, 0], [0, 0, 1]].map(v => rotate(v as Vec3, axis, -theta));
-        const back: SheetRigid = { R: [backR[0]![0], backR[1]![0], backR[2]![0], backR[0]![1], backR[1]![1], backR[2]![1], backR[0]![2], backR[1]![2], backR[2]![2]], t: add(sub(center, rotate(center, axis, -theta)), o, allowance) };
-        mapping.panels.push({ shape: mappedFlange, toFlat: sheetCompose(hostMapping.toFlat, back) });
-        const rawZone = this.kernel.extrude(frame, [strip('flat.bend', ylo, yhi)], add([0,0,0], o, allowance)).shape;
-        own(rawZone);
-        mapping.zones.push(own(this.kernel.transformed(rawZone, sheetRows(hostMapping.toFlat))));
-        const atFlat = (point: Vec3) => sheetPlanar(mapping.frame, sheetPoint(hostMapping.toFlat, point));
-        mapping.bends.push({ feature: f.id, name: 'bend', a: atFlat(add(add(origin, o, allowance / 2), e, xa)), b: atFlat(add(add(origin, o, allowance / 2), e, xb)), angle: theta, radius: rb, direction: dot(sheetVector(hostMapping.toFlat, m), mapping.frame.normal) > 0 ? 'up' : 'down', kFactor: sheet.kFactor, allowance });
+    if (sheet.mapping && hostMapping && mappedFlange !== null && mappedBend!==null) {
+      const mapping = sheet.mapping;
+      const own = (shape: ShapeId) => { this.owned.push(shape); return shape; };
+      mapping.panels = mappedPanels!;
+      mapping.curves=mappedCurves!;
+      const backR = [[1, 0, 0], [0, 1, 0], [0, 0, 1]].map(v => rotate(v as Vec3, axis, -theta));
+      const back: SheetRigid = { R: [backR[0]![0], backR[1]![0], backR[2]![0], backR[0]![1], backR[1]![1], backR[2]![1], backR[0]![2], backR[1]![2], backR[2]![2]], t: add(sub(center, rotate(center, axis, -theta)), o, allowance) };
+      mapping.panels.push({ shape: mappedFlange, toFlat: sheetCompose(hostMapping.toFlat, back), feature:f.id, unfolds:{...sheetConjugate(sheetInverse(back),hostMapping.unfolds),[f.id]:back} });
+      const current=sheet.flanges.at(-1)!;
+      const flat=flatFlangeBend(this.kernel,current,hostMapping.toFlat,own);
+      const rawMap:import('@3db/kernel').SheetBendMap={flatOrigin:add(origin,m,ylo),flatAcross:o,flatAlong:axis,flatNormal:m,center,axis,radial:neg(m),radiusAtZero:rb+T,radialSlope:-1,neutralRadius:rb+sheet.kFactor*T,angle:theta};
+      mapping.curves.push({feature:f.id,name:'bend',flat,folded:mappedBend,map:sheetMapFlat(rawMap,hostMapping.toFlat),placement:sheetInverse(hostMapping.toFlat),unfolds:{...hostMapping.unfolds}});
+      for(const mt of mitres){
+        if(!mt)continue;
+        const curve=mapping.curves.find(c=>c.feature===mt.g.feature&&c.name==='bend');
+        if(curve){const boundary=flatFlangeBend(this.kernel,mt.g,sheetInverse(curve.placement),own);curve.flat=own(this.kernel.boolean('common',curve.flat,boundary).shape);}
       }
+      mapping.zones=mapping.curves.map(c=>c.flat);
+      (mapping.order??=[]).push(f.id);
+      const atFlat = (point: Vec3) => sheetPlanar(mapping.frame, sheetPoint(hostMapping.toFlat, point));
+      mapping.bends.push({ feature: f.id, name: 'bend', a: atFlat(add(add(origin, o, allowance / 2), e, xa)), b: atFlat(add(add(origin, o, allowance / 2), e, xb)), angle: theta, radius: rb, direction: dot(sheetVector(hostMapping.toFlat, m), mapping.frame.normal) > 0 ? 'up' : 'down', kFactor: sheet.kFactor, allowance });
     }
     this.info = info(allowance) + (insetA > 0 || insetB > 0 ? t('flange.info.inset', { start: String(insetA), end: String(insetB) }) : '') + (mitres[0] || mitres[1] ? t('flange.info.miter', { gap: String(((mitres[0]?.s ?? mitres[1]!.s) * Math.SQRT2).toFixed(3)) }) : '');
     return [...list];

@@ -453,3 +453,18 @@ export interface HelixCurveResult {
 }
 
 
+
+/** Material coordinates of a developable cylindrical sheet bend. Lengths are mm, angle radians. */
+export interface SheetBendMap {
+  flatOrigin: Vec3;
+  flatAcross: Vec3;
+  flatAlong: Vec3;
+  flatNormal: Vec3;
+  center: Vec3;
+  axis: Vec3;
+  radial: Vec3;
+  radiusAtZero: number;
+  radialSlope: 1 | -1;
+  neutralRadius: number;
+  angle: number;
+}

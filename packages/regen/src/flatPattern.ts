@@ -1,4 +1,4 @@
-import { mappedBlank } from './sheetMapping';
+import { sessionFlatBlank, mappedBlank } from './sheetMapping';
 import { t } from '@3db/i18n';
 import type { Frame, Kernel, Region, ShapeId } from '@3db/kernel';
 import type { Id } from '@3db/model';
@@ -197,7 +197,7 @@ export function flatPattern(kernel: Kernel, sheet: SheetInfo): FlatPattern {
     };
     if (sheet.mapping?.active) {
       frame = sheet.mapping.frame;
-      body = sheet.unfolding ? keep(kernel.copy(sheet.unfolding.current)) : mappedBlank(kernel, sheet.mapping, keep);
+      body = sheet.unfolding ? sessionFlatBlank(kernel,sheet.mapping,sheet.unfolding,keep) : mappedBlank(kernel, sheet.mapping, keep);
       bends.push(...sheet.mapping.bends);
       notIncluded.push(...sheet.mapping.notIncluded);
     } else if (base.kind === 'bent') {
@@ -349,4 +349,20 @@ export function flatPattern(kernel: Kernel, sheet: SheetInfo): FlatPattern {
   } finally {
     for (const id of owned) kernel.release(id);
   }
+}
+
+/** The same mitre allowance boundary used by legacy unfolding, retained in manufacturing coordinates. */
+export function flatFlangeBend(kernel:Kernel,fl:SheetInfo['flanges'][number],toFlat:import('./sheetMapping').SheetRigid,keep:(s:ShapeId)=>ShapeId):ShapeId{
+  const g=fl.fold;
+  const lo=fl.miter[0]?Math.min(g.xa,fl.miter[0].xOuter):g.xa;
+  const hi=fl.miter[1]?Math.max(g.xb,fl.miter[1].xOuter):g.xb;
+  let raw=keep(kernel.extrude({origin:g.origin,xDir:g.e,yDir:g.m,normal:cross(g.e,g.m)},[rect(lo,g.ylo,hi,g.yhi,'flat.bend')],addv([0,0,0],g.o,fl.allowance)).shape);
+  for(const [end,mt] of [[0,fl.miter[0]],[1,fl.miter[1]]] as const){
+    if(!mt)continue;
+    const fr:Frame={origin:addv(g.origin,g.m,g.ylo-1),xDir:g.e,yDir:g.o,normal:cross(g.e,g.o)};
+    const cutter=keep(kernel.extrude(fr,[mitreCutter(fl,mt,end,fl.allowance+fl.straight+1)],addv([0,0,0],g.m,g.yhi-g.ylo+2)).shape);
+    raw=keep(kernel.boolean('cut',raw,cutter).shape);
+  }
+  const m=toFlat;
+  return keep(kernel.transformed(raw,[m.R[0],m.R[1],m.R[2],m.t[0],m.R[3],m.R[4],m.R[5],m.t[1],m.R[6],m.R[7],m.R[8],m.t[2]]));
 }

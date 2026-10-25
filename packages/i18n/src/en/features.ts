@@ -2,6 +2,15 @@ import type { Translation } from '../index';
 
 /** Messages of the features of Phase 3a-5 to 3a-7 (C4.1–C4.3, C5.4, C5.5, C6, C3): end conditions, draft, thin features, shell, patterns. */
 export const features: Translation = {
+  'feature.sheetPartialUnfold': 'Partial unfold',
+  'pm.sheetUnfold.hint': 'Choose bend features to unfold; other bends remain folded. A jog is selected as a two-bend group.',
+  'pm.sheetUnfold.all': 'All bends',
+  'pm.sheetUnfold.jogPair': ' (two bends)',
+  'sheetCurve.badSelection': 'Choose existing bend features without empty or duplicate entries',
+  'sheetCurve.notUnfolded': 'The cut touches a bend that remains folded; add that bend to the unfold selection',
+  'sheetCurve.badMap': 'Bend material coordinates must be finite, orthonormal and have positive radii',
+  'sheetCurve.normalCut': 'Bend-zone machining requires a normal, constant-section cut',
+  'sheetCurve.buildFailed': 'Could not build a valid cylindrical material mapping',
   'feature.sheetUnfold': 'Unfold for machining',
   'feature.sheetRefold': 'Refold',
   'sheetState.noUnfold': 'No matching active unfold feature was found',
@@ -9,10 +18,10 @@ export const features: Translation = {
   'sheetState.alreadyFlat': 'Already unfolded for machining; refold first',
   'sheetState.foldFirst': 'Refold before adding bends or flanges',
   'sheetState.cutOnly': 'Editable unfold currently supports material removal only',
-  'sheetState.bendCut': 'The cut crosses a bend zone and cannot be refolded by planar mapping; move it to a planar panel',
+  'sheetState.bendCut': "Machining contains unmapped material; unfold the affected bends and use constant-section cuts normal to thickness",
   'sheetMapping.noPanel': 'No planar sheet panel contains the bend or selected edge; sketch on a planar sheet face',
   'sheetMapping.invalidFlat': 'The unfolded panels do not form one valid solid; check overlap and connectivity',
-  'sheetMapping.miterMixed': 'Mixed sequential bends currently require flanges without mitred or closed corners',
+
   "feature.gear": "Spur Gear",
   "feature.rack": "Gear Rack",
   "gear.module": "Module",

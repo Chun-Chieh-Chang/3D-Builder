@@ -1753,6 +1753,15 @@ class AppStore {
   }
 
   /** 「中間折彎」 (S-3): the selected sketch (one straight line), 90° to start with. */
+  newSheetUnfoldSelected(): void {
+    const doc=this.history.doc;
+    const candidates=doc.features.filter(f=>!f.suppressed&&['midBend','jog','edgeFlange','hem'].includes(f.type));
+    const chosen=candidates.find(f=>f.id===this.state.selected)??candidates[0];
+    if(!chosen)return;
+    const name=t('feature.sheetPartialUnfold');
+    this.openNew({id:this.allocator().take('sheetUnfold'),type:'sheetUnfold',name:nextName(doc,name),suppressed:false,bends:[chosen.id]},name);
+  }
+
   newSheetState(type: 'sheetUnfold' | 'sheetRefold'): void {
     const doc = this.history.doc;
     const unfolded = activeSheetUnfold(doc.features);

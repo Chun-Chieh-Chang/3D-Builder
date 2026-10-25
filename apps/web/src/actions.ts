@@ -210,6 +210,7 @@ export const ACTIONS: UiAction[] = [
   { id: 'screw-boss', get label() { return t('feature.screwBoss'); }, group: 'feature', enabled: (s) => sketchSelected(s) && !!s.result?.mesh, run: () => store.newScrewBoss() },
   { id: 'base-flange', get label() { return t('feature.baseFlange'); }, group: 'sheet', enabled: sketchSelected, run: () => store.newBaseFlange() },
   { id: 'sheet-unfold', get label() { return t('feature.sheetUnfold'); }, group: 'sheet', enabled: s => hasBody(s) && s.doc.features.some(f => f.type === 'baseFlange' && !f.suppressed) && !activeSheetUnfold(s.doc.features), run: () => store.newSheetState('sheetUnfold') },
+  { id: 'sheet-unfold-selected', get label() { return t('feature.sheetPartialUnfold'); }, group: 'sheet', enabled: s => hasBody(s) && !activeSheetUnfold(s.doc.features) && s.doc.features.some(f => !f.suppressed && ['midBend','jog','edgeFlange','hem'].includes(f.type)), run: () => store.newSheetUnfoldSelected() },
   { id: 'sheet-refold', get label() { return t('feature.sheetRefold'); }, group: 'sheet', enabled: s => hasBody(s) && !!activeSheetUnfold(s.doc.features), run: () => store.newSheetState('sheetRefold') },
   { id: 'mid-bend', get label() { return t('feature.midBend'); }, group: 'sheet', enabled: (s) => hasBody(s) && sketchSelected(s), run: () => store.newMidBend() },
   { id: 'jog', get label() { return t('feature.jog'); }, group: 'sheet', enabled: (s) => hasBody(s) && sketchSelected(s), run: () => store.newJog() },

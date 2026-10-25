@@ -30,10 +30,10 @@ it('unfold is editable native material and refold restores both planar panels wi
   expect(folded.body!.names.edges.length).toBe(folded.body!.topology.edges.length);
  }finally{reg.dispose();}
 });
-it('rejects bend-zone machining, nested unfolds, mismatched refolds and added material explicitly',()=>{
+it('accepts bend-zone machining but rejects nested unfolds, mismatched refolds and added material explicitly',()=>{
  const reg=new Regenerator(k,solver,new Map());
  try{
-  const bad=reg.rebuild(build([...base,unfold,...cut(50),refold]));expect(bad.features.at(-1)).toMatchObject({status:'error',message:expect.stringContaining('折彎帶')});
+  const bad=reg.rebuild(build([...base,unfold,...cut(50),refold]));expect(bad.features.at(-1)).toMatchObject({status:'ok'});
   const nested=reg.rebuild(build([...base,unfold,{...unfold,id:'u2'}]));expect(nested.features.at(-1)).toMatchObject({status:'error'});
   expect(()=>build([...base,{...refold,unfold:'absent'}])).toThrow();
   const more=reg.rebuild(build([...base,unfold,sketch('boss',front,circle('bc',10,10,3)),extrude('bossE','boss','boss',{type:'blind',depth:'4'}),refold]));expect(more.features.at(-1)).toMatchObject({status:'error',message:expect.stringContaining('除料')});

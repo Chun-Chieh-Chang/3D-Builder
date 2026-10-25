@@ -1,5 +1,14 @@
 /** Messages of the features of Phase 3a-5 (C4.1–C4.3, C5.4, C5.5): end conditions, draft, thin features, shell. */
 export const features = {
+  'feature.sheetPartialUnfold': '部分展開',
+  'pm.sheetUnfold.hint': '選擇要展開的折彎，未選的保留折疊；凸折的兩道彎作為一組。',
+  'pm.sheetUnfold.all': '全部折彎',
+  'pm.sheetUnfold.jogPair': '（兩道彎）',
+  'sheetCurve.badSelection': '請選擇已建立的折彎特徵，不能空白或重複',
+  'sheetCurve.notUnfolded': '加工碰到尚未展開的彎曲區；請將該折彎也加入展開清單',
+  'sheetCurve.badMap': '折彎材料映射參數必須有效、正交且半徑大於零',
+  'sheetCurve.normalCut': '彎曲帶加工需為沿板厚方向的等截面除料',
+  'sheetCurve.buildFailed': '無法建立有效的圓柱折彎材料映射',
   'feature.sheetUnfold': '展開加工',
   'feature.sheetRefold': '摺回',
   'sheetState.noUnfold': '找不到相符且尚未摺回的展開特徵',
@@ -7,10 +16,10 @@ export const features = {
   'sheetState.alreadyFlat': '目前已在展開加工狀態，請先摺回',
   'sheetState.foldFirst': '新增折彎或凸緣前請先摺回',
   'sheetState.cutOnly': '展開加工目前僅支援除料，不接受新增材料',
-  'sheetState.bendCut': '加工跨入折彎帶，無法以平板剛體映射摺回；請將切孔移到平直板片',
+  'sheetState.bendCut': "存在未能映射的材料加工；請先展開對應折彎，並使用沿板厚方向的等截面除料",
   'sheetMapping.noPanel': '找不到折彎線或選取邊所屬的平直板片；請在平直面上建立草圖或選取邊',
   'sheetMapping.invalidFlat': '展開板片無法組成單一有效實體，請檢查展開後的重疊與連接',
-  'sheetMapping.miterMixed': '多道折彎混用目前不接受斜接或封閉角落；請先使用一般凸緣',
+
   "feature.gear": "直齒齒輪",
   "feature.rack": "直齒齒條",
   "gear.module": "模數",

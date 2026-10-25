@@ -240,6 +240,8 @@ const migrations: Record<number, (doc: Json) => Json> = {
   81: (doc) => doc,
   // v83: editable sheet unfold/refold features.
   82: (doc) => doc,
+  // v84: selectable partial unfold; absent selection preserves full unfold.
+  83: (doc) => doc,
 };
 
 export class FormatError extends Error {

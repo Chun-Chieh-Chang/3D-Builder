@@ -140,6 +140,7 @@ ull). */
   | { type: 'setScrewBoss'; featureId: Id; boss: Omit<ScrewBossFeature, 'id' | 'type' | 'name' | 'suppressed' | 'sketch'> }
   /** The base flange's settings (C11.1): everything but which sketch it is made from. */
   /** Changes a mid bend (S-3): the angle, the radius, which side stays and which way it folds. */
+  | { type: 'setSheetUnfold'; featureId: Id; bends: Id[] | null }
   | { type: 'setMidBend'; featureId: Id; midBend: Omit<MidBendFeature, 'id' | 'type' | 'name' | 'suppressed' | 'sketch'> }
   /** Changes a jog (C11.3, ADR 0159): the offset, the angle, the radius, which side stays and which way it folds. */
   | { type: 'setJog'; featureId: Id; jog: Omit<JogFeature, 'id' | 'type' | 'name' | 'suppressed' | 'sketch'> }
@@ -709,7 +710,10 @@ function validateNewFeature(doc: PartDoc, f: Feature, index: number): void {
       if (f.corners.length === 0 || f.corners.some((r) => r.kind !== 'edge')) throw new CommandError(t('cmd.flangeOnlyEdge'));
       if (f.kind !== 'chamfer' && f.kind !== 'fillet') throw new CommandError(t('cmd.featureTypeInvalid'));
       return;
-    case 'sheetUnfold': return;
+    case 'sheetUnfold': {
+      if (f.bends !== undefined && (!Array.isArray(f.bends) || !f.bends.length || new Set(f.bends).size !== f.bends.length || f.bends.some(id => typeof id !== 'string' || !doc.features.slice(0,index).some(x => x.id === id && ['midBend','jog','edgeFlange','hem'].includes(x.type))))) throw new CommandError(t('sheetCurve.badSelection'));
+      return;
+    }
     case 'sheetRefold': {
       const source = doc.features.findIndex(x => x.id === f.unfold);
       if (source < 0 || source >= index || doc.features[source]!.type !== 'sheetUnfold') throw new CommandError(t('sheetState.noUnfold'));
@@ -1306,6 +1310,13 @@ export function mutate(draft: Draft<PartDoc>, cmd: Command): void {
       f.kind = cmd.kind;
       f.size = cmd.size;
       checkExprs(draft as PartDoc, f);
+      return;
+    }
+    case 'setSheetUnfold': {
+      const f=feature(draft,cmd.featureId);
+      if(f.type!=='sheetUnfold')throw new CommandError(t('cmd.onlyThisHasParams',{what:t('feature.sheetUnfold')}));
+      if(cmd.bends===null)delete f.bends;else f.bends=cmd.bends;
+      validateNewFeature(draft as PartDoc,f as Feature,draft.features.findIndex(x=>x.id===f.id));
       return;
     }
     case 'setMidBend': {

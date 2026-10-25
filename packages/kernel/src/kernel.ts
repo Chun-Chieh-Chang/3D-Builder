@@ -3515,6 +3515,112 @@ export class Kernel {
     }
   }
 
+  /** Wraps a normal prismatic material patch onto an analytic cylinder using exact UV curves. */
+  bendSheetMaterial(id: ShapeId, map: import('./types').SheetBendMap): OpResult {
+    const oc = this.oc, arena = new Arena();
+    const dot = (a: Vec3, b: Vec3) => a.reduce((s,x,i)=>s+x*b[i]!,0);
+    const cross = (a: Vec3,b: Vec3): Vec3 => [a[1]*b[2]-a[2]*b[1],a[2]*b[0]-a[0]*b[2],a[0]*b[1]-a[1]*b[0]];
+    const vectors=[map.flatAcross,map.flatAlong,map.flatNormal,map.axis,map.radial];
+    if (![...map.flatOrigin,...map.center,map.radiusAtZero,map.neutralRadius,map.angle,...vectors.flat()].every(Number.isFinite) || vectors.some(v=>Math.abs(Math.hypot(...v)-1)>1e-8) || Math.abs(dot(map.axis,map.radial))>1e-8 || Math.abs(dot(map.flatAcross,map.flatAlong))>1e-8 || Math.abs(dot(map.flatAcross,map.flatNormal))>1e-8 || Math.abs(dot(map.flatAlong,map.flatNormal))>1e-8 || !(map.radiusAtZero>0) || !(map.neutralRadius>0) || !(map.angle>0&&map.angle<=Math.PI+1e-8) || ![1,-1].includes(map.radialSlope)) throw new KernelError(t('sheetCurve.badMap'));
+    const topology=this.topology(id);
+    const depth=(p: Vec3)=>dot(p.map((x,i)=>x-map.flatOrigin[i]!) as Vec3,map.flatNormal);
+    const ds=topology.vertices.map(v=>depth(v.point));
+    if (!ds.length) throw new KernelError(t('sheetCurve.normalCut'));
+    const low=Math.min(...ds),high=Math.max(...ds);
+    const r0=map.radiusAtZero+map.radialSlope*low,r1=map.radiusAtZero+map.radialSlope*high;
+    if (!(high-low>1e-8)||!(Math.min(r0,r1)>1e-7)) throw new KernelError(t('sheetCurve.badMap'));
+    const caps=topology.faces.flatMap((f,i)=>f.normal&&dot(f.normal,map.flatNormal)>1-1e-8&&Math.abs(depth(f.center)-high)<1e-6?[i]:[]);
+    const area=caps.reduce((s,i)=>s+topology.faces[i]!.area,0),volume=this.massProps(id).volume;
+    if (!caps.length||Math.abs(area*(high-low)-volume)>1e-6*Math.max(1,volume)) throw new KernelError(t('sheetCurve.normalCut'));
+    for (const f of topology.faces) {
+      if (f.geometry?.type==='plane' && f.normal && Math.abs(dot(f.normal,map.flatNormal))>1e-8 && Math.abs(dot(f.normal,map.flatNormal))<1-1e-8) throw new KernelError(t('sheetCurve.normalCut'));
+      if (f.geometry?.type==='cylinder' && Math.abs(dot(f.geometry.axis,map.flatNormal))<1-1e-8) throw new KernelError(t('sheetCurve.normalCut'));
+    }
+    const faces=ShapeIndex.of(oc,this.get(id),T.FACE,arena);
+    const solids: import('libcascade/single/init').TopoDS_Shape[]=[];
+    try {
+      const plane=arena.own(new oc.gp_Pln(arena.own(new oc.gp_Ax3(this.pnt(arena,map.flatOrigin),this.dir(arena,map.flatNormal),this.dir(arena,map.flatAcross)))));
+      const planeY=cross(map.flatNormal,map.flatAcross);
+      const transform=arena.own(new oc.gp_GTrsf2d());
+      transform.SetValue(1,1,1/map.neutralRadius); transform.SetValue(2,2,dot(planeY,map.flatAlong));
+      const axes=arena.own(new oc.gp_Ax3(this.pnt(arena,map.center),this.dir(arena,map.axis),this.dir(arena,map.radial)));
+      for (const index of caps) {
+        const face=arena.own(oc.TopoDS.Face(faces.keys[index]!));
+        const outer=arena.own(oc.BRepTools.OuterWire(face));
+        const wires=ShapeIndex.of(oc,face,'TopAbs_WIRE',arena);
+        const surfaces=[r0,r1].map(r=>arena.own(new oc.Geom_CylindricalSurface(axes,r)));
+        const converted: { outer:boolean; wires: import('libcascade/single/init').TopoDS_Wire[] }[]=[];
+        const sides: import('libcascade/single/init').TopoDS_Face[]=[];
+        try {
+          for (const wire of wires.keys) {
+            const builders=surfaces.map(()=>arena.own(new oc.BRepBuilderAPI_MakeWire()));
+            const explorer=arena.own(new oc.BRepTools_WireExplorer(arena.own(oc.TopoDS.Wire(wire)),face));
+            let signedArea=0;
+            for(;explorer.More();explorer.Next()) {
+              const edge=arena.own(explorer.Current());
+              const source=oc.BRep_Tool.Curve(edge,0,0);const curve=arena.own(source.returnValue);
+              const two=arena.own(oc.GeomAPI.To2d(curve,plane));
+              const trimmed=arena.own(new oc.Geom2d_TrimmedCurve(two,source.First,source.Last));
+              const uv=arena.own(oc.GeomLib.GTransform(trimmed,transform));
+              // Bound the actual trimmed UV curve, including interior extrema of circles/splines.
+              // Vertex-only checks miss a closed circle's far side and can wrap outside the bend.
+              const uvBounds=arena.own(new oc.Bnd_Box2d());
+              oc.BndLib_Add2dCurve.AddOptimal(uv,uv.FirstParameter(),uv.LastParameter(),1e-9,uvBounds);
+              if(uvBounds.GetXMin() < -1e-6 || uvBounds.GetXMax() > map.angle+1e-6)throw new KernelError(t('sheetCurve.badMap'));
+              const reverse=edge.Orientation()===oc.TopAbs_Orientation.TopAbs_REVERSED;
+              let previous: [number,number] | null=null;
+              for(let j=0;j<=16;j++){
+                const u=uv.FirstParameter()+(uv.LastParameter()-uv.FirstParameter())*(reverse?1-j/16:j/16);
+                const p=arena.own(uv.Value(u));const next:[number,number]=[p.X(),p.Y()];
+                if(previous)signedArea+=previous[0]*next[1]-next[0]*previous[1];previous=next;
+              }
+              const edges=surfaces.map(surface=>{
+                const mk=arena.own(new oc.BRepBuilderAPI_MakeEdge(uv,surface,uv.FirstParameter(),uv.LastParameter()));
+                if(!mk.IsDone())throw new KernelError(t('sheetCurve.buildFailed'));
+                let e=arena.own(mk.Edge());
+                if(reverse)e=arena.own(oc.TopoDS.Edge(arena.own(e.Reversed())));
+                if(!oc.BRepLib.BuildCurves3d(e,1e-7,oc.GeomAbs_Shape.GeomAbs_C1,14,64))throw new KernelError(t('sheetCurve.buildFailed'));
+                return e;
+              });
+              builders.forEach((b,i)=>b.Add(edges[i]!));
+              sides.push(arena.own(oc.BRepFill.Face(edges[0]!,edges[1]!)));
+            }
+            const isOuter=wire.IsSame(outer);
+            const reverseWire=isOuter?signedArea<0:signedArea>0;
+            converted.push({outer:isOuter,wires:builders.map(b=>{
+              let w=arena.own(b.Wire());if(reverseWire)w=arena.own(oc.TopoDS.Wire(arena.own(w.Reversed())));return w;
+            })});
+          }
+          const outerPair=converted.find(c=>c.outer);if(!outerPair)throw new KernelError(t('sheetCurve.buildFailed'));
+          const sewing=arena.own(new oc.BRepBuilderAPI_Sewing(1e-6,true,true,true,false));
+          for(let i=0;i<2;i++){
+            const mk=arena.own(new oc.BRepBuilderAPI_MakeFace(surfaces[i]!,outerPair.wires[i]!,true));
+            for(const hole of converted.filter(c=>!c.outer))mk.Add(hole.wires[i]!);
+            if(!mk.IsDone())throw new KernelError(t('sheetCurve.buildFailed'));
+            sewing.Add(arena.own(mk.Face()));
+          }
+          for(const side of sides)sewing.Add(side);
+          sewing.Perform(arena.own(new oc.Message_ProgressRange()));
+          const sewn=arena.own(sewing.SewedShape());
+          const shells=ShapeIndex.of(oc,sewn,'TopAbs_SHELL',arena);
+          try{
+            if(shells.size!==1||sewing.NbFreeEdges()!==0)throw new KernelError(t('sheetCurve.buildFailed'));
+            const fixer=arena.own(new oc.ShapeFix_Solid());
+            const solid=arena.own(fixer.SolidFromShell(arena.own(oc.TopoDS.Shell(shells.keys[0]!))));
+            if(!this.valid(solid))throw new KernelError(t('sheetCurve.buildFailed'));
+            solids.push(solid);
+          } finally {shells.dispose();}
+        } finally {wires.dispose();}
+      }
+      const compound=arena.own(new oc.TopoDS_Compound());const builder=arena.own(new oc.BRep_Builder());builder.MakeCompound(compound);for(const solid of solids)builder.Add(compound,solid);
+      const shape=this.put(compound.Oriented(compound.Orientation()));
+      const expected=volume*(r0+r1)/(2*map.neutralRadius),actual=this.massProps(shape).volume;
+      if(!this.isValid(shape)||Math.abs(actual-expected)>1e-5*Math.max(1,expected)){this.release(shape);throw new KernelError(t('sheetCurve.buildFailed'));}
+      return {shape,faceOrigins:this.topology(shape).faces.map((_,index)=>[{rel:'imported' as const,index}])};
+    } catch(e){if(e instanceof KernelError)throw e;throw new KernelError(t('sheetCurve.buildFailed')+': '+this.errorText(e));}
+    finally {faces.dispose();arena.dispose();}
+  }
+
   private sectionCap(origins: FaceOrigin[] | undefined, sourceFaceCount: number): boolean {
     const faces = (origins ?? []).filter(o => o.rel !== 'cap' && o.rel !== 'imported' && o.kind === 'face');
     // Coincident tool/body faces can have both origins even before same-domain unification.
